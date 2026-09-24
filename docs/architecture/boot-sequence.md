@@ -1,15 +1,12 @@
 # 부팅 시퀀스 (첫 윈도우) — 부팅 상태 머신
 
-첫 윈도우 부팅은 **부팅 상태 머신**(`src/app/boot_machine.rs`, `BootPhase`)이 담당한다.
-창은 hidden 으로 생성되고, 첫 로딩 프레임 present 후에야 표시되며(흰/OS 기본 배경
-프레임 0장), 부팅 대기는 sleep 이 아니라 프레임 스텝으로 진행돼 메인 스레드가 얼지
-않는다.
+첫 윈도우는 `src/app/boot_machine.rs`의 `BootPhase` 상태 머신으로 부팅한다. 숨긴 창에서 첫 로딩 프레임을 그린 뒤 창을 표시한다. 대기는 sleep 대신 프레임마다 진행 상태를 확인하는 방식으로 처리한다.
 
 ## 시퀀스
 
 ```
 resumed() (src/app/event_handler.rs)
-  ├─ 창 생성: WindowAttributes .with_visible(false)     — 축A: hidden 생성
+  ├─ 창 생성: WindowAttributes .with_visible(false)     — 숨긴 상태로 생성
   ├─ Settings::load + normalize
   ├─ create_gpu_state (동기, pollster)                  — 이 동안 창은 hidden
   ├─ shell 무효 시: shell setup 첫 프레임 렌더 → set_visible(true) → early return
@@ -64,7 +61,7 @@ finish_boot (Ready):
   보이므로 표시 전환만 스킵, phase 구동 동일).
 - 다중 창(`create_new_window`)·parked 복원은 상태 머신을 타지 않고 동기 경로
   (`create_app_state` → `ensure_engine_and_plugins`)를 유지한다. 동기 경로와
-  워커(`WaitingEngine`)는 원자 초기화 본문으로 같은 App-free 함수
+  워커(`WaitingEngine`)는 초기화 본문으로 같은 App 비참조 함수
   `build_engine_and_plugins`(첫 부팅 전용 하위 함수, `src/app/window_lifecycle.rs`)
   를 공유하고, `boot_pump_step_*` / `boot_apply_pending_layout_restore` /
   `assemble_app_state` 도 두 경로가 공통으로 쓰므로 대기 의미론이 이중화되지
@@ -96,9 +93,7 @@ finish_boot (Ready):
 
 ## 부팅에 걸리는 일 (트리거와 무관한 일)
 
-**필요성이 트리거와 무관한 일은 부팅 경로에 건다. 기동만 지연에 둔다.** 지연 자리에
-같은 호출이 남아 있는 것은 재시도라 무해하고, 결함은 지연이 **유일한** 채널일 때
-생긴다. 근거·부류 구분·대안은 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
+첫 요청이 없어도 필요한 초기화는 부팅에서 수행한다. 플러그인 설치·namespace 표 등록과 프로세스 기동은 구분한다. 판단 기준은 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)에 있다.
 
 지금 명부에 오른 일과 조합별 자리:
 
@@ -106,19 +101,13 @@ finish_boot (Ready):
 |----|----------|-----|
 | 번들 plugin 설치 (`install_builtins_if_needed`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
 | namespace 소유 표 설치 (`install_namespace_table`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
-| agent 재시작 정화·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
+| agent 재시작 기록 정리·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
 
-소유 표 설치는 `PluginManager` 가 든 표의 핸들을 그것을 **해소하는** 크레이트
-(`tasty-ipc`)에 넘기는 일이다 — 사본을 만드는 것이 아니라 같은 표를 가리키게 한다.
-표의 *내용*은 그 뒤 `refresh_packages` 가 설치된 매니페스트에서 유도한다. 왜 사본이
-아니라 핸들인지는 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
+소유 표 설치는 `PluginManager`가 사용하는 표의 핸들을 `tasty-ipc`에 전달하는 작업이다. 두 크레이트는 같은 표를 읽으며, `refresh_packages`가 설치된 매니페스트에서 표 내용을 갱신한다. 표를 복사하지 않는 이유는 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)에 있다.
 
-**여기서 프로세스는 하나도 안 뜬다** — 설치는 디스크에 놓는 것까지고, plugin 기동은
-첫 호출까지 지연된다. agent 러너 스레드도 수동 `agent.task_run --action start` 전까지
-안 뜬다([agent-runner](../dev-guide/agent-runner.md)).
+설치와 namespace 표 등록 자체는 프로세스를 시작하지 않는다. 헤드리스는 이 메타데이터만 준비하고 플러그인이 필요한 첫 호출까지 기동을 미룬다. GUI의 `build_plugin_manager`는 준비 후 `discover_and_start`를 호출해 활성 플러그인을 기동한다. agent 러너 스레드는 두 환경 모두 `agent.task_run --action start` 전까지 시작하지 않는다([작업 러너](../dev-guide/agent-runner.md)).
 
-`src/source_guards/jobs_anchored_at_boot.rs` 가 조합마다 그 함수 본문이 호출을 갖는지
-본다. 명부가 한 조합만 덮어도 실패한다 — 원래 사고의 형태가 "한 조합에만 있었다" 였다.
+`src/source_guards/jobs_anchored_at_boot.rs`는 GUI와 헤드리스의 지정된 부팅 함수가 필요한 초기화를 호출하는지 확인한다. 한쪽 환경의 호출이 빠져도 실패한다.
 
 ## 로딩 프레임
 
@@ -162,7 +151,7 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
 
 ## 부팅 계측 (target: `tasty::boot`)
 
-부팅 경로에는 상시 tracing 계측이 박혀 있다. debug 빌드는
+부팅 경로는 tracing으로 단계별 소요 시간을 기록한다. debug 빌드는
 `$TASTY_HOME/debug-dev.log`(debug 레벨 file layer)에 수집되고, stderr 기본 필터가
 warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info` 로 실행한다.
 

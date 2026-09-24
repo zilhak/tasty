@@ -1,6 +1,8 @@
 # 마우스 입력 계층 (Input Layer)
 
-윈도우 내부에서 마우스 이벤트(클릭·이동·스크롤)와 커서 아이콘이 **렌더링 z-order 와 일치하는 입력 z-order** 를 따른다 — 화면에서 위에 그려진 요소가 입력을 먼저 받고, 가려진 요소는 받지 않는다.
+마우스 이벤트(클릭·이동·스크롤)는 화면에서 위에 그려진 요소부터 처리한다.
+입력을 받은 요소가 커서 아이콘도 결정한다. 아래에는 비활성 surface를 활성화하는 첫 클릭 등
+이 원칙의 구체적인 조건을 정리한다.
 
 ## 기본 동작: 소비 (Consume)
 
@@ -26,19 +28,35 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 **순서 6 은 버튼 없는 hover motion 보고에도 적용된다.** DECSET 1003(AnyEventMouse)을 켠 앱에 커서 이동을 보고하기 전에 press 경로와 **같은 threshold**(`state::mouse::DIVIDER_HIT_THRESHOLD`)로 divider 밴드를 먼저 판정하고, 밴드 안이면 보고하지 않는다 — 밴드는 gap(1~2px)보다 넓어 양쪽 surface rect 안쪽까지 겹치므로, 이 가드가 없으면 "커서는 ↔ 인데 그 아래 TUI 는 hover 를 계속 받는" 불일치가 생긴다. OS 창 리사이즈 가장자리 밴드와 divider 드래그 진행 중에도 같은 이유로 보고하지 않는다. 대상은 focused surface 한정이다([ADR-0015](../adr/0015-terminal-user-input-routing.md)) — 순서 3(비활성 surface 전환)이 클릭에 대해 세운 "배경 캡쳐 TUI 로 마우스가 새지 않게" 원칙을 hover 에도 적용한 것이며, 다만 hover 는 포커스를 옮기지 않는다. **버튼을 누른 채 시작한 드래그 motion 은 이 가드들의 적용 대상이 아니다** — 대상 surface 가 press 시점에 고정되므로 밴드/이웃 surface 로 나가도 원래 surface 기준으로 계속 보고된다.
 
-**진행 중인 divider 드래그는 surface 콘텐츠보다 우선한다(순서 6 > 순서 7).** egui-mesh surface(마크다운·이미지)는 포인터 이동/버튼을 surface-local 로 forward 하고 소비하는 별도 경로(`egui_mesh_target_at`)를 갖는데, 이 forward 는 표의 순서 7(콘텐츠) 성격이므로 **`dragging_divider.is_some()` 일 때는 건너뛴다** — `handle_cursor_moved`(포인터 이동)와 `handle_mouse_input`(버튼)의 egui-mesh forward 가드에 `dragging_divider.is_none()` 조건을 둔다. 없으면 드래그 중 커서가 egui-mesh surface 영역으로 들어갈 때 forward 가 early-return 하여 divider 갱신이 멈추고(멈춤), release 도 forward 로 소비돼 드래그가 확정/해제되지 않는다(sticky). 터미널/explorer surface 는 egui-mesh 가 아니라 이 경로를 타지 않아 원래도 정상.
+**진행 중인 divider 드래그는 surface 콘텐츠보다 우선한다(순서 6 > 순서 7).**
+egui-mesh surface는 포인터 이동과 버튼 이벤트를 `egui_mesh_target_at` 경로로 plugin에 전달한다.
+이는 콘텐츠 처리이므로 `dragging_divider.is_some()`일 때는 건너뛴다.
+`handle_cursor_moved`와 `handle_mouse_input`의 forward 조건에 모두
+`dragging_divider.is_none()`이 필요하다. 이 조건이 없으면 커서가 mesh 영역에 들어갈 때
+divider 갱신이 멈추고, release도 plugin이 소비해 드래그가 끝나지 않는다.
+터미널과 explorer surface는 이 mesh 전달 경로를 사용하지 않는다.
 
-**Modifier-hint 오버레이**(modifier 홀드 시 뜨는 focus-less 패널)도 마우스를 소비하지만 배너보다 한 단계 강하다: 위 통합 가드(소비·휠·커서)에 더해 **click-to-activate 전환 가드**(`!popup_hovered && !modifier_hint_hovered`)에도 들어가, 오버레이 위 좌클릭이 하위 surface 로 **포커스를 옮기지 못하게** 막는다(popup 과 동급, banner 와 차이). 오버레이 드래그 이동·테두리/코너 리사이즈·X 클릭이 터미널 포커스·selection·마우스 리포트로 새지 않는다 — 키보드 포커스는 애초에 취득하지 않는다(원칙3, [banner 와 동일한 focus-less 성질]). 4지점 배선: `handle_mouse_input` 의 click-to-activate press 가드 + 통합 소비 가드, `handle_mouse_wheel`, `handle_cursor_moved`.
+**Modifier-hint 오버레이**(modifier 홀드 시 뜨는 focus-less 패널)도 마우스를 소비하지만 배너보다 한 단계 강하다: 위 통합 가드(소비·휠·커서)에 더해 **click-to-activate 전환 가드**(`!popup_hovered && !modifier_hint_hovered`)에도 들어가, 오버레이 위 좌클릭이 하위 surface 로 **포커스를 옮기지 못하게** 막는다(popup 과 동급, banner 와 차이). 오버레이 드래그 이동·테두리/코너 리사이즈·X 클릭이 터미널 포커스·selection·마우스 리포트로 새지 않는다 — 키보드 포커스는 애초에 취득하지 않는다(원칙3, [banner 와 동일한 focus-less 성질]). 적용 지점은 네 곳이다: `handle_mouse_input` 의 click-to-activate press 가드 + 통합 소비 가드, `handle_mouse_wheel`, `handle_cursor_moved`.
 
 ### 순서 0 — 전체화면 무대는 좌표를 묻지 않는다
 
-[전체화면 무대](../design/systems/fullscreen-stage.md)가 활성이면 그 위 어떤 레이어도 뒤 세계의 입력을 받지 못한다. 이 단이 표의 다른 단들과 다른 점은 **hit-test 가 없다**는 것이다 — popup(`popup_hovered`)·배너(`banner_hovered`)는 "포인터가 그 위인가" 를 묻지만, 무대는 화면 전체를 덮으므로 물을 이유가 없고 뒤 위젯은 그려지지도 않은 상태라 그 좌표로 판정하는 것 자체가 유령 입력이다. "투과는 기본이 아니다" 원칙의 최상위 사례다.
+[전체화면 무대](../design/systems/fullscreen-stage.md)가 활성이면 그 위 어떤 레이어도 뒤에 있는 요소의 입력을 받지 못한다. 이 단이 표의 다른 단들과 다른 점은 **hit-test 가 없다**는 것이다 — popup(`popup_hovered`)·배너(`banner_hovered`)는 "포인터가 그 위인가" 를 묻지만, 무대는 화면 전체를 덮으므로 물을 이유가 없고 뒤 위젯은 그려지지도 않은 상태라 그 좌표로 판정하는 것 자체가 그리지 않은 위젯에 입력을 전달하게 된다. "투과는 기본이 아니다" 원칙의 최상위 사례다.
 
-배선은 `MainView::mouse_overlay_open()`(= `settings_open_requested || fullscreen_stage_active()`) 한 곳으로 모아, 통합 가드·click-to-activate press 가드·휠·커서 이동·OS 가장자리 리사이즈 양보·링크 hover 계산이 전부 같은 값을 보게 했다. 커서 아이콘도 무대 중에는 `winit_cursor_icon_at` 이 조기 반환한다(무대 프레임의 커서는 egui `platform_output` 이 정한다).
+판정은 `MainView::mouse_overlay_open()`(= `settings_open_requested || fullscreen_stage_active()`) 한 곳으로 모아, 통합 가드·click-to-activate press 가드·휠·커서 이동·OS 가장자리 리사이즈 양보·링크 hover 계산이 전부 같은 값을 보게 했다. 커서 아이콘도 무대 중에는 `winit_cursor_icon_at` 이 조기 반환한다(무대 프레임의 커서는 egui `platform_output` 이 정한다).
 
-**두 항의 생애가 다르다 — `settings_open_requested` 가 덮는 것은 "설정 창이 떠 있는 동안" 이 아니라 프레임 경계 하나다.** 그 값은 사이드바 설정 버튼이 눌렸다는 **열기 요청 래치**다. 세우는 자리는 egui 패스(`src/adapters/ui/draw.rs`)이고 그것은 `render_if_dirty` 안에서 돌며, 지우는 자리는 `MainView::handle_redraw` 의 첫 줄 `dispatch_pending_modal_opens` 이라 그보다 **앞**이다. 그래서 값은 프레임 N 의 egui 패스에서 서고 프레임 N+1 시작에서 지워진다. 설정 창 자체는 `event_loop.create_window` 로 뜨는 **별도 winit 창**이라, 그 창이 떠 있는 동안 메인 창에는 입력 이벤트가 애초에 오지 않는다. 즉 이 항이 막는 구간은 **버튼을 누른 프레임과 모달이 실제로 생기기 전 사이의 한 틱**이다. 같은 항이 키보드 쪽 `AppState::keyboard_overlay_open` 에도 들어가며 생애는 동일하다. "모달이 떠 있는가" 를 물어야 하는 소비자가 볼 값은 그것이 아니라 `view::View::is_modal_active()` 다 — 그 값은 지속한다. 위 호출 순서는 `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs` 가 소스 구조로 고정한다(순서를 뒤집으면 이 항을 읽는 넷이 영영 참이 되지 않는데, 그것을 런타임으로 재는 시험은 없다).
+`settings_open_requested`는 설정 창이 열려 있는 동안 유지되는 값이 아니다.
+egui 패스(`src/adapters/ui/draw.rs`)가 프레임 N에서 이 열기 요청을 설정하고,
+다음 프레임의 `MainView::handle_redraw` 첫 단계인 `dispatch_pending_modal_opens`가 지운다.
+따라서 버튼을 누른 뒤 실제 모달 창이 생기기 전까지의 입력을 막는다.
+`AppState::keyboard_overlay_open`도 같은 값을 같은 용도로 사용한다.
 
-**키보드는 별도 배선이다.** 마우스 계층과 달리 키보드에는 `handle_keyboard_input` 파이프라인의 **0단계 게이트**를 새로 세웠다(double-tap 1~3단계보다 앞). 무대 중 ESC 는 그 자리에서 무대만 닫고 즉시 `return` 하므로 4단계(settings/notifications 닫기)에 도달하지 않는다 — "무대 종료 ESC 는 뒤로 전파되지 않는다" 는 사용자 확정 계약이다. 입력 계약 전체(IME·진입 시 정리·OS 레벨 UI·모달과의 공존)는 [fullscreen-stage.md § 입력 계약](../design/systems/fullscreen-stage.md#입력-계약).
+설정 창은 별도 winit 창이며, 열린 뒤에는 메인 창이 입력을 받지 않는다.
+모달의 지속적인 활성 상태가 필요한 호출자는 `view::View::is_modal_active()`를 쓴다.
+`crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs`는 위 호출 순서를 소스에서
+검사한다. 순서가 뒤집히면 요청을 읽는 네 지점에서 값이 항상 false가 될 수 있다.
+이 프레임 사이 동작을 런타임으로 측정하는 시험은 없다.
+
+**키보드는 별도로 처리한다.** 마우스 계층과 달리 키보드에는 `handle_keyboard_input` 파이프라인의 **0단계 게이트**가 있다(double-tap 1~3단계보다 앞). 무대 중 ESC 는 그 자리에서 무대만 닫고 즉시 `return` 하므로 4단계(settings/notifications 닫기)에 도달하지 않는다 — "무대 종료 ESC 는 뒤로 전파되지 않는다" 는 입력 규칙이다. 입력 계약 전체(IME·진입 시 정리·OS 레벨 UI·모달과의 공존)는 [fullscreen-stage.md § 입력 계약](../design/systems/fullscreen-stage.md#입력-계약).
 
 ### 비활성 surface 클릭 = 전환 우선 (click-to-activate swallow)
 
@@ -74,7 +92,7 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 ### (a) `Order` — 5단 고정 tier
 
-egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` / `Debug`, egui 0.31.1 `layers.rs`)으로 그리기 순서를 5단으로 고정한다 — **enum 선언 순서 그대로**, 매 프레임 무조건 그 순서로 그린다. tasty 의 Popup/Modifier-hint/Banner/egui 위젯(사이드바·탭바·상태바)은 전부 `Order::Foreground` 한 tier 안에 있다 — 즉 위 표의 1(모달 제외)·2·2b·4·5 는 **같은 tier 안에서** 상대 순서를 가려야 하는 문제고, `Order` 만으로는 해결되지 않는다. Divider/Terminal(6/7)은 다른 tier(`Middle` 이하)라 애초에 범위 밖이다.
+egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` / `Debug`, egui 0.31.1 `layers.rs`)으로 그리기 순서를 5단으로 고정한다 — **enum 선언 순서 그대로**, 매 프레임 무조건 그 순서로 그린다. tasty 의 Popup/Modifier-hint/Banner/egui 위젯(사이드바·탭바·상태바)은 중 Popup·Modifier-hint·Banner·탭바·상태바는 `Order::Foreground` 안에 있다. 이들의 상대 순서는 `Order`만으로 정할 수 없다. 사이드바의 SidePanel은 Background에 속한다. Divider/Terminal(6/7)은 다른 tier(`Middle` 이하)라 애초에 범위 밖이다.
 
 ### (b) 같은 tier 안의 순서 — `Areas::order` + `move_to_top`
 
@@ -84,7 +102,10 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 
 ### (c) 미등록 레이어 함정
 
-`egui::Area` 로 등록되지 **않은** 레이어(`ctx.layer_painter(layer_id)` 로 얻은 raw painter — `Areas::order` 에 전혀 없음)는 `GraphicLayers::drain()` 이 같은 tier 안에서 **등록된 레이어를 전부 그린 다음** 그린다 — 즉 등록 여부와 무관하게, 미등록 레이어는 그 tier 안에서 **항상 최상단**에 고정된다. 원래 배너(`banner.rs`, 커밋 `03c583efd`)와 이번에 고친 Modifier-hint(`modifier_hint_overlay.rs`)가 각각 이 함정에 걸려 있었다 — 둘 다 `egui::Ui::new(...).layer_id(layer_id)` 로 bare `Ui` 를 직접 만들어 그렸을 뿐 `egui::Area::new(...).show()` 를 거치지 않았다. 두 경우 모두 **호출 순서를 바꿔도 고쳐지지 않는다** — 미등록인 한 항상 위다.
+`egui::Area`로 등록하지 않은 레이어는 `Areas::order`에 없다.
+`ctx.layer_painter(layer_id)`로 직접 그리면 `GraphicLayers::drain()`이 같은 tier의
+등록된 레이어를 모두 그린 뒤에 처리한다. 따라서 등록된 레이어보다 위에 보인다.
+`Ui::new(...).layer_id(...)`의 호출 순서를 바꾸는 것만으로는 이 순서를 고칠 수 없다.
 
 ### (d) tasty 의 중앙 집중식 강제 — `enforce_foreground_z_order`
 
@@ -96,76 +117,83 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 
 결과적으로 Banner(5) < {상태바·탭바}(4) < Modifier-hint(2b) < Popup(2) 이 재현된다. Modal(1)은 별도 OS 창이라 범위 밖, Divider/Terminal(6/7)은 다른 `Order` tier 라 범위 밖이다.
 
-**실측 확인**(임시 debug 인스턴스 + `tasty screenshot` CLI):
-- Popup(`debug.host_popup.open`)과 Modifier-hint(`debug.modifier_hint.hold`)를 창 크기를 줄여 강제로 겹치게 배치 → Popup 이 Modifier-hint 위에 그려짐(가려진 keycap 만 가장자리에 남음).
-- Banner(`debug.banner.show --scope view`)는 View 스코프 플레이스홀더가 탭 행과 겹쳐 뜬다 — 탭 칩(`zilhak@...`)이 배너 카드 위에 온전히 그려짐(A/B 비교: `enforce_foreground_z_order` 호출을 임시로 빼면 탭 칩이 배너에 완전히 가려짐 — 재삽입하면 복구). 상태바도 탭바와 동일한 `set_sublayer(banner_layer, ...)` 관계라 같은 메커니즘이 적용된다. Banner 와 상태바가 **기하적으로 직접 겹치는** 배치는 만들 수 없었다 — Banner 의 zone 은 항상 탭바 하단에서 시작해 화면 끝까지 뻗지만 카드 자체는 zone 상단에 고정 높이로만 그려지고 `set_clip_rect(zone)` 로 그 밖으로 넘치지 않아, 카드가 화면 하단(상태바 행)까지 물리적으로 닿을 방법이 없다(정상 동작 — 버그 아님).
-- Popup 단독 / Banner 단독 / Modifier-hint 단독 회귀 확인 — 셋 다 기존과 동일하게 정상 렌더.
+기존 화면 검증에서는 Popup과 Modifier-hint를 겹쳐 Popup이 위에 보이는 것을 확인했다.
+Banner와 탭바를 겹친 비교에서도 `enforce_foreground_z_order`가 있을 때 탭 칩이 위에 보였다.
+각 요소를 단독으로 표시하는 경우도 확인했다.
+
+상태바는 탭바와 같은 `set_sublayer(banner_layer, ...)` 관계를 쓴다. 다만 Banner 카드가
+zone 상단에 고정되고 `set_clip_rect(zone)`에 잘리므로 상태바와 직접 겹치는 배치는
+만들지 못했다. 같은 구현을 쓴다는 근거와 실제 화면에서 확인한 범위를 구분한다.
 
 ### 레이어별 Order/Area 등록 현황 (조사 결과)
 
-| # | 레이어 | `Order` | `egui::Area` 등록 | 상태 |
-|---|--------|---------|---------------------|------|
-| 1 | 모달/오버레이(`overlay_open`) | 해당없음 | 별도 OS 윈도우 — Area 개념 자체가 적용 안 됨 | **해소됨** — mouse.rs 의 `overlay_open` 정의 차이는 조사 결과 의도된 설계(위 "`overlay_open`" 절)로 결론. rename 다이얼로그는 popup 시스템 경로라 #2 와 동일 |
-| 2 | Popup | Foreground | 등록됨 | 이상 없음(기존부터 정상) |
-| 2 (예외) | `plugin_bridge/popup_render.rs` egui-mesh popup 셸 | Foreground | 기본 미등록(raw `layer_painter`), host popup 과 z-order 경합 시 `set_sublayer` 로 조건부 등록 | **해소됨** — 의도적 예외를 유지하되 host popup 과의 z_seq 경합 시 조건부로 깨진다(아래 "`plugin_bridge/popup_render.rs`" 절 갱신 참고) |
-| 2b | Modifier-hint 오버레이 | Foreground | 미등록 → **등록함** | **해소됨** — `modifier_hint_overlay.rs` 를 `egui::Area` 로 등록하도록 수정 |
-| 4 | egui 위젯(사이드바·탭바·상태바) | 혼재(SidePanel=Background 미등록 / tab_bar·status_bar=Foreground 등록) | — | tab_bar/status_bar 는 이상 없음(기존부터 정상). SidePanel 은 Background tier 라 이번 범위 밖(아래 "Background tier" 절) |
-| 5 | Banner | Foreground | 등록됨(`03c583efd`, 이번 작업 이전 완료) | `enforce_foreground_z_order` 로 상태바/탭바보다 아래 고정 — **해소됨** |
-| 6 | Divider | Middle | 미등록, raw painter | 범위 밖(다른 tier) — 조사 결과 표의 "6번"은 렌더 레이어 경쟁이 아니라 `mouse.rs` 의 좌표 기반 입력 우선순위로 확인, 변경 불필요 |
-| 7 | Terminal/Surface | 터미널=Order 밖 / 비터미널=Background | 비터미널만 등록 | 범위 밖(다른 tier) |
-
-**순서 불일치 가능성이 있던 3쌍의 결론**:
-
-1. **Popup vs Modifier-hint** — 실측 결과 **불일치 확정 → 이번 작업에서 수정**(Modifier-hint Area 등록 + `enforce_foreground_z_order` 의 `set_sublayer(modifier_hint, popup)`). 수정 후 재실측으로 Popup 이 위에 그려짐을 확인(위 "실측 확인" 절).
-2. **Banner vs status_bar/tab_bar** — 실측 결과 **불일치 확정(A/B 비교로 재현) → 이번 작업에서 수정**(`enforce_foreground_z_order` 의 `set_sublayer(banner_layer, status_bar/tab_bar)`). status_bar 와의 직접 겹침 배치는 못 만들었으나(위 "실측 확인" 절 — zone/clip_rect 구조상 불가능), tab_bar 와는 동일 메커니즘·동일 부모 관계로 실측 완료.
-3. **Background tier(SidePanel bare 배경 vs Explorer/Markdown/Html 등록)** — 조사 결과 **현재는 겹치는 배치가 존재하지 않아 실측 불가/불필요**로 결론(위 "Background tier" 절). 잠재 위험은 남아 있으므로 겹치는 시나리오가 생기면 이 문서의 (b)~(d) 메커니즘을 적용한다.
+| # | 레이어 | `Order` | 등록과 처리 |
+|---|--------|---------|------------|
+| 1 | 모달/오버레이(`overlay_open`) | 해당 없음 | 별도 OS 창. rename 다이얼로그는 popup 경로(#2) |
+| 2 | Popup | Foreground | `egui::Area` 등록 |
+| 2 (예외) | `plugin_bridge/popup_render.rs` mesh popup | Foreground | 기본 미등록. host popup과 z-order를 비교할 때 조건부 등록(아래 절) |
+| 2b | Modifier-hint | Foreground | `egui::Area` 등록 |
+| 4 | 사이드바·탭바·상태바 | 혼재 | SidePanel은 Background 미등록. 탭바·상태바는 Foreground 등록 |
+| 5 | Banner | Foreground | 등록됨. `enforce_foreground_z_order`가 탭바·상태바 아래로 배치 |
+| 6 | Divider | Middle | raw painter. 표의 입력 순위는 좌표 판정으로 처리 |
+| 7 | Terminal/Surface | 터미널은 egui Order 밖, 비터미널 egui 영역은 Background | egui 영역만 등록. native WebView는 별도 표시 경로 |
 
 ### Background tier(사이드바 SidePanel·Explorer·Markdown·Html)는?
 
-이번 구현 범위 밖이다. 이 레이어들은 `Order::Background` 라 위 (a)~(d)와 같은 tier 충돌이 없다 — `Background` tier 안에 서로 겹치는 여러 등록 레이어가 동시에 뜨는 시나리오 자체가 현재 없다(SidePanel 은 고정 도킹, Explorer/Markdown/Html 은 각자 자기 pane/tab 영역에만 그려져 서로 겹치지 않는다). 겹치는 시나리오가 생기면(예: plugin 이 Background tier 에 자유 위치 오버레이를 추가) 이 절의 (b)~(d) 메커니즘을 그대로 적용할 수 있다.
+Background 안에서는 현재 서로 겹치는 레이어를 검증할 배치가 없다. 사이드바는 고정
+도킹되고 surface 콘텐츠는 각 pane/tab 영역에 그려진다. Foreground의 순서 제어가
+Background에도 적용되는 것은 아니다. plugin이 자유 위치 오버레이를 추가하는 등
+겹침이 생기면 해당 tier의 등록 순서와 실제 화면을 따로 확인한다.
 
 ### `plugin_bridge/popup_render.rs` — 의도적 예외
 
-`draw_plugin_popups`(egui-mesh popup 셸, `Id::new("plugin_mesh_popup").with(instance_id)`)도 `ctx.layer_painter(layer_id)` 로 그리는 미등록 레이어라 (c)의 대상처럼 보이지만, **의도적으로 Area 등록하지 않는다**:
+`draw_plugin_popups`의 mesh popup 셸(`Id::new("plugin_mesh_popup").with(instance_id)`)은
+기본적으로 raw `layer_painter`를 쓴다. 전체 화면 scrim을 등록된 Foreground 위젯보다
+위에 그리기 위해 Area에 등록하지 않는다. 위젯 트리 없이 `collect_mesh_popup_input`이
+raw 이벤트를 plugin으로 전달하므로 host Area의 스크롤·hover 라우팅도 필요하지 않다.
 
-- 이 popup 은 스크린 전체를 덮는 scrim(`painter.rect_filled(screen_rect, ...)`)을 그려 모달처럼 동작한다 — 열려 있는 동안 Foreground tier 의 다른 무엇보다도 위에 있는 것이 올바른 동작이고, 미등록 상태(= 항상 tier 최상단)가 정확히 그 성질을 공짜로 준다.
-- Area 등록하면서 `enforce_foreground_z_order` 의 4개 대상에 넣지 않으면, 오히려 자연 등록 시점에 따라 이 popup 이 Banner/상태바보다 **아래**로 밀릴 위험이 생긴다(회귀).
-- 인터랙션도 다르다 — egui 위젯 트리가 없고 입력을 raw event 로 모아(`collect_mesh_popup_input`) plugin 프로세스로 forward 할 뿐이라, Area 등록의 원 동기(스크롤/hover 라우팅, `docs/dev-guide/popup-implementation.md`)가 애초에 적용되지 않는다.
+이 popup을 Area에 등록하려면 상대 순서도 함께 정해야 한다. 등록만 하면 먼저 등록된
+Banner나 상태바보다 아래에 그려질 수 있다.
 
-**갱신 — host popup 과의 z-order 도입 이후, "always top" 은 무조건 성립하지 않는다.** host popup(`file_picker` 등)이 이 plugin popup **보다 나중에** 열리거나 클릭되면, `enforce_host_plugin_popup_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 공유 z_seq(`tasty_host_plugin::next_popup_z_seq()`) 비교로 그 host popup 을 `ctx.set_sublayer()` 를 통해 이 레이어 위로 강제한다 — 이 호출이 parent/child 를 모두 `Areas::order` 에 강제 등록하므로, 그 프레임에 한해 이 레이어도 미등록 상태를 벗어난다. host popup 이 열려 있지 않거나 이 plugin popup 보다 먼저 열렸다면(=z_seq 가 더 작으면) 기존과 동일하게 미등록 상태로 tier 최상단에 남는다. 상세 메커니즘은 [popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order).
+더 나중에 열리거나 클릭된 host popup(`file_picker` 등)은 예외다.
+`enforce_host_plugin_popup_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 공유
+`z_seq`(`tasty_host_plugin::next_popup_z_seq()`)를 비교하고 `ctx.set_sublayer()`로
+host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Areas::order`에
+등록한다. host popup이 없거나 그 `z_seq`가 더 작으면 기본 미등록 경로를 쓴다.
+자세한 규칙은 [popup.md의 Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order)를 따른다.
 
 ### `overlay_open` — 정의 3 개, 소비 지점 6 개
 
 "오버레이가 열려 있는가" 는 **하나의 판정이 아니다.** 이름과 모양이 비슷한 정의가 셋 있고,
-각자 묻는 질문이 달라 항의 조합도 다르다. 의도된 분화지만, **새 항(특히 무대 같은 전역
-상태)을 더할 때 셋을 각각 봐야 하고, 그중 키보드 계열은 소비 지점까지 따로 봐야 한다.**
+용도가 달라 조건도 다르다. **새 상태를 추가할 때는 세 정의를 각각 확인한다.
+키보드 판정은 호출하는 곳의 처리 순서도 확인해야 한다.**
 
 | 정의 | 조합 | 묻는 질문 |
 |------|------|-----------|
 | `AppState::keyboard_overlay_open()` (`src/state.rs`, 순수 술어는 같은 파일 하단) | settings + input dialog + focused host popup + plugin popup | 키/IME 를 host egui 로 들여보낼지(= 터미널 포워딩을 막을지) |
-| `MainView::mouse_overlay_open()` (`src/view/main/mouse.rs`) | settings + **무대** | 이 마우스 이벤트를 뒤 세계 좌표로 처리할지 |
+| `MainView::mouse_overlay_open()` (`src/view/main/mouse.rs`) | settings + **무대** | 메인 화면의 좌표로 마우스를 처리할지 |
 | `AppState::has_egui_overlay_open()` (`src/state.rs`) | dialog + plugin popup + popup(visible) + **무대** + tutorial | WebView(OS 네이티브 자식 뷰)를 숨길지 |
 
 왜 조합이 다른가:
 
-- **키보드/IME 경로** 는 "이 키 이벤트를 egui 로 줄지, 중앙 디스패처(터미널/단축키)로 줄지" 를 결정하는 라우팅 전제 질문이다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가" 라는 넓은 정의가 필요하다.
+- **키보드/IME 경로** 는 "이 키 이벤트를 egui 로 줄지, 중앙 디스패처(터미널/단축키)로 줄지" 를 결정하는 전달 경로를 결정한다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가" 라는 넓은 정의가 필요하다.
 - **마우스** 는 `src/view/main.rs` 의 이벤트 분기에서 **항상 무조건** egui 로 먼저 전달되고 `egui_consumed` 로 결과를 받는다 — 라우팅 전제 자체가 없다. Popup 위 클릭은 이미 `egui_consumed`/`popup_hovered`(위치 기반)로 정확히 처리되므로, 여기 남은 항은 **모달(별도 OS 창) 전용** 보강 게이트일 뿐이다. `has_input_dialog_open()`(rename, popup 시스템으로 구현됨)과 `popups.has_focused()` 는 정책상 Popup 이 비모달이라 위치 밖 클릭까지 막을 이유가 없어 안 들어간다.
 - **WebView** 는 입력이 아니라 **표시** 질문이다. WebView 는 OS 네이티브 자식 뷰라 wgpu 표면 **위**에 있어 "안 그리는 것" 만으로는 사라지지 않는다 — `set_visible(false)` 가 필요하고 그 게이트가 이 함수다. 그래서 popup 을 `has_focused()` 가 아니라 `has_visible_open()` 으로 넓게 본다.
 
-**plugin egui-mesh popup 의 키보드 계층**: 이 popup 은 host `PopupManager` 소속이 아니라 `popups.has_focused()` 로 잡히지 않지만, 키보드 계층에서는 **focused host popup 과 동급**이다 — 열려 있으면 키/IME 가 egui 로 들어가고 터미널로는 안 간다. 그 **키와 IME 조합**은 `collect_mesh_popup_input` 이 `ctx.input` 에서 긁어 plugin 프로세스로 forward 하므로, 게이트가 닫혀 있으면 forward 소스가 비어 입력이 통째로 터미널로 샌다. IME 는 조합 세션 네 단계를 전부 나른다 — Commit 만 실으면 egui `TextEdit` 이 조합 결과를 조용히 버린다([egui-mesh-channel § 입력 게이트](../dev-guide/egui-mesh-channel.md)). 게이트 지점(winit 이벤트 핸들러)은 `PluginManager` 에 접근할 수 없어 `AppState.plugin_popup_open` 캐시를 읽는다 — 마우스 쪽 `popup_hovered` 와 같은 프레임 간 전달 패턴이다(위 "프레임 간 전달" 절). 같은 술어를 IME 라우팅(`view::main::ime`)과 plugin surface 단축키 게이트(`app::plugin_glue::shortcut`)도 공유한다. 예외는 `set_ime_allowed` 판정(`gfx/gpu.rs`) 하나 — plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다. 겹친 popup 중 **누가** 키를 갖는지는 [popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order) 의 Esc 소유권 규칙을 따른다.
+**plugin egui-mesh popup 의 키보드 계층**: 이 popup 은 host `PopupManager` 소속이 아니라 `popups.has_focused()` 로 잡히지 않지만, 키보드 계층에서는 **focused host popup 과 동급**이다 — 열려 있으면 키/IME 가 egui 로 들어가고 터미널로는 안 간다. 그 **키와 IME 조합**은 `collect_mesh_popup_input` 이 `ctx.input` 에서 수집해 plugin 프로세스로 forward 하므로, 게이트가 닫혀 있으면 forward 소스가 비어 입력이 통째로 터미널로 전달된다. IME 는 조합 세션 네 단계를 모두 전달한다 — Commit 만 실으면 egui `TextEdit` 이 조합 결과를 조용히 버린다([egui-mesh-channel § 입력 게이트](../dev-guide/egui-mesh-channel.md)). 게이트 지점(winit 이벤트 핸들러)은 `PluginManager` 에 접근할 수 없어 `AppState.plugin_popup_open` 캐시를 읽는다 — 마우스 쪽 `popup_hovered` 와 같은 프레임 간 전달 패턴이다(위 "프레임 간 전달" 절). 같은 술어를 IME 라우팅(`view::main::ime`)과 plugin surface 단축키 게이트(`app::plugin_glue::shortcut`)도 공유한다. 예외는 `set_ime_allowed` 판정(`gfx/gpu.rs`) 하나 — plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다. 겹친 popup 중 **누가** 키를 갖는지는 [popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order) 의 Esc 소유권 규칙을 따른다.
 
 #### 무대는 어느 정의에도 자동으로 얹히지 않는다
 
-`has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 식을 본다 — 그 함수의
+`has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 조건을 확인한다 — 그 함수의
 프로덕션 소비처는 WebView 표시 하나뿐이다. 게다가 `keyboard_overlay_open()` 은 **정의가
 하나인데 소비 지점이 여섯**이고, 그 여섯이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
-무대는 지점마다 명시적으로 배선한다 — 아래 여덟 곳이 전부다.
+무대는 각 지점에서 명시적으로 판정한다 — 아래 여덟 곳이 전부다.
 
 | # | 지점 | 무대 항 | 근거 |
 |---|------|--------|------|
-| 1 | `src/view/main.rs` egui feed 게이트 | `\|\| fullscreen_stage_active()` | **방향이 반대**다. 무대 콘텐츠는 egui 위젯이라 키/IME 가 egui 입력 시스템에 들어가야 클릭·텍스트 입력이 산다. 여기는 "무대**로** 준다" |
+| 1 | `src/view/main.rs` egui feed 게이트 | `\|\| fullscreen_stage_active()` | **방향이 반대**다. 무대 콘텐츠는 egui 위젯이라 키/IME 가 egui 입력 시스템에 들어가야 클릭·텍스트 입력을 처리할 수 있다. 여기는 "무대**로** 준다" |
 | 2 | `src/view/main/keyboard.rs` 터미널 포워딩 게이트 | **없음** | 같은 함수 **앞**의 0단계 게이트(`try_consume_fullscreen_stage_key`)가 무대 키를 전부 소비하고 return 하므로 여기까지 오지 않는다. 그 게이트가 사라지면 이 식도 무대 항이 필요해진다 |
-| 3 | `src/view/main/ime.rs` | `\|\| fullscreen_stage_active()` | 필수. 무대만 떠 있으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막고, 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY 로 샌다 |
+| 3 | `src/view/main/ime.rs` | `\|\| fullscreen_stage_active()` | 필수. 무대만 떠 있으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막고, 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY로 전달된다 |
 | 4 | `src/app/plugin_glue/shortcut.rs` plugin 단축키 | `\|\| fullscreen_stage_active()` | 필수. 이 경로는 `dispatch_window_event_to_view` **이전에** 호출되므로(`src/app/event_handler.rs`) 2 의 0단계 게이트가 아예 도달하지 못한다 |
 | 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([ADR-0029](../adr/0029-webview-host-integration.md)) |
 | 6 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
@@ -176,11 +204,11 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 되지 않나" 가 자연스러운 질문이다. 넣지 않은 이유는 2 다 — 그 지점은 무대에 대해 다른
 답(0단계 게이트가 이미 처리)을 쓰고 있고, 정의를 바꾸면 이 술어의 의미가 "키보드 오버레이"
 에서 "키보드 오버레이 또는 무대" 로 넓어져 앞으로의 호출자에게도 그 결정이 따라붙는다.
-대신 **완전성은 테스트가 강제한다** — `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 의
+대신 **빠진 호출자는 테스트로 찾는다** — `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 의
 `every_overlay_open_composite_is_stage_aware` 가 `keyboard_overlay_open()` 호출부를 소스에서
 기계적으로 전부 찾아 (a) 각각이 무대를 아는지, (b) 지점 집합이 위 표와 같은지를 확인한다.
-새 호출부가 생기면 그 테스트가 먼저 깨지고, 그때 이 표도 함께 갱신한다. 2 의 예외도 그
-테스트가 "0단계 게이트가 살아 있는가" 로 함께 검증한다.
+새 호출부가 생기면 그 테스트가 실패하고, 그때 이 표도 함께 갱신한다. 2 의 예외도 그
+테스트가 "0단계 게이트가 유지되는가" 로 함께 검증한다.
 
 알려진 미해소 사안: popup 바깥 클릭이 popup 을 닫으면서, 그 클릭이 겨냥한 하위 액션도 같은 클릭에서 함께 발생한다. 닫힘만 소비하고 액션을 막을지는 UX 판단이 필요해 별개 사안으로 분리돼 있다.
 

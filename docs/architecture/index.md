@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 60 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+Tasty는 본 바이너리(`src/`)와 60개 크레이트(`crates/*`)로 구성된 Cargo workspace다. 도메인 로직은 GUI 없이 동작하고, GUI·IPC·OS 연동은 port와 adapter로 연결한다.
 
 ## 기술 스택
 
@@ -30,7 +30,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | `hub: Hub` | **외부 통신** — IPC 서버(`Option<Box<dyn IpcServerPort>>`), 포트 파일 | 항상 |
 | `view: ViewRegistry` | **GUI 어댑터** — winit proxy, `views: HashMap<WindowId, Box<dyn View>>`, `active_modal_id`/`focused_view_id` | `#[cfg(feature = "gui")]` |
 
-> 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. 전환기 컨테이너로 남아 있던 `engine` 모듈도 사라졌고, 그 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)은 `src/core/` 아래로 옮겨졌다.
+현재 본체는 `Core`가 상태, `Hub`가 외부 통신, `ViewRegistry`가 GUI를 담당한다. surface_registry·command_index·output_observer·layout_persistence는 `src/core/`에 있다.
 
 ### 도메인 경계 — `core` + `ports`
 
@@ -83,19 +83,21 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 ## 워크스페이스 크레이트 (60)
 
-의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. **그 순서를 `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 가 매니페스트 의존과 대조한다** — 절 소속은 각 절 **첫 문단의 열거**에서 읽고(항목마다 `` `이름` `` 으로 시작), 순서를 거스르는 간선은 문서 본문이 이유를 적은 것만 허용한다.
-지금 그런 예외는 셋이고 전부 도메인-IO 절이다 — `tasty-remote` → `tasty-ipc`, 그리고 `tasty-file-format`·`tasty-file-handler` → `tasty-plugin-protocol`(아래 도메인-IO 절이 각각 이유를 적는다). **순서를 거스르는 간선을 보면 그 간선보다 절 순서를 먼저 의심해라** — 실측에서 그런 넷은 전부 정상 의존이었고 절 넷이 잘못된 자리에 있었다.
-이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
+아래 목록은 낮은 계층부터 나열한다. 의존은 상위에서 하위로 향하며 순환을 허용하지 않는다. `architecture_layer_order_holds`가 매니페스트 의존과 순서를 대조한다. 크레이트 소속은 각 절 첫 문단에서 백틱 이름으로 시작하는 항목을 읽는다. 순서와 다른 의존을 발견하면 실제 의존과 문서의 계층 순서를 함께 확인한다.
+
+계층 예외는 도메인-IO의 세 의존이다: `tasty-remote → tasty-ipc`, `tasty-file-format → tasty-plugin-protocol`, `tasty-file-handler → tasty-plugin-protocol`. 이유는 해당 절에서 설명한다.
+
+`architecture_crate_list_complete`가 `crates/*/`의 전체 이름과 개수를 비교한다. `doc-guards.yml`이 경로 필터 없이 main push·PR에서 두 검사를 실행하며, 크레이트를 추가할 때는 push 전에 직접 확인한다([CI 가이드](../dev-guide/ci-gates.md)).
 
 ### type-\* / primitive (leaf)
-`tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema + toast 분류 `ToastKind` — 색을 고르는 값이라 여기 있고, egui 는 `egui-compat` feature 뒤라 headless 도 그대로 쓴다. 그리는 쪽과 발화하는 쪽이 서로를 안 보고 같은 열거를 본다, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-cell-width`(문자 하나가 터미널 셀을 몇 칸 차지하는가 — 렌더러·선택 모델·링크 스캐너가 같은 답을 써야 하고, 그 답이 GPU 렌더러 안에 있으면 도메인이 렌더러를 거꾸로 본다. 코드포인트 구간표, 의존 0) · `tasty-ansi`(ANSI escape 제거 — CSI/OSC 정규식 하나. `tasty-terminal`(IPC `--strip-ansi`)과 `tasty-output`(파서의 plain text 매칭)이 공유한다. 두 크레이트가 서로를 흡수하면 상대가 몰라도 되는 의존(serde / termwiz)을 들이므로 크기가 아니라 의존 방향으로 분리했다, → regex 만, ADR-0001) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, → utils) · `tasty-shm`(공유 메모리 + FD/HANDLE 전달 primitive — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle. 호스트와 plugin 이 대용량 데이터를 주고받는 **선(wire)** 이라 `tasty-plugin-protocol` 과 같은 역할이고, tasty 도메인 개념을 담지 않는다. 워크스페이스 내부 의존 0, 의존 0)
+`tasty-type-geometry`(길이·도형 타입: LogicalPx·PhysicalPx·Rect, 의존 없음) · `tasty-type-appearance`(색·테마 스키마·ToastKind. 그리기와 이벤트 처리에서 같은 타입 사용. egui 변환은 egui-compat, → type-geometry) · `tasty-design-tokens`(DTCG 디자인 토큰 사본·코드 생성, → type-geometry) · `tasty-utils`(경로 등 공용 함수) · `tasty-cell-width`(렌더러·선택·링크가 공유하는 코드포인트별 셀 폭, 의존 없음) · `tasty-ansi`(CSI·OSC 제거 정규식. terminal의 strip-ansi와 output 파서가 공유, → regex, ADR-0001) · `tasty-timer`(주기 작업을 키로 등록하고 drain_due로 실행. 다음 기한까지 기다리는 waker 스레드1개, → utils) · `tasty-shm`(공유 메모리와 FD/HANDLE 전달. POSIX shm·SCM_RIGHTS·Windows DuplicateHandle, workspace 및 외부 의존 없음)
 
 이 절 안에서만 의존 가능("type-\*" 는 절 이름이고 규칙의 단위는 **절 소속**이다 — `tasty-utils`·`tasty-ansi`·`tasty-timer`·`tasty-design-tokens` 처럼 이름이 `tasty-type-` 으로 시작하지 않는 것도 이 절이다). 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
 
-`tasty-shm` 이 이 절인 이유는 **의존 방향과 역할**이다. syscall 을 부른다는 사실은 분류 기준이 아니다 — `tasty-utils`(경로 IO)·`tasty-timer`(스레드/슬립)도 부른다. 도메인-IO 절의 크레이트는 전부 tasty 의 도메인 개념(테마·설정·터미널·훅·메모리·에이전트·프리셋·ssh·원격·모델·git)을 담는데 shm 은 담지 않고, 워크스페이스 내부 의존이 0 이라 이 절의 규칙("절 안에서만 의존")을 그대로 만족한다. **이 분류에 걸린 것이 아래 sandbox 경계 문장이다** — shm 이 도메인-IO 라면 `tasty-plugin-sdk → tasty-shm` 이 그 문장의 예외가 되어야 하고, 경계 진술에 안 적힌 예외를 두는 대가가 가장 크다. 실측: 이 절로 옮겨도 새로 빨개지는 간선은 0 이다(shm 의 소비자는 plugin host 와 sandbox 경계 둘, 양쪽 다 이 절보다 상위다).
+`tasty-shm`은 Tasty의 도메인 상태를 모르고 공유 메모리 전송만 담당하며 workspace 의존도 없다. syscall 사용 여부가 아니라 역할과 의존 방향으로 이 계층에 둔다. SDK가 shm을 사용하는 것을 도메인 의존 예외로 만들 필요도 없다.
 
 ### 도메인-IO
-`tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-portscan` · `tasty-reaper`(자식 프로세스를 호스트 수명에 결박 — Windows Job Object / 비-Windows no-op) · `tasty-lua`(Lua 스크립트 — 워커 격리 + 고정 host API, ADR-0027) · `tasty-i18n`(번역) · `tasty-remote-profiles`(원격 연결 프로필 + passkey, typed-tagged registry — attach/explorer/plugin 공유, ADR-0020) · `tasty-ssh`(시스템 ssh 위임 — ssh 프로세스 spawn · 터널 수명 · 원격 포트 발견 · 백오프 · 취소. SSH 프로토콜은 구현하지 않는다, → remote-profiles/i18n/utils) · `tasty-remote`(원격 인스턴스 client 능력 — 워크스페이스 조회/생성. CLI·GUI·IPC 3소비자 공유, → ssh/ipc/remote-profiles, ADR-0001) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-appearance/type-geometry/utils, GUI-free) · `tasty-dag-layout`(task DAG 레이어 레이아웃 — Sugiyama 계열로 노드 좌표만 계산, egui/Theme 를 모르는 순수 계산이라 본체·갤러리가 같은 코드를 씀, → type-geometry 만. [dag-layout](../dev-guide/dag-layout.md)) · `tasty-git-core`(read-only git2 래퍼 — repo 탐색·status/log/diff/worktrees, mutate 없음. host core(원격 attach git query)와 `tasty-plugin-git-viewer`(로컬)가 공유, → utils, ADR-0022) · `tasty-file-format`(파일 형식 식별 — detector 레지스트리 + 규칙/Lua/구조 평가기. 호스트·GUI·IPC 결합 0, → utils/plugin-protocol) · `tasty-file-handler`(파일 핸들러 정책·레지스트리 — detector→handler 매핑, 사용자 오버라이드, plugin 기여, 최근 선택. 호스트·GUI·IPC 결합 0, → utils/file-format/plugin-protocol) · `tasty-selection`(터미널 텍스트 선택 — 격자 좌표·선택 모드·픽셀→격자 사상·적중 판정·선택 텍스트 추출. 렌더러와 view 가 같은 타입을 써야 해서 타입 소속만 내렸다, → terminal/type-geometry/cell-width) · `tasty-terminal-link`(터미널 화면 텍스트의 링크 검출 — URL·경로 스캔, 줄바꿈을 가로지르는 세그먼트, 렌더러가 색을 덮는 하이라이트 범위. 링크를 **여는** 일은 OS 부수효과라 본체의 `gui` 뒤에 남는다, → terminal/type-appearance/cell-width)
+`tasty-themes`(전역 Theme·TOML IO) · `tasty-settings`(설정 스키마·직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY·termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(memory.db) · `tasty-telemetry`(사용량·진단, → memory) · `tasty-output`(출력 파서) · `tasty-approval`(승인) · `tasty-agent`(세션·수명, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-portscan`(포트 조회) · `tasty-reaper`(Windows Job Object로 자식 수명 관리. 다른 OS에서는 동작 없음) · `tasty-lua`(격리 워커·고정 host API, ADR-0027) · `tasty-i18n`(번역) · `tasty-remote-profiles`(연결 프로필·passkey. attach·explorer·plugin이 공유, ADR-0020) · `tasty-ssh`(시스템 ssh 실행·터널·포트 탐색·재시도·취소. SSH 프로토콜은 구현하지 않음, → remote-profiles/i18n/utils) · `tasty-remote`(원격 workspace 조회·생성. CLI·GUI·IPC 공용, → ssh/ipc/remote-profiles, ADR-0001) · `tasty-model`(workspace·pane·tab·surface 모델, GUI 의존 없음, → terminal/type-appearance/type-geometry/utils) · `tasty-dag-layout`(Sugiyama 방식의 DAG 좌표 계산. 본체·갤러리 공용, egui·Theme 의존 없음, → type-geometry. [설명](../dev-guide/dag-layout.md)) · `tasty-git-core`(git2 읽기 전용 래퍼. repo·status·log·diff·worktrees, 원격 host와 git-viewer 공용, → utils, ADR-0022) · `tasty-file-format`(detector·규칙·Lua·구조 평가. 호스트·GUI·IPC 구현 의존 없음, → utils/plugin-protocol) · `tasty-file-handler`(detector와 handler 연결·사용자 설정·plugin 등록·최근 선택. 호스트·GUI·IPC 구현 의존 없음, → utils/file-format/plugin-protocol) · `tasty-selection`(격자 선택·픽셀 변환·적중 판정·텍스트 추출. 렌더러·View 공용, → terminal/type-geometry/cell-width) · `tasty-terminal-link`(URL·파일 경로·여러 줄 링크와 강조 범위 계산. 실제 열기는 호스트 GUI에서 처리, → terminal/type-appearance/cell-width)
 
 이 절 + type-\*/primitive 절만 의존 가능(위와 같이 판정 단위는 절 소속이다). **예외 셋** — 첫째, `tasty-remote` 는 plugin host 의 `tasty-ipc` 에 의존한다: 원격 client 능력이 IPC 호출이고, 합칠 후보 둘(`tasty-ssh` 와 `tasty-ipc`)이 각각 더 나쁜 의존을 들여 기각됐다.
 그 방향은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md) 의 결정이다.
@@ -107,20 +109,20 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 이 절의 다른 크레이트에는 예외가 없다.
 
 ### UI primitive
-`tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처) · `tasty-icons`(line/fill 아이콘 SVG 단일 출처 — host/gallery/plugin build-time bake 공유) · `tasty-key-match`(바인딩 문자열을 실제 키 이벤트와 대조 — 단축키 디스패치와 webview 키 브리지가 같은 규칙을 쓰는데, 규칙이 `gui` feature 뒤에 있으면 브리지가 UI 에 묶인다. egui 갈래만 `egui-input` feature 뒤, → settings/winit). — [ui-widgets-crate](ui-widgets-crate.md)
+`tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)
 
 ### OS 경계
-`tasty-platform`(OS 를 부르는 코드 전부 — panic/hang 리포트와 호스트 로그 초기화, 네이티브 컨텍스트 메뉴(NSMenu / TrackPopupMenu / GTK), 시스템 트레이, Windows jump list · 전원 재개 후크, CSD 윈도우 크롬, OS 인터랙티브 화면 캡처, macOS 권한 preflight 와 Dock/메뉴바 delegate, 이벤트 루프 stall 워치독. **App 을 안 본다** — OS 신호가 `AppEvent` 로 무엇이 되는지는 부르는 쪽이 콜백으로 정한다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)). 윈도잉·GTK·AppKit·트레이 의존은 전부 `gui` feature 뒤라 headless 빌드가 링크하는 것은 crash 리포트 갈래뿐이다, → i18n/settings/utils, [ADR-0001](../adr/0001-crate-dependency-boundaries.md))
+`tasty-platform`(panic·hang 진단, 호스트 로그, 네이티브 메뉴, 트레이, jump list, 전원 재개, 창 크롬, OS 화면 캡처, macOS 권한·Dock·메뉴바, 이벤트 루프 watchdog. App 해석은 호출자가 callback으로 전달. 창·GTK·AppKit·트레이는 gui feature 뒤이며 headless에는 crash 진단이 포함됨, → i18n/settings/utils, [ADR-0001](../adr/0001-crate-dependency-boundaries.md))
 
-이 절이 UI primitive 뒤에 오는 이유는 의존이 아니라 **소비자**다 — 이 크레이트를 드는 것은 본 바이너리 하나이고, 자기가 드는 것은 위 두 절(도메인-IO · type-\*)뿐이다. 네이티브 메뉴·트레이가 UI 지만 egui 를 한 줄도 안 쓰므로 UI primitive 절에 넣지 않았다: 그 절의 규칙은 "본체·갤러리가 공유하는 egui 위젯" 이고 이 크레이트에는 갤러리 소비자가 없다.
+`tasty-platform`은 본 바이너리가 사용하고 도메인-IO와 primitive 계층에만 의존한다. 네이티브 메뉴·트레이는 egui 위젯이 아니므로 본체·갤러리 공용 UI 계층과 구분한다.
 
 ### plugin protocol / SDK (sandbox 경계)
-`tasty-plugin-protocol`(호스트↔plugin 와이어, → type-appearance) · `tasty-plugin-sdk`(외부 plugin 제작 SDK, → protocol/shm/utils/i18n) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK) · `tasty-plugin-agent-common`(AI CLI 자식을 다루는 두 번들 plugin — claude/codex — 이 공유하는 헬퍼: prompt 임시파일·형제 hook 정리·children 응답 읽기·reboot 인자. 이름이 `tasty-plugin-` 으로 시작하지만 매니페스트가 없어 번들 plugin 이 아니다, → sdk)
+`tasty-plugin-protocol`(호스트·plugin 전송 타입, → type-appearance) · `tasty-plugin-sdk`(외부 plugin SDK, → protocol/shm/utils/i18n) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK) · `tasty-plugin-agent-common`(Claude·Codex 공용 prompt 임시파일·훅 정리·children 응답·reboot 인자. 매니페스트가 없어 번들 plugin은 아님, → sdk)
 
-이 계층은 도메인-IO 에 **직접 의존하지 않는다**(sandbox 경계) — protocol/sdk 만 통과. **예외 하나** — `tasty-plugin-sdk` → `tasty-i18n`: 호스트와 SDK 가 설치·사용자 plugin 카탈로그 로딩을 공유한다.
+이 계층은 protocol·SDK를 통해 호스트와 통신하며 도메인-IO에 직접 의존하지 않는다. 이 경계가 OS 샌드박스를 뜻하지는 않는다. **예외 하나** — `tasty-plugin-sdk` → `tasty-i18n`: 호스트와 SDK 가 설치·사용자 plugin 카탈로그 로딩을 공유한다.
 
 ### plugin host (IPC 인프라)
-`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트 · off-main 스레드가 호스트 큐에 요청을 주입하는 `host_call::HostIpcInjector` · attach 스트림 연결마다 bounded push sink 를 드는 서버측 레지스트리 `stream_hub::StreamHub` — 소켓을 읽고 쓰는 accept 스레드는 본체 adapter `tcp_ipc_server.rs` 에 남는다, [ADR-0001](../adr/0001-crate-dependency-boundaries.md)) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
+`tasty-plugin-manifest`(매니페스트 스키마·파서) · `tasty-ipc`(JSON-RPC 메시지·caller·audit·method_meta·port trait·클라이언트 연결·HostIpcInjector·StreamHub. TCP 소켓 처리는 본체 tcp_ipc_server adapter, [ADR-0001](../adr/0001-crate-dependency-boundaries.md)) · `tasty-host-plugin`(호스트의 plugin manager·process·event bus·registry)
 
 ### 번들 plugin (bin 크레이트, 모두 `tasty-plugin-sdk` 의존)
 `tasty-plugin-claude`(lib 도 함께 노출) · `tasty-plugin-codex` · `tasty-plugin-git-viewer` · `tasty-plugin-clipboard-viewer` · `tasty-plugin-image` · `tasty-plugin-html` · `tasty-plugin-markdown` · `tasty-plugin-agent-stream` · `tasty-plugin-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)
@@ -132,7 +134,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 `tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles/remote/ssh/i18n/plugin-manifest/plugin-protocol/tui-simulator/utils)
 
 ### 테스트·가드 전용 (제품 산출물 밖)
-`tasty-latency-control`(지연 단정의 대조군 — 부하가 만든 값과 코드가 만든 값을 가른다. 계열 둘(고정 CPU 일감 · 자식 하나 띄우기)을 주고, 실패 문장이 어느 계열을 썼는지 밝힌다. **의존 0 + 소비처가 전부 `dev-dependencies`** 라 제품 산출물에 안 들어간다 — [ADR-0046](../adr/0046-verification-evidence-and-diagnostics.md)) · `tasty-doc-guards`(문서를 읽는 통합 가드들의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0048](../adr/0048-source-guards-and-exemptions.md)) · `tasty-test-support`(테스트 전용 RAII 가드 — 프로세스 전역 env 와 `TASTY_HOME` 을 시험 동안만 갈아끼우고 `Drop` 에서 되돌린다. 위 둘과 달리 의존이 0 은 아니지만(→ utils/tempfile) **소비처가 전부 `dev-dependencies`** 라 같은 이유로 이 절에 있다)
+`tasty-latency-control`(CPU 작업 또는 자식 프로세스 시작으로 지연의 대조군 제공. 실패 메시지는 사용한 종류를 표시. 의존 없음, dev-dependencies로만 사용, [ADR-0046](../adr/0046-verification-evidence-and-diagnostics.md)) · `tasty-doc-guards`(문서·소스·workflow를 대조. 의존 없이 빠르게 실행해 문서만 바뀐 main push도 검사, [ADR-0048](../adr/0048-source-guards-and-exemptions.md)) · `tasty-test-support`(테스트 동안 전역 env·TASTY_HOME을 바꾸고 Drop에서 복원하는 RAII 가드, → utils/tempfile. dev-dependencies로만 사용)
 
 ### 본 바이너리 (`tasty`)
 위 크레이트를 의존하며 App/View/GPU/IPC 라우터/부팅을 제공.
@@ -170,23 +172,23 @@ ports-and-adapters 배치:
 | [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
 | [shutdown-sequence](shutdown-sequence.md) | 종료 확정 시 native webview 숨김 + cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
 | [close-sequence](close-sequence.md) | 워크스페이스 close 경로 3종(gui/inline/cascade) · 자원 회수의 소유(gui/headless 차이 표) · close 계측(C1~C5) 과 실측 기준선 |
-| [multi-window](multi-window.md) | App = Core/Hub/ViewRegistry, Window trait 계층, 모달 불변식, 단일 프로세스 근거 |
+| [multi-window](multi-window.md) | App = Core/Hub/ViewRegistry, View trait 계층, 모달 불변식, 단일 프로세스 근거 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준) |
 | [ipc-server](ipc-server.md) | IPC 서버가 요청을 받아들이고 처리하는 쪽의 규칙 — 입장 상한 · dispatch 회차 예산 · 기한 · wake · 요청 압력 게이지 |
 | [ui-widgets-crate](ui-widgets-crate.md) | `tasty-ui-widgets` — 본체·갤러리 공유 UI primitive |
-| [Invariants](#invariants) | 깨지면 안 되는 시스템 약속 (surface-cwd 등) — 아래 절 |
+| [Invariants](#invariants) | 깨지면 안 되는 시스템 조건 (surface-cwd 등) — 아래 절 |
 
 ## Invariants
 
-*깨지면 안 되는 시스템 약속* — 코드 변경 시 가장 먼저 점검할 리스트. 각 invariant 는 가능하면 컴파일/CI 로 강제하고, 그게 불가능하면 review 로 지킨다.
+*깨지면 안 되는 시스템 조건* — 코드 변경 시 가장 먼저 점검할 리스트. 각 invariant 는 가능하면 컴파일/CI 로 강제하고, 그게 불가능하면 review 로 지킨다.
 
 | Invariant | 적용 시점 | 강제 기제 |
 |-----------|----------|----------|
 | [surface-cwd](../design/policies/cwd.md#surface-cwd-invariant) | surface 생성/변환 | `Surface::source_cwd()` default 없음 — compile-time |
 | 포커스 독립성 | 모든 CLI/IPC 명령 | review (전 워크스페이스 순회·ID 직접 지정) — [focus 정책](../design/policies/focus.md) |
 | 사용자/에이전트 행동 분리 | release 빌드 IPC 노출 | review + `#[cfg(debug_assertions)]` 격리 — [debug-ipc](../dev-guide/debug-ipc.md) |
-| Intent 디스패치 규율 | 호스트 내부 동작 | `check-intent-discipline.sh` grep CI — [action-dispatch](../design/flows/action-dispatch.md) |
+| Intent 디스패치 규율 | 호스트 내부 동작 | `check-intent-discipline.sh` 소스 검사 — [action-dispatch](../design/flows/action-dispatch.md) |
 
 > 새 invariant 는 *위반이 조용히 통과하면 큰 회귀* 인 약속만 등재한다. 일반 코딩 규칙은 [CLAUDE.md](../../CLAUDE.md)/dev-guide 로.
 

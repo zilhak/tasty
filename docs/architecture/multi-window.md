@@ -17,7 +17,7 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
 
 `focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0017](../adr/0017-workspace-identity-and-focus.md)).
 
-모든 윈도우(모달 포함)는 단일 `views` 맵에 저장된다. 모달은 별개 엔티티가 아니라 `active_modal_id: Option<WindowId>` 로 식별되는 View 상태이며, 활성 모달은 이 필드로 식별한다. (옛 `Engine` struct 는 삭제됐고 그 역할이 Core/Hub/ViewRegistry 로 분산됐다.)
+모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal_id`로 활성 View를 표시한다.
 
 ## Window 트레잇 계층 (`src/view/`)
 
@@ -36,7 +36,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 - **`ModalView`**: 모달 계열의 default 동작 marker(`shown`/`set_shown`/`reveal_after_first_render`/`on_escape`). 그 외 구현체(`MainView`/`PresetView`)는 `View` + `sealed::Sealed` 를 직접 구현한다.
 - **`ViewBase`**: 모든 구현체가 `pub base: ViewBase` 로 합성하는 공통 필드(gpu·winit·dirty·modifiers·focused·close_requested).
 
-> 용어: 여기서 "윈도우"는 winit OS-level 윈도우다. tasty 도메인 계층의 Window/Workspace/Pane/Tab/Surface 와 다르다 — [구조 계층](../concepts/hierarchy.md).
+> 용어: 여기서 "윈도우"는 winit OS-level 윈도우다. Workspace·Pane·Tab·Surface 도메인 계층과 구분한다 — [구조 계층](../concepts/hierarchy.md).
 
 ## 모달 (Modal modality)
 
@@ -50,9 +50,9 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 모든 윈도우가 닫혀도 PTY 세션을 잃지 않도록, `App.parked_states` 에 `(AppState, CoreState)` 를 보관한다. 새 윈도우 생성 시 옮겨 담거나 IPC 가 직접 쓴다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
 
-파킹은 engine 을 살려 두는 것이므로 아래 레이아웃 슬롯 점유도 함께 유지된다 — 창은 없지만 슬롯은 여전히 그 engine 것이다.
+parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유를 유지한다.
 
-**"engine 이 살아 있는가"를 묻는 판정은 `views` 와 `parked_states` 를 함께 봐야 한다.** 창 유무로 대신 판정하면 파킹이 곧 소멸로 오인된다. 원격 attach 세션의 고아 판정이 그 사례다 — mirror 워크스페이스를 들고 있는 engine 이 parked 라는 이유로 세션을 끊으면 사용자가 창을 최소화했을 뿐인데 원격 점유가 풀린다([remote-attach — 창 없는 상태(parked)에서의 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)). 그 세션에 도착하는 mirror 이벤트의 적용 대상 탐색도 같은 범위를 돈다 — parked engine 의 mirror 터미널에 즉시 적용되고, 창 복원 시 그대로 그려진다([ADR-0023](../adr/0023-attach-state-sync-and-forwarding.md)).
+engine의 존재 여부는 `views`와 `parked_states`를 함께 확인한다. 창이 없다는 이유만으로 원격 attach 세션을 끊으면 안 된다. mirror 이벤트도 parked engine에 적용하며 창을 복원하면 그 상태를 표시한다([원격 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명), [ADR-0023](../adr/0023-attach-state-sync-and-forwarding.md)).
 
 ### 창이 스스로 닫히는 자리 — `close_requested`
 
@@ -69,7 +69,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 **점유는 살아있는 engine 에서 파생된다.** 별도 레지스트리도, 디스크 기록도 없다. 점유 집합은 그때그때 `views` 의 MainView 들과 `parked_states` 를 훑어 만든다 — 여기에 `App.core_state` 도 포함된다. 갓 만들어진 engine 은 `views` 에 등록되기 전까지 거기 임시로 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
 
-- engine 이 drop 되면(창 닫힘) 그 슬롯은 그 순간 free 가 된다 — 해제 호출이 없으니 해제 누락도 없다.
+- engine이 실제로 drop되면 그 슬롯은 그 순간 free 가 된다 — 해제 호출이 없으니 해제 누락도 없다.
 - **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
 - 프로세스가 죽으면 점유는 전부 사라진다 — 크래시가 슬롯을 영구 점유로 남기지 않는다.
 
@@ -90,12 +90,12 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 | 크래시 격리 | 셸은 이미 별도 OS 프로세스(PTY) — 셸 크래시가 tasty 로 전파 안 됨 |
 | 리소스 방어 | 스크롤백 상한 + PTY 읽기 채널 버퍼 제한 |
 
-Chrome 의 멀티 프로세스 사유(신뢰 불가 웹 코드 보안 격리)는 tasty 에 해당하지 않는다. (plugin 은 별도 프로세스지만 sandbox 경계는 IPC 권한 게이트로 — [plugins](../concepts/plugins.md).)
+플러그인은 별도 프로세스로 실행한다. IPC 권한 검사는 호스트 API 호출을 제한하며 OS 자원 접근 전체를 격리하는 샌드박스는 아니다([플러그인 권한](../concepts/plugins.md#권한-permissions)).
 
 ## 관련
 
 - [아키텍처 개요](index.md) — headless `gui` feature 분리
 - [input-layer](input-layer.md) — 윈도우 내부 마우스 입력 계층
-- [concepts/hierarchy](../concepts/hierarchy.md) — 도메인 Window/Workspace/Pane/Tab/Surface
+- [concepts/hierarchy](../concepts/hierarchy.md) — Workspace·Pane·Tab·Surface 도메인 계층
 - [ADR-0017](../adr/0017-workspace-identity-and-focus.md) — 레이아웃 슬롯 점유 모델의 근거·대안
 - [features/layout-persistence](../features/layout-persistence/index.md) — 슬롯 배정·저장·복원의 현재 동작

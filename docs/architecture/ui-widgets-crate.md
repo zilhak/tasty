@@ -1,6 +1,6 @@
 # `tasty-ui-widgets` — 본체·갤러리 공유 UI primitive
 
-`crates/tasty-ui-widgets/` 는 본체(`tasty`)와 갤러리(`tasty-gallery`)가 공유하는 *egui layout / 위젯 primitive* 다. 본체의 settings 모달 등 UI 코드와 갤러리 데모가 **동일 함수를 호출**해 시각 100% 동기화를 보장한다.
+`crates/tasty-ui-widgets/`는 본체와 갤러리가 공유하는 egui 위젯과 배치 함수를 제공한다. 두 소비자가 같은 구현을 호출하므로 위젯 변경을 한곳에서 반영할 수 있다. 실제 화면은 전달한 Theme·배율·상태도 함께 확인한다.
 
 ## 위치와 의존 방향
 
@@ -18,7 +18,7 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 
 ## 레이아웃 idiom 카탈로그
 
-이 표는 **layout idiom**(화면 배치 패턴) 함수만 다룬다 — `button`/`select`/`multi_select`/`table`/`toggle`/`chip`/`tooltip`/`spinner`/`autocomplete`/`segmented`/`tree_row`/`path_field`/`menu_item`/`icon_button`/`input`/`status_dot`/`warning_callout`/`help_hint` 등 이름으로 식별되는 보편 컴포넌트(아래 "확장 가이드" 1번 카테고리)는 `crates/tasty-ui-widgets/src/`에 각자 파일로 존재하지만 여기 표에는 나열하지 않는다 — 전체 위젯 목록·시각은 [`tasty-gallery`](../dev-guide/gallery-first.md)가 단일 출처다(gallery-completeness 정책상 본체의 모든 컴포넌트가 갤러리에 노출된다).
+아래 표는 화면 배치 함수만 다룬다. 버튼·입력창·표·토글·툴팁 등 공용 컴포넌트는 `crates/tasty-ui-widgets/src/`의 각 파일에 있으며, 전체 목록과 화면은 [갤러리](../dev-guide/gallery-first.md)에서 확인한다. 본체의 모든 UI 컴포넌트는 갤러리에 포함한다.
 
 | 함수 | 역할 |
 |------|------|
@@ -77,7 +77,7 @@ tasty_ui_widgets::two_depth_layout(ui, &theme, available_height,
 if let Some(new) = selected_new { *sub_tab = new; }
 ```
 
-탭 전환에 1 프레임(~16ms) 지연이 생기지만 인지 불가 수준 — closure 모델의 자연스러운 비용.
+탭 선택은 다음 프레임에 반영되므로 약16ms의 지연이 생긴다. 두 클로저의 가변 참조 충돌을 피하기 위한 방식이다.
 
 `horizontal_tab_bar_with_arrows` 의 chevron 아이콘은 `tasty-icons` 의 `CHEVRON_LEFT`/`CHEVRON_RIGHT` 를 쓰며, 호출자가 `egui_extras::install_image_loaders` 를 미리 호출했다고 가정한다.
 
@@ -102,11 +102,11 @@ if let Some(new) = selected_new { *sub_tab = new; }
 
 ### 근거
 
-"재사용처가 1곳뿐이니 YAGNI" 논리는 **이 부류엔 적용하지 않는다.** 보편 컴포넌트는 개발을 계속하면 반드시 다른 화면에서 다시 쓰게 된다 — 표는 두 번째 목록 화면에서, 버튼은 모든 다이얼로그에서, 드롭다운은 다음 설정 항목에서. 그때 인라인 구현이 흩어져 있으면 각각 따로 손봐야 하고, 시각·동작이 화면마다 미묘하게 갈라진다. 처음부터 한 곳에 정의해두면:
+표·버튼·드롭다운 같은 공용 컴포넌트를 화면마다 따로 구현하면 토큰·간격·입력 동작이 달라지기 쉽다. 현재 사용처가 하나여도 공용 위젯으로 만들면 다른 화면과 갤러리가 같은 구현을 사용할 수 있다.
 
-- **시각 단일 출처**: 토큰·간격·상태 오버레이가 한 함수에 모여 화면 간 불일치가 원천 차단된다([theme UI 디자인 규칙](../design/systems/theme.md#ui-디자인-규칙-필수)).
-- **demo=main 보장**: 본체와 갤러리가 같은 함수를 호출하므로 갤러리 specimen 이 곧 본체 모습이다(mirror 아님).
-- **두 번째 사용처가 공짜**: 다음에 같은 컴포넌트가 필요할 때 새로 그릴 게 없다.
+- **공유 구현**: 토큰·간격·상태 오버레이를 한 함수에서 관리한다([theme UI 디자인 규칙](../design/systems/theme.md#ui-디자인-규칙-필수)).
+- **본체·갤러리 비교**: 같은 위젯 함수를 호출하므로 구현 사본의 차이를 줄일 수 있다. 입력 상태와 배율도 맞춰 확인한다.
+- **재사용**: 다음 화면에서도 기존 컴포넌트를 호출한다.
 
 ### 적용 기준
 

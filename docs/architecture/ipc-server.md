@@ -76,11 +76,11 @@ GUI와 헤드리스는 IpcRound로 256명령 또는 16ms 중 먼저 닿는 제�
 
 응답 대기 상한은 호출자가 response_timeout_ms로 정한다. 없거나 0이면 무한 대기를 유지해 승인·task await의 의도적 대기를 자르지 않는다. 시작 뒤 만료는 -32061 결과 불명이며 취소가 아니다. 만료해도 작업은 계속될 수 있고 연결은 유지한다. 늦은 응답은 사라진 전용 수신자에게 전달 실패해 다음 요청과 섞이지 않는다. capability ipc.response-timeout으로 지원을 확인한다. 연결 끊김을 작업 취소로 해석하지 않으며 소켓 생존 감지를 통한 대기 회수는 별도 검토 대상이다.
 
-요청은 QUEUED에서 STARTED 또는 WITHDRAWN으로 한 번만 전환한다. dequeue와 응답 대기 timeout이 같은 lifecycle을 비교·교환해 실행 시작 여부를 결정한다. 큐에서 기한이 지나면 권한·rate·audit 전에 -32067 미실행으로 답하고 나중에도 실행하지 않는다. 시작 뒤 만료만 -32061이다. ipc.response-timeout.not-run capability로 이를 알린다. 미실행 만료도 dequeue 전까지는 큐 장부에 남는다. timeout과 연결 종료는 실행 중 작업의 취소를 뜻하지 않는다.
+요청은 QUEUED에서 STARTED 또는 WITHDRAWN으로 한 번만 전환한다. dequeue와 응답 대기 timeout이 공유 lifecycle을 원자적으로 비교·교환해 실행 시작 여부를 결정한다. 큐에서 기한이 지나면 권한·rate·audit 전에 -32067 미실행으로 답하고 나중에도 실행하지 않는다. 시작 뒤 만료만 -32061이다. ipc.response-timeout.not-run capability로 이를 알린다. 미실행 만료도 dequeue 전까지는 큐 장부에 남는다. timeout과 연결 종료는 실행 중 작업의 취소를 뜻하지 않는다.
 
 HostIpcInjector::dispatch는 자신의 대기 시간을 deadline으로 전달하며 1ms 미만도 1ms로 올린다. 큐에서 포기한 요청은 Expired(nothing_ran), 시작한 뒤 만료는 Timeout(결과 불명)이다. tell의 Enter 재주입과 runner는 이 기본 경로를 쓴다. 이미 발생한 사건을 늦게라도 반영해야 하는 execute_sequence의 모든 훅 단계만 dispatch_even_if_abandoned로 deadline 없이 남긴다. 시작 직전 경합과 시작 뒤 실행은 여전히 취소할 수 없다. 새 주입자는 이 차이를 명시적으로 선택해야 한다.
 
-release IPC가 실패 가능한 작업을 winit에 예약하면 완료 채널로 실제 결과를 요청자에게 돌려준다. window.create/view.create는 생성된 window_id 또는 -32000 원인을 반환하고 에이전트 실패를 사용자 toast로 알리지 않는다. 메인 루프를 막고 기다리면 작업 실행 자체가 멈추므로 응답을 지연 전달한다. 채널이 결과 없이 닫히면 disconnect다. debug 작업이나 렌더·worker 경로는 각 완료 위치에 맞는 별도 계약을 판단한다. 새 실패 가능 예약 작업도 예약 성공만으로 완료를 가장하지 않는다.
+release IPC가 실패할 수 있는 작업을 winit에 예약하면 완료 채널로 작업 결과를 요청자에게 돌려준다. window.create/view.create는 생성된 window_id 또는 -32000 원인을 반환하고 에이전트 실패를 사용자 toast로 알리지 않는다. 메인 루프에서 결과를 기다리면 예약된 작업도 실행할 수 없으므로 응답은 나중에 전달한다. 채널이 결과 없이 닫히면 disconnect다. debug 작업이나 렌더·worker 경로는 각 완료 위치에 맞는 별도 계약을 판단한다. 새 실패 가능 예약 작업도 예약 성공만으로 완료를 가장하지 않는다.
 
 ## wake
 
@@ -104,7 +104,7 @@ connections의 accept_wait_bound는 accept 큐를 마지막으로 비어 있다�
 
 ## 큐와 재시도 집계
 
-queue_dispatch의 in_flight는 실행을 시작했고 lifecycle을 쥔 요청·대기자가 아직 끝나지 않은 요청 수다. worker로 넘긴 응답 대기도 포함하지만 timeout 뒤에도 계속되는 고아 작업의 전체 수는 아니다. started와 in_flight_max도 제공한다. queue_admission은 주입기가 서버와 공유하는 장부를 읽으며 장부 없는 조립에서는 null이다. 큐 사용량과 실행 누계는 CommandQueueSnapshot에서 함께 읽되 각 필드의 의미를 다시 정의하지 않는다.
+queue_dispatch의 in_flight는 실행을 시작했고 명령 또는 응답 대기자가 lifecycle을 보유하고 있는 요청 수다. worker로 넘긴 응답 대기도 포함하지만 timeout 뒤에도 계속되는 고아 작업의 전체 수는 아니다. started와 in_flight_max도 제공한다. queue_admission은 주입기가 서버와 공유하는 장부를 읽으며 장부 없는 조립에서는 null이다. 큐 사용량과 실행 누계는 CommandQueueSnapshot에서 함께 읽되 각 필드의 의미를 다시 정의하지 않는다.
 
 멱등 재시도 집계는 판정을 내리는 Store의 잠금 안에서 executed·replayed·conflicted·discarded·in_flight를 올린다. 층마다 별도 카운터를 두지 않는다. 담당하지 않는 층이 열었다 닫은 항목의 executed는 되돌려 실제 담당 층에서 한 번만 센다. in_flight는 현재 수가 아니라 진행 중 요청에 합류한 누적 횟수다. 메서드·caller ID별 label은 두지 않는다.
 
@@ -119,9 +119,9 @@ slow_requests는 큐+호스트+plugin 대기 합계가 100ms 이상인 최근 32
 원문 params·토큰·멱등 키·RPC id는 저장하지 않는다.
 plugin hop은 원 번호와 host_request_id로 연결하지만 plugin→host 부모를 추측하지 않는다.
 intent 뒤 파일 핸들러 forward와 큐를 안 지난 host-call은 연계되지 않는다.
-링은 재시작 시 초기화되며 원인 진단용으로 전역 histogram과 함께 읽는다.
+이 기록은 재시작하면 사라진다. 지연 원인을 볼 때 전체 histogram과 함께 확인한다.
 
-느린 요청의 host.outcome과 error_code는 실제 대기자가 받은 결과를 한 번 기록한 공유 칸에서 읽는다. dispatch 끝에서 값을 복사하면 plugin의 늦은 답과 timeout 결과가 빠지므로 OnceLock 참조를 링에 둔다. 아직 결과가 없거나 기한 없는 내부 대기가 포기하면 null일 수 있다. 같은 행을 나중에 읽으면 null이 결과로 채워질 수 있지만 채운 값은 바꾸지 않는다. 새 대기 경로는 record_answer를 호출해야 한다.
+느린 요청의 host.outcome과 error_code는 응답 대기자가 실제로 받은 결과를 한 번 기록하는 공유 상태에서 읽는다. dispatch 끝에서 값을 복사하면 plugin의 늦은 답과 timeout 결과가 빠지므로 OnceLock 참조를 링에 둔다. 아직 결과가 없거나 기한 없는 내부 대기가 포기하면 null일 수 있다. 같은 행을 나중에 읽으면 null이 결과로 채워질 수 있지만 채운 값은 바꾸지 않는다. 새 대기 경로는 record_answer를 호출해야 한다.
 
 ## 진입 검사 거절 집계
 

@@ -1,8 +1,8 @@
 # 데이터 흐름
 
-모듈 경계를 넘는 주요 흐름 5종을 파일+함수 기준으로 본다(줄 번호 대신). 호스트 *내부 동작* 이 Intent 큐로 통일된 디스패치 모델은 [action-dispatch](../design/flows/action-dispatch.md) — 본 문서는 입력→PTY→렌더 같은 *런타임 파이프라인* 이다.
+입력·출력·IPC·알림·설정이 모듈 사이를 이동하는 경로를 파일과 함수로 설명한다. Intent 큐의 처리 구조는 [action-dispatch](../design/flows/action-dispatch.md)를 참고한다.
 
-메인 이벤트 루프는 `src/boot.rs` 의 `run()` 이 winit 이벤트와 `AppEvent`(`TerminalOutput` / `IpcReady` / `StreamReady`)를 drain 한다. 루프에는 축이 둘이다 — **프레임축**(이벤트가 있었으니 큐를 비운다: 위 drain + `dispatch_pending_*`)과 **시간축**(N ms 마다/뒤에 한 번). 시간축은 전부 중앙 타이머 허브에 키로 등록되고 `about_to_wait`(gui) / `recv_timeout` 루프(headless)가 due 한 키만 실행한다 — 등록·실행·대기 전략은 [timer-hub](../dev-guide/timer-hub.md).
+`src/boot.rs::run()`은 winit 이벤트와 `AppEvent`의 TerminalOutput·IpcReady·StreamReady를 처리한다. 이벤트에 따른 큐 처리는 `dispatch_pending_*`에서, 시간에 따른 작업은 중앙 타이머 허브에서 관리한다. GUI의 `about_to_wait`와 헤드리스의 `recv_timeout` 루프는 실행 시각이 된 키만 처리한다([타이머 허브](../dev-guide/timer-hub.md)).
 
 ---
 
@@ -13,7 +13,7 @@ winit KeyEvent / Ime
   → app/event_handler.rs (ApplicationHandler::window_event)
   → view/main/ (overlay/host-egui surface 면 egui 가 먼저 소비 — input-layer)
   → view/main/keyboard.rs (handle_keyboard_input) · view/main/ime.rs (handle_event)
-      ├── 단축키·vi·escape 매칭 → Intent 발화 (shortcuts → UiIntent/DomainIntent, action-dispatch)
+      ├── 단축키·vi·escape 매칭 → Intent 생성 (shortcuts → UiIntent/DomainIntent, action-dispatch)
       └── 그 외 키 → 포커스 surface 로 분배:
           ├── Terminal → forward_key_to_terminal → tasty-terminal(send_key) → PTY stdin → 셸
           └── egui-mesh(image, 그리고 markdown 의 확인 팝업 2개) → egui_mesh_push_key/text/ime
@@ -80,7 +80,7 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.
 호출자별 스케줄링은 없다(ADR-0007).
 
-호출자가 봉투에 응답 대기 상한을 실었으면 명령은 **기한**(큐 진입 + 상한)을 든다. 회차는 명령을
+호출자가 요청에 응답 대기 상한을 지정하면 명령은 **기한**(큐 진입 + 상한)을 든다. 회차는 명령을
 꺼낸 직후, 게이트보다 앞에서 기한을 보고 지났으면 실행하지 않고 `-32067` 로 답한다. 응답을
 기다리는 연결 스레드와 "시작했는가" 를 상태 칸 하나로 정하므로, 시작 뒤의 만료만 `-32061`(결과
 불명)이다([ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)).
@@ -116,7 +116,7 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
     등록된 headless popup — 렌더 루프 자체는 adapters/ui/popup/frame.rs)
 ```
 
-알림은 *시스템 조건* 발이라 popup 을 자동으로 띄우지 않는다 — 데이터(Store)만 바꾸고 UI 가 수동 표시([toast/popup 발화 정책](../design/systems/popup.md)).
+알림이 발생하면 Store를 갱신한다. popup은 자동으로 열지 않고 사용자가 요청했을 때 표시한다([팝업 정책](../design/systems/popup.md)).
 
 ---
 

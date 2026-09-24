@@ -1,7 +1,7 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
 사용자 종료(Cmd/Ctrl+Q, quit 모달, 창 닫기)는 부팅과 대칭으로 **상태 머신
-(`ShutdownPhase`)이 프레임 단위로 전개**한다. 대기가 남아 있는 프레임마다 부팅과
+(`ShutdownPhase`)이 프레임마다 진행**한다. 대기가 남아 있는 프레임마다 부팅과
 같은 로딩 화면(워드마크 + 회전 스피너 + 단계 문구)을 present 하므로, 종료 대기
 동안 창이 얼어붙지 않는다 — 근거는 [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
 
@@ -19,7 +19,7 @@
 
 begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
   ShutdownPhase 상태 머신 설치 → 모든 MainView 의 native webview 숨김
-  → about_to_wait 워치독이 16ms 케이던스로 구동
+  → about_to_wait 워치독이 16ms 간격으로 구동
   (단계 본문은 src/app/shutdown_cascade.rs, 순서·대기는 상태 머신이 소유)
 
   SavingLayout
@@ -34,7 +34,7 @@ begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
   │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
   ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
   │      surface close 가 뒤로 미뤄둔 output observer sink 워커 회수
-  └─ ―   begin_plugin_shutdown() — 전 plugin 에 shutdown 요청을 뿌리기만 한다
+  └─ ―   begin_plugin_shutdown() — 전 plugin 에 shutdown 요청을 보낸다
   StoppingPlugins
   └─ S4  poll_shutdown_all() 폴링 — 대기가 겹친다
          └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
@@ -59,9 +59,9 @@ run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
   S3(close cascade) 앞에 온다는 제약도 호출자마다 재현해야 한다.
 - **중복 진입은 무해하다.** 이미 종료 중이면 `begin_shutdown` 이 즉시 return 하므로,
   종료 화면이 뜬 상태에서 Cmd/Ctrl+Q 를 다시 눌러도 phase 가 되감기지 않는다.
-- **스텝은 전부 논블로킹이어야 한다.** `shutdown_cascade.rs` 의 각 함수는 프레임
-  안에서 끝나거나(1ms 미만) begin/poll 로 갈라져 있다. 블로킹 호출을 스텝 안에
-  넣으면 그 구간만 다시 얼어붙는다 — 컴파일러가 잡아 주지 않는다.
+- **프레임에서 실행하는 단계에는 긴 대기를 넣지 않는다.** `shutdown_cascade.rs` 의 각 함수는 프레임
+  안에서 짧게 끝나거나 begin/poll 로 갈라져 있다. 블로킹 호출을 단계 안에
+  넣으면 그동안 렌더링이 멈춘다. 컴파일 검사만으로는 이를 발견할 수 없다.
 - `PluginProcess::drop` 도 Drop tail 에서 블로킹(`child.wait()`)하지만, S4 의
   `shutdown_all` 이 이미 `processes` 를 drain 했다면 남은 대상이 없다.
 - **정상 종료 경로에 `std::process::exit` 는 없다** — 위 Drop 들은 전부 실행된다.
@@ -73,8 +73,7 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
 은 두 단계로 나뉜다.
 
 1. `begin_shutdown_all()` — 전 plugin 의 `req_tx` 에 shutdown 요청을 넣고 자식
-   핸들만 회수한 뒤 **즉시 반환**한다. 요청을 먼저 전부 뿌리는 것이 대기 겹침의
-   전제다.
+   핸들만 회수한 뒤 **즉시 반환**한다. 모든 plugin에 먼저 요청해야 동시에 기다릴 수 있다.
 2. `poll_shutdown_all()` — 논블로킹 폴링. 각 자식이 스스로 종료했는지
    `try_wait` 로 확인하고, 자기 deadline(2s)을 넘긴 자식만 force kill 한다.
    남은 대상이 없으면 `true`.
@@ -92,10 +91,9 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   호스트→plugin 방향의 포화는
   대기가 아니라 **거절**이다([ADR-0006](../adr/0006-bounded-ipc-transport.md)).
   writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
-  graceful 기회 없이 deadline 뒤 kill 로 회수된다. **그 사후 판별을 S4a 의 `killed` 로
-  하지 마라** — `killed` 는 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
-  빠졌다" 를 한 값으로 뭉갠다. 두 사건의 처방이 반대다(앞은 호스트 큐·writer 쪽, 뒤는
-  plugin 쪽). 가르는 것은 거절 시점에 호스트 로그로 나가는
+  graceful 기회 없이 deadline 뒤 kill 로 회수된다. **S4a의 `killed`만으로는 원인을 구분할 수 없다.** 이 값은 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
+  빠졌다" 를 모두 포함한다. 전자는 호스트 큐·writer를, 후자는 plugin을 조사해야 한다.
+  큐의 거절 여부는 다음 호스트 로그로 구분한다:
   `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
   `request queue over its byte budget` 둘 중 하나 — shutdown 은 제어 요청이라 합계 바이트
   판정을 면제받으므로 `plugin channels over their total byte budget` 로는 거절되지 않는다,
@@ -114,13 +112,13 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   기동을 미뤘다가 회수가 끝난 tick 에 한다(겹치면 옛 프로세스가 쥔 포트·파일을 새 것이
   못 잡는다). 회수 중에 온 `disable` 은 그 예약을 거둔다. 회수 중에 온 명시적 `enable`
   은 미루지 않고 그 id 의 회수를 기다린 뒤 그 자리에서 띄운다 — `enable` 이 돌아오면
-  plugin 이 떠 있다. 그 대가로 이 조작에 한해 메인 스레드가 최대 2s 선다. 호스트 종료가
+  plugin 이 떠 있다. 그 대가로 이 조작에 한해 메인 스레드가 최대 2s 동안 대기한다. 호스트 종료가
   시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지 보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
-  **기다리는 자리는 넷이다** — `plugin remove` · swap · `upgrade-builtins` 의 쓰기 갈래 ·
+  **회수 완료를 기다리는 작업은 네 가지다** — `plugin remove` · swap · `upgrade-builtins` 의 쓰기 경로 ·
   명시적 `enable`. 헬스체크 재시작과 `disable` 은 기다리지 않는다. 앞의 셋은 옛
   프로세스가 반드시 사라져 있어야 하는 자리다 — `plugin remove`
   (디렉토리를 지운다) · swap(`upgrade-builtins --restart-running` · auto-reload,
-  디렉토리를 덮어쓴다) · `upgrade-builtins` 의 **쓰기 갈래**(버전이 달라 덮어쓰거나,
+  디렉토리를 덮어쓴다) · `upgrade-builtins` 의 **쓰기 경로**(버전이 달라 덮어쓰거나,
   같은 버전인데 바뀐 내용이 있을 때). 설치본이 더 높아 건너뛰거나 같은 버전에 바뀐 것이
   없으면 기다리지 않는다 — 회수와 재기동 예약은 뒤에서 그대로 이어진다. 기다린 자리는
   회수 뒤의 재기동 예약을 함께 가져오므로 쓰기를 마친 뒤 다시 띄운다. 근거·대안은
@@ -140,7 +138,7 @@ plugin 종료 및 backend 최종 정리 순서는 그대로 유지한다.
 웹뷰가 없거나 부팅 중인 경우에는 숨길 인스턴스가 없어 추가 대기 없이 진행한다.
 
 상태 머신이 대기하는 프레임마다 `GpuState::render_loading` 으로 로딩 화면을
-present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 것은 phase 문구뿐이다 —
+present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른 것은 phase 문구뿐이다 —
 `render_loading` 은 phase 타입이 아니라 i18n 키를 받고, 두 상태 머신이 각자의
 매핑을 소유한다(`boot_phase_text_key` / `ShutdownPhase::text_key`).
 
@@ -151,7 +149,7 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
 | `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | 아니오 (실측 <1ms) |
 | `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 예 (S4 — 가장 늦게 빠지는 plugin 의 소요, 상한 2s) |
 
-동작 규칙 넷:
+동작 규칙:
 
 - **빠른 종료는 화면을 띄우지 않는다.** `drive_shutdown_frame` 은 한 호출 안에서
   더 진행할 수 없을 때까지 스텝을 반복하므로, 대기가 없는 종료(plugin 0 개 — 실측
@@ -159,11 +157,11 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
   시간이나 지연 표시 타이머가 필요 없다.
 - **창이 없으면 프레임을 돌리지 않는다.** macOS 최소화(창 파괴 + park)나 트레이
   hide 상태의 종료는 상태 머신을 설치하지 않고 그 자리에서 끝까지 블로킹으로
-  돈다(= 이 구조 이전과 동일한 동작).
+  실행한다.
 - **창이 여럿이면 전부 종료 화면으로 바꾼다.** 하나만 그리고 나머지를 먼저 닫으면
   창이 하나씩 사라지는 것으로 보여 크래시와 구분되지 않는다.
 - **종료 가드** — 종료 진행 중에는 steady-state 파이프라인(IPC 처리 / intent drain /
-  plugin pump)을 태우지 않고 `AppEvent` 는 폐기한다(부팅 가드는 지연 후 재생하지만
+  plugin pump)을 실행하지 않고 `AppEvent` 는 폐기한다(부팅 가드는 지연 후 재생하지만
   종료에는 재생할 미래가 없다). 키/마우스도 core 에 닿지 않는다.
   가드는 `event_loop.exit()` **이후에도 유지된다** — winit 은 exit 요청 즉시 루프를
   끊지 않고 콜백을 한 번 더 돌리며(Linux/X11 실측), 그 패스에서 가드가 풀려 있으면
@@ -172,7 +170,7 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
 - **IPC 요청은 무시하지 않고 거절한다** — 가드가 `process_ipc()` 를 막으므로 이
   구간의 요청은 아무도 읽지 않는다. 그냥 드롭하면 클라이언트(우리 자신의 `tasty`
   CLI 포함)는 무한정 기다린다. 그래서 매 프레임과 `exit()` 직전에 큐를 drain 해
-  핸들러를 태우지 않고 `-32000 "host is shutting down"` 으로 회신한다
+  핸들러를 실행하지 않고 `-32000 "host is shutting down"` 으로 회신한다
   ([ADR-0016](../adr/0016-window-platform-and-shutdown.md)). 창 없는 블로킹 경로도
   같은 루프를 쓰므로 함께 덮인다.
 
@@ -184,8 +182,8 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
 헤드리스 빌드(`--no-default-features`)의 `AppEvent::Shutdown` 은 `rx.recv()` 루프를
 `break` 할 뿐 `shutdown_all` 을 호출하지 않는다(`src/boot.rs` 의 `run_headless`).
 plugin 정리는 `PluginProcess::drop` 의 즉시 kill 로만 이뤄지므로 graceful 2s 대기가
-없고, 본 문서의 종료 cascade 계측(S1~S4)도 발화하지 않는다. 이 비대칭은 의도된
-것이다 — 헤드리스는 GUI 종료 UX 가 없어 graceful 대기의 값이 다르다.
+없고, 이 문서의 종료 cascade 계측(S1~S4)도 기록하지 않는다. GUI 종료 상태 머신을
+헤드리스에도 적용한 것으로 이해하면 안 된다.
 
 ## 종료 계측 (target: `tasty::shutdown`)
 
@@ -239,46 +237,15 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   **절대값이 아니라 델타로만** 의미가 있다.
 - `shutdown_total` ≥ S1+S2+S3+S4 이며, 차이가 크면 계측이 덮지 않은 구간이 있다는
   뜻이다. 마찬가지로 `shutdown_total_with_drop` − `shutdown_total` = S5 다.
-- **마지막 줄은 유실되지 않는다.** file layer 는 host 프로세스가 연 `Mutex<File>` 을
-  writer 로 직접 쓰고 (`crates/tasty-platform/src/crash_report.rs`) BufWriter 를 끼우지 않아,
-  프로세스가 곧 죽는 Drop tail 구간에서도 이벤트마다 write 가 완료된다.
+- 로그 file layer는 `Mutex<File>`에 직접 쓴다
+  (`crates/tasty-platform/src/crash_report.rs`). `BufWriter`를 사용하지 않으므로
+  Drop tail의 로그가 사용자 공간 버퍼에만 남는 문제를 피한다. 파일 쓰기 실패까지
+  방지한다는 뜻은 아니다.
 
 ## 실측 기준치
 
-Linux(X11) / debug 빌드 / 번들 plugin 전부 활성, `TASTY_LOG=info`, `system.shutdown`
-IPC 로 종료. 단위 ms.
-
-| | plugins | S1 | S3 | S4 | shutdown_total | S5a | S5b | S5 | **with_drop** |
-|---|---|---|---|---|---|---|---|---|---|
-| 겹친 대기, 정지 0개 | 6 (전부 killed) | — | 0.4 | 2008 | 2009 | — | — | 115 | **2124** |
-| 겹친 대기, SIGSTOP 2개 | 7 (전부 killed) | 0.7 | 0.4 | 2073 | 2074 | — | — | 262 | **2336** |
-| 겹친 대기, SIGSTOP 1개 | 5 (전부 killed) | — | — | 2050 | 2051 | — | — | 286 | **2337** |
-| plugin 0개 | 0 | 0.5 | 0.05 | 0.001 | 0.63 | 0.18 | 101 | 153 | **158** |
-
-프레임 구동 상태 머신 도입 후 같은 환경 실측 (창 닫기 / Ctrl+Q 로 종료):
-
-| | plugins | S1 | S2 | S3 | S4 | shutdown_total | S5 | **with_drop** |
-|---|---|---|---|---|---|---|---|---|
-| 창 1개, SIGSTOP 2개 | 8 (전부 killed) | 0.6 | — | 0.2 | 2004 | 2005 | 36 | **2043** |
-| 창 2개, SIGSTOP 2개 | 7 (전부 killed) | 1.2 | — | 0.9 | 2012 | 2015 | 154 | **2179** |
-| 부팅 중 종료 (GpuInit) | 0 (manager 없음) | 0.009 | — | 0.003 | 0 | 0.11 | 37 | **52** |
-| 부팅 중 종료 (WaitingEngine) | 8 (전부 killed) | 0.008 | 594 | 0.005 | 2001 | 2596 | — | — |
-
-- **S2 가 실제로 발화하고, 그 뒤에 S4 가 나란히 온다.** 부팅 로딩 화면 상태에서
-  창을 닫으면 워커 회수(414~626ms)가 끝난 뒤 S4 가 시작된다. 회수 구간 동안 화면
-  문구는 `Finishing startup…`, 그 뒤는 `Stopping plugins…` 로 바뀐다.
-- **종료 화면이 덮는 범위는 `shutdown_total` 까지다.** Drop tail(위 표에서
-  36~154ms)은 창이 사라진 뒤라 덮이지 않는다.
-
-참고 — 대기를 겹치기 전(plugin 하나씩 순차 대기)의 같은 환경 실측:
-
-| | plugins | S1 | S3 | S4 | shutdown_total | S5a | S5b | S5 | **with_drop** |
-|---|---|---|---|---|---|---|---|---|---|
-| run 1 | 8 (전부 killed) | 1.8 | 0.07 | 16130 | 16132 | 0.11 | 55 | 518 | **16664** |
-| run 2 | 6 (전부 killed) | 0.6 | 0.06 | 12094 | 12095 | 0.19 | 122 | 335 | **12444** |
-| run 3 | 8 (전부 killed) | 0.6 | 0.04 | 16052 | 16053 | 0.14 | 100 | 149 | **16208** |
-
-SDK 가 shutdown 요청에 스스로 빠지게 된 뒤의 같은 경로 실측 (2026-09-23, Linux Xvfb /
+다음은 shutdown 요청을 받은 SDK가 스스로 종료하는 경로의 측정 기록이다
+(2026-09-23, Linux Xvfb /
 debug GUI 빌드 / 격리 `TASTY_HOME` / 번들 plugin 9 개 전부 running 확인 후 `system.shutdown`
 IPC, 정지시킨 plugin 없음, 부하 평균 36~56):
 
@@ -290,37 +257,26 @@ IPC, 정지시킨 plugin 없음, 부하 평균 36~56):
 
 S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 
-이 값들이 말하는 것:
+이 조건에서는 S4가 3.4~3.8ms였고 Drop tail(S5)이 60~64ms로 전체 시간의 대부분을
+차지했다. 응답하지 않는 plugin에는 여전히 2s deadline이 적용된다. Drop tail은 창이
+사라진 뒤 실행하므로 종료 화면으로 표시할 수 없다.
 
-- **위쪽 표들의 "전부 killed" 와 S4 ≈2s 는 SDK 결함의 값이다.** plugin 로그에는 `plugin
-  received shutdown` 이 찍혀 요청 자체는 도달했지만, SDK `run()` 이 worker 스레드 join 에서
-  서서 프로세스가 안 끝났다 — worker 는 큐가 닫히기를 기다렸는데 그 큐의 sender 를
-  `HostHandle` 이 쥐고 있었다. 그래서 그 시절 S4 는 2s deadline 에 붙어 plugin 수와 무관하게
-  2.0~2.1s 로 평탄했고, 일부 plugin 을 `SIGSTOP` 으로 정지시켜도 값이 안 움직였다.
-  순차 대기 시절의 같은 plugin 수(6개=12.1s)와 비교하면 6배였다.
-- **지금 정상 종료의 S4 는 수 ms 다.** 9 개 전부 graceful 로 빠져 S4 3.4~3.8 ms,
-  `shutdown_total` 5 ms 안쪽이다. 2s deadline 은 응답하지 않는 plugin 이 있을 때만 S4 의
-  상한으로 드러난다.
-- **체감 종료는 이제 Drop tail 이 대부분이다.** with_drop 66~70 ms 중 S5 가 60~64 ms 다.
-  헤드리스 경로의 같은 수정 실측(번들 9 개를 `plugin enable` 로 띄우고 하나씩
-  `plugin disable`)은 9/9 `reason="graceful"`, 개별 55~160 ms 였다(`plugin process retired` 줄).
-- **Drop tail 은 위쪽 표들에서 36~520ms, 지금 실측에서 60~64ms 다.** 위쪽 표들의 내역은
-  S5b(PTY) 55~122ms, S5a(Lua join) 0.2ms 미만이고, 나머지 수십~수백 ms 는
-  GPU/egui/View 등 그 밖의 destructor 다. **이 구간은 종료 화면으로 덮을 수 없다** —
-  창이 이미 사라진 뒤이므로, 종료 화면을 도입해도 체감 시간의 하한으로 남는다. plugin
-  종료가 graceful 로 빠진 지금은 S4 보다 이 구간이 길다.
-- **`~/.tasty/tasty.port` 는 Drop tail 초반(S5d, `event_loop.exit()` 후 ~14ms)에
-  사라진다.** 제거는 `TcpIpcServer::drop` 에서만 일어나지만 Drop tail 의 앞쪽이라,
-  Drop tail 이 길어도 stale 포트 파일이 남는 창은 짧다.
+헤드리스에서 번들 9개를 `plugin enable`로 시작한 뒤 하나씩 `plugin disable`한
+별도 측정은 9/9 `reason="graceful"`, 개별 55~160ms였다(`plugin process retired` 로그).
+이는 단건 disable 경로의 기록이며, 헤드리스 호스트 종료에 graceful 대기가 있다는 뜻은 아니다.
+
+포트 파일은 `TcpIpcServer::drop`(S5d)에서 제거된다. 해당 측정에서는
+`event_loop.exit()` 후 약 14ms에 제거됐지만, 고정된 시간 제한은 아니다.
 
 실측 시 유의:
 
-- plugin 수가 run 마다 다른 것은 이 환경에서 일부 plugin 이 spawn 되지 않기
-  때문이다. 순차 대기 시절에는 plugin 수가 S4 를 그대로 좌우했으므로 비교 시
-  `plugins` 필드를 함께 봐야 했다. 겹친 대기에서는 S4 가 plugin 수에 둔감해지는
-  것 자체가 판정 기준이다 — 비례해서 늘어난다면 병렬화가 깨진 것이다.
-- 정지시킨 plugin 개수(0/1/2)를 바꿔도 S4 가 평탄한지가 회귀 확인의 핵심이다.
-  재현은 `pgrep -f tasty-plugin- | head -N | xargs -r kill -STOP` 후 종료.
+- 비교할 때는 plugin 수와 각 S4a의 `reason`을 함께 확인한다. 여러 plugin이 동시에
+  deadline을 기다리는 경우 S4가 개별 대기의 합으로 늘어나지 않아야 한다.
+- 응답 없는 plugin은 검증용으로 직접 실행한 인스턴스에서만 재현한다. 실행 기록의
+  plugin PID와 격리 `TASTY_HOME`의 소유 관계를 확인한 뒤 해당 PID에만 `SIGSTOP`을
+  보낸다. 이름 검색으로 찾은 프로세스나 소유를 확인할 수 없는 PID는 대상으로 삼지 않는다.
+  정지시킨 plugin 수(0/1/2)를 바꾸며 대기가 직렬화되지 않는지 비교한다.
+
 - 위 값은 Linux/debug 기준이다. 부팅 계측의 기준치(Windows/7950X3D)와는 환경이
   달라 직접 비교하지 않는다.
 - **S2(부팅 중 종료)는 X11 에서 `wmctrl -i -c <win>` 로 재현된다.** 창이 뜨자마자
@@ -330,7 +286,7 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
   로 실제 키 이벤트를 보내면 된다(합성 이벤트가 아니라 XTEST 경로여야 한다).
 - **종료 중 IPC 는 즉시 오류로 끝나야 한다.** 종료 대기 중에 아무 메서드나 던져
   `{"error":{"code":-32000,"message":"host is shutting down"}}` 가 곧바로 오는지
-  본다. 응답이 없거나 클라이언트가 매달리면 회귀다.
+  본다. 응답이 없거나 클라이언트가 계속 기다리면 실패다.
 - **화면이 실제로 도는지는 창 캡처로 판정한다.** `xwd -id <win>` 로 0.25~0.3s 간격
   3장 이상을 찍어 스피너 각도가 서로 다른지 본다 — 각도가 같으면 프레임이 안 도는
   것이다(정지 프레임). tasty 자체 `ui.screenshot` IPC 는 종료 중에 처리되지 않으므로
