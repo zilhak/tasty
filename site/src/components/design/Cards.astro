@@ -1,12 +1,5 @@
 ---
-/**
- * The guideline documents, embedded.
- *
- * Each is a standalone page with its own generic class names, so it is framed
- * rather than inlined — and framed at the viewport it declares, which is the
- * size it was drawn to be read at. A frame narrower than that scrolls; it does
- * not reflow, because a swatch ramp that reflows stops being a ramp.
- */
+/** Iframes isolate guideline CSS and preserve the declared viewport width. */
 import { byGroup, type Card } from "../../lib/guidelines";
 import { REPO, url } from "../../lib/site";
 

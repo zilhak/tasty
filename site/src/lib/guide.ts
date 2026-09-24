@@ -25,11 +25,7 @@ export const SECTIONS: { dir: string; ko: string; en: string }[] = [
   { dir: "help", ko: "도움말", en: "Help" },
 ];
 
-/**
- * Reading order. The sidebar and prev/next follow this list, not file names — the
- * order is an editorial decision, so it is written down. A content file missing
- * from it is a build error, so a new page is always placed deliberately.
- */
+/** Explicit reading order for the sidebar and previous/next links. */
 export const ORDER: string[] = [
   "index",
   "getting-started/install",

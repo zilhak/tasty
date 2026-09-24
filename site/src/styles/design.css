@@ -1,9 +1,4 @@
-/* The design-system section.
- *
- * Reuses the guide's layout grid and sidebar; what is different is that there
- * is no table of contents column and the main column is not held to a prose
- * measure, because the documents it embeds are drawn at fixed widths.
- */
+/* Fixed-width design examples use a wider content column without a table of contents. */
 
 .layout--design {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -19,7 +14,7 @@
 }
 .nav-list a[aria-current="page"] .nav-desc { color: inherit; opacity: 0.75; }
 
-/* ------------------------------------------------------------------ head */
+
 
 .design-head { margin-bottom: var(--sp-10); }
 .design-head__kicker {
@@ -43,7 +38,7 @@
   font-size: 0.9em;
 }
 
-/* ----------------------------------------------------------------- cards */
+
 
 .ds-group { margin-bottom: var(--sp-12); }
 .ds-group > h2 {
@@ -70,9 +65,7 @@
 }
 .ds-card__src:hover { color: var(--brand); }
 
-/* The frame keeps the document at its declared width. A narrower column
-   scrolls it sideways rather than reflowing it — a ramp that reflows into two
-   rows stops reading as a ramp. */
+/* Preserve each document's declared width and scroll narrow containers horizontally. */
 .ds-card__frame {
   border: var(--border);
   border-radius: var(--radius);
@@ -93,7 +86,7 @@
   .layout--design { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* --------------------------------------------------------- gallery tiles */
+
 
 .ds-lede {
   margin: 0 0 var(--sp-5);

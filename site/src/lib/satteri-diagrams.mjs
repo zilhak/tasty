@@ -11,11 +11,8 @@ import { renderDiagram, isDiagram } from "./diagrams.jsx";
  *     ...
  *     ```
  *
- * The drawing stays because the guide is read on GitHub too, where none of this
- * runs; there the comment is invisible and the fence is the picture. On the site
- * the fence becomes the components the app is built from, so the picture cannot
- * drift from the product — and cannot be misaligned by a script whose glyphs are
- * two columns wide, which is what the drawings had been.
+ * Keep the ASCII drawing for GitHub readers. On the site, replace it with
+ * a diagram made from the vendored design kit.
  *
  * The marker is a comment rather than a fence language because the highlighter
  * runs first and rewrites an unrecognised language to `plaintext`, taking the

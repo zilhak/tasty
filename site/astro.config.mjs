@@ -7,8 +7,6 @@ import { createGuideLinkPlugin } from "./src/lib/satteri-guide-links.mjs";
 import { createDiagramPlugin } from "./src/lib/satteri-diagrams.mjs";
 import { BASE } from "./src/lib/base.mjs";
 
-// The site is fully static. Where it is served from lives in `site/src/lib/base.mjs`
-// — one value, imported by everything that needs it.
 export default defineConfig({
   base: BASE,
   integrations: [react()],

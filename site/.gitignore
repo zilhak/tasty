@@ -12,8 +12,7 @@ src/kit/
 src/styles/tokens.css
 src/styles/kit.css
 
-# Copied out of the repo's own assets/ by the same script — assets/ sits outside
-# the Astro project root, so the build cannot reach it any other way.
+# Copied from the repository's assets/ directory by the same script.
 public/tasty-melon.svg
 public/tasty-icon.png
 

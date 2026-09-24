@@ -1,14 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/**
- * The design guidelines, read straight out of `site/vendor/guidelines/`.
- *
- * Each document opens with a `@dsCard` comment carrying the metadata the
- * design system publishes it under — the group it belongs to, its name and
- * subtitle, and the viewport it is drawn for. That comment is the manifest;
- * there is no second list to keep in step.
- */
+/** Read guideline names, groups and viewport sizes from their @dsCard comments. */
 export interface Card {
   slug: string;
   group: string;

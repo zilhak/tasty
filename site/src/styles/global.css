@@ -1,32 +1,21 @@
-/* Tasty — GitHub Pages stylesheet.
- *
- * The palette is NOT defined here. It comes from the design system in
- * site/vendor/ (styles.css -> tokens/), which is the same source the app UI
- * kit renders from — see site/vendor/README.md. This file only adds what the
- * *site* needs on top: page layout and document typography.
- *
- * Why the site keeps its own spacing and font sizes: the vendor scale is tuned
- * for app chrome (a 14px UI cap, dense 4/8/12 steps). Prose on a web page needs
- * larger type and looser rhythm, so sizes below are the site's own. Colors are
- * shared; measurements are not.
- */
+/* Site layout and document typography. Colors come from the vendored design
+ * tokens; spacing and font sizes use a separate scale suited to web prose. */
 
-/* ---------------------------------------------------------------- tokens */
+
 
 :root {
-  /* Brand accents come from the logo — the design system ships them as
-     first-class colors rather than the approximations this file used before. */
+
   --brand:      var(--tasty-color-melon-flesh);
   --brand-alt:  var(--tasty-color-melon-rind);
 
   --link: var(--tasty-color-blue);
 
-  /* Korean/Japanese fallbacks the app does not need but a web page does. */
+
   --font-sans: var(--tasty-font-family-sans), "Apple SD Gothic Neo",
                "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-mono: var(--tasty-font-family-mono), monospace;
 
-  /* 4px grid — the site's own scale (see header note) */
+
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
   --sp-12: 48px; --sp-16: 64px; --sp-20: 80px; --sp-24: 96px;
@@ -66,7 +55,7 @@
     transition-duration: 0.01ms !important;
   }
 }
-/* ----------------------------------------------------------------- reset */
+
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -108,7 +97,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-/* ---------------------------------------------------------------- header */
+
 
 .site-header {
   position: sticky;
@@ -192,9 +181,8 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .icon-btn:hover { background: var(--tasty-color-neutral-300); color: var(--tasty-color-neutral-1100); }
 .icon-btn svg { width: 16px; height: 16px; }
 
-/* A segmented control, so it has to match the height of the field and the
-   icon buttons beside it. The active fill uses surface1 because surface0 is
-   the border colour: filling with it merged the active half into the outline. */
+/* Match adjacent controls in height. surface1 keeps the active fill distinct
+   from the surface0 border. */
 .lang-switch {
   display: inline-flex;
   flex: none;
@@ -218,12 +206,12 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .lang-switch a:hover { background: var(--tasty-color-neutral-300); color: var(--tasty-color-neutral-1100); text-decoration: none; }
 .lang-switch a[aria-current] { background: var(--tasty-color-neutral-400); color: var(--tasty-color-neutral-1100); }
 
-/* theme toggle shows the icon of the theme you'd switch *to* */
+
 .theme-toggle .icon-sun { display: none; }
 :root[data-theme="latte"] .theme-toggle .icon-sun { display: block; }
 :root[data-theme="latte"] .theme-toggle .icon-moon { display: none; }
 
-/* --------------------------------------------------------------- search */
+
 
 .search {
   position: relative;
@@ -242,8 +230,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .search input::placeholder { color: var(--tasty-color-neutral-600); }
 
-/* Stands in for the placeholder once the field collapses to a square below
-   900px; clicks fall through to the input, which expands it again. */
+/* When search collapses below 900px, clicks pass through the icon to the input. */
 .search__icon {
   display: none;
   position: absolute;
@@ -296,7 +283,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   text-align: center;
 }
 
-/* --------------------------------------------------------------- layout */
+
 
 .layout {
   display: grid;
@@ -376,7 +363,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   background: color-mix(in srgb, var(--tasty-accent-primary) 12%, transparent);
 }
 
-/* ------------------------------------------------------------- content */
+
 
 .content {
   min-width: 0;
@@ -474,7 +461,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 
 .prose img { border-radius: var(--radius); border: var(--border); margin: var(--sp-5) 0; }
 
-/* tables — docs use them heavily */
+
 .table-wrap {
   overflow-x: auto;
   margin: var(--sp-5) 0;
@@ -502,7 +489,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .table-wrap tbody tr:last-child td { border-bottom: 0; }
 .table-wrap tbody tr:hover { background: color-mix(in srgb, var(--tasty-color-neutral-300) 40%, transparent); }
 
-/* code blocks */
+
 .code-block {
   position: relative;
   margin: var(--sp-5) 0;
@@ -575,7 +562,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .hl-markup.hl-italic { font-style: italic; }
 .hl-invalid { color: var(--tasty-color-red); }
 
-/* callouts rendered from blockquotes are plain; keep a utility for later */
+
 .note {
   margin: var(--sp-5) 0;
   padding: var(--sp-4) var(--sp-5);
@@ -596,7 +583,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   background: color-mix(in srgb, var(--tasty-color-yellow) 7%, transparent);
 }
 
-/* page footer nav */
+
 .page-nav {
   display: flex;
   gap: var(--sp-4);
@@ -627,7 +614,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .edit-link:hover { color: var(--tasty-color-neutral-1100); }
 
-/* ------------------------------------------------------------------ toc */
+
 
 .toc {
   position: sticky;
@@ -657,7 +644,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .toc a[data-active] { color: var(--tasty-accent-primary); border-left-color: var(--tasty-accent-primary); }
 .toc .lvl-3 { padding-left: var(--sp-6); }
 
-/* --------------------------------------------------------------- footer */
+
 
 .site-footer {
   border-top: var(--border);
@@ -698,7 +685,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   align-items: center;
 }
 
-/* ------------------------------------------------------------ responsive */
+
 
 .menu-btn { display: none; }
 

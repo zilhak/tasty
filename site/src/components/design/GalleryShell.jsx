@@ -3,24 +3,12 @@ import { GALLERY_INTROS } from "../../lib/design";
 import { SpecsToggle, ThemeToggle, readSpecs, applySpecs } from "../../gallery/shell.jsx";
 import { VendorStamp } from "./VendorStamp.jsx";
 
-/**
- * The gallery's chrome, as this site publishes it.
- *
- * The gallery is a whole application, not a page: a left rail of categories, a
- * top bar with the theme and spec toggles, and a scrolling body of specimens.
- * So it keeps its own shell here rather than being poured into the site's
- * documentation layout — the class names below are the ones `gallery.css`
- * styles. What changes is the navigation, which points at this site's routes,
- * and the theme, which is the site's rather than the gallery's own.
- */
+/** Gallery navigation and controls, using the shared site theme. */
 
-/* The gallery's toggle drove a key of its own. Here the page theme is the
-   site's, so the same control writes the key the rest of the site reads and
-   the choice survives a walk back into the guide. */
+
 const KEY = "tasty-theme";
 
-/* Where the site is served from — a project page mounts it under the repository
-   name. `astro.config.mjs` `base` is the only place that path is written. */
+
 const BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/`;
 
 function read() {

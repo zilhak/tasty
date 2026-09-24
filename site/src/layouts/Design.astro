@@ -1,10 +1,5 @@
 ---
-/**
- * Design-system page: the section's own sidebar plus a wide main column.
- *
- * Wider than the guide on purpose — what is on these pages is drawn at the
- * size the design system draws it, not reflowed into a prose measure.
- */
+/** Keep design examples at their intended widths in a wider content column. */
 import Base from "./Base.astro";
 import { DESIGN_NAV, GALLERY_GROUPS, designPath, galleryPath, pick } from "../lib/design";
 import { stringsFor } from "../lib/strings";
@@ -74,9 +69,6 @@ const s = stringsFor(lang);
         <p class="design-head__kicker">Tasty Design System</p>
         <h1>{title}</h1>
         <p class="design-head__intro" set:html={intro} />
-        {/* Both pages in this section draw from `site/vendor/` — the token
-            document renders one guideline file and the foundations page
-            renders the rest — so both say how old that copy is. */}
         <VendorStamp lang={lang} />
       </header>
       <slot />

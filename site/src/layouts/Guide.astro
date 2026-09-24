@@ -6,8 +6,7 @@ import type { Page, Lang } from "../lib/guide";
 import { pathOf } from "../lib/urls";
 import { stringsFor } from "../lib/strings";
 import { REPO, url } from "../lib/site";
-// Linked rather than imported: only two pages carry a diagram, and a plain
-// import would put the kit's 47 KB of component rules on all thirty-six others.
+// Link these styles only on pages with a diagram instead of bundling them everywhere.
 import kitHref from "../styles/kit.css?url";
 import shellHref from "../styles/app-shell.css?url";
 

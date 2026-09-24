@@ -35,8 +35,7 @@ const mark = (name: string) => (active === name ? "page" : undefined);
     <meta property="og:type" content="website" />
     <link rel="icon" href={url("tasty-melon.svg")} type="image/svg+xml" />
     <script is:inline>
-      /* Applied before first paint so the theme never flashes. Names are the
-         app's own — mocha (dark, default) and latte (light). */
+      /* Apply the saved or system theme while parsing the document head. */
       (function () {
         try {
           var saved = localStorage.getItem("tasty-theme");

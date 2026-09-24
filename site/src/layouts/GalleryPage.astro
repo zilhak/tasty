@@ -1,13 +1,6 @@
 ---
-/**
- * A gallery page.
- *
- * Deliberately not built on `Base.astro`: the gallery is an application with
- * its own full-height chrome, and stacking the site's header, footer and
- * document typography on top of it would give two navigations and two
- * scrollbars. It keeps the site's theme instead — same key, same pre-paint
- * script — and a link back into `/design/`.
- */
+/** Use the gallery layout to avoid duplicate navigation and scrollbars.
+ * Share the site theme and provide a link back to the design pages. */
 import "../styles/tokens.css";
 import "../styles/kit.css";
 import "../../vendor/gallery/gallery.css";

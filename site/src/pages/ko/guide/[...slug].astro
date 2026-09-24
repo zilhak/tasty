@@ -20,8 +20,7 @@ export async function getStaticPaths() {
 
 const { page, pages, idx, entry } = Astro.props;
 const { Content, headings } = await render(entry);
-// The kit's styles are linked per page, so the layout has to know before it
-// renders. The marker is in the source, which is the one place it is certain.
+// Load kit styles only when the source contains a diagram marker.
 const hasDiagram = /<!--\s*tasty-diagram:/.test(entry.body ?? "");
 ---
 <Guide lang="ko" page={page} pages={pages} idx={idx} headings={headings} hasDiagram={hasDiagram}>

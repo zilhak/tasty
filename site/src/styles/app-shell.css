@@ -1,19 +1,10 @@
-/* The app, embedded in a page.
- *
- * The kit components style themselves; these rules are only the frame around
- * them — the boxes the landing's hero and the guide's diagrams put them in, and
- * what each drops when the column gets narrow. Shared because both places embed
- * the same composition.
- */
+/* Shared frames for the landing demo and guide diagrams; component styles come from the kit. */
 
-/* The kit's type is fixed by design (app chrome caps at 14px), so the shell is
- * not scaled — it takes the frame's width and shows more or fewer terminal
- * columns, the way the real window does when you resize it. What does not
- * survive a narrow screen is dropped further down. */
+/* Keep the kit text size; change the visible columns instead of scaling the shell. */
 .shell {
   position: relative;
   z-index: 1;
-  text-align: left;                 /* the hero centres its text; the app is not text */
+  text-align: left;
   display: flex;
   flex-direction: column;
   height: clamp(440px, 44vw, 600px);
@@ -34,10 +25,9 @@
 .shell__side { display: flex; flex: none; }
 .shell__status { flex: none; }
 
-/* ---------------------------------------------------------- guide diagrams */
 
-/* A labelled region of the window. The label rides on the wrapper because the
-   kit styles its own roots inline, and an inline style beats any rule here. */
+
+/* Wrap labels separately because kit components use inline styles. */
 .anat {
   position: relative;
   display: flex;
@@ -63,8 +53,7 @@
   white-space: nowrap;
   pointer-events: none;
 }
-/* Regions size the way the app's own boxes do: fixed rows keep their height,
-   and the two marked ones take what is left. */
+
 .anat { flex: none; }
 .anat[data-grow] { flex: 1; }
 
@@ -80,15 +69,8 @@
 .anat-settings { overflow-x: auto; overflow-y: hidden; }
 .anat-window .shell { height: 420px; }
 
-/* The settings window has a fixed design size and its own modal scrim, which is
-   `position: absolute` — so it fills this stage instead of covering a page.
-   The stage is zoomed down to the column the guide gives it.
-
-   Stepped rather than computed: `zoom` takes a number, and CSS cannot divide a
-   container-query length by a length to get one (`zoom: calc(100cqi / 1100)`
-   parses and is then ignored — measured). The steps stop at 0.5, because below
-   that the window's 13px type stops being readable; from there the frame
-   scrolls sideways instead, which it also does if a step ever falls short. */
+/* Scale the fixed-size settings window in steps. Stop at 0.5 to keep text
+   readable, then allow horizontal scrolling. */
 .anat-settings__stage {
   position: relative;
   width: 1100px;
@@ -98,16 +80,10 @@
 @container (max-width: 700px) { .anat-settings__stage { zoom: 0.6; } }
 @container (max-width: 560px) { .anat-settings__stage { zoom: 0.5; } }
 
-/* ------------------------------------------------------------- responsive */
 
-/* The two embeddings answer a narrow screen differently, and the difference is
-   what each one is for.
 
-   The landing's hero is an illustration: dropping the parts that stop being
-   legible leaves something that still reads as the app. The guide's diagram
-   names every region in the prose underneath, so dropping one would leave a
-   name with nothing to point at — it keeps them all and scrolls sideways
-   instead. */
+/* Hide secondary parts of the landing illustration on narrow screens.
+   Guide diagrams retain all labelled regions and scroll horizontally. */
 @media (max-width: 1000px) {
   .window .shell__pane--agent { display: none; }
 }
@@ -121,13 +97,10 @@
   .anat-window .shell { width: 820px; }
 }
 
-/* ---------------------------------------------------------- overlay layer */
 
-/* The windows the shell can open (Settings 1100x700, Plugins 820x540) are
-   bigger than the frame the hero gives it, and the tools menu anchors to
-   viewport coordinates. So they render into this layer at the end of <body>
-   instead — at their real size, over the page. The layer itself lets clicks
-   through; each overlay takes them back, so a toast never blocks the page. */
+
+/* Body-level overlays use viewport coordinates. The container passes clicks
+   through; individual overlays receive them. */
 .shell-overlays {
   position: fixed;
   inset: 0;

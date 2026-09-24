@@ -1,11 +1,10 @@
-/* Tasty site — progressive enhancement only. Every page is usable with JS off. */
+/* Site controls for theme, navigation, copying and search. */
 (function () {
   "use strict";
 
   var root = document.documentElement;
   var body = document.body;
 
-  /* ------------------------------------------------------------- theme */
 
   /* Theme names are the app's own — mocha (dark, default) and latte (light).
      Only latte carries an attribute; mocha is the bare :root. Values stored by
@@ -24,9 +23,7 @@
     return window.matchMedia("(prefers-color-scheme: light)").matches ? "latte" : "mocha";
   }
 
-  /* The landing's app mockup is React and has its own theme control. It reads
-     and sets the page theme through here so the two never disagree, and so the
-     persistence rule stays in one place. */
+  /* Let the React demo read and update the shared page theme. */
   window.tastyTheme = { get: currentTheme, set: applyTheme };
 
   var themeBtn = document.querySelector(".theme-toggle");
@@ -36,7 +33,6 @@
     });
   }
 
-  /* --------------------------------------------------- mobile nav drawer */
 
   var menuBtn = document.querySelector(".menu-btn");
   if (menuBtn) {
@@ -54,7 +50,6 @@
     });
   }
 
-  /* ------------------------------------------------------- code copying */
 
   document.querySelectorAll(".code-block").forEach(function (block) {
     var pre = block.querySelector("pre");
@@ -89,7 +84,6 @@
     block.appendChild(btn);
   });
 
-  /* ------------------------------------------------------- toc scrollspy */
 
   var tocLinks = Array.prototype.slice.call(document.querySelectorAll(".toc a"));
   if (tocLinks.length && "IntersectionObserver" in window) {
@@ -119,7 +113,6 @@
     });
   }
 
-  /* ------------------------------------------------------------- search */
 
   var searchInput = document.querySelector(".search input");
   var searchResults = document.querySelector(".search__results");
@@ -231,7 +224,6 @@
     });
   }
 
-  /* -------------------------------------------- downloads: visitor's OS */
 
   var primary = document.getElementById("dl-primary");
   if (primary) {
@@ -249,7 +241,6 @@
     }
   }
 
-  /* -------------------------------------------- keep active nav in view */
 
   var current = document.querySelector('.nav-list a[aria-current="page"]');
   if (current) {

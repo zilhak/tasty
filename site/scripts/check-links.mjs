@@ -1,18 +1,12 @@
 /**
  * Checks every internal link and `#anchor` in the built site.
  *
- * The previous generator did this while rendering (`--strict`). Doing it on the
- * output instead is stricter: it sees the final HTML, so a link broken by a
- * layout or a component is caught too, not just one written in markdown.
- *
  *   node scripts/check-links.mjs [dist]
  */
 import { readdirSync, statSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve, dirname, relative } from "node:path";
 import { BASE } from "../src/lib/base.mjs";
 
-// Imported, not repeated: a base changed in one place and forgotten here would
-// make this pass on links the deployed site cannot serve.
 const base = BASE.replace(/\/$/, "");
 
 const dist = resolve(process.argv[2] ?? "dist");
@@ -30,7 +24,6 @@ const htmlFiles = [];
   }
 })(dist);
 
-/** id="…" of every element, so `#anchor` targets can be verified. */
 const anchorsOf = (html) =>
   new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
 

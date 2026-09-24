@@ -10,29 +10,13 @@ import { SettingsWindow } from "../kit/overlays/settings_window.jsx";
 import { ToolsMenu } from "../kit/overlays/tools_menu.jsx";
 import { TabStrip, TerminalPane, MarkdownSurface, StatusBar, Prompt } from "../kit/work.jsx";
 
-/**
- * The app itself, composed from the shipped UI kit, as the landing page's
- * illustration — and it works: tabs switch, close and open, workspaces switch,
- * the sidebar collapses, and the sidebar's buttons open the real windows.
- *
- * This is the kit's own composition (`kit/app.jsx`) with two things changed for
- * a page rather than a preview:
- *
- *   - Theme belongs to the page, not to this component. The status bar and the
- *     Settings window drive the site's own toggle, so the whole page follows.
- *   - The windows (Settings 1100x700, Plugins 820x540) are larger than the
- *     frame the hero gives the shell, and the tools menu positions itself
- *     against the viewport. So overlays render into a fixed full-page portal
- *     instead of inside the frame, at their real size.
- */
+/** Interactive landing-page demo built from the vendored UI kit. */
 const c = {
   green: "var(--tasty-color-green)", blue: "var(--tasty-color-blue)", mauve: "var(--tasty-color-mauve)",
   yellow: "var(--tasty-color-yellow)", dim: "var(--tasty-color-neutral-700)", teal: "var(--tasty-color-teal)",
 };
 const t = (color) => (txt) => <span style={{ color }}>{txt}</span>;
 
-// The two panes are the product's whole claim in one frame: an agent building
-// on the left while the operator keeps working on the right, in one workspace.
 const agentSession = (task) => ({
   id: "s_01HX",
   lines: [
@@ -75,8 +59,6 @@ const userSession = {
   ],
 };
 
-// Every workspace field combination the sidebar knows how to draw, so the
-// illustration shows the real range rather than one happy row.
 const workspaces = [
   { id: "prod", name: "agents-prod", status: "running", notif: 0 },
   { id: "infra", name: "infra", subtitle: "mirror → prod-web", status: "idle", notif: 0, mirror: true, mirrorTarget: "prod-web" },
@@ -90,9 +72,7 @@ const INITIAL_TABS = [
   { id: "t3", title: "terminal + docs", kind: "split", owner: "user", activity: "idle" },
 ];
 
-/* Theme is the page's, not this component's. `site.js` owns applying and
-   persisting it; this only reads the attribute it sets and asks it to set
-   another. Falls back to a local toggle if that script has not run. */
+/* Share the site theme; use a local toggle if site.js is unavailable. */
 function readTheme() {
   if (typeof document === "undefined") return "mocha";
   if (window.tastyTheme) return window.tastyTheme.get();
@@ -116,10 +96,8 @@ function usePageTheme() {
   return [theme, apply];
 }
 
-/* Overlays go to the end of <body> so they get the whole viewport: the windows
-   are bigger than the hero's frame, and ToolsMenu anchors to viewport
-   coordinates. Renders nothing until mounted, so the static HTML has no
-   overlay markup and hydration has nothing to mismatch. */
+/* Use a body portal because windows exceed the demo frame and ToolsMenu
+   uses viewport coordinates. Wait for mount to match the server markup. */
 function OverlayLayer({ open, lock, scale, children }) {
   const [host, setHost] = React.useState(null);
   React.useEffect(() => { setHost(document.body); }, []);
@@ -151,9 +129,7 @@ export function AppShell({ heading = "Workspaces", task = "run tests", lang = "e
   const seq = React.useRef(4);
   const toastTimer = React.useRef(0);
 
-  // The kit scales its chrome off one variable. The app sets it on :root; here
-  // it stays on the shell and the overlay layer, so the page around it is not
-  // resized by a control inside the picture.
+  // Scope the scale to the demo and its overlays so it does not resize the page.
   const scale = { "--tasty-ui-scale": `var(--tasty-ui-scale-${uiScale})` };
 
   const anyOverlay = overlay !== null || toolsAnchor !== null;

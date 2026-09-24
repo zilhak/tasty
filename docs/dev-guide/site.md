@@ -6,7 +6,7 @@
 - 콘텐츠: `site/content/` (한국어 정본) · `site/content/en/` (영어 번역)
 - 산출물: `site/` 아래 `dist/` — 빌드가 만들며 Git에서 제외한다(경로 인용으로 안 적는다. 갓 클론한
   트리에는 없어서 좌표를 실재로 판정하는 CI의 경로 검사가 실패할 수 있다)
-- 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동) — `npm run build`
+- 배포: `.github/workflows/pages.yml`. main의 `site/**`, `assets/icons/tasty-melon.svg`, `Cargo.toml`, 해당 워크플로 변경 시 자동 실행하며 수동 실행도 가능하다. 빌드 명령은 `npm run build`다.
   다음에 `npm run check-links` 로 산출물의 내부 링크·앵커를 전수 판정하고 나서 올린다.
   이 단계는 `site/content/` 앵커의 실제 HTML 결과를 검사한다([링크와 표](../documentation-model.md#링크와-표))
 

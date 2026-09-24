@@ -15,14 +15,6 @@ export function appVersion(root: string): string {
   return "0.0.0";
 }
 
-/**
- * Site-absolute URL.
- *
- * The configured `base` is the only place the deployment path is written, and
- * this is the only place it is joined to anything — so a project page
- * (`/tasty/`) and a custom domain (`/`) differ by one line of config and
- * nothing else. Astro reports the base without a trailing slash, so the join
- * normalises rather than concatenating.
- */
+/** Join a site path to the configured deployment base. */
 export const url = (path: string) =>
   `${import.meta.env.BASE_URL.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;

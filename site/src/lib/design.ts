@@ -1,13 +1,6 @@
 import type { Lang } from "./guide";
 
-/**
- * The design-system section's own table of contents and copy.
- *
- * The documents this section publishes come from the design system itself and
- * are written once, in English — a swatch of `--tasty-accent-primary` says the
- * same thing in either language. So the pages are bilingual in their chrome
- * and their framing, and identical in what they embed.
- */
+/** Bilingual navigation and introductions for the shared English design examples. */
 export interface DesignPage {
   /** Route under the section, with its trailing slash. "" is the section root. */
   slug: string;
@@ -44,13 +37,7 @@ export const designPath = (slug: string, lang: Lang) =>
 
 export const pick = <T>(v: { en: T; ko: T }, lang: Lang) => (lang === "ko" ? v.ko : v.en);
 
-/**
- * The gallery — the design system's live component catalogue.
- *
- * These pages are the gallery's own application, chrome included, so they are
- * published once rather than per language and carry their own navigation.
- * `key` is the identifier each specimen file already declares for itself.
- */
+/** The gallery uses shared routes. `key` matches the identifier in each example. */
 export interface GalleryPage {
   key: string;
   /** Route under `design/gallery/`; "" is the gallery root. */

@@ -2,15 +2,8 @@ import React from "react";
 import { TitleBar, Sidebar } from "../../kit/chrome.jsx";
 import { TabStrip, TerminalPane, StatusBar, Prompt } from "../../kit/work.jsx";
 
-/**
- * The window's parts, named — the guide's first diagram.
- *
- * It is the shipped chrome, not a picture of it: the same `TitleBar`,
- * `Sidebar`, `TabStrip`, `TerminalPane` and `StatusBar` the app renders, each
- * wrapped in a labelled region. The wrapper is what carries the label and the
- * outline, because the kit styles its own roots inline and an inline style
- * beats any rule this page could write.
- */
+/** Label the vendored kit regions. Wrappers keep label styles separate
+ * from the kit components' inline styles. */
 const noop = () => {};
 
 const workspaces = [

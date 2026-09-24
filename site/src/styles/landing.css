@@ -1,10 +1,4 @@
-/* Landing page.
- *
- * Colour, radius and elevation come from the design-system tokens; the measures
- * (section rhythm, display type) are the site's own — the vendor scale is tuned
- * for app chrome with a 14px cap, which a marketing page cannot use. Same split
- * as global.css, same reason.
- */
+/* Use shared color, radius and elevation tokens, with site-specific spacing and type sizes. */
 
 .landing {
   --gutter: var(--sp-6);
@@ -43,9 +37,9 @@
 }
 .caption { font-size: 0.88rem; color: var(--tasty-text-muted); }
 
-/* ------------------------------------------------------------------- hero */
 
-/* The intro column is centred over the full-width product window below it. */
+
+
 .hero {
   display: flex;
   flex-direction: column;
@@ -110,7 +104,7 @@
   margin-top: var(--sp-2);
 }
 
-/* ------------------------------------------------------------------ button */
+
 
 .btn {
   display: inline-flex;
@@ -139,7 +133,7 @@
 
 .btn--ghost { background: transparent; }
 
-/* ------------------------------------------------------------- app window */
+
 
 .window {
   width: 100%;
@@ -151,7 +145,7 @@
   background: var(--tasty-bg-app);
   position: relative;
 }
-/* A soft brand wash behind the window, so it lifts off the page. */
+
 .window::before {
   content: "";
   position: absolute;
@@ -162,7 +156,7 @@
   z-index: 0;
 }
 
-/* -------------------------------------------------------------------- why */
+
 
 .split {
   display: grid;
@@ -170,8 +164,7 @@
   gap: var(--sp-12);
   align-items: center;
 }
-/* Same two columns, illustration first in the source so it reads first on a
-   phone; on a wide screen it swaps back to the right. */
+/* Source order puts the illustration first on phones; wide layouts place it on the right. */
 .split--rev > :first-child { order: 2; }
 
 .feature-list {
@@ -203,7 +196,7 @@
 .feature-list strong { font-size: 1rem; letter-spacing: -0.01em; }
 .feature-list .v > span { font-size: 0.93rem; line-height: 1.7; color: var(--tasty-text-secondary); }
 
-/* --------------------------------------------------------------- features */
+
 
 .card-grid {
   display: grid;
@@ -250,7 +243,7 @@
   transition: opacity 0.15s, transform 0.15s;
 }
 
-/* ----------------------------------------------------------------- agents */
+
 
 .term {
   border: var(--border);
@@ -287,7 +280,7 @@
 .term .g { color: var(--tasty-color-green); }
 .term .y { color: var(--tasty-color-yellow); }
 
-/* -------------------------------------------------------------- platforms */
+
 
 .platform-row {
   display: flex;
@@ -332,7 +325,7 @@
 }
 .stat__l { font-size: 0.88rem; color: var(--tasty-text-muted); }
 
-/* ---------------------------------------------------------------- closing */
+
 
 .cta-band {
   display: flex;
@@ -351,7 +344,7 @@
 .cta-band h2 { margin: 0; font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); letter-spacing: -0.014em; }
 .cta-band p { margin: 0; max-width: 42em; line-height: 1.75; color: var(--tasty-text-secondary); }
 
-/* ------------------------------------------------------------- responsive */
+
 
 @media (max-width: 1080px) {
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

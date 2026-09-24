@@ -1,13 +1,7 @@
 import { readFileSync } from "node:fs";
 
-/**
- * The latest release, as CI hands it over.
- *
- * `pages.yml` writes `site/release.json` with `gh release view --json
- * tagName,assets` before the build. A local build has no such file, and that is
- * not an error — the download buttons then point at the releases page, which is
- * correct at any moment and merely one click longer.
- */
+/** pages.yml writes release.json before building. If absent, download links
+ * fall back to the releases page. */
 export type Platform = "macos" | "windows" | "linux";
 
 export interface Download {

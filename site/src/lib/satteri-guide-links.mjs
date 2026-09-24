@@ -2,24 +2,10 @@ import { fileURLToPath } from "node:url";
 import { posix, relative, resolve, sep } from "node:path";
 
 /**
- * Rewrites `*.md` links in the guide to the routes the site actually serves.
- *
- * The guide is authored as a plain markdown tree that also reads correctly on
- * GitHub, so its links are relative paths to `.md` files. Nothing in the build
- * turns those into page URLs on its own — this plugin is that step:
- *
- *   inside `content/`  -> the sibling page's route, still relative
- *   outside `content/` -> the file on GitHub (docs/, CHANGELOG.md, LICENSES/)
- *
- * Links stay RELATIVE on purpose. A page with no translation is published in
- * both trees with the same body, so an absolute path would point at the wrong
- * tree for one of them.
- *
- * Routes are directories, and their depth does not follow the file's: a page
- * `using/terminal.md` serves at `using/terminal/` (one deeper than the file's
- * directory) while `plugins/index.md` serves at `plugins/` (the same depth).
- * So the relative link is computed between the two *routes*, never by pasting
- * a fixed number of `../` onto the authored path.
+ * Rewrite Markdown links to guide routes or repository files on GitHub.
+ * Keep guide links relative so untranslated bodies work under both languages.
+ * Compute paths between routes: using/terminal.md becomes using/terminal/,
+ * while plugins/index.md becomes plugins/.
  */
 const BLOB_BASE = "https://github.com/zilhak/tasty/blob/main";
 
