@@ -1,54 +1,8 @@
-//! attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach 결선.
-//!
-//! 사용자 핵심 요구("워크스페이스1 = a컴퓨터, 워크스페이스2 = b컴퓨터")의 종착점:
-//! 매핑(`Workspace.attach_mapping`)이 있는 로컬 워크스페이스를 **활성화하면** 호스트가
-//! 자동으로 ① 프로필 resolve → ② SSH 터널(`tasty_ssh`) 수립 → ③ 그 `local_port`
-//! 를 작업 J 의 [`App::start_gui_attach`] 에 넘겨 원격 워크스페이스를 GUI mirror 로
-//! 띄운다. 터널 핸들은 client 세션에 보관돼 세션 수명 동안 살아있다(Drop 시 자식 ssh
-//! kill — 고아 터널 방지).
-//!
-//! 결선 파이프라인(plan-v2 §6.2):
-//! ```text
-//! [about_to_wait] poll_auto_attach
-//!   ├─ maybe_trigger_auto_attach: 활성 ws 매핑 Some & 미attach → 워커 스레드 spawn
-//!   │     (워커: 프로필 resolve + SSH 터널 수립 = 최대 수초 블록 → 메인 무블록)
-//!   │     완료 → 결과 채널 push + AppEvent::AutoAttachReady wake
-//!   └─ drain_auto_attach_results: 채널 drain → start_gui_attach(port, remote_ws, tunnel)
-//! ```
-//!
-//! - **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 면 터널 없이
-//!   그 포트로 직접 attach(로컬 검증·동일 머신 다중 인스턴스).
-//! - **중복 방지**: anchor(매핑된 로컬 ws id)를 `auto_attach_active` 에 넣어 재트리거
-//!   skip. 세션 정리(force-detach/EOF) 시 제거해 재활성 시 재attach 가능.
-//! - **원칙 3**: `remote_workspace` 가 None 이면 자동 attach skip(ID 명시 필요).
-//!
-//! ## silent disconnect 후 backoff 자동 재연결(`docs/dev-guide/attach-behavior.md`
-//! "GUI 자동 재연결 스코프" "backoff 재연결 트리거" 절)
-//!
-//! disconnect 로 anchor 세션이 `Reconnecting` 상태(`attach_client.rs`)가 되면, 위
-//! 레벨/엣지 트리거와 **병행해** 아래 backoff 스케줄이 돈다:
-//! ```text
-//! [poll_auto_attach] (매 프레임 + `Tick::Reconnect(anchor)` 로 idle 에서도 보장)
-//!   ├─ maybe_trigger_auto_attach: anchor 에 Reconnecting 세션이 있으면 스킵(레이스 방지 — 재연결은 아래가 전담)
-//!   ├─ maybe_trigger_reconnect: Reconnecting 세션이 있는 각 anchor 마다
-//!   │     - 사용자가 지금 그 워크스페이스로 전환해왔으면(엣지) 즉시, 아니면
-//!   │       backoff `next_attempt` 시각이 됐으면 → 워커 spawn(`is_reconnect: true`)
-//!   └─ drain_auto_attach_results: `is_reconnect` 로 성공 시 `reconnect_session`
-//!         (survivor mapping, `docs/dev-guide/attach-behavior.md` "재연결 시 세션
-//!         상태 보존" 절) vs `start_gui_attach` 분기. 실패는
-//!         `on_reconnect_attempt_failed` 로 backoff 갱신(`already_attached` 는
-//!         영구 충돌로 취급해 지수 증가 없이 max 간격 고정, 그 외엔 통상 지수 증가).
-//!         시도 상한(`MAX_RECONNECT_ATTEMPTS`) 초과 시 자동 재시도만 중단(안내
-//!         toast) — `auto_attach_pending_reactivation` 은 남겨 사용자가 워크스페이스를
-//!         왕복하면 여전히 수동으로 재시도된다.
-//! ```
-//! **backoff 는 non-blocking** — `tasty_ssh::Backoff::sleep()`(blocking) 대신
-//! `current()`/`advance()` 로 "다음 시도 시각"만 계산해 [`ReconnectSlot`] 에 저장한다
-//! (GUI 메인 스레드를 블록할 수 없어서). 그 시각에 **깨어나는 것**은 중앙 타이머
-//! 허브의 `Tick::Reconnect(anchor)` 가 맡고([`reconnect_wakeup_at`],
-//! `docs/dev-guide/timer-hub.md`), **due 판정 자체**는 기존대로 [`reconnect_due`] 가
-//! 프레임에서 한다 — 엣지(워크스페이스 재활성화) 트리거는 시각과 무관하므로 시각
-//! 판정만 타이머로 옮기고 두 트리거의 합류점은 그대로 뒀다.
+//! 매핑된 워크스페이스의 자동 attach와 재연결을 처리한다.
+//! SSH 연결 준비는 워커가 맡고 메인 루프가 결과를 mirror 세션에 적용한다.
+//! 재연결은 예약 시각 또는 해당 워크스페이스 재활성화로 시도한다.
+//! 자동 재시도 상한에 도달해도 사용자가 다시 활성화하면 재시도할 수 있다.
+//! docs/dev-guide/attach-behavior.md#gui-자동-재연결-스코프 참조.
 
 use std::time::Instant;
 
@@ -60,25 +14,16 @@ use crate::app::App;
 use crate::model::WorkspaceAttachTarget;
 use crate::view::ui::View as _;
 
-/// anchor 하나당 backoff 재연결 시도 상한. 초과하면 자동(backoff) 재시도를
-/// 멈추고 안내 toast 를 띄운다 — 무한 재시도로 조용히 CPU/네트워크를 계속 쓰는 것을
-/// 막는다. 사용자가 워크스페이스를 왕복하는 엣지 트리거는 이 상한과 무관하게 계속
-/// 동작한다(수동 재시도는 항상 가능).
+/// 자동 재연결의 실패 횟수 상한. 워크스페이스 재활성화로 재시도하는 동작은 막지 않는다.
 const MAX_RECONNECT_ATTEMPTS: u32 = 20;
 
-/// anchor 하나의 backoff 재연결 스케줄. `Reconnecting` 진입 시 생성되지
-/// 않고(첫 시도는 즉시), 시도가 **실패**할 때만 갱신되며 다음 시도 시각을 저장한다.
+/// 실패한 재연결의 다음 시도 시각과 누적 횟수. 첫 시도는 슬롯 없이 즉시 수행한다.
 pub(crate) struct ReconnectSlot {
     backoff: Backoff,
     next_attempt: Instant,
     attempts: u32,
-    /// 버그수정(Gate4) — `MAX_RECONNECT_ATTEMPTS` 초과로 자동 재시도를 포기했는지.
-    /// 포기 시 슬롯을 지워 부재(`None`)로 표현하면 `reconnect_due` 가 "아직 한 번도
-    /// 실패하지 않음"과 구분할 수 없어 바로 다음 프레임에 다시 즉시 재시도가
-    /// 재개되고, 실패하면 시도 횟수가 0부터 다시 쌓여 상한마다 무한히 give-up→즉시
-    /// 재개를 반복하는 회귀가 있었다. give-up 은 슬롯을 지우지 않고 이 플래그로
-    /// 명시적으로 저장하며, 사용자가 그 워크스페이스로 돌아오는 edge 트리거만이
-    /// 해제(재개)할 수 있다.
+    /// 슬롯을 지우면 첫 시도로 취급하므로 중단 상태를 별도로 보존한다.
+    /// 사용자가 해당 워크스페이스로 돌아오면 재개할 수 있다.
     given_up: bool,
 }
 
@@ -93,28 +38,16 @@ impl ReconnectSlot {
     }
 }
 
-/// 버그수정(Gate4) — 자동(backoff) 재시도가 지금 due 인지 슬롯 상태로부터 판단하는
-/// 순수 함수. give-up 된 슬롯은 `next_attempt` 가 이미 지났어도 항상 자동 재시도
-/// 대상에서 제외한다(엣지 트리거로만 재개) — 그렇지 않으면 give-up 직후에도 다음
-/// backoff 시각이 되는 즉시 자동 재시도가 재개돼 상한이 무의미해진다.
 fn reconnect_due(slot: Option<&ReconnectSlot>, now: Instant) -> bool {
     match slot {
         Some(slot) if slot.given_up => false,
         Some(slot) => now >= slot.next_attempt,
-        // 아직 실패한 적 없음(Reconnecting 진입 직후) — 1차 시도는 즉시.
         None => true,
     }
 }
 
-/// 이 anchor 의 backoff 재시도를 위해 호스트를 깨워야 하는 시각.
-///
-/// `None` 은 **"타이머 예약 없음"** 이지 "슬롯 없음" 이 아니다 — 세 경우가 여기로 접힌다:
-/// - 슬롯 없음: 1차 시도는 즉시라 이번 프레임이 이미 처리한다(예약할 미래 시각이 없다).
-/// - `given_up`: 자동 재시도를 멈춘 상태. **타이머만 없애고 슬롯은 그대로 둔다** —
-///   슬롯을 지우면 `reconnect_due(None, _)` 가 "아직 실패한 적 없음" 으로 오해해 즉시
-///   재시도를 재개하는 회귀가 된다([`ReconnectSlot::given_up`] 참조). 재개는 edge
-///   트리거만 할 수 있고, edge 는 시각과 무관하므로 타이머가 필요 없다.
-/// - 그 외: 다음 시도 시각.
+/// 다음 재연결을 예약할 시각. None이어도 중단 상태를 가진 슬롯은 지우지 않는다.
+/// 슬롯이 없는 첫 시도는 현재 프레임에서 처리한다.
 fn reconnect_wakeup_at(slot: Option<&ReconnectSlot>) -> Option<Instant> {
     match slot {
         Some(slot) if slot.given_up => None,
@@ -123,46 +56,28 @@ fn reconnect_wakeup_at(slot: Option<&ReconnectSlot>) -> Option<Instant> {
     }
 }
 
-/// 버그수정(Gate4) — 실패 횟수가 상한에 도달했는지. `attempts` 는 이번 실패를 반영해
-/// 증가시킨 뒤(1부터 시작) 넘겨받으므로 `>=` 여야 "`MAX_RECONNECT_ATTEMPTS` 회 실패
-/// 후 자동 재시도 중단" 스펙과 일치한다(`>` 는 상한보다 한 번 더 실패해야(21번째)
-/// 중단하는 off-by-one 이었다).
+/// 이번 실패까지 포함한 횟수를 받는다.
 fn reconnect_exhausted(attempts: u32) -> bool {
     attempts >= MAX_RECONNECT_ATTEMPTS
 }
 
-/// 버그수정(Gate4) — edge(사용자가 그 워크스페이스로 명시적으로 돌아옴) 트리거가
-/// give-up 상태의 슬롯을 재개(리셋)해야 하는지. give-up 이 아닌 슬롯(또는 슬롯 없음)
-/// 은 리셋 대상이 아니다 — 이미 정상 진행 중인 backoff 스케줄을 edge 가 매번
-/// 초기화해버리면 정상적인 지수 증가가 의미를 잃는다.
+/// 정상 진행 중인 백오프는 워크스페이스 전환만으로 초기화하지 않는다.
 fn should_reset_given_up(slot: Option<&ReconnectSlot>, edge_now: bool) -> bool {
     edge_now && slot.is_some_and(|s| s.given_up)
 }
 
-/// 자동 attach 워커 스레드 → 메인 루프 결과. 터널 핸들/포트를 채널로 전달한다
-/// (AppEvent 는 Debug 라 핸들을 싣지 못해 별도 채널 사용).
+/// AppEvent에 넣을 수 없는 터널 핸들을 별도 결과 채널로 전달한다.
 pub(crate) struct AutoAttachOutcome {
-    /// 매핑된(anchor) 로컬 워크스페이스 id. 자동 attach(매핑 활성화)면 `Some(id)`,
-    /// **IPC 수동 트리거**(`remote.attach` — anchor 없는 브라우징→attach)면 `None`.
-    /// None 이면 재attach 게이트(`auto_attach_active`)를 건드리지 않는다.
+    /// 자동 attach의 로컬 anchor ID. anchor 없는 수동 요청은 None이며 중복 방지 집합에 넣지 않는다.
     pub(crate) anchor_ws_id: Option<u32>,
-    /// 원격 tasty 의 attach 대상 workspace_id.
     pub(crate) remote_ws: u32,
-    /// 엔드포인트 해석 결과: `(터널 핸들 or None, 접속 포트)`.
     pub(crate) result: anyhow::Result<(Option<SshTunnel>, u16)>,
-    /// 이 워커가 backoff 재연결 트리거(`maybe_trigger_reconnect`)로
-    /// spawn 됐는지. `drain_auto_attach_results` 가 성공 시 `reconnect_session`
-    /// (survivor mapping)과 `start_gui_attach`(완전 신규) 중 무엇을 부를지, 실패 시
-    /// backoff 스케줄을 갱신할지 결정하는 데 쓴다.
+    /// 신규 mirror 생성 대신 기존 세션 재연결과 실패 시 백오프 갱신을 수행할지 구별한다.
     pub(crate) is_reconnect: bool,
 }
 
 impl App {
-    /// `about_to_wait` 매 프레임 — 활성 워크스페이스 매핑을 보고 자동 attach 를
-    /// 트리거하고(레벨/엣지), `Reconnecting` anchor 들의 backoff 재연결을 확인한 뒤,
-    /// 완료된 워커 결과를 적용한다(다 cheap — 후보 없으면 즉시 반환). 엣지 판정에 쓰는
-    /// (현재/직전 활성 ws id)를 한 프레임에 한 번만 계산해 두 트리거가 공유한다 —
-    /// 따로 계산하면 `auto_attach_last_active_ws` 갱신 순서에 따라 엣지가 어긋난다.
+    /// 활성 워크스페이스의 전환을 한 번 계산해 두 트리거가 같은 전환을 보게 한다.
     pub(crate) fn poll_auto_attach(&mut self) {
         let prev_active = self.auto_attach_last_active_ws;
         let current_ws_id = self
@@ -176,12 +91,7 @@ impl App {
         self.drain_auto_attach_results();
     }
 
-    /// `Reconnecting` anchor 들의 backoff 시각을 `Tick::Reconnect(anchor)` 에
-    /// 동기화한다. 프레임 말미에 1회.
-    ///
-    /// **`auto_attach_reconnect` 맵은 절대 건드리지 않는다.** 타이머 해제와 슬롯
-    /// 삭제는 의미가 다르다 — give-up 슬롯을 지우면 즉시 재시도가 재개되는 회귀가
-    /// 있었다([`reconnect_wakeup_at`]). 여기서 하는 일은 예약의 등록/해제뿐이다.
+    /// 타이머만 등록·해제한다. 중단 상태를 담은 재연결 슬롯은 보존한다.
     pub(crate) fn sync_reconnect_timers(&mut self, now: Instant) {
         let wakeups: Vec<(u32, Instant)> = self
             .attach_client_sessions
@@ -197,23 +107,9 @@ impl App {
         crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups, now);
     }
 
-    /// 활성 워크스페이스가 매핑 Some & 아직 attach 안 됐으면 워커 스레드로 SSH 터널
-    /// 수립을 시작한다(메인 루프 무블록). 포커스 독립(원칙 3): 활성 상태를 *읽어*
-    /// 트리거할 뿐, 동작은 ID(anchor/remote_ws)로 결정된다.
-    ///
-    /// **재진입 대기(pending reactivation) anchor 만 엣지 게이팅**:
-    /// `auto_attach_pending_reactivation` 에 속한 anchor(= silent disconnect 로
-    /// `cleanup_mirror_workspace` 가 방금 정리한 워크스페이스)는 `auto_attach_last_active_ws`
-    /// 와 비교해 활성 워크스페이스가 **바뀐 프레임**(전환 엣지)이어야만 후보로 본다 —
-    /// disconnect 직후에도 그 워크스페이스를 계속 보고 있으면(전환 없음) 재트리거하지
-    /// 않는다("정리만, 자동 재연결은 사용자가 벗어났다 되돌아오는 등 수동 재진입
-    /// 필요"). **그 집합에 없는 anchor 는 기존처럼 활성화 즉시(레벨) 트리거된다** —
-    /// 예를 들어 이미 활성인 워크스페이스에 `attach_mapping` 을 방금 새로 설정한
-    /// 경우(`tasty set workspace --ssh-profile ...`)는 disconnect 를 겪은 적이 없어
-    /// 전환을 요구하면 안 된다(엣지를 모든 anchor 에 무차별 적용하면 이 흔한 CLI
-    /// 시나리오가 트리거되지 않는 회귀가 생긴다).
+    /// 신규 매핑은 활성 상태면 연결하고, 연결 해제 뒤 대기 중인 anchor는 재활성화를 요구한다.
+    /// 대상 ID는 매핑에서 가져오며 포커스를 바꾸지 않는다.
     fn maybe_trigger_auto_attach(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
-        // 활성 ws 의 (anchor id, 매핑)을 읽어 후보 수집.
         let candidate = {
             let Some(main) = self.focused_window_mut() else {
                 return;
@@ -227,11 +123,7 @@ impl App {
         let Some((anchor, mapping)) = candidate else {
             return;
         };
-        // 이 anchor 에 이미 `Reconnecting` 세션이 있으면 재연결은
-        // `maybe_trigger_reconnect` 전담 대상이다. 그쪽이 `auto_attach_active` 를 아직
-        // 안 채운 순간(레이스 윈도우)에 여기가 먼저 완전 신규 `start_gui_attach` 를
-        // 트리거해버리면 같은 anchor 에 mirror workspace 가 중복 생성된다 — 반드시
-        // 스킵.
+        // 재연결이 맡은 anchor에 새 mirror를 중복 생성하지 않는다.
         if self
             .attach_client_sessions
             .iter()
@@ -239,28 +131,23 @@ impl App {
         {
             return;
         }
-        // 재진입 대기 중인 anchor 만 전환 엣지를 요구 — 그 외(신규 mapping 등)는
-        // 레벨(즉시) 트리거.
         let pending_reactivation = self.auto_attach_pending_reactivation.contains(&anchor);
         if !is_attach_trigger_allowed(pending_reactivation, current_ws_id, prev_active) {
             return;
         }
-        // 이미 진행 중/established → skip(중복 attach 방지).
         if self.auto_attach_active.contains(&anchor) {
             return;
         }
-        // 원격 workspace id 미지정 → 자동 attach skip(원칙 3, plan §11-2).
         let Some(remote_ws) = mapping.remote_workspace else {
             return;
         };
 
         self.auto_attach_active.insert(anchor);
-        // 트리거 성공(워커 spawn) — 재진입 대기 해소.
         self.auto_attach_pending_reactivation.remove(&anchor);
         let tx = self.auto_attach_tx.clone();
         let proxy = self.view.proxy.clone();
         let target = mapping.target.clone();
-        // 워커: 프로필 resolve + 포트 발견 + ssh -L 터널(최대 ~수초 블록).
+        // SSH 연결 준비가 메인 루프를 막지 않게 한다.
         std::thread::spawn(move || {
             let result = resolve_endpoint(&target);
             let outcome = AutoAttachOutcome {
@@ -270,18 +157,11 @@ impl App {
                 is_reconnect: false,
             };
             let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
-            // 메인 루프를 깨워 결과를 drain 시킨다(idle 상태에서도 즉시 반영).
             let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
         });
     }
 
-    /// `Reconnecting` 세션이 있는 각 anchor 의 backoff 스케줄을 확인해
-    /// 재연결 워커를 spawn 한다. 두 트리거를 병행: ① 사용자가 **지금** 그 anchor
-    /// 워크스페이스로 전환해 돌아왔으면(엣지, `current_ws_id == anchor` 한정 — 다른
-    /// 워크스페이스로의 무관한 전환까지 모든 Reconnecting anchor 를 깨우면 안 된다)
-    /// 즉시, ② 아니어도 backoff 의 `next_attempt` 시각이 지났으면. 이미 시도가
-    /// 진행 중인 anchor(`auto_attach_active`)는 skip(기존 게이트 재사용 — 중복 attach
-    /// 방지).
+    /// 시도 중이 아닌 anchor를 예약 시각 또는 해당 워크스페이스 재활성화 때 재연결한다.
     fn maybe_trigger_reconnect(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
         let anchors: Vec<u32> = self
             .attach_client_sessions
@@ -300,15 +180,10 @@ impl App {
             if !edge_now && !due {
                 continue;
             }
-            // 버그수정(Gate4) — give-up 된 슬롯은 위 `reconnect_due` 가 항상 false 를
-            // 반환하므로 여기 도달했다는 건 edge_now 가 true 라는 뜻. 사용자가 명시적으로
-            // 돌아온 것이니 give-up 을 풀고 시도 횟수/backoff 를 리셋해 재개를 허용한다.
             if should_reset_given_up(existing_slot, edge_now) {
                 self.auto_attach_reconnect.remove(&anchor);
             }
-            // mapping 재조회 — anchor 워크스페이스 자체가 삭제됐거나 attach_mapping 이
-            // 그 사이 바뀌었으면(Codex 크로스체크 지적) 이 재연결 대상은 소멸한 것 —
-            // 스케줄을 정리하고 skip.
+            // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
             let mapping = self.main_windows_iter_mut().find_map(|m| {
                 m.core_state
                     .workspaces
@@ -339,26 +214,17 @@ impl App {
                     is_reconnect: true,
                 };
                 let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
-                // 메인 루프를 깨워 결과를 drain 시킨다(idle 상태에서도 즉시 반영).
                 let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
             });
         }
     }
 
-    /// 워커가 보낸 엔드포인트 결과를 적용한다 — 성공이면 mirror 를 띄우고(터널 핸들
-    /// 세션에 보관), 실패면 anchor 게이트를 풀어 재활성 시 재시도 가능하게 한다.
-    /// `is_reconnect` 로 신규 attach(`start_gui_attach`) 와 재연결(`reconnect_session`,
-    /// `docs/dev-guide/attach-behavior.md` "GUI 자동 재연결 스코프"/"재연결 시 세션
-    /// 상태 보존" 절)을 분기한다.
     pub(crate) fn drain_auto_attach_results(&mut self) {
         while let Ok(outcome) = self.auto_attach_rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
         }
     }
 
-    /// 워커 결과 하나를 적용한다 — 성공/실패를 갈라 성공은
-    /// `handle_auto_attach_connected` 에, 실패는 anchor 게이트 해제 + (재연결 시)
-    /// backoff 갱신으로 처리한다.
     fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
         let AutoAttachOutcome {
             anchor_ws_id,
@@ -390,9 +256,6 @@ impl App {
         }
     }
 
-    /// 엔드포인트 해석에 성공한 워커 결과를 적용한다 — self(loopback) mirror 는
-    /// release 에서 거부하고, 그 외엔 신규 attach(`start_gui_attach`) 또는 재연결
-    /// (`reconnect_session`)을 시도한 뒤 성공/실패에 따라 anchor 상태를 갱신한다.
     fn handle_auto_attach_connected(
         &mut self,
         anchor_ws_id: Option<u32>,
@@ -401,10 +264,7 @@ impl App {
         tunnel: Option<SshTunnel>,
         port: u16,
     ) {
-        // self(loopback) mirror 차단(원칙 1 ②): resolve 된 포트가 이 인스턴스
-        // 자신의 IPC 포트면 자기 화면 mirror = 사용자 입력 재현 성격이라
-        // release 에서 거부한다. SSH 터널의 local_port 는 자기 포트와 다르므로
-        // 원격 attach 는 통과한다. 로컬 self-mirror 검증은 debug 빌드로.
+        // release에서는 연결을 시도하기 전에 자기 포트를 거절한다.
         #[cfg(not(debug_assertions))]
         if self.hub.ipc_server.as_ref().map(|s| s.port()) == Some(port) {
             tracing::warn!(
@@ -424,8 +284,7 @@ impl App {
             });
             match idx {
                 Some(idx) => self.reconnect_session(idx, port, tunnel),
-                // Reconnecting 세션이 그 사이 사라짐(사용자가 mirror 를
-                // 직접 닫는 등) — 재연결 대상 소멸, no-op 성공 취급.
+                // 사용자가 기다리는 동안 mirror를 닫았으면 연결할 세션이 없다.
                 None => Ok(()),
             }
         } else {
@@ -452,13 +311,8 @@ impl App {
         }
     }
 
-    /// 재연결 시도 실패 후 backoff 스케줄을 갱신한다. `already_attached`
-    /// (다른 클라이언트가 여전히 그 원격 워크스페이스를 점유 중 — 영구적 충돌일 수
-    /// 있음)는 지수 증가 대신 max 간격으로 고정해 폭주 없이 계속 대기하고, 그 외
-    /// (네트워크/SSH 등 일시적 실패)는 통상적인 지수 백오프로 늘린다. 시도 횟수가
-    /// 상한을 넘으면 자동(backoff) 재시도만 멈추고(수동 엣지 트리거는 계속 유효) 1 회
-    /// 안내 toast 를 띄운다. 간격에 ±20% jitter 를 둬 여러 anchor 가 동시에 끊겼을 때
-    /// 재시도가 한 tick 에 몰리는 것을 방지한다.
+    /// already_attached는 긴 고정 간격, 나머지 실패는 지수 백오프로 재시도한다.
+    /// jitter로 동시 재시도 집중을 줄이며 상한에 도달하면 자동 재시도만 멈춘다.
     fn on_reconnect_attempt_failed(&mut self, anchor: u32, err: &anyhow::Error) {
         let permanent_conflict = err.to_string().contains("already_attached");
         let slot = self
@@ -467,16 +321,11 @@ impl App {
             .or_insert_with(ReconnectSlot::new);
         slot.attempts += 1;
         if reconnect_exhausted(slot.attempts) {
-            // 버그수정(Gate4) — 슬롯을 지우지 않고 give-up 만 표시한다. 지워버리면
-            // 다음 프레임에 `reconnect_due(None, _)` 가 "아직 실패한 적 없음"으로
-            // 오해해 즉시 재시도를 재개해버린다(무한 give-up→즉시재개 루프).
             slot.given_up = true;
             self.notify_reconnect_giveup(anchor);
             return;
         }
         if permanent_conflict {
-            // 다른 클라이언트가 계속 점유 중 — 지수 증가 없이 max 간격 고정(폭주
-            // 방지). 상대가 disconnect 하면 다음 tick 에 다시 시도할 여지는 유지.
             slot.backoff.reset();
             while slot.backoff.current() < std::time::Duration::from_secs(30) {
                 slot.backoff.advance();
@@ -489,10 +338,7 @@ impl App {
         slot.next_attempt = Instant::now() + base.mul_f64(jitter);
     }
 
-    /// `MAX_RECONNECT_ATTEMPTS` 초과로 자동 재시도를 포기했음을 anchor
-    /// 워크스페이스에 1 회 안내한다. `auto_attach_pending_reactivation` 은 여기서
-    /// 건드리지 않는다 — 사용자가 그 워크스페이스를 왕복하는 엣지 트리거는 여전히
-    /// 유효해야 한다("자동만 멈춤, 수동은 항상 가능").
+    /// 자동 재시도 중단을 알린다. 워크스페이스 재활성화로 다시 시도할 상태는 유지한다.
     fn notify_reconnect_giveup(&mut self, anchor: u32) {
         for main in self.main_windows_iter_mut() {
             if main.core_state.workspaces.iter().any(|ws| ws.id == anchor) {
@@ -511,9 +357,8 @@ impl App {
     }
 }
 
-/// 매핑 타깃 → 접속 엔드포인트(터널 or loopback 포트). 워커 스레드에서 실행(블록 OK).
+/// 워커 스레드에서 프로필과 SSH 터널 또는 loopback 포트를 준비한다.
 fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<SshTunnel>, u16)> {
-    // ① 접속 스펙 결정(destination + remote_tasty + port_mode + port_file).
     let (ssh_target, remote_tasty, port_mode, port_file) = match target {
         WorkspaceAttachTarget::Profile { name } => {
             let profiles = RemoteProfiles::load();
@@ -524,7 +369,6 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
                     crate::i18n::t_fmt("cli.remote_profile.not_found", name)
                 )
             })?;
-            // tasty-attach kind 검증 + 비활성 게이트 + ref/inline resolve 를 한곳에서.
             ssh::resolve_attach_target(p, &profiles, &passkeys)?
         }
         WorkspaceAttachTarget::Inline {
@@ -540,15 +384,13 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
         ),
     };
 
-    // ② loopback 직결(터널 없이): host 가 127.0.0.1:PORT / localhost:PORT 면 그 포트로.
     if let Some(port) = parse_loopback_port(&ssh_target.destination) {
         return Ok((None, port));
     }
 
-    // ③ SSH 터널: 원격 포트 발견 → ssh -L → local_port.
     let ssh = ssh::resolve_ssh_path();
     let mode = PortMode::parse(&port_mode)?;
-    // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시 기본 strict 유지(보안).
+    // TASTY_SSH_VERIFY가 설정된 검증 환경에서는 accept-new를 사용한다. 기본은 strict다.
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
     let remote_port = ssh::discover_remote_port(
@@ -565,22 +407,10 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     Ok((Some(tunnel), local_port))
 }
 
-/// `current`(이번 프레임 활성 ws id) 가 `previous`(직전 프레임 활성 ws id) 와 달라진
-/// **전환** 인지 판정한다. `maybe_trigger_auto_attach` 의 엣지 트리거 조건
-/// (silent disconnect 후 사용자가 실제로 워크스페이스를 전환해 돌아와야 재시도)의
-/// 핵심 술어라 독립적으로 테스트한다. `current` 가 `None`(포커스 창에 활성 ws 자체가
-/// 없는 비정상 상태)이면 전환으로 치지 않는다.
 fn is_reactivation_edge(current: Option<u32>, previous: Option<u32>) -> bool {
     current.is_some() && current != previous
 }
 
-/// `maybe_trigger_auto_attach` 가 candidate anchor 를 실제로 트리거할지 결정하는
-/// 술어. `pending_reactivation`(그 anchor 가 `App.auto_attach_pending_reactivation`
-/// 에 있는지 — silent disconnect 로 방금 정리돼 재진입 대기 중인지)이 `false` 면
-/// (신규 mapping 등 disconnect 를 겪은 적 없는 anchor) 무조건 허용한다(레벨 트리거,
-/// 기존 동작과 동일). `true` 면 `is_reactivation_edge` 로 워크스페이스 전환이 실제로
-/// 있었을 때만 허용한다 — 그래야 "이미 활성인 워크스페이스에 매핑을 새로 설정하면
-/// 즉시 트리거"와 "disconnect 직후엔 전환 전까지 억제"가 동시에 성립한다.
 fn is_attach_trigger_allowed(
     pending_reactivation: bool,
     current: Option<u32>,
@@ -609,20 +439,15 @@ fn parse_loopback_port(dest: &str) -> Option<u16> {
 mod tests {
     use super::*;
 
-    /// give-up 슬롯은 타이머만 사라지고 **슬롯 자체는 남는다** — 지우면
-    /// `reconnect_due(None, _)` 가 "아직 실패한 적 없음" 으로 오해해 즉시 재시도가
-    /// 재개되는 회귀가 된다(과거 이력).
     #[test]
     fn given_up_slot_schedules_no_wakeup_but_survives() {
         let mut slot = ReconnectSlot::new();
         slot.next_attempt = Instant::now() + std::time::Duration::from_secs(5);
         slot.given_up = true;
         assert_eq!(reconnect_wakeup_at(Some(&slot)), None);
-        // 슬롯은 그대로 살아 있어 due 판정이 "아직 실패한 적 없음" 과 구분된다.
         assert!(!reconnect_due(Some(&slot), Instant::now()));
     }
 
-    /// 진행 중인 backoff 는 다음 시도 시각에 깨어나야 한다.
     #[test]
     fn active_backoff_schedules_its_next_attempt() {
         let at = Instant::now() + std::time::Duration::from_secs(5);
@@ -631,7 +456,6 @@ mod tests {
         assert_eq!(reconnect_wakeup_at(Some(&slot)), Some(at));
     }
 
-    /// 첫 시도는 즉시라 예약할 미래 시각이 없다(이번 프레임이 처리한다).
     #[test]
     fn absent_slot_schedules_no_wakeup_because_it_is_already_due() {
         assert_eq!(reconnect_wakeup_at(None), None);
@@ -640,36 +464,21 @@ mod tests {
 
     #[test]
     fn reactivation_edge_only_on_transition() {
-        // 첫 활성화(직전 없음) — 전환으로 인정.
         assert!(is_reactivation_edge(Some(1), None));
-        // 같은 ws 가 계속 활성 — 전환 아님(이게 없으면 silent disconnect 직후 anchor
-        // 가 여전히 활성인 상태에서 매 프레임 재트리거되는 회귀가 재현된다).
         assert!(!is_reactivation_edge(Some(1), Some(1)));
-        // 다른 ws 로 전환 — 전환으로 인정.
         assert!(is_reactivation_edge(Some(2), Some(1)));
-        // 활성 ws 자체가 없음 — 전환 아님.
         assert!(!is_reactivation_edge(None, Some(1)));
     }
 
     #[test]
     fn new_mapping_triggers_immediately_without_transition() {
-        // 신규 mapping(= auto_attach_pending_reactivation 에 없음) 은 워크스페이스
-        // 전환 없이도(current == previous, "계속 활성 상태") 즉시 트리거 후보가 된다
-        // — `tasty set workspace --ssh-profile ...` 를 이미 활성인 워크스페이스에
-        // 실행하는 흔한 CLI 시나리오의 회귀 방지 테스트.
         assert!(is_attach_trigger_allowed(false, Some(1), Some(1)));
-        // 전환이 있어도 당연히 허용.
         assert!(is_attach_trigger_allowed(false, Some(2), Some(1)));
     }
 
     #[test]
     fn disconnected_anchor_waits_for_transition_before_retrigger() {
-        // disconnect 로 정리된(= auto_attach_pending_reactivation 에 있음) anchor 는
-        // 워크스페이스가 계속 활성 상태(전환 없음)면 재트리거되지 않는다 —
-        // `docs/dev-guide/attach-behavior.md` "레벨/엣지 트리거"의 "재진입 대기"
-        // 목표(조용한 자동 재연결 억제) 유지 확인.
         assert!(!is_attach_trigger_allowed(true, Some(1), Some(1)));
-        // 다른 워크스페이스로 갔다가 돌아오는 등 실제 전환이 있으면 허용.
         assert!(is_attach_trigger_allowed(true, Some(1), Some(2)));
     }
 
@@ -688,14 +497,8 @@ mod tests {
         assert_eq!(parse_loopback_port("example.com:22"), None);
     }
 
-    // 버그수정(Gate4) — give-up 이후 자동 재시도가 재개되지 않는지, 수동 재진입(edge)
-    // 일 때만 재개되는지의 회귀 테스트. 원래 슬롯을 지워 `None` 으로 표현했을 때
-    // "아직 실패한 적 없음"과 구분이 안 돼 give-up 직후 바로 다음 프레임에 자동으로
-    // 재시도가 재개되던 버그(MAX_RECONNECT_ATTEMPTS 를 무의미하게 만듦)를 고쳤다.
-
     #[test]
     fn reconnect_due_when_no_slot_yet() {
-        // Reconnecting 진입 직후, 아직 한 번도 실패한 적 없음 — 1차 시도는 즉시.
         assert!(reconnect_due(None, Instant::now()));
     }
 
@@ -710,9 +513,6 @@ mod tests {
 
     #[test]
     fn reconnect_due_is_false_when_given_up_even_past_next_attempt() {
-        // 핵심 회귀 테스트: give-up 된 슬롯은 next_attempt 시각이 이미 지났어도
-        // 자동 재시도 대상이 아니다 — 그렇지 않으면 give-up 직후 바로 다음 프레임에
-        // 자동으로 재시도가 재개돼 MAX_RECONNECT_ATTEMPTS 상한이 무의미해진다.
         let mut slot = ReconnectSlot::new();
         slot.given_up = true;
         slot.next_attempt = Instant::now() - std::time::Duration::from_secs(1);
@@ -721,8 +521,6 @@ mod tests {
 
     #[test]
     fn reconnect_exhausted_at_max_not_before() {
-        // off-by-one 회귀 테스트: 상한(MAX_RECONNECT_ATTEMPTS)에 도달한 순간(그 다음이
-        // 아니라) 바로 give-up 되어야 "20회 실패 후 중단" 스펙과 맞는다.
         assert!(!reconnect_exhausted(MAX_RECONNECT_ATTEMPTS - 1));
         assert!(reconnect_exhausted(MAX_RECONNECT_ATTEMPTS));
         assert!(reconnect_exhausted(MAX_RECONNECT_ATTEMPTS + 1));
@@ -732,14 +530,10 @@ mod tests {
     fn given_up_slot_resets_only_on_edge_reactivation() {
         let mut slot = ReconnectSlot::new();
         slot.given_up = true;
-        // due 가 될 수 없는 상태이므로(위 테스트) 이 경로는 오직 edge_now 로만 온다.
         assert!(!should_reset_given_up(Some(&slot), false));
         assert!(should_reset_given_up(Some(&slot), true));
-        // 이미 정상(give-up 아님) 진행 중인 슬롯은 edge 가 와도 리셋 대상이 아니다 —
-        // 정상 지수 백오프 진행을 edge 가 매번 초기화해버리면 안 된다.
         slot.given_up = false;
         assert!(!should_reset_given_up(Some(&slot), true));
-        // 슬롯 자체가 없으면(아직 실패한 적 없음) 리셋할 대상도 없다.
         assert!(!should_reset_given_up(None, true));
     }
 }
