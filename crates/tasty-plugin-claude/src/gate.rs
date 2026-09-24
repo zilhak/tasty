@@ -1,48 +1,12 @@
-//! Stop-훅 게이트 레지스트리 — 이름으로 등록해 둔 (본문, 센티넬, 라운드 상한)
-//! 3요소를 게이트 하나로 묶는다.
+//! Stop 훅 게이트의 본문·완료 표식·회차 상한을 이름으로 등록한다.
+//! 게이트 이름은 프로필 적용에도 사용하므로 같은 이름의 사용자 프로필과 중복 등록할 수 없다.
 //!
-//! `profile.rs`(Claude 세션 프로필 레지스트리)의 형태를 **미러링**한다 — short-name
-//! 규칙 · `<owner>/<short>` id · `TASTY_PLUGIN_DATA_DIR` 하위 저장 · `data_dir` 이
-//! `None` 이면 명시적 에러 · `XxxError` + `translate(&Translator)`. 타입은 공유하지
-//! 않는다(이 레포의 확립된 방식, `profile.rs` 모듈 doc 참조).
+//! 데이터 디렉터리의 gates/registered/<name>.json에 정의를, gates/bodies/<name>.md에
+//! 본문 복사본을 저장한다. 여러 줄 본문을 JSON 문자열에 넣지 않고 별도 파일로 관리한다.
+//! 활성 파일과 회차 상태는 checklist 모듈이 관리한다.
 //!
-//! 이 plugin 은 단일 스레드 IPC 디스패치(`ClaudePlugin::handle_ipc_method`)만
-//! 레지스트리를 건드리므로 `RwLock`/`OnceLock` 프로세스 전역 싱글턴이 불필요하다
-//! (`profile.rs` · `state.rs` 와 동일 근거).
-//!
-//! ## 게이트 이름 = 프로필 부착 이름
-//!
-//! 게이트를 등록하면 동명의 attachable 프로필로 부착 가능해진다 — 별도 attach
-//! 문법을 만들지 않는다. 그래서 두 레지스트리의 이름 공간은 **한 평면**이고,
-//! 같은 이름이 양쪽에 생기면 조용히 한쪽이 가려진다. 그 shadowing 을 만들지 않기
-//! 위해 등록 시점에 **양방향으로** 거부한다(`gate-register` 는 동명 registered
-//! 프로필을, `profile-register` 는 동명 게이트를). 이 plugin 은 조용한 shadowing
-//! 으로 이미 사고를 겪었고(`profile.rs` 모듈 doc), 같은 이유로 `--profile-file`
-//! 반복 지정도 last-wins 대신 명시적 에러로 거부한다.
-//!
-//! ## 저장 위치
-//!
-//! `TASTY_PLUGIN_DATA_DIR` 하위. 사용자 원본과 tasty 생성물을 나누는
-//! `profiles/registered/` vs `profiles/generated/` 방침을 그대로 따른다:
-//! - `gates/registered/<gate-name>.json` — 게이트 정의(`sentinel` / `round_limit`,
-//!   둘 다 optional)
-//! - `gates/bodies/<gate-name>.md` — 등록 시 호출자가 준 본문 파일의 **복사본**
-//!   (원본이 나중에 옮겨지거나 지워져도 게이트는 살아 있다 — `profile::register`
-//!   와 같은 방침)
-//!
-//! 본문을 정의 JSON 에 인라인하지 않는 이유는 그 복사본 방침에 더해, 본문이 여러
-//! 줄 마크다운이라 JSON 문자열 인라인보다 파일이 다루기 쉽기 때문이다.
-//!
-//! 라운드 상태·enable 마커의 게이트별 경로는 이 모듈이 다루지 않는다(게이트
-//! **정의** 저장만 담당).
-//!
-//! ## host 기본 게이트는 코드 상수로 남는다
-//!
-//! `continue-checklist` 는 파일로 실체화되지 않고 [`host_default_gate`] 조회
-//! 함수로만 존재한다(본문은 lang 의 `claude.checklist.body`, 센티넬은
-//! [`crate::checklist::SENTINEL`], 라운드 상한은 미지정 → Settings 폴백).
-//! `MANAGED_HOOKS` · [`host_default_names`] 가 이미 같은 형태이고, host 기본값을
-//! 데이터 디렉토리에 실체화하면 사용자가 지웠을 때 되살릴 경로가 없다.
+//! 기본 continue-checklist는 파일 없이 제공한다. 본문은 번역 카탈로그에서 읽고
+//! 완료 표식은 checklist::SENTINEL을 쓰며 회차 상한은 설정값으로 결정한다.
 
 use std::path::{Path, PathBuf};
 
@@ -51,10 +15,8 @@ use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use crate::checklist::SENTINEL;
 
-/// 게이트 short-name 규칙 — `profile.rs::is_valid_short_name` 과 **동일 규칙**
-/// (소문자/숫자/하이픈, 최대 32자). 두 레지스트리의 이름이 한 평면을 공유하므로
-/// 규칙이 갈리면 한쪽에서만 쓸 수 있는 이름이 생긴다. 파일명으로도 그대로 쓰이므로
-/// 경로 traversal 문자(`/`, `..`)를 원천 배제한다.
+/// 프로필과 같은 이름 규칙: 영문 소문자·숫자·하이픈, 최대 32자.
+/// 경로에 넣는 이름이므로 슬래시·점 등은 허용하지 않는다.
 pub(crate) fn is_valid_short_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
@@ -73,17 +35,15 @@ pub enum GateError {
         path: String,
         message: String,
     },
-    /// 본문에 실효 센티넬이 없다 — 모델이 종료를 선언할 방법을 안내받지 못해
-    /// 라운드 상한 백스톱까지 무조건 도달한다(게이트가 "N턴 강제 연장" 으로 변질).
+    /// 본문에 이 게이트의 완료 표식이 없다.
     BodyMissingSentinel {
         sentinel: String,
     },
-    /// 빈 센티넬은 모든 메시지에 매칭되어(`str::contains("")` 는 항상 참) 게이트가
-    /// 첫 라운드에 통과한다 — 게이트를 등록해 놓고 꺼두는 것과 같아진다.
+    /// 빈 표식은 모든 메시지와 일치하므로 허용하지 않는다.
     EmptySentinel,
     /// 라운드 상한 0 — 게이트가 한 번도 block 하지 못한다.
     RoundsBelowOne,
-    /// 동명 registered 프로필이 이미 있다(이름 공간이 한 평면이므로 거부).
+    /// 같은 이름의 사용자 프로필이 있다.
     ProfileNameConflict(String),
     Io {
         path: String,
@@ -120,15 +80,12 @@ impl GateError {
     }
 }
 
-/// 게이트 정의 — 본문을 뺀 나머지 2요소. 본문은 별도 파일이라 이 구조체에 담기지
-/// 않는다(`show` 가 함께 돌려준다).
+/// 본문은 별도 파일에 저장하고 정의에는 완료 표식과 회차 상한을 둔다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateDef {
-    /// 종료 선언 센티넬. 미지정으로 등록하면 기본 센티넬이 여기 실체화된다 —
-    /// 정의 파일만 보고도 실효값을 알 수 있어야 하기 때문.
+    /// 실제 사용할 완료 표식. 생략해 등록했으면 기본값을 저장한다.
     pub sentinel: String,
-    /// 라운드 상한. `None` 이면 Settings → `DEFAULT_ROUND_LIMIT` 순 폴백(해석은
-    /// 훅 발화 시점의 몫이라 이 모듈은 미지정을 그대로 보존한다).
+    /// 생략하면 실행 시 설정값, DEFAULT_ROUND_LIMIT 순서로 선택한다.
     pub round_limit: Option<u32>,
 }
 
@@ -140,8 +97,7 @@ impl GateDef {
         }
     }
 
-    /// 미지의 필드는 무시하고 아는 것만 읽는다 — 정의 파일은 tasty 가 쓰고 tasty 가
-    /// 읽으므로, 구버전이 신버전 파일을 만나도 아는 범위에서 동작하는 편이 낫다.
+    /// 알려진 필드만 읽어 이전 버전도 읽을 수 있는 부분을 사용한다.
     fn from_json(v: &Value) -> Self {
         Self {
             sentinel: v
@@ -159,9 +115,7 @@ impl GateDef {
     }
 }
 
-/// `claude gate-list` 가 반환하는 항목 요약. `round_limit` 이 `None` 인 항목은
-/// `round_limit_source` 로 어디서 폴백되는지 알린다 — 실효값을 이 계층에서
-/// 확정하지 않는 이유는 Settings 조회가 호스트 왕복(`HostHandle`)을 요구해서다.
+/// 목록에 표시할 요약. 자체 회차 상한이 없으면 값 대신 settings에서 결정함을 알린다.
 #[derive(Debug, Clone)]
 pub struct GateSummary {
     /// `<owner>/<short>` 형식.
@@ -171,21 +125,12 @@ pub struct GateSummary {
     pub round_limit: Option<u32>,
     /// `"gate"`(정의가 직접 지정) 또는 `"settings"`(미지정 → Settings 폴백).
     pub round_limit_source: &'static str,
-    /// 이 게이트의 마커가 켜져 있는가(`checklist-enable --gate <name>`). 게이트별
-    /// on/off 를 한 번에 보려면 `checklist-status` 를 게이트 수만큼 호출해야 하므로
-    /// 목록 쪽에 싣는다 — `checklist-status` 응답 형태는 기존 호출자를 위해
-    /// `{ "enabled": bool }` 그대로 둔다.
+    /// 게이트가 켜져 있는지. 개별 status 호출 없이 전체 상태를 볼 수 있도록 포함한다.
     pub enabled: bool,
 }
 
-/// host 가 코드로 내장한 기본 게이트. 사용자가 같은 이름으로 등록하면 그쪽이
-/// 이긴다(`show`/`list` 모두 registered 파일을 먼저 찾고, 없을 때만 여기로 온다).
-///
-/// `continue-checklist` — 본문은 lang 의 `claude.checklist.body`, 센티넬은
-/// [`SENTINEL`], 라운드 상한은 미지정(Settings 폴백). 본문을 여기 상수로 박지 않는
-/// 이유는 로케일별로 달라야 하기 때문이고, 그 본문이 센티넬을 포함한다는 불변식은
-/// `checklist.rs` 의 `checklist_body_contains_sentinel_in_every_locale` 이 컴파일
-/// 타임에 강제한다(사용자 등록 본문에는 같은 불변식을 [`register`] 가 런타임에 건다).
+/// 번역 본문과 기본 표식을 사용하는 내장 게이트. 같은 이름의 사용자 등록이 있으면 그쪽이 우선한다.
+/// 번역의 표식 포함 여부는 checklist 시험, 사용자 본문은 register에서 확인한다.
 pub(crate) fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(GateDef, String)> {
     match short_name {
         DEFAULT_GATE_NAME => Some((
@@ -199,9 +144,7 @@ pub(crate) fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(Ga
     }
 }
 
-/// 게이트를 지정하지 않은 훅 호출이 해석되는 이름 — host 기본 게이트. 매니페스트
-/// `checklist_hook_args` 의 `--gate` 기본값이 이 값과 같아야 하며,
-/// `manifest_gate_flag_default_matches_constant` 테스트가 그 일치를 강제한다.
+/// 게이트를 생략했을 때의 기본 이름. 매니페스트와 같은지는 기존 시험이 확인한다.
 pub(crate) const DEFAULT_GATE_NAME: &str = "continue-checklist";
 
 /// [`host_default_gate`] 가 아는 이름 전체 — `list` 이 host 항목을 나열할 때 순회한다.
@@ -227,16 +170,12 @@ fn require_data_dir(data_dir: Option<&Path>) -> Result<&Path, GateError> {
     data_dir.ok_or(GateError::NoDataDir)
 }
 
-/// 이 이름으로 등록된 사용자 게이트가 있는가 — `profile::register` 가 반대 방향
-/// 충돌을 검사할 때 쓴다(이름 공간이 한 평면이라는 계약의 대칭 절반).
+/// 같은 이름의 사용자 게이트가 있는지 확인해 프로필 등록의 충돌을 막는다.
 pub(crate) fn is_registered(data_dir: Option<&Path>, short_name: &str) -> bool {
     data_dir.is_some_and(|d| registered_file(d, short_name).is_file())
 }
 
-/// 이 이름의 게이트가 실재하는가(등록 게이트 또는 host 기본 게이트) — 마커를
-/// 켜고 끄는 진입점이 오타를 거를 때 쓴다. [`show`] 와 달리 본문 파일을 읽지
-/// 않는다: 마커 토글에 본문은 필요 없고, 본문이 읽히지 않는다는 이유로 이미
-/// 켜 둔 게이트를 끄지 못하게 되면 곤란하다.
+/// 토글 대상이 등록돼 있는지 확인한다. 본문이 손상됐어도 끌 수 있도록 본문은 읽지 않는다.
 pub(crate) fn ensure_known(
     data_dir: Option<&Path>,
     short_name: &str,
@@ -251,13 +190,7 @@ pub(crate) fn ensure_known(
     }
 }
 
-/// 이 이름의 게이트가 어느 출처에서 오는가 — `"user"`(등록 게이트) /
-/// `"host"`(기본 게이트) / `None`(없음). 등록 게이트가 우선한다([`show`] 와 같은
-/// 순서 — 목록/조회/부착이 서로 다른 출처를 가리키면 안 된다).
-///
-/// host 판정을 상수 대신 [`host_default_gate`] 로 하는 이유: 이름 목록과 실제
-/// 정의가 갈리지 않게 SoT 를 하나로 둔다. 그래서 `tr` 이 필요하다(host 기본
-/// 게이트 본문이 locale 별 lang 문자열이라 조회에 Translator 가 든다).
+/// 사용자 등록을 먼저 확인하고 없으면 기본 게이트를 조회해 출처를 반환한다.
 fn owner_of(data_dir: Option<&Path>, short_name: &str, tr: &Translator) -> Option<&'static str> {
     if !is_valid_short_name(short_name) {
         return None;
@@ -268,15 +201,12 @@ fn owner_of(data_dir: Option<&Path>, short_name: &str, tr: &Translator) -> Optio
     host_default_gate(short_name, tr).map(|_| "host")
 }
 
-/// host 기본 게이트 이름 전체. `profile::list` 이 attachable host 항목을 나열할
-/// 때 순회한다 — 이름 목록의 소유자를 이 모듈 하나로 유지하려고 상수를 그대로
-/// 공개하는 대신 열거 API 로 감싼다.
+/// 기본 게이트 이름 목록. 프로필 목록에서도 사용한다.
 pub(crate) fn host_default_names() -> &'static [&'static str] {
     HOST_DEFAULT_GATE_NAMES
 }
 
-/// 등록된 게이트 이름 전체(정렬). [`list`] 와 `profile::list` 이 함께 쓴다 —
-/// 목록의 출처를 이 모듈 하나로 유지한다.
+/// 사용자 게이트 이름을 정렬해 반환한다.
 pub(crate) fn registered_names(data_dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(registered_dir(data_dir))
         .into_iter()
@@ -291,19 +221,8 @@ pub(crate) fn registered_names(data_dir: &Path) -> Vec<String> {
     names
 }
 
-/// 이 이름의 게이트를 **부착용 Stop 훅 프로필 JSON** 으로 해석한다 —
-/// `--profile <이름>` 경로(`profile::resolve_names`/`show_registered`)가 등록
-/// 프로필을 못 찾았을 때 여기로 온다. 반환하는 owner 는 실제 출처를 그대로
-/// 반영한다(`profile::show_registered` 의 요구사항).
-///
-/// 게이트의 3요소(본문·센티넬·상한)는 이 JSON 에 담기지 않는다 — 훅 발화 시점에
-/// `--gate <이름>` 으로 레지스트리를 다시 읽어 해석한다(`checklist.rs`). 그래서
-/// 등록 내용을 바꿔도 재부착 없이 다음 발화에 반영된다.
-///
-/// **게이트 이름이 셸 명령 문자열에 그대로 삽입된다.** 안전성은 전적으로
-/// [`is_valid_short_name`] 규칙(소문자/숫자/`-`, 최대 32자)에 의존한다 — 공백·
-/// 따옴표·셸 메타문자가 원천 배제되므로 인용이 필요 없다. 그 규칙을 느슨하게
-/// 바꾸려면 여기부터 인용/이스케이프를 함께 손봐야 한다.
+/// 이름으로 적용할 Stop 훅 설정을 만든다. 실제 본문·표식·상한은 훅 실행 때 다시 읽는다.
+/// 이름은 명령에 그대로 들어가므로 is_valid_short_name의 문자 제한을 유지해야 한다.
 pub(crate) fn attach_profile(
     data_dir: Option<&Path>,
     short_name: &str,
@@ -313,10 +232,7 @@ pub(crate) fn attach_profile(
     Some((owner, stop_hook_profile(short_name)))
 }
 
-/// 게이트 하나를 발동시키는 `settings.json` 조각. 명령 문자열은 하드코딩하지 않고
-/// [`crate::install::tasty_guarded_command`] 로 만든다 — 형태를 두 곳에 박아 두면
-/// `install.rs` 만 고쳤을 때 두 경로가 조용히 갈린다(`profile.rs` 가 같은 이유로
-/// 이미 그 함수를 쓰고 있었다).
+/// 공용 tasty_guarded_command로 게이트 호출 명령을 만들어 Stop 훅 설정에 넣는다.
 fn stop_hook_profile(short_name: &str) -> Value {
     let command = crate::install::tasty_guarded_command(&format!(
         "tasty claude checklist-hook --gate {short_name}"
@@ -331,15 +247,8 @@ fn stop_hook_profile(short_name: &str) -> Value {
     })
 }
 
-// ── 등록/조회/해제 (user 출처) ────────────────────────────────────────────
-
-/// `short_name` 으로 게이트를 등록한다. `body_path` 의 내용을 읽어 실효 센티넬
-/// 포함 여부를 검증한 뒤 정의 JSON 과 본문 복사본을 함께 쓴다 — 원본이 나중에
-/// 옮겨지거나 지워져도 게이트는 영향받지 않는다. 이미 등록된 이름이면 정의와
-/// 본문을 **둘 다** 덮어쓴다(재등록으로 갱신하는 것이 정상 사용).
-///
-/// 검증은 파일을 하나라도 쓰기 **전에** 전부 끝낸다 — 정의만 쓰고 본문에서 실패하면
-/// 본문 없는 게이트가 남는다.
+/// 이름·본문·완료 표식·상한을 검증하고 본문 복사본과 정의를 저장한다.
+/// 같은 이름으로 재등록하면 두 파일을 덮어쓴다. 입력 검증은 쓰기 전에 끝낸다.
 pub(crate) fn register(
     data_dir: Option<&Path>,
     short_name: &str,
@@ -352,7 +261,7 @@ pub(crate) fn register(
     }
     let data_dir = require_data_dir(data_dir)?;
 
-    // 이름 공간이 프로필과 한 평면이다 — 조용히 가리지 않고 여기서 거부한다.
+    // 같은 이름의 사용자 프로필을 가리지 않도록 충돌을 거절한다.
     if crate::profile::is_registered(Some(data_dir), short_name) {
         return Err(GateError::ProfileNameConflict(short_name.to_string()));
     }
@@ -390,8 +299,7 @@ pub(crate) fn register(
         message: e.to_string(),
     })?;
 
-    // 본문을 먼저 쓴다 — 정의 파일의 존재가 "이 게이트는 쓸 수 있다" 의 신호이므로,
-    // 그 신호가 본문보다 먼저 나타나면 안 된다.
+    // 정의 파일로 등록 여부를 판단하므로 본문을 먼저 쓴다.
     let body_dest = body_file(data_dir, short_name);
     std::fs::write(&body_dest, &body).map_err(|e| GateError::Io {
         path: body_dest.display().to_string(),
@@ -406,18 +314,11 @@ pub(crate) fn register(
     Ok(())
 }
 
-/// `short_name` 등록을 해제한다. 정의와 본문을 **둘 다** 지운다 — 본문만 남으면
-/// 다음 등록이 조용히 옛 본문을 덮어쓰는 것처럼 보이는 orphan 이 된다. 없으면
-/// `UnknownGate`.
-///
-/// 그 게이트의 **런타임 상태**(마커 + 라운드,
-/// [`crate::checklist::remove_gate_runtime_state`])도 함께 지운다 — 남겨 두면
-/// 같은 이름으로 재등록했을 때 과거의 켜짐 상태와 라운드 카운터가 부활해,
-/// "지웠다 새로 만든 게이트" 가 이전 상태를 물려받는 놀라운 동작이 된다. 이
-/// 정리는 실패해도 unregister 자체를 실패시키지 않는다(`warn!` 만).
+/// 정의와 본문을 제거한다. 등록이 없으면 UnknownGate를 반환한다.
+/// 같은 이름의 재등록이 이전 상태를 물려받지 않도록 활성 파일·회차도 정리한다.
+/// 상태 정리 실패는 경고만 남기고, 정의·본문 삭제의 실패와는 구분한다.
 pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateError> {
-    // 이름이 그대로 파일명이 되므로 삭제도 등록과 같은 관문을 통과해야 한다 —
-    // 검증 없이 경로를 조립하면 `../` 로 data_dir 밖 파일을 지울 수 있다.
+    // 파일을 삭제하기 전에 경로에 넣을 이름을 검증한다.
     if !is_valid_short_name(short_name) {
         return Err(GateError::InvalidShortName(short_name.to_string()));
     }
@@ -430,9 +331,7 @@ pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<()
         path: def.display().to_string(),
         message: e.to_string(),
     })?;
-    // 정의가 사라진 시점이 되돌릴 수 없는 지점이다 — 런타임 상태(마커·라운드)도
-    // 여기서 함께 지운다. 뒤의 본문 삭제가 실패해도 "지웠다 다시 만든 게이트가
-    // 옛 켜짐 상태와 라운드 카운터를 물려받는" 동작은 남지 않아야 한다.
+    // 뒤의 본문 삭제가 실패하더라도 활성 파일과 회차 상태의 정리는 시도한다.
     crate::checklist::remove_gate_runtime_state(Some(data_dir), short_name);
     let body = body_file(data_dir, short_name);
     // 본문이 이미 없는 상태(수동 삭제 등)는 정상 완료로 본다 — 목표는 "둘 다 없음".
@@ -445,20 +344,14 @@ pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<()
     Ok(())
 }
 
-/// 게이트 정의 + 본문을 반환한다. 반환하는 owner prefix(`"user"`/`"host"`)는 실제로
-/// 어느 출처에서 읽었는지를 그대로 반영한다 — 사용자 등록이 없어 host 기본값으로
-/// fallback 됐는데 `"user/..."` 라고 답하면 호출자가 실체와 다른 id 로 착각한다
-/// (`profile::show_registered` 와 같은 이유).
-///
-/// `data_dir` 이 `None` 이어도 host 기본 게이트는 조회된다 — 조회는 저장소를
-/// 요구하지 않는다(등록/해제만 명시적 에러).
+/// 정의와 본문, 실제 출처(user 또는 host)를 반환한다.
+/// 데이터 디렉터리가 없어도 기본 게이트는 조회할 수 있다.
 pub(crate) fn show(
     data_dir: Option<&Path>,
     short_name: &str,
     tr: &Translator,
 ) -> Result<(&'static str, GateDef, String), GateError> {
-    // 조회도 같은 관문 — 검증을 건너뛰면 `../` 로 data_dir 밖 파일 내용을 그대로
-    // 돌려주는 읽기 통로가 된다.
+    // 파일을 읽기 전에도 경로에 넣을 이름을 검증한다.
     if !is_valid_short_name(short_name) {
         return Err(GateError::InvalidShortName(short_name.to_string()));
     }
@@ -487,11 +380,7 @@ pub(crate) fn show(
     }
 }
 
-/// 등록된 사용자 게이트 + host 기본 게이트를 함께 나열한다. host 를 먼저 보여준다 —
-/// "항상 있는 것" 이 먼저 눈에 띄어야 한다(`profile::list` 와 같은 정렬 방침).
-///
-/// 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만**
-/// 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
+/// 기본 게이트를 먼저 나열한다. 같은 이름의 사용자 등록이 있으면 실제 사용할 사용자 항목만 보여준다.
 pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
     let user_names: Vec<String> = data_dir.map(registered_names).unwrap_or_default();
 
@@ -506,8 +395,7 @@ pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary>
         }
     }
     for name in &user_names {
-        // 정의를 못 읽는 항목(손상/권한)은 목록에서 빼지 않고 기본값으로 보여준다 —
-        // 목록에서 사라지면 사용자가 지울 대상조차 찾지 못한다.
+        // 정의가 손상돼도 삭제할 이름을 찾을 수 있도록 목록에는 기본값으로 표시한다.
         let def = data_dir
             .map(|d| registered_file(d, name))
             .and_then(|p| std::fs::read_to_string(p).ok())
@@ -538,8 +426,6 @@ fn summary(id: String, owner: &'static str, def: GateDef, enabled: bool) -> Gate
     }
 }
 
-// ── IPC handler (main.rs 배선 대상) ────────────────────────────────────────
-
 fn require_name<'a>(params: &'a Value, tr: &Translator) -> Result<&'a str, IpcMethodError> {
     params
         .get("name")
@@ -563,9 +449,7 @@ fn summary_to_json(s: &GateSummary) -> Value {
     })
 }
 
-/// `claude.gate_register` — `--name <short> --body-file <path> [--sentinel <s>]
-/// [--rounds <n>]`. `body_file` 은 CLI `path_kind = "file"` 정규화를 이미 거친
-/// 절대경로.
+/// 게이트 등록 IPC. CLI에서 전달한 body_file은 경로 정규화를 거친다.
 pub(crate) fn handle_register(
     data_dir: Option<&Path>,
     params: &Value,
@@ -581,9 +465,7 @@ pub(crate) fn handle_register(
         .get("sentinel")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
-    // `--sentinel ""` 는 CLI 에서 빈 문자열로 도착하는데, 위 filter 가 그걸 `None`
-    // (미지정)으로 접어버리면 "빈 센티넬은 거부" 계약이 조용히 무력화된다. 키가
-    // 존재하는데 값이 빈 경우를 따로 잡아 `EmptySentinel` 로 보낸다.
+    // 빈 표식을 미지정으로 처리하지 않고 별도로 거절한다.
     if sentinel.is_none()
         && params
             .get("sentinel")
@@ -740,9 +622,7 @@ mod tests {
         assert!(matches!(err, GateError::InvalidShortName(_)));
     }
 
-    /// data_dir 밖으로 새는 이름을 만들어 준다 — 게이트 경로가 `data_dir/gates/
-    /// {registered,bodies}/<name>.<ext>` 라, `../` 3개면 tempdir 루트로 빠져나간다.
-    /// 검증이 없으면 그 파일이 실제 대상이 된다는 것이 이 이름이 증명하는 것.
+    /// 이름 검증이 없으면 데이터 디렉터리 밖의 파일에 닿는 입력을 만든다.
     fn escaping_name() -> &'static str {
         "../../../outside"
     }
@@ -855,7 +735,7 @@ mod tests {
         assert!(!registered_file(tmp.path(), "gone").exists());
         assert!(
             !body_file(tmp.path(), "gone").exists(),
-            "본문만 남으면 orphan 이다"
+            "등록 해제 뒤 본문 파일도 없어야 한다"
         );
 
         let err = unregister(Some(tmp.path()), "gone").unwrap_err();
@@ -885,8 +765,7 @@ mod tests {
         assert_eq!(user.round_limit_source, "gate");
     }
 
-    /// `gate-list` 가 게이트별 on/off 를 보여준다 — 게이트마다
-    /// `checklist-status` 를 부르지 않고 한 번에 보려면 이 필드가 필요하다.
+    /// 전체 목록에서 게이트별 활성 상태를 확인할 수 있어야 한다.
     #[test]
     fn list_reports_each_gates_enabled_state() {
         let tmp = tempfile::tempdir().unwrap();
@@ -975,8 +854,7 @@ mod tests {
         assert_eq!(matching[0].id, "user/continue-checklist");
     }
 
-    /// 등록 시점에 미지정한 센티넬은 정의 파일에 기본값으로 실체화된다 — 정의만
-    /// 보고도 실효값을 알 수 있어야 한다.
+    /// 생략한 완료 표식은 정의 파일에 기본값으로 저장한다.
     #[test]
     fn omitted_sentinel_is_materialized_as_the_default() {
         let tmp = tempfile::tempdir().unwrap();
@@ -993,8 +871,7 @@ mod tests {
 mod message_tests {
     use super::*;
 
-    /// 충돌 메시지는 이름을 두 번 쓴다(충돌한 이름 + 해제 명령 예시). `t_fmt` 로
-    /// 넘기면 두 번째 `{}` 가 그대로 새어나가 사용자에게 리터럴 중괄호가 보인다.
+    /// 충돌 이름과 제거 명령의 두 placeholder를 모두 채워야 한다.
     #[test]
     fn name_conflict_messages_fill_every_placeholder() {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");

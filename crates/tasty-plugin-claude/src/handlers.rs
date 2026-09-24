@@ -1,16 +1,5 @@
-//! `tasty-claude` 의 IPC handler fn 들 — 외부 plugin SDK 진입점.
-//!
-//! 자식 terminal 관리(spawn/tell/wait/children/parent/kill/respawn/broadcast)는
-//! 호스트가 내재화한 `terminal.*` IPC(docs/features/child-terminal/index.md)로 **위임**한다. 이
-//! plugin 은 더 이상 자체 child registry 를 보유하지 않는다(호스트 registry 가 단일
-//! SoT). claude **특화**만 여기 남는다:
-//! - `start_claude_in_surface` / `issue_session_token` — session token + agent id +
-//!   TASTY_SURFACE_ID inline env 를 박은 기동 명령 (spawn/respawn 이 소비).
-//! - `build_launch_command` / `handle_launch` — 새 workspace 기동 + error_scan 등록
-//!   (top-level). `handle_spawn`/`handle_respawn` 은 자식 surface 를 error_scan 에
-//!   등록하고 `handle_kill` 은 내린다.
-//! - `handle_children` — 호스트 registry 목록에 `surface.foreground_process` 를 덧씌움.
-//! - wall-time 텔레메트리 타이밍(`ClaudeState`) — hook.rs 가 소비.
+//! Claude IPC 처리. 자식 터미널의 생성·조회·입력·종료는 호스트 terminal.*에 위임한다.
+//! 여기서는 Claude 실행 명령·세션 토큰·오류 감시·알림과 공개 응답 형식을 처리한다.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -30,11 +19,8 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 use crate::error_scan::{ErrorScanner, ScanTarget};
 use crate::reboot::reboot_surface;
 
-/// `profile_file`(직접 지정한 경로)과 `profile`(레지스트리에 등록된 이름 목록,
-/// 쉼표 구분 — `profile.rs` 참고) params 를 최종 `--settings` 파일 경로 하나로
-/// 해석한다. 둘 다 주어지면
-/// 어느 쪽이 이기는지 조용히 정하지 않고 즉시 거부한다 — last-wins 함정을
-/// 경로/이름 인자 사이에서도 반복하지 않기 위함.
+/// 경로나 등록 이름 목록을 --settings 파일 하나로 해석한다.
+/// profile_file과 profile을 함께 지정하면 우선순위를 정하지 않고 거절한다.
 pub(crate) fn resolve_profile_file_param(
     data_dir: Option<&Path>,
     params: &Value,
@@ -60,11 +46,8 @@ pub(crate) fn resolve_profile_file_param(
     }
 }
 
-/// Claude Code `--permission-mode` 가 받는 값 집합. 외부 도구의 계약이라 실측으로
-/// 얻었다(`claude --help`, 2026-09-12). 각 값이 무엇을 뜻하는지는 Claude Code 가
-/// 정하며 이 plugin 은 해석하지 않고 전달만 한다 — 여기서 하는 일은 **모르는 값을
-/// 조용히 흘려보내지 않는 것**뿐이다(`docs/plugins/claude/index.md#승인-정책---permission-mode`
-/// 참조).
+/// 이 플러그인이 허용하는 Claude Code 권한 모드. 의미는 Claude Code가 정하며 값만 전달한다.
+/// 2026-09-12의 claude --help로 확인한 목록이다.
 pub(crate) const VALID_PERMISSION_MODES: &[&str] = &[
     "acceptEdits",
     "auto",
@@ -87,11 +70,7 @@ fn permission_mode_flag(mode: Option<&str>) -> String {
     }
 }
 
-/// settings JSON 이 **권한 모드**를 정하고 있는가. 순수 함수 — 단위 테스트 대상.
-///
-/// `permissions.allow`/`deny` 는 규칙 목록이지 모드가 아니라 `--permission-mode` 와
-/// 축이 달라 충돌로 보지 않는다. 모드를 정하는 키는 `permissions.defaultMode`
-/// 하나다.
+/// permissions.defaultMode를 지정했는지 확인한다. allow·deny 규칙 목록은 모드와 별개다.
 fn settings_json_sets_default_mode(settings: &Value) -> bool {
     settings
         .get("permissions")
@@ -99,10 +78,7 @@ fn settings_json_sets_default_mode(settings: &Value) -> bool {
         .is_some()
 }
 
-/// `--profile`/`--profile-file` 로 주입될 settings 파일이 권한 모드를 정하는지.
-/// 읽기·파싱 실패는 "정하지 않는다" 로 본다 — 이 판정의 목적은 **두 축이 같은 값을
-/// 놓고 조용히 경쟁하는 것**을 막는 것이라, 읽을 수 없는 파일 때문에 기동 자체를
-/// 막지는 않는다(그 파일이 실제로 깨졌다면 Claude Code 가 자기 자리에서 말한다).
+/// 프로필이 권한 모드를 지정했는지 확인한다. 읽기·파싱에 실패하면 false로 처리한다.
 fn profile_file_sets_default_mode(path: &str) -> bool {
     std::fs::read_to_string(path)
         .ok()
@@ -110,10 +86,8 @@ fn profile_file_sets_default_mode(path: &str) -> bool {
         .is_some_and(|v| settings_json_sets_default_mode(&v))
 }
 
-/// 전역 설정(`default_permission_mode`)의 fallback 값. 미설정·`"inherit"` 이면
-/// `None`(= 플래그를 안 붙인다). 설정에 모르는 값이 들어 있으면 기동을 막지 않고
-/// 경고만 남기고 무시한다 — 설정 항목은 select 라 정상 경로로는 생길 수 없는 값이고,
-/// 그것 때문에 모든 기동이 실패하면 사용자가 복구할 창구가 좁다.
+/// 기본 권한 모드. 미설정·inherit이면 플래그를 붙이지 않는다.
+/// 알 수 없는 설정값은 경고하고 무시한다.
 fn default_permission_mode<H: HostCall>(host: &H) -> Option<String> {
     let value = host
         .call(
@@ -130,15 +104,9 @@ fn default_permission_mode<H: HostCall>(host: &H) -> Option<String> {
     Some(value)
 }
 
-/// `permission_mode` param → 기동 명령에 실릴 값. 우선순위는 **호출별 params >
-/// 전역 설정 > 미부착**이고, 아무도 안 고르면 플래그 자체가 안 붙어 자식은 사용자
-/// 자신의 Claude Code 설정대로 뜬다
-/// (`docs/plugins/claude/index.md#승인-정책---permission-mode`).
-///
-/// `profile_file` 이 정하는 settings JSON 에 `permissions.defaultMode` 가 있고
-/// `permission_mode` 도 함께 오면 **거부**한다 — 어느 쪽이 이기는지 조용히 정하지
-/// 않는다([`resolve_profile_file_param`] 이 `profile_file`+`profile` 조합에서,
-/// `profile_merge` 가 `defaultMode` 충돌에서 이미 같은 선택을 했다).
+/// 명시한 인자, 플러그인 설정, 플래그 생략 순서로 권한 모드를 고른다.
+/// 명시한 인자와 프로필의 permissions.defaultMode가 함께 있으면 거절한다.
+/// 명시하지 않은 설정 폴백에는 이 충돌 검사를 적용하지 않는다.
 pub(crate) fn resolve_permission_mode<H: HostCall>(
     host: &H,
     params: &Value,
@@ -166,23 +134,8 @@ pub(crate) fn resolve_permission_mode<H: HostCall>(
     Ok(Some(mode.to_string()))
 }
 
-/// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
-///
-/// `hook.rs` 의 `resolve_surface_id_from` 은 [`optional_target_surface`] 에 **env 폴백**만
-/// 더한 것이라 판정 자체는 아래와 같은 한 벌에서 온다. 이쪽은 폴백이 없어 어느 쪽이든
-/// 에러지만, **자르기는 여기도 위험하다**:
-/// `4_294_967_297 as u32` 는 `1` 이고 `5_000_000_000 as u32` 는 `705_032_704` 다.
-/// 둘 다 실재할 수 있는 다른 surface 의 id 라, 못 읽는 값이 조용히 남의 터미널로 간다.
-///
-/// 메시지도 가른다 — 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을
-/// 안 의심한다.
-/// 판정은 [`tasty_plugin_agent_common::params::u32_field`] 가 한다 — 여기서 하는
-/// 일은 그 갈래를 **이 plugin 의 카탈로그 문구로 옮기는 것**뿐이다.
-///
-/// 문구를 파라미터마다 전용 키로 짓는 것은 짝 crate(codex, `{key}` 를 끼우는 공용
-/// 키)와 다르고, 그 차이는 표류가 아니다 — 이쪽은 호출자가 하나(`child_index`)라
-/// 전용 문구가 더 정확하고, 저쪽은 다섯이라 공용 키가 카탈로그를 안 불린다.
-/// **갈릴 수 있었던 것은 문구가 아니라 판정이었고, 그쪽은 이제 한 벌이다.**
+/// 공용 u32 판정으로 누락·잘못된 값·범위 초과를 구분하고 Claude 번역문으로 안내한다.
+/// 큰 값을 잘라 다른 대상 id로 해석하지 않는다.
 fn require_u32(
     params: &Value,
     key: &str,
@@ -198,21 +151,13 @@ fn require_u32(
     })
 }
 
-/// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
-/// 한 벌이고, 여기서는 그 실패를 **claude 카탈로그의 문구로** 옮기기만 한다.
-/// 두 plugin 이 같은 판정을 각자 구현하면 한쪽만 고쳐지는 순간 갈린다 — 이 함수가
-/// 고치고 있는 결함 자체가 그 형태로 생겼다.
+/// 공용 판정으로 surface·surface_id를 읽고 오류를 Claude 번역문으로 안내한다.
 pub(crate) fn optional_target_surface(
     params: &Value,
     tr: &Translator,
 ) -> Result<Option<u32>, IpcMethodError> {
     target_surface(params).map_err(|e| match e {
-        // `key` 를 버리지 않는다 — 이 판정은 `surface` 와 `surface_id` **두 이름**을 한
-        // 필드로 읽으므로, 어느 쪽이 틀렸는지 안 대면 호출자는 자기가 보낸 두 키 중
-        // 무엇을 고쳐야 하는지 모른다. 짝 plugin(codex)의 **같은 자리**는 처음부터
-        // 그것을 댔다 — 그쪽 훅 경로(`handle_hook`)는 그러지 않았고, 그건 따로 고쳤다.
-        // placeholder 형태는 이 crate 의 관례(`{}` 하나 + 조립한 인자)를 따른다 —
-        // 바로 아래 `Conflict` 가 같은 형태다.
+        // 두 인자 중 잘못된 키 이름도 안내에 포함한다.
         TargetSurfaceError::Malformed { key, raw } => IpcMethodError::invalid_params(&tr.t_fmt(
             "claude.params.target_surface_not_a_number",
             &format!("'{key}' = {raw}"),
@@ -227,19 +172,7 @@ pub(crate) fn optional_target_surface(
     })
 }
 
-/// 대상 surface — 없으면 거절한다. 판정은 [`optional_target_surface`] 와 같다.
-///
-/// **이름이 `require_surface_id` 가 아닌 이유.** 이 함수는 `surface` 와 `surface_id`
-/// **두 키를 한 필드로** 읽는다. 그런데 이 저장소에는 그 이름이 이미 있고, 거기서는
-/// `surface_id` **한 키만** 읽는다(`src/adapters/ipc/handler.rs` 의 호스트 헬퍼와
-/// `tasty-plugin-sdk` 의 런타임 헬퍼). 그래서 여기서 그 이름을 쓰면 **한 이름이 두 술어를
-/// 가리키고**, 두 키의 어긋남이 조용히 지나가던 것이 바로 그 형태였다 — raw IPC 가
-/// `surface_id` 로 지목한 호출이 대상 없는 호출이 되어 호스트의 유일-parent 폴백에
-/// 떨어졌다. 수리는 코드에 남지만 오해는 이름에 남는다.
-///
-/// 실패 문구의 키는 `missing_surface_id` 로 **그대로 둔다** — `missing_target_surface`
-/// 는 같은 표에서 이미 다른 뜻이다(`target_surface` 라는 **literal 파라미터**를 받는
-/// 메서드용). 문구 자체는 두 키를 다 대고 있어 참이다.
+/// surface·surface_id를 같은 대상 필드로 읽되 둘 다 없으면 거절한다.
 pub(crate) fn require_target_surface(
     params: &Value,
     tr: &Translator,
@@ -270,16 +203,8 @@ pub(crate) fn require_child_index(params: &Value, tr: &Translator) -> Result<u32
     )
 }
 
-/// `--child <index>` 를 그 자식의 **surface id** 로 해석한다.
-///
-/// `kill`/`respawn` 은 index 를 그대로 `terminal.kill`/`terminal.respawn` 에 넘겨
-/// 호스트가 해석하게 두지만, 자식 surface 를 대상으로 다른 명령(예: reboot 경로)을
-/// 태우려면 여기서 직접 id 를 알아야 한다.
-///
-/// **필드명 주의**: 여기서 부르는 것은 claude 특화 remap 된 `claude.children`
-/// (`child_surface_id`)이 아니라 **원본** `terminal.children` 이므로 `surface_id` 를
-/// 읽는다 — `handle_children` 이 remap 하는 쪽과 헷갈리면 항상 `None` 이 나온다
-/// (`compute_spawn_warning` 에도 같은 취지의 경고가 붙어 있다).
+/// 부모의 자식 인덱스를 surface id로 바꾼다.
+/// terminal.children 원본의 surface_id를 읽으며 Claude 응답의 child_surface_id와 구분한다.
 pub(crate) fn resolve_child_surface_id<H: HostCall>(
     host: &H,
     parent_surface_id: u32,
@@ -300,8 +225,7 @@ pub(crate) fn resolve_child_surface_id<H: HostCall>(
         .and_then(|c| c.get("surface_id").and_then(|v| v.as_u64()))
         .map(|v| v as u32);
     found.ok_or_else(|| {
-        // 있는 index 를 함께 보여준다 — "없다" 만으로는 오타인지 자식이 이미
-        // 죽은 것인지 호출자가 구분할 수 없다.
+        // 대상 인덱스를 찾지 못하면 현재 사용할 수 있는 인덱스도 안내한다.
         let available: Vec<String> = children
             .iter()
             .filter_map(|c| c.get("index").and_then(|v| v.as_u64()))
@@ -325,16 +249,9 @@ fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value
     host.call(method, params).map_err(IpcMethodError::from)
 }
 
-/// 호스트 registry 목록(`terminal.children`)에 `surface.foreground_process` 로
-/// 각 자식의 PTY 전경 프로세스를 덧씌운다. claude 특화 필드명(`child_surface_id`)을
-/// 보존하기 위해 호스트 응답(`surface_id`)을 remap 한다. 응답은 bare 배열(claude
-/// CLI 출력 shape).
-/// ★ 짝 crate(codex)의 같은 함수와 **응답 shape 이 다르다** — 이쪽은 remap 한
-/// bare 배열, 저쪽은 호스트 응답 그대로다. 그 차이가 왜 남아 있는지는
-/// `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채 남는 것" 에 한 곳으로
-/// 적혀 있다. 여기에 사본을 두지 않는다. 이쪽 shape 을 고정하는 것은
-/// `children_response_is_a_bare_remapped_array` 이고, 저쪽 shape 을 고정하는 짝
-/// 시험이 codex 에 같은 이름 규칙으로 있다 — 한쪽만 바뀌면 그 시험이 빨개진다.
+/// 호스트 자식 목록에 전경 프로세스 정보를 추가한다.
+/// 공개 응답은 배열이며 호스트의 surface_id를 child_surface_id로 바꾼다.
+/// 호스트 객체를 그대로 반환하는 Codex와 형식이 다르다.
 pub(crate) fn handle_children<H: HostCall>(
     host: &H,
     params: &Value,
@@ -358,9 +275,7 @@ pub(crate) fn handle_children<H: HostCall>(
                 "role": c.get("role").cloned().unwrap_or(Value::Null),
                 "nickname": c.get("nickname").cloned().unwrap_or(Value::Null),
                 "state": c.get("state").cloned().unwrap_or(Value::Null),
-                // remap 이 화이트리스트라 호스트가 실어 보낸 판정 근거 3 축 중
-                // `state` 만 옮기면 나머지 둘이 여기서 잘린다 — `confidence` 가
-                // 없으면 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(docs/features/child-terminal/index.md#판정-우선순위).
+                // 상태뿐 아니라 판단 근거와 확실성도 함께 전달한다.
                 "evidence": c.get("evidence").cloned().unwrap_or(Value::Null),
                 "confidence": c.get("confidence").cloned().unwrap_or(Value::Null),
             })
@@ -386,14 +301,8 @@ pub(crate) fn handle_children<H: HostCall>(
     Ok(json!(entries))
 }
 
-/// 자식 Claude 를 종료한다 — 호스트 `terminal.kill` 로 위임(surface.close +
-/// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
-/// 종료된 surface 는 error scanner 에서도 즉시 내린다.
-/// ★ `error_scan` 을 내리는 것은 **의도된 비대칭**이다(codex 에 그 하위 시스템이
-/// 없다). 그 옆의 응답 shape 차이(`{killed: true}` vs 호스트 응답 그대로)는 공개
-/// 호출자의 호환성을 위해 유지하며, 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채
-/// 남는 것" 에 있다. 이쪽 shape 을 고정하는 것은
-/// `kill_response_is_reduced_to_a_killed_flag` 이고, 저쪽에 짝 시험이 있다.
+/// terminal.kill에 종료를 위임하고 오류 감시에서 제거한다.
+/// 공개 성공 응답은 기존 형식인 {killed: true}로 반환한다.
 pub(crate) fn handle_kill<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &H,
@@ -404,11 +313,8 @@ pub(crate) fn handle_kill<H: HostCall>(
     let mut kp = serde_json::Map::new();
     put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child_index));
-    // 호스트 terminal.kill 성공 시 { killed_surface_id, child_index } 반환. claude
-    // CLI 는 기존에 { killed: true } 를 기대하므로 성공을 그 shape 으로 변환한다.
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
-    // 폴링 루프의 생존 대조가 최대 800ms 뒤 어차피 정리하지만, 여기서 즉시 내리면
-    // 그 사이 마지막 출력에 대고 `claude-error` 를 발화할 여지가 사라진다.
+    // 다음 폴링을 기다리지 않고 오류 감시에서 제거한다.
     if let Some(killed) = resp
         .get("killed_surface_id")
         .and_then(|v| v.as_u64())
@@ -419,20 +325,7 @@ pub(crate) fn handle_kill<H: HostCall>(
     Ok(json!({ "killed": true }))
 }
 
-/// 부모의 모든(또는 role 필터된) 자식에 텍스트를 broadcast — 호스트
-/// `terminal.broadcast` 로 위임.
-///
-/// ★ 짝 crate(codex)의 같은 함수와 **본문이 글자 그대로 같고**, 갈리는 것은 실패
-/// 문구의 카탈로그 키 하나뿐이다. 합치지 않은 이유: 남는 다섯 줄은 판정이 아니라
-/// 조립이고, 공용화하려면 문구와 `put_target_surface` 를 **둘 다** 주입해야 한다 —
-/// 뒤엣것을 주입하면 이 crate 안에 대상 surface 를 싣는 길이 둘이 되고, 그것이 지금
-/// 없애려는 종류의 표류다. 이 조립이 읽는 판정(대상 surface)은 이미
-/// [`tasty_plugin_agent_common::params::target_surface`] 한 벌이다.
-///
-/// 두 키의 ko 어미가 다른 것(`누락` vs `가 없다`)도 이 키 하나의 표류가 아니다 —
-/// 카탈로그마다 어미 규약이 통째로 다르다(`[claude.params]` 는 `missing_*` 11 중
-/// 10 이 "누락", `[codex.params]` 는 5 중 4 가 "가 없다"). 이 키만 맞추면 자기 파일
-/// 안에서 그 키가 예외가 된다. en/ja 는 두 카탈로그가 이미 글자 그대로 같다.
+/// 부모의 자식에게 텍스트를 보내는 terminal.broadcast에 위임한다. role 필터도 전달한다.
 pub(crate) fn handle_broadcast(
     host: &HostHandle,
     params: &Value,
@@ -448,9 +341,7 @@ pub(crate) fn handle_broadcast(
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-/// 자식 Claude 에 메시지를 보낸다 — 호스트 `terminal.tell` 로 위임. 개행/제출
-/// 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트가 동일하게
-/// 처리하므로 본문 포맷을 재구현하지 않는다.
+/// terminal.tell에 메시지를 전달한다. 줄바꿈과 제출 처리는 호스트가 담당한다.
 pub(crate) fn handle_tell(
     host: &HostHandle,
     params: &Value,
@@ -467,9 +358,7 @@ pub(crate) fn handle_tell(
         json!({ "surface": surface_id, "text": message }),
     )?;
 
-    // caller_surface 는 dynamic.rs 의 TASTY_SURFACE_ID 자동 채움으로 대개 채워진다.
-    // 없으면(구버전 클라이언트 등) 어디로 알릴지 알 수 없으므로 알림 배선을
-    // 생략한다(soft) — tell 자체의 성공/실패에는 영향 없음.
+    // 알림을 받을 caller_surface가 없으면 훅 등록만 생략하고 tell 결과는 유지한다.
     if let Some(caller_surface) = params.get("caller_surface").and_then(|v| v.as_u64()) {
         register_notify_hooks(host, caller_surface as u32, surface_id, "tell");
     }
@@ -483,9 +372,7 @@ pub(crate) use crate::notifications::{
     handle_notify_done, handle_notify_error, register_notify_hooks,
 };
 
-/// 새 workspace 를 만들고 그 안에서 claude 를 기동한다. child 가 아니라 top-level
-/// 이므로 호스트 child registry 에 등록하지 않는다(launch 는 05 범위 밖 특화 잔류).
-/// error scanner 에 그 surface 를 등록한다.
+/// 새 워크스페이스에 Claude를 실행하고 독립 surface로 오류 감시에 등록한다.
 pub(crate) fn handle_launch(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
@@ -509,8 +396,7 @@ pub(crate) fn handle_launch(
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
     let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
-    // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
-    // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
+    // CLI에서 정규화한 작업 디렉터리를 PTY 생성에 전달한다.
     let mut ws_params = json!({
         "type": "terminal",
         "name": workspace_name,
@@ -555,10 +441,7 @@ pub(crate) fn handle_launch(
     }))
 }
 
-/// `claude` / `claude --task <escaped>` / 뒤에 `--settings "<path>"` ·
-/// `--permission-mode <mode>` 가 붙는 조합.
-/// `profile_file` 은 CLI `path_kind = "file"` 정규화를 이미 거친 절대경로 — 인라인
-/// JSON 이 아니라 파일 경로를 큰따옴표로 감싼다(`reboot::resume_command` 와 동일 규칙).
+/// 작업 인자를 이스케이프하고 settings 경로·권한 모드를 붙인 Claude 실행 명령을 만든다.
 pub(crate) fn build_launch_command(
     task: Option<&str>,
     profile_file: Option<&str>,
@@ -576,11 +459,8 @@ pub(crate) fn build_launch_command(
     cmd
 }
 
-/// 자식 surface 의 PTY 를 갈아끼우고 claude 를 재시작한다. registry 조작(PTY 교체/
-/// Ctrl-C + metadata 갱신 + idle 초기화)은 호스트 `terminal.respawn` 으로 위임하고,
-/// claude 특화 기동 명령만 그 위에 재전송한다. `child_index` → 호스트 `child` 매핑.
-/// error scanner 에는 (재)등록 + dedupe 초기화한다 — surface_id 가 유지되므로 이전
-/// 인스턴스가 남긴 dedupe 스니펫이 재기동 후 같은 에러를 억제할 수 있다.
+/// 호스트 terminal.respawn으로 자식을 준비한 뒤 Claude 실행 명령을 보낸다.
+/// 같은 surface id를 다시 쓰므로 오류 감시의 중복 알림 상태도 초기화한다.
 pub(crate) fn handle_respawn(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
@@ -597,8 +477,7 @@ pub(crate) fn handle_respawn(
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
     let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
-    // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
-    //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
+    // 호스트가 cwd에 따른 PTY 교체와 자식 메타데이터·idle 상태를 처리한다.
     let mut rp = forward(params, &["cwd", "role", "nickname"]);
     put_target_surface(&mut rp, params, tr)?;
     rp.insert("child".into(), json!(child_index));
@@ -613,7 +492,6 @@ pub(crate) fn handle_respawn(
             )
         })?;
 
-    // 2) claude 특화 기동 명령 재전송.
     start_claude_in_surface(
         host,
         child_surface_id,
@@ -622,9 +500,7 @@ pub(crate) fn handle_respawn(
         permission_mode.as_deref(),
     );
 
-    // 3) error scan 대상으로 (재)등록. PTY 가 갈렸으므로 이전 인스턴스의 dedupe
-    //    스니펫은 버린다 — 안 버리면 재기동 후 같은 에러 텍스트가 다시 나도
-    //    `claude-error` 가 억제된다.
+    // 재실행 뒤 같은 오류도 알릴 수 있도록 중복 기록을 지운다.
     {
         let mut s = crate::error_scan::lock_scanner(scanner);
         s.enable(child_surface_id, ScanTarget::Child);
@@ -638,19 +514,8 @@ pub(crate) fn handle_respawn(
     }))
 }
 
-/// `claude.child_profile` 진입점 — 부모가 **자식**에게 지속 세션 프로필을 붙인다.
-///
-/// 부착 자체는 새로 만들지 않는다: `--child <index>` 를 자식 surface id 로 바꾼 뒤
-/// [`crate::reboot::reboot_surface`] 에 그대로 넘긴다 — 자식이 스스로
-/// `reboot --profile` 을 부른 것과 완전히 같은 경로(프로필 검증 → surface meta 부착
-/// → Ctrl+C → `claude -r <sid> --settings`)를 탄다. 중복 가드(`inflight`)도 reboot
-/// 과 같은 set 을 공유하므로 같은 자식에 두 명령이 겹치면 뒤엣것이 거부된다.
-///
-/// `reboot` 과 다른 점은 둘뿐이다:
-/// - 대상이 자식이므로 **호출자(부모)의 턴은 잘리지 않는다** — reboot 문서의
-///   "턴의 마지막 행동으로 호출하라" 제약은 여기 해당하지 않는다.
-/// - `spawn`/`tell` 과 같은 완료 알림 hook 을 자동으로 건다 — 부모가 자식의
-///   재기동 완료(idle/needs_input/exited)를 기다릴 수 있어야 하기 때문.
+/// 자식 인덱스를 surface id로 바꿔 같은 reboot 경로로 프로필을 적용한다.
+/// 재시작 중복 검사도 공유한다. 부모가 아닌 자식을 재시작하고 부모에게 완료 알림을 등록한다.
 pub(crate) fn handle_child_profile(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
@@ -659,8 +524,7 @@ pub(crate) fn handle_child_profile(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let parent_surface_id = require_target_surface(params, tr)?;
-    // `--child` 는 항상 필수다 — 생략을 caller 자신으로 해석하면 `reboot --profile`
-    // 과 창구가 겹친다.
+    // child는 필수이며 생략을 호출자 자신으로 해석하지 않는다.
     let child_index = require_child_index(params, tr)?;
     let child_surface_id = resolve_child_surface_id(host, parent_surface_id, child_index, tr)?;
 
@@ -677,12 +541,8 @@ pub(crate) fn handle_child_profile(
     }))
 }
 
-/// 자식 surface 에서 claude 를 기동한다. surface_id 를 박은 inline env prefix 를
-/// 항상 붙인다:
-/// - `TASTY_SURFACE_ID={surface_id}` — 자식 셸이 `tasty claude hook` 을 발사할 때
-///   자기 위치 식별 (없으면 hook 이 silent skip → idle/needs_input 미갱신).
-/// - `TASTY_AGENT_ID=claude_s<surface_id>` — 관측/비용 agent 식별.
-/// - `TASTY_SESSION_TOKEN=<hex>` — 신원 검증 토큰(발급 실패 시 생략).
+/// 자식 surface에서 Claude를 실행한다. 위치와 관측용 agent id를 환경 변수로 전달하고,
+/// 세션 토큰 발급이 성공했으면 인증 토큰도 붙인다.
 pub(crate) fn start_claude_in_surface(
     host: &HostHandle,
     surface_id: u32,
@@ -726,24 +586,12 @@ pub(crate) fn start_claude_in_surface(
     }
 }
 
-/// prompt 임시파일 이름 prefix. 청소 스윕(`prompt_file::sweep_stale`)이 같은 패턴으로
-/// 자기 파일만 매칭하도록 상수로 뽑는다. suffix·TTL·쓰기·스윕은
-/// `tasty-plugin-agent-common` 이 갖고, **prefix 만** 여기 남는다 — codex plugin 이
-/// 같은 surface_id 로 자기 prompt 파일을 같은 디렉터리에 쓰기 때문에 이름이 갈려야 한다.
+/// 다른 플러그인의 프롬프트 파일과 구분할 접두어. 저장·정리 규칙은 공용 헬퍼를 사용한다.
 const PROMPT_FILE_PREFIX: &str = "tasty-prompt-";
-/// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
-/// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
-/// `profile_file` 이 있으면 positional prompt 인자보다 앞에 `--settings "<path>"` 를
-/// 붙인다. 이 함수는 이미 POSIX 전용 env prefix 를 쓰고 있어(`agent_prefix`) 그
-/// 플랫폼 정합은 이 변경의 범위 밖 — 기존 상태를 그대로 따른다.
-///
-/// 파일 정리 시점: 자식이 `$(cat ...)` 로 이 파일을 다 읽은 순간을 tasty 가 알
-/// 방법이 없다(`surface.send` 는 fire-and-forget 텍스트 주입) — 쓰자마자 지우면
-/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 TTL 을 넘긴 이전 파일들을
-/// 먼저 청소한다(`prompt_file::sweep_stale`) — 지연 삭제.
-/// 권한은 생성 시점부터 0600(owner-only, Unix) 으로 좁힌다 — 생성 후 별도
-/// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
-/// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
+/// 프롬프트를 임시 파일에 쓰고 POSIX 셸의 cat 치환으로 전달할 명령을 만든다.
+/// 파일 쓰기 실패도 기록 후 명령 생성을 계속한다. settings·권한 모드는 본문 앞에 둔다.
+/// 자식이 읽었는지 확인할 수 없어 즉시 삭제하지 않고 다음 생성 때 TTL로 정리한다.
+/// 공용 write는 Unix에서 새 파일에 0600 모드를 지정한다.
 fn claude_launch_command_with_prompt(
     surface_id: u32,
     agent_prefix: &str,
@@ -771,14 +619,9 @@ fn claude_launch_command_with_prompt(
     )
 }
 
-/// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의
-/// 권한 부분집합만 발급되며, 발급 실패는 치명적이지 않으므로 `Option` 반환.
-///
-/// `ipc.invoke:claude` 는 자식이 이 plugin 으로 돌아오는 호출(`tasty claude hook` 완료
-/// 알림, 손자 spawn·tell)의 자격이다 — 호스트는 권한 셋을 가진 caller 가 plugin
-/// namespace 를 부를 때 그 토큰을 요구하고, 자기 namespace 토큰은 소유 plugin 이 쥐지
-/// 않고도 넘길 수 있다. `ipc.invoke:codex` 는 자식이 Codex 교차 검증을 띄우는 자격이라
-/// 매니페스트에 선언해 쥔 것을 넘긴다(docs/dev-guide/plugin-permissions.md#agent-caller--session-token--temp-grants).
+/// 자식의 세션 토큰을 발급한다. 실패하면 토큰 없이 실행하도록 None을 반환한다.
+/// 일반 권한은 플러그인의 허용 범위에서 발급한다. 자기 namespace인 claude는 별도 보유 없이,
+/// codex 호출 권한은 매니페스트로 받은 것을 전달한다.
 pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<String> {
     let resp = match host.call(
         "session.issue",
@@ -810,11 +653,8 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
     token
 }
 
-/// 자식 Claude 를 spawn 한다 — 호스트 `terminal.spawn` 으로 registry 등록 + soft
-/// 점유 + tab 생성(command 미전송)한 뒤, 반환된 surface_id 에 claude 특화 기동
-/// 명령을 전송한다(2단계 spawn). 호스트가 index/tab-name/pane/occupancy 를 소유.
-/// 자식 surface 는 error scanner 대상으로 등록한다 — 사람이 보고 있지 않은 자식이야말로
-/// 네트워크/API 에러 감지가 가장 필요한 대상이다.
+/// terminal.spawn으로 자식 surface를 만든 뒤 Claude 명령을 보내고 오류 감시에 등록한다.
+/// 인덱스·탭·페인·점유 상태는 호스트가 관리한다.
 pub(crate) fn handle_spawn(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,
@@ -830,7 +670,6 @@ pub(crate) fn handle_spawn(
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
     let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
-    // 1) 호스트 registry 에 등록 + 점유 + tab 생성. workspace required.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
     sp.insert("parent".into(), json!(parent_surface_id));
     let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
@@ -844,7 +683,6 @@ pub(crate) fn handle_spawn(
             )
         })?;
 
-    // 2) claude 특화 기동 명령 전송(session token + surface_id inline env 필요).
     start_claude_in_surface(
         host,
         child_surface_id,
@@ -853,42 +691,29 @@ pub(crate) fn handle_spawn(
         permission_mode.as_deref(),
     );
 
-    // 2-1) error scan 대상 등록. `ScanTarget::Child` 로 넣으면 폴링 루프가
-    //      `terminal.parent` 로 관계 생존을 대조하므로, kill/close 뿐 아니라
-    //      `terminal.release`(surface 는 남기고 관계만 해제)까지 함께 정리된다.
+    // 자식 관계로 추적해 surface가 남는 release도 정리할 수 있게 한다.
     crate::error_scan::lock_scanner(scanner).enable(child_surface_id, ScanTarget::Child);
 
-    // claude CLI/auto_wait 는 응답에 parent_surface_id 를 기대한다(호스트 응답엔
-    // 없으므로 caller surface 로 채운다). 나머지 필드(child_surface_id/child_index/
-    // pane_id/workspace_id)는 호스트 응답 그대로.
+    // 호스트 응답에 부모 id를 추가하고 나머지 필드는 그대로 전달한다.
     let mut out = resp;
     if let Some(obj) = out.as_object_mut() {
         obj.insert("parent_surface_id".into(), json!(parent_surface_id));
     }
 
-    // 3) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
+    // 자식 수 경고는 생성 성공을 바꾸지 않는다.
     if let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr) {
         if let Some(obj) = out.as_object_mut() {
             obj.insert("warning".into(), json!(warning));
         }
     }
 
-    // 4) caller(parent_surface_id)에게 완료(idle/needs_input/exited) 1회성 알림 배선.
+    // 부모가 자식 상태 전환을 알 수 있도록 완료 훅을 등록한다.
     register_notify_hooks(host, parent_surface_id, child_surface_id, "spawn");
 
     Ok(out)
 }
 
-/// spawn 직후 parent 의 현재 child 목록/상태를 재조회해 임계치 초과 여부를 판단한다.
-/// host 호출 실패는 경고 생략으로 처리한다(soft 경고이므로 spawn 성공을 막지 않음).
-///
-/// 여기서 부르는 건 claude 특화 remap 된 `claude.children`(필드명 `child_surface_id`)이
-/// 아니라 **원본** `terminal.children`(필드명 `surface_id`) — `index`/`state` 필드명은
-/// 양쪽 shape 모두 동일하므로 아래 파싱 코드는 원본 응답에 그대로 맞는다.
-/// 자식 인구는 [`tasty_plugin_agent_common::children::spawn_census`] 가 센다 —
-/// 그 판정(확정 stale 만 센다 · 못 읽으면 `None`)이 짝의 두 crate 에 주석까지
-/// 글자 그대로 두 벌 있었다. 여기 남는 것은 **문구 조립**뿐이다: 카탈로그
-/// namespace 와 기존 placeholder 형식을 보존해 공개 카탈로그 호환성을 유지한다.
+/// 공용 자식 상태 집계로 생성 후 경고를 만든다. 조회 실패는 경고 생략으로 처리한다.
 fn compute_spawn_warning(
     host: &HostHandle,
     parent_surface_id: u32,
@@ -898,13 +723,8 @@ fn compute_spawn_warning(
     build_spawn_warning(tr, c.total, &c.idle, &c.stale, c.threshold)
 }
 
-/// host 호출은 `tr`(순수 조회) 뿐 — 단위 테스트 대상.
-///
-/// 재사용 후보를 **두 목록으로 나눈다.** 둘 다 respawn 대상이지만 근거가 다르다:
-/// `idle` 은 자식이 hook 으로 완료를 직접 보고한 값이고, 확정 `stale` 은 보고가 오지
-/// 않은 채 호스트 관측이 "전경이 셸로 돌아왔다" 를 잡아낸 값이다(hook 유실 —
-/// docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오). 후자에 "이미 작업을 끝냈다" 는 문구를 쓰면 자식이
-/// 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다.
+/// idle과 confirmed stale을 별도로 안내한다.
+/// 전자는 완료 보고가 있고 후자는 보고 없이 전경이 셸로 돌아온 상태다.
 fn build_spawn_warning(
     tr: &Translator,
     total: usize,
@@ -944,10 +764,7 @@ pub(crate) fn handle_parent(
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
-/// 자식 surface 단건 상태 조회 — 호스트 `terminal.state` 로 위임.
-/// `claude` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
-/// namespace 밖을 참조할 수 없어서다(결정 2) — `claude.spawn` 기본 전략이 이
-/// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
+/// 완료 전략은 자기 namespace의 메서드를 사용해야 하므로 terminal.state를 claude.state로 제공한다.
 pub(crate) fn handle_state(
     host: &HostHandle,
     params: &Value,
@@ -958,27 +775,18 @@ pub(crate) fn handle_state(
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트의 정리 작업에서 결과를 의도적으로 무시한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 
-    /// 대상 surface 를 **호스트로 넘기는 params 에 실제로 싣는다.**
-    ///
-    /// 이 판정이 없어서 났던 일: `claude.kill` / `claude.respawn` 은 `surface_id`
-    /// 를 읽어놓고 호스트에는 `surface` 키만 pass-through 했다. 두 이름이 갈린
-    /// 자리라 `surface_id` 만 실은 호출은 **아무 대상도 안 실은 호출**이 됐고,
-    /// 호스트는 유일-parent 폴백으로 답했다 — 존재하지 않는 surface 를 지목한
-    /// 호출이 남의 자식을 죽이고 성공을 돌려줬다.
-    ///
-    /// 그래서 이 테스트는 "에러가 안 난다" 가 아니라 **실린 값**을 본다.
+    /// 어느 대상 키로 입력해도 호스트 params의 surface에 전달돼야 한다.
     #[test]
     fn the_target_surface_reaches_the_host_under_either_name() {
         let tr = test_translator();
         for params in [json!({ "surface": 7 }), json!({ "surface_id": 7 })] {
             let mut out = serde_json::Map::new();
-            put_target_surface(&mut out, &params, &tr).expect("두 이름 다 받는다");
+            put_target_surface(&mut out, &params, &tr).expect("두 대상 키를 모두 받아야 한다");
             assert_eq!(
                 out.get("surface"),
                 Some(&json!(7)),
@@ -987,9 +795,7 @@ mod tests {
         }
     }
 
-    /// 아무 이름도 안 주면 **아무것도 안 싣는다** — 호스트의 유일-parent 폴백이
-    /// 곧 CLI 의 "`--surface` 생략" 동작이므로, 여기서 값을 지어내면 그 동작이
-    /// 사라진다.
+    /// 대상을 생략한 요청에는 값을 넣지 않아 호스트의 기본 대상 선택을 유지한다.
     #[test]
     fn no_target_named_stays_no_target_sent() {
         let tr = test_translator();
@@ -1001,8 +807,7 @@ mod tests {
         );
     }
 
-    /// 두 이름이 **다른 값**이면 고르지 않고 거절한다. 어느 쪽을 골라도 절반의
-    /// 호출자에게는 지목하지 않은 대상이 된다.
+    /// 두 대상 키가 서로 다르면 거절한다.
     #[test]
     fn two_names_with_different_values_are_refused_not_picked() {
         let tr = test_translator();
@@ -1011,7 +816,7 @@ mod tests {
         let msg = format!("{e:?}");
         assert!(
             msg.contains('1') && msg.contains('2'),
-            "어느 두 값이 부딪혔는지 안 알려준다: {msg}"
+            "충돌한 두 값이 오류 안내에 없다: {msg}"
         );
         // 같은 값이면 부딪힌 것이 아니다.
         assert_eq!(
@@ -1021,8 +826,7 @@ mod tests {
         );
     }
 
-    /// `require_target_surface` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
-    /// 실재하는 surface id 를 쓰지 않는다 — 그 id 가 사라지면 회귀가 뜻을 잃는다.
+    /// 실제 자원을 만들지 않고 누락·정상·형식 오류·범위 초과를 검사한다.
     #[test]
     fn required_u32_params_separate_absent_from_malformed_and_refuse_to_truncate() {
         let tr = test_translator();
@@ -1047,7 +851,7 @@ mod tests {
         assert!(m.contains("32 bits"), "{m}");
         assert!(!m.contains("Missing"), "값이 왔는데 없다고 답한다: {m}");
 
-        // ④ ★ 범위 초과 — 자르면 다른 surface 가 된다(`u32::MAX + 2` → 1).
+        // 범위를 넘는 값을 잘라 다른 id로 해석해서는 안 된다.
         for over in [
             u64::from(u32::MAX) + 1,
             u64::from(u32::MAX) + 2,
@@ -1055,7 +859,7 @@ mod tests {
         ] {
             assert!(
                 require_target_surface(&json!({ "surface_id": over }), &tr).is_err(),
-                "{over} 가 안 걸린다"
+                "범위를 넘는 {over}를 거절해야 한다"
             );
             assert!(require_child_index(&json!({ "child_index": over }), &tr).is_err());
         }
@@ -1063,8 +867,7 @@ mod tests {
         assert!(require_target_surface(&json!({ "surface_id": -1 }), &tr).is_err());
     }
 
-    /// `null` 슬롯은 **안 왔다**로 읽는다 — 직렬화가 빈 슬롯을 `null` 로 채우는 경우가
-    /// 있어, 오타로 취급하면 정상 경로가 막힌다.
+    /// null도 인자 부재로 처리한다.
     #[test]
     fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
         let tr = test_translator();
@@ -1072,9 +875,7 @@ mod tests {
         assert!(format!("{e:?}").contains("Missing"), "{e:?}");
     }
 
-    /// 실제 crate `lang/` 을 로드한 `Translator` — 하드코딩 영문 assertion 을
-    /// lang 파일 드리프트로부터 고정한다(`checklist.rs` 의 SENTINEL 핀 테스트와
-    /// 동일 패턴).
+    /// 실제 영어 카탈로그로 오류 안내를 검사한다.
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
@@ -1085,24 +886,7 @@ mod tests {
         Translator::load(&lang_dir, code)
     }
 
-    /// 오형식 대상 surface 는 **어느 키가 틀렸는지** 댄다.
-    ///
-    /// 이 판정은 `surface` 와 `surface_id` **두 이름을 한 필드로** 읽는다. 그래서
-    /// 틀린 키를 안 대면 호출자는 자기가 보낸 둘 중 무엇을 고쳐야 하는지 모른다 —
-    /// 한동안 이쪽이 `Malformed { raw, .. }` 로 키를 버려서 정확히 그랬고, 짝
-    /// plugin(codex)은 처음부터 댔다. 같은 이름의 시험이 그쪽에도 있다: 두 사본이
-    /// **정보량**을 함께 고정한다(문구·placeholder 형태는 여전히 crate 마다 다르고,
-    /// 그 축은 `tasty-plugin-agent-common` 의 crate doc 이 호환성을 위해 보존하는 것이다).
-    ///
-    /// 이 판정을 거치는 자리는 **넷**이다. 나머지 둘은 훅 경로다: 이쪽의
-    /// `hook.rs::resolve_surface_id_from` 은 env 폴백이 더 붙어 있고, codex 쪽의
-    /// `handlers.rs::handle_hook` 은 한동안 세 갈래를 전부 `--surface 를 대라` 한
-    /// 문장으로 덮어 이 축을 깨고 있었다(그래서 위 "짝 plugin 은 처음부터" 는
-    /// **판정부 자리에 한한 말**이다). 넷 다 자기 시험으로 같은 축을 따로 고정한다.
-    ///
-    /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라
-    /// 세 카탈로그에서 똑같이 나와야 하고, 한 언어만 보면 다른 언어에서 문구를
-    /// 손보다 키를 흘려도 안 잡힌다.
+    /// 잘못된 인자 이름을 세 언어에서 모두 알려야 한다.
     #[test]
     fn a_malformed_target_surface_names_which_of_the_two_keys_was_wrong() {
         for locale in ["en", "ko", "ja"] {
@@ -1156,8 +940,7 @@ mod tests {
         assert!(build_spawn_warning(&tr, 4, &[], &[], 3.0).is_some());
     }
 
-    /// 확정 stale 자식만 있어도 respawn 을 권해야 한다 — hook 유실로 idle 보고가
-    /// 영영 오지 않는 자식이 정확히 이 경우다(docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오).
+    /// confirmed stale도 재실행 후보로 안내한다.
     #[test]
     fn build_spawn_warning_lists_stale_children_as_respawn_candidates() {
         let tr = test_translator();
@@ -1166,8 +949,7 @@ mod tests {
         assert!(w.contains('3'), "{w}");
     }
 
-    /// stale 문구는 idle 문구와 분리된다 — 보고받지 않은 자식에 "이미 끝냈다" 는
-    /// 문구를 쓰면 자식이 그렇게 보고한 것처럼 읽힌다.
+    /// 완료 보고가 없었던 stale을 idle과 같은 문구로 안내하지 않는다.
     #[test]
     fn build_spawn_warning_separates_stale_wording_from_idle() {
         let tr = test_translator();
@@ -1222,9 +1004,7 @@ mod tests {
         );
     }
 
-    /// `settings.get_plugin_setting` 하나만 답하는 최소 host — 승인 정책 해석은
-    /// 그 한 물음 말고는 host 를 안 부른다. `MockHost` 는 hook 사이클을 흉내 내는
-    /// 물건이라 이 축을 표현할 자리가 없다.
+    /// 권한 기본 설정만 반환하는 시험용 호스트.
     struct SettingHost(Option<&'static str>);
 
     impl HostCall for SettingHost {
@@ -1275,9 +1055,7 @@ mod tests {
 
     #[test]
     fn resolve_permission_mode_defaults_to_no_flag() {
-        // docs/plugins/claude/index.md#승인-정책---permission-mode — params 도 설정도 없으면 플래그를 안 붙인다(사용자 자신의
-        // Claude Code 설정이 그대로 정한다). codex 와 달리 비대화형 값으로 떨어뜨리지
-        // 않는다.
+        // 인자와 플러그인 설정이 모두 없으면 Claude Code의 설정을 따른다.
         let host = SettingHost(None);
         assert_eq!(
             resolve_permission_mode(&host, &json!({}), None, &test_translator()).unwrap(),
@@ -1375,7 +1153,7 @@ mod tests {
         assert!(format!("{err:?}").contains("defaultMode"), "got {err:?}");
     }
 
-    /// `allow`/`deny` 는 규칙 목록이지 모드가 아니다 — 같은 축이 아니므로 공존한다.
+    /// allow·deny는 모드가 아닌 규칙이므로 권한 모드와 함께 지정할 수 있다.
     #[test]
     fn resolve_permission_mode_allows_a_profile_that_only_lists_rules() {
         let dir = tempfile::tempdir().unwrap();
@@ -1421,10 +1199,7 @@ mod tests {
         );
     }
 
-    // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
-    // 원래 이 회귀 가드가 겨냥한 한국어 문구는 `lang/ko.toml` 로 옮겨졌으므로,
-    // 그 locale 을 실제로 로드해 동일 속성을 검증한다(하드코딩 복제 대신 lang
-    // 파일을 SoT 로 삼는다 — `checklist.rs` SENTINEL 핀 테스트와 동일 이유).
+    // 실제 한국어 번역으로 작업 완료 알림의 뜻을 검사한다.
     fn test_translator_ko() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "ko")
@@ -1444,15 +1219,13 @@ mod tests {
 
     #[test]
     fn notify_done_message_does_not_read_as_command_itself_completing() {
-        // 회귀 방지: 과거 "{command_name} 완료: surface N" 형태는 "spawn 이라는 동작이
-        // 완료됐다"로 오독되기 쉬웠다 — command_name 이 더 이상 완료의 주어로 문장
-        // 맨 앞에 오지 않아야 한다.
+        // spawn/tell 명령 자체가 완료된 것으로 읽히는 문장으로 시작하지 않아야 한다.
         let tr = test_translator_ko();
         for command_name in ["spawn", "tell"] {
             let msg = notify_done_message(&tr, command_name, 7);
             assert!(
                 !msg.starts_with(&format!("{command_name} 완료")),
-                "옛 오독 유발 포맷으로 회귀함: {msg}"
+                "명령 자체의 완료로 읽히는 안내다: {msg}"
             );
         }
     }
@@ -1493,7 +1266,7 @@ mod tests {
         assert_eq!(err.code, -32602);
     }
 
-    // ── 형제 once-hook 정리 재현 (docs/plugins/claude/index.md 의 notify-done 형제 hook 정리 절 참조) ──
+    // 같은 명령으로 등록한 완료 훅의 정리와 재등록.
 
     use std::cell::RefCell;
 
@@ -1506,18 +1279,13 @@ mod tests {
         once: bool,
     }
 
-    /// hook.set/list/unset + terminal.tell 을 in-memory 로 시뮬레이션하는 mock 호스트.
-    /// `fire` 로 특정 surface 의 특정 event once-hook 을 실제 host 처럼 제거(once)한다.
-    /// `alive` 는 `surface.locate` 응답을 시뮬레이션 — 기본은 아무도 살아있지 않은
-    /// 것으로 취급하고(= surface.locate 조회 실패와 동일하게 안전 쪽으로 fallback),
-    /// `mark_alive`/`mark_dead` 로 명시적으로 상태를 세팅한다.
+    /// 훅 등록·정리와 메시지 전달을 모의 실행한다.
+    /// surface.locate는 기본적으로 exists=false이며 mark_alive/mark_dead로 바꾼다.
     struct MockHost {
         hooks: RefCell<Vec<MockHook>>,
         next_id: RefCell<u64>,
         alive: RefCell<std::collections::HashSet<u32>>,
-        /// `terminal.children` 응답의 `children` 배열. 호스트 원본 스키마 그대로
-        /// `surface_id` 필드를 쓴다 — claude 특화 remap(`child_surface_id`)은
-        /// `handle_children` 이 나중에 얹는 것이라 여기 있으면 안 된다.
+        /// terminal.children 원본 배열. 변환 전이므로 surface_id를 사용한다.
         children: RefCell<Vec<Value>>,
     }
 
@@ -1535,8 +1303,7 @@ mod tests {
             *self.children.borrow_mut() = children;
         }
 
-        /// event 발화 시뮬레이션 — 매칭 once-hook 제거(호스트 `check_and_fire` 의
-        /// retain 과 동일). 상시 hook(once=false)은 남긴다. 발화한 hook 개수를 반환.
+        /// 매칭되는 once 훅을 제거하고 해당 개수를 반환한다. 상시 훅은 남긴다.
         fn fire(&self, surface_id: u32, event: &str) -> usize {
             let mut hooks = self.hooks.borrow_mut();
             let fired = hooks
@@ -1547,8 +1314,7 @@ mod tests {
             fired
         }
 
-        /// 완료 알림(notify-done) 그룹의 command 만 — 에러 정지 알림 hook 은 별개
-        /// 수명이라 형제 사이클 assertion 에서 제외한다.
+        /// 완료 훅의 command만 모은다. 상시 오류 알림은 수명이 달라 제외한다.
         fn done_commands_on(&self, surface_id: u32) -> Vec<String> {
             self.commands_on(surface_id)
                 .into_iter()
@@ -1574,13 +1340,12 @@ mod tests {
                 .collect()
         }
 
-        /// `surface.locate` 가 `exists: true` 를 돌려주도록(= 아직 process 가 살아있음).
+        /// surface.locate가 exists=true를 반환하도록 한다.
         fn mark_alive(&self, surface_id: u32) {
             self.alive.borrow_mut().insert(surface_id);
         }
 
-        /// `surface.locate` 가 `exists: false` 를 돌려주도록(= process-exit 로 host 가
-        /// 이미 surface 를 닫아버림을 재현).
+        /// surface.locate가 exists=false를 반환하도록 한다.
         fn mark_dead(&self, surface_id: u32) {
             self.alive.borrow_mut().remove(&surface_id);
         }
@@ -1635,9 +1400,7 @@ mod tests {
         }
     }
 
-    // ── `--child <index>` → child surface id 해석 — 호스트가 주는 원본 `surface_id`
-    // 로만 풀고, 없는 index 는 실재하는 index 목록과 함께 거절한다
-    // (docs/plugins/claude/index.md 의 `child-profile` 절) ──
+    // 호스트 자식 인덱스를 surface id로 해석한다.
 
     #[test]
     fn child_index_resolves_to_the_hosts_surface_id() {
@@ -1676,9 +1439,7 @@ mod tests {
 
     #[test]
     fn child_index_does_not_read_the_claude_remapped_field() {
-        // `claude.children` 이 쓰는 `child_surface_id` 만 있고 원본 `surface_id` 가
-        // 없으면 해석은 실패해야 한다 — 두 필드를 헷갈린 채 통과하면 엉뚱한
-        // surface 를 재기동시킨다.
+        // 변환된 Claude 응답의 필드명으로 원본 호스트 응답을 읽어서는 안 된다.
         let tr = test_translator();
         let host = MockHost::new();
         host.set_children(vec![json!({ "index": 0, "child_surface_id": 7 })]);
@@ -1699,16 +1460,14 @@ mod tests {
 
         assert!(
             host.done_commands_on(target).is_empty(),
-            "형제 hook 이 하나도 남지 않아야 함 — process-exit 좀비 없음: {:?}",
+            "같은 완료 그룹의 훅이 모두 제거돼야 한다: {:?}",
             host.done_commands_on(target)
         );
     }
 
     #[test]
     fn concurrent_registrations_leave_no_zombie() {
-        // 같은 child(target) 에 spawn 완료 hook 과 tell 완료 hook 이 겹쳐 등록된 상태
-        // (spawn 후 fire 전에 tell 이 들어온 경우). 단일 meta 슬롯을 덮어쓰던 옛
-        // 방식이면 여기서 spawn 그룹의 process-exit 이 좀비로 남았다.
+        // 같은 자식에 spawn과 tell의 완료 훅을 각각 등록한다.
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "spawn");
@@ -1733,11 +1492,11 @@ mod tests {
         // spawn 그룹은 완전히 사라져야 한다.
         assert!(
             remaining.iter().all(|c| c == &tell_cmd),
-            "spawn 그룹 좀비 잔존: {remaining:?}"
+            "spawn 완료 그룹의 훅이 남았다: {remaining:?}"
         );
         assert!(
             !remaining.iter().any(|c| c == &spawn_cmd),
-            "spawn 그룹 process-exit 좀비 남음"
+            "spawn 그룹의 process-exit 훅이 남았다"
         );
 
         // 이제 tell 그룹도 fire → 전부 정리.
@@ -1750,13 +1509,7 @@ mod tests {
         );
     }
 
-    // ── 자기재무장(self-rearm) — child 가 살아있는 동안 알림 반복 (docs/plugins/claude/index.md 의 자기재무장 절 참조) ──
-    //
-    // 배경: needs-input/claude-idle 은 process-exit 와 달리 "child 가 아직 살아있는
-    // 상태 전환"일 수 있다(예: 애매한 지시에 되묻고 다시 작업 재개). 형제 hook 이
-    // once=true 라 한 번 fire 하면 남은 형제도 정리돼 그 spawn/tell 콜당 알림이 딱
-    // 1번만 오던 문제 — child 가 진짜 완료되기 전에 needs-input 을 한 번이라도 거치면
-    // 그 뒤엔 재알림 경로가 없었다.
+    // 대상 surface가 남아 있으면 완료 훅을 다시 등록해 이후 상태 전환도 알린다.
 
     #[test]
     fn handle_notify_done_rearms_when_target_still_alive() {
@@ -1779,12 +1532,10 @@ mod tests {
         assert_eq!(
             host.done_commands_on(target).len(),
             3,
-            "살아있으면 형제 hook 이 다시 3개로 재무장돼야 함"
+            "대상 surface가 남아 있으면 완료 훅 3개를 다시 등록해야 한다"
         );
 
-        // 2번째 전환: 진짜 완료(claude-idle) — 여전히 살아있는 상태에서 fire 됐다고
-        // 가정(실제로는 이 직후 host 가 종료를 감지해도, hook 발화 자체는 idle 이 먼저
-        // 다다르는 케이스를 재현). 재무장이 반복되는지 확인.
+        // surface가 남아 있는 두 번째 상태 전환에서도 재등록해야 한다.
         assert_eq!(host.fire(target, "claude-idle"), 1);
         handle_notify_done(
             &host,
@@ -1795,11 +1546,9 @@ mod tests {
         assert_eq!(
             host.done_commands_on(target).len(),
             3,
-            "두 번째 전환에도 계속 재무장돼야 함 — 'spawn/tell 당 1회' 로 되돌아가면 안 됨"
+            "두 번째 상태 전환에도 완료 훅을 다시 등록해야 한다"
         );
     }
-
-    // ── 에러 정지 알림 배선 (`claude-error-stalled`) ──
 
     #[test]
     fn spawn_tell_wiring_subscribes_the_error_axis() {
@@ -1839,9 +1588,13 @@ mod tests {
             assert_eq!(
                 host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
                 1,
-                "재무장 사이클을 돌아도 에러 hook 은 정확히 1개로 유지"
+                "완료 훅을 다시 등록해도 오류 훅은 하나만 유지해야 한다"
             );
-            assert_eq!(host.done_commands_on(target).len(), 3, "형제 재무장도 정상");
+            assert_eq!(
+                host.done_commands_on(target).len(),
+                3,
+                "완료 훅 3개도 다시 등록해야 한다"
+            );
         }
     }
 
@@ -1880,7 +1633,7 @@ mod tests {
 
     #[test]
     fn notify_error_message_appends_error_line_hint() {
-        // codex `notify-caller` 선례 — 알림 조립 직전 화면을 읽어 실패 원인을 덧붙인다.
+        // 화면에 오류 줄이 있으면 알림에 그 내용을 덧붙인다.
         struct ScreenHost(&'static str);
         impl HostCall for ScreenHost {
             fn call(
@@ -1918,8 +1671,7 @@ mod tests {
         host.mark_alive(target);
         register_notify_hooks(&host, caller, target, "spawn");
 
-        // process-exit 로 fire — host 는 이 시점에 이미 동기로 surface 를 닫으므로
-        // surface.locate 가 exists:false 를 돌려주는 상황을 재현.
+        // surface가 없다고 응답하는 상태에서 process-exit 훅을 처리한다.
         assert_eq!(host.fire(target, "process-exit"), 1);
         host.mark_dead(target);
         let tr = test_translator();
@@ -1932,17 +1684,12 @@ mod tests {
 
         assert!(
             host.done_commands_on(target).is_empty(),
-            "죽은 surface 에 재무장하면 좀비 hook: {:?}",
+            "없는 surface에 완료 훅을 다시 등록해서는 안 된다: {:?}",
             host.done_commands_on(target)
         );
     }
 
-    // ── 짝 crate 와 갈린 응답 shape 고정 (`tasty_plugin_agent_common` crate doc
-    //    "짝이 갈린 채 남는 것") — codex 에 같은 두 물음을 묻는 짝 시험이 있다 ──
-
-    /// 호스트 원본 응답만 돌려주는 mock. 위 `MockHost` 는 hook 사이클을 흉내 내는
-    /// 물건이라 `terminal.kill` 성공 응답의 두 필드를 표현하는 축이 없다 — 그
-    /// 축만 따로 세운다.
+    /// 호스트 자식 목록·전경 프로세스·종료 응답을 반환해 Claude 응답 변환을 검사하는 mock.
     struct ShapeHost;
 
     impl HostCall for ShapeHost {
@@ -1969,25 +1716,26 @@ mod tests {
         }
     }
 
-    /// 응답은 **bare 배열**이고, 호스트 `surface_id` 는 `child_surface_id` 로
-    /// remap 되며, 자식마다 foreground 정보가 덧씌워진다. 짝 crate(codex)는 호스트
-    /// 응답을 그대로 흘린다. 기존 공개 응답을 호환성 때문에 유지하므로,
-    /// 그 변환이 조용히 바뀌지 않도록 여기서 못박는다.
+    /// 배열 응답과 child_surface_id 변환, 전경 프로세스 정보 추가를 유지해야 한다.
     #[test]
     fn children_response_is_a_bare_remapped_array() {
         let out = handle_children(&ShapeHost, &json!({ "surface_id": 1 }), &test_translator())
             .expect("handle_children");
         let arr = out
             .as_array()
-            .unwrap_or_else(|| panic!("bare 배열이 아니다 (호스트 shape 으로 돌아갔나): {out}"));
+            .unwrap_or_else(|| panic!("응답이 배열이 아니다: {out}"));
         assert_eq!(arr.len(), 1);
         let e = &arr[0];
-        assert_eq!(e["child_surface_id"], json!(42), "remap 이 사라졌다: {e}");
+        assert_eq!(
+            e["child_surface_id"],
+            json!(42),
+            "child_surface_id 필드로 변환되지 않았다: {e}"
+        );
         assert!(
             e.get("surface_id").is_none(),
             "호스트 필드명이 그대로 남았다: {e}"
         );
-        // 화이트리스트가 판정 근거 3 축을 다 옮기는지(docs/features/child-terminal/index.md#판정-우선순위).
+        // 상태와 판단 근거·확실성을 모두 전달한다.
         assert_eq!(e["state"], json!("idle"));
         assert_eq!(e["evidence"], json!("prompt"));
         assert_eq!(e["confidence"], json!("certain"));
@@ -1995,9 +1743,7 @@ mod tests {
         assert_eq!(e["foreground_pid"], json!(4242));
     }
 
-    /// 성공 응답은 `{"killed": true}` 하나로 줄어든다 — 호스트가 실어 보낸
-    /// `killed_surface_id`·`child_index` 는 여기서 버려진다. 짝 crate(codex)는 그
-    /// 둘을 그대로 흘린다.
+    /// 종료 성공 응답은 기존 공개 형식인 {killed: true}를 유지한다.
     #[test]
     fn kill_response_is_reduced_to_a_killed_flag() {
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
@@ -2011,7 +1757,7 @@ mod tests {
         assert_eq!(
             out,
             json!({ "killed": true }),
-            "응답 shape 이 바뀌었다 — 짝 crate 와의 차이가 정해지기 전에는 못 바꾼다"
+            "기존 공개 응답인 killed 플래그를 유지해야 한다"
         );
     }
 }
