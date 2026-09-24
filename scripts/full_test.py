@@ -1,4 +1,4 @@
-"""Full functional test for tasty via IPC. Run with a GUI instance already started."""
+"""Legacy manual IPC scenarios for an isolated GUI instance. Uses older UI methods and a fixed screenshot directory; running it changes the connected instance and removes test_*.ppm files there."""
 import socket, json, time, os, sys
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 0
@@ -81,7 +81,6 @@ print('=' * 60)
 print('TASTY GUI FULL FUNCTIONAL TEST')
 print('=' * 60)
 
-# 1. Initial state
 print('\n[1] Initial State')
 info = ipc('system.info')
 check('system.info returns version', info and 'version' in info)
@@ -97,7 +96,6 @@ if surfaces:
     check('surface has valid cols', surfaces[0]['cols'] > 10)
     check('surface has valid rows', surfaces[0]['rows'] > 5)
 
-# 2. Terminal I/O
 print('\n[2] Terminal Input/Output')
 ipc('surface.set_mark')
 ipc('surface.send', {'text': 'echo hello_test\r\n'})
@@ -109,14 +107,12 @@ check('screen_text not empty', screen and len(screen.get('text', '').strip()) > 
 cursor = ipc('surface.cursor_position')
 check('cursor position valid', cursor and 'x' in cursor and 'y' in cursor)
 
-# 3. Key combos
 print('\n[3] Key Combos')
 for key, mods in [('c', ['ctrl']), ('z', ['ctrl']), ('d', ['ctrl']), ('x', ['alt'])]:
     r = ipc('surface.send_combo', {'key': key, 'modifiers': mods})
     label = '+'.join(mods) + '+' + key
     check(f'send_combo {label}', r and r.get('sent'))
 
-# 4. Pane Split (vertical)
 print('\n[4] Pane Split Vertical')
 r = ipc('pane.split', {'direction': 'vertical'})
 check('vertical split succeeds', r and r['pane_count'] == 2)
@@ -130,7 +126,6 @@ ss = screenshot('split_v')
 left, right = analyze_halves(ss)
 check('both panes render (vertical)', left > 50 and right > 50, f'left={left} right={right}')
 
-# 5. Pane Focus
 print('\n[5] Pane Focus')
 panes = ipc('pane.list')
 if panes and len(panes) >= 2:
@@ -138,21 +133,18 @@ if panes and len(panes) >= 2:
     r = ipc('pane.focus', {'pane_id': first_id})
     check('focus pane by ID', r and r.get('focused'))
 
-# 6. Close Pane
 print('\n[6] Close Pane')
 r = ipc('pane.close')
 check('close pane', r and r.get('closed'))
 ui = ipc('ui.state')
 check('back to 1 pane', ui and ui['pane_count'] == 1)
 
-# 7. Horizontal Split
 print('\n[7] Pane Split Horizontal')
 r = ipc('pane.split', {'direction': 'horizontal'})
 check('horizontal split', r and r['pane_count'] == 2)
 time.sleep(1)
 ipc('pane.close')
 
-# 8. Tabs
 print('\n[8] Tab Operations')
 r = ipc('tab.create')
 check('create tab', r and r['tab_count'] == 2)
@@ -161,7 +153,6 @@ check('tab list has 2', tabs and len(tabs) == 2)
 r = ipc('tab.close')
 check('close tab', r and r.get('closed'))
 
-# 9. Workspaces
 print('\n[9] Workspace Operations')
 r = ipc('workspace.create', {'name': 'ws_test'})
 check('create workspace', r and 'id' in r)
@@ -173,14 +164,12 @@ r = ipc('workspace.select', {'index': 1})
 check('switch to ws 1', r and r['active_workspace'] == 1)
 ipc('workspace.select', {'index': 0})
 
-# 10. Notifications
 print('\n[10] Notifications')
 r = ipc('notification.create', {'title': 'Test', 'body': 'Hello'})
 check('create notification', r and r.get('created'))
 nlist = ipc('notification.list')
 check('notification exists', nlist and len(nlist) >= 1)
 
-# 11. Hooks
 print('\n[11] Hooks')
 r = ipc('hook.set', {'surface_id': 1, 'event': 'bell', 'command': 'echo test'})
 check('set hook', r and 'hook_id' in r)
@@ -190,12 +179,10 @@ check('hook listed', hlist and len(hlist) >= 1)
 r = ipc('hook.unset', {'hook_id': hid})
 check('unset hook', r and r.get('removed'))
 
-# 12. Tree
 print('\n[12] Tree View')
 tree = ipc('tree')
 check('tree returns data', tree and len(tree) >= 1)
 
-# 13. Surface targeting by ID
 print('\n[13] Surface Targeting')
 surfaces = ipc('surface.list')
 if surfaces:
@@ -210,7 +197,6 @@ if surfaces:
     st = ipc('surface.screen_text', {'surface_id': sid})
     check('screen_text by ID', st and len(st.get('text', '').strip()) > 0)
 
-# 14. Special keys
 print('\n[14] Special Keys')
 keys = ['enter','tab','escape','backspace','up','down','left','right',
         'home','end','pageup','pagedown','delete','insert',
@@ -219,7 +205,6 @@ for key in keys:
     r = ipc('surface.send_key', {'key': key})
     check(f'send_key {key}', r and r.get('sent'))
 
-# 15. Error paths
 print('\n[15] Error Paths')
 r = ipc_raw('nonexistent.method')
 check('unknown method -> error', 'error' in r)
@@ -232,17 +217,14 @@ check('bad ws index -> error', 'error' in r)
 r = ipc_raw('surface.send_combo', {'modifiers': ['ctrl']})
 check('missing key -> error', 'error' in r)
 r = ipc_raw('pane.close')
-# Last pane should not close
 check('close last pane -> not closed', 'result' in r and not r['result'].get('closed', True))
 r = ipc_raw('tab.close')
 check('close last tab -> not closed', 'result' in r and not r['result'].get('closed', True))
 
-# 16. Screenshot
 print('\n[16] Screenshot API')
 ss = screenshot('final')
 check('screenshot created', os.path.exists(ss) and os.path.getsize(ss) > 1000)
 
-# Summary
 print('\n' + '=' * 60)
 print(f'RESULTS: {PASS} passed, {FAIL} failed')
 print('=' * 60)
@@ -251,7 +233,6 @@ if ERRORS:
     for e in ERRORS:
         print(e)
 
-# Cleanup
 for f in os.listdir('E:/workspace/tasty/'):
     if f.startswith('test_') and f.endswith('.ppm'):
         os.remove(os.path.join('E:/workspace/tasty/', f))

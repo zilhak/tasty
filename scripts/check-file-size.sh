@@ -1,29 +1,6 @@
 #!/usr/bin/env bash
-# 파일 SLOC 게이트 (복잡도 게이트 파트 B) — Rust 파일의 **출하** code SLOC 상한을 강제.
-# code SLOC(주석·공백 제외) > 1000 인 Rust 파일 중 allowlist 에 없고 skip 대상도
-# 아닌 것이 있으면 목록을 출력하고 exit 1. 기존 대형 파일은 .complexity-file-allowlist
-# 로 동결(grandfather)하고, 새로 임계를 넘는 것만 차단한다.
-#
-# **재는 것은 원본이 아니라 출하 밖 줄을 지운 사본이다.** 판정(무엇이 출하되는가)은
-# strip-cfg-test 가 하고 계측(몇 줄인가)은 tokei 가 그대로 한다 — 계측기를 둘로 늘리지
-# 않는다. 근거: docs/adr/ 의 "출하 SLOC" ADR.
-#
-# 지우는 형태가 **둘**이다. 인라인 `#[cfg(test)]` 범위와, `#[cfg(test)] mod x;` 로만
-# 선언된 **파일 전체**(cargo 통합 타깃 포함)다. 뒤쪽이 빠져 있던 동안 이 게이트는 한 줄도
-# 안 나가는 파일을 출하 줄로 세었고, 그 값으로 임계를 판정했다 — 아무것도 안 깨지고
-# **값만 틀렸다**. 근거·모수:
-# docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정
-#
-# **이것은 신규 파일 필터가 아니라 성장 래칫이다.** 실측(2026-07-06 → 09-05): 새로 생긴
-# .rs 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던
-# 파일이 자란 것이었다. 재는 사건은 "큰 파일이 생겼다" 가 아니라 "파일이 자라 임계를
-# 넘었다" 다. 임계 1000 의 유도와 그 근거: docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
-#
-# 예외 등록: 정당하게 큰 파일은 .complexity-file-allowlist 에 레포 상대경로(슬래시)를 추가.
-# skip(게이트 미적용): 테스트 모듈·생성/전사 코드는 아래 skip() 에서 제외.
-#
-# 정책 근거: docs/dev-guide/complexity-gate.md
-# 선례: scripts/check-intent-discipline.sh (소스 파싱 게이트 + 위치 단위 예외)
+# test 전용 범위를 지운 Rust 사본을 tokei로 측정한다. 임계 초과·예외·제외 기준은 아래 설정을 따른다.
+# 주석·문자열을 직접 다시 해석하지 않고 strip-cfg-test를 사용한다. 정책은 docs/dev-guide/complexity-gate.md.
 
 set -euo pipefail
 
@@ -32,43 +9,20 @@ cd "$ROOT"
 
 THRESHOLD=1000
 
-# ── 좌변은 **한 값이다** — 지목처가 둘이었다 ──────────────────────────────
-# 이 게이트는 같은 트리를 두 번 지목한다: 출하 사본을 뜰 때(판정기)와 그 사본을 잴
-# 때(tokei). 둘이 따로 적혀 있으면 누가 하나를 손댈 때 나머지가 안 따라가고 **그
-# 어긋남의 두 방향이 서로 다르게 조용하다**:
-#   판정기만 좁으면  사본에 없는 디렉토리를 tokei 가 열다 죽는다 — 판정 불가(2)라 시끄럽다.
-#   tokei 만 좁으면  사본은 다 떴는데 안 재고 끝난다 — **위반 0 · rc=0 으로 조용하다.**
-# 뒤쪽이 이 게이트의 위험한 방향이다. 판정 대상 수(`judged`)는 줄지만 그 수는 rc 에
-# 안 들어가므로(0 일 때만 판정 불가), 반쯤 줄어든 좌변이 초록으로 나간다.
-# 형제 셋이 같은 형태로 갈려 있었다(intent 넷 · allow-reason 다섯 · shared-walk 셋).
-# `tests/file_sloc_gate_fails_loudly.rs` 가 이 값을 늘려 둘이 따라가는지를 잰다.
+# 같은 디렉터리 목록으로 사본을 만들고 측정한다.
 SCAN_DIRS=(src crates)
 
-# ── 출하 판정을 어떻게 부르는가 — 이것도 **한 값이다** ────────────────────
-# 자매 게이트(check-frozen-sum-ratchet.sh)의 합은 정의상 이 게이트가 판정하는 집합의
-# 부분집합(allowlist 항목)이다. 둘이 판정기를 **다른 플래그로** 부르면 같은 파일이 두
-# 게이트에서 서로 다른 줄 수를 갖는다 — 그 어긋남은 여유가 파일 하나 몫이라 조용하다.
-# 그래서 자매가 `SCAN_DIRS`·`THRESHOLD` 를 읽어 가듯 이 줄도 읽어 간다.
+# 총합 검사도 이 플래그를 읽어 같은 사본을 측정한다.
 SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes --blank-test-only-files)
 
 ALLOWLIST="$ROOT/.complexity-file-allowlist"
 
-# 경고 띠 — **판정이 아니다. rc 에 안 들어간다.**
-#
-# 임계만 있으면 이 게이트는 아무 말도 안 하다가 갑자기 막는 물건이다. 그 해악은
-# 높이가 아니라 타이밍이다: 벽은 조립 시점에, 마지막 한 줄을 얹은 lane 에게 터지고
-# 그 lane 은 원인이 아니다. 실측(2026-09-07): 임계 이하 최댓값이 999 인데 그 뒤로
-# 997·997·995 가 붙어 있었고 900 대가 아홉이었다. 아무도 그것을 몰랐다 — 통과할 때
-# 게이트가 수를 안 찍었기 때문이다.
-#
-# **이 값을 래칫으로 만들지 마라.** 경고 개수에 상한을 박는 순간 그것이 또 하나의
-# 벽이 되고, 그러면 사람들이 파일을 줄이는 대신 그 파일을 피해 다닌다(그 형태를
-# 이미 한 번 밟았다). 경고는 **값만** 나른다.
+# WARN_BAND는 안내만 하며 종료 코드나 상한을 바꾸지 않는다.
 WARN_BAND=900
 
 command -v tokei >/dev/null 2>&1 || { echo "tokei 미설치: cargo install tokei"; exit 2; }
 
-# 실제로 동작하는 python 선택. Windows 는 python3 가 Store 스텁일 수 있어 실행 검증한다.
+# Windows의 Store 실행 별칭을 도구로 오인하지 않도록 실제 Python 실행도 확인한다.
 PY=""
 for cand in python3 python; do
     if command -v "$cand" >/dev/null 2>&1 && [ "$("$cand" -c 'print(1)' 2>/dev/null)" = "1" ]; then
@@ -77,95 +31,39 @@ for cand in python3 python; do
 done
 [ -n "$PY" ] || { echo "python 미설치: tokei JSON 파싱에 python3 필요"; exit 2; }
 
-# skip: 테스트 모듈/디렉토리 · 생성/전사 코드(*generated*, design-tokens/generated/).
-#
-# 앞 갈래(이름으로 고른 테스트 파일)는 이제 **판정과 겹친다** — 그 파일들은 판정기가
-# 통째로 공백화하므로 skip 이 없어도 code 0 으로 재어진다. 그래도 남겨 두는 것은 이
-# 갈래가 `*generated*` 와 한 case 에 있고, 이름을 없애는 것과 판정기를 하나로 모으는
-# 것이 다른 물음이기 때문이다. `src/source_guards/sloc_gate_skip_proxy.rs` 의 (가)가
-# 이 대리인을 판정에 양방향으로 못박는다 — 출하 파일을 `*_tests.rs` 로 개명하면 그것이
-# 운다. 뒤 갈래(생성물)는 판정기가 안 지우므로 여기서만 걸러진다.
+# 이름으로 고른 test·generated 경로는 별도로 제외한다. 일부 test 파일은 이미 사본에서 지워진다.
 skip() {
     case "$1" in
         */tests/*|*/tests.rs|*_test.rs|*_tests.rs) return 0 ;;
-        # 두 갈래는 **같은 갈래**다(둘 다 return 0) — 넓은 쪽이 좁은 쪽을 이미 덮는다.
-        # 좁은 쪽을 앞에 두는 것은 이 skip 이 겨냥한 대표 사례를 이름으로 남기기
-        # 위해서고, 순서를 이렇게 둬야 정적 검사기가 "뒤 갈래는 영영 안 걸린다" 로
-        # 읽지 않는다. 판정은 어느 순서든 같다.
+        # 대표 경로를 먼저 적되 두 패턴 모두 같은 제외 결과다.
         */design-tokens/generated/*|*generated*)   return 0 ;;
         *) return 1 ;;
     esac
 }
 
-# 측정 실패를 "위반 없음" 으로 읽지 않는다 (필수).
-#
-# tokei 나 파서가 죽어도 게이트가 초록이 되던 자리다. 원인이 둘이었다:
-#   - `mapfile < <(...)` 의 프로세스 치환은 종료코드를 버린다 — `set -o pipefail` 이 안 닿는다.
-#   - 결과가 0 줄인 것과 "위반이 0 건인 것" 이 구분되지 않았다.
-# 그래서 tokei 는 rc 를 받아 검사하고, 파서는 Rust report 가 하나도 없으면 비영으로 죽는다.
-# src·crates 에 Rust 파일이 0 개인 상황은 이 저장소에 없으므로, 0 개는 곧 측정 실패다.
-# 측정 실패는 위반(exit 1)과도 구분해 **exit 2**(환경/도구 문제)로 낸다.
-#
-# 회귀는 tests/file_sloc_gate_fails_loudly.rs 가 스텁 tokei · 스텁 판정기로 이 경우들을
-# 고정한다(수를 여기 적지 않는다 — 시험이 늘면 그 수만 낡는다. 실제로 낡아 있었다).
-# 판정기: 출하 밖 줄(인라인 `#[cfg(test)]` 범위 · 테스트 전용 파일 전체)을 빈 줄로 바꾼
-# 사본을 만든다. 줄 번호가 보존되므로 tokei 의 보고를 원본 좌표로 그대로 읽는다.
-#
-# 바이너리를 여기서 `cargo build` 로 만들지 않는다 — 이 스크립트는 `cargo test` 안에서도
-# 불리고(tests/file_sloc_gate_fails_loudly.rs), 그때 중첩 cargo 는 빌드 디렉토리 잠금에서
-# 서로를 기다린다. 호출자가 경로를 주거나(TASTY_STRIP_CFG_TEST_BIN), 이미 빌드된 것을 쓴다.
-# 찾기와 **신선도 판정**은 공용이다. 낡은 판정기는 없는 판정기보다 나쁘다 — 여기서는
-# 둘 다 판정 불가로 다룬다(위 "측정이 안 됐으면 통과가 아니다" 와 같은 근거).
+# 도구 실행 실패·빈 보고는 위반 없음과 구분해 rc 2로 처리한다.
+# cargo test 안에서도 호출하므로 여기서 보조 도구를 빌드하지 않는다.
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
 resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT"
 STRIP_BIN="$JUDGE_BIN"
 if [ -z "$STRIP_BIN" ]; then
-    # ── rc=2 만으로는 다음 사람이 무엇을 할지 모른다 ────────────────────────
-    # 실측(2026-09-08): 판정기를 안 보이게 하고 여섯 셸 게이트를 돌리면 다섯은 재빌드
-    # 명령을 찍고 **이 게이트만 안 찍었다.** rc 는 다섯과 같은 2 인데 화면에는 "통과로
-    # 읽지 않는다" 한 줄뿐이라, 이 자리에 처음 선 사람은 무엇이 없는지도 모른다.
-    #
-    # 그 공백이 조용한 이유가 있다 — `tests/gates_pin_their_judge_absence.rs` 가 이
-    # 갈래를 **rc 로만** 고정한다. 그 파일의 머리말은 정작 위험을 실패문의 **처방**에
-    # 둔다("그 실패문의 처방이 실재하지 않는 결함을 영구히 봐주는 자국을 남긴다"). 즉
-    # 지키려는 것이 처방인데 재는 것은 종료 코드였다. 처방이 통째로 없는 상태가 그
-    # 사이로 지나간다.
-    #
-    # 형제들과 같은 형태로 찍는다: **무엇을 만지지 말라**(여기서는 allowlist — 이
-    # 게이트에서 그 자리를 헐겁게 만드는 레버가 그것이다)와 **무엇을 지어라**.
-    echo "[file-size] 판정 불가 — 출하 줄을 가릴 판정기가 없다(또는 낡았다)."
-    echo "  이 상태에서 재면 테스트 코드까지 출하 줄로 세어진다. 그 값으로 임계를"
-    echo "  판정하지 않는다 — 두 값의 차는 파일이 자란 폭이 아니라 **세는 사본이 바뀐 폭**이다."
+    echo "[file-size] 판정 불가 — test 전용 코드를 제외할 도구가 없다(또는 낡았다)."
+    echo "  원문에는 test 전용 코드도 포함되어 측정 조건이 달라진다. 그 값으로 임계를"
+    echo "  판정하지 않는다. 먼저 현재 소스의 strip-cfg-test를 준비해라."
     echo
-    echo "  ★ .complexity-file-allowlist 에 경로를 추가하지 마라. 판정기를 지어라:"
+    echo "  .complexity-file-allowlist에 예외를 추가하지 말고 도구를 빌드해라:"
     echo "      cargo build -p tasty-doc-guards --bin strip-cfg-test"
     echo "      target/debug/strip-cfg-test --check-fresh ."
-    echo "  --check-fresh 가 rc=0 이어야 이 게이트의 값이 값이다(낡은 판정기도 없는 것으로 다룬다)."
+    echo "  --check-fresh의 rc=0으로 현재 소스와 일치하는지 확인해라."
     echo "  rebase 직후라면 이것이 첫 번째로 할 일이다."
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"
     exit 2
 fi
 
 STRIPPED="$(mktemp -d)"
-# 실패 경로에서도 지운다. 종료코드는 건드리지 않는다.
 trap 'rm -rf "$STRIPPED"' EXIT
 
-# ── 판정기의 **부분 성공**을 통과로 읽지 않는다 (필수) ────────────────────
-# 판정기 갈래를 rc 로만 보면 셋 중 둘밖에 안 갈린다: 죽는다(rc≠0) · 없다(경로 부재).
-# 세 번째는 **rc=0 인데 사본이 모자란 것**이고, 그 갈래는 rc 에 흔적을 안 남긴다.
-# 실측(2026-09-07): 진짜 판정기를 부른 뒤 사본의 절반을 지우는 스텁을 물리자 판정
-# 대상이 1117 에서 601 로 반토막 났는데 **rc 는 0 이었다.** 스크립트를 한 글자도 안
-# 고치므로 skip 목록을 텍스트로 읽는 대리 판정도 안 걸리고, allowlist 파일이 남아
-# 있으면 자매 게이트(check-frozen-sum-ratchet.sh)도 안 움직인다. 아무도 안 잡았다.
-#
-# 그래서 **판정기가 만들었다고 말한 수**와 **디스크에 실제로 있는 사본 수**를 맞춰
-# 본다. 자매 게이트가 이미 같은 형태를 쓴다 — "목록의 파일이 디스크에 있는데 보고에
-# 없다". 셈을 여기서 새로 만들지 않는다: 판정기가 자기 표준출력에 그 수를 이미 찍고
-# 있었고, 이 게이트가 그것을 버리고 있었을 뿐이다.
-#
-# 어긋나면 **판정 불가(2)** 다. 통과도 위반도 아닌 이유는 그 상태에서 위반이 있는지
-# 없는지를 모르기 때문이다 — 모자란 사본에서 나온 "임계 초과 0" 은 "큰 파일이 없다"
-# 와 "큰 파일을 안 봤다" 를 같은 줄로 만든다.
+# 도구가 보고한 사본 수와 디스크의 실제 사본 수를 비교해 누락을 확인한다. 파일별 내용까지 대조하지는 않는다.
 STRIP_REPORTED="$("$STRIP_BIN" "${SHIPPING_JUDGE_FLAGS[@]}" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
     echo "출하 줄 판정 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
@@ -181,25 +79,17 @@ case "$COPIED" in
         echo "사본 수를 셀 수 없다 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2 ;;
 esac
 if [ "$COPIED" -ne "$STRIP_REPORTED" ]; then
-    echo "판정기가 만들었다는 사본 수와 디스크의 사본 수가 다르다 — 부분 성공이다."
+    echo "도구가 보고한 사본 수와 디스크의 사본 수가 달라 판정할 수 없다."
     echo "  판정기 보고: ${STRIP_REPORTED}개 · 디스크: ${COPIED}개"
-    echo "  이 상태의 '임계 초과 0' 은 '큰 파일이 없다' 가 아니라 '큰 파일을 안 봤다' 일"
-    echo "  수 있다. rc=0 으로 나가면 그 둘이 같은 줄이 된다."
+    echo "  일부 파일이 누락됐을 수 있으므로 이 결과의 '임계 초과 0'을"
+    echo "  통과로 처리하지 않는다."
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"; exit 2
 fi
 
 TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}")" || {
     echo "tokei 실행 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
-# tokei JSON → "code<TAB>path" (Rust 파일 **전부**, code 내림차순). 파일 report 는
-# 최상위 "Rust".reports 에 평면으로 담긴다(children 은 임베드 언어 집계라 무시).
-#
-# **임계 비교를 파이썬에서 셸로 옮겼다 — 판정은 그대로다.** 위반은 여전히
-# "code > THRESHOLD 이면서 skip 도 allowlist 도 아닌 것" 이다. 옮긴 이유는 계측이다:
-# 파이썬이 임계 초과만 내보내면 **임계까지 얼마나 남았는지를 아무도 모른다**. 초록일 때
-# 값을 못 찍는 게이트는 "여유 0" 과 "여유 900" 이 같은 얼굴이라, 어느 쪽인지 모른 채
-# 커밋하게 된다. 내림차순이므로 skip/allowlist 를 걷어낸 첫 임계 이하 파일이 곧 최댓값이고,
-# 그래서 allowlist 조회는 목록 앞부분에서 멈춘다(전수 조회가 아니다).
+# Rust 파일 보고를 code 내림차순으로 읽는다. 임베드 언어 children은 포함하지 않는다.
 ROWS_RAW="$(printf '%s' "$TOKEI_JSON" | "$PY" -c '
 import json, sys
 sys.stdout.reconfigure(newline="\n")  # Windows text 모드의 \n→\r\n 변환 방지
@@ -225,10 +115,7 @@ mapfile -t rows <<< "$ROWS_RAW"
 
 violations=()
 warnings=()
-judged=0      # 이 게이트가 실제로 판정한 파일 수. **여기서는 정확한 수다** —
-              # 등급(상한/하한)은 수가 아니라 술어에 붙고, 게이트 안의 술어는 skip 과
-              # allowlist 를 그대로 쓰므로 근사가 아니다. 밖에서 skip 을 다시 구현해
-              # 재현한 값은 하한이 될 수 있다(실측으로 그렇게 어긋났다).
+judged=0
 max_code=""   # 게이트가 실제로 판정하는 파일 중 임계 이하 최댓값(내림차순이라 첫 건)
 max_path=""
 for line in "${rows[@]}"; do
@@ -243,7 +130,6 @@ for line in "${rows[@]}"; do
         violations+=("$line")
     else
         [ -z "$max_code" ] && { max_code="$code"; max_path="$path"; }
-        # 경고 띠는 임계 이하만 담는다 — 위반은 위 갈래가 이미 이름으로 찍는다.
         [ "$code" -ge "$WARN_BAND" ] && warnings+=("$line")
     fi
 done
@@ -257,21 +143,15 @@ if [ "${#violations[@]}" -gt 0 ]; then
     exit 1
 fi
 
-# 초록일 때도 값을 찍는다 — 여유가 0 인지 900 인지가 통과/실패에 안 나타난다.
-# 판정에는 안 들어간다: 상한이 아니라 보고다.
+# 통과 때도 최대값과 경고 목록을 출력한다. 경고는 실패 조건이 아니다.
 if [ -n "$max_code" ]; then
     echo "파일 SLOC 게이트 판정 ${judged} 개 · 임계초과 0 · 경고(${WARN_BAND}↑) ${#warnings[@]} · 최대 ${max_code} (${max_path}) / 임계 ${THRESHOLD} — 남은 여유 $((THRESHOLD - max_code))"
     if [ "${#warnings[@]}" -gt 0 ]; then
-        echo "경고 — 임계까지 $((THRESHOLD - WARN_BAND)) 줄 안에 든 파일 (rc 에 안 들어간다 · 래칫 아니다 · 값만 나른다):"
+        echo "경고 — 임계까지 $((THRESHOLD - WARN_BAND)) 줄 안에 든 파일 (안내만 하며 실패 조건은 아니다):"
         printf '  %s\n' "${warnings[@]}"
     fi
 else
-    # **판정 대상이 0 건인 것은 통과가 아니다.** 이 파일은 다른 모든 "측정이 안 됐다" 를
-    # exit 2 로 내는데(위 주석 "측정 실패를 위반 없음으로 읽지 않는다"), 여기만 초록으로
-    # 나가면 **아무것도 안 재고도 게이트가 통과한 것과 같은 줄**이 찍힌다. skip 과
-    # allowlist 가 전부를 삼켰거나 판정기가 빈 트리를 넘긴 경우이고, 건강한 트리에서는
-    # 안 온다 — 그러니 이 갈래가 초록이면 그건 게이트가 눈을 감은 것이다.
-    echo "판정 대상 파일이 0 건이다 — skip/allowlist 가 전부를 삼켰거나 훑을 트리가 비었다."
+    echo "판정 대상 파일이 0 건이다 — 모든 파일이 skip/allowlist로 제외됐거나 검사 대상이 비었다."
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"
     exit 2
 fi

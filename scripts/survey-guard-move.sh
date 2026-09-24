@@ -1,60 +1,9 @@
 #!/usr/bin/env bash
-# 가드 파일을 옮기기 **전에** 그 이동이 무엇을 건드리는지 재는 조사 도구.
-#
-# 이름이 `check-` 가 아닌 이유가 있다. 이 레포에서 `check-*.sh` 는 전부 **판정**한다 —
-# 위반이면 0 이 아닌 값으로 끝나고 훅이나 CI 가 그걸로 커밋을 막는다. 이 도구는 판정하지
-# 않는다. 축마다 **찾은 것과 찾은 명령**을 찍고 판단은 사람에게 넘긴다. 접두를 빌리면
-# 다음 사람이 이것을 게이트로 알고 훅에 걸게 되고, 그 순간 **정당한 예외가 빨강이 된다** —
-# 아래 축들에는 예외가 실제로 있다(M-b 만 해도 세 갈래인데 그중 둘은 처방이 "아무것도 하지
-# 않는다" 이다).
-#
-# ## 왜 이 도구가 필요한가
-#
-# 파일을 옮기면 두 방향으로 깨지는데 채널은 한쪽에만 있다.
-#   (가) 옛 경로를 가리키는 인용이 죽는다 — 전수 grep 이 잡는다.
-#   (나) 새 경로가 다른 스캐너의 뿌리 안으로 들어가 그 스캐너가 그것을 세기 시작한다 —
-#        아무도 안 본다. 늘어난 항이 우연히 통과하면 아무 일도 안 난다.
-# (나)가 (가)보다 조용하다. (가)는 "읽지 못했다" 로 죽지만 (나)는 모수가 하나 늘 뿐이다.
-# 그리고 옮기는 사람이 도는 테스트는 자기 크레이트라, (나)는 **그 사람의 모수 밖**에 있다.
-#
-# ## 축 일곱
-#
-# 정본은 `docs/dev-guide/guard-relocation.md` 다. 아래는 그 목록의 **사본**이고, 축을
-# 더하거나 이름을 바꾸면 **두 곳을 함께** 고쳐야 한다 — 한쪽만 고치면 두 곳이 서로 다른
-# 축 체계를 말하게 되고 그것은 조용하다. 각 축의 판정법과 처방은 그 문서에 있다.
-#
-#   M-a  새 뿌리가 그것을 세기 시작한다
-#   M-b  세기 시작하는데 그 내용이 위반의 모양이다
-#   M-c  뿌리를 얻는 **표현식**이 위치 의존이라 뿌리가 파일을 따라 움직인다
-#   M-d  파일이 자기 **채널에 대한 주장**을 담고 있어 위치가 바뀌면 거짓이 된다
-#   M-e  뿌리 **목록**이 같아도 뿌리별 **하한**이 있으면 합이 불변인 채로 하나가 뚫린다
-#   (가) 옛 경로를 가리키는 인용
-#   (가′) 이동 **뒤에** 생긴 인용 — 이 도구는 못 잰다(아래)
-#
-# ## 이 주석이 예시 경로를 형태로만 드는 이유
-#
-# 이 파일도 방금 그 부류에 걸렸다. 사용법 예시를 레포 경로 꼴(`<디렉토리>/<파일>.rs`)로
-# 적었더니 `cited_coordinates_exist` 가 그것을 인용으로 읽고 "따라갈 곳이 없다" 로 빨개졌다.
-# 그 가드 자신이 같은 함정에 걸린 뒤 "예시는 형태로 든다" 로 처방을 적어 뒀고, 여기서도
-# 그렇게 한다 — 실재하는 경로를 예시로 쓰면 그 파일이 움직일 때 이 설명이 죽는다.
-#
-# ## 이 도구가 못 하는 것
-#
-# M-a 와 M-d 는 **후보만** 낸다. 정확히 답하려면 순회 범위를 소스에서 읽어야 하고 그것은
-# 임의의 코드라 언제나 근사가 된다(`tasty_doc_guards::floored_walk` 모듈 주석에 그 시도가
-# 세 번 반례를 맞은 기록이 있다). 그래서 여기서는 **읽을 자리를 좁혀 주는 것**까지만 한다.
-# M-b 도 절반만 기계적이다 — 이모지는 셀 수 있지만 "이 파일이 담은 것이 저 가드에게
-# 위반인가" 는 가드마다 다르다.
-#
-# **(가′) 는 이 도구가 원리적으로 못 잰다.** 이 도구는 이동 **전에** 도는데, 그 축은 다른
-# 사람이 이동 **뒤에** 쓴 문단이 옛 경로를 인용하는 것이다 — 지금 없는 글을 볼 수 없다.
-# 그 축이 잡히는 자리는 조사가 아니라 **rebase 직후**이고, 아래 마지막 절이 그 명령을 찍는다.
-#
-# 사용법:  bash scripts/survey-guard-move.sh <옮길-파일> <목적지-경로>
-#   예:  루트 통합 타깃 하나를 의존 0 크레이트의 tests 아래로 옮기는 경우
-# 두 경로 모두 **레포 상대**로 준다. 목적지는 아직 없어도 된다(이동 전에 쓰는 도구다).
-#
-# 끝값: 0 = 재기를 마쳤다(위반 유무와 무관). 2 = 잴 수 없었다(인자가 틀렸거나 도구 부재).
+# 가드 이동 전에 경로 인용·수집 범위·실행 경로 설명의 영향 후보를 출력한다.
+# 사용: bash scripts/survey-guard-move.sh <현재 파일> <목적지> (저장소 상대 경로).
+# 목록의 기준은 docs/dev-guide/guard-relocation.md. 정규식 후보 조사이며 위반 판정이나 완전한 수집을 보장하지 않는다.
+# 일부 검색 오류는 빈 결과와 구별하지 못한다. 이동·rebase 후에는 실제 가드도 실행해야 한다.
+# 정상 조사 종료 0, 인자 오류 2. 도구별 검색 실패를 모두 rc 2로 반환하지는 않는다.
 
 set -euo pipefail
 
@@ -70,12 +19,10 @@ TO="$2"
 case "$FROM" in /*) die "레포 상대 경로로 줘라: $FROM" ;; esac
 case "$TO"   in /*) die "레포 상대 경로로 줘라: $TO" ;; esac
 
-# 뿌리 = 경로의 첫 조각. 첫 슬래시 앞이 그대로 뿌리 이름이 된다
-# (루트 통합 타깃이면 그 디렉토리 이름, 크레이트 아래면 `crates`).
+# 아래 ROOT는 저장소 경로의 첫 구성 요소다. 실제 검사기의 수집 범위와 같지는 않다.
 FROM_ROOT="${FROM%%/*}"
 TO_ROOT="${TO%%/*}"
 
-# 스캔에서 뺄 곳. 빌드 산출물과 VCS.
 EXCL=(--exclude-dir=target --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist)
 
 section() {
@@ -83,7 +30,6 @@ section() {
     echo "━━━ $1"
 }
 cmd() { echo "    \$ $1"; }
-# 결과를 찍는다. 빈손이면 그렇게 말한다 — 빈손과 "안 쟀다" 는 다르다.
 emit() {
     local body="$1" empty_msg="$2"
     if [ -z "$body" ]; then
@@ -94,14 +40,13 @@ emit() {
 }
 
 echo "가드 이동 조사: $FROM  →  $TO"
-echo "뿌리: $FROM_ROOT → $TO_ROOT"
+echo "최상위 경로: $FROM_ROOT → $TO_ROOT"
 if [ "$FROM_ROOT" = "$TO_ROOT" ]; then
-    echo "★ 두 뿌리가 같다. 뿌리 목록으로 소속이 갈리는 축(M-a·M-e)은 대체로 무감이지만,"
-    echo "  뿌리 **아래**를 더 좁게 보는 술어(예: crates/*/src/ 만)는 여전히 갈릴 수 있다."
+    echo "두 최상위 경로가 같다. 최상위 경로만 보는 검사에서는 범위가 같지만,"
+    echo "  하위 경로까지 제한하는 검사(예: crates/*/src/만)는 결과가 달라질 수 있다."
 fi
 
-# ── (가) 옛 경로를 가리키는 인용 ──────────────────────────────────────
-section "(가) 옛 경로 인용 — 이동하면 죽는다"
+section "(가) 이동 후 갱신할 옛 경로 인용"
 cmd "grep -rn '$FROM' --exclude-dir=target … ."
 CITES="$(grep -rn -- "$FROM" "${EXCL[@]}" . 2>/dev/null | grep -v "^\./$FROM:" || true)"
 emit "$CITES" "옛 경로를 가리키는 자리가 없다."
@@ -111,38 +56,36 @@ echo "      파일을 가리키는 인용이 아니라 경로의 **모양**을 �
 echo "      가르는 법: 그 문자열이 없어지면 시험이 뜻을 잃는가, 아니면 그냥 다른 예로"
 echo "      바꿔도 되는가."
 
-# ── M-c 뿌리를 얻는 표현식 ────────────────────────────────────────────
-section "M-c 뿌리 표현식이 위치 의존인가 — 기계적으로 답한다"
+section "M-c 위치에 따라 달라지는 기준 경로 후보"
 cmd "grep -n 'CARGO_MANIFEST_DIR' $FROM"
 MANIFEST_USE="$(grep -n "CARGO_MANIFEST_DIR" "$FROM" || true)"
 if [ -z "$MANIFEST_USE" ]; then
-    echo "    (없음) 이 파일은 CARGO_MANIFEST_DIR 을 안 쓴다 — M-c 무감."
+    echo "    (없음) 이 파일에서 CARGO_MANIFEST_DIR을 찾지 못했다. 간접 호출은 별도 확인이 필요하다."
 else
     printf '%s\n' "$MANIFEST_USE" | sed 's/^/    /'
     echo
-    echo "    ★ 각 자리가 **올라가는지** 봐라. 같은 줄이나 뒤 몇 줄에 .parent() / pop() 이"
-    echo "      없으면 그 표현식은 **이 타깃이 사는 패키지**를 가리킨다 — 루트 패키지에서는"
+    echo "    각 사용처에서 경로를 어떻게 조합하는지 확인해라. .parent() / pop()이"
+    echo "      없으면 시작점이 해당 패키지일 수 있다. CARGO_MANIFEST_DIR은 루트 패키지에서는"
     echo "      레포 루트지만 crates/<이름>/tests/ 에서는 그 크레이트 디렉토리다."
-    echo "      올라가는 자리(무해)와 안 올라가는 자리(수선 대상)를 가른 문맥:"
+    echo "      다음 세 줄의 parent/pop 표지만 찾은 결과다. 실제 경로까지 증명하지는 않는다:"
     AWKED="$(awk -v f="$FROM" '
         /CARGO_MANIFEST_DIR/ {
             ctx = $0
             for (i = 1; i <= 3; i++) { if ((getline nxt) > 0) ctx = ctx "\n" nxt; else break }
-            up = (ctx ~ /parent|pop\(\)/) ? "올라감(무해)" : "★ 안 올라감 — repo_root() 로 바꿔라"
+            up = (ctx ~ /parent|pop\(\)/) ? "parent/pop 표지 있음 — 실제 경로 확인" : "parent/pop 표지 없음 — 기준 경로 확인"
             print NR ": " up
         }' "$FROM" || true)"
     emit "$AWKED" "문맥을 못 읽었다."
-    echo "      이 레포에는 이미 답이 있다: tasty_doc_guards::repo_root() 는 표지 파일로"
+    echo "      저장소 루트가 필요하다면 tasty_doc_guards::repo_root()를 검토해라. 표지 파일로"
     echo "      자기가 잡은 경로를 검증한다."
 fi
 
-# ── M-d 채널 주장 ─────────────────────────────────────────────────────
-section "M-d 채널에 대한 주장 — 위치가 바뀌면 거짓이 될 수 있다 (후보)"
+section "M-d 자동 실행 경로 설명의 변경 후보"
 CHANNEL_RE='check-headless|자동 채널|수동 전용|doc-guards|자동 실행은|자동으로 돈다|paths-ignore|경로 필터'
 cmd "grep -nE '<채널 표지>' $FROM   그리고 이 파일을 지목하는 파일들"
 OWN="$(grep -nE "$CHANNEL_RE" "$FROM" || true)"
 echo "    [이 파일 자신]"
-emit "$OWN" "자기 채널을 주장하지 않는다."
+emit "$OWN" "등록된 실행 경로 표지를 찾지 못했다."
 echo
 echo "    [이 파일을 지목하는 다른 파일 — 주장하는 파일과 주장 대상은 다를 수 있다]"
 BASENAME="$(basename "$FROM")"
@@ -150,9 +93,7 @@ OTHERS=""
 while IFS= read -r hf; do
     [ -z "$hf" ] && continue
     [ "$hf" = "./$FROM" ] && continue
-    # 지목 줄과 채널 표지 줄이 **가까운** 것만 낸다. 파일 어딘가에 표지가 있다는 것만으로는
-    # 이 타깃에 대한 주장이 아니다 — `ci_channel_claims_match_workflows` 가 보는 단위도
-    # 파일이 아니라 마크다운 항목 하나 · 이어진 주석 블록 하나다.
+    # 파일명 언급 앞뒤 세 줄의 표지만 찾는다. 정확한 주장 대상은 사람이 확인해야 한다.
     NEAR="$(awk -v name="$BASENAME" -v re="$CHANNEL_RE" '
         { line[NR] = $0 }
         END {
@@ -169,30 +110,23 @@ while IFS= read -r hf; do
 $NEAR
 "
 done <<< "$(grep -rln -- "$BASENAME" "${EXCL[@]}" . 2>/dev/null || true)"
-emit "$OTHERS" "이 타깃을 지목하면서 채널을 주장하는 파일이 없다."
+emit "$OTHERS" "파일명 언급 주변에서 등록된 실행 경로 표지를 찾지 못했다."
 echo
-echo "    ※ 판정 채널이 하나 있다 — 이 축만은 조용하지 않다:"
+echo "    자동 실행 설명은 다음 검사도 실행해 확인해라:"
 echo "      cargo test -p tasty-doc-guards --test ci_channel_claims_match_workflows"
-echo "      그 가드는 주장하는 파일이 누구인지 안 보고 **지목**만으로 잡는다."
+echo "      검사가 지원하는 설명 형식과 실제 workflow를 함께 확인해라."
 
-# ── M-a 목적지를 세기 시작하는 스캐너 ─────────────────────────────────
-section "M-a 목적지 뿌리를 세는 스캐너 (후보)"
+section "M-a 목적지 경로를 읽을 수 있는 검사 후보"
 cmd "grep -rln '\"$TO_ROOT\"' <뿌리 목록 상수를 가진 타깃>"
-# 소속을 정하는 자리는 **상수 목록만이 아니다.** 뿌리를 상수로 선언하지 않고 술어 함수로
-# 판정하는 스캐너가 있고(`fn is_scan_target` 이 경로 접두를 직접 본다), 그런 자리는 `ROOTS`
-# 를 찾는 grep 으로 영원히 안 나온다 — 뿌리가 "목록이 아니라 뿌리를 얻는 표현식" 이었던
-# 것과 같은 종류의 구멍이다. 그래서 셋을 함께 찾는다: 뿌리 상수 · 소속 술어 · 경로 접두 판정.
+# 상수 목록뿐 아니라 경로 접두를 직접 비교하는 검사기도 후보로 찾는다.
 ROOT_DECLS="$(grep -rln -E "ROOTS: &\[|SCAN_ROOTS|fn is_scan_target|starts_with\(\"$TO_ROOT/" --include='*.rs' "${EXCL[@]}" src crates tests 2>/dev/null || true)"
 CANDS=""
 while IFS= read -r f; do
     [ -z "$f" ] && continue
-    # `"crates"`(뿌리 목록 원소)와 `"crates/`(경로 접두 판정) 둘 다 받는다. 하나만 보면
-    # 소속을 술어로 정하는 스캐너를 통째로 놓친다.
     if grep -qE "\"$TO_ROOT(\"|/)" "$f" 2>/dev/null; then
-        # ★ 옮기는 파일 자신이 후보로 나오는 것은 오류가 아니라 **이 부류의 대표 사고**다.
-        #    스캐너를 그 스캐너의 뿌리 안으로 옮기면 자기 자신을 세기 시작한다.
+        # 옮기는 검사기가 새 위치에서 자기 소스도 읽게 될 수 있다.
         if [ "$f" = "$FROM" ]; then
-            CANDS="$CANDS$f   ← ★ 옮기는 파일 자신이다. 이 스캐너가 **자기를 세기 시작한다** — M-b 를 반드시 함께 봐라.
+            CANDS="$CANDS$f   ← 옮기는 검사기 자신이다. 자기 소스를 읽게 되는지 M-b도 확인해라.
 "
         else
             CANDS="$CANDS$f
@@ -200,15 +134,14 @@ while IFS= read -r f; do
         fi
     fi
 done <<< "$ROOT_DECLS"
-emit "$CANDS" "목적지 뿌리를 뿌리 목록에 담은 타깃이 없다."
+emit "$CANDS" "등록된 검색 패턴으로 목적지 경로를 읽는 후보를 찾지 못했다."
 echo
-echo "    ※ **후보다.** 뿌리에 '$TO_ROOT' 가 있어도 그 아래를 더 좁히는 술어가 있으면"
-echo "      목적지는 여전히 모수 밖이다 — 예: crates/*/src/ 만 보면서 /tests/ 를 배제하는"
+echo "    ※ 후보 목록이다. '$TO_ROOT'를 포함해도 하위 경로를 제한한다면"
+echo "      목적지는 여전히 검사 대상이 아닐 수 있다 — 예: crates/*/src/ 만 보면서 /tests/ 를 배제하는"
 echo "      술어는 crates 를 뿌리로 갖고도 crates/<이름>/tests/ 를 안 센다."
-echo "      각 후보에서 is_scan_target 류 술어를 열어 목적지 경로를 먹여 봐라."
+echo "      각 후보의 is_scan_target 같은 조건에서 목적지를 실제로 포함하는지 확인해라."
 
-# ── M-e 뿌리별 하한 ───────────────────────────────────────────────────
-section "M-e 뿌리별 하한 — 합이 불변인 채로 한 뿌리가 뚫린다"
+section "M-e 디렉터리별 하한 — 전체 수가 같아도 개별 디렉터리 수는 달라진다"
 cmd "grep -rn '(\"$FROM_ROOT\", <수>)' 및 '(\"$TO_ROOT\", <수>)' 형태"
 PER_ROOT="$(grep -rn -E "\(\"($FROM_ROOT|$TO_ROOT)\", *[0-9]+\)" --include='*.rs' "${EXCL[@]}" src crates tests 2>/dev/null || true)"
 echo "    [뿌리별 하한 — 출발지 쪽이 줄고 목적지 쪽이 는다]"
@@ -217,14 +150,13 @@ echo
 echo "    [총수 하한 — 이동만으로는 합이 안 변하므로 대체로 무감이지만, 함께 적어 둔다]"
 TOTALS="$(grep -rn -E 'const (MIN_[A-Z_]+|[A-Z_]+_FLOOR): usize' --include='*.rs' "${EXCL[@]}" src crates tests 2>/dev/null || true)"
 TOTAL_N="$(printf '%s' "$TOTALS" | grep -c . || true)"
-echo "    총수 하한 상수 $TOTAL_N 개 (전부 찍지 않는다 — 위 뿌리별 목록이 실제 위험이다)"
+echo "    총수 하한 상수 $TOTAL_N 개 (전부 출력하지 않는다. 전체 범위도 달라지면 따로 확인해라)"
 echo
-echo "    ★ 뿌리 목록이 같아도 하한의 **형태**가 다르면 민감도가 다르다. 실측 본보기:"
-echo "      no_unserialized_env_mutation 과 no_unshared_fixed_temp_path 는 SCAN_ROOTS 가"
-echo "      같은데(src·crates·tests) 앞쪽만 뿌리별 하한을 걸어서, 같은 이동에 앞쪽만 터졌다."
+echo "    수집 디렉터리가 같아도 개별 하한의 유무에 따라 결과가 다를 수 있다."
+echo "      no_unserialized_env_mutation과 no_unshared_fixed_temp_path처럼 SCAN_ROOTS가"
+echo "      같은 검사도(src·crates·tests) 디렉터리별 하한을 각각 확인해라."
 
-# ── M-b 위반의 모양 ───────────────────────────────────────────────────
-section "M-b 옮기는 파일이 목적지 판정의 위반 모양을 담는가 (절반만 기계적)"
+section "M-b 이동한 파일의 내용이 새 검사 대상이 되는지 확인"
 if command -v python3 >/dev/null 2>&1; then
     cmd "python3 — 금지 코드포인트(U+1F000..1FAFF, U+1F1E6..1F1FF) 계수"
     EMOJI="$(python3 -c '
@@ -245,18 +177,17 @@ else
     echo "    (미측정) python3 가 없어 코드포인트를 못 셌다 — 0 이 아니라 미측정이다."
 fi
 echo
-echo "    이 파일이 정의한 술어(자기 자신을 세게 될 때 무엇이 위반이 되는지 읽을 자리):"
+echo "    이 파일에서 찾은 검사 함수 후보:"
 PREDS="$(grep -nE '^(fn|    fn) (is_|has_|no_)[a-z_]+' "$FROM" || true)"
-emit "$PREDS" "술어 함수가 없다."
+emit "$PREDS" "등록된 이름 패턴에 맞는 함수를 찾지 못했다."
 echo
-echo "    ★ 처방이 셋으로 갈린다. 앞의 둘이면 아무것도 하지 않는다:"
-echo "      · 담은 것이 **산문**이면 표기로 바꿔라(U+XXXX 등). 면제 명부를 늘리지 마라."
-echo "      · 그 가드의 **술어가 목적지를 배제**하면 구조적 면역이다 — 무처방."
-echo "      · 판정기가 **문자열을 마스킹**하면(mask_non_code) 원문 리터럴은 코드로 안 세어진다 — 무처방."
-echo "      셋 다 아닐 때만 면제가 정당하다. 그때도 파일 통째가 아니라 자리 단위로."
+echo "    내용과 검사 범위를 확인한 뒤 처리해라:"
+echo "      · 이모지를 설명하는 산문이면 U+XXXX 같은 표기로 바꿀 수 있다. 예외부터 늘리지 마라."
+echo "      · 검사가 목적지 경로를 제외한다면 그 검사 때문에 내용을 바꿀 필요는 없다."
+echo "      · mask_non_code로 문자열을 제외하는 검사라면 문자열 속 합성 입력은 그대로 유지한다."
+echo "      예외가 필요하다면 근거를 확인하고 파일 전체보다 해당 위치로 한정해라."
 
-# ── 이동 뒤 무엇을 돌릴 것인가 ────────────────────────────────────────
-section "이동 뒤 돌릴 것 — 출발지와 목적지 **양쪽**을 돌려라"
+section "이동 뒤 출발지와 목적지 양쪽의 검사를 실행해라"
 echo "    cargo test -p tasty-doc-guards --no-fail-fast"
 echo "    cargo test -p tasty --lib --no-fail-fast"
 echo "    bash scripts/check-allow-reason.sh"
@@ -264,19 +195,19 @@ echo "    bash scripts/check-shared-walk-ratchet.sh"
 echo
 echo "    ※ -p <크레이트> 는 루트 패키지의 통합 타깃을 안 돌리고, 그 반대도 마찬가지다."
 echo "      이동은 두 패키지를 건드리므로 한쪽만 돌리면 절반이 미측정이다."
-echo "    ※ rc 는 파이프 끝 단계의 것이다. 판정은 'test result' 줄로 해라."
+echo "    ※ 파이프를 썼다면 Cargo의 종료 코드와 전체 test result를 함께 확인해라."
 echo "    ※ 옮긴 타깃을 옛 패키지 이름으로 부르면 그 타깃은 **안 돈다**. 없는 이름을 주면"
-echo "      시끄럽게 죽지만, --test 를 아예 안 붙이면 조용히 빠진다 — 뒤엣것이 위험하다."
-echo "    ※ 루트 패키지를 --bins 로 좁히지 마라. 그 단위시험은 전부 lib 타깃에 살아서"
-echo "      --bins 는 0 건을 ok 로 찍는다(실측). 좁히려면 --lib 다."
+echo "      오류가 나지만 --test를 생략하면 원래 실행하려던 타깃이 빠져도 모를 수 있다."
+echo "    ※ 루트 단위 검사는 --lib로 실행해라. --bins만 실행하면"
+echo "      lib 타깃의 검사를 실행하지 않는다."
 
-section "이 도구가 못 재는 축 — (가′) 이동 **뒤에** 생긴 인용"
-echo "    이 도구는 이동 전에 돈다. 그러니 다른 사람이 이동 **뒤에** 쓴 문단이 옛 경로를"
-echo "    인용하는 것은 원리적으로 못 본다 — 지금 없는 글은 볼 수 없다."
-echo "    어느 쪽도 혼자서는 틀리지 않는다. 그 문단이 쓰인 트리에서 그 경로는 실재했고,"
-echo "    이동한 트리에는 그 문단이 없었다. **겹치는 순간에만** 죽는다."
+section "(가′) 이동 이후 다른 변경에서 추가된 옛 경로 인용"
+echo "    이 조사 이후 다른 변경이 옛 경로를 추가로 인용할 수 있다."
+echo "    현재 조사 결과만으로 이후 변경까지 확인했다고 볼 수 없다."
+echo "    각 변경을 따로 검사할 때는 인용 경로가 유효했더라도"
+echo "    두 변경을 합치면 경로가 사라질 수 있다."
 echo
-echo "    잡히는 자리는 조사가 아니라 rebase 직후 한 번이다:"
+echo "    rebase 후 합쳐진 트리에서도 경로 검사를 실행해라:"
 echo "      cargo test -p tasty-doc-guards --locked --test cited_coordinates_exist"
 
 echo

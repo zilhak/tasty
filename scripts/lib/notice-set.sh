@@ -1,24 +1,8 @@
+# 저장소 루트를 cwd로 두고 source한다. 고지 파일 목록은 LICENSES 디렉터리에서 읽는다.
+# 배포 기준: docs/dev-guide/release.md#배포물의-고지-파일.
 # shellcheck shell=bash
-#
-# 이 파일은 `source` 되는 라이브러리라 shebang 이 없다 — 실행 파일이 아니다(위 지시자가
-# 정적 검사기에게 대상 셸을 알려 준다. 같은 형태의 본보기는 `scripts/lib/judge-bin.sh`).
-#
-# 고지 세트를 배포 트리에 스테이징하고, 산출물에 그 세트가 다 들어갔는지 본다. 세트가
-# 무엇인지는 THIRD_PARTY_LICENSES.md 의 "고지 세트" 절이 정본이고, 생성하지 않고 저장소의
-# 파일을 그대로 나르는 근거는 docs/dev-guide/release.md#배포물의-고지-파일 에
-# 있다.
-#
-# 세트의 셋째 항목은 파일 이름이 아니라 `LICENSES/` 디렉토리다 — 본문이 하나 늘 때 이 파일을
-# 고칠 일이 없게 하려는 것이다. 그래서 목록을 여기 적지 않고 `notice_set_files` 가 매번
-# 디렉토리에서 읽는다.
-#
-# 부르는 쪽은 레포 루트를 cwd 로 둔 채 이 파일을 source 한다 — 아래 경로가 전부 루트
-# 기준 상대 경로다.
 
-# Print the notice set, one repo-relative path per line: LICENSE, the inventory,
-# then every regular file directly under LICENSES/ in name order. An empty
-# LICENSES/ is an error rather than an empty set — the inventory lists at least
-# one licence text, so an empty directory means the checkout is broken.
+# LICENSES가 비면 고지 파일이 누락된 checkout으로 보고 거부한다.
 notice_set_files() {
     local f found=0
     echo "LICENSE"
@@ -34,9 +18,7 @@ notice_set_files() {
     fi
 }
 
-# Stage the notice set into a distribution tree. `LICENSES/` keeps its
-# subdirectory so that the relative links inside THIRD_PARTY_LICENSES.md still
-# resolve.
+# 고지 문서의 상대 링크를 유지하도록 LICENSES 하위 경로를 보존한다.
 stage_notice() {
     local dest="$1" files f
     files=$(notice_set_files) || return 1
@@ -46,8 +28,7 @@ stage_notice() {
     done <<<"$files"
 }
 
-# Check a staged tree against the repo copy, byte for byte. Used where the
-# packed tree is still on disk (AppImage's AppDir, the macOS .app).
+# 저장소 원본과 스테이징된 파일의 내용을 비교한다. 아직 패키징하지 않은 트리도 받을 수 있다.
 verify_notice_tree() {
     local root="$1" label="$2" files f
     files=$(notice_set_files) || return 1
@@ -59,15 +40,9 @@ verify_notice_tree() {
     done <<<"$files"
 }
 
-# Check an archive/package listing (one entry per line, any decoration before
-# the path) for every file of the set. A line matches when it **ends** with
-# `prefix` + the path — a substring match would let `…/LICENSES/x` stand in for a
-# missing `…/LICENSE`. `prefix` is prepended to each path; with
-# `flat` set, `LICENSES/<name>` is looked up as `<name>` — the rpm layout keeps
-# the licence texts directly under /usr/share/licenses/tasty/.
-#
-# The listing comes in as a string, not a pipe: see the SIGPIPE note in
-# build-linux.sh's verification step.
+# 목록의 각 줄 끝이 prefix+경로와 같은지 확인한다. 파일 내용 검사는 아니다.
+# flat 모드는 RPM 배치처럼 LICENSES/ 접두를 뺀 이름을 찾는다.
+# producer의 SIGPIPE를 피하도록 목록 전체를 문자열로 받는다.
 verify_notice_listing() {
     local listing="$1" prefix="$2" label="$3" flat="${4:-}" files f want
     files=$(notice_set_files) || return 1

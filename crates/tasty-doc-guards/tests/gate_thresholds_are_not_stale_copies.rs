@@ -90,14 +90,12 @@ const SLOC_CLAIMS: &[Claim] = &[
     ("tests/file_sloc_gate_fails_loudly.rs", 1),
     ("docs/dev-guide/clippy-policy.md", 1),
     ("docs/dev-guide/complexity-gate.md", 3),
-    // 머리말·결정 문서 안내·실제 설정값.
-    ("scripts/check-file-size.sh", 3),
+    ("scripts/check-file-size.sh", 1),
 ];
 
 /// 현재 공유 순회 상한을 설명하는 파일과 해당 줄 수.
 const SHARED_WALK_CLAIMS: &[Claim] = &[
-    // 마지막 측정 기록과 설정값.
-    ("scripts/check-shared-walk-ratchet.sh", 2),
+    ("scripts/check-shared-walk-ratchet.sh", 1),
     // 테스트가 상한을 치환할 때 쓰는 문자열도 실제 값과 맞아야 한다.
     ("tests/shared_walk_gate.rs", 2),
 ];
@@ -134,11 +132,6 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "docs/adr/0047-ci-and-complexity-checks.md",
         Kind::Dated,
         "임계값을 품질 공식에서 도출하지 않았다는 결정 당시의 선택 근거",
-    ),
-    (
-        "scripts/check-frozen-sum-ratchet.sh",
-        Kind::Dated,
-        "옛 어긋남 사건의 기록 · 계측 편향의 시점 재측정",
     ),
     (
         "CHANGELOG.md",

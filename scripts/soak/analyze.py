@@ -1,31 +1,23 @@
 #!/usr/bin/env python3
-"""soak JSONL 분석 — 메모리 누수 판정.
+"""soak JSONL의 메모리·자원 지표를 임계값과 비교한다.
 
-tests/soak_memory.rs 가 기록한 JSONL 을 읽어 4계층 지표를 판정한다:
+warmup 이후 RSS 추세와 후반 증가량, 자원 수의 첫 값과 최종값을 검사한다.
+자료가 부족한 지표도 PASS를 반환하므로 전체 PASS가 누수 부재를 보장하지는 않는다.
+FAIL은 임계 초과를 뜻하며 누수 원인이나 영구 누수를 확정하지 않는다.
 
-- L2 (heap 성장): warmup 제외 후 트리 RSS 에 OLS. 기울기 + 총증가 이중 조건.
-- L3 (GPU):       wgpu allocated 카운트·egui-mesh 맵 len 이 기준선으로 복귀해야
-                  PASS (정수 엄격 — 1 이라도 순증가면 FAIL). 호스트 explorer view 수도 같은
-                  방식으로 본다(GPU 가 아니라 L2 지만 정수라 엄격 판정이 선다).
-- L4 (핸들/프로세스): 자식 프로세스 수는 엄격, 핸들 수는 요동 허용치 내 복귀.
-
-사용:
-    python scripts/soak/analyze.py <soak-*.jsonl> [--warmup-frac 0.1] [--plot out.png]
-
-exit code: 0=PASS, 1=FLAG(의심 — 재실행/attribution 권장), 2=FAIL(누수 확정).
-판정 기준의 근거와 후속 절차: docs/dev-guide/memory-leak-soak.md
+사용: python scripts/soak/analyze.py <soak-*.jsonl> [--warmup-frac 0.1] [--plot out.png]
+종료 코드: PASS 0, FLAG 1, FAIL 2. 원인 조사는 docs/dev-guide/memory-leak-soak.md를 따른다.
 """
 
 import argparse
 import json
 import sys
 
-# ── 판정 임계값 ──────────────────────────────────────────────────────────
-RSS_SLOPE_BYTES_PER_CYCLE = 1024  # 이 이상 지속 증가면 FLAG
-RSS_SLOPE_R2 = 0.5                # 기울기의 설명력 하한
-RSS_GROWTH_FRAC = 0.05            # 후반 총증가 비율 임계
-RSS_GROWTH_ABS = 20 * 1024 * 1024  # 후반 총증가 절대 임계 (20MB)
-HANDLE_TOLERANCE = 64             # Windows 핸들 수 자연 요동 허용치
+RSS_SLOPE_BYTES_PER_CYCLE = 1024
+RSS_SLOPE_R2 = 0.5
+RSS_GROWTH_FRAC = 0.05
+RSS_GROWTH_ABS = 20 * 1024 * 1024
+HANDLE_TOLERANCE = 64
 
 
 def load(path):
@@ -85,8 +77,7 @@ def mesh_targets_sum(p):
 
 
 def explorer_views_sum(p):
-    # 창마다의 explorer view 수. main 이 아닌 창은 null 이라 0 으로 센다. 이 칸이 없는 옛
-    # JSONL 은 KeyError 로 series() 가 건너뛴다(판정 "insufficient data").
+    # explorer_views가 없는 기록은 series가 건너뛰며 null은 0으로 센다.
     return sum(w["explorer_views"] or 0 for w in p["gpu"]["windows"])
 
 
@@ -94,7 +85,7 @@ def gpu_allocated(p, kind):
     return p["gpu"]["wgpu"]["hub"][kind]["allocated"]
 
 
-# 각 지표: (이름, getter, 판정 방식). strict=기준선 정수 복귀, tolerance=허용 요동.
+# 항목별 이름, getter, 최종 증가 허용치. 0은 최종값이 기준선 이하일 때 통과한다.
 BASELINE_METRICS = [
     ("gpu.textures", lambda p: gpu_allocated(p, "textures"), 0),
     ("gpu.buffers", lambda p: gpu_allocated(p, "buffers"), 0),
@@ -116,7 +107,6 @@ def judge_baseline(name, pairs, tolerance):
     delta = final - baseline
     if delta > tolerance:
         return ("FAIL", f"{name}: {baseline} -> {final} (+{delta}, tolerance {tolerance})")
-    # 허용치 내라도 단조 증가 추세면 의심 (요동이 아니라 느린 누수일 수 있음)
     values = [v for _, v in pairs]
     increases = sum(1 for a, b in zip(values, values[1:]) if b > a)
     decreases = sum(1 for a, b in zip(values, values[1:]) if b < a)
@@ -209,9 +199,9 @@ def main():
     print(f"\nverdict: {worst}")
     if worst != "PASS":
         print(
-            "next: 같은 시나리오로 재현 확인 후 attribution 도구로 원인 규명 —\n"
+            "next: 같은 시나리오로 재현한 뒤 아래 도구로 할당 위치와 자원 사용을 조사해라 —\n"
             "  Linux heaptrack / macOS Instruments·leaks / Windows UMDH\n"
-            "  (docs/dev-guide/memory-leak-soak.md 의 런북 참조)"
+            "  (docs/dev-guide/memory-leak-soak.md 의 조사 절차 참조)"
         )
 
     if args.plot:

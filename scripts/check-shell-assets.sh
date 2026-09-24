@@ -1,28 +1,6 @@
 #!/usr/bin/env bash
-#
-# 셸 자산을 정적 검사기(shellcheck)에 태운다.
-#
-# 이 레포의 셸 자산은 전부 게이트·빌드 보조·git 훅이다. 사용자 기계에서 직접 도는 것은
-# 없지만, **판정하는 쪽**이라 조용한 결함의 값이 비싸다. 실제로 그 형태가 있었다 —
-# 한 게이트의 실패 메시지가 예시를 역따옴표로 감싸 **명령 치환**이 되어 있었고, 그
-# 메시지는 실패할 때만 나오므로 아무도 그것이 깨진 것을 못 봤다. 같은 자리에서 파서가
-# 멈춰 그 아래 200 줄이 어떤 검사도 안 받고 있었다.
-#
-# ## 왜 warning 위인가
-#
-# 잔여 0 hard-fail 이다. 문턱을 `style`/`info` 까지 내리면 잔여가 43 이고 그중 31 이
-# 이 레포에서 오탐이다(배열로 호출하는 함수를 "안 불린다" 로, source 하는 파일을
-# "못 따라간다" 로 센다). 그 수를 래칫으로 얼리면 상한 밑의 여유가 곧 안 보는 구간이
-# 되고, 일괄 억제하면 같은 코드의 진짜 위반까지 같이 덮인다. warning 위는 도입 시점에
-# 12 였고 전부 고쳤다 — 그 12 가 실물 결함이었다는 것이 이 문턱의 근거다.
-#
-# 근거·대안·재검토 조건: docs/dev-guide/ci-gates.md#셸-검사와-커밋-범위
-#
-# 사용법:
-#   bash scripts/check-shell-assets.sh              # 레포의 셸 자산 전부
-#   bash scripts/check-shell-assets.sh <파일>...     # 그중 지정한 것만 (훅이 이렇게 쓴다)
-#
-# 종료코드: 0 통과 · 1 위반 · 2 판정 불가(검사기 없음 · 좌변 0 · 비-git)
+# 추적된 .sh 파일과 shell shebang 파일을 ShellCheck warning 수준으로 검사한다.
+# 인자를 주면 그 목록에 같은 선택 규칙을 적용한다. 통과 0, 검사 실패 1, 도구·대상 부재 2.
 
 set -e -o pipefail
 
@@ -30,30 +8,21 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || { echo "[shell-assets] 판정 불가: git 저장소가 아니다." >&2; exit 2; }
 cd "$REPO_ROOT"
 
-# 검사기가 없으면 **통과가 아니라 판정 불가**다. 이 레포의 다른 게이트가 판정기 부재를
-# 같은 등급으로 다룬다 — 없는 판정을 초록으로 세면 그 칸은 영영 안 보이는 칸이 된다.
 if ! command -v shellcheck >/dev/null 2>&1; then
     echo "[shell-assets] 판정 불가: shellcheck 이 PATH 에 없다." >&2
     echo "  받는 법: bash scripts/install-shellcheck.sh   (배포판 패키지도 된다)" >&2
     exit 2
 fi
 
-# 좌변. **확장자로만 고르면 훅 셋이 통째로 빠진다** — 그 셋은 확장자가 없고, 마침
-# 로컬에서 실제로 돌아가는 유일한 셸 자산이다. 그래서 확장자와 shebang 둘 다로 고른다.
-# (`scripts/lib/judge-bin.sh` 는 반대 방향의 예다 — source 되는 라이브러리라 shebang 이
-# 없고 확장자로만 걸린다. 한쪽만 쓰면 둘 중 하나를 놓친다.)
 is_shell_asset() {
     case "$1" in *.sh) return 0 ;; esac
     [ -f "$1" ] || return 1
-    # 파이프를 안 만든다 — 오른쪽이 먼저 닫으면 왼쪽이 SIGPIPE 로 죽고 `pipefail`
-    # 아래서는 그 실패가 조건을 뒤집는다(그 가드가 이 줄을 실제로 잡았다).
+    # grep -q가 producer를 조기 종료해 SIGPIPE를 일으키지 않도록 먼저 내용을 받는다.
     local first=""
     IFS= read -r first < "$1" || true
     grep -qE '^#!.*[ /](ba|z)?sh( |$)' <<<"$first"
 }
 
-# 좌변을 고르는 규칙은 **한 곳뿐**이다(`is_shell_asset`). 훅이 넘기는 staged 목록도 같은
-# 규칙으로 거른다 — 규칙을 호출자 쪽에 복사하면 두 모수가 같은 물음에 다른 답을 갖는다.
 select_shell_assets() {
     while IFS= read -r f; do
         [ -n "$f" ] || continue
@@ -65,8 +34,7 @@ select_shell_assets() {
 collect_corpus() {
     {
         git ls-files -- '*.sh'
-        # `|| true` — 후보가 0 건이면 `git grep` 이 1 을 낸다. `set -e` 아래서는 그 1 이
-        # 좌변 수집을 **조용히 죽인다**(치환 안에서 죽으므로 출력도 안 남는다).
+        # 후보가 없을 때 git grep의 rc 1을 허용한다.
         git grep -lI -E '^#!' -- . 2>/dev/null || true
     } | select_shell_assets
     return 0
@@ -78,27 +46,22 @@ else
     TARGETS=$(collect_corpus | sort -u)
 fi
 
-# 빈 문자열을 `printf '%s\n'` 로 내면 **줄 하나**가 된다 — 그 값을 그대로 세면 좌변 0 이
-# 1 로 세어지고, 아래 '좌변 0 은 판정 불가' 갈래가 영영 안 열린다. 실측으로 밟았다:
-# 셸 자산이 없는 트리에서 이 게이트가 "자산 1 개" 라고 찍으며 검사기의 사용법을 뱉었다.
 COUNT=$(printf '%s\n' "$TARGETS" | grep -c . || true)
 
-# 좌변이 0 이면 초록이 아니라 판정 불가다. 인자를 받은 호출은 예외다 — 훅이 셸 자산이
-# 안 담긴 커밋에서 이 스크립트를 부를 때가 정상이고, 그때는 볼 것이 없는 것이 맞다.
+# 전체 검사 대상이 비면 거부한다. 인자로 받은 staged 목록에 셸 파일이 없는 경우는 통과다.
 if [ "$COUNT" -eq 0 ]; then
     if [ "$#" -gt 0 ]; then
         echo "[shell-assets] 대상 0 개 — 넘어온 $# 개 중 셸 자산이 없다."
         exit 0
     fi
-    echo "[shell-assets] 판정 불가: 좌변이 0 이다. 순회가 죽었는지 봐라 — 이 레포에 셸 자산이 없을 수는 없다(훅 셋)." >&2
+    echo "[shell-assets] 판정 불가: 검사할 셸 파일을 찾지 못했다. Git 파일 수집과 선택 조건을 확인해라." >&2
     exit 2
 fi
 
 VERSION=$(shellcheck --version | sed -n 's/^version: //p')
 
 set +e
-# 단어 분리가 목적이다 — TARGETS 는 줄바꿈으로 이은 경로 목록이고 shellcheck 은 그것을
-# 가변 인자로 받는다. 경로에 공백이 있으면 깨지지만, 이 레포의 추적 경로에는 없다.
+# 이유: TARGETS의 경로 목록을 개별 인자로 넘기기 위해 단어 분리를 사용한다.
 # shellcheck disable=SC2086
 OUT=$(shellcheck --severity=warning --format=tty $TARGETS 2>&1)
 RC=$?

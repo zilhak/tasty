@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
-# gen-dev-key.sh — 개발자 로컬 Ed25519 dev keypair 생성 + 공개키 임베드 갱신.
-#
-# 결과:
-#   ~/.tasty-keys/dev.pem                        — Ed25519 private key (chmod 600)
-#   host-plugin 크레이트의 keys/ 아래 dev-pubkey.bin — raw 32 byte public key.
-#   추적하지 않는 로컬 산출물이라 레포 경로로 적지 않는다 —
-#   `crates/tasty-host-plugin/keys/README.md` 가 그 파일을 설명한다.
-#
-# 본 스크립트는 한 번만 실행. private key 가 이미 있으면 덮어쓰지 않고 종료
-# (실수로 키 분실 방지). 강제 재생성은 `--force` 플래그.
-#
-# 생성 후 흐름:
-#   1. sign-bundle.sh 로 모든 builtin plugin manifest 서명
-#   2. dev 빌드 / cargo run 시 tasty 가 dev-pubkey.bin (임베드) 으로 자동 trust
-#   3. dev-pubkey.bin 은 추적하지 않는 로컬 전용 파일 (keys/.gitignore).
-#      build.rs 가 OUT_DIR 로 staging 하므로 커밋하지 않는다.
+# 개발용 Ed25519 개인키와 raw 공개키를 준비한다. 기존 개인키는 유지하고 공개키를 다시 추출한다.
+# --force는 개인키를 덮어쓰므로 기존 키로 만든 서명과 호환되지 않을 수 있다.
+# 사용: bash scripts/gen-dev-key.sh [--force]. 키 경로는 아래 설정을 따른다.
 
 set -euo pipefail
 
@@ -53,14 +40,7 @@ PUB_PATH="${REPO_ROOT}/crates/tasty-host-plugin/keys/dev-pubkey.bin"
 mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
 
-# raw 32 byte Ed25519 public key 를 private key 에서 추출해 $2 에 기록.
-# openssl 의 DER 출력 마지막 32 byte 가 raw key
-# (44 byte DER = 12 byte SubjectPublicKeyInfo prefix + 32 byte key).
-#
-# dev-pubkey.bin 은 추적되지 않는 로컬 전용 파일이다 (build.rs 가 OUT_DIR 로
-# staging). private key 가 이미 있어도 빌드 전 이 함수로 매번 재도출해야
-# 임베드되는 trust 키가 서명 키와 일치한다. 누락 시 build.rs 가 all-zero
-# placeholder 를 임베드해 dev 서명 plugin 이 전부 거부된다.
+# DER 공개키의 마지막 32바이트를 사용한다. 추출 길이는 확인하지만 DER 구조 전체를 파싱하지 않는다.
 derive_pubkey() {
     local priv="$1" out="$2"
     mkdir -p "$(dirname "$out")"
@@ -75,9 +55,7 @@ derive_pubkey() {
         rm -f "$tmp"
         exit 1
     fi
-    # 내용이 동일하면 mtime 을 건드리지 않는다. dev-pubkey.bin 은 build.rs 의
-    # rerun-if-changed 대상이라, 매번 재기록하면 내용이 같아도 tasty-host-plugin +
-    # tasty 바이너리가 불필요하게 재컴파일된다. 부재/내용 불일치일 때만 갱신.
+    # build.rs가 공개키 변경을 감지하므로 내용이 같으면 mtime을 유지한다.
     if [[ -f "$out" ]] && cmp -s "$tmp" "$out"; then
         rm -f "$tmp"
     else
@@ -86,7 +64,6 @@ derive_pubkey() {
 }
 
 if [[ -f "$PRIV_PATH" && "$FORCE" -ne 1 ]]; then
-    # private key 는 유지하되, 추적되지 않는 공개키는 항상 (재)도출한다.
     derive_pubkey "$PRIV_PATH" "$PUB_PATH"
     echo "Private key exists: $PRIV_PATH (kept)"
     echo "Re-derived public key: $PUB_PATH"
@@ -94,11 +71,9 @@ if [[ -f "$PRIV_PATH" && "$FORCE" -ne 1 ]]; then
     exit 0
 fi
 
-# 1) Ed25519 private key 생성.
 openssl genpkey -algorithm Ed25519 -out "$PRIV_PATH"
 chmod 600 "$PRIV_PATH"
 
-# 2) raw 32 byte public key 추출.
 derive_pubkey "$PRIV_PATH" "$PUB_PATH"
 
 cat <<EOF
