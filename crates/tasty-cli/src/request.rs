@@ -53,7 +53,6 @@ fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, s
             ..
         } => {
             if *into_gui {
-                // 작업 J 트리거 — GUI 가 client 로서 원격 워크스페이스 mirror 재구성.
                 (
                     "attach.into_gui",
                     serde_json::json!({
@@ -79,14 +78,10 @@ fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, s
                 }
             }
         }
-        // `remote check` 는 run_client 에서 SSH 터널 + 자체 IPC 로 선처리되므로 여기
-        // 도달하지 않는다(로컬 JSON-RPC 매핑 대상 아님).
         RemoteCommands::Check { .. } => {
             debug_assert!(false, "remote check is dispatched before request mapping");
             ("remote.check.noop", serde_json::json!({}))
         }
-        // `remote workspaces` 는 run_client 에서 SSH 터널 + 자체 IPC(remote_browse)로
-        // 선처리되므로 여기 도달하지 않는다(로컬 JSON-RPC 매핑 대상 아님).
         RemoteCommands::Workspaces { .. } => {
             debug_assert!(
                 false,
@@ -94,8 +89,6 @@ fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, s
             );
             ("remote.workspaces.noop", serde_json::json!({}))
         }
-        // `remote new-workspace` 도 run_client 에서 SSH 터널 + 자체 IPC(remote_create)로
-        // 선처리되므로 여기 도달하지 않는다(로컬 JSON-RPC 매핑 대상 아님).
         RemoteCommands::NewWorkspace { .. } => {
             debug_assert!(
                 false,
@@ -148,12 +141,8 @@ pub(super) fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
     explicit.or_else(|| std::env::var("TASTY_SURFACE_ID").ok()?.parse().ok())
 }
 
-/// `--cwd` raw 입력을 CLI process cwd 기준 absolute path 로 정규화 + 디렉토리
-/// 존재 검증. 실패 시 stderr + exit 1 — 호스트가 silent 하게 잘못된 cwd 에서
-/// PTY 를 시작하는 사고를 사전에 차단한다.
-///
-/// `None` 입력은 그대로 `None` 반환 — caller 가 cwd 를 명시하지 않은 경우는
-/// 호스트 측 inherit 로직에 위임된다.
+/// 명시한 cwd를 절대 경로로 바꾸고 디렉터리인지 확인한다. 실패하면 exit 1로 끝낸다.
+/// 생략한 cwd는 호스트가 결정한다.
 fn normalize_cwd_or_exit(raw: Option<&str>) -> Option<String> {
     let value = raw?;
     if value.is_empty() {
@@ -188,7 +177,6 @@ fn parse_json_arg_or_exit(flag: &str, raw: &str) -> serde_json::Value {
 
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
-        // ── grouped ──
         Commands::New { command } => new_command_to_method_params(command),
         Commands::Close { command } => close_command_to_method_params(command),
         Commands::List { command } => list_command_to_method_params(command),
@@ -196,7 +184,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Move { command } => move_command_to_method_params(command),
         #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
-        // ── standalone ──
         Commands::Split {
             level,
             target_surface,
@@ -236,8 +223,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             )
         }
         Commands::Send { command } => send_command_to_method_params(command),
-        // remote attach 의 non-into_gui 경로는 run_client 에서 raw 스트림으로 선처리된다.
-        // 여기 도달하는 건 `--into-gui`(원격 GUI mirror 위임)뿐.
+        // 일반 attach는 ClientDriven이 처리한다. 여기서는 into-gui와 force-detach만 변환한다.
         Commands::Remote { command } => remote_command_to_method_params(command),
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
@@ -421,10 +407,8 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
                 "attach_remote_workspace": remote_workspace,
                 "category": category,
             });
-            // 주인 창은 IPC 라우터가 `surface_id` 로 고른다(원칙 3) — 그 surface 를 가진 창이
-            // 없으면 포커스로 새지 않고 거절된다. 생략하면 키를 싣지 않아 종전 요청과 같다.
-            // `TASTY_SURFACE_ID` 로 채우지 않는다: 생략 시 사용자가 보는 창으로 가던 동작을
-            // 지킨다.
+            // 명시한 surface_id로 창을 찾고, 찾지 못하면 거절한다.
+            // 생략 시 기존 창 선택을 유지하기 위해 TASTY_SURFACE_ID로 채우지 않는다.
             if let Some(sid) = surface {
                 params["surface_id"] = serde_json::json!(sid);
             }
@@ -469,7 +453,6 @@ fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, ser
             "surface.close",
             serde_json::json!({ "surface_id": surface, "caller_surface_id": caller }),
         ),
-        // 대상은 id 로 직접 지정 — 활성 워크스페이스/창에 암묵 의존하지 않는다.
         CloseCommands::Workspace { id } => (
             "workspace.close",
             serde_json::json!({ "id": id, "caller_surface_id": caller }),
@@ -502,10 +485,7 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Pressure => ("system.pressure", serde_json::json!({})),
         ListCommands::Notifications => ("notification.list", serde_json::json!({})),
         ListCommands::Timers => ("timer.list", serde_json::json!({})),
-        // list 는 포커스 독립 — 무필터면 전 워크스페이스를 순회한다. 여기서
-        // `resolve_surface_id`(TASTY_SURFACE_ID env fallback)를 쓰면 tasty 터미널
-        // 안에서 호출 시 현재 surface 로 암묵 필터링돼 전체 조회가 불가능해지므로,
-        // 명시적 `--surface` 값만 필터로 넘긴다(없으면 null → 호스트가 전체 반환).
+        // 전체 조회를 현재 surface로 제한하지 않도록 환경변수 대신 명시한 필터만 보낸다.
         ListCommands::Hooks { surface } => {
             ("hook.list", serde_json::json!({ "surface_id": surface }))
         }
@@ -564,8 +544,7 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
                 "surface_id": resolve_surface_id(*surface),
                 "strip_ansi": strip_ansi,
             });
-            // 준 것만 싣는다 — 아무것도 안 준 호출은 예전과 바이트까지 같은 요청이고, 그래서
-            // 계약 확인(`contract::required`)도 안 붙는다.
+            // 위치 인자를 생략한 요청은 기존 형태를 유지하고 capability 조회도 생략한다.
             if let Some(c) = cursor {
                 params[PARAM_CURSOR] = serde_json::json!(c);
             }
@@ -773,13 +752,10 @@ fn webhook_command_to_method_params(
             auth_key,
             auth_token,
         } => {
-            // --sequence 는 JSON 문자열 → Value 로 파싱해 전달(서버가 IpcCall 배열로 검증).
-            // 파싱 실패는 여기서 멈춘다 — null 로 흘리면 사용자는 원인 대신 "handler 나
-            // sequence 중 하나" 라는 서버 거절을 받는다.
+            // 파싱 오류를 null로 보내면 서버가 다른 사유로 거절하므로 여기서 알린다.
             let sequence_value = sequence
                 .as_deref()
                 .map(|s| parse_json_arg_or_exit("--sequence", s));
-            // auth 3-flag → 서버가 검증하는 auth 객체(미지정 시 null).
             let auth_value = auth_location.as_deref().map(|loc| {
                 serde_json::json!({
                     "location": loc,
@@ -790,9 +766,7 @@ fn webhook_command_to_method_params(
             (
                 "webhook.register",
                 serde_json::json!({
-                    // `--method` 생략은 null 이다 — 빈 배열을 보내면 서버가 "비어 있다" 로
-                    // 거절한다. null 이면 서버의 기본값(POST)이 선다: 기본값의 정본은 서버
-                    // 한 곳이다.
+                    // 빈 배열은 거절되므로 미지정은 null로 보내 서버 기본값 POST를 사용한다.
                     "methods": (!methods.is_empty()).then_some(methods),
                     "handler": handler,
                     "sequence": sequence_value,
@@ -886,13 +860,8 @@ fn surface_meta_command_to_method_params(
 
 fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
     match command {
-        // `tasty tool ssh|remote-profile|attach|passkey ...` 는 네 갈래 모두
-        // `dispatch::classify` 가 클라이언트 주도 실행으로 잡아가므로 이 함수에는
-        // 도달하지 않는다 — 그래도 arm 을 남긴다: 지우려면 `command_to_request` 의
-        // `Commands::Tool` 갈래를 `unreachable!()` 로 바꿔야 하는데, 컴파일러가
-        // 보장하는 미도달을 런타임 panic 으로 바꾸는 건 손해다. 프로필 CRUD 의
-        // 에이전트 조작(원칙 2)은 `remote.profile.*` IPC 로 별도 노출된다
-        // (src/adapters/ipc/handler/remote_profile.rs).
+        // 네 명령은 dispatch::classify가 ClientDriven으로 처리한다.
+        // 프로필을 IPC로 조작하는 경로는 별도의 remote.profile.* 메서드다.
         ToolCommands::Ssh { .. } => ("tool.ssh.noop", serde_json::json!({})),
         ToolCommands::RemoteProfile { .. } => ("tool.remote_profile.noop", serde_json::json!({})),
         ToolCommands::Attach { .. } => ("tool.attach.noop", serde_json::json!({})),
@@ -904,12 +873,7 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
 mod tests {
     use super::*;
 
-    /// `TASTY_SURFACE_ID` 를 테스트 동안만 바꿔두고 **원값으로 되돌리는** 가드.
-    ///
-    /// 이 키는 tasty 터미널 안에서 실제로 설정돼 있다. 테스트가 마지막에
-    /// `remove_var` 로 "정리" 하면 그 실값을 잃고, 중간 단언이 패닉하면 정리 자체가
-    /// 건너뛰어져 — 어느 쪽이든 같은 프로세스의 뒤따르는 테스트가 오염된 env 를
-    /// 물려받는다.
+    /// 환경변수의 원래 값을 저장하고 패닉 시에도 복원한다. 단순 삭제하면 실행 환경을 잃는다.
     struct SurfaceIdEnvGuard(Option<std::ffi::OsString>);
 
     impl SurfaceIdEnvGuard {
@@ -940,7 +904,6 @@ mod tests {
         }
     }
 
-    /// 깨진 JSON 은 null 로 흘리지 않고 인자 이름과 원인을 담은 실패다. 멀쩡한 JSON 은 그대로다.
     #[test]
     fn a_broken_json_argument_is_an_error_that_names_the_flag() {
         tasty_i18n::init("en");
@@ -955,11 +918,7 @@ mod tests {
         );
     }
 
-    // env 는 process-global 이라 cargo test 의 병렬 실행에서 race 가 난다.
-    // TASTY_SURFACE_ID 를 조작하는 모든 시나리오를 이 한 #[test] 안에 순차
-    // 수행해 격리한다. 별도 #[test] 로 분리하면 set/remove 가
-    // 병렬 인터리빙되어 flaky 해진다 — 실측 사례: terminal.children 의
-    // remove_var 가 notify 의 set_var("42") 직후에 끼어들어 None != Some(42).
+    // 환경변수는 프로세스 전체가 공유하므로 모든 변경 시나리오를 한 시험 안에서 직렬화한다.
     #[test]
     fn surface_id_env_scenarios() {
         let cmd = Commands::Notify {
@@ -967,10 +926,8 @@ mod tests {
             title: Some("T".to_string()),
         };
 
-        // 가드가 스코프 종료 시(패닉 포함) 실행 환경의 원래 값을 되돌린다.
         let env = SurfaceIdEnvGuard::new();
 
-        // case 1: env set → request 에 동일한 surface_id 포함
         env.set("42");
         let req = command_to_request(&cmd);
         assert_eq!(req.method, "notification.create");
@@ -981,8 +938,6 @@ mod tests {
             Some(42)
         );
 
-        // case 1a: `new workspace` 는 env 가 있어도 surface_id 를 싣지 않는다 — 생략 시
-        // 사용자가 보는 창으로 가던 동작을 지킨다. `--surface` 를 주면 그 값이 라우팅 키다.
         let ws_default = command_to_request(&cmd_from(&["tasty", "new", "workspace"]));
         assert_eq!(ws_default.method, "workspace.create");
         assert!(ws_default.params.get("surface_id").is_none());
@@ -993,10 +948,6 @@ mod tests {
             Some(7)
         );
 
-        // case 1b: hook.list 는 포커스 독립 list — env(TASTY_SURFACE_ID=42)가 있어도
-        // 무필터면 surface_id 를 null 로 보내 호스트가 전 워크스페이스를 순회하게 한다.
-        // resolve_surface_id 의 env 폴백을 여기 적용하면 현재 surface 로 암묵 필터링돼
-        // 전체 조회가 불가능해지는 회귀를 막는다.
         let hooks_no_filter = command_to_request(&cmd_from(&["tasty", "list", "hooks"]));
         assert_eq!(hooks_no_filter.method, "hook.list");
         assert!(
@@ -1005,7 +956,6 @@ mod tests {
                 .get("surface_id")
                 .is_some_and(|v| v.is_null())
         );
-        // --surface 명시 시 필터 유지(회귀 없음).
         let hooks_filtered =
             command_to_request(&cmd_from(&["tasty", "list", "hooks", "--surface", "7"]));
         assert_eq!(
@@ -1016,19 +966,15 @@ mod tests {
             Some(7)
         );
 
-        // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
         env.unset();
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
 
-        // case 2b: terminal.children — --surface 없고 env 없으면 host
-        // single_parent 폴백 위해 키 자체를 생략.
         let children = cmd_from(&["tasty", "terminal", "children"]);
         let req = command_to_request(&children);
         assert_eq!(req.method, "terminal.children");
         assert!(req.params.get("surface").is_none());
 
-        // case 3: env 가 invalid → surface_id null (resolve_surface_id 안전 폴백)
         env.set("not-a-number");
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
@@ -1068,7 +1014,6 @@ mod tests {
             Some(&serde_json::json!(["waiting", "ready", "running"]))
         );
 
-        // 플래그를 여러 번 준 형태도 같은 배열이 된다.
         let repeated = command_to_request(&cmd_from(&[
             "tasty",
             "agent",
@@ -1085,7 +1030,6 @@ mod tests {
             Some(&serde_json::json!(["waiting", "ready"]))
         );
 
-        // 미지정이면 state 키 자체가 없다(= 필터 없음).
         let none = command_to_request(&cmd_from(&[
             "tasty",
             "agent",
@@ -1124,7 +1068,6 @@ mod tests {
             req.params.get("surface_id").and_then(|v| v.as_u64()),
             Some(5)
         );
-        // surface 지정 시 window_id 는 null (호스트가 surface 소유 창을 해소).
         assert!(req.params.get("window_id").is_some_and(|v| v.is_null()));
     }
 

@@ -1,24 +1,10 @@
-//! `tasty attach <surface>` — surface 단위 attach client (attach/detach 단계 4).
-//!
-//! 두 모드:
-//! - **mirror-dump**(기본, `--dump-after`): attach 후 일정 시간 출력을 수집해 mirror
-//!   Terminal 로 grid 를 재구성하고 `screen_text` 를 stdout 으로 출력한다. GUI 없이
-//!   로컬 loopback e2e 를 자동 검증하는 핵심 경로(초기 스냅샷 + 출력 delta 확인).
-//! - **raw 브리지**(`--raw`): stdin↔stdout passthrough. detach 전용 키 `Ctrl+\`
-//!   (decisions #8). 완전한 raw TTY 모드는 단계 4 옵션(여기선 기본 passthrough).
-//!
-//! `--send` 로 attach 직후 1 회 비대화형 입력을 보낼 수 있다(escape 디코딩) —
-//! raw TTY 없이 입력 라우팅을 검증하기 위함.
-//!
-//! 핸드셰이크(`stream.open{target}`) 직후 서버는 attach 결과를 Control 프레임으로
-//! 통지한다(`attached{cols,rows}` 또는 `attach_error{reason}`). 그 다음 Data 프레임이
-//! 초기 스냅샷 + 이후 출력 delta. force-detach 는 `Control{force_detached}`+`Detach`.
-//!
-//! 세 루프 모두 attach 직후 손실 통지를 받겠다고 선언한다(`ClientLossNotify`). 서버가
-//! `Loss` 를 보내면 그 연결의 화면은 이어지지 않으므로 옛 연결을 놓고 **다시 attach** 해
-//! 새 snapshot 을 받는다 — 서버가 snapshot 을 만드는 자리는 attach 하나뿐이다
-//! (`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
-//! 구 서버는 선언을 모르는 변종으로 무시하고 `Loss` 도 안 보내므로 종전 동작 그대로다.
+//! remote/debug attach의 공용 세션 처리. mirror-dump는 화면을 재구성해 출력하고,
+//! raw bridge는 stdin과 stdout을 연결한다. Ctrl+\로 detach하며 완전한 raw TTY 설정은 하지 않는다.
+//! --send 입력은 Loss 복구를 위한 재attach에서 반복하지 않는다.
+//! 핸드셰이크 뒤 attached/attached_workspace 또는 attach_error를 받고, Data로 snapshot과 delta를 받는다.
+//! force-detach는 force_detached Control과 Detach로 전달된다.
+//! ClientLossNotify를 선언하고 Loss를 받으면 다시 attach해 snapshot을 받는다.
+//! 구 서버는 이 선언을 무시하므로 손실 통지 없이 기존 방식으로 동작한다.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -35,7 +21,7 @@ use crate::out::outln;
 use crate::ssh::{self, Backoff, PortMode, SshTarget, SshTunnel};
 use tasty_ipc::client::StreamConnection;
 
-/// 한 attach 세션이 끝난 사유(백오프 재연결 판단용 — 단계 5).
+/// attach 종료 사유. 호출자가 백오프 재연결 여부를 정한다.
 pub(crate) enum AttachExit {
     /// 정상 종료(mirror-dump 1회성 완료, raw 의 사용자 detach/EOF, force-detach).
     Completed,
@@ -43,9 +29,7 @@ pub(crate) enum AttachExit {
     Disconnected,
 }
 
-/// 한 연결이 끝난 사유 — [`AttachExit`] 에 **재attach** 하나를 더한다. 재attach 는 이
-/// 파일 안에서 끝나는 일이라(`run_attach_on_port` · `run_attach_workspace_on_port` 가 다시
-/// 붙는다) 호출자에게 보이는 [`AttachExit`] 에는 없다.
+/// 연결 종료 사유. Desynced는 이 모듈에서 재attach하므로 공개 AttachExit에는 포함하지 않는다.
 enum SessionEnd {
     Exit(AttachExit),
     /// 서버가 이 연결의 프레임을 버렸다고 알렸고(`StreamControl::Loss`), 옛 연결을 놓았다.
@@ -53,17 +37,12 @@ enum SessionEnd {
     Desynced(u64),
 }
 
-/// mirror-dump 한 번의 실행에서 손실로 다시 attach 하는 최대 횟수. 넘으면 수집을 이어가
-/// 결과를 찍고 stderr 로 공백이 있다고 알린다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). raw 브리지에는 걸지 않는다 —
-/// 대화형이라 사용자가 `Ctrl+\` 로 끝낼 수 있다.
+/// dump의 손실 복구 횟수 상한. 초과하면 수집을 마치고 stderr로 손실을 알린다.
+/// raw bridge는 사용자가 종료할 수 있어 이 횟수 제한을 적용하지 않는다.
 const DUMP_RESYNC_LIMIT: u32 = 3;
 
-/// mirror-dump 수집 루프가 보내는 client 발 heartbeat. 서버는 attach 소켓에
-/// [`stream::HEARTBEAT_TIMEOUT`] read timeout 을 걸어, 그동안 client 프레임이 하나도 안 오면
-/// 끊긴 연결로 보고 점유를 푼다. dump 는 `--send` 한 번 뒤로 아무것도 안 보내므로 이것이
-/// 없으면 그 시한보다 긴 `--dump-after` 가 오류 없이 도중에 풀린다 — 그래서 raw 브리지와
-/// 같은 주기로 `Ping` 을 보낸다. 첫 Ping 은 시작 후 한 주기 뒤라 그보다 짧은 dump 의
-/// 송신 프레임은 종전과 같다(`docs/dev-guide/attach-behavior.md#연결-생존-확인-read-timeout--heartbeat`).
+/// 긴 dump 중 서버의 heartbeat timeout으로 점유가 풀리지 않게 Ping을 보낸다.
+/// 첫 Ping은 한 주기 뒤에 보내며 raw bridge와 같은 주기를 쓴다.
 struct DumpHeartbeat {
     every: Duration,
     next: Instant,
@@ -147,12 +126,8 @@ fn classify_control(payload: &[u8]) -> ControlSignal {
     ControlSignal::Other
 }
 
-/// 단일 attach 세션: `127.0.0.1:port` 접속 → 핸드셰이크 → mirror/raw.
-/// 로컬(loopback)과 SSH(터널 localport) 양쪽이 공유한다 — SSH 경로는 이 함수에
-/// **터널의 localport** 를 넘기기만 한다(O7: `--port` 공개 플래그 불필요).
-///
-/// 손실 통지로 끝난 연결은 여기서 다시 붙는다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). `send` 입력은 첫 attach 에서만
-/// 보낸다 — 재attach 가 입력을 되풀이하면 원격에서 명령이 두 번 돈다.
+/// loopback 또는 SSH 터널의 로컬 포트에 attach한다. Loss면 다시 연결한다.
+/// send는 첫 연결에만 적용해 원격 명령이 중복 실행되지 않게 한다.
 pub(crate) fn run_attach_on_port(
     port: u16,
     surface: u32,
@@ -248,11 +223,8 @@ fn attach_surface_once(
     }
 }
 
-/// `tasty attach --ssh user@host <surface>` (1회성 SSH 터널 attach — 단계 5).
-///
-/// ① 원격 포트 발견(auto fallback 체인) → ② `ssh -L` 터널 수립 → ③ 터널 localport 로
-/// 단계 4 attach. SSH 끊김 시 백오프 재연결(decisions 7, `--no-reconnect` 로 off).
-/// 세션은 서버에 상주하므로 재연결은 터널 재수립 + 재attach 만 하면 복구된다.
+/// 원격 포트를 찾아 SSH 터널로 attach한다. 끊기면 터널과 연결을 다시 만들며
+/// --no-reconnect로 재연결을 끌 수 있다. 원격 세션은 서버에 남는다.
 #[allow(clippy::too_many_arguments)]
 pub fn run_attach_ssh(
     target: SshTarget,
@@ -467,8 +439,7 @@ fn attach_workspace_once(
     )
 }
 
-/// `tasty attach --ssh user@host --workspace <id>` (1회성 SSH 터널 workspace attach).
-/// 단계 5 의 터널/포트발견/백오프를 그대로 재사용 — surface 단위와 동일한 SSH 경로.
+/// workspace 단위 원격 attach. surface attach와 포트 발견·터널·백오프를 공유한다.
 #[allow(clippy::too_many_arguments)]
 pub fn run_attach_workspace_ssh(
     target: SshTarget,
@@ -672,11 +643,8 @@ fn run_workspace_mirror_dump(
     }))
 }
 
-/// mirror-dump 모드: 출력을 수집해 mirror grid 재구성 → stdout 출력.
-/// 1회성이라 항상 `Completed` 를 반환하지만, deadline 전에 reader 가 끊기면
-/// `Disconnected`(터널/서버 단절)로 보고해 SSH 재연결이 가능하게 한다.
-///
-/// 손실 통지는 [`run_workspace_mirror_dump`] 와 같은 규칙이다.
+/// 수집 시간이 끝나면 화면을 출력하고 Completed를 반환한다.
+/// 그 전에 reader가 끊기면 Disconnected로 재연결을 요청한다. Loss는 workspace dump와 동일하게 처리한다.
 fn run_mirror_dump(
     mut conn: StreamConnection,
     cols: usize,
@@ -805,11 +773,7 @@ fn report_unrecovered_loss(lost: u64) {
     }
 }
 
-/// raw 브리지 내부 이벤트 — stdin 스레드와 server reader 스레드가 하나의 채널에
-/// merge 해 보낸다. main 은 이 채널에만 블록하므로 더 이상 stdin syscall 에 직접
-/// 갇히지 않고, 서버 쪽 단절을 즉시 감지해 `AttachExit::Disconnected` 를 반환할 수
-/// 있다(mirror-dump 의 `rx.recv_timeout` 패턴과 동일한 아이디어 — 여기선 deadline
-/// 이 없으므로 `recv()`).
+/// stdin과 서버 reader가 보내는 이벤트. 메인 루프는 이 채널에서 기다려 서버 단절도 처리한다.
 enum RawEvent {
     Stdin(Vec<u8>),
     StdinEof,
@@ -818,25 +782,15 @@ enum RawEvent {
     ServerRecvErr,
 }
 
-/// raw 브리지의 stdin 라우팅 슬롯 — 현재 활성 세션의 sender. **쓰기는
-/// [`install_sender`] 만 수행한다**(`docs/dev-guide/attach-behavior.md` "SSH 터널"
-/// "stdin 라우팅(단일 영속 리더 + 슬롯 교체)" 절 불변식) — 리더 스레드는 읽기만
-/// 해서 ABA 경쟁을 피한다: 죽은 sender 로의 송신이 실패했다고 리더가 슬롯을
-/// 되돌리면, 그 사이 이미 설치된 새 세션의 sender 를 지워버릴 수 있다.
+/// 활성 세션의 sender. install_sender만 쓴다. 리더가 송신 실패 후 슬롯을 비우면
+/// 그 사이 설치한 새 sender까지 지울 수 있으므로 리더는 읽기만 한다.
 type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
 
-/// stdin 슬롯 poison 을 보고했는가(첫 1 회만 — poison 은 sticky 라 이후 모든 청크가
-/// 같은 경로를 탄다).
+/// stdin 슬롯 poison은 최초 한 번만 보고한다.
 static STDIN_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// stdin 슬롯 락을 poison 이어도 잡는다. 세 호출부(청크 라우팅 · EOF 라우팅 ·
-/// sender 설치)의 근거는 각 함수 doc 에 있고, 공통점은 **여기서 패닉하면 프로세스가
-/// 영구 사망**한다는 것이다. 복구를 택하더라도 관측은 남긴다
-/// (`docs/dev-guide/error-handling.md` "어느 선택을 하든 로그를 남긴다").
-///
-/// `tasty_utils::poison` 헬퍼를 쓰지 않는 이유는 이 파일의 형제 지점인 writer 락이
-/// **복구가 오답**이라 반대 선택을 하기 때문이다 — 한 파일에 두 형태를 섞으면 다음
-/// 사람이 "여기도 헬퍼면 되겠네" 로 잘못 통일하기 쉽다.
+/// stdin 슬롯은 poison을 보고한 뒤 복구한다. 여기서 패닉하면 stdin 전달이 끝난다.
+/// 아래의 소켓 writer 락은 부분 프레임 위험 때문에 복구하지 않으므로 처리 방식을 구분한다.
 fn lock_stdin_slot(slot: &StdinSlot) -> std::sync::MutexGuard<'_, Option<mpsc::Sender<RawEvent>>> {
     slot.lock().unwrap_or_else(|p| {
         if !STDIN_SLOT_POISON_REPORTED.swap(true, Ordering::Relaxed) {
@@ -850,24 +804,13 @@ fn lock_stdin_slot(slot: &StdinSlot) -> std::sync::MutexGuard<'_, Option<mpsc::S
     })
 }
 
-/// 슬롯이 비어있는(세션 전환 중) 동안 발생한 진짜 stdin EOF/에러를 기억해두는
-/// latch. 리더 스레드가 세우고, [`install_sender`] 가 다음 세션 설치 시 확인해
-/// 즉시 `RawEvent::StdinEof` 를 전달한다 — 서버 단절→재연결 전환과 진짜 stdin
-/// EOF 가 겹치는 경쟁 대응(그렇지 않으면 EOF 통지가 영영 유실돼, 다음 세션이
-/// 이미 닫힌 stdin 을 무한정 기다리게 될 수 있다).
+/// 세션 전환 중의 stdin EOF/오류를 기억한다. 다음 install_sender가 즉시 전달해
+/// 이미 닫힌 stdin을 새 세션이 계속 기다리지 않도록 한다.
 type StdinEofLatch = Arc<AtomicBool>;
 
-/// 프로세스 생애주기 동안 단 하나만 존재하는 stdin 리더 스레드를 시작한다
-/// (`docs/dev-guide/attach-behavior.md` "SSH 터널" "stdin 라우팅(단일 영속 리더 +
-/// 슬롯 교체)" 절) — `run_raw_bridge` 가 재연결마다 새 스레드를 스폰하던 기존
-/// 구조를 대체한다. stdin 을 읽는 스레드가 항상 정확히 1 개이므로, 좀비 스레드가
-/// 새 스레드와 전역 `std::io::Stdin`(내부 `Mutex<BufReader<..>>`)을 두고 경쟁해
-/// 재연결 직후 입력을 훔쳐가는 문제가 구조적으로 사라진다. 반환된 슬롯에 각 raw
-/// 세션이 [`install_sender`] 로 자신의 sender 를 설치해 라우팅 대상을 바꾼다.
-///
-/// 별도 종료 신호 없이 프로세스 종료에 정리를 맡긴다 — 기존 heartbeat 스레드와
-/// 동일한 전제(528행 근방 주석 참고, OS 가 프로세스 종료 시 blocking syscall 여부와
-/// 무관하게 모든 스레드를 회수한다)라 코드베이스 관행과 일치한다.
+/// 프로세스에서 공유할 stdin 리더를 시작한다. 각 세션은 install_sender로 수신 대상만 바꾼다.
+/// stdin을 여러 스레드가 읽으면 재연결 뒤 입력을 서로 가져갈 수 있어 하나만 유지한다.
+/// 별도 종료 신호 없이 프로세스 종료 때 회수한다.
 fn spawn_stdin_reader() -> (StdinSlot, StdinEofLatch) {
     let slot: StdinSlot = Arc::new(Mutex::new(None));
     let eof_latch: StdinEofLatch = Arc::new(AtomicBool::new(false));
@@ -903,13 +846,8 @@ fn stdin_router() -> &'static (StdinSlot, StdinEofLatch) {
     ROUTER.get_or_init(spawn_stdin_reader)
 }
 
-/// stdin 에서 읽은 바이트를 현재 슬롯의 sender 로 라우팅한다. 슬롯이 비어있거나
-/// (세션 전환 사이) 이미 죽은 채널이면 이 청크만 조용히 버리고 계속 읽는다 —
-/// 오늘의 "송신 실패 시 스레드 종료" 와 달리, 리더가 항상 1 개만 존재해야 한다는
-/// 불변식을 지키기 위해 이 함수는 스레드를 종료시키지 않는다.
-///
-/// **불변식**: 이 함수는 `slot` 을 절대 쓰지 않는다(읽기만) — 위 [`StdinSlot`]
-/// 문서의 ABA 경쟁 방지 규칙 참고.
+/// 현재 sender에 청크를 보낸다. 세션 전환 중 sender가 없거나 전송에 실패하면 버린다.
+/// 리더 스레드는 계속 읽으며 새 sender를 지우지 않도록 슬롯을 수정하지 않는다.
 fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
     // poison 이어도 계속 진행 — 감싼 `Option<Sender>` 은 항상 유효한 값이라 poison
     // 후에도 안전하게 읽을 수 있다(tearing 불가). 이 상시 리더 스레드는 `OnceLock`
@@ -921,11 +859,8 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
     }
 }
 
-/// stdin EOF/에러 통지를 현재 슬롯의 sender 로 라우팅한다. 활성 세션이 있어
-/// 전달에 성공하면 그걸로 끝. 슬롯이 비어있거나 전달에 실패하면(세션 전환 사이)
-/// [`StdinEofLatch`] 에 기억해뒀다가, 다음 세션이 [`install_sender`] 로 sender 를
-/// 설치하는 시점에 즉시 전달되게 한다. 위 [`route_stdin_chunk`] 와 동일한 이유로
-/// `slot` 은 쓰지 않는다.
+/// EOF를 현재 sender에 전달한다. 실패하면 latch에 남겨 다음 세션 설치 때 전달한다.
+/// 청크 전달과 마찬가지로 슬롯은 수정하지 않는다.
 fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
     // route_stdin_chunk 와 동일한 이유로 poison 을 무시하고 계속 진행한다 — 이
     // 함수도 같은 상시 리더 스레드에서 돌므로 여기서 패닉하면 마찬가지로 영구 사망.
@@ -939,10 +874,7 @@ fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
     }
 }
 
-/// 새 raw 세션이 시작될 때 자신의 sender 를 슬롯에 설치한다 — `slot` 에 대한
-/// 유일한 쓰기 지점(위 [`StdinSlot`] 불변식). 설치 직전까지 [`StdinEofLatch`] 가
-/// 세워져 있었다면(슬롯이 비어있는 동안 진짜 stdin EOF 가 발생한 경우) 새로
-/// 설치한 sender 로 즉시 `RawEvent::StdinEof` 를 전달하고 latch 를 내린다.
+/// 슬롯을 쓰는 유일한 함수. 새 sender 설치 시 남아 있는 EOF를 전달하고 latch를 내린다.
 fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<RawEvent>) {
     // poison 이어도 대입은 안전(값 자체가 tearing 불가) — 이 함수는 메인 스레드
     // (재연결 루프)에서 매 세션마다 호출되므로, 여기서 패닉하면 백오프 재연결
@@ -953,15 +885,8 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
     }
 }
 
-/// writer 락 poison 처리 — **복구하지 않는다.**
-///
-/// 임계구역이 소켓에 프레임을 쓰므로, 락을 든 채 죽은 스레드는 프레임을 절반만
-/// 남겼을 수 있다. 그 위에 이어 쓰면 스트림 프레이밍이 깨져 상대가 쓰레기를 읽는다 —
-/// 데이터를 신뢰할 수 없는 자리라 복구가 오답이다
-/// (`docs/dev-guide/error-handling.md` "락 poison").
-///
-/// 대신 **조용히** 접지도 않는다. 지금까지 poison 은 "쓰기 실패" 와 구분 없이 세션
-/// 종료로 흘러가, 사용자에게는 attach 가 이유 없이 끊긴 것으로 보였다.
+/// 소켓 writer의 poison은 로그를 남기고 세션을 끝낸다. 복구해서 이어 쓰지 않는다.
+/// 이전 쓰기가 프레임 중간에서 끝났을 수 있어 이후 프레임도 잘못 해석될 수 있다.
 fn note_writer_poisoned(during: &str) {
     tracing::error!(
         "attach: writer lock poisoned while {during} — a thread panicked while holding it; \
@@ -969,24 +894,9 @@ fn note_writer_poisoned(during: &str) {
     );
 }
 
-/// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
-/// 단계 4 옵션(완전 raw TTY 설정은 추후) — 기본 passthrough.
-///
-/// server 출력은 별도 스레드로 읽어 하나의 `mpsc` 채널에 merge 한다(mirror-dump
-/// 와 동일 패턴). main 은 채널 `recv()` 에만 블록하므로 서버 단절을
-/// `RawEvent::ServerRecvErr` 로 즉시 감지해 `AttachExit::Disconnected` 를 정상
-/// 반환할 수 있다 — `process::exit` 는 쓰지 않는다.
-///
-/// stdin 은 이 함수가 직접 스레드를 스폰하지 않는다 — 프로세스
-/// 생애주기 동안 [`stdin_router`] 가 1 회만 스폰한 리더 스레드가 있고, 이 함수는
-/// 매 호출(=매 재연결 세션)마다 [`install_sender`] 로 자신의 sender 를 그 리더의
-/// 라우팅 슬롯에 설치할 뿐이다. 재연결마다 새 stdin 스레드를 스폰하던 예전
-/// 구조는 이전 스레드가 종료 신호를 받을 방법이 없어 blocking read 에 갇힌 채
-/// 좀비로 남았고, 좀비와 새 스레드가 전역 stdin Mutex 를 두고 경쟁해 재연결
-/// 직후 입력이 비결정적으로 유실될 수 있었다 — 리더가 항상 정확히 1 개인
-/// 지금은 이 경쟁 자체가 구조적으로 불가능하다. 남는 유실 창은 세션 전환의 아주
-/// 짧은 순간(이전 세션이 끝나 슬롯이 비거나 죽은 채널을 가리키는 동안 들어온
-/// 입력)뿐이다. 상세 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
+/// stdin→서버, 서버→stdout을 연결한다. Ctrl+\(0x1c)로 detach한다.
+/// 서버 reader와 공용 stdin 리더의 이벤트를 채널에서 받아 단절 사유를 반환한다.
+/// 세션마다 stdin sender만 교체하며, 전환 중 입력은 유실될 수 있다.
 fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<SessionEnd> {
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
@@ -1065,10 +975,7 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<SessionE
     raw_bridge_main_loop(rx, writer, &mut out)
 }
 
-/// `run_raw_bridge` 의 이벤트 디스패치 루프 — stdin/server 스레드가 실제 OS 자원에
-/// 블록하는 부분과 분리해뒀다. 채널 로직만 이 함수가 담당하므로, 유닛 테스트가
-/// 실제 stdin/소켓 없이 `RawEvent` 를 직접 채널에 흘려 종료 사유 판정을 검증할 수
-/// 있다(아래 `raw_bridge_tests`).
+/// 실제 stdin·소켓을 읽는 스레드와 분리한 이벤트 처리. 시험은 RawEvent를 직접 보낸다.
 fn raw_bridge_main_loop(
     rx: mpsc::Receiver<RawEvent>,
     writer: Arc<Mutex<TcpStream>>,
@@ -1142,16 +1049,9 @@ fn raw_bridge_main_loop(
     }
 }
 
-/// raw 브리지의 옛 연결을 놓는다 — `Detach` 를 쓰고, 서버가 소켓을 닫았다는 신호
-/// (`ServerRecvErr` 또는 서버의 `Detach`)를 기다린다. 기다리는 동안 들어온 stdin 은
-/// 버린다 — 세션 전환 사이의 짧은 창이고, 그 창의 입력은 재연결 때와 같이 원격에 닿지
-/// 않는다(`run_raw_bridge` doc). 신호가 끝내 안 오면 `HEARTBEAT_TIMEOUT` 에서 포기하고
-/// 다시 붙는다 — 그 경우 새 attach 는 서버 점유 해제와 경합할 수 있다.
-///
-/// 단 **끝내라는 신호는 버리지 않는다** — stdin EOF 와 detach 키(`Ctrl+\`)는 이
-/// 창에서도 정상 루프와 같이 세션을 끝낸다(재attach 하지 않는다). 이 창에서는 슬롯이
-/// 아직 이 세션의 sender 를 들고 있어 EOF 가 latch 에 안 남으므로, 여기서 삼키면 다음
-/// 세션이 받을 EOF 가 없다. 옛 연결에는 이미 `Detach` 를 썼으므로 더 보낼 것도 없다.
+/// Detach를 보내고 서버의 Detach 또는 EOF를 기다린다. 일반 입력은 이 동안 버린다.
+/// HEARTBEAT_TIMEOUT이 지나면 다시 attach하므로 서버의 점유 해제와 경합할 수 있다.
+/// stdin EOF와 Ctrl+\는 버리지 않고 세션을 끝낸다. 삼키면 다음 세션이 종료 신호를 받지 못한다.
 fn release_raw_for_resync(
     rx: &mpsc::Receiver<RawEvent>,
     writer: &Arc<Mutex<TcpStream>>,
@@ -1265,15 +1165,9 @@ mod tests {
     }
 }
 
-/// `raw_bridge_main_loop` 채널 로직 단위 테스트 — 실제 stdin/소켓 대신 `RawEvent`
-/// 를 채널에 직접 흘려 종료 사유별 `AttachExit` 판정을 검증한다. 이 항목이 고치는
-/// 결함은 "서버 쪽 단절을 감지해도 raw 브리지가 `AttachExit::Disconnected` 를 반환하지
-/// 못하고(과거엔 `process::exit` 로 프로세스 자체가 죽어 반환 지점에 도달 못함)
-/// 백오프 재연결이 발동하지 않는" 것이었다 — 아래 `server_recv_err_reports_disconnected`
-/// 가 바로 그 회귀를 잡는다.
+/// 실제 stdin·소켓 없이 RawEvent로 종료 및 재연결 판단을 검사한다.
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 이유: 테스트는 let _ = 사유 주석 정책의 대상이 아니며 제품 lint는 유지한다.
 #[allow(clippy::let_underscore_must_use)]
 mod raw_bridge_tests {
     use std::io::Read;
@@ -1574,11 +1468,8 @@ mod raw_bridge_tests {
     }
 }
 
-/// mirror-dump 가 서버 heartbeat 시한보다 오래 붙어 있을 때 client 발 `Ping` 을 보내는가.
-/// 가짜 서버가 실제 서버처럼 read timeout 을 걸고(시험용으로 줄인 주기의 네 배 —
-/// `HEARTBEAT_TIMEOUT` 과 `HEARTBEAT_INTERVAL` 의 비율 그대로), 그 시한을 여러 번 넘기는
-/// dump 동안 한 번도 시한에 안 걸리고 `Detach` 까지 받는지 잰다. Ping 이 없으면 서버 쪽
-/// read 가 시한에 걸려 실제 서버가 점유를 푸는 바로 그 자리에서 이 시험이 실패한다.
+/// 서버 시한보다 긴 dump에서 Ping으로 연결을 유지하는지 확인한다.
+/// 가짜 서버의 timeout과 Ping 주기는 실제 비율을 유지해 줄인다.
 #[cfg(test)]
 mod dump_heartbeat_tests {
     use std::io::{BufRead, BufReader};

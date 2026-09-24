@@ -1,9 +1,5 @@
-//! `tasty terminal` · `tasty pty` CLI → JsonRpcRequest 매핑.
-//!
-//! 두 네임스페이스는 같은 PTY 를 다루지만 대상이 다르다 — `terminal.*` 는 자식 터미널
-//! surface 를, `pty.*` 는 surface 없는 headless PTY primitive([내부 동작 (headless-valid)](../../../../docs/features/headless-pty/index.md#내부-동작-headless-valid))
-//! 를 id 로 조작한다. 한 자리에 두는 이유는 둘 다 `normalize_cwd_or_exit` 로 cwd 를
-//! 정규화하고, 그 외에는 부모의 어떤 상태도 안 본다는 것이다.
+//! terminal.*는 자식 터미널 surface를, pty.*는 surface 없는 PTY를 ID로 조작한다.
+//! cwd 정규화는 normalize_cwd_or_exit를 공유한다.
 
 use super::{normalize_cwd_or_exit, resolve_surface_id};
 

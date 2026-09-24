@@ -100,11 +100,8 @@ pub(super) fn hook_handler_command_to_method_params(
     }
 }
 
-/// JSON 문자열을 파싱하되, **못 읽으면 조용히 버리지 않고 원문 문자열 그대로 넘긴다.**
-///
-/// `.ok()` 로 떨어뜨리면 그 자리가 "미지정" 이 되고, `--action` 오타 하나가 아무것도
-/// 안 고친 upsert 를 성공으로 만든다. 문자열로 넘기면 서버의 스키마 검증이 그 자리에서
-/// 거부하므로, 잘못 적은 것이 값으로 드러난다.
+/// JSON 파싱이 실패하면 원문 문자열을 보내 서버가 거절하게 한다.
+/// 값을 버리면 잘못 쓴 action을 미지정으로 처리해 성공할 수 있다.
 fn json_or_raw(s: &str) -> serde_json::Value {
     serde_json::from_str::<serde_json::Value>(s)
         .unwrap_or_else(|_| serde_json::Value::String(s.to_string()))

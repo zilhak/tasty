@@ -1,13 +1,4 @@
-//! 클라이언트 주도 실행 — 크레이트의 세 번째 갈래.
-//!
-//! `commands/`(무엇을 받나 · clap 선언) → `request/`(단발 RPC 면 어디로) 의 2갈래
-//! 대칭에 이 모듈이 세 번째로 붙는다: **클라이언트 주도면 무엇을 하는가.**
-//! 갈래 판정은 [`crate::dispatch`] 가 하고, 여기엔 각 명령의
-//! [`ClientCommand`](crate::dispatch::ClientCommand) 구현과 그 실행부가 온다.
-//!
-//! 하위 모듈이 SSH 위임(`crate::ssh`)·스트림(`tasty_ipc`)·원격 능력
-//! (`crate::remote_browse` / `crate::remote_create`)을 참조하는 것은 정상이다 —
-//! 뒤집혀 있던 것은 선언 계층(`commands/`)이 그것들을 알던 쪽이었다.
+//! ClientCommand 실행 처리. 단발 JSON-RPC와의 구분은 crate::dispatch가 담당한다.
 
 pub mod attach;
 pub mod debug;
@@ -196,7 +187,6 @@ impl ClientCommand for RemoteAttach<'_> {
             self.remote_port_mode,
             tasty_i18n::t("cli.dispatch.remote_attach_target_required"),
         )?;
-        // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
         if let Some(ws) = self.workspace {
             if self.raw {
                 anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.raw_workspace_exclusive"));
@@ -213,7 +203,6 @@ impl ClientCommand for RemoteAttach<'_> {
                 !self.no_reconnect,
             );
         }
-        // surface 단위 attach (단계 4/5).
         let Some(surface) = self.surface else {
             anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.attach_target_required"));
         };
@@ -231,9 +220,7 @@ impl ClientCommand for RemoteAttach<'_> {
     }
 }
 
-/// `tasty remote check` — 원격 tasty 생존 확인. 포트 발견 + ssh -L 터널 + 터널 포트로
-/// 가벼운 IPC(system.info) 1 회. 포트 발견만으로 alive 단정하지 않는다(stale 포트
-/// 거짓 alive 방지).
+/// 원격 포트를 찾고 SSH 터널로 system.info 응답을 확인한다. 포트 파일만으로 생존을 판단하지 않는다.
 pub struct RemoteCheck<'a> {
     pub ssh: &'a Option<String>,
     pub profile: &'a Option<String>,
@@ -270,7 +257,6 @@ impl ClientCommand for RemoteWorkspaces<'_> {
         if self.ssh.is_some() && self.profile.is_some() {
             anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.ssh_profile_exclusive"));
         }
-        // 접속 스펙 resolve(profile/ssh) — CLI 와 호스트 IPC 워커가 공유하는 helper.
         let (target, rt, pm, pf) = crate::remote_browse::resolve_connection_spec(
             self.profile.as_deref(),
             self.ssh.as_deref(),

@@ -152,7 +152,7 @@ pub(super) fn plugin_command_to_method_params(
             }
             ("plugin.audit_clear", serde_json::Value::Object(p))
         }
-        // AuditFollow는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
+        // audit-follow는 ClientDriven에서 plugin.audit_follow IPC를 반복 호출한다.
         PluginCommands::AuditFollow { .. } => ("plugin.list", serde_json::json!({})),
     }
 }

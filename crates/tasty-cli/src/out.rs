@@ -1,39 +1,17 @@
-//! CLI 클라이언트 stdout 쓰기의 단일 경로 — `println!` / `print!` 대체.
-//!
-//! `println!` 은 stdout 쓰기 실패를 panic 으로 승격한다(`failed printing to stdout`).
-//! 읽는 쪽이 파이프를 먼저 닫으면(`tasty list tree | head -1`, `| true`) EPIPE 가
-//! 돌아오고, 그 panic 이 종료 코드 101 + 가짜 crash report 로 이어진다. Rust 런타임이
-//! SIGPIPE 를 `SIG_IGN` 으로 두므로 프로세스가 스스로 처리해야 하고, Windows 에는
-//! SIGPIPE 자체가 없어 `ErrorKind::BrokenPipe` 만 온다 — 그래서 쓰기를 `Result` 로
-//! 받는다(근거: `docs/dev-guide/cli-structure.md#stdout-출력-outrs`).
-//!
-//! - tasty-cli 는 stdout 에 [`outln!`] / [`out!`] 로만 쓴다(정책은
-//!   `docs/dev-guide/error-handling.md` "stdout 쓰기", 집행은
-//!   `tests/cli_stdout_broken_pipe.rs` 의 소스 스캔).
-//! - `BrokenPipe` 는 [`StdoutClosed`] 로 구분돼 호출 스택을 타고 올라오고, CLI 진입점
-//!   (`run_client` / `print_augmented_help` / `print_command_tree` /
-//!   `try_run_plugin_cli`)이 [`quiet_if_stdout_closed`] 로 **종료 코드 0** 으로 접는다.
-//!   더 쓸 곳이 없어졌을 뿐 명령이 실패한 것이 아니다.
-//! - 그 외 stdout 오류(EIO / ENOSPC 등)는 일반 에러로 전파돼 `Error: …` + 종료 코드 1.
-//! - stderr 도 같은 이유로 `eprintln!` 을 쓰지 않는다 — [`errln!`] 을 쓴다. stderr 는 CLI 의
-//!   마지막 보고 채널이라 그 쓰기의 실패는 알릴 곳이 없으므로 **버리고**, 명령의 종료 코드는
-//!   그대로 둔다(`docs/dev-guide/cli-structure.md#stdout-출력-outrs`).
-//! - host(GUI / headless) 는 stdout 에 쓰지 않으므로 이 모듈과 무관하다 — `Routed::Gui`
-//!   갈래의 동작은 바뀌지 않는다.
+//! CLI 출력 오류를 처리한다. stdout은 outln!/out!, stderr는 errln!을 사용한다.
+//! BrokenPipe는 StdoutClosed로 전달하고 CLI 진입점에서 종료 코드 0으로 처리한다.
+//! 그 외 stdout 오류는 종료 코드 1로 전파한다. stderr 쓰기 실패는 버리고 기존 종료 코드를 유지한다.
+//! 자세한 규칙은 docs/dev-guide/cli-structure.md#stdout-출력-outrs를 따른다.
 
 use std::fmt;
 use std::io::{self, Write};
 
-/// 읽는 쪽이 stdout 파이프를 닫았다(EPIPE / `ErrorKind::BrokenPipe`).
-///
-/// 실패가 아니라 "더 이상 출력이 필요 없다" 는 신호다. 호출 스택을 `?` 로 타고 올라와
-/// CLI 진입점에서 [`quiet_if_stdout_closed`] 가 종료 코드 0 으로 접는다.
+/// stdout을 읽던 쪽이 파이프를 닫았다. quiet_if_stdout_closed가 정상 종료로 처리한다.
 #[derive(Debug, thiserror::Error)]
 #[error("stdout closed by reader (broken pipe)")]
 pub struct StdoutClosed;
 
-/// stdout 쓰기 오류를 분류한다 — `BrokenPipe` 만 [`StdoutClosed`] 로, 나머지는 문맥을
-/// 붙인 일반 에러로.
+/// BrokenPipe만 StdoutClosed로 바꾸고 다른 오류는 문맥을 붙여 반환한다.
 fn classify(err: io::Error) -> anyhow::Error {
     if err.kind() == io::ErrorKind::BrokenPipe {
         StdoutClosed.into()
@@ -70,12 +48,7 @@ pub fn flush() -> anyhow::Result<()> {
     io::stdout().lock().flush().map_err(classify)
 }
 
-/// `eprintln!` 대체 — stderr 에 `args` 뒤 개행. [`errln!`] 이 이 함수를 부른다.
-///
-/// `eprintln!` 은 stderr 쓰기 실패를 panic 으로 승격한다(`failed printing to stderr`) — 읽는
-/// 쪽이 먼저 닫힌 `2>&1 | head` 에서 그 panic 이 crash report 가 된다. stderr 는 CLI 가 실패를
-/// 알리는 마지막 채널이라 그 쓰기가 실패하면 **더 알릴 곳이 없다.** 그래서 결과를 버리고,
-/// 실패의 신호는 호출자가 이어서 내는 종료 코드가 나른다.
+/// stderr에 개행과 함께 쓴다. 실패를 다시 보고할 곳이 없어 쓰기 오류를 무시한다.
 pub fn err_line(args: fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
     let written = stderr

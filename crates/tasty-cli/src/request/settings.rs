@@ -29,7 +29,6 @@ pub(super) fn settings_command_to_method_params(
             ("settings.get_remote_transfer", serde_json::json!({}))
         }
         SettingsCommands::SetRemoteTransfer { dir, max_mb } => {
-            // 지정된 필드만 실어 보낸다(핸들러가 부분 patch 로 현재 설정 위에 덮음).
             let mut params = serde_json::Map::new();
             if let Some(dir) = dir {
                 params.insert("dir".to_string(), serde_json::json!(dir));

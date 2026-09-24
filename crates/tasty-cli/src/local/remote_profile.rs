@@ -1,11 +1,5 @@
-//! `tasty tool remote-profile ...` 실행 — 원격 접속 프로필 통합 CRUD (ssh + tasty-attach).
-//!
-//! `~/.tasty/remote-profiles.toml` / `passkeys.toml` 는 client(이 머신) 로컬 파일이라
-//! IPC 미경유로 직접 읽고 쓴다. 포커스 비의존(원칙 3): 모든 명령이 `--name` 으로 대상을
-//! 지정한다. 비밀 값은 저장하지 않는다 — `--identity <path>` 는 path kind passkey
-//! `<name>-key` 로 분리 저장되고, 프로필은 그 passkey 를 이름으로 참조한다.
-//!
-//! 선언(`RemoteProfileCommands`)은 [`crate::commands::remote_profile`] 에 남는다.
+//! remote-profile은 로컬 프로필 파일을 직접 읽고 쓴다. --name으로 대상을 지정한다.
+//! --identity 경로는 `<name>-key` passkey로 저장하고 프로필에는 그 이름만 기록한다.
 
 use anyhow::Result;
 use tasty_i18n::{t, t_args, t_fmt, t_fmt2};
@@ -104,7 +98,6 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 }
                 p.set_field("ssh_ref", r.clone());
             } else {
-                // 인라인 연결 필드.
                 if let Some(h) = host {
                     p.set_field("host", h.clone());
                 }
@@ -187,15 +180,8 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 outln!("{}", serde_json::to_string_pretty(p)?)?;
                 return Ok(());
             }
-            // 왼쪽 라벨 열은 산문이 아니라 **필드 식별자 열**이라 번역하지 않는다.
-            // 등록 kind 는 프로필이 실제로 갖는 필드명을 그대로 찍고(`shell` /
-            // `port_mode` / `remote_tasty` / `ssh_ref` / `extra_options` 는
-            // `[profile.fields]` 의 toml 키 그 자체다), 미등록 kind 는 아래
-            // fallback 이 `p.fields` 의 raw 키를 같은 열에 찍는다. 등록 kind 쪽만
-            // 번역하면 한 명령의 같은 열이 절반은 번역어, 절반은 raw 필드명이 된다.
-            // (`--json` 키와 1:1 대응해서가 아니다 — `type`↔`kind`,
-            // `passkey`↔`passkey_ref` 로 이름이 다르고 `destination` / `status` 는
-            // 합성값이라 대응 키가 아예 없다. 라벨 옆의 자연어만 번역 대상이다.)
+            // 필드 식별자와 미등록 kind의 raw 키를 같은 열에 표시하므로 라벨은 번역하지 않는다.
+            // JSON과는 type/kind, passkey/passkey_ref처럼 이름이 다른 항목도 있다.
             outln!("name          : {}", p.name)?;
             outln!("type          : {}", p.kind)?;
             if let Some(l) = &p.label {
@@ -391,11 +377,8 @@ fn list_local(json: bool) -> Result<()> {
     let hosts = enumerate_hosts();
     let profiles = RemoteProfiles::load();
     if json {
-        // **IPC 와 비대칭인 지점이다.** `remote.profile.list_local` 은 `config_exists`·
-        // `config_readable` 을 함께 실어 보내지만 여기 `--json` 은 맨 배열이라 빈 결과의
-        // 이유(부재 / 권한 없음 / Host 항목 없음)를 구분하지 못한다. 객체로 감싸면
-        // 기존 스크립트를 깨는 breaking change 라 두 갈래를 일부러 어긋난 채 둔다 —
-        // 그 구분이 필요한 호출자는 IPC 를 쓰면 된다.
+        // 기존 JSON 출력은 배열이다. 파일 부재·읽기 실패·빈 목록을 구분하려면
+        // config_exists/config_readable을 제공하는 remote.profile.list_local IPC를 사용한다.
         let arr: Vec<_> = hosts
             .iter()
             .map(|h| {
@@ -413,10 +396,7 @@ fn list_local(json: bool) -> Result<()> {
         return Ok(());
     }
     if hosts.is_empty() {
-        // 빈 목록의 이유는 셋 중 하나고, 사용자가 할 일이 전부 다르다 — 파일을
-        // 만든다 / 읽을 수 있게 고친다(권한, 또는 경로가 디렉토리인 경우) /
-        // Host 항목을 추가한다. IPC 쪽은 같은 구분을 `config_exists`·
-        // `config_readable` 로 실어 보낸다.
+        // 텍스트 출력은 설정 파일 부재·읽기 실패·Host 항목 부재를 구분한다.
         let path = user_config_path();
         let avail = config_availability(path.as_deref());
         let shown = path
@@ -446,8 +426,7 @@ fn list_local(json: bool) -> Result<()> {
     Ok(())
 }
 
-/// 표시용 hint 한 칸 — `HostName[:Port]`(둘 다 없으면 빈 칸). 프로필에는 저장되지
-/// 않는 값이라 "이 alias 가 어디를 가리키나" 를 눈으로 확인하는 용도다.
+/// 화면에만 쓰는 HostName[:Port] 요약. 둘 다 없으면 -를 반환한다.
 fn target_hint(h: &SshConfigHost) -> String {
     match (&h.hostname, h.port) {
         (Some(host), Some(port)) => format!("{host}:{port}"),

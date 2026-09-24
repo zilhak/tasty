@@ -150,9 +150,6 @@ fn assert_annotation_matrix() {
     }
 }
 
-/// 자식 프로세스 쪽 단언 — 부모는 케이스를 돌리고, 실제 도움말 판정은 여기서 한다.
-///
-/// 한 함수에 두 갈래를 두면 읽는 사람이 매 줄마다 "이건 어느 쪽인가" 를 되묻게 된다.
 fn assert_child_side(locale: &str) {
     let report = tasty_i18n::init(locale);
     let locale = report.effective;
@@ -209,9 +206,6 @@ fn assert_child_side(locale: &str) {
     );
 }
 
-/// 한 인자 조합에서 짧은/긴 도움말 두 형태를 모두 단언한다.
-///
-/// 케이스를 고르는 네 겹의 루프와 **한 케이스를 재는 일**은 서로 다른 관심사다.
 fn assert_rendered_forms(
     original: &clap::Command,
     localized: &clap::Command,

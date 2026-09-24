@@ -2,10 +2,7 @@
 
 use crate::commands::{MemoryCommands, memory::ScopeArgs};
 
-/// scope 선택자 → scope 토큰. 아무것도 안 주면 `None`.
-///
-/// 인자가 [`ScopeArgs`] 한 덩어리인 것이 요점이다 — 여섯 값을 따로 받으면 호출부마다
-/// 여섯 줄이 되고, 그 여섯 줄이 자리 수만큼(16) 복제된 것이 이 모듈의 원래 모습이었다.
+/// scope 선택자를 토큰으로 바꾼다. 지정하지 않았으면 None이다.
 pub(super) fn resolve_scope(a: &ScopeArgs) -> Option<String> {
     if let Some(s) = a.scope.as_deref() {
         return Some(s.to_string());
@@ -71,7 +68,6 @@ pub(super) fn memory_command_to_method_params(
                         std::process::exit(1);
                     }
                 };
-                // JSON으로 파싱되면 JSON value, 아니면 string으로 보존.
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
                     params["value"] = parsed;
                 } else {
@@ -157,7 +153,6 @@ pub(super) fn memory_command_to_method_params(
             offset,
         } => {
             let scope_token = require_scope(scope);
-            // `--equals` 는 JSON 리터럴로 파싱; 실패하면 문자열 그대로.
             let equals_val: serde_json::Value = match serde_json::from_str(equals) {
                 Ok(v) => v,
                 Err(_) => serde_json::Value::String(equals.clone()),
@@ -212,7 +207,6 @@ pub(super) fn memory_command_to_method_params(
                     std::process::exit(1);
                 }
             };
-            // 입력은 배열이거나 `{ "entries": [...] }` 형태 둘 다 허용.
             let entries = if parsed.is_array() {
                 parsed
             } else if let Some(arr) = parsed.get("entries") {
@@ -283,18 +277,11 @@ use goal::memory_goal_command_to_method_params;
 use plan::memory_plan_command_to_method_params;
 use secret::memory_secret_command_to_method_params;
 
-/// `memory list` ↔ `memory secret list` 가 같은 인자에 같은 params 를 낸다.
-///
-/// 이 자리의 결함은 "갈렸다" 가 아니라 **처음부터 덜 복제됐고 아무도 안 봤다** 였다 —
-/// `memory.secret.list` 핸들러는 `since`/`until`/`offset` 을 처음부터 읽는데 CLI 의 secret
-/// 경로는 셋을 한 번도 보낸 적이 없다. 코드를 공유하는 것으로는 그 형태가 안 잡힌다(덜
-/// 복제된 쪽에 맞춰 공유물이 쓰였을 것이다). 잡히는 것은 **두 자리에 같은 것을 넣어 보고
-/// 나온 것을 대조하는** 술어뿐이다.
+/// 일반/secret 목록의 필터가 같은 인자에서 같은 params를 만드는지 확인한다.
 #[cfg(test)]
 mod list_filter_parity {
     use clap::Parser;
 
-    /// 두 계열이 함께 받아야 하는 list 필터 전부. 값까지 준다.
     const LIST_ARGS: [&str; 11] = [
         "--global", "--prefix", "p", "--limit", "3", "--since", "5", "--until", "9", "--offset",
         "2",
@@ -322,9 +309,7 @@ mod list_filter_parity {
         assert_eq!(
             list_params(false),
             list_params(true),
-            "`memory list` 와 `memory secret list` 가 같은 인자에 다른 params 를 낸다. \
-             두 계열의 핸들러는 짝마다 같은 키를 읽으므로, CLI 한쪽만 자라면 서버는 받는데 \
-             CLI 로는 닿을 길이 없는 자리가 생긴다."
+            "memory list와 memory secret list가 같은 필터 인자에 다른 params를 보낸다."
         );
     }
 

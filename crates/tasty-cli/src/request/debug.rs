@@ -123,13 +123,9 @@ pub(super) fn debug_command_to_method_params(
         ),
         DebugCommands::Inject(sub) => inject_debug_command_to_method_params(sub),
         DebugCommands::PluginBanner(sub) => plugin_banner_debug_command_to_method_params(sub),
-        // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
-        // handled directly in `run_client` before request mapping is reached.
         DebugCommands::StreamEcho { .. } => {
             unreachable!("debug stream-echo is dispatched before request mapping")
         }
-        // sim emits raw VTE locally — handled directly in `run_client` before
-        // request mapping is reached.
         DebugCommands::Sim { .. } => {
             unreachable!("debug sim is dispatched before request mapping")
         }
@@ -287,10 +283,7 @@ pub(super) fn settings_debug_command_to_method_params(
             "debug.settings.open",
             serde_json::json!({ "tab": tab, "subtab": subtab }),
         ),
-        // raw 문자열을 그대로 싣지 않고 CLI 단에서 1차 파싱해 Value object 로 넘긴다
-        // (서버는 `params.get("settings")` 로 object 를 기대). 이 fn 은 Result 를
-        // 반환하지 못하므로 파싱/파일 에러는 errln + exit(1) 로 처리한다
-        // (normalize_cwd_arg 와 동일한 CLI 에러 선례).
+        // 서버가 JSON 값을 받으므로 CLI에서 먼저 파싱한다. 실패는 stderr에 알리고 exit 1로 끝낸다.
         SettingsDebugCommands::Apply { json, file } => {
             let raw = match (file, json) {
                 (Some(path), _) => std::fs::read_to_string(path).unwrap_or_else(|e| {
@@ -333,8 +326,7 @@ pub(super) fn lua_debug_command_to_method_params(
         LuaDebugCommands::Eval { source } => {
             ("debug.lua.eval", serde_json::json!({ "source": source }))
         }
-        // 파일은 CLI 단에서 읽어 source 로 넘긴다(Apply --file 선례). 이 fn 은 Result 를
-        // 반환하지 못하므로 읽기 실패는 errln + exit(1) 로 처리한다.
+        // 파일은 CLI가 읽는다. 실패는 stderr에 알리고 exit 1로 끝낸다.
         LuaDebugCommands::EvalFile { path } => {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
                 crate::out::errln!(
@@ -420,9 +412,7 @@ pub(super) fn event_bus_command_to_method_params(
     }
 }
 
-/// 입력 주입 — 사용자 입력 재현이라 debug 격리 안에서만 존재한다(원칙 1).
-/// 파라미터 이름은 핸들러가 실제로 읽는 것과 같아야 한다 — 이름이 어긋나면 잎이
-/// 있는데 기본값으로만 도는, 없느니만 못한 진입점이 된다.
+/// 사용자 입력 재현은 debug 빌드에서만 제공한다.
 #[cfg(debug_assertions)]
 pub(super) fn inject_debug_command_to_method_params(
     command: &crate::InjectDebugCommands,
@@ -498,8 +488,7 @@ pub(super) fn inject_debug_command_to_method_params(
     }
 }
 
-/// 두 포인터 주입(`window_mouse` · `egui_mouse`)은 같은 파라미터 집합을 받는다.
-/// 한 벌로 두지 않으면 한쪽만 고쳐지는 순간 두 진입점이 갈린다.
+/// 두 포인터 주입 경로가 같은 파라미터를 보내도록 공용으로 조립한다.
 #[cfg(debug_assertions)]
 #[allow(clippy::too_many_arguments)]
 fn pointer_params(

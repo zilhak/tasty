@@ -31,11 +31,8 @@ pub(super) fn agent_command_to_method_params(
             state,
         } => {
             let mut p = serde_json::json!({ "workspace_id": *workspace_id });
-            // 단일 값은 예전과 똑같이 문자열로 보낸다 — 다중값을 모르는 구버전
-            // 호스트에 새 CLI 가 붙어도 `--state running` 은 그대로 동작한다.
-            // 2개 이상일 때만 배열로 보낸다(구버전 호스트는 배열을 필터로
-            // 인식하지 못해 필터 없이 전체를 반환하는데, 조용히 빈 목록을
-            // 내놓는 것보다 낫다).
+            // 구 호스트와의 단일값 호환을 위해 하나면 문자열, 여러 개면 배열로 보낸다.
+            // 배열을 모르는 구 호스트는 다중값 필터를 적용하지 않고 전체를 반환한다.
             match state.len() {
                 0 => {}
                 1 => p["state"] = serde_json::Value::String(state[0].clone()),
@@ -368,9 +365,6 @@ pub(super) fn agent_command_to_method_params(
     }
 }
 
-/// `TaskCreate` → `agent.task_create` params 조립. `agent_command_to_method_params`
-/// 의 인지 복잡도 상한을 넘기지 않도록 그 큰 match 밖으로 뺀 것 — 로직
-/// 자체는 이전과 동일하다.
 #[allow(clippy::too_many_arguments)] // CLI 인자 하나당 파라미터 하나 — 묶으면 오히려 추적이 어려워짐
 fn build_task_create_params(
     workspace_id: u32,
@@ -500,11 +494,8 @@ fn parse_inline_or_file_json(s: &str, flag: &str) -> serde_json::Value {
     }
 }
 
-/// `--concurrency-limit <name>` 를 `metadata.semaphore.name` 으로 병합한다
-/// (`RunnerLoop` dispatch 가 읽는 `task.metadata.semaphore = { name, holder? }`
-/// 컨벤션의 CLI 단축 — 값 자체는 raw `--metadata` 로 넣는 것과 동일하다). `None` 이면
-/// `metadata_val` 그대로 통과. `--metadata` 가 이미 `semaphore` 키를 담고 있으면
-/// 어느 쪽을 취할지 모호하므로 에러로 거부한다.
+/// concurrency-limit를 metadata.semaphore.name에 넣는다. 지정하지 않으면 원래 metadata를 유지한다.
+/// metadata에 semaphore가 이미 있으면 두 설정 중 하나를 임의로 고르지 않고 거절한다.
 fn apply_concurrency_limit(
     metadata_val: serde_json::Value,
     concurrency_limit: Option<&str>,

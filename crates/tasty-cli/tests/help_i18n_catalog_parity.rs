@@ -1,13 +1,10 @@
-//! `lang/*.toml` 의 `cli.help.*` 가 **실재하는 자리를 정확히** 가리키는가.
-//!
-//! Every compiled help slot must have a catalog entry; English stays source-exact.
+//! 컴파일된 도움말과 카탈로그의 키 집합·영어 원문을 대조한다.
 
 use clap::CommandFactory;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
-    // `crates/tasty-cli` 에서 두 층 위.
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -63,9 +60,7 @@ fn every_english_help_key_names_a_real_slot() {
         .collect();
     assert!(
         orphans.is_empty(),
-        "`lang/en.toml` 에 실재하지 않는 도움말 키가 있다: {orphans:#?}\n\
-         명령이나 인자의 이름이 바뀌면 키가 그 자리를 잃는다. 그때 번역은 **사라지지 않고 \
-         조용히 안 쓰인다** — 영어가 그대로 보이므로 en 에서는 아무 증상이 없다."
+        "컴파일된 도움말에 없는 영어 카탈로그 키: {orphans:#?}\n명령·인자 이름과 번역 키가 일치하는지 확인한다."
     );
 }
 
@@ -86,10 +81,7 @@ fn every_english_help_value_matches_the_compiled_text() {
     }
     assert!(
         drift.is_empty(),
-        "`lang/en.toml` 의 영어가 소스의 doc comment 와 다르다:\n{}\n\
-         영어 원본은 소스다(`clap_help_text_is_english_only` 가 그것을 강제한다). \
-         en.toml 은 **자유도 없는 복제**이고, 그 복제가 번역자에게 키 목록이 된다. \
-         갈라지면 번역자는 지금 화면에 없는 문장을 번역한다.",
+        "영어 카탈로그가 컴파일된 도움말과 다르다:\n{}\n소스의 doc 주석을 기준으로 en.toml을 맞춘다.",
         drift.join("\n")
     );
 }

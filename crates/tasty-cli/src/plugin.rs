@@ -1,4 +1,4 @@
-//! Plugin CLI 명령 중 호스트 IPC를 거치지 않는 local-only 처리.
+//! 플러그인 로컬 파일 진단·로그 조회와 감사 로그 IPC 폴링.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::net::TcpStream;
@@ -91,21 +91,15 @@ pub fn run_audit_follow(
             for rec in records {
                 outln!("{}", serde_json::to_string(rec).unwrap_or_default())?;
             }
-            // 배치 경계 flush(종전 best-effort flush 자리). 파이프 생존 프로브가 아니다 —
-            // 레코드는 `outln!` 로 개행과 함께 이미 write 됐으므로 여기서 버퍼는 비어 있고,
-            // 빈 버퍼 flush 는 write(2) 를 내지 않아 EPIPE 를 감지하지 못한다. 읽는 쪽이
-            // 닫혔을 때 이 무한 루프를 실제로 빠져나가는 지점은 **다음 레코드의 `outln!`**
-            // (`StdoutClosed` → 종료 코드 0, docs/dev-guide/cli-structure.md#stdout-출력-outrs)이고, 레코드가 더 없으면
-            // `tail -f | head -1` 처럼 계속 대기한다(종전과 같다).
+            // 빈 버퍼의 flush는 파이프 닫힘을 감지하지 못한다. 다음 outln!에서 종료하며,
+            // 새 레코드가 없으면 tail -f처럼 계속 기다린다.
             crate::out::flush()?;
         }
         std::thread::sleep(std::time::Duration::from_millis(interval_ms));
     }
 }
 
-/// `tasty plugin doctor <id>` — Plugin manifest 의 contributes.detector / handler 를
-/// 점검해 현재 호스트가 이해하지 못하는 rule kind (= `DetectorRuleDecl::Unknown`) 를
-/// 표시한다. 호스트가 실행 중이지 않아도 작동하는 local-only 명령.
+/// 로컬 매니페스트의 detector/handler를 요약하고 지원하지 않는 rule kind를 표시한다.
 pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     let root = tasty_host_plugin::plugin_root()
         .ok_or_else(|| anyhow::anyhow!("{}", tasty_i18n::t("cli.plugin.root_unresolved")))?;
@@ -120,9 +114,8 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
             )
         );
     }
-    // F.B.13-3: host file 도메인 검증 (validate_bin_extras) 은 본 바이너리 잔존.
-    // CLI tasty-cli 단독 빌드 가능을 위해 schema 검증 (Manifest::load 내장) 까지만
-    // 수행. install/remove 경로의 daemon IPC handler 가 bin extras 를 추가 검증.
+    // Manifest::load의 공용 스키마 검사만 수행한다. 호스트의 bin extras 검증은
+    // 설치·제거 IPC 경로가 담당하므로 이 명령의 성공이 그 검증까지 보장하지 않는다.
     let manifest = Manifest::load(&plugin_dir).map_err(|e| {
         anyhow::anyhow!(
             "{}",
@@ -139,9 +132,7 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     outln!("  manifest_version: {}", manifest.manifest_version)?;
     outln!("  api_version:      {}", manifest.api_version)?;
 
-    // F.B.2: contributes.detector/handler 가 opaque Value 로 전환되어 본 CLI 표시는
-    // Value 의 필드를 직접 읽어 요약한다. concrete schema 검증은 manifest::load 내
-    // bin glue 에서 수행하므로 여기 도달했다는 것은 schema 가 valid 함을 의미.
+    // detector/handler는 opaque Value이므로 필드를 직접 읽어 표시한다.
     let detectors = &manifest.contributes.detector;
     outln!()?;
     outln!(

@@ -1,10 +1,5 @@
-//! 호스트가 JSON-RPC 오류로 답했을 때 CLI 가 stderr 에 내는 모양.
-//!
-//! 첫 줄은 종전 그대로 `Error (<code>): <message>` 다 — 그 줄을 파싱하는 스크립트가 있다.
-//! 응답에 `error.data` 가 있으면 **둘째 줄** `data: <한 줄 JSON>` 으로 원형 그대로 싣는다.
-//! `reason` · `storage_failure` 처럼 IPC 호출자가 분기하는 실패 분류를 CLI 호출자도 같은
-//! 값으로 얻게 하는 것이 목적이다(원칙 2). 형식의 근거는
-//! `docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs`.
+//! 호스트 오류를 `Error (<code>): <message>`로 출력한다.
+//! error.data가 있으면 다음 줄에 `data: <한 줄 JSON>`을 붙인다. 두 줄의 형식은 파서 계약이다.
 
 use tasty_ipc::client::JsonRpcCallError;
 
@@ -33,12 +28,8 @@ pub(crate) fn exit_with(e: &anyhow::Error) -> ! {
     std::process::exit(1);
 }
 
-/// 오류를 `main` 까지 올리는 경로(스트리밍 명령)용 — std 가 찍는 문구에 `data` 줄을 싣는다.
-///
-/// 그 경로의 첫 줄은 std 가 앞에 붙이는 `Error: ` 까지 포함해 `Error: Error (<code>): <message>`
-/// 이고, 그 모양을 파싱하는 쪽이 있다. [`exit_with`] 로 옮기면 그 접두가 빠지므로 옮기지 않고,
-/// 올라가는 값의 문구만 [`render`] 의 두 줄로 바꾼다. `data` 가 없으면 **값을 그대로** 돌려준다 —
-/// 그 출력은 한 글자도 안 바뀐다.
+/// main으로 반환하는 오류는 std가 Error:를 추가하므로 그 접두를 유지한다.
+/// data가 있으면 render의 두 줄 형식으로 바꾸고, 없으면 원래 오류를 반환한다.
 pub(crate) fn with_data_line(e: anyhow::Error) -> anyhow::Error {
     let has_data = e
         .downcast_ref::<JsonRpcCallError>()
@@ -97,8 +88,6 @@ mod tests {
         );
     }
 
-    /// std 가 `main` 의 `Err` 를 찍는 모양(`Error: {:?}`)으로 재 본다 — 첫 줄은 종전 그대로이고
-    /// `data` 는 둘째 줄이다. `data` 가 없으면 한 줄 그대로다.
     #[test]
     fn the_main_path_keeps_its_first_line_and_adds_the_data_line() {
         // `RUST_BACKTRACE` 가 켜진 환경이면 anyhow 가 뒤에 backtrace 블록을 붙인다 — 그 앞까지만 본다.

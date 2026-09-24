@@ -15,20 +15,11 @@ use super::request::command_to_request;
 use crate::out::outln;
 use tasty_ipc::client::IpcConnection;
 
-/// IPC connect 상한. 목적지가 항상 `127.0.0.1` 이라 미리스닝 포트는 즉시 RST 로
-/// 거부되므로 평시엔 이 값에 닿지 않는다 — 로컬 방화벽 DROP 처럼 RST 가 돌아오지
-/// 않는 상황에서 OS 기본 타임아웃(수십 초~분)까지 매달리는 것을 막는 보험이다.
-/// hook 은 에이전트 턴 경계에서 **동기** 실행되므로, 여기서 블록되면 상태 push 가
-/// 늦는 데 그치지 않고 턴 자체가 멈춘다. read/write 쪽 선례는
-/// `remote_browse.rs` 의 `PROBE_TIMEOUT`.
+/// loopback에서도 방화벽 DROP 등으로 연결이 지연될 수 있어 대기 상한을 둔다.
+/// 에이전트 훅은 동기로 실행되므로 연결 지연이 턴을 막을 수 있다.
 const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// 연결 실패 — **두 개의 문구를 함께 나른다.**
-///
-/// 사용자에게 보이는 stderr 는 번역문이어야 하고, `hook-failures.log` 에 남는 진단은
-/// 로케일 무관 영어여야 한다(`hook_failure` 모듈 참고). 포트 파일 쪽은 `PortFileError` 의
-/// `Display` 가 이미 영어 원본을 들고 있었지만 이 경로에는 대응물이 없어, 번역문이
-/// 그대로 로그에 실렸다. 그래서 여기서 원본을 만든다.
+/// 사용자 stderr용 번역과 hook-failures.log용 영어 진단을 나눠 만든다.
 pub(crate) struct ConnectFailure {
     port: u16,
     source: std::io::Error,
@@ -44,8 +35,7 @@ impl ConnectFailure {
         )
     }
 
-    /// 진단용 — 로케일 무관 영어. `lang/en.toml` 의 같은 키와 문자 단위로 같아야 하며
-    /// 아래 테스트가 그것을 강제한다(포트 파일 쪽 선례와 같은 형태).
+    /// 영어 카탈로그와 정확히 같은 진단문을 반환한다.
     pub(crate) fn diagnostic(&self) -> crate::hook_failure::DiagnosticEnglish {
         crate::hook_failure::DiagnosticEnglish::new_unchecked(format!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
@@ -123,24 +113,11 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     ))
 }
 
-/// plugin CLI 단발 요청. **agent hook 이 타는 유일한 경로**다(static CLI 는 plugin
-/// 명령이 아니다) — 그래서 실패 기록([`crate::hook_failure`])을 여기에만 건다.
-///
-/// 그 "유일" 을 지키는 것은 이 파일이 아니라 **매니페스트**다. hook 서브커맨드가
-/// `polling` 이나 `auto_wait` 를 선언하면 그 명령은 아래 두 디스패치
-/// ([`run_dynamic_client_polling`] · [`run_dynamic_client_with_auto_wait`])로 새고,
-/// 거기에는 기록이 없어 그 hook 의 실패는 아무 데도 안 남는다 — 빌드도 테스트도
-/// 초록인 채로. 그 전제를 재는 자리는
-/// `tests/hook_commands_stay_on_the_recording_path.rs` 다.
-///
-/// **전달이 실패로 끝나는 갈래를 하나도 빼지 않고 기록한다**: 포트 파일 부재
-/// (=tasty 미실행, 실사용에서 가장 흔한 원인) / connect 실패 / 연결 준비 실패 /
-/// JSON-RPC 에러, 그리고 응답은 왔지만 호스트 호출이 조용히 실패한 갈래. 셸 래퍼가
-/// exit code 를 버리므로, 기록하지 않으면 그중 무엇이 일어났는지 사후에 알 방법이 없다.
-///
-/// 기록하지 **않는** 갈래는 하나다 — 응답을 받아 놓고 stdout 쓰기가 실패하는 것
-/// (`outln!`). 그것은 전달 실패가 아니라 출력 실패이고, 파이프 조기 종료는 docs/dev-guide/cli-structure.md#stdout-출력-outrs 이
-/// 조용한 종료 코드 0 으로 접는다.
+/// 플러그인 CLI 단발 요청. 훅 전달 실패는 로컬 파일에 기록한다.
+/// 훅 매니페스트가 polling/auto_wait를 선언하면 이 경로를 우회하므로
+/// tests/hook_commands_stay_on_the_recording_path.rs가 그 선언을 막는다.
+/// 포트 조회·연결·준비·JSON-RPC 오류와 성공 응답의 host_call_failures를 기록한다.
+/// 응답 뒤 stdout 쓰기 실패는 전달 실패가 아니므로 여기에 기록하지 않는다.
 fn run_dynamic_client(
     mut request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
@@ -150,8 +127,6 @@ fn run_dynamic_client(
     let port = match crate::port_file::read_port_diagnosed(port_file) {
         Ok(p) => p,
         Err(e) => {
-            // `PortFileError` 의 `Display` 가 영어 원본이다. 사용자에게 낼 번역문은
-            // `read_port` 와 같은 지점(`port_file::localize`)이 만든다.
             hook_failure::record(
                 &request.method,
                 &request.params,
@@ -171,21 +146,8 @@ fn run_dynamic_client(
     let mut conn = match IpcConnection::new(stream) {
         Ok(c) => c,
         Err(e) => {
-            // 연결은 됐는데 CLI 쪽 준비(스트림 복제)가 실패한 갈래. 요청은 한 바이트도
-            // 안 나갔으므로 **전달 실패**이고, 앞의 두 갈래와 같은 이유로 흔적이 여기
-            // 말고는 없다.
-            //
-            // **기록할 곳이 없어서 안 하는 것이 아니다.** 기록은 IPC 가 아니라
-            // `tasty_home()` 아래 파일이라 상대에 닿는 것과 무관하다 — 닿지도 못한
-            // 앞의 두 갈래가 이미 그렇게 남긴다.
-            //
-            // 다만 이 갈래의 흔한 원인(fd 고갈)은 로그 파일을 여는 것도 같이 막는다.
-            // `record` 는 best-effort 라 그때는 조용히 아무것도 안 남는다 — 그래도
-            // 거는 이유는 원인이 그것 하나가 아니고, 안 걸면 남을 확률이 0 이기 때문이다.
-            //
-            // 문구는 `io::Error` 의 `Display` 다. Rust 는 `setlocale` 을 부르지 않으므로
-            // libc 가 로케일과 무관한 영어를 돌려준다 — `new_unchecked` 의 보증을
-            // 호출자가 지는 자리이고, 그 근거가 이것이다.
+            // 요청을 보내기 전의 준비 실패도 기록한다. fd 고갈이면 로그 파일 열기도
+            // 실패할 수 있어 기록은 best-effort다. 문구는 io::Error에서 얻는다.
             hook_failure::record(
                 &request.method,
                 &request.params,
@@ -195,21 +157,9 @@ fn run_dynamic_client(
             return Err(e);
         }
     };
-    // 새 계약을 쓰는 요청이면 상대의 선언을 먼저 묻는다. 여기서 끝나는 갈래는 어느 것이든
-    // 이 요청이 안 나간 **전달 실패**라 앞 갈래들과 같은 이유로 기록한다. 문구의 출처는
-    // 갈래마다 다르다:
-    //
-    // - 선언이 없다(`UnsupportedCapability`) — `Display` 가 CLI 가 쥔 **영어 원본**이다.
-    // - 확인 요청(`system.info`)의 전송·EOF 실패 — `io::Error` 와 `IpcConnection::send` 의
-    //   고정 영어 문구다.
-    // - 확인이 요청의 응답 대기 상한 안에 안 끝났다 — CLI 가 만든 `-32067` 문장이다(본 요청이
-    //   큐에서 만료됐을 때 호스트가 쓰는 영어 문장과 같은 함수로 만든다). 이 갈래만 `code` 칸에
-    //   `-32067` 을 싣는다 — 이 요청에 대한 답이고, 서버가 이 요청을 큐에서 만료시킨 아래 `conn.send`
-    //   갈래가 싣는 값과 같다(`contract::failure_code`).
-    // - 확인 요청이 JSON-RPC 오류로 끝났다 — 문구는 **답한 서버가 만든 문장**이라 CLI 에 영어
-    //   원본이 없다. 아래 `conn.send` 실패 갈래와 같은 처지이고 같은 방식으로 적는다 —
-    //   `new_unchecked` 의 보증이 이 갈래에서는 서지 않는다. 다만 그 코드는 이 요청이 아니라
-    //   확인 요청의 것이라 `code` 칸에 싣지 않는다.
+    // capability 확인에 실패하면 원래 요청은 보내지 않는다. 확인 만료의 -32067만
+    // 원래 요청의 오류 코드로 기록한다. 확인 요청이 받은 다른 오류는 서버 문구를
+    // 보존하되 원래 요청의 JSON-RPC 코드로 기록하지 않는다.
     if let Err(e) = super::contract::ensure(&mut conn, &mut request) {
         hook_failure::record(
             &request.method,
@@ -222,12 +172,8 @@ fn run_dynamic_client(
     }
     match conn.send(&request) {
         Ok(value) => {
-            // **성공 응답도 실패를 담을 수 있다.** 최선노력 host 호출을 가진 훅 핸들러는
-            // 조용히 실패한 호출 수를 `host_call_failures` 로 싣는다
-            // (docs/dev-guide/error-handling.md "최선노력의 대가는 치르되 값으로 노출한다").
-            // 그 수는 응답에 있으므로 여기 stdout 으로도 나가지만, 실사용에서 이 CLI 는
-            // 훅 명령 안에서 돌고 그 명령은 출력을 버린다 — 이 파일이 유일한 흔적이 되는
-            // 이유가 앞의 네 갈래와 같다.
+            // 성공 응답에도 최선노력 host 호출 실패가 담길 수 있다. 훅의 stdout이
+            // 버려져도 사유를 볼 수 있도록 host_call_failures를 파일에 기록한다.
             if let Some(failures) = value
                 .get("host_call_failures")
                 .and_then(serde_json::Value::as_u64)
@@ -249,12 +195,7 @@ fn run_dynamic_client(
             Ok(())
         }
         Err(e) => {
-            // **이 갈래만 문구를 CLI 가 만들지 않는다.** 앞의 둘은 CLI 가 영어 원본을
-            // 쥐고 있어 진단과 표시를 갈라 놓을 수 있지만, 여기 `message` 는 답한 쪽이
-            // 만들어 보낸 것이라 CLI 에 영어 원본이 없다 — 그리고 plugin 이 답하면 그
-            // 문구는 앱 언어를 탄다(`claude.hook`·`codex.hook`). 그래서 로케일 무관성은
-            // 산문이 아니라 **코드 필드**가 진다(`code=`). 코드는 프로토콜 값이라
-            // 안 흔들리고, 이제 산문을 파싱하지 않아도 꺼낼 수 있다.
+            // 외부 응답 문구는 번역됐을 수 있으므로 고정 JSON-RPC 코드도 기록한다.
             let code = e
                 .downcast_ref::<tasty_ipc::client::JsonRpcCallError>()
                 .map(|err| err.code);
@@ -269,10 +210,7 @@ fn run_dynamic_client(
     }
 }
 
-/// auto-wait chain / polling 의 각 응답을 **line-delimited(compact 한 줄)** JSON 으로
-/// 직렬화한다. pretty(여러 줄)로 내면 한 프로세스 stdout 에 두 응답을 합칠 때 물리적
-/// 라인 경계가 응답 경계와 어긋나 "마지막 line 만 파싱" 계약이 깨진다 — 그래서 compact
-/// 고정. serde_json compact 는 중첩 값에도 개행을 넣지 않으므로 emit 당 정확히 1 줄.
+/// auto-wait/polling 응답 하나를 한 줄 JSON으로 만든다. 마지막 줄을 읽는 호출자의 형식을 유지한다.
 fn line_json(value: &serde_json::Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
@@ -324,7 +262,6 @@ fn run_dynamic_client_with_auto_wait(
 ) -> Result<()> {
     let port = crate::port_file::read_port(port_file)?;
 
-    // ── 1) 1 차 IPC (spawn / tell) 호출 + 응답 출력.
     let first_value = {
         let stream = connect_ipc(port)?;
         let mut conn = IpcConnection::new(stream)?;
@@ -337,12 +274,10 @@ fn run_dynamic_client_with_auto_wait(
     };
     outln!("{}", line_json(&first_value))?;
 
-    // ── 2) --no-wait 이면 여기서 종료.
     if aw.skipped {
         return Ok(());
     }
 
-    // ── 3) wait params 구성 + 4) wait IPC chain. polling sense 그대로 재사용.
     let wait_params = build_wait_params(&aw, &first_value);
     let wait_req = tasty_ipc::protocol::JsonRpcRequest {
         response_timeout_ms: None,
@@ -470,7 +405,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     run_client_with(command, port_file, Envelope::default())
 }
 
-/// [`run_client`] 에 루트 플래그가 정한 봉투 값을 더한 판. 진입점(`boot`)이 부른다.
+/// CLI 루트 플래그의 요청 옵션을 받아 실행한다. boot 진입점이 사용한다.
 pub fn run_client_with(
     command: Commands,
     port_file: Option<&str>,
@@ -480,9 +415,6 @@ pub fn run_client_with(
 }
 
 fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelope) -> Result<()> {
-    // 갈래는 `dispatch` 가 정한다 — 클라이언트 주도 실행이면 그쪽으로 넘기고,
-    // 아니면 아래 단발 JSON-RPC 경로를 탄다. 새 로컬 명령을 추가할 때 이 함수를
-    // 고칠 필요는 없다(`dispatch::classify` 만 손댄다).
     if let Dispatch::ClientDriven(cmd) = command.dispatch()? {
         // 클라이언트 주도 명령은 요청을 여럿 보내거나 IPC 를 안 탄다 — 봉투 상한을 실을
         // 요청 하나가 없다. 받으면 조용히 버리지 않고 거절한다.
@@ -490,10 +422,8 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
         return cmd.run(&ClientCtx { port_file });
     }
 
-    // 인자 → 요청 매핑은 **연결보다 먼저** 한다. 매핑은 서버 없이 끝나는 검증(깨진 JSON ·
-    // 없는 `--cwd` 등 — 실패하면 그 자리에서 원인을 내고 종료한다)이라, 연결을 먼저 하면
-    // 인스턴스가 없을 때 사용자는 자기 인자의 잘못 대신 "실행 중인 인스턴스가 없다" 를 받는다.
-    // 서버의 값이 있어야 하는 확인(아래 `contract::ensure`)만 연결 뒤에 남는다.
+    // 인자 오류를 인스턴스 미실행 오류보다 먼저 알리도록 연결 전에 요청을 만든다.
+    // 서버의 capability 확인만 연결 뒤에 수행한다.
     let mut request = command_to_request(&command);
     envelope.apply(&mut request);
     let cli_warnings = take_cli_warnings(&mut request);
@@ -554,9 +484,6 @@ mod tests {
 
     #[test]
     fn line_json_is_single_physical_line() {
-        // 프레이밍 계약: auto-wait chain / polling 의 각 emit 은 정확히 1 물리 라인이어야
-        // "마지막 line 파싱"이 성립한다. 중첩 객체/배열이 들어와도 compact 직렬화는
-        // 개행을 넣지 않으므로 두 응답(spawn + wait)을 이어붙여도 라인 경계 = 응답 경계.
         let spawn_resp = json!({
             "child_index": 3,
             "child_surface_id": 42,
@@ -568,8 +495,6 @@ mod tests {
         let wait_line = line_json(&wait_resp);
         assert!(!spawn_line.contains('\n'), "spawn emit must be single-line");
         assert!(!wait_line.contains('\n'), "wait emit must be single-line");
-        // 두 emit 을 개행으로 이어붙인 stdout(경로 A) 은 정확히 2 물리 라인이고,
-        // 마지막 라인은 그 자체로 유효한 wait JSON 이다.
         let combined = format!("{spawn_line}\n{wait_line}");
         let lines: Vec<&str> = combined.lines().collect();
         assert_eq!(lines.len(), 2);
@@ -581,7 +506,6 @@ mod tests {
 
     #[test]
     fn auto_wait_maps_from_response() {
-        // 1 차 응답 키가 map_from_response 매핑에 따라 wait params 로 복사된다.
         let mut mfr = HashMap::new();
         mfr.insert("child_index".into(), "child".into());
         mfr.insert("parent_surface_id".into(), "surface".into());
@@ -589,14 +513,12 @@ mod tests {
         let resp = json!({ "child_index": 3, "parent_surface_id": 11 });
         let p = build_wait_params(&plan, &resp);
         assert_eq!(p.get("child"), Some(&Value::from(3)));
-        // surface ↔ surface_id alias 가 양쪽 다 채워짐.
         assert_eq!(p.get("surface"), Some(&Value::from(11)));
         assert_eq!(p.get("surface_id"), Some(&Value::from(11)));
     }
 
     #[test]
     fn auto_wait_maps_from_request_fallback() {
-        // 응답에 키가 없을 때 1 차 요청 params 에서 채워온다.
         let mut mfreq = HashMap::new();
         mfreq.insert("surface".into(), "surface".into());
         let mut params = Map::new();
@@ -610,7 +532,6 @@ mod tests {
 
     #[test]
     fn auto_wait_both_mappings_response_wins() {
-        // response 와 request 둘 다 동일 target_key 로 매핑되어 있으면 response 우선.
         let mut mfr = HashMap::new();
         mfr.insert("surface".into(), "surface".into());
         let mut mfreq = HashMap::new();
@@ -629,8 +550,6 @@ mod tests {
 
     #[test]
     fn auto_wait_surface_id_aliased_from_surface() {
-        // 응답 매핑이 "surface" 키만 채워도 wait IPC handler 가 surface_id 키를 보면
-        // 받아서 동작하도록 양방향 alias.
         let mut mfr = HashMap::new();
         mfr.insert("parent".into(), "surface".into());
         let plan = sample_plan(mfr, HashMap::new(), Map::new());
@@ -642,7 +561,6 @@ mod tests {
 
     #[test]
     fn auto_wait_surface_aliased_from_surface_id() {
-        // 반대 방향: surface_id 만 채워졌어도 surface 키도 동일 값으로 채운다.
         let mut mfr = HashMap::new();
         mfr.insert("sid".into(), "surface_id".into());
         let plan = sample_plan(mfr, HashMap::new(), Map::new());
@@ -654,7 +572,6 @@ mod tests {
 
     #[test]
     fn auto_wait_timeout_field_copied() {
-        // 1 차 요청의 timeout 값이 wait params 의 polling.timeout_field 키로 복사.
         let mut params = Map::new();
         params.insert("timeout".into(), Value::from(30_u32));
         let plan = sample_plan(HashMap::new(), HashMap::new(), params);
@@ -664,22 +581,17 @@ mod tests {
 
     #[test]
     fn auto_wait_timeout_renamed_via_polling_timeout_field() {
-        // polling.timeout_field 가 "deadline" 이면 wait params 의 키도 "deadline".
-        // (manifest 작성자가 wait handler 의 키 이름을 다른 이름으로 둘 수 있음.)
         let mut params = Map::new();
         params.insert("timeout".into(), Value::from(45_u32));
         let mut plan = sample_plan(HashMap::new(), HashMap::new(), params);
         plan.polling.timeout_field = Some("deadline".into());
         let p = build_wait_params(&plan, &json!({}));
         assert_eq!(p.get("deadline"), Some(&Value::from(45_u32)));
-        // 원 키는 채우지 않음.
         assert!(p.get("timeout").is_none());
     }
 
     #[test]
     fn auto_wait_timeout_absent_no_copy() {
-        // 1 차 요청에 timeout 키가 없으면 wait params 에도 timeout 키가 들어가지 않음
-        // (= 무한 대기).
         let plan = sample_plan(HashMap::new(), HashMap::new(), Map::new());
         let p = build_wait_params(&plan, &json!({}));
         assert!(p.get("timeout").is_none());
@@ -700,11 +612,6 @@ mod language_split_tests {
         }
     }
 
-    /// en 로케일에서는 번역을 거친 문구가 코드에 박은 영어 진단문과 **같아야** 한다.
-    ///
-    /// 포트 파일 쪽(`port_file.rs`)과 같은 형태의 강제다. 두 값이 갈리면 같은 실패가
-    /// 경로에 따라 다른 영어 문장으로 나오고, `hook-failures.log` 를 알려진 패턴과
-    /// 대조하는 쪽이 그 차이에 걸린다.
     #[test]
     fn english_lang_value_matches_the_diagnostic_rendering() {
         tasty_i18n::init("en");
@@ -712,13 +619,7 @@ mod language_split_tests {
         assert_eq!(f.localized(), f.diagnostic().as_str());
     }
 
-    /// 진단문은 **i18n 을 거치지 않는다** — 프로세스 로케일이 무엇이든 같은 문자열이다.
-    ///
-    /// `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이라 테스트 안에서 로케일을
-    /// 바꿔 가며 확인할 수 없다. 대신 검증하는 것은 그보다 강한 성질이다:
-    /// `diagnostic()` 의 값이 **로케일과 무관하게 고정**이라는 것. 실제로 두 출력이
-    /// 갈리는지는 위 en 파리티 테스트(번역 경로 == 영어 경로)와 `lang/ko.toml` 의
-    /// 값이 다르다는 사실이 함께 보장한다.
+    /// OnceLock으로 로케일을 재설정할 수 없어 진단문이 i18n 없이 고정되는지 확인한다.
     #[test]
     fn the_diagnostic_rendering_is_locale_independent() {
         let f = failure(59999);

@@ -1,11 +1,6 @@
-//! `tasty tool passkey ...` 실행 — Passkey(자격증명) CRUD (로컬 파일, IPC 미경유).
-//!
-//! `~/.tasty/passkeys.toml`(0600) 를 직접 읽고 쓴다. 프로필이 이름으로 참조한다.
-//! **값 비노출 정책(docs/design/systems/memory.md#passkey-저장과-열람)**: list/show 는 name + kind 만 출력하고 경로/내용을
-//! 절대 보이지 않는다(실제 값은 GUI Reveal 로만 확인). add 는 쓰기라 허용 — inline 은
-//! `~/.tasty/passkeys/<name>` 0600 파일로 materialize 된다.
-//!
-//! 선언(`PasskeyCommands`)은 [`crate::commands::passkey`] 에 남는다.
+//! passkey 로컬 파일을 관리한다. list/show는 이름과 종류만 출력하고 값은 GUI Reveal로만 확인한다.
+//! inline 값은 `passkeys/<name>` 파일에 0600 권한으로 저장한다.
+//! 값 노출 정책은 docs/design/systems/memory.md#passkey-저장과-열람을 따른다.
 
 use std::io::Read;
 
@@ -67,7 +62,6 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
         PasskeyCommands::List { json } => {
             let passkeys = Passkeys::load();
             if *json {
-                // 값 비노출 — name + kind 만.
                 let arr: Vec<_> = passkeys
                     .passkeys
                     .iter()
@@ -77,9 +71,7 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             } else if passkeys.passkeys.is_empty() {
                 outln!("{}", t("cli.passkey.list_empty"))?;
             } else {
-                // 헤더는 컬럼 패딩까지 값에 담는다 — CJK 는 터미널 표시 폭이 2배라
-                // 코드에서 문자 수로 패딩하면 ko/ja 헤더가 데이터 행과 어긋난다
-                // (`remote_profile.rs` 의 표 헤더와 같은 처리).
+                // CJK 표시 폭에 맞춘 패딩까지 번역된 헤더에 포함한다.
                 outln!("{}", t("cli.passkey.list_header"))?;
                 for k in &passkeys.passkeys {
                     outln!("{:<24} {}", k.name, k.kind)?;
@@ -92,7 +84,6 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             let Some(k) = passkeys.get(name) else {
                 anyhow::bail!("{}", t_fmt("cli.passkey.not_found", name));
             };
-            // 값(경로/내용)은 노출하지 않는다 — name + kind 만.
             if *json {
                 outln!(
                     "{}",
@@ -103,9 +94,7 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             } else {
                 outln!("name : {}", k.name)?;
                 outln!("kind : {}", k.kind)?;
-                // `name` / `kind` 라벨은 그대로 둔다 — 바로 위 `--json` 분기가
-                // 내보내는 실제 키라 같은 이름이라야 두 출력이 대응된다. 번역
-                // 대상은 그 옆의 자연어(마스킹 안내)뿐이다.
+                // name/kind는 JSON 키와 같은 이름을 유지한다. 값 숨김 안내만 번역한다.
                 outln!("value: {}", t("cli.passkey.value_masked"))?;
             }
             Ok(())
