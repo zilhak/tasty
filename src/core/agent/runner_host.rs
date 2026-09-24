@@ -1,10 +1,5 @@
-//! Host-side `TaskExecutor` 구현 — runner thread 가 사용.
-//!
-//! - `Custom { poll: None }` → IPC 동기 호출, 응답으로 즉시 종결.
-//! - `Custom { poll: Some(..) }` → dispatch 후 `poll_method` 를 terminal 상태 도달까지
-//!   반복 호출하는 범용 폴링 (코어가 모르는 임의 비동기 작업).
-//! - `Reduce` → 즉시 collect + `reduce_with_custom`.
-//! - `Run` → shell process spawn + watcher.
+//! 러너 스레드에서 작업을 실행한다. Run은 자식 프로세스, Custom은 IPC와 완료 전략을 사용한다.
+//! lease·작업 출력 치환, 실행 handle 보존, 폴링 결과 수집도 담당한다.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -20,20 +15,14 @@ use tasty_agent::{
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
-/// DispatchHandle 영속 key prefix (workspace scope). S2: `RunnerLoop.running` 의
-/// in-memory map 을 호스트 재시작 사이에 복원하기 위한 mirror. Immediate*/ImmediateFail
-/// 은 영속 대상 아님 (다음 tick poll 에서 즉시 흡수).
+/// 재시작 뒤 실행 중인 작업을 복원할 workspace별 handle 키. 즉시 끝나는 handle은 저장하지 않는다.
 pub const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
 
 pub fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
 }
 
-/// 영속된 handle 을 읽기 전용으로 조회한다(mutate 없음) — IPC 조회
-/// (`task_get`) 가 "이 task 가 어떤 외부 신호를 기다리는 중인지"(`AwaitExternal`
-/// 이면 `wait_key`/`deadline_ms`)를 노출할 때 쓴다. 결정 5 — `hook_wait` 자체는
-/// 워크스페이스 무관 in-memory 매핑이라 조회 표면이 없지만, 그 매핑을 만든
-/// `AwaitExternal` handle 은 영속되므로 이 경로로 조회 가능하다.
+/// IPC 조회가 외부 완료 신호의 wait_key·deadline도 보여줄 수 있도록 저장된 handle을 읽는다.
 pub fn load_dispatch_handle(
     ctx: &RunnerContext,
     workspace_id: u32,
@@ -49,10 +38,7 @@ pub fn load_dispatch_handle(
     })
 }
 
-/// K.A-1: ShellProcess Run task 의 정확한 종료 결과 영속 key prefix.
-/// watcher thread 가 자식 `wait()` 종료 직후 기록 → 호스트가 재시작돼도 다음 reload
-/// 단계가 exit_code 까지 정확히 마감할 수 있다 (단, watcher 가 기록을 마치기 전에
-/// 호스트가 죽으면 손실 — cross-platform 으로 회피 불가).
+/// 자식 종료와 출력 수집 뒤 기록하는 결과 키. 기록 전에 호스트가 종료되거나 저장이 실패하면 남지 않을 수 있다.
 pub const RUN_RESULT_KEY_PREFIX: &str = "tasty.agent.run_result.";
 
 pub fn run_result_key(task_id: &str) -> String {
@@ -63,66 +49,39 @@ use crate::core::agent::task_output_ref;
 use tasty_agent::run_custom_shell;
 use tasty_ipc::host_call::HostIpcInjector;
 
-/// Host→plugin dispatch timeout — 자식 프로세스 생성/디스크 I/O 까지 포함할 수 있는
-/// dispatch 와 1tick 만인 poll 양쪽에 같은 값으로 통일.
+/// 최초 IPC 요청과 후속 poll 요청에 공통으로 사용하는 응답 대기 시간.
 const HOST_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// K.A-2: host IPC injector 미초기화 시 dispatch_plugin 이 반환하는 정적 메시지.
-/// poll 분기가 사유 분류용으로 매칭. 메시지 변경 시 grace 가드가 동작하지 않으니
-/// `dispatch_plugin` 과 동일 상수를 참조 (R-6 회피).
+/// poll 오류 분류가 이 문자열을 사용하므로 반환부와 분류부에서 같은 상수를 쓴다.
 pub(crate) const INJECTOR_UNINIT_MSG: &str = "host IPC injector not initialized";
 
-/// K.A-2: 첫 dispatch_plugin 실패 (injector 미초기화) 시점부터 grace 마감 시각까지의
-/// 허용 시간. reload 직후 첫 tick 가 injector init 보다 먼저 도달해도 30 s 안에서는
-/// task 를 Failed 로 떨어뜨리지 않고 Active 로 흡수.
+/// injector가 아직 준비되지 않은 poll 실패를 잠시 Active로 두는 유예 시간.
 pub(crate) const INJECTOR_GRACE_MS: u64 = 30_000;
 
-/// K.A-2: 에러 메시지가 injector 미초기화 사유인지 분류 (`dispatch_plugin` 의
-/// 정적 prefix 매칭). poll method 명 prefix 가 붙은 형태도 함께 흡수.
+/// 메서드명 등이 붙은 오류도 포함하므로 정확한 일치가 아닌 부분 문자열로 분류한다.
 pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
     msg.contains(INJECTOR_UNINIT_MSG)
 }
 
-/// runner thread 에 주입되는 컨텍스트 — Core 의 일부만 추려서 thread 로 옮긴다.
 #[derive(Clone)]
 pub struct RunnerContext {
     pub memory: Arc<Mutex<dyn MemoryStorage>>,
     pub agent_seq: Arc<AtomicU64>,
     pub host_ipc: Arc<OnceLock<HostIpcInjector>>,
-    /// `agent.task_await` blocking 용 waker hub. tick 의 set_state 클로저가 종결 전이
-    /// 시 fire. R-5 회피: runner_thread 가 Core wrapper 를 우회하기 때문에 RunnerContext
-    /// 에 직접 포함시켜야 누락 없음.
+    /// Core를 거치지 않는 러너의 종료 처리도 대기자를 깨울 수 있도록 같은 hub를 공유한다.
     pub task_waker_hub: Arc<crate::core::agent::task_waker::TaskWakerHub>,
-    /// hook_id → task_id 대기 매핑. push-kind `Custom`
-    /// dispatch 가 여기 `register` 해 `AwaitExternal` 로 전이하고,
-    /// `runner_thread.rs::expire_overdue_hook_waits` 가 timeout 안전망으로
-    /// `sweep_expired` 를 돈다. `task_waker_hub` 와 동일 사유로 `Core` 를 거치지
-    /// 않고 이 `Arc` 를 직접 공유(runner thread 는 main thread 소유 `Core`/
-    /// `CoreState` 에 접근 불가).
+    /// 러너가 push 대기를 등록하고 호스트가 훅 결과를 전달하는 공유 매핑.
     pub hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
 }
 
-/// memory 락 poison 을 보고했는가(첫 1 회만). `with_memory` 는 task 폴링마다 도는
-/// 경로라 매번 남기면 폭주한다.
 static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// shell 자식의 결과 cell poison 을 보고했는가(첫 1 회만).
 static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 impl RunnerContext {
-    /// memory 스토리지 임계구역.
-    ///
-    /// 복구 자체는 원래도 맞았다 — 이 함수는 runner 스레드뿐 아니라 IPC 핸들러(메인
-    /// 스레드)에서도 불리므로 패닉하면 실행 중인 모든 창이 죽는다. 다만 **조용했다**:
-    /// poison 은 "어딘가에서 이미 패닉이 있었다" 는 신호인데 조용한 복구가 그 신호를
-    /// 지운다(`error-handling.md` "락 poison" — 어느 선택을 하든 로그를 남긴다).
-    ///
-    /// 임계구역이 `dyn MemoryStorage` 라는 임의 코드를 부르므로 방침표만 보면 "데이터를
-    /// 신뢰하지 않는다" 쪽이지만, 그 선택은 스토리지를 못 쓰게 된 runner 가 무엇을
-    /// 해야 하는지까지 정해야 하는 **별개 결정**이다. 여기서는 기존 선택(복구)을 유지하고
-    /// 관측만 붙인다 — 선택을 바꾸는 것은 이 축의 작업이 아니다.
+    /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
     pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
         let mut guard = crate::poison::recover_mutex(
             self.memory.lock(),
@@ -132,11 +91,7 @@ impl RunnerContext {
         f(&mut *guard)
     }
 
-    /// host→plugin sync dispatch. injector 미초기화 시 Err.
-    ///
-    /// 큐 입장 거절(`InjectError::Refused`)도 다시 걸지 않고 그대로 올린다 — 호출자는 task
-    /// 실행이고 그 실패는 task 결과로 agent 에게 간다. 여기서 재시도하면 이미 밀린 큐에
-    /// 부하를 더한다. 문구는 "nothing ran" 을 실어 시간 초과(결과 불명)와 갈린다.
+    /// 큐 입장 거절을 여기서 재시도하면 적체를 늘리므로 오류를 그대로 전달한다.
     pub fn dispatch_plugin(
         &self,
         method: &str,
@@ -151,41 +106,24 @@ impl RunnerContext {
     }
 }
 
-/// K.A-1: ShellProcess Run task 의 watcher 와 결과 cell.
-///
-/// dispatch 가 자식을 spawn 한 직후 watcher thread 를 띄워 `child.wait()` 호출 →
-/// 종료 status 를 `result` cell + 영속 (run_result_key) 양쪽에 기록한다. poll path
-/// 는 `try_wait()` 대신 cell 만 조회하므로, host 가 살아 있는 한 정확한 exit_code
-/// 회수가 보장된다. cancel 시 watcher 는 *자연 종료까지 detach* — 별 phase 에서
-/// `child.kill()` 추가 검토 (현재는 기존 동작 유지).
+/// watcher가 자식 종료와 두 출력 파이프의 EOF를 기다린 뒤 결과를 채운다.
+/// 취소·permit 해제는 자식을 종료시키지 않는다. executor가 사라져도 watcher는 분리되어 계속 기다릴 수 있다.
 struct ShellChildEntry {
-    /// watcher 가 자식 종료 후 채움. poll 이 take() 로 가져가면 entry 제거.
     result: Arc<Mutex<Option<PollOutcome>>>,
-    /// watcher thread 핸들 — 누수 추적용. host 종료 시 detach.
-    /// 자식이 살아 있는 한 watcher 도 wait() 에 block, 자식이 죽으면 자연 종료.
     _watcher: thread::JoinHandle<()>,
 }
 
 pub struct HostExecutor {
     ctx: RunnerContext,
-    /// Run task 의 watcher + 결과 cell — pid → entry. DispatchHandle 은 Clone 필요
-    /// (RunnerLoop 가 핸들을 복제), Child 객체 자체는 watcher thread 가 소유.
+    /// Child는 watcher가 소유하고 Clone 가능한 DispatchHandle에는 PID만 남긴다.
     shell_children: HashMap<u32, ShellChildEntry>,
-    /// 본 executor 가 dispatch 시 점유한 semaphore permit — (workspace_id, name, holder).
-    /// in-memory only. 호스트 재시작 시 비어 있게 되므로 [`crate::core::agent::runner_thread`]
-    /// 의 시작 시 정화 단계가 영속 holder 를 회수.
+    /// 이 executor가 얻은 permit. 재시작 시 메모리 기록은 없어져 러너 시작 단계에서 저장된 holder를 정리한다.
     held_permits: HashMap<TaskId, (u32, String, String)>,
-    /// 본 executor 가 dispatch 시 점유한 lease — (workspace_id, resource, holder).
-    /// semaphore 와 같은 정책: in-memory only, 재시작 시 runner_thread 의 purge 가 회수.
+    /// 이 executor가 얻은 lease. 재시작 정리는 metadata.resource와 task ID holder로 찾은 Running 작업에 한정된다.
     held_leases: HashMap<TaskId, (u32, String, String)>,
-    /// 영속된 DispatchHandle 의 ws 추적 — release_permit 에서 evict_handle 호출 시
-    /// ws 가 필요한데 handle 자체에서 식별 불가 (ShellProcess { pid } 등) 이므로
-    /// persist_handle 시점에 함께 저장.
+    /// workspace가 없는 handle도 삭제할 수 있도록 저장 시 task별 workspace를 기억한다.
     held_handles: HashMap<TaskId, u32>,
-    /// K.A-2: `PolledDispatch` poll 이 injector 미초기화로 실패하기 시작한 시각 +
-    /// `INJECTOR_GRACE_MS`. 한 executor (= 한 workspace runner) 가 모든 PolledDispatch
-    /// 핸들에 공유 — reload 직후 injector init 까지의 window 를 흡수. injector 가
-    /// ready 가 되어 정상 dispatch 가 1회라도 성공하면 None 으로 reset.
+    /// workspace executor의 모든 PolledDispatch가 공유한다. 한 poll이라도 성공하면 유예를 초기화한다.
     injector_grace_deadline_ms: Option<u64>,
 }
 
@@ -201,9 +139,7 @@ impl HostExecutor {
         }
     }
 
-    /// `task.metadata.semaphore` 컨벤션을 읽어 permit 점유 시도.
-    /// 반환: `Ok(None)` = 미사용 (semaphore metadata 없음), `Ok(Some(true))` = 점유 성공,
-    /// `Ok(Some(false))` = 부족, `Err(msg)` = store 오류 또는 invalid metadata.
+    /// semaphore metadata가 없으면 None, 얻었으면 Some(true), 부족하면 Some(false)다. 잘못된 name·저장소 오류는 Err다.
     fn try_acquire_semaphore(&mut self, task: &Task) -> Result<Option<bool>, String> {
         let Some(meta) = task.metadata.get("semaphore").and_then(|v| v.as_object()) else {
             return Ok(None);
@@ -216,7 +152,7 @@ impl HostExecutor {
             .get("holder")
             .and_then(|v| v.as_str())
             .unwrap_or(task.id.as_str());
-        // lease metadata 와 같은 이름·같은 의미의 opt-in TTL. 생략하면 만료 없음.
+        // TTL을 생략하면 자동 만료시키지 않는다.
         let ttl_ms = meta.get("ttl_ms").and_then(|v| v.as_u64());
         let name = name.to_string();
         let holder = holder.to_string();
@@ -237,23 +173,9 @@ impl HostExecutor {
         Ok(Some(acquired))
     }
 
-    /// `task.metadata.lease` 컨벤션을 읽어 lease 점유 시도.
-    ///
-    /// metadata 형식(단일 resource — sugar): `{ resource: String, holder?,
-    /// ttl_ms?, mode? }`. `resource: "x"` 는 `candidates: ["x"]` 와 store 상에서
-    /// 동일한 `lease_key` 를 쓰므로 관측적으로 동일하다.
-    ///
-    /// metadata 형식(pool): `{ candidates: [String], holder?, ttl_ms?, mode?,
-    /// elastic?: { max_candidates?: u32, overflow_prefix?: String } }`.
-    /// `elastic` 생략 시 기본 **fixed** — candidates 안에서만 순회하고 전부
-    /// 점유 중이면 대기/실패한다. `elastic` 이 있으면(빈 객체 `{}` 도 포함)
-    /// 소진 시 새 candidate 이름을 자동 합성한다(명시적 opt-in — 문서
-    /// `crates/tasty-agent/src/lease.rs` 모듈 주석 참조).
-    ///
-    /// 반환: `Ok(None)` = 미사용, `Ok(Some(true))` = 점유(실제 받은 자원은
-    /// `self.held_leases` 에 기록 — `dispatch` 가 이걸로 `TaskCommand` 치환),
-    /// `Ok(Some(false))` = 충돌/소진 (Block 모드), `Err(msg)` = Fail 모드
-    /// 충돌/소진 또는 store 오류.
+    /// resource 하나 또는 candidates 목록에서 자원을 얻는다. holder 기본값은 task ID다.
+    /// elastic을 명시해야 후보를 자동 추가하며 생략하면 고정 목록만 사용한다.
+    /// Block 충돌은 Some(false), Fail 충돌과 설정·저장소 오류는 Err다. 획득한 자원은 held_leases에 기록한다.
     fn try_acquire_lease(&mut self, task: &Task) -> Result<Option<bool>, String> {
         let Some(meta) = task.metadata.get("lease").and_then(|v| v.as_object()) else {
             return Ok(None);
@@ -286,7 +208,7 @@ impl HostExecutor {
         let ttl_ms = meta.get("ttl_ms").and_then(|v| v.as_u64());
         let mode = match meta.get("mode").and_then(|v| v.as_str()) {
             Some("fail") => LeaseMode::Fail,
-            // Block 가 dispatch 컨벤션 (semaphore 와 일관: 부족 → Deferred → 다음 tick).
+            // 점유가 부족하면 다음 tick에서 다시 시도하도록 기본 모드는 Block이다.
             None | Some("block") => LeaseMode::Block,
             Some(other) => {
                 return Err(format!(
@@ -357,11 +279,8 @@ impl HostExecutor {
         Ok(Some(acquired))
     }
 
-    /// DispatchHandle 영속. dispatch 가 Started 반환 직후 호출. ws 인자는
-    /// `ShellProcess { pid }` variant 에 workspace_id 가 없어서 handle 자체로 식별 불가
-    /// 하기에 호출자(dispatch)가 `task.workspace_id` 를 직접 전달한다.
-    /// `Immediate*` / `ImmediateFail` 은 영속 대상 아님 — 다음 tick 에 흡수되므로
-    /// 영속해 둘 의미가 없고, reload 시 재dispatch 되어 side-effect 위험.
+    /// Started를 반환하기 전에 실행 handle을 저장한다. workspace는 handle에 없을 수 있어 별도로 받는다.
+    /// 즉시 종료 handle은 저장하지 않으며 저장 실패는 로그를 남긴다.
     fn persist_handle(&mut self, ws: u32, task_id: &TaskId, handle: &DispatchHandle) {
         if matches!(
             handle,
@@ -394,12 +313,9 @@ impl HostExecutor {
         self.held_handles.insert(task_id.clone(), ws);
     }
 
-    /// 영속된 DispatchHandle 삭제. release_permit (task 종결) 시 호출.
-    /// ws 는 `held_handles` 에서 꺼낸다 — handle 자체에서 식별 불가 (ShellProcess
-    /// variant 에 workspace_id 없음) + task store 전수 검색은 race 위험.
     fn evict_handle(&mut self, task_id: &TaskId) {
         let Some(ws) = self.held_handles.remove(task_id) else {
-            return; // 영속 안 됐던 task (Immediate*) — no-op.
+            return;
         };
         let res = self.ctx.with_memory(|mem| {
             mem.delete(
@@ -412,12 +328,9 @@ impl HostExecutor {
         if let Err(e) = res {
             tracing::warn!("evict handle {task_id}: {e}");
         }
-        // K.A-1: ShellProcess 의 영속 run_result 도 함께 정리. Non-Shell variant 도
-        // 같은 key 가 없을 뿐이라 delete 호출 자체는 idempotent (none-found → no-op).
         evict_run_result(&self.ctx, ws, task_id);
     }
 
-    /// task 가 점유 중인 lease 가 있으면 release. release_permit 안에서 호출.
     fn release_lease(&mut self, task_id: &TaskId) {
         let Some((ws, resource, holder)) = self.held_leases.remove(task_id) else {
             return;
@@ -434,14 +347,7 @@ impl HostExecutor {
         }
     }
 
-    /// command 가 참조하는 upstream task 들의 `result.output` 을 모은다.
-    ///
-    /// `Reduce` dispatch 와 **같은 방식**이다 — memory lock 안에서는 조회만 하고
-    /// (`with_memory` + `TaskStore::get` + `result.output`), 치환 자체는 lock
-    /// 바깥에서 한다. `Core::memory` 는 프로세스 전역 `Mutex` 라 lock 안에서 일을
-    /// 오래 붙들면 러너 전체가 직렬화된다.
-    ///
-    /// 참조가 없으면 store 를 아예 건드리지 않는다(가장 흔한 경로).
+    /// 저장소 락 안에서는 선행 작업 결과만 읽고 문자열 치환은 락 밖에서 수행한다.
     fn collect_task_outputs(
         &mut self,
         task: &Task,
@@ -461,9 +367,7 @@ impl HostExecutor {
                     .get(ws, &tid)
                     .map_err(|e| e.to_string())?
                     .ok_or_else(|| format!("task output reference '{tid}': task not found"))?;
-                // `result` 가 없으면(아직 안 끝났거나 결과를 안 남긴 상태) 조용히
-                // null 로 두지 않는다 — depends_on 검증을 통과했는데도 여기 오면
-                // 그건 진짜 이상 상황이라 드러나야 한다.
+                // 결과가 아직 없으면 null을 넣지 않고 참조 해석 실패로 알린다.
                 let output = t.result.and_then(|r| r.output).ok_or_else(|| {
                     format!("task output reference '{tid}': upstream task has no result output yet")
                 })?;
@@ -473,10 +377,7 @@ impl HostExecutor {
         })
     }
 
-    /// lease pool 이 배정한 resource 로 치환된 `task.command` 를 store 에도
-    /// 되써서 task-get/task-list 가 원본(`${lease.resource}`/빈 cwd) 대신 실제
-    /// 배정 값을 보여주게 한다. best-effort — 실패해도 dispatch 자체(진짜
-    /// 실행)는 이미 이 command 로 진행되므로 warn 로그만 남기고 계속한다.
+    /// 조회에도 실제 실행할 치환값이 보이도록 command를 저장한다. 저장 실패는 경고하고 실행은 계속한다.
     fn persist_substituted_command(&mut self, ws: u32, task: &Task) {
         let seq = self.ctx.agent_seq.clone();
         let res: Result<(), String> = self.ctx.with_memory(|mem| {
@@ -496,9 +397,6 @@ impl HostExecutor {
 
 impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
-        // lease + semaphore-gated dispatch. lease → semaphore 순서
-        // (lease 가 conflict 잦고 더 가벼움). 어느 한쪽이라도 막 점유한 후 다음 게이트가
-        // 실패하면 점유한 자원 즉시 release (idempotent).
         match self.try_acquire_lease(task) {
             Ok(None) => {}
             Ok(Some(true)) => {}
@@ -517,19 +415,8 @@ impl TaskExecutor for HostExecutor {
                 return DispatchOutcome::PermanentFail(format!("semaphore: {e}"));
             }
         }
-        // lease 로 획득한 resource 식별자를 dispatch_command 호출 직전 command 에
-        // 주입 — pool 모드에서 dispatch된 task가 실제로 어느 candidate 를
-        // 받았는지 알 방법이 이 치환뿐이다(§ 아래 substitute_lease_resource).
-        // 치환된 command 는 store 에도 되써서 task-get/task-list 조회 시점에
-        // 실제 배정된 자원(예: cwd)이 그대로 드러나게 한다 — 안 그러면 원본
-        // `${lease.resource}`/빈 cwd 만 보여 "어느 candidate 를 받았는지" 를
-        // 외부에서 확인할 방법이 lease-list 뿐이게 된다.
-        //
-        // 치환은 **lease 먼저, upstream 출력 나중** 이다. 순서를 뒤집으면 upstream
-        // task 가 만든 문자열 안에 `${lease.resource}` 가 들어 있을 때 그게
-        // lease 치환의 입력이 되어, 자식 에이전트가 만든 데이터가 lease 의미론에
-        // 끼어든다. 지금 순서면 나중에 주입되는 값(런타임 데이터)이 다시 해석되지
-        // 않는다 — 각 치환은 자기 결과를 재훑지 않는 1-pass 다.
+        // lease를 먼저, 선행 작업 출력을 나중에 치환한다.
+        // 출력 데이터 안의 lease 표식을 다시 해석하지 않기 위한 순서다.
         let mut substituted = task.clone();
         let leased = self.held_leases.get(&task.id).cloned();
         if let Some((_, resource, _)) = &leased {
@@ -542,10 +429,7 @@ impl TaskExecutor for HostExecutor {
         };
         let dispatch_result = match outputs_substituted {
             Ok(changed) => {
-                // 치환된 command 를 store 에 되쓰면 task-get/task-list 가 "실제로
-                // 무엇으로 호출됐는지" 를 보여준다(lease 선례와 같은 이유). 아무것도
-                // 안 바뀌었으면 쓸 이유가 없다 — dispatch 마다 store write 를 더하지
-                // 않는다.
+                // 바뀐 command만 저장해 조회와 실제 실행 인자를 맞춘다.
                 if let Some((ws, _, _)) = &leased {
                     self.persist_substituted_command(*ws, &substituted);
                 } else if changed {
@@ -553,20 +437,15 @@ impl TaskExecutor for HostExecutor {
                 }
                 self.dispatch_command(&substituted)
             }
-            // 참조 해석 실패는 dispatch 실패다. 조용한 null 로 흘리면 downstream 이
-            // 훨씬 뒤에서, 원인과 먼 자리에서 터진다.
             Err(e) => Err(format!("task output substitution: {e}")),
         };
         let result = match dispatch_result {
             Ok(h) => {
-                // S2: Started 직후 영속 — handle 자체에서 ws 식별 불가 (ShellProcess
-                // 에는 workspace_id 가 없음) 라 task.workspace_id 를 직접 전달.
                 self.persist_handle(task.workspace_id, &task.id, &h);
                 DispatchOutcome::Started(h)
             }
             Err(e) => DispatchOutcome::PermanentFail(e),
         };
-        // dispatch 가 실패하면 막 점유한 자원을 즉시 반환.
         if matches!(result, DispatchOutcome::PermanentFail(_)) {
             self.release_permit(&task.id);
         }
@@ -578,7 +457,7 @@ impl TaskExecutor for HostExecutor {
     }
 
     fn release_permit(&mut self, task_id: &TaskId) {
-        // 의미: 이 task 의 모든 자원 해제 (semaphore + lease) + 영속 handle evict.
+        // 이름과 달리 permit뿐 아니라 lease·저장된 handle도 정리한다. 자식 프로세스는 종료시키지 않는다.
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
             let res: Result<(), String> = self.ctx.with_memory(|mem| {
                 let mut store = SemaphoreStore::new(mem, HOST_OWNER);
@@ -599,11 +478,9 @@ impl TaskExecutor for HostExecutor {
 }
 
 impl HostExecutor {
-    /// 내부 dispatch 본체. `?` 로 `String` 에러 흡수 후 호출자가 `DispatchOutcome` 변환.
     fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {
         match &task.command {
             TaskCommand::Reduce { inputs, strategy } => {
-                // 1단계: 입력 task 결과 수집 (memory lock).
                 let collected: Result<Vec<ReducerInput>, String> = self.ctx.with_memory(|mem| {
                     use tasty_agent::{TaskState, TaskStore};
                     let seq = self.ctx.agent_seq.clone();
@@ -628,7 +505,7 @@ impl HostExecutor {
                     Ok(out)
                 });
                 let collected = collected?;
-                // 2단계: reduce — memory lock 바깥에서.
+                // 사용자 reduce 작업은 저장소 락 밖에서 실행한다.
                 let value = reduce_with_custom(strategy, &collected, run_custom_shell)
                     .map_err(|e| e.to_string())?;
                 Ok(DispatchHandle::ReduceImmediate(TaskResult {
@@ -654,9 +531,7 @@ impl HostExecutor {
                     .spawn()
                     .map_err(|e| format!("Run spawn '{program}': {e}"))?;
                 let pid = child.id();
-                // 파이프 교착 회피: `wait()` 전에 stdout/stderr 를 각각 별도 스레드로
-                // 드레인 시작. 읽지 않고 wait() 하면 자식이 OS 파이프 버퍼(16~64KB)를
-                // 채우고 block, 부모는 그 자식의 종료를 기다리므로 둘 다 영원히 멈춘다.
+                // 자식이 파이프를 채운 채 종료를 기다리지 않도록 stdout·stderr를 wait와 동시에 읽는다.
                 let stdout_pipe = child.stdout.take().expect("stdout piped");
                 let stderr_pipe = child.stderr.take().expect("stderr piped");
                 let stdout_thread = thread::Builder::new()
@@ -672,9 +547,7 @@ impl HostExecutor {
                 let mem_clone = self.ctx.memory.clone();
                 let task_id_clone = task.id.clone();
                 let ws = task.workspace_id;
-                // task 당 스레드가 3개(watcher + stdout/stderr drain)로 는다 — drain
-                // 스레드가 EOF 까지 읽는 동안 watcher 는 child.wait() 로 exit status 를
-                // 기다리고, 그 뒤 두 drain 스레드를 join 해 캡처 결과를 조립한다.
+                // 자식 종료 뒤에도 상속된 파이프가 열려 있으면 drain join은 계속 기다릴 수 있다.
                 let watcher = thread::Builder::new()
                     .name(format!("agent-shell-watcher-pid{pid}"))
                     .spawn(move || {
@@ -692,8 +565,7 @@ impl HostExecutor {
                             Err(e) => PollOutcome::Failed(format!("Run wait: {e}")),
                         };
                         persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
-                        // 조용히 버리면 아래 폴링이 cell 을 영원히 비어 있다고 보고
-                        // `PollOutcome::Active` 를 계속 돌려준다 — task 가 영구 대기한다.
+                        // 결과를 기록하지 못하면 poll은 계속 Active라 poison을 알리고 cell을 사용한다.
                         *crate::poison::recover_mutex(
                             cell_clone.lock(),
                             "agent run result cell",
@@ -715,12 +587,8 @@ impl HostExecutor {
                 params,
                 poll,
             } => {
-                // 동기 IPC dispatch. poll=None 이면 응답으로 즉시 종결(단, 결정 6 기본
-                // 전략이 매칭되면 그 전략의 사양을 대신 사용), poll=Some(Inline) 이면
-                // 인라인 사양대로, poll=Some(Named) 이면 완료 판정 전략 레지스트리로
-                // 이름을 해석한다. poll/push 두 kind 모두 kind-agnostic
-                // `resolve_strategy`(§B 결정 7)로 다룬다 — poll 이면 기존과 동일하게
-                // `PolledDispatch`, push 면 `dispatch_push_strategy`로 `AwaitExternal`.
+                // IPC를 먼저 실행한 뒤 완료 전략을 해석한다. 전략 해석 실패가 이미 실행한 요청을 되돌리지는 않는다.
+                // poll 미지정 시 기본 전략을 사용하고 그것도 없으면 응답으로 즉시 끝낸다.
                 let value = self
                     .ctx
                     .dispatch_plugin(ipc_method, params.clone())
@@ -786,7 +654,7 @@ impl HostExecutor {
                     }
                 };
                 let spec = &spec;
-                // poll params 사전 해석: 원 요청 → 응답 순으로 채움 (응답이 요청보다 우선).
+                // 같은 poll 인자를 매핑하면 응답값이 요청값을 덮는다.
                 let mut poll_params = serde_json::Map::new();
                 for (req_key, poll_key) in &spec.map_from_request {
                     if let Some(v) = params.get(req_key) {
@@ -817,24 +685,8 @@ impl HostExecutor {
         }
     }
 
-    /// push-kind 완료 전략 dispatch. `notify_via` 가 가리키는
-    /// 훅 핸들러를 대상 surface 에 1회성(`once: true`)으로 바인딩해 살아있는
-    /// `hook_id` 를 얻고, `hook_task_waits` 에 `(workspace_id, task_id, deadline)`
-    /// 로 등록한 뒤 `AwaitExternal` 로 전이한다. 실제 종결(Succeeded/Failed)은
-    /// 이 dispatch 가 아니라 `PendingHostEvent::HookFired` 소비부
-    /// (`Core::resolve_hook_task_wait`, exit code 로 성공/실패 분기)와 timeout
-    /// 안전망(`runner_thread::expire_overdue_hook_waits`)이 담당한다 —
-    /// `AwaitExternal` 의 poll 은 계약대로 항상 `Active` 다(§C-2).
-    ///
-    /// **범위 제한**: 오늘 유일한 push 전략(`host/command-completed`)의 필요만
-    /// 반영해 이벤트를 `HookEvent::CommandCompleted(None)`(모든 exit code 매칭)
-    /// 으로 고정한다. 두 번째 push 유스케이스가 실제로 생기면(예: 향후
-    /// claude/codex idle 신호) 그때 전략에 이벤트를 싣는 필드를 추가해
-    /// 일반화한다 — 지금 존재하지 않는 요구를 미리 설계하지 않는다.
-    ///
-    /// surface_id 는 원 dispatch `params.surface_id` 에서 얻는다 — `surface.send`
-    /// 등 surface 대상 IPC 메서드 대다수가 이 키를 쓰는 host 공통 관례
-    /// (`require_surface_id`, `src/adapters/ipc/handler.rs`)를 그대로 재사용한다.
+    /// params.surface_id에 command-completed 일회성 훅을 걸고 외부 완료를 기다린다.
+    /// 현재 이벤트 종류는 고정이다. 훅 수신 또는 별도 만료 처리가 task를 종결하며 이 handle의 poll은 Active다.
     fn dispatch_push_strategy(
         &mut self,
         task: &Task,
@@ -874,16 +726,13 @@ impl HostExecutor {
         self.ctx
             .hook_task_waits
             .register(hook_id, task.workspace_id, task.id.clone(), deadline_ms);
-        // deadline 을 handle 자체에도 실어 둔다 — `hook_task_waits` 매핑은
-        // 재시작 시 비영속으로 사라지지만, 영속되는 handle 쪽 deadline 은
-        // 재시작 후 reload 경로가 만료 판정에 쓸 수 있다(결정 4).
+        // 훅 매핑은 재시작 때 사라져도 handle의 기한으로 reload에서 만료를 판단할 수 있게 한다.
         Ok(DispatchHandle::AwaitExternal {
             wait_key: hook_id.to_string(),
             deadline_ms,
         })
     }
 
-    /// 내부 poll 본체.
     fn poll_handle(&mut self, handle: &DispatchHandle) -> PollOutcome {
         match handle {
             DispatchHandle::PolledDispatch {
@@ -897,13 +746,10 @@ impl HostExecutor {
             } => {
                 let resp = match self.ctx.dispatch_plugin(poll_method, poll_params.clone()) {
                     Ok(v) => {
-                        // K.A-2: injector 가 ready → grace deadline reset.
                         self.injector_grace_deadline_ms = None;
                         v
                     }
                     Err(e) if is_injector_not_initialized(&e) => {
-                        // K.A-2: 첫 미초기화 시점에 deadline 세팅. grace 안이면 Active,
-                        // 도래 후이면 기존 정책대로 Failed.
                         let now = now_ms();
                         let deadline = *self
                             .injector_grace_deadline_ms
@@ -918,28 +764,21 @@ impl HostExecutor {
                     Err(e) => return PollOutcome::Failed(format!("{poll_method}: {e}")),
                 };
                 let state = resp.get(state_field).and_then(|v| v.as_str()).unwrap_or("");
-                // 실패 목록을 **먼저** 본다. 두 목록에 같은 값이 들어간 선언은
-                // 모순이지만 거부하지 않고 실패 쪽을 채택한다 — 실패를 성공으로
-                // 읽어 downstream 이 없는 산출물을 전제로 진행하는 쪽이, 성공을
-                // 실패로 읽어 멈추는 쪽보다 위험하다.
+                // 성공·실패 목록에 모두 있으면 실패를 우선한다. 없는 산출물로 후속 작업을 진행하지 않게 한다.
                 if failure_states.iter().any(|s| s == state) {
-                    // 응답 JSON 전체를 잃지 않게 요약을 메시지에 싣는다 —
-                    // `Run` 이 stdout/stderr tail 을 에러 메시지에 이어붙이는 것과
-                    // 같은 관례(`PollOutcome::Failed` 는 문자열 하나만 나른다).
                     return PollOutcome::Failed(format!(
                         "{poll_method}: failure state '{state}' — {}",
                         summarize_poll_response(&resp)
                     ));
                 }
                 if terminal_states.iter().any(|s| s == state) {
-                    // terminal 도달 → 전체 응답을 산출물로 종결.
                     PollOutcome::Done(TaskResult {
                         exit_code: None,
                         output: Some(resp),
                         error: None,
                     })
                 } else {
-                    // 비-terminal → 계속 폴링(Active). 단 전체 timeout deadline 초과 시 Failed.
+                    // 미완료 응답에서 기한을 확인한다. 한 번의 IPC 대기 자체를 이 기한으로 중단하지는 않는다.
                     if let Some(deadline) = deadline_ms
                         && now_ms() >= *deadline
                     {
@@ -952,9 +791,7 @@ impl HostExecutor {
                 PollOutcome::Done(r.clone())
             }
             DispatchHandle::ShellProcess { pid } => {
-                // K.A-1: watcher cell 우선 조회. 채워졌으면 즉시 종결, 비어있으면 Active.
                 if let Some(entry) = self.shell_children.get(pid) {
-                    // watcher 가 채운 결과를 조용히 못 읽으면 task 가 영구 Active 다.
                     let taken = crate::poison::recover_mutex(
                         entry.result.lock(),
                         "agent run result cell",
@@ -967,11 +804,8 @@ impl HostExecutor {
                     }
                     return PollOutcome::Active;
                 }
-                // child map 없음 — 호스트 재시작 후 reload 된 핸들 (이 executor 에서
-                // dispatch 하지 않음 → watcher 도 없음). 정확한 마감은 reload 단계가
-                // run_result 영속 조회로 처리하므로, 여기서는 alive 만 판별:
-                // alive → Active, dead → Failed (이미 reload 가 처리했어야 할 경우의
-                // race 안전망).
+                // 이 executor의 watcher가 없으면 PID 생존 여부만 본다. 재사용된 PID가 원래 자식인지 확인하지 않는다.
+                // 저장된 종료 결과의 적용은 reload 단계가 담당한다.
                 if tasty_agent::platform::process_alive::is_alive(*pid) {
                     return PollOutcome::Active;
                 }
@@ -1003,29 +837,17 @@ impl HostExecutor {
                     Err(e) => PollOutcome::Failed(format!("barrier poll '{name}': {e}")),
                 }
             }
-            // AwaitExternal 계약대로 poll 은 절대 종결시키지 않는다 — 종결은
-            // 외부(hook_id → task_id 매핑 소비 등)가 store 를 직접 전이시켜
-            // 이뤄지고, `RunnerLoop::tick` 0단계(terminal 흡수)가 다음 tick 에
-            // handle 정리 + release_permit 을 담당한다.
+            // 외부 훅·만료 처리가 store를 종결시키면 다음 러너 tick이 handle과 점유 자원을 정리한다.
             DispatchHandle::AwaitExternal { .. } => PollOutcome::Active,
         }
     }
 }
 
-/// dispatch 직전 lease pool 이 배정한 resource 식별자를 command 에 주입하는
-/// placeholder 토큰. `Run.cwd`/`Run.command` 인자/`Custom.params` 어디든 이
-/// 문자열이 나타나면 실제 resource 로 치환된다.
+/// 실행 전에 lease로 받은 자원을 넣는 표식. Run 인자·cwd와 Custom의 문자열 값에 적용한다.
 const LEASE_RESOURCE_PLACEHOLDER: &str = "${lease.resource}";
 
-/// `try_acquire_lease` 가 획득한 resource(`held_leases`)를 실제 실행 파라미터에
-/// 주입한다.
-///
-/// - `Run.command` 의 각 인자 / `Run.cwd`: placeholder 치환. `cwd` 가 애초에
-///   `None` 이면(가장 흔한 pool 사용법 — "이 후보 경로에서 실행해라") 곧장
-///   resource 경로로 채운다.
-/// - `Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의
-///   placeholder 를 치환(예: `claude.spawn` 의 `cwd` 파라미터).
-/// - `Reduce`/`WaitBarrier`: lease 와 무관 — no-op.
+/// Run의 cwd가 없으면 lease 자원으로 채우고, 있으면 표식만 치환한다.
+/// Custom의 JSON 문자열 값도 치환하며 Reduce·WaitBarrier는 바꾸지 않는다.
 fn substitute_lease_resource(command: &mut TaskCommand, resource: &str) {
     match command {
         TaskCommand::Run { command, cwd, .. } => {
@@ -1075,18 +897,8 @@ fn substitute_lease_resource_in_json(value: &mut serde_json::Value, resource: &s
     }
 }
 
-/// dispatch 직전 upstream task 의 `result.output` 을 command 에 주입한다.
-///
-/// 문법 소유자는 [`task_output_ref`](crate::core::agent::task_output_ref) 다 —
-/// 여기서는 해석된 참조를 실제 값으로 바꾸는 일만 한다.
-///
-/// **타입 보존이 이 함수의 핵심이다.** 문자열 값이 *정확히* placeholder 하나뿐이면
-/// 그 자리를 뽑아낸 `Value` 로 **통째 교체**한다. 문자열로 떨어뜨리면 숫자가
-/// `"731"` 이 되어 `claude.spawn` 의 `require_surface_id`(`as_u64`) 같은 타입
-/// 검사가 거부한다. placeholder 가 다른 텍스트에 섞여 있을 때만 문자열 보간이다
-/// (그때는 애초에 문자열이 기대값이다).
-///
-/// 반환값은 "무언가 치환했는가" — 호출자가 store 되쓰기 여부를 정하는 데 쓴다.
+/// JSON 문자열 전체가 표식 하나이면 원래 값의 타입을 유지한다. 다른 글자와 섞이면 문자열로 보간한다.
+/// Run 인자·cwd는 문자열로 보간하며 바뀐 값이 있으면 true다. 문법은 task_output_ref가 담당한다.
 fn substitute_task_outputs(
     command: &mut TaskCommand,
     outputs: &HashMap<TaskId, serde_json::Value>,
@@ -1127,7 +939,6 @@ fn substitute_task_outputs_in_json(
             if refs.is_empty() {
                 return Ok(());
             }
-            // 문자열 전체가 placeholder 하나 → 타입 보존 통째 교체.
             if refs.len() == 1 && refs[0].0.start == 0 && refs[0].0.end == s.len() {
                 *value = resolve(&refs[0].1, outputs)?.clone();
             } else if let Some(next) = interpolate_string(s, outputs)? {
@@ -1150,11 +961,8 @@ fn substitute_task_outputs_in_json(
     Ok(())
 }
 
-/// 문자열 보간 — placeholder 가 없으면 `None`(원문 유지).
-///
-/// 값이 문자열이면 따옴표 없이 내용만, 그 밖(숫자/불리언/객체/배열/null)은 compact
-/// JSON 으로 떨어뜨린다. **1-pass** 다 — 주입된 값 안에 placeholder 처럼 보이는
-/// 텍스트가 있어도 다시 훑지 않는다(원문에서 찾은 범위만 교체한다).
+/// 문자열 결과는 내용만, 나머지 값은 compact JSON으로 넣는다.
+/// 원문 표식만 한 번 치환하며 주입한 값에 든 표식을 다시 해석하지 않는다.
 fn interpolate_string(
     s: &str,
     outputs: &HashMap<TaskId, serde_json::Value>,
@@ -1178,8 +986,6 @@ fn interpolate_string(
     Ok(Some(out))
 }
 
-/// 참조 하나를 값으로 해석. 조용한 `null` 대신 **에러**다 — 해석 실패를 값으로
-/// 흘리면 downstream 이 한참 뒤에 엉뚱한 자리에서 터진다.
 fn resolve<'a>(
     r: &task_output_ref::TaskOutputRef,
     outputs: &'a HashMap<TaskId, serde_json::Value>,
@@ -1208,18 +1014,11 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 스트림당 tail 상한 (64 KiB). 캡처 결과는 `run_result` 키 하나로 memory store 에
-/// JSON 직렬화되어 들어가는데, 그 store 는 값 하나당 1 MiB(`MemoryConfig::entry_max_bytes`)
-/// 를 넘으면 거부한다. JSON 이스케이프 최악의 경우(cargo 출력의 ANSI ESC 등 제어문자가
-/// `\u00XX` 6바이트로 팽창)를 가정해도 64 KiB × 2스트림 raw → 최악 768 KiB 로 1 MiB
-/// 아래에 안전하게 들어간다. tail(마지막 N바이트)을 남기는 이유: 빌드 도구는 실패
-/// 요약과 실패 지점을 대개 출력 뒤쪽에 남긴다 — 첫 에러가 앞쪽에 있으면 놓친다는
-/// 한계가 있고(v1 범위), ANSI 는 벗기지 않고 그대로 보존한다(벗기는 구현은 후속).
+/// 출력 뒤쪽의 실패 요약을 보존한다. 앞부분의 오류는 빠질 수 있으며 ANSI escape는 유지한다.
+/// 두 tail의 JSON 이스케이프를 고려해 기본 저장소 항목 상한보다 작게 잡았다. 더 낮은 설정에서는 저장이 실패할 수 있다.
 const CAPTURE_TAIL_CAP: usize = 64 * 1024;
 
-/// 자식 stdout/stderr 드레인 스레드가 모은 결과 — 마지막 [`CAPTURE_TAIL_CAP`] 바이트만
-/// 보관한다. `truncated`/`dropped_bytes` 는 절단이 실제로 일어났는지, 얼마나 버렸는지
-/// 를 담아 `TaskResult.output` 에 그대로 실린다.
+/// 스트림 뒤쪽의 제한된 바이트와 잘린 양. 읽기 오류도 종료로 처리해 출력이 불완전할 수 있다.
 #[derive(Debug, Default)]
 pub(crate) struct DrainedStream {
     data: Vec<u8>,
@@ -1241,21 +1040,14 @@ impl DrainedStream {
     }
 }
 
-/// 실패로 종결한 poll 응답을 에러 메시지에 실을 때의 상한(바이트).
-/// `Run` 의 [`CAPTURE_TAIL_CAP`] 과 달리 스트림 tail 이 아니라 상태 응답 JSON 이라
-/// 훨씬 작다 — 원인 파악에 필요한 필드가 보이면 충분하다.
+/// task 오류에 저장할 poll 응답 요약의 바이트 상한.
 const POLL_FAILURE_SUMMARY_CAP: usize = 2 * 1024;
 
-/// 실패로 종결하는 poll 응답을 에러 메시지에 실을 한 줄로 접는다.
-///
-/// `PollOutcome::Failed` 는 문자열 하나만 나르므로, 응답 JSON 을 통째로 잃으면
-/// "왜 실패했는지" 의 유일한 단서가 상태값 하나로 줄어든다. 컴팩트 JSON 으로
-/// 직렬화하되 [`POLL_FAILURE_SUMMARY_CAP`] 바이트에서 자른다 — task 의 error
-/// 문자열은 memory store 값 하나에 실려 영속되므로 응답이 크면 상한이 필요하다.
+/// Failed는 문자열 하나만 전달하므로 응답 JSON을 길이 제한한 진단에 포함한다.
 fn summarize_poll_response(resp: &serde_json::Value) -> String {
     let mut text = resp.to_string();
     if text.len() > POLL_FAILURE_SUMMARY_CAP {
-        // char boundary 로 내려서 자른다 — 멀티바이트 중간에서 자르면 패닉한다.
+        // UTF-8 문자 중간을 자르지 않는다.
         let mut cut = POLL_FAILURE_SUMMARY_CAP;
         while cut > 0 && !text.is_char_boundary(cut) {
             cut -= 1;
@@ -1266,12 +1058,8 @@ fn summarize_poll_response(resp: &serde_json::Value) -> String {
     text
 }
 
-/// 자식 stdout/stderr 파이프를 EOF 까지 계속 읽으면서 마지막 [`CAPTURE_TAIL_CAP`]
-/// 바이트만 남긴다(ring buffer 대신 단순 drain — 상한이 64KiB 라 성능 문제 없음).
-///
-/// **호출자 주의**: 이 함수는 자식이 stdio 를 닫을 때까지(보통 종료 시점) block 한다.
-/// `child.wait()` 와 **반드시 별도 스레드**에서 동시에 돌려야 한다 — 안 그러면 자식이
-/// OS 파이프 버퍼를 채우고 block, 부모가 그 자식의 wait() 를 기다리는 교착이 생긴다.
+/// EOF나 읽기 오류까지 읽고 마지막 CAPTURE_TAIL_CAP 바이트만 남긴다.
+/// 파이프가 찬 자식의 종료를 기다리는 교착을 피하려고 child.wait와 별도 스레드에서 실행한다.
 fn drain_capped<R: std::io::Read>(mut reader: R) -> DrainedStream {
     let mut data = Vec::with_capacity(CAPTURE_TAIL_CAP);
     let mut dropped_bytes: u64 = 0;
@@ -1297,10 +1085,7 @@ fn drain_capped<R: std::io::Read>(mut reader: R) -> DrainedStream {
     }
 }
 
-/// K.A-1: `ExitStatus` → `PollOutcome` 변환 (poll 의 try_wait fast path 와 동일 의미).
-/// 결정 2·3: stdout/stderr 캡처(각 tail 64KiB + truncated/dropped_bytes)를 성공 시엔
-/// `TaskResult.output` 에, 실패 시엔(Failed 가 `String` 하나만 나를 수 있는 계약이라)
-/// 에러 메시지에 함께 실어 실패 진단(예: `cargo build` 컴파일 에러 본문)을 가능하게 한다.
+/// 성공은 구조화된 출력으로, 실패는 종료 코드와 출력 tail을 포함한 오류 문자열로 반환한다.
 pub(crate) fn shell_outcome_from_status(
     pid: u32,
     code: Option<i32>,
@@ -1338,8 +1123,7 @@ pub(crate) fn shell_outcome_from_status(
     }
 }
 
-/// K.A-1: ShellProcess 종료 결과를 memory store 에 영속 (workspace scope).
-/// watcher thread 가 `child.wait()` 완료 직후 호출. best-effort — 실패 시 warn 로그.
+/// 자식 종료와 출력 수집 뒤 결과를 저장한다. 실패하면 경고하지만 cell에는 결과를 계속 전달한다.
 pub(crate) fn persist_run_result(
     memory: &Arc<Mutex<dyn MemoryStorage>>,
     workspace_id: u32,
@@ -1348,7 +1132,6 @@ pub(crate) fn persist_run_result(
 ) {
     let value = MemoryValue::Json(run_outcome_to_value(outcome));
     let res = {
-        // 근거는 `RunnerContext::with_memory` 와 같다 — 복구는 유지하고 관측만 붙인다.
         let mut guard = crate::poison::recover_mutex(
             memory.lock(),
             "agent runner memory",
@@ -1367,7 +1150,6 @@ pub(crate) fn persist_run_result(
     }
 }
 
-/// K.A-1: 영속된 ShellProcess 결과를 load (reload 단계가 사용).
 pub(crate) fn load_run_result(
     ctx: &RunnerContext,
     workspace_id: u32,
@@ -1384,7 +1166,6 @@ pub(crate) fn load_run_result(
     })
 }
 
-/// K.A-1: ShellProcess 결과를 evict (release_permit / reload 가 호출).
 pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     let res = ctx.with_memory(|mem| {
         mem.delete(
@@ -1399,12 +1180,7 @@ pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: 
     }
 }
 
-/// 영속된 `DispatchHandle` 를 workspace_id 를 이미 아는 호출자가 직접 지운다.
-/// `HostExecutor::evict_handle` 과 달리 `held_handles`(러너 스레드 로컬 북키핑)
-/// 없이 동작 — task 삭제(`Core::task_delete`/GC sweep) 는 러너 스레드 밖(IPC
-/// 핸들러 스레드, 부팅 시점)에서 일어나 `HostExecutor` 인스턴스에 접근할 수
-/// 없으므로 필요하다. non-ShellProcess task 는 애초에 이 키가 없을 뿐이라
-/// delete 자체는 idempotent(no-op)다.
+/// executor 밖의 삭제·GC도 정리할 수 있도록 task와 workspace ID로 handle을 지운다.
 pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     let res = ctx.with_memory(|mem| {
         mem.delete(
@@ -1419,9 +1195,7 @@ pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: 
     }
 }
 
-/// task 삭제 시 정리해야 할 host 측 side-key 전부 — `tasty.agent.handle.<id>`
-/// + `tasty.agent.run_result.<id>`(정상 종료 경로 밖에서 지워지는
-/// task 도 이 두 키가 orphan 으로 남지 않아야 한다).
+/// 정상 종료를 거치지 않고 task를 삭제해도 handle과 실행 결과 키를 함께 지운다.
 pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     evict_handle_key(ctx, workspace_id, task_id);
     evict_run_result(ctx, workspace_id, task_id);
@@ -1439,7 +1213,6 @@ fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
             "kind": "failed",
             "error": e,
         }),
-        // Active 영속은 의미 없음 — watcher 는 종결 시점에만 호출.
         PollOutcome::Active => json!({ "kind": "active" }),
     }
 }
@@ -1468,8 +1241,7 @@ fn run_outcome_from_value(v: &serde_json::Value) -> Option<PollOutcome> {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 이유: 시험의 반환값 무시는 허용하되 제품 코드의 검사는 유지한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -1488,7 +1260,6 @@ mod tests {
         (td, ctx)
     }
 
-    /// J.A.S2: persist 후 별도 reader 가 deserialize → 같은 variant 복원.
     #[test]
     fn persist_handle_round_trip_via_memory_store() {
         let (_td, ctx) = fresh_ctx();
@@ -1496,7 +1267,6 @@ mod tests {
         let handle = DispatchHandle::ShellProcess { pid: 4242 };
         exec.persist_handle(1, &"t-test".to_string(), &handle);
 
-        // fresh read from memory store
         let loaded: Option<DispatchHandle> = ctx.with_memory(|mem| {
             let entry = mem
                 .get(&Scope::Workspace(1), &handle_key("t-test"))
@@ -1513,7 +1283,6 @@ mod tests {
         }
     }
 
-    /// J.A.S2: ImmediateFail / Reduce / Custom Immediate 는 영속 대상 아님.
     #[test]
     fn persist_handle_skips_immediate_variants() {
         let (_td, ctx) = fresh_ctx();
@@ -1543,7 +1312,6 @@ mod tests {
         }
     }
 
-    /// K.A.1: run_outcome JSON 직렬화 → 역직렬화 round trip.
     #[test]
     fn run_outcome_done_serde_round_trip() {
         let outcome = PollOutcome::Done(TaskResult {
@@ -1562,7 +1330,6 @@ mod tests {
         }
     }
 
-    /// K.A.1: Failed variant serde round trip.
     #[test]
     fn run_outcome_failed_serde_round_trip() {
         let outcome = PollOutcome::Failed("Run exited non-zero: code=Some(1)".into());
@@ -1574,8 +1341,6 @@ mod tests {
         }
     }
 
-    /// K.A.1: watcher thread 가 자식 종료 후 run_result 영속 + cell 채움.
-    /// "true" 명령 (Unix) — 즉시 종료 코드 0.
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_watcher_persists_exit_code_on_success() {
@@ -1610,7 +1375,6 @@ mod tests {
             DispatchHandle::ShellProcess { pid } => pid,
             other => panic!("expected ShellProcess, got {other:?}"),
         };
-        // watcher 가 wait → cell 채움 + 영속 까지 대기 (max 2s).
         let mut final_outcome: Option<PollOutcome> = None;
         for _ in 0..40 {
             match exec.poll(&handle) {
@@ -1626,21 +1390,15 @@ mod tests {
             PollOutcome::Done(r) => assert_eq!(r.exit_code, Some(0)),
             other => panic!("expected Done, got {other:?}"),
         }
-        // memory 에도 영속됐는지 확인.
         let loaded = load_run_result(&ctx, 1, &task.id).expect("persisted");
         match loaded {
             PollOutcome::Done(r) => assert_eq!(r.exit_code, Some(0)),
             other => panic!("expected persisted Done, got {other:?}"),
         }
-        // shell_children 에서도 제거됐는지.
         assert!(!exec.shell_children.contains_key(&pid));
     }
 
-    /// poison 된 결과 cell 에서도 poll 이 결과를 꺼내오는가.
-    ///
-    /// 쓰기(watcher)까지 한 테스트로 묶지 않은 이유: 그쪽은 실제 자식이 죽는 시점에
-    /// 걸려 있어 poison 을 그 사이에 끼워 넣는 순간부터 타이밍 의존이 된다. 같은 형태의
-    /// watcher cell 쓰기는 `core::pty_registry` 의 poison 테스트가 결정론적으로 고정한다.
+    /// poison 뒤 결과 조회를 검사한다. watcher 쓰기의 실행 타이밍을 재현하는 시험은 아니다.
     #[test]
     fn a_poisoned_run_result_cell_still_delivers_the_outcome() {
         let (_td, ctx) = fresh_ctx();
@@ -1652,7 +1410,6 @@ mod tests {
             error: None,
         }))));
         let poisoner = cell.clone();
-        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
         let _ = thread::spawn(move || {
             let _guard = poisoner.lock().expect("fresh lock");
             panic!("poison the run result cell on purpose");
@@ -1680,11 +1437,7 @@ mod tests {
         assert!(!exec.shell_children.contains_key(&pid));
     }
 
-    /// 테스트 전용 Run task 빌더 — 필드 대부분이 테스트마다 동일해 중복 축소.
-    ///
-    /// 빌더 자체는 플랫폼 중립이다 — `Task` 값을 만들 뿐 프로세스를 띄우지 않는다.
-    /// `sh`/`true` 를 실제로 실행하는 테스트만 `#[cfg(unix)]` 로 게이팅하고, 실행 전에
-    /// 실패해야 하는 테스트(task output 치환 실패 등)는 모든 플랫폼에서 이 빌더를 쓴다.
+    /// 값만 만드는 공용 task 빌더. 실제 프로세스 실행 시험에는 별도 Unix 조건을 둔다.
     fn mk_run_task(id: &str, command: Vec<&str>) -> Task {
         use tasty_agent::OnFailure;
         Task {
@@ -1708,8 +1461,7 @@ mod tests {
         }
     }
 
-    /// dispatch 후 `exec.poll` 을 terminal 상태 도달까지 반복 — 도달 못 하면(교착 등)
-    /// `max_ticks * 50ms` 후 panic 해 회귀를 잡는다("영원히 hang" 대신 실패로 드러남).
+    /// 지정한 횟수만 폴링한다. sleep 합 외에 poll 자체도 기다릴 수 있어 실제 시간 상한은 아니다.
     #[cfg(unix)]
     fn poll_until_terminal(
         exec: &mut HostExecutor,
@@ -1723,13 +1475,11 @@ mod tests {
             }
         }
         panic!(
-            "task did not reach a terminal state within {}ms — possible pipe deadlock",
+            "task did not reach a terminal state; nominal polling sleep budget: {}ms",
             max_ticks * 50
         );
     }
 
-    /// A: 출력이 있는 Run 명령의 stdout 이 `TaskResult.output` 에 담기는지 확인
-    /// (완료 확인 방법 §1 — 구현 전에는 output 이 `{"pid": N}` 뿐이라 반드시 실패).
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_captures_stdout_in_output() {
@@ -1759,7 +1509,6 @@ mod tests {
         }
     }
 
-    /// A: 비0 종료 — state 는 Failed, exit code 는 에러 메시지에 명시(완료 확인 방법 §2).
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_nonzero_exit_fails_with_exit_code_in_error() {
@@ -1779,8 +1528,7 @@ mod tests {
         }
     }
 
-    /// B: 대용량 stdout(파이프 버퍼 상한을 훌쩍 넘는 2MB) 을 내는 명령이 교착 없이
-    /// 종결되는지 확인 — `Stdio::piped()` 만 붙이고 드레인을 안 하면 여기서 hang 한다.
+    /// 파이프 용량을 넘는 stdout을 계속 읽어 자식과 wait가 서로 막히지 않는지 확인한다.
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_large_stdout_does_not_deadlock() {
@@ -1791,7 +1539,6 @@ mod tests {
             DispatchOutcome::Started(h) => h,
             other => panic!("expected Started, got {other:?}"),
         };
-        // 대용량 출력 드레인 여유를 두고 넉넉한 timeout(10s).
         match poll_until_terminal(&mut exec, &handle, 200) {
             PollOutcome::Done(r) => {
                 assert_eq!(r.exit_code, Some(0));
@@ -1807,7 +1554,7 @@ mod tests {
         }
     }
 
-    /// B: stderr 만 대량 출력하는 케이스 — 한 스트림만 안 읽어도 교착하므로 별도 확인.
+    /// stderr만 차도 자식이 멈출 수 있어 별도로 검사한다.
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_large_stderr_does_not_deadlock() {
@@ -1836,14 +1583,11 @@ mod tests {
         }
     }
 
-    /// 결정 2: `drain_capped` 가 상한 초과 시 tail 만 남기고 dropped_bytes 를 정확히
-    /// 누적하는지 — 파이프/스레드 없이 순수 로직만 단위 테스트.
     #[test]
     fn drain_capped_truncates_to_tail_and_tracks_dropped_bytes() {
-        // CAPTURE_TAIL_CAP(64KiB) 보다 큰 입력 — 앞부분은 버려지고 뒷부분(tail)만 남아야.
         let total = CAPTURE_TAIL_CAP + 100;
         let mut input = vec![b'a'; total];
-        // 마지막 100 바이트만 다른 값으로 표시해 tail 이 실제로 "끝부분"인지 확인.
+        // 끝부분에 다른 바이트를 넣어 앞부분이 아닌 tail이 남았는지 확인한다.
         for b in input.iter_mut().rev().take(100) {
             *b = b'b';
         }
@@ -1855,7 +1599,6 @@ mod tests {
         assert!(result.data.ends_with(&[b'b'; 100]));
     }
 
-    /// 범용 폴링 핸들 헬퍼 — 특정 에이전트와 무관한 임의 poll method 로.
     fn mk_polled(method: &str) -> DispatchHandle {
         DispatchHandle::PolledDispatch {
             workspace_id: 1,
@@ -1869,8 +1612,7 @@ mod tests {
         }
     }
 
-    /// 폴링 판정 단위 테스트용 fake injector — 주어진 응답을 요청 순서대로 돌려준다.
-    /// `ctx.host_ipc` 를 채우고 워커 스레드 핸들을 반환한다(호출자가 join).
+    /// 지정한 응답을 요청 순서대로 보내는 모의 IPC. 호출자는 반환한 워커를 join한다.
     fn spawn_fake_injector(
         ctx: &RunnerContext,
         responses: Vec<serde_json::Value>,
@@ -1899,7 +1641,6 @@ mod tests {
         })
     }
 
-    /// 폴링 판정 단위 테스트용 핸들 — terminal/failure 목록을 직접 지정한다.
     fn mk_polled_with_states(method: &str, terminal: &[&str], failure: &[&str]) -> DispatchHandle {
         DispatchHandle::PolledDispatch {
             workspace_id: 1,
@@ -1913,9 +1654,6 @@ mod tests {
         }
     }
 
-    /// `failure_states` 적중은 Done 이 아니라 Failed 다 — 자식이 죽었는데
-    /// downstream 이 그 산출물을 전제로 진행하면 안 된다. 메시지에는 상태값과
-    /// 응답 요약이 함께 실려야 원인을 볼 수 있다.
     #[test]
     fn polled_dispatch_failure_state_yields_failed_not_done() {
         let (_td, ctx) = fresh_ctx();
@@ -1932,8 +1670,7 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// terminal 과 failure 에 같은 값이 있으면 failure 우선 — 실패를 성공으로 읽는
-    /// 쪽이 그 반대보다 위험하다.
+    /// 성공·실패 목록이 겹치면 실패를 우선한다.
     #[test]
     fn polled_dispatch_failure_states_take_precedence_over_terminal() {
         let (_td, ctx) = fresh_ctx();
@@ -1944,8 +1681,6 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// `failure_states` 가 비면 이 필드 도입 전과 완전히 같게 — terminal 도달은
-    /// 전부 성공이다(기존 영속 handle 의 동작 보존).
     #[test]
     fn polled_dispatch_without_failure_states_still_succeeds_on_terminal() {
         let (_td, ctx) = fresh_ctx();
@@ -1956,7 +1691,6 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// 기존 영속 DAG JSON(`failure_states` 없음)이 그대로 역직렬화돼야 한다.
     #[test]
     fn poll_spec_without_failure_states_deserializes() {
         let spec: tasty_agent::PollSpec = serde_json::from_str(
@@ -1967,7 +1701,7 @@ mod tests {
         assert_eq!(spec.interval_ms, 500);
     }
 
-    /// 실패 메시지 요약은 상한에서 잘리되 멀티바이트 경계에서 패닉하지 않는다.
+    /// 긴 응답을 줄일 때 UTF-8 문자 경계를 지켜야 한다.
     #[test]
     fn poll_failure_summary_truncates_on_char_boundary() {
         let big = "가".repeat(POLL_FAILURE_SUMMARY_CAP);
@@ -1976,11 +1710,9 @@ mod tests {
         assert!(summary.len() <= POLL_FAILURE_SUMMARY_CAP + "...(truncated)".len());
     }
 
-    /// K.A.2: injector 미초기화 1회 → Active + grace deadline 세팅.
     #[test]
     fn polled_dispatch_poll_injector_uninit_returns_active_within_grace() {
         let (_td, ctx) = fresh_ctx();
-        // host_ipc OnceLock 비어있는 상태 — set_host_ipc_injector 호출 X.
         let mut exec = HostExecutor::new(ctx);
         let handle = mk_polled("fake.poll");
         let outcome = exec.poll(&handle);
@@ -1994,16 +1726,14 @@ mod tests {
         );
     }
 
-    /// K.A.2: grace deadline 을 과거로 강제 → 다음 poll 은 Failed("grace expired").
     #[test]
     fn polled_dispatch_poll_after_grace_expired_returns_failed() {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx);
         let handle = mk_polled("fake.poll");
-        // 첫 poll 로 deadline 세팅 — 반환값은 Active (검증은 다음 라인의 덮어쓰기 후).
         let _first = exec.poll(&handle);
         debug_assert!(matches!(_first, PollOutcome::Active));
-        exec.injector_grace_deadline_ms = Some(0); // 과거로 강제.
+        exec.injector_grace_deadline_ms = Some(0);
         let outcome = exec.poll(&handle);
         match outcome {
             PollOutcome::Failed(err) => {
@@ -2014,8 +1744,6 @@ mod tests {
         }
     }
 
-    /// K.A.2: injector ready 가 되어 정상 dispatch 가 응답하면 grace deadline reset.
-    /// 테스트 worker thread 가 poll method 에 terminal 상태 응답 — Done 으로 종결.
     #[test]
     fn polled_dispatch_recovers_after_injector_ready() {
         use std::sync::mpsc;
@@ -2026,12 +1754,10 @@ mod tests {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
         let handle = mk_polled("fake.poll");
-        // 1차 poll — injector 미초기화 → Active + deadline 세팅.
         let outcome1 = exec.poll(&handle);
         assert!(matches!(outcome1, PollOutcome::Active));
         assert!(exec.injector_grace_deadline_ms.is_some());
 
-        // Fake injector + worker thread: fake.poll 에 terminal("done") 응답.
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
         let injector = HostIpcInjector::new(tx, waker);
@@ -2045,21 +1771,18 @@ mod tests {
             );
             cmd.response_tx.send(resp).expect("send resp");
         });
-        // 2차 poll — injector ready → fake.poll 응답 "done"(terminal) → Done.
         let outcome2 = exec.poll(&handle);
         worker.join().unwrap();
         match outcome2 {
             PollOutcome::Done(_) => {}
             other => panic!("expected Done, got {other:?}"),
         }
-        // grace deadline reset 확인.
         assert!(
             exec.injector_grace_deadline_ms.is_none(),
             "deadline should reset after successful dispatch"
         );
     }
 
-    /// K.A.2: injector 외 사유 Err 는 grace 우회 — 즉시 Failed.
     #[test]
     fn polled_dispatch_non_injector_error_fails_immediately() {
         use std::sync::mpsc;
@@ -2069,11 +1792,9 @@ mod tests {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
         let handle = mk_polled("fake.poll");
-        // injector 를 ready 로 만들되 worker 가 응답을 보내지 않게 두면 dispatch 가
-        // HOST_DISPATCH_TIMEOUT (5s) 후 timeout Err. 본 테스트는 channel disconnect 로
-        // 빠르게 Err 유도 — sender 만 drop.
+        // timeout을 실제로 기다리지 않고 수신자를 닫아 다른 종류의 IPC 실패를 만든다.
         let (tx, rx) = mpsc::channel::<IpcCommand>();
-        drop(rx); // receiver drop → sender.send 가 즉시 Err.
+        drop(rx);
         let waker = std::sync::Arc::new(|| {});
         let injector = HostIpcInjector::new(tx, waker);
         ctx.host_ipc.set(injector).ok().expect("set once");
@@ -2092,12 +1813,9 @@ mod tests {
             }
             other => panic!("expected Failed, got {other:?}"),
         }
-        // deadline 은 우회 — 변경 없음 (None 그대로).
         assert!(exec.injector_grace_deadline_ms.is_none());
     }
 
-    /// 범용 폴링: Custom{poll:Some} → dispatch 응답/요청 키를 poll_params 로 매핑한 뒤
-    /// terminal 상태 도달까지 폴링. (fake.start → {"job":"J1"}, fake.poll → running→done)
     #[test]
     fn custom_with_poll_maps_params_and_polls_to_done() {
         use std::collections::HashMap;
@@ -2116,7 +1834,6 @@ mod tests {
             .set(HostIpcInjector::new(tx, waker))
             .ok()
             .expect("set once");
-        // worker: fake.start → {"job":"J1"}, fake.poll(1) → running, fake.poll(2) → done.
         let worker = std::thread::spawn(move || {
             let start = rx.recv().expect("recv fake.start");
             assert_eq!(start.request.method, "fake.start");
@@ -2130,7 +1847,6 @@ mod tests {
 
             let poll1 = rx.recv().expect("recv fake.poll 1");
             assert_eq!(poll1.request.method, "fake.poll");
-            // poll_params 매핑 검증: 요청(surface_id) + 응답(job) 양쪽 반영.
             assert_eq!(poll1.request.params.get("surface_id"), Some(&json!(7)));
             assert_eq!(poll1.request.params.get("job"), Some(&json!("J1")));
             poll1
@@ -2184,7 +1900,6 @@ mod tests {
             finished_at: None,
         };
 
-        // dispatch → PolledDispatch 핸들 + poll_params 매핑.
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,
             other => panic!("expected Started, got {other:?}"),
@@ -2201,9 +1916,7 @@ mod tests {
             }
             other => panic!("expected PolledDispatch, got {other:?}"),
         }
-        // 1차 poll → running(비-terminal) → Active.
         assert!(matches!(exec.poll(&handle), PollOutcome::Active));
-        // 2차 poll → done(terminal) → Done.
         match exec.poll(&handle) {
             PollOutcome::Done(r) => {
                 assert_eq!(r.output, Some(json!({ "state": "done" })));
@@ -2213,7 +1926,6 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// 회귀: Custom{poll:None} → dispatch 응답으로 즉시 CustomImmediate.
     #[test]
     fn custom_without_poll_is_immediate() {
         use std::sync::mpsc;
@@ -2271,8 +1983,6 @@ mod tests {
         }
     }
 
-    /// `poll: Some(Named)` → 완료 판정 전략 레지스트리로 이름 해석 후 그
-    /// `PollSpec` 대로 폴링한다(인라인과 동등하게 동작).
     #[test]
     fn custom_with_named_poll_strategy_resolves_and_polls() {
         use std::sync::mpsc;
@@ -2356,11 +2066,6 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest1");
     }
 
-    /// `poll: Some(Named)` 이 push-kind 전략을 가리키면
-    /// `AwaitExternal` 로 전이한다: `hook.set` 를 통해 대상 surface(`params.
-    /// surface_id`)에 1회성 훅을 등록하고, 그 hook_id 를 `hook_task_waits` 에
-    /// 등록한다. poll 은 계약대로 절대 종결시키지 않는다(항상 Active) — 종결은
-    /// `Core::resolve_hook_task_wait`(훅 발화 소비부)의 몫.
     #[test]
     fn custom_with_named_push_strategy_registers_hook_and_awaits_external() {
         use crate::hook_handler::types::{
@@ -2479,9 +2184,7 @@ mod tests {
             }
             other => panic!("expected AwaitExternal, got {other:?}"),
         }
-        // 계약: poll 은 절대 종결시키지 않는다.
         assert!(matches!(exec.poll(&handle), PollOutcome::Active));
-        // hook_task_waits 에 실제로 등록됐는지 확인(1회성 소비 — resolve 로 검증).
         assert_eq!(
             ctx.hook_task_waits.resolve(999),
             Some((1, "t-push".to_string()))
@@ -2490,8 +2193,6 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push");
     }
 
-    /// push 전략인데 원 dispatch `params` 에 `surface_id` 가 없으면
-    /// hook 을 어느 surface 에 걸지 알 수 없다 — dispatch 자체가 실패한다.
     #[test]
     fn custom_with_push_strategy_missing_surface_id_fails_dispatch() {
         use crate::hook_handler::types::{
@@ -2577,9 +2278,7 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push2");
     }
 
-    /// `poll: Some(Named)` 이 미등록 이름을 가리키면 dispatch 자체가 실패(PermanentFail)
-    /// — Running 진입 후가 아니라 dispatch 시점에 드러난다. dispatch 는 poll 해석
-    /// 전에 먼저 `ipc_method` 를 호출하므로 그 응답까지는 정상적으로 흘려보낸다.
+    /// 미등록 전략 오류 전에 원래 IPC는 이미 실행된다. 응답 뒤 전략 해석에서 실패하는 순서를 확인한다.
     #[test]
     fn custom_with_unknown_named_poll_strategy_fails_dispatch() {
         use std::sync::mpsc;
@@ -2634,8 +2333,6 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// 결정 6 — `poll: None` 이라도 `default_for_methods` 로 그 IPC 메서드를 지목한
-    /// poll 전략이 있으면 그 사양을 대신 사용한다(즉시-성공 하위호환보다 우선).
     #[test]
     fn custom_without_poll_uses_default_for_method_strategy() {
         use std::sync::mpsc;
@@ -2706,8 +2403,6 @@ mod tests {
             started_at: None,
             finished_at: None,
         };
-        // poll:None 이라도 default_for_methods 매칭 때문에 즉시 CustomImmediate 가
-        // 아니라 PolledDispatch 가 나와야 한다.
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,
             other => panic!("expected Started, got {other:?}"),
@@ -2721,7 +2416,6 @@ mod tests {
         crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest3");
     }
 
-    /// J.A.S2: evict 후 store 에서 사라짐.
     #[test]
     fn evict_handle_removes_from_store() {
         let (_td, ctx) = fresh_ctx();
@@ -2745,13 +2439,6 @@ mod tests {
         assert!(!present_after, "evict should remove entry");
         assert!(!exec.held_handles.contains_key(&task_id));
     }
-
-    // =====================================================================
-    // lease pool 모드 (candidates/elastic) — `try_acquire_lease`
-    // 자체는 실행(dispatch_command)과 독립적이므로 여기 테스트는 실제 process
-    // spawn 없이 private 메서드를 직접 호출해 배정 로직만 검증한다. cwd/params
-    // 치환은 뒤쪽 `dispatch_*` 테스트에서 실제 spawn 으로 end-to-end 확인한다.
-    // =====================================================================
 
     #[cfg(unix)]
     #[test]
@@ -2780,13 +2467,11 @@ mod tests {
             "expected 3 distinct resources, got {got:?}"
         );
 
-        // 4번째는 대기(Deferred = Some(false)) — Block 이 기본 mode.
         let mut task4 = mk_run_task("t-pool-3", vec!["true"]);
         task4.metadata = json!({ "lease": { "candidates": candidates } });
         assert_eq!(exec.try_acquire_lease(&task4).unwrap(), Some(false));
         assert!(!exec.held_leases.contains_key(&task4.id));
 
-        // elastic 미지정 — 새 candidate 이름이 절대 합성되지 않았어야 한다.
         for (resource, _holder) in exec.held_leases.values().map(|(_, r, h)| (r, h)) {
             assert!(
                 candidates.contains(resource),
@@ -2842,12 +2527,9 @@ mod tests {
                 acquired += 1;
             }
         }
-        // 3(fixed) + 1(합성 상한) = 4개만 즉시 점유, 나머지 2개는 대기.
         assert_eq!(acquired, 4);
     }
 
-    /// sugar 통합: `resource`(단일)와 `candidates`([단일])가 같은 lease key 로
-    /// 충돌 판정되는지 — `try_acquire_lease` 파싱 층까지 포함해 확인.
     #[cfg(unix)]
     #[test]
     fn try_acquire_lease_resource_sugar_conflicts_with_single_candidate_pool() {
@@ -2868,11 +2550,6 @@ mod tests {
         );
     }
 
-    /// dispatch 치환이 store 에도 되써지는지 — `task-get`/`task-list` 가 원본
-    /// (빈 cwd)이 아니라 실제 배정된 resource 를 보여줘야 한다(완료 확인 방법
-    /// §2). in-memory `Task` 만 바꾸고 store 를 안 건드리면 이 요구를 못
-    /// 만족하므로, 여기선 실제로 `TaskStore` 에 넣은 뒤 dispatch → 다시
-    /// `TaskStore::get` 으로 읽어 확인한다.
     #[cfg(unix)]
     #[test]
     fn dispatch_persists_lease_substituted_cwd_for_task_get() {
@@ -2882,9 +2559,7 @@ mod tests {
         let mut exec = HostExecutor::new(ctx.clone());
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_str().unwrap().to_string();
-        // `pwd` 는 getcwd() 가 준 실제 경로를 찍는다. macOS 의 tempdir 은
-        // `/var`(→ `/private/var` 심볼릭 링크) 아래라 원본 문자열과 다르므로,
-        // stdout 비교에는 심볼릭 링크를 푼 경로를 쓴다.
+        // macOS 임시 경로는 symlink를 포함할 수 있어 pwd의 결과와 비교할 때 canonicalize한다.
         let resolved_path = dir
             .path()
             .canonicalize()
@@ -2905,9 +2580,6 @@ mod tests {
             other => panic!("expected Started, got {other:?}"),
         };
 
-        // dispatch 도중(아직 Running 으로 store 전이되기 전) store 를 직접
-        // 조회해도 이미 치환된 cwd 가 보여야 한다 — RunnerLoop 가 set_state
-        // 를 부르기 전에 이 persist 가 먼저 일어나기 때문.
         let stored = ctx.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
             store.get(1, &task.id).unwrap().unwrap()
@@ -2923,7 +2595,6 @@ mod tests {
             other => panic!("expected Run, got {other:?}"),
         }
 
-        // 정상 종결도 확인(치환된 cwd 로 실제 spawn 됐는지).
         match poll_until_terminal(&mut exec, &handle, 40) {
             PollOutcome::Done(r) => {
                 let stdout_text = r
@@ -2938,8 +2609,6 @@ mod tests {
             other => panic!("expected Done, got {other:?}"),
         }
     }
-
-    // ── `${task.<id>.output<pointer>}` 치환 ──────────────────────────────
 
     fn outputs_of(pairs: &[(&str, serde_json::Value)]) -> HashMap<TaskId, serde_json::Value> {
         pairs
@@ -2956,8 +2625,6 @@ mod tests {
         }
     }
 
-    /// 문자열 값 전체가 단일 placeholder 면 뽑아낸 Value 로 통째 교체 — 타입 보존.
-    /// 문자열로 떨어지면 `claude.spawn` 의 `require_surface_id`(`as_u64`) 가 거부한다.
     #[test]
     fn task_output_substitution_preserves_number_type() {
         let outputs = outputs_of(&[("t-a", json!({ "child_surface_id": 731 }))]);
@@ -2974,16 +2641,19 @@ mod tests {
         assert_ne!(
             params["surface_id"],
             json!("731"),
-            "타입이 문자열로 떨어졌다"
+            "숫자 결과가 문자열로 바뀌었다"
         );
         assert!(
             params["surface_id"].as_u64().is_some(),
-            "require_surface_id 의 as_u64() 가 통과해야 한다"
+            "치환한 surface_id는 u64로 읽을 수 있어야 한다"
         );
-        assert_eq!(params["message"], json!("hi"), "무관한 값은 그대로");
+        assert_eq!(
+            params["message"],
+            json!("hi"),
+            "참조가 없는 값은 바뀌면 안 된다"
+        );
     }
 
-    /// 숫자만이 아니라 객체/배열/불리언도 통째 교체된다 — 빈 포인터는 출력 전체.
     #[test]
     fn task_output_substitution_preserves_composite_types() {
         let outputs = outputs_of(&[(
@@ -3010,7 +2680,6 @@ mod tests {
         );
     }
 
-    /// 부분 문자열 안에 섞이면 문자열 보간.
     #[test]
     fn task_output_substitution_interpolates_within_string() {
         let outputs = outputs_of(&[("t-a", json!({ "pr_number": 42, "who": "zilhak" }))]);
@@ -3024,11 +2693,9 @@ mod tests {
             panic!("expected Custom");
         };
         assert_eq!(params["prompt"], json!("review PR 42"));
-        // 문자열 값은 따옴표 없이 내용만 들어간다.
         assert_eq!(params["two"], json!("zilhak opened #42"));
     }
 
-    /// 중첩 구조(배열/객체 안쪽)와 `Run` 인자에도 적용된다.
     #[test]
     fn task_output_substitution_reaches_nested_json_and_run_args() {
         let outputs = outputs_of(&[("t-a", json!({ "id": 7, "dir": "build" }))]);
@@ -3048,12 +2715,10 @@ mod tests {
         let TaskCommand::Run { command, cwd, .. } = &run else {
             panic!("expected Run");
         };
-        // argv 는 어차피 문자열이라 타입 보존 문제가 없다 — 전부 보간.
         assert_eq!(command[1], "id=7");
         assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/tmp/build")));
     }
 
-    /// 포인터가 출력에 없으면 조용한 null 이 아니라 에러다.
     #[test]
     fn task_output_substitution_rejects_pointer_miss() {
         let outputs = outputs_of(&[("t-a", json!({ "child_surface_id": 731 }))]);
@@ -3062,12 +2727,11 @@ mod tests {
         assert!(err.contains("not found"), "{err}");
     }
 
-    /// 주입된 값 안에 placeholder 처럼 보이는 텍스트가 있어도 재치환하지 않는다(1-pass).
+    /// 결과에 포함된 다른 표식을 재치환하지 않는다.
     #[test]
     fn task_output_substitution_does_not_rescan_injected_values() {
         let outputs = outputs_of(&[("t-a", json!({ "text": "${task.t-b.output/x}" }))]);
         let mut cmd = custom_params(json!({ "p": "${task.t-a.output/text}" }));
-        // t-b 는 outputs 에 없다 — 재치환한다면 여기서 에러가 났을 것이다.
         substitute_task_outputs(&mut cmd, &outputs).unwrap();
         let TaskCommand::Custom { params, .. } = &cmd else {
             panic!("expected Custom");
@@ -3075,13 +2739,11 @@ mod tests {
         assert_eq!(params["p"], json!("${task.t-b.output/x}"));
     }
 
-    /// 참조 task 가 아직 결과가 없으면 조용히 null 이 아니라 dispatch 실패.
     #[test]
     fn task_output_substitution_missing_result_is_permanent_fail() {
         use tasty_agent::TaskStore;
         let (_td, ctx) = fresh_ctx();
         let seq = ctx.agent_seq.clone();
-        // upstream 은 store 에 있지만 result 가 없다.
         let mut upstream = mk_run_task("t-up", vec!["true"]);
         upstream.result = None;
         ctx.with_memory(|mem| {
@@ -3104,7 +2766,6 @@ mod tests {
         }
     }
 
-    /// 참조 task 가 store 에 아예 없어도 dispatch 실패.
     #[test]
     fn task_output_substitution_unknown_task_is_permanent_fail() {
         let (_td, ctx) = fresh_ctx();
@@ -3118,8 +2779,6 @@ mod tests {
         }
     }
 
-    /// dispatch 가 치환한 command 를 store 에 되쓴다 — task-get 이 "실제로 무엇으로
-    /// 호출됐는지" 를 보여줘야 한다(lease 치환과 같은 이유).
     #[cfg(unix)]
     #[test]
     fn dispatch_persists_task_output_substituted_command() {
@@ -3159,9 +2818,6 @@ mod tests {
         }
     }
 
-    /// dispatch 치환: `cwd` 가 `None` 이면 획득한 lease resource 로 그대로
-    /// 채워야 한다(완료 확인 방법 §2 — task-get 결과에 어느 자원을 받았는지
-    /// 드러나야 한다는 요구를 `cwd` 로 실증).
     #[cfg(unix)]
     #[test]
     fn dispatch_fills_empty_run_cwd_with_acquired_lease_resource() {
@@ -3169,7 +2825,7 @@ mod tests {
         let mut exec = HostExecutor::new(ctx);
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_str().unwrap().to_string();
-        // 위 테스트와 같은 이유 — `pwd` 출력은 심볼릭 링크가 풀린 경로다.
+        // pwd는 symlink를 해석한 경로를 출력한다.
         let resolved_path = dir
             .path()
             .canonicalize()
@@ -3204,8 +2860,6 @@ mod tests {
         }
     }
 
-    /// dispatch 치환: `cwd`/command 인자에 이미 `${lease.resource}` placeholder
-    /// 가 있으면 그 안의 값만 치환(원래 cwd 를 통째로 덮어쓰지 않음).
     #[cfg(unix)]
     #[test]
     fn dispatch_substitutes_lease_placeholder_in_cwd_and_command_args() {
@@ -3249,9 +2903,6 @@ mod tests {
                     .and_then(|s| s.get("text"))
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
-                // spawn 이 성공했다는 사실 자체가 cwd placeholder 가 실제 존재하는
-                // 디렉터리로 치환됐음을 증명한다(치환 실패 시 존재하지 않는
-                // "${lease.resource}" 경로로 spawn 이 실패해 PermanentFail).
                 assert_eq!(
                     stdout_text.trim(),
                     dir_path,
@@ -3262,8 +2913,6 @@ mod tests {
         }
     }
 
-    /// dispatch 치환: `Custom.params` 안의 placeholder 도 dispatch_plugin 호출
-    /// 전에 치환돼야 한다(예: `claude.spawn` 의 `cwd` 파라미터 시나리오).
     #[test]
     fn dispatch_substitutes_lease_placeholder_in_custom_params() {
         use std::sync::mpsc;
@@ -3317,8 +2966,6 @@ mod tests {
         assert!(matches!(handle, DispatchHandle::CustomImmediate(_)));
     }
 
-    /// release 경로: pool 모드로 얻은 자원도 `release_permit` 한 번으로 정상
-    /// 반환되고, 그 뒤 다른 holder 가 바로 이어받을 수 있어야 한다.
     #[cfg(unix)]
     #[test]
     fn release_permit_returns_pool_resource_for_next_holder() {
