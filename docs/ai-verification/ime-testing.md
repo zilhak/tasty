@@ -1,6 +1,8 @@
 # IME 시뮬레이션 검증
 
-`surface.ime_*` IPC(**debug 빌드 전용** — 사용자 입력기 조합의 재현이라 release 표면에 없다, [ADR-0012](../adr/0012-request-admission-and-isolation.md). window-local, **local-only** — 로컬 caller 만, `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`)로 IME 입력을 프로그래밍 방식으로 시뮬레이션해 한글/CJK 입력 파이프라인 버그를 재현·검증한다. 핸들러는 `src/adapters/ipc/handler/ime.rs`. (debug 포트 `~/.tasty-debug/tasty.port`, 격리 인스턴스면 `$TASTY_HOME/tasty.port`.)
+`surface.ime_*` IPC로 한글·CJK 입력을 재현한다. 사용자 입력기의 조합 과정을 재현하는 기능이므로 debug 빌드의 local caller에게만 허용한다([ADR-0012](../adr/0012-request-admission-and-isolation.md)).
+
+상태는 창 단위다. 핸들러는 `src/adapters/ipc/handler/ime.rs`, 접근 규칙은 `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`에 있다. 기본 debug 포트는 `~/.tasty-debug/tasty.port`, 격리 인스턴스는 `$TASTY_HOME/tasty.port`를 사용한다.
 
 메서드: `surface.ime_enable` · `surface.ime_preedit {text}` · `surface.ime_commit {text}` · `surface.ime_status` · `surface.ime_disable`.
 
@@ -30,10 +32,12 @@ call("surface.ime_disable")
 5. 연속 preedit→commit 시 텍스트 누적
 6. 스크린샷에서 preedit 오버레이 위치·파란 배경 정렬
 
-### 리팩터 후 flush/clear 회귀 확인 (handle_keyboard_input 상환 시)
+<a id="리팩터-후-flushclear-회귀-확인-handle_keyboard_input-상환-시"></a>
+
+### 키 입력 처리 변경 후 flush/clear 확인
 
 1. 한글 조합 중(예: "한" 입력 중) **split/close 등 팝업 없는 단축키** → 조합 문자가 PTY 로 확정 전송(flush). 유실·중복 없음.
-2. 한글 조합 중 **command palette·notifications(intent 팝업)** → 현재 동작상 **flush**(dispatch 지연으로 체크 시 미포커스). 상환 후에도 동일한지.
+2. 한글 조합 중 **command palette·notifications(intent 팝업)** → 현재 동작상 **flush**(dispatch 지연으로 체크 시 미포커스). 변경 후에도 같은지 확인한다.
 3. 열림·비포커스 search_bar 상태에서 조합 중 `find` 재입력 → 조합 문자 **폐기**(clear), PTY 미전송.
 4. 조합 중 **Ctrl+letter**(예: 'ㅊ' 조합 중 Ctrl+C) → physical 폴백으로 control char(0x03) 전송, 조합문자 아님.
 5. 위 3케이스에서 `ime_status.has_preedit` 가 처리 후 `false`.
@@ -44,9 +48,9 @@ call("surface.ime_disable")
 - `surface_id` 지정 미지원 — 항상 포커스된 surface.
 - 마우스 클릭에 의한 preedit 커밋은 시뮬레이션 불가(별도 경로).
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되나 실제 OS IME 는 열리지 않음.
-  egui-mesh 갈래(surface·popup)의 후보창 위치는 **plugin 이 알려온 값**을 host 가 창 좌표로
+  egui-mesh의 surface·popup의 후보창 위치는 **plugin 이 알려온 값**을 host 가 창 좌표로
   올려 넘긴다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md) "IME candidate 위치") —
-  변환식 자체는 `plugin_bridge::mesh_ime_cursor_area` 단위 시험으로 재고, 후보창이 실제로
+  변환식은 `plugin_bridge::mesh_ime_cursor_area` 단위 시험으로 확인하고, 후보창이 실제로
   그 자리에 뜨는지는 OS IME 가 그리는 창이라 tasty 프레임 캡처에 안 잡힐 수 있다. 그때는
   winit 에 넘긴 값을 stderr trace 로 관측한다 —
   `TASTY_LOG=tasty::view::main=trace` 로 띄우면 `ime cursor area: x=… y=… w=… h=…` 가
@@ -59,8 +63,7 @@ call("surface.ime_disable")
   볼 수 있다. WM 없는 Xvfb 에서는 클릭 주입이 egui popup 에 안 닿으니
   `debug inject egui-key --key Tab` 으로 포커스 체인을 돌린다 — 몇 번째 Tab 이 입력란에
   닿는지는 그 popup 의 위젯 순서에 달렸으므로, Tab 하나마다 trace 줄 수의 **증가분**을
-  재서 켜지는 자리와 꺼지는 자리를 갈라라. popup 을 닫은 뒤 증가분이 0 인 것이
-  stale 캐시가 없다는 음성 대조다.
+  재서 켜지는 자리와 꺼지는 자리를 확인한다. popup을 닫은 뒤에는 trace가 더 나오지 않아야 하며, 이 조건으로 남은 IME 캐시가 없는지 확인한다.
 - 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
   다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
   **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온

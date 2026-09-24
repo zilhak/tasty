@@ -1,13 +1,8 @@
 # 스크린샷 방법
 
-> **`ui.screenshot` 이 기본이지만 전부는 아니다.** tasty 자체 캡처(`ui.screenshot` IPC)가
-> 실제 렌더한 프레임을 PNG 로 떨군다 — OS 화면 녹화 권한 불요, 다른 창 가림·포커스·최대화
-> 상태에 영향받지 않음. **그러나 native WebView 로 그리는 화면은 그 캡처에 담기지 않는다**
-> (아래 "무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다"). 그쪽은 OS 화면 캡처가
-> **폴백이 아니라 유일 채널**이다.
+`ui.screenshot`은 Tasty가 렌더한 프레임을 PNG로 저장한다. OS 화면 녹화 권한이 필요 없고 다른 창의 가림·포커스·최대화에 영향을 받지 않는다. native WebView는 이 프레임에 포함되지 않으므로 OS 화면 캡처를 사용한다.
 
-**어느 채널에 있고 어느 채널에 없나 — 두 열을 함께 읽는다.** "찍히나/안 찍히나" 한 열로
-고르면 webview 를 놓친다(그 1 열이 실제로 오진을 만들었다 — 아래 절).
+대상에 따라 캡처 방법을 고른다. 자체 캡처에 나오지 않는다고 화면을 캡처할 수 없는 것은 아니다.
 
 | 찍으려는 것 | `ui.screenshot`(CLI `tasty screenshot`) | OS 화면 캡처 |
 |---|---|---|
@@ -27,10 +22,7 @@ GPU 창에서 검게 나온다고 알려져 있고, 이 실측은 그 조건이 
 
 ## `tasty screenshot` CLI / `ui.screenshot` IPC (권장)
 
-정식 release 기능이다(더 이상 debug 전용 아님). **focus 독립** — 대상 창/surface 를 ID 로 직접
-지정하며 focused 창에 의존하지 않는다(불가침 원칙 3). 에이전트가 *자기 작업을 관찰*하는
-캡처라 사용자 상태(focus/가시 탭/선택)를 건드리지 않는다(원칙 1·2). 임의 경로 파일 쓰기
-표면이라 `local_only`(plugin 미노출) — CLI/로컬 client 만 호출.
+캡처는 release에서 제공하는 관찰 기능이다. 창·surface를 ID로 지정하며 사용자의 포커스·가시 탭·선택을 바꾸지 않는다. 파일을 임의 경로에 쓰는 기능이므로 local caller만 호출할 수 있고 플러그인에는 노출하지 않는다.
 
 - GUI 모드 전용(headless 불가).
 - 두 가지 대상:
@@ -60,9 +52,7 @@ tasty screenshot --path /abs/win.png --window 2
 
 **명시한 `--window <id>` 는 모든 창을 가리킬 수 있다** — main 창뿐 아니라 설정 · 플러그인 ·
 종료 확인 모달과 preset 창까지. 별도 winit 창으로 뜨는 UI 를 자동 시각 검증할 수 있어야
-디자인 정합 확인이 사람 눈에 의존하지 않는다. 하드웨어 GPU 가 붙은 X 서버에서는 X11 화면
-캡처가 GPU 창에서 검게 나와 대안이 되지 못한다(Xvfb 는 그렇지 않다 — 아래 "무엇을 그리느냐가
-어느 캡처로 보이느냐를 정한다").
+디자인 정합 확인이 사람 눈에 의존하지 않는다. 하드웨어 GPU가 붙은 X 서버에서는 캡처가 검게 나올 수 있으므로 실제 결과를 확인한다. 아래 Xvfb 관측을 모든 환경에 적용하지 않는다.
 
 경계는 **창의 종류가 아니라 두 가지 다른 축**에 있다 (근거·기각 대안·재검토 조건:
 [ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)).
@@ -84,14 +74,13 @@ tasty screenshot --path /abs/win.png --window 2
 
 ### 무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다 — webview 는 `ui.screenshot` 에 안 담긴다
 
-이 레포가 그리는 화면은 **렌더 경로**로 갈리고, 그 갈래마다 픽셀을 낼 수 있는 캡처가
-다르다. **`ui.screenshot` 이 모든 화면의 상위 채널이 아니다.**
+렌더링 경로에 따라 사용할 수 있는 캡처 방법이 다르다.
 
 | 렌더 경로 | 무엇이 그것으로 그려지나 | `ui.screenshot --window` | OS 화면 캡처 |
 |---|---|---|---|
 | GPU 셰이더 | `terminal` | 콘텐츠 나옴 | 콘텐츠 나옴 |
 | host egui | `empty` · `explorer` · `dag_graph` · chrome 전부 · 별도 winit 창(설정·plugin·preset·종료 확인) | 콘텐츠 나옴 | 콘텐츠 나옴 |
-| plugin egui-mesh | `image` · `mesh_demo` surface, plugin popup, plugin banner | 콘텐츠 나옴 | 콘텐츠 나옴 |
+| plugin egui-mesh | `image` · `mesh_demo` surface, plugin popup, plugin banner | 콘텐츠 나옴 | surface 확인. popup·banner는 미측정 |
 | **native WebView** | **`markdown` · `html`** | **안 나옴** — 아래 chrome 만 | 콘텐츠 나옴 |
 
 **webview 만 갈리는 이유는 환경이 아니라 구조다.** `ui.screenshot` 은 wgpu swapchain 을
@@ -101,11 +90,7 @@ readback 이 그 자리에서 읽는 것은 overlay 아래에 host 가 그려 �
 (`adapters/ui/surface/webview_chrome.rs` 의 boundary backdrop)이라, 캡처에는 지구본 글리프 +
 "WebView region" + **URL 문자열**이 담긴다.
 
-그래서 markdown 을 찍으면 **HTML 소스가 통째로 보인다** — markdown plugin 은 sanitize 한
-HTML 문서 전체를 URL 자리에 싣기 때문이고([ADR-0029](../adr/0029-webview-host-integration.md)),
-그것은 webview 가 렌더에 실패한 것도 소프트웨어 GL 탓도 아니다. **backdrop 이 제 일을 한
-결과다.** (이 절은 한때 그 관측을 "Xvfb 에서 webview 가 소스로 나올 수 있다" 로 적었는데,
-관측은 맞고 원인이 틀렸다 — 처방까지 바뀌므로 갈아둔다.)
+Markdown 캡처에 HTML 소스가 보일 수 있다. 플러그인이 정리한 HTML 전체를 URL 자리에 전달하기 때문이다([ADR-0029](../adr/0029-webview-host-integration.md)). 이는 WebView 아래의 backdrop을 캡처한 결과이며 WebView 렌더링 실패를 뜻하지 않는다.
 
 **처방**: webview 화면의 픽셀이 필요하면 `ui.screenshot` 이 아니라 **OS 화면 캡처**를 쓴다.
 실측(2026-09-07, Xvfb :90 · aarch64 · WebKitGTK 4.1): 한 창을 같은 순간 두 채널로 찍어
@@ -113,11 +98,7 @@ HTML 문서 전체를 URL 자리에 싣기 때문이고([ADR-0029](../adr/0029-w
 글리프·색 블록)를 그대로 냈다. 네 갈래를 한 탭에 surface split 으로 나란히 놓고 한 장에
 담으면 대조가 한 번에 끝난다.
 
-**이 환경에서 OS 캡처는 GPU 창에서 검지 않았다.** 같은 실측에서 `scrot` 이 터미널 ·
-host egui 패널 · plugin mesh · 설정 모달까지 전부 정상으로 냈다 — Xvfb 는 서버뿐 아니라
-렌더러도 소프트웨어라 프레임이 X 픽스맵에 들어간다. 위 "무엇을 캡처할 수 있는가" 가 적은
-"X11 캡처는 GPU 창에서 검게 나온다" 는 **하드웨어 GPU 가 붙은 X 서버**의 성질이고, 그쪽은
-이 축으로 **미측정**이다. 어느 환경인지 모른 채 둘 중 하나를 일반 규칙으로 쓰지 않는다.
+같은 Xvfb 관측에서는 scrot으로 터미널·host egui·plugin mesh surface·설정 모달을 캡처할 수 있었다. Xvfb는 소프트웨어 렌더링을 사용한다. 하드웨어 GPU가 연결된 X 서버는 이 비교에서 측정하지 않았으므로, OS 캡처가 항상 되거나 항상 검게 나온다고 일반화하지 않는다.
 
 **함정 하나 더**: plugin egui-mesh popup 은 **첫 프레임에 콘텐츠가 없다.** 셸(scrim +
 border)만 그려진 상태로 찍히면 "mesh 가 안 온다" 로 오진한다 — 실측에서 팝업을 연 직후
@@ -195,47 +176,19 @@ kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID �
 
 **격리 홈은 OS 열기(브라우저 · 파일 관리자)를 격리하지 않는다** — 위 `TASTY_DEBUG_OS_OPEN_LOG` 가 tasty 자신의 열기를 기록으로 바꾸고, PTY 셸·plugin 이 스스로 여는 것은 가짜 브라우저 `PATH`/`BROWSER` 로 막는다. 절차 전체는 [self-verification](../dev-guide/self-verification.md) "격리 홈도 전용 디스플레이도 OS 열기를 격리하지 않는다".
 
-**격리 CLI 는 바깥 세션의 `TASTY_SESSION_TOKEN` 을 물려받으면 안 된다.** 이 절차를
-tasty 안에서 돌리면(멀티에이전트 검증이 늘 그렇다) 셸에 이미 `TASTY_SESSION_TOKEN` 이
-있고, 격리 인스턴스는 그 토큰을 모르므로 CLI 를 `permission_denied` 로 거부한다. 그런데
-위 readiness 루프의 `list info` 는 그 거부도 실패로 세므로 **증상이 "기동이 안 된다(not
-ready)" 로 나타난다** — 원인(토큰 불일치)과 증상(기동 실패)이 안 닮아 readiness·포트·GPU 를
-엉뚱하게 파게 된다. 그러니 격리 CLI 는 바깥 env 를 끊고 부른다 —
-`env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME TASTY_HOME="$TH" tasty ...`.
-토큰을 지우면 CLI 는 로컬 접속이라 **local caller** 로 붙어 권한 제약 없이 동작한다.
-(같은 이유로 launcher 자신도 위 예제처럼 바깥 env 를 끊고 `--launch` 한다.)
+격리 CLI는 바깥의 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`을 제거하고 실행한다. 외부 토큰은 격리 인스턴스에 등록되지 않아 permission_denied가 발생하며, readiness 검사에서는 기동 실패처럼 보일 수 있다. 위 예제처럼 launcher와 CLI 모두 환경을 분리한다. 세션 토큰이 없는 로컬 CLI는 local caller로 접속한다.
 
-**정리는 반드시 자기가 띄운 PID 로 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
-**자기 것이 아닌 인스턴스까지 죽인다** — 이 레포는 사용자 release · 다른 검증 세션 ·
-병렬 lane 의 debug 인스턴스가 동시에 떠 있는 것이 일상이고, 실제로 그 형태가 다른
-세션의 프로세스를 죽인 사고가 두 번 났다. 레포의 PreToolUse 훅도 같은 이유로 패턴
-기반 프로세스 종료를 차단한다. `rm -rf` 의 대상에도 같은 원칙이 적용된다 —
-`${TH:?}` 로 빈 변수가 경로가 되는 경우를 막는다.
+직접 시작하면서 저장한 PID만 종료한다. 이름이나 명령줄 패턴으로 찾은 프로세스를 한꺼번에 종료하지 않는다. 정리할 디렉터리도 이번 검증에서 만든 경로인지 확인하고 `${TH:?}`처럼 빈 값이 전달되지 않게 한다.
 
-PID 를 놓쳤다면 **패턴으로 찾아 죽이지 말고 소유자부터 확인한다.** 격리 실행은
-`TASTY_HOME` 이 인스턴스마다 다르므로 그것이 신원이 된다(Linux):
+PID는 실행 직후 기록한다. 기록을 놓쳤다면 이번 실행 로그에서 PID를 확인한 뒤 Linux의 `/proc/<pid>/environ`에서 `TASTY_HOME` 값만 읽어 격리 홈과 대조한다. 환경 전체를 출력하지 않는다. 실행 파일과 실행 기록까지 확인해 이번 세션이 직접 시작한 인스턴스임을 알 수 있을 때만 종료 대상으로 삼는다.
 
-```bash
-for pid in $(pgrep -x tasty); do
-  home=$(tr '\0' '\n' < "/proc/$pid/environ" | grep '^TASTY_HOME=' | cut -d= -f2-)
-  echo "$pid  TASTY_HOME=${home:-<없음>}"
-done
-# 위 목록에서 "$TH" 와 일치하는 PID 하나만 골라 kill <PID>
-```
-
-macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. 어느 쪽이든 내
-것이라고 확정할 수 없으면 죽이지 않는다. 남의 인스턴스를 죽였다면 **무엇을 언제
-죽였고 그래서 어떤 검증이 무효가 됐는지**를 보고에 적는다 — 무효가 된 검증을 유효한
-것처럼 보고하는 쪽이 사고 자체보다 나쁘다.
+macOS에서는 `/proc` 대신 `ps -E -p <pid>`로 환경을 확인한다. 어느 플랫폼이든 이번 검증의 프로세스임을 확인하지 못하면 종료하지 않는다. 다른 인스턴스를 잘못 종료했다면 시각·대상과 영향을 받은 검증을 기록하고, 해당 결과를 유효한 것으로 보고하지 않는다.
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
 ### 측정 전에 — 대상 바이너리가 최신인지 확인한다 (plugin)
 
-**`cargo build` 는 plugin 바이너리를 다시 만들지 않는다.** 실측으로 확인한 것이다:
-`crates/tasty-plugin-*/src/main.rs` 를 고치고 루트에서 `cargo build` 를 돌려도
-`target/debug/tasty-plugin-<name>` 의 mtime 이 그대로다. `cargo build --workspace` 나
-`cargo build -p tasty-plugin-<name>` 은 다시 만든다.
+루트의 `cargo build`만으로 플러그인 실행 파일이 다시 만들어지지는 않는다. `cargo build --workspace` 또는 `cargo build -p tasty-plugin-<name>`으로 해당 바이너리를 빌드한다.
 
 여기에 스테이징이 겹친다. host 는 **debug 빌드에서 부팅할 때만** `copy_if_newer` 로
 `target/debug/builtin-plugins/` 를 갱신한다. release/dist 는 빌드 단계에서 스테이징한다. 모든 프로필은 번들에서 `<TASTY_HOME>/plugins/` 로
@@ -244,14 +197,9 @@ sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). debug 스테이징 판�
 건너뛰며, **시각이 같을 때만 내용을 본다.** 그래서 "시각이 같아 조용히 건너뛴다" 는 갈래는
 닫혔지만, **dest 가 더 새것인데 내용이 다른 경우**(src 가 `cp -p` 복원 등으로 더 옛 시각을 달고
 바뀐 경우)는 여전히 못 본다.
-**닫히지 않은 것이 이 절의 본론이다**: 안 만들어진 바이너리는 **내용도 옛것**이라 스테이징이
-옳게 동작해도 옛 코드가 그대로 간다 — 즉 위 문단의 함정은 스테이징이 아니라 **빌드**에 있다.
+빌드하지 않은 바이너리는 스테이징이 정상이어도 이전 코드다. 빌드 완료와 스테이징 완료를 따로 확인한다.
 
-그래서 plugin 을 고친 뒤 GUI 로 확인하면 **직전 plugin 코드를 재고 있을 수 있다.**
-실패로도 성공으로도 오진할 수 있는 형태다 — 고친 것이 안 고쳐진 것처럼 보이거나,
-되돌린 것이 여전히 고쳐진 것처럼 보인다. 실제로 이 함정 때문에 "주입한 휠이 mesh
-surface 를 못 움직인다" 는 결함을 없는데 있다고 판단한 적이 있다(같은 절차가 낡은
-바이너리에서는 0px, 새 바이너리에서는 19275px 였다).
+빌드나 스테이징이 빠지면 이전 플러그인을 실행해 변경 결과를 잘못 판단할 수 있다. 플러그인 바이너리와 번들 사본을 모두 확인한다.
 
 기동 전에 다음 중 하나를 돌린다:
 
@@ -271,14 +219,9 @@ ls -la target/debug/tasty-plugin-<name> \
 
 ### Xvfb 에서 실제 입력(휠·클릭)을 굴릴 때
 
-전용 디스플레이를 띄우고 `xdotool` 로 진짜 X11 입력을 넣으면, IPC 주입이 닿지 않는 구간
-(winit → egui → plugin 까지의 실제 라우팅)을 끝까지 지날 수 있다. 다만 이 환경에는
-데스크톱과 다른 함정이 다섯 있고, 다섯 다 **조용히** 실패한다 — 하나만 놓쳐도 "화면이
-비었다" 같은 **거짓 관측**이 나온다.
+전용 Xvfb에서 `xdotool`로 X11 입력을 보내면 winit·egui·plugin을 거치는 실제 입력 경로를 확인할 수 있다. 먼저 최신 플러그인 바이너리를 준비하고, 다음 환경 조건을 확인한다.
 
-(앞의 넷은 *관측*의 함정이고 다섯째는 *주입 경로*의 함정이다 — `xdotool` 이 성공을 보고하는데
-키가 안 들어간다. 그 앞에 *측정 대상*의 함정이 하나 더 있다 — 위 "측정 전에 — 대상 바이너리가
-최신인지 확인한다". plugin 을 고쳤다면 그것부터 확인하고 이 다섯으로 넘어간다.)
+앞의 네 항목은 접속·창 선택·캡처 조건이고, 다섯째는 키보드 입력 조건이다. 도구의 종료 코드만으로 입력 전달이나 화면 갱신이 성공했다고 판단하지 않는다.
 
 **1. `xdotool` 은 `xvfb-run` 이 만든 Xauthority 없이는 붙지 못한다.** `DISPLAY` 만 넘기면
 `Authorization required, but no authorization protocol specified` 뒤에
@@ -358,9 +301,7 @@ PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 키보드 포
 
 ## `tasty-gallery` 캡처 (`TASTY_GALLERY_SHOT`)
 
-갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요다. **"결정적" 은 캡처 경로에 대한 말이지 이미지에 대한 말이 아니다** — 어느 창을
-찍을지가 결정적이라는 뜻이고, 같은 화면을 두 번 찍으면 같은 픽셀이 나온다는 뜻이 아니다. 아래
-"픽셀 diff 판정 전" 절을 반드시 함께 읽는다.
+갤러리는 별도 바이너리로 IPC를 제공하지 않는다. `TASTY_GALLERY_SHOT`을 사용하면 창을 선택한 뒤 GPU 프레임을 PNG로 저장할 수 있다. 본체와 같은 swapchain readback을 사용하며 BGRA를 RGB로 변환하고 행을256바이트에 맞춘다. OS 화면 녹화 권한은 필요하지 않다. 캡처할 대상은 정해져 있어도 렌더링 잡음 때문에 결과 픽셀이 매번 같지는 않다. 아래 픽셀 비교 절차를 함께 따른다.
 
 - 형식: `TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]` — **배치**. 콤마로 여러 항목을 주면 **한 인스턴스에서** 순차로 선택→4프레임 settle→캡처하고 마지막에 **자체 종료**한다(콜드스타트 1회. `crates/tasty-gallery/src/main.rs`).
   **settle 은 프레임 수지 시간이 아니다**(`plan.frame >= 4`) — 벽시계로 도는 애니메이션은 이 대기로 가라앉지 않는다(아래 절).
@@ -384,7 +325,7 @@ TASTY_GALLERY_SIZE=1360x1000 \
 
 - **Linux** `scrot` — native WebView 화면은 이 채널로만 찍힌다(위 "무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다").
 - **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 또는 갤러리는 `TASTY_GALLERY_SHOT` 사용).
-- **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 `cargo build` 가 exe 를 못 덮어쓰니 빌드 전 종료(`Stop-Process -Force`).
+- **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 빌드가 파일을 덮어쓰지 못할 수 있다. 이 세션에서 직접 시작한 검증 인스턴스만 PID를 확인해 종료한다(`Stop-Process -Force`). 사용자 인스턴스는 종료하지 않는다.
 
 ## 시각 판정 체크리스트
 
@@ -394,7 +335,7 @@ TASTY_GALLERY_SIZE=1360x1000 \
 
 화면 캡처는 OS 캡처 도구가 아니라 **tasty 의 `ui.screenshot`**(CLI `tasty screenshot`)를 우선 쓴다 — 정확한 윈도우/surface 영역을 결정적으로 얻고, 좌표가 tasty 내부 레이아웃과 일치한다(OS 캡처는 데코·DPI·다른 창 혼입 위험). focus-독립 정식 기능이라 release 에서도 동작하고 `--surface <id>` 로 특정 터미널 surface 도 캡처 가능 → [screenshot-methods](#). 셀 색 검증은 `debug.glyph_color`(렌더러가 GPU 에 push 하는 실제 RGBA, debug 빌드)도 함께.
 
-**예외 하나 — 이건 우선순위가 아니라 유무다.** `markdown`·`html` 처럼 native WebView 로 그리는 화면은 `ui.screenshot` 에 **담기지 않는다**(swapchain 밖의 OS 자식 창이라 host chrome 만 찍힌다). 그쪽 픽셀이 필요하면 OS 화면 캡처가 폴백이 아니라 **유일 채널**이다 — 어느 대상이 어느 채널에 있는지는 [screenshot-methods](#) 맨 위 표가 정본이다. "OS 캡처는 최후 폴백" 으로만 읽으면 그 두 kind 의 시각 검증을 통째로 건너뛰게 된다.
+native WebView로 표시하는 Markdown·HTML은 자체 캡처에 포함되지 않는다. 해당 콘텐츠를 검증하려면 OS 화면 캡처를 사용한다. 대상별 방법은 문서 첫 표를 참고한다.
 
 ### 체크리스트 ("보인다"고 말하기 전에)
 
@@ -459,17 +400,15 @@ for x in range(expected_x - 5, expected_x + 5):
 **노이즈 바닥은 화면 내용에 따라 다르다 — 반드시 측정하고 고정값을 가정하지 마라.**
 
 - 애니메이션이 있는 화면(예: 부팅 로딩 스피너)은 노이즈가 크다 — 한 측정에서 동일 바이너리 통제군 diff 가 ~548px 였다.
-- 정적 specimen(예: 갤러리 모달 dialog)은 노이즈가 **0px**(diff bbox `None`)이었다 — 이 경우 어떤 diff 든 실제 변화다.
+- 정적 specimen(예: 갤러리 모달 dialog)은 측정한 통제군에서 잡음이0px(diff bbox `None`)였다. 같은 환경을 유지한 비교에서는 작은 차이도 변경 근거로 살펴볼 수 있다.
 
 같은 llvmpipe 환경에서도 이렇게 갈리므로 수치를 재사용하지 말고 **매번** 통제군을 찍는다.
 
-### 통제군이 초록인 것은 통과가 아니다 — 양성 대조를 먼저 세운다
+<a id="통제군이-초록인-것은-통과가-아니다--양성-대조를-먼저-세운다"></a>
 
-노이즈 바닥은 **거짓 빨강**(잡음을 변화로 오해)만 막는다. 반대 방향이 하나 더 있다:
-**대상이 프레임 밖이면 before/after 도, 변이를 넣은 통제군도 전부 동일하게 나온다.**
-한 측정에서 얕은 스윕 6 컷이 before/after 6/6 바이트 동일이었고, 값을 일부러 바꾼
-**양성 대조까지 파일 크기까지 바이트 동일**이었다 — 그 오프셋 범위에 대상 specimen 이
-애초에 없었다. 그때 "동일하니 값 보존" 은 참인 문장이 아니라 **아무것도 안 잰 것**이다.
+### 의도적인 변경이 캡처에 나타나는지 먼저 확인한다
+
+잡음 측정은 작은 픽셀 차이를 실제 변경으로 오해하지 않게 한다. 반대로 확인할 대상이 프레임 밖이면 아무리 값을 바꿔도 캡처가 같을 수 있다. 따라서 의도적으로 바꾼 값이 화면에 나타나는지 먼저 확인해야 한다.
 
 그래서 순서를 고정한다.
 
@@ -506,8 +445,6 @@ diff bbox 와 채널 델타로 한다.
 없다 — 공용 위젯 크레이트에서 온다. 갤러리만 훑으면 "애니메이션 없음" 이라는 틀린
 결론이 나온다.
 
-**전후 diff 가 잡음 bbox 와 같은 자리를 같은 크기로 차지하면 변화가 아니다.** 바닥보다
-큰지만 보면 이 경우를 놓친다 — 한 측정에서 전후 diff 가 잡음과 **같은 bbox** 안에서
-잡음보다 **작았다**(잡음 428px@(627,420,652,444) vs 전후 356px@(628,421,651,443)).
+전후 차이가 잡음과 같은 bbox 안에 있고 크기도 비슷하면 픽셀 비교만으로 실제 변경인지 구분하기 어렵다. 잡음의 크기뿐 아니라 위치도 대조한다. 한 관측에서는 잡음이428px@(627,420,652,444), 전후 차이가356px@(628,421,651,443)여서 변경 효과를 분리할 수 없었다.
 
 **소스로 증명되는 더 강한 경로가 있으면 우선한다.** 픽셀 대조가 노이즈 바닥 근처라 애매할 때, 코드상 값 델타가 0(동일값 const 인라인)이거나 변경이 한 필드로 국한되는 등 소스로 자명한 경로가 있으면 그쪽이 픽셀 대조보다 강하다 — 픽셀 대조는 그 경우 보조 확인이다.

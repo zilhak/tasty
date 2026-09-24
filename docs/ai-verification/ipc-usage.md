@@ -1,6 +1,6 @@
 # IPC 로 tasty 조작·검증
 
-tasty 는 AI 가 조작 가능한 터미널이다. 정상 모드면 IPC 서버가 자동으로 뜨고 포트 파일(`~/.tasty/tasty.port`)로 접속한다 — tasty 터미널 안에서 도는 AI 도 IPC 로 자신을 제어할 수 있다. 전체 메서드는 [reference/api](../reference/api.md).
+Tasty가 실행되면 로컬 IPC 서버의 포트 파일로 접속할 수 있다. 기본 release 포트 파일은 `~/.tasty/tasty.port`이며, 전체 메서드는 [API 문서](../reference/api.md)에 있다.
 
 ```python
 import socket, json, os
@@ -28,7 +28,7 @@ tasty send text "hello" && tasty send key enter
 
 ## 함정 2 — 응답은 `read_line` 으로 (`read_to_end` 금지)
 
-IPC 서버는 응답을 한 줄(`\n` 종료)로 보낸 뒤 **connection 을 즉시 닫지 않는다.** `read_to_end`/TCP EOF 대기로 읽으면 응답을 받고도 read timeout 만큼 더 기다린다(10초 설정이면 정확히 10초). "모든 IPC 호출이 10초씩 걸린다 → throttling 이다" 같은 잘못된 가설로 시간을 낭비하는 위험한 함정이다.
+IPC 응답은 개행으로 끝나는 JSON 한 줄이다. 서버가 바로 연결을 닫지는 않으므로 `read_line`으로 읽는다. `read_to_end`로 EOF를 기다리면 응답을 받은 뒤에도 설정한 read timeout까지 멈출 수 있다. 예를 들어 timeout이10초면 그만큼 기다리게 되며, 이를 서버 처리 지연이나 throttling으로 오해하지 않는다.
 
 ```rust
 // ❌ server close 까지 read timeout 만큼 대기
@@ -45,29 +45,23 @@ line = s.makefile('rb').readline()   # ✅ 줄 단위
 
 ## 대화형 작업 수행 — 도구 한계 우회
 
-위의 함정들이 "tasty 를 검증한다" 축이라면, 이 섹션은 다른 축이다 — **에이전트가 평소 못 하던 대화형 작업을 tasty surface 로 수행한다.**
+에이전트는 전용 Tasty surface에서 대화형 프로그램을 실행하고 화면을 읽으며 입력을 보낼 수 있다.
 
 ### 핵심 명제
 
-tasty surface 뒤에는 **진짜 PTY**(Windows ConPTY) 가 있다. 그래서 stdout 을 파이프로 캡처하는 일반 자식 프로세스(Bash/PowerShell 도구)로는 **구조적으로 불가능한 대화형 프로그램 구동**을 surface 안에서 할 수 있다. `send` → `read screen` → 판단 → `send` 를 반복하면 읽고-쓰는 대화 루프가 된다.
+Tasty surface에는 실제 PTY(Windows에서는 ConPTY)가 연결된다. `send`, `read screen`, 상태 확인을 반복하면 실행 중인 프로그램과 대화할 수 있다.
 
 ### 왜 되는가 — 두 장벽을 실 PTY 가 둘 다 뚫는다
 
-에이전트가 대화형 입력을 못 하는 이유는 두 장벽이 겹쳐서다:
+파이프로 출력만 받는 실행 도구는 프로그램 실행 중에 추가 입력을 보내기 어렵고, OpenSSH처럼 `/dev/tty`에서 비밀번호를 읽는 프로그램에는 제어 터미널이 필요하다.
 
-1. **하니스 장벽** — Bash/PowerShell 도구는 "명령 1회 던지고 종료까지 대기 후 출력 수신" 모델이라, 실행 *도중* 프롬프트에 키를 끼워넣는 실시간 양방향 채널이 없다.
-2. **TTY 장벽** — OpenSSH 등은 비밀번호를 stdin 이 아니라 제어 터미널(`/dev/tty`)에서 읽는다. 도구는 자식에 PTY 를 안 붙이므로(stdin=pipe/null) `no tty present...` 로 실패한다.
-
-tasty surface 는 둘 다 뚫는다:
-
-- 장벽1 → `send` / `read screen` 를 **각각 별개 도구 호출**로 반복하면 사실상 폴링 기반 대화 루프가 된다(한 번의 도구 호출 안에서 실시간 주고받을 필요가 없다).
-- 장벽2 → surface 에 실 PTY 가 있으니, 프로그램의 `/dev/tty` 읽기가 `send key`/`send text` 로 보낸 키를 실제 터미널 입력으로 받는다.
+Tasty에서는 `send`와 `read screen`을 별도 요청으로 반복하고, 프로그램은 PTY로 전달된 입력을 읽는다. 한 번의 도구 호출에서 모든 대화를 끝낼 필요는 없다.
 
 ### 적용 예
 
 ssh 비밀번호/`sudo` 암호/OTP 프롬프트, 대화형 REPL, 설치 마법사, `git rebase -i` 같은 풀스크린 에디터 등 — 파이프 도구로는 손댈 수 없던 대화형 절차를 surface 안에서 진행할 수 있다.
 
-> 단, ssh 비밀번호는 **키 인증이 정답**이다(키-경로 수렴: [remote-attach](../features/remote-attach/index.md), [ADR-0011](../adr/0011-secrets-and-local-trust.md)). 여기서는 "비밀번호 프롬프트에도 응답할 수 있다"는 **능력의 존재만** 기술하며 비밀번호 자동화를 권장하지 않는다.
+> SSH 연결은 [원격 attach](../features/remote-attach/index.md)와 [로컬 신뢰 정책](../adr/0011-secrets-and-local-trust.md)에 따라 키 인증을 사용한다. PTY가 비밀번호 프롬프트를 처리할 수 있다는 설명이 비밀번호 자동화를 권장하는 것은 아니다.
 
 ### 한계
 
