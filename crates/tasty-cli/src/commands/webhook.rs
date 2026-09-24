@@ -16,9 +16,8 @@ pub enum WebhookCommands {
     /// The listener binds every interface, not loopback. The printed URL reads
     /// `127.0.0.1` because that is the convenient way to curl it, but whoever
     /// can reach the port reaches this webhook. There is no signature
-    /// verification of any kind: `--auth-token` is one fixed shared secret
-    /// compared in constant time, and with no `--auth-*` the sequence fires for
-    /// whoever asks. `--persistent` writes that token in plain text into
+    /// verification of any kind: `--auth-token` is one fixed shared secret,
+    /// and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into
     /// `~/.tasty/webhooks.toml`.
     ///
     /// The HTTP answer is a fixed acknowledgement chosen before the sequence

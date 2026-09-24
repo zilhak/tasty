@@ -16,7 +16,8 @@ pub enum FileHandlerCommands {
     Dispatch {
         /// Path to dispatch.
         path: String,
-        /// Detection depth: `cheap` (extension only) or `deep` (sniff contents).
+        /// Detection depth: `cheap` (extension, filename glob, directory check)
+        /// or `deep` (also inspect contents).
         #[arg(long, default_value = "cheap")]
         depth: String,
         /// Add the resulting surface as a tab of this surface's pane instead of

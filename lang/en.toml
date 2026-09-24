@@ -743,26 +743,18 @@ new_window_desc = "Open a new Tasty window"
 palette_tooltip = "Open command palette"
 theme_tooltip = "Toggle theme"
 
-# Host-generated notification titles. These are not egui widget arguments —
-# they reach the notification panel, the sidebar badge, `notification.list`
-# and the `notification.created` plugin event as data, so they still go
-# through t() (CLAUDE.md i18n rule).
+# 호스트 알림 제목도 사용자에게 보이므로 t()로 번역한다.
 [notification]
-# Title of the notification raised when a terminal receives BEL (\a).
-# Display only — hooks identify the bell by `HookEvent::Bell` / event kind
-# `bell`, plugins by the event `source` field; nothing matches on this text.
+# 표시 제목이다. hook과 플러그인은 이 문자열이 아닌 이벤트 종류와 source로 구분한다.
 bell_title = "Bell"
-# Title used by `notification.create` when the caller omits `title`
-# (e.g. `tasty notify "body only"`). The IPC parameter stays optional; the
-# phrase shown for "absent" is a UI string, not a protocol token.
+# notification.create에서 title을 생략했을 때 쓰는 표시 제목이며 프로토콜 값이 아니다.
 default_title = "Notification"
 
 [notification_panel]
 window_title = "Notifications"
 unread_count = "{} unread"
 empty_message = "No notifications"
-# Source column when the workspace that raised the notification no longer
-# exists (closed after the notification was created).
+# 알림을 만든 워크스페이스가 닫혔을 때 쓰는 출처 표시.
 unknown_workspace = "Unknown"
 
 [explorer]
@@ -934,9 +926,7 @@ copied_path = "Path copied"
 copied_files = "Files copied"
 cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
-# Shown when an interactive screen capture is requested on macOS but screen
-# recording permission has not been granted. Distinct from the user cancelling
-# the capture, which produces no toast.
+# 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "Screen recording permission is required. Turn Tasty on in System Settings > Privacy & Security > Screen & System Audio Recording."
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
@@ -1269,9 +1259,7 @@ startup = "Startup command"
 startup_hint = "command to run on start"
 subtitle_hint = "subtitle"
 
-# Plugin-declared surface preset fields. Plugins may override these keys from
-# their own lang files; kept here as a graceful fallback if a plugin lang fails
-# to load.
+# 플러그인 번역을 읽지 못하면 이 값을 사용한다. 플러그인은 같은 키를 덮어쓸 수 있다.
 [preset.settings]
 pane = "pane {}"
 surface = "surface {}"
@@ -1322,8 +1310,7 @@ empty = "No presets saved yet."
 apply_button = "Apply"
 cancel_button = "Cancel"
 
-# Surface kind display names (host builtins). Plugin kinds (markdown/image/…)
-# register their own surface.kind.* keys via plugin lang files.
+# 호스트 종류의 표시명. 플러그인 종류는 플러그인의 surface.kind.* 번역을 사용한다.
 [surface.kind]
 dag_graph = "DAG"
 terminal = "Terminal"
@@ -1331,7 +1318,7 @@ empty = "Empty"
 explorer = "Explorer"
 
 [surface.kind_toast]
-# 철회된 kind(제공 plugin 이 disable · remove 됨)로 새 surface 를 만들려 했을 때. {} = kind, {} = plugin id
+# 자리표시자 순서: surface 종류, 플러그인 ID.
 withdrawn = "Can't open a new '{}' surface: the plugin that provides it ({}) is turned off or has not reconnected yet."
 
 [attach]
@@ -1346,81 +1333,47 @@ occupied_surface = "Held by another client (readonly). Force detach to take over
 occupied_workspace = "Attached by a client"
 mirror_workspace = "Mirror of a remote workspace"
 mirror_pill_label = "Remote"
-# Title of a mirror tab when the remote snapshot carries no tab name, or of
-# the placeholder tab/pane built for an empty remote tree.
+# 원격 탭 이름이 없거나 원격 트리가 비었을 때 쓰는 탭 이름.
 tab_title_fallback = "Shell"
 
 [attach.toast]
-# Shown when a structural change (split / new tab / close / reorder) is attempted
-# inside a mirror workspace. Mirror workspaces are a view of a remote workspace,
-# so the change must run on the remote instance (forwarding lands in a later step).
 mirror_structural_blocked = "Can't change structure in a mirrored remote workspace yet."
-# Shown when a structural change forwarded to the remote instance fails there —
-# most often because the requested surface kind isn't available on the remote.
 mirror_structural_forward_failed = "The remote workspace couldn't apply that change."
-# Forwarded restore found nothing in the remote workspace's restore stack. Not a
-# failure — the generic forward-failure wording above would read as an error.
+# 복원할 항목이 없는 정상 응답이다. 오류처럼 번역하지 않는다.
 mirror_restore_empty = "Nothing to restore in the remote workspace."
-# A mirrored markdown document arrived cut at the attach frame budget (the remote
-# file is bigger than one frame can carry), so the view below is incomplete.
+# attach 프레임 용량을 넘어 문서 일부만 수신한 경우.
 mirror_markdown_truncated = "The remote document is too large. Only part of it is shown in the mirror."
-# Shown when a close would destroy a surface a remote attach session hard-occupies.
-# Occupancy means someone is working in that terminal right now, so closing would kill
-# their session without warning. Reclaim it with the force-detach button, then close.
 close_blocked_hard_occupied = "Not closed — a remote session is using one of these terminals. Force-detach it first, then try again."
-# Shown after an interactive screenshot taken while focused on a mirror
-# workspace was uploaded and set as the remote instance's clipboard content.
 mirror_capture_saved = "Screenshot copied to the remote clipboard."
-# Shown when that upload/remote clipboard write fails.
 mirror_capture_failed = "Couldn't copy the screenshot to the remote clipboard."
-# Shown when a mirror workspace is torn down because the remote connection was
-# lost (EOF / force-detach / heartbeat timeout / an outbound frame write failed).
-# Only applies to mirrors that were attached ad-hoc (no workspace mapping) —
-# mapped mirrors instead go through the three keys below (they auto-reconnect).
+# 임시 mirror는 연결 종료 시 제거한다. 매핑된 mirror는 재연결 안내를 사용한다.
 mirror_disconnected = "The remote connection was lost. The mirror workspace has been closed."
-# Shown when a mapped mirror workspace's connection is lost — the workspace and
-# its terminals are kept (scrollback preserved) while a background backoff
-# retry tries to reconnect automatically.
+# 매핑된 워크스페이스와 scrollback을 유지한 채 자동 재연결을 시도한다.
 mirror_reconnecting = "The remote connection was lost. Trying to reconnect…"
-# Shown when a backoff retry succeeds and the mirror is live again.
 mirror_reconnected = "Reconnected to the remote workspace."
-# Shown when the remote dropped part of what it was sending to this mirror, so
-# the screen is no longer continuous; the mirror re-attaches to fetch it again.
 mirror_desynced = "Part of the remote screen was lost. Fetching it again…"
-# Shown once automatic backoff retries give up after repeated failures.
-# Switching away from and back to the workspace still retries manually.
+# 자동 재시도는 끝났지만 워크스페이스를 다시 선택하면 재시도할 수 있다.
 mirror_reconnect_giveup = "Couldn't reconnect after several attempts. Switch away and back to this workspace to retry."
 
-# Remote file-transfer feedback popups — progress (determinate) + failed.
 [transfer.progress]
-# Header of the transfer progress popup (download glyph). Framed from the
-# receiving side (the remote instance receives the file being uploaded).
+# 수신하는 쪽에서 보여 주는 제목이다.
 title = "Receiving file"
-# Ghost button — stops watching progress (the background transfer still finishes).
+# 진행 상황 보기만 닫으며 전송은 계속한다.
 cancel = "Cancel"
 
 [transfer.error]
-# Header of the transfer failed popup (danger glyph).
 title = "Transfer failed"
-# Follows the (bold) file name: "<name> could not be received."
+# 파일명 뒤에 이어 붙이는 문장이다.
 body_suffix = " could not be received."
-# Dismiss the failure. Sole action when the remote rejected the transfer
-# (e.g. capacity exceeded) — retrying wouldn't help.
 dismiss = "Dismiss"
-# Re-attempt — shown only when the transfer failed mid-flight (transport error).
 retry = "Retry"
 
-# Webview(html) surface host chrome — painted by the host before/around the
-# native WebView overlay (placeholder when no page, boundary backdrop otherwise).
 [webview]
 region = "WebView region"
 no_page = "No page loaded"
 loading = "Loading…"
 error = "Failed to load"
 
-# Remote port discovery failure classification (`crates/tasty-ssh/src/lib.rs`
-# `PortDiscoveryError`). Shared by CLI and GUI (remote workspace attach popup),
-# so no `cli.` prefix.
 [ssh.port_discovery]
 connection_failed = "SSH connection failed (this may be a network or authentication problem)."
 instance_not_running = "No tasty instance appears to be running on the remote host."
@@ -1428,8 +1381,6 @@ parse_failed = "Could not parse the port reported by the remote host — the rem
 timed_out = "The remote host did not respond in time (it may be unreachable, or the connection may be too slow)."
 cancelled = "The port lookup was stopped."
 
-# CLI output strings. The `tasty-cli` crate reads these through the shared
-# i18n store (initialized on the CLI boot path before `run_client`).
 [cli.remote_check]
 not_found = "Remote tasty not found (target={}, discovery mode={})."
 tunnel_failed = "Remote port {} was found, but the ssh -L tunnel could not be established (target={})."
@@ -1458,9 +1409,7 @@ create_failed = "Failed to create a workspace on remote (target={})"
 serialize_failed = "Failed to serialize the created remote workspace to JSON"
 created = "Created remote workspace #{} '{}' on {} (index={})"
 
-# `tasty tool remote-profile` — local CRUD for remote connection profiles.
-# `list_header` / `list_local_header` carry their own column padding: CJK glyphs
-# are twice as wide in a terminal, so each language pads its own header line.
+# 표 머리글의 공백은 열 정렬용이다. CJK 글자의 표시 폭을 고려해 유지한다.
 [cli.remote_profile]
 unknown_shell = "Unknown --shell '{}' (powershell|cmd|bash|zsh|auto)"
 ssh_added = "Added: ssh profile '{}' ({})."
@@ -1496,10 +1445,7 @@ status_unknown_kind = "unknown type"
 auto_detect_ok = "Auto-detection succeeded: remote environment -> port_mode={} (enabled)."
 auto_detect_failed = "Auto-detection failed: {}\n  '{}' was saved as disabled — retry with 'tasty tool remote-profile detect {}'."
 
-# `tasty tool passkey` — local CRUD for credentials. Values are never printed
-# (docs/design/systems/memory.md#passkey-저장과-열람) — list/show expose name + kind only.
-# `list_header` carries its own column padding: CJK glyphs are twice as wide in a
-# terminal, so each language pads its own header line.
+# 표 머리글의 공백은 열 정렬용이다. 자격증명 값은 출력하지 않는다.
 [cli.passkey]
 path_xor_inline = "--path and --inline cannot be used together."
 inline_empty = "The inline value is empty (--value or stdin)."
@@ -1512,34 +1458,25 @@ not_found = "passkey '{}' not found."
 value_masked = "(masked — reveal it from the GUI only)"
 removed = "Removed: passkey '{}'."
 
-# `tasty terminal` — host-internalized child-terminal management (docs/features/child-terminal/index.md).
 [cli.terminal]
 desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."
 spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 
-# Port file lookup failures. `tasty-ipc` reports the condition as a typed error and owns no
-# wording; these values are what the user actually reads (see docs/dev-guide/i18n.md — a leaf
-# crate takes its wording from the caller).
-# The English values must stay byte-identical to `PortFileError`'s own rendering — a test in
-# `tasty-cli` asserts that, because the same failure must not read two ways in English.
+# 영어 값은 PortFileError의 표시 문구와 같아야 한다. help가 아닌 오류 본문이다.
 [cli.port_file]
 no_instance = "No running tasty instance found (port file not found at {})"
 home_unresolved = "Could not determine config directory"
 invalid_contents = "Invalid port file contents"
 
-# `tasty` CLI — client-side argument validation and status lines written to stderr.
-# Two shapes live here, told apart by the value itself: messages the CLI prints directly
-# carry their own "Error:" / "warning:" prefix so each language can phrase it, while the
-# rest are error bodies whose prefix the caller (or the `Error: {}` top level) adds.
+# 직접 출력하는 문구는 오류·경고 접두어를 포함한다. 나머지는 호출자가 접두어를 붙인다.
 [cli.request]
 cwd_invalid = "Error: --cwd: {}"
 json_arg_invalid = "Error: {}: not valid JSON: {}"
 close_self_no_surface = "Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal."
 connect_failed = "Could not connect to tasty instance on port {}: {}. Is tasty running?"
 
-# path-argument normalization (`--cwd` / plugin `path_kind` args). Bodies only — the caller
-# prefixes them (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`).
+# 오류 본문만 번역한다. 접두어는 호출자가 붙인다.
 [cli.cwd_resolve]
 current_dir_failed = "failed to read the current working directory"
 cwd_not_accessible = "cwd '{}' does not exist or is not accessible"
@@ -1619,10 +1556,7 @@ auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
 arg_invalid = "--{}: {}"
 
-# `tasty plugin` — the `doctor` report (stdout) plus the command group's error bodies.
-# In the report, manifest field names (`name:` … `api_version:`), action kinds
-# (`surface "…"` / `ipc "…"`) and the handler row's `detector` stay literal — they mirror
-# manifest keys/values one-to-one (see docs/dev-guide/i18n.md exceptions).
+# 매니페스트 필드명과 action kind, detector는 실제 키·값이므로 번역하지 않는다.
 [cli.plugin]
 doctor_header = "Plugin: {}"
 doctor_detectors = "Detectors contributed: {}"
@@ -1638,7 +1572,6 @@ not_installed = "plugin '{}' not installed (no manifest at {})"
 manifest_load_failed = "failed to load manifest for '{}': {}"
 no_log_file = "no log file for plugin '{}' at {}"
 
-# stdout write failures other than a closed pipe (EIO / ENOSPC …) — `Error: …` + exit 1.
 [cli.out]
 write_failed = "failed writing to stdout"
 
@@ -1703,11 +1636,10 @@ reserved = "'normal' is a reserved category name."
 duplicate = "A category with this name already exists."
 
 [modifier_hint]
-# Drag-strip label after the held key combo ("Ctrl held").
+# 누른 키 조합 뒤에 붙는 문구다(예: Ctrl held).
 held = "held"
-# Tooltip on the overlay's X button — closes only for the current hold session.
+# 키를 놓을 때까지만 숨긴다.
 hide_tooltip = "Hide for this hold"
-# Placeholder shown under a chord that has no binding and no role (empty section).
 empty = "No shortcuts bound"
 
 [modifier_hint.role]
@@ -1818,7 +1750,7 @@ idle = "Runner stopped · no work"
 stalled = "Runner stopped · {} ready"
 crashed = "Runner crashed · {} ready"
 resume_hint_lead = "Resume with:"
-# 실제 CLI 명령 — 사용자가 셸에 그대로 붙여 넣는 문자열이라 번역하지 않는다.
+# 사용자가 셸에 붙여 넣는 명령이므로 번역하지 않는다.
 resume_hint_command = "tasty agent task-run --workspace-id <N> --action start"
 
 [dag.zoom]
@@ -1892,7 +1824,7 @@ title = "Task DAGs"
 back = "Back to list"
 search_placeholder = "Filter DAGs…"
 status_any = "Any status"
-# 트리거 요약 — 일부만 선택. `{}` 는 선택 개수.
+# 자리표시자는 선택한 상태 개수다.
 status_some = "{} statuses"
 status_all = "All statuses"
 this_workspace_only = "This workspace only"
@@ -1905,26 +1837,19 @@ empty_none_hint = "Tasks grouped by dependency appear here."
 empty_filtered = "No matching DAGs"
 empty_filtered_hint = "Try a different filter."
 
-# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "Fullscreen"
 
-# 무대 셸이 공통 제공하는 종료 버튼 — 무대 프레임에는 CSD 타이틀바가 없어 이 버튼이
-# 유일한 마우스 탈출 수단이다.
 [fullscreen.stage]
 exit_tooltip = "Exit fullscreen"
 
-# 알림 무대 — 알림 popup 과 같은 형상의 별개 콘텐츠(popup 인스턴스가 아니다).
 [fullscreen.notifications]
 title = "Notifications"
 
-# popup 타이틀바 전체화면 버튼(X 왼쪽) — 아이콘만으로는 뜻이 모호해 tooltip 을 단다.
 [popup.fullscreen_button]
 tooltip = "Show fullscreen"
 
-# macOS-only. Full Disk Access cannot be requested by an app — the user has to add
-# Tasty in System Settings themselves — so all Tasty can do is show the state and
-# link to the panel. The state shown is a guess (see settings.macos_permissions.detection_note).
+# 권한 상태는 추정값이다. 사용자가 시스템 설정에서 직접 권한을 추가한다.
 [settings.macos_permissions]
 full_disk_access_label = "Full Disk Access"
 screen_recording_label = "Screen recording"
@@ -1935,10 +1860,7 @@ status_unknown = "Unknown"
 detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it."
 open_full_disk_access = "Open Full Disk Access settings"
 
-# Startup notice shown once when Full Disk Access appears to be missing. The body must
-# not overstate what Full Disk Access covers: it removes file-access prompts, but
-# Automation (controlling other apps), screen recording and accessibility are separate
-# TCC services that keep prompting.
+# 전체 디스크 접근은 Automation·화면 기록·손쉬운 사용 권한과 별개다.
 [macos_permissions.fda]
 title = "Grant Tasty Full Disk Access"
 body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without Full Disk Access you keep hitting "Tasty would like to access data from other apps" in the middle of your work, once per app folder.
@@ -1952,9 +1874,7 @@ If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./s
 Once you grant it, this notice stops appearing."""
 open_settings = "Open settings"
 
-# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
-# 영어 원본은 소스의 doc comment 다. 여기 값은 **자유도 없는 복제**이고, 그 복제가
-# 번역자에게 키 목록이 된다. 어긋나면 `help_i18n_catalog_parity` 가 그 키를 짚는다.
+# CLI 도움말. 영어 값은 소스에서 생성되는 clap 도움말과 정확히 같아야 한다.
 [cli.help._root]
 about = "GPU-accelerated terminal emulator for AI coding agents"
 
@@ -5556,7 +5476,7 @@ about = "Open a path through the file-handler dispatch flow — the same route t
 help = "Path to dispatch"
 
 [cli.help._root.file-handler.dispatch.arg.depth]
-help = "Detection depth: `cheap` (extension only) or `deep` (sniff contents)"
+help = "Detection depth: `cheap` (extension, filename glob, directory check) or `deep` (also inspect contents)"
 
 [cli.help._root.file-handler.dispatch.arg.origin_surface]
 help = "Add the resulting surface as a tab of this surface's pane instead of the focused pane"
@@ -5769,7 +5689,7 @@ about = "Manage inbound webhooks (register/list/info/unregister) — HTTP → Ip
 
 [cli.help._root.webhook.register]
 about = "Register an inbound webhook and print its issued URL"
-long = "Register an inbound webhook and print its issued URL.\n\nProvide exactly one of `--handler <id>` (bind a registered hook handler) or `--sequence <json>` (define an inline IpcSequence). The external HTTP payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.\n\nThe listener binds every interface, not loopback. The printed URL reads `127.0.0.1` because that is the convenient way to curl it, but whoever can reach the port reaches this webhook. There is no signature verification of any kind: `--auth-token` is one fixed shared secret compared in constant time, and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into `~/.tasty/webhooks.toml`.\n\nThe HTTP answer is a fixed acknowledgement chosen before the sequence runs, so `200` says the call matched and was handed off, never that it worked. A step that fails neither stops the steps after it nor changes the answer, which leaves a partly applied sequence as an ordinary outcome; the log is the only place that failure appears."
+long = "Register an inbound webhook and print its issued URL.\n\nProvide exactly one of `--handler <id>` (bind a registered hook handler) or `--sequence <json>` (define an inline IpcSequence). The external HTTP payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.\n\nThe listener binds every interface, not loopback. The printed URL reads `127.0.0.1` because that is the convenient way to curl it, but whoever can reach the port reaches this webhook. There is no signature verification of any kind: `--auth-token` is one fixed shared secret, and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into `~/.tasty/webhooks.toml`.\n\nThe HTTP answer is a fixed acknowledgement chosen before the sequence runs, so `200` says the call matched and was handed off, never that it worked. A step that fails neither stops the steps after it nor changes the answer, which leaves a partly applied sequence as an ordinary outcome; the log is the only place that failure appears."
 
 [cli.help._root.webhook.register.arg.methods]
 help = "Allowed HTTP methods (repeatable). Defaults to POST"
