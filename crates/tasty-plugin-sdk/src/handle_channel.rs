@@ -352,7 +352,7 @@ mod unix_wire {
             if level == libc::SOL_SOCKET && ty == libc::SCM_RIGHTS {
                 // SAFETY: header 크기 계산.
                 let header_len = unsafe { libc::CMSG_LEN(0) } as usize;
-                // cmsghdr.cmsg_len의 타입은 플랫폼마다 달라 usize로 변환한다.
+                // 이유: cmsghdr.cmsg_len의 타입은 플랫폼마다 달라 usize로 변환한다.
                 #[allow(clippy::unnecessary_cast)]
                 let data_len = (len as usize).saturating_sub(header_len);
                 let n_fds = data_len / mem::size_of::<libc::c_int>();
