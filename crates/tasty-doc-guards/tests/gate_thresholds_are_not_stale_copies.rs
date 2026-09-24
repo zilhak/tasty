@@ -156,11 +156,6 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "webhook 남용 차단 threshold 기본 20",
     ),
     (
-        "src/app/event_handler.rs",
-        Kind::OtherMeaning,
-        "20여개 variant — 개수",
-    ),
-    (
         "src/adapters/ui/popup/command_palette.rs",
         Kind::OtherMeaning,
         "목록이 상한에 걸린 뒤 높이가 안 움직이는지 보는 시험의 항목 수 1000 — 줄 수가 아니다",

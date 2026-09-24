@@ -1,14 +1,6 @@
-//! Headless 빌드용 `dispatch_domain` cascade no-op stubs.
-//!
-//! gui 빌드의 `dispatch_domain.rs` 는 View 의 모든 window 에 cascade 를 broadcast.
-//! headless 에서는 view 자체가 없으므로 cascade 가 의미 없다 — silent no-op.
-//!
-//! state mutation 만 필요한 일부 cascade (closed_item_restored 등) 도 모두 no-op
-//! — headless 의 IPC 표면이 그 state 를 의존하지 않는다 (popup/toast 등 GUI 객체뿐).
-//!
-//! 구조 변경 cascade(split / tab / close — 자원 회수 포함)는 여기 없다. 두 빌드가 같은
-//! 파일을 컴파일하는 `core::structural_cascade` 가 소유하고, gui 와 갈리는 지점은 그 안의
-//! `cfg` 블록이다.
+//! 헤드리스에서 사용하는 창별 후속 처리 대체 함수.
+//! 생성·복원·메타 변경의 GUI 처리는 생략하지만 workspace 이동의 활성 인덱스는 보정한다.
+//! 구조 변경과 자원 정리는 두 빌드가 공유하는 core::structural_cascade가 담당한다.
 
 #![cfg(not(feature = "gui"))]
 
@@ -17,8 +9,7 @@ use crate::core::intent::RestoredKind;
 use crate::intent::IntentOrigin;
 use crate::state::AppState;
 
-/// gui 의 `WorkspaceCreatedCascade` 와 동등. 만드는 자리(`workspace.create` IPC · workspace
-/// intent)는 두 빌드가 공유하지만 필드를 읽는 cascade 는 gui 뿐이다.
+/// 생성 결과는 두 빌드가 공유하지만 이 필드를 읽는 후속 처리는 GUI에만 있다.
 #[expect(
     dead_code,
     reason = "headless cascade is a no-op; the fields are read only by the gui cascade"
@@ -49,10 +40,7 @@ pub(crate) fn cascade_closed_item_restored(
 ) {
 }
 
-/// 다른 stub 과 달리 no-op 이 아니다 — 이 cascade 는 view 가 아니라 `AppState` 의
-/// 인덱스 포인터를 고치는 일이라 headless 에도 그대로 필요하다. 제거 축
-/// (`core::structural_cascade::cascade_surface_closed` 의
-/// `fix_workspace_pointers_after_removal`)과 같은 이유다.
+/// 헤드리스도 활성 workspace 인덱스가 실제 위치를 가리켜야 한다.
 pub(crate) fn cascade_workspace_moved(state: &mut AppState, from_index: usize, to_index: usize) {
     state.fix_workspace_pointers_after_move(from_index, to_index);
 }

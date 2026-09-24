@@ -1,8 +1,4 @@
-//! 닫은 항목 복원 cascade 는 **사용자 발화일 때만** 포커스 포인터를 옮긴다.
-//!
-//! 복원은 오늘 사용자 단축키에서만 발화하지만, 그 사실은 호출 자리의 약속이지 이 cascade 의
-//! 판정이 아니었다. 복원이 IPC 로 열리면 에이전트 행동이 사용자의 활성 워크스페이스를 옮기게
-//! 되므로(원칙 2.1 ① · 2.3), cascade 가 origin 을 직접 본다. 이 시험이 그 판정을 고정한다.
+//! 닫은 항목 복원은 사용자 origin에서만 포커스를 옮겨야 한다.
 
 use super::cascade_closed_item_restored;
 use crate::core::intent::RestoredKind;

@@ -1,11 +1,4 @@
-//! step 2: 호스트 자체 메서드.
-//!
-//! - `system.shutdown` (debug)
-//! - `system.gpu_stats` (read-only GPU 리소스 카운트 — 메모리 누수 soak 검증)
-//! - `timer.list` (read-only 타이머 허브 스냅샷 — 무엇이 인스턴스를 깨우는가)
-//! - `window.create` / `window.close` / `window.focus` / `window.list`
-//! - `plugin.*` (목록은 `crates/tasty-ipc/src/method_meta.rs` 의 `"plugin.` 항목)
-//! - `approval.await` (blocking — worker thread 위임)
+//! 창·플러그인 등 App 자원이 필요한 IPC 메서드를 처리한다.
 
 mod remote;
 
@@ -22,9 +15,7 @@ impl App {
         cmd: &IpcCommand,
         caller: &host_ipc::caller::CallerContext,
     ) -> IpcStep {
-        // 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — 이 층의 메서드는 engine
-        // 라우터에 안 닿으므로 거기 보존소가 못 본다. 이 층이 그 이름을 안 맡으면
-        // (`NotHandled`) 연 자리를 닫고 다음 층이 다시 판정한다(ADR-0005).
+        // engine 라우터를 거치지 않는 변경도 멱등 키를 확인한다. 맡지 않은 메서드는 다음 단계가 다시 확인한다.
         if let Some(step) = host_ipc::handler::idempotency::run_app_layer(
             caller,
             cmd,
@@ -51,10 +42,7 @@ impl App {
             return self.ipc_handle_timer_list(cmd);
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
-            // 완료 채널을 실어 보내고 응답은 defer 한다 — winit 핸들러가 창 생성
-            // 성공/실패를 이 채널로 돌려준다(ADR-0007). 즉시 `{"scheduled": true}` 를
-            // 돌려주던 fire-and-forget 은 실패를 요청자에게 못 알려, 실패가 사용자
-            // toast 로만 새어나갔다(요청하지도 않은 일의 실패 통지 — 원칙 1 위반).
+            // 이벤트 처리 뒤 창 생성 결과를 회신해 예약 접수와 실제 성공을 구별한다.
             let completion = crate::app::event::IpcCompletion::new(
                 cmd.response_tx.clone(),
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -71,9 +59,7 @@ impl App {
         if cmd.request.method == "window.close" || cmd.request.method == "view.close" {
             return self.ipc_handle_window_close(cmd);
         }
-        // window.focus 는 사용자 입력 재현 (단축키/마우스 클릭 영역) 으로 분류.
-        // CLAUDE.md: "CLI/IPC로 포커스·활성 탭·활성 워크스페이스를 전환하는 명령은
-        // 존재하지 않는다." → release 빌드에 노출 안 함. debug 빌드만 유지.
+        // 포커스 변경은 사용자 입력 재현이므로 debug에만 제공한다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "window.focus" || cmd.request.method == "view.focus" {
             return self.ipc_handle_window_focus(cmd);
@@ -102,10 +88,6 @@ impl App {
             self.ipc_dispatch_task_await(cmd);
             return IpcStep::Handled;
         }
-        // remote.workspaces / remote.attach — 원격 워크스페이스 브라우징·attach 능력의
-        // 로컬 IPC 노출(원칙 2: 에이전트가 CLI 없이 소켓만으로도 수행 가능). 블로킹 SSH
-        // I/O 는 워커 스레드로 돌려 이벤트루프를 막지 않는다. CLI(`remote workspaces`)와
-        // 동일한 `tasty_remote::browse` 코어를 공유한다.
         if cmd.request.method == "remote.workspaces" {
             self.ipc_dispatch_remote_workspaces(cmd);
             return IpcStep::Handled;
@@ -117,15 +99,7 @@ impl App {
         IpcStep::NotHandled
     }
 
-    /// `timer.list` — 중앙 타이머 허브의 read-only 스냅샷.
-    ///
-    /// 일반 IPC 핸들러(`src/adapters/ipc/handler/`)가 아니라 여기 있는 이유: 허브는
-    /// `App` 필드고 plugin manager 는 자기 허브를 따로 소유한다. `CoreState` 만 받는
-    /// 핸들러에서는 둘 중 어느 쪽에도 닿지 못해 "무엇이 깨우고 있는가" 에 답할 수 없다.
-    /// headless 는 같은 이유로 dispatch pump 에서 같은 함수를 부른다.
-    ///
-    /// 순수 조회 — 사용자 상태에 닿지 않고(원칙 1), 대상 지정이 필요 없는 전역
-    /// 스냅샷이라 포커스 독립(원칙 3). local_only — plugin 미노출.
+    /// App과 플러그인 매니저가 가진 타이머의 등록 상태를 함께 조회한다.
     fn ipc_handle_timer_list(&self, cmd: &IpcCommand) -> IpcStep {
         let response = host_ipc::protocol::JsonRpcResponse::success(
             cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -135,17 +109,7 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `system.gpu_stats` — GPU 리소스 카운트 read-only 조회 (메모리 누수 soak 검증용).
-    ///
-    /// 반환: wgpu 전역 리포트(`Instance::generate_report()` — 모든 창 합산 buffers/
-    /// textures/texture_views/bind_groups … 의 live 카운트) + 창별 `GpuState` 카운트
-    /// (egui-mesh target 맵 3종 len, atlas, draw calls) + 창별 explorer view 수
-    /// (`explorer_views` — main 이 아닌 창은 null). soak 하네스가 "surface 를
-    /// 닫았는데 카운트가 기준선으로 복귀하지 않음" 유형의 누수를 판정하는 1차 소스.
-    ///
-    /// 순수 조회 — 사용자 상태(focus/선택/스크롤)에 닿지 않는다(원칙 1). IPC+CLI
-    /// 양면 노출(원칙 2: `tasty list gpu-stats`), 대상 지정 불필요한 전역 스냅샷이라
-    /// 포커스 독립(원칙 3). local_only — plugin 미노출.
+    /// 전체 wgpu 자원 수와 창별 렌더 자원·explorer view 수를 조회한다.
     fn ipc_handle_system_gpu_stats(&self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let windows: Vec<_> = self
@@ -157,14 +121,12 @@ impl App {
                     "window_id": u64::from(*id),
                     "main": w.as_main().is_some(),
                     "stats": w.base().gpu.resource_stats(),
-                    // 호스트 view store(explorer)의 view 수 — GPU 가 아니라 창의 AppState 에
-                    // 있다. main 이 아닌 창은 그 store 가 없어 null 이다.
+                    // explorer store는 MainView에만 있어 다른 창은 null이다.
                     "explorer_views": w.as_main().map(|m| m.state.explorer_views.view_count()),
                 })
             })
             .collect();
-        // RegistryReport 를 JSON 으로 — 타입 경로(wgpu-core 재수출)에 의존하지 않도록
-        // 필드 접근만 하는 macro 로 변환한다. `num_allocated` 가 live 카운트.
+        // wgpu-core의 재수출 타입에 의존하지 않도록 필드 접근 macro로 JSON을 만든다.
         macro_rules! reg {
             ($r:expr) => {
                 serde_json::json!({
@@ -207,11 +169,8 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `window.close` / `view.close`: main view 만 대상, 마지막 main 은 거부.
-    /// CLAUDE.md "포커스 독립": id 로 직접 지정, focused 의존 금지.
+    /// ID로 지정한 MainView만 닫는다. 마지막 MainView는 종료 동작이라 거절한다.
     fn ipc_handle_window_close(&mut self, cmd: &IpcCommand) -> IpcStep {
-        // 관문을 거친다 — 값이 왔는데 안 읽히는 것을 "안 왔다" 로 답하면 호출자가
-        // 자기가 준 값을 안 의심한다.
         let target_id = params::read_int::<u64>(&cmd.request.params, "id");
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match target_id {
@@ -219,11 +178,10 @@ impl App {
             Ok(None) => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
-                "Missing 'id' parameter (u64). focused 의존은 금지.",
+                "Missing 'id' parameter (u64); specify the target window.",
             ),
             Ok(Some(id_u64)) => {
-                // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
-                // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
+                // 모달·preset은 window.list와 IPC 닫기 대상에 포함하지 않는다.
                 let mains: Vec<_> = self
                     .view
                     .views
@@ -239,8 +197,6 @@ impl App {
                         "Cannot close the last main window via IPC — quitting the app is a user action",
                     ),
                     Some(tid) => {
-                        // GUI request_close_window 와 공통 helper — window.closed
-                        // plugin event + window.delete.post Lua fire 포함.
                         self.close_main_window(tid, tasty_plugin_protocol::LifecycleReason::Ipc);
                         host_ipc::protocol::JsonRpcResponse::success(
                             response_id,
@@ -259,7 +215,7 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `window.focus` / `view.focus` (debug 전용): 사용자 입력 재현이라 release 미노출.
+    /// 사용자 포커스 변경을 재현하는 debug 메서드다.
     #[cfg(debug_assertions)]
     fn ipc_handle_window_focus(&mut self, cmd: &IpcCommand) -> IpcStep {
         let target_id = params::read_int::<u64>(&cmd.request.params, "id");
@@ -294,16 +250,7 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `window.list` / `view.list`: 전 view 순회, main view 만 노출.
-    ///
-    /// `layout_slot` 은 이 창이 점유한 레이아웃 슬롯 번호다 — "새 창을 열면 어떤
-    /// 레이아웃이 뜰지" 를 결정하는 상태라, 관측 수단이 없으면 에이전트가 창 생성
-    /// 결과를 예측·검증할 수 없다. headless engine 은 슬롯을 잡지 않으므로 `null`.
-    ///
-    /// **parked engine 은 여기 섞지 않는다.** 파킹된 engine 도 슬롯을 점유하지만
-    /// 창이 아니라 창 id 가 없고, `{id, focused, title}` 계약이 깨진다. 점유 현황
-    /// 전체(파킹 포함)를 봐야 할 일이 생기면 `layout.slots` 같은 별도 조회
-    /// 메서드로 분리한다.
+    /// MainView만 열거한다. parked engine은 슬롯을 점유해도 창 ID가 없어 이 목록에 넣지 않는다.
     fn ipc_handle_window_list(&self, cmd: &IpcCommand) -> IpcStep {
         let focused_id = self.view.focused_view_id;
         let list: Vec<_> = self
@@ -328,16 +275,8 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `ui.screenshot` — 정식 release 기능. focus 독립(원칙 3): 대상 window/surface 를
-    /// ID 로 직접 지정하고 focused_view_id 에 의존하지 않는다. 에이전트가 자기 작업을
-    /// 관찰하는 캡처라 사용자 상태(focus/가시 탭)를 건드리지 않는다(원칙 1·2). local_only
-    /// (파일 쓰기 표면) — plugin 미노출.
-    ///
-    /// params: { path (필수), surface_id? (u32), window_id? (u64) }
-    /// - surface_id → 해당 터미널 surface 를 오프스크린 렌더로 캡처(가시성/포커스 무관).
-    /// - 아니면 window 프레임 캡처: window_id 를 명시하면 **모달·preset 창을 포함한 모든
-    ///   창**, 미지정이면 main 창이 정확히 하나일 때만, 그 외는 에러. 두 갈래가 비대칭인
-    ///   근거는 [`resolve_screenshot_window`] 문서.
+    /// 터미널 surface는 별도 렌더로, 창은 프레임으로 캡처한다.
+    /// 포커스를 바꾸지 않으며 창 ID가 없으면 MainView가 정확히 하나일 때만 선택한다.
     fn ipc_handle_ui_screenshot(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
@@ -378,12 +317,10 @@ impl App {
             }
         };
 
-        // ── surface 지정 오프스크린 캡처 (focus 독립) ──
         if let Some(sid) = surface_id {
             return self.ipc_screenshot_surface(cmd, response_id, &path, sid);
         }
 
-        // ── window(tasty 자체 화면) 캡처 (focus 독립) ──
         let ids: Vec<_> = self.view.views.keys().copied().collect();
         let kinds: Vec<(u64, bool)> = ids
             .iter()
@@ -414,7 +351,6 @@ impl App {
                             }),
                         )
                     }
-                    // `ids` 는 바로 위에서 같은 맵에서 뽑았으므로 도달하지 않는다.
                     None => host_ipc::protocol::JsonRpcResponse::error(
                         response_id,
                         -32603,
@@ -427,8 +363,6 @@ impl App {
         send_response(&cmd.response_tx, response);
         IpcStep::Handled
     }
-    /// `clipboard.set_text` — 본체는 두 조합이 공유한다
-    /// (`crate::core::app_surface`). 여기서는 응답을 회신만 한다.
     fn ipc_handle_clipboard_set_text(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let resp = crate::core::app_surface::clipboard_set_text(
@@ -440,8 +374,7 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `ui.screenshot` 의 surface 지정 오프스크린 캡처 경로. 소유 window 를 ID 로 순회
-    /// 해소(focus 무관)하고 terminal surface 만 캡처 스케줄한다.
+    /// surface ID의 소유 창을 찾아 터미널 캡처를 예약한다. 비터미널 surface는 거절한다.
     fn ipc_screenshot_surface(
         &mut self,
         cmd: &IpcCommand,
@@ -449,7 +382,6 @@ impl App {
         path: &str,
         sid: u32,
     ) -> IpcStep {
-        // 소유 window(창별 CoreState)를 ID 로 순회 해소 — focus 무관.
         let owner = self.view.views.values_mut().find_map(|w| {
             let m = w.as_main_mut()?;
             if m.core_state.has_surface(sid) {
@@ -495,16 +427,13 @@ impl App {
         IpcStep::Handled
     }
 
-    /// `plugin.*` 메서드 한 묶음. 라이프사이클 변경 메서드는 HandledDirty 반환.
     fn ipc_dispatch_plugin_method(
         &mut self,
         cmd: &IpcCommand,
         caller: &host_ipc::caller::CallerContext,
     ) -> IpcStep {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        // 읽기 전용 조회는 헤드리스와 **공유하는 한 함수**가 답한다. 여기에 같은 표를
-        // 다시 두면 한쪽만 고쳐지는 순간 갈라지므로, 라우팅 표는 그 함수에만 있다
-        // (`crate::adapters::ipc::handler::plugin::dispatch_readonly`).
+        // 읽기 전용 메서드 표는 헤드리스와 공유한다.
         let surface_registry = self.core_state().surface_registry.clone();
         if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
             &self.core,
@@ -534,7 +463,6 @@ impl App {
                 };
                 match self.plugin_install(path) {
                     Ok(events) => {
-                        // 첫 event 의 plugin_id 가 응답 페이로드용 (Installed CoreEvent).
                         let installed_id = events
                             .iter()
                             .find_map(|ev| match ev {
@@ -580,9 +508,7 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
-            // 두 조합이 **같은 함수**를 부른다 — 헤드리스 pump 도 이것을 부른다
-            // (`src/boot/headless_dispatch.rs`). 여기 남는 차이는 낸 이벤트의
-            // 소비처뿐이다: gui 는 창 큐로 cascade 하고 헤드리스는 그 자리에서 낸다.
+            // 상태 변경은 헤드리스와 공유하고 결과 이벤트의 전달만 빌드별로 처리한다.
             "plugin.enable" | "plugin.disable" => {
                 let surface_registry = self.core_state().surface_registry.clone();
                 let Some((response, events)) = host_ipc::handler::plugin::dispatch_lifecycle_toggle(
@@ -592,8 +518,7 @@ impl App {
                     id,
                     &cmd.request.params,
                 ) else {
-                    // 위 arm 이 이름을 못 걸러 냈다는 뜻 — 표와 arm 이 갈렸다.
-                    unreachable!("plugin.enable/disable 이 토글 표에 없다");
+                    unreachable!("plugin.enable/disable is missing from the toggle table");
                 };
                 self.cascade_plugin_events(events);
                 response
@@ -765,17 +690,8 @@ impl App {
                 host_ipc::handler::audit::handle_clear(&self.core, id, &cmd.request.params)
             }
             "plugin.request_permission" => {
-                // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
-                // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
-                // internal_error.
-                //
-                // **공유가 어디서 만들어지는지를 함께 적는다.** `CoreState` 의 생성자는
-                // engine 마다 `approval_store: Arc::new(...)` 로 새로 만들고, 두 번째
-                // main window 를 세울 때 `App::ensure_engine_and_plugins`
-                // (`app/window_lifecycle.rs`)가 첫 engine 의 Arc 로 **덮어쓴다**
-                // (`any_main_engine` 이 넘겨주는 아홉 중 하나). 그래서 "공유" 는
-                // 생성자만 읽으면 거짓으로 보이고 창 생성 경로까지 읽어야 참이다 —
-                // 좌표를 안 적어 두면 다음 사람이 생성자에서 멈춘다.
+                // 창 생성 경로가 approval_store Arc를 공유하므로 첫 MainView를 사용한다.
+                // 창이 없으면 승인 popup을 표시할 수 없어 거절한다.
                 let core = &mut self.core;
                 let main = self.view.views.values_mut().find_map(|w| w.as_main_mut());
                 match main {
@@ -813,9 +729,7 @@ impl App {
             IpcStep::Handled
         }
     }
-    /// `events.fetch`: `wait_ms` 가 있으면 블로킹이라 **워커로 내보낸다** — 프레임
-    /// 루프에서 기다리면 그만큼 창이 멈춘다(`agent.task_await` 와 같은 이유).
-    /// 버스는 `Clone` 이고 안이 `Arc` 라 사본이 같은 링을 본다.
+    /// wait_ms가 있으면 워커에서 기다려 이벤트 루프를 막지 않는다. 버스 사본은 같은 링을 공유한다.
     fn ipc_dispatch_events_fetch(&mut self, cmd: &IpcCommand) {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let Some(mgr) = self.plugin_manager.as_ref() else {
@@ -844,9 +758,7 @@ impl App {
         });
     }
 
-    /// `agent.task_await`: 블로킹. **어느 engine 의 허브인지 고르는 것만** 여기 있다 —
-    /// 창 → parked → (헤드리스 전용) 단일 engine 순으로 훑는다. 고른 뒤의 대기는 두
-    /// 조합이 공유한다(`crate::ipc::handler::agent::task::spawn_task_await`).
+    /// 요청한 작업을 가진 engine의 허브를 고르고 대기는 공용 워커 함수에 맡긴다.
     fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
         let hub_opt = self
             .view
@@ -883,12 +795,7 @@ impl App {
             ),
         }
     }
-    /// `approval.await`: 블로킹. store 선택만 여기 있고 대기는 공유한다
-    /// (`ipc_dispatch_task_await` 와 같은 구조).
-    ///
-    /// **어느 engine 을 고르든 같은 store 다** — 창 생성 경로가 첫 engine 의
-    /// `approval_store` Arc 를 넘겨준다(위 `plugin.request_permission` 의 주석).
-    /// 그래서 이 선택은 대기 대상을 가르지 않는다.
+    /// 창 생성 때 공유한 approval_store를 고르고 대기는 공용 함수에 맡긴다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
             .view
@@ -919,29 +826,10 @@ impl App {
     }
 }
 
-/// `ui.screenshot` 의 대상 창 결정.
-///
-/// `windows` 는 `(window id, main view 인가)` 를 창 하나당 하나씩 담는다. 성공하면
-/// 그 슬라이스의 **인덱스**를 돌려준다(호출자가 같은 순서의 `WindowId` 배열에서
-/// 되찾을 수 있게 — u64 로 다시 찾는 왕복을 없앤다). 실패는 `(JSON-RPC code, message)`.
-///
-/// 두 갈래가 의도적으로 비대칭이다.
-///
-/// - **`window_id` 를 명시하면 모든 창이 대상이다** — 설정·플러그인·종료 확인 모달과
-///   preset 창을 포함한다. 캡처는 이미 그려진 프레임의 readback 이라 사용자 상태
-///   (포커스 / 선택 / 스크롤 / 커서)를 바꾸지 않으므로 원칙 1 의 금지 대상이 아니고,
-///   `ui.screenshot` 은 `local_only`(plugin 미노출)라 호출자는 이미 사용자 권한으로
-///   `config.toml` 과 PTY 를 읽을 수 있다. 근거 전체는
-///   `docs/ai-verification/screenshot-methods.md` "무엇을 캡처할 수 있는가".
-/// - **미지정 시의 자동 선택은 main 창이 정확히 하나일 때뿐이다** — 모달로는 절대
-///   폴백하지 않고 포커스도 보지 않는다(원칙 3). "지금 보고 있는 창" 에 기대는 순간
-///   같은 명령이 사용자 상태에 따라 다른 것을 캡처한다.
-///
-/// 캡처가 **행동** 대상 집합을 넓히는 것은 아니다 — `window.list` 와 `window.close` 는
-/// 종전대로 main 창만 다룬다(모달·preset 은 사용자 조작 영역).
-///
-/// 결정의 근거·기각 대안·재검토 조건:
-/// `docs/adr/0018-explicit-capture-and-fullscreen-stage.md`.
+/// 명시한 창 ID는 모달·preset도 허용한다. ID가 없으면 MainView 하나만 자동 선택한다.
+/// 포커스나 열린 모달을 대체 대상으로 쓰지 않는다. 반환값은 입력 목록의 인덱스다.
+/// 캡처 허용 범위가 window.list·window.close의 범위를 넓히는 것은 아니다.
+/// docs/adr/0018-explicit-capture-and-fullscreen-stage.md 참조.
 fn resolve_screenshot_window(
     windows: &[(u64, bool)],
     requested: Option<u64>,
@@ -974,14 +862,13 @@ fn resolve_screenshot_window(
 mod screenshot_target_tests {
     use super::resolve_screenshot_window;
 
-    /// main 2 개(10, 11) + 설정 모달(20) + 종료 확인 모달(21).
+    /// MainView 두 개와 모달 두 개.
     const MIXED: &[(u64, bool)] = &[(10, true), (20, false), (11, true), (21, false)];
-    /// main 1 개(10) + 설정 모달(20).
+    /// MainView 한 개와 모달 한 개.
     const ONE_MAIN: &[(u64, bool)] = &[(10, true), (20, false)];
 
     #[test]
     fn an_explicit_id_can_name_a_modal_window() {
-        // 이것이 이 함수의 존재 이유다 — 되돌리면(모달을 후보에서 빼면) 여기서 깨진다.
         assert_eq!(resolve_screenshot_window(MIXED, Some(20)), Ok(1));
         assert_eq!(resolve_screenshot_window(MIXED, Some(21)), Ok(3));
         assert_eq!(resolve_screenshot_window(ONE_MAIN, Some(20)), Ok(1));
@@ -1010,8 +897,6 @@ mod screenshot_target_tests {
 
     #[test]
     fn without_an_id_a_modal_is_never_the_automatic_target() {
-        // main 이 없고 모달만 떠 있어도 "그거라도 찍는다" 로 가지 않는다 — 자동 선택이
-        // 사용자가 무엇을 열어뒀는지에 의존하기 시작하면 원칙 3 이 깨진다.
         let only_modals: &[(u64, bool)] = &[(20, false), (21, false)];
         let (code, _) = resolve_screenshot_window(only_modals, None).unwrap_err();
         assert_eq!(code, -32000);

@@ -1,8 +1,4 @@
-//! `Tick::Busy` 에 편승한 글로벌 훅(`tasty set global-hook`) 조건 평가/발화.
-//!
-//! 글로벌 훅은 surface 가 아니라 `CoreState`(엔진) 단위로 등록되므로, busy-state 갱신과
-//! 동일하게 창마다·parked 엔진마다 각자의 `GlobalHookManager` 를 개별적으로 tick 한다 —
-//! 다른 엔진의 훅이 중복 발화되지 않는다.
+//! Busy tick에서 창과 parked engine의 전역 훅 조건을 각각 확인한다.
 
 use crate::app::App;
 

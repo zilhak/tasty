@@ -2025,7 +2025,7 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
     })
 }
 
-/// 손실 뒤 스트림 표지를 바꾸고 재attach를 요청한다. 중복 통지는 수만 더한다.
+/// 손실 통지마다 스트림 표지를 바꾼다. 이미 재attach 대기 중이면 손실 수를 누적한다.
 /// parked 상태에서는 창을 다시 찾을 때까지 Detach를 미룬다.
 fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frames: u64) {
     for &local in sess.remote_to_local.values() {

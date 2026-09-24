@@ -1,12 +1,6 @@
-//! `Tick::Busy` 에 편승한 `IdleTimeout` 훅(`tasty set hook --event
-//! idle-timeout:SECS`) 폴링/발화.
-//!
-//! `CoreState::poll_idle_timeout_hooks` 는 순수 engine 레이어라 발사된 훅의
-//! `(surface_id, FiredHook)` 만 돌려준다 — 바인딩 실행(`HostIpcInjector` 필요)과
-//! host event enqueue(`AppState` 필요)는 이 App 레이어가 담당한다
-//! (`app/dispatch_domain.rs` 의 bell/notification cascade 와 동일한 책임 분리).
-//! `global_hooks.rs`(`GlobalHookManager`, non-surface-bound)와는 별개 훅
-//! 시스템이다 — 이쪽은 surface 스코프 `tasty-hooks::HookManager`.
+//! Busy tick에서 surface별 IdleTimeout 훅을 확인한다.
+//! engine이 반환한 일치 결과의 바인딩 실행·호스트 이벤트 전달은 App이 담당한다.
+//! engine 단위 GlobalHookManager와는 별개다.
 
 use crate::app::App;
 
