@@ -120,7 +120,7 @@ pub struct DispatchedIntent {
     )
 )]
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
+#[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
     Ui(UiIntent),
     /// 도메인 명령도 같은 큐에 넣고 Core::apply로 전달한다.

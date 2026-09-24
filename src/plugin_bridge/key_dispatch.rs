@@ -1,14 +1,6 @@
-//! Plugin 단축키 매칭 + dispatch 헬퍼 (단계 F).
-//!
-//! event_handler.rs가 winit 키 이벤트를 normal window dispatch로 보내기 전에,
-//! focused surface가 plugin RemoteSurface일 경우 이 모듈을 통해 plugin command
-//! 매칭을 시도한다. 매칭 시 호스트 단축키 dispatch는 trigger되지 않고 이벤트가
-//! 소모된다.
-//!
-//! 포커스된 plugin surface가 없을 때는 `match_plugin_shortcut`(단일 plugin
-//! 대상)이 아니라 `match_global_shortcut`(등록된 모든 plugin의 `CommandScope::Global`
-//! command 대상)을 쓴다 — 호출 순서는 `App::try_plugin_shortcut`
-//! (`src/app/plugin_glue/shortcut.rs`)이 결정.
+//! 플러그인 단축키 검색과 실행 요청.
+//! 포커스된 플러그인 우선 검사와 전역 단축키 검사의 호출 순서는
+//! src/app/plugin_glue/shortcut.rs의 App::try_plugin_shortcut이 정한다.
 
 use winit::keyboard::{Key, ModifiersState};
 
@@ -18,7 +10,6 @@ use crate::plugin::PluginManager;
 use crate::plugin::command_registry::{EffectiveBinding, effective_binding};
 use crate::shortcuts::matches_any_binding;
 
-/// Focused surface가 RemoteSurface인 경우 (plugin_id, surface_id) 튜플 반환.
 pub fn focused_plugin_surface(
     state: &crate::state::AppState,
     engine: &crate::core::CoreState,
@@ -33,14 +24,8 @@ pub fn focused_plugin_surface(
     Some((remote.plugin_id.clone(), remote.id))
 }
 
-/// 주어진 plugin이 contribute한 command 중 현재 키 + modifiers에 매칭되는 것이
-/// 있으면 command_id를 반환. 사용자 override + 매니페스트 default + 호스트
-/// keybindings를 모두 합성한 effective binding을 사용.
-///
-/// 포커스된 plugin surface가 있을 때(그 plugin이 우선권을 갖는 경로)만 호출한다 —
-/// scope(`Global`/`Surface`)와 무관하게 그 plugin의 커맨드를 모두 후보로 본다,
-/// 왜냐하면 "그 plugin의 surface가 이미 포커스되어 있다"는 조건 자체가 `Surface`
-/// scope의 발화 조건을 이미 만족하기 때문이다.
+/// 지정한 플러그인의 단축키를 사용자 설정·매니페스트·호스트 설정으로 계산한다.
+/// 해당 플러그인의 surface에 포커스가 있을 때 호출하므로 Global과 Surface 모두 검사한다.
 pub fn match_plugin_shortcut(
     mgr: &PluginManager,
     plugin_id: &str,
@@ -65,12 +50,7 @@ pub fn match_plugin_shortcut(
     None
 }
 
-/// 포커스된 plugin surface가 없을 때: 등록된 **모든** plugin의
-/// `CommandScope::Global` command를 대상으로 키 매칭. 매칭되면
-/// `(plugin_id, command_id)`를 반환.
-///
-/// `Surface` scope command는 여기서 대상이 되지 않는다 — 그 owner plugin의
-/// surface가 실제로 포커스되어 있을 때만 `match_plugin_shortcut`으로 매칭된다.
+/// 모든 플러그인의 Global 명령에서 단축키를 찾는다. Surface 명령은 제외한다.
 pub fn match_global_shortcut(
     mgr: &PluginManager,
     key: &Key,
@@ -96,31 +76,12 @@ pub fn match_global_shortcut(
     None
 }
 
-/// **활성** plugin command 의 effective binding 을 합쳐 돌려준다(중복 제거 없음).
-///
-/// 용도는 native webview 키 포워딩 정책 스냅샷 하나뿐이다
-/// (`docs/adr/0029-webview-host-integration.md`). 백엔드는 "host 가 가져갈 수 있는 키인가"
-/// 만 동기 판정하면 되고, 실제로 어떤 커맨드가 발화하는지는 host 가 큐를 비울 때
-/// `dispatch_plugin_shortcut_key` 가 focused surface 기준으로 다시 좁힌다 — 그래서 여기서
-/// 만드는 것은 (scope 기준으로는) **상위집합**이다. scope 로 미리 걸러내면 안 된다:
-/// 포워딩된 키가 도착하는 시점의 모델 포커스는 그 webview 일 수도(→ 그 plugin 의
-/// `Surface` scope 커맨드도 후보), 다른 surface 일 수도(→ 전체 plugin 의 `Global` 커맨드가
-/// 후보) 있다.
-///
-/// 반면 **비활성 plugin 은 제외**한다(`is_disabled`) — 발화할 수 없는 커맨드가 키를 claim
-/// 하면 그 키가 페이지에도 host 에도 가지 않고 사라진다. registry 가 비활성 plugin 까지
-/// 담는 것은 설정 UI 표시의 요구지 claim 의 근거가 아니다.
-///
-/// 매 프레임 호출하는 함수가 아니다 — 호출부는 `command_registry.revision()` +
-/// `config.shortcut_revision()` 이 바뀐 프레임에만 부른다.
+/// WebView가 호스트로 전달할 단축키 목록. 비활성 설정의 플러그인은 제외한다.
+/// 입력을 처리할 때 포커스가 바뀔 수 있어 Global·Surface를 모두 포함하며 중복은 제거하지 않는다.
+/// 실제 실행할 명령은 호스트가 입력을 처리할 때 다시 선택한다.
 pub fn all_command_bindings(mgr: &PluginManager, host_kb: &KeybindingSettings) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for entry in mgr.command_registry.iter_all() {
-        // 비활성 plugin 의 콤보는 정책에 올리지 않는다 — 발화할 수 없는 명령이
-        // 키를 claim 하면 그 키는 페이지에도 host 에도 가지 않고 그냥 사라진다.
-        // registry 가 비활성 plugin 명령까지 담는 것은 설정 UI **표시**의 요구지
-        // claim 의 근거가 아니다(`manager::queries::plugin_palette_commands` 와 같은
-        // 필터).
         if mgr.config.is_disabled(&entry.plugin_id) {
             continue;
         }
@@ -137,11 +98,8 @@ pub fn all_command_bindings(mgr: &PluginManager, host_kb: &KeybindingSettings) -
     out
 }
 
-/// Event Bus 1.0 `command.invoked` owner-unicast 발사 (sub_id=0 sentinel — 다른
-/// plugin이 `command.invoked`를 구독해도 보이지 않는다).
-///
-/// `action`(선언적 처리) 유무·대상 surface 유무와 무관하게 매칭될 때마다 항상
-/// 실행되는 informational 통지 — plugin이 관찰 목적으로만 구독해도 안전하다.
+/// command.invoked 전송을 명령 소유 플러그인에만 요청한다.
+/// 다른 플러그인의 같은 이벤트 구독으로는 전달하지 않는다.
 pub fn emit_command_invoked(
     mgr: &mut PluginManager,
     plugin_id: &str,
@@ -169,19 +127,9 @@ pub fn emit_command_invoked(
     mgr.emit_host_event_to_plugin(plugin_id, "command.invoked", &payload, EventScope::System);
 }
 
-/// `action`이 선언되지 않은 command를 plugin 프로세스에 전달(legacy 경로).
-///
-/// - Event Bus `command.invoked`는 항상 발사(`emit_command_invoked`).
-/// - 옛 `command.invoke` IPC(plugin의 `handle_command`를 트리거하고
-///   `SurfaceResult`로 tree/display_name을 갱신할 수 있게 하는 응답 기반 형태)는
-///   `surface_id`가 있을 때만 발사한다. `CommandInvokeCtx`/`send_command_invoke`가
-///   `surface_id: u32`를 필수로 요구해 "대상 surface 없음"을 표현할 수 없기
-///   때문 — 포커스된 plugin surface 없이 매칭된 `Global` command가 이 케이스다.
-///   그 경우 plugin은 Event Bus 경로만으로 command 발화를 알 수 있다(옛 IPC
-///   round-trip은 애초에 `Surface` scope 전용으로 한정).
-///
-/// `action`이 선언된 command는 이 함수를 거치지 않는다 — 호출자(`App::try_plugin_shortcut`)가
-/// 그 경우 `emit_command_invoked` + 직접 액션 실행으로 분기하고 여기로 오지 않는다.
+/// action이 없는 명령의 실행을 플러그인에 요청한다.
+/// command.invoked를 보내고, surface_id가 있을 때만 command.invoke도 요청한다.
+/// action이 있는 명령은 호출자가 이벤트를 보낸 뒤 직접 처리한다.
 pub fn dispatch_plugin_command(
     mgr: &mut PluginManager,
     plugin_id: &str,
@@ -206,9 +154,6 @@ mod tests {
     use tasty_plugin_manifest::{CommandDecl, Contributes, Entry};
     use winit::keyboard::{NamedKey, SmolStr};
 
-    // `PluginManager::new`는 `tasty-host-plugin` crate 자체의 `#[cfg(test)]` 전용
-    // ctor라 외부 crate(본 바이너리)의 테스트 빌드에서는 보이지 않는다 — production
-    // 경로와 동일한 `with_registries` + stub registry 로 대체.
     struct StubFormat;
     impl tasty_plugin_protocol::host_port::FileFormatRegistryPort for StubFormat {
         fn install_plugin_detectors(&self, _: &str, _: &[serde_json::Value]) {}
@@ -220,13 +165,8 @@ mod tests {
         fn uninstall_plugin(&self, _: &str) {}
     }
 
-    /// 격리 홈과 매니저를 함께 돌려준다 — **순서가 계약이다.**
-    ///
-    /// `PluginManager::with_registries` 는 생성 중에 `tasty_home()/plugins-logs` 를
-    /// `create_dir_all` 한다. 그래서 override 를 **생성 전에** 세워야 하고, 이 모듈의
-    /// 시험들은 `CoreState` 를 만들지 않으므로 그쪽 가드의 보호를 받지 못한다.
-    /// 첫 원소를 버리면(`_`) 그 자리에서 drop 돼 override 가 즉시 풀리므로,
-    /// 호출부는 반드시 `let (_home, mut m) = mgr();` 처럼 **이름 있는 바인딩**으로 받는다.
+    /// 매니저는 생성 중 plugins-logs를 만들므로 격리 홈을 먼저 설정한다.
+    /// 반환한 홈 가드를 이름 있는 변수로 보관해 매니저보다 먼저 해제되지 않게 한다.
     fn mgr() -> (crate::test_support::IsolatedHome, PluginManager) {
         let home = crate::test_support::IsolatedHome::new();
         let m = PluginManager::with_registries(
@@ -288,8 +228,6 @@ mod tests {
     fn ctrl_shift_r() -> (Key, ModifiersState) {
         (k_char("r"), ModifiersState::CONTROL | ModifiersState::SHIFT)
     }
-
-    // ── match_global_shortcut ─────────────────────────────────────
 
     #[test]
     fn match_global_shortcut_finds_across_multiple_plugins() {
@@ -377,8 +315,6 @@ mod tests {
         );
     }
 
-    // ── match_plugin_shortcut (focused-surface path, 회귀) ────────
-
     #[test]
     fn match_plugin_shortcut_matches_within_focused_plugin_only() {
         let (_home, mut m) = mgr();
@@ -404,7 +340,6 @@ mod tests {
             match_plugin_shortcut(&m, "com.example.a", &key, mods, &kb),
             Some("a.open".to_string())
         );
-        // 다른 plugin 이름으로는 같은 키라도 매칭되지 않는다 (per-plugin 격리).
         assert_eq!(
             match_plugin_shortcut(&m, "com.example.ghost", &key, mods, &kb),
             None
@@ -430,8 +365,6 @@ mod tests {
         );
     }
 
-    // ── dispatch/emit: 플러그인 프로세스 미기동 상태에서 panic 없이 no-op ──
-
     #[test]
     fn dispatch_plugin_command_with_no_surface_does_not_panic() {
         let (_home, mut m) = mgr();
@@ -443,7 +376,7 @@ mod tests {
                 tasty_plugin_manifest::CommandScope::Global,
             )],
         ));
-        // plugin process가 실행 중이 아니므로 emit/legacy IPC 모두 조용히 no-op.
+        // 프로세스가 없는 경로에서 패닉하지 않는지만 확인한다.
         dispatch_plugin_command(&mut m, "com.example.a", "a.open", None);
     }
 
@@ -464,15 +397,9 @@ mod tests {
     #[test]
     fn emit_command_invoked_unknown_command_defaults_scope_without_panic() {
         let (_home, mut m) = mgr();
-        // registry에 없는 command — scope는 CommandScope::default()(Global)로 폴백.
         emit_command_invoked(&mut m, "com.example.ghost", "ghost.cmd", None);
     }
 
-    // ── all_command_bindings (webview 키 포워딩 정책 스냅샷) ──────────
-
-    /// 매니페스트 default 와 사용자 override 가 모두 정책 원천에 실린다. scope 로
-    /// 미리 걸러내지 않는다 — `Surface` scope 커맨드도 그 plugin surface 가 포커스된
-    /// 상태에서는 발화하므로 정책은 상위집합이어야 한다.
     #[test]
     fn all_command_bindings_collects_manifest_defaults_and_overrides() {
         let (_home, mut m) = mgr();
@@ -504,12 +431,10 @@ mod tests {
         assert_eq!(
             got,
             vec!["ctrl+shift+h".to_string(), "ctrl+shift+r".to_string()],
-            "override 가 매니페스트 default 를 대체하고 Surface scope 도 포함돼야 한다"
+            "사용자 설정이 기본 단축키를 대체하고 Surface scope도 포함해야 한다"
         );
     }
 
-    /// 사용자가 단축키를 비워둔 커맨드는 정책에 실리지 않는다 — 실리면 그 콤보를
-    /// webview 위에서 host 가 claim 해 페이지가 못 받는다(키 소실).
     #[test]
     fn all_command_bindings_skips_cleared_bindings() {
         let (_home, mut m) = mgr();
@@ -530,8 +455,6 @@ mod tests {
         assert!(all_command_bindings(&m, &kb).is_empty());
     }
 
-    /// 비활성 plugin 의 콤보는 정책에 오르지 않는다 — 발화할 수 없는 명령이 키를
-    /// claim 하면 그 키가 페이지에도 host 에도 안 가고 사라진다(conductor 판정 A).
     #[test]
     fn all_command_bindings_skips_disabled_plugins() {
         let (_home, mut m) = mgr();
@@ -544,18 +467,15 @@ mod tests {
             )],
         ));
         let kb = KeybindingSettings::preset_tasty();
-        // 활성일 땐 실린다.
         assert_eq!(
             all_command_bindings(&m, &kb),
             vec!["ctrl+alt+z".to_string()]
         );
-        // 비활성으로 바꾸면 빠진다.
         assert!(m.config.disable("com.example.a"));
         assert!(all_command_bindings(&m, &kb).is_empty());
     }
 
-    /// 정책 캐시의 무효화 키가 실제로 움직이는지 — registry 등록/해제와 override
-    /// 변경 모두 epoch 를 올려야 `sync_webviews` 가 스냅샷을 다시 만든다.
+    // registry와 사용자 설정 변경으로 WebView의 단축키 캐시를 갱신할 수 있어야 한다.
     #[test]
     fn shortcut_epochs_advance_on_every_binding_change() {
         let (_home, mut m) = mgr();
@@ -571,15 +491,15 @@ mod tests {
         let r1 = m.command_registry.revision();
         assert_ne!(
             r0, r1,
-            "register_plugin 이 registry revision 을 올려야 한다"
+            "플러그인을 등록하면 registry revision이 바뀌어야 한다"
         );
         m.command_registry.unregister_plugin("com.example.a");
         assert_ne!(
             r1,
             m.command_registry.revision(),
-            "unregister_plugin 도 올려야 한다"
+            "플러그인을 해제하면 registry revision이 바뀌어야 한다"
         );
-        // 새로 만든 registry 도 이전 값과 겹치지 않는다(전역 단조 epoch).
+        // 새 registry도 이전 객체와 다른 revision을 가져야 한다.
         assert_ne!(
             m.command_registry.revision(),
             crate::plugin::command_registry::PluginCommandRegistry::new().revision()
@@ -594,9 +514,13 @@ mod tests {
         let c1 = m.config.shortcut_revision();
         assert_ne!(
             c0, c1,
-            "set_shortcut_override 가 config revision 을 올려야 한다"
+            "사용자 단축키를 설정하면 config revision이 바뀌어야 한다"
         );
         assert!(m.config.clear_shortcut_override("com.example.a", "a.open"));
-        assert_ne!(c1, m.config.shortcut_revision(), "clear 도 올려야 한다");
+        assert_ne!(
+            c1,
+            m.config.shortcut_revision(),
+            "사용자 단축키를 지우면 config revision이 바뀌어야 한다"
+        );
     }
 }

@@ -1,29 +1,14 @@
-//! Tasty 의 크레이트 루트.
-//!
-//! 바이너리(`src/main.rs`)는 `fn main()` 하나만 들고 여기의 [`boot::run`] 을 부른다.
-//! 둘을 가른 이유는 **밖에서 무엇을 쓸 수 있는지를 잴 자리를 만드는 것**이다 —
-//! 바이너리 전용 패키지에는 그 좌변이 없다(`pub` 이 아무 데도 안 나간다).
-//!
-//! ★ 지금 이 크레이트가 밖으로 내보내는 것은 아래 `pub use` 재수출뿐이고, 모듈은
-//! 전부 비공개이거나 `pub(crate)` 다. 즉 **경계가 생긴 것이 아니라 경계를 잴 수 있게
-//! 된 것**이다. 무엇을 공개할지는 소비자가 생길 때 그 자리에서 정한다.
-//!
-//! 재는 법: `cargo public-api` 같은 도구 없이도 `cargo doc -p tasty --no-deps` 가
-//! 지금 공개된 표면을 그대로 그린다.
+//! Tasty 라이브러리. src/main.rs가 boot::run으로 실행한다.
+//! 공개 API는 cargo doc -p tasty --no-deps로 확인한다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// reason: 시험 코드의 Result 무시는 사유 주석 대상에서 제외한다.
+// 일반 라이브러리 빌드는 기존 lint 수준을 유지한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod adapters;
 mod app;
 pub mod boot;
-// 셀 색 해석 — gui 게이트 밖이다. 렌더러가 쓰지만 순수 계산이라
-// headless 의 `debug.glyph_color` 도 같은 함수로 답한다. 부르는 자리가 그 둘뿐이라
-// 게이트는 그 합이다 — release 헤드리스에는 둘 다 없다.
+// GUI 렌더러와 헤드리스 debug.glyph_color가 같은 색 계산을 사용한다.
 #[cfg(any(feature = "gui", debug_assertions))]
 mod cell_palette;
 mod clipboard;
@@ -36,8 +21,7 @@ mod design_token_guard;
 #[cfg(test)]
 mod dpi_conversion_guard;
 mod file;
-// 무대 메타 — 읽는 자리가 gui 의 무대 정의 · debug 조회(`debug.fullscreen.*`) · 테스트
-// 가드뿐이라 게이트는 그 합이다.
+// GUI의 무대 정의와 debug 조회, 시험에서 사용하는 메타데이터다.
 #[cfg(any(feature = "gui", debug_assertions, test))]
 mod fullscreen_stages;
 #[cfg(feature = "gui")]
@@ -61,19 +45,12 @@ mod view;
 mod waker;
 mod webhook;
 
-/// 락 poison 복구 헬퍼 — 실체는 `tasty-utils` 에 있다(소비 크레이트가 셋이라 leaf 로
-/// 올렸다). 본체 코드가 `crate::poison::…` 로 계속 부르도록 이름만 잇는다.
 pub(crate) use tasty_utils::poison;
 
-/// 테스트 전용 가드 — 실체는 `tasty-test-support` 크레이트에 있다(출하되지 않으므로
-/// dev-dependency 로만 들어간다). 시험 코드가 `crate::test_support::…` 로 계속
-/// 부르도록 이름만 잇는다.
 #[cfg(test)]
 pub(crate) use tasty_test_support as test_support;
 
 pub use tasty_font as font;
-/// OS 경계 — 실체는 `tasty-platform` 크레이트에 있다. 본체 코드가
-/// `crate::platform::…` 로 계속 부르도록 이름만 잇는다(다른 leaf 재수출과 같은 형태).
 pub(crate) use tasty_platform as platform;
 pub use tasty_settings as settings;
 #[cfg(feature = "gui")]

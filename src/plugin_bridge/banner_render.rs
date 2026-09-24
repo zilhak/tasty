@@ -1,15 +1,6 @@
-//! Plugin egui-mesh banner 합성 forward (A3).
-//!
-//! host banner manager([`crate::adapters::ui::BannerManager`])가 매 egui frame 셸(컨테이너/
-//! border/close X/카운트다운)을 그리고 plugin 배너의 content_rect 를 슬롯으로 기록한다.
-//! 이 모듈은 그 슬롯을 받아 `banner.set_context` 를 plugin 에 forward 하고, 합성 영역을
-//! `state.plugin_mesh_banner_regions` 에 적재한다 — 실제 mesh 합성은 `gpu.render` 가 host
-//! egui pass *후* content_rect 에 수행한다(`render_egui_mesh_banners`).
-//!
-//! popup([`super::popup_render`])과 평행하되, banner 는 non-modal 공지라 scrim/키보드
-//! 포커스가 없어 content 영역 위 **포인터/스크롤 입력만** forward 한다(키/텍스트 없음, D3).
-//! set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 상태에 부수효과가 없다
-//! (identity 원칙 1·3).
+//! 플러그인 배너의 콘텐츠 영역과 입력을 전달하고 GPU 합성 영역을 기록한다.
+//! 호스트 배너를 그린 뒤 호출하며, 실제 mesh는 호스트 egui 렌더 뒤에 합성한다.
+//! 배너에는 키보드 포커스를 주지 않고 포인터·스크롤만 전달한다.
 
 use egui::{Context, Event, Pos2, Rect};
 use tasty_plugin_protocol::{
@@ -23,32 +14,24 @@ use crate::plugin::PluginManager;
 use crate::plugin_bridge::wire_scroll;
 use crate::state::AppState;
 
-/// 매 egui frame, host banner draw *후* 호출. banner manager 가 기록한 plugin mesh 슬롯을
-/// 받아 set_context forward + 합성 영역 적재. host 측 생명주기(TTL/close X)로 닫힌 배너는
-/// plugin 에 `banner.closed` 로 전파하고, plugin 이 죽어 mgr 에서 사라진 배너는 host UI 에서
-/// 정리한다(양방향 reconcile).
+/// 호스트에서 닫힌 배너와 플러그인 매니저에서 사라진 배너를 양쪽에 반영한다.
 pub fn draw_plugin_banners(
     ctx: &Context,
     state: &mut AppState,
     engine: &crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
 ) {
-    // 매 frame 합성 영역을 새로 수집한다 — 이전 frame 잔재가 합성되지 않게.
     state.plugin_mesh_banner_regions.clear();
 
-    // banner manager 가 이번 frame 그린 슬롯 + host 측 close 이벤트를 가져온다.
     let slots = state.banners.take_plugin_mesh_slots();
     let closed = state.banners.drain_closed_plugin_banners();
 
     let Some(mgr) = plugin_manager else {
-        // plugin manager 부재 — 추적 상태 정리.
         state.plugin_mesh_banner_forward.clear();
         return;
     };
 
-    // 1) host 측 생명주기(TTL/close X)로 닫힌 plugin 배너 → close 큐에 적재. 실제
-    //    close_banner_instance(banner.closed 송신 + frame 정리)는 App 메인 루프가 drain 해
-    //    호출한다 — 렌더 경로가 manager 를 직접 mutate 하지 않게(popup closes 와 동형).
+    // 렌더 중 매니저를 변경하지 않고, 메인 루프에 닫기 처리를 요청한다.
     for (instance_id, kind) in closed {
         let reason = match kind {
             PluginBannerCloseKind::Ttl => BannerCloseReason::Ttl,
@@ -57,7 +40,6 @@ pub fn draw_plugin_banners(
         state.plugin_banner_closes.push((instance_id, reason));
     }
 
-    // 2) reconcile: host UI 에 있으나 mgr 에서 사라진(=plugin 종료) 배너는 UI 에서 제거.
     let live_in_mgr: std::collections::HashSet<u64> =
         mgr.banner_instances().map(|(iid, _)| iid).collect();
     let orphan_ui: Vec<u64> = state
@@ -69,7 +51,6 @@ pub fn draw_plugin_banners(
         state.banners.close_by_instance(iid);
     }
 
-    // 닫힌 banner 의 forward 추적 정리 — 한 맵이라 칸별로 빠뜨릴 자리가 없다.
     let live_slots: std::collections::HashSet<u64> = slots.iter().map(|s| s.instance_id).collect();
     state
         .plugin_mesh_banner_forward
@@ -81,8 +62,6 @@ pub fn draw_plugin_banners(
 
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
     let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
-    // 현재 resolved Theme 스냅샷 1회 (배너 무관). plugin 이 host 와 동일 Theme 으로
-    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(popup forward 와 동형, ADR-0028).
     let current_theme = {
         let th = crate::theme::theme();
         ThemeWire {
@@ -96,21 +75,14 @@ pub fn draw_plugin_banners(
         let content_rect = slot.content_rect;
         let raw_input = collect_mesh_banner_input(ctx, content_rect, pointer_pos);
 
-        // set_context forward — geom 변경 / 입력 / bootstrap(미paint) / theme 변경 시만.
-        // bootstrap 은 1회만 (popup 과 동일: 첫 frame 폰트 atlas delta 를 host 가 반드시 decode).
         let physical = crate::plugin_bridge::mesh_region_of(content_rect, ppp);
         let w_px = physical.width.value().round().max(1.0) as u32;
         let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
-        // plugin 이 무입력 재-repaint 를 요청했다(egui `viewport_output` — hover fade·
-        // 스크롤 스무딩·스피너). geom/입력/theme 어느 것도 안 바뀌므로 아래 판정만으로는
-        // 안 잡힌다. popup 과 같은 `remove` 소비 형태다.
-        //
-        // **`fwd` 를 잡기 전에 읽는다.** 아래 `record_sent` 가 그 가변 대여를 if 블록
-        // 안까지 끌고 가서, 그 뒤에 `state` 를 다시 빌리면 컴파일되지 않는다(popup 은
-        // if 안에서 entry 를 다시 열기 때문에 순서가 반대여도 된다).
+        // 입력이나 크기 변경 없이 요청한 repaint도 처리한다.
+        // fwd를 가변 차용하기 전에 AppState의 요청 집합에서 꺼낸다.
         let need_repaint = state
             .plugin_mesh_banner_pending_repaint
             .remove(&slot.instance_id);
@@ -119,9 +91,6 @@ pub fn draw_plugin_banners(
             .entry(slot.instance_id)
             .or_default();
         let need_bootstrap = fwd.need_bootstrap(has_frame);
-        // 건강 상태 반영 + 빈 화면 워치독 — crash 로 frame 이 사라지면 재bootstrap 하도록
-        // 무장 해제하고, bootstrap 후 유예를 넘기도록 frame 이 없으면 1회 경고한다
-        // (판정도 경고문도 `MeshForwardCommon` 한 곳, surface·popup 과 같다).
         fwd.watch_blank(
             has_frame,
             format_args!(
@@ -132,8 +101,6 @@ pub fn draw_plugin_banners(
         );
         let geom_changed = fwd.geom_changed(geom);
         let theme_changed = fwd.theme_changed(&current_theme);
-        // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
-        // need_full_textures 를 실어 보낸다(popup 과 같은 판정, 같은 타입).
         let need_full = fwd.take_pending_full();
         if geom_changed || has_input || need_bootstrap || theme_changed || need_full || need_repaint
         {
@@ -152,18 +119,14 @@ pub fn draw_plugin_banners(
             );
         }
 
-        // 합성 영역(물리 px) 적재 — gpu.render 가 host egui pass 후 mesh 를 그린다.
         state
             .plugin_mesh_banner_regions
             .push((slot.instance_id, physical));
     }
 }
 
-/// banner content 영역 위 egui 입력을 content-local 논리 포인트(좌상단 0,0) 와이어로 변환.
-///
-/// host 가 받은 *실제* 사용자 입력만 forward 한다(identity 원칙 1·3). banner 는 non-modal
-/// 이라 키보드 포커스가 없다 — 포인터/스크롤만 보내고 focused=false (키/텍스트 없음, D3).
-/// 포인터 이벤트는 content 영역 안의 것만 보낸다.
+/// 콘텐츠 기준 논리 좌표로 포인터·스크롤을 전달한다. 키·텍스트는 전달하지 않는다.
+/// PointerGone은 콘텐츠 영역 포함 여부와 관계없이 전달해 이전 hover 상태를 지운다.
 fn collect_mesh_banner_input(
     ctx: &Context,
     content_rect: Rect,
@@ -171,8 +134,7 @@ fn collect_mesh_banner_input(
 ) -> RawInputWire {
     let origin = content_rect.min;
     let pointer_inside = pointer_pos.is_some_and(|p| content_rect.contains(p));
-    // 노치 거리는 `ctx.input` 밖에서 읽는다 — 같은 컨텍스트의 다른 잠금이라
-    // 중첩을 만들 이유가 없다.
+    // ctx.input 안에서 같은 컨텍스트의 다른 잠금을 잡지 않도록 먼저 읽는다.
     let line = wire_scroll::line_scroll(ctx);
     ctx.input(|i| {
         let modifiers = map_modifiers(&i.modifiers);
@@ -201,9 +163,7 @@ fn collect_mesh_banner_input(
                         });
                     }
                 }
-                // 와이어 `Scroll` 은 논리 포인트 단위다 — 물리 마우스 휠이 싣고 오는
-                // `Line` 단위를 여기서 환산하지 않으면 notch 당 1pt 만 도착해 egui-mesh
-                // surface 와 이동량이 갈린다(`wire_scroll` 모듈 문서).
+                // wire Scroll은 논리 포인트이므로 Line 입력은 노치 거리로 환산한다.
                 Event::MouseWheel { unit, delta, .. } if pointer_inside => {
                     let (dx, dy) = wire_scroll::wheel_delta_to_points(
                         *unit,
@@ -217,13 +177,11 @@ fn collect_mesh_banner_input(
                     });
                 }
                 Event::PointerGone => events.push(RawInputEventWire::PointerGone),
-                // 키/텍스트는 forward 하지 않는다 — banner 는 키보드 포커스를 안 받는다(D3).
                 _ => {}
             }
         }
         RawInputWire {
             time: None,
-            // banner 는 키보드 포커스가 없다.
             focused: false,
             modifiers,
             events,
@@ -254,21 +212,17 @@ fn map_button(b: egui::PointerButton) -> Option<PointerButtonWire> {
 mod tests {
     use super::*;
 
-    /// banner content 위 휠 이벤트 하나가 와이어에 싣는 `Scroll` 값(논리 포인트)을
-    /// **실제 수집 함수**로 잰다.
     fn collected_scroll(unit: egui::MouseWheelUnit, delta: egui::Vec2) -> Option<(f32, f32)> {
         collected_scroll_with_notch(unit, delta, tasty_settings::DEFAULT_WHEEL_LINE_SCROLL)
     }
 
-    /// 위와 같되 노치 거리(host 가 egui 옵션에 밀어 넣는 값)를 지정한다 — 그 값이
-    /// 실제로 와이어까지 흐르는지 재는 데 쓴다.
     fn collected_scroll_with_notch(
         unit: egui::MouseWheelUnit,
         delta: egui::Vec2,
         notch: f32,
     ) -> Option<(f32, f32)> {
         let ctx = Context::default();
-        // host 가 창을 만들 때 하는 것과 같다 — 이 설정 없이는 egui 기본값(40)이 남는다.
+        // 호스트의 노치 거리를 지정하지 않으면 egui 기본값 40이 남는다.
         ctx.options_mut(|o| o.line_scroll_speed = notch);
         let content_rect =
             Rect::from_min_size(Pos2::new(40.0, 40.0), egui::Vec2::new(400.0, 120.0));
@@ -286,8 +240,7 @@ mod tests {
             ..Default::default()
         };
         let mut wire = None;
-        // 한 pass 를 실제로 돌려 `InputState` 를 채운다. 렌더 산출물(`FullOutput`)은
-        // 이 측정에 쓰지 않는다 — 필요한 것은 수집 함수가 만든 와이어 입력뿐이다.
+        // 실제 입력 처리를 실행하되 렌더 결과는 이 검사에 사용하지 않는다.
         let _full_output = ctx.run(input, |ctx| {
             wire = Some(collect_mesh_banner_input(ctx, content_rect, Some(pointer)));
         });
@@ -297,7 +250,6 @@ mod tests {
         })
     }
 
-    /// banner 도 popup·surface 와 같은 배율을 쓴다 — 세 표면이 갈리지 않아야 한다.
     #[test]
     fn a_wheel_notch_reaches_the_wire_as_the_shared_line_scroll_distance() {
         let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Line, egui::Vec2::new(0.0, -1.0))
@@ -307,8 +259,6 @@ mod tests {
         assert_ne!(dy, -1.0);
     }
 
-    /// 노치 거리는 이제 상수가 아니라 **host egui 옵션**에서 온다 — 사용자가 설정을
-    /// 바꾸면 banner 가 받는 거리도 따라와야 한다. 상수로 되돌아가면 이 테스트가 죽는다.
     #[test]
     fn the_wire_distance_follows_the_host_option() {
         let (_, slow) = collected_scroll_with_notch(
@@ -327,7 +277,6 @@ mod tests {
         assert_eq!(fast, -120.0);
     }
 
-    /// 트랙패드 델타는 그대로 실린다(회귀 방지).
     #[test]
     fn a_trackpad_delta_reaches_the_wire_unchanged() {
         let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Point, egui::Vec2::new(1.5, -9.0))

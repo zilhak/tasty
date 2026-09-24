@@ -1,24 +1,10 @@
-//! `CoreState::mesh_mirror`(구독 상태, `src/core/mesh_mirror.rs`) 구동 + relay —
-//! GUI/headless 공용(`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절).
+//! GUI와 헤드리스에서 원격 attach에 mesh 프레임을 전달한다.
 //!
-//! `mesh_mirror.rs` 자신은 `PluginManager` 접근권이 없어(설계상 registry 전용) 실제
-//! plugin 구동은 이 모듈이 맡는다. 세 호출부가 있다:
-//!
-//! - **headless**(`src/boot/headless_plugins.rs::pump_plugins`) — 단일 engine, 로컬
-//!   렌더가 아예 없으므로 [`forward_mesh_frames_for_engine`]이 dirty 를 직접 읽어
-//!   구동까지 전담한다.
-//! - **parked**(GUI, `App::about_to_wait` — macOS 최소화로 window 가 파괴되고
-//!   `CoreState` 만 `App::parked_states` 에 남은 engine) — 살아있는 window 가 없다는
-//!   점에서 headless 와 처지가 같으므로 동일하게 [`forward_mesh_frames_for_engine`]을
-//!   그대로 재사용한다.
-//! - **GUI 살아있는 window**(`view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`)
-//!   — `forward_egui_mesh_context` 가 이미 매 프레임 그 window 의 실제 로컬 렌더
-//!   해상도로 권위있게 `set_context` 를 구동하므로, [`forward_mesh_frames_for_engine`]을
-//!   쓰면 안 된다 — mesh_mirror ctx 의 (attach client 가 요청한, 로컬과 다를 수 있는)
-//!   width_px/height_px 로 다시 구동하면 로컬 화면이 attach client 해상도로 튈 수
-//!   있다. 이 경로는 자체 판단(bootstrap-if-never-rendered / need_full 은 로컬
-//!   pending_full 메커니즘에 위임)만 하고, 이미 만들어진 frame 을 client 로 흘리는
-//!   꼬리 로직만 [`relay_mesh_frame_if_new`]로 공유한다.
+//! 창이 없는 헤드리스·parked engine은 forward_mesh_frames_for_engine으로
+//! 플러그인 렌더도 요청한다. 창이 있는 engine은 로컬 화면 크기로 이미 렌더하므로
+//! relay_mesh_frame_if_new로 만들어진 프레임만 전달한다.
+//! attach 클라이언트의 크기로 다시 렌더하면 로컬 화면의 해상도까지 바뀔 수 있다.
+//! 동작: docs/dev-guide/attach-behavior.md.
 
 use crate::core::CoreState;
 use crate::core::attach::AttachClientId;
@@ -26,32 +12,15 @@ use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::plugin::PluginManager;
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
-/// `CoreState::mesh_mirror`(구독 상태)를 읽어 plugin 을 구동하고, 새 frame 을 attach
-/// client 에 chunk forward 한다(`docs/dev-guide/attach-behavior.md` "frame 소비·forward
-/// (headless-as-server / gui parked engine)" 절). headless 는 `pump_plugins` 호출 tick 마다,
-/// parked engine 은 GUI 의 App-level tick(`about_to_wait`, `mgr.pump()` 호출 지점)
-/// 마다 실행돼 `PaintFrame` 도착 즉시(또는 1Hz busy-poll 안전망 tick 에) 반응한다 —
-/// 별도 wake 채널 불필요(headless_plugins 모듈 문서 §pump 트리거 참조).
-///
-/// 구독당 두 가지 독립 동작:
-/// 1. **구독 상태가 dirty**(신규 구독/geometry·theme·focus 변경) — plugin 에
-///    `surface.set_context` 재전송(첫 호출이면 `surface.create` bootstrap 선행).
-/// 2. **아직 이 client 에 안 보낸 새 generation 의 frame 존재** — `SharedBuffer`에서
-///    바이트를 읽어 chunk 로 쪼개 client 에 push([`relay_mesh_frame_if_new`]).
-/// 두 동작은 서로 독립이다 — geometry 변경 없이도 plugin 이 새 frame 을 밀 수 있고
-/// (markdown 내부 애니메이션 등), 반대로 이번 tick 에 새 frame 이 없어도 geometry 변경은
-/// 즉시 반영해야 한다.
-///
-/// **살아있는 GUI window 의 engine 에는 쓰지 않는다** — 모듈 문서 참조.
+/// 창이 없는 engine의 mesh 구독을 처리한다.
+/// 구독이 dirty이면 context를 보내고, 전송하지 않은 프레임이 있으면 client에 전달한다.
+/// 두 조건은 독립적으로 확인한다. 창이 있는 engine에는 사용하지 않는다.
 pub(crate) fn forward_mesh_frames_for_engine(
     engine: &mut CoreState,
     mgr: &PluginManager,
     stream_hub: &StreamHub,
 ) {
     for sid in engine.mesh_mirror.active_surface_ids() {
-        // 방어적 정리: 정상 경로는 disconnected 처리(boot.rs)가 동기적으로
-        // `mesh_mirror.remove_for_client` 를 부르므로 거의 항상 일치하지만, surface
-        // 자체가 닫힌 경우(구조 변경 등)는 여기서만 감지된다.
         if !engine.attach.is_hard_occupied(sid) {
             engine.mesh_mirror.remove(sid);
             continue;
@@ -78,11 +47,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
 
         let dirty = engine.mesh_mirror.take_dirty(sid);
         let need_full = engine.mesh_mirror.take_need_full_textures(sid);
-        // attach client → plugin 입력 forward(`docs/dev-guide/attach-behavior.md`
-        // "MeshInput 누적" 절) — `MeshInput`으로 누적된
-        // 이벤트를 이번 set_context 에 실어 보낸다. dirty(위 take_dirty)는
-        // push_input 이 이미 세워두므로, 입력만 있고 geometry/theme/focus 변경이
-        // 없어도 이 블록에 진입한다.
+        // 입력 추가도 dirty를 설정하므로 크기나 테마가 그대로여도 아래에서 전달한다.
         let events = engine.mesh_mirror.take_pending_events(sid);
 
         if dirty {
@@ -117,13 +82,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
     }
 }
 
-/// mesh mirror 구독 1개에 대해, plugin 이 이미 만들어 둔 최신 `EguiMeshFrame`(있다면)을
-/// attach client 로 relay 한다 — 새 `set_context` 는 보내지 않는 순수 byte relay다
-/// (`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절). headless/parked
-/// ([`forward_mesh_frames_for_engine`])와 GUI 살아있는
-/// window(`view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`) 양쪽의 공용
-/// 꼬리 로직 — 두 호출부 모두 "이 tick 에 새로 구동할지"는 각자 판단하고, "구동
-/// 후(또는 무관하게) 이미 있는 frame 을 client 에 흘리는" 이 부분만 공유한다.
+/// 이미 만들어진 새 프레임을 attach client에 전달한다. context는 보내지 않는다.
 pub(crate) fn relay_mesh_frame_if_new(
     engine: &mut CoreState,
     mgr: &PluginManager,
@@ -143,22 +102,18 @@ pub(crate) fn relay_mesh_frame_if_new(
     let Some(mem) = mgr.plugin_buffer(&frame.plugin_id, frame.buffer_id) else {
         return;
     };
-    // SAFETY: `buffer_id`는 이 plugin 이 `host.shared_buffer.create`로 만든 뒤
-    // `PaintFrame` 이벤트로 알려온 값이라 `mem`은 유효한 매핑이다. footer
-    // 프로토콜은 plugin(writer)/host(reader) 양쪽이 합의한 8B 헤더 + user data
-    // 레이아웃이며(`tasty_shm::footer` 문서), 이 host 프로세스가 이 버퍼의 유일한
-    // reader 다 — `gfx/gpu/egui_mesh_prepare.rs::decode_mesh_into_target`의 동일
-    // 패턴과 동형(그쪽은 GPU 디코드까지 하지만 여기는 raw 바이트 forward 만 한다).
+    // SAFETY: mem이 슬라이스를 읽는 동안 매핑을 유지한다.
+    // payload를 읽는 동안 다른 프로세스의 쓰기도 배제해야 하지만,
+    // 아래 generation 비교만으로는 배제되지 않으며 이 경로에 별도 배제 절차는 없다.
     let raw = unsafe { mem.as_slice() };
     if raw.len() < tasty_shm::footer::SIZE {
         return;
     }
-    // SAFETY: 위에서 `raw.len() >= footer::SIZE`를 검증했고, mmap 매핑의 시작
-    // 주소는 항상 페이지 정렬(≥8B)이라 `AtomicU64` 재해석이 안전하다(`footer_atomic`
-    // 안전 조건 문서 참조).
+    // SAFETY: 길이는 위에서 확인했고 매핑 시작은 페이지 정렬돼 있다.
+    // 첫 8바이트는 양쪽 프로세스가 atomic footer로 사용한다.
     let gen_now = unsafe { tasty_shm::footer::load(raw, std::sync::atomic::Ordering::Acquire) };
     if gen_now != frame.generation {
-        // writer 가 다음 frame 을 쓰는 중(tear) — 다음 tick 에 재시도(GPU 경로와 동형).
+        // 메타데이터와 버퍼 세대가 다르면 다음 호출로 미룬다. 일치해도 이후 쓰기를 배제하지 않는다.
         return;
     }
     let user = tasty_shm::footer::user_slice(raw);
@@ -166,7 +121,7 @@ pub(crate) fn relay_mesh_frame_if_new(
     let bytes = if byte_len > 0 && byte_len <= user.len() {
         &user[..byte_len]
     } else {
-        // 구버전 plugin(byte_len=0) 또는 길이 불일치 — capacity 전체 fallback.
+        // byte_len이 없거나 범위를 벗어나면 전체 payload 용량을 사용한다.
         user
     };
 
@@ -183,9 +138,7 @@ pub(crate) fn relay_mesh_frame_if_new(
     ) {
         let result = stream_hub.push(client_id, StreamFrame::new(StreamTag::MeshData, payload));
         if matches!(result, PushResult::Unknown | PushResult::Disconnected) {
-            // client 가 끊겼다 — 다음 StreamReady tick 의 disconnected 처리가
-            // `remove_for_client`로 구독을 정리한다. 남은 chunk 전송은 낭비이므로
-            // 이 surface 는 여기서 중단.
+            // 연결이 사라졌거나 끊겼으면 이 프레임의 나머지 chunk 전송을 중단한다.
             break;
         }
     }
@@ -198,12 +151,7 @@ mod tests {
     use std::sync::Arc;
     use tasty_terminal::waker_factory::NoopWakerFactory;
 
-    /// headless 와 동형의 단일 mesh surface 를 가진 "parked engine" 하나를 만든다 —
-    /// 기본 workspace/pane/tab 의 시드 터미널 surface 를 `EguiMeshSurface` 로
-    /// 교체하고, 그 surface 를 `client_id` 가 hard-occupy + mesh mirror 구독 중인
-    /// 상태로 세팅한다(`handle_minimize` macOS 분기가 parked 로 옮기기 직전의 실제
-    /// 상태와 동형 — 구독/hard-occupy 자체는 owning-engine 패턴으로 이미 parked
-    /// engine 에도 정상 반영된다, `apply_mesh_context_on_owning_engine` 참조).
+    /// 터미널 대신 mesh surface를 만들고 client가 hard 점유·구독한 engine을 준비한다.
     fn make_parked_engine(client_id: AttachClientId) -> (CoreState, u32) {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
         let mut engine = CoreState::new(80, 24, waker).expect("core state");
@@ -237,8 +185,6 @@ mod tests {
             .attach
             .acquire(surface_id, client_id)
             .expect("hard-occupy for mesh mirror subscription");
-        // 신규 구독 — `upsert` 는 dirty=true/need_full_textures=true 로 seed 한다
-        // (mesh_mirror.rs::new_subscribe_is_dirty_and_needs_full_textures 와 동일 전제).
         engine
             .mesh_mirror
             .upsert(surface_id, client_id, 800, 600, 2.0, None, true);
@@ -246,38 +192,25 @@ mod tests {
         (engine, surface_id)
     }
 
-    /// 핵심 회귀 시나리오(`docs/dev-guide/attach-behavior.md` "frame 소비·forward" 절):
-    /// macOS 에서 window 여러 개가 동시에 minimize 되어 `App::parked_states` 에
-    /// engine 이 2개 이상 쌓인 경우.
-    /// `window_lifecycle.rs` 의 복원이 `remove(0)` 으로 1개씩만 꺼내므로, 이 구동
-    /// 함수는 owning-engine 순회 패턴처럼 **첫 매치에서 멈추면 안 되고** parked
-    /// 전부를 독립적으로 서비스해야 한다.
+    // 여러 parked engine의 구독이 각각 처리되는지 검사한다.
     #[test]
     fn multiple_parked_engines_are_each_serviced_independently() {
         let stream_hub = StreamHub::new();
 
         let mut parked: Vec<(CoreState, u32)> =
             vec![make_parked_engine(101), make_parked_engine(202)];
-        // 등록된 plugin 은 없다(dirty-driven set_context/create 호출이 해당
-        // plugin_id 를 찾지 못해 조용히 no-op 되는 경로만 검증) — `with_registries`
-        // 는 실제 plugin process 없이도 안전하게 만들 수 있는 유일한 공개 생성자다
-        // (`PluginManager::new` 는 tasty-host-plugin crate 내부 전용 `#[cfg(test)]`).
+        // 플러그인 프로세스는 실행하지 않으며 구독 상태가 처리되는지만 검사한다.
         let mgr = PluginManager::with_registries(
             Arc::new(NoopWakerFactory),
             parked[0].0.file_format.clone(),
             parked[0].0.file_handler.clone(),
         );
 
-        // App::about_to_wait 의 parked 순회 스텝과 동일한 shape.
         for (engine, _sid) in parked.iter_mut() {
             forward_mesh_frames_for_engine(engine, &mgr, &stream_hub);
         }
 
         for (engine, sid) in parked.iter_mut() {
-            // 수정 전에는 이 구동 함수 자체가 parked engine 을 전혀 호출하지 않아
-            // dirty/need_full_textures 가 계속 true 로 남는다(= "구독은 되지만
-            // frame 이 갱신되지 않는" 버그 증상) — 수정 후에는 두 engine 모두
-            // 방문돼 소비돼 있어야 한다.
             assert!(
                 !engine.mesh_mirror.take_dirty(*sid),
                 "parked engine's mesh mirror subscription should have been driven"
@@ -286,8 +219,6 @@ mod tests {
                 !engine.mesh_mirror.take_need_full_textures(*sid),
                 "parked engine's need_full_textures should have been consumed"
             );
-            // 방어적 정리(`is_hard_occupied` 체크)가 살아있는 구독을 잘못 지우지
-            // 않아야 한다.
             assert!(engine.attach.is_hard_occupied(*sid));
         }
     }
