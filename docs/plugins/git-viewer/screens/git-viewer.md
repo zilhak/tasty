@@ -5,7 +5,7 @@
 
 도구 메뉴/IPC 로 뜨는 git status/log/diff 읽기 전용 popup. **egui-mesh** 로 그린다 — plugin 이
 자기 프로세스 egui Context 에서 콘텐츠를 직접 페인트하고, host 는 셸(scrim/border/Esc/outside-click)만
-소유한다(ADR-0028 / B3). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
+소유한다(ADR-0028). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
 동일 `Theme` 으로 재구성된다.
 
 ## 트리거
@@ -25,7 +25,7 @@
 
 - **worktree rail** — main + 모든 linked worktree 를 2줄 행으로. line1 = 이름(mono) + 타입 pill
   (`main`=sky / `linked`=neutral), line2 = short oid(sky) + 상태 pill(`current`/`locked`/`invalid`, dot).
-  선택 행 = `surface-active` + 좌측 2px inset accent bar. 선택 시 우측이 그 worktree 기준으로 rebind.
+  선택 행 = `surface-active` + 좌측 2px inset accent bar. 선택 시 우측 내용을 그 worktree 기준으로 갱신.
   invalid 행은 흐림 + 전환 불가.
 - **Changes** — 변경된 파일 목록. 고정폭 상태 pill(`M/A/D/R/?/U`) + 경로(dir `text-muted` / file
   `text-primary`). 행 선택 시 하단 pane 이 diff 로 교체(선택 행에 inset bar).
@@ -107,7 +107,7 @@ popup을 닫으면 핸들을 해제한다. 다중 thread dispatch나 저장소 �
 
 `crates/tasty-gallery/src/catalog/components/git_viewer.rs` — Overlays › `Git worktree viewer
 popup`. context strip · 섹션 strip · 2줄 worktree 행 · Changes · Commits · diff well 을 토큰·구조
-정합으로 전사(픽셀 동일성 비목표 — ADR-0035 완전성). 3자 매핑:
+정합으로 전사(픽셀 동일성 비목표 — ADR-0035 완전성). 디자인·갤러리·제품 구현의 대응표:
 [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#git-viewer-plugins).
 
 ## 시각 소스

@@ -67,7 +67,7 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 
 ### 디자인 토큰 매핑
 
-시각 수치·토큰의 단일 출처는 `design-system/` 이다 — [시각 소스](#시각-소스).
+페이지 콘텐츠는 해당 페이지의 스타일을 따른다. Tasty가 그리는 로딩·오류·빈 상태에는 공용 Theme 토큰을 사용한다.
 
 ### 갤러리 specimen
 

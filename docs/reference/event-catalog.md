@@ -1,6 +1,8 @@
 # Event Bus 1.0 카탈로그
 
-호스트와 plugin 이 공유하는 사건의 wire 계약. **plugin 이 의존하는 공개 API** 이자 호환성 정책의 단일 출처(SoT). plugin 이 구독·발화 API 를 *어떻게* 쓰는지는 [concepts/plugins](../concepts/plugins.md) · dev-guide; 여기는 사건의 *구조* 만 다룬다. 페이로드 Rust 타입은 `tasty_plugin_protocol::events::payloads` 가 정답이며, 본 표는 사람이 읽기 위한 요약이다.
+호스트와 plugin이 주고받는 이벤트의 공개 형식과 호환성 규칙이다. 구독·발행 방법은
+[plugins 개념](../concepts/plugins.md)을 참고한다. 이 문서는 구조를 요약하며,
+정확한 payload는 `tasty_plugin_protocol::events::payloads`의 Rust 타입을 기준으로 한다.
 
 ## Envelope
 
@@ -16,7 +18,7 @@
 |------|------|
 | `key` | `<namespace>.<event_name>`. 예약 네임스페이스는 호스트만 publish |
 | `payload` | 이벤트별(아래 카탈로그) |
-| `meta.trace_id` | chain 전체 공유 opaque id. 호스트 발화 시 생성. 재발화에서 전파되는 것은 plugin 이 받은 값을 실어 보낼 때다 — 호스트는 이 값을 고치지 않는다 |
+| `meta.trace_id` | chain 전체 공유 opaque id. 호스트가 이벤트를 만들 때 생성. 재발행에서 이어지는 것은 plugin 이 받은 값을 실어 보낼 때다 — 호스트는 이 값을 고치지 않는다 |
 | `meta.hop` | host는 0. plugin publish는 미응답 dispatch의 최대 hop+1과 보낸 값 중 큰 값을 사용하며 16 초과는 거절한다. 아래 재발행 규칙 참조 |
 | `meta.origin` | `{kind:host}` 또는 `{kind:plugin, plugin_id}` |
 | `meta.scope` | `system`(전역) 또는 `surface`(대상 id 는 payload 필드로) |
@@ -72,7 +74,9 @@ epoch 없이 새 세대의 끝이 이미 옛 offset을 넘었다면 재시작을
 같은 세대에서 손으로 미래 offset을 지정해도 초기화 후 과거 사건이 다시 나올 수 있다.
 consumer가 cursor와 중복 처리를 책임진다. feed로 사용자 key·mouse 원문이나 화면 복원을 구현하지 않는다.
 
-## 예약 네임스페이스 (호스트만 발화)
+<a id="예약-네임스페이스-호스트만-발화"></a>
+
+## 예약 네임스페이스 (호스트만 발행)
 
 ```
 system, surface, tab, pane, workspace, window, command, ime, split,
@@ -147,7 +151,9 @@ agent
 | `extension.conflict` | `extension_id, target_id, conflicting_id` |
 | `tool.invoked` | `tool_id, source(builtin/plugin)` |
 
-### Command (Option D — plugin 은 단축키를 보지 않음)
+<a id="command-option-d--plugin-은-단축키를-보지-않음"></a>
+
+### Command — plugin은 실행할 명령을 받는다
 | 키 | 전달 | payload |
 |----|------|---------|
 | `command.invoked` | **owner unicast**(broadcast 아님) | `plugin_id, command_id, scope, source_surface_id?, trigger(shortcut/menu/ipc)` |
@@ -156,21 +162,21 @@ agent
 scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 허용.
 
 ### Memory (scope=system, Stable)
-`memory.changed`: regular entry 의 put/delete/expire/cleanup 직후 — `scope, key, kind∈{created,updated,deleted,expired}, version?`. **secret 영역은 발화 안 함**(owner/key 노출 방지). 1 변경 = 1 envelope. 구독 권한 `memory.read`.
+`memory.changed`: regular entry 의 put/delete/expire/cleanup 직후 — `scope, key, kind∈{created,updated,deleted,expired}, version?`. **secret 영역은 발행하지 않음**(owner/key 노출 방지). 1 변경 = 1 envelope. 구독 권한 `memory.read`.
 
 ### Agent (scope=system, Experimental)
 
-협업 primitive 의 **종결 사실**만 싣는다. 대상 workspace 는 `meta.scope` 가 아니라 payload 의 `workspace_id` 로 온다 — envelope 의 scope 축은 `system`/`surface` 둘뿐이고 `workspace.*` 계열이 이미 같은 방식이다.
+협업 기능의 **종결 사실**만 싣는다. 대상 workspace 는 `meta.scope` 가 아니라 payload 의 `workspace_id` 로 온다 — envelope 의 scope 축은 `system`/`surface` 둘뿐이고 `workspace.*` 계열이 이미 같은 방식이다.
 
 | 키 | 시점 | payload | 등급 |
 |----|------|---------|------|
 | `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state` | Experimental |
 | `agent.barrier_closed` | barrier 가 요구 수를 채워 닫힌 직후 | `workspace_id, name, count_required` | Experimental |
 
-- `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발화하지 않는다** — 종결에는 모든 진입 경로가 지나는 공통 처리 지점이 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다.
+- `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발행하지 않는다** — 종결에는 모든 진입 경로가 지나는 공통 처리 지점이 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다.
 - **실패 사유·task 결과·명령 출력을 안 싣는다.** 그 문자열은 task 가 돌린 명령의 출력을 담을 수 있고 피드는 구독 권한만 있으면 받는다. 필요하면 `task_id` 로 `agent.task_get` 을 부른다.
 - **`agent.barrier_closed` 에 시간 초과는 안 온다.** barrier 의 `timed_out` 은 전이가 일어나는 순간이 없고 조회할 때 현재 시각으로 판단한다.
-- **lease 만료는 사건이 아니다.** 같은 이유다 — 만료는 읽을 때 확인하는 조건이고, 그것을 사건으로 내면 발화 시점이 "누가 언제 조회했나" 에 달린다.
+- **lease 만료는 사건이 아니다.** 같은 이유다 — 만료는 읽을 때 확인하는 조건이고, 그것을 사건으로 내면 발생 시점이 "누가 언제 조회했나" 에 달린다.
 - 등급이 Experimental 이라 minor 에서 키·payload 가 바뀔 수 있다. 구독 조건은 다른 키와 같다 — 매니페스트 `event_subscribe` 가 그 키를 덮으면 받는다.
 
 ### IME / Theme / Language / Notification / Hook / System
@@ -180,15 +186,17 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 | `theme.changed` | system | Stable | `theme_id` |
 | `language.changed` | system | Stable | `language_code` |
 | `notification.created` | system | Stable | `id, title, body, source` |
-| `notification.dismissed` | system | **Planned**(예약, 미발화) | `id` |
+| `notification.dismissed` | system | **Planned**(예약, 아직 발행하지 않음) | `id` |
 | `hook.fired` | surface/system | Experimental | `hook_id, event_kind, surface_id?, payload` |
 | `system.startup_complete` | system | Stable | `{}` |
 | `system.shutdown_initiated` | system | Stable | `reason` |
 | `debug.*` | system | Internal | (가변, debug 빌드만) |
 
-> `composition_update`·`process.output_match`·`settings.changed` 는 1.0 제외. 알림 *read* 처리는 host event 미발화(표시 상태일 뿐).
+> `composition_update`·`process.output_match`·`settings.changed` 는 1.0 제외. 알림 읽음 처리는 표시 상태만 바꾸며 host 이벤트를 발행하지 않는다.
 
-## 구독·발화 권한 패턴
+<a id="구독발화-권한-패턴"></a>
+
+## 구독·발행 권한 패턴
 
 매니페스트 `event_subscribe` / `event_publish` 가 권한 게이트다.
 

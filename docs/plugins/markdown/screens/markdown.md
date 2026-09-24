@@ -1,7 +1,7 @@
 # Markdown surface 화면
 
 - **부모 기획**: [../index.md](../index.md)
-- **시각 소스**: plugin 이 생성한 sanitize HTML 문서 — host native OS WebView 가 렌더. `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
+- **시각 소스**: plugin 이 생성한 sanitize HTML 문서 — host native OS WebView 가 렌더. 마크다운 surface의 전용 vendor 시안은 현재 없다.
 
 [작업 영역](../../../features/work-area/index.md#화면) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 `pulldown-cmark`+`ammonia` 로 만든 HTML 문서를 host 의 native OS WebView overlay(WebKitGTK/WKWebView/WebView2)에 올려 렌더한다(webview, [ADR-0029](../../../adr/0029-webview-host-integration.md)) — host 는 문서의 픽셀에 관여하지 않는다.
 
@@ -32,17 +32,16 @@
 블록이 하나도 없으면 이 스크립트는 아예 삽입되지 않는다(수 MB 번들이라 불필요한 문서에 매번
 인라인하는 낭비를 피함). 테마는 `Theme.is_light` 에 따라 mermaid 내장 `default`/`dark` 팔레트로
 매핑되며, 테마 전환 시 문서 전체가 재생성되므로(`reload_all_webviews`) 별도 런타임 재테마
-로직 없이 자동 반영된다. 문법이 깨진 다이어그램은 그 블록만 원본 코드 텍스트로 남고, 나머지
-콘텐츠 렌더에는 영향을 주지 않는다.
+로직 없이 자동 반영된다. 초기화·렌더 실패는 console error로 기록한다. 실패한 다이어그램이 언제나 원본 코드로 복원된다고 보장하지 않는다.
 
 ## 수식(Math/LaTeX) 렌더링
 
 인라인 `$...$`/블록 `$$...$$` 수식은 `pulldown-cmark`의 `Options::ENABLE_MATH`
 (`parser_options()`)가 켜져 있으면 각각 `<span class="math math-inline">`/`<span
-class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 파싱된다 — **이 shape은
+class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 파싱된다 — **이 구조는
 라이브러리 기본 동작 그대로**다(GFM alert/footnote처럼 Rust 쪽에서 별도 AST 이벤트 rewrite를
-할 필요가 없었다). 실제 수식 렌더링은 mermaid와 동일한 클래스의 작업(클라이언트사이드 JS
-라이브러리, 조건부 트러스트 스크립트 삽입)으로
+할 필요가 없다). 실제 수식 렌더링은 mermaid와 동일한 클래스의 작업(브라우저 JS
+라이브러리, 필요한 문서에만 신뢰된 스크립트 삽입)으로
 [KaTeX](https://katex.org)(MIT, 오프라인 vendor —
 `crates/tasty-plugin-markdown/assets/katex.min.{js,css}` + `assets/fonts/KaTeX_*.woff2` +
 `NOTICE.md`)가 수행한다. 문서에 math span이 하나도 없으면 이 스크립트(JS+CSS+폰트 합쳐 약
@@ -59,7 +58,7 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
 - **폰트 오프라인 포함 — data URI**: 이 plugin의 다른 모든 vendored 자산(mermaid.js/highlight.js,
   그리고 렌더된 문서 자체)은 host WebView에 넘기는 단일 HTML 문자열 안에 완전히
   self-contained되어 있다 — 런타임에 상대 폰트 URL이 참조할 수 있는 "plugin assets 디렉토리"가
-  디스크에 따로 존재하지 않는다(`include_str!`/`include_bytes!`가 바이너리에 굽고, 아무것도
+  디스크에 따로 존재하지 않는다(`include_str!`/`include_bytes!`가 바이너리에 포함하며, 아무것도
   디스크에 다시 써지지 않는다). 문서에는 `<base href>`가 아예 없어서(문서 안 앵커가 다른
   URL로 풀리기 때문 — [ADR-0030](../../../adr/0030-bundled-plugin-data.md))
   상대 폰트 URL을 풀어 줄 기준 자체가 없다. 그래서
@@ -69,10 +68,6 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
   의존성 불필요, 폰트 20개 basename이 컴파일타임에 고정). `woff`/`ttf` 형제 파일은 vendor하지
   않았다 — 이 웹뷰가 임베드하는 엔진(WebKitGTK/WKWebView/WebView2)은 전부 evergreen이라
   레거시 브라우저 폴백이 불필요하다.
-- **바이너리 크기 실측**: vendored 원본 자산은 KaTeX JS 272KB + CSS 24.7KB + woff2 폰트 20개
-  합계 약 254KB(base64 인코딩은 렌더 시점 런타임에 1회 계산 — `OnceLock` 메모, 바이너리 자체엔
-  raw 폰트 bytes만 들어간다). release 바이너리 크기를 같은 커밋 직전(KaTeX 미포함) 대비 직접
-  비교 측정한 결과 **9.69MB → 10.26MB(+576KB)**.
 - **보안**: `throwOnError: false`(파싱 실패 시 예외 대신 원본 TeX을 에러색으로 렌더 —
   크래시·빈 화면 없음, 실패 전 span의 원본 escaped 텍스트도 손대지 않으므로 최악의 경우도
   "원본 텍스트 그대로")와 `trust: false`(`\includegraphics`/`\href`/`\url` 등 LaTeX 매크로를
@@ -94,26 +89,19 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
   걸리는 것을 막는다(코드블록 복사 버튼/이미지 실패 UI와 동일한 idempotency 관례) — 재로드는
   항상 문서 전체를 새로 만들므로 구조적으로 필요하진 않지만 방어적으로 넣었다.
 
-**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1)**: 인라인 수식 1개
-(`$E=mc^2$`), 블록 수식 1개(`$$\sum_{i=1}^n i$$`), 의도적으로 깨진 수식 1개(`$\frac{1}$` —
-`\frac`의 두 번째 인자 누락)를 포함한 실제 `render_document()` 출력을
-`WebKit2.WebView.load_html`로 로드해 DOM을 직접 확인했다 — 정상 수식 2개는 실제 KaTeX MathML
-구조(`<math xmlns="http://www.w3.org/1998/Math/MathML">...`)로 렌더됐고, 블록 수식은
-`.katex-display`로 감싸졌으며, 깨진 수식은 크래시·빈 화면 없이 `.katex-error` 요소로
-치환되고 그 텍스트가 원본 TeX 소스(`\frac{1}`)와 정확히 일치함을 확인했다. macOS/Windows는 이
-머신에서 실행 불가 — 코드 리뷰로 KaTeX 자체가 표준 브라우저 API만 쓴다는 점만 확인했다(실기
-미검증, KaTeX는 플랫폼별 분기가 없는 순수 JS 라이브러리라 엔진 차이로 인한 리스크는 낮다고
-판단).
+**검증 범위**: Linux/WebKitGTK에서 정상 인라인·블록 수식의 MathML 생성과 깨진 수식의
+`.katex-error` 표시를 확인한 이력이 있다. 오류 표시의 텍스트는 원본 TeX와 같았다.
+macOS·Windows에서 실제 실행한 결과는 없다.
 
 ## 코드블록 syntax highlighting
 
 펜스드 코드블록(` ```rust ` 등)은 `sanitize_fence_lang` 이 언어 토큰을 `[A-Za-z0-9_+-]` 로 정규화한
-`code.language-<lang>` class 를 그대로 유지한 채 렌더되고, 실제 토큰 강조는 **클라이언트사이드**로
+`code.language-<lang>` class 를 그대로 유지한 채 렌더되고, 실제 토큰 강조는 **브라우저**에서
 [highlight.js](https://highlightjs.org)(BSD-3-Clause, 오프라인 vendor —
 `crates/tasty-plugin-markdown/assets/highlight.min.js` + `NOTICE.md`, 36개 언어를 포함하는
-"common" 번들)가 수행한다. 서버사이드(syntect 등) 대신 클라이언트사이드를 택한 이유는
+"common" 번들)가 수행한다. 서버(syntect 등) 대신 브라우저를 택한 이유는
 `sanitize_html`(`render.rs`)의 태그/속성 화이트리스트를 건드릴 필요가 없고, mermaid 가 이미
-증명한 "트러스트 wrapper 에 조건부 스크립트 삽입" 패턴을 그대로 재사용할 수 있기 때문이다.
+증명한 "신뢰된 wrapper 에 조건부 스크립트 삽입" 패턴을 그대로 재사용할 수 있기 때문이다.
 
 - **조건부 삽입**: 문서에 펜스드 코드블록이 하나도 없으면 highlight.js 스크립트 자체가 삽입되지
   않는다(mermaid 와 동일한 절약 패턴 — `render_document`).
@@ -169,16 +157,10 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
   경로 자체가 없다. attach 루프도 방어적으로 `pre.querySelector('.tasty-copy-btn')` 로 같은
   `<pre>` 안에 이미 버튼이 있으면 건너뛴다.
 
-**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, `webkit2gtk` crate 가 감싸는 것과 동일한
-libwebkit2gtk-4.1 엔진)**: `render_document` 가 실제로 만든 문서(펜스드 rust 코드블록 포함)를
-`WebKit2.WebView.load_html` 로 그대로 로드한 뒤, 실제 vendor 된 highlight.js 실행 완료 후
-`code.textContent` 를 읽어 원본 소스와 정확히 일치함(하이라이팅으로 인한 변형 없음, `hljs-*`
-span 부착은 확인됨)을 확인했고, 복사 버튼 클릭을 디스패치해 `navigator.clipboard.writeText()` 가
-성공(`data-state` 가 `copied` 로 전이)해 시스템 클립보드에 원본 코드 텍스트가 그대로 들어감을
-GTK 클립보드 readback 으로 직접 확인했다 — 이 백엔드에서는 primary path 가 곧바로 성공해
-`execCommand('copy')` 폴백은 실제로 타지 않았다. macOS(WKWebView)/Windows(WebView2) 는 이
-머신에서 실행이 불가능해 **코드 리뷰로 표준 비동기 Clipboard API 구현 여부만 확인**했다(실기
-미검증).
+**검증 범위**: Linux/WebKitGTK에서 highlight.js 적용 전후의 `code.textContent`가
+원문과 같고, 복사 버튼이 시스템 클립보드에 같은 텍스트를 쓰는 것을 확인한 이력이 있다.
+이때 `navigator.clipboard.writeText()`가 성공해 `execCommand('copy')` 폴백은 실행하지 않았다.
+macOS·Windows의 실제 실행 결과는 확인되지 않았다.
 
 ## Frontmatter 숨김
 
@@ -204,8 +186,7 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
 제목)이 `render.rs::rewrite_callout_events`/`rewrite_callout_buffer` 하나의 통합 경로로
 처리된다 — 두 문법이 서로 다른 함수로 나뉘어 있지 않다. `pulldown-cmark`의
 `Options::ENABLE_GFM`은 문서 전체에 한 번만 적용되는 파서 옵션이라 GFM 5종만 켜고 Obsidian
-확장만 끄는 식으로 나눌 수 없기 때문에 이렇게 설계했다(전신이었던 GFM 전용
-`rewrite_alert_blockquote_event`를 이 통합 함수가 대체).
+확장만 끄는 식으로 나눌 수 없기 때문에 이렇게 설계했다.
 
 ### 지원 타입
 
@@ -217,12 +198,12 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
   abstract, `hint`→tip, `check`/`done`→success, `help`/`faq`→question, `fail`/`missing`→failure,
   `error`→danger, `cite`→quote.
 - **의도적으로 제외한 별칭**: Obsidian 문서는 `important`/`caution`/`attention`을 각각
-  tip/warning/warning 의 별칭으로 정의하지만, 이 세 키워드는 이미 GFM 5종 고유 타입(각자
-  다른 아이콘·색)으로 존재한다 — "GFM 5종 기존 유지"가 우선이라 이 3개는 별칭 테이블에 넣지
+  tip/warning/warning 의 별칭으로 정의하지만, `important`와 `caution`은 이미 GFM 고유 타입으로 각각
+  다른 아이콘·색을 사용한다 — "GFM 5종 기존 유지"가 우선이라 이 3개는 별칭 테이블에 넣지
   않았다. `[!important]`/`[!caution]`은 항상 기존 GFM 엔트리로 해석되고, `[!attention]`은
   아무 타입에도 매칭되지 않아 일반 blockquote 로 남는다.
 - 목록에 없는 `[!아무거나]`는 콜아웃으로 인식되지 않고 대괄호 텍스트 그대로 일반 blockquote
-  본문에 남는다(공식 문서에 없는 타입은 만들어내지 않는다는 스코프 결정).
+  본문에 남는다(공식 문서에 없는 타입은 만들어내지 않는다는 지원 범위).
 
 ### 문법
 
@@ -231,7 +212,7 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
 
 - `> [!type]` — 마커/제목 없음. 기본 타입 라벨(번역됨)로 렌더.
 - `> [!type] 제목` — 마커 없이 커스텀 제목만. **접기 UI 자체가 없다**(`<details>`를 아예 쓰지
-  않는다 — GFM alert 와 동일한 `<blockquote>` shape, `data-label` 속성만 제목으로 바뀐다).
+  않는다 — GFM alert 와 동일한 `<blockquote>` 구조, `data-label` 속성만 제목으로 바뀐다).
 - `> [!type]+ 제목`(제목 생략 가능) — `<details open><summary>...` 로 렌더, 초기 펼침.
 - `> [!type]- 제목`(제목 생략 가능) — `<details><summary>...`(`open` 없음), 초기 접힘.
 
@@ -240,16 +221,14 @@ GFM 5종을 마커/제목 없이 bare 로 쓴 `> [!NOTE]`는 `pulldown-cmark` �
 scan_blockquote_tag` — 태그 뒤에 공백 외 다른 내용이 있으면 이 인식 자체가 실패해 일반
 blockquote 로 폴백). 이 경우를 포함한 모든 콜아웃 인식·렌더가
 `rewrite_callout_buffer`에서 한 곳에 모여 처리된다. **결과적으로 GFM 5종에 마커/제목이
-붙은 문법(`[!note]+ 제목`처럼)도 Obsidian 문법으로 자연히 인식된다** — 이는 Obsidian 지원을
-추가하며 생긴 의도된 동작 변경이다(과거에는 태그 뒤에 무엇이든 붙으면 그냥 일반 텍스트로
-남았다).
+붙은 문법(`[!note]+ 제목`처럼)도 Obsidian 문법으로 자연히 인식된다**.
 
 헤더 레이블(기본 타입 라벨 또는 커스텀 제목)은 `render.rs::CALLOUT_KINDS`가 plugin 자신의
 `Translator`로 UI 언어에 맞게 조회한다(`markdown.alert.<type>`, `lang/{en,ko,ja}.toml`) —
-마커 없는 shape 은 CSS 가 언어를 분기할 수 없으므로 `data-label` 속성 + `content:
-attr(data-label)`로 반영하고, `<details>` shape 은 `<summary>` 안의 실제 텍스트 노드로
+마커 없는 구조는 CSS 가 언어를 분기할 수 없으므로 `data-label` 속성 + `content:
+attr(data-label)`로 반영하고, `<details>` 구조는 `<summary>` 안의 실제 텍스트 노드로
 반영한다(어느 쪽이든 커스텀 제목이 있으면 그 텍스트가 기본 라벨을 대체). 아이콘은
-`tasty-icons`의 canonical 글리프를 각 kind 의 accent 색으로 구운 SVG data URI 로
+`tasty-icons`의 canonical 글리프를 각 kind 의 accent 색으로 만든 SVG data URI 로
 `background-image` 에 심는다(`render.rs::alert_icon_data_uri`, 15개 타입이 7개 기존
 semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/
 `accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
@@ -271,7 +250,7 @@ blockquote 콘텐츠만 신뢰하는 방식이기 때문).
 
 ### sanitize
 
-`<details>`/`<summary>` 태그가 `sanitize_html` 화이트리스트에 추가됐다 — `details` 는
+`<details>`/`<summary>` 태그가 `sanitize_html` 허용 목록에 있다 — `details` 는
 `class`+`open`, `summary` 는 별도 속성 없음(제목이 실제 텍스트 노드로 들어가 별도
 attribute 가 필요 없다).
 
@@ -281,7 +260,7 @@ attribute 가 필요 없다).
 클릭 가능한 링크로 변환된다. `pulldown-cmark` 0.12.2 는 CommonMark 코어의 꺾쇠 autolink 만 지원하고
 GFM 의 확장 autolink(스킴 없는 bare URL 인식 포함)는 구현하지 않으므로(`Options::ENABLE_GFM` 는 alert
 blockquote 태그만 켠다), `render.rs::autolink_bare_urls`/`split_bare_urls` 가 이벤트 스트림에서 직접
-스캔해 `Tag::Link` 로 쪼갠다. **이번 스코프는 `http(s)://` 스킴만이다** — `www.`-prefix(스킴 없는
+스캔해 `Tag::Link` 로 쪼갠다. **지원하는 스킴은 `http(s)://`뿐이다** — `www.`-prefix(스킴 없는
 호스트)나 이메일 자동링크는 제외(필요성이 확인되면 따로 다룬다).
 
 이 pass 는 상태를 가진 스캔이다(단순 무상태 `map()` 이 아님) — 다음을 명시적으로 제외한다:
@@ -292,8 +271,7 @@ blockquote 태그만 켠다), `render.rs::autolink_bare_urls`/`split_bare_urls` 
 - 인라인 코드는 별도 추적이 필요 없다 — pulldown-cmark 는 인라인 코드 내용을 애초에 `Event::Text`
   가 아니라 별개의 `Event::Code` variant 로 표현하므로 구조적으로 이미 제외된다.
 
-실측 확인 결과, 하나의 시각적 URL 이 여러 `Event::Text` 조각으로 쪼개져 들어오는 경우가 실제로
-있다 — URL 안에서 진짜 강조(emphasis)로 짝이 맞지 않는 `*`/`_` 하나가 단독 1글자 `Event::Text` 로
+하나의 URL이 여러 `Event::Text` 조각으로 나뉠 수 있다 — URL 안에서 진짜 강조(emphasis)로 짝이 맞지 않는 `*`/`_` 하나가 단독 1글자 `Event::Text` 로
 따로 토큰화된다(예: `.../foo*bar` → `Text("...foo")` + `Text("*")` + `Text("bar...")`). 그래서 이
 pass 는 실제 마크업(다른 태그 시작/`SoftBreak` 등)이 끼어들기 전까지 연속된 `Event::Text` 를 하나의
 버퍼로 병합한 뒤 그 위에서 URL 을 스캔한다 — 진짜 마크업 경계는 절대 이어붙이지 않는다.
@@ -361,7 +339,7 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
 - **Vault 전체 재귀 검색** — 같은 디렉토리 밖은 전혀 뒤지지 않는다.
 - **대소문자 무시 매칭 / alias** — 정확히 같은 파일명만 인식한다.
 - **`[[문서명#섹션]]`(heading-anchor 조합)** — heading id 자동생성으로 기술적으로는 쉽게
-  구현 가능하지만, 이번 스코프에서 의도적으로 제외했다.
+  구현 가능하지만, 현재 지원하지 않는다.
 - **`![[문서명]]`(embed 문법)** — 구현하지 않는다.
 
 ## 각주 backlink · 접근성
@@ -371,7 +349,7 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
 `aria-label` 은 전혀 생성하지 않는다. `render.rs::rewrite_footnote_event` 가 실제
 `Event::FootnoteReference`/`Tag::FootnoteDefinition` AST 이벤트를 가로채(콜아웃의
 `rewrite_callout_events` 와 동일한 패턴 — 완성된 HTML 문자열이 아니라 파서 이벤트 자체를
-매칭해야, raw HTML 로 위장한 가짜 각주 마크업과 절대 혼동되지 않는다) 다음을 직접 심는다:
+매칭해 raw HTML로 쓴 각주 모양의 마크업과 구분한다) 다음을 직접 심는다:
 
 - **참조 지점 고유 id** — `fnref-<safe-name>`(첫 참조), 같은 각주가 여러 번 참조되면
   `fnref-<safe-name>-2`, `-3`... 순으로 순번이 붙는다. 참조 `<a>` 는 `#fndef-<safe-name>`(정의)로
@@ -387,7 +365,7 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
   `markdown.footnote.backlink_aria_nth`("각주 N의 M번째 참조로 돌아가기")로 어느 참조인지 구분한다.
   `lang/{en,ko,ja}.toml` 세 파일에 키가 있다. `sanitize_html` 은 `a` 태그에 한해 `aria-label` 을
   허용한다(모든 태그가 아니라 실제 필요한 `a` 로 범위를 좁힘).
-- **id 안전화** — 각주 이름의 공백/유니코드는 HTML id 로 그대로 쓸 수 없어
+- **id 안전화** — 각주 이름의 공백을 피하고 유니코드를 일관되게 표현하도록
   `percent_encode_fragment`(nav-fragment/아이콘 data URI 와 동일한 헬퍼)로 인코딩한다 — 충돌 없는
   단사 함수라 서로 다른 이름이 같은 id 로 뭉개지지 않는다.
 - **미정의 참조**(`[^missing]` 인데 매칭되는 정의가 없음)는 `pulldown-cmark` 파서 자체가
@@ -407,7 +385,7 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
 를 훑으므로 heading 순서가 항상 일치) 각 heading 이벤트의 `id` 필드에 순서대로 대입한다 —
 pulldown-cmark 의 HTML writer 는 `Tag::Heading::id` 가 있으면 옵션과 무관하게 항상 출력하므로
 `ENABLE_HEADING_ATTRIBUTES` 를 켤 필요가 없다. `sanitize_html` 의 `generic_attributes(["id"])`
-가 이미 모든 허용 태그에 `id` 를 허용하므로 sanitizer 변경도 불필요했다.
+가 이미 모든 허용 태그에 `id` 를 허용하므로 별도 sanitizer 변경은 필요 없다.
 
 heading 이 하나 이상 있으면 문서 최상단(주소창 바로 아래, 본문 위)에 접을 수 있는 `<nav id="tasty-toc">`
 목차가 삽입된다(`render.rs::toc_nav_html`) — sticky 사이드 패널이 아니라 인라인 삽입이다(레이아웃
@@ -420,54 +398,30 @@ CSS/스크롤 동기화 복잡도를 늘리지 않기 위한 설계 결정). 각
 을 어떻게 다루든 결과가 같다. `#tasty-nav:` 로 시작하는 href 는 이 리스너가 건드리지 않는다 — 그쪽은
 host 신호 채널이라 `decide-policy` 까지 가야 한다. 문서에 `<base href>` 가 없는 것도 같은 이유다
 ([ADR-0030](../../../adr/0030-bundled-plugin-data.md)). 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
-CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(트러스트 스크립트, 사용자
+CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(신뢰된 스크립트, 사용자
 콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
 토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
 패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 는 `position:sticky` 이고 **문서 어느 위치에서도 상단에 붙어 있다.**
 그 바의 높이는 `--md-addr-bar-h` 한 자리에만 적혀 있고 아래 세 소비처가 그 이름을 읽는다.
-sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상자 — 이 문서 길이만큼 자라야 하므로
-`html` 만 `height:100%` 을 갖고 `body` 는 `min-height:100%` 을 갖는다. 둘을 함께 `height:100%` 로
-두면 `body` 상자가 뷰포트 높이에 고정돼 바가 한 뷰포트 뒤부터 밀려 올라간다(그 상태의 실측
-2026-09-20, 뷰포트 813 · 문서 높이 10399: `body` 높이가 813 에 묶이고 스크롤 끝에서
-`rect.top` −8813). 같은 문서를 같은 엔진에서 고친 뒤 재면 `body` 높이가 10399 로 문서를 따라가고
-스크롤 끝에서 `rect.top` 0 이다 — 짧은 문서에서 배경이 뷰포트를 채우는 성질(`body` 높이 813)은
-`min-height` 가 그대로 유지한다. `html` 쪽이 `height` 로 남는 것도 이유가 있다: 백분율
-`min-height` 는 부모의 높이에 대해 풀리므로 부모가 auto 면 무너진다.
+주소창을 문서 끝까지 고정하려면 `html`에는 `height:100%`, `body`에는 `min-height:100%`를
+사용한다. `body`를 고정 높이로 제한하면 긴 문서에서 주소창의 고정 범위가 한 화면에 그친다.
+반대로 `html` 높이가 확정되지 않으면 짧은 문서의 `body`가 화면 높이를 채우지 못할 수 있다.
 
-**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1 2.50.4)**: `render_document`
-가 실제로 만든 문서를 `WebKit2.WebView` 에 `file://` 로 올려 세 조합을 각각 다시 쟀다 — 뷰포트
-800, 긴 문서 `scrollHeight` 15135. 지금 규칙(`html` 이 `height` · `body` 가 `min-height`)에서는
-문서 끝(`scrollY` 14335)에서 바의 `rect.top` 이 **0** 이고 `body` 상자가 15134.6 으로 문서를
-따라간다. `body` 를 `height:100%` 로 되돌리면 같은 자리에서 `body` 상자가 **800** 에 묶이고 바의
-`rect.top` 이 **−13575** — 화면 밖이다. `html` 만 `min-height` 로 바꾸면 긴 문서의 바는 여전히 0
-이지만 짧은 문서의 `body` 상자가 800 에서 **392.6** 으로 무너진다. 두 선언이 서로 다른 것을
-지탱한다는 뜻이고, 그래서 한쪽만 보고 둘을 같은 값으로 맞추면 안 된다.
-macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — **이 축은 실기 미검증이다.**
-엔진마다 sticky 의 containing block 해석이 같은지는 재지 않았고, 추정으로 채우지 않는다.
+Linux/WebKitGTK에서 긴 문서 끝의 주소창 `rect.top`이 0이고 짧은 문서 배경이 화면을
+채우는 것을 확인한 이력이 있다. macOS·Windows의 실제 레이아웃 결과는 확인되지 않았다.
 
-**그 단언을 레포 안에서 다시 재는 것은 없다.** 위 값은 손으로 한 번 잰 것이고, 그 뒤로
-자동으로 도는 자리가 없다. 지키는 쪽은 `render.rs` 의 시험 둘이며 **생성된 CSS 바이트만** 본다 —
-`stylesheet_lets_body_grow_while_html_stays_definite` 가 `html{height:100%` 와 `body{min-height:100%`
-가 산출물에 있고 옛 합친 규칙으로 안 돌아갔는지를, `bar_height_is_declared_once_and_read_by_four_rules`
-가 `--md-addr-bar-h` 선언 하나와 읽기 넷을 고정한다. 그래서 **누가 그 줄을 되돌리는 것**은
-잡히지만 **엔진이 같은 바이트를 다르게 계산하는 것**은 안 잡힌다. 실측: `body` 를
-`height:100%` 로 되돌리고 헤드리스 조합 전량을 돌리면 그 둘 중 **앞쪽 하나만** 빨개지고, 레이아웃을
-보는 것은 한 건도 없다.
+`stylesheet_lets_body_grow_while_html_stays_definite`와
+`bar_height_is_declared_once_and_read_by_four_rules`는 생성 CSS의 선언만 검사한다.
+브라우저가 그 CSS를 어떻게 배치하는지 자동으로 확인하는 시험은 아니다.
 
-**재는 법**(자동 채널이 없으니 값 자리에 남긴다): `render_document` 산출 HTML 을 파일로 떨궈
-오프스크린 WebKitGTK 뷰에 `file://` 로 올리고, **뷰포트보다 긴** 문서에서 문서 끝까지 스크롤한 뒤
-`#tasty-addr-bar` 의 `getBoundingClientRect().top` 을 읽는다. 재는 쪽이 갖춰야 할 조건 셋은
-실측으로 갈렸다 — 문서가 뷰포트보다 **길어야** 한다(짧은 문서에서는 두 조합이 똑같이 0 을 낸다),
-`getComputedStyle(bar).position` 은 **판정에 못 쓴다**(두 조합 다 `sticky` 다), 그리고 스크롤이
-실제로 일어났는지를 `scrollTop` 으로 함께 읽어야 한다(스크롤이 막히면 바가 안 움직여 `top` 이
-0 으로 나오는데 그것은 붙어 있다는 뜻이 아니다). 디스플레이가 있어야 한다 — GTK3 에는 헤드리스
-백엔드가 없어 `DISPLAY` 없이는 초기화 자체가 실패하므로 가상 디스플레이 안에서 돌린다.
+직접 검증할 때에는 `render_document`의 HTML을 WebKitGTK에 띄우고 화면보다 긴 문서의
+끝까지 스크롤한 뒤 `#tasty-addr-bar.getBoundingClientRect().top`을 확인한다.
+`scrollTop`도 함께 읽어 실제 스크롤이 일어났는지 확인한다. 짧은 문서나
+`getComputedStyle(bar).position == 'sticky'`만으로는 이 동작을 구별할 수 없다.
+GTK3 실행에는 실제 또는 가상 디스플레이가 필요하다.
 
 모든 heading 에 `scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm))` 을 줘, 앵커
-이동한 heading 이 바 아래 가려지지 않게 한다. 바가 상시 붙어 있으므로 그 여백은 상시 제 일을
-한다 — sticky 가 한 뷰포트에서만 붙던 동안에는 바가 없는 구간에서도 여백만 남았다(같은 실측에서
-문서 중간 heading 으로 앵커 이동했을 때 heading 은 48 에 놓이는데 바의 `rect.top` 은 −4577,
-즉 화면에 없는 바를 피해 자리를 비우고 있었다. 고친 뒤 같은 이동에서 바의 `rect.top` 은 0 이다).
+이동한 heading이 주소창 아래에 가려지지 않게 한다.
 같은 값이 `.footnote-reference`/`.footnote-definition` 에도 걸린다 — 각주도 앵커 이동의
 목적지다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
 않게 — `render_document` 이 heading 목록이 비면 호출을 아예 건너뜀).
@@ -504,11 +458,11 @@ inline 컨텍스트에 중첩되는 잘못된 HTML이 되어 브라우저가 `<p
 image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이미지 문서) 이 스크립트 자체가
 삽입되지 않는다 — 코드블록 복사 버튼/mermaid/highlight.js 와 동일한 조건부 삽입 절약 패턴.
 
-- **왜 `onerror=` 인라인 핸들러가 아니라 트러스트 스크립트인가**: `sanitize_html` 은 모든 인라인
+- **왜 `onerror=` 인라인 핸들러가 아니라 신뢰된 스크립트인가**: `sanitize_html` 은 모든 인라인
   이벤트 핸들러를 무조건 제거한다(XSS 방어의 핵심 축이라 예외를 두지 않음). 대신 코드블록 복사
   버튼과 동일한 패턴 — sanitize 이후 신뢰된 plugin 코드가 렌더 시점에 `addEventListener('error',
   ...)` 를 DOM에 직접 부착한다.
-- **이미 실패가 끝난 이미지 보완**: 트러스트 스크립트가 실행되는 시점은 문서 하단이라, 리스너를
+- **이미 실패가 끝난 이미지 보완**: 신뢰된 스크립트가 실행되는 시점은 문서 하단이라, 리스너를
   붙이기 전에 이미 `error` 이벤트가 발생해버린 이미지가 있을 수 있다. 그래서 리스너 부착 직후
   각 `<img>`에 대해 `img.complete && img.naturalWidth === 0`(로드는 끝났는데 실제 픽셀이 없음 =
   실패, `![alt]()`처럼 `src` 가 아예 빈 경우도 이 조건으로 자연히 잡힌다)도 함께 검사한다.
@@ -527,20 +481,16 @@ image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이
   `data-tasty-img-checked`(리스너 중복 부착 방지)/`data-tasty-img-failed`(플레이스홀더 교체
   idempotent화, 리스너 경로와 즉시-검사 경로가 동시에 fire해도 안전) 두 데이터 속성으로
   방어한다.
-- **테마 연동**: 아이콘은 `tasty_icons::IMAGE` 글리프를 `theme.accent_danger()`로 구운 data URI로
+- **테마 연동**: 아이콘은 `tasty_icons::IMAGE` 글리프를 `theme.accent_danger()`로 만든 data URI로
   심는다(GFM alert 아이콘과 동일한 `render.rs::alert_icon_data_uri` 재사용). 테두리/라벨 색도
   같은 `danger` 토큰, 경로 텍스트는 `.tasty-state-detail`과 동일한 `muted` 토큰 — 별도 실패 UI
   전용 토큰 없이 기존 에러 상태 배색을 그대로 재사용한다.
 
-**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1)**: `render_document`가 실제로
-만든 문서(실재하는 1x1 PNG 하나 + 존재하지 않는 경로 하나, 실제 `file://` base URI)를
-`WebKit2.WebView.load_html`로 로드해 실제 브라우저 fetch가 성공/실패하는 것을 그대로 관찰했다 —
-실재 이미지는 `<img>`로 그대로 남았고(회귀 없음), 존재하지 않는 이미지만 `.tasty-img-error`로
-교체되어 원본 alt가 `aria-label`로, 원본 상대경로(`missing.png`, 정규화된 `file://` URI가 아님)가
-텍스트로 정확히 들어감을 DOM에서 직접 확인했다. 같은 부착 스크립트를 같은 문서에 한 번 더
-수동으로 재주입해도 플레이스홀더 개수가 늘지 않음을 확인해 데이터 속성 가드가 실제로 작동함을
-검증했다. macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — 코드 리뷰로 동일한 표준
-DOM 이벤트(`error`)/`HTMLImageElement` API 기반 구현이라는 점만 확인했다(실기 미검증).
+**검증 범위**: Linux/WebKitGTK에서 정상 이미지와 실패 이미지를 함께 띄워 실패한 것만
+`.tasty-img-error`로 바뀌고 alt·상대경로가 보존되는 것을 확인한 이력이 있다.
+스크립트를 두 번 적용해도 placeholder가 늘지 않았다. 이 확인은 당시 `file://` base URI로
+수행했으며, 현재 문서의 인라인 이미지 처리 전체를 검증한 결과로 확대하지 않는다.
+macOS·Windows의 실제 실행 결과는 확인되지 않았다.
 
 ## 문서 내 검색(find-in-page)
 
@@ -562,14 +512,9 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 에는 검색을 트리거하지 않는다. `Esc` 는 바를 닫고 하이라이트를 완전히 제거(DOM 원상복구),
 `Enter`/`Shift+Enter` 는 다음/이전 매치로 이동(래핑) + `scrollIntoView`.
 
-**기존 터미널 검색(`kb.find`)과의 충돌**: host 의 전역 `find` 키바인딩은 focused surface
-kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup 의 검색 로직
-(`run_search`)은 `find_terminal_by_id` 로만 동작해 markdown(webview) surface 에서는 항상
-빈 `0/0` 오버레이가 된다(실측 확인된 버그). `src/adapters/ui/input/shortcuts/keybinding.rs`
-의 `kb.find` 분기를 focused surface 가 `Terminal` 일 때만 열도록 고쳤다 — 그 외 kind 는
-이 분기를 소비하지 않고(false 반환) 페이지 자신의 find-in-page(있다면)로 넘어간다. 이
-변경으로 markdown 문서가 focus 인 상태에서 `Ctrl+F` 는 항상 이 절의 문서-내 검색으로
-가고, 터미널 전용 오버레이가 뜨지 않는다.
+**터미널 검색과의 구분**: 호스트 `kb.find`는 focused surface가 Terminal일 때만
+터미널 검색 popup을 연다. 다른 kind에서는 키를 소비하지 않아 페이지의 검색 기능이
+처리할 수 있다. markdown에서는 이 절의 문서 내 검색을 사용한다.
 
 **host 키 포워딩과의 관계**: webview 자식 창이 키보드 입력을 받는 동안에도 tasty 전역
 단축키는 동작한다 — 세 백엔드가 native 키를 가로채 host 로 올린다
@@ -583,7 +528,7 @@ kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup
 
 ## 디자인 토큰 매핑
 
-시각 수치·토큰의 단일 출처는 `design-system/` 이다 — [시각 소스](#시각-소스).
+본문 스타일은 plugin의 CSS와 호스트 Theme 토큰을 사용한다. [시각 소스](#시각-소스) 참고.
 
 ## 갤러리 specimen
 
@@ -597,9 +542,9 @@ kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup
 `fn main() { format!("hi from tasty"); }` 를 highlight.js 의 rust 문법이 나눌 토큰 그대로 손으로
 분할해 `hljs-*` scope 별 `Theme` hue 색을 입힌 `CodeToken` 런, 라이브 highlight.js 실행 결과의
 정적 근사).
-3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
+디자인·갤러리·제품 구현의 대응표: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ## 시각 소스
 
 plugin 이 host `theme.query` IPC 로 조회한 Theme 토큰을 CSS 로 문서에 주입해 자가 렌더(host 는
-native WebView 로 그 문서를 표시만 함). design-system 에 마크다운 디자인이 vendor 되면 링크로 교체.
+native WebView 로 그 문서를 표시만 함). 전용 vendor 시안은 현재 없다.

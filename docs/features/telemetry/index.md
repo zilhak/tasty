@@ -181,7 +181,7 @@ checkpoint가 다른 연결의 읽기 때문에 끝나지 못하면 `checkpoints
 읽은 뒤에 시작하므로 그 시간이 어디에도 안 잡혔다. OS 가 연결을 큐에 넣은 시각은 사용자 공간에서 안
 보이므로, 재는 것은 **루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간**이다. 그 뒤에 꺼낸 연결은 그
 순간 뒤에 도착했으므로 실제 대기 시간은 이 값을 넘지 않으므로 **상한**으로 사용하며, 잠든 동안 고르게 도착하면 실제
-대기는 평균적으로 그 절반이다. 집계 대상는 루프가 꺼낸 TCP 연결 전부라 `accept_waits = accepted +
+대기는 평균적으로 그 절반이다. 집계 대상은 루프가 꺼낸 TCP 연결 전부라 `accept_waits = accepted +
 refused_saturated` 다([ADR-0008](../../adr/0008-ipc-pressure-observability.md)).
 
 #### DB에 적용된 설정
@@ -236,7 +236,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 센다. 주입 명령은 `-32067` 로 답해지지 않고 주입한 호출자 스레드에서 `InjectError::Expired` 로 끝난다) · `started`(실행을 시작한 명령) · `in_flight`(실행을 시작한 뒤 명령 또는 응답 대기자가 lifecycle을 보유한 요청 — 이 항목에서 유일하게 내려가는 값) · `in_flight_max`. 호출자 대기가 끝나도 실행 중인 명령이 lifecycle을 보유하면 계속 센다. 메인
 스레드 handler 는 한 번에 하나라 `in_flight` 가 1 을 넘는 것은 응답을 워커로 넘긴 요청이 기다리는
 동안이다. 정의는 [ADR-0008](../../adr/0008-ipc-pressure-observability.md).
-두 항목을 합치지 않는 이유는 집계 대상가 달라서다 — `queued_commands` 와 `started` 의 차는 "아직 큐에
+두 항목을 합치지 않는 이유는 집계 대상이 달라서다 — `queued_commands` 와 `started` 의 차는 "아직 큐에
 있다" 가 아니다(큐 안에서 만료된 것과 기다리던 쪽이 물러난 것이 섞인다).
 
 #### 멱등 요청
@@ -262,7 +262,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 - **한 줄** — `request_seq` · `host`(`method` canonical 이름 — 모르는 이름은 받은 그대로이고 128 바이트에서 자른다 · `caller` 봉투가 말한 `local`/`agent` ·
   `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` ·
   `outcome` = `ok`/`error`/`expired`/`cancelled`, 최대 셋 — pre-hook · target · post-hook) · `total_us`.
-  `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 집계 대상가
+  `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 집계 대상이
   다르다. plugin 으로 넘긴 요청이면 넘기는 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
 - **호스트 몫의 결과** — `host` 에는 `outcome`(`ok`/`error` — hop 의 `outcome` 과 같은 낱말)과
   `error_code`(오류면 호출자가 받은 JSON-RPC 코드, 아니면 `null`)가 함께 실린다. 값은 **호출자에게 실제로
@@ -312,7 +312,7 @@ Local 호출자는 이 게이트에서 돌려보내지지 않으므로 없는 �
 앞 둘은 Local 호출자도 받는다.
 
 - **리셋** — 전부 이 프로세스가 뜬 뒤의 누계다. 창 단위로 비워지지 않고 재시작하면 0 이다. 영속되는
-  `agent.rate_limit_status` 의 `throttled_count` 와 집계 대상가 다르다 — 그쪽은 버킷 하나의 수명 동안 재시작을
+  `agent.rate_limit_status` 의 `throttled_count` 와 집계 대상이 다르다 — 그쪽은 버킷 하나의 수명 동안 재시작을
   넘어 쌓이고, 게이트 밖의 직접 소비 거절도 센다.
 - **집계 대상 밖** — 게이트 뒤의 봉투 검사(멱등 키 길이)에서 돌려보낸 요청은 거절 칸에 안 든다(정책이 아니라
   틀린 인자다). 엔진이 없는 GUI 부팅·종료 구간에서 Local 이 아닌 호출자를 돌려보내는 판정
@@ -349,7 +349,7 @@ Local 호출자는 이 게이트에서 돌려보내지지 않으므로 없는 �
 
 두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
 지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은
-두 집계 대상를 나란히 두고 뺄셈을 하지 않는다.
+두 집계 대상을 나란히 두고 뺄셈을 하지 않는다.
 
 관측이 없는 평균은 `null` 이다 — 0 이면 "기다림이 없었다" 와 "잰 적이 없다" 가 같은 값이 된다.
 

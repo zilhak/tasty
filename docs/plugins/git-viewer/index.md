@@ -28,7 +28,7 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
   `commondir` 파일(폴백: 경로 추론)로 직접 식별해 목록 선두에 합성한다(`git worktree list` 와 동등).
   popup 이 받은 cwd 가 속한 worktree 에 `current` 마커, `locked`/`invalid` 상태 배지를 표시한다.
 - **worktree 전환** — rail 행 선택 시 그 worktree 의 workdir 로 다시 열어 status/log/diff 를
-  재바인딩한다. **실제 checkout/working dir/HEAD 변경은 없다**(플러그인 popup 내부 상태만 변경).
+  다시 조회한다. **실제 checkout/working dir/HEAD 변경은 없다**(플러그인 popup 내부 상태만 변경).
 - **repo 핸들** — 로컬 모드는 활성 worktree 의 `Repository` 핸들 하나를 들고 재사용해 조작마다
   다시 열지 않는다. 무효화는 worktree 전환 · Refresh · repo 소실 셋뿐이며 Refresh 는 캐시를
   무조건 버린다(외부 편집·worktree add/remove·외부 커밋이 항상 반영된다).
@@ -77,4 +77,3 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 ## 화면
 
 - [screens/git-viewer.md](screens/git-viewer.md) — git status/log/diff popup.
-</content>

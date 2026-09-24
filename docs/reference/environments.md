@@ -13,35 +13,22 @@ AI 에이전트가 tasty 를 조작하기 전 알아야 할 OS별 경로·실행
 
 ## 실행 여부 확인
 
-```bash
-pgrep -x tasty >/dev/null && echo running || echo "not running"
-# 포트 파일은 있으나 프로세스가 없으면 stale — 삭제
-[ -f ~/.tasty/tasty.port ] && ! pgrep -x tasty >/dev/null && rm ~/.tasty/tasty.port
-```
-
-검증용 debug 인스턴스(`cargo run`)는 루트가 `~/.tasty-debug/` 라 포트파일이 `~/.tasty-debug/tasty.port` 다 — 위 release 체크와 무관하게 따로 띄워도 충돌하지 않는다.
+`tasty list info`의 IPC 응답으로 대상 인스턴스가 요청을 처리하는지 확인한다.
+프로세스 이름 검색이나 포트 파일의 존재만으로 준비가 끝났다고 판단하지 않는다.
+조회 실패만으로 포트 파일을 삭제하지 않는다.
 
 ## 실행 / 대기 / 종료
 
-```bash
-tasty &
-until tasty list info 2>/dev/null; do sleep 0.2; done    # 포트 뜰 때까지 (sleep 루프 대신 조건검사)
-tasty list tree            # 구조 (ID 포함)
-tasty send text "ls -la\r" --surface <id>
-# 종료: system.shutdown IPC 는 debug 빌드 전용 — release 는 프로세스를 끝낸다(kill <pid>)
-```
+검증에는 전용 `TASTY_HOME`을 가진 인스턴스를 직접 시작하고 그 PID를 기록한다.
+준비 대기는 재시도 횟수나 전체 기한을 제한하고 PID 생존도 확인하며, 종료도 그 PID에만 요청한다.
+구체적인 실행 절차는 [격리 인스턴스 검증](../dev-guide/self-verification.md#tasty-에서-직접-검증)을 따른다.
+사용 중인 인스턴스를 이름이나 명령줄 패턴으로 찾아 종료하지 않는다.
 
 ## IPC 직접 (Python)
 
-```python
-import socket, json, os
-port = int(open(os.path.expanduser("~/.tasty/tasty.port")).read().strip())
-s = socket.socket(); s.settimeout(5); s.connect(("127.0.0.1", port))
-def call(m, p=None):
-    s.sendall((json.dumps({"jsonrpc":"2.0","id":1,"method":m,"params":p or {}}) + "\n").encode())
-    return json.loads(s.recv(1<<16).decode())
-call("system.info")
-```
+[API 접속 예제](api.md#접속)를 사용한다. 요청과 응답은 개행으로 구분하며 TCP의 한 번의
+`recv`가 JSON 하나를 반환한다고 가정하지 않는다. debug 또는 격리 인스턴스에 연결할 때는
+예제를 실행하는 프로세스에도 같은 `TASTY_HOME`을 지정한다.
 
 ## 스크린샷
 

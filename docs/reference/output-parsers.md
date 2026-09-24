@@ -23,13 +23,13 @@
 | `osc_link` | ✗ | 한 줄 | `url, text, params`(OSC 8) |
 | `osc_notification` | ✗ | 한 줄 | `osc(9/777), title?, message, action?` |
 
-기본 활성 4종(`DEFAULT_PARSER_IDS` = `path`/`url`/`prompt_boundary`/`exit_code`)은 false-positive 위험이 낮다. 나머지 6종은 도메인 특수성/오탐 위험 때문에 **명시 opt-in**.
+기본 활성 4종(`DEFAULT_PARSER_IDS` = `path`/`url`/`prompt_boundary`/`exit_code`)은 false-positive 위험이 낮다. 나머지 6종은 특정 출력 형식에 맞춰져 있고 오탐 가능성이 있어 **직접 지정해야 한다**.
 
 ## 멀티라인 파서 한계
 
 `compile_error`·`stack_trace` 는 여러 줄에 걸친 패턴을 본다.
 - `parse_since_mark`(batch): 전체 block 을 `parse_block` 으로 정확히 분해.
-- `output.observe_*`(streaming): 라인별 `parse_line` dispatch 라 **멀티라인 파서는 발화하지 않는다.** 컴파일 에러 수집은 `prompt_boundary` 옵저버로 종료 감지 후 `parse_since_mark` batch 로.
+- `output.observe_*`(streaming): 라인별 `parse_line` dispatch 라 **멀티라인 파서는 결과를 만들지 않는다.** 컴파일 에러 수집은 `prompt_boundary` 옵저버로 종료 감지 후 `parse_since_mark` batch 로.
 
 ## 예시
 

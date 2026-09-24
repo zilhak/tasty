@@ -2,10 +2,9 @@
 
 - **부모 기획**: [../index.md](../index.md)
 - **시각 소스**: Claude Design 프로젝트 `Tasty Design System`(projectId `41fd3f5a-4bb9-4877-999f-db5124dc2925`)
-  `ui_kits/terminal/overlays/clipboard_viewer.jsx` — 구조 전사 완료.
+  `ui_kits/terminal/overlays/clipboard_viewer.jsx`.
 
-도구 메뉴/단축키로 뜨는 클립보드 뷰어 popup. header → type-bar → body → footer 4단 수직 스택
-(좌측 rail master-detail 레이아웃은 폐기).
+도구 메뉴/단축키로 뜨는 클립보드 뷰어 popup. header → type-bar → body → footer 4단 수직 배치.
 
 ## 트리거
 
@@ -15,8 +14,13 @@
 
 - **header** — 클립보드 아이콘 + "Clipboard" 타이틀(14px/600) + `snapshot` 뱃지(default tag) + 우측 close IconButton.
 - **type-bar** — 좌측 [`type_switch`]: 가용 타입이 1개면 아이콘 + accent 뱃지(읽기전용), 2개 이상이면 가로 세그먼트 버튼 그룹(rail 없음). 5개 이상(`SEG_COMPACT_AT`)이면 비활성 세그먼트가 아이콘 전용으로 압축되고 hover 시 전체 타입명 툴팁이 뜬다. Other 세그먼트/뱃지의 hover 툴팁은 기본 라벨("Other") 대신 "{n} unrecognized formats"(발견된 포맷 개수)를 보여준다. 우측 슬롯은 HTML 타입일 때만 "Pretty print" `Checkbox`(`tasty_ui_widgets::checkbox`)로 스왑되고, 다른 타입은 빈 슬롯.
-- **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠. Text 는 mono pre 스크롤(`well`). Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤). Image 는 **인라인 렌더링 없음**(design 결정) — well 을 상하좌우 중앙 정렬로 바꿔(`well_centered`) 아이콘(28px, CenterState 와 같은 값) + 치수·용량 메타(mono caption) + "인라인 미리보기 없음" 안내(caption, italic, `text-disabled`)만 표시한다. HTML(렌더링 없이 원본 소스 또는 prettify 결과를 동일 스타일로 표시). Other(text/files/image/html 이 아닌 raw 포맷 전부를 `well` 스크롤 안에 포맷별 블록으로 나열, 블록마다 이름(mono caption, 굵게, `text-secondary`)+크기(mono caption, `text-muted`)를 같은 줄에, 그 아래 텍스트화된 미리보기(mono term-sm, `text-primary`)를 표시, 블록 사이 1px `separator`, 길면 `+N more lines` 절삭 — 목록 자체는 접지 않는다).
-- **footer** — mime 텍스트(mono caption, 좌, HTML 타입은 `{mime} · {n} chars · {n} line(s)` 로 메타 결합, Other 타입은 mime 이 없어 "{n} unrecognized formats" 가 그 자리를 통째로 대체) + Close 버튼(secondary, 우). host 의 outside-click/Esc 와 기능 중복이지만 디자인이 명시적으로 요구.
+- **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠.
+  Text 는 mono pre 스크롤(`well`).
+  Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤).
+  Image 는 **인라인 렌더링 없음**(design 결정) — well 을 상하좌우 중앙 정렬로 바꿔(`well_centered`) 아이콘(28px, CenterState 와 같은 값) + 치수·용량 메타(mono caption) + "인라인 미리보기 없음" 안내(caption, italic, `text-disabled`)만 표시한다.
+  HTML(렌더링 없이 원본 소스 또는 prettify 결과를 동일 스타일로 표시).
+  Other(text/files/image/html 이 아닌 raw 포맷 전부를 `well` 스크롤 안에 포맷별 블록으로 나열, 블록마다 이름(mono caption, 굵게, `text-secondary`)+크기(mono caption, `text-muted`)를 같은 줄에, 그 아래 텍스트화된 미리보기(mono term-sm, `text-primary`)를 표시, 블록 사이 1px `separator`, 길면 `+N more lines` 절삭 — 목록 자체는 접지 않는다).
+- **footer** — mime 텍스트(mono caption, 좌, HTML 타입은 `{mime} · {n} chars · {n} line(s)` 로 메타 결합, Other 타입은 mime 이 없어 "{n} unrecognized formats" 가 그 자리를 통째로 대체) + Close 버튼(secondary, 우). 바깥 클릭과 Esc로도 닫을 수 있다.
 - (빈 상태) 아이콘 + 굵은 타이틀 + 옅은 부제 2줄.
 - (읽기 실패) 위와 동일 구조, danger 톤.
 - (이미 열림) 위와 동일 구조, lock 아이콘.
@@ -97,7 +101,7 @@ CenterState 를 토큰으로 전사(본체/plugin crate 비의존, 픽셀 동일
 인덴트 결과와 other 상태의 포맷 블록 샘플은 각각 `html_format::prettify()` /
 `clipboard::OtherFormatEntry` 와 동일 규칙으로 수기 정리한 샘플이다(갤러리는 plugin crate 를
 의존할 수 없다). 압축 세그먼트(타입 5종이 동시에 살아 있어 비활성 세그먼트가 아이콘 전용으로 줄어든 상태)도
-specimen 에 있다. 3자 매핑:
+specimen 에 있다. 디자인·갤러리·제품 구현의 대응표:
 [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-plugins).
 
 ## 시각 소스
