@@ -1,13 +1,5 @@
-//! Plugin이 매니페스트 `[[contributes.commands]]`로 선언한 단축키 command를
-//! 한 곳에 모은 registry.
-//!
-//! `PluginManager::discover_and_start` 시 모든 활성 plugin의 매니페스트에서
-//! command를 흡수하고, plugin enable/disable/install/remove에 맞춰 갱신된다.
-//!
-//! 사용처:
-//! - 키 매칭 (단계 F): focused surface가 plugin 소유일 때 후보 조회
-//! - 설정 UI (단계 E): plugin 단축키 항목 목록 표시
-//! - effective binding 계산 (단계 D): 매니페스트 기본값 + 사용자 override 합성
+//! 매니페스트의 plugin 명령을 모아 단축키 매칭과 설정 화면에 제공한다.
+//! 등록·해제 시 목록을 갱신하고 기본 키와 사용자 override를 함께 해석한다.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -62,12 +54,8 @@ impl PluginCommandEntry {
     }
 }
 
-/// plugin 단축키에 영향을 주는 변경마다 새로 뽑는 **프로세스 전역 단조 증가** 값.
-///
-/// 소비자는 "지난번에 본 값과 같은가" 만 보고 자기 파생 스냅샷의 재계산 여부를 정한다
-/// (webview 키 포워딩 정책 스냅샷 — `docs/design/systems/webview.md#키보드--별도-계약`). 전역
-/// 단조라서 registry 를 통째로 새로 만들어도(`PluginCommandRegistry::new`) 값이 겹치지
-/// 않는다 — 인스턴스 지역 카운터였다면 재생성 시 0 으로 되돌아가 stale 스냅샷이 남는다.
+/// 목록이 바뀔 때 발급하는 프로세스 전역 epoch.
+/// 레지스트리를 다시 만들어도 이전 스냅샷 캐시와 구분할 수 있게 한다.
 pub(crate) fn next_shortcut_epoch() -> u64 {
     static EPOCH: AtomicU64 = AtomicU64::new(0);
     EPOCH.fetch_add(1, Ordering::Relaxed) + 1
@@ -129,7 +117,6 @@ impl PluginCommandRegistry {
             .unwrap_or(&[])
     }
 
-    /// 라이브러리 표준 accessor — 호출처 0 이지만 std-style API 일관성 위해 보존.
     pub fn is_empty(&self) -> bool {
         self.by_plugin.is_empty()
     }
@@ -138,7 +125,7 @@ impl PluginCommandRegistry {
         self.by_plugin.values().map(|v| v.len()).sum()
     }
 
-    /// 전체 entry 순회 — 설정 UI에서 plugin별 command snapshot을 만들 때 사용.
+    /// 모든 plugin 명령을 순회한다. plugin 사이의 순서는 보장하지 않는다.
     pub fn iter_all(&self) -> impl Iterator<Item = &PluginCommandEntry> {
         self.by_plugin.values().flat_map(|v| v.iter())
     }

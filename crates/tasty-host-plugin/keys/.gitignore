@@ -1,10 +1,5 @@
-# dev-pubkey.bin 은 개발자별 로컬 키 — 추적하지 않는다.
-# build.rs 가 OUT_DIR 로 staging 하며, 부재 시 all-zero placeholder 로 채운다.
-# 실제 dev 키는 scripts/gen-dev-key.sh(ensure-sign-key.sh 가 호출)로 매 빌드 재도출한다.
-#
-# release-pubkey.bin 도 추적하지 않는다 — 영구 보관되는 release 신뢰 루트가
-# 없어졌기 때문에(각 러너가 release 빌드에서도 ensure-sign-key.sh 폴백으로
-# dev key 를 그 자리에서 생성해 서명), 이 슬롯은 항상 placeholder 로 남는다.
-# 자세한 배경은 docs/dev-guide/plugin-packaging.md, docs/dev-guide/release.md#배포-범위와-번들-서명 참고.
+# 개인키에서 도출한 공개키는 로컬에서 준비하며 추적하지 않는다.
+# build.rs는 없거나 길이가 잘못된 슬롯을 OUT_DIR에서 zero 값으로 채운다.
+# 키 선택: docs/dev-guide/plugin-packaging.md.
 /dev-pubkey.bin
 /release-pubkey.bin

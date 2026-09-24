@@ -1,9 +1,4 @@
-//! `upgrade-builtins` 가 회수 중인 plugin 의 재기동 예약을 잇는다는 것.
-//!
-//! 무응답 재시작은 옛 프로세스를 뒤에서 회수하고 회수가 끝나면 다시 띄운다
-//! (`manager::retire`). 그 사이 `upgrade-builtins` 가 그 디렉토리에 쓰려고 회수를 기다리면
-//! 예약은 회수 기록과 함께 사라진다 — 그것을 이어받지 않으면 enabled 인 plugin 이 꺼진 채
-//! 남는다.
+//! 번들 업데이트가 프로세스 회수를 기다린 뒤에도 재시작 예약을 유지하는지 확인한다.
 #![cfg(unix)]
 
 use std::path::Path;
@@ -40,7 +35,7 @@ fn restarting(home: &HomeEnvGuard) -> (PluginManager, std::path::PathBuf, std::p
     (mgr, src, dest)
 }
 
-/// 설치본 `1.<installed>.0` 을 번들 `1.<bundle>.0` 으로 맞춘다. 돌려주는 것은 탄 갈래의 보고다.
+/// 설치본과 번들 버전을 지정해 업데이트하고 처리 결과를 반환한다.
 fn upgrade(
     mgr: &mut PluginManager,
     src: &Path,
@@ -98,12 +93,7 @@ type Case = (
     fn(&BuiltinUpgradeAction) -> bool,
 );
 
-/// 재시작으로 회수 중인 plugin 에 **쓰는** upgrade 가 오면, 회수를 기다려 쓰고 그 뒤에 결국
-/// 다시 뜬다 — 기다리며 가져온 재기동 예약을 버리지 않는다.
-///
-/// 쓰는 갈래 셋(같은 버전에 바뀐 내용 · 버전이 오름 · `--force`)은 예약을 각자 받아 끝에서
-/// 한 줄로 잇는다. 갈래마다 받는 대입이 따로 빠질 수 있으므로 셋을 모두 태운다 — 보고의
-/// 종류로 그 갈래를 탔는지 함께 단정한다.
+/// 같은 버전의 내용 변경, 버전 증가, 강제 업데이트가 모두 재시작 예약을 보존하는지 확인한다.
 #[test]
 fn an_upgrade_during_a_restart_keeps_the_restart() {
     let cases: [Case; 3] = [
@@ -141,14 +131,8 @@ fn an_upgrade_during_a_restart_keeps_the_restart() {
     }
 }
 
-/// 쓸 것이 없는 upgrade(같은 버전·같은 내용 / 설치본이 더 높음)는 회수를 기다리지 않는다.
-/// 회수는 뒤에서 이어지고, 재시작 예약도 그대로 남아 결국 다시 뜬다.
-///
-/// "기다리지 않았다" 는 시계가 아니라 **회수 기록**으로 판정한다. 기다리는 길
-/// (`wait_retired`)은 기록을 가져가고, 기다리지 않으면 기록은 pump 가 거둘 때까지 남는다 —
-/// upgrade 와 단정 사이에 pump 가 없으므로 회수가 뒤에서 이미 끝났어도 기록은 그대로다.
-/// 그래서 부하가 upgrade 를 아무리 늦춰도 판정이 안 바뀐다. 예전의 벽시계 단언(500 ms)은
-/// 이 호출이 실제로 수 µs~수백 µs 인데도 그 차이를 시계에 맡겼다.
+/// 쓸 파일이 없으면 회수를 기다리지 않고 재시작 예약을 유지한다.
+/// pump를 호출하기 전 회수 기록이 남아 있는지 검사해 시간 측정에 의존하지 않는다.
 #[test]
 fn an_upgrade_that_writes_nothing_does_not_wait_for_a_retirement() {
     for (installed, bundle) in [(0, 0), (1, 0)] {

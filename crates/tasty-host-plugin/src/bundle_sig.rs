@@ -1,24 +1,9 @@
-//! bundle manifest 의 ed25519 detached signature 검증.
+//! tasty-plugin.toml의 SHA-256 digest에 대한 Ed25519 서명을 검증한다.
+//! 바이너리·번역 파일 등 디렉터리 전체를 서명하는 것은 아니다.
 //!
-//! 보호 대상: bundle 디렉토리 안의 `tasty-plugin.toml` 한 파일. 같은 디렉토리의
-//! `tasty-plugin.toml.sig` (raw 64-byte signature) 사이드카로 확인한다. 매니페스트
-//! 안에 권한·contributes 가 들어있으므로 *변조 시 confused-deputy 차단* 이 핵심
-//! 목표다. 디렉토리 전체 hash 서명은 0.7 이후.
-//!
-//! release 빌드에서는 `upgrade_builtins` / `install_builtins_if_needed` 가 본
-//! verify 를 호출해서 실패 시 해당 plugin 을 `Skipped { signature-invalid }` 로
-//! 차단한다. debug 빌드는 dev workspace bundle 이 unsigned 라 warn 로깅 후 통과.
-//!
-//! ## Trust 단계 (정책 5=B+C)
-//!
-//! 1. **임베드 키** (`TRUSTED_PUBKEYS`): release-pubkey + dev-pubkey 자동 trust.
-//!    이 키로 서명 통과 시 → [`TrustDecision::Trusted`].
-//! 2. **사용자 trust DB** ([`crate::known_plugins::KnownPlugins`],
-//!    `~/.tasty/known-plugins.toml`): 외부 plugin 이라도 사용자가 한 번 trust
-//!    했으면 해당 plugin_id 의 pubkey + 권한 스냅샷을 저장. 매칭 시 → `Trusted`.
-//!    단, 매니페스트 권한이 trust 시점과 달라졌으면 → `Untrusted` 로 재승인 요구.
-//! 3. **모두 실패** → [`TrustDecision::Untrusted`]. 호출처 (호스트 UI) 가 사용자
-//!    승인 모달을 띄우고, 승인 시 `KnownPlugins::add` 로 trust DB 에 기록.
+//! 임베드 키로 검증하거나, 사용자 신뢰 목록의 키와 승인한 권한을 확인한다.
+//! 사용자 키는 서명이 맞아도 권한이 바뀌면 재승인이 필요하다.
+//! 실제 설치·검색 경로는 release에서 검증하고 debug에서는 우회할 수 있다.
 
 use std::path::Path;
 
@@ -27,20 +12,14 @@ use sha2::{Digest, Sha256};
 
 use crate::known_plugins::KnownPlugins;
 
-/// 임베드 trust 키 목록. release-pubkey + dev-pubkey 가 자동 trust.
-///
-/// 두 키는 build.rs 가 `OUT_DIR` 로 staging 한 raw 32 byte 를 가리킨다 (소스
-/// 트리 `keys/` 직접 참조 아님). `dev-pubkey.bin` 은 개발자별 로컬 키라 추적되지
-/// 않으므로, 부재 시 build.rs 가 all-zero placeholder 로 슬롯을 채워 컴파일이
-/// 깨지지 않게 한다. 자세한 배경은 `build.rs` 모듈 주석 참고. zeroed placeholder
-/// 는 `VerifyingKey::from_bytes` 가 정상 파싱하더라도 어떤 서명도 통과시키지 못한다.
+/// OUT_DIR에 준비된 release·dev 공개키. build.rs가 슬롯을 채운다.
+/// 검증 함수는 파싱할 수 없는 키를 건너뛴다.
 pub const TRUSTED_PUBKEYS: &[[u8; 32]] = &[
     *include_bytes!(concat!(env!("OUT_DIR"), "/release-pubkey.bin")),
     *include_bytes!(concat!(env!("OUT_DIR"), "/dev-pubkey.bin")),
 ];
 
-/// 하위 호환 alias — 외부 crate 가 본 상수를 참조할 가능성에 대비.
-/// `TRUSTED_PUBKEYS` 의 첫 항목 (release-pubkey) 를 가리킨다.
+/// 호환용 별칭. release 공개키 슬롯을 가리킨다.
 pub const TASTY_BUNDLE_PUBKEY: [u8; 32] = TRUSTED_PUBKEYS[0];
 
 /// `verify_bundle_signature` 의 결과 — 신뢰 단계 분기.
@@ -55,7 +34,7 @@ pub enum TrustDecision {
     /// `KnownPlugins::add` 로 trust DB 에 기록해야 한다.
     Untrusted {
         plugin_id: String,
-        /// 서명 키의 SHA-256 hex (사용자 비교용).
+        /// 권한 변경은 공개키, UnknownKey는 서명의 R 값에서 계산한 표시 지문.
         fingerprint: String,
         /// 매니페스트가 요구하는 권한 목록 (UI 노출 + trust DB 저장용).
         manifest_permissions: Vec<String>,
@@ -79,7 +58,7 @@ pub enum SigVerifyError {
     SidecarReadError(std::io::Error),
     ManifestReadError(std::io::Error),
     InvalidSignatureLength,
-    /// 임베드 trust key 가 전부 invalid (예: zeroed placeholder 에서 from_bytes 실패).
+    /// 파싱 가능한 임베드 키가 없고 사용자 신뢰 키로도 검증하지 못했다.
     NoValidTrustedKeys,
 }
 
@@ -210,7 +189,7 @@ pub fn verify_bundle_signature(dir: &Path) -> Result<TrustDecision, SigVerifyErr
     let (digest, sig_array) = read_digest_and_sig(dir)?;
     let sig = Signature::from_bytes(&sig_array);
 
-    // Step 1: 임베드 키 시도. invalid 키 (zeroed placeholder 등) 는 skip.
+    // 파싱할 수 있는 임베드 키로 서명을 확인한다.
     let mut had_valid_embedded = false;
     for pk in TRUSTED_PUBKEYS {
         let Ok(vk) = VerifyingKey::from_bytes(pk) else {
@@ -242,19 +221,13 @@ pub fn verify_bundle_signature(dir: &Path) -> Result<TrustDecision, SigVerifyErr
         return Ok(TrustDecision::Trusted);
     }
 
-    // Step 3: 알 수 없는 키. 서명의 R 값은 안전한 식별자가 아니므로, 매니페스트
-    // 의 id + sig 의 첫 32 byte (signature R) 를 fingerprint 화. 사용자는 publisher
-    // 가 제시한 키 fingerprint 와 trust DB 의 fingerprint 를 수동 비교해야 한다.
-    // 단, 여기서는 *임베드 키 후보군 자체가 없음* (placeholder) 면 별도 에러로
-    // 노출하여 release 빌드 misconfiguration 을 표면화.
+    // 사용자 키로도 확인하지 못했고 파싱 가능한 임베드 키가 없으면 오류다.
     if !had_valid_embedded {
         return Err(SigVerifyError::NoValidTrustedKeys);
     }
 
-    // sig R component (앞 32 byte) — pubkey 자체는 알 수 없으므로 sig 의 R 을 키
-    // 후보 fingerprint 로 대체 표현. 사용자가 publisher 의 공식 키 fingerprint 와
-    // 비교하려면 publisher 가 raw pubkey 를 제공해야 한다 (또는 manifest 에 pubkey
-    // 가 embed 되어 있어야 함). 매니페스트 embed pubkey 정책은 0.7+.
+    // 이 지문은 서명의 R 값에서 계산한다. 공개키 지문이 아니므로
+    // 발급자의 공개키 지문과 직접 비교할 수 없다.
     let r_component: [u8; 32] = sig_array[..32].try_into().unwrap_or([0u8; 32]);
     Ok(TrustDecision::Untrusted {
         plugin_id,
@@ -283,10 +256,7 @@ mod tests {
         sk.sign(digest.as_slice()).to_bytes().to_vec()
     }
 
-    /// 본 헬퍼는 release 시점 전까지 embed pubkey 가 placeholder 라서, multi-key
-    /// loop 의 *임시 키 통과 경로* 를 단독으로 점검하기 위해 직접 검증.
-    /// 사용자 정의 키로 서명만 검증 (multi-key trust store 우회). placeholder
-    /// 시기 동안 single-key 흐름을 보존하기 위한 테스트 헬퍼.
+    /// 테스트에서 만든 키로 서명 검증만 수행한다. 사용자 신뢰 목록은 사용하지 않는다.
     fn verify_with_custom_key(dir: &Path, vk: &VerifyingKey) -> bool {
         let (digest, sig_array) = match read_digest_and_sig(dir) {
             Ok(p) => p,
@@ -342,10 +312,8 @@ mod tests {
         assert!(matches!(err, SigVerifyError::InvalidSignatureLength));
     }
 
-    /// placeholder 시기 (embed pubkey 가 zero) — 임의 sig 를 주면
-    /// `NoValidTrustedKeys` 또는 `Untrusted { UnknownKey }` 중 하나. zero pubkey
-    /// 의 `VerifyingKey::from_bytes` 동작은 ed25519-dalek 버전에 따라 다르므로
-    /// 두 분기 모두 허용.
+    /// 임베드 키와 일치하지 않는 서명은 신뢰하면 안 된다.
+    /// 임베드 키의 파싱 가능 여부에 따라 UnknownKey 또는 NoValidTrustedKeys를 허용한다.
     #[test]
     fn placeholder_pubkeys_never_grant_trust() {
         let sk = SigningKey::from_bytes(&[42u8; 32]);
@@ -436,12 +404,8 @@ mod tests {
     }
 }
 
-/// `KnownPlugins` 와의 e2e 분기 — HOME 환경변수를 임시 디렉토리로 돌려 trust DB
-/// 를 격리한 뒤 `verify_bundle_signature` 의 multi-stage 동작을 검증.
-///
-/// Unix 한정: `directories::BaseDirs` 가 Unix 에서는 HOME 환경변수로 결정되지만
-/// Windows 에서는 `SHGetKnownFolderPath` 를 통해 결정되므로 env override 가 통하지
-/// 않는다. Windows 용 e2e 는 별도 `KnownPlugins::load_from(path)` API 도입 후 0.7+.
+/// 임시 HOME으로 사용자 신뢰 목록을 격리해 검증한다.
+/// Windows의 홈 조회는 HOME 환경변수를 쓰지 않으므로 Unix에서만 실행한다.
 #[cfg(all(test, unix))]
 mod integration_tests {
     use super::*;
@@ -449,9 +413,7 @@ mod integration_tests {
     use ed25519_dalek::{Signer, SigningKey};
     use tempfile::TempDir;
 
-    /// 임시 홈으로 `known-plugins.toml` 을 격리한다. 직렬화 락·복원은 crate 공용 가드가
-    /// 맡는다 — 이 모듈만의 락을 따로 두면 `manager::pump` 쪽 테스트와 서로의 임시 홈을
-    /// 지운다(`crate::test_support` 참조).
+    /// 다른 테스트와 경합하지 않도록 공용 가드로 HOME을 바꾸고 복원한다.
     use crate::test_support::HomeEnvGuard;
 
     /// 매니페스트 작성 + ed25519 signing — 매니페스트 digest 에 sk 서명.
@@ -543,17 +505,8 @@ mod integration_tests {
         }
     }
 
-    /// B-3: placeholder embed pubkey + 빈 trust DB → 절대 `Trusted` 가 나오면 안 됨.
-    /// 현재 동작: `Untrusted { UnknownKey }` 또는 `Err(NoValidTrustedKeys)` 중 하나
-    /// (ed25519-dalek 버전에 따라 zero pubkey 의 `from_bytes` 결과가 다름).
-    ///
-    /// release-pubkey.bin 슬롯이 zero(placeholder)로 남는 것 자체는 정상 정책이다
-    /// (영구 신뢰 루트를 두지 않음) — 이미 `build.rs`(release 빌드, `stage_key`
-    /// 호출부)가 release·dev 두 슬롯이 **동시에** zero 일 때만 `cargo:warning` 으로
-    /// misconfig 를 알린다(dev 슬롯이 실질 검증을 담당하므로 release 단독 zero 는
-    /// 경고 대상이 아니다). 본 테스트는 그 경고와 별개로, placeholder 상태에서도
-    /// `verify_bundle_signature` 가 `Trusted` 를 반환하지 않는다는 invariant 만
-    /// 검증한다.
+    /// 사용자 신뢰 목록이 비어 있고 임베드 키와 맞지 않는 서명은 신뢰하지 않는다.
+    /// 키의 파싱 가능 여부에 따라 UnknownKey 또는 NoValidTrustedKeys를 허용한다.
     #[test]
     fn placeholder_embed_with_empty_db_never_trusts() {
         let _home = HomeEnvGuard::derived_from_home();
