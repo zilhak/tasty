@@ -99,7 +99,13 @@
 
 - **저장 위치** — 전부 `TASTY_PLUGIN_DATA_DIR`(`~/.tasty/plugin-data/com.tasty.claude/`) 하위. 호스트가 이 디렉토리를 미리 만들어 주므로 `fs.write` 권한 없이도 쓸 수 있다. 호스트가 이 env 를 주입하지 않은 비정상 기동(`data_dir = None`)이면 등록/부착 모두 명시적 에러로 거부한다 — `~/.claude/` 나 새 경로를 조용히 쓰지 않는다.
 - IPC: `claude.profile_register`/`claude.profile_unregister`/`claude.profile_list`/`claude.profile_show`/`claude.profile_current` — CLI 서브커맨드와 1:1 대응(원칙 2, 에이전트 조작 가능성).
-- spawn 시 parent 의 살아있는 child 수가 설정 임계치를 넘으면 응답에 `warning` 필드가 실린다 — Settings › Plugin › Claude Code 에서 임계치 조정. 재사용 후보는 근거가 다른 두 목록으로 나뉜다: **`idle`**(자식이 hook 으로 완료를 직접 보고) 과 **확정 `stale`**(`confidence: confirmed` — 보고는 없었지만 전경이 셸로 복귀해 에이전트 프로세스 종료가 관측됨, 완료 훅 보고와 별도로 확인된 종료). `confidence: heuristic` 인 `stale` 은 SIGSTOP·긴 추론과 구별되지 않아 세지 않는다 — 판정 근거는 [child-terminal](../../features/child-terminal/index.md) "판정 응답 필드" 참조.
+- spawn 시 조회한 parent의 자식 수가 설정 임계치를 넘으면 응답에 `warning`을 넣는다.
+  Settings › Plugin › Claude Code에서 임계치를 조정한다. 후보 목록은 `idle` 보고를 받은
+  자식과 `confidence: confirmed`인 `stale` 자식을 구분한다. 후자는 마지막으로 조회한
+  전경 이름이 셸이라는 뜻이며, 에이전트 종료나 훅 유실을 확인한 결과는 아니다.
+  훅의 idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 상태를 확인한 뒤 재사용한다.
+  `confidence: heuristic`인 `stale`은 긴 추론·SIGSTOP·무출력 작업과 구별되지 않아
+  후보 수에 넣지 않는다. [자식 상태 판정](../../features/child-terminal/index.md)을 참고한다.
 
 ### 승인 정책 (`--permission-mode`)
 

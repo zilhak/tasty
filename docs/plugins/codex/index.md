@@ -111,13 +111,16 @@ RTM_NEWADDR 오류로 시작에 실패할 수 있다. 실행 환경과 선택한
 
 ### 자식 수 경고
 
-spawn 뒤 살아 있는 자식 수가 설정의 Spawn child warning threshold(기본 6)를 넘으면
-응답에 warning을 넣되 생성은 막지 않는다. 재사용 후보는 idle과 확정 stale을 나눠 보여 준다.
-idle은 자식의 보고이고, 확정 stale은 전경이 셸로 돌아온 관측이다.
-관측만 받은 자식이 작업 성공을 보고했다고 설명하지 않는다.
+spawn 뒤 조회한 자식 수가 설정의 Spawn child warning threshold(기본 6)를 넘으면
+응답에 warning을 넣되 생성은 막지 않는다. 후보 목록은 idle 보고를 받은 자식과
+`confidence: confirmed`인 stale 자식을 구분한다. 후자는 마지막으로 조회한 전경 이름이
+셸이라는 뜻이며, 프로세스 종료나 훅 유실을 확인한 결과는 아니다.
+idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 상태를 확인한 뒤 재사용한다.
 문구는 `codex.spawn_warning.{total,idle,stale}`을 현재 언어로 번역한다.
 
-`confidence: heuristic`인 stale은 재사용 후보 수에 넣지 않는다. 긴 추론·SIGSTOP·무출력 작업을 종료한 자식으로 잘못 권할 수 있기 때문이다. 판정 기준은 [자식 터미널](../../features/child-terminal/index.md)의 판정 응답 필드를 참고한다.
+`confidence: heuristic`인 stale은 후보 수에 넣지 않는다. 긴 추론·SIGSTOP·무출력 작업과
+구별되지 않기 때문이다. 판정 기준은 [자식 터미널](../../features/child-terminal/index.md)의
+판정 응답 필드를 참고한다.
 
 ## 훅 설치 대상 선택
 

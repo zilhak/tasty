@@ -75,7 +75,9 @@ release는 해당 자식의 `claude-error` 알림도 중단한다
 `terminal.children`과 `terminal.state`는 훅으로 보고받은 상태와 호스트 관측을 함께 사용한다.
 두 경로는 `CoreState::child_liveness{,_with_live}`를 공유한다.
 registry의 `active`는 idle이나 입력 대기 보고가 없다는 뜻이므로 실제 실행의 증거가 부족할 수 있다.
-훅이 유실됐거나 프로그램이 멈춘 경우를 보완하기 위해 PTY·전경 프로세스·출력 시각을 확인한다.
+상태를 보완하기 위해 busy 캐시·최근 조회한 전경 이름·출력 시각을 함께 사용한다.
+이 값들은 프로세스의 생존이나 종료를 직접 검사한 결과가 아니다.
+`confirmed`도 특정 관측 분기에 붙이는 응답 분류이며, OS의 종료·회수 확인을 뜻하지 않는다.
 마지막 훅 보고 시각은 등록 시 초기화하고 각 보고 때 갱신하며, 재시작 후에도 해석할 수 있도록
 Unix epoch 밀리초로 저장한다. 관측 조합은 registry 밖의 순수 함수에서 판단한다.
 
@@ -88,43 +90,44 @@ Unix epoch 밀리초로 저장한다. 관측 조합은 registry 밖의 순수 �
 | 1 | surface 가 라이브 트리에 없음 | `exited` | `confirmed` | `surface_gone` |
 | 2 | hook 이 `needs_input` 보고 | `needs_input` | `reported` | `hook_needs_input` |
 | 3 | hook 이 `idle` 보고 | `idle` | `reported` | `hook_idle` |
-| 4 | PTY busy | `active` | `confirmed` | `pty_busy` |
-| 5 | PTY 미기동(deferred) | `active` | `unobserved` | `pty_not_started` |
-| 6 | 전경 프로그램이 셸로 복귀 | `stale` | `confirmed` | `foreground_is_shell` |
-| 7 | 무출력 경과시간 관측 불가(mirror 등) | `active` | `unobserved` | `observation_unavailable` |
+| 4 | busy 캐시가 true | `active` | `confirmed` | `pty_busy` |
+| 5 | 로컬 TerminalStore에 없음(deferred·mirror 등) | `active` | `unobserved` | `pty_not_started` |
+| 6 | 캐시된 전경 이름이 알려진 셸 이름 | `stale` | `confirmed` | `foreground_is_shell` |
+| 7 | 로컬 출력 후 경과시간을 알 수 없음 | `active` | `unobserved` | `observation_unavailable` |
 | 8 | 무출력 < 임계값 | `active` | `heuristic` | `recent_output` |
 | 9 | 무출력 ≥ 임계값 && hook 침묵 < 임계값 | `active` | `heuristic` | `recent_hook_report` |
 | 10 | 무출력 ≥ 임계값 && hook 침묵 ≥ 임계값 | `stale` | `heuristic` | `output_and_hook_silent` |
 
-- **2·3 이 관측보다 위**인 것은 의도다 — 명시적으로 받은 보고를 무출력 추정으로
-  덮어쓰지 않기 때문이다.
-- **5 가 6~10 보다 위**인 것도 의도다 — deferred terminal 은 출력을 낸 적이
-  없어, 게이트하지 않으면 spawn 직후 전부 `stale` 로 오판정된다.
-- 임계값: 무출력 `CHILD_OUTPUT_SILENCE` = 120s, hook 침묵 `CHILD_HOOK_SILENCE` = 300s.
-  `BUSY_OUTPUT_WINDOW`(2s)를 그대로 쓸 수 없다 — 그 창은 "지금 화면이 갱신되는 중인가"
-  용도라 사람이 프롬프트를 읽는 몇 초만으로도 넘어간다.
-- hook 침묵 기준점이 없으면(이 기능 도입 전에 영속된 항목) 침묵으로 간주한다 —
-  무출력 시간도 이미 임계값을 넘겼고 최근 훅 보고도 확인할 수 없기 때문이다.
+- 2·3은 명시적으로 받은 보고를 출력 관측보다 우선한다. 보고의 진위나 최신성을
+  검증했다는 뜻은 아니며, 보고가 오래됐어도 이 두 분기가 우선한다.
+- 4의 busy 캐시는 최근 출력뿐 아니라 터미널 상태 락 경합 때문에 true가 될 수도 있다.
+  mirror는 원격에서 전달받은 busy 캐시를 사용한다.
+- 5는 로컬 Terminal이 없을 때 무출력 시간만으로 stale을 만들지 않도록 한다.
+  이 조건만으로 deferred와 mirror를 구별하지 않는다.
+- 6은 마지막 전경 조회의 이름을 사용한다. 현재 프로세스를 다시 조회하거나
+  에이전트의 종료 상태를 OS에서 기다린 결과가 아니다.
+- 임계값은 무출력 `CHILD_OUTPUT_SILENCE` = 120s, hook 침묵 `CHILD_HOOK_SILENCE` = 300s다.
+  busy의 짧은 출력 구간인 `BUSY_OUTPUT_WINDOW`(2s)와 용도가 다르다.
+- hook 보고 기준 시각이 없으면 침묵으로 간주한다. 무출력 시간도 이미 임계값을 넘겼고
+  최근 보고를 확인할 수 없을 때 stale로 분류한다.
 
 ### 미등록 surface
 
-`terminal.state` 는 registry 에 없는 surface 도 조회를 거부하지 않는다(`state_of` 의
-미등록 fallback 계약 유지). 다만 응답은 registry 원값이 아니라 파생 판정이므로,
-**PTY 가 떠 있고 셸 프롬프트에 머무는** 임의의 live surface 는 `active` 가 아니라
-`stale`(`foreground_is_shell`)로 나온다 — "이 surface 에서 도는 프로그램이 없다" 는
-관측 사실 그대로다. PTY 미기동(deferred) surface 는 게이트에 걸려 `active`
-(`pty_not_started`)로 남는다.
+`terminal.state`는 registry에 등록되지 않은 surface도 조회할 수 있다.
+응답은 registry 원값에 관측을 합친 판정이다. 예를 들어 로컬 Terminal이 있고
+busy가 아니며 캐시된 전경 이름이 셸이면 `stale`/`foreground_is_shell`을 반환한다.
+이름 캐시만으로 해당 surface에서 실행 중인 프로그램이 없다고 단정할 수는 없다.
+라이브 트리에는 있지만 로컬 Terminal이 없으면 앞선 훅·busy 분기를 거친 뒤 `active`/`pty_not_started`로 남는다.
 
 ### `stale` 의 의미와 한계
 
-`stale` 은 **`exited` 가 아니다.** surface 는 살아 있고, "이 surface 에서 에이전트
-프로세스가 돌고 있지 않거나, 돌고 있다는 증거가 없다" 는 뜻이다. `terminal.adopt` 로
-들어온 자식은 애초에 에이전트가 아닌 일반 셸일 수 있으므로 종료로 단정해선 안 된다.
+`stale`은 surface가 있지만 전경 이름이 셸이거나 출력·훅 보고가 오래 없다는 분류다.
+`exited`는 surface가 라이브 트리에 없다는 분류다. 어느 쪽도 OS 프로세스의 종료·회수를
+직접 확인한 값은 아니다. `terminal.adopt`로 등록한 자식은 처음부터 일반 셸일 수도 있다.
 
-무출력 기반 정지 판정은 **원리적으로 휴리스틱**이다 — SIGSTOP 으로 멈춘 프로세스,
-긴 추론 중인 에이전트, 출력이 없는 긴 명령은 관측상 구별되지 않는다. surface 부재와 전경 셸 복귀는 각각 확정 관측이며, 훅 보고·PTY busy·관측 불가도
-위 표처럼 별도 confidence를 갖는다. 특히 추정에 의한 `stale`만으로 작업 성공이나
-재시작 가능 여부를 결정하지 않는다.
+무출력 시간만으로는 SIGSTOP, 긴 추론, 출력 없는 긴 명령을 구별할 수 없다.
+`reported`는 훅으로 받은 상태, `unobserved`는 필요한 관측이 없어 active로 남긴 상태다.
+`confirmed`를 포함한 이 분류만으로 작업 성공이나 재시작 가능 여부를 결정하지 않는다.
 
 ### 출력 전용
 
@@ -147,7 +150,8 @@ Claude 플러그인의 `error_scan`은 출력 정지가 일정 시간 이어지�
 
 추정 `stale`도 알림 대상이다. 긴 추론과 실제 정지는 구별되지 않을 수 있으므로 부모가
 상태를 확인해야 하며 이 알림만으로 작업을 재시작하지 않는다. `stale` 자체도 훅 유실을
-증명하지 않는다. 재사용 후보를 세는 `spawn_census`는 확정 `stale`만 포함한다.
+증명하지 않는다. 재사용 후보를 세는 `spawn_census`는 `confidence: confirmed`인 `stale`만 포함한다.
+이는 캐시된 셸 이름을 근거로 한 목록이며 종료나 훅 유실이 확인됐다는 뜻은 아니다.
 이 감시는 `terminal.set_state`를 호출하지 않고 관측 결과를 읽기만 한다.
 Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설명하지 않는다.
 
@@ -193,12 +197,14 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
 
 나오는 조합은 위 "판정 우선순위" 표의 행 그대로다 — 임의 조합은 생기지 않는다.
 
-`state` 하나만 보면 **같은 값의 근거가 갈리는 것을 구분할 수 없다.** 예를 들어
-`active` 는 "PTY 가 지금 출력 중"(`pty_busy`/`confirmed`)일 수도 있고 "판정할 관측
-정보가 없어서 그대로 둔 것"(`observation_unavailable`/`unobserved`)일 수도 있다.
-소비자는 `confidence` 를 보고 **확정 판정만 종결로 다룰 수 있다** — `heuristic` 인
-`stale` 은 SIGSTOP·긴 추론·무출력 명령과 구별되지 않으므로(위 "`stale` 의 의미와
-한계") 그것만으로 종료 처리하면 실행 중인 자식을 잘못 종료할 수 있다.
+`state`와 `confidence`, `evidence`를 함께 읽어야 한다. 예를 들어 `active`는 busy 캐시가
+true인 경우(`pty_busy`/`confirmed`)와 필요한 관측이 없는 경우
+(`observation_unavailable`/`unobserved`)에 모두 나온다. busy에는 락 경합도 포함되므로
+현재 출력 중이라는 뜻으로만 읽어서는 안 된다.
+
+`confirmed`는 종료 확정 표시가 아니다. 재사용·종료 여부를 정할 때는 해당 자식의
+현재 상태와 작업 결과를 따로 확인한다. 특히 `heuristic`인 `stale`은 SIGSTOP·긴 추론·
+무출력 명령과 구별되지 않는다.
 
 원시 관측값(`busy`, 무출력 경과시간 등)은 싣지 않는다 — `evidence` 가 "어떤 관측으로
 판정했는가" 를 이미 알려주므로 목적이 달성되고, 원시값을 계약으로 굳히면
