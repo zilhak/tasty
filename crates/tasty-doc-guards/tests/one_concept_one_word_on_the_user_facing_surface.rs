@@ -48,6 +48,12 @@ struct NotAWindow {
 
 const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
+        path: "lang/ko.toml",
+        phrase: "중복 사용을 확인하는 창이 열립니다",
+        count: 2,
+        evidence: "ie_migrate_conflict와 ie_migrate_conflicts_tail은 단축키 가져오기 충돌 안내다. src/view/settings/ui.rs가 keybinding_import_conflict를 설정 윈도우 내부 PopupManager에 등록하고 연다.",
+    },
+    NotAWindow {
         path: "crates/tasty-plugin-clipboard-viewer/lang/ko.toml",
         phrase: "스냅샷 창은",
         count: 1,
@@ -72,12 +78,6 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
         phrase: "Task DAGs --> 창",
         count: 1,
         evidence: "DAG 목록 패널을 가리킨다. lang/ko.toml의 toggle_dag_list_label로 여닫으며 같은 문단의 DAG 탭과 구별된다.",
-    },
-    NotAWindow {
-        path: "site/content/customize/scripts.md",
-        phrase: "로그 창 하나",
-        count: 1,
-        evidence: "OS 창이나 팝업이 아니라 workspace 오른쪽의 surface/pane을 가리킨다. 구체적인 표기는 아직 정하지 않았다.",
     },
     NotAWindow {
         path: "site/content/customize/scripts.md",
@@ -112,9 +112,9 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     },
     NotAWindow {
         path: "site/content/using/files.md",
-        phrase: "그 창은 파일 경로와",
+        phrase: "**다음으로 열기…** 창에는",
         count: 1,
-        evidence: "바로 위 문단이 연 그 핸들러 선택 popup 을 되받아 형상을 설명한다",
+        evidence: "file_handler_picker PopupDef가 표시하는 경로·형식·핸들러 목록이다. 정의는 src/adapters/ui/popup/defs.rs에 있다.",
     },
     NotAWindow {
         path: "site/content/using/files.md",
@@ -124,13 +124,13 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     },
     NotAWindow {
         path: "site/content/using/files.md",
-        phrase: "같은 창이 다시 뜹니다",
+        phrase: "선택 창이 나올 수 있습니다",
         count: 1,
-        evidence: "같은 핸들러 선택 popup 이 다음 번에도 뜬다는 말이다 — 1회성 선택의 결과",
+        evidence: "같은 file_handler_picker 팝업의 일회성 핸들러 선택을 설명한다. src/file/dispatch.rs가 PopupManager로 연다.",
     },
     NotAWindow {
         path: "site/content/using/files.md",
-        phrase: "창은 `Esc` 나",
+        phrase: "창은 `Esc`나",
         count: 1,
         evidence: "같은 핸들러 선택 popup 의 닫는 법 — 그 popup 은 `close_on_outside_click=false` 다",
     },

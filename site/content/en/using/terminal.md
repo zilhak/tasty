@@ -1,4 +1,4 @@
-<!-- source-hash: 434835dbabcc -->
+<!-- source-hash: ff7054e7e347 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
