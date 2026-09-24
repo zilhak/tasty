@@ -1,24 +1,6 @@
-//! `DrillDown` — master→detail content-swap 레이아웃 (디자인
-//! `components/navigation/DrillDown`).
-//!
-//! 경계 잡힌 콘텐츠 영역 안에서 풀폭 **리스트 뷰**와 풀폭 **디테일 뷰**를 전면
-//! 교체(side-by-side 분할 아님)한다. 항목을 고르면 영역 전체가 그 디테일이 되고,
-//! 상단 고정 **back bar**(ghost ← IconButton + 디테일 제목 + 우측 actions 슬롯)로
-//! 리스트로 돌아온다. "풀폭 리스트 하나 → 항목 선택 → 디테일 → back" 모델 어디든
-//! 사용 — 예: Settings › Keybindings › Preset ([`crate::ListCtrl`] 와 짝).
-//!
-//! 디자인 계약 (`DrillDown.jsx`):
-//! - **Controlled** — 어느 뷰를 보일지는 호출측이 `view` 로 소유한다.
-//! - 전환은 **즉시**(0ms) — calm/0ms-terminal 시스템 준수. 디자인의 opt-in
-//!   `animate`(reduced-motion 인지 cross-fade)는 장식이므로 전사하지 않는다.
-//! - 컨테이너를 채운다(100% 높이). 디테일 본문은 내부 스크롤 — back bar 고정.
-//! - back bar: 36px 밴드(`--tasty-drilldown-backbar-height`), padding 4/8,
-//!   gap 8, 하단 `separator` 헤어라인. ← 는 ghost [`crate::IconButton`] sm +
-//!   chevronLeft 글리프. 제목 body(13) `title-fg`(semibold 은 egui weight 한계로
-//!   색 강조 관례 — `button.rs` 참조), 말줄임. actions 는 우측 정렬(gap space-sm).
-//!
-//! back 글리프는 tree_row 관례대로 painter 폴리라인으로 위젯이 직접 그린다
-//! (이 crate 는 본체 icons 미의존).
+//! 목록과 상세 내용을 같은 영역에서 교체한다. 표시 상태는 호출자가 소유한다.
+//! 전환 애니메이션은 없으며 상세 화면은 뒤로 가기 줄을 고정하고 본문만 스크롤한다.
+//! 뒤로 가기 아이콘은 직접 그리며 버튼 오른쪽에 호출자의 액션을 배치한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -106,9 +88,7 @@ impl<'a> DrillDown<'a> {
         self
     }
 
-    /// 레이아웃을 그린다. `view` 에 따라 `list` 또는 `detail` 본문 **하나만**
-    /// 호출된다(content swap). `actions` 는 back bar 우측 슬롯 — 디테일 액션
-    /// (예: "Apply")의 정위치 (모달 푸터의 Cancel/Save 와 분리).
+    /// view에 해당하는 본문 하나만 호출한다. actions는 상세 화면의 뒤로 가기 줄 오른쪽에 놓인다.
     pub fn show(
         self,
         ui: &mut egui::Ui,
@@ -131,7 +111,6 @@ impl<'a> DrillDown<'a> {
                     theme.drilldown_backbar_padding_y(),
                 );
                 back_clicked = self.backbar(ui, theme, width, bar_h.value(), actions);
-                // 디테일 본문 — 내부 스크롤 (back bar 고정).
                 egui::ScrollArea::vertical()
                     .id_salt(("tasty_drilldown_detail", self.id_salt))
                     .auto_shrink([false, false])
@@ -139,7 +118,6 @@ impl<'a> DrillDown<'a> {
                     .drag_to_scroll(false)
                     .show(ui, |ui| detail(ui, theme));
             } else {
-                // 리스트 뷰 — 영역 전체 스크롤.
                 egui::ScrollArea::vertical()
                     .id_salt(("tasty_drilldown_list", self.id_salt))
                     .auto_shrink([false, false])
@@ -166,7 +144,6 @@ impl<'a> DrillDown<'a> {
 
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, bar_h), egui::Sense::hover());
 
-        // 하단 헤어라인.
         let y = rect.bottom() - theme.border_width.value() * 0.5;
         ui.painter().line_segment(
             [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
@@ -178,7 +155,6 @@ impl<'a> DrillDown<'a> {
 
         let inner = rect.shrink2(egui::vec2(pad_x, pad_y));
 
-        // ← ghost IconButton (sm, chevronLeft 글리프).
         let mut left_ui = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(inner)
@@ -196,7 +172,6 @@ impl<'a> DrillDown<'a> {
         }
         let title_left = resp.rect.right() + gap;
 
-        // actions 슬롯 (우측 정렬, 항목 간 gap space-sm).
         let mut title_right = inner.right();
         if let Some(actions) = actions {
             let mut right_ui = ui.new_child(
@@ -209,7 +184,6 @@ impl<'a> DrillDown<'a> {
             title_right = right_ui.min_rect().left() - gap;
         }
 
-        // 제목 — body(13) title-fg, 말줄임.
         let mut job = egui::text::LayoutJob::simple_singleline(
             self.title.to_owned(),
             egui::FontId::proportional(theme.drilldown_title_font_size().value()),

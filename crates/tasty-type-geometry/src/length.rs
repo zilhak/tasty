@@ -1,10 +1,6 @@
-//! Type-safe pixel length types to prevent physical/logical pixel confusion at compile time.
-//!
-//! - `PhysicalPx`: actual device pixels (used by GPU, wgpu, winit mouse coordinates)
-//! - `LogicalPx`: DPI-independent pixels (used by egui, Theme constants)
-//!
-//! Direct assignment between the two is impossible. Conversion requires an explicit
-//! scale factor, making DPI-related bugs a compile error instead of a runtime surprise.
+//! PhysicalPx는 장치 픽셀, LogicalPx는 DPI와 독립된 논리 픽셀을 나타낸다.
+//! 두 타입 사이의 직접 대입을 막고 변환할 때 배율을 명시하게 한다.
+//! 잘못된 배율이나 원시 값으로 계산한 오류까지 방지하는 것은 아니다.
 
 /// A length in physical (device) pixels.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
@@ -35,13 +31,8 @@ impl PhysicalPx {
         Self(self.0.min(other.0))
     }
 
-    /// 두 경계 사이로 자른다. 경계가 같은 타입이라 결과도 같은 타입이고 좌표계를
-    /// 넘지 않는다 — 벗겼다가 다시 싸는 자리를 만들지 않으려고 둔다.
-    ///
-    /// `.max(lo).min(hi)` 로도 같은 값이 나오지만 그 형태는 호출처에서 벗기기를 두 번
-    /// 만드는 자리로 이어진다. 계약은 [`f32::clamp`] 를 그대로 물려받는다 —
-    /// `min > max` 이거나 어느 한쪽이 NaN 이면 패닉한다([`Self::max`]/[`Self::min`] 이
-    /// f32 에 위임하는 것과 같은 형태다).
+    /// 같은 좌표계의 최소·최대 경계로 제한한다.
+    /// f32::clamp와 같이 min > max이거나 경계가 NaN이면 패닉한다.
     pub fn clamp(self, min: Self, max: Self) -> Self {
         Self(self.0.clamp(min.0, max.0))
     }
@@ -54,9 +45,7 @@ impl PhysicalPx {
         Self(self.0.abs())
     }
 
-    /// `const` 문맥용 덧셈. `Add` impl 과 결과가 같지만 트레이트 impl 은 `const` 가
-    /// 아니라 상수 초기화식에서 부를 수 없다(E0015). 그 자리에서 `Self(a.0 + b.0)` 로
-    /// 필드를 벗기면 타입이 사라지므로, 벗기지 않고 쓰는 통로를 둔다.
+    /// Add 트레이트를 호출할 수 없는 const 문맥에서 사용할 덧셈.
     pub const fn plus(self, other: Self) -> Self {
         Self(self.0 + other.0)
     }
@@ -66,10 +55,7 @@ impl PhysicalPx {
         Self(self.0 - other.0)
     }
 
-    /// `const` 문맥용 스칼라 배. 사유는 [`Self::plus`] 와 같다.
-    ///
-    /// `Mul<f32>` 와 달리 계수가 좌변인 형태(`4.0 * LEN`)는 어차피 지원하지 않으므로,
-    /// 호출 형태가 `LEN.scaled(4.0)` 하나로 고정된다.
+    /// const 문맥에서 사용할 배율 곱셈.
     pub const fn scaled(self, k: f32) -> Self {
         Self(self.0 * k)
     }
@@ -92,13 +78,8 @@ impl LogicalPx {
         Self(self.0.min(other.0))
     }
 
-    /// 두 경계 사이로 자른다. 경계가 같은 타입이라 결과도 같은 타입이고 좌표계를
-    /// 넘지 않는다 — 벗겼다가 다시 싸는 자리를 만들지 않으려고 둔다.
-    ///
-    /// `.max(lo).min(hi)` 로도 같은 값이 나오지만 그 형태는 호출처에서 벗기기를 두 번
-    /// 만드는 자리로 이어진다. 계약은 [`f32::clamp`] 를 그대로 물려받는다 —
-    /// `min > max` 이거나 어느 한쪽이 NaN 이면 패닉한다([`Self::max`]/[`Self::min`] 이
-    /// f32 에 위임하는 것과 같은 형태다).
+    /// 같은 좌표계의 최소·최대 경계로 제한한다.
+    /// f32::clamp와 같이 min > max이거나 경계가 NaN이면 패닉한다.
     pub fn clamp(self, min: Self, max: Self) -> Self {
         Self(self.0.clamp(min.0, max.0))
     }
@@ -111,9 +92,7 @@ impl LogicalPx {
         Self(self.0.abs())
     }
 
-    /// `const` 문맥용 덧셈. `Add` impl 과 결과가 같지만 트레이트 impl 은 `const` 가
-    /// 아니라 상수 초기화식에서 부를 수 없다(E0015). 그 자리에서 `Self(a.0 + b.0)` 로
-    /// 필드를 벗기면 타입이 사라지므로, 벗기지 않고 쓰는 통로를 둔다.
+    /// Add 트레이트를 호출할 수 없는 const 문맥에서 사용할 덧셈.
     pub const fn plus(self, other: Self) -> Self {
         Self(self.0 + other.0)
     }
@@ -123,10 +102,7 @@ impl LogicalPx {
         Self(self.0 - other.0)
     }
 
-    /// `const` 문맥용 스칼라 배. 사유는 [`Self::plus`] 와 같다.
-    ///
-    /// `Mul<f32>` 와 달리 계수가 좌변인 형태(`4.0 * LEN`)는 어차피 지원하지 않으므로,
-    /// 호출 형태가 `LEN.scaled(4.0)` 하나로 고정된다.
+    /// const 문맥에서 사용할 배율 곱셈.
     pub const fn scaled(self, k: f32) -> Self {
         Self(self.0 * k)
     }
@@ -274,8 +250,7 @@ impl<'de> serde::Deserialize<'de> for PhysicalPx {
 mod tests {
     use super::*;
 
-    // 이 셋이 `const` 문맥에서 평가된다는 것 자체가 검증 대상이다. 값 비교만 하면
-    // `const` 를 떼도 초록이라, 상수 초기화식으로 써서 컴파일 자체를 증거로 삼는다.
+    // const 초기화식으로 사용해 상수 계산이 가능한지도 확인한다.
     const A: LogicalPx = LogicalPx(40.0);
     const B: LogicalPx = LogicalPx(12.0);
     const SUM: LogicalPx = A.plus(B);
@@ -291,8 +266,6 @@ mod tests {
         assert_eq!(PHYS, (PhysicalPx(9.0) + PhysicalPx(1.0)) * 2.0);
     }
 
-    // `clamp` 은 두 타입에 대칭으로 있어야 한다 — 한쪽만 있으면 다음 사람이 그
-    // 비대칭을 결함으로 읽는다. 그래서 둘 다 검사한다.
     #[test]
     fn clamp_cuts_at_both_ends_on_both_types() {
         let lo = LogicalPx(10.0);
@@ -308,12 +281,11 @@ mod tests {
         assert_eq!(PhysicalPx(15.0).clamp(plo, phi), PhysicalPx(15.0));
     }
 
-    // 경계가 뒤집히면 `f32::clamp` 이 패닉한다. 그 계약을 물려받는다는 것이
-    // 이 타입의 약속이라, 물려받는지 자체를 검사한다.
+    // f32::clamp의 잘못된 경계 처리와 같은지 확인한다.
     #[test]
     #[should_panic(expected = "min > max, or either was NaN")]
     fn clamp_panics_when_the_bounds_are_reversed() {
-        // 반환값은 안 쓴다 — 이 테스트가 보는 것은 값이 아니라 패닉 자체다.
+        // 반환값이 아닌 패닉을 검사한다.
         let _ = LogicalPx(1.0).clamp(LogicalPx(20.0), LogicalPx(10.0));
     }
 }

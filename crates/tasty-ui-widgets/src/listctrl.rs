@@ -1,24 +1,6 @@
-//! `ListCtrl` — 행 선택형 내비게이션 리스트 (디자인 `components/data/ListCtrl`).
-//!
-//! Table(다컬럼·정렬 데이터 그리드)과 달리 "하나 골라 진입하는(pick one to drill
-//! into)" 풀폭 리스트다. 각 행: 주 라벨 + 선택적 보조 description + 선택적 leading
-//! 아이콘 / trailing 슬롯(Tag/Badge — 예: "Active" 마커) + 기본으로 우측 drill-in
-//! chevron(클릭 시 디테일 진입 신호). [`crate::DrillDown`] 과 짝지어 list → detail
-//! content-swap 에 쓴다.
-//!
-//! 디자인 계약 (`ListCtrl.jsx`):
-//! - 행 상태: default / hover(`overlay-hover`) / selected(`surface-active` + 2px
-//!   accent 좌측 바 — sidebar/list idiom) / disabled(opacity, chevron 숨김).
-//! - `divided`(기본 on): 마지막 행 제외 `separator` 헤어라인 + 해당 행 radius 0.
-//! - 행 min-height 36(`--tasty-listctrl-row-min-height`) — description 있으면
-//!   내용 높이(label + 1px + desc + 상하 패딩)만큼 늘어난다.
-//! - label body(13) `label-fg` → hover/selected `label-fg-active`. desc caption(11)
-//!   muted. 둘 다 넘치면 말줄임(ellipsis).
-//! - trailing 슬롯과 chevron 은 우측 정렬, 간격 `space-sm`.
-//! - 빈 목록: `space-lg` 패딩의 중앙 muted `empty_label` (비상호작용).
-//!
-//! 아이콘 시스템은 **호출측 소유** — [`IconPainter`] 주입(이 crate 는 본체 icons
-//! 미의존). chevron 은 tree_row 관례대로 위젯이 painter 로 직접 그린다.
+//! 항목을 골라 상세 화면으로 들어가는 목록. DrillDown과 함께 사용할 수 있다.
+//! 선택·호버·비활성을 구분하며 보조 설명이 있으면 행 높이를 늘린다.
+//! 아이콘과 오른쪽 액션은 호출자가 제공하고, 결과 인덱스로 자신의 모델을 조회한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -30,8 +12,7 @@ use crate::tokens::STRUCT_GAP_1;
 /// 예: `|ui, theme| { tag(ui, theme, "Active", TagVariant::Success, true); }`.
 pub type ListCtrlTrailing<'a> = &'a dyn Fn(&mut egui::Ui, &Theme);
 
-/// ListCtrl 한 행. 디자인 `ListCtrlItem` (id 는 인덱스로 갈음 — 호출측이
-/// `clicked` 인덱스로 자기 모델의 id 를 역참조한다).
+/// 목록의 한 행. 클릭 결과는 items 기준 인덱스다.
 pub struct ListCtrlItem<'a> {
     /// 주 라벨 (body 13).
     pub label: &'a str,
@@ -195,7 +176,6 @@ impl<'a> ListCtrl<'a> {
         let label_font = egui::FontId::proportional(theme.listctrl_font_size().value());
         let desc_font = egui::FontId::proportional(theme.listctrl_desc_font_size().value());
 
-        // 내용 높이 → 행 높이 (min-height 36, description 있으면 늘어남).
         let label_h = ui.fonts(|f| f.row_height(&label_font));
         let desc_h = item
             .description
@@ -218,11 +198,9 @@ impl<'a> ListCtrl<'a> {
         let hovered = !item.disabled && resp.hovered();
         let radius = row_radius(theme.listctrl_radius(), self.divided, is_last).value();
 
-        // 배경: selected(surface-active) > hover(overlay-hover).
         if is_selected {
             ui.painter()
                 .rect_filled(rect, radius, theme.listctrl_row_bg_selected().to_egui());
-            // 2px accent 좌측 바 (inset box-shadow 전사).
             let bar = egui::Rect::from_min_max(
                 rect.min,
                 egui::pos2(
@@ -240,7 +218,6 @@ impl<'a> ListCtrl<'a> {
             );
         }
 
-        // divided: 마지막 행 제외 하단 헤어라인.
         if self.divided && !is_last {
             let y = rect.bottom() - theme.border_width.value() * 0.5;
             ui.painter().line_segment(
@@ -262,7 +239,6 @@ impl<'a> ListCtrl<'a> {
 
         let mut x = rect.left() + pad_x;
 
-        // leading 아이콘 (icon-size-md, muted).
         if let Some(paint) = item.icon {
             let glyph = theme.icon_glyph_size_md.value();
             let irect = egui::Rect::from_center_size(
@@ -273,7 +249,6 @@ impl<'a> ListCtrl<'a> {
             x += glyph + gap;
         }
 
-        // 우측: chevron (가장 오른쪽) ← trailing 슬롯 순으로 배치.
         let mut right = rect.right() - pad_x;
         if self.chevron && !item.disabled {
             let glyph = theme.icon_glyph_size_sm.value();
@@ -302,7 +277,6 @@ impl<'a> ListCtrl<'a> {
             right = child.min_rect().left() - theme.spacing_sm.value();
         }
 
-        // 텍스트 컬럼 (label 위 / desc 아래, 1px 간격, 말줄임).
         let text_w = (right - x - gap).max(0.0);
         let label_fg = if is_selected || hovered {
             theme.listctrl_label_fg_active().to_egui()

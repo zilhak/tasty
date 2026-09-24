@@ -1,19 +1,5 @@
-//! `IconButton` — 정사각 아이콘 전용 컨트롤 (디자인 `components/core/IconButton`).
-//!
-//! 디자인 계약:
-//! - border 1px **transparent**(비가시) — ghost 기본. tasty 가 팝업마다 egui 기본
-//!   `ui.button` 프레임을 노출하던 버그(예: port_scanner X 버튼 테두리)를 제거한다.
-//! - size md(28) / sm(24), glyph 16 / 14, radius `corner_radius`.
-//! - ghost: fg `text-secondary` → hover `text-primary`, hover bg `overlay-hover`.
-//! - solid: bg `surface-raised` + border `border-default` + fg `text-primary`.
-//! - active(지속 선택): fg `accent-primary` + bg `overlay-active`.
-//! - disabled: opacity 0.5 (`--tasty-opacity-disabled`).
-//!
-//! Motion(디자인 .prompt.md): hover 틴트 fade 는 장식 → 스냅 OK. `active` 선택
-//! 틴트와 focus-ring 은 기능 → 즉시(여기선 즉시 그린다).
-//!
-//! 아이콘 시스템은 **호출측 소유** — 본체 `icons::Icon`, 갤러리 mock 모두
-//! [`IconPainter`] 클로저로 주입한다(이 crate 는 본체 icons 에 의존하지 않는다).
+//! 정사각 아이콘 버튼. 투명한 ghost와 채운 solid 형태를 제공한다.
+//! 선택·호버·누름 상태를 즉시 표시하며 아이콘은 호출자의 IconPainter로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -91,8 +77,7 @@ impl IconButton {
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), sense);
         let radius = theme.icon_button_radius().value();
 
-        // solid: 채움 + 1px border. solid bg/border 는 대응 icon-button component
-        // 토큰 없어 semantic 유지.
+        // solid 배경과 테두리는 대응 컴포넌트 토큰이 없어 의미별 토큰을 사용한다.
         if self.variant == IconButtonVariant::Solid {
             ui.painter().rect(
                 rect,
@@ -103,7 +88,6 @@ impl IconButton {
             );
         }
 
-        // 배경 오버레이. active(지속) 또는 pressed → active 틴트, hover → hover 틴트.
         if self.active || (self.enabled && resp.is_pointer_button_down_on()) {
             ui.painter().rect_filled(
                 rect,
@@ -118,7 +102,6 @@ impl IconButton {
             );
         }
 
-        // 글리프 색. active accent 는 대응 icon-button component 토큰 없어 semantic.
         let color = if self.active {
             theme.accent_primary().to_egui()
         } else if self.variant == IconButtonVariant::Solid || (self.enabled && resp.hovered()) {

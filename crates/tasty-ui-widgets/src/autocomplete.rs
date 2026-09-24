@@ -1,29 +1,8 @@
-//! `AutoComplete` — 자유입력 트리거 + 후보 드롭다운(typeahead).
-//!
-//! 닫힌 선택(Select)이 아니라 **입력하면 후보가 좁혀지는** 진짜 typeahead 다. 새 디자인
-//! 언어가 아니라 기존 프리미티브의 **합성**이다(디자인 `forms/AutoComplete`):
-//! - 트리거(편집 필드) = [`crate::Input`] 그대로(mono 변형·leading 아이콘·focus ring).
-//! - 드롭다운 컨테이너 = `menu container` 토큰(surface-raised / border-default /
-//!   corner-radius) + `shadow_popover` lift.
-//! - 후보 행 = `navigation/MenuItem` 언어(control-height 28, space-md 패딩). 단 경로
-//!   가독을 위해 우측 clip 대신 **middle-ellipsis**(파일명 꼬리 보존)로 그린다.
-//!
-//! 계약(디자인 `AutoComplete.jsx`):
-//! - **필터**: `match` = `Substring`(기본·경로친화) · `Prefix` · `None`. 트리거 텍스트를
-//!   질의로 후보를 좁힌다(대소문자 무시). `None` 은 필터 없이 전체 노출(구 히스토리 동작).
-//! - **highlight**: 매치 구간을 accent-primary 로 강조(egui 폰트 weight 한계상 색만 —
-//!   `button.rs` semibold 관례와 동일).
-//! - **maxDropdownHeight**: 기본 `autocomplete_max_height`(220 ≈ 7행) 초과 시 리스트
-//!   **내부 세로 스크롤** + shrink-to-fit.
-//! - **hover vs keyboard-active 2단계 분리**: pointer hover = `overlay-hover`(약한 워시),
-//!   ↑/↓ keyboard 커서 = `surface-active`(더 진함). 겹치면 keyboard-active 우선.
-//! - **Pick 계약**: 확정 시 **선택된 후보 문자열을 직접 반환**한다(필터된 가시 목록 기준).
-//!   호출측이 원본 인덱스로 되돌릴 필요가 없어 필터 도입에 따른 인덱스 오매핑을 원천 차단.
-//! - empty/no-match: muted `empty_label` 행 1개.
-//!
-//! 키보드 내비(↑/↓/Enter/Esc)는 **스캐폴드**다 — 실제 키 forward 는 plugin 주소창 배선에서
-//! 종단 검증한다. 여기선 action 반환 골격과 순수 필터/인덱스/ellipsis 로직만 확정한다
-//! (단위테스트로 회귀 격리).
+//! 입력한 텍스트로 후보를 좁히는 자동 완성 필드.
+//! Substring·Prefix는 대소문자를 무시하고 None은 모든 후보를 보여준다.
+//! 후보는 가운데를 줄여 파일명 끝을 보존하며 높이를 넘으면 내부 스크롤을 사용한다.
+//! 키보드 선택은 호버보다 우선한다. 확정하면 필터된 목록의 문자열을 직접 반환한다.
+//! 방향키·Enter·Esc를 처리하지만 플러그인의 키 전달과 취소 후 버퍼 복원은 호출자가 맡는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -37,7 +16,7 @@ pub enum MatchMode {
     Substring,
     /// 후보 라벨이 질의로 시작.
     Prefix,
-    /// 필터 없음 — 전체 후보 노출(구 히스토리 동작).
+    /// 필터 없이 전체 후보를 보여준다.
     None,
 }
 
@@ -48,8 +27,7 @@ pub enum AutoCompleteAction {
     None,
     /// 입력 버퍼 텍스트가 바뀜(질의 변경).
     Edited,
-    /// 후보 행을 확정(클릭 또는 keyboard-active 행에서 Enter). **선택된 후보 문자열**을
-    /// 담는다(필터된 가시 목록 기준 — 호출측이 인덱스를 역매핑하지 않는다).
+    /// 필터된 후보에서 확정한 문자열. 원본 인덱스로 다시 변환할 필요가 없다.
     Pick(String),
     /// active 행 없이 Enter — 현재 버퍼를 그대로 확정(navigate).
     Submit,
@@ -57,11 +35,7 @@ pub enum AutoCompleteAction {
     Cancel,
 }
 
-/// `AutoComplete::show` 한 프레임 결과 — 행위 + 트리거 응답.
-///
-/// 트리거(`Input`)의 [`egui::Response`] 를 그대로 노출한다. 호출측이 포커스 상태
-/// (`has_focus`/`gained_focus`/`lost_focus`)로 편집모드를 추적하거나 Esc 확정 후
-/// `surrender_focus()` 하도록 하기 위함이다(플러그인 주소창 배선 계약).
+/// 동작과 입력 필드 응답. 호출자는 응답의 포커스 상태를 읽거나 포커스를 해제할 수 있다.
 pub struct AutoCompleteResponse {
     /// 이번 프레임의 사용자 행위.
     pub action: AutoCompleteAction,
@@ -149,8 +123,7 @@ impl<'a> AutoComplete<'a> {
         self
     }
 
-    /// 트리거 텍스트 색 override — 미지정 시 `input_fg`(text-primary). 주소창 idle 표시가
-    /// 비편집 시 text-secondary 로 낮추는 용도. 값은 `Theme` 토큰에서 파생해야 한다.
+    /// 입력 글자색. 기본은 input_fg이며 다른 색도 Theme에서 가져와야 한다.
     pub fn trigger_text_color(mut self, color: egui::Color32) -> Self {
         self.trigger_text_color = Some(color);
         self
@@ -174,14 +147,9 @@ impl<'a> AutoComplete<'a> {
         self
     }
 
-    /// 트리거 + (포커스 시) 후보 드롭다운을 그린다.
-    ///
-    /// - `buf`: 편집 버퍼(트리거 텍스트 = 필터 질의).
-    /// - `entries`: 후보(원본 목록). 필터가 켜지면 이 목록을 좁혀 그린다.
-    /// - `active`: keyboard-active 행 index(호출측 소유 상태, **필터된 가시 목록 기준**).
-    ///
-    /// 드롭다운은 트리거 아래 floating popover(`shadow_popover` lift)로 뜬다 —
-    /// 주변 레이아웃을 밀어내지 않는다(§3 브라우저 주소창형).
+    /// 입력 필드와 포커스 중의 후보 팝오버를 그린다.
+    /// buf는 검색할 입력값, entries는 원본 후보, active는 필터된 목록의 키보드 인덱스다.
+    /// 팝오버는 주변 레이아웃을 밀지 않는다.
     pub fn show(
         self,
         ui: &mut egui::Ui,
@@ -192,7 +160,6 @@ impl<'a> AutoComplete<'a> {
     ) -> AutoCompleteResponse {
         let width = self.width.unwrap_or_else(|| ui.available_width());
 
-        // 트리거 = Input 그대로(mono·아이콘·focus ring 계약을 재사용).
         let mut trigger = crate::Input::new()
             .placeholder(self.placeholder)
             .mono(self.mono)
@@ -212,11 +179,8 @@ impl<'a> AutoComplete<'a> {
             AutoCompleteAction::None
         };
 
-        // 포커스 중이면 열림(브라우저 주소창형 — 포커스 즉시 후보 노출).
         let focused = self.enabled && resp.has_focus();
-        // singleline TextEdit 은 Enter/Esc 에서 **같은 프레임에 포커스를 넘긴다** → 그
-        // 프레임엔 `has_focus()` 가 이미 false 다. Enter/Esc 확정을 놓치지 않도록 이번
-        // 프레임에 포커스를 잃은 경우(`lost_focus`)까지 "관여(engaged)"로 본다.
+        // Enter/Esc가 포커스를 해제하는 프레임에도 확정·취소를 처리해야 한다.
         let engaged = self.enabled && (resp.has_focus() || resp.lost_focus());
         if !engaged {
             return AutoCompleteResponse {
@@ -225,7 +189,6 @@ impl<'a> AutoComplete<'a> {
             };
         }
 
-        // 질의 = 트리거 버퍼. 이 값으로 후보를 좁히고(typeahead) 매치 구간을 강조한다.
         let query = buf.clone();
         let filtered = filter_entries(entries, &query, self.match_mode);
 
@@ -246,9 +209,7 @@ impl<'a> AutoComplete<'a> {
                 Some(i.min(n - 1))
             };
         }
-        // active 이동·드롭다운 렌더는 실제 포커스(열림)일 때만. 닫히는 프레임엔 스킵.
-        // 커서 규약(끝에서 순환·첫 오픈은 진행 방향 끝)은 [`crate::keyboard_cursor`] 한 벌을
-        // 부른다 — 여기엔 비활성 행 개념이 없어 마스크는 `None`.
+        // 포커스가 있을 때만 공용 키보드 커서 규칙으로 이동한다. 비활성 후보는 없다.
         if focused {
             if down {
                 *active = keyboard_cursor::step_active(*active, n, None, true);
@@ -258,7 +219,6 @@ impl<'a> AutoComplete<'a> {
             }
         }
 
-        // 드롭다운 — 트리거 아래 floating(레이아웃 불변). space-xs 오프셋.
         let clicked = if focused {
             let area_id = ui.make_persistent_id(("tasty_autocomplete", self.id_salt));
             let origin = resp.rect.left_bottom() + egui::vec2(0.0, theme.spacing_xs.value());
@@ -308,13 +268,8 @@ impl<'a> AutoComplete<'a> {
     }
 }
 
-/// 드롭다운 컨테이너 + (스크롤되는) 후보 행을 **현재 ui 위치**에 그린다(호출측이 Area/inline 결정).
-///
-/// 컨테이너 = surface-raised / border-default 1px / corner-radius / `shadow_popover` lift.
-/// 행 = MenuItem 언어(control-height, space-md 패딩) + middle-ellipsis 경로 + 매치 highlight.
-/// `active`(keyboard 커서)는 surface-active, pointer hover 는 overlay-hover(2단계 분리).
-/// `entries` 는 **이미 필터된 가시 목록**이고, 리스트가 `max_height` 를 넘으면 내부 세로
-/// 스크롤(적으면 shrink-to-fit). 반환: 클릭된 행 index(가시 목록 기준).
+/// 현재 위치에 후보 목록을 그린다. entries와 반환 인덱스는 필터된 목록 기준이다.
+/// 키보드 선택이 호버보다 우선하며 max_height를 넘으면 내부 스크롤을 사용한다.
 #[allow(clippy::too_many_arguments)]
 pub fn autocomplete_dropdown(
     ui: &mut egui::Ui,
@@ -345,7 +300,6 @@ pub fn autocomplete_dropdown(
             if entries.is_empty() {
                 empty_row(ui, theme, empty_label);
             } else {
-                // maxDropdownHeight 초과 시 내부 스크롤, 적으면 shrink-to-fit.
                 egui::ScrollArea::vertical()
                     .id_salt(("tasty_autocomplete_list", id_salt))
                     .max_height(max_height)
@@ -374,7 +328,7 @@ pub fn autocomplete_dropdown(
     clicked
 }
 
-/// 후보 행 하나 — MenuItem 구조 전사 + middle-ellipsis + 매치 highlight. 클릭 응답 반환.
+/// 후보 한 행을 그리고 클릭 응답을 반환한다.
 #[allow(clippy::too_many_arguments)]
 fn candidate_row(
     ui: &mut egui::Ui,
@@ -396,7 +350,6 @@ fn candidate_row(
 
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
 
-    // 배경: keyboard-active → surface-active(진함), hover → overlay-hover(약함). 2단계 분리.
     if keyboard_active {
         ui.painter()
             .rect_filled(rect, radius, theme.surface_active().to_egui());
@@ -408,7 +361,6 @@ fn candidate_row(
         );
     }
 
-    // fg: idle text-secondary, hover/active text-primary (MenuItem hover 승격).
     let highlighted = keyboard_active || resp.hovered();
     let fg = if highlighted {
         theme.text_primary().to_egui()
@@ -427,7 +379,6 @@ fn candidate_row(
         x += icon_glyph + gap;
     }
 
-    // 라벨 — 남은 폭에 middle-ellipsis(파일명 꼬리 보존).
     let avail = (rect.right() - pad_x - x).max(0.0);
     let painter = ui.painter();
     let shown = elide_middle(path, avail, |s| {
@@ -437,7 +388,7 @@ fn candidate_row(
             .width()
     });
 
-    // 매치 구간 강조 — 표시(가능하면 elide 된) 문자열에서 첫 매치 run 을 accent 색으로.
+    // 말줄임 후 표시 문자열에서 첫 번째 일치 구간을 강조한다.
     let run = if highlight {
         match_run(&shown, query)
     } else {
@@ -629,8 +580,7 @@ mod tests {
 
     #[test]
     fn pick_returns_visible_string_not_original_index() {
-        // 필터가 목록을 좁히면 가시 인덱스 != 원본 인덱스. Pick 은 문자열을 직접
-        // 반환하므로 호출측이 원본 인덱스로 되돌릴 필요가 없다(오매핑 원천 차단).
+        // 필터된 인덱스와 원본 인덱스가 달라도 선택 문자열을 그대로 반환해야 한다.
         let items = ["alpha", "beta", "gamma", "delta"];
         let filtered = filter_entries(&items, "l", MatchMode::Substring);
         // "l" 포함: alpha, delta (beta·gamma 는 제외).
@@ -639,7 +589,6 @@ mod tests {
         let active = 1usize;
         let picked = filtered[active].to_string();
         assert_eq!(picked, "delta");
-        // 원본 인덱스 1 은 beta 라, 인덱스 기반이었다면 엉뚱한 후보로 이동했을 것.
         assert_ne!(picked, items[active]);
     }
 

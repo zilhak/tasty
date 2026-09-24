@@ -1,16 +1,5 @@
-//! `HelpHint` — 라벨 옆 인라인 `(?)` 글리프 + hover Tooltip
-//! (디자인 `components/feedback/HelpHint`).
-//!
-//! 디자인 계약:
-//! - 크기 14(`icon-size-sm`), 수직 중앙 정렬, `cursor: help`, 클릭 동작 없음.
-//! - 색: rest=`text-muted` → hover/focus=`text-secondary`.
-//! - 글리프(24 viewBox, 2px stroke, round cap/join, currentColor):
-//!   `<circle cx=12 cy=12 r=10/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>`
-//! - hover ~150ms(design `--tasty-motion-ui-med`) 후 [`Tooltip`] 을 조합해 띄운다.
-//!
-//! 글리프는 SVG 자산 주입 대신 painter 로 직접 그린다(`status_dot`/`spinner` 전례) —
-//! 위젯 크레이트는 아이콘 자산을 소유하지 않는다. canonical 지오메트리는 `tasty-icons`
-//! (수기 전사)가 소유하며, 그 `HELP_CIRCLE` 은 여기 painter path 와 별개 소스다.
+//! 라벨 옆 물음표와 호버 도움말. 클릭 동작 없이 Tooltip을 조합한다.
+//! 아이콘은 painter로 직접 그리며 tasty-icons의 HELP_CIRCLE SVG와는 별도 구현이다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -84,11 +73,8 @@ impl<'a> HelpHint<'a> {
     }
 }
 
-/// hover 시작 시각을 egui memory 에 기록하고 `component.tooltip-delay`(150ms) 경과
-/// 여부를 판정한다. hover 가 풀리면 타이머를 지워 다음 hover 에서 다시 시작한다.
-///
-/// egui 전역 `Interaction::tooltip_delay`(0.5s)를 건드리면 기존 `on_hover_text` 전부가
-/// 영향을 받으므로 커스텀 타이밍을 쓴다.
+/// 호버가 시작된 시각부터 지연을 계산하고 벗어나면 초기화한다.
+/// 다른 egui 도움말의 대기 시간을 바꾸지 않도록 자체 타이머를 사용한다.
 fn hover_delay_elapsed(ui: &egui::Ui, theme: &Theme, id: egui::Id, hovered: bool) -> bool {
     let key = id.with("help_hint_hover_started_at");
     if hovered {
@@ -122,7 +108,7 @@ fn paint_help_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Colo
     painter.circle_stroke(map(12.0, 12.0), 10.0 * scale, stroke);
 
     // 물음표 훅(arc `M9.09 9 a3 3 0 0 1 5.83 1`) → 꼬리(cubic `c0 2 -3 3 -3 3`).
-    // arc 를 endpoint→center 변환해 얻은 상수(계획 path 에서 산출).
+    // SVG 호의 끝점 표현을 중심 좌표로 변환한 값이다.
     let mut pts: Vec<egui::Pos2> = Vec::new();
     let (cx, cy, r) = (11.92_f32, 9.996_f32, 3.0_f32);
     let start = 199.4_f32.to_radians();

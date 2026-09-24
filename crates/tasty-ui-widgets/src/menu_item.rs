@@ -15,12 +15,7 @@ pub enum MenuItemVariant {
     Danger,
 }
 
-/// MenuItem 우측 단축키 자리의 두 표현.
-///
-/// 디자인에서 이 자리는 한 종류가 아니다 — 메뉴는 mono micro muted **텍스트** 한
-/// 덩이이고(`menu-item-shortcut-font-size`), 커맨드 팔레트는 키별 **`Kbd` 키캡**이다
-/// (`components/core/Kbd`). 그래서 `menu_item` 의 인자 타입을 바꾸는 대신 표현을 둘로
-/// 갈라 각자의 문을 둔다 — 텍스트 쪽 호출자 아홉 자리는 그대로다.
+/// 일반 메뉴의 텍스트 단축키와 팔레트의 키캡 단축키를 구분한다.
 enum Shortcut<'a> {
     Text(&'a str),
     Keys(&'a [&'a str]),
@@ -50,13 +45,8 @@ pub fn menu_item(
     )
 }
 
-/// [`menu_item`] 의 **키캡 판** — 단축키를 키별 `Kbd` 로 그린다(커맨드 팔레트 관례).
-///
-/// `keys` 는 이미 나뉜 토큰이다(`["Ctrl", "T"]`) — `"ctrl++"` 같은 조합에서 `+` 가
-/// 구분자인지 키인지 모호해지므로 문자열을 여기서 쪼개지 않는다.
-///
-/// 키캡은 `enabled=false` 에서도 흐려지지 않는다. 지금 이 문을 쓰는 자리는 팔레트
-/// 하나이고 거기 행은 늘 enabled 라, 안 쓰는 상태를 미리 그리지 않는다.
+/// 단축키를 키캡으로 그린다. + 키를 구분자와 혼동하지 않도록 이미 나눈 목록을 받는다.
+/// 비활성 행에서도 키캡은 흐려지지 않는다.
 #[allow(clippy::too_many_arguments)] // reason: [`menu_item`] 과 같은 스펙, 단축키 표현만 다르다
 pub fn menu_item_kbd(
     ui: &mut egui::Ui,
@@ -80,7 +70,7 @@ pub fn menu_item_kbd(
     )
 }
 
-#[allow(clippy::too_many_arguments)] // reason: 두 공개 문이 공유하는 한 구현, 인자는 그 둘의 합집합이다
+#[allow(clippy::too_many_arguments)] // reason: 두 공개 함수가 공유하는 구현이며 두 함수에 필요한 인자를 받는다.
 fn menu_item_inner(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -97,7 +87,6 @@ fn menu_item_inner(
     let gap = theme.spacing_sm.value();
     let radius = theme.menu_item_radius().value();
     let body = theme.font_size_body.value();
-    // 아이콘 글리프 = icon-size-md(16). (token-policy: 15 → 16 snap.)
     let icon_glyph = theme.icon_glyph_size_md.value();
     let width = ui.available_width();
 
@@ -115,7 +104,6 @@ fn menu_item_inner(
         }
     };
 
-    // 배경: active → surface-active, hover → overlay-hover.
     if active {
         ui.painter()
             .rect_filled(rect, radius, theme.surface_active().to_egui());
@@ -127,9 +115,7 @@ fn menu_item_inner(
         );
     }
 
-    // fg: Normal 은 구현이 text_primary 를 쓴다(디자인 menu-item-fg=text-secondary 와
-    // 불일치 → 픽셀 diff 0 위해 이식 제외). Danger accent-danger·아이콘색도 대응
-    // component 토큰 없어 semantic 유지.
+    // 일반 항목은 현재 text_primary를 사용한다. 디자인의 text-secondary와는 차이가 있다.
     let fg = match variant {
         MenuItemVariant::Normal => theme.text_primary().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
@@ -149,7 +135,6 @@ fn menu_item_inner(
         x += icon_glyph + gap;
     }
 
-    // shortcut (우측 정렬) — 텍스트는 mono micro(10) muted, 키캡은 공용 `Kbd`.
     let mut right = rect.right() - pad_x;
     match shortcut {
         Some(Shortcut::Text(sc)) => {
@@ -175,7 +160,6 @@ fn menu_item_inner(
         None => {}
     }
 
-    // label (좌측, 남은 폭 ellipsis 없이 clip).
     let g = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(body),

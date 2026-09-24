@@ -12,15 +12,8 @@ pub struct PhysicalRect {
     pub height: PhysicalPx,
 }
 
-/// A pixel rectangle in logical (DPI-independent) pixels — [`PhysicalRect`] 의 짝.
-///
-/// egui 는 논리 좌표로 그리고 레이아웃은 물리 좌표로 계산되므로, 그 경계에서 사각형
-/// 하나가 통째로 변환된다. 네 변을 각각 `÷ scale_factor` 하던 자리를 이 타입 하나로
-/// 모아 **변환이 한 번만 일어나게** 한다 — 네 번 나누던 코드는 하나만 빠뜨려도
-/// 컴파일이 통과했다.
-///
-/// egui 타입으로의 변환은 여기 두지 않는다. 이 crate 는 leaf 라 `egui` 에 의존하지
-/// 않는다(`lib.rs` 참고) — 호출부가 경계에서 `.value()` 로 꺼낸다.
+/// 논리 픽셀 사각형. PhysicalRect와 변환할 때 네 필드에 같은 배율을 적용한다.
+/// egui에 의존하지 않으므로 해당 타입으로 바꾸는 작업은 호출자가 맡는다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LogicalRect {
     pub x: LogicalPx,
@@ -65,9 +58,7 @@ impl PhysicalRect {
             && (self.height - other.height).abs() < PhysicalPx(1.0)
     }
 
-    /// 두 영역으로 분할. `gap` 은 두 분할 사이 시각적 보더 두께 (분할 자식의 *합* 에서 빠짐).
-    /// 호출자가 명시적으로 gap 을 제공해야 한다 (이전 split() default 인자 제거 — 도메인 상수
-    /// 의존을 type-geometry 에서 끊기 위해).
+    /// 두 영역으로 분할한다. gap은 두 영역 사이의 간격이며 호출자가 지정한다.
     pub fn split_with_gap(
         self,
         direction: SplitDirection,
@@ -130,8 +121,7 @@ pub struct DividerInfo {
 mod tests {
     use super::*;
 
-    /// 왕복이 상쇄되지 않으면 두 좌표계 사이를 오갈 때마다 사각형이 조금씩 움직인다.
-    /// 네 변을 손으로 나누던 시절에는 이 성질을 확인할 자리 자체가 없었다.
+    /// 두 좌표계를 왕복한 뒤 원래 사각형으로 돌아오는지 확인한다.
     #[test]
     fn physical_and_logical_round_trip_cancels() {
         let physical = PhysicalRect {

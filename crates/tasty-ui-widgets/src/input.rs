@@ -1,16 +1,5 @@
-//! `Input` — 단일 행 텍스트 필드 (디자인 `components/forms/Input`).
-//!
-//! 디자인 계약:
-//! - height `control-height`(28), padding `0 space-md`, gap `space-sm`.
-//! - bg `surface-raised`, border 1px `border-default`, radius `corner_radius`.
-//! - focus: border `border-focus` + 1px ring(box-shadow 대체).
-//! - invalid: border `accent-danger`. disabled: opacity 0.5.
-//! - leading `icon`(15px, text-muted) / trailing `addon`(mono 11, text-muted).
-//! - `mono`: 입력 폰트 monospace + caption. placeholder: `text-placeholder`.
-//!
-//! Motion(디자인 .prompt.md): 유일한 애니메이션은 focus 시 border/ring easing
-//! (장식, 스냅 OK). focus-ring **가시성**과 `invalid` border 는 기능 → **즉시**
-//! (여기선 fade 없이 즉시 그린다).
+//! 아이콘·접미 라벨을 붙일 수 있는 한 줄 입력 필드.
+//! 포커스와 잘못된 값의 테두리는 애니메이션 없이 바로 표시한다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -79,7 +68,7 @@ impl<'a> Input<'a> {
         self
     }
 
-    /// leading 아이콘 painter(15px, text-muted 색으로 호출됨).
+    /// 입력 앞의 아이콘. 크기와 색은 Theme에서 읽는다.
     pub fn icon(mut self, icon: IconPainter<'a>) -> Self {
         self.icon = Some(icon);
         self
@@ -90,16 +79,13 @@ impl<'a> Input<'a> {
         self
     }
 
-    /// 텍스트 색 override — 미지정 시 `input_fg`(text-primary). 주소창 idle 표시처럼
-    /// 비포커스 상태를 text-secondary 로 낮추려는 호출측(AutoComplete 트리거)을 위해 노출한다.
-    /// 값은 반드시 `Theme` 토큰에서 파생한 색이어야 한다(raw hex 금지).
+    /// 입력 글자색을 지정한다. 기본은 input_fg이며 다른 색도 Theme에서 가져와야 한다.
     pub fn text_color(mut self, color: egui::Color32) -> Self {
         self.text_color = Some(color);
         self
     }
 
-    /// 글자 정렬. 숫자 필드는 `Align::RIGHT` 를 쓴다 — 설정 열을 내려가며 자릿수가
-    /// 맞아야 두 값의 크기를 눈으로 견줄 수 있다. 그 외에는 기본(좌측)이다.
+    /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
     pub fn align(mut self, align: egui::Align) -> Self {
         self.align = align;
         self
@@ -119,15 +105,12 @@ impl<'a> Input<'a> {
         let width = self.width.unwrap_or_else(|| ui.available_width());
         let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
-        // bg.
         ui.painter()
             .rect_filled(outer, radius, theme.input_bg().to_egui());
 
         let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
         let inner_w = inner.width();
 
-        // 폭 분배: leading 아이콘 + TextEdit(flex) + trailing addon.
-        // 아이콘 글리프 = icon-size-md(16, semantic — 대응 component 토큰 없음).
         let icon_glyph = theme.icon_glyph_size_md.value();
         let icon_w = if self.icon.is_some() {
             icon_glyph + gap
@@ -148,7 +131,6 @@ impl<'a> Input<'a> {
             .unwrap_or(0.0);
         let te_w = (inner_w - icon_w - addon_w).max(0.0);
 
-        // leading 아이콘 + trailing addon 색 = input-icon-fg(text-muted 종착).
         let muted = theme.input_icon_fg().to_egui();
         let resp = ui
             .allocate_new_ui(
@@ -190,7 +172,6 @@ impl<'a> Input<'a> {
             )
             .inner;
 
-        // border (기능 → 즉시, fade 없음).
         let border = if self.invalid {
             theme.input_border_invalid().to_egui()
         } else if resp.has_focus() {
@@ -204,7 +185,6 @@ impl<'a> Input<'a> {
             egui::Stroke::new(bw, border),
             egui::StrokeKind::Inside,
         );
-        // focus ring (box-shadow 0 0 0 1px 대체) — 즉시.
         if resp.has_focus() {
             let ring = if self.invalid {
                 theme.input_border_invalid().to_egui()
@@ -219,10 +199,8 @@ impl<'a> Input<'a> {
             );
         }
 
-        // 반환 rect 를 outer(테두리가 실제로 그려지는 전체 박스)로 덮어쓴다 — 내부
-        // TextEdit rect(leading icon 만큼 우측으로 밀려 있음)를 그대로 노출하면
-        // `AutoComplete` 같은 소비처가 anchor 로 삼을 때 오프셋이 새어나간다. id/
-        // focus 등 TextEdit 상태는 그대로 유지되고 rect 필드만 바뀐다.
+        // 팝오버 앵커가 아이콘 폭만큼 밀리지 않도록 응답 영역은 필드 전체로 바꾼다.
+        // TextEdit의 ID와 포커스 상태는 유지한다.
         let mut resp = resp;
         resp.rect = outer;
         resp

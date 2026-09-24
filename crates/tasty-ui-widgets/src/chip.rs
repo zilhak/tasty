@@ -1,8 +1,5 @@
-//! 정적 chip primitive — `Tag` / `Badge` / `Kbd` (디자인 `components/core/*`).
-//!
-//! 상호작용 없는 시각 라벨. 색·폰트·치수는 전부 `tag-*`/`badge-*`/`kbd-*`
-//! component 접근자(`&Theme` 경유, ui_zoom 반영)에서 가져온다. egui 한계: 폰트
-//! weight(bold/medium)는 별도 family 없이 재현 불가 → 크기·색만 충실히 따른다.
+//! 상호작용 없는 태그·배지·키캡. Theme의 컴포넌트 토큰으로 크기와 색을 정한다.
+//! 글꼴 굵기는 별도 계열을 등록하지 않아 재현하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -14,16 +11,12 @@ pub enum TagVariant {
     Default,
     Accent,
     Agent,
-    /// sky 톤 tinted chip — 투명 채움 + accent-info 40% border + accent-info fg.
-    /// 디자인 Tag variants 에 없던 톤(git-viewer 의 main/oid/refs/hunk = sky).
+    /// 투명 배경의 정보 태그. git-viewer에서 사용한다.
     Info,
     Success,
     Warning,
     Danger,
-    /// sky 톤 **채움** chip(fill 16%/border 45%) — accent-remote 기준. 디자인
-    /// 2026-07-13 workspace-remote-indicator: 사이드바 mirror 워크스페이스 pill
-    /// 전용. `Info`(투명 채움+40% 보더, git-viewer 태그용)와 시각이 달라 별도
-    /// variant로 분리 — `Info` alpha를 바꾸면 git-viewer 태그가 회귀한다.
+    /// 원격 미러 워크스페이스용 채운 태그. 투명 배경의 Info와 구분한다.
     Remote,
 }
 
@@ -42,10 +35,7 @@ fn mono(size: f32) -> egui::FontId {
     egui::FontId::monospace(size)
 }
 
-/// `tag()`가 그릴 pill의 폭을 실제로 그리지 않고 미리 계산한다(`dot=false` 가정 —
-/// 현재 폭 계산이 필요한 호출부는 모두 dot 없는 pill). 호출부가 그리기 전에 상한
-/// 폭 안에 들어가는지 판단할 때 사용(예: git-viewer commit row의 refs pill 축약
-/// 판단, `cm_row`).
+/// 상태 점 없는 태그의 폭을 계산한다. 그리기 전 가용 폭과 비교할 때 사용한다.
 pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     let pad_x = theme.tag_padding_x().value();
     let galley = ui.painter().layout_no_wrap(
@@ -64,14 +54,10 @@ pub fn tag(
     variant: TagVariant,
     dot: bool,
 ) -> egui::Response {
-    // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. remote 태그의
-    // 테두리는 `tint-border-alpha` 로 모였고(docs/design/systems/theme.md#ui-코드의-색상-접근 이 승인한 "테두리만" 부분 사용),
-    // 나머지 둘은 대응 토큰이 없어 값을 여기 이름으로 둔다.
+    // 테두리의 공통 비율은 Theme에서 읽고 대응 토큰이 없는 두 비율만 아래에 둔다.
     const TAG_BORDER_OPACITY: f32 = 0.4;
     const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;
     let (fill, border, fg) = match variant {
-        // Default(외곽선 chip)만 `tag-*` component 색 대응. 나머지 상태 변형(accent
-        // 계열)은 대응 component 토큰이 없어 semantic 유지.
         TagVariant::Default => (
             theme.tag_bg().to_egui(),
             Some(theme.tag_border().to_egui()),
@@ -222,11 +208,7 @@ pub fn badge(
     resp
 }
 
-/// Badge dot — 라벨 없는 상태 점.
-///
-/// `Ui` 에 `badge-dot-size` 정사각 자리를 할당하고 그 중심에 [`paint_badge_dot`] 으로
-/// 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만 한다. 이미 정해진 좌표에
-/// 겹쳐 그려야 하는 쪽은 [`paint_badge_dot`] 을 직접 부른다.
+/// 상태 점의 영역을 할당한 뒤 공용 그리기 함수를 호출한다.
 pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egui::Response {
     let dot_sz = theme.badge_dot_size().value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
@@ -234,12 +216,7 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
     resp
 }
 
-/// 상태 점 하나를 **좌표에 직접** 그린다 — [`badge_dot`] 이 레이아웃에 자리를 잡아
-/// 부르는 것과 같은 그림이다([`num_keycap`] ↔ [`paint_num_keycap`] 과 같은 갈래).
-///
-/// 본체 목록의 행 우측 점처럼 **행 rect 에서 계산한 좌표**에 그려야 하는 자리가 있어
-/// 갈래가 둘이다. 지름은 `badge-dot-size` 에서만 오므로 지역 상수로 반지름을 박으면
-/// 안 된다 — 토큰은 `ui_zoom` 을 타고 상수는 안 탄다.
+/// 이미 계산된 좌표에 상태 점을 그린다. 크기는 배율이 적용된 badge-dot-size를 사용한다.
 pub fn paint_badge_dot(
     painter: &egui::Painter,
     theme: &Theme,
@@ -256,11 +233,7 @@ pub fn paint_badge_dot(
     painter.circle_filled(center, theme.badge_dot_size().value() * 0.5, fill);
 }
 
-/// 단일 숫자 키캡 (디자인 `overlays/NumCap` — switch-number overlay).
-///
-/// `Ui` 에 한 변 `switch-overlay-size` 인 정사각 자리를 할당하고 그 중심에
-/// [`paint_num_keycap`] 으로 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만
-/// 한다. 이미 정해진 좌표에 겹쳐 그려야 하는 쪽은 [`paint_num_keycap`] 을 직접 부른다.
+/// 숫자 키캡의 영역을 할당한 뒤 공용 그리기 함수를 호출한다.
 pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -> egui::Response {
     let side = theme.switch_overlay_size().value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
@@ -268,22 +241,9 @@ pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -
     resp
 }
 
-/// 숫자 키캡 한 장을 **좌표에 직접** 그린다 — [`num_keycap`] 이 레이아웃에 자리를
-/// 잡아 부르는 것과 같은 그림이다.
-///
-/// 이 갈래가 필요한 이유는 소비처가 둘이고 **레이아웃 여부가 다르기 때문**이다.
-/// 갤러리 specimen 은 `Ui` 안에 자리를 할당해 그리고, 본체 switch-number overlay 는
-/// 탭 스트립·사이드바 행 위에 이미 정해진 좌표로 겹쳐 그린다(그래서 알파 페이드도
-/// 필요하다). 모양이 아니라 **놓는 방식**이 다르므로, 갈리는 것은 자리 계산까지고
-/// 그림은 여기 한 벌이다.
-///
-/// `alpha` 는 등장 페이드 계수(0..=1) — 채움·엣지·글자에 같은 값이 걸려 키캡 전체가
-/// 함께 떠오른다.
-///
-/// 색과 두 치수(한 변·하단 두께)는 `switch-overlay-*` component 토큰을 읽는다 —
-/// 이 컴포넌트가 자기 토큰 집합을 가지므로 semantic 을 직접 읽지 않는다. 디자인이
-/// 키캡만 다시 칠하면 여기만 바뀐다. radius 와 글자 크기는 그 집합에 없어
-/// `kbd-*` 를 그대로 쓴다(`switch-overlay-*` 자신이 `kbd-*` 의 별칭이다).
+/// 이미 계산된 좌표에 숫자 키캡을 그린다.
+/// alpha는 채움·테두리·글자에 함께 적용한다. 크기·색은 switch-overlay 토큰을,
+/// 대응 값이 없는 반경·글꼴은 kbd 토큰을 사용한다.
 pub fn paint_num_keycap(
     painter: &egui::Painter,
     theme: &Theme,
@@ -346,14 +306,12 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     kbd_parts(ui, theme, &owned);
 }
 
-/// 키캡 한 칸의 폭 — 텍스트 폭에 좌우 패딩을 더하되 정사각 최소치를 지킨다.
-/// [`kbd_parts`]·[`kbd_parts_at`]·[`kbd_parts_width`] 가 **이 한 식**을 부른다.
+/// 글자 폭에 패딩을 더하되 정사각 최소 크기를 유지한다.
 fn cap_width(text_w: f32, pad_x: f32, kbd_h: f32) -> f32 {
     (text_w + 2.0 * pad_x).max(kbd_h)
 }
 
-/// 키캡 시퀀스가 실제로 할당하는 항목들의 폭 — 키캡 k 개와 그 사이 `+` 라벨 k-1 개를
-/// **그리는 순서 그대로** 2k-1 개. 항목 사이 gap 은 여기 안 들어간다(세는 쪽이 더한다).
+/// 키캡과 사이의 + 라벨 폭을 그리는 순서로 반환한다. 항목 사이 간격은 제외한다.
 fn kbd_item_widths(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) -> Vec<f32> {
     let micro = theme.kbd_font_size().value();
     let pad_x = theme.kbd_padding_x().value();
@@ -378,15 +336,8 @@ fn kbd_item_widths(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) -> V
     out
 }
 
-/// [`kbd_parts`] 가 차지할 폭 — **그리기 전에** 알아야 하는 자리(상태바의 축소 판정과
-/// spacer 산정, 팔레트 행의 라벨 자리)를 위해 같은 파일에서 같은 토큰으로 센다.
-///
-/// `Ui` 가 아니라 `Context` 를 받는다 — 폭은 폰트 metric 만으로 정해지고, 그래야
-/// 바깥에서 같은 폭을 재검산하는 테스트가 `Ui` 를 짓지 않고도 이 함수를 부른다.
-///
-/// 세는 것과 그리는 것이 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 정렬만
-/// 조용히 어긋난다 — 그래서 항목 폭은 [`kbd_item_widths`] 하나에서 나오고, 여기서는
-/// 그 사이 gap 만 더한다(항목 2k-1 개 → gap 2k-2 개).
+/// 키캡을 그릴 때와 같은 식으로 항목 폭과 간격을 합산한다.
+/// 그리기 전에 상태바·팔레트의 남은 공간을 계산할 때 사용한다.
 pub fn kbd_parts_width(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) -> LogicalPx {
     let items = kbd_item_widths(ctx, theme, keys);
     let gaps = items.len().saturating_sub(1) as f32;
@@ -399,19 +350,13 @@ pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
     kbd_parts_width(ctx, theme, &parts)
 }
 
-/// [`kbd_parts`] 한 키캡의 콘텐츠 — 텍스트 또는 벡터 아이콘.
-///
-/// macOS modifier 심볼(⌘/⌥/⇧)처럼 egui 폰트 fallback 체인에 없는 glyph 는
-/// 텍스트로 넘기면 tofu box 로 깨진다 — 그런 키는 `Icon` 으로 넘겨 벡터로 그린다
-/// (`tasty_icons::{CMD_KEY,OPTION_KEY,SHIFT_KEY}`).
+/// 키캡의 텍스트 또는 아이콘. 폰트에 없는 보조 키 문자는 SVG 아이콘으로 전달할 수 있다.
 pub enum KbdKey<'a> {
     Text(&'a str),
     Icon(tasty_icons::Icon),
 }
 
-/// [`kbd`] 의 텍스트+아이콘 혼합 버전 — 시각 기준(패딩·radius·하단 보더 강조)은
-/// [`kbd`] 와 동일하게 공유한다. 아이콘 키는 `icon_glyph_size_sm`(14px, modifier-hint
-/// 키캡 칩 표준 — 12px mono 라벨과 광학적으로 맞춘 크기)로 정사각 키캡 중앙에 그린다.
+/// 텍스트·아이콘 키캡을 함께 그린다. 두 종류는 같은 패딩·반경·테두리를 사용한다.
 pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
     let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
@@ -460,15 +405,8 @@ pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
     });
 }
 
-/// [`kbd_parts`] 와 **같은 토큰·같은 폭 식**으로 그리되, egui 레이아웃을 쓰지 않고
-/// 이미 할당된 행 안의 좌표에 직접 그린다 — `right_x` 에서 왼쪽으로 정렬하고 세로
-/// 중앙을 `center_y` 에 맞춘다. 행 rect 를 먼저 잡아 두고 그 안을 painter 로 채우는
-/// 호출자(command palette 의 명령 행)를 위한 것이다.
-///
-/// 좌표 판이 [`kbd_parts`] 와 **같은 파일**에 있는 이유는 [`kbd_parts_width`] 와 같다 —
-/// 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 두 자리의 키캡이 조용히 갈린다.
-///
-/// 그린 폭을 돌려준다(호출자가 라벨 자리를 남길 때 쓴다).
+/// 공용 폭 계산으로 키캡을 좌표에 직접 그린다.
+/// right_x에서 왼쪽으로 배치하고 center_y에 세로 중심을 맞춘 뒤 사용한 폭을 반환한다.
 pub fn kbd_parts_at(
     ui: &egui::Ui,
     theme: &Theme,
@@ -531,8 +469,7 @@ pub fn kbd_parts_at(
     total
 }
 
-/// 키캡 배경 + 보더(하단 2px 강조) — [`kbd`]/[`kbd_parts`] 공유. `kbd()`가 원래
-/// 인라인으로 갖고 있던 시각 규칙 그대로, 텍스트/아이콘 두 키 종류가 재사용한다.
+/// 텍스트·아이콘 키캡이 공유하는 배경과 아래쪽 강조 테두리.
 #[allow(clippy::too_many_arguments)]
 fn draw_keycap_box(
     ui: &egui::Ui,
