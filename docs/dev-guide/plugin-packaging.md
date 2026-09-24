@@ -4,7 +4,7 @@
 
 ## 번들 plugin 목록 (SoT)
 
-`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처다. 아래 표는 탐색용이다. 추가·제거할 때는 실제 `BUILTINS` 목록과 패키징 설정을 함께 확인한다:
+`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 기준 목록다. 아래 표는 탐색용이다. 추가·제거할 때는 실제 `BUILTINS` 목록과 패키징 설정을 함께 확인한다:
 
 | crate | plugin ID |
 |-------|-----------|
@@ -24,7 +24,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 
 매니페스트 최상위 `bundle` 키(기본 `true`, 스키마: `crates/tasty-plugin-manifest/src/types.rs`)로 **개별 plugin 을 배포 패키징에서만 제외**할 수 있다. `false` 면 dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)의 plugin 탐색 glob 이 그 crate 를 건너뛰어 DMG/AppImage/MSI 산출물과 실제 바이너리 빌드에는 넣지 않는다. **dev 스테이징**(`just build-plugins`/`link-plugins`)은 이 플래그를 보지 않으므로 로컬 빌드에는 그대로 포함된다 — 데모/PoC plugin 을 개발 중엔 쓰되 출하판엔 빼는 용도.
 
-런타임 `BUILTINS`(`builtin.rs`)에는 그대로 남겨둔다: `install_builtins_if_needed` 가 번들에 없는 builtin 을 debug 로그만 남기고 **graceful skip** 하므로, dev(스테이징됨)는 설치·dist(미스테이징)는 무시로 자연히 갈린다. 현재 `com.tasty.mesh-demo`(egui-mesh PoC)가 유일한 `bundle = false`. **주의**: `bundle = false` 는 glob 기반 위치(4/5/6)와 바이너리 빌드에만 자동 적용되고, 아래 "staging 7 위치 동기화" 표의 **명시(explicit) 위치(1/2/3)는 자동으로 걸러지지 않는다** — 새로 `bundle = false` 를 붙인 plugin 이 있으면 `[package.metadata.deb] assets`/`[package.metadata.generate-rpm] assets`/`wix/main.wxs` 에서도 그 plugin 항목을 수동으로 빼야 한다. mesh-demo 는 WiX 는 애초에 목록에 없었지만 deb/rpm 에는 남아있어 dist 빌드가 `Static file asset has not been built`(cargo-deb)로 fail 하는 실제 사고가 있었다 — deb/rpm assets 에서도 제거해 정정됨.
+런타임 `BUILTINS`(`builtin.rs`)에는 그대로 남겨둔다: `install_builtins_if_needed` 가 번들에 없는 builtin 을 debug 로그만 남기고 **건너뛰기** 하므로, dev(스테이징됨)는 설치·dist(미스테이징)는 무시로 자연히 갈린다. 현재 `com.tasty.mesh-demo`와 `com.tasty.agent-stream`이 `bundle = false`다. **주의**: `bundle = false` 는 glob 기반 위치(4/5/6)와 바이너리 빌드에만 자동 적용되고, 아래 "staging 7 위치 동기화" 표의 **명시(explicit) 위치(1/2/3)는 자동으로 걸러지지 않는다** — 새로 `bundle = false` 를 붙인 plugin 이 있으면 `[package.metadata.deb] assets`/`[package.metadata.generate-rpm] assets`/`wix/main.wxs` 에서도 그 plugin 항목을 수동으로 빼야 한다. 누락하면 패키저가 만들지 않은 바이너리를 찾다가 실패한다.
 
 ## 서명
 
@@ -36,7 +36,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 | Trust store | `crates/tasty-host-plugin/keys/`의 `release-pubkey.bin`과 `dev-pubkey.bin` 두 슬롯. 추적하지 않는 로컬 파일이며, 없는 슬롯은 build.rs가 placeholder로 채운다. 실제 서명 키에 대응하는 공개키가 빌드에 포함돼야 한다 |
 | 검증 시점 | plugin 로드(`discovery.rs::trust_outcome`)와 `upgrade-builtins`(`builtin.rs::verify_builtin_bundle_trust`) — release/dist 는 실제 차단, debug 는 건너뛰거나 `debug!` 로그만(`#[cfg(debug_assertions)]`) |
 
-보호 범위는 **매니페스트 한 파일만** — 권한/contributes/kind 가 매니페스트 안이라 변조 시 confused-deputy 가 최대 위험. binary 는 OS codesign(macOS notarization/Windows Authenticode)에 위임, lang/ 등 부속은 검증 밖.
+보호 범위는 **매니페스트 한 파일만** — 권한/contributes/kind 가 매니페스트 안이라 변조되면 host가 잘못된 권한·기여 정보를 신뢰할 수 있다. binary 는 OS codesign(macOS notarization/Windows Authenticode)에 위임, lang/ 등 부속은 검증 밖.
 
 ### dev key (개발자 1회)
 
@@ -105,9 +105,9 @@ release workflow는 각 빌드 러너에서 서명 스크립트를 실행한다.
 
 ### drift 함정
 
-- **lang 파일 — wix 만 enumerate**: deb/rpm/빌드스크립트는 `lang/*` 자동 포함, wix 는 `LangEn`/`LangJa`/`LangKo` Component 를 *나열* → 새 로케일(`de.toml` 등) 추가 시 wix 만 silent skip → .msi 사용자만 누락. wix 의 해당 plugin Directory 에 `Component`+`ComponentRef` 직접 추가 필요.
+- **lang 파일 — wix 만 enumerate**: deb/rpm/빌드스크립트는 `lang/*` 자동 포함, wix 는 `LangEn`/`LangJa`/`LangKo` Component 를 *나열* → 새 로케일(`de.toml` 등) 추가 시 wix 만 자동으로 포함되지 않음 → .msi 사용자만 누락. wix 의 해당 plugin Directory 에 `Component`+`ComponentRef` 직접 추가 필요.
 - **`.sig` 빌드 시점 의존**: git 에 commit 안 되는 빌드 산출물. 6 staging 위치 모두 비존재 시 non-debug 빌드 fail — CI 가 `sign-bundle.sh` 를 항상 실행하도록 보장.
-- **`bundle = false` — 명시 위치(1/2/3)는 자동으로 안 걸러짐**: glob 위치(4/5/6)는 빌드 자체가 그 crate 를 건너뛰지만, deb/rpm assets·wix components 는 plugin 마다 하드코딩된 목록이라 `bundle = false` 여부와 무관하게 그대로 남아있다. mesh-demo 를 deb/rpm assets 에서 안 뺐다가 `cargo-deb`/`cargo-generate-rpm` 이 "빌드 안 된 바이너리를 packaging 하려 함" 으로 dist 빌드 전체가 fail 한 사고가 실제로 있었다(v0.9.5 릴리스). 새로 `bundle = false` 를 붙일 때 1/2/3 에서도 그 plugin 항목을 반드시 제거할 것.
+- **`bundle = false` — 명시 위치(1/2/3)는 자동으로 안 걸러짐**: glob 위치(4/5/6)는 빌드 자체가 그 crate 를 건너뛰지만, deb/rpm assets·wix components 는 plugin 마다 하드코딩된 목록이라 `bundle = false` 여부와 무관하게 그대로 남아있다. 새로 `bundle = false` 를 붙일 때 1/2/3 에서도 그 plugin 항목을 반드시 제거할 것.
 
 비-staging(번들 산출물 아님): `~/.tasty/known-plugins.toml`(사용자 trust DB, 런타임 생성) · `.pub` sidecar(없음 — 공개키는 호스트 바이너리 embed).
 
@@ -173,11 +173,11 @@ builtin 디렉토리는 **host-owned** — 자동/수동 upgrade 가 `overwrite_
 
 #### 매니페스트 version bump
 
-plugin 작성자가 의미적 변경 시 `tasty-plugin.toml::version` 을 수동 bump 해야 자동 upgrade 가 동작한다. **루트 앱 자동 패치 +1 정책과 분리** — plugin 단위 변경(매니페스트/permission 추가, behavior 변경)이 있을 때 그 plugin 매니페스트만 bump. version 그대로면 동일버전 분기(내용 resync)로 떨어져 파일은 옮겨지지만, 같은 버전 아래 두 산출물이 남는다.
+plugin 작성자가 의미적 변경 시 `tasty-plugin.toml::version` 을 수동 bump 해야 자동 upgrade 가 동작한다. 루트 앱 버전과는 별개다. plugin을 바꾸면 해당 매니페스트·Cargo 버전과 lock 파일을 함께 갱신한다. version 그대로면 동일버전 분기(내용 resync)로 떨어져 파일은 옮겨지지만, 같은 버전 이름으로 서로 다른 산출물이 존재하게 된다.
 
 #### 개발용 자동 reload — `TASTY_PLUGIN_AUTO_RELOAD`
 
-dev workspace 에서 `cargo build -p tasty-plugin-X --release` 반복 시 수동 disable/enable 없이 새 binary 즉시 적용. env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2 초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 옛 동작으로 graceful degrade.
+dev workspace 에서 `cargo build -p tasty-plugin-X --release` 반복 시 수동 disable/enable 없이 새 binary 즉시 적용. env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2 초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 재시도 반복을 막는다.
 
 ### i18n 키 충돌
 

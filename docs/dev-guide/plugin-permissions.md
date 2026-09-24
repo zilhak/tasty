@@ -7,7 +7,7 @@
 | 위치 | 역할 |
 |------|------|
 | `crates/tasty-plugin-manifest/src/types.rs::Permission` | 권한 enum + 토큰 매핑(`from_token`/`as_token`). 새 토큰은 여기 |
-| `crates/tasty-ipc/src/method_meta.rs::method_meta` | IPC 메서드 → 필요 권한 / plugin 호출 가능 여부 (단일 진실원) |
+| `crates/tasty-ipc/src/method_meta.rs::method_meta` | IPC 메서드 → 필요 권한 / plugin 호출 가능 여부 (기준 표) |
 | `crates/tasty-ipc/src/caller.rs::CallerContext` | 호출자 종류 (Local / Internal / Plugin / Agent) + `ensure_allowed` |
 | `src/adapters/ipc/handler/checked.rs::check_request` | 라우터 진입에서 `ensure_allowed` + capability elevation 자동 발행 + audit |
 | `crates/tasty-host-plugin/src/manager.rs::plugin_permissions` | plugin id → `Arc<HashSet<Permission>>` 캐시 |
@@ -18,9 +18,9 @@
 GUI·헤드리스의 외부 IPC와 plugin host-call은 check_request에서 권한→cap→rate-limit을 한 번 검사한다.
 통과한 요청의 telemetry와 Allow audit 호출도 한 번 수행하되 Allow는 보존 정책상 디스크에 남지 않는다.
 private CheckedRequest가 요청·caller와 함께 검사 완료를 전달하고 wire checked 플래그나 Local 변환으로 우회하지 않는다.
-alias는 canonical 이름으로 판정·관측한다.
+alias는 canonical 이름으로 판정·집계한다.
 새 host-call은 별도 요청이므로 다시 검사한다.
-엔진 없는 GUI 구간은 Local 부팅 요청만 허용하며 비Local은 state 오류로 거절한다.
+엔진 없는 GUI 구간은 Local 부팅 요청만 허용하며 Local 이외 호출자는 state 오류로 거절한다.
 저장소 오류의 기존 fail-open 정책은 바꾸지 않는다.
 
 ## 토큰 형식 — `<name>[:<scope>]`
@@ -100,13 +100,15 @@ raw memory KV에서 tasty. 접두사는 호스트 전용이다. 권한 집합을
 |----|--------|------------------------|
 | 전역·자기 정보 조회 | `system.info` · `theme.query` · `plugin.list_agent_permissions` | 상태를 바꾸지 않고 특정 surface 의 내용도 노출하지 않는다. system.info의 version은 전역이고 count/index는 소유 workspace ID가 명시된 engine 관측값이다. theme.query는 테마의 전역 스냅샷이고(webview-kind surface 는 `set_context` 로 Theme 를 push 받지 못해 문서를 그릴 때마다 `theme.query` 로 대신한다 — [ADR-0029](../adr/0029-webview-host-integration.md)), 마지막은 **자기에게 지금 무슨 권한이 있는지**를 되읽는 self-introspection 이라 토큰을 요구하면 순환이 된다 |
 | attach · 원격 프로필 · 패스키 | `attach.acquire` · `attach.release` · `attach.force_detach` · `attach.force_detach_workspace` · `attach.into_gui` · `attach.list` · `remote.profile.list` · `remote.profile.get` · `remote.profile.add` · `remote.profile.detect` · `remote.profile.remove` · `remote.profile.list_local` · `remote.profile.import` · `remote.workspaces` · `remote.passkey.list` · `remote.passkey.get` · `remote.passkey.add` · `remote.passkey.remove` | 신뢰경계가 이 권한 모델이 아니라 **연결 경계(SSH + loopback)** 다 — 근거는 아래 [한계](#한계) 의 attach 문단에 있고 여기서 되풀이하지 않는다. 프로필은 비밀 없는 장비 인벤토리이고, 원격 워크스페이스 열거도 같은 조회이며(구조를 만드는 `remote.attach` 는 이 군에 **없다** — 사용자의 로컬 창에 워크스페이스를 만드는 것은 SSH 가 주는 권한이 아니라서 local 전용이다, [ADR-0021](../adr/0021-occupancy-and-attach-admission.md)), 패스키도 `list`/`get` 이 이름과 종류만 돌려주며 키 파일 내용은 반환하지 않는다([ADR-0011](../adr/0011-secrets-and-local-trust.md)) |
-| 아직 정하지 않은 것 | `host.shared_buffer.create` | **정책이 아니다.** egui-mesh 로 그리는 plugin 이 프레임 버퍼를 얻는 통로이고, 요구 토큰이 없는 것은 그렇게 정해서가 아니라 **정한 적이 없어서**다. 원래는 `METHOD_TABLE` 에 등재조차 없어 게이트가 이름을 못 찾았고, 그래서 권한뿐 아니라 cap·rate·audit 도 통째로 건너뛰었다. 지금은 현재 동작 그대로 등재해 최소한 그 셋은 걸리게 해 둔 상태다. 어떤 토큰을 요구할지와 개수·총량 상한을 함께 둘지는 매니페스트 호환성이 걸린 별도 결정이라 [ADR-0012](../adr/0012-request-admission-and-isolation.md) 의 열린 질문으로 남아 있다 |
+| 아직 정하지 않은 것 | `host.shared_buffer.create` | egui-mesh plugin이 프레임 버퍼를 얻는 통로다. `METHOD_TABLE`에 등재해 cap·rate·audit를 적용하지만 요구할 권한 토큰은 아직 정하지 않았다. 어떤 토큰을 요구할지와 개수·총량 상한을 함께 둘지는 매니페스트 호환성이 걸린 별도 결정이라 [ADR-0012](../adr/0012-request-admission-and-isolation.md) 의 열린 질문으로 남아 있다 |
 
-**앞의 두 군은 구멍이 아니라 정책이다.** 그 둘은 "게이트를 빠뜨렸다" 가 아니라 그 자리에 게이트를 두지 않기로 한 결정이고, 특히 아래쪽 군은 SSH 접속 권한이 이미 그 이상을 허용하므로 별도 토큰을 만들지 않는다는 이 레포의 확립된 판단이다([ADR-0006](../adr/0006-bounded-ipc-transport.md)). 다만 그 사실이 **문서에 있어야** grant 화면을 보는 사용자와 매니페스트를 쓰는 plugin 작성자가 실제 개방 범위를 안다. 셋째 군은 그 반대다 — 결정을 기다리는 자리이므로, 같은 표에 있다는 것이 같은 근거를 갖는다는 뜻이 되지 않게 군을 갈라 둔다.
+앞의 두 분류는 토큰을 요구하지 않기로 정한 정책이다. 공유 버퍼는 권한 토큰과
+개수·총량 제한을 아직 결정하지 않은 항목이므로 구분해서 읽는다.
 
 위 표는 `crates/tasty-doc-guards/tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 `crates/tasty-ipc/src/method_meta.rs` 에서 읽어 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다.
-이 가드는 의존이 0 인 크레이트에 살아 **`doc-guards.yml` 이 경로 필터 없이 매 push 실행한다** — 이 표를 고치는 것이 곧 이 가드를 위반하는 유일한 방법이라, 문서만 바뀐 push 에서도 도는 것이 요점이다([ci-gates](ci-gates.md) · ADR-0048). 그 판독이 실제 표와 갈리지 않는지는 본체 패키지의 `tests/method_table_readings_agree.rs` 가 런타임 열거와 대조해 붙박는다.
-다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
+이 검사는 `doc-guards.yml`에서 경로 필터 없이 매 push에 실행된다
+([CI 가이드](ci-gates.md)). `tests/method_table_readings_agree.rs`는 텍스트로 읽은
+메서드 표를 실제 런타임 목록과 대조한다. 검사기는 어느 근거 분류에 넣을지는 판단하지 않는다.
 
 ### `network` — 여는 것 하나 + 정직한 선언
 
@@ -152,14 +154,14 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 | `pty.read` / `pty.wait` / `pty.list` | `TerminalRead` | 아니오 |
 | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | **예** (실제 Tab 생성 — `terminal.spawn` 과 동일 이유로 `SurfaceWrite` 추가) |
 
-**`TerminalWrite` 의 범위는 "지정한 대상에 바이트를 쓴다" 까지다.** 이 토큰으로 열리는 것은 PTY 쓰기(`pty.write`/`pty.kill`)와 대상 surface ID 를 필수로 받는 `surface.send_key` 같은 메서드이며, **OS 전역 입력 조작은 포함하지 않는다.** 한때 macOS `surface.raw_key`(`CGEventPost` 로 시스템 전역 키 주입)와 `surface.switch_input_source` 가 같은 토큰으로 열려 있어 토큰 이름이 함의하는 것보다 능력이 넓었으나, 두 메서드는 debug 전용 `local_only()` 로 옮겨져 plugin 에서 호출 자체가 불가능하다([ADR-0012](../adr/0012-request-admission-and-isolation.md)). 새 메서드에 `TerminalWrite` 를 붙일 때는 그 동작이 **대상을 ID 로 받는 쓰기** 인지 확인한다 — 아니면 토큰이 아니라 표(release/debug) 선택이 잘못된 것이다.
+**`TerminalWrite` 의 범위는 "지정한 대상에 바이트를 쓴다" 까지다.** 이 토큰으로 열리는 것은 PTY 쓰기(`pty.write`/`pty.kill`)와 대상 surface ID 를 필수로 받는 `surface.send_key` 같은 메서드이며, **OS 전역 입력 조작은 포함하지 않는다.** macOS `surface.raw_key`(`CGEventPost`의 시스템 전역 키 주입)와 `surface.switch_input_source`는 debug 전용 `local_only()`이므로 plugin에서 호출할 수 없다([ADR-0012](../adr/0012-request-admission-and-isolation.md)). 새 메서드에 `TerminalWrite` 를 붙일 때는 그 동작이 **대상을 ID 로 받는 쓰기** 인지 확인한다 — 아니면 토큰이 아니라 표(release/debug) 선택이 잘못된 것이다.
 
 ## 새 권한 토큰 추가
 
 1. `Permission` enum 에 variant 추가(scoped 면 `<Name>(String)`).
 2. `from_token`/`as_token` 매핑(scoped 면 `strip_prefix` + scope 검증 함수).
 3. `is_valid_<x>` 검증 함수 — **형식만**, owner 존재는 검증 안 함.
-4. runtime 게이트(`method_meta` 또는 manager) 배선.
+4. runtime 게이트(`method_meta` 또는 manager) 연결.
 5. 이 문서의 [토큰 전체](#토큰-전체--무엇을-여나) 표 + [concepts/plugins](../concepts/plugins.md#권한-permissions) 나열 갱신 — `crates/tasty-doc-guards/tests/permission_token_docs_parity.rs` 가 둘 다 강제하고, `doc-guards.yml` 이 main push · PR 마다 그것을 돌린다 — 그 잡에는 경로 필터가 없어 **이 문서만 고친 push 에서도 돈다**([ADR-0048](../adr/0048-source-guards-and-exemptions.md) · [ci-gates](ci-gates.md)).
 
 `ipc.invoke`/`ext` 두 사례가 reference.
@@ -190,7 +192,7 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 | `[[contributes.hook_handler]]` | `hook_handler.define` |
 | `[[contributes.completion_strategy]]` | `completion_strategy.define` |
 
-`event_subscribe` 는 별도 권한 없음 — 패턴 자체가 게이트.
+`event_subscribe` 는 별도 권한 없음 — 구독 패턴으로 허용 범위를 제한.
 
 ### 새 게이트 추가
 
@@ -220,7 +222,9 @@ agent의 재발급은 받은 권한의 부분집합이다.
 거절된 호출은 plugin 기동 전에 끝나야 한다.
 세션 발급 실패 뒤 토큰 없이 자식을 띄우는 기존 경로는 별도의 fail-open 한계로 남아 있다.
 
-## 비-Local caller 가 유발할 수 있는 plugin 수명주기
+<a id="비-local-caller-가-유발할-수-있는-plugin-수명주기"></a>
+
+## Local 이외 호출자가 plugin을 시작하는 경우
 
 이 문서의 나머지는 "그 호출이 통과하는가" 를 다룬다. 이 절은 **통과한 호출의 부수효과가
 plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니라 각 경로가 무엇을 하느냐로
@@ -228,7 +232,7 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 
 | 경로 | 필요한 권한 | 기동 범위 |
 |---|---|---|
-| `plugin.enable` / `plugin.disable` | Local 전용 | 비-Local 거부 시 0 |
+| `plugin.enable` / `plugin.disable` | Local 전용 | Local 이외 호출자 거부 시 0 |
 | namespace 호출 권한·cap·rate 거부 | 기존 공통 게이트 | 0 |
 | 허용된 namespace 호출 | 기존 METHOD_TABLE/PREFIX_RULES 또는 `ipc.invoke:<prefix>` | 활성 owner, 그리고 실제 실행할 매칭 IPC hook의 active extension만 |
 | 미등록 prefix | 기존 unknown-method 오류 | 0 |
@@ -239,11 +243,11 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 - owner를 찾거나 권한을 검사할 때는 기동하지 않는다. 이미 running인 owner/extension은 다시 시작하지 않는다. 매칭 hook이 없거나 self-loop/backoff로 우회되면 그 extension을 기동할 이유도 없다.
 - 설치·enable·grant·사용자 설정 저장은 namespace 준비 경로에 없다. 다른 namespace를 호출해 agent-stream의 저장된 SSE가 우연히 재개되는 동작에 의존하지 않는다. 재개하려는 plugin을 명시적으로 사용하거나 Local enable 경로로 시작한다.
 - GUI의 첫 창에서 활성 plugin을 시작하는 기존 부팅 정책과 attach mesh mirror의 별도 기동 트리거는 유지한다. **호출로 인한 추가 기동**은 GUI/headless 공통 manager가 같은 범위로 처리한다.
-- 권한 해소 순서는 기존 `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → 등록 plugin prefix다. 표에 있는 `image.list` 같은 이름의 권한을 `ipc.invoke`로 대체하지 않는다. 거부·cap·rate·허용 관측은 [ADR-0012](../adr/0012-request-admission-and-isolation.md)의 공통 진입 검사를 유지한다.
+- 권한 해소 순서는 기존 `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → 등록 plugin prefix다. 표에 있는 `image.list` 같은 이름의 권한을 `ipc.invoke`로 대체하지 않는다. 거부·cap·rate·허용된 요청의 사용량 집계은 [ADR-0012](../adr/0012-request-admission-and-isolation.md)의 공통 진입 검사를 유지한다.
 
 ## Audit log
 
-입장 검사에서 허용 관측과 거절 기록을 한 번씩 수행한다. 디스크에는 Deny만 보존한다. 보존 기간과 한도는 [저장소의 관측 로그 보존](../design/systems/storage.md#관측-로그-보존)을 따른다. 공통 게이트 뒤의 namespace 검증 거절까지 같은 감사 경로에 들어가는지는 별도 확인 대상이다.
+입장 검사에서 허용된 요청의 사용량 집계과 거절 기록을 한 번씩 수행한다. 디스크에는 Deny만 보존한다. 보존 기간과 한도는 [저장소의 관측 로그 보존](../design/systems/storage.md#관측-로그-보존)을 따른다. 공통 게이트 뒤의 namespace 검증 거절까지 같은 감사 경로에 들어가는지는 별도 확인 대상이다.
 
 ### 텔레메트리 기록 정책
 
@@ -255,7 +259,7 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 
 ## 한계
 
-권한 게이트는 **호스트 IPC 호출만** 막는다. 플러그인이 자기 프로세스에서 `std::fs::write` 로 임의 경로에 쓰면 호스트는 모른다 — 진짜 격리는 OS 샌드박스(seccomp/sandbox-exec/WASM)가 필요하고 현재 범위 밖. 즉 매니페스트 `permissions[]` 는 **"호스트 API 호출 권한"** 이지 "OS 자원 권한"이 아니다 — UI/문서에서 grant 요청 시 이 표현을 유지해 false security 를 만들지 않는다.
+권한 게이트는 **호스트 IPC 호출만** 막는다. 플러그인이 자기 프로세스에서 `std::fs::write` 로 임의 경로에 쓰면 호스트는 모른다 — 진짜 격리는 OS 샌드박스(seccomp/sandbox-exec/WASM)가 필요하고 현재 범위 밖. 즉 매니페스트 `permissions[]` 는 **"호스트 API 호출 권한"** 이지 "OS 자원 권한"이 아니다 — UI/문서에서 grant 요청 시 이 표현을 유지해 OS 자원까지 보호한다고 오해하게 하지 않는다.
 
 **이 문서의 권한 모델과 attach 의 신뢰 모델은 서로 다른 축이라 섞지 않는다.** 이 문서는 "플러그인이 호스트 IPC 를 호출할 수 있는가"만 통제한다.
 플러그인이 그린 화면(렌더 결과)이 attach 로 원격에 얼마나 노출되는지는 이 권한 모델과 무관하게 **SSH+loopback 연결 경계**([ADR-0006](../adr/0006-bounded-ipc-transport.md), [attach-behavior "IPC 표면"](attach-behavior.md#ipc-표면-attach))에 이미 위임돼 있다 — attach 로 새 콘텐츠(예: 플러그인 렌더)를 노출하는 기능을 설계할 때, "더 민감해 보이니 이 권한모델에 신규 토큰을 추가해야 한다"고 판단하지 않는다.

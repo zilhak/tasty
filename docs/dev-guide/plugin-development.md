@@ -19,7 +19,7 @@
 
 ## 개요
 
-플러그인은 **별도 OS 프로세스**로 실행되어 호스트와 TCP+NDJSON 으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/`의 매니페스트로 소유권을 등록한다. GUI 부팅과 headless 요청별 시작 정책은 아래 수명주기 절을 따른다. 작성자는 SDK(`tasty-plugin-sdk`)의 `Plugin` trait 을 구현하고 `run()` 을 호출하면 — SDK 가 핸드셰이크(토큰 인증, AuthAck 5 초 대기)·NDJSON 직렬화·dispatch loop·ping/shutdown 을 가린다.
+플러그인은 **별도 OS 프로세스**로 실행되어 호스트와 TCP+NDJSON 으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/`의 매니페스트로 소유권을 등록한다. GUI 부팅과 headless 요청별 시작 정책은 아래 수명주기 절을 따른다. 작성자는 SDK(`tasty-plugin-sdk`)의 `Plugin` trait 을 구현하고 `run()` 을 호출하면 SDK가 핸드셰이크(토큰 인증, AuthAck 5초 대기)·NDJSON 직렬화·dispatch loop·ping/shutdown을 처리한다.
 
 플러그인이 contribute 할 수 있는 것은 [concepts/plugins 통합 축](../concepts/plugins.md#통합-축--host-에-무엇을-기여하나) 참고. **contribute 0 개여도 valid** (예: 다른 surface 닫힘만 관찰).
 
@@ -55,21 +55,21 @@ display_name_i18n_key = "surface.kind.myplugin"
 ## 2. Plugin trait
 
 ```rust
-use tasty_plugin_sdk::{Plugin, SurfaceCreateCtx, SurfaceResult, ui::{label, vbox, button}};
+use tasty_plugin_sdk::{Plugin, SurfaceCreateCtx, SurfaceResult};
 
-struct MyPlugin { counter: u32 }
+struct MyPlugin;
 
 impl Plugin for MyPlugin {
     fn id(&self) -> &str { "com.example.myplugin" }
     fn version(&self) -> &str { "0.1.0" }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult { tree: Some(self.build_tree()), display_name: Some("My Plugin".into()) }
+        SurfaceResult { display_name: Some("My Plugin".into()), ..Default::default() }
     }
 }
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(/* RUST_LOG */ "info").init();
-    tasty_plugin_sdk::run(MyPlugin { counter: 0 })
+    tasty_plugin_sdk::run(MyPlugin)
 }
 ```
 
@@ -88,7 +88,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 함께 실린다 — host 본체에 `if kind == "..."` 를 박지 않기 위한 것들이다:
 
 - **`icon`** — 탭/프리셋 leading 아이콘의 **이름**. host 가 자기 아이콘 세트에서 `icons::from_name` 으로 glyph 에 매핑한다(현재 이름: `markdown`/`folder`/`image`/`html`/`terminal`/`file`; 미지의 이름은 `file` 로 fallback). 예: markdown 의 `icon = "markdown"`.
-- **`preset_fields`** — 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마. `required = true` 인 `param_key` 는 surface 생성 IPC(`pane.split`/`workspace.new`)의 **필수 파라미터**로도 쓰인다(단일 진실원). 예: markdown 은 `file` 필드 하나(required).
+- **`preset_fields`** — 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마. `required = true` 인 `param_key` 는 surface 생성 IPC(`pane.split`/`workspace.new`)의 **필수 파라미터**로도 쓰인다(공통 선언). 예: markdown 은 `file` 필드 하나(required).
 - **`param_aliases`** — 옛 caller 가 넘기는 alias 키 → canonical 키 매핑. host 가 convert 경로에서 정규화한다. 예: markdown 의 `{ file_path = "file" }`.
 - **`default_params`** — surface 생성 시 params 에 없으면 host 가 주입하는 기본값(키 → 리터럴 또는 정책 토큰). 정책 토큰: `@settings.explorer_view_mode`(Settings 의 마지막 explorer view mode), `@home`(홈 디렉토리 — **새 탭 생성 fresh-context 에서만** 해석; split/preset/workspace 처럼 cwd 를 상속·carry 하는 경로에선 건너뛴다). 예: explorer(builtin)의 `{ view_mode = "@settings.explorer_view_mode", path = "@home" }`.
 - **capability flags**(모두 기본 false) — host 의 입력/줌/복사/붙여넣기 게이트를 kind 하드코딩 없이 판정한다:
@@ -118,7 +118,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ### 완료 판정 전략 (agent task `Custom` dispatch 완료 판정)
 
-`[[contributes.completion_strategy]]` — `agent.task_create` 의 `TaskCommand::Custom.poll` 이 이름으로 참조할 수 있는 완료 판정 전략을 선언한다(자세한 모델·결정 사항은 [agent-runner](agent-runner.md)의 "완료 판정 전략 레지스트리" 참고). 권한: `completion_strategy.define`. `spec.kind = "poll"`(`poll_method`/`state_field`/`terminal_states` 등, `PollSpec` 과 1:1) 또는 `"push"`(`notify_via`: 자기 자신 또는 host 소유 훅 핸들러 id + 필수 `timeout_ms`). `poll_method` 와 `default_for_methods`(결정 6 — 이 전략이 기본 판정이 되는 IPC 메서드 목록)는 plugin 소유면 자기 namespace(`<plugin_id>.*`) 만 가리킬 수 있다. id 는 short name → install 단계가 `<plugin_id>/<id>` 로 자동 prefix.
+`[[contributes.completion_strategy]]` — `agent.task_create` 의 `TaskCommand::Custom.poll` 이 이름으로 참조할 수 있는 완료 판정 전략을 선언한다(자세한 모델·결정 사항은 [agent-runner](agent-runner.md)의 "완료 판정 전략 레지스트리" 참고). 권한: `completion_strategy.define`. `spec.kind = "poll"`(`poll_method`/`state_field`/`terminal_states` 등, `PollSpec` 과 1:1) 또는 `"push"`(`notify_via`: 자기 자신 또는 host 소유 훅 핸들러 id + 필수 `timeout_ms`). `poll_method` 와 `default_for_methods`(이 전략을 기본으로 사용할 IPC 메서드 목록)는 plugin 소유면 자기 namespace(`<plugin_id>.*`) 만 가리킬 수 있다. id 는 short name → install 단계가 `<plugin_id>/<id>` 로 자동 prefix.
 
 ### 도구 메뉴 항목 + popup
 
@@ -188,9 +188,9 @@ self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실
 안 받고, egui-mesh kind 도 입력·geom·theme·focus·invalidated 중 하나가 있어야 forward
 된다. 즉 **idle 상태에서는 감시 스레드가 유일한 자동 갱신 경로다.**
 
-그 기계는 SDK 의 `file_watch` 모듈에 있다. plugin 이 정하는 것은 둘뿐이다.
+공용 감시 루프는 SDK의 `file_watch` 모듈에 있다. plugin 이 정하는 것은 둘뿐이다.
 
-1. **판정자**(`EntryProbe`) — 무엇을 견줘 "바뀌었다" 로 볼 것인가.
+1. **변경 검사**(`EntryProbe`) — 파일의 어떤 값을 비교할 것인가.
 2. **reload 메서드 이름** — 변경을 알릴 자기 네임스페이스 메서드.
 
 ```rust
@@ -219,11 +219,11 @@ forward 하지 않아 항상 `-32601` 이 떨어진다.
 
 #### 판정자 고르기 — 기준은 "읽기 비용에 상한이 있는가"
 
-- **`ContentDigest`(SDK 제공)** — 매 폴 전량을 읽어 내용 지문을 견준다. 오탐·미탐이 모두
-  없다. **입력 크기에 상한이 있을 때만** 이 교환이 성립한다(markdown 문서가 그렇다).
+- **`ContentDigest`(SDK 제공)** — 매 폴 전량을 읽어 내용 지문을 견준다. mtime 해상도 때문에 같은 시각의 변경을 놓치는 문제를 피한다. 64비트 해시이므로
+  충돌 가능성까지 없애지는 않는다. **입력 크기에 상한이 있을 때만** 이 교환이 성립한다(markdown 문서가 그렇다).
 - **시계(mtime)만** — 싸지만 두 쓰기가 같은 mtime 눈금에 떨어지면 뒤엣것을 **영구히**
   놓친다. 그 창은 파일시스템이 정한다(그 타입 문서에 실측값이 있다).
-- **2 단 판정(`stat` 게이트 → 지문)** — 입력이 무계일 때. 싼 `stat` 으로 먼저 거르고
+- **2 단 판정(`stat` 게이트 → 지문)** — 파일 크기에 상한이 없을 때. 싼 `stat` 으로 먼저 거르고
   움직였을 때만 읽는다. `EntryProbe` 가 값 반환이 아니라 trait 인 이유가 이것이다 —
   "안 읽고 통과" 를 반환값으로는 말할 수 없다.
 
@@ -288,7 +288,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0035](..
 다른 플러그인이 못 보게만 하면 충분한 것 — UI 옵션, API 응답 캐시, 작업 중 임시 컨텍스트. *디스크에 평문으로 있어도 사용자에게 큰 손해 없는* 데이터.
 
 ##### ❌ secret 에 두면 안 되는 것
-**디스크 평문 정착이 안전한가**로 판단 — master password, OAuth refresh/access token, 결제 정보·API 결제 key, 개인정보(의료/금융/식별), 타 서비스 자격증명.
+**디스크에 평문으로 저장해도 되는가**로 판단 — master password, OAuth refresh/access token, 결제 정보·API 결제 key, 개인정보(의료/금융/식별), 타 서비스 자격증명.
 
 이 종류는 플러그인이 **직접 OS keyring** 을 호출한다. Rust `keyring` 크레이트:
 
@@ -306,13 +306,8 @@ let token = entry.get_password()?;
 
 #### sandbox 가 들어오면
 
-플러그인 sandbox(macOS `sandbox-exec` / Linux `landlock` / Windows `AppContainer`)가 도입되면 플러그인이 `memory.db` 직접 열기·keyring 직접 호출도 capability 로 제어된다 — 그 시점에 secret 의 IPC 격리만으로 진짜 격리가 완성된다. 도입 시기 미정. **그 전까지 위 권고를 따른다.**
-
-#### 요약
-
-- secret 영역 = "다른 플러그인한테 안 보이는 자리", 그 이상도 이하도 아니다.
-- 진짜 민감 데이터 = OS keyring 직접 호출 또는 외부 파일 + 권한 관리.
-- 모호하면 "이 데이터가 평문으로 디스크에 있어도 괜찮은가?" — 괜찮으면 secret, 아니면 keyring.
+OS 샌드박스는 아직 도입되지 않았다. 도입할 때는 파일·keyring 접근 제한과 기존
+IPC 권한을 함께 검토해야 한다. 그 전까지 민감한 값은 위 keyring·파일 권한 규칙을 따른다.
 
 ## 7. 호스트 런타임 계약 (env · 생명주기 · 핸드셰이크)
 
@@ -383,7 +378,7 @@ enable·swap 응답은 자식을 만들었다는 뜻이며 연결 완료를 보�
 #### 무응답과 늦은 응답
 
 - ping 간격은 15 초, healthcheck 무응답 기준은 60 초다. tick 판정까지 최대 75 초이며 실제 연결 종료는 별도로 감지한다.
-- 10 초 안에 spawn 실패 3 회면 자동 비활성화한다.10 초짜리 연결 실패만 반복해서는 이 창 안에 3 회가 쌓이지 않는다.
+- 10 초 안에 spawn 실패 3 회면 자동 비활성화한다. 10 초짜리 연결 실패만 반복해서는 이 창 안에 3 회가 쌓이지 않는다.
 - namespace 요청 기한은 `2 × (HEALTHCHECK_TIMEOUT + PING_INTERVAL)`, 현재 150 초다. 만료는 모든 caller에 `-32004`로 답한다.
 - namespace 연속 만료 3 회는 다음 ping tick에서 재시작한다. 실제 namespace 응답은 늦게 와도 계수를 지운다.
   최근 만료 ID와 일치하는 응답만 한 번 소비하며 pong·hook 응답은 이 계수를 지우지 않는다.
@@ -422,10 +417,10 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 
 호스트와 plugin 사이 메인 채널(TCP · NDJSON)은 IPC · attach 소켓과 같은 **이중 방어**를 쓴다.
 
-- **메시지 한 줄은 한 번의 write 로 나간다** — 양 끝의 모든 송신 자리가
+- **본문과 개행은 한 버퍼로 보낸다** — 양 끝의 모든 송신 자리가
   `tasty_plugin_protocol::write_line` 을 거쳐 본문과 개행을 한 버퍼로 `write_all` 1 회에 보낸다.
-  단위 시험 `line::tests::write_line_emits_one_write_call` 이 write 횟수를 고정한다(각 호출 자리가
-  이 함수를 쓰는지는 시험이 아니라 코드가 보인다).
+  단위 시험 `line::tests::write_line_emits_one_write_call` 이 시험 writer에 전달된 호출 수를 확인한다(각 호출자가
+  이 함수를 쓰는지는 별도로 확인한다).
 - **양 끝 소켓은 `TCP_NODELAY`** 다 — 호스트는 listener 가 연결을 받는 자리
   (`crates/tasty-host-plugin/src/listener.rs` `handle_incoming`), plugin 은 SDK `Connection::connect`.
   한 번에 써도 줄이 MSS 를 넘거나 직전 메시지가 아직 unACKed 면 다음 조각이 다시 Nagle 에 걸리므로
@@ -433,14 +428,9 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 
 보조 핸들 채널(Unix 도메인 소켓 · Windows named pipe)은 TCP 가 아니라 Nagle 이 없어 이 규칙의 대상이 아니다.
 
-둘 다 없던 때는 `writeln!` 이 본문과 개행을 **두 번에 나눠 써서**, 개행 조각이 본문의 ACK 를
-기다리고 받는 쪽은 그 ACK 를 최대 ~40 ms 미뤘다. 실측(strace, 같은 조건)으로 개행 조각이 hop 마다 40.0–40.2 ms 늦게 도착했다. 빈 결과를 내는 namespace 호출 하나가 hop 셋(요청 · plugin 이 부른 host-call 의 결과 ·
-응답)을 지나므로 호출마다 ~120 ms 가 붙었다. 끄고 나서의 실측(2026-09-23, Linux 헤드리스 debug,
-`system.pressure` 의 `plugin_round_trip`): 9 건 `us_max` 1515 · `us_mean` 1238(끄기 전 같은 호출
-124.8–130.9 ms). IPC · attach 소켓의 같은 규칙은
-[`attach-behavior.md` "프레임 전송 지연"](attach-behavior.md#프레임-전송-지연-nagle-금지).
-두 끝의 설정은 각 크레이트의 단위 시험(`handed_off_stream_has_nodelay` ·
-`connect_disables_nagle_on_the_host_channel`)이 고정한다.
+`handed_off_stream_has_nodelay`와 `connect_disables_nagle_on_the_host_channel`이
+양 끝의 소켓 설정을 검사한다. IPC·attach의 같은 규칙은
+[프레임 전송 지연](attach-behavior.md#프레임-전송-지연-nagle-금지)을 따른다.
 
 ### 채널 상한 (개수 · 바이트 · 합계)
 
@@ -480,7 +470,7 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 그래서 버린 수를 **다음으로 실제 큐에 들어가는 요청**에 얹는다 —
 `PluginRequest.dropped_requests`. 별도 통지 메시지를 만들면 그 통지도 같은(찬) 큐를
 써야 해서 자기모순이고, 자리가 났다는 것은 plugin 이 하나라도 소비했다는 뜻이므로
-살아서 밀리는 plugin 은 반드시 이 값을 본다. 근거는
+다음 요청이 실제로 전달되면 plugin이 이 값을 읽을 수 있다. 근거는
 [ADR-0006](../adr/0006-bounded-ipc-transport.md).
 
 SDK 가 셋으로 노출한다.
@@ -498,7 +488,10 @@ SDK 가 셋으로 노출한다.
 
 ### 프로세스 수명 결박 (3 OS — 크래시·강제종료 포함)
 
-위 "종료" 경로는 `PluginProcess::shutdown` / `Drop` 의 `child.kill()` 에 의존하므로 **정상 종료만** 커버한다. 하드 크래시·`taskkill /f`·디버거 강제종료 등 Drop 이 돌지 않는 경로에서는 플러그인이 고아로 잔존할 수 있다. 이를 OS 커널 레벨에서 막기 위해, 호스트가 어떤 식으로 죽든 플러그인이 함께 종료되도록 결박한다 (`crate::reaper::PluginReaper`, spawn 시 `prepare`/`adopt` 배선). OS 별 메커니즘이 비대칭이라 단일 추상화 뒤에 숨긴다:
+정상 종료에서는 `PluginProcess::shutdown`과 `Drop`이 자식을 정리한다.
+Drop이 실행되지 않는 크래시·강제 종료에 대비해 `PluginReaper`가 아래 장치를 사용한다.
+설정 실패 시에는 경고를 남기고 기존 kill 기반 정리로 돌아가므로 모든 종료 상황을
+무조건 보장하는 것은 아니다.
 
 | OS | 메커니즘 | 통합 지점 | 손자(node/chrome) |
 |----|----------|-----------|--------------------|
@@ -508,10 +501,11 @@ SDK 가 셋으로 노출한다.
 
 모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 기능이나 호스트를 죽이지 않는다.
 
-**결박 대상은 플러그인에 국한되지 않는다.** PTY pane 의 사용자 셸과 그 안에서 돌던 모든 것(AI 에이전트·빌드·MCP 서버 등 자식 트리)도 호스트 수명에 묶인다 — **tasty 가 죽으면(정상 종료·크래시·`taskkill /f`·디버거 강제 stop 무관) tasty 안에서 돌던 프로세스는 함께 종료된다.** 메커니즘은 OS 별로 다르지만 결과는 같다:
-
-- **Windows**: 터미널 셸을 전역 호스트 Job Object 에 결박한다 (공용 primitive `tasty-reaper`, `Terminal::new` 이 spawn 직후 `adopt_pid`, 부팅 시 `boot.rs` 에서 `init_host_reaper` 1 회). ConPTY 는 "pseudoconsole 종료 ⇒ 자식 종료" 를 보장하지 않아, 결박이 없으면 tasty 비정상 종료 시 화면 없는 좀비 셸 트리가 누적된다(개발 중 디버거 stop 마다 수십 개씩). 플러그인 job(위 표, `PluginManager` 소유)과 터미널 job(전역)은 별개 인스턴스지만 둘 다 `KILL_ON_JOB_CLOSE` 라 프로세스 사망 시 동일하게 정리된다.
-- **Unix**: tasty 종료 시 커널이 PTY master fd 를 닫으며 발생하는 SIGHUP 이 셸 foreground 프로세스 그룹을 정리하므로 별도 결박 없이 같은 결과가 난다(portable-pty `CommandBuilder` 가 `pre_exec` 를 노출하지 않아 셸에는 PDEATHSIG 설치 불가 — 대신 SIGHUP 이 그 역할을 한다).
+PTY 셸도 별도 정리 경로가 있다. Windows에서는 `tasty-reaper`의 호스트 Job Object에
+`Terminal::new`가 셸 PID를 등록한다. plugin Job과는 별도 인스턴스다.
+Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 전달된다.
+신호를 무시하거나 분리된 자식까지 모두 종료한다고 일반화하지 않는다.
+`portable-pty::CommandBuilder`는 `pre_exec`를 제공하지 않아 셸에 PDEATHSIG를 설치하지 않는다.
 
 정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md).
 
@@ -524,7 +518,10 @@ SDK 가 셋으로 노출한다.
 - **이름**: crate `tasty-plugin-<name>` = binary 이름, id `com.x.<name>`(다어절 hyphen), IPC prefix = id 마지막 segment 의 `_` 변환, i18n key root = prefix.
 - **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입 — host 가 부팅 시 `general.language` 에서 set, §7 표). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
 - **권한 표기**: 실제 필요한 것만. 자기 namespace `ipc.invoke:<self>` 는 적지 않는다 — 자기 호출에는 필요 없고, 자식 agent 토큰에 넘길 때도 소유자라 쥐지 않고 넘긴다([plugin-permissions](plugin-permissions.md#agent-caller--session-token--temp-grants)).
-- **모듈 분리**: `main.rs` 가 ~300 줄을 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리한다(`crates/tasty-plugin-claude/src/` · `crates/tasty-plugin-codex/src/` 가 reference). 커지면 실제로 가른다 — `crates/tasty-plugin-image/src/` 가 그 예로, 렌더와 문서 처리를 `crates/tasty-plugin-image/src/render.rs` · `crates/tasty-plugin-image/src/doc.rs` 로 냈다. 아직 단일 `main.rs` 인 것도 있다(`crates/tasty-plugin-html/src/main.rs`). **줄 수는 적지 않는다** — 커밋마다 바뀌는 값이라 적는 순간 낡고, 예시가 낡으면 규칙이 자기 반대를 가르친다(ADR-0049).
+- **모듈 분리**: `main.rs`가 약 300줄을 넘으면 역할에 따라 `state.rs`·`handlers.rs`·
+  `install.rs` 등으로 나눈다. Claude·Codex·image plugin의 모듈 구성을 참고한다.
+  파일별 현재 줄 수는 문서에 복제하지 않는다(ADR-0049).
+
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.
 
 ## 9. 빌드 & 설치
@@ -568,12 +565,11 @@ tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .ex
 #      있을 때만. 건너뛰는 plugin 과 바뀐 내용이 없는 plugin 은 기다리지 않는다.
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
 #   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
-#      (2026-09-07 부터. 그전에는 mtime 비교였고, `cp -p`·아카이브처럼 mtime 이 보존되면 조용히 건너뛰었다).
 #      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
 #      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **설치본 버전이 번들보다 높아** 건너뛰는 갈래에만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 #   ※ 옛 프로세스가 아직 빠지는 중이면 enable 이 그 회수(최대 2 s)를 기다린 뒤 그 자리에서 띄운다 —
-#      enable 이 돌아오면 plugin 은 이미 떠 있다(ADR-0026).
+#      enable 응답은 spawn 완료이며 연결·hello 완료를 보장하지 않는다(ADR-0026).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은

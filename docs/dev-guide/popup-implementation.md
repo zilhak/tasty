@@ -13,7 +13,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 | 정의 위치 | `src/adapters/ui/popup/defs.rs::all_defs()` 정적 목록(`OnceLock`) | plugin 매니페스트 `tasty-plugin.toml` |
 | 콘텐츠 렌더 | host 프로세스 egui (`draw_fn`) | **plugin 프로세스** egui → egui-mesh 로 tessellate, host 가 합성 ([ADR-0028](../adr/0028-egui-mesh-rendering.md)) |
 | 셸(scrim·border·이동·리사이즈·outside-click·Esc) | `PopupManager` | **host `PopupManager`** (동일 — 셸은 언제나 host 소유) |
-| 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host event 발행이 발화, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0031](../adr/0031-file-handler-routing.md)) |
+| 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host 이벤트로 실행, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0031](../adr/0031-file-handler-routing.md)) |
 | 상태·입력 버퍼 | host `AppState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
 | 스코프(가시성·경계) | `PopupDef.default_scope` + 여는 쪽 `OpenPopupMode::WithScope` | 매니페스트 `scope`(`window` 기본 / `surface`) + 여는 host 진입점이 대상 surface 바인딩 — 판정 함수는 host 와 같다([design/systems/popup.md](../design/systems/popup.md) §plugin popup 의 스코프) |
 
@@ -22,7 +22,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 - **host `PopupDef`**: 콘텐츠가 host 데이터/위젯(설정, 파일 핸들러 picker, convert 목록, 이름변경 등)이고 host 가 렌더에 필요한 모든 상태를 가진 경우. host 가 kind 이름을 몰라야 하는 정보(특정 plugin 의 도메인 데이터)는 담지 않는다.
 - **plugin `[[contributes.popup]]`**: 콘텐츠가 **특정 plugin 의 도메인**(그 plugin 만 아는 데이터·검증·동작)인 경우. host 는 그 내용을 몰라야 한다(불가침 원칙 — host 는 plugin 이름/도메인으로 조건분기하지 않는다). 셸만 host 가 그려 준다.
 
-**현재 plugin 팝업 (markdown, egui-mesh):**
+**현재 plugin 팝업 예 (markdown, egui-mesh):**
 
 - `large-file-confirm` — 대용량 파일 열기 확인. 크기 감지·확인 로직이 plugin in-process 소유(host 는 파일 크기를 stat 하지 않는다). plugin 이 `com.tasty.markdown.large_file_confirm` 이벤트를 발행하면 열린다.
 - `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). `scope = "surface"` 라 대상 surface 가 보일 때만 그 영역 안에 뜬다. host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0036](../adr/0036-overlay-scope-and-lifetime.md))으로 위임하고 팝업을 띄운 surface 의 폴더에서 출발시킨다, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 새 탭 쪽은 `owner_popup_instance` 에 자기 popup 을 실어 사용자 조작임을 알린다 — 빠지면 host 가 에이전트 요청으로 받아 새 탭을 선택하지 않는다([ADR-0031](../adr/0031-file-handler-routing.md)). 상세: [plugins/markdown](../plugins/markdown/index.md).
@@ -81,16 +81,18 @@ PopupDef {
 }
 ```
 
-### 3. 팝업 열기 — Intent 큐로 발화
+<a id="3-팝업-열기--intent-큐로-발화"></a>
 
-`state.popups.open*` 직접 호출 금지 — **Intent 로 발화**한다 (origin 정책·디스패치 이유는 [`design/flows/action-dispatch.md`](../design/flows/action-dispatch.md)).
+### 3. 팝업 열기 — Intent 큐로 요청
+
+`state.popups.open*` 직접 호출 금지 — **Intent를 생성**한다 (origin 정책·디스패치 이유는 [`design/flows/action-dispatch.md`](../design/flows/action-dispatch.md)).
 
 ```rust
 use crate::intent::{UiIntent, OpenPopupMode};
 state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode::CenteredFocused }.from_user_menu("my_button"));
 ```
 
-`OpenPopupMode`: `Default` · `CenteredFocused` · `WithScope(scope)` · `AtTopOfScope(scope)` · `AtFocused(pos)`. 발화 origin(`from_user_*` / `from_agent_*`)에 맞는 mode 를 고른다. 같은 id 가 이미 열려 있으면 두 번째 OpenPopup 은 dedup 으로 무시된다.
+`OpenPopupMode`: `Default` · `CenteredFocused` · `WithScope(scope)` · `AtTopOfScope(scope)` · `AtFocused(pos)`. 요청의 origin(`from_user_*` / `from_agent_*`)에 맞는 mode 를 고른다. 같은 id 가 이미 열려 있으면 두 번째 OpenPopup 은 dedup 으로 무시된다.
 
 ## `PopupDef` 필드
 
@@ -110,7 +112,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `min_size` | `Option<egui::Vec2>` | 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용 |
 | `fullscreen_stage` | `Option<StageId>` | `Some(id)` 면 타이틀바 X 왼쪽에 전체화면 버튼이 붙고, 누르면 그 [무대](../design/systems/fullscreen-stage.md)가 뜬다. 노출 여부와 대상이 한 필드라 "버튼은 있는데 갈 곳이 없는" 상태가 생기지 않는다. 아래 "전체화면 버튼" 참고 |
 | `draw_fn` | `fn(&mut Ui, &mut AppState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
-| `on_close` | `Option<fn(&egui::Context, &mut AppState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 발화(아래 "닫힘 정리" 참고) |
+| `on_close` | `Option<fn(&egui::Context, &mut AppState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 실행(아래 "닫힘 정리" 참고) |
 
 ### sizer 는 매 프레임 돈다 (열 때 한 번이 아니다)
 
@@ -127,7 +129,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 - **배율은 sizer 의 몫이다.** `sizer` 가 있는 popup 은 등록 시 `default_size` 에 host UI zoom 이
   곱해지지 않는다(`PopupManager::register`). 그래서 폭이 콘텐츠를 안 따르더라도 sizer 가
   `zoomed_px` 로 직접 곱해 돌려줘야 한다. 높이 식도 같다 — `Theme` 값은 생성 때 배율을
-  이미 탔고 파일 안 const 는 안 탔으므로, 한 식에서 섞으면 그릇만 고정되고 안의 글자가
+  이미 탔고 파일 안 const 는 안 탔으므로, 한 식에서 섞으면 팝업 크기는 고정된 채 글자만
   커진다(ADR-0035). 고정 크기였을 때는 등록이 곱해 주던 몫이라 **sizer 로 바꾸는 순간
   조용히 사라진다.**
 
@@ -185,12 +187,12 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 
 - **해결**: 드롭다운을 그리는 뷰가 `popup::report_child_overlay_rect(ctx, popup_id, overlay_key, rect)`로 실측 rect를 매 프레임 보고한다(닫혀 있으면 반드시 `None` — stale rect 방지). `overlay_key`는 오버레이별 고유 문자열(보통 그 드롭다운의 egui popup id 문자열)로, 한 popup 에 오버레이가 여러 개(`port_scanner`의 state_filter + column_chooser)여도 report 호출 순서와 무관하게 서로 덮어쓰지 않는다.
 - **hit-test 반영**: `PopupManager::draw`의 pre-content 판정은 `popup_rect().contains(pos)`가 실패하면 그 popup 소유의 등록된 오버레이 rect 들도 추가로 확인한다(`child_overlay_hit`). 여기 걸리면 `hovered_popup`이 그 popup으로 설정되어 outside-click 으로도, hover 기반 입력 게이팅(`PopupDrawResult.hovered` → `state.popup_hovered`)에도 "바깥"으로 취급되지 않는다 — 드롭다운이 시각적으로 떠 있는 동안은 그 위 터미널 입력도 계속 차단되는 게 맞는 동작이다. close 버튼/리사이즈 엣지/드래그 핸들 판정은 `popup_rect` 자체에만 유효하므로 오버레이 hit 은 여기 관여하지 않는다.
-- **1프레임 지연**: 보고는 hit-test보다 뒤(콘텐츠 렌더 시점)라 직전 프레임 값을 쓴다 — `report_header_drag_rect`와 동일한 트레이드오프(사실상 인지 불가).
+- **1프레임 지연**: 보고는 hit-test보다 뒤(콘텐츠 렌더 시점)라 직전 프레임 값을 쓴다 — `report_header_drag_rect`와 동일한 트레이드오프.
 - **적용 예**: `port_scanner.rs`의 `draw_state_filter`/`draw_column_chooser`, `remote_tool.rs`의 `draw_protocol_filter`. `remote_tool`은 부모 popup 이 `close_on_outside_click: false`라 증상 자체는 안 드러나지만 구조는 동일하게 맞춰져 있다.
 
 ## 타이틀 길이 처리 (elide)
 
-타이틀바 텍스트가 길면 우측 상단 버튼군과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — 버튼군 좌변(`title_buttons_left_x()`: 전체화면 버튼이 있으면 그 좌변, 없으면 `close_btn_rect` 좌변)을 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).
+타이틀바 텍스트가 길면 우측 상단 버튼군과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — 버튼군 왼쪽 경계(`title_buttons_left_x()`: 전체화면 버튼이 있으면 그 왼쪽 경계, 없으면 `close_btn_rect` 왼쪽 경계)을 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).
 
 - **개별 popup 은 타이틀 문자열을 미리 축약하지 않는다.** `title_key`/`title_fn`은 원본 텍스트(전체 경로, 원본 문구 등)를 그대로 반환하면 된다 — 문자 수 기준 임의 축약(예: N자 초과 시 `.../parent/name`)을 타이틀 겹침 방지 목적으로 넣지 않는다. 폭 기준 elide 가 아닌 문자 수 기준 축약은 폰트/문자 폭이 다르면 여전히 겹치거나 불필요하게 짧아질 수 있다.
 - **본문이 경로를 스스로 그리는 자리는 다르다 — 거기서는 앞에서 자른다.** 타이틀 겹침 방지가 아니라 **어느 쪽 끝이 정보인가**의 문제다. 경로와 reverse-DNS id 는 꼬리가 대상을 가르고 앞쪽이 반복되는 부분이라, 잘라야 하면 앞에서 자르고(`…/federation/screens.tsx`) 그 결과를 좌→우로 그린다. `direction: rtl` 류의 뒤집기는 런을 재배열해 정보가 있는 끝을 자른다. `file_handler_picker.rs` 의 `elide_target_front()`(헤더 경로) · `elide_id_front()`(행의 handler id)가 그 형태다.
@@ -203,8 +205,8 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 
 - **대상 무대는 먼저 존재해야 한다** — `fullscreen::defs::all_defs()` 에 같은 id 의 `StageDef` 를 등록한다(방법: [fullscreen-stage.md](../design/systems/fullscreen-stage.md)). 두 테이블의 정합은 단위 테스트가 강제한다(`popup_declared_stages_exist_and_are_not_headless`).
 - **headless popup 에는 달 수 없다** — 타이틀바가 없어 버튼을 놓을 자리가 없다. 값이 `Some` 이어도 그려지지 않고, 같은 테스트가 그 조합을 금지한다.
-- **원본 popup 은 닫히지 않는다** — 무대가 덮을 뿐이고 나오면 그대로 다시 보인다. 무대 콘텐츠는 이 popup 의 인스턴스가 아니라 **같은 형상의 별개 콘텐츠**이므로, 무대에서 무엇을 하든 popup 상태에 반영되지 않는다.
-- **버튼을 달지 않은 popup 은 타이틀바가 변하지 않는다** — close 버튼 rect 는 전체화면 버튼 유무와 무관하게 타이틀바 우측 끝 고정이고, 제목 elide 기준도 버튼이 없으면 예전과 같은 `close_btn_rect` 좌변이다.
+- **원본 popup 은 닫히지 않는다** — 무대가 덮을 뿐이고 나오면 그대로 다시 보인다. 무대 콘텐츠는 이 popup 의 인스턴스가 아니라 **같은 형태로 그린 별도 콘텐츠**이므로, 무대에서 무엇을 하든 popup 상태에 반영되지 않는다.
+- **버튼을 달지 않은 popup 은 타이틀바가 변하지 않는다** — close 버튼 rect 는 전체화면 버튼 유무와 무관하게 타이틀바 우측 끝 고정이고, 제목 elide 기준도 버튼이 없으면 예전과 같은 `close_btn_rect` 왼쪽 경계이다.
 
 ## 텍스트 입력이 있는 팝업
 

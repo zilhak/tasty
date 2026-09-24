@@ -15,7 +15,7 @@ plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를
           │  SharedBuffer 에 write + commit(footer generation)
           ▼  PluginEvent::PaintFrame { surface_id, buffer_id, generation,
           │                            frame_seq, full_textures, ime_cursor }
-          │  ime_cursor 는 그 pass 의 PlatformOutput::ime — host 가 OS IME 후보창 위치를
+          │  ime_cursor 는 해당 pass의 PlatformOutput::ime — host 가 OS IME 후보창 위치를
           │  정하는 데 쓰는 역방향 값(아래 "IME candidate 위치")
 [host]  SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
           → frame_seq 체인 검증(아래 "텍스처 상태 수명 + delta 체인"): delta 적용은 체인
@@ -45,7 +45,7 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 
 ### 보조 핸들 채널 — shared buffer 를 plugin 에 넘기는 전송 (크로스플랫폼)
 
-mesh 는 GPU shared memory 버퍼에 써서 host 가 합성한다. 그 버퍼를 만드는 건 host 지만
+mesh는 프로세스 간 공유 메모리 버퍼로 전달하고 host가 GPU에서 합성한다. 그 버퍼를 만드는 건 host 지만
 (`manager/buffer.rs::create_shared_buffer_for`), 매핑 핸들을 plugin 프로세스로 넘기는 건
 메인 TCP 채널이 아니라 **보조 핸들 채널**이다(메인 채널은 fd/HANDLE 을 운반 못 함). OS 별
 전송 수단만 다르고 상위 프로토콜(NDJSON `HandleAttach` + `Dirty`)은 동일하다:
@@ -89,14 +89,16 @@ focused) 를 추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 
 트리거에 넣는 이유: egui 자체가 `ctx.input(|i| i.focused)` 로 커서 블링크·포커스 링 등
 위젯 시각을 바꾸므로, 입력 없이 포커스만 잃는 경우(다른 surface 클릭)에도 재전송돼야
 그 변화가 즉시 반영된다.
-`SurfaceInvalidated`(`MeshForwardState::invalidated`, 단계 06)는 plugin 이 out-of-band
+`SurfaceInvalidated`(`MeshForwardState::invalidated`, 유휴 갱신)는 plugin 이 out-of-band
 로 감지한 변경(예: idle 상태에서 외부 파일 수정)을 host 에 알려 **입력 없이도** 재forward
 를 트리거하는 유일한 plugin-발 경로다 — 아래 "idle invalidate" 절 참조. focused 를 안 쓰는
-plugin 은 출력 바이트가 불변이라 SDK 출력 해시 dedup 이 PaintFrame 을 흡수 — 스퍼리어스
-재합성 없음. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
+plugin 은 출력 바이트가 불변이라 SDK 출력 해시 dedup 이 PaintFrame 을 흡수 — 같은 출력의
+불필요한 재합성을 줄임. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
 frame 이 사라지면 다시 bootstrap 한다.
 
-## idle invalidate (SurfaceInvalidated, 단계 06)
+<a id="idle-invalidate-surfaceinvalidated-단계-06"></a>
+
+## idle invalidate (SurfaceInvalidated)
 
 위 5 개 host-side 트리거와 별개로, plugin 은 `HostHandle::notify(&PluginEvent::SurfaceInvalidated
 { surface_id })` 로 **입력과 무관하게** 재forward 를 요청할 수 있다. host 수신 스레드는
@@ -112,14 +114,9 @@ frame 이 사라지면 다시 bootstrap 한다.
    빈 입력 `set_context` 를 1 회 통과시키고, 송신 시 플래그를 소거한다(`src/view/main/egui_mesh.rs`).
 4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태를 재확인·재-read 한다.
 
-**과거 소비자(현재는 다른 경로로 대체됨)**: markdown plugin 이 egui-mesh 로 본문을 그리던
-시절엔 markdown 의 idle 폴링 worker(현재 `crates/tasty-plugin-sdk/src/file_watch.rs`)가 이
-채널로 `SurfaceInvalidated` 를 emit 해 재-read 를 트리거했다. markdown 이 webview 로
-전환된 뒤([ADR-0029](../adr/0029-webview-host-integration.md))로는 webview-kind
-surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 무의미해졌다 — 지금
-`file_watch` 는 변경 감지 시 이 채널 대신 `self_invoke` 로 `markdown.reload` IPC 를
-직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
-유효한 일반 인프라이나, 현재 이를 실제로 쓰는 번들 plugin 은 없다.
+`SurfaceInvalidated`는 현재도 사용할 수 있지만 이를 직접 사용하는 번들 plugin은 없다.
+markdown 본문은 WebView로 렌더하며 `file_watch`가 변경을 감지하면 `self_invoke`로
+`markdown.reload`를 호출한다. 이 경로는 `paint`·`set_context`를 받지 않는다.
 
 ### popup·banner 대응 — `PopupInvalidated` · `BannerInvalidated`
 
@@ -172,11 +169,9 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 퇴행한다(markdown 주소창 진동 버그의 원인이었다). 캐시된 theme 은 `last_theme()` 로
 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
 
-소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤). git-viewer 는 모든 상태
-변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다. (markdown
-은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0029](../adr/0029-webview-host-integration.md)
-로 본문 surface 가 webview 전환되며 egui-mesh self-repaint 경로 자체를 타지 않게 됐다 —
-`markdown.reload` IPC 는 지금은 host 가 webview 를 직접 재로드하는 별개 경로다.)
+image는 `image.next`·`prev`·`paste`·`save` 뒤 이 경로로 다시 그린다.
+git-viewer는 draw closure의 사용자 입력에서 상태가 바뀌므로 별도 self-repaint가 필요하지 않다.
+markdown 본문은 WebView이며 확인 팝업만 egui-mesh를 사용한다.
 
 ## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용
 
@@ -186,7 +181,7 @@ SDK는 ROOT viewport의 repaint_delay를 읽어 SurfaceInvalidated·PopupInvalid
 
 SelfRepaintTimer는 plugin 프로세스당 하나이며 첫 요청에 시작한다.
 Condvar로 가장 이른 기한까지 기다린 뒤 lock 밖에서 인스턴스 arm을 풀고 알린다.
-인스턴스당 대기 요청은 최대 하나다.0 지연도 같은 큐를 사용하고 checked_add 범위를 넘는 기한은 버린다.
+인스턴스당 대기 요청은 최대 하나다. 0 지연도 같은 큐를 사용하고 checked_add 범위를 넘는 기한은 버린다.
 callback panic은 요청별로 기록하고 계속한다. 루프가 종료되면 대기 arm과 running 상태를 풀어 다음 요청이 재기동하게 한다.
 타이머 thread 생성 실패에는 일회성 thread를 시도하고 실패를 로그로 남긴다.
 
@@ -229,7 +224,7 @@ egui-mesh surface 마다 **독립 `egui_wgpu::Renderer`** 를 둬, plugin 의
 
 wire 의 `textures_delta` 는 **증분**(full atlas 는 Context 첫 run 에만)이고 SharedBuffer 는
 latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 delta(font atlas, image
-비트맵 등)가 유실된다. 두 겹으로 막는다:
+비트맵 등)가 유실된다. 다음 규칙으로 처리한다:
 
 1. **surface 수명 귀속** — 전용 Renderer/디코드 캐시는 "보이는 동안"이 아니라 **layout 에
    존재하는 동안**(전 workspace, 비활성 탭 포함) 유지한다
@@ -419,10 +414,10 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 비면 재경고한다. 원인 자체는 여전히 plugin 로그에서 확인해야 한다 — 이 로그는 "어디를
 볼지"를 가리키는 신호다.
 
-**세 채널이 모두 갖는다** — surface·popup·banner 의 forward 루프가 각자
+**surface·popup·banner가 모두 사용한다** — surface·popup·banner 의 forward 루프가 각자
 `MeshForwardCommon::watch_blank` 를 부르고, 대상을 지목하는 구절(`surface <sid> (kind …)` ·
 `popup instance <iid> …` · `banner instance <iid> …`)만 인자로 다르다. 판정도 유예값도
-경고문도 그 한 곳에서 나오므로 한 채널만 조용해지는 형태의 drift 가 생기지 않는다.
+경고문도 그 한 곳에서 나오므로 판정이 서로 달라지지 않도록 한다.
 
 검사는 forward 루프(= redraw) 안에서 돈다. 완전 idle 상태면 다음 redraw 까지 지연되지만,
 빈 화면을 보고 조작하는 순간 발화한다.
@@ -440,8 +435,8 @@ bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` �
 
 위 채널은 host 가 **자기 프로세스의 plugin** 을 구동하는 경로를 전제한다. attach(원격
 피점유측)에서는 이 채널의 소비자가 하나 더 있다 — mirror 를 붙인 **client** 가 원격의
-plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원격으로 되돌려 보낸다. 프로토콜
-결선(어떤 `StreamControl` variant 로 무엇을 나르는지)은
+plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원격으로 되돌려 보낸다. 프로토콜의
+메시지 구성(어떤 `StreamControl` variant 로 무엇을 나르는지)은
 [attach-behavior.md "mesh mirror 채널"](attach-behavior.md#mesh-mirror-채널) 에 있다.
 여기서는 이 소비자가 위 채널의 각 구성 요소를 어떻게 재사용/대체하는지만 정리한다.
 
@@ -482,7 +477,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다(그
   사이엔 캐시된 델타뿐일 수 있는 frame 을 새 구독자에 흘리지 않고 건너뛴다 — 텍스처 손상
   방지). attach client 의 입력을 로컬 plugin 에 되먹이는 축(`MeshMirrorRegistry::take_pending_events`)
-  은 아직 이 경로에 배선되지 않았다 — gui-as-server 에서 mesh 콘텐츠는 보이지만 아직
+  은 아직 이 경로에 연결되지 않았다 — gui-as-server 에서 mesh 콘텐츠는 보이지만 아직
   인터랙티브하지 않다.
 - **서버측(GUI, parked engine): 헤드리스와 동일하게 직접 구동** — macOS 에서 window 를
   최소화하면 `App::handle_minimize` 의 macOS 분기가 그 window 의 `MainView` 를 파괴하고
@@ -518,8 +513,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   자체가 같은 wire 이벤트를 타므로). IME candidate 위치는 **attach 쪽만 한계로 남았다** —
   값을 나르는 칸이 로컬 JSON 알림에만 있고 attach 의 바이너리 chunk 헤더에는 없다(위
   "알려진 한계").
-- **개방 정책은 서버측에서 재검증**: client 는 서버가 보낸 디스크립터의 `role: "mesh"` 를
-  신뢰하지 않고, 서버(`build_workspace_tree_surfaces`, `src/core/attach_runtime.rs`)가
+- **개방 정책은 서버측에서 재검증**: 서버(`build_workspace_tree_surfaces`, `src/core/attach_runtime.rs`)가
   `Surface::attach_mesh_info()` + 위 "개방 정책" 화이트리스트(`is_egui_mesh_allowed`)로 재검증한
   결과만 `role: "mesh"` 로 내려보낸다 — 화이트리스트 밖 kind 는 attach 에서도 `role:
   "placeholder"` 로 남아 mirror 렌더 대상이 아니다.
@@ -528,7 +522,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
 `tasty-plugin.toml` 의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하고,
 SDK 를 `features = ["egui-mesh"]` 로 받아 `EguiMeshSurface::paint(&ctx.host,
 &ctx.params, |egui_ctx| { ... })` 를 `Plugin::paint_surface` 에서 호출하면 된다.
-코덱/송신은 SDK 가 은닉한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`.
+인코딩과 송신은 SDK가 처리한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`.
 
 ## plugin 콘텐츠의 clip 규약 (surface·popup·banner 공통)
 
@@ -636,7 +630,9 @@ egui::ScrollArea::vertical()
 (`crates/tasty-plugin-mesh-demo/src/main.rs` 의
 `the_wheel_scrolls_the_list_from_anywhere_on_the_surface`).
 
-## egui-mesh popup 채널 (A2)
+<a id="egui-mesh-popup-채널-a2"></a>
+
+## egui-mesh popup 채널
 
 surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. surface
 채널을 재사용하되 popup 의 셸/생명주기 차이를 반영한다.
@@ -667,7 +663,7 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
 
 ### 입력 게이트 — 키·텍스트·IME 는 최상단 popup 만 받는다
 
-`collect_mesh_popup_input`(`src/plugin_bridge/popup_render.rs`)이 host egui ctx 에서 긁는
+`collect_mesh_popup_input`(`src/plugin_bridge/popup_render.rs`)이 host egui ctx 에서 수집하는
 이벤트 중 포인터 계열은 콘텐츠 영역/가림 판정(`accepts_pointer`)을 타고, **키·텍스트·IME
 세 계열은 `has_key_focus`(= 이번 프레임 최상단 popup) 게이트**를 함께 탄다 — 아래 깔린
 popup 이 Esc·문자·조합 문자를 받아 자기 UI 로 처리하면 Esc 소유권 규칙
@@ -727,7 +723,9 @@ plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_ins
 > clipboard-viewer 가 이 채널로 자가 렌더하며, 옛 UiNode popup 렌더 경로는 존재하지
 > 않는다 (`PopupRendering` 은 `egui-mesh` 단일 variant).
 
-## egui-mesh banner 채널 (A3)
+<a id="egui-mesh-banner-채널-a3"></a>
+
+## egui-mesh banner 채널
 
 surface·popup 에 이어 **plugin banner 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. popup
 채널을 형(型)으로 하되 banner 의 non-modal 공지 성질과 생명주기 차이를 반영한다. banner
@@ -737,10 +735,10 @@ surface·popup 에 이어 **plugin banner 콘텐츠도 egui-mesh 로 자가 렌�
 
 banner chrome(컨테이너/border/close X/카운트다운/그림자)과 **스택(스코프당 표시 1 + 큐 5)·
 위치(스코프 콘텐츠 최상단, 탭바 아래)·z-order·dismiss 타이밍**은 전부 host 소유다. plugin 은
-content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 identity 경계). 핵심 설계(D2):
+content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 identity 경계).
 plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지점**을 그대로 타고,
 `BannerState.content` 만 `BannerContentSource::{Host, PluginMesh{..}}` 로 분기한다 — 별도
-lane 을 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`
+큐 을 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`
 (`Host(&'static str)` / `Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다.
 
 ### popup 대비 차이
@@ -771,9 +769,11 @@ TTL 만료·close X 는 `BannerManager` 가 감지해 `closed_plugin_banners` �
 `close_banner_instance`(→ `banner.closed`)로 전파한다. plugin 이 죽어 mgr 에서 사라진 배너는
 `draw_plugin_banners` 가 host UI 에서 제거(양방향 reconcile).
 
-### 개방 정책 · scope 소유권 (D1)
+<a id="개방-정책--scope-소유권-d1"></a>
 
-surface/popup 과 동일하게 bundled 전용 + api_version 게이트다. 트리거는 phase1 **ipc 전용**
+### 개방 정책 · scope 소유권
+
+surface/popup 과 동일하게 bundled 전용 + api_version 게이트다. 트리거는 **IPC 전용**
 (`banner.open`, 권한 `ui.banner`). scope 는 `surface` 만 — host 는 그 plugin 이 **소유한**
 surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 매핑으로 검증). 단일
 인스턴스 가드로 같은 `(plugin_id, banner_id)` 는 하나만 연다.
@@ -788,7 +788,7 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 | host 라우팅 (banner_mesh_frames / set_context 송신) | `crates/tasty-host-plugin/src/manager/{pump,events,buffer,banner}.rs` |
 | host 셸·큐·content 분기 | `src/adapters/ui/banner.rs` (`BannerContentSource` / `BannerKey`) |
 | host 입력 forward + 영역 수집 + reconcile | `src/plugin_bridge/banner_render.rs` |
-| host open/close 오케스트레이션 (D1 검증) | `src/app/dispatch/plugin_banner.rs` |
+| host open/close 처리와 소유 검증 | `src/app/dispatch/plugin_banner.rs` |
 | host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_banners`) |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`banner_id = "status"`) |
 

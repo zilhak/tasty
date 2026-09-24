@@ -45,9 +45,12 @@ renderer.render_all(&mut render_pass, w, h);   // ④ bg 패스 → glyph 패스
 
 per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 draw 카운터를 클리어하고 glyph atlas frame 카운터를 bump(per-page LRU stamp 일관성).
 
-그 bump 는 LRU stamp 만이 아니라 **atlas 의 eviction 스로틀을 다시 무장한다** — atlas 는 한 프레임에 페이지를 한 번만 evict 하고, 그 제한을 푸는 것은 이 bump 뿐이다. 그래서 이 호출을 건너뛴 렌더 경로는 **한 번 evict 한 뒤 이후의 모든 eviction 을 영구히 거절하고**, 증상은 glyph 가 조용히 rasterize 되지 않는 것으로만 나타난다. 그 상태 기계(`FrameClock`)는 device 없이 단독으로 검증된다(`cargo test -p tasty-font`).
+그 bump 는 LRU stamp 만이 아니라 **atlas의 프레임당 eviction 제한을 초기화한다** — atlas 는 한 프레임에 페이지를 한 번만 evict 하고, 그 제한을 푸는 것은 이 bump 뿐이다. 그래서 이 호출을 건너뛴 렌더 경로는 **다음 프레임으로 인식하지 못해 추가 eviction을 거절하고**, 증상은 glyph 가 조용히 rasterize 되지 않는 것으로만 나타난다. 그 상태 기계(`FrameClock`)는 device 없이 단독으로 검증된다(`cargo test -p tasty-font`).
 
-그 시계를 **실제로 감는지**는 이쪽 크레이트의 소스에 대한 물음이라 거기서 못 묻는다 — `src/source_guards/frame_clock_arming.rs` 가 판정한다: `append_terminal_viewport` 를 부르는 모든 함수가 첫 append 보다 앞에서, 어떤 루프에도 안 들어간 자리에서, **그 append 와 같은 수신자 위의** `begin_frame` 을 부르는가. 수신자를 함께 보는 이유는 본체에 동명이인이 있기 때문이다 — `src/view/base.rs` 의 뷰 계층 `begin_frame` 은 이름이 같지만 atlas 시계와 무관하다. 정적 판정이라 **조건 분기 · 호출 횟수 · 한 프레임에 그 함수가 몇 번 불리는가는 안 본다** — 그 가드의 모듈 주석에 못 보는 갈래가 전부 적혀 있다.
+`src/source_guards/frame_clock_arming.rs`는 `append_terminal_viewport`를 호출하는 함수에서
+첫 append 전에 같은 수신자의 `begin_frame`을 루프 밖에서 호출하는지 검사한다.
+`src/view/base.rs`에도 이름이 같은 함수가 있어 수신자까지 비교해야 한다.
+이 소스 검사는 조건 분기, 호출 횟수, 프레임당 실행 횟수까지 확인하지 않는다.
 
 ### ② `append_terminal_viewport(...)`
 
@@ -84,41 +87,16 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 것이다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고(헤드리스 `debug.glyph_color`
 핸들러가 같은 함수로 답한다), 함수를 복제하지 않으려면 둘이 같은 자리를 봐야 한다.
 
-재는 법 — 이 사실에 자동 채널은 없다. 새 `use crate::…` 한 줄은 컴파일되고 어떤
-시험도 안 깬다.
+이 의존 규칙을 확인하는 자동 검사는 없다. 다음 명령으로 참조를 찾고 코드 문맥을 읽는다.
 
 ```bash
 grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]\+:[[:space:]]*//'
-# 두 줄 — 둘 다 cell_palette 다
 ```
 
-**두 단계인 이유가 있다.** 좌변이 `.rs` 원문이므로 앞 명령만 쓰면 **이 규칙을 적은
-`renderer.rs` 머리 주석의 산문까지 센다** — 상시 잡음 둘이 섞이면 나중의 회귀 한 줄과
-안 갈린다. 뒤의 `grep -v` 가 내용이 `//` 로 시작하는 줄을 버린다.
-
-좌변을 `use crate::` 로 좁히는 쪽이 간단해 보이지만 **그건 틀린다.** 이 경계가 실제로
-지운 형태 중 둘이 `use` 없이 본문에 박힌 `crate::selection::is_selected(...)` 였다 —
-좁힌 좌변은 그 형태를 못 본다. 실측(base `63a777ecc`, 좌변은 위 명령 그대로 —
-`renderer.rs` + `renderer/` 아래 **다섯 파일** 전수): `use crate::` 는 10 줄, 위 두
-단계는 12 줄이고 **차이가 정확히 그 두 자리**다. 반대로 위 두 단계는 블록 주석·문자열
-리터럴 안의 `crate::` 를 그대로 세는데, 그건 더 많이 잡는 방향이라 눈으로 한 번 갈라
-읽으면 된다.
-
-**이 재는 법이 못 보는 것** — "조용한 통과가 없다" 고는 말할 수 없다. 두 갈래다.
-
-- **닫은 것**: `grep -v` 의 패턴을 줄머리에 고정했다(`^[^:]*:[0-9]\+:` 뒤에서만 `//` 를
-  본다). 고정 전에는 그 패턴이 줄 어디에서든 맞아, 진짜 코드 줄이라도 후행 주석에
-  `파일:줄:` 인용이 들어 있으면 통째로 버려졌다. 탐침
-  `pub const _P: bool = crate::state::FLAG; // see <파일>:99: // gui gate` 가
-  고정 전 필터 뒤 **0**, 고정 뒤 **남는다**. 덤으로 탭으로 들여쓴 줄 주석도 이제 버려진다
-  (옛 패턴의 ` *//` 는 탭을 안 먹었다).
-- **못 닫는 것**: `crate::` 라는 **글자가 없는** 본체 의존은 어떤 텍스트 술어로도 안 보인다.
-  탐침 둘 다 필터 뒤 목록에 안 나온다 — `use super::super::super::state::AppState;` 와
-  `use crate as c;` + `c::state::AppState`. 이건 grep 의 한계라 리뷰가 봐야 한다.
-
-**이 두 수를 다시 잴 때 좌변을 줄이지 마라.** `renderer.rs` 와 `line_render.rs` 둘만
-꺼내 세면 `renderer/pipeline.rs` 의 `use crate::font::…` 한 줄이 빠져 10·12 가 9·11 로
-나온다. 차이 2 는 그대로라 결론이 안 흔들리고, 그래서 **틀린 절대값이 안 들킨다.**
+두 번째 필터는 줄 주석을 제외한다. `use crate::`만 검색하면 함수 본문에서 직접 쓰는
+경로를 놓치므로 전체 `crate::`를 찾는다. 블록 주석·문자열은 결과에 남으므로 직접 구분한다.
+반대로 `super::…`나 `use crate as c` 뒤의 `c::…`는 이 검색에 잡히지 않는다.
+검색 결과가 적다는 것만으로 의존 규칙 준수를 확정하지 않는다.
 
 `src/gfx/gpu*` 는 이 규칙의 대상이 아니다 — 그쪽은 `AppState`·`CoreState`·
 `PluginManager` 를 받는 호스트 접착층이고, 본체 의존이 거짓이 아니라 사실이다. 다만
@@ -156,7 +134,7 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 | egui 내부 delay 0 즉시 repaint | `EguiAnimation` | 주사율까지 coalesce | `AppEvent::EguiRepaint` 핸들러 |
 | attach mirror 갱신 | `AttachMirror` | 주사율까지 coalesce | `src/app/attach_poll.rs`, `src/app/attach_client.rs` |
 
-사용자 조작발을 통과시키는 이유는 반응성이다 — 여기에 상한을 걸면 타이핑·클릭 지연이 그대로 늘어난다. 나머지는 사람이 개별 프레임을 구분하지 못하므로 묶어도 체감이 없다.
+사용자 조작으로 발생한 요청을을 즉시 처리하는 이유는 반응성이다 — 여기에 상한을 걸면 타이핑·클릭 지연이 그대로 늘어난다. 나머지는 주사율 안에서 합쳐 불필요한 프레임 요청을 줄인다.
 
 ### 상한값
 
@@ -168,13 +146,13 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 
 게이트는 `request_redraw()` 를 미룰 뿐 `dirty` 를 지우거나 요청을 버리지 않는다. 미뤄진 요청의 만기 시각은 `about_to_wait`(`drive_deferred_repaints`)이 `ControlFlow::WaitUntil` 로 재예약하며, 만기 tick 에서 `request_redraw()` 를 발화한다. 이 재예약이 유일한 복구 경로다 — 빠뜨리면 아무 이벤트도 오지 않는 순간에 그 프레임이 영영 오지 않는다.
 
-`dirty` 를 **억제하지 않는** 것은 계약이다. `render_if_dirty` 의 doc 주석이 명시하듯 attach 서버의 원격 mirror 중계가 `dirty` 프레임에 종속돼 있어, 프레임을 없애면 원격 사용자 화면이 굶는다. 상한은 cadence 만 주사율에 맞추고 프레임 자체는 계속 흐르게 한다.
+`dirty` 를 **억제하지 않는** 것은 계약이다. `render_if_dirty` 의 doc 주석이 명시하듯 attach 서버의 원격 mirror 중계가 `dirty` 프레임에 종속돼 있어, 프레임을 없애면 원격 사용자 화면이 갱신되지 않는다. 상한은 요청 간격만 주사율에 맞추고 프레임 자체는 계속 흐르게 한다.
 
 ### 왜 present 층이 아니라 요청 층인가
 
 `present_mode` 는 `Mailbox` 가 가능하면 `Mailbox`, 아니면 `Fifo` 다(`src/gfx/gpu.rs`, 선택 결과를 `info!` 로 남긴다). `Fifo` 로 고정하면 상한은 서지만 **모든** 리페인트에 최대 한 프레임의 present 블록이 실려 입력 반응성이 함께 나빠진다. 게다가 가상 디스플레이(xrdp 계열)에는 하드웨어 vblank 가 없어 `Fifo` 가 실제로 프레임을 묶어 준다는 보장도 없다. 요청 층에서 걸면 유발원별로 갈라 처리할 수 있어 반응성을 지키면서 초과 프레임만 없앤다.
 
-원격 데스크톱 경유에서 이 상한이 특히 중요한 이유는 프레임당 비용이다. GPU 스캔아웃 경로가 없어 present 마다 GPU→CPU readback → X11 `PutImage` → 서버측 재인코딩을 타므로, 프레임당 화면 전체(1920×1080×4B ≈ 8MB)가 소켓으로 흐른다. 주사율을 넘겨 그린 프레임은 화면에 나타나지 못한 채 그 비용만 물고 버려진다.
+원격 데스크톱 경유에서 이 상한이 특히 중요한 이유는 프레임당 비용이다. GPU 스캔아웃 경로가 없어 present 마다 GPU→CPU readback → X11 `PutImage` → 서버측 재인코딩을 타므로, 해당 경로에서는 프레임당 화면 전체(1920×1080×4B ≈ 8MB)의 전송 비용이 생긴다. 주사율을 넘겨 그린 프레임은 화면에 나타나지 못한 채 그 비용만 물고 버려진다.
 
 ## 성능 측정
 
