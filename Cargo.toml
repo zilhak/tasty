@@ -1,96 +1,39 @@
 [workspace]
 members = ["crates/*"]
-# Phase J.C — WASM plugin POC 격리. wasmtime/wit-bindgen 의존성이 default
-# 빌드에 새지 않도록 main workspace 에서 완전 제외. 자체 Cargo.lock 사용.
-# `cargo build` / `cargo build --workspace` 모두 이 crate 를 미인식.
-# 본 격리가 없으면 wasmtime 의존성 해석으로 cold build time 이 분 단위 증가.
-# WASM 정식 지원을 보류한 이유: docs/adr/0025-plugin-trust-and-distribution.md.
-# `site/` 는 더 이상 크레이트가 아니다 — GitHub Pages 정적 사이트는 Astro 로
-# 빌드한다(docs/dev-guide/site.md). 그 안에 .rs 가 없으므로 exclude 대상도 아니다.
-# `vendor/tiny_http` 는 [patch.crates-io] 로 끼운 상류 크레이트 사본이다 — 워크스페이스
-# 루트 아래의 path 의존은 기본으로 멤버가 되므로 명시적으로 뺀다(lint·fmt·clippy 대상 밖).
-# 근거: docs/features/webhook/index.md#body-상한-요청당
+# WASM 실험 SDK는 자체 Cargo.lock으로 관리해 기본 빌드의 의존성 해석에서 제외한다.
+# 보류 이유: docs/adr/0025-plugin-trust-and-distribution.md
+# vendor 사본은 workspace lint·fmt 대상에 포함하지 않는다.
 exclude = ["crates/tasty-plugin-sdk-wasm", "vendor/tiny_http"]
 resolver = "2"
 
-# 워크스페이스 공통 lint.
-# `undocumented_unsafe_blocks`: 모든 unsafe 블록 위에 `// SAFETY:` 주석 필수.
-# `multiple_unsafe_ops_per_block`: 한 블록에 두 개 이상의 unsafe op 적발 (deny).
-#   비용을 재고 올렸다(2026-09-07). 잔여 24 건이 **네 파일에만** 있었고, 자리마다 사유를
-#   쓰는 대신 파일 단위로 면제했다 — 이 lint 가 묻는 것은 "이 블록" 이 아니라 파일의
-#   성격(FFI 묶음)이라, 자리 단위로 쓰면 같은 문장이 반복될 뿐이다. 면제 넷의 근거는
-#   각 파일 머리에 있다. 프로덕션 둘은 `#![allow]` + 사유, 시험 하네스 둘은
-#   `#![cfg_attr(test, allow(..))]` 로 형태가 갈린다(뒤쪽은 게이트 좌변 밖이라
-#   사유가 어디에도 안 걸려서, 형태가 뜻을 남겨야 한다).
-#   ★ 그 24 는 **호스트 타깃의 값이라 총계가 아니라 하한이었다.** `cargo clippy` 는
-#   `#[cfg(windows)]` 코드를 컴파일하지 않으므로, Linux 에서 잰 잔여에는 Win32 FFI 자리가
-#   통째로 빠진다. 같은 날 승격이 `check-windows` 를 빨갛게 만들었고, Windows 타깃으로
-#   다시 재니 **파일 아홉에 블록 열여덟**이 더 있었다(총 42 / 13 파일). 그 아홉도 같은
-#   형태로 면제했다 — 프로덕션 여덟(그중 둘은 크로스플랫폼 파일이라 파일이 아니라
-#   **함수**에 걸었다), 시험 하네스 하나.
-#   그래서 이 lint 의 잔여를 다시 잴 때는 **타깃을 밝혀라.** 재는 명령:
-#     cargo clippy --workspace --all-targets --locked --target x86_64-pc-windows-gnu
-#   (msvc 타깃은 `mlua-sys`·`libsqlite3-sys` 가 Windows C 툴체인을 요구해 이 호스트에서
-#    중간에 죽는다. gnu 타깃 + mingw 는 614 타깃을 끝까지 검사한다.)
-# 각 member crate 및 본 패키지의 `[lints]` 절에서 `workspace = true`로 상속.
+# 각 패키지가 [lints] workspace = true로 공통 규칙을 사용한다.
 [workspace.lints.clippy]
+# unsafe 블록에는 SAFETY 주석으로 전제를 설명한다.
 undocumented_unsafe_blocks = "deny"
-# 복잡도 게이트(파트 A): 함수 cognitive complexity 상한 강제. nursery lint 라
-# 명시 활성화가 필요하다. 임계값은 clippy.toml 의 cognitive-complexity-threshold(=20).
-# 기존 초과 함수는 위치 단위 #[allow(clippy::cognitive_complexity)] // complexity-exempt: …
-# 로 동결(grandfather). 신규 초과 함수는 CI(Windows clippy 잡)에서 자동 차단된다.
-# `-D warnings` 없이도 deny 라 그 자체로 에러가 되므로 별도 플래그 불요.
-# 상세: docs/dev-guide/complexity-gate.md#무엇을도구임계값
+# 함수 복잡도 기준은 clippy.toml의 cognitive-complexity-threshold = 20이다.
+# 기존 예외는 위치별 allow와 complexity-exempt 사유를 남긴다.
+# 검사 범위: docs/dev-guide/complexity-gate.md#무엇을도구임계값
 cognitive_complexity = "deny"
+# FFI처럼 여러 unsafe 연산을 묶어야 하는 예외는 해당 파일·함수에서 설명한다.
+# 플랫폼 전용 코드는 그 타깃으로 Clippy를 실행해야 검사할 수 있다.
 multiple_unsafe_ops_per_block = "deny"
-# 도메인 Error enum 이 IPC fault path / preset mutation 등과 1:1 매핑이라
-# Box 화는 hot path 영향 + 호출 사이트의 ? 흐름이 어색해진다. 대상은 그 Error 를
-# 지고 흐르는 자리 전부다 — 워크스페이스 전역이고 좁지 않다. 그런데 그 수는 여기
-# 안 적는다: 사유가 자리 수에 안 기대므로 수가 아무것도 안 지탱한다
-# (docs/documentation-model.md 의 "그 수를 기계가 셀 수 있나" 갈래가 이 자리를
-# 본보기로 든다). 세어야 할 일이 생기면 이 줄을 warn 으로 되돌려라 — clippy 가
-# 자리마다 진단을 내고, 그것이 이 수의 유일한 채널이다.
-# 신규 Error enum 추가 시 sizeof 확인 + Box 화 검토 필요.
+# 도메인 오류를 일괄 Box로 감싸는 비용을 피한다. 새 오류 타입은 크기와 Box 사용을 검토한다.
+# 적용 위치를 확인하려면 이 lint를 임시로 warn으로 바꿔 Clippy를 실행한다.
 result_large_err = "allow"
-# `let_underscore_must_use`: `let _ = <Result/#[must_use]>` 형태의 무음 무시 적발.
-#   error-handling.md 정책("Result 를 let _ 로 삼키지 않는다 — 로그 또는 사유 주석")의
-#   구조적 강제. 의도적 무시는 같은 줄 사유 주석을 단다(주석은 clippy 를 끄지 않으므로
-#   warn 가 그대로 남지만, 리뷰에서 "주석 유무"로 판정한다). reference/단순 값 drop 은
-#   must_use 가 아니라 걸리지 않는다 — 정확히 Result/must_use 누락만 표면화한다.
-#   CI 에 `-D warnings` 가 없어 빌드를 막지 않는다.
-#   **주의 — 이 lint 는 정책을 집행하지 않는다.** 주석을 읽지 못하므로 사유가 제대로
-#   달린 정상 코드까지 경고한다. 따라서 "clippy 에 뜨면 처리" 로는 신규 위반이 드러나지
-#   않는다 — 전수 + 주석 유무 판정은 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 가 한다.
-#   이 lint 의 출력은 위반 목록이 아니라 **의도적 무시 자리의 명부**이고, 타입을 아는
-#   층이라 텍스트 스캔이 못 보는 것을 본다. 정책이 사유를 요구하지 않는 범위(테스트
-#   본문)는 위치 단위 allow 로 빼 두었다 — 조치 불가능한 경고가 명부를 흔들지 않게.
-#   근거·실측: docs/dev-guide/error-handling.md "clippy::let_underscore_must_use 는
-#   무엇을 세는가".
+# Result 등 must_use 값을 무시한 위치를 경고한다. 사유 주석은 Clippy가 검사하지 않는다.
+# 주석 정책은 let_underscore_documented 테스트로 별도 확인한다.
+# 범위: docs/dev-guide/error-handling.md
 let_underscore_must_use = "warn"
-# 색을 "디자인"하는 raw 생성자 호출 차단(docs/design/systems/theme.md "색 생성 정책" 의 집행 수단). warn 이던 시절
-# 위반 6건이 조용히 유입됐던 전례 → deny 로 승격. 예외는 위치 단위
-# `#[allow(clippy::disallowed_methods)]` + 사유 주석 (clippy.toml 의 예외 컨벤션).
+# 직접 색을 만드는 호출은 금지하고 필요한 예외는 위치별 allow와 이유를 적는다.
+# 기준: docs/design/systems/theme.md
 disallowed_methods = "deny"
-# 모든 `pub unsafe fn`에 `# Safety` 문서 절 필수. `undocumented_unsafe_blocks`가
-# unsafe *블록*의 SAFETY 주석을 강제하는 것과 대칭 — 이건 unsafe *fn 자체*의 호출자 계약
-# 문서화를 강제한다. `tasty_shm::receive`처럼 raw fd/handle 소유권 이전을 요구하는 함수가
-# safe fn 뒤에 숨어 계약이 코드로 강제되지 않는 사고를 막는다.
+# 공개 unsafe 함수는 호출자가 지켜야 할 조건을 # Safety 절에 적는다.
 missing_safety_doc = "deny"
 
-# `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
-# unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스
-# 일관성을 위해 명시.
+# unsafe 함수 내부에서도 unsafe 연산에는 명시적 unsafe 블록이 필요하다.
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
-# 워크스페이스 warning 0 달성(2026-07-12) 시점에 아래를 deny 로 못박는다 —
-# "권고" 가 아니라 "금지". 각각 올바른 대체 형태가 존재한다:
-# - function_casts_as_integer: `f as usize` 금지 → `f as *const () as usize`
-# - unused_assignments: dead store 금지 → 값 합성(.max 등) 또는 제거
-# - unused_must_use: Result/must_use 무음 무시 금지 → 처리 또는 tracing 로그
-#   (error-handling.md 정책의 기계적 집행. 의도적 무시는 `let _ =` + 사유 주석
-#   경로만 남는데 그건 let_underscore_must_use(warn)가 표면화한다)
-# - dead_code: 죽은 코드 금지 → 삭제 또는 위치 단위 #[allow(dead_code)] + 사유
-#   (git-viewer 에서 cfg 게이트 잔재 47건이 warning 으로만 떠서 방치됐던 전례)
+# 함수 주소는 포인터를 거쳐 정수로 변환한다(f as *const () as usize).
 function_casts_as_integer = "deny"
 unused_assignments = "deny"
 unused_must_use = "deny"
@@ -114,9 +57,8 @@ support for AI coding agents. Built on wgpu (Vulkan/DX12/Metal) and winit,
 it exposes both an IPC API and a CLI surface so agents can drive the
 terminal programmatically alongside human use."""
 depends = "$auto, libfreetype6, libfontconfig1"
-# libvulkan1: wgpu 의 Vulkan 백엔드는 링크타임이 아니라 dlopen(ash 로더)이라
-# $auto(ELF NEEDED 스캔)가 못 잡는다. 없어도 GL/다른 백엔드로 fallback 가능하므로
-# hard depends 가 아니라 Recommends 급으로만 노출한다.
+# Vulkan은 동적 로딩하므로 $auto의 ELF 의존성 검사로 찾지 못한다.
+# 다른 GPU 백엔드를 사용할 수 있어 필수 의존성 대신 권장 패키지로 둔다.
 recommends = "libvulkan1"
 section = "utils"
 priority = "optional"
@@ -129,19 +71,13 @@ assets = [
     ["assets/icons/icon_128.png", "usr/share/icons/hicolor/128x128/apps/tasty.png", "644"],
     ["assets/icons/icon_256.png", "usr/share/icons/hicolor/256x256/apps/tasty.png", "644"],
     ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/tasty.png", "644"],
-    # Notice set — see THIRD_PARTY_LICENSES.md. Debian keeps package documentation
-    # under /usr/share/doc/<pkg>/; `LICENSES/` keeps its subdirectory so the links
-    # inside the notice document still resolve in the installed tree. The set's
-    # licence texts are "every file under LICENSES/", hence the glob rather than
-    # one line per text (scripts/lib/notice-set.sh reads the directory the same way).
+    # LICENSES 하위 경로를 유지해 THIRD_PARTY_LICENSES.md의 링크가 설치 후에도 열리게 한다.
+    # 라이선스 파일 목록은 중복해서 열거하지 않고 디렉터리 전체를 포함한다.
     ["LICENSE", "usr/share/doc/tasty/", "644"],
     ["THIRD_PARTY_LICENSES.md", "usr/share/doc/tasty/", "644"],
     ["LICENSES/*", "usr/share/doc/tasty/LICENSES/", "644"],
-    # Builtin plugins — installed under FHS path; `bundle_root()` picks this up
-    # as the linux fallback (crates/tasty-host-plugin/src/builtin.rs).
-    # Per-plugin layout: <id>/{tasty-plugin-<crate>, tasty-plugin.toml, lang/}.
-    # Keep in sync with crates/tasty-host-plugin/src/builtin.rs BUILTINS and
-    # the build-linux.sh / build-macos-dmg.sh staging loops.
+    # Linux 번들 검색 경로에 설치한다. BUILTINS 및 빌드 스크립트의 준비 목록과 맞춘다.
+    # 기준: crates/tasty-host-plugin/src/builtin.rs
     ["target/release/tasty-plugin-claude",            "usr/lib/tasty/plugins/com.tasty.claude/",            "755"],
     ["crates/tasty-plugin-claude/tasty-plugin.toml",  "usr/lib/tasty/plugins/com.tasty.claude/",            "644"],
     ["crates/tasty-plugin-claude/tasty-plugin.toml.sig", "usr/lib/tasty/plugins/com.tasty.claude/",         "644"],
@@ -175,7 +111,6 @@ assets = [
 [package.metadata.generate-rpm]
 license = "MIT"
 summary = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"
-# builtin: rpm-build 도구가 없는 빌더(Ubuntu 등)에서도 ELF 분석으로 의존성을 잡는다.
 auto-req = "builtin"
 assets = [
     { source = "target/release/tasty", dest = "/usr/bin/tasty", mode = "755" },
@@ -186,13 +121,10 @@ assets = [
     { source = "assets/icons/icon_128.png", dest = "/usr/share/icons/hicolor/128x128/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_512.png", dest = "/usr/share/icons/hicolor/512x512/apps/tasty.png", mode = "644" },
-    # Notice set — see [package.metadata.deb] for what the set is. RPM keeps
-    # licence text under /usr/share/licenses/<pkg>/, so the layout differs from
-    # the deb one on purpose.
+    # RPM의 라이선스 설치 경로를 사용한다. 목록 범위는 Debian과 같다.
     { source = "LICENSE", dest = "/usr/share/licenses/tasty/LICENSE", mode = "644" },
     { source = "THIRD_PARTY_LICENSES.md", dest = "/usr/share/licenses/tasty/THIRD_PARTY_LICENSES.md", mode = "644" },
     { source = "LICENSES/*", dest = "/usr/share/licenses/tasty/", mode = "644" },
-    # Builtin plugins — see [package.metadata.deb] for layout/sync notes.
     { source = "target/release/tasty-plugin-claude",             dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin-claude",                       mode = "755" },
     { source = "crates/tasty-plugin-claude/tasty-plugin.toml",   dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml",                         mode = "644" },
     { source = "crates/tasty-plugin-claude/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml.sig",                   mode = "644" },
@@ -227,14 +159,12 @@ assets = [
 freetype = "*"
 fontconfig = "*"
 
-# libvulkan1 항목과 동일 사유(dlopen, non-hard) — Fedora 패키지명은 vulkan-loader.
+# Debian의 libvulkan1과 같은 동적 로딩용 권장 의존성이다.
 [package.metadata.generate-rpm.recommends]
 vulkan-loader = "*"
 
-# 루트 패키지는 lib + bin 두 타깃이다. `src/lib.rs` 가 모듈 트리와 재수출을 들고,
-# `src/main.rs` 는 `tasty::boot::run()` 만 부른다. lib 를 세운 것은 경계를 만든 것이
-# 아니다 — 모듈 대부분이 여전히 `pub(crate)` 라 밖에서 못 쓴다. 생긴 것은 좌변이다:
-# 이제 "무엇이 밖으로 나가는가" 를 잴 수 있다. 재는 법: cargo doc -p tasty --no-deps
+# 모듈과 공개 API는 lib에, 실행 진입점은 bin에 둔다.
+# 외부 공개 범위는 cargo doc -p tasty --no-deps로 확인할 수 있다.
 [lib]
 name = "tasty"
 path = "src/lib.rs"
@@ -244,7 +174,6 @@ name = "tasty"
 path = "src/main.rs"
 
 [dependencies]
-# Workspace crates
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-lua = { path = "crates/tasty-lua" }
@@ -271,19 +200,14 @@ tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
-# OS 경계 — crash/hang 리포트 · 네이티브 메뉴 · 트레이 · jump list · CSD 크롬 ·
-# 화면 캡처 · macOS 권한 · stall 워치독. `gui` 뒤의 윈도잉/GTK/AppKit 의존은 이
-# 크레이트의 같은 이름 feature 가 든다(아래 [features].gui 가 켠다).
+# 윈도잉·GTK·AppKit 의존성은 아래 gui feature에서 활성화한다.
 tasty-platform = { path = "crates/tasty-platform" }
-# winit 을 필수로 드는 크레이트라 optional 이다 — 소비자가 전부 `gui` 뒤에 있어서
-# 무조건 의존으로 두면 headless 빌드가 윈도잉 스택을 통째로 링크한다.
+# headless에 winit을 포함하지 않도록 GUI 키 매칭은 선택 의존성으로 둔다.
 tasty-key-match = { path = "crates/tasty-key-match", optional = true }
 tasty-themes = { path = "crates/tasty-themes" }
-# 크레이트 자체가 egui 전용이라 optional 이다 — 소비자가 전부 `gui` 뒤에 있어서
-# 무조건 의존으로 두면 headless 빌드가 egui/wgpu 스택을 통째로 링크한다
-# (tasty-key-match 와 같은 형태).
+# headless에서는 egui 테마 변환을 사용하지 않는다.
 tasty-egui-theme = { path = "crates/tasty-egui-theme", optional = true }
-# `egui` feature 는 `gui` 가 켠다 — 여기 두면 headless 도 egui 를 든다.
+# egui 렌더링 기능은 아래 gui feature에서만 활성화한다.
 tasty-icons = { path = "crates/tasty-icons" }
 tasty-ui-widgets = { path = "crates/tasty-ui-widgets", optional = true }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
@@ -295,138 +219,96 @@ tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-reaper = { path = "crates/tasty-reaper" }
 tasty-portscan = { path = "crates/tasty-portscan" }
-# 중앙 타이머 허브 — 메인 루프의 시간축 폴링 단일화(docs/dev-guide/timer-hub.md).
 tasty-timer = { path = "crates/tasty-timer" }
-# 원격 attach 세션의 git query 요청(`src/core/attach_runtime.rs::handle_git_query_request`)이
-# tasty-plugin-git-viewer 와 동일한 repo 탐색/status/log/diff 로직을 재사용.
+# 원격 attach의 Git 조회도 Git 플러그인과 같은 구현을 사용한다.
 tasty-git-core = { path = "crates/tasty-git-core" }
-# Window & Input
 winit = { version = "0.30", optional = true }
 
-# GPU Rendering
 wgpu = { version = "24", optional = true }
 
-# UI Widgets
 egui = { version = "0.31", optional = true }
 egui-wgpu = { version = "0.31", optional = true }
 egui-winit = { version = "0.31", optional = true }
-# SVG icons (chevron) via egui::Image — load + tint as currentColor.
+# SVG 아이콘을 읽고 현재 글자색으로 그리는 데 사용한다.
 egui_extras = { version = "0.31", features = ["svg", "image"], optional = true }
 
-# Terminal Emulation
 termwiz = "0.22"
 
-# Async
 pollster = "0.4"
 
-# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# heap attribution (opt-in feature `dhat-heap`) — memory-leak-soak.md 참조
 dhat = { version = "0.3", optional = true }
 
-# Error Handling
 anyhow = "1"
 
-# Font validation for language-pack [font] resolve (already in the tree via egui/epaint).
-
-# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# base64 for OSC 52 clipboard read responses (`OSC 52 ; c ; <base64> ST`)
 base64 = "0.22"
 
-# Version range matching (plugin extension version_req)
 semver = "1"
 
-# File type detection (file_format Deep evaluator — magic bytes + MIME)
 infer = { version = "0.16", default-features = false }
 
-# file_format PathGlob rule 매칭 (표준 glob 문법: *, ?, [...], **).
-# 여러 패턴을 GlobSetBuilder 로 묶어 하나의 자동으로 컴파일해 재사용한다.
+# 파일 판별 규칙의 glob 패턴을 묶어 컴파일한 뒤 재사용한다.
 globset = "0.4"
 
-# Lua sandbox for file_format Lua detector rules (host/user only)
+# 호스트·사용자의 Lua 파일 판별 규칙을 실행한다.
 mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
 
-# JSON Schema validation for file_format StructureCheck rule
 jsonschema = { version = "0.30", default-features = false }
 
-# CLI
 clap = { version = "4", features = ["derive"] }
 
-# Font & Text
 cosmic-text = { version = "0.18", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 
-# Regex
 regex = "1"
 
-# URL/파일 오픈 (터미널 내 링크 클릭 시 기본 브라우저/연결 프로그램)
 webbrowser = { version = "1", optional = true }
 
-# Shell escaping
 shell-escape = "0.1"
 
-# 인바운드 웹훅 리스너 — 경량 blocking HTTP/1.1 서버 (thread-per-request).
-# ssl feature 없이 사용(TLS 종단은 리버스 프록시/공유기에 위임). tokio 불필요 —
-# 코드베이스 std::thread blocking I/O 일관성 유지. 신규 트랜지티브 3개
-# (ascii/chunked_transfer/httpdate) 전부 퍼미시브 라이선스. 근거: docs/adr.
+# 웹훅 HTTP 리스너. TLS는 리버스 프록시 등 외부에서 처리한다.
 tiny_http = { version = "0.12", default-features = false }
 
-# Clipboard
 arboard = { version = "3", optional = true }
 
-# Trash/recycle bin (explorer "Move to Trash")
 trash = { version = "5", optional = true }
 
-# PNG encoding (screenshots)
 png = { version = "0.18", optional = true }
 
-# Image loading/saving (image viewer)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"], optional = true }
 
-# Platform
 libc = "0.2"
 
-# File Dialogs
 rfd = { version = "0.15", optional = true }
 
-# Utilities
 directories = "6"
 
-# Atomic file writes (user config persistence — file_format / file_handler)
 tempfile = "3"
 
-# SQLite (state.db for bookmarks, recent files, clipboard history 등)
 rusqlite = { version = "0.32", features = ["bundled"] }
 
-# RNG (Phase 6.2: agent session token)
 rand = "0.9"
 
-# Date/time — known-plugins.toml trusted_at RFC3339 timestamp.
-# default-features=false 로 tzdata 의존 제거; UTC + std clock 만 사용.
+# UTC 시각만 사용하므로 기본 시간대 데이터 의존성은 제외한다.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-# Markdown 문서 렌더링은 tasty-plugin-markdown이 자신의 pulldown-cmark 의존성으로 처리한다.
-# 현재 렌더링 구조: docs/plugins/markdown/index.md#내부-동작
 pulldown-cmark = { version = "0.12", default-features = false, optional = true }
-# System tray (cross-platform: Windows=Shell_NotifyIcon, macOS=NSStatusItem, Linux=SNI/AppIndicator via GTK)
 tray-icon = { version = "0.22", optional = true }
 
-# WebView (macOS)
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "block2"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
-# objc2-web-kit 0.3 의 WKContentRuleList completion handler block 타입(>=0.6.1).
+# WKContentRuleList의 completion handler에 필요한 블록 타입이다.
 block2 = { version = "0.6", optional = true }
 drag = { version = "2.1", optional = true }
 
-# WebView (Windows)
 [target.'cfg(windows)'.dependencies]
 webview2-com = { version = "0.38", optional = true }
 windows = { version = "0.61", features = [
@@ -441,8 +323,6 @@ windows = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Variant",
-    # webview 키 포워딩이 GetKeyState/SetFocus 로 modifier 상태·포커스를 다룬다
-    # (`src/host_api/webview/windows.rs`).
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
@@ -450,7 +330,6 @@ windows = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-# WebView (Linux)
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"], optional = true }
 gtk = { version = "0.18", optional = true }
@@ -462,30 +341,22 @@ winresource = "0.1"
 
 [features]
 default = ["gui"]
+# headless에서 윈도잉·egui·GPU 의존성을 제외하도록 GUI 기능을 여기서 함께 켠다.
 gui = [
     "dep:winit",
-    # OS 경계 크레이트의 윈도잉/GTK/AppKit/트레이 갈래. 이 줄이 없으면
-    # `tasty-platform` 은 crash_report 만 컴파일한다.
     "tasty-platform/gui",
     "dep:wgpu",
     "dep:egui",
     "dep:egui-wgpu",
     "dep:egui-winit",
     "dep:egui_extras",
-    # egui-mesh host 합성(A1-S5)이 mesh_wire POD 코덱을 쓴다. gui 빌드만 활성화 —
-    # 비-gui(CLI/headless) 빌드는 egui 의존 없이 유지(protocol lib.rs 불변식).
     "tasty-plugin-protocol/egui-mesh",
-    # 바인딩 매칭의 egui 갈래(`any_binding_pressed_egui`). headless 는 안 켠다.
-    # 이 줄이 optional 인 tasty-key-match 자체도 함께 켠다.
+    # 이 feature가 선택 의존성인 tasty-key-match도 활성화한다.
     "tasty-key-match/egui-input",
-    # egui 전용 크레이트 둘 — optional 이라 이 줄이 없으면 그래프에 안 들어온다.
     "dep:tasty-egui-theme",
     "dep:tasty-ui-widgets",
-    # 아이콘의 egui 렌더 갈래와 색 변환 shim. 둘 다 headless 는 안 켠다.
     "tasty-icons/egui",
     "tasty-type-appearance/egui-compat",
-    # GPU 글리프 아틀라스. 이 줄이 없으면 tasty-font 가 wgpu 를 안 들고, 그것이
-    # 헤드리스 그래프에서 wgpu 스택이 빠지는 유일한 이유다.
     "tasty-font/gpu",
     "dep:cosmic-text",
     "dep:bytemuck",
@@ -509,74 +380,51 @@ gui = [
     "dep:gdkx11",
     "dep:x11-dl",
 ]
-# heap attribution (opt-in): 전 할당 계측 → 종료 시 dhat-heap.json.
-# UMDH 없는 환경(권한/미설치)에서의 크로스플랫폼 대안. 기본 빌드와 무관.
+# 선택적으로 할당을 측정하고 종료 때 dhat-heap.json을 쓴다.
 # 사용법: docs/dev-guide/memory-leak-soak.md
 dhat-heap = ["dep:dhat"]
 
 [dev-dependencies]
 serde_json = "1"
-# `test-support` 를 켜는 유일한 이유는 `tasty_utils::path::push_home_override` 다 — 그 API 는
-# `#[cfg(any(test, feature = "test-support"))]` 로 게이트돼 있고, `tasty-utils` 는 이 크레이트의
-# **의존**이라 본 크레이트의 `cfg(test)` 로는 켜지지 않는다. dev-dependency 라 제품 빌드에는
-# 들어가지 않는다. 쓰는 곳은 `crates/tasty-test-support/src/lib.rs` 의 `IsolatedHome` 하나이고, 근거는
-# `docs/dev-guide/unit-test-isolation.md#1-설정-테스트-생성자는-settingsdefault-를-쓴다`.
+# 의존 크레이트에는 호출자의 cfg(test)가 적용되지 않아 test-support를 명시한다.
+# IsolatedHome의 push_home_override를 테스트에서 사용하기 위한 설정이다.
 tasty-utils = { path = "crates/tasty-utils", features = ["test-support"] }
 tasty-test-support = { path = "crates/tasty-test-support" }
-# popup 렌더 루프 시험이 plugin 프로세스 없이 popup 인스턴스를 세우는 훅
-# (`PluginManager::insert_popup_instance_for_test`)을 켠다. dev-dependency 라 제품 빌드에는
-# 그 함수가 없다. 팝업의 실제 사용자 입력을 기록하는 경로는
-# docs/features/file-handler/index.md#origin-소유권과-비동기-완료 를 따른다.
+# 플러그인 프로세스 없이 팝업 인스턴스를 만드는 테스트용 함수를 활성화한다.
 tasty-host-plugin = { path = "crates/tasty-host-plugin", features = ["test-support"] }
-# 스캔 가드가 공유하는 판정(레포 루트, 빌드 캐시 디렉토리 식별). 이 크레이트는 의존이
-# 0 이라(docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
 tasty-doc-guards = { path = "crates/tasty-doc-guards" }
-# 지연 단정의 대조군(docs/dev-guide/self-verification.md#시간-측정과-실패-진단). 의존 0 이라 테스트 빌드가 무거워지지 않고,
-# dev-dep 이라 제품 산출물에 들어가지 않는다.
+# 지연 시험의 대조 측정용이다. docs/dev-guide/self-verification.md#시간-측정과-실패-진단
 tasty-latency-control = { path = "crates/tasty-latency-control" }
 enigo = "0.6"
 tempfile = "3"
-# 메모리 누수 soak 하네스(tests/soak_memory.rs)의 외부 측정용 — 프로세스 트리
-# RSS·자식 프로세스 열거. 본체 의존성 아님(관찰자 효과 0), dev 전용. 텔레메트리
-# RssSurge 이상탐지의 실제 sampling 코드는 `crates/tasty-host-plugin`
-# 이 자기 자신의 production dependency 로 sysinfo 를 별도로 갖는다(host 가
-# `PluginProcess.child` PID 를 그 크레이트 안에서 직접 다루므로) — 본 루트
-# 크레이트는 sysinfo 를 production 경로에서 쓰지 않는다.
+# soak 하네스에서 프로세스 트리와 RSS를 조회한다.
+# 호스트의 런타임 샘플링은 tasty-host-plugin이 별도 의존성으로 사용한다.
 sysinfo = "0.35"
 
-# gui_common 이 objc2-app-kit 등 gui 전용 optional 의존을 쓰므로 headless
-# (`--no-default-features`) 테스트 빌드에서 제외한다.
+# gui_common이 GUI 선택 의존성을 사용하므로 headless 테스트에서 제외한다.
 [[test]]
 name = "gui_tests"
 required-features = ["gui"]
 
-
-# 한글 IME 수정을 위한 개인 포크 핀. 재현성을 위해 movable branch 가 아니라 고정 commit(rev)에 핀한다.
-# 탈출 조건·근거·대비책: docs/dev-guide/dep-issues.md 참조.
-# TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
+# IME 수정을 위한 winit 포크는 재현 가능한 커밋으로 고정한다.
+# 상류 반영 후 교체 조건: docs/dev-guide/dep-issues.md
 [patch.crates-io]
 winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5bf55bfbca274a7cf56e5fae0d20c1f5" }
-# 웹훅 413 이 잔여 body 를 읽지 않고 연결을 닫게 하는 최소 패치를 얹은 tiny_http 0.12.0 사본.
-# 패치 범위·탈출 조건(상류가 같은 수정을 내면 걷는다): vendor/tiny_http/PATCHES.md,
-# docs/features/webhook/index.md#body-상한-요청당
+# 413 응답 뒤 남은 본문을 읽지 않고 닫도록 패치한 사본이다.
+# 패치 범위와 상류 버전으로 돌아갈 조건: vendor/tiny_http/PATCHES.md
 tiny_http = { path = "vendor/tiny_http" }
 
 [lints]
 workspace = true
 
-# 일상 dev 빌드의 hot-path 비용을 줄이기 위한 절충 최적화.
-# 본 crate (tasty 본체) 는 빠른 컴파일을 위해 opt-level=0 유지하고,
-# 의존성 + 워크스페이스 crate (cell 루프 / atlas / wgpu wrapper 등 hot path 의 본진)
-# 는 release 수준으로 미리 최적화하여 cache 한다.
-# 첫 빌드는 길어지지만 incremental dev cycle 은 거의 그대로.
+# 본체는 빌드 속도를 위해 opt-level 0, 의존성과 아래 크레이트는 반복 실행 비용을 위해 3을 쓴다.
 [profile.dev]
 opt-level = 0
 
-# 의존성 전체를 opt=3 (release 수준)
 [profile.dev.package."*"]
 opt-level = 3
 
-# 워크스페이스 crate 들은 `"*"` glob 으로 적용되지 않으므로 각각 명시.
+# 별표 패턴은 워크스페이스 멤버에 적용되지 않으므로 필요한 크레이트를 명시한다.
 [profile.dev.package.tasty-agent]
 opt-level = 3
 [profile.dev.package.tasty-approval]
@@ -661,15 +509,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-i18n]
 opt-level = 3
-# 셀 렌더러가 셀마다 부르는 잎 세 개. 추출 전에는 본체(opt 0) 안에 있었다 — 등재는
-# 옛 상태로 돌리는 것이 아니라 이 세 크레이트를 새로 최적화하는 것이다. 값은 실측
-# (2026-09-21, 240×70 한 화면, opt 0 호출자에서 부름, 두 빌드를 번갈아 스무 번씩 · 중앙값,
-#  재컴파일은 크레이트 하나만 · 3 회 중앙값):
-#   cell-width    폭 판정(셀마다 2 회)      2.12 ms → 0.24 ms / 프레임 · 수정 후 재컴파일 +0.09 s
-#   terminal-link 링크 판정 covers           0.41 ms → 0.18 ms / 프레임 · 한 줄 검출 84 µs → 5 µs / hover
-#                                            수정 후 재컴파일 +1.4 s
-#   selection     선택 판정 is_selected      0.23 ms → 0.17 ms / 프레임 · 수정 후 재컴파일 +0.6 s
-# dev 최적화의 적용 범위: docs/architecture/index.md#크레이트를-나누는-기준
+# 폭·링크·선택 검사는 셀마다 반복 실행하므로 개발 빌드에서도 최적화한다.
+# 기준: docs/architecture/index.md#크레이트를-나누는-기준
 [profile.dev.package.tasty-cell-width]
 opt-level = 3
 [profile.dev.package.tasty-terminal-link]
@@ -682,8 +523,7 @@ lto = "thin"
 strip = true
 opt-level = 3
 
-# 배포용 프로필. release를 상속받되 full LTO를 사용해 끝까지 짜낸다.
-# 일상 cargo build --release보다 약 3.5배 느리므로 DMG/MSIX 등 배포 산출물에만 사용.
+# 배포 패키지는 release 설정에 전체 LTO를 추가한다.
 [profile.dist]
 inherits = "release"
 lto = true

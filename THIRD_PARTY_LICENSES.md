@@ -1,21 +1,21 @@
 # Third-Party Licenses
 
 Tasty 자체 코드는 [`LICENSE`](LICENSE) 파일에 명시된 MIT 라이선스를 따릅니다.
-다만 Tasty는 별도 라이선스를 가진 다음 third-party 자산을 번들합니다 — upstream 프로젝트
-넷, 라이선스 셋(OFL 1.1 · MIT · BSD-3-Clause)입니다.
+아래 네 외부 프로젝트의 자산도 함께 배포합니다. 각 자산에는
+OFL 1.1, MIT 또는 BSD-3-Clause 라이선스가 적용됩니다.
 
-| upstream | 버전 | 라이선스 | 들어가는 곳 | 라이선스 본문 |
+| 프로젝트 | 버전 | 라이선스 | 포함 위치 | 라이선스 본문 |
 |---|---|---|---|---|
 | D2Coding ligature | Ver 1.3.2 | OFL 1.1 | 본체 바이너리 (폰트 2 개) | [`LICENSES/D2Coding-OFL.txt`](LICENSES/D2Coding-OFL.txt) |
 | mermaid | 11.16.1 | MIT | markdown plugin 바이너리 | [`LICENSES/mermaid-MIT.txt`](LICENSES/mermaid-MIT.txt) |
 | highlight.js | 11.10.0 | BSD-3-Clause | markdown plugin 바이너리 | [`LICENSES/highlightjs-BSD-3-Clause.txt`](LICENSES/highlightjs-BSD-3-Clause.txt) |
 | KaTeX | 0.18.4 | MIT | markdown plugin 바이너리 (JS · CSS · 폰트 20 개) | [`LICENSES/KaTeX-MIT.txt`](LICENSES/KaTeX-MIT.txt) |
 
-`LICENSES/` 의 본문은 upstream 이 둔 라이선스 파일을 한 글자도 고치지 않고 옮긴 것입니다.
-mermaid · highlight.js · KaTeX 는 **그 버전의 태그**에 둔 `LICENSE` 파일입니다. D2Coding 은
-예외입니다 — 번들한 Ver 1.3.2 의 태그(`VER1.3.2`)와 그 릴리스 zip 에는 라이선스 파일이 없어서,
-upstream 이 라이선스 파일을 처음 둔 다음 태그 `VER1.3.3` 의 `OFL.txt` 를 옮겼습니다(아래 D2Coding
-절). 저작권 줄이 프로젝트마다 다르므로 일반 라이선스 템플릿으로 대신하지 않습니다.
+`LICENSES/`의 파일은 각 프로젝트의 원문을 수정 없이 복사했습니다. mermaid, highlight.js,
+KaTeX는 번들 버전의 태그에 있는 `LICENSE`를 사용합니다. D2Coding Ver 1.3.2의 태그와
+릴리스 ZIP에는 라이선스 파일이 없어, 다음 태그 `VER1.3.3`의 `OFL.txt`를 사용합니다.
+출처는 아래 D2Coding 절에 기록했습니다. 프로젝트별 저작권 고지가 달라 일반 템플릿으로
+대체하지 않습니다.
 
 ## 폰트
 
@@ -41,11 +41,11 @@ OFL 1.1은 폰트의 사용·변경·재배포(상용 포함)를 허용하지만
 
 ## markdown plugin 의 렌더링 엔진
 
-markdown plugin(`crates/tasty-plugin-markdown`)은 아래 세 엔진을 **컴파일 시점에 plugin
-바이너리 안으로** 임베드합니다(`include_str!` 4 개 · `include_bytes!` 20 개, 파일로 24 개).
-실행 중 네트워크로 받는 것은 없습니다. 각 파일의 출처 URL · sha512 · 갱신 절차는
-[`crates/tasty-plugin-markdown/assets/NOTICE.md`](crates/tasty-plugin-markdown/assets/NOTICE.md)
-가 정본이고, 이 절은 배포 의무에 필요한 것만 옮깁니다.
+마크다운 플러그인(`crates/tasty-plugin-markdown`)은 아래 세 엔진의 24개 파일을 컴파일할 때
+바이너리에 포함합니다(`include_str!` 4개, `include_bytes!` 20개). 이 자산은 실행 중
+다운로드하지 않습니다. 출처 URL, sha512, 갱신 방법은
+[자산 고지](crates/tasty-plugin-markdown/assets/NOTICE.md)에 있으며, 여기에는 배포에 필요한
+라이선스 정보를 정리했습니다.
 
 ### mermaid
 
@@ -54,7 +54,7 @@ markdown plugin(`crates/tasty-plugin-markdown`)은 아래 세 엔진을 **컴파
 - 적용 범위: `crates/tasty-plugin-markdown/assets/mermaid.min.js`
 - 라이선스: MIT — Copyright (c) 2014 - 2022 Knut Sveidqvist
 - 라이선스 본문: [`LICENSES/mermaid-MIT.txt`](LICENSES/mermaid-MIT.txt) (태그 `mermaid@11.16.1` 의 `LICENSE`)
-- 번들 안에 다른 MIT 조각(jQuery 이벤트 모듈 등)의 고지가 주석으로 들어 있고, 그 주석은
+- 번들에 포함된 다른 MIT 구성요소(jQuery 이벤트 모듈 등)의 고지 주석도
   `mermaid.min.js` 안에 그대로 보존돼 있습니다.
 
 ### highlight.js
@@ -75,37 +75,36 @@ markdown plugin(`crates/tasty-plugin-markdown`)은 아래 세 엔진을 **컴파
 - 적용 범위: `crates/tasty-plugin-markdown/assets/katex.min.js`, `crates/tasty-plugin-markdown/assets/katex.min.css`, `crates/tasty-plugin-markdown/assets/fonts/KaTeX_*.woff2` (20 개)
 - 라이선스: MIT — Copyright (c) 2013-2020 Khan Academy and other contributors
 - 라이선스 본문: [`LICENSES/KaTeX-MIT.txt`](LICENSES/KaTeX-MIT.txt) (태그 `v0.18.4` 의 `LICENSE`)
-- 폰트는 같은 저장소 전체의 MIT 가 덮습니다 — 그 `LICENSE` 파일에 폰트만 따로 정한 조항은
-  없습니다.
+- 폰트에도 같은 MIT 라이선스가 적용됩니다. 해당 `LICENSE`에는 폰트에만 적용하는 별도
+  조항이 없습니다.
 
-MIT 는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사본 또는 상당 부분" 에 포함할 것을
-요구합니다. plugin 바이너리가 그 사본이므로, 본문을 산출물에 함께 넣는 것이 그 요구의 형태입니다.
+MIT는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사본 또는 상당 부분"에 포함하도록
+요구합니다. 따라서 플러그인 바이너리를 배포할 때 라이선스 본문도 함께 제공합니다.
 
 ## 고지 세트
 
-배포되는 고지는 다음이며, 전부 저장소에 그대로 들어 있습니다. 릴리스 시점에 새로 생성하는
-단계는 없습니다 — 근거는
-[ADR-0051](docs/adr/0051-release-artifacts-and-versioning.md).
+다음 파일을 배포물에 함께 넣습니다. 저장소의 원본을 사용하며 릴리스 때 새로 생성하지
+않습니다. [ADR-0051](docs/adr/0051-release-artifacts-and-versioning.md).
 
 - `LICENSE` — Tasty 자체 코드의 MIT 본문
 - `THIRD_PARTY_LICENSES.md` — 본 문서 (무엇이 번들되고 무슨 의무가 따르는지)
 - `LICENSES/` 의 **모든 파일** — 번들 자산의 라이선스 본문. 지금은 위 표의 네 파일입니다.
 
-세트의 셋째 항목은 파일 이름이 아니라 **디렉토리**로 정합니다. 새 자산이 들어와 본문이 하나
-늘면 그 파일을 `LICENSES/` 에 넣고 위 표에 한 줄을 더하는 것이 저장소 쪽 할 일의 전부입니다.
+`LICENSES/`는 폴더 안의 모든 파일을 포함합니다. 새 자산의 라이선스 파일을 이 폴더에
+추가하고 위 표도 갱신합니다.
 
 ## 산출물별 위치
 
-| 산출물 | 고지 세트의 자리 |
+| 산출물 | 고지 파일 위치 |
 |---|---|
-| GitHub 릴리스 | 고지 세트를 릴리스 에셋으로 올리도록 해 두었습니다(`LICENSES/` 의 파일은 디렉토리 없이 이름만으로 올라갑니다). **그 설정으로 발행된 릴리스는 아직 없습니다.** |
-| Windows `.msi` | 설치 디렉토리(`<설치 폴더>\tasty\`) 최상단, `LICENSES\` 하위 경로 유지. MIT 본문은 설치 동의 화면용 `License.rtf` 로도 한 번 더 들어갑니다. **설치 파일 정의와 빌드 스크립트의 확인을 넣었지만, 그렇게 만든 `.msi` 를 열어 본 적은 아직 없습니다** — Windows 빌더에서만 만들 수 있습니다. |
+| GitHub 릴리스 | 고지 파일을 릴리스 에셋으로 게시하도록 설정했습니다(`LICENSES/`의 파일은 폴더 없이 파일명으로 게시합니다). 실제 게시 결과는 아직 검증하지 않았습니다. |
+| Windows `.msi` | 설치 디렉토리(`<설치 폴더>\tasty\`) 최상단, `LICENSES\` 하위 경로 유지. MIT 본문은 설치 동의 화면용 `License.rtf` 로도 한 번 더 들어갑니다. 설치 정의와 빌드 검사에 반영했으며, Windows 빌더가 만드는 MSI 실물의 확인 기록은 없습니다. |
 | Linux `tar.gz` | 압축을 풀면 나오는 디렉토리 최상단 |
 | Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다) |
 | Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다 — `LICENSES/` 의 본문도 하위 디렉토리 없이 이 자리에 바로 놓입니다) |
 | Linux `.AppImage` | `usr/share/licenses/tasty/` |
-| macOS `.dmg` | `Tasty.app/Contents/Resources/` (`LICENSES/` 하위 경로를 그대로 유지합니다). **스크립트에 스테이징과 확인을 넣었지만, 그렇게 만든 `.dmg` 를 열어 본 적은 아직 없습니다** — macOS 빌더에서만 만들 수 있습니다. |
-| Windows `.zip` | 압축을 풀면 나오는 최상단(`tasty.exe` 옆). **`.msi` 와 같이 배선만 됐고 열어 본 적은 아직 없습니다.** |
+| macOS `.dmg` | `Tasty.app/Contents/Resources/` (`LICENSES/` 하위 경로를 그대로 유지합니다). 파일 준비와 빌드 검사에 반영했으며, macOS 빌더가 만드는 DMG 실물의 확인 기록은 없습니다. |
+| Windows `.zip` | 압축을 풀면 나오는 최상단(`tasty.exe` 옆). MSI와 마찬가지로 빌드 설정에 반영했으며 ZIP 실물의 확인 기록은 없습니다. |
 
-산출물 자체에 동봉되는 것이 OFL 1.1 · MIT · BSD-3-Clause 가 요구하는 형태입니다 — 릴리스
-에셋으로 따로 내려받을 수 있는 것은 그 요구를 대신하지 못합니다.
+OFL 1.1, MIT, BSD-3-Clause의 고지는 산출물 안에도 포함해야 합니다. 릴리스에서 별도로
+다운로드할 수 있게 하는 것만으로는 이를 대신하지 못합니다.

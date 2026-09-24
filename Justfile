@@ -1,41 +1,17 @@
-# Tasty build & dev task runner.
+# 빌드·플러그인 준비·개발 실행·배포 명령. 전체 목록은 just --list로 확인한다.
+# build/run은 기본 debug, build-plugins/build-all은 기본 release를 사용한다.
+# build/run에 --release를 주거나 PROFILE 환경변수로 프로필을 선택할 수 있다.
+# install은 현재 macOS만 지원한다.
 #
-# dist 빌드(OS 자동 감지/정리/사전 도구/SHA 재검증), 플러그인 빌드·스테이징,
-# 개발 실행(just run)을 제공한다.
-#
-# 사용:
-#   just build              # 본체+플러그인 debug 빌드·스테이징 (실행 X)
-#   just build --release    # 본체+플러그인 release 빌드·스테이징 (실행 X)
-#   just run [ARGS]         # 본체+플러그인 debug 빌드 + 호스트 실행 (개발용)
-#   just run --release      # 본체+플러그인 release 빌드 + 호스트 실행
-#   just install            # 본체+플러그인 dist 빌드 + 현재 머신에 설치 (OS 자동 감지)
-#   just build-plugins      # 플러그인 빌드·스테이징
-#   just build-all          # main bin + 플러그인
-#   just dist               # 호스트 OS 자동 감지 (배포 산출물)
-#   just dist-macos         # 플랫폼 명시
-#   just dist-linux
-#   just dist-windows
-#   just dist-clean         # dist/ + cargo-deb / generate-rpm / AppDir 정리
-#   just dist-setup-linux   # cargo-deb / generate-rpm / linuxdeploy 자동 설치
-#   just dist-verify        # SHA256SUMS 재검증
-#
-# 사전 조건:
-#   - cargo install just  (또는 winget install Casey.Just)
-#   - 모든 레시피는 bash 스크립트다. Windows 에서는 Git for Windows 의 bash 가
-#     필요하며, just 가 shebang 경로를 변환할 때 cygpath 를 쓰므로
-#     `C:\Program Files\Git\usr\bin` 이 PATH 에 있어야 한다(cygpath 위치).
-#     이 조건만 충족하면 PowerShell / cmd / Git Bash 어디서 실행해도 동작한다.
-#
-# 주의: shebang 은 반드시 `#!/bin/bash` (절대경로) 를 쓴다. `#!/usr/bin/env bash`
-# 로 하면 Windows 에서 env 가 PATH 를 2차 탐색해 System32 의 WSL bash 를 잡아
-# 실패한다. `/bin/bash` 는 cygpath 가 Git bash 로 직접 변환하므로 안전하고,
-# macOS(/bin/bash) · Linux 에도 그대로 호환된다.
+# Windows의 Bash 레시피에는 Git for Windows와 cygpath가 필요하다.
+# C:\Program Files\Git\usr\bin을 PATH에 포함한다.
+# shebang은 /bin/bash를 사용한다. /usr/bin/env bash는 WSL의 bash를 찾을 수 있다.
 
+# 사용 가능한 명령을 표시한다.
 default:
     @just --list
 
-# 호스트 OS 자동 감지 → 해당 스크립트 실행
-# (Windows 는 Git Bash 환경에서만 자동 감지 가능, 일반적으로 just dist-windows 권장)
+# 호스트 OS에 맞는 배포 패키지를 빌드한다.
 dist:
     #!/bin/bash
     set -euo pipefail
@@ -51,9 +27,9 @@ dist:
             exit 1 ;;
     esac
 
-# 본체 + 플러그인 전체를 dist 프로필로 빌드해 현재 머신에 설치 (전부 최신본으로 덮어쓰기).
-# 호스트 OS 자동 감지. macOS 는 /Applications/Tasty.app 으로 설치하고, 플러그인은 앱 첫
-# 실행 시 호스트가 ~/.tasty/plugins 로 강제 덮어쓰기 동기화한다.
+# 플러그인은 호스트 시작 시 번들 설치 정책에 따라 동기화한다.
+
+# macOS 앱 번들을 빌드해 /Applications에 설치한다.
 install:
     #!/bin/bash
     set -euo pipefail
@@ -73,20 +49,23 @@ install:
             exit 1 ;;
     esac
 
+# macOS 배포 패키지를 빌드한다.
 dist-macos:
     ./scripts/build-macos-dmg.sh
 
+# Linux 배포 패키지를 빌드한다.
 dist-linux:
     ./scripts/build-linux.sh
 
+# Windows 배포 패키지를 빌드한다.
 dist-windows:
     pwsh -File ./scripts/build-windows.ps1
 
+# 배포 결과와 패키징 중간 파일을 삭제한다.
 dist-clean:
     rm -rf dist target/debian target/generate-rpm target/AppDir
 
-# Linux 사전 도구 자동 설치 (cargo-deb, cargo-generate-rpm, linuxdeploy).
-# sudo 권한 필요 (apt install 단계).
+# Linux 패키징 도구를 설치한다. apt 단계에는 sudo 권한이 필요하다.
 dist-setup-linux:
     #!/bin/bash
     set -euo pipefail
@@ -100,39 +79,17 @@ dist-setup-linux:
         echo "linuxdeploy installed to ~/.local/bin (ensure on PATH)"
     fi
 
-# ────────────────────────────────────────────────────────────
-# Plugin 빌드 / 스테이징
-# ────────────────────────────────────────────────────────────
-#
-# bundle_root() (crates/tasty-host-plugin/src/builtin.rs) 의 fallback 경로
-# `<exe_dir>/builtin-plugins/` = `target/<profile>/builtin-plugins/` 에
-# plugin 산출물(tasty-plugin.toml + bin + lang/) 을 스테이징한다.
-# tasty 부팅 시 `install_builtins_if_needed` 가 거기서 사용자
-# `~/.tasty/plugins/<id>/` 로 자동 sync 한다.
-#
-# 사용:
-#   just build-plugins              # 모든 bin plugin → release 스테이징
-#   PROFILE=debug just build-plugins  # debug 프로필 (cargo build, target/debug/)
-#   just build-plugin claude        # 단일 plugin (이름/crate/manifest id 허용)
-#   just build-all                  # plugins + main bin
-#   just link-plugins               # cp 대신 symlink (dev 가속용)
-
-# profile 선택 (release 기본; debug 도 가능)
+# 플러그인·build-all 명령의 기본 프로필. build/run은 별도로 debug를 기본값으로 쓴다.
 PROFILE := env_var_or_default('PROFILE', 'release')
 
-# 모든 bin plugin crate 를 빌드 + 스테이징.
-# 판별 기준: crates/tasty-plugin-* 중 tasty-plugin.toml 보유 = bin plugin.
-# manifest 없는 lib-only crate (protocol, sdk, manifest, sdk-wasm) 는 자동 skip.
-# e2e 하네스가 띄울 헤드리스 데몬을 짓고 경로를 낸다.
-#
-# IPC/attach 만 쓰는 스위트는 이것을 띄우면 GUI 부팅(창 + wgpu 디바이스 + boot
-# 상태기계)을 통째로 건너뛴다. 조합 의존 단언을 가진 스위트(`e2e_tests`)는 이
-# 경로를 **안 받는다** — `spawn_diag::daemon_kind()`.
-#
-#   BIN=$(just e2e-headless-bin) && export TASTY_E2E_BIN=$BIN
+# TASTY_E2E_BIN을 허용하는 테스트에서만 사용할 수 있다.
+# 사용법: BIN=$(just e2e-headless-bin) && export TASTY_E2E_BIN=$BIN
+
+# e2e용 headless 바이너리를 빌드하고 경로를 출력한다.
 e2e-headless-bin:
     @scripts/build-e2e-headless.sh
 
+# 매니페스트가 있는 플러그인을 빌드해 실행 파일 옆 builtin-plugins에 준비한다.
 build-plugins:
     #!/bin/bash
     set -euo pipefail
@@ -160,26 +117,19 @@ build-plugins:
         exit 1
     fi
 
-    # 서명 키 보장 + 임베드 pubkey 재도출 — cargo build 전에. release/dist 프로필은
-    # trust 게이트가 켜지므로(#[cfg(debug_assertions)] off), dist 스크립트와 동일하게
-    # 빌드 시점에 키를 보장해야 builtin 이 자동 trust 된다. host `tasty` 바이너리는
-    # build/run/build-all 에서 이 recipe **다음에** 컴파일되므로, 여기서 재도출한
-    # dev-pubkey.bin 이 그 빌드에 임베드된다(순서 불변식). debug 는 게이트가 꺼져 있어
-    # 건너뛴다(기본 dev 워크플로에 openssl 의존을 부과하지 않음).
+    # 본체에 공개키를 포함할 수 있도록 non-debug 빌드 전에 서명 키를 준비한다.
     if [ "$profile" != debug ]; then
         SIGN_KEY_PATH="$(bash ./scripts/ensure-sign-key.sh)"
         export SIGN_KEY_PATH
     fi
 
-    # 모든 plugin 을 단일 cargo 호출로 — dep graph 1회 해석.
     cargo_args=()
     for c in "${crates[@]}"; do
         cargo_args+=("-p" "$c")
     done
     cargo build $profile_flag "${cargo_args[@]}"
 
-    # release/dist: 모든 builtin 매니페스트를 재서명(--all-builtins). 매니페스트가
-    # 바뀌면(버전 자동 bump 포함) 기존 .sig 가 무효화되므로 빌드 시점에 흡수.
+    # 매니페스트가 바뀌면 기존 서명은 유효하지 않으므로 다시 서명한다.
     if [ "$profile" != debug ]; then
         bash ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
     fi
@@ -187,8 +137,7 @@ build-plugins:
     mkdir -p "$bundle_root"
     for c in "${crates[@]}"; do
         d="crates/$c"
-        # `|| true` 가 없으면 아래 -z 분기가 죽는다 — grep 이 못 찾았을 때
-        # pipefail + set -e 가 대입 자리에서 먼저 죽여 진단이 발화하지 못한다.
+        # grep 실패를 뒤의 빈 ID 진단에서 처리하도록 || true를 둔다.
         id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/' || true)
         if [ -z "$id" ]; then
@@ -205,8 +154,6 @@ build-plugins:
         mkdir -p "$dest"
         cp "$src_bin" "$dest/$bin_name"
         cp "$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
-        # .sig sidecar — 위 sign-bundle.sh 산출물. non-debug 는 필수(없으면 서명 실패),
-        # debug 는 게이트 우회라 선택.
         if [ -f "$d/tasty-plugin.toml.sig" ]; then
             cp "$d/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
         elif [ "$profile" != debug ]; then
@@ -220,8 +167,7 @@ build-plugins:
         echo "✓ staged $id → $dest"
     done
 
-# 단일 plugin build + 스테이징.
-# 인자 허용 형태: "claude" / "tasty-plugin-claude" / "com.tasty.claude"
+# 지정한 플러그인을 빌드하고 번들 폴더에 복사한다. 이름·크레이트명·매니페스트 ID를 받는다.
 build-plugin name:
     #!/bin/bash
     set -euo pipefail
@@ -240,7 +186,6 @@ build-plugin name:
         *)                    exe_ext="" ;;
     esac
 
-    # 정규화: 입력으로 crate 디렉토리를 찾는다.
     crate=""
     plugin_id=""
     for d in crates/tasty-plugin-*; do
@@ -286,7 +231,7 @@ build-plugin name:
     fi
     echo "✓ staged $plugin_id → $dest"
 
-# main bin + 모든 plugin 한 번에.
+# 플러그인을 준비한 뒤 본체를 빌드한다.
 build-all: build-plugins
     #!/bin/bash
     set -euo pipefail
@@ -298,12 +243,9 @@ build-all: build-plugins
     esac
     cargo build $profile_flag --bin tasty
 
-# 풀빌드 — 본체+플러그인 빌드·스테이징 (실행 없음).
-#   just build            # debug 빌드 (기본)
-#   just build --release  # release 빌드
-# run 과 동일하게 플러그인을 빌드·스테이징하고 본 바이너리도 빌드한다. 다만 실행은 하지
-# 않으므로, 스테이징본(target/<profile>/builtin-plugins)이 ~/.tasty/plugins 로 강제
-# 덮어쓰기되는 건 다음 호스트 실행 시점이다.
+# 사용자 설치 폴더에는 다음 호스트 시작 때 번들 정책에 따라 반영한다.
+
+# 본체·플러그인을 빌드하고 번들을 준비한다. 호스트는 실행하지 않는다.
 build *ARGS:
     #!/bin/bash
     set -euo pipefail
@@ -323,13 +265,10 @@ build *ARGS:
     PROFILE="$profile" just build-plugins
     cargo build $profile_flag --bin tasty
 
-# 개발 실행 — 플러그인 풀빌드 + 호스트 실행.
-# build-plugins 로 플러그인을 빌드·스테이징한 뒤 호스트를 실행한다. 호스트는 시작 시
-# builtin 을 번들본으로 항상 무조건 덮어쓰기 설치하므로(install_builtins_if_needed),
-# 플러그인 소스 변경이 버전 bump 없이도 매 실행 반영된다.
-#   just run            # debug 빌드 (기본)
-#   just run --release  # release 빌드
-# --release 는 ARGS 에서 분리해 프로필로 해석하고, 나머지 인자는 호스트로 passthrough.
+# --release/--debug는 프로필로 해석하고 나머지 인자는 호스트에 전달한다.
+# 호스트는 같은 버전의 변경 파일을 동기화하며 더 높은 설치 버전은 유지한다.
+
+# 본체·플러그인을 빌드하고 호스트를 실행한다.
 run *ARGS:
     #!/bin/bash
     set -euo pipefail
@@ -348,17 +287,16 @@ run *ARGS:
         *)       profile_flag="--profile $profile" ;;
     esac
     PROFILE="$profile" just build-plugins
-    # bash 3.2: 빈 배열 "${arr[@]}" 가 set -u 에서 unbound 이므로 분기.
+    # Bash 3.2의 set -u에서 빈 배열을 펼치면 오류가 나므로 분기한다.
     if [ "${#passthrough[@]}" -gt 0 ]; then
         cargo run $profile_flag --bin tasty -- "${passthrough[@]}"
     else
         cargo run $profile_flag --bin tasty
     fi
 
-# 빌드된 plugin 산출물을 cp 대신 symlink 로 스테이징.
-# rebuild 후 별도 sync 단계 없이 새 binary 즉시 반영 — H (auto-reload) 시너지.
-# (debug 빌드는 이미 ensure_dev_bundle 이 mtime 기반 자동 sync 하므로
-#  주로 release 빌드의 dev 반복 가속용.)
+# 번들 링크 갱신과 실행 중인 플러그인의 재시작은 별개다.
+
+# 플러그인을 빌드하고 복사 대신 심볼릭 링크로 번들을 준비한다.
 link-plugins:
     #!/bin/bash
     set -euo pipefail
@@ -382,8 +320,7 @@ link-plugins:
         crates+=("$(basename "$d")")
     done
 
-    # build-plugins 와 동일: release/dist 는 trust 게이트가 켜지므로 키 보장 +
-    # pubkey 재도출을 cargo build 전에 수행한다. (debug 는 게이트 우회 → 건너뜀.)
+    # 본체에 공개키를 포함할 수 있도록 non-debug 빌드 전에 서명 키를 준비한다.
     if [ "$profile" != debug ]; then
         SIGN_KEY_PATH="$(bash ./scripts/ensure-sign-key.sh)"
         export SIGN_KEY_PATH
@@ -395,8 +332,7 @@ link-plugins:
     done
     cargo build $profile_flag "${cargo_args[@]}"
 
-    # release/dist: crate-dir 매니페스트 재서명. .sig 를 symlink 하므로 이후 재서명이
-    # 번들에 자동 반영된다(link-plugins 의 dev 반복 가속 취지와 일치).
+    # 매니페스트가 바뀌면 기존 서명은 유효하지 않으므로 다시 서명한다.
     if [ "$profile" != debug ]; then
         bash ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
     fi
@@ -417,7 +353,6 @@ link-plugins:
         mkdir -p "$dest"
         ln -sfn "$src_bin" "$dest/$bin_name"
         ln -sfn "$abs_workspace/$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
-        # .sig sidecar — crate-dir 파일을 symlink (재서명 시 자동 반영).
         if [ -f "$d/tasty-plugin.toml.sig" ]; then
             ln -sfn "$abs_workspace/$d/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
         elif [ "$profile" != debug ]; then
@@ -431,7 +366,7 @@ link-plugins:
         echo "✓ linked $id → $dest"
     done
 
-# SHA256SUMS 재검증.
+# 배포 파일의 SHA256SUMS를 다시 확인한다.
 dist-verify:
     #!/bin/bash
     set -euo pipefail

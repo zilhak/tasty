@@ -1,38 +1,23 @@
-# cargo-deny 공급망 게이트 설정 (advisories / licenses / bans / sources)
-#
-# 목적: RUSTSEC 취약점·라이선스 드리프트·yanked 크레이트·중복/wildcard 의존을
-# 한 파일로 코드화한다. 로컬/CI 에서 `cargo deny check` 로 검증한다.
-#
-# 정책 요지 (각 항목의 구체 근거는 아래 해당 섹션의 인라인 주석):
-#  - advisories: 모든 취약점/unmaintained/unsound 는 기본 deny. 당장 못 고치는
-#    트랜지티브 항목만 근거와 함께 개별 ignore 로 격리한다.
-#  - licenses: 퍼미시브 allowlist. 강한 copyleft 단독 의존은 없음(GPL/LGPL 은
-#    전부 OR 표현식이라 퍼미시브 쪽 선택으로 통과).
-#  - bans: 중복 72건은 대부분 트랜지티브 불가피 → warn. wildcard 는 deny.
-#  - sources: winit git 포크(`[patch.crates-io]`) 때문에 unknown-git = allow.
+# cargo deny check로 보안 공지·라이선스·중복 버전·의존성 출처를 검사한다.
+# 현재 해결하지 못한 보안 공지는 아래 ignore에서 이유와 재검토 조건을 관리한다.
 
 [graph]
-# 모든 타깃을 평가한다 — quick-xml 등 Linux 전용 트랜지티브는 기본(Windows)
-# 타깃에서는 잡히지 않으므로 all-features 대신 전 타깃을 명시적으로 본다.
+# 선택 기능의 의존성도 검사한다.
 all-features = true
 
 [advisories]
 version = 2
-# yanked 크레이트는 즉시 실패로 강제한다.
 yanked = "deny"
 ignore = [
-  # --- quick-xml High DoS 2건 (RUSTSEC-2026-0194/0195) ---
-  # 빌드타임 전용(wayland-scanner proc-macro) · Linux Wayland 한정 · 파싱 입력이
-  # wayland-protocols 동봉 고정 XML(신뢰 입력)이라 적대적 XML DoS 경로 미노출.
-  # `cargo update` 로 상향 불가: wayland-scanner 가 quick-xml ^0.39 를 고정하고,
-  # 그 위 sctk ← winit(git 포크)이 상향을 차단한다. winit PR #4478 머지로
-  # 공식 winit 복귀 시 quick-xml 0.41+ 가 자연 승격되므로 그때 재확인해 해제한다.
+  # quick-xml DoS 두 건: 빌드 시 신뢰하는 XML만 처리한다.
+  # Linux Wayland 빌드의 wayland-scanner가 고정된 프로토콜 XML을 읽는다.
+  # wayland-scanner의 quick-xml ^0.39와 winit 의존성에 묶여 있다.
+  # 공식 winit으로 복귀할 때 quick-xml 0.41 이상으로 올릴 수 있는지 확인하고 해제한다.
   "RUSTSEC-2026-0194", # quick-xml: 시작 태그 중복 속성 검사 quadratic 런타임
   "RUSTSEC-2026-0195", # quick-xml: NsReader 무제한 네임스페이스 할당 메모리 고갈
 
-  # --- Linux GTK3 스택 unmaintained (gtk-rs GTK3 EOL, 전부 0.18.2) ---
-  # rfd/트레이의 GTK 백엔드 경유 트랜지티브. gtk-rs 가 GTK4 로 이동하며 GTK3
-  # 바인딩 유지보수 종료. xdg-portal(ashpd) 백엔드 정리 시 상당수 제거 가능.
+  # 유지보수가 끝난 Linux GTK3 0.18.2 계열.
+  # rfd·트레이의 간접 의존성이다. xdg-portal(ashpd)로 전환할 때 제거 여부를 확인한다.
   "RUSTSEC-2024-0412", # gdk
   "RUSTSEC-2024-0413", # atk
   "RUSTSEC-2024-0414", # gdkx11-sys
@@ -42,36 +27,24 @@ ignore = [
   "RUSTSEC-2024-0418", # gdk-sys
   "RUSTSEC-2024-0419", # gtk3-macros
   "RUSTSEC-2024-0420", # gtk-sys
-  # glib 0.18.5 의 RUSTSEC-2024-0429(VariantStrIter unsound) 는 여기 없다 —
-  # 아래 "unsound 스코프 주의" 참조. GTK3 라인에 묶여 단독 상향은 여전히 불가하다.
 
-  # --- 기타 트랜지티브 unmaintained (당장 못 고침, 추적 대상) ---
+  # 아직 교체하지 못한 유지보수 종료 간접 의존성.
   "RUSTSEC-2024-0436", # paste 1.0.15 unmaintained
   "RUSTSEC-2024-0370", # proc-macro-error 1.0.4 unmaintained
   "RUSTSEC-2017-0008", # serial 0.4.0 unmaintained
   "RUSTSEC-2026-0192", # ttf-parser unmaintained (0.20.0 / 0.25.1)
 
-  # --- unsound, 트랜지티브 핀에 막혀 상향 불가 ---
-  # git2 0.20.5 는 crates.io 에 없음(0.20.4 가 최신 호환) → 상향 불가.
+  # 고정된 git2 0.20.4의 메모리 안전성 문제. 호환 수정 버전으로 올릴 때 해제한다.
   "RUSTSEC-2026-0183", # git2 0.20.4: Remote::list() 잠재 UB
   "RUSTSEC-2026-0184", # git2 0.20.4: BlameHunk Signature 잠재 UB
 
-  # --- unsound 스코프 주의 (ignore 를 늘리기/줄이기 전에 반드시 읽을 것) ---
-  # cargo-deny 의 `[advisories] unsound` 기본 스코프는 `workspace` 다 — 즉
-  # informational="unsound" advisory 는 워크스페이스 직접 의존에만 보고되고
-  # 트랜지티브 전용 크레이트는 애초에 검출되지 않는다(`unmaintained` 는 기본 `all`
-  # 이라 트랜지티브도 전부 보고된다). 위 git2 2건이 잡히는 이유는 tasty-git-core /
-  # tasty-plugin-git-viewer 가 git2 를 직접 의존하기 때문이다.
-  #
-  # 그래서 다음 2건은 lock 에 취약 버전이 그대로 남아 있는데도 ignore 하지 않는다
-  # (ignore 해두면 영구 미소비 → `advisory-not-detected` 경고만 쌓인다):
-  #  - RUSTSEC-2024-0429 (glib 0.18.5 VariantStrIter unsound) — 직접 의존 없음,
-  #    rfd/트레이 경유 GTK3 트랜지티브.
-  #  - RUSTSEC-2026-0097 (rand 0.8.5 커스텀 로거 + rand::rng() unsound) — 직접
-  #    의존은 rand 0.9 (해소됨), 0.8.5 는 phf_generator 빌드타임 트랜지티브 전용.
-  #
-  # 되돌림 조건: `unsound = "all"` 로 스코프를 넓히면 위 2건이 즉시 에러로 부활한다.
-  # 두 크레이트 모두 상향 경로가 막혀 있으므로 그때는 ignore 를 되살려야 한다.
+  # unsound 기본 검사 범위는 workspace의 직접 의존성이다. unmaintained는 간접 의존성도 본다.
+  # git2는 tasty-git-core·tasty-plugin-git-viewer의 직접 의존성이므로 위 예외가 필요하다.
+  # glib 0.18.5의 RUSTSEC-2024-0429와 rand 0.8.5의 RUSTSEC-2026-0097은
+  # lock에 남아 있지만 간접 의존성이라 이 범위에서는 보고되지 않는다.
+  # 검사되지 않는 항목을 ignore에 넣으면 advisory-not-detected 경고가 발생한다.
+  # unsound 범위를 all로 넓힐 때는 두 의존성의 갱신 가능성과 예외 필요 여부를 다시 확인한다.
+
 ]
 
 [licenses]
@@ -98,17 +71,13 @@ allow = [
 ]
 
 [bans]
-multiple-versions = "warn"     # 중복 72건은 대부분 트랜지티브 불가피 → 추이만 관찰
-# wildcards: 이상적으로는 "deny"(외부 크레이트 version="*" 금지) 지만, tasty 내부
-# workspace 크레이트 23개가 서로를 버전 미명시 path 의존(= wildcard)으로 참조한다.
-# cargo-deny 는 crates.io 가 path 의존을 금하므로 `publish = false` 가 아닌 public
-# 크레이트에는 allow-wildcard-paths 를 적용하지 않아, deny 로 두면 이 내부 path
-# wildcard 23건이 전부 실패한다. 내부 크레이트에 publish=false 를 다는 것은 본
-# 작업(deny.toml 도입) 밖 · plugin 버전 bump 규칙과 충돌하므로, 지금은 warn 으로
-# 관찰한다. 후속으로 내부 크레이트에 publish=false 를 부여하면 deny 로 승격 가능.
+multiple-versions = "warn"     # 간접 의존성의 버전 중복은 경고로 확인한다.
+# 내부 크레이트의 버전 없는 path 의존성도 wildcard로 분류된다.
+# allow-wildcard-paths는 publish=false인 크레이트에만 적용되므로 현재는 경고로 둔다.
+# 내부 크레이트의 비공개 배포 설정을 정리한 뒤 deny 전환을 검토한다.
 wildcards = "warn"
-allow-wildcard-paths = true    # private(publish=false) 크레이트의 path wildcard 는 제외
+allow-wildcard-paths = true    # publish=false인 크레이트의 path wildcard는 제외한다.
 
 [sources]
 unknown-registry = "deny"
-unknown-git = "allow"       # winit-ime-fix git 포크(`[patch.crates-io]`) 사용 중이라 필수
+unknown-git = "allow"       # winit의 Git 포크를 사용한다.

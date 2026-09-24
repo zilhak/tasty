@@ -316,7 +316,7 @@
 
 ### Changed
 
-- **웹훅 도움말에 네트워크·인증·응답 조건을 명시했다.** `tasty webhook --help`는 등록 출력의 `http://127.0.0.1:<port>/<id>`가 표시용이며 실제 리스너는 `0.0.0.0`에 바인딩한다고 설명한다. 서명 검증은 없고 선택적인 고정 공유 토큰을 상수시간 비교한다. `--auth-*`를 생략하면 포트에 접근한 누구나 시퀀스를 요청할 수 있다. persistent 토큰은 `~/.tasty/webhooks.toml`에 평문으로 저장한다.
+- **웹훅 도움말에 네트워크·인증·응답 조건을 명시했다.** `tasty webhook --help`는 등록 출력의 `http://127.0.0.1:<port>/<id>`가 표시용이며 실제 리스너는 `0.0.0.0`에 바인딩한다고 설명한다. 서명 검증은 없고 선택적인 고정 공유 토큰을 비교한다. `--auth-*`를 생략하면 포트에 접근한 누구나 시퀀스를 요청할 수 있다. persistent 토큰은 `~/.tasty/webhooks.toml`에 평문으로 저장한다.
 
   `200`은 실행 완료가 아닌 접수 응답이며 시퀀스보다 먼저 확정한다. 한 단계가 실패해도 다음 단계를 실행하므로 부분 적용될 수 있고 결과는 로그로 확인한다. 만료 전용 타이머는 없으며 만료 후 첫 호출은 `410`, 이후는 `404`다. sweep의 정리 목적도 설명한다. 긴 도움말만 확장하고 `-h` 목록은 유지한다.
 - **승인의 실행 중 상태와 이력을 도움말에서 구분했다.** `tasty approval --help`는 request/respond/await/cancel/list/get이 부팅마다 비어 있는 메모리 저장소를 사용한다고 설명한다. 재시작 전 pending 요청은 list에 없고 같은 ID의 await도 not found다. 저장된 기록은 memory store의 history로 조회한다. 긴 도움말을 보완하고 짧은 `-h` 목록은 유지한다.
@@ -450,7 +450,7 @@
 - tracing 진단을 stdout 대신 stderr로 출력한다. `tasty list tree | jq .` 같은 JSON 처리에 경고가 섞이던 문제를 고쳤다. 파일 로그는 유지한다.
 - **닫기·이동 후에도 사용자가 보던 대상을 유지한다.** 워크스페이스·탭의 앞쪽 항목을 지우면 인덱스가 다른 대상을 가리키고, 페인은 무조건 첫 항목으로 포커스를 옮기던 문제를 고쳤다. 이제 삭제 위치와 기존 선택을 함께 보정하고 보던 대상 자체가 없어졌을 때만 이동한다. 에이전트 close뿐 아니라 사용자 메뉴, surface.move, 원격 attach 전달에도 적용한다. mirror 정리는 기존에도 보정했으며 공용 함수로 합치면서 카테고리 전환 위치도 보정했다. 근거 ADR-0017.
 - **headless에서도 surface.completion을 적용한다.** GUI 전용 Intent 처리에만 의존해 아무 효과가 없던 요청을 IPC 핸들러에서 대상 엔진에 적용한다. 응답 형식은 유지하며 새 surface.attention.get/clear도 headless에서 동작한다.
-- **headless가 상태 변경 Intent를 응답 전에 처리한다.** surface.set_mark, notification.create, settings.set_remote_transfer가 ok를 반환하고도 상태를 바꾸지 않던 문제를 고쳤다. --headless와 --no-default-features 모두 적용하며 큐가 요청 수에 비례해 계속 늘지 않게 한다. 근거 ADR-0003.
+- **headless가 상태 변경 Intent를 응답 전에 처리한다.** surface.set_mark, notification.create, settings.set_remote_transfer가 ok를 반환하고도 상태를 바꾸지 않던 문제를 고쳤다. `--no-default-features`로 만든 headless 빌드에 적용하며 큐가 요청 수에 비례해 계속 늘지 않게 한다. 근거 ADR-0003.
 - **플러그인에 실제 설정 언어를 전달한다.** 호스트가 부팅 때 general.language로 TASTY_LOCALE을 설정해 모든 플러그인이 상속한다. 이전에는 셸에서 직접 설정한 경우 외에는 플러그인 UI가 영어였다. 셸의 기존 환경값보다 앱 설정을 우선하며 프로세스 생성 시 고정되므로 언어 변경은 재시작 후 적용한다.
 - **CLI stdout의 닫힌 파이프를 정상 종료로 처리한다.** `tasty list tree | head -1`, `| true` 등의 EPIPE에서 panic·종료 코드 101·가짜 crash report를 만들던 문제를 고쳤다. 세 OS 모두 종료 코드 0을 반환하며 다른 stdout 오류는 계속 오류로 처리한다. 같은 상황의 루트 --help도 기존 Broken pipe·코드 1 대신 이 규칙을 적용한다. 근거 ADR-0043.
 

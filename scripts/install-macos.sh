@@ -6,11 +6,8 @@
 #   ./scripts/install-macos.sh --release  # release build (thin LTO, 빠른 빌드)
 #   ./scripts/install-macos.sh --debug    # debug build
 #
-# Reuses build-macos-dmg.sh to assemble dist/Tasty.app (NO_DMG skips packaging),
-# then overwrites /Applications/Tasty.app with the freshly built bundle. The
-# bundled plugins ride inside the .app (Contents/Resources/plugins/) and the host
-# force-overwrites ~/.tasty/plugins/<id>/ on first launch — so after install the
-# app body AND every plugin are at the latest built version.
+# The app contains bundled plugins. On startup, the host synchronizes changed
+# files at the same version and keeps any newer installed plugin version.
 
 set -euo pipefail
 
@@ -40,4 +37,4 @@ cp -R "$SRC_APP" "$DEST_APP"
 echo ""
 echo "Installed!"
 echo "  App: $DEST_APP"
-echo "  플러그인은 앱 첫 실행 시 ~/.tasty/plugins 로 강제 덮어쓰기 동기화됩니다."
+echo "  플러그인은 앱 시작 시 버전·내용을 비교해 사용자 플러그인 폴더에 반영합니다."
