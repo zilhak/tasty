@@ -1,4 +1,4 @@
-//! Surface scrollback 의 디스크 dump (capture) + deferred restore queue.
+//! scrollback과 화면을 저장하고, deferred 터미널에 적용할 이전 내용을 준비한다.
 
 use crate::core::CoreState;
 
@@ -13,36 +13,23 @@ pub(super) fn queue_scrollback_for_surface(
             engine.pending_scrollback_inject.insert(surface_id, lines);
         }
         ScrollbackRead::Loaded(_) => {}
-        // 저장된 적 없거나 이미 소비된 정상 분기 — 예상된 흐름이라 debug.
         ScrollbackRead::Absent => {
             tracing::debug!(
                 "scrollback restore: no saved content for surface {surface_id} ({persist_id})"
             );
         }
-        // 읽기·역직렬화 실패는 사용자 내용이 사라진 것이라 정상 분기가 아니다. 원인은
-        // 리더가 이미 warn 으로 남겼으므로 여기서는 어느 surface 인지만 잇는다.
+        // 읽기 오류 원인은 저장소가 기록했다. 여기서는 복원하지 못한 surface를 함께 남긴다.
         ScrollbackRead::Unreadable => {
             tracing::warn!(
-                "scrollback restore: unreadable content for surface {surface_id} ({persist_id}) \
-                 — the surface restores empty"
+                "scrollback restore: cannot load saved content for surface {surface_id} ({persist_id})"
             );
         }
     }
 }
 
-/// `TerminalSurface` 의 scrollback + 현재 화면(visible) 을 묶어
-/// `~/.tasty/scrollback/<id>.bin` 으로 덤프하고 `<id>` 를 반환. persist_id 는
-/// `TerminalStore::scrollback_persist_id` 에 보관되며 다음 capture 가 같은
-/// ID 를 재사용한다 (orphan 누적 방지).
-///
-/// 화면 라인은 scrollback 의 뒤에 이어 붙인다 → 복원 시 위로 스크롤하면
-/// [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다.
-///
-/// `seen_refs` 는 같은 capture 사이클에서 이미 사용된 persist_id 집합. 충돌
-/// 발견 시 fresh ID 를 발급해 self-heal 한다 — 과거에 layout.json 에 중복이
-/// 들어간 적이 있어도 다음 첫 capture 가 정리한다.
-///
-/// 실패하거나 (scrollback + screen) 양쪽 모두 비어 있으면 `None`.
+/// scrollback 뒤에 현재 화면을 붙여 저장한다. 비어 있거나 저장에 실패하면 None이다.
+/// 기존 ID를 재사용하되 같은 capture의 다른 surface가 이미 사용했으면 새 ID로 바꾼다.
+/// 새 ID는 쓰기 성공 전에 Terminal store에 기록될 수 있다.
 pub(super) fn capture_scrollback_to_disk(
     surface_id: crate::model::SurfaceId,
     store: &mut crate::core::terminal_store::TerminalStore,
@@ -53,7 +40,6 @@ pub(super) fn capture_scrollback_to_disk(
     if lines.is_empty() {
         return None;
     }
-    // 중복 가드: 다른 surface 가 같은 사이클에서 이미 쓴 ID 면 fresh 로 교체.
     let persist_id = resolve_capture_persist_id(surface_id, store, seen_refs);
     if let Err(e) = crate::scrollback_store::write(&persist_id, &lines) {
         tracing::warn!(
@@ -66,23 +52,18 @@ pub(super) fn capture_scrollback_to_disk(
     Some(persist_id)
 }
 
-/// scrollback 전체 + 현재 화면(visible) 라인을 이어붙인다. 둘 다 비어 있으면
-/// 빈 `Vec` — 호출자가 `is_empty()` 로 no-op 을 판정한다.
 fn collect_capture_lines(
     terminal: &tasty_terminal::Terminal,
 ) -> Vec<tasty_terminal::ScrollbackLine> {
     let screen = terminal.screen_snapshot_lines();
-    // 벌크 회수 — 라인당 `scrollback_line_full` 은 라인마다 terminal state mutex
-    // 를 잡는다. layout 캡처는 살아 있는 surface 전부를 훑으므로 그 비용이 그대로
-    // surface 수만큼 곱해진다.
+    // 줄마다 state mutex를 다시 잡지 않도록 scrollback을 한 번에 읽는다.
     let mut lines = terminal.scrollback_lines_all();
     lines.reserve(screen.len());
     lines.extend(screen);
     lines
 }
 
-/// 이 surface 가 쓸 persist_id 를 결정한다. 기존 ID 가 있고 이번 capture
-/// 사이클에서 아직 안 쓰였으면 재사용, 아니면(중복이거나 없으면) fresh 발급.
+/// 이번 capture에서 쓰지 않은 기존 ID는 재사용하고 없거나 중복이면 새로 발급한다.
 fn resolve_capture_persist_id(
     surface_id: crate::model::SurfaceId,
     store: &mut crate::core::terminal_store::TerminalStore,

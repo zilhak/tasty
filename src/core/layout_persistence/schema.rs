@@ -1,7 +1,4 @@
-//! Layout persistence wire format — `~/.tasty/layouts/NN.json` 에 직렬화되는 타입들.
-//!
-//! 모든 신규 surface 종류는 `SavedSurface::Generic { kind, data }` 변종으로 그대로
-//! 거쳐가므로 본 schema 는 surface 추가에 변경되지 않는다.
+//! 슬롯 JSON의 저장 형식. Terminal 외 surface는 Generic의 kind와 data로 저장한다.
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
@@ -9,16 +6,12 @@ use serde_json::{Value, json};
 
 use crate::model::{SplitDirection, WorkspaceAttachMapping, WorkspaceCategoryId};
 
-// ── Serializable structs ──
-
 #[derive(Serialize, Deserialize)]
 pub struct SavedLayout {
     pub version: u32,
     pub workspaces: Vec<SavedWorkspace>,
     pub active_workspace: usize,
-    /// Workspace category(사이드바 폴더) 목록(섹션 표시 순서). `#[serde(default)]` 로
-    /// 구버전 layout.json(필드 없음) 과 호환 — 비었으면 restore 가 normal 단일로
-    /// 마이그레이션한다(모든 ws → normal).
+    /// 표시 순서의 카테고리 목록. 필드가 없던 파일은 복원 때 기본 normal 분류를 만든다.
     #[serde(default)]
     pub categories: Vec<SavedCategory>,
 }
@@ -27,7 +20,6 @@ pub struct SavedLayout {
 pub struct SavedCategory {
     pub id: WorkspaceCategoryId,
     pub name: String,
-    /// 사이드바에서 이 섹션이 접혀 있는지(사용자 UI 상태 영속).
     #[serde(default)]
     pub collapsed: bool,
 }
@@ -38,14 +30,12 @@ pub struct SavedWorkspace {
     pub subtitle: String,
     pub description: String,
     pub pane_layout: SavedPaneNode,
-    /// Index of the focused pane among all leaf panes (left-to-right DFS order).
+    /// 왼쪽부터 깊이 우선으로 센 leaf pane 중 선택된 pane의 인덱스.
     pub focused_pane_index: usize,
-    /// attach/detach 단계 7 — 원격 컴퓨터(SSH) attach 매핑. `#[serde(default)]` 로
-    /// 구버전 layout.json(필드 없음) 과 호환. None 이면 일반(로컬) 워크스페이스.
+    /// 원격 attach 매핑. 필드가 없는 이전 파일은 None으로 읽는다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attach_mapping: Option<WorkspaceAttachMapping>,
-    /// 이 워크스페이스가 속한 카테고리 id. `#[serde(default)]` 로 구버전(필드 없음)
-    /// 은 normal(`0`) 로 귀속된다.
+    /// 필드가 없는 이전 파일은 기본 normal ID인 0으로 읽는다.
     #[serde(default)]
     pub category: WorkspaceCategoryId,
 }
@@ -91,23 +81,16 @@ pub enum SavedSplitDirection {
     Vertical,
 }
 
-/// Persistent surface representation.
-///
-/// `Terminal` stays its own variant because PTY spawn is host-managed and needs
-/// engine state (cols/rows/shell/waker) at restore time; routing it through the
-/// registry would muddle that path. Every other surface kind goes through `Generic`
-/// where the per-kind shape is opaque JSON, defined by the `SurfaceKindDef::snapshot`
-/// / `restore` pair in the registry.
+/// Terminal은 host의 PTY·셸·waker가 필요해 별도로 복원한다.
+/// Generic 데이터의 내용은 각 등록 종류의 snapshot·restore가 정한다.
 #[derive(Serialize)]
 pub enum SavedSurface {
     Terminal {
         cwd: Option<String>,
-        /// Command to re-launch the TUI app that was running (e.g. "claude -r <session-id>").
-        /// Populated from surface-meta `restore.command` at capture time; plugins own the format.
+        /// 실행할 복원 명령. 실제 터미널은 surface 메타데이터, deferred는 DeferredSpawn에서 가져온다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         restore_command: Option<String>,
-        /// `~/.tasty/scrollback/<id>.bin` 파일 식별자. `restore_surface_content` 옵션
-        /// on 일 때만 발급된다. `None` 이면 scrollback 복원을 시도하지 않는다.
+        /// 별도 scrollback 파일 ID. 저장 설정이 꺼져 있으면 capture에 넣지 않으며 None이면 읽기를 생략한다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scrollback_ref: Option<String>,
     },
@@ -162,8 +145,6 @@ impl<'de> Deserialize<'de> for SavedSurface {
         }
     }
 }
-
-// ── Direction conversion ──
 
 impl From<SplitDirection> for SavedSplitDirection {
     fn from(d: SplitDirection) -> Self {

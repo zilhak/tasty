@@ -1,4 +1,4 @@
-//! Schema migration / round-trip tests for `SavedSurface`.
+//! 저장 형식 호환성, 슬롯 저장·백업과 scrollback 참조를 검사한다.
 
 use serde_json::json;
 
@@ -39,8 +39,7 @@ fn v2_terminal_round_trips() {
 
 #[test]
 fn legacy_terminal_without_scrollback_ref_parses() {
-    // 본 기능 추가 전 layout.json 의 Terminal entry — scrollback_ref 필드가 없어도
-    // #[serde(default)] 로 None 처리.
+    // scrollback_ref가 없는 이전 Terminal 형식도 읽어야 한다.
     let json = r#"{"Terminal":{"cwd":"/home","restore_command":null}}"#;
     match parse(json) {
         SavedSurface::Terminal {
@@ -95,8 +94,6 @@ fn unknown_variant_is_rejected() {
     assert!(result.is_err());
 }
 
-// ── 단계 7: SavedWorkspace.attach_mapping 영속 round-trip + 구버전 호환 ──
-
 #[test]
 fn saved_workspace_attach_mapping_round_trips() {
     use super::schema::{SavedPane, SavedPaneNode, SavedSurfaceLayout, SavedTab, SavedWorkspace};
@@ -131,7 +128,7 @@ fn saved_workspace_attach_mapping_round_trips() {
 #[test]
 fn saved_workspace_without_mapping_field_is_none() {
     use super::schema::SavedWorkspace;
-    // 구버전 layout.json (attach_mapping 필드 없음) → serde(default) 로 None.
+    // attach_mapping이 없는 이전 저장 형식.
     let legacy = r#"{
         "name": "ws",
         "subtitle": "",
@@ -146,13 +143,11 @@ fn saved_workspace_without_mapping_field_is_none() {
     assert!(ws.attach_mapping.is_none());
 }
 
-// ── S-WSCAT: SavedWorkspace.category / SavedLayout.categories 영속 ──
-
 #[test]
 fn saved_workspace_without_category_field_defaults_to_normal() {
     use super::schema::SavedWorkspace;
     use crate::model::NORMAL_CATEGORY_ID;
-    // 구버전 layout.json (category 필드 없음) → serde(default) 로 normal(0).
+    // category가 없는 이전 저장 형식.
     let legacy = r#"{
         "name": "ws",
         "subtitle": "",
@@ -221,8 +216,7 @@ fn saved_layout_categories_round_trip() {
 #[test]
 fn saved_layout_without_categories_field_is_empty() {
     use super::schema::SavedLayout;
-    // 구버전 layout.json (categories 필드 없음) → serde(default) 로 빈 Vec.
-    // restore 가 ensure_normal_category 로 normal 단일 마이그레이션한다.
+    // categories가 없으면 역직렬화 결과는 빈 목록이다. 기본 분류 생성은 별도의 복원 처리다.
     let legacy = r#"{
         "version": 2,
         "active_workspace": 0,
@@ -232,10 +226,7 @@ fn saved_layout_without_categories_field_is_empty() {
     assert!(layout.categories.is_empty());
 }
 
-// ── 슬롯 파일 저장소 ────────────────────────────────────────────────────
-//
-// process-global `tasty_home()` 을 건드리지 않도록 전부 `*_in(dir, ..)` 내부
-// helper 로 검증한다 (`store::scrollback` 테스트와 같은 관례).
+// 실제 홈 대신 디렉터리를 받는 저장 함수를 사용한다.
 
 mod slots {
     use std::path::Path;
@@ -250,7 +241,6 @@ mod slots {
         slot_path_in,
     };
 
-    /// 슬롯이 정상 로드돼야 하는 자리. 실패하면 어떤 상태였는지 알려준다.
     fn expect_loaded(dir: &Path, slot: u32) -> SavedLayout {
         match load_slot_in(dir, slot) {
             SlotLoad::Loaded(layout) => layout,
@@ -260,8 +250,6 @@ mod slots {
         }
     }
 
-    /// workspace 이름 하나 + terminal surface 하나(주어진 `scrollback_ref`)짜리
-    /// 최소 레이아웃.
     fn layout_with(ws_name: &str, scrollback_ref: Option<&str>) -> SavedLayout {
         SavedLayout {
             version: LAYOUT_VERSION,
@@ -290,7 +278,6 @@ mod slots {
         }
     }
 
-    /// `wiring` 모듈이 쓰는 정상 슬롯 작성기 — 레이아웃 조립 헬퍼를 공유한다.
     pub(super) fn write_valid_slot(dir: &Path, slot: u32, ws_name: &str) {
         write_slot(dir, slot, &layout_with(ws_name, None));
     }
@@ -315,12 +302,9 @@ mod slots {
         for name in ["01.json", "02.json", "10.json", "notes.txt", "01.json.tmp"] {
             std::fs::write(dir.join(name), "{}").unwrap();
         }
-        // 사전순이면 10 이 2 보다 앞선다 — 숫자 정렬이어야 한다.
         assert_eq!(list_slots_in(dir), vec![1, 2, 10]);
     }
 
-    /// zero-pad 유무가 다른 두 파일은 같은 슬롯 번호로 접힌다 — 목록에 같은 번호가
-    /// 두 번 나오면 호출자(union GC 등)가 같은 슬롯을 두 번 읽는다.
     #[test]
     fn list_slots_folds_padded_and_unpadded_names_into_one() {
         let tmp = tempfile::tempdir().unwrap();
@@ -356,7 +340,6 @@ mod slots {
         let restored = expect_loaded(&layouts, 1);
         assert_eq!(restored.workspaces[0].name, "legacy-ws");
 
-        // 멱등: 두 번째 호출은 no-op (레거시가 이미 없다).
         migrate_legacy_in(home);
         assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
     }
@@ -380,12 +363,8 @@ mod slots {
         assert!(!slot_path_in(&layouts, 1).exists());
     }
 
-    /// 파일 **실체**의 id — unix inode / windows file index.
-    ///
-    /// 원자적 교체(tmp write → rename)는 디렉터리 엔트리가 새 실체를 가리키게 하므로
-    /// 값이 바뀌고, `fs::write` 직접 호출은 같은 실체를 in-place 로 잘라 쓰므로 값이
-    /// 그대로다. 원자성의 관측 가능한 흔적이 이 차이 하나다 — "덮어쓴 뒤 `.tmp` 가
-    /// 없더라"만으로는 비원자적 write 와 구분되지 않는다.
+    /// Unix inode 또는 Windows file index로 같은 파일에 덮어쓴 경우를 구별한다.
+    /// ID가 바뀌었다는 사실만으로 동시 읽기의 원자성이나 디스크 내구성을 증명하지는 않는다.
     fn file_identity(path: &Path) -> Option<u64> {
         #[cfg(unix)]
         {
@@ -394,12 +373,7 @@ mod slots {
         }
         #[cfg(windows)]
         {
-            // Windows 의 file index 는 `Metadata` 가 아니라 **열린 핸들**에서만 나온다.
-            // std 의 `MetadataExt::file_index()` 는 unstable feature `windows_by_handle`
-            // 이라 stable 툴체인에서 컴파일되지 않으므로 Win32
-            // `GetFileInformationByHandle` 을 직접 호출한다(agent-stream plugin 의 tail
-            // 과 같은 방식). 실패(핸들 열기·API)는 `None` — 호출자가 vacuous 판정으로
-            // 처리한다.
+            // 열린 파일 핸들에서 file index를 조회한다. 실패는 None이며 호출자가 검사 실패로 처리한다.
             use std::os::windows::io::AsRawHandle;
 
             use windows::Win32::Foundation::HANDLE;
@@ -409,15 +383,13 @@ mod slots {
 
             let file = std::fs::File::open(path).ok()?;
             let mut info = BY_HANDLE_FILE_INFORMATION::default();
-            // SAFETY: `file` 이 살아 있는 동안 그 raw handle 을 넘기고, 출력 버퍼는 위에서
-            // 초기화한 유효한 `BY_HANDLE_FILE_INFORMATION` 하나다 — Win32 계약을 만족한다.
+            // SAFETY: 호출 동안 file 핸들이 살아 있고 info는 초기화된 출력 구조체다.
             unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.ok()?;
             Some((u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow))
         }
         #[cfg(not(any(unix, windows)))]
         {
-            // 이 플랫폼은 파일 실체 id 를 노출하지 않는다 — 경로는 쓰지 않고 버린다
-            // (호출자가 `None` 을 받아 단정을 어떻게 다룰지 정한다).
+            // 이 플랫폼에서는 파일 ID 비교를 지원하지 않는다.
             let _ = path;
             None
         }
@@ -431,7 +403,6 @@ mod slots {
         let path = slot_path_in(&dir, 1);
         let before = file_identity(&path);
 
-        // 같은 슬롯을 다시 저장 — 이때가 "기존 파일을 교체" 하는 경로다.
         write_slot(&dir, 1, &layout_with("second", None));
 
         let names: Vec<String> = std::fs::read_dir(&dir)
@@ -442,18 +413,13 @@ mod slots {
         assert_eq!(names, vec!["01.json".to_string()], "tmp 잔재가 없어야 한다");
         assert_eq!(expect_loaded(&dir, 1).workspaces[0].name, "second");
 
-        // 판별 단정: 교체여야 한다. `.tmp` + rename 을 `fs::write(path, json)` 로
-        // "단순화" 하면 위 두 단정은 그대로 통과하고 여기서만 걸린다.
+        // 같은 파일에 직접 쓰면 ID가 유지되므로 내용·tmp 잔재 검사만으로 놓친 변경을 검출한다.
         match (before, file_identity(&path)) {
-            (Some(b), Some(a)) => assert_ne!(
-                b, a,
-                "슬롯 덮어쓰기가 in-place 였다 — tmp write → rename 이어야 한다"
-            ),
+            (Some(b), Some(a)) => assert_ne!(b, a, "슬롯 교체 전후의 파일 ID가 같다"),
             _ => {
-                // unix/windows 는 항상 실체 id 를 노출한다. 못 얻었다면 단정이
-                // 조용히 사라진 것이므로 통과시키지 않는다.
+                // 지원 플랫폼에서 ID 조회 실패를 검사 생략으로 처리하지 않는다.
                 #[cfg(any(unix, windows))]
-                panic!("file identity unavailable — atomicity assertion would be vacuous");
+                panic!("file identity unavailable; cannot check replacement");
             }
         }
     }
@@ -468,7 +434,6 @@ mod slots {
         delete_slot_in(&dir, 2); // 없는 파일은 no-op
     }
 
-    /// 이 트랙의 핵심 회귀 — 슬롯별 GC 였다면 다른 슬롯의 `.bin` 이 지워진다.
     #[test]
     fn gc_union_keeps_refs_from_every_slot() {
         let tmp = tempfile::tempdir().unwrap();
@@ -485,7 +450,7 @@ mod slots {
         assert!(bin_exists(&scrollback, "aaa"));
         assert!(
             bin_exists(&scrollback, "bbb"),
-            "단일 슬롯 GC 면 여기서 지워진다 — union 이어야 산다"
+            "다른 슬롯이 참조하는 scrollback도 보존해야 한다"
         );
         assert!(
             !bin_exists(&scrollback, "ccc"),
@@ -493,8 +458,6 @@ mod slots {
         );
     }
 
-    /// "모르면 지우지 않는다" — 손상 슬롯 하나가 다른 슬롯의 scrollback 을
-    /// 데려가지 않게 GC 자체를 건너뛴다.
     #[test]
     fn gc_skips_entirely_when_any_slot_fails_to_parse() {
         let tmp = tempfile::tempdir().unwrap();
@@ -515,7 +478,6 @@ mod slots {
         );
     }
 
-    /// 슬롯이 하나도 없으면 알려진 ref 가 없다 → 전부 orphan (슬롯 도입 전과 동일).
     #[test]
     fn gc_with_no_slots_treats_everything_as_orphan() {
         let tmp = tempfile::tempdir().unwrap();
@@ -527,8 +489,6 @@ mod slots {
         assert!(!bin_exists(&scrollback, "aaa"));
     }
 
-    /// version gate 는 슬롯 경로에서도 살아 있고, 그런 슬롯은 GC 에서 "모르는 것"
-    /// 으로 취급된다.
     #[test]
     fn slot_newer_than_supported_version_is_unreadable_and_blocks_gc() {
         let tmp = tempfile::tempdir().unwrap();
@@ -539,15 +499,11 @@ mod slots {
         write_slot(&layouts, 1, &future);
         touch_bin(&scrollback, "aaa");
 
-        // 미래 version 은 "없음" 이 아니라 "읽지 못함" 이다 — 저장을 막아 신버전이
-        // 저장한 레이아웃을 구버전이 덮어쓰지 않게 한다.
         assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Unreadable));
         gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
         assert!(bin_exists(&scrollback, "aaa"));
     }
 
-    /// 미래 version 슬롯은 **손대지 않는다** — 백업으로 옮기면 그 파일을 읽을 수 있는
-    /// 새 빌드가 다음에 켜졌을 때 레이아웃이 사라진 것으로 보인다.
     #[test]
     fn future_version_slot_file_is_left_in_place() {
         let tmp = tempfile::tempdir().unwrap();
@@ -569,8 +525,6 @@ mod slots {
         );
     }
 
-    /// 손상 JSON 은 **읽기 시점에 건드리지 않는다** — 부팅 중 이 슬롯을 읽는 곳이 GC 와
-    /// engine 둘이라, 읽는 쪽이 옮기면 나중에 읽는 쪽은 사건 자체를 못 본다.
     #[test]
     fn unparsable_slot_is_left_in_place_by_load() {
         let tmp = tempfile::tempdir().unwrap();
@@ -591,8 +545,6 @@ mod slots {
         assert!(!layouts.join("01.json.bak").exists());
     }
 
-    /// 보존은 실제로 덮어쓰는 순간에 일어난다. 옮긴 뒤에는 원본이 `.bak` 에 남고 그
-    /// 자리는 비므로, 이어지는 write 가 사용자 레이아웃을 지우지 않는다.
     #[test]
     fn preserving_an_unparsable_slot_moves_it_aside() {
         let tmp = tempfile::tempdir().unwrap();
@@ -602,13 +554,12 @@ mod slots {
         std::fs::write(&path, "first corrupt").unwrap();
 
         assert!(preserve_unparsable_slot(&layouts, 1));
-        assert!(!path.exists(), "원본은 자리를 떠야 한다");
+        assert!(!path.exists(), "원래 경로에는 파일이 남지 않아야 한다");
         assert_eq!(
             std::fs::read_to_string(layouts.join("01.json.bak")).unwrap(),
             "first corrupt"
         );
 
-        // 먼저 만들어진 백업이 더 원본에 가깝다 — 덮어쓰지 않는다.
         std::fs::write(&path, "second corrupt").unwrap();
         assert!(preserve_unparsable_slot(&layouts, 1));
         assert_eq!(
@@ -620,12 +571,9 @@ mod slots {
             "second corrupt"
         );
 
-        // 옮길 것이 없으면 실패가 아니다 — 덮어써도 잃을 것이 없다.
         assert!(preserve_unparsable_slot(&layouts, 1));
     }
 
-    /// 읽기 자체가 실패하면(권한) 파일을 **건드리지 않고** `Unreadable` 을 돌려준다.
-    /// 일시적 오류에 사용자 레이아웃이 자리를 뜨면 안 된다.
     #[cfg(unix)]
     #[test]
     fn unreadable_slot_is_left_in_place_and_locked() {
@@ -652,9 +600,7 @@ mod slots {
     }
 }
 
-/// 보호 장치의 **배선**을 검사한다 — 판정 함수와 백업 헬퍼가 각각 옳은 것만으로는
-/// 사용자 파일이 지켜지지 않는다. 판정이 engine 플래그가 되고, 그 플래그가 저장을
-/// 막거나 백업을 부르는 고리까지 이어져야 한다. 이 모듈이 그 고리를 지난다.
+/// 부팅 판정에서 engine 플래그, 저장 거절·백업까지 연결되는지 검사한다.
 #[cfg(test)]
 mod wiring {
     use std::path::Path;
@@ -672,14 +618,13 @@ mod wiring {
         engine
     }
 
-    /// 손상 슬롯 위에 저장하면 **먼저 옮기고** 쓴다. 보존 단계를 빼면 여기서 걸린다.
     #[test]
     fn saving_over_an_unparsable_slot_moves_it_aside_first() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
         let mut engine = engine_with_layouts(&layouts);
         std::fs::write(slot_path_in(&layouts, 1), "{ NOT JSON {{").unwrap();
-        // 부팅이 손상으로 판정했다고 치자.
+        // 실제 부팅 대신 판정 결과를 주입한다.
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
 
         save_slot_in_dir(&mut engine, 0, 1, &layouts);
@@ -699,8 +644,6 @@ mod wiring {
         );
     }
 
-    /// 플래그가 선 뒤 파일이 **정상으로 바뀌어 있으면** 옮기지 않는다. 같은
-    /// `TASTY_HOME` 을 쓰는 다른 인스턴스가 그 사이에 써 넣는 경우다.
     #[test]
     fn a_slot_that_became_valid_is_not_moved_aside() {
         let tmp = tempfile::tempdir().unwrap();
@@ -713,13 +656,11 @@ mod wiring {
 
         assert!(
             !layouts.join("01.json.bak").exists(),
-            "멀쩡한 파일을 백업으로 흘리면 9개뿐인 예산을 정상 파일이 깎는다"
+            "정상으로 바뀐 파일의 백업을 만들면 안 된다"
         );
         assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
     }
 
-    /// 부팅 판정이 engine 플래그로 이어진다 — 이 고리가 끊기면 아래 두 테스트가
-    /// 지키는 저장 측 보호가 애초에 발동하지 않는다.
     #[test]
     fn boot_verdict_becomes_the_engine_flags() {
         let tmp = tempfile::tempdir().unwrap();
@@ -744,11 +685,10 @@ mod wiring {
         assert!(!engine.layout_slot_protected);
         assert!(
             !engine.layout_slot_preserve_failed,
-            "백업 자리가 남아 있으면 부팅은 '옮길 수 있다' 로 판정한다 — 아래 예산 소진 테스트의 대조군"
+            "백업 공간이 있으면 보존 실패로 표시하면 안 된다"
         );
     }
 
-    /// `.bak` … `.bak.9` 를 미리 채워 보존 예산을 소진시킨다.
     fn exhaust_backup_budget(dir: &Path, slot: u32) {
         let base = slot_path_in(dir, slot);
         let mut name = base.as_os_str().to_os_string();
@@ -761,10 +701,6 @@ mod wiring {
         }
     }
 
-    /// **부팅 알림이 거짓말을 하지 않는다.** 백업 자리가 이미 다 찼으면 첫 저장이
-    /// 통째로 거부되는데, 그 사실은 저장 시점(= `finish_boot` 이후)에야 확정된다.
-    /// 부팅 알림은 그보다 먼저 뜨므로 판정도 부팅 때 서야 한다 — 서지 않으면 사용자는
-    /// "옆에 `.bak` 으로 보관합니다" 라는 **사실과 반대인** 안내를 받고 원본을 지운다.
     #[test]
     fn a_full_backup_budget_makes_the_boot_verdict_say_preservation_is_blocked() {
         let tmp = tempfile::tempdir().unwrap();
@@ -777,14 +713,11 @@ mod wiring {
 
         assert!(
             engine.layout_slot_preserve_failed,
-            "부팅 시점에 이미 옮길 자리가 없다면 그 사실이 서야 한다 — 이 플래그가 \
-             `persistence.warn.layout_unparsable_blocked` 를 고른다"
+            "부팅 때 백업 공간 부족을 표시해 저장 차단 안내를 선택해야 한다"
         );
         assert!(engine.layout_slot_unparsable);
     }
 
-    /// 저장이 보존에 실패하면 **그 사실을 남기고** 원본을 그대로 둔다. 플래그를
-    /// 세우지 않으면 같은 세션에서 저장이 계속 거부되는데 사용자는 그 이유를 알 길이 없다.
     #[test]
     fn a_save_that_cannot_preserve_records_it_and_keeps_the_original() {
         let tmp = tempfile::tempdir().unwrap();
@@ -793,7 +726,7 @@ mod wiring {
         let path = slot_path_in(&layouts, 1);
         std::fs::write(&path, "{ NOT JSON {{").unwrap();
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
-        // 부팅 뒤에 예산이 찬 경우 — 부팅 판정만으로는 잡히지 않는 자리다.
+        // 부팅 뒤 백업 공간이 찬 경우는 저장 때도 확인해야 한다.
         exhaust_backup_budget(&layouts, 1);
         engine.layout_slot_preserve_failed = false;
 
@@ -801,7 +734,7 @@ mod wiring {
 
         assert!(
             engine.layout_slot_preserve_failed,
-            "옮기지 못했으면 그 사실이 서야 한다 — 안 세우면 알림이 반대로 나간다"
+            "백업 실패를 표시해 저장이 차단된 이유를 안내해야 한다"
         );
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -810,8 +743,6 @@ mod wiring {
         );
     }
 
-    /// 그 사이 **신버전이 써 놓은** 슬롯은 옮기지도 덮어쓰지도 않는다. 구버전으로
-    /// 한 번 켰다고 신버전 레이아웃이 사라지면 안 된다.
     #[test]
     fn a_slot_that_became_a_newer_version_is_neither_moved_nor_overwritten() {
         let tmp = tempfile::tempdir().unwrap();
@@ -838,8 +769,6 @@ mod wiring {
         );
     }
 
-    /// 저장 직전에 **다시 읽지 못한** 슬롯도 옮기지도 덮어쓰지도 않는다. 내용을
-    /// 모르는 파일을 치우면 일시적 오류 한 번에 사용자 레이아웃이 자리를 뜬다.
     #[test]
     #[cfg(unix)]
     fn a_slot_that_cannot_be_re_read_is_neither_moved_nor_overwritten() {
@@ -866,7 +795,6 @@ mod wiring {
         );
     }
 
-    /// 잠긴 슬롯에는 **아무것도 쓰지 않는다.** 저장 경로 전체를 지나며 확인한다.
     #[test]
     fn a_locked_slot_is_never_written() {
         let tmp = tempfile::tempdir().unwrap();
@@ -890,12 +818,10 @@ mod wiring {
         );
         assert!(
             engine.layout_dirty.is_dirty(),
-            "저장을 건너뛰었으면 dirty 는 남는다 — 지우면 나중에 저장할 기회까지 잃는다"
+            "보호된 슬롯의 저장을 건너뛰면 dirty를 유지해야 한다"
         );
     }
 
-    /// 잠기지 않은 슬롯은 평소대로 저장된다 — 위 테스트가 "항상 안 쓴다" 로
-    /// 통과하는 것을 막는 대조군이다.
     #[test]
     fn an_unlocked_slot_is_written_as_usual() {
         let tmp = tempfile::tempdir().unwrap();
