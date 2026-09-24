@@ -1,9 +1,4 @@
-//! ListCtrl primitive specimen — 디자인 `components/data/ListCtrl` 카드.
-//!
-//! "하나 골라 진입하는" 행 선택형 내비게이션 리스트 (데이터 그리드는 Table —
-//! `prim_table`). 디자인 `ListCtrl.prompt.md` 예제 그대로: keybinding preset
-//! 목록 — 주 라벨 + description + trailing "Active" Tag + drill-in chevron.
-//! disabled 행 상태도 함께 전시한다.
+//! 공용 ListCtrl의 선택·비활성 행 예제. 항목별 설명과 Active 태그를 함께 표시한다.
 
 use std::cell::RefCell;
 

@@ -1,8 +1,5 @@
-//! `Status resolution` specimen — 디자인(4) `components/feedback/Status resolution` 카드.
-//!
-//! 한 surface 의 *소유(owner)* 상태와 *활동(activity)* 상태가 충돌할 때 어떤 점 하나로
-//! 귀결되는지를 보이는 우선순위 표. 규칙: error › waiting › running › agent › idle,
-//! 동순위는 live(activity) 우선. 항상 점 1개로 해소된다(`resolveStatus`).
+//! 소유자와 활동 상태를 점 하나로 표시할 때의 우선순위 예제.
+//! error > waiting > running > agent > idle 순이며 같은 순위는 활동 상태를 선택한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{StatusKind, status_dot};
@@ -53,7 +50,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     let cw = theme.field_width_color.value();
     stage(ui, theme, StageVariant::Column, |ui| {
-        // 헤더 행 — mono micro.
         ui.horizontal(|ui| {
             header_cell(ui, theme, cw, "owner");
             header_cell(ui, theme, cw, "activity");

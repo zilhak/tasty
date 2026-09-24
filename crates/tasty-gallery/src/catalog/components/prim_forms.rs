@@ -1,9 +1,4 @@
-//! Select · Multi-select · Checkbox · Switch primitive specimen — 디자인(4)
-//! `components/forms` 카드.
-//!
-//! Select(토큰 트리거 + 드롭다운) · Multi-select(같은 트리거 + checkbox 행 팝업) ·
-//! Checkbox(16px square) · Switch(28×16 track). 상태는 thread_local 로 보관.
-//! 하단 `meta` 로 치수/토큰 노출.
+//! Select, Multi-select, Checkbox, Switch의 상태별 예제.
 
 use std::cell::RefCell;
 
@@ -50,10 +45,7 @@ struct FormState {
     multi_rows: [bool; 5],
     /// 일괄 토글(allToggle) 케이스용 10종 — 옵션 목록은 [`MULTI_ALL_OPTIONS`].
     multi_all: [bool; 10],
-    /// 일괄 토글 × 행 disabled 교차 케이스용 8종 — 마스크는 [`MULTI_ALL_DISABLED`].
-    ///
-    /// 활성 행(2~7)만 전부 켠 채로 시작한다 — 비활성 0 번이 꺼져 있는데도 액션 행이
-    /// "Clear all" 로 서는 판정(토글 가능한 행만 센다)을 열자마자 보여주기 위함이다.
+    /// 비활성 두 행을 제외한 나머지를 선택해 Clear all 동작을 비교한다.
     multi_all_masked: [bool; 8],
     check_a: bool,
     check_b: bool,
@@ -61,10 +53,7 @@ struct FormState {
     switch_b: bool,
 }
 
-/// "Multi-select (20 options)" specimen 의 옵션 목록. 20 개는 팝업이
-/// multiselect-menu-max-height(220) 를 확실히 넘겨 내부 스크롤을 발동시키는 개수이고,
-/// 첫 줄만 일부러 길게 두어 스크롤 없이 보이는 자리에서 max-width(320) 클램프와
-/// 행 라벨 말줄임까지 같은 화면에 담는다.
+/// 스크롤 높이와 긴 첫 라벨의 말줄임을 함께 확인할 옵션 목록.
 const MULTI_SCROLL_OPTIONS: [&str; 20] = [
     "Very long column label that overflows the menu max width",
     "PID",
@@ -88,16 +77,10 @@ const MULTI_SCROLL_OPTIONS: [&str; 20] = [
     "Latency",
 ];
 
-/// "Multi-select (rows disabled)" specimen 의 행 단위 비활성 마스크.
-///
-/// 첫 행은 **선택 안 된 채** 비활성, 둘째 행은 **선택된 채** 비활성이다 — 두 조합을
-/// 같이 두어야 dim 이 체크마크(accent 채움)에도 걸리는지 한 화면에서 대조된다.
+/// 선택 여부가 다른 두 행을 비활성화해 체크마크도 흐려지는지 비교한다.
 const MULTI_ROW_DISABLED: [bool; 5] = [true, true, false, false, false];
 
-/// "Multi-select (all toggle)" specimen 의 옵션 목록.
-///
-/// 10 개인 이유는 디자인 권고("옵션 8 개 미만이면 일괄 토글을 끄라") 를 넘기는 최소
-/// 실전 크기이기 때문이다 — 일괄 토글이 실제로 값을 하는 규모에서 보여준다.
+/// 일괄 선택 예제의 옵션 목록.
 const MULTI_ALL_OPTIONS: [&str; 10] = [
     "Waiting",
     "Ready",
@@ -111,10 +94,7 @@ const MULTI_ALL_OPTIONS: [&str; 10] = [
     "Unknown",
 ];
 
-/// "Multi-select (all toggle + rows disabled)" specimen 의 비활성 마스크.
-///
-/// 첫 행은 꺼진 채, 둘째 행은 켜진 채 비활성 — 일괄 토글이 **양방향 모두** 이 두 행을
-/// 건드리지 않는지(켜기도 끄기도) 한 화면에서 확인된다.
+/// 선택 여부가 다른 두 비활성 행은 일괄 선택·해제에서도 바뀌지 않아야 한다.
 const MULTI_ALL_DISABLED: [bool; 8] = [true, true, false, false, false, false, false, false];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -153,8 +133,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // placeholder 는 값이 아니다 — `text_placeholder` 색으로 그리고 메뉴 맨 앞의
-            // sentinel 은 한 번 고르면 빠진다(단축키 가져오기 modifier 선택이 첫 소비자).
+            // 한 번 선택하면 placeholder는 목록에서 사라진다.
             cluster(ui, theme, "Select (placeholder)", |ui| {
                 let opts = ["Ctrl", "Alt", "Ctrl+Alt"];
                 select_or_placeholder(
@@ -168,17 +147,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // 다중선택 — 트리거는 위 Select 와 같은 토큰이고, 팝업만 checkbox 행이다.
-            // 나란히 놓아 높이·보더·폰트가 같은 계열로 읽히는지 눈으로 대조한다.
-            //
-            // 아래 multi_select specimen 은 전부 키보드로도 조작된다(트리거 포커스 후
-            // `↓`/`Enter`/`Space` 열기 · `↑↓`/`Home`/`End` 행 이동 · `Space`/`Enter`
-            // 토글 · `Esc` 닫기). active 행 배경(`surface_active`)은 그때만 보인다 —
-            // 갤러리는 키 주입 경로가 없어 배치 스크린샷에는 잡히지 않는다.
+            // 키보드로도 열기·행 이동·선택·닫기를 확인할 수 있다. 자동 스크린샷은 키를 주입하지 않는다.
             cluster(ui, theme, "Multi-select", |ui| {
                 let opts = ["Waiting", "Ready", "Running", "Done", "Failed"];
-                // 문구는 위젯이 아니라 호출자가 주입한다(위젯 crate 는 i18n 미의존).
-                // 갤러리는 본체가 아니라 specimen 이라 영어 리터럴을 그대로 쓴다.
                 let labels = MultiSelectLabels {
                     none: "No status",
                     some: "{} selected",
@@ -197,9 +168,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // 회귀 방지: 요약 라벨과 팝업 행 라벨 **양쪽**이 가용 폭을 넘는 케이스.
-            // 트리거도 팝업 행도 말줄임(truncate_at_width) — 팝업은 내용만큼 넓어지되
-            // multiselect-menu-max-width(320) 에서 멈춘다.
+            // 선택 요약과 메뉴 행 양쪽에 긴 라벨을 넣어 말줄임을 비교한다.
             cluster(ui, theme, "Multi-select (long text)", |ui| {
                 let opts = [
                     "Untrusted (신뢰되지 않은 명령만 승인 요청)",
@@ -225,7 +194,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // 비활성 — 트리거만 dim 되고 클릭해도 팝업이 열리지 않는다.
             cluster(ui, theme, "Multi-select (disabled)", |ui| {
                 let opts = ["Waiting", "Ready", "Running", "Done", "Failed"];
                 let labels = MultiSelectLabels {
@@ -247,8 +215,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     false,
                 );
             });
-            // 행 단위 비활성 — 트리거는 살아 있어 팝업이 열리고, 마스크가 켜진 행만
-            // 흐려진 채 클릭이 먹지 않는다. 위 "(disabled)" 와 층이 다른 상태다.
+            // 트리거는 활성인 채 지정된 행만 비활성화한다.
             cluster(ui, theme, "Multi-select (rows disabled)", |ui| {
                 let opts = ["Waiting", "Ready", "Running", "Done", "Failed"];
                 let labels = MultiSelectLabels {
@@ -269,8 +236,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // 일괄 토글(opt-in) — 메뉴 최상단에 accent 액션 행 + 구분선이 붙는다.
-            // 위 specimen 들은 전부 off 라 이 행이 없다(끄면 렌더가 이전과 동일).
             cluster(ui, theme, "Multi-select (all toggle)", |ui| {
                 let opts = MULTI_ALL_OPTIONS;
                 let labels = MultiSelectLabels {
@@ -278,7 +243,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     some: "{} selected",
                     all: "All statuses",
                 };
-                // 액션 행 문구도 요약 라벨과 같은 규약으로 호출자가 주입한다.
                 let all_toggle = MultiSelectAllToggle {
                     select_all: "Select all",
                     clear_all: "Clear all",
@@ -296,8 +260,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            // 일괄 토글 × 행 disabled — 액션 행은 **토글 가능한 행만** 보고 판정하고,
-            // 비활성 두 행은 켜기·끄기 어느 쪽으로도 움직이지 않는다.
+            // 일괄 선택은 비활성 행을 제외하고 판단한다.
             cluster(
                 ui,
                 theme,
@@ -327,9 +290,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     );
                 },
             );
-            // 회귀 방지: 옵션이 많은 케이스 — 팝업이 세로로 무한정 늘어나지 않고
-            // multiselect-menu-max-height(220 = autocomplete 와 동일) 에서 멈춰
-            // 내부 스크롤로 넘어간다.
+            // 높이 상한을 넘는 목록에서 내부 스크롤을 확인한다.
             cluster(ui, theme, "Multi-select (20 options)", |ui| {
                 let opts = MULTI_SCROLL_OPTIONS;
                 let labels = MultiSelectLabels {

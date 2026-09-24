@@ -1,9 +1,5 @@
-//! DrillDown primitive specimen — 디자인 `components/navigation/DrillDown` 카드.
-//!
-//! master→detail content-swap: 풀폭 ListCtrl(프리셋 목록) → 항목 선택 시 영역
-//! 전체가 디테일(프리뷰 + back bar 의 Apply 액션)로 교체, ← 로 복귀. 디자인
-//! `DrillDown.prompt.md` 의 canonical 예제(Settings › Keybindings › Preset)
-//! 그대로. 전환은 즉시(0ms) — opt-in animate 는 전사하지 않는다.
+//! 목록에서 항목을 고르면 전체 영역을 상세로 바꾸는 DrillDown 예제.
+//! 뒤로 가기로 목록에 돌아오며 전환 애니메이션은 사용하지 않는다.
 
 use std::cell::RefCell;
 
@@ -88,7 +84,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         ui,
                         theme,
                         |ui, th| {
-                            // 리스트 뷰 — ListCtrl 와 짝 (디자인 canonical 페어링).
                             let active_tag = |ui: &mut egui::Ui, th: &Theme| {
                                 tag(ui, th, "Active", TagVariant::Success, true);
                             };
@@ -106,7 +101,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             }
                         },
                         |ui, th| {
-                            // 디테일 뷰 — 프리셋 프리뷰 (내부 스크롤, back bar 고정).
                             egui::Frame::new()
                                 .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
                                 .show(ui, |ui| {

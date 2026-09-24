@@ -1,14 +1,5 @@
-//! Remote connections — 디자인 Overlays `remote` Spec.
-//!
-//! 520×460 모달. 헤더(remote icon + title + close) · 3 탭(Remote profiles /
-//! Attach / Passkeys, bg-sidebar) · add-bar(Add profile + 프로토콜 필터) · ProfileRow 리스트(name +
-//! (label) + type Tag + target mono + passkey caption/detecting Spinner + 우측
-//! IconButton ×3). 디자인 미러: `gallery/overlays-shared.jsx` `RemoteFrame`
-//! (tab="profiles"|"attach") + `RemoteFormFrame`(variant attach-ref/attach-inline).
-//!
-//! Attach 탭(가운데): tasty-attach 대상 리스트(`AttachRow` — name + mode Tag +
-//! inactive 배지 / target 요약 / tasty:·port: 캡션)와 attach 폼(Connection 세그먼트
-//! ref↔inline + Remote tasty 그룹)을 별도 Spec 으로 노출한다.
+//! 원격 프로필, Attach 대상, 연결 설정 폼 예제.
+//! 공용 탭·프로토콜 필터·SSH config 목록 뷰를 사용하며 실제 연결은 하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -84,8 +75,7 @@ const LOCAL_HOSTS: &[LocalSshHost<'static>] = &[
         target: "deploy@10.0.4.12:22",
         in_profiles: true,
     },
-    // 확정 시안의 셋째 항목은 **일부러 긴** alias 다 — 우측 슬롯을 먼저 잡는 레이아웃이
-    // 실제로 말줄임으로 끝나는지 specimen 이 보이게 한다.
+    // 긴 별칭으로 오른쪽 동작 버튼을 유지하며 말줄임되는지 확인한다.
     LocalSshHost {
         alias: "eu-west-build-farm-bastion-01",
         target: "ci-runner@bastion-01.eu-west.build.example.com:2222",
@@ -96,7 +86,6 @@ const LOCAL_HOSTS: &[LocalSshHost<'static>] = &[
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            // 헤더.
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -118,13 +107,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             tab_bar(ui, theme, 0);
 
-            // add-bar — 좌측 Add profile + 우측 정렬 프로토콜 필터 버튼.
-            //
-            // 필터 버튼이 여기 있는 이유는 본체 규칙이 그렇기 때문이다: `draw_profile_list`
-            // 는 `protocol_set(profiles).len() >= 2` 일 때만 이 버튼을 그린다. 위 `PROFILES`
-            // 는 ssh 셋과 smb 하나라 **프로토콜이 둘**이고, 그러면 본체 화면에는 이 버튼이
-            // 뜬다. 버튼 자신의 상태 두 가지는 `remote-filter` spec 이 따로 보이고, 여기서는
-            // **add-bar 안에서 어디에 어떻게 놓이는가**를 보인다 — 그 배치가 이 화면의 몫이다.
+            // 서로 다른 프로토콜이 둘 이상인 예제이므로 필터 버튼을 표시한다.
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     Button::new("Add profile")
@@ -134,15 +117,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         })
                         .show(ui, theme);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // 가린 것이 없는 상태 — 본체도 저장된 필터가 비면 이 모습이다.
                         draw_protocol_filter_button(ui, theme, "Filter", false);
                     });
                 });
             });
 
-            // ProfileRow 리스트 + 로컬 SSH config 섹션. **한 스크롤 영역 안**이라 본체와
-            // 같이 하나의 padding region 에 넣는다 — 로컬 섹션이 프로필 목록 아래에
-            // 이어지는 배치가 이 화면의 요점이다.
+            // 프로필과 SSH config 목록을 같은 스크롤 영역에 둔다.
             kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
                 for (i, p) in PROFILES.iter().enumerate() {
                     if i > 0 {
@@ -150,8 +130,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     }
                     profile_row(ui, theme, p);
                 }
-                // 본체와 **같은 view 함수**를 부른다. 상단 rule 과 세로 여백은 그 함수가
-                // 소유하므로 여기서 `hsep` 을 덧대지 않는다.
+                // 공용 목록 뷰가 구분선과 간격을 포함하므로 중복해서 그리지 않는다.
                 draw_local_ssh_section(
                     ui,
                     theme,
@@ -197,17 +176,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Tasty has no remote security model of its own — every profile is an SSH \
-         target, and identity is delegated to passkeys at that boundary.",
+        "Remote profiles store connection details for their protocol. SSH profiles supply the connection and authentication settings; Attach records add the remote Tasty executable and port discovery options.",
     );
 }
 
-/// 공통 3-탭 바 — 본체 popup 과 **같은 view 함수**(`tasty_ui_widgets::draw_tab_strip`)를
-/// 부른다. 라벨과 활성 인덱스만 specimen 이 정한다. `active` = 0 Profiles / 1 Attach /
-/// 2 Passkeys.
-///
-/// `x_range` 는 카드 전체폭이다 — 바 배경(`bg-sidebar`)과 하단 separator 가 카드 좌우
-/// 끝까지 닿아야 하고, 탭 자체는 그 범위의 왼쪽에서 시작한다.
+/// 공용 탭 바에 라벨과 활성 항목을 전달한다. 배경은 카드 전체 폭을 채운다.
 fn tab_bar(ui: &mut egui::Ui, theme: &Theme, active: usize) {
     draw_tab_strip(
         ui,
@@ -220,10 +193,6 @@ fn tab_bar(ui: &mut egui::Ui, theme: &Theme, active: usize) {
     );
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Attach 탭 — tasty-attach 대상 (디자인 `RemoteFrame tab="attach"`)
-// ════════════════════════════════════════════════════════════════════════
-
 struct Attach {
     name: &'static str,
     label: &'static str,
@@ -234,7 +203,6 @@ struct Attach {
     inactive: bool,
 }
 
-// 디자인 gallery/overlays-shared.jsx `RemoteFrame` attach seed 1:1.
 const ATTACHES: &[Attach] = &[
     Attach {
         name: "gb10",
@@ -271,7 +239,6 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
             attach_header(ui, theme);
             tab_bar(ui, theme, 1);
 
-            // Add attach 버튼행 — 프로토콜 필터 없음 (Profiles 전용).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     Button::new("Add attach")
@@ -283,7 +250,6 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
                 });
             });
 
-            // AttachRow 리스트.
             kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
                 for (i, a) in ATTACHES.iter().enumerate() {
                     if i > 0 {
@@ -357,7 +323,6 @@ fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                // row1 — name + (label) + mode Tag + inactive 배지.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     let name_color = if a.inactive {
@@ -383,14 +348,12 @@ fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
                         warn_pill(ui, theme, "inactive");
                     }
                 });
-                // row2 — target 요약 (mono).
                 ui.label(
                     egui::RichText::new(a.target)
                         .monospace()
                         .size(theme.font_size_caption.value())
                         .color(theme.text_muted().to_egui()),
                 );
-                // row3 — tasty/port 캡션 (gap space-md 12).
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
                     kit::caption(ui, theme, &format!("tasty: {}", a.tasty), true);
@@ -446,10 +409,6 @@ fn warn_pill(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.painter().galley(pos, galley, warn);
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Attach 폼 — reference vs. inline (디자인 `RemoteFormFrame` attach-ref/-inline)
-// ════════════════════════════════════════════════════════════════════════
-
 /// 폼 라벨 컬럼 폭 — 디자인 `--tasty-remote-label-col`(size-112).
 const LABEL_COL: LogicalPx = LogicalPx(112.0);
 /// 폼 카드 폭 — 디자인 `RemoteFormFrame` maxWidth 460 (raw).
@@ -458,8 +417,7 @@ const FORM_WIDTH: LogicalPx = LogicalPx(460.0);
 pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for inline in [false, true] {
-            // 두 변종은 **같은 폼**이라 안의 위젯 id 가 글자까지 같다. id 를 안 가르면 egui 가
-            // 둘째를 id 충돌로 보고 두 카드 위에 빨간 경고를 그린다(실측 — 캡처에 찍혔다).
+            // 같은 폼을 두 개 그리므로 위젯 ID의 범위를 나눈다.
             ui.push_id(inline, |ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
@@ -511,7 +469,6 @@ fn attach_form_card(ui: &mut egui::Ui, theme: &Theme, inline: bool) {
         attach_header(ui, theme);
         tab_bar(ui, theme, 1);
 
-        // 본문 — 디자인 rtScrollPad(padding 12 16), rowGap 8.
         kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             ui.label(
@@ -588,7 +545,6 @@ fn attach_form_card(ui: &mut egui::Ui, theme: &Theme, inline: bool) {
                     );
                 });
             }
-            // Remote tasty 그룹 헤더 — mono 10 uppercase caps.
             ui.add_space(theme.spacing_xs.value());
             ui.label(
                 egui::RichText::new("REMOTE TASTY")
@@ -648,7 +604,6 @@ fn attach_form_card(ui: &mut egui::Ui, theme: &Theme, inline: bool) {
             });
         });
 
-        // footer — 전체폭 borderTop + 우측 [Cancel ghost][Save primary].
         kit::hsep(ui, theme);
         kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -683,13 +638,7 @@ fn form_row(ui: &mut egui::Ui, theme: &Theme, label: &str, add: impl FnOnce(&mut
     });
 }
 
-/// Connection 세그먼트 chip — gallery 미러 `seg()` 전사: 개별 chip(gap 6),
-/// active = accent-primary fill + on-accent 잉크 + border-strong,
-/// inactive = surface-raised + border-default + text-secondary.
-///
-/// 2026-09-17 디자인 결정(R1)이 **세그먼트와 탭 스트립을 갈랐다**: 밑줄은 view 를
-/// 바꾸고 채움은 값을 바꾼다. 세그먼트는 값이므로 accent 채움이다. `surface-active`
-/// 는 행 선택 채움이라 어느 쪽도 아니다 — 그 전까지 이 미러가 그것을 쓰고 있었다.
+/// 연결 방식은 값을 고르는 항목이므로 밑줄 탭 대신 채운 세그먼트로 표시한다.
 fn seg_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let h = theme.item_height_interactive.value();
     let font = egui::FontId::proportional(theme.font_size_body.value());
@@ -787,10 +736,6 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
     });
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 프로토콜 필터 — add-bar 버튼 + 드롭다운 (디자인 `RemoteFrame` 의 filter 블록)
-// ════════════════════════════════════════════════════════════════════════
-
 /// 필터 목록의 프로토콜 — 디자인 seed 와 같은 넷이고 마지막 하나가 미지 kind 다.
 const FILTER_PROTOCOLS: &[(&str, bool)] = &[
     ("ssh", false),
@@ -799,34 +744,23 @@ const FILTER_PROTOCOLS: &[(&str, bool)] = &[
     ("snb", true),
 ];
 
-/// 프로토콜 필터 — 본체와 **같은 view 함수** 둘(`draw_protocol_filter_button` ·
-/// `draw_protocol_filter_body`)을 부른다.
-///
-/// 본체는 이 둘 사이에 egui popup(`FILTER_POPUP_ID` memory + `popup_above_or_below_
-/// widget`)을 끼워 열림을 관리하지만, specimen 은 **열린 상태를 그대로 세워 보인다** —
-/// 갤러리가 보이려는 것은 열림 상태 전이가 아니라 두 표면의 생김새다.
+/// 공용 프로토콜 필터의 닫힌 버튼과 열린 목록을 나란히 보여준다.
 pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 닫힘 — 아무것도 가리지 않은 상태. `surface-raised` + `border-strong`.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::caption(ui, theme, "closed · nothing hidden", false);
             draw_protocol_filter_button(ui, theme, "Filter", false);
         });
-        // 닫힘(적용됨) — 하나라도 가려져 있으면 accent 채움 + 개수.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::caption(ui, theme, "closed · 1 of 4 hidden", false);
             draw_protocol_filter_button(ui, theme, "Filter · 3/4", true);
         });
     });
-    // 열린 드롭다운은 **따로 세운다** — 닫힘 버튼들과 한 wrap 행에 넣으면 그 행의 높이가
-    // 가장 큰 항목에서 정해지기 전에 내부 ScrollArea 가 남은 높이를 읽어 목록이 잘린다.
+    // 목록 높이가 확보되도록 열린 드롭다운은 별도 행에 놓는다.
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 열림 — 드롭다운 본문. draft 는 **제외 집합**이라 `snb` 하나가 들어 있다.
-        // 시안과 같은 멤버를 끈다 — 시안은 해제된 행과 `unknown` 배지가 **같은 행**에
-        // 겹쳐 있고, 그 겹침이 이 화면에서 볼 것 중 하나다(다른 행을 끄면 두 상태가
-        // 흩어져 specimen 이 시안과 다른 상태를 보인다).
+        // 미지원 프로토콜을 제외한 상태를 보여준다. draft는 숨길 항목의 집합이다.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::caption(ui, theme, "open · draft = hidden set", false);
@@ -839,8 +773,7 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                     unknown: *unknown,
                 })
                 .collect();
-            // 폭은 공용 view 가 자기 안에서 거는 최소폭을 **그 자리에서** 읽는다 —
-            // specimen 이 자기 수를 이름으로 들고 있으면 본체가 바뀔 때 조용히 갈린다.
+            // 공용 목록 뷰와 같은 최소폭을 사용한다.
             kit::frame_card_popover(
                 ui,
                 theme,
@@ -848,10 +781,7 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                 kit::raised_fill(theme),
                 |ui| {
                     kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                        // 공용 view 의 목록은 **남은 높이**가 상한보다 작으면 그만큼
-                        // 잘린다. 본체에서는 popup Area 가 높이를 넉넉히 주지만
-                        // specimen 의 카드는 높이가 내용으로 정해져 남은 높이가 0 에
-                        // 가깝다 — 상한만큼 먼저 잡아 본체와 같은 목록이 나오게 한다.
+                        // 내용에 맞춰 크기가 정해지는 카드에서도 목록 높이를 먼저 확보한다.
                         ui.set_min_height(tasty_ui_widgets::FILTER_DROPDOWN_MAX_HEIGHT.value());
                         draw_protocol_filter_body(
                             ui,

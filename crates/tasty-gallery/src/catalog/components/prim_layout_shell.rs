@@ -1,22 +1,5 @@
-//! `layout-shell` specimen — 공용 레이아웃 위젯 3종을 **직접 호출**한다 (Components).
-//!
-//! 여기 있는 세 함수는 `crates/tasty-ui-widgets` 의 공용 위젯이라 갤러리가 복제하지
-//! 않고 **본체와 같은 함수**를 부른다(demo=main —
-//! `docs/design/policies/gallery-completeness.md`). 따라서 위젯이 바뀌면 이 specimen
-//! 이 자동으로 따라간다.
-//!
-//! - [`two_depth_layout`] / [`two_depth_layout_filtered`] — 좌측 고정폭 sub-menu
-//!   패널(`crust` 배경 + 1px 보더) + 우측 콘텐츠, 사이 8px gap. filtered 변종은
-//!   좌측 패널 상단에 섹션 필터 입력 슬롯을 더 얹는다.
-//! - [`horizontal_tab_bar_with_arrows`] — 가로 `ScrollArea` 탭 줄. 콘텐츠가
-//!   viewport 보다 넓을 때만 좌/우 chevron 이 탭 위에 알파 오버레이로 뜬다(영역을
-//!   차지하지 않는다). chevron 클릭은 80px 씩 스크롤.
-//! - [`tab_content_frame`] — 탭 콘텐츠를 모달 테두리에서 `TAB_CONTENT_PADDING`
-//!   만큼 띄우는 4면 균등 wrapper.
-//!
-//! **Layouts 페이지의 `twodepth`/`multitab` specimen 과 다른 물건이다.** 그쪽은
-//! 디자인 레이아웃 idiom 을 painter 로 전사한 정적 무대이고, 여기는 그 idiom 을
-//! 실제로 구현한 **공용 위젯 자체**의 라이브 데모다.
+//! 공용 레이아웃 위젯의 동작 예제. 본체와 같은 함수를 호출한다.
+//! Layouts 페이지의 정적 화면 예제와 달리 탭 이동·스크롤·필터 입력을 조작할 수 있다.
 
 use std::cell::RefCell;
 
@@ -196,9 +179,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "세 함수 모두 `tasty-ui-widgets` 의 공용 위젯이라 이 specimen 은 복제가 아니라 \
-         본체와 같은 호출이다 — 위젯을 고치면 여기도 같이 바뀐다. chevron 은 콘텐츠가 \
-         viewport 보다 넓을 때만 나타나므로, 좁은 폭으로 묶어야 그 상태를 볼 수 있다. \
-         필터 입력은 위젯이 그리지만 어떤 항목을 남길지는 호출자가 정한다.",
+        "공용 레이아웃 위젯을 본체와 같이 호출한다. 탭이 가용 폭을 넘으면 스크롤 화살표가 나타난다. 필터 입력은 위젯이 그리며 어떤 항목을 남길지는 호출자가 정한다.",
     );
 }

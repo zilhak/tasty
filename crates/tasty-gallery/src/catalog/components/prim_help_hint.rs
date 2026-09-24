@@ -1,8 +1,4 @@
-//! `HelpHint · Tooltip` primitive specimen — 디자인(4) `gallery/components.jsx`
-//! "HelpHint · Tooltip" Section 전사.
-//!
-//! 설정행 사용례(라벨 옆 `(?)`) · rest→hover 색 전환 · 4 placement 강제 open 버블.
-//! 하단 `meta` 로 치수/토큰 노출.
+//! 라벨 옆 도움말, 호버 상태, 네 방향 툴팁 배치 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{HelpHint, TooltipPlacement};
@@ -29,9 +25,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
         cluster(ui, theme, "rest · hover (hover the right glyph)", |ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-            // rest — 아무 상호작용 없이 muted 색.
             HelpHint::new(SAMPLE).show(ui, theme);
-            // hover 시 secondary 색 + 150ms 후 버블 (라이브 확인용).
             HelpHint::new(SAMPLE)
                 .placement(TooltipPlacement::Bottom)
                 .show(ui, theme);
@@ -42,7 +36,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "placement — top · bottom · left · right",
             |ui| {
-                // 강제 open 4종 — Area id 를 placement 별로 고유화(동시 표시 충돌 방지).
+                // 동시에 보이는 툴팁의 ID가 겹치지 않도록 한다.
                 ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
                 for (place, key) in [
                     (TooltipPlacement::Top, "hh_top"),

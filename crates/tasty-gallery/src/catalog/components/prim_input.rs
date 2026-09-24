@@ -1,8 +1,5 @@
-//! `Input` primitive specimen — 디자인(4) `components/forms/Input` 카드.
-//!
-//! default · icon(search) · addon · mono · invalid · disabled · block. focus 시
-//! ring(즉시). 상태는 egui memory 에 남도록 specimen 마다 독립 버퍼를 thread_local
-//! 로 보관. 하단 `meta` 로 치수/토큰 노출.
+//! 입력 필드의 아이콘·단위·글꼴·오류·비활성 상태 예제.
+//! 편집 내용은 예제마다 별도 버퍼에 보관한다.
 
 use std::cell::RefCell;
 
@@ -13,9 +10,7 @@ use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
-    // 디자인 jsx 의 defaultValue 를 그대로 전사하기 위해 1회만 초기화한다.
-    // [0] Workspace name(placeholder) · [1] Filter(placeholder) · [2] "14"(addon px) ·
-    // [3] "s_01HXK9"(mono) · [4] "bad value"(invalid) · [5] Disabled(placeholder)
+    // 예제 초깃값이 입력 중인 내용을 덮지 않도록 한 번만 초기화한다.
     static BUFS: RefCell<Option<[String; 6]>> = const { RefCell::new(None) };
 }
 

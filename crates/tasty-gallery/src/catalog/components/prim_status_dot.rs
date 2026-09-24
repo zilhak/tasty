@@ -1,7 +1,4 @@
-//! `StatusDot` primitive specimen — 디자인(4) `components/feedback/StatusDot` 카드.
-//!
-//! running(pulse) · idle · agent · waiting · error + reduced-motion. 하단 `meta` 로
-//! 치수/토큰 노출.
+//! 공용 StatusDot의 실행·대기·오류 등 상태별 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{StatusKind, status_dot};

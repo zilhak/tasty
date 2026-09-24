@@ -1,7 +1,4 @@
-//! `IconButton` primitive specimen — 디자인(4) `components/buttons/IconButton` 카드.
-//!
-//! ghost(테두리 없음)/solid/active × md/sm + disabled. 글리프는 `super::glyph`
-//! (디자인 icons.json 미러). 하단 `meta` 로 치수/토큰 노출.
+//! 공용 IconButton의 채움·활성·크기·비활성 상태 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};

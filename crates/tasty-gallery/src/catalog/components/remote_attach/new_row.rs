@@ -97,20 +97,11 @@ pub fn draw_new_row(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Creating dims the list below it rather than replacing the pane with a spinner — the \
-         round trip is a second or two and the user was reading that list. Failure lands \
-         under the row for the same reason: after a failed create the next move is usually \
-         to pick an existing workspace, so the list has to stay on screen. The remote's \
-         message can be long; it clamps to three lines and carries the rest in a tooltip.",
+        "During creation the list stays visible but disabled. A failure appears below the new-workspace row so an existing workspace can still be chosen afterward. Long error text is limited to three lines, with the full text in a tooltip.",
     );
 }
 
-// ════════════════════════════════════════════════════════════════════════
-/// 새 행 한 상태를 실제 pane 폭(440px)에서 보여주는 스트립 — 아래에 ws 행 하나를
-/// 같이 깔아 두 행의 좌측 정렬선이 픽셀 동일한지 눈으로 확인할 수 있게 한다.
-///
-/// 이 스트립은 popup **안**의 목록 한 조각을 떼어 보이는 것이라 떠 있는 표면이 아니다
-/// — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래로 lift 를 얹지 않는다(`ra_card` 와 다르다).
+/// 새 행과 일반 워크스페이스 행의 정렬을 비교한다. 팝업 내부 목록이므로 그림자는 없다.
 fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     let peek = &WORKSPACES[0];
     egui::Frame::new()
@@ -127,7 +118,6 @@ fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
                 ui.set_width(STRIP_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 new_ws_row(ui, theme, state);
-                // 생성 중에는 아래 목록이 dim + inert 된다.
                 let dim = if state.creating() { 0.5 } else { 1.0 };
                 ui.scope(|ui| {
                     ui.set_opacity(dim);
@@ -137,9 +127,7 @@ fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
         });
 }
 
-/// "+ New workspace" — loaded 목록의 첫 행. ws 행과 같은 34px 박스이고, 실제 원격
-/// 워크스페이스와는 **세 채널 동시**로 구분된다(글리프 · accent 라벨 · 아래 구분선).
-/// 색 하나로만 구분하지 않는다.
+/// 새 워크스페이스 행은 아이콘·라벨·구분선으로 일반 행과 구별한다.
 pub(super) fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     let width = ui.available_width();
     let (rect, _) =
@@ -170,8 +158,7 @@ pub(super) fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
         theme.accent_primary()
     };
     dot_slot_glyph(&mut child, theme, state, glyph_c.to_egui());
-    // selected 에서만 accent 를 놓는다 — surface-active 위의 accent 는 3.17:1 이라
-    // 고른 순간 가장 안 읽힌다. 구분은 글리프·구분선·accent 바가 계속 진다.
+    // 선택 배경 위에서 읽기 쉽도록 라벨을 text-primary로 바꾼다.
     let label_c = if state.creating() {
         theme.text_muted()
     } else if state.selected() {
@@ -189,7 +176,6 @@ pub(super) fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
         .strong()
         .color(label_c.to_egui()),
     );
-    // 우측 슬롯 — status dot·pane 수·배지는 의미상 없는 행이라 캡션 하나뿐.
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if !state.creating() && !state.failed() {
             ui.label(
@@ -202,7 +188,6 @@ pub(super) fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     if state.failed() {
         new_ws_error(ui, theme);
     }
-    // 행 아래 1px 구분선 — 새 행 그룹을 닫는다.
     row_separator(ui, theme);
 }
 
@@ -228,8 +213,7 @@ fn dot_slot_glyph(ui: &mut egui::Ui, theme: &Theme, state: NewRow, color: egui::
     }
 }
 
-/// 생성 실패 — 행 하단 인라인. connect-error center-state 는 "목록 자체를 못 받은"
-/// 경우의 어휘이고, 여기서는 목록을 이미 쥐고 있으므로 가리지 않는다.
+/// 생성 실패는 목록을 가리지 않고 행 아래에 표시한다.
 fn new_ws_error(ui: &mut egui::Ui, theme: &Theme) {
     let width = ui.available_width();
     let cap_h = theme.font_size_caption.value() * theme.line_height_ui;

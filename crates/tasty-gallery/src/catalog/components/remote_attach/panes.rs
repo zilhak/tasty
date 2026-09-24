@@ -19,7 +19,6 @@ pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, stat
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    // caps 헤더 — padding 10/12/4.
     let hdr =
         egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W.value(), CAPS_HEADER_H.value()));
     let (_, _) = col.allocate_exact_size(
@@ -36,7 +35,6 @@ pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, stat
         egui::FontId::monospace(theme.font_size_micro.value()),
         theme.text_muted().to_egui(),
     );
-    // 선택 규칙(디자인 미러): loaded → prod-web, error → legacy-attach, else prod-web.
     let sel_name = match state {
         RaState::Error => "legacy-attach",
         RaState::Connecting => "gb10",
@@ -50,8 +48,7 @@ pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, stat
 
 pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState) {
     match state {
-        // loaded / empty 는 같은 경로 — ws 목록의 길이만 다르다. empty 는 새 행을
-        // 미리 선택해 두어 pane 이 뜬 순간부터 footer 가 살아 있다.
+        // 빈 목록은 새 워크스페이스 행을 미리 선택해 생성할 수 있게 한다.
         RaState::Loaded => loaded_pane(
             ui,
             theme,
@@ -87,10 +84,7 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
              respond, the lookup stops on its own after 20s.",
             false,
         ),
-        // 실제 에러 클래스와 동기화(갤러리 완전성 정책) — `PortDiscoveryFailureKind::
-        // RemoteInstanceNotRunning` (`crates/tasty-ssh/src/lib.rs`), 문구는
-        // `lang/en.toml` `ssh.port_discovery.instance_not_running` 과 동일. 원격
-        // stderr/포트 파일 경로 같은 내부 구현은 노출하지 않는다.
+        // 본체와 같은 원격 인스턴스 미실행 오류 예제. 내부 stderr·포트 경로는 표시하지 않는다.
         RaState::Error => center_state(
             ui,
             theme,
@@ -127,7 +121,6 @@ fn center_state(
             )))
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    // 세로 중앙 정렬 — 위쪽 여백을 대략 반으로.
     col.add_space((rect.height() - EMPTY_BLOCK_H).max(0.0) * 0.5);
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
@@ -155,10 +148,7 @@ fn center_state(
     }
 }
 
-/// caps 헤더 + "+ New workspace" 행 + (ws 목록 | empty 한 줄).
-///
-/// 렌더 분기가 하나뿐이라 `ws` 가 비어도 이 경로를 그대로 탄다 — 목록이 비는 것은
-/// "행이 하나인 목록"이지 다른 화면이 아니다.
+/// 목록이 비어도 헤더와 새 워크스페이스 행을 표시한다.
 fn loaded_pane(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -174,8 +164,6 @@ fn loaded_pane(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    // caps 헤더 — "REMOTE WORKSPACES · {profile}". 생성이라는 사실은 행 라벨이 말하므로
-    // 그룹을 설명하는 이 문구는 새 행이 생겨도 그대로다.
     let (hdr, _) = col.allocate_exact_size(
         egui::vec2(rect.width(), CAPS_HEADER_H.value()),
         egui::Sense::hover(),

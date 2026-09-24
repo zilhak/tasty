@@ -1,10 +1,4 @@
-//! `Spinner` primitive specimen — 디자인(4) `components/feedback/Spinner` 카드.
-//!
-//! 기본 크기(16) 회전 arc + 저대비 track · 크기 램프 · accent 색 ·
-//! reduced-motion 3-dot fallback. 하단 `meta` 로 치수/토큰 노출.
-//!
-//! 기본값의 출처는 `icon-size-md` 다 — 위젯이 크기를 안 받으면 그 토큰을 읽는다
-//! (`component.spinner-size` 도 같은 16 이지만 위젯이 읽는 것은 그쪽이 아니다).
+//! Spinner의 크기·색·동작 줄이기 예제. 기본 크기는 위젯과 같은 icon-size-md에서 읽는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, Spinner};
@@ -12,7 +6,6 @@ use tasty_ui_widgets::{Button, ButtonVariant, Spinner};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 위젯이 크기를 안 받았을 때 스스로 고르는 값과 같은 접근자를 읽는다.
     let base = theme.icon_glyph_size_md.value();
     stage(ui, theme, StageVariant::Column, |ui| {
         cluster(ui, theme, "sizes — 12 · 16 · 20 · 24", |ui| {
@@ -31,9 +24,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             );
         });
         cluster(ui, theme, "in a button · detecting row", |ui| {
-            // 디자인: <Button variant=secondary disabled leadingIcon={<Spinner 14/>}>Installing…</Button>.
-            // Button.leading_icon 은 정적 글리프(IconPainter)만 받아 Spinner 를 임베드할 수
-            // 없으므로, spinner 를 버튼 앞에 두어 근사한다(구조적 갭 — 요약 기록).
+            // Button.leading_icon은 정적 아이콘만 받으므로 스피너를 버튼 앞에 별도로 그린다.
             Spinner::new().size(14.0).show(ui, theme);
             Button::new("Installing…")
                 .variant(ButtonVariant::Secondary)
@@ -50,8 +41,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             );
         });
         cluster(ui, theme, "reduced motion — 3 static dots", |ui| {
-            // 갤러리는 사용자 설정과 무관하게 **두 상태를 나란히** 보여야 하므로
-            // 여기서만 override 를 쓴다(제품 화면은 `theme.reduced_motion` 을 따른다).
+            // 사용자 설정과 무관하게 두 상태를 비교하려고 이 예제만 동작 줄이기를 강제한다.
             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
             Spinner::new()
                 .reduced_motion(false)

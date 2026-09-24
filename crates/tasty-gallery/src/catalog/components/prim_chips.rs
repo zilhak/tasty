@@ -1,7 +1,4 @@
-//! Badge · Tag · Kbd primitive specimen — 디자인(4) `components/chips/*` 3 카드.
-//!
-//! 디자인 components 페이지의 chips 섹션은 Badge / Tag / Kbd 를 각각 독립 Spec 으로
-//! 노출한다. 한 파일에서 3 draw 함수로 나눠 catalog 의 3 Spec 에 연결한다.
+//! Badge, Tag, Kbd를 각각 보여주는 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, badge_dot, kbd, tag};

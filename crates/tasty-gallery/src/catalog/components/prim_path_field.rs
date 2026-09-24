@@ -1,10 +1,5 @@
-//! `PathField` primitive specimen — 디자인 `plugins.jsx` `PathField`(:59) 카드.
-//!
-//! 주소창용 편집형 경로 필드(Explorer / Markdown 공용). 구조 = AutoComplete 트리거(Input
-//! 언어 + 후보 드롭다운) + 우측 Go IconButton. 디자인 두 아이콘 컨텍스트(explorer folderOpen /
-//! markdown file) × idle / editing / editing+list 를 전사한다. idle/editing+list 정적 행은
-//! 필드+Go 합성을 육안 고정하고, 실제 편집/포커스링/키내비/이동·원복 결정은 하단 "interactive"
-//! 라이브 `PathField` 인스턴스로 노출한다.
+//! 경로 필드의 정적 상태와 조작 가능한 공용 PathField 예제.
+//! 폴더·파일 아이콘, 후보 목록, 편집·확정·취소를 비교한다.
 
 use std::cell::RefCell;
 
@@ -74,7 +69,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
 
         stage(ui, theme, StageVariant::Column, |ui| {
-            // ── EXPLORER 컨텍스트 (folderOpen · recent directories) ──
             cluster(
                 ui,
                 theme,
@@ -134,7 +128,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
-            // ── MARKDOWN 컨텍스트 (file · recent files) ──
             cluster(
                 ui,
                 theme,
@@ -235,8 +228,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 필드 한 행 — Input(mono, idle=secondary / editing=primary) + Go IconButton. 드롭다운 없음.
-/// 디자인 PathField 의 non-AutoComplete 브랜치(정적 표시) 전사. 정적 데모라 버퍼는 로컬.
+/// 후보 목록 없이 입력 필드와 Go 버튼을 정적으로 그린다.
 fn field_row(
     ui: &mut egui::Ui,
     theme: &Theme,

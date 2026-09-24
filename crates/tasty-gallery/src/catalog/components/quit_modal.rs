@@ -1,23 +1,4 @@
-//! `quit-modal` specimen — 종료 확인 모달 창 (Overlays).
-//!
-//! 본체 `src/view/quit.rs::QuitView::render` 의 구조 전사. 이 모달은 popup 이
-//! 아니라 **독립 winit 창**(400×200, non-resizable)이고 `close_behavior = "ask"`
-//! 경로에서만 뜬다.
-//!
-//! 세로 구성:
-//! - **본문**(CentralPanel, `vertical_centered`) — `spacing_xl` 여백 뒤 제목,
-//!   `spacing_md` 뒤 안내문, `spacing_sm` 뒤 설정 힌트(작게·흐리게).
-//! - **푸터**(bottom panel, 높이 52 = `item_height_interactive` + `spacing_md`×2) —
-//!   좌우 `spacing_lg` 여백 안에서 두 버튼이 가용 폭을 **정확히 반씩** 나눠 갖고
-//!   사이 간격은 `spacing_sm`. 버튼 높이는 `item_height_interactive`.
-//!
-//! **토큰 이관 2건** (구조·치수 보존):
-//! - 본체 리터럴 `52.0` / `28.0` / `- 32.0` / `- 4.0` → 각각
-//!   `item_height_interactive + spacing_md*2` / `item_height_interactive` /
-//!   `spacing_lg*2` / `spacing_sm` 에서 도출. 값은 전부 동일하다.
-//! - 본체 `egui::Button::new` + `ui.heading`/`ui.label` → 공용
-//!   `tasty_ui_widgets::Button` + Theme 폰트 토큰
-//!   (`docs/architecture/ui-widgets-crate.md#무엇을-공용-위젯으로` 목표 상태).
+//! 종료 확인 창의 정적 예제. 본체는 close_behavior가 ask일 때 별도 창으로 띄운다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -49,7 +30,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
         egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.max.y - footer_h));
     let footer_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, body_rect.max.y), rect.max);
 
-    // ── 본문 (중앙 정렬 3단) ──
     let mut body = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     body.vertical_centered(|ui| {
         ui.add_space(theme.spacing_xl.value());
@@ -73,7 +53,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
-    // ── 푸터 (좌우 spacing_lg · 반반 분할 · 사이 spacing_sm) ──
     let side = theme.spacing_lg.value();
     let gap = theme.spacing_sm.value();
     let inner_w = footer_rect.width() - side * 2.0;

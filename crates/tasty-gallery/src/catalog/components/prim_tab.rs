@@ -1,10 +1,4 @@
-//! `Tab` primitive specimen — 디자인(4) `components/nav/Tab` 카드.
-//!
-//! 디자인 nav 섹션은 Tab 을 독립 Spec 으로 노출한다(Layouts 의 Pane Tab Bar 와
-//! 별개 — 여기선 단일 탭의 *상태* 만 보인다). 본체 binary 비의존이므로 Theme 토큰
-//! 만으로 strip + 탭을 painter 로 직접 그린다.
-//!
-//! 상태 3종: active(accent top bar + panel fill) · idle · notification(badge dot).
+//! 탭 하나의 활성·비활성·알림 상태를 Theme 값으로 그리는 정적 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::StatusKind;
@@ -57,7 +51,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(strip_w, strip_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
 
-        // strip 배경 = bg-sidebar, 하단 separator.
         painter.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
         painter.hline(
             rect.x_range(),
@@ -73,7 +66,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             let tab_rect =
                 egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(tab_w, strip_h));
             draw_tab(&painter, theme, tab_rect, tab);
-            // 탭 사이 separator.
             if i > 0 {
                 painter.vline(
                     x,
@@ -118,7 +110,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 fn draw_tab(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tab: &TabSpec) {
     if tab.active {
-        // panel fill + accent top bar.
         painter.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_panel()));
         let bar = egui::Rect::from_min_size(
             rect.min,
@@ -131,7 +122,6 @@ fn draw_tab(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tab: &TabS
     let dot_r = theme.status_dot_size.value() * 0.5;
     let cy = rect.center().y;
 
-    // status dot.
     let dot_x = rect.left() + pad + dot_r;
     painter.circle_filled(
         egui::pos2(dot_x, cy),
@@ -139,7 +129,6 @@ fn draw_tab(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tab: &TabS
         status_color(theme, tab.status),
     );
 
-    // label.
     let label_color = if tab.active {
         egui::Color32::from(theme.text_primary())
     } else {

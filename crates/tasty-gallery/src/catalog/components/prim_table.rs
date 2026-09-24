@@ -1,8 +1,4 @@
-//! `Table` primitive specimen — 디자인(4) `components/data/Table` 카드.
-//!
-//! 본체·포트 스캐너와 동일한 `tasty_ui_widgets::Table` 위젯을 5행 미니 데모로 호출
-//! (demo=main). sticky 헤더(bg-sidebar) · mono 셀 · 행 선택(surface-active) · 내부
-//! 스크롤 cap. 하단 `meta` 로 치수/토큰 노출.
+//! 공용 Table의 고정 헤더, 행 선택, 정렬, 스크롤을 보여주는 예제.
 
 use std::cell::RefCell;
 
@@ -142,49 +138,45 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     theme,
                     &rows,
                     |row: &Row| rows.iter().position(|r| r.port == row.port) == Some(selected),
-                    |ui, th, row, col| {
-                        // process 셀은 proc 라벨 + pid Tag, state 셀은 StatusDot 로 구성
-                        // (디자인 render(value, row) 전사). 나머지는 mono 텍스트.
-                        match col {
-                            3 => {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                                    ui.label(
-                                        egui::RichText::new(row.proc)
-                                            .size(th.font_size_body.value())
-                                            .monospace()
-                                            .color(egui::Color32::from(th.text_primary())),
-                                    );
-                                    tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
-                                });
-                            }
-                            4 => {
-                                let listen = row.state == "LISTEN";
-                                let kind = if listen {
-                                    StatusKind::Running
-                                } else {
-                                    StatusKind::Waiting
-                                };
-                                status_dot(ui, th, kind, row.state, listen, false);
-                            }
-                            _ => {
-                                let (text, muted) = match col {
-                                    0 => (row.port.to_string(), false),
-                                    1 => (row.proto.to_string(), true),
-                                    _ => (row.addr.to_string(), true),
-                                };
-                                let color = if muted {
-                                    egui::Color32::from(th.text_muted())
-                                } else {
-                                    egui::Color32::from(th.text_primary())
-                                };
+                    |ui, th, row, col| match col {
+                        3 => {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                                 ui.label(
-                                    egui::RichText::new(text)
+                                    egui::RichText::new(row.proc)
                                         .size(th.font_size_body.value())
                                         .monospace()
-                                        .color(color),
+                                        .color(egui::Color32::from(th.text_primary())),
                                 );
-                            }
+                                tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
+                            });
+                        }
+                        4 => {
+                            let listen = row.state == "LISTEN";
+                            let kind = if listen {
+                                StatusKind::Running
+                            } else {
+                                StatusKind::Waiting
+                            };
+                            status_dot(ui, th, kind, row.state, listen, false);
+                        }
+                        _ => {
+                            let (text, muted) = match col {
+                                0 => (row.port.to_string(), false),
+                                1 => (row.proto.to_string(), true),
+                                _ => (row.addr.to_string(), true),
+                            };
+                            let color = if muted {
+                                egui::Color32::from(th.text_muted())
+                            } else {
+                                egui::Color32::from(th.text_primary())
+                            };
+                            ui.label(
+                                egui::RichText::new(text)
+                                    .size(th.font_size_body.value())
+                                    .monospace()
+                                    .color(color),
+                            );
                         }
                     },
                 );

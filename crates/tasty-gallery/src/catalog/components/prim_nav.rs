@@ -1,8 +1,4 @@
-//! TreeRow · MenuItem primitive specimens — 디자인(4) `components/nav/*` 카드.
-//!
-//! 디자인 nav 섹션은 Tab / TreeRow / MenuItem 세 Spec. Tab 은 `prim_tab`,
-//! TreeRow·MenuItem 은 이 파일의 두 draw 함수가 담당한다. 두 컴포넌트는 풀블리드
-//! 패널(tight) 안에 sidebar / raised 표면을 깔고 행을 쌓는다.
+//! 공용 TreeRow와 MenuItem의 상태별 예제.
 
 use std::cell::RefCell;
 

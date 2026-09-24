@@ -1,18 +1,5 @@
-//! Add remote workspace — 680×460 two-pane 원격 워크스페이스 picker (NEW).
-//!
-//! 좌: tasty-attach 프로필 리스트(single select) → 우: 선택 프로필의 원격
-//! 워크스페이스를 4상태로 표시(initial / connecting / error / loaded[+empty]).
-//! 디자인 미러: `gallery/overlays-shared.jsx` `RemoteAttachFrame({state})` +
-//! `ui_kits/terminal/overlays/remote_attach.jsx` `RemoteAttach`. remote_tool 과 같은
-//! shell 언어(headless 헤더 · bg-panel 프레임 · ghost/primary footer).
-//!
-//! - `draw` = loaded 상태(원격 ws 리스트 + "+ New workspace" 첫 행, 대형).
-//! - `draw_states` = 비-list 3상태(initial / connecting / error) + empty(목록 경로).
-//! - `draw_new_row` = "+ New workspace" 행 5상태(rest / hover / selected / creating / failed).
-//!
-//! 우측 pane 의 loaded 렌더 경로는 **하나**다 — 원격에 ws 가 0개여도 caps 헤더와
-//! "+ New workspace" 행은 그대로 나오고 그 아래 muted 한 줄만 붙는다. 그래서 empty 는
-//! 막다른 center-state 가 아니라 "행이 정확히 하나인 목록"으로 degrade 한다.
+//! Attach 프로필과 원격 워크스페이스를 선택하는 정적 예제.
+//! 원격 목록이 비어도 새 워크스페이스 행은 남기며 푸터에서 선택을 확인한다.
 
 mod new_row;
 mod panes;
@@ -91,7 +78,6 @@ struct Prof {
     inactive: bool,
 }
 
-// 디자인 RA_ATTACHES seed 1:1 (overlays-shared.jsx).
 const PROFILES: &[Prof] = &[
     Prof {
         name: "prod-web",
@@ -132,7 +118,6 @@ struct Ws {
     attached: bool,
 }
 
-// 디자인 RA_WORKSPACES.t1 seed (prod-web).
 const WORKSPACES: &[Ws] = &[
     Ws {
         name: "agents-prod",
@@ -268,10 +253,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Connecting is time-bounded: an unresponsive host would otherwise hold the pane for \
-         minutes, so the lookup gives up after 20s and lands on the error state (with Retry). \
-         The footer ghost button reads Stop while connecting and aborts the lookup back to \
-         initial — it does not close the picker.",
+        "The host checks the connection wait on each frame. With no result after 20 seconds, it requests cancellation and shows an error with Retry. Stop requests cancellation and returns to the initial state without closing the picker.",
     );
 
     spec::dont(
@@ -294,11 +276,7 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        // 본체 `remote_attach` popup 은 anchored 명부에도 shadowless 명부에도 없어
-        // 뷰포트를 점유하는 centered 표면으로 판정된다 = 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 modal
-        // 갈래(`popup/draw.rs::popup_shadow`). def 도 중앙 고정 · 이동/리사이즈 없음이다.
-        // 이 specimen 은 공유 셸 키트를 안 쓰고 프레임을 직접 그리므로 갈래도 여기서
-        // 직접 얹는다.
+        // 본체와 같은 중앙 팝업이므로 modal 그림자를 적용한다.
         .shadow(theme.shadow_modal().to_egui())
         .show(ui, |ui| {
             ui.set_width(FRAME_W.value());
@@ -318,7 +296,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
         egui::vec2(FRAME_W.value(), HEADER_H.value()),
         egui::Sense::hover(),
     );
-    // borderBottom separator.
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -367,7 +344,6 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
         egui::pos2(rect.left() + LEFT_W.value(), rect.top()),
         rect.max,
     );
-    // 좌 pane 배경(bg-sidebar) + borderRight.
     ui.painter()
         .rect_filled(left, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().vline(
@@ -399,8 +375,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    // Connect 는 목록이 떠 있고 행이 선택됐을 때만 활성. 새 행이 선택된 상태(empty 는
-    // 그 행이 미리 선택돼 있다)에서는 버튼이 둘 중 무엇을 할지 말해야 한다.
+    // 새 워크스페이스 행을 고르면 확인 버튼이 생성과 연결을 함께 알린다.
     Button::new(if state == RaState::Empty {
         "Create & connect"
     } else {
@@ -409,8 +384,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     .variant(ButtonVariant::Primary)
     .enabled(matches!(state, RaState::Loaded | RaState::Empty))
     .show(&mut child, theme);
-    // 조회 중에는 같은 ghost 버튼이 "조회 중단"이다 — 팝업을 닫지 않고 Connecting 을
-    // 빠져나가는 수단(디자인 원본의 요소를 그대로 쓰되 문구만 상태에 맞춘다).
+    // 연결 중에는 팝업 닫기 대신 조회 중단을 표시한다.
     Button::new(if state == RaState::Connecting {
         "Stop"
     } else {
