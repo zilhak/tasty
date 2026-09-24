@@ -1,49 +1,14 @@
-//! Claude 세션 프로필 레지스트리 — 이름으로 등록해 둔 `settings.json` 조각을
-//! 세션(자기 자신 또는 자식)에 부착한다.
+//! 이름으로 등록한 Claude 설정 파일을 세션에 부착한다.
 //!
-//! `src/hook_handler/registry.rs` 의 형태(patch semantics · priority ↑ → owner
-//! tie-break → id 정렬 · `<owner>/<short>` id)를 **미러링**한다 — 타입은
-//! 공유하지 않는다 — plugin 이 host 타입에 묶이면 plugin 을 독립적으로 갱신할 수
-//! 없어지고, 이 레지스트리의 소비자는 이 plugin 하나뿐이라 공유 이득도 없다.
+//! 이름은 등록 프로필, 등록·기본 게이트, 내장 훅 순으로 해석한다.
+//! 게이트는 Stop 훅 설정으로 변환하며 내장 훅은 조회만 허용한다.
+//! 프로필과 등록 게이트의 이름이 겹치면 등록을 거부한다.
 //!
-//! 실질 2 출처: host(내장 훅 전부를 조회 전용 항목으로 나열 — `install::MANAGED_HOOKS`
-//! 가 유일한 정의처, 여기서 재정의하지 않는다) + user(사용자가 등록한 프로필의
-//! 실체 JSON). plugin manifest 출처는 소비자가 이 plugin 하나뿐이라 비어 있다.
-//! host/user 는 id 네임스페이스가 겹치지 않으므로(`host/*` vs `user/*`)
-//! patch-fold 는 실제로는 단일 contribution 병합으로만 동작하지만, 형태는
-//! 3출처 병합 코드와 동일하게 유지해 나중에 세 번째 출처가 필요해져도 재설계가
-//! 없도록 한다.
+//! `TASTY_PLUGIN_DATA_DIR` 아래에 두 종류의 파일을 둔다.
+//! - `profiles/registered/<short-name>.json`: 등록할 때 받은 파일의 복사본
+//! - `profiles/generated/<sorted-names>.json`: 부착할 때마다 다시 병합한 결과
 //!
-//! ## 이름으로 부착 가능한 것 — 프로필과 게이트
-//!
-//! 이름 해석은 등록 프로필만 보는 것이 아니다. Stop-훅 게이트([`crate::gate`])가
-//! 같은 이름 평면을 공유하므로, 등록 프로필이 없으면 게이트로 fallback 해 그
-//! 게이트를 발동시키는 `Stop` 훅 조각을 만들어 부착한다
-//! ([`crate::gate::attach_profile`]). `continue-checklist` 도 이 경로를 타는 host
-//! 기본 게이트 하나일 뿐이라, 이 파일에 그 이름이 박히는 자리는 없다.
-//!
-//! 해석 순서는 등록 프로필 → 게이트(등록 → host 기본) → 내장 훅 토큰(부착 불가
-//! 에러) → 미등록 에러. 두 레지스트리가 등록 시점에 동명을 서로 거부하므로 앞의
-//! 둘이 실제로 충돌하지는 않지만, 순서는 방어적으로 고정한다.
-//!
-//! 이 plugin 은 단일 스레드 IPC 디스패치(`ClaudePlugin::handle_ipc_method`)만
-//! 레지스트리를 건드리므로 호스트 레지스트리들과 달리 `RwLock`/`OnceLock`
-//! 프로세스 전역 싱글턴이 불필요하다 — `ClaudePlugin` 의 plain 필드로 충분하다
-//! (`state.rs` 의 `ClaudeState` 와 동일 근거: 별도 스레드가 건드리지 않는다).
-//!
-//! ## 저장 위치 (결정 3)
-//!
-//! `TASTY_PLUGIN_DATA_DIR` 하위, 사용자 원본과 tasty 생성 산출물을 분리:
-//! - `profiles/registered/<short-name>.json` — 등록 시 호출자가 준 파일의 복사본
-//!   (원본이 나중에 옮겨지거나 지워져도 레지스트리는 안전). 실제 attachable 항목의
-//!   유일한 소스.
-//! - `profiles/generated/<sorted-names>.json` — 프로필 조합을 부착할 때마다
-//!   재생성되는 머지 산출물. 캐시가 아니라 항상 최신 등록 내용을 반영하도록
-//!   매 attach 시점에 다시 쓴다.
-//!
-//! `data_dir` 이 `None`(호스트가 주입하지 않은 비정상 기동)이면 등록/부착 모두
-//! 명시적 에러로 거부한다 — 조용히 다른 경로에 쓰지 않는다(`~/.claude/` 나
-//! 새 경로를 발명하지 않는다는 결정 3 그대로).
+//! 데이터 경로가 없으면 등록·부착을 거부한다. 다른 경로에 대신 쓰지 않는다.
 
 use std::path::{Path, PathBuf};
 
@@ -54,9 +19,7 @@ use tracing::warn;
 use crate::install::MANAGED_HOOKS;
 use crate::profile_merge::{MergeError, merge_contents};
 
-/// 프로필 short-name 규칙 — `hook_handler` short-name 규칙과 동일한 형태를
-/// 미러링(소문자/숫자/하이픈, 최대 32자). 파일명으로도 그대로 쓰이므로 경로
-/// traversal 문자(`/`, `..`)를 원천적으로 배제한다.
+/// 파일명으로 쓰므로 소문자·숫자·하이픈만 허용하고 최대 32자로 제한한다.
 fn is_valid_short_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
@@ -75,9 +38,7 @@ pub enum ProfileError {
     UnknownProfile(String),
     /// 조회 전용 항목(내장 훅)은 이름으로 부착할 수 없다.
     NotAttachable(String),
-    /// 동명 Stop-훅 게이트가 이미 등록돼 있다. 게이트도 이름으로 부착되므로
-    /// (`gate.rs` 모듈 doc) 두 레지스트리는 이름 공간을 공유한다 — 같은 이름을
-    /// 양쪽에 두면 조용히 한쪽이 가려지므로 등록 시점에 거부한다.
+    /// 같은 이름의 게이트가 있어 프로필을 등록할 수 없다.
     GateNameConflict(String),
     SourceNotReadable {
         path: String,
@@ -101,7 +62,7 @@ impl ProfileError {
             Self::EmptyNames => tr.t("claude.profile.empty_names").to_string(),
             Self::UnknownProfile(id) => tr.t_fmt("claude.profile.unknown_profile", id),
             Self::NotAttachable(id) => tr.t_fmt("claude.profile.not_attachable", id),
-            // 두 자리 placeholder — `t_fmt` 는 첫 하나만 채운다(`gate.rs` 의 대칭 항목과 동일).
+            // t_fmt는 첫 자리만 채우므로 두 자리 모두 직접 치환한다.
             Self::GateNameConflict(name) => tr
                 .t("claude.profile.gate_name_conflict")
                 .replacen("{}", name, 1)
@@ -122,15 +83,13 @@ impl ProfileError {
     }
 }
 
-/// `claude profile list` 가 반환하는 항목 요약. IPC 응답으로는 `handlers.rs`
-/// 가 `serde_json::json!` 로 직접 변환한다(이 crate 는 `serde` derive 를
-/// 직접 의존하지 않는다 — `serde_json` 만으로 충분).
+/// `claude profile list` 응답에 넣는 항목 요약.
 #[derive(Debug, Clone)]
 pub struct ProfileSummary {
     /// `<owner>/<short>` 형식.
     pub id: String,
     pub owner: &'static str,
-    /// 이름으로 attach 가능한지. 내장 훅 listing 항목은 `false`.
+    /// 이름으로 부착할 수 있는지 여부. 내장 훅은 false다.
     pub attachable: bool,
     pub description: Option<String>,
 }
@@ -151,9 +110,7 @@ fn require_data_dir(data_dir: Option<&Path>) -> Result<&Path, ProfileError> {
     data_dir.ok_or(ProfileError::NoDataDir)
 }
 
-/// 이 이름으로 등록된 사용자 프로필이 있는가 — `gate::register` 가 반대 방향
-/// 충돌을 검사할 때 쓴다(이름 공간이 한 평면이라는 계약의 대칭 절반,
-/// `gate.rs` 모듈 doc 참조).
+/// 게이트 등록 시 같은 이름의 프로필이 있는지 확인한다.
 pub(crate) fn is_registered(data_dir: Option<&Path>, short_name: &str) -> bool {
     data_dir.is_some_and(|d| registered_file(d, short_name).is_file())
 }
@@ -176,12 +133,8 @@ fn parse_names(names_csv: &str) -> Result<Vec<String>, ProfileError> {
     Ok(names)
 }
 
-// ── 등록/조회/해제 (user 출처) ────────────────────────────────────────────
-
-/// `short_name` 으로 프로필을 등록한다. `source_path` 의 내용을 읽어 JSON
-/// object 인지 검증한 뒤 `registered/<short_name>.json` 에 복사본을 쓴다 —
-/// 원본이 나중에 옮겨지거나 지워져도 레지스트리는 영향받지 않는다.
-/// 이미 등록된 이름이면 내용을 덮어쓴다(재등록으로 갱신하는 것이 정상 사용).
+/// JSON 객체인지 확인한 뒤 등록 파일로 복사한다. 같은 이름이 있으면 덮어쓴다.
+/// 등록 뒤에는 사용자가 준 원본 파일의 이동·삭제에 영향을 받지 않는다.
 pub(crate) fn register(
     data_dir: Option<&Path>,
     short_name: &str,
@@ -191,7 +144,6 @@ pub(crate) fn register(
         return Err(ProfileError::InvalidShortName(short_name.to_string()));
     }
     let data_dir = require_data_dir(data_dir)?;
-    // 이름 공간이 게이트와 한 평면이다 — 조용히 가리지 않고 여기서 거부한다.
     if crate::gate::is_registered(Some(data_dir), short_name) {
         return Err(ProfileError::GateNameConflict(short_name.to_string()));
     }
@@ -237,10 +189,7 @@ pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<()
     Ok(())
 }
 
-/// 등록된 프로필 원본 JSON 을 반환한다(`claude profile show`). 반환하는 owner
-/// prefix(`"user"`/`"host"`)는 실제로 어느 출처에서 읽었는지를 그대로 반영한다 —
-/// 사용자 등록이 없어 host 기본값으로 fallback 됐는데도 `"user/..."` 라고 답하면
-/// 호출자가 실체와 다른 id 로 착각한다.
+/// 등록 파일이나 게이트 설정과 실제 출처(user/host)를 반환한다.
 pub(crate) fn show_registered(
     data_dir: Option<&Path>,
     short_name: &str,
@@ -250,8 +199,7 @@ pub(crate) fn show_registered(
     let path = registered_file(data_dir, short_name);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
-        // 등록 프로필이 없으면 게이트로 fallback(등록 프로필 우선). owner 는
-        // 게이트 쪽이 실제 출처(user 등록 게이트 / host 기본 게이트)를 돌려준다.
+        // 등록 프로필이 없으면 게이트를 조회한다.
         Err(_) => {
             if let Some((owner, value)) =
                 crate::gate::attach_profile(Some(data_dir), short_name, tr)
@@ -268,9 +216,7 @@ pub(crate) fn show_registered(
     Ok(("user", value))
 }
 
-/// 등록된 사용자 프로필 전체 + 내장 훅 listing 항목을 함께 나열한다
-/// (`priority` 개념이 필요 없는 단순 목록이라 owner tie-break 없이 owner→id
-/// 순으로만 정렬 — host 를 먼저 보여줘 "항상 켜져 있는 것"이 먼저 눈에 띄게 한다).
+/// 프로필·게이트·내장 훅을 출처와 ID 순으로 나열한다.
 pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
     let mut out: Vec<ProfileSummary> = MANAGED_HOOKS
         .iter()
@@ -307,14 +253,9 @@ pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSumma
                 description: None,
             });
         }
-        // 등록 게이트도 이름으로 부착 가능하므로 함께 나열한다. 등록 프로필과
-        // 구분되도록 설명을 싣는다(등록 프로필은 `description: None`).
-        // `profile-list` 와 `gate-list` 가 둘 다 게이트를 보여주는 것은 의도된
-        // 중복이다 — 전자는 "부착 가능한 것들", 후자는 "게이트 정의" 관점.
+        // 부착할 수 있는 게이트도 설명을 붙여 목록에 포함한다.
         for short in crate::gate::registered_names(data_dir) {
-            // 두 레지스트리가 동명 등록을 서로 거부하므로 정상적으로는 겹치지
-            // 않지만, 겹친 상태에서는 부착이 프로필을 택하므로 목록도 그 실체를
-            // 따른다(같은 id 가 두 줄로 보이지 않게).
+            // 동명 항목이 있으면 실제 부착 순서와 같이 프로필을 우선한다.
             if profile_names.contains(&short) {
                 continue;
             }
@@ -344,12 +285,8 @@ fn short_names_in(dir: &Path) -> Vec<String> {
     names
 }
 
-// ── 부착용 해석(조합 머지 포함) ────────────────────────────────────────────
-
-/// `names_csv`(쉼표 구분 이름 목록)를 등록된 프로필 파일들로 해석하고, 필요하면
-/// 머지해 `generated/` 에 실체화한 뒤 그 경로를 반환한다. 이름이 하나뿐이어도
-/// 항상 이 경로를 통해 `generated/` 에 다시 쓴다 — attach 경로가 단수/복수로
-/// 갈라지지 않게 하기 위함(등록 내용이 바뀐 뒤 재부착 시에도 최신 내용 보장).
+/// 입력 순서대로 프로필을 병합하고 generated/ 아래에 쓴다.
+/// 이름이 하나여도 다시 읽어 쓰므로 재부착 시 등록 내용의 변경을 반영한다.
 pub(crate) fn resolve_names(
     data_dir: Option<&Path>,
     names_csv: &str,
@@ -362,15 +299,11 @@ pub(crate) fn resolve_names(
     for name in &names {
         let path = registered_file(data_dir, name);
         if !path.is_file() {
-            // 등록 프로필이 없으면 게이트로 fallback — 등록 게이트든 host 기본
-            // 게이트(`continue-checklist`)든 같은 Stop 훅 조각으로 해석된다
-            // (모듈 doc "이름으로 부착 가능한 것" 절의 해석 순서).
             if let Some((owner, value)) = crate::gate::attach_profile(Some(data_dir), name, tr) {
                 contents.push((format!("{owner}/{name}"), value));
                 continue;
             }
-            // host/* listing 전용 항목(내장 훅)은 attachable 하지 않다 — 사용자가
-            // 이름을 착각해 `--profile stop` 처럼 넘기면 "attach 불가" 를 명확히 알린다.
+            // 내장 훅은 목록에서 조회만 할 수 있다.
             if MANAGED_HOOKS.iter().any(|(_, token, _)| token == name) {
                 return Err(ProfileError::NotAttachable(format!("host/{name}")));
             }
@@ -409,8 +342,6 @@ pub(crate) fn resolve_names(
     Ok(out_path)
 }
 
-// ── IPC handler (main.rs 배선 대상) ────────────────────────────────────────
-
 fn require_name<'a>(params: &'a Value, tr: &Translator) -> Result<&'a str, IpcMethodError> {
     params
         .get("name")
@@ -432,8 +363,7 @@ fn summary_to_json(s: &ProfileSummary) -> Value {
     })
 }
 
-/// `claude.profile_register` — `--name <short> --file <path>` 로 등록. `file` 은
-/// CLI `path_kind = "file"` 정규화를 이미 거친 절대경로.
+/// 파일을 프로필로 등록한다. CLI 경로는 path_kind="file"로 정규화된다.
 pub(crate) fn handle_register(
     data_dir: Option<&Path>,
     params: &Value,
@@ -481,8 +411,7 @@ pub(crate) fn handle_show(
     Ok(json!({ "id": format!("{owner}/{name}"), "content": content }))
 }
 
-/// `claude.profile_current` — 이 세션(surface)에 지금 부착된 프로필 + 항상
-/// 살아있는 내장 훅을 함께 보여준다("지금 이 세션에 무슨 프로필이 걸려 있나").
+/// 세션의 부착 기록과 내장 훅 목록을 반환한다.
 pub(crate) fn handle_current(
     data_dir: Option<&Path>,
     host: &HostHandle,
@@ -717,8 +646,7 @@ mod tests {
         );
     }
 
-    /// 명령 형태를 이 파일에 따로 박아 두면 `install.rs` 만 고쳤을 때 두 경로가
-    /// 갈린다 — 생성 결과가 `tasty_guarded_command` 산출물과 문자 단위로 같은지 본다.
+    /// 설치 경로와 동일한 명령 생성 함수를 사용하는지 확인한다.
     #[test]
     fn generated_hook_command_uses_guarded_form() {
         let tmp = tempfile::tempdir().unwrap();
@@ -736,7 +664,7 @@ mod tests {
     fn registered_profile_shadows_gate_of_same_name() {
         let tmp = tempfile::tempdir().unwrap();
         register_gate(tmp.path(), "mygate");
-        // 41 의 상호 배제를 우회해 같은 이름의 등록 프로필을 손으로 만든 상태.
+        // 등록 충돌 검사를 거치지 않고 동명 파일을 직접 만든다.
         write_profile(tmp.path(), "mygate", r#"{"env":{"FROM_PROFILE":"1"}}"#);
 
         let path = resolve_names(Some(tmp.path()), "mygate", &test_translator()).unwrap();
@@ -785,8 +713,7 @@ mod tests {
         assert!(profile.attachable && profile.description.is_none());
     }
 
-    /// 게이트 둘을 함께 부착하면 Stop 훅이 두 개 등록된다(`profile_merge` 의
-    /// hooks concat) — 42 가 라운드 상태를 게이트별로 쪼갠 전제.
+    /// 게이트 둘을 함께 부착하면 각각의 Stop 훅이 남아야 한다.
     #[test]
     fn resolve_two_gates_registers_two_stop_hooks() {
         let tmp = tempfile::tempdir().unwrap();

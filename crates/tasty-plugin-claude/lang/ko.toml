@@ -193,7 +193,7 @@ description = "Stop 훅 게이트 활성 상태 표시. 모든 게이트를 한 
 description = "내부용: 오류 후 자식 정체 알림을 호출자 서피스에 전달(claude-error-stalled의 hook.set 명령). 자식 상태나 완료 훅을 변경·정리·재등록하지 않습니다."
 
 [claude.cli.sub.notify-done]
-description = "내부용: spawn/tell 상태 전환을 호출자에게 알리고 형제 일회성 훅을 정리합니다. 대상 서피스가 남아 있으면(process-exit이 아니면) 세 형제 훅을 다시 등록해 실제 종료까지 계속 알립니다(claude-idle/needs-input/process-exit의 hook.set 명령)."
+description = "내부용: spawn/tell 상태 변화를 호출자에게 알리고 같은 대상·명령의 일회성 훅을 제거합니다. 대상 surface가 여전히 조회되면 완료 훅 세 개를 다시 등록합니다. claude-idle/needs-input/process-exit의 hook.set 명령으로 사용합니다."
 
 [claude.cli.sub.profile-register]
 description = "이름으로 Claude 세션 프로필 등록(plugin 전용 저장소에 파일 복사, 같은 이름 재등록은 내용 갱신)"

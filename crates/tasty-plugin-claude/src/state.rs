@@ -1,13 +1,5 @@
-//! Claude plugin 특화 상태 — 세션 wall-time 타이밍만.
-//!
-//! child registry(children/parent_of/last_index/closed_parents/idle/needs_input)와
-//! 그 영속화·reconcile 은 호스트가 내재화한 `terminal.*` registry(docs/features/child-terminal/index.md
-//! 참조)가 맡는다. 이 plugin은 자식 매핑을 보유하지
-//! 않는다 — 호스트 registry 가 단일 SoT.
-//!
-//! 여기 남는 것은 claude hook 텔레메트리 전용 상태뿐: `session-start` 시각을 기록해
-//! `stop`/`session-end` 시 `wall_time_ms` 를 계산한다. 재시작 시 휘발되므로(비영속),
-//! span 이 끊겨도 누락만 발생하고 잘못된 값은 나오지 않는다.
+//! session-start 시각을 저장하고 stop/session-end에서 경과 시간을 계산한다.
+//! 메모리에서만 보관하므로 플러그인을 재시작하면 기록이 사라진다.
 
 use std::collections::HashMap;
 
@@ -27,7 +19,7 @@ impl ClaudeState {
         self.wall_time_starts.insert(surface, ts_ms);
     }
 
-    /// 기록된 session-start 시각을 꺼내고 (있으면) elapsed 를 반환.
+    /// 시작 시각을 꺼내 경과 시간을 반환한다. 기록이 없으면 None이다.
     pub fn take_wall_time(&mut self, surface: u32, now_ms: u64) -> Option<u64> {
         let start = self.wall_time_starts.remove(&surface)?;
         Some(now_ms.saturating_sub(start))

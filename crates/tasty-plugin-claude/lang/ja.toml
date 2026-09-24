@@ -193,7 +193,7 @@ description = "Stopフックゲートの有効状態を表示。全ゲートを�
 description = "内部用：エラー後の子の停止通知を呼び出し元サーフェスへ送信（claude-error-stalledのhook.setコマンド）。子の状態や完了フックの変更・削除・再登録はしません。"
 
 [claude.cli.sub.notify-done]
-description = "内部用：spawn/tell状態移行を呼び出し元へ通知し、兄弟の一度限りフックを削除します。対象サーフェスが残る場合（process-exitでない場合）は三つの兄弟フックを再登録し、実際の終了まで通知を継続します（claude-idle/needs-input/process-exitのhook.setコマンド）。"
+description = "内部用：spawn/tell の状態変化を呼び出し元に通知し、同じ対象・コマンドの一度限りフックを削除します。対象 surface を引き続き確認できる場合は完了フック三つを再登録します。claude-idle/needs-input/process-exit の hook.set コマンドで使用します。"
 
 [claude.cli.sub.profile-register]
 description = "名前でClaudeセッションプロファイルを登録（plugin専用領域にファイルを複製。同名の再登録は内容を更新）"

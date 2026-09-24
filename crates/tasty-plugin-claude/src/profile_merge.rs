@@ -1,17 +1,11 @@
-//! Claude 세션 프로필 여러 개를 하나의 `settings.json` 조각으로 머지한다.
+//! Claude 프로필 여러 개를 하나의 --settings 파일로 병합한다.
 //!
-//! `--settings` 는 반복 지정이 last-wins 이라(실측, `profile.rs` 참고) 슬롯이
-//! 하나뿐이다 — 프로필 둘 이상을 동시에 걸려면 이 머지가 유일한 조합 지점이다.
+//! - 객체는 키별로 재귀 병합한다.
+//! - 배열은 JSON 값이 완전히 같은 항목만 중복 제거한다.
+//! - 다른 값·유형이 충돌하면 경고 후 뒤 프로필의 값을 사용한다.
+//!   permissions.defaultMode의 충돌은 권한 변경을 막기 위해 거부한다.
 //!
-//! 키 유형별 규칙:
-//! - 객체: 키 단위 재귀 병합
-//! - 배열: union(중복 제거) — 훅 이벤트 배열(`hooks.Stop` 등)도 이 규칙으로
-//!   "concat" 이 된다(같은 훅 command 문자열이 중복 등록되는 것만 막는다)
-//! - 스칼라: 값이 다르면 충돌. `permissions.defaultMode` 는 권한 모드가 조용히
-//!   약해질 위험이 있어 **거부**. 그 외 스칼라는 경고 후 나중 값으로 last-wins
-//!
-//! 병합 후 불변식 강제: `permissions.deny` 에 있는 항목은 `permissions.allow`
-//! 에서 제거한다 — deny 가 allow 를 이겨야 조합 시 샌드박스가 풀리지 않는다.
+//! 병합 후 deny와 완전히 같은 항목을 allow에서 제거한다.
 
 use serde_json::Value;
 use tasty_plugin_sdk::i18n::Translator;
@@ -45,13 +39,10 @@ impl MergeError {
     }
 }
 
-/// 충돌 시 거부(경고로 넘기지 않음)하는 스칼라 키 경로. 권한 모드가 조합으로
-/// 조용히 약해지는 것을 막는다(위 실측 — `permissions.defaultMode`).
+/// 충돌을 경고만으로 넘기지 않고 거부할 경로.
 const HARD_REJECT_SCALAR_PATHS: &[&str] = &["$.permissions.defaultMode"];
 
-/// `contents`(각 프로필의 JSON 최상위 object, 등록 순서)를 순서대로 접어 하나의
-/// object 로 만든다. 발생한 경고(스칼라 last-wins 충돌 등)는 반환값에 모아
-/// 호출자가 로그로 남긴다. 비어 있으면 빈 object 를 반환.
+/// 입력 순서대로 병합하고 경고를 함께 반환한다. 입력이 없으면 빈 객체를 반환한다.
 pub(crate) fn merge_contents(
     contents: &[(String, Value)],
 ) -> Result<(Value, Vec<String>), MergeError> {
@@ -114,9 +105,7 @@ fn merge_value(
     }
 }
 
-/// `permissions.deny` 에 있는 항목을 `permissions.allow` 에서 제거한다. deny 가
-/// 없으면 no-op. 이 함수 호출 전에 `permissions.allow`/`deny` 는 이미 union 이
-/// 끝난 상태여야 한다(재귀 배열 병합이 처리).
+/// 배열 병합을 마친 뒤 deny와 같은 항목을 allow에서 제거한다.
 fn enforce_deny_beats_allow(root: &mut Value) {
     let Some(perms) = root.get_mut("permissions").and_then(|p| p.as_object_mut()) else {
         return;
@@ -201,8 +190,7 @@ mod tests {
         assert_eq!(allow, vec!["Read".to_string(), "Write".to_string()]);
     }
 
-    /// 보안 회귀 테스트 — deny 프로필과 allow 프로필을 조합해도 샌드박스가
-    /// 풀리면 안 된다 — 적용 순서를 뒤집어도 deny 가 이긴다는 것을 JSON 레벨에서 고정한다.
+    /// deny에 있는 권한이 병합 후 allow에 남지 않아야 한다.
     #[test]
     fn deny_beats_allow_even_when_allow_profile_applied_later() {
         let deny_profile = json!({"permissions": {"deny": ["Bash"]}});
@@ -221,8 +209,7 @@ mod tests {
         assert!(deny.iter().any(|v| v == "Bash"));
     }
 
-    /// allow 에 **둘**을 둔다. 하나만 두면 "deny 된 것만 뺐다" 와 "allow 를 통째로
-    /// 비웠다" 가 같은 관측이 되고, 권한 병합에서 그 둘은 전혀 다른 사고다.
+    /// allow를 통째로 비우는 오류도 잡도록 deny에 없는 항목을 함께 넣는다.
     #[test]
     fn deny_beats_allow_regardless_of_profile_order() {
         let deny_profile = json!({"permissions": {"deny": ["Bash"]}});

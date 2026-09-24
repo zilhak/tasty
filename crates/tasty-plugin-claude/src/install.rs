@@ -1,10 +1,4 @@
-//! `~/.claude/settings.json` 머지 로직.
-//!
-//! 호스트에 있던 install/uninstall helper 를 1:1 옮긴 것. cutover 로 호스트
-//! 측은 제거됐고 본 모듈이 단일 출처다.
-//!
-//! `is_tasty_stop_hook_installed`는 tasty Stop hook 설치 여부를 점검하는
-//! 별도 노출 함수다 — 실사용 소비자가 생긴 적은 없다.
+//! ~/.claude/settings.json에 Tasty 훅을 추가·갱신·제거한다.
 
 use std::path::PathBuf;
 
@@ -12,33 +6,10 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use tasty_plugin_sdk::i18n::Translator;
 
-/// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
-/// `(claude_event_name, tasty_hook_token, matcher)` 3-튜플. 정의는 이 목록 하나뿐이다 —
-/// `profile.rs`(내장 훅 나열) · `hook.rs` 는 이것을 읽을 뿐 사본을 두지 않는다.
-///
-/// `UserPromptSubmit` 은 child 가 *2 번째 이후 prompt* 를 받을 때 ClaudeState 의
-/// idle=true (직전 Stop hook 잔재) 를 clear 하는 데 필수. 미등록 시 multi-round
-/// 대화에서 idle 상태 조회(`terminal.children` 등)가 *진짜 active 인 child* 를
-/// idle 로 잘못 보고하는 transient state bug 발생 (구현 중 확인됨).
-///
-/// `PreToolUse`/`PostToolUse` 는 matcher `"AskUserQuestion"` 으로 좁혀 그 툴
-/// 호출에만 발화한다(나머지는 matcher `""` 로 전부 받는다). 실측(실제 Claude Code
-/// 를 띄워 hook stdin payload 를 덤프해 확인)으로 근거를 얻었다:
-/// - `AskUserQuestion` 답변은 `UserPromptSubmit` 을 발생시키지 않는다(같은 프롬프트
-///   turn 안의 tool 상호작용이라 새 프롬프트로 카운트되지 않음) — 그래서 기존
-///   `UserPromptSubmit`(→active) 만으로는 needs_input 해제 시점을 잡을 수 없다.
-///   `PostToolUse`/`AskUserQuestion` 이 답변 즉시(관찰상 `duration_ms: 0`) 발화해
-///   그 해제 신호를 정확히 제공한다 — 그래서 `PreToolUse` 단독이 아니라 반드시
-///   짝을 이뤄 추가한다.
-/// - `PreToolUse`/`AskUserQuestion` 은 인터랙티브 선택 UI 가 뜨기 **전에** 발화하고
-///   `tool_input.questions` 를 담고 있어, "질문을 막 띄우려는 참"을 구조적으로
-///   (matcher 로 tool 이름 자체를 보증) 정밀하게 잡는다.
-///
-/// `StopFailure` 는 API 에러(재시도를 다 쓴 529 · rate limit · 인증 실패 …)로 턴이 끝날
-/// 때 `Stop` **대신** 발화한다. 이것이 없으면 그 턴은 끝났다는 신호가 하나도 오지 않아
-/// 상태가 직전 `UserPromptSubmit` 이 남긴 `active` 에 머물고, 부모 완료 알림도 나가지
-/// 않는다 — `UserPromptSubmit` 미등록 때와 같은 부류의 상태 오보고다. matcher 는 `""`
-/// (에러 종류 전부) — 종류는 stdin payload 의 `error` 로 받아 plugin 이 가른다.
+/// 자동 등록할 (Claude 이벤트, Tasty 훅 이름, matcher) 목록.
+/// UserPromptSubmit은 다음 턴의 상태를 active로 바꾼다.
+/// AskUserQuestion의 전후 훅은 입력 대기와 응답 이후 상태를 구분한다.
+/// StopFailure는 API 오류로 끝난 턴도 상태·알림에 반영하기 위해 등록한다.
 pub const MANAGED_HOOKS: &[(&str, &str, &str)] = &[
     ("Stop", "stop", ""),
     ("Notification", "notification", ""),
@@ -56,42 +27,16 @@ fn tasty_hook_marker(event_token: &str) -> String {
     format!("tasty claude hook {}", event_token)
 }
 
-/// `settings.json` / 세션 프로필에 기록되는 hook 명령의 **단일 출처**.
-///
-/// 형태: `if [ -n "$TASTY_SURFACE_ID" ]; then <argv> || true; fi`
-///
-/// **왜 `A && B || true` 가 아니라 `if` 인가** — 옛 형태에서 `|| true` 는 서로 다른
-/// 두 가지를 동시에 삼켰다:
-/// 1. `$TASTY_SURFACE_ID` 미설정(= tasty 밖에서 Claude Code 를 쓰는 사용자) →
-///    조용히 성공해야 하는 **정당한 경우**.
-/// 2. `tasty claude hook` 자체의 실패 → 상태 push 유실인데 아무 흔적도 안 남는
-///    **문제인 경우**.
-///
-/// 두 경우가 한 연산자에 묶여 있어 분리 없이 `|| true` 를 떼면 1 번이 깨진다.
-/// 가드를 `if` 로 올려 두면 1 번은 블록에 진입조차 하지 않고(가드 자체가 명시적
-/// 성공 종료), 안쪽 `|| true` 는 오직 2 번만 담당한다 — 실패 처리 정책을 바꿀 때
-/// 손댈 지점이 한 군데로 좁혀진다.
-///
-/// **안쪽 `|| true` 를 지금 떼지 않는 이유**: hook 의 비-0 exit 를 Claude Code 가
-/// 어떻게 다루는지(무시/경고/턴 차단)는 외부 도구 런타임 동작이라 이 저장소에서
-/// 확인할 수 없다. 실패의 **기록**은 CLI 쪽(`tasty_cli::hook_failure`)이 IPC 와
-/// 무관한 로컬 파일로 남기므로, exit code 를 노출하지 않아도 관측 가능성 목적은
-/// 달성된다. 노출 여부는 런타임 실측 뒤에 결정한다.
-///
-/// **marker 호환**: [`tasty_hook_marker`] 는 `"tasty claude hook <token>"` substring
-/// 으로 기존 entry 를 찾는다. 이 형태는 그 substring 을 그대로 포함하므로 기존
-/// 설치본의 in-place upgrade 경로가 계속 발동한다(깨지면 옛 entry 가 남은 채 새
-/// entry 가 추가돼 hook 이 두 번 발화한다).
+/// settings.json과 세션 프로필에서 공유하는 훅 명령.
+/// TASTY_SURFACE_ID가 없으면 호출하지 않고 성공으로 끝낸다.
+/// 값이 있으면 호출하되 실패 코드가 세션을 막지 않도록 || true를 붙인다.
+/// IPC 실패 기록은 CLI의 hook_failure가 담당한다.
+/// 기존 설치 항목을 찾아 갱신할 수 있도록 tasty_hook_marker 문자열을 유지해야 한다.
 pub(crate) fn tasty_guarded_command(argv: &str) -> String {
     format!("if [ -n \"$TASTY_SURFACE_ID\" ]; then {argv} || true; fi")
 }
 
-/// settings.json에 실제로 기록되는 명령 문자열.
-///
-/// `session_id` 와 `message` 등 hook 별 가변 데이터는 Claude Code 가 stdin 으로
-/// 흘려보내는 JSON payload 에서 `tasty claude hook` CLI 가 직접 읽어 채운다
-/// (매니페스트 `stdin_json = true` + `stdin_field` 매핑). 그래서 명령 문자열은
-/// 어느 event 에서도 동일한 형태로 충분하다.
+/// 이벤트 이름만 넣은 명령을 만든다. 세션 id·메시지 등은 CLI가 stdin JSON에서 읽는다.
 fn tasty_hook_command(event_token: &str) -> String {
     tasty_guarded_command(&format!("tasty claude hook {event_token}"))
 }
@@ -117,8 +62,7 @@ fn entry_matches_marker(entry: &Value, marker: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 비-테스트 빌드에서 유일한 호출자가 `is_tasty_stop_hook_installed`(그 자체도
-/// 실사용처 없음)뿐이라 함께 개별 억제한다. 테스트에서는 직접 호출된다.
+/// 현재 제품 호출은 설치 확인 함수뿐이며, 단위 시험에서도 직접 사용한다.
 #[allow(dead_code)]
 pub(crate) fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
     let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else {
@@ -130,9 +74,7 @@ pub(crate) fn is_marker_installed_in_value(root: &Value, event_name: &str, marke
     arr.iter().any(|entry| entry_matches_marker(entry, marker))
 }
 
-/// `~/.claude/settings.json`을 읽어 tasty Stop hook이 설치돼 있는지. 파일이
-/// 없으면 false. 별도 노출 함수로 만들어졌으나 실사용 소비자가 생긴 적이
-/// 없다 — 삭제 대신 유지, 개별 억제만 부여.
+/// Stop 훅 설치 여부를 읽는다. 파일이 없으면 false다. 현재 제품 내 호출자는 없다.
 #[allow(dead_code)]
 pub(crate) fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
     let path = claude_settings_path(tr)?;
@@ -174,13 +116,7 @@ pub(crate) fn install_hooks_in_value(
                 anyhow::anyhow!(tr.t_fmt("claude.install.hooks_event_not_array", event_name))
             })?;
 
-        // 기존에 marker 가 일치하는 entry 가 있으면, 그 entry 의 matcher 와 그 안의
-        // hook 명령 문자열을 canonical 한 새 값으로 갱신한다. 옛 버전이 설치한 잘못된
-        // 명령(예: `tasty claude hook session-start --session ${CLAUDE_SESSION_ID}`)
-        // 이나 옛 matcher 가 그대로 남아 있어도, install 을 재실행하면 자동으로 최신
-        // 형태로 upgrade 된다(matcher 비교를 넣지 않으면 command 문자열만 최신화되고
-        // matcher 는 옛 값에 고정돼버린다 — `PreToolUse`/`PostToolUse` 처럼 matcher 가
-        // 의미를 갖는 항목의 향후 matcher 변경 시 이 경로가 필요하다).
+        // 기존 Tasty 항목은 중복 추가하지 않고 matcher와 명령을 현재 값으로 갱신한다.
         let mut upgraded = false;
         for entry in arr.iter_mut() {
             if !entry_matches_marker(entry, &marker) {
@@ -354,8 +290,7 @@ mod tests {
         }
     }
 
-    /// 위 테스트와 `install_is_idempotent` 는 `MANAGED_HOOKS` 를 순회해 기대값을 만들므로 항목이 빠져도
-    /// 초록이다. 이름으로 박아 두어야 `StopFailure` 배선이 사라질 때 이 자리가 빨개진다.
+    /// MANAGED_HOOKS 순회로 만든 기대값과 별도로 StopFailure 등록을 확인한다.
     #[test]
     fn install_adds_stop_failure_entry_exactly_once() {
         let mut root = json!({});
@@ -369,9 +304,7 @@ mod tests {
 
     #[test]
     fn install_upgrades_stale_command() {
-        // 옛 install 이 남긴 잘못된 SessionStart command 문자열이, 재 install 시
-        // canonical 한 새 형태로 자동 갱신되어야 한다. 사용자가 uninstall→install
-        // 수작업을 하지 않아도 복원이 정상화되도록.
+        // 이전 명령을 재설치하면 기존 항목의 명령만 갱신해야 한다.
         let stale_command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start --session ${CLAUDE_SESSION_ID} || true";
         let mut root = json!({
             "hooks": {
@@ -434,9 +367,7 @@ mod tests {
 
     #[test]
     fn install_upgrades_stale_matcher() {
-        // 멱등성 점검: matcher 없이(빈 문자열로) 깔려있던 옛 entry 를 재-install 하면
-        // canonical matcher("AskUserQuestion")로 갱신돼야 한다 — command 문자열만
-        // 비교하던 옛 upgrade 로직이라면 이 매처 드리프트를 감지하지 못했을 것이다.
+        // 이전 matcher도 재설치로 갱신해야 한다.
         let mut root = json!({
             "hooks": {
                 "PreToolUse": [
@@ -471,9 +402,7 @@ mod tests {
 
     #[test]
     fn install_preserves_other_hooks() {
-        // `PreToolUse` 는 이제 tasty 도 관리하는 event(matcher "AskUserQuestion")라,
-        // 사용자가 그 아래 다른 matcher("Bash")로 넣어둔 entry 와 공존해야 한다 —
-        // tasty entry 는 *추가*될 뿐 사용자 entry 를 건드리거나 대체하지 않는다.
+        // 같은 이벤트 아래의 사용자 matcher·명령은 그대로 유지한다.
         let mut root = json!({
             "hooks": {
                 "PreToolUse": [
@@ -541,10 +470,7 @@ mod tests {
         assert!(is_marker_installed_in_value(&root, "Stop", &marker));
     }
 
-    /// 모든 hook event 의 명령 문자열이 동일한 단순 형태인지 검증한다. session_id
-    /// 등 가변 데이터는 stdin JSON 으로 흐르므로, 명령 자체는 event 토큰만 다르다.
-    /// (옛 버전이 `--session ${CLAUDE_SESSION_ID}` 같은 쉘 확장에 의존하다 동작
-    /// 실패했던 회귀를 막는다.)
+    /// 가변 데이터는 stdin으로 받으므로 명령에는 이벤트 이름만 달라야 한다.
     #[test]
     fn hook_command_matches_host_format() {
         assert_eq!(
@@ -561,9 +487,7 @@ mod tests {
         );
     }
 
-    /// 가드는 **`if` 블록**이어야 한다 — `A && B || true` 형태로 되돌아가면
-    /// "TASTY_SURFACE_ID 미설정"(정당한 침묵)과 "hook 명령 실패"(관측해야 할 유실)가
-    /// 다시 한 연산자에 묶여 실패 처리 정책을 분리할 수 없게 된다.
+    /// 환경 값이 없는 경우와 호출 실패 처리를 구분하도록 if 블록을 유지한다.
     #[test]
     fn hook_command_separates_guard_from_failure_handling() {
         for (_, token, _) in MANAGED_HOOKS {
@@ -580,9 +504,7 @@ mod tests {
         }
     }
 
-    /// 명령 문자열이 바뀌어도 marker 매칭은 계속 성립해야 한다. 깨지면 기존
-    /// 설치본의 in-place upgrade 경로가 발동하지 않아 **옛 entry 가 남은 채 새
-    /// entry 가 추가되고 hook 이 두 번 발화**한다.
+    /// 명령 형식이 바뀌어도 기존 항목을 찾는 marker는 유지해야 한다.
     #[test]
     fn new_command_still_contains_marker() {
         for (_, token, _) in MANAGED_HOOKS {
@@ -594,10 +516,7 @@ mod tests {
         }
     }
 
-    /// 옛 프로덕션 문자열(`[ -n ... ] && tasty claude hook <t> || true`)이 박힌
-    /// settings.json 에 install 을 다시 걸면, entry 가 늘지 않고 command 만 새
-    /// 형태로 **제자리 갱신**된다. 이 저장소가 실제로 배포했던 문자열이라
-    /// 기존 사용자 전원이 통과하는 경로다.
+    /// 이전 버전 명령도 중복 추가 없이 현재 명령으로 갱신해야 한다.
     #[test]
     fn install_upgrades_previous_production_command_in_place() {
         let legacy = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
@@ -627,9 +546,7 @@ mod tests {
         assert_eq!(root["hooks"]["Stop"].as_array().unwrap().len(), 1);
     }
 
-    /// 가드 동작 회귀 — `$TASTY_SURFACE_ID` 가 없으면 조용히 exit 0 이어야 한다
-    /// (tasty 밖에서 Claude Code 를 쓰는 사용자에게 소음을 내지 않는다).
-    /// 실제 `sh` 로 실행해 형태가 아니라 **동작**을 고정한다.
+    /// 실제 셸에서 TASTY_SURFACE_ID가 없으면 호출 없이 성공하는지 확인한다.
     #[cfg(unix)]
     #[test]
     fn guard_exits_silently_without_surface_id() {
@@ -650,9 +567,7 @@ mod tests {
         );
     }
 
-    /// 반대쪽 — surface id 가 있으면 블록에 진입한다. 안쪽 `|| true` 때문에 최종
-    /// exit 는 여전히 0 이지만(에이전트 턴 방해 금지), 명령이 **실행은 됐다**는 것을
-    /// stderr 로 확인한다(가드가 과하게 막고 있지 않다는 증거).
+    /// 대상 id가 있으면 명령을 시도하고 실패해도 최종 종료 코드는 0이어야 한다.
     #[cfg(unix)]
     #[test]
     fn guard_runs_command_when_surface_id_present() {
