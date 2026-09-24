@@ -136,11 +136,6 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "임계값을 품질 공식에서 도출하지 않았다는 결정 당시의 선택 근거",
     ),
     (
-        "crates/tasty-design-tokens/src/dtcg/duration_accessor.rs",
-        Kind::Dated,
-        "과거 사건 서술 — 파일을 가른 이유",
-    ),
-    (
         "scripts/check-frozen-sum-ratchet.sh",
         Kind::Dated,
         "옛 어긋남 사건의 기록 · 계측 편향의 시점 재측정",

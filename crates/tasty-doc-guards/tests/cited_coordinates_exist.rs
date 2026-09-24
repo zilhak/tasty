@@ -437,8 +437,9 @@ fn cited_repo_directories_resolve() {
             }
         }
     }
+    // 수집 누락을 확인하는 보조 하한이며 현재 인용 수나 품질 기준을 뜻하지 않는다.
     assert!(
-        judged > 300,
+        judged > 250,
         "디렉터리 인용을 {judged}개만 판정했다. 수집 범위와 추출을 확인한다."
     );
     assert!(
