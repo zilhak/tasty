@@ -58,13 +58,12 @@ pub enum ReadCommands {
         /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
-        /// Number of lines to read from the bottom, counted from the end of the
-        /// content: trailing blank rows are skipped and the shortfall is filled from
-        /// scrollback. The ceiling is the content, not the grid — rows below the last
-        /// printed line never come back, so a mostly empty screen returns fewer than N
-        /// even with scrollback to spare. On the alternate screen (a full-screen TUI)
-        /// the fill comes from the *primary* buffer's scrollback and arrives with no
-        /// marker, so a large N can prepend shell history above the TUI's own screen.
+        /// Read up to N lines ending at the last nonblank screen row. Trailing blank
+        /// screen rows are skipped; any shortfall is filled from the primary scrollback.
+        /// If the screen content and scrollback together contain fewer than N lines,
+        /// return all available lines. On the alternate screen (a full-screen TUI),
+        /// primary scrollback is still prepended without a marker, so the result may
+        /// include shell history before the TUI's screen text.
         #[arg(long)]
         lines: Option<usize>,
         /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.
