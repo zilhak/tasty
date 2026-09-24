@@ -1,15 +1,10 @@
-# Design ↔ Gallery ↔ Host 3자 매핑
+<a id="design--gallery--host-3자-매핑"></a>
 
-`design-parity` 작업의 컴포넌트 매핑 기록. 디자인 jsx 하위 컴포넌트 ↔ tasty 호스트 함수 ↔
-갤러리(`tasty-gallery`) 카탈로그 항목을 1:1 로 연결한다. 다음 작업이 바로 찾도록 한다.
+# 디자인·갤러리·본체 대응표
 
-> 디자인 정합은 **구조 축 + 토큰 축** 둘 다다. 이 매핑(구조 축)으로 함수를 찾았으면, 구조 전사
-> 함정은 [design-parity-notes.md](design-parity-notes.md), **토큰 규칙(Theme 토큰 강제·4px·14px·1px·
-> 하드코딩 금지)은 [theme.md "UI 디자인 규칙"](theme.md#ui-디자인-규칙-필수)** 을 함께 본다.
+디자인 JSX의 컴포넌트, 본체 함수, 갤러리 카탈로그 항목의 대응표다. 구조를 옮길 때의 제약은 [디자인과 구현의 차이](design-parity-notes.md), 색·치수·배율 규칙은 [테마 가이드](theme.md#ui-디자인-규칙-필수)를 함께 확인한다.
 
-갤러리 실행: `cargo run -p tasty-gallery` (상단 toolbar 에서 theme·UI scale 토글, 좌측
-카탈로그 선택). 등록: `crates/tasty-gallery/src/catalog/{components,widgets}/<name>.rs` 의
-`draw(ui, theme)` + `catalog.rs::pages()` 의 해당 페이지에 `section(...)`/`spec(...)` 한 줄.
+갤러리는 `cargo run -p tasty-gallery`로 실행한다. 상단 도구 모음에서 테마·UI 배율을 바꾸고 왼쪽 카탈로그에서 예제를 선택한다. 등록 위치는 `crates/tasty-gallery/src/catalog/{components,widgets}/<name>.rs`의 `draw(ui, theme)`와 `catalog.rs::pages()`의 `section(...)`·`spec(...)`이다.
 
 ## remote_tool (Overlays)
 
@@ -36,57 +31,17 @@
 Attach 갤러리 specimen 은 디자인 **gallery 미러**(`gallery/overlays-shared.jsx` `RemoteFrame
 tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전사한 것이다.
 
-**세그먼트 색은 2026-09-17 결정(R1)으로 닫혔다.** 한때 갤러리 미러가 active 를
-`surface-active` 로, 본체가 `accent-primary` 로 그려 갈려 있었는데, 그것은 두 디자인 소스가
-서로 달랐기 때문이고 **디자인 쪽이 미러를 틀린 것으로 판정해 고쳤다.** 확정 규칙은 두 컴포넌트를
-가른다 — **밑줄은 view 를 바꾸고(탭 스트립), 채움은 값을 바꾼다(세그먼트).** 그래서 탭 스트립은
-2px `accent-primary` 밑줄 + weight 600 이고 세그먼트는 `accent-primary` 채움 + `text-on-accent`
-잉크다. `surface-active` 는 **행 선택 채움**이라 어느 쪽도 아니다. 본체(`tasty_ui_widgets::
-segmented`)와 갤러리(`components/remote.rs` `seg_chip`)가 지금 둘 다 이 규칙을 따른다.
+탭 스트립과 세그먼트는 역할과 색이 다르다. 화면을 전환하는 탭은 2px `accent-primary` 밑줄과 weight 600을 사용한다. 값을 선택하는 세그먼트는 `accent-primary` 채움과 `text-on-accent` 글자를 쓴다. `surface-active`는 행 선택용이므로 두 컴포넌트에 대신 쓰지 않는다. 본체의 `tasty_ui_widgets::segmented`와 갤러리의 `seg_chip`이 같은 규칙을 따른다.
 
-**로컬 SSH config 섹션은 2026-09-17 결정(R2)으로 디자인 원본을 얻었다** — 한때 이 자리에
-"디자인 원본 없음" 이라 적혀 있었고 본체가 `ProfileRow` 3행 레이아웃의 축약형으로 근사하고
-있었는데, 확정 시안(`gallery/overlays-shared.jsx` `LocalSshSection`, `ui_kits/terminal/
-overlays/remote_tool.jsx` 가 소비)이 다른 모양을 정했다: 카드가 아니라 **섹션 헤더**(11px
-대문자 라벨 + mono 경로 + 우측 개수), 3줄이 아니라 **2줄 행**(alias / `user@host:port` mono),
-**행 아이콘 버튼 없음** — ghost `Add profile` 하나이고 이미 등록된 호스트는 `in profiles` Tag,
-빈 상태·읽기 실패는 `text-muted` 한 줄(경고 톤 아님). 본체와 갤러리가 지금 같은 함수
-(`tasty_ui_widgets::draw_local_ssh_section`)를 부르므로 두 사본이 갈릴 자리가 없다.
+로컬 SSH config는 카드 대신 섹션 헤더와 2줄 행으로 표시한다. 헤더는 11px 대문자 라벨·고정폭 경로·오른쪽 개수이며, 행은 alias와 `user@host:port`다. 행 아이콘 버튼 대신 ghost `Add profile`을 사용하고, 등록된 호스트에는 `in profiles` Tag를 표시한다. 빈 상태와 읽기 실패는 `text-muted` 한 줄로 알린다. 본체와 갤러리 모두 `tasty_ui_widgets::draw_local_ssh_section`을 호출한다.
 
-전사에서 **뺀 것은 하나**다. canonical 의 `padding` 세로 성분 중 `2px`(헤더 위·빈 줄 위)는
-4px 그리드 밖이고 대응 토큰이 없어 넣지 않았다 — 그만큼(2px) 더 붙어 그려진다. 가로 `4px`
-들여쓰기는 `space-xs` 로 그대로 넣었다(그리드 안이고 "한 tier 아래" 를 말하는 성분이다).
+디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 자간 `letterSpacing: 0.06em`은 `SECTION_HEADING_TRACKING_EM`(0.06)에 글자 크기를 곱해 `TextFormat::extra_letter_spacing`으로 적용한다. caption 11px에서는 0.66px이며, 사이드바의 0.07em(10px에서 0.7px)과 같은 방법이다.
 
-`letterSpacing: 0.06em` 은 **넣었다.** egui 에 채널이 있다 — `TextFormat::extra_letter_spacing`
-이고, 이 레포는 사이드바 섹션 헤딩에서 이미 같은 축을 쓴다(`0.07em` = 10px 에서 0.7px).
-공용 view 는 `SECTION_HEADING_TRACKING_EM`(0.06)을 폰트 크기에 곱해 넘긴다(caption 11px 에서
-0.66px). **1px 밑이라 사라지지 않는다** — 값을 0 으로 두고 같은 캡처를 다시 찍어 헤딩 띠만
-비교하면 **1201 px 이 달라지고**, 단어 경계가 붙은 `FROMSSHCONFIG` 가 `FROM SSH CONFIG` 로
-갈린다. (한때 이 자리에 "egui 가 자간을 노출하지 않아 넣을 수 없다" 고 적혀 있었고 그것은
-거짓이었다.)
+`draw_remote_tool_popup`은 AppState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 내부 그리기 함수는 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
 
-**컨테이너와 필터는 model-view split 뒤에 등록됐다.** `draw_remote_tool_popup` 자체는 여전히
-`(ui, &mut AppState, &mut CoreState)` 라 갤러리 `Spec.draw`(`(ui, &Theme)`)가 부를 수 없다 —
-그래서 등록된 것은 **그 popup 이 부르는 view 들**이다. 상태·파일 IO(`RemoteProfiles::load()` /
-`Passkeys::load()`)·egui memory(`FILTER_MEMORY_ID` · `FILTER_POPUP_ID`)·배치는 본체 wrapper 가
-그대로 들고, 그 안의 그리기만 `crates/tasty-ui-widgets/src/remote_tool.rs` 로 내려가 props 를
-받는다. 갤러리가 같은 함수를 부르므로 두 사본이 갈릴 자리가 없다(변이로 확인한다 — 공용 view 를
-한 줄 고치면 specimen 이 따라 바뀐다).
+필터 예제는 닫힘과 열림 모습을 나란히 보여 준다. 열림 전이를 재현하지 않으며 목록 높이를 먼저 확보한다. 본체 팝업과 달리 갤러리 카드의 남은 높이가 작으면 같은 ScrollArea도 마지막 행을 자르기 때문이다.
 
-필터 specimen 은 **열림 상태를 그대로 세워 보인다.** 본체는 `popup_above_or_below_widget` 로
-버튼 아래에 띄우지만 specimen 이 보이려는 것은 열림 전이가 아니라 두 표면의 생김새다. 그 대신
-specimen 은 목록 높이를 먼저 잡아 둔다 — 공용 view 의 `ScrollArea` 는 **남은 높이**가 상한보다
-작으면 그만큼 자르는데, 본체는 popup Area 가 높이를 넉넉히 주는 반면 카드 안에서는 남은 높이가
-0 에 가깝다. 그렇게 하지 않으면 같은 함수가 specimen 에서만 마지막 행을 자른다(실측).
-
-**드롭다운 폭은 디자인과 다르다 — 다만 차는 6 px 이지 20 px 이 아니다.** 확정 시안
-(`RemoteFrame` 의 filter 블록)은 `width: 236` 이고 본체 `FILTER_DROPDOWN_MIN_WIDTH` 는
-216 인데, **두 값의 좌변이 다르다** — 시안 쪽은 테두리 박스이고 상수 쪽은 내용 폭이다.
-실측으로 같은 좌변에 세운다: scale 1.0 · 창 1280×720 에서 드롭다운을 열고 테두리 색
-`(204, 208, 218)` 이 나타나는 열을 읽으면 테두리 박스가 x 874..1103 = **230 px** 이다
-(프레임이 먹는 폭 = 좌우 합 14 px). 216 은 이 결정들보다 앞서 정해진 값이고 2026-09-17
-결정(R1·R2·R3)이 다루지 않았다 — 남은 6 px 을 어느 쪽으로 맞출지는 디자인이 정한다.
-그동안 갤러리는 본체 상수를 **그 자리에서 읽어** 두 쪽이 갈리지 않게만 한다.
+필터 폭은 아직 디자인과 차이가 있다. 디자인의 236px는 테두리를 포함한 폭이고 본체 `FILTER_DROPDOWN_MIN_WIDTH` 216은 내용 폭이다. 기록된 측정(scale 1.0, 창 1280×720)에서는 테두리 색 `(204, 208, 218)`의 x 범위가 874..1103으로 전체 230px였다. 좌우 프레임이 14px를 차지하므로 차이는 20px가 아닌 6px다. 이 차이의 해소는 디자인 결정이 필요하다. 갤러리는 본체 상수를 읽어 두 구현의 폭을 일치시킨다.
 
 ## remote_attach — RA02 "Add remote workspace" (Overlays)
 
@@ -134,44 +89,33 @@ specimen 은 목록 높이를 먼저 잡아 둔다 — 공용 view 의 `ScrollAr
 이어지고, `poll_create`가 받은 새 workspace ID는 `push_attach`를 통해 기존 attach 큐에
 합류한다. 상세 동작은 [remote-attach](../../features/remote-attach/index.md)의 GUI picker 절을 따른다.
 살아 있는 터널 포트로 생성 요청을 보내며 왕복 상한은 `src/adapters/ui/popup/remote_attach.rs`의
-상수를 따른다. 갤러리 specimen이 gallery-first로 먼저 들어간 순서다(ADR-0035,
-[gallery-first](../../dev-guide/gallery-first.md)).
+상수를 따른다. 새 예제의 반영 순서는 [gallery-first](../../dev-guide/gallery-first.md)를 따른다.
 
 ## switch_overlay (Overlays)
 
 디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw
-(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/view.rs` full/collapsed). 갤러리 specimen
-이 본체보다 먼저 들어갔고(gallery-first, ADR-0035), 본체 배선은 아래 표대로 탭·사이드바 모두 구현돼 있다.
+(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/view.rs` full/collapsed). 탭·사이드바의 본체와 갤러리 대응은 아래 표와 같다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
-| `NumCap`(키캡) | `keycap_at` (헬퍼) — 공용 위젯 `tasty_ui_widgets::num_keycap` 호출 | ✅ `switch_overlay::paint_keycap` (공통, P2a) — 같은 그림을 `paint_num_keycap` 으로 호출 |
-| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar/view.rs` `draw_pane_tab_bars_view` → `tab_bar/tab.rs` `draw_tab` (leading 교체, P2a) |
-| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
-| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
+| `NumCap`(키캡) | `keycap_at` (헬퍼) — 공용 위젯 `tasty_ui_widgets::num_keycap` 호출 | ✅ `switch_overlay::paint_keycap` (공통) — 같은 그리기 함수를 `paint_num_keycap` 으로 호출 |
+| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar/view.rs` `draw_pane_tab_bars_view` → `tab_bar/tab.rs` `draw_tab` (아이콘 위치에 표시) |
+| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (상태 점 위치에 표시) |
+| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (아바타 위치에 표시) |
 | `CatSwitchSidebarMock` | `full_cat` → `draw_category` (`switch-cat` specimen, full) | ✅ `sidebar/view.rs` (헤더 우측 키캡, `category_switch_held`) |
 | `CatSwitchRailMock` | `rail_cat` → `draw_category` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_rail_category_button` (`---` 중앙 키캡) |
 
-**본체 배선 (P2a 탭 + P2b 사이드바 모두 구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs`
-— modifier↔대상 판정(`switch_target_for`, numeric.rs 규칙 1:1) + 키캡
-painter(`paint_keycap`, 갤러리 `keycap_at` 과 같은 `paint_num_keycap` 호출) + 숫자 매핑(`tab_digit` 0~9/`workspace_digit`
-1~9). **탭(P2a)**: `tab_bar.rs` wrapper 가 `state.switch_overlay()` 스냅샷(`ModifiersChanged` 로만
-갱신, `Tab` 대상이면 focused pane id 동봉)에서 `switch_overlay_pane: Option<u32>` 를 뽑아
-`PaneTabBarsProps` 로 전달 → view 는 `tab_keycap_for(switch_overlay_pane, pane_id, i)` 로 **focused
-pane 의 탭바에서만** 키캡을 그린다(비-focused pane 은 held 여도 아이콘 유지 — 단축키가 focused pane
-탭만 전환하므로). **사이드바(P2b)**: `sidebar/{full,collapsed}.rs` wrapper 가 `ctx.input` modifier +
-`engine.settings.keybindings` 로 `workspace_switch_held` bool 을 계산해 `Sidebar{Full,Collapsed}Props.
-workspace_switch_held` 로 전달(워크스페이스 전환은 전역이라 pane 한정 불필요). view 가 leading
-indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_keycap`. 모두 16px slot
-in-place 교체라 리플로 0, release 시 원복. 사용자 입력 modifier 만 보므로 IPC/에이전트 강제
-표시 불가(사용자 입력 전용).
+공용 모듈 `src/adapters/ui/switch_overlay.rs`가 보조키와 대상의 대응(`switch_target_for`), 키캡 그리기(`paint_keycap`), 숫자 매핑(`tab_digit` 0~9, `workspace_digit` 1~9)을 담당한다.
+
+탭바는 `ModifiersChanged`에서 갱신한 `state.switch_overlay()`로부터 `switch_overlay_pane: Option<u32>`를 받아 `PaneTabBarsProps`에 전달한다. `tab_keycap_for`는 포커스된 pane에만 키캡을 표시한다. 단축키도 그 pane의 탭만 전환하므로 다른 pane은 기존 아이콘을 유지한다.
+
+사이드바의 `full`·`collapsed` wrapper는 입력 보조키와 설정에서 `workspace_switch_held`를 계산한다. workspace 전환은 pane에 한정되지 않는다. 키캡은 기존 탭 아이콘·상태 점·레일 아바타의 16px 슬롯을 그대로 사용하고 키를 놓으면 원래 표시로 돌아간다. 실제 사용자 보조키만 읽으므로 IPC로 강제 표시할 수 없다.
 
 **카테고리 quick-switch (기본 Ctrl+Shift, `draw_category`)**: 카테고리는 자기 modifier 필드
-(`category_switch_modifier`, 기본 `"ctrl+shift"`)를 갖는 **독립 1급 축**이다 — 과거 "workspace
-오버레이(Alt) + Shift 파생" 방식은 폐기됐다. `switch_target_for` 가 세 축(탭/워크스페이스/카테고리)
+(`category_switch_modifier`, 기본 `"ctrl+shift"`)를 갖는 별도 설정이다. `switch_target_for` 가 세 축(탭/워크스페이스/카테고리)
 각각의 modifier 조합을 `Combo::parse_modifiers` 로 파싱해 현재 눌린 조합과 **정확히 일치**할 때만
-그 축을 반환하므로(modifier-exclusive, 우선순위 로직 없음) 세 축이 서로 새지 않는다. full 은
-카테고리 헤더 **우측**에 키캡(chevron 은 load-bearing 이라 교체 안 함, status dot 없음), rail 은 `---` 경계
+해당 대상을 반환한다. 다른 보조키가 추가되면 일치하지 않으며 우선순위로 대상을 고르지 않는다. full 은
+카테고리 헤더 **우측**에 키캡(chevron은 접기 상태를 표시하므로 유지, status dot 없음), rail 은 `---` 경계
 **중앙**에 키캡. 번호는 reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 없음. 전환 시 접힘이면 자동
 확장(슬롯 파일 영속) + 그 카테고리 last-active 착지(`state/workspace.rs` `switch_to_category`, 다음/이전
 카테고리 자체 전환은 `next_category`/`prev_category` 가 이 함수를 재사용). folders 토글 게이트.
@@ -187,13 +131,9 @@ discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 �
 approval 사이(디자인 순서와 동일). 3 specimen(tab / workspace / category), workspace·category 는 released /
 held-full / released-rail / held-rail cluster.
 
-**왜 painter 갈래가 따로 있나**: 본체 `kbd()`·`num_keycap()` 은 inline egui 위젯(자체
-allocate)이라 탭 스트립/사이드바 중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서
-`chip.rs` 가 그림을 `paint_num_keycap(painter, theme, center, ..)` 로 뽑아 두고, `num_keycap`
-은 자리를 할당해 그것을 부르고 본체 `paint_keycap` 은 좌표를 넘겨 그것을 부른다 — **갈리는
-것은 자리 계산까지고 형상은 한 벌**이라 레시피 동기화가 필요 없다. 색·치수는
-`switch-overlay-*` component 토큰(전부 `kbd-*` 별칭, active 만 accent_primary /
-text_on_accent)에서 온다. 신규 Theme 필드 없음(P0 확정).
+`kbd()`·`num_keycap()`은 자신의 영역을 할당하는 egui 위젯이라 이미 정해진 16px 슬롯에 바로 넣을 수 없다. 공용 `paint_num_keycap(painter, theme, center, ..)`는 주어진 좌표에 그림만 그린다. `num_keycap`과 본체의 `paint_keycap` 모두 이 함수를 사용한다.
+
+색과 치수는 `switch-overlay-*` component 토큰을 따른다. 모두 `kbd-*` 별칭이며 active만 `accent_primary`·`text_on_accent`를 사용한다. 별도 Theme 필드는 없다.
 
 ## preset demo-layout (Overlays)
 
@@ -254,10 +194,10 @@ registry `display_name_i18n_key` 로 해석하며(미번역/미등록이면 `fal
 로 graceful fallback), `empty` 는 후보에서 제외한다. registry 미주입(갤러리·main
 부재)이면 빈 catalog → 정적 목록으로 떨어진다.
 
-**배선**: `draw_preset_panel`(`src/adapters/ui/preset.rs`)이 선택 preset 으로 `DemoLayout` 을
+**본체 연결**: `draw_preset_panel`(`src/adapters/ui/preset.rs`)이 선택 preset 으로 `DemoLayout` 을
 빌드해 egui temp memory 에 `(key, layout)` 으로 유지(탭 클릭 전환 지속), 남은 영역에 캔버스
 프레임 + `DemoLayout::show`/`show_edit` 렌더. `PresetView` 가 파생한 `KindCatalog` 를
-`draw_preset_panel → draw_preview → DemoLayout` 으로 흘려 설정 화면 드롭다운·mutation 라벨의
+`draw_preset_panel → draw_preview → DemoLayout` 으로 전달해 설정 화면 드롭다운·mutation 라벨의
 kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 인스턴스를 읽고, 확인 시 그
 사본에 draft 를 적용해 저장이 성공해야만 캐시를 바꾼다.
 
@@ -287,14 +227,16 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 `approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
 
-## 공용 crate view specimen (복제 0 — 본체와 같은 함수 호출)
+<a id="공용-crate-view-specimen-복제-0--본체와-같은-함수-호출"></a>
+
+## 공용 그리기 함수를 사용하는 예제
 
 본체 view 를 `crates/tasty-ui-widgets` 로 올려 **본체 wrapper 와 갤러리 specimen 이 같은
 함수를 호출**하는 항목. 아래 "시각 복제 specimen" 과 달리 레이아웃·색·치수를 갤러리가
-재선언하지 않으므로 시각 동기화가 자동이며 수동 검증이 필요 없다. 새 bar/패널은 복제보다
+재선언하지 않으므로 그리기 코드의 차이는 줄어든다. 입력 rect·테마·배율이 다르면 화면도 달라지므로 같은 조건의 캡처 비교는 필요하다. 새 bar/패널은 복제보다
 이 경로를 우선한다([gallery-first](../../dev-guide/gallery-first.md)).
 
-| 디자인 canonical | 공용 crate view | 본체 wrapper | 갤러리 specimen |
+| 디자인 디자인 원본 | 공용 crate view | 본체 wrapper | 갤러리 specimen |
 |---|---|---|---|
 | `gallery/layouts.jsx` **Workspace status bar** (하단 24px 바, 좌 요약 / 우 리마인더) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
 | `gallery/overlays.jsx` `NumCap` (16px 숫자 키캡) | `tasty_ui_widgets::paint_num_keycap` (`crates/tasty-ui-widgets/src/chip.rs`; 레이아웃 갈래는 같은 파일의 `num_keycap`) | `src/adapters/ui/switch_overlay.rs::paint_keycap` (slot 좌표·등장 페이드 alpha) | `switch` (Overlays, `components/switch_overlay.rs::keycap_at`) |
@@ -303,13 +245,15 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 (부유 배치·z-order 는 본체 정책), i18n 라벨·tooltip 문자열(위젯 crate 는 `tasty-i18n`
 비의존 — `multi_select` 와 동일 정책), 글로벌 `theme()` 를 읽는 `status_bar_bottom_inset`.
 
-## Overlay 시각 복제 specimen (본체 의존 0)
+<a id="overlay-시각-복제-specimen-본체-의존-0"></a>
+
+## 본체 화면을 복제한 오버레이 예제
 
 본체 view 의 시각만 로컬 mock props 로 복제한 Overlays 항목. 본체 binary crate(`tasty`)에
 의존 불가하므로 layout·색·폰트·간격·보더는 모두 Theme 토큰에서 가져오고 상태는 mock 으로
 주입한다. 본체 view 변경 시 시각 동기화는 수동 검증.
 
-| 디자인 canonical | 본체 view | 갤러리 specimen |
+| 디자인 디자인 원본 | 본체 view | 갤러리 specimen |
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
@@ -326,31 +270,22 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 
 **`file_handler_picker` 의 세 좌표는 한 형상이다.** 폭 420px · headless 헤더(경로 한 번) · 제목 줄 형식 Tag ·
 후보/Recent 단일 목록 · 2px accent 좌측 바 · `icon · name · origin` 행 · plugin mauve · fallback 안내 띠 ·
-빈 상태 블록 · 264px 목록 상한 + 하단 페이드 · [취소]/[열기] footer. 갤러리는 canonical 의 10 Spec 을 그대로
+빈 상태 블록 · 264px 목록 상한 + 하단 페이드 · [취소]/[열기] footer. 갤러리는 디자인 원본 의 10 Spec 을 그대로
 미러한다(`filehandler` · `-format` · `-recent` · `-fallback` · `-empty` · `-long` · `-headless` · `-footer` ·
 `-rows` · `-default`). 거기에 2026-09-20 결정이 둘을 더한다 — `-when`(상대시간 어휘 6 단계와 예약된 열)과
 `-path-cut`(헤더 경로 앞자름 세 표본). 뒤쪽은 표본을 **본체와 같은 함수**에 넣어 그 자리에서 자른다.
 
-세 좌표가 **그리는 코드를 공유하지는 않는다** — 갤러리 표본은 정적 렌더이고 본체는 상호작용 view 다. 공유하는
-것은 둘이다. 하나는 `crates/tasty-ui-widgets/src/tokens.rs` 의 `FH_*` 전사 치수
-(420 · 14 · 10 · 6 · 5 · 264 · 20 · 32 · 34 · 0.8)이고, 그 값들에는 대응 `Theme` 토큰이 없다. 다른 하나는
-`crates/tasty-ui-widgets/src/file_handler.rs` 의 **모델 규칙**(id 앞자름 · 헤더 경로 앞자름 · 문자 예산)이다 —
-순수 함수라 두 표면이 같은 것을 부를 수 있고, 예전에 id 앞자름이 양쪽에 복제돼 있던 자리를 그것이 대신한다.
-치수 하나는 `Theme` 에서 온다: 예약된 "언제" 열 폭 `component.fh-when-width`(56px). **근거는 "그리드 밖" 이 아니다** — 그중 넷(420 · 264 · 20 · 32)은
-4px 배수라 그리드 위에 있다. 근거는 축이다: 그리드 위에 있는 값도 그것이 재는 것(프레임 폭 · 목록 상한 · 페이드
-높이 · 블록 여백)에 대응하는 semantic 이 없고, 값이 우연히 겹치는 토큰을 부르면 없는 관계가 생긴다. 같은 판정을
-[`design-token-mapping.md`](design-token-mapping.md) 의 `## File handler picker` 절과
-`src/source_guards/on_scale_length_literal.rs` 의 `AREAS` 주석이 적는다.
+디자인·본체·갤러리는 모양을 맞추지만 그리기 코드 전체를 공유하지는 않는다. 갤러리는 정적 예제이고 본체는 상호작용하는 화면이다. 공용 부분은 다음과 같다.
 
-canonical 이 열어 두었던 결정 셋은 닫혔다. footer 의 "Always open …" 체크는 **제거**(picker 는 순수 dispatcher —
-저장되는 바인딩은 보고 되돌릴 자리가 있어야 하고 그 자리는 설정 › 핸들러다), 행 icon 은 action 이 여는 surface
-kind 에서 도출(모르면 `file`), 행 name 은 id 의 마지막 `/` 뒤 조각(선언된 이름이 있으면 그것, 없으면 mono).
+- `crates/tasty-ui-widgets/src/tokens.rs`의 `FH_*` 치수: 420·14·10·6·5·264·20·32·34·0.8. 대응 Theme 토큰이 없어 용도를 명시한 상수로 둔다.
+- `crates/tasty-ui-widgets/src/file_handler.rs`의 ID·헤더 경로 앞자름과 문자 예산 계산.
+- 예약된 “언제” 열의 `component.fh-when-width`(56px)는 Theme에서 읽는다.
 
-갤러리가 canonical 과 **한 자리에서 갈린다**: 디자인의 "Footer — settled" Spec 은 기각된 두 읽기(체크박스 ·
-비활성 체크박스)를 결정 표본으로 함께 렌더하지만, 갤러리는 확정된 footer 하나만 싣는다 — 기각된 읽기를 그리면
-제거하기로 한 문구가 레포에 남는다. 그룹 라벨의 자간도 전사하지 않는다 — egui 에는 채널이 있고
-(`RichText::extra_letter_spacing`), canonical `FileHandlerFrame` 쪽에 값이 없다. 대문자 · 11px ·
-색까지만 전사한다.
+420·264·20·32는 4px 배수지만 해당 역할의 토큰은 없다. 숫자가 같아도 프레임 폭·목록 상한·페이드 높이·블록 여백을 다른 역할의 토큰으로 대체하지 않는다. [토큰 매핑](design-token-mapping.md)의 File handler picker 절과 `src/source_guards/on_scale_length_literal.rs`의 `AREAS`가 같은 구분을 사용한다.
+
+footer에는 “Always open …” 체크박스를 두지 않는다. 파일 피커는 이번 열기만 처리하며 저장되는 연결 설정은 설정 › 핸들러에서 관리한다. 행 아이콘은 action이 여는 surface kind에서 고르고, 알 수 없으면 `file`을 쓴다. 이름은 선언된 이름을 우선하며 없으면 ID의 마지막 `/` 뒤 부분을 고정폭 글꼴로 표시한다.
+
+디자인의 “Footer — settled” 예제에는 기각한 체크박스 두 형태도 있지만 갤러리에는 확정한 footer만 표시한다. 그룹 라벨은 대문자·11px·색을 적용한다. 자간은 egui에 `RichText::extra_letter_spacing`이 없어 생략한 것이 아니라 디자인 `FileHandlerFrame`에 값이 없어서 적용하지 않는다.
 
 ## Overlays — plugins window
 
@@ -398,7 +333,9 @@ TASTY_GALLERY_SIZE=1400x2500 TASTY_GALLERY_SHOT="3@36500:/abs/a.png,3@39000:/abs
 tasty screenshot --path /abs/host.png --window <Tasty Plugins 창 id>
 ```
 
-## Specimen 공용 헬퍼 (dedup)
+<a id="specimen-공용-헬퍼-dedup"></a>
+
+## 갤러리 예제의 공용 헬퍼
 
 specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates/tasty-gallery/src/catalog/`):
 
@@ -408,49 +345,49 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `toast_card.rs` | `tasty-type-appearance` 의 `ToastKind` · `tasty-ui-widgets` 의 `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | info_modal · notification_panel · fullscreen_stage (`draw_title_buttons` 만) |
 
-## Primitive 컴포넌트 레이어 (Components)
+<a id="primitive-컴포넌트-레이어-components"></a>
+
+## 기본 컴포넌트 (Components)
 
 디자인 `components/**` 의 atomic primitive ↔ `tasty-ui-widgets` 공용 함수 ↔ 갤러리
 `Components` specimen 3자 매핑. 본체 팝업과 갤러리가 **동일** `tasty_ui_widgets::*` 를
-호출(mirror 아님 — demo=main). 위젯의 집은 `crates/tasty-ui-widgets/`(메인+갤러리 양쪽 의존).
+호출(mirror 아님 — demo=main). 위젯 구현은 `crates/tasty-ui-widgets/`(메인+갤러리 양쪽 의존).
 
-| 디자인 컴포넌트 | tasty-ui-widgets | 갤러리 specimen | 시각검증 |
-|---|---|---|---|
-| `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` | ✓ port_scanner |
-| `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg, leading_icon/trailing_icon) | `prim_button` | ✓ port_scanner |
-| `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` | ✓ port_scanner |
-| `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` | ✓ port_scanner(PID) |
-| `core/Badge` | `badge` / `badge_dot` | `prim_chips` | ✓ gallery |
-| `core/Kbd` | `kbd`(키캡 시퀀스) | `prim_chips` | ✓ gallery |
-| `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
-| `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
-| `forms/Select` | `select`(토큰 트리거 + egui popup) · `select_or_placeholder`(같은 트리거 + "아직 안 고름" 상태 — 트리거에 placeholder 를 `text_placeholder` 색으로, 메뉴 맨 앞에 sentinel) | `prim_forms` | ✓ gallery |
-| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크 + 일괄 선택/해제 액션 행(opt-in, accent + separator, 스크롤 밖 고정) + 키보드 내비(↓/Enter/Space 열기 · ↑↓/Home/End active 행 이동(disabled 건너뜀) · Space/Enter 토글(안 닫힘) · Esc 닫기(포커스 유지) · Tab 닫고 이동, active 행은 `surface_active` 배경)) | `prim_forms` | ✓ gallery |
-| `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
-| `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` | ✓ gallery |
-| `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
-| `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` | ✓ port_scanner(loading) |
-| `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` | — |
-| `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` | — |
-| `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
-| `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
-| `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | `prim_layout_shell` (Components `Layout shell widgets`) | — |
-| `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` | — |
-| `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택) | `prim_table` (Components `Table · ListCtrl`) | ✓ port_scanner |
-| `data/ListCtrl` | `ListCtrl` / `ListCtrlItem` / `ListCtrlOutput` (label+description+leading icon+trailing 슬롯+drill-in chevron, divided 헤어라인, selected surface-active+2px accent 좌측 바, disabled, empty_label) | `prim_listctrl` | — |
-| `feedback/Toast` | `crates/tasty-ui-widgets/src/toast.rs`(그리기) + `src/adapters/ui/toast.rs`(상태·레이어) | Components `Toast` | — |
+| 디자인 컴포넌트 | tasty-ui-widgets | 갤러리 specimen |
+|---|---|---|
+| `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` |
+| `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg, leading_icon/trailing_icon) | `prim_button` |
+| `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` |
+| `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` |
+| `core/Badge` | `badge` / `badge_dot` | `prim_chips` |
+| `core/Kbd` | `kbd`(키캡 시퀀스) | `prim_chips` |
+| `forms/Checkbox` | `checkbox` | `prim_forms` |
+| `forms/Switch` | `switch` | `prim_forms` |
+| `forms/Select` | `select`(토큰 트리거 + egui popup) · `select_or_placeholder`(같은 트리거 + "아직 안 고름" 상태 — 트리거에 placeholder 를 `text_placeholder` 색으로, 메뉴 맨 앞에 sentinel) | `prim_forms` |
+| `forms/MultiSelect` | `multi_select` / `multi_select_summary` / `multi_select_popup_id` (`select` 와 같은 트리거 토큰 + checkbox 행 팝업 + `CloseOnClickOutside` + 요약 라벨 3분기 + 메뉴 max-height 스크롤/max-width 클램프 + 행 단위 disabled 마스크 + 일괄 선택/해제 액션 행(opt-in, accent + separator, 스크롤 밖 고정) + 키보드 내비(↓/Enter/Space 열기 · ↑↓/Home/End active 행 이동(disabled 건너뜀) · Space/Enter 토글(안 닫힘) · Esc 닫기(포커스 유지) · Tab 닫고 이동, active 행은 `surface_active` 배경)) | `prim_forms` |
+| `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` |
+| `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` |
+| `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` |
+| `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
+| `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` |
+| `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` |
+| `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` |
+| `navigation/TreeRow` | `tree_row` | `prim_nav` |
+| `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | `prim_layout_shell` (Components `Layout shell widgets`) |
+| `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` |
+| `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택) | `prim_table` (Components `Table · ListCtrl`) |
+| `data/ListCtrl` | `ListCtrl` / `ListCtrlItem` / `ListCtrlOutput` (label+description+leading icon+trailing 슬롯+drill-in chevron, divided 헤어라인, selected surface-active+2px accent 좌측 바, disabled, empty_label) | `prim_listctrl` |
+| `feedback/Toast` | `crates/tasty-ui-widgets/src/toast.rs`(그리기) + `src/adapters/ui/toast.rs`(상태·레이어) | Components `Toast` |
 
 **primitive 케이스 커버리지**: 디자인 jsx 의 변형까지 specimen 에 포함 — Button
 `leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
 Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false).
 
-**시각검증 주**: primitive 15종 전부 시각검증 완료(multi_select: gallery readback — 닫힘/열림/연속 3토글 후에도 팝업 유지/바깥클릭 닫힘, 요약 라벨 3분기, 트리거 치수가 단일 `select` 와 동일(28×160px)함, 옵션 20종에서 메뉴가 max-height(220)에서 멈추고 긴 라벨이 max-width(320)에서 말줄임됨 확인. 키보드 내비는 갤러리에 키 주입 경로가 없어 본체 DAG 목록 필터에서 `debug.inject_egui_key` + `ui.screenshot` 으로 검증 — ↓↓ 로 짚은 행 배경이 `surface_active`(rgb 88,91,112) 로 실측되고 메뉴 배경(30,30,46)과 갈림, Space/Enter 토글 뒤에도 팝업 유지 + 트리거 요약 즉시 갱신, Esc 는 드롭다운만 닫고 부모 popup 은 유지하며 트리거 포커스가 남아 곧바로 ↓ 로 다시 열림. autocomplete: gallery scroll readback — idle/open/filtered+highlight/overflow→scroll/empty/keyboard-active·middle-ellipsis 확인). "✓ port_scanner" = 본체 격리 인스턴스 +
-`ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
-(`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
-settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이
-env 일회성 캡처가 격리 자동검증 경로다.
+시각 비교는 본체의 격리 인스턴스에서 `ui.screenshot`을 사용하거나 갤러리의 `TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`로 캡처한다. 갤러리는 선택한 예제가 안정되도록 4프레임 뒤에 캡처하고 종료한다. 키보드 내비게이션은 갤러리에 키 주입 경로가 없으므로 본체에서 `debug.inject_egui_key`로 확인한다. 토큰값뿐 아니라 열림·닫힘, 선택 유지, 긴 목록·라벨의 스크롤과 말줄임도 확인한다.
 
-## Layouts (composition specimens)
+<a id="layouts-composition-specimens"></a>
+
+## 레이아웃 예제 (Layouts)
 
 상위 화면 idiom 데모. 본체 binary 의존 0 — layout·색·폰트·간격은 Theme 토큰, 상태는
 thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
@@ -474,12 +411,12 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 아니다 — 갤러리 크레이트가 본체 bin 의 비공개 상수를 참조할 수 없어 값을 로컬로 들고
 관례로 맞춘다(200 은 리터럴, 44 는 `titlebar_height + spacing_sm` 도출).
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
-않는 일반 2-depth idiom(168/40, 토큰 도출)이다 — 혼동 금지.
+않는 일반 2-depth idiom(168/40, 토큰 도출)이다 로 구분한다.
 
 | 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
 |---|---|---|---|
 | `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 갤러리 고정 크기 `WIDTH`/`HEIGHT`(1100×700) |
-| L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | `gallery-alignment §3`: underline fork 금지 (underline = 스킨). **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
+| L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | 밑줄 스타일을 별도 탭 구현으로 복제하지 않는다. **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
 | L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. **양쪽 다 200** 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 같은 폭의 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
 | `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(3행 — `close_active`/`quit`/`fullscreen_stage_exit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
 | `Mono`(섹션 헤딩) | — | `mono` | micro(10)·uppercase·text-muted |
@@ -497,7 +434,9 @@ Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다 (전 7탭 전수
 디자인 gallery `components.html` 구조에 맞춰 갤러리 `Components` = primitive 전용으로 정리.
 통팝업/컴포지션 데모(Dialog/Convert/Port Scanner/Approval)는 `Overlays` 로 이동.
 
-## Plugin settings page (16-B) — `Tasty Design System (3)`
+<a id="plugin-settings-page-16-b--tasty-design-system-3"></a>
+
+## 플러그인 설정 페이지
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx:240-248`(Appearance › HTML viewer 페이지) ↔
 본체 `src/view/settings/ui/tabs/appearance.rs` `draw_plugin_settings_page`(+ `plugin_setting_row` /
@@ -518,12 +457,13 @@ Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다 (전 7탭 전수
 | `Sandbox scripts:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) on | |
 | `Note` | Note 라벨 | caption · text-muted | |
 
-## Banner (banner-02) — `gallery/overlays.jsx` `#banner` Section
+<a id="banner-banner-02--galleryoverlaysjsx-banner-section"></a>
+
+## 배너
 
 디자인 `gallery/overlays.jsx` 의 `#banner` Section(3 Spec) ↔ 갤러리
 `crates/tasty-gallery/src/catalog/widgets/banner.rs` (Overlays › `Banner — the floating
-top notice`). 네 번째 overlay 패밀리(Modal / Popup / Toast / **Banner**)의 specimen.
-본체 구현(banner-03)보다 먼저 만든 gallery-first 산출물.
+top notice`). 배너의 상태별 예제를 제공한다.
 
 **전사 방식**: 디자인 Spec 의 정적 레이아웃(shell chrome · 행 구성 · 우상단 슬롯 ·
 스택 z-order)을 1:1 전사한다. hover/카운트다운/큐 같은 시간·상호작용 상태는 egui
@@ -585,15 +525,14 @@ master-detail 레이아웃은 폐기됐다 — header→type-bar→body→footer
 | footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row(ui, theme, mime)`(text · files · image `image/rgba8` · other — 호출부가 mime 자리 문구를 넘긴다) / `footer_row_html`(`{mime} · {meta}`) |
 | CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
-화면 전용 고정값 480×360 은 module const(token-policy §c). 10 상태(data-text/data-files/
+화면 전용 고정값 480×360 은 용도를 명시한 모듈 상수. 10 상태(data-text/data-files/
 compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
 `StageVariant::Column` 으로 노출.
 
-**압축 세그먼트는 문턱이 곧 타입 수라서 재현된다.** `SEG_COMPACT_AT` 은 5 이고 `ClipboardType`
+**압축 세그먼트**는 지원하는 5개 타입을 모두 표시할 때 사용한다. `SEG_COMPACT_AT` 은 5 이고 `ClipboardType`
 도 다섯(Text/Files/Image/Html/Other)이며 `read_available()` 이 다섯 리더의 결과를 이어 붙이므로,
 다섯이 동시에 살아 있으면 그대로 compact 다 — 브라우저 복사가 text·html·image 를 한 번에 올리는
-흔한 출발점이다. 한때 이 자리와 plugin·갤러리 소스 셋, 그리고 plugin 화면 문서가 "재현되지
-않는다" 고 적고 있었고 그것은 사실이 아니었다. `compact` specimen 이 그 상태를 보인다.
+흔한 출발점이다. `compact` specimen 이 그 상태를 보인다.
 
 ## git-viewer (Plugins)
 
@@ -601,8 +540,7 @@ compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
 (egui-mesh 자가 렌더) ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree viewer
 popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(ADR-0028의 egui-mesh 렌더링) — plugin 이
 자기 egui Context 에서 새 디자인을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
-소유한다. 갤러리는 plugin crate 비의존이라 같은 구성을 Theme 토큰 mock 으로 전사한다. **specimen
-포함 확정**(ADR-0035 완전성). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
+소유한다. 갤러리는 plugin crate 비의존이라 같은 구성을 Theme 토큰 mock 으로 전사한다. [갤러리 정책](../policies/gallery-completeness.md)에 따라 예제를 유지한다. 토큰·구조 정합 목표, 픽셀 동일성 비목표.
 
 | 디자인(jsx) | plugin render.rs | 갤러리 함수 |
 |---|---|---|
@@ -638,11 +576,13 @@ specimen 이 아니라) 실제 CSS 출력 내용까지 손으로 전사한다 �
 glyph: `crates/tasty-icons` 의 `IMAGE`(image fallback) · `HTML`(webview) — 갤러리 아이콘 페이지 SURFACES 그룹에 전시. image 는
 `viewer`/`no-image` 2 cluster, html 은 `boundary`/`placeholder`/`loading`/`error` 4 cluster,
 markdown 은 Column · Solo · Column · Wrap 네 무대. 화면 전용 고정값(560/360/300, control 버튼 24×20/30×20)은
-module const(token-policy §c).
+용도를 명시한 모듈 상수.
 
 <a id="misc--scripts-lua-script-manager--05-adr-0031"></a>
 
-## Misc · Scripts (Lua script manager) — 05
+<a id="misc--scripts-lua-script-manager--05"></a>
+
+## Lua 스크립트 관리
 
 설정 modal Misc 탭 › Scripts 관리 창. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
 (`ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge`). 갤러리 미러:
@@ -685,8 +625,7 @@ i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,di
 | `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 바인딩 2열=mono term-sm(12), 변경=`accent-primary`(색상만, bold 없음) |
 | `fullBleed` (Keybindings›Preset 만 표준 래퍼 우회) | `ui.rs` content 디스패치 `full_bleed` 분기 | DrillDown 이 자체 패딩+내부 스크롤 소유 |
 
-**헤더 close ✕ 제거 (Request 1)**: `draw_l1_tab_band` 의 `marginLeft:auto` ghost close ✕ 삭제
-(닫기 = footer Cancel + OS 타이틀바). 갤러리 `components/settings.rs` L1 밴드 미러도 동일.
+헤더에는 별도 close ✕를 두지 않는다. 하단 Cancel과 OS 타이틀바로 닫으며, 갤러리 `components/settings.rs`의 L1 밴드도 같다.
 **신규 토큰 없음** (위젯 토큰은 [design-token-mapping §drilldown/listctrl](design-token-mapping.md) 참조).
 i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`preset_col_before` 문구 갱신,
 `preset_col_after` 제거 (3열 헤더 = 프리셋 이름).
@@ -695,7 +634,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
 창 자체 toast) + `gallery/overlays-windows.jsx` Section `kbimportexport` ↔ 갤러리
-`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 5 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `migrate` · `notices` · `paint`, 갤러리만 첫 시안이 비워 둔 값 여섯을 모은 `open_values` 와 그 회차가 남긴 나머지를 드는 `remaining_values`). 갤러리는
+`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 5 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `migrate` · `notices` · `paint`, 갤러리의 추가 상태 예제인 `open_values` 와 나머지 상태 예제인 `remaining_values`). 갤러리는
 본체 미의존이라 같은 위젯·토큰으로 미러한다. 본체는 `src/view/settings/ui/keybindings_tab/import_export.rs`
 와 그 하위 모듈(`import_export/` 의 `entry.rs` · `diff_table.rs` · `migrate.rs` · `notices.rs` · `paint.rs`, 계산은 `labels.rs` · `view_model.rs` · `model.rs` · `bundle_notices.rs`.
 `action_row` · `diff_table` · `group_header` · `action_cell` · `migrate_card` · `migrate_row` ·
@@ -705,7 +644,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 | 디자인 jsx | 갤러리 | 비고 |
 |---|---|---|
 | `IeL2Tail` · `KB_L2_SEPARATED` | `l2_tail` · `l2_separator` · `l2_row` | **신규 축** — L2 행 위 1px separator(margin space-sm), 필터 활성 시 숨김 |
-| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding `kb-ie-notice-inset`(→ space-md, 양축 — 옛 14 는 12 로 스냅). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
+| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding `kb-ie-notice-inset`(→ space-md, 가로·세로 모두 12). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
 | 창 toast(export 경로) | `export_toast`(`toast_card::draw_single_card`, Success) | 설정 창 자체 `ToastManager` 의 카드 |
 | `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · `{n} unresolved`(mono caption warning) · Apply primary(미해결 시 비활성) |
 | `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · mono micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary, 미해결 = accent-warning |
@@ -713,7 +652,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 | `IeMigrateCard` | `migrate_card` · `card` · `conflict_summary` | tone(warning/success) 11% 채움 · 36% 테두리, 헤더 counter mono caption. 충돌 행 2 개 이상이면 설명 아래 개수 줄(개수 danger + 나머지 text-secondary) |
 | `IeMigrateRow` | `migrate_row` · `record_slot` · `select` | 라벨 288 · 원래 조합 120 · → · 녹화 슬롯(min 140×24, mono, 충돌 시 danger 테두리) 또는 modifier `select_or_placeholder`(7 조합 + placeholder `Select a modifier`). 부제 들여쓰기 288 |
 | `IeNotices` | `notices` · `dropped_notice` · `parse_failure` | 버린 plugin = helpCircle muted 정보 줄(경고 아님) · 마이그레이션 불필요 = 안내문 한 문장 · 파싱 실패 = 알림 블록(danger) + "Choose another file" |
-| `IeBlockG` | `notice_block` | **알림 블록 레시피 하나** — tone 12% 채움 · 35% 테두리 · 헤더(glyph 16 · 제목 13 tone · 우측 mono caption 개수) · 본문 12 text-secondary · 액션 행(gap space-sm). 파싱 실패 · 내보내기 실패(danger) · 번들 경고(warning)가 모두 이것이다 |
+| `IeBlockG` | `notice_block` | **공통 알림 블록** — tone 12% 채움 · 35% 테두리 · 헤더(glyph 16 · 제목 13 tone · 우측 mono caption 개수) · 본문 12 text-secondary · 액션 행(gap space-sm). 파싱 실패 · 내보내기 실패(danger) · 번들 경고(warning)가 모두 이것이다 |
 | `IeExportFailG` · `IeBundleNoticesG` · `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG` | `open_values`(Spec 4) · `export_failure_row` · `bundle_notices` · `notice_line` | 내보내기 실패 = Export 행 안 danger 블록(Try again secondary · Choose another location… ghost, 행 버튼 비활성) · 번들 경고 = warning 블록 하나(`{n} notices`, `·` 글머리 줄, 3 줄 뒤 `Show {n} more`) · 줄 번호 없는 파싱 실패 · 충돌 개수 카드 · placeholder/선택된 modifier Select. 본체는 `notices::{export_failure, bundle_notices}` · `bundle_notices.rs`(순서·접기) |
 | `IeExportFailG reason="other"` · `IeBundleNoticesG one` | `remaining_values`(Spec 5) · `unknown_export_failure` · `os_reason_line` · `one_notice` | 사유를 모르는 내보내기 실패 — 가운데 구절은 고정 집합의 catch-all("the write didn't finish.") 이고 OS 가 낸 문장은 **문장 안에 안 들어간다**: 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip). 알림이 하나뿐이면 헤더와 그 줄이 모두 단수형이고 접기 링크가 없다. 본체는 `notices::{export_failure, os_reason_line, bundle_notices}` · `import_export::ExportFailReason` · `view_model::notice_line` |
 
@@ -724,7 +663,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
   `LogicalPx` 로 못 담아 스킵하는 쪽이다(`crates/tasty-design-tokens/src/dtcg.rs` 의
   `Skip::EmUnit`). `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
-- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 스냅하지 않고 명명 const 로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
+- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
 - 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
   `kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width`)을 열었지만 vendor 한
   DTCG export(`crates/tasty-design-tokens/dtcg/tasty.tokens.json`)에 아직 그 이름이 없어 명명 const 로
@@ -734,7 +673,9 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 - specimen 폭은 본체 설정 창 콘텐츠 컬럼(868)이다 — jsx gallery 의 620 에는 ui kit 의 288·120
   라벨 열이 들어가지 않는다. 진입 화면 컬럼만 620 을 따른다.
 
-## Settings › Handler 탭 서브탭 콘텐츠 (S13)
+<a id="settings--handler-탭-서브탭-콘텐츠-s13"></a>
+
+## Settings › Handler 하위 탭
 
 L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)하고 Hook Handlers
 서브탭을 추가한 개편. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
@@ -753,30 +694,27 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   `font-size-micro` uppercase `text-muted`)로 전사. egui 가 자간을 못 거는 것이 아니라
   (`RichText::extra_letter_spacing`), `letter-spacing-caps` = `0.04em` 이 em 이라 Rust
   상수로 생성되지 않는다(위 `Skip::EmUnit` 항목과 같은 이유).
-- **신규 토큰 0** — `hook_handlers.rs`/`settings_handler.rs`가 쓰는 토큰은 전부 기존
+- **별도 토큰 없음** — `hook_handlers.rs`/`settings_handler.rs`가 쓰는 토큰은 전부 기존
   `spacing_*`/`font_size_*`/`text_*`/`border_*` 등 범용 접근자이며 이 기능 전용으로
   추가된 Theme 필드가 없다. 화면 전용 고정값(라벨폭 74/100, priority step 10)은
-  module const(token-policy §c).
-- **레지스트리 정책이 그 자리를 정한다 — 차이가 아니라 확정된 모양이다.** 제거 버튼은
+  용도를 명시한 모듈 상수.
+- **레지스트리 정책에 따른 행 표시**: 제거 버튼은
   user-origin 행만 달고(host/plugin base 는 finalize 가 되살린다), 나머지 행에는 같은
   자리에 자물쇠 글리프가 온다(`glyph-dim` + "Provided by host — can't be removed").
-  **disabled 버튼이 아니다** — 보류된 것이 없으므로 그런 표시는 "지금은 안 되지만
-  언젠가" 라는 거짓을 말한다. 출처 Tag 는 **모든 행**이 달고 `host` · `you` ·
+  제거할 수 없는 항목이므로 비활성 버튼 대신 자물쇠로 표시한다. 출처 Tag 는 **모든 행**이 달고 `host` · `you` ·
   **그 plugin 의 id**(mauve `accent-agent`)를 찍는다. `IpcSequence` 행은 인라인 편집
   대신 mono 한 줄 요약(스텝을 `→` 로 이음)이다. intro copy 의 priority 방향은 엔진
   규약(낮을수록 먼저)으로 기술.
 - **`IpcSequence` 행의 `Edit` ghost 버튼은 아직 없다** — 디자인은 그 버튼이 시퀀스
   편집기를 연다고 적지만, 이 레포에 **GUI 편집기가 없다**. 시퀀스를 고치는 경로는
-  CLI 에 있다(`tasty hook-handler get` / `upsert`). 아무 데도 안 여는 버튼은 그 자체가
-  거짓 표시라, GUI 편집기의 범위가 정해질 때까지 두지 않는다 — 열 것이 생긴 뒤에
-  버튼을 둔다. 갤러리 specimen 도 같다.
+  CLI 에 있다(`tasty hook-handler get` / `upsert`). 편집기를 구현하기 전까지 동작하지 않는 버튼을 표시하지 않는다. 갤러리 specimen 도 같다.
 
 ## Settings › General › Remote transfer
 
 General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md))
 수신측 저장 정책(`RemoteTransferSettings{dir, max_mb}`) 편집. 디자인:
 `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` + `gallery/overlays-windows.jsx`
-"Settings · General › Remote transfer" spec. 백엔드는 이미 merge 됐고, 이번은 UI 만.
+"Settings · General › Remote transfer" spec. 저장 정책을 편집하는 화면이다.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
@@ -792,30 +730,25 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 - 라벨 컬럼 150px(`gridTemplateColumns: "150px 1fr"`)·행 gap 12(space-md)·행 높이
   `settings_row_min_height`(32). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
   가 제공(형제 탭 관례 — 재패딩 안 함).
-- **size Input 폭은 90 으로 닫혔다(2026-09-17 결정).** 88 은 field-width 토큰 세트
-  (90/110/160/180/200) 밖의 specimen 값이었고, 결정이 **90(`field_width_xs`) 을 승인하고 88 을
-  폐기**했다. 본체도 갤러리도 그대로다(둘 다 `field_width_xs`) — 바뀐 것은 이 매핑의 판정이다:
-  "토큰으로 근사한 2px 차" 가 아니라 **확정 값 그대로**다. 단, **시안 파일은 아직 88 이다**
-  (`gallery/overlays-shared.jsx` 의 `style={{ width: 88 }}`, 2026-09-20 재독 실측) — 결정이
-  파일에 반영되기 전이라, 그 파일만 보고 되돌리지 마라.
+- 최대 크기 입력 폭은 승인된 90px인 `field_width_xs`를 사용한다. field-width 토큰 세트는 90/110/160/180/200이다. 2026-09-17 결정에서 예제의 88px 대신 90px를 승인했다. 2026-09-20 확인한 `gallery/overlays-shared.jsx`의 `style={{ width: 88 }}`에는 아직 반영되지 않았으므로 그 값으로 되돌리지 않는다.
+
 - **"MiB" 는 필드 밖 정적 mono suffix**(Toast 의 " s" 와 동형, addon/Tag 아님). i18n 단위
   기호 예외로 리터럴.
-- **신규 Theme 필드 0** — 전부 기존 접근자(`settings_row_min_height`/`field_width_xs`/
+- **별도 Theme 필드 없음** — 전부 기존 접근자(`settings_row_min_height`/`field_width_xs`/
   `separator`/`text_muted`/`font_size_micro`/`font_size_caption`)·기존 위젯(`Input`/`Button`).
   i18n 8키(`settings.tab.remote_transfer` + `settings.remote_transfer.{section,dir,dir_placeholder,dir_desc,browse,max_capacity,max_capacity_desc}`).
 - 갤러리는 본체 미의존이라 host `draw_remote_transfer_tab`(Settings 저장소 의존)을 직접
   못 부르고 같은 위젯·토큰으로 미러(settings_handler 서브탭 specimen 전례). rfd 폴더 피커는
   specimen 에서 no-op.
 
-## File picker (Overlays) — gallery-first 반영 완료, 본체 배선됨
+<a id="file-picker-overlays--gallery-first-반영-완료-본체-배선됨"></a>
+
+## 파일 피커 (Overlays)
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
 `catalog/components/file_picker.rs`.
-**본체
-(egui `PopupDef`) 구현 완료** — `src/adapters/ui/popup/file_picker.rs`(`FILE_PICKER_POPUP_ID`
-= `"file_picker"`, `draw_file_picker`)가 `defs.rs`에 등록되어 있다(커밋 `519d98f0`,
-2026-07-23).
+본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
@@ -845,7 +778,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
 대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다 — 브레드크럼 세그먼트별
 `maxWidth:180` ellipsis 도 같은 `elide()` 로 근사한다. 갤러리의 가운데 생략은 jsx 와 같이
-`deep` prop 으로 켜고, 본체는 전체 breadcrumb 이 폭을 넘을 때 켠다. **신규 Theme 필드 0** — 전부 기존 semantic 접근자
+`deep` prop 으로 켜고, 본체는 전체 breadcrumb 이 폭을 넘을 때 켠다. **별도 Theme 필드 없음** — 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
 
@@ -854,7 +787,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 디자인 `gallery/overlays-shared.jsx` `TransferProgressFrame` / `TransferErrorFrame`
 ↔ 본체 `src/adapters/ui/popup/transfer.rs`(PopupDef `transfer_progress` / `transfer_error`)
 ↔ 갤러리 `catalog/components/transfer.rs`. bulk 파일 전송 + mirror 터미널 이미지 붙여넣기 업로드에 대한
-사용자 피드백 UI. **진행은 시스템 최초 determinate progress bar**(indeterminate `Spinner` 와 구분).
+사용자 피드백 UI. 진행률 막대는 완료 비율을 표시하며, 비율을 알 수 없는 작업의 `Spinner`와 구분한다.
 
 | 디자인 jsx | 본체 함수 (`popup/transfer.rs`) | 갤러리 함수 (`components/transfer.rs`) |
 |---|---|---|
@@ -875,14 +808,10 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 갤러리 specimen 은 프레임을 클러스터에 **직접** 렌더한다(scrim 스테이지 미사용 — file_picker 관례,
 [design-parity-notes](design-parity-notes.md) "transfer — scrim_backdrop 스테이지…" 참조). 진행
 determinate bar 는 `Spinner` 처럼 위젯화하지 않고 painter 인라인(track `bg_app` + fill `accent_primary`,
-0ms). **신규 Theme 필드 0** — 전부 기존 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
+0ms). **별도 Theme 필드 없음** — 전부 기존 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
 i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suffix,dismiss,retry}`).
 
-**본체 배선(bulk 송신 + 이미지 붙여넣기 업로드)**: 진행률은 `upload_file_over_bulk` 에 `on_progress(sent,total)` 콜백을 추가해
-청크마다 통지 → 이미지 업로드 워커가 `transfer_progress` 채널로 흘림 → `drain_transfer_progress` 가 행 갱신.
-실패는 이미지 업로드의 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
-`BULK_REJECT_PREFIX`(원격 거부) 면 Dismiss 단독, 아니면 Retry(재큐잉). 상세
-[features/remote-attach](../../features/remote-attach/index.md).
+본체의 `upload_file_over_bulk`는 청크마다 `on_progress(sent,total)`을 호출한다. 이미지 업로드 워커가 `transfer_progress` 채널로 보내고 `drain_transfer_progress`가 화면 행을 갱신한다. `drain_image_upload_results`의 실패는 팝업으로 알린다. `BULK_REJECT_PREFIX`인 원격 거절에는 Dismiss만 제공하고, 그 밖의 실패에는 다시 큐에 넣는 Retry를 제공한다. 자세한 동작은 [원격 attach](../../features/remote-attach/index.md)를 따른다.
 
 <a id="attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062"></a>
 
@@ -904,13 +833,13 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 | `StatusDot status="needs-input"` | `sidebar/view.rs::draw_collapsed_avatar` 우상단 dot 분기 | `sidebar.rs::attention_rail_demo` | collapsed rail — kind 우선순위로 대표색 1개 |
 | `StatusDot status="completion"`(기존 notif) | 동 | 동 | 값 불변(파랑), 분기 순서만 needs-input 다음으로 |
 | surface border(occPane 확장) | `divider.rs::highlight_stroke_color`/`regions_from_state` | `occupancy_borders.rs::occ_pane`(`Kind::NeedsInput`) | 우선순위: NeedsInput > 점유 > Completion |
-| 탭 제목 색(위계) | `tab_bar/tab.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | 기존 "divergence: accent_warning 값-보존" 주석 해소(Completion 이 이제 정말 파랑) |
+| 탭 제목 색(위계) | `tab_bar/tab.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | Completion은 파란색으로 표시 |
 
-**신규 Theme 필드 0** — 전부 기존 semantic 접근자(`accent_warning`/`accent_primary`/
+**별도 Theme 필드 없음** — 전부 기존 semantic 접근자(`accent_warning`/`accent_primary`/
 `text_on_accent`/`focus_ring_width`/`spacing_xs`)로 해소([design-token-mapping
 §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
 참조). `AttentionKind`/`AttentionLevel`(host, `src/core/state/attention.rs`)이 색 선택의
-SoT — 갤러리는 binary 비의존이라 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
+기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
 
 ## Task DAG — surface · canvas · node (Layouts)
@@ -949,7 +878,7 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 (longest-path + 중앙정렬)이라 sugiyama 결과와 좌표가 다르고, 갤러리는 **본체가 실제로 그리는
 좌표**를 보여야 하므로 엔진 쪽을 따른다.
 
-**의도적 디자인 대비 차이 (갤러리·본체 공통)**
+**디자인과 구현의 차이**
 
 - **상태 글리프**: 시안의 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 은 Dingbats 블록이라 UI 비례
   폰트에서 tofu 로 떨어진다. 본체는 기하 도형(`◦ ▷ ◑ ● × ⊘ ◇ ?`)으로 치환했고

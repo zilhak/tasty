@@ -1,21 +1,15 @@
 # Design Token → tasty Theme 매핑
 
-claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드로 옮길 때 쓰는
-확정 매핑표. `design-parity` 스킬이 참조한다. **hex 가 아니라 Theme 필드로 접근한다**
-(테마가 바뀌면 hex 는 달라지므로).
+Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme의 대응표다. 색의 hex 값은 mocha 기준이며 테마마다 달라지므로 코드에서는 Theme 접근자를 사용한다.
 
-출처: 디자인 루트의 `tokens/semantic.css` + `tokens/primitives.css` (mocha 기준).
-
-> 색·치수 토큰이 `Theme` 로 수렴하듯, **아이콘 지오메트리(SVG path)는 `tasty-icons`
-> 크레이트의 수기 전사가 소유**한다(소비처는 path 를 재인라인하지 않는다). 규칙 전문은
-> [icons.md](icons.md).
+아이콘 SVG는 `tasty-icons`에서 정의하며 사용하는 곳에서 도형을 다시 만들지 않는다. [아이콘 가이드](icons.md)를 따른다.
 
 ## 색
 
 | 디자인 토큰 | tasty Theme | mocha hex | 비고 |
 |---|---|---|---|
 | `bg-sidebar` | `mantle` | `#181825` | 사이드바·**탭 바** 등 한 단계 더 어두운 면 |
-| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner / file_handler_picker / 전송 진행·실패). 목록이 아니라 **판정기**가 정본이다 — `popup::draw::popup_bg_fill` |
+| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner / file_handler_picker / 전송 진행·실패). 실제 배경 선택은 다음 함수가 정한다: `popup::draw::popup_bg_fill` |
 | `surface-raised` | `surface0` | `#313244` | 카드·입력·메뉴·command_palette 본문, secondary 버튼 fill |
 | `border-default` | `surface0` | `#313244` | |
 | `border-strong` | `surface1` | `#45475a` | 팝업 외곽선·강한 구분 |
@@ -23,8 +17,8 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | `text-primary` | `text` | `#cdd6f4` | |
 | `text-secondary` | `subtext1` | `#bac2de` | |
 | `text-muted` | `subtext0` | `#a6adc8` | |
-| `text-disabled` | `overlay1` | `#7f849c` | **disabled 전용 잉크.** 모든 disabled 라벨·글리프가 이 role 을 읽는다 |
-| `glyph-dim` | `overlay0` | `#6c7086` | 물러나야 하는 chrome glyph(사이드바 dim chevron·dim 아이콘·상태바 글리프). `text-placeholder` 와 값만 같고 role 이 다르다 — **disabled 용이 아니다** |
+| `text-disabled` | `overlay1` | `#7f849c` | **비활성 상태의 글자·아이콘 색.** 모든 disabled 라벨·글리프가 이 role 을 읽는다 |
+| `glyph-dim` | `overlay0` | `#6c7086` | 덜 강조할 창 아이콘(사이드바 dim chevron·dim 아이콘·상태바 글리프). `text-placeholder` 와 값만 같고 role 이 다르다 — **disabled 용이 아니다** |
 | `border-frame` | `surface2` | `#585b70` | 틀의 선 **넷**(popup 프레임 · titlebar 아래 선 · pane divider · GPU 비활성 보더). popup **내부** 구분선은 `border-strong` 에 남는다. `surface-active` 와 값만 같다 |
 | `accent-decorative` | `peach` | `#fab387` | 헤더 장식 accent(Plugins 창 헤더 glyph). `accent-attention`(주의 환기)과 값만 같다 |
 | `accent-primary` | `accent_primary()` | `#89b4fa` | primary 버튼·포커스·활성 탭 언더라인 |
@@ -79,12 +73,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 
 ## switch-number overlay (chrome)
 
-디자인 `tokens/components.css` 의 `CHROME · SWITCH-NUMBER OVERLAY` 블록(8 토큰). modifier 홀드 중
-탭/워크스페이스의 leading indicator(탭 아이콘 / 워크스페이스 status dot / collapsed letter avatar)를
-숫자 키캡으로 제자리 교체하는 패턴. **비active 키캡은 기존 `Kbd` 키캡 그대로** (디자인도
-`var(--tasty-kbd-*)` 로 alias) → tasty 의 `kbd()`(`crates/tasty-ui-widgets/src/chip.rs`) 가 이미 커버.
-**신규는 active(현재 탭/ws) 키캡의 accent-filled bg/fg 뿐**이고, 그조차 기존 semantic 접근자로
-표현된다 → **신규 Theme 필드 0개** (component→semantic 직접 매핑, button-primary-bg→accent_primary() 와 동일 관습).
+`tokens/components.css`의 `CHROME · SWITCH-NUMBER OVERLAY`는 보조키를 누르는 동안 탭 아이콘·workspace 상태 점·접힌 레일 아바타를 숫자 키캡으로 바꾼다. 8개 토큰은 아래 생성 접근자로 읽는다. 비활성 키캡은 Kbd와 같고 현재 항목은 accent 채움과 전경색을 사용한다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 위젯 | 비고 |
 |---|---|---|---|
@@ -111,10 +100,7 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `accent_primary().with_alpha(56)` | 존 밴드 채움(22%×255≈56). `PRESET_SPLIT_ZONE_BG_ALPHA` |
 | `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 2px 굵기는 `tab_indicator_width` 재사용 |
 
-> **비raw 치수(preview 전용 egui 좌표)**: 존 밴드 30%(`SPLIT_ZONE_EDGE=0.3`)·degrade 임계
-> 46px(`SPLIT_ZONE_MIN`)·close × 14px·add-tab 22px 는 `demo_layout.rs`/`preset_editor.rs` 의
-> egui logical raw f32 관행(PANE_GAP 등과 동일)으로, typed-length(PhysicalPx/LogicalPx) 규칙
-> 밖이다(egui `Rect` 좌표계, tasty `Rect` 아님) — 소스에 주석 명시.
+미리보기의 분할 영역 비율은 `SPLIT_ZONE_EDGE=0.3`(30%)이며 무차원 f32다. 길이인 `SPLIT_ZONE_MIN` 46px, 닫기 × 14px, 탭 추가 22px 등은 `demo_layout.rs`·`preset_editor.rs`의 LogicalPx 상수를 사용한다. egui에 넘기는 최종 좌표가 f32라는 이유로 내부 길이 타입 규칙에서 제외하지 않는다.
 
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
@@ -132,10 +118,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-preset-leaf-value-font-size` | `font-size-caption` (11) | `Theme::font_size_caption` | 값 폰트(mono). 기존 필드 재사용 |
 | `--tasty-preset-leaf-summary-gap` | `space-xs` (4) | `Theme::spacing_xs` | 행↔행·kind명↔요약·라벨↔값 gap. 기존 필드 재사용 |
 
-> **degrade 임계(preview 전용 egui 좌표, 비토큰 구조 상수)**: 요약 숨김 `96×72`
-> (`LEAF_SUMMARY_MIN_W`/`LEAF_SUMMARY_MIN_H`)·아이콘만 `46`(`LEAF_ICON_ONLY_MIN`, `SPLIT_ZONE_MIN`
-> 동류) 는 위 split-zone 과 동일하게 egui raw f32 관행이다. 앞자름(cwd/file)/뒤자름(startup/url)
-> 방향은 `PresetFieldSpec.input`(Dir/FilePath=앞자름)으로 판정 — kind 하드코딩 없음.
+요약을 숨기는 기준 96×72(`LEAF_SUMMARY_MIN_W`·`LEAF_SUMMARY_MIN_H`)와 아이콘만 표시하는 기준 46(`LEAF_ICON_ONLY_MIN`)도 LogicalPx 상수다. cwd·file의 앞자름과 startup·url의 뒤자름은 `PresetFieldSpec.input`의 Dir/FilePath 여부로 결정하며 kind 이름으로 고정하지 않는다.
 
 ## 토큰이 아닌 raw 값 주의
 
@@ -146,12 +129,9 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 
 ## banner (banner-02 specimen / banner-03 본체)
 
-디자인 `tokens/components.css` 의 `--tasty-banner-*` Tier-3 블록 + `tokens/primitives.css`
-의 `--tasty-opacity-recessed`. 갤러리 specimen(`widgets/banner.rs`)은 **본체 Theme struct
-증설 없이** 아래 표의 매핑대로 기존 접근자로 대응시킨다. 아래 표의 "갤러리
-매핑" 은 specimen 이 현재 쓰는 값, "banner-03" 은 본체 구현 때 토큰화할 항목.
+배너의 `--tasty-banner-*` component 토큰과 `--tasty-opacity-recessed`는 아래 값으로 연결된다. 본체와 갤러리는 같은 Theme 의미를 사용한다. 아래 표는 현재 대응이며 앞으로 구현할 작업 목록이 아니다.
 
-| 디자인 토큰 | 디자인 체인 | 갤러리 매핑(specimen) | banner-03(본체) |
+| 디자인 토큰 | 디자인 체인 | 갤러리 매핑 | 본체 |
 |---|---|---|---|
 | `--tasty-banner-bg` | → `surface-raised` → neutral-300 | `surface_raised()` | semantic 직접 매핑(신규 필드 불필요) |
 | `--tasty-banner-fg` | → `text-primary` | `text_primary()` | 〃 |
@@ -171,20 +151,13 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-banner-recessed-opacity` | → `opacity-recessed` (0.4) | `opacity_recessed()` + `gamma_multiply` | 기존 접근자 — 본체도 같은 접근자를 쓴다 |
 | `--tasty-banner-fade` | → `motion-ui` → duration-120 (120ms) | `banner_fade()` (생성, `Millis`) — 소비처 없음 | 본체는 페이드 없이 end-state 로 그린다 |
 
-> **banner-03(본체) 에 추가로 필요한 신규 Theme 항목은 없다.** 한때 신규로 적혔던 셋 —
-> `--tasty-banner-radius`(`corner_radius_lg`) · `--tasty-opacity-recessed`
-> (`opacity_recessed()`) · `--tasty-banner-shadow`(`shadow_popover()`) — 은 모두 `Theme`
-> 에 있고, 나머지 `--tasty-banner-*` 도 기존 semantic 접근자로 커버된다.
+배너 반경·디밍·그림자는 각각 `corner_radius_lg`·`opacity_recessed()`·`shadow_popover()`를 사용한다.
 
 ## modifier-hint 오버레이 (modifier-hint-03 specimen + 본체)
 
-디자인 `tokens/components.css` 의 `--tasty-modhint-*` Tier-3 블록 + `tokens/primitives.css`
-의 `--tasty-size-180` / `--tasty-duration-200` / `--tasty-duration-500`, `tokens/semantic.css`
-의 `--tasty-motion-ui-fade`(=200ms) / `--tasty-motion-hold-reveal`(=500ms). 4분류
-(Popup/Toast/Banner/Modal) 밖의 신규 요소(키보드 포커스 없음 + 마우스 인터랙티브 + 홀드
-수명)라 [`docs/concepts/ubiquitous-language.md`](../../concepts/ubiquitous-language.md) 에
-정의를 추가했다. 지오메트리는 `LogicalPx`(DPI 자연대응), 색은 전부 기존 semantic 접근자 재사용.
-접근자는 `crates/tasty-type-appearance/src/theme.rs` 의 `modhint_*()` / `motion_hold_reveal_shift()`.
+modifier-hint는 보조키를 누르는 동안 유지되며 키보드 포커스 없이 마우스로 이동·크기를 조절하는 오버레이다. [통합 용어집](../../concepts/ubiquitous-language.md)의 구분을 따른다.
+
+기본 토큰은 `tokens/components.css`의 `--tasty-modhint-*`, `tokens/primitives.css`의 `--tasty-size-180`·`--tasty-duration-200`·`--tasty-duration-500`, `tokens/semantic.css`의 모션 값이다. 길이는 LogicalPx, 시간은 아래 Millis 접근자로 읽는다.
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
@@ -199,8 +172,8 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-pad` | → 10px | `modhint_pad()` | 스크롤 리스트 안쪽 패딩 |
 | `--tasty-modhint-section-gap` | → `space-md` (12) | `modhint_section_gap()` | 섹션 사이 |
 | `--tasty-modhint-row-gap` | → 6px | `modhint_row_gap()` | 섹션 내부 행 사이 |
-| `--tasty-modhint-empty-row-gap` | → 3px | `modhint_empty_row_gap()` | **신규**. 빈 조합 섹션 내부 간격(채워진 6px보다 좁게, §6-5). 디자인은 인라인 px(`.mh-section--empty{gap:3px}`) — 코드에서 토큰화 |
-| `--tasty-modhint-empty-row-min-height` | → 20px | `modhint_empty_row_min_height()` | **신규**. 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트). 디자인 인라인 px(`.mh-empty{min-height:20px}`) — 코드에서 토큰화 |
+| `--tasty-modhint-empty-row-gap` | → 3px | `modhint_empty_row_gap()` | 빈 조합 섹션 내부 간격(채워진 6px보다 좁게, §6-5). 디자인은 인라인 px(`.mh-section--empty{gap:3px}`) — 코드에서 토큰화 |
+| `--tasty-modhint-empty-row-min-height` | → 20px | `modhint_empty_row_min_height()` | 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트). 디자인 인라인 px(`.mh-empty{min-height:20px}`) — 코드에서 토큰화 |
 | `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` | 코너 리사이즈 그립 |
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
@@ -212,7 +185,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-role-bg` | → `surface-active` | `modhint_role_bg()` | 특수 역할 행 washed 배경 |
 | `--tasty-modhint-role-fg` | → `accent-primary` | `modhint_role_fg()` | 역할 행 leading 글리프 |
 | `--tasty-modhint-row-fg` | → `text-secondary` | `modhint_row_fg()` | 액션/역할 행 텍스트 |
-| `--tasty-modhint-empty-fg` | → `text-muted` | `modhint_empty_fg()` | **신규**. 빈 조합 플레이스홀더("바인딩 없음") 텍스트 — row-fg(text-secondary)보다 한 단계 절제(§6-2) |
+| `--tasty-modhint-empty-fg` | → `text-muted` | `modhint_empty_fg()` | 빈 조합 플레이스홀더("바인딩 없음") 텍스트 — row-fg(text-secondary)보다 한 단계 절제(§6-2) |
 | `--tasty-modhint-agent-dot` | → `accent-agent` | `modhint_agent_dot()` | plugin 행 leading agent dot |
 
 ## tooltip / help-hint (help-hint-01 위젯 + specimen)
@@ -232,33 +205,26 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-padding-y` | → `space-xs` (4) | `spacing_xs` | 세로 패딩 |
 | `--tasty-tooltip-padding-x` | → `space-sm` (8) | `spacing_sm` | 가로 패딩 |
 | `--tasty-tooltip-font-size` | → `font-size-caption` (11) | `font_size_caption` | 11px 텍스트 |
-| `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | **신규** `line_height_ui: f32 = 1.4` (무차원 비율, zoom 무관) | UI 줄간격 배수 |
-| `--tasty-tooltip-max-width` | → `size-240` (240px) | **신규** `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
+| `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | `line_height_ui: f32 = 1.4` (무차원 비율, zoom 무관) | UI 줄간격 배수 |
+| `--tasty-tooltip-max-width` | → `size-240` (240px) | `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
 | `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
 | `--tasty-tooltip-delay` | → `motion-ui-med` → duration-150 (150ms) | `tooltip_delay()` (생성, `Millis`) | hover delay. 종전에는 위젯 상수 `HOVER_DELAY_SECONDS: f64 = 0.15` 였다. fade 는 immediate-mode snap 으로 생략 |
 
-### duration 접근자에서 값을 벗기는 자리 — 감시 대상
-
-`Millis` 는 `Theme` 경계까지다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)).
-경계 밖의 단위 없는 ms 산술(순수 함수·표시 문자열)에는 `to_millis_f32()` 로 벗겨
-넘긴다. **그 자리가 늘어나면** 벗기는 것이 일상이 됐다는 뜻이고, 길이 축처럼 두 번째
-가드가 필요해진다(그 조건이 ADR-0037 의 재검토 트리거다).
-
-```bash
-# 분자 = 벗기는 자리 / 모수 = duration 접근자를 쓰는 자리 전체
-echo "$(grep -rn 'to_millis_f32()' --include='*.rs' src crates \
-        | grep -vc 'crates/tasty-type-appearance/src/motion.rs') \
-      / $(grep -rnE '\.(banner_fade|modhint_fade|modhint_hold_delay|spinner_duration|status_dot_pulse_duration|switch_overlay_fade|tooltip_delay|motion_hold_reveal_shift)\(\)' \
-          --include='*.rs' src crates | grep -vc 'crates/tasty-type-appearance/src/')"
-```
-
-모수를 함께 세는 이유는 분자만으로는 그 수가 큰지 작은지 알 수 없기 때문이다 —
-접근자 사용이 늘어 분자도 같이 느는 것과, 사용은 그대로인데 벗기기만 느는 것은
-다른 일이다.
 | `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
 | `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |
 | `--tasty-help-hint-color` | → `text-muted` | `text_muted()` | rest 색 |
 | `--tasty-help-hint-color-hover` | → `text-secondary` | `text_secondary()` | hover/focus 색 |
+
+### duration 접근자에서 값을 벗기는 자리 — 감시 대상
+
+디자인 모션은 Theme에서 `Millis`로 반환한다. 표시 문자열이나 단위 없는 ms 계산이 필요한 경계에서는 `to_millis_f32()`로 변환한다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)). 변환 위치가 많아지면 전체 모션 접근자 사용과 함께 검토한다. 사용처가 늘어난 것인지 단위를 벗기는 비율만 늘어난 것인지 구분해야 한다.
+
+```bash
+rg 'to_millis_f32\(\)' src crates -g '*.rs'
+rg '\.(banner_fade|modhint_fade|modhint_hold_delay|spinner_duration|status_dot_pulse_duration|switch_overlay_fade|tooltip_delay|motion_hold_reveal_shift)\(\)' src crates -g '*.rs'
+```
+
+결과에는 정의와 테스트도 포함될 수 있으므로 실제 호출 문맥을 확인한다.
 
 > **결론**: tooltip/help-hint 16 토큰 중 14 종은 기존 Theme 접근자·위젯 상수로 커버되고,
 > `line-height-ui`(1.4)·`max-width-240`(240px) 2 종만 신규 Theme 필드로 승격했다. delay(150ms)
@@ -309,20 +275,18 @@ semantic/primitive 종착.
 ## Remote file transfer (progress/error 09)
 
 디자인 `tokens/components.css` 의 `--tasty-transfer-popup-width` + `--tasty-progress-*`(4종).
-09 진행/실패 팝업(`popup/transfer.rs`)의 프레임 폭 + **시스템 최초 determinate progress bar**.
-switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·primitive 로 종착 → 신규 Theme
-필드 0**([design-parity-notes](design-parity-notes.md) "component-tier 토큰은 신규 필드 안 만듦").
+진행·실패 팝업(`popup/transfer.rs`)의 폭과 완료 비율을 표시하는 진행률 막대에 사용한다. 아래 값과 현재 호출 경로를 따른다. component 토큰이라는 이유만으로 Theme 접근자를 만들 수 없다고 일반화하지 않는다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
 |---|---|---|---|
-| `--tasty-transfer-popup-width` | → `size-400` (400px) | 화면 전용 popup `default_size.x` const 400 (token-policy §c) | 진행+실패 프레임 폭. popup 좌표라 typed-length 밖(egui `Vec2`) |
+| `--tasty-transfer-popup-width` | → `size-400` (400px) | `FRAME_W: LogicalPx` 400 | 진행·실패 프레임 폭. egui 좌표로 넘길 때 값을 변환 |
 | `--tasty-progress-height` | → `size-4` (4px) | `Theme::spacing_xs`(=4) | determinate bar 두께. size-4 = space-xs 값 일치 → 기존 필드 재사용 |
 | `--tasty-progress-radius` | → `radius-sm` (2px) | `Theme::corner_radius_sm` | bar 라운드 |
 | `--tasty-progress-track-bg` | → `bg-app` | `Theme::bg_app()` | recessed track(패널보다 어둡게) |
 | `--tasty-progress-fill-bg` | → `accent-primary` | `Theme::accent_primary()` | determinate fill(0ms, 폭=바이트) |
 
-> **화면 전용 raw px(token-policy §c, egui popup 좌표)**: 헤더/푸터 패딩(14/12/10)·바디 패딩(14)·
-> gap(10)·헤더 콘텐츠 높이(20)는 디자인 inline raw 로 `popup/transfer.rs`·specimen module const.
+> **팝업의 구조 치수**: 헤더/푸터 패딩(14/12/10)·바디 패딩(14)·
+> gap(10)·헤더 콘텐츠 높이(20)는 디자인 값을 유지한 `popup/transfer.rs`와 갤러리의 LogicalPx 상수다.
 > reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
 
@@ -333,7 +297,7 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 디자인 `tokens/semantic.css` + `tokens/components.css` + `components/core/Badge.jsx` +
 `components/feedback/StatusDot.jsx`(원본: Claude Design "attention-visuals", 2026-08-10
 확정). 색은 기존 semantic accessor 를 그대로 참조 — **신규 Theme 필드 0**
-([design-parity-notes](design-parity-notes.md) "component-tier 토큰은 신규 필드 안 만듦").
+([Theme 접근자 선택](design-parity-notes.md)).
 `--tasty-badge-group-gap` 도 `space-xs` 그대로 별칭이다 — 생성 접근자 `badge_group_gap()` 은 있으나 소비처는 없고
 `Theme::spacing_xs` 를 직접 참조한다.
 
@@ -353,7 +317,7 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 | `--tasty-surface-highlight-done-border` | = attention-completion | `accent_primary()` | 기존 완료 테두리 — 렌더 색 불변, 경유만 변경 |
 | `--tasty-status-dot-needs-input`/`-completion` | = attention-* | `accent_warning()`/`accent_primary()` | collapsed rail dot |
 
-예약(이번엔 미구현, 토큰만 존재): `error` rank 40 → `accent-danger`, `approval` rank 20 →
+예약(아직 미구현, 토큰만 존재): `error` rank 40 → `accent-danger`, `approval` rank 20 →
 `accent-agent`. Catppuccin 매핑에 추가할 hue 없음 — Latte 는 기존 accent role 을 통해
 자동 상속.
 
@@ -388,12 +352,9 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 선택 행의 2px 좌측 바는 **`listctrl_selected_bar_width` · `listctrl_selected_bar`** 다 —
 `tab_indicator_width` 가 아니다. 두 토큰은 값이 같지만(2) 가리키는 역할이 다르고, 이 자리는
 목록 행이라 `listctrl` 계열이다. 같은 역할의 다른 자리(`tasty_ui_widgets::listctrl` · 갤러리
-`prim_listctrl` · `git_viewer` · `remote_attach/rows`)가 이미 이쪽을 쓴다. **값이 같다고 그
-축이 아니다** 는 이 문서의 논지가 여기에도 걸린다.
+`prim_listctrl` · `git_viewer` · `remote_attach/rows`)가 이미 이쪽을 쓴다. 같은 값이어도 역할이 다른 토큰으로 대체하지 않는다.
 
-치수는 대부분 4px 그리드 스텝 밖이라 대응 semantic 이 없다 — **화면 전용 raw px
-(token-policy §c)** 로 `crates/tasty-ui-widgets/src/tokens.rs` 에 `FH_*` 이름을 붙여 두고
-본체 popup 과 갤러리 specimen 이 **같은 상수를 읽는다**(정의를 둘로 두면 갈린다).
+이 치수에는 대응하는 역할의 토큰이 없다. `crates/tasty-ui-widgets/src/tokens.rs`의 `FH_*` 상수를 본체와 갤러리가 함께 사용한다. 4px 배수인지와 해당 역할의 토큰이 있는지는 별도로 확인한다.
 
 | 디자인 inline 값 | 상수 | 자리 |
 |---|---|---|
@@ -414,11 +375,11 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 > `surface-raised` 이고 host 는 헤더 + 리스트형만 `bg-panel` 로 가른다
 > (`popup::draw::popup_bg_fill`). 이 화면이 그 갈래인 이유는 형상만이 아니다 —
 > 형식을 못 알아봤을 때 헤더가 다는 Tag 가 default 변형이고 그 채움이 `tag-bg`
-> (= `surface-raised`) 라, 셸이 같은 값이면 그 칩이 배경에 녹는다(실측: Mocha 에서
+> (= `surface-raised`) 라, 셸이 같은 값이면 그 칩이 배경과 구분되지 않는다(실측: Mocha 에서
 > 두 색이 `#313244` 로 동일했다). `popup_shell_fill_keeps_the_default_tag_visible`
 > 가 두 값이 갈린다는 것을 고정한다.
 
-> **전사되지 않은 디자인 속성 하나**: 그룹 라벨의 자간. egui 에는 채널이 **있다**
+> **전사되지 않은 디자인 속성 하나**: 그룹 라벨의 자간. egui에는 해당 API가 있다
 > (`RichText::extra_letter_spacing` · `TextFormat::extra_letter_spacing`) — 안 건 이유는
 > 값 쪽이다. 이 화면의 canonical `FileHandlerFrame` 은 평평한 핸들러 목록이라 그룹 헤딩도
 > `letterSpacing` 선언도 없다(그룹은 본체가 더한 것이다). 값이 시안에 들어오기 전까지
@@ -499,52 +460,15 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 - DTCG semantic **색** 토큰 ↔ Rust 접근자 전수표. 과거 이 문서가 "Rust 미대응"으로 꼽았던 것 중 `text-on-accent` → `Theme::text_on_accent()`, `radius-sm` → `SIZING.corner_radius_sm` 은 **이미 구현되어 있다** (stale 정정). `radius-pill`/`motion-*`(semantic — component 모션은 `banner_fade()` 등 생성 접근자로 있다)/`ui-scale-*`/`brand-*`(`brand-melon-flesh` → `brand_melon_flesh()` 만 있다) 등은 여전히 Theme 표면 부재.
 - component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑, SIZING 소비처의 토큰 참조 전환.
 
-#### ★ SIZING 소비처 토큰 전환 전 필독 — 그 전환에는 **픽셀 변경이 섞여 있다**
+<a id="-sizing-소비처-토큰-전환-전-필독--그-전환에는-픽셀-변경이-섞여-있다"></a>
 
-**이 전환은 "연결" 이 아니라 부분적으로 재디자인이다.** vendor 된 값과 그 자리가 지금
-그리는 값이 다르면 연결하는 순간 화면이 바뀌고, 그건 전환이 아니라 **디자인 결정**이라
-전환 커밋이 곁다리로 할 수 없다. **지금까지 다섯이 확인됐고(아래에서 모두 닫혔다) 나머지는 미측정이다** — 그 둘을
-같이 읽어라. 다섯은 상한이 아니라 지금까지 연 자리의 수다.
+#### SIZING을 토큰에 연결하기 전에 값과 배율을 비교한다
 
-**같은 형태를 이 레포는 이미 한 번 겪었다** — 폰트 축에서 "값이 바뀌는 치환은 하나도
-없다" 는 주장과 함께 올라온 묶음에 실제로는 ±0.5~1.0 변경이 10 자리 섞여 있었고,
-그 결과가 [ADR-0035](../../adr/0035-shared-design-and-theme.md) 이다.
-그 ADR 의 결론(스케일 밖 값은 스냅하지 않고 사유를 적은 명명 const 로 둔다)은 폰트 ·
-코너 반경 · 점 치수 세 축에 적용돼 있다.
+현재 화면의 값과 토큰값이 다르면 단순 코드 정리로 바꾸지 않는다. 실제 값과 지원 배율을 먼저 비교하고 차이가 있으면 디자인 결정을 받는다. 이유와 재검토 조건은 [ADR-0035](../../adr/0035-shared-design-and-theme.md)에 있다.
 
-**전환 전에 값 대조부터 한다.** 접근자를 부르기 전에 그 자리가 지금 그리는 값을 재고,
-토큰 값과 다르면 연결하지 말고 디자인 판단을 받는다.
+접근자 호출 여부와 값 일치는 별개다. 접근자를 쓰지 않아도 기반 필드로 같은 값을 읽을 수 있고, 기반 필드를 사용해도 해당 컴포넌트가 다른 값을 그릴 수 있다. `GAP`·`POPUP_WIDTH`·`MIN_HEIGHT`처럼 흔한 이름만 비교하면 무관한 토큰이 연결될 수 있으므로 정의와 사용처를 읽는다.
 
-실측(2026-09-05, 치수 접근자 208): 접근자 이름으로 불리는 것 125 · **base 필드 이름으로
-불리는 것 53** · 자체 계산이면서 아무 이름으로도 안 불리는 것 30.
-
-★ **"안 불리는 접근자" 를 세는 것으로는 이 위험을 못 잰다.** 접근자가 안 불려도 같은 값이
-base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-caption-width` ↔ `caption_width`),
-반대로 **base 이름으로 불리고 있어도 그 컴포넌트 자리는 다른 값을 그리고 있을 수 있다.**
-**호출 여부와 값 일치는 독립이다.**
-
-값이 어긋나는 것으로 **확인된** 자리는 **한 줄도 안 남았다** — 2026-09-17 디자인 결정
-(D1~D7)이 다섯을 모두 닫았다.
-
-닫힌 다섯은 이렇게 갈렸다 — `tab-dot-size` 는 토큰이 `status-dot-size-compact`(6)를
-가리키도록 바뀌어 자리가 맞았고(D2), `toast-gap`(D1) · `status-dot-attached-ring-width`(D4) ·
-`-offset`(D5) · 상태바 점(D3, 7→`statusbar-dot-size` 6)은 **자리가 토큰 값으로 옮겨 갔다**
-(6→8 · 1.5→2 · 1.5→2 · 7→6, 전부 의도된 시각 변화).
-
-**확인된 자리가 다 닫혔다는 것이 "어긋난 자리가 없다" 는 뜻은 아니다** — 열린 확인 자리가 없다는
-뜻이다. 아래 "미측정" 문단이 그 차이를 든다. 새로 확인되면 그 자리의 상수 doc 이 같은
-사실을 적어야 한다: 값이 그리드 스케일 밖이라는 것과, 겨냥하는 토큰이 실재하되 값이
-어긋난다는 것은 다른 물음이라 갈라 적는다. 어느 쪽이 맞는지는 디자인이 정하고, 그때까지
-상수는 값을 지키고 이름만 남긴다(ADR-0035).
-
-나머지는 **미측정**이다 — 0 이 아니라 안 잰 것이다. 이름이 같은 const 를 기계로 대조해
-봤지만 `GAP` · `POPUP_WIDTH` · `MIN_HEIGHT` 같은 흔한 이름이 무관한 토큰에 무더기로 걸려
-(예: `component.transfer-popup-width` ↔ 파일 피커의 `POPUP_WIDTH`) 그 수는 위험의 크기가
-아니라 이름 충돌의 크기였다. **이 축의 판정은 이름이 아니라 정의를 열어야 선다.**
-
-**남은 줄은 소스에 기록돼 있다 — 그 상수의 doc 주석에.** 그런데 전환을 하는 쪽은 상수
-주석이 아니라 이 문서를 읽는다. 그래서 여기 옮겨 적는다. 반대 방향도 성립한다 — 이 표에
-줄을 더할 때 그 상수의 doc 도 같이 적어야 두 자리가 갈리지 않는다.
+앞서 확인한 다섯 차이는 2026-09-17 디자인 결정으로 정리됐다. tab 점은 `status-dot-size-compact` 6, toast 간격은 8, attached ring의 굵기·offset은 각각 2, 상태바 점은 6을 사용한다. 이것이 나머지 호출처까지 검증했다는 뜻은 아니다. 새 차이를 발견하면 값은 유지하고 상수 옆에 해당 역할·후보 토큰·차이를 기록한 뒤 디자인에서 결정한다.
 
 ### 관련
 

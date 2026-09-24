@@ -1,227 +1,140 @@
-# Design Parity 히스토리 — 디자인(html/CSS) ↔ 구현(winit/egui) 구조적 차이
+<a id="design-parity-히스토리--디자인htmlcss--구현winitegui-구조적-차이"></a>
 
-`design-parity` 스킬이 발동 시 먼저 읽지만, **UI/갤러리를 디자인에 정합시키는 모든 작업에서**
-(스킬을 명시적으로 부르지 않아도) 참조하는 구조 정합 원칙·함정 노트다. **검증으로 확인된
-사실만** 적는다(추정이면 명시). 같은 함정을 두 번 파지 않기 위함. 형식: 증상 / 원인 / 처방 / 근거.
+# 디자인과 구현의 차이
 
----
+디자인의 HTML/CSS 구조를 winit·egui로 옮길 때 주의할 점과 현재 구현의 제약을 설명한다. UI와 갤러리를 디자인에 맞추는 작업에서 함께 확인한다. 수치 예시는 해당 조건에서 확인한 값이며 다른 글꼴·배율에 그대로 적용하지 않는다.
 
 ## 구조 전사 (structural transcription) — 핵심 원칙
 
-디자인을 구현에 정합시키는 1차 작업은 **레이아웃 구조의 1:1 전사**다: 디자인의 grid·컬럼
-정의·패딩·정렬·요소 경계를 egui 소스 구조에 그대로 옮긴다. egui flow(자동 spacing·기본 정렬·
-auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간격·치수 같은 **토큰 정합과는 별개
-축**이며, 토큰이 맞아도 구조가 어긋나면 specimen·본체가 드리프트한다([gallery-first](../../dev-guide/gallery-first.md)
-1 단계의 두 축). 아래 함정 노트들은 이 전사 과정에서 egui 가 디자인 구조를 왜곡하는 구체
-사례와 처방이다 — 새 함정을 만나면 같은 형식으로 추가한다.
+디자인의 grid·컬럼·패딩·정렬·요소 경계를 egui 레이아웃에 맞춰 옮긴다. egui의 기본 간격·정렬·크기 축소만으로 비슷하게 보이도록 맞추지 않는다.
 
-> **두 축은 함께 충족해야 한다.** 이 문서(구조 축)만 따르고 토큰 축을 빠뜨리면 정합이 절반만
-> 된다. **토큰 축 규칙은 반드시 [theme.md "UI 디자인 규칙"](theme.md#ui-디자인-규칙-필수)을 함께
-> 본다** — 색·폰트크기·선굵기·간격은 전부 `Theme`(디자인 토큰 매핑)에서 가져오고 raw px·`from_rgb`
-> 하드코딩 금지, 4px 그리드·14px 폰트 상한·1px 보더. 구조를 1:1 전사하면서 새로 넣는 모든 치수·색은
-> 토큰에서 끌어온다.
+구조와 토큰은 함께 확인한다. 색·폰트 크기·선 굵기·간격은 Theme에서 읽고 [테마 규칙](theme.md#ui-디자인-규칙-필수)의 4px 그리드·14px 폰트 상한·1px 보더를 따른다. 작업 순서는 [gallery-first](../../dev-guide/gallery-first.md)를 참고한다.
 
----
+<a id="일반--egui-item_spacing-자동-삽입이-dividergap-을-밀어낸다"></a>
 
-## 일반 — egui `item_spacing` 자동 삽입이 divider·gap 을 밀어낸다
+## egui 자동 간격과 명시한 패딩
 
-- **증상**: 구역 사이/위젯 사이에 의도치 않은 간격이 생겨 divider 위치가 디자인보다 밀린다.
-- **원인**: egui 는 위젯마다 `item_spacing`(기본 ~6px)을 자동 삽입한다. CSS 와 달리 "내 값 +
-  egui 기본값 = 결과".
-- **처방**: 구역 배치는 `item_spacing.y = 0` 으로 죽이고 간격은 명시 `add_space`/Frame
-  inner_margin 으로만. divider 는 add_space 뒤 커서가 아니라 구역 Frame 의 실제 `rect.bottom()`
-  좌표에 그린다.
-- **주의(회귀)**: `item_spacing` 을 vec2(0,0) 으로 통째 죽이면 **콘텐츠 행 내부 가로 gap 까지
-  사라진다**(텍스트가 다 붙음). y 만 0 으로 하거나, 콘텐츠 영역 진입 시 원래 spacing 을 복원할 것.
-- **근거**: remote_tool 2026-06-20. 최상위 vec2(0,0) → "gb10...ssh", "passkey:—shell:bash"
-  처럼 행 내부가 붙음. y 만 0 + 콘텐츠에서 saved_spacing 복원으로 해결.
+egui는 위젯 사이에 `item_spacing`을 추가하므로 명시한 간격과 합쳐질 수 있다. 구역을 직접 배치할 때는 `item_spacing.y = 0`으로 두고 `add_space`나 Frame의 inner_margin으로 간격을 정한다. 구분선은 변경된 커서가 아니라 구역 Frame의 `rect.bottom()`에 그린다.
 
-## 일반 — 픽셀 검증 시 터미널 unfocused 배경이 popup `base` 와 동색
+가로 간격까지 0으로 만들면 행 안의 텍스트가 붙는다. y만 바꾸거나 콘텐츠에 들어갈 때 원래 spacing을 복원한다.
 
-- **증상**: 스크린샷에서 popup 경계를 배경색 전환으로 찾으려 하면 실패한다.
-- **원인**: 터미널 surface 의 unfocused_bg = `base`(#1e1e2e) = 패널형 popup 배경과 같은 색.
-  또 `bg-sidebar`(mantle) 는 tasty 사이드바와도 동색이라 가로 mantle run 에 사이드바가 섞인다.
-- **처방**: popup 경계/구역을 **고유 색 랜드마크**로 잡는다. remote_tool 은 탭바 `mantle`
-  띠가 터미널엔 없으므로 그걸 기준점으로. 사이드바 혼입은 x 범위 필터(x>700 등)로 배제.
-- **근거**: remote_tool 2026-06-20 검증.
+<a id="일반--픽셀-검증-시-터미널-unfocused-배경이-popup-base-와-동색"></a>
 
-## 일반 — ui_scale(zoom)이 popup default_size 에만 곱해진다 (비균일)
+## 같은 배경색을 쓰는 영역의 픽셀 비교
 
-- **증상**: ui_scale=large(1.2) 에서 popup 은 1.2배 커지는데 내부 하드코딩 px(탭 높이 등)는
-  안 커져, 디자인 대비 내부 요소가 작아 보인다(탭바 35→측정 28.8).
-- **원인**: `PopupManager::register_def` 가 `default_size * ui_zoom` 만 적용. draw_fn 내부의
-  logical px 는 zoom 곱이 없다. → zoom≠1.0 이면 popup 과 내부의 비율이 깨진다.
-- **처방**: **디자인 픽셀 검증은 ui_scale=medium(1.0) 에서 한다**(config.toml
-  `appearance.ui_scale="medium"` 임시 변경 → 검증 → 복원). 1.0 이면 popup·내부 모두 device
-  scale 만 적용돼 디자인과 1:1.
-- **근거**: remote_tool 2026-06-20. large(scale 2.4) → medium(scale 2.0) 전환 후 측정이
-  디자인과 일치.
-- **정리된 방향**: 본체는 egui `zoom_factor` 로 균일 처리하지 않는다(native ppp 갱신 전 zoom 이
-  박히는 사고 때문). 대신 내부 길이를 리터럴이 아니라 `ui_zoom` 을 곱하는 `Theme` 접근자로 뺀다 —
-  근거·가드·남은 사각(호출부 리터럴)은 [ADR-0039](../../adr/0039-typed-length-and-dpi-boundaries.md).
-  그 사각에 남은 리터럴은 여전히 이 증상을 내므로 위 처방(medium 에서 검증)은 유효하다.
+터미널의 비포커스 배경과 패널 팝업은 모두 `base`(#1e1e2e)를 쓸 수 있다. `bg-sidebar`(mantle)도 사이드바와 겹치므로 색 하나의 전체 범위로 팝업 경계를 정하지 않는다.
 
-## remote_tool — CSS line-height vs egui 텍스트 박스 높이 (헤더 8px 얕음)
+팝업 안에서 구분되는 띠나 구분선을 기준으로 삼고 측정할 x 범위를 제한한다. remote_tool에서는 탭바의 mantle 띠를 사용할 수 있다. x>700 같은 제한은 특정 캡처의 예시일 뿐 공통 기준이 아니다.
 
-- **증상**: 헤더가 디자인보다 ~8px(logical) 얕아 divider Y 가 위로 밀린다(40 vs 48).
-- **원인**: 디자인 헤더 콘텐츠 높이는 title `fontSize:14` 의 line-height(~24)가 결정. egui 의
-  label/icon 텍스트 박스는 더 낮다(~18). 같은 폰트 크기여도 박스 높이가 다르다.
-- **처방**: 헤더 행에 `ui.set_min_height(<디자인 콘텐츠 높이>)` 로 높이를 강제. remote_tool 은
-  26 (디자인 24 + popup border Outside 보정 2)에서 divider Y 48.0 일치.
-- **근거**: remote_tool 2026-06-20. min_height 26 + tab_h 36 → header divider 48.0/tab
-  divider 84.0 (diff 0).
+<a id="일반--ui_scalezoom이-popup-default_size-에만-곱해진다-비균일"></a>
 
-## remote_tool — popup border 가 stroke Outside → 콘텐츠가 1px 위에서 시작
+## 팝업과 내부 콘텐츠의 배율
 
-- **증상**: 구역 Y 좌표가 디자인보다 1~2px 일정하게 위에 있다.
-- **원인**: `draw.rs` 가 popup 외곽선을 `StrokeKind::Outside` 로 그린다 → 콘텐츠(content_rect)
-  는 popup_rect.top 부터이고, 측정한 popup border 는 그 1px 바깥. 디자인은 border 가 컨테이너
-  안쪽(box-sizing border-box).
-- **처방**: 콘텐츠 시작 좌표 계산 시 +1~2px 보정(또는 min_height 등에 흡수). 정밀(±1px) 단계
-  에서만 신경 쓰면 된다.
-- **근거**: remote_tool 2026-06-20.
+팝업의 `default_size`만 확대하고 내부 길이를 리터럴로 두면 UI 배율에서 비율이 달라진다. 기본 크기 비교는 `appearance.ui_scale="medium"`(1.0)으로 하되, 지원 배율에서 내부 내용이 함께 커지는지도 확인한다.
 
-## command_palette — surface0 배경은 popup 밖에도 쓰여 색 bbox 가 오염된다
+본체는 egui 전역 zoom 대신 배율을 적용하는 Theme 접근자를 사용한다. 토큰으로 전환하지 않은 호출부 리터럴은 여전히 누락될 수 있다. 이유와 검사 한계는 [ADR-0039](../../adr/0039-typed-length-and-dpi-boundaries.md)를 따른다. 검증 설정은 격리 인스턴스에서 바꾸거나 검사 뒤 복원한다.
 
-- **증상**: surface0(=`surface-raised`) 픽셀의 bounding box 로 popup 을 잡으면 화면 우측 끝까지
-  잡혀 폭이 틀린다(scale 오검출).
-- **원인**: command_palette 본문 bg 는 surface0 인데, 같은 surface0 가 비활성 탭·hover
-  오버레이·스크롤바 등 **popup 밖 여러 위젯**에도 쓰인다. 단색 bbox 로는 popup 만 못 가린다.
-- **처방**: popup 의 **전체폭 가로 divider(surf1 line)** 를 랜드마크로 쓴다. x 범위 안에서
-  surf1 픽셀이 일정 수 이상인 행 = search/footer divider + popup top/bottom border. 그 행들의
-  surf1 run 으로 popup 좌우, 행 Y 로 구역 경계를 잡는다.
-- **근거**: command_palette 2026-06-20. wide-surf1 행 [top, search_div, footer_div, bottom]
-  → search divider 49.6(design 50), footer h 31.3(design 31). diff <1.
+<a id="remote_tool--css-line-height-vs-egui-텍스트-박스-높이-헤더-8px-얕음"></a>
 
-## command_palette — 카드 높이는 콘텐츠를 따른다 (`PopupDef.sizer` 는 **매 프레임** 돈다)
+## remote_tool — CSS 줄 높이와 egui 텍스트 박스
 
-- **증상(해결됨)**: 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 list 바로 아래 붙는다.
-  한동안 이 popup 은 `default_size` 고정이라 검색으로 항목이 줄면 목록 아래가 비어 있었다.
-- **왜 오래 남았나 — 틀린 전제**: 여기 "완전 일치는 popup 높이를 매 프레임 콘텐츠로 재계산하는
-  **기능이 필요**" 하다고 적혀 있었고, 그 근거는 `PopupDef.sizer` 가 open 시점 1 회만 불린다는
-  것이었다. 그 전제가 거짓이다 — `popup::frame::draw_popup_layer` 의 첫 루프가 **매 프레임**
-  모든 def 의 `sizer` 를 부르고, 사용자가 직접 리사이즈하지 않은(`size_user_overridden` 아닌)
-  popup 의 `size` 에 그대로 넣는다. `tools_menu`·`rail_category` 가 이미 그렇게 쓰고 있었다.
-  출처는 `PopupDef.sizer` 의 필드 doc 한 줄이었고(그 줄은 고쳤다), 새 경로는 필요 없었다.
-- **처방**: `command_palette_sizer` 하나. 매 프레임 현재 쿼리의 **매칭 개수**만 세어
-  `palette_height(theme, n)` 을 돌려준다(라벨·아이콘·키캡까지 만드는 쪽은 다시 안 부른다).
-  draw 의 footer 고정과 sizer 가 같은 `palette_footer_height`/`palette_row_height`/
-  `PALETTE_LIST_MAX_H` 를 본다 — 두 식이 갈리면 목록 마지막 행이 footer 밑으로 밀린다.
-  행 높이는 상수가 아니라 `Theme.item_height_interactive`(= `semantic.control-height`) 다.
-- **배율**: `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom 이 **안** 곱해진다 —
-  종전의 고정 크기는 등록이 곱해 주고 있었다. 그래서 높이 식 안의 `Theme` 값(이미 배율을 탄
-  것)과 파일 안 const(안 탄 것)를 섞으면 배율에서 그릇만 고정되고 글자가 커진다. 폭·목록
-  상한·여백 const 는 전부 `zoomed_px` 를 거쳐서만 쓰고, 행 높이는 토큰이라 이미 탄다 —
-  그래야 한 화면에 보이는 행 수가 배율마다 안 달라진다.
-- **위치**: 카드는 열 때 한 번 중앙 정렬되고(`request_center`) 그 뒤 높이가 줄어도 `pos` 는
-  그대로다 — 위쪽 가장자리가 고정돼 타이핑 중에 검색창이 움직이지 않는다.
-- **근거**: 2026-09-20 실측. 항목 하나짜리 카드를 종전 고정 높이(412)로 그리면 목록 아래가
-  200px 넘게 비고, 콘텐츠 맞춤 높이로 그리면 footer 구분선이 그 행에서 한 행 높이 안쪽에 붙는다
-  (`command_palette.rs` 의 `painted()` 테스트 — 식을 되읊는 대신 **그려진 구분선 y** 를 본다).
+같은 폰트 크기라도 CSS line-height와 egui 텍스트 박스 높이는 다르다. 제목이 14px여도 디자인의 줄 높이는 약 24px, egui 박스는 약 18px일 수 있다.
 
-## port_scanner — 테이블 컬럼 floor 가 footer 잘림의 근본 원인 (디자인 Table 구조 미준수)
+헤더 행의 최소 높이를 디자인 콘텐츠 높이에 맞추고 바깥 보더도 포함해 비교한다. remote_tool의 기록된 보정은 최소 높이 26(콘텐츠 24 + Outside 보더 보정 2)과 탭 높이 36이며 구분선 y는 48.0·84.0이었다. 이 값을 다른 헤더의 기본값으로 사용하지 않는다.
 
-- **증상**: footer 의 `주소 복사`/`닫기` 버튼이 popup 우측에서 잘린다.
-- **원인**: 디자인 Table 은 고정폭 4개(port 84/proto 76/ws 120/state 140) + **flex 3개
-  (addr/proc/tab, CSS `max-width:0`+ellipsis, 최소폭 없음)** 구조다. 구현이 flex 컬럼에
-  `at_least` floor 를 줘서 floor 합이 가용폭을 넘으면 테이블이 popup 폭을 초과 → footer 의
-  right_to_left 기준점이 화면 밖으로 밀려 버튼이 잘렸다. "footer 높이"가 아니라 **테이블 가로
-  오버플로**가 진짜 원인.
-- **처방**: 디자인 구조 그대로 — 고정폭은 `Column::exact`, flex 는 `Column::remainder().
-  clip(true)`(floor 없음, 말줄임). exact 합 + flex 분배 = 항상 컨테이너 폭에 fit → 잘림 자체가
-  구조적으로 안 생긴다. Tab 은 대개 "—" 라 디자인상 좁으므로(measured 62) flex 에서 빼 exact
-  62 로 두면 addr/proc 가 89 로 넓어진다(egui remainder 는 균등 분배라 Tab 까지 flex 면
-  addr/proc 가 좁아짐).
-- **교훈**: "회귀 위험" 으로 우회할 게 아니라, 디자인 컴포넌트 구조(컬럼 정의)를 그대로
-  따르면 얽힘이 사라진다. 위 **구조 전사** 핵심 원칙을 테이블 컬럼 정의에도 적용할 것.
-- **근거**: port_scanner 2026-06-20. floor 제거 후 `주소 복사`+`닫기` 둘 다 온전.
-- **전환(2026-06-26)**: "항상 fit(말줄임)" 결정을 **가로 스크롤 도입**으로 안전하게 뒤집었다.
-  이제 컬럼별 **최소폭** + slack 분배(`compute_column_widths`)로 폭을 정하고, 보이는 컬럼
-  최소폭 합 > 본문 폭이면 `Table::horizontal_scroll(true)`(본문을 `ScrollArea::horizontal`
-  로 감쌈)로 좌우 스크롤한다. 과거 footer 잘림은 테이블이 *outer ui 폭*을 부풀려 생긴 것이라,
-  가로 스크롤을 **본문 영역에만** 가두면(footer 는 여전히 popup 전체폭 rect 에 그림) 재발하지
-  않는다. sticky 헤더 띠는 스크롤 컨텐츠 폭(고정폭 합)에 맞춰 칠해 본문과 수평 동기 이동.
+<a id="remote_tool--popup-border-가-stroke-outside--콘텐츠가-1px-위에서-시작"></a>
 
-## port_scanner — 테이블 헤더 th 배경(mantle)은 painter 로 직접 칠한다
+## remote_tool — 바깥 보더와 콘텐츠 시작점
 
-- **증상**: egui_extras Table 은 헤더 셀 배경 API 가 없어 디자인 th `bg-sidebar`(mantle) 가
-  안 칠해진다.
-- **처방**: TableBuilder 전에 header 영역 rect(`cursor.top` ~ `+header_h`, 전체폭)를 계산해
-  `painter().rect_filled(mantle)`. sticky header 텍스트는 그 위에 그려진다.
-- **근거**: port_scanner 2026-06-20.
+팝업 외곽선을 `StrokeKind::Outside`로 그리면 콘텐츠는 `popup_rect.top`부터 시작하고 보더는 그보다 1px 바깥에 있다. CSS의 `box-sizing: border-box`와 비교할 때 이 차이를 반영한다.
 
-## port_scanner — 테이블 셀 정렬/패딩 + footer 가 ui 폭 확장에 밀린다
+정밀한 좌표 비교에서 나타나는 1~2px 차이는 콘텐츠 시작점이나 최소 높이 계산에 포함한다. 보더 위치를 확인하지 않고 모든 요소에 일괄 보정값을 더하지 않는다.
 
-- **증상 1**: 표 컬럼 텍스트가 컬럼 경계에 붙고(패딩 0), Port 가 좌측 정렬(디자인은 우측).
-- **원인 1**: egui_extras Table 은 셀 패딩/정렬 API 가 없다. 디자인 td `padding 0 12` + Port
-  `align:right` 가 그냥 안 들어간다.
-- **처방 1**: 셀 콘텐츠를 헬퍼로 감싼다 — 좌측 정렬 컬럼은 `ui.add_space(12)` 후 콘텐츠,
-  Port 는 `with_layout(right_to_left)` + `add_space(12)`. 헤더 셀(draw_header_cell)도 동일.
-- **증상 2**: 셀 패딩을 넣자 footer 의 `닫기` 버튼이 popup 우측에서 잘렸다(재발).
-- **원인 2**: 테이블이 **컬럼 사이 `item_spacing.x`(기본 ~8 × 6 gap)** 만큼 자기 ui 폭을
-  popup 폭보다 넓힌다. footer 를 그 ui 에 그리면 `right_to_left` 기준 우측이 popup 밖으로
-  밀려 버튼이 잘린다. (remote_tool 에서 본 "콘텐츠가 ui 폭 확장 → footer 밀림" 과 같은 패턴.)
-- **처방 2**: footer 를 `ui.allocate_new_ui(UiBuilder::max_rect(popup 전체폭 rect))` 안에
-  그려 ui 폭 확장과 무관하게 popup 폭에 고정. → `주소 복사`+`닫기` 온전.
-- **교훈**: footer 등 우측 기준 레이아웃은 **테이블/콘텐츠가 부풀린 ui 폭이 아니라 popup
-  전체폭 rect 에 고정**해 그린다.
-- **근거**: port_scanner 2026-06-20.
+<a id="command_palette--surface0-배경은-popup-밖에도-쓰여-색-bbox-가-오염된다"></a>
 
-## port_scanner — tasty mono(D2Coding)가 디자인 폰트보다 넓다 (셀 말줄임)
+## command_palette — 배경색만으로 경계를 찾지 않는다
 
-- **증상**: 디자인 addr 88px 에서 "127.0.0.1"이 보이는데 tasty 같은 폭에서 1~2px 넘쳐 말줄임.
-- **원인**: tasty 본문 mono 폰트(D2Coding)의 glyph advance 가 디자인 미리보기 폰트보다 넓다
-  (폰트 메트릭 차이). 셀 좌우 패딩 24 까지 빼면 빠듯해진다.
-- **처방**: 디자인 폭을 대체로 따르되, 거의 "—" 인 Tab 컬럼을 디자인 62→56 으로 조금 좁혀
-  addr/proc 에 폭을 양보(보정). 폰트 자체 차이라 완전 일치는 불가 — 디자인도 긴 데이터는
-  말줄임(seed 의 ws "serv…").
-- **근거**: port_scanner 2026-06-20.
+`surface0`은 팔레트 밖의 비활성 탭·호버·스크롤바에도 쓰인다. 해당 색의 전체 경계 상자로 팝업 폭을 재면 다른 위젯까지 포함한다.
 
-## egui UI 의 mono 한 칸은 6px 다 — 공칭 advance 가 아니라 **깔리는** advance
+팔레트 안의 전체폭 `surf1` 구분선을 기준으로 검색·목록·footer 영역을 나누고, 해당 x 범위에서 팝업 테두리를 찾는다.
 
-- **증상**: 문자 수로 폭을 잡는 자리(파일 핸들러 헤더 경로)가 "들어간다" 고 판정한
-  문자열이 화면에서는 painter 에 잘렸다.
-- **원인 둘**. 하나는 측정 대상이다 — D2Coding 11px 의 공칭 advance 는 5.5556px
-  (`egui::Fonts::glyph_width`)지만 egui 는 레이아웃에서 글리프 advance 를 정수 픽셀로
-  반올림하므로 실제로 깔리는 폭은 **6px** 다. 글자 하나의 galley 폭(5.5625)으로 나누면
-  예산이 8% 넉넉하게 나온다. 다른 하나는 폰트 자체였다 — 부팅이 얹은 D2Coding 을
-  `font_registry::build_font_definitions` 가 첫 프레임에 `set_fonts` 로 덮어쓰면서
-  Monospace 가 egui 기본 서체(한 칸 7px)로 돌아가 있었다. 글자가 멀쩡히 나오므로
-  눈으로는 안 잡힌다.
-- **처방**: 재는 쪽은 **한 글자 늘 때의 증분**을 잰다(`"00"` 폭 − `"0"` 폭). 얹는 쪽은
-  두 자리(`GpuState::setup_egui_fonts` · `build_font_definitions`) 모두에 번들 mono 를
-  맨 앞에 넣고, 두 스택이 같은 한 칸을 준다는 것을 시험으로 묶는다.
-- **값**: 한 칸 6px · 헤더 라인 박스 390px · 파생 상한 65 자. 공칭으로 나누면 70 이
-  나오고 그 70 자는 깔리면 419.56px 라 라인 박스를 29.56px 넘긴다.
+<a id="command_palette--카드-높이는-콘텐츠를-따른다-popupdefsizer-는-매-프레임-돈다"></a>
+
+## command_palette — 콘텐츠에 맞춘 높이 계산
+
+`popup::frame::draw_popup_layer`는 매 프레임 `PopupDef.sizer`를 호출한다. 사용자가 직접 크기를 바꾸지 않은 팝업(`size_user_overridden`이 아님)에 결과를 적용한다.
+
+`command_palette_sizer`는 현재 검색의 매칭 개수만 세어 `palette_height(theme, n)`을 계산한다. 라벨·아이콘·키캡을 만드는 처리를 중복 호출하지 않는다. 그리기와 크기 계산은 같은 `palette_footer_height`·`palette_row_height`·`PALETTE_LIST_MAX_H`를 사용한다. 행 높이는 `Theme.item_height_interactive`다.
+
+sizer가 있는 팝업은 등록 시 default_size에 UI 배율을 곱하지 않는다. 폭·목록 상한·여백 상수는 `zoomed_px`를 거치고 이미 배율이 적용된 Theme 값에는 다시 곱하지 않는다. 카드는 열 때 `request_center`로 중앙에 놓고 이후 높이가 바뀌어도 위쪽 위치를 유지해 검색창이 움직이지 않게 한다.
+
+`command_palette.rs`의 `painted()` 테스트는 그려진 구분선 y를 확인한다.
+
+<a id="port_scanner--테이블-컬럼-floor-가-footer-잘림의-근본-원인-디자인-table-구조-미준수"></a>
+
+## port_scanner — 열 최소폭과 가로 스크롤
+
+본문 테이블이 팝업보다 넓어져도 footer가 밀려나서는 안 된다. 현재는 `column_layout`의 열별 최소폭을 기준으로 `compute_column_widths`가 남은 폭을 가변 열에 나눈다. 최소폭 합이 본문보다 크면 `Table::horizontal_scroll(true)`로 본문만 가로 스크롤한다.
+
+footer는 팝업 전체폭 사각형에 고정하고 sticky 헤더는 스크롤 콘텐츠와 수평으로 함께 이동한다. 과거의 최소폭 제거·무조건 말줄임 방식은 현재 규칙이 아니다. 구현과 열별 값은 `src/adapters/ui/popup/port_scanner.rs`를 따른다.
+
+<a id="port_scanner--테이블-헤더-th-배경mantle은-painter-로-직접-칠한다"></a>
+
+## port_scanner — 헤더 배경
+
+egui_extras Table의 헤더 배경은 별도로 그린다. TableBuilder 전에 `cursor.top`부터 `header_h`까지 전체폭 사각형을 계산해 `bg-sidebar`(mantle)로 채우고, 그 위에 sticky 헤더 텍스트를 표시한다.
+
+<a id="port_scanner--테이블-셀-정렬패딩--footer-가-ui-폭-확장에-밀린다"></a>
+
+## port_scanner — 셀 정렬과 footer 폭
+
+셀 패딩과 정렬은 공용 그리기 함수에서 적용한다. 왼쪽 정렬 열은 콘텐츠 앞에 12px를 두고 Port는 `right_to_left`와 12px 패딩을 사용한다. 헤더도 같은 규칙을 따른다.
+
+테이블의 컬럼 간 `item_spacing.x`가 전체 UI 폭을 늘릴 수 있다. footer를 그 UI의 오른쪽 끝에 붙이지 말고, 팝업 전체폭의 `UiBuilder::max_rect` 안에 그린다.
+
+<a id="port_scanner--tasty-monod2coding가-디자인-폰트보다-넓다-셀-말줄임"></a>
+
+## port_scanner — 고정폭 글꼴의 말줄임
+
+같은 폰트 크기라도 D2Coding과 디자인 미리보기 글꼴의 글자 폭은 다르다. 예를 들어 디자인의 88px 열에 맞는 `127.0.0.1`이 실제 폰트와 좌우 패딩 24px를 적용하면 잘릴 수 있다.
+
+현재 열 너비는 `column_layout`과 가로 스크롤 규칙을 따른다. 과거 측정에서 사용한 Tab 열 62→56 보정은 현재 코드에 적용할 처방이 아니다. 긴 문자열은 실제 글꼴로 배치한 결과를 확인한다.
+
+<a id="egui-ui-의-mono-한-칸은-6px-다--공칭-advance-가-아니라-깔리는-advance"></a>
+
+## 문자 폭은 실제 레이아웃으로 측정한다
+
+문자 수로 폭을 제한할 때는 `glyph_width`나 한 글자의 galley 폭보다 한 글자 추가 시 늘어나는 폭을 사용한다. `"00"`의 폭에서 `"0"`의 폭을 빼면 레이아웃의 픽셀 반올림을 반영할 수 있다.
+
+D2Coding 11px에서 확인한 예에서는 공칭 advance가 5.5556px, 한 글자 galley가 5.5625px였지만 추가 글자의 폭은 6px였다. 헤더 390px의 예산은 65자이며 공칭값으로 계산한 70자는 419.56px가 되어 29.56px를 넘었다.
+
+폰트 설치 경로도 확인한다. `GpuState::setup_egui_fonts`와 `font_registry::build_font_definitions` 모두 번들 고정폭 글꼴을 우선해야 한다. 첫 프레임의 `set_fonts`가 다른 글꼴로 덮어쓰면 앞서 측정한 폭을 사용할 수 없다.
 
 ## port_scanner — 테이블 행 구분선이 divider 자동 측정을 교란
 
-- **증상**: wide-surf1 라인 랜드마크로 구역 divider 를 찾으면 테이블 행마다의 borderBottom
-  (surf1)이 다수 잡혀 header/filter/footer divider 를 가려낼 수 없다.
-- **처방**: 테이블 헤더의 `mantle` 띠를 기준으로 잡고(행엔 mantle 없음), 그 위/아래로 구역
-  divider 를 센다. 정밀 ±1px 가 어려우면 구역 패딩을 디자인값 그대로(코드 상수) 넣어 구조로
-  보장하고 시각 비교로 갈음.
-- **근거**: port_scanner 2026-06-20. 구역 패딩 header 12/14·filter 8/14·footer 9/14 상수 적용.
+테이블의 행 구분선과 구역 구분선이 같은 `surf1`을 사용하므로 색만으로 구분하기 어렵다. 행에는 없는 헤더의 mantle 띠를 먼저 찾고 그 위·아래의 구역 경계를 비교한다. 패딩 값은 디자인과 코드의 정의를 대조하고 화면 캡처로 확인한다.
 
 ## remote_tool — 컨테이너 패딩 0 + 구역별 패딩 (통짜 패딩 금지)
 
-- **증상**: 단일 Frame inner_margin 으로 전체를 감싸면 헤더(14L/12R)·탭바(8)·리스트(14)의
-  서로 다른 패딩을 못 맞춘다.
-- **처방**: popup content_margin 을 0 으로(`popup.rs` content_rect 에서 id 분기) 두고, 헤더/
-  탭바/콘텐츠를 각자 Frame inner_margin 으로 디자인 패딩만큼 들여쓴다. 탭바 `bg-sidebar`
-  배경은 전체폭 `rect_filled(mantle)` 로 직접 칠한다(Frame.fill 은 자식 폭만큼이라 전체폭이
-  안 됨).
-- **근거**: remote_tool 2026-06-20.
+헤더(왼쪽 14/오른쪽 12), 탭바(8), 목록(14)은 서로 다른 패딩을 사용한다. 팝업 전체를 같은 inner_margin으로 감싸지 않고 content_margin을 0으로 둔 뒤 각 구역의 Frame에서 적용한다.
 
-## 공용 위젯 레이어 (2026-06-21) — primitive 컴포넌트화에서 얻은 것
+탭바 배경은 전체폭 `rect_filled(mantle)`로 그린다. 자식 크기에 맞춰지는 Frame.fill만으로는 전체폭을 채우지 못할 수 있다.
 
-### 위젯의 집 = `crates/tasty-ui-widgets` (신규 디렉토리 아님)
+<a id="공용-위젯-레이어-2026-06-21--primitive-컴포넌트화에서-얻은-것"></a>
+
+## 공용 위젯과 CSS 표현
+
+<a id="위젯의-집--cratestasty-ui-widgets-신규-디렉토리-아님"></a>
+
+### 공용 위젯 위치: `crates/tasty-ui-widgets` (신규 디렉토리 아님)
 갤러리(`tasty-gallery`)는 별도 크레이트라 메인 바이너리(`src/`)를 의존할 수 없다. 공용
 위젯을 `src/adapters/ui/` 에 두면 갤러리가 또 mirror 를 떠야 한다. `tasty-ui-widgets` 는
-**메인+갤러리 양쪽이 이미 의존**하고 `&Theme` 명시·본체 미의존 → primitive 의 올바른 집.
-효과: 팝업과 갤러리 specimen 이 동일 함수 호출(demo=main, mirror 불필요).
+본체와 갤러리가 함께 의존하며 `&Theme`을 명시적으로 받는다.
+팝업과 갤러리가 같은 함수를 호출하므로 그리기 코드를 복사하지 않아도 된다.
 
-### egui 세금 (디자인 → 즉시모드 변환 시)
+<a id="egui-세금-디자인--즉시모드-변환-시"></a>
+
+### CSS와 egui의 표현 차이
 - **폰트 weight**(medium/semibold/bold): egui 는 별도 bold family 없이는 굵기 재현 불가.
   크기+색(또는 `.strong()` 색 보정)만 따른다 — 디자인 weight 차이는 시각상 미세 손실.
 - **radius-pill**(완전 둥금): egui CornerRadius 로 `height/2` 사용.
@@ -240,28 +153,15 @@ rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는
 즉시**(focus-ring 가시성, invalid 보더, checked/selected/active) — fade 금지. 터미널 0ms 별개.
 
 ### 검증
-갤러리는 IPC 스크린샷이 없고 OS 캡처는 권한 불가 → 본체 격리 인스턴스
-(`TASTY_HOME=tmp ./target/debug/tasty --launch`, debug 는 별도 루트로 격리 — [self-verification 독립 검증](../../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다)) + `ui.screenshot`
-JSON-RPC + `debug.host_popup.open` 으로 검증. primitive 는 본체 팝업에 adopt 한 뒤 대조한다.
+갤러리는 `TASTY_GALLERY_SHOT`의 GPU readback 캡처를 사용한다. 본체는 [격리 인스턴스](../../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다)에서 `ui.screenshot`과 `debug.host_popup.open`으로 확인한다. 공용 위젯도 실제 팝업에 넣은 상태에서 입력과 배치를 대조한다.
 
-## 팝업 — egui Area 미등록 → ScrollArea 스크롤 불가 + 클립 누출 (2026-06-21)
+<a id="팝업--egui-area-미등록--scrollarea-스크롤-불가--클립-누출-2026-06-21"></a>
 
-팝업 콘텐츠가 bare `Ui::new(layer_id)` 라 **egui Area 미등록** → `Memory::layer_id_at`
-이 팝업 레이어를 못 찾음 → `ScrollArea::ui_contains_pointer()`=false → **휠/드래그
-스크롤 입력 무시**(모든 팝업 공통). 위젯 클릭은 widget hit-test(다른 경로)라 정상이라
-"클릭은 되는데 스크롤만 안 됨" 으로 드러난다.
+## 팝업 — Area 등록과 입력·클립 범위
 
-수정: 콘텐츠를 동일 layer_id 의 `egui::Area`(movable(false)+sense(hover))로 등록.
-부수 함정 2개:
-- Area 는 콘텐츠에 auto-shrink → footer(allocate_new_ui 별도 배치)가 빠져 hit-rect 가
-  줄어 layer_id_at 이 팝업 하단을 못 잡음 → `set_min_size(content_rect)` 로 강제.
-- `Ui::new(max_rect(r))` 는 clip_rect=r 였지만 Area 는 기본 clip 이 더 넓음 → State 컬럼
-  긴 라벨(ESTABLISHED)·선택 하이라이트·스크롤바가 팝업 경계 밖으로 누출 →
-  `set_clip_rect(content_rect)` 로 클립 복원.
+팝업 콘텐츠를 `Ui::new(layer_id)`만으로 만들면 egui Area 목록에 등록되지 않는다. `Memory::layer_id_at`이 해당 레이어를 찾지 못해 ScrollArea가 포인터를 받지 못할 수 있다. 위젯 클릭은 별도 검사라 클릭만 동작하는 현상도 가능하다.
 
-검증은 스크롤 주입 수단이 없어 `ctx.layer_id_at(content중심)` 이 Background→팝업
-Foreground area 로 전환됨을 로깅으로 확인(기계적 증명) + 팝업 스크린샷 z-order 회귀 확인.
-상세 아키텍처: [`dev-guide/popup-implementation.md`](../../dev-guide/popup-implementation.md) "콘텐츠 레이어".
+같은 layer_id의 `egui::Area`에 `movable(false)`·`sense(hover)`를 적용한다. 별도 배치한 footer까지 입력 영역에 포함되도록 `set_min_size(content_rect)`로 크기를 확보하고 `set_clip_rect(content_rect)`로 내용 유출을 막는다. 자세한 구조는 [팝업 구현](../../dev-guide/popup-implementation.md)의 콘텐츠 레이어 절을 따른다.
 
 ## port_scanner — State 컬럼 140px 에 가장 긴 라벨(ESTABLISHED)이 들어간다
 
@@ -273,7 +173,9 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 를 잰다(예: PIL `ImageFont.truetype(path, px).getlength("ESTABLISHED")`). 셀 폰트나 라벨 크기가
 바뀌면 다시 잰다.
 
-## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → `Theme` 이 실어 나름
+<a id="spinner--egui-엔-prefers-reduced-motion-매체-질의-없음--theme-이-실어-나름"></a>
+
+## Spinner — 모션 감소 설정
 
 - **증상**: 디자인 Spinner 는 `prefers-reduced-motion` 에서 회전을 멈추고 3-dot fallback 을
   쓰는데, egui 엔 그 매체 질의가 없다.
@@ -318,13 +220,13 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **증상**: 디자인 토큰엔 letter-spacing(ui 0 / caps 0.04em)·line-height(tight 1.0 / term 1.2
   / ui 1.4 / prose 1.6)·세분 font-weight 가 있다. 셋 중 **막힌 것은 weight 하나**다 — egui 는
   별도 bold family 없이 굵기를 재현하지 못한다(위 "공용 위젯 레이어 — 폰트 weight" 항목).
-- **앞의 둘은 채널이 있다**: `RichText::extra_letter_spacing` / `RichText::line_height` 와
+- **앞의 둘은 API가 있다**: `RichText::extra_letter_spacing` / `RichText::line_height` 와
   `TextFormat` 의 같은 이름 필드. 둘 다 px 를 받으므로 em·배수 토큰은 폰트 크기를 곱해
   넘긴다 — `tasty_ui_widgets::remote_tool::selectable_label_tracked` 가 그 형태다. 전사가
-  안 된 자리가 남아 있다면 채널이 없어서가 아니라 값이 Rust 상수로 안 와 있어서다: em 단위
+  안 된 자리가 남아 있다면 API가 없어서가 아니라 값이 Rust 상수로 안 와 있어서다: em 단위
   dimension 은 DTCG 생성기가 `LogicalPx` 로 못 담아 스킵한다
   (`crates/tasty-design-tokens/src/dtcg.rs` 의 `Skip::EmUnit`).
-- **처방**: weight 는 크기+색으로 근사한다. 나머지 둘은 값이 오면 그대로 건다.
+- **처방**: weight 는 크기+색으로 근사한다. 나머지 둘은 값이 준비되면 해당 API로 적용한다.
 - **근거**: `crates/tasty-gallery/src/catalog/typography.rs` — specimen 은 지금 weight 축만
   기록하고 letter-spacing·line-height 토큰 값은 아직 싣지 않는다.
 
@@ -382,27 +284,19 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 
 ---
 
-## 일반 — component-tier 디자인 토큰은 신규 Theme 필드를 만들지 않는다 (semantic 접근자 직접 매핑)
+<a id="일반--component-tier-디자인-토큰은-신규-theme-필드를-만들지-않는다-semantic-접근자-직접-매핑"></a>
 
-- **증상**: 디자인 `tokens/components.css` 에 새 컴포넌트 토큰 블록이 추가되면(예
-  `switch-overlay-active-bg: var(--tasty-accent-primary)`), Theme 에 대응 필드를 새로
-  만들어야 할 것처럼 보인다.
-- **원인(검증)**: tasty `Theme` 은 **semantic-tier 값만 필드/접근자로 보유**하고, component-tier
-  토큰은 코드가 그 접근자를 직접 호출해 표현한다. `components.css` 의 `button-primary-bg`
-  · `checkbox-bg-checked` · `switch-track-bg-on` 이 모두 `--tasty-accent-primary` alias 지만
-  Theme 엔 전용 필드가 없고 호출부가 `accent_primary()` 를 직접 부른다(매핑표 `design-token-mapping.md`
-  에 dedicated 필드 0개). 즉 디자인의 3-tier(component→semantic→primitive)에서 tasty Theme 은
-  semantic tier 에 해당하고, component tier 는 호출부의 책임.
-- **처방**: 새 component 토큰이 기존 semantic 접근자(`accent_primary()`/`text_on_accent()`/
-  `surface0`/`subtext1`/`surface1` 등)나 위젯 상수로 해석되면 **신규 필드를 만들지 말고 매핑만
-  기록**. 새 *semantic* 색/치수가 진짜로 도입될 때만 Theme 필드를 추가한다.
-- **근거(2026-06-25)**: switch-number overlay 8 토큰 전부 기존 접근자/`Kbd` 위젯 상수(`chip.rs`
-  `KBD_HEIGHT/KBD_BOTTOM_BORDER`)·`font_size_micro` 로 커버 → P0 에서 theme.rs 무변경. 매핑은
-  `design-token-mapping.md` "switch-number overlay (chrome)" 섹션.
+## component 토큰과 Theme 접근자
 
----
+기존 semantic 값의 별칭인 component 토큰은 해당 Theme 접근자를 사용한다. 예를 들어 `button-primary-bg`·`checkbox-bg-checked`·`switch-track-bg-on`은 `accent_primary()`를 공유한다. 같은 의미의 필드를 중복해서 만들지 않는다.
 
-## 갤러리 — inline 키캡 위젯은 좌표 slot 에 못 끼운다 → painter 갈래를 공유 위젯에 둔다
+반면 고유 치수를 가진 component 토큰에는 자체 Theme 경로가 필요할 수 있다. `component.fp-crumb-max-width`는 `generated_component.rs`의 `fp_crumb_max_width()`에서 UI 배율을 적용한다. component라는 이유만으로 접근자 생성을 금지하거나 숫자가 같은 다른 토큰으로 대신하지 않는다.
+
+[토큰 매핑](design-token-mapping.md)과 [테마 가이드](theme.md)의 생성 길이 상수 규칙에 따라 기존 매핑·생성 접근자·수기 접근자를 확인한다.
+
+<a id="갤러리--inline-키캡-위젯은-좌표-slot-에-못-끼운다--painter-갈래를-공유-위젯에-둔다"></a>
+
+## 갤러리 — 좌표 기반 키캡 그리기
 
 - **증상**: switch-number overlay 는 탭 스트립/사이드바 행 중간의 *정해진 16px slot*(아이콘/
   dot 자리)에 키캡을 그려야 한다. 본체 `kbd()`(`crates/tasty-ui-widgets/src/chip.rs`)를 그대로
@@ -410,11 +304,10 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   배치**하는 위젯이라 임의 좌표 slot 에 끼울 수 없다.
 - **원인**: 갤러리 mock(tab_bar/sidebar specimen)은 `ui.painter_at(rect)` 로 좌표 painting 한다.
   inline 위젯(kbd)과 좌표 painting 은 배치 모델이 달라 섞이지 않는다.
-- **처방**: 그림을 좌표 painter `paint_num_keycap`(`chip.rs`)으로 뽑아 두고, inline 위젯
+- **처방**: 그리기를 좌표 기반 함수 `paint_num_keycap`(`chip.rs`)으로 뽑아 두고, inline 위젯
   `num_keycap` 은 자리를 할당해 그것을 부른다. 갤러리 `keycap_at` 과 본체 `paint_keycap` 이 같은
-  함수를 부르므로 형상은 한 벌이다. 색·치수는 `switch-overlay-*` component 토큰에서 온다.
-- **근거(2026-06-25)**: `crates/tasty-gallery/src/catalog/components/switch_overlay.rs`. 신규
-  Theme 필드 없음(P0). 본체 P2 draw 도 같은 좌표 painting 이 될 것이므로 형상 로직 공유 가능.
+  함수를 부르므로 그리기를 공유한다. 색·치수는 `switch-overlay-*` component 토큰에서 온다.
+- **구현**: `crates/tasty-gallery/src/catalog/components/switch_overlay.rs`와 본체의 `paint_keycap`이 같은 공용 함수를 사용한다.
 
 ---
 
@@ -428,9 +321,8 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
     즉 **bare Ctrl press/release 도 redraw 를 유발**한다(별도 배선 불필요). focus 상실 시
     `base.modifiers = empty()` (`src/view/main.rs`) 로도 정리되고 egui 도 동일.
   - draw 단계 modifier 소스는 **egui `ctx.input(|i| i.modifiers)`** 가 가장 깔끔. winit→egui
-    raw_input 으로 들어온 **실제 사용자 입력만** 반영 → IPC/에이전트가 raw_input 에 주입
-    불가 → 사용자↔에이전트 분리 자동 충족. tasty `base.modifiers`(MainView) 를 draw 까지
-    plumbing 할 필요 없음.
+    raw_input 으로 들어온 **실제 사용자 입력만** 반영 → IPC/에이전트가 raw_input에 사용자 입력을 주입하는 release API는 없다. tasty `base.modifiers`(MainView) 를 draw 까지
+    따로 전달할 필요는 없다.
 - **처방**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` 에 ① modifier↔대상 판정
   (`switch_target_for`, numeric.rs 규칙 1:1; 사이드바용 얇은 래퍼 `workspace_switch_held`) ②
   키캡 painter(`paint_keycap`) 를 모은다. wrapper 가 **순수 view props 로 전달**(view 는 settings
@@ -449,48 +341,19 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 
 ## command_palette — 키캡은 본체·갤러리가 **같은 `Kbd` 함수**를 부른다
 
-- **증상(해결됨)**: 본체는 좌표 painting 으로 키별 키캡을 그리고, 갤러리 미러는 공유
-  `menu_item` 에 단일 문자열(`"⌘T"`)을 넘겨 한 덩이 mono 텍스트로 그렸다 — specimen 이 보여야
-  할 컴포넌트가 화면에 없었다. 게다가 본체 키캡은 한 변 18 · h-padding 5 · 키 사이 4 · 글자
-  caption(11) 로 `kbd-size`(16) · `kbd-padding-x`(4) · `kbd-gap`(3) · `kbd-font-size`(10) 보다
-  넷 다 컸다.
-- **왜 오래 남았나 — 틀린 전제**: "갤러리에 키별 키캡을 넣으려면 공유 `menu_item` 이 키 벡터를
-  지원해야 하고 그러면 **모든 사용처에 영향**이 간다" 고 적혀 있었다. 인자 타입을 바꿀 필요가
-  애초에 없었다 — 디자인에서 그 자리는 한 종류가 아니다(메뉴는 mono micro 텍스트, 팔레트는
-  `Kbd`). 표현을 둘로 갈라 문을 따로 두면(`menu_item` / `menu_item_kbd`) 텍스트 쪽 호출자는
-  그대로다.
-- **처방**: 그리는 일은 `tasty-ui-widgets` 의 `kbd_parts_at` 하나가 한다 — `kbd_parts` 의 좌표
-  판이고 같은 토큰·같은 폭 식(`kbd_item_widths`)을 쓴다. 본체 `draw_keycaps` 는 키 문자열을
-  `KbdKey` 로 감싸 넘기기만 하고, 갤러리는 `menu_item_kbd` 로 같은 함수에 닿는다.
-- **치수**: 2026-09-17 디자인 회신이 위 네 값 차이를 **변종이 아니라 드리프트**로 판정하고
-  `Kbd` 로 수렴시켰다(신규 토큰 없음, 28px 행에서 높이·정렬 불변). 그래서 본체가 값을 맞춘 것이
-  아니라 값을 **들고 있기를 그만뒀다**.
-- **근거**: 2026-09-20 변이. `kbd_parts_at` 의 `+` 구분자 글자만 바꿔 갤러리를 다시 빌드·캡처하면
-  팔레트 specimen 에서 **1,953 px** 이 달라지고 그 bbox 가 단축키 있는 세 행의 구분자 열과
-  겹친다 — 갤러리가 이 함수를 부른다는 뜻이다.
+본체의 `draw_keycaps`와 갤러리의 `menu_item_kbd`는 공용 `tasty-ui-widgets::kbd_parts_at`을 호출한다. 이 함수는 `kbd_parts`와 같은 토큰 및 `kbd_item_widths` 계산을 사용한다.
 
----
+일반 메뉴의 고정폭 단축키 텍스트는 `menu_item`, 키캡 조합은 `menu_item_kbd`로 구분한다. 기존 텍스트 호출자의 인자 형식을 바꾸지 않는다. 키캡은 `kbd-size` 16·`kbd-padding-x` 4·`kbd-gap` 3·`kbd-font-size` 10을 따르며 28px 행의 높이와 정렬을 유지한다.
 
-## sidebar 카테고리 헤더 — 패딩 대칭화 + 고아 구분선 제거 (2026-07-02 디자인 변경 반영)
+<a id="sidebar-카테고리-헤더--패딩-대칭화--고아-구분선-제거-2026-07-02-디자인-변경-반영"></a>
 
-- **증상**: 카테고리 헤더가 상 12/하 4 비대칭 패딩이라 top-heavy 로 보이고, 그룹 행 리스트가
-  상+하 보더를 둘 다 그려 다음 헤더 위 gap 에 이전 그룹의 하단 보더가 떠 있었다(고아 구분선).
-- **원인**: 구 디자인은 헤더 top 패딩(space-md)이 섹션 간 간격을 겸했다. 2026-07-02 디자인이
-  두 역할을 분리 — 헤더는 상하 space-xs(4) 대칭, 섹션 간격은 그룹 컨테이너로 이동(컨테이너
-  paddingTop space-sm 8 + 비-첫 섹션 marginTop space-sm 8). 그룹 행 리스트는 `rowList(…,
-  bottomBorder=false)` 로 **상단 보더만**(헤더 → 선 → 행). 평면 모드는 상+하 유지, 레일 불변.
-- **처방(전사)**: `view.rs::draw_category_header` pad_top 을 `spacing_xs` 로(상하 대칭 4,
-  헤더 총 34→26). 그룹 렌더 분기의 목록 하단 `draw_list_separator` 삭제(상단만). 섹션 루프
-  enumerate 로 비-첫 섹션 앞 `add_space(spacing_sm)` — `sec_start` 캡처 **뒤**에 두어 gap 이
-  해당 섹션 드롭존(section_spans)에 포함. 스크롤 시작 `add_space(8.0)`(그룹/평면 공통)이
-  디자인 컨테이너 paddingTop 8, New Workspace 앞 `add_space(4.0)` 이 paddingBottom 4 대응 —
-  둘 다 무변경. 갤러리 `sidebar.rs::full_categories` 는 schematic 유지 + 3항목만 미러(헤더
-  상하 xs 대칭 인셋 / 비-첫 spacing_sm / 헤더 아래 1px separator rule 추가 — 하단 rule 없음).
-- ~~알려진 잔차(의도적 비변경)~~ **해소됨 (design-tokens 02 간격 이식)**: 본체 헤더 패널
-  하단 6px 는 `spacing_xs`(4) 로, 상단 10px 는 `spacing_md`(12) 로 스냅되어 chrome.jsx
-  Sidebar 헤더 padding(space-md _ space-xs)과 정합. 첫 헤더 위 실효 간격 12 = 디자인 12.
-- **근거**: `chrome.jsx` `CategoryHeader`(padding xs/sm)·`rowList(bottomBorder)`·컨테이너
-  paddingTop/marginTop.
+## sidebar — 카테고리 헤더와 구분선
+
+카테고리 헤더는 상하 `spacing_xs`(4)로 대칭 배치한다. 그룹 컨테이너의 위 패딩은 `spacing_sm`(8), 첫 그룹을 제외한 그룹 간 간격도 8이다. 그룹 목록은 헤더 아래의 상단 구분선만 그리고 평면 모드는 상·하 구분선을 유지한다. 레일은 이 규칙의 변경 대상이 아니다.
+
+`draw_category_header`와 그룹 루프가 이를 적용한다. 섹션 시작 위치를 기록한 뒤 그룹 간 간격을 추가해 해당 간격도 드롭 영역에 포함한다. 스크롤 시작의 8px와 New Workspace 앞의 4px도 유지한다. 사이드바 헤더 패널은 위 `spacing_md`(12), 아래 `spacing_xs`(4)를 사용하며 첫 카테고리 헤더 위 간격은 12다.
+
+갤러리 `full_categories`도 같은 헤더 패딩·그룹 간격·상단 1px 구분선을 표시한다.
 
 ## preset 편집기 — 정적 specimen 은 존/× hover·crosshair 를 재현 못 한다
 
@@ -503,7 +366,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **처방(전사)**: specimen 은 이 상태들을 **고정 상태 예시**로 전사한다 — `draw_edit_direct_mock`
   이 Left 존을 활성 예시로 항상 그리고(`draw_split_zone_overlay_mock`), 탭 하나는 active 의 ×
   rest 상태, 다른 하나는 hover 상태(overlay_active fill), add-tab 은 hover fill 상태로 굳혀
-  보여준다. crosshair 커서는 정적에서 표현 불가라 생략(밴드+2px 분할선 시각만 전사). 색·치수는
+  보여준다. crosshair 커서는 정적에서 표현하지 않아 생략(밴드+2px 분할선 시각만 전사). 색·치수는
   본체와 **동일 토큰**(`preset_split_zone_bg/border`, `overlay_active/hover`, 14×14 ×, 22×20 +,
   30% 밴드)이라 구조·토큰 축은 정합하고, 오직 "입력 상태 전이"만 정적↔live 로 갈린다.
 - **근거**: `gallery/preset_editor.jsx` (`SurfaceBox`/`pickZone`/`AddTabBtn`).
@@ -542,37 +405,21 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **결정 근거**: kind 전환 · default 선채움 · autofocus 없음 · 저장 실패 시 화면 유지 · 더블클릭 범위의
   근거 · 대안 · 재검토 조건은 [ADR-0038](../../adr/0038-preset-drafts-and-store-conflicts.md).
 
-## explorer GridCell — 아이콘 축소 + 파일명 3줄 wrap 말줄임 (2026-07-09 디자인 확정 반영)
+<a id="explorer-gridcell--아이콘-축소--파일명-3줄-wrap-말줄임-2026-07-09-디자인-확정-반영"></a>
 
-- **증상**: explorer grid(아이콘) 셀이 28px 아이콘 + **1줄 12자 하드컷**(`truncate(&e.name,12)`
-  → `rust-toolch…`) 이라 긴 파일명 식별이 어렵고, 아이콘이 셀 높이를 대부분 차지했다.
-- **원인/전사 포인트**: 디자인 `GridCell`(gallery/plugins.jsx L301, `WebkitLineClamp:3`)은
-  폭 기준 3줄 wrap + 마지막 줄 말줄임을 규정하는데, egui `p.text(Align2::CENTER_CENTER, …)` 은
-  **단일 행 렌더**라 이 구조를 못 담는다. 구조 전사에는 다행 wrap+말줄임을 네이티브로 처리하는
-  `LayoutJob` 이 필요하다.
-- **처방(구조 축)**: 라벨을 `LayoutJob { halign: Align::Center, wrap: TextWrapping {
-  max_width: CELL_W - spacing_xs*2(=72), max_rows: 3, overflow_character: Some('…') } }` +
-  `ui.fonts(|f| f.layout_job(job))` galley → `p.galley()` 로 교체. `halign::Center` 로 각
-  행이 x=0 중심 정렬되므로 `p.galley(center.x, …)` 가 다행 중앙정렬을, pos.y 를 라벨 블록 상단에
-  두어 **top 정렬**(구 `label_h/2` 수직 중앙 아님)을 준다. 셀 높이는 `label_line_h ×3`(round(11×1.3)
-  =14 ×3) 고정 예약으로 짧은 이름도 3줄분을 잡아 `horizontal_wrapped` 그리드 행을 균일화한다.
-  `CELL_W` 80 유지, 아이콘→라벨 `spacing_xs`(4)·블록 상하 `spacing_sm`(8) 리듬 불변. dead 가 된
-  `truncate()` 함수 제거.
-- **처방(토큰 축)**: 아이콘 `item_height_interactive`(28) → `icon_glyph_size_md`(16), 라벨 폰트
-  `font_size_body`(13) → `font_size_caption`(11)(사용자 explorer 폰트를 caption 상한으로 clamp).
-  라벨색 **상태 의존**으로 — 선택 `text_primary` / 비선택 `text_secondary`(디자인이 함께 확정,
-  기존엔 상태 무관 항상 primary). glyph 색(폴더/파일 text-muted·이미지 accent-info)·선택/hover/cut
-  스타일은 불변. 신규 Theme 필드 0(기존 토큰 재사용).
-- **egui 세금/검증 함정**: `Galley::text()` 는 **원본 소스 문자열**을 돌려주므로 말줄임 삽입
-  여부를 여기서 못 본다 — 실제 렌더 결과는 `galley.rows[].glyphs[].chr` 로 재구성해야 확인된다.
-  실 폰트 레이아웃으로 디자인 샘플(src·rust-toolchain.toml·THIRD_PARTY_LICENSES.md) 전부 ≤3행,
-  초장문 unbreakable 이름은 3행 클램프 + glyph 에 `…` 삽입을 확인(임시 test, 검증 후 제거).
-- **근거**: `gallery/plugins.jsx` `GridCell`(L301)·`ExpGridMini`(L314, 긴 이름 샘플). 본체
-  `src/adapters/ui/surface/explorer.rs` `grid_cell()`, specimen
-  `crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs`
-  `grid_cell()`(GRID 긴 이름 샘플 + meta `"glyph 16 + 3-line label (…) · fixed height"`).
+## Explorer — 아이콘과 여러 줄 파일명
 
-## PathField — AutoComplete + Go 합성 공용 위젯 (편집/이동/원복 결정 포팅, 2026-07-09)
+파일명은 폭 기준으로 최대 3줄을 표시하고 마지막 줄을 말줄임한다. `LayoutJob`의 `halign: Align::Center`, `TextWrapping { max_width: CELL_W - spacing_xs*2, max_rows: 3, overflow_character: Some('…') }`를 사용한다. `p.galley()`는 라벨 블록 위쪽에서 그려 각 행을 가운데 정렬한다.
+
+`CELL_W`는 80, 유효 라벨 폭은 72다. 줄 높이 `round(11×1.3)`인 14를 3줄 예약해 짧은 이름도 같은 셀 높이를 사용한다. 아이콘과 라벨 간격은 `spacing_xs`(4), 블록 상하 간격은 `spacing_sm`(8)이다.
+
+아이콘은 `icon_glyph_size_md`(16), 라벨은 `font_size_caption`(11)을 사용하고 사용자 Explorer 글꼴 크기도 caption 상한으로 제한한다. 선택한 라벨은 `text_primary`, 나머지는 `text_secondary`다. 폴더·파일 글리프는 text-muted, 이미지는 accent-info이며 선택·호버·잘라내기 표시는 기존 규칙을 따른다.
+
+`Galley::text()`는 원문이므로 말줄임 여부를 확인할 수 없다. 실제 배치 결과의 `galley.rows[].glyphs[].chr`와 캡처를 확인한다. 구현은 `src/adapters/ui/surface/explorer.rs`와 갤러리 `explorer_view_cells.rs`의 `grid_cell()`에 있다.
+
+<a id="pathfield--autocomplete--go-합성-공용-위젯-편집이동원복-결정-포팅-2026-07-09"></a>
+
+## PathField — 편집·이동·원복
 
 - **무엇**: 두 주소창(Explorer / Markdown)이 공유할 편집형 경로 필드를 `tasty-ui-widgets` 에
   신설(`path_field.rs`). 디자인 `plugins.jsx` `PathField`(:59) 전사 — 트리거 = `AutoComplete`
@@ -581,7 +428,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **구조 축**: 디자인 `PathField` 는 `editing && candidates` 면 `<AutoComplete withGo …/>`, 아니면
   필드 div + `<IconButton Go/>` 두 브랜치다. 소스 `AutoComplete` 에는 `withGo` 가 없어(markdown 이
   Go 를 따로 그렸음) PathField 가 **AutoComplete + Go IconButton 을 `ui.horizontal` 한 행에** 합성
-  한다: 필드폭 = 총폭 − control-height(sm 28) − `spacing_sm`(6) gap. 드롭다운은 트리거 rect 아래
+  한다: 필드폭 = 총폭 − control-height(sm 28) − `spacing_sm` 간격. 드롭다운은 트리거 rect 아래
   floating(AutoComplete 소유)이라 Go 버튼과 겹치지 않는다.
 - **토큰 축**: 색·간격·행높이 전부 `theme.*` accessor — 필드 fill=`surface-raised`(input-bg),
   idle=`text-secondary`, editing=`text-primary`, match=`accent-primary`, Go 버튼=`IconButton`(sm)
@@ -591,47 +438,33 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   확정없는 blur(원복) > None**. Go 클릭은 같은 프레임 `lost_focus` 를 유발하지만 이동 확정이므로
   blur-원복보다 앞선다(이 순서가 회귀 방지 핵심 — 단위테스트 `decide_go_click_navigates_buffer_over_blur_revert`).
   상태(buffer/editing/active)는 호출측 소유, 위젯이 매 프레임 `&mut` 갱신(글로벌 상태 0).
-- **egui 세금/specimen**: editing 의 focus ring/caret 은 실제 포커스에서만 Input 이 그린다 → 정적
+- **갤러리 예제의 제한**: editing 의 focus ring/caret 은 실제 포커스에서만 Input 이 그린다 → 정적
   specimen 은 focus 테두리를 못 고정한다. `prim_path_field` 는 idle/editing+list 를 정적 전사(필드
   행 + `autocomplete_dropdown`)하되, 실제 편집·포커스링·키내비·이동/원복은 **라이브 `PathField`
   인스턴스**(context 별 click-to-edit)로 노출한다(gallery-first).
 - **근거**: 디자인 `gallery/plugins.jsx` `PathField`(:59). 소스
   `crates/tasty-ui-widgets/src/path_field.rs`, specimen
-  `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
-  이 항목의 범위 밖이었다.
+  `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비 화면에서는 상태와 이동 처리를 별도로 연결한다.
 
-## transfer 팝업 — scrim_backdrop 스테이지가 카드보다 짧으면 클러스터가 겹친다 (2026-07-23)
+<a id="transfer-팝업--scrim_backdrop-스테이지가-카드보다-짧으면-클러스터가-겹친다-2026-07-23"></a>
 
-- **증상**: 갤러리 transfer specimen 을 `kit::scrim_backdrop`(고정 height) 안에 카드를 얹어
-  그렸더니, 다중 파일(2행) 진행 카드가 스테이지 높이(240)를 넘쳐 아래 클러스터와 겹쳐 렌더됐다.
-- **원인(검증)**: `scrim_backdrop` 은 고정 rect 를 allocate 하고 모달을 `new_child` **오버레이**로
-  그린다 — 카드는 부모 flow 의 커서를 진행시키지 않아(오버레이) 스테이지보다 크면 아래로 새어
-  다음 cluster 위에 겹친다. 카드 높이가 가변(행 수)이라 고정 스테이지로는 담을 수 없다.
-- **처방**: 실제 scrim dim 은 본체 `draw.rs`(scrim id-set)가 그리므로, 갤러리 specimen 은
-  scrim 스테이지 없이 프레임을 **클러스터에 직접 렌더**한다(`egui::Frame` 이 flow 에서 정상
-  공간 확보). file_picker specimen 이 이미 이 관례(card 를 cluster 에 직접) — 동일하게 맞췄다.
-- **근거**: `crates/tasty-gallery/src/catalog/components/transfer.rs`. 캡처 검증(Overlays 페이지
-  임시 상단 배치 → `TASTY_GALLERY_SHOT=3` → 겹침 해소 확인).
+## transfer — 가변 높이 카드의 갤러리 배치
 
-## tab_bar — attention kind 도입으로 옛 "값-보존" divergence 가 해소됨 (2026-08-10)
+`scrim_backdrop`은 고정 영역을 확보하고 카드를 오버레이로 그린다. 가변 높이 카드가 영역보다 크면 부모의 배치 커서가 늘어나지 않아 다음 예제와 겹친다.
 
-- **배경**: kind 가 `Completion` 1종뿐이던 시절, `tab_bar.rs` 의 탭 제목 강조색은 실제로는
-  파랑(`accent-primary`)이어야 할 자리에 노랑(`accent_warning()`)을 쓰고 있었다 — 전용
-  "notification" 토큰이 없어 시맨틱이 다른 `accent_warning` 값을 그대로 재사용한
-  값-보존 divergence였다(주석: "divergence: notif 강조. warning 과 값 동일하나 의미는
-  notification — 전용 토큰 부재로 accent_warning() 값-보존").
-- **해소**: `NeedsInput` kind 추가로 노랑(`accent_warning`)이 진짜 의미(응답 대기)를 갖는
-  전용 색이 되고, `Completion` 은 원래 의도대로 파랑(`accent_primary`)으로 바로잡혔다 —
-  값-보존이 필요 없어졌다. 두 kind 가 서로 다른 사용자 행동(완료 확인 vs 즉시 응답)을
-  요구하므로 둘을 구분되는 색으로 분리하는 것이 이번 kind 도입의 목적 자체이며, 노랑은
-  이미 `accent_warning` 으로 존재하던 "주의 필요" 시맨틱과 자연스럽게 맞고 파랑은
-  워크스페이스 배지·로고 등 기존 `accent_primary` 용례(중립적 정보 강조)와 맞아
-  완료 쪽에 배정했다.
-- **근거**: `src/adapters/ui/tab_bar/tab.rs` `text_color` match(`AttentionKind` 분기). 상세는
-  [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
-  · [design-gallery-mapping §Attention kind](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062).
+갤러리 transfer 예제는 scrim 스테이지 없이 클러스터에 Frame을 직접 배치해 실제 높이만큼 공간을 확보한다. 본체의 scrim은 `draw.rs`가 담당한다. 파일 피커 예제도 같은 방식을 사용한다. 구현은 `crates/tasty-gallery/src/catalog/components/transfer.rs`다.
 
-## PluginAvatar — 색은 갈래가 하나뿐이고 글리프는 상한에서 잘린다 (2026-09-08)
+<a id="tab_bar--attention-kind-도입으로-옛-값-보존-divergence-가-해소됨-2026-08-10"></a>
+
+## tab_bar — 주의 환기 종류별 색
+
+탭 제목의 NeedsInput은 `accent_warning`, Completion은 `accent_primary`를 사용한다. 입력 요청과 작업 완료를 구분하는 색이며 별도의 값 보존 예외를 두지 않는다.
+
+구현은 `src/adapters/ui/tab_bar/tab.rs`의 `text_color`와 `AttentionKind` 분기다. 값과 대응은 [토큰 매핑](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062), [갤러리 대응표](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062)를 따른다.
+
+<a id="pluginavatar--색은-갈래가-하나뿐이고-글리프는-상한에서-잘린다-2026-09-08"></a>
+
+## PluginAvatar — 카테고리와 글자 크기 제한
 
 디자인 `plugins_window.jsx` 의 `PluginAvatar` 를 전사하면서 **의도적으로 갈린 두 자리**다.
 전사 자체는 구조·토큰 두 축 모두 디자인을 따른다(사각 `size`, `radius`,
