@@ -1,8 +1,4 @@
-//! Workspace / pane / surface / terminal / image panel 접근 헬퍼.
-//!
-//! 거의 모든 접근자가 `active_workspace` 인덱스 또는 focused pane 의 active tab 을
-//! 기준으로 한다. parked 상태(워크스페이스 0개) 에서는 `Option::None` 또는 panic 직전
-//! invariant 호출자가 책임.
+//! 활성 워크스페이스·pane·surface 접근. 워크스페이스가 없을 수 있는 호출자는 Option 또는 빈 목록 검사를 사용한다.
 
 #[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
@@ -25,7 +21,6 @@ impl AppState {
         &engine.workspaces[idx]
     }
 
-    // 부르는 자리가 gui · debug 핸들러 · 테스트뿐이다 — release 헤드리스에는 없다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn active_workspace_mut<'a>(
         &self,
@@ -56,7 +51,6 @@ impl AppState {
 
     /// Get the focused pane (mutable) in the active workspace, or the first pane as fallback.
     /// Returns `None` if no workspaces exist (parked state after last-window close).
-    // 부르는 자리가 gui · debug 핸들러 · 테스트뿐이다 — release 헤드리스에는 없다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn focused_pane_mut<'a>(
         &self,
@@ -67,7 +61,6 @@ impl AppState {
         }
         let ws = self.active_workspace_mut(engine);
         let focused_id = ws.focused_pane;
-        // If focused_id is stale, fall back to the first available pane.
         if ws.pane_layout().find_pane(focused_id).is_none() {
             let fallback_id = ws.pane_layout().first_pane().map(|p| p.id);
             if let Some(fid) = fallback_id {
@@ -78,35 +71,29 @@ impl AppState {
         ws.pane_layout_mut().find_pane_mut(focused_id)
     }
 
-    /// Get the focused surface ID (the surface that currently receives input).
     pub fn focused_surface_id(&self, engine: &CoreState) -> Option<u32> {
         let pane = self.focused_pane(engine)?;
         let tab = pane.tabs.get(pane.active_tab)?;
         tab.focused_surface_id()
     }
 
-    /// Get the ultimately focused terminal.
     #[cfg(feature = "gui")]
     pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.terminals.get(id)
     }
 
-    /// Get the ultimately focused terminal (mutable).
     #[cfg(feature = "gui")]
     pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.terminals.get_mut(id)
     }
 
-    /// Get the focused pane ID.
     #[cfg(feature = "gui")]
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.active_workspace(engine).focused_pane
     }
 
-    /// 현재 switch-number overlay 스냅샷. draw 경로(탭 바 `draw_pane_tab_bars` / 사이드바)가
-    /// 매 프레임 읽어 숫자 키캡 오버레이를 표시할 focused pane / 대상을 판단한다.
     #[cfg(feature = "gui")]
     pub(crate) fn switch_overlay(
         &self,
@@ -114,11 +101,8 @@ impl AppState {
         self.switch_overlay
     }
 
-    /// 현재 눌린 modifier 로 switch-number overlay 스냅샷을 다시 계산해 저장한다.
-    /// `ModifiersChanged` 마다 호출. 스냅샷이 실제로 바뀌었으면 `true` (호출측이
-    /// 그때 `mark_dirty()` 한다 — modifier press/release 시 키캡이 즉시 뜨고 사라지게).
-    ///
-    /// `ctrl`/`shift`/`alt` 는 플랫폼 정규화가 끝난 값을 받는다(numeric.rs 와 동일).
+    /// 수식키에 맞는 숫자 전환 안내를 갱신하고 변경 여부를 반환한다.
+    /// ctrl/shift/alt는 플랫폼별 정규화를 마친 값이어야 한다.
     #[cfg(feature = "gui")]
     pub(crate) fn update_switch_overlay(
         &mut self,
@@ -133,13 +117,11 @@ impl AppState {
             SwitchOverlayState, SwitchTarget, switch_target_for,
         };
         let next = switch_target_for(kb, ctrl, shift, alt, option)
-            // folders 기능 off 면 Category(Alt+Shift) 는 대상 없음 — 스냅샷·리드로 안 함.
             .filter(|t| {
                 *t != SwitchTarget::Category || engine.settings.general.workspace_categories_enabled
             })
             .map(|target| {
                 let pane_id = match target {
-                    // parked 상태(워크스페이스 0개)에서는 focused pane 이 없으므로 None.
                     SwitchTarget::Tab if !engine.workspaces.is_empty() => {
                         Some(self.focused_pane_id(engine))
                     }
@@ -152,8 +134,7 @@ impl AppState {
         changed
     }
 
-    /// switch-number overlay 스냅샷을 비운다(창 비활성/포커스 상실 시). 실제로 비워졌으면
-    /// `true`.
+    /// 숫자 전환 안내를 지우고 변경 여부를 반환한다.
     #[cfg(feature = "gui")]
     pub(crate) fn clear_switch_overlay(&mut self) -> bool {
         let changed = self.switch_overlay.is_some();

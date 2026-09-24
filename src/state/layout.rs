@@ -37,14 +37,8 @@ impl AppState {
         result
     }
 
-    /// 전체 workspace 의 모든 tab(비활성 탭 포함)에 **존재**하는 egui-mesh surface 일람
-    /// (surface_id, plugin_id).
-    ///
-    /// [`Self::surface_regions`] 가 "활성 workspace 의 활성 탭"(=화면에 보이는 surface)만
-    /// 순회하는 것과 달리, 이 함수는 layout 존재 기반이다 — egui-mesh 텍스처 상태의
-    /// surface 수명 귀속(렌더 prepare 의 retain / 비가시 디코드)과 forward 추적 상태
-    /// retain 에 쓴다. 탭 전환/workspace 전환으로 안 보이게 된 surface 의 텍스처 상태를
-    /// 파괴하지 않기 위한 열거다.
+    /// 보이지 않는 탭도 포함해 모든 egui-mesh surface의 ID와 소유 플러그인을 반환한다.
+    /// 텍스처·전송 상태는 가시성이 아니라 surface 수명에 맞춰 유지해야 한다.
     #[cfg(feature = "gui")]
     pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
         use crate::core::egui_mesh_surface::EguiMeshSurface;
@@ -71,10 +65,7 @@ impl AppState {
         out
     }
 
-    /// 전체 workspace 의 모든 tab(비활성 탭 포함)에 **존재**하는 attach mesh mirror
-    /// surface(`AttachMeshSurface`) local id 일람. [`Self::egui_mesh_surfaces_existing`]의
-    /// attach 대응 — plugin_id 는 `PluginManager` 조회에 쓰이지 않으므로(로컬에 plugin
-    /// 프로세스가 없다) id 만 반환한다.
+    /// 모든 탭에 있는 attach mesh mirror의 로컬 ID. 로컬 플러그인 프로세스는 조회하지 않는다.
     #[cfg(feature = "gui")]
     pub fn attach_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<u32> {
         use crate::model::AttachMeshSurface;
@@ -101,22 +92,8 @@ impl AppState {
         out
     }
 
-    /// Reify (lazy PTY spawn) every deferred placeholder that is about to be
-    /// drawn this frame: the active workspace's panes, each pane's active tab,
-    /// and every deferred leaf within it.
-    ///
-    /// This is the single display-point that enforces the invariant "a surface
-    /// visible on screen has a live PTY". Calling it once per frame (before the
-    /// render passes) covers every exposure path at once — keyboard tab switch
-    /// (next/prev/goto), tab close moving active_tab onto a deferred tab, pane
-    /// focus change, workspace switch, window restore — without scattering reify
-    /// hooks across each input handler.
-    ///
-    /// Cheap when nothing is deferred: it only walks the active workspace's
-    /// active-tab layout trees (`deferred_surface_ids` returns early per tab).
-    /// `ensure_surface_initialized` is a no-op for already-reified surfaces, so
-    /// there is no double-spawn with the existing eager reify paths (mouse tab
-    /// click / workspace switch / boot).
+    /// 활성 워크스페이스의 각 활성 탭에서 지연된 surface 초기화를 시도한다.
+    /// 입력 경로마다 복원 처리를 넣는 대신 그리기 전에 한 번 순회한다.
     pub fn reify_displayed_surfaces(&self, engine: &mut CoreState) {
         if engine.workspaces.is_empty() {
             return;
@@ -136,8 +113,6 @@ impl AppState {
             }
         }
         for sid in deferred {
-            // terminal placeholder 먼저 시도. false 면 terminal 이 아니라는 뜻이므로
-            // plugin placeholder 실제화를 시도한다(둘 다 아니면 no-op — 이미 reify됨).
             if !engine.ensure_surface_initialized(sid) {
                 engine.reify_plugin_surface(sid);
             }
@@ -167,7 +142,7 @@ impl AppState {
     }
 
     /// Get the physical pixel rect of a specific terminal cell within a surface.
-    #[allow(clippy::too_many_arguments)] // reason: cell geometry lookup 컨텍스트
+    #[allow(clippy::too_many_arguments)] // reason: 셀 위치 계산에 surface·행·열과 화면 좌표 정보가 함께 필요하다
     #[cfg(feature = "gui")]
     pub fn surface_cell_rect(
         &self,
@@ -240,17 +215,8 @@ impl AppState {
         None
     }
 
-    /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
-    ///
-    /// **단일 authority 위임**: 터미널 grid 리사이즈 로직은 `Core::resize_all_terminals`
-    /// 한 곳으로 통일한다(attach 의미론 — detached mirror 는 원격 forward, hard-점유
-    /// surface 는 skip — 을 정본 한 벌만 보유). 과거 이 메서드가 자체 sweep 을 갖고
-    /// 있었으나 정본과 갈라져(occupancy 가드 누락) GUI-hosted 서버에서 점유 surface 를
-    /// 매 프레임 창 grid 로 되돌리는 레터박스를 유발했다(ADR-0022). 렌더/입력 경로의
-    /// 진입점만 유지하고 구현은 위임한다.
-    ///
-    /// PTY resize 는 Terminal 내부에서 deferred(`pending_pty_resize`) — 호출자는
-    /// resize 이벤트가 settle 되면 `flush_all_pty_resizes()` 를 별도로 호출한다.
+    /// 점유·mirror 처리를 포함한 Core::resize_all_terminals에 위임한다.
+    /// PTY resize는 미뤄지므로 호출자가 resize 이벤트 처리 후 flush_all_pty_resizes를 호출해야 한다.
     #[cfg(feature = "gui")]
     pub fn resize_all(
         &mut self,

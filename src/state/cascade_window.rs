@@ -1,6 +1,4 @@
-//! [`CascadeWindow`] 의 창 쪽 구현 — 도메인 구조 실행이 부르는 창 연산을 `AppState` 의 같은
-//! 이름 메서드로 넘긴다. 메서드마다 한 줄 위임이고 새 동작은 없다. 포트를 도메인이 선언하는
-//! 이유는 [`crate::core::cascade_window`] 모듈 문서.
+//! 도메인의 CascadeWindow 요청을 AppState의 창 연산에 연결한다.
 
 use std::path::PathBuf;
 

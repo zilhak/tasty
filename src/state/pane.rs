@@ -4,7 +4,6 @@ use crate::model::SplitDirection;
 
 use super::AppState;
 
-/// Helper: tab 내 surface_id 에 해당하는 TerminalSurface 를 찾는다 (downcast).
 fn terminal_surface_in_tab(
     tab: &crate::model::Tab,
     surface_id: u32,
@@ -17,28 +16,9 @@ fn terminal_surface_in_tab(
 }
 
 impl AppState {
-    /// 이 close **요청**이 죽일 surface 중 원격이 하드 점유한 것이 있으면 거절한다.
-    /// 거절이면 `true` 를 돌리고 호출부는 아무것도 하지 않는다.
-    ///
-    /// 하드 점유(ADR-0021)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다.
-    /// 닫으면 그 세션이 예고 없이 죽고, 되돌리기 스택에 남는 것은 살아 있는 PTY 가 아니라
-    /// **같은 명령으로 새 세션을 여는 레시피**라(`capture_workspace_snapshot`) 복구가 아니다.
-    /// 그래서 close 는 거절이 맞다 — 같은 판정을 `workspace.close`·`surface.attention.clear`
-    /// IPC 가 이미 한다(ADR-0017). 이 메서드가 **그 규칙의 소유자**이고, 호출부는 자기가
-    /// 죽일 대상 집합만 넘긴다.
-    ///
-    /// # 요청 경로만 이것을 본다 — 사후 정리 경로는 보면 안 된다
-    ///
-    /// PTY 가 스스로 끝나서 도는 정리(`cascade_terminal_process_exited`)는 이미 죽은
-    /// 프로세스를 치우는 것이다. 거기서 거절하면 점유 락 때문에 **좀비 surface 가 영구히
-    /// 남는다.** 그래서 검사는 공용 cascade 초크포인트(`close_surface_by_id_inner`)가 아니라
-    /// **사용자 제스처·에이전트 요청의 진입점**에 붙인다.
-    ///
-    /// # 로컬 사용자가 막히지 않는 근거
-    ///
-    /// 하드 점유 surface 위에는 강제 해제 버튼이 그려진다(`adapters/ui/egui_panels.rs` 의
-    /// `draw_occupied_overlays`) — 로컬 사용자는 그것을 눌러 점유를 끊고 닫을 수 있다.
-    /// 그 버튼이 없었다면 이 거절은 "로컬에서 영영 못 닫는" 상태를 만들었을 것이다.
+    /// 닫을 대상 중 hard 점유된 surface가 있으면 true를 반환해 요청을 거절한다.
+    /// 종료된 PTY의 사후 정리에는 적용하지 않는다. 그 경로까지 막으면 surface가 남는다.
+    /// 로컬 사용자는 점유 해제 버튼으로 먼저 연결을 끊을 수 있다.
     pub(crate) fn refuse_if_hard_occupied(
         &mut self,
         engine: &CoreState,
@@ -59,26 +39,12 @@ impl AppState {
         true
     }
 
-    /// active 워크스페이스가 mirror(원격 attach client)면 구조 변경을 원격으로
-    /// **forward** 하고 `true` 를 돌려 로컬 실행/폴백 체인을 멈춘다(전체 mirror 뷰는
-    /// 유지). mirror 워크스페이스는 원격 워크스페이스의 뷰라, 그 안의 구조 변경
-    /// (new-tab / close / move-tab)을 로컬에서 실행하면 "workspace 전체가 remote"
-    /// 불변식을 깬다 — 대신 원격 authority 로 forward 해 거기서 실행된다.
+    /// mirror의 구조 변경을 원격 큐에 넣고 true를 반환해 로컬 실행을 멈춘다.
+    /// op를 만들 수 없으면 전달하지 않고 차단 토스트를 표시한다.
+    /// mirror 워크스페이스 자체를 닫는 동작은 이 함수를 거치지 않는다.
     ///
-    /// `Core::apply` 를 우회하는 UI-layer 직접 조작 경로(`add_tab`·`close_active_*`)는
-    /// split(intent→`Core::apply`→forward)과 달리 forward 가 자동으로 붙지 않으므로
-    /// 여기서 직접 `op` 를 실어 준다. `op` 가 `None`(앵커 surface 를 못 찾음)이면
-    /// forward 없이 차단 toast 만 띄운다.
-    ///
-    /// mirror 워크스페이스 **자체를 닫는 것**(`close_active_workspace`)은 로컬 mirror
-    /// 뷰를 걷어내는 정당한 로컬 동작이므로 이 가드를 태우지 않는다.
-    ///
-    /// 이 메서드의 모든 호출부는 GUI 단축키/버튼/컨텍스트 메뉴 직접 조작이다(IPC/CLI
-    /// 는 `Core::apply`→`DomainIntent` 경로만 탄다) — 그래서 항상 `user_triggered: true`
-    /// 로 push 한다(new-tab/split focus 이동의 근거). `close_focus_candidates`(로컬 surface id, 우선순위 순)는 close
-    /// 계열 호출부가 닫히기 **전** 트리에서 계산해 넘긴다 — 닫힌 surface 가 focus 였고
-    /// 원격의 옛 focus 복원이 실패할 때 client-only fallback 대상이 된다. new-tab/
-    /// split/move-tab 등 close 가 아닌 op 은 빈 벡터를 넘긴다.
+    /// GUI 사용자 요청으로 표시하며, 닫기 요청은 변경 전 트리에서 구한 포커스 후보를 받는다.
+    /// 새 탭·분할·이동처럼 닫기가 아닌 요청에는 빈 후보 목록을 넘긴다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn forward_mirror_structural(
         &mut self,
@@ -112,12 +78,8 @@ impl AppState {
         true
     }
 
-    /// pane 안에서 `closing_tab_index` 탭이 닫힐 때 client-side focus fallback 후보
-    /// (로컬 surface id, 우선순위 순)를 반환한다. 로컬(비-mirror)의 "탭 하나만
-    /// 남기고 닫음" 케이스(`close_case_tab`, `src/core/mod.rs`)와 동일한 규칙: 닫히는
-    /// 탭이 마지막이 아니면 다음 탭, 마지막이면 이전 탭이 1순위. 그 슬롯도 못 쓰게 되는
-    /// (예상 밖) 경우를 대비해 나머지 탭도 순서대로 방어적 fallback 으로 담는다. pane
-    /// 에 탭이 하나뿐이면 빈 벡터(호출부가 기존 동작 — 원격 고정값 — 으로 남는다).
+    /// 닫을 탭의 다음 탭, 마지막이면 이전 탭을 우선하는 로컬 포커스 후보다.
+    /// 나머지 탭도 순서대로 포함하며 하나뿐인 탭에는 후보가 없다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn pane_sibling_tab_focus_candidates(
         pane: &crate::model::Pane,
@@ -147,12 +109,8 @@ impl AppState {
         out
     }
 
-    /// focused pane 의 active tab 안에서 `surface_id` 가 닫힐 때 client-side focus
-    /// fallback 후보(로컬 surface id, 우선순위 순)를 반환한다. split 된 tab 이면
-    /// 같은 tab 안의 다른 leaf surface(구조상 순서, `close_active_surface` 가 로컬
-    /// 실행 시 쓰는 `Tab::close_surface`/`SurfaceLayout::close_surface` 의 "첫 leaf
-    /// 승격"과 동형)를, split 안 된 tab(닫으면 탭 자체가 사라짐)이면
-    /// [`pane_sibling_tab_focus_candidates`] 를 그대로 위임한다.
+    /// 같은 분할 탭의 다른 surface를 순서대로 후보에 넣는다.
+    /// 단일 surface 탭이면 pane_sibling_tab_focus_candidates에 위임한다.
     #[cfg(any(feature = "gui", test))]
     fn active_surface_close_focus_candidates(
         &self,
@@ -180,24 +138,19 @@ impl AppState {
         }
     }
 
-    /// Close the focused pane (unsplit). Returns true if a pane was removed.
+    /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
     pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 ClosePane 을 원격으로
-        // forward 한다. true 를 돌려 fallback 체인(→ close_active_workspace)을 멈춘다.
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
                 anchor_surface_id: sid,
             }
         });
-        // pane 레벨 close 는 로컬도 무조건 "워크스페이스 첫 pane" 으로 이동하는 cascade
-        // 케이스(`close_case_pane`)와 같은 성격이라 인접 후보를 계산하지 않는다 — close
-        // focus fallback 의 스코프(같은 pane 안 인접 탭/surface)에 포함하지 않기로 한 결정.
+        // pane 닫기는 같은 pane 안의 인접 포커스 후보를 사용하지 않는다.
         if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             return true;
         }
         let target_id = self.active_workspace(engine).focused_pane;
-        // 이 pane 이 품은 surface 중 하나라도 원격이 잡고 있으면 거절한다.
         let in_pane: Vec<u32> = {
             let ws = self.active_workspace(engine);
             ws.pane_layout()
@@ -215,16 +168,11 @@ impl AppState {
             return false;
         }
 
-        // Capture closed-item snapshot (전용 `close_pane` 단축키는 항상 사용자
-        // 행동이라 조건 없이 캡처한다 — `close_active_surface`의 무조건 스냅샷과
-        // 동일 관례). 캡처는 `close_pane`이 트리를 재배치하기 *전*이어야 한다 —
-        // 제거 후엔 부모 Split 노드 자체가 사라져 split context 를 복구할 수 없다
-        // (`CoreState::capture_closed_pane` 의 doc 이 그 제약을 소유한다).
+        // 제거 후에는 부모 Split 정보를 잃으므로 트리 변경 전에 복원 사본을 만든다.
         if let Some(item) = engine.capture_closed_pane(target_id) {
             engine.push_closed_item(item);
         }
 
-        // Collect all (surface_id, persist_id) in the pane being closed for cleanup.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
             let ws = self.active_workspace(engine);
@@ -238,12 +186,9 @@ impl AppState {
         let ws = self.active_workspace_mut(engine);
         let removed = ws.pane_layout_mut().close_pane(target_id);
         if removed {
-            // Update focus to the first available pane
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
-            // cleanup_surface 직후엔 layout 에서 surface 가 사라져 kind 조회 불가 →
-            // 미리 캡쳐. plugin lifecycle 큐에 cleanup_targets 모두 enqueue (R1 분석).
             for (sid, pid) in targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
@@ -254,13 +199,9 @@ impl AppState {
         removed
     }
 
-    /// Close the focused surface. For split tabs, closes the focused surface
-    /// within the tab. For single-surface tabs, delegates to close_surface_by_id
-    /// which handles tab/pane/workspace cascading.
+    /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
     #[cfg(any(feature = "gui", test))]
     pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseSurface 를 원격으로
-        // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
         let focused_sid = self.focused_surface_id(engine);
         let mirror_op = focused_sid
             .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
@@ -270,17 +211,11 @@ impl AppState {
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
-        // 이 경로가 죽이는 것은 포커스된 surface 하나다 — tab/pane/workspace 로 cascade 하는
-        // 경우도 그 surface 가 그 컨테이너의 유일한 거주자일 때뿐이라 대상 집합은 같다.
         if self.refuse_if_hard_occupied(engine, focused_sid) {
             return false;
         }
         let surface_id;
-        // split 케이스의 closed-item 스냅샷용 tab_name — tab 이 mutate 되기 전(아래
-        // `focused_pane_mut` 블록 이전)에 여기서 미리 구해둔다. close_case_split 과
-        // 동일한 캡처 로직이지만, 여기선 이미 이 블록이 `surface_id` 를 얻으려고
-        // `engine` 을 immutable 하게 빌리는 중이라 재사용한다(중복이면 헬퍼화가
-        // 바람직하나, borrow 형태가 서로 달라 강제하지 않음).
+        // 탭을 변경하기 전에 복원할 이름을 보관한다.
         let mut tab_name_for_snapshot: Option<String> = None;
         if let Some(pane) = self.focused_pane(engine) {
             let tab = match pane.tabs.get(pane.active_tab) {
@@ -299,8 +234,7 @@ impl AppState {
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
         let kind = self.surface_kind(engine, surface_id);
-        // tab.close_surface(surface_id) 로 mutate 되기 전에 스냅샷을 완성해둔다
-        // (순서 뒤바뀌면 이미 제거된 surface 정보를 읽게 됨 — close_case_split 참고).
+        // surface를 제거하기 전에 복원 사본을 완성한다.
         let split_snapshot =
             tab_name_for_snapshot.map(|tab_name| crate::model::ClosedItem::Surface {
                 surface: crate::model::closed_item::ClosedSurface::from_surface_id(
@@ -337,10 +271,8 @@ impl AppState {
         true
     }
 
-    /// Close a specific surface by ID. Cascades up the hierarchy:
-    /// surface -> tab -> pane -> workspace as needed.
-    /// When `save_snapshot` is true, the closed item is saved for user restore (Ctrl+Shift+T).
-    /// Agent/IPC closures should pass false to avoid polluting the user's undo stack.
+    /// ID로 surface를 닫으며 복원 사본을 저장한다.
+    /// 사본이 필요 없는 경로는 close_surface_by_id_no_snapshot을 사용한다.
     #[cfg(any(feature = "gui", test))]
     pub fn close_surface_by_id(
         &mut self,
@@ -351,13 +283,7 @@ impl AppState {
         self.close_surface_by_id_inner(engine, surface_id, true, is_user_close)
     }
 
-    /// Close without saving snapshot (for IPC/agent-initiated closures).
-    ///
-    /// Agent 가 마지막 workspace 까지 닫아 windows 상태가 비어 버리면, 다음
-    /// redraw 가 `active_workspace()` 를 호출하다 패닉한다. 사용자의 window 를
-    /// 에이전트가 끄는 부작용도 피해야 하므로 (CLAUDE.md "사용자 행동과 에이전트
-    /// 행동의 분리"), cascade 결과 workspaces 가 비면 즉시 새 empty workspace
-    /// 를 만들어 invariant 를 유지한다.
+    /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
         engine: &mut CoreState,
@@ -366,38 +292,15 @@ impl AppState {
     ) -> bool {
         let closed = self.close_surface_by_id_inner(engine, surface_id, false, is_user_close);
         if closed {
-            // Core 통과 없이 invariant 복구. 본 호출처는 PTY exit cleanup
-            // (cascade_terminal_process_exited) 과 egui 의 diff close 두 곳에서 도달 — 둘 다
-            // *시스템 invariant restorer* 라 host event 발화 불필요.
             self.recreate_workspace_if_empty(engine, "close_surface_by_id_no_snapshot");
         }
         closed
     }
 
-    /// surface→tab→pane→workspace cascade close 의 인라인 실행형 디스패처.
-    /// Step1 판정(공유 `locate_surface_in_pane`)으로 위치를 잡고 case1..4 메서드에
-    /// 순차 위임한다. C2(`Core::apply_close_surface`)가 CoreEvent 를 *반환*해
-    /// caller 가 cleanup 을 실행하는 것과 달리, 여기서는 각 case 메서드가
-    /// cleanup/enqueue 를 *직접 실행*한다.
-    ///
-    /// # `save_snapshot` 과 `is_user_close` 를 왜 따로 받나
-    ///
-    /// [`AppState::close_workspace_at`] 은 같은 두 축을
-    /// [`WorkspaceCloseOrigin`](crate::state::WorkspaceCloseOrigin) 하나로 접었다 —
-    /// 그 경로에서는 두 값이 **항상 같이 움직이는데** 인자가 하나뿐이라 둘 중
-    /// 하나만 갈리는 사고가 실제로 났기 때문이다. **여기서 같은 일을 하면 안 된다.**
-    /// 이 경로는 두 축이 실제로 독립이고, 프로덕션에 서로 다른 조합이 둘 다 있다:
-    ///
-    /// | 호출자 | `save_snapshot` | `is_user_close` |
-    /// |---|---|---|
-    /// | egui 닫기([`AppState::close_active_surface`]) | `true` | `true` |
-    /// | PTY 프로세스 종료 cleanup(`app::dispatch_domain` 의 `cascade_terminal_process_exited`) | **`false`** | `true` |
-    ///
-    /// 셸이 스스로 끝난 경우 되살릴 것이 없어 스냅샷을 남기지 않지만, 그 종료를
-    /// 일으킨 것은 에이전트가 아니라 사람이므로 plugin 에는 사용자 close 로 나간다.
-    /// 두 값을 하나로 접으면 이 조합에서 둘 중 하나가 반드시 틀린 값이 된다.
-    /// 독립성은 `pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close`
-    /// 가 고정한다.
+    /// 닫힐 surface의 위치에 따라 탭·pane·워크스페이스 정리까지 직접 실행한다.
+    /// 복원 사본 저장 여부와 사용자 닫기 표시는 별개다.
+    /// PTY 종료 정리는 save_snapshot=false이지만 is_user_close=true로 보고한다.
+    /// 이 조합은 pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close가 검사한다.
     fn close_surface_by_id_inner(
         &mut self,
         engine: &mut CoreState,
@@ -421,7 +324,6 @@ impl AppState {
         self.close_case_workspace(engine, &loc, save_snapshot, is_user_close)
     }
 
-    /// Case 1: split tab 내 다중 surface 중 하나 close. 닫혔으면 true.
     fn close_case_split(
         &mut self,
         engine: &mut CoreState,
@@ -430,7 +332,6 @@ impl AppState {
         save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
-        // Capture surface snapshot before closing (user actions only)
         if save_snapshot {
             let ws = &engine.workspaces[loc.ws_idx];
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
@@ -447,7 +348,6 @@ impl AppState {
                 });
             }
         }
-        // close 이전에 leaf surface 의 persist_id 를 추출해 둔다.
         let persist_id = engine
             .terminals
             .scrollback_persist_id(surface_id)
@@ -465,8 +365,6 @@ impl AppState {
         false
     }
 
-    /// Case 2: surface 가 tab 유일 content 이고 pane.tabs>1 — tab close.
-    /// 처리했으면 true, 조건 불충족이면 false(fallthrough).
     fn close_case_tab(
         &mut self,
         engine: &mut CoreState,
@@ -474,8 +372,6 @@ impl AppState {
         save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
-        // Capture tab snapshot before removing (user actions only).
-        // Must be done in a separate scope to avoid borrow conflicts.
         if save_snapshot {
             let ws = &engine.workspaces[loc.ws_idx];
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
@@ -495,7 +391,6 @@ impl AppState {
                 }
             }
         }
-        // tab 의 모든 leaf surface 의 persist_id 수집 후 close.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
             let ws = &engine.workspaces[loc.ws_idx];
@@ -523,8 +418,6 @@ impl AppState {
         false
     }
 
-    /// Case 3: pane 의 마지막 tab 이고 ws 안 pane>1 — pane close.
-    /// 처리했으면 true, 조건 불충족이면 false(fallthrough).
     fn close_case_pane(
         &mut self,
         engine: &mut CoreState,
@@ -532,10 +425,7 @@ impl AppState {
         save_snapshot: bool,
         is_user_close: bool,
     ) -> bool {
-        // Capture pane snapshot before removing (user actions only). Split
-        // context(sibling/direction/ratio/side)는 `close_pane`이 트리를
-        // 재배치하기 *전*에 캡처해야 한다 — 제거 후엔 부모 Split 노드 자체가
-        // 사라져 복구할 수 없다.
+        // 부모 Split 정보가 사라지기 전에 pane의 복원 사본을 만든다.
         if save_snapshot {
             let ws = &engine.workspaces[loc.ws_idx];
             if ws.pane_layout().all_pane_ids().len() > 1
@@ -560,7 +450,6 @@ impl AppState {
                 engine.push_closed_item(snapshot);
             }
         }
-        // pane 내 모든 tab 의 leaf surface persist_id 수집.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
             let ws = &engine.workspaces[loc.ws_idx];
@@ -586,12 +475,6 @@ impl AppState {
         false
     }
 
-    /// Case 4 & 5: workspace 의 마지막 pane — workspace close. 항상 true.
-    /// `target_kinds` 를 `workspaces.remove` **전에** 선캡처하고(remove 후
-    /// surface_kind 조회 불가), memory purge + active_workspace 보정을 포함한다.
-    ///
-    /// 두 bool 을 각각 받는 이유는 [`AppState::close_surface_by_id_inner`] 의
-    /// "왜 따로 받나" 참조 — 이 경로에서는 두 축이 독립이다.
     fn close_case_workspace(
         &mut self,
         engine: &mut CoreState,
@@ -602,13 +485,9 @@ impl AppState {
         use crate::close_trace;
         use std::time::Instant;
 
-        /// close 계측의 경로 구분값 — surface→workspace cascade 를 한 함수 안에서
-        /// 끝내는 인라인 디스패처.
         const PATH: &str = "inline";
 
         let t_close = Instant::now();
-        // C1/C2 — snapshot 은 조건부다. `save_snapshot=false`(에이전트/PTY exit)면
-        // 두 단계가 통째로 생략되고, 그 사실은 close_total 의 `snapshot` 필드에 남는다.
         if save_snapshot {
             let t = Instant::now();
             let item = Self::capture_workspace_snapshot(engine, loc.ws_idx);
@@ -616,11 +495,9 @@ impl AppState {
             let t = Instant::now();
             engine.push_closed_item(item).log(t.elapsed(), PATH);
         }
-        // C3 — Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
         let t = Instant::now();
         let targets = Self::collect_workspace_close_targets(engine, loc.ws_idx);
         close_trace::log_collect(t, targets.len(), PATH);
-        // workspaces.remove 이후엔 surface_kind 조회 불가 → 미리 캡쳐.
         let target_kinds: Vec<Option<&'static str>> = targets
             .iter()
             .map(|(sid, _)| self.surface_kind(engine, *sid))
@@ -628,9 +505,6 @@ impl AppState {
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
         self.fix_workspace_pointers_after_removal(loc.ws_idx, engine.workspaces.len());
-        // C4 — 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory
-        // purge). 이 경로가 이 호출을 빠뜨렸던 탓에, 워크스페이스의 마지막 터미널이
-        // 스스로 종료돼 사라질 때만 plugin 이 `workspace.closed` 를 못 받았다.
         self.after_workspace_removed(workspace_id, PATH);
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
@@ -647,10 +521,7 @@ impl AppState {
 
 #[cfg(test)]
 impl AppState {
-    /// Test-only helper: split the focused pane along the given direction.
-    ///
-    /// Production code uses `DomainIntent::SplitPane` dispatched through `Core`.
-    /// 테스트 setup 편의 용도로만 직접 호출한다.
+    /// 시험 준비용 직접 분할. 제품 코드는 Core의 DomainIntent::SplitPane을 사용한다.
     pub(crate) fn test_split_pane(
         &mut self,
         engine: &mut CoreState,
@@ -696,11 +567,8 @@ impl AppState {
     }
 }
 
-/// split 튜토리얼 관찰. 호출자는 구조 변경 cascade(`core::structural_cascade`)의 사용자
-/// origin 분기다 — 튜토리얼 런타임이 gui 전용이라 이 관찰도 gui 에만 있다.
 #[cfg(feature = "gui")]
 impl AppState {
-    /// surface split 뒤: 새 surface 가 든 tab 을 찾아 `SplitSurface` 연습을 기록한다.
     pub(crate) fn observe_tutorial_surface_split(
         &mut self,
         engine: &CoreState,
@@ -724,7 +592,6 @@ impl AppState {
         }
     }
 
-    /// pane split 뒤: `SplitPane` 연습을 기록한다.
     pub(crate) fn observe_tutorial_pane_split(
         &mut self,
         workspace: u32,

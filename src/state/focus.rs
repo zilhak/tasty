@@ -4,13 +4,11 @@ use crate::model::PhysicalPx;
 use super::AppState;
 
 impl AppState {
-    /// Move focus to the next pane only (skip surface group logic).
     pub fn move_pane_focus_forward(&mut self, engine: &mut CoreState) {
         let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
-    /// Move focus to the previous pane only (skip surface group logic).
     pub fn move_pane_focus_backward(&mut self, engine: &mut CoreState) {
         let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
@@ -80,14 +78,12 @@ impl AppState {
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
-        // Find the focused pane's rect
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
         let pane_rect = match pane_rect {
             Some((_, r)) => r,
             None => return false,
         };
 
-        // Account for tab bar height
         let ws = self.active_workspace(engine);
         let _tab_count = ws
             .pane_layout()
@@ -122,13 +118,8 @@ impl AppState {
         false
     }
 
-    /// surface id 로 직접 포커스를 옮긴다(활성 workspace 안에서). 좌표 기반
-    /// `focus_pane_at_position`/`focus_surface_at_position` 의 id 기반 대응 —
-    /// native webview 클릭처럼 **좌표가 host 에 도달하지 않는** 입력이 모델 포커스를
-    /// 맞출 때 쓴다(`app/webview_keys.rs`). 포커스가 실제로 바뀌었으면 `true`.
-    ///
-    /// 활성 workspace 의 각 pane 의 **active tab** 만 본다 — 화면에 보이지 않는 탭의
-    /// surface 로 포커스가 튀지 않게 한다.
+    /// 활성 워크스페이스에서 ID로 포커스를 옮기고 변경 여부를 반환한다.
+    /// 좌표를 받지 못하는 네이티브 WebView 입력에도 사용하며, 각 pane의 활성 탭만 찾는다.
     pub fn focus_surface_by_id(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
         let ws = self.active_workspace(engine);
         let mut target_pane = None;

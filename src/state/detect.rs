@@ -1,16 +1,9 @@
-//! Polling 기반 lifecycle 이벤트 감지: focus 변화, workspace activation,
-//! tab/pane/workspace/surface 의 created/closed/moved 감지.
-//!
-//! 호스트 main loop tick 마다 `AppState` 의 스냅샷을 직전 tick 과 비교해 변경이
-//! 있으면 `pending_host_events` 큐에 `PendingHostEvent` 를 enqueue 한다.
+//! 폴링으로 surface·워크스페이스·탭 포커스와 pane 간 탭 이동을 감지한다.
 
 use super::{AppState, PendingHostEvent};
 use crate::core::CoreState;
 
 impl AppState {
-    /// 현재 focused surface id를 마지막 기록과 비교해 달라졌다면 `SurfaceFocused`
-    /// 이벤트를 enqueue하고 기록을 갱신한다. focus 전환 경로(키/마우스/IPC/탭/워크
-    /// 스페이스)가 많아 각각 hook하는 대신 main loop tick에서 polling으로 처리한다.
     pub fn detect_focus_change(&mut self, engine: &CoreState) {
         let current = self.focused_surface_id(engine);
         if current == self.last_focused_surface_id {
@@ -26,9 +19,6 @@ impl AppState {
         }
     }
 
-    /// 현재 활성 워크스페이스 ID를 마지막 기록과 비교해 달라졌다면 `WorkspaceActivated`
-    /// 이벤트를 enqueue한다. workspace 활성화 경로(사이드바 클릭, 단축키, IPC 등)가
-    /// 여럿이라 focused와 동일하게 polling으로 처리.
     pub fn detect_workspace_activation(&mut self, engine: &CoreState) {
         let current = engine.workspaces.get(self.active_workspace).map(|w| w.id);
         if current == self.last_active_workspace_id {
@@ -44,9 +34,6 @@ impl AppState {
         }
     }
 
-    /// focused pane의 active tab을 마지막 기록과 비교해 달라졌다면 `TabFocused`
-    /// 이벤트를 enqueue. tab 전환 경로(클릭, next/prev/goto 단축키, close 후 인접
-    /// 탭으로 shift, pane 전환에 의한 focused tab 변화 등)가 여럿이라 polling 채택.
     pub fn detect_tab_focus_change(&mut self, engine: &CoreState) {
         let current = self
             .focused_pane(engine)
@@ -65,11 +52,8 @@ impl AppState {
         }
     }
 
-    /// Tab 의 cross-pane 이동 (`tab.moved`) 만 polling 으로 감지한다.
-    /// `tab.created` / `tab.closed` 는 cascade 시점에 직접
-    /// enqueue 하므로 여기서 다루지 않는다 (중복 발화 방지). cross-pane move 는
-    /// 별 DomainIntent 가 없어 polling 으로 잡는다.
-    /// 첫 호출(스냅샷이 `None`)에서는 베이스라인만 기록한다.
+    /// pane 간 탭 이동을 감지한다. 생성·닫기는 해당 처리 경로가 이벤트를 기록한다.
+    /// 최초 호출은 기준 사본만 만든다.
     pub fn detect_tab_lifecycle(&mut self, engine: &CoreState) {
         use std::collections::HashMap;
 

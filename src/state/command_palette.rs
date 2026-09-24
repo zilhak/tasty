@@ -1,25 +1,9 @@
-//! Command palette state + 매칭 로직.
-//!
-//! 팔레트는 사용자 입력으로만 열리는 popup이다 (Ctrl+Shift+P 또는 Tools 메뉴).
-//! popup이 query를 누적하고 후보를 매칭하면, Enter 시 `pending_run`에 실행할 명령을
-//! 적재한다. `MainView` 메인 루프가 매 프레임 drain하여 호스트 명령은 keybinding
-//! 단축키와 동일한 action body를, plugin 명령은 App 메인 루프의 dispatch 큐를
-//! 호출한다 (`src/view/main/redraw.rs`, `src/app/dispatch/palette_plugin_commands.rs`).
-//!
-//! 후보 목록은 두 출처를 합친다:
-//! - 호스트: `tasty_settings::KeybindingSettings::GENERAL_BINDING_FIELDS`. 새
-//!   단축키를 추가하면 자동으로 팔레트에도 노출되므로 별도 등록 필요 없음.
-//! - Plugin: `AppState.palette_plugin_commands`(`PluginManager::plugin_palette_commands()`
-//!   snapshot). **`CommandScope::Global`만** 노출한다 — `Surface` scope
-//!   명령은 owner plugin의 surface가 포커스되어 있을 때만 의미가 있는데, 팔레트
-//!   실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키
-//!   경로 `match_global_shortcut`과 동일 판단 — `plugin_palette_commands()`가 이미
-//!   `iter_global()`로 필터링해 snapshot에 담아준다).
+//! 명령 팔레트의 입력 상태와 검색. 선택한 명령은 pending_run에 넣어 후속 프레임에서 처리한다.
+//! 호스트 단축키 목록과 플러그인의 Global 명령 사본을 합친다.
+//! Surface 명령은 팔레트 실행 시 대상 포커스를 보장할 수 없어 제외한다.
 
 use tasty_settings::KeybindingSettings;
 
-/// 팔레트가 보여줄 단일 항목. 실행 시 필요한 최소 식별 정보를 담아 `pending_run`에도
-/// 그대로 재사용한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaletteCommand {
     /// 호스트 내장 명령 (keybinding field).
@@ -38,18 +22,10 @@ pub enum PaletteCommand {
     },
 }
 
-/// 팔레트 목록에서 제외할 keybinding field_id.
-///
-/// - `toggle_command_palette`: 이미 팔레트 안이므로 자기 자신을 여는 명령은 무의미하다.
-/// - `fullscreen_stage_exit`: 무대가 올라와 있으면 0단계 게이트가 모든 키를 소비해
-///   팔레트를 **열 수 없고**, 무대가 없으면 이 명령은 아무 것도 닫을 게 없는 no-op 이다.
-///   즉 팔레트에서 고를 수 있는 시점과 의미가 있는 시점이 서로 배타적이라 노출하지 않는다.
+// 팔레트 자체 열기와, 팔레트와 동시에 사용할 수 없는 무대 종료 명령은 제외한다.
 const PALETTE_EXCLUDED: &[&str] = &["toggle_command_palette", "fullscreen_stage_exit"];
 
-/// 실행 가능한 명령 전체 목록: 호스트 keybinding 필드 + `plugin_commands`(팔레트에
-/// 노출할 plugin 전역 command snapshot, 이미 비활성 plugin 필터링됨).
-///
-/// [`PALETTE_EXCLUDED`] 의 field_id 는 목록에서 뺀다.
+/// 호스트 단축키와 활성 플러그인의 전역 명령을 합치고 제외 목록을 적용한다.
 pub fn all_commands(
     plugin_commands: &[crate::plugin::command_registry::PluginCommandEntry],
 ) -> Vec<PaletteCommand> {
@@ -66,15 +42,12 @@ pub fn all_commands(
     out
 }
 
-/// 팔레트 UI 상태. `AppState`가 소유한다(그 필드가 gui 전용이다).
 #[cfg(feature = "gui")]
 #[derive(Debug, Default)]
 pub struct CommandPaletteState {
-    /// 사용자 입력 쿼리.
     pub query: String,
-    /// 현재 선택 인덱스 (필터링된 결과 기준).
+    /// 필터링된 결과에서 선택한 인덱스.
     pub selected: usize,
-    /// Enter 시 popup이 채워두면, MainView가 다음 프레임에 drain하여 dispatch한다.
     pub pending_run: Option<PaletteCommand>,
 }
 
@@ -86,10 +59,7 @@ impl CommandPaletteState {
     }
 }
 
-/// 쿼리 문자열을 명령 목록에 적용하여 `(score, command)` 쌍을 반환한다.
-///
-/// 매칭 알고리즘은 단순 case-insensitive subsequence + word-prefix bonus.
-/// 외부 crate 없이 동작하며, 후보가 수십 개 규모라 성능은 문제되지 않는다.
+/// 대소문자를 구분하지 않고 부분 문자열·부분 수열을 검색해 점수순으로 반환한다.
 pub fn search<'a>(
     query: &str,
     commands: &'a [PaletteCommand],
@@ -135,7 +105,6 @@ fn match_score(query: &str, text: &str) -> Option<i32> {
         }
         return Some(score);
     }
-    // Subsequence match
     let mut chars = query.chars();
     let mut current = chars.next()?;
     let mut last_idx: Option<usize> = None;
@@ -177,9 +146,6 @@ mod tests {
         assert_eq!(results.len(), cmds.len());
     }
 
-    /// [`PALETTE_EXCLUDED`] 가 실제로 목록에서 빠지는지. `fullscreen_stage_exit` 은
-    /// 팔레트를 열 수 있는 시점(무대 없음)과 의미가 있는 시점(무대 있음)이 배타적이라
-    /// 노출하지 않는다 — 목록에 되살아나면 아무 것도 하지 않는 명령이 검색에 잡힌다.
     #[test]
     fn excluded_ids_are_absent_from_the_palette() {
         let cmds = all_commands(&[]);
@@ -191,12 +157,11 @@ mod tests {
                 "'{excluded}' 가 팔레트 목록에 노출됐다"
             );
         }
-        // 제외 목록이 통째로 비면 위 단정이 공허해진다 — 대조군으로 일반 액션 하나를
-        // 확인해 필터가 전부를 걸러내지 않는다는 것도 함께 고정한다.
+        // 일반 명령까지 모두 제외하는 구현은 통과하지 않아야 한다.
         assert!(
             cmds.iter()
                 .any(|c| matches!(c, PaletteCommand::Host { id, .. } if *id == "new_tab")),
-            "일반 액션까지 걸러졌다 — 필터가 과하게 잡는다"
+            "일반 명령까지 제외됐다"
         );
     }
 
@@ -233,7 +198,6 @@ mod tests {
         let cmds = vec![host("early"), host("late")];
         let labels = vec!["new tab".to_string(), "renew tab".to_string()];
         let results = search("new", &cmds, &labels);
-        // "new tab" starts with "new" → higher score
         assert_eq!(results.first().unwrap().1, &cmds[0]);
     }
 

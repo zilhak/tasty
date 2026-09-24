@@ -1,6 +1,4 @@
-//! [`IpcWindow`] 의 창 쪽 구현 — IPC 엔진 핸들러가 부르는 창 연산을 `AppState` 의 같은 일로
-//! 넘긴다. 메서드마다 한 줄 위임이고 새 동작은 없다. 포트를 두는 이유는
-//! [`crate::adapters::ipc::window_port`] 모듈 문서.
+//! IPC의 IpcWindow 요청을 AppState의 창 연산에 연결한다.
 
 use std::path::PathBuf;
 
