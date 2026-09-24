@@ -1,21 +1,12 @@
-//! 사용자 등록 Lua 스크립트 목록 저장소 + SHA256 (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
-//!
-//! 단축키 트리거·관리 창·TOFU 게이트가 모두 이 "등록 목록" 을 전제로 한다.
-//! `Settings.scripts` 로 `~/.tasty/config.toml` 에 영속된다.
-//!
-//! **단축키 combo 는 여기 저장하지 않는다.** 바인딩 소유권은 `KeybindingSettings` 에
-//! 있고(`script_id` 로 참조), 관리 창은 그 값을 조회해 표시만 한다 — 저장 위치 이중화 방지.
+//! 등록 Lua 스크립트와 승인한 엔트리 파일 해시를 저장한다. Settings.scripts에 영속한다.
+//! 단축키는 여기 복제하지 않고 KeybindingSettings가 script_id로 참조한다.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// 자동실행 트리거로 등록 가능한 host lifecycle 이벤트 화이트리스트.
-///
-/// host 가 실제 `fire` 하는 이벤트명과 1:1 (`docs/features/lua-hooks/index.md#구현--발화-site--payload` 카탈로그).
-/// 여기 없는 이름은 트리거로 등록할 수 없다 — 발화 지점이 없어 영원히 침묵하는
-/// 바인딩을 config 에 만들지 않기 위함.
+/// 자동실행에 허용한 호스트 이벤트 이름. 이 목록 밖 이름은 트리거로 등록하지 않는다.
 pub const AUTO_TRIGGER_EVENTS: [&str; 13] = [
     "tasty.startup.post",
     "window.create.post",
@@ -37,10 +28,7 @@ pub fn is_auto_trigger_event(name: &str) -> bool {
     AUTO_TRIGGER_EVENTS.contains(&name)
 }
 
-/// 스크립트 자동실행 트리거 1개. `ScriptEntry.triggers` 로 영속된다.
-///
-/// 단축키 바인딩(`KeybindingSettings.script_bindings`)과 별개의 추가 채널 —
-/// combo 충돌 검사가 없어 keybindings 소유 근거가 없으므로 scripts 가 소유한다.
+/// 스크립트 자동실행 트리거. 단축키 바인딩과 별도로 ScriptEntry에 저장한다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AutoTrigger {
@@ -123,7 +111,7 @@ impl ScriptRegistry {
         })
     }
 
-    /// 트리거 추가 (중복 무시). 스크립트가 존재해 실제 추가됐으면 true.
+    /// 트리거를 추가한다. 이미 같은 값이 있어도 스크립트가 존재하면 true다.
     pub fn add_trigger(&mut self, id: &str, trigger: AutoTrigger) -> bool {
         match self.scripts.iter_mut().find(|s| s.id == id) {
             Some(e) => {
@@ -224,7 +212,6 @@ mod tests {
         let id1 = reg.add("a".into(), PathBuf::from("/tmp/a.lua"), "h1".into());
         let id2 = reg.add("b".into(), PathBuf::from("/tmp/b.lua"), "h2".into());
         assert_ne!(id1, id2);
-        // 제거 후 재등록해도 이전 id 를 재사용하지 않는다.
         reg.remove(&id1);
         let id3 = reg.add("c".into(), PathBuf::from("/tmp/c.lua"), "h3".into());
         assert_ne!(id3, id1);
@@ -264,12 +251,9 @@ mod tests {
 
     #[test]
     fn deserializes_empty_to_default() {
-        // scripts 키가 없는 기존 config 조각 → 빈 레지스트리(마이그레이션 안전).
         let reg: ScriptRegistry = toml::from_str("").unwrap();
         assert!(reg.is_empty());
     }
-
-    // --- 자동실행 트리거 (lua-autofire §02) ---
 
     #[test]
     fn trigger_survives_toml_roundtrip() {

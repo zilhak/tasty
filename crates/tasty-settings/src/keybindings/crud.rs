@@ -420,7 +420,6 @@ impl KeybindingSettings {
     /// existing_keys에 없는 필드(= 기본값으로 채워진 필드)의 바인딩 중,
     /// 다른 필드와 중복되는 것을 제거한다.
     pub fn remove_conflicts_from_defaults(&mut self, existing_keys: &HashSet<String>) {
-        // 먼저 모든 사용자 설정 바인딩을 수집
         let mut user_combos: HashSet<String> = HashSet::new();
         for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
             if existing_keys.contains(*field_id)
@@ -434,7 +433,6 @@ impl KeybindingSettings {
             }
         }
 
-        // 기본값 필드에서 사용자 바인딩과 충돌하는 combo 제거
         for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
             if existing_keys.contains(*field_id) {
                 continue;
@@ -484,7 +482,6 @@ impl KeybindingSettings {
         if combo.is_empty() {
             return None;
         }
-        // 고정 액션 필드와의 충돌.
         for (id, _label) in Self::GENERAL_BINDING_FIELDS {
             if let Some(bindings) = self.get_bindings(id)
                 && bindings.iter().any(|b| b == combo)
@@ -492,7 +489,6 @@ impl KeybindingSettings {
                 return Some((*id).to_string());
             }
         }
-        // 다른 스크립트 바인딩과의 충돌.
         for b in &self.script_bindings {
             if Some(b.script_id.as_str()) != except_script_id && b.combo == combo {
                 return Some(format!("script:{}", b.script_id));
@@ -509,12 +505,7 @@ impl KeybindingSettings {
             .map(|(_, key)| *key)
     }
 
-    // ── quick-switch raw 키 accessor (index 기반) ─────────────────────
-    //
-    // 이 8개 필드는 콤보가 아니라 raw 키 하나이므로 `GENERAL_BINDING_FIELDS` /
-    // `get_bindings(_mut)`(콤보 `Vec<String>` 시스템)에 넣지 않고 전용 accessor 로 다룬다.
-    // modifier 는 dispatch 시점에 `tab_switch_modifier`/`workspace_switch_modifier`/
-    // `category_switch_modifier` 에서 조합된다(quickswitch-03). 여기는 데이터 접근만 제공한다.
+    // quick-switch 값은 raw 키 또는 개별 지정 콤보이므로 일반 Vec<String> 액션과 별도로 접근한다.
 
     /// 탭 quick-switch 슬롯 `idx`(0~9)의 raw 키. 범위 밖이면 None.
     pub fn tab_slot_key(&self, idx: usize) -> Option<&str> {
@@ -606,13 +597,8 @@ impl KeybindingSettings {
         self.category_switch_prev_key = key.to_string();
     }
 
-    // ── 개별 지정 모드 역전환 복원 (S-9) ─────────────────────────────
-    //
-    // 개별 지정(`INDIVIDUAL_SWITCH_MODIFIER`) 에서 규칙 기반 modifier 로 되돌아갈 때
-    // 호출한다. 개별 지정 슬롯의 완전 콤보 문자열(예: `"ctrl+alt+1"`)은 "어느 부분이
-    // modifier 였고 어느 게 raw 키였는지" 구조적으로 유실돼 있어 역산이 불가능하므로,
-    // 이 축의 슬롯/다음/이전 값을 전부 기본값으로 복원하는 것이 유일하게 안전한
-    // 선택이다(S-9 분석검증 Q3 확정).
+    // 개별 지정에서 공통 modifier 방식으로 바꾸면 슬롯·다음·이전 값을 기본값으로 돌린다.
+    // 각 슬롯에 설정한 전체 콤보에서 하나의 공통 modifier를 정하지 않는다.
 
     /// 탭 축 슬롯/다음/이전을 기본값으로 복원.
     pub fn reset_tab_switch_to_defaults(&mut self) {
@@ -645,20 +631,8 @@ impl KeybindingSettings {
         Self::format_display_parts(binding, general).join("+")
     }
 
-    /// Tokenize a binding into display키캡 단위 (e.g. "ctrl+shift+n" → ["Ctrl","Shift","N"]).
-    ///
-    /// 키캡 분해 렌더(명령 팔레트 Kbd 등)가 `+` 구분자 모호성 없이 토큰을 받도록 하는
-    /// 정식 경로. 반환 문자열을 `split('+')` 하면 `"ctrl++"`(Ctrl+`+키`) 같은 케이스가
-    /// 깨지므로, 표시 문자열 대신 **이 함수**를 써야 한다.
-    ///
-    /// 주의: `split('+')`은 쓸 수 없다. `"ctrl++"`(Ctrl+`+키`) 같은 바인딩에서 구분자
-    /// `+`와 키 이름 `+`를 구분하지 못하기 때문. 왼쪽부터 모디파이어 프리픽스를 하나씩
-    /// 떼어내고, 남은 부분을 통째로 키 토큰으로 본다.
-    ///
-    /// `general` 의 표시 스타일 필드는 저장 포맷(OS 독립 추상 토큰)에는 영향을 주지
-    /// 않고 화면 표시 문자열만 바꾼다(`docs/design/policies/key-mapping.md` 저장↔표시
-    /// 분리 원칙). alt: "alt"→Alt, "cmd"→Cmd, "symbol"→⌘. option: "option"→Option,
-    /// "symbol"→⌥. shift: "shift"→Shift, "symbol"→⇧.
+    /// 바인딩을 키캡별 표시 문자열로 반환한다. ctrl++의 마지막 +는 키이므로 표시 문자열을
+    /// split('+')하지 않고 modifier 접두사를 차례로 읽는다. general의 스타일은 표시만 바꾸고 저장값은 유지한다.
     pub fn format_display_parts(binding: &str, general: &GeneralSettings) -> Vec<String> {
         if binding.is_empty() {
             return Vec::new();
@@ -724,14 +698,8 @@ impl KeybindingSettings {
     }
 }
 
-/// quick-switch 축 — 탭 / 워크스페이스 / 카테고리.
-///
-/// 세 축은 modifier 한 필드 · 슬롯 배열 · 다음/이전 두 필드를 **대칭으로** 갖는다.
-/// 그 대칭을 타입으로 세워 축마다 필드 이름을 손으로 나열하지 않게 한다 — 이 자리가
-/// 없으면 "축 셋" 이라는 사실이 소비처마다 다시 적히고, 슬롯 수(10/9/10)도 함께
-/// 복제된다. 슬롯 수는 [`TAB_SWITCH_SLOT_COUNT`] 등 필드 타입이 쓰는 상수 그대로다.
-///
-/// [`TAB_SWITCH_SLOT_COUNT`]: super::TAB_SWITCH_SLOT_COUNT
+/// 탭·workspace·카테고리 전환의 modifier·슬롯·다음/이전 값을 공통으로 다룬다.
+/// 슬롯 수는 각 필드 타입과 같은 상수를 사용한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SwitchAxis {
     Tab,
@@ -740,7 +708,7 @@ pub enum SwitchAxis {
 }
 
 impl SwitchAxis {
-    /// 세 축 전량. 스캔·순회는 이 배열을 돌아 축을 하나도 빠뜨리지 않는다.
+    /// 순회할 전환 종류 전체.
     pub const ALL: [SwitchAxis; 3] = [SwitchAxis::Tab, SwitchAxis::Workspace, SwitchAxis::Category];
 
     /// 이 축의 슬롯 개수.
@@ -846,6 +814,6 @@ pub enum SwitchStep {
 }
 
 impl SwitchStep {
-    /// 둘 전량.
+    /// 다음·이전 순회 목록.
     pub const ALL: [SwitchStep; 2] = [SwitchStep::Next, SwitchStep::Prev];
 }

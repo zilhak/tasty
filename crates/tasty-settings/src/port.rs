@@ -1,7 +1,4 @@
-//! `SettingsStorage` trait — Hexagonal architecture 의 *internal port*.
-//!
-//! Production: `FileSettingsStorage` — `~/.tasty/settings.toml` 읽기/쓰기.
-//! Test: `testing::InMemorySettingsStorage`.
+//! config.toml 저장소와 시험용 메모리 저장소의 공통 인터페이스.
 
 use crate::Settings;
 

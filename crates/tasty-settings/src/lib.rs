@@ -36,16 +36,8 @@ pub use types::{
     OverlaySettings, PerformanceSettings, RemoteTransferSettings,
 };
 
-/// 이 `Settings` 값이 어디서 왔는지 — **원본 파일을 덮어써도 되는지**를 판정한다.
-///
-/// 파싱 실패를 기본값으로 폴백하는 것 자체는 앱을 계속 쓰게 해 주므로 옳다. 위험한
-/// 것은 그 뒤의 저장이다: 폴백한 기본값을 원래 자리에 쓰면 사용자가 쓴 설정이 사라진다.
-/// 그래서 로드 결과에 "덮어써도 되는가" 를 실어 [`Settings::save`] 가 판정하게 한다.
-///
-/// **로드는 파일을 건드리지 않는다.** 보존(백업으로 이동)은 실제로 덮어쓰려는 순간,
-/// 즉 [`Settings::save`] 안에서 일어난다. 로드 시점에 옮기면 부팅 중 같은 파일을 여러 번
-/// 읽는 프로세스들 사이에서 첫 로드만 사건을 보고 나머지는 "부재" 로 관측하게 되어,
-/// 정작 사용자에게 알릴 프로세스가 아무것도 모르는 상태가 된다.
+/// 로드 출처에 따른 저장 정책. 파싱 실패로 기본값을 쓸 때 원본을 바로 덮어쓰지 않는다.
+/// 로드는 파일을 옮기지 않으며 실제 저장 전에 필요한 백업을 만든다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SettingsOrigin {
     /// 파일을 정상적으로 읽었거나(부재 포함), 프로그램이 만든 값. 저장해도 잃을 것이 없다.
@@ -70,8 +62,7 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub memory: MemorySettings,
     pub accessibility: AccessibilitySettings,
-    /// 오버레이류(토스트 등) 표시 설정. `#[serde(default)]`(Settings 전체) 로 기존
-    /// config.toml 마이그레이션 안전(누락 시 toast_duration_ms=2000).
+    /// 토스트 등 오버레이 표시 설정.
     pub overlay: OverlaySettings,
     /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
@@ -96,14 +87,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// 전역 `Theme` 을 만들 때 실어야 하는 설정 값들을 한 덩이로 낸다.
-    ///
-    /// **이 함수가 이 값들이 채워지는 유일한 자리다.** 종전에는 install 호출부마다
-    /// 값을 하나씩 인자로 넘겼고, 그 형태가 실제로 두 번 사고를 냈다 — `ui_zoom` 을
-    /// 빠뜨린 install 이 전역 Theme 을 배율 1.0 으로 되돌렸고, `reduced_motion` 은
-    /// 위젯 인자로만 존재해 넘기는 자리가 레포 전체에 하나도 없었다(설정을 켜도
-    /// 스피너가 계속 돌았다). 값을 늘릴 때 호출부를 안 건드려도 되게 하려고 묶는다.
-    /// 결정과 대안은 `docs/design/systems/theme.md#모션-설정과-시간-단위`.
+    /// 전역 Theme 설치에 필요한 UI 배율·모션 설정을 함께 반환한다.
     pub fn theme_runtime(&self) -> tasty_themes::ThemeRuntime {
         tasty_themes::ThemeRuntime {
             ui_zoom: self.appearance.ui_scale_factor(),
@@ -139,7 +123,7 @@ impl Settings {
 // ---- Settings file operations ----
 
 impl Settings {
-    /// Returns the config file path: ~/.tasty/config.toml
+    /// tasty_home 아래 config.toml 경로. TASTY_HOME과 debug/release 구분을 따른다.
     pub fn config_path() -> Option<PathBuf> {
         tasty_home().map(|dir| dir.join("config.toml"))
     }
@@ -163,12 +147,7 @@ impl Settings {
         Self::load_from_path(&path)
     }
 
-    /// 확정된 config 경로에서 읽어 파싱한다.
-    ///
-    /// **부재와 읽기 실패를 구분한다.** 둘을 같은 기본값으로 뭉개면 권한 오류·IO 오류가
-    /// "설정을 만든 적 없음" 과 같아지고, 이후 저장이 멀쩡한 사용자 파일을 기본값으로
-    /// 덮어쓴다. 읽지 못한 경우에는 파일을 건드리지 않고 저장만 막는다 — 내용을 확인하지
-    /// 못한 파일을 옮기면 일시적 오류에도 사용자 파일이 자리를 뜨기 때문이다.
+    /// 설정 파일을 읽는다. 부재는 기본값으로 시작하고 다른 읽기 실패는 이후 저장을 막는다.
     fn load_from_path(path: &std::path::Path) -> Self {
         let contents = match fs::read_to_string(path) {
             Ok(c) => c,
@@ -191,12 +170,7 @@ impl Settings {
         Self::parse_or_default(&contents, path)
     }
 
-    /// 파싱 성공/실패를 각각 로그하고, 실패 시 기본값으로 폴백한다.
-    ///
-    /// **파일은 건드리지 않는다.** 원본 보존은 실제로 덮어쓰려는 순간([`Settings::save`])에
-    /// 한다. 레벨이 `error!` 인 이유는 `docs/dev-guide/error-handling.md` 의 표가 "설정
-    /// 저장 실패" 를 그 레벨의 예로 들기 때문이다 — 파싱 실패는 사용자의 전체 설정이
-    /// 무효가 되는 같은 무게의 사건이다.
+    /// 파싱 실패는 오류로 알리고 기본값을 반환한다. 원본 파일은 저장 전까지 그대로 둔다.
     fn parse_or_default(contents: &str, path: &std::path::Path) -> Self {
         match Self::parse_with_migration(contents) {
             Ok(settings) => {
@@ -235,10 +209,7 @@ impl Settings {
         Ok(settings)
     }
 
-    /// 그 경로의 파일이 **지금도** 해석되지 않는가. 보존이 실제로 일어났는지 되묻는 데
-    /// 쓴다 — 원본을 `.bak` 으로 옮겼으면 그 자리는 새로 쓴 정상 파일이라 `false` 이고,
-    /// 옮기지 못했으면(백업 자리 소진 등) 원본이 그대로라 `true` 다. 파일이 없으면
-    /// 해석할 것이 없으므로 `false`.
+    /// 현재 파일을 다시 파싱할 수 없는지 확인한다. 없거나 읽지 못하면 false다.
     pub fn file_is_unparsable(path: &std::path::Path) -> bool {
         match fs::read_to_string(path) {
             Ok(contents) => Self::parse_with_migration(&contents).is_err(),
@@ -246,11 +217,7 @@ impl Settings {
         }
     }
 
-    /// Save settings to the config file.
-    ///
-    /// 원본을 읽지 못했고 보존도 못 한 상태([`SettingsOrigin::ProtectedUnreadable`])면
-    /// **거부한다.** 그 상태의 `self` 는 기본값이므로, 쓰면 디스크에 남아 있는 사용자
-    /// 설정을 기본값으로 대체하게 된다.
+    /// 설정을 저장한다. 원본을 읽지 못한 ProtectedUnreadable 상태는 덮어쓰기를 거절한다.
     pub fn save(&self) -> Result<()> {
         Self::ensure_config_dir()?;
         let Some(path) = Self::config_path() else {
@@ -269,15 +236,8 @@ impl Settings {
         Ok(())
     }
 
-    /// 덮어쓰기 직전에 디스크의 기존 파일을 지킨다.
-    ///
-    /// 이 프로세스가 로드할 때 해석하지 못했던 파일이 **아직 그 자리에 있으면** `.bak` 으로
-    /// 옮긴 뒤 진행한다. 읽지도 못했던 경우에는 옮길 수 없으므로 저장 자체를 거부한다 —
-    /// 지금 `self` 는 기본값이라, 쓰는 순간 사용자의 설정이 기본값으로 대체된다.
-    ///
-    /// 저장 시점에 다시 확인하는 이유: `save` 는 `&self` 라 한 번 보존했다는 사실을
-    /// 남길 곳이 없다. 파일을 다시 읽어 판정하면 두 번째 저장이 방금 쓴 정상 파일을
-    /// 백업으로 옮기는 일이 없다.
+    /// 파싱하지 못한 원본이 아직 있으면 백업한 뒤 저장한다. 읽기 실패 상태는 저장 자체를 거절한다.
+    /// 다시 읽어 확인하므로 두 번째 저장이 이미 쓴 정상 파일을 다시 백업하지 않는다.
     fn protect_existing_file(&self, path: &std::path::Path) -> Result<()> {
         match self.origin {
             SettingsOrigin::Clean => return Ok(()),
@@ -349,9 +309,7 @@ impl Settings {
             _ => {}
         }
 
-        // appearance.ui_scale
-        // 목록을 여기 다시 쓰지 않는다 — 배율 집합의 모수는 `UI_SCALE_CHOICES` 하나이고
-        // 그 집합은 `the_supported_ui_scale_set_is_pinned` 가 못박는다.
+        // 배율 선택 목록을 공통 상수와 대조한다.
         normalize_choice(
             &mut self.appearance.ui_scale,
             UI_SCALE_CHOICES,
@@ -400,9 +358,7 @@ impl Settings {
             );
         }
 
-        // general.shell_mode — Windows 전용 필드. 기존 settings.toml 의
-        // `shell_mode = "custom"` 같은 값은 비-Windows 에서 serde(default) 가
-        // unknown field 로 무시하고, Windows 에서는 여기서 default 로 fallback.
+        // shell_mode는 Windows 필드다. 다른 OS는 알 수 없는 키로 무시한다.
         #[cfg(windows)]
         normalize_choice(
             &mut self.general.shell_mode,
@@ -546,9 +502,7 @@ ui_scale = "large"
         assert!(!parsed.general.shell.is_empty());
     }
 
-    /// 해석하지 못한 파일은 **로드가 건드리지 않는다.** 부팅 중 같은 파일을 여러 번 읽고,
-    /// 런처와 GUI 는 서로 다른 프로세스다 — 첫 로드가 파일을 옮겨버리면 정작 사용자에게
-    /// 알릴 프로세스는 "파일 없음" 만 보게 된다.
+    /// 여러 프로세스가 같은 원본을 읽을 수 있도록 로드만으로 파일을 옮기지 않는다.
     #[test]
     fn unparsable_settings_file_is_left_in_place_by_load() {
         let tmp = tempfile::tempdir().unwrap();
@@ -605,8 +559,7 @@ ui_scale = "large"
         assert_eq!(loaded.origin, SettingsOrigin::Clean);
     }
 
-    /// 읽기 자체가 실패하면 파일을 **건드리지 않고** 저장만 막는다. 일시적 권한 오류에
-    /// 사용자 설정이 자리를 뜨면 안 되고, 그 위에 기본값을 쓰면 더더욱 안 된다.
+    /// 읽기 실패는 원본을 옮기지 않고 저장을 거절한다.
     #[cfg(unix)]
     #[test]
     fn unreadable_settings_file_blocks_save_and_is_left_in_place() {
@@ -623,9 +576,7 @@ ui_scale = "large"
             "읽지 못한 파일 위에 기본값을 쓰면 안 된다"
         );
 
-        // 위 단정만으로는 부족하다 — mode 000 파일에는 `fs::write` 자체가 실패하므로
-        // 가드를 통째로 들어내도 그대로 통과한다(OS 권한을 검사하는 셈이다). 거부가
-        // **origin 판정에서** 나온다는 것을 보이려면 OS 가 막지 않는 자리에 써 봐야 한다.
+        // OS 쓰기 권한이 아닌 origin 검사로 거절하는지 보려고 쓰기 가능한 경로에도 저장한다.
         let writable = tmp.path().join("elsewhere.toml");
         assert!(
             loaded.save_to_path(&writable).is_err(),
@@ -633,8 +584,7 @@ ui_scale = "large"
              '원본을 읽지 못했다' 는 판정이다"
         );
         assert!(!writable.exists(), "거부했으면 파일을 만들지도 않는다");
-        // 대조군: 같은 자리라도 origin 이 Clean 이면 정상적으로 쓰인다 — 위 두 단정이
-        // "save_to_path 는 늘 실패한다" 로 통과하는 것을 막는다.
+        // 정상 origin은 같은 경로에 저장할 수 있어야 한다.
         Settings::default()
             .save_to_path(&writable)
             .expect("Clean 인 설정은 쓸 수 있어야 한다");
@@ -652,7 +602,6 @@ ui_scale = "large"
         );
     }
 
-    /// 정상 로드는 저장을 막지 않는다(회귀 가드 — 가드가 과하게 잠그면 설정 저장이 죽는다).
     #[test]
     fn valid_settings_file_stays_clean() {
         let tmp = tempfile::tempdir().unwrap();
@@ -794,8 +743,7 @@ ui_scale = "large"
         assert_eq!(settings.general.shift_display_style, "shift");
     }
 
-    /// 기존 settings.toml 에 `shell_mode = "custom"` 이 남아 있을 때 normalize 가
-    /// panic 없이 default 로 fallback 하는지 검증 (Windows 전용 필드).
+    /// Windows의 알 수 없는 shell_mode를 default로 바꾼다.
     #[cfg(windows)]
     #[test]
     fn custom_mode_no_longer_exists() {
@@ -884,8 +832,7 @@ ui_scale = "large"
         assert!(!parsed.modifier_hint.enabled);
     }
 
-    /// `theme_runtime()` 이 이 값들이 채워지는 유일한 자리다 — 여기서 빠지면 전역
-    /// Theme 을 설치하는 4 경로 전부가 조용히 기본값을 쓴다.
+    /// 전역 Theme에 전달할 설정을 함께 구성하는지 확인한다.
     #[test]
     fn theme_runtime_carries_every_settings_backed_value() {
         let mut settings = Settings::default();

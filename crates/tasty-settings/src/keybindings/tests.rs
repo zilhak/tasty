@@ -181,7 +181,7 @@ fn label_key_for_returns_correct_key() {
     assert_eq!(KeybindingSettings::label_key_for("nonexistent"), None);
 }
 
-/// 0.4 fresh-start: 단일 string 형식은 reject (Vec 필수).
+/// 바인딩은 문자열 배열이어야 하며 단일 문자열은 거절한다.
 #[test]
 fn single_string_keybinding_rejected() {
     let toml_str = r#"new_tab = "alt+x""#;
@@ -370,10 +370,7 @@ fn missing_fields_fall_back_to_preset_not_empty() {
 /// 사용자가 설정한 바인딩과 충돌하는 기본값 바인딩이 제거되는지 확인.
 #[test]
 fn remove_conflicts_from_defaults_strips_conflicting_combos() {
-    // zoom_out의 기본값은 ["ctrl+-", "alt+-"].
-    // 사용자가 new_tab = ["ctrl+-"]를 설정하면,
-    // zoom_out에서 "ctrl+-"가 제거되어야 한다.
-    // (예전에는 `image_undo` 로 같은 것을 쟀다 — 그 필드는 실행부가 없어 걷어냈다.)
+    // 사용자가 지정한 new_tab의 ctrl+-가 zoom_out 기본값보다 우선한다.
     let toml = r#"new_tab = ["ctrl+-"]"#;
     let mut kb: KeybindingSettings = toml::from_str(toml).unwrap();
     let existing_keys: HashSet<String> = ["new_tab".to_string()].into_iter().collect();
@@ -439,8 +436,6 @@ fn script_bindings_serde_default_when_absent() {
     let kb: KeybindingSettings = toml::from_str("new_tab = [\"ctrl+t\"]").unwrap();
     assert!(kb.script_bindings.is_empty());
 }
-
-// ── quick-switch raw 키 필드 (quickswitch-02) ─────────────────────
 
 #[test]
 fn preset_tasty_has_vim_style_quick_switch_defaults() {
@@ -628,9 +623,7 @@ fn quick_switch_fields_not_in_general_bindings() {
     assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 61);
 }
 
-// ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────
-
-/// 4 프리셋 전부 카테고리 next/prev 기본값이 vim 스타일 `j`/`k` (분석검증 Q1 확정값).
+/// 네 프리셋의 카테고리 다음·이전 기본값을 확인한다.
 #[test]
 fn all_presets_share_category_next_prev_defaults() {
     for name in KeybindingSettings::preset_names() {
@@ -673,19 +666,14 @@ fn category_next_prev_serde_roundtrip() {
     assert_eq!(restored.category_switch_prev_key, "p");
 }
 
-// ── "개별 지정" sentinel + 역전환 복원 (S-9) ────────────────────────
-
-/// sentinel 의 **문자열 값**을 고정한다(회귀 방지) — 이 값은 축 modifier 필드에 그대로
-/// 직렬화되므로, 바뀌면 기존 config 의 "개별 지정" 축이 조용히 풀린다. "4축 조합 파서가
-/// 절대 만들 수 없는 문자열" 이라는 동치 쪽은 `parse` 의
-/// `individual_sentinel_is_not_a_modifier_combo` 가 `Combo::parse_modifiers` 를 직접 불러
-/// 고정한다 — 같은 크레이트라 여기서 문자열 형태만 고정할 이유가 없다.
+/// 기존 설정을 읽을 수 있도록 개별 지정 모드의 저장 문자열을 유지한다.
+/// modifier 파서에서 거절되는지는 parse 모듈의 시험이 확인한다.
 #[test]
 fn individual_switch_modifier_sentinel_value() {
     assert_eq!(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER, "individual");
 }
 
-/// 4 프리셋 전부 기본값은 sentinel 이 아니다(규칙 기반 값만 가짐 — 작업 항목 9).
+/// 프리셋은 개별 지정 모드가 아닌 공통 modifier 방식을 사용한다.
 #[test]
 fn presets_never_default_to_individual_modifier() {
     for name in KeybindingSettings::preset_names() {
@@ -704,8 +692,7 @@ fn presets_never_default_to_individual_modifier() {
     }
 }
 
-/// 개별 지정 → 규칙 기반 역전환 시 각 축의 reset_*_to_defaults 가 정확히 기본값으로
-/// 복원하는지(분석검증 Q3).
+/// 개별 지정에서 공통 modifier 방식으로 바꿀 때 기본 키를 복원한다.
 #[test]
 fn reset_to_defaults_restores_each_axis_independently() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -741,9 +728,7 @@ fn reset_to_defaults_restores_each_axis_independently() {
     );
 }
 
-/// 카테고리 next/prev 기본값(`j`/`k`)이 4 프리셋 전체에서 다른 일반 액션과 충돌하지
-/// 않는지 확인 — 분석검증 Q1 근거("j"/"k" 무충돌, "u"/"p" 는 실제로는 충돌 없음이지만
-/// 원 문서 제안값 "p" 는 toggle_command_palette 와 충돌해 기각됐음을 회귀로 고정).
+/// 카테고리 다음·이전 조합이 네 프리셋의 일반 액션과 충돌하지 않는지 확인한다.
 #[test]
 fn category_next_prev_defaults_do_not_conflict_with_presets() {
     for name in KeybindingSettings::preset_names() {
@@ -771,9 +756,7 @@ fn category_next_prev_defaults_do_not_conflict_with_presets() {
 
 // ── 전체화면 무대 종료 (fullscreen_stage_exit) ─────────────────────
 
-/// 4 프리셋 전부 기본값이 `escape` 다. 무대는 플랫폼 관습이 갈리는 영역이 아니라
-/// 프리셋별로 다르게 둘 이유가 없다 — 한 프리셋만 빠져도 그 프리셋 사용자에게는
-/// 키보드 종료 수단이 사라진다.
+/// 네 프리셋 모두 Escape로 전체화면 무대를 종료한다.
 #[test]
 fn every_preset_binds_fullscreen_exit_to_escape() {
     for name in KeybindingSettings::preset_names() {
@@ -786,11 +769,7 @@ fn every_preset_binds_fullscreen_exit_to_escape() {
     }
 }
 
-/// id → slice / id → `&mut` 양방향 매핑이 둘 다 연결돼 있는지.
-///
-/// slice 쪽이 빠지면 `find_conflict` 가 이 바인딩을 못 봐 **중복 등록을 허용**하고,
-/// `&mut` 쪽이 빠지면 설정 UI 녹화가 값을 못 쓴다. 둘은 서로 다른 match 문이라
-/// 한쪽만 추가되는 실수가 실제로 가능하다.
+/// 읽기·쓰기 매핑을 모두 확인한다. 각각 충돌 검사와 설정 편집에 필요하다.
 #[test]
 fn fullscreen_stage_exit_has_both_crud_directions() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -830,9 +809,7 @@ fn fullscreen_stage_exit_participates_in_conflict_detection() {
     );
 }
 
-/// 구 config(이 필드 없음) 로드 시 전용 default fn 이 기본 바인딩을 복원한다.
-/// struct 레벨 `#[serde(default)]` 만 믿으면 `Vec::default()`(빈 vec)가 들어와
-/// 키보드 종료 수단이 조용히 사라진다.
+/// 필드가 누락되면 전용 기본 함수의 바인딩을 사용한다.
 #[test]
 fn missing_fullscreen_stage_exit_falls_back_to_escape() {
     let toml_str = r#"new_tab = ["ctrl+t"]"#;
@@ -852,21 +829,8 @@ fullscreen_stage_exit = []
     assert!(kb.fullscreen_stage_exit.is_empty());
 }
 
-// ── 콤보 필드 ↔ SoT 정합 ──────────────────────────────────────────
-
-/// 직렬화 결과에서 **문자열 배열인 최상위 키**를 뽑아 콤보 필드 목록을 만든다.
-///
-/// 좌변을 손으로 나열하지 않는 것이 요점이다 — 새 콤보 필드가 늘면 이 목록도 같이
-/// 는다. 제외는 둘뿐이고 둘 다 이유가 다르다:
-///
-/// - `*_switch_slot_keys` 셋은 문자열 배열이지만 콤보가 아니라 raw 키다(이유는 아래
-///   `quick_switch_fields_not_in_general_bindings` 와 같다).
-/// - `script_bindings` 는 `Vec<ScriptBinding>` 이라 형태부터 다르다(docs/features/lua-hooks/index.md#실행-격리--안전-장치: 스크립트는
-///   N 개 동적이라 고정 액션 필드와 별개 표현이다). 기본값이 비어 있으면 "문자열 배열"
-///   판정을 공허하게 통과하므로 형태로는 안 갈리고 이름으로 뺀다.
-///
-/// 기본값이 빈 콤보 필드(`open_explorer` 등)를 놓치지 않으려고 "비어 있지 않은 배열"
-/// 로는 거르지 않는다 — 그렇게 하면 이 시험이 가장 잘 빠지는 자리를 못 본다.
+/// 직렬화한 문자열 배열 필드에서 일반 콤보 목록을 얻는다. 새 필드도 자동으로 포함한다.
+/// raw 슬롯 배열과 ScriptBinding 배열은 제외한다. 기본값이 빈 배열인 일반 콤보도 포함해야 한다.
 fn combo_field_ids(kb: &KeybindingSettings) -> Vec<String> {
     const NOT_COMBO_FIELDS: &[&str] = &[
         "tab_switch_slot_keys",
@@ -887,11 +851,7 @@ fn combo_field_ids(kb: &KeybindingSettings) -> Vec<String> {
         .collect()
 }
 
-/// 콤보 필드는 전부 SoT 에 있어야 한다.
-///
-/// SoT 밖의 콤보 필드는 "동작은 하는데 아무 소비자도 못 보는" 상태가 된다 —
-/// webview 키 포워딩(`HostShortcutPolicy`)이 그 콤보를 host 것으로 안 세어 페이지가
-/// 먹고, 충돌 검사가 그 필드를 후보로 안 봐서 같은 키가 두 액션에 걸린 채 저장된다.
+/// 일반 콤보 필드가 목록에서 빠지면 키 전달·충돌 검사가 놓치므로 전부 등록됐는지 확인한다.
 #[test]
 fn every_combo_field_is_in_the_sot() {
     let kb = KeybindingSettings::preset_tasty();
@@ -909,13 +869,7 @@ fn every_combo_field_is_in_the_sot() {
     );
 }
 
-/// 사용자가 TOML 에 직접 적어 둔 콤보가 이 3필드의 기본값을 이긴다.
-///
-/// 등록 전에는 이 3필드가 SoT 밖이라 `remove_conflicts_from_defaults` 의 양쪽 순회에서
-/// 다 빠져 아무 일도 안 일어났다. 등록하면서 **다른 55개와 같은 취급**을 받게 했다 —
-/// 사용자가 명시한 값이 기본값을 이기는 것이 이 함수의 규칙이고, 이 셋만 예외로 두면
-/// 같은 콤보가 두 액션에 걸린 채 남는다. 그 대가로 `ctrl+b` 를 이미 다른 데 쓰던
-/// 사용자는 업그레이드 첫 로드에서 사이드바 접기 기본값을 잃는다.
+/// TOML에 명시한 사용자 바인딩이 충돌하는 기본 바인딩보다 우선한다.
 #[test]
 fn a_user_combo_beats_the_new_sidebar_defaults() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -933,12 +887,7 @@ fn a_user_combo_beats_the_new_sidebar_defaults() {
     assert_eq!(kb.new_tab, vec!["ctrl+b".to_string()]);
 }
 
-/// 걷어낸 필드가 적힌 옛 설정 파일이 그대로 읽힌다.
-///
-/// `image_undo` / `image_redo` 는 실행부가 없어 제거했다. 이미 그 키가 저장된 설정
-/// 파일이 있을 수 있는데, serde 는 모르는 키를 그냥 무시하므로(struct 에
-/// `deny_unknown_fields` 를 안 걸었다) 로드가 깨지지 않아야 한다 — 여기서 그것을
-/// 값으로 고정한다. 깨지면 사용자가 설정 전체를 잃는다.
+/// 제거된 옛 필드는 무시하고 나머지 설정을 정상적으로 읽는다.
 #[test]
 fn an_old_file_naming_a_removed_field_still_loads() {
     let toml = r#"
@@ -954,8 +903,7 @@ image_redo = ["ctrl+shift+z"]
 
 use crate::keybindings::crud::{SwitchAxis, SwitchStep};
 
-/// 축이 말하는 슬롯 수는 **실제 배열 길이**여야 한다 — 둘이 갈리면 순회가 슬롯을
-/// 빠뜨리거나 범위 밖을 짚는다.
+/// 선언한 슬롯 수가 실제 배열 길이와 같은지 확인한다.
 #[test]
 fn switch_axis_slot_count_matches_the_array() {
     let kb = KeybindingSettings::default();

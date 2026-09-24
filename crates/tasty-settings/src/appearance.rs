@@ -12,13 +12,9 @@ fn default_ligatures() -> bool {
     true
 }
 
-/// Plugin-contributed settings page 의 generic 값. host 가 `Settings::plugin_settings`
-/// 의 `[plugin_id][storage_key]` 슬롯에 저장한다 (FontOverride 의 전역
-/// `plugin_font_overrides` 슬롯과 **별개 네임스페이스**). manifest 의
-/// `SettingsItemDecl::{Toggle,Select,Number}` 가 각각 `Bool`/`Text`/`Number` 로 매핑된다.
-///
-/// `#[serde(untagged)]` — TOML 스칼라(`true` / `100.0` / `"follow"`)로 그대로 저장돼
-/// 손편집/디버깅이 자연스럽다. host 는 항상 타입을 맞춰 write 하므로 round-trip 안정적.
+/// plugin_settings[plugin_id][storage_key]에 저장할 TOML 스칼라 값.
+/// Bool·Text·Number는 매니페스트의 Toggle·Select·Number 항목에 대응한다.
+/// 폰트의 plugin_font_overrides와는 별개다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PluginSettingValue {
@@ -145,8 +141,7 @@ pub struct AppearanceSettings {
     /// 현재 라이트/다크 플래그. 테마 파일이 명시하면 그 값으로 갱신.
     pub theme_is_light: bool,
     pub background_opacity: f32,
-    /// 폰트 합자(ligature) 사용 여부. 디자인 settings_window.jsx:225 Ligatures
-    /// Switch (기본 on). 번들 D2Coding ligature 폰트의 합자 표시를 제어한다.
+    /// 터미널 폰트의 합자 표시 여부. 기본값은 켜짐이다.
     #[serde(default = "default_ligatures")]
     pub ligatures: bool,
     pub sidebar_width: LogicalPx,
@@ -163,22 +158,11 @@ pub struct AppearanceSettings {
     pub default_font: FontSettings,
     /// Terminal surface font override (per-field). Host-rendered terminal core uses this.
     pub terminal_font: FontOverride,
-    /// Per-plugin (surface-kind) font overrides. Key = surface kind string
-    /// (e.g. `"markdown"`, `"explorer"`). Single source of truth for surface
-    /// font overrides — the host stays kind-agnostic and never names a specific
-    /// kind in the *live* font path.
+    /// Surface kind별 폰트 설정. 지정하지 않은 필드는 default_font를 따른다.
     #[serde(default)]
     pub plugin_font_overrides: HashMap<String, FontOverride>,
-    /// Legacy markdown override. Read on load and migrated into
-    /// `plugin_font_overrides["markdown"]`; never written back.
-    ///
-    /// The `migrate_legacy_font_overrides` reader is transitional back-compat:
-    /// the migration has **not** shipped in a tagged release yet, so users of the
-    /// last release (v0.3.1) still keep their markdown/explorer font override in
-    /// these top-level `[markdown_font]`/`[explorer_font]` sections. We keep these
-    /// fields as a one-shot config-migration reader until the migration reaches a
-    /// release; the next cycle after that ships can remove them (removal trigger).
-    /// The live font logic itself is fully generic over `plugin_font_overrides`.
+    /// 호환용 markdown 설정. 로드 때 plugin_font_overrides로 옮기고 다시 저장하지 않는다.
+    /// 옛 설정을 잃지 않도록 이 읽기를 제거하기 전에 배포 호환성을 확인해야 한다.
     #[serde(default, skip_serializing)]
     pub markdown_font: FontOverride,
     /// Legacy explorer override. Read on load and migrated into
@@ -244,15 +228,8 @@ impl AppearanceSettings {
         Self::ui_scale_factor_for(&self.ui_scale)
     }
 
-    /// UI scale 배율의 단일 출처. 인스턴스의 `ui_scale_factor` 와 Display 설정의
-    /// "Aa" 프리뷰가 공유한다 (배율 숫자가 한 곳에만 존재하도록).
-    ///
-    /// **배율 집합이 바뀌면 다른 크레이트의 사본도 같이 고쳐야 한다** —
-    /// `tasty-type-appearance` 의 `zoom_cost_differs_by_axis` 는 이 셋을 하드코딩한
-    /// 사본(`SUPPORTED_ZOOMS`)으로 돈다. 그쪽이 여기를 읽을 수 없어서(의존 방향이
-    /// 반대다) 사본을 지울 수 없고, 대신 **이쪽에 핀을 둔다**:
-    /// `the_supported_ui_scale_set_is_pinned`. 그 핀이 이 함수의 배율 집합이
-    /// 움직이는 것을 잡는다.
+    /// 설정과 프리뷰가 공유하는 UI 배율. 지원값을 바꾸면 tasty-type-appearance의
+    /// SUPPORTED_ZOOMS 시험 사본도 맞춘다. the_supported_ui_scale_set_is_pinned가 변경을 확인한다.
     pub fn ui_scale_factor_for(scale: &str) -> f32 {
         match scale {
             "small" => 0.85,
@@ -285,16 +262,7 @@ impl AppearanceSettings {
         }
     }
 
-    /// Migrate legacy `markdown_font` / `explorer_font` fields into
-    /// `plugin_font_overrides`. Called by [`crate::Settings::load`] right after
-    /// deserialization. Idempotent: an existing entry in `plugin_font_overrides`
-    /// always wins over the legacy field.
-    ///
-    /// Transitional back-compat: the migration has not shipped in a tagged
-    /// release yet, so the last release (v0.3.1) writes overrides into the
-    /// top-level `[markdown_font]`/`[explorer_font]` sections. Removing this
-    /// reader before the migration reaches a release would silently drop those
-    /// users' font overrides on their next save.
+    /// 호환용 폰트 필드를 plugin_font_overrides로 옮긴다. 이미 맵에 있는 값이 우선한다.
     pub fn migrate_legacy_font_overrides(&mut self) {
         let legacy = [
             ("markdown", std::mem::take(&mut self.markdown_font)),
@@ -312,30 +280,15 @@ impl AppearanceSettings {
     }
 }
 
-/// `ui_scale` 로 **도달 가능한** 값의 전부. 설정 로드 시 정규화가 이 목록 밖의 값을
-/// `"medium"` 으로 접으므로, 여기 없는 이름은 배율로 실현되지 않는다.
-///
-/// 목록과 [`AppearanceSettings::ui_scale_factor_for`] 의 match 는 **따로 움직일 수
-/// 있다** — 그래서 둘을 대조하는 핀이 있다(`the_supported_ui_scale_set_is_pinned`).
+/// 설정에서 선택할 UI 배율 이름. 정규화는 나머지를 medium으로 바꾼다.
 pub const UI_SCALE_CHOICES: &[&str] = &["small", "medium", "large"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// **지원 배율 집합을 못박는다.** 이 셋이 움직이면 `border_width`(1) 가 배율
-    /// 가변이 되는지 여부가 바뀌고, 그 위에 선 docs/design/systems/theme.md#토큰에-없는-값과-배율 의 고정 테두리 배율
-    /// 가 조건부가 된다.
-    ///
-    /// 이 핀이 필요한 이유는 **소비자가 여기를 읽을 수 없기 때문**이다.
-    /// `tasty-type-appearance::theme` 의 `zoom_cost_differs_by_axis` 는
-    /// `SUPPORTED_ZOOMS = [0.85, 1.0, 1.2]` 라는 하드코딩 사본으로 돈다 — 의존
-    /// 방향이 반대라(이 크레이트가 그쪽에 의존한다) 사본을 없앨 수 없다. 그쪽 사본은
-    /// **배율 집합이 바뀌어도 안 운다.** 우는 것은 이 핀이다.
-    ///
-    /// **이 핀이 못 잡는 것**: `ui_scale_factor_for` 의 match 에 `UI_SCALE_CHOICES`
-    /// 에 없는 이름으로 팔을 더하는 경우. 다만 그런 이름은 정규화가 `"medium"` 으로
-    /// 접어서 설정으로 도달할 수 없다 — 둘째 단언이 그 접힘을 확인한다.
+    /// 하위 크레이트의 배율 시험 사본과 맞춰 지원 배율을 확인한다.
+    /// 목록 밖 이름은 기본 배율로 처리하는지도 확인한다.
     #[test]
     fn the_supported_ui_scale_set_is_pinned() {
         let mut factors: Vec<f32> = UI_SCALE_CHOICES
@@ -352,7 +305,6 @@ mod tests {
              `(1 * z).round() != 1` 이 되면 그 축에도 대가가 생긴다"
         );
 
-        // 목록 밖 이름이 배율을 새로 만들지 못한다는 것 — 집합이 닫혀 있다는 쪽 근거.
         for unknown in ["huge", "tiny", ""] {
             assert_eq!(
                 AppearanceSettings::ui_scale_factor_for(unknown),
@@ -364,7 +316,6 @@ mod tests {
 
     #[test]
     fn plugin_setting_value_untagged_round_trip() {
-        // `#[serde(untagged)]` 가 TOML 스칼라를 Bool/Number/Text 로 정확히 분류·복원하는지.
         #[derive(Debug, PartialEq, Serialize, Deserialize)]
         struct W {
             v: PluginSettingValue,
@@ -379,7 +330,6 @@ mod tests {
             let back: W = toml::from_str(&dumped).unwrap();
             assert_eq!(back.v, v, "round-trip changed value (dumped: {dumped:?})");
         }
-        // 명시적 TOML 스칼라 → 기대 variant (분류 순서 확인).
         assert_eq!(
             toml::from_str::<W>("v = true").unwrap().v,
             PluginSettingValue::Bool(true)
@@ -461,14 +411,11 @@ font_family = "Iosevka"
         assert_eq!(parsed.default_font.font_family, "Cascadia");
         assert_eq!(parsed.default_font.font_size, 15.0);
         assert_eq!(parsed.terminal_font.font_size, Some(18.0));
-        // Legacy field deserializes pre-migration.
         assert_eq!(parsed.markdown_font.font_family.as_deref(), Some("Iosevka"));
         parsed.migrate_legacy_font_overrides();
-        // After migration: markdown override lives only in plugin_font_overrides.
         assert!(parsed.markdown_font.is_empty());
         let md_ov = parsed.plugin_font_overrides.get("markdown").unwrap();
         assert_eq!(md_ov.font_family.as_deref(), Some("Iosevka"));
-        // Effective values: terminal_font overrides only size, markdown only family.
         let eff_term = parsed.effective_terminal_font();
         assert_eq!(eff_term.font_family, "Cascadia");
         assert_eq!(eff_term.font_size, 18.0);
@@ -563,7 +510,6 @@ font_scale_mode = "fixed"
         assert_eq!(ov.font_family.as_deref(), Some("Iosevka"));
         assert_eq!(ov.font_size, Some(16.0));
         assert_eq!(ov.font_scale_mode.as_deref(), Some("fixed"));
-        // Legacy fields never re-emit.
         assert!(!dumped.contains("[markdown_font]"));
         assert!(!dumped.contains("[explorer_font]"));
     }
@@ -600,7 +546,6 @@ font_family = "New"
 
     #[test]
     fn explicit_plugin_override_deserializes_per_kind() {
-        // 여러 kind override 가 서로 독립적으로 역직렬화되는지 (generic per-kind).
         let toml_str = r#"
 [plugin_font_overrides.markdown]
 font_family = "Md"

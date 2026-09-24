@@ -1,8 +1,4 @@
-//! 터미널 텍스트 선택 — 격자 좌표 · 선택 모드 · 픽셀→격자 사상 · 적중 판정 ·
-//! 선택 텍스트 추출.
-//!
-//! 렌더러와 view 가 같은 타입을 쓴다. 그 타입이 앱 상태 모듈에 살면 렌더러가 상태를
-//! 거꾸로 보게 되므로 소속만 여기로 내렸다 — 호스트·GUI·IPC 결합은 0 이다.
+//! 터미널 선택 좌표·모드·범위와 텍스트 추출. 렌더러와 뷰가 같은 모델을 사용한다.
 
 use tasty_type_geometry::rect::PhysicalRect;
 
@@ -122,29 +118,20 @@ pub fn is_selected(col: usize, absolute_row: usize, sel: &NormalizedSelection) -
         }
         SelectionMode::Normal | SelectionMode::Word => {
             if sel.start.absolute_row == sel.end.absolute_row {
-                // Single row selection
                 col >= sel.start.col && col <= sel.end.col
             } else if absolute_row == sel.start.absolute_row {
-                // First row: from start.col to end of line
                 col >= sel.start.col
             } else if absolute_row == sel.end.absolute_row {
-                // Last row: from start of line to end.col
                 col <= sel.end.col
             } else {
-                // Middle rows: entire line
                 true
             }
         }
     }
 }
 
-/// Extract selected text from the terminal.
-///
-/// Soft-wrapped lines (lines that the terminal auto-wrapped because content
-/// reached the right edge) are rejoined into a single logical line on copy:
-/// the wrap point is treated as no separator at all, while real `\n` line
-/// breaks are preserved. This matches WezTerm/Alacritty behavior for shell
-/// prompts that wrap a long command across multiple visual rows.
+/// Extract selected text. Soft-wrapped rows are joined without a separator;
+/// hard line breaks remain. Rectangular selection keeps visual row boundaries.
 pub fn extract_selected_text(
     terminal: &tasty_terminal::Terminal,
     selection: &TextSelection,
@@ -190,7 +177,6 @@ pub fn extract_selected_text(
         return lines.join("\n");
     }
 
-    // Collect (raw_text_without_trim, wrapped) per row in selection.
     let mut rows: Vec<(String, bool)> = Vec::new();
     for abs_row in norm.start.absolute_row..=norm.end.absolute_row {
         let (text, wrapped) = if abs_row < scrollback_len {
@@ -354,9 +340,6 @@ mod tests {
 
     #[test]
     fn soft_wrapped_screen_lines_are_joined_into_one_line() {
-        // 10-col, 4-row terminal. Write 25 chars on a single logical line —
-        // termwiz auto-wraps into rows 0..2. Selecting all should produce one
-        // contiguous string, not three lines separated by `\n`.
         let mut t = term(10, 4);
         let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars
         t.process_bytes(&payload);
@@ -381,9 +364,7 @@ mod tests {
 
     #[test]
     fn soft_wrap_in_scrollback_still_joins() {
-        // Wrap a long command, then push the wrapped lines into scrollback by
-        // emitting more rows than the screen can hold. The wrap flag must
-        // survive scrollback capture so the selection rejoins into one line.
+        // Push wrapped rows into scrollback to check that joining still works after capture.
         let mut t = term(10, 3);
         let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars → 3 wrapped rows
         t.process_bytes(&payload);
@@ -393,8 +374,6 @@ mod tests {
         assert!(t.scrollback_len() >= 3);
         let sel = select_all(&t);
         let text = extract_selected_text(&t, &sel);
-        // Expect: the wrapped command rejoined as one line, then the trailing
-        // hard-newline-separated rows.
         let head: String = (b'a'..=b'y').map(|b| b as char).collect();
         let expected = format!("{head}\nA\nB\nC\nD");
         assert_eq!(text, expected);

@@ -15,11 +15,7 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
-            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
-            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
-            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
-            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
-            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
+            // 새 기본 단축키가 기존 사용자 바인딩과 충돌하지 않도록 도구 키는 비워 둔다.
             open_port_scanner: Vec::new(),
             open_remote_tool: Vec::new(),
             open_preset_window: Vec::new(),
@@ -81,8 +77,6 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
-            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
-            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
             category_switch_slot_keys: super::default_category_slot_keys(),
@@ -107,11 +101,6 @@ impl KeybindingSettings {
             toggle_settings: vec!["alt+,".into()],
             toggle_notifications: vec!["alt+shift+i".into()],
             toggle_dag_list: vec!["alt+shift+g".into()],
-            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
-            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
-            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
-            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
-            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
             open_port_scanner: Vec::new(),
             open_remote_tool: Vec::new(),
             open_preset_window: Vec::new(),
@@ -168,8 +157,6 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
-            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
-            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
             category_switch_slot_keys: super::default_category_slot_keys(),
@@ -194,11 +181,6 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
-            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
-            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
-            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
-            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
-            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
             open_port_scanner: Vec::new(),
             open_remote_tool: Vec::new(),
             open_preset_window: Vec::new(),
@@ -255,8 +237,6 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
-            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
-            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
             category_switch_slot_keys: super::default_category_slot_keys(),
@@ -281,11 +261,6 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
-            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
-            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
-            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
-            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
-            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
             open_port_scanner: Vec::new(),
             open_remote_tool: Vec::new(),
             open_preset_window: Vec::new(),
@@ -342,8 +317,6 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
-            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
-            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
             category_switch_slot_keys: super::default_category_slot_keys(),

@@ -8,9 +8,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tasty_utils::path::tasty_home;
 
-/// core 가 직접 소비하는 내장 타입. `http` 등은 여기 없다 — 플러그인이 manifest 로
-/// 선언한다. 유효 known 집합 = `BUILTIN_KINDS` ∪ {설치 플러그인 선언 타입}(런타임 계산,
-/// 상위에서). `smb` 소비자(explorer mount)는 추후지만 의도된 내장 타입이라 미리 등록.
+/// 호스트의 내장 타입 목록. smb는 예약된 타입이며 소비자는 아직 구현하지 않았다.
+/// 설치 플러그인이 추가로 선언한 타입은 호스트가 합쳐 판단한다.
 pub const BUILTIN_KINDS: &[&str] = &["ssh", "tasty-attach", "smb"];
 
 /// core 내장 타입인지. 미등록(노란 배지) 최종 판정은 런타임 집합 기준(상위)이며 이
@@ -38,12 +37,8 @@ pub fn is_valid_port_mode(s: &str) -> bool {
     PORT_MODES.contains(&s)
 }
 
-/// 셸 종류 → 원격 포트 발견 모드 매핑(2026-06-12 실측 기반).
-///
-/// - `powershell` → `file-unix` (`cat ~/...` — PowerShell 의 cat alias + `~` 확장)
-/// - `cmd` → `file-windows` (`type %USERPROFILE%\...` — cmd 전용)
-/// - `bash` / `zsh` → `subcommand` (`tasty port` — unix·git bash 성공)
-/// - `auto` / 알 수 없는 값 → `None` (자동감지 또는 fallback 체인 필요)
+/// PowerShell은 file-unix, cmd는 file-windows, bash/zsh는 subcommand를 사용한다.
+/// auto나 알 수 없는 값은 None이며 호출자가 감지·대체 경로를 결정한다.
 pub fn shell_to_port_mode(shell: &str) -> Option<&'static str> {
     match shell {
         "powershell" => Some("file-unix"),
@@ -53,8 +48,7 @@ pub fn shell_to_port_mode(shell: &str) -> Option<&'static str> {
     }
 }
 
-/// 필드 값 = 스칼라 string 또는 string 리스트. TOML 의 스칼라/배열에 네이티브 매핑되어
-/// `extra_options` 같은 리스트도 인코딩 꼼수 없이 그대로 표현된다.
+/// TOML 문자열 또는 문자열 배열로 저장할 필드 값.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FieldValue {
@@ -107,7 +101,7 @@ pub struct RemoteProfile {
     /// UI 표시용 라벨(옵션, 사용자 자유 입력 — i18n 대상 아님).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// 타입 태그(열린 string). 알려진: core 내장 `ssh`/`smb` + 플러그인 선언.
+    /// 내장 또는 플러그인이 정의한 타입 태그. 알 수 없는 이름도 보관한다.
     pub kind: String,
     /// 참조 passkey name(없으면 무인증 / ssh-agent 위임).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -161,8 +155,7 @@ impl RemoteProfile {
     }
 }
 
-/// ssh kind 프로필의 typed view — `fields` 맵에서 ssh 필드를 안전 추출한다.
-/// (모델은 열린 스키마라 값이 없거나 형식이 틀리면 기본값/None + warn 으로 흡수.)
+/// ssh 필드 접근자. 누락·잘못된 타입은 기본값이나 None으로 처리하고 잘못된 포트 문자열은 경고한다.
 pub struct SshView<'a>(pub &'a RemoteProfile);
 
 impl<'a> SshView<'a> {
@@ -245,14 +238,9 @@ impl<'a> SshView<'a> {
 
 /// tasty-attach kind 프로필의 typed view.
 ///
-/// attach 는 ssh 연결 정보를 **참조(ref)** 하거나 **인라인** 으로 보유한다:
-/// - `ssh_ref` 필드가 있으면 **ref 모드** — 연결 정보는 참조된 ssh 프로필에서
-///   resolve 시점에 로드하고, 이 view 의 인라인 접근자(host/user/…)는 None/기본값.
-/// - `ssh_ref` 가 없으면 **인라인 모드** — 자기 `fields` 의 ssh 정보를 [`SshView`]
-///   로직 그대로 재사용해 노출한다(중복 구현 방지).
-///
-/// attach 전용 필드(`remote_tasty`/`port_mode`/`port_file`)는 모드와 무관하게
-/// 항상 tasty-attach 프로필 자신이 소유한다.
+/// ssh_ref가 있으면 연결 정보는 참조 프로필이 소유하고 인라인 접근자는 기본값을 반환한다.
+/// 없으면 자기 fields를 SshView 규칙으로 읽는다. remote_tasty·port_mode·port_file은
+/// 어느 모드에서나 attach 프로필 자신의 값이다.
 pub struct AttachView<'a>(pub &'a RemoteProfile);
 
 impl<'a> AttachView<'a> {
@@ -352,8 +340,7 @@ impl RemoteProfiles {
         Ok(())
     }
 
-    /// 로드한다. 파일이 없거나 파싱 실패면 빈 목록(default)으로 폴백한다
-    /// (`Settings::load` 와 동형 — 잘못된 파일이 부팅을 막지 않는다).
+    /// 파일이 없거나 읽기·파싱에 실패하면 빈 목록으로 시작한다.
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 파일 없음/읽기 실패/파싱 실패 3갈래를 각각 로그 후 기본값 폴백 — Passkeys::load 와 동형 패턴.
     pub fn load() -> Self {
         let Some(path) = Self::path() else {
@@ -433,7 +420,6 @@ mod tests {
 
     #[test]
     fn field_value_toml_roundtrip_scalar_and_list() {
-        // 스칼라 / 리스트가 TOML 의 string / array 로 네이티브 직렬화·역직렬화되는지.
         let mut p = RemoteProfile::new("gx10", "ssh")
             .with_field("host", "gx10")
             .with_field("port", "2222")
@@ -475,7 +461,6 @@ mod tests {
         assert_eq!(v.user(), Some("zilhak"));
         assert_eq!(v.port(), Some(2222));
         assert_eq!(v.ssh_destination(), "zilhak@box");
-        // 기본값
         assert_eq!(v.shell(), "auto");
         assert!(v.use_agent()); // 필드 없으면 위임
         assert!(!v.is_disabled());
@@ -533,7 +518,6 @@ mod tests {
 
     #[test]
     fn unknown_kind_still_valid_profile() {
-        // 미등록 타입도 정상 저장/로드 (배지 판정은 상위).
         let p = RemoteProfile::new("weird", "asdfasdf").with_field("k", "v");
         assert!(!p.is_builtin_kind());
         let mut ps = RemoteProfiles::default();
@@ -583,7 +567,6 @@ mod tests {
 
     #[test]
     fn attach_view_ref_ignores_inline_ssh_fields() {
-        // ref 모드는 인라인 host 가 실수로 있어도 읽지 않는다(연결은 참조 ssh 소유).
         let p = RemoteProfile::new("mix", "tasty-attach")
             .with_field("ssh_ref", "gb10")
             .with_field("host", "leftover");
@@ -597,7 +580,6 @@ mod tests {
     fn ssh_kind_has_no_attach_view() {
         let p = RemoteProfile::new("gb10", "ssh").with_field("host", "box");
         assert!(p.as_attach().is_none());
-        // 반대로 tasty-attach 는 as_ssh 가 None.
         let a = RemoteProfile::new("gb10-attach", "tasty-attach");
         assert!(a.as_ssh().is_none());
     }

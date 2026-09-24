@@ -1,17 +1,5 @@
-//! 바인딩 문자열 파서와 modifier 조합 — 순수 `&str` 로직, UI·winit·egui 비의존.
-//!
-//! `KeybindingSettings` 가 저장하는 값(`"ctrl+shift+n"` 같은 콤보, `"ctrl+shift"` 같은
-//! 축 modifier 조합)의 **해석 규칙**은 그 값을 소유한 이 크레이트에 있다. 실제 키 이벤트와
-//! 대조하는 매칭 레이어(winit/egui `Key` 비교)는 본체 `src/adapters/ui/input/shortcuts/`
-//! 에 남아 여기의 파싱 결과를 소비한다.
-//!
-//! 이 자리에 있는 이유는 소비처가 매칭 레이어 하나가 아니기 때문이다 — 단축키 이식
-//! 번들의 `option` 판정(`tasty-host-plugin` 의 `keybinding_bundle`)도 같은 파서를 써야
-//! 하는데, 그쪽은 본체 크레이트를 볼 수 없고 본체의 매칭 레이어는 `gui` feature 뒤에
-//! 있다. 파서를 복제하면 매칭 규칙과 판정 규칙이 조용히 갈린다.
-//!
-//! 저장 포맷(OS 독립 추상 토큰)과 표시 포맷의 분리는
-//! `docs/design/policies/key-mapping.md` 가 정본이다.
+//! 바인딩 문자열과 modifier 조합 파싱. 실제 키 이벤트 매칭은 tasty-key-match가 맡는다.
+//! UI와 단축키 이식 검사도 이 파서를 공유한다.
 
 /// 파싱된 바인딩 — 기대 modifier 상태 + 키 토큰.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,17 +27,8 @@ impl ParsedBinding<'_> {
     }
 }
 
-/// 왼쪽부터 `ctrl+`/`shift+`/`alt+`/`option+` 프리픽스를 순차적으로 떼어낸다.
-///
-/// `split('+')`을 쓰지 않는 이유: `"ctrl++"`의 두 번째 `+`처럼 키 이름과 구분자가
-/// 충돌하는 경우를 다루기 위함. 프리픽스를 하나씩 벗겨내면 남은 부분이 통째로 키가
-/// 되므로 구분자 충돌 문제가 사라진다.
-///
-/// 더블탭 바인딩(`"shift+shift"`·`"ctrl+ctrl"`·`"alt+alt"`)은 별도 경로가 다루며
-/// 여기서는 `None` 이다 — 프리픽스를 떼면 남는 것이 모디파이어 키워드 단독이라 아래
-/// 거부 규칙에 그대로 걸린다(별도 목록을 두지 않는 이유: 같은 사실이 두 자리에
-/// 적히면 한쪽만 고쳐진다. 이 모듈의 `double_tap_spellings_are_rejected` 테스트가
-/// 그 동치를 고정한다).
+/// modifier 접두사를 차례로 읽고 남은 문자열을 키로 쓴다. ctrl++처럼 + 자체가 키인 경우를 보존한다.
+/// modifier만 남는 더블탭 표기는 여기서 거절하며 별도 입력 경로가 처리한다.
 pub fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     if binding.is_empty() {
         return None;
@@ -99,17 +78,7 @@ pub fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     })
 }
 
-/// 두 바인딩 문자열이 **같은 콤보**를 가리키는지 — 대소문자와 modifier 순서를
-/// 무시하고 비교한다.
-///
-/// 매칭을 실제로 하는 [`parse_binding`] 이 modifier 프리픽스를 순서 무관하게 벗기고
-/// 키 토큰을 `to_ascii_lowercase` 로 비교하므로, "같은 콤보인가" 판정도 반드시 같은
-/// 경로를 타야 한다 — 원시 문자열 비교(`"Ctrl+F"` != `"ctrl+f"`)면 매칭 규칙과 갈라진다.
-/// webview 포워딩 정책이 plugin 콤보를 페이지 예약 콤보와 대조할 때, 이식 판정이
-/// 대체 조합의 충돌을 볼 때 쓴다.
-///
-/// 어느 한쪽이 파싱 불가(빈 문자열·modifier 단독 등)면 원시 문자열의 대소문자 무시
-/// 비교로 폴백한다.
+/// 대소문자와 modifier 순서를 무시해 조합을 비교한다. 파싱에 실패하면 원문을 대소문자 무시로 비교한다.
 pub fn bindings_equivalent(a: &str, b: &str) -> bool {
     match (parse_binding(a), parse_binding(b)) {
         (Some(pa), Some(pb)) => {
@@ -130,7 +99,7 @@ pub const OPTION_AXIS: bool = true;
 #[cfg(not(target_os = "macos"))]
 pub const OPTION_AXIS: bool = false;
 
-/// modifier 조합 — 4축 bool. `option` 은 macOS 전용(비-macOS 에선 항상 false 로만 등장).
+/// 네 modifier 상태. 파싱은 어느 OS에서나 option을 보존하고 실제 매칭·선택 목록이 OS 제한을 적용한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Combo {
     pub ctrl: bool,
@@ -181,14 +150,8 @@ impl Combo {
         (self.size(), prios)
     }
 
-    /// modifier-only 조합 문자열(`"ctrl"` / `"alt"` / `"ctrl+shift"` / `"option+shift"`)을
-    /// [`Combo`] 로 파싱한다. quick-switch 축 modifier(`KeybindingSettings::tab_switch_modifier`
-    /// 등)와 hint 역할 주입이 공유하는 **단일 소스** — `if shift` 하드코딩을 대체한다.
-    ///
-    /// modifier 토큰(`ctrl`/`shift`/`alt`/`option`)은 `+` 를 키로 갖지 않으므로 [`parse_binding`]
-    /// 의 프리픽스-스트립 대신 `split('+')` 로 충분하다(구분자 충돌 없음). 알 수 없는 토큰이
-    /// 하나라도 섞이거나(`"none"`·키 문자·`INDIVIDUAL_SWITCH_MODIFIER` sentinel) 빈 문자열이면
-    /// `None`(=역할/매칭 없음).
+    /// modifier만 있는 문자열을 파싱한다. 알려진 네 토큰 외 이름이나 빈 값은 None이다.
+    /// 키 문자 +를 다루지 않으므로 여기서는 split('+')를 사용한다.
     pub fn parse_modifiers(s: &str) -> Option<Combo> {
         let mut c = Combo::default();
         for part in s.split('+') {
@@ -251,11 +214,8 @@ fn all_axis_combos() -> Vec<Combo> {
     out
 }
 
-/// 사용 가능한 축 전체의 비어있지 않은 조합을 정렬해 반환(OS-aware).
-///
-/// 설정 UI 의 quick-switch modifier 피커가 소비한다 — 열거된 유효 조합만 선택 가능하게
-/// 해 쓰레기 값 저장을 원천 차단한다. macOS 는 `option` 축 포함(15개), 그 외는 제외(7개).
-/// [`Combo::name`] 이 저장용 정규 문자열, `KeybindingSettings::format_display` 가 표시용.
+/// OS에서 사용할 수 있는 비어 있지 않은 modifier 조합을 정렬한다.
+/// macOS는 option을 포함한 15개, 다른 OS는 7개다.
 pub fn all_modifier_combos() -> Vec<Combo> {
     let mut combos = all_axis_combos();
     combos.sort_by_key(|c| c.sort_key());
@@ -280,9 +240,7 @@ pub fn combos_containing_all(held: Combo) -> Vec<Combo> {
 mod tests {
     use super::*;
 
-    /// 더블탭 표기 셋은 프리픽스를 떼면 모디파이어 키워드 단독만 남아 거부된다.
-    /// [`parse_binding`] 이 그 셋을 별도 목록으로 들지 않는 근거 — 목록을 두면
-    /// 더블탭 표기가 늘 때 두 자리를 함께 고쳐야 한다.
+    /// 더블탭 표기는 일반 바인딩으로 파싱하지 않는다.
     #[test]
     fn double_tap_spellings_are_rejected() {
         for b in ["shift+shift", "ctrl+ctrl", "alt+alt", "Shift+Shift"] {

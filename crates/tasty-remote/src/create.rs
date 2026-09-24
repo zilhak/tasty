@@ -1,28 +1,12 @@
-//! 원격 워크스페이스 **생성** 능력 — attach 프로필/ssh 대상에 붙어 원격 tasty
-//! 인스턴스에 워크스페이스를 하나 만든다(`workspace.create` 1회).
-//!
-//! [`crate::browse`] 와 형제 모듈이다. 그쪽이 "client 측 순수 조회" 인 반면
-//! 이 모듈은 **원격 상태를 바꾸는 유일한 client 능력**이라, 조회/변경을 모듈 경계로
-//! 갈라 둔다(browse 라는 이름 아래 mutate 를 숨기지 않는다).
-//!
-//! CLI(`tasty remote new-workspace`)와 로컬 IPC(`remote.attach` 의 생성 옵션)가
-//! **같은 함수를 공유**한다(원칙 2 — 에이전트가 CLI 없이 소켓만으로도 생성 가능).
-//!
-//! 원칙 1 은 양쪽 끝에서 모두 유지된다:
-//! - 원격측: `workspace.create` 는 IPC = Agent origin 이라 원격의 active workspace 를
-//!   바꾸지 않는다(`src/adapters/ipc/handler/workspace.rs` 의 cascade 분기).
-//! - 로컬측: 이 모듈은 로컬 상태에 아예 닿지 않는다(원격으로 나가는 client 로직).
-//!
-//! 블로킹 I/O(SSH 터널 수립·소켓 read)를 하므로 **이벤트루프에서 직접 호출하면 안 된다**
-//! — 호스트 IPC 경로는 워커 스레드에서 호출한다(`src/app/ipc/app_methods.rs`).
+//! 원격 workspace.create를 호출한다. 로컬 상태를 바꾸지 않으며 원격 생성은 Agent 요청으로 처리된다.
+//! 블로킹 I/O이므로 CLI 또는 호스트 워커에서 호출한다.
 
 use anyhow::{Context, Result};
 
 use crate::browse::{probe_method, resolve_endpoint};
 use tasty_ssh::SshTarget;
 
-/// 원격에 갓 만들어진 워크스페이스 — `workspace.create` 응답에서 이번 스코프에
-/// 의미 있는 필드만 추린다(그 id 를 attach 대상으로 그대로 넘길 수 있다).
+/// 원격 생성 응답에서 추린 workspace 식별 정보.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CreatedRemoteWorkspace {
     pub id: u32,
@@ -36,9 +20,7 @@ pub struct CreatedRemoteWorkspace {
 /// 접속된 포트로 `workspace.create` 1회. 터널 수명은 호출자가 관리한다 — attach 를
 /// 이어 붙이는 호스트 경로는 같은 터널을 mirror 세션에 그대로 실어 살려야 한다.
 ///
-/// `name`/`cwd` 는 미지정 가능(원격 기본값). `cwd` 는 **원격에서** `is_dir()` 검증되며,
-/// 없으면 원격이 `invalid_params("cwd does not exist: …")` 로 거절한다 — 그 메시지가
-/// 그대로 호출자에게 전파된다(로컬에서 미리 판정하지 않는다. 원격 파일시스템이다).
+/// name/cwd는 생략할 수 있다. cwd 유효성은 원격이 검사하며 로컬 파일시스템으로 미리 판단하지 않는다.
 pub fn create_via_port(
     port: u16,
     name: Option<&str>,
@@ -72,12 +54,8 @@ pub fn create_via_port(
     })
 }
 
-/// 전체 생성 경로: 엔드포인트(터널/loopback) 해석 → `workspace.create`. **블로킹**(SSH).
-/// 터널은 이 함수 반환 시 Drop 된다(단발 생성) — attach 를 이어 붙이려면 호출자가
-/// [`resolve_endpoint`] 를 직접 잡고 [`create_via_port`] 를 쓴다.
-/// **공개 계약 아님** — `tasty-cli` 의 `remote new-workspace` 구현만 쓴다.
-/// 크레이트 밖 소비자가 하나뿐이라 `pub(crate)` 로 못 내릴 뿐이며, 새 소비자가
-/// 이걸 쓰기 시작하면 계약 확장이므로 `#[doc(hidden)]` 을 떼는 결정을 먼저 한다.
+/// 접속 후 workspace를 만들고 터널을 닫는 CLI 내부용 경로.
+/// attach를 이어갈 호출자는 resolve_endpoint와 create_via_port로 터널 수명을 직접 관리한다.
 #[doc(hidden)]
 pub fn create(
     target: &SshTarget,

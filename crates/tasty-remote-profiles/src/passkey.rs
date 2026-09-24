@@ -1,11 +1,8 @@
-//! Passkey 저장소 — `~/.tasty/passkeys.toml` (0600) + `~/.tasty/passkeys/` (0700).
-//!
-//! 모든 자격증명은 at-rest 에서 **파일 경로로 수렴**한다:
-//! - `kind="path"` — 사용자 소유 기존 파일 참조(tasty 는 경로만, 수명 미관여).
-//! - `kind="inline"` — 사용자 입력 문자열 → tasty 가 `~/.tasty/passkeys/<name>` 0600
-//!   파일로 써서 소유(passkey 삭제/수정 시 파일도 관리).
-//!
-//! toml 엔 비밀 *값* 이 없다(경로뿐). 보호는 암호화가 아니라 OS 파일권한 위임이다.
+//! 경로는 tasty_home(TASTY_HOME 또는 debug/release 기본 홈)을 따른다.
+//! 자격증명 목록은 passkeys.toml에 경로로 저장한다. path는 사용자 파일을 참조하고
+//! inline은 Tasty가 passkeys/<name> 파일을 만들어 관리한다. 비밀 파일은 암호화하지 않는다.
+//! Unix의 inline 파일 권한은 0600으로 설정하며 디렉터리 0700 설정 실패는 무시한다.
+//! 목록 TOML의 0600 설정도 최선 시도이고, 비 Unix에서는 별도 권한을 설정하지 않는다.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,8 +14,7 @@ use tasty_utils::path::tasty_home;
 /// 알려진 passkey kind. 그 외(미등록)도 저장은 되되 UI/CLI 가 경고 표시(상위).
 pub const KNOWN_PASSKEY_KINDS: &[&str] = &["path", "inline"];
 
-/// **대화형 등록용** 이름 검증 — 영숫자/`-`/`_` 화이트리스트. name 이 파일명으로
-/// 쓰이므로 path traversal 을 원천 차단한다(그 외 문자는 거부).
+/// 파일명으로 사용할 이름은 ASCII 영숫자·하이픈·밑줄만 허용한다.
 pub fn is_valid_passkey_name(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -26,8 +22,7 @@ pub fn is_valid_passkey_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// **마이그레이션/자동생성용** 이름 변환 — 거부 대신 비허용 문자를 `_` 로 치환한다
-/// (기존 데이터는 거부할 수 없으므로). 결과는 항상 화이트리스트를 통과한다.
+/// 자동 생성용 이름. 허용하지 않는 문자는 밑줄로 바꾸고 빈 결과는 key로 대체한다.
 pub fn sanitize_passkey_name(raw: &str) -> String {
     let s: String = raw
         .chars()
@@ -159,7 +154,7 @@ impl Passkeys {
         }
     }
 
-    /// pretty TOML 로 전체를 덮어쓰고 파일을 0600 으로 만든다.
+    /// TOML 전체를 덮어쓴 뒤 Unix 권한 0600을 시도한다. 권한 설정 실패는 무시한다.
     pub fn save(&self) -> Result<()> {
         Self::ensure_dir()?;
         let Some(path) = Self::path() else {
@@ -212,8 +207,8 @@ impl Passkeys {
         Ok(())
     }
 
-    /// inline kind passkey 등록 — 비밀을 `~/.tasty/passkeys/<name>` 0600 파일로
-    /// materialize 하고 그 경로를 저장한다. 메모리만 변경(toml 반영은 [`Self::save`]).
+    /// inline 비밀 파일을 실제로 쓰고 메모리 목록에 경로를 등록한다.
+    /// TOML 목록 저장은 별도의 save 호출이 필요하다.
     pub fn upsert_inline(&mut self, name: impl Into<String>, secret: &str) -> Result<()> {
         let name = name.into();
         let dir = passkeys_dir().context("could not determine passkeys dir")?;
@@ -226,7 +221,7 @@ impl Passkeys {
         Ok(())
     }
 
-    /// name 으로 제거. inline 이면 관리 파일도 삭제한다. 제거됐으면 true.
+    /// 목록에서 제거하고 inline 관리 파일도 삭제를 시도한다. 파일 삭제 실패는 경고하며 목록 제거는 유지한다.
     pub fn remove(&mut self, name: &str) -> bool {
         let Some(idx) = self.passkeys.iter().position(|p| p.name == name) else {
             return false;
@@ -243,8 +238,7 @@ impl Passkeys {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 이유: 테스트의 let _ =를 제품 코드의 오류 처리 명부에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -266,7 +260,6 @@ mod tests {
         assert_eq!(sanitize_passkey_name("my key"), "my_key");
         assert_eq!(sanitize_passkey_name("../etc"), "___etc");
         assert_eq!(sanitize_passkey_name("키"), "_"); // 전부 치환되어도 비지 않음
-        // 결과는 항상 화이트리스트 통과
         for raw in ["내 서버", "a b/c", "x", ""] {
             assert!(
                 is_valid_passkey_name(&sanitize_passkey_name(raw))
@@ -301,7 +294,6 @@ mod tests {
     fn materialize_inline_writes_file_and_rejects_bad_name() {
         let dir = std::env::temp_dir().join(format!("tasty-pk-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
-        // 정상
         let path = materialize_inline_in(&dir, "tok", "s3cr3t").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "s3cr3t");
         #[cfg(unix)]
@@ -310,7 +302,6 @@ mod tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
-        // 잘못된 이름
         assert!(materialize_inline_in(&dir, "../escape", "x").is_err());
         let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
     }

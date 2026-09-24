@@ -30,18 +30,16 @@ pub struct NotificationSettings {
     pub coalesce_ms: u64,
 }
 
-/// Accessibility 관련 토글. OS 자동 감지(Phase 2)는 미구현 — 현재는 모두 수동 설정.
+/// 수동 접근성 설정. OS 상태 자동 감지는 구현하지 않았다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[derive(Default)]
 pub struct AccessibilitySettings {
-    /// 활성 시 모든 UI 페이드/슬라이드 애니메이션을 즉시 끝낸다. 토스트 페이드인/페이드아웃은 0ms로 적용.
+    /// 이 설정을 따르는 UI 애니메이션을 즉시 끝낸다. 토스트 페이드 시간도 0으로 적용한다.
     pub reduced_motion: bool,
 }
 
-/// 오버레이류(토스트 등) 표시 설정. "Overlay" 는 ubiquitous-language 의 확립된
-/// 우산 용어라, 이후 banner/marker 등 다른 오버레이 표시 설정도 이 섹션에 모은다.
-/// 현재는 토스트 수명 1개만 보유한다.
+/// 오버레이 표시 설정. 현재는 토스트 수명을 보관한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OverlaySettings {
@@ -58,16 +56,11 @@ impl Default for OverlaySettings {
     }
 }
 
-/// Modifier 키 홀드 시 표시되는 단축키 안내 오버레이의 설정 슬롯.
-/// on/off 토글과 사용자가 이동/리사이즈한 위치·크기를 영속한다.
-///
-/// 지오메트리(`pos`/`size`)는 접근성 의미가 아닌 오버레이 UI 상태이므로
-/// `AccessibilitySettings` 와 분리한 전용 루트 섹션으로 둔다.
-/// 저장값은 윈도우 축소로 화면 밖이 되어도 불변이며, 클램프는 렌더 단계 책임(이 계층은 저장까지만).
+/// Modifier 키 안내의 표시 여부·위치·크기. 화면 밖 저장값의 보정은 렌더 단계가 맡는다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModifierHintSettings {
-    /// 오버레이 표시 on/off. 기본 true (거치적거리면 사용자가 끈다).
+    /// 오버레이 표시 여부. 기본값은 true다.
     pub enabled: bool,
     /// 사용자가 이동한 위치. `None` = 기본 위치(렌더 단계 결정).
     pub pos: Option<(LogicalPx, LogicalPx)>,
@@ -85,8 +78,7 @@ impl Default for ModifierHintSettings {
     }
 }
 
-/// `~/.tasty/memory.db` 의 quota 정책. 모든 byte cap 은 MiB 단위 정수.
-/// 0 또는 음수는 invalid 로 reject (음수는 serde 단계에서 unsigned 로 차단).
+/// 메모리 저장소 quota 설정(MiB). unsigned 정수로 음수는 읽지 못하며, 값의 유효성은 호출자가 검사한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MemorySettings {
@@ -118,10 +110,7 @@ impl Default for NotificationSettings {
     }
 }
 
-/// 원격 전송(bulk 파일 전송 채널, docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) 수신측 저장 정책. 전송받은 파일을 저장할 폴더와
-/// 그 폴더의 최대 용량 상한을 둔다(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 "원격이 경로를 소유"). `begin.total_size`
-/// 기반 사전 용량 판정이 `dir` 사용량 + 전송 크기가 상한을 넘으면 전송을 시작 전
-/// 거부한다.
+/// 원격 파일 수신 폴더와 용량 상한. 호스트는 begin의 total_size와 현재 폴더 사용량을 비교한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RemoteTransferSettings {
