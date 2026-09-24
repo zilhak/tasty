@@ -1,17 +1,6 @@
-//! H — plugin 자동 reload 단위 테스트.
-//!
-//! 검증 대상:
-//! - `capture_plugin_baseline` — entry binary mtime + manifest version 캡처
-//! - `check_for_updates` — baseline 대비 변경 감지 (binary mtime / manifest version)
-//! - flag 가 off 면 변경 감지 안 함
-//!
-//! `auto_reload_one` 의 happy path 는 PluginProcess::spawn 이 필요해 별도
-//! 통합 테스트로 이전 (본 모듈은 process spawn 없이 검증 가능한 부분만).
+//! 자동 갱신의 파일 상태 기록·변경 탐지 시험. 실제 프로세스 연결 성공은 검사하지 않는다.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 테스트의 정리 작업에서는 의도적으로 결과를 무시한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::sync::Arc;
@@ -108,8 +97,7 @@ fn capture_baseline_missing_binary_keeps_version_only() {
 
 #[test]
 fn capture_baseline_clears_stale_mtime_on_missing_binary() {
-    // 한 번 캡처 후 binary 가 사라진 상태에서 재캡처 — stale mtime 이 남으면
-    // 후속 check_for_updates 가 binary 없음 ≠ 변경 판정. 제거되어야 한다.
+    // 바이너리가 사라지면 이전 mtime도 지워야 한다.
     let (tmp, pkg) = make_pkg_with_binary("0.1.0");
     let pid = pkg.manifest.id.clone();
     let mut m = mgr();
@@ -227,9 +215,7 @@ fn check_for_updates_skips_plugins_not_running() {
 
 #[test]
 fn auto_reload_one_updates_baseline_even_when_respawn_fails() {
-    // listener 미존재 — swap_respawn 의 ensure_listener 가 bind 실패할 수도
-    // 있고 성공해도 fake-bin 이 실제 PluginProcess 가 아니므로 spawn 실패.
-    // 어느 쪽이든 baseline 은 capture 되어 다음 tick 의 무한 swap 회피해야 함.
+    // 가짜 바이너리의 재실행 결과와 관계없이 종료 뒤 파일 상태를 기록해야 한다.
     let (tmp, pkg) = make_pkg_with_binary("0.1.0");
     let pid = pkg.manifest.id.clone();
     let mut m = mgr();
@@ -254,8 +240,7 @@ fn auto_reload_one_updates_baseline_even_when_respawn_fails() {
         .unwrap();
     assert_eq!(stored, actual);
 
-    // 다음 check_for_updates 호출은 빈 결과 — 동일 mtime 으로 무한 swap 회피.
-    // (단 respawn 실패로 processes 는 비어 있으므로 check 자체가 skip.)
+    // 재실행에 실패하면 processes가 비어 있어 변경 비교 자체를 건너뛸 수 있다.
     assert!(m.check_for_updates().is_empty());
 }
 

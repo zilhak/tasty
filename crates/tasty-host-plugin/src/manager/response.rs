@@ -18,8 +18,7 @@ use super::{
     PluginManager, TargetOutcome, parse_hook_result,
 };
 
-/// 만료된 namespace 호출이 caller 에게 돌려주는 사유. 세 변종이 같은 문장을 쓴다 —
-/// caller 입장에서는 같은 일(기다리던 plugin 응답이 끝내 안 왔다)이다.
+/// namespace 요청이 만료됐을 때 호출자에게 보낼 메시지.
 fn namespace_timeout_message(plugin_id: &str) -> String {
     format!(
         "plugin '{plugin_id}' did not answer within {}s",
@@ -27,15 +26,12 @@ fn namespace_timeout_message(plugin_id: &str) -> String {
     )
 }
 
-/// 경고 줄에 싣는 원 요청 번호. 번호를 모르는 plugin 요청이면 `none` 이다(IPC 요청에서 오지 않은
-/// 것, 그리고 파일 핸들러 큐를 거쳐 번호를 잃은 것).
+/// 원 IPC 요청 번호. IPC 외부에서 시작했거나 전달 중 번호가 없어졌으면 none.
 fn request_seq_label(origin: Option<tasty_ipc::server::RequestSeq>) -> String {
     origin.map_or_else(|| "none".to_string(), |seq| seq.to_string())
 }
 
-// surface handle 슬롯 락의 poison 보고 플래그(각 첫 1 회만). 둘 다 값 슬롯(String ·
-// Option<Value>)이라 락을 든 채 죽어도 불변식이 성하다 — 복구가 맞다. 조용히 삼키면
-// 라벨/스냅샷이 갱신 없이 stale 로 남는데 그 사실이 어디에도 안 남는다.
+// 표시 이름·스냅샷 슬롯의 poison을 각각 처음 한 번만 알린다.
 static DISPLAY_NAME_POISONED: AtomicBool = AtomicBool::new(false);
 const DISPLAY_NAME_WHAT: &str = "surface display-name slot";
 static SNAPSHOT_CACHE_POISONED: AtomicBool = AtomicBool::new(false);
@@ -58,30 +54,24 @@ impl PluginManager {
         }
     }
 
-    /// 왕복 대기 게이지를 주입한다. 호스트가 `Core` 쪽 압력 게이지와 **같은 축으로**
-    /// 읽을 수 있도록 같은 프로세스의 한 인스턴스를 공유한다.
+    /// 호스트와 공유할 플러그인 왕복 대기 통계를 주입한다.
     pub fn set_plugin_wait(&mut self, stats: Arc<tasty_telemetry::PluginWaitStats>) {
         self.plugin_wait = Some(stats);
     }
 
-    /// plugin 채널에 지금 쌓인 바이트와 상한·거절·대기 누계(docs/architecture/ipc-server.md#플러그인-채널의-상한).
-    ///
-    /// 값을 만드는 데까지다 — IPC/CLI 로 내보내는 자리(`system.pressure`)는 아직 이 값을
-    /// 안 읽는다. 장부가 프로세스 하나라서 어느 매니저에서 불러도 같은 값이 나온다.
+    /// 플러그인 채널의 대기 바이트·상한·거절·대기 통계를 읽는다.
+    /// system.pressure에는 아직 이 값을 포함하지 않는다.
     pub fn channel_bytes(&self) -> crate::process::channel_bytes::ChannelBytesSnapshot {
         self.channel_ledger.snapshot()
     }
 
-    /// 느린 요청 링을 주입한다(docs/architecture/ipc-server.md#느린-요청-추적). `set_plugin_wait` 과 같이 프로세스의 한 인스턴스를
-    /// 호스트 dispatch 루프와 나눠 든다 — 호스트 몫과 plugin hop 이 같은 줄에 이어지려면 둘이
-    /// 같은 링을 봐야 한다.
+    /// 호스트 처리와 플러그인 경유 시간을 같은 요청에 기록할 공용 로그를 주입한다.
     pub fn set_slow_requests(&mut self, log: Arc<tasty_telemetry::SlowRequestLog>) {
         self.slow_requests = Some(log);
     }
 
-    /// 원 IPC 요청 번호를 든 plugin 요청을 대기 표에 넣는다 — 링에 그 요청의 자리를 먼저 연다.
-    /// hop 이 끝나기 전에 호스트 몫이 채워지므로(forward 는 dispatch 안에서 일어난다) 자리가
-    /// 먼저 있어야 호스트 몫이 문턱 아래여도 버려지지 않고 hop 을 기다린다.
+    /// 플러그인 요청을 기다리기 전에 원 IPC 요청의 기록을 연다.
+    /// 호스트 처리만 빨랐더라도 플러그인 응답까지 집계할 수 있어야 한다.
     pub(super) fn insert_pending(&mut self, req_id: u64, pending: PendingRequest) {
         if let (Some(log), Some(seq)) = (&self.slow_requests, pending.origin) {
             log.note_forwarded(seq.get());
@@ -89,11 +79,8 @@ impl PluginManager {
         self.pending_requests.insert(req_id, pending);
     }
 
-    /// 원 IPC 요청 번호를 든 대기 항목 하나가 끝났다 — 그 hop 을 링의 줄에 붙인다. 번호가 없는
-    /// 항목(IPC 요청에서 오지 않았거나 파일 핸들러 큐에서 번호를 잃은 것)은 남기지 않는다.
-    ///
-    /// `last` 는 사슬이 이 hop 에서 끝나는가다. pre-hook 은 늘 target 으로 이어지고(응답이든
-    /// fail-open 이든), post-hook 이 걸린 target 은 응답이 오면 post-hook 으로 이어진다.
+    /// 원 IPC 요청 번호가 있으면 플러그인 경유 시간을 기록한다.
+    /// last는 이후 hook이나 target 호출이 이어지지 않는 마지막 단계인지 나타낸다.
     pub(super) fn record_origin_hop(
         &self,
         req_id: u64,
@@ -117,7 +104,7 @@ impl PluginManager {
         );
     }
 
-    /// 응답 하나가 매칭됐다 — 보낸 뒤 흐른 시간을 게이지에 접는다.
+    /// 매칭된 응답의 왕복 대기 시간을 기록한다.
     fn record_plugin_wait(&self, waited: std::time::Duration) {
         if let Some(stats) = &self.plugin_wait {
             stats.record(waited);
@@ -126,8 +113,7 @@ impl PluginManager {
 
     pub(super) fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
         let pending = self.pending_requests.remove(&resp.id);
-        // 왕복 대기 — 여기가 모든 plugin 응답이 지나는 한 자리다. 매칭되지 않은
-        // 응답(이미 만료·취소된 id)은 재지 않는다: 잰 값의 끝점이 없다.
+        // 이미 만료·취소된 요청처럼 매칭되지 않은 응답은 왕복 시간에 넣지 않는다.
         if let Some(p) = &pending {
             let waited = p.sent_at.elapsed();
             self.record_plugin_wait(waited);
@@ -136,7 +122,7 @@ impl PluginManager {
             } else {
                 tasty_telemetry::slow_requests::HopOutcome::Ok
             };
-            // 응답이 사슬의 다음 hop 을 부르는 두 종류 — 그 밖은 여기서 끝난다.
+            // pre-hook 또는 post-hook이 남은 target 응답이면 후속 처리가 이어진다.
             let last = !matches!(
                 p.kind,
                 PendingRequestKind::ExtensionPreIpcHook { .. }
@@ -145,8 +131,7 @@ impl PluginManager {
             self.record_origin_hop(resp.id, p, waited, outcome, last);
         }
         if let Some(err) = &resp.error {
-            // 원 IPC 요청 번호를 같은 줄에 싣는다 — plugin 로그의 id(= 호스트 req_id)에서 호스트
-            // 쪽 원 요청으로 되짚는 열쇠다(docs/architecture/ipc-server.md#느린-요청-추적). 새 줄을 만들지 않는다.
+            // 플러그인 로그와 호스트 요청을 함께 추적할 수 있도록 원 요청 번호도 남긴다.
             tracing::warn!(
                 "plugin '{plugin_id}' response error (id={}, request_seq={}): {err}",
                 resp.id,
@@ -156,9 +141,7 @@ impl PluginManager {
         let kind = match pending {
             Some(p) => p.kind,
             None => {
-                // `event.dispatch` 의 응답은 pending 을 안 만든다(호스트가 기다리지 않는다) —
-                // 대신 버스가 재발화 hop 하한을 위해 따로 기록하고, plugin 은 응답해야 한다
-                // (docs/reference/event-catalog.md#재발행과-응답). 그 기록이면 여기서 끝난다.
+                // event.dispatch 응답은 pending 대신 EventBus의 재발행 추적 기록에서 처리한다.
                 if self.event_bus.note_dispatch_answered(plugin_id, resp.id) {
                     return;
                 }
@@ -167,13 +150,7 @@ impl PluginManager {
                 return;
             }
         };
-        // namespace 응답이 하나라도 오면 그 plugin 의 연속 만료 계수를 지운다 —
-        // 답하고 있는 plugin 은 느려도 재시작 판정에 안 걸린다. pong 은 애초에
-        // pending 을 안 만들어(`PluginProcess::ping`) 위 `None` 갈래로 빠지고, 거기서도
-        // namespace 로 기억된 id 가 아니라 안 지운다: ping 에만 답하는 plugin 을
-        // 가리려는 것이 계수의 목적이므로, pong 이 계수를 지우면 계수가 영영 안 찬다.
-        // 이 `matches!` 가 실제로 거르는 것은 `SurfaceCreate`·`PopupOpen`·`Other`
-        // 같은 다른 pending 종류다.
+        // namespace 응답은 연속 만료 기록을 지운다. pong이나 다른 요청의 응답은 제외한다.
         if matches!(
             kind,
             PendingRequestKind::NamespaceInvoke { .. }
@@ -212,9 +189,7 @@ impl PluginManager {
                 call_id,
                 deadline: _,
             } => {
-                // plugin caller에는 ipc.result로 회신. 코드도 함께 간다 — 같은 함수의
-                // namespace 갈래(위)가 이미 `resp.error_code` 를 쓰고 있었고, 이쪽만
-                // 버리면 plugin 을 거쳐 나온 응답이 전부 `-32000` 이 된다.
+                // 플러그인 호출자에게도 원 오류 코드를 전달한다.
                 self.send_ipc_result(
                     &caller_plugin_id,
                     call_id,
@@ -561,16 +536,8 @@ impl PluginManager {
         }
     }
 
-    /// deadline 을 넘긴 pending 요청을 sweep 한다. hook 은 fail-open(원래 흐름을
-    /// 그대로 진행)으로, namespace 호출은 caller 에 오류 회신으로 끝난다 — 후자는
-    /// "진행" 할 원본 흐름이 없다(target 응답 자체가 목적이었다).
-    ///
-    /// `now` 는 [`PluginManager::pump`] 가 받은 프레임 기준시각이다. 여기서
-    /// `Instant::now()` 를 직접 읽으면 호출자가 넘긴 시각과 이 함수가 보는 시각이
-    /// 갈리고, 그 순간 **시험이 시간을 주입할 자리가 없어진다** — deadline 을
-    /// 과거/미래로 두는 것 말고는 만료를 만들 방법이 없고, 그 방식으로는 "만료가
-    /// 한 번 일어난 뒤 같은 pending 이 다시 안 만료된다" 같은 시간 축의 성질을
-    /// 못 잰다. pump 가 자기 타이머 판정에 쓰는 시각과 같은 값을 쓰는 것이기도 하다.
+    /// pump가 받은 시각으로 만료 요청을 처리한다.
+    /// hook은 원래 흐름을 계속 진행하고, namespace 호출은 오류를 반환한다.
     pub(super) fn sweep_expired_requests(&mut self, now: Instant) {
         let expired = self.collect_expired_request_ids(now);
         for id in expired {
@@ -589,12 +556,8 @@ impl PluginManager {
         }
     }
 
-    /// 현재 pending 중인 요청 가운데 `now` 시점 deadline 을 넘긴 request id 목록.
-    /// deadline 을 든 변종만 본다 — 4 종 hook(pre/post × ipc/event) 과 3 종
-    /// namespace 호출.
-    ///
-    /// 시한은 받는 plugin 의 연결 성사부터 센다([`Self::deadline_from_connection`]) —
-    /// 연결 중인 plugin 에 보낸 요청은 아직 만료되지 않는다.
+    /// 연결된 플러그인에 보낸 hook·namespace 요청 중 deadline을 넘긴 id를 모은다.
+    /// 연결 대기 중에는 deadline_from_connection이 만료를 유예한다.
     fn collect_expired_request_ids(&self, now: Instant) -> Vec<u64> {
         let expired = |p: &PendingRequest, deadline: Instant| {
             self.deadline_from_connection(&p.to, p.sent_at, deadline)
@@ -621,11 +584,8 @@ impl PluginManager {
             .collect()
     }
 
-    /// 타임아웃된 요청 한 건을 종결한다. hook 은 fail-open — target/publisher 는
-    /// 원본 payload 로 그대로 진행시키고 해당 extension 은 실패로 기록한다.
-    /// namespace 호출은 기다리던 응답이 곧 목적이라 진행시킬 것이 없다 — plugin 이
-    /// 사라졌을 때(`cancel_pending_namespace_calls`)와 같은 모양으로 caller 에
-    /// `-32004` 를 회신한다.
+    /// 만료된 hook은 원래 흐름을 진행하고 실패를 기록한다.
+    /// namespace 호출은 호출자에게 -32004를 반환한다.
     fn expire_pending_request(
         &mut self,
         id: u64,
@@ -685,11 +645,7 @@ impl PluginManager {
         }
     }
 
-    /// 회신이 목적인 pending 의 만료 — 진행시킬 원본 흐름이 없어 fail-open 이 없다.
-    ///
-    /// caller 종류(local `response_tx` · plugin `ipc.result` · post-hook 이 걸린
-    /// `send_final_error`)만 다르고 싣는 코드는 셋 다 `-32004` 로 같다
-    /// (`docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화`).
+    /// namespace 호출의 만료는 호출자 종류에 관계없이 -32004로 회신한다.
     fn expire_pending_answer(
         &mut self,
         id: u64,
@@ -716,8 +672,6 @@ impl PluginManager {
                 deadline: _,
             } => {
                 let msg = self.note_namespace_expiry(&plugin_id, id, origin);
-                // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
-                // 같은 사건이다.
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
@@ -731,8 +685,7 @@ impl PluginManager {
                 let msg = self.note_namespace_expiry(&target_plugin_id, id, origin);
                 self.send_final_error(final_caller, -32004, msg);
             }
-            // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
-            // 진행시킬 원본 흐름이 없으므로 namespace 만료와 같은 모양으로 끝낸다.
+            // 디버그 직접 호출은 이어갈 원래 요청이 없으므로 오류로 회신한다.
             #[cfg(debug_assertions)]
             PendingRequestKind::DebugExtensionInvokeHook {
                 response_tx,
@@ -753,12 +706,8 @@ impl PluginManager {
         }
     }
 
-    /// namespace 만료 한 건을 기록한다 — 경고를 남기고 연속 계수에 더한 뒤,
-    /// caller 에 실을 문구를 돌려준다. 세 caller 갈래가 같은 문구·같은 계수를
-    /// 쓰므로 그 셋을 여기 한 자리로 모은다.
-    ///
-    /// 경고에는 호스트 req_id 와 원 IPC 요청 번호를 **같은 줄에** 더한다 — caller 에 가는 문구
-    /// (`msg`)는 그대로다. 둘은 plugin 쪽 로그(req_id)와 호스트 쪽 원 요청을 잇는 열쇠다(docs/architecture/ipc-server.md#느린-요청-추적).
+    /// namespace 만료를 세고 회신 메시지를 만든다.
+    /// 로그에는 플러그인 요청 id와 원 IPC 요청 번호를 함께 남긴다.
     fn note_namespace_expiry(
         &mut self,
         plugin_id: &str,
@@ -775,10 +724,8 @@ impl PluginManager {
         msg
     }
 
-    /// 거둬진 namespace 호출의 id 를 그 plugin 앞으로 적어 둔다. 뒤늦게 그 id 의
-    /// 응답이 오면 [`Self::clear_streak_if_late_namespace_answer`] 가 계수를 지운다.
-    /// 길이는 계수 상한만큼만 들고 오래된 것부터 버린다 — 상한에 닿으면 재시작이
-    /// 일어나고 그 경로가 이 목록도 비우므로, 이 자름이 판정을 무르게 하지 않는다.
+    /// 늦은 응답을 식별할 요청 id를 재시작 기준 개수만큼 보관한다.
+    /// 그보다 오래된 id는 버리므로 모든 늦은 응답을 기억하지는 않는다.
     fn remember_expired_namespace_call(&mut self, plugin_id: &str, req_id: u64) {
         let ids = self
             .expired_namespace_calls
@@ -790,32 +737,10 @@ impl PluginManager {
         }
     }
 
-    /// 이미 거둬진 요청의 **늦은 응답**을 처리하는 유일한 자리.
-    ///
-    /// 요청이 pending 에서 빠지는 길은 셋이다 — 응답 매칭 · deadline 만료(sweep) · plugin
-    /// 이 치워짐(취소). 뒤 둘은 **그 자리에서 이미 끝을 냈다**: namespace 호출은 caller 에
-    /// `-32004` 를 회신했고, hook 은 fail-open 으로 원래 흐름을 진행시켰다. 그래서 늦게
-    /// 온 응답이 할 일은 **아무것도 진행시키지 않는 것**이고, 변종마다 그 이유가 있다.
-    ///
-    /// - **target 응답이 늦으면 post-hook 을 안 부른다.** post-hook 은 caller 에게 갈 결과를
-    ///   바꾸는 단계인데 caller 는 이미 `-32004` 를 받았다. 부르면 extension 이 결과를 못
-    ///   바꾸는 호출을 받고 **효과만 남는다**(post-hook 이 기록·전송을 하는 extension 이면
-    ///   caller 가 실패로 본 호출에 대해 그 효과가 난다).
-    /// - **pre-hook 응답이 늦으면 target 을 다시 안 부른다.** fail-open 이 원본 payload 로
-    ///   이미 불렀다 — 다시 부르면 같은 호출이 두 번 실행된다.
-    /// - **post-hook 응답이 늦으면 결과를 다시 안 보낸다.** fail-open 이 target 결과를 이미
-    ///   보냈다 — caller 는 같은 id 에 답을 두 번 받는다.
-    /// - **hook 실패 계수를 되돌리지 않는다.** 만료가 이미 실패로 셌고, backoff 가 묻는
-    ///   것은 "제때 답하는가" 라 늦은 답은 여전히 실패다.
-    ///
-    /// 남는 일은 하나다 — namespace 호출의 늦은 답은 연속 만료 계수를 지운다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화
-    /// 참조: 늦어도 답한 것은 답한 것이다). 이 정책의 근거와 대안은
-    /// docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화 에 정리되어 있다.
-    ///
-    /// ★ **이 자리에 오는 것이 늦은 응답만은 아니다.** pending 에 애초에 안 들어가는
-    /// 요청(ping · `event.dispatch` 같은 알림성 요청)에도 plugin 은 답하고, 그 답도 id 가
-    /// 안 맞아 여기로 온다. id 만으로는 둘을 못 가르고, 뒤엣것은 정상 운용에서 늘 난다 —
-    /// 그래서 한 건마다 남기는 기록은 trace 에 둔다(debug 에 두면 ping 마다 한 줄이 쌓인다).
+    /// pending에 없는 응답을 처리한다. 이미 끝난 요청의 hook·target 호출이나 회신을
+    /// 반복하지 않으며, 만료된 hook의 실패 기록도 되돌리지 않는다.
+    /// 기억하고 있는 namespace 요청의 늦은 응답이면 연속 만료 기록만 지운다.
+    /// ping처럼 처음부터 pending에 넣지 않은 응답도 오므로 개별 로그는 trace로 남긴다.
     fn settle_late_response(&mut self, plugin_id: &str, resp_id: u64) {
         tracing::trace!(
             "plugin '{plugin_id}' answered request {resp_id} that has no pending entry \
@@ -824,13 +749,8 @@ impl PluginManager {
         self.clear_streak_if_late_namespace_answer(plugin_id, resp_id);
     }
 
-    /// 만료로 이미 거둬진 namespace 호출의 **늦은 응답**이면 그 plugin 의 연속 계수를
-    /// 지운다.
-    ///
-    /// 늦어도 답한 것은 답한 것이다. 이것이 없으면 `NAMESPACE_CALL_TIMEOUT` 을 조금씩
-    /// 넘겨 답하는 plugin 이 — 매번 실제로 응답을 보내는데도 — 세 번마다 재시작된다.
-    /// 재시작은 느린 것을 빠르게 만들지 못하므로 그 반복은 그 plugin 의 surface·popup
-    /// 만 주기적으로 없앨 뿐이다. 계수가 가리려는 것은 **아무것도 안 답하는** plugin 이다.
+    /// 기억하고 있는 만료 요청의 늦은 응답이면 연속 만료 기록을 지운다.
+    /// 느리더라도 응답하는 플러그인의 불필요한 재시작을 줄이기 위한 처리다.
     fn clear_streak_if_late_namespace_answer(&mut self, plugin_id: &str, resp_id: u64) {
         let Some(ids) = self.expired_namespace_calls.get_mut(plugin_id) else {
             return;
@@ -841,11 +761,8 @@ impl PluginManager {
         }
     }
 
-    /// namespace 만료 한 건을 그 target plugin 의 연속 계수에 더한다.
-    ///
-    /// 여기서 바로 재시작하지 않는다 — 이 함수는 sweep 루프 한가운데서 불리고,
-    /// 재시작은 `pending_requests` 를 다시 훑어 거둔다. 판정은 다음 ping tick 의
-    /// `restart_unresponsive_plugins` 가 healthcheck 와 같은 자리에서 한다.
+    /// namespace 연속 만료를 센다. 실제 재시작은 다음 ping tick에서 판정한다.
+    /// 재시작도 pending을 순회하므로 이 만료 처리 중에는 실행하지 않는다.
     fn record_namespace_expiry(&mut self, plugin_id: &str) {
         let n = self
             .namespace_expiries
@@ -855,7 +772,7 @@ impl PluginManager {
         if *n >= super::NAMESPACE_EXPIRY_RESTART_LIMIT {
             tracing::error!(
                 "plugin '{plugin_id}' let {n} namespace calls expire in a row without answering \
-                 any of them — it will be restarted"
+                 any of them — restart threshold reached; checked on the next ping tick"
             );
         }
     }

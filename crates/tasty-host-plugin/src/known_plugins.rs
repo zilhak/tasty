@@ -39,7 +39,7 @@ pub struct KnownPluginEntry {
     pub permissions: Vec<String>,
     /// RFC3339 timestamp (예: `2026-06-09T09:50:00Z`).
     pub trusted_at: String,
-    /// 표시용 공개키 지문.
+    /// 승인 화면에 표시한 지문. UnknownKey에서는 서명 R 값으로 계산한다.
     #[serde(default)]
     pub publisher_fingerprint: String,
 }

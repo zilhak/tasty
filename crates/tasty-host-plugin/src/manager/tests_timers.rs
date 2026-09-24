@@ -1,8 +1,5 @@
-//! plugin 주기 작업(`PluginTick`) 스케줄 단위 테스트.
-//!
-//! `pump(now)` 가 기준시각을 인자로 받으므로 시간 주입만으로 결정론적으로 검증할 수
-//! 있다 — 실제 sleep 없이 "15초 뒤" 를 재현한다. 발화 관측은 허브 스냅샷의
-//! `last_fired` 로 한다(프로세스가 없는 매니저라 ping 자체는 부수효과가 없다).
+//! pump에 시각을 전달해 주기 작업의 실행 시점을 검사한다.
+//! 프로세스는 실행하지 않으며 TimerHub의 last_fired를 확인한다.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,7 +14,7 @@ fn mgr() -> PluginManager {
     PluginManager::new(Arc::new(NoopWakerFactory))
 }
 
-/// 허브에서 이 키가 마지막으로 발화한 시각.
+/// 이 타이머를 마지막으로 실행한 시각.
 fn last_fired(m: &PluginManager, key: PluginTick) -> Option<Instant> {
     m.timers
         .snapshot()
@@ -40,7 +37,7 @@ fn ping_fires_once_per_interval() {
     m.pump(t0 + PING_INTERVAL); // 도래
     assert_eq!(last_fired(&m, PluginTick::Ping), Some(t0 + PING_INTERVAL));
 
-    // 같은 주기 안에서 여러 번 pump 해도 다시 발화하지 않는다.
+    // 같은 주기에는 여러 번 호출해도 다시 실행하지 않는다.
     m.pump(t0 + PING_INTERVAL + Duration::from_secs(1));
     assert_eq!(last_fired(&m, PluginTick::Ping), Some(t0 + PING_INTERVAL));
 
@@ -58,7 +55,11 @@ fn rss_sampling_keeps_its_own_cadence() {
     let t0 = Instant::now();
 
     m.pump(t0 + PING_INTERVAL);
-    assert_eq!(last_fired(&m, PluginTick::Rss), None, "30초 전에는 안 뜬다");
+    assert_eq!(
+        last_fired(&m, PluginTick::Rss),
+        None,
+        "30초 전에는 RSS 타이머를 실행하지 않는다"
+    );
 
     m.pump(t0 + RSS_SAMPLE_INTERVAL);
     assert_eq!(
@@ -67,9 +68,7 @@ fn rss_sampling_keeps_its_own_cadence() {
     );
 }
 
-/// RSS 는 Lax 라 **스스로 호스트를 깨우지 않는다** — 30초 시점이 데드라인이지만
-/// hard deadline 은 ping 주기만큼 뒤다. 그래서 `next_deadline()` 은 항상 ping 이
-/// 결정한다(관측용 샘플링이 idle wakeup 을 늘리지 않는다).
+/// 처음 등록한 상태에서는 RSS의 slack을 포함한 시각보다 ping 시각이 빠르다.
 #[test]
 fn rss_never_advances_the_wakeup_deadline() {
     let m = mgr();

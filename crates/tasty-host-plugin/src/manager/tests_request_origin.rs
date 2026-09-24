@@ -1,8 +1,5 @@
-//! plugin 으로 넘긴 요청이 **원 IPC 요청의 호스트 번호**를 대기 표에 싣는가(docs/architecture/ipc-server.md#느린-요청-추적).
-//!
-//! plugin 에게 가는 것은 hop 마다 새로 받는 호스트 req_id 뿐이다. 그 req_id 를 원 요청으로
-//! 되짚는 대응표가 대기 표의 `origin` 칸이고, pre/post hook 사슬은 hop 마다 새 req_id 를
-//! 받으므로 **사슬 전체가 같은 번호를 들어야** 느린 hop 이 어느 요청의 것인지 남는다.
+//! 플러그인 전달과 pre/post hook에 원 IPC 요청 번호를 유지하는지 확인한다.
+//! 단계별 요청 id가 달라도 호스트 처리와 각 대기 시간을 같은 요청에 기록해야 한다.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -57,7 +54,7 @@ fn ok(id: u64) -> PluginResponse {
     }
 }
 
-/// 대기 표에서 `to` 앞으로 걸린 항목 하나의 (req_id, origin).
+/// 대상 플러그인 to에 보낸 대기 항목의 (req_id, origin).
 fn pending_to(mgr: &PluginManager, to: &str) -> (u64, Option<RequestSeq>) {
     let found: Vec<_> = mgr
         .pending_requests
@@ -169,8 +166,7 @@ timeout_ms = {timeout_ms}
     (mgr, owner_rx, ext_rx)
 }
 
-/// pre-hook 을 선언한 확장이 붙은 namespace 로 넘기면 **첫 hop 이 확장으로** 가고, 그 대기
-/// 항목도 원 요청의 번호를 든다 — 사슬의 첫 칸이 번호를 잃으면 뒤 hop 이 모두 `None` 이 된다.
+/// pre-hook으로 먼저 전달해도 대기 항목은 원 요청 번호를 유지한다.
 #[test]
 fn a_forward_through_a_pre_hook_puts_the_request_seq_on_the_hook_entry() {
     let (mut mgr, _owner_rx, ext_rx) = mgr_with_pre_hook(60_000);
@@ -192,8 +188,7 @@ fn a_forward_through_a_pre_hook_puts_the_request_seq_on_the_hook_entry() {
     assert_eq!(origin, Some(seq), "pre-hook hop 이 번호를 잃었다");
 }
 
-/// 빠른 pre-hook 뒤에 느린 target 이 오면 **한 줄에 호스트 몫과 hop 둘**이 순서대로 남는다 —
-/// 빠른 pre-hook 응답에서 열린 자리를 닫으면 target hop 이 호스트 몫과 이을 자리를 잃는다.
+/// 빠른 pre-hook 뒤 느린 target 응답까지 같은 요청에 기록해야 한다.
 #[test]
 fn a_fast_pre_hook_and_its_slow_target_land_on_one_row_in_order() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
@@ -214,7 +209,7 @@ fn a_fast_pre_hook_and_its_slow_target_land_on_one_row_in_order() {
     mgr.handle_plugin_response(EXT, ok(hook_id));
     assert!(
         log.snapshot().rows.is_empty(),
-        "빠른 pre-hook 은 아직 줄이 아니다"
+        "빠른 pre-hook만 완료했을 때는 요청 로그가 확정되지 않아야 한다"
     );
     let (target_id, _) = pending_to(&mgr, OWNER);
     if let Some(p) = mgr.pending_requests.get_mut(&target_id) {
@@ -226,7 +221,7 @@ fn a_fast_pre_hook_and_its_slow_target_land_on_one_row_in_order() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(
         rows[0].host.is_some(),
-        "호스트 몫과 이어지지 않았다: {rows:?}"
+        "호스트 처리와 플러그인 대기가 같은 요청에 기록되지 않았다: {rows:?}"
     );
     let hops: Vec<_> = rows[0]
         .plugin_hops
@@ -236,8 +231,7 @@ fn a_fast_pre_hook_and_its_slow_target_land_on_one_row_in_order() {
     assert_eq!(hops, [(EXT, hook_id), (OWNER, target_id)]);
 }
 
-/// pre-hook 응답이 target 을 부르면 target 대기 항목이 **같은 번호**를 든다 — hop 마다 req_id
-/// 는 새로 받지만 원 요청은 하나다. target 응답이 post-hook 을 부를 때도 같다.
+/// pre-hook → target → post-hook의 각 대기 항목이 같은 원 요청 번호를 유지한다.
 #[test]
 fn every_hop_of_a_hook_chain_carries_the_same_request_seq() {
     let mut mgr = mgr_owning("orig");
@@ -285,7 +279,7 @@ fn every_hop_of_a_hook_chain_carries_the_same_request_seq() {
     assert_eq!(origin, Some(seq), "target → post-hook hop 이 번호를 잃었다");
 }
 
-/// 빠른 호스트 몫 — dispatch 루프가 forward 직후 채우는 값을 흉내 낸다.
+/// 호스트의 빠른 dispatch 처리 시간을 기록한다.
 fn fast_host_leg(seq: RequestSeq) -> tasty_telemetry::slow_requests::HostLeg<'static> {
     tasty_telemetry::slow_requests::HostLeg {
         request_seq: seq.get(),
@@ -318,23 +312,23 @@ fn forwarded(
         tx,
         Some(seq),
     );
-    // 호스트 몫은 dispatch 루프가 forward 직후 채운다 — 여기서는 빠른 값으로 흉내 낸다.
+    // 호스트 dispatch가 빨리 끝난 경우를 만든다.
     log.finish_host(fast_host_leg(seq));
     assert!(
         log.snapshot().rows.is_empty(),
-        "호스트 몫만으로는 안 느리다"
+        "호스트 처리 시간만으로는 느린 요청 기준을 넘지 않는다"
     );
     (mgr, seq, rx)
 }
 
-/// plugin 이 늦게 답한 forward 는 그 대기가 **원 요청의 줄**에 붙는다 — hop 의 호스트 req_id 가
-/// plugin 이 받은 JSON-RPC id 와 같아 plugin 로그를 원 요청으로 되짚을 수 있다.
+/// 늦은 플러그인 응답의 대기 시간을 원 요청에 기록한다.
+/// 단계별 req_id는 플러그인이 받은 JSON-RPC id와 같아 로그를 연결할 수 있다.
 #[test]
 fn a_slow_answer_lands_on_the_original_requests_row() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
     let (mut mgr, seq, _rx) = forwarded(&log);
     let (req_id, _) = pending_to(&mgr, OWNER);
-    // 실제로 기다리지 않고 보낸 시각을 뒤로 민다 — 벽시계는 부하에 흔들린다.
+    // 실제 대기 대신 전송 시각을 조정해 실행 부하의 영향을 줄인다.
     if let Some(p) = mgr.pending_requests.get_mut(&req_id) {
         p.sent_at = Instant::now() - Duration::from_millis(150);
     }
@@ -342,7 +336,10 @@ fn a_slow_answer_lands_on_the_original_requests_row() {
     let rows = log.snapshot().rows;
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].request_seq, seq.get());
-    assert!(rows[0].host.is_some(), "호스트 몫과 이어지지 않았다");
+    assert!(
+        rows[0].host.is_some(),
+        "호스트 처리와 플러그인 대기가 같은 요청에 기록되지 않았다"
+    );
     let hop = &rows[0].plugin_hops[0];
     assert_eq!(
         (hop.plugin_id.as_str(), hop.host_request_id, hop.outcome),
@@ -355,8 +352,7 @@ fn a_slow_answer_lands_on_the_original_requests_row() {
     assert!(hop.wait_us >= 150_000, "{hop:?}");
 }
 
-/// 끝내 답이 없어 만료된 forward 도 같은 줄에 `expired` 로 붙는다 — 분포(`plugin_round_trip`)는
-/// 끝점이 없어 이 건을 못 세지만, 링은 그 한 건을 남긴다.
+/// 만료된 호출은 왕복 시간 분포에서 제외하지만 요청 로그에는 expired로 남긴다.
 #[test]
 fn an_expired_forward_lands_on_the_row_as_expired() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
@@ -380,7 +376,7 @@ fn an_expired_forward_lands_on_the_row_as_expired() {
     );
 }
 
-/// 빨리 답한 forward 는 줄을 안 남긴다 — 링은 전 요청의 기록이 아니다.
+/// 빠른 요청은 로그에 남기지 않는다.
 #[test]
 fn a_fast_answer_leaves_no_row() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
@@ -390,7 +386,7 @@ fn a_fast_answer_leaves_no_row() {
     assert!(log.snapshot().rows.is_empty());
 }
 
-/// 답을 기다리던 plugin 이 치워지면 그 hop 이 `cancelled` 로 같은 줄에 붙는다.
+/// 플러그인이 제거되면 대기하던 요청에 cancelled를 기록한다.
 #[test]
 fn a_forward_cancelled_by_plugin_removal_lands_as_cancelled() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
@@ -415,8 +411,7 @@ fn a_forward_cancelled_by_plugin_removal_lands_as_cancelled() {
     );
 }
 
-/// pre-hook 이 만료돼도 fail-open 으로 target 이 불리므로 사슬은 이어진다 — 짧은 hook 의 만료가
-/// 열린 자리를 닫으면 뒤의 느린 target 이 호스트 몫과 이을 자리를 잃는다.
+/// pre-hook이 만료돼도 fail-open으로 실행한 target의 대기를 같은 요청에 기록해야 한다.
 #[test]
 fn an_expired_pre_hook_keeps_the_row_open_for_its_target() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
@@ -434,12 +429,12 @@ fn an_expired_pre_hook_keeps_the_row_open_for_its_target() {
     );
     log.finish_host(fast_host_leg(seq));
     let (hook_id, _) = pending_to(&mgr, EXT);
-    // hook 제한(50 ms)은 넘기되 문턱(100 ms) 아래에서 만료시킨다.
+    // hook 제한 50ms를 넘기되 느린 요청 기준인 100ms 전에 만료시킨다.
     let sent_at = mgr.pending_requests[&hook_id].sent_at;
     mgr.sweep_expired_requests(sent_at + Duration::from_millis(60));
     assert!(
         log.snapshot().rows.is_empty(),
-        "문턱 아래 만료는 아직 줄이 아니다"
+        "기준 시간 전에 hook이 만료돼도 후속 target 응답 전에는 기록을 확정하지 않는다"
     );
     let (target_id, _) = pending_to(&mgr, OWNER);
     if let Some(p) = mgr.pending_requests.get_mut(&target_id) {
@@ -451,7 +446,7 @@ fn an_expired_pre_hook_keeps_the_row_open_for_its_target() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(
         rows[0].host.is_some(),
-        "호스트 몫과 이어지지 않았다: {rows:?}"
+        "호스트 처리와 플러그인 대기가 같은 요청에 기록되지 않았다: {rows:?}"
     );
     let hops: Vec<_> = rows[0]
         .plugin_hops
@@ -467,7 +462,7 @@ fn an_expired_pre_hook_keeps_the_row_open_for_its_target() {
     );
 }
 
-/// 이 스코프 동안 나가는 tracing 이벤트를 문자열로 모은다(`builtin.rs` 시험과 같은 모양).
+/// 이 범위의 tracing 이벤트를 문자열로 모은다.
 fn capture_logs(f: impl FnOnce()) -> String {
     use std::sync::Mutex;
     #[derive(Clone)]
@@ -500,8 +495,7 @@ fn warn_line<'a>(logs: &'a str, needle: &str) -> &'a str {
         .unwrap_or_else(|| panic!("{needle:?} 를 담은 WARN 줄이 없다: {logs}"))
 }
 
-/// plugin 이 오류로 답한 경고 한 줄에 호스트 req_id 와 원 요청 번호가 **함께** 있다 — plugin
-/// 로그의 id 에서 원 요청으로 되짚는 열쇠다. 줄을 새로 만들지 않는다.
+/// 응답 오류 로그 한 줄에 단계별 req_id와 원 IPC 요청 번호를 함께 기록한다.
 #[test]
 fn the_error_answer_warning_names_the_host_id_and_the_request_seq_on_one_line() {
     let log = Arc::new(tasty_telemetry::SlowRequestLog::default());

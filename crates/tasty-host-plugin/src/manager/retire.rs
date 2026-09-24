@@ -1,19 +1,7 @@
-//! 단건 plugin 종료 — 무응답 재시작과 disable — 의 **회수 대기를 메인 스레드 밖으로** 뺀다.
-//!
-//! 예전에는 두 경로가 [`PluginProcess::shutdown`] 으로 자식이 빠질 때까지(최대
-//! [`PLUGIN_SHUTDOWN_TIMEOUT`]) 메인 스레드를 세웠다. 그동안 모든 IPC 응답과 프레임이
-//! 멈췄고, 영구히 멈춘 plugin 은 약 62 초마다 그 정지를 되풀이했다.
-//!
-//! 지금은 shutdown 요청을 보낸 뒤 대기를 **전용 스레드**가 맡는다(`plugin-retire-<id>`).
-//! 메인 스레드는 [`PluginTick::Retire`] 가 올 때마다 끝난 것만 거둔다 — 기다리지 않는다.
-//!
-//! **새 프로세스는 옛 프로세스가 회수된 뒤에 뜬다.** 겹치면 옛 프로세스가 쥔 자원 —
-//! 번들 `agent-stream` 이 재시작 때 다시 여는 SSE 포트, plugin 데이터 디렉토리의 파일 —
-//! 을 새 프로세스가 못 잡는다. 그래서 재시작은 기동을 미뤘다가 회수가 끝나는 tick 에
-//! 한다([`PluginManager::poll_retiring`]). 명시적 `enable` 은 미루지 않고 그 자리에서 회수를
-//! 기다린 뒤 띄운다([`PluginManager::wait_retired`]).
-//!
-//! plugin 이 보는 순서(shutdown 요청 → 종료)는 그대로다. 근거·대안은 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
+//! 플러그인 종료 후 회수는 전용 스레드가 맡고 호스트는 완료 여부를 폴링한다.
+//! 이전 프로세스가 쓰던 포트·파일과 겹치지 않도록 회수 뒤에 재시작한다.
+//! 명시적 enable이나 파일 교체는 회수 완료를 기다린다.
+//! 스레드를 만들지 못하면 호출한 스레드에서 기다린다.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -42,8 +30,7 @@ impl Retiring {
         self.done.is_some() || self.handle.as_ref().is_some_and(|h| h.is_finished())
     }
 
-    /// 결과를 꺼낸다. 스레드가 아직이면 끝날 때까지 기다린다 — 그 기다림은 스레드가
-    /// 자기 deadline 으로 묶으므로 [`PLUGIN_SHUTDOWN_TIMEOUT`] 을 크게 넘지 않는다.
+    /// 결과를 꺼낸다. 회수 스레드가 실행 중이면 끝날 때까지 기다린다.
     fn join(mut self) -> ShutdownOutcome {
         if let Some(outcome) = self.done.take() {
             return outcome;
@@ -66,8 +53,7 @@ type PendingSlot = Arc<Mutex<Option<PendingShutdown>>>;
 static SLOT_POISONED: AtomicBool = AtomicBool::new(false);
 const SLOT_WHAT: &str = "plugin retire slot";
 
-/// 슬롯에서 핸들을 꺼내 회수까지 기다린다. 락 안의 값은 `Option` 하나라 poison 이어도
-/// 그대로 쓸 수 있다.
+/// 잠금에서 종료 핸들을 꺼내 회수를 기다린다. poison 상태여도 Option 값을 재사용한다.
 fn wait_slot(slot: &PendingSlot) -> ShutdownOutcome {
     let taken = tasty_utils::poison::recover_mutex(slot.lock(), SLOT_WHAT, &SLOT_POISONED).take();
     match taken {
@@ -76,7 +62,7 @@ fn wait_slot(slot: &PendingSlot) -> ShutdownOutcome {
     }
 }
 
-/// 회수 대기를 스레드로 보낸다. 스레드를 못 띄우면 그 자리에서 기다린다 — 예전 동작이다.
+/// 회수를 별도 스레드에 맡긴다. 스레드를 만들지 못하면 여기서 기다린다.
 fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
     let started = Instant::now();
     let slot: PendingSlot = Arc::new(Mutex::new(Some(pending)));
@@ -107,8 +93,8 @@ fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
 }
 
 impl PluginManager {
-    /// `proc` 에 shutdown 요청을 보내고 회수는 스레드에 맡긴다. 메인 스레드는 기다리지
-    /// 않는다. `respawn` 이면 회수가 끝난 tick 에 같은 plugin 을 다시 띄운다.
+    /// 종료를 요청하고 회수를 별도 스레드에 맡긴다. respawn이면 회수 뒤 다시 실행한다.
+    /// 스레드 생성에 실패하면 호출한 스레드에서 기다린다.
     pub(super) fn retire_process(&mut self, plugin_id: &str, proc: PluginProcess, respawn: bool) {
         let pending = proc.begin_shutdown(Instant::now() + PLUGIN_SHUTDOWN_TIMEOUT);
         self.retire_pending(plugin_id, pending, respawn);
@@ -228,17 +214,8 @@ impl PluginManager {
         self.retiring.contains_key(plugin_id)
     }
 
-    /// `plugin_id` 의 회수가 끝날 때까지 **기다린다**. 옛 프로세스가 반드시 사라져 있어야
-    /// 하는 자리만 부른다 — `plugin remove`(디렉토리를 지운다) · swap(디렉토리를 덮어쓴다) ·
-    /// `upgrade-builtins` 의 **쓰기 갈래**(디렉토리에 실제로 쓸 때만. 건너뛰는 갈래와 바뀐
-    /// 내용이 없는 같은 버전 갈래는 안 부른다) · 명시적 `enable`(그 자리에서 띄우려고).
-    /// 헬스체크 재시작과 `disable` 은 부르지 않는다. 이 목록은 `shutdown-sequence.md` 의
-    /// "단건 경로" 항과 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화 에 같은 말로 적혀 있다.
-    ///
-    /// 돌려주는 값은 **회수 뒤에 다시 띄우기로 예약돼 있었는가**다(무응답 재시작 · 회수 중에
-    /// 온 전체 기동). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인
-    /// plugin 이 아무 것도 다시 띄우지 않는 채로 꺼져 남는다 — 호출자가 쓰기를 마친 뒤
-    /// `true` 면 [`Self::start_if_still_wanted`] 로 이어 받는다.
+    /// 회수가 끝날 때까지 기다린다. 파일 삭제·교체나 명시적 enable에 사용한다.
+    /// true이면 재시작 예약도 가져온 것이므로, 쓰기 뒤 start_if_still_wanted로 이어야 한다.
     #[must_use = "true means a restart was pending on this retirement and is now yours to carry \
                   out (start_if_still_wanted after the write); dropping it leaves an enabled plugin \
                   down"]

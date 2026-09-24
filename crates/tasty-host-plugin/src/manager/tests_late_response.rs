@@ -1,9 +1,4 @@
-//! 만료로 이미 끝난 요청에 **늦게** 도착한 응답은 아무것도 다시 진행시키지 않는다
-//! (`PluginManager::settle_late_response`, docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
-//!
-//! 세 시험 모두 "만료가 한 번 끝을 냈다" 를 먼저 관측하고 나서 늦은 응답을 넣는다. 만료
-//! 쪽 관측이 없으면 늦은 응답이 아무 일도 안 한 것인지 애초에 할 일이 없었던 것인지
-//! 가려지지 않는다.
+//! 요청 만료를 먼저 확인한 뒤 늦은 응답을 넣어 후속 호출·회신이 반복되지 않는지 검사한다.
 
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -41,9 +36,7 @@ fn past() -> Instant {
     Instant::now() - Duration::from_secs(1)
 }
 
-/// target 응답이 만료 뒤에 오면 **post-hook 을 부르지 않는다**. caller 는 이미 `-32004`
-/// 를 받았고, post-hook 은 그 결과를 바꾸는 단계라 결과가 나간 뒤에는 바꿀 대상이 없다 —
-/// 부르면 extension 에 효과만 남는다.
+/// 만료 뒤 target 응답이 와도 post-hook을 부르지 않는다. 호출자는 이미 오류를 받았다.
 #[test]
 fn a_late_target_answer_does_not_run_the_post_hook_or_answer_twice() {
     let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
@@ -92,8 +85,7 @@ fn a_late_target_answer_does_not_run_the_post_hook_or_answer_twice() {
     );
 }
 
-/// pre-hook 응답이 만료 뒤에 오면 **target 을 다시 부르지 않는다** — fail-open 이 원본
-/// payload 로 이미 불렀다. 다시 부르면 같은 호출이 두 번 실행된다.
+/// pre-hook이 늦게 응답해도 fail-open으로 이미 호출한 target을 다시 부르지 않는다.
 #[test]
 fn a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time() {
     let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
@@ -146,9 +138,7 @@ fn a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time() {
     );
 }
 
-/// post-hook 응답이 만료 뒤에 오면 **결과를 다시 보내지 않는다** — fail-open 이 target 결과를
-/// 이미 보냈다. 다시 보내면 caller 는 같은 id 에 답을 두 번 받고, 두 번째는 post-hook 이
-/// 바꾼 값이라 첫 답과 다를 수도 있다.
+/// post-hook이 늦게 응답해도 이미 보낸 target 결과를 다시 회신하지 않는다.
 #[test]
 fn a_late_post_hook_answer_does_not_answer_the_caller_a_second_time() {
     let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));

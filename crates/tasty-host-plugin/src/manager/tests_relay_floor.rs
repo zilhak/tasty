@@ -1,6 +1,4 @@
-//! 재발화 hop 하한의 **manager 배선** — `event.dispatch` 를 보낸 순간 기록하고, 그 응답이
-//! 오면 지우고, plugin publish 가 도착한 순간 하한을 건다(docs/reference/event-catalog.md#재발행과-응답). 규칙 자체는
-//! `event_bus_relay_tests.rs` 가 고정하고, 여기는 세 자리가 실제로 이어졌는지만 본다.
+//! EventBus의 재발행 hop 규칙이 매니저의 dispatch·응답·publish 처리에도 적용되는지 확인한다.
 
 use std::sync::Arc;
 
@@ -63,7 +61,7 @@ fn a_publish_between_a_dispatch_and_its_answer_is_raised_and_one_after_is_not() 
     mgr.route_plugin_event_publish(PLUGIN, relay(0));
     assert_eq!(last_hop(&mgr), 1);
 
-    // 그 dispatch 의 응답은 버스가 가져간다 — 그 뒤의 publish 는 새 발화다.
+    // dispatch 응답 후에는 그 요청의 hop 하한을 적용하지 않는다.
     mgr.handle_plugin_response(
         PLUGIN,
         PluginResponse {

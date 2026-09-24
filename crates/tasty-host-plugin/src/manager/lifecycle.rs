@@ -22,16 +22,8 @@ use super::{
     RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW, RSS_SAMPLE_INTERVAL,
 };
 
-/// 완료 판정 전략 레지스트리의 plugin owner 문자열. `[[contributes.
-/// completion_strategy]]`의 `poll_method`/`default_for_methods` 는 plugin 의
-/// 실제 IPC dispatch 접두어(`[[contributes.ipc_namespace]].prefix`, 예:
-/// `"claude"`)로 제한된다(결정 2) — 레지스트리는 owner 문자열과 그 접두어를
-/// 그대로 문자열 비교하므로, reverse-DNS 매니페스트 `id`(예:
-/// `"com.tasty.claude"`)를 owner 로 넘기면 어떤 실제 poll_method 접두어와도
-/// 겹치지 않아 결정 2 가 모든 poll 전략을 무조건 drop 시킨다. namespace 를
-/// 선언하지 않은 plugin 은 애초에 poll_method 로 참조할 자기 namespace 가
-/// 없으므로 manifest id 로 폴백해도(install/uninstall 양쪽에서 동일 폴백이라
-/// 서로 어긋나지 않음) 그 plugin 의 poll 전략은 여전히 (정당하게) 전부 drop된다.
+/// 완료 전략의 owner는 첫 IPC namespace 접두어이며, 없으면 manifest id를 쓴다.
+/// poll 메서드의 접두어와 비교하므로 등록·해제에서 같은 값을 사용해야 한다.
 fn completion_strategy_owner_id(pkg: &PluginPackage) -> &str {
     pkg.manifest
         .contributes
@@ -52,8 +44,7 @@ impl PluginManager {
             tasty_timer::Precision::Strict,
             now,
         );
-        // RSS 는 관측용이라 늦어도 무해하다 — 자기 힘으로 호스트를 깨우지 않고
-        // ping wakeup 에 편승한다(slack 이 ping 주기라 최악에도 한 ping 만큼만 밀린다).
+        // RSS 측정은 ping 주기만큼 늦춰도 되므로 같은 길이의 slack을 허용한다.
         hub.every(
             PluginTick::Rss,
             RSS_SAMPLE_INTERVAL,
@@ -65,9 +56,7 @@ impl PluginManager {
         hub
     }
 
-    /// auto-reload 를 켜고 끈다. **켤 때만 타이머가 등록된다** — 꺼진 기능이
-    /// `next_deadline()` 에 기여하지 않는 것이 이 게이트의 요점이다(개발용 flag 가
-    /// production 의 idle wakeup 을 만들지 않는다).
+    /// auto-reload를 켤 때만 타이머를 등록한다. 꺼져 있으면 wakeup 시각에 포함하지 않는다.
     pub(super) fn set_auto_reload_enabled(&mut self, enabled: bool, now: Instant) {
         self.auto_reload_enabled = enabled;
         if enabled {
@@ -82,17 +71,12 @@ impl PluginManager {
         }
     }
 
-    /// 이 매니저가 호스트를 깨우기를 요구하는 가장 가까운 시각. 호스트는 자기
-    /// 허브의 데드라인과 `min` 을 취한다(`docs/dev-guide/timer-hub.md`).
+    /// 다음 wakeup 요청 시각. 호스트는 자신의 타이머 시각과 비교해 빠른 쪽을 쓴다.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.timers.next_deadline()
     }
 
-    /// 관측용 타이머 스냅샷. 호스트가 자기 허브 스냅샷과 합쳐 `timer.list` 로
-    /// 노출한다(`docs/dev-guide/timer-hub.md` "관측").
-    ///
-    /// [`PluginTick`] 은 이 크레이트 내부 어휘라 밖으로 내보내지 않는다 — 대신
-    /// 표시용 라벨로 옮긴 뒤 넘긴다. 조회 전용이며 등록/취소 경로는 열지 않는다.
+    /// 내부 PluginTick을 표시용 이름으로 바꾼 조회 전용 스냅샷. 호스트의 timer.list에 합친다.
     pub fn timer_snapshot(&self) -> Vec<tasty_timer::TimerSnapshot<&'static str>> {
         self.timers
             .snapshot()
@@ -112,11 +96,7 @@ impl PluginManager {
             .collect()
     }
 
-    /// 기본 file_format/file_handler stub 으로 초기화 — 내부 unit test 전용.
-    /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를 직접
-    /// 호출. F.B.11-4 이후, host file 도메인 결합 회피를 위해 test ctor 는
-    /// no-op stub 으로 변경 — 실제 file_format/handler 검증을 거치는 test 는
-    /// 본 바이너리 통합 test 로 이전.
+    /// file_format/file_handler에 no-op 구현을 쓰는 단위 테스트용 생성자.
     #[cfg(test)]
     pub fn new(waker: tasty_terminal::waker_factory::SharedWakerFactory) -> Self {
         struct StubFormat;
@@ -214,8 +194,7 @@ impl PluginManager {
         }
     }
 
-    /// 호스트가 공유 훅 핸들러 레지스트리 port 를 주입. headless/test 는 호출 안 함.
-    /// 주입 후에는 plugin enable/disable 시 `[[contributes.hook_handler]]` 를 등록/해제한다.
+    /// 훅 레지스트리를 주입한다. 이후 enable/disable에서 hook_handler를 등록·해제한다.
     pub fn set_hook_handler_registry(
         &mut self,
         registry: Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>,
@@ -223,9 +202,7 @@ impl PluginManager {
         self.hook_handler = Some(registry);
     }
 
-    /// 호스트가 완료 판정 전략 레지스트리 port 를 주입. headless/test 는
-    /// 호출 안 함. 주입 후에는 plugin enable/disable 시
-    /// `[[contributes.completion_strategy]]` 를 등록/해제한다.
+    /// 완료 전략 레지스트리를 주입한다. 이후 enable/disable에서 전략을 등록·해제한다.
     pub fn set_completion_strategy_registry(
         &mut self,
         registry: Arc<dyn tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort>,
@@ -233,7 +210,7 @@ impl PluginManager {
         self.completion_strategy = Some(registry);
     }
 
-    /// 호스트가 i18n namespace 등록 trait 을 주입. headless/test 는 호출 안 함.
+    /// i18n namespace 등록 기능을 주입한다.
     pub fn set_i18n_registrar(
         &mut self,
         registrar: Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>,
@@ -253,10 +230,7 @@ impl PluginManager {
         self.surface_registry = Some(registry);
     }
 
-    /// 디스커버리 + 활성 plugin 모두 spawn. listener도 여기서 한 번만 bind.
-    /// plugin이 없으면 listener 자체를 만들지 않음 (포트 점유 회피).
-    /// `~/.tasty/plugins/` 를 다시 스캔해 `packages` 와 `rejected` 를 함께 갱신.
-    /// 모든 discover 호출 지점은 이 헬퍼를 거쳐 거부 목록이 누락되지 않게 한다.
+    /// 설치 디렉터리를 다시 읽어 패키지와 거부 목록을 함께 갱신한다.
     pub fn refresh_packages(&mut self) {
         let (packages, rejected) = crate::discovery::discover_with_rejections();
         self.packages = packages;
@@ -264,32 +238,17 @@ impl PluginManager {
         self.sync_ipc_namespaces_from_packages();
     }
 
-    /// 라우팅 해소의 재료를 **설치 사실**에 맞춘다 — 실행 여부는 여기서 묻지 않는다.
-    ///
-    /// 그 물음은 같은 호출 경로에서 `validate_namespace_call` 의 `processes` 검사가
-    /// 이미 따로 지고 있고(`-32002 plugin '…' is not running`), 두 물음을 표 하나에
-    /// 겹쳐 두면 꺼진 plugin 의 메서드가 "그런 메서드 없다" 로 답해 **거짓이 된다.**
-    ///
-    /// 스캔 시점에 채우는 것이 중요한 이유가 하나 더 있다: 이 표를 spawn 시점에
-    /// 채우면 헤드리스는 "이 이름이 plugin 소속인가" 를 **묻기 위해 먼저 plugin 을
-    /// 띄워야** 한다. 실측(2026-09-05)에서 그 대가는 오타 한 번당 프로세스 9 개와
-    /// 1.2 초였고, 그 프로세스는 데몬 수명 내내 남았다. 근거·수·대안은
-    /// [CLI + IPC namespace](../../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
+    /// 설치 목록으로 namespace 소유자를 갱신한다. 실행 여부는 호출 검증에서 따로 확인한다.
+    /// 소유자 조회를 위해 플러그인을 실행할 필요가 없고, 비활성 플러그인도
+    /// 없는 메서드와 구분할 수 있다.
+    /// [CLI + IPC namespace](../../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace) 참고.
     fn sync_ipc_namespaces_from_packages(&mut self) {
         let fresh = self.freshly_computed_namespaces();
-        // **계산은 락 밖에서 끝났다.** 임계구역은 대입 한 줄뿐이라 그 안에서 도는
-        // 코드가 없다 — 표를 읽는 쪽(`method_meta`)이 이 락을 다시 잡으러 들어올
-        // 자리가 없다는 뜻이다. 항목을 하나씩 등록/해제하면 그 사이사이가 전부
-        // 임계구역이 되고, 그때는 재진입이 가능해진다.
+        // 계산을 마친 표를 한 번의 잠금으로 교체한다.
         *self.namespaces_write() = fresh;
     }
 
-    /// 설치된 매니페스트만으로 소유 표를 **처음부터** 만든다.
-    ///
-    /// 낡은 것을 골라 지우고 새 것을 더하는 대신 통째로 다시 만드는 이유는 그것이
-    /// 유도의 정의이기 때문이다 — 이 표는 `packages` 의 함수이고 그 밖의 재료가 없다
-    /// (docs/dev-guide/plugin-development.md#cli--ipc-namespace). 차분으로 만들면 "어디서 왔는지 모르는 항목" 이 남을 수 있고, 그것이
-    /// 바로 제거된 plugin 의 prefix 가 표에 남아 있던 결함의 형태였다.
+    /// 설치 목록 전체로 다시 계산해 제거된 패키지의 namespace가 남지 않게 한다.
     fn freshly_computed_namespaces(&self) -> IpcNamespaceRegistry {
         let mut fresh = IpcNamespaceRegistry::new();
         for package in &self.packages {
@@ -303,18 +262,14 @@ impl PluginManager {
         fresh
     }
 
-    /// 설치 목록을 놓고 **유도까지** 돌린다 — 운영에서 `refresh_packages` 가 하는 것과
-    /// 같은 순서다. 디스크 스캔만 건너뛴다.
+    /// 디스크 스캔 없이 설치 목록을 교체하고 namespace 소유자를 갱신한다.
     #[cfg(test)]
     pub(crate) fn set_packages_for_tests(&mut self, packages: Vec<crate::PluginPackage>) {
         self.packages = packages;
         self.sync_ipc_namespaces_from_packages();
     }
 
-    /// 설치 목록만 바꾸고 **유도를 안 돌린다** — 신선도 단정의 대조군 전용이다.
-    /// 운영 경로에 이런 자리가 있으면 그것이 곧 이 단정이 잡으려는 결함이다.
-    ///
-    /// 그 대조군 시험이 `debug_assertions` 에 걸려 있어(단정 자체가 debug 전용) 같은 cfg 다.
+    /// debug 전용 신선도 검사가 낡은 표를 잡는지 확인하기 위해 갱신을 생략한다.
     #[cfg(all(test, debug_assertions))]
     pub(crate) fn overwrite_packages_without_deriving_for_tests(
         &mut self,
@@ -323,26 +278,20 @@ impl PluginManager {
         self.packages = packages;
     }
 
-    /// 소유 표가 지금 `packages` 로 다시 계산한 것과 같은가 — **debug 빌드 전용.**
-    ///
-    /// 텍스트 가드가 못 보는 것이 순서다. "유도를 부르는가" 는 소스에서 보이지만
-    /// "유도 **뒤에** 원본을 또 쓰지 않았는가" 는 안 보인다. 그 형태의 결함이 이
-    /// 저장소에서 실제로 났다(확장 집합에서 `config.save()` 가 유도 뒤에 있던 것).
+    /// 설치 목록을 마지막으로 바꾼 뒤 소유자 표도 갱신했는지 debug 빌드에서 확인한다.
     pub fn debug_assert_namespaces_fresh(&self) {
         #[cfg(debug_assertions)]
         {
             let fresh = self.freshly_computed_namespaces();
             assert!(
                 fresh == *self.namespaces_read(),
-                "namespace 소유 표가 낡았다 — 유도(`refresh_packages`) 뒤에 원본(`packages`)이 \
-                 또 바뀌었다. 유도를 원본의 마지막 쓰기 뒤로 옮겨라"
+                "namespace 소유 표가 낡았다 — packages의 마지막 변경 뒤 refresh_packages를 호출해야 한다"
             );
         }
     }
 
     pub fn discover_and_start(&mut self) {
-        // H.b — env flag 한 번 평가. TASTY_PLUGIN_AUTO_RELOAD 가 비어있지 않고
-        // "0" 이 아니면 enable. 기본 false (production 부작용 0).
+        // 비어 있지 않고 "0"이 아닌 환경 변수 값은 auto-reload를 켠다.
         let enabled = std::env::var("TASTY_PLUGIN_AUTO_RELOAD")
             .map(|v| !v.is_empty() && v != "0")
             .unwrap_or(false);
@@ -371,9 +320,7 @@ impl PluginManager {
         for id in &to_start {
             self.start_enabled_package(id);
         }
-        // 전체 기동은 연결까지 기다린다 — 부팅은 이 뒤에 hello 를 짧은 시한으로 기다리므로
-        // (T4) 연결이 그 시한을 갉아먹으면 안 된다. 연결 대기는 plugin 마다 스레드라 겹치고,
-        // 이 자리는 GUI 에서 부팅 워커다(메인 스레드가 아니다).
+        // GUI 부팅 워커에서 연결을 먼저 기다려, 이후 hello 대기 시간을 연결에 쓰지 않는다.
         self.wait_for_connections();
     }
 
@@ -393,16 +340,9 @@ impl PluginManager {
         }
     }
 
-    /// **설정을 안 건드리고** 이미 설치·활성인 plugin 하나만 띄운다 — 띄웠으면 `true`.
-    ///
-    /// [`Self::enable`] 과 갈리는 자리는 `plugins.toml` 이다. 그쪽은 활성 여부라는
-    /// **사용자 결정**을 영속화하는 명령이라 요청 하나의 부수효과로 부를 수 없다.
-    /// 이쪽은 그 결정을 읽기만 한다 — 비활성이면 아무것도 안 하고, 그래서 요청이
-    /// disable 을 뒤집지 못한다.
-    ///
-    /// 대안은 `discover_and_start` 였고, 그것은 **설치된 것을 전부** 띄운다. 요청
-    /// 하나가 지목한 것 말고 여덟을 더 띄우는 것은 관측 대상을 요청이 만들어내는
-    /// 형태라(docs/dev-guide/headless-ipc-surface.md#조회와-개별-플러그인-실행 과 같은 축) 이 창구를 따로 낸다.
+    /// 설정을 바꾸지 않고 설치·활성 상태인 플러그인 하나만 실행한다. 실행했으면 true.
+    /// 요청 처리가 disable을 되돌리거나 관계없는 플러그인까지 실행하지 않도록
+    /// 활성 상태를 저장하는 enable 및 전체 기동과 구분한다.
     pub fn start_one_enabled(&mut self, plugin_id: &str) -> bool {
         if self.config.is_disabled(plugin_id) || self.is_auto_disabled(plugin_id) {
             return false;
@@ -418,14 +358,7 @@ impl PluginManager {
         self.processes.contains_key(plugin_id)
     }
 
-    /// `discover_and_start` 부팅 경로 — enable() 과 대칭으로 정적 contribute 를
-    /// 등록 후 spawn 시도. `id` 가 packages 에 없으면(레이스) no-op.
-    ///
-    /// **이미 떠 있으면 아무것도 안 한다.** `enable()` 이 예전부터 그 검사를 들고
-    /// 있었는데(`!self.processes.contains_key`) 이쪽에는 없었고, 그래서 이미 하나가
-    /// 뜬 매니저에서 `discover_and_start` 가 돌면 그 하나를 **다시 spawn** 해 맵의
-    /// 옛 핸들을 덮어썼다 — 덮인 프로세스는 회수 주체를 잃는다. 기동 창구가
-    /// [`Self::start_one_enabled`] 로 하나 늘면서 그 조합이 흔해지므로 여기서 막는다.
+    /// 설치된 패키지의 정적 기능을 등록하고 실행한다. 이미 실행 중이면 그대로 둔다.
     fn start_enabled_package(&mut self, id: &str) {
         if self.processes.contains_key(id) {
             return;
@@ -433,10 +366,7 @@ impl PluginManager {
         let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() else {
             return;
         };
-        // 부팅 경로에서도 enable() 과 대칭으로 정적 contribute 를 두 registry 에
-        // 등록한다. spawn 성공 여부와 무관하게 detector/handler 가 즉시
-        // 활성화되도록 start_plugin_internal(spawn) 과 분리해 enabled 판정 직후
-        // install. (멱등 — push_contribution 이 같은 owner 를 retain 으로 교체.)
+        // 정적 기능은 프로세스 실행 성공 여부와 관계없이 활성화한다.
         self.file_format
             .install_plugin_detectors(&pkg.manifest.id, &pkg.manifest.contributes.detector);
         self.file_handler
@@ -486,8 +416,7 @@ impl PluginManager {
                 self.handle_listener = Some(l);
             }
             Err(e) => {
-                // 보조 채널 없이도 plugin 본 기능은 동작. shared buffer를 쓰는 plugin만
-                // 이후 핸드셰이크 단계에서 실패.
+                // 일반 IPC는 쓸 수 있지만 보조 채널이 필요한 shared buffer 전달은 실패한다.
                 tracing::warn!("plugin handle channel listener bind failed: {e}");
             }
         }
@@ -497,8 +426,7 @@ impl PluginManager {
         if self.auto_disabled.contains(&pkg.manifest.id) {
             return;
         }
-        // 옛 프로세스가 아직 빠지는 중이면 겹쳐 띄우지 않는다 — 회수가 끝나는 tick 에
-        // 띄운다(`manager::retire`). 기동 창구가 여럿이라 이 한 자리에서 막는다.
+        // 이전 프로세스의 회수가 끝난 뒤에만 다시 실행한다(manager::retire).
         if self.defer_start_until_retired(&pkg.manifest.id) {
             return;
         }
@@ -526,21 +454,10 @@ impl PluginManager {
     fn on_plugin_spawn_success(&mut self, pkg: &PluginPackage, p: PluginProcess) {
         tracing::info!("plugin started: {}", p.plugin_id);
         self.processes.insert(pkg.manifest.id.clone(), p);
-        // 연속 실패 기록(`spawn_failures`)은 여기서 지우지 않는다 — 연결은 아직이고, 연결이
-        // 끝내 안 오는 것도 기동 실패로 센다. 지우는 자리는 연결이 성사된 때다
-        // (`manager::connect`). 여기서 지우면 매번 연결에 실패하는 plugin 의 누적이 매
-        // 기동마다 0 으로 돌아가 자동 비활성이 영영 안 걸린다.
-        // H.b — spawn 성공 분기에서만 baseline 캡처. 무한 swap loop 회피용
-        // 기준점. 실패 시 entry 가 디스크에 없거나 metadata 실패해도
-        // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
-        // 없으면 skip.
+        // 연결 성공 전까지는 연속 기동 실패 기록을 유지한다(manager::connect).
+        // 실행 직후의 파일 상태를 기록해 같은 변경으로 auto-reload를 반복하지 않게 한다.
         self.capture_plugin_baseline(&pkg.manifest.id);
-        // `plugin.loaded` 발화 위치 — hello 수신 후 호출자
-        // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
-        // 발화는 제거 (이중 발화 회피).
-        //
-        // ipc namespace 등록은 **여기 없다.** 소유는 설치 사실이지 기동 사실이
-        // 아니므로 `sync_ipc_namespaces_from_packages` 가 스캔 시점에 채운다.
+        // plugin.loaded는 hello 이후 호스트가 알린다. namespace 소유자는 설치 스캔에서 등록한다.
     }
 
     pub(super) fn on_plugin_spawn_failure(&mut self, plugin_id: &str, e: anyhow::Error) {
@@ -577,19 +494,11 @@ impl PluginManager {
         }
     }
 
-    /// 호스트 종료 시 전 plugin 프로세스 정리 — **전 plugin 에 shutdown 요청을
-    /// 먼저 뿌린 뒤** 대기를 겹친다. plugin 은 서로 독립 프로세스라 대기가 직렬일
-    /// 이유가 없다: 총 소요는 Σ(개별 2s) 가 아니라 max(2s) 로 수렴한다.
-    ///
-    /// 반환 시점에 모든 자식이 회수(exit 관측 또는 kill+wait 완료)돼 있다.
-    /// 프레임을 계속 돌려야 하는 호출자는 이 블로킹 형태 대신
-    /// [`Self::begin_shutdown_all`] + [`Self::poll_shutdown_all`] 을 직접 조합한다.
-    ///
-    /// 계측은 `target: "tasty::shutdown"` 으로 상시 발화한다: plugin 별
-    /// `S4a plugin_shutdown_one`(개별 ms + graceful/killed 사유) + 합계
-    /// `S4 plugin_shutdown`(plugin 수). plugin 이 0개여도 S4 는 `plugins=0` 으로
-    /// 반드시 발화한다 — "안 걸렸다" 와 "계측이 안 붙었다" 를 로그로 구분해야 한다.
-    /// 마커 표는 본체 `docs/architecture/shutdown-sequence.md`.
+    /// 모든 플러그인에 종료를 요청한 뒤 공유 deadline으로 대기하고 자식을 회수한다.
+    /// 정상 종료 대기는 겹치지만 kill과 회수까지 포함한 총시간 상한은 아니다.
+    /// 프레임을 계속 처리해야 하면 begin_shutdown_all과 poll_shutdown_all을 쓴다.
+    /// tasty::shutdown의 S4a는 개별 회수, S4는 전체 완료를 기록한다.
+    /// 로그 표지는 docs/architecture/shutdown-sequence.md에 정리돼 있다.
     pub fn shutdown_all(&mut self) {
         self.begin_shutdown_all();
         while !self.poll_shutdown_all() {
@@ -597,18 +506,9 @@ impl PluginManager {
         }
     }
 
-    /// 전 plugin 에 shutdown 요청을 전송하고 **대기 없이** 즉시 반환한다.
-    ///
-    /// 요청을 먼저 전부 뿌리는 것이 대기 겹침의 전제다. 요청은 각 plugin 의
-    /// `req_tx` 에 들어가므로, 앞서 dispatch 된 `surface.closed` 들보다 뒤에
-    /// 놓인다는 채널 순서 계약은 그대로 유지된다. 그 계약의 자리는
-    /// `src/app/shutdown_machine.rs` 의 `shutdown_step_closing_surfaces` 이고
-    /// (전에는 `shutdown_cascade.rs` 를 가리켰는데 거기는 집행 자리가 아니다),
-    /// 값으로 무는 것은 그 레포의 `source_guards::shutdown_channel_order` 다.
-    ///
-    /// 반환 후에는 [`Self::poll_shutdown_all`] 이 true 를 반환할 때까지 폴링해야
-    /// 자식이 회수된다(폴링 없이 매니저가 drop 되면 남은 자식은 즉시 kill 된다).
-    /// 이미 진행 중이면 no-op.
+    /// 모든 플러그인에 종료를 요청하고 기다리지 않고 반환한다. 이미 진행 중이면 그대로 둔다.
+    /// 각 요청은 같은 채널의 surface.closed 뒤에 놓인다.
+    /// 반환 후 poll_shutdown_all이 true가 될 때까지 호출해야 자식을 회수할 수 있다.
     pub fn begin_shutdown_all(&mut self) {
         if self.shutdown_batch.is_some() {
             return;
@@ -622,10 +522,8 @@ impl PluginManager {
         self.shutdown_batch = Some(ShutdownBatch::new(pending));
     }
 
-    /// 종료 대기 논블로킹 폴링. 남은 대상이 없으면 `true`(= 모든 자식 회수 완료).
-    /// [`Self::begin_shutdown_all`] 없이 호출하면 기다릴 것이 없으므로 `true`.
-    ///
-    /// 완료된 plugin 마다 `S4a` 를 발화하고, 전부 끝난 라운드에 `S4` 를 발화한다.
+    /// 전체 종료와 별도로 진행 중인 회수를 폴링한다. 모두 끝나면 true.
+    /// 개별 완료는 S4a, 전체 종료 배치의 완료는 S4로 기록한다.
     pub fn poll_shutdown_all(&mut self) -> bool {
         // 단건 경로로 이미 내려가던 plugin 도 끝날 때까지 본다 — 다시 띄우지 않는다.
         let retired = self.poll_retiring_for_exit();
@@ -686,11 +584,8 @@ impl PluginManager {
             );
         }
 
-        // 옛 프로세스가 아직 빠지는 중이면(방금 disable) 그 회수를 끝까지 기다렸다가 **이
-        // 자리에서** 띄운다 — 사용자·에이전트가 명시적으로 부른 조작이라, "disable → enable →
-        // 곧바로 호출" 이 예전처럼 성공해야 한다. 미뤄 두면 그 사이의 호출이 `not running`
-        // 을 받는다. 그 대가로 메인 스레드가 최대 2 s 선다(remove · swap 과 같은 논리,
-        // docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신하므로 따로 잇지 않는다.
+        // disable로 회수 중인 프로세스가 있으면 끝까지 기다린 뒤 실행한다.
+        // 회수 과정에서 가져온 재시작 예약은 아래 실행으로 대신한다.
         if self.wait_retired(plugin_id) {
             tracing::debug!(
                 plugin_id,
@@ -701,8 +596,7 @@ impl PluginManager {
             self.ensure_listener();
             self.start_plugin_internal(&pkg);
         }
-        // `plugin.enabled` 발화는 cascade 가 처리 (App::plugin_enable
-        // 의 CoreEvent::PluginEnableToggled → cascade).
+        // plugin.enabled는 호스트의 CoreEvent 처리에서 알린다.
         Ok(())
     }
 
@@ -719,25 +613,14 @@ impl PluginManager {
         self.config.save()?;
         self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
-        // 회수는 기다리지 않는다 — 대기는 스레드가 한다(`manager::retire`). 이미 회수
-        // 중이던 것(무응답 재시작)은 다시 띄우지 않게 한다.
+        // 회수는 별도 스레드에서 진행하며 기존 재시작 예약은 취소한다.
         if let Some(proc) = self.processes.remove(plugin_id) {
             self.retire_process(plugin_id, proc, false);
         } else {
             self.cancel_respawn_after_retire(plugin_id);
         }
-        // ipc namespace 는 **해제하지 않는다.** disable 은 설치를 되돌리는 것이 아니라
-        // 기동을 끄는 것이고, 소유는 설치 사실이다. 해제하면 그 plugin 의 메서드가
-        // "그런 메서드 없다"(거짓)로 답한다 — 지금은 소유가 남아 forward 로 가고
-        // `validate_namespace_call` 이 `-32002 plugin '…' is not running`(참)으로
-        // 답한다([CLI + IPC namespace](../../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace)).
-        //
-        // completion_strategy 의 owner id 는 install 시점과 동일 유도 규칙
-        // (`completion_strategy_owner_id`)으로 계산해둔다 — install 은 ipc_namespace
-        // 접두어를 owner 로 쓰므로 uninstall 도 같은 문자열로 지워야 매치된다(그냥
-        // plugin_id 를 쓰면 등록은 되고 해제는 안 되는 stale 전략이 남는다).
-        // file_format / file_handler / hook_handler / completion_strategy registry 에서
-        // plugin 의 contribute 제거.
+        // namespace 소유자는 설치 정보이므로 유지한다. 호출 시 실행 중이 아님을 알릴 수 있다.
+        // 완료 전략의 owner는 등록할 때와 같은 접두어로 계산해야 해제할 수 있다.
         self.file_format.uninstall_plugin(plugin_id);
         self.file_handler.uninstall_plugin(plugin_id);
         if let Some(hh) = &self.hook_handler {
@@ -746,29 +629,14 @@ impl PluginManager {
         if let Some(cs) = &self.completion_strategy {
             cs.uninstall_plugin(&cs_owner_id);
         }
-        // `plugin.unloaded` / `plugin.disabled` 발화는 cascade 가 처리
-        // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded
-        // → cascade). was_running 분기는 App::plugin_disable 가 사전 캡처하므로 본
-        // 메서드 안에서는 사용 안 함.
-        let _ = was_running; // 의도적으로 무시 — 발화는 cascade 가 담당.
-        // plugin_remove 도 내부적으로 이 disable() 을 거치므로 함께 커버된다.
+        // 상태 알림은 App::plugin_disable에서 처리하며, 실행 중이었는지도 거기서 확인한다.
+        let _ = was_running; // 의도적으로 무시 — 상태 알림은 호스트에서 처리한다.
         self.forget_plugin_runtime(plugin_id, "plugin disabled");
         Ok(())
     }
 
-    /// plugin 프로세스를 치운 **뒤** 호스트가 그 plugin 에 대해 들고 있던 실행 상태를
-    /// 잊는다. disable · graceful swap · 무응답 재시작 · 연결 실패(`connect::on_connect_failure`)
-    /// 넷이 **이 한 함수**를 거친다.
-    ///
-    /// 셋이 각자 줄을 들고 있던 때에는 재시작 경로만 마지막 줄을 빠뜨렸다. 그러면
-    /// `event_bus.clear_plugin` 이 지운 이벤트 권한과 `settings_pages` 가 지운 sub-page 가
-    /// 새 프로세스의 hello 에서 **다시 채워지지 않는다** — hello 가 "이미 등록됨" 게이트에
-    /// 막혀 `register_new_hellos` 가 안 돌기 때문이다. 재시작된 plugin 은 떠 있는데
-    /// `event.subscribe` 가 전부 거절되고 설정 탭이 사라진 채로 남았다.
-    ///
-    /// 여기 **안** 들어가는 것: ipc namespace 소유(설치 사실이라 유지 — docs/dev-guide/plugin-development.md#cli--ipc-namespace),
-    /// registry contribute(disable 만 지운다 — 설정을 끄는 일이다), mesh 프레임(재시작만
-    /// 지운다 — 호출자 쪽 사정이 갈린다).
+    /// 프로세스를 정리한 뒤 요청·버퍼·권한·설정 페이지 등 실행 상태를 지운다.
+    /// namespace 소유권은 설치 정보이므로 유지한다. 정적 기능과 mesh 프레임은 호출자가 정리한다.
     pub(super) fn forget_plugin_runtime(&mut self, plugin_id: &str, reason: &str) {
         self.event_bus.clear_plugin(plugin_id);
         // namespace 호출·hook 은 caller 에 회신하고, 그 plugin 에게 보낸 나머지 요청도
@@ -776,10 +644,7 @@ impl PluginManager {
         self.cancel_pending_namespace_calls(plugin_id, reason);
         self.plugin_buffers.remove(plugin_id);
         self.settings_pages.unregister_plugin(plugin_id);
-        // registered_plugins gate 해제 — 이걸 안 지우면 재기동 후 새 프로세스의
-        // hello 가 pump::classify_event 에서 "이미 등록됨"으로 오판돼
-        // register_new_hellos(권한·event bus·settings page) 와
-        // finalize_plugin_hello(→ hook_event_registry.register 등)가 재실행되지 않는다.
+        // 다음 hello에서 권한과 설정 페이지 등을 다시 등록할 수 있게 한다.
         self.registered_plugins.remove(plugin_id);
     }
 
@@ -787,28 +652,19 @@ impl PluginManager {
         self.processes.contains_key(plugin_id)
     }
 
-    /// 호스트가 송신한 `surface.restore` 요청 중 plugin 응답을 아직 못 받은 것이
-    /// 하나라도 있는지. 부팅 시 wait-for-plugin loop 가 round-trip 완료까지
-    /// 기다리는 데 사용 — None 인 snapshot_cache 가 main loop 에 진입하지 못하게
-    /// 함으로써 capture 시 kind="empty" fallback 으로 layout.json 이 오염되는
-    /// race 를 차단.
+    /// 아직 응답이 없는 surface.restore 요청이 있는지 확인한다.
+    /// 부팅 대기에서 복원 완료 여부를 확인하는 데 쓴다.
     pub fn has_pending_surface_restores(&self) -> bool {
         self.pending_requests
             .values()
             .any(|p| matches!(p.kind, super::PendingRequestKind::SurfaceRestore { .. }))
     }
 
-    /// graceful swap 전용 — `config.disabled.ids` 를 건드리지 않고 process 만
-    /// shutdown + 부속 registry 정리. `disable()` 의 sibling 인데 config persist
-    /// 부작용이 없다 (verify-J-E §3.2: silent config corruption 회피).
-    ///
-    /// 호출 순서: `swap_shutdown_internal` → 외부에서 disk overwrite → `swap_respawn_internal`.
-    /// upgrade_builtins 의 `--restart-running` flag 경로 외에서는 사용 금지.
+    /// 활성 설정을 바꾸지 않고 교체할 프로세스를 종료한다.
+    /// 종료 뒤 파일을 덮어쓰고 swap_respawn_internal로 다시 실행한다.
     pub(crate) fn swap_shutdown_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
-        // swap 은 이 뒤에 디스크의 plugin 디렉토리를 덮어쓰므로 옛 프로세스가 **사라져
-        // 있어야** 한다 — 그래서 여기는 기다린다. 무응답 재시작으로 이미 회수 중이던
-        // 것도 끝까지 기다린다(`manager::retire`). 그 재기동 예약은 여기서 따로 잇지 않는다 —
-        // swap 은 뒤의 `swap_respawn_internal` 이 어차피 다시 띄운다.
+        // 파일을 덮어쓰기 전에 이전 프로세스의 회수가 끝나야 한다.
+        // 기존 재시작 예약은 뒤의 swap_respawn_internal로 대신한다.
         if self.wait_retired(plugin_id) {
             tracing::debug!(
                 plugin_id,
@@ -824,8 +680,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// graceful swap 전용 — `config.disabled.ids` 미수정 process spawn.
-    /// `enable()` 의 sibling. 새 binary 로 재시작.
+    /// 활성 설정을 바꾸지 않고 교체된 바이너리로 다시 실행한다.
     pub(crate) fn swap_respawn_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         self.auto_disabled.remove(plugin_id);
         let pkg = self
@@ -845,22 +700,13 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 현재 `packages` + `config.is_disabled`를 기준으로 extension 상태를 재계산.
-    /// 디스커버리/enable/disable/install/remove 후 매번 호출한다.
+    /// 플러그인 로그 파일 경로.
     pub fn log_path(&self, plugin_id: &str) -> PathBuf {
         self.log_dir.join(format!("{plugin_id}.log"))
     }
 
-    /// H.d — auto-reload swap 한 건. `swap_shutdown_internal` → `swap_respawn_internal`
-    /// 순으로 호출하고 성공 시 baseline 을 새 값으로 갱신해 다음 polling tick 의
-    /// 무한 swap loop 를 차단한다.
-    ///
-    /// 실패 시:
-    /// - `swap_shutdown_internal` 실패 — 옛 process 그대로. baseline 미갱신.
-    /// - `swap_respawn_internal` 실패 — spawn_failures / auto_disabled 기존 로직이
-    ///   3회 누적 시 plugin 을 차단. 옛 동작 (수동 disable/enable) 으로 graceful
-    ///   degrade. 본 helper 는 baseline 만 갱신해 *부분 swap* (shutdown 만 성공)
-    ///   상태에서도 같은 diff 로 재시도하지 않도록 한다.
+    /// auto-reload 한 건을 처리한다. 종료 성공 뒤 기준 파일 상태를 갱신한다.
+    /// 재실행에 실패해도 같은 변경으로 교체를 반복하지 않는다.
     pub(super) fn auto_reload_one(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         tracing::info!("auto-reload: {plugin_id} swap start");
         self.swap_shutdown_internal(plugin_id)?;
@@ -873,13 +719,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// H.c — auto-reload 가 활성화된 상태에서 실행 중인 plugin 중 baseline 대비
-    /// entry binary mtime 또는 manifest version 이 달라진 id 목록을 반환.
-    ///
-    /// 신호 조합: `binary mtime diff` OR `manifest version diff`.
-    /// - metadata 읽기 실패 (binary 없음, 권한 등) 시 mtime 신호 skip — 무해.
-    /// - flag off 면 즉시 빈 Vec — pump cost 0.
-    /// - process 가 실행 중이지 않은 plugin 은 reload 대상 아님 — skip.
+    /// auto-reload가 켜져 있으면 실행 중인 플러그인의 mtime·버전 변경을 찾는다.
+    /// 파일 정보를 읽지 못하면 mtime 비교만 생략한다.
     pub(super) fn check_for_updates(&self) -> Vec<String> {
         if !self.auto_reload_enabled {
             return Vec::new();
@@ -908,9 +749,7 @@ impl PluginManager {
         updated
     }
 
-    /// H.b — plugin 한 건의 baseline (entry binary mtime + manifest version) 캡처.
-    /// spawn 성공 직후 + auto_reload swap 직후 호출하여 무한 reload loop 회피.
-    /// metadata 실패 시 mtime 항목만 skip — version 은 항상 packages 캐시에서 갱신.
+    /// mtime과 manifest 버전을 기록한다. 파일 정보를 읽지 못해도 버전은 기록한다.
     pub(super) fn capture_plugin_baseline(&mut self, plugin_id: &str) {
         let pkg = match self.packages.iter().find(|p| p.manifest.id == plugin_id) {
             Some(p) => p,

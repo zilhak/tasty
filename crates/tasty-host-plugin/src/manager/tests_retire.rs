@@ -1,5 +1,4 @@
-//! 단건 종료(disable · 무응답 재시작)가 메인 스레드를 세우지 않는다는 것, 그리고 옛
-//! 프로세스가 빠지기 전에 새 프로세스를 띄우지 않는다는 것(`manager::retire`).
+//! 별도 스레드에서 회수하고, 이전 프로세스의 회수가 끝난 뒤 재시작하는지 확인한다.
 use std::process::{Child, Command};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -64,8 +63,7 @@ fn pump_until_retired(mgr: &mut PluginManager) -> Duration {
     longest
 }
 
-/// disable 은 자식이 빠질 때까지 기다리지 않는다 — 예전에는 최대 2 초 동안 메인 스레드가
-/// 섰다. 회수는 뒤에서 끝나고, 그동안 pump 한 번도 서지 않는다.
+/// disable과 이후 pump는 별도 스레드의 회수를 기다리지 않아야 한다.
 #[test]
 fn disable_returns_before_a_stalled_child_exits() {
     let home = HomeEnvGuard::tasty_home();
@@ -80,13 +78,17 @@ fn disable_returns_before_a_stalled_child_exits() {
         took < Duration::from_millis(500),
         "disable 이 회수를 기다렸다: {took:?}"
     );
-    assert_eq!(mgr.retiring_count(), 1, "회수가 뒤에 남아 있어야 한다");
+    assert_eq!(
+        mgr.retiring_count(),
+        1,
+        "회수가 별도 스레드에서 진행 중이어야 한다"
+    );
     assert_eq!(mgr.retiring_respawn(ID), Some(false));
 
     let longest = pump_until_retired(&mut mgr);
     assert!(
         longest < Duration::from_millis(500),
-        "회수를 거두는 pump 가 섰다: {longest:?}"
+        "회수 완료를 확인하는 pump가 오래 걸렸다: {longest:?}"
     );
     assert!(
         t.elapsed() >= Duration::from_millis(1500),
@@ -113,9 +115,7 @@ fn a_disable_during_a_restart_cancels_the_restart() {
     assert!(!mgr.is_running(ID), "disable 로 거둔 예약이 기동됐다");
 }
 
-/// 회수 중에 온 **명시적** enable 은 미루지 않는다 — 옛 프로세스가 빠지기를 그 자리에서
-/// 기다렸다가 띄운다. 그래서 enable 이 돌아온 직후에 plugin 이 떠 있다("disable → enable →
-/// 곧바로 호출" 이 예전처럼 성공한다). 그 대가인 대기는 이 조작에만 있다.
+/// 명시적 enable은 이전 프로세스의 회수를 기다린 뒤 새 프로세스를 실행한다.
 #[cfg(unix)]
 #[test]
 fn an_explicit_enable_during_retirement_waits_and_starts_in_place() {
@@ -152,9 +152,7 @@ fn an_explicit_enable_during_retirement_waits_and_starts_in_place() {
     }
 }
 
-/// 기동 창구는 회수 중인 id 를 띄우지 않고 회수 뒤로 미룬다 — 명시적 enable 말고 그 창구를
-/// 지나는 것(전체 기동)이 옛 프로세스와 겹치지 않게 하는 한 자리다. 띄울 수 있는 plugin 으로
-/// 재야 창구가 빠졌을 때 실제로 뜬다.
+/// 회수 중의 기동 요청은 이전 프로세스와 겹치지 않도록 미뤄야 한다.
 #[cfg(unix)]
 #[test]
 fn the_start_gate_defers_a_plugin_that_is_still_retiring() {

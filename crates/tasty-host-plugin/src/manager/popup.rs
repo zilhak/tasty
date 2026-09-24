@@ -23,11 +23,7 @@ impl PluginManager {
         };
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let req = PluginRequest::new(method, params, id);
-        // 실패를 조용히 삼키면 popup 이 안 열리는 사유가 어디에도 안 남는다. 무제한
-        // 채널일 때는 여기서 실패한다는 것이 곧 "plugin 이 죽었다" 였지만, 유한해진
-        // 뒤로는 **일시적 포화**도 같은 갈래로 떨어진다 — 둘을 가르는 문장이
-        // `RequestSendError` 의 `Display` 에 있고, 그것이 로그에 닿아야 docs/architecture/ipc-server.md#플러그인-채널의-상한 의
-        // 재검토 조건("정상 사용이 용량에 닿는가")을 잴 수 있다.
+        // 큐 포화와 연결 종료를 구분할 수 있도록 RequestSendError도 기록한다.
         match proc.try_send_request(req) {
             Ok(()) => {
                 self.pending_requests
@@ -87,9 +83,7 @@ impl PluginManager {
         Some(instance_id)
     }
 
-    /// 열린 popup 인스턴스에 소속 surface 를 바인딩한다. 이미 바인딩돼 있으면 그대로 둔다 —
-    /// 단일 인스턴스 가드로 기존 인스턴스가 재사용될 때 plugin 이 받은 open context 의
-    /// 대상과 host 가 그리는 범위가 갈리지 않게 하려는 것이다.
+    /// 팝업에 surface를 연결한다. 기존 인스턴스를 재사용할 때는 처음의 대상을 유지한다.
     pub fn bind_popup_instance_surface(&mut self, instance_id: u64, surface_id: u32) {
         if let Some(inst) = self.popup_instances.get_mut(&instance_id)
             && inst.scope_surface.is_none()
@@ -98,9 +92,7 @@ impl PluginManager {
         }
     }
 
-    /// 단일 인스턴스 가드: 같은 (plugin_id, popup_id) 인스턴스가 이미 열려 있으면 그 id.
-    /// 사용자 조작(popup open)이 중복 인스턴스를 쌓지 않게 하는 host 소유 정책
-    /// (identity 원칙 1 — 셸 생명주기는 host 소유).
+    /// 같은 플러그인·팝업의 열린 인스턴스가 있으면 기존 id를 반환한다.
     fn find_open_popup_instance(&self, plugin_id: &str, popup_id: &str) -> Option<u64> {
         let (existing, _) = self
             .popup_instances
@@ -112,9 +104,7 @@ impl PluginManager {
         Some(*existing)
     }
 
-    /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
-    /// egui-mesh popup 은 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-    /// api_version 일치를 게이트한다(surface egui-mesh 등록 정책 미러, docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+    /// 팝업 선언을 찾는다. egui-mesh는 host와 plugin의 api_version도 같아야 한다.
     fn resolve_open_popup_contribute(
         &self,
         plugin_id: &str,
@@ -152,9 +142,7 @@ impl PluginManager {
         let Some(inst) = self.popup_instances.remove(&instance_id) else {
             return;
         };
-        // egui-mesh popup 이면 합성기가 참조하던 frame 메타를 함께 정리 (stale buffer 방지).
-        // 그 frame 의 shared buffer 매핑도 해제 — 안 지우면 plugin 수명 내내 host 에
-        // 누적된다 (`release_plugin_buffer` 문서 참조).
+        // 마지막 프레임과 호스트의 버퍼 매핑도 함께 해제한다.
         if let Some(f) = self.popup_mesh_frames.remove(&instance_id) {
             self.release_plugin_buffer(&f.plugin_id, f.buffer_id);
         }
@@ -172,12 +160,8 @@ impl PluginManager {
         }
     }
 
-    /// plugin 프로세스 없이 popup 인스턴스를 하나 세운다 — 호스트 크레이트의 시험이 popup 렌더
-    /// 루프(입력 forward 와 그 자리의 사용자 활성화 기록)를 실제로 돌리려고 쓴다. 정식 경로
-    /// [`Self::open_popup_instance`] 는 실행 중인 plugin 이 있어야 인스턴스를 만든다.
-    ///
-    /// `test-support` feature 뒤에만 있다. 루트 크레이트는 그 feature 를 dev-dependency 로만
-    /// 켜므로 정규(lib/bin/release) 빌드에는 이 함수가 없다.
+    /// 프로세스 없이 팝업 렌더·입력 전달을 시험하기 위한 인스턴스를 만든다.
+    /// test-support 기능을 켰을 때만 제공한다.
     #[cfg(feature = "test-support")]
     pub fn insert_popup_instance_for_test(&mut self, instance_id: u64, instance: PopupInstance) {
         self.popup_instances.insert(instance_id, instance);
@@ -188,17 +172,14 @@ impl PluginManager {
         self.popup_instances.iter().map(|(k, v)| (*k, v))
     }
 
-    /// popup 콘텐츠 영역 클릭 시 z-order 순번을 갱신해 맨 앞으로 가져온다
-    /// (`docs/design/systems/popup.md` 규칙 7 "클릭된 것이 앞"). 인스턴스가 이미
-    /// 닫혔으면 조용히 무시.
+    /// 열린 팝업을 클릭하면 z-order 순번을 갱신해 앞으로 가져온다.
     pub fn touch_popup_instance_z(&mut self, instance_id: u64) {
         if let Some(inst) = self.popup_instances.get_mut(&instance_id) {
             inst.z_seq = super::next_popup_z_seq();
         }
     }
 
-    /// 단계 G: 사용자 단축키 매칭으로 plugin command를 trigger. 응답은
-    /// `SurfaceResult` 형태로 받아 tree/display_name을 갱신할 수 있다.
+    /// 단축키에 연결된 플러그인 명령을 실행하고 SurfaceResult 응답으로 화면을 갱신한다.
     pub fn send_command_invoke(&mut self, plugin_id: &str, surface_id: u32, command_id: &str) {
         if !self.processes.contains_key(plugin_id) {
             tracing::warn!(
