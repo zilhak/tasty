@@ -1,24 +1,5 @@
-//! Debug 빌드 전용 IPC 핸들러 중 **gui feature 에 의존하지 않는 것** — 워크스페이스
-//! 전환/닫기 · 탭 전환.
-//!
-//! 형제 모듈 `debug.rs` 와 갈라져 있는 이유는 게이트 하나뿐이다. `debug.rs` 의
-//! 핸들러 상당수는 `state.popups` / `state.banners` / `state.modifier_hint` 처럼
-//! gui feature 에서만 존재하는 필드를 만져서 모듈 전체가
-//! `#[cfg(all(debug_assertions, feature = "gui"))]` 로 걸려 있다. 여기 셋은
-//! `AppState::switch_workspace` / `goto_tab_in_pane` / `close_workspace_at` 와
-//! `engine.workspaces` 만 쓰고 그 어느 것에도 feature 게이트가 없다 — 즉 gui 를
-//! 끈 빌드에서도 그대로 컴파일되고 동작한다.
-//!
-//! 갈라 둔 실익: headless **debug** 데몬에서도 이 셋이 라우터에 등록된다.
-//! `tests/attach_attention_loopback.rs` 의
-//! `hard_occupied_attention_survives_the_servers_local_focus` 는 서버 쪽 로컬
-//! 포커스 이동을 `debug.switch_workspace` 로 재현하는데, 모듈이 gui 게이트에
-//! 묶여 있던 동안 헤드리스 조합에서는 `Method not found` 로 죽었다.
-//!
-//! 불가침 원칙 1(사용자 입력 재현은 release 에 없다)은 그대로 지켜진다 — 이
-//! 파일은 `#![cfg(debug_assertions)]` 이라 release 빌드에는 아예 없다. 원칙이
-//! 가르는 축은 debug/release 이지 gui/headless 가 아니다
-//! (`docs/dev-guide/debug-ipc.md`).
+//! GUI feature 없이도 쓰는 디버그 전용 workspace·tab 전환과 닫기.
+//! 헤드리스 시험에서도 서버 로컬 사용자의 동작을 재현한다. release에는 포함하지 않는다.
 
 #![cfg(debug_assertions)]
 
@@ -29,9 +10,7 @@ use tasty_model::TabSwitch;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// 포커스 pane 의 활성 탭 전환 — 사용자의 탭 클릭 재현. release 미노출
-/// ([`handle_debug_switch_workspace`] 의 탭 대응). egui-mesh 텍스처 상태의 탭
-/// 전환/복귀 검증 등 탭 가시성 시나리오 재현에 쓴다.
+/// 사용자의 탭 전환을 재현한다.
 pub(super) fn handle_debug_switch_tab(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -42,10 +21,7 @@ pub(super) fn handle_debug_switch_tab(
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    // 갈래 넷을 눌러서 보고하면 안 된다 — 예전에는 `bool` 하나라 **이미 그 탭이었다**
-    // 까지 "out of range" 로 나갔고, 그 문구를 믿고 "탭이 안 만들어졌다" 로 읽어 한
-    // 회차를 헛짚었다. 범위 안 인덱스는 성공이다: 바뀐 것이 없을 뿐이라 `switched`
-    // 가 false 로 나간다.
+    // 이미 활성인 탭도 성공이다. 범위 오류와 구별해 switched=false를 반환한다.
     match state.goto_tab_in_pane(engine, index) {
         TabSwitch::Switched => {
             JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
@@ -61,17 +37,7 @@ pub(super) fn handle_debug_switch_tab(
     }
 }
 
-/// 워크스페이스 close — 사용자의 워크스페이스 컨텍스트 메뉴 "Close workspace"
-/// (`src/view/main/redraw.rs` 의 native 메뉴 응답 `Some(6)`) 재현. release 미노출.
-///
-/// release IPC 의 `surface.close` 로는 이 경로에 도달할 수 없다 — cascade close 는
-/// **탭/페인이 하나만 남았을 때만** workspace 단계까지 올라가므로 cleanup 대상이
-/// 항상 surface 1개다. "탭이 많은 워크스페이스를 통째로 닫는" 비용(close 계측
-/// `path="gui"`)은 이 메뉴 항목으로만 발생하고, 그래서 계측 기준선을 잡으려면
-/// 이 항목을 재현할 수단이 필요하다.
-///
-/// 사용자 상태(closed_items undo 스택 / 포커스)를 건드리는 사용자 행동이므로
-/// release 표면에는 두지 않는다 (CLAUDE.md "사용자 행동 ↔ 에이전트 행동 분리").
+/// 사용자 메뉴의 workspace 닫기를 재현한다. 복원 기록과 포커스가 바뀌므로 디버그 전용이다.
 pub(super) fn handle_debug_close_workspace(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -88,9 +54,7 @@ pub(super) fn handle_debug_close_workspace(
             format!("Workspace index {index} out of range"),
         );
     }
-    // GUI 메뉴 경로는 마지막 workspace 를 닫으면 `request_close()` 로 창까지 닫는다.
-    // debug IPC 는 그 창 종료까지 재현하지 않으므로, workspaces 가 비어 다음 redraw
-    // 의 `active_workspace()` 가 패닉하는 상태를 만들지 않도록 거절한다.
+    // 실제 메뉴와 달리 창 종료는 재현하지 않으므로 마지막 workspace는 남긴다.
     if engine.workspaces.len() == 1 {
         return JsonRpcResponse::invalid_params(
             id,
@@ -101,8 +65,7 @@ pub(super) fn handle_debug_close_workspace(
     JsonRpcResponse::success(id, json!({"closed": closed, "index": index}))
 }
 
-/// 워크스페이스 활성 전환 — 사용자의 포커스 조작(워크스페이스 전환) 재현. release 미노출.
-/// `active_workspace` 인덱스 변경뿐이라 OS 의존성 없음.
+/// 사용자의 workspace 전환을 재현한다. OS 창 포커스는 바꾸지 않는다.
 pub(super) fn handle_debug_switch_workspace(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,

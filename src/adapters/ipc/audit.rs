@@ -1,11 +1,6 @@
-//! IPC audit log 의 **dispatcher hook**.
-//!
-//! 레코드를 어디에 쌓는지는 [`crate::store::audit`] 가 안다. 이 모듈은 그 앞단만
-//! 맡는다 — `CallerContext` 에서 호출자 종류를 읽고, allow 를 걸러내고, protocol
-//! 타입으로 옮겨 [`tasty_ipc::IpcHostFacade::record_audit`] 를 부른다.
-//!
-//! **`Allow` 는 기록하지 않는다** — 그 정책의 근거와 이 선택이 무엇을 버리는지는
-//! [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md).
+//! IPC 호출자를 감사 레코드로 변환해 store에 전달한다.
+//! Allow는 저장하지 않는다. 보존 정책은
+//! [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md)를 따른다.
 
 use crate::ipc::caller::CallerContext;
 use crate::store::audit::{AuditCallerKind, AuditDecision};
@@ -20,14 +15,7 @@ impl AuditCallerKind {
     }
 }
 
-/// dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
-/// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
-/// 호출된다.
-///
-/// **`Allow` 는 기록하지 않고 즉시 반환한다** — 그 정책의 근거와 이 선택이 무엇을
-/// 버리는지는 [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md).
-/// 게이트를 통과한 호출은 전부 여기로 오므로, 기록을 여기서 끊으면 dispatcher 의
-/// 어느 진입점이 늘어나도 다시 새지 않는다.
+/// 거절된 호출만 감사 로그에 기록한다. 허용된 호출의 사용량 집계는 별도다.
 pub fn record(
     host: &dyn tasty_ipc::IpcHostFacade,
     caller: &CallerContext,
@@ -72,8 +60,7 @@ pub fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// `record()` 의 정책 게이트. allow 는 store 근처에도 못 가고, deny 는
-    /// **method 와 무관하게** 전부 간다 — 축소 대상은 allow 뿐이라는 것이 계약이다.
+    /// 메서드와 관계없이 Deny만 기록한다.
     #[test]
     fn allow_is_dropped_before_the_store_and_deny_never_is() {
         use std::sync::Mutex;
@@ -103,7 +90,6 @@ mod tests {
 
         let host = CountingFacade::default();
         let caller = CallerContext::Local;
-        // audit 행의 85% 를 만들던 폴링 4종 — allow 로는 한 건도 남지 않아야 한다.
         for method in [
             "terminal.parent",
             "surface.read_since_mark",
@@ -117,7 +103,7 @@ mod tests {
             "allow 는 기록되지 않는다"
         );
 
-        // 같은 폴링 method 라도 deny 면 기록된다 — 제외 목록이 아니라 decision 기준.
+        // 폴링 메서드도 거절되면 기록한다.
         record(
             &host,
             &caller,

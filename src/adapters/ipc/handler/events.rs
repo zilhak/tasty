@@ -1,11 +1,5 @@
-//! `events.fetch` — 사건 피드 조회.
-//!
-//! **서버는 소비자별 상태를 들지 않는다.** 커서는 소비자가 들고 매번 가져온다. 그래서
-//! 같은 인자로 두 번 불러도 같은 답이 오고, 느린 소비자가 호스트 쪽에 아무것도 쌓지
-//! 않는다. 이 모양의 선례가 `plugin.audit_follow` 다.
-//!
-//! 이 모듈은 params 를 읽어 버스에 묻고 wire 모양으로 싼다. 링·위치·보존의 규율은
-//! 버스가 소유한다(`tasty_host_plugin::event_bus`).
+//! 사건 피드 조회. 소비자가 커서를 보관하고 매 요청에 보낸다.
+//! 보관 범위와 위치 처리는 tasty_host_plugin::event_bus가 담당한다.
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -14,22 +8,13 @@ use crate::plugin::event_bus::{EVENT_RING_CAPACITY, EventBus};
 /// 한 번에 돌려주는 사건 수의 기본값.
 const DEFAULT_MAX: usize = 256;
 
-/// 한 번에 돌려주는 사건 수의 상한 — **링 용량에서 파생한다.**
-///
-/// 링에 들어 있을 수 있는 최대가 곧 한 답의 최대이므로, 그보다 큰 `max` 는 답을
-/// 하나도 더 늘리지 못한다. 값을 여기 따로 박으면 링을 키우는 날 이 상한만 남아
-/// 조용히 어긋난다 — `audit` 이 보존 기간을 자기 상수로 들고 있다가 부팅 경로와
-/// 720 배 어긋난 것이 같은 형태였다.
-///
-/// 상한이 답을 잃게 하지는 않는다. 소비자는 `next_offset` 으로 이어 받는다.
+/// 반환 건수의 상한은 링 용량과 같다. 나머지는 next_offset으로 이어 받는다.
 const MAX_MAX: usize = EVENT_RING_CAPACITY;
 
-/// `wait_ms` 의 상한. 이 값보다 긴 대기를 주면 여기서 잘린다 — 무한 대기는 응답을
-/// 기다리는 쪽의 타임아웃과 어긋나면 조용히 끊긴 연결이 된다.
+/// wait_ms의 상한. 더 긴 대기는 이 값으로 제한한다.
 const MAX_WAIT_MS: u64 = 60_000;
 
-/// `events.fetch` 의 인자. 파싱을 한 자리에 모아 두 dispatch 경로(gui · headless)가
-/// 같은 규칙을 쓴다.
+/// GUI와 헤드리스가 공유하는 사건 조회 인자.
 pub(crate) struct FetchParams {
     pub offset: u64,
     pub max: usize,
@@ -38,12 +23,8 @@ pub(crate) struct FetchParams {
 }
 
 impl FetchParams {
-    /// 모든 인자가 **선택**이다. 아무것도 안 주면 처음부터 기다리지 않고 읽는다.
-    ///
-    /// 다만 "안 왔다" 와 "왔는데 안 읽힌다" 는 가른다. 숫자가 아닌 `offset` 을
-    /// 조용히 0 으로 읽으면 소비자가 든 위치를 버리고 **링 전체를 다시** 주고,
-    /// 같은 실수가 `max`·`wait_ms` 에서는 호출자가 지정한 값 대신 기본값을 쓴다.
-    /// 그래서 공용 관문(`handler::params`)을 지난다.
+    /// 생략한 인자는 기본값을 쓰지만 잘못된 타입은 거절한다.
+    /// 잘못된 offset을 0으로 바꾸면 이미 읽은 사건을 다시 반환하게 된다.
     pub fn parse(
         params: &serde_json::Value,
         id: &serde_json::Value,
@@ -70,8 +51,7 @@ impl FetchParams {
     }
 }
 
-/// 버스에 묻고 wire 모양으로 싼다. `wait` 가 0 이 아니면 **부르는 스레드를 막는다** —
-/// 호출자가 워커에서 부른다.
+/// wait가 0보다 크면 호출 스레드가 대기하므로 워커에서 호출해야 한다.
 pub(crate) fn fetch(bus: &EventBus, args: &FetchParams, id: serde_json::Value) -> JsonRpcResponse {
     let got = if args.wait.is_zero() {
         bus.fetch(args.offset, args.max, args.filter.as_deref())
@@ -103,9 +83,7 @@ pub(crate) fn fetch(bus: &EventBus, args: &FetchParams, id: serde_json::Value) -
     )
 }
 
-/// 매니저가 아직 없을 때의 답. 버스는 `PluginManager` 가 소유하므로 그것이 서기
-/// 전에는 답할 링 자체가 없다 — **빈 피드로 답하지 않는다.** 빈 답은 "아직 아무 일도
-/// 없었다" 로 읽히고, 그것은 이 시점의 사실이 아니다.
+/// 버스가 준비되지 않은 상태를 사건이 없는 빈 피드와 구분한다.
 pub(crate) fn no_bus(id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::error(id, -32000, "plugin manager not initialized")
 }
@@ -114,7 +92,6 @@ pub(crate) fn no_bus(id: serde_json::Value) -> JsonRpcResponse {
 mod tests {
     use super::*;
 
-    /// 잘못된 값은 답이 아니라 **거절**이라, 시험은 정상 경로에서 벗겨 쓴다.
     fn ok(params: serde_json::Value) -> FetchParams {
         FetchParams::parse(&params, &serde_json::json!(1)).expect("정상 인자")
     }
@@ -151,8 +128,6 @@ mod tests {
 
     #[test]
     fn a_position_that_is_not_a_number_is_refused_rather_than_read_as_zero() {
-        // 0 으로 읽으면 소비자가 든 위치를 버리고 링 전체를 다시 준다 — 그 답은
-        // 틀렸다는 표시가 없어 조용하다.
         let r = FetchParams::parse(
             &serde_json::json!({ "offset": "12" }),
             &serde_json::json!(1),
@@ -163,8 +138,7 @@ mod tests {
         assert!(resp.error.is_some());
     }
 
-    /// wire 에 앞섬 표지와 끝 위치가 실린다. 예전 다섯 필드는 이름도 값도 그대로다 —
-    /// 그 필드만 읽는 소비자의 동작은 바뀌지 않는다(ADR-0033).
+    // 미래 위치 응답에서도 요청 위치와 빈 결과를 유지한다.
     #[test]
     fn the_answer_carries_the_ahead_marker_next_to_the_old_fields() {
         let bus = EventBus::new();

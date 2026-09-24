@@ -1,4 +1,4 @@
-//! `approval` IPC: request 도메인.
+//! 승인 요청 생성.
 
 use super::*;
 use crate::adapters::ipc::handler::params::{self, p_try};
@@ -80,10 +80,8 @@ pub fn handle_request(
             Err(e) => return e,
         };
 
-    // 귀속 워크스페이스: 명시 `workspace_id` → `surface_id` 가 사는 워크스페이스 → 활성
-    // 워크스페이스. 가운데 갈래는 호출자가 대상 surface 를 이미 댔는데 귀속을 사용자 포커스가
-    // 정하지 않게 한다(원칙 3). 둘 다 없는 요청만 종전대로 활성으로 떨어진다 — 호환 때문에
-    // 남긴 기본값이고 근거는 ADR-0017.
+    // workspace_id, surface 소속, 활성 workspace 순으로 선택한다.
+    // 대상이 없는 요청의 활성 workspace 기본값은 호환을 위해 유지한다(ADR-0017).
     let workspace_id =
         match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
             Ok(v) => v,

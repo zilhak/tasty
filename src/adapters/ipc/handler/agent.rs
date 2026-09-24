@@ -1,15 +1,6 @@
-//! `agent.*` IPC 핸들러 — 협업 primitive.
-//!
-//! 본 모듈은 `tasty-agent` 의 도메인 모델을 IPC 표면으로 노출한다. 영속은
-//! `tasty-memory` 의 workspace scope 에 위임. **task 실행 자체는 본 phase
-//! 5.1 범위 밖** — 호스트가 `Ready` task 를 골라 실제 IPC dispatch 를 트리거하는
-//! 스케줄러 루프는 후속 5.x 에서 붙는다. 본 단계는 state 머신 / DAG / 영속
-//! 정확성만 보장한다.
-//!
-//! handler 는 param 파싱과 응답 직렬화만 담당. `with_memory + ...Store::new`
-//! 의 store 조립은 `src/core/agent/` 의 Core extension 메서드 (`Core::task_*`,
-//! `Core::barrier_*`, `Core::lease_*`, `Core::rate_limit_*`,
-//! `Core::semaphore_*`) 가 책임진다.
+//! agent.*의 인자를 읽고 협업 기능의 결과를 IPC 응답으로 변환한다.
+//! 저장소 조립과 workspace별 영속 처리는 src/core/agent/의 Core 메서드가 맡는다.
+//! task 실행은 별도의 작업 러너가 담당한다.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -41,9 +32,7 @@ pub(super) fn task_id_param(params: &Value, id: &Value) -> Result<TaskId, JsonRp
 
 pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcResponse {
     use AgentError::*;
-    // 메시지를 먼저 뽑아둔다 — 아래 `TaskReferenced { referenced_by, .. }` 처럼
-    // 필드를 값으로 바인딩하는 arm 이 있으면, match 안에서 `err.to_string()` 을
-    // 또 부르는 건 partial move 이후라 컴파일이 안 된다.
+    // match에서 err의 일부 필드를 이동하기 전에 메시지를 만든다.
     let msg = err.to_string();
     match err {
         TaskNotFound(_) => JsonRpcResponse::error(id, -32004, msg),

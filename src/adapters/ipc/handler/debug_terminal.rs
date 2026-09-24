@@ -1,18 +1,5 @@
-//! Debug 빌드 전용 IPC 핸들러 중 **터미널 그리드만 보는 것** — 셀 속성 조회 ·
-//! 행 단위 속성 조회 · VTE 바이트 직접 주입.
-//!
-//! `debug.rs` 와 갈라져 있는 이유는 `debug_nav.rs` 와 같다 — 그쪽 모듈이
-//! `#[cfg(all(debug_assertions, feature = "gui"))]` 라 헤드리스에서 통째로
-//! 사라지는데, 여기 셋은 `CoreState::find_terminal_by_id` 로 얻은 터미널만
-//! 만지고 gui 게이트된 심볼을 하나도 안 쓴다. 터미널 그리드는 headless 에도
-//! 그대로 있다 — 없는 것은 그것을 **그리는** 층이다.
-//!
-//! `debug.glyph_color` 도 여기 있다. 그것은 그리드가 아니라 **렌더러의 색 해석**을
-//! 묻지만, 그 해석 자체(`cell_palette::compute_cell_colors`)는 `CellAttributes` 와
-//! 색 타입만 쓰는 순수 함수다 — 한동안 `#[cfg(feature = "gui")] mod gfx;` 아래
-//! 있었을 뿐이고, 그래서 그 모듈을 게이트 밖으로 꺼냈다. 렌더러와 **같은 함수**를
-//! 부르는 것이 이 메서드의 정의라(렌더러가 빠뜨린 변환이 있으면 그대로 노출된다),
-//! 복제가 아니라 이동이어야 했다.
+//! 헤드리스에서도 쓰는 디버그 터미널 조회와 바이트 주입.
+//! glyph_color는 렌더러와 같은 색 계산 함수를 사용하되 선택·커서 등의 덮어쓰기는 제외한다.
 
 #![cfg(debug_assertions)]
 
@@ -105,12 +92,8 @@ pub(super) fn handle_debug_screen_attrs(
     }
 }
 
-/// Inject raw VTE bytes directly into a surface's terminal, bypassing the PTY
-/// and the shell. Useful for renderer/parser tests that need deterministic
-/// escape sequences without depending on shell escaping rules.
-///
-/// Accepts either `bytes` (hex string) or `text` (UTF-8 string with optional
-/// `\xHH` escape support disabled — the text is fed verbatim).
+/// PTY와 셸을 거치지 않고 VTE 파서에 입력한다.
+/// bytes는 hex, text는 UTF-8 그대로 받으며 text의 이스케이프 표기는 해석하지 않는다.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_feed_bytes(
     engine: &mut crate::core::CoreState,
@@ -146,13 +129,8 @@ pub(super) fn handle_debug_feed_bytes(
     JsonRpcResponse::success(id, json!({"fed": bytes.len()}))
 }
 
-/// Returns the (bg, fg) RGBA pair the renderer would push to the GPU for a single
-/// cell, given only its `CellAttributes` and the surface's default background.
-///
-/// This intentionally bypasses contextual overrides (selection, link hover, cursor,
-/// IME preedit) — the goal is to verify the renderer's per-cell color resolution.
-/// If the renderer omits a transformation (e.g. SGR 2 dim handling), this method
-/// will report colors that match the (broken) GPU output, exposing the gap.
+/// 셀 속성과 기본 배경으로 렌더러의 색 계산 결과를 반환한다.
+/// 선택·링크 hover·커서·IME에 따른 색 덮어쓰기는 포함하지 않는다.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_glyph_color(
     engine: &crate::core::CoreState,
@@ -171,7 +149,6 @@ pub(super) fn handle_debug_glyph_color(
         Some(c) => c as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
     };
-    // bg_mode: "focused" (default) | "unfocused"
     let bg_mode = params
         .get("bg_mode")
         .and_then(|v| v.as_str())

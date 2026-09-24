@@ -94,7 +94,7 @@ pub fn handle_barrier_state(
     }
 }
 
-/// poll-based — 상태 조회와 동일. 추후 blocking + wakeup 도입.
+/// 완료까지 기다리지 않고 현재 barrier 상태를 반환한다.
 pub fn handle_barrier_await(
     core: &Core,
     engine: &mut crate::core::CoreState,
@@ -147,7 +147,3 @@ pub fn handle_barrier_delete(
         },
     )
 }
-
-// ============================================================
-// agent.semaphore_*
-// ============================================================

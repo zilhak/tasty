@@ -84,9 +84,7 @@ fn approve_without_grant_ttl_secs_is_indefinite_in_metadata() {
     assert_eq!(ttl, None);
 }
 
-/// 두 경계가 같은 봉투를 낸다 — gui 의 `caller_gate` 와 안쪽
-/// `check_permission_gate` 가 이 함수 하나로 `error.data` 를 만든다. 모양이
-/// 갈리면 그것을 읽는 에이전트가 조합을 구분할 수단이 없어진다.
+/// 공통 권한 요청 오류에 조회 가능한 approval_id와 대상 권한·메서드가 포함된다.
 #[test]
 fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
     let rec = elevation_record(json!({}));
@@ -95,8 +93,6 @@ fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
     assert_eq!(data["kind"], "capability_elevation");
     assert_eq!(data["permission"], "fs.write");
     assert_eq!(data["method"], "file.write");
-    // approval_id 가 있어야 `approval.await`/`approval.respond` 로 이어진다 —
-    // 이것이 빠지면 거부는 기록만 남고 회복 경로가 끊긴다.
     assert_eq!(
         data["approval_id"],
         serde_json::to_value(&rec.request.id).unwrap(),
@@ -104,7 +100,6 @@ fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
     );
 }
 
-/// `approval.request` 가 귀속시킨 워크스페이스 id 를 응답에서 읽는다.
 fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
@@ -134,8 +129,7 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
     (result["record"]["request"]["workspace_id"].as_u64(), ids)
 }
 
-/// 원칙 3 — 호출자가 surface 를 댔으면 귀속은 그 surface 의 워크스페이스다. 사용자가 어느
-/// 워크스페이스를 보고 있든 같은 답이어야 한다(ADR-0017).
+/// surface가 지정되면 사용자의 활성 workspace 대신 그 surface 소속을 사용한다(ADR-0017).
 #[test]
 fn a_named_surface_decides_the_workspace_whatever_the_user_is_viewing() {
     for active in [0, 1] {
@@ -148,14 +142,13 @@ fn a_named_surface_decides_the_workspace_whatever_the_user_is_viewing() {
     }
 }
 
-/// 명시 `workspace_id` 가 surface 보다 앞선다 — 호출자가 둘 다 줬으면 준 대로 기록한다.
 #[test]
 fn an_explicit_workspace_wins_over_the_surface() {
     let (ws, ids) = requested_workspace(json!({ "surface_id": "ws1", "workspace_id": 999 }), 1);
     assert_eq!(ws, Some(999), "명시 workspace_id 를 무시했다 (ids {ids:?})");
 }
 
-/// 둘 다 없으면 종전대로 활성 워크스페이스다 — 호환 때문에 남긴 기본값이다.
+/// 대상이 없는 요청의 활성 workspace 기본값은 호환을 위해 유지한다.
 #[test]
 fn without_a_target_the_active_workspace_is_kept_for_compatibility() {
     for active in [0, 1] {

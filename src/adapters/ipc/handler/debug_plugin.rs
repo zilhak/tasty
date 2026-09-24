@@ -1,13 +1,9 @@
-//! Debug 빌드 전용 plugin IPC 핸들러 — `debug.event_bus.*` + `debug.extension.invoke_hook`.
-//!
-//! PluginManager 의 EventBus 직접 조작 + extension hook 직접 fire. release 빌드에는
-//! 컴파일되지 않는다 (handler.rs 의 mod 선언에 `#[cfg(debug_assertions)]`).
+//! Event Bus 조작과 extension 훅 직접 호출을 위한 디버그 IPC. release에서는 제외한다.
 
 use crate::ipc::server::send_response;
 use crate::plugin;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// `debug.event_bus.*` IPC 처리.
 pub(crate) fn handle_event_bus(
     mgr: Option<&mut plugin::PluginManager>,
     method: &str,
@@ -93,9 +89,7 @@ pub(crate) fn handle_event_bus(
     }
 }
 
-/// `debug.extension.invoke_hook` IPC. extension 에 hook 을 직접 fire 하고
-/// 응답을 그대로 caller 에 회신한다. 비동기: response_tx 로 회신
-/// (main loop 의 handle_plugin_response 가 처리).
+/// 훅을 직접 호출하고 main loop의 handle_plugin_response를 통해 비동기 응답한다.
 pub(crate) fn handle_extension_invoke_hook(
     mgr: Option<&mut plugin::PluginManager>,
     params: &serde_json::Value,

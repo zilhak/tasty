@@ -1,7 +1,4 @@
-//! `plugin.audit_*` IPC 핸들러.
-//!
-//! audit log 조회/집계/삭제. CallerContext 검사는 method_meta 의 `local_only`
-//! 가 dispatcher 레벨에서 거른다 (운영자 전용).
+//! 감사 기록 조회·집계·삭제. dispatcher의 `local_only` 검사로 로컬 호출만 허용한다.
 
 use super::params::{self, p_try};
 use serde_json::{Value, json};
@@ -82,7 +79,6 @@ fn build_query(params: &Value, id: &Value) -> std::result::Result<AuditQuery, Js
     Ok(q)
 }
 
-/// `plugin.audit_query` — 필터된 audit record 목록.
 pub fn handle_query(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
@@ -108,8 +104,7 @@ pub fn handle_query(core: &crate::core::Core, id: Value, params: &Value) -> Json
     }
 }
 
-/// `plugin.audit_summary` — 필터된 record 의 집계.
-/// `top_n` (옵션, 기본 10) 으로 by_caller / by_method 상위 개수 제한.
+/// `top_n`은 호출자별·메서드별 상위 항목 수를 제한한다. 기본값은 10이다.
 pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
@@ -138,9 +133,8 @@ pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> Js
     }
 }
 
-/// `plugin.audit_follow` — `after_ts_ms` / `after_seq` 커서 이후의 새 record.
-/// 커서 미지정 시 빈 배열 + 현재 latest 커서를 반환해 호출자가 그 다음부터
-/// 폴링하게 한다 (`tail -f -n 0` 시멘틱).
+/// 커서 이후의 기록을 반환한다. 커서가 없으면 빈 목록과 최신 커서를 반환해
+/// 다음 호출부터 새 기록을 조회하게 한다.
 #[cfg(feature = "gui")]
 pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
@@ -172,8 +166,7 @@ pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> Jso
     }
 }
 
-/// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
-/// 반환: `{ removed: N }`.
+/// `before_ms` 이전 기록을 삭제한다. 생략하면 모두 삭제한다.
 #[cfg(feature = "gui")]
 pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let before_ms = p_try!(params::opt_int::<u64>(params, "before_ms", &id));
@@ -190,9 +183,6 @@ pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> Json
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // build_query 단독 테스트 — 옛 handle_* 호출 테스트는 Core 의존성이
-    // 생기면서 build_query 자체의 validation 만 검사하도록 좁힘.
 
     fn err_resp_code(resp: &JsonRpcResponse) -> i32 {
         resp.error.as_ref().expect("expected error").code

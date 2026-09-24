@@ -1,4 +1,4 @@
-//! `approval` IPC: read 도메인.
+//! 승인 요청의 현재 상태와 저장된 기록 조회.
 
 use super::*;
 use crate::adapters::ipc::handler::params::{self, p_try};
@@ -24,12 +24,8 @@ pub fn handle_cancel(
     }
 }
 
-/// `approval.await` 의 실제 본문 — 메인 스레드를 막지 않도록 워커 스레드에서
-/// 호출한다. `ipc_dispatch_approval_await` 가 Arc<ApprovalStore> + memory port
-/// Arc 를 클론해 thread::spawn 안에서 이 함수를 호출하고, 응답을 `response_tx`
-/// 로 보낸다.
-///
-/// `timeout_ms` 가 0 또는 null 이면 record 의 `timeout_ms` 사용, 그것도 없으면 무한 대기.
+/// 메인 루프를 막지 않도록 별도 워커에서 승인 결과를 기다린다.
+/// timeout_ms가 0 또는 null이면 요청의 제한시간을 쓰고, 둘 다 없으면 계속 기다린다.
 pub fn await_blocking(
     store: &ApprovalStore,
     memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
@@ -46,8 +42,7 @@ pub fn await_blocking(
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
     };
     let outcome = store.await_response(&req_id, timeout_ms);
-    // 상태 전이(timeout 자동 전이 포함) 가 있었으면 영속. worker thread 의
-    // memory port arc 로 lock 후 한 번에 처리.
+    // timeout을 포함해 상태가 바뀌었으면 워커의 memory port로 저장한다.
     if let Some(record) = store.get(&req_id) {
         persist_record_via_arc(memory, &record);
     }
@@ -95,7 +90,6 @@ pub(crate) fn spawn_approval_await(
     });
 }
 
-/// `approval.get` — 단일 record 조회.
 pub fn handle_get(
     _core: &Core,
     engine: &mut crate::core::CoreState,
@@ -150,10 +144,6 @@ pub fn handle_list(
     let arr: Vec<Value> = records.iter().map(record_to_json).collect();
     JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
 }
-
-// ============================================================
-// History — memory 의 `tasty.approval.<id>` 키 전체를 시간 기준으로 조회
-// ============================================================
 
 /// `approval.history` — 영속 기록 조회. memory 에서 모든 scope 의 approval 항목을
 /// 읽어 필터링한다. 필터: `since`/`until` (unix ms, memory updated_at 기준),
@@ -216,7 +206,7 @@ pub fn handle_history(
             continue;
         };
         for entry in entries {
-            // summary 키는 history 결과에서 제외 (3.5 에서 사용).
+            // 세션 요약은 개별 승인 기록이 아니다.
             if entry.key == "tasty.approval.summary" {
                 continue;
             }
@@ -256,7 +246,6 @@ pub fn handle_history(
         });
     }
 
-    // 시간 역순 — 최신 응답이 위로.
     collected.sort_by(|a, b| {
         let ta = transition_at(&a.state).unwrap_or(a.request.created_at);
         let tb = transition_at(&b.state).unwrap_or(b.request.created_at);

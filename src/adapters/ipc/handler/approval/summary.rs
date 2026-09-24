@@ -1,4 +1,4 @@
-//! `approval` IPC: summary 도메인.
+//! 워크스페이스별 승인 요약 저장·조회.
 
 use super::*;
 use crate::adapters::ipc::handler::params::require_u32;

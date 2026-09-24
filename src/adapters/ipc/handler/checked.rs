@@ -1,8 +1,8 @@
-//! 요청과 caller에 묶인 게이트 통과 증거. wire에서 만들거나 역직렬화할 수 없다.
+//! 권한 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
 use crate::core::{Core, CoreState};
 
-/// 라우팅 전에 권한·cap·rate 검사 및 허용 관측을 끝낸 요청.
+/// 권한·사용량 제한·호출 빈도 검사를 통과하고 사용량 집계까지 마친 요청.
 pub(crate) struct CheckedRequest<'a> {
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
@@ -18,7 +18,7 @@ impl<'a> CheckedRequest<'a> {
     }
 }
 
-/// 모든 진입점의 공통 게이트. 거부는 한 번 기록하고, 허용만 한 번 계측한다.
+/// 모든 진입점에서 사용한다. 거부 사유나 허용 횟수는 요청당 한 번 기록한다.
 pub(crate) fn check_request<'a>(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -32,8 +32,7 @@ pub(crate) fn check_request<'a>(
         .workspaces
         .get(window.active_workspace_index())
         .map(|w| w.id);
-    // 거절은 게이트마다 따로 센다 — 처방이 셋 다 다르다(ADR-0008). 앞 게이트가 돌려보내면 뒤
-    // 게이트는 안 돌므로 한 요청은 많아야 한 칸에 세진다.
+    // 거부 사유별 대응이 달라 따로 센다(ADR-0008). 첫 거부에서 반환하므로 중복 집계하지 않는다.
     use tasty_telemetry::GateRefusal;
     core.gate().record_judged();
     let refused = super::check_permission_gate(core, window, engine, caller, canonical, ws, &id)
@@ -51,10 +50,8 @@ pub(crate) fn check_request<'a>(
         return Err(response);
     }
     super::record_telemetry_and_audit(core, window, engine, caller, canonical, &request.params, ws);
-    // 봉투 검사는 **모든 층의 앞**이다 — App 층·namespace forward·engine 라우터 중 어디로
-    // 가든 같은 봉투는 같은 판정을 받는다. 게이트 **뒤**인 것은 옛 자리(engine 라우터의
-    // 보존소 입구)가 게이트 뒤였기 때문이다: 권한 없는 호출자는 여전히 `-32001` 을 먼저
-    // 받고, 허용 관측도 예전처럼 한 번 남는다(ADR-0005).
+    // 멱등성 키는 모든 라우터에 앞서 검사한다. 권한 검사를 먼저 거쳐
+    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0005).
     super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest { request, caller })
 }
@@ -68,7 +65,6 @@ pub(crate) fn check_without_engine<'a>(
 ) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     if matches!(caller, CallerContext::Local) {
-        // 창이 없어도 봉투 판정은 같다 — [`check_request`] 와 같은 자리.
         super::idempotency::check_envelope(request, &id)?;
         return Ok(CheckedRequest { request, caller });
     }
@@ -176,10 +172,7 @@ mod tests {
         assert_eq!(observations(&mut core, &mut state, &mut engine), 1);
     }
 
-    // 압력 계측의 경계. 큐 대기는 게이트 **앞**에서 재고(거부된 요청도 큐에 앉아
-    // 있었으므로 그 시간은 실재한다) handler 실행 시간은 게이트 **뒤**에서 잰다.
-    // 둘을 같은 자리에서 재면 거부가 실행 비용으로 보이고, 느린 응답의 원인을
-    // 적체와 handler 중 어느 쪽으로도 고를 수 없게 된다.
+    // 거부된 요청도 큐에서 기다렸으므로 대기 시간에 포함한다. 실행 시간은 허용된 요청만 잰다.
     #[test]
     fn only_a_request_that_passed_the_gate_is_timed_as_a_handler() {
         let _home = crate::test_support::TastyHomeGuard::new();
@@ -212,10 +205,8 @@ mod tests {
         );
     }
 
-    /// 게이트 셋이 돌려보낸 요청이 **각자의 칸**으로, 프로덕션 조회(`system.pressure`)까지 나간다.
-    ///
-    /// 거절을 게이트마다 다른 수로 일으켜, 한 칸이 다른 칸으로 새거나 두 칸이 합쳐지면 대조가
-    /// 깨지게 한다. `judged` 는 통과한 요청과 조회 자신까지 센다.
+    /// 거부 사유별로 다른 횟수를 만들어 `system.pressure`의 집계가 섞이지 않는지 확인한다.
+    /// `judged`에는 조회 요청 자체도 포함된다.
     #[test]
     fn each_gate_refusal_is_counted_in_its_own_slot_of_the_pressure_answer() {
         let _home = crate::test_support::TastyHomeGuard::new();

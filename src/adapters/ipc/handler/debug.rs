@@ -1,8 +1,4 @@
-//! Debug 빌드 전용 IPC 핸들러 — cell_info / screen_attrs / feed_bytes /
-//! glyph_color / inject_mouse / inject_key.
-//!
-//! 디버그 빌드에서만 라우터에 등록되며, 사용자의 키/마우스 입력을 재현하는
-//! 저수준 IPC 표면을 제공한다. release 빌드에는 본 모듈이 컴파일되지 않는다.
+//! 입력 재현과 UI 상태 조회를 위한 디버그 IPC. release에서는 모듈을 컴파일하지 않는다.
 
 #![cfg(debug_assertions)]
 
@@ -44,7 +40,7 @@ pub(super) fn handle_debug_inject_mouse(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    // col, row: 1-indexed cell coordinates
+    // 입력 좌표는 0부터 시작한다. SGR로 보낼 때 1을 더한다.
     let col = match p_try!(params::opt_int::<u64>(params, "col", &id)) {
         Some(c) => c,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
@@ -53,9 +49,8 @@ pub(super) fn handle_debug_inject_mouse(
         Some(r) => r,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
-    // button: 0=left, 1=middle, 2=right. Default: 0
+    // 버튼 번호: 왼쪽 0, 가운데 1, 오른쪽 2.
     let button = p_try!(params::opt_int::<u64>(params, "button", &id)).unwrap_or(0);
-    // event_type: "press", "release", "move". Default: "press"
     let event_type = params
         .get("event_type")
         .and_then(|v| v.as_str())
@@ -66,7 +61,6 @@ pub(super) fn handle_debug_inject_mouse(
         "move" => 32 + button as u8,
         _ => return JsonRpcResponse::invalid_params(id, "event_type must be press/release/move"),
     };
-    // SGR mouse(1006). col/row 입력은 0-indexed → 1-based 로. 공용 인코더 사용.
     let bytes = tasty_terminal::encode_mouse_report(
         true,
         cb,
@@ -83,12 +77,7 @@ pub(super) fn handle_debug_inject_mouse(
     }
 }
 
-/// `debug.host_popup.list` — 호스트 빌트인 popup(`PopupDef`) 전체 목록을 반환.
-///
-/// plugin 이 contribute 한 popup 은 `debug.popup.list` 가 담당한다. 이쪽은 tasty
-/// 본체가 `popup::defs::all_defs()` 로 정의한 빌트인 popup (tools_menu / port_scanner
-/// / command_palette / remote_tool 등) 전용이다. 사용자 클릭 경로 없이 popup 을
-/// 직접 띄워 시각 검증하기 위한 debug 격리 표면.
+/// 호스트에 정의된 팝업 목록. 플러그인 팝업은 debug.popup.list로 조회한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_list(
     state: &AppState,
@@ -97,10 +86,7 @@ pub(super) fn handle_debug_host_popup_list(
     let items: Vec<_> = crate::adapters::ui::popup::defs::all_defs()
         .iter()
         .map(|def| {
-            // 열려 있는 popup 은 현재 rect 와 z_seq 를 함께 노출한다 — 겹친 popup 의
-            // 마우스 소유권 판정(`popup/occlusion.rs`)을 debug 로 검증할 때 좌표를
-            // 실측 없이 조준하기 위한 관찰면. z_seq 는 plugin popup 과 공유하는 전역
-            // 시퀀스라 `debug.popup.list` 값과 직접 비교된다.
+            // z_seq는 플러그인 팝업과 공유하므로 두 목록의 겹침 순서를 비교할 수 있다.
             let geom = state.popups.open_geometry(def.id);
             json!({
                 "id": def.id,
@@ -118,9 +104,7 @@ pub(super) fn handle_debug_host_popup_list(
     JsonRpcResponse::success(id, json!({ "popups": items }))
 }
 
-/// `debug.host_popup.open` — `{ popup_id }` 로 호스트 빌트인 popup 을 화면 중앙에
-/// 강제로 띄운다. 사용자 클릭(사이드바 도구 버튼 → 메뉴 → 항목) 을 재현하는
-/// 디버그 동작이므로 release 에 노출되지 않는다.
+/// 사용자 클릭 없이 호스트 팝업을 연다. 디버그 빌드에서만 허용한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_open(
     state: &mut AppState,
@@ -131,20 +115,15 @@ pub(super) fn handle_debug_host_popup_open(
     let Some(popup_id) = params.get("popup_id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'popup_id' parameter");
     };
-    // 런타임 문자열 → 정적 def id (`PopupId` 는 &'static str). 정의에 없는 id 는 거부.
     let Some(def) = crate::adapters::ui::popup::defs::find(popup_id) else {
         return JsonRpcResponse::error(id, -32602, format!("host popup '{popup_id}' not found"));
     };
-    // `workspace_scope` 는 런타임 스코프 주입(`OpenPopupMode::WithScope`)을 쓰는
-    // popup 을 위한 것이다 — 그런 popup 은 `CenteredFocused` 로 열면 스코프가
-    // 기본값(`Window`)에 머물러 워크스페이스 가시성 게이트가 아예 발동하지 않는다.
+    // 기본 창 범위 대신 workspace 범위를 지정해 가시성 조건을 시험한다.
     let workspace_scope = params
         .get("workspace_scope")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    // `surface_scope` 는 같은 이유의 surface 판이다 — scrim 범위·경계 inset 은 범위가
-    // `Surface` 일 때만 발동하므로(docs/design/systems/popup.md#scrim-의-범위), 기본값으로 열면 그 갈래를 볼 수 없다.
-    // 포커스 surface 가 없으면(빈 워크스페이스) 주입할 대상이 없어 창 범위로 남는다.
+    // surface 범위의 scrim과 여백을 시험한다. 포커스된 surface가 없으면 창 범위를 유지한다.
     let surface_scope = params
         .get("surface_scope")
         .and_then(|v| v.as_bool())
@@ -161,8 +140,7 @@ pub(super) fn handle_debug_host_popup_open(
         ),
         (false, None) => crate::intent::OpenPopupMode::CenteredFocused,
     };
-    // 변환 popup 은 대상 surface 를 `dialogs` 에서 읽는다 — 범위만 주입하고 그것을
-    // 비워 두면 목록은 뜨지만 고른 값이 갈 곳이 없다.
+    // 변환 팝업은 범위 외에도 dialogs에서 대상 surface를 읽는다.
     if def.id == "convert_surface" {
         state.dialogs.convert_popup = bound_surface;
         state.dialogs.convert_popup_selected = None;
@@ -178,8 +156,6 @@ pub(super) fn handle_debug_host_popup_open(
     )
 }
 
-/// `debug.host_popup.close` — `{ popup_id }` 로 호스트 빌트인 popup 을 닫는다.
-/// 여러 popup 을 차례로 스크린샷할 때 직전 popup 을 정리하는 용도.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_close(
     state: &mut AppState,
@@ -196,13 +172,8 @@ pub(super) fn handle_debug_host_popup_close(
     JsonRpcResponse::success(id, json!({ "closed": def.id }))
 }
 
-/// `debug.modifier_hint.hold` — `{ ctrl, alt, option, shift, elapsed_ms? }` 로 오버레이의
-/// 홀드 조합을 직접 세팅한다(생략 축 = false, 모두 false 면 홀드 해제). `elapsed_ms` 가
-/// 있으면 타이머를 그만큼 과거로 백데이트해 표시 지연 게이트를 즉시 통과시킨다.
-///
-/// 원칙1상 오버레이는 실 modifier 홀드로만 뜨지만, 이는 PTY raw 주입이 아니라 오버레이
-/// 내부 상태만 세팅하는 force-state 라 `host_popup.open` 과 동일하게 debug 격리로 충분하다.
-/// 응답은 `state` 와 동일한 렌더 상태 덤프. release 미노출.
+/// modifier 홀드 상태와 경과 시간을 지정한다. 생략한 키는 false이며 모두 false면 해제한다.
+/// 사용자 입력을 재현하는 디버그 기능이고, 응답은 state 조회와 같은 형식이다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_hold(
     state: &mut AppState,
@@ -230,9 +201,7 @@ pub(super) fn handle_debug_modhint_hold(
     JsonRpcResponse::success(id, dump)
 }
 
-/// `debug.modifier_hint.state` — 오버레이의 현재 렌더 상태를 draw 경로와 동일 로직으로
-/// 재평가해 덤프한다(held / 지연 / alpha / visible / header_combo / 좁혀진 sections). 스크린샷
-/// 없이 좁힘·즉시갱신·지연을 자동 단정하기 위한 debug 격리 표면. release 미노출.
+/// draw와 같은 함수로 오버레이 상태를 계산해 반환한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_state(
     state: &AppState,
@@ -250,27 +219,9 @@ pub(super) fn handle_debug_modhint_state(
     JsonRpcResponse::success(id, dump)
 }
 
-/// `debug.banner.list` — 빌트인 배너 정의 목록 + 현재 표시/대기 상태 + **기하**를 반환.
-///
-/// 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 release 에
-/// 노출되지 않는다. plugin 기여 배너는 (도입 시) 별도 표면이 담당한다.
-///
-/// # 좌표계 — 두 rect 가 서로 다르다
-///
-/// 응답 최상위의 `coords` 가 이것을 그대로 싣는다. 이 레포에서 좌표계를 안 적으면
-/// 반드시 틀린다(`docs/concepts/typed-length.md`).
-///
-/// - `shown[].rect` — 셸(카드) 영역. **egui 논리 좌표.** `debug.host_popup.list` 의
-///   `rect` 와 같은 좌표계·같은 키 모양(`x`/`y`/`w`/`h`)이라 두 응답을 직접 비교할 수
-///   있다. 배율이 바뀌어도 값이 같아야 한다 — 달라지면 그 자체가 DPI 결함 신호다.
-/// - `shown[].content_rect` — plugin egui-mesh 배너의 콘텐츠 합성 영역. **물리 픽셀.**
-///   셸은 host egui 가 논리로 그리고 콘텐츠는 plugin 이 ppp 로 재렌더해 GPU 가 합성하는
-///   별개 경로라, 논리로 접어 내리면 그 두 경로를 가르는 정보가 사라진다. host 배너는
-///   `null`.
-///
-/// `rect` 는 popup 과 달리 **한 프레임 늦고**, 배너가 뜬 직후 첫 프레임에는 `null` 이다 —
-/// 배너는 자기 좌표를 모델에 들고 있지 않고 컨테이너가 매 프레임 배치하므로 좌표가
-/// 그린 뒤에야 확정된다(`BannerManager::card_rect`).
+/// 빌트인 배너 정의와 표시·대기 중인 배너의 상태를 반환한다.
+/// rect는 egui 논리 좌표이고 content_rect는 플러그인 콘텐츠의 물리 픽셀 영역이다.
+/// 호스트 배너의 content_rect는 null이다. 카드 rect는 직전 프레임 값이며 첫 프레임에는 null이다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let defs: Vec<_> = crate::adapters::ui::banner::defs::all_defs()
@@ -291,12 +242,10 @@ pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) 
                 .queued_banners(&b.scope)
                 .map(|q| q.id)
                 .collect();
-            // 셸 rect: 직전 프레임 실측(논리). popup 과 같은 키 모양으로 낸다.
             let rect = state
                 .banners
                 .card_rect(&b.scope, &b.key())
                 .map(|r| json!({ "x": r.min.x, "y": r.min.y, "w": r.width(), "h": r.height() }));
-            // 콘텐츠 rect: plugin egui-mesh 배너만. GPU 합성 영역이라 물리 픽셀이다.
             let content_rect = match &b.content {
                 crate::adapters::ui::banner::BannerContentSource::PluginMesh {
                     instance_id,
@@ -331,17 +280,13 @@ pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) 
             "defs": defs,
             "shown": shown,
             "total_queued": state.banners.total_queued(),
-            // 좌표계를 응답이 스스로 말한다 — 문서만 아는 사실이면 호출부가 물리로 읽는다.
             "coords": { "rect": "logical", "content_rect": "physical" },
         }),
     )
 }
 
-/// `debug.banner.show` — `{ banner_id, scope }` 로 배너를 직접 발화한다.
-///
-/// 사용자 조작(마우스 캡쳐 surface 에서 드래그 등) 을 재현하는 디버그 동작이라
-/// release 에 없다. `scope` 는 `view` / `workspace:<i>` / `pane:<id>` /
-/// `tab:<pane>:<i>` / `surface:<id>` 토큰. def 의 ttl 을 그대로 적용한다.
+/// 지정 범위에 배너를 표시한다. scope는 view/workspace/pane/tab/surface 토큰이며
+/// 배너 정의의 TTL을 적용한다. 사용자 동작을 재현하므로 디버그 빌드에서만 허용한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_show(
     state: &mut AppState,
@@ -448,14 +393,8 @@ pub(super) fn handle_debug_inject_key(
     }
 }
 
-/// `debug.gpu.stall` — 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹하도록 예약한다.
-///
-/// 실제 GPU 드라이버 행을 결정적으로 재현할 수 없으므로, 같은 구조(이벤트 루프 스레드
-/// 안에서 반환하지 않는 GPU 호출)를 인위적으로 만들어 stall 워치독을 검증한다.
-///
-/// `debug_assertions` 가 cfg 에 반드시 들어간다 — 호출 대상인 `arm_debug_stall` 이 debug
-/// 전용이라, 이 함수만 gui 로 남으면 호출자가 없어도 release 에서 타입체크에 걸려 빌드가
-/// 깨진다(`route_debug_handler` 는 debug 전용이라 dead code 경고도 뜨지 않는다).
+/// 다음 프레임의 present 직전에 ms만큼 멈춰 GPU 응답 지연 감시를 시험한다.
+/// 실제 드라이버의 멈춤을 재현하는 대신 이벤트 루프의 같은 위치를 지연시킨다.
 pub(super) fn handle_debug_gpu_stall(
     id: serde_json::Value,
     params: &serde_json::Value,

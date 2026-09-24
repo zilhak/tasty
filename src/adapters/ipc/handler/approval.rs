@@ -1,9 +1,5 @@
-//! `approval.*` IPC 핸들러 — 휴먼 핸드오프 결정 게이트.
-//!
-//! `tasty-approval` 도메인 store 의 얇은 어댑터. [`CallerContext`] 를
-//! `Requester`/`Responder` 로 변환하고, 상태 전이마다 `tasty-memory` 의
-//! `tasty.approval.<id>` 키로 영속한다 (workspace 가 주어지면 `workspace:<wid>`,
-//! 그 외엔 `global`).
+//! 승인 요청의 호출자 변환과 상태 영속 저장.
+//! workspace가 있으면 해당 scope에, 없으면 global에 저장한다.
 
 use serde_json::{Value, json};
 use tasty_approval::{
@@ -16,11 +12,6 @@ use crate::core::Core;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-// ============================================================
-// 변환 헬퍼
-// ============================================================
-
-/// CallerContext → Requester.
 pub(super) fn requester_from_caller(caller: &CallerContext) -> Requester {
     match caller {
         CallerContext::Local => Requester::User,
@@ -33,7 +24,6 @@ pub(super) fn requester_from_caller(caller: &CallerContext) -> Requester {
     }
 }
 
-/// CallerContext → Responder.
 pub(super) fn responder_from_caller(caller: &CallerContext) -> Responder {
     match caller {
         CallerContext::Local => Responder::User,
@@ -67,19 +57,13 @@ pub(super) fn map_error(id: Value, err: ApprovalError) -> JsonRpcResponse {
         InvalidRequest(m) => JsonRpcResponse::invalid_params(id, format!("invalid_request: {m}")),
         TimedOut => JsonRpcResponse::error(id, -32012, "timed_out"),
         Cancelled => JsonRpcResponse::error(id, -32013, "cancelled"),
-        // 상태 변경을 거절한 것이지 요청이 잘못된 것이 아니다 — invalid_params 가 아닌
-        // 서버측 에러 코드로 낸다. 원인 로그는 store 가 남긴다.
+        // 요청 형식 오류가 아닌 상태 변경 실패다. 원인은 store에서 기록한다.
         StorePoisoned => JsonRpcResponse::error(id, -32014, "store_poisoned"),
     }
 }
 
-// ============================================================
-// 영속 — tasty-memory 에 record 를 JSON 으로 보관
-// ============================================================
-
 const APPROVAL_KEY_PREFIX: &str = "tasty.approval.";
 
-/// record 의 workspace_id 에 따라 scope 결정. 없으면 global.
 pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
     match record.request.workspace_id {
         Some(wid) => Scope::Workspace(wid),
@@ -87,9 +71,7 @@ pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
     }
 }
 
-/// Worker thread 용 — `core` 가 도달하지 못하는 thread 에서, memory port 의
-/// Arc clone 으로 직접 영속한다. `await_blocking` 전용. 메인 스레드는
-/// `persist_record(core, ...)` 사용.
+/// Core에 접근할 수 없는 대기 워커가 memory port를 통해 상태를 저장한다.
 pub(super) fn persist_record_via_arc(
     memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     record: &ApprovalRecord,
@@ -138,23 +120,11 @@ pub(crate) fn persist_record(core: &Core, record: &ApprovalRecord) {
     }
 }
 
-// ============================================================
-// JSON 직렬화 헬퍼
-// ============================================================
-
 pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
     serde_json::to_value(record).unwrap_or(Value::Null)
 }
 
-// ============================================================
-// 핸들러
-// ============================================================
-
-/// 거부 응답의 `error.data` — 격상 레코드를 호출자가 집을 수 있게 싣는다.
-///
-/// **두 경계가 같은 모양을 실어야 한다.** 바깥 경계(gui `caller_gate`)와 안쪽
-/// 게이트(`check_permission_gate`)가 각자 조립하면 조합마다 다른 봉투가 나가고,
-/// 그것을 읽는 에이전트는 조합을 구분할 수단이 없다.
+/// 권한 요청 레코드를 호출자가 조회할 수 있도록 공통 error.data를 만든다.
 pub(crate) fn elevation_error_data(
     record: &ApprovalRecord,
     permission: &str,
@@ -168,12 +138,7 @@ pub(crate) fn elevation_error_data(
     })
 }
 
-/// 격상 발행의 알맹이 — **창(`AppState`)에 안 닿는다.**
-///
-/// 헤드리스에는 `AppState.active_workspace` 로 workspace 를 고르는 바깥 경계가
-/// 없고 게이트가 이미 `workspace_id` 를 손에 들고 있다. 그래서 workspace 를
-/// 인자로 받는 이 갈래를 정본으로 두고, 창을 가진 쪽이
-/// [`publish_capability_elevation`] 으로 감싸 팝업까지 띄운다.
+/// 창 없이 권한 요청을 만든다. GUI 호출자는 publish_capability_elevation으로 팝업도 연다.
 pub(crate) fn publish_capability_elevation_at(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
@@ -283,7 +248,7 @@ pub(crate) fn publish_capability_elevation(
     Some(record)
 }
 
-/// `approval.respond` — 응답 제출. self-response 면 거부.
+/// 승인 응답에서 agent·권한·유효 시간을 추출한다. 거절 응답에는 권한을 부여하지 않는다.
 pub(crate) fn elevation_grant_decision(
     record: &ApprovalRecord,
     choice: &str,
@@ -358,8 +323,7 @@ pub(super) fn apply_elevation_grant_if_any(core: &Core, record: &ApprovalRecord,
     }
 }
 
-/// `approval.cancel` — 종료되지 않은 요청을 취소.
-/// state 가 가진 timestamp(있다면) 를 추출.
+/// 완료 상태의 전이 시각을 반환한다. Pending에는 시각이 없다.
 pub(super) fn transition_at(state: &tasty_approval::ApprovalState) -> Option<u64> {
     use tasty_approval::ApprovalState as S;
     match state {
@@ -367,10 +331,6 @@ pub(super) fn transition_at(state: &tasty_approval::ApprovalState) -> Option<u64
         S::Responded { at, .. } | S::TimedOut { at, .. } | S::Cancelled { at, .. } => Some(*at),
     }
 }
-
-// ============================================================
-// 세션 요약 — workspace 별 1개 markdown 텍스트. memory key `tasty.approval.summary`.
-// ============================================================
 
 const SUMMARY_KEY: &str = "tasty.approval.summary";
 
