@@ -1,25 +1,5 @@
-//! 두 조합이 **같은 함수로** 답해야 하는 app 층 IPC 표면.
-//!
-//! gui 는 5-step 라우터의 `app_methods` step 에서, 헤드리스는 dispatch pump 에서
-//! 부른다. 여기 있는 것들의 공통점은 **창이 없어도 답이 정의된다**는 것이다 — 읽는
-//! 것이 `Core`(클립보드·메모리) 이거나, 인자만으로 끝나는 것(원격 브라우징)이다.
-//! `App.view` 에 닿는 것은 여기 없다.
-//!
-//! 승인·태스크 대기(`approval.await` · `agent.task_await`)도 두 조합이 같은 함수로 답하지만
-//! 그 함수는 여기가 아니라 대기 본문 옆(`ipc::handler::approval` ·
-//! `ipc::handler::agent::task`)에 있다 — 이 모듈은 도메인 쪽(`core`)이라 IPC 핸들러를
-//! 거꾸로 부르지 않는다.
-//!
-//! ## 왜 한 벌인가
-//!
-//! 같은 메서드를 두 라우터가 각자 구현하면 한쪽만 고쳐지는 순간 갈라진다. 이
-//! 저장소는 그 형태를 이미 겪었고([ADR-0003](../../docs/adr/0003-headless-behavior.md)
-//! 의 `handle_list`), 그래서 읽기 전용 `plugin.*` 는 표와 dispatch 를 한 벌만 둔다.
-//! 이 모듈은 같은 규약을 app 층에 적용한 것이다 — gui 쪽 `impl App` 메서드는 여기
-//! 함수를 부르는 얇은 껍데기로 남는다.
-//!
-//! 무엇을 열고 무엇을 안 여는지의 메서드별 판정은
-//! [headless-ipc-surface](../../docs/dev-guide/headless-ipc-surface.md).
+//! GUI와 헤드리스가 공유하는 창 독립 IPC 처리.
+//! 클립보드 포트나 명시한 접속 인자를 사용하며 지원 목록은 docs/dev-guide/headless-ipc-surface.md를 따른다.
 
 use std::sync::mpsc::SyncSender;
 
@@ -28,11 +8,7 @@ use serde_json::Value;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_ipc::server::send_response;
 
-/// `clipboard.set_text` — 쓰는 대상이 `Core` 의 클립보드 포트 하나다.
-///
-/// 헤드리스에서도 답이 정의된다: 클립보드가 없는 환경이면 포트가 실패를 돌려주고
-/// 그것이 그 시점의 사실이다. `-32601`("그런 메서드 없음")과 "클립보드에 못 썼다" 는
-/// 호출자에게 다른 사실이며, 뒤엣것이 참이다.
+/// 클립보드가 없는 환경도 메서드 부재 대신 포트의 쓰기 오류로 응답한다.
 pub(crate) fn clipboard_set_text(
     core: &crate::core::Core,
     rpc_id: Value,
@@ -47,10 +23,7 @@ pub(crate) fn clipboard_set_text(
     }
 }
 
-/// `remote.*` 공통 접속 파라미터(`profile` XOR `ssh` + 포트 발견 옵션).
-///
-/// 두 디스패처(`remote.workspaces` / `remote.attach`)가 같은 상호배타 가드를 각자
-/// 재현하면 메시지가 어긋나므로 한 곳에 모은다. CLI 선처리(`run.rs`)의 가드와 같은 규약.
+/// remote.workspaces와 remote.attach가 공유하는 접속 인자. profile과 ssh 중 하나만 받는다.
 pub(crate) struct RemoteConnParams {
     pub(crate) profile: Option<String>,
     pub(crate) ssh: Option<String>,
@@ -91,11 +64,7 @@ impl RemoteConnParams {
     }
 }
 
-/// `remote.workspaces` — 원격 인스턴스의 workspace 목록을 브라우징한다.
-///
-/// **App 상태를 하나도 안 읽는다.** 인자로 접속 스펙을 받고 블로킹 SSH I/O 를 워커로
-/// 돌린다. 그래서 창의 유무와 무관하며, 헤드리스에서 없을 이유가 없다 — 오히려 원격
-/// 인스턴스를 뒤지는 것은 헤드리스 데몬의 주된 쓰임에 가깝다.
+/// 블로킹 SSH 조회를 워커에서 수행하고 같은 응답 채널로 결과를 돌려준다.
 pub(crate) fn spawn_remote_workspaces(
     rpc_id: Value,
     params: &Value,
@@ -139,7 +108,6 @@ pub(crate) fn spawn_remote_workspaces(
     });
 }
 
-/// 응답을 낼 store 를 못 찾았을 때의 답 — 두 조합이 같은 문구를 쓴다.
 #[cfg(feature = "gui")]
 pub(crate) fn no_application_state(rpc_id: Value) -> JsonRpcResponse {
     JsonRpcResponse::error(rpc_id, -32000, "no application state available")
@@ -166,10 +134,9 @@ mod tests {
         assert!(p.profile.is_none());
     }
 
-    /// `text` 가 없으면 클립보드에 손대기 전에 인자 오류로 끝난다.
+    /// 빈 params의 text 조회 결과만 검사한다. 실제 핸들러나 클립보드 호출 순서는 실행하지 않는다.
     #[test]
     fn clipboard_without_text_is_an_invalid_params_error() {
-        // `Core` 없이 판정되는 분기만 본다 — 인자 검사가 포트 호출보다 먼저다.
         let params = serde_json::json!({});
         assert!(params.get("text").and_then(|v| v.as_str()).is_none());
     }

@@ -1,5 +1,4 @@
-//! Task store wrapper. handler 의 `core.with_memory + TaskStore::new` 조립을
-//! 본 모듈로 흡수. `agent_seq` 의 시퀀스 공유는 그대로 유지.
+//! Core의 저장소와 engine의 공유 시퀀스로 작업을 관리한다.
 
 use tasty_agent::task::{
     TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
@@ -15,11 +14,7 @@ use crate::core::CoreState;
 use crate::core::agent::runner_host::evict_task_side_keys;
 
 impl Core {
-    /// Task 생성 — `TaskStore::create`/`create_reserved_for_fallback` wrapper.
-    /// `reserved_for_fallback=true` 면 이 task 를 앞으로 다른 main 의
-    /// `on_failure.fallback.task` 로 참조할 계획이라는 뜻 — 그 main 이 생기기
-    /// 전까지 `Ready` 로 노출되지 않아 러너가 dispatch 할 수 없다(TOCTOU 레이스
-    /// 방지, `crates/tasty-agent/src/task/store.rs::create_reserved_for_fallback`).
+    /// fallback 예약 작업은 참조할 본 작업이 등록되기 전에 Ready가 되지 않게 만든다.
     pub(crate) fn task_create(
         &self,
         engine: &CoreState,
@@ -37,41 +32,26 @@ impl Core {
         })
     }
 
-    /// Task 목록.
     pub(crate) fn task_list(
         &self,
         engine: &CoreState,
         workspace_id: u32,
     ) -> Result<Vec<Task>, AgentError> {
-        // `Core::memory` 와 `CoreState::memory` 는 같은 Arc 다(부팅이 전자를 clone 해
-        // 후자에 주입) — 읽기는 어느 쪽으로 들어가도 같은 store 다. 본체를 free fn
-        // 으로 두어 `Core` 를 손에 쥐지 못하는 호출자(렌더 경로)도 같은 구현을 쓴다.
+        // 렌더 경로도 Core 없이 같은 저장소와 목록 구현을 사용할 수 있게 위임한다.
         task_list_from_state(engine, workspace_id)
     }
 
-    /// 등록된 DAG 목록. `workspace_id` 가 `None` 이면 **지금 살아있는 전 workspace**
-    /// 를 순회한다(원칙 3 — 활성 workspace 에 의존하지 않는다).
-    ///
-    /// 삭제된 workspace 에 남은 고아 task 는 열거하지 않는다 — 영속 scope 를 직접
-    /// 훑으면(`MemoryStore::scopes`) 드러나겠지만, 목록이 보여줄 대상은 사람이 지금
-    /// 조작 가능한 workspace 의 DAG 다. 고아 정리는 부팅 시 자동 GC 의 책임이다
-    /// (`docs/dev-guide/agent-runner.md` "자동 GC").
+    /// ID를 지정하지 않으면 이 engine에 살아 있는 workspace만 순회한다. 삭제된 workspace의 고아 scope는 조회하지 않는다.
     pub(crate) fn dag_list(
         &self,
         engine: &CoreState,
         workspace_id: Option<u32>,
     ) -> Result<Vec<DagSummary>, AgentError> {
-        // `task_list` 와 같은 이유로 본체는 free fn 이다 — `Core` 를 손에 쥐지 못하는
-        // 렌더 경로(DAG 목록 popup)가 같은 구현을 쓴다.
         dag_list_from_state(engine, workspace_id)
     }
 
-    /// DAG 하나 + 그 DAG 에 속한 task 전체. 못 찾으면 `None`.
-    ///
-    /// `workspace_id` 가 `None` 이면 전 workspace 를 오름차순으로 훑어 첫 일치를
-    /// 돌려준다 — explicit id(`d:<metadata.dag>`)는 사용자가 정한 키라 서로 다른
-    /// workspace 가 같은 값을 쓸 수 있으므로, 그 경우를 구분하려면 호출자가
-    /// `workspace_id` 를 함께 준다.
+    /// workspace를 지정하지 않으면 ID 오름차순의 첫 일치를 반환한다.
+    /// 사용자가 정한 DAG 키가 여러 workspace에 같을 수 있어 구별하려면 workspace_id도 지정한다.
     pub(crate) fn dag_get(
         &self,
         engine: &CoreState,
@@ -95,7 +75,6 @@ impl Core {
         Ok(None)
     }
 
-    /// Task 단건 조회.
     pub(crate) fn task_get(
         &self,
         engine: &CoreState,
@@ -109,7 +88,6 @@ impl Core {
         })
     }
 
-    /// Task 취소 — downstream cascade 포함.
     pub(crate) fn task_cancel(
         &self,
         engine: &CoreState,
@@ -131,9 +109,7 @@ impl Core {
         result
     }
 
-    /// S5: task state 가 종결 (Succeeded/Failed/Cancelled/Skipped) 이면 waker hub 에
-    /// fire. set_state / cancel / runner thread 등 *모든* terminal 진입 경로에서
-    /// 호출되어야 누락 없음 (R-5 회피).
+    /// 종결 상태 전이 경로는 대기자를 깨우고 사건 피드를 기록하도록 이 hub를 호출해야 한다.
     fn fire_waker_if_terminal(&self, engine: &CoreState, workspace_id: u32, task: &Task) {
         if !task.state.is_terminal() {
             return;
@@ -148,7 +124,6 @@ impl Core {
         );
     }
 
-    /// Task retry — 옵션에 따라 downstream reset.
     pub(crate) fn task_retry(
         &self,
         engine: &CoreState,
@@ -164,8 +139,7 @@ impl Core {
         })
     }
 
-    /// Task state 강제 전이 — runner 가 dispatch / poll 결과에 따라 호출.
-    /// downstream cascade 도 함께 수행. 반환: (갱신된 자기, 자동 전이된 downstream).
+    /// 상태 변경과 자동 전이된 후속 작업을 반환한다.
     pub(crate) fn task_set_state(
         &self,
         engine: &CoreState,
@@ -188,7 +162,6 @@ impl Core {
         result
     }
 
-    /// Task result 영속. set_state(Succeeded/Failed) 직전에 호출.
     pub(crate) fn task_set_result(
         &self,
         engine: &CoreState,
@@ -203,17 +176,9 @@ impl Core {
         })
     }
 
-    /// `hook_id` 에 매핑된 대기 중 task 가 있으면 완료
-    /// 처리한다. 없으면 no-op. `engine` 은 `task_set_state` 의 waker 발화
-    /// (`task_waker_hub`)에 필요하다 — 호출자는 이 훅이 발화한 그 window/state
-    /// 의 engine 을 넘겨야 `agent.task_await` 대기자가 정확히 깨어난다(다른
-    /// window 의 engine 을 넘기면 waker 가 엉뚱한 hub 에 발화한다).
-    ///
-    /// `exit_code` — 실제 관측된 값(`HookEvent::CommandCompleted` 발화만 보유,
-    /// 그 외 push 신호는 `None`). `Some(0)` 또는 `None` 이면 Succeeded,
-    /// `Some(비0)` 이면 그 코드를 실은 Failed — 결정 7 "exit 0 은 succeeded,
-    /// 비-0 은 failed" 를 여기서 강제한다. exit code 개념이 없는 임의 push
-    /// 완료 신호(예: 향후 claude/codex 전략)는 `None` 이라 기존처럼 Succeeded.
+    /// 훅 매핑을 소비해 exit code가 0 또는 없으면 성공, 나머지는 실패로 처리한다.
+    /// 대기자를 깨울 hub가 engine에 있으므로 훅이 발생한 engine을 전달해야 한다.
+    /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다.
     pub(crate) fn resolve_hook_task_wait(
         &self,
         engine: &CoreState,
@@ -244,8 +209,7 @@ impl Core {
         }
     }
 
-    /// Reducer 단계 1: 입력 task 들의 결과를 `ReducerInput` 형태로 수집.
-    /// 실제 reducer / shell I/O 는 handler 가 *memory lock 바깥에서* 실행.
+    /// 저장소 락 안에서는 입력 결과만 모으고 실제 reducer 실행은 호출자가 락 밖에서 한다.
     pub(crate) fn task_reduce_collect(
         &self,
         engine: &CoreState,
@@ -276,11 +240,8 @@ impl Core {
         })
     }
 
-    /// Task 삭제 — `TaskStore::delete_checked`(참조 무결성 + Running 거부)로
-    /// 지운 뒤, 실제로 지워진 task 마다 host 측 side-key(handle/
-    /// run_result)도 정리한다. side-key 정리는 memory lock 을 놓은 뒤 별도로
-    /// 순회한다 — `with_memory` 안에서 `RunnerContext::with_memory` 를 또 호출하면
-    /// 같은 `Arc<Mutex<_>>` 재진입 lock 으로 deadlock.
+    /// 참조·Running 검사를 통과해 삭제된 작업의 handle·실행 결과도 정리한다.
+    /// 부속 키 정리는 저장소 락을 다시 사용하므로 첫 락을 놓은 뒤 호출해야 한다.
     pub(crate) fn task_delete(
         &self,
         engine: &CoreState,
@@ -300,11 +261,8 @@ impl Core {
         Ok(report)
     }
 
-    /// Task 일괄 정리 — `filter` 로 선정된 후보를 sweep. 상태/
-    /// 경과시간 둘 다 미지정이면 워크스페이스 전체가 후보가 되어버려 위험하므로
-    /// 여기서 거부한다(IPC 로 직접 호출되는 경로라 CLI 가드만으로는 부족).
-    /// `dry_run=true` 면 계획만 계산하고 아무것도 지우지 않는다 — `plan_sweep`
-    /// 자체가 순수 함수라 dry-run/실제 실행이 후보 선정 로직을 100% 공유한다.
+    /// 상태나 경과시간 조건 중 하나는 있어야 한다. dry_run과 실제 삭제가 같은 계획을 사용한다.
+    /// 계획 조회와 적용은 별도 락 구간이다.
     pub(crate) fn task_purge(
         &self,
         engine: &CoreState,
@@ -404,16 +362,12 @@ mod hook_wait_tests {
             .id
     }
 
-    /// hook_task_wait 전체 생애주기: register → (해당 hook 발화 시뮬레이션인)
-    /// resolve 호출 → task 가 Succeeded 로 마감. `agent.task_set_result` 외부
-    /// 호출과 동형의 결과를 훅 경유로 재현한다.
     #[test]
     fn register_then_resolve_completes_the_waiting_task() {
         let (core, _home) = core();
         let engine = engine();
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine, ws);
-        // dispatch 가 됐다고 가정 — Ready → Running (실제 러너의 0단계 전이와 동형).
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
@@ -431,8 +385,6 @@ mod hook_wait_tests {
         );
     }
 
-    /// 등록되지 않은 hook_id 는 no-op — 대부분의 훅 발화(§B 미구현이라 오늘은
-    /// 전부)가 여기 해당하므로 반드시 안전해야 한다.
     #[test]
     fn resolve_unregistered_hook_id_does_not_touch_any_task() {
         let (core, _home) = core();
@@ -442,7 +394,6 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        // 아무것도 등록 안 한 채 임의 hook_id resolve — task 는 Running 그대로.
         core.resolve_hook_task_wait(&engine, 999, None);
 
         let task = core
@@ -452,8 +403,6 @@ mod hook_wait_tests {
         assert!(!task.succeeded);
     }
 
-    /// resolve 는 1회성 소비 — 같은 hook_id 가 두 번 발화해도(예: 재등록 없이
-    /// 중복 이벤트) 두 번째는 이미 소비된 매핑이라 no-op(에러 없이 조용히 무시).
     #[test]
     fn resolve_is_one_shot() {
         let (core, _home) = core();
@@ -466,7 +415,6 @@ mod hook_wait_tests {
         core.hook_task_waits
             .register(7, ws, task_id.clone(), u64::MAX);
         core.resolve_hook_task_wait(&engine, 7, None);
-        // 두 번째 발화 — 매핑이 이미 소비돼 no-op. 패닉/에러 없이 조용히 지나간다.
         core.resolve_hook_task_wait(&engine, 7, None);
 
         let task = core
@@ -476,8 +424,6 @@ mod hook_wait_tests {
         assert!(task.succeeded);
     }
 
-    /// 결정 7 — 비-0 exit code 로 발화하면 task 는 Failed 로 마감된다(Succeeded
-    /// 아님). `command-completed` 내장 push 전략의 핵심 계약.
     #[test]
     fn resolve_with_nonzero_exit_code_fails_the_task() {
         let (core, _home) = core();
@@ -499,11 +445,7 @@ mod hook_wait_tests {
         assert_eq!(task.result.and_then(|r| r.exit_code), Some(1));
     }
 
-    /// `reserved_for_fallback` 배선 확인 — `Core::task_create(.., reserved_for_fallback: true)`
-    /// 가 `handle_task_create` 의 `reserved_for_fallback` JSON param 부터
-    /// `TaskStore::create_reserved_for_fallback` 까지 실제로 이어진다.
-    /// 세부 readiness/dormant 로직은 `crates/tasty-agent` 크레이트 테스트가
-    /// 이미 폭넓게 덮으므로, 여기서는 Core 계층 배선만 확인한다.
+    /// Core의 reserved_for_fallback 인자가 Store의 Waiting 생성으로 이어지는지 확인한다. IPC 인자 파서는 실행하지 않는다.
     #[test]
     fn task_create_reserved_for_fallback_wires_through_core_to_waiting_state() {
         let (core, _home) = core();
@@ -533,10 +475,7 @@ mod hook_wait_tests {
     }
 }
 
-/// host 층(`Core::task_delete`) 이 실제로
-/// side-key(handle/run_result) 를 정리하고, `Running` 삭제 거부가 자원(세마포어
-/// permit)을 건드리지 않는지 검증. store 층의 참조/상태 검사 자체는
-/// `crates/tasty-agent/src/task/tests.rs` 가 더 폭넓게 덮는다.
+/// 작업 삭제의 부속 키 정리와 Running 삭제 거절 시 permit 보존을 검사한다.
 #[cfg(test)]
 mod task_delete_tests {
     use std::sync::{Arc, Mutex};
@@ -606,8 +545,6 @@ mod task_delete_tests {
             .id
     }
 
-    /// 시나리오 4: terminal 로 마감된 task 를 지우면 `tasty.agent.handle.<id>`/
-    /// `tasty.agent.run_result.<id>` 두 side-key 가 모두 evict 된다.
     #[test]
     fn task_delete_evicts_handle_and_run_result_side_keys() {
         let (core, _home) = core();
@@ -660,9 +597,6 @@ mod task_delete_tests {
         );
     }
 
-    /// 시나리오 3: `Running` task 는 세마포어 permit 을 쥐고 있어도(결정 2에
-    /// 따라) 항상 거부된다 — 그리고 거부된 삭제 시도는 그 permit 을 건드리지
-    /// 않는다(부분 실패로 인한 자원 누수 없음).
     #[test]
     fn task_delete_rejects_running_task_without_touching_held_semaphore_permit() {
         let (core, _home) = core();
@@ -702,18 +636,12 @@ mod task_delete_tests {
     }
 }
 
-/// `CoreState` 만으로 task 목록을 읽는다.
-///
-/// `Core` 를 인자로 받지 못하는 호출자용 — 특히 egui 렌더 경로(`draw_egui_panels`)
-/// 는 `state`/`engine` 만 받는다. `Core::task_list` 가 이 함수에 위임하므로 읽기
-/// 규칙(owner·시퀀스)이 두 벌로 갈라지지 않는다.
+/// Core를 받지 못하는 화면도 같은 목록 조회를 사용할 수 있도록 engine에서 저장소를 가져온다.
 pub(crate) fn task_list_from_state(
     engine: &CoreState,
     workspace_id: u32,
 ) -> Result<Vec<Task>, AgentError> {
     let seq = engine.agent_seq.clone();
-    // poison 은 다른 스레드의 패닉 흔적일 뿐 store 자체는 읽을 수 있다 —
-    // `Core::with_memory` 와 같은 처리(거기서 유일한 lock 정책을 정한다).
     let mut guard = crate::poison::recover_mutex(
         engine.memory.lock(),
         crate::core::MEMORY_WHAT,
@@ -723,11 +651,7 @@ pub(crate) fn task_list_from_state(
     store.list(workspace_id)
 }
 
-/// DAG 조회가 훑을 workspace id 목록. 순회 순서를 id 오름차순으로 고정해
-/// `dag_list` / `dag_get` 결과가 workspace 생성 순서에 흔들리지 않게 한다.
-///
-/// `Core` 메서드와 `CoreState` 전용 경로가 **같은 순회 규칙**을 써야 한다 — 한쪽만
-/// 고치면 popup 과 CLI 가 같은 질문에 다른 순서로 답한다.
+/// ID 미지정 시 이 engine의 live workspace를 오름차순으로 순회한다. 명시한 ID는 그대로 사용한다.
 pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>) -> Vec<u32> {
     match workspace_id {
         Some(w) => vec![w],
@@ -739,10 +663,6 @@ pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>)
     }
 }
 
-/// 등록된 DAG 목록 — `CoreState` 만으로 조회한다([`Core::dag_list`] 의 본체).
-///
-/// `workspace_id` 가 `None` 이면 지금 살아있는 전 workspace 를 id 오름차순으로
-/// 순회한다(원칙 3 — 활성 workspace 에 의존하지 않는다).
 pub(crate) fn dag_list_from_state(
     engine: &CoreState,
     workspace_id: Option<u32>,
@@ -754,15 +674,8 @@ pub(crate) fn dag_list_from_state(
     Ok(out)
 }
 
-/// 러너 스레드의 생사 — `CoreState` 만으로 조회한다.
-///
-/// 카운트(ready/running)는 함께 돌려주지 않는다. 호출자(DAG surface)는 **자기가
-/// 보고 있는 DAG 의 부분집합** 을 세야 하는데 러너 레지스트리는 workspace 전체를
-/// 세기 때문이다 — 화면이 12 개짜리 DAG 를 띄워 놓고 옆 DAG 의 ready 를 합산해
-/// 보여주면 배지가 거짓말을 한다.
-///
-/// 반환은 `(running, crashed)`. 레지스트리가 아직 주입되지 않았으면(headless 초기·
-/// 테스트) `(false, false)` — "러너 없음" 으로 읽힌다.
+/// 화면은 표시 중인 DAG의 task만 세므로 여기서는 러너 실행·crash 여부만 반환한다.
+/// 레지스트리가 없으면 (false, false)다.
 #[cfg(feature = "gui")]
 pub(crate) fn runner_liveness(engine: &CoreState, workspace_id: u32) -> (bool, bool) {
     engine
