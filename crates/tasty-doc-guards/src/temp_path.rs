@@ -136,7 +136,7 @@ fn reason_is_attached(
 /// 한 파일을 분류한 결과. 줄 번호는 0 기반(`temp_dir()` 이 있는 줄).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct FileClass {
-    /// 경로를 짓는(`.join` 이 창 안에 있는) `temp_dir()` 자리 전부.
+    /// 수신자 추적으로 경로를 만드는 .join과 연결한 temp_dir 호출.
     pub sites: Vec<usize>,
     /// 그중 유니크화된 줄.
     pub uniquified: Vec<usize>,
@@ -144,14 +144,9 @@ pub struct FileClass {
     pub reasoned: Vec<usize>,
     /// 그중 유니크화도 사유도 없는 줄 — 고정 이름 공유(위반).
     pub silent: Vec<usize>,
-    /// [`uniquified`](Self::uniquified) 의 부분집합 — **약한 성분만으로** 유일해진 줄.
-    ///
-    /// 사유가 그 자리에 붙어 있으면 여기 안 담는다(의도된 선택으로 본다). 즉 이 칸은
-    /// "시간 nonce 에만 기댔고 그 선택을 아무도 안 밝힌 자리" 다.
+    /// 같은 프로세스의 호출을 시계만으로 구분하고 그 선택의 사유가 없는 줄.
     pub weak_only: Vec<usize>,
-    /// [`uniquified`](Self::uniquified) 의 부분집합 — **재호출을 가르는 축이 빈** 줄.
-    ///
-    /// 사유가 그 자리에 붙어 있으면 여기 안 담는다(의도된 선택으로 본다).
+    /// 같은 프로세스의 재호출을 구분할 성분도 사유도 없는 줄.
     pub recall_blind: Vec<usize>,
     /// recall_blind 중 스레드 ID도 사용하는 항목. 보고만 세분화하며 재호출 판정은 그대로다.
     pub recall_blind_with_thread: Vec<usize>,

@@ -1,52 +1,13 @@
-//! 권한 문서 표의 **메서드 목록**이 `METHOD_TABLE` 과 맞는지 검증한다.
+//! 권한 문서의 메서드 목록을 METHOD_TABLE과 대조한다.
+//! 메서드만 나열한 행은 전체 집합을, 전부라고 쓴 글롭은 해당 접두 전체를 비교한다.
+//! 등을 붙인 행은 일부 예시이므로 적힌 메서드만 확인한다. 검사 범위를 임의로 줄이지 않도록
+//! 그런 행의 개수도 고정한다.
 //!
-//! 형제 가드([`permission_token_docs_parity`])는 **토큰**이 문서에 등장하는지만 본다 —
-//! 자기 doc 에 그렇게 적혀 있다. 그런데 `docs/dev-guide/plugin-permissions.md` 의 표는
-//! 토큰마다 **그 토큰이 여는 메서드 목록**을 함께 싣고, 그 목록은 지금까지 어떤 가드도
-//! 보지 않았다. 매니페스트 작성자는 이 표를 읽고 권한을 고르므로, 어긋나면 필요한
-//! 권한을 안 붙이거나 필요 없는 권한을 붙인다.
+//! memory.read/write의 조회·변경 한정어는 자동 분류하지 못한다. 대신 두 권한의 합이
+//! secret을 제외한 memory 메서드 전부를 포함하고 서로 겹치지 않는지 확인한다.
 //!
-//! ## 단일 출처는 있다
-//!
-//! `crates/tasty-ipc/src/method_meta.rs` 의 `METHOD_TABLE` 이 메서드 → 필요 권한을
-//! 싣고 스스로 "단일 진실 원천" 이라고 적어 두었다. 즉 이 축의 답은 "출처를 만든다" 가
-//! 아니라 "있는 출처와 문서를 잇는다" 다.
-//!
-//! ## 어디까지 가를 수 있는가 — 행마다 다르다
-//!
-//! 문서의 가운데 열은 산문이라 한 가지 강도로 검사할 수 없다. 표기 자체가 네 부류를
-//! 구분하고 있어서, 그 구분을 그대로 검사 강도로 쓴다.
-//!
-//! | 표기 | 행 | 검사 |
-//! |---|---|---|
-//! | 메서드만 나열 | 20 | **집합 동등** — 나열이 곧 전부라는 주장이다 |
-//! | `` `x.*` 전부 `` | 4 | **접두 집합 동등** — 더 강한 주장이라 양방향으로 검사된다 |
-//! | `` `memory.bb_*` 조회 `` | 2 | 정방향 + **쌍 단위 완전성**(아래) |
-//! | `… 등` | 4 | **정방향 포함만** — `등` 이 불완전을 명시적으로 선언한다 |
-//!
-//! `등` 행의 역방향은 검사하지 않는다. 그 표기가 "여기 적힌 것이 전부는 아니다" 라는
-//! 뜻이므로, 역방향 누락은 **결함이 아니라 그 행의 설계**다. 대신 그런 행이 몇 개인지를
-//! 고정한다 — 면제 목록이 조용히 자라면 검사가 껍데기가 되고, 그 목록이 곧 이 가드가
-//! 답하지 못하는 질문의 집합이기 때문이다. 닫힌 행에 `등` 을 붙여 검사를 낮추는 변경은
-//! 그 고정에서 걸린다.
-//!
-//! `memory.read` / `memory.write` 는 `` `memory.bb_*` 조회 `` / `` … 변경 `` 처럼 한국어
-//! 한정어로 글롭을 가른다 — 어느 `bb_*` 가 조회인지는 기계가 못 정한다. 그래서 그 둘은
-//! **쌍으로** 검사한다: 두 토큰이 합쳐 `memory.*`(secret 제외) 전부를 덮고 서로 겹치지
-//! 않으며, 접두 밖의 예외는 문서가 이름으로 적은 것뿐이라는 주장은 기계가 가른다.
-//!
-//! ## 백틱 안에 토큰과 메서드가 섞여 있다
-//!
-//! 형제 가드가 겪은 벽이다(그 doc 의 "역방향은 검사하지 않는다" 문단). 여기서는 벽을
-//! 피할 수 있다 — 이 가드는 `METHOD_TABLE` 을 갖고 있으므로, 백틱 안 문자열이 토큰 집합에
-//! 있고 메서드 표에 없으면 **토큰 참조**로 읽는다. 두 집합이 겹치는 이름은 지금 없고,
-//! 생기면 그 이름은 메서드로 해석돼 정방향 검사를 받는다(안전한 방향이다).
-//!
-//! 백틱에는 산문도 들어온다 — `process.spawn` 행의 "`method_meta` 어느 메서드도 요구하지
-//! 않는다" 같은 모듈 이름이다. **표에 있으면 메서드, 표에 없고 점도 없으면 산문**으로
-//! 가른다. 점을 근거로 삼는 쪽이 단순하지만 그러면 `split` · `tree` 처럼 점 없는 실제
-//! 메서드가 조용히 빠지므로, 표 조회를 먼저 둔다. 남는 구멍은 "점 없는 이름을 오타 낸
-//! 경우" 하나이고, 그 둘이 그대로 있는지는 파서 테스트가 붙든다.
+//! 백틱 항목은 METHOD_TABLE에서 먼저 찾고, 없으면 권한 토큰인지 확인한다.
+//! 나머지 중 점이 없는 이름은 산문으로 본다. 따라서 점이 없는 메서드명의 오타는 놓칠 수 있다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -56,8 +17,7 @@ const TOKEN_SOURCE: &str = "crates/tasty-plugin-manifest/src/types.rs";
 const METHOD_SOURCE: &str = "crates/tasty-ipc/src/method_meta.rs";
 const DOC: &str = "docs/dev-guide/plugin-permissions.md";
 
-/// `등` 으로 불완전을 선언한 행의 수. 이 가드가 역방향을 답하지 못하는 행의 개수이기도
-/// 하다 — 늘면 검사가 조용히 약해지므로 고정한다.
+/// 역방향 누락 검사를 하지 않는 부분 목록의 수다. 행 분류가 바뀌면 함께 검토한다.
 const OPEN_ROWS: usize = 4;
 
 fn root() -> PathBuf {
@@ -99,12 +59,7 @@ fn variant_tokens(src: &str) -> BTreeMap<String, String> {
     out
 }
 
-/// `method_meta.rs` 가 실제로 정의한 `MethodMeta` 생성자 이름.
-///
-/// 손으로 유지하는 목록 대신 **소스에서 도출**한다. 도출한 것과 [`KNOWN_CTORS`] 가
-/// 갈라지면 그 자리에서 실패한다 — 파서가 모르는 생성자를 조용히 건너뛰면 그 항목들이
-/// 표에서 사라지고, 그때 이 가드는 "문서가 없는 메서드를 적었다" 는 **거짓 결함**을
-/// 보고한다(2026-09-05 실제로 그렇게 났다: `plugin_only` 를 추가하자 넷이 사라졌다).
+/// 소스의 MethodMeta 생성자를 도출해 파서가 모르는 형식이 추가됐는지 확인한다.
 fn constructors_in_source(src: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in src.lines() {
@@ -234,41 +189,30 @@ fn model() -> Model {
     }
 }
 
-/// 소스가 정의한 생성자를 이 파서가 **전부** 해석할 줄 안다.
-///
-/// 이 단정이 이 파일에서 제일 오래 살 부류를 막는다 — 스캐너가 **자기가 아는 모양만**
-/// 보는 형태다. 생성자를 하나 더 만드는 커밋은 이 파서를 조용히 눈멀게 하는데, 그때
-/// 나오는 것은 "파서가 못 읽었다" 가 아니라 "문서가 없는 메서드를 적었다" 라는 **엉뚱한
-/// 방향의 결함**이라 읽는 사람이 문서를 고치러 간다. 그래서 목록을 손으로 두지 않고
-/// 소스에서 도출해 대조한다.
+/// 모르는 생성자를 건너뛰어 문서 오류로 오인하지 않도록 파서의 지원 목록과 대조한다.
 #[test]
 fn the_known_constructors_cover_what_the_source_defines() {
     let src = read(METHOD_SOURCE);
     let defined = constructors_in_source(&src);
     assert!(
         defined.len() >= 3,
-        "생성자를 {}개밖에 못 뽑았다 — 도출이 죽었다(2026-09-05 실측 3: plugin · \
-         plugin_only · local_only). `const fn …() -> MethodMeta` 형태가 바뀌었는지 봐라",
+        "MethodMeta 생성자를 {}개만 찾았다(2026-09-05 측정3개). const fn의 반환 형식과 파서를 확인한다.",
         defined.len()
     );
     let known: BTreeSet<String> = KNOWN_CTORS.iter().map(|(n, _)| (*n).to_string()).collect();
     let unhandled: Vec<&String> = defined.difference(&known).collect();
     assert!(
         unhandled.is_empty(),
-        "`method_meta.rs` 가 정의한 생성자를 이 파서가 해석할 줄 모른다 — 그 생성자로 적힌 \
-         항목은 표에서 조용히 사라진다. `KNOWN_CTORS` 에 (이름, plugin 이 부를 수 있는가) \
-         를 더해라: {unhandled:?}"
+        "파서가 지원하지 않는 MethodMeta 생성자가 있다. 호출 가능 범위를 확인해 KNOWN_CTORS를 갱신한다: {unhandled:?}"
     );
     let stale: Vec<&String> = known.difference(&defined).collect();
     assert!(
         stale.is_empty(),
-        "`KNOWN_CTORS` 에 있는데 소스에 없는 생성자다 — 지워진 것을 계속 해석하고 있다: \
-         {stale:?}"
+        "KNOWN_CTORS에 있지만 소스에 없는 생성자다: {stale:?}"
     );
 }
 
-/// 파서가 조용히 빈 결과를 내면 아래 전부가 무력해진다. 특히 **여러 줄 항목**은
-/// 한 줄 파서에서 소리 없이 빠지므로 대표를 하나 박아 둔다.
+/// 빈 결과와 항목 형식별 누락을 따로 확인한다.
 #[test]
 fn the_parsers_are_alive() {
     let m = model();
@@ -311,8 +255,7 @@ fn the_parsers_are_alive() {
             .cloned()
             .flatten()
             .is_some_and(|v| v.contains(&"UiBanner".to_string())),
-        "`plugin_only(&[..])` 항목을 못 읽는다 — 이 갈래가 빠지면 그 메서드들이 조용히 \
-         사라져 '문서가 없는 메서드를 적었다' 로 오보된다"
+        "plugin_only 항목을 읽지 못했다. 이 항목을 누락하면 문서에만 메서드가 있다고 잘못 보고한다."
     );
     assert_eq!(
         expand("approval.summary.get/set"),
@@ -370,7 +313,6 @@ fn every_method_the_doc_names_really_needs_that_permission() {
     );
 }
 
-/// 나열이 전부라고 주장하는 행은 코드와 **집합이 같아야** 한다.
 #[test]
 fn closed_rows_list_exactly_what_the_code_requires() {
     let m = model();
@@ -409,7 +351,6 @@ fn closed_rows_list_exactly_what_the_code_requires() {
     );
 }
 
-/// `` `x.*` 전부 `` 는 더 강한 주장이라 양방향으로 검사한다.
 #[test]
 fn total_glob_claims_hold_in_both_directions() {
     let m = model();
@@ -519,7 +460,6 @@ fn the_memory_pair_covers_every_memory_method_exactly_once() {
     );
 }
 
-/// `등` 행의 수를 고정한다 — 이 가드가 역방향을 **답하지 못하는** 행의 집합이다.
 #[test]
 fn the_number_of_rows_that_declare_themselves_incomplete_is_pinned() {
     let m = model();
@@ -532,11 +472,6 @@ fn the_number_of_rows_that_declare_themselves_incomplete_is_pinned() {
     let found = open.len();
     assert_eq!(
         found, OPEN_ROWS,
-        "`등` 으로 불완전을 선언한 행이 {found}개다(고정값 {OPEN_ROWS}): {open:?}\n\n\
-         이 행들은 역방향(코드에 있는데 문서에 없는 메서드)이 검사되지 않는다 — `등` 이 곧 \
-         '전부는 아니다' 라는 선언이라 역방향 누락이 결함이 아니기 때문이다.\n\
-         늘었다면: 닫힌 행에 `등` 을 붙여 검사를 낮춘 것은 아닌지 본다. 낮춘 것이 맞고 \
-         의도한 것이라면 이 상수를 올린다.\n\
-         줄었다면: 좋은 방향이다. 상수를 내린다."
+        "등을 붙인 부분 목록이 {found}개다(기준 {OPEN_ROWS}): {open:?}. 부분 목록은 코드에만 있는 메서드의 누락을 검사하지 않는다. 행의 분류 변경이 타당한지 확인한 뒤 기준 개수를 갱신한다."
     );
 }
