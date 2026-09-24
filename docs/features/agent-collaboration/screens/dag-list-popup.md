@@ -84,7 +84,7 @@ DAG 를 나열하고 행마다 소속 workspace 를 보여준다:
 
 목록은 **가장 최근에 움직인 DAG 가 맨 위**다. 정렬 키는 `updated_at` 내림차순 — 소속 task 의
 (`finished_at` ∪ `started_at` ∪ `created_at`) 최대값이라 "방금 만든 것" 과 "방금 움직인 것" 을
-둘 다 위로 올린다. 목록을 최근 작업을 찾기 위한 순서다. 정렬 방향을 바꾸는 UI 는 없다.
+둘 다 위로 올린다. 최근 작업을 찾기 위한 순서다. 정렬 방향을 바꾸는 UI 는 없다.
 
 동률은 `id` 내림차순, 그래도 같으면 소속 workspace id 오름차순으로 끊는다. explicit id
 (`d:<metadata.dag>`)는 사용자가 정한 키라 workspace 가 다르면 같은 값이 나올 수 있어 세 키를

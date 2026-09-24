@@ -209,7 +209,6 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-max-width` | → `size-240` (240px) | `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
 | `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
 | `--tasty-tooltip-delay` | → `motion-ui-med` → duration-150 (150ms) | `tooltip_delay()` (생성, `Millis`) | hover delay. 종전에는 위젯 상수 `HOVER_DELAY_SECONDS: f64 = 0.15` 였다. fade 는 immediate-mode snap 으로 생략 |
-
 | `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
 | `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |
 | `--tasty-help-hint-color` | → `text-muted` | `text_muted()` | rest 색 |
@@ -460,7 +459,7 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 - DTCG semantic **색** 토큰 ↔ Rust 접근자 전수표. 과거 이 문서가 "Rust 미대응"으로 꼽았던 것 중 `text-on-accent` → `Theme::text_on_accent()`, `radius-sm` → `SIZING.corner_radius_sm` 은 **이미 구현되어 있다** (stale 정정). `radius-pill`/`motion-*`(semantic — component 모션은 `banner_fade()` 등 생성 접근자로 있다)/`ui-scale-*`/`brand-*`(`brand-melon-flesh` → `brand_melon_flesh()` 만 있다) 등은 여전히 Theme 표면 부재.
 - component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑, SIZING 소비처의 토큰 참조 전환.
 
-<a id="-sizing-소비처-토큰-전환-전-필독--그-전환에는-픽셀-변경이-섞여-있다"></a>
+<a id="sizing-소비처-토큰-전환-전-필독--그-전환에는-픽셀-변경이-섞여-있다"></a>
 
 #### SIZING을 토큰에 연결하기 전에 값과 배율을 비교한다
 

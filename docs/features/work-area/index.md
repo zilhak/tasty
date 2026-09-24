@@ -8,7 +8,7 @@
 
 ## 목적
 
-[MainView](../main-view/index.md) 의 중앙 — 사용자가 실제로 일하는 영역. **Workspace › Pane › Tab › Surface** 포함 관계과 그 위의 **두 레벨 레이아웃**을 보유한다. 이 도메인은 GUI 없이도 성립하는 `CoreState` 의 본체이며, MainView는 이 상태를 화면에 표시한다 (→ [identity](../../identity.md) headless). 계층 용어 자체는 [구조 계층](../../concepts/hierarchy.md).
+[MainView](../main-view/index.md) 의 중앙 — 사용자가 실제로 일하는 영역. **Workspace › Pane › Tab › Surface** 포함 관계와 그 위의 **두 레벨 레이아웃**을 보유한다. 이 도메인은 GUI 없이도 성립하는 `CoreState` 의 본체이며, MainView는 이 상태를 화면에 표시한다 (→ [identity](../../identity.md) headless). 계층 용어 자체는 [구조 계층](../../concepts/hierarchy.md).
 
 ## 내부 동작 (headless-valid)
 

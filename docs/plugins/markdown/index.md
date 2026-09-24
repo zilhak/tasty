@@ -43,19 +43,30 @@
   근거·대안·재검토 조건은 [ADR-0030](../../adr/0030-bundled-plugin-data.md).
   이 인라이닝 뒤로 `<base href>` 가 할 일이 남지 않아 문서 `<head>` 에서 제거됐다([ADR-0030](../../adr/0030-bundled-plugin-data.md)).
 - **파일 핸들러** — `detector "markdown"`(확장자 매핑) + `handler` action `open_surface{surface_kind:"markdown"}`. 마크다운 파일 열기 시 이 surface 로 뜬다.
-- **파일열기/대용량 확인 팝업** — plugin 매니페스트 `[[contributes.popup]] id="file-open"`/`id="large-file-confirm"` — **egui-mesh로 그린다**.
-  경로 입력 필드 + **찾아보기** + 열기/취소로 구성한다.
-  `file-open` 은 매니페스트에서 `scope = "surface"` 를 선언해, host 진입점이 바인딩한 대상 surface(제자리 변환이면 그 surface, 새 탭이면 여는 시점의 focus surface)가 보일 때만 그 영역 가운데에 뜬다 — 워크스페이스·탭을 옮기면 숨고 돌아오면 그대로 복원된다.
-  event trigger 로 열린 경우는 창 범위다([design/systems/popup.md](../../design/systems/popup.md) §plugin popup 의 스코프).
-  **두 경로로 열린다**: (1) surface_kind 매니페스트 `convert_input_popup = "file-open"` capability — host 가 convert 팝업/`open_markdown`·`convert_to_markdown` 단축키/context menu 진입점에서 이 팝업을 `open_popup_instance` 로 직접 연다([ADR-0031](../../adr/0031-file-handler-routing.md)), (2) event trigger `com.tasty.markdown.file_open`.
-  **찾아보기**는 host generic **`file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`** IPC 로 host 소유 in-app `file_picker` 팝업을 연다.
-  피커는 팝업을 띄운 surface 의 폴더에서 출발한다 — plugin 은 open context 의 `observed_cwd`(로컬) 또는 `mirror` 일 때 `remote_cwd` 를 `start_dir` 로, `origin_surface_id` 를 그대로 싣는다(`inherit_cwd` 게이트가 걸린 `cwd` 키가 아니다 — [native-file-picker](../../features/native-file-picker/index.md) "시작 위치")([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
-  호출은 `request_id` 만 즉시 받고 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다.
-  이때 `owner_popup_instance` 로 **file-open 자신의 popup instance** 를 신고해 두 팝업이 부모-자식 스택을 이룬다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)) — 피커가 떠 있는 동안 file-open 이 바깥 클릭으로 닫히지 않고, Esc 는 위쪽 피커부터 한 단계씩 닫으며, file-open 이 먼저 닫히면 피커도 함께 정리되어 고른 파일이 유실되지 않는다.
-  **열기 확정 시 open context 의 `surface_id` 유무로 분기**한다: 있으면 그 surface 를 제자리 변환(host `markdown.navigate {surface_id,path}` — convert-to-markdown), 없으면 새 탭으로 연다(host `file_handler.dispatch {path,depth:"deep",owner_popup_instance}` — open-markdown).
-  `owner_popup_instance` 는 file-open 자신의 popup instance 다 — host 가 이것으로 사용자가 만진 팝업에서 온 호출임을 알아보고 새 탭을 선택한다.
-  빠지면 에이전트 요청으로 도착해 새 탭이 선택되지 않는다([ADR-0031](../../adr/0031-file-handler-routing.md)).
-  `file_picker.trigger` 는 **`fs.read`** 권한으로 게이트.
+- **파일 열기와 대용량 확인 팝업** — 매니페스트에 `file-open`과 `large-file-confirm`을 등록하며 egui-mesh로 그린다. 파일 열기 팝업은 경로 입력, 찾아보기, 열기/취소로 구성한다.
+
+  `file-open`은 `scope = "surface"`다. host가 연결한 대상 surface가 보일 때 그 영역 가운데에 뜬다. 제자리 변환은 그 surface를, 새 탭 열기는 당시 포커스된 surface를 대상으로 삼는다. 다른 workspace나 탭으로 이동하면 숨고 돌아오면 복원된다. event trigger로 열 때는 창 범위를 사용한다([팝업 범위](../../design/systems/popup.md#plugin-popup-의-스코프)).
+
+  | 열기 경로 | 동작 |
+  |---|---|
+  | `convert_input_popup = "file-open"` | host가 convert 팝업, `open_markdown`·`convert_to_markdown` 단축키, context menu에서 `open_popup_instance`로 연다. |
+  | `com.tasty.markdown.file_open` | event trigger로 연다. |
+
+  **찾아보기**는 `file_picker.trigger {filters,owner_popup_instance?,start_dir?,origin_surface_id?} → {request_id}`로 host의 파일 피커를 연다. `fs.read` 권한이 필요하며 선택 결과는 `file_picker.result` 이벤트로 비동기 도착한다.
+
+  시작 폴더는 open context의 로컬 `observed_cwd`, mirror이면 `remote_cwd`를 `start_dir`에 담는다. `origin_surface_id`도 그대로 전달한다. `inherit_cwd` 설정의 영향을 받는 `cwd` 키와는 다르다([파일 피커의 시작 위치](../../features/native-file-picker/index.md)).
+
+  `owner_popup_instance`에 file-open 자신의 인스턴스를 넣어 두 팝업을 부모·자식으로 연결한다. 피커가 떠 있는 동안 부모는 바깥 클릭으로 닫히지 않는다. Esc는 위쪽 피커부터 닫으며, 부모가 먼저 닫히면 피커도 함께 정리한다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
+
+  **열기를 확정하면** open context의 `surface_id` 유무에 따라 처리한다.
+
+  | 조건 | 호출 |
+  |---|---|
+  | `surface_id` 있음 | `markdown.navigate {surface_id,path}`로 해당 surface를 제자리 변환 |
+  | `surface_id` 없음 | `file_handler.dispatch {path,depth:"deep",owner_popup_instance}`로 새 탭 열기 |
+
+  확정 요청의 `owner_popup_instance`도 file-open 자신의 인스턴스다. host는 이를 통해 사용자가 조작한 팝업의 요청임을 확인하고 새 탭을 선택한다. 빠지면 에이전트 요청으로 처리해 새 탭을 선택하지 않는다([ADR-0031](../../adr/0031-file-handler-routing.md)).
+
 - **링크 클릭 라우팅** — 문서 안의 모든 non-anchor 링크 destination 은 HTML 생성 시점에 내부 nav-fragment 스킴(`#tasty-nav:link:<percent-encoded-dest>`)으로 rewrite 된다(`render::rewrite_link_dest`) — 실제 `href` 를 그대로 두면 native WebView 가 진짜 파일/미지 스킴으로 navigate 해버려(host 는 *원격* http(s) 만 차단) 렌더된 문서가 그 자리에서 깨진다.
   fragment 만 바뀌는 same-document navigation 은 (a) WebKitGTK 의 `decide-policy` 로는 여전히 캡처되지만(→ host 가 `webview.navigation_attempt` 이벤트로 forward) (b) 실제 페이지 리로드는 일으키지 않는다(실측 검증됨) — 이 성질로 "클릭을 가로채되 화면은 안 깨지는" 신호 채널을 만든다.
   plugin 의 `on_webview_navigation_attempt` 핸들러가 그 이벤트를 받아 `render::parse_nav_fragment`+`classify_link` 로 판정한다:

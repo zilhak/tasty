@@ -249,7 +249,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 
 ## 에이전트가 만든 탭과 선택
 
-에이전트가 탭을 만들어도 그 pane 의 활성 탭은 그대로다 .
+에이전트가 탭을 만들어도 그 pane 의 활성 탭은 그대로다.
 
 - 선택 여부는 `DomainIntent::CreateTab` 의 `activate` **하나**가 정한다. 각 진입점이 값을 정해
   싣는다.

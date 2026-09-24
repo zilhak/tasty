@@ -54,7 +54,7 @@ plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 
 
 ## 비-목표
 
-- 클립보드 **히스토리** 누적·재복사..
+- 클립보드 **히스토리** 누적·재복사.
 - 현재 클립보드 **뷰어 UI** — 빌트인 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 제공.
 - IME(한글/CJK) 입력 파이프라인 — 별도 영역.
 

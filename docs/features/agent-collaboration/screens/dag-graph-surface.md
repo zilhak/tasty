@@ -137,7 +137,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 엣지 3 관계 · 줌 클러스터 + 미니맵 · 러너 배지 5 상태 · 노드 상세 · 빈 상태와 사이클 배너 ·
 풀탭 서피스(넓은/320px) 를 전시한다.
 
-갤러리는 main 바이너리를 의존할 수 없어 이 화면의 specimen 은 **별도 구현**다(좌표 계산만은
+갤러리는 main 바이너리를 의존할 수 없어 이 화면의 specimen 은 **별도 구현**이다(좌표 계산만은
 `tasty-dag-layout` 을 직접 불러 본체와 같은 코드를 쓴다). 미러가 본체와 어긋난 지점,
 시안 대비 의도적 차이(글리프 치환 · 재개 힌트 문구 · 기본 방향)는
 [design-gallery-mapping](../../../design/systems/design-gallery-mapping.md#task-dag--surface--canvas--node-layouts)

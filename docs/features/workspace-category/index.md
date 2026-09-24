@@ -20,7 +20,7 @@
 - **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
 - **워크스페이스 축 next/prev 의 카테고리 경계 넘기 옵션**: "다음/이전 워크스페이스" quick-switch(기본 vim 스타일 `j`/`k`, `next_workspace_in_active_category`/`prev_workspace_in_active_category`)는 기본적으로 활성 카테고리 **로컬 목록 안에서만** wrap-around 한다.
   설정 → 일반 → "다음/이전 워크스페이스가 카테고리 경계를 넘음"(`workspace_switch_crosses_category`, 기본 off)을 켜면, 카테고리 마지막 워크스페이스에서 "다음"은 **다음 카테고리의 첫 워크스페이스**로, 카테고리 첫 워크스페이스에서 "이전"은 **이전 카테고리의 마지막 워크스페이스**로 넘어가며 카테고리 목록 자체도 wrap 한다.
-  이동 대상은 항상 방향에 맞는 첫/마지막 워크스페이스이며, 아래 카테고리 quick-switch 의 **마지막 활성 workspace로의 이동와는 다르다**(방향성 유지가 우선).
+  이동 대상은 항상 방향에 맞는 첫/마지막 워크스페이스이며, 아래 카테고리 quick-switch 의 **마지막 활성 workspace로의 이동과는 다르다**(방향성 유지가 우선).
   카테고리가 1개뿐이면(`workspace_categories_enabled` off 포함) 이 옵션이 on 이어도 기존 로컬 wrap 과 동일하게 동작한다.
   이 옵션은 **워크스페이스 축**의 경계 동작이며, 아래의 **카테고리 축** quick-switch(`Ctrl+Shift`+숫자, `next_category`/`prev_category`)와는 독립적인 별개 기능이다 — 두 축을 함께 켜도 서로 간섭하지 않는다.
 - **카테고리 quick-switch (카테고리 조합+숫자, 기본 Ctrl+Shift)**: 기존 switch-number 오버레이 축을 재사용한다.

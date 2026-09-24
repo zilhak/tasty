@@ -18,12 +18,12 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 
 - **배타 lock**: 한 surface 는 한 client 만 점유한다(`OccupancyRegistry`). 점유는 `stream.open{target}` 핸드셰이크의 `attach.acquire` 로 잡고, 동시 attach 는 holder 정보를 담아 `already_attached` 로 거부.
 - **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다. readonly 는 PTY/TUI 조작(키 입력·마우스 트래킹 보고·휠 스크롤·Ctrl+click 링크 열기)만 차단하는 것이고, **드래그로 텍스트를 선택해 클립보드로 복사하는 tasty 자체 기능은 예외적으로 계속 동작**한다 — PTY 에 아무것도 보내지 않는 순수 로컬 UI 동작이기 때문이다(좌표·복사 텍스트는 실제 렌더되는 mirror 기준). 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
-- **점유 중 attention 해제 권한**: 점유된 surface 의 **주의 환기(attention) 해제도 홀더만** 할 수 있다 — 서버 로컬 사건(그 surface 의 실 렌더 포커스 · 알림 패널의 읽음 처리·"모두 읽음")은 attention 을 지우지 못한다.
-  확인의 주체가 곧 그 surface 의 주체이기 때문이다.
-  홀더의 확인은 `ClientAttentionClear`(client→server) 로 들어와 holder 검증 후 적용된다([ADR-0024](../../adr/0024-attention-ownership-and-clear.md)).
-  게이트 범위는 좁다 — **알림 자체는 점유와 무관하게 읽음 처리되고**(읽음은 이 인스턴스 사용자의 패널 상태), soft 점유에는 걸리지 않으며, 점유가 풀리면 서버 로컬 포커스가 자동으로 해제 주체로 복귀해 stale 배지를 회수한다.
-  근거: [ADR-0024](../../adr/0024-attention-ownership-and-clear.md).
-  이 게이트는 위 selection 예외(ADR-0021)와 **다른 축**이다 — selection 은 로컬 사용자 화면·클립보드에만 존재해 홀더가 보는 것을 바꾸지 않지만, attention 레코드는 push 채널로 홀더에게 그대로 전달되는 공유 상태다.
+- **점유 중 attention 해제 권한**: 강하게 점유된 surface의 attention은 점유한 클라이언트(holder)만 지울 수 있다. 서버의 로컬 포커스나 알림 패널의 읽음·모두 읽음 처리는 attention을 지우지 못한다. 클라이언트는 `ClientAttentionClear`를 보내며 서버는 holder가 맞는지 확인한 뒤 적용한다.
+
+  서버 알림 패널의 읽음 상태는 이 제한과 별개로 바뀐다. 약한 점유(soft)에는 이 제한이 없으며, 강한 점유가 풀리면 서버 로컬 포커스가 다시 attention을 해제할 수 있어 남은 배지도 정리된다([ADR-0024](../../adr/0024-attention-ownership-and-clear.md)).
+
+  텍스트 선택과 복사는 점유 중에도 허용한다. 이 동작은 로컬 화면과 클립보드에만 영향을 준다. 반면 attention은 클라이언트에도 전달되는 공유 상태이므로 holder의 확인 없이 지우지 않는다.
+
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
 - **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
 - **self-attach(자기 인스턴스 포트로 attach)는 거절된다** — debug/release 공통. GUI attach 핸드셰이크는 메인 스레드에서 동기 대기하는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 반드시 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 로컬 self-mirror 가 필요하면 별도 프로세스인 `tasty debug attach` 를 쓴다(같은 이유로 교착이 없다).
@@ -117,7 +117,7 @@ mirror 콘텐츠(grid) 갱신은 원격 출력이 올 때 즉시, 3초 tick 은 
 메커니즘 상세는 [dev-guide/attach-behavior "활동(busy) 상태 전파"](../../dev-guide/attach-behavior.md#활동busy-상태-전파).
 
 **주의 환기(attention)도 같은 방향의 별도 채널이다** — 원격이 자기 surface 의 attention(작업 완료 / 응답 필요)을 같은 1Hz tick 에 `StreamControl::Attention{surface_id, kind}` 로 forward 하고 client 가 자기 `AttentionStore` 에 반영한다.
-attention 의 관리 주체은 **surface 를 소유한 인스턴스**다: producer(완료 IPC/CLI, Claude 플러그인 훅, OSC 133 명령 완료, toast)가 전부 PTY 가 있는 쪽에서 돌고, 특히 `needs_input` 은 서버 훅에서만 나와 미러가 스스로 만들 수 없다.
+attention 의 관리 주체는 **surface 를 소유한 인스턴스**다: producer(완료 IPC/CLI, Claude 플러그인 훅, OSC 133 명령 완료, toast)가 전부 PTY 가 있는 쪽에서 돌고, 특히 `needs_input` 은 서버 훅에서만 나와 미러가 스스로 만들 수 없다.
 반영된 값은 로컬 attention 과 **같은 store** 에 들어가므로 미러 워크스페이스에서도 사이드바 개수 배지·surface 테두리·탭 제목 색이 그대로 동작한다.
 미러는 자기 판단으로 attention 을 만들지 않는다 — 미러 터미널도 서버 바이트를 파싱해 OSC 133 D·Bell 등을 발생시키지만 `raise_attention` 이 mirror surface 를 걸러내므로, 이 push 가 미러 attention 의 **유일한 소스**다(알림 패널 아이템·토스트는 억제 대상이 아니라 그대로 뜬다).
 반대로 **해제는 미러에서 서버로 되돌아간다** — 미러 사용자가 그 surface 를 확인(실-포커스 또는 미러 로컬 알림 읽음)해 레코드가 실제로 지워지면 `StreamControl::ClientAttentionClear` 1 회가 서버로 가고 서버 레코드도 제거된다.
@@ -187,7 +187,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 - **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단·forward 대상이 아니다.
 - **`terminal.spawn` 은 forward 대상이 아니라 거부 대상이다 ([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md))**: 위 forward 는 fire-and-forget 이라 응답이 원격에서 생긴 리소스의 id 를 담지 않는다.
   `tasty claude/codex/terminal spawn` 이 타는 `terminal.spawn` 은 그 id 를 **동기로** 받아 child registry 등록·soft 점유·후속 command 주입까지 이어가야 하므로 이 응답 모델 위에 얹힐 수 없다.
-  막지 않으면 로컬은 에러를 돌려주는데 forward 큐는 IPC 응답과 무관하게 드레인되어 **호출자가 관리하지 못하는 원격 탭**가 생긴다.
+  막지 않으면 로컬은 에러를 돌려주는데 forward 큐는 IPC 응답과 무관하게 드레인되어 **호출자가 관리하지 못하는 원격 탭**이 생긴다.
   그래서 mirror 워크스페이스를 대상으로 한 `terminal.spawn` 은 tab/surface 를 하나도 만들지 않고 `invalid_params` 로 즉시 거부하며, 메시지에 mirror 사유와 대안(다른 워크스페이스 사용 / 원격 인스턴스에서 직접 spawn)을 담는다.
   나머지 구조 변경은 mirror 에서도 그대로 forward 된다 — 거부는 `terminal.spawn` 한 method 에만 적용된다.
 
@@ -232,7 +232,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 - **타임아웃**(상한 안에 아무 답도 오지 않음) — 무응답 호스트(패킷이 조용히 버려지는 IP·방화벽 DROP·꺼진 머신), 보이지 않는 프롬프트 대기, 또는 체인 전체 예산 소진. 아래 "연결 시도 상한" 참고. `SshConnectionFailed` 로 접지 않고 따로 두는 이유는 ① 사용자가 취할 조치가 다르고(도달성/회선 점검 vs 인증·호스트키 점검), ② 타임아웃 kill 도 시그널 종료라 접으면 원격발 시그널 종료와 뭉개지기 때문이다.
 
 각 분류는 `lang/{en,ko,ja}.toml` `[ssh.port_discovery]` 의 번역된 문구로만 노출된다 — 원격 raw stderr·내부 명령(`cat`/`type`)·포트 파일 경로는 에러의 `Display` 에 담기지 않고 생성 시점에 `tracing::debug!` 로만 로그된다(`PortDiscoveryError::detail()`).
-Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타임아웃 > SSH 연결 실패 > 인스턴스 미실행 > 파싱 실패 순)를 대표 에러로 고른다 — 한 단계가 무응답이면 다른 단계의 "연결 실패" 는 그 타임아웃이 남은 시간이 부족해진 결과일 수 있어 대표로 삼으면 오도한다 — 마지막 단계 에러만 남기면 정보량이 가장 적은 사유가 노출되던 문제를 막는다.
+Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타임아웃 > SSH 연결 실패 > 인스턴스 미실행 > 파싱 실패 순)를 대표 에러로 고른다 — 한 단계가 무응답이면 다른 단계의 "연결 실패" 는 앞 단계에서 시간을 써서 남은 시간이 부족해진 결과일 수 있어 대표로 삼으면 오도한다 — 마지막 단계 에러만 남기면 정보량이 가장 적은 사유가 노출되던 문제를 막는다.
 이 분류는 `ssh::discover_remote_port`/`remote_browse::resolve_endpoint` 를 공유 소비하는 모든 경로(GUI 원격 워크스페이스 추가 팝업, `tasty remote check`/`remote workspaces`/`tool attach`, IPC `remote.workspaces`/`remote.attach`, 자동 재연결)에 동일하게 적용된다.
 
 ### 연결 시도 상한 (no-hang)

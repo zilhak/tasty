@@ -104,7 +104,7 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 |------|-----|
 | `TASTY_HOOK_EVENT` | 훅 트리거: 등록 이벤트 표시 문자열(`bell` / `process-exit` / `output-match:<pattern>` / 플러그인 커스텀 키 등). `hook_handler.dispatch` 수동 실행: 핸들러 id |
 | `TASTY_HOOK_SOURCE` | `hook`(내부 이벤트 트리거) 또는 `dispatch`(`hook_handler.dispatch` 수동 실행). 셸은 webhook 바인딩이 구조적으로 불가하므로 `webhook` 값은 존재하지 않는다 |
-| `TASTY_HOOK_SURFACE_ID` | 훅 트리거의 발생한 surface id. 수동 실행(surface 무관)에는 설정되지 않음 |
+| `TASTY_HOOK_SURFACE_ID` | 훅 이벤트가 발생한 surface ID. 수동 실행(surface 무관)에는 설정되지 않음 |
 | `TASTY_HOOK_<UPPER_SNAKE_KEY>` | payload 가 object 면 최상위 key 각각. 훅 트리거의 payload 는 아래 [트리거 payload](#트리거-payload-이벤트별-key) 가 이벤트별로 채우고, `hook_handler.dispatch` 수동 실행은 params 의 `body` 를 그대로 쓴다 |
 
 - **key 정규화**: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 겹치거나 위 예약 변수와 겹치면 **먼저 온 값을 사용하고** 나머지는 무시한다. payload 안에서 서로 다른 원본 key 가 정규화 후 충돌하는 경우(예: `pr-id` vs `pr_id`)만 warn 하고, 예약 변수와의 충돌은 조용히 무시한다(`surface_id` 처럼 이벤트가 발생할 때마다 생기는 정상 경로). 영숫자가 없는 key 는 건너뜀.

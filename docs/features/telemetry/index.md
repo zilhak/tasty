@@ -190,7 +190,7 @@ refused_saturated` 다([ADR-0008](../../adr/0008-ipc-pressure-observability.md))
 `degraded` 와 pragma 넷(`journal_mode` · `synchronous` · `foreign_keys` · `journal_size_limit`)의
 `requested` · `effective` · `took` · `error` 를 싣는다. 요청값을 함께 싣는 것은 소스의 `WAL` 이
 runtime 보장이 아니어서다 — SQLite 는 요청을 조용히 거절할 수 있다. `degraded` 는 하나라도 그
-DB 모드의 허용 결과와 다르다는 뜻이고 **오류가 아니라 열린 채로 쓰이는 상태**다. `db` 항목와
+DB 모드의 허용 결과와 다르다는 뜻이고 **오류가 아니라 열린 채로 쓰이는 상태**다. `db` 항목과
 같은 DB 를 말하므로 한 응답에서 "commit 이 느리다" 와 "WAL이 적용되지 않았다" 가 함께 읽힌다. 열리지
 않은 DB 는 `null` 이다 — 헤드리스의 `state_db` 는 늘 `null` 이다(허용 결과표·근거는
 [storage](../../design/systems/storage.md) 와
@@ -244,7 +244,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 `keyed_requests`는 **멱등 키가 있는 요청만** 센다. 보존소가 내린 판정마다 한 칸이다 —
 `executed`(처음 보는 키, 실행했다) · `replayed`(같은 요청, 보관된 답을 냈다) · `conflicted`(같은 키에
 다른 요청, 아무것도 실행하지 않았다) · `discarded`(실행은 됐고 답은 버려졌다) · `in_flight`(같은 요청이
-진행 중이어서 거기에 합류했다). 전부 누계다. `executed` 는 재시도가 아니지만 **집계 대상**다 — 재생 수만으로는
+진행 중이어서 거기에 합류했다). 전부 누계다. `executed` 는 재시도가 아니지만 **집계 대상**이다 — 재생 수만으로는
 그것이 키 실은 실행 열 건 중 하나인지 만 건 중 하나인지 모른다. 한 요청은 자기를 맡은 층의 판정으로
 **한 번만** 세진다. 이 `in_flight` 는 `queue_dispatch.in_flight` 와 이름만 같다. 정의는
 [ADR-0008](../../adr/0008-ipc-pressure-observability.md).

@@ -21,7 +21,7 @@ surface ID와 headless PTY ID는 같은 store를 쓰므로 범위가 겹치지 �
 
 에이전트 workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace, 호출자 자신의 작업이 포함된 대상을 거절한다. 창 종료와 attach 해제는 각 전용 API를 사용한다. headless에는 window.close가 없으므로 마지막 workspace를 닫을 수 없다. 닫기는 되돌릴 수 없음을 도움말과 사용자 가이드에서 알리며 별도 force 확인을 요구하지 않는다.
 
-category_last_active에는 workspace ID를 저장한다. 카테고리로 돌아갈 때 ID를 찾아 현재 소속을 확인하고 없으면 그 카테고리의 첫 workspace를 고른다. active_workspace와 active_tab은 인덱스를 유지하며, 이동은 active_index_after_move 및 공용 적용 함수를 사용한다. GUI와 헤드리스의 연관 자원 정리 모두 같은 보정을 수행한다.
+category_last_active에는 workspace ID를 저장한다. 카테고리로 돌아갈 때 ID를 찾아 현재 소속을 확인하고 없으면 그 카테고리의 첫 workspace를 고른다. active_workspace와 active_tab은 인덱스를 유지하며, 이동은 active_index_after_move 및 공용 적용 함수를 사용한다. GUI와 헤드리스의 변경에 따른 후속 처리 모두 같은 보정을 수행한다.
 
 대상을 지정하지 않는 창 소유 자원을 조회하는 목록은 모든 main·parked engine의 결과를 합친다. 메서드 이름에 list가 있는지, params가 있는지만으로 분류하지 않는다. 필터는 대상 지정과 다르다. tree도 workspace.list와 같은 workspace 집합을 반환한다.
 

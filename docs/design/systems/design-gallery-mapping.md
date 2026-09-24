@@ -236,7 +236,7 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 재선언하지 않으므로 그리기 코드의 차이는 줄어든다. 입력 rect·테마·배율이 다르면 화면도 달라지므로 같은 조건의 캡처 비교는 필요하다. 새 bar/패널은 복제보다
 이 경로를 우선한다([gallery-first](../../dev-guide/gallery-first.md)).
 
-| 디자인 디자인 원본 | 공용 crate view | 본체 wrapper | 갤러리 specimen |
+| 디자인 원본 | 공용 crate view | 본체 wrapper | 갤러리 specimen |
 |---|---|---|---|
 | `gallery/layouts.jsx` **Workspace status bar** (하단 24px 바, 좌 요약 / 우 리마인더) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
 | `gallery/overlays.jsx` `NumCap` (16px 숫자 키캡) | `tasty_ui_widgets::paint_num_keycap` (`crates/tasty-ui-widgets/src/chip.rs`; 레이아웃 갈래는 같은 파일의 `num_keycap`) | `src/adapters/ui/switch_overlay.rs::paint_keycap` (slot 좌표·등장 페이드 alpha) | `switch` (Overlays, `components/switch_overlay.rs::keycap_at`) |
@@ -253,7 +253,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 의존 불가하므로 layout·색·폰트·간격·보더는 모두 Theme 토큰에서 가져오고 상태는 mock 으로
 주입한다. 본체 view 변경 시 시각 동기화는 수동 검증.
 
-| 디자인 디자인 원본 | 본체 view | 갤러리 specimen |
+| 디자인 원본 | 본체 view | 갤러리 specimen |
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
@@ -411,7 +411,7 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 아니다 — 갤러리 크레이트가 본체 bin 의 비공개 상수를 참조할 수 없어 값을 로컬로 들고
 관례로 맞춘다(200 은 리터럴, 44 는 `titlebar_height + spacing_sm` 도출).
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
-않는 일반 2-depth idiom(168/40, 토큰 도출)이다 로 구분한다.
+않는 일반 2단계 레이아웃(168/40, 토큰으로 계산)이다.
 
 | 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
 |---|---|---|---|

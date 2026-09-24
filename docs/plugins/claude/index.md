@@ -254,7 +254,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 `PreToolUse`/`PostToolUse`만 matcher `AskUserQuestion`으로 좁혀 등록돼 그 툴 호출에만 발생한다(나머지 7개는 matcher `""`로 이벤트 전체를 받는다) — 실측(실제 Claude Code를 띄워 hook stdin payload를 덤프해 확인) 결과 `AskUserQuestion` 답변은 `UserPromptSubmit`을 발생시키지 않으므로(질문/답변이 같은 prompt turn 안의 tool 상호작용이라 새 프롬프트로 집계되지 않음), 기존 `UserPromptSubmit`(→active)만으로는 이 케이스의 needs_input 해제 시점을 잡을 수 없다.
 `PreToolUse`가 질문 UI가 뜨기 **전에** 발생해(`tool_input.questions` 포함) needs_input을 켜고, `PostToolUse`가 답변 즉시(관찰상 `duration_ms: 0`) 그 짝으로 active로 되돌린다 — `needs_input`은 이제 `Notification`과 `PreToolUse` 두 경로에서 나온다.
 
-`StopFailure`는 API 에러(재시도를 다 쓴 `529 Overloaded` · rate limit · 인증 실패 …)로 턴이 끝날 때 Claude Code가 `Stop` **대신** 발생한다 — 그 턴에는 `Stop`이 오지 않는다.
+`StopFailure`는 API 에러(재시도를 다 쓴 `529 Overloaded` · rate limit · 인증 실패 …)로 턴이 끝날 때 Claude Code가 `Stop` **대신 `StopFailure`를 보낸다** — 그 턴에는 `Stop`이 오지 않는다.
 이것이 없으면 실패로 끝난 턴에 턴 종료 신호가 하나도 오지 않아 상태가 직전 `UserPromptSubmit`의 `active`에 머문다(`UserPromptSubmit` 미등록 때와 같은 부류의 오보고).
 턴은 끝났고 Claude는 입력을 기다리므로 상태는 `idle`이고, **`claude-idle`도 함께 보낸다** — 부모 완료 알림 훅 세 개가 그 키를 구독하므로 빠뜨리면 부모가 아무 알림도 못 받는다.
 그와 별도로 `claude-stop-failure`를 보내고, 에러 종류(stdin JSON `error` — Claude Code가 matcher 값으로 선언한 `rate_limit`/`overloaded`/`authentication_failed`/`billing_error`/`invalid_request`/`server_error`/`max_output_tokens`/`unknown` 등)를 surface meta `claude-last-stop-failure`에 남긴다.
@@ -331,7 +331,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 | top-level (`launch`) | child registry 에 없음 | `surface.locate` 로 surface 존재 확인 |
 | 자식 (`spawn`/`respawn`) | 호스트 child registry | `terminal.parent` 로 **부모-자식 관계** 존재 확인 |
 
-자식을 관계로 판정하는 이유는 [`terminal.release`](../../features/child-terminal/index.md)가 surface 를 닫지 않고 관계·soft 점유만 해제하기 때문이다 — surface 존재만 봤다면 release 후에도 영원히 폴링되며, 더 이상 자식이 아닌 사용자 터미널에 `claude-error` 를 계속 발생한다. 호스트가 관계 조회 전 `reconcile_child_terminals()` 를 돌리므로 이 한 번의 조회가 kill/close 실패로 surface 가 살아남은 케이스까지 함께 걷어낸다. `claude kill` 은 성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 추가 알림 가능 시간까지 없앤다. 조회 자체가 실패(IPC 오류)하면 "죽었다"로 단정하지 않고 추적을 유지한다 — 재활성화 경로가 없어 오탐 정리가 오탐 유지보다 위험하다.
+자식을 관계로 판정하는 이유는 [`terminal.release`](../../features/child-terminal/index.md)가 surface 를 닫지 않고 관계·soft 점유만 해제하기 때문이다 — surface 존재만 봤다면 release 후에도 영원히 폴링되며, 더 이상 자식이 아닌 사용자 터미널에 `claude-error`를 계속 보낸다. 호스트가 관계 조회 전 `reconcile_child_terminals()` 를 돌리므로 이 한 번의 조회가 kill/close 실패로 surface 가 살아남은 케이스까지 함께 걷어낸다. `claude kill` 은 성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 추가 알림 가능 시간까지 없앤다. 조회 자체가 실패(IPC 오류)하면 "죽었다"로 단정하지 않고 추적을 유지한다 — 재활성화 경로가 없어 오탐 정리가 오탐 유지보다 위험하다.
 
 **스캐너는 에이전트와 다른 커서를 쓴다.** `surface.read_since_scan_mark` 는 에이전트의 mark(`tasty set mark` · `tasty read since-mark` · `parse-since-mark` 가 쓰는 것)와 **별개 커서**를 읽고, 읽을 때마다 읽은 자리 끝으로 전진한다. 그래서 ① 에이전트가 `tasty set mark` 를 걸어도 스캐너의 관측 창이 안 움직이고 ② 폴링 1 회가 나르는 것은 지난 800ms 에 새로 온 바이트뿐이다. 반대 방향도 닫혀 있다 — 스캐너의 읽기는 에이전트의 mark 를 안 움직인다.
 

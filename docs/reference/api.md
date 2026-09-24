@@ -72,32 +72,47 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` · `telemetry.*` · `session.*` 의 쓰기 응답도 같다([ADR-0010](../adr/0010-storage-failure-reporting.md)).
 
 ### 에이전트 협업 (`agent.*`)
-`task_{create,list,get,cancel,retry,graph,reduce,run,delete,purge}` · `dag_{list,get}` · `barrier_*` · `semaphore_*` · `lease_*` · `rate_limit_*`.
-전부 `agent`(AgentManage) 권한 — `task_run`(workspace runner thread start/stop/status)도 포함(호스트가 재시작 시 runner 를 자동으로 다시 켜지 않으므로, plugin 이 자기 workspace 의 runner 를 스스로 되살릴 수 있어야 한다).
-**local caller 전용**(plugin 호출 거부)은 `task_await`(진짜 blocking — `approval.await` 와 대칭, plugin SDK 단일 워커 스레드가 막히는 걸 막기 위함.
-기본 timeout 10분, `timeout_ms:0` 은 무한 대기)와 `task_set_result`(외부 task 완료 신호 — 러너가 Custom task 생명주기를 단독 소유하므로 plugin 이 별도로 전이시키면 쓰기 주체가 이중화된다.
-plugin 은 완료 판정 전략 선언으로 우회).
-둘 다 [method_meta.rs](../../crates/tasty-ipc/src/method_meta.rs)의 `METHOD_TABLE`에 `local_only()` 로 **명시 등재**돼 있다 — 미등재(`UnknownMethod` 거부)는 정책과 누락이 구분되지 않으므로, 라우터 분기가 있는 모든 메서드는 표에 등재한다(`tests/ipc_router_table_parity.rs` 가 강제).
-`task_delete`/`task_purge` 는 참조(`depends_on`/`Fallback.task`/`Reduce.inputs`) 안전 검사를 거친다 — 기본 거부+참조자 목록, `--cascade`(연쇄 삭제)/`--force`(참조 검사만 우회, `running` 상태 제약은 못 뚫음).
-`task_command.kind = "run"`(Surface 없는 bare subprocess)의 결과는 `task_get`/`task_await` 의 `result.output` 에 stdout/stderr 캡처(각 마지막 64KiB tail + `truncated`/`dropped_bytes`)를 싣는다 — 실패(비0 exit)는 `result.error` 문자열에 같은 내용이 포함된다.
-`semaphore_set_permits` 는 세마포어 한도를 제자리에서 바꾼다(delete→create 우회의 "세마포어가 없는 순간" 을 없앤다) — 축소는 drain 이라 기존 홀더를 강제 회수하지 않고 새 acquire 만 거절한다.
-`semaphore_acquire` 의 `ttl_ms` 는 선택이며, 준 경우에만 그 홀더가 만료돼 회수된다(기본은 만료 없음, lease 와 같은 메커니즘 — [ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
-`dag_{list,get}` 은 workspace 안의 flat 한 task 를 **DAG 단위로 쪼갠 조회 표면**이다 — DAG 는 영속 레코드가 아니라 `metadata.dag`(explicit) 또는 그래프 연결성(derived)에서 도출된다.
-`dag_list` 는 `workspace_id` 를 생략하면 살아있는 전 workspace 를 순회하고(응답 `scope: "live_workspaces"`), `dag_get` 은 그 DAG 부분집합만으로 `task_graph` 와 동일한 `nodes`/`edges`(또는 dot)를 낸다.
-[agent-collaboration](../features/agent-collaboration/index.md).
+
+일반 메서드는 `agent`(AgentManage) 권한이 필요하다.
+
+| 메서드 | 역할과 제한 |
+|---|---|
+| `task_{create,list,get,cancel,retry,graph,reduce,run,delete,purge}` | 작업 생성·조회·실행·정리 |
+| `task_run` | workspace 러너의 시작·중지·상태 조회. 호스트 재시작 후 자동으로 켜지지 않으므로 플러그인이 자기 workspace의 러너를 다시 시작할 수 있다. |
+| `barrier_*`, `semaphore_*`, `lease_*`, `rate_limit_*` | 작업 간 대기와 자원 사용 조정 |
+| `dag_{list,get}` | 작업을 DAG별로 묶어 조회 |
+
+다음 두 메서드는 **로컬 호출만 허용**하며 플러그인은 호출할 수 없다. 둘 다 [METHOD_TABLE](../../crates/tasty-ipc/src/method_meta.rs)에 `local_only()`로 등록되어 있다. 라우터가 처리하는 메서드는 모두 이 표에 등록한다. 미등록 메서드의 `UnknownMethod` 거부와 의도한 접근 제한을 구분하기 위해 `tests/ipc_router_table_parity.rs`로 누락을 검사한다.
+
+| 메서드 | 로컬로 제한하는 이유 |
+|---|---|
+| `task_await` | 완료까지 호출을 대기시킨다. `approval.await`와 마찬가지로 플러그인 SDK의 단일 워커를 막지 않도록 제한한다. 기본 timeout은 10분이고 `timeout_ms:0`은 무한 대기다. |
+| `task_set_result` | 외부에서 작업 완료를 알린다. 플러그인의 Custom task는 러너가 상태를 관리하므로 플러그인이 직접 완료 상태를 바꾸지 않고 완료 판정 전략을 선언한다. |
+
+`task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.**
+
+`task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다.
+
+`semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
+
+DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
 
 ### 사건 피드 (`events.*`)
-`events.fetch {offset, max, filter, wait_ms}` (local-only) — Event Bus 에 지나간 사건을 **위치로** 읽는다.
-**서버는 소비자별 상태를 들지 않는다** — 커서는 소비자가 들고 매 호출에 가져온다(같은 모양의 선례가 `plugin.audit_follow`).
-응답은 `{events, next_offset, epoch, truncated, skipped, ahead_of_stream, stream_end}` 이고 각 사건 봉투에 자기 `offset` 이 실려 있다.
-`filter` 는 구독과 같은 문법이다(정확 일치 또는 `<ns>.*`) — 새 문법을 만들지 않았다.
-`wait_ms` 를 주면 그 시간까지 새 사건을 기다렸다 답한다(상한 60초, 기본 0 = 즉답).
-링은 메모리에만 있고 용량(1024 건 · 16 MiB 중 먼저 닿는 쪽, [ADR-0033](../adr/0033-event-feed-delivery.md))을 넘긴 사건은 밀려난다 — 보존 밖 위치로 물으면 조용히 처음부터 주지 않고 `truncated: true` 와 건너뛴 수 `skipped` 를 함께 준다.
-`epoch` 은 host 인스턴스 세대라 재시작 뒤 옛 위치를 들고 오면 값이 달라져 있다.
-링의 끝(`stream_end`)보다 **뒤**인 위치로 물으면 — 재시작 전 세대의 위치가 흔한 원인이다 — `ahead_of_stream: true` 를 싣는다.
-이때 나머지 필드는 표지가 없던 때와 같고(`next_offset` 은 요청 위치 그대로), `wait_ms` 를 줬으면 예전처럼 기다린 뒤 답한다([ADR-0033](../adr/0033-event-feed-delivery.md)).
-CLI 는 `tasty events fetch` / `tasty events follow` — `follow` 는 재부착 때 `--epoch` 을 받아 세대를 가르고, 끊기면 다시 붙을 인자를 찍거나 `--reconnect` 로 다시 붙는다([ADR-0033](../adr/0033-event-feed-delivery.md)).
-키 목록과 등급은 [event-catalog](event-catalog.md).
+
+`events.fetch {offset, max, filter, wait_ms}`는 Event Bus를 지난 사건을 위치로 조회하며 로컬 호출만 허용한다. 서버는 소비자별 커서를 저장하지 않는다. 소비자가 위치를 보관해 매 요청에 보낸다.
+
+| 항목 | 동작 |
+|---|---|
+| `filter` | 구독과 같은 문법: 정확 일치 또는 `<ns>.*` |
+| `wait_ms` | 새 사건을 기다리는 시간. 기본 0은 즉시 응답이며 상한은 60초다. |
+| 응답 | `{events, next_offset, epoch, truncated, skipped, ahead_of_stream, stream_end}`. 각 사건에도 자신의 `offset`이 포함된다. |
+| 보관 범위 | 메모리에만 최대 1024건 또는 16 MiB까지 보관한다. 둘 중 먼저 닿은 한도를 넘으면 오래된 사건을 내보낸다. |
+
+보관 범위보다 오래된 위치로 요청하면 `truncated: true`와 건너뛴 수 `skipped`를 반환한다. 서버가 재시작하면 `epoch`이 바뀌므로 이전 인스턴스에서 받은 위치와 구별할 수 있다.
+
+요청 위치가 현재 끝인 `stream_end`보다 뒤에 있으면 `ahead_of_stream: true`를 반환한다. 이때 `next_offset`은 요청 위치 그대로이며, `wait_ms`를 지정했다면 기다린 뒤 응답한다. 나머지 응답 필드는 이 표시가 추가되기 전과 같다([ADR-0033](../adr/0033-event-feed-delivery.md)).
+
+CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연결할 때 `--epoch`으로 인스턴스를 구별한다. 연결이 끊기면 재연결에 쓸 인자를 출력하며, `--reconnect`를 지정하면 자동으로 다시 연결한다. 키 목록과 등급은 [event-catalog](event-catalog.md)를 참고한다.
 
 ### 휴먼 핸드오프 (`approval.*`)
 `request,respond,await,cancel,get,list,history,summary.{set,get}`. [human-handoff](../features/human-handoff/index.md).
