@@ -2793,7 +2793,7 @@ fn the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists(
     );
 }
 
-/// 워크플로 명령에서 게이트 스크립트 이름을 읽는다. 별도의 목록 사본을 유지하지 않는다.
+/// 워크플로 원문에서 scripts/check-*.sh 이름을 수집한다. 주석·step 이름과 실제 명령을 구별하지 않는다.
 fn gate_scripts_of_workflow(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;

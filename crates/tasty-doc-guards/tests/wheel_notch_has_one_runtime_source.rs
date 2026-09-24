@@ -1,19 +1,8 @@
-//! 휠 1노치 거리의 **런타임 출처가 하나로 남아 있는가** — ADR-0015 의 집행.
-//!
-//! 휠을 포인트로 바꾸는 모든 경로는 같은 egui 컨텍스트의
-//! `Options::line_scroll_speed`를 읽어야 한다. 새 surface가 고정값을 사용하면
-//! 설정을 바꿔도 다른 surface와 이동 거리가 달라진다. 환산 함수에 값을 직접 넘기는
-//! 산술 테스트만으로는 이 차이를 찾지 못한다.
-//!
-//! 이 검사는 환산 경로를 소스에서 찾아 런타임 설정을 읽는지 확인한다.
-//!
-//! 동작 축의 짝은 `src/plugin_bridge/wire_scroll.rs` 의 `one_notch_per_context` 다.
-//! 그쪽은 컨텍스트에 기본값 아닌 값을 심고 세 경로가 그것을 집어 오는지 실행으로 잰다.
-//! 이쪽은 그 셋 말고 **네 번째가 생기는 것**을 본다.
-// 이유: 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+//! 휠 Line 환산 파일에서 egui의 line_scroll_speed를 읽는 표지를 확인한다(ADR-0015).
+//! 기본값 상수를 직접 쓰면 사용자가 바꾼 설정을 반영하지 못한다.
+//! 실제 컨텍스트 값을 읽는 동작은 src/plugin_bridge/wire_scroll.rs의 one_notch_per_context가 검사한다.
+//! 여기서는 새 경로도 등록 규칙을 따르는지 파일별 소스 표지로 확인한다.
+// 테스트의 값 무시를 출하 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
@@ -21,11 +10,7 @@ use tasty_doc_guards::cfg_predicate as cfg_span;
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 휠 Line 델타를 다루는 자리임을 알리는 표지.
-///
-/// 세 번째가 필요하다 — popup·banner 는 단위를 `*unit` 으로 그대로 넘기므로 살아 있는
-/// 코드에 `MouseWheelUnit::Line` 이 안 나온다(그 이름은 자기 테스트 안에만 있다).
-/// 앞의 둘만 보면 환산 자리 다섯 중 셋만 세고, 빠진 둘은 조용하다.
+/// 단위를 그대로 전달하는 팝업·배너에는 Line 이름이 없을 수 있어 환산 함수 이름도 찾는다.
 const LINE_UNIT_MARKS: [&str; 3] = [
     "MouseWheelUnit::Line",
     "MouseScrollDelta::LineDelta",
@@ -38,25 +23,16 @@ const RUNTIME_SOURCE_MARKS: [&str; 2] = ["line_scroll(", "line_scroll_speed"];
 /// 런타임 값이 아니라 **기본값 상수**를 쓰는 형태 — 설정을 바꿔도 안 따라온다.
 const FROZEN_DEFAULT: &str = "DEFAULT_WHEEL_LINE_SCROLL";
 
-/// Line 을 다루지만 환산하지는 않는 자리의 면제. (경로, 사유) 로 적는다.
-/// 사유는 이름이 아니라 성질이어야 한다 — "여기는 원래 괜찮다" 는 사유가 아니다.
+/// Line 단위를 다루지만 환산하지 않고 전달하는 파일과 예외 근거.
 const ALLOWLIST: &[(&str, &str)] = &[(
     "src/view/main/debug_input.rs",
-    "debug 주입기 — 요청받은 단위를 환산하지 않고 그대로 넘긴다(`to_egui` · \
-     `to_winit_delta`). 여기서 접으면 그 단위를 재현하려던 검증이 다른 환산 경로를 \
-     재고도 통과한다. 그 성질을 같은 파일의 `every_unit_reaches_egui_as_itself` 와 \
-     `winit_level_maps_line_and_point_to_the_two_winit_deltas` 가 지킨다.",
+    "debug 입력기는 요청 단위를 to_egui/to_winit_delta로 그대로 전달한다. 여기서 환산하면 입력 단위 재현이 달라진다. 같은 파일의 단위 보존 시험으로 확인한다.",
 )];
 
-/// 자리 수 하한. 0 이면 아래 술어들은 위반을 못 찾는 것이 아니라 **볼 것이 없어서**
-/// 초록이다. 실측 다섯(`wire_scroll` · `mouse` · `modifier_hint_overlay` ·
-/// `popup_render` · `banner_render`)보다 하나 낮게 잡는다 — 자리가 정상적으로 하나
-/// 줄 수는 있어도, 표지가 낡아 절반을 놓치는 것은 여기서 먼저 말해야 한다.
+/// 기존 환산 파일5개를 측정한 뒤 정상적인 파일 정리1개를 허용한 하한4다.
 const MIN_CONVERSION_SITES: usize = 4;
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     tasty_doc_guards::repo_root()
 }
 
@@ -80,17 +56,12 @@ struct Site {
     frozen_default_lines: Vec<usize>,
 }
 
-/// `src/` 안에서 휠 Line 을 다루는 자리를 모은다. `#[cfg(test)]` 아래는 제외한다 —
-/// 테스트는 노치를 스스로 정해 넣는 것이 정상이고, 그것이 곧 위 술어들의 대조군이다.
+/// 본체 src만 검사한다. 테스트에서는 환산값을 직접 지정할 수 있어 제외한다.
 fn conversion_sites() -> Vec<Site> {
     conversion_sites_under(&repo_root())
 }
 
-/// 같은 판정을 **뿌리를 받아** 한다.
-///
-/// 뿌리를 함수 안에 박으면 이 판정에는 양성 대조가 원리적으로 안 붙는다 — 합성 트리를
-/// 먹일 자리가 없어서 "표지가 낡으면 자리 수가 준다" 를 시험이 못 재고, 그러면 위 하한은
-/// 자기가 무엇을 지키는지 한 번도 확인받지 않은 채 선다. 뿌리는 처음부터 인자다.
+/// 작은 합성 트리에도 같은 수집·판정을 적용하도록 루트를 인자로 받는다.
 fn conversion_sites_under(root: &Path) -> Vec<Site> {
     let root = root.to_path_buf();
     let mut files = Vec::new();
@@ -112,8 +83,7 @@ fn conversion_sites_under(root: &Path) -> Vec<Site> {
         }
         let lines: Vec<&str> = text.lines().collect();
         let gated = cfg_span::cfg_gated_lines(&lines, "test");
-        // 주석은 코드가 아니다. 양방향으로 중요하다 — 산문에 이름이 나왔다고 위반으로
-        // 세지 않고, 산문에 `line_scroll_speed` 를 적었다고 읽은 것으로도 안 센다.
+        // 주석으로 시작하는 줄은 표지 존재 여부에서 제외한다. 리터럴 전체를 마스킹하지는 않는다.
         let is_code = |i: usize| !gated[i] && !lines[i].trim_start().starts_with("//");
         let live = |needle: &str| {
             lines
@@ -143,16 +113,7 @@ fn the_population_of_conversion_sites_is_not_empty() {
     let n = conversion_sites().len();
     assert!(
         n >= MIN_CONVERSION_SITES,
-        "휠 Line 을 다루는 자리가 {n} 개다(하한 {MIN_CONVERSION_SITES}). \
-         순회가 깨졌거나 표지가 낡았다 — 아래 술어들은 볼 것이 없으면 공짜로 초록이다.\n\
-           ★ 판별 — 이 모수는 다섯이고 **전부 이름이 있다**(`wire_scroll` · `mouse` · \
-           `modifier_hint_overlay` · `popup_render` · `banner_render`). 그러니 수를 보지 말고 \
-           **어느 이름이 빠졌는지**를 봐라. 빠진 자리의 파일이 아직 있으면 표지가 낡은 것이고(그 자리는 \
-           여전히 휠을 다루는데 스캔이 못 알아본다), 파일 자체가 없으면 자리가 정말 사라진 것이다. \
-           열거로 셀 수 있는 모수라 이 판별은 언제나 결정적이다 — 이름을 우리가 소유하고 있다.\n\
-           ★ 이 하한을 내려서 통과시키지 마라 — 표지가 낡아 절반을 놓치는 것과 자리가 하나 준 것이 \
-           같은 수로 나타나는데, 하한을 내리면 그 둘을 영영 안 가르게 된다.\n\
-           자리가 정말 없어졌으면 값과 함께 위 doc 의 이름 목록에서도 그것을 지워라."
+        "휠 Line 처리 파일을 {n}개만 찾았다(하한 {MIN_CONVERSION_SITES}). 기존 wire_scroll/mouse/modifier_hint_overlay/popup_render/banner_render와 실제 수집 목록을 대조한다. 파일 이동·삭제와 표지 변경을 구별하고 하한 변경에는 근거를 남긴다."
     );
 }
 
@@ -165,10 +126,7 @@ fn every_conversion_site_reads_the_runtime_option() {
         .collect();
     assert!(
         bad.is_empty(),
-        "휠 Line 을 다루면서 런타임 노치(egui `Options::line_scroll_speed`)를 안 읽는 \
-         자리가 있다. 노치를 자기 값으로 정하면 그 표면만 설정을 안 따라오고, 같은 창에서 \
-         휠 한 칸이 표면마다 다른 거리를 움직인다(ADR-0015). Line 을 환산하지 않고 \
-         넘기기만 하는 자리라면 사유와 함께 ALLOWLIST 에 넣어라:\n{}",
+        "휠 Line 처리 파일에서 런타임 line_scroll_speed를 읽는 표지를 찾지 못했다. 현재 egui 설정으로 환산해야 한다(ADR-0015). 단위만 전달하는 파일은 근거와 함께 ALLOWLIST에 등록한다:\n{}",
         bad.join("\n")
     );
 }
@@ -182,21 +140,12 @@ fn no_conversion_site_freezes_the_notch_at_its_default() {
         .collect();
     assert!(
         bad.is_empty(),
-        "환산 자리가 `{FROZEN_DEFAULT}` 를 직접 읽는다. 그것은 설정의 **기본값**이지 \
-         지금 값이 아니다 — 사용자가 슬라이더를 옮겨도 이 자리만 옛 거리로 스크롤한다. \
-         런타임 값은 egui 컨텍스트에서 읽어라(ADR-0015):\n{}",
+        "휠 환산에서 기본값 {FROZEN_DEFAULT}를 직접 읽는다. 사용자가 변경한 현재 값은 egui 컨텍스트에서 읽는다(ADR-0015):\n{}",
         bad.join("\n")
     );
 }
 
-/// [`MIN_CONVERSION_SITES`] 의 **양성 대조** — 표지가 낡으면 자리 수가 정말 주나.
-///
-/// 그 하한의 실패문은 "순회가 깨졌거나 **표지가 낡았다**" 고 말한다. 그런데 레포를
-/// 상대로만 돌면 표지 쪽은 한 번도 확인이 안 된다 — 표지 셋 중 하나를 지워도 레포에
-/// 남은 자리가 하한을 넘으면 조용하다. 여기서 그 갈래를 합성 트리로 직접 건다.
-///
-/// 파일 이름과 내용은 전부 합성이다. 실물 자리 이름을 쓰면 이 파일이 다른 가드의
-/// 좌변에 앉는다.
+/// 합성 트리로 표지별 검출과 대상 밖 파일의 제외를 확인한다.
 #[test]
 fn a_stale_mark_or_a_dead_root_shrinks_the_population() {
     let probe = Scratch::new("wheel-notch");
@@ -204,7 +153,6 @@ fn a_stale_mark_or_a_dead_root_shrinks_the_population() {
     let src = dir.join("src");
     std::fs::create_dir_all(src.join("inner")).expect("합성 트리를 만들지 못했다");
 
-    // 표지 셋을 하나씩 나눠 심는다 — 셋 중 하나라도 안 세면 이 수가 준다.
     let bodies: [(&str, String); 3] = [
         (
             "alpha.rs",
@@ -231,16 +179,13 @@ fn a_stale_mark_or_a_dead_root_shrinks_the_population() {
     for (name, body) in &bodies {
         std::fs::write(src.join(name), body).expect("합성 소스를 쓰지 못했다");
     }
-    // 대조군 — Line 을 안 다루는 파일은 모수 밖이다.
     std::fs::write(src.join("delta.rs"), "fn d() {}\n").expect("합성 소스를 쓰지 못했다");
-    // 대조군 — `.rs` 가 아닌 파일은 표지를 담아도 모수 밖이다. **하한은 이 갈래를
-    // 원리적으로 못 본다** — 모수를 넓히는 변이는 하한을 *더 쉽게* 넘게 만든다.
+    // 확장자 필터가 넓어지는 오류는 수집 하한만으로 찾지 못한다.
     std::fs::write(
         src.join("zeta.md"),
         format!("{} {}\n", LINE_UNIT_MARKS[0], RUNTIME_SOURCE_MARKS[0]),
     )
     .expect("합성 문서를 쓰지 못했다");
-    // 대조군 — 주석에 표지가 있어도 코드가 아니다.
     std::fs::write(
         src.join("epsilon.rs"),
         format!(
@@ -256,18 +201,15 @@ fn a_stale_mark_or_a_dead_root_shrinks_the_population() {
     assert_eq!(
         got,
         vec!["src/alpha.rs", "src/beta.rs", "src/inner/gamma.rs"],
-        "모수가 다르다 — 표지 셋 중 하나라도 안 세면 여기서 준다. 레포 대면 하한은 \
-         남은 자리가 그 수를 넘는 한 같은 낡음에 대해 조용하다"
+        "합성 트리의 환산 파일 목록이 다르다. 표지별 검출과 대상 파일의 범위를 확인한다."
     );
     assert!(
         sites.iter().all(|s| s.reads_runtime_source),
-        "런타임 출처 표지를 못 읽었다 — 그러면 아래 술어가 멀쩡한 자리를 위반으로 짚는다"
+        "합성 코드의 런타임 설정 표지를 찾지 못했다"
     );
 
-    // 하한이 겨냥하는 다른 갈래 — 뿌리가 죽으면 예외가 아니라 **빈 모수**다.
     assert!(
         conversion_sites_under(&dir.join("does-not-exist")).is_empty(),
-        "죽은 뿌리에서 자리를 주웠다 — `gather_rs` 는 `read_dir` 실패를 조용히 넘기므로 \
-         이 성질이 하한의 존재 이유다"
+        "없는 루트에서 환산 파일을 수집했다. 읽기 실패 때 빈 목록을 반환해야 한다."
     );
 }

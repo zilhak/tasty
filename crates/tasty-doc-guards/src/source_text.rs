@@ -261,7 +261,7 @@ pub fn invokes_macro(code: &str, name: &str) -> bool {
 }
 
 /// 한글·가나·한자 범위의 문자다. 영어 여부를 완전히 판별하는 함수는 아니다.
-/// ASCII와 다른 언어 문자가 없다는 사실만으로 영어라고 판단할 수 없다.
+/// 이 범위의 문자가 없거나 ASCII만 있다고 해서 영어라고 단정할 수는 없다.
 pub fn is_locale_specific(c: char) -> bool {
     matches!(c as u32,
         0x1100..=0x11FF   // Hangul Jamo

@@ -66,7 +66,11 @@ mod tests {
             kept = s.path().to_path_buf();
             assert!(kept.is_dir(), "지어지면 있어야 한다: {}", kept.display());
         }
-        assert!(!kept.exists(), "떨어지면 없어야 한다: {}", kept.display());
+        assert!(
+            !kept.exists(),
+            "Drop 뒤 임시 디렉터리가 남았다: {}",
+            kept.display()
+        );
     }
 
     /// 패닉 때 수동 삭제는 실행되지 않지만 RAII Drop은 실행되는지 비교한다.

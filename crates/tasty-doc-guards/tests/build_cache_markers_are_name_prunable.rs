@@ -63,7 +63,7 @@ const TARGET_FLOOR: Floor = Floor {
         + tasty_doc_guards::floored_walk::populations::CRATE_TEST_TARGETS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.counted_on,
-    why_this_gap: "루트와 크레이트의 통합 테스트 타깃 수를 합산한다. cc2e5e72e에서 합172(46+126), 하한122의 여유는50이다. fdca139c0..91ca7d37d의558커밋에서 루트 타깃의 최대 감소16, 크레이트 타깃의 감소0을 관측해, 같은 감소가 세 번 겹치는48을 허용하도록 정했다. 실제 수집 범위는 the_target_walk_sees_both_roots_and_stays_flat과 경로 판정의 합성 검사로 확인한다.",
+    why_this_gap: "루트와 크레이트의 통합 테스트 타깃 수를 합산한다. cc2e5e72e에서 합172(46+126), 하한122의 여유는50이다. fdca139c0..91ca7d37d의558커밋에서 루트 타깃의 최대 감소16, 크레이트 타깃의 감소0을 관측해, 같은 감소가 세 번 겹치는48을 허용하도록 정했다. 실제 수집 범위는 루트·크레이트 수집 검사와 경로 깊이의 합성 검사로 확인한다.",
 };
 
 /// `CACHEDIR.TAG` 규격의 서명 줄. 여기서는 **판정이 아니라 입력**으로만 쓴다 —

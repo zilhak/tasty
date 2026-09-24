@@ -729,7 +729,10 @@ mod tests {
             "fn f() {\n    let p = std::env::temp_dir().join(format!(\"x-{}-{}\", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));\n}",
         );
         assert_eq!(fc.uniquified.len(), 1);
-        assert!(fc.weak_only.is_empty(), "카운터가 프로세스-내 축을 진다");
+        assert!(
+            fc.weak_only.is_empty(),
+            "카운터는 같은 프로세스의 호출을 구분한다"
+        );
     }
 
     #[test]

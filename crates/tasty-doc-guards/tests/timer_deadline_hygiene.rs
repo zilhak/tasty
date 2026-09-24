@@ -1,28 +1,13 @@
-//! 파생 데드라인 스핀 재유입 가드 — 소스 수준에서 두 규칙을 강제한다.
+//! 과거 데드라인을 반복 등록하면 이벤트 루프가 즉시 깨기를 반복할 수 있다.
+//! 파생 데드라인은 arm_derived로 등록해 다음 주기보다 이르게 깨어나지 않게 한다.
+//! 또한 DAG 요청이 비어도 poll을 호출해야 보이지 않는 뷰의 타이머를 정리할 수 있다.
+//! 배경 탭으로 바뀔 때는 drop_view가 호출되지 않아 빈 요청 처리가 필요하다.
+//! 규칙은 docs/dev-guide/timer-hub.md에 있다.
 //!
-//! 배경: 같은 버그 클래스가 이미 **두 번** 터졌다. 외부 상태에서 파생한 절대
-//! 데드라인(`마지막으로 읽은 시각 + 주기`, `처음 dirty 가 된 시각 + 디바운스`,
-//! `다음 재시도 시각`)은 그 외부 상태가 갱신을 멈추면 **영원히 과거**에 머문다.
-//! 그 값을 매 프레임 다시 등록하면 `WaitUntil(과거)` 가 즉시 wake 를 무한 반복해
-//! 코어 하나가 100% 로 점유된다. 등록 누락(누수 = 한 번 더 깨어남)과 달리 실패
-//! 비용이 크고, 두 사례 모두 단위 테스트로는 잡히지 않는 **호출부 한 줄**이었다.
-//!
-//! 규칙과 배경 서술은 [`docs/dev-guide/timer-hub.md`] "파생 데드라인은 반드시
-//! 바닥친다" 절. 선례(소스 스캔 테스트): `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`,
-//! `crates/tasty-doc-guards/tests/no_emoji_in_source.rs`.
-//!
-//! **R1 — 파생 데드라인은 `arm_derived` 를 통해서만 등록한다.**
-//! `src/app/timers.rs` 에서 `hub.once_at(` 을 직접 부르면 fail. 새 `Tick` 을
-//! 추가하면서 바닥치기를 빠뜨리는 것이 이 클래스의 재발 경로다.
-//!
-//! **R2 — DAG 폴링 요청 목록이 비어도 `poll` 을 호출한다.**
-//! `src/adapters/ui/egui_panels.rs` 에서 `requests` 의 빈 여부로 `poll` 을 건너뛰면
-//! fail. 빈 목록은 "이 창에 보이는 DAG 뷰가 없다" 는 정보이고, 그때 `visible` 이
-//! 비워져야 호스트가 타이머를 걷는다. 배경 탭 전환은 `drop_view` 를 부르지 않으므로
-//! 이 경로가 유일한 정리 지점이다.
+//! 이 검사는 호출 문자열의 개수·순서와 requests.is_empty 사용 여부를 확인한다.
+//! 함수 본문이나 제어 흐름을 완전히 해석하지는 않는다.
 
-/// 주석/문서 줄을 뺀 실제 코드 줄만 본다 — 규칙을 설명하는 주석이 스스로를
-/// 위반으로 만들면 안 된다.
+/// 주석으로 시작하는 줄만 제외한다. 문자열 내부까지 구분하지는 않는다.
 fn code_lines(src: &str) -> impl Iterator<Item = (usize, &str)> {
     src.lines().enumerate().filter_map(|(i, l)| {
         let t = l.trim_start();
@@ -35,8 +20,6 @@ fn code_lines(src: &str) -> impl Iterator<Item = (usize, &str)> {
 }
 
 fn read(rel: &str) -> String {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let p = tasty_doc_guards::repo_root().join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
@@ -46,7 +29,6 @@ fn derived_deadlines_go_through_the_floor_helper() {
     const FILE: &str = "src/app/timers.rs";
     let src = read(FILE);
 
-    // 통로 자체가 사라지면(이름 변경 등) 규칙이 조용히 무력화된다.
     assert!(
         src.contains("fn arm_derived("),
         "{FILE}: `arm_derived` 가 없다 — 파생 데드라인 등록 통로가 사라졌다. \
@@ -54,14 +36,13 @@ fn derived_deadlines_go_through_the_floor_helper() {
     );
     assert!(
         src.contains("fn not_before_next_period("),
-        "{FILE}: 바닥치기 함수 `not_before_next_period` 가 없다."
+        "{FILE}: 데드라인을 제한하는 not_before_next_period 함수가 없다."
     );
 
     let offenders: Vec<usize> = code_lines(&src)
         .filter(|(_, l)| l.contains("hub.once_at(") && !l.contains("fn arm_derived"))
         .map(|(n, _)| n)
         .collect();
-    // `arm_derived` 본문의 단 한 줄만 허용된다.
     assert_eq!(
         offenders.len(),
         1,
@@ -78,8 +59,7 @@ fn derived_deadlines_go_through_the_floor_helper() {
     let line_of_fn = src[..body_start].lines().count();
     assert!(
         line_of_call > line_of_fn,
-        "{FILE}: 유일하게 허용되는 `hub.once_at` 은 `arm_derived` 본문의 것이다 \
-         (fn at line {line_of_fn}, call at line {line_of_call})."
+        "{FILE}: hub.once_at 호출이 arm_derived 정의보다 앞에 있다(fn {line_of_fn}, call {line_of_call}). 등록 함수의 본문에서 호출해야 한다."
     );
 }
 

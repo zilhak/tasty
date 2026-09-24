@@ -51,7 +51,7 @@ pub mod workflow_triggers;
 /// 순회 결과에 하한을 적용한다.
 pub mod floored_walk;
 
-/// 레포 루트에서 훑는 가드의 실패문이 **레포 밖 좌표에 처방을 붙이지 않게** 한다.
+/// 저장소 외부 경로를 수정 대상으로 안내하지 않게 한다.
 pub mod tracked_scope;
 
 use std::collections::BTreeMap;

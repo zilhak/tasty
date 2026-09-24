@@ -3,7 +3,7 @@
 // 재빌드 누락 검사용이며 위조 방지용 해시가 아니다.
 // include! 소비자와 충돌하지 않도록 use와 테스트는 두지 않는다.
 
-/// 디렉토리 하나의 지문. 읽을 수 없는 자리가 있으면 `None`(= 물을 수 없다).
+/// 디렉터리의 지문을 계산하며 읽기에 실패하면 None을 반환한다.
 pub(crate) fn fingerprint(lib_dir: &std::path::Path) -> Option<String> {
     let mut files = Vec::new();
     collect(lib_dir, lib_dir, &mut files)?;
