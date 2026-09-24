@@ -123,8 +123,7 @@ pub mod populations {
         measured: 214,
         measured_on: "2026-09-24",
         counted_on: super::CountedOn::Tree(
-            "e87dcea71 — ADR 재작성 여섯 묶음을 합친 트리에서 측정했다. \
-             기존 ADR 406편을 51편으로 정리해 문서가 569개에서 214개로 줄었다.",
+            "9d1b15669 — 이 트리에서 Git이 추적하는 docs/ 아래 .md 파일 214개를 다시 확인했다.",
         ),
         how: "git ls-files에서 docs/로 시작하고 .md로 끝나는 경로를 센다. 깊이는 제한하지 않는다.",
     };

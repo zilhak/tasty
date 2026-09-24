@@ -1,16 +1,6 @@
-//! `tasty-plugin-manifest` 의 두 표를 **텍스트로** 읽는다 — 권한 토큰과 contributes 게이트.
-//!
-//! 왜 링크하지 않고 읽나: 이 크레이트는 의존이 0 이라 콜드 빌드가 1 초 미만이고, 그래서
-//! `doc-guards.yml` 이 **경로 필터 없이** 매 push 돌 수 있다(ADR-0048). 그 표들을 링크로
-//! 열거하려면 `tasty-plugin-manifest` 를 끌어와야 하는데 그것만으로 전이 의존이 61 개다
-//! (serde·toml·serde_json…) — 필터 없는 잡의 전제가 무너진다.
-//!
-//! 텍스트 판독의 대가는 **판독기가 진짜 표와 갈릴 수 있다**는 것이다. 그 위험은 본체
-//! 패키지의 `tests/contributes_gate_readings_agree.rs` 가 받는다 — 거기서는 두 타입을
-//! 링크해 런타임에 열거할 수 있으므로 판독본과 열거본을 직접 맞댄다.
-//!
-//! 판독기는 **모르는 형태를 만나면 panic 한다.** 조용히 건너뛰면 그 항목이 표에서
-//! 사라져 소비자가 빈 쪽을 대조하며 통과한다.
+//! 추가 의존성 없이 매니페스트 소스의 권한 토큰과 contributes 조건을 읽는다.
+//! 실제 타입을 연결할 수 있는 tests/contributes_gate_readings_agree.rs가 런타임 표와 대조한다.
+//! 지원하지 않는 형태를 만나면 항목을 누락시키지 않고 panic한다.
 
 use std::collections::BTreeMap;
 
@@ -33,13 +23,8 @@ impl TokenForm {
     }
 }
 
-/// `Permission::as_token` 의 팔을 **variant 이름 → 토큰 형태** 로 읽는다.
-///
-/// 토큰 문자열의 단일 출처는 그 함수다 — exhaustive match 라 variant 를 늘리면 팔이
-/// 강제로 추가된다. 팔은 공용 판정기([`crate::match_arms`])가 떼고, 모르는 모양(여러 variant
-/// 를 `|` 로 묶은 팔, 리터럴도 `format!` 도 아닌 본문)은 panic 한다 — 줄 단위로 읽던
-/// 판독은 그런 팔을 `continue` 로 건너뛰어, 본문이 여러 줄로 내려간 새 variant 의 토큰이
-/// 문서 대조에서 조용히 빠졌다.
+/// Permission::as_token의 match를 variant별 토큰 형태로 읽는다.
+/// 여러 variant를 |로 묶거나 지원하지 않는 본문 형식이면 panic한다.
 pub fn permission_tokens(src: &str) -> BTreeMap<String, TokenForm> {
     use crate::match_arms::{Source, matching_close};
     let source = Source::new(src);
@@ -108,8 +93,7 @@ pub fn permission_tokens(src: &str) -> BTreeMap<String, TokenForm> {
     }
     assert!(
         !out.is_empty(),
-        "`as_token` 을 읽었는데 팔이 한 건도 안 나왔다 — 표가 빈 것이 아니라 판독기가 \
-         형태를 못 맞춘 것이다."
+        "as_token에서 match 분기가 한 건도 나오지 않았다. 함수 내용과 지원하는 문법을 확인한다."
     );
     out
 }
@@ -152,8 +136,7 @@ pub fn contributes_gates(gates_src: &str, types_src: &str) -> Vec<(String, Strin
     }
     assert!(
         !out.is_empty(),
-        "`contributes_gates!` 를 읽었는데 항목이 한 건도 안 나왔다 — 표가 빈 것이 아니라 \
-         판독기가 형태를 못 맞춘 것이다."
+        "contributes_gates!에서 항목이 한 건도 나오지 않았다. 매크로 내용과 지원하는 문법을 확인한다."
     );
     out
 }

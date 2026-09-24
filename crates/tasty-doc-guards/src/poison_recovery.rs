@@ -1,36 +1,10 @@
-//! **락 poison 을 보고 없이 복구하는 자리**를 소스에서 집는다.
+//! 락 poison 복구 코드에서 보고 호출이 빠진 곳을 찾는다.
+//! 복구 정책은 docs/dev-guide/error-handling.md를 따르며, recover_* 헬퍼나 인라인 로그로 보고한다.
+//! 테스트 코드는 cfg 범위와 테스트 전용 파일 판정으로 제외한다.
 //!
-//! 방침은 저장소의 `docs/dev-guide/error-handling.md` "락 poison" 절 ②축이다 — 임계구역이
-//! 불변식을 깨진 채 남기지 않아 복구하기로 했다면, 그 복구는 **첫 1 회라도 보고**해야
-//! 한다. 조용한 복구는 조용한 유실과 구분되지 않기 때문이다. `tasty_utils::poison` 의
-//! `recover_*` 헬퍼가 그 보고를 태우고, 헬퍼가 안 닿는 자리는 인라인으로 보고한다.
-//!
-//! ## 술어는 성질이다 — 허용 목록이 아니다
-//!
-//! 이 가드는 "헬퍼를 거쳤는가" 를 묻지 않는다(그건 목록으로 관리하는 허용 방식이라
-//! 자기보고하는 자리를 일일이 면제해야 한다). 대신 **성질**을 묻는다: poison 을
-//! 복구하는 `into_inner()` 인데 그 복구 arm/closure 안에 보고가 없는가. 그래서
-//! 자기보고하는 자리(헬퍼 자신 · `event_bus` · plugin-sdk runtime · cli attach ·
-//! agent-stream pump/handlers · approval)는 **면제 없이** 통과한다 — 보고가 있으니까.
-//!
-//! ## cfg(test) 는 목록이 아니라 구조로 빠진다
-//!
-//! 테스트 코드의 조용한 복구는 프로덕션 유실을 숨기지 않는다. 그것을 빼는 근거는
-//! 이름이 아니라 **소스 자신의 `#[cfg(test)]`** 다 — [`crate::cfg_predicate::cfg_gated_lines`]
-//! 가 줄 단위로, [`crate::shipping_scope::test_only_files`] 가 파일 단위로 판정한다.
-//! 실측(2026-09-05): shipping 파일 안 `#[cfg(test)]` 블록에 조용한 복구가 스물 남짓
-//! 있어서 줄 단위 판정이 없으면 전부 오탐이 된다.
-//!
-//! ## 잡지 못하는 것
-//!
-//! 이 가드는 **인라인 세 형태**만 본다 — `x.lock().unwrap_or_else(|p| p.into_inner())`,
-//! `Err(p) => p.into_inner()`, `Err(TryLockError::Poisoned(p)) => p.into_inner()`.
-//! 이미 손에 쥔 `PoisonError` 를 함수 인자로 받아 `p.into_inner()` 하는 형태(복구 헤드가
-//! 근처에 없는 형태)는 텍스트로 poison 인지 확정할 수 없어 보지 않는다 — 그 형태는
-//! `recover_poisoned` 가 존재하는 이유이고, 현재 트리의 그런 자리(condvar 재획득 등)는
-//! `recover_poisoned` 를 사용해야 한다. 함수 포인터 `PoisonError::into_inner` 도
-//! `.into_inner()` 호출이나 복구 바인더가 없어 인식하지 못한다. 이 검사 통과를
-//! 모든 복구 경로의 관측 증명으로 읽지 않는다.
+//! 지원 형태는 unwrap_or_else의 복구 클로저, Err(p) 분기, TryLockError::Poisoned 분기다.
+//! 인자로 받은 PoisonError나 PoisonError::into_inner 함수 포인터는 식별하지 못한다.
+//! 검사 통과가 모든 복구 경로의 보고를 보장하는 것은 아니다.
 
 use std::path::{Path, PathBuf};
 
@@ -38,7 +12,7 @@ use crate::cfg_predicate::cfg_gated_lines;
 use crate::shipping_scope::test_only_files;
 use crate::source_text::{mask_non_code, rust_sources};
 
-/// 복구 arm/closure 안에 이것이 있으면 **보고를 동반한** 복구다.
+/// 복구 블록에 보고 코드가 있는지 확인할 문자열.
 const REPORT_TOKENS: &[&str] = &[
     "report(",
     "report_poison",
@@ -92,9 +66,7 @@ fn recovery_binder(line: &str) -> Option<String> {
     None
 }
 
-/// 헤드를 거슬러 찾을 때 보는 최대 줄 수. 블록형 복구의 긴 다중행 로그 메시지를
-/// 넉넉히 덮되(실측 최장 8 줄), 무관한 앞선 arm 까지 번지지 않게 가장 가까운 헤드에서
-/// 멈춘다.
+/// 가장 가까운 복구 선언을 찾는 최대 줄 수. 무관한 앞 분기를 함께 검사하지 않도록 제한한다.
 const HEAD_LOOKBACK: usize = 25;
 
 /// masked 소스 줄들과 그 파일의 `#[cfg(test)]` 마스크로 poison 복구를 분류한다.
@@ -140,7 +112,7 @@ pub fn classify(masked: &[&str], cfg_test: &[bool]) -> FileClass {
     out
 }
 
-/// 워크스페이스 전역 census. shipping(비-test-only) 파일의 조용한 복구를 모은다.
+/// 제품 코드의 보고 없는 poison 복구를 모은 결과.
 #[derive(Debug, Default)]
 pub struct Census {
     pub files_scanned: usize,
@@ -152,7 +124,7 @@ pub struct Census {
     pub silent: Vec<String>,
 }
 
-/// `scan_roots`(예: `["src", "crates"]`) 아래를 훑어 census 를 만든다.
+/// scan_roots 아래의 코드를 검사한다.
 pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     let sources = rust_sources(root, scan_roots);
     let test_only: std::collections::BTreeSet<PathBuf> = test_only_files(root, &sources);
@@ -196,9 +168,6 @@ mod tests {
         classify(&masked, &cfg_test)
     }
 
-    // ── 합성 회귀: 세 인라인 형태를 조용/보고로 가른다 ──────────────────
-
-    /// 형태 ① closure — 보고 없는 `unwrap_or_else` 는 조용하다.
     #[test]
     fn a_bare_unwrap_or_else_closure_is_silent() {
         let fc = classify_src("fn f() { let g = m.lock().unwrap_or_else(|p| p.into_inner()); }");
@@ -210,7 +179,6 @@ mod tests {
         );
     }
 
-    /// 형태 ② match arm — 보고 없는 `Err(p) => p.into_inner()` 는 조용하다.
     #[test]
     fn a_bare_err_arm_is_silent() {
         let fc = classify_src(
@@ -219,7 +187,6 @@ mod tests {
         assert_eq!(fc.silent.len(), 1);
     }
 
-    /// 형태 ③ TryLockError::Poisoned — 안쪽 바인더로 잡는다.
     #[test]
     fn a_try_lock_poisoned_arm_is_silent() {
         let fc = classify_src(
@@ -228,7 +195,6 @@ mod tests {
         assert_eq!(fc.silent.len(), 1, "Poisoned(p) 의 안쪽 p 로 잡아야 한다");
     }
 
-    /// 보고를 동반하면 — closure 블록 안에 report — 조용이 아니다.
     #[test]
     fn a_closure_with_a_report_is_not_silent() {
         let fc = classify_src(
@@ -239,7 +205,6 @@ mod tests {
         assert_eq!(fc.reported.len(), 1);
     }
 
-    /// arm 블록 안 다중행 로그 뒤의 into_inner 도 보고로 본다(헤드에서 이어진 span).
     #[test]
     fn a_multiline_logged_arm_is_reported() {
         let fc = classify_src(
@@ -249,7 +214,6 @@ mod tests {
         assert_eq!(fc.reported.len(), 1);
     }
 
-    /// `#[cfg(test)]` 블록 안의 조용한 복구는 위반이 아니다(줄 단위로 빠진다).
     #[test]
     fn a_silent_recovery_under_cfg_test_is_gated_not_silent() {
         let fc = classify_src(
@@ -260,7 +224,6 @@ mod tests {
         assert!(fc.silent.is_empty());
     }
 
-    /// 비-poison `into_inner()` 는 복구 헤드가 없어 세지 않는다.
     #[test]
     fn a_non_poison_into_inner_is_not_counted() {
         let fc = classify_src(
@@ -272,15 +235,13 @@ mod tests {
         );
     }
 
-    /// 주석·문자열 속 `into_inner` 언급은 코드로 세지 않는다.
     #[test]
     fn a_mention_in_a_comment_is_not_counted() {
         let fc = classify_src("/// 이 자리를 into_inner() 로 되돌린 변이가 살아남았다.\nfn f() {}");
         assert!(fc.poison_sites.is_empty());
     }
 
-    /// 함수 인자로 받은 `PoisonError` 를 into_inner 하는 형태(recover_poisoned 모양)는
-    /// 복구 헤드가 근처에 없어 보지 않는다 — 모듈 주석의 '잡지 못하는 것' 에 적은 사각을 못박는다.
+    /// 인자로 받은 PoisonError는 복구 선언을 찾지 못하므로 이 검사에서 제외된다.
     #[test]
     fn a_param_binder_poison_into_inner_is_out_of_scope() {
         let fc = classify_src(

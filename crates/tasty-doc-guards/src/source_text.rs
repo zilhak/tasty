@@ -1,85 +1,44 @@
-//! 소스를 **텍스트로 읽는** 가드들이 공유하는 두 가지: 코드가 아닌 부분을 덮는 것과,
-//! 스캔 루트 아래의 `.rs` 를 모으는 것.
-//!
-//! 여기 있는 이유는 소비자가 **다른 컴파일 단위**에 흩어져 있기 때문이다 — 본체의
-//! `src/source_guards/`(단위 테스트)와 루트 `tests/`(통합 타깃)는 서로의 비공개
-//! 항목을 못 본다. 각자 사본을 두면 같은 물음에 답이 둘이 되고, 갈린 쪽은 조용하다.
+//! 소스 검사가 공유하는 주석·리터럴 마스킹과 Rust 파일 수집 함수.
 
 use std::path::PathBuf;
 
-/// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
-/// 결과 문자열의 줄 번호는 원본과 같다. 라이프타임 틱(`'a`)은 문자 리터럴과 구분한다.
-///
-/// "여기 **코드**에 X 가 있나" 를 묻는 가드가 쓴다.
+/// 주석·문자열·문자 리터럴을 공백으로 바꾼다. 줄바꿈과 문자 수는 유지한다.
+/// 라이프타임의 작은따옴표는 문자 리터럴과 구분한다.
 pub fn mask_non_code(src: &str) -> String {
     mask(src, Fate::Blank, Fate::Blank, Fate::Blank)
 }
 
-/// [`mask_non_code`] 와 같은 구간을 덮되 **바이트 위치까지** 원본과 맞춘 사본 — 덮은
-/// 글자 하나를 그 글자의 UTF-8 바이트 수만큼의 공백으로 바꾼다.
-///
-/// 구조(괄호 짝 · 구분자)는 이 사본에서 찾고 **값은 같은 구간의 원본에서 읽는** 가드가
-/// 쓴다([`crate::match_arms`]). [`mask_non_code`] 는 글자 수만 지키므로, 덮인 구간에
-/// 한글 같은 여러 바이트 글자가 있으면 그 뒤의 바이트 위치가 원본과 어긋난다.
+/// mask_non_code와 같은 범위를 가리되 UTF-8 바이트 위치도 보존한다.
+/// 구조를 마스킹한 사본에서 찾고 같은 바이트 구간의 값을 원문에서 읽을 때 사용한다.
 pub fn mask_non_code_aligned(src: &str) -> String {
     mask(src, Fate::BlankBytes, Fate::BlankBytes, Fate::BlankBytes)
 }
 
-/// 주석만 덮고 리터럴은 남기되 **바이트 위치까지** 원본과 맞춘 사본.
-///
-/// [`mask_non_code_aligned`] 의 짝이다 — 그 사본에서 공백인 자리가 이 사본에서도 공백이면
-/// 공백이나 주석이고, 여기서 글자가 남으면 리터럴이다. 구조 주사가 "주석은 건너뛰되
-/// 리터럴은 건너뛰지 않는다" 를 가를 때 쓴다.
+/// 주석만 가리고 리터럴은 남긴다. UTF-8 바이트 위치를 보존한다.
+/// mask_non_code_aligned와 비교하면 리터럴과 공백/주석을 구별할 수 있다.
 pub fn mask_comments_aligned(src: &str) -> String {
     mask(src, Fate::BlankBytes, Fate::Keep, Fate::Keep)
 }
 
-/// 문자열·문자 리터럴만 덮고 **주석은 원문 그대로 남긴** 사본.
-///
-/// "여기 **주석**이 달려 있나" 를 묻는 가드가 쓴다. 두 물음은 서로의 답을 지우므로
-/// 한 함수로 못 합친다 — 주석을 덮으면 주석의 유무를 못 묻고, 안 덮으면 주석 속 코드
-/// 형태가 코드로 세어진다. 판정기를 하나로 모으는 것은 **원인**을 모으는 것이지 함수
-/// 개수를 줄이는 것이 아니다.
-///
-/// 이 결과에 `//` 가 있으면 진짜 주석이다. 원문에는 있는데 여기 없으면 그 `//` 는
-/// 문자열 안에 있었다는 뜻이다 — URL 이 대표적이다.
+/// 문자열·문자 리터럴만 가리고 주석을 남긴다. 사유 주석을 검사할 때 사용한다.
+/// 결과에 남은 //는 실제 주석이며 문자열 안의 URL 표기는 제거된다.
 pub fn mask_literals(src: &str) -> String {
     mask(src, Fate::Keep, Fate::Blank, Fate::Blank)
 }
 
-/// 주석만 덮고 **문자열·문자 리터럴은 원문 그대로 남긴** 사본.
-///
-/// "여기 **코드**에 이 리터럴을 담은 형태가 있나" 를 묻는 가드가 쓴다 —
-/// `#[cfg(feature = "gui")]` 처럼 찾는 형태 안에 문자열 리터럴이 들어 있으면
-/// [`mask_non_code`] 는 그 리터럴까지 지워 형태를 못 찾고, 원문은 주석 속 언급까지 센다.
+/// 주석만 가리고 문자열·문자 리터럴을 남긴다. cfg의 문자열 값처럼 리터럴도 검사할 때 사용한다.
 pub fn mask_comments(src: &str) -> String {
     mask(src, Fate::Blank, Fate::Keep, Fate::Keep)
 }
 
-/// 문자 리터럴 안의 `"` 만 안전한 글자로 바꾼 사본. **그 밖은 원문 그대로다** —
-/// 주석도 문자열도 코드도 안 건드린다.
-///
-/// 줄 수를 세는 계측기(`tokei`)가 쓴다. 그 계측기는 `'"'` 의 따옴표를 **문자열의
-/// 시작**으로 읽고, 그 뒤 파일 끝까지를 문자열 안으로 본다 — 문자열 안의 빈 줄은
-/// code 로 세므로 그 파일의 code 가 실제보다 **크게** 나온다. 실측(tokei 14.0.0,
-/// 2026-09-09): `src/core/attach_runtime.rs` 에 `'"'` 한 자리가 들어오자 출하 SLOC 이
-/// 1240 → 3046 으로 뛰었는데 같은 구간의 원시 순증은 +364 였다. 오진은 조용하다 —
-/// 계측기는 성공으로 끝나고 값만 틀리다.
-///
-/// 여기서 고치는 이유: 판정(무엇이 출하되는가)과 계측(몇 줄인가)을 가른 설계에서
-/// **사본은 계측 전용 산출물**이다. 계측기가 읽을 수 있는 형태로 넘기는 것이 사본을
-/// 만드는 쪽의 몫이고, 소스를 계측기에 맞춰 쓰라고 요구하는 것보다 좁다. 바꾸는 것은
-/// 리터럴 **안의 한 글자**뿐이라 줄 수도 code 수도 안 움직인다.
-///
-/// **내용 동등을 묻는 소비자는 이걸 쓰면 안 된다** — `'"'` 와 `'x'` 가 같아 보인다.
+/// 문자 리터럴 안의 큰따옴표만 바꾸고 나머지 내용은 보존한다.
+/// tokei가 이를 문자열 시작으로 오독하지 않게 하는 SLOC 측정용 처리다.
+/// 서로 다른 문자 리터럴이 같아질 수 있어 내용 비교에는 사용하지 않는다.
 pub fn neutralize_char_literal_quotes(src: &str) -> String {
     mask(src, Fate::Keep, Fate::Keep, Fate::QuoteSafe)
 }
 
-/// 렉서가 구간 하나를 만났을 때 그 글자를 어떻게 할지.
-///
-/// 셋을 한 렉서에 두는 이유는 구간을 **가르는 규칙**이 하나여야 하기 때문이다 —
-/// raw string · 이스케이프 · 라이프타임 틱을 아는 사본이 여럿이면 갈린 쪽이 조용하다.
+/// 같은 렉서로 구분한 각 영역의 출력 방식.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Fate {
     /// 공백으로 덮는다(줄바꿈은 남긴다).
@@ -120,16 +79,14 @@ fn mask(src: &str, comments: Fate, strings: Fate, char_literals: Fate) -> String
     out
 }
 
-/// 코드가 아닌 한 글자를 그 구간의 운명대로 내보낸다 — `Blank` 는 공백으로 덮되
-/// 줄바꿈만 그대로 둬서 줄 번호를 지킨다.
+/// 선택한 출력 방식을 적용하고 줄바꿈은 보존한다.
 fn emit(out: &mut String, c: char, fate: Fate) {
     match fate {
         Fate::Blank => out.push(if c == '\n' { '\n' } else { ' ' }),
         Fate::BlankBytes if c == '\n' => out.push('\n'),
         Fate::BlankBytes => out.extend(std::iter::repeat_n(' ', c.len_utf8())),
         Fate::Keep => out.push(c),
-        // `x` 인 이유는 폭이 같은 아무 글자면 되기 때문이다 — 계측기가 이 자리를
-        // 문자열의 시작으로 안 읽기만 하면 된다.
+        // 문자열 시작으로 오인되지 않는 같은 폭의 문자로 바꾼다.
         Fate::QuoteSafe => out.push(if c == '"' { 'x' } else { c }),
     }
 }
@@ -188,8 +145,7 @@ fn mask_raw_string(chars: &[char], i: usize, out: &mut String, fate: Fate) -> us
     i
 }
 
-/// `terminator` 로 닫히는 리터럴(문자열·문자)을 그 운명대로 내보낸다. 역슬래시
-/// 이스케이프를 따른다 — 여닫는 따옴표도 리터럴의 일부라 같은 운명이다.
+/// 이스케이프를 고려해 닫는 구분자까지 출력 방식을 적용한다. 구분자도 같은 방식으로 처리한다.
 fn mask_quoted(
     chars: &[char],
     mut i: usize,
@@ -247,29 +203,7 @@ fn is_char_literal(chars: &[char], i: usize) -> bool {
     chars.get(i + 1) == Some(&'\\') || chars.get(i + 2) == Some(&'\'')
 }
 
-/// 스캔 루트 아래의 모든 `.rs` 를 (레포 상대 경로, LF 정규화된 내용)으로 모은다.
-/// 빌드 산출물(`target/`)은 루트 밑에 없지만, 크레이트별 `target/` 이 생길 수 있어
-/// 이름으로 한 번 더 뺀다.
-///
-/// **읽기 실패는 panic 이다.** 스캔 가드에서 조용히 건너뛰면 모수가 줄고, 줄어든 모수는
-/// 언제나 초록이다.
-/// 레포 상대 경로를 **구분자까지 정규화**해 돌려준다 — 언제나 `/` 다.
-///
-/// 소비자 대부분은 이 경로를 `to_string_lossy()` 로 펴서 **소스에 박힌 `/` 리터럴**
-/// (명부의 좌표, 접두사)과 문자열로 비교한다. 그런데 `strip_prefix` 가 돌려주는 것은
-/// **그 플랫폼의 구분자**라, Windows 에서는 같은 파일이 `crates\\x\\y.rs` 로 펴져
-/// 어떤 리터럴과도 안 맞는다. 그 어긋남은 예외가 아니라 **조용한 0** 이다 —
-/// 명부 조회가 전부 빗나가고, 가드는 "명부에 없다" 고 보고한다.
-///
-/// 2026-09-06 실측: 갤러리 사본 판정이 Windows 에서만 11 건을 미등록으로 잡았다.
-/// 같은 커밋이 Linux 에서는 초록이었다 — 판정의 입력이 트리뿐인데도 플랫폼이 답을 갈랐다.
-///
-/// `/` 를 담은 `PathBuf` 는 Windows 에서도 그대로 열린다(std 가 두 구분자를 다 받는다).
-/// 그래서 소비자가 `repo_root().join(rel)` 로 다시 여는 경로도 안 깨진다.
-/// **다른 생산자도 이걸 써라.** 레포 상대 경로를 문자열로 펴서 비교하는 자리는 이
-/// 저장소에 여럿이고, 각자 손으로 `replace('\\', "/")` 를 붙이거나 안 붙인다. 안 붙인
-/// 자리는 Windows 에서만 조용히 빗나가고, 그 빗나감은 예외가 아니라 0 이다.
-/// 규칙을 한 벌만 두려고 공개한다.
+/// 저장소 상대 경로의 구분자를 /로 정규화한다. Windows에서도 같은 문자열로 비교할 수 있다.
 pub fn repo_relative(rel: &std::path::Path) -> PathBuf {
     let joined: Vec<String> = rel
         .components()
@@ -278,6 +212,8 @@ pub fn repo_relative(rel: &std::path::Path) -> PathBuf {
     PathBuf::from(joined.join("/"))
 }
 
+/// scan_roots 아래의 .rs를 상대 경로와 LF 정규화한 본문으로 모은다.
+/// target 디렉터리는 제외하며 읽기 실패는 panic한다.
 pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
     let mut stack: Vec<PathBuf> = scan_roots.iter().map(|r| root.join(r)).collect();
@@ -307,15 +243,8 @@ pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf
     out
 }
 
-/// `code` 안에 `name!` 매크로 **호출**이 있는가. 이름 앞의 경계를 본다.
-///
-/// 경계를 안 보면 `eprintln!` 이 `println` 을 담아 **stderr 를 stdout 으로 센다.**
-/// 실측 2026-09-08: `git grep 'println!' -- src/` 가 17 을 냈는데 그중 3 이 `eprintln!`
-/// 이었고, 그 17 을 근거로 호스트 stdout 출력이 없다는 설명이 낡았다고 의심했다 — 실제 값은
-/// 0 이었다. 부분문자열로 세면 방향이 한쪽으로만 틀린다(더 많이 잡는다).
-///
-/// 입력은 **주석·문자열이 지워진 코드**여야 한다 — 이 함수는 그것을 안 한다.
-/// [`mask_non_code`] 가 그 일을 한다.
+/// 마스킹한 코드에서 name! 호출을 찾는다. 식별자 경계로 println!과 eprintln!을 구분한다.
+/// 주석·문자열 제거는 호출자가 먼저 수행해야 한다.
 pub fn invokes_macro(code: &str, name: &str) -> bool {
     let mut from = 0;
     while let Some(pos) = code[from..].find(name) {
@@ -331,16 +260,8 @@ pub fn invokes_macro(code: &str, name: &str) -> bool {
     false
 }
 
-/// 값만으로 "로케일 무관 영어가 아니다" 가 확정되는 문자.
-///
-/// **이 술어가 답하는 것은 좁다** — 한글·가나·한자가 한 글자라도 있으면 그 문자열은
-/// 어떤 로케일에서도 영어가 아니다. 반대는 성립하지 않는다: ASCII 라고 영어인 것도,
-/// 번역문이 아닌 것도 아니다(스페인어·터키어는 전부 이 범위 밖이다). 그래서 이것은
-/// **판정의 전부가 아니라 값만으로 끝나는 부분집합**이다.
-///
-/// 두 가드가 같은 물음을 물어서 여기 둔다 — 번들 plugin 프로덕션 코드의 로케일 고정
-/// 문구와, 진단 로그에 실릴 문자열의 로케일 무관성. 각자 사본을 두면 한쪽에 범위를
-/// 더해도 다른 쪽은 모른다.
+/// 한글·가나·한자 범위의 문자다. 영어 여부를 완전히 판별하는 함수는 아니다.
+/// ASCII와 다른 언어 문자가 없다는 사실만으로 영어라고 판단할 수 없다.
 pub fn is_locale_specific(c: char) -> bool {
     matches!(c as u32,
         0x1100..=0x11FF   // Hangul Jamo
@@ -353,12 +274,7 @@ pub fn is_locale_specific(c: char) -> bool {
 
 #[cfg(test)]
 mod repo_relative_tests {
-    /// **이 단정을 재는 채널은 `check-windows` 하나다** (`cargo test --workspace --lib`).
-    ///
-    /// Linux·macOS 에서는 `join` 이 이미 `/` 를 내므로 이 단정은 언제나 참이고, 거기서
-    /// 나오는 초록은 정규화가 살아 있다는 증거가 **아니다**. 채널 이름을 안 적어 두면
-    /// 다음 사람이 그 초록을 증거로 읽는다 — 실측으로, 구분자 결함은 세 게이트가 전부
-    /// 초록인 채로 두 번 살아남았고 `check-windows` 하나만이 답했다.
+    /// Windows의 구분자 정규화를 확인한다. Linux·macOS의 통과만으로 이 변환을 검증할 수는 없다.
     #[test]
     fn repo_relative_always_yields_forward_slashes() {
         let p = std::path::PathBuf::from("crates")
@@ -376,8 +292,6 @@ mod repo_relative_tests {
 mod neutralize_tests {
     use super::{mask_literals, mask_non_code, neutralize_char_literal_quotes};
 
-    /// 이 함수가 생긴 형태. 계측기(`tokei`)는 `'"'` 의 따옴표를 문자열의 시작으로 읽고
-    /// 그 뒤 파일 끝까지를 문자열 안으로 본다 — 그 오독을 끊는 것이 전부다.
     #[test]
     fn a_quote_inside_a_char_literal_is_swapped() {
         assert_eq!(
@@ -386,8 +300,6 @@ mod neutralize_tests {
         );
     }
 
-    /// **밖은 원문 그대로다.** 여기서 문자열이나 주석까지 건드리면 이 사본을 세는
-    /// 게이트가 원문과 다른 것을 재게 된다.
     #[test]
     fn nothing_outside_a_char_literal_moves() {
         for src in [
@@ -405,7 +317,6 @@ mod neutralize_tests {
         }
     }
 
-    /// 줄 수는 안 움직인다 — 계측기가 이 사본의 좌표를 원본으로 읽는다.
     #[test]
     fn the_line_count_is_unchanged() {
         let src = "fn a() {\n    let c = '\"';\n}\n\nfn b() {}\n";
@@ -414,7 +325,6 @@ mod neutralize_tests {
         assert!(got.contains("fn b() {}"), "코드가 사라졌다: {got}");
     }
 
-    /// 세 모드는 서로의 자리를 안 밟는다 — 한 렉서를 나눠 쓰므로 함께 본다.
     #[test]
     fn the_three_modes_keep_their_own_scopes() {
         let src = "let c = '\"'; // 주석";
