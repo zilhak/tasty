@@ -26,10 +26,10 @@ url_hint = "https://…"
 desc = "HTML 뷰어 명령어"
 
 [html.cli.sub.open]
-description = "포커스된 탭에서 URL을 HTML 서피스로 열기"
+description = "기존 HTML 화면의 URL 변경"
 
 [html.cli.arg.open_args.url]
-help = "URL(http://, https://, file://) 또는 로컬 경로"
+help = "URL(http://, https://, file://). 로컬 파일은 file:// URL로 지정하세요."
 
 [html.cli.arg.open_args.surface]
-help = "대상 서피스 ID(기본값: 포커스된 서피스 변환)"
+help = "대상 HTML surface ID(생략 시 호출자의 TASTY_SURFACE_ID)"

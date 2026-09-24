@@ -19,20 +19,15 @@ lang_dir = "lang"
 type = "process"
 command = "tasty-plugin-image"
 
-# egui-mesh 하이브리드(docs/dev-guide/egui-mesh-channel.md#데이터-흐름): 비트맵은 plugin egui Context 의 텍스처로
-# 올려(mesh textures_delta 채널, 폰트 atlas 와 동일 경로) mesh 로 합성하고, chrome
-# (control bar / paint bar / handles / zoom)도 같은 mesh 로 선명하게 그린다. host 의
-# egui-mesh 화이트리스트 + api_version 게이트(src/core/surface_registry/egui_mesh.rs)를
-# 통과해야 등록된다. 별도 Canvas 레이어(재사용 substrate)는 실재하지 않아 채택하지
-# 않는다 — mesh 텍스처델타가 대형 비트맵을 1회 업로드+캐시로 처리한다(docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+# 이미지 픽셀은 텍스처로 전달하고 도구 모음과 함께 egui-mesh로 그린다.
 [[surface_kinds]]
 kind = "image"
 display_name_i18n_key = "surface.kind.image"
 icon = "image"
 rendering = "egui-mesh"
-# capability: paste 는 plugin(image.paste)이 소비 — host 가 terminal 로 흘리지 않음.
+# 붙여넣기는 터미널로 보내지 않고 image.paste가 처리한다.
 egui_paste = true
-# 자동 탭 명명: `file` 값의 basename 을 표시명으로. 본체의 kind 하드코딩을 대체.
+# file의 파일명을 탭 이름으로 사용한다.
 name_from_param = "file"
 
 # 프리셋 편집기 필드 — 파일 경로(+Browse). 적용 시 파일 폴더를 cwd 로 파생.
@@ -55,7 +50,6 @@ unfocused_fg = "#a6adc8"
 prefix = "image"
 description_i18n_key = "image.namespace.desc"
 
-# 이미지 확장자 매핑. install 단계가 전역 id 를 "com.tasty.image/image" 로 자동 prefix.
 [[contributes.detector]]
 id = "image"
 display_name_i18n_key = "file_handler.format.image"
@@ -63,8 +57,7 @@ display_name_i18n_key = "file_handler.format.image"
 kind = "extension"
 values = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif"]
 
-# id 는 short name (lowercase + 숫자 + `-`, 1~32자). 전역 id 는 install 단계가
-# "com.tasty.image/viewer" 로 자동 prefix.
+# 설치할 때 핸들러 ID 앞에 플러그인 ID를 붙인다.
 [[contributes.handler]]
 id = "viewer"
 detector = "image"

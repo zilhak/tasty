@@ -1,26 +1,9 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Image plugin — **egui-mesh + bitmap-texture** image surface (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
-//!
-//! The plugin owns the image content and renders it in its own process (mirroring B1
-//! markdown): it loads the bitmap (delivered via `surface.create`), uploads it to its own
-//! egui `Context` as a texture, draws the viewer / paint chrome from the host `Theme`
-//! tokens (delivered each frame via `set_context`), tessellates the mesh, and the host
-//! composites it over the surface region. The bitmap texture flows through the same mesh
-//! `textures_delta` channel as the font atlas — uploaded once and cached in the host's
-//! per-surface `egui_wgpu::Renderer` — so there is no separate host Canvas layer.
-//!
-//! Edit state (brush strokes, undo/redo, paste→floating selection→commit/Esc) lives in the
-//! plugin ([`doc::ImageDoc`]). `image.save`/`export`/`paste`/`next`/`prev` operate on that
-//! state directly; `image.open` (surface conversion) and `image.list` (host surface
-//! enumeration) trampoline to the host. The former host `ImageView` render path stays
-//! compiled until C1 removes it.
+//! 이미지 픽셀과 편집 상태를 플러그인에서 관리하고 egui-mesh로 그린다.
+//! 저장·붙여넣기·파일 탐색은 문서 상태를 바꾸며, 화면 변환·목록 조회는 호스트에 맡긴다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 시험의 let _는 제품 코드에서 반환값을 버리는 목록에 포함하지 않는다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod doc;
@@ -48,7 +31,7 @@ const PLUGIN_ID: &str = "com.tasty.image";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct ImagePlugin {
-    /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
+    /// 화면별 egui 렌더 상태와 공유 버퍼.
     #[cfg(any(unix, windows))]
     meshes: HashMap<u32, EguiMeshSurface>,
     /// surface_id 들 중 폰트(CJK fallback)를 이미 설치한 것 — set_fonts 재업로드 방지.
@@ -58,8 +41,7 @@ struct ImagePlugin {
     docs: HashMap<u32, ImageDoc>,
     /// plugin lang 카탈로그 (UI 문자열).
     tr: Translator,
-    /// 외부 변경 감시 worker(SDK `file_watch::run`) 로 등록/해제 명령을 보내는 채널.
-    /// `on_start` 에서 worker 를 spawn 하며 채워진다.
+    /// 외부 변경 감시 스레드에 파일 등록·해제를 보내는 채널.
     watch_tx: Option<mpsc::Sender<WatchCmd>>,
 }
 
@@ -87,14 +69,8 @@ impl Plugin for ImagePlugin {
     }
 
     fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
-        // idle 자동 리로드: egui-mesh surface 는 입력·geom·theme·focus·invalidated 중
-        // 하나가 있어야 host 가 set_context 를 forward 하므로, 아무도 안 건드리는 동안은
-        // paint 가 아예 안 온다 — 별도 감시 스레드가 유일한 자동 갱신 경로다.
-        //
-        // 판정자는 `StatGatedDigest` 다. 이미지는 사용자가 고르는 아무 파일이라 읽기 비용에
-        // 상한이 없어 markdown 의 `ContentDigest`(매 폴 전량 읽기)를 그대로 쓸 수 없고,
-        // 반대로 시계만 보면 `touch`·rsync 같은 오탐마다 디코드가 돈다 — 이 자리에서
-        // 디코드는 읽기의 100~250 배다(그 타입 문서의 실측표).
+        // 입력이 없을 때도 외부 저장을 반영하도록 별도 스레드에서 감시한다.
+        // 메타데이터가 바뀔 때만 내용을 비교해 불필요한 읽기·디코딩을 줄인다.
         let (tx, rx) = mpsc::channel();
         self.watch_tx = Some(tx);
         if let Err(e) = std::thread::Builder::new()
@@ -106,9 +82,7 @@ impl Plugin for ImagePlugin {
     }
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // egui-mesh surface: no tree — load the file and return an empty result. The SDK
-        // hands the full `surface.create` envelope as `ctx.params`; the real params
-        // (`file`) are nested under `params.params`.
+        // SDK가 전달한 전체 요청에서 중첩된 파일 파라미터를 읽는다.
         let file = surface_param_file(&ctx.params);
         self.watch_register(ctx.surface_id, file.clone());
         self.docs.insert(ctx.surface_id, ImageDoc::new(file));
@@ -127,20 +101,15 @@ impl Plugin for ImagePlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            // Surface conversion + host enumeration stay host-owned (self-call trampoline).
+            // 화면 변환과 전체 목록 조회는 호스트에 맡긴다.
             "image.open" | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
-            // Edit / navigation operate on plugin-owned document state. These change the
-            // document out-of-band (no user input), so after a successful mutation we
-            // self-repaint the last context (empty input) — otherwise the new image/paste
-            // wouldn't show until the next user input (egui-mesh re-forward gap, option A).
+            // 사용자 입력 없이 문서가 바뀌므로 마지막 컨텍스트로 다시 그린다.
             "image.save" | "image.export_png" => {
                 let out = self.image_save(&ctx.params)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
                 Ok(out)
             }
-            // 감시자가 외부 변경을 알렸거나 사용자가 명시 호출했다. 실제 read 는 여기
-            // 하나로만 수렴한다(SDK `file_watch` 모듈 문서 — 쓰기 경로가 하나여야
-            // 빠른 연속 편집에서 stale read 가 최신 것을 덮어쓰지 않는다).
+            // 파일 읽기와 문서 변경은 플러그인 처리 스레드에서 수행한다.
             "image.reload" => {
                 let out = self.image_reload(&ctx.params)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
@@ -193,8 +162,7 @@ impl ImagePlugin {
                 if doc.is_blank() {
                     doc.file_path = Some(final_path.clone());
                 }
-                // 방금 우리가 쓴 파일이다 — 기준선을 다시 잡아 감시자가 이 쓰기를 외부
-                // 변경으로 되읽지 않게 한다(되읽어도 결과는 같지만 디코드가 한 번 더 돈다).
+                // 직접 저장한 내용을 외부 변경으로 다시 읽지 않도록 감시 기준을 갱신한다.
                 let watched = doc.file_path.clone();
                 self.watch_register(sid, watched);
                 Ok(json!({ "ok": true, "path": final_path }))
@@ -213,8 +181,7 @@ impl ImagePlugin {
         Ok(json!({ "ok": true, "surface_id": sid, "applied": applied }))
     }
 
-    /// 감시 대상 경로를 등록(또는 갱신)한다. 이미 등록된 surface 에 다시 보내면 **기준선이
-    /// 다시 잡힌다** — 우리가 스스로 쓴 파일(저장)을 외부 변경으로 되읽지 않으려고 쓴다.
+    /// 감시 파일과 비교 기준을 등록·갱신한다.
     fn watch_register(&self, surface_id: u32, path: Option<String>) {
         let Some(tx) = &self.watch_tx else { return };
         if tx.send(WatchCmd::Register { surface_id, path }).is_err() {
@@ -258,7 +225,7 @@ impl ImagePlugin {
         match new_path {
             Some(path) => {
                 doc.load_after_navigation();
-                // 같은 surface 가 다른 파일을 보게 됐다 — 감시 대상도 따라가야 한다.
+                // 선택한 파일로 감시 대상도 바꾼다.
                 self.watch_register(sid, Some(path.clone()));
                 Ok(json!({ "ok": true, "path": path }))
             }
@@ -291,7 +258,7 @@ impl ImagePlugin {
             .entry(sid)
             .or_insert_with(|| EguiMeshSurface::new(sid));
         if is_new {
-            // 한글/일문 파일명·라벨이 tofu(□) 되지 않도록 CJK fallback 을 설치한다.
+            // 인스턴스마다 CJK 대체 폰트를 한 번 설치한다.
             install_fonts(mesh.context());
             self.fonts_installed.insert(sid);
         }
@@ -304,15 +271,12 @@ impl ImagePlugin {
         }
     }
 
-    /// 편집/탐색 IPC 로 doc 이 out-of-band 로 바뀐 뒤, **입력 없이** 화면을 갱신한다(옵션 A).
-    /// 마지막 set_context 의 캐시된 컨텍스트(geom/ppp/theme)로 빈 입력 재-paint → 출력이
-    /// 바뀌면 host 로 PaintFrame 을 송신한다. theme 미수신(첫 set_context 전)이면 no-op.
+    /// IPC로 바뀐 문서를 마지막 컨텍스트와 빈 입력으로 다시 그린다. 테마가 없으면 생략한다.
     #[cfg(any(unix, windows))]
     fn repaint_after_edit(&mut self, host: &HostHandle, params: &Value) {
         let Ok(sid) = require_surface(params) else {
             return;
         };
-        // 캐시된 theme 으로 draw 를 재구성한다. 첫 set_context 전이면 theme 이 없어 no-op.
         let Some(theme) = self
             .meshes
             .get(&sid)
@@ -338,23 +302,21 @@ impl ImagePlugin {
         }
     }
 
-    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
-    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
+    /// Unix·Windows 외에는 공유 버퍼 그리기를 생략한다.
     #[cfg(not(any(unix, windows)))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
 
-    /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
+    /// Unix·Windows 외에는 다시 그리기도 생략한다.
     #[cfg(not(any(unix, windows)))]
     fn repaint_after_edit(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
-/// `image.*` 메서드를 호스트의 동명 IPC로 위임한다. plugin manager가 self-call을
-/// 호스트 dispatcher로 우회시키므로 무한 forward 루프는 발생하지 않는다.
+/// 같은 이름의 호스트 메서드를 호출한다. 호스트가 이 자기 호출을 내부 처리기로 보낸다.
 fn trampoline(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     Ok(host.call(method, params)?)
 }
 
-/// Read `surface` from IPC params (all image.* methods take it explicitly — focus独立).
+/// IPC의 surface 인자를 읽는다.
 fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
     params
         .get("surface")
@@ -393,12 +355,12 @@ fn surface_param_file(envelope: &Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+/// 전달받은 색·밝기·확대 비율로 테마를 만든다.
 fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
-/// plugin Context 에 CJK fallback 을 설치한다 (host `font_registry` 미러, B1 markdown 동일).
+/// 구할 수 있는 시스템 CJK 폰트를 대체 폰트로 추가한다.
 #[cfg(any(unix, windows))]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
@@ -415,11 +377,7 @@ fn install_fonts(ctx: &egui::Context) {
                 .push("system_cjk".to_owned());
         }
     }
-    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
-    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
-    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
-    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
-    // `PluginEnv.locale_font` 와 같은 출처).
+    // 호스트와 같은 검사 함수로 언어팩 폰트를 대체 폰트 목록 끝에 추가한다.
     if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
         let path = std::path::PathBuf::from(path);
         if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
@@ -437,7 +395,7 @@ fn install_fonts(ctx: &egui::Context) {
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
     #[cfg(target_os = "windows")]
     {
-        // host font_registry 미러 — 맑은 고딕(한글 tofu 방지). 없으면 None.
+        // 맑은 고딕이 없으면 추가하지 않는다.
         if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
             return Some(data);
         }

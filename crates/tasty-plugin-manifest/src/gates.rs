@@ -1,31 +1,9 @@
-//! `contributes` → 요구 권한 게이트 표.
-//!
-//! 매니페스트의 일부 contribute 는 대응 권한 토큰이 `permissions[]` 에 선언돼 있어야만
-//! 로드된다. 그 대응 관계는 두 곳에서 쓰인다 — [`crate::validate`] 의 검증 코드와
-//! `docs/dev-guide/plugin-permissions.md` 의 "contributes 권한 게이트" 표. 두 곳이 각자
-//! 문자열을 들고 있으면 한쪽만 갱신했을 때 조용히 어긋난다(실제로 `[[contributes.banner]]`
-//! 행이 표에서 빠진 채 유지된 적이 있다).
-//!
-//! 그래서 게이트 목록을 **데이터**로 만들고 양쪽이 같은 출처를 읽게 한다.
-//!
-//! - 검증 코드는 토큰 문자열을 [`ContributesGate::required`] 로만 얻는다.
-//! - 문서 parity 가드(`crates/tasty-doc-guards/tests/contributes_gate_docs_parity.rs`)는 [`ContributesGate::ALL`] 을
-//!   순회해 문서 표와 1:1 로 맞는지 본다.
-//!
-//! 토큰 문자열은 이 표에 **없다** — [`Permission::as_token`] 에서 온다. 그래야 `validate.rs` ·
-//! 문서 · 이 표가 같은 출처를 보고, 토큰 개명이 한 곳에서 끝난다.
-//!
-//! 표 자체의 완전성은 컴파일러가 붙잡는다 — `enum` / `ALL` / `contributes_key` / `token` 이
-//! 전부 아래 매크로의 한 행에서 생성되므로, 행을 추가하지 않고 게이트만 늘리는 것은
-//! 불가능하고 행을 추가하면 네 가지가 함께 갱신된다.
+//! 기능 선언별 요구 권한. 매니페스트 검증과 문서 표 검사가 이 목록을 함께 사용한다.
+//! 토큰 문자열은 Permission::as_token에서 얻고, 게이트 목록과 접근자는 같은 매크로 행에서 만든다.
 
 use crate::types::Permission;
 
-/// 게이트가 요구하는 토큰의 형태.
-///
-/// 토큰 **문자열** 은 여기 없다 — 어느 쪽도 [`Permission::as_token`] 이 만든다. 이 표가
-/// 존재하는 이유가 "같은 문자열을 두 곳이 각자 들면 조용히 어긋난다" 인데, 그 논거를 펴면서
-/// 사본을 하나 더 만들 수는 없다.
+/// 고정 권한 또는 대상을 포함하는 권한. 문자열은 Permission에서 만든다.
 #[derive(Debug, Clone)]
 pub enum GateToken {
     /// 고정 토큰. `permissions[]` 에 이 권한의 토큰이 그대로 있어야 한다.
@@ -133,9 +111,7 @@ impl ContributesGate {
 mod tests {
     use super::*;
 
-    /// 문서 parity 가드는 (키, 토큰 표기) 쌍으로 표 행을 식별한다. 두 게이트가 같은 쌍을
-    /// 가지면 그 식별이 무너지므로(한 행이 두 게이트를 만족시키고 다른 행은 미매칭으로
-    /// 남는다) 표 자체가 그 쌍의 유일성을 지켜야 한다.
+    /// 문서에서 행을 구분할 (키, 권한) 쌍이 중복되지 않아야 한다.
     #[test]
     fn every_gate_has_a_unique_key_and_token_pair() {
         let mut seen = std::collections::HashSet::new();
@@ -146,9 +122,7 @@ mod tests {
         assert_eq!(seen.len(), ContributesGate::ALL.len());
     }
 
-    /// 아래 두 테스트의 문자열은 표의 **사본이 아니라 핀**이다 — `Permission` 쪽에서
-    /// 토큰을 개명하면 여기서 요란하게 깨져 개명 범위를 알려준다. 프로덕션 경로는
-    /// 어느 것도 이 문자열을 읽지 않는다.
+    /// 외부에 사용하는 권한 토큰이 바뀌면 시험이 실패하도록 표기를 직접 비교한다.
     #[test]
     fn scoped_tokens_resolve_to_the_prefix_plus_target() {
         assert_eq!(

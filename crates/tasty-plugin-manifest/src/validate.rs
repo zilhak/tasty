@@ -1,7 +1,5 @@
-//! `Manifest::load` + `Manifest::validate` + 각종 sub-validation 메서드.
-//!
-//! 자유 함수 형태의 형식 검사 헬퍼는 [`super::validators`] 모듈에 있고,
-//! 본 모듈은 `impl Manifest` 와 `[extends]` hook 검증만 담당한다.
+//! 매니페스트를 읽고 선언의 형식·참조·권한을 검사한다.
+//! 문자열 형식 검사는 validators 모듈을 사용한다.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -29,10 +27,7 @@ impl Manifest {
         let manifest: Manifest = toml::from_str(&s)
             .map_err(|e| anyhow::anyhow!("invalid manifest at {}: {}", path.display(), e))?;
         manifest.validate()?;
-        // F.B.2/F.B.6 — opaque detector/handler payload 의 concrete schema 검증은
-        // crate 외부 (본 바이너리 `plugin_bridge::manifest_validate`) 에서 수행.
-        // 본 crate 의 `load` 는 schema-agnostic 검증까지만 수행하고, 호출처가 추가
-        // 검증을 chain 한다.
+        // 호스트 타입이 필요한 감지기·핸들러 본문 검사는 호출자가 추가로 수행한다.
         Ok(manifest)
     }
 
@@ -82,15 +77,8 @@ impl Manifest {
         Ok(())
     }
 
-    /// `[[surface_kinds.preset_fields]]` 검증.
-    ///
-    /// - `id`: settings id 규칙(소문자/숫자/`_`/`-`, 1..=64), kind 안에서 유일.
-    /// - `label_key` / `param_key`: 비어있지 않음.
-    /// - `derive_cwd`: `input_type = file_path` 에서만 유효(url/text/dir 은 경로 파생
-    ///   의미가 없어 거부).
-    /// - `required_params` 와의 정합(단일화): `preset_fields[].required=true` 가 진실원.
-    ///   `required_params` 를 함께 선언하면 그 각 항목이 `required=true` 인 필드의
-    ///   `param_key` 와 일치해야 한다(어긋나면 진실원 둘 → 거부).
+    /// 프리셋 필드의 ID·필수 문자열·중복·경로 파생 조건을 확인한다.
+    /// required_params도 있으면 그 각 항목이 required=true 필드에 포함돼야 한다.
     fn validate_preset_fields(&self, kind: &SurfaceKindDecl) -> anyhow::Result<()> {
         let mut seen_ids = HashSet::new();
         let mut required_param_keys = HashSet::new();
@@ -134,11 +122,7 @@ impl Manifest {
                 required_param_keys.insert(field.param_key.clone());
             }
         }
-        // required_params 정합 — preset_fields 로 마이그레이션한 kind 에서 둘이 갈리는
-        // 것을 막는다. preset_fields 가 진실원이므로, **preset_fields 를 선언한 경우에만**
-        // required_params 각 항목이 `required=true` 필드의 param_key 와 일치하는지 검사한다.
-        // (preset_fields 미선언 kind 의 legacy `required_params` 단독 선언은 그대로 허용 —
-        // 미사용 메타라 대조할 진실원이 없다.)
+        // preset_fields를 선언한 경우에만 required_params와 대조한다.
         if !kind.preset_fields.is_empty() {
             for rp in &kind.required_params {
                 if !required_param_keys.contains(rp) {
@@ -153,18 +137,10 @@ impl Manifest {
         Ok(())
     }
 
-    /// `[extends]` 블록 검증.
-    ///
-    /// - `plugin_id`는 유효한 plugin id 형식, 자기 자신을 가리키면 거부.
-    /// - `version_req`는 semver 문법 (`semver::VersionReq::parse`로 검사).
-    /// - `api_version`은 호스트의 `HOST_API_VERSION`과 일치.
-    /// - hook 항목 최소 1개 필수 (zero hooks면 `[extends]` 무의미).
-    /// - 각 hook: `timeout_ms ∈ [1, HOOK_TIMEOUT_MS_MAX]`.
-    /// - event hook의 `event` 키는 정확한 키 (와일드카드 금지).
-    /// - IPC hook의 `method`는 비어 있지 않은 정규 메서드 이름.
-    ///
-    /// 권한 매칭(`ext.modify_output:*`, `ext.modify_input:*`)과 target 호환성 검증은
-    /// ExtensionRegistry 활성화 단계에서 수행한다 (target 매니페스트가 필요하므로).
+    /// 확장 대상 ID·버전·프로토콜·권한 선언과 훅을 검사한다.
+    /// 훅은 최소 하나 필요하고 timeout_ms는 1..=HOOK_TIMEOUT_MS_MAX여야 한다.
+    /// 이벤트는 정확한 키여야 하고 IPC 메서드는 비어 있거나 *를 포함하면 안 된다.
+    /// 대상 플러그인의 실제 선언과 사용자 권한 승인은 호스트가 추가로 확인한다.
     fn validate_extends(&self) -> anyhow::Result<()> {
         let Some(decl) = &self.extends else {
             return Ok(());
@@ -225,13 +201,7 @@ impl Manifest {
         Ok(())
     }
 
-    /// `events_emitted` 카탈로그 검증.
-    ///
-    /// - key는 정확한 이벤트 키여야 한다 (와일드카드 불가).
-    /// - key는 예약 네임스페이스를 쓸 수 없다.
-    /// - key는 매니페스트의 `event_publish` 패턴 중 하나에 의해 *cover*되어야 한다.
-    ///   (실제 publish 시점에도 같은 검사가 적용되므로 일관성 보장)
-    /// - 같은 key를 두 번 선언하면 거부 (의미 없는 중복).
+    /// 이벤트 키의 형식·예약 이름·발행 허용 패턴·중복을 검사한다.
     fn validate_events_emitted(&self) -> anyhow::Result<()> {
         let mut seen: HashSet<&str> = HashSet::new();
         for decl in &self.events_emitted {
@@ -267,13 +237,7 @@ impl Manifest {
         Ok(())
     }
 
-    /// `[[contributes.hook_events]]` surface hook 이벤트 카탈로그 검증.
-    ///
-    /// - key는 유효한 hook 이벤트 키 형식이어야 한다 (kebab-case, 와일드카드 불가).
-    /// - key는 내장 이벤트(`process-exit`/`bell`/`notification`/`output-match:`/
-    ///   `idle-timeout:`)와 충돌할 수 없다 (코어 parse 가 내장 변형으로 먼저 가로채
-    ///   plugin 선언이 죽으므로).
-    /// - 같은 key를 두 번 선언하면 거부.
+    /// 훅 키의 형식·내장 이벤트와의 충돌·중복을 검사한다.
     fn validate_hook_events(&self) -> anyhow::Result<()> {
         let mut seen: HashSet<&str> = HashSet::new();
         for decl in &self.contributes.hook_events {
@@ -299,14 +263,9 @@ impl Manifest {
         Ok(())
     }
 
-    /// `event_subscribe`/`event_publish` 패턴 검증.
-    ///
-    /// 규칙:
-    /// - 빈 문자열, 단독 `"*"` 거부 (모든 이벤트 일괄 매칭 금지)
-    /// - 와일드카드는 끝의 `.<segment>` 자리에만 허용 (`foo.*`, `foo.bar.*`)
-    /// - 중간/시작 와일드카드(`*.bar`, `f*`) 거부
-    /// - 각 세그먼트: 소문자 ascii + 숫자 + `_`. 알파벳으로 시작.
-    /// - `event_publish`는 예약 네임스페이스(`surface`, `system`, `tab`, ...)를 거부.
+    /// 정확한 이벤트 키 또는 마지막 부분만 *인 패턴을 허용한다.
+    /// 각 부분은 알파벳으로 시작하는 영문 소문자·숫자·밑줄이다.
+    /// 호스트 전용 namespace는 발행할 수 없지만 구독은 허용한다.
     fn validate_event_patterns(&self) -> anyhow::Result<()> {
         for p in &self.event_subscribe {
             if !is_valid_event_pattern(p) {
@@ -390,13 +349,7 @@ impl Manifest {
                     cli.name
                 );
             }
-            // 호스트 명령과 겹치는 이름은 여기서 거절하지 않는다. 이 크레이트는 CLI
-            // 크레이트 아래에 있어 실제 clap 명령 집합을 볼 수 없고, 그래서 여기 있던
-            // 판정은 손으로 적은 목록일 수밖에 없었다 — 그 목록은 호스트 명령의 절반만
-            // 담은 채 늙어 있었고, 목록 밖 이름은 debug 빌드에서 CLI 전체를 패닉시켰다.
-            // 지금은 등록 시점(`tasty-cli` 의 `build_augmented_cli`)이 실제 명령 집합에서
-            // 도출해 겹치는 이름을 등록하지 않고 경고한다 — 판정이 한 자리에만 있다.
-            // 근거: docs/dev-guide/plugin-development.md#cli--ipc-namespace
+            // 실제 호스트 CLI 이름과의 충돌은 tasty-cli의 build_augmented_cli가 처리한다.
             if !seen_cli_names.insert(cli.name.clone()) {
                 anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }
@@ -470,11 +423,8 @@ impl Manifest {
         Ok(())
     }
 
-    /// `AutoWaitDecl.polling`/`.strategy` 는 정확히 하나만 선언해야 한다. `strategy`
-    /// 를 선언했으면 값은 `<plugin_id>/<short-name>` 형식이고, prefix 는 반드시
-    /// 이 매니페스트 자신의 `id` 와 같아야 한다 — 다른 plugin 의 completion
-    /// strategy 를 이름으로 훔쳐 참조하는 것을 여기서 막는다(CLI 는 어차피 같은
-    /// 매니페스트 안에서만 이름을 해석하므로, 이 검증은 조기 실패용 방어선).
+    /// polling과 strategy 중 하나만 있어야 한다.
+    /// 이름으로 참조한 전략은 이 플러그인 소유여야 하며 이름 형식도 검사한다.
     fn validate_auto_wait_strategy(
         cli: &CliCommandDecl,
         sub: &CliSubcommandDecl,
@@ -569,7 +519,6 @@ impl Manifest {
     }
 
     fn validate_contributed_tools(&self) -> anyhow::Result<()> {
-        // [[contributes.tool]] 검증.
         if !self.contributes.tool.is_empty() {
             let token = ContributesGate::Tool.required("");
             if !self.permissions.iter().any(|p| p == &token) {
@@ -613,9 +562,7 @@ impl Manifest {
         Self::validate_action("contributes.tool", &tool.id, &tool.action, surface_kinds)
     }
 
-    /// `ToolAction`(`[[contributes.tool]].action` 및 `[[contributes.commands]].action`이
-    /// 공유하는 타입) 형식 검증. `owner_label`은 에러 메시지에 쓰이는 소속 표기
-    /// (`"contributes.tool"` / `"contributes.commands"`).
+    /// 도구·단축키가 공유하는 액션 형식을 검사한다. owner_label은 오류에 표시할 선언 종류다.
     fn validate_action(
         owner_label: &str,
         id: &str,
@@ -644,7 +591,7 @@ impl Manifest {
                 }
             }
             ToolAction::OpenPopup { popup_id } => {
-                // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
+                // 여기서는 빈 값만 검사하고 아래에서 이 플러그인의 팝업 참조를 확인한다.
                 if popup_id.is_empty() {
                     anyhow::bail!(
                         "{} '{}': action.popup_id must not be empty",
@@ -657,9 +604,7 @@ impl Manifest {
         Ok(())
     }
 
-    /// `[[contributes.commands]]` 검증: id 형식/중복, `binding_mode = "inherit:<action>"`
-    /// 대상이 호스트 화이트리스트에 있는지, `scope = "global"` 커맨드가 단일 키를
-    /// 쓰지 않는지(문서상 "조합키만 권장"을 여기서 강제), `action`(있다면) 형식.
+    /// 명령 ID·중복·상속 대상·전역 단축키·액션 형식을 검사한다.
     fn validate_contributed_commands(&self) -> anyhow::Result<()> {
         if self.contributes.commands.is_empty() {
             return Ok(());
@@ -734,7 +679,6 @@ impl Manifest {
     }
 
     fn validate_contributed_popups(&self) -> anyhow::Result<()> {
-        // [[contributes.popup]] 검증.
         if !self.contributes.popup.is_empty() {
             let token = ContributesGate::Popup.required("");
             if !self.permissions.iter().any(|p| p == &token) {
@@ -839,7 +783,6 @@ impl Manifest {
     }
 
     fn validate_contributed_banners(&self) -> anyhow::Result<()> {
-        // [[contributes.banner]] 검증 (A3).
         if !self.contributes.banner.is_empty() {
             let token = ContributesGate::Banner.required("");
             if !self.permissions.iter().any(|p| p == &token) {
@@ -884,7 +827,6 @@ impl Manifest {
     }
 
     fn validate_contributed_windows(&self) -> anyhow::Result<()> {
-        // [[contributes.window]] 검증.
         if !self.contributes.window.is_empty() {
             let token = ContributesGate::Window.required("");
             if !self.permissions.iter().any(|p| p == &token) {
@@ -926,7 +868,6 @@ impl Manifest {
     }
 
     fn validate_contributed_settings_pages(&self) -> anyhow::Result<()> {
-        // [[contributes.settings_pages]] 검증.
         if !self.contributes.settings_pages.is_empty() {
             let token = ContributesGate::SettingsPage.required("");
             if !self.permissions.iter().any(|p| p == &token) {
@@ -961,8 +902,7 @@ impl Manifest {
     fn validate_settings_page_items(page: &SettingsPageContribute) -> anyhow::Result<()> {
         let mut seen_item_ids = HashSet::new();
         for item in &page.items {
-            // 공통 형식 검사 (모든 variant): id·storage_key 는 settings id 규칙
-            // (소문자/숫자/`_`/`-`, 1..=64), label_key 비어있지 않음, id 중복 금지.
+            // 모든 항목의 ID·저장 키 형식, 라벨, 중복을 검사한다.
             let (id, label_key, storage_key) = item.common();
             if !is_valid_settings_id(id) {
                 anyhow::bail!(
@@ -1003,13 +943,11 @@ impl Manifest {
         id: &str,
         item: &SettingsItemDecl,
     ) -> anyhow::Result<()> {
-        // variant 별 추가 검사.
         match item {
             SettingsItemDecl::FontOverride { .. } | SettingsItemDecl::Toggle { .. } => {}
             SettingsItemDecl::Select {
                 options, default, ..
             } => {
-                // default 는 options.value 중 하나여야 한다.
                 if !options.iter().any(|o| &o.value == default) {
                     anyhow::bail!(
                         "contributes.settings_pages '{}' item '{}': select default '{}' is not among options",
@@ -1022,7 +960,6 @@ impl Manifest {
             SettingsItemDecl::Number {
                 default, min, max, ..
             } => {
-                // min/max 둘 다 주어지면 min ≤ max, default 는 [min,max] 안.
                 if let (Some(mn), Some(mx)) = (min, max)
                     && mn > mx
                 {
@@ -1062,9 +999,7 @@ impl Manifest {
     }
 
     fn validate_contributed_detectors(&self) -> anyhow::Result<()> {
-        // [[contributes.detector]] 검증 — schema-agnostic 만 (host file 도메인 결합 제거).
-        // concrete detector rule 검증은 본 바이너리
-        // `plugin_bridge::manifest_validate::validate_detector_actual` 에서 수행.
+        // 감지기 본문의 구체 규칙은 호스트의 manifest_validate에서 검사한다.
         let mut seen_detector_ids = HashSet::new();
         for v in &self.contributes.detector {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
@@ -1089,8 +1024,7 @@ impl Manifest {
     }
 
     fn validate_contributed_handlers(&self) -> anyhow::Result<()> {
-        // [[contributes.handler]] 검증 — schema-agnostic 만. 본문 (action/detector ref)
-        // 은 본 바이너리 측에서 install 시점에 reject (file::handler::install_plugin_handlers).
+        // 액션과 감지기 참조의 구체 검사는 호스트의 설치 단계에서 한다.
         let mut seen_handler_ids = HashSet::new();
         for v in &self.contributes.handler {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
@@ -1100,7 +1034,6 @@ impl Manifest {
             if !seen_handler_ids.insert(id.to_string()) {
                 anyhow::bail!("contributes.handler id '{id}' declared twice in this manifest");
             }
-            // 권한 매칭: file_handler.handle:<detector>
             let detector = v.get("detector").and_then(|x| x.as_str()).unwrap_or("");
             if detector.is_empty() {
                 anyhow::bail!(
@@ -1118,10 +1051,8 @@ impl Manifest {
     }
 
     fn validate_contributed_detector_permissions(&self) -> anyhow::Result<()> {
-        // detector contribute 권한: 신규 정의면 define, 기존 id 재선언이면 extend.
-        // host/다른 plugin 의 detector 목록은 manifest 만으로는 모른다. install 시점에
-        // 더 엄격하게 확인하되, manifest 차원에서는 최소한 둘 중 하나는 가져야 한다고
-        // 강제한다 — 사용자가 plugin install 시 권한 부여 UI 가 의미를 가지도록.
+        // 기존 감지기 목록을 모르므로 정의 권한 또는 해당 ID 확장 권한 중 하나를 요구한다.
+        // 호스트는 설치 때 신규·기존 여부를 구분해 다시 검사한다.
         let define = ContributesGate::DetectorDefine.required("");
         for v in &self.contributes.detector {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
@@ -1140,11 +1071,7 @@ impl Manifest {
     }
 
     fn validate_contributed_hook_handlers(&self) -> anyhow::Result<()> {
-        // [[contributes.hook_handler]] 검증 — schema-agnostic 만. concrete action
-        // (IpcSequence calls 등) 은 host 측 `HookHandlerRegistryPort::install_plugin_hook_handlers`
-        // 가 install 시점에 deserialize·검증한다. plugin 은 셸(`ShellCommand`) 을
-        // 타입 레벨에서 쓸 수 없으므로(PluginHookHandlerActionDecl) 여기선 id 형식 +
-        // 유일성 + define 권한만 확인한다.
+        // ID·중복·선언 권한만 검사한다. 액션 본문은 호스트가 설치 때 해석·검증한다.
         let hook_define = ContributesGate::HookHandler.required("");
         let has_define = self.permissions.iter().any(|p| p == &hook_define);
         let mut seen_ids = HashSet::new();
@@ -1161,9 +1088,6 @@ impl Manifest {
             if !seen_ids.insert(id.to_string()) {
                 anyhow::bail!("contributes.hook_handler id '{id}' declared twice in this manifest");
             }
-            // 훅 핸들러 정의는 base 권한 `hook_handler.define` 을 요구한다(파일 핸들러
-            // detector 가 `file_handler.define` 을 요구하는 것과 동일 지위). 사용자가
-            // plugin install 시 이 권한을 grant 해야 훅 핸들러가 설치된다.
             if !has_define {
                 anyhow::bail!(
                     "contributes.hook_handler '{id}' requires permission '{hook_define}'"
@@ -1177,18 +1101,8 @@ impl Manifest {
         &self,
         seen_prefixes: &HashSet<String>,
     ) -> anyhow::Result<()> {
-        // [[contributes.completion_strategy]] 검증 — schema-agnostic 만
-        // (hook_handler 와 동일 지위). concrete spec(poll_method 매핑 등)
-        // 은 host 측 `CompletionStrategyRegistryPort::install_plugin_completion_strategies`
-        // 가 install 시점에 deserialize·검증한다. 여기서는 id 형식 + 유일성 +
-        // define 권한 + (결정 2) poll_method 가 자기 namespace 인지만 확인한다.
-        //
-        // "자기 namespace"는 이 매니페스트가 실제로 선언한 `[[contributes.
-        // ipc_namespace]]` prefix 집합(`seen_prefixes`, 예: "claude")이다 —
-        // reverse-DNS `self.id`(예: "com.tasty.claude")가 아니다. 어떤 IPC
-        // method 도 `self.id` 를 dot-prefix 로 쓰지 않으므로 그걸 기준으로
-        // 비교하면 실제로 유효한 poll_method 를 전부 거부하게 된다
-        // (`validate_cli_subcommands` 의 ipc_method 검증과 동일 패턴 재사용).
+        // ID·중복·선언 권한과 메서드 namespace를 검사한다. 구체 전략은 호스트가 검사한다.
+        // namespace는 플러그인 ID가 아니라 ipc_namespace에 선언한 접두어다.
         let strategy_define = ContributesGate::CompletionStrategy.required("");
         let has_define = self.permissions.iter().any(|p| p == &strategy_define);
         let mut seen_ids = HashSet::new();
@@ -1214,10 +1128,7 @@ impl Manifest {
                     "contributes.completion_strategy '{id}' requires permission '{strategy_define}'"
                 );
             }
-            // 결정 2 — poll 형의 poll_method 는 plugin 자기 namespace 로 제한한다
-            // (CLI subcommand 의 ipc_method 검증과 동일 취지, `validate_cli_subcommands`
-            // 참고). host/user 출처는 host 측 레지스트리 finalize 가 권위 있게 강제
-            // — 여기서는 매니페스트가 스스로 선언 가능한 plugin 출처만 조기 검증한다.
+            // poll 메서드는 이 플러그인이 선언한 namespace에 속해야 한다.
             if v.get("spec")
                 .and_then(|s| s.get("kind"))
                 .and_then(|k| k.as_str())
@@ -1236,7 +1147,7 @@ impl Manifest {
                     );
                 }
             }
-            // default_for_methods 도 같은 이유로 전원 자기 namespace 여야 한다(결정 6).
+            // 기본 적용 메서드도 같은 namespace 제한을 따른다.
             if let Some(methods) = v.get("default_for_methods").and_then(|m| m.as_array()) {
                 for m in methods {
                     let Some(method) = m.as_str() else {
@@ -1258,8 +1169,7 @@ impl Manifest {
         Ok(())
     }
 
-    /// 매니페스트에 선언된 권한을 파싱한 set으로 반환.
-    /// `validate()`가 통과한 매니페스트에 대해 호출되면 절대 실패하지 않는다.
+    /// 권한 문자열을 집합으로 변환한다. 알 수 없는 토큰이 있으면 오류다.
     pub fn parsed_permissions(&self) -> anyhow::Result<HashSet<Permission>> {
         let mut out = HashSet::with_capacity(self.permissions.len());
         for raw in &self.permissions {
@@ -1300,8 +1210,7 @@ fn validate_hook_mode_modifies(
             }
         }
         HookMode::Filter | HookMode::Observe => {
-            // filter는 bool 반환만 하므로 modifies 무시. observe도 변경 권한 없음.
-            // 매니페스트에 적혀 있어도 거부하지는 않지만 silently 무시되지 않게 경고 로깅.
+            // filter와 observe는 값을 바꾸지 않으므로 modifies는 경고 후 무시한다.
             if !modifies.is_empty() {
                 tracing::warn!(
                     "extends hook for '{target}': mode={:?} ignores 'modifies' field",

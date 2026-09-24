@@ -634,9 +634,7 @@ fn manifest_reserved_ipc_prefix_rejected() {
     assert!(err.contains("reserved"), "got: {err}");
 }
 
-/// 호스트 명령과 겹치는 CLI 이름은 **매니페스트 층에서 거절하지 않는다** — 이 크레이트는
-/// 실제 clap 명령 집합을 볼 수 없어 손목록으로만 판정할 수 있었고, 그 목록은 늙었다.
-/// 판정은 등록 시점 한 자리(`tasty-cli` 의 `build_augmented_cli`)에만 있다.
+/// 호스트 CLI 이름과의 충돌은 실제 명령 목록을 가진 build_augmented_cli에서 처리한다.
 #[test]
 fn manifest_does_not_judge_cli_names_against_host_commands() {
     let s = r#"
@@ -856,12 +854,9 @@ fn lang_dir_custom() {
     assert_eq!(m.lang_dir, "i18n");
 }
 
-/// 번들된 com.tasty.image plugin의 실제 매니페스트가 파서를 통과하고
-/// surface_kind가 egui-mesh로 인식되는지 확인 (docs/dev-guide/egui-mesh-channel.md#이미지-텍스처의-전송: image 는 host-rendered →
-/// egui-mesh mesh-only 로 전환됨).
+/// 번들 이미지 매니페스트를 읽고 egui-mesh 선언을 확인한다.
 #[test]
 fn bundled_image_plugin_manifest_validates() {
-    // CARGO_MANIFEST_DIR = crates/tasty-plugin-manifest → 형제 crate 경로.
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("tasty-plugin-image");
@@ -880,11 +875,7 @@ fn bundled_image_plugin_manifest_validates() {
     assert!(m.contributes.cli.iter().any(|c| c.name == "image"));
 }
 
-/// 번들된 com.tasty.claude plugin 의 실제 매니페스트가 파서를 통과하는지 확인.
-/// 이 plugin 의 `settings_pages`/`ui.settings_page` 는 이미 추가되어 있고, 이
-/// smoke test 가 그 기준선이 되어 권한 누락 회귀는 `settings_pages_requires_ui_permission`
-/// (`docs/dev-guide/plugin-development.md`, `docs/dev-guide/plugin-permissions.md`
-/// 참고)가 파서 레벨에서 잡는다.
+/// 번들 Claude 매니페스트가 기본 검증을 통과해야 한다.
 #[test]
 fn bundled_claude_plugin_manifest_validates() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -894,11 +885,7 @@ fn bundled_claude_plugin_manifest_validates() {
     assert_eq!(m.id, "com.tasty.claude");
 }
 
-/// 번들된 com.tasty.codex plugin 의 실제 매니페스트가 파서를 통과하는지 확인.
-/// 이 plugin 의 `settings_pages`/`ui.settings_page` 는 이미 추가되어 있고, 이
-/// smoke test 가 그 기준선이 되어 권한 누락 회귀는 `settings_pages_requires_ui_permission`
-/// (`docs/dev-guide/plugin-development.md`, `docs/dev-guide/plugin-permissions.md`
-/// 참고)가 파서 레벨에서 잡는다.
+/// 번들 Codex 매니페스트가 기본 검증을 통과해야 한다.
 #[test]
 fn bundled_codex_plugin_manifest_validates() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -929,8 +916,7 @@ fn surface_kind_rendering_defaults_to_remote() {
 
 #[test]
 fn surface_kind_rendering_host_rejected() {
-    // host-rendered 채널은 제거됐다 — `rendering = "host"` 는 더 이상
-    // 유효한 variant 가 아니며 매니페스트 파싱 자체가 실패해야 한다.
+    // 제거된 host 렌더링 값은 거부해야 한다.
     let s = r#"
         manifest_version = 1
         id = "com.tasty.image"
@@ -950,8 +936,7 @@ fn surface_kind_rendering_host_rejected() {
 
 #[test]
 fn surface_kind_rendering_egui_mesh_parses_hyphenated_wire_key() {
-    // 와이어 키는 하이픈 포함 "egui-mesh" (variant rename). rename_all="lowercase"
-    // 가 만드는 "eguimesh" 가 아니라 이 키로만 파싱돼야 한다 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+    // 직렬화 이름은 하이픈을 포함한 egui-mesh여야 한다.
     let s = r#"
         manifest_version = 1
         id = "com.tasty.markdown"
@@ -972,8 +957,7 @@ fn surface_kind_rendering_egui_mesh_parses_hyphenated_wire_key() {
 
 #[test]
 fn surface_kind_rendering_eguimesh_without_hyphen_rejected() {
-    // lowercase 기본 변환형 "eguimesh" 는 유효 variant 가 아니다 — rename 덮어쓰기
-    // 검증 (하이픈 함정, §9-9).
+    // 하이픈 없는 eguimesh는 거부해야 한다.
     let s = r#"
         manifest_version = 1
         id = "com.tasty.markdown"
@@ -993,10 +977,7 @@ fn surface_kind_rendering_eguimesh_without_hyphen_rejected() {
 
 #[test]
 fn rendering_serializes_back_to_the_wire_key_it_parses_from() {
-    // 밖으로 나가는 문자열은 직렬화기가 만든다. `Debug` 파생을 소문자화하면
-    // "eguimesh" 가 나와 **입력으로 되돌릴 수 없는** 값이 되고, 그 어긋남을
-    // 컴파일러는 모른다 — `plugin.show` 가 실제로 그 값을 내보내고 있었다.
-    // 위 두 테스트가 "무엇이 파싱되나" 를 고정하므로, 이 테스트는 그 반대 방향을 고정한다.
+    // 직렬화 결과가 다시 입력으로 사용될 수 있어야 한다.
     for (v, wire) in [
         (SurfaceKindRendering::Remote, "remote"),
         (SurfaceKindRendering::Webview, "webview"),
@@ -1012,9 +993,7 @@ fn rendering_serializes_back_to_the_wire_key_it_parses_from() {
 
 #[test]
 fn binding_mode_serializes_back_to_its_toml_spelling() {
-    // `BindingMode` 는 커스텀 Deserialize 로 "independent" / "inherit:<action>" 을 받는다.
-    // 내보낼 때도 같은 표기여야 왕복이 성립한다. `Debug` 파생은
-    // `InheritHost("clipboard.copy")` 를 만들어 그 왕복을 깬다.
+    // 독립·상속 단축키의 직렬화 표기가 입력 형식과 같아야 한다.
     for (v, wire) in [
         (BindingMode::Independent, "independent"),
         (
@@ -1173,9 +1152,7 @@ fn event_publish_rejects_reserved_namespace() {
 
 #[test]
 fn the_agent_namespace_is_the_hosts_to_publish_in() {
-    // `RESERVED_IPC_PREFIXES` 는 `agent` 를 처음부터 들고 있었는데 사건 쪽 목록에만
-    // 빠져 있었다. 호스트가 그 이름으로 발화하기 시작한 이상 plugin 이 같은 이름을
-    // 자기 것으로 선언하면 두 발화자가 한 키를 다툰다.
+    // 호스트가 사용하는 agent 이벤트를 플러그인이 발행하도록 선언할 수 없다.
     let s = r#"
         manifest_version = 1
         id = "com.example.evil"
@@ -1193,7 +1170,7 @@ fn the_agent_namespace_is_the_hosts_to_publish_in() {
 
 #[test]
 fn subscribing_to_agent_events_stays_open_to_plugins() {
-    // 예약은 **발화** 제약이다. 구독까지 막으면 이 사건을 만든 이유가 사라진다.
+    // 호스트 이벤트의 구독은 허용한다.
     let s = r#"
         manifest_version = 1
         id = "com.example.watcher"
@@ -1369,8 +1346,6 @@ fn events_emitted_accepts_experimental_stability() {
     assert_eq!(decl.payload_schema.as_deref(), Some("schemas/alpha.json"));
 }
 
-// ── contributes.hook_events 검증 ─────────────────────────────────────
-
 #[test]
 fn hook_events_parses_and_defaults_stable() {
     let s = r#"
@@ -1482,8 +1457,6 @@ fn hook_events_rejects_duplicate_key() {
     let err = parse(s).unwrap_err().to_string();
     assert!(err.contains("declared twice"), "got: {err}");
 }
-
-// ── extends 블록 검증 ────────────────────────────────────────────────
 
 fn extends_skeleton(extra: &str) -> String {
     format!(
@@ -1989,8 +1962,6 @@ fn popup_size_hint_zero_rejected() {
     assert!(err.contains("size_hint"), "got: {err}");
 }
 
-// ── banner contribute (A3) ──
-
 fn banner_skeleton(extra: &str) -> String {
     format!(
         r#"
@@ -2414,10 +2385,6 @@ fn handler_system_kind_rejected_in_plugin() {
     assert!(parse(&s).is_err());
 }
 
-// ─────────────────────────────────────────────────────────────────
-//  F.H — Plugin manifest 확장
-// ─────────────────────────────────────────────────────────────────
-
 #[test]
 fn window_spawn_permission_token_roundtrip() {
     assert_eq!(
@@ -2579,19 +2546,13 @@ fn window_contribute_id_format_validated() {
 
 #[test]
 fn example_markdown_plugin_manifest_parses() {
-    // crates/tasty-plugin-markdown/tasty-plugin.toml — schema 확장 데모 +
-    // 템플릿 plugin. BUILTINS 미등록이라 런타임 로드는 안 되지만, 컴파일타임
-    // include + 런타임 parse 로 schema 호환성을 잠근다.
+    // 실제 번들 Markdown 매니페스트의 호환성을 검사한다.
     let text = include_str!("../../tasty-plugin-markdown/tasty-plugin.toml");
     let m = parse(text).expect("example markdown manifest should parse and validate");
     assert_eq!(m.id, "com.tasty.markdown");
     assert_eq!(m.surface_kinds.len(), 1);
     assert!(m.surface_kinds[0].default_colors.is_some());
 }
-
-// ─────────────────────────────────────────────────────────────────
-//  Settings pages contribute (Step 1 — manifest schema 확장)
-// ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn settings_pages_parses_with_default_empty() {
@@ -2874,8 +2835,7 @@ fn settings_pages_with_plugin_category_parses() {
 
 #[test]
 fn surface_kind_decl_new_fields_default() {
-    // 새 3 필드 (required_params / param_aliases / consumes_egui_input) 는 모두
-    // `#[serde(default)]` 이므로 기존 manifest 가 깨지지 않아야 한다.
+    // 기본값이 있는 필드를 생략해도 기존 매니페스트를 읽을 수 있어야 한다.
     let s = r#"
         manifest_version = 1
         id = "com.example.x"
@@ -3110,8 +3070,7 @@ fn window_contribute_zero_default_size_rejected() {
 
 #[test]
 fn auto_wait_decl_parses_with_defaults() {
-    // `tasty claude spawn` 자동 wait manifest 가 `map_from_response` /
-    // `map_from_request` / default no_wait/timeout 필드 없이도 deserialize 되는지.
+    // auto_wait의 기본 인자 이름과 생략 가능한 매핑을 확인한다.
     let s = r#"
         manifest_version = 1
         id = "com.example.x"
@@ -3144,8 +3103,7 @@ fn auto_wait_decl_parses_with_defaults() {
 
 #[test]
 fn rejects_subcommand_with_both_polling_and_auto_wait() {
-    // 한 subcommand 가 polling (self-poll) 과 auto_wait (chained wait) 를 동시에
-    // 선언하면 의미가 충돌 — validator 가 reject.
+    // polling과 auto_wait는 동시에 선언할 수 없다.
     let s = r#"
         manifest_version = 1
         id = "com.example.x"
@@ -3212,8 +3170,7 @@ fn auto_wait_strategy_parses_when_owner_prefix_matches_plugin_id() {
 
 #[test]
 fn auto_wait_strategy_rejects_mismatched_owner_prefix() {
-    // 다른 plugin 의 strategy 를 참조하면 거부 — CLI 는 어차피 같은 매니페스트
-    // 안에서만 이름을 해석하므로, 이건 조기 실패용 방어선.
+    // 같은 매니페스트에서만 전략을 찾으므로 다른 플러그인 참조는 거부한다.
     let s = auto_wait_strategy_manifest("com.other.plugin/wait-ready");
     let err = parse(&s).unwrap_err().to_string();
     assert!(err.contains("does not"), "got: {err}");
@@ -3283,9 +3240,7 @@ fn auto_wait_rejects_both_polling_and_strategy() {
 
 #[test]
 fn completion_strategy_decl_parses_with_defaults_and_converts_to_polling_decl() {
-    // CompletionStrategyDecl 은 아직 어떤 [[contributes.*]] 배열에도 담기지 않는다
-    // (registry 트랙 몫) — 여기서는 타입 자체의 deserialize 기본값과
-    // to_polling_decl() 변환만 확인한다.
+    // 공용 전략 타입의 기본값과 CLI 폴링 설정으로의 변환을 검사한다.
     let s = r#"
         poll_method = "ex.wait"
         state_field = "state"

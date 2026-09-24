@@ -1,11 +1,5 @@
-//! Per-surface image document state, owned by the plugin process (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
-//!
-//! Mirrors the former host `ImageView` + `ImagePanel` navigation fields, now living in the
-//! plugin: the loaded pixel buffer, edit-mode state machine (drawing / floating selection),
-//! undo/redo history, brush settings, zoom/pan, directory navigation, and popup buffers.
-//! The bitmap is uploaded to the plugin's own egui `Context` as a texture and composited by
-//! the host over the surface region (mesh textures_delta channel, same path as the font
-//! atlas) — no separate host `CanvasTextureCache` layer is involved.
+//! 이미지별 픽셀·편집·실행 취소·확대·탐색 상태.
+//! 픽셀을 플러그인의 egui 텍스처로 올려 mesh 채널을 통해 호스트에 전달한다.
 
 use std::path::{Path, PathBuf};
 
@@ -14,8 +8,6 @@ use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
 /// Default blank-canvas dimensions when an image surface is created without a file.
 pub const DEFAULT_BLANK_CANVAS_WIDTH: usize = 800;
 pub const DEFAULT_BLANK_CANVAS_HEIGHT: usize = 600;
-
-// ── Drawing action / history types ──
 
 /// A single undoable drawing action.
 #[derive(Clone)]
@@ -129,8 +121,9 @@ pub enum DragState {
         initial_position: Vec2,
     },
     Resizing {
-        /// 향후 hit-area 별 resize 동작 분기 시 사용 — debug 인식용.
-        #[allow(dead_code)] // variant 필드 — 현재 미read, 향후 resize 분기용 보존
+        /// 어떤 크기 조절 손잡이에서 시작했는지 기록한다. 현재는 읽지 않는다.
+        #[allow(dead_code)]
+        // 크기 조절 시작 위치를 기록하지만 현재 처리에서는 읽지 않는다.
         handle: ResizeHandle,
         drag_start_pos: Pos2,
         initial_rect: Rect,
@@ -161,7 +154,6 @@ pub enum EditState {
 
 /// Per-surface image document state owned by the plugin.
 pub struct ImageDoc {
-    // ── Navigation / identity (former ImagePanel) ──
     /// `None` = blank canvas not yet saved to disk.
     pub file_path: Option<String>,
     /// Sibling images in the same directory (sorted), used for prev/next navigation.
@@ -169,13 +161,11 @@ pub struct ImageDoc {
     /// Index into `dir_images` for the currently displayed file.
     pub current_index: usize,
 
-    // ── Viewer state ──
     pub original_image: Option<ColorImage>,
     pub texture: Option<TextureHandle>,
     pub zoom: f32,
     pub pan_offset: Vec2,
 
-    // ── Drawing state ──
     pub edit_state: EditState,
     pub draw_layer: Option<ColorImage>,
     pub draw_texture: Option<TextureHandle>,
@@ -184,18 +174,15 @@ pub struct ImageDoc {
     pub last_draw_pos: Option<Pos2>,
     pub draw_texture_dirty: bool,
 
-    // ── New-image popup buffers ──
     pub new_image_popup: bool,
     pub new_image_width: String,
     pub new_image_height: String,
 
-    // ── Save-path popup buffers ──
     pub save_path_popup: bool,
     pub save_path_buffer: String,
 
-    /// 편집 중에 도착한 외부 변경. 편집 세션을 밑에서 갈아치우지 않으려고 미뤄 둔 것으로,
-    /// 편집을 끝낼 때 반영된다. 이걸 안 두면 감시자는 이미 기준선을 옮겼으므로 그 변경이
-    /// **영구히** 사라진다(다음 외부 저장 전까지 낡은 그림을 보게 된다).
+    /// 편집 중 받은 외부 변경을 기억했다가 편집이 끝날 때 다시 읽는다.
+    /// 변경 감시기가 같은 변경을 다시 알리지 않으므로 여기서 버리지 않는다.
     pending_external_reload: bool,
     /// True until pixels are first loaded — the plugin lazily loads on first paint.
     loaded: bool,
@@ -281,11 +268,7 @@ impl ImageDoc {
         }
     }
 
-    /// 감시자가 알린 외부 변경을 반영한다. **편집 중이면 미뤄 둔다** — 사용자가 그리는
-    /// 중에 밑그림을 갈아치우면 그 위의 스트로크가 다른 그림에 얹힌다. 미룬 것은
-    /// [`Self::exit_edit_mode`] 가 반영한다.
-    ///
-    /// 반환값은 화면이 실제로 바뀌었는지 — 호출자가 재-paint 여부를 정하는 데 쓴다.
+    /// 외부 변경을 반영하되 편집 중에는 미룬다. 화면 내용이 바뀌었으면 true다.
     pub fn apply_external_change(&mut self) -> bool {
         if self.is_editing() {
             self.pending_external_reload = true;
@@ -624,14 +607,11 @@ impl ImageDoc {
     }
 }
 
-// ── Free helper functions ──
-
 /// Load an image from a file path.
 pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
     let img = match image::open(path) {
         Ok(img) => img,
-        // 삼키지 않는다. 이 `None` 은 화면에서 **빈 캔버스**로 보이고, 파일이 깨진
-        // 것인지 이 빌드가 그 포맷을 못 여는 것인지 구분할 단서가 여기밖에 없다.
+        // 읽지 못한 이유를 남겨 손상된 파일과 지원하지 않는 포맷을 구분할 수 있게 한다.
         Err(e) => {
             tracing::warn!("image: failed to decode {path}: {e}");
             return None;
@@ -640,7 +620,7 @@ pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
 
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
-    // 외부 입력 (이미지 파일 픽셀) → Color32. 정당한 dangerously 사용처.
+    // 이미지 픽셀에서 읽은 외부 색상이다.
     #[allow(clippy::disallowed_methods)]
     let pixels: Vec<Color32> = rgba
         .pixels()
@@ -653,19 +633,8 @@ pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
     })
 }
 
-/// Returns true if this path's extension names a format **this build can decode**.
-///
-/// 목록을 손으로 적지 않는다. 한때 여기 확장자 10 종이 상수로 적혀 있었고
-/// `Cargo.toml` 의 `image` feature 는 6 종이었다 — 두 사본이 갈려 `gif` 와 `svg` 가
-/// 디렉토리 순회 목록에 오르고(`scan_directory_images`), `image.next` 로 넘어가면
-/// 빈 화면이 됐다. 로그도 안 남아서 파일이 깨진 것인지 못 여는 것인지 알 수 없었다.
-///
-/// 그래서 판정을 `image` 크레이트에 넘긴다 — `reading_enabled()` 는 그 크레이트
-/// 안의 `cfg!(feature = ...)` 이라 **컴파일된 디코더 그 자체**를 답한다. 포맷을
-/// 늘리려면 `Cargo.toml` 의 feature 한 곳만 고치면 되고, 사본이 갈릴 자리가 없다.
-///
-/// `svg` 는 그래서 빠진다 — `image` 는 래스터 전용이라 feature 로 켤 수 없다.
-/// 여는 수단이 생기는 날 이 함수가 아니라 그 수단이 답을 바꾼다.
+/// 확장자에 해당하는 디코더가 이 빌드에 포함됐는지 확인한다.
+/// 지원 목록을 따로 복제하지 않고 image 크레이트의 reading_enabled를 사용한다.
 pub(crate) fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(image::ImageFormat::from_extension)
@@ -710,7 +679,7 @@ pub(crate) fn alpha_blend(bg: Color32, fg: Color32) -> Color32 {
     let r = (fg.r() as f32 * fa + bg.r() as f32 * ba * (1.0 - fa)) / out_a;
     let g = (fg.g() as f32 * fa + bg.g() as f32 * ba * (1.0 - fa)) / out_a;
     let b = (fg.b() as f32 * fa + bg.b() as f32 * ba * (1.0 - fa)) / out_a;
-    // alpha 합성 결과 — 입력 두 색의 변형. 정당한 dangerously 사용처.
+    // 두 입력 색상을 합성한 결과다.
     #[allow(clippy::disallowed_methods)]
     {
         Color32::from_rgba_unmultiplied(r as u8, g as u8, b as u8, (out_a * 255.0) as u8)
@@ -821,22 +790,20 @@ mod tests {
 
     #[test]
     fn every_extension_the_navigator_accepts_can_actually_be_decoded() {
-        // 완결 조건 그 자체 — 목록에 오른 것은 실제로 디코드된다. `is_image_file` 이
-        // 받아들이는 확장자마다 그 포맷으로 1x1 을 **인코드했다가 다시 디코드**한다.
-        // 선언만 보고 통과하지 않으려고 실물 왕복을 쓴다.
+        // 지원하는 확장자인지 확인하고 인코더도 있는 포맷은 실제 왕복을 검사한다.
         for ext in [
             "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif",
         ] {
             let path = Path::new("x").with_extension(ext);
             assert!(
                 is_image_file(&path),
-                "{ext} 가 순회 목록에서 빠졌다 — 매니페스트 detector 는 이것을 연다고 선언한다"
+                "매니페스트가 선언한 {ext}를 파일 목록에 포함해야 한다"
             );
 
             let fmt = image::ImageFormat::from_extension(ext).expect("확장자→포맷");
             assert!(fmt.reading_enabled(), "{ext}: 디코더가 안 켜져 있다");
 
-            // webp 는 이 feature 조합에서 읽기 전용이라 왕복의 인코드 쪽이 없다.
+            // 인코더가 없는 포맷은 읽기 지원 여부까지만 확인한다.
             if !fmt.writing_enabled() {
                 continue;
             }
@@ -847,13 +814,17 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{ext} 인코드 실패: {e}"));
             let decoded = image::load_from_memory_with_format(buf.get_ref(), fmt)
                 .unwrap_or_else(|e| panic!("{ext} 디코드 실패: {e}"));
-            assert_eq!(decoded.width(), 1, "{ext}: 왕복이 크기를 잃었다");
+            assert_eq!(
+                decoded.width(),
+                1,
+                "{ext}: 저장 후 다시 읽은 이미지 너비가 달라졌다"
+            );
         }
     }
 
     #[test]
     fn an_extension_with_no_decoder_is_not_offered() {
-        // svg 는 `image` 가 래스터 전용이라 못 연다. 목록에 두면 넘기다가 빈 화면이 된다.
+        // SVG 디코더는 이 빌드에 없다.
         assert!(!is_image_file(Path::new("x.svg")));
     }
 
@@ -865,18 +836,14 @@ mod tests {
         assert!(!doc.is_editing());
     }
 
-    /// 시험용 PNG 를 하나 만든다. 지정한 색으로 단색이라 `original_image` 의 첫 픽셀만
-    /// 보면 어느 세대를 읽었는지 알 수 있다.
+    /// 첫 픽셀로 읽은 파일을 구분할 수 있도록 단색 PNG를 만든다.
     fn write_probe_png(path: &std::path::Path, rgb: [u8; 3]) {
         let img = image::RgbImage::from_pixel(4, 4, image::Rgb(rgb));
         img.save(path).expect("probe png 저장 실패");
     }
 
     fn probe_png_path(what: &str) -> PathBuf {
-        // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
-        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
-        // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
-        // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+        // 시간 해상도에 의존하지 않도록 PID와 단조 카운터로 시험 파일명을 구분한다.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         std::env::temp_dir().join(format!(
             "tasty-image-{what}-{}-{:?}.png",
@@ -892,10 +859,7 @@ mod tests {
             .pixels[0]
     }
 
-    /// ⓪ **대조군** — 편집 중이 아니면 외부 변경이 곧바로 반영된다.
-    ///
-    /// 아래 "미룬다" 시험과 짝이다. 이 칸이 없으면 그쪽이 "안 반영됐다" 를 낼 때 그것이
-    /// **미뤄서인지 애초에 리로드가 동작을 안 해서인지** 못 가른다.
+    /// 편집 중이 아니면 외부 변경을 바로 반영해야 한다.
     #[test]
     fn an_external_change_is_applied_at_once_when_not_editing() {
         let path = probe_png_path("apply");
@@ -913,11 +877,7 @@ mod tests {
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 
-    /// **편집 중 도착한 외부 변경은 미뤄지되 버려지지 않는다.**
-    ///
-    /// 그리는 중에 밑그림을 갈아치우면 스트로크가 다른 그림에 얹힌다. 그렇다고 그냥
-    /// 버리면 안 된다 — 감시자는 이미 기준선을 옮겨서 같은 변경을 다시 알리지 않으므로,
-    /// 버린 변경은 **다음 외부 저장 전까지 영구히** 안 보인다.
+    /// 편집 중에는 기존 이미지를 유지하고, 편집이 끝나면 미룬 변경을 읽어야 한다.
     #[test]
     fn an_external_change_during_an_edit_is_deferred_not_lost() {
         let path = probe_png_path("defer");
@@ -930,7 +890,7 @@ mod tests {
         write_probe_png(&path, [0, 255, 0]);
         assert!(
             !doc.apply_external_change(),
-            "편집 중에는 밑그림을 갈아치우지 않는다"
+            "편집 중에는 원본 이미지를 바꾸지 않아야 한다"
         );
         assert_eq!(
             first_pixel(&doc).r(),
@@ -942,13 +902,12 @@ mod tests {
         assert_eq!(
             first_pixel(&doc).g(),
             255,
-            "편집을 끝내면 미뤄 둔 변경이 반영돼야 한다 — 버려지면 안 된다"
+            "편집을 끝내면 미뤄 둔 파일 변경을 반영해야 한다"
         );
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 
-    /// 미뤄 둔 것이 없으면 편집을 끝낼 때 디스크를 다시 읽지 않는다 — 편집 종료가
-    /// 매번 디코드를 부르면 그 자체가 이 판정자가 피하려던 비용이다.
+    /// 외부 변경을 받은 적이 없으면 편집 종료 때 다시 읽지 않는다.
     #[test]
     fn leaving_an_edit_without_a_pending_change_does_not_reload() {
         let path = probe_png_path("nopending");
@@ -963,7 +922,7 @@ mod tests {
         assert_eq!(
             first_pixel(&doc).r(),
             255,
-            "미뤄 둔 것이 없으면 편집 종료가 스스로 다시 읽지 않는다"
+            "외부 변경 기록이 없으면 편집 종료 때 다시 읽지 않아야 한다"
         );
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }

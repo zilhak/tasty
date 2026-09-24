@@ -64,7 +64,7 @@ struct CachedRepo {
 /// 원격 조회에 사용할 호스트와 대기 중 요청.
 struct RemoteCtx {
     host: HostHandle,
-    /// 호스트가 원격 ID로 변환할 로컬 미러 터미널 ID.
+    /// 호스트가 원격 ID로 변환할 로컬 미러 surface ID.
     local_surface_id: u32,
     /// 마지막 요청 ID. 다른 ID의 응답은 버린다(연결 종료 알림의 0은 별도 처리).
     pending_request_id: Option<u64>,
@@ -115,7 +115,7 @@ impl ViewerState {
     }
 
     /// 원격 스냅샷을 요청한다. 받은 서버 경로는 로컬 경로로 해석하지 않고 그대로 돌려보낸다.
-    /// 경로가 없으면 서버가 해당 터미널의 원격 cwd에서 저장소를 찾는다.
+    /// 경로가 없으면 서버가 해당 surface의 원격 cwd에서 저장소를 찾는다.
     fn request_remote_snapshot(&mut self, worktree_path: Option<String>) {
         let Some(remote) = self.remote.as_mut() else {
             return;
@@ -538,7 +538,7 @@ impl Plugin for GitViewerPlugin {
         // 첫 인스턴스만 상태를 읽는다. 추가 인스턴스에는 이미 열림을 안내한다.
         if self.primary.is_none() {
             self.primary = Some(ctx.instance_id);
-            // 미러 터미널이면 로컬 저장소 대신 호스트를 통해 원격 저장소를 조회한다.
+            // 미러 surface면 로컬 저장소 대신 호스트를 통해 원격 저장소를 조회한다.
             let is_mirror = ctx
                 .context
                 .get("mirror")

@@ -1,11 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! Tasty plugin manifest schema, parse and schema-agnostic validation.
-//!
-//! 본 crate 는 `tasty-plugin.toml` 의 schema + 파서 + 기본 검증 (id 형식, 중복,
-//! permission 매칭 등) 만 제공한다. concrete file::format / file::handler 결합이
-//! 필요한 추가 검증 (detector rule schema 등) 은 호스트 본 바이너리의
-//! `plugin_bridge::manifest_validate` 가 담당.
+//! 플러그인 매니페스트의 형식과 기본 검증.
+//! 파일 감지 규칙 등 호스트 타입이 필요한 추가 검증은 plugin_bridge::manifest_validate에서 한다.
 
 pub mod gates;
 pub mod host_actions;

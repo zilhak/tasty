@@ -1,12 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! Tasty HTML plugin — host webview overlay 를 사용해 HTML/URL 을 표시하는 surface.
-//!
-//! host 는 webview 토대 (OS-level native overlay) 만 제공하고, html surface 의
-//! 모든 도메인 로직은 본 plugin 안. surface kind="html", rendering="webview"
-//! 매니페스트 선언으로 host 가 surface 생성 시 webview overlay 자동 생성.
-//!
-//! `html.open(url, surface)` IPC 가 host 의 `webview.set_url` 로 URL 전달.
+//! 호스트의 네이티브 WebView에 HTML·URL을 표시한다.
+//! 생성·복원 때 URL을 전달하고 스냅샷에 남긴다. html.open은 기존 화면의 URL을 갱신한다.
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{
@@ -19,8 +14,7 @@ const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Default)]
 struct HtmlPlugin {
-    /// `on_start`에서 받아 저장 — `create_surface`(host 가 없는 ctx)에서
-    /// `webview.set_url` 을 호출하는 데 재사용한다.
+    /// create_surface에서도 URL을 전달할 수 있도록 보관한다.
     host: Option<HostHandle>,
 }
 
@@ -38,17 +32,12 @@ impl Plugin for HtmlPlugin {
     }
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // SDK 는 surface.create 의 전체 envelope 을 ctx.params 로 넘긴다 — 실제 생성
-        // params(url 등)는 params.params 아래에 중첩돼 있다(자매 plugin
-        // markdown 의 surface_param_file 과 동일 계약).
+        // SDK가 전달한 전체 요청에서 중첩된 생성 파라미터를 읽는다.
         let url = surface_param_url(&ctx.params);
         self.open_url_surface(ctx.surface_id, url)
     }
 
-    // layout 재시작 복원 경로. preset apply 는 `surface.create` 를 타지만 layout
-    // 재시작은 `surface.restore` 를 탄다 — SDK 기본 구현은 빈 `SurfaceResult` 라,
-    // 구현하지 않으면 재시작 시 html 이 url 을 잃고 빈 채로 살아난다. create 가
-    // 실어 둔 snapshot(`{"url": ...}`)을 그대로 받아 같은 페이지를 연다.
+    // 레이아웃 복원은 create_surface와 별도로 스냅샷의 URL을 다시 전달해야 한다.
     fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
         let url = ctx
             .data
@@ -67,11 +56,7 @@ impl Plugin for HtmlPlugin {
 }
 
 impl HtmlPlugin {
-    /// create/restore 공용 — url 을 webview 에 싣고 snapshot 으로 되돌려준다.
-    /// 빈 문자열은 "url 없음" 으로 취급한다(빈 채로 열린 html surface 는 snapshot 에
-    /// 실을 것이 없다 — markdown 의 file=None 과 같은 계약). host 가 채우는 경로는
-    /// create/restore 응답의 `SurfaceResult.snapshot` 이다(host 는 surface.snapshot 을
-    /// 따로 부르지 않는다).
+    /// URL을 호스트에 전달하고 스냅샷에 담는다. 빈 문자열은 URL 없음으로 처리한다.
     fn open_url_surface(&mut self, surface_id: u32, url: Option<String>) -> SurfaceResult {
         let url = url.filter(|u| !u.is_empty());
         if let Some(u) = url.as_deref() {
@@ -104,9 +89,7 @@ impl HtmlPlugin {
     }
 }
 
-/// surface.create envelope 에서 `url` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은
-/// `{surface_id, kind, cwd, params:{url, ...}}` 전체이므로 `params.url` 을 본다(중첩).
-/// flat 으로 온 경우(`url` top-level)도 fallback 으로 받는다.
+/// 생성 요청의 params.url을 읽고 없으면 최상위 url을 사용한다.
 fn surface_param_url(envelope: &Value) -> Option<String> {
     envelope
         .get("params")
@@ -116,12 +99,7 @@ fn surface_param_url(envelope: &Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// `http://`/`https://`/`file://` 스킴이 이미 있으면 그대로 통과. 없으면 로컬
-/// 파일시스템 경로로 간주해 `file://` URI 로 변환한다 — host `dispatch.rs` 가
-/// 스킴 없는 원시 경로를 그대로 `url` 파라미터에 담아 보내기 때문(다른
-/// `OpenSurface` 소비자인 markdown 의 `file` 파라미터 계약을 지키기 위해 host
-/// 레벨에서는 변환하지 않는다 — 변환은 이 plugin 이 자기 `url` 파라미터 의미를
-/// 아는 여기서만 한다).
+/// http/https/file URL은 그대로 두고, 나머지는 로컬 경로로 보고 file URI로 바꾼다.
 fn local_path_to_file_uri(raw: &str) -> String {
     if raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("file://") {
         return raw.to_string();
@@ -140,9 +118,7 @@ fn local_path_to_file_uri(raw: &str) -> String {
     percent_encode_uri(&uri)
 }
 
-/// URI 안전 문자(영숫자 + `-_.~/:`) 외 모든 바이트를 `%XX` 로 이스케이프한다.
-/// 공백/`#`/`%`/비-ASCII 문자를 포함한 경로를 다룬다. 스킴/슬래시/콜론은
-/// 안전 문자 집합에 포함돼 있어 그대로 보존된다.
+/// 영숫자와 -_.~/: 이외의 바이트를 %XX로 바꾼다.
 fn percent_encode_uri(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -269,8 +245,7 @@ mod tests {
 
     #[test]
     fn restore_surface_reopens_from_snapshot_and_re_carries_it() {
-        // create 가 실은 snapshot 을 layout 재시작이 restore 로 되먹인다 — 같은 url 을
-        // 다시 열고 다시 실어야 round-trip 이 반복해서 성립한다.
+        // 복원 뒤에도 같은 URL을 스냅샷에 남겨야 한다.
         let mut p = HtmlPlugin::default();
         let res = p.restore_surface(SurfaceRestoreCtx {
             surface_id: 2,

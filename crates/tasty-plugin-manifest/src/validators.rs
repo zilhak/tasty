@@ -8,10 +8,7 @@ pub(super) fn is_valid_kind(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit())
 }
 
-/// detector id 형식 검증 (manifest 측 schema 차원). 소문자 ascii + 숫자 + `-`,
-/// 길이 1..=64. host 측 `file::format::types::is_valid_detector_id` 와 동일 규칙이며,
-/// 본 함수는 manifest 가 host file 도메인 결합 없이 schema 검증을 마치기 위한
-/// 자체 복제 — 두 함수가 어긋나면 install 단계에서 reject 된다.
+/// 감지기 ID: 영문 소문자·숫자·하이픈, 길이 1..=64. 호스트와 별도로 기본 형식을 검사한다.
 pub(super) fn is_valid_simple_id(s: &str) -> bool {
     if s.is_empty() || s.len() > 64 {
         return false;
@@ -20,11 +17,7 @@ pub(super) fn is_valid_simple_id(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// hook handler short-name 형식 검증 (manifest 측 schema 차원). 소문자 ascii + 숫자 +
-/// `-`, 길이 1..=32. host 측 `hook_handler::types::is_valid_hook_handler_short_name`
-/// 과 동일 규칙이며, 본 함수는 manifest 가 host hook_handler 도메인 결합 없이
-/// `hook_handler.handle:<id>` scope 를 검증하기 위한 자체 복제다 — 두 함수가 어긋나면
-/// install 단계에서 reject 된다.
+/// 훅 핸들러 이름: 영문 소문자·숫자·하이픈, 길이 1..=32.
 pub(super) fn is_valid_hook_handler_id(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
@@ -33,11 +26,7 @@ pub(super) fn is_valid_hook_handler_id(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// 완료 판정 전략 short-name 형식 검증 (manifest 측 schema 차원). 소문자 ascii +
-/// 숫자 + `-`, 길이 1..=32 — hook handler short-name 과 동일 규칙(id 규약
-/// 미러링). host 측 `completion_strategy::types::is_valid_completion_strategy_short_name`
-/// 과 동일 규칙이며, 본 함수는 manifest 가 host completion_strategy 도메인 결합
-/// 없이 schema 검증을 마치기 위한 자체 복제다.
+/// 완료 전략 이름: 영문 소문자·숫자·하이픈, 길이 1..=32.
 pub(super) fn is_valid_completion_strategy_id(s: &str) -> bool {
     is_valid_hook_handler_id(s)
 }
@@ -57,12 +46,9 @@ pub(super) fn is_valid_ipc_prefix(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// 호스트가 자기 IPC 메서드에 쓰는 prefix들. plugin이 점유하면 호스트 메서드가 가려진다.
-///
-/// 호스트 메서드 표(`tasty_ipc::method_meta::METHOD_TABLE`)와 **집합으로 맞물려 있다** —
-/// 본체의 `source_guards::reserved_ipc_prefixes` 가 양방향으로 대조하므로, 새 호스트
-/// prefix 가 생기면 여기에 넣거나 왜 넣지 않는지를 그 가드에 적어야 한다. 이 크레이트가
-/// 표를 직접 읽지 못하는 이유는 의존 방향이다 — `tasty-ipc` 가 이 크레이트를 쓴다.
+/// 호스트 IPC가 사용하는 접두어. 플러그인이 같은 이름을 등록하지 못하게 한다.
+/// 본체의 reserved_ipc_prefixes 가드가 실제 메서드 목록과 대조한다.
+/// 의존 방향상 여기서는 tasty-ipc의 목록을 직접 읽을 수 없다.
 pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "agent",
     "approval",
@@ -79,9 +65,7 @@ pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "global_hook",
     "hook",
     "hook_handler",
-    // plugin ↔ host 보조 채널 계열(`host.shared_buffer.*`). 매니페스트로 이 이름을
-    // 점유하면 그 뒤 호스트가 같은 prefix 에 메서드를 더할 때 표에 없는 `host.*` 가
-    // plugin 으로 forward 된다.
+    // 호스트 보조 채널과 이후 추가될 같은 접두어의 메서드도 보호한다.
     "host",
     "ime",
     "ipc",
@@ -200,10 +184,7 @@ pub(super) fn is_valid_event_key(s: &str) -> bool {
     segments.iter().all(|seg| is_valid_event_segment(seg))
 }
 
-/// publish 패턴이 정확 키를 cover하는지. 매니페스트 검증된 패턴만 받는다.
-///
-/// - 패턴이 정확 키와 같으면 cover.
-/// - 패턴이 `<prefix>.*`이고 키가 `<prefix>.<segment>` 형태면 cover.
+/// 유효한 발행 패턴에 이벤트 키가 포함되는지 확인한다. 정확히 같거나 prefix.*에 속해야 한다.
 pub(super) fn event_pattern_covers(pattern: &str, key: &str) -> bool {
     if pattern == key {
         return true;
@@ -216,11 +197,8 @@ pub(super) fn event_pattern_covers(pattern: &str, key: &str) -> bool {
     false
 }
 
-/// `[[contributes.commands]] id` 형식 검증. `<namespace>.<action>` 관례
-/// (예: `"explorer.refresh"`, `"clipboard.copy"`)를 따르되 강제하진 않는다 — `.`으로
-/// 구분된 세그먼트(소문자 ascii + 숫자 + `_`, 알파벳 시작)가 1개 이상이면 된다.
-/// 길이 1..=64. `contributes.tool`/`contributes.popup` id(대시 기반, `is_valid_tool_id`)와
-/// 달리 command id는 기존 관례상 점(`.`) 구분자를 쓰므로 별도 규칙을 둔다.
+/// 명령 ID: 점으로 나눈 영문 소문자·숫자·밑줄, 각 부분은 알파벳으로 시작한다.
+/// 전체 길이는 1..=64이며 namespace.action 형식을 권장한다.
 pub(super) fn is_valid_command_id(s: &str) -> bool {
     if s.is_empty() || s.len() > 64 {
         return false;
@@ -241,15 +219,13 @@ fn is_valid_event_segment(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// 패턴의 최상위 namespace 세그먼트. 검증 통과 후 호출하면 절대 빈 값을 반환하지 않는다.
+/// 검증된 이벤트 키의 첫 부분을 namespace로 사용한다.
 pub(super) fn event_pattern_namespace(s: &str) -> &str {
     s.split('.').next().unwrap_or("")
 }
 
-/// `[[contributes.hook_events]]` key 형식 검증. surface hook 이벤트 키는 점(.) 구분
-/// 이벤트 버스 키(`is_valid_event_key`)와 달리 `process-exit` 류 kebab-case 식별자다.
-/// 소문자 ascii + 숫자 + `-`. 알파벳으로 시작. 길이 1..=64. `:`/`*`/`.` 불가
-/// (`:` 는 내장 prefix 이벤트와, `*` 는 와일드카드 혼동 방지).
+/// 훅 이벤트 키: 영문 소문자·숫자·하이픈, 알파벳으로 시작하며 길이는 1..=64.
+/// 이벤트 버스와 달리 점 구분이나 와일드카드·콜론을 허용하지 않는다.
 pub(super) fn is_valid_hook_event_key(s: &str) -> bool {
     if s.is_empty() || s.len() > 64 {
         return false;
@@ -262,25 +238,18 @@ pub(super) fn is_valid_hook_event_key(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// host 가 코어에 내장한 surface hook 이벤트와 충돌하는지. plugin 이 점유하면
-/// `HookEvent::parse` 가 내장 변형으로 먼저 해석해 plugin 선언이 죽으므로 거부한다.
-/// 정확 이름 `process-exit`/`bell`/`notification` 과 prefix 이벤트
-/// `output-match:`/`idle-timeout:` 을 막는다 (prefix 는 `:` 라 형식 검증에서 이미
-/// 걸리지만 방어적으로 함께 검사).
+/// 내장 훅 이름과 접두어를 플러그인이 선언하지 못하게 한다.
+/// 콜론은 앞선 형식 검사에서도 거부하지만 여기서도 확인한다.
 pub(super) fn is_reserved_hook_event_key(s: &str) -> bool {
     matches!(s, "process-exit" | "bell" | "notification")
         || s.starts_with("output-match:")
         || s.starts_with("idle-timeout:")
 }
 
-/// 호스트만 publish 가능한 예약 네임스페이스.
-/// plugin은 자기 도메인의 namespace로만 발화할 수 있다.
+/// 플러그인이 발행할 수 없는 호스트 전용 namespace.
 pub(super) fn is_reserved_event_namespace(ns: &str) -> bool {
     matches!(
         ns,
-        // 협업 primitive 의 도메인. `RESERVED_IPC_PREFIXES` 에는 처음부터 있었고
-        // 사건 쪽에만 빠져 있었다 — 그래서 plugin 이 `agent.*` 를 자기 것으로
-        // 선언할 수 있었고, 호스트가 그 이름으로 발화를 시작하면 그 선언과 부딪힌다.
         "agent"
             | "surface"
             | "tab"

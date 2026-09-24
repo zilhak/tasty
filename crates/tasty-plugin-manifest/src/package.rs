@@ -1,4 +1,4 @@
-//! 매니페스트가 들어 있는 디렉터리 핸들 — 디렉터리 + 파싱된 매니페스트 묶음.
+//! 매니페스트와 설치 디렉터리.
 
 use std::path::{Path, PathBuf};
 
@@ -11,17 +11,9 @@ pub struct PluginPackage {
 }
 
 impl PluginPackage {
-    /// 실행할 entry binary의 경로. 매니페스트 디렉터리 기준 상대 경로면
-    /// 디렉터리에 합쳐서 반환. 절대 경로 또는 PATH 의존이면 그대로.
-    ///
-    /// **프로필 격리의 핵심.** 매니페스트의 `command` 는 크로스 플랫폼이라 실행
-    /// 확장자 없이 적힌다 (`tasty-plugin-foo`). Unix 설치본은 같은 이름이라 아래
-    /// `candidate` 분기에서 바로 절대경로로 고정되지만, Windows 설치본은
-    /// `foo.exe` 라 확장자 없는 join 이 실패한다. 그 경우 `.exe` 를 붙여 설치본을
-    /// 재탐색한다 — 이 보정이 없으면 절대경로로 고정되지 못하고
-    /// `Command::new("foo")` 가 PATH/cwd 탐색으로 빠져 엉뚱한 빌드 산출물
-    /// (`target/<profile>/foo.exe`) 을 실행하게 되어 debug/release 프로세스
-    /// 격리가 깨진다 (각 프로필은 자기 데이터루트의 설치본을 실행해야 한다).
+    /// 설치 디렉터리의 실행 파일을 우선한다. Windows에서는 .exe를 붙여 다시 찾는다.
+    /// 그래야 PATH의 다른 빌드보다 이 설치본을 실행할 수 있다.
+    /// 절대 경로는 그대로 쓰고, 설치본을 찾지 못하면 원래 명령을 반환한다.
     pub fn entry_command_path(&self) -> PathBuf {
         match &self.manifest.entry {
             Entry::Process { command, .. } => {
@@ -33,7 +25,6 @@ impl PluginPackage {
                 if candidate.exists() {
                     return candidate;
                 }
-                // Windows: 확장자를 붙여 설치본을 재탐색 (위 주석 참조).
                 #[cfg(windows)]
                 if p.extension().is_none() {
                     let exe = self.dir.join(format!("{command}.exe"));
@@ -57,8 +48,7 @@ impl PluginPackage {
 mod tests {
     use super::*;
 
-    /// 최소 매니페스트로 PluginPackage 구성. `command` 만 검증 대상이므로 나머지
-    /// 필드는 스키마 필수값만 채운다.
+    /// 실행 명령 외에는 최소 필드만 채운 시험용 매니페스트.
     fn pkg(dir: PathBuf, command: &str) -> PluginPackage {
         let toml_str = format!(
             "manifest_version = 1\n\
@@ -74,10 +64,7 @@ mod tests {
         PluginPackage { dir, manifest }
     }
 
-    /// Windows: 설치본은 `foo.exe` 인데 매니페스트 command 는 확장자가 없다.
-    /// `.exe` 보정으로 설치 디렉토리의 절대경로를 반환해야 한다 — 이게 깨지면
-    /// PATH 탐색으로 빠져 빌드 산출물(target/<profile>/foo.exe)을 실행하게 되어
-    /// debug/release 프로세스 격리가 무너진다.
+    /// Windows에서는 확장자를 생략해도 설치 디렉터리의 .exe를 찾아야 한다.
     #[cfg(windows)]
     #[test]
     fn windows_resolves_installed_exe_not_bare_name() {
@@ -99,8 +86,7 @@ mod tests {
         assert_eq!(p.entry_command_path(), bin);
     }
 
-    /// 설치본 바이너리가 디렉토리에 없으면 (예: 누락) command 이름을 그대로 반환.
-    /// 절대경로로 고정할 근거가 없으므로 OS 탐색에 맡기는 기존 동작 유지.
+    /// 설치 파일을 찾지 못하면 OS가 탐색할 수 있도록 원래 명령을 반환한다.
     #[test]
     fn missing_binary_falls_back_to_bare_command() {
         let tmp = tempfile::tempdir().unwrap();

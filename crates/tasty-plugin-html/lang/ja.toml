@@ -26,10 +26,10 @@ url_hint = "https://…"
 desc = "HTML ビューアコマンド"
 
 [html.cli.sub.open]
-description = "フォーカス中のタブでURLをHTMLサーフェスとして開く"
+description = "既存の HTML surface の URL を変更する"
 
 [html.cli.arg.open_args.url]
-help = "URL（http://、https://、file://）またはローカルパス"
+help = "URL（http://、https://、file://）。ローカルファイルは file:// URL で指定してください。"
 
 [html.cli.arg.open_args.surface]
-help = "対象サーフェスID（既定値：フォーカス中のサーフェスを変換）"
+help = "対象 HTML surface ID（省略時は呼び出し元の TASTY_SURFACE_ID）"

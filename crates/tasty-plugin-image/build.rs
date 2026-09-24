@@ -1,14 +1,4 @@
-//! 빌드타임 SVG → 벡터 베이크 (방식 B).
-//!
-//! `tasty-icons`(build-dependency, egui-free, 런타임 바이너리 크기 영향 0)의
-//! `Icon.svg` 를 `usvg` 로 파싱해 서브패스별 폴리라인으로 평탄화하고,
-//! `OUT_DIR/plugin_icons.rs` 에 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
-//! 좌표) 상수를 생성한다. 런타임은 이 점배열을 그릴 크기로 스케일해
-//! `egui::Shape::line` + `PathStroke` 로 그린다(텍스처 없음, DPI 독립).
-//!
-//! canonical 소스는 `tasty-icons` 크레이트 하나 — host/gallery 런타임 렌더와
-//! **바이트 동일한 같은 `<svg>` 문자열**을 여기서 베이크한다. 아이콘을 추가하려면
-//! `ICONS` 에 (상수명, `tasty_icons::<ICON>`) 쌍만 더한다.
+//! tasty-icons의 SVG를 폴리라인 상수로 변환해 OUT_DIR/plugin_icons.rs에 쓴다.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -16,7 +6,7 @@ use std::path::Path;
 use usvg::tiny_skia_path::PathSegment;
 use usvg::{Options, TreeParsing};
 
-/// (생성 상수명, canonical `tasty-icons` const). 툴바에서 쓰는 아이콘 subset.
+/// 도구 모음에서 사용하는 아이콘과 생성할 상수 이름.
 const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("REFRESH", tasty_icons::REFRESH),
     ("CHEVRON_LEFT", tasty_icons::CHEVRON_LEFT),
@@ -28,8 +18,7 @@ const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("REDO", tasty_icons::REDO),
 ];
 
-/// 베지어 평탄화 허용 오차 (viewBox 24 단위, px). 작을수록 곡선이 매끄럽고 점이 많다.
-/// 시각 품질은 Linux(gx10) 실렌더로 host `Icon` 과 대조해 확정한다.
+/// viewBox 좌표에서 베지어 곡선 평탄화에 허용하는 오차. 작을수록 점이 많아진다.
 const FLATTEN_TOLERANCE: f64 = 0.1;
 
 fn main() {
@@ -56,14 +45,11 @@ fn main() {
     let out_path = Path::new(&out_dir).join("plugin_icons.rs");
     std::fs::write(&out_path, generated)
         .unwrap_or_else(|e| panic!("failed to write {}: {e}", out_path.display()));
-    // 아이콘 소스 rerun 은 build-dep(tasty-icons) 재컴파일이 자동 트리거한다.
-    // 그 사슬을 실제로 잰 기록은 docs/dev-guide/build.md 의
-    // "plugin 세 개가 자기 자신만 거는 이유" — 선언이 빠진 것으로 보고 고치기 전에 읽어라.
+    // 아이콘 변경은 build-dependency 재컴파일을 통해 반영한다.
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-/// 트리의 모든 Path 를 서브패스(폴리라인) 목록으로 평탄화. 좌표는 절대좌표
-/// (usvg 가 transform 을 이미 적용 — `Path::data` 는 absolute coordinates).
+/// 각 Path의 데이터를 폴리라인으로 변환한다. 별도의 노드 변환은 적용하지 않는다.
 fn flatten_tree(tree: &usvg::Tree) -> Vec<Vec<[f64; 2]>> {
     let mut subpaths: Vec<Vec<[f64; 2]>> = Vec::new();
 

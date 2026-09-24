@@ -26,10 +26,10 @@ url_hint = "https://…"
 desc = "HTML viewer commands"
 
 [html.cli.sub.open]
-description = "Open a URL as HTML surface in the focused tab"
+description = "Set the URL of an existing HTML surface"
 
 [html.cli.arg.open_args.url]
-help = "URL (http://, https://, file://) or local path"
+help = "URL (http://, https:// or file://). Use a file:// URL for a local file."
 
 [html.cli.arg.open_args.surface]
-help = "Target surface ID (default: convert focused)"
+help = "Target HTML surface ID (defaults to the caller's TASTY_SURFACE_ID)"

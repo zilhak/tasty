@@ -1,5 +1,6 @@
 //! diff의 도구 모음과 이전·이후 줄 번호, 부호, 텍스트를 그린다.
-//! 가로 스크롤 너비는 전체 줄의 최댓값으로 고정하고 각 줄의 배경은 해당 줄 길이만큼 칠한다.
+//! 가로 스크롤 너비는 전체 줄의 최댓값으로 고정한다.
+//! 줄 배경은 표시 영역과 해당 줄에 필요한 너비 중 큰 값으로 칠한다.
 
 use egui::{Align, Align2, Color32, Layout, Rect, Sense, UiBuilder, vec2};
 use tasty_plugin_sdk::Translator;
@@ -217,7 +218,7 @@ fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
         (false, DiffLineKind::Context) => (theme.text_primary().to_egui(), Color32::TRANSPARENT),
     };
     if bg != Color32::TRANSPARENT {
-        // 배경만 해당 줄의 텍스트 너비에 맞춰 칠한다.
+        // 배경은 최소한 표시 영역을 채우고, 긴 줄이면 해당 줄 너비까지 늘린다.
         let band_w = avail.max(diff_min_w(ui.painter(), theme, text, sz));
         ui.painter()
             .rect_filled(Rect::from_min_size(rect.min, vec2(band_w, h)), 0.0, bg);

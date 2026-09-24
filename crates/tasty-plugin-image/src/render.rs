@@ -1,16 +1,7 @@
-//! egui closure for the image surface — control bar / paint bar chrome + canvas, drawn
-//! in the plugin process and tessellated to a mesh the host composites (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
-//!
-//! Structure transcribes the design (`gallery/plugins.jsx` Image viewer / the
-//! `image_viewer` gallery specimen): a control bar (viewer = ◀ ▶ ↻ ✏ + · filename ·
-//! right-aligned zoom; paint = Save / Cancel / ↶ ↷ · brush · color · zoom) over a canvas
-//! filled with the sidebar tone. All colors / sizes / spacing come from the `Theme`
-//! tokens delivered via `set_context` — no raw px / `from_rgb` hardcoding.
+//! 이미지의 도구 모음과 캔버스를 플러그인에서 그린다.
+//! 문서의 보기·편집 상태에 따라 버튼과 그리기 영역을 구성한다.
 
-/// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
-/// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
-/// 좌표)를 생성한다. 런타임은 이 점배열을 [`tasty_plugin_sdk::baked_icon::draw`] 로
-/// 그릴 크기에 스케일해 벡터 stroke 로 그린다(텍스처 없음, DPI 독립).
+/// 빌드 때 만든 아이콘 폴리라인. 런타임에 크기를 맞춰 선으로 그린다.
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
 }
@@ -25,7 +16,6 @@ use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-        // ── Popups take over the whole surface ──
         if doc.new_image_popup {
             draw_new_image_popup(ui, theme, tr, doc);
             return;
@@ -37,7 +27,6 @@ pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mu
 
         let pad = theme.spacing_sm.value();
 
-        // ── Control bar ──
         ui.add_space(pad);
         ui.horizontal(|ui| {
             ui.add_space(pad);
@@ -51,7 +40,6 @@ pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mu
         });
         ui.add_space(pad);
 
-        // ── bar / canvas separator ──
         let sep_y = ui.min_rect().bottom();
         ui.painter().hline(
             ui.max_rect().x_range(),
@@ -59,12 +47,9 @@ pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mu
             egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
         );
 
-        // ── Canvas area ──
         draw_canvas(ui, theme, tr, doc);
     });
 }
-
-// ── Control bar (viewer / paint) ────────────────────────────────────────────
 
 fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     let has_dir = doc.dir_images.len() > 1;
@@ -119,7 +104,6 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
 
     ui.add_space(theme.spacing_sm.value());
 
-    // File info (name + optional index).
     if let Some(ref path) = doc.file_path {
         let name = std::path::Path::new(path)
             .file_name()
@@ -199,7 +183,7 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         doc.brush_color.b(),
     ];
     if ui.color_edit_button_srgb(&mut color_arr).changed() {
-        // 사용자 입력 (브러시 색 picker). 정당한 dangerously 사용처.
+        // 사용자가 색상 선택기에서 고른 값이다.
         #[allow(clippy::disallowed_methods)]
         let new_color = egui::Color32::from_rgb(color_arr[0], color_arr[1], color_arr[2]);
         doc.brush_color = new_color;
@@ -226,8 +210,6 @@ fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, doc: &mut ImageDoc) {
     }
 }
 
-// ── Canvas ──────────────────────────────────────────────────────────────────
-
 fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     let available = ui.available_rect_before_wrap();
     let (rect, response) = ui.allocate_exact_size(
@@ -235,7 +217,6 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
         egui::Sense::click_and_drag(),
     );
 
-    // Canvas background (sidebar tone).
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
 
@@ -251,7 +232,6 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
     };
     let [img_w, img_h] = img.size;
 
-    // Upload original texture if needed.
     if doc.texture.is_none() {
         let img = doc.original_image.clone().expect("checked above");
         doc.texture = Some(ui.ctx().load_texture(
@@ -260,7 +240,6 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
             egui::TextureOptions::LINEAR,
         ));
     }
-    // Upload draw-layer texture if needed.
     if doc.is_editing()
         && let Some(layer) = doc.draw_layer.clone()
         && (doc.draw_texture.is_none() || doc.draw_texture_dirty)
@@ -298,8 +277,6 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
         ui.painter()
             .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
     }
-
-    // ── Mouse / keyboard interactions ──
 
     // Zoom with mouse wheel (only over the canvas).
     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
@@ -352,8 +329,6 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
         doc.pan_offset += response.drag_delta();
     }
 }
-
-// ── Floating selection ───────────────────────────────────────────────────────
 
 fn draw_floating_selection(
     ui: &mut egui::Ui,
@@ -504,8 +479,6 @@ fn resize_handle_rects(sel_rect: egui::Rect, handle_size: f32) -> Vec<(ResizeHan
     ]
 }
 
-// ── Popups ────────────────────────────────────────────────────────────────────
-
 fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     ui.vertical_centered(|ui| {
         ui.add_space(theme.spacing_lg.value());
@@ -606,8 +579,6 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     });
 }
 
-// ── Themed widget helpers ─────────────────────────────────────────────────────
-
 /// A caption-sized muted label (filename / zoom % / field labels).
 fn caption(theme: &Theme, text: &str) -> egui::RichText {
     egui::RichText::new(text)
@@ -627,7 +598,7 @@ fn heading(theme: &Theme, text: &str) -> egui::RichText {
         .color(theme.text_primary().to_egui())
 }
 
-/// Design-token control button: surface-raised fill + 1px border + caption label.
+/// 공용 토큰의 배경·테두리·caption 글꼴을 사용하는 버튼.
 fn styled_button(theme: &Theme, label: &str) -> egui::Button<'static> {
     egui::Button::new(
         egui::RichText::new(label.to_owned())
@@ -642,19 +613,17 @@ fn styled_button(theme: &Theme, label: &str) -> egui::Button<'static> {
     .corner_radius(theme.corner_radius_sm.value())
 }
 
-/// 아이콘 글리프를 버튼 높이 대비 몇 배로 그릴지. 시각 대조(gx10)로 확정할 튜닝값.
+/// 버튼 높이에 대한 아이콘 크기 비율.
 const ICON_DRAW_RATIO: f32 = 0.7;
 
-/// 아이콘 버튼 고정 크기(control-bar). host 는 add_sized([24,20]) 를 썼다.
+/// 도구 모음 아이콘 버튼의 크기.
 fn icon_button_size(theme: &Theme) -> [f32; 2] {
     let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
     let w = theme.spacing_lg.value() * 1.5; // ≈ 24
     [w, h]
 }
 
-/// 베이크된 벡터 아이콘 버튼. chrome(배경·보더·hover·active)은 `styled_button` 을
-/// 재사용하고(빈 라벨), 그 위에 [`tasty_plugin_sdk::baked_icon::draw`] 로 벡터 stroke
-/// 아이콘을 겹쳐 그린다. stroke 색은 텍스트 라벨과 동일한 `text_primary` — 하드코딩 없음.
+/// 공용 스타일의 빈 버튼 위에 text_primary 색상으로 폴리라인 아이콘을 그린다.
 fn baked_icon_button(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -675,8 +644,7 @@ fn baked_icon_button(
     resp
 }
 
-/// 비활성화 가능한 베이크 아이콘 버튼 (undo / redo). disabled 면 chrome 은
-/// `add_enabled_ui` 로, 아이콘 stroke 는 `text_muted` 로 흐리게 그린다.
+/// 비활성 상태에서는 버튼과 아이콘을 흐리게 그린다.
 fn baked_icon_button_enabled(
     ui: &mut egui::Ui,
     theme: &Theme,
