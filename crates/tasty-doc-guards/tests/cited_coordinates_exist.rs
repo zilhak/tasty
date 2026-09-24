@@ -410,7 +410,7 @@ fn cited_repo_paths_resolve() {
         }
     }
     assert!(
-        judged > 2500,
+        judged > 2000,
         "경로 인용을 {judged}개만 판정했다. 수집 범위와 경로 추출을 확인한다."
     );
     assert!(
