@@ -27,7 +27,7 @@ description = "Start reading the agent session transcript for a surface. The ses
 description = "Open a turn on a watched surface and tag its events with the caller's request_id. In a webhook IpcSequence, call this before claude.tell. Rejects unwatched surfaces and overlapping turns."
 
 [agent_stream.cli.sub.unwatch]
-description = "Stop tailing a surface. Emits a final turn_end{reason=unwatched} event."
+description = "Stop tailing a surface. Emits a final turn_end{reason=stream:unwatched} event."
 
 [agent_stream.cli.sub.list]
 description = "List every surface currently being tailed with its session id, transcript path, byte offset and status"

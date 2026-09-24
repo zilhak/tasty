@@ -1,20 +1,6 @@
-//! 구독자 레지스트리 + 구독자별 bounded 큐.
-//!
-//! ## 생산자는 절대 블로킹하지 않는다
-//!
-//! 이벤트를 만드는 쪽은 tail 스레드다(`crate::pump`). 그 스레드가 느린 구독자의 소켓을
-//! 기다리면 **수집 자체가 멈춘다** — transcript 를 못 읽는 동안 파일은 계속 자라고,
-//! 레지스트리 락을 쥔 채 멈추면 IPC 핸들러까지 밀려 healthcheck 응답이 늦는다. 그래서
-//! 구독자마다 bounded 채널을 두고 `try_send` 만 쓴다. 가득 차면 **버리고 카운터를 올린다**
-//! (본체 옵저버 `src/core/output_observer.rs` 와 같은 패턴).
-//!
-//! ## 연속으로 버려지는 구독자는 끊는다
-//!
-//! 버리기만 하고 계속 연결을 유지하면 소비자는 "연결은 살아 있는데 구멍 난 스트림" 을
-//! 받는다 — 무엇을 놓쳤는지 알 방법이 없다. SSE 는 끊김이 정상 경로이고(plugin 강제
-//! 재시작만으로도 끊긴다) 재구독 시 `Last-Event-ID` 로 재개할 수 있으므로, 연속 drop 이
-//! [`DROP_STREAK_LIMIT`] 를 넘으면 그 구독을 끊어 **누락을 재연결로 드러낸다**. 순간적인
-//! 버스트로 멀쩡한 구독자를 끊지 않도록 즉시가 아니라 연속 임계로 판정한다.
+//! 구독자별 제한된 큐에 이벤트를 전달한다. 큐의 여유를 기다리지 않고 포화 시 버린 수를 센다.
+//! 연속 누락이 DROP_STREAK_LIMIT에 도달하면 구독을 끊어 재연결을 유도한다.
+//! 소비자는 Last-Event-ID로 버퍼에 남은 구간을 재개할 수 있다.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
@@ -26,7 +12,7 @@ use serde_json::{Value, json};
 use crate::record::EventKind;
 use crate::sse::frame;
 
-/// 구독자 한 명이 밀릴 수 있는 최대 이벤트 수. 본체 옵저버와 같은 값.
+/// 구독자 한 명의 큐에 보관할 수 있는 이벤트 수.
 pub const SUBSCRIBER_QUEUE_CAP: usize = 256;
 
 /// 이 횟수만큼 **연속으로** 버려지면 그 구독을 끊는다.
@@ -125,16 +111,8 @@ pub struct SseHub {
 }
 
 impl SseHub {
-    /// 구독자 레지스트리 락. **여섯 접근자가 전부 이 한 곳을 지난다** — poison 대응을
-    /// 접근자마다 따로 쓰면 그중 하나만 어긋나도 스트림이 조용히 멎기 때문이다.
-    ///
-    /// poison 이면 복구한다. 임계구역이 남길 수 있는 최악의 손상은 `total_dropped`
-    /// **과소계상 하나**이고(`subs` 자체는 `retain_mut`/`drain` 이 일관성을 지킨다),
-    /// 그 대가로 잃는 것은 SSE 스트림 전체다. 게다가 poison 은 sticky 라 한 번 걸리면
-    /// 이후 방출이 **영구히** 멎는다 — 구독자는 연결된 채 아무것도 못 받고, 무엇을
-    /// 놓쳤는지 알 방법도 없다. 패닉도 답이 아니다 — 그리고 여기서 패닉의 대가는
-    /// 스레드 하나가 아니라 **프로세스 전체**다: [`Subscription`] 의 `Drop` 이 이 락을
-    /// 다시 잡으므로, 패닉이 언와인딩하며 `unsubscribe` 를 지나면 재패닉해 abort 한다.
+    /// 모든 허브 접근에서 사용하는 잠금. poison을 알리고 기존 상태를 재사용한다.
+    /// 패닉 전의 부분 갱신을 되돌리거나 집계값의 정확성을 보장하지는 않는다.
     fn lock_inner(&self) -> std::sync::MutexGuard<'_, HubInner> {
         tasty_utils::poison::recover_mutex(self.inner.lock(), INNER_WHAT, &INNER_POISON_REPORTED)
     }
@@ -166,7 +144,7 @@ impl SseHub {
         }
     }
 
-    /// 이벤트를 모든 매칭 구독자에게 넣는다. **어떤 경우에도 블로킹하지 않는다.**
+    /// 매칭되는 구독자의 큐에 넣는다. 큐의 여유는 기다리지 않는다.
     pub fn publish(&self, event: Arc<Published>) {
         let mut inner = self.lock_inner();
         // 끊긴 구독자의 통계는 목록에서 사라지므로, 그 누적 drop 만 총량으로 옮긴다
@@ -190,8 +168,7 @@ impl SseHub {
         }
     }
 
-    /// 열린 구독을 전부 끊는다 — 송신단이 사라지면 연결 스레드의 `recv` 가 즉시
-    /// 깨어나 응답을 닫는다(shutdown 경로).
+    /// 모든 구독의 송신단을 닫는다. 수신단은 남은 큐를 읽은 뒤 종료를 확인한다.
     pub fn close_all(&self) {
         let mut inner = self.lock_inner();
         let carried: u64 = inner.subs.drain(..).map(|s| s.dropped).sum();
@@ -288,8 +265,7 @@ mod tests {
         assert_eq!(stats[0].sent, SUBSCRIBER_QUEUE_CAP as u64);
         assert_eq!(stats[0].dropped, 0);
 
-        // 가득 찬 상태에서 더 넣어도 생산자는 멈추지 않는다(이 테스트가 끝난다는 것이
-        // 곧 블로킹하지 않았다는 증거다). drop 카운터만 오른다.
+        // 가득 찬 큐의 송신은 기다리지 않고 누락 수만 올려야 한다.
         for seq in 1..=10u64 {
             hub.publish(event(1000 + seq, 1, EventKind::Text));
         }
@@ -357,40 +333,29 @@ mod tests {
         assert!(hub.is_idle());
     }
 
-    /// poison 이 걸린 뒤에도 스트림이 계속 흐르는가.
-    ///
-    /// 겨냥하는 곳은 두 자리다. `is_idle` 은 poison 을 "구독자 없음" 으로 읽어 생산자가
-    /// **직렬화조차 건너뛰게** 했고(`registry.rs` 의 hot path 분기), `publish` 는 그냥
-    /// 반환했다. 둘 다 조용했고 poison 은 sticky 라, 한 번 걸리면 구독자는 연결을 유지한
-    /// 채 이후 이벤트를 **영구히** 못 받는다 — 끊기지도 않으니 재구독으로 복구할 기회도
-    /// 없다. 그래서 이 테스트는 "패닉하지 않는다" 가 아니라 **이벤트가 실제로 도달한다** 를
-    /// 확인한다. 마지막의 보고 플래그 확인은 복구를 조용히 되돌리는(로그 없는
-    /// `into_inner()`) 변경을 잡기 위한 것으로, 동작만 보는 단언은 그 변경에 살아남는다.
+    /// poison 상태에서도 구독자를 유지하고 이벤트를 전달하며 복구를 한 번은 알려야 한다.
     #[test]
     fn a_poisoned_registry_still_delivers_to_live_subscribers() {
         let hub = Arc::new(SseHub::default());
         let sub = hub.subscribe(SubOptions::default());
 
-        // 락을 쥔 채 패닉시켜 poison 을 건다. 구독을 **먼저** 등록해 두어야
-        // `is_idle` 이 "비어 있다" 로 답할 여지가 실제로 생긴다.
+        // 구독자가 있는 상태에서 잠금을 보유한 스레드에 패닉을 일으킨다.
         let poisoner = Arc::clone(&hub);
         std::thread::spawn(move || {
-            let _guard = poisoner.inner.lock().expect("아직 성한 락");
-            panic!("이 스레드가 락을 쥔 채 죽는다");
+            let _guard = poisoner.inner.lock().expect("poison 전 잠금");
+            panic!("시험을 위해 잠금 보유 중 패닉을 일으킨다");
         })
         .join()
         .expect_err("패닉한 스레드는 Err 로 join 된다");
         assert!(hub.inner.lock().is_err(), "poison 이 실제로 걸려야 한다");
 
-        // 생산자의 빠른 검사가 살아 있는 구독자를 못 본 척하지 않는다.
+        // 기존 구독자가 있다고 보고해야 한다.
         assert!(
             !hub.is_idle(),
-            "poison 이 구독자를 지운 것처럼 보이면 안 된다"
+            "poison 상태에서도 기존 구독자가 있음을 알려야 한다"
         );
 
-        // 그리고 이벤트가 실제로 도달한다. `recv` 가 아니라 `recv_timeout` 인 이유는,
-        // 방출이 막히면 이 단언이 **실패가 아니라 정지**가 되기 때문이다 — 멈춘 테스트는
-        // 잡의 벽시계를 먹은 뒤 타임아웃으로 귀속돼, 여기서 잡으려던 결함을 가린다.
+        // 전달에 실패해도 시험이 멈추지 않도록 수신에 제한 시간을 둔다.
         hub.publish(event(1, 1, EventKind::Text));
         let got = sub
             .rx
@@ -406,7 +371,7 @@ mod tests {
 
         assert!(
             INNER_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
-            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+            "poison 복구를 한 번은 로그로 알려야 한다"
         );
     }
 

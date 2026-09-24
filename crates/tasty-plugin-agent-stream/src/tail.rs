@@ -1,7 +1,5 @@
-//! append-only JSONL 파일의 tail 상태 기계.
+//! JSONL 파일을 이어 읽는다. 외부 프로세스의 삭제·절단·교체도 처리한다.
 //!
-//! 파일은 에이전트 프로세스가 **우리와 무관하게** 쓰고 지우고 갈아끼운다. 그래서 tail
-//! 은 "offset 부터 끝까지 읽는다" 만으로는 부족하고, 아래 이상 상태를 전부 다뤄야 한다:
 //!
 //! | 상태 | 판정 | 대응 |
 //! |------|------|------|
@@ -11,8 +9,7 @@
 //! | rotate / 파일 교체 | inode(Unix) · file index(Windows) 변화 | 0 부터 재동기화 |
 //! | 개행 없이 끝난 부분 라인 | 버퍼 잔여 | 다음 read 로 완성될 때까지 보류 — **완성 시 정확히 1 회** 방출 |
 //!
-//! 재동기화가 같은 레코드를 다시 읽어도 상위 계층의 `uuid` 중복 제거가 흡수한다
-//! (`crate::registry`). 즉 이 계층은 **누락보다 중복을 택한다**.
+//! 재동기화하면 같은 기록을 다시 읽을 수 있다. 상위 계층은 기억하고 있는 uuid만 중복 제거한다.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -54,16 +51,9 @@ impl TailState {
         }
     }
 
-    /// 지정한 offset 에서 재개하는 상태 — plugin 재시작 후 복구에 쓴다.
-    ///
-    /// **지문은 지금 그 경로에 있는 파일에서 새로 잡는다 — 재시작 이전의 지문과 이어지지
-    /// 않는다.** 스냅샷(`crate::registry`)이 offset 만 남기고 지문은 남기지 않기 때문이다.
-    /// 따라서 plugin 이 죽어 있는 동안 같은 경로가 **더 긴 다른 파일**로 교체됐다면, 그
-    /// 교체는 지문 비교로도 길이 비교(`len >= offset`)로도 잡히지 않고 저장된 offset 중간
-    /// 부터 읽힌다 — 첫 줄은 레코드 파편이라 파싱 실패로 버려지고 그 앞 레코드는 유실된다.
-    /// 재시작 중 세션 파일이 교체되는 경우는 관측된 바 없어(transcript 는 append-only 이고
-    /// 세션이 바뀌면 **파일명 자체가** 바뀐다) 감수한 한계이며, 세션 교체는 지문이 아니라
-    /// surface meta 의 session id 변화로 잡는다(`crate::pump::verify_one`).
+    /// 저장된 offset에서 재개한다. 이전 파일 지문은 저장하지 않아 현재 경로에서 새로 읽는다.
+    /// 재시작 중 더 긴 다른 파일로 바뀌면 길이와 지문만으로는 교체를 감지하지 못해
+    /// 앞부분을 놓칠 수 있다. 세션 id가 바뀐 경우는 pump의 호스트 조회로 따로 확인한다.
     pub fn resume_at(path: &Path, offset: u64) -> Self {
         let meta = std::fs::metadata(path).ok();
         Self {
@@ -166,10 +156,8 @@ fn read_fully(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
     Ok(total)
 }
 
-/// 같은 경로가 **같은 파일**인지 판별하는 지문.
-///
-/// Unix 는 inode, Windows 는 file index 를 쓴다. 어느 쪽도 얻지 못하는 환경에서는
-/// `None` 을 돌려 길이 비교 판정으로 degrade 한다(교체 감지만 약해질 뿐 동작한다).
+/// 파일 식별자. Unix는 inode, Windows는 file index를 사용한다.
+/// 식별자를 얻지 못하면 길이로만 교체·절단을 판단한다.
 #[cfg(unix)]
 fn file_identity(_path: &Path, meta: &std::fs::Metadata) -> Option<u64> {
     use std::os::unix::fs::MetadataExt;

@@ -27,7 +27,7 @@ description = "サーフェスのエージェントセッション記録を追�
 description = "追跡中のサーフェスにターンを開き、イベントに呼び出し元の request_id を付けます。webhook の IpcSequence では claude.tell より先に呼び出します。未追跡のサーフェスやターンの重複は拒否します。"
 
 [agent_stream.cli.sub.unwatch]
-description = "サーフェスの追跡を停止。最後にturn_end{reason=unwatched}イベントを発行"
+description = "サーフェスの追跡を停止。最後にturn_end{reason=stream:unwatched}イベントを発行"
 
 [agent_stream.cli.sub.list]
 description = "追跡中の全サーフェスのセッションID・記録パス・バイト位置・状態を一覧表示"

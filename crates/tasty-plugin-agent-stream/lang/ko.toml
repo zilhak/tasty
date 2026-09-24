@@ -27,7 +27,7 @@ description = "서피스의 에이전트 세션 기록을 추적합니다. 서�
 description = "추적 중인 서피스에 턴을 열고 이벤트에 호출자의 request_id를 붙입니다. 웹훅 IpcSequence에서는 claude.tell보다 먼저 호출하세요. 추적하지 않는 서피스나 중복 턴은 거부합니다."
 
 [agent_stream.cli.sub.unwatch]
-description = "서피스 추적 중지. 마지막 turn_end{reason=unwatched} 이벤트 발행"
+description = "서피스 추적 중지. 마지막 turn_end{reason=stream:unwatched} 이벤트 발행"
 
 [agent_stream.cli.sub.list]
 description = "추적 중인 모든 서피스의 세션 ID·기록 경로·바이트 위치·상태 나열"

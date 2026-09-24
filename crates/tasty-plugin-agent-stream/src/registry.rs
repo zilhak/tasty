@@ -1,21 +1,8 @@
-//! watch 레지스트리 + 수집 이벤트 버퍼 + 재시작 복구용 영속화.
-//!
-//! ## 전달 보장: at-least-once (누락보다 중복)
-//!
-//! SDK 는 healthcheck 무응답 시 plugin 프로세스를 **강제 재시작**한다. 재시작하면
-//! 메모리 상태가 통째로 사라지므로, watch 대상과 tail offset 을 디스크에 남겨 두었다가
-//! 복구한다(`TASTY_PLUGIN_DATA_DIR/watches.json`).
-//!
-//! 복구 시 두 갈래가 있다:
-//!
-//! - **누락을 택하면** 재시작 시점의 파일 끝에서 다시 시작한다 → 죽어 있던 동안 쓰인
-//!   응답이 영원히 사라진다. 중계 파이프라인에서 이건 조용한 데이터 손실이다.
-//! - **중복을 택하면** 마지막으로 영속화한 offset 에서 재개한다 → 마지막 flush 이후
-//!   이미 방출했던 레코드를 다시 읽을 수 있다.
-//!
-//! **중복을 택한다.** 소비자는 이벤트의 `record_uuid` 로 중복을 접을 수 있지만 잃어버린
-//! 응답은 복구할 수 없기 때문이다. 프로세스가 살아 있는 동안의 중복(파일 재동기화 등)은
-//! 아래 [`DedupeCache`] 가 흡수하고, 재시작을 건너뛴 중복만 소비자에게 노출된다.
+//! 추적 대상·이벤트 버퍼와 재시작용 스냅샷.
+//! 재시작하면 파일 끝이 아니라 마지막으로 저장한 offset부터 읽어 중복을 허용한다.
+//! 실행 중에도 최근 uuid만 기억하므로 오래된 기록이나 uuid 없는 기록은 다시 나올 수 있다.
+//! 이벤트 버퍼와 열린 턴은 저장하지 않는다. 따라서 소비자에게 모든 이벤트가
+//! 적어도 한 번 전달된다는 보장은 아니며, 버퍼에서 사라진 구간은 SSE 재개 시 gap으로 알린다.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -34,8 +21,7 @@ use crate::tail::TailState;
 /// 이벤트 버퍼 상한. 넘치면 가장 오래된 것부터 버리고 `dropped` 로 알린다.
 pub(crate) const EVENT_BUFFER_CAP: usize = 4096;
 
-/// 한 watch 가 기억하는 최근 레코드 uuid 개수. 파일 재동기화가 되돌아가 읽는 범위를
-/// 넉넉히 덮을 만큼만 있으면 된다.
+/// 추적 대상별로 중복 확인에 사용할 최근 uuid 수.
 const DEDUPE_CAP: usize = 4096;
 
 /// 영속 스냅샷 포맷 버전. 형식이 바뀌면 올려서 옛 파일을 무시한다.
@@ -49,11 +35,8 @@ pub(crate) const DEFAULT_TURN_TIMEOUT_SECS: u64 = 600;
 pub(crate) const MIN_TURN_TIMEOUT_SECS: u64 = 10;
 pub(crate) const MAX_TURN_TIMEOUT_SECS: u64 = 86_400;
 
-/// `turn_start` 로 연, 아직 닫히지 않은 correlation 턴 하나.
-///
-/// 이 surface 에서 나오는 이벤트는 열려 있는 동안 이 `request_id` 로 태깅된다. transcript
-/// 의 `turn_end`(정상 종료·취소·오류)나 등록 교체/해제/세션 소멸이 닫는다. 어느 것도 오지
-/// 않는 경우(막힌 턴)의 안전망이 `last_activity` 기준 비활동 타임아웃이다.
+/// surface 이벤트에 request_id를 붙이는 열린 턴.
+/// turn_end 또는 비활성 시간 초과로 닫는다.
 #[derive(Debug)]
 struct TurnState {
     request_id: String,
@@ -68,8 +51,7 @@ struct TurnState {
 pub enum TurnError {
     /// 대상 surface 가 watch 중이 아니다 — 태깅할 이벤트가 애초에 나오지 않는다.
     NotWatched,
-    /// 그 surface 에 이미 열린 턴이 있다. claude 는 한 번에 한 턴만 처리하므로 겹침을
-    /// 거부한다 — 소비자는 앞 턴의 `turn_end` 를 받은 뒤 다음 요청을 보낸다.
+    /// 이미 열린 턴이 있다. 앞 턴이 끝나기 전에는 새 턴을 열지 않는다.
     AlreadyOpen { request_id: String },
 }
 
@@ -81,7 +63,7 @@ struct DedupeCache {
 }
 
 impl DedupeCache {
-    /// 처음 보는 uuid 면 기록하고 `true`. 이미 본 uuid 면 `false`.
+    /// 기억하고 있는 uuid면 false, 그 외에는 기록하고 true를 반환한다.
     fn insert(&mut self, uuid: &str) -> bool {
         if !self.seen.insert(uuid.to_string()) {
             return false;
@@ -108,8 +90,7 @@ pub struct Watch {
     /// 마지막으로 관측된 읽기 위치. `tail` 이 꺼내져 있는 동안에도 `list`/스냅샷이
     /// 참조해야 하므로 별도로 들고 있는다.
     offset: u64,
-    /// 대상(세션/경로/tail)이 바뀔 때마다 레지스트리가 새로 발급하는 전역 유일 번호.
-    /// 꺼내간 tail 을 되돌릴 때 "그 사이 대상이 바뀌지 않았는가" 를 판정한다.
+    /// 대상 변경 시 이 레지스트리가 새로 발급하는 번호. 꺼내간 tail이 아직 유효한지 확인한다.
     generation: u64,
     dedupe: DedupeCache,
 }
@@ -140,12 +121,7 @@ impl Watch {
     }
 }
 
-/// 레지스트리 락 **밖으로** 꺼낸 tail 작업 단위.
-///
-/// 파일 I/O(최대 4 MiB read)를 락 안에서 하면 IPC 핸들러가 그 락을 기다리게 되고,
-/// SDK 가 ping 을 worker(dispatch) 스레드에서 응답하므로 healthcheck 응답까지 함께
-/// 밀린다 — `crate::pump` 모듈 주석이 "dispatch 에서 파일 I/O 금지" 로 세운 불변식이
-/// 락을 통해 되살아나는 셈이다. 그래서 I/O 동안에는 tail 상태만 들고 나간다.
+/// 파일 I/O 동안 잠금 밖으로 꺼낸 tail 상태. IPC가 파일 읽기를 기다리지 않게 한다.
 #[derive(Debug)]
 pub struct TailCheckout {
     pub surface_id: u32,
@@ -155,13 +131,8 @@ pub struct TailCheckout {
     generation: u64,
 }
 
-/// 재개 요청 하나에 대한 응답.
-///
-/// `gap` 은 **커서가 수집 버퍼 밖으로 밀려나 재전송할 수 없는 구간**이다. 버퍼는 유한하고
-/// (`EVENT_BUFFER_CAP`) plugin 재시작 시 비므로, 오래 끊겨 있던 소비자의 커서가 버퍼보다
-/// 뒤처지는 일이 실제로 생긴다. 그때 남은 것만 조용히 흘려보내면 소비자는 **자기가 무엇을
-/// 놓쳤는지도 모른 채** 이어붙인다 — 이 파이프라인이 세운 "침묵하는 누락보다 중복"
-/// (docs/plugins/agent-stream/index.md#내부-동작)과 정면으로 어긋난다. 그래서 재전송에 앞서 갭 구간을 먼저 알린다.
+/// 버퍼에 남아 있는 이벤트를 재전송한다.
+/// 커서가 오래돼 이미 사라진 구간은 gap으로 알려 소비자가 누락을 알 수 있게 한다.
 #[derive(Debug, Default)]
 pub struct Replay {
     /// 재전송할 수 없는 `(첫 seq, 마지막 seq)` 구간. 없으면 `None`.
@@ -169,7 +140,7 @@ pub struct Replay {
     pub events: Vec<Arc<Published>>,
 }
 
-/// 버퍼에 쌓인 이벤트 하나 — 전역 단조 증가 `seq` 로 커서를 만든다.
+/// 이벤트와 수집 순서 번호. 번호는 스냅샷 저장 시 함께 남긴다.
 #[derive(Debug)]
 struct BufferedEvent {
     seq: u64,
@@ -193,12 +164,8 @@ impl BufferedEvent {
     }
 }
 
-/// 소비자에게 나가는 이벤트 JSON. `poll` 응답과 SSE `data` 가 **같은 함수**를 쓴다 —
-/// 두 경로의 스키마가 갈라지면 소비자가 채널마다 다른 파서를 들어야 한다.
-///
-/// `request_id` 는 correlation 값이다 — 웹훅 요청자가 준 식별자로, 그 요청이 만든
-/// 이벤트에 실린다. 턴 밖 이벤트는 `None` 이라 필드 자체가 빠진다(소비자는 존재 여부로
-/// "요청에서 비롯된 것인가" 를 가른다).
+/// poll과 SSE가 공유하는 이벤트 JSON.
+/// 열린 턴의 이벤트에는 호출자가 준 request_id를 붙이고, 턴 밖에서는 필드를 생략한다.
 pub(crate) fn event_json(
     seq: u64,
     surface_id: u32,
@@ -236,11 +203,9 @@ pub struct StreamRegistry {
     /// `turn_end` 이벤트(어느 경로에서 왔든)가 뺀다. 재시작으로 사라지는 **휘발 상태**라
     /// 스냅샷에 남기지 않는다 — 재시작 시점의 in-flight 턴은 복구 대상이 아니다.
     turns: HashMap<u32, TurnState>,
-    /// SSE 구독자 fan-out. 구독자가 없으면 비용이 0 이다.
+    /// SSE 구독자에게 이벤트를 전달하는 허브.
     hub: Arc<SseHub>,
-    /// SSE 서버 기동 설정. 스냅샷에 함께 남겨 강제 재시작 후 자동으로 다시 연다 —
-    /// 되살아나지 않으면 소비자의 재구독이 영원히 실패한다(끊김은 정상 경로인데
-    /// 복구 경로가 없어지는 셈).
+    /// 재시작 후 같은 주소로 열기 위해 저장하는 SSE 설정.
     serve: Option<ServeConfig>,
 }
 
@@ -257,11 +222,7 @@ impl StreamRegistry {
         self.watches.iter().any(|w| w.surface_id == surface_id)
     }
 
-    /// 대상을 등록한다. 이미 있으면 교체하고 `true` 를 돌려준다.
-    ///
-    /// 교체 시 **이전 등록의 턴을 닫는다**(`stream:rewatched`). unwatch·세션 교체·surface
-    /// 소멸이 전부 턴을 닫는데 이 경로만 조용히 갈아치우면, 이전 등록을 보고 있던 소비자가
-    /// 끝나지 않는 턴을 영원히 기다린다.
+    /// 대상을 등록한다. 기존 등록을 교체하면 그 턴을 stream:rewatched로 닫고 true를 반환한다.
     pub fn insert(&mut self, mut watch: Watch) -> bool {
         self.next_generation += 1;
         watch.generation = self.next_generation;
@@ -371,8 +332,7 @@ impl StreamRegistry {
         self.watches.iter_mut().find(|w| w.surface_id == surface_id)
     }
 
-    /// 세션이 바뀌었을 때 tail 대상을 교체한다. 옛 세션의 턴은 여기서 닫는다 —
-    /// 그러지 않으면 소비자가 이전 세션의 응답을 영원히 기다린다.
+    /// 세션이 바뀌면 이전 턴을 닫고 읽을 대상을 교체한다.
     pub fn switch_session(&mut self, surface_id: u32, session_id: String, transcript: PathBuf) {
         self.next_generation += 1;
         let generation = self.next_generation;
@@ -394,16 +354,11 @@ impl StreamRegistry {
         self.dirty = true;
     }
 
-    /// 수집 이벤트를 버퍼에 넣는다. 상한을 넘으면 가장 오래된 것부터 버린다.
-    ///
-    /// 이 surface 에 열린 correlation 턴이 있으면 그 `request_id` 로 이벤트를 태깅하고
-    /// 턴의 활동 시각을 갱신한다. 이벤트가 `turn_end` 면(정상 종료·취소·오류·등록 교체·
-    /// 해제·세션 소멸·타임아웃 어느 경로든) **그 턴을 닫는다** — 모든 종료 경로가 이
-    /// 한 곳을 지나므로 correlation 이 닫히는 규칙이 흩어지지 않는다.
+    /// 이벤트를 버퍼에 넣고 상한을 넘으면 오래된 것부터 뺀다.
+    /// 열린 턴이 있으면 request_id와 활동 시각을 반영하며 turn_end는 그 턴을 닫는다.
     pub fn push_event(&mut self, surface_id: u32, session_id: &str, event: StreamEvent) {
         self.next_seq += 1;
-        // seq 가 전진했으므로 스냅샷이 낡았다 — 재시작 후에도 커서가 단조 증가해야
-        // 소비자의 `after_seq` 가 의미를 유지한다(아래 `restore` 참고).
+        // 다음 저장에서 이벤트 순서 번호도 갱신한다.
         self.dirty = true;
         let request_id = self.turns.get(&surface_id).map(|t| t.request_id.clone());
         if let Some(turn) = self.turns.get_mut(&surface_id) {
@@ -433,11 +388,7 @@ impl StreamRegistry {
         }
     }
 
-    /// correlation 턴을 연다. 이 surface 에서 나오는 이벤트가 `request_id` 로 태깅된다.
-    ///
-    /// 겹침은 거부한다(`AlreadyOpen`) — claude 는 한 번에 한 턴만 처리하므로, 앞 턴이
-    /// 닫히기 전에 새 턴을 열면 앞 턴의 이벤트가 새 `request_id` 로 잘못 태깅될 수 있다.
-    /// watch 중이 아니면 거부한다(`NotWatched`) — 태깅할 이벤트가 애초에 나오지 않는다.
+    /// 추적 중인 surface에 턴을 연다. 이미 열려 있으면 거절해 request_id가 섞이지 않게 한다.
     pub fn start_turn(
         &mut self,
         surface_id: u32,
@@ -463,10 +414,7 @@ impl StreamRegistry {
         Ok(())
     }
 
-    /// 활동 없이 자기 타임아웃을 넘긴 턴을 닫는다 — `turn_start` 뒤 `claude.tell` 이 실패해
-    /// 그 턴을 닫을 transcript 이벤트가 영영 오지 않는 경우의 안전망. tail 루프가 매 tick
-    /// 부른다. 닫힘은 `turn_end{reason=stream:turn_timeout}` 로 방출되며, `push_event` 가
-    /// 그 이벤트를 열린 `request_id` 로 태깅하고 턴을 뺀다.
+    /// 활동이 오래 없는 턴을 stream:turn_timeout으로 닫고 기존 request_id를 붙여 알린다.
     pub fn sweep_stale_turns(&mut self, now: Instant) {
         let stale: Vec<u32> = self
             .turns
@@ -515,8 +463,7 @@ impl StreamRegistry {
         }
     }
 
-    /// 구독자에게 흘린다. **구독자가 없으면 직렬화조차 하지 않는다** — 이 함수가 tail
-    /// 스레드의 hot path 라, 아무도 안 보는 동안 JSON 을 만들 이유가 없다.
+    /// 구독자가 있을 때만 이벤트를 JSON으로 만들고 전달한다.
     fn publish_to_subscribers(
         &self,
         seq: u64,
@@ -534,11 +481,8 @@ impl StreamRegistry {
         )));
     }
 
-    /// `Last-Event-ID` 재개용. 수집 버퍼(상한 [`EVENT_BUFFER_CAP`])에 남아 있는 것 중
-    /// `after_seq` 뒤의 것만 프레임으로 만든다. 별도 재개 버퍼를 두지 않는 이유는 두
-    /// 버퍼가 서로 다른 상한으로 잘리면 "poll 로는 보이는데 SSE 로는 안 보이는" 불일치가
-    /// 생기기 때문이다. 커서가 버퍼보다 뒤처져 재전송이 불가능한 구간은 [`Replay::gap`]
-    /// 으로 함께 돌려준다.
+    /// SSE 재개에 poll과 같은 이벤트 버퍼를 사용한다.
+    /// 커서보다 뒤의 이벤트와 이미 사라져 돌려줄 수 없는 gap을 반환한다.
     pub fn replay_after(&self, after_seq: u64, opts: SubOptions) -> Replay {
         // 버퍼에 남아 있는 가장 오래된 seq. 비어 있으면 "아무 것도 남지 않았다" 는 뜻이라
         // 다음에 발급될 번호를 첫 가용 번호로 본다.
@@ -609,8 +553,7 @@ impl StreamRegistry {
         self.events.front().map(|e| e.seq).unwrap_or(self.next_seq)
     }
 
-    /// 변경이 있을 때만 스냅샷을 저장한다. 실패는 로그만 남기고 삼킨다 — 영속화
-    /// 실패가 살아 있는 스트림을 끊을 이유는 없다(다음 재시작에서 복구가 덜 될 뿐).
+    /// 변경된 스냅샷을 저장한다. 실패하면 로그를 남기고 다음 저장 기회를 기다린다.
     pub fn save_if_dirty(&mut self) {
         if !self.dirty {
             return;
@@ -643,14 +586,8 @@ impl StreamRegistry {
         })
     }
 
-    /// 재시작 복구. 저장된 대상들을 **저장된 offset 그대로** 되살린다(위 at-least-once
-    /// 결정). transcript 가 사라졌으면 경로만 들고 대기 상태로 되살아나며, tail 루프가
-    /// 다음 tick 에 세션 id 를 재확인해 경로를 다시 잡는다.
-    ///
-    /// `seq` 커서도 함께 복구한다. 재시작마다 1 부터 다시 세면 `after_seq=100` 을 들고
-    /// 있던 소비자가 재시작 후 처음 100 개 이벤트를 **조용히 못 받는다** — 중복은
-    /// 허용해도 침묵하는 누락은 허용하지 않는다는 이 파이프라인의 기준에 어긋난다.
-    /// 버퍼 내용 자체는 메모리에만 있으므로 재시작으로 사라진다(커서 의미만 보존된다).
+    /// 저장된 대상·offset·순서 번호로 복구한다. 이벤트 버퍼는 복구하지 않는다.
+    /// 마지막 저장 이후의 기록은 다시 읽을 수 있으며, 사라진 파일은 tail 루프에서 다시 찾는다.
     pub fn restore(&mut self) {
         let Some(path) = self.snapshot_path.clone() else {
             return;
@@ -685,13 +622,8 @@ impl StreamRegistry {
     }
 }
 
-/// 스냅샷을 디스크에 쓴다. 로그는 남기지 않는다 — 호출자가 한 곳에서 처리한다.
-///
-/// **temp 파일에 다 쓴 뒤 rename 으로 갈아끼운다.** 목적지에 직접 쓰면 그 도중 프로세스가
-/// 죽었을 때 잘린 JSON 이 남고, 다음 [`StreamRegistry::restore`] 가 그것을 파싱 실패로
-/// 버려 **등록 전체가 조용히 사라진다** — 소비자는 스트림이 붙어 있다고 믿은 채 아무것도
-/// 받지 못한다. 이 crate 가 배격하는 바로 그 실패 모양이라, 같은 디렉토리 안의 rename
-/// (POSIX·Windows 모두 원자적 교체)으로 "옛 스냅샷 아니면 새 스냅샷" 둘 중 하나만 남게 한다.
+/// 같은 디렉터리의 임시 파일에 쓴 뒤 rename해 쓰다 만 JSON이 목적지에 남는 것을 줄인다.
+/// 저장 오류는 호출자가 기록한다.
 fn write_snapshot(path: &Path, payload: &Value) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -702,8 +634,7 @@ fn write_snapshot(path: &Path, payload: &Value) -> std::io::Result<()> {
     match std::fs::rename(&temp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            // rename 이 실패하면 temp 가 남아 다음 저장의 쓰레기가 된다 — 정리하고
-            // 원래 오류를 그대로 올린다(정리 실패는 원 오류를 가리지 않는다).
+            // 임시 파일 정리 실패가 원래 rename 오류를 가리지 않게 한다.
             if let Err(cleanup) = std::fs::remove_file(&temp) {
                 tracing::warn!(
                     "agent-stream: cannot remove stale snapshot temp {temp:?}: {cleanup}"
@@ -714,15 +645,8 @@ fn write_snapshot(path: &Path, payload: &Value) -> std::io::Result<()> {
     }
 }
 
-/// 스냅샷 파일을 **소유자만 읽을 수 있게** 쓴다.
-///
-/// 이 파일에는 SSE 구독 토큰이 평문으로 들어간다(본체 웹훅이 자기 토큰을 다루는 것과 같은
-/// 방식이다 — `src/webhook/persist.rs`). 토큰은 비-loopback 구성에서 대화 전문에 대한
-/// 원격 접근을 여는 유일한 열쇠이므로, 같은 기기의 다른 사용자에게까지 읽히지 않도록
-/// 생성 시점에 0600 으로 만든다. 이미 있던 파일은 `mode()` 가 적용되지 않으므로
-/// (생성 시에만 쓰인다) 열고 나서 한 번 더 조인다.
-///
-/// Windows 는 ACL 모델이 달라 같은 조작이 없다 — 기존 동작(`std::fs::write`)을 그대로 둔다.
+/// 구독 토큰이 들어 있는 스냅샷을 쓴다. Unix에서는 새 파일과 기존 파일 모두 0600으로 맞춘다.
+/// 다른 플랫폼은 std::fs::write를 사용하며 여기서 별도 ACL을 지정하지 않는다.
 #[cfg(unix)]
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
@@ -744,8 +668,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes)
 }
 
-/// 스냅샷의 `serve` 절을 되살린다. 형태가 어긋나면 켜지 않는다 — 반쯤 해석한 설정으로
-/// 예상 밖 주소에 여는 것보다 안 여는 쪽이 안전하다.
+/// 저장된 SSE 설정을 검증한다. 형식이나 조건이 맞지 않으면 복원하지 않는다.
 fn restore_serve(entry: &Value) -> Option<ServeConfig> {
     let config = ServeConfig {
         bind: entry.get("bind")?.as_str()?.to_string(),
@@ -965,7 +888,7 @@ mod tests {
         let watch = restored.watch_mut(5).expect("restored watch");
         assert_eq!(watch.session_id, "sess");
         assert_eq!(watch.transcript, transcript);
-        // at-least-once: 저장된 offset(= 파일 끝)에서 재개한다.
+        // 저장된 offset인 파일 끝에서 재개한다.
         assert_eq!(watch.offset(), 16);
     }
 

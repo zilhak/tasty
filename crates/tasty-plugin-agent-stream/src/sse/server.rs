@@ -1,17 +1,6 @@
-//! tiny_http bind + accept 스레드 + 연결당 스레드.
-//!
-//! 본체 웹훅과 같은 HTTP 레이어를 쓴다(`tiny_http`, blocking, ADR-0032). SDK 가 async 를
-//! 지원하지 않아 plugin 도 blocking 서버 + 전용 스레드가 자연스러운 선택이고, 같은
-//! 크레이트를 쓰면 판단 근거가 본체와 일치한다. 장기 연결
-//! 구독을 제공하지만, 예상 소비자는 FE 서버 한둘이라 연결당 스레드가 부담이 되는
-//! 규모가 아니다 — 그 전제가 깨지면 docs/plugins/agent-stream/index.md#sse-엔드포인트 의 재검토 조건으로 다시 본다.
-//!
-//! 스레드 구성:
-//!
-//! - **accept 스레드 1 개** — `recv_timeout` 으로 돌며 stop 플래그를 본다. 타임아웃을
-//!   쓰는 이유는 종료 신호를 받을 지점을 만들기 위해서다.
-//! - **연결당 스레드 1 개** — 구독 후 자기 큐만 보며 프레임을 쓴다. 레지스트리 락은
-//!   연결 시작 시 replay 를 읽을 때 한 번만 잡는다.
+//! tiny_http 기반 SSE 서버. accept 스레드와 연결별 스레드를 사용한다(ADR-0032).
+//! 연결 수가 적다는 전제이며, 규모가 커지면 docs/plugins/agent-stream/index.md#sse-엔드포인트를 재검토한다.
+//! 연결별 스레드는 시작할 때 재전송 버퍼를 읽고 이후에는 자기 구독 큐를 사용한다.
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -47,16 +36,15 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 /// 소비자가 끊겼을 때 재접속까지 기다릴 시간(ms) 힌트. 끊김이 정상 경로라 명시한다.
 const RETRY_HINT_MS: u64 = 3000;
 
-/// 연결 핸들 리스트 락의 poison 복구 공용 보고 좌표(첫-1 회). 담는 것은 `JoinHandle`
-/// 목록뿐이라 복구가 안전하다 — 틀린 것은 흔적이 없다는 것이었다.
+/// 연결 핸들 목록의 poison을 처음 한 번 보고한다.
 const CONNECTIONS_WHAT: &str = "the SSE connection-handle list";
 static CONNECTIONS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// 스트림 레지스트리(replay 버퍼) 락의 poison 복구 공용 보고 좌표(첫-1 회).
+/// 재전송 레지스트리의 poison을 처음 한 번 보고한다.
 const STREAM_REGISTRY_WHAT: &str = "the SSE stream registry";
 static STREAM_REGISTRY_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// SSE 응답 헤더 + 재접속 힌트. `Content-Length` 가 없고 연결을 닫지 않는다.
+/// Content-Length 없이 이어 보내는 SSE 응답 헤더.
 const STREAM_PREAMBLE: &str = concat!(
     "HTTP/1.1 200 OK\r\n",
     "Content-Type: text/event-stream\r\n",
@@ -147,12 +135,8 @@ fn start_bound(
 }
 
 impl SseServer {
-    /// `agent_stream.serve_info` 응답. 토큰은 담지 않는다.
-    ///
-    /// `running` 은 **stop 플래그에서 도출한다** — accept 루프가 스스로 죽으면
-    /// (`accept_loop` 의 Err 분기) 리스너 소켓은 이미 닫혔는데 `SseServer` 값은 남는다.
-    /// 그때 `true` 를 고정으로 넣으면 "떠 있다고 보고하는데 아무도 붙을 수 없는" 상태가
-    /// 되고, 운영자가 그것을 알아챌 유일한 창이 이 응답이다.
+    /// 서버 상태와 구독 통계를 조회한다. 토큰은 제외한다.
+    /// accept 루프가 오류로 끝난 경우도 반영하도록 running은 stop 플래그로 판단한다.
     pub fn to_json(&self) -> Value {
         let (subs, total_dropped) = self.hub.stats();
         let host = match self.bound {
@@ -174,14 +158,11 @@ impl SseServer {
         info
     }
 
-    /// 종료: 신호 → 구독 전부 끊기 → accept 스레드 join → 연결 스레드 join(한정 대기).
-    ///
-    /// 연결 스레드를 무한정 join 하지 않는 이유는, 소켓 송신 버퍼가 막힌 클라이언트에서
-    /// `write` 가 오래 걸릴 수 있기 때문이다. 이 함수는 IPC 핸들러(dispatch 스레드)에서
-    /// 불리므로 여기서 멈추면 healthcheck 무응답 → 강제 재시작으로 번진다.
+    /// 구독과 accept 스레드를 닫고 연결 스레드는 제한 시간 동안 기다린다.
+    /// 소켓 쓰기에서 멈춘 연결 때문에 IPC dispatch까지 무한히 기다리지 않게 한다.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        // 송신단을 없애 연결 스레드의 `recv` 를 즉시 깨운다.
+        // 송신단을 닫아 대기 중인 수신단이 종료를 확인할 수 있게 한다.
         self.hub.close_all();
         if let Some(handle) = self.accept.take()
             && handle.join().is_err()
@@ -220,9 +201,7 @@ impl SseServer {
     }
 }
 
-/// 이미 끝난 스레드만 join 한다. 반환값은 아직 안 끝나 떼어놓은 개수 — 소켓 송신이
-/// 막힌 클라이언트에서 `write` 가 오래 걸릴 수 있어, 여기서 무한정 기다리면 이 함수를
-/// 호출한 dispatch 스레드가 막히고 healthcheck 무응답으로 번진다.
+/// 끝난 스레드만 join하고 아직 실행 중인 스레드는 분리한다. 분리한 수를 반환한다.
 fn join_finished(handles: Vec<JoinHandle<()>>) -> usize {
     let mut stuck = 0usize;
     for handle in handles {
@@ -254,8 +233,7 @@ fn accept_loop(server: Server, ctx: Arc<ConnCtx>, connections: Arc<Mutex<Vec<Joi
             // 타임아웃 — stop 플래그를 다시 본다.
             Ok(None) => {}
             Err(e) => {
-                // 리스너가 더 못 돈다 — `serve_info` 가 계속 `running: true` 로 보이지
-                // 않도록 stop 을 세우고 나간다(연결 스레드도 같은 플래그로 빠진다).
+                // 조회 결과와 연결 스레드에도 종료를 알린다.
                 ctx.stop.store(true, Ordering::SeqCst);
                 tracing::warn!("agent-stream: SSE accept failed: {e} — the listener stops");
                 return;
@@ -293,7 +271,7 @@ fn spawn_connection(
     }
 }
 
-/// 이미 끝난 연결 스레드를 걷어낸다 — 오래 뜬 서버에서 핸들이 무한히 쌓이지 않게.
+/// 끝난 연결 스레드의 핸들을 정리한다.
 fn reap_finished(connections: &Arc<Mutex<Vec<JoinHandle<()>>>>) {
     let mut list = tasty_utils::poison::recover_mutex(
         connections.lock(),
@@ -358,8 +336,7 @@ fn stream(
 ) {
     let opts = request::sub_options(query);
     let resume = request::resume_from(headers, query);
-    // **구독을 먼저 등록하고** replay 를 읽는다. 반대 순서면 그 사이 이벤트가 어느 쪽에도
-    // 안 잡혀 조용히 사라진다. 이 순서에서는 겹치기만 하고, 겹친 것은 seq 로 접는다.
+    // 구독을 먼저 등록해 재전송을 읽는 사이의 이벤트를 받는다. 겹치는 부분은 seq로 제외한다.
     let sub = ctx.hub.subscribe(opts);
     let replay = collect_replay(&ctx.registry, resume, opts);
 
@@ -372,8 +349,7 @@ fn stream(
     }
     let mut last_seq = 0u64;
     if let Some((from, to)) = replay.gap {
-        // 재전송할 수 없는 구간을 **먼저** 알린다. `id` 는 소비자가 보낸 커서 그대로다 —
-        // 갭 통지가 커서를 전진시키면 그 뒤 재연결에서 남은 이벤트까지 건너뛴다.
+        // 누락 구간을 먼저 알리되 gap 알림 자체로 소비자의 커서를 전진시키지 않는다.
         let payload = format!(r#"{{"kind":"gap","from":{from},"to":{to}}}"#);
         if !write_str(
             &mut writer,
@@ -433,13 +409,13 @@ fn pump_stream(
                 }
                 idle_since = Instant::now();
             }
-            // 허브가 이 구독을 끊었다(shutdown 또는 연속 drop 임계 초과).
+            // 종료 또는 연속 누락 상한 도달로 송신단이 닫혔다.
             Err(RecvTimeoutError::Disconnected) => return,
         }
     }
 }
 
-/// 소켓에 쓰고 즉시 flush 한다. 실패는 "소비자가 끊었다" 는 정상 종료 신호다.
+/// 소켓에 쓰고 flush한다. 실패하면 로그를 남기고 해당 연결을 끝낸다.
 fn write_str(writer: &mut Box<dyn Write + Send + 'static>, text: &str) -> bool {
     if let Err(e) = writer.write_all(text.as_bytes()) {
         tracing::debug!("agent-stream: SSE subscriber went away while writing: {e}");
@@ -512,20 +488,14 @@ mod tests {
         let (mut server, _port, _registry) = serve_on_ephemeral_port(None);
         assert_eq!(server.to_json()["running"], json!(true));
 
-        // `shutdown` 은 stop 을 세우고 accept 스레드를 join 한다 — 그 반환으로 tiny_http
-        // `Server` 가 drop 되어 리스너 소켓이 닫힌다. `SseServer` 값은 그대로 남으므로,
-        // `running` 을 상수로 두면 "떠 있다고 보고하는데 아무도 붙을 수 없는" 상태가 되고
-        // 운영자가 그것을 알아챌 유일한 창이 이 응답이다. accept 루프가 스스로 죽는
-        // 경로(`accept_loop` 의 Err 분기)도 같은 플래그를 세우므로 같은 판정을 탄다.
+        // 서버 값을 보관하고 있어도 종료 뒤에는 running=false여야 한다.
         server.shutdown();
 
         let info = server.to_json();
         assert_eq!(info["running"], json!(false), "{info}");
     }
 
-    // ── 소켓 왕복 e2e ────────────────────────────────────────────────────
-    // 프레이밍/인증/스트리밍이 실제 HTTP 연결 위에서 맞는지 본다. 단위 테스트가
-    // 통과해도 헤더를 잘못 쓰거나 flush 를 빠뜨리면 소비자에겐 아무것도 안 온다.
+    // 실제 소켓에서 헤더·인증·프레임 전달을 검사한다.
 
     use std::io::Read;
     use std::net::TcpStream;

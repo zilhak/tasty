@@ -1,7 +1,4 @@
-//! 구독 요청 해석 — 경로 · 쿼리 · 인증 · 구독 옵션.
-//!
-//! tiny_http 타입에 의존하지 않는다(문자열/맵만 받는다). 소켓 없이 단위 테스트하기
-//! 위해서이고, HTTP 레이어를 바꾸더라도 이 규칙들이 그대로 남게 하기 위해서다.
+//! HTTP 라이브러리와 별도로 경로·쿼리·인증·구독 옵션을 해석한다.
 
 use std::collections::BTreeMap;
 
@@ -32,8 +29,7 @@ pub fn parse_query(url: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// `application/x-www-form-urlencoded` 디코딩. 잘못된 `%` 시퀀스는 원문 그대로 둔다
-/// (토큰 비교는 어차피 상수시간 전량 비교라, 여기서 조용히 버리면 원인 파악만 어려워진다).
+/// form-urlencoded를 디코드한다. 잘못된 % 시퀀스는 그대로 남긴다.
 fn percent_decode(raw: &str) -> String {
     let bytes = raw.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -69,8 +65,8 @@ fn hex_pair(hi: u8, lo: u8) -> Option<u8> {
     Some((hi * 16 + lo) as u8)
 }
 
-/// 상수시간 바이트 비교 — 일치 시에도 조기 반환하지 않아 토큰을 타이밍으로 유추당하지
-/// 않게 한다(본체 웹훅 `src/webhook/auth.rs` 와 같은 규칙). 길이는 조기 판별한다.
+/// 길이가 다르면 거절하고 같은 길이는 모든 바이트의 XOR 결과를 합쳐 비교한다.
+/// 이 소스만으로 컴파일된 코드의 실행 시간이 일정하다고 보장하지는 않는다.
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -128,10 +124,7 @@ fn is_truthy(raw: &str) -> bool {
     )
 }
 
-/// 재개 커서. `Last-Event-ID` 헤더가 우선이고, 없으면 `?after_seq=`.
-///
-/// **둘 다 없으면 `None` — 재전송 없이 지금부터 흘린다.** 새 구독자에게 버퍼 전체를
-/// 자동으로 밀면 "지금부터 보고 싶다" 는 가장 흔한 의도가 불가능해진다.
+/// Last-Event-ID를 우선 읽고 유효한 값이 없으면 after_seq를 읽는다. 둘 다 없으면 재전송하지 않는다.
 pub fn resume_from(
     headers: &BTreeMap<String, String>,
     query: &BTreeMap<String, String>,

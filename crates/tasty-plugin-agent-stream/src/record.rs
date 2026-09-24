@@ -1,23 +1,8 @@
-//! Transcript JSONL 레코드 → 내부 스트림 이벤트 정규화.
-//!
-//! Claude Code 는 세션 대화를 `<transcript-root>/<project-slug>/<session-id>.jsonl`
-//! 에 append-only 로 기록한다. 한 줄이 레코드 하나이며 `type` 으로 갈린다
-//! (`assistant` / `user` / `system` / `ai-title` / `mode` / …).
-//!
-//! 이 모듈은 그중 **에이전트가 밖으로 낸 것**만 이벤트로 승격한다:
-//!
-//! - `assistant.message.content[]` 의 `text` / `thinking` / `tool_use` 블록 —
-//!   thinking 은 표시 의미와 민감도가 응답 텍스트와 달라 **별도 kind** 로 분리한다.
-//!   소비자가 선택적으로 버릴 수 있어야 하기 때문.
-//! - **턴 종료** — 정상 완료(`stop_reason`)뿐 아니라 API 오류 종료
-//!   (`isApiErrorMessage`)와 사용자 취소(`[Request interrupted by user…]`)도 포함한다.
-//!   정상 완료만 다루면 소비자가 영원히 다음 이벤트를 기다리는 상태가 생긴다.
-//!   세션 자체가 사라진 경우의 종료는 파일에 남지 않으므로 tail 루프가 만든다
-//!   (`REASON_SESSION_ENDED` / `REASON_UNWATCHED`, `crate::registry`).
-//!
-//! 그 밖의 레코드(사용자 프롬프트 본문, 툴 결과, 첨부, 모드 전환 등)는 이 파이프라인의
-//! 대상이 아니므로 이벤트를 만들지 않는다 — 조용히 버리는 게 아니라 "중계 대상 아님"이
-//! 명시된 설계다.
+//! 대화 기록의 JSONL을 text·thinking·tool_use·turn_end 이벤트로 바꾼다.
+//! thinking은 소비자가 표시·보관 여부를 따로 정할 수 있도록 text와 구분한다.
+//! 정상 종료뿐 아니라 API 오류와 사용자 취소도 턴 종료로 처리한다.
+//! 세션 소멸·추적 해제는 기록 파서 밖의 tail/registry에서 알린다.
+//! 사용자 프롬프트·도구 결과·첨부·모드 변경은 중계하지 않는다.
 
 use serde_json::{Value, json};
 
@@ -45,14 +30,7 @@ impl EventKind {
     }
 }
 
-/// `turn_end.reason` 의 두 네임스페이스.
-///
-/// 외부(Claude Code)가 준 `stop_reason` 원문과 우리가 판정해 만든 예약 사유가 같은 필드에
-/// 섞이면, 외부 스펙이 언젠가 `session_ended` 같은 문자열을 쓰기 시작했을 때 소비자가 둘을
-/// 구분할 수 없다. 접두로 출처를 분리해 그 충돌 가능성을 없앤다.
-///
-/// - `stop:` — transcript 의 `stop_reason` 을 그대로 옮긴 값 (`stop:end_turn`).
-/// - `stream:` — 이 파이프라인이 만든 예약 사유 (`stream:cancelled` 등). 아래 `REASON_*`.
+/// turn_end.reason의 접두어. 외부 stop_reason은 stop:, 내부 종료 사유는 stream:으로 구분한다.
 pub const STOP_REASON_PREFIX: &str = "stop:";
 
 /// 턴이 API 오류로 끝났다 (`isApiErrorMessage: true`).
@@ -65,9 +43,7 @@ pub const REASON_SESSION_ENDED: &str = "stream:session_ended";
 pub const REASON_UNWATCHED: &str = "stream:unwatched";
 /// 같은 surface 를 다시 watch 해 이전 등록이 교체됐다 — 이전 등록의 턴을 닫는다.
 pub const REASON_REWATCHED: &str = "stream:rewatched";
-/// correlation 턴이 활동 없이 오래 열려 있어 정리됐다 — transcript 가 아니라 sweep 이
-/// 만든다. `agent_stream.turn_start` 는 등록됐는데 뒤이을 `claude.tell` 이 실패해 그 턴을
-/// 닫을 transcript 이벤트가 영영 오지 않는 경우의 안전망이다(`crate::registry`).
+/// 오래 활동이 없는 턴을 정리했다. turn_start 뒤 실제 요청이 실패한 경우 등에도 적용한다.
 pub const REASON_TURN_TIMEOUT: &str = "stream:turn_timeout";
 
 /// 사용자 취소 시 transcript 에 남는 마커. `[Request interrupted by user]` 와
@@ -150,8 +126,7 @@ pub struct ParsedRecord {
     pub events: Vec<StreamEvent>,
 }
 
-/// JSONL 한 줄을 파싱한다. JSON 이 아니면 `Err` — 호출자가 파일 교체/절단 복구를
-/// 판단하는 신호로 쓴다(`crate::tail`).
+/// JSONL 한 줄을 파싱한다. 올바른 JSON이 아니면 Err로 반환한다.
 pub(crate) fn parse_line(line: &str) -> Result<ParsedRecord, serde_json::Error> {
     let value: Value = serde_json::from_str(line)?;
     let uuid = str_field(&value, "uuid");
