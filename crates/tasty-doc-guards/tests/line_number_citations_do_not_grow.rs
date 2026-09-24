@@ -12,8 +12,8 @@
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
-/// 2026-09-24 ADR 통폐합 후 측정값. 늘거나 BAND 넘게 줄면 실패한다.
-const CAP: usize = 21;
+/// 현재 남은 인용 수. 늘거나 BAND 넘게 줄면 실패한다.
+const CAP: usize = 4;
 
 const BAND: usize = 15;
 
