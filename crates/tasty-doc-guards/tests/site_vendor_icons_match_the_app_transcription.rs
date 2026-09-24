@@ -1,81 +1,21 @@
-//! 아이콘 **기하**와 그 **그릇**의 사본 셋을 대조한다 — 사이트 사본 둘과 앱 전사본 하나.
+//! 사이트의 SVG 파일·Icon.jsx와 앱의 아이콘 사본을 대조한다.
+//! 사이트는 SVG 파일 대신 Icon.jsx의 ICON_PATHS를 그리므로 두 사이트 사본도 서로 비교해야 한다.
+//! 원격 디자인은 조회하지 않는다. 사본끼리 맞아도 최신 원본이라는 뜻은 아니다.
 //!
-//! 토큰에 [`site_vendor_tokens_track_the_app_export`] 가 있는 것과 같은 자리이고, 같은
-//! 이유로 있다: 두 사본이 **둘 다 레포 안**이라 원격 접근 없이 판정된다.
+//! 이름만으로 대응시킬 수 없어 PAIRS를 사용한다. 사이트 list는 앱 log에, listView는 앱 list에 대응한다.
+//! 같은 경로 데이터를 가진 star와 starFill도 있어 채움 여부를 별도로 비교한다.
 //!
-//! ## 사본이 셋이다
-//!
-//! 원격 킷은 글리프 기하를 `icons/<name>.svg` 에 한 파일씩 두고(그쪽이 SoT), 같은 것을
-//! `icons.json` 매니페스트와 `components/core/Icon.jsx` 의 `ICON_PATHS` 레지스트리로
-//! 내보낸다. 이 레포로 내려온 것은 그중 둘이다 — `site/vendor/icons/*.svg` 와
-//! `site/vendor/components/core/Icon.jsx`. 셋째 `icons.json` 은 사본에 없다
-//! (`site/vendor/README.md` 의 "원본에서 제외한 것" 참조).
-//!
-//! 앱은 네 번째 자리다. `crates/tasty-icons/src/lib.rs` 가 같은 기하를 **손으로 전사한**
-//! 것이고(생성기가 없다 — `build.rs` 도 `bin` 도 없다), 그 모듈 주석이 출처로 `icons.json`
-//! 을 적는다.
-//!
-//! ## ★ 사이트가 그리는 것은 `.svg` 파일이 **아니다**
-//!
-//! 변환기(`site/scripts/vendor-to-esm.mjs`)는 `icons/*.svg` 를 읽지 않는다. 사이트는
-//! `Icon.jsx` 를 번들하고 그 안의 문자열 리터럴을 그린다. 그래서 `.svg` 만 고치면
-//! **화면은 안 바뀌는데 고친 것처럼 보인다.** 이 타깃이 두 사본을 서로도 대조하는 이유다.
-//!
-//! ## 짝은 이름에서 **도출할 수 없다** — 명부여야 한다
-//!
-//! 두 가지가 도출을 막는다.
-//!
-//! - **이름이 겹치면서 어긋난다.** 사이트의 `list` 는 앱의 `log` 이고, 사이트의 `listView`
-//!   가 앱의 `list` 다. camelCase↔snake_case 정규화로 짝지으면 `list` 가 서로 다른 글리프에
-//!   붙어 **거짓 불일치**를 내고, 그 처방("사이트를 앱에 맞춰라")을 따르면 사이트가 깨진다.
-//!   이름이 다른 짝은 넷이다 — `filter`/`funnel` · `list`/`log` · `listView`/`list` ·
-//!   `scriptFile`/`script`.
-//! - **기하가 같은데 다른 글리프가 있다.** `star` 와 `starFill` 은 `d` 가 한 글자도 다르지
-//!   않고 **채움 여부만** 다르다. 그래서 기하로도 짝을 정할 수 없고, 채움도 함께 재야 한다.
-//!
-//! ## 왜 그림이 아니라 글자로 재는가
-//!
-//! 두 사본은 각자 그린 것이 아니라 **같은 문자열을 옮겨 적은 것**이다. 실측: 아래
-//! 정규화(자기닫기 형태 통일 + 태그 사이 공백 제거) 뒤 65 짝이 **전부 글자까지 같다.**
-//!
-//! 오차 방향도 안전한 쪽이다. 글자가 같으면 그림도 반드시 같으므로 **놓치는 일은 없고**,
-//! 표기만 달라진 경우(소수점 표기·경로 순서)에 **더 잡는 쪽으로** 틀린다. 그 오탐의 처방은
-//! "받아오거나 명부에 적어라" 라서 무엇도 헐겁게 만들지 않는다.
-//!
-//! 래스터로 재는 선택지는 **이 크레이트에서 불가능하다.** `doc-guards.yml` 이 이 타깃을
-//! 경로 필터 없이 매 push 돌릴 수 있는 이유가 이 크레이트의 **의존 0**(ADR-0048)이고,
-//! 래스터 판정기는 usvg·resvg·tiny-skia 를 끌어와 그 성질을 깬다. 값이 아니라 **채널의
-//! 존재 조건**이 판정 방식을 정한 자리다.
-//!
-//! ## 그릇도 본다 — 기하만 보면 65 짝이 다 같아도 화면이 다르다
-//!
-//! 여는 `<svg …>` 태그가 정하는 `viewBox` · `stroke-width` · `stroke-linecap` ·
-//! `stroke-linejoin` 은 글리프 **전부**에 한 번에 걸린다. 그 한 글자가 어긋나면 65 짝의
-//! inner 마크업이 한 글자도 안 다르면서 그려지는 그림은 전부 달라진다 — 기하 대조는
-//! **그것을 못 본다.** 실측으로 확인했다: `Icon.jsx` 의 `viewBox` 를 `0 0 25 24` 로
-//! 바꿔도 기하 대조 다섯은 전부 초록이었다.
-//!
-//! 색 축은 갈리는 것이 정상이라 사유와 함께 [`DIVERGENT_ENVELOPE`] 에 적는다(사이트는
-//! `currentColor` 상속, 앱은 `white` 고정 + egui tint). `xmlns` 는 문서 사본 둘만 갖는다
-//! ([`DOCUMENT_ONLY_ENVELOPE`]). 두 명부 다 **여유 0** 이다 — 갈림이 사라지면 그 항목을
-//! 지워야 하고, 분류 안 된 속성이 한 사본에만 생겨도 실패한다.
-//!
-//! ## 이 타깃이 안 보는 것
-//!
-//! 기하와 그릇만 본다. 글리프가 **어디에 쓰이는지**(역할·그룹)는 안 본다. 그리고 두 사본이 나란히
-//! 낡는 것도 못 잡는다 — 원격이 앞서간 것은 원격을 받아와야 드러나고, 그것은 판정기가
-//! 아니라 `site/vendor/README.md` 의 "vendor 갱신 절차" 가 맡는다. 이 타깃의 초록은
-//! **"사이트 사본과 앱 전사본이 서로 맞다"** 일 뿐 "최신" 이 아니다.
+//! 문자열을 정규화해 내부 마크업과 여는 SVG 태그의 속성을 대조한다. 실제 화면을 렌더하지 않으므로
+//! 픽셀 일치나 사용 위치의 적절성을 보장하지 않는다. 표기만 달라진 경우에도 불일치가 날 수 있다.
+//! viewBox·선 굵기·끝·연결 속성은 같아야 하고, 색은 사이트의 currentColor와 앱의 white+tint 차이를 허용한다.
+//! xmlns는 SVG 문서 두 사본에만 있다. 새 속성과 더 이상 필요 없는 예외도 검사한다.
+//! 사본을 갱신할 때는 site/vendor/README.md의 절차를 따른다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use tasty_doc_guards::floored_walk::{CountedOn, Descend, Floor, Walked, walk_with_floor};
 
-/// (사이트 이름, 앱 이름). 65 짝 — 사이트 사본이 가진 글리프 전부.
-///
-/// 넷은 이름이 다르다(`filter`/`funnel` · `list`/`log` · `listView`/`list` ·
-/// `scriptFile`/`script`). 나머지는 camelCase↔snake_case 지만, 그 규칙으로 **도출하지
-/// 않는다** — 위 모듈 주석의 `list` 충돌 때문이다.
+/// 사이트 이름과 앱 이름. 이름이 겹치지만 다른 아이콘인 경우가 있어 자동 변환하지 않는다.
 const PAIRS: &[(&str, &str)] = &[
     ("plus", "plus"),
     ("close", "close"),
@@ -144,9 +84,7 @@ const PAIRS: &[(&str, &str)] = &[
     ("shiftKey", "shift_key"),
 ];
 
-/// 앱에만 있고 사이트 사본에 없는 글리프. 여유 0 의 양방향 래칫이다 — 늘면 앱이 킷에 없는
-/// 글리프를 새로 그린 것이고(킷에 올려야 한다), 줄면 받아온 것이니 그만큼 [`PAIRS`] 로
-/// 옮긴다.
+/// 앱에만 있는 아이콘. 사이트 사본에도 추가되면 PAIRS로 옮긴다.
 const APP_ONLY: &[&str] = &["arrow_down", "arrow_right", "fit", "minus", "redo", "undo"];
 
 /// 채운 글리프 — 사이트 `FILL_GLYPHS` 와 앱 `fill_icon!` 이 같은 집합을 가리켜야 한다.
@@ -157,28 +95,18 @@ const VENDOR_ICON_DIR: &str = "site/vendor/icons";
 const VENDOR_REGISTRY: &str = "site/vendor/components/core/Icon.jsx";
 const APP_ICONS: &str = "crates/tasty-icons/src/lib.rs";
 
-/// 판정기가 실제로 뭔가를 셌는지 보는 바닥. 파서가 조용히 0 을 내놓으면 모든 집합이 비어
-/// 등식이 전부 성립한다 — 그때 초록은 "맞다" 가 아니라 "안 봤다" 다.
-///
-/// 세 사본이 같은 좌변(글리프 수)을 재므로 **값은 하나만 둔다** — 순회 하한이 그 하나이고,
-/// 파서 둘은 그 `min` 을 빌려 쓴다.
+/// 빈 파싱 결과끼리 같다고 통과하지 않도록 세 사본에 같은 개수 하한을 적용한다.
 const PARSE_FLOOR: usize = VENDOR_ICON_FLOOR.min;
 
-/// `site/vendor/icons/` 의 `.svg` 순회 하한.
-///
-/// 이 모수는 **킷의 글리프 수**다. 디자인이 글리프를 더하거나 빼야만 움직이고, 그 두 방향은
-/// 이 파일의 [`PAIRS`]·[`APP_ONLY`] 가 이미 **정확히** 고정한다. 그래서 이 하한이 잡는 것은
-/// 수의 변화가 아니라 **순회가 죽는 것**뿐이고(디렉토리 이름이 바뀌거나 확장자 필터가
-/// 어긋나는 경우), 여유는 그 목적에 맞춰 넓게 둔다. 좁혀 봐야 명부가 먼저 울므로 두 번
-/// 우는 자리만 생긴다.
+/// 정확한 아이콘 집합은 별도로 비교하므로 이 하한에는 수집 실패를 찾을 여유를 둔다.
 const VENDOR_ICON_FLOOR: Floor = Floor {
     min: 60,
     measured: 65,
     measured_on: "2026-09-20",
-    counted_on: CountedOn::Tree("2527d1920 — `site/vendor/icons/*.svg` 의 추적 계수"),
-    why_this_gap: "글리프 수는 디자인 결정으로만 움직이고 한 회차에 한둘이다. 정확한 값은 \
-                   `PAIRS`(65 짝)와 `APP_ONLY` 가 양방향으로 고정하므로, 이 하한은 그 \
-                   등식이 아니라 순회 자체가 살아 있는지만 본다.",
+    counted_on: CountedOn::Tree(
+        "9d1b15669 — site/vendor/icons의 추적 SVG 65개를 2026-09-24에 재확인했다. 기존 측정값과 같다.",
+    ),
+    why_this_gap: "정확한 아이콘 집합은 PAIRS와 APP_ONLY로 비교한다. 이 하한은 그 비교가 빈 수집 결과끼리 통과하지 않도록 하며 정상적인 개수 변화에는 여유를 둔다.",
 };
 
 fn repo_root() -> PathBuf {
@@ -191,8 +119,7 @@ fn read(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("{} 를 못 읽었다: {e}", path.display()))
 }
 
-/// 렌더에 영향 없는 표기 차이를 지운다 — 자기닫기 형태(`></path>` ↔ `/>`)와 태그 사이
-/// 공백. `d` 속성 **안**의 공백은 좌표를 가르므로 건드리지 않는다(한 칸으로 줄이기만 한다).
+/// 비교용으로 자기닫기 태그를 통일하고 공백을 정리한다. 속성 안의 공백은 한 칸으로 합친다.
 fn normalize(body: &str) -> String {
     let mut s = body.to_string();
     for tag in [
@@ -200,7 +127,6 @@ fn normalize(body: &str) -> String {
     ] {
         s = s.replace(&format!("></{tag}>"), "/>");
     }
-    // 공백 런을 한 칸으로
     let mut out = String::with_capacity(s.len());
     let mut prev_ws = false;
     for ch in s.chars() {
@@ -214,18 +140,11 @@ fn normalize(body: &str) -> String {
             prev_ws = false;
         }
     }
-    // 태그 경계의 공백 제거
     let out = out.replace("> <", "><");
     out.trim().to_string()
 }
 
-/// `site/vendor/icons/<name>.svg` → 이름 → 파일 **전문**.
-///
-/// 기하(inner 마크업)를 보는 [`vendor_files`] 와 envelope(여는 태그)를 보는
-/// [`vendor_svg_envelopes`] 가 같은 순회를 두 번 돌지 않게 여기서 한 번만 읽는다.
-///
-/// 순회는 공용 [`walk_with_floor`] 를 쓴다 — 직접 `read_dir` 를 부르면 하한을 빠뜨릴 수
-/// 있고, 하한 없는 순회는 아무것도 못 모았을 때 조용히 빈 집합을 내놓는다.
+/// SVG를 한 번 수집해 내부 마크업과 여는 태그 속성 검사에서 함께 쓴다.
 fn vendor_svg_sources() -> BTreeMap<String, String> {
     let root = repo_root();
     let walked = walk_with_floor(
@@ -267,10 +186,7 @@ fn vendor_files() -> BTreeMap<String, String> {
     map
 }
 
-/// `Icon.jsx` 의 `ICON_PATHS` 레지스트리 → 이름 → inner 마크업.
-///
-/// 의존 0 이라 파서를 쓸 수 없다(ADR-0048). 블록을 잘라 줄 단위로 읽는다 — 항목이
-/// `  name: '…',` 한 줄 형태인 데 기대고, 그 형태가 깨지면 [`PARSE_FLOOR`] 가 잡는다.
+/// ICON_PATHS의 항목이 한 줄짜리 작은따옴표 문자열이라고 가정해 읽는다.
 fn vendor_registry(src: &str) -> BTreeMap<String, String> {
     let start = src
         .find("export const ICON_PATHS = {")
@@ -331,8 +247,7 @@ fn app_icons(src: &str) -> BTreeMap<String, (String, bool)> {
         while let Some(hit) = src[from..].find(macro_name) {
             let at = from + hit + macro_name.len();
             from = at;
-            // 선언(매크로 정의)은 `macro_rules!` 뒤에 오므로 인자 형태가 다르다 — uri 자리에
-            // 문자열 리터럴이 없으면 건너뛴다.
+            // 매크로 호출의 URI 문자열이 없는 형식은 건너뛴다.
             let Some(uri_open) = src[at..].find('"') else {
                 continue;
             };
@@ -356,14 +271,7 @@ fn app_icons(src: &str) -> BTreeMap<String, (String, bool)> {
     map
 }
 
-/// 세 사본이 **같아야 하는** 여는 태그 속성 — (SVG 이름, JSX 이름).
-///
-/// 이름이 갈리는 이유는 JSX 가 DOM 프로퍼티 표기를 쓰기 때문이다(`stroke-width` ↔
-/// `strokeWidth`). 그 짝을 **도출하지 않고 명부로 적는다** — [`PAIRS`] 와 같은 이유다.
-///
-/// 이 네 축이 글리프의 **그릇**을 정한다. `viewBox` 가 어긋나면 모든 글리프가 잘리거나
-/// 어긋나 그려지고, `stroke-width` 가 어긋나면 전부 굵기가 달라진다. 즉 여기 한 글자가
-/// 65 짝의 기하 전부를 무효로 만드는데, 기하 대조는 inner 마크업만 보므로 **그것을 못 본다.**
+/// 세 사본에서 같아야 하는 여는 태그 속성. SVG와 JSX의 속성 이름을 대응시킨다.
 const SHARED_ENVELOPE: &[(&str, &str)] = &[
     ("viewBox", "viewBox"),
     ("stroke-width", "strokeWidth"),
@@ -371,13 +279,7 @@ const SHARED_ENVELOPE: &[(&str, &str)] = &[
     ("stroke-linejoin", "strokeLinejoin"),
 ];
 
-/// 세 사본이 **달라도 되는** 축과 그 사유. **여유 0 의 양방향 명부다** — 여기 없는 축이
-/// 갈리면 실패하고, 여기 있는 축이 세 사본에서 같아지면 (통일된 것이므로) 지워야 한다.
-/// 두 **SVG 문서** 사본(`.svg` 파일 · 앱 매크로 접두)만 갖는 축과 그 사유.
-///
-/// JSX 는 문서가 아니라 인라인 엘리먼트라 이 축이 없는 것이 정상이다. 그래서 세 사본
-/// 등식에는 안 넣고, 두 문서 사본끼리만 같은지 본다. **여기도 여유 0 이다** — JSX 에
-/// 생기면 분류가 틀린 것이고, 두 문서 사본에서 갈리면 실패한다.
+/// SVG 파일과 앱의 SVG 문서에만 필요한 속성. JSX 인라인 태그에는 없어야 한다.
 const DOCUMENT_ONLY_ENVELOPE: &[(&str, &str)] = &[(
     "xmlns",
     "독립 문서에만 필요한 네임스페이스 선언이다. `.svg` 파일은 파일로 열리고 앱 접두는 \
@@ -388,20 +290,15 @@ const DOCUMENT_ONLY_ENVELOPE: &[(&str, &str)] = &[(
 const DIVERGENT_ENVELOPE: &[(&str, &str)] = &[
     (
         "stroke",
-        "선 색이다. 사이트 둘은 CSS 의 `currentColor` 를 상속받고, 앱은 `white` 로 고정해 \
-         egui 가 tint 로 색을 입힌다. 색은 이 타깃의 축이 아니다",
+        "사이트는 currentColor를 상속하고 앱은 white로 그린 뒤 egui tint로 색을 입힌다. 색 값 자체는 비교하지 않는다.",
     ),
     (
         "fill",
-        "채운 글리프의 색이다 — 같은 이유로 갈린다. 채움 **여부**는 색과 별개이고 \
-         `FILLED` 명부와 `FILL_GLYPHS` 가 이미 그 축을 잰다",
+        "사이트와 앱의 색 적용 방식이 다르다. 채움 여부는 FILLED와 FILL_GLYPHS로 별도 비교한다.",
     ),
 ];
 
-/// 여는 `<svg …>` 태그에서 속성을 모은다.
-///
-/// 값이 따옴표면 그 문자열을, JSX 의 `name={…}` 이면 [`JSX_EXPR`] 를 넣는다. 의존 0 이라
-/// 파서를 못 쓰므로(ADR-0048) 손으로 훑는다 — 이 좌변은 속성 몇 개짜리 여는 태그 하나다.
+/// 여는 태그의 큰따옴표 속성 값을 읽는다. JSX 식은 값 대신 JSX_EXPR로 표시한다.
 fn open_tag_attrs(tag: &str) -> BTreeMap<String, String> {
     let b = tag.as_bytes();
     let mut out = BTreeMap::new();
@@ -457,10 +354,10 @@ fn open_tag_attrs(tag: &str) -> BTreeMap<String, String> {
     out
 }
 
-/// JSX 에서 값이 식인 속성의 표지. 값 자체는 이 타깃의 축이 아니다.
+/// JSX 식이 있음을 나타내는 표지. 식의 내용은 비교하지 않는다.
 const JSX_EXPR: &str = "{식}";
 
-/// `<svg` 로 시작하는 여는 태그를 통째로 잘라낸다. `>` 까지이고, 따옴표 안의 `>` 는 센다.
+/// 큰따옴표 밖의 >까지 여는 SVG 태그를 읽는다.
 fn svg_open_tag(src: &str, what: &str) -> String {
     let at = src
         .find("<svg")
@@ -480,7 +377,6 @@ fn svg_open_tag(src: &str, what: &str) -> String {
     panic!("{what}: 여는 `<svg …>` 태그가 안 닫힌다");
 }
 
-/// 사이트 사본 하나 — `.svg` 파일 65 개의 여는 태그.
 fn vendor_svg_envelopes() -> BTreeMap<String, BTreeMap<String, String>> {
     vendor_svg_sources()
         .into_iter()
@@ -491,10 +387,7 @@ fn vendor_svg_envelopes() -> BTreeMap<String, BTreeMap<String, String>> {
         .collect()
 }
 
-/// 사이트 사본 둘째 — `Icon.jsx` 의 컴포넌트가 실제로 그리는 `<svg …>`.
-///
-/// 사이트가 번들하는 것은 이쪽이다. `.svg` 파일만 고치면 화면이 안 바뀐다는 이 타깃의
-/// 전제가 envelope 에도 그대로 적용된다.
+/// 사이트가 실제로 그리는 Icon.jsx의 여는 태그.
 fn registry_envelope(src: &str) -> BTreeMap<String, String> {
     let at = src
         .find("export function Icon(")
@@ -518,7 +411,6 @@ fn app_envelopes(src: &str) -> BTreeMap<bool, BTreeMap<String, String>> {
     out
 }
 
-/// 파서가 살아 있는지 — 이것이 먼저 통과해야 아래 envelope 판정의 초록이 뜻을 갖는다.
 #[test]
 fn the_envelope_readers_see_all_three_copies() {
     let files = vendor_svg_envelopes();
@@ -531,8 +423,7 @@ fn the_envelope_readers_see_all_three_copies() {
     let app = app_envelopes(&read(APP_ICONS));
     assert_eq!(app.len(), 2, "앱 매크로 접두를 둘 다 못 읽었다: {app:?}");
 
-    // 비영 대조 — 세 사본 각각에서 **같은 축 하나**가 실제로 잡히는지 본다. 위 계수만으로는
-    // 파서가 엉뚱한 것을 세고 있어도 통과한다.
+    // 개수뿐 아니라 각 사본에서 공통 속성을 실제로 읽었는지도 확인한다.
     let (svg_axis, jsx_axis) = SHARED_ENVELOPE[0];
     for (what, attrs) in [
         (
@@ -548,8 +439,7 @@ fn the_envelope_readers_see_all_three_copies() {
         };
         assert!(
             attrs.contains_key(axis),
-            "{what} 의 여는 태그에서 `{axis}` 를 못 읽었다 — 파서가 죽었다면 아래 등식은 \
-             안 봐서 나온 초록이다: {attrs:?}"
+            "{what}의 여는 태그에서 {axis}를 읽지 못했다: {attrs:?}"
         );
     }
     for (filled, attrs) in &app {
@@ -560,9 +450,7 @@ fn the_envelope_readers_see_all_three_copies() {
     }
 }
 
-/// 명부가 실재하는 축을 가리키는가 — 그리고 **죽은 항목이 없는가.**
-///
-/// `DIVERGENT_ENVELOPE` 에 실제로는 안 갈리는 축이 남으면 그 자리는 영구히 안 보이게 된다.
+/// 값이 같아진 속성을 차이 허용 목록에 남기면 이후 차이를 놓칠 수 있다.
 #[test]
 fn the_divergence_roster_has_no_dead_weight() {
     let files = vendor_svg_envelopes();
@@ -577,9 +465,7 @@ fn the_divergence_roster_has_no_dead_weight() {
         }
         assert!(
             values.len() > 1,
-            "`{axis}` 는 순수 SVG 사본들에서 값이 하나뿐이다({values:?}) — 갈리지 않으므로 \
-             이 명부가 아니라 `SHARED_ENVELOPE` 에 있어야 한다. 명부에 남겨 두면 그 축은 \
-             영구히 안 보인다"
+            "{axis}는 SVG 사본 사이에 값 차이가 없다({values:?}). 차이 허용 목록에서 SHARED_ENVELOPE로 옮긴다."
         );
     }
     for (svg_axis, _) in SHARED_ENVELOPE {
@@ -589,8 +475,6 @@ fn the_divergence_roster_has_no_dead_weight() {
         );
     }
 
-    // 문서 전용 축 — 두 문서 사본에서 같고, JSX 에는 없어야 한다. 둘 중 하나라도 어긋나면
-    // 분류가 틀린 것이다.
     let registry = registry_envelope(&read(VENDOR_REGISTRY));
     for (axis, why) in DOCUMENT_ONLY_ENVELOPE {
         assert!(!why.trim().is_empty(), "`{axis}` 에 사유가 없다");
@@ -620,9 +504,7 @@ fn the_divergence_roster_has_no_dead_weight() {
     }
 }
 
-/// 순수 SVG 사본(`.svg` 파일 · 앱 매크로 접두)의 속성이 **전부 분류돼 있는가.**
-///
-/// 새 속성이 한 사본에만 생기면 여기서 걸린다 — 두 명부 중 어디로 갈지는 사람이 정한다.
+/// SVG 문서에 추가된 속성은 같은 값·차이 허용·문서 전용 중 하나로 분류해야 한다.
 #[test]
 fn every_envelope_attribute_is_classified() {
     let classified: BTreeSet<&str> = SHARED_ENVELOPE
@@ -669,7 +551,7 @@ fn every_envelope_attribute_is_classified() {
     );
 }
 
-/// 세 사본의 그릇이 같은가. **이 타깃의 기하 대조가 안 보는 축이다.**
+/// 내부 마크업과 별개로 여는 SVG 태그의 속성을 비교한다.
 #[test]
 fn the_three_copies_share_one_render_envelope() {
     let files = vendor_svg_envelopes();
@@ -678,7 +560,6 @@ fn the_three_copies_share_one_render_envelope() {
 
     let mut problems: Vec<String> = Vec::new();
     for (svg_axis, jsx_axis) in SHARED_ENVELOPE {
-        // 좌변 하나당 (자리 이름, 값) 전수를 모아 값으로 묶는다.
         let mut by_value: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (name, attrs) in &files {
             if let Some(v) = attrs.get(*svg_axis) {
@@ -727,10 +608,7 @@ fn the_three_copies_share_one_render_envelope() {
 
     assert!(
         problems.is_empty(),
-        "세 사본의 **그릇**이 갈린다. 여기 한 글자가 글리프 65 짝 전부를 다르게 그리는데, \
-         inner 마크업 대조는 그것을 못 본다. 어느 쪽이 맞는지는 이 타깃이 모른다 — 원격 킷이 \
-         정본이므로 `site/vendor/README.md` 의 갱신 절차로 사본을 맞추고, 앱이 뒤처졌으면 \
-         앱 전사본을 고친다:\n  {}",
+        "사이트와 앱 사본의 SVG 속성이 다르다. 내부 마크업만 같아도 이 속성 때문에 화면은 달라질 수 있다. 원격 디자인과 비교해 site/vendor/README.md의 절차로 사이트·앱 사본을 갱신한다:\n  {}",
         problems.join("\n  ")
     );
 }
@@ -747,8 +625,7 @@ fn the_judge_actually_parses_all_three_copies() {
     ] {
         assert!(
             n >= PARSE_FLOOR,
-            "{what} 에서 {n} 개만 읽었다 (바닥 {PARSE_FLOOR}) — 파서가 형태를 놓쳤다. \
-             0 에 가까우면 아래 등식들이 전부 빈 집합끼리 비교돼 조용히 초록이 된다"
+            "{what}에서 {n}개만 읽었다(하한 {PARSE_FLOOR}). 소스 형식과 파싱 범위를 확인한다."
         );
     }
     assert!(
@@ -836,8 +713,7 @@ fn the_two_vendor_copies_carry_the_same_geometry() {
         .collect();
     assert!(
         mismatched.is_empty(),
-        "사이트 사본 둘의 **기하**가 어긋난다. 사이트가 그리는 것은 ICON_PATHS 쪽이므로, \
-         `.svg` 만 고친 상태면 화면은 안 바뀐 채 고친 것처럼 보인다:{}",
+        "사이트 SVG와 ICON_PATHS의 내부 마크업이 다르다. 사이트는 ICON_PATHS를 그리므로 두 사본을 함께 확인한다:{}",
         mismatched.join("")
     );
 }
@@ -857,9 +733,7 @@ fn the_app_transcription_matches_the_vendored_kit() {
         .collect();
     assert!(
         mismatched.is_empty(),
-        "앱 전사본과 사이트 사본의 기하가 어긋난다. 어느 쪽이 맞는지는 이 타깃이 모른다 — \
-         원격 킷이 정본이고, 앱만 받았으면 `site/vendor/README.md` 의 갱신 절차로 사본을 \
-         따라오게 하고, 앱이 안 받았으면 앱을 고친다:{}",
+        "앱과 사이트 사본의 내부 마크업이 다르다. 어느 쪽이 최신인지 원격 디자인과 대조하고 site/vendor/README.md의 절차에 따라 갱신한다:{}",
         mismatched.join("")
     );
 
@@ -876,8 +750,7 @@ fn the_app_transcription_matches_the_vendored_kit() {
         .collect();
     assert_eq!(
         app_filled, want_filled,
-        "앱의 `fill_icon!` 집합이 사이트의 FILL_GLYPHS 와 다르다 — `star`/`starFill` 처럼 \
-         **기하가 같고 채움만 다른** 짝이 있어, 이 축이 어긋나면 같은 그림이 다르게 그려진다"
+        "앱 fill_icon과 사이트 FILL_GLYPHS가 다르다. 같은 경로 데이터라도 채움 여부는 같아야 한다."
     );
 }
 
@@ -893,7 +766,6 @@ fn the_app_has_exactly_the_recorded_extra_glyphs() {
     let recorded: BTreeSet<&str> = APP_ONLY.iter().copied().collect();
     assert_eq!(
         extra, recorded,
-        "앱에만 있는 글리프 집합이 기록과 다르다. 늘었으면 킷에 없는 글리프를 앱이 새로 \
-         그린 것이고(킷에 올려야 한다), 줄었으면 사본이 그만큼 따라온 것이니 PAIRS 로 옮겨라"
+        "앱 전용 아이콘 목록이 달라졌다. 새 아이콘의 디자인 근거를 확인하고, 사이트 사본에도 생긴 아이콘은 PAIRS로 옮긴다."
     );
 }

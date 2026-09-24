@@ -1,40 +1,21 @@
-//! plugin popup close 단일 초크포인트 가드.
-//!
-//! 배경: plugin popup 이 닫힐 때 자식 host `file_picker` 를 함께 취소하는 연쇄 정리
-//! ([ADR-0036](../docs/adr/0036-overlay-scope-and-lifetime.md)의 팝업 결과 전달 규칙)는
-//! `App::dispatch_plugin_popup_events` 가 `AppState.plugin_popup_closes` 큐를 drain 할 때
-//! `cancel_child_file_picker` 를 태우는 방식으로만 돈다. 그래서 **큐를 거치지 않고
-//! `PluginManager::close_popup_instance` 를 직접 부르는 호출처는 그 정리를 통째로
-//! 건너뛴다** — 실제로 plugin 자신의 `popup.close` 경로가 그랬고, 자식 피커가 부모 없이
-//! 떠 있는 고아가 됐다. 단위 테스트가 `cancel_child_file_picker` 를 직접 호출해 사유
-//! (`PopupCloseReason`) 무관함만 확인하고 있었기 때문에 "경로가 그 함수에 안 닿는다" 는
-//! 진짜 결함은 잡히지 않았다.
-//!
-//! 이 가드는 그 결함의 **모양**(초크포인트 우회 호출처가 하나 더 생김)을 소스 수준에서
-//! 막는다. 사유별 동작은 `src/state/popup_ownership_tests.rs` 가, 큐 합류 자체는
-//! `App::enqueue_plugin_popup_close` 가 담당한다.
-//!
-//! 선례: `crates/tasty-doc-guards/tests/no_emoji_in_source.rs` / `crates/tasty-doc-guards/tests/design_token_adherence.rs`.
+//! 플러그인 팝업 닫기가 공용 큐를 우회하지 않도록 직접 호출을 검사한다.
+//! 큐를 처리할 때 자식 파일 피커도 취소하므로 매니저를 바로 부르면 자식 정리가 빠진다(ADR-0036).
+//! 사유별 정리 동작은 src/state/popup_ownership_tests.rs에서 검사한다.
+//! 여기서는 주석 줄을 제외한 호출 문자열과 진입 파일의 공용 함수 이름을 확인한다.
 
 use std::path::{Path, PathBuf};
 
-/// `close_popup_instance` 를 직접 불러도 되는 유일한 파일(repo-relative).
-/// - drain 본체(`dispatch_plugin_popup_events`) — 연쇄 정리를 태운 **뒤** 매니저에 forward.
-/// - `enqueue_plugin_popup_close` 의 no-window fallback — 큐를 가진 state 가 하나도 없어
-///   drain 이 돌지 않는 경우로, 정리할 자식 피커도 함께 사라진 상황이다.
+/// 직접 닫기를 허용할 파일. 큐를 처리한 뒤 매니저에 전달한다.
+/// 창 상태가 하나도 없는 fallback은 큐 처리도 자식 피커 정리도 필요하지 않은 예외다.
 const CHOKEPOINT_FILE: &str = "src/app/dispatch/plugin_popup_events.rs";
 
-/// 큐로 합류시키는 App-level glue. 우회 호출처를 고칠 때 안내할 이름.
 const GLUE_FN: &str = "enqueue_plugin_popup_close";
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     tasty_doc_guards::repo_root()
 }
 
-/// 주석 줄인가 — `//`, `///`, `//!`, 블록 주석 본문(`*`). 문서에서 이름을 언급하는 것은
-/// 호출이 아니므로 스캔에서 뺀다.
+/// 주석으로 시작하는 줄을 제외한다. 문자열 내부까지 구별하는 렉서는 아니다.
 fn is_comment_line(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("//") || t.starts_with('*')
@@ -62,7 +43,7 @@ fn close_popup_instance_is_only_called_from_the_drain() {
     collect_rs_files(&src, &mut files);
     assert!(
         !files.is_empty(),
-        "src/ 아래 .rs 파일을 하나도 못 찾았다 — 가드가 헛돈다"
+        "src 아래에서 Rust 파일을 찾지 못했다. 경로와 순회를 확인한다."
     );
 
     let mut offenders: Vec<String> = Vec::new();
@@ -87,15 +68,12 @@ fn close_popup_instance_is_only_called_from_the_drain() {
 
     assert!(
         offenders.is_empty(),
-        "`close_popup_instance` 직접 호출은 `{CHOKEPOINT_FILE}` 밖에서 금지다 — \
-         큐를 건너뛰면 `cancel_child_file_picker` 연쇄 정리(ADR-0036)가 안 돌아 자식 \
-         `file_picker` 가 고아로 남는다. `App::{GLUE_FN}` 로 바꿔라:\n{}",
+        "close_popup_instance 직접 호출은 {CHOKEPOINT_FILE}에서만 허용한다. 자식 file_picker 정리를 거치도록 App::{GLUE_FN}을 사용한다(ADR-0036):\n{}",
         offenders.join("\n")
     );
 }
 
-/// 초크포인트가 실제로 연쇄 정리를 태우는지 — drain 안에 `cancel_child_file_picker`
-/// 호출이 남아 있어야 위 가드가 지키는 대상이 의미를 갖는다.
+/// main view와 parked state 정리를 위한 호출 문자열 수를 확인한다.
 #[test]
 fn the_drain_still_runs_the_cascade_cleanup() {
     let text = std::fs::read_to_string(repo_root().join(CHOKEPOINT_FILE))
@@ -111,9 +89,7 @@ fn the_drain_still_runs_the_cascade_cleanup() {
     );
 }
 
-/// plugin 자신의 `popup.close`(release 경로)와 debug 강제 close 가 **둘 다** glue 를
-/// 거치는지. 이 둘이 매니저를 직접 치던 것이 원 결함이었고, debug 쪽이 release 와 다른
-/// 코드를 타면 debug IPC 로 하는 재현 검증 자체가 실제 동작을 못 비춘다.
+/// 일반 popup.close와 debug.popup.close 진입 파일에 공용 함수 이름이 있는지 확인한다.
 #[test]
 fn both_close_entry_points_go_through_the_glue() {
     let root = repo_root();
@@ -125,8 +101,7 @@ fn both_close_entry_points_go_through_the_glue() {
             .unwrap_or_else(|e| panic!("{rel} 를 읽을 수 없다: {e}"));
         assert!(
             text.contains(GLUE_FN),
-            "{rel} ({what}) 가 `{GLUE_FN}` 을 거치지 않는다 — \
-             매니저를 직접 치면 연쇄 정리를 건너뛴다(ADR-0036)"
+            "{rel} ({what})에서 {GLUE_FN} 이름을 찾지 못했다. 자식 피커 정리를 거치는 호출 경로인지 확인한다(ADR-0036)."
         );
     }
 }

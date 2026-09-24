@@ -1,44 +1,15 @@
-//! ANSI escape 제거 정규식의 **사본이 하나뿐인지** 검증한다.
-//!
-//! 배경: 같은 정규식이 `crates/tasty-terminal` 과 `crates/tasty-output` 에 하나씩
-//! 있었다. 두 크레이트는 서로 의존하지 않아 상수를 공유할 자리가 없었고, 실제로
-//! 갈라졌다 — 한쪽은 `[0-9;?]`, 다른 쪽은 `[0-9;]` 였다. 이름도 달라서
-//! (`strip_ansi` vs `strip_ansi_escapes`) grep 으로도 안 걸렸다.
-//!
-//! 지금은 `crates/tasty-ansi` 한 곳에 있다. 이 테스트가 남아 있는 이유는 **합치는
-//! 것과 합쳐진 채로 있는 것이 다르기 때문**이다 — 두 소비자 중 한쪽이 "여기서만
-//! 살짝 다르게" 를 이유로 자기 사본을 다시 만들면, 그건 컴파일도 되고 테스트도
-//! 통과하며 리뷰에서도 안 걸린다. 갈라진 뒤에야 증상이 나온다.
-//!
-//! 그래서 검사 대상은 동등이 아니라 **자리와 개수**다. `crates/` 와 `src/` 어디에든
-//! 두 번째 리터럴이 나타나면 실패한다.
-//!
-//! ## 왜 `tasty` 가 아니라 여기 사는가
-//!
-//! 판정 대상이 `crates/` 와 `src/` **레포 전체**인데, 루트 `tests/` 에 있으면 그 판정을
-//! 받으려면 `-p tasty` 를 돌려야 한다. 그건 본 바이너리를 링크하는 패키지라 **어느
-//! 크레이트를 고친 lane 도 자기 작업 중에는 안 돈다** — 크레이트를 고치고 그 크레이트를
-//! 돌려 초록을 본 lane 이 조립에서 처음 빨강을 만나는 형태가 실제로 났다.
-//!
-//! 여기(의존 0 크레이트)로 옮기면 lane 이 `cargo test -p tasty-doc-guards` 로 초 단위에
-//! 같은 판정을 받는다. `doc-guards.yml` 이 **경로 필터 없이** main push·PR 마다
-//! `cargo test -p tasty-doc-guards --locked --no-fail-fast` 를 돌린다.
-//! 이 배치는 ADR-0048 이 세운 선례를 그대로 따른 것이다.
+//! ANSI escape 제거 정규식이 tasty-ansi에만 있는지 확인한다.
+//! src와 crates에서 대상 리터럴의 위치·개수를 비교해 소비자가 별도 사본을 만들지 못하게 한다.
+//! 정규식의 모든 동등한 표현을 찾는 검사는 아니며 아래 표기 형식을 기준으로 검색한다.
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 사본이 있어야 하는 **유일한** 자리. 여기서 벗어난 사본이 생기면 실패한다.
 const EXPECTED: [&str; 1] = ["crates/tasty-ansi/src/lib.rs"];
 
-/// 이 파일 자신의 자리(레포 루트 기준). 검출 패턴을 raw 리터럴로 들고 있어 자기 자신이
-/// 사본으로 잡히므로 판정에서 뺀다 — 근거는 아래 사용처 주석에 있다.
+/// 검출용 정규식 조각을 가진 이 파일은 제외한다.
 const SELF_PATH: &str = "crates/tasty-doc-guards/tests/strip_ansi_regex_parity.rs";
 
-/// raw 문자열 리터럴 본문을 뽑는다. 여는 `r"` 부터 다음 `"` 까지 — 정규식 안에
-/// `"` 가 없다는 전제이며, 그 전제가 깨지면 아래 `starts_with` 검사에서 걸린다.
-///
-/// `Regex::new(...)` 호출에 한정하지 않는다. 사본이 `const PATTERN: &str = r"..."`
-/// 로 떨어져 나가는 형태도 사본이고, 호출 형태만 보면 그것을 놓친다.
+/// 한 줄의 r 따옴표 문자열 하나를 읽는다. 내용에 따옴표가 없다고 가정하며 const 선언도 대상이다.
 fn extract_literal(line: &str) -> Option<String> {
     let start = line.find("r\"")? + 2;
     let rest = &line[start..];
@@ -46,27 +17,12 @@ fn extract_literal(line: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// 순회 뿌리마다 두는 **자기 하한** — 그 뿌리 아래에서 실제로 훑은 `.rs` 파일 수.
-///
-/// **뿌리가 둘 이상인데 하한이 하나뿐이면 그 가드는 가장 작은 뿌리만큼만 본다.** 여기는
-/// 그보다 나빴다 — 하한이 아예 없었고, 아래의 공허 방지 단정(`before > found.len()`)은
-/// `crates` 하나로 충족되므로 **`src` 순회가 통째로 죽어도 이 시험은 초록이었다.**
-/// `collect` 이 `read_dir` 실패를 조용히 `return` 하므로 그 죽음은 소리도 안 낸다.
-///
-/// 하한을 **찾은 건수**가 아니라 **훑은 파일 수**에 거는 이유: 이 가드가 찾는 리터럴은
-/// 설계상 한 자리뿐이라(`EXPECTED`) 건수로는 `src` 에 하한을 걸 수가 없다 — 정상 상태의
-/// `src` 건수가 0 이다. 물어야 할 것은 "몇 건 찾았나" 가 아니라 **"그 뿌리를 봤나"** 다.
-///
-/// 실측 2026-09-07(두 계기 일치 — `find <뿌리> -name '*.rs'` 와 `git ls-files`):
-/// crates **664** · src **598**. 하한은 550 · 500 으로 각각 여유 114 · 98(약 17%)이다.
-/// **여유 0 을 베끼지 않는다** — 이 수는 크레이트 신설·파일 정리로 정상적으로 흔들리고,
-/// 이 하한이 답해야 하는 물음은 "몇 개인가" 가 아니라 "뿌리가 죽었나" 이기 때문이다.
-/// 뿌리 하나가 죽으면 그 값은 0 이 되므로 여유가 100 이든 0 이든 똑같이 잡힌다.
+/// 한 루트의 수집 실패를 다른 루트가 가리지 않도록 각각 하한을 둔다.
+/// 정규식은 한 위치에만 있어야 하므로 발견 건수가 아니라 훑은 Rust 파일 수를 센다.
+/// 2026-09-07 측정 crates664/src598에서 파일 정리를 허용한 하한550/500이다.
 const MIN_SCANNED: [(&str, usize); 2] = [("crates", 550), ("src", 500)];
 
-/// `.rs` 파일을 모아 ANSI escape 정규식 리터럴이 있는 자리를 전부 돌려준다.
-///
-/// 돌려주는 값은 **훑은 `.rs` 파일 수**다 — 호출자가 뿌리별 하한을 걸 수 있게 한다.
+/// 정규식 리터럴을 모으고 하한 검사에 쓸 Rust 파일 수를 반환한다.
 fn collect(dir: &Path, out: &mut Vec<(PathBuf, String)>) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -96,35 +52,21 @@ fn collect(dir: &Path, out: &mut Vec<(PathBuf, String)>) -> usize {
 
 #[test]
 fn the_ansi_escape_regex_has_exactly_one_home() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root_buf = tasty_doc_guards::repo_root();
     let root = root_buf.as_path();
     let mut found = Vec::new();
-    // 뿌리마다 따로 세고 따로 단정한다. 합으로 묶으면 한쪽이 죽어도 다른 쪽이 메운다.
     for (name, floor) in MIN_SCANNED {
         let scanned = collect(&root.join(name), &mut found);
         println!("[ANSI 정규식 한 집] 뿌리 {name} 아래 .rs {scanned} · 하한 {floor}");
         assert!(
             scanned >= floor,
-            "순회 뿌리 `{name}` 이 {scanned} 개만 훑었다(하한 {floor}). 그 뿌리가 죽었거나 \
-             자리가 바뀌었다 — `collect` 은 `read_dir` 실패를 조용히 넘기므로 이 단정이 \
-             없으면 이 시험은 나머지 뿌리만 보고 초록이 난다. \
-             **하한을 내려서 초록을 만들지 마라**: 내리면 이 가드가 보는 범위가 그만큼 준다."
+            "{name}에서 Rust 파일을 {scanned}개만 읽었다(하한 {floor}). collect는 읽기 실패를 건너뛰므로 경로와 실제 파일 감소를 대조한다. 검사 누락을 하한 변경으로 숨기지 않는다."
         );
     }
     found.sort();
 
-    // **자기 자신은 뺀다.** 이 가드는 루트 `tests/` 에 살 때 판정 대상(`crates/` · `src/`)
-    // 밖이었다. 의존 0 크레이트로 옮기면서 대상 **안으로** 들어왔고, 검출 패턴을 raw
-    // 리터럴로 들고 있으니 자기를 두 번째·세 번째 사본으로 센다. 여기서 빼는 것은 판정을
-    // 좁히는 것이 아니라 **옮기기 전 모수를 그대로 유지하는 것**이다.
-    //
-    // 뺀 건수를 단정한다 — 파일이 옮겨지거나 이름이 바뀌면 이 면제가 조용히 0 건이 되고,
-    // 그러면 자기 사본이 다시 세어져 이 가드가 영원히 빨개진다. 그때는 여기서 죽는 것이
-    // 맞다(면제가 안 걸렸다는 것을 값으로 말한다).
-    // 비교는 문자열이 아니라 `Path` 로 한다 — `Path` 의 동등성은 component 단위라
-    // 구분자를 손으로 정규화할 필요가 없다(그 손 정규화는 별도 가드가 세는 자리다).
+    // 검출 패턴을 포함한 검사 파일 자신을 제외한다. 제외가 실제로 적용됐는지도 확인한다.
+    // 경로 비교는 플랫폼 구분자를 고려하는 Path의 동등성을 사용한다.
     let self_path = Path::new(SELF_PATH);
     let before = found.len();
     found.retain(|(path, _)| path.strip_prefix(root).unwrap_or(path) != self_path);
@@ -134,7 +76,6 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
          옮겼거나 이름이 바뀐 것이니 그 상수를 고쳐라."
     );
 
-    // 모수를 먼저 확정한다. 0 건이면 "전부 같다" 가 공허하게 참이 된다.
     let paths: Vec<String> = found
         .iter()
         .map(|(p, _)| {
@@ -146,9 +87,7 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
         .collect();
     assert_eq!(
         paths, EXPECTED,
-        "ANSI escape 정규식이 `tasty-ansi` 밖에도 있다. 두 번째 사본은 언젠가 갈라지고 \
-         그때까지 조용하다 — 새로 만들지 말고 `tasty_ansi::strip_ansi` 를 불러라. \
-         거처를 옮긴 것이라면 여기 경로를 고쳐라. 발견: {paths:?}"
+        "ANSI escape 정규식 위치가 다르다: {paths:?}. 별도 사본 대신 tasty_ansi::strip_ansi를 사용한다. 의도한 이동이라면 EXPECTED를 갱신한다."
     );
 
     let first = &found[0].1;
@@ -157,9 +96,7 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
         "리터럴 추출이 어긋났다(정규식 본문이 아님): {first:?}"
     );
 
-    // 사본이 하나면 이 루프는 돌지 않는다. 위 `assert_eq!(paths, EXPECTED)` 가 그것을
-    // 보장하므로 여기 남겨 두는 것은 **거처를 둘로 늘리기로 결정한 날**을 위한 것이다 —
-    // 그때 EXPECTED 만 늘리면 동등 검사가 자동으로 살아난다.
+    // 현재는 사본이 하나여서 이 루프가 돌지 않는다. EXPECTED를 늘리면 값의 일치도 확인한다.
     for (path, lit) in &found[1..] {
         assert_eq!(
             lit,
@@ -171,24 +108,14 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
     }
 }
 
-/// [`MIN_SCANNED`] 의 **양성 대조** — 그 하한이 겨냥하는 갈래가 실제로 열려 있나.
-///
-/// 위 시험은 레포를 상대로만 돈다. 그러면 `collect` 이 무엇을 세는지는 아무도 안 본다 —
-/// 세는 것을 넓히면 하한은 **더 쉽게** 충족되므로 그 변이는 레포 대면 단정에서 조용하다.
-/// 하한이 지키려는 것이 "뿌리가 죽으면 0" 이라는 성질인데, 그 성질 자체가 시험 밖이었다.
-///
-/// 합성 트리로 셋을 건다: 하위 디렉토리까지 내려가는가 · `.rs` 만 세는가 ·
-/// **없는 뿌리에서 예외가 아니라 0 을 내는가**(`collect` 은 `read_dir` 실패를 조용히
-/// 넘긴다 — 하한이 존재하는 이유가 정확히 그것이다).
+/// 하위 Rust 파일만 수집하고 없는 경로는0개로 반환하는지 합성 트리에서 확인한다.
 #[test]
 fn a_dead_root_scans_zero_and_only_rs_files_count() {
     let probe = Scratch::new("ansi-parity");
     let dir = probe.path();
     std::fs::create_dir_all(dir.join("nested")).expect("합성 트리를 만들지 못했다");
 
-    // 검출 표지는 **런타임에 조립한다.** 소스에 그대로 적으면 이 파일이 자기 판정 대상에
-    // 한 번 더 앉는다 — 지금은 파일 통째 면제라 무해하지만, 면제가 자리 단위로 좁아지는
-    // 날 조용히 깨진다. 픽스처가 자기 가드의 좌변을 건드리지 않는 것이 원칙이다.
+    // 검출 표지를 조립해 합성 입력 자체가 추가 사본으로 세어지지 않게 한다.
     let needle = format!("{}{}", r"\x1b", r"\[");
     std::fs::write(
         dir.join("alpha.rs"),
@@ -204,22 +131,19 @@ fn a_dead_root_scans_zero_and_only_rs_files_count() {
     let scanned = collect(dir, &mut found);
     assert_eq!(
         scanned, 2,
-        "훑은 수가 2 가 아니다 — `.rs` 만 세고 하위 디렉토리까지 내려가야 한다. 이 수가 \
-         넓어지면 하한은 더 쉽게 충족되고, 그 변이는 레포 대면 단정에서 조용하다"
+        "합성 트리에서 하위 디렉터리를 포함한 Rust 파일2개를 수집해야 한다"
     );
     assert_eq!(
         found.len(),
         1,
-        "합성 트리에서 리터럴 한 자리를 못 뽑았다 — 추출기가 죽으면 레포에서도 사본을 \
-         못 찾고, 그때 초록은 '사본이 없다' 가 아니라 '안 봤다' 다: {found:?}"
+        "합성 트리의 정규식 리터럴을 찾지 못했다: {found:?}"
     );
 
-    // ★ 하한이 겨냥하는 바로 그 갈래 — 없는 뿌리는 **예외가 아니라 0** 이다.
     let mut none = Vec::new();
     assert_eq!(
         collect(&dir.join("does-not-exist"), &mut none),
         0,
-        "죽은 뿌리가 0 을 안 냈다 — 이 성질이 깨지면 하한은 아무것도 안 지킨다"
+        "없는 경로의 수집 결과가0개가 아니다"
     );
     assert!(none.is_empty(), "죽은 뿌리에서 자리를 주웠다: {none:?}");
 }
