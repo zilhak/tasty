@@ -42,15 +42,7 @@ pub use status_bar::{draw_status_bar, status_bar_bottom_inset};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
 
-/// plugin 이 등록한 i18n 키를 라벨로 푼다 — 카탈로그에 없으면 **키 자체**를 보여준다.
-///
-/// `t()` 는 키가 없으면 키를 그대로 돌려주므로 그 반환을 키와 비교하는 것이 "미해석"
-/// 판정이다. plugin 작성자가 카탈로그에 키를 안 넣었을 때 빈 라벨 대신 키를 보여주면
-/// 무엇을 등록해야 하는지가 화면에 그대로 드러난다.
-///
-/// 도구 메뉴(`tools_menu`)와 명령 팔레트(`popup::command_palette`)가 **같은 함수를**
-/// 부른다. 예전에는 같은 세 줄이 두 자리에 있었고 둘을 같게 잡아 주는 것이 "동형"
-/// 이라는 주석뿐이었다 — 한쪽이 fallback 을 바꾸면 두 표면이 갈라진다.
+/// 번역이 없으면 빈 라벨 대신 키를 보여준다. 도구 메뉴와 명령 팔레트가 함께 쓴다.
 pub(crate) fn label_or_raw_key(key: &str) -> String {
     let translated = tasty_i18n::t(key);
     if translated == key {
@@ -60,16 +52,8 @@ pub(crate) fn label_or_raw_key(key: &str) -> String {
     }
 }
 
-/// 배율 밖에 있는 호스트 chrome 치수를 현재 UI 배율로 올린다.
-///
-/// `Theme` 필드는 생성 시점에 `zoomed()` 를 한 번 거치지만, 대응 디자인 토큰이 없어
-/// 파일 안 명명 const 로 남은 치수는 그 경로 밖이라 배율을 안 탄다. 그 상태로 두면
-/// **그릇만 고정되고 안의 글자·아이콘은 커진다** — 0.85 에서 여백이 뜨고 1.2 에서 내용이
-/// 잘린다(ADR-0035). 반올림 지점을 `zoomed()` 와 같게
-/// 맞춰 배율 1 에서 값이 변하지 않는다.
-///
-/// **토큰이 생기면 이 함수가 아니라 `Theme` 필드로 옮겨간다** — 여기 있는 것은 토큰이
-/// 아직 없다는 표시이지 별도 스케일이라는 뜻이 아니다.
+/// Theme에서 아직 배율을 적용하지 않은 고정 치수를 UI 배율로 조정한다.
+/// Theme.zoomed와 같은 반올림을 쓰며 토큰이 생기면 해당 Theme 접근자로 옮긴다.
 #[inline]
 pub(crate) fn zoomed_px(
     theme: &tasty_type_appearance::theme::Theme,
@@ -78,17 +62,7 @@ pub(crate) fn zoomed_px(
     tasty_type_geometry::length::LogicalPx((px.value() * theme.ui_zoom).round())
 }
 
-/// popup + 오버레이 체인(toast/banner/modifier-hint/tutorial) 조립 진입점. 매 프레임
-/// `egui_bridge.rs` 가 호출한다.
-///
-/// **z-order (뒤→앞)**: popup 자체 → toast → banner → modifier-hint → tutorial.
-/// ADR-0036이 Modal/Popup/Toast/Banner 를 서로 다른 개념으로 나눠 popup 루프
-/// (`popup::frame::draw_popup_layer`)와 오버레이 체인(`overlay::draw_overlays`)이
-/// 별도 모듈로 쪼개져 있지만, 화면 겹침 순서는 아래 두 호출의 순서 자체로 여전히
-/// 여기 고정된다 — 순서를 바꾸면 뒤 레이어가 앞 레이어를 가리는 시각적 회귀가 된다.
-/// 전체화면 무대 draw 진입점. **일반 프레임과 별개인 무대 프레임**에서만 호출된다
-/// (`Gpu::render` 의 무대 분기) — 무대가 켜져 있으면 host chrome·popup·오버레이는
-/// 이 프레임에 아예 그려지지 않는다.
+/// 일반 프레임과 별도로 전체화면 무대만 그린다. 이 프레임에는 호스트 UI나 팝업을 그리지 않는다.
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
     state: &mut crate::state::AppState,
@@ -97,8 +71,7 @@ pub fn draw_fullscreen_stage(
     fullscreen::draw_fullscreen_stage(ctx, state, engine);
 }
 
-/// host popup 층과 오버레이를 그리고, 그 판정에 쓴 [`LayoutContext`] 를 돌려준다 — 같은
-/// frame 의 plugin popup 이 같은 값으로 소속 범위를 판정하도록(`draw_plugin_popups`).
+/// 팝업 뒤에 오버레이를 그린다. 같은 프레임의 플러그인 팝업도 소속 범위를 공유하도록 LayoutContext를 반환한다.
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut crate::state::AppState,
@@ -115,8 +88,7 @@ pub fn draw_popups(
         scale_factor,
     );
 
-    // 무대 닫힘 훅 drain — 무대를 나온 다음 프레임은 일반 프레임이라 무대 draw 경로가
-    // 돌지 않는다. 두 경로 모두에서 drain 해야 훅이 유실되지 않는다.
+    // 닫힌 다음 프레임에는 무대 그리기가 실행되지 않아 일반 경로에서도 닫기 훅을 처리한다.
     fullscreen::drain_on_close_hooks(ctx, state, engine);
 
     popup::frame::draw_popup_layer(ctx, state, engine, &draw_ctx);
@@ -124,15 +96,8 @@ pub fn draw_popups(
     draw_ctx
 }
 
-/// 물리 사각형을 egui 가 그리는 논리 좌표 사각형으로 내린다.
-///
-/// 변환 자체는 [`PhysicalRect::to_logical`] 이 하고 여기서는 egui 타입으로 옮기기만
-/// 한다. 네 변을 각각 `÷ scale_factor` 하던 자리를 이 한 곳으로 모은 것 — 나눗셈이
-/// 네 번이면 하나를 빠뜨려도 컴파일이 통과하지만, 변환이 한 번이면 빠뜨릴 것이 없다.
-///
-/// `.value()` 로 타입을 벗기는 것은 여기서 정당하다. egui 는 `f32` 를 받는 외부
-/// 라이브러리이고, 정책이 허용하는 것이 정확히 그 경계다
-/// (`docs/concepts/typed-length.md` "외부 API 경계에서만 `.value()`").
+/// PhysicalRect의 변환을 사용해 egui 논리 좌표를 만든다.
+/// egui API가 f32를 받는 이 경계에서만 길이 타입의 값을 꺼낸다.
 pub(crate) fn to_egui_rect(rect: crate::model::PhysicalRect, scale_factor: f32) -> egui::Rect {
     let logical = rect.to_logical(scale_factor);
     egui::Rect::from_min_size(

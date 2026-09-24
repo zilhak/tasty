@@ -1,4 +1,4 @@
-//! FakeClock — test 시 시각을 생성 시점에 **고정**한다. deterministic.
+//! 시험용 시계를 생성 시각에 고정한다.
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 

@@ -1,18 +1,11 @@
-//! Test `WakerFactory` — waker dedup 게이트 누수 회귀 테스트용.
-//!
-//! `make_targeted_waker`/`forget_surface` 호출을 기록해, headless PTY 종료·승격 경로
-//! (`pty.kill`/idle sweep/`AdoptTerminal`)가 pty_id 게이트를 실제로 정리하는지
-//! (`forget_surface` 호출 여부) 관찰한다. production `WinitWakerFactory`/
-//! `HeadlessWakerFactory` 는 내부 게이트 맵이 private 이라 직접 관찰이 안 되므로
-//! 테스트는 이 recording mirror 를 주입한다.
+//! PTY 생성·회수의 waker 등록/해제 호출을 기록한다.
+//! 실제 factory의 비공개 상태 대신 이 구현을 주입해 정리 여부를 확인한다.
 
 use std::sync::{Arc, Mutex};
 
 use tasty_terminal::Waker;
 use tasty_terminal::waker_factory::WakerFactory;
 
-/// `make_targeted_waker` 로 만들어진 게이트 id 와 `forget_surface` 로 정리된 id 를
-/// 호출 순서대로 기록하는 test factory.
 #[derive(Default)]
 pub struct RecordingWakerFactory {
     made: Mutex<Vec<u32>>,

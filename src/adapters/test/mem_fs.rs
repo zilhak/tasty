@@ -128,7 +128,6 @@ impl FileSystem for MemFileSystem {
             })
         ) && path != Path::new("")
         {
-            // path 가 디렉토리 아니면 실패
             return Err(anyhow::anyhow!("{:?} is not a directory", path));
         }
         let mut result = Vec::new();

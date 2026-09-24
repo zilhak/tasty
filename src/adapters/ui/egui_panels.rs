@@ -4,10 +4,7 @@ use crate::model::PhysicalRect;
 use crate::state::AppState;
 use crate::theme;
 
-/// explorer 최근 방문 디렉토리를 담는 `RecentFiles` kind. markdown 이 파일을 kind
-/// "markdown" 으로 적재하는 것과 대칭으로, explorer 는 이동 확정한 cwd 를 이 kind 로
-/// 적재하고 주소창(PathField) 자동완성 후보로 되읽는다(generic per-kind — 신규 DB 테이블
-/// 불필요, 기존 `recent_files(kind, path, opened_at)` 재사용).
+/// 탐색기의 최근 폴더를 RecentFiles에 저장할 kind. 주소창 자동완성에서 다시 읽는다.
 const EXPLORER_RECENT_KIND: &str = "directory";
 
 struct EguiPanelInfo {
@@ -19,20 +16,13 @@ struct EguiPanelInfo {
     logical_y: f32,
     logical_w: f32,
     logical_h: f32,
-    /// explorer surface 이면 첫 패스에서 캡처한 `current_root()`(빈영역 메뉴 cwd),
-    /// 그 외 surface 는 `None`. fallback 이 explorer 위에서 generic `Surface` 메뉴
-    /// 대신 항상 빈영역 explorer 메뉴를 세우게 하는 kind 판별 겸 cwd 운반자다(A-1).
+    /// 탐색기라면 빈 영역 context menu에 사용할 현재 폴더.
     explorer_cwd: Option<std::path::PathBuf>,
-    /// DAG surface 이면 이번 프레임의 폴링 요청. 렌더 루프 안에서는 `engine` 이
-    /// workspace/pane/tab 에 배타 차용돼 task store 를 읽을 수 없으므로, 첫 패스에서
-    /// "무엇을 읽어야 하는지" 만 캡처해 두 패스 사이에서 읽는다(explorer 스냅샷과
-    /// 같은 이유).
+    /// 렌더 중 engine을 빌리고 있으므로 DAG 조회 요청만 모아 두 패스 사이에 처리한다.
     dag_poll: Option<crate::adapters::ui::surface::dag_graph::DagPollRequest>,
 }
 
-/// Render egui-based panels (Markdown, Explorer, Html, DAG, Empty).
-/// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
-/// Supports both standalone non-terminal tabs and non-terminal leaves within split tabs.
+/// 비터미널 패널을 그린다. 터미널 내용은 별도 GPU 경로에서 처리한다.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — panel kind별 렌더 분기, 클로저 중첩이 구조적
 pub fn draw_egui_panels(
     ctx: &egui::Context,
@@ -41,7 +31,6 @@ pub fn draw_egui_panels(
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
-    // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
     {
         let ws = state.active_workspace(engine);
@@ -57,7 +46,6 @@ pub fn draw_egui_panels(
                 None => continue,
             };
 
-            // Collect non-GPU-rendered surfaces from this tab.
             let content_rect = PhysicalRect {
                 x: pane_rect.x,
                 y: pane_rect.y + tab_bar_h,
@@ -65,20 +53,12 @@ pub fn draw_egui_panels(
                 height: (pane_rect.height - tab_bar_h)
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
-            // egui 로 그려지는 surface = terminal 외 모든 종류.
-            // attach/detach 작업 J(readonly 정정): 점유된 터미널은 render_pass 가
-            // readonly display mirror 로 렌더하므로 egui 는 관여하지 않는다(점유 표시
-            // 테두리만 §J-3 오버레이가 그린다). 점유된 비-터미널은 mirror 불가지만
-            // **숨기지 않고 내용을 readonly 로 렌더**하되 키 입력만 suppress 한다.
+            // 점유된 터미널도 GPU가 읽기 전용으로 그린다. 비터미널은 숨기지 않고 내용을 표시한다.
             for r in tab.layout().surface_regions(content_rect) {
                 if r.surface.kind() == "terminal" {
-                    // free·점유 모두 GPU 렌더(점유는 readonly mirror). egui 미관여.
                     continue;
                 }
-                // explorer surface 는 빈영역 메뉴 cwd(=current_root)를 미리 캡처해
-                // fallback 이 explorer-aware 하게 동작하도록 한다(A-1). catch-all 이
-                // 어떤 이유로 슬롯을 못 세워도 fallback 이 generic 메뉴 대신 explorer
-                // 빈영역 메뉴를 세운다(불가침 §1·§2).
+                // 일반 surface 메뉴로 대체되지 않도록 탐색기의 현재 폴더를 함께 보관한다.
                 let explorer_cwd = r
                     .surface
                     .as_any()
@@ -109,13 +89,8 @@ pub fn draw_egui_panels(
         }
     }
 
-    // 두 패스 사이 — DAG surface 의 데이터를 필요하면 새로 읽는다. 500ms 게이트는
-    // 스토어 쪽에 있어 프레임마다 호출해도 실제 읽기는 그 주기로만 일어난다.
-    //
-    // **requests 가 비어도 반드시 호출한다.** 빈 목록은 "이 창에 보이는 DAG 뷰가
-    // 없다" 는 뜻이고, `poll` 이 그때 `visible` 을 비워야 호스트가 폴링 타이머를
-    // 걷는다. 건너뛰면 배경 탭으로 밀린(=닫히지는 않은) surface 의 옛 데드라인이
-    // 계속 남아 이벤트 루프가 쉬지 못한다.
+    // 비어 있어도 호출해야 안 보이는 DAG의 폴링 타이머를 정리한다.
+    // 실제 저장소 읽기는 500ms 간격 제한을 따른다.
     {
         let requests: Vec<_> = infos.iter().filter_map(|i| i.dag_poll.clone()).collect();
         let mut dag_views = std::mem::take(&mut state.dag_graph_views);
@@ -123,10 +98,8 @@ pub fn draw_egui_panels(
         state.dag_graph_views = dag_views;
     }
 
-    // Second pass: render each egui panel.
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
-    // T11: explorer 의 사용자 조작은 deferred 로 모아 렌더 루프 종료 후 적용한다
-    // (engine 가변 차용 충돌 회피 — empty action 패턴과 동일). (surface_id, action).
+    // engine을 빌린 렌더 루프가 끝난 뒤 탐색기 액션을 적용한다.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
 
     let explorer_font = engine
@@ -139,20 +112,15 @@ pub fn draw_egui_panels(
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-    // 즐겨찾기는 전역(engine 보유)이라 루프에서 engine 이 가변 차용되는 동안엔
-    // 읽을 수 없다 → 프레임당 1회 스냅샷(항목 소수, clone 비용 무시 가능).
     let explorer_favorites = engine.explorer_favorites.items.clone();
-    // cut-pending 집합(잘라내기 대기 경로) — 셀 디밍용. 클립보드가 cut 모드일 때만
-    // 채워지고, 붙여넣기 완료/복사/취소로 클립보드가 비거나 copy 가 되면 빈 집합이
-    // 되어 디밍이 자동 해제된다(프레임당 1회 스냅샷, 항목 소수).
+    // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
     let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = engine
         .explorer_clipboard
         .as_ref()
         .filter(|c| c.cut)
         .map(|c| c.paths.iter().cloned().collect())
         .unwrap_or_default();
-    // 최근 방문 디렉토리(주소창 자동완성 후보) — 프레임당 1회 스냅샷(≤10, clone 무시 가능).
-    // 루프 안에서 state 가 가변 차용되는 동안 읽을 수 없어 owned Vec 로 뽑아 둔다.
+    // 렌더 중 state를 빌리기 전에 최근 폴더를 한 번 읽어 둔다.
     let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND);
 
     for info in &infos {
@@ -173,7 +141,6 @@ pub fn draw_egui_panels(
             None => continue,
         };
 
-        // Get the surface to render: either a leaf within a split tab, or the tab's surface.
         let surface: &mut dyn crate::model::Surface = if let Some(sid) = info.surface_id {
             match tab.layout_mut().find_leaf_mut(sid) {
                 Some(leaf) => leaf.as_mut(),
@@ -243,15 +210,9 @@ pub fn draw_egui_panels(
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
         ) {
-            // webview-kind(rendering="webview", 예: html) surface 는 native WebView
-            // overlay 가 콘텐츠를 그리므로 host 는 chrome 만 페인트한다(placeholder=URL
-            // 미지정 / boundary=overlay backdrop). overlay 가 보일 땐 이 chrome 을
-            // 덮고, overlay 가 숨겨지거나(메뉴/팝업) URL 이 없을 때 노출된다.
-            // UiNode(tree) surface 렌더 경로는 제거됨(C1) — webview kind 만 그린다.
+            // webview 내용은 native overlay가 그린다. 여기서는 URL 부재나 overlay 숨김 때 보일 배경을 그린다.
             if crate::core::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
-                // RemoteSurface mirror(host sync_webviews 가 native nav_state 를 복사)에서
-                // navigation 상태를 읽어 loading/error chrome 분기에 쓴다.
                 let nav = remote.nav_state();
                 draw_panel_frame(
                     ctx,
@@ -267,20 +228,14 @@ pub fn draw_egui_panels(
         }
     }
 
-    // attach/detach 작업 J: 점유 surface 의 주황 테두리 + force-detach 오버레이는
-    // `draw_occupied_overlays` 가 그린다(§J-3). readonly 정정으로 "내용 숨김
-    // placeholder 안내" 는 폐기됐다(내용은 render_pass/위 infos 가 readonly 로 보임).
     let active_ws = state.active_workspace;
     let tab_bar_h = state.tab_bar_height;
     draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
 
-    // Restore extracted view stores before any further `state` access below.
     state.explorer_views = explorer_views;
     state.dag_graph_views = dag_views;
 
-    // (ADR-0022) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
-    // 옮긴다 — 루프 안에서는 `engine` 이 이미 `ws`/`pane`/`tab`/`surface` 로 배타 차용
-    // 중이라 직접 push 할 수 없다(outbox 패턴, `pending_explorer_action` 과 동형).
+    // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
     for (sid, req) in state.explorer_views.drain_outbox() {
         engine
             .pending_list_dir_forward
@@ -292,12 +247,10 @@ pub fn draw_egui_panels(
             });
     }
 
-    // T11: explorer deferred action 적용 (view store 복원 후 — state/engine 가변 차용 가능).
     if let Some((sid, act)) = pending_explorer_action {
         apply_explorer_action(state, engine, sid, act);
     }
 
-    // Apply deferred empty surface action (must happen after render loop due to state mutation).
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
@@ -312,32 +265,12 @@ pub fn draw_egui_panels(
         );
     }
 
-    // T9: 비-terminal surface 컨텍스트 메뉴의 **단일 생산자**(release 시점).
     emit_surface_menu_fallback(state, ctx, &infos);
 }
 
-/// 비-terminal surface(explorer/empty/markdown/image/webview/remote) 우클릭 →
-/// surface 컨텍스트 메뉴(잘라내기/여기로 이동 + copy surface id)의 **단일 생산자**.
-///
-/// winit `mouse.rs` 경로는 terminal 전용으로 축소됐고(비-terminal 은 위임만 함), 이
-/// egui 프레임이 release 시점 `secondary_clicked()` 로 비-terminal 컨텍스트 메뉴를
-/// 유일하게 생산한다. 전역 포인터 상태만 읽어(별도 click-sense 위젯을 덧대지 않아
-/// markdown 링크·explorer 버튼 등 내부 상호작용을 가로채지 않음) 비-terminal 패널
-/// rect 안의 secondary click 을 잡는다.
-///
-/// `is_none()` 가드는 explorer 를 위해 유지한다: explorer 는 이 호출 앞선 line 206
-/// `apply_explorer_action` 이 위치별 `Explorer`/`ExplorerFavorite` 메뉴를 먼저 슬롯에
-/// 선점하므로, 여기 fallback 은 이미 설정됨을 보고 건너뛴다("winit 이 먼저"가 아니라
-/// "explorer apply 가 먼저"). 한 프레임 한 메뉴(중복 발화 없음). 패널 rect 는 logical
-/// px, interact_pos 도 logical.
-///
-/// **A-1(explorer-aware fallback):** catch-all(`draw_explorer` line 167-185)이 어떤
-/// 이유로 explorer 슬롯을 못 세우고 이 fallback 이 발화하더라도, explorer surface
-/// (`info.explorer_cwd.is_some()`) 위에서는 generic `Surface` 메뉴 대신 항상 빈영역
-/// `Explorer` 메뉴를 세운다. 그래서 explorer 위에는 절대 "터미널 ID 복사" 같은
-/// surface-op 메뉴가 노출되지 않고(불가침 §1·§2), 사용자는 항상 explorer 메뉴를
-/// 받는다. OS 무관 순수 로직이라 `#[cfg]` 불필요 — explorer 위 generic 메뉴는 원래
-/// 어느 OS 에서도 뜨면 안 되므로 macOS 정상 경로 회귀도 불가능하다.
+/// 비터미널의 보조 버튼 release를 처리한다. 별도 클릭 위젯을 덮지 않아 내부 버튼과 링크를 가리지 않는다.
+/// 탐색기가 먼저 만든 메뉴가 있으면 유지한다. 없더라도 탐색기 위에서는 일반 surface 메뉴 대신
+/// 현재 폴더의 빈 영역 메뉴를 연다. 좌표는 egui 논리 좌표이며 한 프레임에 메뉴 하나만 선택한다.
 fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: &[EguiPanelInfo]) {
     if state.dialogs.pending_native_menu.is_some() {
         return;
@@ -357,11 +290,6 @@ fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: 
             && pos.y >= info.logical_y
             && pos.y <= info.logical_y + info.logical_h;
         if within {
-            // A-1: explorer surface 위에서는 generic `Surface` 메뉴("터미널 ID
-            // 복사"/"잘라내기")를 절대 세우지 않는다 — catch-all 이 어떤 이유로
-            // explorer 슬롯을 못 세워도 항상 빈영역 explorer 메뉴를 세운다(kind-blind
-            // 구멍 원천 차단, 불가침 §1·§2). 빈영역 메뉴는 catch-all 의 `T::Empty`
-            // 분기(paths 빈 vec + cwd = current_root + single_is_dir=false)와 동일.
             state.dialogs.pending_native_menu = Some(match &info.explorer_cwd {
                 Some(cwd) => crate::state::PendingNativeMenu::Explorer {
                     surface_id: sid,
@@ -382,9 +310,7 @@ fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: 
     }
 }
 
-/// T11: explorer deferred action 적용. 파일 열기/새로고침은 `state` 만, 내비게이션/
-/// 뷰모드/탭 조작은 대상 `ExplorerPanel` (origin surface id 로 직접 지정 — 포커스
-/// 독립)을 가변 차용해 처리한다.
+/// 모아 둔 탐색기 액션을 원래 surface ID에 적용한다.
 pub(crate) fn apply_explorer_action(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -394,9 +320,7 @@ pub(crate) fn apply_explorer_action(
     use crate::explorer_ui::ExplorerAction as A;
     match &act {
         A::OpenFile(path) => {
-            // (ADR-0022) 원격 mirror explorer 는 browse-only — 파일 내용
-            // fetch(더블클릭 열기)는 스코프 밖이라 트리거하지 않고 toast 로 안내한다.
-            // 로컬 surface 는 기존과 동일하게 동작한다.
+            // 원격 탐색기는 목록 조회만 지원하므로 파일 열기는 안내로 대신한다.
             if engine.is_mirror_surface(sid) {
                 state.toasts.push(
                     crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
@@ -422,8 +346,6 @@ pub(crate) fn apply_explorer_action(
             }
         }
         A::SetViewMode(m) => {
-            // 대상 패널에 반영하고, "마지막 view mode" 를 Settings 에 영속한다 —
-            // 새로 생성되는 explorer 가 이 형태로 열리도록(재시작/새 창은 disk 로드).
             apply_explorer_panel_action(state, engine, sid, &act);
             let mode = m.as_str().to_string();
             if engine.settings.general.explorer_view_mode != mode {
@@ -435,8 +357,6 @@ pub(crate) fn apply_explorer_action(
         }
         A::ContextMenu { target, cwd, x, y } => {
             use crate::explorer_ui::ExplorerMenuTarget as T;
-            // explorer 전용 메뉴를 단일 슬롯에 선점 → 이후 generic surface fallback
-            // (egui_panels 의 secondary_pos 루프)은 이미 설정됨을 보고 건너뛴다.
             let menu = match target {
                 T::Favorite { path } => crate::state::PendingNativeMenu::ExplorerFavorite {
                     surface_id: sid,
@@ -465,18 +385,13 @@ pub(crate) fn apply_explorer_action(
         }
         _ => {
             apply_explorer_panel_action(state, engine, sid, &act);
-            // 사용자가 이동 확정한 디렉토리를 "최근 디렉토리" 후보로 적재(주소창 자동완성).
-            // `A::Navigate` 는 주소창 타이핑·트리·즐겨찾기 클릭 등 실제 사용자 입력에서만
-            // emit 되고, 에이전트 IPC 의 cwd 변경은 다른 경로(`set_explorer_cwd`)라 자연히
-            // 제외된다(identity 경계). 중복/최신순/상한은 `RecentFiles::add` 가 처리.
+            // 사용자 탐색만 최근 폴더에 기록한다. 에이전트 cwd 변경은 별도 경로다.
             if let A::Navigate(p) = &act {
                 state
                     .recent_files
                     .add(EXPLORER_RECENT_KIND, p.display().to_string());
             }
-            // cwd/내부 탭이 바뀔 수 있는 액션은 주소창 편집을 취소한다 — surface 단위
-            // `ExplorerView` 의 addr 버퍼가 다른 내부 탭/경로로 새지 않도록(다음 sync 가
-            // 새 cwd 로 재동기화). SetViewMode/SetSort 는 cwd 불변이라 제외.
+            // 폴더·탭이 바뀌면 주소창 편집을 취소해 이전 버퍼가 다른 대상에 적용되지 않게 한다.
             if matches!(
                 act,
                 A::Navigate(_)
@@ -494,7 +409,6 @@ pub(crate) fn apply_explorer_action(
     }
 }
 
-/// `ExplorerPanel` 을 가변 차용해 내비게이션/뷰모드/내부 탭 조작을 적용한다.
 fn apply_explorer_panel_action(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -563,14 +477,11 @@ fn apply_to_explorer_panel(
                 ex.active = *i;
             }
         }
-        // OpenFile/Refresh/ContextMenu 는 apply_explorer_action 에서 처리.
         A::OpenFile(_) | A::Refresh | A::ContextMenu { .. } => {}
     }
 }
 
-/// 공통 egui Area + Frame 껍데기. `margin`만큼 내부 여백을 준다.
-/// `bg_color`가 Some이면 해당 색상을, None이면 th.crust를 배경으로 사용한다.
-/// body의 반환값을 그대로 전달한다 (None을 리턴하는 기존 호출처는 ()).
+/// egui Area와 Frame을 만들고 body의 반환값을 전달한다.
 fn draw_panel_frame<R, F>(
     ctx: &egui::Context,
     id: &str,
@@ -624,16 +535,8 @@ where
         });
 }
 
-/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0021).
-///
-/// 점유 tier 를 색으로 구분해 1px 테두리로 표시한다(하나의 시각 채널 = surface 테두리):
-/// - **soft**(협조 신호, write 제한 없음) → green(`accent-occupied-soft`), force-detach 없음.
-/// - **hard**(readonly + mirror-observe, 기존 remote-attach 흡수) → peach
-///   (`accent-occupied-hard`) + 우상단 force-detach 버튼.
-///
-/// **focus 와 무관**하게 점유 중이면 항상 그린다(focus 해도 사라지지 않음). readonly
-/// 정정으로 내용은 보이므로(render_pass/egui), 테두리는 *점유 표식* + (hard 한정)
-/// force-detach 진입점 역할만 한다. 색은 Theme 토큰(하드코딩 없음).
+/// soft/hard 점유를 각각 Theme의 해당 색으로 표시한다.
+/// 포커스와 관계없이 표시하며 강제 해제 버튼은 hard 점유에만 제공한다.
 fn draw_occupied_overlays(
     ctx: &egui::Context,
     active_ws: usize,
@@ -644,7 +547,6 @@ fn draw_occupied_overlays(
 ) {
     let th = theme::theme();
 
-    /// 점유 surface 의 logical rect + tier(읽기 단계 수집물).
     struct Occ {
         sid: u32,
         hard: bool,
@@ -673,9 +575,6 @@ fn draw_occupied_overlays(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             for r in tab.layout().surface_regions(content_rect) {
-                // content-hidden(workspace 점유 멤버)은 ADR-0021 상 hard 계열이라 lock
-                // 유무와 무관하게 hard(peach)로 표시한다. 그 외에는 occupancy_of 의 tier
-                // 로 분기: hard=peach, soft=green(협조 마커). 점유 아니면 skip.
                 let hard = if engine.attach.is_content_hidden(r.id) {
                     true
                 } else {
@@ -700,20 +599,12 @@ fn draw_occupied_overlays(
         return;
     }
 
-    // tier 별 1px 테두리 — surface 전체를 덮는 interactable Area 대신 순수 페인트
-    // (`ctx.layer_painter`)로 그린다. `divider.rs`의 `draw_pane_dividers`/
-    // `draw_surface_highlights_view`와 동일 패턴: `Areas::layer_id_at`의 순회
-    // 대상(interactable 레이어)에 아예 안 잡히므로 점유 surface 위 마우스
-    // 클릭/드래그/휠을 막지 않는다(egui 0.31.1 `memory/mod.rs`의 `Areas::layer_id_at`
-    // 순회 로직으로 확인) — interactable Area 로 그렸다면 이 장식용 테두리가
-    // 자체적으로 hover/hit-test 를 가로채, 점유 표시와 무관하게 그 위치의 마우스
-    // 입력(surface 조작·인접 divider 드래그)을 부수적으로 막아버렸을 것이다.
+    // 장식 테두리는 입력을 받는 Area 대신 painter로 그려 터미널·구분선 입력을 가로채지 않는다.
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("occupied_overlays_border"),
     ));
     for o in &occ {
-        // soft=green(협조 신호), hard=peach(readonly). 둘 다 Theme 토큰(하드코딩 없음).
         let border_color = if o.hard {
             th.accent_occupied_hard()
         } else {
@@ -728,10 +619,7 @@ fn draw_occupied_overlays(
         );
     }
 
-    // force-detach 버튼은 hard 점유(readonly)에서만. soft 는 협조 신호라 회수
-    // 진입점 없음. 버튼은 실제 클릭 가능한 위젯이라 surface 전체가 아닌 버튼
-    // 크기에 딱 맞는 작은 Area로 분리 — 이 Area만 interactable로 남는다.
-    // 클릭은 deferred 적용(engine 가변 차용).
+    // hard 점유의 강제 해제 버튼만 작은 Area로 입력을 받는다. 클릭 적용은 렌더 뒤에 한다.
     let mut pending_force_detach: Option<u32> = None;
     for o in &occ {
         if !o.hard {
@@ -757,8 +645,6 @@ fn draw_occupied_overlays(
     }
 
     if let Some(sid) = pending_force_detach {
-        // tier 공용 해제(ADR-0021): hard(workspace 멤버·surface lock) 든 soft 든 로컬
-        // 사용자가 끊는다. workspace 점유면 멤버 일괄(D6), soft 는 holder 통지 없이 제거.
         engine.release_occupancy(sid);
     }
 }

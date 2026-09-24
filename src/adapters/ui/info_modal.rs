@@ -1,16 +1,5 @@
-//! 정보 알림용 modal-like popup. 부팅 시점 fallback/에러 알림에 사용한다.
-//!
-//! 구조: 큐(`DialogState.info_modal_queue`)에 `InfoModal`을 push하고 popup을
-//! 띄우면, 큐 head를 표시 + [확인]/Enter/Escape로 pop. 큐가 비면 popup 닫힘.
-//!
-//! 호출 패턴:
-//! ```ignore
-//! show_info_modal(state, InfoModal {
-//!     title: "...".into(),
-//!     body: "...".into(),
-//!     on_close: InfoModalAction::Continue,
-//! });
-//! ```
+//! 부팅 오류 등을 큐에 담아 차례로 보여주는 안내 팝업.
+//! 확인·Enter·Escape로 현재 메시지를 닫고 큐가 비면 팝업도 닫는다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
@@ -19,7 +8,6 @@ use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
-/// 모달 [확인] 시 동작.
 #[derive(Debug, Clone)]
 pub enum InfoModalAction {
     /// 큐 처리 후 부팅/동작을 계속한다.
@@ -28,29 +16,20 @@ pub enum InfoModalAction {
     Exit(i32),
 }
 
-/// [확인] 옆에 추가로 붙는 버튼의 동작. 안내 자체로 끝나지 않고 사용자를 어딘가로
-/// 보내야 하는 모달(예: OS 설정 패널로 유도)을 위한 것이다.
 #[derive(Debug, Clone)]
 pub enum InfoModalButtonAction {
-    /// URL/스킴을 OS 기본 핸들러로 연다. 모달은 **열린 채 유지**된다 — 설정 패널을
-    /// 열어둔 채 안내 문구를 다시 읽을 수 있어야 하기 때문.
-    ///
-    /// 현재 유일한 생산자가 macOS 전용 안내(Full Disk Access)라 다른 OS 에서는
-    /// 아무도 만들지 않는다. `GeneralSubTab::Display` 와 동일하게 variant 자체는
-    /// 플랫폼 공통으로 두고 경고만 억제한다 — 그리는 쪽은 어느 OS 에서든 컴파일된다.
-    // 이유: 유일한 생산자가 macOS 전용 안내라 다른 OS 빌드엔 생성처가 없다(위 문단).
+    /// OS 설정 등 외부 주소를 열되 안내는 계속 볼 수 있도록 팝업을 유지한다.
+    // 이유: 현재 생성처가 macOS의 Full Disk Access 안내뿐이라 다른 플랫폼에서는 사용되지 않는다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenExternal(String),
 }
 
-/// [확인] 외에 모달 하단에 함께 그리는 버튼.
 #[derive(Debug, Clone)]
 pub struct InfoModalButton {
     pub label: String,
     pub action: InfoModalButtonAction,
 }
 
-/// 큐에 들어가는 단일 메시지.
 #[derive(Debug, Clone)]
 pub struct InfoModal {
     pub title: String,
@@ -64,16 +43,10 @@ pub const INFO_MODAL_ID: &str = "info_modal";
 const DEFAULT_WIDTH: LogicalPx = LogicalPx(440.0);
 const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
-/// 본문 아래 버튼행이 차지하는 높이. **고정값**이다 — 갤러리 specimen 은 같은 자리를
-/// 테마 파생(`item_height_interactive + spacing_lg + spacing_xs`)으로 낸다. 오늘 두 값이
-/// 같을 뿐이고, 갈라지면 `gallery_copied_dimensions` 가 그 자리에서 결정을 요구한다.
+/// 고정된 버튼 행 높이. 갤러리는 토큰으로 계산하므로 gallery_copied_dimensions로 차이를 검사한다.
 const FOOTER_ROOM: LogicalPx = LogicalPx(48.0);
 
-/// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
-///
-/// 호출처는 시스템 부트스트랩 (DB 초기화 실패, theme fallback 등) — 사용자 입력에
-/// 의해 발화되지는 않지만, modal 인 만큼 focus 가 필요하다. agent IPC 가 아니므로
-/// `from_user_menu` 와 동일한 user-ish origin 으로 발화 (PR 리뷰에서 정책 분기 결정).
+/// 안내를 큐에 추가한다. 부팅 안내는 에이전트 요청이 아니므로 사용자 입력을 받는 팝업으로 연다.
 pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
     state.dialogs.info_modal_queue.push_back(modal);
     state.dispatch_intent(
@@ -85,7 +58,6 @@ pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
     );
 }
 
-/// PopupDef.title_fn — 큐 head의 title을 popup 타이틀로 사용.
 pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
     state
         .dialogs
@@ -95,7 +67,6 @@ pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> S
         .unwrap_or_default()
 }
 
-/// PopupDef.sizer — body 길이에 따라 height를 조정.
 pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let body_len = state
         .dialogs
@@ -103,7 +74,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
         .front()
         .map(|m| m.body.chars().count())
         .unwrap_or(0);
-    // 대략 char당 1.6 line으로 가정 (한글/영문 혼합). 70 chars per line 기준.
+    // 문자 수로 대략 높이를 정한다. 실제 줄바꿈과 다르면 본문 스크롤로 처리한다.
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
     let line_h = theme::theme().font_size_body.value() * 1.5;
     let body_h = approx_lines * line_h;
@@ -116,13 +87,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     egui::vec2(DEFAULT_WIDTH.value(), total_h.value())
 }
 
-/// PopupDef::on_close 진입점 — X 버튼(또는 그 외 draw_fn 을 우회하는 닫힘 경로)로
-/// 닫혔을 때 draw_fn 의 확인 로직을 그대로 미러한다. draw_fn 자신의 pop 경로로
-/// 닫힌 경우엔 이 시점에 큐가 이미 비어 있어(그 경로만 `PopupAction::Close`를
-/// 반환) `pop_front`가 `None`을 돌려주고 즉시 반환 — 이중 pop 은 없다.
-///
-/// X 로 닫으면 head 가 pop 되지 않던 시절엔 남은 큐가 다시 뜨지 않아 부팅 에러
-/// 안내가 조용히 유실됐다 — 그 버그의 수정.
+/// 확인 버튼 외의 닫기 경로도 큐를 처리한다. 확인이 이미 큐를 비웠으면 다시 꺼내지 않는다.
 pub fn on_close_info_modal(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -141,7 +106,6 @@ pub fn on_close_info_modal(
     }
 }
 
-/// PopupDef.draw_fn — 큐 head를 보여주고 [확인]/Enter/Escape로 pop.
 pub fn draw_info_modal(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -160,12 +124,7 @@ pub fn draw_info_modal(
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
-    // 본문은 **스크롤한다** — 버튼 행이 밀려나지 않게 `FOOTER_ROOM` 만큼을 먼저 뗀다.
-    // `info_modal_sizer` 의 높이는 글자 수 추정(60자/줄)이라 실제 줄바꿈과 어긋난다.
-    // 한글처럼 440px 폭에서 60자보다 훨씬 일찍 줄이 넘어가는 본문은 추정치를 넘겨
-    // 흘러넘쳤고, 그러면 아래에서 bottom-up 으로 쌓는 [확인]·[설정 열기] 가 프레임
-    // 밖으로 나가 **닫기(X) 말고는 아무것도 누를 수 없는 안내**가 된다. 추정 상수를
-    // 손보는 것은 언어마다 다시 틀리므로, 넘치면 스크롤되게 해 실패 자체를 없앤다.
+    // 예상보다 긴 본문이 버튼을 밀어내지 않도록 버튼 높이를 확보하고 나머지를 스크롤한다.
     let body_max_h = (ui.available_height() - FOOTER_ROOM.value()).max(0.0);
     egui::ScrollArea::vertical()
         .max_height(body_max_h)
@@ -184,8 +143,6 @@ pub fn draw_info_modal(
 
     ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
         vspace(ui, th.spacing_xs);
-        // 오른쪽부터 쌓는다 — 먼저 그린 [확인] 이 가장 오른쪽에 오고 추가 버튼이
-        // 그 왼쪽에 붙는다(dialog/preset 의 버튼 행과 같은 배치).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button(t("button.ok")).clicked() {
                 confirm = true;
@@ -204,13 +161,11 @@ pub fn draw_info_modal(
         return PopupAction::None;
     }
 
-    // Pop the current head and act on its on_close.
     let popped = state.dialogs.info_modal_queue.pop_front();
     if let Some(modal) = popped
         && let InfoModalAction::Exit(code) = modal.on_close
     {
-        // 부팅 시점 fatal 알림에만 사용한다. winit destructor는 돌지 못하지만
-        // 아직 PTY/plugin 등이 떠 있지 않은 시점이라 손실이 없다.
+        // 즉시 종료하므로 winit을 포함한 남은 객체의 destructor는 실행하지 않는다.
         tracing::info!("info modal exit requested (code={code})");
         std::process::exit(code);
     }
@@ -218,16 +173,11 @@ pub fn draw_info_modal(
     if state.dialogs.info_modal_queue.is_empty() {
         PopupAction::Close
     } else {
-        // 다음 메시지로 이어진다. popup은 그대로 유지하되 title/size는 다음 프레임에
-        // popup::frame::draw_popup_layer의 refresh 루프가 자동 갱신.
         PopupAction::None
     }
 }
 
-/// URL/스킴을 OS 기본 핸들러로 넘긴다. `reveal::open_path` 와 같은 방식이되 경로가
-/// 아니라 스킴을 넘기는 자리 — `x-apple.systempreferences:` 처럼 브라우저가 아닌
-/// 핸들러가 받는 스킴도 그대로 통과해야 하기 때문이다. 프로세스를 기다리지 않는다
-/// (렌더 경로에서 호출된다).
+/// 렌더를 막지 않도록 외부 URL/스킴을 열고 프로세스 완료는 기다리지 않는다.
 fn open_external(url: &str) {
     #[cfg(debug_assertions)]
     if crate::platform::debug_os_open::intercepted("open_external", url) {

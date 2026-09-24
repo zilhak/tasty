@@ -1,15 +1,11 @@
-//! MockIpcServer — in-memory `IpcServerPort`.
-//!
-//! 테스트에서 IPC server 의존을 *TCP 없이* 검증할 때 사용. `push` 로 command 를
-//! 큐에 직접 넣고, Hub 소비 측은 `try_recv` 로 꺼낸다. port 는 0 고정.
+//! TCP 없이 명령을 넣고 받는 시험용 IPC 서버. port는 0이다.
 
 use std::sync::{Mutex, mpsc};
 
 use crate::ipc::server::IpcCommand;
 use crate::ports::ipc_server::IpcServerPort;
 
-/// In-memory IPC server. command queue 는 `Mutex<VecDeque<IpcCommand>>` 가
-/// 아닌 `mpsc::channel` 로 — 실제 production 과 동일한 try_recv 의미를 유지.
+/// 실제 서버와 같은 try_recv 동작을 쓰도록 mpsc 채널로 구현한다.
 pub struct MockIpcServer {
     rx: Mutex<mpsc::Receiver<IpcCommand>>,
     tx: mpsc::Sender<IpcCommand>,
@@ -17,8 +13,6 @@ pub struct MockIpcServer {
 }
 
 impl MockIpcServer {
-    /// `port=0` 으로 새 mock 생성. `tx` 는 caller 가 외부에서 push 할 수 있도록
-    /// `tx_clone()` 로 받아간다.
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
@@ -28,7 +22,6 @@ impl MockIpcServer {
         }
     }
 
-    /// 테스트가 command 를 큐에 넣을 수 있는 sender 사본을 받는다.
     pub fn tx_clone(&self) -> mpsc::Sender<IpcCommand> {
         self.tx.clone()
     }
@@ -68,7 +61,6 @@ mod tests {
     #[test]
     fn empty_returns_disconnected_or_empty() {
         let m = MockIpcServer::new();
-        // 새 mock 은 비어 있다 — Empty 반환.
         assert!(matches!(
             <MockIpcServer as IpcServerPort>::try_recv(&m),
             Err(mpsc::TryRecvError::Empty)

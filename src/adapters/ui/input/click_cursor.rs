@@ -1,14 +1,8 @@
-//! Click-to-move-cursor feature.
-//!
-//! Computes the "editable region" of a terminal surface (the area where the
-//! shell prompt / command line is), and moves the cursor to a clicked position
-//! within that region by sending arrow key sequences.
+//! 명령줄의 편집 영역을 추정하고 클릭한 위치까지 방향키를 보낸다.
 
 use crate::model::PhysicalRect;
 
-/// The editable region of a terminal surface — the contiguous area of the
-/// current (possibly soft-wrapped) command line, from the first wrapped row
-/// to the last row with text content.
+/// 현재 명령줄로 추정한 연속 영역. 화면 폭을 채운 행을 줄바꿈된 명령의 일부로 본다.
 #[derive(Debug, Clone)]
 pub struct EditableRegion {
     /// First row of the editable region (may be above cursor if soft-wrapped).
@@ -17,9 +11,7 @@ pub struct EditableRegion {
     pub end_row: usize,
     /// Last occupied column on `end_row` (text boundary).
     pub end_col: usize,
-    /// Cursor row.
     pub cursor_row: usize,
-    /// Cursor column.
     pub cursor_col: usize,
 }
 
@@ -52,9 +44,7 @@ impl EditableRegion {
             return None;
         }
 
-        // Snapshot cols/rows, cursor, and the grid under a single state lock so
-        // the parser thread cannot ingest between reads and leave the cursor and
-        // screen_lines on different generations (ADR-0013).
+        // 파서 갱신 사이에 커서와 그리드를 따로 읽지 않도록 같은 잠금에서 가져온다(ADR-0013).
         let (cols, rows, cursor_col, cursor_row, screen_lines) = terminal.with_surface(|s| {
             let (cols, rows) = s.dimensions();
             let (cursor_col, cursor_row) = s.cursor_position();
@@ -66,9 +56,6 @@ impl EditableRegion {
             (cols, rows, cursor_col, cursor_row, screen_lines)
         });
 
-        // Walk upward from cursor_row to find the first row of the editable region.
-        // A row is part of the same soft-wrapped line if the row above it fills
-        // all terminal columns (no hard line break).
         let mut start_row = cursor_row;
         while start_row > 0 {
             let prev_row = start_row - 1;
@@ -82,8 +69,6 @@ impl EditableRegion {
             start_row = prev_row;
         }
 
-        // Walk downward from cursor_row to find the last row of the editable region.
-        // If the cursor row fills all columns, the next row is a continuation.
         let mut end_row = cursor_row;
         while end_row + 1 < rows {
             let line = match screen_lines.get(end_row) {
@@ -93,19 +78,16 @@ impl EditableRegion {
             if last_occupied_col(line) < cols {
                 break; // This row doesn't fill the terminal width — no wrap
             }
-            // Next row is a continuation if current row is fully filled
             let next_line = match screen_lines.get(end_row + 1) {
                 Some(l) => l,
                 None => break,
             };
-            // Only include next row if it has content
             if last_occupied_col(next_line) == 0 {
                 break;
             }
             end_row += 1;
         }
 
-        // End column: last visible character on end_row
         let end_col = screen_lines
             .get(end_row)
             .map(last_occupied_col)
@@ -130,7 +112,6 @@ impl EditableRegion {
             return None; // Too far away
         }
 
-        // Clamp row into the region
         let row = row.clamp(self.start_row, self.end_row);
 
         let col = if row == self.end_row {

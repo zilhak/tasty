@@ -24,13 +24,11 @@ pub fn draw_drop_overlay(
 
     let theme = crate::theme::theme();
 
-    // 물리 픽셀 → 논리 픽셀 (egui 좌표계).
     let rect = crate::adapters::ui::to_egui_rect(terminal_rect, scale_factor);
 
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
     let painter = ctx.layer_painter(layer);
 
-    // 반투명 fill — accent_primary 의 12% alpha. 대응 토큰이 없어 이름만 둔다.
     const OVERLAY_FILL_ALPHA: u8 = 31;
     let fill = theme
         .accent_primary()
@@ -38,7 +36,6 @@ pub fn draw_drop_overlay(
         .to_egui();
     painter.rect_filled(rect, theme.corner_radius.value(), fill);
 
-    // 1px 보더 — accent_primary, alpha 0.6.
     const OVERLAY_BORDER_ALPHA: u8 = 153;
     let stroke = egui::Stroke::new(
         theme.border_width.value(),
@@ -54,7 +51,6 @@ pub fn draw_drop_overlay(
         egui::StrokeKind::Inside,
     );
 
-    // 중앙 라벨.
     let label = if hover.paths.len() > 1 {
         format!(
             "{}  ({})",

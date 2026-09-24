@@ -19,7 +19,6 @@ pub fn draw_ui(
     let sidebar_width = state.sidebar_width.value();
 
     if !state.sidebar_visible {
-        // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
         let r = sidebar::draw_collapsed_sidebar(ctx, state, engine, sidebar_width, plugin_alert);
 
@@ -65,11 +64,9 @@ pub fn draw_ui(
         }
     }
 
-    // Compute remaining terminal area in physical pixels (below the titlebar inset).
     let screen_rect = ctx.screen_rect();
     let top_inset = super::titlebar::top_inset(scale_factor);
-    // egui 가 준 값은 전부 logical 이다 — 물리로 올리는 곱셈은 `to_physical` 한 곳으로.
-    // 생성자로 감싸기만 하면 곱셈을 빠뜨려도 컴파일되므로 변환을 타입에 맡긴다.
+    // egui의 논리 좌표를 to_physical에서 한 번만 변환한다.
     let terminal_x = LogicalPx(sidebar_width).to_physical(scale_factor);
     let terminal_y = top_inset;
     let terminal_width = LogicalPx(screen_rect.width() - sidebar_width).to_physical(scale_factor);

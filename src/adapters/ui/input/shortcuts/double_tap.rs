@@ -7,9 +7,7 @@ use crate::view::main::MainView;
 use super::{focused_workspace_category, send_app_event};
 
 impl MainView {
-    /// close 계열 double-tap 액션(`close_workspace`/`close_pane`/`close_surface`/
-    /// `close_active`) 공통 마무리: 워크스페이스가 전부 닫혔으면 창을 닫고,
-    /// 아니면 남은 레이아웃을 새 rect 로 재계산한다.
+    /// 마지막 workspace가 닫혔으면 창을 닫고, 남아 있으면 레이아웃을 다시 계산한다.
     fn finish_after_possible_close(
         &mut self,
         terminal_rect: PhysicalRect,
@@ -26,7 +24,6 @@ impl MainView {
         }
     }
 
-    /// Handle double-tap modifier shortcuts. Returns true if consumed.
     pub(crate) fn handle_double_tap_shortcut(
         &mut self,
         dt: crate::double_tap::DoubleTapKey,
@@ -40,9 +37,7 @@ impl MainView {
             return true;
         }
         if has_dt(&kb.toggle_notifications) {
-            // Intent 통과 시 다음 프레임에 처리되므로 is_open 체크는 즉시 수행
-            // 후 toggle Intent 발화. mark_all_read 는 현재 상태 기준 — 다음 프레임
-            // 에 popup 이 열릴 예정이면 미리 읽음 처리.
+            // intent 적용은 다음 프레임이므로 현재 상태에서 열릴지를 판단해 읽음 처리한다.
             let will_open = !self.state.popups.is_open("notifications");
             self.state.dispatch_intent(
                 UiIntent::TogglePopup {
@@ -60,7 +55,6 @@ impl MainView {
             return true;
         }
 
-        // Check all configurable bindings for double-tap matches
         let bindings_to_check: Vec<(&[String], &str)> = vec![
             (&kb.new_workspace, "new_workspace"),
             (&kb.close_workspace, "close_workspace"),
@@ -83,20 +77,13 @@ impl MainView {
             (&kb.close_active, "close_active"),
             (&kb.next_tab, "next_tab"),
             (&kb.prev_tab, "prev_tab"),
-            // 아래 넷은 실행 arm 이 **이미 있었는데** 이 목록에 없어 도달하지 못했다.
-            // 종료 계열을 double-tap 에 두는 것이 위험해 보일 수 있으나, 이 목록이 정하는
-            // 것은 "그런 조합이 존재하는가" 가 아니라 **사용자가 저장한 값을 존중하는가**
-            // 다 — 네 프리셋 기본값에 double-tap 은 하나도 없고, 설정 화면은 이미 이
-            // 필드들에 double-tap 녹화를 허용한다. 빼 두면 사용자가 저장한 조합이 아무
-            // 신호 없이 무시되고, 그것이 이 티켓이 고치는 결함과 같은 형태다.
             (&kb.restore_closed, "restore_closed"),
             (&kb.quit, "quit"),
             (&kb.quit_immediate, "quit_immediate"),
             (&kb.quit_minimize, "quit_minimize"),
         ];
 
-        // 소비 판정은 **실행됐는가**로 한다 — 매칭만으로 먹지 않는다. 등록 목록에
-        // 같은 조합이 둘 이상 실려 있으면 앞엣것이 arm 없이 끝나도 뒤엣것이 실행된다.
+        // 매칭뿐 아니라 실제 실행한 경우에만 입력을 소비한다.
         for (bindings, action) in &bindings_to_check {
             if has_dt(bindings) && self.run_double_tap_action(action) {
                 return true;
@@ -106,13 +93,7 @@ impl MainView {
         false
     }
 
-    /// double-tap 으로 매칭된 액션 하나를 **실행만** 한다. 실행 arm 이 있으면 `true`.
-    ///
-    /// 소비 판정(`handle_double_tap_shortcut` 의 반환값)은 여기서 안 한다 — 목록과
-    /// arm 을 맞추는 일과 실행한 것만 소비하는 일은 다른 일이라, 한 함수에 두면
-    /// 분기가 겹쳐 읽을 수 없어진다. 실행 표는 다시 **필요한 것이 무엇인가**로 넷으로
-    /// 갈라져 있다 — 레이아웃을 다시 재야 하는 것 · 포커스만 옮기는 것 · 포커스된
-    /// surface 를 물어봐야 하는 것 · 창 밖으로 이벤트를 보내는 것.
+    /// 매칭된 액션을 실행하고 처리 여부를 반환한다.
     fn run_double_tap_action(&mut self, action: &str) -> bool {
         if self.run_double_tap_layout_action(action)
             || self.run_double_tap_focus_action(action)
@@ -121,27 +102,19 @@ impl MainView {
         {
             return true;
         }
-        // 등록됐는데 실행 arm 이 없다. **키를 먹지 않는다** — 소비 여부는 "매칭됐는가"
-        // 가 아니라 "실행했는가" 여야 한다. 예전에는 이 갈래가 `_ => {}` 였고 호출자가
-        // 무조건 소비해서, 사용자가 지정한 조합이 아무 일도 안 하면서 다른 경로로도 못
-        // 가는 상태가 됐다 (로그조차 없었다).
         tracing::warn!("double-tap: registered action '{action}' has no execution arm");
         false
     }
 
-    /// 생성·닫기·분할 — 실행 뒤 남은 레이아웃을 새 rect 로 다시 재야 하는 액션들.
     fn run_double_tap_layout_action(&mut self, action: &str) -> bool {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
-        // `engine` 가변 차용 전에 잡는다.
         let scale_factor = self.base.gpu.scale_factor();
 
         let engine = &mut self.core_state;
         match action {
             "new_workspace" => {
-                // 현재 활성 워크스페이스의 카테고리를 계승 (keybinding.rs
-                // match_create_bindings 와 동일 정책).
                 let category = focused_workspace_category(&self.state, engine);
                 self.state.dispatch_intent(
                     Intent::NewWorkspace {
@@ -236,7 +209,6 @@ impl MainView {
         true
     }
 
-    /// 포커스·탭 이동 — 레이아웃이 그대로라 rect 를 다시 안 잰다.
     fn run_double_tap_focus_action(&mut self, action: &str) -> bool {
         let engine = &mut self.core_state;
         match action {
@@ -263,12 +235,10 @@ impl MainView {
         true
     }
 
-    /// 열기·변환 — 포커스된 surface 를 물어보고 팝업이나 변환 Intent 를 띄운다.
     fn run_double_tap_open_action(&mut self, action: &str) -> bool {
         let engine = &mut self.core_state;
         match action {
             "open_markdown" => {
-                // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 새 탭 dispatch).
                 self.state
                     .enqueue_convert_input_popup(engine, "markdown", None);
             }
@@ -292,14 +262,11 @@ impl MainView {
             }
             "convert_to_markdown" => {
                 if let Some(sid) = self.state.focused_surface_id(engine) {
-                    // 제자리 markdown 변환: surface_id 를 실어 file-open 팝업(plugin navigate).
                     self.state
                         .enqueue_convert_input_popup(engine, "markdown", Some(sid));
                 }
             }
             "convert_to_explorer" => {
-                // explorer 가 host builtin surface 로 승격(T11)되어 즉시
-                // 변환을 복구. cwd None → source surface 에서 carry.
                 if let Some(sid) = self.state.focused_surface_id(engine) {
                     self.state.dispatch_intent(
                         crate::intent::Intent::ConvertSurface {
@@ -319,7 +286,6 @@ impl MainView {
         true
     }
 
-    /// 창 밖으로 나가는 것 — 앱 이벤트만 보내고 상태를 안 건드린다.
     fn run_double_tap_app_action(&mut self, action: &str) -> bool {
         match action {
             "quit" => {

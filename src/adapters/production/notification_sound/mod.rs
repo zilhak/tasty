@@ -1,9 +1,4 @@
-//! `NotificationSoundPlayer` production adapter.
-//!
-//! GUI 실행만 OS 별 impl 을 `PlatformPlayer` alias 로 주입한다. headless 는
-//! `boot::wiring::build_production_core_headless` 가 `NoopPlayer` 를 직접 넣으므로
-//! 플랫폼 구현 모듈을 컴파일하지 않는다 — 그쪽에 소비자가 한 곳도 없다
-//! (docs/dev-guide/headless-build-boundaries.md). port 의 trait 계약은 공용이다.
+//! GUI는 OS별 소리 재생 구현을, 헤드리스는 NoopPlayer를 사용한다.
 
 #![allow(unused_imports)]
 

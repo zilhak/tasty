@@ -1,7 +1,6 @@
 use std::time::Instant;
 use winit::keyboard::{Key, NamedKey};
 
-/// Which modifier key was double-tapped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoubleTapKey {
     Shift,
@@ -10,7 +9,6 @@ pub enum DoubleTapKey {
 }
 
 impl DoubleTapKey {
-    /// The binding string for this double-tap (e.g. "shift+shift").
     pub fn binding_str(&self) -> &'static str {
         match self {
             DoubleTapKey::Shift => "shift+shift",
@@ -20,13 +18,8 @@ impl DoubleTapKey {
     }
 }
 
-/// Detect double-tap of modifier keys (Shift, Ctrl, Alt).
-///
-/// Detection logic:
-/// 1. Modifier key pressed alone → record
-/// 2. Any other key pressed while modifier is held → invalidate
-/// 3. Modifier key released (clean, no other key) → record as "first tap" with timestamp
-/// 4. Same modifier pressed again within threshold → fire double-tap!
+/// 수식키 단독 누름·떼기 뒤 제한 시간 안에 같은 키를 다시 누르면 double tap으로 처리한다.
+/// 누르는 동안 다른 키가 들어오면 해당 탭은 취소한다.
 pub struct DoubleTapDetector {
     /// Maximum time between two taps (ms).
     threshold_ms: u128,
@@ -51,18 +44,15 @@ impl DoubleTapDetector {
         }
     }
 
-    /// Call on every KeyboardInput event (both Press and Release).
     pub fn on_key_event(&mut self, key: &Key, pressed: bool) {
         let modifier = Self::as_modifier(key);
 
         if pressed {
             if let Some(m) = modifier {
-                // Modifier pressed
                 if self.pending_key.is_none() {
                     self.pending_key = Some(m);
                     self.contaminated = false;
 
-                    // Check if this is the second tap
                     if let Some((first_key, first_time)) = &self.first_tap
                         && *first_key == m
                         && first_time.elapsed().as_millis() < self.threshold_ms
@@ -73,17 +63,14 @@ impl DoubleTapDetector {
                     }
                 }
             } else {
-                // Non-modifier key pressed → contaminate
                 self.contaminated = true;
                 self.first_tap = None;
             }
         } else {
-            // Key released
             if let Some(m) = modifier
                 && self.pending_key == Some(m)
             {
                 if !self.contaminated {
-                    // Clean release → record as first tap
                     self.first_tap = Some((m, Instant::now()));
                 }
                 self.pending_key = None;
@@ -92,20 +79,12 @@ impl DoubleTapDetector {
         }
     }
 
-    /// Take the fired double-tap event (if any). Returns None if no double-tap occurred.
     pub fn take(&mut self) -> Option<DoubleTapKey> {
         self.fired.take()
     }
 
-    /// 진행 중인 탭 추적을 전부 버린다. 창의 포커스가 바뀌는 시점에 호출한다.
-    ///
-    /// 포커스 경계를 넘으면 modifier 의 down/up 짝이 이 창 안에서 완결되지 않는다.
-    /// `Alt+Tab` 으로 빠져나가면 `Alt` 의 press 만 여기로 들어오고, 짝이 되는 release 는
-    /// winit 의 합성 이벤트로 오는데 그건 사용자 입력이 아니라 버려진다
-    /// (`super::synthetic`). 그대로 두면 `pending_key` 가 남아, 돌아와서 `Alt` 를 떼는
-    /// 순간 "clean release" 로 오인돼 first tap 이 기록되고 다음 실제 탭 한 번에
-    /// double-tap 이 오발화한다. 양방향(획득/상실) 모두에서 지운다 — 어느 쪽이든
-    /// 이전 상태를 신뢰할 수 없다.
+    /// 포커스 획득·상실 때 이전 탭을 버린다. 창 밖의 release는 합성 이벤트로 걸러질 수 있어
+    /// 이전 press와 돌아온 뒤 입력을 연결하면 탭 한 번을 두 번으로 오인할 수 있다.
     pub fn reset(&mut self) {
         self.pending_key = None;
         self.contaminated = false;
@@ -134,8 +113,6 @@ mod tests {
         Key::Named(NamedKey::Alt)
     }
 
-    /// 기준선 — 같은 modifier 를 두 번 탭하면 발화한다. 아래 reset 테스트가
-    /// "아무것도 발화하지 않는 detector" 로 통과하지 않게 잡아주는 대조군이다.
     #[test]
     fn two_clean_taps_fire() {
         let mut d = DoubleTapDetector::new();
@@ -145,27 +122,17 @@ mod tests {
         assert_eq!(d.take(), Some(DoubleTapKey::Alt));
     }
 
-    /// `Alt` 를 누른 채 창을 벗어났다 돌아온 경우. 합성 release 는 버려지므로
-    /// `pending_key` 가 남고, 포커스 시점에 지우지 않으면 돌아와서 `Alt` 를 떼는 것이
-    /// first tap 으로 기록돼 다음 탭 한 번에 double-tap 이 오발화한다.
     #[test]
     fn focus_change_reset_prevents_stale_first_tap() {
         let mut d = DoubleTapDetector::new();
-        // 창 안에서 Alt 를 누른 상태로 포커스가 떠난다 (짝이 되는 release 는 합성이라
-        // 이 detector 에 오지 않는다).
         d.on_key_event(&alt(), true);
         d.reset();
 
-        // 포커스 복귀 후 사용자가 Alt 를 뗀다 — 눌린 적을 본 일이 없으므로 first tap 이
-        // 기록되면 안 된다.
         d.on_key_event(&alt(), false);
-        // 이어지는 실제 탭 한 번으로 double-tap 이 발화하면 안 된다.
         d.on_key_event(&alt(), true);
         assert_eq!(d.take(), None);
     }
 
-    /// reset 은 이미 기록된 first tap 도 버린다 — 포커스가 오간 뒤의 탭 한 번은
-    /// 이전 탭과 짝지어지지 않는다.
     #[test]
     fn reset_discards_recorded_first_tap() {
         let mut d = DoubleTapDetector::new();

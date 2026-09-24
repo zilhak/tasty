@@ -1,10 +1,6 @@
 #![cfg(windows)]
 
-//! Windows `MessageBeep` 기반 NotificationSoundPlayer impl.
-//!
-//! windows-rs 0.61 기준 `MessageBeep` 은 `System::Diagnostics::Debug`
-//! 모듈에, `MB_OK` (실제 타입 `MESSAGEBOX_STYLE`) 는
-//! `UI::WindowsAndMessaging` 모듈에 위치. 두 모듈 모두 import.
+//! Windows MessageBeep으로 알림음을 재생한다.
 
 use windows::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows::Win32::UI::WindowsAndMessaging::MB_OK;

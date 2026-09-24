@@ -1,7 +1,5 @@
-//! TmpHome — 명시한 base 경로 위에 tasty config / data / cache 구성.
-//!
-//! test 시 base = tempfile::TempDir 의 경로. 실제 디스크 사용 시 `MemFileSystem` 과
-//! 함께 쓰면 in-memory 완성.
+//! 지정한 base 아래의 Tasty 설정·데이터·캐시 경로를 제공한다.
+//! 디스크를 사용하는 시험은 TempDir 경로를 전달한다.
 
 use std::path::PathBuf;
 
