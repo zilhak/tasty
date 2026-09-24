@@ -145,5 +145,8 @@ fn a_dead_root_scans_zero_and_only_rs_files_count() {
         0,
         "없는 경로의 수집 결과가 0개가 아니다"
     );
-    assert!(none.is_empty(), "죽은 뿌리에서 자리를 주웠다: {none:?}");
+    assert!(
+        none.is_empty(),
+        "없는 디렉터리에서 사용처를 수집했다: {none:?}"
+    );
 }

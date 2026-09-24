@@ -1,45 +1,9 @@
-//! `debug-ipc.md` 의 † 표시가 **런타임 게이트라는 코드의 성질**과 어긋나지 않는지 본다.
+//! debug-ipc.md의 † 표시·각주 목록·require_input_simulation 호출 핸들러의 메서드 목록을 대조한다.
+//! 입력 게이트가 필요한 기준은 [ADR-0012](../../docs/adr/0012-request-admission-and-isolation.md)를 따른다.
+//! 게이트 호출의 존재만 확인하며, 실제 거절 동작이나 모든 실행 경로의 도달 여부는 검증하지 않는다.
 //!
-//! † 는 "이 메서드는 `--enable-input-simulation` 없이는 거부된다" 를 주장하는 표식이다.
-//! 그 주장의 진위는 소스에 있다 — `require_input_simulation` 을 부르는가. 표식과 성질이
-//! 갈라져도 아무 데서도 안 터지므로, 실제로 갈라져 있었다: † 여섯 행 중 둘
-//! (`debug.switch_workspace` · `debug.switch_tab`)이 게이트 없는 메서드에 붙어 있었다.
-//!
-//! # 세 집합이 같아야 한다
-//!
-//! 같은 사실을 세 곳이 각각 적는다. 셋이 일치하지 않으면 어느 하나가 거짓이다.
-//!
-//! 1. **† 가 붙은 표 행** — 사람이 표를 고칠 때마다 손으로 붙인다.
-//! 2. **각주 본문의 열거** — 같은 문단이 이름을 다시 적는다.
-//! 3. **`require_input_simulation` 호출처** — 실제로 게이트가 걸린 곳.
-//!
-//! 어긋났을 때 무엇이 정본인지는 이 가드가 정하지 않는다. 셋 중 하나만 고쳐서 통과시키면
-//! 나머지 둘과 또 갈라지므로, **셋을 함께 맞추게** 강제하는 것이 이 가드의 일이다.
-//!
-//! # 왜 † 만 지우는 것이 맞았나 (2026-09-05 판정)
-//!
-//! [ADR-0012](../../docs/adr/0012-request-admission-and-isolation.md) 가 게이트의
-//! 기준을 적는다 — 대상은 **tasty 프로세스 밖으로 나가는** 입력 조작(OS 이벤트 스트림·
-//! 시스템 입력 소스)과 대상 surface 의 **PTY 에 쓰는** 주입이고, 창 내부 상태만 바꾸는
-//! in-process 시뮬레이션(`surface.ime_*` · `debug.selection` 계열)에는 걸지 않는다.
-//! `debug.switch_workspace`/`switch_tab` 은 후자다 — 둘 다 `route_debug_handler`
-//! (`#[cfg(debug_assertions)]`) 안에 있어 release 에는 없고, PTY 에도 OS 에도 안 나간다.
-//! ADR 의 결정 · 각주 본문의 열거 · 게이트 호출처 **셋이 이미 일치**했고 † 만 어긋났다.
-//!
-//! # 사거리
-//!
-//! 게이트가 **걸렸는지**만 본다. 게이트가 **옳게 동작하는지**는 안 본다 — 그건
-//! `tests/ipc_release_table_excludes_input_reproduction.rs` 와 ADR-0012의 몫이다.
-//! 그리고 dispatch 팔을 텍스트로 읽으므로, 팔의 이름이 리터럴이 아니게 되면(매크로가
-//! 만들거나 상수와 맞대면) 그 팔은 지도에 안 들어온다. 그러면 **게이트가 걸렸는데 † 가
-//! 없는 메서드**가 아무 집합에도 안 나타나 세 집합이 사이좋게 일치한다 — 조용한 초록이다.
-//!
-//! **아래 하한은 그것을 못 본다.** 변이로 쟀다: 게이트된 핸들러를 부르는 팔을 하나 더
-//! 넣되 † 를 안 달면 리터럴일 때는 "게이트만 있고 † 없음" 으로 빨개지는데, 같은 팔을
-//! 매크로가 만든 이름으로 바꾸면 **6 개 테스트가 전부 초록**이었다. 팔이 하나 느는 방향
-//! 이라 팔 수가 줄지 않고, 수를 세는 검사는 느는 방향을 못 보기 때문이다 — 여유의 문제가
-//! 아니다. 그래서 팔의 이름이 리터럴인지를 따로 잰다 — 같은 전제 위에 선 가드가
-//! 여럿이라 그 판정은 [`super::dispatch_name_literals`] 가 라우터 전부에 대해 맡는다.
+//! 문자열 리터럴이 아닌 dispatch 이름은 수집하지 못한다. 메서드 수 하한도 이런 누락을 보장하지 못하므로
+//! 이름의 형식은 super::dispatch_name_literals에서 따로 확인한다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -50,12 +14,10 @@ const DOC: &str = "docs/dev-guide/debug-ipc.md";
 const DISPATCH: &str = "src/adapters/ipc/handler.rs";
 const HANDLER_DIR: &str = "src/adapters/ipc/handler";
 
-/// 게이트 함수의 이름. 이 파일이 그 이름을 담으므로 스캔 대상에서 자기를 빼는 대신
-/// **스캔 루트를 핸들러 트리로 좁혀** 애초에 자기가 안 들어오게 한다.
+/// 스캔을 핸들러 트리로 제한해 이 검사 자체의 문자열은 수집하지 않는다.
 const GATE: &str = "require_input_simulation";
 
-/// dispatch 팔 수의 하한 — 연기 검사. 파서가 죽으면 0 이 되고, 0 은 "게이트가 없다" 로
-/// 읽혀 조용히 통과한다. 근거: 2026-09-05 실측 214.
+/// 2026-09-05 dispatch 메서드 214개를 측정했다. 빈 파싱을 찾기 위한 하한이다.
 const MIN_DISPATCH_ARMS: usize = 150;
 
 fn read(rel: &str) -> String {
@@ -64,7 +26,6 @@ fn read(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("{} 를 읽을 수 없다: {e}", path.display()))
 }
 
-/// 백틱으로 감싼 `무엇.무엇` 꼴 이름을 순서대로 뽑는다.
 fn backticked_methods(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -88,7 +49,6 @@ fn backticked_methods(text: &str) -> Vec<String> {
     out
 }
 
-/// 표 행에 † 가 붙은 메서드. 행의 **첫 칸**이 메서드 이름이다.
 fn dagger_marked(doc: &str) -> BTreeSet<String> {
     doc.lines()
         .filter(|l| l.trim_start().starts_with('|') && l.contains('†'))
@@ -96,11 +56,7 @@ fn dagger_marked(doc: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// 각주 본문이 **열거하는** 이름.
-///
-/// 각주는 열거 뒤에 다른 이름도 언급한다(`engine.input_simulation_enabled` 같은 필드,
-/// 그리고 게이트가 **없는** 반례 `surface.ime_*`). 그래서 문장 구조로 열거 구간을 자른다 —
-/// `—` 와 첫 조사 `는` 사이가 열거다. 구간을 못 자르면 통과가 아니라 실패다.
+/// 각주의 예시·반례를 섞지 않도록 —와 첫 조사 는 사이의 목록만 읽는다.
 fn footnote_enumerated(doc: &str) -> BTreeSet<String> {
     let line = doc
         .lines()
@@ -117,38 +73,24 @@ fn footnote_enumerated(doc: &str) -> BTreeSet<String> {
     let out: BTreeSet<String> = backticked_methods(span).into_iter().collect();
     assert!(
         !out.is_empty(),
-        "각주의 열거 구간에서 메서드 이름을 하나도 못 읽었다 — 빈 집합은 아래 비교를 \
-         무의미하게 만든다. 구간: {span:?}"
+        "각주 목록에서 메서드 이름을 읽지 못했다. 목록 구간의 형식을 확인한다: {span:?}"
     );
     out
 }
 
-/// 응답만 만드는 팔의 호출 대상. 이 팔들은 **아무것도 실행하지 않는다** — 왜 못 하는지를
-/// 답할 뿐이다(예: 플랫폼 게이트의 상보 팔, ADR-0004). 게이트가 걸렸는지를 물을 대상이
-/// 아니므로 지도에서 뺀다. 안 빼면 한 메서드에 팔이 둘일 때 뒤엣것이 앞엣것을 덮어,
-/// **게이트된 실제 핸들러가 사라진 것처럼** 보인다(2026-09-05 실측: `surface.raw_key` 가
-/// 그렇게 게이트 없음으로 판정됐다).
+/// 오류 응답만 반환하는 분기는 실행 핸들러가 아니므로 제외한다.
 const REFUSAL_CALLEES: &[&str] = &["error", "invalid_params"];
 
-/// dispatch 팔 `"a.b" | "c.d" => 모듈::함수(...)` 를 메서드 → 핸들러 함수**들**로 편다.
-///
-/// 값이 집합인 이유: 한 메서드가 조합마다 다른 팔로 갈릴 수 있다. 하나만 담으면 나중 팔이
-/// 앞선 팔을 덮어 **조용히 판정을 뒤집는다.**
+/// 같은 메서드가 cfg별로 다른 핸들러를 부를 수 있어 호출 대상을 집합으로 보존한다.
 fn dispatch_map() -> BTreeMap<String, BTreeSet<String>> {
     dispatch_map_of(&strip_comments(&read(DISPATCH)))
 }
 
-/// 위의 순수부 — 합성 입력으로 면제를 찌를 수 있게 분리한다.
-///
-/// 구분자(`=>` · `{` · `,` · `(`)는 공용 렉서가 문자열·문자 리터럴·주석을 바이트째 덮은
-/// 사본(`code`)에서 찾고, 메서드 이름은 같은 구간의 원본에서 읽는다 — guard 문자열 안의 `,`
-/// 가 팔 머리를 자르면 그 앞의 이름이 지도에서 빠지고, 한 메서드에 팔이 둘일 때 게이트 없는
-/// 팔이 빠져 판정이 조용히 뒤집힌다.
+/// 리터럴 속 구분자로 분기를 잘못 나누지 않도록 마스킹한 소스에서 경계를 찾고 원문에서 이름을 읽는다.
 fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
     let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (i, _) in code.match_indices("=>") {
-        // 오른쪽: 첫 `식별자(` 의 마지막 경로 세그먼트가 핸들러 이름이다.
         let rhs = &code[i + 2..];
         let Some(paren) = rhs.find('(') else { continue };
         let callee: String = rhs[..paren]
@@ -159,7 +101,6 @@ fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
         if callee.is_empty() || REFUSAL_CALLEES.contains(&callee.as_str()) {
             continue;
         }
-        // 왼쪽: 이 팔의 문자열 리터럴들. 앞선 `=>` 나 블록 경계까지만 거슬러 본다.
         let lhs_start = code[..i]
             .rfind("=>")
             .map(|p| p + 2)
@@ -175,7 +116,6 @@ fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
     out
 }
 
-/// 큰따옴표로 감싼 `무엇.무엇` 꼴 리터럴.
 fn backticked_or_quoted(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -199,7 +139,7 @@ fn backticked_or_quoted(text: &str) -> Vec<String> {
     out
 }
 
-/// 게이트를 부르는 핸들러 함수 이름들. 정의부(`fn require_input_simulation`)는 뺀다.
+/// 게이트 이름 앞의 마지막 fn 이름을 수집한다. 함수 정의 자체는 제외하며 실제 호출 관계까지 분석하지 않는다.
 fn gated_handler_fns() -> BTreeSet<String> {
     let dir = repo_root().join(HANDLER_DIR);
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -218,12 +158,10 @@ fn gated_handler_fns() -> BTreeSet<String> {
         };
         let masked = mask_non_code(&raw);
         for (pos, _) in masked.match_indices(GATE) {
-            // 정의부는 호출이 아니다.
             let before = &masked[..pos];
             if before.trim_end().ends_with("fn") {
                 continue;
             }
-            // 감싸는 함수: 이 위치 앞의 마지막 `fn <이름>`.
             let Some(fi) = before.rfind("fn ") else {
                 continue;
             };
@@ -239,12 +177,7 @@ fn gated_handler_fns() -> BTreeSet<String> {
     out
 }
 
-/// 실제로 게이트가 걸린 **메서드** 이름.
-///
-/// 판정은 **모든** 실행 팔이 게이트를 부르는가다(`any` 가 아니라 `all`). 하나라도 게이트
-/// 없이 실행되는 길이 있으면 † 의 주장("이 메서드는 `--enable-input-simulation` 없이는
-/// 거부된다")이 그 길에서 거짓이기 때문이다. 거절만 하는 팔은 애초에 지도에 없다
-/// (`REFUSAL_CALLEES`).
+/// 오류 응답 분기를 제외한 모든 호출 대상에서 게이트 이름을 찾은 메서드만 인정한다.
 fn gated_methods(map: &BTreeMap<String, BTreeSet<String>>) -> BTreeSet<String> {
     gated_methods_with(map, &gated_handler_fns())
 }
@@ -264,11 +197,9 @@ fn the_dagger_the_footnote_and_the_gate_name_the_same_methods() {
     let doc = read(DOC);
     let map = dispatch_map();
 
-    // 연기 검사 — 파서가 죽으면 세 집합이 다 비고, 빈 집합끼리는 언제나 같다.
     assert!(
         map.len() >= MIN_DISPATCH_ARMS,
-        "dispatch 팔을 {} 개밖에 못 읽었다(하한 {MIN_DISPATCH_ARMS}) — 파서가 죽었으면 \
-         아래 세 집합이 전부 비어 서로 같아지고, 이 가드는 아무것도 안 본 채 초록이 된다",
+        "dispatch 메서드를 {}개만 읽었다(하한 {MIN_DISPATCH_ARMS}). 수집 경로와 파서를 확인한다.",
         map.len()
     );
 
@@ -278,18 +209,13 @@ fn the_dagger_the_footnote_and_the_gate_name_the_same_methods() {
 
     assert!(
         !gated.is_empty(),
-        "`{GATE}` 를 부르는 핸들러를 하나도 못 찾았다 — 게이트가 사라졌거나 스캔 루트가 \
-         어긋났다. 0 을 '게이트 대상 없음' 으로 읽지 않는다"
+        "`{GATE}`가 있는 핸들러를 찾지 못했다. 게이트가 없어졌는지, 스캔 경로가 맞는지 확인한다."
     );
 
     assert_eq!(
         marked,
         gated,
-        "† 가 붙은 메서드와 런타임 게이트가 실제로 걸린 메서드가 다르다.\n  \
-         † 만 있고 게이트 없음: {:?}\n  게이트만 있고 † 없음: {:?}\n\
-         † 는 게이트의 존재를 주장하는 표식이다 — 주장과 성질이 갈리면 문서가 거짓말을 \
-         하거나 구현이 빠진 것이다. 어느 쪽인지는 ADR-0012의 기준(프로세스 밖으로 나가는 \
-         입력 조작인가)으로 판단해라.",
+        "† 목록과 게이트 호출을 찾은 메서드 목록이 다르다.\n  †만 있음: {:?}\n  게이트만 있음: {:?}\nADR-0012의 입력 게이트 기준에 따라 문서와 구현 중 바꿀 대상을 판단한다.",
         marked.difference(&gated).collect::<Vec<_>>(),
         gated.difference(&marked).collect::<Vec<_>>()
     );
@@ -303,8 +229,6 @@ fn the_dagger_the_footnote_and_the_gate_name_the_same_methods() {
     );
 }
 
-/// 표식과 성질이 갈렸을 때 **정말 잡히는가.** 세 집합을 합성으로 흔든다 — 실제 문서를
-/// 고쳐서 재는 변이는 복원이 필요하고, 여기서는 필요 없다.
 #[test]
 fn a_dagger_without_a_gate_is_caught() {
     let doc = read(DOC);
@@ -315,7 +239,6 @@ fn a_dagger_without_a_gate_is_caught() {
         real.len()
     );
 
-    // ① † 를 한 행에 더 붙인다(게이트 없는 메서드에).
     let victim = "debug.switch_workspace";
     assert!(
         !real.contains(victim),
@@ -335,23 +258,20 @@ fn a_dagger_without_a_gate_is_caught() {
     let after = dagger_marked(&mutated);
     assert!(
         after.contains(victim),
-        "게이트 없는 메서드에 † 를 붙였는데 파서가 못 봤다 — 이 가드는 † 추가를 못 잡는다"
+        "게이트 없는 메서드에 추가한 †를 읽지 못했다"
     );
     assert_eq!(
         after.len(),
         real.len() + 1,
         "† 하나를 더했는데 집합 크기가 1 만큼 안 늘었다 — 파서가 행을 잘못 세고 있다"
     );
-    // 파서가 본다는 것과 **판정이 뒤집힌다**는 것은 다른 명제다. 고리를 닫는다.
     let gated = gated_methods(&dispatch_map());
     assert_eq!(real, gated, "변이 전에는 두 집합이 같아야 한다");
     assert_ne!(
         after, gated,
-        "† 를 게이트 없는 메서드에 붙였는데 본 판정의 집합 동등이 여전히 성립한다 — \
-         파서는 봤지만 판정은 안 바뀐다"
+        "게이트 없는 메서드에 †를 추가했는데 목록 비교가 실패하지 않았다"
     );
 
-    // ② 각주 열거에서 하나를 빼도 잡히는가 — 개수가 줄어드는 방향.
     let listed = footnote_enumerated(&doc);
     let dropped = listed
         .iter()
@@ -368,11 +288,6 @@ fn a_dagger_without_a_gate_is_caught() {
     assert!(!after_listed.contains(&dropped));
 }
 
-/// 각주가 **게이트 없는 반례로 언급하는** 이름을 열거로 오독하지 않는가.
-///
-/// 각주 본문에는 게이트 대상이 아닌 이름도 나온다(`engine.input_simulation_enabled` 같은
-/// 필드, 그리고 반례 `surface.ime_*`). 문장 구조로 열거 구간을 자르는 것이 그 오독을
-/// 막는 유일한 수단이라, 그 자름 자체를 못박는다.
 #[test]
 fn the_footnote_parser_reads_only_the_enumeration() {
     let doc = read(DOC);
@@ -385,8 +300,7 @@ fn the_footnote_parser_reads_only_the_enumeration() {
 
     assert!(
         everything.len() > listed.len(),
-        "각주 줄 전체에서 뽑은 이름({})이 열거 구간에서 뽑은 것({})보다 많지 않다 — \
-         자름이 아무것도 안 자르고 있다면 이 대조는 의미가 없다: {everything:?}",
+        "각주 전체의 이름 {}개가 목록 안의 이름 {}개보다 많지 않아 제외 범위를 확인할 수 없다: {everything:?}",
         everything.len(),
         listed.len()
     );
@@ -398,11 +312,6 @@ fn the_footnote_parser_reads_only_the_enumeration() {
     }
 }
 
-/// 거절 팔을 지도에서 빼는 면제가 **진짜 결손을 가리지 않는가.**
-///
-/// 이 면제는 실제 결함을 고치려고 넣은 것이라(상보 팔이 실제 핸들러를 덮었다), 그 면제
-/// 창 안쪽에 진짜 위반을 심었을 때 여전히 잡히는지를 여기서 못 박는다. 안 그러면 면제
-/// 자체가 구멍이 된다.
 #[cfg(test)]
 mod exemption_mutations {
     use super::*;
@@ -411,7 +320,6 @@ mod exemption_mutations {
         names.iter().map(|s| (*s).to_string()).collect()
     }
 
-    /// 거절 팔이 있어도 **실제 핸들러의 게이트 여부**로 판정한다 — 이번에 고친 형태.
     #[test]
     fn a_refusal_arm_does_not_hide_the_real_handler() {
         let src = r#"
@@ -433,7 +341,6 @@ match m {
         );
     }
 
-    /// 면제 창 안의 진짜 위반 — 게이트 없이 **실행되는** 길이 하나라도 있으면 잡는다.
     #[test]
     fn an_ungated_execution_path_is_still_caught() {
         let src = r#"
@@ -447,12 +354,10 @@ match m {
         let gated = gated_methods_with(&map, &fns(&["handle_raw_key"]));
         assert!(
             !gated.contains("surface.raw_key"),
-            "게이트 없이 실행되는 팔이 남아 있는데 게이트됨으로 읽었다 — `all` 이 아니라 \
-             `any` 로 판정하고 있다"
+            "게이트 없이 실행되는 분기가 있는데 게이트가 있는 메서드로 분류했다"
         );
     }
 
-    /// 거절 팔**만** 있는 메서드는 게이트된 것이 아니다(빈 집합을 참으로 읽지 않는다).
     #[test]
     fn a_method_with_only_refusals_is_not_gated() {
         let src = r#"

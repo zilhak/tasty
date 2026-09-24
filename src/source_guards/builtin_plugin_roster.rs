@@ -1,24 +1,6 @@
-//! 번들 plugin 명부가 적힌 다섯 자리가 같은 집합을 말하는지 못 박는다.
-//!
-//! 같은 사실("번들 plugin 이 무엇인가")이 다섯 곳에 열거되어 있다:
-//!
-//! 1. `crates/tasty-host-plugin/src/builtin.rs` 의 `BUILTINS` — `#[cfg(windows)]` 갈래
-//! 2. 같은 파일의 `#[cfg(not(windows))]` 갈래
-//! 3. `crates/tasty-plugin-*/tasty-plugin.toml` 의 `id` — 디스크 실물
-//! 4. `docs/dev-guide/plugin-packaging.md` 의 "번들 plugin 목록" 표
-//! 5. `docs/plugins/index.md` 의 카탈로그 표
-//!
-//! 자리가 여럿인 것 자체는 결함이 아니다 — 셋 이상이 일치하면 어긋난 하나를
-//! 판정할 수 있다. 결함은 **자리가 여럿인데 잇는 것이 없는 상태**다. 실제로
-//! `plugin-packaging.md` 는 "`BUILTINS` 가 단일 출처다. 아래 표는 그 복제" 라고
-//! 스스로 선언하지만, 그 선언을 강제하는 것은 이 파일이 생기기 전까지 없었다.
-//!
-//! 두 `cfg` 갈래는 특히 위험하다 — 컴파일러가 한 번에 한쪽만 본다. Linux 에서
-//! 빌드하는 한 `#[cfg(windows)]` 갈래의 오타는 어떤 빌드도 잡지 못한다.
-//!
-//! 판정 기준은 개수가 아니라 집합 동등이다. 개수만 맞추는 판정은 "하나를 다른
-//! 것으로 바꾼" 변이를 통과시킨다 — 아래 변이 대조가 그것을 같은 테스트에서
-//! 단언한다.
+//! 번들 플러그인 목록을 Windows·그 외의 BUILTINS, 디스크 매니페스트, 패키징 문서와 카탈로그에서 대조한다.
+//! 한 플랫폼의 컴파일만으로는 다른 cfg 분기의 이름을 확인하지 못하므로 두 분기를 함께 읽는다.
+//! 개수뿐 아니라 ID와 크레이트의 집합을 비교해 다른 플러그인으로 바뀐 경우도 찾는다.
 
 use std::collections::BTreeSet;
 
@@ -30,7 +12,7 @@ const PACKAGING_TABLE_HEAD: &str = "| crate | plugin ID |";
 const CATALOG_DOC: &str = "docs/plugins/index.md";
 const CATALOG_TABLE_HEAD: &str = "| 플러그인 (id) | 무엇 | 주요 기여 |";
 const PLUGIN_CRATE_PREFIX: &str = "tasty-plugin-";
-/// 바늘을 쪼갠다 — 이 파일이 판정 대상 문자열을 그대로 담으면 자기 참조가 된다.
+/// 검사 대상 문자열을 소스에 직접 남기지 않도록 조립한다.
 const ID_PREFIX: &str = concat!("com.", "tasty.");
 
 fn read(rel: &str) -> String {
@@ -49,8 +31,7 @@ fn specs_in(block: &str) -> BTreeSet<(String, String)> {
         } else if let Some(v) = field(t, "crate_dir:")
             && let Some(i) = id.take()
         {
-            // 단락 평가라야 한다 — 튜플로 묶으면 `crate_dir:` 가 아닌 줄에서도
-            // `take()` 가 돌아 직전 `id` 를 조용히 버린다.
+            // crate_dir 줄일 때만 take해야 앞에서 읽은 id를 잃지 않는다.
             out.insert((i, v));
         }
     }
@@ -64,10 +45,7 @@ fn field(line: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// 두 `cfg` 갈래를 각각 (라벨, 명세 집합) 으로 돌려준다.
-///
-/// 배열 경계는 `const BUILTINS` 부터 다음 `];` 까지다. 주석을 먼저 지워 주석
-/// 안의 예시가 항목으로 읽히지 않게 한다.
+/// 주석을 지운 뒤 각 cfg 분기의 BUILTINS 배열을 따로 읽는다.
 fn builtin_arms() -> Vec<(String, BTreeSet<(String, String)>)> {
     let src = strip_comments(&read(BUILTIN_SRC));
     let mut arms = Vec::new();
@@ -91,7 +69,7 @@ fn builtin_arms() -> Vec<(String, BTreeSet<(String, String)>)> {
     arms
 }
 
-/// 디스크의 매니페스트 — 파서가 아니라 실물이라 독립 오라클이다.
+/// BUILTINS와 별개로 디스크의 플러그인 매니페스트에서 ID를 읽는다.
 fn manifest_specs() -> BTreeSet<(String, String)> {
     let crates = repo_root().join("crates");
     let mut out = BTreeSet::new();
@@ -115,7 +93,7 @@ fn manifest_specs() -> BTreeSet<(String, String)> {
     out
 }
 
-/// 헤더로 표 하나를 고른다 — 같은 문서의 다른 표를 긁지 않기 위해서다.
+/// 지정한 머리글로 시작하는 표만 읽는다.
 fn table_rows(doc: &str, head: &str) -> Vec<Vec<String>> {
     let text = read(doc);
     let mut rows = Vec::new();
@@ -164,7 +142,6 @@ fn backticked(cell: &str) -> Vec<String> {
     out
 }
 
-/// `plugin-packaging.md` 표: 두 열이 각각 crate 와 id 다 → (id, crate_dir).
 fn packaging_specs() -> BTreeSet<(String, String)> {
     table_rows(PACKAGING_DOC, PACKAGING_TABLE_HEAD)
         .iter()
@@ -176,7 +153,6 @@ fn packaging_specs() -> BTreeSet<(String, String)> {
         .collect()
 }
 
-/// `plugins/index.md` 카탈로그: 첫 열에 링크와 id 가 함께 있어 id 만 뽑는다.
 fn catalog_ids() -> BTreeSet<String> {
     table_rows(CATALOG_DOC, CATALOG_TABLE_HEAD)
         .iter()
@@ -196,7 +172,6 @@ fn ids(specs: &BTreeSet<(String, String)>) -> BTreeSet<String> {
 mod tests {
     use super::*;
 
-    /// 컴파일러가 한 번에 한쪽만 보는 두 갈래를 여기서 함께 본다.
     #[test]
     fn both_cfg_arms_of_builtins_declare_the_same_plugins() {
         let arms = builtin_arms();
@@ -208,14 +183,13 @@ mod tests {
         );
         assert!(
             arms[0].1.len() >= 5,
-            "갈래 하나가 비었거나 너무 작다 — 파싱 실패다: {:?}",
+            "BUILTINS 분기 하나가 비었거나 너무 작다. 파싱 범위를 확인한다: {:?}",
             arms[0]
         );
         assert_eq!(
             arms[0].1,
             arms[1].1,
-            "{BUILTIN_SRC} 의 두 cfg 갈래가 다른 plugin 을 선언한다.\n  {} 쪽에만: {:?}\n  {} 쪽에만: {:?}\n\
-             이 어긋남은 한 플랫폼에서 빌드하는 한 컴파일러가 못 잡는다.",
+            "BUILTINS의 플랫폼별 목록이 다르다. {}에만 있는 항목: {:?}, {}에만 있는 항목: {:?}",
             arms[0].0,
             arms[0].1.difference(&arms[1].1).collect::<Vec<_>>(),
             arms[1].0,
@@ -223,7 +197,7 @@ mod tests {
         );
     }
 
-    /// 디스크 실물과의 대조 — 이쪽은 파서가 아니라 오라클이다.
+    /// 코드 목록을 별도로 수집한 매니페스트와 대조한다.
     #[test]
     fn the_manifests_on_disk_and_the_builtin_table_name_the_same_plugins() {
         let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
@@ -242,7 +216,6 @@ mod tests {
         );
     }
 
-    /// `plugin-packaging.md` 는 자기 표를 "복제" 라고 선언한다 — 그 선언을 강제한다.
     #[test]
     fn both_docs_that_copy_the_builtin_table_still_match_it() {
         let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
@@ -264,8 +237,7 @@ mod tests {
         );
     }
 
-    /// 변이 대조 — 개수를 보존하는 치환은 "건수 고정" 강도를 통과하고
-    /// "집합 동등" 만 잡는다. 두 강도의 차이를 같은 테스트에서 단언한다.
+    /// 같은 개수의 다른 플러그인으로 바꿔 집합 비교가 실패하는지 확인한다.
     #[test]
     fn swapping_one_entry_is_caught_although_the_count_is_unchanged() {
         let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
@@ -277,17 +249,16 @@ mod tests {
         assert_eq!(
             mutated.len(),
             code.len(),
-            "변이가 개수를 바꿨다 — 이 대조는 강도 차이를 못 보인다"
+            "같은 개수를 유지하는 치환 입력이 아니다"
         );
         assert_ne!(
             mutated,
             manifest_specs(),
-            "치환 변이가 집합 동등 판정을 통과했다 — 이 가드는 어긋남을 못 잡는다"
+            "다른 플러그인으로 바꾼 목록을 같은 집합으로 판단했다"
         );
     }
 
-    /// 내가 실제로 빠진 함정 — 한 문서 안의 다른 표를 긁으면 자리가 뒤바뀐다.
-    /// `plugin-packaging.md` 에는 표가 넷 있고, 그중 하나만 번들 목록이다.
+    /// 같은 문서의 다른 표가 목록에 섞이지 않는지 확인한다.
     #[test]
     fn the_table_parser_reads_only_the_table_it_was_pointed_at() {
         let text = read(PACKAGING_DOC);
@@ -302,7 +273,7 @@ mod tests {
             .count();
         assert!(
             other_heads > 0,
-            "{PACKAGING_DOC} 에 다른 표가 없다 — 이 대조가 무의미해졌다"
+            "{PACKAGING_DOC}에 비교할 다른 표가 없어 표 선택 범위를 확인할 수 없다"
         );
         let rows = table_rows(PACKAGING_DOC, PACKAGING_TABLE_HEAD);
         assert!(

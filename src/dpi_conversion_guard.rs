@@ -349,7 +349,7 @@ mod tests {
         let declared = tasty_doc_guards::floored_walk::populations::SRC_RS;
         assert!(
             files.len() < MIN_SCANNED_FILES,
-            "src의 Rust 파일{}개가 하한 {MIN_SCANNED_FILES} 이상이다(선언 SRC_RS={}, 측정시점{}). src만 수집한 누락을 전체 하한으로 찾을 수 없으므로 루트별 하한 등으로 검사를 보완해야 한다.",
+            "src의 Rust 파일 {}개가 하한 {MIN_SCANNED_FILES} 이상이다(선언 SRC_RS={}, 측정 시점 {}). src만 수집한 누락을 전체 하한으로 찾을 수 없으므로 루트별 하한 등으로 검사를 보완해야 한다.",
             files.len(),
             declared.measured,
             declared.measured_on,

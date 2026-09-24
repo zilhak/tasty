@@ -623,7 +623,7 @@ fn ui_does_not_consume_generated_length_consts_directly() {
     // 각 타입의 대표 상수도 확인해 개수만 맞는 잘못된 파싱을 찾는다.
     assert!(
         logical.iter().any(|n| n == "ICON_SIZE_SM"),
-        "`ICON_SIZE_SM`(LogicalPx)이 길이 표에 없다 — 타입 파서가 죽었다"
+        "`ICON_SIZE_SM`(LogicalPx)을 길이 상수로 수집하지 못했다. 타입 파서를 확인한다."
     );
     assert!(
         other.iter().any(|n| n == "EDGE_DIM_OPACITY"),
@@ -637,7 +637,7 @@ fn ui_does_not_consume_generated_length_consts_directly() {
         .collect();
     assert!(
         scanned.len() >= MIN_ZOOM_CONST_SCANNED_FILES,
-        "갤러리를 제외한 파일을 {}개만 읽었다(하한 {MIN_ZOOM_CONST_SCANNED_FILES}, 전체{}개). 수집과 제외 범위를 확인한다.",
+        "갤러리를 제외한 파일을 {}개만 읽었다(하한 {MIN_ZOOM_CONST_SCANNED_FILES}, 전체 {}개). 수집과 제외 범위를 확인한다.",
         scanned.len(),
         sources.len()
     );
@@ -668,7 +668,7 @@ fn ui_does_not_consume_generated_length_consts_directly() {
     }
     assert!(
         violations.is_empty(),
-        "UI에서 생성 길이 상수를 직접 읽어 Theme의 배율 적용·제외 정책을 건너뛴다:\n{}\n같은 검사에서 길이가 아닌 상수 사용{}건은 허용했다.",
+        "UI에서 생성 길이 상수를 직접 읽어 Theme의 배율 적용·제외 정책을 건너뛴다:\n{}\n같은 검사에서 길이가 아닌 상수 사용 {}건은 허용했다.",
         violations.join("\n"),
         dimensionless
     );
@@ -722,12 +722,12 @@ fn the_path_parser_beats_the_weak_forms_on_the_deepest_path() {
     let (logical, other) = generated_const_types();
     assert!(
         !logical.iter().any(|n| n == first) && !other.iter().any(|n| n == first),
-        "첫 조각이 상수 표에 있으면 약한 형태 ②가 우연히 잡는다 — 대조가 무너진다"
+        "경로의 첫 조각이 상수 표에 있어 첫 이름만 읽는 방식과 비교할 수 없다"
     );
 
     assert!(
         logical.iter().any(|n| n == "MAX_HEIGHT"),
-        "`MAX_HEIGHT` 가 LogicalPx 표에 없다 — 최악 후보를 잘못 골랐다"
+        "`MAX_HEIGHT`가 LogicalPx 표에 없어 경로의 마지막 상수를 읽는지 확인할 수 없다"
     );
 }
 
@@ -1283,7 +1283,7 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
     unlisted.dedup();
     assert!(
         unlisted.is_empty(),
-        "UI 폰트 상한{}px를 넘는 상수다:\n{}\n승인된 예외는 근거를 문서화해 OVER_CAP_SANCTIONED에, 디자인 결정을 기다리면 그 내용을 OVER_CAP_PENDING에 기록한다.",
+        "UI 폰트 상한 {}px를 넘는 상수다:\n{}\n승인된 예외는 근거를 문서화해 OVER_CAP_SANCTIONED에, 디자인 결정을 기다리면 그 내용을 OVER_CAP_PENDING에 기록한다.",
         UI_FONT_SIZE_CAP.value(),
         unlisted.join("\n")
     );
@@ -1434,7 +1434,7 @@ fn dot_scan_roots() -> Vec<&'static str> {
 
 const MIN_DOT_SCANNED_FILES: usize = 150;
 
-/// 점 지름 토큰에서 가져온 비교 전용 LogicalPx 값이다.
+/// 점 지름 토큰과 비교할 기준값.
 const DOT_SIZE_TOKEN_VALUE: LogicalPx = LogicalPx(8.0);
 
 const DOT_CONST_NAME_MARK: &str = "DOT";
