@@ -133,7 +133,8 @@ impl App {
         view.mark_dirty();
     }
 
-    /// 일반 Configure·파일 핸들러·권한 진입 요청과 debug가 지정한 초기 탭·하위 탭을 적용한다.
+    /// 플러그인 Configure, 파일 핸들러, 권한 화면 진입 요청과 debug 빌드에서 지정한
+    /// 초기 탭·하위 탭을 적용한다.
     fn apply_pending_tab_overrides(&mut self, modal: &mut view::SettingsView) {
         if std::mem::take(&mut self.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();

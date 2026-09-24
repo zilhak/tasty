@@ -122,13 +122,14 @@ pub fn draw_egui_panels(
         .unwrap_or_default();
     // 렌더 중 state를 빌리기 전에 최근 폴더를 한 번 읽어 둔다.
     let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND);
-    // 타입어헤드 게이트 — 셋 다 `state`/`engine` 을 읽어야 해서 가변 차용 루프에
-    // 들어가기 전에 값으로 뽑아 둔다(위 스냅샷들과 같은 이유).
+    // 타입어헤드를 허용할지 판단하는 값들. 셋 다 `state`와 `engine`을 읽어야 해서
+    // 가변 차용이 걸리는 루프에 들어가기 전에 미리 꺼내 둔다(위 스냅샷들과 같은 이유).
     let focused_surface_id = state.focused_surface_id(engine);
-    // 전체화면 무대도 함께 본다 — 무대가 떠 있는 동안 그 뒤 세계로 입력이 새면 안 된다.
+    // 전체화면 무대도 함께 확인한다. 무대가 떠 있는 동안 그 뒤의 패널로 입력이 새면
+    // 안 되기 때문이다.
     let overlay_open = state.keyboard_overlay_open() || state.fullscreen_stage_active();
-    // 바인딩 61 개를 훑어 파싱하므로, explorer 패널이 하나도 없는 프레임에는 짓지 않는다
-    // (`explorer_cwd` 는 `ExplorerPanel` 일 때만 채워진다).
+    // 키 바인딩 전체를 파싱하는 작업이라, explorer 패널이 하나도 없는 프레임에서는
+    // 만들지 않는다(`explorer_cwd`는 `ExplorerPanel`일 때만 채워진다).
     let explorer_shortcut_chars = if infos.iter().any(|i| i.explorer_cwd.is_some()) {
         crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.settings.keybindings)
     } else {

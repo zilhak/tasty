@@ -269,14 +269,15 @@ impl SettingsUiState {
         self.active_tab = SettingsTab::FileHandler;
     }
 
-    /// 부팅 권한 안내의 [권한 설정 열기] 에서 호출 — 첫 진입을 일반 > 권한으로 설정.
-    /// **L1 과 L2 를 함께** 세운다. 권한 L2 는 macOS 에서만 목록에 들어가므로
-    /// (`general_l2_sections`) 다른 OS 에서 이 값이 선택되면 본문이 빈 화면으로 그려지는데,
-    /// 생산자가 macOS 전용 안내 하나라 실제로는 그 조합이 만들어지지 않는다.
+    /// 부팅 권한 안내의 [권한 설정 열기]에서 호출한다. 첫 화면을 일반 > 권한으로 맞추기
+    /// 위해 L1과 L2를 함께 정한다. 권한 L2는 macOS에서만 목록에 들어가므로
+    /// (`general_l2_sections`) 다른 OS에서 이 값이 선택되면 본문이 비어 보인다. 다만 이
+    /// 함수를 부르는 곳이 macOS 전용 안내 하나뿐이라 그 조합은 실제로 생기지 않는다.
     pub fn select_macos_permissions_tab(&mut self) {
         self.active_tab = SettingsTab::General;
         self.general_sub_tab = GeneralSubTab::MacosPermissions;
-        // 진입은 권한 상태 스냅샷의 갱신 트리거다(`apply_l2_select` 와 같은 이유).
+        // 권한 화면에 들어오는 것도 스냅샷을 다시 측정하는 시점이다
+        // (`apply_l2_select`와 같은 이유).
         crate::macos_permissions::refresh_permission_snapshot();
     }
 
@@ -1343,8 +1344,9 @@ fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
     match select {
         L2Select::General(v) => {
             ui_state.general_sub_tab = *v;
-            // 권한 화면은 상태를 draw 에서 재지 않고 스냅샷을 읽는다. 진입이 그 갱신
-            // 트리거 중 하나다 — macOS 외에서는 no-op.
+            // 권한 화면은 상태를 그릴 때마다 측정하지 않고 보관된 스냅샷을 읽는다.
+            // 화면에 들어오는 것이 그 갱신 시점 중 하나다. macOS가 아니면 아무 일도
+            // 하지 않는다.
             if matches!(v, GeneralSubTab::MacosPermissions) {
                 crate::macos_permissions::refresh_permission_snapshot();
             }

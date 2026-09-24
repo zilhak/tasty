@@ -496,11 +496,12 @@ impl App {
         }
     }
 
-    /// macOS 에서 확인 가능한 권한 중 하나라도 미승인이면 안내한다.
-    /// 부팅 직후 자동 요청이 없으므로 이 안내가 권한 화면으로 가는 발견 채널이다.
-    /// 권한이 회수될 수 있어 부팅마다 다시 확인하며 안내 여부를 영구 저장하지 않는다.
-    /// 판정 규칙과 그 한계는 `crates/tasty-platform/src/macos_permissions.rs` 의
-    /// `should_show_permission_notice`. macOS 외에서는 no-op.
+    /// macOS에서 확인할 수 있는 권한 중 하나라도 허용되지 않았으면 안내 모달을 띄운다.
+    /// 부팅 직후에 권한을 자동으로 요청하지 않으므로, 사용자가 권한 화면을 찾아가는
+    /// 경로는 이 안내다. 사용자가 권한을 회수할 수 있어 부팅할 때마다 다시 확인하며,
+    /// 안내를 띄웠다는 사실은 저장하지 않는다. 어떤 권한을 보는지와 그 한계는
+    /// `crates/tasty-platform/src/macos_permissions.rs`의 `should_show_permission_notice`에
+    /// 있다. macOS가 아니면 아무 일도 하지 않는다.
     fn report_missing_permissions(state: &mut crate::state::AppState) {
         if !crate::macos_permissions::wants_permission_notice() {
             return;
@@ -625,7 +626,7 @@ impl App {
     }
 }
 
-/// 권한 안내 모달의 추가 버튼 — 시스템 설정이 아니라 Tasty 의 권한 화면으로 보낸다.
+/// 권한 안내 모달에 붙는 버튼. 시스템 설정이 아니라 Tasty의 권한 화면으로 보낸다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 fn permission_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     vec![crate::adapters::ui::info_modal::InfoModalButton {

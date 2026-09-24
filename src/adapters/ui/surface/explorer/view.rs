@@ -77,10 +77,11 @@ pub struct ExplorerView {
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     outbox: Vec<ExplorerListRequest>,
-    /// 타입어헤드 입력 버퍼(영숫자로 항목 선택). 규칙은 `type_ahead` 모듈에 있다.
+    /// 영숫자로 항목을 선택하는 타입어헤드의 입력 버퍼. 동작 규칙은 `type_ahead`
+    /// 모듈에 있다.
     pub type_ahead: TypeAhead,
-    /// 이번 프레임에 보이도록 스크롤할 항목 경로. **쓰고 나면 비운다** — 남겨두면
-    /// 매 프레임 재스크롤이 되어 사용자가 휠로 다른 곳을 볼 때 끌려간다.
+    /// 이번 프레임에 화면에 보이도록 스크롤할 항목의 경로. 사용한 뒤에는 비운다.
+    /// 남겨두면 매 프레임 다시 스크롤해서 사용자가 휠로 다른 곳을 볼 때 끌려간다.
     pub scroll_to: Option<PathBuf>,
 }
 
@@ -106,9 +107,9 @@ impl ExplorerView {
         }
     }
 
-    /// 타입어헤드 입력을 버린다. 내부 탭 전환/추가/닫기처럼 목록이 통째로 바뀌는
-    /// 자리에서 호출한다 — 이전 탭에서 치던 접두사가 새 목록에 이어지면 안 된다.
-    /// (디렉토리·정렬 변경은 `sync()` 가 스스로 처리한다.)
+    /// 타입어헤드 입력을 비운다. 내부 탭을 바꾸거나 추가·닫을 때처럼 목록이 통째로
+    /// 바뀌는 자리에서 호출한다. 이전 탭에서 입력하던 접두사가 새 목록으로 이어지면
+    /// 안 되기 때문이다. 폴더나 정렬이 바뀌는 경우는 `sync()`가 알아서 처리한다.
     pub fn reset_type_ahead(&mut self) {
         self.type_ahead.reset();
         self.scroll_to = None;
@@ -179,8 +180,8 @@ impl ExplorerView {
             return;
         }
         self.reload_requested = false;
-        // 목록이 바뀌는 것이 확정된 자리다. 정렬만 바뀌어도 인덱스 의미가 달라지므로
-        // 디렉토리 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
+        // 목록이 바뀌는 것이 확실한 지점이다. 정렬만 바뀌어도 인덱스가 가리키는 항목이
+        // 달라지므로, 폴더 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
         self.reset_type_ahead();
         if dir_changed {
             self.selected.clear();
@@ -535,11 +536,11 @@ mod tests {
         assert_eq!(view.addr_buffer, "/tmp/typed");
     }
 
-    /// 목록이 다시 적재되면 타입어헤드 버퍼가 비워진다 — 새 디렉토리에서 옛 접두사가
-    /// 이어지면 사용자가 치지 않은 글자로 검색하는 것이 된다.
+    /// 목록을 다시 읽어 오면 타입어헤드 버퍼가 비워지는지 확인한다. 새 폴더에서 예전
+    /// 접두사가 이어지면 사용자가 입력하지 않은 글자로 검색하게 된다.
     ///
-    /// 버퍼는 사적이라 값으로 못 보고, 다음 입력이 무엇으로 검색되는지로 잰다:
-    /// 비워지지 않았으면 "ab" 로 찾아 `None`, 비워졌으면 "b" 로 찾아 `bravo`.
+    /// 버퍼는 비공개라 값을 직접 볼 수 없어, 다음 입력이 무엇으로 검색되는지로 확인한다.
+    /// 비워지지 않았다면 "ab"로 찾아 `None`이 되고, 비워졌다면 "b"로 찾아 `bravo`가 된다.
     #[test]
     fn reloading_the_listing_clears_the_type_ahead_buffer() {
         let names = vec!["alpha".to_string(), "bravo".to_string()];
@@ -550,7 +551,7 @@ mod tests {
         let now = std::time::Instant::now();
         assert_eq!(view.type_ahead.feed('a', now, &names, None), Some(0));
 
-        // 정렬만 바꿔도 인덱스 의미가 달라지므로 같은 자리에서 비워져야 한다.
+        // 정렬만 바뀌어도 인덱스가 가리키는 항목이 달라지므로 같은 자리에서 비워야 한다.
         let mut panel = panel;
         panel.active_tab_mut().sort_dir = SortDir::Desc;
         view.sync(&panel, None);

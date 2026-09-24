@@ -1,4 +1,4 @@
-<!-- source-hash: e94a5203807b -->
+<!-- source-hash: 549b382a877d -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -44,7 +44,7 @@ The install procedure itself is in [Install](../getting-started/install.md).
 
 **Cause** — when a command run inside the terminal reads a file, macOS attributes that access to Tasty (Terminal.app · iTerm2 behave the same). macOS only asks at the moment of actual access, so unless you grant the permissions up front, the prompt lands in the middle of your work.
 
-**Fix — grant them up front, in one go.** In **Settings** > **General** > **Permissions**, click **Request all permissions**: it asks one at a time, in the order Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording. The next prompt only appears once you answer the previous one, and the window works normally while they are up. Items already allowed · denied are not asked again, so clicking it repeatedly is harmless — click it again after mounting a new volume and only that one is asked.
+**Fix — grant them up front, in one go.** In **Settings** > **General** > **Permissions**, click **Request all permissions**: it asks one at a time, in the order Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording. The next prompt only appears once you answer the previous one, and the window works normally while they are up. Items you have already allowed or denied are not asked again, so pressing the button more than once is harmless. Press it again after mounting a new volume and only that volume is asked about.
 
 Tasty does **not** raise these prompts automatically at startup. That keeps a first launch from throwing a stack of unexplained prompts at you. Instead, if any permission is still missing, a notice at startup leads you to this screen.
 
@@ -55,7 +55,7 @@ Tasty does **not** raise these prompts automatically at startup. That keeps a fi
 | Folder access (Downloads · Documents · Desktop · volumes) | Commands that read or write that folder may fail | System Settings > Privacy & Security > Files and Folders |
 | Screen recording | The `Ctrl+Alt+S` screenshot-to-clipboard feature only shows a "Screen recording permission is required" notice. Once denied, it is not asked again | System Settings > Privacy & Security > Screen & System Audio Recording |
 
-You can see the current state in the same tab (only shown on macOS). Full Disk Access is not part of that button because no app can request it — use **Open Full Disk Access settings** below it and add Tasty in System Settings yourself. Folder permissions have no way to be queried, so they read "Cannot be observed".
+You can see the current state in the same tab (only shown on macOS). Full Disk Access is not part of that button because no app can request it. Use **Open Full Disk Access settings** below it to open System Settings and add Tasty yourself. Folder permissions cannot be queried at all, so they read "Cannot be observed".
 
 - **A "Some permissions are not granted" notice appeared** — it appears at every start while Tasty does not seem to have Full Disk Access or screen recording. The **Settings** > **General** > **Permissions** tab shows which ones and what state they are in. **Open permission settings** opens Tasty's own Permissions screen. Tasty cannot request Full Disk Access itself, so from there use **Open Full Disk Access settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away, and the notice stops appearing from the next start. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. There is no setting to disable this notice. Tasty checks the current state at each startup.
 - **I granted everything, but folder prompts still appear** — the startup notice only looks at permissions it can check. Folder permissions (Downloads · Documents · Desktop · volumes) are left out because macOS offers no way to ask for their state — asking *is* the prompt. Granting Full Disk Access covers those folders too.

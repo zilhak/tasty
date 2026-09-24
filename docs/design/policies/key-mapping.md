@@ -135,22 +135,20 @@ Event Bus의 `command.invoked`는 소유 plugin에 보내는 알림이다. `acti
 
 ## 텍스트 입력과 단축키의 우선순위
 
-egui surface(explorer 등)에 포커스가 있으면 한 키 입력이 **두 소비자**에게 도달한다.
-`handle_event` 가 먼저 `egui::Event::Text` 를 egui 큐에 넣고, 그 다음 단축키를
-소비한다. 단축키가 소비되더라도 **이미 큐에 들어간 `Event::Text` 를 빼는 경로가
-없다** — 그래서 수식 없이(또는 shift 만 붙여) 영숫자에 바인딩된 단축키는 그 글자를
-텍스트로도 흘린다.
+explorer 같은 egui surface에 포커스가 있으면 한 번의 키 입력이 두 곳에 도달한다.
+`handle_event`가 텍스트 이벤트를 egui 큐에 먼저 넣고 그 다음에 단축키를 처리하는데,
+단축키가 처리되더라도 이미 큐에 들어간 텍스트 이벤트를 되돌릴 방법이 없다. 그래서 수식
+키 없이(또는 shift만 붙여) 영숫자에 등록된 단축키는 그 글자를 텍스트로도 흘려보낸다.
 
-그 이중 발화를 막는 자리는 **텍스트를 소비하는 쪽**이다. explorer 타입어헤드는
-`unmodified_binding_chars` 로 "수식 없이 바인딩된 영숫자" 집합을 만들어 그 글자를
-소비하지 않고 단축키에 양보한다([explorer](../../features/explorer/index.md) 의
-"사용자 트리거 (타입어헤드)"). Tasty 프리셋 기본값에는 그런 바인딩이 하나도 없으므로
-기본 상태에서 양보되는 글자는 없다.
+이 중복을 막는 곳은 텍스트를 소비하는 쪽이다. explorer 타입어헤드는
+`unmodified_binding_chars`로 수식 키 없이 등록된 영숫자를 모아 두고, 그 글자는 소비하지
+않고 단축키에 넘긴다([explorer](../../features/explorer/index.md)의 "타입어헤드로 항목
+선택"). Tasty 기본 프리셋에는 그런 단축키가 없으므로 기본 상태에서 넘기는 글자도 없다.
 
-`shift` 만 붙은 바인딩도 같은 취급이다 — shift 조합은 대문자 `Event::Text` 를 만들어
-수식 없는 것과 똑같이 이중 발화한다. `binding_has_modifier` 가 shift 를 수식으로 세지
-않는 판정이 여기서는 맞다. Ctrl/Cmd 조합은 egui-winit 이 `Event::Text` 를 아예 만들지
-않으므로 이 문제가 없다.
+`shift`만 붙은 단축키도 같이 처리한다. shift 조합은 대문자 텍스트 이벤트를 만들어 수식
+키가 없을 때와 똑같이 두 번 동작한다. `binding_has_modifier`가 shift를 수식 키로 세지
+않는 것이 여기서는 오히려 맞는 판단이다. Ctrl과 Cmd 조합은 egui-winit이 텍스트 이벤트를
+아예 만들지 않으므로 이 문제가 없다.
 
 ## 합성 키 이벤트 (winit)
 
@@ -197,7 +195,7 @@ macOS·Wayland 에서는 항상 `false` 로 들어와 동작이 바뀌지 않으
 - 합성 키 차단: `src/adapters/ui/input/synthetic.rs`(`is_synthetic_key_event`),
   `src/app/event_handler.rs`(`App::window_event` 진입부 게이트),
   `src/adapters/ui/input/double_tap.rs`(`DoubleTapDetector::reset`).
-- 텍스트 입력과의 경합: `src/adapters/ui/surface/explorer/type_ahead.rs`
+- 텍스트 입력과 겹치는 경우의 처리: `src/adapters/ui/surface/explorer/type_ahead.rs`
   (`unmodified_binding_chars`).
 - Plugin 커맨드: `crates/tasty-host-plugin/src/command_registry.rs`(`PluginCommandRegistry`,
   `effective_binding`), `src/plugin_bridge/key_dispatch.rs`(`match_plugin_shortcut`/

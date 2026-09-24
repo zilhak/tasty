@@ -18,10 +18,14 @@ pub enum InfoModalAction {
 
 #[derive(Debug, Clone)]
 pub enum InfoModalButtonAction {
-    /// Tasty 의 권한 화면(설정 > 일반 > 권한)을 연다. 모달은 열린 채 유지되며 [확인] 으로만 닫힌다.
-    /// popup draw 에는 winit proxy 가 없어 `dialogs.permission_settings_requested` 슬롯을
-    /// 세우고 App 레이어가 드레인한다.
-    // 이유: 유일한 생산자가 macOS 전용 안내라 다른 OS 빌드엔 생성처가 없다.
+    /// Tasty의 권한 화면(설정 > 일반 > 권한)을 연다. 이 버튼을 눌러도 안내 모달은 열린
+    /// 채로 남고 [확인]으로만 닫힌다. 설정 창은 별도 창이라 안내를 가릴 수 있어서, 창을
+    /// 닫은 뒤에도 무엇을 왜 허용해야 하는지 다시 읽을 수 있어야 하기 때문이다.
+    ///
+    /// 팝업을 그리는 코드는 `AppState`만 가지고 있어 winit 이벤트 루프에 접근할 수 없다.
+    /// 그래서 `dialogs.permission_settings_requested`만 표시해 두고 App 계층이 이를 읽어
+    /// 창을 연다.
+    // 이유: 이 값을 만드는 곳이 macOS 전용 안내 하나뿐이라 다른 OS 빌드에는 생성처가 없다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenPermissionSettings,
 }

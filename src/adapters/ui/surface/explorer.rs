@@ -84,18 +84,19 @@ pub enum ExplorerMenuTarget {
     Favorite { path: PathBuf },
 }
 
-/// 타입어헤드가 키를 소비해도 되는지 판정하는 데 필요한, explorer 밖에서 오는 값들.
-/// 렌더 루프 안에서는 `state`/`engine` 이 배타 차용돼 읽을 수 없어 프레임당 1 회 계산해
-/// 넘긴다(`egui_panels` 의 favorites·cut_pending 스냅샷과 같은 이유).
+/// 타입어헤드가 키를 소비해도 되는지 판단하는 데 필요한, 탐색기 바깥에서 오는 값들.
+/// 렌더 루프 안에서는 `state`와 `engine`을 읽을 수 없으므로 프레임마다 한 번 계산해
+/// 넘긴다. `egui_panels`에서 즐겨찾기와 잘라내기 목록을 미리 꺼내 두는 것과 같은
+/// 이유다.
 pub struct ExplorerInput<'a> {
-    /// 이 surface 가 포커스된 surface 인가. **egui 이벤트 큐는 전역이라** 이 게이트가
-    /// 없으면 한 번의 타이핑이 열려 있는 모든 explorer 의 선택을 동시에 움직인다.
+    /// 이 surface가 현재 포커스를 가지고 있는지. egui 이벤트 큐는 전역이라, 이 조건이
+    /// 없으면 한 번의 입력이 열려 있는 모든 탐색기의 선택을 동시에 움직인다.
     pub focused: bool,
-    /// 팝업·모달·입력 다이얼로그가 떠 있는가. 그때도 키는 egui 로 들어오므로
-    /// (`view::main` 의 feed 조건이 `overlay_open || egui_surface`) 여기서 따로 막지
-    /// 않으면 뒤에 있는 explorer 의 선택이 조용히 움직인다.
+    /// 팝업·모달·입력 다이얼로그가 떠 있는지. 그런 상태에서도 키 입력은 egui로 들어오므로
+    /// (`view::main`의 전달 조건이 `overlay_open || egui_surface`다) 여기서 막지 않으면
+    /// 뒤에 있는 탐색기의 선택이 사용자 모르게 움직인다.
     pub overlay_open: bool,
-    /// 수식 없이 바인딩된 영숫자 — 그 글자는 단축키 쪽에 양보한다
+    /// 수식 키 없이 단축키로 등록된 영숫자. 그 글자는 단축키가 가져간다
     /// (`type_ahead::unmodified_binding_chars`).
     pub shortcut_chars: &'a HashSet<char>,
 }
@@ -1112,14 +1113,15 @@ fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
     }
 }
 
-/// 이번 프레임의 문자 입력을 타입어헤드로 소비해 선택과 스크롤 대상을 정한다.
+/// 이번 프레임에 들어온 문자 입력을 타입어헤드로 처리해 선택할 항목과 스크롤 대상을
+/// 정한다.
 ///
-/// 이벤트를 큐에서 **빼지 않는다.** 주소창 `TextEdit` 도 같은 큐를 읽는데, 그쪽이
-/// 활성일 때는 아래 `addr_editing` 게이트가 이미 이 함수를 통째로 막으므로 이중 입력이
-/// 생기지 않는다. 큐를 건드리면 오히려 다른 위젯의 입력을 삼킬 위험이 생긴다.
+/// 이벤트를 큐에서 빼지는 않는다. 주소창의 `TextEdit`도 같은 큐를 읽지만, 주소창을
+/// 편집 중일 때는 아래 `addr_editing` 조건이 이 함수 전체를 막으므로 입력이 두 번
+/// 처리되지 않는다. 큐를 직접 건드리면 오히려 다른 위젯의 입력을 삼킬 수 있다.
 fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInput<'_>) {
-    // 스크롤 대상은 한 프레임만 산다 — 남겨두면 매 프레임 재스크롤이 되어 사용자가
-    // 휠로 다른 곳을 보는 동안 끌려간다.
+    // 스크롤 대상은 한 프레임만 유지한다. 남겨두면 매 프레임 다시 스크롤해서, 사용자가
+    // 휠로 다른 곳을 보는 동안에도 화면이 끌려간다.
     view.scroll_to = None;
 
     if !input.focused
@@ -1128,8 +1130,8 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
         || !matches!(view.state, LoadState::Ok)
         || view.entries.is_empty()
     {
-        // 게이트가 거짓인 프레임에는 버퍼도 버린다 — 돌아왔을 때 옛 접두사가 이어지면
-        // 사용자가 치지 않은 글자로 검색하는 것이 된다.
+        // 조건이 맞지 않는 프레임에서는 버퍼도 비운다. 그대로 두면 다시 돌아왔을 때
+        // 예전 접두사가 이어져, 사용자가 입력하지 않은 글자로 검색하게 된다.
         view.type_ahead.reset();
         return;
     }
@@ -1162,8 +1164,8 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
     }
 }
 
-/// 검색 시작점이 되는 선택 인덱스. 선택이 없거나 여럿이면 `None` — 어느 항목 다음부터
-/// 돌지 정할 수 없으므로 목록 처음부터 찾는다.
+/// 검색을 시작할 선택 인덱스를 구한다. 선택된 항목이 없거나 여러 개면 `None`을
+/// 돌려준다. 어느 항목 다음부터 찾을지 정할 수 없으므로 목록 처음부터 찾는다.
 fn single_selection_index(view: &ExplorerView) -> Option<usize> {
     if view.selected.len() != 1 {
         return None;
@@ -1438,8 +1440,8 @@ fn detail_view(
     rows.extend(view.entries.iter().cloned());
     let selected: HashSet<PathBuf> = view.selected.clone();
     let cut: HashSet<PathBuf> = cut_pending.clone();
-    // `Table` 은 행 `Response` 를 돌려주지 않고 가상 스크롤도 하지 않으므로, 대상 행이
-    // 그려지는 자리에서 직접 스크롤을 요청한다. 위젯 쪽은 고치지 않는다.
+    // `Table`은 행의 `Response`를 돌려주지 않고 가상 스크롤도 하지 않으므로, 대상 행을
+    // 그리는 자리에서 직접 스크롤을 요청한다. 위젯 쪽은 고치지 않는다.
     let scroll_to: Option<PathBuf> = view.scroll_to.clone();
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
@@ -1464,8 +1466,8 @@ fn detail_view(
                 };
                 match col {
                     0 => {
-                        // `..` 는 렌더 전용 행이라 타입어헤드 대상이 아니다. 경로만 보면
-                        // 부모 디렉토리와 겹칠 수 있어 이름으로 함께 거른다.
+                        // `..`는 화면에만 있는 행이라 타입어헤드 대상이 아니다. 경로만
+                        // 비교하면 상위 폴더와 겹칠 수 있어 이름도 함께 확인한다.
                         if row.name != ".." && scroll_to.as_deref() == Some(row.path.as_path()) {
                             ui.scroll_to_rect(ui.max_rect(), Some(egui::Align::Center));
                         }

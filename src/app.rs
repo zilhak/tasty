@@ -197,8 +197,8 @@ pub(crate) struct App {
     /// 파일 핸들러 등록 안내에서 설정을 열 때 FileHandler 탭을 한 번 선택한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_settings_file_handler_tab: bool,
-    /// 부팅 권한 안내의 [권한 설정 열기] 가 설정 창을 열 때 첫 진입을 일반 > 권한으로
-    /// 강제하는 1회성 플래그. `open_settings_modal` 이 소비한다.
+    /// 부팅 권한 안내에서 설정 창을 열 때 일반 > 권한 탭으로 바로 들어가게 하는
+    /// 일회성 표시. `open_settings_modal`이 읽고 지운다.
     #[cfg(feature = "gui")]
     pub(crate) pending_settings_macos_permissions_tab: bool,
     /// debug.settings.open이 지정한 초기 탭. 다음 설정 창 열기에서 소비한다.

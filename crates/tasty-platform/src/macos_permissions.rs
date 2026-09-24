@@ -1,10 +1,14 @@
-//! macOS 보호 폴더·화면 기록·손쉬운 사용의 권한 요청과 Full Disk Access 추정.
-//! 요청은 사용자가 설정 > 일반 > 권한 의 [모든 권한 요청하기] 를 눌렀을 때만 워커에서
-//! 돈다. 부팅 직후 자동 발화는 하지 않는다 — 결정의 근거·대안·재검토 조건은
-//! `docs/adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md`.
-//! 매 부팅 현재 상태를 확인하며 승인·표시 여부 자체는 OS가 결정한다.
-//! 이미 허용/거부가 결정된 항목에는 프롬프트가 뜨지 않으므로 몇 번을 눌러도 무해하다.
-//! 경로 목록과 상태 분류는 OS 접근과 분리해 다른 플랫폼에서도 시험한다.
+//! macOS 보호 폴더와 화면 기록, 손쉬운 사용 권한을 요청하고 Full Disk Access 상태를
+//! 추정한다.
+//!
+//! 권한 요청은 사용자가 설정 > 일반 > 권한에서 [모든 권한 요청하기]를 눌렀을 때만
+//! 워커 스레드에서 실행한다. 부팅 직후에 자동으로 요청하지는 않는다. 그 이유와 대안은
+//! [ADR-0052](../../../docs/adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)에
+//! 있다. 이미 허용하거나 거부한 항목에는 프롬프트가 뜨지 않으므로 여러 번 눌러도 문제가
+//! 없다. 승인 여부와 프롬프트 표시는 OS가 결정하며, 상태는 부팅할 때마다 다시 확인한다.
+//!
+//! 대상 경로를 고르는 코드와 상태를 분류하는 코드는 실제 OS 접근과 분리해 두었다.
+//! 그래야 macOS가 아닌 환경에서도 그 부분을 테스트할 수 있다.
 
 #[cfg(any(target_os = "macos", test))]
 use std::path::{Path, PathBuf};
@@ -286,13 +290,17 @@ fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAcc
     }
 }
 
-/// 확인 가능한 권한 중 하나라도 미승인으로 확인되면 부팅 안내를 표시한다.
-/// 과거 표시 여부 대신 매번 현재 상태를 사용한다.
-/// FDA 와 화면 기록만 본다. 파일 폴더 권한은 상태를 묻는 API 가 없고 재는 것 자체가
-/// 프롬프트라 판정에 넣지 않으며, 그래서 둘 다 허용한 사용자에게는 안내가 뜨지 않는
-/// 사각이 남는다. 손쉬운 사용은 release 에 소비자가 없어 제외한다.
-/// Unknown 은 미승인으로 세지 않는다. 근거가 사라졌을 뿐이며 승인을 가진 사용자에게
-/// 매 부팅 오탐을 띄우게 된다.
+/// 확인할 수 있는 권한 중 하나라도 허용되지 않았으면 부팅 안내를 표시한다.
+/// 이전에 안내를 띄웠는지는 기록하지 않고 매번 현재 상태로 판단한다.
+///
+/// 판단에 넣는 것은 Full Disk Access와 화면 기록 두 가지다. 파일 폴더 권한은 상태를
+/// 물어보는 API가 없고 확인하는 행위 자체가 프롬프트를 띄우므로 제외한다. 그래서 이 둘을
+/// 모두 허용했지만 파일 폴더를 요청한 적이 없는 사용자에게는 안내가 뜨지 않는다.
+/// 손쉬운 사용은 release에 이 권한을 쓰는 코드가 없어 제외한다.
+///
+/// Full Disk Access가 `Unknown`이면 허용되지 않은 것으로 보지 않는다. 추정할 근거가
+/// 없다는 뜻일 뿐이어서, 이를 미승인으로 세면 권한을 가진 사용자에게도 부팅마다 안내가
+/// 뜬다.
 #[cfg(any(test, all(target_os = "macos", feature = "gui")))]
 fn should_show_permission_notice(full_disk_access: FullDiskAccess, screen_recording: bool) -> bool {
     matches!(full_disk_access, FullDiskAccess::Denied) || !screen_recording
@@ -308,9 +316,10 @@ pub fn full_disk_access_state() -> FullDiskAccess {
     decide_full_disk_access(&probes)
 }
 
-/// 부팅 시 권한 안내를 띄워야 하는가. **이때 표시용 스냅샷을 새로 재서 보관한다** —
-/// 부팅 판정과 권한 화면이 같은 측정 1 회를 공유한다. 비-macOS / headless 에서는
-/// 스냅샷이 `Unknown` + 화면 기록 승인이라 안내하지 않는다.
+/// 부팅할 때 권한 안내를 띄워야 하는지 판단한다. 이 과정에서 표시용 스냅샷을 새로
+/// 측정해 보관하므로, 부팅 판단과 권한 화면이 같은 측정 결과를 함께 쓴다.
+/// macOS가 아니거나 headless인 환경에서는 스냅샷이 `Unknown`과 화면 기록 허용으로
+/// 나오므로 안내하지 않는다.
 pub fn wants_permission_notice() -> bool {
     let snapshot = refresh_permission_snapshot();
     should_show_permission_notice(snapshot.full_disk_access, snapshot.screen_recording)
@@ -318,68 +327,69 @@ pub fn wants_permission_notice() -> bool {
 
 // ── 표시용 권한 상태 스냅샷 ────────────────────────────────────────────────────
 //
-// 설정 > 일반 > 권한 탭은 상태를 **재지 않고 읽는다.** 측정은 파일 열기 syscall 과 TCC
-// 데몬 IPC 라, draw(렌더) 경로에 두면 tccd 응답이 늦는 만큼 설정 창이 멈추고, egui 가
-// repaint 를 요구하는 입력(마우스 이동·호버)이 이어지는 동안 그 횟수만큼 반복된다.
-// 값이 필요한 시점은 프레임이 아니라 "상태가 바뀔 수 있었던 시점" 이다.
+// 설정 > 일반 > 권한 탭은 상태를 직접 측정하지 않고 보관된 값을 읽는다. 측정은 파일 열기
+// syscall과 TCC 데몬 IPC라서, 렌더 경로에 두면 tccd 응답이 늦는 만큼 설정 창이 멈춘다.
+// 게다가 마우스 이동이나 호버처럼 repaint를 유발하는 입력이 이어지는 동안 그 횟수만큼
+// 반복된다. 값이 필요한 시점은 매 프레임이 아니라 상태가 바뀔 수 있었던 시점이다.
 //
-// **캐시와 갱신은 세트다.** FDA 는 앱이 요청할 수 없어 사용자가 시스템 설정에 다녀오는
-// 왕복이 반드시 생기고(위 "Full Disk Access" 주석), 화면 기록도 거부 이후에는 시스템
-// 설정에서만 되돌릴 수 있다. 부팅 값만 들고 있으면 그 왕복 결과가 화면에 영영 반영되지
-// 않는다. 그래서 갱신 트리거를 함께 둔다 — 부팅 1 회(`wants_full_disk_access_notice`),
-// 권한 화면 진입(`apply_l2_select`), 설정 창 포커스 복귀(`SettingsView::handle_event`).
+// 값을 보관하는 이상 갱신 시점도 함께 정해야 한다. Full Disk Access는 앱이 요청할 수
+// 없어 사용자가 시스템 설정을 다녀오는 과정이 반드시 생기고, 화면 기록도 한 번 거부하면
+// 시스템 설정에서만 되돌릴 수 있다. 부팅 때 잰 값만 들고 있으면 그 결과가 화면에 반영되지
+// 않는다. 그래서 세 시점에 다시 측정한다. 부팅 한 번(`wants_permission_notice`),
+// 권한 화면 진입(`apply_l2_select`), 설정 창 포커스 복귀(`SettingsView::handle_event`)다.
 //
-// **캡처·주입 경로는 이 스냅샷을 쓰지 않는다.** `screen_capture.rs` 의
-// `screen_recording_authorized()` 와 `input_source.rs` 의 `accessibility_trusted()` 는
-// 그 동작 직전 실측이 의도된 정책이다(각 함수의 주석). 두 소비처를 같은 캐시로 묶으면
-// 캡처·주입 판정이 낡은 값을 보게 된다.
+// 캡처와 키 주입 경로는 이 스냅샷을 쓰지 않는다. `screen_capture.rs`의
+// `screen_recording_authorized()`와 `input_source.rs`의 `accessibility_trusted()`는
+// 동작 직전에 직접 측정하도록 되어 있다(각 함수의 주석 참고). 두 곳까지 같은 캐시로
+// 묶으면 실제 동작 여부를 낡은 값으로 판단하게 된다.
 
-/// 권한 화면이 표시하는 상태 한 벌. **측정 시점의 값**이며, 그 뒤 사용자가 시스템
-/// 설정에서 바꾼 것은 다음 갱신 전까지 반영되지 않는다.
+/// 권한 화면이 표시하는 상태 묶음. 측정한 시점의 값이므로, 그 뒤 사용자가 시스템
+/// 설정에서 바꾼 내용은 다음 갱신 전까지 반영되지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PermissionSnapshot {
-    /// Full Disk Access 추정 3 상태.
+    /// Full Disk Access 추정 결과(허용·거부·판단 불가).
     pub full_disk_access: FullDiskAccess,
     /// 화면 기록 승인 여부.
     pub screen_recording: bool,
-    /// 손쉬운 사용 승인 여부. **debug 빌드에만 있다** — release 에는 이 권한을 소비하는
-    /// 코드가 없어 표시할 행 자체가 없다(`accessibility_trusted` 참고).
+    /// 손쉬운 사용 승인 여부. debug 빌드에만 있다. release에는 이 권한을 쓰는 코드가
+    /// 없어 화면에 표시할 항목 자체가 없다(`accessibility_trusted` 참고).
     #[cfg(debug_assertions)]
     pub accessibility: bool,
 }
 
-/// 마지막으로 잰 값. `None` 은 아직 한 번도 재지 않았다는 뜻이다.
+/// 마지막으로 측정한 값. `None`이면 아직 한 번도 측정하지 않았다는 뜻이다.
 static PERMISSION_SNAPSHOT: std::sync::RwLock<Option<PermissionSnapshot>> =
     std::sync::RwLock::new(None);
 
-/// 보관된 값을 읽는다 — **측정하지 않는다.** 표시 경로(draw)가 부르는 쪽이다.
+/// 보관된 값을 읽기만 한다. 측정은 하지 않으며, 화면을 그리는 경로가 호출한다.
 ///
-/// 아직 한 번도 재지 않았으면 그 자리에서 1 회 잰다. 부팅이 먼저 재므로 정상 흐름에서는
-/// 일어나지 않고, 측정 없이 "허용 안 됨" 을 표시해 승인을 가진 사용자에게 거짓을 말하는
-/// 것보다 1 회 측정이 낫다.
+/// 아직 한 번도 측정하지 않았다면 그 자리에서 한 번 측정한다. 부팅 때 먼저 측정하므로
+/// 정상적인 흐름에서는 일어나지 않는다. 측정 없이 "허용 안 됨"으로 표시해 권한을 가진
+/// 사용자에게 잘못된 정보를 보여주는 것보다는 한 번 측정하는 편이 낫다.
 pub fn permission_snapshot() -> PermissionSnapshot {
-    // 이유: poison 은 보관된 값을 못 믿는다는 뜻이고, 여기서 할 수 있는 최선이 아래의
-    // 재측정이다 — 아무것도 삼키지 않는다(못 읽은 것과 아직 안 잰 것의 처방이 같다).
+    // 이유: 잠금이 poison 되었다는 것은 보관된 값을 믿을 수 없다는 뜻이다. 그때 할 수
+    // 있는 최선이 아래의 재측정이고, 아직 측정한 적 없는 경우와 대응이 같다.
     if let Some(snapshot) = PERMISSION_SNAPSHOT.read().ok().and_then(|g| *g) {
         return snapshot;
     }
     refresh_permission_snapshot()
 }
 
-/// 지금 상태를 다시 재서 보관하고 그 값을 돌려준다. 위 "갱신 트리거" 에서만 부른다.
+/// 지금 상태를 다시 측정해 보관하고 그 값을 돌려준다. 위에 적은 세 갱신 시점에서만
+/// 호출한다.
 pub fn refresh_permission_snapshot() -> PermissionSnapshot {
     let snapshot = measure_permissions();
-    // 측정이 실제로 여기서만 일어나는지(= draw 경로에서 빠졌는지) 세는 자리다.
+    // 측정이 이 함수에서만 일어나는지 로그로 확인할 수 있게 남긴다.
     tracing::debug!(?snapshot, "권한 상태 스냅샷 갱신");
     match PERMISSION_SNAPSHOT.write() {
         Ok(mut guard) => *guard = Some(snapshot),
-        // 보관만 실패한 것이라 이번 측정값은 그대로 쓴다 — 다음 갱신에서 다시 시도한다.
+        // 보관에만 실패했으므로 이번 측정값은 그대로 쓰고, 다음 갱신에서 다시 시도한다.
         Err(err) => tracing::warn!(%err, "권한 상태 스냅샷 보관 실패"),
     }
     snapshot
 }
 
-/// 실제 측정. 여기서만 TCC 를 건드린다.
+/// 실제 측정을 수행한다. TCC를 조회하는 곳은 여기뿐이다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 fn measure_permissions() -> PermissionSnapshot {
     PermissionSnapshot {
@@ -390,9 +400,9 @@ fn measure_permissions() -> PermissionSnapshot {
     }
 }
 
-/// 비-macOS / headless — 항목별 동명 조회와 같은 답을 낸다(권한 개념이 없으므로 제약
-/// 없음). FDA 만 `Unknown` 이다: 없는 권한을 "보유" 로 적으면 안내 판정이 그 값을 근거로
-/// 쓰게 된다.
+/// macOS가 아니거나 headless인 환경에서 쓰는 짝. 권한 개념이 없으므로 항목별 조회
+/// 함수와 같은 값을 돌려준다. Full Disk Access만 `Unknown`으로 둔다. 존재하지 않는
+/// 권한을 "보유"로 적으면 안내 판단이 그 값을 근거로 삼게 되기 때문이다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
 fn measure_permissions() -> PermissionSnapshot {
     PermissionSnapshot {
@@ -426,19 +436,22 @@ fn home_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
 }
 
-/// 요청 시퀀스가 도는 중인가. 버튼 재진입을 막고 진행 표시를 켜는 좌변이다.
+/// 요청이 진행 중인지 나타낸다. 버튼을 다시 누르는 것을 막고 진행 표시를 켜는 데 쓴다.
 static REQUEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// 요청 시퀀스가 지금 도는 중인가. draw 경로가 매 프레임 읽어도 되는 원자 로드다.
+/// 권한 요청이 진행 중인지 알려준다. 원자적 읽기라서 화면을 그릴 때 매 프레임 호출해도
+/// 된다.
 pub fn permission_request_running() -> bool {
     REQUEST_RUNNING.load(std::sync::atomic::Ordering::Acquire)
 }
 
-/// 워커를 시작해 목록의 폴더, 화면 기록, debug 손쉬운 사용 순으로 요청한다.
-/// 파일 접근과 시스템 요청이 사용자 응답이나 네트워크를 기다릴 수 있어 메인 루프에서 실행하지 않는다.
-/// 하나씩 순차로 요청한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다.
-/// 이미 돌고 있으면 아무것도 하지 않고 `false` 를 돌려준다.
-/// 끝나면 표시용 스냅샷을 갱신하고 `on_finished` 로 호출자를 깨운다.
+/// 워커 스레드를 시작해 대상 폴더, 화면 기록, debug 빌드에서는 손쉬운 사용 순으로 권한을
+/// 요청한다.
+///
+/// 파일 접근과 시스템 요청은 사용자 응답이나 네트워크를 기다릴 수 있으므로 메인 루프에서
+/// 실행하지 않는다. 한 번에 하나씩 순서대로 요청하며, 동시에 요청하면 프롬프트가 겹쳐서
+/// 뜬다. 이미 요청이 진행 중이면 아무것도 하지 않고 `false`를 돌려준다. 요청이 끝나면
+/// 표시용 스냅샷을 갱신하고 `on_finished`를 호출해 화면을 다시 그리게 한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub fn request_all_permissions(on_finished: impl FnOnce() + Send + 'static) -> bool {
     use std::sync::atomic::Ordering;
@@ -465,8 +478,8 @@ pub fn request_all_permissions(on_finished: impl FnOnce() + Send + 'static) -> b
         // 손쉬운 사용은 debug 빌드에서만 요청한다 — release 에는 소비자가 없다.
         #[cfg(debug_assertions)]
         prewarm_accessibility();
-        // 표시용 상태를 먼저 갱신하고 나서 깃발을 내린다 — 반대로 하면 호출자가
-        // "끝났다" 를 보고 낡은 스냅샷을 읽을 수 있다.
+        // 표시용 상태를 먼저 갱신한 뒤 진행 중 표시를 내린다. 순서가 반대면 호출자가
+        // 완료를 확인하고도 낡은 스냅샷을 읽을 수 있다.
         refresh_permission_snapshot();
         REQUEST_RUNNING.store(false, Ordering::Release);
         on_finished();
@@ -474,9 +487,10 @@ pub fn request_all_permissions(on_finished: impl FnOnce() + Send + 'static) -> b
     true
 }
 
-/// 비-macOS / headless — 요청할 권한이라는 개념이 없다. 호출부에 `#[cfg]` 를 흩뿌리지
-/// 않기 위한 짝이고, 시퀀스를 시작하지 않았으므로 `false` 다. headless 에는 프롬프트를
-/// 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다.
+/// macOS가 아니거나 headless인 환경에서 쓰는 짝. 요청할 권한이라는 개념이 없고, 아무
+/// 요청도 시작하지 않으므로 `false`를 돌려준다. 호출부에 `#[cfg]`가 흩어지지 않도록
+/// 같은 이름으로 둔다. headless에는 프롬프트를 띄울 GUI가 없으므로 macOS에서도 이쪽을
+/// 쓴다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
 pub fn request_all_permissions(_on_finished: impl FnOnce() + Send + 'static) -> bool {
     false
@@ -536,16 +550,17 @@ mod tests {
         assert_eq!(raw_key_decision(false), RawKeyDecision::PermissionDenied);
     }
 
-    /// 요청 시퀀스가 끝까지 돌고, 끝나면 깃발을 내리고 호출자를 깨우는가.
+    /// 요청이 끝까지 진행되고, 끝난 뒤 진행 중 표시가 내려가며 호출자가 깨어나는지 본다.
     ///
-    /// **실제 TCC 를 건드리므로 `#[ignore]` 다.** 미결정 항목이 있으면 프롬프트가 떠서
-    /// 사용자 응답까지 멈추는데, 헤드리스 러너에는 누를 사람이 없다 — 모듈 최상단의
-    /// `FsProbe` 주석이 테스트에 실 IO 를 들이지 않는 이유로 적어 둔 바로 그 함정이다.
-    /// 어느 워크플로도 `--ignored` 를 쓰지 않으므로 이 시험은 사람이 부를 때만 돈다.
-    /// 재는 법: `cargo test -p tasty-platform --features gui -- --ignored request_sequence`
+    /// 실제 TCC를 건드리므로 `#[ignore]`를 붙였다. 아직 결정되지 않은 항목이 있으면
+    /// 프롬프트가 떠서 사용자 응답을 기다리는데, 헤드리스 러너에는 응답할 사람이 없다.
+    /// 어느 워크플로도 `--ignored`를 쓰지 않으므로 이 테스트는 사람이 직접 실행할 때만
+    /// 돈다. 실행 방법은 다음과 같다.
+    /// `cargo test -p tasty-platform --features gui -- --ignored request_sequence`
     ///
-    /// 재진입 거부(두 번째 호출이 `false`)는 여기서 재지 않는다 — 워커가 언제 끝나는지에
-    /// 달려 있어 결정적이지 않다. 그 규칙은 `REQUEST_RUNNING` 의 원자 교환 한 줄이다.
+    /// 두 번째 호출이 `false`를 돌려주는지는 여기서 확인하지 않는다. 워커가 언제 끝나는지에
+    /// 따라 결과가 달라져 결정적이지 않기 때문이다. 그 동작은 `REQUEST_RUNNING`의 원자적
+    /// 교환 한 줄이 보장한다.
     #[cfg(all(target_os = "macos", feature = "gui"))]
     #[test]
     #[ignore]
@@ -566,7 +581,7 @@ mod tests {
             "완료 통지 시점에는 깃발이 이미 내려가 있어야 한다"
         );
 
-        // 끝난 뒤에는 다시 시작할 수 있다 — 깃발이 걸린 채 남지 않는다.
+        // 끝난 뒤에는 다시 시작할 수 있어야 한다. 진행 중 표시가 남아 있으면 안 된다.
         let (tx2, rx2) = std::sync::mpsc::channel();
         assert!(
             request_all_permissions(move || {
@@ -579,19 +594,21 @@ mod tests {
             .expect("두 번째 시퀀스도 끝나야 한다");
     }
 
-    /// 읽기는 보관된 값을 그대로 돌려준다 — draw 가 매번 재지 않아도 되는 근거.
+    /// 읽기가 보관된 값을 그대로 돌려주는지 확인한다. 화면을 그릴 때마다 다시 측정하지
+    /// 않아도 되는 근거다.
     #[test]
     fn snapshot_read_returns_last_refreshed_value() {
         let refreshed = refresh_permission_snapshot();
         assert_eq!(permission_snapshot(), refreshed);
     }
 
-    /// 프로브 결과 → 3 상태 매핑. 안내 판정과 분리돼 있어 따로 고정한다.
+    /// 경로 조회 결과가 세 상태로 올바르게 분류되는지 확인한다. 안내 여부를 정하는
+    /// 규칙과 분리돼 있으므로 따로 검사한다.
     #[test]
     fn full_disk_access_is_denied_only_on_a_confirmed_refusal() {
         use std::io::ErrorKind;
 
-        // 하나라도 열리면 보유다 — 앞쪽 경로가 없어도 뒤쪽이 열리면 보유.
+        // 경로 하나라도 열리면 권한이 있는 것으로 본다. 앞쪽이 없어도 뒤쪽이 열리면 된다.
         assert_eq!(decide_full_disk_access(&[None]), FullDiskAccess::Granted);
         assert_eq!(
             decide_full_disk_access(&[Some(ErrorKind::NotFound), None]),
@@ -602,26 +619,27 @@ mod tests {
             decide_full_disk_access(&[Some(ErrorKind::PermissionDenied)]),
             FullDiskAccess::Denied
         );
-        // 모든 경로가 없으면 거부가 아닌 판정 불가다.
+        // 모든 경로가 존재하지 않으면 거부가 아니라 판단 불가다.
         assert_eq!(
             decide_full_disk_access(&[Some(ErrorKind::NotFound), Some(ErrorKind::NotFound)]),
             FullDiskAccess::Unknown
         );
     }
 
-    /// 안내 판정의 6 갈래를 전부 고정한다. `Granted` + 화면 기록 미승인이 이 규칙의
-    /// 핵심 갈래다 — FDA 만 보던 때에는 그 사용자에게 아무 안내도 뜨지 않았다.
+    /// 안내 여부를 정하는 여섯 경우를 모두 확인한다. Full Disk Access는 허용됐지만 화면
+    /// 기록이 허용되지 않은 경우가 핵심이다. 예전처럼 Full Disk Access만 보면 그 사용자는
+    /// 아무 안내도 받지 못한다.
     #[test]
     fn notice_shows_when_any_checkable_permission_is_missing() {
         use FullDiskAccess::*;
         assert!(should_show_permission_notice(Denied, false));
         assert!(should_show_permission_notice(Denied, true));
-        // FDA 를 이미 가진 사용자도 화면 기록이 없으면 알아야 한다.
+        // Full Disk Access가 있어도 화면 기록이 없으면 알려줘야 한다.
         assert!(should_show_permission_notice(Granted, false));
         assert!(!should_show_permission_notice(Granted, true));
-        // 판정 근거가 없는 것을 미승인으로 접지 않는다.
+        // 판단할 근거가 없는 상태를 미승인으로 취급하지 않는다.
         assert!(!should_show_permission_notice(Unknown, true));
-        // 다만 화면 기록 쪽 근거는 확실하므로 그것만으로 띄운다.
+        // 다만 화면 기록은 확실히 확인할 수 있으므로 그것만으로도 안내를 띄운다.
         assert!(should_show_permission_notice(Unknown, false));
     }
 

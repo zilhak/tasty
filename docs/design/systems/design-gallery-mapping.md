@@ -711,24 +711,26 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 
 ## Settings › General › Permissions (macOS)
 
-General L1 의 마지막 L2 서브탭. **디자인 시안이 없다** — claude design 에 요청을 넣지 못한
-상태에서 본체와 갤러리를 같은 토큰·위젯으로 함께 조립했다. 요청 버튼과 진행 표시는
-[ADR-0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md) 가 만든 새
-요소라 어느 시안에도 없던 것이다. 시안이 나중에 오면 이 표의 왼쪽 칸이 채워지고, 그때
-갤러리 specimen 이 대조 자리가 된다.
+General L1의 마지막 L2 서브탭이다. 아직 디자인 시안이 없어 본체와 갤러리를 같은 토큰과
+위젯으로 함께 조립했다. 요청 버튼과 진행 표시는
+[ADR-0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)로 새로
+생긴 요소라 어느 시안에도 없다. 나중에 시안이 오면 이 표의 왼쪽 칸이 채워지고, 그때
+갤러리 specimen이 대조 기준이 된다.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
 | (시안 없음 — 콘텐츠 컬럼) | `src/view/settings/ui/tabs/macos_permissions.rs::draw_macos_permissions_tab` | `components/settings_macos_permissions.rs::draw` (`settings` 섹션 `settings-macos-permissions` spec) |
 | (시안 없음 — 상태 grid) | 2 열 `egui::Grid`(라벨 · 상태, 간격 `spacing_md`/`spacing_sm`) | `panel` 안의 같은 grid |
-| (시안 없음 — 상태 칸) | `fda_status_text`(3 상태) · `status_text`(bool) | `Status::{Granted,Missing,Unknown,NotObservable}` |
+| (시안 없음 — 상태 칸) | `fda_status_text`(세 상태) · `status_text`(bool) | `Status::{Granted,Missing,Unknown,NotObservable}` |
 | (시안 없음 — 요청 버튼) | `Button::Primary/Md`, 요청 중 `enabled(false)` | 동 |
 | (시안 없음 — FDA 패널 바로가기) | `Button::Secondary/Md` → `open_full_disk_access_settings()` | 동(열지 않고 그리기만) |
 | (시안 없음 — 설명 줄) | caption muted, 요청 중에는 진행 문구로 교체 | `muted` |
 
-**갤러리가 본체보다 많이 보여주는 것**: FDA 3 상태(특히 `Unknown` — 프로브 경로가 하나도 없는
-macOS 에서만 나와 실기 재현이 어렵다)와 요청 진행 중 상태를 나란히 놓는다. 본체는 실기의 TCC 상태
-하나만 그린다. **본체에만 있는 것**: 손쉬운 사용 행(debug 빌드 한정, [ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
+갤러리는 본체보다 많은 것을 보여준다. Full Disk Access의 세 상태와 요청 진행 중 상태를
+나란히 놓는데, 특히 `Unknown`은 추정에 쓰는 경로가 하나도 없는 macOS에서만 나와 실제
+장비에서 재현하기 어렵다. 본체는 그 장비의 TCC 상태 하나만 그린다. 반대로 본체에만 있는
+것은 손쉬운 사용 행이며, debug 빌드에서만
+보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
 
 ## Settings › General › Remote transfer
 

@@ -76,9 +76,10 @@ impl SettingsView {
         self.settings_ui_state.select_file_handler_tab();
     }
 
-    /// 첫 진입을 일반 > 권한으로 설정 (부팅 권한 안내의 [권한 설정 열기] 진입점).
-    /// L1 만 정하는 위 둘과 달리 L2 까지 함께 정한다 — L1 만 맞추면 권한 화면이 아니라
-    /// 일반 탭 기본 화면이 열리고, 그 오답은 "설정 창이 열렸다" 로는 안 보인다.
+    /// 설정 창의 첫 화면을 일반 > 권한으로 맞춘다. 부팅 권한 안내의 [권한 설정 열기]가
+    /// 들어오는 지점이다. 위의 두 함수는 L1 탭만 정하지만 여기서는 L2까지 함께 정한다.
+    /// L1만 맞추면 권한 화면이 아니라 일반 탭의 기본 화면이 열리는데, 창이 열린 것은
+    /// 마찬가지여서 잘못된 것을 알아채기 어렵다.
     pub fn focus_macos_permissions_tab(&mut self) {
         self.settings_ui_state.select_macos_permissions_tab();
     }
@@ -184,9 +185,9 @@ impl View for SettingsView {
                 // 이유는 `DoubleTapDetector::reset` 주석 참조.
                 self.double_tap.reset();
                 if focused {
-                    // 권한(TCC) 상태를 바꾸는 유일한 길은 시스템 설정이고, 이 창으로
-                    // 돌아오는 것이 그 왕복의 끝이다. 권한 화면이 낡은 값을 들고 있지
-                    // 않도록 여기서 다시 잰다 — macOS 외에서는 no-op.
+                    // 권한 상태를 바꾸려면 시스템 설정에 다녀와야 하고, 이 창으로
+                    // 돌아오는 것이 그 과정의 끝이다. 권한 화면이 낡은 값을 보여주지
+                    // 않도록 여기서 다시 측정한다. macOS가 아니면 아무 일도 하지 않는다.
                     crate::macos_permissions::refresh_permission_snapshot();
                     self.mark_dirty();
                 }
