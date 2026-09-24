@@ -99,11 +99,11 @@ const SRC_FLOOR: Floor = Floor {
     measured: tasty_doc_guards::floored_walk::populations::SRC_RS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::SRC_RS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::SRC_RS.counted_on,
-    why_this_gap: "src Rust 파일 수의 대량 누락을 검사한다. 2026-09-24 8d5d7a28f에서 653개 중 깊이 4 이하가 428개였다. 하한 420은 그 이하이므로 얕은 파일만 수집한 경우에는 별도 깊이 검사가 실패한다. 전체 653과의 차이 233을 허용 가능한 손실로 해석하면 안 된다. 얕은 파일 수가 하한 아래로 줄면 두 검사의 역할을 다시 확인한다.",
+    why_this_gap: "src Rust 파일 수의 대량 누락을 검사한다. 2026-09-25 16c4fdd1c에서 655개 중 깊이 4 이하가 429개였다. 하한 420은 그 이하이므로 얕은 파일만 수집한 경우에는 별도 깊이 검사가 실패한다. 전체 655와의 차이 235를 허용 가능한 손실로 해석하면 안 된다. 얕은 파일 수가 하한 아래로 줄면 두 검사의 역할을 다시 확인한다.",
 };
 
 /// src를 첫 성분으로 세는 최소 도달 깊이. 총파일 수만으로 놓치는 얕은 재귀를 찾는다.
-/// 2026-09-24 8d5d7a28f에서 653파일 중 깊이 4 이하 428·깊이 5 이상 225·최대깊이 7이었다.
+/// 2026-09-25 16c4fdd1c에서 655파일 중 깊이 4 이하 429·깊이 5 이상 226·최대깊이 7이었다.
 /// 파일 수 하한 420을 얕은 파일 수 이하에 둬 깊이 검사를 별도로 확인할 수 있게 한다.
 /// 이 관계가 바뀌면 수집 하한과 깊이 검사를 함께 재검토해야 한다.
 const MIN_DEPTH: usize = 5;
