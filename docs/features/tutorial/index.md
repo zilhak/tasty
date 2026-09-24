@@ -46,7 +46,7 @@
 - `catalog.rs`: 안정적인 ID·번역 키·단계 요구사항.
 - `runtime.rs`: 전이, 완료/중단, 실습 성공 판정.
 - `progress.rs` / `src/store/tutorial_progress.rs`: 사용자 전이의 DB 효과와 SQL.
-- `mod.rs`: 현재 대상 해석과 렌더 오케스트레이션.
+- `mod.rs`: 현재 대상 확인과 렌더 진행 관리.
 - `callout.rs`, `marker.rs`, `topic_popup.rs`: 표시.
 - `src/intent/popup.rs`: 공용 목록 진입과 팔레트 관찰.
 - `src/view/main.rs`, `src/state.rs`: raw Escape 및 키/오버레이 판정.

@@ -36,7 +36,7 @@ hover 가 판정해 둔 링크(`hovered_link`) 위에서 우클릭하면 기존 
 
 | 항목 | 동작 |
 |------|------|
-| 선택 | 스냅샷 범위로 `text_selection` 을 세운다. 메뉴가 떠 있는 동안 화면이 바뀌어 같은 범위가 다른 텍스트를 가리키면 아무것도 안 한다 |
+| 선택 | 스냅샷 범위로 `text_selection`을 설정한다. 메뉴가 떠 있는 동안 화면이 바뀌어 같은 범위가 다른 텍스트를 가리키면 아무것도 안 한다 |
 | 복사 | 스냅샷 텍스트를 클립보드로(+토스트). OSC 8 이면 대상 URI 가 아니라 표시 라벨 |
 | 연결 동작 | 자동 1순위 실행을 건너뛰고 [핸들러 picker](../file-handler/index.md) 를 연다 — 식별 없이 전체 핸들러가 fallback 후보. 경로 링크와 `http(s)` 링크에서 노출, 그 밖의 scheme(mailto 등)은 항목 없음. 원격(mirror) surface 의 경로 링크는 후보도 recent 도 없는 빈 picker |
 
@@ -50,7 +50,7 @@ picker 에서 고른 핸들러는 focused pane 에 연다(좌클릭 링크와 �
 
 attach mirror surface(자식 PTY 없음 — `process_id().is_none()` 으로 판별)는 화면 경로가 **원격 호스트 경로**라 로컬 핸들러로 못 연다:
 - 로컬 `exists()` 검증 건너뛰고 OSC 7 원격 cwd 기준 경로를 그대로 링크로 emit(원격 경로도 하이라이트).
-- ctrl+클릭 시 로컬 핸들러 lookup 대신 **빈 핸들러 picker(empty-state placeholder)** 만 — 후보도 recent 도 싣지 않아 고를 수 있는 핸들러가 없다(recent 를 실으면 로컬 핸들러가 원격 경로로 실행된다). 로컬 파일 오픈/브라우저 새는 것 방지.
+- ctrl+클릭 시 로컬 핸들러 lookup 대신 **빈 핸들러 picker(empty-state placeholder)** 만 — 후보도 recent 도 싣지 않아 고를 수 있는 핸들러가 없다(recent 를 실으면 로컬 핸들러가 원격 경로로 실행된다). 원격 경로를 로컬 파일이나 브라우저로 잘못 여는 것을 방지.
 - `http://` 등 스킴 있는 URL 은 mirror 여부 무관하게 `webbrowser` 로 연다.
 
 > 비-목표(후속): 실제 원격 파일 열기(`ssh host vim {path}` 등)와 그 host 컨텍스트 주입. 1차는 placeholder 까지.
@@ -63,7 +63,7 @@ hover+수식키 클릭과는 별개 입력 경로 — 사용자가 드래그(또
 - **노출 조건**: 우클릭한 surface 와 `text_selection.surface_id` 가 같을 때만 "경로 열기" 항목을 추가한다 — surface 별로 독립적인 드래그 상태를 가질 수 있어, 다르면 노출하지 않는다(기존 복사 메뉴는 surface 무관 전역 selection 관례 그대로 유지).
 - **라벨**: `Path::is_dir()` 로 파일/폴더를 구분해 다른 라벨을 표시(`terminal_context_menu.open_file`/`open_folder`).
 - **열기**: `crate::platform::reveal::open_path`(explorer 컨텍스트 메뉴의 "시스템에서 열기"와 동일 함수).
-- **mirror(원격 attach) surface**: 로컬 파일 관리자로 원격 경로를 여는 배선이 아직 없어 제외(`terminal.process_id().is_none()`이면 항목 자체를 노출하지 않음). 배선이 생기면 재검토.
+- **mirror(원격 attach) surface**: 로컬 파일 관리자로 원격 경로를 여는 기능이 없어 제외(`terminal.process_id().is_none()`이면 항목 자체를 노출하지 않음). 이 기능을 지원하면 재검토.
 
 ## 인터페이스
 

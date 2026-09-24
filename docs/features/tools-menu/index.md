@@ -8,7 +8,7 @@
 
 ## 목적
 
-[사이드바](../sidebar/index.md) 의 **도구 버튼**이 여는 메뉴. 빌트인 + 플러그인 기여 도구 항목을 한곳에 모아 실행 진입점을 제공한다. 메뉴 자체는 *진입점* 일 뿐 — 각 항목의 내용은 그 기능 문서가 가진다 (연결 개념).
+[사이드바](../sidebar/index.md) 의 **도구 버튼**이 여는 메뉴. 빌트인 + 플러그인 기여 도구 항목을 한곳에 모아 실행 진입점을 제공한다. 각 항목의 세부 동작은 해당 기능 문서에서 설명한다.
 
 ## 내부 동작
 
@@ -22,7 +22,7 @@
   - Tutorial → 튜토리얼 토픽 popup
   - Task DAGs → DAG 목록 popup (**workspace 스코프** — 아래 참조)
   - Open File → 네이티브 파일 피커
-- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `AppState::tool_registry` 에 동기화된다. (과거 호스트 빌트인이던 클립보드 항목은 builtin-plugin 의 Clipboard Viewer 로 이전됨.)
+- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `AppState::tool_registry` 에 동기화된다.
 
 ### 레이아웃 / 크기
 
@@ -31,12 +31,12 @@
 ### 항목 실행 (`invoke_tool`)
 
 - **빌트인**: 해당 popup 을 연다 (`BuiltinAction::OpenPopup` — 중앙 정렬 + 포커스). 대상 스코프를 여는 시점에야 아는 항목은 `BuiltinAction::OpenWorkspacePopup` 으로 갈라져 `OpenPopupMode::WithScope(PopupScope::Workspace(활성 인덱스))` 를 주입한다(현재 Task DAGs 하나). 별도 winit 창(`OpenWindow`)·파일 피커(`OpenFilePicker`)도 각각 자기 분기를 쓴다.
-- **플러그인**: `ToolAction` 종류별 — event 발화 또는 `<plugin_id>/<popup_id>` 형식 popup open (활성 surface 의 상속 cwd 를 실어 전달).
+- **플러그인**: `ToolAction` 종류별 — 이벤트 발생 또는 `<plugin_id>/<popup_id>` 형식 popup open (활성 surface 의 상속 cwd 를 실어 전달).
 
 ## 인터페이스
 
 - **사용자**: 사이드바 도구 버튼 클릭 → 메뉴 표시, 항목 클릭 → 실행.
-- **각 항목은 그 기능으로 연결** (연결 개념):
+- **각 항목은 그 기능으로 연결**:
   - Command palette → [`features/command-palette/`](../command-palette/index.md)
   - Listening ports → [`features/listening-ports/`](../listening-ports/index.md)
   - Remote connections → [`features/remote-profiles/`](../remote-profiles/index.md)
@@ -73,7 +73,7 @@
 - **트리거 위치**: [사이드바](../sidebar/index.md#화면) 하단 **도구 버튼**
 - **시각 소스**: `site/vendor/ui_kits/terminal/overlays/tools_menu.jsx` — claude design
 
-각 항목은 이름 + (있으면) 한 줄 + 해당 기능 문서 **링크만** — 항목 내용은 그 문서에 (연결 개념).
+아래에서는 메뉴의 배치를 설명한다. 항목별 동작은 연결된 기능 문서를 참고한다.
 
 ### 트리거
 
@@ -107,7 +107,7 @@
   - **Task DAGs** — 활성 워크스페이스의 DAG 목록 popup 을 연다. → [`features/agent-collaboration/`](../agent-collaboration/index.md)
   - **Open File** — 네이티브 파일 피커를 연다. → [`features/native-file-picker/`](../native-file-picker/index.md)
 - **구분선** — 빌트인과 플러그인 항목 사이 (둘 다 있을 때만).
-- **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). **이 문서엔 항목을 나열하지 않는다** — 공식(번들) 플러그인 메뉴는 [번들 플러그인 문서](../../plugins/index.md)에서 다룬다.
+- **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard Viewer). **이 문서엔 항목을 나열하지 않는다** — 공식(번들) 플러그인 메뉴는 [번들 플러그인 문서](../../plugins/index.md)에서 다룬다.
 
 ### 상태별 시각
 

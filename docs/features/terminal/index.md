@@ -165,7 +165,7 @@ ED/EL은 커서 위치를 유지하며 현재 셀을 포함해 지운다.
 
 ### 스크롤백
 
-화면 위로 밀린 줄을 `VecDeque` 에 보관(`scrollback_lines`, 기본 10,000, 0~100,000 설정). 마우스 휠/PageUp·Down 탐색, 타이핑 시 자동 라이브 뷰 복귀. 대체 화면(vim/less/htop)에선 스크롤백 비활성(모든 입력 PTY 로). 스크롤백 중 새 출력 도착 시 `scroll_offset` 자동 보정으로 위치 유지. 텍스트 wrap 에 의한 implicit 스크롤도 기록한다 — 출력 텍스트를 스크롤이 일어날 바이트 위치에서 잘라 적용하며 밀려나기 직전의 상단 행을 회수하므로, 사라진 행이 빠짐없이 순서대로 남는다(선택 영역 `absolute_row` 가 콘텐츠를 정확히 추적). 부분 스크롤 영역에서의 적재 범위는 위 VTE 절 "스크롤 리전과 자동 줄바꿈" 참조. 세션 간 보존은 disk scrollback. **ED3(`CSI 3J`)** 는 스크롤백 히스토리(메모리+디스크)를 비우고 뷰포트를 라이브로 되돌린다 — 화면 내용은 보존(`clear` 가 보내는 `\x1b[3J\x1b[2J` 에서 ED2 가 화면을, ED3 가 스크롤백을 담당).
+화면 위로 밀린 줄을 `VecDeque` 에 보관(`scrollback_lines`, 기본 10,000, 0~100,000 설정). 마우스 휠/PageUp·Down 탐색, 타이핑 시 자동 라이브 뷰 복귀. 대체 화면(vim/less/htop)에선 스크롤백 비활성(모든 입력 PTY 로). 스크롤백 중 새 출력 도착 시 `scroll_offset` 자동 보정으로 위치 유지. 텍스트 wrap 에 의한 implicit 스크롤도 기록한다 — 출력 텍스트를 스크롤이 일어날 바이트 위치에서 잘라 적용하며 밀려나기 직전의 상단 행을 회수하므로, 사라진 행이 빠짐없이 순서대로 남는다(선택 영역 `absolute_row` 가 콘텐츠를 정확히 추적). 부분 스크롤 영역에서의 적재 범위는 위 "스크롤 영역과 소거" 절 참조. 세션 간 보존은 disk scrollback. **ED3(`CSI 3J`)** 는 스크롤백 히스토리(메모리+디스크)를 비우고 뷰포트를 라이브로 되돌린다 — 화면 내용은 보존(`clear` 가 보내는 `\x1b[3J\x1b[2J` 에서 ED2 가 화면을, ED3 가 스크롤백을 담당).
 
 ### 키보드 입력
 
@@ -189,7 +189,7 @@ xterm-256color(ANSI 16 + 216 큐브 + 24 그레이) + TrueColor. 색은 Theme �
 
 ### 이벤트 드리븐 렌더
 
-파서 스레드가 ingest 직후 `AppEvent::TerminalOutput` 으로 메인 루프를 깨운다(`Waker`). 메인은 파싱이 아니라 변경된 grid 의 렌더·이벤트 수집만. 무조건 redraw 제거 — 실제 변경 시에만. **가시성 게이트**: 안 보이는 surface(비활성 워크스페이스/탭)는 출력을 항상 drain·파싱하되 `request_redraw` 는 생략(데이터 무손실, 재렌더만 절약). 출력·입력 없으면 CPU 0%.
+파서 스레드가 ingest 직후 `AppEvent::TerminalOutput` 으로 메인 루프를 깨운다(`Waker`). 메인은 파싱이 아니라 변경된 grid 의 렌더·이벤트 수집만. 무조건 redraw 제거 — 실제 변경 시에만. **가시성 게이트**: 안 보이는 surface(비활성 워크스페이스/탭)는 출력을 항상 drain·파싱하되 `request_redraw` 는 생략(데이터 무손실, 재렌더만 절약). 출력·입력이 없을 때 불필요한 렌더링을 줄인다.
 
 Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 뒤 짧게 숨긴다. VTE 파서가 carriage return, CSI cursor/edit, cursor save/restore action 을 실제로 본 뒤 120ms 동안 적용한다. Codex 같은 redraw-heavy CLI 가 커서 이동/줄 지우기를 빠르게 내보낼 때 중간 cursor hop 을 화면에 드러내지 않기 위한 렌더 정책이다. 단순 printable echo 는 화면 제어 action 이 아니므로 사용자가 직접 타이핑하는 동안 커서를 숨기지 않으며, 입력 직후라도 프로그램이 화면 제어 action 을 출력하면 억제를 적용한다. 커서를 숨긴 프레임은 후속 redraw 를 예약해 화면 갱신이 조용해진 뒤 커서가 다시 나타나게 한다. 다른 OS 에서는 이 억제 정책을 적용하지 않는다.
 
