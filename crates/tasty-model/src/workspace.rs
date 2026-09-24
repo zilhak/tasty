@@ -10,6 +10,7 @@ use super::{
 /// - non_terminals: 전용 mirror 경로가 없어 placeholder로 보낼 surface.
 /// - mesh_candidates/content_candidates: trait이 반환한 후보이며 최종 허용 여부는 호스트가 검사한다.
 /// - explorers: 활성 내부 탭의 현재 경로로 만든 읽기 전용 원격 탐색 대상.
+///
 /// 허용되지 않은 후보는 호스트가 placeholder로 처리해야 한다.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct AttachSurfaceClass {

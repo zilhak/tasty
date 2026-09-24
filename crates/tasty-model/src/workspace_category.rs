@@ -95,8 +95,8 @@ pub fn is_reserved_normal(name: &str) -> bool {
 
 /// 새 카테고리 이름 검증. `existing` 은 기존 카테고리 이름들(normal 포함).
 ///
-/// 1) trim 후 빈 이름 거부, 2) 예약어 `normal` 거부, 3) 기존 이름과 대소문자
-/// 무시 중복 거부. 성공 시 정규화된 이름을 반환한다.
+/// 앞뒤 공백을 제거한 뒤 빈 이름, 예약어 `normal`, 기존 이름과의 중복을 거절한다.
+/// 예약어와 중복 검사는 대소문자를 구분하지 않는다. 성공하면 정규화된 이름을 반환한다.
 pub fn validate_new_category_name<'a>(
     raw: &str,
     existing: impl IntoIterator<Item = &'a str>,
