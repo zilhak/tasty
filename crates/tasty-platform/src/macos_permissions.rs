@@ -358,6 +358,8 @@ static PERMISSION_SNAPSHOT: std::sync::RwLock<Option<PermissionSnapshot>> =
 /// 일어나지 않고, 측정 없이 "허용 안 됨" 을 표시해 승인을 가진 사용자에게 거짓을 말하는
 /// 것보다 1 회 측정이 낫다.
 pub fn permission_snapshot() -> PermissionSnapshot {
+    // 이유: poison 은 보관된 값을 못 믿는다는 뜻이고, 여기서 할 수 있는 최선이 아래의
+    // 재측정이다 — 아무것도 삼키지 않는다(못 읽은 것과 아직 안 잰 것의 처방이 같다).
     if let Some(snapshot) = PERMISSION_SNAPSHOT.read().ok().and_then(|g| *g) {
         return snapshot;
     }
