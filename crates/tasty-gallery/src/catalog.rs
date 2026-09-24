@@ -1,15 +1,6 @@
-//! 카탈로그 모델 — 디자인(4) gallery 의 **page > section > spec** 문서 계층.
-//!
-//! 한 페이지(`Page`)는 1차 분류(`Category`) 하나에 대응하고, 여러 `Section` 을
-//! 가진다. 각 `Section` 은 여러 `Spec` 을 묶는다. `Spec::draw` 는 선택된 한
-//! specimen 의 라이브 데모(stage/cluster/meta)를 그린다.
-//!
-//! 셸(`host_shell`)은 활성 페이지의 전 Section/Spec 을 한 문서로 스크롤 렌더하고,
-//! 좌측 nav 의 "On this page" 앵커는 이 Section 목록에서 도출한다.
-//!
-//! 이 단계(인프라)는 모델/셸/헬퍼의 토대만 만든다. 각 `Spec::draw` 는 기존
-//! specimen 의 `draw` 함수를 그대로 연결해 컴파일/실행을 유지하며, 페이지별
-//! specimen 콘텐츠의 디자인 정합 재작성은 Round 2 의 책임이다.
+//! 카탈로그는 페이지 → 구역 → 예제로 구성한다.
+//! 각 페이지는 Category 하나에 대응한다. host_shell은 페이지 전체를 스크롤하며
+//! 구역 목록으로 왼쪽 탐색 메뉴의 앵커를 만든다.
 
 pub mod chrome_loading;
 pub mod components;
@@ -29,19 +20,11 @@ use std::sync::OnceLock;
 use tasty_settings::{GeneralSettings, KeybindingSettings};
 use tasty_type_appearance::theme::Theme;
 
-/// quick-switch 축의 modifier 를 **설정 기본값**에서 표시 문자열로 뽑는다
-/// (`"ctrl+shift"` → `"Ctrl+Shift"`). 표기 규칙은 본체 설정 UI 와 같은
-/// `KeybindingSettings::format_display` 를 그대로 쓴다.
-///
-/// 조합을 specimen 라벨에 문자열로 박으면 기본값이 바뀔 때 라벨만 조용히 남는다 —
-/// 실제로 카테고리 축의 기본값이 바뀐 뒤 컴포넌트 캡션만 갱신되고 이 카탈로그의
-/// 제목·부제는 옛 조합을 가리킨 채로 있었다. 여기서 파생시키면 그 드리프트가 구조적으로
-/// 불가능해진다(단축키를 코드에 하드코딩하지 않는다는 정책과 같은 취지).
+/// 기본 키바인딩을 본체 설정 UI와 같은 규칙으로 표시한다.
 fn modifier_label(combo: &str) -> String {
     KeybindingSettings::format_display(combo, &GeneralSettings::default())
 }
 
-/// 탭 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
 fn tab_switch_caption() -> &'static str {
     static CAPTION: OnceLock<String> = OnceLock::new();
     CAPTION
@@ -54,7 +37,6 @@ fn tab_switch_caption() -> &'static str {
         .as_str()
 }
 
-/// 워크스페이스 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
 fn workspace_switch_caption() -> &'static str {
     static CAPTION: OnceLock<String> = OnceLock::new();
     CAPTION
@@ -67,11 +49,6 @@ fn workspace_switch_caption() -> &'static str {
         .as_str()
 }
 
-/// 카테고리 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
-///
-/// 끝의 배타성 문구는 특정 조합이 아니라 **축**을 가리킨다 — 워크스페이스 축과
-/// 카테고리 축은 서로 다른 조합이라 두 오버레이가 동시에 그려지지 않는다는 뜻이며,
-/// 어느 쪽 기본값이 바뀌어도 그대로 참이다.
 fn category_switch_caption() -> &'static str {
     static CAPTION: OnceLock<String> = OnceLock::new();
     CAPTION
@@ -92,7 +69,7 @@ pub enum Category {
     Foundations,
     /// 위젯·컴포넌트 (단일 UI primitive).
     Components,
-    /// canonical 글리프 세트.
+    /// 공통 아이콘.
     Icons,
     /// 모달·팝업 레이어.
     Overlays,
@@ -100,7 +77,7 @@ pub enum Category {
     Layouts,
     /// 플러그인 유래 컴포넌트 (네이티브와 분리된 플러그인 전용 섹션).
     Plugins,
-    /// 앱 크롬 전용 완결 화면 (부팅 로딩 등) — 위젯이 아니라 조립된 화면 단위 specimen.
+    /// 부팅 로딩 등 앱 화면 전체를 보여주는 예제.
     Chrome,
 }
 
@@ -118,7 +95,7 @@ impl Category {
         }
     }
 
-    /// nav 링크 우측 desc (research §1.2 의 페이지 메타).
+    /// 탐색 링크 옆에 표시할 짧은 설명.
     pub fn desc(self) -> &'static str {
         match self {
             Category::Foundations => "tokens",
@@ -228,10 +205,7 @@ fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
     Section { id, title, specs }
 }
 
-/// 모든 페이지의 Section/Spec 트리.
-///
-/// 기존 specimen `draw` 들을 디자인 분류(research §3.1)에 따라 page/section 으로
-/// 임시 매핑한다 — 34 개 기존 draw 전수 연결. 콘텐츠 재작성은 Round 2.
+/// 페이지별 구역과 예제 목록.
 pub fn pages() -> Vec<Page> {
     vec![
         // ── Foundations ──────────────────────────────────────────────
@@ -604,8 +578,6 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Icons ────────────────────────────────────────────────────
-        // 디자인(4) §2.3 — system-rules Section 1개 + 8 job 그룹 Section.
-        // 모든 글리프 24×24, 2px stroke, round, no fill, currentColor.
         Page {
             category: Category::Icons,
             sections: vec![
@@ -718,8 +690,6 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Overlays ─────────────────────────────────────────────────
-        // 디자인(4) §2.4 의 14 Spec 을 1:1 Section 으로 — 모든 모달이 공유하는
-        // scrim/frame 레시피(scrim)부터 2-tier settings 까지.
         Page {
             category: Category::Overlays,
             sections: vec![
@@ -1541,8 +1511,6 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                // Task DAG — 디자인 `gallery/dag.jsx` 의 NAV 섹션 전부. 캔버스/노드,
-                // 크롬/상세/서피스, 그리고 목록 행 + 워크스페이스 popup 세 묶음이다.
                 section(
                     "dag-graph",
                     "Task DAG · canvas & nodes",
@@ -1662,8 +1630,6 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Plugins ──────────────────────────────────────────────────
-        // 플러그인 유래 specimen 을 네이티브와 분리한 전용 페이지. 각 플러그인을
-        // 하나의 Section 으로 묶는다(clipboard / git / markdown / image / html).
         Page {
             category: Category::Plugins,
             sections: vec![
@@ -1724,8 +1690,6 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Chrome ───────────────────────────────────────────────────
-        // 완결 앱 크롬 화면 specimen — 위젯이 아니라 조립된 화면 단위(디자인
-        // `gallery/shell.jsx` 의 신규 "Chrome" 그룹 1:1 전사).
         Page {
             category: Category::Chrome,
             sections: vec![

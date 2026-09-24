@@ -1,31 +1,19 @@
-//! W3C DTCG 토큰 파서 + alias 해석기 + Rust 코드 생성기.
+//! DTCG 토큰 파싱, 별칭 해석, Rust 코드 생성.
 //!
-//! vendor 실물(`dtcg/tasty.tokens.json`)은 strict DTCG 가 아니다 — `$value` 는
-//! 보통 문자열이고(`"1.4"`, `"500"`), dimension 에 `"12px"` / `"0"`(무단위) /
-//! `"0.04em"`(em) 이 혼재하며, shadow/cubicBezier 는 CSS 문자열이다. 다만
-//! `$type: "number"` 토큰 일부는 raw JSON number(`0.4`)로 export 되기도 하므로
-//! 파서는 문자열/숫자/불리언 스칼라를 모두 받아 문자열로 정규화한다. 파서는 이
-//! 실물 형식을 기준으로 한다.
-//!
-//! alias 는 `{tier.name}` 문법. 디자인 계약(TOKENS.md)과 달리 실물에는
-//! component → primitive 직접 참조 등 tier-skip alias 가 실존하므로, 해석기는
-//! 임의 tier 간 참조 + 다단 체인을 허용한다. tier 규율의 강제는 생성물
-//! visibility(`generated::primitive` = `pub(crate)`)로만 수행한다.
+//! 저장된 JSON은 `$value`에 문자열·숫자·불리언을 쓰며 파서는 이를 문자열로 바꾼다.
+//! 길이는 px·단위 없는 값·em이 섞여 있고, 그림자와 cubicBezier는 CSS 문자열이다.
+//! 별칭은 `{tier.name}` 형태이며 계층을 건너뛰거나 여러 토큰을 거칠 수 있다.
+//! 생성된 primitive 상수는 `pub(crate)`로 외부 접근을 막는다.
 
 mod accessor;
 mod duration_accessor;
 
-/// `tests/sizing_parity.rs` 가 이 표를 데이터로 순회한다 — 표를 든 모듈이 옮겨져도
-/// 소비 경로(`dtcg::SEMANTIC_DIM_TO_THEME_FIELD`)는 그대로 둔다.
+/// 토큰 경로와 SIZING 필드의 대응표. 접근자 생성과 치수 대조 시험에서 공유한다.
 pub use accessor::SEMANTIC_DIM_TO_THEME_FIELD;
 use accessor::{generate_component_accessors, generate_semantic_color_accessors};
 
 use std::collections::BTreeMap;
 use std::fmt;
-
-// ============================================================================
-//  모델
-// ============================================================================
 
 /// 3-tier 중 어느 계층의 토큰인지.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -106,11 +94,11 @@ impl TokenSet {
         self.tokens.values().filter(|t| t.tier == tier).count()
     }
 
-    /// alias 체인을 끝까 따라가 터미널 리터럴을 돌려준다.
-    /// latte 모드는 각 hop 에서 latte 오버라이드가 있으면 그것을 따른다.
+    /// 별칭을 끝까지 따라가 최종 값을 반환한다.
+    /// Latte 모드에서는 각 토큰의 Latte 값을 우선한다.
     pub fn resolve(&self, path: &str, mode: ThemeMode) -> Result<String, ResolveError> {
         let mut current = path.to_string();
-        // 실물 체인은 최대 3-4단 — 32 는 순환 가드.
+        // 순환 참조나 지나치게 긴 체인은 32단계에서 중단한다.
         for _ in 0..32 {
             let token = self
                 .get(&current)
@@ -128,14 +116,10 @@ impl TokenSet {
     }
 }
 
-// ============================================================================
-//  에러
-// ============================================================================
-
 #[derive(Debug)]
 pub enum ParseError {
     Json(serde_json::Error),
-    /// 구조가 기대(3 tier 그룹 / `$type`+`$value` 문자열)와 다름.
+    /// 필수 계층, 문자열 `$type`, 스칼라 `$value` 형식이 맞지 않음.
     Structure(String),
 }
 
@@ -175,10 +159,6 @@ impl fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 
-// ============================================================================
-//  파서
-// ============================================================================
-
 /// DTCG json 텍스트를 파싱한다. 최상위 `primitive`/`semantic`/`component` 3그룹 필수.
 pub fn parse(text: &str) -> Result<TokenSet, ParseError> {
     let root: serde_json::Value = serde_json::from_str(text)?;
@@ -199,9 +179,7 @@ pub fn parse(text: &str) -> Result<TokenSet, ParseError> {
     Ok(TokenSet { tokens })
 }
 
-/// `$value`/latte 오버라이드 스칼라를 문자열로 정규화한다. DTCG는 `$type`에 따라
-/// number/boolean 을 raw JSON 스칼라로 export 할 수 있으므로, 문자열 외에도
-/// 받아들인다(예: `$type: "number"` 토큰의 `$value: 0.4`).
+/// 문자열·숫자·불리언 값을 문자열로 통일한다.
 fn json_scalar_to_string(v: &serde_json::Value) -> Option<String> {
     match v {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -221,8 +199,7 @@ fn collect(
         if key.starts_with('$') {
             continue;
         }
-        // 실물은 flat 이지만, 중첩 그룹이 생겨도 alias 경로 문법(`.` 구분)과
-        // 일치하도록 재귀 수집한다.
+        // 중첩 그룹은 점으로 구분한 별칭 경로로 수집한다.
         let name = if prefix.is_empty() {
             key.clone()
         } else {
@@ -271,15 +248,8 @@ fn collect(
     Ok(())
 }
 
-// ============================================================================
-//  코드 생성
-// ============================================================================
-
-/// 생성 결과. `files` 는 `src/generated/` 밑에 쓸 (파일명, 내용) — 결정적 순서.
-/// `type_appearance_files` 는 `crates/tasty-type-appearance/src/` 밑에 쓸 (파일명,
-/// 내용) — semantic 색·component 접근자는 `&Theme` 경유가 강제라 type-appearance
-/// 안에 산출해야 한다(런타임 의존 방향 보존, 04/05 생성기 확장 설계 참조).
-/// `skips` 는 생성에서 제외한 토큰의 사유 로그.
+/// 생성 파일과 제외 사유. `files`는 이 크레이트, `type_appearance_files`는
+/// `tasty-type-appearance/src`에 쓴다. Theme 접근자를 그쪽에 두어 의존 방향을 유지한다.
 #[derive(Debug)]
 pub struct Generated {
     pub files: Vec<(&'static str, String)>,
@@ -287,8 +257,7 @@ pub struct Generated {
     pub skips: Vec<String>,
 }
 
-/// 토큰 하나의 Rust 표현. 값은 mocha(`$value`) 터미널 리터럴 기준 —
-/// 치수·타이포·모션은 테마 불변이라 latte 분기가 없다.
+/// 색을 제외한 토큰의 Rust 표현. 테마에 따라 달라지지 않는 값만 상수로 만든다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum RustKind {
     /// dimension (px 또는 무단위) → `LogicalPx`.
@@ -322,13 +291,13 @@ impl RustKind {
 /// 생성 제외 사유. `Color` 는 요약 한 줄로, 나머지는 토큰별 로그.
 #[derive(Debug)]
 enum Skip {
-    /// 색 — 런타임 테마 시스템이 SSoT (시리즈 04/05).
+    /// 색 상수는 만들지 않는다. 런타임 테마의 색은 Theme 접근자로 읽는다.
     Color,
-    /// 시리즈 01 범위 밖 `$type` (fontFamily / shadow / cubicBezier).
+    /// 상수 생성을 지원하지 않는 `$type` (fontFamily / shadow / cubicBezier 등).
     Type(String),
     /// em 단위 dimension (letter-spacing 계열) — `LogicalPx` 로 표현 불가.
     EmUnit(String),
-    /// 터미널 리터럴을 숫자로 파싱 실패.
+    /// 별칭의 최종 값을 숫자로 해석할 수 없음.
     Unparsable(String),
 }
 
@@ -461,7 +430,7 @@ fn const_expr(from: Tier, target: &Token) -> String {
     }
 }
 
-/// 한 토큰의 `pub const` 라인(들)을 만든다. doc 주석에 토큰 경로·체인·터미널 값 명기.
+/// 상수와 원본 토큰 경로·별칭·값을 담은 문서 주석을 만든다.
 fn emit_const(
     set: &TokenSet,
     kinds: &BTreeMap<String, Result<RustKind, Skip>>,
@@ -508,9 +477,7 @@ fn emit_const(
         _ => "",
     };
     let ty = kind.type_name();
-    // rustfmt(max_width 100) 와 같은 줄바꿈을 생성기가 직접 낸다 — 생성물은 커밋되고
-    // `cargo fmt --check` 게이트를 지나가는데, freshness 테스트가 "생성기 출력 == 커밋된
-    // 텍스트" 를 요구하므로 사후 rustfmt 로 고칠 수 없다(고치면 다음 생성에서 다시 어긋난다).
+    // freshness 검사가 텍스트를 비교하므로 생성 단계에서 rustfmt 줄바꿈에 맞춘다.
     let one_line = format!("{indent}{vis} const {name}: {ty} = {expr};");
     let decl = if one_line.chars().count() > 100 {
         format!("{indent}{vis} const {name}: {ty} =\n{indent}    {expr};")
@@ -520,14 +487,11 @@ fn emit_const(
     format!("{indent}/// {doc}{unit}\n{decl}\n")
 }
 
-/// 파싱된 토큰셋에서 `src/generated/` 파일 4개 + `tasty-type-appearance` 접근자
-/// 파일 2개(semantic 색 + component)를 생성한다. 출력은 입력에만 의존하는 결정적 텍스트
-/// (타임스탬프 없음 — freshness 테스트 전제).
+/// 토큰 상수 파일 4개와 Theme 접근자 파일 2개를 생성한다.
 pub fn generate(set: &TokenSet) -> Generated {
     let mut skips: Vec<String> = Vec::new();
     let mut color_count = 0usize;
 
-    // 1) 전 토큰 분류 (참조 emit 시 대상 kind 대조에 필요).
     let mut kinds: BTreeMap<String, Result<RustKind, Skip>> = BTreeMap::new();
     for token in set.iter() {
         kinds.insert(token.path(), classify(set, token));
@@ -537,7 +501,7 @@ pub fn generate(set: &TokenSet) -> Generated {
             Ok(_) => {}
             Err(Skip::Color) => color_count += 1,
             Err(Skip::Type(ty)) => {
-                skips.push(format!("{path}: $type {ty} — 시리즈 01 생성 보류"));
+                skips.push(format!("{path}: $type {ty} — 상수 생성 미지원"));
             }
             Err(Skip::EmUnit(v)) => {
                 skips.push(format!(
@@ -545,13 +509,13 @@ pub fn generate(set: &TokenSet) -> Generated {
                 ));
             }
             Err(Skip::Unparsable(v)) => {
-                skips.push(format!("{path}: 터미널 값 파싱 실패 ({v}) — 생성 스킵"));
+                skips.push(format!("{path}: 최종 값 파싱 실패 ({v}) — 생성 스킵"));
             }
         }
     }
     if color_count > 0 {
         skips.push(format!(
-            "color 토큰 {color_count}개 — 런타임 테마 시스템이 SSoT, 생성하지 않음 (시리즈 04/05)"
+            "color 토큰 {color_count}개 — 색 상수는 생성하지 않으며 Theme 접근자로 읽음"
         ));
     }
 
@@ -564,10 +528,9 @@ pub fn generate(set: &TokenSet) -> Generated {
         )
     };
 
-    // 2) primitive.rs — pub(crate).
     let mut primitive = header(
         "//! Tier 1 — primitive 치수 스케일. **`pub(crate)`**: \"UI 는 primitive 를 직접\n\
-         //! 읽지 않는다\"(3-tier 계약)를 visibility 로 컴파일 타임 강제한다.\n\
+         //! 읽지 않는다\"는 규칙을 모듈 공개 범위로 지킨다.\n\
          //! 외부 crate 는 `semantic` / `component` 를 경유할 것.",
     );
     primitive.push_str("#![allow(dead_code)] // 스케일 전체를 보존한다 — 미참조 엔트리 포함.\n\n");
@@ -587,10 +550,9 @@ pub fn generate(set: &TokenSet) -> Generated {
         }
     }
 
-    // 3) semantic.rs — pub, primitive 참조.
     let mut semantic = header(
         "//! Tier 2 — semantic 치수/타이포/모션 (테마 불변). primitive 참조로 정의된다.\n\
-         //! 색 semantic 은 생성하지 않는다 — 런타임 테마 시스템(`tasty-themes`)이 SSoT.\n\
+         //! 색 상수는 생성하지 않는다. 색은 런타임 Theme 접근자로 읽는다.\n\
          //!\n\
          //! **zoom 주의**: 이 const 들은 `SIZING` 초기값·정합 테스트용이다. 런타임\n\
          //! 소비는 반드시 `&Theme` 필드/접근자 경유 (`with_colors_and_zoom` 의 zoom\n\
@@ -613,7 +575,6 @@ pub fn generate(set: &TokenSet) -> Generated {
         }
     }
 
-    // 4) component.rs — pub, 컴포넌트별 하위 모듈.
     let mut by_module: BTreeMap<String, Vec<(&Token, RustKind, String)>> = BTreeMap::new();
     for token in set.iter().filter(|t| t.tier == Tier::Component) {
         if let Some(Ok(kind)) = kinds.get(&token.path()) {
@@ -627,7 +588,7 @@ pub fn generate(set: &TokenSet) -> Generated {
     let mut component = header(
         "//! Tier 3 — component 치수 (테마 불변), 컴포넌트별 하위 모듈. semantic (일부는\n\
          //! primitive 직접 — 디자인 실물의 tier-skip alias) 참조로 정의된다.\n\
-         //! 색 component 접근자는 시리즈 04 에서 결정.\n\
+         //! 색 접근자는 tasty-type-appearance에 생성한다.\n\
          //!\n\
          //! **zoom 주의**: 런타임 소비는 반드시 `&Theme` 경유 — `semantic.rs` 참조.",
     );
@@ -645,16 +606,13 @@ pub fn generate(set: &TokenSet) -> Generated {
         component.push_str("}\n");
     }
 
-    // 5) mod.rs.
-    let module_root =
-        header("//! 생성 모듈 루트. `primitive` 는 `pub(crate)` — tier 규율의 컴파일 타임 강제.")
-            + "\npub(crate) mod primitive;\n\npub mod semantic;\n\npub mod component;\n";
+    let module_root = header("//! primitive는 크레이트 내부에서만 접근할 수 있다.")
+        + "\npub(crate) mod primitive;\n\npub mod semantic;\n\npub mod component;\n";
 
-    // 6) tasty-type-appearance/src/semantic_color_generated.rs — semantic 색 접근자 (05-A).
+    // Theme 색 접근자는 type-appearance에 생성한다.
     let (semantic_color_accessors, semantic_color_skips) = generate_semantic_color_accessors(set);
     skips.extend(semantic_color_skips);
 
-    // 7) tasty-type-appearance/src/generated_component.rs — component 접근자.
     let (component_accessors, accessor_skips) = generate_component_accessors(set);
     skips.extend(accessor_skips);
 

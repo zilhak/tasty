@@ -1,13 +1,5 @@
-//! `SIZING`(`tasty-type-appearance`) ↔ vendor json 정합 가드.
-//!
-//! `dtcg::SEMANTIC_DIM_TO_THEME_FIELD` 표를 순회한다 — 표가 (토큰 경로, SIZING
-//! 필드명) pair 의 단일 소스이고, `generated_component` 접근자도 같은 표를 쓴다.
-//! 여기서 어긋나면 소스 치수와 디자인 토큰이 드리프트한 것 — 값을 임의로 맞추지
-//! 말고 디자인 판정을 먼저 확인할 것.
-//!
-//! 대응표 자체가 유일한 근거(single source of truth)다 — `dtcg.rs` 의
-//! `SEMANTIC_DIM_TO_THEME_FIELD` 정의를 기준으로 이 테스트가 `SIZING` 값과의
-//! 정합을 검증한다.
+//! SEMANTIC_DIM_TO_THEME_FIELD의 대응표를 따라 SIZING과 DTCG 값을 비교한다.
+//! 불일치가 나면 임의로 값을 맞추지 말고 디자인의 의도와 변경 내용을 확인한다.
 
 use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, SEMANTIC_DIM_TO_THEME_FIELD, ThemeMode};
@@ -80,13 +72,13 @@ fn sizing_value(field: &str) -> f32 {
     }
 }
 
-/// 토큰 terminal 문자열(`"8px"` / `"1.6"` / `"9999px"`)에서 숫자만 파싱.
+/// 별칭을 해석한 최종 문자열(`"8px"` / `"1.6"` / `"9999px"`)에서 숫자만 파싱.
 fn terminal_number(raw: &str) -> f32 {
     let stripped = raw.strip_suffix("px").unwrap_or(raw);
     stripped
         .trim()
         .parse()
-        .unwrap_or_else(|_| panic!("terminal 값이 숫자가 아님: {raw}"))
+        .unwrap_or_else(|_| panic!("최종 값이 숫자가 아님: {raw}"))
 }
 
 /// `SEMANTIC_DIM_TO_THEME_FIELD` 표 전체를 데이터로 순회하는 정합 가드.
@@ -106,12 +98,8 @@ fn sizing_matches_dim_tokens() {
     }
 }
 
-/// tint 채움/테두리 계수 ↔ vendor json 정합 가드.
-///
-/// `TINT_FILL_ALPHA`/`TINT_BORDER_ALPHA` 는 치수가 아니라 비율이라 `SIZING` 에도
-/// `generated_component` 접근자에도 실리지 않는다 — `tasty-type-appearance` 는
-/// `tasty-design-tokens` 를 의존할 수 없어(type-layer 규율) 값이 손으로 적힌다.
-/// 그래서 여기서만 두 사본이 붙어 있는지 확인한다.
+/// 배율에 무관한 tint 비율을 DTCG 값과 비교한다.
+/// type-appearance는 design-tokens에 의존할 수 없어 상수를 직접 정의한다.
 #[test]
 fn tint_alphas_match_tokens() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
@@ -133,12 +121,8 @@ fn tint_alphas_match_tokens() {
     }
 }
 
-/// 상태바 인라인 글리프의 **크기 role** 이 component → semantic → primitive 로 선다
-/// (2026-09-20 결정 G1). 바에는 글리프 **색** role 이 있었고 **크기** role 이 없어
-/// 위젯이 semantic 을 직접 읽고 있었다.
-///
-/// **한 칸씩 단정한다.** 종착값(12)만 보면 사슬 한 칸이 끊겨 component 가 primitive 를
-/// 직접 가리키게 돼도 값이 같아 안 보인다 — 이 결정이 요구한 것은 값이 아니라 **사슬**이다.
+/// 상태바 글리프 크기의 component → semantic → primitive 연결을 확인한다.
+/// 최종 값만 비교하면 중간 계층을 건너뛴 참조를 놓치므로 각 연결을 따로 검사한다.
 #[test]
 fn the_statusbar_glyph_size_chain_stands_on_three_tiers() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
@@ -150,7 +134,7 @@ fn the_statusbar_glyph_size_chain_stands_on_three_tiers() {
     assert_eq!(
         dtcg::alias_target(&component.value),
         Some("semantic.icon-size-xs"),
-        "component 가 semantic 을 안 거친다 — tier-skip 이면 사슬이 둘로 준다"
+        "component가 semantic을 거치지 않는다"
     );
 
     let semantic = set
@@ -165,9 +149,9 @@ fn the_statusbar_glyph_size_chain_stands_on_three_tiers() {
     let primitive = set
         .get("primitive.size-12")
         .expect("primitive.size-12 가 없다");
-    assert_eq!(primitive.value, "12px", "사슬의 종착값이 12px 가 아니다");
+    assert_eq!(primitive.value, "12px", "최종 값이 12px가 아니다");
 
-    // 모드 분기가 없다 — 치수가 테마 상태가 되면 안 된다(결정문의 명시 제약).
+    // 치수는 색 테마에 따라 달라지지 않는다.
     for mode in [ThemeMode::Mocha, ThemeMode::Latte] {
         assert_eq!(
             set.resolve("component.statusbar-glyph-size", mode)

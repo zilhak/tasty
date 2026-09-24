@@ -2,8 +2,6 @@
 
 use super::{fill_hline, fill_vline};
 
-// ---- box drawing -----------------------------------------------------------
-
 /// Line weight for each of the four directions.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Lw {
@@ -176,7 +174,7 @@ fn box_desc(cp: u32) -> Option<BoxDesc> {
         0x256F => BoxDesc::new(Light, None, Light, None), // ╯
         0x2570 => BoxDesc::new(None, Light, Light, None), // ╰
 
-        // ── Diagonal lines (render as light cross for approximation) ──
+        // Diagonals are drawn separately before this table is used.
         0x2571 => BoxDesc::new(None, None, None, None), // ╱ (handled specially)
         0x2572 => BoxDesc::new(None, None, None, None), // ╲ (handled specially)
         0x2573 => BoxDesc::new(None, None, None, None), // ╳ (handled specially)
@@ -203,7 +201,6 @@ fn box_desc(cp: u32) -> Option<BoxDesc> {
 }
 
 pub(super) fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
-    // Handle diagonal lines specially
     match cp {
         0x2571 => {
             draw_diagonal_forward(bitmap, w, h);
@@ -229,15 +226,12 @@ pub(super) fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bo
     let cx = w / 2;
     let cy = h / 2;
 
-    // Line thickness
     let light_h = (w / 8).max(1); // horizontal light thickness (vertical extent)
     let heavy_h = (w / 4).max(2); // horizontal heavy thickness
     let light_v = (w / 8).max(1); // vertical light thickness (horizontal extent)
     let heavy_v = (w / 4).max(2); // vertical heavy thickness
     let double_gap = (w / 6).max(2); // gap between double lines (center-to-center distance)
 
-    // Draw each arm
-    // LEFT arm
     match desc.left {
         Lw::None => {}
         Lw::Light => fill_hline(bitmap, w, h, 0, cx + light_v / 2, cy, light_h),
@@ -265,7 +259,6 @@ pub(super) fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bo
         }
     }
 
-    // RIGHT arm
     match desc.right {
         Lw::None => {}
         Lw::Light => fill_hline(bitmap, w, h, cx.saturating_sub(light_v / 2), w, cy, light_h),
@@ -293,7 +286,6 @@ pub(super) fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bo
         }
     }
 
-    // UP arm
     match desc.up {
         Lw::None => {}
         Lw::Light => fill_vline(bitmap, w, h, 0, cy + light_h / 2, cx, light_v),
@@ -321,7 +313,6 @@ pub(super) fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bo
         }
     }
 
-    // DOWN arm
     match desc.down {
         Lw::None => {}
         Lw::Light => fill_vline(bitmap, w, h, cy.saturating_sub(light_h / 2), h, cx, light_v),

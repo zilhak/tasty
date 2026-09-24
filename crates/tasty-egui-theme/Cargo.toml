@@ -7,7 +7,6 @@ description = "Theme ↔ egui adapter helpers (Visuals/Style apply, hint_text wr
 
 [dependencies]
 egui = "0.31"
-# Read and validate the same font bytes as the language-pack loader.
 tasty-i18n = { path = "../tasty-i18n" }
 tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 tasty-type-geometry = { path = "../tasty-type-geometry" }

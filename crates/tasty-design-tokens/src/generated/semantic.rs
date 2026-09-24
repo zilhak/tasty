@@ -2,7 +2,7 @@
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
 //! Tier 2 — semantic 치수/타이포/모션 (테마 불변). primitive 참조로 정의된다.
-//! 색 semantic 은 생성하지 않는다 — 런타임 테마 시스템(`tasty-themes`)이 SSoT.
+//! 색 상수는 생성하지 않는다. 색은 런타임 Theme 접근자로 읽는다.
 //!
 //! **zoom 주의**: 이 const 들은 `SIZING` 초기값·정합 테스트용이다. 런타임
 //! 소비는 반드시 `&Theme` 필드/접근자 경유 (`with_colors_and_zoom` 의 zoom

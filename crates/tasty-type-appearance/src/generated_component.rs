@@ -1,12 +1,9 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 3 (component) 치수·색·시간 접근자. `generated::component` 의
-//! raw const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를
-//! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접
-//! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자
-//! 상호 호출로 이어붙인다. 시간은 `Millis` 로 나가며 **zoom 을 곱하지
-//! 않는다** — 배율은 길이 축이다.
+//! Component 치수·색·시간을 Theme를 통해 읽는다.
+//! 치수는 배율을 적용한 필드를 쓰거나 ui_zoom을 곱한다.
+//! 색은 연결된 접근자로 읽고, 시간은 배율 없이 Millis로 반환한다.
 
 use crate::color::HexColor;
 use crate::motion::Millis;

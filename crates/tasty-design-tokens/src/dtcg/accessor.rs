@@ -1,32 +1,14 @@
-//! DTCG 토큰 → `&Theme` 경유 접근자 생성 (component 치수·색, semantic 색).
-//!
-//! `generated::component` 의 raw const 는 zoom 을 모른다 (테마 불변 스케일).
-//! 위젯이 그 const 를 직접 읽으면 `Theme::with_colors_and_zoom()` 의 zoom
-//! resolve/제외 정책을 우회한다 — 그래서 component 토큰은 `&Theme` 경유
-//! 접근자로만 노출한다 (`crates/tasty-type-appearance/src/generated_component.rs`).
-//!
-//! 여기서 만드는 텍스트는 `super::generate` 가 `Generated` 로 모은다. 파싱·분류·
-//! const emit 은 `super` 에 남는다 — 이 모듈은 접근자 표와 그 emit 만 든다.
+//! Theme의 배율 정책을 적용하는 component 치수·시간 접근자와 색 접근자를 생성한다.
+//! 배율을 적용하지 않은 상수는 `super`에서 생성한다.
 
 use super::{
     ThemeMode, Tier, Token, TokenSet, alias_target,
     duration_accessor::{emit_duration_accessor, resolve_duration_accessor},
 };
 
-/// semantic/component 치수 토큰의 전체 경로 ↔ `Theme`/`SIZING` 필드명.
-/// `component.<name>` 키는 SIZING 이 그 component 토큰 전용 필드를 직접 보유하는
-/// 경우(사이드바, titlebar OS 어포던스, 토스트, status-dot, spinner, tab
-/// indicator), `semantic.<name>` 키는 위젯이 semantic 치수를 공유 소비하는
-/// 일반 경로.
-///
-/// **순서 중요**: 같은 토큰 경로를 여러 `SIZING` 필드가 가리킬 때(tab-bar 류
-/// zoom-제외 필드가 위젯과 같은 semantic 값을 재사용, 예: `control-height-tab`
-/// ↔ `item_height_tab`/`tab_bar_height` 모두 대응) lookup 은 **먼저 나오는
-/// 항목이 승자** — zoom 적용 위젯 필드를 zoom-제외 host-chrome 전용 필드보다
-/// 앞에 둔다.
-///
-/// `tests/sizing_parity.rs` 의 가드는 이 표를 데이터로 순회한다 — 표 밖에서
-/// 대응 pair 를 따로 하드코딩하지 않는다.
+/// 토큰 경로와 Theme/SIZING 필드의 대응표. 치수 검사도 이 표를 사용한다.
+/// 같은 토큰에 필드가 여럿이면 첫 항목을 선택하므로 배율이 적용되는 위젯 필드를
+/// 배율에서 제외되는 창 UI 필드보다 앞에 둔다.
 pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     // spacing (4px 그리드 5단)
     ("semantic.space-xs", "spacing_xs"),
@@ -55,13 +37,9 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
         "font_size_brand_display",
     ),
     ("semantic.font-size-prose-h1", "font_size_prose_h1"),
-    // `semantic.font-size-prose-h2` 는 은퇴·제거됨 — egui_commonmark 이 헤딩을 보간해
-    // per-H2 픽셀을 받지 못한다(vendor json 에서도 제거됨).
     ("semantic.font-size-term-sm", "font_size_term_sm"),
     ("semantic.font-size-term", "font_size_term"),
     ("semantic.font-size-term-lg", "font_size_term_lg"),
-    // `semantic.line-height-prose` 는 은퇴·제거됨 — markdown body leading 을
-    // egui_commonmark 이 소유해 override 미노출(vendor json 에서도 제거됨).
     // 아이콘 글리프
     ("semantic.icon-size-xs", "icon_glyph_size_xs"),
     ("semantic.icon-size-sm", "icon_glyph_size_sm"),
@@ -121,21 +99,14 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("component.status-dot-size", "status_dot_size"),
     ("component.spinner-size", "spinner_size"),
     ("component.tab-indicator-width", "tab_indicator_width"),
-    // zoom-제외 host-chrome 전용 필드 — 위 item_height_tab/font_size_body/
-    // font_size_caption 이 같은 토큰 경로를 먼저 흡수하므로 lookup 에서는 도달하지
-    // 않는다. sizing_parity 가드 완전성을 위해서만 유지.
+    // 위의 배율 적용 필드가 먼저 선택된다. 아래 필드는 치수 검사에 필요하다.
     ("semantic.control-height-tab", "tab_bar_height"),
     ("semantic.font-size-body", "tab_bar_label_font_size"),
     ("semantic.font-size-caption", "tab_bar_arrow_font_size"),
 ];
 
-/// semantic 색 토큰의 전체 경로 ↔ `theme.rs` 수기 접근자 표현식. 필드는 괄호 없이
-/// (`separator`), 메서드는 `()` 포함(`accent_primary()`) — `self.<expr>` 로 그대로
-/// 이어붙인다.
-///
-/// component 색 토큰의 alias 체인이 semantic 홉에서 이 표에 없는 경로를 만나면
-/// 생성기는 skip + 로그한다. 값을 임의로 새 접근자에 매핑하지 않는다 — 대응
-/// 접근자가 실제로 존재하는데 이 표에만 빠져 있으면 여기 한 줄을 추가한다.
+/// semantic 색 토큰과 Theme 필드·메서드의 대응표. `self.<expr>`로 생성한다.
+/// 대응하는 접근자가 없는 토큰은 로그를 남기고 제외한다.
 pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-agent", "accent_agent()"),
     ("semantic.accent-attached", "border_attached()"),
@@ -177,16 +148,10 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.text-secondary", "text_secondary()"),
 ];
 
-/// 생성 대상 semantic 색 접근자 — (DTCG semantic 토큰 경로, `impl Theme` 메서드명,
-/// 반환 `Theme` primitive 필드). 각 항목은 theme.rs 의 기존 수기 접근자와 **diff 0**
-/// (동일 필드를 반환). 필드 바인딩을 표로 고정하는 이유는 DTCG primitive → `Theme`
-/// 필드 대응이 1:1 이 아니기 때문 — 예: `text-placeholder` 는 `{primitive.color-neutral-600}`
-/// (값상 `overlay0` 과 동일) 이지만 별도 `placeholder` 필드로 종착한다. 값 일치는
-/// `tests/color_drift.rs`, 필드 일치는 theme.rs `semantic_accessors_map_to_primitives`
-/// 가 이중으로 가드한다.
-///
-/// 메서드명이 토큰명 snake_case 와 다른 경우가 있다 — `accent-attached` → `border_attached`
-/// (attached workspace outline 은 accent 가 아니라 border role). 그래서 fn 이름을 표에 명시한다.
+/// 생성할 semantic 색 접근자: 토큰 경로, 메서드명, 반환할 Theme 필드.
+/// 토큰과 필드가 항상 일대일로 대응하지 않으므로 명시적으로 연결한다.
+/// 예를 들어 text-placeholder는 overlay0와 기본값이 같지만 별도 placeholder 필드를 쓴다.
+/// color_drift 시험은 값, semantic_accessors_map_to_primitives 시험은 필드 연결을 확인한다.
 pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     // 배경 (bg-*)
     ("semantic.bg-app", "bg_app", "crust"),
@@ -209,19 +174,13 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     // accent (의미색)
     ("semantic.accent-primary", "accent_primary", "blue"),
     ("semantic.accent-info", "accent_info", "sky"),
-    // accent-remote: mirror/원격 origin 전용 role. accent-info 와 같은 sky 지만 의미 분리
-    // (accent-info 는 git-viewer/chip/banner/explorer/preset 다수 실사용처 — 용도 격리).
+    // 원격 연결과 일반 안내는 기본 색이 같아도 용도를 구분한다.
     ("semantic.accent-remote", "accent_remote", "sky"),
     ("semantic.accent-success", "accent_success", "green"),
     ("semantic.accent-warning", "accent_warning", "yellow"),
-    // accent-attention: plugin/occupancy "needs-attention" notice role. accent-warning
-    // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분한다.
+    // 주의 환기(peach)와 경고(yellow)를 구분한다.
     ("semantic.accent-attention", "accent_attention", "peach"),
-    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry).
-    // soft=green(협조 신호, write 제한 없음), hard=peach(readonly + force-detach).
-    // accent-success(green)·accent-
-    // attention(peach) 와 primitive 는 공유하나 의미가 겹치지 않도록 독립 role 로
-    // 분리 — 점유 의미가 축 독립 진화 가능.
+    // 점유 표시는 soft=green, hard=peach. 성공·주의 환기와 색이 같아도 별도 역할이다.
     (
         "semantic.accent-occupied-soft",
         "accent_occupied_soft",
@@ -235,35 +194,23 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),
-    // accent-decorative: 장식 accent role (Plugins 창 헤더 glyph). accent-attention
-    // (peach) 과 primitive 는 같지만 "주의 환기" 가 아니라 "장식" 이라 role 을 가른다.
+    // 장식과 주의 환기는 색이 같아도 역할을 구분한다.
     ("semantic.accent-decorative", "accent_decorative", "peach"),
     // 상태 표시 (status-*)
-    // status-idle: idle/inactive 인디케이터 톤. 값상 text-placeholder 와 같은
-    // neutral-600 이지만 필드는 `overlay0` 로 종착한다 — `placeholder` 는 텍스트
-    // 입력 전용 필드라 사용자가 독립적으로 덮어쓸 수 있고, 인디케이터 도트가 그
-    // 오버라이드를 따라가는 것은 의도가 아니다.
+    // 입력 placeholder의 사용자 설정이 상태 표시 색에 영향을 주지 않게 한다.
     ("semantic.status-idle", "status_idle", "overlay0"),
-    // glyph-dim: 물러나야 하는 chrome glyph 톤. 값상 text-placeholder 와 같은
-    // neutral-600 이지만 status-idle 과 같은 이유로 `overlay0` 로 종착한다 —
-    // `placeholder` 는 텍스트 입력 전용 필드라 사용자 오버라이드를 chrome glyph 가
-    // 따라가는 것은 의도가 아니다. disabled 용이 아니다(그쪽은 text-disabled).
+    // 약하게 표시할 창 아이콘 색. 입력 placeholder 설정이나 비활성 색과 구분한다.
     ("semantic.glyph-dim", "glyph_dim", "overlay0"),
     // 보더 (border-*)
     ("semantic.border-default", "border_default", "surface0"),
     ("semantic.border-strong", "border_strong", "surface1"),
     ("semantic.border-focus", "border_focus", "blue"),
-    // border-frame: surface2 값의 border role (pane divider · GPU 비활성 surface
-    // 보더 · popup 프레임 보더). surface-active 와 primitive 는 같지만 "선택된 표면"
-    // 이 아니라 "틀의 선" 이라 role 을 가른다.
+    // 프레임 선과 선택된 배경은 색이 같아도 역할을 구분한다.
     ("semantic.border-frame", "border_frame", "surface2"),
 ];
 
-/// semantic 색 토큰 중 **생성하지 않고 theme.rs 에 수기로 남기는** 접근자 + 사유.
-/// (단순 primitive 필드 alias 가 아니라 분기·도출·합성·리터럴이라 codegen 불가.)
-/// 나머지 semantic 색(ansi-*·surface-terminal/markdown-*·selection/vi/search-*·
-/// brand-melon-rind/seed)은 semantic **접근자 자체가 없다** — 터미널 표면 색
-/// subsystem 또는 미사용 토큰이라 여기 열거하지 않는다.
+/// 단순 필드 반환이 아닌 색 접근자는 theme.rs에 직접 구현한다.
+/// 터미널 전용 색이나 사용하지 않는 토큰처럼 접근자 자체가 없는 색은 이 목록에서 제외한다.
 const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
     (
         "semantic.text-on-accent",
@@ -295,11 +242,7 @@ const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
     ),
 ];
 
-/// component 색 접근자 이름이 `theme.rs` 의 기존 수기 접근자와 충돌하는 목록.
-/// `banner-*`/`titlebar-*` 색은 이미 semantic 접근자 조합으로 손으로 작성돼 있다
-/// (예: `banner_bg` → `surface_raised()`) — 동일 이름으로 재생성하면 `impl Theme`
-/// 중복 정의로 컴파일이 깨진다. 새 충돌이 생기면 `cargo build` 가 "duplicate
-/// definitions" 로 즉시 드러나며, 그때 이 표에 추가한다.
+/// theme.rs에 직접 구현한 색 접근자. 같은 이름으로 생성하면 중복 정의가 된다.
 const EXISTING_THEME_ACCESSOR_NAMES: &[&str] = &[
     "banner_bg",
     "banner_border",
@@ -320,10 +263,7 @@ const EXISTING_THEME_ACCESSOR_NAMES: &[&str] = &[
     "modhint_empty_fg",
 ];
 
-/// [`EXISTING_THEME_ACCESSOR_NAMES`]의 치수(dimension) 버전 — component 치수
-/// 접근자 생성 시에도 동일한 이름 충돌이 발생할 수 있다(예: modifier-hint 크기
-/// 토큰은 theme.rs 에 수기 접근자가 먼저 생겼고, 이후 vendor json 에 대응 component
-/// 토큰이 추가됨).
+/// theme.rs에 직접 구현한 치수 접근자. 같은 이름으로 생성하지 않는다.
 const EXISTING_THEME_DIM_ACCESSOR_NAMES: &[&str] = &[
     "modhint_width",
     "modhint_height",
@@ -382,7 +322,7 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
                 .trim()
                 .parse::<f32>()
                 .map(DimAccessor::RawZoom)
-                .map_err(|_| format!("{own_path}: 터미널 값 파싱 실패 ({terminal}) — 생성 스킵"))
+                .map_err(|_| format!("{own_path}: 최종 값 파싱 실패 ({terminal}) — 생성 스킵"))
         }
         None => Err(format!(
             "{own_path}: alias 대상 없음 ({target_path}) — 생성 스킵"
@@ -415,10 +355,7 @@ fn resolve_color_accessor(set: &TokenSet, token: &Token) -> Result<ColorAccessor
             }),
         Some(target) if target.tier == Tier::Component => {
             let fn_name = accessor_fn_name(&target.name);
-            // chain 대상이 EXISTING_THEME_ACCESSOR_NAMES 충돌로 스킵되거나 자기 자신의
-            // alias 해석에 실패하면, 대상 접근자가 실제로 생성되지 않아 이 체인 호출이
-            // dangling self-call 이 된다 — tier 만 보고 낙관적으로 Chain 을 반환하지
-            // 않도록 재귀 검증한다.
+            // 대상 접근자도 생성 가능한지 확인해야 존재하지 않는 메서드를 호출하지 않는다.
             if EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str()) {
                 Ok(ColorAccessor::Chain(fn_name))
             } else {
@@ -473,10 +410,8 @@ fn emit_color_accessor(token: &Token, acc: &ColorAccessor) -> String {
     )
 }
 
-/// component 치수+색 접근자 파일(`generated_component.rs`) 본문을 만든다.
-/// `crates/tasty-type-appearance/src/` 에 산출 — `&Theme` 경유 강제 원칙 때문에
-/// (`tasty-design-tokens` → `tasty-type-appearance` 런타임 의존은 금지이므로
-/// 생성기가 산출물을 상대 크레이트 안에 직접 쓴다).
+/// component 접근자는 Theme가 있는 type-appearance에 쓴다.
+/// design-tokens가 type-appearance에 런타임 의존성을 갖지 않도록 한다.
 pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
     let mut skips = Vec::new();
     let mut body = String::new();
@@ -513,8 +448,7 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
             }
             "duration" => {
                 let fn_name = accessor_fn_name(&token.name);
-                // 이름이 겹치면 `impl Theme` 이 중복 메서드로 컴파일이 깨진다 — 반환
-                // 타입이 달라도 마찬가지라 두 표를 **함께** 본다.
+                // 반환 타입이 달라도 같은 이름의 메서드를 중복 정의할 수 없다.
                 if EXISTING_THEME_DIM_ACCESSOR_NAMES.contains(&fn_name.as_str())
                     || EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str())
                 {
@@ -529,8 +463,7 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
                     Err(reason) => skips.push(reason),
                 }
             }
-            // number/fontWeight component 토큰 — component 접근자 생성 범위 밖. 테마 불변이고 무단위라
-            // `generated::component` 의 raw const 로 이미 충분.
+            // 테마와 배율에 무관한 number/fontWeight는 상수로만 생성한다.
             _ => {}
         }
     }
@@ -538,12 +471,9 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
     let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
                   //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
                   //!\n\
-                  //! Tier 3 (component) 치수·색·시간 접근자. `generated::component` 의\n\
-                  //! raw const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
-                  //! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접\n\
-                  //! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자\n\
-                  //! 상호 호출로 이어붙인다. 시간은 `Millis` 로 나가며 **zoom 을 곱하지\n\
-                  //! 않는다** — 배율은 길이 축이다.\n\n\
+                  //! Component 치수·색·시간을 Theme를 통해 읽는다.\n\
+                  //! 치수는 배율을 적용한 필드를 쓰거나 ui_zoom을 곱한다.\n\
+                  //! 색은 연결된 접근자로 읽고, 시간은 배율 없이 Millis로 반환한다.\n\n\
                   use crate::color::HexColor;\n\
                   use crate::motion::Millis;\n\
                   use tasty_type_geometry::length::LogicalPx;\n\n\
@@ -554,17 +484,6 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
     (file, skips)
 }
 
-// ============================================================================
-//  Semantic 색 접근자 (단순 primitive 필드 alias) — 05-A
-// ============================================================================
-//
-// theme.rs 가 수기로 들고 있던 semantic 색 접근자(`bg_app`/`accent_primary`/
-// `border_default` 등)를 DTCG semantic 색 토큰에서 생성으로 전환한다. 각 접근자는
-// `&Theme` 의 primitive 필드를 그대로 반환 — component 색 접근자가 이 semantic
-// 접근자를 `self.accent_primary()` 처럼 호출하므로 inherent method 이름을 유지한다.
-// 분기(is_light)·도출(overlay)·합성(scrim)·리터럴(OS/brand) 접근자는 생성 불가라
-// theme.rs 에 수기로 남는다 (`SEMANTIC_COLOR_HAND_WRITTEN` 참조).
-
 /// semantic 색 접근자 하나의 `impl Theme` 메서드 텍스트.
 fn emit_semantic_color_accessor(token: &Token, fn_name: &str, field: &str) -> String {
     format!(
@@ -574,16 +493,14 @@ fn emit_semantic_color_accessor(token: &Token, fn_name: &str, field: &str) -> St
     )
 }
 
-/// semantic 색 접근자 파일(`semantic_color_generated.rs`) 본문을 만든다.
-/// component 접근자와 같은 이유로 `crates/tasty-type-appearance/src/` 에 산출
-/// (`&Theme` 경유 강제 + 런타임 의존 방향 보존).
+/// semantic 색 접근자를 Theme가 있는 type-appearance에 생성한다.
 pub(super) fn generate_semantic_color_accessors(set: &TokenSet) -> (String, Vec<String>) {
     let mut skips = Vec::new();
     let mut body = String::new();
 
     for (path, fn_name, field) in SEMANTIC_COLOR_ACCESSOR_GEN {
         match set.get(path) {
-            // 표에 든 토큰이 사라지면(디자인 rename 등) 드리프트 신호로 skip 로그.
+            // 대응표에만 남은 토큰은 로그로 알린다.
             None => skips.push(format!(
                 "{path}: SEMANTIC_COLOR_ACCESSOR_GEN 표에 있으나 vendor json 에 없음 — 생성 스킵"
             )),
@@ -603,7 +520,7 @@ pub(super) fn generate_semantic_color_accessors(set: &TokenSet) -> (String, Vec<
                   //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
                   //!\n\
                   //! Tier 2 (semantic) 색 접근자. 각 메서드는 DTCG semantic 색 토큰의\n\
-                  //! primitive 종착을 `Theme` 필드로 그대로 반환하는 단순 alias 다.\n\
+                  //! 대응 `Theme` 필드를 반환한다.\n\
                   //! is_light 분기(text-on-accent)·도출 overlay·합성색(scrim)·OS/brand\n\
                   //! 리터럴 등 비단순 접근자는 theme.rs 에 수기로 남는다.\n\n\
                   use crate::color::HexColor;\n\n\

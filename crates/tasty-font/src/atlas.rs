@@ -1,22 +1,12 @@
-//! GPU 글리프 아틀라스 — 이 모듈만 `wgpu` 를 본다.
-//!
-//! 크레이트가 `gpu` feature 뒤에서 이 모듈 하나만 켜고 끄도록 갈라져 있다. 가른 축은
-//! 취향이 아니라 **의존 그래프**다: 헤드리스 소비자는 `FontConfig` 하나만 쓰는데
-//! (`FontConfig::new` → 시스템 폰트 DB lookup), 그것은 cosmic-text 만 필요로 한다.
-//! `wgpu` 를 끌고 오는 것은 여기 있는 `GlyphAtlas` 뿐이다.
-//!
-//! 여기 없는 것도 경계다 — `GlyphKey` · `AtlasEntry` · `AtlasPage` · `pick_lru_victim` ·
-//! `FrameClock` 은 device 가 없어도 성립하는 상태 기계라 크레이트 루트에 남는다. 그래서
-//! 그 다섯의 단위시험은 `gpu` 를 꺼도 그대로 돈다. 근거: docs/architecture/index.md#크레이트를-나누는-기준.
+//! `gpu` 기능으로 켜는 GPU 글리프 아틀라스.
+//! 캐시 키·페이지 상태·프레임 시계는 장치 없이 시험할 수 있도록 크레이트 루트에 둔다.
 
 use cosmic_text::{Attrs, Buffer, Metrics, Shaping, SwashContent};
 use rustc_hash::FxHashMap;
 
 use crate::{AtlasEntry, AtlasPage, FontConfig, FrameClock, GlyphKey, pick_lru_victim};
 
-/// ASCII fast-path glyph cache: direct array index for printable ASCII
-/// (code points 0..128) × bold × italic = 512 slots. Avoids hash lookup
-/// on the hot path where ~95% of cell glyphs land.
+/// Direct cache for ASCII code points 0..128 × bold × italic: 512 slots.
 struct AsciiCache {
     slots: Box<[Option<AtlasEntry>; 512]>,
 }
@@ -195,7 +185,6 @@ impl GlyphAtlas {
             return None;
         }
         let max_pages = self.pages.len() as u32;
-        // Walk from active page through all pages once.
         for step in 0..max_pages {
             let idx = (self.active_page + step) % max_pages;
             if let Some((x, y)) = self.pages[idx as usize].try_allocate(w, h, self.atlas_size) {
@@ -219,7 +208,6 @@ impl GlyphAtlas {
             self.pages[victim as usize].entry_count,
             self.pages[victim as usize].last_access_frame
         );
-        // Drop cache entries that lived on this page.
         self.ascii_cache.retain_pages_except(victim);
         self.overflow_cache.retain(|_, e| e.page != victim);
         self.pages[victim as usize].reset();
@@ -329,7 +317,6 @@ impl GlyphAtlas {
         font_config: &mut FontConfig,
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
-        // Try builtin rendering for block elements and box drawing characters
         if !key.bold
             && !key.italic
             && let Some(entry) = self.rasterize_builtin_glyph(key.ch, font_config, queue)
@@ -367,7 +354,6 @@ impl GlyphAtlas {
         );
         buffer.shape_until_scroll(&mut font_config.font_system, false);
 
-        // Find the first glyph in the first layout run.
         let found_glyph = buffer.layout_runs().find_map(|run| {
             run.glyphs
                 .first()
@@ -376,7 +362,6 @@ impl GlyphAtlas {
 
         let (physical_glyph, _line_y) = found_glyph?;
 
-        // Rasterize the glyph using swash
         let image = font_config
             .swash_cache
             .get_image(&mut font_config.font_system, physical_glyph.cache_key)
@@ -402,7 +387,6 @@ impl GlyphAtlas {
             return Some(entry);
         }
 
-        // Convert to grayscale if needed
         let grayscale_data: Vec<u8> = match image.content {
             SwashContent::Mask => image.data.clone(),
             SwashContent::Color => {
@@ -439,10 +423,6 @@ impl GlyphAtlas {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Builtin rendering for block elements (U+2580–U+259F) and box drawing (U+2500–U+257F)
-// ---------------------------------------------------------------------------
-
 /// Returns `true` if the character was handled (bitmap filled).
 fn draw_builtin_char(ch: char, bitmap: &mut [u8], w: u32, h: u32) -> bool {
     let cp = ch as u32;
@@ -453,14 +433,8 @@ fn draw_builtin_char(ch: char, bitmap: &mut [u8], w: u32, h: u32) -> bool {
     }
 }
 
-// ---- helpers ---------------------------------------------------------------
-
-/// Fill a rectangle [x0, x1) × [y0, y1) with the given alpha value.
-///
-/// 같은 파일 내 box-drawing match arm 에서 62회 호출되는 private helper.
-/// `(bitmap, w, h)` wrapper 도입 시 호출자 + 그 호출자의 내부 코드까지 도미노 변경이라
-/// (A2) Target wrapper 대신 (C) `#[allow]` 채택. 좌표 4개 + alpha 의미는 graphics primitive 관습.
-#[allow(clippy::too_many_arguments)] // reason: 62회 호출되는 내부 helper, wrapper 도입 시 호출자 도미노 변경 — graphics primitive 좌표 인자 관습
+/// Fill [x0, x1) × [y0, y1) with the given alpha.
+#[allow(clippy::too_many_arguments)] // reason: 비트맵과 사각형 좌표, 알파를 함께 받는 내부 그리기 함수
 fn fill_rect(bitmap: &mut [u8], w: u32, _h: u32, x0: u32, y0: u32, x1: u32, y1: u32, alpha: u8) {
     for y in y0..y1 {
         for x in x0..x1 {
@@ -505,8 +479,6 @@ pub(crate) fn fill_vline(
     let x1 = (cx + thickness - half).min(w);
     fill_rect(bitmap, w, h, x0, y0, x1, y1, 255);
 }
-
-// ---- block elements --------------------------------------------------------
 
 fn draw_block_element(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
     match cp {

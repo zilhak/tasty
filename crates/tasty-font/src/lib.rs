@@ -82,9 +82,8 @@ impl FontConfig {
         }
     }
 
-    /// Reconfigure font settings without rebuilding the FontSystem from scratch.
-    /// Reuses the existing system font database to avoid the ~180ms FontSystem::new() scan.
-    /// Only reloads the custom font if the path changed.
+    /// Reconfigure while reusing the system font database.
+    /// A non-empty custom font path is read again on every call.
     pub fn reconfigure(
         &mut self,
         font_size: f32,
@@ -92,7 +91,6 @@ impl FontConfig {
         custom_font_path: &str,
         line_height_mult: f32,
     ) {
-        // Load custom font if path is non-empty (additive; duplicates are harmless)
         if !custom_font_path.is_empty() {
             if let Ok(data) = std::fs::read(custom_font_path) {
                 self.font_system.db_mut().load_font_data(data);
@@ -182,7 +180,6 @@ impl FontConfig {
         );
         buffer.shape_until_scroll(font_system, false);
 
-        // Measure the width of 'M' by looking at layout runs
         let mut cell_width = font_size * 0.6; // fallback
         let mut baseline = line_height * 0.8; // fallback
         if let Some(run) = buffer.layout_runs().next() {
@@ -286,13 +283,7 @@ pub fn pick_lru_victim(pages: &[AtlasPage], active_page: u32) -> Option<u32> {
         .map(|(i, _)| i as u32)
 }
 
-/// Per-frame bookkeeping for the atlas: the monotonic counter that stamps
-/// `AtlasPage::last_access_frame`, plus the once-per-frame eviction throttle.
-///
-/// Kept as its own device-free type because `GlyphAtlas` cannot exist without
-/// a `wgpu::Device`. The rule that `GlyphAtlas::begin_frame` states in prose —
-/// bump once per render frame or LRU stamps stop meaning anything — has no
-/// place to be checked while it lives only on that struct; here it does.
+/// Frame stamps and the once-per-frame eviction limit, testable without a GPU device.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameClock {
     current: u64,
@@ -326,9 +317,7 @@ impl FrameClock {
     }
 }
 
-/// GPU 아틀라스는 `gpu` feature 뒤에 있다 — 이 모듈만 `wgpu` 를 본다. 헤드리스 소비자는
-/// `FontConfig` 만 쓰므로 그 feature 를 안 켜고, 그러면 wgpu 스택이 의존 그래프에 아예
-/// 안 들어온다. 근거와 재는 법: docs/architecture/index.md#크레이트를-나누는-기준.
+/// GPU 아틀라스. 헤드리스 소비자는 gpu 기능을 켜지 않아 wgpu 의존성을 제외한다.
 #[cfg(feature = "gpu")]
 mod atlas;
 #[cfg(feature = "gpu")]
@@ -364,7 +353,6 @@ mod tests {
         let config = FontConfig::new(16.0, "JetBrains Mono");
         assert!(matches!(config.font_family, FamilyOwned::Name(_)));
         assert_eq!(config.metrics.font_size, 16.0);
-        // Cell dimensions should be positive regardless of whether the font exists
         assert!(config.metrics.cell_width > 0.0);
         assert!(config.metrics.cell_height > 0.0);
     }
@@ -375,8 +363,6 @@ mod tests {
         let large = FontConfig::new(24.0, "");
         assert!(large.metrics.cell_height > small.metrics.cell_height);
     }
-
-    // --- Atlas shelf packer + LRU page selection (device-free) ---
 
     #[test]
     fn atlas_page_first_alloc_lands_at_origin() {
@@ -415,7 +401,6 @@ mod tests {
         let mut page = AtlasPage::default();
         assert!(page.try_allocate(3000, 32, 2048).is_none());
         assert!(page.try_allocate(32, 3000, 2048).is_none());
-        // State must not have advanced.
         assert_eq!(page.shelf_x, 0);
         assert_eq!(page.entry_count, 0);
     }
@@ -448,8 +433,6 @@ mod tests {
         let pages = vec![AtlasPage::default(); 1];
         assert!(pick_lru_victim(&pages, 0).is_none());
     }
-
-    // --- Frame clock: the contract `GlyphAtlas::begin_frame` states in prose ---
 
     #[test]
     fn frame_clock_starts_at_zero_with_eviction_available() {
@@ -491,10 +474,6 @@ mod tests {
 
     #[test]
     fn frame_clock_never_advanced_latches_the_throttle() {
-        // Why `begin_frame` must be called once per render frame: nothing else
-        // releases the throttle. A caller that skips it evicts once and then
-        // refuses every later eviction for the atlas's whole lifetime, which
-        // shows up only as glyphs silently failing to rasterize.
         let mut clock = FrameClock::default();
         clock.note_eviction();
         for _ in 0..1000 {
@@ -524,38 +503,25 @@ mod tests {
         assert_eq!(page.shelf_y, 0);
         assert_eq!(page.shelf_height, 0);
         assert_eq!(page.entry_count, 0);
-        // last_access_frame intentionally preserved so the just-evicted page
-        // doesn't immediately re-evict itself in the same frame.
+        // Resetting the packing cursor preserves the last-use timestamp.
         assert_eq!(page.last_access_frame, 42);
     }
 
-    /// `wgpu` 가 이 크레이트에서 **선택적으로만** 들어온다는 것을 못 박는다.
-    ///
-    /// 이 좌변이 무너지는 형태는 조용하다 — `optional = true` 를 지우거나 `default` 에
-    /// `gpu` 를 넣으면 빌드도 시험도 전부 초록인 채로 헤드리스 의존 그래프에 wgpu 스택
-    /// 27 개가 돌아온다. 그것을 보는 시험은 레포에 이것 하나뿐이고, 그래프 자체를 보는
-    /// 채널은 없다(크레이트 경계 기준은 docs/architecture/index.md#크레이트를-나누는-기준 참조).
-    ///
-    /// 매니페스트를 문자열로 읽는 것은 `optional` 이 **선언**이라 타입으로 안 보이기
-    /// 때문이다. `cfg!(feature = "gpu")` 로는 못 묻는다 — 그 값은 이 시험을 어느 조합에서
-    /// 돌렸는지만 말하고, 선언이 어떻게 돼 있는지는 말하지 않는다.
+    /// 실행된 기능 조합만으로는 기본값·선택적 의존 선언을 알 수 없어 매니페스트를 읽는다.
     #[test]
     fn wgpu_stays_an_optional_dependency_of_this_crate() {
         let manifest = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
         )
-        .expect("이 크레이트의 Cargo.toml 을 못 읽었다 — 읽은 것이 없으면 판정이 아니다");
+        .expect("이 크레이트의 Cargo.toml을 읽지 못했다");
 
         let wgpu_line = manifest
             .lines()
             .find(|l| l.trim_start().starts_with("wgpu = "))
-            .expect("`wgpu = ` 선언 줄이 없다. 의존을 지웠으면 이 시험도 지워라");
+            .expect("wgpu 의존 선언이 없다. 의존성이 제거됐다면 이 검사도 검토해야 한다");
         assert!(
             wgpu_line.contains("optional = true"),
-            "`wgpu` 가 비-optional 로 돌아갔다: {wgpu_line}\n\
-             그러면 이 크레이트를 드는 모든 소비자가 wgpu 스택을 함께 든다 — 헤드리스 \
-             포함이다. GPU 아틀라스는 `gpu` feature 뒤에 있고 device 없는 타입들은 그 \
-             밖에 있다(docs/architecture/index.md#크레이트를-나누는-기준)."
+            "wgpu는 선택적 의존이어야 한다. 헤드리스 소비자에 GPU 의존성을 추가하지 않는다: {wgpu_line}"
         );
         assert!(
             manifest.contains("\ngpu = [\"dep:wgpu\"]"),
@@ -563,8 +529,7 @@ mod tests {
         );
         assert!(
             manifest.contains("\ndefault = []"),
-            "`default` 가 비어 있지 않다. `gpu` 가 기본으로 켜지면 소비자가 끄지 않는 한 \
-             wgpu 가 따라오고, 그것은 이 갈림이 막으려던 바로 그 상태다"
+            "기본 기능은 비어 있어야 한다. GPU 소비자가 gpu 기능을 명시적으로 켠다"
         );
     }
 }

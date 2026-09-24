@@ -1,42 +1,22 @@
-//! Chrome · Loading screen — 워드마크 + 스피너 + phase 문구 중앙 스택
-//! (S-17, `guidelines/brand-logo.html` 브랜드 락업).
-//!
-//! **부팅과 종료가 같은 락업을 쓴다.** 실 렌더도 `render_loading` 한 벌이고 phase
-//! 문구만 다르므로, 여기서도 `draw_frame` 을 공유하고 종료 specimen 은 문구만
-//! 바꾼다 — 갤러리가 두 화면의 동일성을 눈으로 확인하는 자리다.
-//!
-//! 실 렌더 경로(`src/gfx/gpu/loading.rs::render_loading`)와 동일한 스택 구성을
-//! egui 로 재현한다. 워드마크 락업(마크 PNG·브랜드 색·`draw_wordmark`)과 로딩
-//! 스택 상수는 위젯 크레이트 [`tasty_ui_widgets::brand`] 의 단일 출처를 쓴다 —
-//! 본체 `render_loading` 도 같은 출처를 부르므로, 이 specimen 과 실 화면이 값·렌더를
-//! 공유한다(예전의 로컬 복제는 승격으로 제거).
+//! 부팅·종료 화면의 로고, 스피너, 진행 문구 예제.
+//! 본체와 공통 브랜드 위젯·Theme 값을 사용하며 두 화면은 문구만 다르게 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::Spinner;
-// 워드마크 락업 상수·렌더·브랜드 색은 위젯 크레이트가 단일 출처다 — 예전엔 본체
-// `src/adapters/ui/brand.rs` 값을 여기 로컬 미러링했으나 승격으로 복제를 없앴다.
 use tasty_ui_widgets::brand::{self};
 
 use crate::catalog::spec::{meta, note};
 
-// ── 무대 canvas 치수 ─────────────────────────────────────────────────────────
-//
-// specimen 이 그리는 faux 부팅창의 크기다. 디자인 토큰이 아니라 **무대 크기**라
-// Theme 에서 오지 않는다 — 값이 케이스마다 다른 이유는 그 케이스가 무엇을 보여야
-// 하는지(기본/최소/나란히 비교)에 있다. 로딩 스택은 창 크기와 무관하게 고정
-// 크기(반응형 축소 없음)라, 이 값들은 "축소가 없다"·"슬롯이 흔들리지 않는다" 를
-// 눈으로 확인시키는 무대일 뿐이다.
+// 크기가 다른 예제 창에서도 로딩 요소의 크기를 유지하는지 비교한다.
 
-/// 기본 부팅/종료 창 — 실 렌더가 흔히 present 하는 1280×720.
+/// 기본 크기 예제 창.
 const CANVAS_DEFAULT: (f32, f32) = (1280.0, 720.0);
-/// 최소창 데모 — 반응형 축소가 없음을 보이는 640×480 극단(문구 없음·Latte 변형 공용).
+/// 최소 크기 예제 창. 문구 없음·Latte 예제에서도 사용한다.
 const CANVAS_MIN: (f32, f32) = (640.0, 480.0);
-/// phase 문구 3~4종을 가로로 나란히 비교하는 좁은 무대.
+/// 진행 문구들을 나란히 비교할 예제 창.
 const CANVAS_MULTI: (f32, f32) = (320.0, 240.0);
 
-/// 실 부팅 로딩 화면 1장 — `canvas` 크기의 faux 창에 워드마크→스피너→phase 문구
-/// 중앙 스택을 그린다. `render_loading` 과 동일하게 창 크기와 무관하게 스택
-/// 자체는 고정 크기(반응형 축소 없음) — `top_pad` 로만 수직 중앙 정렬한다.
+/// 요소의 크기는 유지하고 주어진 창 안에서 수직 중앙에 배치한다.
 fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(canvas, egui::Sense::hover());
     let p = ui.painter_at(rect);
@@ -82,7 +62,6 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
     }
 }
 
-/// 기본 — 1280×720, `GpuInit` 문구.
 pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,
@@ -98,7 +77,6 @@ pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 최소창 — 640×480, 동일 중앙 스택(반응형 축소 없음 확인용).
 pub fn draw_min(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,
@@ -119,7 +97,6 @@ pub fn draw_min(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// phase 문구 3종 — `GpuInit` / `WaitingPlugins` / `RestoringLayout` 나란히 비교.
 pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
@@ -148,7 +125,7 @@ pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 문구 없는 변형 — 슬롯은 예약되지만 비어 있다(첫 설치, RestoringLayout 스킵).
+/// 문구가 없어도 해당 영역의 높이를 유지한다.
 pub fn draw_no_text(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(ui, theme, egui::vec2(CANVAS_MIN.0, CANVAS_MIN.1), None);
     note(
@@ -158,8 +135,7 @@ pub fn draw_no_text(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Latte 변형 — 앰비언트 테마 토글과 무관하게 고정 표시(저장된 테마를 따라간다는
-/// 디자인 확정 §5 를 보여주는 비교 카드).
+/// 툴바의 테마 선택과 무관하게 Latte로 그린다.
 pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
     draw_frame(
@@ -175,8 +151,6 @@ pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
     );
 }
 
-/// 종료 phase 문구 4종 — `SavingLayout` / `ReclaimingBootWorker` / `ClosingSurfaces`
-/// / `StoppingPlugins` 나란히 비교. 락업은 부팅과 완전히 동일하다(같은 렌더 경로).
 pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
@@ -212,7 +186,6 @@ pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 종료 화면 기본 — 1280×720, 실측상 거의 유일하게 보이는 문구(`StoppingPlugins`).
 pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,

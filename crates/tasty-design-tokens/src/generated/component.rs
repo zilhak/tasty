@@ -3,7 +3,7 @@
 //!
 //! Tier 3 — component 치수 (테마 불변), 컴포넌트별 하위 모듈. semantic (일부는
 //! primitive 직접 — 디자인 실물의 tier-skip alias) 참조로 정의된다.
-//! 색 component 접근자는 시리즈 04 에서 결정.
+//! 색 접근자는 tasty-type-appearance에 생성한다.
 //!
 //! **zoom 주의**: 런타임 소비는 반드시 `&Theme` 경유 — `semantic.rs` 참조.
 

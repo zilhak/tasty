@@ -2,7 +2,7 @@
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
 //! Tier 2 (semantic) 색 접근자. 각 메서드는 DTCG semantic 색 토큰의
-//! primitive 종착을 `Theme` 필드로 그대로 반환하는 단순 alias 다.
+//! 대응 `Theme` 필드를 반환한다.
 //! is_light 분기(text-on-accent)·도출 overlay·합성색(scrim)·OS/brand
 //! 리터럴 등 비단순 접근자는 theme.rs 에 수기로 남는다.
 

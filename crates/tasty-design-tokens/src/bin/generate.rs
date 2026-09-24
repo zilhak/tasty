@@ -1,7 +1,5 @@
-//! DTCG → Rust 코드 생성기. `src/generated/` 를 덮어쓴다.
-//!
+//! DTCG에서 토큰 상수와 `tasty-type-appearance`의 `Theme` 접근자를 생성한다.
 //! 실행: `cargo run -p tasty-design-tokens --bin generate`
-//! 출력은 입력(vendor json)에만 의존하는 결정적 텍스트 — 재실행 시 diff 0 (멱등).
 
 use std::fs;
 use std::path::Path;
@@ -9,9 +7,8 @@ use std::process::ExitCode;
 
 use tasty_design_tokens::{DTCG_JSON, dtcg};
 
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 일회성 코드생성 스크립트 main — 파싱/디렉토리생성/두 차례 파일쓰기/skip 로그가 순차 early-return 나열. write_generated_files 로 파일쓰기 루프는 이미 분리했고(62→32), 남은 단계를 더 쪼개면 1회성 wrapper 만 늘어남.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 파싱, 디렉터리 생성, 파일 쓰기의 실패를 순서대로 처리한다.
 fn main() -> ExitCode {
-    // C.11: bin 로그도 tracing 경유 — 기본 info 레벨로 wrote/skip 이 항상 보인다.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -44,9 +41,7 @@ fn main() -> ExitCode {
         return code;
     }
 
-    // component 접근자는 `&Theme` 경유 강제 원칙 때문에 `tasty-type-appearance`
-    // 안에 산출한다 (`tasty-design-tokens` → `tasty-type-appearance` 런타임
-    // 의존은 금지 — 의존 방향 보존).
+    // 런타임 의존 방향을 유지하려고 Theme 접근자는 type-appearance에 생성한다.
     let type_appearance_dir =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tasty-type-appearance/src");
     if let Some(code) = write_generated_files(
@@ -63,8 +58,7 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// `dir` 밑에 `files`(파일명, 내용) 목록을 쓰고 파일마다 `wrote <label>/<name>` 로그를
-/// 남긴다. 실패하면 에러 로그 후 `Some(ExitCode::FAILURE)`, 전부 성공하면 `None`.
+/// 파일을 쓰고 경로를 기록한다. 쓰기에 실패하면 `Some(ExitCode::FAILURE)`를 반환한다.
 fn write_generated_files(
     dir: &Path,
     files: &[(&'static str, String)],

@@ -6,27 +6,20 @@ license = "MIT"
 description = "Font atlas, glyph rasterization, and font registry for Tasty"
 
 [dependencies]
-# Cosmic-text for font shaping/rasterization
 cosmic-text = "0.18"
 
-# wgpu for GPU font atlas texture. Optional: only the `atlas` module links it,
-# and a headless consumer that just needs FontConfig must not pull the wgpu
-# stack into its dependency graph. See the gpu feature below.
+# GPU 아틀라스에만 필요하다. 헤드리스 소비자는 gpu 기능을 켜지 않는다.
 wgpu = { version = "24", optional = true }
 
-# Logging
 tracing = "0.1"
 
 # Fast non-cryptographic hash for hot-path glyph cache fallback
 rustc-hash = "2"
 
 [features]
-# Empty on purpose. A default that is on means a new consumer never has to ask,
-# and the whole point of this split is that asking is what keeps wgpu out of the
-# headless graph. Consumers that draw glyphs turn it on by name. See docs/architecture/index.md#크레이트를-나누는-기준.
+# GPU를 사용하는 소비자가 명시적으로 켠다.
 default = []
-# The GPU glyph atlas (src/atlas.rs). Everything else in this crate is
-# device-free and compiles without it.
+# GPU 글리프 아틀라스. 나머지 타입은 장치 없이 사용할 수 있다.
 gpu = ["dep:wgpu"]
 
 [lints]

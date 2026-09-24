@@ -1,5 +1,5 @@
 {
-  "$description": "Tasty Design System — W3C DTCG token export. 3 tiers: primitive → semantic → component. Aliases ({tier.key}) mirror the CSS var() chain. Theme-scoped primitives & semantic role-remaps carry a Latte value under $extensions[\"com.tasty.mode\"].latte; baseline $value is Catppuccin Mocha. Generated from tokens/{primitives,semantic,components}.css — full parity, do not hand-edit.",
+  "$description": "Tasty Design System의 W3C DTCG 토큰. primitive → semantic → component 계층과 별칭을 사용한다. 기본 테마는 Mocha이며 테마별 값은 Latte 확장에 둔다. tokens의 CSS에서 생성한다.",
   "$extensions": {
     "com.tasty.themes": [
       "mocha (default)",

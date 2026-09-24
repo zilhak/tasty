@@ -1,15 +1,8 @@
-//! Tier 3 components — popup / sidebar / tab_bar 등의 props-분리된 view 데모.
-//!
-//! 각 컴포넌트는 본체 (`crate tasty`) 의 view 함수 시그니처
-//! `fn draw_xxx_view(ui, theme, &XxxProps) -> XxxAction` 와 동일한 형태를
-//! 로컬에 재현한다. 갤러리는 본체 binary 에 직접 의존할 수 없어 props 타입과
-//! 시각 layout 을 *복제* 한다 — 본체 update 시 시각 동등성은 수동 검증.
-//!
-//! **예외 — view 가 공용 crate 로 올라간 컴포넌트는 복제하지 않는다.** 본체와
-//! 갤러리가 `tasty-ui-widgets` 의 **같은 함수**를 호출하므로 시각이 자동 동기화되고,
-//! specimen 은 표시 데이터(props)만 준다. 현재 이 경로: [`status_bar`]
-//! (`tasty_ui_widgets::draw_status_bar_view`). 새 bar/패널을 추가할 때는 복제보다
-//! 이 경로를 우선한다 — `docs/dev-guide/gallery-first.md`.
+//! 팝업·사이드바·탭바 화면 예제.
+//! 본체 바이너리에 의존할 수 없어 일부 뷰의 props와 레이아웃을 복제한다.
+//! 이 경우 본체 변경 후 시각적 일치를 직접 확인해야 한다.
+//! 공용 크레이트에 있는 뷰는 같은 함수를 호출하고 예제 데이터만 전달한다.
+//! 새 화면도 공용 뷰를 우선한다: docs/dev-guide/gallery-first.md.
 
 pub mod apply_preset;
 pub mod approval;

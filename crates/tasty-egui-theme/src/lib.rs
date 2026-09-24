@@ -1,21 +1,9 @@
 #![forbid(unsafe_code)]
-// 이유: 이 억제는 **테스트 범위 전용**이다. 시험이 임시 파일 정리처럼 결과에 무관한
-//       `Result` 를 버리는 자리를 프로덕션 명부에 올리면, 그 명부가 실제 프로덕션 자리를
-//       가리키는 뜻을 잃는다 — `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이
-//       그것을 막는다. 자리마다 붙이지 않고 크레이트 루트 한 줄로 그 범위를 덮는다.
+// 테스트의 임시 파일 정리 실패는 무시한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
-//! Theme ↔ egui 변환 어댑터.
-//!
-//! `tasty_type_appearance::theme::Theme` 은 egui 와 독립적인 schema 다.
-//! egui Visuals/Style 적용처럼 GUI 라이브러리에 직접 의존하는 헬퍼는
-//! 본체와 갤러리(`tasty-gallery`) 모두에서 공유할 수 있도록 별도 lib
-//! crate 로 분리한다.
-//!
-//! 라이트/다크 베이스는 `theme.is_light` 로 분기하고, 그 위에 모든 위젯 색상
-//! (stroke 포함), selection, hyperlink, error/warn, code_bg, faint_bg 를 명시적으로
-//! 덮어쓴다. 베이스 기본값에 의존하는 필드를 남기지 않아 라이트 ↔ 다크 전환 시
-//! 일부 위젯이 어울리지 않는 톤으로 남는 문제를 막는다.
+//! 본체와 갤러리에서 공유하는 Theme ↔ egui 어댑터.
+//! 테마의 밝기에 맞는 egui 기본값을 고른 뒤 위젯 색, 글꼴, 간격, 그림자를 적용한다.
 
 use std::sync::Arc;
 
@@ -23,66 +11,37 @@ use egui::emath::GuiRounding as _;
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 
-/// `TextEdit::hint_text` 에 넘길 placeholder 텍스트를 디자인 시스템의
-/// `Theme::placeholder` 색상으로 래핑한다. egui 의 기본 `weak_text_color` 는
-/// `override_text_color` (우리는 `Theme::text` 로 설정) 에서 파생되므로 다크
-/// 테마에서도 본문과 비슷한 밝기로 나오기 쉽다 — 명시적으로 색을 박는다.
-///
-/// 본체 binary 시절에는 글로벌 `crate::theme::theme()` 을 직접 호출했지만,
-/// lib crate 로 분리하면서 theme 을 인자로 받도록 시그니처를 바꾼다.
+/// egui 기본 약한 텍스트 색 대신 Theme의 placeholder 색을 적용한다.
 pub fn hint_text(theme: &Theme, text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text).color(egui::Color32::from(theme.placeholder))
 }
 
-/// 보더 1줄 stroke — 굵기는 `Theme` 의 `border_width`(theme.md "보더 항상 1px").
-/// 색만 인자로 받는다.
 #[inline]
 fn stroke1(theme: &Theme, c: HexColor) -> egui::Stroke {
     egui::Stroke::new(theme.border_width.value(), c)
 }
 
-/// Apply this theme to an egui context.
-///
-/// `Theme` 자체가 이미 host UI zoom 배율 (`with_colors_and_zoom`) 을 sizing
-/// 토큰에 반영하고 있다고 가정한다 — 여기서 별도 ui_scale 곱셈 없음.
+/// Theme를 egui에 적용한다. Theme에 이미 UI 배율이 반영되어 있어야 한다.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
-    // ── 베이스: 라이트/다크 분기 ──
-    // light()/dark() 의 기본값에 의존하는 필드는 아래에서 거의 모두 덮어쓴다.
-    // 그래도 베이스를 맞춰두면 text_cursor 등 우리가 매핑하지 않는 잔여 필드가
-    // 적절한 톤으로 남는다(그림자 두 필드는 아래에서 정본 토큰으로 덮는다).
+    // 직접 지정하지 않는 필드도 테마 밝기에 맞도록 기본값을 선택한다.
     let mut visuals = if theme.is_light {
         egui::Visuals::light()
     } else {
         egui::Visuals::dark()
     };
 
-    // ── Panel / Window / Extreme ──
     visuals.panel_fill = theme.mantle.into();
     visuals.window_fill = theme.base.into();
     visuals.window_stroke = stroke1(theme, theme.surface0);
 
-    // ── 떠 있는 표면의 그림자 (그림자 선택 규칙 — docs/design/systems/theme.md#떠-있는-표면의-그림자) ──
-    // egui 가 스스로 그리는 그림자는 둘이다. `popup_shadow` 는 `Frame::popup` 이 쓰고
-    // (`egui::popup_below_widget` · `ComboBox` 가 그 경로다), `window_shadow` 는
-    // `egui::Window` 의 기본 프레임이 쓴다. 이 둘을 매핑하지 않으면 `Visuals::dark()`
-    // /`light()` 의 기본값이 그대로 남아, 정본 토큰이 아닌 **세 번째 그림자**가 화면에
-    // 뜬다 — 게다가 그 기본값은 테마마다 알파가 갈려(dark α96 / light α25) 같은 화면에
-    // 나란히 놓인 tasty 그림자와 값이 달라진다.
-    //
-    // 갈래는 SCOPE RULE 대로 형태가 정한다. `Frame::popup` 은 트리거 위젯 아래 붙어
-    // 살아 있는 콘텐츠 위에 뜨는 anchored 표면이므로 popover, `egui::Window` 는 떠서
-    // 뷰포트를 점유하는 표면이므로 modal 이다. 프레임을 직접 넘기는 호출부는 이 기본값
-    // 대신 자기 프레임의 `.shadow(...)` 를 쓴다 — 그쪽도 같은 두 토큰에서만 고른다.
+    // 위젯에 붙는 팝업은 popover, 독립 창은 modal 그림자를 사용한다.
+    // 프레임을 직접 지정하는 호출부도 같은 두 토큰 중에서 선택한다.
     visuals.popup_shadow = theme.shadow_popover().to_egui();
     visuals.window_shadow = theme.shadow_modal().to_egui();
     visuals.extreme_bg_color = theme.crust.into();
     visuals.faint_bg_color = theme.surface0.into();
     visuals.code_bg_color = theme.surface0.into();
 
-    // ── Widget 상태별 색상 ──
-    // 베이스가 light/dark 라도, fg_stroke 가 다크 기본값으로 남으면 라이트 배경에서
-    // 거의 안 보인다. 5가지 상태(noninteractive/inactive/hovered/active/open) 모두
-    // bg/weak_bg/bg_stroke/fg_stroke 를 명시한다.
     visuals.widgets.noninteractive.bg_fill = theme.mantle.into();
     visuals.widgets.noninteractive.weak_bg_fill = theme.mantle.into();
     visuals.widgets.noninteractive.bg_stroke = stroke1(theme, theme.surface0);
@@ -108,31 +67,23 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     visuals.widgets.open.bg_stroke = stroke1(theme, theme.surface2);
     visuals.widgets.open.fg_stroke = stroke1(theme, theme.text);
 
-    // ── Selection / focus ring ──
-    // A2 시범 이식: primitive 직접접근 → semantic 접근자(동일 primitive 리턴, 픽셀 동일).
-    // accent-primary 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
+    // Straight RGBA는 to_egui()에서 gamma-aware premultiply로 변환된다.
     const SELECTION_BG_ALPHA: u8 = 80;
     visuals.selection.bg_fill = theme
         .accent_primary()
         .with_alpha(SELECTION_BG_ALPHA)
         .to_egui();
-    // focus 외곽선은 디자인 시스템의 2px focus ring (border-focus).
     visuals.selection.stroke =
         egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus());
 
-    // ── 의미 색상 ── (A2 시범 이식: semantic 접근자 사용)
     visuals.hyperlink_color = theme.accent_primary().into();
     visuals.error_fg_color = theme.accent_danger().into();
     visuals.warn_fg_color = theme.accent_warning().into();
 
-    // ── 텍스트 ──
-    // override_text_color 를 박으면 egui 의 weak_text_color() 도 이 색의
-    // gamma_multiply 로 파생되므로 라이트/다크 모두 자연스럽게 동작.
     visuals.override_text_color = Some(theme.text.into());
 
     ctx.set_visuals(visuals);
 
-    // ── Style: 폰트 / spacing ──
     let mut style = (*ctx.style()).clone();
     style.text_styles.insert(
         egui::TextStyle::Body,
@@ -162,16 +113,12 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
         theme.spacing_sm.value().round_ui(),
         theme.spacing_xs.value().round_ui(),
     );
-    // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
-    // 애니메이션을 끈다. egui 기본값은 최대 300ms 로 `docs/design/systems/theme.md`
-    // "UI 디자인 규칙" 의 애니메이션 상한(150ms)을 넘고, 스크롤은 입력 직후 피드백이
-    // 아니라 콘텐츠 이송이라 같은 표의 "스크롤엔 transition 금지" 쪽에 선다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
+    // 스크롤에는 transition을 적용하지 않는다.
     style.scroll_animation = egui::style::ScrollAnimation::none();
     ctx.set_style(style);
 }
 
-/// 시스템에서 CJK 폰트 파일 (macOS / Linux / Windows) 을 찾아 바이트로 반환한다.
-/// 본체 GPU 폰트 셋업과 갤러리 양쪽에서 호출되는 단일 진실 공급원.
+/// macOS·Linux·Windows의 알려진 시스템 경로에서 CJK 폰트 바이트를 읽는다.
 pub fn load_system_cjk_font() -> Option<Vec<u8>> {
     #[cfg(target_os = "windows")]
     {
@@ -211,17 +158,10 @@ pub fn load_system_cjk_font() -> Option<Vec<u8>> {
     None
 }
 
-/// egui Context 에 시스템 CJK 폰트를 `Proportional` / `Monospace` family 양쪽의
-/// fallback 으로 등록한다. 시스템 폰트를 못 찾으면 `tracing::warn!` 후 noop.
-///
-/// **번들 mono 를 안 얹는다** — Monospace 의 첫 자리는 egui 기본 서체로 남는다.
-/// 그래서 mono 폭으로 무엇을 재는 자리에는 쓸 수 없다. 본체
-/// (`src/gfx/gpu/fonts.rs::setup_egui_fonts`)와 갤러리
-/// (`tasty_gallery::fonts::install`)는 각자 D2Coding 을 맨 앞에 놓고
-/// [`load_system_cjk_font`] 만 재사용한다.
-///
-/// 남는 쓰임은 **proportional 만 재는 자리**다(두 스택의 Proportional 은 같다).
-/// 실제 호출부도 그것 하나 — 설정 키바인딩 라벨 열 폭 시험.
+/// 시스템 CJK 폰트를 Proportional·Monospace의 마지막 폴백으로 추가한다.
+/// 찾지 못하면 경고만 남긴다. 번들 D2Coding은 설치하지 않으므로 본체와 같은
+/// 고정폭 측정에는 사용할 수 없다. 본체와 갤러리는 D2Coding을 먼저 설치한 뒤
+/// `load_system_cjk_font`를 사용한다.
 pub fn install_cjk_fallback(ctx: &egui::Context) {
     let Some(bytes) = load_system_cjk_font() else {
         tracing::warn!("no system CJK font found; Korean/Japanese/Chinese labels will render as □");
@@ -245,23 +185,12 @@ pub fn install_cjk_fallback(ctx: &egui::Context) {
 /// egui `FontDefinitions` 안에서 언어팩 폰트를 가리키는 키.
 const LOCALE_FONT_KEY: &str = "locale_pack";
 
-/// 언어팩이 선언한 폰트 파일을 읽어 붙이지 못한 이유. 어느 쪽이든 호출부는 기본 폰트
-/// 스택을 그대로 두고(문자열은 렌더되되 팩 스크립트만 □) 경고를 띄운다.
+/// 언어팩 폰트를 읽거나 검증하지 못한 이유.
 pub use tasty_i18n::font::LocaleFontError;
 
-/// 언어팩이 선언한 폰트 파일을 `Proportional`·`Monospace` 양쪽의 **마지막** 폴백으로
-/// 붙인다. 라틴 글리프는 기본 폰트를 그대로 쓰고 팩 스크립트만 이 폰트로 흘러 내려간다
-/// (혼합 렌더). "전부 팩 폰트" 는 범위 밖이다.
-///
-/// 붙이기 전에 `ab_glyph`(epaint 가 쓰는 그 파서)로 검증한다 — egui 는 깨진 폰트
-/// 데이터에서 복구 경로 없이 panic 하므로, 잘못된 파일은 egui 가 보기 전에 막아야 한다.
-/// 실패하면 `fonts` 를 건드리지 않고 `Err` 를 돌려준다 — 호출부는 경고하고 기본 스택을
-/// 유지한다. 이 함수는 호스트 두 폰트 경로(`src/gfx/gpu/fonts.rs`·
-/// `src/adapters/ui/font_registry.rs`)와 egui UI 를 그리는 plugin 넷
-/// (`tasty-plugin-{clipboard-viewer,git-viewer,image,markdown}`)의 **단일 진실
-/// 공급원**이다 — 검증이 곧 "어떤 폰트를 거부하는가" 라는 판정이라, 사본을 두면
-/// host 는 받고 plugin 은 거부하는 갈림이 조용히 생긴다. plugin 은 그래서 이 크레이트를
-/// 직접 의존해 같은 판정기를 쓴다(경로는 `TASTY_LOCALE_FONT` env 로 받는다).
+/// 언어팩 폰트를 Proportional·Monospace의 마지막 폴백으로 추가한다.
+/// 앞선 폰트에 없는 글리프에만 사용한다. 추가 전에 ab_glyph로 검증하며 실패하면
+/// `fonts`를 그대로 두고 오류를 반환한다. 본체와 플러그인이 같은 검증을 사용한다.
 pub fn install_locale_font_fallback(
     fonts: &mut egui::FontDefinitions,
     path: &std::path::Path,
@@ -330,7 +259,6 @@ mod locale_font_tests {
         let err = install_locale_font_fallback(&mut fonts, &path);
         assert!(matches!(err, Err(LocaleFontError::Parse)));
         assert!(!fonts.font_data.contains_key(LOCALE_FONT_KEY));
-        // 정리 실패는 테스트 결과에 무관하다(임시 디렉토리라 OS 가 회수).
         let _ = std::fs::remove_file(&path);
     }
 }

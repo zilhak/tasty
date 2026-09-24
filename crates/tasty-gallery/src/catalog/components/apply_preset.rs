@@ -1,8 +1,4 @@
-//! Apply preset — 디자인(4) Overlays `preset` Spec.
-//!
-//! 440px 모달. 헤더(title + Workspace/Tab/Pane 세그먼트, border-bottom) · preset 행
-//! (layers icon + name + meta mono, selected = 2px accent inset) · footer(Cancel /
-//! Apply to workspace).
+//! 프리셋 적용 팝업 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -18,7 +14,6 @@ const WIDTH: LogicalPx = LogicalPx(440.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            // 헤더 — title + 세그먼트.
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     kit::title(ui, theme, "Apply preset");
@@ -29,7 +24,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             kit::hsep(ui, theme);
 
-            // preset 행.
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 preset(ui, theme, "Dev split", "2 panes · editor + shell", true);
                 preset(ui, theme, "Logs grid", "4 panes · tail -f", false);
@@ -37,7 +31,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             kit::hsep(ui, theme);
 
-            // footer.
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

@@ -1,16 +1,6 @@
-//! DTCG primitive 색 ↔ `tasty-themes` 임베드 값 드리프트 가드.
-//!
-//! mocha 기준값 = `mocha_fallback_colors()`, latte 기준값 = `LATTE_TOML_TEXT` 파싱
-//! (`builtin_mocha_toml_matches_fallback_const` 선례). 색의 SSoT 는 런타임 테마
-//! 시스템이므로 여기서는 **값 일치만** 고정한다 — const 생성은 하지 않는다.
-//!
-//! 비교 범위는 hex 색 primitive 만 (시리즈 01 결정):
-//! - `alpha-*` (rgba 문자열) — `ThemeColors` 에 대응 필드 없음 (`is_light` 도출) → 스킵
-//! - `color-black`/`color-white` (절대색), `color-melon-*` (브랜드), `color-os-*`
-//!   (OS 리터럴 const) — `ThemeColors` 테마 필드가 아님 → 스킵
-//!
-//! neutral ramp 12단 넘버링은 elevation role 기준 (TOKENS.md) — 대응표는
-//! `docs/design/systems/design-token-mapping.md#rust-필드--호출처-토큰-크로스워크` 에도 기록되어 있다.
+//! DTCG와 내장 Mocha·Latte 테마의 색을 비교한다.
+//! ThemeColors에 대응하는 hex primitive만 검사한다. alpha, 절대색, 브랜드색,
+//! OS 고정 색은 대응 필드가 없어 제외한다.
 
 use tasty_design_tokens::DTCG_JSON;
 use tasty_design_tokens::dtcg::{self, ThemeMode};
@@ -82,35 +72,25 @@ fn primitive_colors_match_embedded_themes() {
     }
 }
 
-/// `placeholder` 필드는 DTCG primitive 미대응(ramp 밖)이지만, shipped 테마에서 값이
-/// `overlay0`(=neutral-600)와 동일하다. design-tokens-05b 가 overlay0 직접읽기 3곳을
-/// `text_placeholder()`(=placeholder field)로 값-보존 이식하면서 이 결합에 의존한다
-/// (convert/port_scanner/remote_tool disabled-role). shipped 테마에서 그 결합이 깨지면
-/// 그 3화면만 색이 어긋나므로 여기서 가드한다 (mocha·latte 양쪽).
+/// 내장 Mocha·Latte의 placeholder와 overlay0는 같은 값이다.
+/// 사용자 설정에서는 별도 필드로 바꿀 수 있다.
 #[test]
 fn placeholder_matches_overlay0_in_shipped_themes() {
     let mocha = mocha_fallback_colors();
     assert_eq!(
         mocha.placeholder, mocha.overlay0,
-        "mocha placeholder != overlay0 — 05b overlay0→text_placeholder 값-보존 결합 깨짐"
+        "mocha placeholder와 overlay0의 기본 색이 다르다"
     );
     let latte_file = ThemeFile::parse(LATTE_TOML_TEXT).expect("latte.toml must parse");
     let (latte, _) = latte_file.to_partial();
     assert_eq!(
         latte.placeholder, latte.overlay0,
-        "latte placeholder != overlay0 — 05b overlay0→text_placeholder 값-보존 결합 깨짐"
+        "latte placeholder와 overlay0의 기본 색이 다르다"
     );
 }
 
-/// `[surfaces.<kind>]` 의 전경 두 필드는 팔레트 토큰을 그대로 따라간다 —
-/// `focused_fg == text`, `unfocused_fg == subtext0`. shipped 테마 TOML 에 그렇게
-/// **주석으로만** 적혀 있어(`unfocused_fg = "#63667c"   # = subtext0`) 둘 중 하나만
-/// 바뀌면 조용히 어긋난다. latte 의 `subtext0` 을 대비 때문에 내렸을 때 실제로
-/// 세 곳을 손으로 맞춰야 했던 자리라 가드를 건다.
-///
-/// 배경 두 필드는 가드하지 않는다 — 관계가 kind 마다 다르다(terminal 의
-/// `focused_bg` 는 팔레트 밖 `#000000`, `unfocused_bg` 는 terminal=base /
-/// markdown=mantle). 균일한 관계가 아니면 가드가 아니라 족쇄가 된다.
+/// 내장 테마의 표면 전경은 focused_fg=text, unfocused_fg=subtext0를 따른다.
+/// 배경은 표면 종류마다 관계가 달라 이 시험에서 비교하지 않는다.
 #[test]
 fn surface_foregrounds_track_palette_in_shipped_themes() {
     for (name, toml) in [("mocha", MOCHA_TOML_TEXT), ("latte", LATTE_TOML_TEXT)] {
@@ -126,7 +106,7 @@ fn surface_foregrounds_track_palette_in_shipped_themes() {
 
         assert!(
             !file.surfaces.is_empty(),
-            "{name}.toml 에 [surfaces.*] 가 하나도 없다 — 가드가 헛돈다"
+            "{name}.toml 에 [surfaces.*] 가 하나도 없다 — 비교할 표면이 없다"
         );
         for (kind, surface) in &file.surfaces {
             assert_eq!(
@@ -143,10 +123,7 @@ fn surface_foregrounds_track_palette_in_shipped_themes() {
     }
 }
 
-/// WCAG 상대 명도. 이 파일 안에만 있는 이유는 레포에 대비 계산기가 **한 자리도
-/// 없었기 때문**이다(2026-09-20 확인) — 쓰는 자리가 아래 시험 하나뿐이라 크레이트
-/// API 로 올리지 않았다. 둘째 호출처가 생기면 그때 올린다. 계수는 WCAG 2.x 정의
-/// 그대로이고 sRGB 역감마 문턱 0.03928 도 그 정의값이다.
+/// WCAG 2.x 상대 명도. sRGB 역감마 문턱은 이 계산식의 0.03928을 사용한다.
 fn relative_luminance(c: HexColor) -> f64 {
     let channel = |v: u8| {
         let x = f64::from(v) / 255.0;
@@ -165,26 +142,8 @@ fn contrast_ratio(a: HexColor, b: HexColor) -> f64 {
     (hi + 0.05) / (lo + 0.05)
 }
 
-/// 틀의 선(`border-frame`)은 패널 위에서 `border-strong` 보다 **대비가 높다** —
-/// 그리고 그 방향을 **명도로는 고를 수 없다.**
-///
-/// 이것이 이 시험의 전부다. 2026-09-20 정정은 popup 프레임 · titlebar 아래 선 ·
-/// pane divider · GPU 비활성 보더 넷을 한 role 로 묶으면서, 그 role 이 어느 단계에
-/// 앉을지를 **명도가 아니라 대비로** 골랐다. 실측이 그 이유를 보여준다:
-///
-/// - mocha — frame(neutral-500) 이 strong(neutral-400) 보다 **밝다** (L 0.107 vs 0.065)
-/// - latte — frame 이 strong 보다 **어둡다** (L 0.435 vs 0.528)
-///
-/// 명도 부등호가 테마마다 뒤집히므로 "한 단계 올린다" 를 명도로 적으면 한 테마에서
-/// 반드시 틀린다. 대비는 두 테마에서 같은 방향이라 그 문장이 성립한다. 그래서 아래는
-/// 명도 부등호가 **반대임까지** 고정한다 — 그것이 뒤집히는 날 "대비로 고른다" 는
-/// 근거 자체가 사라지고, 그때는 role 배치를 다시 판단해야 한다.
-///
-/// 두 role 이 **값이 다르다**는 것도 함께 고정한다. [UI 코드의 색상 접근](../../../docs/design/systems/theme.md#ui-코드의-색상-접근)
-/// 은 새 role 넷이 기존 role 과 값이 겹쳐 "값이 같은 두 role 을 갈라 읽는 가드는
-/// 원리적으로 세울 수 없다" 고 적었다. 그 문장은 `border-frame` ↔ `surface-active`
-/// 짝에 대해 여전히 참이지만, `border-frame` ↔ `border-strong` 짝에 대해서는 이 정정
-/// 이후 **거짓**이다 — 값이 갈렸으므로 가드를 세울 수 있고, 이것이 그 가드다.
+/// 패널 위 프레임 선은 border-strong보다 대비가 높아야 한다.
+/// Mocha에서는 더 밝고 Latte에서는 더 어두우므로 명도 부등호도 반대인지 확인한다.
 #[test]
 fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
@@ -195,7 +154,7 @@ fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
         HexColor::from_hex(&raw).unwrap_or_else(|| panic!("{path}: hex 가 아님: {raw}"))
     };
 
-    // (모드, 이름, 전 대비, 후 대비) — 결정이 준 검증값.
+    // (모드, 이름, border-strong 대비, border-frame 대비)
     for (mode, name, want_before, want_after) in [
         (ThemeMode::Mocha, "mocha", 1.80_f64, 2.46_f64),
         (ThemeMode::Latte, "latte", 1.61, 1.91),
@@ -206,22 +165,22 @@ fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
 
         assert_ne!(
             frame, strong,
-            "{name}: border-frame 과 border-strong 이 같은 값이 됐다 — 이 가드가 셀 것이 없어진다"
+            "{name}: border-frame과 border-strong의 색이 같아졌다"
         );
 
         let before = contrast_ratio(strong, panel);
         let after = contrast_ratio(frame, panel);
         assert!(
             (before - want_before).abs() < 0.005,
-            "{name}: 전 대비가 {before:.4} — 결정값 {want_before} 이 아니다"
+            "{name}: border-strong 대비가 {before:.4}로 기대값 {want_before}와 다르다"
         );
         assert!(
             (after - want_after).abs() < 0.005,
-            "{name}: 후 대비가 {after:.4} — 결정값 {want_after} 이 아니다"
+            "{name}: border-frame 대비가 {after:.4}로 기대값 {want_after}와 다르다"
         );
         assert!(
             after > before,
-            "{name}: 틀의 선이 패널에서 더 물러섰다 ({before:.4} → {after:.4})"
+            "{name}: border-frame의 패널 대비가 border-strong보다 높지 않다 ({before:.4} → {after:.4})"
         );
     }
 
@@ -233,7 +192,6 @@ fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
     assert!(
         lighter_in_mocha && !lighter_in_latte,
         "명도 부등호가 두 테마에서 같은 방향이 됐다 (mocha frame 이 더 밝다={lighter_in_mocha} · \
-         latte frame 이 더 밝다={lighter_in_latte}) — 단계를 명도로 고를 수 있게 됐다는 뜻이고, \
-         그러면 role 배치 근거를 다시 판단해야 한다"
+         latte frame 이 더 밝다={lighter_in_latte}) — 프레임 색 선택의 근거를 다시 확인해야 한다"
     );
 }
