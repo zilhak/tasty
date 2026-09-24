@@ -1,7 +1,4 @@
-//! `IpcHostFacade` trait 의 본 바이너리 impl.
-//!
-//! IPC dispatcher (caller.rs / audit.rs) 는 본 바이너리 Core 직접 결합을 끊고
-//! `&dyn IpcHostFacade` 만 받는다. 본 모듈이 그 trait 의 단일 impl.
+//! IPC 크레이트가 Core 타입에 의존하지 않도록 세션 조회와 감사 기록 인터페이스를 구현한다.
 
 use tasty_ipc::{
     AuditCallerMarker, AuditDecision as ProtoDecision, IpcHostFacade, SessionResolution,
@@ -14,8 +11,7 @@ use tasty_ipc::caller::SessionToken;
 impl IpcHostFacade for Core {
     fn session_resolve(&self, token: &str, now_ms: u64) -> SessionResolution {
         let Ok(parsed) = token.parse::<SessionToken>() else {
-            // 형식 위반은 NotFound 와 동일 처리 — caller.rs 가 별도 invalid_format
-            // 에러를 띄우려면 token 검증을 자체적으로 한 번 더 한다 (현재 그렇게 됨).
+            // 형식 오류와 미등록 token을 여기서는 구별하지 않는다. caller의 형식 검사는 별도다.
             return SessionResolution::NotFound;
         };
         let resolved = match Core::session_resolve(self, &parsed, now_ms) {
@@ -66,8 +62,7 @@ impl IpcHostFacade for Core {
             workspace_id,
         };
         let result = self.with_memory(|mem| {
-            // append 경로 retention 집행 (관측 로그 3종 공통, 최대 1시간 1회) —
-            // query 전용 lazy 만으론 조회가 없는 일반 사용에서 디스크가 무한 축적된다.
+            // 조회가 없어도 보관 기간 정리가 실행되도록 기록을 추가할 때도 호출한다.
             crate::store::log_retention::maybe_prune(mem, ts_ms);
             let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
             store.append(&record)?;
