@@ -30,7 +30,7 @@ SSH 터널 경유 조회(`remote workspaces`)가 여기 속한다. 용어 정의
 (여러 번) 탄다. variant 를 `Local` 로 부르지 않는 이유이기도 하다.
 
 `Dispatch` 는 **명령을 빌린다**(`Dispatch<'a>`). 소유 형태로 만들면 clap enum 들에
-`Clone` 을 새로 달아야 해서, 리팩터 편의로 다른 크레이트의 공개 표면이 넓어진다.
+`Clone` 구현을 새로 공개해야 한다. 명령을 빌리면 다른 크레이트에 이 구현을 요구하지 않아도 된다.
 `Rpc` 가 요청을 담지 않는 것도 같은 이유다 — 진입점이 원 명령을 계속 들고 있다.
 
 ## 새 명령 추가 절차
@@ -165,7 +165,7 @@ workspace 핸들러의 `resolve_create_cwd`·`inherit_cwd_for_create`가 맡는�
 ## `debug` 갈래
 
 `commands/debug.rs`(선언)와 `local/debug.rs`(실행) 둘 다 모듈째
-`#![cfg(debug_assertions)]` 다. 사용자 입력 재현은 release 표면에 없다 —
+`#![cfg(debug_assertions)]`로 제한한다. 사용자 입력을 재현하는 명령은 release 빌드에 포함하지 않는다.
 [debug-ipc.md](debug-ipc.md), [identity.md](../identity.md) 원칙 1.
 
 ## 관련

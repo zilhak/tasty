@@ -51,7 +51,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 | method | params | 설명 |
 |--------|--------|------|
-| `ui.state` | `{}` | 현재 UI 상태 덤프 — `settings_open_requested`(열기 **요청** 래치. 모달이 화면에 있는지가 아니다) · `modal_open` + `active_modal_kind`(모달이 실제로 떠 있는가와 **어느** 모달인가. 종류 없이 `modal_open` 만 보면 설정 창을 기다리는 쪽이 plugins·quit 창을 보고 통과한다) · popup · `active_workspace` · `workspace_count` · `pane_count` · `tab_count` · `active_tab`(포커스된 pane 의 활성 탭 인덱스. 수만으로는 **탭 전환이 안 보여서** 있는 축이다). parked 엔진(마지막 창이 닫혀 워크스페이스 0)에서도 답한다 — 그때 `pane_count` · `tab_count` · `active_tab` 은 null 이고 `active_workspace` 는 `system.info` 처럼 원래 인덱스다 |
+| `ui.state` | `{}` | 현재 UI 상태. 요청과 실제 모달 표시를 구분하는 필드, 워크스페이스·탭 정보는 아래 [응답 해석](#uistate-응답-해석)을 참고한다 |
 | `debug.info` | `{}` | 실행 중 인스턴스 debug 정보 |
 | `debug.cell_info` | `surface_id, row, col` | 셀 단위 렌더 속성(텍스트, fg/bg, bold/italic/underline …) |
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |
@@ -74,7 +74,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.tool.invoke` | `key` (`<plugin_id>/<tool_id>`) | 도구 항목을 사용자 클릭과 동일하게 dispatch |
 | `debug.popup.list` | `{}` | contribute 된 popup 정의 + 현재 열린 instance (각 instance 에 `z_seq` — host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list` 값과 직접 비교 가능 — 와 소속 범위 `scope`(매니페스트 선언) · `scope_surface`(host 진입점이 바인딩한 대상, 없으면 `null`)) |
 | `debug.popup.open` | `plugin_id, popup_id, context?` | popup 인스턴스 강제 open (응답에 `instance_id`) |
-| `debug.popup.close` | `instance_id` | popup 인스턴스 강제 close. release 경로(plugin 의 `popup.close`)와 **같은 close 큐**로 합류한다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)) — 여기서 매니저를 직접 치면 부모-자식 연쇄 정리를 건너뛰어, 이 표면으로 하는 재현 검증이 실제 동작과 어긋난다 |
+| `debug.popup.close` | `instance_id` | 팝업 인스턴스를 닫는다. release의 플러그인 `popup.close`와 같은 큐를 사용해 부모·자식 팝업 정리까지 같은 경로로 검증한다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)) |
 | `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key + `close_on_outside_click`). 열려 있는 항목은 `open:true` 와 함께 `z_seq`·`rect`(논리 pt) 를 노출한다 — 겹친 popup 의 마우스 소유권 판정을 좌표 실측 없이 검증하기 위한 관찰면 |
 | `debug.host_popup.open` | `popup_id, workspace_scope?` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용). `workspace_scope:true` 면 활성 workspace 스코프로 연다 — 런타임 스코프 주입(`OpenPopupMode::WithScope`)을 쓰는 popup(`dag_list`)의 가시성 게이트를 재현하려면 이 플래그가 필요하다 |
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
@@ -103,6 +103,20 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS gui 빌드 전용** (다른 조합은 `-32015` ‡). `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
 | `surface.switch_input_source` | `source_id` | **macOS gui 빌드 전용** (다른 조합은 `-32015` ‡). `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
 | `surface.ime_enable` / `ime_disable` / `ime_preedit` / `ime_commit` / `ime_status` | `text`/`cursor`(preedit·commit) | 포커스된 창의 IME 조합 상태(`ime_active`/`ime_preedit`)를 강제로 세팅·조회한다 — 사용자 입력기 조합의 재현. 대상을 ID 로 받지 못하고 포커스된 창에 작용하므로 포커스 독립성도 만족하지 않는다. 개별 등재가 아니라 `PREFIX_RULES` 의 `surface.ime_` 로 해소되며, 그 규칙 자체가 `#[cfg(debug_assertions)]` 다. 사용법은 [ime-testing](../ai-verification/ime-testing.md) |
+
+### `ui.state` 응답 해석
+
+| 필드 | 의미 |
+|---|---|
+| `settings_open_requested` | 설정 열기 요청이 있는지 나타낸다. 모달이 실제로 표시됐다는 뜻은 아니다 |
+| `modal_open`, `active_modal_kind` | 모달 표시 여부와 종류. 설정 창을 기다리는 검증은 plugins·quit 창과 구분하도록 종류도 확인한다 |
+| `gate_host_popup_focused`, `gate_plugin_popup_open`, `notification_panel_open` | 호스트 팝업 포커스, 플러그인 팝업 표시, 알림 패널 표시 여부 |
+| `active_workspace`, `workspace_count` | 활성 워크스페이스 인덱스와 워크스페이스 수 |
+| `pane_count`, `tab_count` | 활성 워크스페이스의 pane 수와 포커스된 pane의 탭 수 |
+| `active_tab` | 포커스된 pane의 활성 탭 인덱스. 탭 수가 그대로여도 전환 여부를 확인할 수 있다 |
+
+창이 없는 parked 엔진에서도 응답한다. 워크스페이스가 0개이면 `pane_count`, `tab_count`, `active_tab`은 null이며,
+`active_workspace`는 `system.info`와 같이 원래 인덱스를 반환한다.
 
 `debug.settings.open` 의 `subtab` 키(활성 `tab` 종속):
 
@@ -194,8 +208,8 @@ tasty screenshot --window <id> --path /tmp/palette-filtered.png
 레벨의 `point` 는 논리 포인트, **winit 레벨의 `point` 는 물리 픽셀**이다(`PixelDelta` 가
 물리 px 이고 수신 측이 scale factor 로 나눈다).
 
-모르는 `unit` 값은 기본값으로 삼키지 않고 `-32602` 로 거절한다 — 오타를 대신 재면 검증이
-의도한 것과 다른 경로를 재고도 통과한다.
+알 수 없는 `unit` 값은 `-32602`로 거절한다. 기본값으로 대신 처리하면
+오타가 있는 검증이 의도와 다른 단위로 실행되고도 통과할 수 있다.
 
 ## CLI 노출
 
@@ -220,14 +234,20 @@ tasty debug settings apply --json '{"general":{"workspace_categories_enabled":fa
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
-로컬 loopback self-attach 의 CLI 진입점 — **debug 전용**(`local/debug/attach.rs`). 로컬 self-attach 는 *사용자가 직접 하는 mirror 조작* 의 자동 재현 성격이라 release 표면에 없다. 원격 attach 는 release `tasty remote attach`. 둘 다 attach 세션 머신은 공용으로 보존되고, 로컬 진입점만 debug 로 격리된다. 결정 근거는 [ADR-0020](../adr/0020-remote-connection-profiles.md), 메커니즘은 [attach-behavior.md](attach-behavior.md).
+로컬 loopback self-attach를 실행하는 **debug 전용** CLI다(`local/debug/attach.rs`).
+사용자의 mirror 조작을 재현하는 로컬 진입점만 debug로 제한하며, 원격 attach는
+release에서도 `tasty remote attach`로 실행한다. 두 명령은 같은 attach 세션 구현을 쓴다.
+결정 근거는 [ADR-0020](../adr/0020-remote-connection-profiles.md),
+동작은 [attach-behavior.md](attach-behavior.md)를 참고한다.
 
-- 표면: `tasty debug attach [SURFACE] [--workspace <id>] [--dump-after <ms>] [--send <str>] [--send-to <sid>] [--raw] [--force-detach]`. `--ssh`/`--profile`/`--into-gui` 같은 원격 옵션은 없다(loopback 전용).
+- 명령: `tasty debug attach [SURFACE] [--workspace <id>] [--dump-after <ms>] [--send <str>] [--send-to <sid>] [--raw] [--force-detach]`. `--ssh`/`--profile`/`--into-gui` 같은 원격 옵션은 없다(loopback 전용).
 - stream 핸드셰이크 + framed 교환이라 JSON-RPC "메서드 목록" 표/`DEBUG_METHODS` 에 없다. force-detach 자체는 release JSON-RPC(`attach.force_detach`).
 
 ### `tasty debug stream-echo` (JSON-RPC 메서드 아님)
 
-스트리밍 채널(`stream.open` 승격)의 server→client push 경로를 end-to-end 검증하는 CLI 전용 명령. raw framed 교환이라 메서드 표에 없다. *입력 재현이 아니라 transport 인프라 검증* 이지만, 사용자 검증 보조라 debug 표면에 둔다.
+스트리밍 채널(`stream.open` 승격)에서 서버가 클라이언트로 보내는 push를 검증하는
+CLI 전용 명령이다. JSON-RPC 호출 대신 프레임을 직접 교환하므로 메서드 표에는 없다.
+입력을 재현하는 명령은 아니지만, 전송 경로 검증에 쓰므로 debug 빌드에서만 제공한다.
 
 ## 메서드 메타 등록
 
@@ -246,8 +266,24 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 이를 만족해야 격리된 것으로 본다.
 
 - **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(inject/host-popup/modifier-hint/banner 등 gui 상태) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` · `input_source.rs`(macOS raw_key/switch_input_source) · `ime.rs`(surface.ime_*) 가 각각 `#[cfg(...)]` 로 모듈 선언된다. **파일 이름에 `debug` 가 들어갈 필요는 없다** — 기준은 "그 파일이 debug 핸들러만 담고 모듈 선언에 cfg 가 붙어 있는가" 다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
-  - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다(그 모듈의 핸들러 다수가 `state.popups` / `state.banners` / `state.modifier_hint` 처럼 gui 에만 존재하는 필드를 만진다). 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**는 `debug.rs` 에 두지 않는다 — `#[cfg(debug_assertions)]` 만 건 형제 모듈로 뺀다 — 지금 셋이다: `debug_state.rs`(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`) · `debug_nav.rs`(워크스페이스/탭 전환 3 종) · `debug_terminal.rs`(터미널 그리드 4 종 — `cell_info` / `screen_attrs` / `feed_bytes` / `glyph_color`). **판정 기준은 핸들러 본체가 gui 게이트된 심볼을 실제로 만지는가**이지, 그 메서드가 사용자 조작 재현인가가 아니다 — 사용자 조작 재현 여부는 debug/release 축이고 이미 `debug_assertions` 가 가른다. 그리고 "만진다" 의 판정은 **심볼이 하는 일**이지 심볼이 놓인 자리가 아니다: `debug.glyph_color` 가 부르는 색 해석 함수는 `CellAttributes` 와 색 타입만 쓰는 순수 함수인데 한동안 `#[cfg(feature = "gui")] mod gfx;` 아래 있었을 뿐이라, 함수를 복제하지 않고 그 파일을 게이트 밖(`src/cell_palette.rs`)으로 올렸다 — 렌더러와 **같은 함수**를 부르는 것이 그 메서드의 정의라 복제는 답이 아니다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
-- **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
+  - **GUI 없이 실행하는 debug 핸들러**는 `#[cfg(debug_assertions)]`만 붙인 형제 모듈에 둔다.
+    `debug.rs`는 `#[cfg(all(debug_assertions, feature = "gui"))]`로 제한하며,
+    `state.popups` / `state.banners` / `state.modifier_hint` 등 GUI 전용 필드를 사용한다.
+    현재 GUI 없이 실행하는 핸들러는 다음 세 모듈에 있다.
+
+    | 모듈 | 핸들러 |
+    |---|---|
+    | `debug_state.rs` | `ui.state`의 `handle_ui_state`, `debug.settings.apply`의 `handle_debug_settings_apply` |
+    | `debug_nav.rs` | 워크스페이스·탭 전환 3종 |
+    | `debug_terminal.rs` | 터미널 그리드 4종: `cell_info` / `screen_attrs` / `feed_bytes` / `glyph_color` |
+
+    GUI 제한 여부는 핸들러가 실제로 사용하는 타입과 상태로 판단한다. 사용자 조작을
+    재현하는지 여부는 debug/release 구분이며, `debug_assertions`가 제한한다.
+    예를 들어 `debug.glyph_color`는 `CellAttributes`와 색 타입만 사용하는
+    `src/cell_palette.rs`의 순수 함수를 호출한다. 검증 대상인 렌더러와 같은 함수를
+    써야 하므로, 검증용 복사본을 만들지 않는다.
+- 일반 라우터에는 `#[cfg(debug_assertions)] route_debug_handler(...)` 호출만 둔다.
+  debug 핸들러와 함께 지울 항목은 해당 경로의 라우터 분기, `DEBUG_METHODS` 행, CLI variant다.
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
 
 ### 마우스를 다룬다고 debug 가 아니다 — 가르는 것은 조작이냐 상태 읽기냐

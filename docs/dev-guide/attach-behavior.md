@@ -22,7 +22,9 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 ### `remote` / `debug` 는 CLI 디스패치 네임스페이스 (IPC 와 비대칭)
 
-`remote`·`debug attach` 는 **IPC 네임스페이스가 아니다.** attach 의 IPC 표면은 `attach.*`(아래) 그대로이고, `remote attach`/`remote check`/`debug attach` 는 그 위(+`system.info`)에서 *원격성·debug 격리만 분기*하는 CLI 계층이다.
+`remote attach`/`remote check`/`debug attach`는 CLI 명령 이름이다.
+이 이름을 그대로 IPC 네임스페이스로 사용하지 않는다. CLI는 `attach.*`와 `system.info`를
+이용하며, 원격 연결 여부와 debug 전용 진입점을 명령별로 구분한다.
 
 ## 점유 레지스트리 (`OccupancyRegistry`)
 
@@ -373,7 +375,18 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
 - **시스템 ssh 위임**: 자체 암호화 없이 시스템 `ssh` 를 자식 프로세스로 실행. 사용자 `~/.ssh/config`·agent·known_hosts 재사용. **Windows 는 시스템 OpenSSH 풀경로**(`%WINDIR%\System32\OpenSSH\ssh.exe`) 우선 — git 번들 ssh 는 윈도우 ssh-agent(named pipe)를 못 봐 무암호 인증 실패.
 - **원격 포트 발견**: 기본 `auto` = subcommand → file-unix → file-windows 순서로 원격 DefaultShell 4종(PowerShell/cmd/git bash/unix) 커버. `--remote-port-mode` 로 고정, `--remote-tasty <path>` 로 원격 바이너리 경로(기본 `tasty`).
 - **포트 발견 상한(no-hang)**: 포트 발견/셸 감지는 무기한 블록하지 않는다 — ssh `-o ConnectTimeout`(`SSH_CONNECT_TIMEOUT` 10초, 연결 수립) + ssh 자식 1개당 프로세스 레벨 감시(`PORT_DISCOVERY_STEP_TIMEOUT` 20초, kill + wait 로 좀비 없이 회수) + 호출 1회 전체 예산(`PORT_DISCOVERY_TOTAL_TIMEOUT` 45초, 체인 단계 수만큼 곱해지는 것을 차단) 3겹. 상수는 `crates/tasty-ssh/src/lib.rs` 에 `pub const`. 프로필 `extra_options` 의 `ConnectTimeout` 이 기본값을 이긴다(ssh(1) first-wins → 기본값을 뒤에 push). 근거 → [ADR-0020](../adr/0020-remote-connection-profiles.md), 상세 → [features/remote-attach "연결 시도 상한"](../features/remote-attach/index.md#연결-시도-상한-no-hang).
-- **포트 발견 자식 ssh 의 조기 취소**: 위 상한은 **시간**이 끊는 것이고, 그와 별개로 **사용자 의도**로 끊는 경로가 있다. 상한 감시를 위해 `run_capture_with_budget` 이 이미 `spawn` + `try_wait` 로 자식 핸들을 쥐고 있으므로, 그 핸들을 **취소 스코프**(`ssh::SshCancel` — 스레드로컬 설치, `SshCancel::scope()`)에도 맡긴다. 조회 워커 스레드가 스코프를 설치해두면 다른 스레드에서 `cancel()` 로 그 자식을 상한 만료 **전에** kill + wait(좀비 방지, `SshTunnel::drop`·타임아웃 경로와 같은 계약) 할 수 있고, 취소 후에는 auto 체인의 남은 단계도 ssh 를 띄우지 않는다(`PortDiscoveryFailureKind::Cancelled` 는 예산 소진과 마찬가지로 fallback 대상이 아니다). 현재 이 스코프를 설치하는 것은 RA02 GUI picker 워커뿐이다 — `remote.workspaces`/`remote.attach` IPC 와 `auto_attach` 워커는 취소를 표현할 사용자 표면이 없고(요청자가 끊어도 알릴 채널이 없다), 도구 메뉴 > Remote connections 의 셸 감지 워커(`remote_tool.rs`/`remote_profile.rs` 의 `spawn_detect`)는 같은 구멍을 공유하지만 별도 상태 머신이라 함께 손대지 않았다. 어느 쪽이든 필요해지면 워커 진입부에 같은 스코프를 설치하고 취소 신호만 연결하면 된다.
+- **포트 발견용 ssh 자식의 취소**: `run_capture_with_budget`은 `spawn` + `try_wait`로
+  자식 핸들을 관리하며, 시간 제한 전에도 사용자가 취소할 수 있다. 조회 워커가
+  스레드 로컬 `ssh::SshCancel`의 `SshCancel::scope()`를 설치하면 다른 스레드에서
+  `cancel()`을 호출해 해당 자식의 kill과 wait를 시도한다. 이 정리는 `SshTunnel::drop`과
+  타임아웃 경로와 같다. 취소 후에는 auto 체인의 나머지 단계도 ssh를 실행하지 않는다.
+  `PortDiscoveryFailureKind::Cancelled`는 예산 소진과 마찬가지로 fallback 대상이 아니다.
+
+  현재 취소 스코프를 설치하는 곳은 GUI picker 조회 워커뿐이다.
+  `remote.workspaces`/`remote.attach` IPC와 `auto_attach` 워커에는 취소 신호가 연결돼 있지 않다.
+  요청자가 연결을 끊어도 이 취소 경로로 전달되지 않는다.
+  도구 메뉴 > Remote connections의 셸 감지 워커
+  (`remote_tool.rs`/`remote_profile.rs`의 `spawn_detect`)에도 취소 스코프가 없다.
 - **포트 발견 실패 진단**: 전 단계 실패 시 `PortDiscoveryError`(`crates/tasty-ssh/src/lib.rs`)가 exit code 기반(로케일 무관)으로 SSH 연결 실패 / 원격 인스턴스 미실행 / 포트 파싱 실패 + 위 상한 초과 시 타임아웃 + 사용자 취소, 5분류한다 — 원격 raw stderr 는 `Display` 에 노출하지 않고 `tracing::debug!` 로만 남긴다(타임아웃·취소 경로도 동일). auto 체인이 전 단계 실패하면 가장 확정적인 분류를 대표로 고른다(`pick_most_informative` — 취소 > 타임아웃 순 우선. 취소는 사용자가 끊었다는 확정 사실이라 시간·연결 실패로 보고하면 오도한다). 상세 → [features/remote-attach "원격 포트 발견 실패 진단"](../features/remote-attach/index.md#원격-포트-발견-실패-진단).
 - **터널 생명주기**: detach/종료 시 자식 ssh kill(고아 터널 방지)하되 **원격 데몬은 생존**(server-owns-PTY persistence = detach 의 본질). 자동 재연결(attach 한정): 지수 백오프(0.5s→30s)로 터널+attach 재수립(`--no-reconnect` 로 끔) — 이 재연결은 `run_attach_on_port` 가 반환하는 `AttachExit::Disconnected` 를 전제로 한다. mirror-dump/workspace-mirror-dump 모드는 처음부터 reader 를 별도 스레드 + `mpsc::channel` 로 분리해 `rx.recv_timeout` 의 `RecvTimeoutError::Disconnected`(끊김) vs `Timeout`(정상 deadline) 을 구분해 이를 반환해왔다. `--raw` 모드(`run_raw_bridge`)도 동일 계약을 만족한다 — server reader 스레드가 `mpsc` 채널에 보내고(`RawEvent::Server`/`ServerRecvErr`), main 은 `rx.recv()`(deadline 없이 블로킹)만 기다린다. server reader 의 `conn.recv()` 가 `Err` 면 `RawEvent::ServerRecvErr` 를 명시적으로 보내 `AttachExit::Disconnected` 로 이어진다.
 - **stdin은 스레드 하나가 읽는다.** 프로세스 시작 때
@@ -524,7 +537,17 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   - **anchor 있는 세션(매핑된 워크스페이스)**: `cleanup_mirror_workspace` 를 부르지 않고 `enter_reconnecting` 으로 전이(위 "재연결 시 세션 상태 보존" 참고) — mirror workspace/터미널을 살려둔 채 `Reconnecting` 상태로 두고 backoff 재연결에 맡긴다.
   - **anchor 없는 세션(임시 mirror, IPC `remote.attach` 등)**: 기존과 동일하게 세션 제거 + `cleanup_mirror_workspace(sess, from_disconnect=true)`. 그 mirror 가 창의 유일한 워크스페이스였으면 정리 뒤 기본 터미널 워크스페이스를 다시 만든다(`AppState::recreate_workspace_if_empty`) — 창을 닫지도, 워크스페이스 0 개로 남기지도 않는다([ADR-0023](../adr/0023-attach-state-sync-and-forwarding.md)).
   - 이미 `Reconnecting` 상태인 세션(재연결 시도 자체가 실패해 다시 disconnected 로 관측되는 경우)은 이 분기에 다시 들어오지 않는다 — `disconnected && state == Connected` 조건이라 진입 시 이미 걸러진다.
-- **로컬발 종료(사용자 close)**: 사용자가 mirror 워크스페이스 **자체**를 닫으면(`close_workspace_at`, context menu/단축키) 로컬 ws 는 즉시 사라지지만 세션은 남는다 — 소켓이 열린 채라 원격은 계속 점유로 본다("사용 중" 잔류). 이는 세션이 `Connected`/`Reconnecting` 어느 쪽이어도 동일하다. `App::detach_orphaned_mirror_sessions`(`about_to_wait`)가 매 프레임 세션의 `local_workspace` 를 들고 있는 engine 이 살아 있는지(`mirror_workspace_engine_alive`)를 확인해, 하나도 없으면 고아로 보고 `cleanup_mirror_workspace` 로 정리한다. 판정 대상은 **창 있는 engine + parked engine** 이다 — 창이 하나도 없는 parked 상태(마지막 창 닫기 / macOS 최소화)에서도 engine 과 mirror 워크스페이스는 살아 있으므로 고아가 아니다(→ [remote-attach 기능 문서 "창 없는 상태(parked)에서의 세션 수명"](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)). 세션 push 는 항상 ws 생성(같은 동기 함수) 뒤라 attach 셋업 중 false-positive 는 없다.
+- **로컬발 종료(사용자 close)**: `close_workspace_at`으로 mirror 워크스페이스를 닫으면
+  로컬 워크스페이스는 즉시 사라지지만, 세션과 소켓은 남아 원격 점유가 바로 해제되지는 않는다.
+  `Connected`와 `Reconnecting` 모두 같은 정리가 필요하다.
+
+  `App::detach_orphaned_mirror_sessions`는 `about_to_wait`에서 세션의 `local_workspace`를
+  가진 engine이 있는지 `mirror_workspace_engine_alive`로 확인한다.
+  창에 속한 engine과 parked engine을 모두 찾고, 없으면 `cleanup_mirror_workspace`로 정리한다.
+  창이 없어도 parked engine에 mirror 워크스페이스가 남아 있다면 세션을 유지한다
+  ([창 없는 상태의 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)).
+  attach 설정 중에는 같은 동기 함수에서 워크스페이스를 만든 뒤 세션을 추가하므로,
+  아직 워크스페이스를 만들지 않은 세션이 이 검사에 걸리지는 않는다.
 - **`cleanup_mirror_workspace`(공용, `from_disconnect: bool` 파라미터로 위 두 트리거 구분)**: mirror ws·터미널·mirror busy 엔트리·mesh 프레임 캐시 제거(창 있는 engine → parked engine 순으로 찾는다. 고아 판정과 순회 범위가 같아야 잔류가 없다. 이미 없으면 skip) → 원격에 `Detach` push → anchor 게이트(`auto_attach_active`) 해제 → 터널 kill. `from_disconnect=true`(원격발, anchor 없는 세션 한정)일 때만 anchor 를 `auto_attach_pending_reactivation` 에 추가(위 "GUI 자동 재연결 스코프" 참고) — `false`(로컬발/사용자 close)는 그 항목과 `auto_attach_reconnect` 스케줄 모두 명시적으로 제거해 이미 걷어낸 세션에 대한 재연결 시도를 남기지 않는다. 원격은 `Detach` 수신 시 read loop break → `Disconnected` → `release_all_for_client`(workspace+surface lock 해제).
 - **적용 순회도 같은 범위다**: `apply_attach_client_output` 은 mirror 이벤트의 적용 대상을 창 있는 engine → parked engine 순으로 찾고(`mirror_output_host`), 찾은 뒤에만 reader 버퍼를 drain 한다 — 창이 없는 parked 구간에 도착한 출력·구조 delta 도 그 engine 에 즉시 적용된다(ADR-0023). 고아 판정·정리·적용 세 순회의 범위가 같아야 "살아 있다고 판정된 engine 에 적용이 닿지 않는" 유실 구간이 생기지 않는다.
 
@@ -582,12 +605,12 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   가 dirty 상태 변경시에만 나가 비동기 push 만으로는 다음 프레임 렌더가 보장되지 않으므로,
   `AppState.plugin_mesh_popup_pending_repaint: HashSet<u64>` 로 강제 repaint 를 예약한다
   (`popup_render.rs` 의 dirty OR-체인에 합류).
-- **cwd 판정 — client 신뢰 vs server 직접 판정**: `list_dir_request` 는 client 가 forward 한 `dir`
-  문자열을 그대로 쓴다. `git_query_request` 는 `worktree_path` 가 없으면 client 문자열을 신뢰하는
-  대신 서버가 `surface_id` 로 자신의 실제 원격 PTY 를 찾아 `Terminal::get_cwd()`(OSC-7 캐시 우선,
-  `/proc`·`proc_pidinfo` 폴백)를 직접 호출한다 — client 의 OSC-7 재생에 의존하지 않아 "원격 셸이
-  OSC 7 을 방출하지 않는 경우"도 커버한다. 두 표면이 다른 이유는 각자 작업 시점의 판단이며,
-  `list_dir_request` 를 이후 동일 방식으로 바꿀지는 별도 결정 사항.
+- **조회할 cwd 선택**: 두 API는 경로를 얻는 방식이 다르다.
+  `list_dir_request`는 클라이언트가 보낸 `dir` 문자열을 그대로 사용한다.
+  `git_query_request`는 `worktree_path`가 없으면 서버가 `surface_id`로 해당 PTY를 찾아
+  `Terminal::get_cwd()`를 호출한다. OSC-7 캐시를 먼저 보고 `/proc`·`proc_pidinfo`로
+  보완하므로, 원격 셸이 OSC 7을 보내지 않아도 OS에서 cwd를 조회할 수 있다.
+  클라이언트가 재생한 OSC-7 정보에 의존하지 않는다.
 
 ## 관련
 

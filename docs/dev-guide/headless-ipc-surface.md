@@ -115,9 +115,9 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 
 ### 아직 없다 — 쓰기이지만 창은 필요 없다 (3)
 
-`Core` 만 있으면 되므로 기술적 장벽은 없다. 읽기 표면과 **함께 열지 않은** 이유는
-쓰기이기 때문이다. 감사 로그를 지우고 에이전트 권한을 바꾸는 것은 조회와 같은
-판단으로 열 대상이 아니며, 권한 표면은 그 자체로 별도 결정을 요구한다.
+이 세 메서드는 `Core`만 있으면 실행할 수 있지만, 헤드리스에서 제공하지 않는다.
+감사 로그 삭제와 에이전트 권한 변경은 조회와 달리 상태를 바꾸므로,
+어떤 호출자에게 허용할지 별도로 결정해야 한다.
 
 `plugin.audit_clear` · `plugin.grant_agent_permission` · `plugin.revoke_agent_permission`
 
@@ -133,8 +133,8 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 `plugin.install` · `plugin.remove` · `plugin.grant` · `plugin.revoke` ·
 `plugin.upgrade_builtins` · `plugin.audit_follow`
 
-`plugin.audit_follow` 는 `Core` 만 읽지만 구독을 여는 스트리밍 표면이라, 헤드리스에서
-구독 수명을 무엇에 묶을지가 위 결정과 함께 정해져야 한다.
+`plugin.audit_follow`는 `Core`의 데이터를 읽는 스트리밍 API다. 헤드리스에서 지원하려면
+구독을 언제 종료할지도 위 결정과 함께 정해야 한다.
 
 ### 창이 없어도 답이 정의되는 것 (1)
 
@@ -192,9 +192,9 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 
 ### 없는 것이 정답 (11)
 
-읽는 것이 `App.view` 인데 헤드리스에 그 필드가 없다(`src/app.rs` 에서 `gui` 게이트).
-사유를 메서드마다 적는 이유는, "이 표면은 GUI 가 필요하다" 같은 뭉뚱그림이 **어느
-것이 진짜 창을 요구하고 어느 것이 그냥 안 열린 것인지**를 지우기 때문이다.
+이 메서드들은 `App.view`를 사용하지만, 헤드리스에는 그 필드가 없다
+(`src/app.rs`에서 `gui`로 제한). 아래 표는 각 메서드가 창이나 GUI 상태를 필요로 하는
+이유다. 앞서 다룬, 창이 없어도 구현할 수 있지만 아직 지원하지 않는 메서드와 구분한다.
 
 | 메서드 | 왜 |
 |--------|-----|
@@ -202,13 +202,15 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 | `window.close` / `view.close` | `App.view.views` 에서 창을 닫는다. 그 레지스트리가 없다 |
 | `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(ADR-0012)이고, 대상도 창이다 |
 | `window.list` / `view.list` | 빈 목록이 아니라 **개념이 없다** — `[]` 를 주면 "창이 0 개인 GUI" 로 읽혀 호출자가 `window.create` 를 시도한다 |
-| `ui.screenshot` | 창 표면을 읽어 파일로 쓴다. 그릴 창이 없으면 하는 일 자체가 없다 |
+| `ui.screenshot` | 창의 화면을 캡처해 파일로 쓴다. 캡처할 창이 필요하다 |
 | `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
 | `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
 
 `plugin.*`의 현재 분류는 위 "`plugin.*` — 19 개 메서드의 판정" 절을 따른다.
 
-## dispatch arm 이 `gui` 로 게이트된 표면
+<a id="dispatch-arm-이-gui-로-게이트된-표면"></a>
+
+## GUI 빌드에서만 라우팅하는 메서드
 
 위 절이 다루는 `app_methods` step 과 **다른 축**이다. 이쪽은 `src/adapters/ipc/handler.rs`
 의 dispatch arm 이 `#[cfg(feature = "gui")]` 인 경우와, gui 라우터의 debug step
@@ -302,12 +304,10 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 
 ### `debug.*` 36 건
 
-debug 표면은 **에이전트가 자기 작업을 검증하는 자리**다(popup 이 떴는가, 훅이 발화했는가,
-event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면 헤드리스 인스턴스는 자기
-동작을 확인할 수단이 없다 — release 격리와는 다른 축이다. **여는 것은 "헤드리스 debug
-빌드에서도 답한다" 이지 "release 에 노출한다" 가 아니다.** release 격리는 `DEBUG_METHODS`
-가 release 에서 비는 것으로 유지되고, 실행으로 확인한다(release 헤드리스 실측: 아래 다섯
-전부 `-32601`).
+debug API는 에이전트가 팝업 표시, 훅 실행, 이벤트 버스 구독 등을 검증할 때 쓴다.
+창 없이 확인할 수 있는 동작은 헤드리스 debug 빌드에서도 조회할 수 있어야 한다.
+이는 release에 API를 제공한다는 뜻이 아니다. `DEBUG_METHODS`는 release에서 비어 있으며,
+release 헤드리스 실행에서도 아래 다섯 메서드가 모두 `-32601`을 반환하는지 확인한다.
 
 모수는 **호출마다 새 인스턴스를 띄우는** census 로 쟀다(2026-09-05). 한 인스턴스에서
 순차로 부르면 앞쪽의 파괴적 호출이 뒤쪽 호출의 라우팅 대상을 없애고, 그러면 멀쩡한
@@ -375,7 +375,9 @@ dispatch 에 새 헬퍼를 만들어 거기서 메서드 이름에 답하려면 
 `request.method` 로 갈래를 칠 때 맞대는 값(`==` · `starts_with` · `match … as_str()` 의 팔)은
 문자열 리터럴이어야 한다. 값을 위임 함수에 **넘기기만** 하는 자리는 대상이 아니다.
 
-## 남은 표면
+<a id="남은-표면"></a>
+
+## 나머지 메서드의 지원 여부
 
 `debug.*` 36 건의 판정은 위 "`debug.*` 36 건" 절에 있다.
 

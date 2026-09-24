@@ -57,7 +57,9 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 `attach.*` IPC namespace 는 `tasty attach` 로 노출되지 않고 용도별 CLI 로 갈린다: `tasty remote attach`/`remote check`(release, 원격 SSH), `tasty debug attach`(debug 전용, 로컬 loopback). 근거·동작은 [attach-behavior](attach-behavior.md), 격리는 [debug-ipc](debug-ipc.md).
 
-### CLI ↔ IPC 표면 — 무엇이 CLI 로 닿고, 무엇이 왜 안 닿는가
+<a id="cli--ipc-표면--무엇이-cli-로-닿고-무엇이-왜-안-닿는가"></a>
+
+### IPC 메서드를 CLI로 제공하는 기준
 
 [`docs/identity.md`](../identity.md) 원칙 2 는 에이전트 기능이 **IPC 와 CLI 양면**으로
 동작해야 한다고 못 박는다. 이 문서는 그 대조를 **어떻게 판정하고 어떻게 세는지**를 적는다.
@@ -113,7 +115,7 @@ CLI 진입점이 없다고 판단하지 않는다. 인자를 맞추지 못해 �
 
 ### release IPC 에 있는데 CLI 가 없는 메서드
 
-[identity §2.2](../identity.md) 원칙 2 는 "**에이전트가 자기 작업에 필요한 기능**은 IPC + CLI 양면으로 동작해야 한다" 이다. 걸리는 대상은 **에이전트 기능**이지 release IPC 표면 전체가 아니다 — plugin 이 host 에게 자기 자원을 요청하는 서비스 메서드는 애초에 CLI 호출자가 존재하지 않는다.
+[identity §2.2](../identity.md)의 원칙 2에 따라 에이전트가 작업에 쓰는 기능은 IPC와 CLI로 제공한다. 모든 release IPC 메서드에 CLI가 필요한 것은 아니다. 플러그인이 호스트에 자기 자원을 요청하는 메서드는 CLI 호출자를 위한 기능이 아니다.
 
 그래서 "release 표에 있는데 CLI 가 없다" 는 그 자체로 결함이 아니다. 아래가 현재 그런 메서드 전부이고, 각 행이 왜 원칙 2 밖인지 또는 어떻게 이미 충족되는지를 적는다. **새로 그런 메서드를 만들면 여기에 행을 추가한다** — `tests/cli_method_table_parity.rs` 가 이 표와 실제 집합을 양방향으로 대조하므로, 빠뜨리면 테스트가 떨어진다. 아래 개수와, 사유 열이 "대신 이걸 쓰라" 고 든 명령이 실재하는지도 같은 가드가 본다. 개수는 표에서 파생되지 않는 값이라(마크다운 표는 스스로 세지 않는다) 행을 고칠 때 함께 고쳐야 하고, 안 고치면 그 가드가 실제 값을 알려준다.
 
@@ -125,7 +127,7 @@ CLI 진입점이 없다고 판단하지 않는다. 인자를 맞추지 못해 �
 | plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. 외부 arm 은 있지만 CLI·agent 호출은 popup 을 안 열고 `-32016` 을 받는다(아래 †plugin-only 절 끝, [ADR-0031](../adr/0031-file-handler-routing.md)) |
 | plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)) |
 | plugin → host 서비스 | `markdown_mirror.content_request` | markdown plugin 이 attach mirror 문서의 원격 원문을 요청한다. `git_viewer.query` 와 같은 비동기 accept 라 `request_id` 만 회신하고 원문은 그 plugin 에 unicast push 되므로 셸이 결과를 받을 수 없다([ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)) |
-| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI로 읽으면 스캐너보다 먼저 커서가 전진해 감시할 출력을 놓칠 수 있다 — 에이전트가 출력을 읽는 표면은 커서를 안 움직이는 `tasty read since-mark` 쪽이다([ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md)) |
+| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI로 읽으면 스캐너보다 먼저 커서가 전진해 감시할 출력을 놓칠 수 있다. 에이전트가 출력을 읽을 때는 커서를 움직이지 않는 `tasty read since-mark`를 쓴다([ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 호출할 수 없다 |
 | plugin → host 서비스 †plugin-only | `webview.open_external` | plugin 이 **자기** webview surface 안에서 클릭된 외부 링크를 host 의 OS 열기 자리로 넘긴다. 대상이 caller plugin 소유 surface 여야 하고, 사용자 브라우저를 여는 것은 에이전트가 자기 작업에 쓰는 능력이 아니다([ADR-0030](../adr/0030-bundled-plugin-data.md)) |
 | plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
@@ -135,7 +137,7 @@ CLI 진입점이 없다고 판단하지 않는다. 인자를 맞추지 못해 �
 | 다른 이름으로 이미 있다 | `view.create` · `view.close` · `view.list` | `window.*` 의 어휘 통일 alias 로 동작이 동등하다. CLI 는 `tasty new window` · `tasty close window` · `tasty list windows` 쪽 한 벌만 노출한다 |
 | 같은 능력을 다른 명령이 준다 | `surface.send_combo` | `surface.send_key` 가 `"ctrl+c"` 형태를 파싱하므로 `tasty send key ctrl+c` 로 덮인다. 이쪽은 modifier 를 배열로 받는 JSON 친화 변종이다 |
 | 같은 능력을 다른 명령이 준다 | `surface.send_to` | `surface.send` 와 동형이라 `tasty send text --surface <id>` 로 덮인다 |
-| 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id` 가 `stream.open` 핸드셰이크 발급물이라 one-shot CLI 가 들 수 없고, 사람이 쓰는 표면은 `tasty remote attach` / `tasty tool attach` 가 세션 전체를 안에서 처리한다 |
+| 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id`는 `stream.open` 핸드셰이크에서 발급하므로 단발성 CLI 호출로 점유를 유지할 수 없다. CLI에서는 `tasty remote attach` / `tasty tool attach`가 세션 전체를 처리한다 |
 
 #### † plugin-only — 외부 호출자는 무엇을 받는가
 
@@ -260,11 +262,10 @@ relay는 완료까지 살아 있으므로 저장 항목 수가 곧 스레드 수
 
 ### debug 표에 있는데 CLI 가 없는 메서드
 
-원칙 2 는 debug 빌드의 에이전트 표면에도 걸린다 — `debug.*` 는 release 에 없을 뿐,
-있는 빌드에서는 에이전트가 쓰는 기능이다. 아래는 debug 표(`DEBUG_METHODS`)에 있으면서
-`tasty debug …` 로도 부를 수 없는 것 전부다. release 쪽 표와 나눠 두는 이유는 두 집합의
-문장이 다르기 때문이다("release IPC 에 있는데 CLI 가 없다" vs "debug 빌드에만 있는데
-그 빌드의 CLI 에도 없다").
+원칙 2는 debug 빌드에서 에이전트가 사용하는 기능에도 적용한다.
+`debug.*`는 release에 포함하지 않지만, debug 빌드에서는 CLI 제공 여부를 확인해야 한다.
+아래 표는 `DEBUG_METHODS`에 있으면서 `tasty debug …`로 호출할 수 없는 메서드다.
+위 release 메서드 목록과는 빌드 조건이 달라 따로 정리한다.
 
 debug 표 기준 총 3개.
 
@@ -393,8 +394,8 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
 
 ### Deprecation 절차
 
-1. 옛 표면 유지 + 새 표면 추가.
-2. 옛 표면 호출 시 `tracing::warn!("deprecated: <old>, use <new>")`(`crates/tasty-ipc/src/alias.rs`).
+1. 기존 API를 유지하면서 새 API를 추가한다.
+2. 기존 API를 호출하면 `tracing::warn!("deprecated: <old>, use <new>")`(`crates/tasty-ipc/src/alias.rs`).
 3. `CHANGELOG.md` `Deprecated` 절에 제거 기한 기록.
 4. 기한 직전 일괄 제거 PR.
 

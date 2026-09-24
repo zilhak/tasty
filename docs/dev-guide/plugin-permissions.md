@@ -261,9 +261,23 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 
 권한 게이트는 **호스트 IPC 호출만** 막는다. 플러그인이 자기 프로세스에서 `std::fs::write` 로 임의 경로에 쓰면 호스트는 모른다 — 진짜 격리는 OS 샌드박스(seccomp/sandbox-exec/WASM)가 필요하고 현재 범위 밖. 즉 매니페스트 `permissions[]` 는 **"호스트 API 호출 권한"** 이지 "OS 자원 권한"이 아니다 — UI/문서에서 grant 요청 시 이 표현을 유지해 OS 자원까지 보호한다고 오해하게 하지 않는다.
 
-**이 문서의 권한 모델과 attach 의 신뢰 모델은 서로 다른 축이라 섞지 않는다.** 이 문서는 "플러그인이 호스트 IPC 를 호출할 수 있는가"만 통제한다.
-플러그인이 그린 화면(렌더 결과)이 attach 로 원격에 얼마나 노출되는지는 이 권한 모델과 무관하게 **SSH+loopback 연결 경계**([ADR-0006](../adr/0006-bounded-ipc-transport.md), [attach-behavior "IPC 표면"](attach-behavior.md#ipc-표면-attach))에 이미 위임돼 있다 — attach 로 새 콘텐츠(예: 플러그인 렌더)를 노출하는 기능을 설계할 때, "더 민감해 보이니 이 권한모델에 신규 토큰을 추가해야 한다"고 판단하지 않는다.
-SSH 접속 권한은 이미 그 이상(임의 파일 접근 등)을 허용하기 때문이다.
+플러그인 권한과 attach 접근 범위는 따로 관리한다. 이 문서의 권한은 플러그인이
+호스트 IPC를 호출할 수 있는지를 정한다. 플러그인이 그린 화면을 attach로 원격에
+전달하는 것은 **SSH+loopback 연결 경계**를 따른다
+([ADR-0006](../adr/0006-bounded-ipc-transport.md),
+[attach IPC](attach-behavior.md#ipc-표면-attach)). SSH 접속 권한으로 이미 원격 파일 등에
+접근할 수 있으므로, 렌더 콘텐츠가 추가된다는 이유만으로 플러그인 권한 토큰을 늘리지 않는다.
 
-**구현 사례 — mesh mirror**: bundled egui-mesh surface(image/mesh_demo — markdown 은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 webview 전환되어 이 채널 대상에서 제외됨)의 attach mirror([attach-behavior "mesh mirror 채널"](attach-behavior.md#mesh-mirror-채널), [egui-mesh-channel "attach mesh mirror 소비 경로"](egui-mesh-channel.md#attach-mesh-mirror-소비-경로))는 위 원칙을 그대로 따른 결과다 — 렌더 콘텐츠를 원격으로 흘려보내는 새 채널(`StreamControl::MeshContext`/`MeshInput`/`MeshFullResendRequest`/`MeshError`)을 추가하면서도 이 문서의 `Permission`/`method_meta`엔 어떤 신규 토큰도 추가하지 않았다.
-노출 범위 통제는 오직 **①** 기존 화이트리스트(`is_egui_mesh_allowed` — 이 채널 자체의 개방 정책, plugin permission 과 무관)를 서버가 attach 트리 직렬화 시점에 재검증하는 것과 **②** attach 의 holder 점유 모델(hard 점유 = 입력 forward 수신 자격, `CoreState::apply_attached_mesh_input` 의 holder 검증)뿐이다 — "화면을 그리는 콘텐츠니 더 민감하다"는 이유로 별도 `Permission::AttachMeshMirror` 류 토큰을 만들지 않았다.
+예를 들어 image/mesh_demo의 egui-mesh attach mirror는 다음 두 곳에서 범위를 제한한다.
+markdown 본문은 [webview](../adr/0029-webview-host-integration.md)를 사용하므로 이 채널의 대상이 아니다.
+
+- 서버가 attach 트리를 직렬화할 때 `is_egui_mesh_allowed` 목록을 다시 검사한다.
+  이는 이 채널에서 허용하는 콘텐츠 목록이며, 플러그인 권한 검사는 아니다.
+- 입력은 hard 점유를 가진 holder만 전달할 수 있다.
+  `CoreState::apply_attached_mesh_input`이 holder를 검사한다.
+
+`StreamControl::MeshContext`/`MeshInput`/`MeshFullResendRequest`/`MeshError`에는
+별도의 `Permission::AttachMeshMirror` 토큰을 두지 않는다. `Permission`/`method_meta`의
+호스트 호출 권한을 추가하지 않고 위 attach 규칙을 사용한다.
+채널 동작은 [mesh mirror](attach-behavior.md#mesh-mirror-채널)와
+[mesh 소비 경로](egui-mesh-channel.md#attach-mesh-mirror-소비-경로)를 참고한다.

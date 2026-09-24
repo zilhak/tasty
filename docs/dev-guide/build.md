@@ -393,7 +393,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 | 형태 | 쓰는 곳 | 이유 |
 |------|---------|------|
-| `pub use tasty_<name>::*;`(glob) | 본체가 그 크레이트를 **통째로 소유**하고 경계를 그을 이유가 없는 shim (`src/model.rs`, `src/adapters/ui/icons.rs`) | 표면 전체가 본체 것이라 좁힐 대상이 없다 |
+| `pub use tasty_<name>::*;`(glob) | 본체에서 해당 크레이트의 공개 심볼을 모두 사용해도 되는 shim (`src/model.rs`, `src/adapters/ui/icons.rs`) | 재수출 목록을 제한할 필요가 없다 |
 | `pub use tasty_<name>::{A, B, C};`(명시 목록) | 본체가 **일부만 써야 하는** 크레이트 (`src/adapters/cli.rs`, `src/adapters/ipc.rs`) | glob 이면 계층 위반이 컴파일 에러로 안 잡힌다 — 본체 어디서든 재수출 경로로 크레이트 전체에 닿는다 |
 
 판단 기준은 "본체가 이 크레이트의 아무 심볼이나 써도 되는가" 하나다. 아니라면 명시 목록을 쓰고, 목록 밖 심볼을 쓰려는 시도가 컴파일 에러가 되게 둔다. 소스 스캔 가드(`crates/tasty-doc-guards/tests/layering.rs`)는 재수출을 우회한 직접 참조를 막는 **2차 방어**이지, 재수출 형태를 좁히는 것의 대체재가 아니다.
@@ -415,7 +415,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
 의존 방향은 모듈 경계와 가드로 제한한다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
-`pub(crate)` 표면)와 다시 볼 조건은 [ADR-0002](../adr/0002-domain-execution-and-ports.md),
+`pub(crate)`로 공개한 범위)와 다시 볼 조건은 [ADR-0002](../adr/0002-domain-execution-and-ports.md),
 경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
 
 같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.

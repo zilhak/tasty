@@ -140,7 +140,7 @@ Lua는 호스트에 등록한 사용자 스크립트 실행 기능이며 플러�
 | 새 메시지 타입 / optional+default 필드 추가 | minor |
 | required 필드 추가 · 필드 의미/타입/nullability 변경·제거 · 에러 코드 의미 변경 · fallback 없는 enum variant 추가 | major |
 
-새 필드는 **반드시 optional + default** 만 허용 → minor 내 호환 유지. plugin 은 별 OS 프로세스 + JSON 이라 ABI 무관, JSON schema 호환성이 본질. 이력은 `crates/tasty-plugin-protocol/CHANGELOG.md`. (IPC 표면 전반 정책은 [api-conventions](api-conventions.md).)
+새 필드는 **optional + default**로 추가해 같은 minor 버전 안에서 호환성을 유지한다. 플러그인은 별도 OS 프로세스에서 JSON으로 통신하므로, 공유 라이브러리의 ABI 대신 JSON 스키마의 호환성을 지켜야 한다. 변경 이력은 `crates/tasty-plugin-protocol/CHANGELOG.md`, IPC 전반의 호환성 정책은 [api-conventions](api-conventions.md)을 따른다.
 
 ### 번들 plugin 자동 upgrade
 

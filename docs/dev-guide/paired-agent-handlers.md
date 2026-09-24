@@ -6,7 +6,7 @@
 
 ## 공개 응답과 번역 형식
 
-| 표면 | Claude | Codex | 유지 근거와 검증 |
+| 기능 | Claude | Codex | 유지 근거와 검증 |
 |---|---|---|---|
 | `children` | bare 배열. `child_surface_id` 등으로 remap하고 전경 프로세스 이름/PID를 보충 | 호스트의 `{"children": […]}` 응답 그대로 | 기존 호출자의 JSON 해석을 보존한다. 각 plugin의 `children_response_is_*` 시험이 자기 변환을 고정한다 |
 | `kill` 성공 | `{"killed": true}` | 호스트의 `killed_surface_id`·`child_index`를 포함한 응답 그대로 | 기존 성공 응답을 보존한다. 각 plugin의 `kill_response_is_*` 시험이 자기 변환을 고정한다 |

@@ -21,7 +21,7 @@
 
 플러그인은 **별도 OS 프로세스**로 실행되어 호스트와 TCP+NDJSON 으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/`의 매니페스트로 소유권을 등록한다. GUI 부팅과 headless 요청별 시작 정책은 아래 수명주기 절을 따른다. 작성자는 SDK(`tasty-plugin-sdk`)의 `Plugin` trait 을 구현하고 `run()` 을 호출하면 SDK가 핸드셰이크(토큰 인증, AuthAck 5초 대기)·NDJSON 직렬화·dispatch loop·ping/shutdown을 처리한다.
 
-플러그인이 contribute 할 수 있는 것은 [concepts/plugins 통합 축](../concepts/plugins.md#통합-축--host-에-무엇을-기여하나) 참고. **contribute 0 개여도 valid** (예: 다른 surface 닫힘만 관찰).
+플러그인이 추가할 수 있는 기능은 [플러그인 통합 방식](../concepts/plugins.md#통합-축--host-에-무엇을-기여하나)을 참고한다. 다른 surface가 닫히는 이벤트만 구독하는 플러그인처럼, 매니페스트의 contribute 항목이 0개여도 된다.
 
 ## 1. 크레이트 골격 + 매니페스트
 

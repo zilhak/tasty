@@ -13,10 +13,10 @@ rustc와 Clippy lint는 모두 멤버가 `[lints] workspace = true`로 상속한
 | 〃 | `cognitive_complexity = "deny"` | 함수 cognitive 복잡도 상한 강제 — 복잡도 게이트의 함수 축이고, 임계값은 `clippy.toml` 이 든다 ([complexity-gate](complexity-gate.md)) |
 | 〃 | `multiple_unsafe_ops_per_block = "deny"` | 블록당 unsafe op 2개+ 차단 — 면제는 위치 단위로 동결하고 **근거는 그 자리에 붙어 있다**. 형태는 자리의 성격이 정하므로 여기서 세지 않는다 |
 | 〃 | `result_large_err = "allow"` | 도메인 Error enum ↔ IPC fault path 1:1 매핑이라 일괄 allow ([documentation-model](../documentation-model.md)) — 사유가 자리 수에 안 기대므로 이 셀은 수를 적지 않는다 |
-| 〃 | `let_underscore_must_use = "warn"` | `let _ = <Result>` 무음 무시를 표면화 — **이 lint 는 정책을 집행하지 않는다**(주석을 못 읽어 사유가 달린 정상 코드도 warn 한다). 전수 판정은 `let_underscore_documented` 가드의 몫 ([error-handling](error-handling.md)) |
+| 〃 | `let_underscore_must_use = "warn"` | `let _ = <Result>`에 경고한다. 주석의 사유는 검사하지 않아 사유가 있는 코드에도 경고한다. 사유 주석의 유무는 `let_underscore_documented` 가드가 검사한다 ([error-handling](error-handling.md)) |
 | 〃 | `disallowed_methods = "deny"` | 아래 `clippy.toml` 목록에 든 함수의 호출을 막는 **레벨**. 금지 목록의 호출은 빌드를 실패시킨다 |
 | 〃 | `missing_safety_doc = "deny"` | 모든 `pub unsafe fn` 에 `# Safety` 절 강제 — `undocumented_unsafe_blocks` 의 블록 축과 대칭인 **호출자 계약** 축 ([아래 unsafe 절](#unsafe--safety-주석)) |
-| `Cargo.toml [workspace.lints.rust]` | `unsafe_op_in_unsafe_fn = "deny"` | `unsafe fn` 안에서도 명시 unsafe 블록 강제. edition 2024 의 기본값이지만 워크스페이스 일관성을 위해 못박는다 |
+| `Cargo.toml [workspace.lints.rust]` | `unsafe_op_in_unsafe_fn = "deny"` | `unsafe fn` 안에서도 명시적 unsafe 블록을 요구한다. edition 2024의 기본값은 `warn`이며, 이 프로젝트는 워크스페이스에서 `deny`로 강화한다 |
 | 〃 | `function_casts_as_integer = "deny"` | `f as usize` 금지 → `f as *const () as usize` |
 | 〃 | `unused_assignments = "deny"` | dead store 금지 → 값 합성(`.max` 등) 또는 제거 |
 | 〃 | `unused_must_use = "deny"` | Result/must_use 무음 무시 금지 → 처리 또는 `tracing` 로그 ([error-handling](error-handling.md)) |
@@ -120,6 +120,6 @@ unsafe { (xlib.XMapWindow)(display, x11_window); }
 |------|------|
 | `clippy::undocumented_unsafe_blocks` | `deny` (모든 unsafe 블록 SAFETY 필수) |
 | `clippy::multiple_unsafe_ops_per_block` | `deny` |
-| `rust::unsafe_op_in_unsafe_fn` | `deny` (edition 2024 기본) |
+| `rust::unsafe_op_in_unsafe_fn` | `deny` (프로젝트 설정; edition 2024 기본은 `warn`) |
 
 리뷰어는 코드보다 **SAFETY 본문(invariant) 검증을 우선** 한다. OS 문서 링크가 있으면 SAFETY 에 포함(장기 변동 대응).

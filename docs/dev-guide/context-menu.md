@@ -8,10 +8,27 @@
 
 surface 우클릭 컨텍스트 메뉴는 surface 종류에 따라 생산 경로가 갈린다:
 
-- **terminal**: winit 경로(`src/view/main/mouse.rs` `handle_right_button`)가 생산한다. mouse-tracking 위임(ADR-0015) 판정이 여기 있어 winit-level 이어야 한다. 큐잉 트리거 시점은 플랫폼별로 다르다(`terminal_menu_open_state` 의 `cfg!(target_os = "linux")` 분기): **Linux 는 release**, **macOS/Windows 는 press** 그대로. Linux 전용인 이유 — 버튼이 아직 눌려 있는 상태에서 GTK `popup_at_rect()` 를 부르면 팝업을 realize/map 하지 않고 조용히 no-op 한다(실측 확인: `has_window`/`realized`/`mapped` 가 영원히 false 로 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청 자체가 안 나감). macOS/Windows 는 `show_context_menu` 가 항상 `MenuOutcome::Ready` 로 동기 처리돼 이 제약 자체가 없어 기존 press 시점 동작을 그대로 둔다(불필요한 플랫폼 공통 동작 변경 방지). 비-terminal 이 egui `secondary_clicked()`(release 시점)로 이 GTK 문제를 애초에 안 겪는 것과 같은 이유로 Linux 만 맞춘 것 — layer 는 winit 그대로 유지하되 트리거 시점만 플랫폼별로 갈린다.
-- **terminal 링크 위**: 같은 `handle_right_button` 이 mouse-tracking 위임 판정 **앞**에서 hover 링크를 먼저 본다. 링크면 `PendingNativeMenu::TerminalLink` 를 세우고(`src/view/main/link_menu.rs`) press·release 둘 다 로컬 소비한다 — 좌클릭 링크가 위임보다 먼저인 것과 대칭이다. 메뉴를 세우는 버튼 상태는 위와 같지만 링크 스냅샷은 press 에서 찍는다(Linux 는 release 까지 hover 가 바뀔 수 있다). 명세는 [terminal-link](../features/terminal-link/index.md).
-- **비-terminal**(explorer/empty/markdown/image/webview/remote): winit 은 메뉴를 만들지 않고(`return`) **egui 프레임이 단일 생산자**다. `emit_surface_menu_fallback`(`src/adapters/ui/egui_panels.rs`)이 release 시점 `secondary_clicked()` 로 발화해 `PendingNativeMenu::Surface` 를 세팅한다. explorer 는 같은 프레임 안에서 `apply_explorer_action` 이 위치별 메뉴를 먼저 선점하고, fallback 은 `is_none()` 가드로 이를 존중한다.
-- **explorer 표면 전체 커버리지**: explorer 는 위치별 메뉴(그리드 파일 셀 → 파일 메뉴, content 빈 영역 → Empty 메뉴, 트리 노드/즐겨찾기 → 각 메뉴)에 더해, `draw_explorer` 끝에서 **표면 전체 rect catch-all** 로 나머지 chrome(툴바/주소창/내부 탭바/상태줄/빈 사이드바)의 우클릭도 Empty 메뉴로 선점한다. 이로써 generic Surface fallback("터미널 ID 복사")이 explorer 위 어디에서도 뜨지 않는다(불가침 원칙 §1·§2 — 파일 브라우저에 무관한 surface-op 메뉴 노출 금지). 권한 거부 루트(`LoadState::NoPermission`)만 예외로, 붙여넣기가 무의미하므로 catch-all 을 건너뛴다.
+- **terminal**: winit의 `src/view/main/mouse.rs::handle_right_button`이 메뉴를 만든다.
+  이 함수가 mouse-tracking 위임 여부도 판단한다(ADR-0015).
+  `terminal_menu_open_state`는 **Linux에서는 release**, **macOS/Windows에서는 press**에 메뉴를 연다.
+  Linux에서는 버튼을 누른 상태로 GTK `popup_at_rect()`를 호출하면 메뉴가 표시되지 않을 수 있다.
+  macOS/Windows의 `show_context_menu`는 `MenuOutcome::Ready`를 동기적으로 반환하므로
+  기존 press 시점을 사용한다. Linux도 입력을 받는 곳은 winit이며, 메뉴를 여는 시점만 다르다.
+- **terminal 링크 위**: `handle_right_button`은 mouse-tracking 위임보다 링크를 먼저 확인한다.
+  링크 위라면 `PendingNativeMenu::TerminalLink`를 설정하고(`src/view/main/link_menu.rs`),
+  press와 release를 터미널에 전달하지 않는다. 메뉴를 여는 시점은 위 플랫폼별 규칙을 따르지만,
+  링크 정보는 press 때 저장한다. Linux에서 release까지 기다리는 동안 hover 대상이 바뀌어도
+  처음 누른 링크의 메뉴를 열기 위해서다. 명세는 [terminal-link](../features/terminal-link/index.md)를 참고한다.
+- **비-terminal**(explorer/empty/markdown/image/webview/remote): winit에서는 메뉴를 만들지 않는다.
+  egui의 `emit_surface_menu_fallback`(`src/adapters/ui/egui_panels.rs`)이 release 때
+  `secondary_clicked()`를 확인해 `PendingNativeMenu::Surface`를 설정한다.
+  explorer는 같은 프레임에서 `apply_explorer_action`이 위치별 메뉴를 먼저 선택하며,
+  fallback은 `is_none()`일 때만 메뉴를 추가한다.
+- **explorer의 나머지 영역**: 파일 셀, content의 빈 영역, 트리 노드, 즐겨찾기는 각 위치에 맞는
+  메뉴를 만든다. `draw_explorer` 마지막에서는 전체 rect를 확인해 툴바·주소창·내부 탭바·상태줄·
+  빈 사이드바의 우클릭에도 Empty 메뉴를 제공한다. 파일 브라우저 위에 무관한 Surface 메뉴
+  ("터미널 ID 복사")를 표시하지 않기 위해서다(불가침 원칙 §1·§2).
+  `LoadState::NoPermission`에서는 붙여넣기를 할 수 없으므로 이 전체 rect 처리를 건너뛴다.
 - **fallback 의 explorer-aware 최후 방어선**: catch-all 이 어떤 이유(런타임 이벤트 프레이밍·좌표 미스 등)로 explorer 슬롯을 못 세우고 `emit_surface_menu_fallback` 이 발화하더라도, fallback 은 **explorer surface 위에서는 generic `Surface` 대신 빈영역 `Explorer` 메뉴**(paths 빈 vec + cwd = current_root)를 세운다. 첫 패스에서 각 패널의 explorer 여부와 `current_root` 를 `EguiPanelInfo.explorer_cwd` 로 캡처해 판별한다. 그래서 explorer 위에는 어떤 경로로도 surface-op 메뉴가 노출되지 않고, 사용자는 항상 explorer 메뉴를 받는다. OS 무관 순수 로직(`#[cfg]` 불필요)이며, explorer 위 generic 메뉴는 원래 어느 OS 에서도 뜨면 안 되므로 플랫폼 공통으로 같은 선택 규칙을 적용한다.
 
 비-terminal 메뉴를 winit press와 egui release 양쪽에서 만들면 generic 메뉴가
@@ -106,12 +123,24 @@ winit 이 소유한 창은 GTK 소유가 아니라 기본적으로 대응하는 
 - **raw Xlib grab(`XGrabPointer`/`XGrabKeyboard`) 이 아니라 `gdk::Seat::grab()` 을 쓰는 이유**: GDK3 의 X11 백엔드는 XInput2(XI2) 로만 이벤트를 받는다. raw core-protocol grab 으로 리다이렉트된 클릭은 X11 프로토콜 레벨에서는 메뉴 창으로 도착하지만 GDK 의 이벤트 소스가 XI2 이벤트만 인식하므로 `GdkEventButton` 으로 변환되지 않아 GTK 위젯 로직(activate, 우리가 추가한 바깥 클릭 감지 핸들러 모두)에 전혀 도달하지 못한다(raw grab 으로 실제 테스트해 확인된 사실).
 - **`owner_events=true` 로 잡는 이유**: `false` 로 잡으면 메뉴 "안" 클릭까지 전부 grab 창(메뉴 자신)으로 강제 리다이렉트되면서 GTK 내부 hit-test 가 깨져 항목 클릭(activate)이 아예 씹힌다(실측 회귀 — Rename 클릭 시 다이얼로그가 안 뜸). `true` 로 두면 자신이 소유한 서브윈도우 위의 클릭은 정상 라우팅되어 항목 클릭이 그대로 동작하고, 소유하지 않은 다른 창(tasty 메인 창 등) 위의 클릭만 grab 창으로 리다이렉트된다.
 - 리다이렉트된 바깥 클릭은 `menu.connect_button_press_event` 핸들러가 좌표를 메뉴 자신의 allocation 과 비교해 밖이면 직접 `popdown()` 한다 — GTK 의 기본 deactivate 로직은 (트리거 이벤트 없이 잡은) grab 소유 여부를 스스로 신뢰하지 못해 기대할 수 없다.
-- `Seat::grab` 이 실패(`GrabStatus::Success` 가 아님)해도 패닉하지 않고 경고만 남긴 뒤 grab 없이 진행한다 — 이 경우 바깥 클릭이 GTK 에 도달하지 않지만, **그 클릭은 winit 이 받으므로** `mouse.rs` 의 press 핸들러가 `MenuHandle::dismiss()` 를 호출해 메뉴를 닫는다(아래 "dismiss 클릭은 사이클 전체가 삼켜진다" 참고). 즉 grab 실패해도 바깥 클릭 dismiss 는 그대로 동작하고, 메뉴 자체나 항목 클릭도 영향받지 않는다.
+- `Seat::grab` 이 실패(`GrabStatus::Success` 가 아님)해도 패닉하지 않고 경고만 남긴 뒤 grab 없이 진행한다 — 이 경우 바깥 클릭이 GTK 에 도달하지 않지만, **그 클릭은 winit 이 받으므로** `mouse.rs` 의 press 핸들러가 `MenuHandle::dismiss()` 를 호출해 메뉴를 닫는다(아래 "메뉴를 닫는 클릭 처리" 참고). 즉 grab 실패해도 바깥 클릭 dismiss 는 그대로 동작하고, 메뉴 자체나 항목 클릭도 영향받지 않는다.
 - 완료(선택/취소/타임아웃) 시 `grabbed` 가 true 였으면 반드시 `seat.ungrab()` 으로 대칭 해제한다. 결과를 회수하지 않고 핸들이 버려지는 경로(창 종료 등)는 `Drop` 이 `popdown()` + 같은 해제를 수행한다.
 
-**dismiss 클릭은 사이클 전체가 삼켜진다**: 메뉴를 닫는 바깥 클릭은 **press 부터 짝이 되는 release 까지** 삼킨다 — egui 입력 큐에도, tasty 자체 라우팅에도 넣지 않는다. 판정과 상태 전이는 `view/main.rs` `handle_event` 가 **egui feed 보다 먼저** 이벤트당 한 번 수행하고(`mouse.rs::take_menu_dismiss_swallow` → 순수 함수 `menu_dismiss_swallow_step`), 그 결과를 egui feed 게이트와 `handle_mouse_input` 이 함께 쓴다. 삼키는 이벤트에는 대신 `GpuState::push_egui_pointer_gone` 이 egui 에 `PointerGone` 을 넣어 hover 잔류를 끊는다.
+**메뉴를 닫는 클릭 처리**: 바깥 클릭으로 메뉴를 닫을 때는 press와 짝이 되는 release를
+모두 egui 입력 큐와 Tasty 입력 처리에 전달하지 않는다. `view/main.rs`의 `handle_event`가
+각 이벤트를 egui에 넣기 전에 `mouse.rs::take_menu_dismiss_swallow`와
+`menu_dismiss_swallow_step`으로 판단한다. egui 입력 처리와 `handle_mouse_input`은 이 결과를
+함께 사용한다. 제외한 이벤트 대신 `GpuState::push_egui_pointer_gone`으로 `PointerGone`을
+넣어 기존 hover 표시도 해제한다.
 
-press 만 삼키면 부족하다: winit 이벤트는 egui 에 **먼저** 먹여진 뒤 `handle_mouse_input` 이 불리므로, release 를 흘리면 egui 가 다음 프레임에 press+release 쌍을 완성해 커서 밑 위젯의 `clicked()`(우클릭이면 `secondary_clicked()` → 새 메뉴 큐잉)를 발생시킨다. 즉 메뉴를 닫으려던 클릭이 그 밑의 사이드바 행/탭/explorer 항목까지 실행한다. release 판정을 "메뉴가 아직 떠 있는가" 와 무관하게 press 기록으로만 하는 것도 이 때문이다 — press 로 dismiss 를 건 뒤 release 전에 `poll_pending_native_menu` 가 슬롯을 비우는 것이 정상 경로다. 회귀망은 `mouse.rs` 의 `menu_dismiss_tests`(사이클 전이 + 맨 `egui::Context` 로 "삼킨 사이클은 `clicked()` 를 발생시키지 않는다" 검증, 대조군 포함).
+press만 제외하고 release를 전달하면 egui가 `clicked()`를 만들 수 있다.
+우클릭이면 `secondary_clicked()`로 새 메뉴를 열 수도 있어, 메뉴를 닫으려던 클릭이
+아래의 사이드바·탭·explorer 항목까지 실행하게 된다. 따라서 release도 제외해야 한다.
+
+release를 제외할지는 메뉴의 현재 표시 여부가 아니라 앞선 press 기록으로 판단한다.
+press로 메뉴를 닫은 뒤 release 전에 `poll_pending_native_menu`가 메뉴 슬롯을 비울 수 있기 때문이다.
+`mouse.rs`의 `menu_dismiss_tests`가 이 상태 전이를 검사하며, `egui::Context`와 대조군을 사용해
+제외한 클릭이 `clicked()`를 만들지 않는지도 확인한다.
 
 **비블로킹 폴링**: `GtkMenuHandle::poll()` 은 `while gtk::events_pending() { main_iteration_do(false) }` 로 큐에 있는 것만 처리하고 즉시 반환한다. `MainView::poll_pending_native_menu` 가 두 곳에서 이를 호출한다 — `handle_redraw`(같은 프레임 안에서 `process_pending_native_menu` 보다 **먼저**, 방금 닫힌 메뉴의 뒤처리가 다음 메뉴 요청을 막지 않게)와 `about_to_wait`(메뉴가 떠 있는 동안 8ms `WaitUntil` 로 재예약되며 돌아, redraw 이벤트가 없는 순간에도 폴링이 끊기지 않게). 이 `WaitUntil` 재예약을 빠뜨리면 메뉴가 열린 채 폴링이 멈춘다. 트레이(AppIndicator) GTK 펌프도 메뉴가 떠 있으면 함께 돈다.
 
