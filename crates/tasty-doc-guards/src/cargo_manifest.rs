@@ -1,16 +1,9 @@
-//! Cargo 매니페스트를 **원문으로** 읽는다. 의존 절이 무엇을 선언하는지 묻는 가드가
-//! 여럿이라, 그 물음의 판사를 하나로 둔다.
-//!
-//! 파싱이 아니라 **원문 스캔**이다 — 이 크레이트는 의존이 0 이고
-//! ([ADR-0048](../../../docs/adr/0048-source-guards-and-exemptions.md)) toml 파서를
-//! 들이지 않는다. 그 대가로 형태를 손으로 다뤄야 하므로, 네 형태를 모두 다루는지는
-//! 소비자 쪽 픽스처가 고정한다.
+//! 추가 TOML 의존성 없이 매니페스트의 의존 선언을 읽는다.
+//! 완전한 TOML 파서가 아니며 지원하는 형태는 소비자의 합성 입력으로 확인한다.
 
-/// 매니페스트가 선언하는 의존들 — `(절 이름, 크레이트 이름)`.
-///
-/// 절 이름은 **잎**이다: `[target.'cfg(unix)'.dev-dependencies]` 는 `dev-dependencies`.
-/// 네 형태를 다룬다 — 평서(`serde = "1"`) · 인라인 테이블(`serde = { … }`) ·
-/// `[dependencies.serde]` · target 조건부.
+/// 의존 선언을 (절 종류, 크레이트 이름)으로 반환한다.
+/// 일반 대입·인라인 테이블·dependencies.<이름>·target 조건부 선언을 지원한다.
+/// target 조건은 반환값에 포함하지 않고 dependencies/dev-dependencies/build-dependencies로 구분한다.
 pub fn declared_deps(manifest: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut section: Option<String> = None;
@@ -66,11 +59,8 @@ fn is_dep_section(leaf: &str) -> bool {
     )
 }
 
-/// `[features]` 절의 한 feature 가 `dep:` 로 켜는 optional 의존 이름들 — 선언 순서대로.
-///
-/// `tasty-platform/gui` 처럼 **다른 크레이트의 feature** 를 켜는 항목은 안 담는다. 그 크레이트는
-/// feature 없이도 그래프에 있으므로 "이 feature 가 있어야만 링크되는 크레이트" 가 아니다.
-/// feature 가 없거나 `dep:` 항목이 없으면 빈 벡터다.
+/// 지정 feature의 dep: 항목에서 optional 의존 이름을 선언 순서대로 추출한다.
+/// 다른 크레이트의 feature를 켜는 항목은 제외한다. 해당 feature나 dep: 항목이 없으면 빈 벡터다.
 pub fn feature_enabled_deps(manifest: &str, feature: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut in_features = false;

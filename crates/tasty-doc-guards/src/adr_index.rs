@@ -1,25 +1,14 @@
-//! `docs/adr/index.md` 의 **행**을 ADR 파일에서 만든다 — 생성기(`adr-index` bin)와
-//! 가드(`tests/adr_index_parity.rs`)가 이 모듈의 같은 함수를 부른다.
-//!
-//! 인덱스는 두 층이다. **머리말**(그룹 목록 · 그룹마다 결정 사슬과 운영 문서를 적는 산문)은
-//! 사람이 쓰고, **행**(번호 · 제목 · Status · Date · Tags)은 ADR 헤더에서 파생된다. 두 층이
-//! 한 파일에 있으므로 생성 구역을 마커로 가른다:
+//! ADR 헤더에서 인덱스 행을 만든다. 생성기와 정합 검사가 같은 구현을 사용한다.
+//! 머리말은 사람이 작성하고, 번호·제목·Status·Date·Tags는 생성한다.
+//! ADR의 Group 헤더가 생성 구역을 정하며 마커 밖의 내용은 보존한다.
 //!
 //! ```text
 //! <!-- adr-rows:begin <slug> -->
-//! | # | Title | Status | Date | Tags |
-//! …생성된 행…
+//! ...생성한 표...
 //! <!-- adr-rows:end <slug> -->
 //! ```
 //!
-//! 생성기는 마커 **안**만 다시 쓰고 밖은 한 글자도 안 건드린다. 한 ADR 이 어느 마커 안에
-//! 들어가는지는 그 ADR 헤더의 `- **Group**: <slug>` 한 줄이 정한다 — 그룹 배치는 사람의
-//! 판단이지만 그 판단을 **ADR 파일 자신**에 적어, 인덱스를 병합할 때 행이 빠지거나 다른
-//! 그룹으로 옮겨지는 일이 구조적으로 안 생기게 한다. 결정과 대안은
-//! `docs/adr/0050-architecture-decision-records.md`.
-//!
-//! **이 모듈 하나가 파생 규칙이다.** 셸이나 다른 언어로 두 번째 사본을 만들지 않는다 —
-//! 같은 물음에 답이 둘이 되면 어느 쪽이 옳은지는 표를 다시 읽어야 안다.
+//! 설계 근거: docs/adr/0050-architecture-decision-records.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -249,10 +238,7 @@ pub fn group_slugs(index: &str) -> Vec<String> {
         .collect()
 }
 
-/// 마커 안을 다시 만든 인덱스 전문. 마커 밖은 원문 그대로다.
-///
-/// 마커 짝이 깨졌으면(닫는 줄 없음 · slug 불일치 · 겹침 · 같은 slug 두 번) 만들지 않고
-/// 이유를 돌려준다 — 깨진 구조 위에서 만든 결과는 어느 쪽이 옳은지 모르는 두 번째 답이다.
+/// 마커 안만 다시 만든다. 닫는 마커 누락·slug 불일치·중첩·중복이면 오류를 반환한다.
 pub fn render_index(index: &str, adrs: &[Adr]) -> Result<String, Vec<String>> {
     let mut out = String::with_capacity(index.len());
     let mut errors = Vec::new();
@@ -506,13 +492,9 @@ pub fn region_row_count(index: &str) -> usize {
         .count()
 }
 
-/// 생성 결과가 **완전한가** — 모든 ADR 이 생성 구역 안에 정확히 한 행을 갖는가.
-///
-/// 생성기는 헤더의 `Group` 이 가리키는 구역에만 행을 싣는다. 그래서 `Group` 이 없거나
-/// 인덱스에 없는 slug 를 가리키는 ADR 은 행 없이 빠지고, 그래도 파일은 생성 결과와 **같다**
-/// — "생성 결과와 같은가" 만 물으면 빠진 ADR 이 초록으로 지나간다. 이 판정은 그 빈칸을
-/// 생성기 자신이 보게 한다. 왜 빠졌는지(그룹 배치)는 묻지 않는다 — 그것은
-/// [`placement_violations`] 의 물음이다. 돌려주는 줄은 행이 없거나 여럿인 ADR 이다.
+/// 모든 ADR이 생성 구역에 정확히 한 행을 갖는지 검사한다.
+/// Group이 잘못된 ADR은 생성기와 결과가 같아도 행이 누락될 수 있다.
+/// 누락·중복 행을 반환하며, Group 자체는 placement_violations에서 검사한다.
 pub fn incomplete_rows(rendered: &str, adrs: &[Adr]) -> Vec<String> {
     let mut rows: BTreeMap<&str, usize> = BTreeMap::new();
     for (_, l, inside) in lines_by_region(rendered) {
@@ -533,13 +515,8 @@ pub fn incomplete_rows(rendered: &str, adrs: &[Adr]) -> Vec<String> {
         .collect()
 }
 
-/// 생성 구역 **밖**의 표 줄(앞 공백을 빼고 `|` 로 시작하는 줄).
-///
-/// 생성기는 마커 밖을 안 건드리므로, 거기 적힌 행은 생성 결과와의 대조에 **안 걸린다** —
-/// 머리말에 끼운 행도, `adr-rows:end` 바로 아래에 옛 습관대로 덧붙인 행도 파일은 생성 결과와
-/// 같다. 그래서 "생성물과 수기 부분이 한 파일에서 섞이지 않는다" 는 이 판정이 따로 진다.
-/// 행만이 아니라 표 줄 전체를 센다 — 머리말은 산문이고, 머리말에 표 머리글만 남은 것도
-/// 생성 구역 밖에 두 번째 표를 짓기 시작한 흔적이다.
+/// 생성 구역 밖의 표 줄을 반환한다. 생성기가 수정하지 않는 머리말에는 표를 두지 않는다.
+/// 앞 공백을 제외하고 `|`로 시작하는 줄을 센다.
 pub fn stray_table_lines(index: &str) -> Vec<String> {
     lines_by_region(index)
         .filter(|(_, l, inside)| !*inside && l.trim_start().starts_with('|'))
@@ -547,12 +524,8 @@ pub fn stray_table_lines(index: &str) -> Vec<String> {
         .collect()
 }
 
-/// 생성 구역 **밖**에 남은 git 충돌 표지 줄(`<<<<<<< ` · `|||||||` · `=======` · `>>>>>>> `).
-///
-/// 인덱스가 병합에서 충돌하면 `--write` 는 생성 구역 안의 충돌 표지를 새로 만든 행으로 덮어
-/// 버리지만, 머리말은 사람이 쓰는 산문이라 손대지 않는다 — 머리말의 충돌은 `--write` 뒤에도
-/// 그대로 남고, 그 상태로 커밋해도 다른 판정은 초록이다. 양쪽 머리말을 사람이 합쳤는가를
-/// 이 수가 잰다(0 이어야 한다).
+/// 생성 구역 밖에 남은 Git 충돌 표지를 반환한다.
+/// 생성기는 마커 밖을 보존하므로 그 영역의 충돌은 직접 해결해야 한다.
 pub fn conflict_marker_lines(index: &str) -> Vec<String> {
     lines_by_region(index)
         .filter(|(_, l, inside)| {

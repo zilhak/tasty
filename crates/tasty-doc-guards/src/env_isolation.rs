@@ -1,44 +1,11 @@
-//! **환경변수·cwd 를 만지는 테스트가 직렬화 없이 만지지 않는가** 를 워크스페이스 전역에서
-//! 본다(ADR-0045 — 프로세스 전역 공유 상태).
+//! 테스트의 환경변수·cwd 변경에 직렬화 표지가 있는지 검사한다(ADR-0045).
+//! 이 상태는 프로세스 전체가 공유하므로 같은 바이너리의 병렬 테스트가 서로 영향을 줄 수 있다.
+//! cfg 범위와 테스트 전용 파일 판정은 공용 구현을 사용하며 제품 코드는 검사하지 않는다.
 //!
-//! `std::env::set_var`/`remove_var` 와 `set_current_dir` 는 프로세스 전역을 바꾼다.
-//! `cargo test` 는 한 바이너리의 테스트를 병렬로 돌리므로, 직렬화 없이 이것을 만지는
-//! 테스트끼리는 서로의 상태를 덮어써 **순서 의존 flake** 가 난다. 실패한 테스트가
-//! 전역을 안 되돌리고 죽으면 다음 테스트를 오염시키고, 그 오염은 단독 실행에서 재현되지
-//! 않는다. 처방은 직렬화 락(또는 그 락을 쥐는 RAII 가드)이다.
-//!
-//! ## 왜 리포 전역 한 자리인가 — 자기스캔 형태가 복제되지 않았다
-//!
-//! 강제 패턴은 `tasty-host-plugin` 의 자기스캔(`home_env_is_only_touched_through_this_module`)에
-//! **이미 있다.** 그 형태는 "가드가 통째로 한 파일이고, 그 파일 밖의 env 변경은 위반" 이다.
-//! 그런데 이 형태는 세 크레이트에 그대로 안 옮겨진다(2026-09-05 실측):
-//! - `tasty-telemetry`·`tasty-settings` 의 가드(`AgentIdEnvGuard`·`RelativeHomeGuard`)는
-//!   **인라인 struct** 라 "파일 밖" 으로 제외할 수 없다.
-//! - 본체는 프로덕션(`boot/locale.rs`)이 로케일 env 를 set 하므로 테스트 스캔이 그것을
-//!   빼야 하는데, per-crate 스캔이 `#[cfg(test)]` 판정을 새로 만들면
-//!   같은 물음에 판정기가 둘이 된다.
-//!
-//! 그래서 **효과는 복제하되 형태는 리포 전역**으로 둔다 — 여기(의존 0)의
-//! [`cfg_gated_lines`](crate::cfg_predicate::cfg_gated_lines) 가 프로덕션을 구조로 빼고,
-//! [`test_only_files`](crate::shipping_scope::test_only_files) 가 test-only 파일을 잡는다.
-//! doc-guards.yml 이 매 push 에 돌린다.
-//!
-//! ## 극성 — "이 테스트가 전역을 만지나" 가 아니라 "직렬화 없이 만지나"
-//!
-//! 방향을 뒤집는다: **테스트의 모든 env/cwd 변형은 직렬화를 밝혀야 한다.** 직렬화 증거는
-//! 세 형태다:
-//! - 락 참조(`SERIAL`/`*_LOCK`/`GLOBALS`.lock() — 코드): 그 함수가 락을 쥐고 만진다.
-//! - 마커(`직렬화`/`serialize` 또는 `이유:`/`reason:` — 주석, `check-allow-reason` 관례):
-//!   RAII 가드의 set/unset/drop 은 락을 호출부가 쥐므로 그 자리에 `.lock()` 이 없다 — 그래서
-//!   그 자리 주석이 "…락으로 직렬화" 를 밝히면 인정한다.
-//! - 단일-test 격리(`단일 #[test]` — 주석): 한 키를 만지는 시나리오를 한 `#[test]` 안에
-//!   모으면 cargo 가 그 함수를 한 스레드로 완주해 구조적으로 직렬이다(별도 락 없이도 안전).
-//!
-//! ## 잡지 못하는 것
-//!
-//! - **갈래 2(범위 새는 자리)**: 가드를 락 없이 쓰는 테스트. 변형이 가드 안에 있어 이
-//!   스캔에 안 걸린다 — 그건 가드가 락을 자기가 잡게 하는 별도 처방으로 닫는다.
-//! - 함수 두 겹 너머의 간접 env 접근(이름 안 보임)·런타임 조합 키는 텍스트 밖이다.
+//! 인정하는 표지는 SERIAL/*_LOCK/GLOBALS 같은 코드 이름, 직렬화/serialize/이유:/reason:
+//! 주석, 단일 #[test] 격리 주석이다. 락을 호출자가 보유하는 RAII 가드에도 주석을 허용한다.
+//! 표지의 존재만 확인하며 실제 락 수명이나 가드를 락 없이 호출하는 경로는 검증하지 못한다.
+//! 간접 호출로 숨긴 변경이나 실행 중 조립하는 환경변수 키도 추적하지 않는다.
 
 use std::path::Path;
 
@@ -64,9 +31,7 @@ const SERIAL_TOKENS: &[&str] = &[
     "reason:",
 ];
 
-/// 직렬화 증거를 찾을 때 거슬러 오르는 최대 줄 수. 테스트는 함수 첫머리에서 락을 한 번
-/// 잡고 그 아래에서 여러 번 env 를 만지므로(창이 아니라 **함수 범위**로 본다), 가장 가까운
-/// `fn ` 선언까지 올라가 그 사이에 직렬화 증거가 있는지 본다. 이 값은 그 상한이다.
+/// 변형 지점에서 가장 가까운 fn 선언까지 직렬화 표지를 찾는 최대 줄 수.
 const FN_LOOKBACK: usize = 80;
 
 /// 한 파일 분류 결과. 줄 번호는 0 기반.
@@ -99,14 +64,11 @@ pub fn classify(
         if !MUTATION_TOKENS.iter().any(|t| code[idx].contains(t)) {
             continue;
         }
-        // 테스트 맥락이 아니면(프로덕션) 이 축의 대상이 아니다.
         if !(file_is_test_only || cfg_test[idx]) {
             continue;
         }
         out.mutations.push(idx);
-        // 직렬화 증거는 **enclosing 함수 범위**에서 찾는다 — 락은 함수 첫머리에서 한 번
-        // 잡고 그 아래에서 여러 번 만지기 때문이다. 가장 가까운 `fn ` 선언까지 거슬러
-        // 오르되(FN_LOOKBACK 상한), 그 사이 한 줄이라도 락 참조/직렬화 마커를 가지면 통과.
+        // 락이 함수 앞부분에 있을 수 있어 가장 가까운 fn 선언까지 확인한다.
         let floor = idx.saturating_sub(FN_LOOKBACK);
         let fn_start = (floor..=idx)
             .rev()
@@ -124,15 +86,12 @@ pub fn classify(
     out
 }
 
-/// 워크스페이스 전역 census.
+/// 워크스페이스 전체 검사 결과.
 #[derive(Debug, Default)]
 pub struct Census {
     pub files_scanned: usize,
-    /// 뿌리별 파일 수 — `scan_roots` 와 **같은 순서**이고, 합은 `files_scanned` 와 같다.
-    ///
-    /// 총수만으로는 뿌리 하나가 통째로 빠진 것을 못 본다: 총수의 여유가 작은 뿌리를
-    /// 통째로 삼킨다. 그래서 소비자가 뿌리마다 따로 바닥을 걸 수 있게 나눠 싣는다.
-    /// 뿌리가 겹치지 않는다는 가정 아래 각 파일은 **처음 맞는 뿌리 하나**에만 센다.
+    /// scan_roots 순서대로 센 파일 수. 겹치는 경로는 처음 일치한 루트에만 포함한다.
+    /// 작은 루트의 누락이 전체 파일 수에 가려지지 않도록 소비자가 각각 하한을 검사한다.
     pub per_root: Vec<(String, usize)>,
     pub mutations: usize,
     pub serialized: usize,
@@ -140,7 +99,7 @@ pub struct Census {
     pub bare: Vec<String>,
 }
 
-/// `scan_roots` 아래를 훑어 census 를 만든다.
+/// scan_roots 아래의 테스트 코드를 검사한다.
 pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     let sources = rust_sources(root, scan_roots);
     let test_only = test_only_files(root, &sources);
@@ -151,8 +110,7 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     };
     for (rel, raw) in &sources {
         c.files_scanned += 1;
-        // `Path::starts_with` 는 **성분 단위**다 — `src` 가 `srcgen/` 을 먹지 않는다.
-        // 편 문자열을 `/` 리터럴과 견주지 않는 이유이기도 하다(Windows 에서 조용히 빗나간다).
+        // 경로 구성요소 단위로 비교해 src와 srcgen을 구분하고 Windows도 지원한다.
         if let Some((_, n)) = c.per_root.iter_mut().find(|(r, _)| rel.starts_with(r)) {
             *n += 1;
         }
@@ -188,7 +146,6 @@ mod tests {
         classify(&code, &markers, &cfg_test, test_only)
     }
 
-    /// test 맥락에서 직렬화 증거 없이 env 를 만지면 잡는다.
     #[test]
     fn a_bare_set_var_in_test_code_is_caught() {
         let fc = classify_src(
@@ -199,7 +156,6 @@ mod tests {
         assert_eq!(fc.bare.len(), 1, "직렬화 없는 test env 변형을 잡아야 한다");
     }
 
-    /// 같은 함수에서 락을 잡으면(코드 증거) 통과한다.
     #[test]
     fn a_lock_in_scope_passes() {
         let fc = classify_src(
@@ -210,7 +166,6 @@ mod tests {
         assert_eq!(fc.serialized.len(), 1);
     }
 
-    /// 주석 마커(가드 set 메서드처럼 락을 호출부가 쥐는 자리)면 통과한다.
     #[test]
     fn a_marker_comment_passes() {
         let fc = classify_src(
@@ -220,7 +175,6 @@ mod tests {
         assert!(fc.bare.is_empty(), "직렬화 마커가 붙으면 통과");
     }
 
-    /// 프로덕션(cfg(test) 밖·test-only 파일 아님)의 env 변형은 이 축의 대상이 아니다.
     #[test]
     fn a_production_env_mutation_is_out_of_scope() {
         let fc = classify_src(
@@ -230,7 +184,6 @@ mod tests {
         assert!(fc.mutations.is_empty(), "프로덕션 env 변형은 안 본다");
     }
 
-    /// test-only 파일이면 그 안의 변형은 test 맥락이다.
     #[test]
     fn a_mutation_in_a_test_only_file_is_in_scope() {
         let fc = classify_src(
@@ -241,7 +194,6 @@ mod tests {
         assert_eq!(fc.bare.len(), 1, "마커 없으면 test-only 파일에서도 잡는다");
     }
 
-    /// set_current_dir 도 같은 축이다.
     #[test]
     fn set_current_dir_is_also_covered() {
         let fc = classify_src(
@@ -251,7 +203,6 @@ mod tests {
         assert_eq!(fc.bare.len(), 1);
     }
 
-    /// 단일 #[test] 격리를 밝히는 주석이면 통과한다(락 없이도 구조적 직렬).
     #[test]
     fn a_single_test_containment_marker_passes() {
         let fc = classify_src(
@@ -262,7 +213,6 @@ mod tests {
         assert_eq!(fc.serialized.len(), 1);
     }
 
-    /// 마커가 문자열 안에만 있으면 인정하지 않는다.
     #[test]
     fn a_marker_inside_a_string_does_not_count() {
         let fc = classify_src(

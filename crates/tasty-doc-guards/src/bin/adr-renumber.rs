@@ -1,23 +1,15 @@
-//! ADR 을 새 번호로 옮기고, 레포 전체에서 그 번호를 부르는 자리를 함께 고친다. 판정 규칙은
-//! [`tasty_doc_guards::adr_renumber`] 에 있고, 여기는 파일 · git 부수효과와 보고다.
+//! ADR 파일과 저장소의 인용 번호를 함께 바꾼다. 판독 규칙은 adr_renumber 모듈에 있다.
 //!
 //! ```text
-//! cargo run -p tasty-doc-guards --bin adr-renumber -- <매핑 파일> [--report <경로>]           # dry-run(기본)
-//! cargo run -p tasty-doc-guards --bin adr-renumber -- <매핑 파일> --write [--report <경로>]   # 쓴다
+//! cargo run -p tasty-doc-guards --bin adr-renumber -- <매핑 파일> [--report <경로>]
+//! cargo run -p tasty-doc-guards --bin adr-renumber -- <매핑 파일> --write [--report <경로>]
 //! ```
 //!
-//! `--root <디렉토리>` 로 레포 루트를 줄 수 있다(생략하면 현재 디렉토리). 매핑 형식 · 형태
-//! 목록 · 못 보는 것은 `docs/dev-guide/adr-renumber.md`.
-//!
-//! ## 종료코드
-//!
-//! 0 = dry-run 이 계획을 세웠고 막는 것이 없다, 또는 `--write` 를 마쳤다.
-//! 1 = **삭제(DELETE)되는 ADR 을 고치는 형태로 부르는 자리가 남아 있다.** dry-run 은 그 목록을
-//! 내고 1 로 끝나고, `--write` 는 아무것도 안 쓰고 1 로 끝난다 — 그 자리를 남긴 채 번호를
-//! 옮기면 옛 번호가 **다른 ADR 을 조용히 가리킨다.** 사람이 그 자리를 내용으로 바꾼 뒤 다시
-//! 돌린다.
-//! 2 = 할 수 없다 — 모르는 인자 · 매핑 오류 · ADR 수집 실패 · 번호 중복 · git 실패 ·
-//! `--write` 인데 작업 트리가 깨끗하지 않다 · 파일을 못 씀.
+//! 기본은 dry-run이며 --root로 저장소 경로를 지정한다(기본: 현재 디렉터리).
+//! 매핑 문법과 지원 범위는 docs/dev-guide/adr-renumber.md를 따른다.
+//! 종료코드 0은 계획/쓰기 완료, 1은 삭제할 ADR을 가리키는 인용이 남은 경우다.
+//! 1이면 아무것도 쓰지 않는다. 옛 번호가 다른 ADR을 가리키지 않도록 인용을 먼저 고친다.
+//! 인자·매핑·수집·번호 중복·Git·쓰기 오류와 --write 시 변경 중인 작업 트리는 2로 끝난다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -31,9 +23,8 @@ use tasty_doc_guards::adr_renumber::{Form, Hit, Target, apply, line_of, parse_ma
 const VENDOR: &str = "site/vendor/";
 const VENDOR_OWN: &str = "site/vendor/README.md";
 
-/// 문자열 픽스처에 **가짜 ADR** 을 담은 파일. 파일명 형태(slug 가 실재 파일과 끝까지 같아야
-/// 한다 — 픽스처의 가짜 slug 는 안 걸린다)만 고치고, 나머지 형태는 보고만 한다. 접두 형태를
-/// 고치면 픽스처 안의 짝(`[ADR-NNNN](NNNN-x.md)` 과 기대값 `"NNNN"`)이 한쪽만 바뀐다.
+/// 가짜 ADR과 기대값이 함께 있는 파일은 실제 slug와 일치하는 파일명만 바꾼다.
+/// 다른 번호 표기는 한쪽만 바뀔 수 있어 보고만 한다.
 const FIXTURES: &[&str] = &[
     "crates/tasty-doc-guards/src/adr_index.rs",
     "crates/tasty-doc-guards/tests/adr_index_parity.rs",
@@ -359,8 +350,7 @@ fn main() {
     for d in &deleted {
         git(&root, &["rm", "-q", "--", d]);
     }
-    // 늘 두 단계로 옮긴다 — 새 경로가 아직 옮기기 전의 다른 ADR 자리일 수 있다(같은 slug 의
-    // 교환). 한 단계로 옮기면 그 순서를 도구가 풀어야 하고, 틀리면 git mv 가 중간에 멈춘다.
+    // 번호를 맞바꾸는 경우도 처리하도록 임시 경로를 거쳐 이동한다.
     for (from, _) in &moves {
         git(&root, &["mv", "--", from, &format!("{from}.renumber-tmp")]);
     }

@@ -1,11 +1,5 @@
-//! 소스의 **크레이트 루트 경로**를 읽는다 — `crate::a::b` · `super::…::a` · 중괄호 import.
-//!
-//! 경계 가드들이 같은 물음("이 파일의 출하 코드가 어느 크레이트 루트 항목을 부르는가")을
-//! 묻는다. 한때 이 판정기는 `tests/domain_does_not_reach_up.rs` 안에만 있었다 — 두 번째
-//! 소비자가 생겨 여기로 올렸다. 같은 물음에 판정기를 둘 두면 한쪽만 고쳐져 갈린다.
-//!
-//! 입력은 **마스킹한 코드**다([`crate::source_text::mask_non_code`]). 주석·문자열 속 경로
-//! 언급은 경로가 아니다.
+//! 마스킹한 코드에서 crate/super/외부 크레이트 경로와 중괄호 import를 읽는다.
+//! 주석·리터럴은 호출 전에 source_text::mask_non_code로 제거한다.
 
 use crate::cfg_predicate::cfg_gated_lines;
 use crate::source_text::mask_non_code;
@@ -49,9 +43,8 @@ fn ident_end(b: &[u8], i: usize) -> Option<usize> {
     (j > i).then_some(j)
 }
 
-/// 크레이트 루트 뒤의 경로 나무를 편다 — `a::b` 는 하나, `{a::b, c::{d, e}}` 는 셋.
-/// `(마디가 시작한 오프셋, 크레이트 루트부터의 마디들)` 을 `out` 에 싣고 읽은 끝을 돌려준다.
-/// 마디 사이의 공백·줄바꿈은 건넌다(rustfmt 가 긴 경로를 줄에서 끊는다).
+/// 경로와 중괄호 import를 각각의 경로 목록으로 편다.
+/// 항목 시작 오프셋과 경로를 out에 넣고 읽은 끝을 반환한다. 공백·줄바꿈을 허용한다.
 pub fn expand_tree(
     code: &str,
     mut i: usize,

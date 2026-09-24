@@ -1,25 +1,15 @@
-//! `docs/adr/index.md` 의 생성 구역(`adr-rows:begin` ~ `adr-rows:end`)을 ADR 헤더에서
-//! 다시 만든다. 규칙은 [`tasty_doc_guards::adr_index`] 하나이고, 가드
-//! (`tests/adr_index_parity.rs`)가 같은 함수로 "파일이 생성 결과와 같은가" 를 묻는다.
+//! ADR 헤더로 docs/adr/index.md의 생성 구역만 갱신한다.
+//! 생성 규칙은 tasty_doc_guards::adr_index에서 공유한다.
 //!
 //! ```text
-//! cargo run -p tasty-doc-guards --bin adr-index -- --write   # 다시 쓴다
-//! cargo run -p tasty-doc-guards --bin adr-index               # 대조만(--check)
+//! cargo run -p tasty-doc-guards --bin adr-index -- --write
+//! cargo run -p tasty-doc-guards --bin adr-index -- --check
 //! ```
 //!
-//! 뒤에 레포 루트 경로를 줄 수 있다(생략하면 현재 디렉토리).
-//!
-//! ## 종료코드
-//!
-//! 0 = 파일이 생성 결과와 같고(또는 `--write` 로 맞췄고) 그 결과가 완전하다. 1 = 다르다
-//! (`--check`), 또는 생성 구역 **밖**에 표 줄이나 git 충돌 표지가 있다, 또는 생성 결과가
-//! **불완전하다** — 생성 구역에 행이 없거나 둘 이상인 ADR 이 있다(`Group` 이 없거나 인덱스에
-//! 없는 slug). 뒤의 둘은 두 모드 모두다 — 마커 밖은 생성기가 안 건드리고, 빠진 행은 헤더를
-//! 고쳐야 생기므로 `--write` 로 안 없어진다. 빠진 행을 0 으로 돌려주면 "생성 결과와 같다" 만
-//! 보고 ADR 이 인덱스에서 빠진 상태를 통과시킨다.
-//! 2 = 만들 수 없다 — 모르는 인자(`--` 로 시작하는), ADR 디렉토리 · ADR 파일 · 인덱스를 못
-//! 읽음, 마커 짝이 깨짐, ADR 0 개, 인덱스를 못 씀(`--write`).
-//! 0 개를 0 으로 돌려주면 빈 모수에서 초록이 난다.
+//! 마지막 인자는 저장소 루트이며 생략하면 현재 디렉터리다.
+//! 종료코드: 0은 일치/갱신 완료, 1은 차이·생성 구역 밖 표/충돌·행 누락/중복이다.
+//! 마커 밖 표/충돌과 잘못된 Group은 --write로 해결되지 않아 직접 고쳐야 한다.
+//! 인자·읽기·쓰기·마커 오류나 ADR이 없는 경우는 2로 끝난다.
 
 use std::path::PathBuf;
 
@@ -57,8 +47,6 @@ fn main() {
     let stray = stray_table_lines(&current);
     let conflicts = conflict_marker_lines(&current);
     let incomplete = incomplete_rows(&rendered, &adrs);
-    // 행 수는 둘을 함께 찍는다 — 하나만 찍으면 그것이 파일의 상태인지 생성 결과인지 라벨로만
-    // 갈리고, `--check` 가 빨간 때는 둘이 다르다(행을 지운 파일 · Group 을 지운 ADR).
     eprintln!(
         "[adr-index] ADR {} · 그룹 {} · 생성 구역 행 현재 {} / 생성 결과 {} · 구역 밖 표 줄 {} · \
          구역 밖 충돌 표지 {}",
