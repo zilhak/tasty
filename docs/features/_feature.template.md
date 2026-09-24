@@ -1,11 +1,11 @@
 <!--
-기획문서 (internal behavior, 1순위) 템플릿.
+기능의 내부 동작을 설명하는 템플릿.
 새 기능을 만들 때:  cp docs/features/_feature.template.md docs/features/<feature>/index.md
 규칙: docs/documentation-model.md / docs/identity.md (작성 전 필독).
 
 작성 시 지킬 것:
-- 내부 *동작*(WHAT)이 본체. 내부 *구현*(crate·모듈·핵심 함수 포인터)은 "## 구현" 에 보강으로 적어도 된다 (agent-guide 와 달리 기획문서엔 허용). 단 과도한 콜사이트 나열은 rot 하니 핵심 포인터만.
-- 시각 수치/토큰은 design-system 을 링크. docs 에 재서술 금지.
+- 기능의 동작을 먼저 쓴다. 필요한 구현 경로는 "## 구현"에 핵심 크레이트·모듈·함수만 연결한다. 자주 바뀌는 호출부를 전부 나열하지 않는다.
+- 시각 수치와 토큰은 디자인 문서로 연결하고 값을 반복해서 적지 않는다.
 - 빌드/로드맵 상태(Phase·구현 예정·이관)는 적지 않는다 — 현재 상태만.
 - 마크다운 체크박스(task list)를 쓰지 않는다 — Acceptance Criteria 는 평문 Given/When/Then 불릿 (documentation-model.md §6).
 - 화면이 없으면(headless 전용) "## 화면" 섹션을 지운다. 구현 포인터가 불필요하면 "## 구현" 도 지운다.
@@ -23,7 +23,7 @@
 
 ## 목적
 
-이 기능이 왜 존재하나. 한 문단.
+기능의 목적을 한 문단으로 쓴다.
 
 ## 내부 동작 (headless-valid)
 
@@ -37,7 +37,7 @@
 
 ## 비-목표 (Out of scope)
 
-이 기능이 *하지 않는* 것.
+이 기능에서 지원하지 않는 범위.
 
 ## Acceptance Criteria
 

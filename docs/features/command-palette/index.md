@@ -8,7 +8,7 @@
 
 ## 목적
 
-VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색해 실행한다 — 단축키를 외우지 않아도 키보드만으로 모든 기능에 접근. [도구 메뉴](../tools-menu/index.md) 항목이자 전용 단축키로 연다.
+VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색해 실행한다 — 단축키를 외우지 않아도 등록된 명령을 키보드로 실행할 수 있다. [도구 메뉴](../tools-menu/index.md) 항목이자 전용 단축키로 연다.
 
 ## 내부 동작
 
@@ -32,7 +32,7 @@ VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색�
 Enter/클릭 시 `command_palette.pending_run` 에 선택된 `PaletteCommand` 적재 → `MainView::handle_redraw` 가 다음 프레임에 drain:
 
 - `Host`: `dispatch_action_by_id` 호출 — **단축키와 정확히 같은 action body** 를 타므로 효과 동일.
-- `Plugin`: `AppState.pending_plugin_command_invokes` 에 `(plugin_id, command_id)` 를 enqueue(팔레트 draw/redraw 경로는 `PluginManager` 에 접근할 수 없음 — `PopupDef` 고정 시그니처 제약). `App::dispatch_pending_palette_plugin_commands` 가 다음 IPC 처리 틱에 drain 해 `command_registry` 로 조회: `action` 이 있으면 `invoke_tool` 로 직접 실행(`try_plugin_shortcut` 의 action 분기와 동일 패턴), 없으면 `key_dispatch::dispatch_plugin_command(.., surface_id: None)` 으로 `command.invoked` event 만 발사(포커스 없이 매칭된 global 단축키와 동일 — 옛 `command.invoke` IPC 는 대상 surface 가 없어 생략).
+- `Plugin`: `AppState.pending_plugin_command_invokes` 에 `(plugin_id, command_id)` 를 enqueue(팔레트 draw/redraw 경로는 `PluginManager` 에 접근할 수 없음 — `PopupDef` 고정 시그니처 제약). `App::dispatch_pending_palette_plugin_commands` 가 다음 IPC 처리 틱에 drain 해 `command_registry` 로 조회: `action` 이 있으면 `invoke_tool` 로 직접 실행(`try_plugin_shortcut` 의 action 분기와 동일 패턴), 없으면 `key_dispatch::dispatch_plugin_command(.., surface_id: None)` 으로 `command.invoked` 이벤트만 발생(포커스 없이 매칭된 global 단축키와 동일 — 옛 `command.invoke` IPC 는 대상 surface 가 없어 생략).
 
 ### AppState 동기화
 
@@ -57,7 +57,8 @@ Enter/클릭 시 `command_palette.pending_run` 에 선택된 `PaletteCommand` �
 - 항목 실행 결과가 해당 단축키 직접 실행과 동일하다(호스트) / 대응 도구 메뉴 클릭과 동일하다(plugin).
 - plugin 이 하나도 활성화되지 않은 상태에서도 팔레트가 정상 동작한다(회귀 없음).
 
-> GUI 키보드 기능이라 시각은 스크린샷, 매칭/필터 로직은 단위 검증 가능. 실제 plugin 명령 검색·실행은 debug IPC(`debug.host_popup.open`/`debug.inject_egui_mouse`)로 라이브 인스턴스에서 확인함.
+화면은 스크린샷으로, 매칭과 필터는 단위 시험으로 검증한다. 실제 plugin 명령의 검색·실행은
+debug IPC(`debug.host_popup.open`/`debug.inject_egui_mouse`)로 확인할 수 있다.
 
 ## 구현
 
@@ -65,7 +66,7 @@ Enter/클릭 시 `command_palette.pending_run` 에 선택된 `PaletteCommand` �
 - popup: `src/adapters/ui/popup/command_palette.rs`.
 - plugin 명령 snapshot 동기화: `src/app/plugin_glue/palette_commands.rs`(`refresh_palette_plugin_commands`), 초기 populate `src/app/window_lifecycle.rs`(`assemble_app_state`).
 - plugin 명령 조회 필터: `crates/tasty-host-plugin/src/manager/queries.rs`(`plugin_palette_commands`).
-- dispatch: `src/view/main/redraw.rs` 가 `pending_run` drain → 호스트는 `dispatch_action_by_id`, plugin 은 `AppState.pending_plugin_command_invokes` 로 enqueue. `src/app/dispatch/palette_plugin_commands.rs`(`dispatch_pending_palette_plugin_commands`)가 App 메인 루프에서 drain해 action 실행/event 발사.
+- dispatch: `src/view/main/redraw.rs` 가 `pending_run` drain → 호스트는 `dispatch_action_by_id`, plugin 은 `AppState.pending_plugin_command_invokes` 로 enqueue. `src/app/dispatch/palette_plugin_commands.rs`(`dispatch_pending_palette_plugin_commands`)가 App 메인 루프에서 drain해 action 실행 또는 이벤트 발생.
 
 ## 화면
 

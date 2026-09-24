@@ -2,13 +2,13 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (`restore_closed`, 기본 `Ctrl+Shift+T`)
-- **ADR**: 없음 (원칙은 [identity](../../identity.md) §1) — pane 미복원은 원래 스코프 결정이 아니라 `close_case_pane`/`close_active_pane`이 `push_closed_item`을 호출하지 않던 버그였다(`ClosedPane`/`rebuild_pane`은 워크스페이스 복원용으로 이미 존재했으나 pane 단독 복원엔 연결되지 않았음). 새 스코프를 정하는 결정이 아니라 기존 의도를 완성하는 수정이라 신규 ADR 대상이 아니다.
+- **ADR**: 없음. 사용자와 에이전트의 구분은 [identity](../../identity.md) §1을 따른다.
 - **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/state/{pane,tab,workspace}.rs` + `src/core/impl_close.rs`(`close_case_pane`/`close_case_tab`/`close_case_workspace` cascade), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/impl_workspace.rs`(`apply_restore_closed_item`)
 - **화면**: 없음 (복원은 focused pane 에 즉시 반영)
 
 ## 목적
 
-사용자가 실수로 닫은 surface/tab/pane/workspace 를 즉시 되돌린다. 닫기 시점 스냅샷(`ClosedItem`, **인메모리 LIFO 스택**)을 보관했다가 단축키로 복원하는 휘발성 안전망 — 스택은 재시작에 살아남지 않는다. 반복 사용 목적의 영구 저장은 [layout-presets](../layout-presets/index.md).
+사용자가 실수로 닫은 surface/tab/pane/workspace 를 즉시 되돌린다. 닫기 시점 스냅샷(`ClosedItem`, **인메모리 LIFO 스택**)을 보관했다가 단축키로 복원하는 임시 복원 기능 — 스택은 재시작에 살아남지 않는다. 반복 사용 목적의 영구 저장은 [layout-presets](../layout-presets/index.md).
 
 ## 내부 동작
 
@@ -20,10 +20,10 @@
 
 ## 사용자/에이전트 분리 (핵심)
 
-복원 스택은 **사용자의 시점 상태**라 에이전트 표면에 없다([identity](../../identity.md) §1):
+복원 스택은 **사용자의 화면 상태**라 에이전트 표면에 없다([identity](../../identity.md) §1):
 
 - 복원을 트리거하는 CLI/IPC 없음 (`RestoreClosedItem` intent 는 사용자 단축키 전용).
-- 복원 뒤 포커스 이동(복원한 워크스페이스로 활성 전환 · 복원한 pane 으로 포커스)은 **사용자 발화일 때만** 일어난다. 복원이 사용자 단축키 전용이라는 약속에 기대지 않고 cascade(`cascade_closed_item_restored`)가 origin 을 직접 본다 — 다른 발화가 복원에 닿아도 사용자의 활성 워크스페이스·포커스 pane 은 그대로다.
+- 복원 뒤 포커스 이동(복원한 워크스페이스로 활성 전환 · 복원한 pane 으로 포커스)은 **사용자 요청일 때만** 일어난다. 복원이 사용자 단축키 전용이라는 약속에 기대지 않고 cascade(`cascade_closed_item_restored`)가 origin 을 직접 본다 — 다른 요청이 복원에 닿아도 사용자의 활성 워크스페이스·포커스 pane 은 그대로다.
 - **에이전트가 닫은 항목은 스택에 안 들어간다** — IPC `surface.close` 는 `save_snapshot=false`, `tab.close`/`pane.close`(DomainIntent)는 스냅샷 경로 자체가 없다. 스냅샷 push 는 사용자 단축키/마우스 닫기 경로에서만.
 - **원격 attach 로 forward 된 close 도 같은 규칙이다** — 서버는 mirror 에서 온 close 를 요청 주체(`origin`)로 가르고, 원격 사용자의 손 조작만 스냅샷한다. 원격 에이전트의 CLI/IPC close 는 서버 스택에도 안 들어간다([remote-attach](../remote-attach/index.md), [ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)).
 

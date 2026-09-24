@@ -10,7 +10,8 @@
 
 터미널 텍스트의 **복사/붙여넣기/선택**, OSC 52 클립보드 설정. 복사/붙여넣기는 사용자 행동이라 토스트로 피드백하고, 에이전트(IPC) 경로는 사용자 시각 상태를 건드리지 않는다. OSC 52 쓰기는 토스트를 낸다 — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다(PTY 출력이라 origin 을 가를 수 없어 에이전트가 셸에 찍게 해도 뜬다 — [toast](../../design/systems/toast.md) 트리거 정책의 알려진 예외).
 
-> **히스토리 기능 제거됨.** 과거 host 가 OS 클립보드를 폴링해 누적하던 클립보드 히스토리(메모리 `ClipboardHistory` + DB 테이블 + `tasty clipboard` 의 히스토리 서브커맨드 + `tool.clipboard.*` IPC + `clipboard.copied` 이벤트)는 전부 제거됐다. 현재는 *히스토리 누적 없이* 지금 클립보드 내용만 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 read-only 로 보여준다.
+현재 클립보드 내용만 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md)이
+읽기 전용으로 보여준다. 클립보드를 주기적으로 수집하거나 과거 내용을 저장하지 않는다.
 
 ## 내부 동작
 
@@ -26,15 +27,15 @@
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.
 
-마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스가 앱에 전면 위임되어 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
+마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스 이벤트를 앱에 전달하므로 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
 
-**트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다 — 즉 트래킹 앱 위에서도 키보드 vi 복사 모드 외에 마우스 선택 경로가 열려 있다. plain 좌클릭은 그대로 앱에 위임되어 회귀가 없다 (우클릭 `Shift` 우회는 [ADR-0015](../../adr/0015-terminal-user-input-routing.md) 의 동일 패턴).
+**트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다. 일반 좌클릭은 계속 앱으로 전달된다 (우클릭 `Shift` 우회는 [ADR-0015](../../adr/0015-terminal-user-input-routing.md) 의 동일 패턴).
 
 ### OSC 52
 
 **쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). **토스트를 낸다**(`toast.copied_osc52`, 그 surface 스코프) — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다. 같은 surface 에서 500 ms 안에 반복된 쓰기는 토스트 coalesce 로 한 장에 합쳐진다.
 
-**읽기(query)**: `OSC 52 ; c ; ? ST` 클립보드 읽기 질의는 설정 토글 `general.allow_clipboard_read`(기본 **off**)로 게이트된다. off 면 **무응답**(1바이트도 내보내지 않음) — 터미널 안의 임의 프로그램(원격/SSH 프로세스 포함)이 로컬 클립보드(비밀번호·토큰)를 조용히 탈취하는 것을 차단한다(xterm/iTerm 계열 정책). on 이면 시스템 클립보드를 base64 로 인코딩해 `OSC 52 ; c ; <base64> ST` 로 회신. 경로: 터미널 크레이트가 `TerminalEventKind::ClipboardQuery` 이벤트만 발화(설정·클립보드 무지) → host(`Core::drain_terminal_events`)가 게이트·읽기·인코딩 후 해당 surface 의 PTY 로 `send_bytes`. 설정 UI 는 Terminal › TUI 섹션(토글 + 바로 아래 bordered warning callout). 토스트 없음.
+**읽기(query)**: `OSC 52 ; c ; ? ST` 클립보드 읽기 질의는 설정 토글 `general.allow_clipboard_read`(기본 **off**)로 게이트된다. off 면 **무응답**(1바이트도 내보내지 않음) — 터미널 안의 임의 프로그램(원격/SSH 프로세스 포함)이 로컬 클립보드(비밀번호·토큰)를 조용히 탈취하는 것을 차단한다(xterm/iTerm 계열 정책). on 이면 시스템 클립보드를 base64 로 인코딩해 `OSC 52 ; c ; <base64> ST` 로 회신. 경로: 터미널 크레이트가 `TerminalEventKind::ClipboardQuery` 이벤트만 발생(설정과 클립보드 접근은 호스트가 담당) → host(`Core::drain_terminal_events`)가 게이트·읽기·인코딩 후 해당 surface 의 PTY 로 `send_bytes`. 설정 UI 는 Terminal › TUI 섹션(토글 + 바로 아래 bordered warning callout). 토스트 없음.
 
 ### egui-mesh plugin 의 텍스트 선택 복사 (`egui_copy` capability)
 
@@ -53,7 +54,7 @@ plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 
 
 ## 비-목표
 
-- 클립보드 **히스토리** 누적·재복사 — 제거됨(위 목적 참고).
+- 클립보드 **히스토리** 누적·재복사..
 - 현재 클립보드 **뷰어 UI** — 빌트인 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 제공.
 - IME(한글/CJK) 입력 파이프라인 — 별도 영역.
 

@@ -1,59 +1,61 @@
 # 접근성 (Accessibility)
 
-- **Status**: Implemented (Phase 1 — 수동 토글)
+- **Status**: Implemented — 수동 설정
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)(모션 감소를 `Theme` 이 실어 나른다)
-- **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), 토스트 알파 분기(`crates/tasty-ui-widgets/src/toast.rs` 의 `fade_alpha`), 스피너(`crates/tasty-ui-widgets/src/spinner.rs`), switch 오버레이 페이드(`src/adapters/ui/switch_overlay.rs`), 모달 흔들기(`src/app/modal/shake.rs`), modifier-hint 콘텐츠 모델(`src/adapters/ui/input/shortcuts/modifier_hint.rs`) · 오버레이 본체(`src/adapters/ui/modifier_hint_overlay.rs`)
-- **화면**: [설정 창](../settings/screens/settings.md) Accessibility 탭
+- **ADR**: [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md) — Theme의 모션 감소 설정
+- **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), `crates/tasty-ui-widgets/src/{toast,spinner}.rs`, `src/adapters/ui/switch_overlay.rs`, `src/app/modal/shake.rs`, `src/adapters/ui/input/shortcuts/modifier_hint.rs`, `src/adapters/ui/modifier_hint_overlay.rs`
+- **화면**: [설정 창](../settings/screens/settings.md)의 Accessibility 탭
 
 ## 목적
 
-설정 → Accessibility 탭에서 직접 켜는 옵션. **Phase 1 은 수동 토글만** — OS 자동 감지(Windows ANIMATIONS / macOS NSWorkspace), AccessKit 통합, 색맹 팔레트, 스크린 리더 라벨은 Phase 2 이후.
+사용자가 모션을 줄이거나 보조키 단축키 안내를 켤 수 있게 한다. OS 설정 자동 감지, AccessKit, 색맹 팔레트, 스크린 리더 라벨은 현재 제공하지 않는다.
 
 ## 내부 동작
 
 ### Reduced motion
 
-`accessibility.reduced_motion: bool`(기본 false). 활성 시:
+`accessibility.reduced_motion`의 기본값은 false다. 켜면 다음과 같이 동작한다.
 
-- **토스트** 페이드인/아웃 0ms — lifetime 동안 100%, 만료 즉시 0%.
-- **스피너**(`tasty-ui-widgets`) 회전 정지 → 3-dot 정적 표시.
-- **switch-number 오버레이** 등장/퇴장 페이드 0ms(즉시 표시/소거).
-- **모달 흔들기**(닫기 거부 피드백)는 아예 시작하지 않는다 — 창 자체를 움직이는 물리적 모션이라 모션 감소가 막으려는 것 그 자체다.
-- **modifier 힌트** 페이드는 생략하되 표시 지연은 유지(위 Modifier key hints 항 참조).
-- **터미널 콘텐츠**는 영향 없음([theme](../../design/systems/theme.md) "터미널 콘텐츠 애니메이션 0ms" 원칙상 이미 모션 없음).
+| 대상 | 모션 감소 시 동작 |
+|---|---|
+| 토스트 | 등장·소멸 페이드 0ms. 수명 동안 100%, 만료 즉시 0% |
+| Spinner | 회전을 멈추고 정적인 3개 점 표시 |
+| switch-number 오버레이 | 페이드 없이 즉시 표시·제거 |
+| 모달 흔들기 | 시작하지 않음 |
+| modifier-hint | 페이드만 생략하고 표시 지연 유지 |
+| 터미널 콘텐츠 | 원래 모션을 쓰지 않으므로 변화 없음 |
 
-값은 `Theme.reduced_motion` 이 실어 나르고 **위젯의 기본 동작이 그것을 읽는다** — 호출부가 넘기는 형태였을 때 실제로 넘기는 자리가 하나도 없어 설정이 무력했기 때문이다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)). 채우는 자리는 `Settings::theme_runtime()` 하나이고, 전역 `Theme` 설치 경로가 그것을 그대로 나른다. 위젯 쪽 override(`Spinner::reduced_motion`)는 실행 중 설정과 무관하게 두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
+`Settings::theme_runtime()`이 설정값을 만들고 전역 Theme 설치 경로가 `Theme.reduced_motion`에 전달한다. 위젯은 기본적으로 이 값을 읽는다. `Spinner::reduced_motion` 같은 개별 override는 갤러리에서 회전·정지 상태를 함께 보여 줄 때 사용한다.
 
-plugin 프로세스는 아직 이 값을 모른다(`ThemeWire` 에 필드 없음) — 닫는 비용의 대부분이 plugin 패치 버전 bump 이고 현재 plugin 이 그리는 모션 위젯이 0 이라, **닫지 않고 감시한다.**
-
-```bash
-# 분자 = plugin 이 그리는 Spinner / 모수 = 그릴 수 있는 번들 plugin(= tasty-ui-widgets 의존)
-echo "$(grep -rc 'Spinner::new()' --include='*.rs' crates/tasty-plugin-*/src | awk -F: '{s+=$2} END{print s+0}') \
-      / $(grep -l 'tasty-ui-widgets' crates/tasty-plugin-*/Cargo.toml | wc -l)"
-```
-
-분자가 0 이 아니게 되는 순간이 이 구멍이 실재가 되는 순간이고, 그때 `ThemeWire` 에 필드를 더한다. 모수를 함께 세는 이유는 분자만으로는 그 0 이 "위험이 없다" 인지 "볼 자리가 없다" 인지 갈리지 않기 때문이다.
+현재 `ThemeWire`에는 이 값이 없어 plugin 프로세스로 전달되지 않는다. plugin에 모션 위젯을 추가할 때는 호스트의 모션 감소 설정을 전달하는 방법도 함께 정해야 한다. 자세한 단위와 적용 범위는 [테마 가이드](../../design/systems/theme.md#모션-설정과-시간-단위)를 따른다.
 
 ### Modifier key hints
 
-`modifier_hint.enabled: bool`(기본 **true**). 접근성 탭의 두 번째 토글. **modifier 키를 홀드하면** 눌린 **조합을 포함하는(부분집합)** 조합의 단축키 목록 오버레이가 200ms 페이드(opacity 0.2→1.0)로 사이드바 하단에 뜨고, **키를 떼면 즉시 사라진다**. 조합을 좁혀 누르면(예: Ctrl→Ctrl+Shift) 목록도 **즉시 좁혀진다**. 표시 지연은 기본 **500ms**, 단 **Shift 단독** 홀드만 **1200ms**(Shift 는 대문자·기호 입력에 상시 눌려 스침이 잦으므로 타이핑 중 오버레이가 튀는 것을 억제 — [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)). 홀드를 유지한 채 **등록된 tasty 단축키를 실제로 실행**하면 그 시점부터 지연 타이머가 다시 시작된다(아직 표시되지 않았을 때만 — [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)). `reduced_motion` 이면 페이드는 생략되지만 **지연은 유지**된다(지연은 모션이 아니라 실수 스침 억제 게이트).
+`modifier_hint.enabled`의 기본값은 true다. 보조키를 누르고 기다리면 현재 누른 키를 모두 포함하는 단축키 조합을 보여 준다. 기본 위치는 사이드바 하단이다. 키를 놓으면 즉시 사라지고 Ctrl에서 Ctrl+Shift로 바꾸면 목록도 즉시 좁혀진다.
 
-Modal/Popup/Toast/Banner 어디에도 안 맞는 **5번째 오버레이 요소** — 키보드 포커스를 절대 안 받고(입력은 그대로 터미널로), **마우스만 소비**한다(드래그 스트립으로 이동 · 테두리/코너 그립으로 리사이즈 · X 로 이번 홀드 세션 dismiss · 리스트 세로 휠 스크롤). `modifier_hint_hovered` 플래그가 `mouse.rs` 4지점에서 하위 surface 로의 전파(click-to-activate/휠/드래그)를 막는다([input-layer](../../architecture/input-layer.md)).
+표시 지연은 500ms이며 Shift 단독만 1200ms다. 타이핑 중 자주 누르는 Shift 때문에 안내가 뜨는 것을 줄이기 위한 구분이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)). 처음 누를 때 타이머를 시작하고 조합 변경만으로는 다시 시작하지 않는다. 현재 조합으로 지연을 계산하므로 Shift 대기 중 다른 보조키를 추가하면 500ms 기준을 적용한다.
 
-- **휠 스크롤(modifier 무시)**: 이 오버레이는 **modifier 를 홀드한 채** 떠 있으므로 egui 의 기본 처리(`Ctrl+휠`=zoom, `Shift+휠`=가로 스크롤)로는 세로 `ScrollArea` 가 안 움직인다. `modifier_free_wheel_y()` 가 포인터가 패널 위일 때 raw `MouseWheel` 이벤트를 modifier 무관하게 다시 읽어(egui 와 동일 단위 스케일) 세로 성분만 `scroll_with_delta` 로 주입한다 → **어떤 modifier 를 눌러도 휠은 순수 세로 스크롤**. alt/option 단독은 egui 가 이미 세로로 처리하므로 이중 스크롤을 피해 Ctrl·Cmd·Shift 홀드 시에만 주입.
+아직 표시 전일 때 실제 키 입력으로 등록된 단축키나 보조키 더블탭을 실행하면 타이머를 다시 시작한다. 명령 팔레트 같은 다른 실행 경로에는 적용하지 않는다. 기본 등장 페이드는 200ms(opacity 0.2→1.0)이며 모션 감소를 켜도 표시 지연은 유지한다.
 
-- **콘텐츠**: `build_hint_sections(held: Combo, …)`(modifier-hint 콘텐츠 모델) — 눌린 4축 조합 `held` 를 부분집합으로 포함하는 조합(`combos_containing_all`, `Combo::contains_all`)만 노출. 고정 호스트 액션 + 사용자 스크립트 + 특수 역할(탭/워크스페이스 전환·마우스 캡처 우회·링크 열기)을 조합 크기·우선순위로 정렬. 다축 홀드 시 첫 섹션이 홀드 조합 자신이라 헤더와 일치. 빈 조합(바인딩·역할 모두 없음)도 섹션을 **유지**하며, 오버레이가 ChordHead 아래에 muted "바인딩 없음" 플레이스홀더(`modifier_hint.empty`, 키캡·wash·글리프 없음, min-height 20px·내부 간격 3px)를 그린다 — 미할당 조합을 홀드해도 패널이 뜨고 부재를 명시([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)). plugin 단축키 노출은 후속 배선(PluginManager 가 App 소유라 draw 경로 미도달).
-- **ChordHead 키캡**: `combo_keycap_parts`(`modifier_hint_overlay.rs`)가 `GeneralSettings::{alt,option,shift}_display_style` 이 `"symbol"` 인 축을 텍스트("⌘"/"⌥"/"⇧") 대신 벡터 아이콘(`tasty_icons::{CMD_KEY,OPTION_KEY,SHIFT_KEY}`)으로 그린다 — egui 폰트 fallback 체인에 없는 glyph 라 텍스트로 두면 tofu box 로 깨지기 때문([key-mapping.md](../../design/policies/key-mapping.md) "symbol 표시" 참고). `kbd_parts`(`tasty-ui-widgets`)가 텍스트/아이콘 키캡을 같은 배경·테두리로 렌더링.
-- **홀드 판정**: winit `ModifiersChanged`(실사용자 입력)만 반영 — IPC/CLI 로 강제 표시 불가(원칙1). `held: Option<Combo>` 가 현재 눌린 4축을 그대로 담고, 조합이 바뀌면 `update_hold` 가 **항상 dirty** 를 반환해 즉시 좁힘. 타이머(`hold_since`)는 최초 press 에만 시작하고 **조합이 바뀌는 것만으로는** 리셋하지 않는다(ADR-0019) — 단 등록된 단축키가 **키 입력 경로**에서 실제로 소비되면(Command Palette 등 공용 진입점 제외 — 원칙1) 아직 표시 전인 홀드에 한해 `reset_reveal_timer_if_not_shown` 이 타이머를 다시 시작한다(ADR-0019). 창 포커스 상실 시 clear.
-- **표시 지연**: `reveal_delay_ms(held, theme)` 가 Shift 단독이면 `motion_hold_reveal_shift()`(1200ms), 그 외 `modhint_hold_delay()`(500ms, 생성 토큰). 매 프레임 재평가라 Shift 단독 대기 중 modifier 를 추가하면 지연이 500ms 로 떨어지고 경과가 넘었으면 즉시 표시. 두 값 모두 `Theme` 경유이며 위젯이 직접 리터럴을 쓰지 않는다 — 다만 **1200ms 쪽은 대응 디자인 토큰이 없어** 아직 `theme.rs` 에 손으로 남아 있다.
-- **지오메트리**: `modifier_hint.pos` / `modifier_hint.size`(`Option<(LogicalPx, LogicalPx)>`, 기본 `None`)에 영속. 기본 180×400, 최소 180×240. 사용자가 이동/리사이즈해 놓는 시점에 `UpdateSettings` 로 저장(사이드바 폭과 동일 성질, 전역 공유 + last-write-wins). 윈도우 축소로 화면 밖이 되어도 **저장값은 불변**이고 클램프는 렌더 단계 책임이다. 지오메트리는 접근성 의미가 아닌 오버레이 UI 상태라 `ModifierHintSettings`(별도 루트 섹션)에 둔다.
+패널은 키보드 포커스를 받지 않는다. 키 입력은 기존 대상에 전달하고, 이동·크기 조절·X 닫기·목록 스크롤에 필요한 마우스만 소비한다. X는 현재 보조키를 누르고 있는 동안만 패널을 숨긴다. `modifier_hint_hovered`가 `mouse.rs`의 네 입력 지점에서 하위 surface로 전달되지 않게 한다([입력 계층](../../architecture/input-layer.md)).
+
+휠은 보조키와 관계없이 세로 스크롤한다. egui는 Ctrl·Cmd 휠을 확대, Shift 휠을 가로 이동으로 해석하므로 `modifier_free_wheel_y()`가 패널 위의 raw MouseWheel을 같은 단위로 다시 읽어 세로 성분을 `scroll_with_delta`에 전달한다. Alt·Option만 누른 경우에는 egui의 세로 처리를 사용해 중복 스크롤을 피한다.
+
+목록은 `build_hint_sections`가 `combos_containing_all`·`Combo::contains_all`로 만든다. 호스트 액션, 사용자 스크립트, 탭·workspace 전환·마우스 캡처 우회·링크 열기 역할을 조합 크기와 우선순위로 정렬한다. 여러 키를 누르면 첫 섹션은 현재 조합과 같다. plugin 단축키는 아직 이 목록에 포함하지 않는다.
+
+바인딩과 역할이 없는 조합도 남겨 `modifier_hint.empty`로 표시한다. 키캡·아이콘·배경 없이 약한 텍스트를 사용하며 최소 높이는 20px, 내부 간격은 3px다. `combo_keycap_parts`는 표시 스타일이 symbol인 Alt·Option·Shift를 `CMD_KEY`·`OPTION_KEY`·`SHIFT_KEY` 벡터 아이콘으로 그린다. 해당 글리프가 폰트에 없을 때 빈 사각형이 되는 문제를 피한다([키 매핑](../../design/policies/key-mapping.md)).
+
+실제 키 상태는 winit `ModifiersChanged`에서만 읽는다. `held: Option<Combo>`는 네 보조키 상태를 보관하고 `update_hold`는 조합이 바뀌면 다시 그리도록 알린다. 창 포커스를 잃으면 비운다. `reveal_delay_ms`는 Theme의 `modhint_hold_delay()`와 `motion_hold_reveal_shift()`를 사용하며, 후자의 1200ms는 대응 디자인 토큰이 없어 수기 접근자에 남아 있다.
+
+위치와 크기는 `ModifierHintSettings`의 `pos`·`size`(`Option<(LogicalPx, LogicalPx)>`, 기본 None)에 저장한다. 기본 크기는 180×400, 최소는 180×240이다. 사용자가 옮기거나 크기를 바꿀 때 UpdateSettings로 저장하며 여러 창에서는 마지막 저장값을 사용한다. 창 축소로 화면 밖이 돼도 저장값은 바꾸지 않고 그릴 때 경계를 제한한다.
 
 ## 인터페이스
 
-- **사용자**: Settings Accessibility 탭 토글(`settings.accessibility.modifier_hint*`). 오버레이 표시는 실 modifier 홀드 · 드래그/리사이즈/X 는 사용자 마우스. i18n 키 `modifier_hint.*`(held / hide_tooltip / role.*).
-- **에이전트**: release 없음 — IPC/CLI 로 오버레이를 띄우거나 조작할 수 없다(원칙1, focus 독립성). **debug 빌드 한정** 검증용으로 `debug.modifier_hint.hold`(홀드 조합 force-state + 타이머 백데이트) / `debug.modifier_hint.state`(렌더 상태 덤프)가 있다([debug-ipc](../../dev-guide/debug-ipc.md)). `#[cfg(all(debug_assertions, feature = "gui"))]` 격리라 release 미노출.
+- **사용자**: Settings › Accessibility의 토글(`settings.accessibility.modifier_hint*`). 안내 문구는 `modifier_hint.*`를 사용한다.
+- **에이전트**: release에는 강제 표시·조작 API가 없다. GUI debug 전용 `debug.modifier_hint.hold`는 보조키와 타이머를 설정하고 `.state`는 표시 상태를 조회한다. `#[cfg(all(debug_assertions, feature = "gui"))]`로 격리한다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ## 관련
 
-- [settings](../settings/index.md) · [design/systems/toast](../../design/systems/toast.md) · [design/systems/theme](../../design/systems/theme.md) · [architecture/input-layer](../../architecture/input-layer.md) · [ubiquitous-language](../../concepts/ubiquitous-language.md)
+- [설정](../settings/index.md)
+- [modifier-hint](../../design/systems/modifier-hint.md)
+- [토스트](../../design/systems/toast.md) · [테마](../../design/systems/theme.md)
