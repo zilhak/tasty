@@ -1,29 +1,6 @@
-//! attach mesh mirror(`docs/dev-guide/attach-behavior.md` "MeshFullResendRequest 복구"
-//! 절) pane 의 로컬→원격 입력 forward("MeshInput 누적" 절).
-//!
-//! [`egui_mesh`](super::egui_mesh) 는 host 가 **자기 프로세스**의 plugin 을 IPC 로
-//! 구동하는 경로(로컬 `PluginManager`)다. 이 모듈은 그 대응이되 목적지가
-//! **네트워크**(attach 스트림)다 — attach client 가 mirror pane 위에서 캡처한 입력을
-//! `StreamControl::MeshContext`/`MeshInput` 으로 원격에 보내, 원격의 실제 plugin
-//! 프로세스를 구동시킨다.
-//!
-//! # egui_mesh 와의 차이
-//!
-//! - **bootstrap/pending_full 없음**: 원격 surface 는 이미 존재하므로 `surface.create`
-//!   가 필요 없고, 텍스처 delta 체인 복구는 서버측 명시 요청
-//!   ([`StreamControl::MeshFullResendRequest`],
-//!   `dispatch_pending_mesh_full_resend_forwards`)이 이미 별도로 담당한다.
-//! - **좌표/modifier 변환 재사용**: `mesh_local_point`/`mesh_modifiers`/
-//!   `mesh_theme_snapshot`/`map_button`/`key_wire_event`(모두 `egui_mesh.rs`)를 그대로
-//!   쓴다 — 로컬 마우스 이벤트가 attach mirror pane 위에 있든 로컬 plugin surface
-//!   위에 있든 동일한 물리 좌표계·modifier 상태이기 때문.
-//! - **App 경계를 건너는 2단계 forward**: `MainView`(이 모듈)는 `App.attach_client_sessions`
-//!   에 접근할 수 없다 — `CoreState`의 `pending_mesh_context_forward`/
-//!   `pending_mesh_input_forward` 큐에 쌓아두면, `App::about_to_wait`
-//!   (`attach_client.rs::dispatch_pending_mesh_context_forwards`/
-//!   `dispatch_pending_mesh_input_forwards`)가 다음 tick 에 drain 해 실제 네트워크
-//!   전송을 한다(`pending_resize_forward`/`dispatch_pending_resize_forwards` 와 동형 —
-//!   ADR-0022 패턴).
+//! 원격 mesh에 사용자 입력·컨텍스트를 전달한다. 좌표·modifier 변환은 로컬 mesh와 공유한다.
+//! MainView에서 CoreState 큐에 넣고 App이 attach 세션으로 전송한다.
+//! 원격 surface는 이미 존재하므로 생성하지 않으며 전체 텍스처 복구 요청은 별도 경로에서 처리한다.
 
 use winit::event::MouseButton;
 
@@ -35,8 +12,7 @@ use crate::model::{AttachMeshSurface, PhysicalPx, PhysicalRect};
 use super::MainView;
 use super::egui_mesh::{key_wire_event, map_button};
 
-/// 한 attach mesh surface 의 forward 추적 상태(dedup 용) — [`super::egui_mesh::MeshForwardState`]
-/// 의 축약판(모듈 doc "차이" 참고 — bootstrap/pending_full 없음).
+/// 원격 mesh에 마지막으로 보낸 컨텍스트와 다음에 보낼 입력.
 #[derive(Default)]
 pub(crate) struct AttachMeshForwardState {
     /// 마지막으로 보낸 (width_px, height_px, ppp.to_bits()). 변경 감지에 사용.
@@ -50,8 +26,7 @@ pub(crate) struct AttachMeshForwardState {
 }
 
 impl MainView {
-    /// (x, y) 물리 좌표가 attach mesh mirror surface 위에 있으면 (surface_id, rect) 반환.
-    /// [`super::egui_mesh::MainView::egui_mesh_target_at`]의 attach 대응.
+    /// 포인터 위치의 원격 mesh surface와 영역.
     pub(super) fn attach_mesh_target_at(&self, x: f32, y: f32) -> Option<(u32, PhysicalRect)> {
         let terminal_rect = self.compute_terminal_rect();
         for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
@@ -73,8 +48,7 @@ impl MainView {
         None
     }
 
-    /// 포커스된 surface 가 attach mesh mirror(`AttachMeshSurface`)면 그 surface_id 반환.
-    /// [`super::egui_mesh::MainView::focused_egui_mesh_surface_id`]의 attach 대응.
+    /// 포커스된 원격 mesh surface ID.
     pub(super) fn focused_attach_mesh_surface_id(&self) -> Option<u32> {
         let sid = self.state.focused_surface_id(&self.core_state)?;
         let surface = self.core_state.find_surface_by_id(sid)?;
@@ -123,8 +97,7 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
-    /// 포인터가 이 attach mesh surface 밖으로 나갔음을 1 회 forward.
-    /// [`super::egui_mesh::MainView::egui_mesh_push_pointer_gone`] 의 attach 대응.
+    /// 포인터가 대상 밖으로 나갔음을 다음 전송에 넣는다.
     pub(super) fn attach_mesh_push_pointer_gone(&mut self, surface_id: u32) {
         let st = self.attach_mesh_input.entry(surface_id).or_default();
         st.events.push(RawInputEventWire::PointerGone);
@@ -136,8 +109,7 @@ impl MainView {
         st.events.push(RawInputEventWire::Scroll { x: dx, y: dy });
     }
 
-    /// 키 누름을 attach mesh surface 에 누적. [`super::egui_mesh::MainView::egui_mesh_push_key`]
-    /// 와 동형(press-only — release 는 `handle_keyboard_input` 이 이미 걸러낸다).
+    /// 눌린 키를 누적한다. 뗌은 키보드 진입부에서 제외한다.
     pub(super) fn attach_mesh_push_key(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
         let modifiers = self.mesh_modifiers();
         let Some(ev) = key_wire_event(
@@ -174,12 +146,7 @@ impl MainView {
         st.events.push(RawInputEventWire::Ime { event });
     }
 
-    /// 활성 workspace 의 attach mesh mirror surface 들에 대해 geometry/theme/focus
-    /// 변경 또는 누적 입력이 있으면 `CoreState`의 forward 큐에 쌓는다. 실제 네트워크
-    /// 전송은 `App::about_to_wait`(`attach_client.rs`)가 다음 tick 에 수행한다(모듈
-    /// doc "App 경계를 건너는 2단계 forward" 참고). [`MainView::handle_redraw`] 가
-    /// 매 dirty frame 마다 부른다 — `PluginManager` 는 필요 없다(로컬에 plugin 프로세스가
-    /// 없다).
+    /// 변경된 영역·테마·포커스와 누적 입력을 App의 네트워크 전송 큐에 넣는다.
     pub(super) fn forward_attach_mesh_context(&mut self) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
@@ -204,7 +171,6 @@ impl MainView {
             }
         }
 
-        // layout 에서 사라진 surface 의 추적 상태 정리(존재 기반 — egui_mesh 와 동형).
         let existing = self.state.attach_mesh_surfaces_existing(&self.core_state);
         let live: std::collections::HashSet<u32> = existing.into_iter().collect();
         self.attach_mesh_input.retain(|sid, _| live.contains(sid));

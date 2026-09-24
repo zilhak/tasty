@@ -1,11 +1,5 @@
-//! Frame timing 집계 + 주기적 dump.
-//!
-//! 측정 segment 는 `gpu.rs::render()` 가 이미 측정 중인 `terminals_ms` /
-//! `gpu_total_ms` 와 `CellRenderer::draw_call_count()` 의 total. 매 N=`DUMP_EVERY`
-//! 프레임마다 p50/p99/max 를 `tracing::info!` 로 한 줄 dump 한다.
-//!
-//! Enable: `TASTY_LOG=tasty::gfx::perf=info`. 본체 기본 필터에서는 비활성이다.
-//! 변수 이름은 `RUST_LOG` 가 아니라 `TASTY_LOG` 다(`docs/dev-guide/crash-diagnostics.md`).
+//! 일정 프레임마다 렌더 시간·draw call·atlas 사용량을 기록한다.
+//! TASTY_LOG=tasty::gfx::perf=info로 켜며 기본 필터에서는 출력하지 않는다.
 
 use std::collections::VecDeque;
 

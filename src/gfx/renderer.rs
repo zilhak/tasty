@@ -1,49 +1,6 @@
-//! 셀 렌더러 — 터미널 격자를 GPU 인스턴스 버퍼로 쌓는 자리.
-//!
-//! **입력은 전부 인자로 온다.** 선택·vi 커서·링크 하이라이트·검색 강조·preedit 는
-//! 호출부가 만들어 넘기고, 이 모듈은 앱 상태를 조회하지 않는다.
-//!
-//! 그 입력 타입을 **어느 이름으로 부르는가**도 계약의 일부다. 선택은
-//! [`tasty_selection`], 링크는 [`tasty_terminal_link`], 폭 표는 [`tasty_cell_width`],
-//! 글리프 아틀라스는 [`tasty_font`], 사각형은 [`tasty_model`] — 전부 워크스페이스
-//! 크레이트를 직접 부른다. 본체의 `state::selection` · `adapters::ui::terminal_link`
-//! 재수출을 거치지 않는 이유는, 거치면 렌더러가 앱 상태·UI 어댑터를 보는 모양이
-//! **표기에 남기** 때문이다(타입은 이미 크레이트에 있는데도). 근거·재검토 조건은
-//! `docs/adr/0001-crate-dependency-boundaries.md`.
-//!
-//! 그래서 이 모듈이 부르는 본체 경로는 **`crate::cell_palette` 하나**다. 그것이
-//! 남은 것은 실수가 아니라 요구다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고
-//! (헤드리스 `debug.glyph_color` 가 같은 함수로 답한다), 그 공유를 깨지 않으려면
-//! 렌더러와 헤드리스 핸들러가 같은 자리를 봐야 한다. 재는 법:
-//!
-//! ```bash
-//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]\+:[[:space:]]*//'
-//! # 두 줄 — 둘 다 cell_palette 다
-//! ```
-//!
-//! **뒤의 `grep -v` 를 빼지 마라.** 좌변이 `.rs` 원문이라 앞 명령은 이 머리 주석의
-//! 산문까지 센다 — 그러면 잡음 둘이 상시로 섞여 회귀 한 줄과 안 갈린다. 뒤엣것이
-//! 내용이 `//` 로 시작하는 줄을 버린다. 좌변을 `use crate::` 로 좁히는 쪽이 더
-//! 간단해 보이지만 **그건 틀린다** — 이 모듈이 방금 지운 형태가 `use` 없이 본문에
-//! 박힌 `crate::selection::is_selected(...)` 였고, 좁힌 좌변은 그것을 못 본다
-//! (base `63a777ecc` 의 좌변 **다섯 파일** 전수에서 `use crate::` 는 10, 위 두 단계는
-//! 12 를 낸다. 차가 정확히 그 두 자리다). 블록 주석·문자열 리터럴 안의 `crate::` 는
-//! 그대로 세는데, 그건 더 많이 잡는 쪽이라 눈으로 한 번 갈라 읽으면 된다.
-//!
-//! **필터가 못 보는 것도 적어 둔다 — "조용한 통과가 없다" 고 말할 수 없다.**
-//! 패턴을 줄머리에 고정한 것은(`^[^:]*:[0-9]\+:` 뒤에서만 `//` 를 본다) 한 형태를
-//! 닫기 위해서다 — 고정 전에는 진짜 코드 줄이라도 후행 주석에 `파일:줄:` 인용이
-//! 들어 있으면 통째로 버려졌다(탐침 `pub const _P: bool = crate::state::FLAG;
-//! // see <파일>:99: // gui gate` 가 필터 뒤 0 이었다. 고정 뒤엔 남는다).
-//! 그래도 **`crate::` 라는 글자가 없는 본체 의존은 어떤 형태로도 안 보인다** —
-//! 탐침 둘로 쟀다: `use super::super::super::state::AppState;` 와
-//! `use crate as c;` + `c::state::AppState`, 둘 다 필터 뒤 목록에 안 나온다.
-//! 그 형태는 grep 으로 못 막으니 리뷰가 봐야 한다.
-//!
-//! ★ 저 좌변은 `renderer.rs` + `renderer/` **아래 전부**다 — 두 파일이 아니다.
-//! `renderer/pipeline.rs` 에도 `use crate::` 가 한 줄 있고(`shaders.rs`·`types.rs` 는
-//! 0 이다), 그것을 빼고 세면 두 수가 나란히 1 씩 낮게 나온다. 차이 2 는 그래도 같아서
-//! 결론이 안 흔들리는데, 그래서 **틀린 절대값이 조용히 살아남는다.**
+//! 터미널 격자를 GPU 인스턴스 버퍼로 만든다. 강조·선택 등은 인자로 받아 앱 상태를 조회하지 않는다.
+//! 입력 타입은 소유 크레이트를 직접 참조한다. 셀 색 해석은 헤드리스와 같은 cell_palette를 사용한다.
+//! 의존 경계: docs/adr/0001-crate-dependency-boundaries.md.
 
 mod line_render;
 mod overlay;
@@ -134,8 +91,6 @@ impl RenderPreedit {
     }
 }
 
-// ---- Cell Renderer ----
-
 pub struct CellRenderer {
     bg_pipeline: wgpu::RenderPipeline,
     glyph_pipeline: wgpu::RenderPipeline,
@@ -146,8 +101,7 @@ pub struct CellRenderer {
     glyph_bind_group: wgpu::BindGroup,
     bg_instance_buffer: wgpu::Buffer,
     glyph_instance_buffer: wgpu::Buffer,
-    /// Current GPU buffer capacity in instances. Grows dynamically when
-    /// the accumulated frame exceeds it (R1: avoid silent clamp regression).
+    /// 프레임 데이터가 넘으면 늘리는 GPU 인스턴스 버퍼 용량.
     max_instances: usize,
     pub font_config: FontConfig,
     pub atlas: GlyphAtlas,
@@ -161,9 +115,7 @@ pub struct CellRenderer {
     /// `append_terminal_viewport` call. Set at the start of accumulation
     /// for a surface and read by per-cell push helpers.
     pub(crate) current_viewport_offset: [f32; 2],
-    /// Per-frame draw call counters (set inside `render_all`). `Cell` 으로
-    /// interior mutability 를 부여해 `&self` 시그니처를 유지한 채
-    /// `wgpu::RenderPass<'a>` 와 묶인 lifetime 충돌을 회피한다.
+    /// render_all에서 기록한 draw call 수. RenderPass 대여와 겹치지 않도록 Cell로 갱신한다.
     last_frame_bg_draws: Cell<u32>,
     last_frame_glyph_draws: Cell<u32>,
 }
@@ -219,18 +171,10 @@ impl CellRenderer {
         let glyph_start = self.glyph_instances.len() as u32;
         self.current_viewport_offset = [viewport.x.value(), viewport.y.value()];
 
-        // Lock the shared terminal state once for the whole viewport render
-        // (surface + scrollback + cursor/modes). The parser thread's per-chunk
-        // lock window is the only contention; a visible terminal is idle enough
-        // that this is uncontended in practice (ADR-0013).
+        // viewport 전체를 일관되게 읽도록 터미널 상태 잠금을 한 번 잡는다.
         terminal.with_render_view(|view| {
-            // DECSCNM (reverse screen): swap the default fg/bg for the whole
-            // viewport. Cell-level attributes are unaffected; only the default
-            // (unstyled) colors invert. Gated by `reverse_screen_enabled`: when
-            // the user turns the setting off, the mode flag stays tracked (so
-            // program queries still answer correctly) but we skip the visual
-            // swap, suppressing the full-screen flash some shells emit as a
-            // visible bell.
+            // reverse_screen_enabled일 때만 기본 전경·배경을 바꾼다.
+            // 꺼져 있어도 터미널 모드 자체는 유지해 조회 결과는 바꾸지 않는다.
             let (default_bg, default_fg) = if reverse_screen_enabled && view.screen_reverse() {
                 (default_fg, default_bg)
             } else {
@@ -335,7 +279,6 @@ impl CellRenderer {
                     }
                 }
 
-                // Right + bottom gutter.
                 let off = self.current_viewport_offset;
                 for row_idx in 0..rows {
                     self.bg_instances.push(BgInstance {
@@ -361,8 +304,7 @@ impl CellRenderer {
         self.surface_ranges.push((*viewport, bg_range, glyph_range));
     }
 
-    /// Append instances for the current-screen path (no scrollback).
-    /// Equivalent to the previous `prepare_with_bg`, but operates in append mode.
+    /// 스크롤백이 아닌 현재 화면의 인스턴스를 추가한다.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 리팩터 후보 — GPU 셀 인스턴스 append(스타일/커서/셀 분기 밀집). hot path 라 분해 신중
     fn fill_surface(
@@ -672,9 +614,7 @@ impl CellRenderer {
         }
     }
 
-    /// Resize the per-instance GPU buffers if the accumulated frame exceeds
-    /// current capacity, then upload the frame's instance data in a single
-    /// `write_buffer` call per kind. (R1: dynamic grow avoids silent clamp.)
+    /// 필요한 만큼 버퍼를 늘리고 종류별로 프레임 데이터를 한 번 업로드한다.
     pub fn flush_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let bg_len = self.bg_instances.len();
         let glyph_len = self.glyph_instances.len();

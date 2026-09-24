@@ -14,10 +14,9 @@ impl CellRenderer {
         let font_config = FontConfig::with_options(font_size, font_family, "", 1.0);
         let atlas = GlyphAtlas::new(device);
 
-        // Max instances for large displays (e.g., 4K at small font: ~500 cols × 250 rows)
+        // 큰 화면을 위한 초기 용량. 필요하면 업로드 때 늘린다.
         let max_instances = 500 * 250;
 
-        // Uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cell_uniforms"),
             size: std::mem::size_of::<Uniforms>() as u64,
@@ -25,7 +24,6 @@ impl CellRenderer {
             mapped_at_creation: false,
         });
 
-        // Instance buffers
         let bg_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("bg_instances"),
             size: (max_instances * std::mem::size_of::<BgInstance>()) as u64,
@@ -40,7 +38,6 @@ impl CellRenderer {
             mapped_at_creation: false,
         });
 
-        // Background bind group layout (uniforms only)
         let bg_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("bg_bind_group_layout"),
@@ -56,7 +53,6 @@ impl CellRenderer {
                 }],
             });
 
-        // Glyph bind group layout (uniforms + texture + sampler)
         let glyph_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("glyph_bind_group_layout"),
@@ -90,7 +86,6 @@ impl CellRenderer {
                 ],
             });
 
-        // Create bind groups
         let bg_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("bg_bind_group"),
             layout: &bg_bind_group_layout,
@@ -119,7 +114,6 @@ impl CellRenderer {
             ],
         });
 
-        // Background pipeline
         let bg_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("bg_shader"),
             source: wgpu::ShaderSource::Wgsl(BG_SHADER.into()),
@@ -180,7 +174,6 @@ impl CellRenderer {
             cache: None,
         });
 
-        // Glyph pipeline
         let glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("glyph_shader"),
             source: wgpu::ShaderSource::Wgsl(GLYPH_SHADER.into()),
@@ -267,7 +260,6 @@ impl CellRenderer {
             cache: None,
         });
 
-        // Write initial uniforms
         let uniforms = Uniforms {
             cell_size: [
                 font_config.metrics.cell_width,
@@ -314,7 +306,6 @@ impl CellRenderer {
             .reconfigure(font_size, font_family, custom_font_path, line_height);
         self.atlas = GlyphAtlas::new(device);
 
-        // Rebuild the glyph bind group with the new atlas texture
         let glyph_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("glyph_bind_group_layout"),
@@ -366,7 +357,6 @@ impl CellRenderer {
             ],
         });
 
-        // Update uniform buffer with new cell size
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,

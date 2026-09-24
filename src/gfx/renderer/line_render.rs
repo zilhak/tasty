@@ -35,27 +35,23 @@ impl CellRenderer {
     ) {
         let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg, default_fg, ansi);
 
-        // Selection: override bg color
         if let Some((sel, sel_bg)) = selection
             && tasty_selection::is_selected(col_idx, absolute_row, sel)
         {
             bg_color = composite_over(*sel_bg, bg_color);
         }
-        // vi copy mode cursor cell: selection 보다 우선하여 cursor 위치를 강조.
         if let Some((pt, cursor_bg)) = vi_cursor
             && pt.col == col_idx
             && pt.absolute_row == absolute_row
         {
             bg_color = composite_over(*cursor_bg, bg_color);
         }
-        // Link highlight: override both bg and fg for hovered link spans
         if let Some(link) = link
             && link.covers(col_idx, absolute_row)
         {
             bg_color = composite_over(link.bg, bg_color);
             fg_color = link.fg;
         }
-        // Search match highlight
         if let Some(sh) = search {
             for (i, m) in sh.matches.iter().enumerate() {
                 if m.row == absolute_row && col_idx >= m.col_start && col_idx < m.col_end {

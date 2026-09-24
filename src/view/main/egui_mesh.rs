@@ -1,33 +1,7 @@
-//! egui-mesh surface 의 host→plugin 렌더 컨텍스트 forward (A1-S7).
-//!
-//! host 는 egui-mesh surface 마다 `surface.set_context { width_px, height_px,
-//! pixels_per_point, raw_input }` 를 owning plugin 에 보낸다. plugin 은 그 컨텍스트로
-//! 자기 프로세스에서 egui 를 tessellate 한 mesh 를 [`PluginEvent::PaintFrame`] 으로
-//! 비동기 회신하고, host 합성기(`gpu/egui_mesh_prepare.rs`)가 surface 영역에 그린다.
-//!
-//! # 언제 보내는가 (research-a1 §9-5)
-//!
-//! 정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막으로 보낸
-//! (크기, ppp) 를 추적해 **다음 중 하나**일 때만 보낸다:
-//! - 크기/ppp 변경 (리사이즈·DPI 전환)
-//! - 누적된 사용자 입력 (클릭/스크롤/포인터 이동)
-//! - 아직 한 번도 paint 받지 못함 (첫 bootstrap, 또는 plugin crash 후 재bootstrap)
-//!
-//! plugin 이 paint 를 보내면(=`egui_mesh_frame` 존재) bootstrap 플래그를 풀어, 이후
-//! crash 로 frame 이 사라지면 자동으로 다시 bootstrap 한다(§9-7 crash 격리와 맞물림).
-//!
-//! # identity 경계 (불가침 원칙 1·3)
-//!
-//! set_context 송신 자체는 *에이전트 행동이 아니라 host 렌더 파이프라인의 일부*다 —
-//! 사용자 상태(focus/스크롤/선택)에 부수효과를 주지 않는다. `raw_input` 에는 host 가
-//! 받은 **실제 사용자 입력만** 담는다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는
-//! 진입로는 만들지 않는다(release 에 없음). 입력 주입이 필요하면 debug 격리만
-//! (`docs/dev-guide/debug-ipc.md`).
-//!
-//! # 좌표 (typed-length)
-//!
-//! host 좌표는 [`PhysicalPx`]. egui 경계로 넘길 때 ppp 로 나눠 surface-local 논리
-//! 포인트(좌상단 0,0)로 변환한다. wire 의 좌표는 egui interop ABI 미러라 raw f32.
+//! surface별 크기·입력·테마·포커스를 플러그인에 보내고 비동기 paint를 받는다.
+//! 초기 생성·전체 재전송·무효화 요청도 여기서 처리한다.
+//! raw_input은 사용자 입력이며 강제 주입은 debug 전용이다.
+//! 물리 화면 좌표를 ppp로 나누어 surface 기준 논리 좌표로 보낸다.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -49,30 +23,16 @@ use tasty_ipc::stream_hub::StreamHub;
 
 use super::MainView;
 
-/// `set_context.raw_input.time` 로 보낼 공유 기준시각의 경과 초. egui 는 두 연속
-/// pass 의 `time` **차이**만으로 dt 를 계산하므로 절대 기준(epoch)은 의미가 없고
-/// 단조 증가만 보장하면 된다 — 프로세스 시작 시 1 회 고정한 [`Instant`] 로부터의
-/// 경과 시간을 쓴다.
-///
-/// 이 값을 항상 `None` 으로 보내면(과거 동작) egui 가 `predicted_dt`(1/60초) 로만
-/// dt 를 추정한다 — idle-invalidate 재forward 처럼 실제 forward 간격이 그보다 훨씬
-/// 길어도 egui 는 짧은 프레임으로 착각해, 스크롤 스무딩의 지수완화 계수가 실제보다
-/// 느리게 수렴한다(`docs/dev-guide/egui-mesh-channel.md` "plugin self-repaint" 참조).
+/// 두 egui 프레임 사이의 실제 경과 시간을 계산하도록 공통 Instant 기준의 초를 보낸다.
 fn mesh_time_now() -> f64 {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     EPOCH.get_or_init(Instant::now).elapsed().as_secs_f64()
 }
 
-/// 한 egui-mesh surface 의 host 측 forward 추적 상태.
-///
-/// layout 에 존재하는 동안 유지된다(가시성 무관) — 비가시 surface 의 full 재전송
-/// 요청(`MeshForwardCommon::pending_full`)을 마지막 geom/plugin_id 로 보낼 수 있어야
-/// 하기 때문. surface 가 닫히면 정리된다.
+/// 숨겨진 surface도 전체 재전송에 마지막 컨텍스트가 필요해 레이아웃에 존재하는 동안 상태를 유지한다.
 #[derive(Default)]
 pub(crate) struct MeshForwardState {
-    /// 세 mesh 채널(surface·popup·banner)이 공유하는 forward 상태 — 마지막 geom/Theme,
-    /// bootstrap 래치, full 재전송 요청. **칸도 dirty 판정도 그 타입 한 곳에서 나온다**
-    /// (`plugin_bridge::MeshForwardCommon`). 아래 필드들은 surface 만의 것이다.
+    /// surface·팝업·배너의 공용 전송 상태.
     common: MeshForwardCommon,
     /// 다음 set_context 에 실어 보낼 누적 입력 이벤트(순서 보존).
     events: Vec<RawInputEventWire>,
@@ -82,21 +42,17 @@ pub(crate) struct MeshForwardState {
     /// 직전 forward 의 focused 상태. 포커스만 바뀌어도(입력·크기·테마 무변) set_context
     /// 재전송을 트리거하기 위해 추적한다 — markdown 등 focused/unfocused 배경 즉시 전환.
     last_focused: Option<bool>,
-    /// plugin 이 `SurfaceInvalidated` 로 알렸다 — 다음 forward 게이트에서
-    /// 무입력 재-forward 를 1회 트리거한다(송신 시 소거). idle(입력 무) 상태에서도
-    /// 파일 변경이 반영되게 하는 유일한 진입점 — `App::event_handler` 가
-    /// `mark_surface_invalidated` 로 세팅한다.
+    /// SurfaceInvalidated를 받으면 입력 변화 없이도 다음 컨텍스트를 한 번 보낸다.
     invalidated: bool,
 }
 
 impl MeshForwardState {
-    /// 렌더 prepare 의 full 재전송 요청을 기록한다 — 다음 forward 에서 소비된다.
-    /// (redraw 가 gpu 요청 대기열을 drain 하며 호출.)
+    /// 다음 전송에 전체 텍스처 요청을 포함한다.
     pub(crate) fn set_pending_full(&mut self) {
         self.common.pending_full = true;
     }
 
-    /// idle 상태에서 plugin 이 알린 파일 변경을 다음 forward 게이트에 무장한다.
+    /// 플러그인의 변경 알림을 다음 전송에 반영한다.
     pub(crate) fn set_invalidated(&mut self) {
         self.invalidated = true;
     }
@@ -114,10 +70,7 @@ struct MeshTarget {
 }
 
 impl MainView {
-    /// (x, y) 물리 좌표가 egui-mesh surface 위에 있으면 (surface_id, plugin_id, rect) 반환.
-    ///
-    /// 합성기(`collect_egui_mesh_targets`)와 동일하게 `surface_regions` + `EguiMeshSurface`
-    /// 다운캐스트로 판정해, 입력 좌표 변환이 합성 좌표와 같은 출처를 공유한다.
+    /// 합성과 같은 surface 영역으로 포인터 대상을 찾는다.
     pub(super) fn egui_mesh_target_at(
         &self,
         x: f32,
@@ -140,9 +93,7 @@ impl MainView {
         None
     }
 
-    /// 현재 resolved 전역 Theme 을 wire 스냅샷으로. plugin 이 host 와 동일 Theme 을
-    /// 재구성하도록 색 집합 + is_light + UI zoom 을 담는다(sizing 은 plugin 이 zoom 으로
-    /// 재도출). 매 forward 마다 1회 만들어, 테마 변경을 set_context 재송신 트리거로 쓴다.
+    /// wire에 전달할 색·is_light·UI 배율. 현재 reduced_motion은 포함하지 않는다.
     pub(super) fn mesh_theme_snapshot(&self) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
@@ -152,9 +103,7 @@ impl MainView {
         }
     }
 
-    /// 현재 modifier 상태를 wire 형태로. `pub(super)` — attach mesh mirror(`docs/dev-guide/
-    /// attach-behavior.md` "MeshInput 누적" 절, `attach_mesh_input.rs`)의 로컬 입력
-    /// 캡처가 동일 좌표계/modifier 계산을 재사용한다.
+    /// 로컬·원격 mesh가 공유하는 modifier 변환.
     pub(super) fn mesh_modifiers(&self) -> ModifiersWire {
         let m = &self.base.modifiers;
         let cmd = if cfg!(target_os = "macos") {
@@ -171,8 +120,7 @@ impl MainView {
         }
     }
 
-    /// 물리 window 좌표를 surface-local 논리 포인트로 변환. `pub(super)` —
-    /// `attach_mesh_input.rs` 재사용.
+    /// 화면 물리 좌표를 surface 기준 논리 좌표로 바꾼다.
     pub(super) fn mesh_local_point(&self, rect: PhysicalRect, x: f32, y: f32) -> (f32, f32) {
         let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
         let local_x = PhysicalPx(x) - rect.x;
@@ -222,9 +170,7 @@ impl MainView {
             .push(RawInputEventWire::PointerMoved { x: lx, y: ly });
     }
 
-    /// 포인터가 이 egui-mesh surface 밖으로 나갔음을 1 회 forward — 좌표
-    /// 없이(`PointerGone` 은 위치 필드가 없다) hover 상태 해제만 알린다. `mouse.rs`
-    /// 의 `update_mesh_hover` 가 hover 대상 전환 시점에 호출한다.
+    /// 이전 hover 대상에 PointerGone을 누적한다.
     pub(super) fn egui_mesh_push_pointer_gone(&mut self, surface_id: u32) {
         let st = self.egui_mesh.entry(surface_id).or_default();
         st.events.push(RawInputEventWire::PointerGone);
@@ -236,21 +182,13 @@ impl MainView {
         st.events.push(RawInputEventWire::Scroll { x: dx, y: dy });
     }
 
-    /// 복사 단축키(Ctrl+C 등, host keybinding `copy` 매칭)를 egui-mesh surface 에
-    /// 전달 — `egui_copy` capability 를 가진 kind(예: markdown)의 텍스트 선택을
-    /// plugin 자신의 egui `Context` 가 복사하도록 `Copy` wire 이벤트를 누적한다.
-    /// `adapters::ui::input::shortcuts::copy_paste::handle_copy_shortcut` 이
-    /// `view::main` 밖에서 호출하므로 `pub(crate)`.
+    /// 플러그인 자체 선택을 복사하도록 Copy 이벤트를 누적한다.
     pub(crate) fn egui_mesh_push_copy(&mut self, surface_id: u32) {
         let st = self.egui_mesh.entry(surface_id).or_default();
         st.events.push(RawInputEventWire::Copy);
     }
 
-    /// 포커스된 surface 가 egui-mesh(plugin 렌더 markdown/image 등)면 그 surface_id 반환.
-    /// terminal·host-egui surface 는 `None` — 키/Text/IME forward 대상 판정에 쓴다.
-    /// `downcast` 로 실제 [`EguiMeshSurface`] 인지 확인하므로, 임의 plugin 의 `Kind`
-    /// surface(RemoteSurface 등)로 잘못 forward 되지 않는다. `copy_paste.rs` 가
-    /// `view::main` 밖에서도 호출하므로 `pub(crate)`.
+    /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
     pub(crate) fn focused_egui_mesh_surface_id(&self) -> Option<u32> {
         let sid = self.state.focused_surface_id(&self.core_state)?;
         let surface = self.core_state.find_surface_by_id(sid)?;
@@ -260,10 +198,7 @@ impl MainView {
             .map(|_| sid)
     }
 
-    /// 키 누름을 egui-mesh surface 에 누적(Key wire 이벤트). 매핑 불가한 키는 무시.
-    /// press-only — release 는 [`MainView::handle_keyboard_input`] 이 이미 걸러낸다
-    /// (egui `TextEdit` 은 press + `RawInput.modifiers`(매 set_context 최신)로 편집·
-    /// 네비게이션을 처리하므로 release 없이도 동작).
+    /// 매핑 가능한 키 누름을 누적한다. 뗌은 키보드 진입부에서 제외한다.
     pub(super) fn egui_mesh_push_key(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
         let modifiers = self.mesh_modifiers();
         let Some(ev) = key_wire_event(
@@ -290,19 +225,13 @@ impl MainView {
         });
     }
 
-    /// IME 조합 이벤트를 egui-mesh surface 에 누적(라이브 preedit + commit). plugin 의
-    /// `TextEdit` 이 조합 중간 상태를 인라인 렌더한다(commit-only 가 아닌 라이브 표시).
+    /// 조합 중 문자열과 확정 문자열을 플러그인에 전달한다.
     pub(super) fn egui_mesh_push_ime(&mut self, surface_id: u32, event: ImeWire) {
         let st = self.egui_mesh.entry(surface_id).or_default();
         st.events.push(RawInputEventWire::Ime { event });
     }
 
-    /// plugin 이 `SurfaceInvalidated` 로 알린 surface 를 dirty 표시한다. 다음
-    /// forward 게이트에서 무입력 재-forward 를 트리거해, idle(입력 무) 상태에서도 파일
-    /// 변경이 `RELOAD_CHECK_INTERVAL_SECS` 내 반영되게 한다. 이 View 의 layout 에 없는
-    /// surface_id 는 무시(`App` 이 모든 window 의 View 를 순회하며 호출하므로 다른
-    /// window 소관일 수 있다). 반환값은 `mark_dirty()`(redraw 요청)를 걸지 판단하는 데
-    /// 쓴다.
+    /// 이 창의 surface가 무효화됐으면 다음 컨텍스트 전송을 요청한다. 다른 창의 ID는 무시한다.
     pub(crate) fn mark_surface_invalidated(&mut self, surface_id: u32) -> bool {
         let exists = self
             .state
@@ -325,14 +254,9 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
         let focused = self.state.focused_surface_id(&self.core_state);
-        // modifier 는 surface 무관 — 루프 전에 1회 계산(차용 충돌 회피).
         let modifiers = self.mesh_modifiers();
-        // 현재 resolved Theme 스냅샷을 1회 만든다(surface 무관). plugin 이 host 와 동일
-        // Theme 으로 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(ADR-0028 parity).
         let current_theme = self.mesh_theme_snapshot();
 
-        // 대상 수집 (surface_id, plugin_id, 물리 rect, kind, file, display_name).
-        // kind/file/display_name 은 bootstrap 시 plugin 에 보낼 surface.create params 용.
         let mut targets: Vec<MeshTarget> = Vec::new();
         for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
             &self.core_state,
@@ -353,18 +277,14 @@ impl MainView {
             }
         }
 
-        // layout(전 workspace, 비활성 탭 포함)에서 사라진 surface 의 추적 상태 정리.
-        // 가시성 기반이 아니라 존재 기반 — 비가시 surface 의 pending_full 요청을
-        // 마지막 geom 으로 보낼 수 있도록 추적 상태를 보존한다.
+        // 숨겨진 surface 상태도 보존하고 레이아웃에서 사라진 것만 정리한다.
         let existing = self.state.egui_mesh_surfaces_existing(&self.core_state);
         let live: HashSet<u32> = existing.iter().map(|e| e.0).collect();
         self.egui_mesh.retain(|sid, _| live.contains(sid));
 
         let visible: HashSet<u32> = targets.iter().map(|t| t.sid).collect();
 
-        // IME 후보창 위치 캐시는 매 redraw 새로 채운다 — 포커스가 mesh surface 를 떠나면
-        // 값이 사라져야 터미널 갈래가 다시 후보창 위치를 정한다(stale 값이 남으면 후보창이
-        // 방금 떠난 surface 자리에 뜬다).
+        // 포커스가 바뀌면 이전 IME 위치가 남지 않게 매 프레임 새로 채운다.
         self.egui_mesh_ime_cursor_area = None;
 
         for MeshTarget {
@@ -383,19 +303,13 @@ impl MainView {
 
             let st = self.egui_mesh.entry(sid).or_default();
             st.plugin_id = Some(plugin_id.clone());
-            // 건강 상태 반영 + 빈 화면 워치독 — 판정도 경고문도 세 채널 공용이다
-            // (`MeshForwardCommon::watch_blank`). frame 이 보이면 bootstrap 무장을 풀고,
-            // bootstrap 후 유예를 넘기도록 frame 이 없으면 1회 경고한다.
             st.common.watch_blank(
                 has_frame,
                 format_args!("surface {sid} (kind '{kind}', plugin '{plugin_id}')"),
                 &plugin_id,
             );
             let is_focused = focused == Some(sid);
-            // OS IME 후보창 위치 — plugin 이 알려온 커서 영역(콘텐츠 로컬)을 창 좌표로
-            // 올려 캐시한다. 아래 dirty 판정의 조기 `continue` **앞**이어야 한다: 조합 중
-            // 화면이 정적이면(입력·geom·theme 무변) 그 `continue` 를 타는데, 그때도 후보창
-            // 위치는 계속 유효해야 한다.
+            // 전송을 생략할 프레임도 IME 위치는 필요하므로 조기 반환 전에 갱신한다.
             if is_focused
                 && let Some(ime) = mgr.egui_mesh_frame(sid).and_then(|f| f.ime_cursor.as_ref())
             {
@@ -407,11 +321,7 @@ impl MainView {
             let need_bootstrap = st.common.need_bootstrap(has_frame);
             let theme_changed = st.common.theme_changed(&current_theme);
             let need_full = st.common.pending_full;
-            // 포커스 변화만으로도 재forward — 입력 없이 포커스만 잃는 경우(다른 surface
-            // 클릭 등)에 markdown 배경이 focused 로 잔류하지 않도록 (B).
             let focus_changed = st.last_focused != Some(is_focused);
-            // idle 상태에서 plugin 이 파일 변경을 알렸다(`SurfaceInvalidated`) — 입력/geom/theme/focus
-            // 무변이어도 이 무입력 재-forward 로 다음 paint 의 poll_reload 가 돈다.
             let invalidated = st.invalidated;
 
             if !(geom_changed
@@ -431,9 +341,7 @@ impl MainView {
             st.last_focused = Some(is_focused);
             st.invalidated = false;
 
-            // 첫 bootstrap(아직 paint 못 받음): set_context 직전에 surface.create 를
-            // 먼저 보낸다 — plugin 이 생성 params(file 등)를 받아 콘텐츠를 적재한 뒤
-            // 같은 채널로 도착하는 set_context 로 렌더하게 한다(create→set_context 순서 보장).
+            // 생성 params가 먼저 도착하도록 set_context보다 surface.create를 먼저 보낸다.
             if need_bootstrap {
                 mgr.send_egui_mesh_surface_create(
                     &plugin_id,
@@ -461,10 +369,7 @@ impl MainView {
             mgr.send_surface_set_context(&plugin_id, &params);
         }
 
-        // 비가시 surface 의 full 재전송 요청 — 렌더 prepare 가 비가시 디코드 중 체인
-        // 단절을 감지한 경우다. 마지막으로 보낸 geom/theme 으로 빈 입력 set_context 를
-        // 보내 plugin 이 전체 텍스처 상태를 동봉한 frame 을 재송신하게 한다. geom 이
-        // 활성화 시점과 다르면 활성화가 다시 정규 set_context 를 보내므로 무해하다.
+        // 숨겨진 surface의 전체 텍스처 요청은 마지막 영역·테마와 빈 입력으로 보낸다.
         for (sid, st) in self.egui_mesh.iter_mut() {
             if !st.common.pending_full || visible.contains(sid) {
                 continue;
@@ -472,8 +377,6 @@ impl MainView {
             let (Some((w, h, ppp_bits)), Some(plugin_id)) =
                 (st.common.last_geom, st.plugin_id.as_ref())
             else {
-                // 아직 한 번도 forward 되지 않은 surface (frame 도 없음) — bootstrap 이
-                // 첫 활성화에서 자연-full frame 을 만들므로 요청이 필요 없다.
                 st.common.pending_full = false;
                 continue;
             };
@@ -496,24 +399,9 @@ impl MainView {
         }
     }
 
-    /// attach mesh mirror(`docs/dev-guide/attach-behavior.md` "frame 소비·forward
-    /// (gui-as-server)" 절) 구독자에게 로컬 redraw 가 만든 `EguiMeshFrame` 을 그대로
-    /// 중계한다(GUI가 attach 서버인 경우).
-    ///
-    /// [`forward_egui_mesh_context`]가 화면에 보이는 surface 의 `set_context` 를 매 프레임
-    /// 권위 있게 구동하므로, 이 함수는 별도 `set_context` 를 보내지
-    /// 않고 **이미 만들어진 frame 바이트를 읽어 StreamHub 로 relay** 할 뿐이다 — 로컬
-    /// authoritative loop 와 경합하지 않는다. 예외는 두 가지:
-    ///
-    /// - attach 구독 대상이 로컬에서 **한 번도 렌더되지 않은** surface(다른 탭/워크스페이스에
-    ///   있어 authoritative loop 의 대상 목록에 전혀 포함되지 않음)면 plugin 이 그
-    ///   surface_id 자체를 모른다 — 경합할 로컬 루프가 없으므로 이 함수가 최소
-    ///   bootstrap(`surface.create` + `set_context`)을 대신 1회 보낸다.
-    /// - 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이 들어와 전체 텍스처가
-    ///   필요하면, 직접 보내는 대신 기존 `pending_full`(비가시 full 재전송) 메커니즘에
-    ///   위임한다 — 다음 tick 의 authoritative/비가시 루프가 `need_full_textures` 를
-    ///   실어 보낸다. 이번 tick 은 relay 를 건너뛴다: 캐시된 frame 이 델타뿐일 수 있어
-    ///   새 구독자에게 그대로 흘리면 텍스처 상태가 깨진다.
+    /// GUI가 만든 mesh를 attach 구독자에게 중계한다. 평소에는 새 컨텍스트를 만들지 않는다.
+    /// 아직 한 번도 렌더하지 않은 surface만 초기 생성·컨텍스트를 보낸다.
+    /// 기존 surface의 새 구독·복구 요청은 pending_full에 넣고 해당 tick의 중계를 생략한다.
     pub(super) fn forward_mesh_to_attach_subscribers(
         &mut self,
         mgr: &PluginManager,
@@ -531,16 +419,11 @@ impl MainView {
             let focused = ctx.focused;
 
             let need_full = self.core_state.mesh_mirror.take_need_full_textures(sid);
-            // geometry/theme/focus 변경 자체에 대한 실제 set_context 재송신은 로컬
-            // authoritative loop(가시 상태) 또는 아래 bootstrap/pending_full 경로(비가시
-            // 상태)가 각자 담당한다 — 여기선 다음 tick에 계속 dirty=true 로 안 남게
-            // drain 만 한다.
+            // 컨텍스트 전송은 기존 로컬 경로가 맡으며 여기서는 변경 표시만 비운다.
             let _ = self.core_state.mesh_mirror.take_dirty(sid);
 
             if mgr.egui_mesh_frame(sid).is_none() {
                 let Some(ms) = self.core_state.find_egui_mesh_surface(sid) else {
-                    // layout 에서도 사라진 surface(닫힘) — 구독을 정리해 매 프레임
-                    // 재시도하는 낭비를 막는다.
                     self.core_state.mesh_mirror.remove(sid);
                     continue;
                 };
@@ -570,9 +453,7 @@ impl MainView {
                     },
                 );
 
-                // 로컬 authoritative loop 가 나중에 이 surface 를 그리게 되거나, 다음
-                // 명시 재전송이 pending_full 경로를 타야 할 때를 위해 최소 forward
-                // 상태를 seed 해 둔다(그 경로는 last_geom/plugin_id 를 요구한다).
+                // 이후 로컬 표시·전체 재전송에 사용할 최소 상태를 기록한다.
                 let st = self.egui_mesh.entry(sid).or_default();
                 st.plugin_id = Some(plugin_id);
                 st.common.last_geom = Some((width_px, height_px, pixels_per_point.to_bits()));
@@ -585,9 +466,6 @@ impl MainView {
                 continue;
             }
 
-            // 이미 만들어진 frame(있다면)을 relay — headless/parked
-            // (`plugin_bridge::mesh_forward::forward_mesh_frames_for_engine`)와 공유하는
-            // 꼬리 로직.
             crate::plugin_bridge::mesh_forward::relay_mesh_frame_if_new(
                 &mut self.core_state,
                 mgr,
@@ -615,10 +493,7 @@ pub(super) fn is_pressed(state: ElementState) -> bool {
     matches!(state, ElementState::Pressed)
 }
 
-/// forward 될 Key wire 이벤트를 만든다. 매핑 불가한 키는 `None`(forward 생략) —
-/// wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK 가 `Key::from_name` 으로
-/// 복원한다(매핑 불가 키는 plugin 도 무시). `KeyEvent` 전체가 아니라 구성요소를
-/// 받아 `KeyEvent` 생성 없이 단위테스트가 가능하게 한다.
+/// 매핑 가능한 키를 wire 이벤트로 만든다. egui 키 이름으로 보내 SDK가 복원한다.
 pub(super) fn key_wire_event(
     logical: &WinitKey,
     physical: PhysicalKey,
@@ -831,7 +706,6 @@ mod tests {
         PhysicalKey::Code(code)
     }
 
-    // 명명 키(Space/Enter/화살표)는 논리 키만으로 매핑된다.
     #[test]
     fn named_keys_map_from_logical() {
         assert_eq!(
@@ -847,7 +721,6 @@ mod tests {
         );
     }
 
-    // 라틴 문자 키는 논리 키(`Key::from_name`)로 매핑된다.
     #[test]
     fn latin_char_maps_from_logical() {
         let a: SmolStr = "a".into();
@@ -857,8 +730,6 @@ mod tests {
         );
     }
 
-    // 비-라틴(한글) 논리 문자는 `from_name` 이 None → 물리 키로 폴백해 편집 단축키
-    // (Ctrl+A select-all 등)가 물리 위치로 매칭된다.
     #[test]
     fn non_latin_char_falls_back_to_physical() {
         let hangul: SmolStr = "ㅁ".into();
@@ -868,7 +739,6 @@ mod tests {
         );
     }
 
-    // 논리·물리 모두 매핑 불가면 None → forward 생략.
     #[test]
     fn unmappable_key_is_none() {
         let dead: SmolStr = "\u{1}".into();
@@ -881,8 +751,6 @@ mod tests {
         );
     }
 
-    // key_wire_event: 매핑된 키는 egui `Key::name()` 문자열 + pressed/repeat/modifiers
-    // 를 담은 Key wire 이벤트를 만든다. plugin 이 `Key::from_name` 으로 복원 가능해야 한다.
     #[test]
     fn key_wire_event_carries_egui_key_name() {
         let mods = ModifiersWire {
@@ -914,7 +782,6 @@ mod tests {
         }
     }
 
-    // 매핑 불가한 키는 wire 이벤트를 만들지 않는다(forward 생략).
     #[test]
     fn key_wire_event_skips_unmappable() {
         let ev = key_wire_event(

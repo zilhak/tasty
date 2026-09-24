@@ -1,14 +1,6 @@
 use winit::window::Window;
 
-// ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
-//
-// 브랜드 타이틀 30 은 ADR-0035로 `font-size-brand-display` semantic 이
-// 생겨 `Theme` 필드(`font_size_brand_display`)로 옮겼고, 경고 본문 12.5 는 12 로
-// 스냅됐다. 남은 것은 semantic role 이 없는 primitive 12 하나다.
-
-/// 입력 라벨·경고 본문. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
-/// `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**. 호출 자리에서
-/// "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리도록 하는 것이 규칙의 목적이다.
+/// 입력·경고용 primitive 글꼴 크기. 대응 semantic role이 없어 별도로 사용한다.
 const SETUP_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use crate::i18n::t;
@@ -18,11 +10,7 @@ use super::{GpuState, ShellSetupAction};
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 
-/// 검증 라벨(font-size-11)이 없을 때(valid/미입력) 그 line-box 높이를 예약하는 구조
-/// 상수 — spacing 리듬이 아니라 라벨 높이 미러라 토큰 대신 명명 const 로 둔다. 폰트
-/// line-box 높이는 font metric 에서 나오는 값이라 4px 그리드에 맞을 이유가 없다(간격
-/// 리듬 값이 아니므로 그리드 규칙 적용 대상도 아님) — 예약 안 하면 라벨이 나타나고
-/// 사라질 때마다 그 아래 레이아웃이 흔들린다(layout jump 방지).
+/// 검증 문구가 없을 때도 같은 높이를 확보해 입력 아래 레이아웃이 움직이지 않게 한다.
 const RESERVE_LABEL_H: LogicalPx = LogicalPx(14.0);
 
 impl GpuState {
@@ -53,11 +41,9 @@ impl GpuState {
                 && (file_name.contains("bash") || file_name.contains("zsh"));
             let show_error = !shell_path.is_empty() && !is_valid;
 
-            // Apply theme from theme module
             let th = crate::theme::theme();
             tasty_egui_theme::apply_theme_to_egui(&th, ctx);
 
-            // Local aliases for this function
             let bg_panel = th.bg_app();
             let bg_card = th.bg_sidebar();
             let border = th.border_default();
@@ -65,15 +51,12 @@ impl GpuState {
             let amber = th.accent_warning();
             let red_err = th.accent_danger();
             let accent_ok = th.accent_success();
-            // 비활성 버튼 채움 — 값-동일 surface_hover()(=surface1). role 은 disabled-accent 이나 전용 토큰 부재.
             let accent_dis = th.surface_hover();
 
-            // Dark background panel
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(bg_panel.into()))
                 .show(ctx, |_| {});
 
-            // Centered window dialog
             let content_w = 440.0;
             egui::Window::new("shell_setup")
                 .title_bar(false)
@@ -87,14 +70,10 @@ impl GpuState {
                         .stroke(egui::Stroke::new(th.border_width.value(), border))
                         .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
                         .inner_margin(margin_all(th.spacing_xl))
-                        // 부팅 셸 설정은 화면 전체를 덮는 `CentralPanel` 위에 중앙
-                        // 정렬로 뜬다 = 그림자 적용 기준의 modal 갈래(ADR-0037). 트리거
-                        // 위젯에 붙지 않고 뷰포트를 점유하므로 anchored popover 가
-                        // 아니다.
+                        // 화면 중앙의 설정 카드에 모달 그림자를 사용한다.
                         .shadow(th.shadow_modal().to_egui()),
                 )
                 .show(ctx, |ui| {
-                    // ── Title ──────────────────────────────────────
                     ui.vertical_centered(|ui| {
                         ui.label(
                             egui::RichText::new("Tasty")
@@ -114,7 +93,6 @@ impl GpuState {
                     ui.separator();
                     vspace(ui, th.spacing_md);
 
-                    // ── Warning ────────────────────────────────────
                     egui::Frame::new()
                         .fill(th.surface_raised().into())
                         .stroke(egui::Stroke::new(
@@ -136,7 +114,6 @@ impl GpuState {
 
                     vspace(ui, th.spacing_lg);
 
-                    // ── Input ──────────────────────────────────────
                     ui.label(
                         egui::RichText::new(t("settings.terminal.shell_label"))
                             .size(SETUP_PRIMITIVE_12.value())
@@ -154,7 +131,6 @@ impl GpuState {
                             .font(egui::TextStyle::Monospace),
                     );
 
-                    // ── Error / success hint ──────────────────────
                     vspace(ui, th.spacing_xs);
                     if show_error {
                         ui.label(
@@ -174,12 +150,10 @@ impl GpuState {
 
                     vspace(ui, th.spacing_lg);
 
-                    // ── Buttons ────────────────────────────────────
                     ui.vertical_centered(|ui| {
                         ui.horizontal(|ui| {
                             let btn_size = egui::vec2(110.0, 34.0);
 
-                            // Cancel
                             if ui
                                 .add(
                                     egui::Button::new(
@@ -199,21 +173,15 @@ impl GpuState {
                                 action = ShellSetupAction::Exit;
                             }
 
-                            // 디자인 버튼 간격 10px 은 off-grid — 4px 그리드의 가장 가까운
-                            // 값인 spacing_md(12)로 snap.
                             hspace(ui, th.spacing_md);
 
-                            // OK
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
                                 (
                                     th.accent_success(),
                                     egui::Stroke::new(th.border_width.value(), th.accent_success()),
-                                    // accent 위 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
                                     th.bg_panel(),
                                 )
                             } else {
-                                // 비활성 보더 — surface2 값의 border role `border-frame`.
-                                // overlay0 dim 텍스트 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
                                 (
                                     accent_dis,
                                     egui::Stroke::new(th.border_width.value(), th.border_frame()),

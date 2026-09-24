@@ -1,10 +1,4 @@
-//! 부팅 실패 화면 렌더 — GPU 는 살아있으나 엔진 생성이 실패했을 때.
-//!
-//! 런처(dock/시작 메뉴)로 실행한 사용자는 stderr 를 못 봐, 창이 잠깐 떴다 사라지는
-//! 것이 전부였다. `enter_shell_setup_mode` 가 부팅 시점에 egui 첫 프레임을 직접 그리는
-//! 선례를 그대로 따라, 진단을 창에 그리고 사용자가 "종료" 를 누를 때까지 유지한다.
-//! GPU 가 아예 없거나 창 자체를 못 만든 경우는 그릴 수단이 없어 이 경로가 아니다
-//! (그쪽은 진단 후 exit — `docs/adr/0016-window-platform-and-shutdown.md`).
+//! 엔진 부팅 실패 진단을 창에 표시한다. GPU나 창 생성 자체가 실패한 경우에는 사용할 수 없다.
 
 use winit::window::Window;
 
@@ -56,13 +50,10 @@ impl GpuState {
                         ))
                         .corner_radius(th.corner_radius_lg.value())
                         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg))
-                        // 부팅 실패 카드는 화면 전체를 덮는 `CentralPanel` 위에 중앙
-                        // 정렬로 뜬다 = 그림자 적용 기준의 modal 갈래(ADR-0037). 부팅 셸
-                        // 설정 다이얼로그와 같은 형태다.
+                        // 화면 중앙의 진단 카드에는 모달 그림자를 사용한다.
                         .shadow(th.shadow_modal().to_egui()),
                 )
                 .show(ctx, |ui| {
-                    // ── Title (danger) ──────────────────────────────
                     ui.label(
                         egui::RichText::new(&info.title)
                             .size(th.font_size_heading.value())
@@ -71,7 +62,6 @@ impl GpuState {
                     );
                     vspace(ui, STRUCT_GAP_2);
 
-                    // ── Body ────────────────────────────────────────
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&info.body)
@@ -82,7 +72,6 @@ impl GpuState {
                     );
                     vspace(ui, th.spacing_md);
 
-                    // ── Hint (muted) ────────────────────────────────
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&info.hint)
@@ -94,7 +83,6 @@ impl GpuState {
 
                     vspace(ui, th.spacing_lg);
 
-                    // ── Quit button ─────────────────────────────────
                     ui.vertical_centered(|ui| {
                         let btn_size = egui::vec2(120.0, 34.0);
                         if ui
@@ -107,15 +95,8 @@ impl GpuState {
                                 )
                                 .min_size(btn_size)
                                 .fill(danger)
-                                // **이 stroke 는 두 면을 가르는 테두리가 아니다** —
-                                // 색이 `fill` 과 같아서 보이는 선이 없고, 실제 효과는
-                                // 칠해진 영역을 선 굵기의 절반만큼 넓히는 것뿐이다.
-                                // 그래도 `border_width` 를 쓰는 이유는 **다른 선택지가
-                                // 없기 때문**이다: 리터럴은 자매 가드의 `Stroke::new(`
-                                // 금지 접두에 걸리고, 1px 굵기를 주는 토큰은 이것뿐이다.
-                                // 대가는 적어 둔다 — `border_width` 가 1 을 벗어나면
-                                // 프레임 테두리는 의도대로 굵어지지만 **이 버튼은 크기가
-                                // 변한다.** 그때 다시 볼 자리다(ADR-0035 재검토 조건).
+                                // 채움과 같은 색의 stroke가 버튼 면적을 넓힌다.
+                                // border_width가 바뀌면 테두리뿐 아니라 이 버튼 크기도 함께 확인해야 한다.
                                 .stroke(egui::Stroke::new(th.border_width.value(), danger))
                                 .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             )

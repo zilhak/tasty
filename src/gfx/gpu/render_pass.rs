@@ -73,13 +73,7 @@ impl GpuState {
 
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
-                // attach/detach 작업 J (decisions 정정): 점유된 surface 는 서버측에서
-                // **readonly 뷰**로 보인다 — 숨김이 아니라 내용 보임, 조작만 차단.
-                // live grid 대신 3초 cadence 로 갱신되는 display-only mirror
-                // (`readonly_view`)를 렌더한다(plan §2.3). 입력 차단은
-                // `apply_send_to_surface` 가 담당하고, 점유 표시(주황 테두리)는 egui
-                // 오버레이가 그린다. client mirror 는 자기 engine 에 lock 이 없어
-                // (is_hard_occupied=false) live terminal 을 정상 렌더한다(G).
+                // hard 점유 surface는 서버가 보관한 읽기 전용 mirror를 그린다.
                 let is_readonly = engine.attach.is_hard_occupied(region.id);
                 // 첫 attach 뷰 tick 전이면 mirror 가 아직 없다 — 다음 tick 에 채워진다.
                 let Some(terminal) = engine.visible_terminal(region.id) else {
@@ -87,8 +81,7 @@ impl GpuState {
                 };
                 let surface_id = &region.id;
                 let rect = &region.rect;
-                // readonly 뷰는 사용자가 조작할 수 없으므로 포커스 커서/선택/IME/링크/
-                // 검색 오버레이를 그리지 않는다(보기 전용).
+                // 읽기 전용 화면은 포커스 커서를 표시하지 않는다.
                 let is_focused = !is_readonly && focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
                     term_surface.focused_bg.to_gpu_rgba()
@@ -101,10 +94,7 @@ impl GpuState {
                     term_surface.unfocused_fg.to_gpu_rgba()
                 };
 
-                // readonly 뷰는 IME/vi-cursor/링크/검색처럼 *PTY 앱과의 상호작용*
-                // 오버레이는 그리지 않는다(보기 전용). selection 만은 예외 — PTY 로
-                // 아무것도 보내지 않는 tasty 로컬 UI 동작(드래그 선택→복사)이라
-                // hard 점유(readonly)에서도 계속 표시한다(ADR-0021).
+                // 읽기 전용에서도 로컬 선택·복사는 표시한다. IME·vi 커서·링크·검색은 제외한다.
                 let sel_info = selection
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
@@ -124,7 +114,6 @@ impl GpuState {
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
                         bg_color: theme.accent_primary().to_gpu_rgba(),
-                        // accent 위 preedit 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
                         fg_color: theme.bg_panel().to_gpu_rgba(),
                     });
                 let render_preedit_ref = render_preedit.as_ref();
@@ -251,17 +240,8 @@ impl GpuState {
         }
     }
 
-    /// host egui pass(`render_egui_pass`, chrome + host popup 전체 + plugin popup 셸)와
-    /// plugin egui-mesh popup 콘텐츠 합성(`render_egui_mesh_popups`)을 host popup ↔
-    /// plugin popup z-order(`host_popup_on_top`, `gfx/gpu/egui_bridge.rs` 의
-    /// `host_popup_should_render_on_top` 이 계산)에 따라 순서를 정해 실행한다.
-    ///
-    /// 기본(`host_popup_on_top == false`)은 host egui pass *후* mesh 콘텐츠를 얹는
-    /// 기존 동작(plugin popup 이 위) 그대로다. `host_popup_on_top == true` 면 mesh
-    /// 콘텐츠를 *먼저* 그려 넣고, 그 뒤 host egui pass 가 host popup(불투명)을 그 위에
-    /// 덮어 host popup 이 위에 오도록 뒤집는다. plugin popup 자신의 셸은 content_rect 를
-    /// 비워 두므로(hole, `plugin_bridge::popup_render::paint_shell_background_excluding_content`)
-    /// 어느 순서든 자기 콘텐츠를 가리지 않는다.
+    /// 팝업 z_seq 판정에 따라 host UI와 plugin 콘텐츠 합성 순서를 정한다.
+    /// plugin 셸은 content_rect를 비워 어느 순서든 자기 콘텐츠를 가리지 않는다.
     #[allow(clippy::too_many_arguments)] // reason: 두 pass 호출에 필요한 인자 그대로 전달
     pub(super) fn render_egui_pass_and_mesh_popups(
         &mut self,

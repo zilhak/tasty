@@ -1,24 +1,6 @@
-//! IME (Input Method Editor) handling — OS별 분리.
-//!
-//! OS마다 winit의 IME 이벤트 모델이 다르다:
-//! - **macOS (NSTextInputClient)**: composition 세션당 `Enabled` 1회, 조합 중 `Preedit` 여러 번,
-//!   마지막에 `Commit`, 세션 종료 시 `Disabled`. 즉 `Disabled`는 실제 IME OFF 시그널.
-//! - **Windows (IMM/TSF)**: **매 글자마다** `Enabled` → `Preedit(...)` ... → `Preedit("")`
-//!   → `Commit(...)` → `Disabled` 사이클. `Disabled`는 "이번 글자 composition 종료"일 뿐,
-//!   IME 전체 상태 리셋이 아니다.
-//! - **Linux (ibus / fcitx 등 text-input)**: Windows와 유사하게 매 commit 전후로 빈 `Preedit("")`이
-//!   여러 번 발사된다. 즉 빈 Preedit을 "세션 종료"로 해석하면 안 되며, advance 보정 상태(advance/base)는
-//!   유지하고 preedit overlay만 비워야 한다.
-//!
-//! 이 차이 때문에 "composition 종료(빈 Preedit, Disabled)에서 advance 보정 상태를 완전히
-//! 리셋할지"가 OS별로 달라져야 한다. 그 외 로직(reconcile, commit 시 advance 누적 등)은
-//! 공통이다.
-//!
-//! PTY 에코 지연 보정에 쓰이는 두 상태:
-//! - `ime_cursor_advance`: 마지막 Commit 이후 전송된 문자들의 누적 display width.
-//!   PTY 에코가 반영되기 전까지 이 offset만큼 anchor를 앞으로 밀어준다.
-//! - `ime_advance_base`: advance가 마지막으로 갱신된 시점의 raw cursor 위치.
-//!   이후 raw cursor가 이 위치를 지나갔다면 그만큼 advance를 차감한다.
+//! OS별 IME 조합 처리. macOS는 조합 종료 때 위치 보정을 초기화한다.
+//! Windows·Linux는 빈 Preedit이나 Disabled가 글자마다 올 수 있어 화면만 지우고
+//! PTY 에코 위치 보정은 유지한다. 공통 처리는 Commit 문자 폭을 더하고 에코가 따라온 만큼 뺀다.
 
 use tasty_plugin_protocol::ImeWire;
 use winit::event::Ime;
@@ -44,10 +26,6 @@ fn dispatch_send_text(w: &mut MainView, surface_id: Option<u32>, text: &str) {
     );
 }
 
-// =============================================================================
-// Public entry points
-// =============================================================================
-
 pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     let engine = &mut w.core_state;
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
@@ -56,17 +34,8 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         return;
     }
 
-    // 팝업/오버레이가 열려 있으면 IME 이벤트를 터미널로 전달하지 않는다.
-    // Enabled/Disabled는 IME 상태 추적용이므로 허용하고, Preedit/Commit만 차단.
-    // 키 게이트와 같은 단일 출처 — plugin egui-mesh popup 이 열려 있을 때도 IME
-    // Preedit/Commit 이 터미널로 새면 안 된다. 그 조합을 popup 으로 나르는 것은 이 경로가
-    // 아니라 `crate::plugin_bridge::popup_render::collect_mesh_popup_input` 이다 — 이벤트는
-    // 이미 egui ctx 에 들어가 있고 그 수집기가 `ctx.input` 으로 읽어 와이어에 싣는다.
-    // 여기서 또 forward 하면 이중 처리가 된다.
-    //
-    // 전체화면 무대도 같은 취급이다 — 무대가 뜨면 뒤 터미널은 그려지지도 않는데, 이 항이
-    // 빠지면 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY 로 샌다. 무대만 떠 있고 다른
-    // 오버레이가 없으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막는다.
+    // 팝업·무대가 있으면 조합 문자를 배경 터미널에 보내지 않는다.
+    // Enabled/Disabled는 상태 추적에 사용한다. plugin 팝업 입력은 egui 수집기가 이미 전달하므로 여기서 반복하지 않는다.
     let overlay_open = w.state.keyboard_overlay_open() || w.state.fullscreen_stage_active();
     if overlay_open {
         match event {
@@ -82,15 +51,12 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         return;
     }
 
-    // 포커스가 egui-mesh surface(`image` 등)면 IME 를 plugin 으로 forward 해
-    // 라이브 preedit 을 그 surface 의 egui TextEdit 이 인라인 표시하게 한다(터미널
-    // overlay 경로 대신). commit-only 가 아니라 조합 중 preedit 문자열도 나른다.
+    // mesh surface는 터미널 오버레이 대신 플러그인에 조합·확정을 전달한다.
     if let Some(sid) = w.focused_egui_mesh_surface_id() {
         forward_ime_to_egui_mesh(w, sid, event);
         w.mark_dirty();
         return;
     }
-    // attach mesh mirror surface — 위와 동형이되 목적지가 원격.
     if let Some(sid) = w.focused_attach_mesh_surface_id() {
         forward_ime_to_attach_mesh(w, sid, event);
         w.mark_dirty();
@@ -105,9 +71,7 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     }
 }
 
-/// winit IME 이벤트를 egui-mesh surface 로 forward. terminal overlay 상태
-/// (`ime_preedit`/advance)는 건드리지 않고, `ime_active` 만 갱신한다 — keyboard.rs 의
-/// Text 억제 판정([`super::keyboard`])이 이 플래그를 읽기 때문.
+/// mesh로 전달할 때 터미널 조합 상태는 바꾸지 않고 키보드 중복 입력을 막는 ime_active만 갱신한다.
 fn forward_ime_to_egui_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
     let wire = match event {
         Ime::Enabled => {
@@ -118,8 +82,6 @@ fn forward_ime_to_egui_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
             w.ime_active = false;
             ImeWire::Disabled
         }
-        // winit preedit 의 cursor byte-range 는 egui `ImeEvent::Preedit(String)` 이
-        // 담지 않으므로 문자열만 나른다(candidate 위치는 host 가 별도 관리).
         Ime::Preedit(text, _cursor) => ImeWire::Preedit { text },
         Ime::Commit(text) => ImeWire::Commit { text },
     };
@@ -221,14 +183,7 @@ fn clear_all(w: &mut MainView) {
     w.ime_advance_base = (0, 0);
 }
 
-// =============================================================================
-// IPC helpers — debug/automation용. OS 분기 없이 macOS 모델(full session)로 동작.
-//
-// **debug 빌드 전용.** 유일한 호출자인 `surface.ime_*` 핸들러가
-// `#[cfg(debug_assertions)]` 로 격리돼 있다 — IME 조합 상태를 강제로 세팅하는
-// 것은 사용자 입력 재현이라 release 표면에 두지 않는다(ADR-0012). cfg 를
-// 빼면 release gui 빌드에서 `dead_code = deny` 에 걸린다.
-// =============================================================================
+// 강제 조합 상태 설정은 debug 전용이며 전체 세션 모델로 처리한다.
 
 #[cfg(debug_assertions)]
 pub(crate) fn ipc_set_preedit(
@@ -295,15 +250,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
     w.mark_dirty();
 }
 
-// =============================================================================
-// Event handlers
-// =============================================================================
-
-/// composition 종료(`Ime::Disabled`, `Preedit("")`). OS별 분기의 유일한 지점.
-///
-/// Windows / Linux: 매 글자마다 이 시그널이 오므로 preedit overlay만 지우고 advance/base는
-/// 다음 글자의 PTY 에코 보정을 위해 유지한다.
-/// macOS: 실제 IME 세션 종료이므로 advance/base까지 완전 리셋.
+/// 종료 시 macOS는 위치 보정도 초기화하고 Windows·Linux는 다음 글자의 에코 보정을 위해 유지한다.
 fn on_composition_end(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
@@ -374,10 +321,6 @@ fn on_commit(w: &mut MainView, text: String) {
     }
     w.mark_dirty();
 }
-
-// =============================================================================
-// Shared helpers
-// =============================================================================
 
 fn compute_raw_advance(
     col: usize,

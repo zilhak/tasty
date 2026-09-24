@@ -1,14 +1,5 @@
-//! 외부 → Tasty 방향 drag&drop 수신.
-//!
-//! winit `WindowEvent::{HoveredFile, HoveredFileCancelled, DroppedFile}` 셋이
-//! `MainView::handle_event` 에서 이 함수들로 라우팅된다.
-//!
-//! - hover 단계: `state.drop_hover` 에 path 누적 (overlay 렌더용).
-//! - drop 단계: `state.pending_file_drops` 큐에 push. frame end 에서 drain →
-//!   `DomainIntent::DispatchFile` 발화로 보낸다.
-//!
-//! winit `DroppedFile` 은 좌표를 주지 않으므로 `MainView.cursor_position` 을
-//! frame end 라우팅 시점에 활용한다.
+//! 외부 파일 드롭. hover 경로는 안내에, 완료 경로는 프레임 끝의 DispatchFile 처리에 사용한다.
+//! DroppedFile에 좌표가 없어 보관 중인 cursor_position으로 대상을 고른다.
 
 use std::path::PathBuf;
 
@@ -41,15 +32,12 @@ impl MainView {
 
     pub(crate) fn handle_dropped_file(&mut self, path: PathBuf) {
         self.state.pending_file_drops.push(path);
-        // OS 가 DroppedFile 후 HoveredFileCancelled 를 보장하지 않을 수 있으므로
-        // 명시 해제. 다중 파일 drop 의 경우 첫 DroppedFile 에서 정리되고 이후
-        // pending_file_drops 만 누적.
+        // OS가 취소 이벤트를 보내지 않아도 hover 표시를 지운다.
         self.state.drop_hover = None;
         self.base.dirty = true;
     }
 
-    /// frame end 에서 호출. 큐를 비우고 각 파일을 `DispatchFile(Deep)` Intent 로
-    /// 발화. 좌표는 `cursor_position` 기준 — terminal_rect 외부면 toast 후 무시.
+    /// 쌓인 파일을 DispatchFile로 보낸다. 터미널 영역 밖이면 안내하고 무시한다.
     pub(crate) fn process_pending_file_drops(&mut self) {
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {

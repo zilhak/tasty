@@ -1,11 +1,5 @@
-//! 셀 배경 위에 얹는 강조(선택 · vi 커서 · 링크 · 검색)의 합성.
-//!
-//! bg 파이프라인은 셀 하나를 quad 하나로 그리고 `BlendState::REPLACE` 로 쓴다.
-//! 강조는 별도 quad 가 아니라 **그 셀의 색을 바꾸는** 방식이라, 강조색의 alpha 를
-//! 반영하려면 GPU 가 아니라 여기서 셀 배경과 합성해야 한다 — GPU 블렌딩으로
-//! 바꾸면 강조가 셀 배경이 아니라 그 아래 clear 색(`bg_panel`)과 섞인다.
-//! 근거·대안·재검토 조건은
-//! `docs/adr/0035-shared-design-and-theme.md`.
+//! 강조색은 별도 도형이 아니라 셀 색을 바꿔 표시한다. GPU 배경 pass가 REPLACE이므로
+//! 반투명 강조를 셀 배경과 먼저 합성해야 아래 clear 색과 섞이지 않는다.
 
 use tasty_type_appearance::color::GpuRgba;
 
@@ -24,7 +18,6 @@ pub(crate) fn composite_over(top: GpuRgba, base: GpuRgba) -> GpuRgba {
         return top;
     }
     let mix = |t: f32, b: f32| (t * ta + b * ba * (1.0 - ta)) / a;
-    // 외부 입력이 아니라 두 테마 색의 합성 결과다 — 새 색을 "디자인" 하지 않는다.
     GpuRgba::dangerously_force_from_array([
         mix(top.r(), base.r()),
         mix(top.g(), base.g()),

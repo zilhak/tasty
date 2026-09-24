@@ -5,17 +5,8 @@ use crate::font::{D2CODING_FAMILY, D2CODING_REGULAR_TTF};
 use super::GpuState;
 
 impl GpuState {
-    /// Register fonts for the egui UI:
-    /// - Bundled D2Coding ligature is the primary `Monospace` family entry.
-    /// - System CJK font (Malgun / AppleSDGothicNeo / NotoSansCJK) is appended
-    ///   as fallback for both `Proportional` and `Monospace` so 한글/한자/かな
-    ///   render correctly in UI labels.
-    /// - `Proportional` itself keeps egui's default UI fonts as the primary face.
-    ///
-    /// `pub(crate)` rather than `pub(super)` so a test can measure against the stack
-    /// the app actually installs. The file handler header budgets its path in mono
-    /// cells, and a test that set up its own copy of the fonts would stop measuring
-    /// this one the moment the two drifted.
+    /// 기본 UI 글꼴, D2Coding 고정폭 글꼴과 시스템 CJK fallback을 등록한다.
+    /// 테스트도 이 함수를 사용해 실제 앱과 같은 폰트의 폭을 잰다.
     pub(crate) fn setup_egui_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
 
@@ -50,9 +41,7 @@ impl GpuState {
             );
         }
 
-        // 언어팩 `[font]` 이 resolve 한 폰트를 CJK 뒤, 즉 체인 맨 뒤 폴백으로 붙인다
-        // (라틴은 기본 폰트, 팩 스크립트만 팩 폰트 — 혼합 렌더). 부팅에서 검증된 경로지만
-        // append 지점에서도 `ab_glyph` 로 한 번 더 확인해 깨진 파일이 egui 에 닿지 않게 한다.
+        // 언어팩 폰트는 마지막 fallback에 추가하며 설치 전에 파일을 다시 검증한다.
         if let Some(path) = crate::boot::locale::font_env_path() {
             if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
                 tracing::warn!(
