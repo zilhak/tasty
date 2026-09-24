@@ -51,13 +51,16 @@ pub struct Cli {
     #[arg(long)]
     pub port_file: Option<String>,
 
-    /// Bound, in milliseconds, on how long a single-request command waits for its reply.
-    /// When it runs out the instance answers -32061 if the request had started: the
-    /// outcome is unknown and the request may still run. If it was still queued the
-    /// answer is -32067 and nothing ran. 0 or no flag waits without a bound. The instance
-    /// must declare ipc.response-timeout, or nothing is sent. Checking that shares the same
-    /// bound: if the check does not finish in time the answer is -32067 and nothing was
-    /// sent. Commands that loop or stream refuse the flag
+    /// Set the server's response wait limit for a single request, in milliseconds.
+    /// If it expires after processing starts, the server returns -32061: the outcome is
+    /// unknown and the request may still run. If it expires while queued, the server
+    /// returns -32067 and the request did not run. 0 or no flag means no response wait limit.
+    /// The instance must declare ipc.response-timeout; otherwise the original request is not sent.
+    /// Time spent checking support is subtracted from the request's remaining budget.
+    /// If the check times out or uses up that budget, the result is -32067 and the original
+    /// request is not sent. The check also sets a timeout for each socket read.
+    /// This option is not an absolute deadline covering connection setup, sending, and
+    /// repeated reads. Commands that loop or stream refuse the flag
     #[arg(long, value_name = "MS")]
     pub response_timeout_ms: Option<u64>,
 
