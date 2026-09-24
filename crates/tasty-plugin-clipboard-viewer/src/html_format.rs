@@ -1,17 +1,6 @@
-//! HTML 미리보기용 경량 인덴터 — 정규 HTML5 파서가 아니라 태그 깊이를 세는
-//! 휴리스틱 토크나이저. Display-only re-indenter — DOM 을 구성하지 않고
-//! sanitize/render 도 하지 않는다. 새 외부 의존성 없이 순수 함수로 구현한다.
-//!
-//! 태그 깊이 추적 본체는 Claude Design 시안이 실제로 구현·검증한 JS 참조 알고리즘
-//! (`prettyHtml()`)을 그대로 포팅한 것이다: `>\s+<` 공백
-//! 정규화 → `<...>` 태그 경계 split → 닫는 태그(`</`)는 먼저 depth 감소, 여는 태그는
-//! 출력 후 depth 증가(void element/self-closing 은 증가 없음).
-//!
-//! 단, `<script>`/`<style>`/`<pre>` 내부는 JS 참조처럼 "우연히 `<[^>]+>` 패턴에 안
-//! 걸리길" 바라는 대신 별도로 통째로 추출해 verbatim 보존한다 — 참조 알고리즘을
-//! 문자 그대로 이식하면 내부에 `<`/`>` 가 섞인 스크립트(예: `if (a < b)`)에서 원본이
-//! 깨지는 사례가 실제로 있어(원인 분석 절이 요구하는 verbatim 보존 요건), 이 부분만
-//! 명시적 예외로 대체했다. 그 외 일반 태그 흐름은 참조 알고리즘과 동일 출력을 낸다.
+//! HTML 미리보기의 태그 깊이에 맞춰 들여쓰기를 추가한다.
+//! DOM 구성·렌더링·보안 정제는 하지 않는 단순한 토크나이저다.
+//! 태그 사이 공백을 줄이고 script/style/pre 블록은 원문 그대로 되돌려 넣는다.
 
 /// 깊이 증가 없이 처리되는 void element(닫는 태그가 없는 표준 HTML 요소).
 const VOID_ELEMENTS: &[&str] = &[
@@ -22,12 +11,10 @@ const VOID_ELEMENTS: &[&str] = &[
 /// 원본 그대로 보존할 태그(재포맷 시 의미가 깨질 수 있는 영역).
 const VERBATIM_TAGS: &[&str] = &["script", "style", "pre"];
 
-/// verbatim 블록을 감싸는 placeholder 마커 — 유니코드 Private Use Area 코드포인트라
-/// 실제 HTML 텍스트와 충돌하지 않는다(새 의존성 없이 고유 마커 확보).
+/// 원문 보존 블록을 바꿔 넣을 표식. 입력에 같은 문자가 있으면 충돌할 수 있다.
 const MARK: char = '\u{E000}';
 
-/// 클립보드 HTML 소스를 태그 깊이만큼 들여쓴 미리보기 문자열로 변환한다.
-/// malformed(닫히지 않은 태그 등) 입력에도 panic 없이 최선의 결과를 낸다.
+/// 태그 깊이에 맞춰 들여쓴다. 잘못된 HTML도 가능한 부분까지 처리한다.
 pub(crate) fn prettify(src: &str) -> String {
     let (masked, verbatim) = extract_verbatim_blocks(src);
     let collapsed = collapse_intertag_whitespace(&masked);
@@ -50,7 +37,7 @@ pub(crate) fn prettify(src: &str) -> String {
     restore_verbatim_blocks(&lines.join("\n"), &verbatim)
 }
 
-/// `>\s+<` 를 `><` 로 정규화(태그 사이 공백 무시, JS 참조 `.replace(/>\s+</g, "><")`).
+/// 태그 사이 공백을 없앤다(>\s+< → ><).
 fn collapse_intertag_whitespace(src: &str) -> String {
     let chars: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
@@ -72,9 +59,7 @@ fn collapse_intertag_whitespace(src: &str) -> String {
     out
 }
 
-/// `<...>` 태그 경계로 split — 태그가 아닌 구간은 텍스트 덩어리로 남긴다
-/// (JS 참조 `.split(/(<[^>]+>)/)` 이식). `[^>]+` 와 동형으로 "<>"(내부 0글자)는
-/// 태그로 보지 않는다.
+/// 태그와 일반 텍스트를 나눈다. 내부가 빈 <>는 태그로 보지 않는다.
 fn split_tags(src: &str) -> Vec<String> {
     let chars: Vec<char> = src.chars().collect();
     let mut parts = Vec::new();
@@ -102,9 +87,7 @@ fn split_tags(src: &str) -> Vec<String> {
     parts
 }
 
-/// 여는 태그(`<` 로 시작, `/`나 `!` 로 시작하지 않음) 이고, self-closing(`/>`) 이
-/// 아니고, void element 도 아니면 depth 를 증가시킬 대상이다(JS 참조
-/// `/^<[^/!]/.test(p) && !/\/>$/.test(p) && !VOID_EL.has(name)` 이식).
+/// 닫는 태그·자체 종료 태그·void 요소를 제외한 여는 태그인지 확인한다.
 fn is_opening_tag(p: &str) -> bool {
     let mut chars = p.chars();
     if chars.next() != Some('<') {
@@ -119,13 +102,12 @@ fn is_opening_tag(p: &str) -> bool {
     }
     match tag_name(p) {
         Some(name) => !VOID_ELEMENTS.contains(&name.to_ascii_lowercase().as_str()),
-        // 이름 추출 실패(예: `<` 바로 뒤가 태그명이 아닌 경우) 도 JS 참조와 동형으로
-        // "void 아님" 취급 — depth 증가.
+        // 이름을 찾지 못해도 void 요소로 보지 않아 깊이를 늘린다.
         None => true,
     }
 }
 
-/// `<` 바로 뒤의 `[a-zA-Z0-9-]+` 태그 이름을 추출(JS 참조 `/^<([a-z0-9-]+)/i` 이식).
+/// < 다음의 영숫자·하이픈으로 된 태그 이름을 읽는다.
 fn tag_name(p: &str) -> Option<&str> {
     let rest = &p[1..];
     let end = rest
@@ -308,8 +290,7 @@ mod tests {
 
     #[test]
     fn prettify_preserves_multiline_script_verbatim_at_correct_depth() {
-        // 원본 그대로 보존 대상이라 스크립트 내부 줄은 재인덴트되지 않는다 — 여는
-        // 태그 줄만 <div> 아래 depth(1)에 맞춰지고, 내부 줄은 원본 그대로 남는다.
+        // script 내부는 들여쓰기를 다시 하지 않는다.
         let input = "<div>\n  <script>\n    var x = 1;\n  </script>\n</div>";
         let out = prettify(input);
         assert!(out.contains("var x = 1;"));

@@ -190,7 +190,7 @@ description = "Stop 훅 게이트 비활성화(활성 마커 제거). 이미 꺼
 description = "Stop 훅 게이트 활성 상태 표시. 모든 게이트를 한 번에 보려면 'claude gate-list' 사용"
 
 [claude.cli.sub.notify-error]
-description = "내부용: 오류 후 자식 정체 알림을 호출자 서피스에 전달(claude-error-stalled의 hook.set 명령). 자식 상태나 완료 훅을 변경·정리·재등록하지 않습니다."
+description = "내부용: 자식의 출력이 오래 변하지 않아 작업이 멈췄을 가능성을 호출자에게 알립니다. claude-error-stalled의 hook.set 명령으로 사용합니다. 자식 상태를 바꾸거나 완료 훅을 제거·재등록하지 않습니다."
 
 [claude.cli.sub.notify-done]
 description = "내부용: spawn/tell 상태 변화를 호출자에게 알리고 같은 대상·명령의 일회성 훅을 제거합니다. 대상 surface가 여전히 조회되면 완료 훅 세 개를 다시 등록합니다. claude-idle/needs-input/process-exit의 hook.set 명령으로 사용합니다."

@@ -190,7 +190,7 @@ description = "Stopフックゲートを無効化（有効マーカーを削除�
 description = "Stopフックゲートの有効状態を表示。全ゲートを一度に見るには 'claude gate-list' を使用"
 
 [claude.cli.sub.notify-error]
-description = "内部用：エラー後の子の停止通知を呼び出し元サーフェスへ送信（claude-error-stalledのhook.setコマンド）。子の状態や完了フックの変更・削除・再登録はしません。"
+description = "内部用：子の出力が長時間変わらず、処理が止まっている可能性を呼び出し元に通知します。claude-error-stalled の hook.set コマンドで使用します。子の状態は変更せず、完了フックの削除・再登録もしません。"
 
 [claude.cli.sub.notify-done]
 description = "内部用：spawn/tell の状態変化を呼び出し元に通知し、同じ対象・コマンドの一度限りフックを削除します。対象 surface を引き続き確認できる場合は完了フック三つを再登録します。claude-idle/needs-input/process-exit の hook.set コマンドで使用します。"

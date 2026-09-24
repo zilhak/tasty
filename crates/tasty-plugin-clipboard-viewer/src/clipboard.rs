@@ -1,11 +1,5 @@
-//! Type-keyed 클립보드 reader 추상화.
-//!
-//! 새 포맷(헥스 / RTF 등) 추가가 `ClipboardType` enum arm + `read_available`
-//! 내 reader 한 줄 추가로 끝나도록 설계한다. Text/Files/Image/Html 은 arboard 로 3 OS
-//! 공통 read 한다(Image 는 `get_image()`, Html 은 `get().html()`, feature gate 없이
-//! 제공). Other 는 arboard 가 노출하지 않는 raw 포맷 열거를
-//! `crate::raw_formats`(플랫폼별 `#[cfg(...)]` 분기)로 직접 구현해 text/files/image/
-//! html 로 이미 소비된 변형을 제외한 나머지를 하나로 묶는다.
+//! 클립보드 내용을 타입별로 읽는다.
+//! 텍스트·파일·이미지·HTML은 arboard로, 나머지 포맷은 플랫폼 API로 읽는다.
 
 use std::path::PathBuf;
 
@@ -16,9 +10,7 @@ pub enum ClipboardType {
     Files,
     Image,
     Html,
-    /// text/files/image/html 어디에도 속하지 않는 raw 포맷들을 하나로 묶은 버킷.
-    /// 개별 포맷이 아니라 "그 외 전부"라 다른 arm 과 달리 항상 여러
-    /// 포맷을 하나의 값으로 들고 다닌다(`ContentRepr::Other`).
+    /// 알려진 텍스트·파일·이미지·HTML 포맷을 제외한 나머지 목록.
     Other,
 }
 
@@ -34,51 +26,38 @@ impl ClipboardType {
         }
     }
 
-    /// 푸터에 표시할 MIME 타입 문자열(design `t.mime`) — 기술 용어라 번역하지 않는다.
+    /// 푸터에 쓸 MIME 문자열. 기술 표기이므로 번역하지 않는다.
     pub fn mime_str(self) -> &'static str {
         match self {
             ClipboardType::Text => "text/plain",
             ClipboardType::Files => "text/uri-list",
-            // arboard::get_image() 은 원본 인코딩(PNG/JPEG 등) 정보 없이 항상 raw
-            // RGBA8 픽셀로 정규화해 반환한다(`ImageData::bytes` 문서) — 디자인 mock 의
-            // "image/png" 는 예시 데이터일 뿐, 실제로 알 수 없는 원본 포맷을 사칭하지
-            // 않고 arboard 가 실제로 반환하는 표현을 그대로 명명한다.
+            // arboard는 원본 인코딩 대신 RGBA8 픽셀을 반환한다.
             ClipboardType::Image => "image/rgba8",
             ClipboardType::Html => "text/html",
-            // 여러 이종 포맷을 하나로 묶은 버킷이라 단일 mime 이 없다 — RFC 2046 의
-            // "종류를 모르는 바이너리" 기본값. 실제 footer 표시는 `view::footer_mime_text`
-            // 가 이 값 대신 포맷 개수 메타로 대체한다(항상 비어있지 않은 채로 push 되므로
-            // 이 문자열이 실제로 화면에 나가는 경우는 없다).
+            // 실제 푸터에서는 단일 MIME 대신 포맷 개수를 표시한다.
             ClipboardType::Other => "application/octet-stream",
         }
     }
 }
 
-/// 한 타입의 표시용 표현. 추후 bytes / 공유버퍼 이미지 핸들 등으로 확장.
+/// 타입별 표시 데이터.
 #[derive(Clone, Debug)]
 pub enum ContentRepr {
     Text(String),
     Files(Vec<PathBuf>),
-    /// 이미지는 렌더링하지 않는다(design 결정) — 픽셀 바이트를 들고 있을
-    /// 필요가 없어 치수/바이트 수 메타만 보존한다.
+    /// 이미지 미리보기는 그리지 않으므로 픽셀 대신 치수와 바이트 수만 보관한다.
     Image {
         width: usize,
         height: usize,
         byte_len: usize,
     },
     Html(String),
-    /// text/files/image/html 어디에도 안 걸린 raw 포맷 전부 — 포맷 이름 +
-    /// 텍스트화된 미리보기의 목록. 비어 있으면 애초에 `read_available()`가 이 arm
-    /// 을 push 하지 않는다(항상 비어있지 않음).
+    /// 포맷 이름과 미리보기 목록. read_available은 빈 목록을 추가하지 않는다.
     Other(Vec<OtherFormatEntry>),
 }
 
 impl ContentRepr {
-    /// design `t.meta` — type-bar 우측 슬롯 + image body 안내에 쓰는 요약 문자열.
-    /// `Text`/`Files`/`Html`/`Other` 은 아직 범위 밖(문자/줄 수·파일 개수 카운트
-    /// 미구현, 후속 라운드로 defer)이라 `None` — 기존처럼 type-bar 우측 슬롯이
-    /// 빈 채로 유지된다(Html 은 대신 view.rs 의 Pretty print 체크박스가, Other 는
-    /// 포맷 개수 tooltip 이 그 슬롯 대신 type-bar 세그먼트 쪽을 차지한다).
+    /// 이미지의 치수·크기 요약. 다른 타입은 None을 반환한다.
     pub fn meta_text(&self) -> Option<String> {
         match self {
             ContentRepr::Text(_) => None,
@@ -94,28 +73,21 @@ impl ContentRepr {
     }
 }
 
-/// "기타" 버킷 한 포맷 항목 — 포맷 이름 + raw 바이트를 텍스트화한 미리보기(design
-/// 확정 결과). `crate::raw_formats`의 플랫폼별 모듈이 raw 바이트를 읽은 뒤
-/// [`OtherFormatEntry::from_bytes`]로 변환해 채운다.
+/// 기타 포맷의 이름·크기·미리보기.
 #[derive(Clone, Debug)]
 pub struct OtherFormatEntry {
     /// 포맷 이름(OS 가 보고하는 사람이 읽는 이름, 없으면 ID 기반 fallback).
     pub name: String,
-    /// 원본 raw 바이트 길이(미리보기 절삭 전 실제 크기 — design "크기 정보").
+    /// 미리보기를 자르기 전의 바이트 수.
     pub byte_len: usize,
-    /// 텍스트화된 미리보기. 바이너리로 판단되면 hex 요약(`is_binary` 참고), 아니면
-    /// `from_utf8_lossy` 결과 — 어느 쪽이든 raw 바이트 자체를 로그에 남기지 않는다
-    /// (민감 데이터일 수 있음).
+    /// 손실 허용 UTF-8 변환 또는 바이너리의 16진수 요약. 내용을 로그에 남기지 않는다.
     pub preview: String,
     /// `preview`가 hex 요약(바이너리 fallback)인지 — 뷰가 스타일을 달리할 수 있게.
     pub is_binary: bool,
 }
 
 impl OtherFormatEntry {
-    /// raw 바이트 → 표시용 항목. `cap`(바이트)을 넘는 데이터는 미리보기 생성 전에
-    /// 잘라낸다("크기 상한" 요구사항 — 거대한 바이너리 포맷을 통째로 문자열화 하지
-    /// 않는다). U+FFFD(치환 문자) 비율이 높으면 텍스트가 아니라 바이너리로 보고
-    /// hex 요약으로 대체한다.
+    /// cap 바이트까지만 미리보기로 변환한다. 치환 문자 비율이 높으면 16진수로 표시한다.
     pub(crate) fn from_bytes(name: String, bytes: &[u8], cap: usize) -> Self {
         let byte_len = bytes.len();
         let capped = &bytes[..byte_len.min(cap)];
@@ -140,8 +112,7 @@ impl OtherFormatEntry {
     }
 }
 
-/// 바이너리로 판단된 raw 바이트의 hex 요약(공백 구분 바이트 쌍) — 앞부분만
-/// 보여준다(전체를 hex 로 펼치면 텍스트보다 몇 배 길어져 오히려 읽기 어렵다).
+/// 바이너리 앞부분을 공백으로 나눈 16진수 바이트로 표시한다.
 fn hex_summary(bytes: &[u8]) -> String {
     const HEX_PREVIEW_BYTES: usize = 256;
     bytes[..bytes.len().min(HEX_PREVIEW_BYTES)]
@@ -151,10 +122,7 @@ fn hex_summary(bytes: &[u8]) -> String {
         .join(" ")
 }
 
-/// 사람이 읽는 바이트 크기 문자열(`src/core/fs_list.rs::human_size` 와 동형 — 이
-/// plugin 은 별도 프로세스 바이너리라 그 crate 를 의존할 수 없어 로컬 재구현).
-/// Image 는 원본 파일 크기가 아니라 `ImageData::bytes`(raw RGBA8) 길이의 근사치로
-/// 썼고, "기타" 포맷 크기 표시도 이 함수를 그대로 재사용한다.
+/// 바이트 수를 사람이 읽기 쉬운 단위로 표시한다. 이미지는 RGBA8 픽셀 데이터 크기다.
 pub(crate) fn format_bytes(n: usize) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut s = n as f64;
@@ -176,7 +144,7 @@ fn read_text(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRep
         Ok(text) if !text.is_empty() => Some((ClipboardType::Text, ContentRepr::Text(text))),
         Ok(_) => None,
         Err(e) => {
-            // 텍스트 없음/접근 불가는 치명 오류가 아니라 "Text 타입 부재"로 처리.
+            // 이 타입을 읽지 못하면 다른 타입 조회를 계속한다.
             tracing::debug!("clipboard get_text: {e}");
             None
         }
@@ -189,14 +157,13 @@ fn read_files(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRe
         Ok(files) if !files.is_empty() => Some((ClipboardType::Files, ContentRepr::Files(files))),
         Ok(_) => None,
         Err(e) => {
-            // 파일 목록 없음/접근 불가는 치명 오류가 아니라 "Files 타입 부재"로 처리.
             tracing::debug!("clipboard get file_list: {e}");
             None
         }
     }
 }
 
-/// Image 리더 — 렌더링하지 않으므로(design 결정) 픽셀 바이트는 버리고 메타만 보존.
+/// 이미지 픽셀은 버리고 치수·크기만 보관한다.
 fn read_image(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRepr)> {
     match clip.get_image() {
         Ok(img) => Some((
@@ -208,14 +175,13 @@ fn read_image(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRe
             },
         )),
         Err(e) => {
-            // 이미지 없음/디코딩 불가는 치명 오류가 아니라 "Image 타입 부재"로 처리.
             tracing::debug!("clipboard get_image: {e}");
             None
         }
     }
 }
 
-/// Html 리더 — arboard `Get::html()` (feature gate 없이 3플랫폼 공통 제공).
+/// 비어 있지 않은 HTML을 읽는다.
 fn read_html(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRepr)> {
     match clip.get().html() {
         Ok(html) if !html.is_empty() => Some((ClipboardType::Html, ContentRepr::Html(html))),
@@ -227,9 +193,7 @@ fn read_html(clip: &mut arboard::Clipboard) -> Option<(ClipboardType, ContentRep
     }
 }
 
-/// Other 리더 — arboard 를 거치지 않고 `crate::raw_formats`(플랫폼별 raw
-/// 열거)로 text/files/image/html 이 아닌 나머지 포맷을 모은다. arboard 는 포맷
-/// 열거 자체를 노출하지 않아 이 타입만 별도 경로를 쓴다.
+/// 플랫폼 API로 기타 포맷을 열거한다. arboard에는 열거 기능이 없다.
 fn read_other() -> Option<(ClipboardType, ContentRepr)> {
     let entries = crate::raw_formats::read_other();
     if entries.is_empty() {
@@ -239,13 +203,8 @@ fn read_other() -> Option<(ClipboardType, ContentRepr)> {
     }
 }
 
-/// 현재 시스템 클립보드에서 가용한 (타입, 내용) 목록을 수집한다.
-///
-/// - `Ok(vec)` — 가용 타입 목록. 빈 vec 이면 표시할 내용이 없는 상태(빈 클립보드).
-/// - `Err(msg)` — 클립보드 핸들 자체를 못 연 경우(read 실패 상태).
-///
-/// 타입별 리더를 개별 함수로 뽑아둔다 — 이 함수 본문에 인라인하면 타입이 늘어날수록
-/// cognitive_complexity(clippy deny-level lint, workspace `Cargo.toml`)에 걸린다.
+/// 읽을 수 있는 타입과 내용을 반환한다. 핸들을 열지 못하면 오류다.
+/// 개별 타입의 읽기 실패는 생략하므로 빈 결과만으로 클립보드가 비었다고 단정할 수 없다.
 pub(crate) fn read_available() -> Result<Vec<(ClipboardType, ContentRepr)>, String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
@@ -342,8 +301,7 @@ mod tests {
     fn other_format_entry_caps_before_previewing() {
         let bytes = vec![b'a'; 10_000];
         let entry = OtherFormatEntry::from_bytes("Big Format".into(), &bytes, 100);
-        // byte_len 은 원본(절삭 전) 크기를 보존 — "크기 정보"는 실제 크기를 보여줘야
-        // 한다(design). preview 만 cap 만큼만 텍스트화된다.
+        // 미리보기만 자르고 원래 바이트 수는 보존한다.
         assert_eq!(entry.byte_len, 10_000);
         assert_eq!(entry.preview.len(), 100);
         assert!(!entry.is_binary);

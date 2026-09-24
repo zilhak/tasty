@@ -190,7 +190,7 @@ description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds 
 description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once."
 
 [claude.cli.sub.notify-error]
-description = "Internal: deliver a 'child stalled after an error' notification to the caller surface (invoked as the hook.set command for claude-error-stalled). Does not touch child state, and does not clean up or re-arm the completion hooks."
+description = "Internal: notify the caller that a child may be stalled after a long period without output changes. Used as the hook.set command for claude-error-stalled. Does not change child state or remove or re-register completion hooks."
 
 [claude.cli.sub.notify-done]
 description = "Internal: report a spawn/tell state transition to the caller and remove matching once-hooks. If the target surface can still be found, register the three completion hooks again. Used as the hook.set command for claude-idle/needs-input/process-exit."

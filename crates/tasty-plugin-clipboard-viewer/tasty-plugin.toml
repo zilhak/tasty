@@ -4,8 +4,7 @@ name = "Clipboard Viewer"
 version = "0.1.71"
 description = "Read-only viewer of the current system clipboard"
 api_version = "1"
-# clipboard.read 는 docs/dev-guide/plugin-packaging.md#정책-현행 상 이 plugin 엔 무의미(자기 프로세스 직접 read)하나
-# 의도 선언용으로 유지. write/ipc_namespace 는 read-only viewer 라 불필요.
+# 클립보드를 직접 읽으므로 호스트의 권한 검사를 거치지 않는다. 사용 목적의 선언으로 남긴다.
 permissions = ["clipboard.read", "ui.popup", "ui.tool_item"]
 lang_dir = "lang"
 
@@ -16,9 +15,6 @@ command = "tasty-plugin-clipboard-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
-# egui-mesh: plugin 이 popup 콘텐츠(header/type-bar/body/footer)를 자기
-# 프로세스에서 egui mesh 로 그리고, host 는 셸(scrim/border/outside-click/Esc)만
-# 그린 뒤 합성한다 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
 rendering = "egui-mesh"
 size_hint = { width = 480, height = 360 }
 anchor = "screen-center"
@@ -30,11 +26,7 @@ label_i18n_key = "clipboard_viewer.tool.label"
 action = { kind = "open_popup", popup_id = "com.tasty.clipboard-viewer/viewer" }
 order_hint = 100
 
-# 단축키로 뷰어를 열기 위한 커맨드(구 호스트 하드코딩 `toggle_clipboard_viewer` 필드에서
-# 마이그레이션). Tools 메뉴 항목과 동일한 popup 을 연다. 기존 기본값
-# (ctrl+shift+h/alt+shift+h, 프리셋마다 다름)은 자동 이관하지 않고 단일 기본값으로
-# 재설정한다 — 프리셋별 커스텀 값이 있던 사용자는 최초 실행 시 이 기본값으로
-# 리셋되며, 필요하면 설정 > 단축키 > 플러그인에서 다시 바꾸면 된다.
+# Tools 메뉴와 같은 팝업을 여는 독립 단축키.
 [[contributes.commands]]
 id = "open_viewer"
 title_i18n_key = "clipboard_viewer.command.open_viewer"

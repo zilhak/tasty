@@ -1,31 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Clipboard Viewer plugin — 현재 시스템 클립보드(최신 하나)의 read-only 뷰어.
-//!
-//! Tools 메뉴 클릭(`[[contributes.tool]]`) 또는 단축키 커맨드(`[[contributes.commands]]`
-//! `open_viewer`)가 `action = open_popup` 을 통해 host 로 하여금 popup 인스턴스를
-//! 직접 열게 한다 — 호스트가 plugin 전용 이벤트를 발행하는 구식 경로는 없다. 클립보드는
-//! plugin process 내에서 arboard 로 **직접** 읽으며 호스트 IPC 를 경유하지 않는다
-//! (docs/dev-guide/plugin-packaging.md#정책-현행 상 first-party 직접 read).
-//!
-//! 렌더 경로는 **egui-mesh popup**(docs/dev-guide/egui-mesh-channel.md#데이터-흐름): plugin 이 자기 프로세스에서 popup
-//! 콘텐츠(header/type-bar/body/footer)를 egui 로 tessellate 한 mesh 를 host 가
-//! content 영역에 합성한다. host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame
-//! 보내고, plugin 은 그것을 `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로
-//! 그린다. chrome(scrim/border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 — plugin
-//! 은 content 만 그린다.
-//!
-//! UI 는 header(아이콘+타이틀+snapshot 뱃지+close) → type-bar(타입 1개면 아이콘+뱃지,
-//! 2개 이상이면 가로 세그먼트 스위치) → body(선택 타입의 상세) → footer(mime+Close)
-//! 4단 수직 스택(rail 없음). Text/HTML 타입을 지원하고, 이미지/기타
-//! 포맷/파일 목록 등은 `clipboard::ClipboardType` enum arm + reader 추가로 확장한다.
-//! read-only 라 쓰기/붙여넣기/제거 액션은 없다.
+//! 현재 클립보드 내용을 한 번 읽어 보여주는 팝업.
+//! 읽기에는 arboard와 플랫폼 API를, 그리기에는 egui-mesh를 사용한다.
+//! 텍스트·파일·이미지 정보·HTML·기타 포맷을 표시하며 클립보드를 변경하지 않는다.
+//! 배경·테두리·닫기 처리는 호스트가 맡고 플러그인은 내용 영역을 그린다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 시험의 let _는 제품 코드에서 반환값을 버리는 목록에 포함하지 않는다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod clipboard;
@@ -55,13 +35,12 @@ use tasty_type_appearance::theme::Theme;
 const PLUGIN_ID: &str = "com.tasty.clipboard-viewer";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// open_popup 시점에 읽어둔 클립보드 스냅샷 + 좌측 선택 상태(paint 클로저에서 갱신).
+/// 팝업을 열 때 읽은 클립보드 내용과 선택 상태.
 pub(crate) struct ViewerState {
     pub(crate) available: Vec<(ClipboardType, ContentRepr)>,
     pub(crate) read_error: Option<String>,
     pub(crate) selected: Option<ClipboardType>,
-    /// HTML 타입의 "Pretty print" 체크박스 상태. popup 인스턴스 생존 동안만
-    /// 유지 — 설정에 영속화하지 않고 `load()`(popup 재오픈)마다 리셋된다.
+    /// HTML 정리 표시 여부. 팝업을 다시 열면 초기화한다.
     pub(crate) html_pretty: bool,
 }
 
@@ -92,11 +71,11 @@ impl ViewerState {
 }
 
 struct ClipboardViewerPlugin {
-    /// 단일 인스턴스 가드 — 주 인스턴스 id. 두 번째 open 은 "이미 열림" placeholder.
+    /// 주 인스턴스 ID. 추가 인스턴스에는 이미 열려 있다는 안내를 그린다.
     primary_instance: Option<u64>,
     /// 주 인스턴스의 클립보드 스냅샷 + 선택 상태.
     state: Option<ViewerState>,
-    /// instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유). unix 전용.
+    /// 인스턴스별 egui-mesh 렌더 상태와 공유 버퍼.
     #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
     /// CJK fallback 폰트를 이미 설치한 instance_id — set_fonts 재업로드 방지.
@@ -128,15 +107,12 @@ impl Plugin for ClipboardViewerPlugin {
         PLUGIN_VERSION
     }
 
-    // popup-only plugin 이라 surface 콜백은 빈 결과.
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        // egui-mesh popup 은 tree(UiNode) 를 반환하지 않는다 — mesh 채널(paint_popup)로 그린다.
-        // 첫 인스턴스면 클립보드 스냅샷을 적재하고 주 인스턴스로 등록. 그 외(이미 열려
-        // 있는 상태의 재호출)는 주 인스턴스가 아니라 paint 시 "이미 열림" placeholder 로 그린다.
+        // UiNode 대신 mesh로 그린다. 첫 인스턴스만 클립보드 내용을 읽는다.
         if self.primary_instance.is_none() {
             self.primary_instance = Some(ctx.instance_id);
             self.state = Some(ViewerState::load());
@@ -168,14 +144,12 @@ impl ClipboardViewerPlugin {
     fn paint(&mut self, ctx: PopupSetContextCtx) {
         let iid = ctx.params.instance_id;
 
-        // host 가 Theme 을 아직 안 보냈으면(theme 미동봉) 토큰을 풀 수 없으므로 이 frame 은
-        // 건너뛴다. host 는 테마 변경/입력 시 theme 을 동봉해 재forward 한다(markdown 동형).
+        // 테마를 받기 전에는 그리지 않는다.
         let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
             tracing::debug!("clipboard popup {iid}: set_context without theme — skipping paint");
             return;
         };
 
-        // 서로소 필드를 지역 참조로 분리 — 클로저가 self 전체를 잡지 않게 한다.
         let Self {
             primary_instance,
             state,
@@ -186,15 +160,12 @@ impl ClipboardViewerPlugin {
         let is_primary = *primary_instance == Some(iid);
 
         let popup = popups.entry(iid).or_insert_with(|| EguiMeshPopup::new(iid));
-        // 한글/일문이 tofu(□) 되지 않도록 CJK fallback 을 popup Context 에 1회 설치한다.
+        // 인스턴스마다 CJK 대체 폰트를 한 번 설치한다.
         if fonts_installed.insert(iid) {
             install_fonts(popup.context());
         }
 
-        // view::draw*는 header/footer Close 클릭 여부를 bool로 반환하지만, paint()의
-        // run_ui 클로저 자체는 반환값이 없다(FnMut(&Context)) — markdown 확인 팝업과
-        // 동형으로 클로저 밖에 캡처해둔 변수에 대입한 뒤, paint() 리턴 후 그 값을 보고
-        // close_popup 을 호출한다.
+        // paint의 클로저는 반환값이 없어 닫기 요청을 밖에 기록해 두었다가 처리한다.
         let mut close_requested = false;
         let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
             close_requested = match (is_primary, state.as_mut()) {
@@ -211,20 +182,18 @@ impl ClipboardViewerPlugin {
         }
     }
 
-    /// egui-mesh shared-buffer 송신을 지원하지 않는 exotic 타깃 — no-op(크로스플랫폼
-    /// 컴파일 보장). Unix/Windows 는 위 실제 paint 를 쓴다.
+    /// 공유 버퍼 송신을 지원하지 않는 타깃에서는 그리기를 생략한다.
     #[cfg(not(any(unix, windows)))]
     fn paint(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
-/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+/// 전달받은 색·밝기·확대 비율로 테마를 만든다.
 #[cfg(any(unix, windows))]
 fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
-/// host 에 팝업 인스턴스 닫기를 요청한다(셸 생명주기는 host 소유 — markdown 확인
-/// 팝업과 동일 패턴).
+/// 호스트에 팝업 닫기를 요청한다.
 #[cfg(any(unix, windows))]
 fn close_popup(host: &tasty_plugin_sdk::HostHandle, instance_id: u64) {
     if let Err(e) = host.call(
@@ -235,8 +204,7 @@ fn close_popup(host: &tasty_plugin_sdk::HostHandle, instance_id: u64) {
     }
 }
 
-/// popup Context 에 CJK fallback 을 설치한다(markdown `install_fonts` 미러). egui 기본
-/// 폰트(Proportional/Monospace) 뒤에 시스템 CJK 폰트를 붙여 한글/일문/한자 tofu 를 막는다.
+/// 기본 폰트 뒤에 시스템 CJK 폰트를 추가한다. 구할 수 없으면 생략한다.
 #[cfg(any(unix, windows))]
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
@@ -253,11 +221,7 @@ fn install_fonts(ctx: &egui::Context) {
                 .push("system_cjk".to_owned());
         }
     }
-    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
-    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
-    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
-    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
-    // `PluginEnv.locale_font` 와 같은 출처).
+    // 호스트와 같은 검사 함수로 언어팩 폰트를 대체 폰트 목록 끝에 추가한다.
     if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
         let path = std::path::PathBuf::from(path);
         if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
@@ -270,12 +234,12 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
+/// OS별 시스템 CJK 폰트 후보를 읽는다.
 #[cfg(any(unix, windows))]
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
     #[cfg(target_os = "windows")]
     {
-        // host font_registry 미러 — 맑은 고딕(한글 tofu 방지). 없으면 None.
+        // 맑은 고딕이 없으면 추가하지 않는다.
         if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
             return Some(data);
         }

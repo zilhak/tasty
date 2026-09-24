@@ -1,19 +1,6 @@
-//! egui-mesh popup 콘텐츠 렌더 — header → type-bar → body → footer 4단 구조
-//! (design-system `overlays/clipboard_viewer.jsx` 구조 전사).
-//!
-//! rail(세로 타입 목록)은 폐기됐다 — 디자인 원칙: 단일 타입은 헤더 아래 뱃지로,
-//! 복수 타입은 가로 세그먼트 스위치([`type_switch`])로 표현한다. `SEG_COMPACT_AT`(5)
-//! 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다. `ClipboardType::Text`/`Files`/
-//! `Image`/`Html`(HTML 은 raw 소스 표시 + Pretty print 체크박스, [`crate::html_format`])/
-//! `Other`(text/files/image/html 가 아닌 raw 포맷을 포맷별 블록으로 나열,
-//! [`crate::raw_formats`])을 채운다.
-//!
-//! chrome(scrim/border/outside-click/Esc)은 host 소유 — plugin 은 content 영역만
-//! 그린다. 색·폰트·간격은 전부 host 가 보낸 `Theme` 토큰에서 가져온다(from_rgb/raw
-//! px 금지). 헤더/푸터의 Close 버튼은 host chrome 의 outside-click/Esc 와 기능이
-//! 중복되지만 디자인이 명시적으로 요구해 그대로 반영한다 — 클릭 시 `draw`/
-//! `draw_already_open` 이 `true` 를 반환하고, 호출부(`main.rs`)가 `popup.close` IPC 로
-//! host 에 닫기를 요청한다(host 가 chrome 생애주기를 계속 소유).
+//! 클립보드 팝업의 헤더·타입 선택·본문·푸터를 그린다.
+//! 타입이 하나면 배지를, 여러 개면 가로 선택 버튼을 표시한다.
+//! 내용 영역만 그리며 닫기 버튼을 누르면 호출자가 호스트에 닫기를 요청한다.
 
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
@@ -27,32 +14,24 @@ use crate::ViewerState;
 use crate::clipboard::{ClipboardType, ContentRepr, OtherFormatEntry, format_bytes};
 use crate::html_format::prettify;
 
-/// 세그먼트가 5개 이상이면 비활성 세그먼트를 아이콘 전용으로 압축한다(design
-/// `SEG_COMPACT_AT`).
+/// 타입이 이 개수 이상이면 선택하지 않은 버튼은 아이콘만 표시한다.
 const SEG_COMPACT_AT: usize = 5;
 
-/// 헤더/타입바/푸터 공통 좌우 인셋 = `space-md`(12). 토큰 정합 과정에서(docs/design/systems/theme.md#ui-코드의-색상-접근) 시안의 14 를 12 로
-/// 내렸다 — 14 전용 semantic 은 열지 않고 4px 그리드가 이긴다. 화면 인벤토리는
-/// docs/plugins/clipboard-viewer/screens/clipboard-viewer.md.
+/// 헤더·타입바·푸터의 좌우 여백. spacing_md 토큰을 사용한다.
 fn row_pad_x(theme: &Theme) -> f32 {
     theme.spacing_md.value()
 }
 
-/// 아이콘 버튼(IconButton/Button leading_icon) 안에서 아이콘이 버튼 높이 대비 차지할
-/// 비율(`tasty-plugin-image` 정본 튜닝값 재사용).
+/// 버튼 높이에 대한 아이콘 크기 비율.
 const ICON_DRAW_RATIO: f32 = 0.7;
 
-// CenterState 아이콘 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
-// specimen(`components/clipboard_viewer.rs`)이 같은 상수를 읽는다.
+// 빈 상태 아이콘 크기는 갤러리와 같은 공용 토큰을 사용한다.
 use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
 
-/// "기타" 버킷 한 블록의 미리보기 최대 줄 수 — 넘으면 `+N more lines`로 절삭(design은
-/// 구체적 상한을 구현에 위임). 목록 자체(포맷 개수)는 절대 접지 않는다(design
-/// §6.5 확정) — 이건 블록 "내부" 콘텐츠 줄 수 상한일 뿐이다.
+/// 기타 포맷별 미리보기의 줄 수 상한. 포맷 목록 자체는 줄이지 않는다.
 const OTHER_PREVIEW_MAX_LINES: usize = 20;
 
-/// 주 인스턴스 popup 본문. 헤더는 항상 그리고, 그 아래는 read_error / empty / data
-/// 3분기(design `dataState`/`snap.status` 동형). 헤더·푸터의 Close 클릭 시 `true`.
+/// 주 팝업의 오류·빈 상태·내용을 그린다. 닫기 버튼을 누르면 true를 반환한다.
 pub(crate) fn draw(
     ctx: &egui::Context,
     theme: &Theme,
@@ -87,8 +66,7 @@ pub(crate) fn draw(
     close
 }
 
-/// 단일 인스턴스 가드 placeholder — 헤더 + "이미 열림" CenterState(기존
-/// `already_open_tree` 동형).
+/// 추가 인스턴스에 이미 열려 있다는 안내를 그린다.
 pub(crate) fn draw_already_open(ctx: &egui::Context, theme: &Theme, tr: &Translator) -> bool {
     let mut close = false;
     panel(ctx, theme, |ui| {
@@ -105,9 +83,7 @@ pub(crate) fn draw_already_open(ctx: &egui::Context, theme: &Theme, tr: &Transla
     close
 }
 
-/// popup content 영역을 채우는 CentralPanel. host 셸이 그린 `bg_panel` 과 이음매 없게
-/// 동일 토큰으로 채운다. 4행(header/type-bar/body/footer)이 여백 없이 맞닿으므로
-/// item_spacing 을 0 으로 죽인다(각 행이 자기 padding 을 직접 계산).
+/// 호스트와 같은 배경색으로 채운다. 행 사이 여백은 각 행에서 직접 정한다.
 fn panel(ctx: &egui::Context, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     let frame = egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -118,7 +94,6 @@ fn panel(ctx: &egui::Context, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-// ── header: 클립보드 아이콘 + "Clipboard" + snapshot 뱃지 + 우측 close ──
 fn header(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, close: &mut bool) {
     let full_w = ui.available_width();
     let pad_x = row_pad_x(theme);
@@ -179,7 +154,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, close: &mut bool) {
     bottom_separator(ui, theme, rect);
 }
 
-/// 타입 있음 — type-bar + body + footer 3행(design `dataState`).
 fn data_state(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -193,20 +167,13 @@ fn data_state(
         .filter(|s| types.contains(s))
         .unwrap_or(types[0]);
 
-    // 우측 슬롯 — design `t.meta`(html 이 아닌 타입 전체 공통 경로). Text/Files 는
-    // 메타가 없다(빈 클로저), Image 는 치수·크기 메타를 채운다. HTML 타입일 때만
-    // "Pretty print" 체크박스로 스왑된다(design 확정 결과) — 그 경우
-    // meta_text()(Html 은 항상 None)는 쓰지 않는다. 클릭 반영 전(이번 프레임 진입
-    // 시점) active 기준으로 그린다 — type_switch 의 active 하이라이트도 동일하게
-    // 클릭 전 상태를 쓰므로 한 프레임 지연이 일관된다.
+    // 선택 변경 전 타입으로 우측 내용을 그린다. HTML은 정리 표시 체크박스를 쓴다.
     let active_meta = state
         .available
         .iter()
         .find(|(t, _)| *t == active)
         .and_then(|(_, c)| c.meta_text());
-    // "기타" 세그먼트 tooltip(design "{n} unrecognized formats")에 쓰는 포맷
-    // 개수 — Other 가 available 에 없으면 None(다른 타입 뿐이면 tooltip 없이 기본
-    // 라벨 유지).
+    // 기타 포맷이 있으면 개수를 툴팁으로 보여 준다.
     let other_count = state.available.iter().find_map(|(t, c)| match (t, c) {
         (ClipboardType::Other, ContentRepr::Other(entries)) => Some(entries.len()),
         _ => None,
@@ -250,9 +217,7 @@ fn data_state(
         type_body(&mut bui, theme, *ty, content, tr, state.html_pretty);
     }
 
-    // HTML 타입은 밀려난 메타(문자수/줄수)를 푸터에서 `{mime} · {meta}` 로 결합해
-    // 노출한다(design 확정 결과) — Other 는 mime 자체가 없어 포맷 개수 문구가
-    // mime 을 대체한다(`footer_mime_text`). 다른 타입은 기존처럼 mime만.
+    // HTML은 MIME에 문자·줄 수를 붙이고, 기타 포맷은 MIME 대신 개수를 표시한다.
     let footer_meta = cur.as_ref().and_then(|(ty, content)| {
         html_footer_meta(tr, *ty, content).or_else(|| other_footer_meta(tr, *ty, content))
     });
@@ -266,13 +231,9 @@ fn data_state(
     );
 }
 
-/// design `TypeSwitch` — 1개면 아이콘+뱃지(읽기전용), 2개 이상이면 가로 세그먼트
-/// 버튼 그룹(rail 재도입 금지). `SEG_COMPACT_AT` 이상이면 비활성 세그먼트를 아이콘
-/// 전용으로 압축(active 만 라벨 유지) + `.on_hover_text()`로 전체 타입명 노출.
-///
-/// `other_count` — Other 타입이 available 이면 그 포맷 개수(design "{n} unrecognized
-/// formats"). Other 세그먼트/뱃지의 tooltip 이 기본 라벨("Other") 대신 이
-/// 개수 문구를 쓴다 — 다른 타입은 영향 없음.
+/// 타입이 하나면 배지, 여러 개면 선택 버튼을 그린다.
+/// SEG_COMPACT_AT 이상이면 선택한 타입만 라벨을 표시한다.
+/// 기타 포맷의 툴팁에는 개수를 넣는다.
 fn type_switch(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -390,21 +351,12 @@ fn type_switch(
     picked
 }
 
-/// 세그먼트가 라벨을 보여줄지 — compact 압축 모드는 active 세그먼트만 라벨 유지.
-/// 순수 함수라 렌더 없이 단위 테스트 가능(`SEG_COMPACT_AT` 문턱값 회귀 방지).
-///
-/// compact 분기는 **실 데이터로 재현된다.** `ClipboardType` 은 다섯이고
-/// (Text/Files/Image/Html/Other) `read_available()` 이 다섯 리더의 결과를 이어 붙이므로
-/// 다섯이 동시에 살아 있으면 `types.len() >= SEG_COMPACT_AT` 가 성립한다 — 브라우저에서
-/// 복사하면 text·html·image 가 한 번에 올라오는 것이 흔한 출발점이다.
+/// 압축 표시 중에는 선택한 타입만 라벨을 표시한다.
 fn seg_shows_label(compact: bool, active: bool) -> bool {
     !compact || active
 }
 
-/// 타입바 행 — 좌측 [`type_switch`] + 우측 슬롯(메타 텍스트 또는 커스텀 위젯,
-/// design "type-bar 우측 슬롯"). 우측 슬롯을 클로저로 받아 텍스트 고정을 피한다 —
-/// HTML 타입일 때 [`data_state`]가 이 자리에 Pretty print 체크박스를 그리는 클로저를
-/// 넘긴다(구조 변경 없음).
+/// 타입 선택과 우측 내용을 그린다. 우측에는 메타데이터나 HTML 체크박스를 넣는다.
 fn type_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -446,7 +398,7 @@ fn type_bar(
     picked
 }
 
-/// design `TypeBody` — Text/Files/Image/Html/Other arm 을 채운다(51/52/48/49/50).
+/// 선택한 타입의 본문을 그린다.
 fn type_body(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -459,14 +411,11 @@ fn type_body(
         (ClipboardType::Text, ContentRepr::Text(text)) => text_body(ui, theme, text),
         (ClipboardType::Files, ContentRepr::Files(files)) => files_body(ui, theme, files),
         (ClipboardType::Image, ContentRepr::Image { .. }) => {
-            // meta_text() 는 Image 에 항상 Some — read_available() 이 항상 실제
-            // width/height/byte_len 을 채워 push 하므로.
             let meta = content.meta_text().unwrap_or_default();
             image_body(ui, theme, tr, &meta);
         }
         (ClipboardType::Html, ContentRepr::Html(html)) => {
-            // 렌더링 없이 원본 소스 그대로 — 체크 시에만 인덴터를 거친 결과로 교체.
-            // 위젯 구조 자체는 text 타입과 동일(design 확정 결과).
+            // HTML은 렌더링하지 않고 소스를 표시한다. 체크하면 들여쓰기만 정리한다.
             if html_pretty {
                 text_body(ui, theme, &prettify(html));
             } else {
@@ -474,14 +423,12 @@ fn type_body(
             }
         }
         (ClipboardType::Other, ContentRepr::Other(entries)) => other_body(ui, theme, tr, entries),
-        // ClipboardType 과 ContentRepr 는 read_available() 이 항상 같은 종류끼리만
-        // 짝지어 push 한다 — 다른 조합은 구조적으로 발생하지 않는다.
+        // read_available이 같은 종류의 타입과 내용을 짝지어 전달해야 한다.
         _ => unreachable!("ClipboardType/ContentRepr mismatch"),
     }
 }
 
-/// design `TypeBody` 의 image 분기 — 아이콘 + 메타(치수·크기) + "인라인 미리보기
-/// 없음" 안내 문구, well 안에 중앙 정렬(실제 픽셀 렌더링 없음 — design 결정).
+/// 이미지 픽셀 대신 아이콘·치수·크기와 미리보기 미지원 안내를 표시한다.
 fn image_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, meta: &str) {
     well_centered(ui, theme, |ui| {
         icon_glyph(
@@ -502,8 +449,7 @@ fn image_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, meta: &str) {
     });
 }
 
-/// design `cbMetaMono` — mono/caption 크기/text-muted 색의 메타 텍스트 한 줄(type-bar
-/// 우측 슬롯 + image body 공용).
+/// 고정폭 글꼴과 caption 크기로 메타데이터를 표시한다.
 fn meta_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -513,19 +459,12 @@ fn meta_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// mono pre 텍스트 — well(border+radius+bg-app fill) 안에 스크롤(design `cbWell` +
-/// `cbMono`).
-///
-/// `egui::Label` 대신 read-only 흉내를 낸 `egui::TextEdit` 를 쓴다 — `Label` 의 내장
-/// 드래그 선택(`LabelSelectionState`)은 세로 이탈만 처리하고 가로 이탈은 처리하지
-/// 않아(egui 의도적 설계 범위, upstream 미수정 확정) 포인터가 위젯을 가로로
-/// 빠르게 벗어나면 선택이 멈춘다. `TextEdit` 의 커서 갱신은 이 게이팅이 없다.
-/// `interactive(false)` 는 쓰지 않는다 — 편집뿐 아니라 선택 자체도 막아버린다
-/// (egui 소스 확인). 대신 매 프레임 지역 `String` 버퍼를 넘겨 편집 결과를 버린다.
+/// 긴 텍스트를 스크롤 영역에 표시한다.
+/// 가로 방향으로 벗어난 드래그 선택을 지원하도록 Label 대신 TextEdit를 사용한다.
+/// interactive(false)는 선택도 막으므로 지역 버퍼에 생긴 편집 결과만 버린다.
 fn text_body(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     well(ui, theme, |ui| {
-        // 캐럿(편집 커서)만 숨긴다 — 이 well 스코프의 자식 ui 한정이라 다른 위젯에
-        // 새지 않는다. selection 하이라이트는 별도 스타일이라 영향 없음.
+        // 이 영역의 캐럿만 숨기고 선택 강조는 유지한다.
         ui.visuals_mut().text_cursor.stroke = egui::Stroke::NONE;
         let mut buf = text.to_owned();
         ui.add(
@@ -539,8 +478,7 @@ fn text_body(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     });
 }
 
-/// 파일 경로 목록 — 아이콘 + mono 경로 텍스트를 한 줄씩(design `TypeBody` `files`
-/// 분기 1:1 전사, `well` 안에 스크롤). 긴 경로는 말줄임(ellipsis).
+/// 파일 경로를 아이콘과 함께 나열한다. 긴 경로는 말줄임한다.
 fn files_body(ui: &mut egui::Ui, theme: &Theme, files: &[std::path::PathBuf]) {
     well(ui, theme, |ui| {
         let icon_sz = theme.icon_glyph_size_sm.value();
@@ -575,9 +513,7 @@ fn files_body(ui: &mut egui::Ui, theme: &Theme, files: &[std::path::PathBuf]) {
     });
 }
 
-/// "기타" 버킷 본문 — 발견된 포맷마다 한 블록씩 세로 나열, 블록 사이 1px
-/// separator(design `TypeBody` `other` 분기 1:1 전사). 목록 자체는 절대 접지
-/// 않는다(design §6.5 확정) — well 이 이미 스크롤되므로 포맷이 몇 개든 전부 그린다.
+/// 모든 기타 포맷을 스크롤 영역 안에 나열한다. 각 미리보기의 줄 수만 제한한다.
 fn other_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entries: &[OtherFormatEntry]) {
     well(ui, theme, |ui| {
         for (i, entry) in entries.iter().enumerate() {
@@ -600,8 +536,7 @@ fn other_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entries: &[Othe
     });
 }
 
-/// "기타" 버킷 한 블록 — 첫 줄 이름+크기(같은 줄), 그 아래 텍스트화된 미리보기,
-/// `OTHER_PREVIEW_MAX_LINES` 초과 시 이탤릭 `+N more lines`(design 확정 결과).
+/// 포맷 이름·크기·미리보기를 그린다. 줄 수가 상한을 넘으면 생략한 줄 수를 표시한다.
 fn other_format_block(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &OtherFormatEntry) {
     ui.horizontal(|ui| {
         ui.label(
@@ -620,8 +555,7 @@ fn other_format_block(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: 
     });
     ui.add_space(theme.spacing_xs.value());
     let (shown, truncated_lines) = truncate_lines(&entry.preview, OTHER_PREVIEW_MAX_LINES);
-    // 바이너리 fallback(hex 요약)은 실제 클립보드 내용이 아니라 대체 표현이라는
-    // 것을 이탤릭으로 구분한다 — 사용자가 hex 를 원본 텍스트로 오인하지 않게.
+    // 바이너리의 16진수 요약은 원래 텍스트와 구분하도록 기울임꼴로 표시한다.
     let mut preview_text = egui::RichText::new(shown)
         .monospace()
         .size(theme.font_size_term_sm.value())
@@ -641,8 +575,7 @@ fn other_format_block(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: 
     }
 }
 
-/// 순수 함수 — `text`를 최대 `max_lines`줄로 절삭하고 잘려나간 줄 수를 반환한다.
-/// 렌더 없이 단위 테스트 가능.
+/// 표시할 앞부분과 생략된 줄 수를 반환한다.
 fn truncate_lines(text: &str, max_lines: usize) -> (String, usize) {
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() <= max_lines {
@@ -651,20 +584,19 @@ fn truncate_lines(text: &str, max_lines: usize) -> (String, usize) {
     (lines[..max_lines].join("\n"), lines.len() - max_lines)
 }
 
-/// design "+{n} more lines" — 블록 본문 절삭 문구.
+/// 생략한 미리보기 줄 수 안내.
 fn other_more_lines_text(tr: &Translator, n: usize) -> String {
     tr.t("clipboard_viewer.popup.other_more_lines")
         .replace("{n}", &n.to_string())
 }
 
-/// design "{n} unrecognized formats" — Other 세그먼트/뱃지 tooltip 문구.
+/// 기타 포맷 개수 안내.
 fn other_unrecognized_text(tr: &Translator, n: usize) -> String {
     tr.t("clipboard_viewer.popup.other_unrecognized_formats")
         .replace("{n}", &n.to_string())
 }
 
-/// Other 타입일 때 푸터 메타 — `{n} unrecognized formats`(mime 이 없어 이 문구가
-/// mime 자리를 대체한다, `footer_mime_text`). 다른 타입은 `None`.
+/// 기타 포맷에는 MIME 대신 개수를 표시한다. 다른 타입은 None이다.
 fn other_footer_meta(tr: &Translator, ty: ClipboardType, content: &ContentRepr) -> Option<String> {
     match (ty, content) {
         (ClipboardType::Other, ContentRepr::Other(entries)) => {
@@ -674,8 +606,7 @@ fn other_footer_meta(tr: &Translator, ty: ClipboardType, content: &ContentRepr) 
     }
 }
 
-/// 한 줄 말줄임 galley — 폭 초과 시 '…' 로 잘라낸다(`tasty-ui-widgets::listctrl` 정본
-/// 이식, design ellipsis 전사).
+/// 너비를 넘는 한 줄 텍스트를 말줄임한다.
 fn truncated_galley(
     ui: &egui::Ui,
     text: &str,
@@ -688,9 +619,7 @@ fn truncated_galley(
     ui.fonts(|f| f.layout_job(job))
 }
 
-/// design `cbWell` frame — border+radius+bg-app fill. 토큰 매핑: fill=`bg-app`,
-/// border=`separator`+`border-width`, radius=`corner_radius`. [`well`](스크롤)과
-/// [`well_centered`](중앙 정렬, image body) 가 공유한다.
+/// 스크롤·중앙 정렬 영역이 함께 사용하는 배경·테두리·모서리 스타일.
 fn well_frame(theme: &Theme) -> egui::Frame {
     let margin = theme.spacing_md.value();
     egui::Frame::new()
@@ -706,7 +635,7 @@ fn well_frame(theme: &Theme) -> egui::Frame {
         ))
 }
 
-/// design `cbWell` — 스크롤 컨테이너(text/html 같은 긴 콘텐츠).
+/// 긴 내용을 위한 스크롤 영역.
 fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     well_frame(theme).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -718,9 +647,7 @@ fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-/// design `cbWell` — 콘텐츠를 상하좌우 중앙에 배치(image body 전용, design jsx의
-/// image 분기가 `cbWell` 에 `display:flex; alignItems:center; justifyContent:center`
-/// 를 덧씌운 것과 동형).
+/// 이미지 정보를 상하좌우 중앙에 배치한다.
 fn well_centered(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     well_frame(theme).show(ui, |ui| {
         let h = ui.available_height().max(1.0);
@@ -734,10 +661,7 @@ fn well_centered(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::U
     });
 }
 
-/// 푸터 — mime 텍스트([`footer_mime_text`], 타입별 조건분기 수용 지점: 51 은
-/// `{mime}` 기본 경로만, 49가 html 의 `{mime} · {meta}` 조건을 보탠다) + Close 버튼.
-/// host 가 이미 outside-click/Esc close 경로를 제공하지만, 디자인이 footer Close 를
-/// 명시적으로 요구해 중복이라도 그대로 반영한다.
+/// 타입별 MIME·메타데이터와 닫기 버튼을 그린다.
 fn footer(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -787,9 +711,7 @@ fn footer(
     }
 }
 
-/// design 조건: 일반 타입은 `{mime}`, HTML 타입은 `{mime} · {meta}`(확정 결과).
-/// Other 는 mime 자체가 없어 meta(포맷 개수 문구)가 mime 을 통째로 대체한다.
-/// Text/Files/Image 는 기본 경로만 채운다.
+/// HTML은 MIME과 메타데이터를, 기타 포맷은 개수를, 나머지는 MIME을 표시한다.
 fn footer_mime_text(ty: ClipboardType, meta: Option<&str>) -> String {
     match (ty, meta) {
         (ClipboardType::Html, Some(meta)) => format!("{} · {meta}", ty.mime_str()),
@@ -798,8 +720,7 @@ fn footer_mime_text(ty: ClipboardType, meta: Option<&str>) -> String {
     }
 }
 
-/// HTML 타입일 때만 푸터 메타(`{n} chars · {n} line(s)`, design 확정 결과 예시
-/// `312 chars · 1 line`)를 만든다. 다른 타입은 `None`(mime만 표시).
+/// HTML의 문자·줄 수를 만든다. 다른 타입은 None이다.
 fn html_footer_meta(tr: &Translator, ty: ClipboardType, content: &ContentRepr) -> Option<String> {
     match (ty, content) {
         (ClipboardType::Html, ContentRepr::Html(html)) => Some(format_html_meta(tr, html)),
@@ -820,8 +741,7 @@ fn format_html_meta(tr: &Translator, html: &str) -> String {
         .replace("{lines}", &lines.to_string())
 }
 
-/// 타입별 세그먼트/뱃지 아이콘(design `TYPE_ICON`). Other 는 `layers`(design 확정
-/// 결과 — "여러 겹" = 여러 포맷이 쌓여있다는 은유).
+/// 타입별 아이콘.
 fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     match ty {
         ClipboardType::Text => baked_icons::TEXT_LEFT,
@@ -832,8 +752,7 @@ fn type_icon(ty: ClipboardType) -> &'static [&'static [[f32; 2]]] {
     }
 }
 
-/// 빈/읽기실패/이미열림 — 아이콘 + 굵은 타이틀 + 옅은 부제 2줄, content 영역 중앙
-/// (design `CenterState`). `danger` 는 읽기실패 톤(`accent-danger`), 아니면 muted.
+/// 빈 상태·읽기 실패·이미 열림 안내를 중앙에 배치한다. danger는 오류 색상이다.
 fn center_state(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -848,10 +767,7 @@ fn center_state(
         egui::Layout::centered_and_justified(egui::Direction::TopDown),
         |ui| {
             ui.vertical_centered(|ui| {
-                // design opacity 0.9(danger)/0.5(muted) 근사 — gamma_multiply(경고
-                // callout 의 color-mix 근사 idiom 재사용).
-                // 빈 상태 아이콘 톤 — 디자인이 적은 opacity 0.9(danger)/0.5(muted).
-                // 대응 토큰 없음(0.5 는 `opacity_disabled` 와 값만 같고 역할이 다르다).
+                // 빈 상태 아이콘의 디자인 불투명도. 비활성 상태 토큰과는 역할이 다르다.
                 const EMPTY_ICON_DANGER_OPACITY: f32 = 0.9;
                 const EMPTY_ICON_MUTED_OPACITY: f32 = 0.5;
                 let icon_tint = if danger {
@@ -891,15 +807,13 @@ fn center_state(
     );
 }
 
-/// 단독 글리프 — `size` 정사각 영역을 할당해 `color` tint 로 벡터 stroke 를 그린다
-/// (베이크된 폴리라인, `tasty_plugin_sdk::baked_icon::draw`).
+/// 지정한 정사각형 안에 폴리라인 아이콘을 그린다.
 fn icon_glyph(ui: &mut egui::Ui, icon: &[&[[f32; 2]]], size: f32, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     baked_icon::draw(ui.painter(), icon, rect.center(), size, color);
 }
 
-/// 버튼 chrome 안에 그리는 글리프 — 버튼이 계산한 `rect`(정사각)에 `ICON_DRAW_RATIO`
-/// 비율로 축소해 그린다(`tasty-plugin-image` 정본 튜닝값).
+/// 버튼 영역에 ICON_DRAW_RATIO 비율로 아이콘을 그린다.
 fn icon_in_button(ui: &mut egui::Ui, icon: &[&[[f32; 2]]], rect: egui::Rect, color: egui::Color32) {
     baked_icon::draw(
         ui.painter(),
@@ -924,11 +838,10 @@ mod tests {
 
     #[test]
     fn compact_mode_starts_at_seg_compact_at() {
-        // compact 가 아니면(types.len() < SEG_COMPACT_AT) active 여부와 무관하게 항상
-        // 라벨을 보여준다.
+        // 압축하지 않을 때는 모든 타입의 라벨을 표시한다.
         assert!(seg_shows_label(false, false));
         assert!(seg_shows_label(false, true));
-        // compact(true, types.len() >= SEG_COMPACT_AT) 는 active 세그먼트만 라벨 유지.
+        // 압축할 때는 선택한 타입만 라벨을 표시한다.
         assert!(!seg_shows_label(true, false));
         assert!(seg_shows_label(true, true));
     }
@@ -950,8 +863,7 @@ mod tests {
 
     #[test]
     fn type_icon_text_uses_text_left_glyph() {
-        // 값 비교 — `const` 는 참조마다 다른 주소로 프로모트될 수 있어(ptr::eq 로는
-        // 신뢰 불가) 폴리라인 내용 자체를 비교한다.
+        // const의 주소는 달라질 수 있으므로 폴리라인 값을 비교한다.
         assert_eq!(type_icon(ClipboardType::Text), baked_icons::TEXT_LEFT);
     }
 
@@ -1033,9 +945,7 @@ mod tests {
 
     #[test]
     fn footer_mime_text_other_without_meta_falls_back_to_mime_str() {
-        // read_available() 은 entries 가 비어 있으면 Other 를 애초에 push 하지
-        // 않으므로 실전에서는 발생하지 않지만, 함수 자체는 두 인자 조합 모두에
-        // 대해 정의돼야 한다.
+        // read_available에서는 만들지 않는 빈 기타 목록도 처리할 수 있어야 한다.
         assert_eq!(
             footer_mime_text(ClipboardType::Other, None),
             "application/octet-stream"
