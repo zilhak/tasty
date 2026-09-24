@@ -60,7 +60,7 @@ pub enum PtyCommands {
         #[arg(long)]
         id: u32,
     },
-    /// List all live headless PTYs (focus-independent — always the full set).
+    /// List all registered headless PTYs, including exited entries, regardless of focus.
     List,
     /// Promote a headless PTY into a real Surface/tab under a pane. The same
     /// process/scrollback is moved (state preserved) and the pty id leaves the

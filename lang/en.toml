@@ -2871,7 +2871,7 @@ about = "Kill a headless PTY's process and reclaim its slot"
 help = "Target pty id"
 
 [cli.help._root.pty.list]
-about = "List all live headless PTYs (focus-independent — always the full set)"
+about = "List all registered headless PTYs, including exited entries, regardless of focus"
 
 [cli.help._root.pty.attach-surface]
 about = "Promote a headless PTY into a real Surface/tab under a pane. The same process/scrollback is moved (state preserved) and the pty id leaves the headless list"
@@ -3688,7 +3688,7 @@ help = "Unique identifier that profiles reference. Only alphanumerics, '-' and '
 help = "path kind: path to an existing key file owned by the user (`-i`). Mutually exclusive with `--inline`"
 
 [cli.help._root.tool.passkey.add.arg.inline]
-help = "inline kind: materialize the secret as a 0600 file. The value comes from `--value` or stdin"
+help = "inline kind: store the secret in a file (0600 on Unix). The value comes from `--value` or stdin"
 
 [cli.help._root.tool.passkey.add.arg.value]
 help = "Inline value (read from stdin if omitted). Used together with `--inline`"

@@ -1974,7 +1974,7 @@ help = "ディレクトリパス（explorer 種別のとき）"
 help = "URL（html 種別のとき）"
 
 [cli.help._root.new.workspace.arg.ssh_profile]
-help = "保存済み SSH プロファイルのリモートホストにこのワークスペースを対応づけます。有効にすると SSH トンネルで自動接続し、リモートワークスペースをミラーリングします。"
+help = "保存済み SSH プロファイルのリモートホストにこのワークスペースを対応づけます。このワークスペースを選択すると SSH トンネルで自動接続し、リモートワークスペースをミラーリングします。"
 
 [cli.help._root.new.workspace.arg.ssh]
 help = "保存済みプロファイルを使わずに SSH 接続先を直接指定します (例: --ssh user@host)。`--ssh-profile` とは併用できません。"
@@ -2626,7 +2626,7 @@ help = "サーフェスID（必須）"
 
 [cli.help._root.surface.attention.clear]
 about = "サーフェスの注意表示を解除"
-long = "サーフェスの注意表示を解除します。対象は --surface で指定し、フォーカスからは選びません。注意表示がなければ成功応答に \"cleared\": false を返します。リモート attach セッションが占有するサーフェスと、リモートワークスペースのミラーサーフェスは拒否されます。この場合はサーフェスを所有するインスタンス側で解除してください。"
+long = "サーフェスの注意表示を解除します。対象は --surface で指定し、フォーカスからは選びません。注意表示がなければ成功応答に \"cleared\": false を返します。リモート attach セッションが占有するサーフェスと、リモートワークスペースのミラーサーフェスは拒否されます。"
 
 [cli.help._root.surface.attention.clear.arg.surface]
 help = "サーフェスID（必須）"
@@ -2841,7 +2841,7 @@ about = "headless PTYのプロセスを終了しスロットを回収"
 help = "対象PTY ID"
 
 [cli.help._root.pty.list]
-about = "現在のフォーカスに関係なく、実行中のすべてのヘッドレス PTY を一覧表示します。"
+about = "フォーカスに関係なく、登録済みのすべてのヘッドレス PTY を一覧表示します。終了済みの項目も含みます。"
 
 [cli.help._root.pty.attach-surface]
 about = "ヘッドレス PTY をペイン内の新しいサーフェスとタブに移します。同じプロセスとスクロールバックを保持し、PTY ID はヘッドレス一覧から除きます。"
@@ -3658,7 +3658,7 @@ help = "プロファイルが参照する一意な識別子。英数字と '-' '
 help = "path 種別: ユーザーが持つ既存の鍵ファイルのパス (`-i`)。`--inline` とは併用できない"
 
 [cli.help._root.tool.passkey.add.arg.inline]
-help = "inline 種別: シークレットを 0600 のファイルとして書き出す。値は `--value` か stdin から取る"
+help = "inline 種別: シークレットをファイルに保存します (Unix では 0600 権限)。値は `--value` または stdin から読み取ります。"
 
 [cli.help._root.tool.passkey.add.arg.value]
 help = "インラインの値 (省略すると stdin から読む)。`--inline` と一緒に使う"

@@ -17,7 +17,7 @@ pub enum PasskeyCommands {
         /// Mutually exclusive with `--inline`.
         #[arg(long)]
         path: Option<String>,
-        /// inline kind: materialize the secret as a 0600 file. The value comes
+        /// inline kind: store the secret in a file (0600 on Unix). The value comes
         /// from `--value` or stdin.
         #[arg(long)]
         inline: bool,
