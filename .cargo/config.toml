@@ -1,6 +1,4 @@
-# Limit test parallelism to avoid PTY resource exhaustion.
-# Tests that create Terminal instances open real PTY pairs,
-# and running too many in parallel can exceed OS limits.
+# Terminal tests open real PTYs, so excessive parallelism can exhaust OS resources.
 [test]
 threads = 4
 

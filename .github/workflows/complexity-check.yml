@@ -1,25 +1,11 @@
 name: Complexity Check
 
-# 파일 SLOC 검사는 docs/dev-guide/complexity-gate.md#무엇을도구임계값 을 따른다.
-# scripts/check-file-size.sh 가 tokei 로 Rust 파일의 code SLOC(주석·공백 제외)을 집계해
-# allowlist/skip 밖에서 1000줄 초과 신규 대형 파일이 있으면 exit 1.
-#
-# 함수 cognitive 복잡도 파트는 crossplatform-check.yml 의 Windows clippy 가 이미 잡으므로
-# 여기서는 파일 SLOC 만 책임진다(관심사 1:1).
-#
-# self-hosted Linux X64 근거: tokei 기반 무컴파일 게이트라 초단위로 끝나고, mac/win
-# 러너에 tokei 설치 부담을 지우지 않으려면 Linux 단일 러너가 적합하다. test.yml /
-# supply-chain-check.yml 과 동일한 self-hosted Linux X64 관행을 따른다.
+# 테스트·생성 코드를 제외하고 1000 code SLOC를 넘는 Rust 파일을 검사한다.
+# 기준: docs/dev-guide/complexity-gate.md#무엇을도구임계값
+# 함수 복잡도는 crossplatform-check.yml의 Windows Clippy에서 별도로 검사한다.
 
 on:
-  # main push 가 이 게이트의 **실질적인 유일 채널**이다 — 이 저장소는 PR 을 열지 않고
-  # main 에 직접 push 한다(실측: 최근 200 run 의 `pull_request` = 0). PR 트리거만
-  # 두었던 동안 이 워크플로는 등록 이래 run 이력이 0 건이었고, 그 사이 임계를 새로
-  # 넘은 파일이 26 개 쌓였다. 근거 전문은 docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때.
-  #
-  # `paths-ignore` 는 crossplatform-check 와 같은 세 경로다. 이 게이트는 `.rs` 의
-  # code SLOC 만 보므로 문서만 담은 push 는 판정을 바꿀 수 없다 — 러너를 깨울 이유가
-  # 없다(레포 전체를 훑는 문서 가드와 달리 여기서는 사각이 생기지 않는다).
+  # PR 없이 반영한 변경도 검사한다. 문서만 바뀐 push는 생략한다.
   push:
     branches: [main]
     paths-ignore:
@@ -30,8 +16,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
-# test.yml / build-check.yml 와 동일 정책.
+# 같은 ref의 이전 실행을 취소해 러너가 중복 작업을 하지 않게 한다.
 concurrency:
   group: complexity-check-${{ github.ref }}
   cancel-in-progress: true
@@ -47,7 +32,6 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # tokei 가 러너에 없을 수 있으므로 보장(있으면 no-op).
       - name: Ensure tokei
         run: |
           if ! command -v tokei >/dev/null 2>&1; then
@@ -55,18 +39,13 @@ jobs:
           fi
           tokei --version
 
-      # 게이트가 재는 것은 원본이 아니라 **인라인 `#[cfg(test)]` 를 지운 사본**이고,
-      # 그 사본을 만드는 것이 이 바이너리다. 게이트는 스스로 빌드하지 않는다(중첩 cargo 가
-      # 빌드 디렉토리 잠금에서 서로를 기다리는 자리가 있다) — 여기서 미리 만들어 둔다.
-      # tasty-doc-guards 는 의존이 0 이라(docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치) 이 빌드가 초 단위다.
+      # 테스트 코드를 제외하는 도구를 미리 빌드해 검사 중 중첩 Cargo 실행을 피한다.
       - name: Build the shipping-scope judge
         run: cargo build --locked -p tasty-doc-guards --bin strip-cfg-test
 
       - name: File SLOC gate
         run: bash scripts/check-file-size.sh
 
-      # 자매 게이트. 파일 SLOC 게이트는 파일이 임계를 넘는 *순간* 만 보고, 목록에 오른
-      # 뒤의 성장은 아무도 안 본다 — 이쪽이 그 합을 본다. tokei·판정기를 위에서 이미
-      # 갖췄으므로 새 준비가 없다.
+      # 예외 목록에 등록된 대형 파일도 합계가 계속 늘지 않는지 검사한다.
       - name: Frozen sum ratchet
         run: bash scripts/check-frozen-sum-ratchet.sh

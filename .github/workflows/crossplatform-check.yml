@@ -1,56 +1,10 @@
 name: Cross-platform Check
 
-# 불가침 원칙 #4(크로스플랫폼: 한 OS 전용 코드가 다른 OS 컴파일을 깨뜨리지 않게)를
-# main 에 들어온 변경마다 자동 강제하는 가벼운 가드.
-#
-# build-check.yml / release.yml 의 build-* 잡은 dist 빌드 스크립트(무거움) + 수동
-# 트리거라 매-커밋 가드 역할을 못 한다. 본 워크플로는 dist 산출물 없이
-# `cargo check` / `cargo clippy` 만 돌려 컴파일 정합성만 빠르게 확인한다.
-#
-# Windows 잡은 `cargo clippy`(check 의 상위집합: 컴파일 + lint)로 돌린다. #[cfg(windows)]
-# 하위에서만 사는 clippy 위반(overlapped I/O 보조채널 등)은 Linux/macOS CI 가 코드를
-# 컴파일조차 안 해 영구 사각지대이며, Windows 러너 clippy 만이 유일한 포착 경로다.
-# `-D warnings` 는 붙이지 않는다 — 워크스페이스에 의도적 warn 이 다수 있어 CI 가 항상
-# red 가 된다. deny-level 하드에러만 plain clippy 로 잡는다.
-#
-# self-hosted runner 사용 근거: cross-compile(`cargo check --target`)은
-# winit/wgpu 네이티브 의존성 때문에 Linux 에서 자주 실패한다. release.yml 이
-# 이미 보유한 각 OS self-hosted runner 에서 네이티브 check 를 돌리는 편이 확실하다.
-# 네이티브 host 타깃이 곧 x86_64-pc-windows-msvc / aarch64-apple-darwin 이므로
-# 별도 `--target` 지정은 불필요(오히려 rustup target 설치를 요구).
-#
-# Linux x64 gui 컴파일 + not-debug(release) 컴파일 정합성은 아래 check-release 잡이 본다.
-# 한때 여기 "Linux x64 gui 컴파일은 자동 잡이 없고 병합 후 수동 전체 스위트가 유일 채널"
-# 이라 적혀 있었는데, 그 사이 두 결함이 그 사각으로 샜다: gui × not-debug 에서만 미사용이
-# 되는 상수(cfg(debug_assertions) 라우터 안의 dead_code)가 release bin 컴파일을 깨뜨린 채
-# 병합됐다(자동 채널 부재라 아무 데서도 안 잡힘). dev check(macos/windows/headless 전부
-# dev 프로필)로는 not-debug 축을 원리적으로 못 본다. check-release 잡이 그 둘을 함께 닫는다.
-# 단, headless(`--no-default-features`) 빌드만은 어떤 workflow 도 돌지 않아 gui-gating
-# 누락(gui 전용 심볼을 cfg 게이팅 없이 사용)이 CI 를 통과해 유입됐다(headless-build-01).
-# gui feature 가 켜진 빌드에선 그 실수가 드러나지 않으므로, headless 회귀는 오직
-# `--no-default-features` 컴파일로만 잡힌다. Linux x64 는 gui 네이티브 의존 없이 순수
-# 컴파일만 필요해 가볍게 돌릴 수 있어 아래 check-headless 잡으로 함께 가드한다.
-
-# 트리거 근거: 이 저장소는 PR 을 열지 않고 main 에 직접 커밋·push 하는 흐름이라
-# `pull_request` 만으로는 이 가드가 발사되지 않는다. 그래서 main push 를 1차 트리거로
-# 둔다. 발사 단위는 커밋이 아니라 push 라 빈도가 낮고(최근 30 일 26 회, 하루 최대 4 회),
-# 세 잡이 서로 다른 러너에서 병렬로 돌며, 아래 concurrency 가 연속 push 의 앞선 실행을
-# 취소한다. 러너 점유 실측(러너 로그 기준): check-macos 137~145s · check-windows
-# 180~508s · check-headless 328s(check 80 + test 215 + clippy 22). Linux X64 러너는
-# **한 대**를 complexity-check · supply-chain-check · dist 빌드와 함께 쓴다
-# (채널 정본: `docs/dev-guide/ci-gates.md`) — concurrency 는 같은 워크플로·같은 ref 만
-# 취소하므로 다른 워크플로와의 줄서기는 막지 않는다.
-# 기각한 대안: (a) 주기 실행(cron) — 변경이 없어도 러너를 깨우고 회귀 검출이 최대 하루
-# 늦다. (b) PR 전용 유지 — 이 저장소의 흐름에서 가드가 영영 돌지 않는다.
-# `pull_request` 는 PR 흐름을 쓰게 될 때를 위해 남겨 둔다.
+# OS별 컴파일과 테스트를 실행한다.
 on:
   push:
     branches: [main]
-    # 아래 세 경로는 컴파일 입력이 아니다 — docs/ 와 site/ 는 워크스페이스 밖이고,
-    # 마크다운을 include_str! 하는 크레이트도 없다. 문서만 담은 push 가 mac/win 러너를
-    # 깨우지 않게 하는 안전판이다(실측상 대부분의 push 는 소스를 함께 담아 실제로
-    # 걸러지는 경우는 드물다). 제외 목록 방식이라 여기 없는 경로가 하나라도 바뀌면
-    # 실행된다 — 새 소스 디렉토리가 생겨도 가드가 자동으로 따라붙는다.
+    # 문서만 바뀐 push는 생략한다. 문서 검사는 doc-guards.yml에서 실행한다.
     paths-ignore:
       - 'docs/**'
       - 'site/**'
@@ -59,8 +13,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
-# test.yml / build-check.yml 와 동일 정책.
 concurrency:
   group: crossplatform-check-${{ github.ref }}
   cancel-in-progress: true
@@ -71,36 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # gui 는 default feature 이므로 별도 feature 지정 없이 GUI 의존성이 활성화된다.
       - name: cargo check
         run: cargo check --workspace --locked
 
-      # fd 예산이 **여유를 유지하는지 단정한다.** 찍기만 하던 스텝을 주장으로 바꿨다.
-      #
-      # 왜 계측을 넣었나: 아래 스텝의 바이너리는 `test_state()` 를 쓰는 시험마다 진짜
-      # PTY 와 자식 셸을 띄운다(docs/dev-guide/unit-test-isolation.md §8). 그 상한에
-      # 닿는지 아닌지는 상한을 모르면 못 정했다.
-      #
-      # 그 물음은 닫혔다 — 2026-09-06 측정으로 여유가 약 9 배다(값과 측정일은
-      # docs/dev-guide/ci-gates.md 에 박아 두었다. CI 로그는 90 일 뒤 사라지므로
-      # 거기에만 있는 값은 다음 사람에게 없는 값이다).
-      #
-      # ★ 그래서 찍기만 하는 스텝으로 남기지 않는다. 읽히지 않는 계기는 장식이고,
-      # 장식은 매 회 초록을 판다. 남기는 이유는 하나뿐이다 — **그 여유는 우리가 정한
-      # 것이 아니라 러너 이미지가 준 것**이고, 이미지가 바뀌면 조용히 사라진다.
-      # 사라지면 증상은 여기가 아니라 아래 스텝에서 EMFILE 로 나타나고, 그 빨강은
-      # 원인을 안 말한다. 이 단정이 그때 **원인 자리에서** 먼저 터진다.
-      #
-      # 하한 4096 의 근거는 인구가 아니라 여유다: 리눅스 실측 최고가 1.2k 언저리이고
-      # 그 수는 시험이 늘면 함께 는다(spawn 이 시험당이다). 4096 이면 약 3 배가 남고,
-      # 2048 로 두면 2 배가 안 남아 스위트가 조금만 커져도 경고가 아니라 실패로 온다.
-      # 이 단정이 터지면 하한을 내리지 마라 — 재야 할 것은 그 시점의 실제 최고 fd 다.
-      #
-      # `continue-on-error` 는 뺐다. 그것이 붙어 있으면 이 스텝은 무엇도 주장하지 못한다
-      # (실패해도 잡이 초록이다) — 주장으로 바꾸는 것과 양립하지 않는다.
-      #
-      # 네 값을 다 찍는다 — soft 만 보면 이미지나 도구가 hard 쪽을 올려 둔 경우를 못 본다.
-      # 이 스텝도 `ulimit` 을 **설정하지 않는다.** 올리면 재는 대상이 바뀐다.
+      # 테스트가 PTY와 자식 셸을 사용하므로 fd soft 상한을 먼저 확인한다.
+      # 4096은 측정된 사용량에 여유를 둔 하한이다. 실패하면 실제 최고 사용량을
+      # 다시 측정하고 원인을 확인한다. 하한만 낮추지 않는다.
+      # 측정 절차: docs/dev-guide/ci-gates.md
+      # soft/hard와 커널 상한을 출력하되 이 스텝에서 상한을 변경하지 않는다.
       - name: fd budget
         run: |
           soft="$(ulimit -n)"
@@ -108,23 +38,18 @@ jobs:
           echo "hard: $(ulimit -Hn)"
           sysctl -n kern.maxfilesperproc kern.maxfiles
           if [ "$soft" = "unlimited" ]; then
-            echo "soft 가 unlimited 다 — 여유 판정 불필요."
+            echo "soft 상한이 unlimited이므로 fd 하한 검사를 생략합니다."
             exit 0
           fi
           if [ "$soft" -lt 4096 ]; then
-            echo "::error::fd soft 상한이 $soft 다(하한 4096). 이 러너에서 유닛 스위트의"
-            echo "::error::최고 fd 에 대한 여유가 사라졌다. 아래 유닛 테스트 스텝이 EMFILE 로"
-            echo "::error::깨지기 시작하면 원인이 여기다. 하한을 내리지 말고, 그 시점의"
-            echo "::error::실제 최고 fd 를 먼저 재라 — 재는 법은 docs/dev-guide/ci-gates.md."
+            echo "::error::fd soft 상한이 $soft 입니다(필요한 하한: 4096)."
+            echo "::error::테스트에서 EMFILE 오류가 발생할 수 있습니다."
+            echo "::error::하한을 낮추기 전에 실제 최고 fd 사용량을 측정해 주세요."
+            echo "::error::측정 절차: docs/dev-guide/ci-gates.md"
             exit 1
           fi
 
-      # macOS 로 게이트된 유닛 테스트는 이 스텝이 생기기 전까지 **어느 채널도 안 돌렸다** —
-      # 컴파일만 되고 실행은 아무도 안 했다. 명령은 check-windows 의 `cargo test (unit)` ·
-      # check-headless 의 `cargo test (linux, gui, unit)` 과 **글자 그대로 같다**(새 형태를
-      # 만들지 않는다). 비용의 단위는 이 잡의 시간이 아니라 **워크플로 벽시계**이고,
-      # 잡들이 병렬이라 이 잡이 임계경로(헤드리스 잡)를 넘지 않는 동안 그 비용은 0 이다.
-      # 재는 법과 그것이 뒤집히는 조건은 docs/dev-guide/ci-gates.md 에 있다.
+      # macOS 전용 분기를 포함한 단위 테스트를 실행한다.
       - name: cargo test (macos, gui, unit)
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
@@ -133,19 +58,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ★ 이 러너는 self-hosted 라 **워크스페이스를 재사용한다.** git 은 `.gitattributes`
-      # 가 바뀌어도 이미 워크트리에 있는 파일을 자동으로 재정규화하지 않는다 — 그래서
-      # `git add --renormalize` 라는 명령이 따로 있다. 그 결과 예전 실행이
-      # `core.autocrlf=true` 로 CRLF 로 써 둔 파일이 새 체크아웃 뒤에도 그대로 남는다.
-      #
-      # 그것이 왜 문제인가: 가드 다수가 소스를 **문자열로** 판정한다(여러 줄 needle 을
-      # `contains` 하거나 `find("\n    }\n")` 로 블록 끝을 잡는다). needle 은 LF 로 쓰여
-      # 있으므로 워크트리가 CRLF 면 같은 코드를 두고 "못 찾았다" 가 나온다.
-      #
-      # 이 스텝은 먼저 **재고**(몇 개가 CRLF 인지) 찍고, 있을 때만 인덱스에서 워크트리로
-      # 강제로 다시 쓴다. 조건부인 이유는 `checkout-index --all --force` 가 모든 파일의
-      # mtime 을 갱신해 cargo 의 증분 빌드를 통째로 무효화하기 때문이다 — 정규화가
-      # 필요 없는 실행에서는 그 비용을 물지 않는다.
+      # 재사용하는 러너에는 이전 CRLF 파일이 남을 수 있다. 문자열 기반 소스 검사가
+      # 줄바꿈 차이로 실패하지 않도록 필요한 경우에만 다시 체크아웃한다.
+      # 항상 다시 쓰면 mtime이 바뀌어 Cargo 증분 빌드를 재사용하기 어렵다.
       - name: normalize the working tree to committed line endings
         shell: pwsh
         run: |
@@ -153,9 +68,7 @@ jobs:
           Write-Host "CRLF in working tree (before): $($before.Count)"
           if ($before.Count -gt 0) {
             $before | Select-Object -First 5 | ForEach-Object { Write-Host "  $_" }
-            # 파일을 먼저 지운다. 인덱스가 CRLF 시절의 크기를 stat 으로 기억하고 있어
-            # git 이 그 항목을 "수정 없음" 으로 판정하며, 그때 checkout 계열은 --force
-            # 를 줘도 한 개도 다시 쓰지 않는다 (실측: 1915 개 중 0 개).
+            # Git이 기존 파일을 수정되지 않은 것으로 판단할 수 있어 먼저 삭제한다.
             $before | ForEach-Object {
               Remove-Item -LiteralPath (($_.Line -split "`t")[-1]) -Force -ErrorAction SilentlyContinue
             }
@@ -165,111 +78,38 @@ jobs:
             if ($after.Count -gt 0) { throw "renormalize did not take" }
           }
 
-      # clippy 컴포넌트가 러너에 없을 수 있으므로 보장(있으면 no-op — 실측
-      # `34184720171`: `info: component clippy is up to date`).
-      #
-      # `if:` 가 붙은 이유는 이 스텝을 위해서가 아니라 **아래 clippy 를 위해서**다.
-      # 아래 스텝을 앞의 실패에서 떼어 내면 그 앞을 함께 떼지 않는 한 이 스텝만
-      # skipped 로 남고, 그때 clippy 가 보는 것은 clippy 판정이 아니라 "component
-      # not found" 다 — 같은 실패의 재방송이라 새 정보가 아니다. 전제는 뒤와 함께
-      # 들어올린다(docs/dev-guide/ci-gates.md "전제는 뒤와 함께 들어올린다").
+      # 앞 스텝이 실패해도 Clippy를 실행할 수 있도록 설치 스텝에도 같은 조건을 둔다.
       - name: ensure clippy component
         if: ${{ !cancelled() }}
         shell: pwsh
         run: rustup component add clippy
 
-      # clippy 는 check 의 상위집합이라 크로스플랫폼 컴파일 가드를 유지하면서 lint 까지 얻는다.
-      # `-D warnings` 금지(의도적 warn 다수 → CI 상시 red). deny-level 하드에러만 잡는다.
-      #
-      # `if: !cancelled()` — 위 `normalize the working tree` 는 이 스텝의 **전제가
-      # 아니다**. 줄 끝 문자는 rust 컴파일에 무관해서, 정규화가 실패한 트리에서 돈
-      # clippy 도 여전히 유효한 clippy 판정이다. 실측 `34111807266` 에서 정확히 그
-      # 스텝이 죽어 이 조합이 통째로 미측정이 됐다(그 run 의 이 스텝: skipped).
+      # CRLF 정규화 실패는 Rust 컴파일을 막지 않으므로 Clippy는 계속 실행한다.
+      # 기존 warning을 모두 오류로 바꾸지 않고 deny 수준의 오류만 차단한다.
       - name: cargo clippy
         if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo clippy --workspace --all-targets --locked
 
-      # Windows 단위테스트 — `#[cfg(windows)]` 분기와 플랫폼 의존 로직(경로 절대성,
-      # ConPTY 등)의 born-broken 테스트를 잡는 유일한 채널 (test.yml 은 Linux 전용이라
-      # terminal_link mirror 경로 테스트가 도입 시점부터 Windows 에서 깨진 채 미검출됐던
-      # 전례). 이 스텝이 `--lib --bins` 인 이유는 **통합 타깃 전체가 부적합해서가 아니다** —
-      # 창을 띄우는 e2e 하네스가 부적합한 것이고, 화면을 안 요구하는 통합 타깃은 아래
-      # 스텝이 패키지를 지목해 돌린다. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
-      # 추가 비용은 실행 시간뿐이다.
-      #
-      # `--no-fail-fast` 는 필수다. 이것이 없으면 cargo 는 **처음 실패한 테스트
-      # 바이너리에서 러너를 멈춰**, 알파벳 순으로 그 뒤에 오는 크레이트가 한 번도
-      # 실행되지 않는다. 실제로 `tasty-plugin-claude` 의 실패가 뒤따르는 크레이트
-      # 전부를 가렸고, 그중 하나에는 글자 그대로 같은 결함이 있었다 — 앞을 고치면
-      # 다음 실행에서 뒤가 새로 빨개지는 형태다. 잡이 초록일 때 추가 비용은 0 이고
-      # (실패가 없으면 어차피 전부 돈다), 빨갈 때만 더 도는 것이 이 플래그의 목적이다.
+      # Windows 전용 분기와 플랫폼 의존 동작을 검사한다.
+      # --no-fail-fast로 한 테스트 바이너리가 실패해도 나머지 결과를 수집한다.
+      # GUI 통합 테스트는 데스크톱 세션을 요구하므로 아래에서 대상 패키지를 따로 지정한다.
       - name: cargo test (unit)
         if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
-      # 통합 타깃 중 **화면을 안 요구하는 두 패키지**만 지목해 Windows 에서 실행한다.
-      # 위 스텝이 `--lib --bins` 라 통합 타깃을 하나도 안 돌리는데, 그 사각 안에
-      # **Windows 에서만 존재하는 구현**과 **어느 OS 에서도 실행된 적 없는 스캔 가드**가
-      # 함께 들어 있었다.
-      #
-      # 무엇을 사는가:
-      #  · `tasty-shm` — `crates/tasty-shm/tests/round_trip.rs` 의 `#[cfg(windows)] mod win` 3 건.
-      #    Windows 의 공유 메모리 전달은 `DuplicateHandle` 로 unix 의 fd 전달과 **구현이
-      #    통째로 다르고**, 그 세 건이 그 구현을 실행하는 **유일한** 자리다. 지금까지
-      #    어떤 자동 잡에서도 돈 적이 없다(헤드리스 잡은 리눅스라 `mod unix` 만 본다).
-      #  · `tasty-doc-guards` — 이 크레이트의 통합 타깃은 **컴파일 채널만** 있었다
-      #    (위 `clippy --all-targets` 가 타깃으로 잡는다). 실행하는 자동 잡은
-      #    `doc-guards.yml` 하나이고 `ubuntu-latest` 다. 스캔 가드가 경로를 문자열로
-      #    다루면 구분자 때문에 Windows 에서만 **조용한 0**(위반을 못 찾고 통과)이 될 수
-      #    있는데, 그 형태는 Linux 초록으로는 원리적으로 안 보인다.
-      #
-      # 무엇을 안 사는가: 루트 패키지의 통합 타깃(e2e 하네스 포함). 그쪽은 기본 feature =
-      # gui 빌드의 자기 바이너리를 spawn 해 **창을 띄우므로**, 이 러너에 대화형 데스크톱
-      # 세션이 있는지를 먼저 재야 한다. 그 측정 없이 넣으면 빨강이 "제품이 깨졌다" 인지
-      # "러너에 화면이 없다" 인지 안 갈린다.
-      #
-      # 왜 `--lib --bins` 를 떼지 않고 스텝을 더하는가:
-      #  · `--skip` 은 **시험 이름** 필터라 타깃 하나를 빼려면 그 안의 이름을 전부
-      #    나열해야 하고, 항목이 늘면 그 목록이 아무 신호 없이 낡는다. 포함을 `-p` 로
-      #    좁히면 낡을 때 **덜 도는** 방향이라 조용한 통과를 안 만든다.
-      #  · 전량을 돌리면 `no_file_claims_ci_runs_the_full_suite_while_it_does_not` 가
-      #    스스로 꺼진다(주장이 참이 되므로). 게이트를 끄고 사는 커버리지는 순증이 아니다.
-      #  · 그리고 전량의 실행시간은 **타깃 하나가 지배한다** — 리눅스 실측(2026-09-07)에서
-      #    통합 전량 310s 중 `i18n_key_parity` 가 232s 였고, 그 안에서도 시험 하나
-      #    (`literal_translation_keys_exist_in_catalog`)가 255s 였다. 합계가 여유를 넘는
-      #    것처럼 보였지만 문턱이 그 한 자리를 가리고 있었다. 그 성능은 별도 과제다.
-      #
-      # 비용: 이 두 패키지의 리눅스 실측 합이 약 19s 다(`tasty-shm` 은 0.00s — 8 항목
-      # 전부 인프로세스다). Windows 값과의 관계는 미정이라 그 수를 예산으로 쓰지 않는다 —
-      # 판단 기준은 이 잡이 워크플로 임계경로(헤드리스 잡)를 넘는가이고, 재는 법은
-      # `docs/dev-guide/ci-gates.md` 에 있다. 추가 컴파일은 0 이다 — 위
-      # `clippy --workspace --all-targets` 가 이미 이 타깃들을 컴파일한다.
-      #
-      # `--no-fail-fast` 근거는 위 스텝과 같다.
+      # 화면 없이 실행할 수 있는 공유 메모리·문서 검사 패키지의 통합 테스트만 실행한다.
+      # Windows의 핸들 전달과 경로 구분자는 Linux 실행 결과로 검증할 수 없다.
+      # GUI를 사용하는 루트 통합 테스트는 여기에 포함하지 않는다.
       - name: cargo test (windows integration — shm · doc-guards)
         if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast
 
-      # **진단이다 — 게이트가 아니고, 재고 나면 지운다.**
-      #
-      # 묻는 것 하나: **이 러너에 대화형 데스크톱 세션이 있는가.** 루트 패키지의 통합
-      # 타깃(e2e 하네스)은 기본 feature = gui 빌드의 자기 바이너리를 spawn 해 창을
-      # 띄운다. 세션이 없으면 그것들이 전부 죽는데, 그 빨강은 "제품이 깨졌다" 인지
-      # "러너에 화면이 없다" 인지 **안 갈린다.** 그래서 본 스텝을 먼저 넣고 빨간지 보는
-      # 방식을 쓰지 않는다 — 원인이 둘로 안 갈리는 실패는 정보가 아니다.
-      #
-      # `continue-on-error` 인 이유: 진단이 잡을 빨갛게 만들면 그 빨강이 위 컴파일·테스트의
-      # 빨강을 가린다. `if: !cancelled()` 인 이유는 실측이다 — 앞 스텝이 죽으면 뒤 스텝은
-      # 아예 안 돌고, 그때 결과 줄이 `0` 으로도 안 남는다(줄 자체가 없다). 진단은 빨간
-      # 회차에서 가장 필요하다.
-      #
-      # 이 진단이 **못 말하는 것**: winit + wgpu 가 이 러너에서 실제로 서는가.
-      # `System.Windows.Forms` 는 다른 스택이라 GPU·드라이버 축은 안 본다. 여기서
-      # "ok" 가 나와도 그건 세션이 있다는 뜻이지 e2e 가 돈다는 뜻이 아니다 — 그 다음
-      # 물음은 이 값을 보고 정한다.
+      # 데스크톱 세션을 조사하는 참고 정보이며 실패해도 잡을 중단하지 않는다.
+      # Windows Forms의 창 생성 성공만으로 winit/wgpu 실행을 보장하지 않는다.
+      # 앞 스텝이 실패한 경우에도 진단을 남기기 위해 !cancelled()를 사용한다.
       - name: desktop session (diagnostic — 재고 나면 지운다)
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -289,10 +129,7 @@ jobs:
             "window: FAILED — $($_.Exception.Message)"
           }
 
-  # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
-  # gui-gating 누락(headless-build-01 회귀)을 `main` push 마다 자동 검출한다(문서만
-  # 바뀐 push 는 제외 — 위 `paths-ignore`). gui 네이티브 의존이 빠져 순수 컴파일만
-  # 필요하므로 Linux x64 러너에서 가볍게 돈다.
+  # GUI 기능을 끈 빌드와 테스트를 검사한다. 같은 러너에서 GUI 단위 테스트도 실행한다.
   check-headless:
     runs-on: [self-hosted, Linux, X64]
     steps:
@@ -306,194 +143,49 @@ jobs:
       - name: cargo check (headless)
         run: cargo check --workspace --no-default-features --locked
 
-      # headless 단위테스트. 여기까지 오기 전에는 headless 테스트 바이너리가 **컴파일조차
-      # 되지 않아서**(gui 전용 상태를 단정하는 테스트 모듈이 cfg 게이팅 없이 있었다) 이
-      # 잡이 `cargo check` 로 프로덕션 코드만 봤고, headless 는 실행 가능한 테스트 커버리지가
-      # 0 이었다.
+      # headless 전용 구현과 IPC·attach·PTY 통합 경로를 검사한다.
+      # GUI 전용 gui_tests 타깃은 Cargo의 required-features로 제외된다.
+      # e2e 하네스는 같은 feature로 빌드한 headless 바이너리를 실행한다.
       #
-      # 이 스텝이 여는 것은 **headless 전용 구현의 행동 커버리지**다 — 예를 들어
-      # `src/app/dispatch_domain_stubs.rs`(파일 전체가 `#![cfg(not(feature = "gui"))]`)의
-      # 자원 해제를 없애면 여기서만 테스트가 깨진다. gui 빌드에서는 그 파일이 통째로
-      # 비어 있어 같은 변이가 영향조차 주지 못한다. 즉 같은 테스트가 빌드 형태에 따라
-      # 서로 다른 구현을 검증한다.
-      #
-      # 반대로 gui/headless 에서 **결과가 같아지는** 불변식(close cascade 의 활성 포인터
-      # 보정 등)은 이 스텝이 행동으로 잡지 못한다 — 기본 빌드에서 도는 소스 가드
-      # (`state::workspace` 의 `both_close_cascades_route_through_the_pointer_helper`)가
-      # 그쪽 담당이고, 그 이유는 그 테스트 doc 에 적혀 있다.
-      #
-      # **통합 테스트까지 포함한다.** 한때 `--lib --bins` 로 좁혀 놓고 "e2e/integration 은
-      # 실행에 GUI spawn 이 필요하다" 고 적었는데, 실측해 보니 루트 `tests/*.rs` 중 GUI 를
-      # 실제로 요구하는 것은 `tests/gui_tests.rs` 하나뿐이고 그것은 Cargo.toml 의
-      # `required-features = ["gui"]` 가 이미 빌드 대상에서 뺀다. 나머지는 워크스페이스
-      # 크레이트의 통합 타깃과 함께 headless 로 그대로 서고 돈다. 지금 몇이 서는지는 세지
-      # 말고 재라 — 이 잡의 로그에서 `Running tests/` 줄과 `test result:` 줄을 세면 되고,
-      # 로컬에서는 `cargo test --workspace --no-default-features --locked --no-run` 뒤
-      # 각 테스트 바이너리를 `--list` 로 부르면 된다(커밋마다 바뀌는 수라 여기 안 적는다).
-      # e2e 하네스가 띄우는 `CARGO_BIN_EXE_tasty` 는 **같은 feature 로 빌드된 자기 바이너리**
-      # 라, `--no-default-features` 에서는 그것이 곧 headless 데몬이다 — 즉 이 스텝이 headless
-      # 부팅 진입점(`src/boot.rs` 의 `run_headless`)을 실제로 부팅해 IPC/attach/PTY 경로를
-      # 끝까지 돌린다. `--lib --bins` 로는 그 경로가 한 줄도 안 돌았다.
-      #
-      # 아래 `--skip` 1 건은 **창(GUI)을 요구해서다** — 헤드리스 조합에서 고칠 결함이 아니다.
-      # 원인과 그것이 왜 헤드리스에서 풀리지 않는지를 적어 둔다 — 원인이 고칠 수 있는 것으로
-      # 바뀌면 skip 을 지우는 것이 이 목록의 용도다.
-      # **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
-      #   1. multi_window_owner_routing
-      #      **GUI 요구.** `window.create` 는 gui 라우터의 `app_methods` step 에만 있고,
-      #      headless 데몬에는 창이 없다 — 배선 결함이 아니라 창의 부재다.
-      #      ★ 이 사유는 **논증이 아니라 실측**이다(2026-09-06). headless 조합에서 그
-      #      타깃만 돌리면 제품 자신의 진단이 그대로 나온다:
-      #        -32017 method 'window.create' is registered but this binary has no
-      #               dispatch arm for it: it is gated out of this build combination
-      #      재현: `cargo test --no-default-features --locked --test e2e_tests --
-      #      multi_window_owner_routing --exact`. 1.56s 만에 그 한 줄로 죽는다.
-      #      왜 그 arm 이 없어야 하는지(창마다의 무엇을 읽는가)는 명부에 항목별로 적혀
-      #      있고 소스 가드가 지킨다 — `src/source_guards/headless_app_layer_coverage.rs`
-      #      (`window.create`: winit 이벤트루프에 창 생성을 맡긴다. 헤드리스엔 그것이 없다).
-      #      즉 고치려면 헤드리스에 이벤트루프를 주어야 하고, 그건 헤드리스가 아니다. 이 축을
-      #      배선으로 오해한 서술이 한때 여기 있었고, 그때 실제로 배선해서 풀린 것들은
-      #      이미 빠졌다(plugin namespace forward: `boot/headless_dispatch.rs` · 터미널
-      #      그리드 debug 핸들러 넷: `handler/debug_terminal.rs`).
-      #      **skip 이 한 스위트 통째에서 테스트 하나로 좁아진 경위**: `tests/e2e_tests.rs`
-      #      가 33 개 시나리오를 `#[test]` 하나(`all_e2e_tests`)에 몰아 두어 GUI 필요
-      #      구간과 아닌 구간을 `--skip` 으로 가를 수 없었다. 시나리오 단위로 쪼갠 지금은
-      #      창을 요구하는 단언이 이 테스트 하나에 모여 있고, 나머지 시나리오는 헤드리스에서
-      #      실제로 돈다 — 이 잡의 로그에서 그 파일의 `test result:` 줄이 `1 filtered out`
-      #      하나만 빼고 전부 통과인 것으로 확인한다. 경계는 **파일이 아니라 테스트**다.
-      #
-      # `output_match_hook_fires_on_real_pty_output` 은 한때 세 번째 skip 이었으나 **뺐다.**
-      # 그 skip 의 근거였던 제품 결함(headless 가 `process_all_pty_output` 의 CoreEvent 를
-      # 버려 `output-match` 훅이 영영 fire 되지 않던 것)을 고쳤다 — `boot.rs` 의
-      # `fire_output_match_hooks`. 그 뒤로 헤드리스에서 통과한다(`tests/hooks_detection_e2e.rs`).
-      #
-      # `hard_occupied_attention_survives_the_servers_local_focus` 는 한때 첫 번째 skip
-      # 이었으나 **뺐다.** `debug.switch_workspace` 등 gui 비의존 debug 핸들러 셋이
-      # `debug.rs` 의 gui 게이트에 묶여 헤드리스 라우터에 없던 것이 원인이었고,
-      # `adapters/ipc/handler/debug_nav.rs` 로 갈라 해결했다(`tests/attach_attention_loopback.rs`).
-      #
-      # `closing_before_the_descriptor_releases_occupancy_promptly` 는 한때 네 번째 skip 이었으나
-      # **뺐다.** 재판정에서 전체 스위트 3 회 연속 통과했고(각 회차 `test result 162`), 다른
-      # 각도(테스트 바이너리는 gui 빌드 + spawn 인스턴스만 headless)의 전체 스위트 2 회도
-      # 통과했다. 관측된 실패는 부하가 높던 이전 베이스의 1 회뿐이라 skip 근거로 약하다 —
-      # 재현 조건이 좁혀지지 않은 간헐 실패는 커버리지를 영구히 깎는 대신 티켓으로 남긴다.
-      # `--no-fail-fast` 를 붙이는 근거는 위 Windows 단위테스트 스텝에 적힌 것과 같다 —
-      # 여기서는 타깃이 100 개 단위라 첫 실패가 가리는 범위가 그쪽보다 훨씬 넓다.
+      # multi_window_owner_routing은 window.create를 요구해 건너뛴다.
+      # headless에는 winit 이벤트 루프와 창 생성 핸들러가 없다.
+      # 제외 범위는 이 테스트 하나이며 다른 시나리오는 실행한다.
+      # skip을 추가할 때는 각 테스트의 실행 불가 사유를 확인한다.
       - name: cargo test (headless)
         run: |
           cargo test --workspace --no-default-features --locked --no-fail-fast -- \
             --skip multi_window_owner_routing
 
-      # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
-      # `--no-default-features` 를 돌지 않아 headless 전용 코드(`run_headless` 등)의
-      # deny 레벨 린트 위반이 아무에게도 안 보였다. 위 테스트 스텝과 같은 이유로
-      # 여기서 함께 닫는다 — 헤드리스 사각을 닫는 잡이 clippy 만 사각으로 남기면
-      # 같은 구멍이 다시 자란다.
+      # 기본 feature의 Clippy에서는 제외되는 headless 전용 코드도 검사한다.
       - name: cargo clippy (headless)
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --no-default-features --locked
 
-      # 이 러너의 디스크는 아무 데도 안 보인다. 자기 머신에서 잰 값은 대신 못 쓴다 —
-      # 이 잡이 그 러너에서 가장 큰 `target/` 을 소유하므로 여기서 재는 것이 맞다.
-      # Linux × default(gui) × **debug** 의 유일한 자동 채널. 이 스텝 전까지 그 칸은
-      # 비어 있었다 — check-macos/check-windows 는 각 OS 의 gui 를, 위 스텝들은
-      # --no-default-features 를, check-release 는 같은 gui 를 **release** 로 본다.
-      # 마지막 것과 이 스텝은 겹치지 않는다: `debug_assertions` 이 서로 반대라 한쪽에서
-      # 사라지는 코드가 다른 쪽에 있다(그 축이 실제로 release bin 을 깨뜨린 전례가
-      # check-release 의 주석에 있다).
-      #
-      # 사는 것은 두 줄로 적는다 — 실행과 컴파일은 다른 채널이다:
-      #   실행    — Linux 에서만 도는 유닛 8 건이 자동으로 돌기 시작한다(#[ignore] 로
-      #             X11 을 요구하는 1 건은 여전히 안 돈다).
-      #   컴파일  — Linux+gui+debug 조합 전체가 컴파일된다. `#[ignore]` 는 실행만 막고
-      #             컴파일은 안 막으므로, 이쪽이 사는 것은 8 이 아니라 조합 하나다.
-      #
-      # 안 사는 것: `tests/` 통합 테스트. `--lib --bins` 는 그것을 담지 않는다
-      # (gui_tests.rs 의 33 건 포함 — 그건 GUI spawn 이 필요해 러너 가드로 부적합하다).
-      # 통합 테스트의 채널은 위 headless 스텝 하나로 남는다.
-      #
-      # **잡 이름이 이 스텝을 안 덮는다.** 이 잡은 headless 가드로 태어났고 이름도 그렇다.
-      # 여기가 빨가면 원인은 headless 가 아니라 gui 일 수 있으므로 스텝 이름에 조합을
-      # 적어 둔다. 잡 이름을 안 바꾸는 이유는 required status check 로 참조될 수 있어서고,
-      # 채널 매트릭스의 정본은 docs/dev-guide/ci-gates.md 다.
-      #
-      # 왜 새 잡이 아니라 스텝인가: self-hosted Linux X64 러너는 한 대라 잡이 늘면
-      # 큐가 직렬로 길어진다. 스텝이면 checkout 과 레지스트리 페치를 재사용한다.
-      # (그 재사용은 target 재사용이 아니다 — checkout 이 매 회차 `git clean -ffdx` 로
-      # target 을 지우므로 이 스텝의 gui 빌드는 언제나 콜드다.)
-      # `if: !cancelled()` 인 이유는 실측이다 — **앞 스텝이 죽으면 이 스텝은 아예 안 돈다.**
-      # run 33982090607 에서 `cargo test (headless)` 하나가 빨개지자 이 스텝과 아래 둘이
-      # 통째로 `skipped` 였다. 그러면 이 잡이 배선한 조합(Linux·debug·gui)은 **그 회차에
-      # 존재하지 않는데**, 로그에는 실패로도 안 남는다 — 줄 자체가 없다. 배선은 그대로인데
-      # 채널만 사라지는 형태라 조용하다.
-      #
-      # `continue-on-error` 로는 이것을 못 막는다. 그 플래그는 **자기 실패**를 무해하게
-      # 만들 뿐, 앞 스텝의 실패로 건너뛰어지는 것은 막지 못한다.
+      # Linux의 GUI 개발 빌드를 컴파일하고 단위 테스트를 실행한다.
+      # release 검사와는 debug_assertions 조건이 다르며 통합 테스트는 포함하지 않는다.
+      # 앞 스텝이 실패해도 이 조합의 결과를 얻기 위해 !cancelled()를 사용한다.
+      # 잡 이름은 외부의 required status check에서 참조할 수 있어 유지한다.
       - name: cargo test (linux, gui, unit)
         if: ${{ !cancelled() }}
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
-      # 조합 격자의 **마지막 칸** — 차단하는 자동 채널이 없는 테스트 1 건. 안 도는 것이
-      # 아니라 **돌지만 차단하지 않는다**: 이 스텝(`cargo test (linux, gui, e2e — 관측용)`)이
-      # Xvfb 아래에서 그 한 건을 돌리되 `continue-on-error: true` 라 빨개져도 잡을 안 막는다.
-      # 결과는 잡 결론이 아니라 이 스텝의 결론으로 읽어야 보인다.
-      #
-      # `multi_window_owner_routing` 은 창을 요구해 위 headless 스텝이 이름으로 `--skip`
-      # 한다. 그 테스트가 든 `e2e_tests` 바이너리 자체는 차단 채널이 있지만 **이 하나만 그
-      # 채널 밖**이다. 실측으로 남은 사각이 정확히 이것 하나다: 두 조합의 통합 명부를
-      # 차분하면 `gui_tests`(전부 `#[ignore]`) 를 빼고 기본 feature 에만 있는 항목이 0 이다
-      # (절차는 docs/dev-guide/ci-gates.md).
-      #
-      # **전량(`test.yml` 의 `test-linux-x64`)을 자동으로 올리지 않는 이유**가 같은 실측이다 —
-      # 그것이 새로 사는 것도 이 한 건뿐이고, 대신 이미 채널이 있는 5000+ 유닛과 690 통합을
-      # 다시 돌린다. 같은 물음에 채널을 두 벌 두지 않는다.
-      #
-      # **왜 `continue-on-error` 인가 (아직 게이트가 아니다).** 남은 조건이 "연속 초록" 이다.
-      # 실패해도 잡의 나머지 판정은 그대로 남는다 — 그게 이 플래그의 목적이다.
-      #
-      # ★ **미측정 하나가 닫혔다.** 오래 "이 러너에 `xvfb-run` 이 있는지 안 쟀다" 였고,
-      # 이 스텝이 존재한 회차 셋에서 셋 다 앞 스텝의 실패·취소로 `skipped` 라 결과 줄이
-      # 0 회였다. 그 물음이 던져지는 조건으로 적어 둔 것("위 `if: !cancelled()` 가 main
-      # 에서 한 번 실제로 도는 회차")이 2026-09-06 에 성립했다:
-      #   `command -v xvfb-run` → `/usr/bin/xvfb-run`
-      #   `test multi_window_owner_routing ... ok`
-      # 즉 **xvfb-run 은 있고, 이 테스트는 gui/Xvfb 조합에서 CI 로 실제로 통과한다.**
-      # 이것이 이 스텝의 **첫 초록**이다(그 전까지는 실행 자체가 0 회였다).
-      #
-      # 그래서 승격 조건 둘 중 앞엣것은 충족됐고 뒤엣것만 남는다 — **연속 N 회 초록.**
-      # N 은 아직 안 정했다. 지금 정하면 근거가 초록 한 번뿐이라, 그 수는 관측이 아니라
-      # 선호가 된다. 회차가 쌓이면 그때 정하고 ci-gates.md 에 적는다.
-      # 세는 법과 "줄이 없음 vs skipped" 의 구분은 docs/dev-guide/ci-gates.md 에 있다.
-      #
-      # flake 율은 **쟀다**: 전용 Xvfb 에서 10 회 연속 통과(실패 0), 그때 박스 부하 19~23.
-      # **전용 디스플레이에서 재는 것이 중요하다** — 이 개발 박스의 공유 `:10.0`
-      # (실제 GPU·컴포지터·다른 클라이언트가 붙은 Xorg)에서는 gui 정체가 관측되지만
-      # 전용 Xvfb 에서는 같은 CPU 부하에서 사라진다. CI 러너는 원래 전용이므로,
-      # "이 박스에서 시끄럽다" 를 "CI 에서 시끄러울 것" 의 근거로 쓰면 안 된다.
-      #
-      # 차단성으로 승격하는 조건: 위 진단이 러너에 `xvfb-run` 이 있다고 답하고, 이 스텝이
-      # CI 에서 연속 N 회 초록인 것을 본 뒤 — 그 수를 ci-gates.md 에 적는다. flake 를
-      # 차단성으로 넣으면 "빨강은 정보다" 라는 이 저장소의 규정이 무의미해진다.
+      # headless에서 제외한 창 소유권 테스트를 전용 Xvfb에서 실행한다.
+      # 아직 관측용이므로 실패해도 잡을 중단하지 않는다. 이 스텝의 결과를 따로 확인한다.
+      # 차단 검사로 바꾸려면 CI에서 연속 통과할 횟수를 정하고 실제 결과를 확인한다.
+      # 기준과 확인 절차는 docs/dev-guide/ci-gates.md에 기록한다.
       - name: cargo test (linux, gui, e2e — 관측용)
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
-          command -v xvfb-run || { echo "xvfb-run 이 이 러너에 없다 — 이 스텝은 아직 못 돈다"; exit 1; }
-          # GUI 하네스는 사용할 디스플레이를 명시한다(docs/dev-guide/e2e-tests.md#3-환경-격리).
-
-          # 물려받은 값을 조용히 쓰지 않는다. 여기서는 xvfb-run 이 방금 만든 그 디스플레이를
-          # 그대로 넘긴다. 셸을 한 겹 두는 것은 $DISPLAY 가 xvfb-run 안에서만 정해지기
-          # 때문이고, 바깥에서 전개되면 빈 값이 간다.
+          command -v xvfb-run || { echo "이 러너에 xvfb-run이 없어 GUI 테스트를 실행할 수 없습니다."; exit 1; }
+          # xvfb-run 안에서 정해진 DISPLAY를 하네스에 전달해야 하므로 sh -c를 사용한다.
+          # 격리 조건: docs/dev-guide/e2e-tests.md#3-환경-격리
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
             sh -c 'TASTY_E2E_DISPLAY="$DISPLAY" cargo test --workspace --locked --no-fail-fast \
               --test e2e_tests -- multi_window_owner_routing --exact'
 
-      # `continue-on-error` 로 두는 이유: 이 줄은 진단이지 게이트가 아니다. 여기서
-      # 실패해 잡을 빨갛게 만들면 그 빨강이 컴파일·테스트의 빨강을 가린다.
-      # 진단은 **빨간 회차에서 가장 필요하다.** 앞 스텝이 죽었을 때 건너뛰면, 왜 죽었는지
-      # 물으려고 만든 줄이 정확히 그때만 없다. run 33982090607 이 그 형태였다 —
-      # 러너에 `xvfb-run` 이 있는지 묻던 줄이 skipped 라, 없음을 "없다" 로도 "있다" 로도
-      # 못 읽는 상태가 됐다(그냥 미측정이다).
+      # 실패 원인을 조사할 때도 필요하므로 앞 스텝의 실패와 관계없이 진단한다.
+      # 디스크·도구 상태 출력에 실패해도 컴파일·테스트 결과를 바꾸지 않는다.
       - name: disk (diagnostic)
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -503,19 +195,8 @@ jobs:
           du -sh ~/.cargo 2>/dev/null || true
           command -v xvfb-run || echo "xvfb-run 없음"
 
-  # not-debug(release) 컴파일 정합성과 Linux gui(default feature) 컴파일의 **유일한 자동
-  # 채널**이다. 한 스텝이 지금 아무 잡도 안 보던 두 사각을 함께 닫는다:
-  #  ① not-debug 컴파일 — 쓰는 자리가 cfg(debug_assertions) 안이라 release 에서 사라지는
-  #     dead_code/미사용을 잡는다(예: PLATFORM_ONLY_MACOS_GUI 가 이렇게 새어 release bin 을
-  #     깨뜨린 채 병합됐다). dev 프로필로 도는 다른 모든 잡은 이 축을 원리적으로 못 본다.
-  #  ② Linux gui 컴파일 — check-macos/check-windows 는 각 OS 의 gui 를, check-headless 는
-  #     --no-default-features 를 본다. Linux × default(gui) 는 이 잡 전까지 자동 채널이 0
-  #     이었다(병합 후 사람이 돌리는 수동 전체 스위트가 유일 채널).
-  # 안 지키는 것: 실행(컴파일만, 테스트 아님) · dist 산출물 sanity(그건 build-check 수동) ·
-  #   codegen/LTO 단계 결함(check 라 codegen 을 안 한다). build 가 아니라 check 인 근거는
-  #   dead_code/미사용은 codegen 없이 잡히고 check 가 수배 싸기 때문이다(채널 매트릭스는
-  #   docs/dev-guide/ci-gates.md). self-hosted Linux X64 러너에 gui deps(webkit2gtk 등)가
-  #   있어 default feature 컴파일이 선다.
+  # Linux GUI release 설정을 컴파일한다. debug_assertions가 꺼진 코드를 확인한다.
+  # cargo check이므로 테스트 실행, 코드 생성·LTO, 배포 패키지 검사는 포함하지 않는다.
   check-release:
     runs-on: [self-hosted, Linux, X64]
     steps:

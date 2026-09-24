@@ -15,9 +15,8 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # M.1  merge 커밋 차단
-# ────────────────────────────────────────────────────────────
 if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
     red "✘ merge 커밋을 만들 수 없습니다. rebase와 fast-forward merge를 사용해 주세요."
     echo
@@ -39,9 +38,8 @@ fi
 FAIL=0
 fail() { red "  ✘ $*"; FAIL=1; }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # A.1  mod/use 선언 순서
-# ────────────────────────────────────────────────────────────
 check_mod_use_order() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -70,9 +68,8 @@ check_mod_use_order() {
     done
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # A.2  cargo fmt --check
-# ────────────────────────────────────────────────────────────
 EXCLUDED_CRATES="site crates/tasty-plugin-sdk-wasm"
 
 check_cargo_fmt() {
@@ -89,9 +86,8 @@ check_cargo_fmt() {
     done
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # A.3  셸 자산 정적 검사
-# ────────────────────────────────────────────────────────────
 check_shell_assets() {
     local rc
     if [ -z "$STAGED_ALL" ]; then return; fi
@@ -110,9 +106,8 @@ check_shell_assets() {
     esac
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # C.6  `let _ =`로 값을 무시하는 이유 확인
-# ────────────────────────────────────────────────────────────
 check_let_underscore() {
     if [ -z "$STAGED_RS" ]; then return; fi
 
@@ -150,7 +145,7 @@ check_let_underscore() {
             # 문자열을 제거한 소스를 줄 번호로 읽는다. 없으면 한 줄 정규식으로 검사한다.
             BEGIN { if (maskfile != "") { while ((getline ml < maskfile) > 0) MASK[++mn] = ml } }
             function flush() { if (pending != "") { print pending; pending = "" } }
-            # ② 위쪽 사유 주석 찾기. 빈 줄과 `#[..]` 속성 줄은 건너뛴다(문서 표와 같은 규칙).
+            # 위쪽 사유 주석을 찾을 때 빈 줄과 `#[..]` 속성 줄은 건너뛴다.
             # 소스 사본이 없으면 바로 윗줄만 확인한다.
             function comment_above(ln,   i, l) {
                 if (mn == 0) return (prev ~ /^[[:space:]]*\/\//)
@@ -163,8 +158,7 @@ check_let_underscore() {
                 }
                 return 0
             }
-            # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + 새 파일 줄 번호 잡기.
-            # 줄 번호가 있어야 마스킹 사본의 같은 줄을 읽을 수 있다.
+            # hunk가 바뀌면 이전 후보를 처리하고 새 파일의 줄 번호를 구한다.
             /^@@/ {
                 flush(); prev = ""
                 if (match($0, /\+[0-9]+/)) nl = substr($0, RSTART + 1, RLENGTH - 1) - 1
@@ -175,7 +169,7 @@ check_let_underscore() {
             {
                 prefix  = substr($0, 1, 1)
                 content = substr($0, 2)
-                if (prefix == "-") next     # 제거 라인: 새 파일에 없음 → 무시 (다음 줄 후보 아님)
+                if (prefix == "-") next
                 if (prefix != "+" && prefix != " ") next
                 nl++
                 # 문자열을 제거한 사본을 우선 사용한다. 정규식은 여러 줄 문자열을 처리하지 못한다.
@@ -185,24 +179,24 @@ check_let_underscore() {
                 # 이전 줄의 let 구문에 이어지는 주석이 있으면 허용한다.
                 if (pending != "") {
                     if (mline ~ /^[[:space:]]*\/\//) {
-                        pending = ""        # ③ 다음 줄 주석 — OK
+                        pending = ""
                     } else {
-                        print pending       # 다음 줄 주석 아님 — 위반 확정
+                        print pending
                         pending = ""
                     }
                 }
                 if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
                     if (mline ~ /\/\//) {
-                        # ① 같은 줄 주석 — OK
+                        # 같은 줄에 사유 주석이 있다.
                     } else if (comment_above(nl)) {
-                        # ② 위쪽 주석 — OK (빈 줄·속성은 건너뛴다)
+                        # 위쪽에 사유 주석이 있다.
                     } else {
-                        pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
+                        pending = content   # 다음 줄에 주석이 있는지 확인한다.
                     }
                 }
-                prev = mline                # 새 파일에 존재하는 라인만 직전으로 갱신
+                prev = mline
             }
-            END { flush() }                 # 마지막 보류 후보 확정
+            END { flush() }
         ')
         if [ -n "$violation" ]; then
             fail "[C.6 let _] $f — \`let _ =\`로 값을 무시하는 이유를 주석으로 적어 주세요:"
@@ -211,17 +205,15 @@ check_let_underscore() {
     done
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # C.8  UI 색상 하드코딩
-# ────────────────────────────────────────────────────────────
 check_color_hardcode() {
     # 실제 검사는 Clippy로 이전했다. 기존 검사 ID와 실행 목록을 유지한다.
     return 0
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # C.9  egui::Window 대신 PopupManager 사용
-# ────────────────────────────────────────────────────────────
 check_egui_window() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -245,9 +237,8 @@ check_egui_window() {
     done
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # C.11 println! / eprintln! 대신 tracing 사용
-# ────────────────────────────────────────────────────────────
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -278,9 +269,8 @@ check_println() {
     done
 }
 
-# ────────────────────────────────────────────────────────────
-# C.12 출시 코드에 남은 dbg! 매크로 확인
-# ────────────────────────────────────────────────────────────
+# ─
+# C.12 추가된 dbg! 매크로 확인
 check_dbg() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -292,15 +282,14 @@ check_dbg() {
             | grep -vE '^\+[[:space:]]*//' \
             || true)
         if [ -n "$violation" ]; then
-            fail "[C.12 dbg!] $f — 출시 빌드에 디버그 출력이 남지 않도록 \`dbg!\`를 제거해 주세요:"
+            fail "[C.12 dbg!] $f — 디버그 출력이 남지 않도록 \`dbg!\`를 제거해 주세요:"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # W.1  사용자 기능 변경 시 CHANGELOG 작성 안내 (경고만)
-# ────────────────────────────────────────────────────────────
 check_changelog_reminder() {
     local staged surface
     staged=$(git diff --cached --name-only --diff-filter=ACMR)
@@ -317,9 +306,8 @@ check_changelog_reminder() {
     yellow "  (내부 리팩터링이나 버전 변경만 있다면 생략할 수 있습니다. 이 안내는 커밋을 막지 않습니다.)"
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # W.2  새 파일에 필요한 테스트 명령 안내 (경고만)
-# ────────────────────────────────────────────────────────────
 suggest_target() {
     # $1 = 테스트 파일 경로, $2 = 실행 명령, $3 = 검사 내용
     if [ -f "$1" ]; then
@@ -409,9 +397,8 @@ check_new_file_judges() {
     yellow "  (이 안내는 커밋을 막지 않습니다. 이미 실행한 검사는 다시 실행하지 않아도 됩니다.)"
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # P.1  플러그인 변경에 따른 버전 갱신 확인
-# ────────────────────────────────────────────────────────────
 check_plugin_version_bump() {
     local staged_any base rc
     staged_any=$(git diff --cached --name-only --diff-filter=ACMRD || true)
@@ -434,9 +421,8 @@ check_plugin_version_bump() {
     esac
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # T.1  로컬 전용 문서 참조 확인
-# ────────────────────────────────────────────────────────────
 check_todo_citation() {
     local out rc
     # 출력과 종료 코드를 따로 저장해 cargo 실패가 로그 출력 결과에 가려지지 않게 한다.

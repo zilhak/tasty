@@ -1,13 +1,12 @@
 name: Build Check
 
-# release.yml 의 build-* 잡을 빌드 검증 only 로 추출.
-# 산출물 upload 없이 빌드 성공 + sanity check 통과만 확인하고 dist/ 를 정리.
-# self-hosted runner 부하 통제를 위해 수동 트리거 only (사용자 권고 Q2).
+# 패키지 빌드를 검사하고 산출물은 삭제한다.
+# self-hosted 러너의 부하를 제한하기 위해 수동으로만 실행한다.
 
 on:
   workflow_dispatch:
 
-# R3: 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+# 같은 ref의 이전 실행을 취소해 러너가 중복 작업을 하지 않게 한다.
 concurrency:
   group: build-check-${{ github.ref }}
   cancel-in-progress: true

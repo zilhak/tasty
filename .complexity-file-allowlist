@@ -1,30 +1,18 @@
-# 파일 SLOC 게이트(복잡도 게이트 파트 B) 동결 목록 — grandfather.
-# scripts/check-file-size.sh 가 참조한다. 각 줄 = 레포 상대경로(슬래시).
-# 여기 등록된 파일은 code SLOC > 1000 여도 통과한다(기존 대형 파일 동결).
-# 신규로 1000 을 넘는 Rust 파일은 여기 없으면 게이트가 차단한다.
-# 테스트 코드는 등록 불요 — 세 경로로 빠진다. 이름이 테스트 관례인 것(tests.rs 등)·생성/
-# 전사 코드는 스크립트 skip() 이 제외한다. `#[cfg(test)] mod x;` 선언으로만 닿는 파일과 cargo
-# 통합 타깃은 이름과 무관하게 판정기가 통째로 빈 줄로 만든다(docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정). 파일 **안**의 인라인
-# `#[cfg(test)] mod` 는 판정기가 그 범위를 지운다(docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정). 게이트가 재는 것은 그 사본이다.
-# 리팩터로 1000 이하로 줄면 해당 줄을 삭제해 래칫을 한 칸 조인다. 계측이 고쳐져
-# 임계 이하임이 드러난 경우도 같다 — 목록에 남겨 두면 그 자리가 아무도 안 보는 구간이 된다.
-# 이 목록은 **경로만** 담는다 — 값이 없으므로 등재된 파일이 얼마나 자라든 게이트가
-# 아무 신호도 내지 않는다. 그 비대칭과 재검토 트리거는 docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
-# 상세: docs/dev-guide/complexity-gate.md#무엇을도구임계값
+# scripts/check-file-size.sh에서 1000 code SLOC 초과를 허용하는 파일 목록.
+# 경로는 저장소 루트 기준이다. 테스트·생성 코드는 별도로 제외한다.
+# 측정 범위: docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정
+# 파일이 1000줄 이하가 되면 해당 항목을 삭제한다.
+# 개별 파일의 증가량은 제한하지 않으므로 아래 합계 예산으로 함께 검사한다.
+# 예외 관리: docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
 #
-# 아래 예산은 이 목록에 오른 파일들의 출하 SLOC **합** 이다. scripts/check-frozen-sum-ratchet.sh
-# 가 양방향으로 고정한다 — 합이 예산 + 임계(1000)를 넘으면 실패하고, 예산 아래로 내려가도
-# 실패한다(그때는 이 수를 내려 래칫을 조인다). 항목이 추가되면 합이 그 파일 크기만큼 뛰므로
-# 그 커밋에서 이 수를 함께 갱신한다 — 목록 diff 와 이 줄이 같은 화면에 보이도록 여기 둔다.
+# 등록된 파일의 code SLOC 합계. scripts/check-frozen-sum-ratchet.sh에서 검사한다.
+# 합계가 예산 + 1000을 넘으면 실패한다. 예산보다 작아져도 실패하므로 예산을 낮춘다.
+# 항목을 추가할 때는 해당 파일 크기를 합계에 반영한다.
 # frozen-sum-budget: 35498
 #
-# 아래 줄은 **계측기 자신의 편향분**이다. tokei 는 doc 주석(///·//!) 바로 앞줄이 문자열
-# 리터럴을 담고 있으면 그 줄을 어디에도 안 센다(사이에 낀 빈 줄도 함께 잃는다). 그래서 위
-# 합은 실제 출하 줄보다 그만큼 작다. 절대값은 예산도 같은 계측기로 정해져 양변에서
-# 상쇄되므로 무해하지만, **움직이면** 위 합이 성장 없이 움직인다 — 늘면 합이 내려가고
-# 줄면 합이 올라간다. scripts/check-frozen-sum-ratchet.sh 가 같은 tokei 로 doc 줄을 뺀
-# 값과 견줘 이 수를 양방향으로 고정한다. 움직였으면 이 줄과 위 예산 줄을 **같은 폭으로
-# 함께** 옮긴다 — 그 폭은 성장이 아니라 계측 단위의 이동이다.
+# tokei가 doc 주석 앞의 문자열 줄 등을 누락한 줄 수.
+# 이 수가 바뀌면 코드 크기가 같아도 측정 합계가 달라진다.
+# 검사 스크립트의 측정값에 맞춰 이 수와 위 예산을 함께 보정한다.
 # doc-comment-bias: 31
 crates/tasty-gallery/src/catalog.rs
 crates/tasty-host-plugin/src/builtin.rs
@@ -42,17 +30,8 @@ src/view/main/redraw.rs
 src/view/settings/ui.rs
 src/view/settings/ui/tabs/appearance.rs
 
-# ── 아래 8 건: 게이트가 한 번도 실행되지 않은 채 쌓인 드리프트 ──
-# 위 15 건과 성격이 다르다. 위쪽은 게이트 도입(2026-07-06) 시점의 기존 대형 파일이고,
-# 아래쪽은 그 뒤 60 일 동안 임계를 새로 넘은 것이다 — 도입 시점에 1000 을 넘던 것은
-# **0 건**이다(그때 임계 이하였거나 아예 없던 파일이다).
-# 한때 26 건이었다. 게이트가 인라인 `#[cfg(test)]` 를 안 세게 되자(docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정) 그중
-# 18 건이 임계 아래로 내려가 래칫으로 빠졌다 — 3 분의 2 가 복잡도 부채가 아니었다.
-# 게이트의 유일한 트리거가 `pull_request` 였고 이 저장소는 PR 을 열지 않아
-# run 이력이 0 건이었다. 근거·대안: docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
-#
-# 이 블록은 **정당화된 예외가 아니라 부채 대장**이다. 위 래칫 조항대로 리팩터로
-# 1000 이하가 되면 줄을 지운다 — 지우는 것이 이 블록의 유일한 정상 종료다.
+# ── 아래 8개는 게이트 도입 뒤 추가된 예외다.
+# 위 15개는 게이트 도입 당시의 예외다.
 crates/tasty-gallery/src/catalog/components/preset_editor.rs
 crates/tasty-plugin-manifest/src/validate.rs
 src/adapters/ipc/handler.rs

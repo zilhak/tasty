@@ -1,22 +1,8 @@
 name: Format Check
 
-# `cargo fmt --check` 의 자동 실행 채널.
-#
-# 이 검사는 지금까지 **pre-commit 훅이 유일한 집행 지점**이었다(`.githooks/pre-commit`
-# A.2). 그 훅은 `git config core.hooksPath .githooks` 를 1회 실행한 체크아웃에서만
-# 살아 있고 `--no-verify` 로 우회된다 — 즉 옵트인 + 우회 가능한 단일 지점이라
-# 훅을 설치하지 않은 체크아웃·다른 도구가 만든 커밋이 그대로 통과했다.
-#
-# 공용 러너를 쓰는 이유: `cargo fmt` 는 **컴파일하지 않는다.** 매니페스트를 읽고
-# `.rs` 를 파싱할 뿐이라 winit/wgpu 네이티브 의존이 필요 없다. self-hosted 러너를
-# 점유하지 않으므로 다른 잡(release·crossplatform-check)과 경합하지 않는다.
-# `rust-toolchain.toml` 이 채널과 `rustfmt` 컴포넌트를 고정하므로, 러너의 rustfmt
-# 버전이 로컬·훅과 어긋나 "로컬은 깨끗한데 CI 만 빨간" 상황이 생기지 않는다.
-#
-# 워크스페이스 `exclude` 크레이트(`crates/tasty-plugin-sdk-wasm/`)는 루트 `cargo fmt`
-# 가 보지 않으므로 매니페스트를 지정해 따로 돈다(pre-commit A.2 와 같은 이유).
-# `site/` 는 더 이상 여기 없다 — Rust 생성기를 Astro 로 바꾸면서 그 안에 .rs 가
-# 사라졌다(docs/dev-guide/site.md).
+# 로컬 훅을 설치하지 않은 체크아웃의 변경도 검사한다.
+# 컴파일하지 않으므로 네이티브 GUI 의존성 없이 공용 러너에서 실행할 수 있다.
+# 워크스페이스에서 제외한 SDK는 매니페스트를 지정해 따로 검사한다.
 
 on:
   push:
@@ -35,8 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # rust-toolchain.toml 이 채널·컴포넌트를 고정한다. rustup 이 그 파일을 보고
-      # 필요한 툴체인을 설치하므로 별도 버전 지정은 하지 않는다(지정하면 이중 SoT).
+      # 도구 버전은 rust-toolchain.toml을 따른다.
       - name: ensure rustfmt component
         run: rustup component add rustfmt
 

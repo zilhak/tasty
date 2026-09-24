@@ -1,38 +1,10 @@
 name: Script Gates
 
-# `scripts/` 의 셸 게이트 중 **텍스트 스캔** 셋과, 셸 자산 자신의 정적 검사를 돌린다.
-#   - check-intent-discipline.sh   : Intent 큐를 우회한 도메인 직접 mutation
-#   - check-allow-reason.sh        : 사유 없는 `#[allow(...)]`
-#   - check-shared-walk-ratchet.sh : 공용 순회를 안 거치는 직접 `read_dir`
-#   - check-shell-assets.sh        : 셸 자산 27 개를 shellcheck 에 태운다 (docs/dev-guide/ci-gates.md#셸-검사와-커밋-범위)
-#
-# 둘 다 등록 이래 **어떤 자동 채널에도 없었다.** 그 사이 intent 쪽은 위반 50 건을
-# 쌓은 채 빨갛게 있었고(문서 셋은 그것을 살아 있는 게이트로 인용하고 있었다),
-# allow-reason 쪽은 초록이었지만 빨개져도 아무도 모르는 자리였다.
-#
-# **판정기 하나를 먼저 짓는다.** allow-reason 은 문자열 리터럴을 덮은 사본에서 세는데,
-# 그 마스킹은 셸이 아니라 `tasty-doc-guards` 의 CLI 판정기가 한다(같은 물음에 답을 둘로
-# 만들지 않으려는 것이다). 판정기가 없으면 원문에서 세고, 원문 값은 상한을 넘어 **래칫이
-# 실패한다** — 그러니 여기서는 있는 것이 전제다. 그 크레이트는 의존이 0 이라(docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치)
-# 이 빌드가 초 단위다(실측 0.9 s).
-#
-# self-hosted Linux X64 근거: complexity-check.yml 과 같다 — 초단위로 끝나고,
-# mac/win 러너에 부담을 지울 이유가 없다.
+# Intent를 우회한 상태 변경, 사유 없는 allow 속성, 공용 순회를 거치지 않는
+# read_dir 호출과 셸 스크립트를 검사한다.
 
 on:
-  # main push 가 실질적인 유일 채널이다 — 이 저장소는 PR 을 열지 않고 main 에 직접
-  # push 한다. complexity-check.yml 이 같은 근거로 같은 조합을 쓴다(docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때).
-  #
-  # `paths-ignore` 를 complexity-check 에서 그대로 베끼지 않고 **스캔 대상을 먼저
-  # 확인했다**: 두 스크립트 모두 `.rs` 만 읽는다
-  #   check-intent-discipline.sh   : find src -name '*.rs'
-  #   check-allow-reason.sh        : rg --files -g '*.rs' crates src
-  #                                  (rg 가 없으면 git ls-files 'crates/*.rs' 'src/*.rs')
-  #   check-shared-walk-ratchet.sh : git ls-files tests/*.rs crates/*/tests/*.rs
-  #   check-shell-assets.sh        : git ls-files '*.sh' + shebang 이 셸인 추적 파일
-  # `site/` 에 `.rs` 가 있지만 네 스캔의 대상 밖이라 `site/**` 를 건너뛰어도 사각이
-  # 생기지 않는다(앞 둘은 `src`·`crates` 만 보고, 셋째는 통합 테스트 디렉토리만 보며,
-  # 넷째는 `site/` 에 셸 자산이 0 이다 — 실측). 문서만 담은 push 는 네 판정을 바꿀 수 없다.
+  # 현재 검사 대상 밖인 문서·사이트 변경만 있는 push는 생략한다.
   push:
     branches: [main]
     paths-ignore:
@@ -58,39 +30,29 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # 판정기. 실패하면 아래 게이트가 원문에서 세어 래칫이 빨개지므로, 여기서 죽는 것이
-      # 조용한 오판보다 낫다.
+      # 문자열을 검사 대상에서 제외하도록 공용 마스킹 도구를 먼저 빌드한다.
       - name: Build the masking judge
         run: cargo build -p tasty-doc-guards --bin mask-source
 
-      # 두 게이트를 **각각** 돌린다. 하나로 묶으면 앞이 죽을 때 뒤가 실행되지 않고,
-      # 그 결과는 `0 failed` 로도 안 나온다 — 줄 자체가 없어 미측정이 통과로 보인다.
       - name: Intent discipline
         run: bash scripts/check-intent-discipline.sh
 
-      # 잔여가 0 이 아니라 hard-fail 이 아니고, 그렇다고 리포트로 두면 건수와 무관하게
-      # 항상 통과하는 칸이 생긴다. 그래서 **상한 래칫**이다 — 늘어도 줄어도 빨개진다
-      # (줄면 상한을 같이 내리라는 뜻이다. 남는 여유가 곧 안 보는 구간이다).
+      # 예외 수가 늘거나 줄면 실패한다. 줄었을 때는 허용 상한도 함께 낮춘다.
       - name: Allow reason (ratchet)
         if: always()
         run: bash scripts/check-allow-reason.sh
 
-      # 같은 형태의 래칫이지만 **세는 대상이 다르다**: 공용 순회를 안 거치고 직접 트리를
-      # 훑는 자리다. `if: always()` 인 이유도 위와 같다 — 앞 게이트가 죽으면 이 줄이 아예
-      # 안 나오고, 없는 줄은 `0 failed` 로도 안 보인다.
+      # 앞 검사가 실패해도 공용 순회를 우회한 호출 수를 확인한다.
       - name: Shared walk (ratchet)
         if: always()
         run: bash scripts/check-shared-walk-ratchet.sh
 
-      # 검사기를 먼저 놓는다. 게이트는 검사기가 없으면 **rc 2 로 실패한다**(통과가
-      # 아니다) — 러너에 없을 때 그 실패가 고칠 수 없는 빨강이 되지 않게, 얻는 길을
-      # 이 잡 안에 둔다. 이미 있으면 아무것도 안 한다. 버전과 sha256 이 박혀 있다.
+      # 검사 도구가 없으면 스크립트가 종료 코드 2로 실패하므로 먼저 설치한다.
       - name: Provision the shell checker
         if: always()
         run: bash scripts/install-shellcheck.sh
 
-      # 잔여 0 hard-fail 이다 — 래칫이 아니다. 문턱(warning 이상)의 근거와 그 아래를
-      # 안 세기로 한 이유는 docs/dev-guide/ci-gates.md#셸-검사와-커밋-범위. `if: always()` 인 이유는 위 둘과 같다.
+      # warning 이상이면 실패한다. 기준: docs/dev-guide/ci-gates.md#셸-검사와-커밋-범위
       - name: Shell assets (shellcheck)
         if: always()
         run: bash scripts/check-shell-assets.sh

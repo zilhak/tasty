@@ -55,9 +55,8 @@ if [ "$#" -ge 1 ] && [ ! -t 0 ]; then
     PUSH_REFS="$(cat)"
 fi
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.9  원격에 게시된 버전과 push할 플러그인 버전 비교
-# ────────────────────────────────────────────────────────────
 check_published_plugin_version() {
     local considered=0 judged=0 failed=0 rc
     local local_ref local_sha remote_ref remote_sha
@@ -97,9 +96,8 @@ EOF
     return "$failed"
 }
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.10  push할 커밋의 실제 파일 수와 검사 기준 비교
-# ────────────────────────────────────────────────────────────
 check_published_populations() {
     local considered=0 judged=0 failed=0 rc
     local local_ref local_sha remote_ref remote_sha
@@ -148,29 +146,24 @@ else
     printf 'B.9 생략 — Git의 ref 정보 없음\nB.10 생략 — Git의 ref 정보 없음\n' >> "$SUMMARY"
 fi
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.5  워크스페이스의 개발 빌드와 테스트 코드 컴파일
-# ────────────────────────────────────────────────────────────
 run_check B.5 'cargo check --workspace --all-targets' cargo check --workspace --all-targets
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.8  release 설정으로 워크스페이스 컴파일
-# ────────────────────────────────────────────────────────────
 run_check B.8 'cargo check --workspace --release --locked' cargo check --workspace --release --locked
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.6  GUI 기능을 제외한 headless 빌드 컴파일
-# ────────────────────────────────────────────────────────────
 run_check B.6 'cargo check --no-default-features' cargo check --no-default-features
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.4  Clippy 검사: correctness 경고는 오류로 처리
-# ────────────────────────────────────────────────────────────
 run_check B.4 'cargo clippy --workspace --all-targets -- -D clippy::correctness' cargo clippy --workspace --all-targets -- -D clippy::correctness
 
-# ────────────────────────────────────────────────────────────
+# ─
 # B.7  문서, 매니페스트, 인덱스 검사
-# ────────────────────────────────────────────────────────────
 run_check B.7 'cargo test -p tasty-doc-guards' cargo test -p tasty-doc-guards
 
 finish
