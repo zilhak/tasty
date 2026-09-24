@@ -4,11 +4,11 @@
 
 - 앱: `site/` (Astro + React, Node 22)
 - 콘텐츠: `site/content/` (한국어 정본) · `site/content/en/` (영어 번역)
-- 산출물: `site/` 아래 `dist/` — 빌드가 만들고 gitignore 다(경로 인용으로 안 적는다. 갓 클론한
-  트리에는 없어서 좌표를 실재로 판정하는 가드가 CI 에서만 빨개진다)
+- 산출물: `site/` 아래 `dist/` — 빌드가 만들며 Git에서 제외한다(경로 인용으로 안 적는다. 갓 클론한
+  트리에는 없어서 좌표를 실재로 판정하는 CI의 경로 검사가 실패할 수 있다)
 - 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동) — `npm run build`
   다음에 `npm run check-links` 로 산출물의 내부 링크·앵커를 전수 판정하고 나서 올린다.
-  그 스텝은 `site/content/` 의 앵커를 보는 **유일한** 판사다([링크와 표](../documentation-model.md#링크와-표))
+  이 단계는 `site/content/` 앵커의 실제 HTML 결과를 검사한다([링크와 표](../documentation-model.md#링크와-표))
 
 **`docs/` 는 발행하지 않는다.** `docs/` 는 코드를 고치는 사람과 에이전트를 위한 명세·설계·ADR 이고,
 사이트는 Tasty 를 받아서 쓰는 사람을 위한 것이라 독자가 다르다. 사이트가 실을 내용은 전부
@@ -78,38 +78,26 @@ site/
 
 위 변환은 `vendor → src` 한 방향만 말한다. 그 앞에 **`원격 → vendor`** 방향이 하나 더 있고,
 그쪽이 사람이 도는 단계다 — `site/vendor/` 는 원격 Claude Design 프로젝트의 사본이라,
-디자인 결정이 착지하면 누군가 그것을 받아와야 한다. 절차는
+디자인이 확정되면 누군가 그것을 받아와야 한다. 절차는
 [`site/vendor/README.md`](../../site/vendor/README.md) 의 "vendor 갱신 절차" 에 있고,
 정합 루프에서 이 단계가 차지하는 자리는
 [design-change-workflow](design-change-workflow.md#정합-대상--사이트-사본-필수) 에 있다. 결정 근거는
 [ADR-0035](../adr/0035-shared-design-and-theme.md).
 
-따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 그 침묵을
-깨는 판정기가 둘 있고 둘 다 **레포 안의 두 사본만** 본다:
-`site_vendor_tokens_track_the_app_export.rs` 가 토큰 **이름 집합**을,
-`site_vendor_icons_match_the_app_transcription.rs` 가 아이콘 **기하**(와 채움), 그리고 그 기하가 담기는 **그릇**(`viewBox` · 선 굵기 · cap/join)을 본다.
-그 둘이 안 여는 결정 — 문구 변경 · 구성 변경 · 컨트롤 삭제 — 은 어느 쪽 좌변도 안 움직이므로
-**여전히 안 잡힌다.**
+오래된 vendor 사본도 정상 빌드할 수 있다. 저장소의 두 사본을 대조하는 검사는
+`site_vendor_tokens_track_the_app_export.rs`(토큰 이름)와
+`site_vendor_icons_match_the_app_transcription.rs`(아이콘 기하·채움·viewBox·선 굵기·cap/join)다.
+문구·구성·컨트롤 삭제는 검사 범위 밖이므로 원격 디자인과 직접 비교한다.
 
-그래서 **그 사본에서 그리는 페이지가 사본의 시점을 화면에 적는다** — 갤러리 라우트와
-디자인 섹션(`/design/` · `/design/tokens/`) 양쪽이다. 뒤엣것도 같은 사본에서 온다:
-foundations 페이지가 `site/vendor/guidelines/` 의 문서들을, 토큰 페이지가 그중 하나를
-렌더한다. 변환기가 빌드 시각에
-`git log -1 -- site/vendor`(README 제외 — 그것은 절차지 스냅샷이 아니다) 로 날짜를 읽어
-생성 트리에 스탬프 모듈 하나를 만들고, 공유 컴포넌트
-[`VendorStamp`](../../site/src/components/design/VendorStamp.jsx) 가 페이지 머리에 그린다 —
-갤러리는 영어 한 판으로, 디자인 섹션은 페이지의 언어로. 문구가 한 자리인 이유는 그것이 한
-사실이기 때문이고, 그 규칙이 자기 스타일시트
-([`vendor-stamp.css`](../../site/src/styles/vendor-stamp.css))에 사는 이유도 같다 — 두 영역이
-서로 다른 스타일시트를 읽어서, 두면 사본이 둘이 된다.
+갤러리와 디자인 페이지는 `VendorStamp`로 vendor의 마지막 변경 날짜를 표시한다.
+변환기가 `git log -1 -- site/vendor`에서 README를 제외한 최신 변경을 읽는다.
+README는 갱신 절차 문서이며 디자인 사본 자체가 아니기 때문이다. 문구와 스타일은
+각각 `site/src/components/design/VendorStamp.jsx`와
+`site/src/styles/vendor-stamp.css`에서 함께 관리한다.
 
-**문구는 "받아온 날" 이 아니라 "마지막으로 바뀐 날" 이라고 말한다.** `site/vendor/` 는 한
-시점의 깨끗한 스냅샷이 아니라 한 번 들여온 뒤 군데군데 기워진 상태이고, 그래서 그 트리의
-최신 커밋 날짜는 **마지막 기움의 날짜**다. 그것을 "스냅샷" 이라 적으면 이 표시가 막으려는
-바로 그 종류의 거짓이 된다.
-**그 날짜를 손으로 적지 않는다** — 손으로 적으면 그것이 또 하나의 낡을 사본이 되고,
-하필 사본이 낡는 그 순간에 "최신" 이라고 말한다. git 이 없으면(소스 tarball · shallow
-clone) 추측하지 않고 줄 자체를 안 그린다.
+이 날짜는 원격 파일을 처음 받은 날짜나 모든 파일의 동기화 날짜가 아니다. 사본을
+부분 수정했을 수도 있어 "마지막 변경"이라고 표시한다. Git 이력을 읽을 수 없으면
+추측한 날짜를 표시하지 않는다.
 
 ## 빌드
 
@@ -164,13 +152,13 @@ npm run stamp content/en/index.md
 **어떤 경로도 두 번 적지 않는다.** 커스텀 도메인으로 옮기면 `base.mjs` 의 값을 `""` 로 바꾸는
 것이 전부다.
 
-영어가 기본 URL 인 이유는 공개 사이트의 첫 방문자 대부분이 영어권이고 랜딩도 `/` 가 영어라서다.
+기본 URL과 랜딩 `/`는 영어로 제공한다.
 정본이 한국어인 것과는 별개다 — 작성은 한국어로, 노출 기본은 영어로.
 
 ## 콘텐츠 구조
 
 `site/content/` 의 디렉토리가 사이드바 섹션이고, 페이지 순서는 `site/src/lib/guide.ts` 의 `ORDER` 가
-정한다. 파일 이름 순이 아니다 — 읽는 순서가 의도이므로 배열로 박는다.
+정한다. 파일 이름 순이 아니다 — 읽을 순서를 배열로 명시한다.
 
 ```
 site/content/
@@ -295,8 +283,8 @@ Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때
   주는 프레임보다 크고, 도구 메뉴는 뷰포트 좌표에 앵커한다. 그림 안에 욱여넣어 줄이는 대신
   제 크기로 페이지 위에 띄운다.
 
-랜딩은 사이트에서 **유일하게 하이드레이트하는 라우트**다 — gzip 94 KB(react-dom 44, 킷과
-오버레이 46). 가이드 페이지는 여전히 JS 를 하나도 싣지 않는다.
+랜딩의 AppShell과 갤러리처럼 상호작용이 필요한 곳은 React를 실행한다.
+일반 가이드는 React 앱을 띄우지 않지만 테마·내비게이션을 위한 공용 사이트 스크립트는 사용한다.
 
 ## 디자인 섹션
 

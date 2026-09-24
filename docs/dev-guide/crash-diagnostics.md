@@ -4,7 +4,7 @@ tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 �
 
 ## panic 발생 시 (모든 빌드)
 
-부팅 때 설치된 panic hook 이 panic 을 잡아 **두 곳**에 남긴다 (release·dev·dist 공통, panic 전까지 런타임 비용 0):
+부팅 때 설치된 panic hook 이 panic 을 잡아 **두 곳**에 남긴다 (release·dev·dist 공통, panic 발생 시 기록):
 
 1. **crash report 파일** — `~/.tasty/crash-reports/crash-<YYYY-MM-DDTHH-MM-SS>.log`
 2. **stderr** — `Tasty crashed! Report saved to: <경로>` + `panic: <info>` + 전체 backtrace
@@ -79,7 +79,7 @@ markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로
 | 페이지가 로드됐는가 | 호스트 로그 — `WebView surface <id>: load started` / `load finished`, 실패 시 백엔드별로 `WKWebView navigation failed` · `WKWebView provisional navigation failed`(macOS) / `WebView2 navigation failed`(Windows) / `WebKitGTK load-failed`(Linux), Linux 는 `WebKit web process terminated` 도. 로드 호출 자체가 실패하는 경우는 반환값이 있는 Windows 뿐이고 그때는 `WebView2 Navigate failed` / `WebView2 NavigateToString failed` — 이 둘은 surface id 를 안 싣는다 | debug / warn |
 | 로드가 안 끝나 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)` — 드러나야 할 자리에 놓였는데 nav 가 `Done` 이 아닌 채로 이어질 때 surface 당 한 번 | warn |
 | 로드는 끝났는데 안 보이는가 | 호스트 로그 — Linux 에서 부모 창 밖에 그려지는 경우 `WebView surface <id>: GTK window realized without a GDK window` (navigation 은 정상 완료하므로 위 보류 줄은 안 남는다). Windows 의 배치·표시 API 실패는 `WebView2 SetBounds failed` / `SetWindowPos failed` / `WebView2 SetIsVisible failed` — 이 세 줄은 surface id 를 안 싣고, navigation 완료 여부와 독립적으로 발생한다 | warn |
-| 위가 다 성공했는데 자리를 못 채우는가 (Linux) | **로그에 안 남는다 — 채널이 없다.** `xwininfo` 로 직접 잰다 (아래 "렌더 타깃 크기를 재는 법") | 없음 |
+| 위가 다 성공했는데 자리를 못 채우는가 (Linux) | **해당 크기를 남기는 로그가 없다.** `xwininfo` 로 직접 잰다 (아래 "렌더 타깃 크기를 재는 법") | 없음 |
 
 보류 줄(`still hidden`)의 판정은 **redraw 안에서** 일어난다 — 매 프레임 "드러나야 할 자리에 있는데 nav 가 `Done` 이 아닌" surface 를 모아 시간을 재는 방식이다. 그래서 이 줄이 보장하는 범위는 **프레임이 도는 동안까지**다: 렌더 루프가 그 지점에 닿지 못하면(프레임이 아예 안 돌면) 자리가 비어 있어도 warn 은 침묵한다. 그때 비어 있음의 흔적은 이 표가 아니라 hang 진단(`hang-*.log`) 쪽에 남는다.
 
@@ -147,7 +147,7 @@ Render phase: present               ← none / acquire / submit / present
 Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
 ```
 
-- `Render phase` 가 `acquire`/`submit`/`present` 면 tasty 로직이 아니라 **GPU 드라이버** 쪽이다(그 호출들에는 애플리케이션 레벨 타임아웃이 없고 취소도 불가능하다). `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
+- `Render phase`가 `acquire`/`submit`/`present`면 해당 GPU 호출에서 멈춘 것으로 기록된 상태다. 드라이버를 포함한 실제 원인은 스택과 추가 로그로 확인한다. `none` 이면 GPU 구간 밖이므로 아래 gdb/strace 로 이어간다.
 - **파일은 stall 당 1 개**이고 `Stuck for` 는 최초 탐지 시점(≈5~6 초)의 값이다. 총 지속 시간이 실린 30 초 주기 재보고는 `tracing` 으로만 나가는데(`target: "tasty::stall"`), 그 로그 파일은 host 가 뜰 때마다 truncate 되므로 행을 겪고 강제 종료 후 다시 띄우면 사라진다. 즉 **재시작을 넘겨 남는 증거는 "어디서 멎었나" 까지이고 "얼마나 오래 멎었나" 는 아니다**(행이 진행되는 동안에는 파일에서 읽을 수 있다 — CLI 실행이 지우지는 않는다).
 - **워치독은 복구하지 않는다.** 기록만 남기며 프로세스를 종료하지도, 응답성을 되돌리지도 않는다 — 사용자는 여전히 강제 종료해야 한다. 근거·대안(렌더 스레드 분리 / 자동 종료)의 기각 사유는 [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
 - native 파일 다이얼로그처럼 **의도적으로** 메인 스레드를 막는 구간은 보고 대상에서 빠진다(`stall_watchdog::without_stall_watch`) — 그런 리포트가 섞이면 이 디렉토리가 신호를 잃기 때문이다.
@@ -159,7 +159,7 @@ Stuck for: 5745 ms                  ← 최초 탐지 시점 기준
 
 ```bash
 # 멈춘 프로세스
-gdb -p $(pidof tasty)
+gdb -p <직접 실행했거나 사용자가 지정한 PID>
 (gdb) thread apply all bt        # 모든 스레드 backtrace
 (gdb) thread 3
 (gdb) bt full

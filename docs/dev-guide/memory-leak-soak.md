@@ -18,7 +18,7 @@
 | L3 GPU 리소스 | wgpu 텍스처/버퍼 미해제, `egui_mesh_targets` 잔류 | 카운트 기준선 복귀 (정수 엄격) | `system.gpu_stats` — **OS 도구로는 불가시** |
 | L4 OS 핸들·프로세스 | ConPTY 핸들, conhost/셸 좀비 (ADR-0013) | 핸들·자식 수 기준선 복귀 | soak 외부 측정 |
 
-장기 실행 앱의 실전 누수 대부분은 **L2** 다. LSAN/valgrind 는 "종료 시 unreachable" 만 누수로 보므로 L2 를 통과시킨다 — 그래서 시간축 diff(soak)가 주력이고 exit-time 판정은 보조다.
+장기 실행 앱에서는 L2도 확인해야 한다. LSAN/valgrind 는 "종료 시 unreachable" 만 누수로 보므로 L2 를 통과시킨다 — 그래서 시간축 diff(soak)가 주력이고 exit-time 판정은 보조다.
 
 ## 1단계 — soak 하네스 실행
 
@@ -62,7 +62,7 @@ env 제어:
 | `s8` | idle | 타이머/폴링 바닥 드리프트 |
 | `s9` | s1~s7 결정적 가중 혼합 | 종합 회귀 |
 
-`s6` 이 새 탭(`tab.create`)이 아니라 분할로 여는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고([ADR-0017](../adr/0017-workspace-identity-and-focus.md)), release 에는 탭을 고르는 API 가 없다(원칙 3) — 그렇게 열면 view store · egui-mesh 경로를 안 탄 채 초록이 난다. 분할한 surface 는 `surface0` 이 든 탭, 곧 보이는 탭 안에 서므로 곧바로 렌더된다. debug 전용 `debug.switch_tab` 으로 탭을 고르는 방법은 soak 을 debug 프로필에 묶어 수치의 의미가 바뀌므로 쓰지 않는다. 새 워크스페이스(`workspace.create`)로 여는 것도 같은 이유로 안 된다 — 워크스페이스를 고르는 `workspace.select` 가 release 에 없어 보이지 않는 워크스페이스 안에 선다. 이 설계는 ADR-0017 가 바뀌거나 호스트가 webview 렌더를 셀 수 있게 되면 다시 본다.
+`s6` 이 새 탭(`tab.create`)이 아니라 분할로 여는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고([ADR-0017](../adr/0017-workspace-identity-and-focus.md)), release 에는 탭을 고르는 API 가 없다(원칙 3) — 그렇게 열면 view store · egui-mesh 경로를 실행하지 않은 채 통과할 수 있다. 분할한 surface 는 `surface0` 이 든 탭, 곧 보이는 탭 안에 서므로 곧바로 렌더된다. debug 전용 `debug.switch_tab` 으로 탭을 고르는 방법은 soak 을 debug 프로필에 묶어 수치의 의미가 바뀌므로 쓰지 않는다. 새 워크스페이스(`workspace.create`)로 여는 것도 같은 이유로 안 된다 — 워크스페이스를 고르는 `workspace.select` 가 release 에 없어 보이지 않는 워크스페이스 안에 선다. 이 설계는 ADR-0017 가 바뀌거나 호스트가 webview 렌더를 셀 수 있게 되면 다시 본다.
 
 **`s6` 은 경로를 탔는지 열어 둔 채로 확인한다.** 닫은 뒤의 체크포인트는 경로를 안 탔을 때도 기준선(0)이라 그 값으로는 못 가른다. 그래서 하네스는 explorer 를 열면 `system.gpu_stats` 의 `explorer_views` 가, image 를 열면 `egui_mesh_targets` 가 연 직전보다 커질 때까지 기다리고, 30 초 안에 안 커지면 **soak 을 실패시킨다**(`… was never rendered … the scenario is not measuring its path`). markdown(webview)은 호스트가 세는 값이 없어 이 확인이 없다 — 고정 700 ms 뒤에 닫는다. 분할이 `surface0` 을 매번 리사이즈하므로 `s6` 에는 `s2` 의 레이아웃·PTY 리사이즈 성분이 함께 섞인다. `s9` 의 s6 몫(8 사이클마다 한 번)도 같은 함수를 부르고 세 view 를 차례로 돈다.
 
@@ -70,7 +70,7 @@ env 제어:
 
 ### 기록 지표
 
-- **외부** (하네스가 sysinfo 로 측정, 관찰자 효과 0): 프로세스 **트리 합산** RSS, root RSS, 이름별 자식 수·**이름별 자식 RSS 합산**(`children_rss_by_name` — 누수 프로세스 1차 특정), 핸들(Windows)/fd(Linux/macOS) 수.
+- **외부** (하네스가 sysinfo 로 측정, 앱 밖에서 수집): 프로세스 **트리 합산** RSS, root RSS, 이름별 자식 수·**이름별 자식 RSS 합산**(`children_rss_by_name` — 누수 프로세스 1차 특정), 핸들(Windows)/fd(Linux/macOS) 수.
 - **내부** (`system.gpu_stats` IPC · CLI `tasty list gpu-stats`): wgpu 전역 리포트(buffers/textures/texture_views/bind_groups 등 live 카운트), 창별 `egui_mesh_targets`/`_popup_targets`/`_banner_targets` len, atlas(eviction/pages/entries), draw calls, 창별 호스트 explorer view 수(`explorer_views` — main 이 아닌 창은 `null`).
 - **부수 신호**: `input_incidents` — split close 직후 `surface.send` 첫 바이트 유실 레이스의 발생 횟수(하네스가 감지·재시도하며 계수).
 
@@ -83,7 +83,7 @@ python scripts/soak/analyze.py "${TMPDIR:-/tmp}/tasty-soak/soak-s9-<ts>.jsonl" [
 warmup(기본 앞 10% 체크포인트)을 제외하고:
 
 - **L2**: 트리/root RSS 에 OLS. `기울기 > 1KB/cycle (R²>0.5)` **그리고** 후반 50% 총증가 `> max(5%, 20MB)` 면 FAIL, 한쪽만이면 FLAG.
-- **L3·L4**: GPU 카운트·mesh len·explorer view 수·surface·proc 수는 최종 체크포인트가 기준선과 **정수 일치**해야 PASS(1 이라도 순증가면 FAIL — 재현 불요 확정). 핸들 수만 자연 요동 허용치(64) 내 복귀.
+- **L3·L4**: GPU 카운트·mesh len·explorer view 수·surface·proc 수는 최종 체크포인트가 기준선과 **정수 일치**해야 PASS(1 이라도 순증가면 FAIL — 하네스 기준). 핸들 수만 자연 요동 허용치(64) 내 복귀.
 - exit code 0=PASS / 1=FLAG / 2=FAIL. 플롯은 matplotlib 있을 때만.
 
 주의: 기준선은 첫 post-warmup 체크포인트다. 짧은 런에서는 lazy 초기화(첫 markdown surface 의 텍스처 등)가 기준선 이후에 발생해 false FAIL 이 날 수 있다 — 본 실행은 충분히 길게, 판정 전 모든 surface kind 가 한 번씩 돌았는지 확인.
@@ -101,12 +101,12 @@ warmup(기본 앞 10% 체크포인트)을 제외하고:
 - **`leaks` 는 diff 로만** — 절대값은 AppKit/XPC 부팅 노이즈를 포함한다 (Apple 자체 바이너리도
   ROOT LEAK 를 보고). warmup 직후와 종료 직전 2점을 떠 성장분만 판정한다.
 - **알려진 상류 잔류 — egui `WidgetRects` layer 누적**: surface churn 시나리오(s1·s2·s6)의
-  root RSS FLAG 에는 egui(0.31, master 도 동일)의 구조적 성장분이 포함된다.
+  root RSS FLAG 에는 측정한 egui 0.31의 구조적 성장분이 포함된다.
   `WidgetRects::clear()` 가 `by_layer` 의 Vec 내용만 비우고 map 항목(capacity 포함)을 제거하지
   않아, surface 마다 고유 `Area` id 를 쓰는 tasty 에서 닫힌 surface 의 layer 항목(~10KB)이
   영구 잔존한다. 닫기 1회당 ~10–12KB — 공개 API 로 purge 불가(상류 몫). soak 판정 시 이
   성분(닫기 횟수 × ~10KB)을 알려진 잔류로 차감하고 그 이상의 성장만 신규 의심으로 본다.
-  **상류 제보·자체 patch 는 하지 않기로 결정(2026-07-12)** — 규모가 작고 bounded-per-surface 라
+  **상류 제보·자체 patch 는 하지 않기로 결정(2026-07-12)** — 규모가 작고 surface 생성 횟수에 비례하는 잔류 라
   차감 운용으로 충분. egui 메이저 업그레이드 시 재확인만 한다 (우회안인 Area id 재사용은
   위젯 상태 bleed 리스크로 기각됨).
 
@@ -162,7 +162,9 @@ cargo build --features dhat-heap
 1. **shutdown 캐스케이드가 해제하는 L2 누수는 exit-time 잔류(`eb`)에 안 남는다** — heap 최대점 스냅샷(`gb`, t-gmax)으로 봐야 한다. 성장분이 부팅 피크를 넘도록 사이클을 충분히 돌려야 gmax 가 churn 말미에 찍힌다.
 2. **비-Rust-heap 성장은 dhat 에 안 보인다** — mmap(플랫폼 shm, plugin shared buffer), GPU 드라이버 풀, GDI 등. "RSS 는 느는데 dhat gmax 총량이 평평"이면 이 유형 (s6 의 markdown 누수가 정확히 이랬다 — shared buffer 매핑 누적).
 
-### L1 확정 도장 — ASAN+LSAN (Linux, nightly)
+<a id="l1-확정-도장--asanlsan-linux-nightly"></a>
+
+### L1 검사 — ASAN+LSAN (Linux, nightly)
 
 ```bash
 rustup +nightly target add x86_64-unknown-linux-gnu

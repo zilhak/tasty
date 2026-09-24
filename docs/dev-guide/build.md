@@ -4,7 +4,10 @@ tasty 의 워크스페이스 구조, 빌드 프로필, 빌드 시간 최적화. 
 
 ## 워크스페이스 구조
 
-cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수와 전수 목록은 [architecture/index.md](../architecture/index.md) 가 정본이고 `architecture_crate_list_complete` 가 그것을 강제한다 — 여기서 수를 복제하지 않는다(복제본은 **가드 밖이면** 낡는다. 실제로 48 로 낡아 있었고, 그 값이 마지막까지 남아 있던 곳이 두 README 의 Workspace 배지와 본문이다). 복제를 남기기로 한 자리는 대조를 함께 붙였다 — 두 README 는 `readme_badge_parity`, 루트 `CLAUDE.md` "빌드" 절은 `architecture_crate_list_complete` 가 본다. 셋 다 좌변이 같은 함수(`tasty_doc_guards::crate_layers::crate_dir_names`)라 답이 갈리지 않는다. 크레이트는 레이어로 나뉜다(전체 목록·각 역할은 `crates/` 와 각 `Cargo.toml`):
+workspace는 본 바이너리(`src/`)와 `crates/*`로 구성한다. 전체 목록과 수는
+[아키텍처](../architecture/index.md)에서 관리한다. `architecture_crate_list_complete`와
+`readme_badge_parity`는 그 목록, 루트 지침, README의 수를 같은
+`crate_dir_names` 함수로 대조한다. 여기에는 역할별 예시만 적는다.
 
 | 레이어 | 예 | 성격 |
 |--------|-----|------|
@@ -14,13 +17,16 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 | 번들 plugin | `tasty-plugin-{claude,codex,image,html,markdown,git-viewer,clipboard-viewer,mesh-demo,agent-stream}` | → [`../plugins/`](../plugins/index.md) |
 | CLI / 테스트 | `tasty-cli`, `tasty-tui-simulator` | |
 
-본 바이너리는 `pub use tasty_core as ...` 식으로 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.
+본 바이너리는 각 크레이트를 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.
 
 **루트 패키지는 `lib` 와 `bin` 두 타깃이다.** `src/lib.rs` 가 모듈 트리와 위 재수출을 들고, `src/main.rs` 는 `tasty::boot::run()` 만 부른다.
 
-- **루트 패키지의 단위시험은 전부 lib 타깃에 산다.** `cargo test -p tasty --bin tasty` 로 좁히면 **0 건이 돌고 초록이 난다** — 0 건은 통과가 아니라 미측정이다. 좁히려면 `cargo test -p tasty --lib` 다. (`--lib --bins` 를 함께 주는 조합은 예전과 같은 것을 담는다.)
-- **가른 것이 경계는 아니다.** 모듈은 여전히 전부 비공개이거나 `pub(crate)` 고, 밖으로 나가는 것은 `boot::run` 과 기존 재수출뿐이다. 생긴 것은 **공개 표면을 잴 좌변**이다 — 재는 법: `cargo doc -p tasty --no-deps`. 첫 값(실측 2026-09-20): 루트 페이지가 모듈 **둘**(`boot` · `paths`)과 함수 **열**(`boot::run` + `paths::*` 아홉)을 든다(`target/doc/tasty/sidebar-items.js` · `all.html`). **그 목록이 표면 전부는 아니다** — `pub use tasty_font as font;` 류의 **크레이트 통째 재수출** 셋(`font` · `settings` · `theme`)은 `--no-deps` 에서 페이지가 안 생겨 목록에 안 뜨지만 소비자에게는 그 크레이트의 공개 API 전부가 나간다. 좁히려면 그 셋부터 본다.
-- 오늘 이 크레이트의 doctest 는 **0 건**이다(`cargo test -p tasty --doc`). `src/` 의 코드펜스는 비공개 항목의 주석 안에 있어 rustdoc 이 수집하지 않는다. `doctest = false` 를 걸지 않은 이유가 이것이고, 이 수가 움직이면 그때 자리를 정한다.
+- **루트 패키지의 단위시험은 전부 lib 타깃에 산다.** `cargo test -p tasty --bin tasty` 로 좁히면 **실행된 시험이 0개인데도 성공으로 끝난다** — 0 건은 통과가 아니라 미측정이다. 좁히려면 `cargo test -p tasty --lib` 다. (`--lib --bins` 를 함께 주는 조합은 예전과 같은 것을 담는다.)
+- 모듈은 비공개 또는 `pub(crate)`로 유지한다. `cargo doc -p tasty --no-deps`로
+  공개 항목을 확인하되, 크레이트 전체 재수출(`font`·`settings`·`theme`)은 의존 문서를
+  생성하지 않으면 목록에 나타나지 않을 수 있다. 재수출된 API도 공개 범위에 포함한다.
+- 비공개 항목의 코드펜스는 rustdoc이 수집하지 않는다. `cargo test -p tasty --doc`가
+  성공해도 실행된 예제가 있는지 확인한다. `doctest = false`로 전체를 끄지는 않는다.
 
 ### type-\* layer 의존 규약 (필수)
 
@@ -30,7 +36,7 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 - **도메인/IO crate 의존 금지** — `tasty-model`/`tasty-themes`/본 바이너리 등을 의존하지 않는다.
 - **그룹 내 순환 금지.**
 
-새 type-\* crate 도 이 3원칙을 따른다 — 의존 그래프가 한 방향으로 유지되어 순환 위험 0.
+새 type-\* crate 도 이 3원칙을 따른다 — 의존 그래프가 한 방향으로 유지되어 순환을 방지한다.
 
 ## 빌드 프로필 (3종)
 
@@ -43,8 +49,8 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 | `dist` | `inherits = "release"` | **full** (`lto = true`) | 배포 산출물 `cargo build --profile dist` |
 
 - **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md).
-- **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. full 의 95–99% 효과를 1/3 시간에 — 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
-- **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 단일 스레드 단계가 길어 약 3.5배 느림. **배포 바이너리(DMG/MSI/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
+- **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
+- **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 최적화 비용이 커 빌드가 오래 걸림. **배포 바이너리(DMG/MSI/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
 
 ```bash
 cargo build                 # debug
@@ -62,7 +68,9 @@ cargo check --workspace --no-default-features   # headless 컴파일 검증
 cargo build --workspace --no-default-features   # headless 빌드
 ```
 
-#### "컴파일된다" 와 "그래프에 안 들어온다" 는 다른 좌변이다
+<a id="컴파일된다-와-그래프에-안-들어온다-는-다른-좌변이다"></a>
+
+#### 컴파일 성공과 GUI 의존성 제외는 따로 확인한다
 
 `--no-default-features` 가 **컴파일되는 것**과 GUI 스택이 **의존 그래프에서 빠지는 것**은
 따로 움직인다. 비-optional path 의존 하나가 남아 있으면 컴파일은 그대로 통과하면서 egui·wgpu
@@ -80,16 +88,16 @@ cargo tree --no-default-features --edges normal -i wgpu
 **②의 신호는 출력이 아니라 종료 코드다.** 그 이름이 그래프에 없으면 빈 출력이 아니라
 `error: package ID specification ... did not match any packages` 로 **죽는다**(rc≠0).
 그래서 "안 들어왔다" 와 "명령이 고장났다" 가 같은 모양으로 보인다 — 스크립트에 넣을 때
-그 둘을 갈라라.
+그 둘을 구분한다.
 
-**그래프 자체를 보는 시험은 없다 — 그 좌변에는 채널이 없다.** 위 두 줄이 그것을 재는 유일한
+**전체 의존 그래프를 확인하는 자동 시험은 없다.** 위 두 줄이 그것을 재는 유일한
 방법이다. 있는 것은 **크레이트 하나의 선언**을 보는 시험 하나뿐이다
 (`crates/tasty-font/src/lib.rs` 의 `wgpu_stays_an_optional_dependency_of_this_crate` —
 `wgpu` 가 비-optional 로 돌아가거나 `gpu` feature 가 사라지거나 `default` 가 안 비면 죽는다,
 변이로 확인). **그것이 그래프를 보는 것은 아니다** — 다른 크레이트가 wgpu 를 새로 들이면
-그 시험은 초록인 채로 스택이 돌아온다.
+그 시험이 통과해도 GUI 의존성이 다시 포함된다.
 
-현재 상태(실측 2026-09-20, 위 ① 규약 = 이름만 유일): 헤드리스 그래프는 **306** 노드다.
+과거 측정(2026-09-20, 위 ①처럼 이름을 중복 제거): 헤드리스 그래프는 **306** 노드다.
 없는 것: `egui` 계열(`egui`·`ecolor`·`emath`·`epaint`·`egui_extras`) · `winit` ·
 **`wgpu` 계열(`wgpu`·`wgpu-core`·`wgpu-hal`·`wgpu-types`·`naga`·`glow`·`ash`)**.
 `wgpu` 가 빠진 것은 `tasty-font` 이 그것을 `gpu` feature 뒤 optional 로 들고 루트의 `gui` 만
@@ -135,8 +143,7 @@ trust 게이트가 켜지므로(debug 는 `#[cfg(debug_assertions)]` 로 우회)
 cargo build 전에 서명 키를 보장(`scripts/ensure-sign-key.sh`: `SIGN_KEY_PATH` env →
 `release.pem` → `dev.pem`+`gen-dev-key.sh`)하고 임베드 `dev-pubkey.bin` 을 재도출한 뒤,
 plugin 빌드 후 `sign-bundle.sh --all-builtins` 로 전체 매니페스트를 재서명한다. 따라서
-매니페스트를 언제 고치든(plugin 버전 자동 bump 포함) 로컬 release 산출물은 항상 게이트를
-통과한다. `just build`/`just run`(debug)은 게이트가 꺼져 있어 서명 단계를 건너뛴다(기본
+매니페스트를 언제 고치든(plugin 버전 자동 bump 포함) 로컬 release 빌드도 변경된 매니페스트에 맞춰 서명을 준비한다. `just build`/`just run`(debug)은 게이트가 꺼져 있어 서명 단계를 건너뛴다(기본
 dev 워크플로에 openssl 의존 미부과). dist 스크립트(`build-*.{sh,ps1}`)도 같은 규칙을
 쓴다 — 상세는 [plugin-packaging](plugin-packaging.md).
 
@@ -158,7 +165,7 @@ build-dependency 도 호스트가 Windows 일 때만 해석된다. 실측(2026-0
 그래서 **Windows 가 아닌 호스트(실측은 Linux)에서 교차 빌드한 Windows exe 에는 아이콘도 VERSIONINFO 도 없고, 빌드는 그
 사실을 경고하지 않는다.** 출하 산출물은 이 갈래를 타지 않는다 — Windows 산출물은 네이티브 Windows
 러너가 만든다(`.github/workflows/release.yml` 의 `runs-on: [self-hosted, Windows]` 잡). 교차 빌드한
-exe 는 컴파일 · 시험 확인용으로만 쓰고 배포물로 쓰지 않는다.
+exe 는 컴파일·시험 확인용으로만 쓰고 배포물로 쓰지 않는다.
 
 ### 입력 선언이 곧 계약이다
 
@@ -179,7 +186,7 @@ feature 이고 이 저장소는 `default-features` 를 끄지 않는다(`Cargo.l
 
 ### 재실행 동작을 재는 법
 
-**`cargo:warning` 출력 유무를 좌변으로 쓰지 마라** — cargo 는 스크립트가 fresh 여서 안 돌았을
+**`cargo:warning` 출력만으로 재실행을 판단하지 않는다** — cargo 는 스크립트가 fresh 여서 안 돌았을
 때도 캐시된 warning 을 다시 찍기 때문에 양쪽이 똑같아 보인다. 스크립트가 파일에 한 줄씩
 append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시 디렉토리에 최소 크레이트 둘(선언
 있음 / 없음)을 만들어 재면 이렇게 나온다.
@@ -246,7 +253,7 @@ tasty-icons  lib   dirty: FsStatusOutdated
 컴파일되지만 **빌드 스크립트는 다시 돌지 않는다**(`invoked.timestamp` 불변). 선언이 하나라도
 있으면 "패키지 안 아무 파일" 기본값이 꺼지기 때문이고, 그것이 여기서 노린 바다.
 
-**A/B 로 잴 때 `-p` 목록을 바꾸지 마라.** cargo 의 feature 통일은 선택된 패키지 집합에 따라
+**전후 비교에서는 `-p` 목록을 같게 유지한다.** cargo 의 feature 통일은 선택된 패키지 집합에 따라
 달라지고, 달라지면 `-C metadata` 해시가 달라져 `build/<pkg>-<hash>/` 가 **새로 생긴다.** 그
 새 디렉토리는 방금 실행된 것처럼 보여서, 재실행이 없는데 있는 것으로 읽힌다. 앞뒤 빌드의
 패키지 선택을 고정해라.
@@ -325,13 +332,13 @@ cargo build --profile dist        # 워크스페이스 컴파일
 ./scripts/build-macos-dmg.sh      # .app 번들 + .dmg
 ```
 
-산출물: `dist/Tasty.app/...`(`CFBundleVersion` = Cargo version) · `dist/Tasty-{version}-macos.dmg`. `build-macos-dmg.sh` 마지막에 자동 sanity check(`tasty --version` / Mach-O / `CFBundleVersion` 일치 / DMG 존재) — 실패 시 빌드 fail. 고지 세트는 `Contents/Resources/` 에 codesign **전에** 스테이징되고(`scripts/lib/notice-set.sh`), `.app` · DMG 스테이징 트리 · 만든 DMG 를 읽기 전용으로 붙인 트리 세 곳에서 저장소 사본과 바이트 대조한다. 이 확인은 배선이며 macOS 빌더에서 돈 적은 아직 없다(미측정). `dist` 는 `release` 상속(`strip=true`)이라 `nm` 이 거의 빈 건 정상.
+산출물: `dist/Tasty.app/...`(`CFBundleVersion` = Cargo version) · `dist/Tasty-{version}-macos.dmg`. `build-macos-dmg.sh` 마지막에 자동 sanity check(`tasty --version` / Mach-O / `CFBundleVersion` 일치 / DMG 존재) — 실패 시 빌드 fail. 고지 세트는 `Contents/Resources/` 에 codesign **전에** 스테이징되고(`scripts/lib/notice-set.sh`), `.app` · DMG 스테이징 트리 · 만든 DMG 를 읽기 전용으로 붙인 트리 세 곳에서 저장소 사본과 바이트 대조한다. 이 확인 코드는 구현돼 있지만 macOS 빌더에서 돈 적은 아직 없다(미측정). `dist` 는 `release` 상속(`strip=true`)이라 `nm` 이 거의 빈 건 정상.
 
 **서명은 ad-hoc, 공증은 범위 밖** — `build-macos-dmg.sh` 가 `codesign --sign -` 로 ad-hoc 서명한다(Apple Silicon 의 "손상됨" 하드 블록 완화). 인증서 서명이 아니라 Gatekeeper 는 여전히 rejected 이므로(`spctl -a` 로 확인) 사용자는 Finder 우클릭→열기로 우회. 번들 plugin 은 `Contents/Resources/plugins/` 에 staging 해야 서명이 통과한다 — `Contents/MacOS/` 하위면 codesign 이 그 디렉터리를 nested bundle 로 파싱하려다 실패한다([build.md](#배포-패키징)). 산출물은 **Apple Silicon(arm64) 전용**이다 — dist 는 full LTO 라 타깃을 하나 더 얹으면 빌드 시간이 배로 늘고, Intel Mac 은 macOS 26 이 마지막 지원 릴리스라 배포 대상에서 뺐다. Intel 에서 쓰려면 `--target x86_64-apple-darwin` 으로 직접 빌드한다.
 
 #### Windows
 
-> Darwin 작성 환경에서 직접 실행 불가 — Windows 머신에서 빌드 후 결과 반영.
+> Windows 산출물은 Windows 머신에서 빌드하고 직접 확인한다.
 
 ```powershell
 cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
@@ -339,7 +346,7 @@ cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
 .\scripts\build-windows.ps1 -SkipMsi   # ZIP 만
 ```
 
-산출물: `tasty-{v}-windows-x64.{zip,msi}` + `SHA256SUMS-windows.txt`. `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인들은 배선이며 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
+산출물: `tasty-{v}-windows-x64.{zip,msi}` + `SHA256SUMS-windows.txt`. `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
 
 #### Linux
 
@@ -358,9 +365,9 @@ just dist-setup-linux              # 또는 수동 (아래)
 
 | 플랫폼 | 명령 | 산출물 |
 |--------|------|--------|
-| macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` (~18MB) |
+| macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` |
 | Windows (x64) | `.\scripts\build-windows.ps1` | `{zip,msi}` |
-| Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` (~83MB AppImage) |
+| Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` |
 
 #### 관련
 
@@ -407,14 +414,14 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 ### 의존 방향 규칙 — 도메인은 조립부를 부르지 않는다
 
 도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
-방향은 모듈 경계와 가드로 선다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
+의존 방향은 모듈 경계와 가드로 제한한다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
 `pub(crate)` 표면)와 다시 볼 조건은 [ADR-0002](../adr/0002-domain-execution-and-ports.md),
 경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
 
 같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.
 `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(`doc-guards.yml` 이 경로
 필터 없이 돌린다). 위 `tasty-cli` 가드와 달리 **면제 명부가 없다** — 기대값이 0 이다. 테스트
-(파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 좌변이 아니다. 같은 파일이 도메인
+(파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 검사 대상에서 제외한다. 같은 파일이 도메인
 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
 부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
 `egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md)).

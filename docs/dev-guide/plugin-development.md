@@ -68,7 +68,7 @@ impl Plugin for MyPlugin {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter(/* RUST_LOG */ "info").init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
     tasty_plugin_sdk::run(MyPlugin)
 }
 ```

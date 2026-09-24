@@ -28,7 +28,7 @@
 ### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
 
 - **원격 접속 프로필(Remote profile)** — 확장 가능한 문자열 `kind`로 연결 유형을 구분한다. 비밀 값은 담지 않고 Passkey 이름을 참조한다. `ssh`는 연결 정보, `tasty-attach`는 attach 설정이다. `tasty-attach`는 `ssh_ref` 또는 인라인 SSH 정보와 `remote_tasty`·`port_mode`·`port_file`을 사용한다. attach는 `tasty-attach`만 받는다(ADR-0020).
-- **Passkey** — 이름으로 관리하는 자격증명. `kind=path`는 기존 파일을 참조하고 `inline`은 값을 권한0600 파일에 저장한다. TOML에는 비밀 대신 파일 경로를 기록한다. 값은 로컬 GUI의 Reveal에서만 볼 수 있고 IPC·에이전트에는 공개하지 않는다([ADR-0011](../adr/0011-secrets-and-local-trust.md)).
+- **Passkey** — 이름으로 관리하는 자격증명. `kind=path`는 기존 파일을 참조하고 `inline`은 값을 권한 0600 파일에 저장한다. TOML에는 비밀 대신 파일 경로를 기록한다. 값은 로컬 GUI의 Reveal에서만 볼 수 있고 IPC·에이전트에는 공개하지 않는다([ADR-0011](../adr/0011-secrets-and-local-trust.md)).
 - **미등록 타입** — 내장 기능(ssh/smb)이나 설치된 플러그인이 처리한다고 선언하지 않은 `kind`. 등록은 허용하되 노란 배지로 알린다.
 
 ### 구조 (→ [hierarchy.md](hierarchy.md))
@@ -73,14 +73,14 @@
 - **Modal** — 전역 1개, 활성 시 입력 차단하는 View 의 한 형태(별개 엔티티 아님). `SettingsView`/`QuitView`/`PluginsView`.
 - **Popup** — View 내부 가상 창(타이틀바+콘텐츠, 드래그·z-order). 스코프 가짐. 상세 [`design/systems/popup.md`](../design/systems/popup.md).
 - **Toast** — View 안에 잠깐 표시하는 알림. 포커스를 받거나 입력을 소비하지 않는다. 사용자 행동에서만 표시하며, 예외로 attach mirror의 끊김·재연결·손실·구조 전달 실패를 알릴 수 있다. 에이전트 IPC로 직접 표시하지 않는다([토스트](../design/systems/toast.md)).
-- **Banner** — parent 영역 상단의 안내와 조치 버튼. 포커스는 받지 않지만 마우스 입력을 처리한다. TTL·z-order를 사용하며 scope마다 하나를 표시하고 최대5개를 대기시킨다. 사용자 행동에서만 표시하고 에이전트 IPC로 표시하지 않는다([배너](../design/systems/banner.md)).
-- **Modifier-hint 오버레이** — modifier를 누르고 있으면 기본500ms 뒤, Shift 단독은1200ms 뒤에200ms 페이드로 단축키 목록을 보여 준다. 현재 누른 조합을 포함하는 단축키만 표시하며 키를 떼면 바로 사라진다.
+- **Banner** — parent 영역 상단의 안내와 조치 버튼. 포커스는 받지 않지만 마우스 입력을 처리한다. TTL·z-order를 사용하며 scope마다 하나를 표시하고 최대 5개를 대기시킨다. 사용자 행동에서만 표시하고 에이전트 IPC로 표시하지 않는다([배너](../design/systems/banner.md)).
+- **Modifier-hint 오버레이** — modifier를 누르고 있으면 기본 500ms 뒤, Shift 단독은 1200ms 뒤에 200ms 페이드로 단축키 목록을 보여 준다. 현재 누른 조합을 포함하는 단축키만 표시하며 키를 떼면 바로 사라진다.
   키보드 포커스는 그대로 두고 마우스로 이동·크기 조정·닫기를 할 수 있다. `ModifiersChanged`로 실제 사용자 입력만 받으며 IPC·CLI로 강제 표시하지 않는다. `enabled`가 꺼져 있으면 표시하지 않고 위치·크기는 `Settings::modifier_hint`에 저장한다.
   [디자인 매핑](../design/systems/design-token-mapping.md)의 modifier-hint 절을 참고한다. 모델은 `src/adapters/ui/input/shortcuts/modifier_hint.rs`, 화면은 `src/adapters/ui/modifier_hint_overlay.rs`에 있다.
 - **마커 오버레이(Marker overlay)** — 대상 rect 위 최상위에 링·glow를 그리는 장치. 메시지나 심각도는 다루지 않는다. 마커와 scrim은 입력을 통과시키며(`pointer-events:none`) 옆 안내 말풍선만 상호작용을 처리한다.
   좌표는 매 프레임 `LayoutContext`·`terminal_rect`·`tab_bar_height`로 다시 계산한다. 현재는 튜토리얼에서만 사용하고 메뉴 선택·Next 클릭 등 사용자 행동으로 진행한다. 에이전트 IPC·CLI에는 표시 API가 없다([튜토리얼](../features/tutorial/index.md), `src/adapters/ui/tutorial/`).
 - **전체화면 무대(Fullscreen stage)** — 창 전체에 별도 콘텐츠를 표시한다. Workspace·Pane·Tab·Surface 트리의 요소를 확대하는 기능이 아니며, popup을 표시할 때도 별도 인스턴스를 만든다. 무대 뒤 콘텐츠는 redraw하지 않고 무대를 닫으면 다시 그린다.
-  창마다 최대1개이며 `StageDef`에 선언한 것만 표시하고 영속화하지 않는다. popup 타이틀바 버튼 등 사용자 조작으로 열며 release에는 제어 API가 없다. 자체 검증은 debug 전용 `debug.fullscreen.*`을 사용한다([전체화면 무대](../design/systems/fullscreen-stage.md), [ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)).
+  창마다 최대 1개이며 `StageDef`에 선언한 것만 표시하고 영속화하지 않는다. popup 타이틀바 버튼 등 사용자 조작으로 열며 release에는 제어 API가 없다. 자체 검증은 debug 전용 `debug.fullscreen.*`을 사용한다([전체화면 무대](../design/systems/fullscreen-stage.md), [ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)).
   - **Zoom 과 혼동 금지** — tasty 에서 `Zoom` 은 **UI 배율**(설정 › 단축키 › Zoom)로 이미 선점된 용어다. tmux 식 "pane zoom" 명칭을 쓰지 않고 **전체화면 / 무대(stage)** 로 통일한다.
 - **상태바(Workspace status bar)** — 작업 영역 하단을 항상 차지하는 고정 strip(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). focus surface 컨텍스트 표시 + 우측 빠른 액션(팔레트·테마). GUI 전용 표시 위젯(에이전트 표면 없음). 정본 [`features/workspace-status-bar`](../features/workspace-status-bar/index.md).
 

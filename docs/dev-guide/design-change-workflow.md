@@ -1,7 +1,7 @@
 # 디자인 변경 워크플로 — 요청문서 → 시안 → 정합 루프
 
 디자인에 **없는** UI 요소를 새로 만들거나, 디자인과 **다른** 형태로 바꿔야 할 때 따르는 절차다.
-"소스부터 고치지 않는다" — 먼저 디자인을 *확보*하고, 받은 디자인을 갤러리·본체로 내린다.
+"소스부터 고치지 않는다" — 먼저 디자인을 *확보*하고, 받은 디자인을 갤러리·본체에 반영한다.
 
 > 디자인에 *이미 있는데* 소스만 못 따라간 경우(구현 누락/불일치)는 이 워크플로가 필요 없다 —
 > 디자인 변경이 아니므로 바로 [gallery-first](gallery-first.md) 의 구조 전사(1단계)로 간다.
@@ -26,7 +26,9 @@
 
 아래 다이어그램·표·라이프사이클은 **B(fallback)** 경로를 기준으로 그린 것이다. A 경로에서는 `[2] 사용자 제출`이 "claude code 가 원격 요청 인박스에 write → 사용자가 Claude design 을 열어 직접 지시"로 대체되고, 시안 수령이 직접 읽기가 된다.
 
-## 뱅글뱅글 도는 루프
+<a id="뱅글뱅글-도는-루프"></a>
+
+## 요청부터 반영까지
 
 ```
    ┌──────────────────────── 재요청 (부족·불일치 발견 시) ────────────────────────┐
@@ -45,7 +47,7 @@
 |------|--------|---------|--------|
 | 1 | **planner** | 무엇을·어떻게 보이게 할지 정의한 **디자인 요청문서** 작성 | 로컬 작업 폴더의 `design-request/MMDDhhmm-design-request-<slug>.md` |
 | 2 | **사용자** | 요청문서를 **Claude design 에 직접 제출** | (제출) |
-| 3 | **designer** (Claude design) | 색·간격·인터랙션 살아있는 **고충실 시안** 생성 | HTML/CSS 시안 (원격 프로젝트의 파일) |
+| 3 | **designer** (Claude design) | 색·간격·인터랙션을 표현한 **고충실 시안** 생성 | HTML/CSS 시안 (원격 프로젝트의 파일) |
 | 4 | **구현** (claude code) | 갤러리 specimen → 본체 반영 → **사이트 사본 재-vendoring**(`site/vendor/`) | 코드 + vendor 사본 |
 | → 재요청 | planner | 4 에서 부족·불일치가 드러나면 **추가 요청문서**로 다시 2 로 | 새/갱신 요청문서 |
 
@@ -55,7 +57,7 @@
 ## 디자인 요청문서란
 
 **planner 가 작성하는 입력 산출물.** "이번에 무엇을, 어떤 화면·컴포넌트·상태·인터랙션으로 보이게 할지"를
-디자이너(Claude design)가 고충실 시안으로 옮길 수 있도록 정의한 문서다. *왜/구현 배선*이 아니라 **무엇을 어떻게 보이게 할지**만 담는다.
+디자이너(Claude design)가 고충실 시안으로 옮길 수 있도록 정의한 문서다. *왜/구현 내부 구조*이 아니라 **무엇을 어떻게 보이게 할지**만 담는다.
 
 - **위치**: 전달 경로에 따라 다르다(위 "요청문서 전달 경로" 참조) — A(직접 접근)면 원격 프로젝트의 전용 요청 인박스(경로는 로컬 전용 지침이 정한다), B(fallback)면 로컬 작업 폴더의 `design-request/`(gitignored, 커밋 대상 아님 — 폴더 위치는 로컬 전용 지침이 정한다).
 - **파일명 규칙**: `MMDDhhmm-design-request-<slug>.md` — 맨 앞에 **월일시분(MMDDhhmm)**, 이어서 **`design-request`**, 마지막에 내용 slug 를 붙인다(예: `07101430-design-request-explorer-file-manager.md`). 날짜·시간을 선두에 둬 파일이 시간순으로 정렬되게 하고, `design-request` 접두로 문서 종류를 명시한다.
@@ -67,7 +69,7 @@
 |------|------|
 | 헤더 메타 | 작성일 · 요청자(planner) · 수행자(designer) · **상태** · 연계 계획 |
 | §0 한 줄 요약 | 이 요청이 만들려는 것 한 줄 |
-| §1 맥락 / 제약 | 토큰=코드 SoT(Catppuccin Mocha, raw hex 금지) · 4px 그리드/14px 폰트 상한/1px 보더 · gallery-first 부품 재사용 · i18n 가변폭 · 기존 구현과의 관계 |
+| §1 맥락 / 제약 | 토큰은 코드 기준(Catppuccin Mocha, raw hex 금지) · 4px 그리드/14px 폰트 상한/1px 보더 · gallery-first 부품 재사용 · i18n 가변폭 · 기존 구현과의 관계 |
 | §2 인벤토리 | 디자이너가 만들 화면/컴포넌트/팝업/상태 목록 표 (신규/기존 구분) |
 | §3 화면별 요구사항 | 화면 단위 레이아웃·영역 구성 |
 | §4 컴포넌트별 요구사항 | 컴포넌트 단위 상태·변형 |
@@ -80,7 +82,7 @@
 
 요청문서 §1·§7 은 시안이 본체 토큰·정책과 어긋나지 않도록 다음을 **시안 단계에서부터** 못박는다:
 
-- **토큰 SoT = 코드(`Theme`)** — 색·간격·치수·보더는 모두 Catppuccin Mocha 토큰 안에서만. raw hex 하드코딩 금지(시안에서도 토큰 의미 이름으로 표기). ([theme UI 규칙](../design/systems/theme.md#ui-디자인-규칙-필수))
+- **토큰 기준은 코드(`Theme`)** — 색·간격·치수·보더는 모두 Catppuccin Mocha 토큰 안에서만. raw hex 하드코딩 금지(시안에서도 토큰 의미 이름으로 표기). ([theme UI 규칙](../design/systems/theme.md#ui-디자인-규칙-필수))
 - **레이아웃 규칙** — 4px 그리드 · 폰트 14px 상한 · 보더 1px · 호버(흰색 +8%)/액티브(+12%) 오버레이는 직접 값 금지(자동 도출).
 - **gallery-first 부품 재사용** — 보편 부품(버튼/입력/표/스크롤바/컨텍스트 메뉴/팝업)은 [공용 위젯](../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)·기존 카탈로그와 시각 일관. ([gallery-first](gallery-first.md))
 - **i18n 가변폭** — 모든 문자열은 [`t()`](i18n.md) 번역 키로 노출될 예정. 시안 텍스트는 영어 기준이되 독/일/한 가변 길이를 감안해 여유 폭.
@@ -91,12 +93,15 @@
 
 | 사본 | 무엇이 받는가 | 갱신 절차 | 안 따라오면 |
 |------|--------------|-----------|-------------|
-| 앱 — `crates/tasty-design-tokens/dtcg/tasty.tokens.json` | 토큰(DTCG) | [`crates/tasty-design-tokens/README.md`](../../crates/tasty-design-tokens/README.md) "vendor 갱신 절차" | `crates/tasty-design-tokens/tests/freshness.rs` 의 census 스냅샷이 빨개진다 |
+| 앱 — `crates/tasty-design-tokens/dtcg/tasty.tokens.json` | 토큰(DTCG) | [`crates/tasty-design-tokens/README.md`](../../crates/tasty-design-tokens/README.md) "vendor 갱신 절차" | `crates/tasty-design-tokens/tests/freshness.rs` 의 목록 검사에 실패한다 |
 | 사이트 — `site/vendor/` | 킷 전부(토큰 · 컴포넌트 · UI kit · 갤러리 · 가이드라인) | [`site/vendor/README.md`](../../site/vendor/README.md) "vendor 갱신 절차" | **공개 사이트가 결정 이전 UI 를 현재형으로 전시한다** |
 
-뒤엣것이 조용한 이유는 사이트가 그 사본을 **정상적으로** 렌더하기 때문이다 — 빌드도 시험도 CI 도 전부 초록이고, 낡았다는 사실이 값으로 안 남는다. 실제로 제거하기로 결정된 컨트롤 한 줄이 그렇게 공개 페이지에 남았다.
-
-부분적인 자동 채널이 **둘** 있다. `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 두 사본의 **토큰 이름 집합**을, `crates/tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` 가 **아이콘 기하·채움과 그 그릇**(`viewBox` · 선 굵기 · cap/join)을 대조한다 — 앱이 받은 것을 사이트가 못 받으면 그 차이가 명부와 어긋나 빨개진다. **그 둘이 덮는 범위와 이 절차가 덮는 범위는 다르다** — 판정기는 토큰 이름과 아이콘(기하·채움·그릇) 두 층만 보고, 그 둘을 안 건드리는 결정(문구 변경 · 구성 변경 · 컨트롤 삭제)은 양쪽 좌변을 똑같이 남겨두므로 **여전히 안 잡힌다.** 그 층은 이 단계(사람이 도는 재-vendoring)만 닫는다. 판정기가 초록인 것을 "사이트 사본이 최신" 으로 읽지 마라.
+사이트는 오래된 사본도 정상 빌드할 수 있으므로 빌드 통과만으로 최신 여부를 판단하지 않는다.
+`site_vendor_tokens_track_the_app_export`는 두 사본의 토큰 이름을,
+`site_vendor_icons_match_the_app_transcription`은 아이콘 기하·채움·viewBox·선 굵기·
+cap/join을 비교한다. 두 검사는 `crates/tasty-doc-guards/tests/`에 있다.
+문구·구성·컨트롤 삭제처럼 그 값들을 바꾸지 않는 변경은 검사하지 않으므로 원격 디자인과
+직접 대조해 사이트 사본도 갱신한다.
 
 이 정합 대상을 세운 근거·대안·재검토 조건은 [ADR-0035](../adr/0035-shared-design-and-theme.md).
 

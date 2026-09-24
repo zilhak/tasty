@@ -1,6 +1,6 @@
 # Gallery-first — 새 UI 컴포넌트 추가 순서
 
-**새 modal · popup · 공용 위젯은 본체에 넣기 전에 갤러리(`crates/tasty-gallery`)에 먼저 만든다.** 갤러리는 본체의 모든 UI 컴포넌트를 노출하는 단일 출처이고([gallery-completeness](../design/policies/gallery-completeness.md), [ADR-0035](../adr/0035-shared-design-and-theme.md)), 컴포넌트는 그 출처를 *거쳐서* 본체로 들어온다.
+**새 modal · popup · 공용 위젯은 본체에 넣기 전에 갤러리(`crates/tasty-gallery`)에 먼저 만든다.** 갤러리는 본체 UI 컴포넌트를 한곳에서 확인하는 카탈로그이며([gallery-completeness](../design/policies/gallery-completeness.md), [ADR-0035](../adr/0035-shared-design-and-theme.md)), 새 컴포넌트는 여기서 확인한 뒤 본체에 연결한다.
 
 ## 순서 (필수)
 
@@ -13,12 +13,14 @@
 받은 디자인으로 갤러리에 specimen 을 만든다: `catalog/{components,widgets}/<name>.rs` 의 `draw(ui, &Theme)` + `catalog.rs::pages()` 의 해당 페이지에 `section(...)`/`spec(...)` 등록. 값과 구조를 각각 확인한다:
 
 - **토큰 정합**: 색·간격·치수·보더는 모두 Theme 토큰에서 가져온다([theme UI 규칙](../design/systems/theme.md#ui-디자인-규칙-필수)). 보편 이름이 붙는 부품(버튼/입력/표 등)은 [공용 위젯](../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)을 호출한다.
-- **구조 전사(structural transcription)**: 디자인의 **레이아웃 구조**(grid·컬럼·패딩·정렬·요소 경계)를 egui 소스에 **1:1 전사**한다 — egui flow 로 눈대중 흉내 내지 않는다. 토큰만 맞고 구조가 어긋나면 specimen 이 드리프트한다(전사 절차·함정은 [`design-parity-notes`](../design/systems/design-parity-notes.md) 의 "구조 전사" 원칙, 매핑은 [`design-gallery-mapping`](../design/systems/design-gallery-mapping.md)).
+- **구조 전사(structural transcription)**: 디자인의 **레이아웃 구조**(grid·컬럼·패딩·정렬·요소 경계)를 egui 소스에 **1:1 전사**한다 — egui flow 로 눈대중 흉내 내지 않는다. 토큰만 맞고 구조가 어긋나면 specimen이 디자인과 달라진다(전사 절차·함정은 [`design-parity-notes`](../design/systems/design-parity-notes.md) 의 "구조 전사" 원칙, 매핑은 [`design-gallery-mapping`](../design/systems/design-gallery-mapping.md)).
 
 ### 2. 본체 반영
-그 후 본체 앱에 넣는다(팝업이면 [popup-implementation](popup-implementation.md) 의 `PopupDef` 3단계). demo=main 이므로 본체와 갤러리가 **같은 view-only 함수**를 호출하도록 props 를 분리한다([model-view-split](model-view-split.md)). 새로 그리지 말고 1 단계에서 만든 함수를 본체에서 호출한다.
+그 후 본체 앱에 넣는다(팝업이면 [popup-implementation](popup-implementation.md) 의 `PopupDef` 3단계).  본체와 갤러리가 **같은 view-only 함수**를 호출하도록 props 를 분리한다([model-view-split](model-view-split.md)). 새로 그리지 말고 1 단계에서 만든 함수를 본체에서 호출한다.
 
-## 이미 본체에만 있는 view 를 갤러리로 끌어올릴 때
+<a id="이미-본체에만-있는-view-를-갤러리로-끌어올릴-때"></a>
+
+## 이미 본체에만 있는 view 를 갤러리로 옮길 때
 
 gallery-first 이전에 만들어져 본체 binary 에만 있는 view 는 갤러리가 복제할 수밖에 없다. 복제를 없애려면 **view 함수를 `crates/tasty-ui-widgets` 로 옮겨** 본체 wrapper 와 갤러리 specimen 이 같은 함수를 호출하게 한다. 이때 crate 로 **넘기지 않는 것**이 정해져 있다:
 
@@ -84,7 +86,7 @@ gallery-first 이전에 만들어져 본체 binary 에만 있는 view 는 갤러
 ## 왜 이 순서인가
 
 - **검증을 먼저 세운다**: 갤러리는 본체 앱을 다 띄우지 않고 컴포넌트 하나만 격리 렌더한다. 디자인 정합을 빠르게 반복할 검증대를 본체 연결보다 먼저 갖는다.
-- **완전성이 절차로 보장된다**: 컴포넌트가 갤러리를 거쳐야만 본체로 들어오므로, "본체엔 있는데 갤러리엔 없는" 누락이 구조적으로 안 생긴다([gallery-completeness](../design/policies/gallery-completeness.md)).
+- **누락을 줄인다**: 갤러리에 먼저 등록해 본체에만 있는 컴포넌트를 줄인다([gallery-completeness](../design/policies/gallery-completeness.md)).
 - **공용 구현을 유지한다**: 갤러리용으로 분리한 view-only 함수를 본체가 그대로 호출하므로 두 환경에서 같은 구현을 검증할 수 있다.
 
 ## 관련

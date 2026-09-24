@@ -28,7 +28,7 @@ tasty send text "hello" && tasty send key enter
 
 ## 함정 2 — 응답은 `read_line` 으로 (`read_to_end` 금지)
 
-IPC 응답은 개행으로 끝나는 JSON 한 줄이다. 서버가 바로 연결을 닫지는 않으므로 `read_line`으로 읽는다. `read_to_end`로 EOF를 기다리면 응답을 받은 뒤에도 설정한 read timeout까지 멈출 수 있다. 예를 들어 timeout이10초면 그만큼 기다리게 되며, 이를 서버 처리 지연이나 throttling으로 오해하지 않는다.
+IPC 응답은 개행으로 끝나는 JSON 한 줄이다. 서버가 바로 연결을 닫지는 않으므로 `read_line`으로 읽는다. `read_to_end`로 EOF를 기다리면 응답을 받은 뒤에도 설정한 read timeout까지 멈출 수 있다. 예를 들어 timeout이 10초면 그만큼 기다리게 되며, 이를 서버 처리 지연이나 throttling으로 오해하지 않는다.
 
 ```rust
 // ❌ server close 까지 read timeout 만큼 대기
