@@ -1,46 +1,18 @@
-//! 사용자 표면 문자열 하드코딩 가드 — 사람이 읽는 문자열이 `t()` 를 거치지 않고
-//! 리터럴로 소스에 박히면 fail 한다.
+//! 사용자에게 보이는 하드코딩 문자열을 찾는다. 번역 정책과 예외는 docs/dev-guide/i18n.md에 있다.
+//! 자동 실행 경로는 docs/dev-guide/ci-gates.md에 있다.
 //!
-//! 배경: `CLAUDE.md` "국제화" 는 자연어 하드코딩을 금지하지만 지금까지 리뷰에만
-//! 의존했고, egui 본체는 지켜졌어도 가장자리(CLI stderr · OS 네이티브 메뉴 · 알림
-//! 제목 · `unwrap_or` 폴백)에서 반복 재발했다. 이 가드는 의존 0 크레이트에 살아서
-//! `doc-guards.yml` 이 경로 필터 없이 돌린다 — main push 와 PR 마다 자동으로 돈다
-//! (`docs/dev-guide/ci-gates.md`).
-//! 근거 문서는
-//! `docs/dev-guide/i18n.md` — 예외 목록도 그 문서의 "하드코딩 허용 예외" 를 그대로 옮긴 것이다.
+//! 호출 형태와 문자 패턴을 검사하므로 모든 사용자 문구를 찾는 것은 아니다.
+//! - W: egui 위젯 인자에서 연속 영문자 두 개 또는 CJK를 찾는다.
+//! - H: hint_text는 예시 식별자를 허용하고 문장 형태(공백과 네 글자 이상 영단어)·CJK를 찾는다.
+//! - N/F/E: 네이티브 메뉴, unwrap_or 폴백, 출력 매크로에서 문장·대문자 시작 영단어·CJK를 찾는다.
+//!   소문자 한 단어는 식별자일 수 있어 허용하지만 실제 화면에 표시한다면 번역해야 한다.
+//! - P: PushNotification의 title 리터럴을 찾는다.
+//! - C: tasty-cli의 clap 도움말 주석과 about/help 속성에서 CJK를 찾는다. 영어 도움말은 허용한다.
 //!
-//! **형태별 검사** (한 정규식으로는 절반도 못 잡으므로 `find_*` 로 분리):
-//! - W  egui 위젯 인자 — `ui.label(` / `ui.button(` / `ui.heading(` / `RichText::new(` /
-//!   `Button::new(` / `Label::new(` / `.on_hover_text(` 등에 리터럴. 두 글자 이상의
-//!   영문자 또는 CJK 가 있으면 위반(라벨은 단어 하나여도 사용자 문구다).
-//! - H  `.hint_text(` — placeholder 는 `my-viewer` / `md, mdx` 같은 예시 식별자가 많아
-//!   문장 형태(공백 + 네 글자 이상 단어)나 CJK 만 위반으로 본다.
-//! - N  OS 네이티브 — `NSString::from_str(` / `MenuItem::new(` / `.with_tooltip(` / `w!(`.
-//!   `UTF-8` · `about:blank` 같은 식별자는 두고, 대문자로 시작하는 영단어 하나
-//!   (`Quit` / `File`)나 문장을 위반으로 본다.
-//! - P  `PushNotification { … title: "…" }` — 알림 제목 리터럴(ADR-0040).
-//! - F  `unwrap_or("…")` / `unwrap_or_else(|| "…")` 폴백 — 대문자 시작 영단어·문장·CJK
-//!   (`"Unknown"` / `"Shell"`). 소문자 단일 단어(`"unknown"`)는 식별자일 수 있어 두지만,
-//!   그런 값이 화면에 간다면 그것도 `t()` 다(i18n.md "위젯 호출이 아닌 경로").
-//! - E  `println!` / `eprintln!` 의 포맷 문자열 — 문장·대문자 영단어·CJK. tasty-cli 의
-//!   stdout 은 `outln!` 이라 stderr 의 `eprintln!` 만 걸린다. `tracing::*` 는 사용자
-//!   표면이 아니라 검사하지 않는다.
-//! - C  clap `///` 도움말 — `crates/tasty-cli` 의 서브커맨드/인자 doc comment 와
-//!   `about =` / `help =` 리터럴에 한글·가나·한자 금지(영어로만 쓴다 — i18n.md).
-//!   영어 도움말 자체는 i18n.md 예외라 검사 대상이 아니다.
-//!
-//! **검사하지 않는 것(i18n.md 예외 — 그대로 옮김)**: 수식키·키 이름(`Ctrl`/`Escape`),
-//! 폰트 프리뷰 `AaBbCcDdEeFfGg`, 언어 이름(`English`/`한국어`/`日本語`), 단위(`MiB`),
-//! 제품명 `Tasty`, `tracing::*` 로그, clap 의 영어 도움말, JSON-RPC 메서드·프로토콜 토큰
-//! (문자열 인자를 위젯에 넘기지 않으므로 형태 자체가 안 걸린다), `tasty list` 구조 출력의
-//! 고정 토큰(`crates/tasty-cli/src/format.rs` 통째로), 갤러리 specimen(영어 리터럴이
-//! 카탈로그의 본질), 데모 plugin, TUI 시뮬레이터, `debug/` 디렉토리(사용자 표면 아님),
-//! `#[cfg(test)]` / `#[test]` 가 붙은 아이템의 본문(테스트 모듈 뒤의 코드는 스캔), `//` 주석.
-//!
-//! 잔존 위반은 [`PENDING_FIX_LITERALS`] 에 파일·리터럴·고칠 방법과 함께 둔다 — 고쳐지면
-//! 항목을 지우라고 fail 하므로 빚이 조용히 남지 않는다.
-//!
-//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `crates/tasty-doc-guards/tests/design_token_adherence.rs`.
+//! 키 이름·언어 이름·폰트 예시·단위·제품명 등은 허용 토큰으로 둔다.
+//! 구조 출력·갤러리·데모·시뮬레이터·debug 경로 등은 아래 경로 목록으로 제외한다.
+//! tracing 로그는 대상 호출에 없으며 테스트 아이템과 주석 줄도 제외한다.
+//! 알려진 미수정 문구는 PENDING_FIX_LITERALS에 고칠 방법과 함께 기록하고, 사라지면 항목을 지운다.
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
 
@@ -51,19 +23,16 @@ use std::path::{Path, PathBuf};
 const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     (
         "crates/tasty-gallery/",
-        "갤러리 specimen — 영어 리터럴을 그대로 주입하는 카탈로그 (i18n.md 공용 위젯 절)",
+        "갤러리는 영어 예시를 표시하는 카탈로그다(i18n.md 공용 위젯 절).",
     ),
     (
         "crates/tasty-plugin-mesh-demo/",
-        "데모 plugin — 사용자 배포 표면이 아니다",
+        "사용자에게 배포하지 않는 데모 플러그인이다.",
     ),
     ("crates/tasty-tui-simulator/", "테스트용 TUI 시뮬레이터"),
     (
         "src/source_guards/",
-        "src/lib.rs 가 `#[cfg(test)] mod source_guards;` 로 다는 테스트 전용 모듈 — \
-         릴리스 바이너리에 없다. 이 스캐너는 파일 **안**의 `#[test]` 만 보므로 모듈 \
-         선언 쪽 cfg 를 못 따라간다. `#[test]` 밖 헬퍼의 진단 문구가 사용자 문구로 \
-         잘못 걸리던 것을 경로로 막는다 (`/debug/` 제외와 같은 근거)",
+        "src/lib.rs에서 cfg(test)로 선언한 테스트 전용 모듈이다. 이 검사는 다른 파일의 모듈 선언을 따라가지 못하므로 경로로 제외한다.",
     ),
     (
         "crates/tasty-cli/src/format.rs",
@@ -79,10 +48,7 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     ),
     (
         "crates/tasty-doc-guards/src/bin/",
-        "게이트 스크립트가 부르는 개발 도구 — 사용자 배포 표면이 아니고, 이 크레이트는 \
-         의존이 0 인 것이 존재 이유라(ADR-0048) 번역 테이블을 들일 수도 없다. 진단은 \
-         게이트 로그로 나가 개발자만 읽는다 (`crates/tasty-tui-simulator/` 와 같은 근거). \
-         **`src/bin/` 만이다** — 이 크레이트의 라이브러리는 아무것도 출력하지 않는다",
+        "개발자용 검사 도구의 진단이다. 의존성이 없는 크레이트이므로 번역 테이블을 추가하지 않는다(ADR-0048). 바이너리 경로만 제외한다.",
     ),
 ];
 
@@ -164,40 +130,22 @@ const PENDING_FIX_LITERALS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// clap 도움말 스캔 뿌리와 **그 뿌리 하나의** `///` 줄 하한(`crates/tasty-cli`).
-///
-/// 스캔 대상이 0 이면 [`clap_help_text_is_english_only`] 는 위반을 못 찾는 것이 아니라
-/// **볼 것이 없어서** 초록이다. `#[cfg(test)]` 를 걷어내는 판정이 너무 많이 먹으면 그
-/// 형태로 조용히 무너지므로, 실측보다 낮되 붕괴를 잡을 만큼은 높게 잡는다 — 전부를
-/// 게이트로 보는 변이는 0 으로 떨어지고, 게이트가 절반쯤 새는 변이도 이 아래로 온다.
-/// CLI 표면이 정상적으로 줄어 여기 걸리면 그때 값을 다시 재서 내린다.
-///
-/// ★ **하한은 뿌리마다 따로다 — 합 하나로 재면 큰 뿌리가 작은 뿌리의 죽음을 덮는다.**
-/// 실측(2026-09-07, 게이트 앞): `commands/` 1456 · `commands.rs` 0 · `lib.rs` 81.
-/// 합 하한 하나였을 때는 `commands/` 혼자 그 합을 어떤 값 위로도 올려서, `lib.rs` 뿌리가
-/// 통째로 안 보이게 돼도 합은 조용히 초록이었다.
-///
-/// `None` 은 **줄 하한 없음**이다. 줄 하한은 **줄이 있는 뿌리에만** 건다 — `commands.rs`
-/// 는 지금 `///` 가 0 줄이라 어떤 줄 하한도 터질 수 없는 대조군이 되고, 값이 있는 척하는
-/// 하한은 안 보는 구간을 덮는 옷이 된다. 줄이 없는 뿌리를 지키는 것은 아래 "파일을 한 개
-/// 이상 봤는가" 단정이고, 그것이 단일 파일 뿌리의 실제 고장 형태 — 줄이 주는 것이 아니라
-/// **경로가 낡아 그 뿌리가 통째로 안 보이는 것** — 을 잡는다.
+/// CLI 도움말의 /// 줄을 루트별로 센다. 한 루트의 수집 실패가 다른 결과에 가려지지 않아야 한다.
+/// 2026-09-07 cfg 제외 전 측정: commands/ 1456줄, commands.rs 0줄, lib.rs 81줄.
+/// None은 줄 하한이 없다는 뜻이며, 모든 루트에는 별도로 파일 존재 검사를 적용한다.
+/// 실제 도움말이 줄었다면 cfg 제외 전후를 다시 측정해 해당 하한을 검토한다.
 const CLAP_DOC_ROOTS: &[(&str, Option<usize>)] = &[
     ("crates/tasty-cli/src/commands", Some(800)),
     ("crates/tasty-cli/src/commands.rs", None),
     ("crates/tasty-cli/src/lib.rs", Some(40)),
 ];
 
-/// 순회에서 통째로 가지치기할 디렉토리명(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와 동일).
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
-/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0049-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
-/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+/// 로컬 경로를 문서 인용으로 오인하지 않도록 순회용 이름을 조립한다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
 fn is_pruned(name: &str) -> bool {
     PRUNE_DIRS.contains(&name)
         || name
@@ -236,8 +184,7 @@ const NATIVE_CALLS: &[&str] = &[
 /// 폴백 호출 — (F).
 const FALLBACK_CALLS: &[&str] = &["unwrap_or(", "unwrap_or_else(|| ", "unwrap_or_else(|_| "];
 
-/// 표준 출력 매크로 — (E). pre-commit C.11 이 이 파일의 추가 라인에서 매크로 토큰을 잡지
-/// 않도록 `concat!` 로 조립한다 — 검사 대상은 소스이지 이 상수가 아니다.
+/// pre-commit C.11이 검사 패턴을 실제 호출로 오인하지 않도록 조립한다.
 const PRINT_CALLS: &[&str] = &[
     concat!("println", "!("),
     concat!("eprintln", "!("),
@@ -245,9 +192,6 @@ const PRINT_CALLS: &[&str] = &[
     concat!("eprint", "!("),
 ];
 
-/// `CARGO_MANIFEST_DIR` 을 그대로 쓰지 않는다 — 그 값은 이 타깃이 어느 패키지에 사는지에
-/// 따라 달라져서 **스캔 뿌리가 파일과 함께 움직인다.** `repo_root()` 는 표지 파일로 자기가
-/// 잡은 경로를 검증한다.
 fn root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }
@@ -297,9 +241,7 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
-            // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
-            // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+            // 이름이 다른 CARGO_TARGET_DIR도 캐시 표식으로 제외한다.
             if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
                 continue;
             }
@@ -307,8 +249,6 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
         gather(&p, out);
     }
 }
-
-// ── 리터럴 판정 ────────────────────────────────────────────────────────
 
 fn is_cjk(c: char) -> bool {
     matches!(c as u32,
@@ -442,9 +382,7 @@ fn find_notification_title(lines: &[&str], idx: usize) -> Option<String> {
     None
 }
 
-/// `#[cfg(test)]` / `#[test]` 가 붙은 아이템(모듈·함수·impl)의 본문을 건너뛴다. 파일 끝까지
-/// 끊지 않으므로 테스트 모듈 **뒤에** 오는 아이템도 스캔한다 — clippy `items_after_test_module`
-/// 이 경고만 하는 배치가 실제로 있어, 첫 `#[cfg(test)]` 에서 멈추면 그 뒤가 사각지대가 된다.
+/// 테스트 아이템 본문만 건너뛰어 테스트 모듈 뒤의 출하 코드도 검사한다.
 #[derive(Default)]
 struct TestRegion {
     skipping: bool,
@@ -481,8 +419,8 @@ impl TestRegion {
     }
 }
 
-/// 문자열·문자 리터럴·`//` 주석 밖의 `{` / `}` 개수. raw string(`r#"…"#`) 안의 중괄호는
-/// 구분하지 않는다 — 테스트 픽스처에 드물고, 어긋나면 위반이 드러나는 쪽(오탐)으로 기운다.
+/// 일반 문자열·중괄호 문자 리터럴·줄 주석 밖의 중괄호를 센다.
+/// raw string을 별도로 해석하지 않아 테스트 범위를 잘못 판단할 수 있다.
 fn brace_counts(line: &str) -> (i32, i32) {
     let mut opens = 0;
     let mut closes = 0;
@@ -525,7 +463,6 @@ fn scan_file(contents: &str) -> Vec<(usize, String)> {
     let mut found = Vec::new();
     let mut tests = TestRegion::default();
     for (idx, line) in lines.iter().enumerate() {
-        // 테스트 픽스처 문구는 사용자 표면이 아니다.
         if tests.skip(line) {
             continue;
         }
@@ -602,8 +539,6 @@ fn no_hardcoded_user_facing_strings() {
     );
 }
 
-// ── clap 도움말 ────────────────────────────────────────────────────────
-
 fn gather_all_rs(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         if path.extension().is_some_and(|e| e == "rs") {
@@ -646,18 +581,12 @@ fn clap_help_text_is_english_only() {
         let mut files = Vec::new();
         gather_all_rs(&root().join(rel), &mut files);
         files.sort();
-        // 뿌리마다 따로 묻는다. 이 단정은 **모든** 뿌리에 걸린다 — 줄 하한이 없는 뿌리도
-        // 여기서는 걸린다. 단일 파일 뿌리의 실제 고장은 "줄이 준다" 가 아니라 "경로가
-        // 낡아 그 뿌리가 통째로 안 보인다" 이고, 그것은 줄 수로는 안 보인다.
+        // 도움말 줄이 원래 없는 루트도 파일 수집 실패는 확인해야 한다.
         assert!(
             !files.is_empty(),
-            "clap 도움말 뿌리 `{rel}` 에서 `.rs` 를 한 개도 못 찾았다 — `CLAP_DOC_ROOTS` 의 \
-             경로가 낡았다. 이 뿌리는 지금 아무것도 검사하지 않는다(위반이 없는 것이 아니라 \
-             보는 것이 없다)."
+            "clap 도움말 루트 `{rel}`에서 Rust 파일을 찾지 못했다. CLAP_DOC_ROOTS의 경로와 수집을 확인한다."
         );
 
-        // 이 뿌리에서 실제로 검사된 `///` 줄. 게이트 판정이 망가져 전부 게이트로 보이면
-        // 이 수가 무너지고, 그때 아래 하한이 먼저 말한다 — 0 은 통과가 아니라 측정 실패다.
         let mut scanned_doc_lines = 0usize;
         for file in &files {
             let Ok(contents) = std::fs::read_to_string(file) else {
@@ -665,8 +594,7 @@ fn clap_help_text_is_english_only() {
             };
             let file_rel = rel_of(file);
             let src: Vec<&str> = contents.lines().collect();
-            // `#[cfg(test)]` 아래는 바이너리에 안 들어가므로 `--help` 에도 안 나온다.
-            // doc 주석은 **뒤따르는 항목**에 귀속되니 속성 앞 줄까지 함께 걷어낸다.
+            // doc 주석은 다음 아이템에 속하므로 test 속성 앞의 주석도 제외한다.
             let gated = cfg_span::cfg_gated_lines(&src, "test");
             for (idx, line) in src.iter().enumerate() {
                 if gated[idx] {
@@ -684,22 +612,7 @@ fn clap_help_text_is_english_only() {
         if let Some(min) = min_doc_lines {
             assert!(
                 scanned_doc_lines >= *min,
-                "뿌리 `{rel}` 의 clap 도움말 후보 `///` 줄이 {scanned_doc_lines} 개뿐이다(하한 \
-                 {min}). 게이트 판정이 너무 많이 걷어냈거나 그 뿌리 안의 경로가 낡았다 — 이 \
-                 술어는 볼 것이 없으면 공짜로 초록이다.\n\
-                   ★ 판별 — 이 모수는 두 단계를 거친다: 뿌리에서 `///` 줄을 모으고, 그다음 \
-                   `#[cfg(test)]` 게이트로 걷어낸다. 그러니 **게이트 앞의 수**를 따로 세면 어느 \
-                   단계가 무너졌는지 갈린다:\n\
-                       git ls-files -- {rel} | grep '\\.rs$' | xargs grep -h '^ *///' | wc -l\n\
-                   2026-09-07 실측(게이트 앞): `crates/tasty-cli/src/commands` 1456 · \
-                   `crates/tasty-cli/src/commands.rs` 0 · `crates/tasty-cli/src/lib.rs` 81. \
-                   그 수는 그대로인데 여기만 무너졌으면 **게이트가 너무 많이 먹은 것**이고, 그 \
-                   수도 함께 줄었으면 CLI 표면이 정말 줄어든 것이다. 앞쪽이 이 자리의 주된 고장 \
-                   형태다 — 뿌리가 통째로 어긋나는 것보다 게이트가 새는 쪽이 훨씬 조용하다.\n\
-                   ★ 이 하한을 내려서 통과시키지 마라 — 게이트가 절반쯤 새는 변이는 정확히 이 \
-                   수를 이 아래로 떨어뜨리고, 하한을 내리는 것은 그 변이를 승인하는 것과 같은 \
-                   조작이다. CLI 가 정당하게 줄었으면 위 명령으로 게이트 앞 수를 먼저 재고, 그 \
-                   비율대로 **그 뿌리의** 값을 다시 잡아라."
+                "`{rel}`의 clap 도움말 후보가 {scanned_doc_lines}줄뿐이다(하한 {min}). cfg 제외 전의 /// 줄 수와 비교해 수집·제외 범위를 확인한다. 도움말이 실제로 줄었다면 해당 루트의 하한과 측정 근거를 함께 갱신한다."
             );
         }
     }
@@ -714,18 +627,9 @@ fn clap_help_text_is_english_only() {
     );
 }
 
-/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
-///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md). 가리키는 것이 실재한다는
-/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
-/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
-///
-/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
-/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+/// 예외 경로의 존재만 확인한다. 해당 예외가 아직 필요한지는 별도 검토해야 한다.
 #[test]
 fn allowlist_path_prefixes_point_at_paths_that_exist() {
-    // 위와 같은 이유로 `repo_root()` 를 쓴다 — 명부의 경로는 레포 상대라, 뿌리가 이
-    // 크레이트로 좁아지면 전부 "없는 경로" 가 된다.
     let root = tasty_doc_guards::repo_root();
     let missing = tasty_doc_guards::missing_referents(
         &root,

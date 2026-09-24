@@ -1,38 +1,9 @@
-//! **NSMenu 항목의 단축키는 설정에서 오거나 비어 있어야 한다** — 그 둘 밖을 잡는다.
+//! NSMenu의 setKeyEquivalent 인자가 빈 문자열이거나 설정 변환에서 왔는지 검사한다.
+//! OS 표준 selector라도 단축키는 KeybindingSettings에서 가져와야 한다.
 //!
-//! 프로젝트 규칙(`CLAUDE.md` "단축키")은 tasty 가 직접 등록하는 모든 메뉴 항목의 key
-//! equivalent 를 `KeybindingSettings` 의 binding 에서 가져오거나 **비우라**고 요구한다.
-//! selector 가 OS 표준(`performClose:` 등)이라는 사실은 단축키 하드코딩의 정당화가 되지
-//! 않는다 — selector 와 단축키는 독립적으로 결정한다.
-//!
-//! 이 규칙은 여태 판정기가 없었다(원칙 명부에서 [구두]로 분류돼 있었다). 만들 수 있는지를
-//! 먼저 쟀고, 값이 나왔으므로 만든다: 호출 지점이 **넷**이고 전부 한 파일에 있으며 셋은
-//! 설정에서, 하나는 빈 문자열에서 온다.
-//!
-//! # 판별식 — 이름이 아니라 인자의 출처
-//!
-//! `setKeyEquivalent(` 의 인자를 보고 셋으로 가른다:
-//!
-//! - `NSString::from_str("")` — **빈 값**. 정책이 허용하는 한쪽.
-//! - 같은 함수 안에서 [`FROM_SETTINGS`] 를 거쳐 묶인 이름 — **설정에서 온 값**. 다른 한쪽.
-//! - 그 밖 전부 — 위반 후보. 리터럴 `"q"` 를 넣는 형태가 여기 걸린다.
-//!
-//! 한 홉만 따라간다(그 이름이 묶인 `let` 한 줄). 두 홉 이상 — 예컨대 하드코딩한 키를
-//! 반환하는 헬퍼를 새로 만들어 그것을 부르는 형태 — 는 **통과한다.** 이 사각을 아래
-//! "단정하지 않는 것" 에 적어 둔다. 지금 레포에 그런 형태가 없어서 판별식을 더 무겁게
-//! 만들 근거가 없다(판별식이 먼저다).
-//!
-//! # 이 가드가 단정하지 않는 것
-//!
-//! - **두 홉 이상의 우회.** 위 참조.
-//! - **그 binding 값이 옳은가.** 설정에서 왔다는 것만 보고, 어느 필드에서 왔는지는 안 본다.
-//! - **macOS 밖.** Windows `AcceleratorTable` · Linux 메뉴에는 지금 key equivalent 를
-//!   등록하는 자리가 **하나도 없다**(실측). 그래서 이 축의 모수는 그 두 플랫폼에서 0 이고,
-//!   거기서의 초록은 "지킨다" 가 아니라 **"잴 것이 없다"** 이다 — 그 구별이 안 보이게
-//!   되지 않도록 아래 [`MIN_SITES`] 하한이 모수를 노출한다.
-//! - **타입으로 이미 막힌 자리.** `make_std_item` 은 단축키 인자를 아예 안 받아 호출부가
-//!   단축키를 박을 수 없다. 그건 스캐너보다 강한 강제이고, 이 가드는 그것을 대체하지
-//!   않는다.
+//! 빈 NSString 표현식 또는 호출 이전 let의 우변에 FROM_SETTINGS가 나오는 이름을 인정한다.
+//! 파일 텍스트에서 이름만 비교하므로 함수 범위·shadowing·변환 함수의 내부를 알지 못하며,
+//! 어느 binding 필드를 썼는지도 확인하지 않는다. 이 검사는 macOS의 NSMenu API만 대상으로 한다.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -41,13 +12,7 @@ use tasty_doc_guards::temp_scratch::Scratch;
 /// 설정에서 키를 뽑는 변환 함수. 이 이름을 거친 값만 "설정에서 왔다" 로 센다.
 const FROM_SETTINGS: &str = "binding_to_nsmenu_key";
 
-/// 훑어야 할 최소 호출 지점 수 — **모수가 살아 있다는 증거**.
-///
-/// ★ 이 수를 **내려서 통과시키지 마라.** 내리는 순간 이 가드는 "호출 지점을 못 찾았다" 와
-/// "위반이 없다" 를 같은 초록으로 돌려주고, 그 둘은 전혀 다른 사실이다. 메뉴 항목이 실제로
-/// 줄어 이 하한이 걸리면, 값을 고치기 전에 **줄어든 자리를 세서** 그 수가 맞는지부터
-/// 확인해라(`rg 'setKeyEquivalent\(' src/`). 늘어나는 것은 이 하한이 안 본다 — 늘어난
-/// 쪽은 아래 위반 판정이 본다.
+/// 호출을 찾지 못한 상태로 통과하지 않게 한다. 실제 메뉴가 줄었다면 호출 수를 다시 확인한다.
 const MIN_SITES: usize = 4;
 
 fn repo_root() -> PathBuf {
@@ -68,18 +33,17 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 한 호출 지점의 판정.
 #[derive(Debug, PartialEq, Eq)]
 enum Source {
     /// 빈 문자열 리터럴.
     Empty,
-    /// 같은 함수 안에서 [`FROM_SETTINGS`] 를 거쳐 묶인 이름.
+    /// 호출 이전 let에서 FROM_SETTINGS 이름을 사용해 얻은 값.
     Settings,
     /// 그 밖 — 위반 후보.
     Unknown,
 }
 
-/// `setKeyEquivalent(` 인자를 괄호 한 겹까지 균형 맞춰 잘라 낸다.
+/// 중첩 괄호를 세어 호출 인자를 추출한다.
 fn argument_at(text: &str, open: usize) -> Option<&str> {
     let bytes = text.as_bytes();
     let mut depth = 0usize;
@@ -98,7 +62,7 @@ fn argument_at(text: &str, open: usize) -> Option<&str> {
     None
 }
 
-/// 그 이름이 이 지점 **앞**에서 [`FROM_SETTINGS`] 를 거쳐 묶였는가.
+/// 호출 이전 텍스트에 해당 이름과 FROM_SETTINGS를 쓰는 let이 있는지 본다.
 fn bound_from_settings(before: &str, name: &str) -> bool {
     for (idx, _) in before.match_indices("let ") {
         let Some(eq) = before[idx..].find('=') else {
@@ -121,7 +85,6 @@ fn bound_from_settings(before: &str, name: &str) -> bool {
     false
 }
 
-/// 한 파일의 호출 지점들을 판정한다 — 파일 순회와 분리된 순수 함수.
 fn sites_in(text: &str) -> Vec<(usize, Source)> {
     let needle = "setKeyEquivalent";
     let mut out = Vec::new();
@@ -129,7 +92,6 @@ fn sites_in(text: &str) -> Vec<(usize, Source)> {
         let Some(open) = text[idx..].find('(').map(|o| idx + o) else {
             continue;
         };
-        // `setKeyEquivalentModifierMask(` 는 다른 물음이다 — 이름이 이어지면 건너뛴다.
         if text[idx + needle.len()..open]
             .chars()
             .any(|c| c.is_alphanumeric())
@@ -160,8 +122,6 @@ fn every_menu_key_equivalent_is_empty_or_from_settings() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join("src"), &mut files);
-    // NSMenu 등록 자리는 `tasty-platform` 크레이트에 있다 — `src/` 에서 멈추면
-    // 모수가 0 이 되고 아래 하한이 그것을 측정 실패로 잡는다.
     rs_files(&root.join("crates/tasty-platform/src"), &mut files);
 
     let mut seen = 0usize;
@@ -184,27 +144,17 @@ fn every_menu_key_equivalent_is_empty_or_from_settings() {
 
     assert!(
         seen >= MIN_SITES,
-        "`setKeyEquivalent(` 호출 지점을 {seen} 곳만 찾았다(하한 {MIN_SITES}) — 스캔이 \
-         죽었거나 그 API 를 부르는 방식이 바뀌었다. 그러면 아래 판정은 빈 집합을 훑고 \
-         조용히 통과한다. ★ 수를 내려서 통과시키지 마라: 내리면 '못 찾았다' 와 '위반이 \
-         없다' 가 같은 초록이 된다. 줄어든 자리를 먼저 세라."
+        "setKeyEquivalent 호출을 {seen}곳만 찾았다(하한 {MIN_SITES}). 스캔 경로와 API 호출 형태를 확인하고, 실제 메뉴가 줄었다면 다시 측정한 뒤 하한을 갱신한다."
     );
 
     assert!(
         violations.is_empty(),
-        "NSMenu 항목의 단축키가 **설정에서도, 빈 값에서도** 오지 않는다:\n{}\n\n\
-         정책은 둘만 허용한다 — `KeybindingSettings` 의 binding 에서 가져오거나(`{}` 를 \
-         거쳐) 빈 문자열로 두거나. selector 가 OS 표준이라는 사실은 단축키 하드코딩의 \
-         정당화가 아니다. 고쳐라: 대응 binding 필드를 읽어 변환하거나, binding 이 없으면 \
-         key equivalent 를 비워 단축키 없는 항목으로 둬라.\n  \
-         ★ 이 판정은 **한 홉만** 본다. 하드코딩한 키를 반환하는 헬퍼를 새로 만들어 그것을 \
-         부르면 이 가드는 조용하다 — 그건 고친 것이 아니다.",
+        "NSMenu 단축키가 설정 변환이나 빈 문자열에서 오지 않는다:\n{}\n대응하는 KeybindingSettings 필드를 {}로 변환하거나 단축키를 비운다. OS 표준 selector도 예외가 아니다. 이 검사는 이름을 비교하며 함수 범위·변환 함수 내부·binding 필드의 정확성은 확인하지 않는다.",
         violations.join("\n"),
         FROM_SETTINGS
     );
 }
 
-/// 판독기가 **양쪽 답을 다 낸다** — 한 방향만 재면 무정보다.
 #[test]
 fn the_reader_answers_both_yes_and_no() {
     let settings = "let (quit_key, mods) = binding_to_nsmenu_key(b);\n\
@@ -221,14 +171,12 @@ fn the_reader_answers_both_yes_and_no() {
     assert_eq!(sites_in(unbound), vec![(1, Source::Unknown)]);
 }
 
-/// 이름이 이어지는 다른 API 를 자기 것으로 세지 않는다.
 #[test]
 fn the_modifier_mask_setter_is_a_different_question() {
     let text = "item.setKeyEquivalentModifierMask(NSEventModifierFlags::empty());\n";
     assert!(sites_in(text).is_empty());
 }
 
-/// 같은 이름이 **뒤에서** 묶여도 앞의 호출을 설정으로 세지 않는다.
 #[test]
 fn a_binding_after_the_call_does_not_count() {
     let text = "item.setKeyEquivalent(&key);\n\
@@ -236,14 +184,11 @@ fn a_binding_after_the_call_does_not_count() {
     assert_eq!(sites_in(text), vec![(1, Source::Unknown)]);
 }
 
-/// 이 축의 모수가 어느 플랫폼에 있는지 — 값으로 고정한다.
 #[test]
 fn the_registration_sites_live_in_one_place() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join("src"), &mut files);
-    // NSMenu 등록 자리는 `tasty-platform` 크레이트에 있다 — `src/` 에서 멈추면
-    // 모수가 0 이 되고 아래 하한이 그것을 측정 실패로 잡는다.
     rs_files(&root.join("crates/tasty-platform/src"), &mut files);
     let mut owners = BTreeSet::new();
     for file in &files {
@@ -251,8 +196,7 @@ fn the_registration_sites_live_in_one_place() {
             continue;
         };
         if !sites_in(&text).is_empty() {
-            // 아래에서 `o.contains("macos")` 로 성분을 찾는다 — 구분자가 섞이면
-            // 같은 트리가 플랫폼마다 다른 답을 낸다.
+            // 플랫폼에 관계없이 같은 상대 경로로 비교한다.
             owners.insert(
                 tasty_doc_guards::source_text::repo_relative(
                     file.strip_prefix(&root).unwrap_or(file),
@@ -264,23 +208,11 @@ fn the_registration_sites_live_in_one_place() {
     }
     assert!(
         owners.len() == 1 && owners.iter().all(|o| o.contains("macos")),
-        "key equivalent 등록 자리가 macOS 한 파일 밖으로 퍼졌다: {owners:?}\n  \
-         퍼진 것 자체는 결함이 아니다 — 다만 이 가드의 모수가 바뀐다. 새 자리에도 같은 \
-         정책(설정에서 오거나 비어 있거나)이 적용되는지 확인하고 이 단정을 갱신해라."
+        "NSMenu key equivalent 호출이 macOS 한 파일 밖에도 있다: {owners:?}. 새 위치의 단축키 정책과 검사 범위를 확인하고 이 단정을 갱신한다."
     );
 }
 
-/// **양성 대조 — 순회 쪽.**
-///
-/// 이 파일의 술어([`sites_in`])는 이미 합성 문자열로 네 방향에서 걸려 있다. 걸려 있지
-/// 않은 것은 **순회**([`rs_files`])다. 그리고 순회가 이 가드에서 위험한 방향은 하한
-/// (`MIN_SITES`)이 보는 쪽이 아니다 — 하한은 자리가 **줄면** 짖지만, `.rs` 필터가
-/// 넓어져 문서까지 훑게 되면 자리는 **늘고**, 늘어난 자리에서 나온 것은 위반 목록에
-/// 그대로 실린다. 즉 넓어지는 변이는 조용한 통과가 아니라 **없는 위반의 처방**을 만든다.
-/// 그 방향은 이 대조만 본다.
-///
-/// ★ 합성 파일에 심는 문자열은 전부 지어낸 것이다 — 이 가드의 상수
-/// (`FROM_SETTINGS` 등)에서 뽑지 않는다.
+/// 확장자 필터가 넓어지면 문서의 API 인용을 코드로 오인하므로 합성 트리의 정확한 파일 목록을 비교한다.
 #[test]
 fn the_walk_recurses_and_takes_only_rust_files() {
     let probe = Scratch::new("menu-key-walk");
@@ -290,7 +222,6 @@ fn the_walk_recurses_and_takes_only_rust_files() {
     std::fs::write(dir.join("top.rs"), "// zeta\n").expect("합성 .rs 실패");
     std::fs::write(dir.join("deep/mid.rs"), "// omega\n").expect("합성 하위 .rs 실패");
     std::fs::write(dir.join("deep/deeper/leaf.rs"), "// sigma\n").expect("합성 말단 .rs 실패");
-    // `.rs` 가 아닌 것들 — 문서가 이 API 이름을 인용하는 일은 실제로 있다.
     std::fs::write(
         dir.join("notes.md"),
         "setKeyEquivalent(\"x\") 를 설명하는 문서\n",
@@ -298,15 +229,12 @@ fn the_walk_recurses_and_takes_only_rust_files() {
     .expect("합성 문서 실패");
     std::fs::write(dir.join("deep/table.txt"), "setKeyEquivalent(\"y\")\n")
         .expect("합성 잡파일 실패");
-    // 확장자가 아예 없는 것.
     std::fs::write(dir.join("Makefile"), "all:\n").expect("합성 무확장자 실패");
 
     let mut found = Vec::new();
     rs_files(dir, &mut found);
     let mut rels: Vec<String> = found
         .iter()
-        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
-        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
         .map(|p| {
             tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&dir).unwrap_or(p))
                 .display()
@@ -327,16 +255,13 @@ fn the_walk_recurses_and_takes_only_rust_files() {
         !rels
             .iter()
             .any(|r| r.ends_with(".md") || r.ends_with(".txt")),
-        "`.rs` 가 아닌 파일을 모았다 — 그러면 이 API 이름을 **인용만** 하는 문서가 위반 \
-         목록에 오르고, 그 처방(\"단축키를 설정에서 가져와라\")은 문서에 대해 참이 아니다"
+        "Rust 파일이 아닌 문서까지 수집했다. 문서의 API 인용을 코드 위반으로 오인할 수 있다."
     );
     assert!(
         !rels.iter().any(|r| r.ends_with("Makefile")),
         "확장자 없는 파일을 모았다"
     );
 
-    // 죽은 뿌리 — 예외가 아니라 빈손이다. `read_dir` 실패를 조용히 넘기는 것이
-    // 하한(`MIN_SITES`)이 존재하는 이유 그 자체다.
     let mut dead = Vec::new();
     rs_files(&dir.join("nonexistent-zeta"), &mut dead);
     assert!(

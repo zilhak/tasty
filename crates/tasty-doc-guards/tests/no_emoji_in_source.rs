@@ -1,30 +1,10 @@
-//! 소스 이모지 재유입 가드 — 코드/매니페스트에 픽토그래픽 이모지가 다시 박히면 fail 한다.
+//! Rust 소스와 플러그인 매니페스트의 이모지를 검사한다. 아이콘은 디자인 SVG를 사용한다.
+//! 자동 실행 경로는 docs/dev-guide/ci-gates.md에 있다.
 //!
-//! 배경: 플러그인 매니페스트(`tasty-plugin.toml`)의 `icon` 필드에 오프-디자인 이모지
-//! (`U+1F4DD`·`U+1F310`·`U+1F5BC` 등)가 손으로 박혀 있었다. 프로젝트 원칙은 "아이콘은 디자인 폴더
-//! (`icons.json`)의 SVG 라인아이콘에서 추출해 쓴다" 이므로 이모지 플레이스홀더는
-//! 위반이다. 이 가드는 정리 결과를 유지한다 — 누가 `.rs`/`tasty-plugin.toml` 에 이모지를
-//! 다시 넣으면 `파일:라인 + 코드포인트(U+XXXX) + 문자` 를 출력하며 fail 한다.
-//! 이 가드는 의존 0 크레이트에 살아서 `doc-guards.yml` 이 경로 필터 없이 돌린다 —
-//! main push 와 PR 마다 자동으로 돈다(`docs/dev-guide/ci-gates.md`).
-//!
-//! 선례: `crates/tasty-doc-guards/tests/design_token_adherence.rs` — 같은 크레이트에
-//! 살고 같은 채널로 돈다.
-//!
-//! **금지 범위(false positive 0 으로 좁힘)**: 픽토그래픽 이모지 대부분
-//! (`U+1F000..=1FAFF`) + regional indicator=국기(`U+1F1E6..=1F1FF`). 이 범위가 소스의
-//! 진짜 이모지 — 매니페스트 아이콘(`U+1F4DD`·`U+1F310`·`U+1F5BC`), 테스트 입력
-//! (`U+1F600`·`U+1F980`), ZWJ 가족 시퀀스(`U+1F468`·`U+1F469`·`U+1F467`·`U+1F466`),
-//! 국기 쌍(`U+1F1F0` `U+1F1F7`), `U+1F44D`, 폴더류(`U+1F4C1`..`U+1F4C4`) — 를 전부 잡고,
-//! `U+26A0`·`U+2192`·`U+25B6`·`U+2318`·`U+2713`·`U+25A6` 같은 **의도적 텍스트 기호**는
-//! 안 잡는다.
-//!
-//! **allowlist(파일 단위)**: 이모지가 테스트 입력 자체인 소수 파일만 스캔에서 제외한다.
-//!
-//! **이 파일의 설명문은 글리프 대신 `U+XXXX` 표기를 쓴다.** 예를 보이려고 글리프를 그대로
-//! 담으면 이 순회가 자기 설명문을 위반으로 세게 된다 — 그리고 그 충돌은 이 파일이 어디에
-//! 사는가에 따라 켜졌다 꺼졌다 한다([`is_scan_target`] 이 `crates/*/tests/` 는 세고 루트
-//! `tests/` 는 안 센다). 뜻은 표기로도 그대로 전해지므로, 면제 명부를 늘리는 대신 표기를 쓴다.
+//! 검사 범위는 U+1F000..=1FAFF와 국기 문자 U+1F1E6..=1F1FF다.
+//! 화살표·명령 키 등 이 밖의 텍스트 기호는 검사하지 않는다.
+//! 이모지가 검증 입력인 파일은 예외로 둔다. 설명에는 글리프 대신 코드포인트를 적어
+//! 이 파일 자체가 위반으로 검출되지 않게 한다. crates의 tests도 검사하지만 루트 tests는 제외한다.
 
 use std::path::{Path, PathBuf};
 
@@ -38,21 +18,12 @@ const ALLOWLIST_FILES: &[&str] = &[
     "crates/tasty-terminal/tests/scrollback_capture.rs",
 ];
 
-/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성.
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
-/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0049-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
-/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+/// 로컬 경로를 문서 인용으로 오인하지 않도록 순회용 이름을 조립한다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더 **둘 다**.
-///
-/// 작업 폴더 쪽(꼬리가 붙은 이름)만 자르던 자리다. 세션 설정 폴더 쪽도 gitignored 라
-/// 같은 근거로 순회 대상이 아닌데 빠져 있었고, 같은 물음에 답하는 다른 사본들과
-/// 집합이 하나 어긋나 있었다(2026-09-06 실측). 이 커밋으로 순회가 **줄어들지만**
-/// 오늘 결과는 불변이다 — 그 폴더 아래 `.rs` 가 0 개다.
 fn is_pruned(name: &str) -> bool {
     PRUNE_DIRS.contains(&name)
         || name
@@ -60,7 +31,6 @@ fn is_pruned(name: &str) -> bool {
             .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
-/// 금지 코드포인트인지 — 픽토그래픽 이모지(1F000..1FAFF) + regional indicator(1F1E6..1F1FF).
 fn is_forbidden_emoji(cp: u32) -> bool {
     (0x1F000..=0x1FAFF).contains(&cp) || (0x1F1E6..=0x1F1FF).contains(&cp)
 }
@@ -78,7 +48,6 @@ fn is_scan_target(rel: &str) -> bool {
     if rel.starts_with("src/") {
         return true;
     }
-    // crates/<name>/src/... 또는 crates/<name>/tests/...
     if let Some(rest) = rel.strip_prefix("crates/") {
         let mut parts = rest.splitn(2, '/');
         let _name = parts.next();
@@ -89,7 +58,6 @@ fn is_scan_target(rel: &str) -> bool {
     false
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. `is_pruned` 는 가지치기.
 fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         let rel = rel_of(path, root);
@@ -105,9 +73,7 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
-            // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
-            // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+            // 이름이 다른 CARGO_TARGET_DIR도 캐시 표식으로 제외한다.
             if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
                 continue;
             }
@@ -123,32 +89,15 @@ fn rel_of(file: &Path, root: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 스캔 하한 — [ADR-0048]의 빈 순회 방지 규칙이다("경로가 틀렸거나 읽기에 실패했다"
-/// 를 잡는 용도). **모수 고정**("이만큼 봤으니 다 봤다")으로 쓰지 않는다 — 실제 모수가
-/// 하한보다 크면 그 차이만큼 사각을 갖고도 초록이기 때문이다.
-///
-/// 이 가드가 "위반 0" 을 내는 이유는 둘이다: 정말 없거나, **아무것도 안 봤거나.**
-/// [`gather`] 는 디렉토리를 못 읽으면 `return` 으로 조용히 빠져나가므로, 하한이 없으면
-/// 순회가 깨진 날 정확히 초록이 뜬다. 실측으로 확인했다 — 스캔 루트를 빈 디렉토리로
-/// 바꾸면 이 가드는 아무 말 없이 통과했다.
-///
-/// 값의 근거: 2026-09-05 기준 **[`gather`] 가 실제로 걷어 온 파일 수 1120** 이다(레포
-/// 전체가 아니라 [`is_scan_target`] 을 통과한 집합). 아래쪽으로 넉넉한 여유를 둔다 —
-/// 순회가 통째로 깨진 경우를 결정적으로 잡는 것이 목적이고, 몇 퍼센트의 누락까지 조이면
-/// 레포가 줄어드는 날 거짓 빨강이 된다.
-///
-/// [ADR-0048]: ../docs/adr/0048-source-guards-and-exemptions.md
+/// 빈 순회가 통과하지 않게 하는 하한이다(ADR-0048).
+/// 2026-09-05에 gather와 is_scan_target으로 1120파일을 수집했다.
+/// 파일 정리를 허용할 여유를 두므로 하한 통과가 수집의 완전성을 보장하지는 않는다.
 const MIN_SCANNED_FILES: usize = 700;
 
-/// 스캔이 믿을 만한가.
-///
-/// 판정을 함수로 뽑아 둔다 — 단언 안에 인라인으로 두면 그 값이 무엇을 가르는지 시험할
-/// 자리가 없고, 하한 자신이 장식이 된다.
 fn scan_is_credible(found: usize) -> bool {
     found >= MIN_SCANNED_FILES
 }
 
-/// 하한을 겨냥한 변이 — 하한 자신이 판정을 하는지 본다.
 #[test]
 fn the_scan_refuses_to_report_zero_from_an_empty_walk() {
     assert!(!scan_is_credible(0), "빈 스캔을 믿을 만하다고 판정했다");
@@ -158,25 +107,12 @@ fn the_scan_refuses_to_report_zero_from_an_empty_walk() {
 
 #[test]
 fn no_emoji_in_source() {
-    // `CARGO_MANIFEST_DIR` 을 그대로 뿌리로 쓰지 않는다 — 이 타깃이 어느 패키지에 사는지에
-    // 따라 그 값이 달라지고, 그러면 **스캔 뿌리가 파일과 함께 움직인다.** 실제로 이 파일이
-    // 루트 `tests/` 에서 여기로 옮겨왔을 때 뿌리가 이 크레이트 디렉토리로 좁아져 모수가
-    // 하한 아래로 떨어졌다. `repo_root()` 는 표지 파일로 자기가 잡은 경로를 검증한다.
     let root = &tasty_doc_guards::repo_root();
     let mut files = Vec::new();
     gather(root, root, &mut files);
     assert!(
         scan_is_credible(files.len()),
-        "스캔 대상이 {}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다. 위반 0 은 이 상태에서 \
-         아무 뜻도 없다.\n\
-         ★ 판별 — [`is_scan_target`] 이 고르는 집합은 git 도 셀 수 있다. 밖에서 한 번 세라:\n\
-             git ls-files 'src/*.rs' 'crates/*/src/*.rs' 'crates/*/tests/*.rs' | wc -l\n\
-         두 수는 같지 않다(가지치기 때문에 git 쪽이 크다 — 2026-09-06 실측 1226 대 순회 1120). \
-         **같은가가 아니라 함께 움직이는가**를 봐라. 둘 다 줄었으면 레포가 정말 줄어든 것이고, \
-         git 쪽은 그대로인데 여기만 줄었으면 순회가 깨진 것이다.\n\
-         ★ 이 하한을 내려서 통과시키지 마라 — 내리면 이 가드는 '이모지가 없다' 가 아니라 \
-         '안 봤다' 를 같은 초록으로 보고하게 된다.\n\
-         레포가 정말 줄었으면 위 명령으로 다시 세고 값과 근거 날짜를 함께 갱신하라.",
+        "검사 대상을 {}개만 수집했다(하한 {MIN_SCANNED_FILES}). is_scan_target과 제외 디렉터리를 확인한다. Git의 추적 Rust 파일 목록과 비교하되 매니페스트 포함·제외 범위가 다른 점을 고려한다. 실제 대상이 줄었다면 값과 측정 근거를 함께 갱신한다.",
         files.len()
     );
 
@@ -206,18 +142,9 @@ fn no_emoji_in_source() {
     );
 }
 
-/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
-///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md). 가리키는 것이 실재한다는
-/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
-/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
-///
-/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
-/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+/// 예외 경로의 존재만 확인한다. 해당 예외가 아직 필요한지는 별도 검토해야 한다.
 #[test]
 fn allowlist_files_point_at_paths_that_exist() {
-    // 위와 같은 이유로 `repo_root()` 를 쓴다 — 명부의 경로는 레포 상대이므로 뿌리가
-    // 이 크레이트로 좁아지면 전부 "없는 경로" 가 된다.
     let root = &tasty_doc_guards::repo_root();
     let missing = tasty_doc_guards::missing_referents(root, ALLOWLIST_FILES.iter().copied());
     assert!(
