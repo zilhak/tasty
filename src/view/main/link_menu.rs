@@ -1,8 +1,6 @@
-//! 터미널 링크 우클릭 메뉴 — 수식키 hover 링크 위 우클릭에서 "선택 / 복사 / 연결 동작".
-//!
-//! 트리거는 사용자 마우스 조작 하나다(release 배선, IPC/CLI 비노출 — identity §1).
-//! 대상은 드래그로 확정한 selection 이 아니라 hover 가 판정해 둔 `LinkSpan` 이다.
-//! 명세: `docs/features/terminal-link/index.md`.
+//! 터미널 hover 링크의 우클릭 메뉴: 선택, 복사, 연결 동작.
+//! 드래그 선택이 아닌 LinkSpan을 사용하며 포커스를 옮기지 않는다.
+//! 명세: docs/features/terminal-link/index.md.
 
 use winit::event::ElementState;
 
@@ -19,15 +17,9 @@ const ITEM_COPY: u32 = 2;
 const ITEM_OPEN_WITH: u32 = 3;
 
 impl MainView {
-    /// 우클릭한 surface 에서 링크 메뉴를 띄울 hover 링크가 있으면 그 스냅샷을 만든다.
-    ///
-    /// `LinkModifier::None` 이어도 막지 않는다 — `hovered_link` 는 이미 수식키 게이트를
-    /// 통과한 결과이고, 좌클릭이 `None` 을 배제하는 이유("수식키 없는 클릭이 링크를
-    /// **열어버리는** 사고")가 우클릭 → 메뉴 → 항목 선택이라는 명시적 3단 조작에는
-    /// 성립하지 않는다.
-    ///
-    /// 포커스는 옮기지 않는다 — 대상은 id 로 스냅샷에 담기고, 컨텍스트 메뉴는 포커스를
-    /// 건드리지 않는 관례다(좌클릭 링크 경로의 focus 호출을 따라 붙이지 않는다).
+    /// 우클릭한 surface의 hover 링크를 복사해 메뉴 대상으로 보관한다.
+    /// 우클릭 뒤 항목을 명시적으로 고르므로 LinkModifier::None도 허용한다.
+    /// 메뉴를 열어도 터미널 포커스는 옮기지 않는다.
     pub(super) fn terminal_link_menu_target(&self, surface_id: u32) -> Option<TerminalLinkMenu> {
         let hovered = self.hovered_link.as_ref();
         if !link_menu_gate(
@@ -60,9 +52,8 @@ impl MainView {
         })
     }
 
-    /// 링크 스냅샷이 있는 우클릭 사이클을 로컬 소비한다. 메뉴는 플랫폼별 버튼 상태
-    /// (`terminal_menu_open_state`)에서만 세우고, 반대쪽 상태도 tracking 앱에 보고하지
-    /// 않는다 — press 만 로컬 소비하고 release 를 앱에 흘리면 앱이 짝 없는 release 를 받는다.
+    /// 링크 메뉴에 사용한 press와 release를 모두 로컬에서 소비한다.
+    /// 한쪽만 앱에 보내면 짝이 없는 버튼 이벤트가 된다.
     pub(super) fn queue_terminal_link_menu(
         &mut self,
         link: TerminalLinkMenu,
@@ -118,10 +109,8 @@ impl MainView {
         });
     }
 
-    /// "선택" — 우클릭 시점의 범위를 selection 으로 세운다. 메뉴가 떠 있는 동안 새 출력·
-    /// scrollback 트림·resize 로 같은 좌표가 다른 글자를 가리키게 됐으면 조용히 아무것도
-    /// 안 한다. 판정은 같은 범위를 다시 추출해 스냅샷 문자열과 견주는 것이다 — "복사" 가
-    /// 넣는 값과 "선택" 이 가리키는 값이 갈리지 않게 한다.
+    /// 메뉴를 연 뒤에도 같은 범위의 문자가 같을 때만 링크를 선택한다.
+    /// 출력·스크롤백 정리·크기 변경으로 내용이 달라졌으면 선택하지 않는다.
     fn apply_link_selection(&mut self, link: &TerminalLinkMenu) {
         let sel = link_selection(link.surface_id, link.start, link.end);
         let Some(terminal) = self.core_state.visible_terminal(link.surface_id) else {
@@ -134,9 +123,8 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// "연결 동작" — 자동 1순위 실행을 건너뛰고 핸들러 picker 를 강제로 연다. 식별은 태우지
-    /// 않고(detector 없음) 전체 핸들러를 fallback 후보로 싣는다 — 자동 경로의 empty-state 와
-    /// 같은 화면이고 즉시 뜬다. 원격 경로는 후보도 recent 도 없는 빈 picker 다.
+    /// 자동 실행이나 detector 조회 없이 전체 핸들러 선택창을 연다.
+    /// 원격 경로에는 후보와 최근 사용 목록을 표시하지 않는다.
     fn open_link_handler_picker(&mut self, link: &TerminalLinkMenu) {
         let Some(target) = link.open_with.clone() else {
             return;
@@ -163,9 +151,8 @@ impl MainView {
     }
 }
 
-/// 링크 메뉴 게이트: hover 링크가 우클릭한 그 surface 의 것이고, 그 surface 가 hard 점유
-/// mirror 가 아니어야 한다. hard 점유 화면은 최대 3초 지연된 스냅샷이라 보이는 링크가
-/// 실제 PTY 상태와 다를 수 있다(ADR-0021 — 좌클릭 링크 오픈과 같은 배제).
+/// hover 링크가 우클릭한 surface에 속하고 hard 점유 mirror가 아닐 때 허용한다.
+/// hard 점유 화면은 지연된 스냅샷이므로 실제 PTY 상태와 다를 수 있다(ADR-0021).
 fn link_menu_gate(hovered_surface: Option<u32>, clicked_surface: u32, hard_occupied: bool) -> bool {
     hovered_surface == Some(clicked_surface) && !hard_occupied
 }

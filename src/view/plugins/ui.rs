@@ -1,33 +1,16 @@
-//! `PluginsView` modal의 egui UI.
-//!
-//! 상단 — 탭 바 (`Installed` / `Add plugin`).
-//! `Installed` 탭: 좌측 plugin 목록, 우측 상세(매니페스트, enable/disable,
-//! 권한(읽기전용), 설치 경로, uninstall).
-//! `Add plugin` 탭: 경로 입력 → 검증 → 추가/취소.
-//!
-//! 모달은 `PluginsSnapshot`(읽기 전용 데이터)을 들고 있고, 사용자 조작은
-//! `PluginsAction` 큐에 쌓여 메인 루프에서 `PluginManager`에 적용된다.
+//! 플러그인 관리 화면: 설치 목록, 확인 필요 항목, 새 플러그인 추가.
+//! PluginsSnapshot을 표시하고 조작은 PluginsAction 큐로 보낸다.
 
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
-/// 모달 헤더의 plug 글리프. 아이콘 스케일 밖(17) — 스케일은 12 · 14 · 15 · 16 이고
-/// 17 은 어디에도 없다. 인접 tier(16)로 맞추는 것은 값이 바뀌는 디자인 변경이라
-/// [ADR-0035](../../../docs/adr/0035-shared-design-and-theme.md)
-/// 과 같게 다룬다 — 스냅하지 않고 이름을 붙여 드리프트를 보이게 둔다.
-/// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+/// 헤더 아이콘의 기존 크기. Theme 토큰과 별도로 지정하며 ui_scale을 적용하지 않는다.
+/// 값 변경은 디자인 검토가 필요하다(ADR-0035).
 const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 
-// ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
-//
-// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에
-// 없는 값은 primitive임을 이름에 남긴다(ADR-0035).
-// 여기서 쓰는 12 / 10 / 10 중 12만 semantic role이 없다.
-
-/// segment 탭 라벨. DTCG primitive `font-size-12` 를 직접 쓰는 자리 — 12px 는
-/// primitive 에는 있지만 **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다.
+/// semantic 역할을 지정하지 않은 탭 라벨의 primitive 폰트 크기(ADR-0035).
 const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 상세 패널에 표시할 plugin command 한 줄.
@@ -59,7 +42,7 @@ pub struct PluginEntry {
     /// plugin 이 contribute 한 command 목록 (`[[contributes.commands]]`).
     pub commands: Vec<PluginCommandEntry>,
     pub log_path: String,
-    /// 설치 디렉터리 (`~/.tasty/plugins/<id>/`).
+    /// 플러그인 설치 디렉터리.
     pub install_dir: String,
 }
 
@@ -119,8 +102,7 @@ pub enum PluginsAction {
     Uninstall {
         id: String,
     },
-    /// 상세의 `Configure` 버튼 — 이 모달을 닫고 Settings›Plugins 탭을 연다.
-    /// (lifecycle 창 → per-plugin config 의 연결 고리.)
+    /// 이 모달을 닫고 설정의 Plugins 탭을 연다.
     OpenSettings,
     /// "확인 필요" 탭의 `Re-approve` — 권한 변경으로 거부된 plugin 을 현재
     /// 매니페스트 권한으로 재신뢰한다. 호스트가 known-plugins.toml 의 권한 스냅샷을
@@ -134,17 +116,11 @@ pub enum PluginsAction {
     OpenInstallDir {
         path: String,
     },
-    /// 외부 디렉터리(`src_path`)를 `~/.tasty/plugins/<id>/`로 복사 설치.
+    /// 외부 디렉터리를 데이터 루트의 plugins/<id>로 복사한다.
     Install {
         src_path: String,
     },
-    /// 임베드 키 / known-plugins.toml 모두 통과하지 못한 외부 plugin 에 대해
-    /// 사용자가 *명시적으로* trust 한 후 install.
-    ///
-    /// 호스트 측 핸들러는 [`crate::plugin_bridge::known_plugins::KnownPlugins`]
-    /// 에 `(plugin_id, KnownPluginEntry { pubkey, permissions, ... })` 항목을
-    /// 추가/덮어쓴 다음, 일반 `Install` 과 동일한 디스크 복사 + discover 재호출
-    /// 흐름을 진행한다.
+    /// 출처 미상 플러그인을 사용자가 승인하면 키와 권한 목록을 저장한 뒤 설치한다.
     TrustAndInstall {
         src_path: String,
         plugin_id: String,
@@ -245,8 +221,6 @@ pub fn draw_plugins_panel(
         .exact_height(th.plugins_header_height().value())
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                // 디자인 헤더 좌 패딩 10px 은 off-grid — 4px 그리드의 가장 가까운 값인
-                // spacing_md(12)로 snap.
                 hspace(ui, th.spacing_md);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 // 헤더 장식 accent — `plugins-header-glyph` → `accent-decorative`(peach).
@@ -487,8 +461,7 @@ pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
     let color = egui::Color32::from(th.text_secondary());
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
-        // 원래 값 11 은 caption 과 정확히 같다 — 값 보존 치환이다. component 토큰
-        // `tag_font_size()` 는 micro(10)라 여기 넣으면 1px 작아진다.
+        // Tag의 micro 크기 대신 caption 크기를 사용한다.
         egui::FontId::proportional(th.font_size_caption.value()),
         color,
     );

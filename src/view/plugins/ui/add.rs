@@ -2,10 +2,7 @@ use crate::i18n::{t, t_fmt};
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
-/// plugin 미리보기 카드의 이름 줄. DTCG primitive `font-size-16` 은 있으나
-/// semantic role 이 배정돼 있지 않아 `Theme` 필드가 없다 — 어느 semantic 에 묶을지가
-/// 판단 항목이라 ADR-0035 대로 **이름에 primitive 임을 남긴다**. 토큰이 아니라
-/// `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+/// 미리보기 이름의 primitive 폰트 크기. ui_scale을 적용하지 않는다(ADR-0035).
 const ADD_PREVIEW_NAME_PRIMITIVE_16: LogicalPx = LogicalPx(16.0);
 
 use tasty_ui_widgets::vspace;
@@ -68,8 +65,6 @@ fn draw_add_input(
         ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
     }
 
-    // 디자인 폼/행 리듬 간격 20px 은 off-grid — 4px 그리드의 가장 가까운 값인
-    // spacing_lg(16)로 snap.
     vspace(ui, th.spacing_lg);
     ui.separator();
     vspace(ui, th.spacing_md);
@@ -91,8 +86,7 @@ fn draw_add_preview(
     actions: &mut Vec<PluginsAction>,
     th: &theme::Theme,
 ) {
-    // `take()`는 cancel/add 모두에서 preview를 소비하기 위함이지만, 이 함수가
-    // 끝날 때까지 표시할 데이터가 필요하므로 clone 후 다시 넣지 않는다.
+    // 표시 중 원본 preview가 필요하므로 복사해 사용한다.
     let preview = ui_state.add_preview.clone().expect("checked by caller");
 
     ui.heading(t("plugins.add_preview_heading"));

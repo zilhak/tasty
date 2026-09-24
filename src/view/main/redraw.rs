@@ -5,28 +5,14 @@ use crate::view::ui::View;
 
 use super::MainView;
 
-/// 한 surface 의 webview 생성을 몇 번까지 시도하는가.
-///
-/// **왜 상한이 필요한가**: 생성이 실패해도 그 surface 는 다음 프레임에 다시 후보가
-/// 된다. 그런데 실패 경로가 X 자식창을 만들었다 지우면 그 X 이벤트가 winit 이벤트
-/// 루프를 깨워 **다음 프레임을 스스로 부른다** — 실패가 자기 재시도를 낳는 고리다.
-/// 실측(합성 영구 실패, 10 초): 시도 27477 회 · X 서버 CPU 코어의 27% · 로그 8.2 MB.
-/// 같은 실패를 X 작업이 없는 자리로 옮기면 시도가 3 회에서 멈췄다 — 고리를 만드는
-/// 것은 로그가 아니라 X 왕복이다.
-///
-/// 8 인 이유: 일시 실패(서버 자원 고갈)가 프레임 몇 개 안에 풀리지 않으면 더 기다려도
-/// 같다는 판단이다. **정확한 수보다 상한이 있다는 것이 요점이다** — "로그가 줄었다"
-/// 는 확률이고 "8 회를 넘지 않는다" 는 불변식이다.
+/// WebView 생성 재시도 상한. 실패 중 발생한 X 이벤트가 다음 프레임을 깨워
+/// 재시도가 반복될 수 있으므로 surface별 시도 횟수를 제한한다.
 pub(crate) const MAX_WEBVIEW_CREATE_ATTEMPTS: u32 = 8;
 
-/// 상한이 1 이면 `Permanent` 와 `Transient` 의 처방이 같아진다 — 분류가 아무 차이도
-/// 안 낳는데 아래 유닛 테스트는 둘 다 초록이다. 그래서 컴파일 타임에 막는다.
+/// 영구 실패와 일시 실패의 재시도 횟수가 달라야 한다.
 const _: () = assert!(MAX_WEBVIEW_CREATE_ATTEMPTS > 1);
 
-/// reveal 게이트에 걸린 상태가 이만큼 이어지면 그 사실을 한 번 로그로 남긴다.
-/// 값 자체는 "정상 로드가 끝나기에 충분히 길다" 는 것 말고 다른 의미가 없다 —
-/// 이 상한이 하는 일은 화면이 빈 채로 남은 것을 로그에서 알아볼 수 있게 하는 것뿐이고,
-/// 넘겼다고 해서 로드를 끊거나 상태를 강등하지 않는다.
+/// 페이지가 계속 숨겨져 있으면 한 번 경고할 시간. 로드를 중단하는 제한은 아니다.
 pub(crate) const REVEAL_PENDING_WARN_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 진단 로그에 남길 URL 의 **종류와 크기**. 원문은 남기지 않는다 — markdown 처럼
@@ -50,8 +36,7 @@ pub(crate) fn should_attempt_webview(attempts: u32) -> bool {
     attempts < MAX_WEBVIEW_CREATE_ATTEMPTS
 }
 
-/// 실패 뒤의 새 시도 횟수. **영구 실패는 한 번에 상한으로 올린다** — 이 프로세스에서
-/// 달라질 입력이 없으므로 더 해 보는 것이 낭비다.
+/// 영구 실패는 재시도를 멈추도록 시도 횟수를 상한까지 올린다.
 pub(crate) fn next_webview_attempts(
     attempts: u32,
     err: &crate::webview::WebViewCreateError,
@@ -70,53 +55,20 @@ impl MainView {
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        // ★ 이 호출이 **`render_if_dirty` 앞**이라는 것이 계약이다 — 위치가 값을 정한다.
-        //
-        // `settings_open_requested`/`plugins_open` 을 **세우는** 자리는 egui 패스
-        // (`src/adapters/ui/draw.rs` 의 사이드바 버튼)이고, 그 패스는 아래
-        // `render_if_dirty` **안에서** 돈다. 그래서 값은 프레임 N 의 egui 패스에서 서고
-        // 프레임 N+1 의 **이 줄**에서 지워진다 — 사는 구간이 정확히 프레임 경계 하나다.
-        //
-        // 그 구간에만 참일 수 있는 소비자가 셋이다:
-        // `AppState::keyboard_overlay_open`(`src/state.rs`) ·
-        // `MainView::mouse_overlay_open`(`src/view/main/mouse.rs`) ·
-        // `try_consume_escape_key`(`src/view/main/keyboard.rs`).
-        // 셋 다 winit `WindowEvent` 핸들러에서 불리므로 **`handle_redraw` 밖**이다 —
-        // 즉 이 구간이 그 셋이 참이 될 수 있는 유일한 시간이다.
-        //
-        // 이 호출을 `render_if_dirty` 뒤로 옮기면 세우기와 지우기가 **한 번의
-        // `handle_redraw` 안에서** 끝나고 그 사이에 이벤트 처리가 없으므로, 셋은 영영
-        // 참이 되지 않는다. 그런데 **아무것도 빨개지지 않는다** — 그 구간을 런타임으로
-        // 재는 시험이 없다. 그래서 순서를 소스로 박는다:
-        // `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs`.
+        // 열기 요청은 render_if_dirty 전에 소비해야 한다. egui가 이번 프레임에 만든
+        // 요청이 다음 프레임까지 남아 키·마우스 차단과 Escape 취소에 사용되기 때문이다.
+        // 순서 검증: crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs.
         self.dispatch_pending_modal_opens();
 
-        // 무대 진입/종료 엣지 처리 — 아래 어떤 경로보다 먼저 돌아야 이번 프레임이
-        // 정리되지 않은 드래그/조합 상태를 그대로 쓰는 일이 없다.
+        // 렌더링 전에 무대 진입으로 중단된 드래그와 IME 조합을 정리한다.
         self.sync_fullscreen_stage_transition();
 
-        // PTY drain 은 전적으로 AppEvent::TerminalOutput 핸들러 몫이다. 과거의
-        // per-frame process_all safety net 은 제거됨 — 코얼레싱 게이트의
-        // early-reset(drain 전 게이트 해제)과 reader 의 EOF 최종 wake 가
-        // 스킵된 wake 의 데이터까지 커버한다 (형식적 메모리모델 잔여 윈도우는
-        // 실하드웨어에서 사실상 0 — ns 급 store 가시화 지연 vs µs 급 핸들러 경로).
-
-        // TerminalEvent → CoreEvent 변환은 Core::process_pty_output 이
-        // event_handler 의 AppEvent::TerminalOutput 처리 안에서 수행한다.
-        // redraw 는 더 이상 collect_events 분기를 가지지 않는다.
+        // PTY 출력과 TerminalEvent 처리는 AppEvent::TerminalOutput에서 수행한다.
 
         self.resync_scale_factor();
 
-        // Resize all terminals to match their current layout rects.
-        // After structural changes (split, new tab, close pane) the terminal's
-        // internal cols/rows may not match the actual rendering area. This call
-        // is cheap: terminal.resize() early-returns when cols/rows are unchanged.
-        //
-        // 전체화면 무대 중에는 건너뛴다 — 무대는 뒤의 개체를 **진입 시점 그대로**
-        // 두는 것이 모델이다. 무대 중 창 크기가 바뀌어도(OS fullscreen 전환 자체가
-        // 창 크기를 바꾼다) 원본 grid 가 따라가면, 무대를 나올 때 원본이 다른 크기로
-        // 리플로우돼 "원본 그대로" 계약이 깨진다. 무대를 나온 다음 프레임에 이
-        // 호출이 다시 돌아 현재 rect 기준으로 한 번에 맞춘다.
+        // 레이아웃 변경에 맞춰 터미널 크기를 갱신한다. 무대 중에는 원본 grid를
+        // 보존하고 무대를 나온 뒤 현재 영역에 맞춘다.
         if !self.state.fullscreen_stage_active() {
             let terminal_rect = self.compute_terminal_rect();
             let cell_w = self.base.gpu.cell_width();
@@ -132,38 +84,25 @@ impl MainView {
             );
         }
 
-        // Render
         self.render_if_dirty(plugin_manager, stream_hub);
 
-        // 무대 상태에 OS 창 fullscreen 을 맞춘다. **render 뒤**인 이유는 무대가
-        // 자기 draw 안에서 닫힐 수 있기 때문이다(`StageAction::Close`) — 앞에 두면
-        // 그 프레임에 닫힌 무대의 창 복원이 다음 프레임으로 밀리고, 그 프레임이
-        // 온다는 보장이 없다. 진입 쪽은 상태를 세운 경로가 이미 `dirty` 를 세우므로
-        // 이 프레임에서 그대로 잡힌다.
+        // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
 
         self.dispatch_pending_command_palette();
 
-        // 열려 있는 네이티브 메뉴를 먼저 펌프한다(비블로킹) — 완료됐으면 그
-        // 프레임에 continuation 을 실행하고, 그래야 아래 새 메뉴 요청 처리가
-        // 방금 닫힌 메뉴에 막히지 않는다.
+        // 닫힌 메뉴의 후처리를 먼저 마쳐 새 메뉴 요청을 처리할 수 있게 한다.
         self.poll_pending_native_menu();
 
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
-        // file handler picker result 슬롯은 App::dispatch_pending_picker_results
-        // 가 다음 frame begin 에 drain 한다 — redraw 에는 인라인 호출이 없다.
+        // file handler 선택 결과는 App의 다음 frame begin에서 처리한다.
 
         // 외부 drag&drop 으로 받은 파일 큐 처리.
         self.process_pending_file_drops();
 
-        // Process pending file drag (after egui frame)
-        //
-        // 무대 중에는 OS 드래그 세션을 시작하지 않고 요청을 **버린다**. 드래그는
-        // 사용자가 마우스를 누른 채 시작하는 제스처인데 무대가 그 마우스 경로를
-        // 이미 끊었으므로(입력 게이트), 큐에 남겨 뒀다가 무대를 나온 뒤 시작하면
-        // 아무도 누르고 있지 않은 드래그가 뜬다.
+        // 무대 중에는 파일 드래그 요청을 버린다. 나중에 시작하면 버튼을 놓은 뒤일 수 있다.
         if self.state.fullscreen_stage_active() {
             self.state.dialogs.pending_file_drag = None;
         }
@@ -182,25 +121,9 @@ impl MainView {
         }
     }
 
-    /// 전체화면 무대 진입/종료 엣지를 잡아 **뷰 쪽 진행 중 상태**를 정리한다.
-    ///
-    /// 진입 API(`AppState::open_fullscreen_stage`)는 `&mut AppState` 만 갖고 있어
-    /// `MainView` 의 드래그/IME/네이티브 메뉴 상태에 손을 댈 수 없다. 진입 경로가
-    /// 단축키든 debug IPC 든 그 뒤에 프레임은 반드시 도므로, 엣지 검출이 모든 진입
-    /// 경로가 지나는 유일한 공통 수렴점이다.
-    ///
-    /// **정리 계약 — 진행 중인 것은 확정하지 않고 폐기한다.** 무대가 뜨는 순간
-    /// 마우스 이벤트가 뒤 세계로 가지 않으므로 짝이 되는 release 를 영영 못 받는다.
-    /// 그대로 두면 divider 가 커서를 따라다니거나 popup 이 붙어 다니는 sticky 드래그가
-    /// 남는다(`docs/architecture/input-layer.md` 가 기록한 sticky divider 와 같은 부류).
-    /// release 로 확정하지 않는 이유는 반대편이다 — 사용자가 놓은 적 없는 위치에
-    /// 크기/좌표를 확정하면 무대를 나왔을 때 레이아웃이 임의로 바뀐 것처럼 보인다.
-    ///
-    /// **정리하지 않는 것**: 이미 잡혀 있는 텍스트 선택 범위와 vi copy-mode(`vi_copy`)는
-    /// 그대로 둔다. 둘 다 "진행 중인 포인터 제스처" 가 아니라 무대 진입 전에 이미
-    /// 확정된 사용자 상태이고, 무대의 모델은 뒤 세계를 **진입 시점 그대로** 두는
-    /// 것이다. vi copy-mode 는 키보드 모드라 무대 중 입력이 차단되면 자연히 멈추고,
-    /// 무대를 나오면 있던 그대로 이어진다.
+    /// 전체화면 무대 진입 시 진행 중인 드래그·IME·native 메뉴를 취소한다.
+    /// 배경으로 release가 전달되지 않으므로 드래그를 확정하지 않고 버린다.
+    /// 이미 확정된 텍스트 선택과 vi 복사 모드는 유지한다.
     fn sync_fullscreen_stage_transition(&mut self) {
         let active = self.state.fullscreen_stage_active();
         if active == self.stage_was_active {
@@ -208,14 +131,11 @@ impl MainView {
         }
         self.stage_was_active = active;
         if !active {
-            // 종료 엣지 — 뒤 세계는 진입 시점 그대로 살아 있으므로 되돌릴 것이 없다.
-            // 프레임 자체는 진입/종료를 유발한 경로가 이미 dirty 로 만든다.
+            // 무대 종료 시 복원할 진행 상태는 없다.
             return;
         }
 
-        // IME 조합은 **버린다**(확정 전송 아님). 오버레이가 열릴 때의 기존 관례를
-        // 그대로 따른다(`keyboard.rs` 6단계의 popup 분기) — 무대를 띄우는 조작으로
-        // 조합 중이던 문자가 뒤 PTY 에 흘러 들어가면 안 된다.
+        // 무대를 열던 중의 조합 문자는 PTY로 보내지 않고 버린다.
         if self.ime_preedit.is_some() {
             self.clear_ime_preedit();
         }
@@ -230,9 +150,7 @@ impl MainView {
         self.hovered_link = None;
         self.state.pending_resize_cursor = None;
 
-        // OS 레벨 UI 는 무대가 덮지 못한다. 떠 있던 네이티브 메뉴는 닫고, 아직
-        // 세우지 않은 요청은 버린다(`process_pending_native_menu` 가 무대 중 신규
-        // 요청을 막지만, 진입 프레임 이전에 이미 큐에 들어온 것은 여기서 비운다).
+        // OS 메뉴는 무대 위에도 표시되므로 닫고, 아직 열지 않은 요청도 버린다.
         self.dismiss_pending_native_menu();
         self.state.dialogs.pending_native_menu = None;
         self.state.dialogs.pending_file_drag = None;
@@ -261,10 +179,7 @@ impl MainView {
         if self.base.gpu.sync_scale_factor(&self.base.winit) {
             let new_size = self.base.winit.inner_size();
             self.base.gpu.resize(new_size);
-            // 무대 중 DPI/모니터 전환: swapchain 은 창을 따라가야 하지만(위 resize)
-            // 기본 grid 갱신은 **보류**한다 — "원본은 진입 시점 그대로" 계약. 그냥
-            // 버리면 무대를 나온 뒤에도 기본값이 옛 DPI 에 머무르므로 보류 사실을
-            // 남겼다가 아래에서 한 번 적용한다.
+            // 무대 중에는 swapchain만 창 크기에 맞추고 기본 grid 갱신은 종료 후로 미룬다.
             if self.state.fullscreen_stage_active() {
                 self.state.stage_deferred_grid_resync = true;
             } else {
@@ -287,17 +202,8 @@ impl MainView {
         self.core_state.update_grid_size(cols, rows);
     }
 
-    /// `self.base.dirty`일 때만 실제 프레임을 그린다 — egui-mesh forward,
-    /// `gpu.render`, full-textures 재전송 요청 drain(로컬 3종 + attach mesh mirror)
-    /// 을 한 트랜잭션으로 묶는다.
-    ///
-    /// **전체화면 무대가 이 함수를 조기 반환시키지 않는다 — 의도된 제약이다.**
-    /// 아래 `forward_mesh_to_attach_subscribers` 는 이 GUI 가 attach 서버일 때 원격
-    /// 사용자의 mesh mirror 화면을 중계하는 경로다. 무대는 **로컬** 화면 개념이므로,
-    /// 여기서 끊으면 로컬 사용자가 전체화면을 켰다는 이유로 원격 사용자 화면이
-    /// 멈춘다(`docs/identity.md` §동시성 — 주체 간 비침범 위반). 같은 이유로 무대 중
-    /// `dirty` 를 억제하는 "어차피 안 보이니까" 최적화도 넣지 않는다 — relay 전체가
-    /// `dirty` 프레임에 종속돼 있어 굶는다. 무대 분기는 `Gpu::render` 안에 있다.
+    /// dirty일 때 입력·mesh 중계와 GPU 렌더링, full 재전송 요청을 처리한다.
+    /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
     fn render_if_dirty(
         &mut self,
         plugin_manager: Option<&PluginManager>,
@@ -308,9 +214,7 @@ impl MainView {
         }
         self.base.begin_frame();
         self.update_ime_cursor_area();
-        // egui-mesh surface 에 렌더 컨텍스트(크기/ppp/입력) forward (A1-S7) — 합성
-        // (gpu.render) 직전. plugin 이 PaintFrame 으로 회신하면 합성기가 그린다.
-        // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
+        // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
             self.forward_egui_mesh_context(mgr);
             // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
@@ -344,8 +248,7 @@ impl MainView {
             plugin_manager,
         ) {
             Ok(()) => {
-                // T7 (부팅 계측): 첫 present 성공 시각. Lost/Outdated 재시도
-                // 프레임은 present 가 안 되므로 Ok 분기에서만 기록 (원샷).
+                // 실제 present에 성공한 첫 시각만 부팅 계측에 기록한다.
                 crate::boot::trace::mark_first_paint();
                 if self.base.gpu.take_terminal_cursor_restore_pending() {
                     self.base.dirty = true;
@@ -414,26 +317,13 @@ impl MainView {
         }
     }
 
-    /// Command palette pending dispatch — popup writes `pending_run` when
-    /// user hits Enter or clicks a row. We drain after render so the popup
-    /// is already closed by the time the action fires (avoids racing with
-    /// any window state the action might mutate).
-    ///
-    /// 호스트 명령은 이 자리에서 바로 dispatch(기존 동작 유지). Plugin 명령은
-    /// `PluginManager`에 접근할 수 없는 이 스코프(`MainView`) 대신
-    /// `pending_plugin_command_invokes` 큐에 enqueue해 App 메인 루프가 drain하게
-    /// 한다 (`pending_tool_events`와 동형).
+    /// 팝업이 닫힌 뒤 팔레트 명령을 실행한다.
+    /// 호스트 명령은 여기서 실행하고 plugin 명령은 App의 처리 큐에 넣는다.
     fn dispatch_pending_command_palette(&mut self) {
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
-                    // 반환값을 안 쓴다. `false` 는 **모르는 action_id** 하나뿐이고, 팔레트
-                    // 목록과 실행 arm 집합이 어긋났을 때만 나온다 — 사용자가 만든 상황이
-                    // 아니라 빌드가 이미 어긋난 상태다. 그래서 토스트로 알리지 않는다:
-                    // 있어서는 안 되는 상태에 대한 UI 는 평생 안 보이거나, 보이는 날엔
-                    // 사용자가 할 수 있는 일이 없다. 여기 남는 기록은
-                    // `dispatch_action_by_id` 안의 `tracing::warn!` 이고, 어긋남 자체는
-                    // `shortcuts::tests` 의 목록↔arm 대조가 빌드에서 잡는다.
+                    // 알 수 없는 action_id는 dispatch_action_by_id가 경고를 기록한다.
                     self.dispatch_action_by_id(id);
                 }
                 crate::state::command_palette::PaletteCommand::Plugin {
@@ -449,16 +339,8 @@ impl MainView {
         }
     }
 
-    /// 해당 surface 가 현재 사용자에게 보이는가.
-    ///
-    /// 가시 기준은 `sync_webviews` 의 webview 표시 기준(`ws_idx == active_ws &&
-    /// is_active_tab`)과 동일하다 — 활성 워크스페이스의 각 pane 에서 active_tab 에
-    /// 속한 surface 만 화면에 렌더되고, 비활성 탭/비활성 워크스페이스의 surface 는
-    /// 숨겨진다. split tab 은 active_tab 안의 모든 surface 가 동시에 보이므로
-    /// `tab.contains_surface` 로 판정한다.
-    ///
-    /// P3: 안 보이는 surface 의 PTY 출력은 보이는 창의 콘텐츠를 바꾸지 않으므로
-    /// 이 판정으로 redraw 요청을 게이트한다(데이터 drain 은 그대로 수행).
+    /// 활성 워크스페이스의 각 패널에서 활성 탭에 속한 surface인지 확인한다.
+    /// 분할된 탭은 모든 leaf가 보인다. 숨겨진 surface의 출력도 읽되 redraw만 생략한다.
     pub(crate) fn is_surface_visible(&self, surface_id: u32) -> bool {
         let Some(ws) = self.core_state.workspaces.get(self.state.active_workspace) else {
             return false;
@@ -474,8 +356,7 @@ impl MainView {
         false
     }
 
-    /// 블록 A: 전 워크스페이스 순회로 html webview surface 수집(순수 계산, native 부수효과 없음).
-    /// all_html_ids = 살아있는 모든 html surface, active_html = 활성 ws·활성 tab 만 inset bounds 포함.
+    /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
     fn collect_html_surfaces(
         &self,
         scale_factor: f64,
@@ -512,9 +393,7 @@ impl MainView {
                         };
                         // Only visible if: active workspace AND active tab
                         let is_visible = ws_idx == active_ws && tab_idx == pane.active_tab;
-                        // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃
-                        // 트리의 모든 leaf 를 본다 — 비포커스 leaf 의 webview 도
-                        // native overlay 를 가져야 한다.
+                        // 비포커스 leaf에도 native WebView가 필요하므로 탭 전체를 순회한다.
                         for (sid, leaf_rect) in
                             layout.compute_rects(content_rect, scale_factor as f32)
                         {
@@ -526,21 +405,9 @@ impl MainView {
                             }
                             all_html_ids.push(sid);
                             if is_visible {
-                                // Inset bounds by divider drag threshold so that
-                                // the native WebView does not cover the divider
-                                // hit-test area, allowing pane resize via drag.
-                                //
-                                // inset 은 leaf 의 변이 **pane 콘텐츠 영역의 외곽**에
-                                // 닿을 때만 적용한다. 탭 내부 분할(SurfaceGroup)의 leaf
-                                // 사이 경계에는 divider gap(`SURFACE_BORDER_WIDTH`)만
-                                // 두고 여백을 주지 않는다 — 터미널끼리의 분할과 같은
-                                // 간격으로 보이게 하고 화면 공간을 낭비하지 않기 위함.
-                                // 위쪽 변은 tab bar 가 있어 원래부터 inset 이 없다.
-                                // 단독 leaf 이면 네 변이 모두 외곽이라 기존 동작 그대로다.
-                                //
-                                // 히트 밴드와 **같은 값**이어야 한다 — 여백이 밴드보다
-                                // 좁으면 native webview 가 드래그 영역을 덮는다. 그래서
-                                // 리터럴을 다시 적지 않고 그 상수를 물리로 내려 쓴다.
+                                // 패널 바깥쪽 변에는 divider 드래그 영역만큼 여백을 둔다.
+                                // 내부 leaf 사이에는 divider gap만 두며 탭바 쪽에는 여백을 두지 않는다.
+                                // native WebView가 드래그 영역을 덮지 않도록 같은 상수를 쓴다.
                                 let inset = crate::state::mouse::divider_hit_threshold_physical(
                                     scale_factor as f32,
                                 ) as f64;
@@ -569,9 +436,7 @@ impl MainView {
                                 } else {
                                     0.0
                                 };
-                                // 인셋을 먹인 **물리** 사각형을 먼저 만들고, 논리로
-                                // 내리는 나눗셈은 변환 API 한 곳에 맡긴다 — 소비자
-                                // (플랫폼 창 API)의 곱셈과 짝이 맞아야 창이 제자리에 온다.
+                                // 물리 사각형을 만든 뒤 플랫폼 API에 맞는 논리 좌표로 변환한다.
                                 let physical = crate::webview::PhysicalWebViewBounds {
                                     x: leaf_rect.x.value() as f64 + left,
                                     y: leaf_rect.y.value() as f64,
@@ -593,8 +458,7 @@ impl MainView {
         (active_html, all_html_ids)
     }
 
-    /// 블록 B: webview 없는 html surface 마다 native PlatformWebView 생성 + URL 로드 + 설정 적용 +
-    /// 비활성 숨김. &self 해석(find_webview_url/resolve_webview_settings) → 소유값 → &mut insert.
+    /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
     fn create_missing_webviews(
         &mut self,
         all_html_ids: &[u32],
@@ -604,8 +468,7 @@ impl MainView {
         // Create new webviews for Html panels that don't have one yet
         for &sid in all_html_ids {
             if !self.webviews.contains_key(&sid) {
-                // 예산을 다 쓴 surface 는 더 시도하지 않는다. 여기서 안 걸러내면
-                // 실패가 자기 재시도를 부르는 고리가 끝나지 않는다.
+                // 재시도 상한에 도달한 surface는 다시 만들지 않는다.
                 let attempts = self.webview_create_attempts.get(&sid).copied().unwrap_or(0);
                 if !should_attempt_webview(attempts) {
                     continue;
@@ -654,18 +517,8 @@ impl MainView {
         }
     }
 
-    /// 이미 생성된 webview 마다 `surface.webview_url()` 최신값과 마지막으로 로드한
-    /// URL(`webview_loaded_urls`)을 비교해, 달라졌으면 기존 인스턴스에 재로드를
-    /// 트리거한다(파괴·재생성 없음). `load_url`/`load_html` 은 호출 즉시 native
-    /// nav_state 를 `Loading` 으로 세팅하므로(각 플랫폼 구현 공통), 이 함수를
-    /// `sync_webviews` 의 reveal 판정(nav_state 기준) 이전에 호출하면 재로드가
-    /// 트리거된 프레임에 곧바로 반영된다 — 이전 페이지가 한 프레임이라도 다시
-    /// 노출되는 일이 없다.
-    /// webview 생성 실패를 기록하고 **필요한 만큼만** 알린다.
-    ///
-    /// 예산 소모 규칙이 한곳에 모여 있다: 영구 실패는 한 번에 상한으로,
-    /// 일시 실패는 하나씩. 로그는 **첫 실패와 포기하는 순간**만 남긴다 — 그 사이를
-    /// 다 남기면 로그가 실패 고리의 속도로 늘어난다(실측 10 초에 27477 줄).
+    /// 생성 실패 횟수를 갱신하고 첫 실패와 재시도 중단 시에만 경고한다.
+    /// 영구 실패는 즉시 상한으로, 일시 실패는 한 번씩 올린다.
     fn record_webview_failure(
         &mut self,
         sid: u32,
@@ -678,9 +531,7 @@ impl MainView {
             tracing::warn!("Failed to create WebView for surface {sid}: {err}");
         }
         if next >= MAX_WEBVIEW_CREATE_ATTEMPTS {
-            // `next` 가 아니라 **실제로 한 시도 수**를 적는다. 영구 실패는 예산을
-            // 한 번에 다 쓰므로 `next` 를 적으면 1 회만 하고도 "8 회 했다" 가 된다 —
-            // 그 줄로 종류를 판정할 사람이 정확히 반대로 읽는다.
+            // 영구 실패는 한 번에 상한이 되므로 로그에는 실제 시도 횟수를 쓴다.
             let made = attempts + 1;
             tracing::warn!(
                 concat!(
@@ -694,12 +545,7 @@ impl MainView {
         }
     }
 
-    /// 갓 만든 webview 에 첫 URL 을 싣는다. scheme 이 있으면 그대로 열고, 없으면 raw
-    /// HTML 로 다룬다(markdown 처럼 문서 전체를 문자열로 싣는 kind 가 이 갈래다).
-    ///
-    /// 이 갈래들을 `create_missing_webviews` 에서 떼어낸 것은 그 함수가 이미 예산 판정과
-    /// 생성 실패 분기를 안고 있어, 로드까지 함께 두면 복잡도 게이트
-    /// (`clippy::cognitive_complexity`)를 넘기 때문이다.
+    /// URL scheme이 있으면 페이지를 열고, 없으면 HTML 본문으로 로드한다.
     fn load_initial_url(
         &mut self,
         sid: u32,
@@ -721,13 +567,8 @@ impl MainView {
         self.webview_loaded_urls.insert(sid, url.clone());
     }
 
-    /// reveal 게이트에 걸린 surface 를 추적해, 그 상태가
-    /// [`REVEAL_PENDING_WARN_AFTER`] 를 넘겨 이어지면 surface 당 **한 번** 경고한다.
-    ///
-    /// 이 함수는 아무것도 고치지 않는다 — 상태를 강등하거나 재로드를 부르지 않는다.
-    /// 하는 일은 "화면 그 자리가 비어 있다" 는 사실을 로그에 남기는 것뿐이다: 생성도
-    /// 로드 발사도 성공한 뒤 navigation 이 끝나지 않는 경로는 지금 어떤 실패 줄도
-    /// 남기지 않아, 증상이 육안으로만 관측된다.
+    /// 페이지가 계속 숨겨져 있으면 surface별로 한 번 경고한다.
+    /// 상태 변경이나 재로드는 하지 않는다.
     fn note_reveal_pending(&mut self, pending: &[(u32, crate::webview::NavState)]) {
         let now = std::time::Instant::now();
         for &(sid, nav) in pending {
@@ -785,13 +626,8 @@ impl MainView {
         // Native views are always above the wgpu render surface in OS z-order.
         let overlay_open = self.state.has_egui_overlay_open();
 
-        // 단축키 정책 스냅샷 갱신 — 백엔드 콜백은 이 값만 보고 "host 가 가져갈 키"
-        // 를 동기 판정한다. 출처는 둘이다: host `KeybindingSettings` 와 plugin 명령
-        // 레지스트리(매니페스트 default + 사용자 override). 스냅샷 생성은 바인딩을 전부
-        // String 으로 모으는 작업이라 매 프레임 하지 않고, **둘 중 하나가 실제로 바뀐
-        // 프레임에만** 다시 만든다 — plugin 쪽은 등록/해제와 override 변경마다 올라가는
-        // 전역 epoch 두 개로 판정한다(`PluginCommandRegistry::revision` /
-        // `PluginsConfig::shortcut_revision`).
+        // 호스트 키 설정 또는 plugin 명령·override의 revision이 바뀔 때만
+        // native 콜백이 사용할 단축키 스냅샷을 다시 만든다.
         let plugin_epoch =
             plugin_manager.map(|m| (m.command_registry.revision(), m.config.shortcut_revision()));
         if self.webview_policy_src.as_ref() != Some(&self.core_state.settings.keybindings)
@@ -808,17 +644,9 @@ impl MainView {
             self.webview_policy_plugin_epoch = plugin_epoch;
         }
 
-        // overlay 가 열리는 순간 webview 가 쥐고 있던 **키보드 포커스를 host 창으로
-        // 회수**한다. 숨기는 것(`set_visible(false)`)과 포커스를 놓는 것은 OS 레벨에서
-        // 별개라, 회수하지 않으면 방금 연 popup/dialog 가 키를 못 받는다. 닫힐 때
-        // 자동 복원은 하지 않는다 — host 가 native 자식으로 키보드 포커스를 밀어넣는
-        // 것은 사용자 포커스 조작의 재현이고(`docs/design/policies/focus.md`), 키
-        // 포워딩이 있는 지금은 문서를 다시 클릭하지 않아도 단축키가 그대로 동작한다.
-        //
-        // 회수는 **이 창이 OS 포커스를 쥐고 있을 때만** 시도한다. 백엔드도 "포커스가
-        // 실제로 자기 자식 창 안에 있는가" 를 각자 확인하지만, 창 단위 조건을 여기서
-        // 한 번 더 걸어 IPC 로 popup 이 열렸을 뿐인 상황에서 다른 앱의 OS 키보드
-        // 포커스에 손대지 않게 한다(불가침 원칙 1, `docs/identity.md`).
+        // overlay를 열면 WebView 키보드 포커스를 호스트 창으로 돌린다. 숨기기만으로는
+        // 포커스가 해제되지 않는다. 닫을 때 자동으로 native 자식에 포커스를 돌려주지는 않는다.
+        // 다른 앱의 포커스를 바꾸지 않도록 이 창이 OS 포커스를 가질 때만 처리한다.
         if overlay_open {
             if !self.webview_overlay_focus_released && self.base.focused {
                 for wv in self.webviews.values() {
@@ -830,10 +658,8 @@ impl MainView {
             self.webview_overlay_focus_released = false;
         }
 
-        // Update bounds/visibility for existing webviews.
-        // reveal(=native 페이지 노출)은 navigation 이 성공 완료(Done)일 때만 — Loading/Failed/
-        // Idle 이면 native overlay 를 숨겨 그 자리에 egui chrome(spinner/error/placeholder)이
-        // 보이게 한다(S-W3 가 지적한 "loading 중 overlay 가 spinner 를 덮는" 문제 해소).
+        // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
+        // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
         let mut any_visible = false;
         let mut reveal_pending: Vec<(u32, crate::webview::NavState)> = Vec::new();
         for (sid, wv) in &self.webviews {
@@ -902,15 +728,9 @@ impl MainView {
             self.mark_dirty();
         }
 
-        // navigation 시도 통지(host→plugin `webview.navigation_attempt`) — native backend
-        // decide-policy/NavigationStarting 콜백이 캡처해 쌓아둔 URL 큐를 매 프레임 drain 해
-        // 소유 plugin 에 forward. "원격 http(s) 차단" 판정(위 native 레벨에서 독립 처리)과
-        // 무관하게 항상 통지한다. `plugin_manager`가 없어도(headless 등) 큐는 그대로
-        // drain 해 무한정 쌓이지 않게 한다.
-        //
-        // 시도마다 그 surface 의 기록을 다시 정한다 — 근거가 되면(제스처 · 소유 plugin 이 쓴 페이지)
-        // 통지받은 plugin 에 묶어 세우고, 아니면 지운다(ADR-0031). 기록은 통지와 **같은 자리**에서
-        // 정한다: plugin 이 시도를 받기 전에 기록이 서 있어야 그 응답 호출이 근거를 찾는다.
+        // navigation 시도를 소유 plugin에 알린다. 원격 콘텐츠 차단 여부와 별개이며
+        // plugin이 없어도 큐를 비운다. 사용자 제스처와 페이지 작성자가 확인된 경우에만
+        // 사용자 탐색 기록을 남긴다. plugin 응답보다 먼저 기록해야 한다(ADR-0031).
         let records = &mut self.state.webview_user_navigations;
         records.retain(|sid, _| self.webviews.contains_key(sid));
         for (sid, wv) in &self.webviews {
@@ -931,10 +751,8 @@ impl MainView {
                 }
             }
         }
-        // 작성자 전이는 시도를 다 반영한 **뒤** 가져간다 — 위 통지가 읽은 작성자가 소유 plugin 의 새
-        // 페이지였다면 이 표지도 서 있다(`RemoteSurface::set_webview_url` 의 기록 순서). 전이가 있던
-        // surface 의 이 프레임 기록은 버린다(`user_navigation::settle_frame`). plugin 이 없어도
-        // 표지는 매 프레임 내린다 — 오래된 표지가 나중의 정당한 클릭을 버리지 않게.
+        // 작성자가 바뀐 프레임의 탐색 기록은 폐기한다. 작성자 전이 표지도 매번 비워
+        // 이후의 정당한 클릭까지 폐기하지 않도록 한다.
         let sids: Vec<u32> = self.webviews.keys().copied().collect();
         for sid in sids {
             let took_over = self
@@ -983,9 +801,7 @@ impl MainView {
         self.find_surface_anywhere(surface_id).map(|s| s.kind())
     }
 
-    /// surface 의 plugin 설정을 해석해 webview 에 적용할 값으로 만든다. html webview(`com.tasty.html`)
-    /// 만 generic 설정을 소비하고, 그 외 webview kind 는 default 를 쓴다(미래 kind 안전).
-    /// 키 부재 시 manifest default(zoom 100 / sandbox true→JS off / remote false / scheme follow).
+    /// surface 소유 plugin의 WebView 설정을 읽는다. 저장된 값이 없으면 기본값을 쓴다.
     fn resolve_webview_settings(&self, surface_id: u32) -> crate::webview::HtmlWebViewSettings {
         use crate::settings::PluginSettingValue;
         use crate::webview::{ColorScheme, HtmlWebViewSettings};
@@ -1002,12 +818,9 @@ impl MainView {
             Some(PluginSettingValue::Number(n)) => *n,
             _ => 100.0,
         };
-        // 기본 sandbox(JS off)는 html plugin 처럼 사용자가 URL 을 직접 골라 임의 원격
-        // 콘텐츠를 여는 경우의 신뢰 경계다. markdown 은 자기 프로세스가 생성한 문서만
-        // 로드하고(사용자가 URL 을 고르지 않음) 그 콘텐츠는 항상 `ammonia` 로 sanitize
-        // 되므로 — 주소창/링크 라우팅에 쓰는 자체 trusted 스크립트(`render.rs` 의
-        // `nav_script`)가 항상 실행돼야 한다. 사용자가 명시적으로 설정을 저장하면
-        // 그 값이 이 기본을 덮는다(다른 kind 와 동일 우선순위).
+        // HTML plugin은 임의 콘텐츠를 열 수 있어 기본적으로 JS를 막는다.
+        // markdown은 정화한 문서의 탐색 스크립트를 실행해야 하므로 기본값이 다르다.
+        // 사용자가 저장한 설정은 이 기본값보다 우선한다.
         let sandbox_default = plugin_id != "com.tasty.markdown";
         let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
             Some(PluginSettingValue::Bool(b)) => *b,
@@ -1040,13 +853,8 @@ impl MainView {
             .map(|u| u.to_string())
     }
 
-    /// 네이티브 컨텍스트 메뉴를 띄우고 결과 처리를 `cont` 로 예약한다.
-    ///
-    /// 해소 타이밍은 플랫폼별로 다르다(`MenuOutcome`): macOS/Windows 는 항상
-    /// `Ready` 라 `cont` 가 이 자리에서 즉시 실행되고(기존 동기 동작과 타이밍
-    /// 동일), Linux/GTK 는 `Pending` 이라 핸들을 슬롯에 두고 매 프레임
-    /// `poll_pending_native_menu` 가 완료를 기다린다. 모든 메뉴 호출은 이
-    /// 헬퍼를 거친다 — 직접 `show_context_menu` 를 부르면 Pending 을 흘린다.
+    /// native 메뉴를 열고 결과를 cont에 전달한다.
+    /// macOS/Windows의 Ready는 즉시 처리하며 Linux의 Pending은 이후 폴링으로 회수한다.
     pub(super) fn open_native_menu(
         &mut self,
         x: f32,
@@ -1068,21 +876,14 @@ impl MainView {
             }
             MenuOutcome::Pending(handle) => {
                 self.pending_menu = Some((handle, Box::new(cont)));
-                // 메뉴가 뜬 프레임을 한 번 그려 둔다. 이후의 폴링 자체는
-                // `about_to_wait` 의 8ms WaitUntil 이 굴리므로, 메뉴가 떠 있는 동안
-                // 매 프레임 GPU 를 다시 태우지는 않는다.
+                // 메뉴를 연 프레임만 그린다. 이후 폴링은 about_to_wait가 진행한다.
                 self.mark_dirty();
             }
         }
     }
 
-    /// 열려 있는 네이티브 메뉴를 1회 펌프한다(비블로킹). 완료됐으면 슬롯을
-    /// 비우고 예약해 둔 continuation 을 결과와 함께 실행한다.
-    ///
-    /// 두 곳에서 불린다: `handle_redraw`(같은 프레임 안에서 `process_pending_native_menu`
-    /// 보다 먼저 — 방금 닫힌 메뉴의 뒤처리가 다음 메뉴 요청을 막지 않게), 그리고
-    /// `about_to_wait`(메뉴가 떠 있는 동안 8ms 주기로 — redraw 이벤트가 없어도
-    /// 폴링이 이어지게). 아직 열려 있으면 아무 것도 하지 않는다.
+    /// 메뉴 결과를 비차단 조회하고 완료됐으면 후처리를 실행한다.
+    /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다.
     pub(crate) fn poll_pending_native_menu(&mut self) {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return;
@@ -1097,10 +898,8 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// 열려 있는 네이티브 메뉴를 바깥 클릭으로 닫는다(`mouse.rs` 의 winit press
-    /// 경로). grab 이 실패해 GTK 가 그 클릭을 못 받는 경우에도 확실히 dismiss
-    /// 되게 하는 경로 — 실제 결과 회수는 다음 `poll_pending_native_menu` 가
-    /// 한다(완료 경로 단일화). 닫을 메뉴가 있었으면 `true`.
+    /// 바깥 클릭으로 native 메뉴를 닫는다. GTK grab이 실패한 경우도 처리한다.
+    /// 결과는 다음 poll_pending_native_menu에서 회수한다.
     pub(crate) fn dismiss_pending_native_menu(&mut self) -> bool {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return false;
@@ -1115,10 +914,7 @@ impl MainView {
     fn process_pending_native_menu(&mut self) {
         use crate::state::PendingNativeMenu;
 
-        // 무대 중에는 네이티브 메뉴를 세우지 않는다 — OS 팝업은 wgpu 표면 **위**에 떠서
-        // 무대가 덮지 못하고, 입력 게이트와도 무관한 경로로 뜬다. 요청은 슬롯에 남기지
-        // 않고 **버린다**: 좌표가 무대 진입 전 화면 기준이라 무대를 나온 뒤 띄우면
-        // 사용자가 우클릭한 적 없는 자리에 메뉴가 뜬다.
+        // OS 메뉴는 무대 위에 뜨므로 요청을 버린다. 무대 종료 뒤에는 좌표도 유효하지 않다.
         if self.state.fullscreen_stage_active() {
             self.state.dialogs.pending_native_menu = None;
             return;
@@ -1135,10 +931,7 @@ impl MainView {
             None => return,
         };
 
-        // debug: egui 프레임이 세우는 메뉴(explorer 우클릭 등)를 실제 native 팝업
-        // 없이 관찰하기 위한 격리 훅. winit 경로(mesh inject)는 핸들러가 즉시 메뉴를
-        // 세워 `debug_captured_menu` 로 포획되지만, egui 경로는 이 redraw 프레임에서
-        // 메뉴를 세우므로 여기서 가로채야 headless 회귀 테스트가 가능하다. release 미노출.
+        // debug에서는 실제 native 메뉴 없이 egui의 메뉴 요청을 관찰할 수 있게 한다.
         #[cfg(debug_assertions)]
         if std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
             self.debug_captured_menu = Some(pending);
@@ -1218,8 +1011,6 @@ impl MainView {
         match result {
             Some(1) => self.rename_tab(pane_id, tab_index),
             Some(2) => {
-                // Close tab (모든 surface 포함). 이전엔 첫 surface 만 닫아 split
-                // 상태에서 surface 하나만 사라지던 버그가 있었음.
                 if self
                     .state
                     .close_tab(&mut self.core_state, pane_id, tab_index)
@@ -1306,11 +1097,7 @@ impl MainView {
         ]
     }
 
-    /// tab 을 `from_index` → `to_index` 로 이동. mirror 워크스페이스는 로컬 탭
-    /// 순서를 직접 바꾸지 않고 `MoveTab` 을 원격으로 forward 한다(로컬 실행은
-    /// 원격 트리와 어긋남) — forward 가 안 먹힌(비-mirror) 워크스페이스에서만
-    /// 로컬 `pane.move_tab` 을 수행한다. Move Left/Right 양쪽에서 동일 로직이라
-    /// 공용화(과거엔 두 곳에 중복).
+    /// mirror의 탭 이동은 원격으로 보내고, 그 외에는 로컬 탭 순서를 변경한다.
     fn move_tab_via_mirror_or_local(&mut self, pane_id: u32, from_index: usize, to_index: usize) {
         let mirror_op = self
             .core_state
@@ -1501,9 +1288,7 @@ impl MainView {
                         );
                     }
                 }
-                // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
-                // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
-                // 독자에게 함정이 된다.
+                // 상태를 변경하는 닫기 호출은 match guard에 넣지 않는다.
                 #[allow(clippy::collapsible_match)]
                 Some(6) => {
                     // Close workspace (모든 surface + closed_item snapshot)
@@ -1517,9 +1302,7 @@ impl MainView {
                     }
                 }
                 Some(7) => {
-                    // 강제 끊기 — 즉시 끊지 않고 확인 팝업을 거친다. 보류에는
-                    // `ws_idx` 가 아니라 **id** 를 담는다: 이 팝업은 메뉴가 닫힌
-                    // 뒤에도 열려 있어 인덱스가 밀릴 창이 위 가드보다 훨씬 길다.
+                    // 확인 팝업을 기다리는 동안 인덱스가 바뀔 수 있으므로 ID를 보관한다.
                     let ws_id = engine.workspaces[ws_idx].id;
                     this.state.dialogs.pending_force_detach_workspace = Some(ws_id);
                     this.state.dispatch_intent(
@@ -1582,8 +1365,7 @@ impl MainView {
             MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
         ];
 
-        // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
-        // + "새 카테고리". move_targets[i] = (cat_id) 로 결과 id(200+i) 매핑.
+        // 현재 카테고리를 제외한 이동 대상과 새 카테고리 항목을 만든다.
         let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
         if engine.settings.general.workspace_categories_enabled && ws_idx < engine.workspaces.len()
         {
@@ -1613,10 +1395,7 @@ impl MainView {
             ));
         }
 
-        // 강제 끊기 — **점유 중일 때만** 붙인다. 사이드바 행의 점유 표시가 쓰는
-        // 술어(`workspace_holder(ws.id).is_some()`, `sidebar/full.rs`)와 같은 것이라
-        // 표시와 항목이 어긋날 수 없다. 라벨은 서피스 오버레이 버튼과 같은
-        // `attach.force_detach` 를 재사용한다 — 같은 행동이라 이름이 둘이면 안 된다.
+        // 사이드바 점유 표시와 같은 기준으로 강제 끊기 항목을 추가한다.
         if ws_idx < engine.workspaces.len()
             && engine
                 .attach
@@ -1680,9 +1459,7 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        // 카테고리 헤더 우클릭 — Add workspace 선두(모든 헤더), 비-normal 만
-        // 이름변경/삭제, 공통 새 카테고리 (2026-07-02 디자인 — 조립·순서는
-        // `category_header_menu_items` 가 고정). 토글 off 면 애초에 라우팅되지 않음.
+        // 카테고리 메뉴를 구성한다. 기본 카테고리는 이름 변경과 삭제를 제외한다.
         let is_normal = self
             .core_state
             .categories()
@@ -1791,11 +1568,8 @@ impl MainView {
         use crate::platform::native_menu::MenuItem;
         // Show copy items only when there is an active (non-empty) selection.
         let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
-        // "경로 열기" 항목은 has_selection 과 별도로, 우클릭한 surface 와 selection 이
-        // 속한 surface 가 같을 때만 노출한다 — surface 별로 독립적인 드래그 상태를
-        // 가질 수 있어 다른 surface 의 선택을 그대로 노출하면 혼동을 유발한다(복사
-        // 항목은 기존부터 surface 무관하게 전역 selection 을 대상으로 동작하는 별개
-        // 관례라 그대로 둔다).
+        // 경로 열기는 선택과 우클릭 surface가 같을 때만 표시한다.
+        // 복사 항목은 surface와 관계없이 전역 선택을 사용한다.
         let selection_open_path = if has_selection {
             self.text_selection
                 .as_ref()
@@ -1830,7 +1604,6 @@ impl MainView {
             1,
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         ));
-        // T9: surface 공용 잘라내기 / 여기로 이동 tail.
         items.push(MenuItem::separator());
         items.push(MenuItem::new(
             10,
@@ -1891,10 +1664,8 @@ impl MainView {
         });
     }
 
-    /// selection 이 가리키는 실재 파일/폴더 경로를 찾는다(우클릭 대상과 selection 의
-    /// surface 일치는 호출부가 미리 검사한다). mirror(원격 attach) surface 는 로컬
-    /// 파일 관리자로 원격 경로를 여는 배선이 아직 없어 이번 범위에서 제외한다 — 그
-    /// 배선이 생기면 이 조건을 재검토한다.
+    /// 선택한 실제 파일·폴더 경로를 찾는다. surface 일치는 호출자가 확인한다.
+    /// 원격 호스트 경로를 로컬 파일 관리자로 열 수 없으므로 mirror는 제외한다.
     fn resolve_selection_open_path(
         engine: &crate::core::CoreState,
         sel: &crate::selection::TextSelection,
@@ -1983,10 +1754,8 @@ impl MainView {
             .as_ref()
             .map(|c| !c.paths.is_empty())
             .unwrap_or(false);
-        // mirror(attach 원격 점유) explorer 는 browse-only(ADR-0022) — 로컬 fs 를 건드리는
-        // 항목(붙여넣기/삭제/이름변경/새탭/시스템에서 열기/잘라내기)은 메뉴에서부터
-        // 숨긴다. 액션별 개별 가드(아래 각 핸들러)는 그대로 유지한다(방어적 이중화 —
-        // 이 native 메뉴가 아닌 다른 경로로 같은 핸들러가 불릴 가능성 대비).
+        // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
+        // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = self.core_state.is_mirror_surface(surface_id);
 
         let items = Self::build_explorer_context_menu(
@@ -2282,11 +2051,8 @@ impl MainView {
         cwd: &std::path::Path,
         is_empty_target: bool,
     ) {
-        // (ADR-0022) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
-        // 무관 즐겨찾기 저장소(`~/.tasty/explorer-favorites.toml`)에 그대로 넣으면
-        // 로컬/다른 호스트 explorer 의 사이드바를 오염시킨다. 팝업을 아예 열지 않고
-        // 여기서 차단한다(`RenameTarget::ExplorerAddFavorite` 이 surface_id 를 갖지
-        // 않아 팝업 쪽에서는 재확인이 불가능 — 이 지점이 유일한 가드).
+        // 원격 경로를 전역 즐겨찾기에 저장하면 로컬·다른 호스트에서도 사용될 수 있다.
+        // 팝업에는 surface_id가 없으므로 여기서 mirror를 차단한다(ADR-0022).
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2312,18 +2078,9 @@ impl MainView {
         );
     }
 
-    /// 새 탭으로 열기 (아이템 60) — 대상 폴더를 cwd 로 하는 새 explorer 를
-    /// 우클릭 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
-    ///
-    /// mirror 워크스페이스에서는 차단한다: `add_kind_tab_by_owner`
-    /// (`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 `forward_mirror_structural`
-    /// 을 거치지 않고 로컬 pane 을 직접 mutate한다. mirror 트리 동기화
-    /// (`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격
-    /// authoritative 트리 기준 전체 재구성이라, 이렇게 로컬에서만 생긴 탭은 원격
-    /// 트리에 없으므로 다음 구조 델타 수신 시 "사라진 항목"으로 제거된다 — 즉 조용히
-    /// 유령 tab 이 생겼다 사라지는 혼란스러운 UX. 정확한 forward 지원(owner_surface_id
-    /// 를 anchor 로 `StructuralOp::NewTab` forward, 원격 쪽 `find_pane_for_surface`
-    /// 매칭과 의미가 일치함을 확인함)은 스코프가 커 별도 작업으로 남긴다.
+    /// 대상 폴더로 새 explorer 탭을 연다.
+    /// add_kind_tab_by_owner는 원격 구조 변경을 전달하지 않고 로컬만 변경하므로
+    /// mirror에서는 금지한다. 로컬에만 만든 탭은 다음 원격 구조 동기화에서 사라진다.
     fn explorer_menu_open_in_new_tab(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
@@ -2488,19 +2245,12 @@ impl MainView {
     }
 }
 
-/// 카테고리 헤더 우클릭 메뉴 항목 조립 (디자인 sidebar_context_menu.jsx category 분기
-/// 전사, 2026-07-02). additive 선두: Add workspace(3) · Create from preset(5,
-/// `docs/features/workspace-category/index.md` 참고)
-/// · ─ · Add remote workspace(4) · ─ · [비-normal 한정: Rename(1) · Delete(2)
-/// · ─] · New category(100). reserved normal 은 rename/delete 만 금지 — add(로컬/
-/// 프리셋/원격) 는 노출한다. native 메뉴 조립은 순수 함수로 분리해 구성·순서를 단위
-/// 테스트로 고정한다.
+/// 카테고리 헤더 메뉴를 구성한다. 기본 카테고리만 이름 변경·삭제를 제외한다.
+/// 구성과 순서는 아래 단위 테스트로 확인한다.
 fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_menu::MenuItem> {
     use crate::platform::native_menu::MenuItem;
     let mut items = vec![
         MenuItem::new(3, crate::i18n::t("workspace_category.add_workspace")),
-        // "+" 버튼 메뉴와 동일 라벨/액션(프리셋 선택 → 워크스페이스 생성) 재사용 —
-        // 신규 i18n 키 불필요.
         MenuItem::new(5, crate::i18n::t("preset.context.apply_workspace_preset")),
         MenuItem::separator(),
         MenuItem::new(4, crate::i18n::t("context_menu.add_remote_workspace")),
@@ -2530,8 +2280,7 @@ mod tests {
     use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
     use crate::webview::WebViewCreateError;
 
-    /// 영구 실패는 **한 번에** 예산을 다 쓴다. 여기서 안 멈추면 실패가 자기 재시도를
-    /// 부르는 고리가 8 회를 돈다 — 영구 실패에는 그 8 회가 전부 낭비다.
+    /// 영구 실패는 첫 시도 뒤 재시도를 멈춘다.
     #[test]
     fn a_permanent_failure_gives_up_at_once() {
         let err = WebViewCreateError::Permanent("no display".into());
@@ -2540,8 +2289,7 @@ mod tests {
         assert!(!should_attempt_webview(next), "포기했어야 한다");
     }
 
-    /// 일시 실패는 **정확히 상한만큼** 시도한다. 상한이 코드에 박혀 있다는 것을
-    /// 세어서 확인한다 — "로그가 줄었다" 는 확률이고 이것은 불변식이다.
+    /// 일시 실패의 재시도가 정해진 상한에서 멈추는지 확인한다.
     #[test]
     fn a_transient_failure_stops_exactly_at_the_cap() {
         let err = WebViewCreateError::Transient("server busy".into());
@@ -2558,8 +2306,7 @@ mod tests {
         );
     }
 
-    /// 상한이 1 이면 두 처방이 같아진다 — 영구/일시를 가른 것이 아무 차이도 안 낳는데
-    /// 위 두 테스트는 **둘 다 초록**이다. 그래서 그 자리를 따로 막는다.
+    /// 첫 실패부터 영구 실패와 일시 실패의 재시도 횟수가 달라야 한다.
     #[test]
     fn the_cap_leaves_room_for_the_two_prescriptions_to_differ() {
         let t = next_webview_attempts(0, &WebViewCreateError::Transient("x".into()));

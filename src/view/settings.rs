@@ -21,8 +21,7 @@ pub struct SettingsView {
     settings_ui_state: SettingsUiState,
     /// `FileHandler` 탭의 Extension Mapping sub-tab 에서 사용. Save 시 user TOML 에 직접 저장.
     file_format: Arc<FileFormatRegistry>,
-    /// 동일 user TOML 파일 (`~/.tasty/file-handlers.toml`) 의 `[[handler]]` 섹션을 보존하기
-    /// 위해 combined save 시 함께 export.
+    /// 같은 사용자 TOML의 handler 섹션을 함께 내보내 저장 시 보존한다.
     file_handler: Arc<FileHandlerRegistry>,
     /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
     user_config_path: Option<std::path::PathBuf>,
@@ -103,23 +102,14 @@ impl SettingsView {
         self.settings_ui_state.set_settings_pages(pages);
     }
 
-    /// Save 시 bashrc 저장이 실패했으면 그 사유를 가져간다(1 회). 호출 후에는
-    /// `None` 이 남는다.
-    ///
-    /// 이 창이 아니라 host App 이 회수해 main window 토스트로 올린다 — Save 는
-    /// 곧바로 이 창을 닫으므로(`should_close`) 여기에 띄운 토스트는 화면에
-    /// 남지 않는다. 회수 경로는 [`take_plugin_shortcut_draft`](Self::take_plugin_shortcut_draft)
-    /// 와 같다.
+    /// Save 중 bashrc 저장 오류를 한 번 가져온다.
+    /// 설정 창은 닫히므로 App이 메인 창에 오류를 표시한다.
     pub fn take_bashrc_save_error(&mut self) -> Option<String> {
         self.settings_ui_state.bashrc_save_error.take()
     }
 
-    /// 사용자가 Plugins 서브탭·가져오기에서 변경한 override draft를 가져간다.
-    /// 호출 후에는 빈 draft가 남는다. 모달 close 시 main App이 회수.
-    ///
-    /// **Save 로 닫혔을 때만** 내용을 돌려준다. 호스트 설정은 Save 전까지 원본이라 Cancel 이
-    /// 저절로 안전하지만, 이 draft 는 닫힐 때 무조건 회수되므로 여기서 가르지 않으면 Cancel ·
-    /// 창 닫기에도 적용된다.
+    /// Save로 닫았을 때만 plugin 단축키 변경 초안을 반환한다.
+    /// 취소·닫기 버튼·설정 단축키로 닫으면 초안을 버린다.
     pub fn take_plugin_shortcut_draft(
         &mut self,
     ) -> std::collections::BTreeMap<
@@ -155,10 +145,7 @@ impl View for SettingsView {
         let is_recording = self.settings_ui_state.is_recording();
         let skip_egui = is_recording && matches!(&event, WindowEvent::KeyboardInput { .. });
 
-        // RedrawRequested 를 egui 에 전달하면 항상 repaint=true 를 반환해
-        // mark_dirty → request_redraw → RedrawRequested 무한 루프(120fps busy-loop)가
-        // 된다. egui 렌더는 아래 RedrawRequested arm 의 render() 가 담당하므로
-        // 이 이벤트는 egui input 으로 넘기지 않는다 (MainView 와 동일 정책).
+        // RedrawRequested는 아래에서 렌더링한다. egui 입력에도 넣으면 재그리기가 반복된다.
         let is_redraw = matches!(&event, WindowEvent::RedrawRequested);
         if !skip_egui && !is_redraw {
             let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
@@ -193,36 +180,10 @@ impl View for SettingsView {
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
 
-                // 설정을 여는 바인딩이 이 창을 닫기도 한다 — 필드 이름이 `toggle_settings`
-                // 이고, 여는 쪽만 구현돼 있어 이름과 동작이 어긋나 있었다. 키보드로 이 창을
-                // 벗어나는 길이 없다는 것이 그 어긋남의 사용자 쪽 얼굴이다.
-                //
-                // 왜 여기서 닫는가: 모달 창은 자기 이벤트를 자기가 받으므로 메인 창의 단축키
-                // 표에 이 키가 도달하지 않는다. 그리고 닫는 길로 `ViewAction::Close` 를 쓰는
-                // 것은 **창 닫기 버튼과 정확히 같은 경로**다 — 저장/취소 cascade 가 그대로
-                // 흐르므로 "키보드로 닫으면 변경이 조용히 버려지는가" 라는 물음이 생기지
-                // 않는다.
-                //
-                // 녹화 중에는 안 한다. 그때 키는 바인딩 캡처로 가야 하고, 여기서 먹으면
-                // 사용자가 그 조합을 단축키로 등록할 수 없다.
-                //
-                // ★ 키를 여기 박지 않는다. 무엇으로 닫히는가는 `KeybindingSettings` 가
-                // 정하고, 사용자가 그 바인딩을 바꾸면 닫는 키도 함께 바뀐다.
-                //
-                // Escape 는 여기 **안 넣는다 — 결정이다.** 넣으려면 대응 필드가 있어야 하는데
-                // `KeybindingSettings` 에 "모달 닫기" 는 없고, 그 필드를 세우는 것은 이 창만의
-                // 물음이 아니다. 이 창 안에서만 봐도 미해결 충돌이 하나 있다: 설정에는 편집
-                // 가능한 텍스트 필드가 여러 탭에 걸쳐 있고(`ui/file_handler_tab/` ·
-                // `ui/tabs/appearance.rs` · `ui/tabs/misc.rs` · `ui/keybindings_tab/plugins.rs`),
-                // 여기서 먼저 먹으면 편집 중 Escape 가 "편집 취소" 가 아니라 "창 닫기" 가 된다.
-                // 그 물음이 값으로 정해지기 전에는 안 넣는다. 넣는 날 고칠 곳은 아래 조건 하나뿐
-                // 이다 — 이 자리가 키가 아니라 **바인딩**을 보기 때문이다.
-                //
-                // ★ 메인 창의 `try_consume_escape_key` 가 이 자리를 대신하고 있지 않다. 그쪽
-                // 첫 소비자의 조건 `settings_open_requested` 는 "열려 있는가" 가 아니라 **열기
-                // 요청 래치**이고(`src/view/main/redraw.rs` 가 같은 프레임에 소비해 false 로
-                // 되돌린다), 모달이 떠 있는 동안은 false 다. 즉 Escape 로 이 창을 닫는 경로는
-                // 어디에도 배선돼 있지 않다.
+                // 모달은 자체 키 이벤트를 받으므로 설정 열기 단축키로 여기서 닫는다.
+                // 단축키 녹화 중에는 키를 소비하지 않는다.
+                // Escape는 텍스트 편집 취소와 충돌하므로 별도 닫기 키로 처리하지 않는다.
+                // 메인 창의 Escape 처리는 아직 열지 않은 설정 요청의 취소만 담당한다.
                 if !is_recording
                     && event.state == ElementState::Pressed
                     && crate::adapters::ui::input::shortcuts::matches_any_binding(

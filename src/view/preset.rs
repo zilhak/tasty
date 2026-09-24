@@ -26,12 +26,10 @@ use crate::view::{ViewAction, ViewBase, ViewCtx};
 pub struct PresetView {
     pub base: ViewBase,
     store: Arc<Mutex<PresetStore>>,
-    /// 편집기 kind 드롭다운/라벨의 진실 소스. main engine 의 공유 Arc 를 clone 해
-    /// 받는다(부재 시 `None` → 빈 catalog → 정적 fallback). 프레임마다 스냅샷을
-    /// 파생해 런타임 등록 kind(플러그인 on/off)를 즉시 반영한다.
+    /// 등록된 surface kind의 공유 목록. 매 프레임 읽어 plugin 활성 상태를 반영한다.
+    /// 목록이 없으면 정적 기본 목록을 사용한다.
     surface_registry: Option<Arc<SurfaceKindRegistry>>,
-    /// 편집 모드 표준 단축키 매칭용 스냅샷. open 시 focused window 설정에서 clone
-    /// (appearance 주입과 동일 전례) — 설정 변경은 창 재오픈 시 반영되는 기존 한계.
+    /// 창을 열 때 가져온 편집 단축키 설정. 변경된 설정은 다시 열어야 반영된다.
     keybindings: KeybindingSettings,
     active_kind: PresetKind,
     selected_workspace: Option<String>,
@@ -72,11 +70,7 @@ impl PresetView {
         }
     }
 
-    /// 우클릭/IPC 진입 시 특정 preset 선택 상태로 열기 위한 helper.
-    ///
-    /// 창 밖에서 선택이 바뀌는 경로다. 열려 있던 surface 설정 화면의 draft 는 취소와
-    /// 똑같이 버리고 묻지 않는다 — 사용자가 다른 동작을 시작했고, draft 는 저장된다고
-    /// 약속된 적이 없다.
+    /// 외부에서 특정 프리셋을 선택한다. 열려 있던 surface 설정 초안은 버린다.
     pub fn select(&mut self, kind: PresetKind, name: String) {
         self.surface_cfg = None;
         self.active_kind = kind;

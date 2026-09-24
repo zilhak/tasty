@@ -248,9 +248,10 @@ fn decode_mesh_into_target(
         );
         return DecodeOutcome::Deferred;
     }
-    // SAFETY: SharedMemory 영역. tasty-shm 동기화 규약 — plugin commit(Release) →
-    // host Acquire-load → user data read. footer 시작 8B 는 mmap 페이지 align 이라 8B aligned.
-    // footer generation 이 frame 메타와 다르면 half-painted 이므로 다음 frame 까지 미룬다.
+    // SAFETY: raw는 페이지 정렬된 매핑 시작이며 길이는 위에서 확인했다.
+    // 첫 8바이트는 양쪽 프로세스가 atomic footer로 사용한다.
+    // 세대 불일치는 오래된 메타데이터 때문일 수도 있어 처리를 미룬다.
+    // 세대가 같아도 이후 payload 쓰기를 배제하지는 못한다.
     let gen_now = unsafe { tasty_shm::footer::load(raw, Ordering::Acquire) };
     if gen_now != generation {
         return DecodeOutcome::Deferred;
@@ -485,7 +486,8 @@ fn decode_and_track<K: std::hash::Hash + Eq + Copy>(
         log_not_registered();
         return;
     };
-    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+    // SAFETY: mem이 읽는 동안 매핑의 수명을 유지한다. 다만 이후 Acquire-load만으로
+    // payload 동시 쓰기가 배제되지는 않으며, 이 경로에는 별도 배제 절차가 없다.
     let raw = unsafe { mem.as_slice() };
     let outcome = decode_mesh_into_target(
         device,

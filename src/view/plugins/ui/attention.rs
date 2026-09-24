@@ -1,40 +1,14 @@
-//! `Attention`("확인 필요") 탭 — 등록 거부(서명/신뢰) 또는 실행 실패(health
-//! error) plugin 을 사유·조치와 함께 보여준다. 좌측 목록 + 우측 상세(사유 배너 +
-//! 사유별 detail + 액션 바). 데이터는 `PluginsSnapshot::attention`.
+//! 서명·권한·실행 오류로 확인이 필요한 플러그인과 가능한 조치를 표시한다.
 
 use crate::i18n::t;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
-//
-// `Theme` 의 UI 폰트 스케일은 micro 10 · caption 11 · body/heading 13 · max 14 이고,
-// DTCG primitive 에는 12 · 16 · 17 · 20 이 더 있다. 아래 값들은 **어느 tier 에도
-// 없다** — 코드에서 자란 값이라 토큰으로 스냅하면 실제로 픽셀이 바뀐다. 조용히
-// 반올림하지 않고 이름만 붙여 한곳에 모아 둔다(스냅 여부는 디자인 판단 항목).
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다.** 토큰 폰트 크기는
-// `Theme::with_colors_and_zoom` 의 `zoomed()` 를 거치는데 그게 `.round()` 하므로
-// 어떤 `ui_scale` 에서도 정수다 — "zoom 1 에서만 0.5 다" 가 아니라 전 배율에서
-// 다르다. 규칙 전문은 `docs/design/systems/theme.md` "스케일 밖 폰트 값".
-//
-// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다. 그 대가와
-// 재검토 조건(디자인이 `.5` 스케일을 정식 tier 로 승인하면 발동)은
-// `docs/adr/0035-shared-design-and-theme.md` 에 있다 —
-// 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
-
-/// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
-/// **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다 — 어느 semantic 에
-/// 묶을지가 판단 항목이라 primitive 값을 그대로 이름 붙여 둔다.
+/// semantic 역할을 지정하지 않은 primitive 폰트 크기. ui_scale을 적용하지 않는다.
+/// 토큰으로 바꾸면 표시 크기가 달라질 수 있어 디자인 검토가 필요하다(ADR-0035).
 const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
-/// severity 점의 지름. 스케일 밖(7) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고,
-/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
-/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
-/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
-/// **같은 7 을 `crates/tasty-ui-widgets/src/status_bar.rs` 의 `DOT_SIZE` 도 쓴다** —
-/// 무관한 두 크레이트가 독립적으로 고른 값이라 드리프트가 아니라 역할일 가능성이 높고,
-/// 그 판단이 서면 둘이 한 토큰으로 모인다.
+/// severity 점의 기존 지름. status-dot 토큰으로 바꾸면 크기·배율 동작이 달라진다.
 const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
@@ -182,8 +156,6 @@ pub(super) fn draw_attention_tab(
 
 /// 확인 필요 plugin 0 건 — success 톤 빈 상태.
 fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
-    // 48 은 그리드 스텝 밖의 값 — 새 스텝을 추가하는 대신 기존 spacing_xl(24)을
-    // 2배 연산으로 표현.
     vspace(ui, th.spacing_xl * 2.0);
     ui.vertical_centered(|ui| {
         ui.label(
@@ -191,7 +163,6 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
                 .size(th.font_size_heading.value())
                 .color(egui::Color32::from(th.text_secondary())),
         );
-        // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
         vspace(ui, th.spacing_xs);
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_body"))
@@ -289,7 +260,6 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
     match entry.kind {
         AttentionKind::PermissionsChanged => {
             mono_header(ui, "plugins.attn_permission_changes");
-            // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
             vspace(ui, th.spacing_xs);
             for p in &entry.permissions_added {
                 ui.horizontal(|ui| {
@@ -336,7 +306,6 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         }
         AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
             mono_header(ui, "plugins.attn_signature");
-            // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
             vspace(ui, th.spacing_xs);
             if let Some(fp) = &entry.fingerprint {
                 ui.horizontal(|ui| {
@@ -357,7 +326,6 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         AttentionKind::HealthError => {
             if let Some(detail) = &entry.health_detail {
                 mono_header(ui, "plugins.attn_error");
-                // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
                 vspace(ui, th.spacing_xs);
                 egui::Frame::new()
                     .fill(egui::Color32::from(th.bg_panel()))
@@ -403,7 +371,6 @@ fn draw_action_bar(
             ATTN_STATUS_DOT_SIZE.value() * 0.5,
             color,
         );
-        // 디자인 값 11px 은 off-grid — 4px 그리드의 가장 가까운 값인 spacing_md(12)로 snap.
         hspace(ui, th.spacing_md);
         ui.label(
             egui::RichText::new(t(status_key))

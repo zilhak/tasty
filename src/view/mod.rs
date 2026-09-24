@@ -1,7 +1,5 @@
-//! `View` — GUI 어댑터. winit 윈도우, egui, modal/focus 식별자, event loop proxy,
-//! views HashMap 등 *사용자의 화면* 측면을 모은다.
-//!
-//! trait 본체는 `src/view/ui.rs`, 구현체 모듈은 본 모듈 안 형제다.
+//! winit 창, egui 입력과 렌더링, 모달·포커스를 관리하는 GUI 어댑터.
+//! View trait은 src/view/ui.rs에 있다.
 
 pub(crate) mod base;
 pub(crate) mod main;
@@ -58,9 +56,7 @@ pub(crate) struct ViewCtx<'a> {
     /// 현재 active plugin manager. MainView 가 frame prepare 시 plugin canvas의
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
-    /// attach 스트림 허브. MainView 가 로컬 redraw 로 만든 egui-mesh frame 을 attach
-    /// mesh mirror 구독자에게 중계할 때 쓴다(`docs/dev-guide/egui-mesh-channel.md`의
-    /// "서버측(GUI, 살아있는 window)" 참고) — Arc 기반 clone 이라 참조만 전달.
+    /// GUI attach 서버가 mesh 프레임을 원격 구독자에게 중계할 때 사용하는 허브.
     pub(crate) stream_hub: &'a tasty_ipc::stream_hub::StreamHub,
 }
 

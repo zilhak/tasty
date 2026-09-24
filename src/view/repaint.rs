@@ -1,41 +1,9 @@
-//! 리페인트 요청 상한(coalescing gate) + 유발원 계측.
+//! 사용자 입력은 즉시 redraw를 요청하고 출력·애니메이션 요청은 주사율에 맞춰 합친다.
+//! dirty는 유지하며 미룬 요청은 deferred_deadline을 통해 about_to_wait에서 예약한다.
+//! attach mesh 중계도 dirty 프레임에 의존하므로 요청 자체를 버리지는 않는다.
 //!
-//! [`View::mark_dirty`](crate::view::ui::View::mark_dirty) 는 dirty 플래그를 세우는 데
-//! 그치지 않고 그 자리에서 `Window::request_redraw()` 를 호출한다 — 즉 **`mark_dirty()`
-//! 호출 = 프레임 1 회 요청**이다. 유발 경로는 여러 갈래지만 전부 이 한 지점으로
-//! 수렴하므로, 상한도 여기 한 곳에 건다.
-//!
-//! # 왜 상한이 필요한가
-//!
-//! 프레임 하나의 비용은 환경에 따라 자릿수가 다르다. 원격 데스크톱(xrdp 계열)을
-//! 경유하면 GPU 스캔아웃 경로가 없어 present 마다 GPU→CPU readback → X11 `PutImage`
-//! → 서버측 재인코딩을 타므로, 프레임당 화면 전체(1920×1080×4B ≈ 8MB)가 소켓으로
-//! 흐른다. tasty 는 원격 attach 를 1급 시나리오로 두므로(`docs/identity.md`) 이
-//! 경로는 예외 상황이 아니다. 그리고 **디스플레이 주사율을 넘겨 그린 프레임은 화면에
-//! 나타나지 못한 채 그 비용만 물고 버려진다** — 상한이 없으면 에이전트 여럿이 동시에
-//! 출력을 쏟는 tasty 의 주 워크로드에서 그 초과분이 그대로 쌓인다.
-//!
-//! # 무엇을 묶고 무엇을 통과시키는가
-//!
-//! 사용자 조작발 요청([`RepaintSource::Interactive`])은 **항상 즉시** 통과한다. 상한을
-//! 걸면 타이핑·클릭 반응성이 그만큼 그대로 나빠지기 때문이다. 반대로 출력·애니메이션발
-//! 요청은 사람이 개별 프레임을 구분하지 못하므로 주사율까지 묶는다.
-//!
-//! # dirty 를 억제하지는 않는다
-//!
-//! 게이트는 `request_redraw()` 를 **미룰** 뿐 `dirty` 를 지우거나 요청을 버리지 않는다.
-//! 미뤄진 요청은 [`RepaintGate::deferred_deadline`] 이 알려주는 시각에
-//! `about_to_wait` 이 `ControlFlow::WaitUntil` 로 재예약해 반드시 발화한다.
-//! `render_if_dirty`(`src/view/main/redraw.rs`)의 doc 주석이 명시하듯 attach 서버의
-//! 원격 mirror 중계는 `dirty` 프레임에 종속돼 있어, 프레임을 **없애면** 원격 사용자
-//! 화면이 굶는다. 상한은 cadence 만 주사율에 맞추고 프레임 자체는 계속 흐르게 한다.
-//!
-//! # 계측
-//!
-//! 유발원별 통과/지연 횟수와 실제 present 횟수를 1 초 창으로 집계해 한 줄 dump 한다.
-//! `src/gfx/perf.rs` 와 같은 관례 — 전용 target 이라 기본 stderr 필터(warn)에서는
-//! 나오지 않는다. `TASTY_LOG=tasty::view::repaint=info` 로 stderr 에 켜고, dev 빌드는
-//! 파일 필터가 `debug` 라 `~/.tasty-debug/debug-dev.log` 에 그냥 남는다.
+//! 요청의 통과·지연과 실제 present 횟수를 1초 단위로 기록한다.
+//! 로그: TASTY_LOG=tasty::view::repaint=info.
 
 use std::time::{Duration, Instant};
 
@@ -59,8 +27,7 @@ impl RepaintSource {
     }
 }
 
-/// 주사율을 얻지 못했을 때의 기본 상한. 오늘날 가장 흔한 주사율이라 여기 맞추면
-/// 대부분의 환경에서 눈에 띄는 손해가 없다.
+/// 모니터 주사율을 얻지 못했을 때 사용할 기본 상한.
 const FALLBACK_REFRESH_HZ: u32 = 60;
 /// 주사율 재조회 주기. 창을 다른 모니터로 옮기거나 모드가 바뀌는 것을 따라가되,
 /// `current_monitor()` 조회(X11 은 서버 왕복이 있을 수 있다)를 프레임마다 하지는 않는다.
@@ -72,10 +39,8 @@ const MAX_REFRESH_HZ: u32 = 480;
 /// 계측 집계 창.
 const STATS_WINDOW: Duration = Duration::from_secs(1);
 
-/// 모니터가 보고한 주사율(millihertz)에서 최소 프레임 간격을 구한다.
-///
-/// 고정 상수로 박지 않는 이유는 고주사율 환경에서 그 상수가 **오히려 상한**이 되기
-/// 때문이다. 보고값이 없거나(0 포함) 상식 범위를 벗어나면 clamp 해 방어한다.
+/// 모니터가 보고한 millihertz에서 최소 프레임 간격을 구한다.
+/// 값이 없거나 0이면 기본값을 쓰고, 그 외에는 허용 범위로 제한한다.
 fn min_interval_from_millihertz(millihertz: Option<u32>) -> Duration {
     let mhz = millihertz
         .filter(|m| *m > 0)
@@ -93,7 +58,7 @@ pub struct RepaintGate {
     interval_checked_at: Option<Instant>,
     /// 마지막으로 실제 프레임을 그린 시각. 상한 창의 기준점.
     last_present: Option<Instant>,
-    /// 상한에 걸려 미뤄진 요청의 발화 예정 시각.
+    /// 미룬 요청을 다시 처리할 예정 시각.
     deferred_until: Option<Instant>,
     stats: RepaintStats,
 }
@@ -113,10 +78,8 @@ impl RepaintGate {
         }
     }
 
-    /// 요청 하나를 받아 **지금 `request_redraw()` 를 할지** 판정한다.
-    ///
-    /// `false` 를 반환해도 요청은 버려지지 않는다 — [`Self::deferred_deadline`] 으로
-    /// 미뤄질 뿐이며, 호출자(`about_to_wait`)가 그 시각에 반드시 발화시킨다.
+    /// 지금 redraw를 요청할지 반환한다. false면 deferred_deadline까지 미루며
+    /// 호출자가 그 시각을 예약해야 한다.
     pub fn admit(
         &mut self,
         source: RepaintSource,
@@ -154,8 +117,7 @@ impl RepaintGate {
         }
     }
 
-    /// 아직 만기 전인 미뤄둔 요청의 발화 예정 시각. `about_to_wait` 이 이 값으로
-    /// `WaitUntil` 을 재예약한다 — 빠뜨리면 미뤄진 프레임이 영영 오지 않는다.
+    /// 미룬 요청의 예정 시각. about_to_wait에서 WaitUntil로 예약한다.
     pub fn deferred_deadline(&self) -> Option<Instant> {
         self.deferred_until
     }
@@ -293,8 +255,7 @@ mod tests {
         );
     }
 
-    /// 보고값이 없으면 60Hz 기본값. 고정 상수를 박지 않는 이유의 반대면 —
-    /// 알 수 없을 때만 쓰는 폴백이다.
+    /// 주사율을 알 수 없으면 60Hz를 쓴다.
     #[test]
     fn min_interval_falls_back_to_60hz() {
         assert_eq!(
@@ -343,7 +304,7 @@ mod tests {
         let t0 = Instant::now();
         gate.note_present(t0);
 
-        // 창이 열리기 전 요청들은 전부 하나의 만기 시각으로 접힌다.
+        // 최소 간격이 지나기 전 요청은 하나의 예정 시각으로 합친다.
         for i in 1..=5 {
             assert!(!gate.admit_at(RepaintSource::TerminalOutput, t0 + Duration::from_millis(i)));
         }
@@ -352,9 +313,9 @@ mod tests {
             Some(t0 + Duration::from_millis(20))
         );
 
-        // 만기 전에는 발화하지 않는다.
+        // 예정 시각 전에는 처리하지 않는다.
         assert!(!gate.take_due(t0 + Duration::from_millis(19)));
-        // 만기 후 정확히 1 회 발화하고 슬롯이 비워진다 — 유실도 중복도 없다.
+        // 예정 시각 뒤 한 번 처리하고 비운다.
         assert!(gate.take_due(t0 + Duration::from_millis(20)));
         assert!(!gate.take_due(t0 + Duration::from_millis(21)));
         assert_eq!(gate.deferred_deadline(), None);

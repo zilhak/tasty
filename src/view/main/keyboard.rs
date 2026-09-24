@@ -19,8 +19,7 @@ struct KeyboardReadState {
     option_as_meta: bool,
 }
 
-/// 키 처리 후 UI 가 직접 수행해야 하는 *터미널 자체 mutate* 동작. PTY input 과
-/// 무관 (옛 코드의 `terminal.scroll_*` / `scroll_to_bottom` 호출 분리).
+/// 키 처리 뒤 호출자가 적용할 터미널 스크롤 동작. PTY 전송과 별도로 처리한다.
 enum KeyboardScrollAction {
     None,
     ScrollUp(usize),
@@ -81,7 +80,7 @@ impl MainView {
             return;
         }
 
-        // 0단계: 전체화면 무대가 떠 있으면 여기서 전부 끝난다(1~9단계로 내려가지 않는다).
+        // 전체화면 무대가 열려 있으면 배경으로 키를 보내지 않는다.
         if self.try_consume_fullscreen_stage_key(event) {
             return;
         }
@@ -112,7 +111,6 @@ impl MainView {
             return;
         }
 
-        // ── Central keyboard dispatch: route to exactly one surface ──
         let surface_type = self.state.focused_surface_type(&self.core_state);
         let typing_surface_id = self.state.focused_surface_id(&self.core_state);
 
@@ -135,9 +133,7 @@ impl MainView {
         }
     }
 
-    /// Ctrl/Cmd/Alt 가 눌린 동안 IME 조합(예: Korean)이 logical_key 를 조합문자로
-    /// 덮어써도 physical key code 로 US 레이아웃 base 문자를 복원한다. 6단계 단축키
-    /// 매칭과 9단계 터미널 포워딩이 동일 로직이라 공용 헬퍼로 통합.
+    /// 수식키를 누른 동안 IME가 logical_key를 바꿔도 physical key에서 US 문자를 찾는다.
     fn shortcut_lookup_key(&self, event: &winit::event::KeyEvent) -> Key {
         if self.base.modifiers.control_key()
             || self.base.modifiers.super_key()
@@ -150,22 +146,10 @@ impl MainView {
         }
     }
 
-    /// 0단계: 전체화면 무대가 활성이면 **모든 키를 여기서 소비**한다. 소비 시 true.
-    ///
-    /// 1~3단계(double-tap)보다 앞에 있어야 한다 — 무대는 뒤 세계와 로직상 무관하므로
-    /// 뒤 세계의 어떤 단축키도(double-tap 포함) 무대 중에 발화하면 안 된다. 4단계
-    /// (`try_consume_escape_key`)보다 앞인 것이 ESC 비전파의 실체다: 무대 중 ESC 는
-    /// 여기서 무대만 닫고 `return` 하므로 settings/notifications 닫기 경로에 도달하지
-    /// 않는다. 무대가 없으면 no-op 이라 기존 파이프라인은 그대로다.
-    ///
-    /// 키가 **무대 콘텐츠로 전달되는 경로는 여기가 아니다** — 무대는 egui 프레임 안에
-    /// 그려지므로 `MainView::handle_event` 가 무대 중 키/IME 를 egui 입력 시스템으로
-    /// 먹인다(오버레이와 같은 취급). 이 함수는 그 뒤에 남은 잔여 입력이 뒤로 새지
-    /// 않게 막는 쪽만 담당한다.
+    /// 전체화면 무대가 열려 있으면 배경 단축키와 Escape 처리를 막는다.
+    /// 무대 콘텐츠로의 키·IME 전달은 handle_event의 egui 입력 경로에서 처리한다.
     fn try_consume_fullscreen_stage_key(&mut self, event: &winit::event::KeyEvent) -> bool {
-        // 조회 키는 나머지 파이프라인과 같은 규칙(`shortcut_lookup_key`)으로 고른다 —
-        // 사용자가 종료 키를 modifier 조합으로 바꾸면 그때부터 물리 키 기준 매칭이
-        // 필요해지고, 기본값 ESC 는 modifier 가 없어 어느 규칙이든 같은 값이다.
+        // 사용자 지정 종료 키도 일반 단축키와 같은 규칙으로 찾는다.
         let key = self.shortcut_lookup_key(event);
         let decision = stage_key_decision(
             self.state.fullscreen_stage_active(),
@@ -188,29 +172,14 @@ impl MainView {
         }
     }
 
-    /// 무대 중 완성된 double-tap 결과를 버린다. 검출기 자체에는 press/release 를 계속
-    /// 먹인다(물리 상태를 놓치면 무대를 나온 뒤 판정이 어긋난다) — 대신 완성된 결과만
-    /// 여기서 소진해 무대 중에도, 무대를 나온 직후에도 발화하지 않게 한다.
+    /// 무대 중에는 double-tap 결과만 버린다.
+    /// 검출기에는 press/release를 계속 전달해 실제 키 상태를 유지한다.
     fn discard_pending_double_tap(&mut self) {
         let _discarded = self.double_tap.take();
     }
 
-    /// 1~3단계: double-tap modifier 단축키(예: Shift+Shift) 소비. 소비 시 true.
+    /// double-tap 수식키 단축키를 처리했으면 true를 반환한다.
     fn try_consume_double_tap_key(&mut self) -> bool {
-        // Check for double-tap modifier shortcut (e.g. Shift+Shift)
-        //
-        // **열기 요청 래치를 보는 분기가 여기 있었고, 지웠다.** 그 분기는 래치가 참인
-        // 동안 완성된 double-tap 을 삼켰는데, 삼키는 이유가 원래는 **캡처**였다 —
-        // 키바인딩 레코더로 넘기려고 `AppState` 에 받아 적었다. 그 대입은 읽는 자리가
-        // 0 건이었고, 진짜 레코더 경로는 `SettingsView` 가 **자기 detector** 로
-        // 따로 갖는다(`src/view/settings.rs` → `src/view/settings/ui/keybindings_tab.rs`).
-        // 설정 창은 별도 winit 창이라 떠 있는 동안 이 창에는 키가 안 온다 — 이쪽
-        // 경로는 그 기능에 한 번도 쓰인 적이 없는 중복이었다.
-        //
-        // 캡처가 빠지고 남은 것은 **이유 없는 삼킴**이었다. 지운 것은 도달 불가라서가
-        // 아니라(도달은 된다 — 사이드바 버튼 클릭과 double-tap 완성이 한 프레임 경계
-        // 안에 겹치면 된다) **버릴 근거가 없어서**다. 같은 래치를 보는 Escape 분기는
-        // 남아 있고 그쪽은 성질이 다르다 — 대기 중인 열기 요청을 **취소**하고 삼킨다.
         if let Some(dt) = self.double_tap.take()
             && self.handle_double_tap_shortcut(dt)
         {
@@ -221,11 +190,8 @@ impl MainView {
         false
     }
 
-    /// 등록된 단축키가 실제로 소비된 시점에 modifier-hint 표시 지연 타이머를 리셋한다
-    /// — 홀드를 유지한 채 단축키를 계속 쓰는 동안에는 도움말 오버레이가 뜨지 않게
-    /// 하기 위함. **키 입력 경로에서만** 호출해야 한다(원칙1) — Command Palette 가
-    /// 공유하는 `dispatch_action_by_id`(`shortcuts/dispatch.rs`) 안에는 이 호출을
-    /// 넣지 않는다. 홀드 중이 아니면 no-op(`ModifierHintRuntime::reset_reveal_timer_if_not_shown`).
+    /// 키보드 단축키를 사용하면 수식키 도움말의 표시 지연을 다시 시작한다.
+    /// 팔레트 실행에는 적용하지 않으며 수식키를 누르고 있지 않으면 아무것도 하지 않는다.
     fn reset_modifier_hint_reveal_timer(&mut self) {
         let theme = crate::theme::theme();
         self.state
@@ -233,20 +199,11 @@ impl MainView {
             .reset_reveal_timer_if_not_shown(&theme);
     }
 
-    /// 4단계: Escape 로 settings / notifications 팝업 닫기 소비. 소비 시 true.
+    /// Escape로 설정 열기 요청을 취소하거나 알림·포커스된 팝업을 닫는다.
     fn try_consume_escape_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         if event.logical_key == Key::Named(NamedKey::Escape) {
             if self.state.settings_open_requested {
-                // ★ 세 문장이 서로 다른 판정을 받는다. 남는 둘은 각각 근거가 있다:
-                //   · `settings_open_requested = false` — 대기 중인 **열기 요청**을
-                //     취소한다. 모달이 이미 떠 있으면 이 분기는 애초에 도달하지 않는다
-                //     (`src/view/main.rs` 의 모달 분기가 `KeyboardInput` 을 먼저 끊는다).
-                //   · `return true` — 관측 가능한 삼킴이다.
-                // 지운 것은 `settings_ui_state = SettingsUiState::new()` 한 줄이다.
-                // `AppState::settings_ui_state` 는 이 한 줄의 쓰기뿐이고 읽기가 0 건이었다
-                // — 살아 있는 쪽은 `SettingsView` 가 자기 안에 가진 같은 이름의 별개
-                // 필드(`src/view/settings.rs`)이고, 그쪽은 자기 안에서 쓰고 읽는다.
-                // 쓰기가 사라지자 컴파일러가 `never read` 로 잡아 필드도 함께 지웠다.
+                // 아직 처리하지 않은 설정 창 열기 요청을 취소한다.
                 self.state.settings_open_requested = false;
                 self.mark_dirty();
                 return true;
@@ -261,25 +218,9 @@ impl MainView {
                 self.mark_dirty();
                 return true;
             }
-            // 위 둘 다 아니면 **포커스된 host popup** 을 푼다. 이것이 키보드의 탈출구다.
-            //
-            // 없으면 어떻게 되는가: 포커스된 popup 은 `keyboard_overlay_open` 을 참으로
-            // 만들고, 그러면 단축키 **테이블 전체**가 아래 6단계에 진입조차 못 한다. 그
-            // 상태를 푸는 길이 지금까지 마우스뿐이었다 — 바깥을 클릭하면 non-sticky popup
-            // 의 포커스가 풀린다(`adapters/ui/popup/draw.rs`). 키보드만 쓰는 사용자에게는
-            // 그 길이 없었다.
-            //
-            // **새 정책이 아니라 이미 있는 정책의 두 번째 입구다.** 바깥 클릭과 같은
-            // 의미로 푼다 — 포커스를 놓고, `close_on_outside_click` 인 것만 닫는다.
-            // 그래서 "Escape 는 무엇을 닫는가" 를 popup 마다 새로 판단할 필요가 없다.
-            //
-            // 범위만 좁힌다: 포커스된 **하나**만 본다. 바깥 클릭은 좌표를 가지므로 그
-            // 점을 안 담은 popup 전부를 가리킬 수 있지만 Escape 에는 좌표가 없다. 좌표
-            // 없는 키를 같은 범위로 쓰면 사용자가 가리킨 적 없는 popup 까지 닫힌다.
-            //
-            // 순서: settings → notifications → 이것. 앞의 둘은 포커스와 무관하게(열려만
-            // 있으면) 먹으므로 뒤로 밀면 동작이 바뀐다. 이 순서는
-            // `crates/tasty-doc-guards/tests/escape_dismisses_the_focused_popup.rs` 가 고정한다.
+            // 설정 요청과 알림을 먼저 처리한 뒤, 포커스된 팝업 하나의 포커스를 해제한다.
+            // 바깥 클릭과 같이 close_on_outside_click인 팝업만 닫는다.
+            // 순서 검증: crates/tasty-doc-guards/tests/escape_dismisses_the_focused_popup.rs.
             if let Some((id, closes)) = self.state.popups.focused_dismissal_target() {
                 self.state.popups.set_focused(id, false);
                 if closes {
@@ -295,8 +236,7 @@ impl MainView {
         false
     }
 
-    /// 6단계: 단축키 소비 + IME 조합 중이면 flush/clear 분기(★불가침 — 조건·순서 불변).
-    /// 호출부가 `!overlay_open` 을 이미 확인한 뒤 진입한다(단락평가로 원본과 순서 동일).
+    /// 오버레이가 없을 때 단축키를 처리하고 IME 조합 문자를 정리한다.
     fn try_consume_shortcut_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
         if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
@@ -306,18 +246,12 @@ impl MainView {
         false
     }
 
-    /// `handle_shortcut` 이 키를 소비한 직후의 후처리(★불가침 — 조건·순서 불변).
-    /// winit 키 경로(`try_consume_shortcut_key`)와 native webview 포워딩 경로
-    /// (`app::webview_keys`)가 **같은 후처리를 쓰도록** 여기 한 곳에 모은다 — 한쪽만
-    /// 빠뜨리면 `enter_copy_mode` 같은 deferred 단축키가 webview 위에서만 죽는다.
+    /// winit과 native webview가 단축키 처리 뒤 함께 사용하는 후처리.
     pub(crate) fn after_shortcut_consumed(&mut self) {
         self.reset_modifier_hint_reveal_timer();
         if self.ime_preedit.is_some() {
-            // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
-            // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
-            // plugin popup 은 이 시점에 아직 캐시에 반영되지 않았다(open 은
-            // `pending_popup_opens` 를 거쳐 다음 tick 에 실행된다) — 그래서 큐가
-            // 비어 있지 않은지로 "방금 이 단축키가 popup 을 요청했는가" 를 본다.
+            // 팝업을 여는 단축키는 조합 문자를 버리고, 그 외에는 PTY로 확정 전송한다.
+            // plugin 팝업은 아직 캐시에 없을 수 있으므로 열기 요청 큐도 확인한다.
             if self.state.popups.has_focused()
                 || self.state.plugin_popup_open
                 || !self.state.pending_popup_opens.is_empty()
@@ -327,13 +261,11 @@ impl MainView {
                 self.flush_ime_preedit();
             }
         }
-        // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
         self.try_enter_vi_copy_mode();
         self.mark_dirty();
     }
 
-    /// 7단계: vi copy-mode 활성 시 키 가로채기. Ctrl-only 폴백이라(6·9단계와 조건이
-    /// 달라) shortcut_lookup_key 로 통합하지 않고 내부에 verbatim 유지. 소비 시 true.
+    /// vi 복사 모드의 키를 처리한다. physical key 대체는 Ctrl만 누른 경우에 적용한다.
     fn try_consume_vi_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         let vi_key = if self.base.modifiers.control_key() {
             crate::shortcuts::physical_key_to_logical(&event.physical_key)
@@ -348,14 +280,9 @@ impl MainView {
         false
     }
 
-    /// 9단계: 포커스된 터미널로 키 포워딩. IME 활성 시 non-ASCII text 억제(Commit 처리),
-    /// modifier 시 physical 폴백(Ctrl+letter). scroll 은 borrow 분리를 위해 별 메서드로.
+    /// 포커스된 터미널로 키를 보낸다. IME 조합 문자는 Commit에서 보낸다.
     fn forward_key_to_terminal(&mut self, event: &winit::event::KeyEvent) {
-        // Forward to terminal.
-        // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
-        // composition — Ime::Commit will handle it). ASCII text (numbers,
-        // punctuation like 1234567890,./) passes through IME unchanged and
-        // won't generate Ime::Commit, so we must send it here.
+        // Commit이 따로 오지 않는 ASCII 문자와 구두점은 여기서 전달한다.
         let text_for_terminal = if self.ime_active {
             match &event.text {
                 Some(t) if t.as_str().is_ascii() => &event.text,
@@ -364,14 +291,10 @@ impl MainView {
         } else {
             &event.text
         };
-        // When modifiers are held, prefer the physical key for Ctrl+letter
-        // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
-        // prevent control characters from being sent.
+        // IME 조합 중에도 Ctrl+문자 입력을 위해 물리 키를 사용한다.
         let terminal_key = self.shortcut_lookup_key(event);
 
-        // option_as_meta 필드는 macOS 전용(#[cfg(target_os = "macos")]) 이므로
-        // 비-macOS 빌드가 깨지지 않도록 cfg 분기로 값을 산출해 항상 bool 을 넣는다.
-        // 이렇게 하면 decide_key_to_terminal 본문은 플랫폼 무관하게 유지된다.
+        // Option as Meta 설정은 macOS에만 있으므로 다른 플랫폼은 false를 쓴다.
         #[cfg(target_os = "macos")]
         let option_as_meta = self.core_state.settings.general.option_as_meta;
         #[cfg(not(target_os = "macos"))]
@@ -430,11 +353,8 @@ impl MainView {
         }
     }
 
-    /// 9단계(egui-mesh 변형): 포커스된 egui-mesh surface(markdown/image 등)로 키 누름 +
-    /// 텍스트를 forward. terminal forward 와 동형이되 대상이 plugin egui `TextEdit` 이라,
-    /// Key wire 이벤트 + (조건부) Text wire 이벤트를 surface 입력 큐에 누적한다.
-    /// Text 는 [`should_forward_text`] 로 걸러 command modifier·제어문자·IME 조합 중
-    /// non-ASCII 를 억제한다(조합 결과는 IME `Commit` 으로 별도 도착 — `ime.rs`).
+    /// 포커스된 egui-mesh surface로 Key와 허용된 Text 이벤트를 보낸다.
+    /// should_forward_text가 수식키·제어문자·IME 조합 문자를 걸러낸다.
     fn forward_key_to_egui_mesh(&mut self, surface_id: u32, event: &winit::event::KeyEvent) {
         self.egui_mesh_push_key(surface_id, event);
 
@@ -461,9 +381,7 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// 9단계 내 scroll match. `forward_key_to_terminal` 이 `focused_terminal`(read)
-    /// 로 read_state 를 만든 뒤 scroll 은 `focused_terminal_mut`(write) 재차용이
-    /// 필요해, read borrow 종료 후 mut borrow 하도록 별 메서드로 분리(borrow checker).
+    /// 터미널의 읽기 차용이 끝난 뒤 스크롤 상태를 변경한다.
     fn apply_keyboard_scroll_action(&mut self, action: KeyboardScrollAction) {
         match action {
             KeyboardScrollAction::None => {}
@@ -485,10 +403,7 @@ impl MainView {
         }
     }
 
-    /// 키 입력을 PTY payload + scroll action 으로 변환. terminal mutate 0 —
-    /// 호출자가 `KeyboardSendOutcome` 으로 받아 dispatch_intent + scroll_action
-    /// 분리 처리. application_cursor_keys / is_alternate_screen / scroll_offset
-    /// / rows 는 호출자가 미리 read 해서 `KeyboardReadState` 로 전달.
+    /// 키를 PTY 전송 데이터와 스크롤 동작으로 변환한다. 실제 반영은 호출자가 한다.
     fn decide_key_to_terminal(
         state: KeyboardReadState,
         key: &Key,
@@ -677,7 +592,6 @@ impl MainView {
                     #[cfg(not(windows))]
                     push_bytes(&mut payloads, &[ctrl_char]);
                     sent = true;
-                    // 옛 코드의 early return (scroll_to_bottom 분기 우회).
                     return KeyboardSendOutcome {
                         payloads,
                         scroll_action,
@@ -685,10 +599,7 @@ impl MainView {
                         sent,
                     };
                 }
-                // macOS "Option as Meta": Option(Alt)+문자를 ESC-prefix Meta 시퀀스로
-                // 인코딩한다. 물리 Option 키만(Ctrl/Cmd 동시 누름 제외) 대상이며, base
-                // 문자(=key 파라미터, Alt 시 이미 physical 기반 US 레이아웃 문자)를 쓴다.
-                // 합성된 특수문자(text, 예: å)가 아니라 base 문자('a')를 ESC 와 묶어야 한다.
+                // Option as Meta는 조합된 문자 대신 물리 키의 US 문자를 사용한다.
                 if state.option_as_meta
                     && modifiers.alt_key()
                     && !modifiers.control_key()
@@ -758,10 +669,7 @@ fn should_forward_text(text: &str, is_cmd: bool, ime_active: bool) -> bool {
     text.chars().all(is_printable_char)
 }
 
-/// 0단계 무대 게이트의 순수 판정([`MainView::try_consume_fullscreen_stage_key`]).
-/// `MainView` 는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어 게이트 메서드 자체를 단위
-/// 테스트로 못 돌린다 — mouse.rs 의 `cursor_moved_should_short_circuit` 과 같은 이유로
-/// 판정만 순수 함수로 떼어 테스트한다.
+// 키 처리 결과는 GPU 없이 확인한다. 실제 이벤트 전달은 별도 검증 대상이다.
 #[derive(Debug, PartialEq, Eq)]
 enum StageKeyDecision {
     /// 무대 없음 — 기존 파이프라인(1단계~)으로 그대로 흘린다.
@@ -788,17 +696,7 @@ fn stage_key_decision(
     }
 }
 
-/// 무대 종료 키 판정 — **바인딩 값을 읽는 단 하나의 지점**. 값 자체는
-/// `KeybindingSettings::fullscreen_stage_exit`(기본 `["escape"]`)에 있고 여기서는
-/// 조회만 한다(CLAUDE.md 단축키 정책: 하드코딩 금지).
-///
-/// 이 조회가 **무대 게이트 안에만** 있는 것이 회귀 방지의 핵심이다 — 무대가 없으면
-/// `stage_key_decision` 이 여기 오기 전에 `PassThrough` 로 빠지므로, 기본값 ESC 가
-/// settings/notifications 닫기나 터미널 `\x1b` 전달을 훔칠 경로가 아예 없다.
-///
-/// 바인딩이 빈 vec 이면 항상 false 다 — 키보드 종료 수단만 사라지고, 무대 셸이 항상
-/// 그리는 종료 버튼(`adapters::ui::fullscreen::draw_fullscreen_stage`)이 남으므로
-/// 탈출 불가 상태가 되지 않는다.
+// 무대가 없으면 무대 종료 키를 소비하지 않는다. 종료 키가 비어 있으면 버튼으로 닫는다.
 fn stage_exit_key_matches(exit_bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     crate::shortcuts::matches_any_binding(exit_bindings, key, mods)
 }
@@ -841,28 +739,18 @@ mod tests {
         ModifiersState::empty()
     }
 
-    /// 바인딩 문자열의 `alt` 토큰이 실제로 요구하는 winit modifier.
-    ///
-    /// modifier 매핑은 물리 위치 기반이라 macOS 에서 바인딩 `alt` 는 Command(winit
-    /// `SUPER`) 에, 그 외 플랫폼에서는 Alt 에 대응한다(`matches_binding` 의 플랫폼
-    /// 분기, `docs/design/policies/key-mapping.md`). 여기에 `ModifiersState::ALT` 를
-    /// 직접 쓰면 macOS 에서는 Option 이 눌린 것이라 `alt` 바인딩과 매칭되지 않는다.
+    // macOS의 Command와 다른 플랫폼의 Alt를 구분한다.
     #[cfg(target_os = "macos")]
     const BINDING_ALT: ModifiersState = ModifiersState::SUPER;
     #[cfg(not(target_os = "macos"))]
     const BINDING_ALT: ModifiersState = ModifiersState::ALT;
 
-    /// 게이트가 실제로 조회하는 값과 같은 출처를 쓴다 — 기본 프리셋의
-    /// `fullscreen_stage_exit`. 여기에 리터럴 `["escape"]` 를 쓰면 프리셋이 바뀌어도
-    /// 테스트가 통과해 버린다.
+    // 기본 설정의 실제 종료 키와 처리 결과를 대조한다.
     fn default_exit_bindings() -> Vec<String> {
         crate::settings::KeybindingSettings::default().fullscreen_stage_exit
     }
 
-    /// 무대 중 ESC 는 0단계에서 끝난다 — 4단계(`try_consume_escape_key`, settings 모달·
-    /// notifications 팝업 닫기)에 **도달하지 않는다**. 0단계가 4단계보다 앞에 있고
-    /// `ExitStage` 가 즉시 `return` 으로 이어진다는 배선은
-    /// `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 구조로 고정한다.
+    // 배경 단축키 차단 순서는 fullscreen_stage_input_gate 검사도 확인한다.
     #[test]
     fn stage_gate_blocks_escape_from_reaching_popup_close() {
         assert_eq!(
@@ -920,9 +808,7 @@ mod tests {
         ));
     }
 
-    /// 사용자가 바인딩을 바꾸면 그 키로 닫히고 ESC 로는 안 닫힌다 — 값이 정말
-    /// 설정에서 오는지(하드코딩이 남아 있지 않은지)를 가르는 단정이다. 모디파이어는
-    /// 플랫폼 규칙(`BINDING_ALT`)으로 만들어 세 플랫폼 모두에서 같은 검증을 유지한다.
+    // 설정에서 읽은 종료 키를 사용한다.
     #[test]
     fn stage_exit_follows_the_configured_binding() {
         let rebound = vec!["ctrl+alt+q".to_string()];

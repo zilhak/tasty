@@ -45,8 +45,7 @@ pub enum PendingOp {
     At,
 }
 
-/// 매크로 buffer 에 저장하는 키 — winit `Key` 의 lifetime 의존을 끊기 위해
-/// 평탄화된 표현.
+/// winit Key의 수명과 독립적으로 보관하는 매크로 키.
 #[derive(Debug, Clone)]
 pub struct MacroKey {
     pub repr: String,
@@ -119,7 +118,7 @@ pub struct MacroRecording {
     pub keys: Vec<MacroKey>,
 }
 
-/// replay 재귀 깊이 한도. 16 을 넘으면 무한 루프로 간주하고 중단.
+/// 매크로 재생의 재귀 깊이 제한.
 pub const MAX_REPLAY_DEPTH: u8 = 16;
 
 /// vi copy mode state.
@@ -298,9 +297,7 @@ fn word_jump_once(
     kind: WordJump,
     total_rows: usize,
 ) -> SelectionPoint {
-    // 평탄화: 현재 cursor 시점 ±20 row 범위로 (col, char) 시퀀스를 만들고
-    // 그 위에서 일반적인 word boundary scan. 충분히 넓으면 실용상 무한 스크롤백
-    // 모두 다룰 필요가 없다.
+    // 커서 앞뒤 20행으로 단어 검색 범위를 제한한다.
     let span: isize = 30;
     let from = (start.absolute_row as isize - span).max(0) as usize;
     let to = ((start.absolute_row as isize + span) as usize).min(total_rows.saturating_sub(1));
@@ -430,10 +427,8 @@ pub enum ViKeyOutcome {
     MacroReplayFailed,
 }
 
-/// 메인 키 dispatcher. cursor / visual / count / search 상태를 mutate.
-/// terminal read-only 로 word_jump 등에 필요. PTY 송신은 전혀 안 일어남.
-/// 매크로 녹화 중인 키는 outcome 이 `MacroRecordToggle` 이 아닌 경우에 한해 자동
-/// 누적된다. replay 중 (`replay_depth > 0`) 키는 녹화에 다시 누적되지 않는다.
+/// 복사 모드의 커서·선택·검색·매크로 상태를 갱신한다. PTY에는 보내지 않는다.
+/// 녹화 시작·중단 키와 재생 중인 키는 녹화에 포함하지 않는다.
 pub fn handle_vi_key(
     vi: &mut ViCopyMode,
     terminal: &tasty_terminal::Terminal,
@@ -498,9 +493,7 @@ fn handle_vi_key_inner(
         }
     }
 
-    // pending_op 분기: 직전 키로 시작된 double-key 시퀀스 대기 중.
-    // 'g' 가 두 번째로 들어오면 top 이동, 그 외 키면 pending 만 취소 + 정상 처리 계속.
-    // (`5gg` 의 경우 count_buf 는 첫 'g' 의 take_count() 에서 이미 소비됨 — §단순화 정책.)
+    // 첫 g에서 count를 이미 소비했다. 다음 키가 g가 아니면 대기를 취소하고 정상 처리한다.
     if let Some(op) = vi.pending_op.take() {
         match op {
             PendingOp::G => {
@@ -764,8 +757,6 @@ fn handle_vi_key_inner(
     }
 }
 
-// ─── MainView integration ───────────────────────────────────────────────────
-
 use crate::core::CoreState;
 use crate::selection::extract_selected_text;
 
@@ -999,8 +990,6 @@ impl MainView {
     }
 }
 
-/// 표준 입력 path 에서 호출하는 진입점. core_state 를 다시 한번 참조하지 않도록
-/// 별도 모듈로 분리하지 않고 same module.
 fn _module_uses_core_state(_: &CoreState) {}
 
 #[cfg(test)]
@@ -1008,10 +997,7 @@ mod tests {
     use super::*;
     use tasty_terminal::Terminal;
 
-    /// 셸도 parser 스레드도 없는 격자. 실제 PTY 를 띄우면 셸 프롬프트가 parser 스레드를
-    /// 거쳐 같은 격자에 비동기로 들어와, 시험이 `process_bytes` 로 쓴 내용과 경합한다
-    /// (공백만 쓴 행의 커서 자리에 프롬프트가 찍히면 `^` 가 그 칸을 첫 비공백으로 읽는다).
-    /// 이 시험들은 격자 내용만 보므로 입력은 전부 `process_bytes` 로 넣는다.
+    /// 셸 출력과 경합하지 않도록 PTY 없이 격자만 만들고 process_bytes로 입력한다.
     fn term(cols: usize, rows: usize) -> Terminal {
         Terminal::new_detached(cols, rows)
     }

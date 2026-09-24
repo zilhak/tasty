@@ -1,9 +1,5 @@
-//! Plugins modal window. Mirrors `SettingsView` structure.
-//!
-//! `App`이 `PluginManager`를 소유하므로, 모달은 직접 manager를 들고 있지 않고
-//! 읽기 전용 `PluginsSnapshot` + `pending_actions` 큐만 보유한다. 매 tick에서
-//! `App::process_plugins_window_actions()`가 큐를 비우고 manager에 적용한 뒤,
-//! 새 snapshot을 모달에 다시 주입한다.
+//! 플러그인 관리 모달. 읽기 전용 스냅샷을 표시하고 사용자 조작은 큐에 넣는다.
+//! App이 조작을 PluginManager에 반영한 뒤 스냅샷을 갱신한다.
 
 pub mod ui;
 

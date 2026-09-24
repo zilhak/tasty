@@ -23,9 +23,7 @@ impl MainView {
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
-        // 무대 중에는 링크 hover 를 계산하지 않는다 — 뒤의 터미널 좌표를 hit-test 하는
-        // 유령 판정이고, modifier 홀드(`ModifiersChanged`)는 무대 게이트를 타지 않아
-        // 이 경로가 무대 중에도 계속 불린다.
+        // 수식키 변경 때도 호출되므로 무대 중에는 배경 링크를 조회하지 않는다.
         let new_link = if !matches_mods
             || self.mouse_overlay_open()
             || self.state.popup_hovered
@@ -91,9 +89,7 @@ impl MainView {
         })
     }
 
-    /// `WindowEvent::CursorLeft` 처리 — 커서 상태 리셋 + hover 중이던 mesh
-    /// surface 가 있으면 `PointerGone` 을 forward 한다(egui-mesh/attach mesh mirror
-    /// 어느 쪽도 이 이벤트에서 직접 `PointerGone` 을 보내지 않던 gap 을 메운다).
+    /// 커서가 창을 벗어나면 상태를 비우고 이전 mesh 대상에 PointerGone을 보낸다.
     pub(super) fn handle_cursor_left(&mut self) {
         self.cursor_position = None;
         self.base.winit.set_cursor(CursorIcon::Default);
@@ -103,23 +99,14 @@ impl MainView {
         self.last_mouse_report_cell = None;
     }
 
-    /// 마우스 계층의 **최상위 차단 판정**(`docs/architecture/input-layer.md` 표의 1 단
-    /// 위). `handle_cursor_moved` · `handle_mouse_input`(click-to-activate press 가드
-    /// 포함) · `handle_mouse_wheel` 세 핸들러가 같은 값을 봐야 한 지점만 뚫려 입력이
-    /// 새는 일이 없다 — modifier-hint 오버레이가 4 지점 배선으로 해결한 것과 같은 문제다.
-    ///
-    /// 무대는 popup 과 달리 **좌표 hit-test 없이** 무조건 차단한다. 화면 전체를 덮으므로
-    /// "무대 위인가" 를 물을 이유가 없고, 뒤의 위젯은 그려지지도 않은 상태라 그 좌표로
-    /// 판정하는 것 자체가 유령 입력이다.
+    /// 전체화면 무대는 좌표에 관계없이 배경 마우스 입력을 막는다.
+    /// 이동·클릭·휠과 click-to-activate가 같은 판정을 사용한다.
     fn mouse_overlay_open(&self) -> bool {
         self.state.settings_open_requested || self.state.fullscreen_stage_active()
     }
 
-    /// mesh pointer hover 슬롯을 갱신한다(구성 요소는 `docs/dev-guide/egui-mesh-channel.md`
-    /// 참고). 대상이 바뀌면(다른 mesh surface
-    /// 로 전환되거나 어느 mesh surface 위도 아니게 되면) 이전 대상에 `PointerGone` 을
-    /// 1 회 forward 한다 — 안 그러면 plugin 쪽 egui 가 마지막 `PointerMoved` 위치에
-    /// 포인터가 계속 있다고 착각해 hover 하이라이트가 잔류할 수 있다.
+    /// hover 대상이 바뀌면 이전 mesh surface에 PointerGone을 보낸다.
+    /// 그렇지 않으면 plugin에 마지막 hover 표시가 남을 수 있다.
     pub(super) fn update_mesh_hover(&mut self, target: Option<MeshHoverTarget>) {
         let (next, gone) = mesh_hover_transition(self.mesh_pointer_hover, target);
         self.mesh_pointer_hover = next;
@@ -152,21 +139,14 @@ impl MainView {
             if self.hovered_link.take().is_some() {
                 self.mark_dirty();
             }
-            // 이 분기에 진입했다는 것 자체가 "이번 프레임엔 mesh surface 위가 아니다"라는
-            // 뜻이므로(mouse hover early-return, `docs/dev-guide/egui-mesh-channel.md` 참고)
-            // — 아래 mesh 판정 블록(180행대)에 도달하지 못한 채 return
-            // 하면 hover 중이던 mesh surface 가 PointerGone 을 영영 못 받는 gap 이 생긴다.
-            // mesh_hover_transition 이 멱등이라 같은 target 유지 중 매 프레임 호출돼도
-            // thrashing 없다.
+            // 아래 mesh 처리 전에 반환하므로 이전 대상의 hover를 여기서 해제한다.
             self.update_mesh_hover(None);
             self.mark_dirty();
             return;
         }
 
-        // 통합 리사이즈 커서 피드백 — 가장자리 margin 안이면 8방향을 저장하고
-        // egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 적용한다(egui 가 매
-        // 프레임 winit 커서를 덮으므로 프레임 내에서만 적용 가능). macOS 는 네이티브
-        // 데코라 제외(cfg 가드) — 그 외 OS 는 항상 None 유지.
+        // egui가 커서를 덮어쓰므로 리사이즈 방향을 저장해 렌더 프레임에서 적용한다.
+        // macOS는 native 장식이 처리한다.
         #[cfg(not(target_os = "macos"))]
         {
             let size = self.base.gpu.size();
@@ -188,13 +168,8 @@ impl MainView {
         let x = position.x as f32;
         let y = position.y as f32;
 
-        // egui-mesh surface 위 포인터 이동 forward (A1-S7): hover/interact_pos 추적용.
-        // 합성 채널이라 host 의 selection/링크 hover 와 무관 — 누적 후 소비한다.
-        // 단 divider 드래그 진행 중에는 forward 하지 않는다: divider(입력 z-order 순서 6)
-        // 가 surface 콘텐츠(순서 7, egui-mesh 포함)보다 우선해야, 드래그 중 커서가
-        // egui-mesh surface 영역으로 들어가도 아래 divider 갱신이 계속 실행된다
-        // (docs/architecture/input-layer.md). 이 가드가 없으면 여기서 early-return 되어
-        // divider 가 커서를 따라오지 못하고 멈춘다.
+        // divider 드래그 중에는 mesh로 전달하지 않아야 아래 드래그 갱신이 실행된다.
+        // 입력 우선순위: docs/architecture/input-layer.md.
         if self.dragging_divider.is_none()
             && let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y)
         {
@@ -220,22 +195,13 @@ impl MainView {
             self.mark_dirty();
         }
 
-        // Handle selection drag / 앱 보고 드래그 motion.
-        // 게이트가 둘이다: 로컬 선택은 좌버튼 전용(`left_mouse_down`)이고, 앱 보고는
-        // **보고된 press 가 있는 모든 버튼**(`report_buttons_down`)이다 — 우/미들
-        // 드래그도 1002/1003 규약대로 중간 motion 을 내보내야 한다.
+        // 로컬 선택은 좌버튼만, 앱 보고는 press를 보낸 모든 버튼의 드래그를 처리한다.
         let dragging_for_report = !self.report_buttons_down.is_empty();
         if (self.left_mouse_down || dragging_for_report) && self.dragging_divider.is_none() {
-            // Shift+좌클릭 우회 시퀀스(left_select_bypass)면 트래킹 motion 보고를 건너뛰고
-            // 곧장 로컬 선택 확장 경로로 떨어진다. 플래그 검사를 트래킹 보고 블록 *이전* 에
-            // 두어 early-return 으로 로컬 경로가 막히는 것을 방지한다.
+            // press 때 선택한 Shift 우회 상태를 motion과 release까지 유지한다.
             if !self.left_select_bypass {
-                // 트래킹 ON(CellMotion/AllMotion): 드래그 motion 을 앱에 보고 (셀 바뀔 때만).
-                // 앱이 마우스를 소유하므로 로컬 선택 확장은 하지 않는다.
-                //
-                // 대상은 **press 시점에 고정된 surface** 다 — 커서가 밴드나 이웃 surface
-                // 로 넘어가도 `mouse_cell_for_report` 의 클램프와 함께 원래 surface 기준
-                // 보고가 이어진다.
+                // 트래킹 앱에 셀 이동을 보고한다. 커서가 surface 밖으로 나가도
+                // press 때 정한 대상을 유지하고 좌표를 해당 surface에 맞춰 제한한다.
                 let track = self
                     .report_buttons_down
                     .last()
@@ -245,9 +211,7 @@ impl MainView {
                             .find_terminal_by_id(sid)
                             .map(|t| (sid, button, t.mouse_tracking()))
                     });
-                // 드래그 motion 은 1002 와 1003 이 **같다** — 둘 다 버튼이 눌린 동안의
-                // 셀 이동을 보고한다. 1003 고유 동작인 버튼 없는 hover 는 이 블록이
-                // 아니라 아래 `report_hover_motion` 이 담당한다.
+                // 1002와 1003 모두 버튼 드래그를 보고한다. 버튼 없는 1003 이동은 아래에서 처리한다.
                 if let Some((sid, button, mode)) = track
                     && matches!(
                         self.effective_click_tracking(sid, mode),
@@ -257,15 +221,12 @@ impl MainView {
                 {
                     let (col, row) = self.mouse_cell_for_report(sid, x, y);
                     if self.last_mouse_report_cell != Some((sid, col, row)) {
-                        // 버튼 비트는 실제 눌린 버튼 — 예전엔 0(좌)으로 하드코딩돼
-                        // 어떤 버튼으로 끌든 좌버튼 드래그로 보고됐다.
                         self.report_mouse_event(sid, x, y, button, true, false);
                     }
                     return;
                 }
             }
-            // 로컬 선택 확장은 **좌버튼 전용** — 우/미들 드래그가 여기로 새면 트래킹
-            // OFF 에서 무동작이던 계약이 깨진다.
+            // 우·미들 버튼 드래그로 로컬 선택을 바꾸지 않는다.
             let is_dragging =
                 self.left_mouse_down && self.text_selection.as_ref().is_some_and(|s| s.dragging);
             if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
@@ -275,9 +236,7 @@ impl MainView {
                 self.mark_dirty();
             }
         } else {
-            // 버튼을 누르지 않은 이동 — DECSET 1003(AnyEventMouse) 전용 hover 보고.
-            // 드래그 블록과 **배타적**이다: 드래그 중 motion 은 위쪽이 이미 원래
-            // surface 좌표로 보고하며, 그 경로는 아래 가드들에 걸리지 않는다.
+            // 버튼 없는 DECSET 1003 이동. 위 드래그 보고와 중복하지 않는다.
             self.report_hover_motion(x, y, &terminal_rect);
         }
 
@@ -318,14 +277,8 @@ impl MainView {
         // Cursor icon is determined in the egui render cycle (gfx/gpu.rs)
     }
 
-    /// `handle_event` 진입부 전용 래퍼 — 이 winit 이벤트가 "네이티브 메뉴를 닫는 바깥
-    /// 클릭" 사이클에 속하면 삼킴 상태를 전이하고 egui 에 `PointerGone` 을 넣는다.
-    ///
-    /// 삼키는 이벤트는 egui 입력 큐에 아예 넣지 않으므로 그 사이클의 press/release 쌍이
-    /// 완성되지 않는다 — 안 그러면 다음 프레임에 사이드바 행/탭/explorer 항목이 쌍을
-    /// 보고 `clicked()`(우클릭이면 `secondary_clicked()` → 새 메뉴 큐잉)를 발화해
-    /// 메뉴를 닫으려던 클릭이 그 밑의 위젯까지 실행한다. `PointerGone` 은 그 위에
-    /// hover 잔류/흘러든 press 상태까지 끊는 보강이다.
+    /// native 메뉴를 닫는 클릭의 press/release를 egui에 전달하지 않는다.
+    /// PointerGone도 보내 아래 위젯이 같은 클릭을 처리하거나 hover를 유지하지 않게 한다.
     pub(super) fn begin_menu_dismiss_swallow(&mut self, event: &winit::event::WindowEvent) -> bool {
         let winit::event::WindowEvent::MouseInput {
             state: button_state,
@@ -342,10 +295,8 @@ impl MainView {
         true
     }
 
-    /// 이 마우스 버튼 이벤트가 "네이티브 메뉴를 닫는 바깥 클릭" 사이클에 속하는지
-    /// 판정하고 삼킴 상태를 전이한다. `handle_event` 가 **egui feed 보다 먼저**
-    /// 이벤트당 정확히 한 번 부르고, 그 결과를 egui feed 게이트와
-    /// `handle_mouse_input` 이 공유한다.
+    /// 메뉴를 닫는 클릭인지 egui 전달 전에 한 번 판정한다.
+    /// 결과는 egui 입력 차단과 handle_mouse_input이 함께 사용한다.
     pub(super) fn take_menu_dismiss_swallow(
         &mut self,
         button_state: ElementState,
@@ -360,11 +311,8 @@ impl MainView {
         )
     }
 
-    /// 마우스 버튼 입력 라우팅 디스패처. 게이트(OS-resize → click-to-activate →
-    /// egui/overlay 소비 → egui-mesh) 를 순서대로 태운 뒤 버튼별 핸들러로 위임한다.
-    /// 좌표/라우팅 결정 수학은 이미 순수 함수(`resize_direction_at`·`pixel_to_grid`·
-    /// `right_click_delegates_to_app`·`left_click_local_select`)로 밖에 있어 이 계층은
-    /// **어느 state 메서드를 어떤 순서로** 부를지의 stateful 디스패치만 담당한다.
+    /// OS 리사이즈, 활성화 클릭, 오버레이, mesh 입력을 순서대로 처리한 뒤
+    /// 남은 클릭을 버튼별 핸들러에 전달한다.
     pub(super) fn handle_mouse_input(
         &mut self,
         button_state: ElementState,
@@ -372,21 +320,9 @@ impl MainView {
         egui_consumed: bool,
         menu_dismiss_swallow: bool,
     ) {
-        // 네이티브 컨텍스트 메뉴가 떠 있는 동안 winit 이 press 를 봤다는 것은
-        // 그 클릭이 메뉴 바깥이면서 메뉴의 grab 에도 안 잡혔다는 뜻이다(잡혔다면
-        // GTK 가 먼저 소비해 여기까지 오지 않는다). 그 클릭은 메뉴를 닫는 데만
-        // 쓰이고 **사이클 전체가 삼켜진다** — 판정/상태 전이는 호출부(`view/main.rs`
-        // `handle_event`)가 egui feed 보다 **먼저** 한 번만 수행하고(egui 입력 큐에도
-        // 안 들어간다), 여기서는 그 결정을 그대로 따른다. press 만 막고 release 를
-        // 흘리면 egui 가 다음 프레임에 쌍을 완성해 메뉴 밑 위젯의 `clicked()` 가
-        // 발화한다(`menu_dismiss_swallow_step` 주석 참고).
-        //
-        // grab 실패 시에도 바깥 클릭 dismiss 가 보장되어 워치독이 사실상 발화하지
-        // 않는다. 실제 결과 회수는 다음 프레임의 `poll_pending_native_menu` 가
-        // 한다(완료 경로 단일화).
-        // 물리적으로 떼진 버튼은 **무조건** 보고 스택에서 내린다 — 아래 어느 분기로
-        // early-return 하든(메뉴 삼킴 / egui 소비 / mesh forward) 눌린 채로 남으면
-        // 그 뒤의 hover 가 영영 드래그로 오인된다.
+        // native 메뉴 바깥 클릭의 소비 여부는 egui 전달 전에 이미 결정됐다.
+        // 물리 버튼을 놓으면 어느 경로로 반환하든 보고 스택에서 먼저 제거한다.
+        // 그렇지 않으면 이후 이동을 계속 드래그로 해석한다.
         if button_state == ElementState::Released
             && let Some(code) = report_button_code(button)
         {
@@ -432,10 +368,8 @@ impl MainView {
             return;
         }
 
-        // divider 드래그 진행 중이면 egui-mesh 로 버튼을 forward 하지 않는다: 마크다운/
-        // 이미지(egui-mesh) surface 위에서 좌클릭을 떼도 release 가 handle_left_release
-        // 로 흘러 divider 를 확정(resize 반영)하고 dragging_divider 를 해제해야 한다.
-        // forward 로 소비되면 드래그가 확정/해제되지 않아 sticky divider 가 된다.
+        // divider 드래그의 release는 mesh로 보내지 않는다. 아래 핸들러가
+        // 크기 변경을 확정하고 드래그 상태를 해제해야 한다.
         if self.dragging_divider.is_none()
             && self.try_forward_egui_mesh_button(button, button_state)
         {
@@ -453,15 +387,8 @@ impl MainView {
         }
     }
 
-    /// OS 가장자리 리사이즈 hit-test (위젯 우선순위 입력모델). 좌클릭 press 가 창
-    /// 가장자리 margin 안이면 OS 리사이즈를 시작하고 `true`(클릭 소비). macOS 는
-    /// 네이티브 데코라 이 경로를 타지 않는다(호출부 cfg 가드).
-    ///
-    /// `egui_consumed`(패널/Area 전체의 bounding rect 단위)가 아니라
-    /// `state.resize_edge_widget_hovered`(타이틀바/상태바의 실제 인터랙티브 버튼
-    /// 단위)로 게이트한다 — 그러지 않으면 상시 렌더되는 타이틀바(36px)·상태바(24px)
-    /// 스트립 전체가 `RESIZE_EDGE_MARGIN`(8px) 여유를 항상 삼켜, 버튼 없는 빈 여백
-    /// 에서도 리사이즈가 절대 시작되지 않는다(버그 재현 조건).
+    /// 창 가장자리에서 좌버튼을 누르면 OS 리사이즈를 시작한다. macOS는 제외한다.
+    /// egui 패널 전체가 아니라 실제 위젯의 hover를 확인해 빈 여백에서도 시작할 수 있게 한다.
     #[cfg(not(target_os = "macos"))]
     fn try_begin_os_resize(&mut self, button: MouseButton, button_state: ElementState) -> bool {
         if button == MouseButton::Left
@@ -614,11 +541,8 @@ impl MainView {
             .find_terminal_by_id(surface_id)
             .map(|t| t.mouse_tracking());
         let Some(tracking) = tracking else {
-            // 비-terminal surface(explorer/empty/markdown/image/webview/remote):
-            // 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임(release 시점)에 위임한다 —
-            // egui_panels 의 emit_surface_menu_fallback 이 Surface 메뉴를, explorer 는
-            // apply_explorer_action 이 Explorer 메뉴를 세팅한다. winit 은 terminal 전용
-            // (mouse-tracking/ADR-0015).
+            // 비터미널 surface의 메뉴는 egui 프레임에서 만든다.
+            // 여기서는 터미널의 트래킹 보고와 메뉴만 처리한다.
             return;
         };
         // 링크 위 우클릭은 tracking 위임보다 먼저 로컬 링크 메뉴로 간다 — 좌클릭이
@@ -656,14 +580,8 @@ impl MainView {
             );
             return;
         }
-        // Linux 는 release 에서 연다(Pressed 아님) — 버튼이 아직 눌려 있는
-        // 상태에서 GTK `popup_at_rect` 를 호출하면 팝업을 realize/map 하지
-        // 않고 조용히 no-op 한다(실측 확인: has_window/realized/mapped 모두
-        // false 로 영원히 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청
-        // 자체가 안 나감). 사이드바/탭바 메뉴는 egui `secondary_clicked()` 가
-        // release 시점에 발화해 원래도 이 문제를 안 겪었다. macOS/Windows 는
-        // `MenuOutcome::Ready` 로 항상 동기 처리되어 이 제약이 없으므로 기존
-        // press 시점 동작을 그대로 유지한다(불필요한 플랫폼 공통 동작 변경 방지).
+        // Linux는 버튼을 놓은 뒤 열어야 GTK popup_at_rect가 메뉴를 표시한다.
+        // macOS/Windows는 press에서 동기 처리한다.
         if button_state == terminal_menu_open_state() {
             let sf = self.base.gpu.scale_factor();
             self.state.dialogs.pending_native_menu =
@@ -719,9 +637,7 @@ impl MainView {
     fn handle_left_button(&mut self, button_state: ElementState) {
         if button_state == ElementState::Pressed {
             self.left_mouse_down = true;
-            // 새 클릭 사이클 진입 — 이전 클릭의 값이 새어 들어가지 않도록 명시적으로
-            // 리셋. 링크가 실제로 열리면 `try_handle_link_click` 이 아래에서 다시 true 로
-            // set 한다.
+            // 이전 클릭의 링크 실행 여부를 비운다.
             self.link_click_consumed = false;
             // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
             if self.vi_copy.is_some() {
@@ -763,11 +679,8 @@ impl MainView {
         if !(link_mods_match && button_state == ElementState::Pressed) {
             return false;
         }
-        // hard 점유(readonly)는 로컬 텍스트 선택(selection)은 허용하지만 링크 클릭은
-        // 계속 억제한다: 파일 열기/외부 URL 오픈은 되돌릴 수 없는 부수효과가 있고,
-        // hard 점유 화면은 최대 3초 지연된 mirror 스냅샷이라 그 시점에 보이는 링크가
-        // 실제 PTY 상태와 다를 수 있다(ADR-0021). false 를 반환하면 handle_left_button 이
-        // 기존처럼 press/release(선택·드래그)로 위임한다.
+        // hard 점유 화면은 지연된 스냅샷이므로 링크를 열지 않는다(ADR-0021).
+        // false를 반환해 로컬 텍스트 선택은 계속 허용한다.
         if let Some(sid) = self.state.surface_id_at_position(
             &self.core_state,
             x,
@@ -792,14 +705,9 @@ impl MainView {
             }
         }
         if let Some(hovered) = self.hovered_link.clone() {
-            // 이 press 는 링크오픈으로 로컬 소비된다 — release 는 tracking 앱에 보고하지
-            // 않는다(handle_left_release 참고). press 를 앱에 보고하지 않으면서
-            // release 만 단독 전달되면 자체 URL-오픈 기능이 있는 TUI 앱이 중복으로 열 수
-            // 있다.
+            // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
-            // 원격(mirror) surface 판별: 클릭한 surface 의 terminal 이 detached
-            // mirror(자식 PTY 없음)면 화면 경로가 원격 호스트 경로라 로컬 핸들러로
-            // 열 수 없다. ID(hovered.surface_id) 로 직접 판별 — 포커스 독립.
+            // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.
             let is_mirror = self
                 .core_state
                 .find_terminal_by_id(hovered.surface_id)
@@ -902,10 +810,8 @@ impl MainView {
         let shift = self.base.modifiers.shift_key();
         if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
             if left_click_local_select(mouse_tracking, shift, false) {
-                // 트래킹 ON + Shift: 앱에 보고하지 않고 로컬 선택을 시작한다 (xterm/iTerm2
-                // 표준 modifier 우회). press 시점 1회 판정을 left_select_bypass 로 release
-                // 까지 유지 — motion/release 는 이 플래그로 라우팅한다. 트래킹 ON 엔 이전
-                // 로컬 앵커가 없어 extend 가 아니라 start.
+                // Shift 우회는 press에서 결정하고 release까지 유지한다.
+                // 트래킹 중에는 이전 로컬 앵커가 없어 선택을 새로 시작한다.
                 self.left_select_bypass = true;
                 self.start_selection(x, y, terminal_rect);
             } else {
@@ -925,14 +831,9 @@ impl MainView {
         }
     }
 
-    /// 마우스 캡처 진입 후 첫 상호작용이면 "마우스 캡처 중 — Shift 로 우회 가능" 안내
-    /// 배너를 1회 띄운다(설정 ON + 배너 억제 리스트 미매칭일 때). 좌·우 클릭 보고
-    /// 경로가 같은 `take_mouse_capture_hint()` 를 공유하므로 먼저 발생한 쪽만 뜬다
-    /// (ADR-0015). `mouse_capture_banner_blacklist` 매칭 surface 는 캡처 자체는
-    /// 유지한 채 이 함수 최상단에서 반환한다 — `take_mouse_capture_hint()` 를 아예
-    /// 호출하지 않으므로 armed 플래그도 소모하지 않는다. 이렇게 해야 같은 트래킹
-    /// 세션 도중 foreground 가 비억제 앱으로 바뀌면 그 시점에 배너를 정상적으로
-    /// 띄울 수 있다.
+    /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(ADR-0015).
+    /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
+    /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
     fn report_left_press_capture(&mut self, surface_id: u32) {
         if self
             .core_state
@@ -1060,13 +961,9 @@ impl MainView {
         (col, row)
     }
 
-    /// surface 의 "유효 클릭 트래킹 모드". 마우스 캡처 블랙리스트(설정 + 1Hz 캐시)에
-    /// 걸린 surface 거나 hard 점유(readonly) 중이면 실제 트래킹 모드와 무관하게
-    /// `None` 으로 격하해 클릭/드래그/버튼을 로컬 처리(선택·tasty 메뉴)하게 한다.
-    /// hard 점유는 사용자가 그 live 앱과 상호작용할 수 없는 상태이므로, 트래킹이
-    /// 켜진 채였더라도 "앱에 보고" 분기로 빠져 조용히 무동작하지 않고 항상 로컬
-    /// 선택으로 떨어져야 한다(ADR-0021). **휠 경로는 이 헬퍼를 쓰지 않고** 별도로
-    /// hard 점유를 조기 차단한다(`handle_mouse_wheel`).
+    /// 캡처 제외 목록에 해당하거나 hard 점유 중이면 클릭 트래킹을 None으로 처리한다.
+    /// 앱에 보고하는 대신 로컬 선택·메뉴를 허용한다(ADR-0021).
+    /// 휠은 이 함수를 쓰지 않고 별도로 hard 점유를 차단한다.
     fn effective_click_tracking(
         &self,
         surface_id: u32,
@@ -1080,14 +977,9 @@ impl MainView {
         )
     }
 
-    /// 버튼 없는 hover motion 보고(DECSET 1003). 셀이 바뀔 때만 `ESC[<35;col;rowM`
-    /// 한 줄이 나간다.
-    ///
-    /// **focused surface 한정이다**(ADR-0015). 커서 아래 surface 가 focused 가 아니거나
-    /// tasty 창 자체가 비포커스면 아무것도 보내지 않고 포커스도 옮기지 않는다 — 마우스가
-    /// 지나가기만 해도 배경 TUI 들에 입력 바이트가 흘러드는 것을 원천 차단한다.
-    /// divider 밴드·OS 리사이즈 가장자리 위에서도 보고하지 않는다(입력 z-order 상
-    /// divider 가 surface 콘텐츠보다 위, `docs/architecture/input-layer.md`).
+    /// DECSET 1003의 버튼 없는 셀 이동을 보고한다.
+    /// OS 창과 대상 surface 모두 포커스되어야 하며 포커스를 옮기지는 않는다.
+    /// divider와 창 리사이즈 영역에서는 보고하지 않는다(ADR-0015).
     fn report_hover_motion(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
         let Some(sid) = self.state.focused_surface_id(&self.core_state) else {
             return;
@@ -1097,7 +989,7 @@ impl MainView {
             .find_terminal_by_id(sid)
             .map(|t| t.mouse_tracking())
             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
-        // 클릭 축이므로 캡처 블랙리스트·hard 점유 격하를 그대로 태운다(휠만 예외).
+        // 클릭과 같은 제외 목록·hard 점유 조건을 적용한다.
         let tracking = self.effective_click_tracking(sid, tracking);
         if tracking != tasty_terminal::MouseTrackingMode::AllMotion {
             // 여기서 끊어야 아래 hit-test 들이 매 프레임 헛돌지 않는다.
@@ -1248,13 +1140,8 @@ impl MainView {
                 .or_else(|| self.state.focused_surface_id(&self.core_state));
 
             if let Some(surface_id) = target_id {
-                // hard 점유(readonly)는 목표상 휠을 요구하지 않으므로 여기서 조기
-                // 차단한다. 트래킹 조회(아래 `t.mouse_tracking()`)는 `effective_click_
-                // tracking`을 거치지 않고 live terminal을 직접 보고, 트래킹 OFF일 때의
-                // 로컬 스크롤백 분기도 live terminal을 직접 mutate한다 — hard 점유가
-                // 렌더하는 것은 mirror(`readonly_view`)라 이 mutate는 화면에 반영되지
-                // 않으면서 live의 scroll_offset만 조용히 어긋나, 점유 해제 직후 스크롤이
-                // 튀어 보이는 회귀를 만든다. 이 두 조회/mutate 이전에 막아야 한다.
+                // hard 점유에서는 휠을 막는다. 표시 중인 mirror 대신 live 터미널에
+                // 보고하거나 스크롤 위치를 바꾸면 점유 해제 뒤 화면이 달라질 수 있다.
                 if self.core_state.attach.is_hard_occupied(surface_id) {
                     return;
                 }
@@ -1363,9 +1250,6 @@ impl MainView {
     }
 }
 
-/// 마우스 휠 이벤트를 마우스 리포팅 시퀀스로 인코딩한다. `sgr` 가 true 면 SGR
-/// (`ESC [ < btn ; col ; row M`), 아니면 legacy X10 (`ESC [ M` + 32-offset 3 bytes).
-/// `count` 만큼 반복 발행. `btn` 은 64(up)/65(down), `col`/`row` 는 1-based.
 /// 앱에 press 를 보고한 버튼을 스택 맨 위로 올린다. 이미 있으면 최신 위치로
 /// 옮긴다 — motion cb 는 "가장 최근에 누른 버튼" 을 싣는다(xterm 관례).
 fn push_report_button(stack: &mut Vec<(u8, u32)>, button: u8, surface_id: u32) {
@@ -1394,8 +1278,7 @@ fn report_button_code(button: MouseButton) -> Option<u8> {
 /// 버튼이 눌리지 않은 상태이고, motion 비트를 얹으면 `3|32 = 35` 가 된다.
 const MOUSE_BUTTON_NONE: u8 = 3;
 
-/// [`should_report_hover_motion`] 입력. 트래킹 레벨은 호출 전에 이미 걸러지므로
-/// 여기엔 담지 않는다 — 남는 건 전부 "어디 위에 있는가" 축이다.
+/// 트래킹 모드를 확인한 뒤 hover 보고 여부를 결정하는 입력.
 #[derive(Debug, Clone, Copy)]
 struct HoverReportInput {
     /// tasty 창 자체가 포커스를 갖고 있는가.
@@ -1465,12 +1348,8 @@ fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shi
     tracking != tasty_terminal::MouseTrackingMode::None && !shift
 }
 
-/// 좌클릭 release 를 tracking 앱(PTY)에 보고할지 결정한다. 트래킹이 꺼져 있으면 항상
-/// 안 보고. 트래킹이 켜져 있어도 이번 클릭의 press 가 링크오픈으로 로컬 소비됐다면
-/// (`link_click_consumed`) 마찬가지로 안 보고한다 — press 는 tasty 가 로컬 소비(링크
-/// 오픈)했는데 release 만 앱에 단독 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim의
-/// `gx`/netrw, tmux url 플러그인 등)이 이를 클릭으로 해석해 링크를 중복으로 열 수
-/// 있다.
+/// 앱에 press를 보냈고 트래킹이 켜져 있을 때만 release도 보고한다.
+/// 링크 실행으로 소비한 press의 release를 단독 전송하지 않는다.
 fn should_report_release_to_app(
     tracking: tasty_terminal::MouseTrackingMode,
     link_click_consumed: bool,
@@ -1491,23 +1370,9 @@ fn left_click_local_select(
     tracking == tasty_terminal::MouseTrackingMode::None || shift || bypass_active
 }
 
-/// `try_begin_os_resize`(MainView 메서드, `#[cfg(not(target_os = "macos"))]`)가 가장자리
-/// margin 안의 좌클릭 press 에서 OS 리사이즈를 **양보해야 하는지** 뽑아낸 순수 로직.
-/// 참이면 `resize_direction_at`이 방향을 찾아도 리사이즈를 시작하지 않고 일반 클릭
-/// 라우팅으로 넘긴다. `cursor_moved_should_short_circuit`과 동일한 이유로 — `MainView`는
-/// 실제 GPU/winit 컨텍스트 없이 구성할 수 없어 `try_begin_os_resize` 자체를 단위
-/// 테스트로 직접 구동할 수 없다 — 이 조건만 뽑아 단위 테스트한다.
-///
-/// `resize_edge_widget_hovered`(타이틀바/상태바의 실제 인터랙티브 버튼 단위, egui
-/// `Response::hovered()` 로 매 프레임 갱신)가 핵심 변경점이다. 이전에는 `egui_consumed`
-/// (패널/Area 전체의 bounding rect 단위)를 썼는데, 상시 렌더되는 타이틀바(36px)·
-/// 상태바(24px) 스트립이 `RESIZE_EDGE_MARGIN`(8px)보다 항상 두꺼워 버튼 없는 빈 여백
-/// 에서도 이 함수가 참을 반환해(=리사이즈를 항상 양보해) 가장자리 리사이즈가 그
-/// 스트립 전체에서 막혔었다.
-///
-/// macOS 는 네이티브 데코라 `try_begin_os_resize` 자체가 컴파일에서 빠지므로
-/// (호출부 cfg 가드) 그 빌드에서는 미사용이다 — `window_chrome.rs`의
-/// `RESIZE_EDGE_MARGIN`/`resize_direction_at` 과 동일하게 dead_code 를 허용한다.
+/// 실제 위젯이나 오버레이가 입력을 받는 위치에서는 창 리사이즈를 시작하지 않는다.
+/// 패널 전체 영역을 제외하면 타이틀바·상태바의 빈 가장자리도 사용할 수 없게 된다.
+/// macOS는 native 장식을 사용하므로 호출하지 않는다.
 // 이유: macOS 는 네이티브 데코라 호출부 `try_begin_os_resize` 가 그 빌드에서 빠진다(위).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn resize_should_yield_to_content(
@@ -1524,13 +1389,8 @@ fn resize_should_yield_to_content(
         || window_size_locked
 }
 
-/// `handle_cursor_moved`(MainView 메서드)의 early-return 판정을 뽑아낸 순수
-/// 로직. 참이면 이번 프레임은 mesh surface 판정을 건너뛰고 `update_mesh_hover(None)`을
-/// 호출한다 — `MainView`는 실제 GPU/winit 컨텍스트 없이 구성할 수 없어(`GpuState`가
-/// 목/헤드리스 생성자를 제공하지 않음) `handle_cursor_moved` 자체를 단위 테스트로 직접
-/// 구동할 수 없다. 대신 이 조건과 `mesh_hover_transition`을 각각 단위 테스트해 둘의
-/// 조합(조건이 참일 때 `update_mesh_hover(None)`이 호출되고, 그 결과 슬롯이
-/// `Some(prev)` → `None`으로 전이하며 `PointerGone`이 발생함)으로 배선을 간접 검증한다.
+/// 커서 이동을 오버레이나 egui가 처리했으면 mesh 조회를 생략한다.
+/// 호출자는 반환 전에 update_mesh_hover(None)으로 이전 hover를 해제한다.
 fn cursor_moved_should_short_circuit(
     egui_consumed: bool,
     overlay_open: bool,
@@ -1541,22 +1401,9 @@ fn cursor_moved_should_short_circuit(
     egui_consumed || overlay_open || popup_hovered || banner_hovered || modifier_hint_hovered
 }
 
-/// 네이티브 컨텍스트 메뉴를 닫는 바깥 클릭을 **클릭 사이클 단위**로 삼키기 위한 순수
-/// 상태 전이. `swallowed` 는 현재 삼키는 중인 버튼 집합이고, 반환값이 참이면 이번
-/// 이벤트는 egui 입력 큐에도 tasty 라우팅에도 들어가지 않는다.
-///
-/// - press: 메뉴가 떠 있으면 그 버튼을 삼킴 집합에 넣고 참(메뉴 dismiss 로 소비).
-/// - release: 짝이 되는 press 를 삼켰던 버튼이면 집합에서 빼고 참.
-///
-/// **press 만 삼키면 부족하다.** press 를 막아도 release 가 egui 에 들어가면, egui 는
-/// 다음 프레임에 press+release 쌍을 보고 커서 밑 위젯의 `clicked()`(우클릭이면
-/// `secondary_clicked()` → 새 메뉴 큐잉)를 발화시킨다. 즉 메뉴를 닫으려던 클릭이 그
-/// 밑의 사이드바 행/탭/explorer 항목까지 실행한다. 그래서 press 시점에 "이번 사이클은
-/// 삼킨다" 를 기억해 짝이 되는 release 까지 끌고 간다.
-///
-/// release 판정이 `menu_open` 과 무관한 것도 의도다 — press 로 dismiss 를 건 뒤
-/// release 가 오기 전에 `poll_pending_native_menu` 가 메뉴를 회수해 슬롯이 비는 것이
-/// 정상 경로이고, 그때도 release 는 여전히 삼켜져야 한다.
+/// 메뉴를 닫는 클릭의 press와 release를 모두 소비한다.
+/// press를 소비한 버튼을 기억해 메뉴가 먼저 닫혀도 release를 egui에 보내지 않는다.
+/// 그렇지 않으면 메뉴 아래 위젯이 같은 클릭을 처리할 수 있다.
 fn menu_dismiss_swallow_step(
     swallowed: &mut Vec<MouseButton>,
     menu_open: bool,
@@ -1597,18 +1444,9 @@ fn mesh_hover_transition(
     }
 }
 
-/// 네이티브 메뉴 dismiss 클릭 삼킴 회귀망.
-///
-/// 두 축을 각각 못 박는다:
-/// 1. `menu_dismiss_swallow_step` — press 로 시작한 삼킴이 **짝이 되는 release 까지**
-///    이어지는지(press 만 삼키던 회귀 재발 방지).
-/// 2. egui 쪽 실제 반응 — 삼킨 사이클의 이벤트를 egui 입력 큐에 넣지 않고 `PointerGone`
-///    만 넣었을 때 위젯이 `clicked()`/`secondary_clicked()` 를 발화하지 **않는지**.
-///    `MainView` 는 GPU/winit 없이 구성할 수 없어(`GpuState` 가 헤드리스 생성자를 주지
-///    않는다) `handle_event` 를 직접 구동할 수 없으므로, 그 자리에서 egui 에 실제로
-///    무엇이 들어가는지를 맨 `egui::Context` 로 재현해 검증한다. 같은 시나리오를 "예전
-///    동작"(press·release 를 그대로 feed)으로 돌리는 대조군이 함께 있어, 이 테스트가
-///    항상 통과하는 무의미한 테스트가 아님을 보장한다.
+/// 메뉴를 닫는 클릭의 상태 전이와 egui 위젯 반응을 확인한다.
+/// GPU가 필요한 MainView 대신 egui::Context에 동일한 입력을 전달한다.
+/// 입력을 그대로 보낸 경우와 소비한 경우를 비교한다.
 #[cfg(test)]
 mod menu_dismiss_tests {
     use super::menu_dismiss_swallow_step;
@@ -1752,7 +1590,7 @@ mod menu_dismiss_tests {
 
     #[test]
     fn unswallowed_cycle_does_fire_the_widget() {
-        // 대조군 — 삼키지 않으면 egui 는 쌍을 완성해 클릭을 발화한다.
+        // 입력을 그대로 보내면 egui 위젯이 클릭을 처리한다.
         assert_eq!(
             click_cycle_reaches_widget(egui::PointerButton::Primary, false),
             (true, false)
@@ -2024,14 +1862,8 @@ mod mesh_hover_tests {
     }
 }
 
-/// `handle_cursor_moved`의 early-return 배선을 간접 검증한다. `MainView`는
-/// 실제 GPU/winit 컨텍스트 없이 구성 불가능해 `handle_cursor_moved` 자체를 직접
-/// 구동하는 단위 테스트는 이 코드베이스에 전례가 없다(다른 스테이트풀 메서드들도
-/// 전부 순수 결정 로직만 추출해 테스트한다 — `mesh_hover_tests`, `right_click_tests`
-/// 등). 대신 (1) early-return 판정이 참인 조건(Case A/B 포함)과 (2) 그 결과
-/// `update_mesh_hover(None)`이 호출됐을 때의 상태 전이를 각각 단위 테스트해, 실제
-/// `handle_cursor_moved` 코드(`self.update_mesh_hover(None)`이 early-return 블록
-/// 안에서 `return` 이전에 호출됨)와 조합하면 배선이 성립함을 보인다.
+/// early-return 조건과 mesh hover 해제 결과를 각각 확인한다.
+/// MainView의 GPU·winit 이벤트 처리를 직접 실행하는 검사는 아니다.
 #[cfg(test)]
 mod cursor_moved_early_return_tests {
     use super::{MeshHoverTarget, cursor_moved_should_short_circuit, mesh_hover_transition};
@@ -2075,10 +1907,7 @@ mod cursor_moved_early_return_tests {
 
     #[test]
     fn short_circuit_frame_transitions_hovered_mesh_target_to_none_with_pointer_gone() {
-        // early-return 조건이 참인 프레임에서 `update_mesh_hover(None)`이 호출되면
-        // (수정된 handle_cursor_moved 배선), 직전까지 hover 중이던 local mesh surface
-        // 는 이 전환 이벤트 자체에서 None 으로 전이하고 PointerGone 이 1회 발생해야
-        // 한다 — 수정 전에는 이 호출 자체가 생략되어 슬롯이 `Some(Local(sid))`로 남았다.
+        // early-return 전에 hover를 해제하면 이전 대상에 PointerGone을 한 번 보낸다.
         assert!(cursor_moved_should_short_circuit(
             true, false, false, false, false
         ));
@@ -2092,22 +1921,14 @@ mod cursor_moved_early_return_tests {
 
     #[test]
     fn short_circuit_frame_is_idempotent_when_already_none() {
-        // 오버레이가 열려있는 동안 여러 CursorMoved 가 연달아 이 분기를 타도(Case B),
-        // mesh_hover_transition 이 멱등이라 이미 None 인 슬롯에 대해서는 PointerGone 을
-        // 중복 발생시키지 않는다(thrashing 방지).
+        // 이미 해제한 상태에서는 PointerGone을 중복 전송하지 않는다.
         let (next, gone) = mesh_hover_transition(None, None);
         assert_eq!(next, None);
         assert_eq!(gone, None);
     }
 }
 
-/// `try_begin_os_resize`의 리사이즈-양보 게이트(`resize_should_yield_to_content`)
-/// 단위 테스트. 창 가장자리 리사이즈가 egui-mesh/Windows 실기 없이도 검증 가능한
-/// 유일한 부분 — hit-test 자체(`resize_direction_at`)는 `window_chrome.rs`에 이미
-/// OS 무관 단위 테스트가 있고(4변+4모서리 우선순위), 여기서는 그 결과를 실제로
-/// 리사이즈로 이어줄지 판단하는 이 함수만 검증한다. OS 리사이즈 모달 루프
-/// (`drag_resize_window`가 트리거하는 Windows `WM_NCLBUTTONDOWN`)와 Windows 실기
-/// 재현은 이 세션(Linux)에서 검증 불가 — 별도 수동 확인 필요.
+/// 실제 위젯에 입력을 양보할 조건을 확인한다. OS 리사이즈 동작 자체는 검사하지 않는다.
 #[cfg(test)]
 mod resize_gate_tests {
     use super::resize_should_yield_to_content;
@@ -2133,11 +1954,7 @@ mod resize_gate_tests {
 
     #[test]
     fn sidebar_widget_hovered_also_yields_to_content() {
-        // 사이드바(트리 항목/버튼 등)도 타이틀바/상태바와 동일하게 자신의
-        // hover 를 `resize_edge_widget_hovered` 에 적재한다(`sidebar/view.rs`).
-        // 이 함수 입장에서는 "누가" 적재했는지 구분하지 않는 단일 bool 이므로,
-        // 사이드바 위젯 hover 도 다른 chrome 위젯과 동일하게 리사이즈를
-        // 양보시켜야 한다 — 사이드바 커버리지 추가의 회귀 방지용 케이스.
+        // 사이드바도 같은 위젯 hover 플래그를 사용하므로 리사이즈보다 우선한다.
         assert!(resize_should_yield_to_content(
             true, false, false, false, false
         ));
@@ -2164,7 +1981,7 @@ mod resize_gate_tests {
 mod hover_motion_tests {
     use super::{HoverReportInput, MOUSE_BUTTON_NONE, mouse_report_cb, should_report_hover_motion};
 
-    /// 모든 가드를 통과하는 기본 입력 — 각 테스트는 축 하나씩만 뒤집는다.
+    /// 모든 조건을 통과하는 기본 입력. 각 테스트에서 조건 하나씩 바꾼다.
     fn ok() -> HoverReportInput {
         HoverReportInput {
             window_focused: true,

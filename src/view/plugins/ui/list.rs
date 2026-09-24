@@ -74,12 +74,7 @@ pub(super) fn draw_list_tab(
                             sub.push_str(&format!("  ·  {}", t("plugins.running")));
                         }
 
-                        // 이름 + 버전 부제를 한 클릭 영역으로 묶기 위해 직접 그린다.
-                        // SelectableLabel은 한 줄만 자연스럽게 표현하므로 painter로 selected/hover
-                        // 배경과 두 줄 텍스트를 그려 동일한 visual을 재현.
-                        //
-                        // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
-                        // 위아래에 32px 아바타가 앉는 flex 행이다.
+                        // 이름과 버전 두 줄을 한 클릭 영역으로 묶기 위해 직접 그린다.
                         let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
                         let (rect, resp) = ui.allocate_exact_size(
                             egui::vec2(ui.available_width(), row_h),
@@ -232,7 +227,6 @@ pub(super) fn draw_list_tab(
                             enabled,
                         });
                     }
-                    // lifecycle 창 → per-plugin config (Settings›Plugins) 연결 고리.
                     if ui.button(t("plugins.configure")).clicked() {
                         actions.push(PluginsAction::OpenSettings);
                     }
@@ -297,7 +291,6 @@ pub(super) fn draw_list_tab(
                     }
                 });
 
-                // 6→4 스냅 (그리드 정합 — 메타 라벨 tight 간격).
                 vspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
