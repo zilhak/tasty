@@ -1,27 +1,11 @@
-//! attach mesh mirror — 서버측 구독 상태(`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
-//!
-//! `CoreState`가 소유한다 — `PluginManager`는 `App` 소유라 여기 둘 수 없다. 이
-//! 레지스트리는 "누가 어떤 mesh surface 를 어떤
-//! geometry/theme/focus 로 구독 중인가" 만 추적하고, 실제 plugin 구동(`surface.set_context`
-//! 송신) 과 mesh 바이트 forward는 `PluginManager` 접근권이 있는 계층
-//! (`src/boot/headless_plugins.rs`)이 이 상태를 읽어 수행한다.
-//!
-//! `apply_attached_mesh_context`/`apply_attached_mesh_full_resend`(둘 다 gui/headless
-//! 공용, `attach_runtime.rs`)를 통해 구독 상태(upsert/dirty/need_full_textures)는
-//! gui/headless 양쪽에서 갱신된다. 실제 forward 루프(`get`/`take_dirty`/
-//! `should_forward_generation`/`mark_forwarded`/`active_surface_ids`/`remove` 소비)는
-//! 두 시나리오 각각의 계층이 담당한다: headless-as-attach-서버는
-//! `src/boot/headless_plugins.rs`(`PluginManager`를 직접 구동), gui-as-attach-서버는
-//! `src/view/main/egui_mesh.rs::forward_mesh_to_attach_subscribers`(로컬 redraw 가
-//! 이미 만든 frame 을 relay, `docs/dev-guide/attach-behavior.md` "frame 소비·forward
-//! (gui-as-server)" 절)가 소비한다.
+//! 서버의 mesh 구독 상태. 실제 plugin context 전송과 frame 중계는 PluginManager를 가진 계층이 맡는다.
+//! GUI·헤드리스가 같은 상태를 갱신하며 각 전송 루프가 변경 표시와 입력을 소비한다.
 
 use std::collections::HashMap;
 
 use crate::core::attach::AttachClientId;
 use tasty_plugin_protocol::protocol::{ModifiersWire, RawInputEventWire, RawInputWire, ThemeWire};
 
-/// 한 mesh surface 의 최신 구독 상태.
 #[derive(Debug, Clone)]
 pub(crate) struct MeshMirrorContext {
     pub(crate) client_id: AttachClientId,
@@ -30,30 +14,16 @@ pub(crate) struct MeshMirrorContext {
     pub(crate) pixels_per_point: f32,
     pub(crate) theme: Option<ThemeWire>,
     pub(crate) focused: bool,
-    /// geometry/theme/focus 가 마지막 forward 이후 바뀌었거나(또는 신규 구독/
-    /// full-resend 요청) — forward 루프가 이 surface 에 `surface.set_context` 를
-    /// 다시 보내야 함을 뜻한다. 매 tick 무조건 재전송하지 않는 이유: 입력이 없는
-    /// idle 구독에 반복 재-context 를 보내면 plugin CPU 를 불필요하게 태운다
-    /// (불필요한 plugin CPU 낭비 방지).
+    /// 바뀐 context나 입력만 보내도록 전송 루프가 소비하는 표시.
     pub(crate) dirty: bool,
-    /// 다음 forward 시 `SurfaceSetContextParams.need_full_textures` 를 세워야 하는가
-    /// (신규 구독 또는 명시적 [`tasty_ipc::stream::StreamControl::MeshFullResendRequest`]).
+    /// 신규 구독이나 재전송 요청에서 전체 texture를 요구한다.
     pub(crate) need_full_textures: bool,
-    /// 이 surface 에 대해 마지막으로 forward 한 `EguiMeshFrame::generation` — 같은
-    /// generation 을 중복 forward 하지 않기 위한 dedup 키. `None` = 아직 forward 없음.
+    /// 마지막 전송 generation과 같은 값의 중복 전송을 피한다. 대소 비교는 하지 않는다.
     pub(crate) last_forwarded_generation: Option<u64>,
-    /// chunk 재조립 키(`mesh_stream::MeshChunkMeta::frame_id`) 발급용 단조 카운터.
-    /// `frame_seq`(plugin 렌더 코어의 시퀀스)와는 별개 — 이건 순수 attach 전송 계층의
-    /// 재조립 키다.
+    /// chunk 재조립용 번호. plugin의 frame_seq와 별개다.
     next_frame_id: u64,
-    /// [`StreamControl::MeshInput`](tasty_ipc::stream::StreamControl)로 누적된, 아직
-    /// plugin 에 forward 하지 않은 입력 이벤트(`docs/dev-guide/attach-behavior.md`
-    /// "MeshInput 누적" 절). forward 루프가 dirty 를 소비할 때
-    /// [`Self::take_pending_events`]로 함께 가져간다.
     pending_events: Vec<RawInputEventWire>,
-    /// 마지막으로 받은 modifier 스냅샷 — `MeshInput`이 갱신한다. `MeshContext`는
-    /// modifier 를 나르지 않으므로(geometry/theme/focus 전용) 여기 보관한 값이
-    /// forward 시 `SurfaceSetContextParams.raw_input.modifiers`의 소스가 된다.
+    /// MeshContext에는 modifier가 없어 마지막 MeshInput의 값을 다음 context 전송에 쓴다.
     pub(crate) last_modifiers: ModifiersWire,
 }
 
@@ -63,17 +33,14 @@ impl MeshMirrorContext {
     }
 }
 
-/// surface_id → 구독 상태. attach 세션이 붙어있는 동안만 채워진다(빈 레지스트리는
-/// mesh mirror 를 전혀 안 쓰는 일반적인 headless/GUI 상태와 동일한 zero-cost 경로).
 #[derive(Debug, Default)]
 pub(crate) struct MeshMirrorRegistry {
     contexts: HashMap<u32, MeshMirrorContext>,
 }
 
 impl MeshMirrorRegistry {
-    /// 구독 요청을 반영한다(신규 구독 또는 기존 갱신). 반환: 이 tick 에 forward 루프가
-    /// `surface.set_context` 를 다시 보내야 하는지(geometry/theme/focus 변경, 또는
-    /// 신규 구독이라 무조건 최초 1 회 필요).
+    /// surface별 구독을 등록·갱신한다. 바뀌었으면 dirty를 세우며 반환값은 없다.
+    /// 기존 client가 바뀌어도 texture·generation·대기 입력을 여기서 초기화하지는 않는다.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn upsert(
         &mut self,
@@ -112,8 +79,7 @@ impl MeshMirrorRegistry {
                         theme,
                         focused,
                         dirty: true,
-                        // 신규 구독 — SharedBuffer의 "최신 generation만 보기" 특성상
-                        // 중간 texture delta 를 절대 못 보므로 첫 프레임은 항상 full.
+                        // 새 구독은 이전 texture delta를 못 받았으므로 전체 texture가 필요하다.
                         need_full_textures: true,
                         last_forwarded_generation: None,
                         next_frame_id: 0,
@@ -129,7 +95,6 @@ impl MeshMirrorRegistry {
         self.contexts.get(&surface_id)
     }
 
-    /// full-resend 요청을 반영. 구독돼 있지 않으면 `false`(호출자는 MeshError 회신).
     pub(crate) fn request_full_resend(&mut self, surface_id: u32) -> bool {
         match self.contexts.get_mut(&surface_id) {
             Some(ctx) => {
@@ -141,9 +106,7 @@ impl MeshMirrorRegistry {
         }
     }
 
-    /// forward 루프 전용 — dirty 플래그를 읽고 초기화. `need_full_textures` 는
-    /// 별도로 [`Self::take_need_full_textures`] 가 소비한다(이 함수가 같이 지우면
-    /// dirty=false 인데 need_full 만 남는 상태를 만들 수 없어 순서 독립적으로 분리).
+    /// dirty만 소비한다. 전체 texture 요청과 대기 입력은 별도 함수로 가져간다.
     pub(crate) fn take_dirty(&mut self, surface_id: u32) -> bool {
         self.contexts
             .get_mut(&surface_id)
@@ -158,14 +121,14 @@ impl MeshMirrorRegistry {
             .unwrap_or(false)
     }
 
-    /// 이 generation 의 frame 을 아직 forward 하지 않았는지 확인.
+    /// 마지막 전송과 다른 generation인지 확인한다. 그보다 오래된 값도 다르면 true다.
     pub(crate) fn should_forward_generation(&self, surface_id: u32, generation: u64) -> bool {
         self.contexts
             .get(&surface_id)
             .is_some_and(|c| c.last_forwarded_generation != Some(generation))
     }
 
-    /// forward 완료 기록 + chunk 재조립용 frame_id 발급(호출 시 1 증가).
+    /// 전송했다고 전달받은 generation을 기록하고 frame ID를 발급한다. 실제 송신 성공을 검사하지 않는다.
     pub(crate) fn mark_forwarded(&mut self, surface_id: u32, generation: u64) -> Option<u64> {
         let ctx = self.contexts.get_mut(&surface_id)?;
         ctx.last_forwarded_generation = Some(generation);
@@ -174,11 +137,7 @@ impl MeshMirrorRegistry {
         Some(id)
     }
 
-    /// client→server [`StreamControl::MeshInput`](tasty_ipc::stream::StreamControl)를
-    /// 반영(`docs/dev-guide/attach-behavior.md` "MeshInput 누적" 절) — 이벤트를
-    /// 누적하고 modifiers 를 최신화, `dirty` 를 세워 geometry
-    /// 무변이어도(입력만으로) forward 루프가 재전송하게 한다. 구독돼 있지 않으면
-    /// `false`(호출자는 MeshError 회신).
+    /// 구독이 있으면 입력을 누적하고 modifier·dirty를 갱신한다. 없으면 false다.
     pub(crate) fn push_input(&mut self, surface_id: u32, input: RawInputWire) -> bool {
         match self.contexts.get_mut(&surface_id) {
             Some(ctx) => {
@@ -191,10 +150,6 @@ impl MeshMirrorRegistry {
         }
     }
 
-    /// forward 루프 전용 — 누적된 입력 이벤트를 비우며 가져간다(`take_dirty`/
-    /// `take_need_full_textures`와 동형, 순서 독립적으로 분리). headless-as-attach-서버
-    /// (`headless_plugins.rs`)와 gui-as-attach-서버(`plugin_bridge/mesh_forward.rs`)
-    /// 양쪽 forward 루프가 소비한다.
     pub(crate) fn take_pending_events(&mut self, surface_id: u32) -> Vec<RawInputEventWire> {
         self.contexts
             .get_mut(&surface_id)
@@ -202,18 +157,15 @@ impl MeshMirrorRegistry {
             .unwrap_or_default()
     }
 
-    /// 구독 중인 모든 surface_id 스냅샷(순회 중 mutate 를 피하기 위해 collect 해 반환).
+    /// 순회 중 상태를 바꿀 수 있도록 ID 목록을 복사해 반환한다.
     pub(crate) fn active_surface_ids(&self) -> Vec<u32> {
         self.contexts.keys().copied().collect()
     }
 
-    /// surface 가 사라졌거나(닫힘) 화이트리스트 재검증에 실패했을 때 정리.
     pub(crate) fn remove(&mut self, surface_id: u32) {
         self.contexts.remove(&surface_id);
     }
 
-    /// attach client 연결 종료 시 그 client 가 구독하던 전부를 정리 — 불필요한
-    /// plugin CPU 낭비 방지("detach 시 context 전달 중단").
     pub(crate) fn remove_for_client(&mut self, client_id: AttachClientId) {
         self.contexts.retain(|_, c| c.client_id != client_id);
     }
@@ -229,7 +181,6 @@ mod tests {
         reg.upsert(1, 100, 800, 600, 2.0, None, true);
         assert!(reg.take_dirty(1));
         assert!(reg.take_need_full_textures(1));
-        // 두 번째 조회는 소비됐으므로 false.
         assert!(!reg.take_dirty(1));
         assert!(!reg.take_need_full_textures(1));
     }
@@ -240,7 +191,6 @@ mod tests {
         reg.upsert(1, 100, 800, 600, 2.0, None, true);
         reg.take_dirty(1);
         reg.take_need_full_textures(1);
-        // 동일 geometry/theme/focus 재전송 — dirty 재설정 안 됨.
         reg.upsert(1, 100, 800, 600, 2.0, None, true);
         assert!(!reg.take_dirty(1));
     }
@@ -253,15 +203,13 @@ mod tests {
         reg.take_need_full_textures(1);
         reg.upsert(1, 100, 801, 600, 2.0, None, true);
         assert!(reg.take_dirty(1));
-        // geometry 변경만으로는 need_full_textures 를 다시 세우지 않는다(그건 별도
-        // 명시 요청 전용) — 이미 소비됐으므로 여기선 false 여야 한다.
         assert!(!reg.take_need_full_textures(1));
     }
 
     #[test]
     fn full_resend_request_requires_existing_subscription() {
         let mut reg = MeshMirrorRegistry::default();
-        assert!(!reg.request_full_resend(9)); // 구독 없음
+        assert!(!reg.request_full_resend(9));
         reg.upsert(9, 1, 10, 10, 1.0, None, false);
         reg.take_dirty(9);
         reg.take_need_full_textures(9);
@@ -304,15 +252,14 @@ mod tests {
             },
             events: vec![RawInputEventWire::PointerMoved { x: 1.0, y: 2.0 }],
         };
-        assert!(!reg.push_input(9, input.clone())); // 구독 없음
+        assert!(!reg.push_input(9, input.clone()));
         reg.upsert(9, 1, 10, 10, 1.0, None, false);
         reg.take_dirty(9);
         assert!(reg.push_input(9, input));
-        assert!(reg.take_dirty(9)); // 입력만으로도 재dirty
+        assert!(reg.take_dirty(9));
         let events = reg.take_pending_events(9);
         assert_eq!(events.len(), 1);
         assert!(reg.get(9).unwrap().last_modifiers.ctrl);
-        // 소비 후 재조회는 빈 벡터.
         assert!(reg.take_pending_events(9).is_empty());
     }
 }

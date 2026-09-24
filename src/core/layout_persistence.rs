@@ -355,7 +355,7 @@ fn move_legacy_into_slot_one(legacy: &Path, dir: &Path) -> std::io::Result<()> {
 
 /// 읽은 모든 슬롯의 scrollback 참조를 합쳐야 다른 창의 파일을 지우지 않는다.
 /// 열거된 슬롯 중 하나라도 로드하지 못하면 GC를 생략한다.
-/// 단, 목록 읽기 실패·개별 항목 누락은 list_slots_in이 삼키므로 이 보호가 적용되지 않는다.
+/// 단, 목록 읽기 실패·개별 항목 누락은 list_slots_in이 오류를 반환하지 않으므로 이 보호가 적용되지 않는다.
 fn gc_scrollback_orphans_all_slots_in(layouts: &Path, scrollback: &Path) {
     let mut union = std::collections::HashSet::new();
     for slot in list_slots_in(layouts) {

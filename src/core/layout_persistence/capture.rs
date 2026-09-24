@@ -171,7 +171,6 @@ impl SavedSurfaceLayout {
     }
 }
 
-/// PTY 생성 후 적용할 scrollback을 대기열에 넣는다.
 impl SavedSurface {
     fn capture_surface(surface: &mut dyn Surface, ctx: &mut CaptureCtx<'_>) -> Self {
         if let Some(ts) = surface
