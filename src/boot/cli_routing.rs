@@ -1,60 +1,41 @@
-//! `fn main` 진입 직후의 CLI 라우팅 결정.
-//!
-//! `-a/--all` / clap parse / plugin CLI fallback / subcommand / augmented help
-//! 5가지 분기를 `Routed` enum 으로 압축. i18n 은 `parse_or_route` 진입부에서 1회 올린다.
+//! CLI 인자를 해석해 명령 실행·도움말·호스트 시작을 선택한다.
 
 use crate::cli;
 
-/// CLI 라우팅 결과. `parse_or_route` 가 반환한다.
 pub(crate) enum Routed {
-    /// `cli_routing` 안에서 이미 출력/실행됨. 호출자는 즉시 Ok(()) 반환.
-    /// - `-a/--all` → `cli::print_command_tree` (i18n 무관, clap get_about 출력)
-    /// - `-a/--all` → `cli::print_command_tree` (clap get_about println; plugin 매니페스트 경고만 i18n)
-    /// - clap parse 에러 → `cli::format_parse_error` 내부 std::process::exit (unreachable)
-    /// - plugin CLI 매칭 → `cli::try_run_plugin_cli` 실행 완료 (에러는 Result 채널로 propagate)
+    /// 이미 도움말을 출력했거나 플러그인 명령을 실행했다.
     AlreadyHandled,
-    /// `cli.command.is_some()` — client mode 진입 (i18n 후 `cli::run_client_with`).
-    /// 두 번째 필드는 전역 `--port-file` 값(없으면 None), 세 번째는 루트 플래그가 정한
-    /// 요청 봉투 값(`--response-timeout-ms`).
+    /// 명령, 선택한 port-file, 요청 timeout 설정.
     Subcommand(cli::Commands, Option<String>, cli::Envelope),
-    /// `TASTY_SURFACE_ID` + `!cli.launch` — augmented help (i18n 후 `cli::print_augmented_help`).
     AugmentedHelp,
-    /// 본 GUI. 호출자가 event loop / app 생성.
+    /// 호스트 실행. GUI·헤드리스 선택은 호출자가 빌드 feature로 판단한다.
     Gui(cli::Cli),
 }
 
-/// 모든 라우팅 결정을 한 곳에 모은다. plugin CLI 실행 에러는 Result 로 전파.
 pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     use clap::FromArgMatches;
 
-    // i18n 은 라우팅 판정보다 먼저 올린다 — 아래의 plugin CLI 매칭(`try_run_plugin_cli`:
-    // 매니페스트 경고·인자 오류)과 root `-h` 의 augmented help 가 번역 테이블을 읽는다.
-    // 뒤의 `run_subcommand` 등이 다시 부르는 `locale::init()` 은 `Once` 가드라 no-op.
+    // 플러그인 인자 오류·매니페스트 경고도 번역을 사용하므로 라우팅 전에 초기화한다.
     super::locale::init();
 
-    // -a/--all + -h/--help 는 clap parse 우회 — clap 의 built-in `--help` 가 plugin
-    // contributes.cli 를 모르는 정적 `Cli::command()` 위에서 발화해 plugin 명령
-    // (claude, codex) 이 도움말에서 누락되는 것을 방지한다. args 를 직접 본다.
+    // clap의 정적 도움말에 없는 플러그인 명령도 포함하도록 이 도움말 요청은 직접 처리한다.
     {
         let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "-a" || a == "--all") {
             cli::print_command_tree(env!("CARGO_PKG_VERSION"))?;
             return Ok(Routed::AlreadyHandled);
         }
-        // root-level `--help` / `-h` 만 가로챈다 — `args[1]` 위치 체크로 좁혀
-        // 서브커맨드의 `--help` (예: `tasty new --help`) 는 그대로 clap 에 위임.
+        // 첫 인자가 아닌 하위 명령의 --help는 clap에 맡긴다.
         if matches!(args.get(1).map(String::as_str), Some("-h") | Some("--help")) {
             cli::print_augmented_help()?;
             return Ok(Routed::AlreadyHandled);
         }
     }
 
-    // tasty-cli 는 라이브러리 crate (CARGO_PKG_VERSION="0.1.0") 라서 clap 기본 `version`
-    // 출력이 root 바이너리 버전과 어긋난다. 여기서 root 의 CARGO_PKG_VERSION 으로 override.
+    // tasty-cli 라이브러리 버전 대신 실행 바이너리의 버전을 표시한다.
     let cmd = cli::localized_command().version(env!("CARGO_PKG_VERSION"));
 
-    // 정적 Cli 파싱. InvalidSubcommand 시 plugin CLI 동적 등록에서 한 번 더 매칭 시도.
-    // 정적이 항상 우선이므로 plugin 이 호스트 명령을 가릴 수 없다.
+    // 호스트 명령을 먼저 해석하고 InvalidSubcommand일 때만 플러그인을 찾는다.
     let cli = match cmd.try_get_matches() {
         Ok(matches) => match cli::Cli::from_arg_matches(&matches) {
             Ok(cli) => cli,
@@ -67,24 +48,21 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
             if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand)
                 && let Some(result) = cli::try_run_plugin_cli()
             {
-                result?; // plugin 실행 에러는 그대로 main 까지 propagate
+                result?;
                 return Ok(Routed::AlreadyHandled);
             }
-            cli::format_parse_error(err); // 내부 process::exit
+            cli::format_parse_error(err);
             unreachable!();
         }
     };
 
     if let Some(command) = cli.command {
-        // `cli.command` 만 부분 이동 — 다른 필드 `cli.port_file` 접근은 허용된다.
         let envelope = cli::Envelope {
             response_timeout_ms: cli.response_timeout_ms,
         };
         return Ok(Routed::Subcommand(command, cli.port_file, envelope));
     }
-    // 서브커맨드가 없는 호출(아래 augmented help · GUI 기동)은 봉투를 실을 요청이 없다.
-    // 플래그를 받으면 조용히 버리지 않고 명령 쪽과 같은 모양으로 거절한다
-    // (docs/adr/0007-ipc-scheduling-and-deadlines.md).
+    // 보낼 IPC 요청이 없는 도움말·호스트 시작에서는 요청 timeout 옵션을 거절한다.
     cli::Envelope {
         response_timeout_ms: cli.response_timeout_ms,
     }

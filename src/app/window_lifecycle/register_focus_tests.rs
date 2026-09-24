@@ -1,4 +1,4 @@
-//! `focus_after_register` — 창 등록이 `focused_view_id` 를 옮기는지는 발화 주체가 정한다.
+//! 창 등록 후 포커스는 요청 주체에 따라 결정한다.
 
 use winit::window::WindowId;
 
