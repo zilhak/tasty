@@ -895,8 +895,6 @@ fn shortcut_new_workspace_stays_normal_when_categories_off() {
 }
 
 /// match arm에서 액션 문자열을 모은다. guard의 문자열은 액션 등록으로 세지 않는다.
-
-/// `fn <fn_name>` 정의들 안의 `match <scrutinee> { … }` 팔 이름(따옴표 이름만).
 fn match_arm_names(src: &str, fn_name: &str, scrutinee: &str) -> Vec<String> {
     use tasty_doc_guards::match_arms::{Source, matching_close};
     let s = Source::new(src);

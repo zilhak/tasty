@@ -234,12 +234,10 @@ semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`
 `accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
 겹치는 조합은 아이콘·라벨 텍스트로 구분).
 
-일반 blockquote(태그 없는 `>`, 또는 목록에 없는 타입)는 영향받지 않는다. `data-label`/
-`<summary>` 텍스트는 실제 파서 이벤트(`Tag::BlockQuote(Some(kind))`) 또는 버퍼링된
-blockquote 의 첫 줄 텍스트 파싱에서만 심어지므로, 문서 본문에 raw HTML 로
-`<blockquote class="markdown-alert-note">` 같은 리터럴을 직접 써넣어도 가짜 콜아웃으로
-오인되지 않는다(완성된 HTML 문자열을 매칭하는 방식이 아니라 파서 이벤트/버퍼링된 실제
-blockquote 콘텐츠만 신뢰하는 방식이기 때문).
+태그가 없거나 지원하지 않는 종류의 Markdown 인용문은 일반 인용문으로 남는다.
+콜아웃 변환은 파서 이벤트와 인용문 첫 줄을 처리한다. Raw HTML에 class만 넣었다고
+자동으로 data-label을 추가하지는 않는다. 다만 sanitize가 class·data-label·summary를
+허용하므로 작성자가 이 속성과 태그를 직접 넣어 콜아웃처럼 표시할 수 있다.
 
 ### 중첩
 
@@ -374,18 +372,17 @@ Obsidian 스타일 `[[문서명]]`/`[[문서명|표시텍스트]]` 문법을 인
 
 ## Heading id + 목차(TOC)
 
-모든 heading(`h1`–`h6`)은 GitHub 호환 방식의 자동 슬러그 `id` 를 받는다 — 명시적 `# 제목 {#custom-id}`
-문법(`Options::ENABLE_HEADING_ATTRIBUTES`)은 지원하지 않는다(스코프를 자동 생성만으로 좁힌 설계
-결정). `render.rs::collect_headings` 가 소스를 한 번 훑어 각 heading 의 순수 텍스트(코드/링크/
-강조/이미지 alt 같은 마크업은 제거하고 텍스트만)를 모으고, `Slugger` 가 이를 소문자화 + 유니코드
-문자/숫자/`-`/`_` 만 유지 + 공백을 `-` 로 치환해 슬러그로 만든다(한글 등 비-ASCII 텍스트는 그대로
-유지 — `char::is_alphanumeric` 가 유니코드 인식). 동일 문서 내 슬러그가 중복되면 `-1`/`-2` 순번을
-붙이고, 전부 특수문자라 슬러그가 비면 `heading` 으로 폴백한다(id 가 절대 빈 문자열이 되지 않게).
-이 결과를 `render.rs::assign_heading_ids` 가 문서를 다시 한번 파싱하며(두 패스 모두 동일 `source`
-를 훑으므로 heading 순서가 항상 일치) 각 heading 이벤트의 `id` 필드에 순서대로 대입한다 —
-pulldown-cmark 의 HTML writer 는 `Tag::Heading::id` 가 있으면 옵션과 무관하게 항상 출력하므로
-`ENABLE_HEADING_ATTRIBUTES` 를 켤 필요가 없다. `sanitize_html` 의 `generic_attributes(["id"])`
-가 이미 모든 허용 태그에 `id` 를 허용하므로 별도 sanitizer 변경은 필요 없다.
+제목(`h1`–`h6`)에는 텍스트에서 만든 자동 ID를 붙인다. 명시적 `# 제목 {#custom-id}`
+문법(`Options::ENABLE_HEADING_ATTRIBUTES`)은 사용하지 않는다. `collect_headings`가
+코드·링크·강조·이미지 alt의 텍스트를 모으고 `Slugger`가 소문자로 바꾼다.
+유니코드 문자·숫자·`-`·`_`를 남기고 공백은 `-`로 바꾸며, 결과가 비면 `heading`을 쓴다.
+
+정규화한 기본 이름이 반복되면 `-1`, `-2`를 붙인다. 이 횟수는 기본 이름별로 관리하므로
+문서 전체 ID의 유일성을 보장하지는 않는다. 예를 들어 `x`, `x`, `x-1`은
+`x`, `x-1`, `x-1`이 될 수 있다. GitHub와 완전히 같은 알고리즘이라고 보지 않는다.
+
+`assign_heading_ids`가 같은 원문을 다시 파싱해 제목에 ID를 순서대로 넣는다.
+HTML writer는 이 ID를 출력하고 sanitize의 `generic_attributes(["id"])`가 유지한다.
 
 heading 이 하나 이상 있으면 문서 최상단(주소창 바로 아래, 본문 위)에 접을 수 있는 `<nav id="tasty-toc">`
 목차가 삽입된다(`render.rs::toc_nav_html`) — sticky 사이드 패널이 아니라 인라인 삽입이다(레이아웃

@@ -2518,9 +2518,8 @@ mod tests {
         }
     }
 
-    /// kind 변경 시 이전 kind 의 stale params/전용 컬럼을 정리한다: markdown(params.file
-    /// + legacy) → terminal 이면 params 는 비워지고(terminal 은 params 필드 없음),
-    /// cwd 컬럼은 terminal 이 쓰므로 보존된다.
+    /// Markdown에서 terminal로 바꾸면 file과 legacy params를 지운다.
+    /// Terminal에서도 사용하는 cwd는 유지한다.
     #[test]
     fn set_kind_cleans_stale_params_keeps_used_columns() {
         let pane = PresetPane {

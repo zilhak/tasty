@@ -560,16 +560,16 @@ cp crates/tasty-plugin-<name>/tasty-plugin.toml.sig target/release/builtin-plugi
 **3) 정지 → 재동기화 → 재기동 (순서 중요)**
 ```bash
 tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
-#   ※ disable 은 프로세스가 빠지기를 기다리지 않고 곧바로 돌아온다(ADR-0026). 옛 프로세스가 아직
-#      빠지는 중이면 다음 줄의 upgrade-builtins 가 그 회수(최대 2 s)를 기다린 뒤 쓴다 — 쓸 것이
-#      있을 때만. 건너뛰는 plugin 과 바뀐 내용이 없는 plugin 은 기다리지 않는다.
+# disable은 보통 회수를 별도 스레드에 맡긴다. 다음 upgrade-builtins는 실제로 쓸 때만
+# 기존 회수 작업을 기다린다. 정상 종료 기한은 2s이며 kill/wait까지 포함한 전체 상한은 아니다.
+# 변경이 없어 건너뛰는 플러그인은 기다리지 않는다.
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
 #   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
 #      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
 #      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **설치본 버전이 번들보다 높아** 건너뛰는 갈래에만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
-#   ※ 옛 프로세스가 아직 빠지는 중이면 enable 이 그 회수(최대 2 s)를 기다린 뒤 그 자리에서 띄운다 —
-#      enable 응답은 spawn 완료이며 연결·hello 완료를 보장하지 않는다(ADR-0026).
+# 기존 회수가 진행 중이면 enable이 그 작업의 완료를 기다린 뒤 새 프로세스를 시작한다.
+# 이 대기도 전체 2s 상한은 아니다. enable 성공은 spawn 완료이며 연결·hello 완료는 아니다(ADR-0026).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은

@@ -1,50 +1,43 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
-사용자 종료(Cmd/Ctrl+Q, quit 모달, 창 닫기)는 부팅과 대칭으로 **상태 머신
-(`ShutdownPhase`)이 프레임마다 진행**한다. 대기가 남아 있는 프레임마다 부팅과
-같은 로딩 화면(워드마크 + 회전 스피너 + 단계 문구)을 present 하므로, 종료 대기
-동안 창이 얼어붙지 않는다 — 근거는 [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
+GUI 종료는 `App::begin_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 [종료 설계](../adr/0016-window-platform-and-shutdown.md)를 따른다.
 
-종료 비용은 두 구간으로 나뉜다. **`event_loop.exit()` 까지**(종료 cascade)와
-**그 이후**(Drop tail)다. 후자는 창이 이미 사라진 뒤에 도는 destructor 구간이라
-**어떤 종료 화면으로도 덮을 수 없다** — 종료 UX 를 논할 때 이 경계가 기준선이다.
+계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, 전체 소요는 `shutdown_total_with_drop`으로 확인한다.
 
 ## 시퀀스
 
 ```
-진입 (3경로 — 모두 App::begin_shutdown 으로 수렴)
-  ├─ AppEvent::Shutdown            (src/app/event_handler.rs)
-  ├─ quit 모달 "종료" → 재진입      (src/app/modal/quit.rs — 모달이 이미 열린 상태)
-  └─ close_behavior == "quit"       (src/app/modal/quit.rs)
+종료 요청 → App::begin_shutdown
 
 begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
   ShutdownPhase 상태 머신 설치 → 모든 MainView 의 native webview 숨김
-  → about_to_wait 워치독이 16ms 간격으로 구동
+  → 표시할 윈도우가 있으면 about_to_wait에서 16ms 간격으로 구동 시도
+  → 없으면 같은 상태 머신을 블로킹 루프로 진행
   (단계 본문은 src/app/shutdown_cascade.rs, 순서·대기는 상태 머신이 소유)
 
   SavingLayout
   └─ S1  flush_layout_persistence(true)
          main + parked engine 각각 SaveLayoutNow{force} → 자기 슬롯 파일
-         (surface.closed 발화 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
+         (surface.closed 이벤트 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
   ReclaimingBootWorker                    (부팅 중 종료 전용 — 아니면 건너뛴다)
   └─ S2  try_recv 폴링 + deadline 5s → 회수한 PluginManager 를 장착
   ClosingSurfaces
-  ├─ ―   system.shutdown_initiated 발화 (plugin cleanup hook 기회)
+  ├─ ―   system.shutdown_initiated 이벤트 전송 (plugin cleanup hook 기회)
   ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
-  │      전 workspace→pane→tab→surface 순회 close 큐 push 후 plugin 으로 broadcast
+  │      모든 workspace→pane→tab→surface를 순회해 닫기 이벤트를 큐에 넣고 전송
   ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
-  │      surface close 가 뒤로 미뤄둔 output observer sink 워커 회수
+  │      surface 닫기에서 미뤄 둔 output observer sink 워커를 동기 join
   └─ ―   begin_plugin_shutdown() — 전 plugin 에 shutdown 요청을 보낸다
   StoppingPlugins
   └─ S4  poll_shutdown_all() 폴링 — 대기가 겹친다
-         └─ S4a plugin 별 2s graceful deadline → 초과 시 force kill
+         └─ S4a 공통 2s 정상 종료 기한 → 초과 시 kill + 동기 wait 시도
   Done
   ├─ shutdown_total
   └─ event_loop.exit()
 
-  ※ 대기가 있는 프레임마다 render_loading 으로 종료 화면 present (아래 절)
+  ※ 단계가 Waiting을 반환하면 종료 화면을 그리고 다음 회차에서 계속 진행
 
-run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
+run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 종료 화면은 더 그리지 않는다.
   drop_app_with_trace(app)
     ├─ S5d TcpIpcServer::drop        accept 스레드 stop + **port 파일 제거**
     ├─ S5a LuaEngine::drop           Shutdown send + 워커 join (블로킹)
@@ -54,32 +47,20 @@ run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 창은 이미 없다.
     └─ shutdown_total_with_drop      **사용자 체감에 대응하는 값**
 ```
 
-- 진입 3경로가 `begin_shutdown` 하나로 수렴하는 것은 계측 요구이자 순서 요구다.
-  t0 이 경로마다 어긋나면 `shutdown_total` 의 의미가 흔들리고, S1(layout 저장)이
-  S3(close cascade) 앞에 온다는 제약도 호출자마다 재현해야 한다.
-- **중복 진입은 무해하다.** 이미 종료 중이면 `begin_shutdown` 이 즉시 return 하므로,
-  종료 화면이 뜬 상태에서 Cmd/Ctrl+Q 를 다시 눌러도 phase 가 되감기지 않는다.
-- **프레임에서 실행하는 단계에는 긴 대기를 넣지 않는다.** `shutdown_cascade.rs` 의 각 함수는 프레임
-  안에서 짧게 끝나거나 begin/poll 로 갈라져 있다. 블로킹 호출을 단계 안에
-  넣으면 그동안 렌더링이 멈춘다. 컴파일 검사만으로는 이를 발견할 수 없다.
-- `PluginProcess::drop` 도 Drop tail 에서 블로킹(`child.wait()`)하지만, S4 의
-  `shutdown_all` 이 이미 `processes` 를 drain 했다면 남은 대상이 없다.
-- **정상 종료 경로에 `std::process::exit` 는 없다** — 위 Drop 들은 전부 실행된다.
-  (`std::process::exit` 호출부는 초기화 실패/에러 경로 전용이다.)
+- `begin_shutdown`을 공통 진입점으로 사용해 시작 시각과 단계 순서를 맞춘다. Layout 저장은 surface 닫기보다 먼저 수행한다.
+- 이미 종료 중이면 중복 요청은 바로 반환하며 단계가 처음으로 돌아가지 않는다.
+- 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. Layout 파일 쓰기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
+- S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
+- 정상 GUI 종료는 `event_loop.exit()`로 요청한다. 초기화 실패 등의 즉시 종료 경로와 달리 이후 객체 정리도 진행한다.
 
 ## plugin 종료 대기의 겹침 (S4)
 
-plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 없다. `shutdown_all`
-은 두 단계로 나뉜다.
+여러 플러그인의 정상 종료 대기를 겹치기 위해 요청과 확인을 나눈다.
 
-1. `begin_shutdown_all()` — 전 plugin 의 `req_tx` 에 shutdown 요청을 넣고 자식
-   핸들만 회수한 뒤 **즉시 반환**한다. 모든 plugin에 먼저 요청해야 동시에 기다릴 수 있다.
-2. `poll_shutdown_all()` — 논블로킹 폴링. 각 자식이 스스로 종료했는지
-   `try_wait` 로 확인하고, 자기 deadline(2s)을 넘긴 자식만 force kill 한다.
-   남은 대상이 없으면 `true`.
+1. `begin_shutdown_all()`은 시작 시각에서 2s 뒤의 공통 deadline을 정하고 각 플러그인에 shutdown을 요청한다. 이 호출에서 각 자식의 정상 종료를 차례로 기다리지는 않는다.
+2. `poll_shutdown_all()`은 `try_wait`로 종료 여부를 확인한다. 기한이 지났거나 조회에 실패하면 kill을 시도하고 `child.wait()`로 기다린다. 이 wait는 동기 호출이므로 함수 전체를 논블로킹으로 볼 수 없다.
 
-`shutdown_all()` 은 이 둘을 묶은 블로킹 형태다. 프레임을 계속 돌려야 하는
-호출자는 두 함수를 직접 조합해 대기 중에도 렌더를 유지할 수 있다.
+`shutdown_all()`은 두 단계를 반복하는 블로킹 함수다. GUI는 begin/poll을 나누어 대기 사이에 렌더링하지만, 각 호출 안의 동기 대기까지 없애지는 않는다.
 
 지켜야 하는 제약:
 
@@ -91,7 +72,7 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   호스트→plugin 방향의 포화는
   대기가 아니라 **거절**이다([ADR-0006](../adr/0006-bounded-ipc-transport.md)).
   writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
-  graceful 기회 없이 deadline 뒤 kill 로 회수된다. **S4a의 `killed`만으로는 원인을 구분할 수 없다.** 이 값은 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
+  정상 종료 요청을 받지 못하고 deadline 뒤 kill·wait 경로로 처리된다. **S4a의 `killed`만으로는 원인을 구분할 수 없다.** 이 값은 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
   빠졌다" 를 모두 포함한다. 전자는 호스트 큐·writer를, 후자는 plugin을 조사해야 한다.
   큐의 거절 여부는 다음 호스트 로그로 구분한다:
   `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
@@ -99,30 +80,11 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   판정을 면제받으므로 `plugin channels over their total byte budget` 로는 거절되지 않는다,
   ADR-0006의 전송 거절 처리), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
   에 남는다.
-- **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
-  기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.
-- **잔존 프로세스 없음** — `poll_shutdown_all()` 이 `true` 를 반환한 시점에 모든
-  자식이 회수(exit 관측 또는 kill+wait 완료)돼 있다. 폴링을 끝내지 않고 매니저가
-  drop 되면 남은 자식은 그 자리에서 kill 된다.
-- **단건 경로는 메인 스레드가 기다리지 않는다** — `plugin disable` 과 헬스체크
-  재시작은 shutdown 요청을 보낸 뒤 회수 대기(최대 2s, 넘으면 kill)를 전용 스레드
-  (`plugin-retire-<id>`)에 맡긴다. 메인 스레드는 50 ms 주기 타이머(`PluginRetire`,
-  회수 중인 것이 있을 때만 등록)로 끝난 것만 거두고, 로그에 `plugin process retired`
-  한 줄(`ms` · `reason`)을 남긴다. **새 프로세스는 옛 것이 회수된 뒤에 뜬다** — 재시작은
-  기동을 미뤘다가 회수가 끝난 tick 에 한다(겹치면 옛 프로세스가 쥔 포트·파일을 새 것이
-  못 잡는다). 회수 중에 온 `disable` 은 그 예약을 거둔다. 회수 중에 온 명시적 `enable`
-  은 미루지 않고 그 id 의 회수를 기다린 뒤 그 자리에서 띄운다 — `enable` 이 돌아오면
-  plugin 이 떠 있다. 그 대가로 이 조작에 한해 메인 스레드가 최대 2s 동안 대기한다. 호스트 종료가
-  시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지 보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
-  **회수 완료를 기다리는 작업은 네 가지다** — `plugin remove` · swap · `upgrade-builtins` 의 쓰기 경로 ·
-  명시적 `enable`. 헬스체크 재시작과 `disable` 은 기다리지 않는다. 앞의 셋은 옛
-  프로세스가 반드시 사라져 있어야 하는 자리다 — `plugin remove`
-  (디렉토리를 지운다) · swap(`upgrade-builtins --restart-running` · auto-reload,
-  디렉토리를 덮어쓴다) · `upgrade-builtins` 의 **쓰기 경로**(버전이 달라 덮어쓰거나,
-  같은 버전인데 바뀐 내용이 있을 때). 설치본이 더 높아 건너뛰거나 같은 버전에 바뀐 것이
-  없으면 기다리지 않는다 — 회수와 재기동 예약은 뒤에서 그대로 이어진다. 기다린 자리는
-  회수 뒤의 재기동 예약을 함께 가져오므로 쓰기를 마친 뒤 다시 띄운다. 근거·대안은
-  [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
+- **2s의 범위**: 정상 종료를 기다리는 공통 기한이다. 요청 준비와 kill·wait까지 포함한 전체 종료 시간의 상한이 아니다. S4a는 개별 처리 시간과 `graceful|killed` 결과를 기록한다.
+- **종료 결과의 한계**: `poll_shutdown_all()`의 true는 관리 중인 대기 항목을 모두 처리했다는 뜻이다. kill이나 wait 실패도 로그를 남기고 `Killed`를 반환하므로, 이 값만으로 모든 OS 프로세스가 사라졌다고 단정하지 않는다.
+- **단건 종료**: disable과 헬스체크 재시작은 보통 `plugin-retire-<id>` 스레드에 기다리기를 맡긴다. 스레드 생성이 실패하면 호출한 스레드가 직접 기다린다. 50ms 주기의 `PluginRetire` 타이머는 완료한 항목을 확인하며 `plugin process retired` 로그에 `ms`와 `reason`을 남긴다.
+- **재시작**: 회수 작업이 끝난 tick에서 새 프로세스를 시작한다. 회수 중 disable이 오면 재시작 예약을 취소한다. 명시적 enable은 해당 회수를 기다린 뒤 시작하므로 호출이 지연될 수 있다. 이 대기도 전체 2s 상한은 아니다. 호스트 종료 중에는 다시 시작하지 않고 S4a에 `retiring before exit`를 기록한다.
+- **파일 변경 전 대기**: plugin remove, swap, upgrade-builtins의 실제 쓰기, 명시적 enable은 기존 회수 작업을 기다린다. 더 높은 설치 버전이나 변경 없는 동일 버전 때문에 쓰기를 생략하면 기다리지 않는다. 쓰기 경로는 재시작 예약도 인계받아 작업 뒤 다시 시작한다. [플러그인 수명 관리](../adr/0026-plugin-registration-and-lifecycle.md)를 따른다.
 
 ## 종료 화면
 
@@ -144,10 +106,12 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
 
 | phase | 문구 키 | 프레임을 넘기는가 |
 |-------|---------|-------------------|
-| `SavingLayout` | `shutdown.phase_saving_layout` | 아니오 (실측 <1ms) |
+| `SavingLayout` | `shutdown.phase_saving_layout` | 파일 저장을 마친 뒤 같은 호출에서 계속 진행 |
 | `ReclaimingBootWorker` | `shutdown.phase_finishing_startup` | 예 (부팅 중 종료 전용) |
-| `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | 아니오 (실측 <1ms) |
-| `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 예 (S4 — 가장 늦게 빠지는 plugin 의 소요, 상한 2s) |
+| `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | 이벤트 전송과 동기 join 뒤 같은 호출에서 계속 진행 |
+| `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 남은 대상이 있으면 다음 회차에서 확인. kill·wait는 동기 호출 |
+
+SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조건의 관측값이며 단계의 시간 제한은 아니다.
 
 동작 규칙:
 
@@ -155,9 +119,7 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
   더 진행할 수 없을 때까지 스텝을 반복하므로, 대기가 없는 종료(plugin 0 개 — 실측
   0.63ms)는 첫 구동에서 완료에 도달해 **한 프레임도 그리지 않는다.** 최소 표시
   시간이나 지연 표시 타이머가 필요 없다.
-- **창이 없으면 프레임을 돌리지 않는다.** macOS 최소화(창 파괴 + park)나 트레이
-  hide 상태의 종료는 상태 머신을 설치하지 않고 그 자리에서 끝까지 블로킹으로
-  실행한다.
+- **표시할 윈도우가 없어도 같은 상태 머신을 쓴다.** `begin_shutdown`에서 상태를 먼저 설치하고, 렌더 대상이 없으면 블로킹 루프로 끝까지 진행한다.
 - **창이 여럿이면 전부 종료 화면으로 바꾼다.** 하나만 그리고 나머지를 먼저 닫으면
   창이 하나씩 사라지는 것으로 보여 크래시와 구분되지 않는다.
 - **종료 가드** — 종료 진행 중에는 steady-state 파이프라인(IPC 처리 / intent drain /
@@ -168,8 +130,7 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
   이미 정리가 끝난 상태로 파이프라인이 돈다. 그래서 `finish_shutdown` 은
   `App.shutdown` 을 비우지 않고 phase 를 `Exited` 로 옮긴다.
 - **IPC 요청은 무시하지 않고 거절한다** — 가드가 `process_ipc()` 를 막으므로 이
-  구간의 요청은 아무도 읽지 않는다. 그냥 드롭하면 클라이언트(우리 자신의 `tasty`
-  CLI 포함)는 무한정 기다린다. 그래서 매 프레임과 `exit()` 직전에 큐를 drain 해
+  구간의 요청은 정상 핸들러로 처리하지 않는다. 클라이언트가 응답 없이 기다리지 않도록 매 프레임과 `exit()` 직전에 큐를 drain 해
   핸들러를 실행하지 않고 `-32000 "host is shutting down"` 으로 회신한다
   ([ADR-0016](../adr/0016-window-platform-and-shutdown.md)). 창 없는 블로킹 경로도
   같은 루프를 쓰므로 함께 덮인다.
@@ -188,7 +149,7 @@ plugin 정리는 `PluginProcess::drop` 의 즉시 kill 로만 이뤄지므로 gr
 ## 종료 계측 (target: `tasty::shutdown`)
 
 부팅 계측(`target: "tasty::boot"`, [boot-sequence](boot-sequence.md))과 같은 관례를
-따른다: 상시 발화, 레벨 `info!`, 소요는 `ms` 필드(f64 밀리초), 분기 사유는 `reason`
+따른다: 항상 기록하며 레벨 `info!`, 소요는 `ms` 필드(f64 밀리초), 분기 사유는 `reason`
 필드. debug 빌드는 `$TASTY_HOME/debug-dev.log`(debug 레벨 file layer)에 수집되고,
 stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info`.
 
@@ -198,7 +159,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | S2 boot_worker_reclaim | `ReclaimingBootWorker` phase (부팅 중 종료 전용, timeout 5s) | `reason = reclaimed\|unreclaimed` |
 | S3 surface_close_cascade | close 큐 push + plugin broadcast | `surfaces` = 큐에 push 한 surface 수 |
 | S3b observer_sink_join | close 경로가 미뤄둔 observer sink 워커 join | — |
-| S4 plugin_shutdown | `StoppingPlugins` phase 전체 (겹친 대기의 합계 = 최댓값) | `plugins` = 종료 대상 plugin 수 |
+| S4 plugin_shutdown | `StoppingPlugins` 단계 전체. 정상 종료 대기는 겹치지만 동기 정리 비용도 포함 | `plugins` = 종료 대상 plugin 수 |
 | S4a plugin_shutdown_one | plugin 1개 종료 (graceful deadline 2s) | `plugin_id`, `reason = graceful\|killed\|no_child` |
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
@@ -218,16 +179,8 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 - **S4 는 plugin 이 0개여도 `plugins=0` 으로 발화한다.** "안 걸렸다" 와 "계측이 안
   붙었다" 를 로그만으로 구분할 수 있어야 하기 때문이다. plugin manager 자체가
   없으면 `S4 plugin_shutdown (no plugin manager)` 로 구분된다.
-- **S4 는 개별 S4a 의 합이 아니라 최댓값에 수렴한다.** 대기가 겹치므로
-  plugin 이 6개면 S4a 가 각각 ≈2000ms 여도 S4 는 ≈2000ms 다. S4 가 plugin 수에
-  비례해 커졌다면 대기가 다시 직렬화된 것이다.
-- **S3b 는 정상 경로에서 0 에 가깝다.** surface close 는 sink 워커를 join 하지 않고
-  모아두기만 하므로([ADR-0016](../adr/0016-window-platform-and-shutdown.md)),
-  여기서 한 번에 회수한다. 워커들이 그동안 병렬로 이미 배수를 끝냈기 때문에 실제
-  대기는 거의 없다. observer 를 쓰지 않으면 항상 0 이다.
-  **이 단계는 정확성 요건이 아니라 최적화다** — `ObserverRouter::drop` 이 같은
-  `join_retired` 를 한 번 더 부르므로, S3b 가 빠져도 sink 파일이 잘리지는 않는다.
-  다만 그 회수가 Drop tail(S5) 까지 밀려 종료가 그만큼 늦어진다.
+- **S4와 S4a는 측정 구간이 다르다.** 정상 종료 대기는 겹치므로 각 S4a를 단순 합산하지 않는다. 그렇다고 S4가 항상 개별 최댓값과 같은 것도 아니다. 순회, kill·wait, 기존 retire 작업의 대기와 스케줄링이 영향을 준다.
+- **S3b는 동기 join 시간이다.** 닫기에서 미뤄 둔 observer sink 워커가 끝날 때까지 기다린다. 워커가 이미 끝났으면 짧지만 파일 쓰기 등이 남아 있으면 길어질 수 있다. Observer가 없어도 순회와 계측 비용이 있어 항상 0이라고 보장하지 않는다. 이후 `ObserverRouter::drop`도 남은 워커를 join하므로 정리가 뒤로 미뤄질 수도 있다.
 - **S3 의 `surfaces` 와 S5b 의 `ptys` 는 세는 대상이 다르다.** 전자는 layout 상의
   surface, 후자는 PTY 를 실제로 가진 backend 다 — child terminal / 헤드리스 PTY 는
   layout 밖에도 있고, PTY 없는 surface(webview 등)도 있어 두 값은 일치하지 않는다.
@@ -235,12 +188,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   / `tasty_ssh::tunnel_drop_totals`). destructor 가 개수만큼 반복돼 개별 로그로는
   읽기 어렵고, 평시(surface 닫기·attach 해제)의 drop 도 같은 누적기에 쌓이므로
   **절대값이 아니라 델타로만** 의미가 있다.
-- `shutdown_total` ≥ S1+S2+S3+S4 이며, 차이가 크면 계측이 덮지 않은 구간이 있다는
-  뜻이다. 마찬가지로 `shutdown_total_with_drop` − `shutdown_total` = S5 다.
-- 로그 file layer는 `Mutex<File>`에 직접 쓴다
-  (`crates/tasty-platform/src/crash_report.rs`). `BufWriter`를 사용하지 않으므로
-  Drop tail의 로그가 사용자 공간 버퍼에만 남는 문제를 피한다. 파일 쓰기 실패까지
-  방지한다는 뜻은 아니다.
+- `shutdown_total`과 각 단계의 합을 비교해 별도 계측하지 않은 시간을 찾는다. `shutdown_total_with_drop`은 Drop tail까지 포함한 값이다.
 
 ## 실측 기준치
 
@@ -284,9 +232,9 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
   `WaitingEngine` 단계에 걸려 S2 가 발화한다. quit 모달 경로는 키 입력이 필요한데,
   `debug.settings.apply` 로 `keybindings.quit` 을 라이브 지정한 뒤 `xdotool key`
   로 실제 키 이벤트를 보내면 된다(합성 이벤트가 아니라 XTEST 경로여야 한다).
-- **종료 중 IPC 는 즉시 오류로 끝나야 한다.** 종료 대기 중에 아무 메서드나 던져
-  `{"error":{"code":-32000,"message":"host is shutting down"}}` 가 곧바로 오는지
-  본다. 응답이 없거나 클라이언트가 계속 기다리면 실패다.
+- **종료 중 IPC는 핸들러 실행 대신 종료 오류로 응답해야 한다.** 종료 대기 중에 아무 메서드나 던져
+  `{"error":{"code":-32000,"message":"host is shutting down"}}` 가 오는지 본다. 응답을 받기까지의 시간도 기록한다. 동기 종료 단계가 막히면
+  큐를 확인하는 시점도 늦어질 수 있다.
 - **화면이 실제로 도는지는 창 캡처로 판정한다.** `xwd -id <win>` 로 0.25~0.3s 간격
   3장 이상을 찍어 스피너 각도가 서로 다른지 본다 — 각도가 같으면 프레임이 안 도는
   것이다(정지 프레임). tasty 자체 `ui.screenshot` IPC 는 종료 중에 처리되지 않으므로

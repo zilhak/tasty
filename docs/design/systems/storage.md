@@ -117,32 +117,16 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 
 ### 터미널 출력 observer 의 memory sink — 저장 계약
 
-`output.observe_start` 로 등록한 observer 중 sink 가 memory 인 것은 파싱된 항목을 `memory.db` 에
-쓴다(`src/core/output_observer.rs` 의 `run_memory_sink`). 이 sink 는 **store 의 port
-(`MemoryStorage`)만 본다** — 도메인 `core` 를 참조하지 않는다.
+`output.observe_start`의 memory sink는 파싱한 항목을 `memory.db`에 쓴다.
+`src/core/output_observer.rs`의 `run_memory_sink`가 `MemoryStorage` 인터페이스를 사용한다.
 
-- **키**: `global` 스코프의 `tasty.observer.<id>.<ms>.<seq>`, owner 는 `_host`. `<ms>` 는 쓰는 순간의
-  밀리초, `<seq>` 는 그 sink 가 쓴 순번(0 부터, 6 자리로 채움)이다. 순번이 있어 **같은 밀리초에 온
-  항목도 각자 키를 가진다** — 한 줄에서 여러 항목이 나와도 덮어쓰지 않는다. 시계가 역행하지 않고 같은 ms 안의 순번이 여섯 자리 범위에 있으면 키 오름차순이 도착
-  순서와 같으므로 `memory.list --prefix tasty.observer.<id>.` 가 시간순으로 읽힌다. 근거는
-  [ADR-0009](../../adr/0009-state-storage-and-retention.md).
-- **상한 `max_records` 는 가장 최근 N 건을 남긴다.** sink 는 자기가 쓴 키를 순서대로 기억해 넘치면
-  가장 오래된 것부터 지운다. 키가 유일하므로 지우는 칸은 늘 그 옛 레코드 자신이다. 삭제는
-  best-effort 다 — 실패해도 경고 없이 넘어가므로 그때는 N 을 넘는 레코드가 남을 수 있다. sink 가
-  재시작하면 기억이 비므로 이전 실행이 남긴 키는 이 상한의 대상이 아니다.
-- **put 실패는 그 항목만 버린다.** `tracing::warn!` 을 한 줄 남기고 다음 항목으로 간다 — sink 가
-  멈추지 않는다. **소비자에게 gap 신호는 가지 않는다**: observer 의 `dropped` 는 채널 역압으로
-  못 넣은 항목만 세고 put 실패는 세지 않는다. 원인은 위 "저장 실패의 의미" 의 표로 갈리지만 이
-  sink 는 그것을 로그 문장에만 싣는다.
-- **락 poison**: sink 는 store 락을 `tasty_utils::poison::recover_mutex` 로 복구해 계속 쓰고, 보고
-  좌표는 store 의 port 가 준다(`tasty_memory::STORE_LOCK_WHAT` · `STORE_LOCK_POISONED`). 본체
-  `core` 의 `MEMORY_WHAT` · `MEMORY_POISONED` 는 **같은 static 의 재수출**이라 프로세스에 첫-1 회
-  플래그가 하나다.
-- **종료 계약**: surface 가 닫히면 sink 의 sender 만 떨어뜨리고 join 은 미룬다 — 채널에 들어간
-  항목은 std mpsc 계약상 워커가 끝까지 비운 뒤 끝나므로 잃지 않는다. 앱 종료 경로가
-  `join_retired` 로 남은 워커를 회수하고, 그 호출을 빠뜨린 경로에서도 라우터의 `Drop` 이 같은
-  회수를 한다(마지막 방어선). 워커가 다 쓰기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
-- 근거는 [ADR-0010](../../adr/0010-storage-failure-reporting.md).
+- **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 저장 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)).
+- **`max_records`**: 이번 실행에서 쓴 키를 순서대로 기억하고 최근 N건을 넘으면 오래된 키부터 삭제한다. 삭제 실패는 경고 없이 넘어가므로 N건보다 많이 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.
+- **put 실패**: 경고를 남기고 해당 항목은 버린 뒤 다음 항목을 처리한다. 소비자에게 gap을 보내지 않으며 observer의 `dropped`에도 더하지 않는다. `dropped`는 채널이 가득 차 넣지 못한 항목만 센다.
+- **잠금 poison**: `tasty_utils::poison::recover_mutex`로 복구해 계속 사용한다. 로그의 대상 이름과 최초 보고 여부는 `tasty_memory::STORE_LOCK_WHAT`·`STORE_LOCK_POISONED`를 쓴다. `core`의 `MEMORY_WHAT`·`MEMORY_POISONED`는 같은 static을 재수출하므로 최초 보고 플래그도 공유한다.
+- **종료**: surface가 닫히면 sender를 해제하고 워커 join은 미룬다. 워커는 채널에 남은 항목을 읽고 저장을 시도한 뒤 종료한다. 앱 종료의 `join_retired`와 라우터 Drop이 남은 워커를 기다린다. 저장 실패까지 방지하는 것은 아니며 워커가 끝나기 전에 프로세스가 종료되면 남은 항목을 잃을 수 있다.
+
+저장 실패 처리의 근거는 [ADR-0010](../../adr/0010-storage-failure-reporting.md)에 있다.
 
 ### 관측 로그 보존
 
@@ -209,7 +193,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 
 **해석하지 못한 사용자 파일은 덮어쓰기 전에 보존한다.** `config.toml` 과 `layouts/NN.json` 은 앱이 다시 쓰는 파일이라, 파싱에 실패한 뒤 기본값으로 폴백하면 다음 저장이 원본을 지운다. 그래서 **저장 직전에** 원본을 `<파일명>.bak`(중복이면 `.bak.2` … `.bak.9`)으로 **rename** 해 자리를 비운 뒤 쓴다. copy 가 아니라 rename 인 이유는 원본이 자리를 떠야 이어지는 write 가 데이터를 지우지 않기 때문이다.
 
-**손상 슬롯이 하나라도 있으면 스크롤백 GC 는 통째로 멈춘다.** `gc_scrollback_orphans_all_slots_in` 은 슬롯 하나라도 읽거나 해석하지 못하면 그 회차의 GC 를 포기하고 모든 `.bin` 을 남긴다 — 그 슬롯이 무엇을 참조했는지 모르는 채로 지우면 백업(`NN.json.bak`)에서 되살릴 때 스크롤백만 빈 채로 복원되기 때문이다("모르면 지우지 않는다"). 절충은 사용자가 손상 슬롯을 방치하는 동안 스크롤백이 계속 쌓인다는 것이다. 디스크가 왜 줄지 않는지, GC 가 왜 안 도는지 의심될 때는 `layouts/` 에 해석되지 않는 슬롯이 남아 있는지부터 본다.
+`gc_scrollback_orphans_all_slots_in`은 열거된 슬롯 하나라도 읽거나 해석하지 못하면 그 회차의 scrollback GC를 건너뛴다. 참조를 알 수 없는 슬롯의 `.bin`을 지우지 않기 위한 처리다. 다만 `list_slots_in`의 디렉터리 열거 실패는 빈 목록으로, 개별 항목 오류는 생략으로 처리한다. 열거되지 않은 슬롯까지 보호하는 보장은 아니며 빈 목록이면 빈 참조 집합으로 GC가 진행된다. 자세한 범위는 [레이아웃 영속화](../../features/layout-persistence/index.md#surface-내용-복원-현재-터미널-scrollback)를 참고한다.
 
 **보존 시점은 로드가 아니라 저장이다.** 로드는 "해석하지 못했다" 는 사실만 값에 실어 돌려주고 파일은 그대로 둔다. 부팅 중 같은 파일을 읽는 곳이 여럿이고(설정은 런처와 GUI 가 각각, 레이아웃 슬롯은 scrollback GC 와 engine 이 각각) 그 둘은 별개 프로세스라, 읽는 쪽이 파일을 옮기면 나중에 읽는 쪽은 "파일 없음" 만 보게 된다 — 사용자에게 알릴 주체가 사건을 모르게 되고, 나중에 읽은 쪽이 잘못된 이유로 저장을 금지할 수도 있다.
 

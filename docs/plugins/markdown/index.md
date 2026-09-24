@@ -22,26 +22,16 @@
   display_name 은 파일명.
   - **제목 크기**: `render::heading_sizes_px` 가 `font-size-prose-h1`(h1)↔`font-size-body`(h6) 사이를 5단계 **선형보간**한다 — CSS 라 라이브러리 제약 없이 이 보간 자체가 plugin 의 디자인 선택이다(원하면 per-level 값을 자유롭게 override 가능).
   - **표(GFM)**: 실제 `<table>`/`<th>`/`<td>` — header 밴드·zebra(`tr:nth-child(even)`)·셀 패딩 전부 CSS 로 직접 달성(egui `Grid` 우회 불필요).
-  - **코드블록**: 펜스드 언어 태그(` ```rust `)는 `class="language-rust"` 로 `<code>` 에 살아남는다(`render::sanitize_fence_lang` 이 `[A-Za-z0-9_+-]` 로 정규화 후 ammonia 화이트리스트에 `code`/`class` 를 명시 허용) — Mermaid fenced block(`language-mermaid`) 식별에 사용한다. 현재 render_document는 fenced code가 있으면 번들 highlight.js를, language-mermaid가 있으면 mermaid.js를 넣고 실행한다. Mermaid는 code.language-mermaid를 대상으로 하며 초기화·렌더 실패는 console error로 남긴다. 모든 OS·오프라인 환경에서의 실행은 확인되지 않았다.
+  - **코드블록**: `sanitize_fence_lang`은 언어 태그를 `[A-Za-z0-9_+-]`로 정리하고 `code`의 class를 유지한다. `render_document`는 생성한 본문 HTML에 `class="language-`가 있으면 highlight.js를, `language-mermaid`가 있으면 mermaid.js를 넣는다. 문자열 포함 검사이므로 실제 코드 블록 외의 본문도 이 조건에 걸릴 수 있다. 실행 스크립트가 코드 요소를 선택해 처리하며, Mermaid는 `code.language-mermaid`를 대상으로 한다. 실패는 console error로 기록한다. 모든 OS·오프라인 환경에서 실행을 확인한 것은 아니다.
 - **sanitize (XSS 방어의 1차 관문)** — `ammonia::Builder` 최소 화이트리스트: `<script>`/이벤트 핸들러 속성(`onerror=` 등)/`javascript:` scheme href 전부 stripped. `classify_link` 도 별도로 `javascript:` 를 판정 불가(`None`)로 취급해 이중 방어. GFM 렌더에 필요한 태그(`table`/체크박스 `input[type=checkbox]`/`del`/footnote `sup`/`div`/이미지/링크)만 허용 — 코드는 `crates/tasty-plugin-markdown/src/render.rs::sanitize_html` 이 정본.
-- **리로드·삭제 처리** — `markdown.reload` IPC(명시 호출)와 idle-watch 감지 리로드가 **동일한 단일 함수**(`MarkdownPlugin::markdown_reload`)로 수렴한다 — 실제 read(`MdDoc::force_reload`)와 문서 재생성(`reload_webview`)이 항상 이 한 경로만 타므로, 빠른 연속 편집이 와도 "stale read 가 최신 값을 덮어쓰는" 레이스가 애초에 생기지 않는다(plugin runtime 은 단일 스레드 dispatch 루프). 파일이 외부 삭제로 사라지면 error 상태(`markdown.state.failed`)로 표시하고, 다시 생기면 자동 복구한다.
-- **idle auto-reload(입력 없이도 갱신)** — webview-kind surface 는 `surface.set_context`/`paint`(=egui-mesh 전용 forward)를 **아예 받지 않는다** — 그래서 idle watch 가 사실상 유일한 자동 갱신 경로다.
-  감시 구현은 SDK의 `file_watch` 모듈을 공유한다([plugin 개발 가이드](../../dev-guide/plugin-development.md)).
-  `on_start` 에서 별도 스레드를 띄워 `RELOAD_CHECK_INTERVAL_SECS`(1 초) 주기로 열려 있는 모든 markdown surface 의 파일 **내용 지문**을 견주고(시계가 아니다 — 눈금이 폴 주기보다 거친 파일시스템에서 같은 mtime 으로 찍힌 두 쓰기 중 뒤엣것을 영구히 놓치기 때문), 변경을 감지하면 `self_invoke` 로 **plugin 자신의** `markdown.reload` IPC 를 호출한다 — CLI/사용자가 같은 메서드를 부르는 것과 동일 요청이 단일 dispatch 루프에 직렬 도착해 위 레이스-없음 보장을 그대로 공유한다.
-  (`host.call` 은 쓸 수 없다 — 호스트는 caller 가 네임스페이스 owner 자신이면 forward 하지 않아 항상 `-32601` 이 떨어진다.)
+- **리로드·삭제 처리**: 명시적 `markdown.reload`와 파일 감시 요청은 같은 플러그인 워커에서 처리한다. 로컬 파일을 다시 읽고 HTML을 만들며 읽기에 실패하면 `markdown.state.failed`를 표시한다. 파일이 다시 생긴 것을 감지하면 다시 읽는다. 워커의 직렬 처리가 파일 시스템의 동시 변경까지 막는 것은 아니다.
+- **입력 없는 자동 갱신**: 별도 스레드가 SDK의 `file_watch`를 사용한다([플러그인 개발 가이드](../../dev-guide/plugin-development.md)). 검사 사이의 대기는 `RELOAD_CHECK_INTERVAL_SECS`(1초)이며 조회·읽기 시간을 포함한 전체 갱신 상한은 아니다. 감시에서도 파일을 읽어 내용 해시를 비교하고, 바뀌면 `self_invoke`로 워커의 `markdown.reload`를 요청한다. 자기 namespace를 `host.call`로 부르면 호스트 구현으로 전달되므로 플러그인 내부 호출에는 사용하지 않는다.
 - **콘텐츠 전달** — surface 생성 시 host 가 `surface.create{file}` 를 plugin 에 보낸다. plugin 이 파일을 직접 읽는다(`fs.read`).
 - **Theme parity** — webview-kind surface 는 Theme 이 자동으로 push 되지 않으므로(egui-mesh 의 `set_context.theme` 와 달리), plugin 이 문서를 (재)생성할 때마다 host 의 read-only **`theme.query`** IPC 로 현재 색+`is_light`+UI zoom 을 직접 조회한다. 이후 색이 바뀌면 host 가 발행하는 **`theme.changed`** 이벤트(매니페스트 `event_subscribe`)를 구독해 열려 있는 모든 markdown 문서를 재생성한다.
 - **JS 는 기본 허용** — host 의 webview 설정 기본값은 plugin 마다 다르다: html 플러그인은 JS 기본 차단(임의 원격 콘텐츠를 열 수 있어서), markdown 은 **기본 허용**(`resolve_webview_settings` 의 per-plugin override, `src/view/main/redraw.rs`) — 신뢰된 주소창/네비게이션 스크립트가 항상 실행돼야 하고, 실제 markdown 콘텐츠 자체는 이미 별도로 sanitize 되므로 플러그인이 추가하는 신뢰 스크립트와 저자가 작성한 본문을 구분한다. sanitize가 모든 스크립트 위험을 없앤다고 보장하지 않는다.
-- **인라인 이미지** — **로컬 이미지는 plugin 이 문서 안으로 싣는다.** sanitize 를 마친 본문에서 원격이 아닌 모든 `<img src>` 를 파일로 풀어 `data:` URI 로 바꾼다(`render::inline_local_images`).
-  상대 경로·스킴 없는 절대 경로·raw HTML `<img>` 가 모두 같은 자리를 지난다.
-  이렇게 하는 이유는 webview 가 `load_html` 로 문서를 받아 origin 이 `about:blank` 라 **파일을 읽을 권한이 없기** 때문이다 — `<base href>` 는 주소를 풀 뿐 권한을 주지 않는다.
-  바이트를 문서에 실으면 권한 자체가 필요 없어 세 플랫폼이 같은 경로로 동작한다.
-  동시에 **읽기 범위가 문서 디렉토리 트리로 좁혀진다**: 트리 밖을 가리키는 이미지(절대 경로·`..`·트리 밖을 가리키는 심볼릭 링크)는 `src` 가 제거돼 실패 placeholder 가 된다.
-  확장자 허용목록(PNG/APNG/JPEG/GIF/WebP/AVIF/BMP/ICO/SVG) 밖이거나 한 장 4 MiB·문서 총합 16 MiB 상한을 넘어도 같다.
-  원격 `http(s)` `src` 는 그대로 두고, 그 판정은 host 의 webview 설정 **원격 콘텐츠 허용**(`allow_remote_content`, 기본 꺼짐)이 한다 — 설정 › Appearance › Markdown 의 토글이고 세 backend에 차단 구현이 있다.
-  기존 실행 근거는 Linux/WebKitGTK에서 차단/허용을 비교한 결과이며 다른 OS의 실행 결과는 확인되지 않았다.
-  근거·대안·재검토 조건은 [ADR-0030](../../adr/0030-bundled-plugin-data.md).
-  이 인라이닝 뒤로 `<base href>` 가 할 일이 남지 않아 문서 `<head>` 에서 제거됐다([ADR-0030](../../adr/0030-bundled-plugin-data.md)).
+- **인라인 이미지**: 정리한 본문의 로컬 `<img src>`를 플러그인이 읽어 `data:` URI로 넣는다. 상대 경로, scheme 없는 절대 경로와 raw HTML 이미지에 같은 처리를 적용한다. WebView가 로컬 파일 경로를 직접 열지 않아도 되게 하기 위한 방식이다.
+  `canonicalize`한 경로가 문서 디렉터리 안에 있고 확장자가 PNG/APNG/JPEG/GIF/WebP/AVIF/BMP/ICO/SVG 목록에 있어야 한다. 파일을 읽기 전 metadata 길이로 한 장 4 MiB·문서 총합 16 MiB 기준을 확인한다. 경로 확인·metadata 조회·읽기는 별도 작업이므로 그 사이 파일이나 심볼릭 링크가 바뀌는 경우까지 막는 보장은 아니다. 읽지 못한 이미지의 `src`는 제거해 실패 표시 대상으로 둔다.
+  원격 `http(s)` 이미지는 그대로 두며 호스트의 `allow_remote_content` 설정을 따른다. 기본값은 꺼짐이고 Settings › Appearance › Markdown에서 바꾼다. 세 백엔드에 차단 구현이 있으며 실제 차단·허용 비교는 Linux/WebKitGTK에서 확인했다. 다른 OS 실행은 확인하지 않았다. 선택 이유는 [ADR-0030](../../adr/0030-bundled-plugin-data.md)에 있다.
 - **파일 핸들러** — `detector "markdown"`(확장자 매핑) + `handler` action `open_surface{surface_kind:"markdown"}`. 마크다운 파일 열기 시 이 surface 로 뜬다.
 - **파일 열기와 대용량 확인 팝업** — 매니페스트에 `file-open`과 `large-file-confirm`을 등록하며 egui-mesh로 그린다. 파일 열기 팝업은 경로 입력, 찾아보기, 열기/취소로 구성한다.
 

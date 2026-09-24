@@ -8,33 +8,39 @@
 
 ## 목적
 
-`general.restore_layout`(기본 **on**) 활성 시 워크스페이스/페인/탭/서피스 구조를 **슬롯 파일** `~/.tasty/layouts/NN.json` 에 저장하고, 앱 시작 시 복원해 이전 세션 창 배치를 재현한다.
+`general.restore_layout`(기본 on)이 켜져 있으면 워크스페이스·페인·탭·서피스 구성을 `~/.tasty/layouts/NN.json` 슬롯 파일에 저장한다. 다음 실행에서 슬롯을 읽어 배치를 복원한다. 파일 읽기와 쓰기는 실패할 수 있으며 아래의 보호 규칙을 적용한다.
 
 ## 내부 동작
 
 ### 저장 대상 / 타이밍
 
-워크스페이스(이름·부제·설명) · 페인 트리(split direction/ratio) · 탭(이름·active) · 서피스 레이아웃 트리 · 서피스 타입별 최소 정보(Terminal: cwd·`restore.command`·`scrollback_ref` / Markdown·Image: path / Explorer: root / Html: url) · 활성 워크스페이스·포커스 페인 인덱스. 구조 변경 시 dirty + **500ms 디바운스**, 종료 시 dirty 면 즉시 flush.
+다음 정보를 저장한다.
 
-복원은 engine(=창) 하나가 만들어질 때 1회 — 앱 시작 시의 첫 창과 이후 새로 여는 창 모두. 파싱 실패/파일 없음 → 기본 "Workspace 1" 로 시작. 개별 서피스 복원 실패 시 그 서피스만 스킵하고, 워크스페이스를 **하나도** 복원하지 못하면 복원 적용 직후의 안전망이 기본 "Workspace 1" 하나를 만든다(빈 창이 뜨지 않는다).
+- 워크스페이스 이름·부제·설명, 페인 분할 방향과 비율, 탭 이름과 선택 상태
+- 서피스 배치와 종류별 복원 정보: Terminal의 cwd·`restore.command`·`scrollback_ref`, Markdown·Image의 path, Explorer의 root, Html의 url
+- 활성 워크스페이스와 포커스 페인 인덱스
 
-복원할 레이아웃이 있는 engine 은 그 기본 워크스페이스를 **미리 만들지 않는다**. 미리 만들면 딸려 spawn 된 셸 프로세스가 복원 후 어떤 워크스페이스에도 속하지 않은 채 남아 회수되지 않는다(engine 하나당 셸 하나 누수). 복원이 끝난 뒤에 창의 view 상태를 조립하므로 그 사이에 빈 화면이 보이지도 않는다.
+구조가 바뀌면 dirty로 표시하고 500ms 디바운스 뒤 저장한다. 종료 시에는 디바운스를 건너뛰며, `restore_surface_content`가 켜져 있으면 구조가 바뀌지 않았어도 저장을 시도한다.
+
+저장 함수 `save_slot`은 파일 I/O를 동기로 수행하지만 성공 여부를 호출자에게 반환하지 않는다. 호출자는 함수를 부른 뒤 dirty를 지우며 저장을 생략한 경우에도 `LayoutSaved`를 반환한다. 따라서 이 이벤트나 종료 flush 완료가 파일 저장 성공을 뜻하지는 않는다. 실패 로그와 실제 파일을 함께 확인해야 한다.
+
+레이아웃 복원은 engine을 만들 때 한 번 수행한다. 앱의 첫 윈도우뿐 아니라 나중에 여는 윈도우도 해당한다. 파일이 없거나 읽지 못하면 기본 `Workspace 1`로 시작한다. 개별 surface를 복원하지 못하면 해당 항목은 건너뛰고, 복원한 workspace가 하나도 없으면 기본 workspace를 만든다.
+
+복원할 레이아웃이 있는 engine에는 기본 workspace를 미리 만들지 않는다. 기본 터미널의 셸이 복원 후 소속 없이 남는 것을 피하기 위해서다. 복원이 끝난 뒤 view 상태를 구성한다.
 
 ### 슬롯 파일
 
-레이아웃은 `~/.tasty/layouts/NN.json` 슬롯 파일 하나 = engine(=창) 하나의 전체 상태다(워크스페이스 목록 · 활성 워크스페이스 · 카테고리). 슬롯 목록과 순서는 파일명의 숫자에서 전부 파생되며 별도 인덱스 파일을 두지 않는다 — 별도 인덱스는 실제 파일 목록과 어긋날 수 있다. 번호는 2자리 zero-pad(`01.json`)이고 100 이상은 자연 확장된다.
+슬롯 파일 하나에 engine 하나의 전체 레이아웃을 저장한다. 파일명의 숫자로 목록과 순서를 정하며 별도 인덱스 파일은 없다. 번호는 최소 2자리(`01.json`)로 표시하고 100 이상은 필요한 자릿수를 사용한다.
 
-write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬롯이 여러 개이므로 잘린 JSON 하나가 아래 scrollback 정리를 통해 다른 슬롯의 `.bin` 까지 잃게 만들 수 있다.
+`NN.json.tmp`에 쓴 뒤 rename으로 슬롯 파일을 교체한다. 쓰기나 rename이 실패하면 로그를 남긴다. 이 방식이 디스크 오류나 전원 중단 뒤의 저장까지 보장하는 것은 아니다.
 
-저장은 각 engine 이 자기 슬롯 파일에만 한다 — 종료 시의 일괄 flush 도 창마다 자기 파일로 나뉜다. 창 사이에 덮어쓰기가 없다는 것이 이 모델의 출발점이다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)).
+각 engine은 자신이 점유한 슬롯에 저장한다. 종료 flush도 윈도우별 파일에 나누어 쓴다. 같은 `TASTY_HOME`을 공유하는 여러 앱 인스턴스의 동시 저장까지 보호하는 모델은 아니다([슬롯 설계](../../adr/0017-workspace-identity-and-focus.md)).
 
 **레거시 마이그레이션** — 단일 파일 시절의 `~/.tasty/layout.json` 은 부팅 1회 `layouts/01.json` 으로 **이동**(rename)된다. `layouts/` 가 이미 있으면 이동하지 않고 남은 레거시 파일을 로그로 알린다.
 
 ### 읽지 못한 슬롯
 
-**"슬롯이 없다" 와 "슬롯을 못 읽었다" 는 다르게 다룬다.** 둘을 같게 처리하면 권한 오류나
-손상된 JSON 이 "이 슬롯을 쓴 적 없음" 과 같아지고, 그 창이 이어서 자기 상태를 같은 슬롯에 저장해
-사용자의 창 구성을 대체한다.
+파일이 없는 경우와 읽지 못한 경우를 구분한다. 읽기 실패를 빈 슬롯으로 취급하면 이어지는 저장이 사용자의 기존 레이아웃을 덮어쓸 수 있기 때문이다.
 
 | 상태 | 그 슬롯에 저장 | 원본 |
 |------|----------------|------|
@@ -44,21 +50,16 @@ write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬�
 | 읽기 실패 (권한 · IO) | **안 한다** | 그 자리에 그대로 |
 | version 이 이 빌드보다 높음 | **안 한다** | 그 자리에 그대로 |
 
-**읽기는 파일을 건드리지 않는다.** 보존은 실제로 덮어쓰려는 순간에 한다. 부팅 중 이 슬롯을 읽는
-곳이 하나가 아니고(scrollback GC 와 engine 복원), 런처와 GUI 는 서로 다른 프로세스라 — 읽는 쪽이
-파일을 옮겨버리면 나중에 읽는 쪽은 그저 "파일 없음" 을 보게 되어, 정작 사용자에게 알릴 프로세스가
-사건을 모르는 상태가 된다.
+로드는 파일을 이동하지 않는다. 손상 파일 백업은 저장 직전에 수행한다. GC와 engine 복원 등 여러 경로가 같은 슬롯을 읽으므로, 읽는 중 파일을 옮기면 뒤의 호출자는 실패 원인 대신 파일 없음만 보게 된다.
 
-읽기 자체가 실패한 파일은 내용을 확인하지 못한 것이므로 옮기지 않는다 — 일시적 오류에 사용자
-레이아웃 파일의 위치까지 바뀌어서는 안 된다. 미래 version 슬롯을 백업하지 않는 이유도 같다: 파일은 멀쩡하고
-새 버전이 읽을 수 있으므로, 구버전으로 한 번 켰다고 신버전의 레이아웃이 사라지면 안 된다.
+읽기 오류가 난 파일은 내용이 손상됐는지 확인할 수 없어 옮기지 않는다. 더 높은 version의 파일도 새 빌드가 읽을 수 있으므로 현재 빌드가 백업하거나 덮어쓰지 않는다.
 
 백업 파일명은 `NN.json.bak` 이고 이미 있으면 `NN.json.bak.2` … `NN.json.bak.9` 로 늘어난다.
 9개가 차면 백업을 만들지 않고 저장을 막는 쪽을 택한다. 저장이 막힌 창에는 토스트로 알린다.
 
 ### 슬롯 배정
 
-창 ↔ engine ↔ 슬롯은 1:1 이다. 창을 새로 열면 이미 다른 창이 쓰고 있는 슬롯이 아니라 **다음 free 슬롯**을 잡으므로, 두 창이 같은 레이아웃을 복제해 보여주지 않는다.
+윈도우와 연결된 engine이 슬롯 하나를 점유한다. 새 윈도우는 다른 engine이 쓰지 않는 슬롯을 선택한다.
 
 규칙 — **실제 존재하는 슬롯 파일** 중 점유되지 않은 가장 낮은 번호를 쓴다.
 
@@ -72,11 +73,11 @@ headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는�
 
 ### 슬롯 점유
 
-점유는 **휘발성**이다 — 디스크에 기록하지 않고 별도 레지스트리도 두지 않는다. 살아있는 engine 들이 들고 있는 슬롯 번호를 모은 것이 곧 점유 집합이므로, 재시작하면 전부 free 로 돌아온다(크래시가 슬롯을 영구 점유로 남기지 않는다). 창이 닫혔다가 되살아나는 parked engine 은 자기 슬롯을 그대로 이어쓴다 — 재배정하면 남의 슬롯 파일을 덮어쓴다. 구조적 배경은 [멀티 윈도우 아키텍처](../../architecture/multi-window.md).
+슬롯 점유는 디스크에 기록하지 않는다. 현재 engine들이 가진 슬롯 번호로 판단하며 앱을 다시 시작하면 점유가 초기화된다. 윈도우가 사라져도 parked engine이 남아 있으면 같은 슬롯을 계속 점유한다([멀티 윈도우 구조](../../architecture/multi-window.md)).
 
 #### 점유 조회
 
-어느 창이 어느 슬롯을 쓰는지는 `window.list` IPC(= `tasty list windows`)의 `layout_slot` 필드로 본다. 슬롯 점유는 "새 창을 열면 어떤 레이아웃이 뜰지" 를 결정하는 상태라, 관측 수단이 없으면 에이전트가 창 생성 결과를 예측·검증할 수 없다.
+`window.list` IPC 또는 `tasty list windows`의 `layout_slot` 필드로 윈도우가 쓰는 슬롯을 조회한다.
 
 ```json
 [
@@ -87,28 +88,34 @@ headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는�
 
 `layout_slot` 은 슬롯을 잡지 않는 engine 에서 `null` 이다(headless). 순수 read 라 포커스·선택 등 사용자 상태를 건드리지 않는다.
 
-**parked engine 은 이 목록에 없다.** 파킹된 engine 도 슬롯을 점유하지만 창이 아니어서 창 id 가 없고, `window.list` 의 `{id, focused, title}` 계약이 깨진다. 따라서 이 목록의 `layout_slot` 집합은 살아있는 창의 점유일 뿐 **점유 집합 전체가 아니다** — 파킹분까지 봐야 할 일이 생기면 별도 조회 메서드로 분리한다.
+Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`에 포함되지 않는다. 따라서 이 응답만으로 전체 슬롯 점유 집합을 알 수는 없다.
 
 ### 창 닫힘 시 슬롯 처리
 
-창을 닫으면 그 engine 이 drop 되며 슬롯 점유가 자동으로 풀린다(점유가 살아있는 engine 에서 파생되므로 별도 해제 호출이 없다 = 누락으로 인한 슬롯 누수도 없다). drop 직전에 슬롯 파일을 어떻게 할지는 `general.restore_layout` 하나로 갈린다.
+윈도우를 닫으면서 engine도 제거하면 슬롯 점유가 해제된다. 제거 직전에는 `general.restore_layout`에 따라 파일을 처리한다.
 
 | `restore_layout` | 슬롯 파일 |
 |---|---|
-| **on** | 강제 flush 후 **보존**. 디바운스 500ms 를 무시하므로 워크스페이스를 추가한 직후 닫아도 그 변경이 남고, 새 창이 그 슬롯을 잡으면 레이아웃이 되살아난다. |
-| **off** | **삭제**. |
+| **on** | 500ms 디바운스를 건너뛰고 저장을 시도한 뒤 슬롯을 남긴다. 저장에 성공한 내용은 다음 윈도우에서 복원할 수 있다. |
+| **off** | 슬롯 파일 삭제를 시도한다. |
 
 마지막 창을 닫아 engine 이 파킹되는 경우(그리고 macOS 최소화)는 engine 이 살아 있으므로 이 처리를 하지 않는다 — 슬롯 점유가 유지되고 다시 창을 열면 같은 슬롯을 이어쓴다.
 
-닫힌 창의 scrollback `.bin` 은 따로 지우지 않는다: 보존 분기에선 슬롯 파일이 계속 참조하고, 삭제 분기에선 참조가 사라져 다음 부팅의 union 정리가 회수한다.
+윈도우 정리에서 scrollback `.bin`을 따로 지우지는 않는다. 남아 있는 슬롯의 참조와 다음 부팅의 GC 결과에 따라 정리된다.
 
 ### Surface 내용 복원 (현재: 터미널 scrollback)
 
-`general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 `TerminalStore.scrollback_persist_ids`(`src/core/terminal_store.rs`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 **전 슬롯의** `scrollback_ref` 합집합 외 `.bin` 일괄 정리(크래시 잔재) — 슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 `.bin` 을 지운다. 읽을 수 없는 슬롯이 하나라도 있으면 그 부팅에서는 정리 자체를 건너뛴다(모르면 지우지 않는다).
+`general.restore_surface_content`(기본 on)가 켜져 있으면 터미널의 scrollback과 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`에 저장한다. 파일 magic은 `TSSB`다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다.
+
+`persist_id`는 `TerminalStore.scrollback_persist_ids`(`src/core/terminal_store.rs`)에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 scrollback을 캡처하지 않는다. 설정 화면에서 on→off로 바꾸면 기존 scrollback 디렉터리를 정리한다. 복원은 저장된 `scrollback_ref`와 읽을 수 있는 파일을 사용한다.
+
+Surface 닫기에서는 해당 `.bin`을 삭제한다. 부팅 GC는 `list_slots_in`으로 열거한 슬롯의 `scrollback_ref` 합집합을 구해 참조되지 않는 `.bin`을 지운다. 열거한 슬롯 하나라도 로드하지 못하면 그 회차 GC를 건너뛴다.
+
+이 보호는 디렉터리 열거 실패까지 포함하지 않는다. `read_dir` 실패는 빈 목록으로 반환하고 개별 항목 오류는 건너뛴다. 따라서 열거에서 빠진 슬롯의 참조는 보호 집합에 들어가지 않을 수 있다. 빈 목록이면 빈 참조 집합으로 GC가 실행된다.
 
 ### Plugin surface 복원 (hello 창)
 
-markdown·image 같은 **plugin surface** 는 호스트가 plugin 프로세스를 spawn 한 뒤 그 plugin 이 `hello` 를 보내 자기 kind 를 등록하기까지 짧은 창이 있다(부팅 부하에 따라 흔들린다). 레이아웃 복원이 이 창에 걸려 kind 가 아직 없으면, 그 surface 를 **kind/snapshot 을 보존한 placeholder 로** 복원한다 — 그 자리를 그냥 버리면 같은 pane 의 형제 tab(다른 터미널 포함)과 상위 형제 pane 까지 함께 사라지기 때문이다. 화면에 표시될 때마다 도는 reify 가 kind 등록을 확인해 placeholder 를 실제 surface 로 채운다.
+Markdown·Image처럼 플러그인이 제공하는 surface는 hello와 kind 등록이 끝나기 전에 레이아웃 복원이 시작될 수 있다. 이때 kind와 snapshot을 가진 placeholder로 위치를 남겨 둔다. kind가 등록되면 화면 갱신 경로에서 실제 surface로 바꾼다.
 
 plugin이 시작하지 못하거나 해당 kind를 더 이상 제공하지 않으면 placeholder를 유지한다.
 화면에는 빈 자리로 보이고, `tasty list tree`에는 원래 kind와 `ready: false`,
@@ -117,15 +124,21 @@ plugin이 시작하지 못하거나 해당 kind를 더 이상 제공하지 않�
 
 ### TUI 세션 복원 (`restore.command`)
 
-claude plugin 등이 `tasty claude install` 로 SessionStart/End hook 을 걸면 세션 시작 시 `restore.command`(예: `claude -r <session-id>`)를 surface-meta 에 set.
-호스트는 에이전트 종류와 무관하게 `restore.command` 값만 읽어 복원에 쓴다 — 명령 내용은 plugin이 정한다.
-예컨대 claude plugin 은 세션 프로필이 부착돼 있으면 `claude -r <id> --settings "<프로필 경로>"` 형태로 써서 **복원된 프로세스에도 프로필이 그대로 붙게** 한다([claude plugin](../../plugins/claude/index.md) "복원을 건너 프로필이 유지되는 방식") — 복원이 발급하는 새 surface id 때문에 surface meta 는 복원을 넘지 못하므로, 프로필을 실어 나르는 유일한 통로가 이 문자열이다.
-명령 주입 타이밍은 PTY spawn 그 순간 — `TerminalConfig.initial_input` 으로 writer thread 시작 전 master fd 에 동기 write, child shell 의 첫 stdin read 에 무조건 첫 입력으로 들어감(추가 트리거 없이 spawn 과 동시 실행).
-발동 경로 둘: 앱 재시작(레이아웃 복원) · [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T).
+플러그인이 세션 시작 훅에서 surface meta의 `restore.command`를 기록하면 호스트는
+그 문자열을 터미널 복원에 사용한다. 에이전트 종류나 명령 내용은 호스트가 해석하지 않는다.
+Claude 프로필이 붙은 경우 `claude -r <id> --settings "<프로필 경로>"`처럼 기록한다.
+프로필 정보 복구는 [Claude 가이드](../../plugins/claude/index.md)의 해당 절을 따른다.
+
+호스트는 명령 뒤에 `\r`을 붙여 `TerminalConfig.initial_input`으로 전달한다.
+자식 셸을 생성한 뒤 writer 스레드를 시작하기 전에 PTY에 동기로 쓰고 flush한다.
+쓰기·flush 실패는 경고를 남기며, 이미 실행 중인 셸의 입력 초기화로 바이트가 사라질 수도 있다.
+따라서 첫 stdin 읽기에 반드시 도착하거나 spawn과 동시에 명령이 실행된다는 보장은 없다.
+
+앱 재시작과 [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T)에서 사용한다.
 
 ## 저장하지 않는 것
 
-현재 화면 cells(새 prompt 로 채움) · PTY 상태/환경변수/실행 중 명령 · 팝업 상태.
+실행 중인 PTY 프로세스와 환경변수, 팝업 상태는 저장하지 않는다. `restore.command`는 기존 프로세스를 보존하는 기능이 아니라 새 터미널에서 명령을 다시 실행하기 위한 정보다.
 
 ## 관련
 

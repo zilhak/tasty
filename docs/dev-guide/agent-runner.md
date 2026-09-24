@@ -156,12 +156,15 @@ tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
 
 ## 완료 판정 전략 레지스트리 (`src/completion_strategy/`)
 
-이 레지스트리는 `Custom` 작업이 호출한 IPC 메서드의 완료 조건을 관리한다.
-`Custom.poll`의 이름 참조(`PollSpecRef::Named`)와 `default_for_methods`의 기본 전략을
-여기서 찾는다. 호스트 내장 TOML, 플러그인 매니페스트, 사용자 설정
-`~/.tasty/completion-strategies.toml`을 차례로 합치며, 뒤의 설정에서 `Some`인 필드만
-앞의 값을 덮어쓴다. ID는 `<owner>/<short>`이고 owner는 `host`, 플러그인 ID, `user`다.
-전역 인스턴스는 `global()`로 얻는다.
+이 레지스트리는 `Custom` 작업의 IPC 완료 조건을 관리한다. `Custom.poll`의 이름 참조
+(`PollSpecRef::Named`)와 `default_for_methods`의 기본 전략을 여기서 찾는다.
+호스트 내장 TOML, 플러그인 매니페스트, 사용자 설정 `~/.tasty/completion-strategies.toml`이
+전략을 등록하며 레지스트리는 실제 등록 순서대로 `Some` 필드를 덮어쓴다.
+출처 순서를 레지스트리 자체가 강제하지 않으며 owner도 마지막 기여자로 바뀐다.
+
+ID는 `<owner>/<short>`다. 호스트와 사용자는 `host`·`user`를 사용한다.
+플러그인은 `completion_strategy_owner_id`가 고른 첫 IPC namespace를 우선 사용하고,
+namespace가 없으면 매니페스트 ID를 쓴다. 전역 인스턴스는 `global()`로 얻는다.
 
 설정 병합과 ID 규칙은 공유 훅 핸들러 레지스트리(`src/hook_handler/`)와 같다.
 다만 레지스트리는 독립적이며, push 전략의 `HookHandlerId` 외에는 훅 핸들러 타입을
@@ -174,7 +177,7 @@ tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
 
 push 전략은 등록할 때 `notify_via` 훅의 존재와 소유자를 검사한다. 자기 소유 또는
 `host` 소유 훅만 쓸 수 있다. 플러그인 전략의 `poll_method`와 `default_for_methods`도
-자기 IPC namespace(`<plugin_id>.*`) 안에 있어야 한다. host/user 전략은 플러그인
+자기 소유자로 등록한 IPC namespace 안에 있어야 한다. host/user 전략은 플러그인
 namespace를 가리킬 수 없다. `_host` 권한 우회를 막기 위한 제한이며,
 `tasty_ipc::method_meta::is_registered_plugin_prefix`로 확인한다.
 
