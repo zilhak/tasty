@@ -17,7 +17,7 @@ desc = "Codex CLI 연동(launch, spawn, kill, tell 등)"
 [codex.spawn_warning]
 total = "이 부모 아래에 자식 인스턴스가 {total}개 있습니다(경고 기준: {threshold}). 쓰지 않는 자식이 남아 있는지 확인하세요."
 idle = " 인덱스 [{indices}]의 idle 자식은 새로 만들지 않고 respawn으로 다시 사용할 수 있습니다."
-stale = " 인덱스 [{indices}]의 자식은 에이전트 프로세스가 끝났지만 완료 보고가 없습니다(훅 유실). 이 자식도 respawn으로 다시 사용할 수 있습니다."
+stale = " 최근 전경 조회에서 인덱스 [{indices}]의 자식이 셸로 확인됐지만 완료 보고는 없습니다. 현재 상태를 확인한 뒤 respawn을 검토하세요."
 
 [settings.subtab]
 codex = "Codex"

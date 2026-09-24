@@ -17,7 +17,7 @@ desc = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 [codex.spawn_warning]
 total = "{total} child instances are currently spawned under this parent (warning threshold: {threshold}). Consider checking for leaked children."
 idle = " Idle children at index [{indices}] have already finished their work — consider `respawn` instead of spawning a new one."
-stale = " Children at index [{indices}] no longer have an agent process running but never reported completion (a lost hook) — they are respawn candidates too."
+stale = " The latest foreground lookup found a shell for children at index [{indices}], but they never reported completion. Check their current state before considering respawn."
 
 [settings.subtab]
 codex = "Codex"

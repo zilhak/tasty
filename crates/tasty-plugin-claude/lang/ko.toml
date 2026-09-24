@@ -79,7 +79,7 @@ missing_child_surface_id = "호스트 terminal.respawn 응답에 'child_surface_
 missing_child_surface_id = "호스트 terminal.spawn 응답에 'child_surface_id'가 없습니다: {}"
 warning_threshold = "이 부모의 자식이 {}개로 경고 기준({})을 넘었습니다."
 warning_idle_children = " 인덱스 {}의 idle 자식은 새로 만들지 않고 respawn으로 다시 사용할 수 있습니다."
-warning_stale_children = " 인덱스 {}의 자식은 에이전트 프로세스가 끝났지만 완료 보고가 없습니다(훅 유실). respawn으로 다시 사용할 수 있습니다."
+warning_stale_children = " 최근 전경 조회에서 인덱스 {}의 자식이 셸로 확인됐지만 완료 보고는 없습니다. 현재 상태를 확인한 뒤 respawn을 검토하세요."
 
 [claude.install]
 no_home_dir = "홈 디렉터리를 확인할 수 없습니다"
