@@ -1,25 +1,6 @@
-//! `scripts/build-macos-dmg.sh` 가 조립하는 `.app` 레이아웃이 실제로 서명 가능한지,
-//! 그리고 그 스크립트가 생성하는 번들 `Info.plist` 가 필요한 키를 갖추는지 검증한다.
-//!
-//! 배경: plugin 을 `Contents/MacOS/plugins/<id>/` 에 staging 하던 시절, codesign 은
-//! `Contents/MacOS/` 하위에 실행 파일이 든 디렉터리를 nested code 로 간주해 번들로
-//! 파싱하려다 "bundle format unrecognized, invalid, or unsuitable" 로 실패했다
-//! (그 디렉터리엔 `Contents/Info.plist` 가 없으니 유효한 번들이 아니다). 스크립트는
-//! `set -euo pipefail` 이라 그 지점에서 죽었고, 서명되지 않은 반쪽 번들이 `dist/` 에
-//! 남아 그대로 실행됐다. 서명이 없으면 macOS 가 TCC 승인을 앱에 귀속시키지 못해
-//! 권한 프롬프트가 매 실행마다 다시 뜬다.
-//!
-//! CI 의 macOS 빌드 잡(`.github/workflows/build-check.yml`)은 `workflow_dispatch`
-//! 수동 트리거라 그 잡은 이 실패를 자동으로 잡지 못한다.
-//!
-//! 이 테스트가 그 공백을 메운다 — 첫 테스트는 플랫폼 무관 정적 가드라 Linux 에서도 돌고,
-//! 둘째는 macOS 에서 실제 `codesign` 을 돌려 레이아웃을 증명한다.
-//!
-//! **다만 그 채널은 한 조합뿐이다** — 이 테스트의
-//! 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만 일어난다
-//! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
-//! 메운 것은
-//! "자동으로 잡힌다" 가 아니라 "돌리면 잡힌다" 쪽이다.
+//! macOS 번들 빌드 스크립트의 플러그인 위치와 Info.plist 설명 키를 검사한다.
+//! 정적 검사는 자동으로 헤드리스 조합(check-headless)에서 실행된다.
+//! 실제 codesign 검사는 macOS에서만 실행할 수 있으며 이 자동 경로의 Linux 실행에는 포함되지 않는다.
 
 use std::path::PathBuf;
 
@@ -27,9 +8,7 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// 빌드 스크립트의 `PLUGINS_DIR=` 할당에서 `$APP_DIR/` 이후의 번들 내부 상대 경로를
-/// 뽑는다 (예: `Contents/Resources/plugins`). 스크립트가 staging 위치를 바꾸면 이
-/// 테스트가 따라 움직이므로, 검증 대상과 구현이 드리프트하지 않는다.
+/// PLUGINS_DIR 할당의 $APP_DIR 뒤 경로를 읽어 빌드 스크립트와 같은 위치를 검사한다.
 fn staged_plugins_rel_path() -> String {
     let script_path = repo_root().join("scripts/build-macos-dmg.sh");
     let script = std::fs::read_to_string(&script_path).expect("build-macos-dmg.sh read 실패");
@@ -50,9 +29,7 @@ fn staged_plugins_rel_path() -> String {
     panic!("PLUGINS_DIR 할당을 찾지 못함: {}", script_path.display());
 }
 
-/// 빌드 스크립트가 번들 `Info.plist` 를 생성하는 heredoc 본문을 그대로 뽑는다
-/// (`$VERSION` 등 셸 변수는 치환하지 않은 원문). 키 존재 여부만 보는 검사에는
-/// 치환이 필요 없고, 치환하지 않아야 macOS 밖에서도 그대로 돌아간다.
+/// 키 존재와 문자열만 검사하므로 셸 변수를 치환하지 않고 Info.plist heredoc을 읽는다.
 fn info_plist_template() -> String {
     let script_path = repo_root().join("scripts/build-macos-dmg.sh");
     let script = std::fs::read_to_string(&script_path).expect("build-macos-dmg.sh read 실패");
@@ -80,10 +57,6 @@ fn info_plist_template() -> String {
     );
 }
 
-/// TCC 보호 리소스에 접근할 때 macOS 가 프롬프트 본문에 띄우는 설명 문구.
-/// 키가 없으면 사용자에게 이유 없는 프롬프트가 뜨고, 일부 서비스는 접근 시도
-/// 자체가 즉시 실패한다. 번들 plist 는 빌드 스크립트가 유일한 정본이라, 누가
-/// heredoc 을 손보다 키를 떨어뜨리면 여기서 잡힌다.
 #[test]
 fn info_plist_declares_tcc_usage_descriptions() {
     const REQUIRED_KEYS: &[&str] = &[
@@ -116,8 +89,6 @@ fn info_plist_declares_tcc_usage_descriptions() {
     }
 }
 
-/// plugin staging 위치가 `Contents/MacOS/` 밖인지 확인하는 정적 가드.
-/// codesign 이 없는 플랫폼(Linux CI)에서도 도는 값싼 방어선.
 #[test]
 fn staged_plugins_are_outside_contents_macos() {
     let rel = staged_plugins_rel_path();
@@ -152,13 +123,10 @@ const PROBE_INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 "#;
 
-/// 빌드 스크립트가 쓰는 staging 위치를 그대로 재현한 최소 `.app` 을 만들어
-/// ad-hoc 서명이 통과하는지 확인한다. 누군가 plugin 을 다시 `Contents/MacOS/`
-/// 하위로 옮기면 여기서 실패한다.
+/// 스크립트의 플러그인 위치를 재현한 최소 번들을 만들어 ad-hoc 서명·검증한다.
 #[cfg(target_os = "macos")]
 #[test]
 fn staged_layout_is_codesignable() {
-    // 서명 대상으로 쓸 임의의 Mach-O. 시스템 바이너리를 복사해 쓴다.
     const DONOR_BIN: &str = "/bin/echo";
 
     let tmp = tempfile::tempdir().expect("tempdir 생성 실패");
@@ -168,7 +136,6 @@ fn staged_layout_is_codesignable() {
     std::fs::copy(DONOR_BIN, contents.join("MacOS/probe")).expect("메인 실행 파일 복사 실패");
     std::fs::write(contents.join("Info.plist"), PROBE_INFO_PLIST).expect("Info.plist 쓰기 실패");
 
-    // 스크립트가 지정한 위치에 plugin 하나를 staging 한 모양 (바이너리 + 매니페스트).
     let plugin_dir = app.join(staged_plugins_rel_path()).join("com.tasty.probe");
     std::fs::create_dir_all(&plugin_dir).expect("plugin staging 디렉터리 생성 실패");
     std::fs::copy(DONOR_BIN, plugin_dir.join("tasty-plugin-probe"))
@@ -182,7 +149,7 @@ fn staged_layout_is_codesignable() {
     run_codesign(&["--force", "--sign", "-"], &app, "서명");
     run_codesign(&["--verify", "--deep", "--strict"], &app, "검증");
 
-    // 서명이 실제로 봉인됐는지 — 링커 자동 서명은 _CodeSignature 를 남기지 않는다.
+    // 링커의 자동 서명과 구별하도록 _CodeSignature 생성도 확인한다.
     assert!(
         contents.join("_CodeSignature").is_dir(),
         "codesign 이 성공했다는데 _CodeSignature/ 가 없다"

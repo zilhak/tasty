@@ -1,45 +1,17 @@
-//! 모달 상태의 **쓰는 자리가 둘뿐**이라는 것을 고정한다.
-//!
-//! `ui.state` 가 내는 `modal_open`/`active_modal_id` 는 `View::active_modal_id` 의 사본이다.
-//! 사본을 둔 이유는 조회 경로(`AppState` 만 받는다)가 `View` 에 안 닿기 때문이고, `&View` 를
-//! 전파하면 View 가 없는 헤드리스 호출자에서 **"모달 없음" 과 "View 가 없음" 이 같은 모양**이
-//! 되기 때문이다.
-//!
-//! 사본은 원본과 어긋날 수 있다. 어긋나지 않는 **유일한 근거**가 "원본을 세우는 그 자리에서
-//! 함께 쓴다" 이므로, 그 근거를 값으로 지킨다. 누가 다른 곳에서 원본이나 사본을 건드리면
-//! 여기서 걸린다 — 안 걸리면 그날부터 `ui.state` 는 조용히 틀린 값을 낸다.
+//! View의 모달 ID와 AppState의 조회용 ID·종류를 함께 갱신하는지 소스로 확인한다.
+//! 파일별 문자열 존재와 open·close 함수 이름 사이 구간을 비교하므로 실행 경로별 동기화를 증명하지는 않는다.
 
 use std::path::Path;
 
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 
-/// 이 단정들은 **부정형**이다 — "위반 0" 과 "아무 파일도 안 읽었다" 가 같은 초록이다.
-/// 그래서 인구의 하한을 순회가 자기 실패문과 함께 강제한다. 직접 `read_dir` 을 쓰지 않는
-/// 이유이기도 하다: 공용 순회를 쓰면 하한을 빠뜨릴 수 없다.
+/// 소스 수집이 비어 위반도 없는 것으로 처리되지 않도록 공용 하한을 적용한다.
 const SRC_FLOOR: Floor = Floor {
     min: 587,
-    // 좌변의 사실은 `tasty_doc_guards::floored_walk::populations::SRC_RS` 하나가 갖는다 — 이 값을 여기에도 적어 두었을
-    // 때 두 자리가 591 과 598 로 갈렸고, 어느 쪽도 그날의 실제 수가 아니었다.
     measured: tasty_doc_guards::floored_walk::populations::SRC_RS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::SRC_RS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::SRC_RS.counted_on,
-    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수다. **이 가드의 순회 생존 계기는 이 \
-                   하한 하나뿐이라**(형제 가드 `layering` 과 달리 깊이 하한도 앵커도 없다) \
-                   부분 사망을 이것만 본다. 그래서 여유를 움직임의 단위에서 파생시킨다: \
-                   도달 가능한 창(`fdca139c0`..`91ca7d37d`, 558 커밋, 직선)에서 감소 사건은 \
-                   **1 건**이고 그 폭이 **24** 다. 여유 64 는 그 감소가 **두 번 겹쳐도(48) \
-                   견디고 16 이 남는다** — 예순다섯째 파일부터 짖는다(2026-09-24, 좌변 651). 좌변이 \
-                   646 이던 판에서는 '여유 59 · 11 이 남는다' 였고, \
-                   633 이던 판에서는 '여유 46 · 두 번 겹치는 폭에 2 모자란다' 였다. 이 문장은 좌변이 643 이던 판의 '여유 56 · 두 번 겹쳐도 견딘다' 에 \
-                   남아 있었고, 그 뒤 좌변이 611 로 줄어 여유가 24 였던 동안에도 그대로였다. 앞선 판은 1257 커밋(2026-07-01~09-08)에서 감소 13 건 · 최대 9 로 \
-                   재고 여유를 18 로 잡았는데, 그 창의 좌표는 지금 main 에서 도달 불가이고 \
-                   **도달 가능한 창의 최대 감소는 그 2.7 배**다. 폭은 창마다 다르다. \
-                   ★ 단위 밖 \
-                   사건 하나를 이름으로 적는다: 크레이트 분해가 `src/` 에서 수십 개를 \
-                   한꺼번에 옮기는 것. 그 폭은 **이 창에서 관측되지 않았다**(다른 모수에서 \
-                   난 대이동을 이 모수의 배수로 쓰지 않는다 — 같은 낱말이 모수마다 40 배 \
-                   다른 폭을 뜻할 수 있다 — docs/dev-guide/guard-population.md의 최소 개수 근거 규칙). 그 사건이 나면 이 하한이 \
-                   먼저 짖고 그것이 옳다: 실패문은 하한을 내리라 하지 않고 다시 재라고 한다.",
+    why_this_gap: "src의 파일 수는 공용 측정을 사용한다. 과거 fdca139c0..91ca7d37d 구간의 최대 감소 24개를 기준으로, 하한의 여유가 두 번의 감소를 감당하는지 비교했다. 크레이트 분리로 한꺼번에 이동하는 경우까지 보장하지는 않는다. 하한에 걸리면 실제 이동·삭제와 순회 누락을 구별해 다시 측정한다.",
 };
 
 fn sources() -> Vec<(String, String)> {
@@ -64,7 +36,6 @@ fn sources() -> Vec<(String, String)> {
 
 const OWNER: &str = "src/app/modal.rs";
 
-/// 원본을 **쓰는** 자리인가 — 읽는 자리(`if let Some(id) = self.view.active_modal_id`)는 아니다.
 fn writes_the_original(t: &str) -> bool {
     t.contains("view.active_modal_id = ") || t.contains("view.active_modal_id.take")
 }
@@ -73,20 +44,10 @@ fn writes_the_mirror(t: &str) -> bool {
     t.contains("state.active_modal_id = ")
 }
 
-/// 사본의 짝 — **어느** 모달인가. 창 id 와 같은 자리에서 같이 움직여야 한다.
 fn writes_the_kind(t: &str) -> bool {
     t.contains("state.active_modal_kind = ")
 }
 
-/// ★ 원본을 옮기는 **모든** 파일이 사본도 함께 옮긴다.
-///
-/// 처음엔 "쓰는 파일이 하나뿐" 으로 적었는데 그건 **거짓이었다** — `app/event_handler.rs` 의
-/// macOS 최소화 경로가 모달을 drop 하면서 원본을 지운다. 그 자리를 안 고쳤으면 사본은
-/// `Some` 인 채로 파킹돼 dock 복귀 때 "모달이 열려 있다" 고 말하고, 그 모달은 이미 없으므로
-/// **되돌릴 경로가 없다.**
-///
-/// 그래서 단정을 "한 파일" 이 아니라 **"짝지어 움직인다"** 로 세운다. 사본을 둔 설계가 서는
-/// 근거가 그것이고, 파일 수는 그 근거가 아니었다.
 #[test]
 fn every_file_that_moves_the_original_moves_the_mirror_too() {
     let offenders: Vec<String> = sources()
@@ -96,16 +57,10 @@ fn every_file_that_moves_the_original_moves_the_mirror_too() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "`view.active_modal_id` 를 옮기면서 `AppState` 쪽 사본을 안 옮기는 파일이 있다: \
-         {offenders:?}. 그 자리를 지나면 `ui.state` 의 `modal_open` 이 실제와 어긋난 채 남는다 — \
-         특히 사본만 `Some` 으로 남는 방향은 되돌릴 경로가 없다."
+        "View 모달 ID의 변경 표지가 있지만 AppState 사본의 변경 표지가 없는 파일이다. 실제 갱신 경로를 확인한다: {offenders:?}"
     );
 }
 
-/// 사본을 쓰는 파일은 반드시 원본도 쓴다 — 반대 방향.
-///
-/// 이쪽이 없으면 "사본만 따로 만지는" 자리가 생겨도 안 걸린다. 그러면 사본은 더 이상
-/// 원본의 거울이 아니라 **두 번째 진실**이 되고, 둘이 갈릴 때 어느 쪽이 맞는지 아무도 모른다.
 #[test]
 fn nobody_touches_the_mirror_alone() {
     let offenders: Vec<String> = sources()
@@ -115,12 +70,10 @@ fn nobody_touches_the_mirror_alone() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "원본 없이 사본만 건드리는 파일이 있다: {offenders:?}. 사본은 거울이지 \
-         두 번째 진실이 아니다."
+        "AppState 사본의 변경 표지만 있는 파일이다. View 상태와 함께 갱신되는지 확인한다: {offenders:?}"
     );
 }
 
-/// 여닫는 자리는 여전히 `app/modal.rs` 하나이고, 사본을 **두 번** 쓴다.
 #[test]
 fn the_open_close_pair_still_lives_in_one_file() {
     let files = sources();
@@ -136,7 +89,7 @@ fn the_open_close_pair_still_lives_in_one_file() {
     );
 }
 
-/// 그리고 그 둘은 각각 원본을 건드리는 함수 **안**에 있다.
+/// 함수 이름의 위치로 나눈 구간을 확인한다. 끝 구간은 파일 끝까지여서 함수 경계를 정확히 파싱하지는 않는다.
 #[test]
 fn each_mirror_write_sits_inside_the_function_that_moves_the_original() {
     let files = sources();
@@ -164,19 +117,10 @@ fn each_mirror_write_sits_inside_the_function_that_moves_the_original() {
     );
     assert!(
         closing.contains("state.active_modal_id = None"),
-        "모달을 닫는 함수가 사본을 안 지운다 — 그러면 닫힌 뒤에도 열려 있다고 말한다. \
-         이쪽이 더 나쁘다: 값이 **영영** 안 돌아온다"
+        "모달 닫기 구간에서 조회용 ID를 지우는 코드를 찾지 못했다"
     );
 }
 
-/// ★ 종류는 창 id 와 **짝이다** — 한쪽만 움직이는 파일이 있으면 안 된다.
-///
-/// 갈리는 두 방향이 둘 다 나쁘고, 나쁜 방향이 서로 다르다:
-/// · id 만 세우고 종류를 안 세우면 → "무언가 떠 있는데 무엇인지는 **옛 값**" 이다.
-///   직전에 열렸던 모달의 종류가 그대로 남아, 그 종류를 기다리는 시험이 **자기가 안 연
-///   창을 보고 통과한다.** 이쪽이 더 나쁘다 — 초록이 거짓이 된다.
-/// · 종류만 세우고 id 를 안 세우면 → `modal_open` 이 거짓인데 종류는 `Some` 이다.
-///   그 조합은 어떤 소비자도 안 다루는 모양이다.
 #[test]
 fn the_kind_moves_with_the_id() {
     let offenders: Vec<String> = sources()
@@ -186,13 +130,10 @@ fn the_kind_moves_with_the_id() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "`state.active_modal_id` 와 `state.active_modal_kind` 중 한쪽만 건드리는 파일이 있다: \
-         {offenders:?}. 둘은 짝이다 — id 만 세우면 종류가 직전 모달의 값으로 남고, \
-         그 종류를 기다리는 시험이 자기가 안 연 창을 보고 통과한다."
+        "AppState 모달 ID와 종류 중 한쪽 변경 표지만 있는 파일이다. 두 상태의 갱신 경로를 확인한다: {offenders:?}"
     );
 }
 
-/// 그리고 그 짝도 여닫는 두 함수 **안**에 각각 있다.
 #[test]
 fn each_kind_write_sits_inside_the_function_that_moves_the_original() {
     let files = sources();
