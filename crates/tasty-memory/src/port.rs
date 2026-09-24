@@ -1,41 +1,20 @@
-//! `MemoryStorage` trait — Hexagonal architecture 의 *internal port*.
-//!
-//! `MemoryStore` 가 자체 impl. Core 가 `Arc<Mutex<dyn MemoryStorage>>` 또는 *single-thread*
-//! 시 `&mut dyn MemoryStorage` 형식으로 보유한다. test 시 `testing::InMemoryStorage`
-//! 로 swap.
-//!
-//! 위치 결정: `tasty-memory` 가 internal crate (워크스페이스) 라 *trait 정의도 crate
-//! 안*. bin 의 wrap layer 회피.
+//! 호스트가 MemoryStore 또는 시험용 InMemoryStorage를 사용하는 공통 인터페이스.
 
 use crate::{
     ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry, MemoryStats, MemoryValue,
     PurgeStats, PutOpts, Result, Scope,
 };
 
-/// 프로세스에 하나인 memory store 락의 poison 보고 좌표 — 이름.
-///
-/// store 는 호스트가 하나 열어 `Arc<Mutex<dyn MemoryStorage>>` 로 여러 모듈에 나눠 준다.
-/// 락도 하나이므로 "첫 1 회만 보고" 하는 플래그도 하나여야 한다 — 모듈마다 제 좌표를
-/// 두면 같은 poison 이 좌표 수만큼 보고되고, 어느 것도 "첫 1 회" 가 아니게 된다.
-///
-/// **여기(port) 에 두는 이유**: 이 좌표는 락을 잡는 쪽이 아니라 **락을 나눠 주는 port**
-/// 의 성질이다. 한때 본체 `core` 가 들고 있었고, 그래서 `core` 밖의 소비자(터미널 출력
-/// observer 의 memory sink)까지 `core` 를 참조해야 했다 — sink 는 port 만 보면 되는
-/// 자리인데 도메인 전체에 묶였다. 복구 자체는 호출자가 `tasty_utils::poison::recover_mutex`
-/// 로 한다(이 크레이트는 그 헬퍼의 소비자가 아니다).
+/// 공유 저장소 락의 poison 보고 이름. 모든 소비자가 같은 이름과 보고 플래그를 써
+/// 한 poison을 중복 보고하지 않는다. 복구는 호출자가 recover_mutex로 수행한다.
 pub const STORE_LOCK_WHAT: &str = "memory store";
 
-/// [`STORE_LOCK_WHAT`] 의 첫-1 회 보고 플래그.
+/// 저장소 락 poison의 최초 보고 여부.
 pub static STORE_LOCK_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Memory store 의 동작 인터페이스. `MemoryStore` 와 mock 모두 impl.
-///
-/// `Sync` 아님 — `MemoryStore` 내부의 SQLite `Connection` 이 `!Sync` (`RefCell` 캐시).
-/// 호출자가 `Arc<Mutex<dyn MemoryStorage>>` 또는 single-thread 보유.
-///
-/// Blackboard / Cache / Plan sub-system 의 함수들은 *별 free function* (`crate::blackboard::*`
-/// 등) — `&mut dyn MemoryStorage` 받으면 자연 동작.
+/// SQLite Connection이 Sync가 아니므로 호출자가 mutex로 보호하거나 한 스레드에서 사용한다.
+/// Blackboard·Cache·Plan 함수도 이 trait을 받는다.
 pub trait MemoryStorage: Send {
     // ─── Config ───
     fn config(&self) -> &MemoryConfig;
@@ -96,12 +75,7 @@ pub trait MemoryStorage: Send {
     fn stats_secret(&self, owner: &str, scope: Option<&Scope>) -> Result<MemoryStats>;
 
     // ─── Maintenance ───
-    /// `prefix` 아래 로그 키 중 최근 `keep_recent` 개만 남기고 삭제(개수 상한).
-    ///
-    /// 로그 retention 이 **부팅 경로와 런타임 경로 양쪽**에서 집행돼야 해서 port 에
-    /// 있다. 부팅만 있으면 재시작 전까지 무제한으로 자라고, 런타임만 있으면 트래픽이
-    /// 끊긴 인스턴스에 이미 쌓인 것이 영원히 남는다. 두 경로가 같은 구현을 부르도록
-    /// 여기에 둔다.
+    /// 로그 키의 최근 keep_recent개만 남긴다. 부팅과 실행 중 정리가 같은 구현을 사용한다.
     fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64>;
     /// `prefix` 아래 로그 키 중 `{ts:013}` 이 `cutoff_ms` 미만인 것을 삭제(시간 상한).
     fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64>;

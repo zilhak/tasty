@@ -1,13 +1,5 @@
-//! git2 래핑 — repo 탐색, status / log / diff 수집.
-//!
-//! 모든 함수는 **read-only**. mutate 작업(commit/stage/checkout 등) 없음.
-//!
-//! `tasty-plugin-git-viewer`(로컬 프로세스 내 직접 호출, 원격 attach 모드에서는 host
-//! 가 회신한 wire JSON 을 이 crate 의 타입으로 역직렬화)와 host core
-//! `src/core/attach_runtime.rs::handle_git_query_request`(원격 attach 세션의 git
-//! 조회 — host 는 `serde_json::json!` 로 직접 조립하고 `Serialize` 는 쓰지 않는다)
-//! 양쪽이 공유하는 순수 로직 crate. 의존은 `git2` + `anyhow` + `tasty-utils` +
-//! `serde`(plugin 원격 모드의 역직렬화 전용, plugin SDK/protocol 타입 비의존).
+//! 호스트와 git-viewer가 공유하는 읽기 전용 Git 조회. 커밋·stage·checkout은 수행하지 않는다.
+//! 로컬은 git2를 호출하고 원격 결과는 같은 타입으로 역직렬화한다. 표시 문구는 소비자가 정한다.
 
 use std::path::{Path, PathBuf};
 
@@ -33,12 +25,7 @@ pub struct StatusEntry {
     pub path: String,
 }
 
-/// 커밋 한 줄. `summary` / `author` 가 **빈 문자열이면 git 에 값이 없다는 뜻**이다
-/// (메시지 없는 커밋, 이름 없는 작성자). 이 crate 는 `tasty-i18n` 을 의존하지 않는
-/// 데이터 crate 라 그 자리에 보여줄 자연어를 만들지 않는다 — 표시 문구는 소비자가
-/// 고른다(git-viewer plugin 은 자기 `Translator`, host 는 `t()`). 원격 attach 조회도
-/// 같은 wire(`attach_runtime::log_entry_wire`)를 타므로 빈 값은 빈 값 그대로 건너간다.
-/// 근거: `docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입`.
+/// 커밋 요약과 작성자 이름. 값이 없으면 빈 문자열을 반환하며 표시 문구는 소비자가 정한다.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogEntry {
     pub oid_short: String,
@@ -137,16 +124,10 @@ fn head_info(repo: &Repository) -> (Option<String>, Option<String>) {
     (branch, oid)
 }
 
-/// linked worktree 의 공유 `.git`(common dir) 으로부터 main working tree 도출.
-///
-/// git2 0.19 에 `commondir()` accessor 가 없어 직접 끌어낸다.
-/// - (B) `repo.path()/commondir` 파일(공유 `.git` 으로의 상대경로) 우선 — git 표준.
-/// - (A) 경로 추론 폴백 — `<main>/.git/worktrees/<name>` → 조부모(`.git`)의 부모.
-///
-/// 둘 다 실패하면 None → 호출부가 main 항목을 생략(graceful degrade).
+/// linked worktree의 commondir 파일에서 main 경로를 찾는다.
+/// 실패하면 `.git/worktrees/<name>` 형태로 추론하고, 그것도 실패하면 None이다.
 fn derive_main_workdir(repo: &Repository) -> Option<PathBuf> {
     if !repo.is_worktree() {
-        // 현재가 main working tree → workdir 이 곧 main.
         return repo.workdir().map(|p| p.to_path_buf());
     }
     let git_dir = repo.path(); // <main>/.git/worktrees/<name>/
@@ -159,13 +140,11 @@ fn main_workdir_via_commondir(git_dir: &Path) -> Option<PathBuf> {
     if rel.is_empty() {
         return None;
     }
-    // 공유 `.git` 디렉토리. canonicalize 로 `..` 정리.
     let shared_git = canon(&git_dir.join(rel));
     shared_git.parent().map(|p| p.to_path_buf())
 }
 
 fn main_workdir_via_path(git_dir: &Path) -> Option<PathBuf> {
-    // git_dir = <main>/.git/worktrees/<name>
     let worktrees = git_dir.parent()?; // <main>/.git/worktrees
     let dot_git = worktrees.parent()?; // <main>/.git
     dot_git.parent().map(|p| p.to_path_buf()) // <main>
@@ -176,24 +155,18 @@ fn main_workdir_via_path(git_dir: &Path) -> Option<PathBuf> {
 /// `current_workdir` = popup 이 받은 cwd 에서 discover 한 repo 의 workdir.
 /// 각 항목의 `is_current` 는 이 경로와의 정규화 비교로 판정한다.
 ///
-/// 부분 실패(개별 worktree head 못 읽음 등)는 그 항목만 degrade 하고 전체는 Ok. 항목별
-/// 조립은 `main_worktree_entry`/`linked_worktree_entry` 로 분리돼 있다(clippy 복잡도 게이트 —
-/// `docs/dev-guide/complexity-gate.md#무엇을도구임계값`).
+/// 개별 worktree의 HEAD 조회 등에 실패해도 나머지 항목은 반환한다.
 pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Vec<WorktreeEntry>> {
     let current_canon = canon(current_workdir);
     let mut out: Vec<WorktreeEntry> = Vec::new();
-    // 이미 담은 항목의 **정규화 경로**. 중복 검사(아래 비표준 레이아웃 방어)가 목록을
-    // 훑을 때마다 `canonicalize` 를 다시 부르면 항목 수의 제곱에 비례하는 syscall 이
-    // 난다 — 항목마다 어차피 한 번 재는 값을 여기 모아 그대로 비교한다.
+    // 중복 검사마다 canonicalize하지 않도록 한 번 구한 경로를 재사용한다.
     let mut seen_canon: Vec<PathBuf> = Vec::new();
 
-    // 1) main working tree 합성 (libgit2 worktrees() 가 안 줌).
     if let Some((entry, entry_canon)) = main_worktree_entry(repo, &current_canon) {
         out.push(entry);
         seen_canon.push(entry_canon);
     }
 
-    // 2) linked worktrees.
     if let Ok(names) = repo.worktrees() {
         for name in names.iter().flatten() {
             if let Some((entry, entry_canon)) =
@@ -253,8 +226,6 @@ fn linked_worktree_entry(
     };
     let wt_path = wt.path().to_path_buf();
     let wt_canon = canon(&wt_path);
-    // main 합성분과 경로 중복 방지 (비표준 레이아웃 방어). 비교 대상은 이미 재 둔
-    // 정규화 경로라 여기서 canonicalize 를 다시 부르지 않는다.
     if seen_canon.contains(&wt_canon) {
         return None;
     }
@@ -345,14 +316,10 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
         .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
         .ok();
     if walker.push_head().is_err() {
-        // unborn HEAD — 걸을 커밋이 없으니 아래 ref 스캔도 부질없다.
         return Ok(Vec::new());
     }
 
-    // oid → ref 이름 맵. **호출마다 새로 만든다** — ref 는 커밋/브랜치 조작 한 번으로
-    // 바뀌고, 이 함수가 불리는 시점이 곧 "최신 상태를 보여달라"(popup open / Refresh /
-    // worktree 전환)는 순간이라 캐시는 낡은 pill 을 띄울 위험만 만든다. 비용도
-    // ref 개수에 선형이라 아래 revwalk 대비 미미하다.
+    // branch/ref가 바뀔 수 있어 조회마다 현재 이름을 읽고 캐시하지 않는다.
     let mut ref_map: std::collections::HashMap<git2::Oid, Vec<String>> =
         std::collections::HashMap::new();
     if let Ok(refs) = repo.references() {
@@ -383,8 +350,6 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
             Ok(c) => c,
             Err(_) => continue,
         };
-        // 없음은 빈 문자열로 — 자연어 폴백은 소비자(plugin Translator / host t()) 몫이다.
-        // `LogEntry` doc 참조.
         let summary = commit.summary().unwrap_or_default().to_string();
         let author = commit.author();
         let author_name = author.name().unwrap_or_default().to_string();
@@ -490,8 +455,6 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
 
-    /// 메시지 없는 커밋·이름 없는 작성자는 **빈 문자열**로 전달된다 — 이 crate 는 자연어
-    /// 폴백을 만들지 않는다(표시 문구는 소비자 몫, docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입).
     #[test]
     fn collect_log_leaves_missing_summary_and_author_empty() {
         let tmp = tempfile::tempdir().unwrap();
@@ -500,15 +463,11 @@ mod tests {
         let tree_oid = repo.index().unwrap().write_tree().unwrap();
         let tree = repo.find_tree(tree_oid).unwrap();
 
-        // 1) 빈 메시지 커밋 — libgit2 는 만들어 주고 `summary()` 는 `Some("")` 을 돌려준다
-        //    (`git_commit_summary` 가 빈 요약을 "" 로 strdup). `None` 은 메시지가 UTF-8 이
-        //    아닐 때뿐이다 — 어느 쪽이든 `LogEntry.summary` 는 빈 문자열로 전달돼야 한다.
         let c1 = repo
             .commit(Some("HEAD"), &sig, &sig, "", &tree, &[])
             .unwrap();
 
-        // 2) 이름 없는 작성자 — `Signature::new` 는 빈 이름을 거부하므로 raw commit
-        //    object 를 직접 써서 만든다(파서는 관대해 읽기는 된다).
+        // Signature::new는 빈 이름을 거절하므로 파서 검증용 raw commit을 직접 만든다.
         let raw = format!(
             "tree {tree_oid}\nparent {c1}\nauthor  <nobody@example.com> 0 +0000\n\
              committer test <test@example.com> 0 +0000\n\nhas message\n"
@@ -532,15 +491,12 @@ mod tests {
         assert_eq!(log[1].author, "test");
     }
 
-    /// 임시 repo + linked worktree 를 만들어 종합 목록 수집을 검증한다.
-    /// (런타임 확인 사항: `worktrees()` 형제 나열 + main 합성 + is_current 판정.)
     #[test]
     fn collect_worktrees_lists_main_and_linked() {
         let tmp = tempfile::tempdir().unwrap();
         let main_dir = tmp.path().join("main");
         std::fs::create_dir_all(&main_dir).unwrap();
 
-        // main repo 초기화 + 최초 커밋(worktree 생성에 HEAD 필요).
         let repo = Repository::init(&main_dir).unwrap();
         {
             let mut cfg = repo.config().unwrap();
@@ -559,11 +515,9 @@ mod tests {
         repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
             .unwrap();
 
-        // linked worktree 생성.
         let wt_dir = tmp.path().join("linked-wt");
         repo.worktree("linked-wt", &wt_dir, None).unwrap();
 
-        // main repo 관점: main(현재) + linked 가 모두 보여야 한다.
         let main_wd = repo.workdir().unwrap().to_path_buf();
         let list = collect_worktrees(&repo, &main_wd).unwrap();
         assert!(
@@ -575,7 +529,6 @@ mod tests {
             "linked worktree 가 목록에 있어야 함: {list:?}"
         );
 
-        // linked worktree 관점: 형제 나열 + linked 가 is_current 여야 한다.
         let linked_repo = Repository::open(&wt_dir).unwrap();
         assert!(linked_repo.is_worktree());
         let linked_wd = linked_repo.workdir().unwrap().to_path_buf();
@@ -592,11 +545,7 @@ mod tests {
         );
     }
 
-    /// 결과 고정 — worktree 여러 개에서 목록의 불변식이 유지되는지 본다.
-    ///
-    /// 중복 검사는 항목마다 `canonicalize` 를 다시 부르지 않고 미리 잰 정규화 경로를
-    /// 비교한다(항목 수에 선형). 그 비교의 결과 — 중복 없음 · main 정확히 1개 ·
-    /// current 정확히 1개 · main 이 선두 — 를 고정한다.
+    /// main과 current가 각각 하나이며 경로가 중복되지 않는지 확인한다.
     #[test]
     fn collect_worktrees_result_invariants_with_multiple_linked() {
         let tmp = tempfile::tempdir().unwrap();
@@ -642,14 +591,12 @@ mod tests {
             "is_current 는 정확히 1개: {list:?}"
         );
 
-        // 경로 중복이 없어야 한다 (비표준 레이아웃 방어의 본래 목적).
         let mut canons: Vec<PathBuf> = list.iter().map(|e| canon(&e.path)).collect();
         canons.sort();
         let before = canons.len();
         canons.dedup();
         assert_eq!(before, canons.len(), "정규화 경로 중복 없음: {list:?}");
 
-        // linked 이름이 전부 살아 있고 각각 유효해야 한다.
         for name in names {
             let e = list
                 .iter()

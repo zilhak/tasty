@@ -52,9 +52,7 @@ fn expired_token_is_evicted_on_resolve() {
     let (token, _) = store
         .issue("a1", None, perms(&[]), Some(1_000), 1_000)
         .unwrap();
-    // ttl=1000 → expires_at=2000. now=2000 이면 expire.
     assert!(store.resolve(&token, 2_000).unwrap().is_none());
-    // 한 번 더 호출해도 None (이미 evict).
     assert!(store.resolve(&token, 3_000).unwrap().is_none());
 }
 
@@ -90,7 +88,6 @@ fn list_returns_alive_only_and_evicts_expired() {
     let all = store.list(1_000).unwrap();
     assert_eq!(all.len(), 1, "only alive should remain");
     assert_eq!(all[0].agent_id, "alive");
-    // alive_token 은 그대로 resolve 가능.
     assert!(store.resolve(&alive_token, 2_000).unwrap().is_some());
 }
 
@@ -111,7 +108,6 @@ fn grant_then_revoke_removes_temp() {
         .unwrap();
     store.grant_permission(&token, "fs.write", None, 0).unwrap();
     assert!(store.revoke_permission(&token, "fs.write", 1_000).unwrap());
-    // 두 번째 revoke 는 false (이미 없음).
     assert!(!store.revoke_permission(&token, "fs.write", 1_000).unwrap());
     let s = store.resolve(&token, 1_000).unwrap().unwrap();
     assert!(s.temp_grants.is_empty(), "revoked grant removed from store");
@@ -125,7 +121,6 @@ fn grant_with_ttl_expires_via_resolve() {
     store
         .grant_permission(&token, "fs.write", Some(1_000), 0)
         .unwrap();
-    // now=1_000 → grant 만료 (now>=expires).
     let s = store.resolve(&token, 1_000).unwrap().unwrap();
     assert!(s.temp_grants.is_empty(), "expired grant evicted on resolve");
 }
@@ -135,11 +130,9 @@ fn grant_duplicate_extends_expiry() {
     let (_td, mut mem) = fresh();
     let mut store = SessionStore::new(&mut mem, "_host");
     let (token, _) = store.issue("a", None, perms(&[]), None, 0).unwrap();
-    // 첫 grant: 짧은 TTL.
     store
         .grant_permission(&token, "fs.write", Some(100), 0)
         .unwrap();
-    // 두 번째 grant: 더 긴 TTL → 갱신되어야 함.
     store
         .grant_permission(&token, "fs.write", Some(10_000), 0)
         .unwrap();
@@ -156,7 +149,6 @@ fn grant_none_ttl_overrides_finite() {
     store
         .grant_permission(&token, "fs.write", Some(100), 0)
         .unwrap();
-    // None TTL → 무기한으로 격상.
     store.grant_permission(&token, "fs.write", None, 0).unwrap();
     let s = store.resolve(&token, 100_000).unwrap().unwrap();
     assert_eq!(s.temp_grants.len(), 1);
@@ -170,7 +162,6 @@ fn grant_existing_base_permission_skips() {
     let (token, _) = store
         .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
         .unwrap();
-    // base 에 이미 있으므로 grant 가 noop.
     let added = store
         .grant_permission(&token, "surface.read", Some(1_000), 0)
         .unwrap();
@@ -223,20 +214,16 @@ fn find_by_agent_id_skips_revoked_and_expired() {
     let (rt, _) = store.issue("dup", None, perms(&[]), None, 0).unwrap();
     store.revoke(&rt).unwrap();
     let (_et, _) = store.issue("dup", None, perms(&[]), Some(1), 0).unwrap();
-    // 두 후보가 모두 invalid (revoked + expired) → None.
     assert!(store.find_by_agent_id("dup", 10_000).unwrap().is_none());
 }
 
 #[test]
 fn unknown_permission_tokens_are_dropped_on_load() {
-    // 미래에 plugin manifest 에서 permission token 이 사라져도 디스크 데이터는
-    // 정상적으로 load 되어야 한다.
     let (_td, mut mem) = fresh();
     let mut store = SessionStore::new(&mut mem, "_host");
     let (token, _) = store
         .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
         .unwrap();
-    // 강제로 알 수 없는 토큰 삽입.
     let mut session = store.get_raw(&token).unwrap().unwrap();
     session.permissions.push("future.unknown.token".into());
     store.put(&token, &session).unwrap();

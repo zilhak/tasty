@@ -952,12 +952,7 @@ fn fallback_finalized_skipped_when_main_cancelled() {
     );
 }
 
-/// 영구 잔류하면 안 된다. `Fallback` 이 설정된 task 는 자기 의존성이 실패해도
-/// (기존 설계상) 직접 Skipped 로 떨어지지 않으므로(`apply_on_failure` 가
-/// `Fallback` 에는 `None` 을 반환 — downstream 쪽 설정 오용 케이스), 이 상태를
-/// 실제로 관찰하려면 main 자신이 *다른 main* 의 dormant fallback 이어서 그
-/// 상위 main 이 성공/취소로 끝나 Skipped 로 마감되는 체인을 구성해야 한다 —
-/// 그 체인이 main 자신의 fallback 정리 로직까지 재귀적으로 타는지 함께 검증한다.
+/// 상위 main이 끝나 dormant fallback이 Skipped가 된 경우, 그 아래 fallback도 정리되는지 확인한다.
 #[test]
 fn fallback_finalized_skipped_when_main_ends_skipped_via_chained_fallback() {
     let (_td, mut mem, seq) = fresh_store();

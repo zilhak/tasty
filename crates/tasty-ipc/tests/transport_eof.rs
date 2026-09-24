@@ -1,14 +1,6 @@
-//! 클라이언트 IPC 연결([`tasty_ipc::client::IpcConnection`])의 EOF 회귀 격리.
-//!
-//! **통합 테스트(별도 바이너리)로 둔 이유**: 이 테스트는 ephemeral 포트를 잡고
-//! 소켓에서 블록한다. 같은 바이너리에 방금 해제한 ephemeral 포트를 다시 bind 해
-//! 보는 유닛 테스트가 있으면 병렬 실행 시 서로 포트를 가로챌 수 있다. cargo 는
-//! 테스트 바이너리를 하나씩 돌리므로 분리하면 그 경합이 성립하지 않는다.
+//! EOF 검증용 소켓 시험. 같은 바이너리의 포트 재사용 시험과 경합하지 않도록 분리한다.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 이유: 테스트는 let _ = 사유 주석 정책의 대상이 아니며 제품 lint는 유지한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::io::{BufRead, BufReader};
@@ -19,12 +11,7 @@ use std::time::Duration;
 use tasty_ipc::client::IpcConnection;
 use tasty_ipc::protocol::JsonRpcRequest;
 
-/// 상대가 응답 없이 연결을 닫으면(EOF) **즉시 에러로 끝나야 한다.**
-///
-/// 회귀 시 증상이 "실패" 가 아니라 "코어 하나를 태우는 무한 스핀"(유저스페이스
-/// 스핀이라 겉보기 hang 과 구분도 어렵다)이라 일반 assert 로는 잡히지 않는다 —
-/// 별도 스레드에서 돌리고 `recv_timeout` 으로 판정한다. 호스트가 종료 중이거나
-/// 크래시/SIGKILL 로 죽으면 실제로 밟는 경로다.
+/// EOF 뒤 무한 반복이 생겨도 시험이 멈추지 않도록 별도 스레드와 recv_timeout으로 확인한다.
 #[test]
 fn 응답_없는_eof_는_스핀하지_않고_에러로_끝난다() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");

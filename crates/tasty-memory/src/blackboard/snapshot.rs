@@ -268,16 +268,10 @@ pub fn bb_snapshot_delete(
     )
 }
 
-/// snapshot 으로 bb 상태 복원.
-///
-/// 동작:
-///   1. 현재 bb 의 모든 field 를 삭제 (caller 가 owner 이거나 `_host` 일 때만 성공)
-///   2. bb 가 없으면 snapshot 의 meta 로 새로 만들고, 있으면 기존 meta 유지
-///   3. snapshot 의 각 field 를 caller owner 로 다시 put
-///
-/// snapshot 자체 entry 는 그대로 남는다 (반복 restore 가능).
-///
-/// Returns: 복원 후 bb 의 field 개수.
+/// 현재 필드를 지우고 snapshot의 필드를 caller 소유로 다시 저장한다.
+/// meta가 없으면 snapshot의 meta로 만들고 기존 meta는 유지한다.
+/// snapshot 자체는 남긴다. 여러 저장소 호출을 트랜잭션으로 묶지 않아 중간 실패 시 부분 변경이 남는다.
+/// 성공하면 복원한 필드 수를 반환한다.
 pub fn bb_snapshot_restore(
     store: &mut dyn MemoryStorage,
     owner: &str,
@@ -296,12 +290,10 @@ pub fn bb_snapshot_restore(
         }
     })?;
 
-    // 기존 field 모두 제거.
     for entry in bb_get_all(store, workspace_id, bb)? {
         store.delete(owner, &scope, &entry.key, None)?;
     }
 
-    // meta 가 없으면 snapshot.meta 로 새로 만들고, 있으면 그대로 둔다.
     if !bb_exists(store, workspace_id, bb)? {
         let meta_value = MemoryValue::Json(snap.meta.clone().unwrap_or(serde_json::json!({
             "name": bb,
@@ -318,7 +310,6 @@ pub fn bb_snapshot_restore(
         )?;
     }
 
-    // snapshot field 재기록.
     let mut restored = 0;
     for sf in snap.fields {
         validate_field_name(&sf.field)?;
@@ -346,8 +337,7 @@ pub fn bb_list(store: &dyn MemoryStorage, workspace_id: u32) -> Result<Vec<Strin
     for e in entries {
         let rest = e.key.strip_prefix(BB_KEY_PREFIX).unwrap_or("");
         if let Some(name) = rest.strip_suffix("._meta") {
-            // name 안에 `.fields.` 같은 게 들어가는 일은 없다 — bb_name 은 도트 금지.
-            // 다만 손상된 데이터 방어 차원에서 한번 더 검증.
+            // 저장된 이름이 손상됐을 수 있어 구분자 포함 여부를 다시 확인한다.
             if !name.contains('.') {
                 names.push(name.to_string());
             }
@@ -664,7 +654,6 @@ mod tests {
         .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
 
-        // 이후에 변경된 상태.
         bb_put(
             &mut s,
             HOST_OWNER,
@@ -712,10 +701,7 @@ mod tests {
         )
         .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
-        // bb 본체 (meta + fields) 삭제. snapshot 은 별도라 보존됨.
         bb_delete(&mut s, HOST_OWNER, 1, "bb").unwrap();
-        // 하지만 위 bb_delete 는 snapshot 도 같이 지운다 → snapshot 도 사라짐.
-        // restore 가능 여부 확인: snapshot 없으니 NotFound 일 것.
         let err = bb_snapshot_restore(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap_err();
         assert!(matches!(err, MemoryError::NotFound { .. }), "{err:?}");
     }
@@ -735,7 +721,6 @@ mod tests {
         )
         .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
-        // meta 만 직접 삭제하고 snapshot 은 그대로 둠.
         s.delete(HOST_OWNER, &Scope::Workspace(1), &meta_key("bb"), None)
             .unwrap();
         assert!(!bb_exists(&s, 1, "bb").unwrap());
@@ -753,7 +738,6 @@ mod tests {
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v2").unwrap();
         let removed = bb_delete(&mut s, HOST_OWNER, 1, "bb").unwrap();
-        // meta + 2 snapshots = 3.
         assert_eq!(removed, 3);
         assert!(bb_snapshot_list(&s, 1, "bb").unwrap().is_empty());
     }

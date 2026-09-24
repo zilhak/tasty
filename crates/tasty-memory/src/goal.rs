@@ -1,30 +1,13 @@
-//! Goal — surface 단위 단일 목표 문장.
-//!
-//! `tasty.goal` 키로 regular memory 영역의 `Scope::Surface(id)` 에 저장된다.
-//! bb / plan / cache 와 달리 **prefix 가 아니라 단일 키**다 — goal 은 surface 당
-//! 하나뿐이고, 소비자(Stop-훅 게이트 등)가 읽을 자리가 코드에 고정되어야 한다.
-//!
-//! 스코프가 surface 인 이유: Claude 세션은 surface 단위로 존재한다. workspace 로
-//! 올리면 부모와 spawn 된 자식들이 goal 을 공유하게 되어, 자식이 자기 subtask 를
-//! 끝냈는데도 부모의 goal 미충족을 이유로 계속 도는 문제가 생긴다. 상속 없음.
-//!
-//! TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫힐 때
-//! (`purge_surface_memory_scope`) 와 앱 시작 시 복원되지 않은 surface 정리
-//! (`purge_dead_surfaces`) 로 scope 통째로 삭제된다. 두 경로 모두 키 필터가 없어
-//! goal 도 자동 포함되므로 **goal 수명 = surface 수명** 이며, TTL 을 걸면 만료
-//! 전에 purge 가 먼저 지워 도달 불가 코드가 된다.
+//! surface별 목표 문장. Scope::Surface(id)의 단일 tasty.goal 키에 저장한다.
+//! 부모와 자식 세션은 목표를 상속·공유하지 않는다. TTL 없이 저장하며 surface scope가
+//! 정리될 때 함께 삭제한다. 사용자가 명시적으로 덮어쓰거나 지울 수도 있다.
 
 use crate::{MemoryEntry, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope};
 
 /// surface goal 이 저장되는 예약 키. prefix 가 아닌 완전한 키다.
 pub const GOAL_KEY: &str = "tasty.goal";
 
-/// 빈/공백-only goal 을 거부한다.
-///
-/// 내용 없는 goal 이 저장되면 소비자가 "내용 없는 목표를 향해 계속 진행하라" 는
-/// 절을 주입하게 된다 — 무의미한 값이 게이트 동작을 변질시키는 것을 등록 시점에
-/// 막는다. `MemoryError::InvalidKey` 를 쓰는 것은 `cache_put` 의 `ttl_secs` 검증과
-/// 같은 선례(도메인 인자 검증 실패를 이 variant 로 표현)를 따른 것이다.
+/// 빈 목표가 후속 작업 지시로 사용되지 않도록 공백뿐인 값도 거절한다.
 fn validate_goal(goal: &str) -> Result<()> {
     if goal.trim().is_empty() {
         return Err(MemoryError::InvalidKey("goal: empty or blank".into()));
@@ -96,7 +79,6 @@ mod tests {
         goal_set(&mut s, HOST_OWNER, 1, "g").unwrap();
         goal_clear(&mut s, HOST_OWNER, 1).unwrap();
         assert!(goal_get(&s, 1).unwrap().is_none());
-        // 두 번째 clear 도 성공해야 한다.
         goal_clear(&mut s, HOST_OWNER, 1).unwrap();
     }
 
@@ -111,7 +93,7 @@ mod tests {
         assert_eq!(entry.version, v2);
     }
 
-    /// TTL 없음 회귀 방지 — goal 수명은 surface 수명이며 만료로 사라지면 안 된다.
+    /// 목표에 TTL이 설정되지 않는지 확인한다.
     #[test]
     fn stored_entry_has_no_expiry() {
         let mut s = open();
@@ -148,7 +130,6 @@ mod tests {
             goal_get(&s, 2).unwrap().unwrap().value,
             MemoryValue::Text("surface 2 목표".into())
         );
-        // 한쪽 clear 가 다른 쪽에 영향을 주지 않는다.
         goal_clear(&mut s, HOST_OWNER, 1).unwrap();
         assert!(goal_get(&s, 1).unwrap().is_none());
         assert!(goal_get(&s, 2).unwrap().is_some());

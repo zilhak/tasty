@@ -1,6 +1,6 @@
 //! 워크스페이스의 작업을 DAG별로 묶은 조회 결과. 별도 DAG 레코드는 저장하지 않는다.
 //!
-//! metadata.dag가 있으면 같은 키로 묶고, 나머지는 약연결 컴포넌트로 나눈다.
+//! metadata.dag가 공백뿐이지 않은 문자열이면 같은 키로 묶고, 나머지는 약연결 컴포넌트로 나눈다.
 //! depends_on·Fallback.task·Reduce.inputs와 metadata.fallback_of 관계를 사용한다.
 //! fallback_of도 읽어 동적으로 만든 fallback이 원래 그룹에 포함되게 한다.
 

@@ -1,12 +1,4 @@
-//! 두 SQLite DB 가 공유하는 연결 pragma 집합.
-//!
-//! `memory.db`([`crate::MemoryStore`])와 `state.db`(본 바이너리의 `Db`)는 **서로
-//! 다른 `prepare`** 를 쓰지만 연결마다 세우는 pragma 는 같아야 한다. 한때 두 자리가
-//! 같은 네 줄을 각자 박아 두었고, 그래서 한쪽만 고치면 다른 쪽이 조용히 뒤처졌다 —
-//! 실제로 `journal_size_limit` 은 한쪽에만 먼저 들어갔다. 자유도가 없는 사본이므로
-//! 사본을 두지 않고 이 함수 하나를 두 곳이 부른다.
-//!
-//! 적용 결과를 어떻게 관측하는지는 [`apply_connection_pragmas`] 의 doc 를 본다.
+//! memory.db와 state.db에 같은 연결 pragma를 적용하고 실제값을 다시 읽는다.
 
 use std::path::Path;
 
@@ -17,12 +9,7 @@ use crate::WAL_SIZE_LIMIT_BYTES;
 /// `journal_mode` 로 요청하는 값.
 const JOURNAL_MODE: &str = "WAL";
 
-/// in-memory DB 가 `journal_mode=WAL` 요청에 대해 실제로 갖는 값.
-///
-/// SQLite 는 in-memory DB 에 WAL 을 적용할 수 없고(WAL 은 파일 두 개를 쓴다) 요청을
-/// **조용히 거절한다** — `pragma_update` 는 `Ok(())` 를 내고 값만 `memory` 로 남는다
-/// (실측 2026-09-20, rusqlite 0.32.1). 그래서 이 값은 실패가 아니라 그 모드의 정상
-/// 결과이고, 경고 대상에서 뺀다.
+/// in-memory DB는 WAL 요청이 성공해도 journal_mode가 memory로 남는다. 이 모드의 정상값이다.
 const IN_MEMORY_JOURNAL_MODE: &str = "memory";
 
 /// `synchronous` 로 요청하는 값. 되읽으면 정수(`0`~`3`)로 오므로 [`synchronous_name`]
@@ -32,11 +19,7 @@ const SYNCHRONOUS: &str = "NORMAL";
 /// `foreign_keys` 로 요청하는 값. 되읽으면 `0`/`1` 로 온다.
 const FOREIGN_KEYS: &str = "ON";
 
-/// pragma 하나의 요청값과 **되읽은 실제값**.
-///
-/// `took` 이 이 값의 판정이다 — 설정·되읽기 어느 쪽도 오류가 없고, 실제값이 이 DB
-/// 모드(파일 / in-memory)의 허용 결과일 때만 `true` 다. 허용 결과의 정의는
-/// [`AppliedPragmas`] 의 doc 에 있다.
+/// pragma 요청값과 실제값. 설정·조회에 오류가 없고 모드별 허용값과 맞을 때 took=true다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PragmaReading {
     /// pragma 이름 (`journal_mode` 등).
@@ -47,7 +30,7 @@ pub struct PragmaReading {
     pub effective: Option<String>,
     /// 설정 또는 되읽기가 낸 오류. 둘 다 났으면 설정 쪽이다.
     pub error: Option<String>,
-    /// 이 pragma 가 요청대로 섰는가.
+    /// 요청한 설정이 이 DB 모드에 맞게 적용됐는지.
     pub took: bool,
 }
 
@@ -62,17 +45,10 @@ pub struct PragmaReading {
 /// | `foreign_keys` | `ON` | `ON` |
 /// | `journal_size_limit` | 요청값 그대로 | 요청값 그대로 |
 ///
-/// 파일 DB 가 `memory` 로 서거나 in-memory DB 가 `wal` 이라고 답하면 **허용 결과가
-/// 아니다** — 두 모드의 정상 결과를 서로의 것으로 봐 주면, 파일 DB 에서 WAL 이 조용히
-/// 안 선 것을 "in-memory 의 정상값" 으로 삼켜 버린다.
+/// 파일 DB와 in-memory DB의 허용값을 서로 바꾸어 적용하지 않는다.
 ///
-/// ## degraded 는 오류가 아니라 상태다
-///
-/// 하나라도 `took == false` 면 [`degraded`](Self::degraded) 가 `true` 다. 그래도 DB 는
-/// 열린 채로 쓰인다 — 열기 자체의 실패(`DbInitError` 는 안내 후 종료, `MemoryInitError` 는
-/// in-memory 대체 — `crate::InitFallback`)와 다른 축이고, pragma 가 안 선 DB 는 느리거나
-/// 덜 내구적일 뿐 동작은 한다.
-/// 그 선택의 근거는 `docs/design/systems/storage.md#적용된-sqlite-설정`.
+/// 하나라도 took=false면 degraded=true다. DB 열기를 중단하지 않고 경고와 상태를 제공한다.
+/// 이는 DB 자체를 열지 못한 경우의 종료·임시 저장소 정책과 별개다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedPragmas {
     /// 이 연결이 in-memory DB 인가. 허용 결과표의 열을 고른다.
@@ -82,7 +58,7 @@ pub struct AppliedPragmas {
 }
 
 impl AppliedPragmas {
-    /// 요청대로 안 선 pragma 가 하나라도 있는가.
+    /// 적용되지 않은 설정이 있는지 확인한다.
     pub fn degraded(&self) -> bool {
         self.readings.iter().any(|r| !r.took)
     }
@@ -93,31 +69,17 @@ impl AppliedPragmas {
     }
 }
 
-/// 연결에 공용 pragma 를 세우고 **실제로 적용됐는지** 되읽어 값으로 돌려준다.
-///
-/// 실패해도 `Err` 를 올리지 않는다 — 호출자는 둘 다 DB 를 여는 중이고, pragma 가
-/// 안 서는 것은 열기 자체의 실패와 다른 축이다(열린 DB 는 그대로 쓸 수 있다).
-/// 대신 **조용하지 않게** 한다: 어긋난 자리마다 `tracing::warn!` 이 나가고, 결과가
-/// [`AppliedPragmas`] 로 남아 호출자가 밖에 내보일 수 있다(`system.pressure` 의
-/// `db_pragmas` 덩어리).
-///
-/// ## 반환값 검사만으로는 부족하다
-///
-/// `journal_mode` 는 요청이 거절돼도 `pragma_update` 가 `Ok(())` 를 낸다. 실측
-/// (2026-09-20): in-memory DB 에 `WAL` 을 요청하면 반환은 `Ok(())` 이고 실제값은
-/// `memory` 다. 즉 **요청값과 적용값은 다른 축**이고, 소스에 `"WAL"` 이라고 적혀
-/// 있다는 것을 runtime 보장으로 쓰면 안 된다. 그래서 넷 다 되읽어 대조한다 —
-/// `synchronous` · `foreign_keys` 는 거절 갈래가 알려져 있지 않지만, 되읽기가 싸고
-/// 그 값이 밖에 나가는 답이므로 "반환값이 `Ok` 였다" 로 갈음하지 않는다.
+/// 공용 pragma를 적용하고 실제값을 다시 읽는다. 반환 성공만으로 적용을 보장하지 않기 때문이다.
+/// 실패나 불일치는 경고와 AppliedPragmas에 남기며 DB 열기 오류로 전파하지 않는다.
+/// 호스트는 system.pressure의 db_pragmas로 결과를 제공한다.
 pub fn apply_connection_pragmas(conn: &Connection, path: &Path) -> AppliedPragmas {
     let in_memory = is_in_memory(conn);
     let size_limit = WAL_SIZE_LIMIT_BYTES.to_string();
-    // 네 pragma 의 순서는 이 함수가 생기기 전 두 사본이 쓰던 것 그대로다.
     let set_journal = set_pragma(conn, path, "journal_mode", JOURNAL_MODE);
     let set_sync = set_pragma(conn, path, "synchronous", SYNCHRONOUS);
     let set_fk = set_pragma(conn, path, "foreign_keys", FOREIGN_KEYS);
     let set_limit = set_wal_size_limit(conn, path);
-    // 위 네 줄이 전부 Ok 여도 journal_mode 는 안 섰을 수 있다 — 이 함수의 doc 참조.
+    // 설정 호출이 성공해도 실제값이 다를 수 있어 다시 읽는다.
     let journal = confirm_journal_mode(conn, path, in_memory, set_journal);
     let readings = vec![
         journal,
@@ -147,7 +109,7 @@ fn is_in_memory(conn: &Connection) -> bool {
     conn.path().is_none_or(str::is_empty)
 }
 
-/// 값 하나를 세우고, 실패하면 그 자리를 이름으로 말한다. 오류 문장을 돌려준다.
+/// 설정 실패를 경고하고 오류 문구를 반환한다.
 fn set_pragma(conn: &Connection, path: &Path, name: &str, value: &str) -> Option<String> {
     match conn.pragma_update(None, name, value) {
         Ok(()) => None,
@@ -158,9 +120,7 @@ fn set_pragma(conn: &Connection, path: &Path, name: &str, value: &str) -> Option
     }
 }
 
-/// WAL 되감기 한도. 이 pragma 가 빠지면 증상이 "조금 느려짐" 이 아니라 WAL 고착
-/// (`WAL_SIZE_LIMIT_BYTES` doc)이라, 조용히 없는 것과 조용히 실패한 것을 구별할 수
-/// 없으면 같은 조사를 처음부터 다시 하게 된다.
+/// WAL 재사용 시 파일을 줄일 상한을 설정한다. 실패를 경고해 설정 미적용을 알린다.
 fn set_wal_size_limit(conn: &Connection, path: &Path) -> Option<String> {
     match conn.pragma_update(None, "journal_size_limit", WAL_SIZE_LIMIT_BYTES) {
         Ok(()) => None,

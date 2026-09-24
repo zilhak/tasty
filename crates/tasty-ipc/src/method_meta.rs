@@ -1,11 +1,5 @@
-//! IPC 메서드별 메타데이터 — plugin이 호출 가능한지, 어떤 권한이 필요한지.
-//!
-//! 이 테이블이 **단일 진실 원천**이다. 새 IPC 메서드를 추가할 때 반드시
-//! 여기에도 등록한다. 매핑되지 않은 메서드는 [`method_meta`]가 `None`을 반환하며,
-//! `CallerContext::ensure_allowed`가 plugin 호출을 거부한다.
-//!
-//! Local caller(CLI/사용자)는 권한 검사를 거치지 않는다. 이 테이블은 **plugin이
-//! 호출했을 때**의 권한 요구사항이다.
+//! IPC 메서드의 호출자·권한·재시도 계약을 정의한다. 새 호스트 메서드는 이 표에 등록한다.
+//! Plugin/Agent는 이 메타데이터로 권한을 검사한다. Local의 권한 검사는 별도로 면제된다.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock, RwLock};
@@ -13,25 +7,13 @@ use std::sync::{Arc, OnceLock, RwLock};
 use tasty_plugin_manifest::Permission;
 
 use crate::ipc_namespace::IpcNamespaceRegistry;
-// `PREFIX_RULES` 한 줄을 100 칸 안에 두려고 이름을 짧게 든다. 그 정의는
-// `ipc_release_table_excludes_input_reproduction` 이 **줄 단위로** 읽으므로, 줄이
-// 접히면 규칙이 사라진 것과 구별이 안 돼 빨개진다.
-//
-// cfg 가 붙은 이유: 이 이름을 쓰는 자리가 debug 쪽 `PREFIX_RULES` 하나뿐이라,
-// release 에서는 아무 데도 안 쓰여 `unused_imports` 가 뜬다. 그 조합을 보는 잡이
-// `check-release` 이고 debug 빌드에서는 조용하다.
+// PREFIX_RULES를 줄 단위로 읽는 검사가 있어 짧은 이름으로 한 줄 형식을 유지한다.
+// 이 이름은 debug 표에서만 사용하므로 import에도 같은 cfg를 적용한다.
 #[cfg(debug_assertions)]
 use self::MethodEffect::Idempotent;
 
-/// 이 메서드를 **두 번 전달하면 관측 가능한 차이가 남는가**.
-///
-/// 축이 "읽기인가" 가 아니라 **재전달**인 이유는 이 값을 쓰는 쪽이 그것만 묻기 때문이다 —
-/// 응답을 못 받은 호출자가 다시 보내도 되는지. 그래서 파일을 쓰는 조회
-/// (`ui.screenshot`)는 이름이 읽기 계열이어도 [`MethodEffect::Mutate`] 다. 두 번째 호출이
-/// 두 번째 파일을 남긴다.
-///
-/// 판정 불가를 뜻하는 값은 없다 — 생성자가 이 값을 **요구**하므로 새 메서드는 분류 없이는
-/// 표에 못 들어간다. 별도 목록으로 뒀다면 그 목록과 표가 갈릴 수 있었다.
+/// 같은 요청을 다시 전달했을 때의 부수효과. 조회처럼 보여도 파일을 쓰거나
+/// 커서를 옮기는 메서드는 Mutate다. 새 메서드는 생성자에서 반드시 분류한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodEffect {
     /// 호스트 상태를 안 바꾼다. 두 번째 전달은 아무 흔적도 안 남긴다.
@@ -47,40 +29,16 @@ pub enum MethodEffect {
     Mutate,
 }
 
-/// 멱등 키([`crate::protocol::JsonRpcRequest::idempotency_key`])를 실으면 이 메서드에서
-/// **무엇이 일어나는가** — 호출자가 보내기 **전에** 읽는 선언.
-///
-/// 이 값이 답하는 물음은 하나다: *같은 키로 다시 보내면 두 번째 효과가 나는가.* 호스트의
-/// 보존소가 "이 메서드에 걸리는가" 도 같은 물음이라 칸을 따로 두지 않는다 — 걸리면
-/// [`KeyContract::Kept`], 원래 걸 필요가 없으면 [`KeyContract::Unneeded`], 걸리지 않으면
-/// [`KeyContract::Outside`] 다. [`MethodEffect`] 와 다른 물음인 것은 층 때문이다: 같은
-/// `Mutate` 라도 보존소를 지나는 이름(호스트가 아는 이름 — 어느 층이 끝내든)이 있고 안 지나는
-/// 이름(plugin 이 뜻을 정하는 namespace 고유 이름)이 있으며, 지나는 이름도 층마다 **받기 시작한
-/// 판**이 다르다.
-///
-/// 값은 대부분 [`MethodEffect`] 에서 **유도**된다(`Mutate` → `Kept`, 나머지 → `Unneeded`).
-/// 손으로 적는 것은 판이 다른 이름뿐이다 — App 층이 끝내는 `Mutate` 는
-/// [`KEY_KEPT_BY_APP_LAYER`], 그 뒤의 두 경로(GUI debug step · plugin namespace forward 로 나가는
-/// 표 이름)가 끝내는 `Mutate` 는 [`KEY_KEPT_ON_EVERY_HOST_PATH`] 다. 그 둘이 실제 배선과
-/// 맞는지는 본체의 source guard(`key_contract_by_layer`)가 dispatch 본문을 읽어 양방향으로 잰다.
-///
-/// `Outside` 는 표가 쓰지 않는다 — 표가 모르는 이름(plugin 고유 이름)에만 나온다.
-///
-/// 호스트 메서드와 plugin 고유 이름의 차이는 [멱등 키 적용 범위]를 따른다.
-///
-/// [멱등 키 적용 범위]: ../../../docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖
+/// 전송 전에 확인할 멱등 키 계약. Mutate인 호스트 메서드는 Kept, 나머지는 Unneeded다.
+/// 표에 없는 플러그인 고유 이름은 Outside다. 필요한 기능 버전은 실제 실행 경로에 따라 다르다.
+/// App과 GUI debug/namespace forward의 버전은 별도로 지정하며 key_contract_by_layer가 구현과 대조한다.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyContract {
-    /// **호스트 보존소가 키를 받는다.** 같은 키·같은 요청의 재시도는 실행되지 않고 보관된 답을
-    /// `idempotent_replay: true` 로 받는다(선언된 보존 범위 안에서). 그래서 성공 응답에 표지가
-    /// 없으면 그 답은 **이번에 실행한 것**이다.
-    ///
-    /// `since` 는 이 보장을 선언하는 `ipc.idempotency-key` 의 판이다. 판 1 서버는 engine
-    /// 라우터에서만 키를 받았으므로, App 층 메서드에 키를 실으려면 상대가 판 2 이상이어야 한다
-    /// — 판이 낮은 서버에서는 키가 조용히 무시되고 재시도가 두 번째 실행이 된다.
+    /// 선언된 보존 범위 안에서 같은 키·요청의 응답을 재사용한다.
+    /// 재사용 응답에는 idempotent_replay가 붙는다. since 이상의 서버 기능 버전이 필요하다.
     Kept {
-        /// 요구하는 `ipc.idempotency-key` 의 최소 판.
+        /// 필요한 ipc.idempotency-key 최소 버전.
         since: u32,
     },
     /// **보존소가 필요 없다** — 재전달이 원래 안전하다([`MethodEffect::Read`] ·
@@ -92,17 +50,14 @@ pub enum KeyContract {
     Outside,
 }
 
-/// engine 라우터의 보존소가 키를 받기 시작한 `ipc.idempotency-key` 판.
+/// Engine 라우터의 멱등 키 기능 버전.
 pub const KEY_KEPT_BY_ROUTER: u32 = 1;
-/// App 층도 키를 받기 시작한 판.
+/// App에서 처리하는 메서드의 멱등 키 기능 버전.
 pub const KEY_KEPT_BY_APP_LAYER: u32 = 2;
-/// App 층 **뒤**의 두 경로도 키를 받기 시작한 판 — GUI debug step, 그리고 plugin namespace
-/// forward 로 나가는 **표의** 이름(prefix 를 번들 plugin 이 점유한 `image.open` 등). 판 2
-/// 서버는 그 둘에서 키를 무시했다. 서버가 선언하는 판이 이것이다(`crate::capability`).
+/// GUI debug step과 정적 호스트 이름의 namespace forward에 필요한 기능 버전.
 pub const KEY_KEPT_ON_EVERY_HOST_PATH: u32 = 3;
 
-/// [`MethodEffect`] 에서 유도한 기본 선언. 판이 다른 이름만 [`MethodMeta::kept_by_app_layer`] ·
-/// [`MethodMeta::kept_on_every_host_path`] 로 고친다.
+/// 효과 분류에서 기본 키 계약을 만든다. 다른 실행 경로는 전용 생성자로 버전을 지정한다.
 const fn key_contract_of(effect: MethodEffect) -> KeyContract {
     match effect {
         MethodEffect::Mutate => KeyContract::Kept {
@@ -115,27 +70,14 @@ const fn key_contract_of(effect: MethodEffect) -> KeyContract {
 /// 한 IPC 메서드에 대한 권한 메타.
 #[derive(Debug, Clone, Copy)]
 pub struct MethodMeta {
-    /// plugin이 이 메서드를 호출할 수 있는지. false면 plugin은 어떤 경우에도 호출 불가.
+    /// Plugin/Agent 호출 허용 여부. false면 권한을 추가해도 호출할 수 없다.
     pub plugin_callable: bool,
-    /// **plugin 만** 부를 수 있는지 — 즉 이 이름에 외부(CLI/네트워크 IPC) dispatch
-    /// arm 이 없다. plugin host-call 진입부가 직접 인터셉트하는 메서드들이다.
-    ///
-    /// 이 표는 원래 caller **게이트**만 담았고 라우팅은 담지 않았다. 그런데 게이트의
-    /// 한쪽 방향은 이미 말할 수 있었다 — `local_only()` 가 "plugin 은 못 부른다" 다.
-    /// 반대 방향을 말할 수단이 없어서, plugin 전용 메서드가 `plugin(&[…])` 로 적히고
-    /// 외부 호출자는 `-32601`("그런 메서드 없다")을 받았다. 이름은 맞고 표에도 있는데
-    /// 없다고 답하면 원인을 잘못 안내한다. 플랫폼·빌드·호출자 제한을 구분한다(ADR-0004).
+    /// 플러그인 host-call에서만 처리하며 외부 CLI·네트워크 dispatch 경로는 없는 메서드.
     pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
-    /// 이 이름이 **표가 아니라 plugin 이 점유한 prefix 로** 해소됐는가.
-    ///
-    /// 참이면 요구 권한이 정적 `required` 로 적히지 않는다 — 필요한 것은
-    /// `ipc.invoke:<prefix>` 이고 그 prefix 는 이름에서만 나온다. 그래서 게이트
-    /// (`CallerContext::ensure_allowed`)가 이 표시를 보고 그 토큰을 직접 요구한다.
-    /// 이 칸이 없던 때에는 이 갈래가 `required: []` 로만 답해, 권한을 하나도 안 가진
-    /// agent 토큰이 설치된 plugin 의 namespace 전체를 부를 수 있었다
-    /// ([Agent caller — session token + temp grants](../../../docs/dev-guide/plugin-permissions.md#agent-caller--session-token--temp-grants)).
+    /// 정적 표 대신 등록된 플러그인 prefix로 찾은 이름이다.
+    /// required가 비어 있어도 호출 게이트가 ipc.invoke:<prefix>를 요구한다.
     pub namespace_forward: bool,
     /// 이 메서드를 두 번 전달했을 때 무엇이 남는가. [`MethodEffect`] 참조.
     pub effect: MethodEffect,
@@ -154,10 +96,7 @@ const fn plugin(effect: MethodEffect, required: &'static [Permission]) -> Method
     }
 }
 
-/// plugin 만 부를 수 있는 메서드 — 외부 dispatch arm 이 없다.
-///
-/// `local_only()` 의 거울이다. 표에 등재하는 이유도 같다: 거부가 **정책인지 누락인지**
-/// 구분되게 하려고. 다른 것은 그 거부를 누가 받느냐뿐이다.
+/// 플러그인 host-call 전용 메서드를 선언한다. 외부 dispatch 경로는 없다.
 const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> MethodMeta {
     MethodMeta {
         plugin_callable: true,
@@ -170,7 +109,7 @@ const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> M
 }
 
 impl MethodMeta {
-    /// App 층이 끝내는 `Mutate` — 보존소가 받지만 판 [`KEY_KEPT_BY_APP_LAYER`] 부터다.
+    /// App에서 처리하는 Mutate의 최소 멱등 키 기능 버전을 지정한다.
     const fn kept_by_app_layer(self) -> Self {
         assert!(
             matches!(self.effect, MethodEffect::Mutate),
@@ -184,8 +123,7 @@ impl MethodMeta {
         }
     }
 
-    /// App 층 뒤의 경로가 끝내는 `Mutate` — GUI debug step 과, plugin namespace forward 로 나가는
-    /// 표 이름. 보존소가 받지만 판 [`KEY_KEPT_ON_EVERY_HOST_PATH`] 부터다.
+    /// GUI debug step 또는 정적 호스트 이름의 namespace forward 경로에 필요한 버전이다.
     const fn kept_on_every_host_path(self) -> Self {
         assert!(
             matches!(self.effect, MethodEffect::Mutate),
@@ -211,52 +149,30 @@ const fn local_only(effect: MethodEffect) -> MethodMeta {
     }
 }
 
-/// 등록된 IPC 메서드 — 단일 진실 원천. lint/검증 테스트가 이 테이블 위에서
-/// 동작한다. 새 메서드는 여기에 추가한다.
-///
-/// prefix-기반 fallback(`surface.ime_*` 등)은 [`PREFIX_RULES`] 참조.
+/// 호스트 메서드의 등록 목록. prefix 기반 처리는 PREFIX_RULES와 런타임 namespace 표를 따른다.
 pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
     use MethodEffect::*;
     use Permission::*;
     &[
         // ── 호스트 system ─────────────────────────────────────────────
         ("system.info", plugin(Read, &[])),
-        // GPU 리소스 카운트 read-only 스냅샷 (메모리 누수 soak 검증). 순수 조회지만
-        // 내부 렌더러 구조를 노출하는 진단 표면이라 local_only — plugin 미노출.
+        // 호스트 내부 렌더러 진단은 Local에만 공개한다.
         ("system.gpu_stats", local_only(Read)),
-        // 프로세스 압력 게이지(큐 대기·깊이·handler 실행 시간)의 누계 조회.
-        //
-        // `local_only` 인 이유는 `system.gpu_stats` 와 같다 — 순수 조회지만 **호스트
-        // 내부의 스케줄링 상태**를 노출하는 진단 표면이다. 그리고 여기 값은
-        // docs/architecture/ipc-server.md#요청-압력-게이지 대로 caller 로 나누지 않는 프로세스 게이지라, plugin 에게 주면
-        // 자기 몫이 아닌 다른 caller 의 부하까지 읽는 것이 된다. plugin 이 자기
-        // 사용량을 보는 축은 `telemetry.*`(caller 별)이고 그쪽은 그대로 열려 있다.
+        // 다른 호출자의 부하까지 포함하는 프로세스 통계이므로 Local 전용이다.
+        // 플러그인은 자기 사용량을 telemetry로 조회한다.
         ("system.pressure", local_only(Read)),
         // ── plugin 보조 채널 ──────────────────────────────────────────
-        // egui-mesh 프레임용 공유 메모리 생성. main 채널 + 보조 채널(fd/HANDLE 송신)을
-        // 함께 다뤄야 해서 라우터가 아니라 plugin 진입부가 가로채 처리하지만, **등재는
-        // 여기 있어야 한다** — 표에 없으면 표를 읽는 어떤 감사도 이 메서드를 보지 못하고,
-        // 게이트도 이름을 못 찾아 태울 수 없다.
-        //
-        // 지금 요구하는 토큰이 없는 것은 **결정이 아니라 미결**이다. 어떤 권한을
-        // 요구할지(그리고 개수·총량 상한을 함께 둘지)는 매니페스트 호환성이 걸린
-        // 별도 결정이고, docs/dev-guide/plugin-permissions.md#토큰-없이도-열려-있는-메서드 의 shared_buffer 항목에 미결정 사항으로 남아 있다.
-        // 그때까지는 현재 동작 그대로 등재해 최소한 cap·rate·audit 는 걸리게 한다.
+        // 보조 fd/HANDLE 채널을 다루는 plugin 진입부가 직접 처리한다.
+        // 별도 권한 토큰·할당량 정책은 미결정이며 현재 토큰 없이 cap·rate·audit 검사를 받는다.
         ("host.shared_buffer.create", plugin_only(Mutate, &[])),
         // ── 타이머 관측 ───────────────────────────────────────────────
-        // 등록된 주기 작업의 read-only 스냅샷("지금 무엇이 이 인스턴스를 깨우는가").
-        // local_only — plugin 이 호스트 내부 스케줄을 알아야 할 이유가 없고, 조회
-        // 전용이라 등록/취소 경로 자체가 없다. 진단·회귀검증 목적이므로 새 권한
-        // 토큰을 신설해 기존 plugin 재승인을 유발할 값어치도 없다.
+        // 호스트 내부 주기 작업의 진단 목록이므로 Local 전용이다.
         ("timer.list", local_only(Read)),
         // ── workspace (read/write) ────────────────────────────────────
         ("workspace.list", plugin(Read, &[SurfaceRead])),
         ("workspace.create", plugin(Mutate, &[SurfaceWrite])),
         ("workspace.update", plugin(Idempotent, &[SurfaceWrite])),
         ("workspace.move", plugin(Idempotent, &[SurfaceWrite])),
-        // workspace.create 와 대칭 — 만들 수 있는 주체는 닫을 수도 있어야 한다(원칙 2).
-        // 새 권한 토큰을 만들지 않는 이유: pane.close / tab.close 도 같은 SurfaceWrite
-        // 이고, 닫기만 따로 승인받게 하면 기존 plugin 이 전부 재승인 대상이 된다.
         ("workspace.close", plugin(Idempotent, &[SurfaceWrite])),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(Read, &[SurfaceRead])),
@@ -292,24 +208,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("preset.apply", plugin(Idempotent, &[SurfaceWrite])),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(Read, &[SurfaceRead])),
-        // 등록된 surface kind 조회. 만드는 것이 유일한 확인이던 자리를 읽기 전용으로
-        // 대체한다 — plugin 도 자기 kind 가 실제로 등록됐는지 물을 수 있어야 해서
-        // `local_only` 가 아니다. 노출값은 kind 이름·i18n 키·렌더 경로·출처뿐이라
-        // `SurfaceRead` 보다 넓은 권한을 요구하지 않는다.
+        // 생성 없이 등록 여부를 확인한다. 종류·번역 키·렌더 경로·출처만 공개한다.
         ("surface.kinds", plugin(Read, &[SurfaceRead])),
         ("surface.close", plugin(Idempotent, &[SurfaceWrite])),
         ("surface.close_self", plugin(Idempotent, &[SurfaceWrite])),
-        // tree/meta는 read 권한
         ("tree", plugin(Read, &[SurfaceRead])),
-        // webview — plugin 이 webview-enabled surface 의 URL 설정. SurfaceWrite 권한.
         ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
-        // theme.query — 현재 resolved 전역 Theme 스냅샷 조회. webview-kind surface(예:
-        // markdown)는 `set_context` 를 받지 않아 Theme 이 자동 push 되지 않으므로, 문서를
-        // (재)생성할 때마다 이 read-only 조회로 대신한다(docs/plugins/markdown/index.md#내부-동작). surface 별 데이터가
-        // 아닌 전역 정보라 별도 권한 없이 노출(`system.info` 와 같은 근거).
+        // webview 플러그인은 문서를 만들 때 전역 테마를 조회한다. surface별 정보가 아니므로 추가 토큰은 없다.
         ("theme.query", plugin(Read, &[])),
-        // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
-        // 예: explorer 가 root 변경 시 carry 후보 cwd 갱신.
         ("surface.set_cwd", plugin(Idempotent, &[SurfaceWrite])),
         ("surface.meta.get", plugin(Read, &[SurfaceRead])),
         ("surface.meta.list", plugin(Read, &[SurfaceRead])),
@@ -323,29 +229,17 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.send_wait_idle", plugin(Mutate, &[TerminalWrite])),
         ("surface.wake", plugin(Mutate, &[TerminalSpawn])),
         ("surface.set_mark", plugin(Mutate, &[TerminalRead])),
-        // completion 은 read 가 아니라 attention(주의 환기) 발동 — PushNotification
-        // 계열이므로 notification.* 와 동일한 Notification 권한.
+        // 완료 신호는 attention 상태를 바꾸므로 알림 권한을 요구한다.
         ("surface.completion", plugin(Mutate, &[Notification])),
-        // attention 조회/해제 — completion 의 역방향(해제)과 그 관측 표면.
-        // raise 와 같은 상태를 읽고 되돌리는 것이라 같은 `Notification` 버킷에 둔다:
-        // 발동 권한만 주고 해제 권한을 빼면 자기가 켠 신호를 못 끄는 비대칭이 된다.
+        // 같은 attention 상태의 조회·해제도 Notification 권한으로 묶는다.
         ("surface.attention.get", plugin(Read, &[Notification])),
         (
             "surface.attention.clear",
             plugin(Idempotent, &[Notification]),
         ),
         ("surface.read_since_mark", plugin(Read, &[TerminalRead])),
-        // 출력 스캐너 전용 커서 — 읽으면 커서가 전진한다. 같은 출력을 읽으므로
-        // read_since_mark 과 같은 권한 버킷이고, CLI 진입점은 없다(파괴적 읽기라
-        // 사용자가 한 줄로 스캐너의 바이트를 가로챌 수 있게 열지 않는다 —
-        // docs/features/terminal-output/index.md#출력-스캐너-전용-커서).
-        //
-        // effect 가 위 read_since_mark(`Read`)와 갈리는 이유: 이 읽기는 커서를
-        // 전진시켜 **읽은 구간을 소비한다.** 재전달은 그때까지 새로 온 두 번째
-        // 구간을 먹고, 첫 응답이 나른 바이트는 어디에서도 다시 못 읽는다. 응답을
-        // 못 받은 호출자가 다시 보내면 안 되는 형태라 `message.read`(peek 기본값
-        // false)와 같은 `Mutate` 다 — docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다 의 축이 "읽기인가" 가 아니라
-        // "두 번 전달하면 관측 가능한 차이가 남는가" 인 것이 여기서 갈린다.
+        // 스캐너 전용 커서는 읽은 구간을 소비하므로 Read가 아닌 Mutate다.
+        // TerminalRead를 요구하되 다른 소비자가 위치를 바꾸지 않도록 CLI에는 노출하지 않는다.
         (
             "surface.read_since_scan_mark",
             plugin(Mutate, &[TerminalRead]),
@@ -367,11 +261,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn])),
         ("surface.is_typing", plugin(Read, &[TerminalRead])),
         // ── child-terminal 관리 (docs/features/child-terminal/index.md) ─────────────
-        // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin 이
-        // 자체 registry 를 걷어내고 이 method 들로 위임한다. 권한은 각 method 가
-        // 내부에서 조합하는 sibling 핸들러(tab.create=SurfaceWrite, surface.send=
-        // TerminalWrite, surface.respawn_terminal=TerminalSpawn, surface.close=
-        // SurfaceWrite)의 요구를 합집합으로 반영한다.
+        // 자식 터미널 작업이 사용하는 생성·입력·닫기 권한을 함께 요구한다.
         (
             "terminal.spawn",
             plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn]),
@@ -379,8 +269,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.tell", plugin(Mutate, &[TerminalWrite])),
         ("terminal.children", plugin(Read, &[SurfaceRead])),
         ("terminal.parent", plugin(Read, &[SurfaceRead])),
-        // 자식 단건 상태 조회. children/parent 와 동일하게 순수 조회라
-        // SurfaceRead 단독.
         ("terminal.state", plugin(Read, &[SurfaceRead])),
         ("terminal.kill", plugin(Idempotent, &[SurfaceWrite])),
         (
@@ -388,35 +276,21 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             plugin(Mutate, &[TerminalWrite, TerminalSpawn]),
         ),
         ("terminal.broadcast", plugin(Mutate, &[TerminalWrite])),
-        // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
         ("terminal.set_state", plugin(Idempotent, &[SurfaceWrite])),
-        // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) —
-        // `docs/features/child-terminal/index.md`("adopt" 절). sibling IPC 핸들러를
-        // 호출하지 않고 순수 in-process core 함수(register_child/occupy_soft)만
-        // 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
-        // (terminal.kill/terminal.set_state 와 동일 컨벤션).
+        // surface 생성 없이 자식 관계와 soft 점유만 등록한다.
         ("terminal.adopt", plugin(Idempotent, &[SurfaceWrite])),
-        // child 관계·soft 점유만 해제하고 surface 는 닫지 않음 —
-        // `docs/features/child-terminal/index.md`("release" 절). adopt 와 대칭으로
-        // 순수 in-process core 함수(remove_child/release_soft_occupancy)만 쓰므로
-        // SurfaceWrite 단독.
+        // 자식 관계·soft 점유만 해제하며 surface를 닫지 않는다.
         ("terminal.release", plugin(Idempotent, &[SurfaceWrite])),
         // ── headless PTY primitive (docs/features/headless-pty/index.md#내부-동작-headless-valid /
         // pty_registry) ────────────────────────────────────────────────
-        // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
-        // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만
-        // 사용한다(위 ADR Decision 참고). spawn 은 Surface 를 안 만들어 SurfaceWrite
-        // 불필요, wait 는 라이브 트리 대신 PtyEntry exit cell 로 판정해 SurfaceRead
-        // 불필요, kill 은 Surface 를 닫지 않고 프로세스만 종료해 SurfaceWrite 불필요.
+        // surface 트리를 바꾸지 않는 PTY 작업에는 Terminal 권한만 요구한다.
         ("pty.spawn", plugin(Mutate, &[TerminalSpawn])),
         ("pty.write", plugin(Mutate, &[TerminalWrite])),
         ("pty.read", plugin(Read, &[TerminalRead])),
         ("pty.wait", plugin(Read, &[TerminalRead])),
         ("pty.kill", plugin(Idempotent, &[TerminalWrite])),
         ("pty.list", plugin(Read, &[TerminalRead])),
-        // 승격 경로: headless PTY 를 실제 Surface 로 만든다 — spawn/write/... 와
-        // 달리 Surface 트리를 새로 만들므로 terminal.spawn 과 동일하게 SurfaceWrite 를
-        // 더한다(TerminalSpawn 은 새 터미널 surface 생성 권한).
+        // PTY를 실제 surface로 만들므로 생성 권한에 SurfaceWrite를 추가한다.
         (
             "pty.attach_surface",
             plugin(Mutate, &[SurfaceWrite, TerminalSpawn]),
@@ -430,11 +304,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("global_hook.list", plugin(Read, &[SurfaceRead])),
         ("global_hook.unset", plugin(Idempotent, &[SurfaceWrite])),
         // ── webhook (인바운드 웹훅 리스너 — lifetime 6종/영속화 포함) ──────
-        // register 만 plugin 호출 가능(Network 권한, S11). plugin 은 인라인
-        // sequence 를 못 쓰고 자기 소유 hook 핸들러 id 만 바인딩할 수 있다(핸들러
-        // 측 caller 게이트). 나머지 조회/해제/설정은 local_only(CLI/로컬 client).
-        // register/unregister/sweep 는 웹훅 lifecycle 의미가 create/remove/clear
-        // 보다 명확 — api-conventions "verb 화이트리스트" 정당화. sweep = 만료 정리.
+        // 플러그인은 Network 권한으로 자기 hook handler만 등록할 수 있다.
+        // 인라인 sequence는 거절하며 조회·해제·설정은 Local 전용이다.
         ("webhook.register", plugin(Mutate, &[Network])),
         ("webhook.list", local_only(Read)),
         ("webhook.info", local_only(Read)),
@@ -447,12 +318,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("message.count", plugin(Read, &[SurfaceRead])),
         ("message.clear", plugin(Idempotent, &[SurfaceWrite])),
         // ── image surface ─────────────────────────────────────────────
-        // com.tasty.image plugin이 namespace를 점유하지만, 호스트 어댑터는
-        // plugin 비활성 상태에서도 동작한다. plugin은 ipc.invoke:image 권한으로
-        // 위 메서드들을 호출한다.
-        //
-        // plugin 이 켜져 있으면 외부 호출은 namespace forward 로 plugin 에 먼저 가고
-        // plugin 이 호스트로 되부른다 — 그래서 `Mutate` 는 forward 경로의 판이다.
+        // image prefix가 플러그인에 등록돼도 정적 메서드는 이 표의 권한을 적용한다.
+        // 외부 요청이 namespace로 전달될 수 있어 Mutate에는 해당 경로의 키 기능 버전이 필요하다.
         (
             "image.open",
             plugin(Mutate, &[SurfaceWrite, FsRead]).kept_on_every_host_path(),
@@ -560,7 +427,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("approval.list", plugin(Read, &[Approval])),
         ("approval.get", plugin(Read, &[Approval])),
         ("approval.history", plugin(Read, &[Approval])),
-        // 세션 요약 — workspace 별 markdown 텍스트. memory.* 와 분리된 표면.
         (
             "approval.summary.set",
             plugin(Idempotent, &[Approval, MemoryWrite]),
@@ -583,44 +449,25 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("telemetry.anomaly.list", plugin(Read, &[Telemetry])),
         ("telemetry.session_summary", plugin(Read, &[Telemetry])),
         // ── events (사건 피드 조회) ──────────────────────────────────
-        //
-        // 읽으면서 서버 쪽 커서가 전진하지 **않는다** — 커서는 소비자가 들고 매번
-        // 가져온다. 그래서 같은 인자로 두 번 불러도 같은 답이 오고, 두 번째 전달이
-        // 남기는 관측 가능한 차이가 없다(docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다 의 축). 이 점이
-        // `surface.read_since_scan_mark` 와 갈리는 자리다 — 그쪽은 읽으면서 서버
-        // 커서를 밀어 같은 구간을 다시 못 읽는다.
-        //
-        // `local_only` 인 이유는 권한이 아니라 **모양**이다. plugin 은 버스 구독으로
-        // 이미 push 를 받고, `wait_ms` 대기는 plugin SDK 의 단일 워커를 막는다
-        // (`agent.task_await`·`approval.await` 가 같은 이유로 local 전용이다).
+        // 커서는 소비자가 보관하며 서버의 읽기 위치를 바꾸지 않는다.
+        // 피드가 갱신되므로 같은 요청의 답이 항상 같다는 뜻은 아니다.
+        // 긴 대기가 SDK 워커를 막을 수 있어 Local 전용이며 플러그인은 이벤트 버스를 구독한다.
         ("events.fetch", local_only(Read)),
         // ── agent (협업 primitive) ────────────────────────────────────
         ("agent.task_create", plugin(Mutate, &[AgentManage])),
         ("agent.task_list", plugin(Read, &[AgentManage])),
         ("agent.task_get", plugin(Read, &[AgentManage])),
-        // approval.await(:265)와 대칭 — 진짜 blocking(worker thread 위임) 이라 plugin
-        // 이 호출하면 단일 워커 스레드가 막혀 다른 host→plugin 요청을 못 받는다.
-        // plugin 은 완료 판정 전략 선언(러너가 대신 기다림) 또는 task_get 폴링으로
-        // 우회한다 — docs/dev-guide/agent-runner.md "완료 판정 전략 레지스트리".
+        // SDK 단일 워커를 막는 대기는 Local 전용이다. 플러그인은 완료 전략이나 task_get 폴링을 쓴다.
         ("agent.task_await", local_only(Read)),
         ("agent.task_cancel", plugin(Idempotent, &[AgentManage])),
         ("agent.task_retry", plugin(Mutate, &[AgentManage])),
         ("agent.task_graph", plugin(Read, &[AgentManage])),
-        // DAG 그룹 조회 — task_graph 와 같은 읽기 표면이라 같은 권한.
         ("agent.dag_list", plugin(Read, &[AgentManage])),
         ("agent.dag_get", plugin(Read, &[AgentManage])),
-        // 외부 task(Custom kind) 의 완료 신호 — 러너가 그 생명주기를 단독으로
-        // 소유한다. plugin 이 같은 task 를 별도로 전이시키면 쓰기 주체가 둘이 되어
-        // 러너의 완료 판정과 경합하고, 결과가 어느 쪽 것인지 추적할 수 없게 된다.
-        // plugin 은 완료 판정 전략 선언(러너가 그 전략으로 판정)으로 우회한다 —
-        // docs/dev-guide/agent-runner.md "완료 판정 전략 레지스트리".
+        // Custom 작업의 상태는 러너가 관리한다. 플러그인의 별도 상태 변경과 경합하지 않도록 Local 전용이다.
         ("agent.task_set_result", local_only(Idempotent)),
-        // 자동 시작이 없으므로(재시작 정화는 부팅 경로 전용) plugin 이 자기
-        // workspace 의 runner 를 스스로 되살릴 수단이 필요하다 — start/stop 은
-        // idempotent, status 는 순수 조회.
+        // 러너는 자동 재시작하지 않으므로 플러그인도 명시적으로 시작·중지할 수 있다.
         ("agent.task_run", plugin(Mutate, &[AgentManage])),
-        // 참조 검사(cascade/force) + 상태 제약(Running 거부)을 지키는
-        // 단건/일괄 삭제.
         ("agent.task_delete", plugin(Idempotent, &[AgentManage])),
         ("agent.task_purge", plugin(Idempotent, &[AgentManage])),
         ("agent.barrier_create", plugin(Idempotent, &[AgentManage])),
@@ -656,21 +503,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ),
         ("agent.rate_limit_status", plugin(Read, &[AgentManage])),
         // ── session.* (자식 agent 신원 토큰) ──────────────────────────
-        // issue/revoke 는 plugin 도 호출 가능 (claude plugin 등이 자식에게
-        // 토큰을 발급해야 하므로). list 는 host 전용 — 감사/디버깅 목적이라
-        // plugin 노출 불필요.
+        // 플러그인이 자식 세션을 발급·철회할 수 있다. 전체 목록은 운영자용으로 제한한다.
         ("session.issue", plugin(Mutate, &[AgentManage])),
         ("session.revoke", plugin(Idempotent, &[AgentManage])),
         ("session.list", local_only(Read)),
         // ── attach.* (배타 attach 점유 제어 — attach/detach 단계 3·4) ──────
-        // surface 단위 배타 점유 lock 제어. acquire/release 는 주로 stream 핸드셰이크
-        // (stream.open{target})로 일어나 method_meta 게이트를 거치지 않는다.
-        // force_detach/list 는 JSON-RPC 요청-응답 경로라 여기 등록이 필요하다.
-        //
-        // 권한: decision 5 — attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)**에
-        // 위임한다. 자체 권한 레이어를 두지 않으므로 추가 Permission 을 요구하지
-        // 않는다(`plugin(&[])`). Local(별도 인스턴스 client)·인증된 agent 모두
-        // 소켓에 도달했다면 attach 제어를 호출할 수 있다.
+        // 스트림 점유는 handshake에서 처리한다. JSON-RPC attach 제어는 여기 등록한다.
+        // SSH와 loopback 연결을 신뢰 경계로 사용하며 추가 권한 토큰은 요구하지 않는다.
         ("attach.acquire", plugin(Idempotent, &[])),
         ("attach.release", plugin(Idempotent, &[])),
         ("attach.force_detach", plugin(Idempotent, &[])),
@@ -686,29 +525,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("remote.profile.add", plugin(Idempotent, &[])),
         ("remote.profile.detect", plugin(Read, &[])),
         ("remote.profile.remove", plugin(Idempotent, &[])),
-        // 로컬 ssh config 열거/가져오기. 읽는 파일이 `~/.ssh/config` 로 넓어지지만
-        // 노출하는 것은 alias 이름과 표시용 hint 뿐이고(키·비밀 없음), 같은 OS 유저의
-        // FS read 는 신뢰모델 범위 밖이라 프로필 CRUD 와 같은 메타를 쓴다.
+        // SSH config에서는 alias와 경로 정보를 조회하며 키 내용은 반환하지 않는다.
         ("remote.profile.list_local", plugin(Read, &[])),
         ("remote.profile.import", plugin(Mutate, &[])),
         // ── remote.workspaces (원격 ws 브라우징) ──────────────────────────
-        // profile CRUD 와 같은 `tasty_remote` 코어를 공유하는 release 경로다
-        // (`app/ipc/app_methods.rs`, 원칙 2: 에이전트가 CLI 없이 소켓으로도 수행 가능).
-        // 조회(browse)라 remote.profile.* 와 같은 신뢰경계 — 연결 경계(소켓 도달 + SSH)에
-        // 위임하고 추가 Permission 을 두지 않는다. CLI `remote workspaces` 와 대칭.
-        // 주의(호출자별로 의미가 다르다): 표는 Local 호출자에게 게이트가 아니다
-        // (`caller.rs` Local => Ok). Local(세션 토큰 없는 tasty CLI·로컬 스크립트)은 라우터
-        // 팔만 있으면 표와 무관하게 이미 도달 가능했다 — 이쪽은 재등재. 반면 plugin/agent
-        // 세션 토큰 호출자는 표에 없으면 UnknownMethod 로 거부됐고, 이 항목이 그들에게
-        // 처음 연다 — 이쪽은 **release 표면 확장**이다.
+        // CLI와 같은 원격 조회 기능. 연결·SSH 신뢰 경계에 따르며 추가 권한 토큰은 없다.
         ("remote.workspaces", plugin(Read, &[])),
-        // remote.attach 는 조회가 아니라 로컬에 mirror 워크스페이스를 만드는 구조 op 라
-        // 사용자 상태(불가침 원칙 1)에 닿는다. SSH 신뢰경계는 원격 셸 접근만 주고 그
-        // 사용자의 로컬 tasty 창에 워크스페이스를 만들 권한은 주지 않으므로, 다른
-        // remote.* 조회와 달리 연결경계 위임만으로 plugin 에 열 근거가 서지 않는다 —
-        // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
-        // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
-        // 트리거는 ADR-0021(docs/adr/0021-occupancy-and-attach-admission.md).
+        // 로컬 GUI에 mirror workspace를 만드는 동작이다. 원격 SSH 접근 권한과 달라 Local 전용으로 둔다.
         ("remote.attach", local_only(Mutate).kept_by_app_layer()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
@@ -730,11 +553,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             plugin(Read, &[UiSettingsPage]),
         ),
         // ── settings.remote_transfer (원격 전송 저장 정책 get/set) ──────
-        // general settings 전역 read/write 라 plugin 권한 모델에 대응 variant 가
-        // 없다 — memory.gc / system.gpu_stats 처럼 local_only 로 두어 plugin 에는
-        // 노출하지 않고 로컬 IPC(CLI·에이전트)만 조작한다. focus 독립(전역 설정,
-        // 대상 ID 불요). set 은 핸들러가 UpdateSettings intent 로 태워 collapse/save
-        // 파이프라인을 재사용한다.
+        // 전역 저장 정책은 Local 전용이다. set은 호스트의 UpdateSettings 경로로 저장한다.
         ("settings.get_remote_transfer", local_only(Read)),
         ("settings.get_input_rules", local_only(Read)),
         ("settings.set_input_rule", local_only(Idempotent)),
@@ -747,38 +566,22 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ),
         ("settings.set_remote_transfer", local_only(Idempotent)),
         // ── file_handler.* (host config 관리 — local-only) ───────────
-        // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
-        // 도 reload 영향 밖이라) local 전용.
         ("file_handler.reload", local_only(Idempotent)),
-        // finalize 된 detector 와 출처별 contribution 조회. 읽기 전용이라 사용자 상태에
-        // 닿지 않는다. plugin 에는 노출하지 않는다 — user 설정의 원본(표시명·아이콘·
-        // 켜기/끄기 patch)까지 싣는데 그것에 대응하는 plugin 권한 variant 가 없다
-        // (`hook_handler.list` 와 같은 판단).
+        // 사용자 설정의 출처별 원문까지 반환하므로 Local 전용이다.
         ("file_handler.detectors", local_only(Read)),
-        // 임의 경로를 file_handler dispatch 흐름에 진입시킨다. 임의 path 를
-        // 읽고 (handler 가 OpenSurface 면 surface 의 param 으로, System 이면 OS
-        // opener 가 읽음) 처리하므로 FsRead 권한 요구. explorer plugin 더블클릭
-        // 같은 사용처가 주된 caller.
+        // 지정 경로를 핸들러로 열므로 FsRead가 필요하다.
         ("file_handler.dispatch", plugin(Mutate, &[FsRead])),
         // ── hook_handler.* (공유 훅 핸들러 레지스트리 — local-only) ───────
-        // 웹훅/훅이 공유하는 핸들러 레지스트리 조회(list)/user config 재로드(reload)/
-        // id 로 수동 발화(dispatch). webhook.* 와 동일하게 지금은 전부 local_only —
-        // plugin 이 HookHandler 권한으로 list/dispatch 를 호출하는 실배선은 후속(S11).
-        // reload 는 user config 변경 후 재읽기라 애초에 plugin 무관(local 전용).
+        // 공유 훅 설정의 조회·변경·실행은 현재 Local 전용이다.
         ("hook_handler.list", local_only(Read)),
         ("hook_handler.get", local_only(Read)),
-        // get/upsert/remove 도 같은 이유로 local 전용이되 근거가 하나 더 있다 —
-        // IpcSequence 는 **Local 권한으로 실행된다.** plugin 이 시퀀스를 고칠 수 있으면
-        // 자기 권한 집합을 넘어선 IPC escalation 이 되므로, `webhook.register` 가
-        // plugin 의 인라인 sequence 를 거부하는 것과 같은 자리에서 막는다.
+        // IpcSequence는 Local 권한으로 실행하므로 플러그인이 수정하면 권한 범위를 우회할 수 있다.
         ("hook_handler.upsert", local_only(Idempotent)),
         ("hook_handler.remove", local_only(Idempotent)),
         ("hook_handler.reload", local_only(Idempotent)),
         ("hook_handler.dispatch", local_only(Mutate)),
         // ── completion_strategy.* (완료 판정 전략 레지스트리 — local-only) ──
-        // hook_handler.list 미러 — 등록된 전략(비활성 포함) 조회만.
-        // reload/dispatch 대응물 없음: "발화" 개념이 없고(판정 함수일 뿐),
-        // user config 재로드는 아직 노출하지 않는다(Settings UI CRUD 표면 없음).
+        // 비활성 항목을 포함한 전략 목록만 제공한다. 재로드·직접 실행 명령은 없다.
         ("completion_strategy.list", local_only(Read)),
         // markdown surface 제자리 이동 — 주어진 surface 를 새 파일의 markdown
         // 으로 교체한다. 임의 path 를 읽으므로 FsRead. markdown 주소창 플러그인이 caller.
@@ -786,39 +589,23 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             "markdown.navigate",
             plugin(Mutate, &[FsRead]).kept_on_every_host_path(),
         ),
-        // generic per-kind 최근목록 조회 — 주소창 드롭다운 데이터 공급원(plugin 이
-        // kind 를 채워 호출). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더
-        // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
+        // 이미 연 항목의 목록만 반환하며 파일을 읽지 않아 SurfaceRead를 요구한다.
         ("recent.query", plugin(Read, &[SurfaceRead])),
         // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
         // ── git_viewer.* (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그
         // — 원격 attach mirror git 조회 트리거) ─
-        // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
-        // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
-        // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에
-        // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
-        // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
+        // 원격 Git 조회를 비동기로 요청한다. request_id 뒤 실제 결과는 event.dispatch로 받는다.
         ("git_viewer.query", plugin(Read, &[FsRead])),
         // ── markdown_mirror.* (docs/dev-guide/attach-behavior.md#markdown-content-채널
         // — 원격 attach mirror markdown 원문 조회 트리거) ─
-        // markdown plugin 이 mirror 문서의 원격 원문을 요청한다. host 는 즉시 request_id 만
-        // 회신하고(비동기 accept), 원문은 attach Control 채널 왕복 후 `event.dispatch`
-        // unicast 로 plugin 에 push 된다. 원격 파일 read 라 FsRead(`git_viewer.query` 와
-        // 동일 근거).
+        // 원격 문서 원문을 요청하며 실제 결과는 event.dispatch로 받는다. 파일 읽기라 FsRead를 요구한다.
         ("markdown_mirror.content_request", plugin(Mutate, &[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
-        // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)을
-        // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
-        // docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
-        // `"file_picker.result"` 로 plugin 에 push 된다. 파일을 고르는 read 관심사라
-        // FsRead(`git_viewer.query` 와 동일 근거). 비-plugin 호출자(CLI·agent)는 이 표가
-        // 아니라 핸들러가 `-32016` 으로 거부한다 — 외부 arm 이 있어 `plugin_only` 를 못 단다
-        // (docs/features/native-file-picker/index.md#plugin-트리거adr-0058--즉시-ack--이벤트-push).
+        // 팝업을 열고 request_id를 반환한다. 선택/취소 결과는 file_picker.result 이벤트로 보낸다.
+        // 비플러그인 호출은 핸들러가 -32016으로 거절한다. 외부 arm이 있어 plugin_only와는 구분한다.
         ("file_picker.trigger", plugin(Mutate, &[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
-        // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
-        // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
-        // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
+        // 자신의 팝업 인스턴스만 닫을 수 있다. 소유권은 호스트가 검사한다.
         ("popup.close", plugin_only(Idempotent, &[UiPopup])),
         // ── banner (plugin → host, A3) ────────────────────────────────
         // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
@@ -826,10 +613,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 자기 배너 인스턴스를 명시적으로 닫는다.
         ("banner.close", plugin_only(Idempotent, &[UiBanner])),
         // ── webview 외부 열기 (plugin → host) ──────────────────────────
-        // 자기 webview surface 안의 외부 링크를 OS 기본 핸들러로 연다. plugin 프로세스가
-        // OS 열기를 직접 하지 않게 host 한 자리로 모은다(docs/plugins/markdown/index.md#내부-동작). 소유권(자기 surface)
-        // 검증은 App. 외부 IPC 호출자에게는 arm 이 없다 — 사용자 브라우저를 여는 것은
-        // 에이전트가 자기 작업에 쓰는 능력이 아니다(원칙 1).
+        // 자신의 webview 외부 링크를 호스트가 연다. 소유권은 App에서 검사하며 외부 IPC 경로는 없다.
         (
             "webview.open_external",
             plugin_only(Mutate, &[SurfaceWrite]),
@@ -842,11 +626,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.remove", local_only(Idempotent)),
         ("plugin.enable", local_only(Idempotent)),
         ("plugin.disable", local_only(Idempotent)),
-        // 번들 plugin 을 실행 중 인스턴스에 재sync — install/remove/enable/disable
-        // 과 같은 lifecycle 계열이라 같은 근거로 닫는다. 호출자는 개발 중 재빌드를
-        // 반영하는 사람이나 dist 업그레이드 경로이지 plugin 자신이 아니고, plugin
-        // 이 자기(또는 남의) 번들 바이너리를 교체할 수 있으면 lifecycle 소유가
-        // 뒤집힌다 — docs/dev-guide/plugin-development.md §9.1.
+        // 번들 바이너리 교체는 운영자·업그레이드 경로가 맡으며 플러그인 자신에게 열지 않는다.
         ("plugin.upgrade_builtins", local_only(Idempotent)),
         ("plugin.permissions", local_only(Read)),
         ("plugin.grant", local_only(Idempotent)),
@@ -856,9 +636,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.grant_agent_permission", local_only(Idempotent)),
         ("plugin.revoke_agent_permission", local_only(Idempotent)),
         ("plugin.list_agent_permissions", plugin(Read, &[])),
-        // agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
-        // 발행할 entry point. approval.request 와 동일한 의미이므로 Approval
-        // 권한이 필요.
+        // 추가 권한 요청은 사용자 승인이 필요하므로 Approval 권한을 요구한다.
         (
             "plugin.request_permission",
             plugin(Mutate, &[Approval]).kept_by_app_layer(),
@@ -875,9 +653,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // focused 창에 의존하지 않는다(원칙 3). 임의 경로 파일 쓰기 표면이라 local_only
         // (plugin 미노출) — CLI/로컬 client 만 호출.
         ("ui.screenshot", local_only(Mutate).kept_by_app_layer()),
-        // E.C.e (D1=b) — Tasty 내부 어휘 통일에 따른 view.* alias. 동작은 window.* 와 동등.
-        // wire format 호환을 위해 양쪽 메서드 명 모두 살림. payload 의 `window_id`
-        // 필드는 외부 wire format 이라 변경 X.
+        // view.*는 window.*의 호환 이름이다. 외부 payload의 window_id도 유지한다.
         ("view.create", local_only(Mutate).kept_by_app_layer()),
         ("view.close", local_only(Idempotent)),
         ("view.list", local_only(Read)),
@@ -888,22 +664,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
     ]
 };
 
-/// debug 빌드에서만 등록되는 메서드. release에서는 [`method_meta`]가 `None`을
-/// 반환해 IPC 표면에서 완전히 사라진다. 핸들러 함수 본체와 라우터 분기는
-/// 이미 `#[cfg(debug_assertions)]`로 보호되어 있으므로, 표 등록만 게이트하면
-/// 일관된 release 표면이 된다.
-///
-/// 카테고리:
-/// - `system.shutdown` — 호스트 종료 (사용자가 직접 종료해야 하는 동작)
-/// - `ui.state` — UI 상태 dump (디버깅용)
-/// - `debug.*` — 사용자 입력 재현 / 디버그 dump
-///
-/// (`ui.screenshot` 은 focus-독립 리팩토링으로 [`METHOD_TABLE`] 로 승격됨.)
-///
-/// `.kept_on_every_host_path()` 가 붙은 `Mutate` 는 GUI 의 debug step(app_methods step **뒤**)이
-/// 끝내는 이름이다. 그 step 도 보존소를 지나지만 판 [`KEY_KEPT_ON_EVERY_HOST_PATH`] 부터다. 그
-/// 목록이 debug step 의 실제 dispatch 와 맞는지는 본체의 `source_guards::key_contract_by_layer`
-/// 가 잰다.
+/// debug 빌드의 로컬 진단·입력 재현 메서드. 핸들러와 라우터도 같은 cfg로 제한한다.
+/// GUI debug step에서 끝나는 Mutate는 kept_on_every_host_path로 기능 버전을 선언한다.
+/// 실제 dispatch와의 일치는 key_contract_by_layer가 검사한다.
 #[cfg(debug_assertions)]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("system.shutdown", local_only(MethodEffect::Idempotent)),
@@ -917,9 +680,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.gpu.stall", local_only(MethodEffect::Mutate)),
     ("debug.inject_mouse", local_only(MethodEffect::Mutate)),
     ("debug.inject_key", local_only(MethodEffect::Mutate)),
-    // window/egui 입력 주입(마우스·키·문자) — 위 inject_* 와 같은 사용자 입력 재현
-    // 계열이라 같은 debug 격리(원칙 1·3). release 미노출. 문자는 키와 다른 이벤트라
-    // (`Event::Text`) 따로 있다 — 키 주입으로는 `TextEdit` 에 글자가 안 들어간다.
+    // 텍스트는 키와 별도 이벤트이므로 egui-key만으로 TextEdit에 입력할 수 없다.
     (
         "debug.inject_window_mouse",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),
@@ -977,11 +738,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.settings.open", local_only(MethodEffect::Idempotent)),
     // 런타임 설정 patch 적용 — 사용자 "설정 저장" 재현. release 미노출.
     ("debug.settings.apply", local_only(MethodEffect::Idempotent)),
-    // 활성 모달에 창 닫기 **요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현.
-    // release `window.close` 가 main view 만 대상으로 두고 모달을 뺀 것과 같은 선이다.
-    // WM 없는 Xvfb 에는 `WM_DELETE_WINDOW` 를 보낼 손이 없어(실측: `xdotool windowclose`
-    // 는 `XDestroyWindow` 를 불러 winit 이 패닉하고, `wmctrl -i -c` 는 WM 이 없으면
-    // 아무도 처리하지 않는다) 자동 검증에는 이 경로가 유일하다.
+    // 활성 모달에 창 닫기 요청을 전달한다. release의 window.close는 메인 창만 대상으로 한다.
     (
         "debug.modal.close_request",
         local_only(MethodEffect::Idempotent),
@@ -1027,26 +784,18 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         local_only(MethodEffect::Idempotent),
     ),
     ("debug.fullscreen.state", local_only(MethodEffect::Read)),
-    // 사용자 입력 재현 — 포커스 전환은 단축키/마우스 영역.
-    // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
+    // 외부 포커스 조작은 debug 전용이다. view.focus는 window.focus의 호환 이름이다.
     ("window.focus", local_only(MethodEffect::Idempotent)),
     ("view.focus", local_only(MethodEffect::Idempotent)),
     // ── OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현 ──────────
-    // `surface.raw_key` 는 CGEventPost 로 **OS 이벤트 스트림에** 키를 주입한다.
-    // 대상 surface 를 받을 수단이 없고(그 순간 OS 포커스를 가진 무엇이든 받는다),
-    // `surface.switch_input_source` 는 TISSelectInputSource 로 **시스템 입력 소스**
-    // 를 바꾼다 — 둘 다 사용자가 키보드/입력기 메뉴로 하는 조작의 재현이라
-    // release 표면에 두지 않는다. 에이전트가 자기 작업으로 터미널에 키를 넣는
-    // 경로는 대상 ID 를 받는 `surface.send_key`(release) 다.
-    // 런타임 `--enable-input-simulation` 게이트가 추가로 걸린다(inject_* 와 동일).
+    // OS 전역 키 주입·입력기 변경은 debug 및 --enable-input-simulation으로 제한한다.
+    // release의 surface.send_key는 대상 ID가 있는 터미널 입력 경로다.
     (
         "surface.switch_input_source",
         local_only(MethodEffect::Idempotent),
     ),
     ("surface.raw_key", local_only(MethodEffect::Mutate)),
-    // `surface.ime_*` 도 같은 계열(창 IME 조합 상태 강제 세팅 — 사용자 입력기
-    // 조합 재현)이지만 개별 등재가 아니라 prefix 로 해소되므로 아래
-    // [`PREFIX_RULES`] 쪽에 같은 cfg 격리를 걸어 뒀다.
+    // IME 계열은 아래 prefix 규칙에 같은 debug 제한을 적용한다.
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
@@ -1066,51 +815,27 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only(Id
 #[cfg(not(debug_assertions))]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
-/// plugin 이 `[[contributes.ipc_namespace]]` 로 점유한 prefix 의 **소유 표**.
-///
-/// **사본이 아니라 원본이다.** 예전에는 이 자리에 `HashMap` 미러가 따로 있었고
-/// host 가 자기 표를 고칠 때마다 같은 값을 여기에 한 번 더 썼다 — 표가 둘이면
-/// 갱신을 한쪽만 하는 결함이 생기고, 실제로 났다(제거된 plugin 의 prefix 가 남아
-/// `-32002` 로 거절하던 것). 지금은 host 가 든 것과 **같은 `Arc`** 를 부팅 때 한 번
-/// 받는다. 쓰는 쪽은 하나뿐이고 여기는 읽기만 한다.
-///
-/// 결정·대안·경계는
-/// [CLI + IPC namespace](../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
-///
-/// 설치 전에는 "등록된 prefix 가 없다" 로 답한다 — 옛 미러가 그 시점에 비어 있던 것과
-/// 같은 답이다. 부팅 전 의미를 바꾸지 않는다.
+/// 호스트와 같은 Arc로 공유하는 namespace 소유 표. 여기서는 읽기만 한다.
+/// 설치 전에는 등록된 prefix가 없는 것으로 처리한다.
 static NAMESPACE_TABLE: OnceLock<Arc<RwLock<IpcNamespaceRegistry>>> = OnceLock::new();
 
-/// 부팅 때 **1 회** 설치한다. 이미 설치돼 있으면 아무것도 안 하고 `false`.
-///
-/// 덮어쓰기를 허용하지 않는 이유: 표를 바꿔 끼우는 것은 소유 관계를 통째로 갈아치우는
-/// 일이라 진행 중인 라우팅이 어느 표를 봤는지가 호출 시점에 달리게 된다. 한 프로세스에
-/// `PluginManager` 는 하나이므로 설치도 한 번이면 된다.
+/// 부팅 때 한 번 설치한다. 이미 설치됐으면 표를 바꾸지 않고 false를 반환한다.
 pub fn install_namespace_table(table: Arc<RwLock<IpcNamespaceRegistry>>) -> bool {
     NAMESPACE_TABLE.set(table).is_ok()
 }
 
-/// 테스트가 쓰는 표. 설치는 1 회뿐이라 **바꿔 끼울 수 없고**, 그래서 테스트는 첫 번째가
-/// 설치한 표를 함께 쓰고 내용만 직렬화해서 비운다(`test_lock`). 운영 코드에는 이 경로가
-/// 없다 — 예전의 `clear_plugin_prefixes_for_tests` 가 `doc(hidden) pub` 으로 운영 표면에
-/// 뚫려 있던 것을 `cfg(test)` 로 닫은 것이다.
+/// 시험은 한 번 설치한 전역 표를 공유하고 test_lock으로 변경을 직렬화한다.
 #[cfg(test)]
 pub(crate) fn test_namespace_table() -> &'static Arc<RwLock<IpcNamespaceRegistry>> {
     NAMESPACE_TABLE.get_or_init(|| Arc::new(RwLock::new(IpcNamespaceRegistry::new())))
 }
 
-/// 이 락의 임계구역은 표 조회뿐이라 패닉이 지나가도 남는 값이 성립한다 — 그래서 복구가
-/// 답이다. 조용히 건너뛰면 poison 이 sticky 인 탓에 소유 판정이 **영구히 "아무도 소유하지
-/// 않는다"** 가 되고, 그러면 plugin namespace 로 갈 호출이 전부 host 로 샌다.
+/// 읽기 전용 임계구역의 poison을 보고하고 복구한다. 읽기 실패를 미등록으로 취급하지 않는다.
 const NAMESPACES_WHAT: &str = "the plugin IPC namespace table";
 static NAMESPACES_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// `prefix` 를 어떤 plugin 이 `[[contributes.ipc_namespace]]` 로 점유하고 있는지 조회.
-///
-/// 호출부가 이 값을 `!` 로 뒤집어 쓰므로 **여기서 `false` 로 물러나면 차단이 뚫린다**
-/// — 표를 못 읽었다는 사정이 "등록된 적 없는 prefix" 와 같은 답이 되어, 막으려던
-/// 우회가 그대로 열린다. 그래서 락이 poison 이어도 복구해서 실제 값을 본다.
-/// 표가 아직 설치되지 않은 것은 다른 사실이고(부팅 전), 그때는 `false` 가 참이다.
+/// prefix 등록 여부를 읽는다. 호출자가 결과를 반대로 써 차단할 수 있어
+/// poison을 false로 바꾸지 않고 실제 표를 복구해 확인한다. 설치 전에는 false다.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
     let Some(table) = NAMESPACE_TABLE.get() else {
         return false;
@@ -1123,13 +848,8 @@ pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
     guard.owns_prefix(prefix)
 }
 
-/// `plugin_id` 가 `prefix` 를 `[[contributes.ipc_namespace]]` 로 점유하고 있는가.
-///
-/// [`is_registered_plugin_prefix`] 는 "누군가 점유했나" 를 묻고, 여기는 "**이 plugin 이**
-/// 점유했나" 를 묻는다. 게이트가 둘을 가르는 자리는 둘이다 — plugin 이 자기 namespace 를
-/// 부르는 trampoline 은 `ipc.invoke:<자기>` 를 요구하지 않고, `session.issue` 는 소유자가
-/// 자기 namespace 의 토큰을 자식에게 넘기는 것을 허용한다. 락 poison 처리는
-/// [`is_registered_plugin_prefix`] 와 같다.
+/// 특정 플러그인이 prefix를 소유하는지 확인한다. 자기 namespace 호출 면제와
+/// 자식에게 namespace 권한을 부여하는 검사가 사용한다.
 pub fn plugin_owns_prefix(plugin_id: &str, prefix: &str) -> bool {
     let Some(table) = NAMESPACE_TABLE.get() else {
         return false;
@@ -1142,17 +862,8 @@ pub fn plugin_owns_prefix(plugin_id: &str, prefix: &str) -> bool {
     guard.prefixes_of(plugin_id).iter().any(|p| p == prefix)
 }
 
-/// 이 이름이 **표에 그 이름 그대로 적혀 있는가**. prefix fallback 은 보지 않는다.
-///
-/// `method_meta()` 와 다른 물음이다. 저쪽은 "이 이름을 어떻게 다뤄야 하나" 를 묻고
-/// 그래서 정적 `PREFIX_RULES` 와 **런타임 등록 plugin prefix** 까지 4 단계로 해소한다.
-/// 여기서 묻는 것은 "**우리가 이 이름을 우리 것으로 적어 뒀나**" 하나뿐이다.
-///
-/// 두 물음을 섞으면 설치된 plugin 의 표면이 통째로 host 것으로 오인된다. 실측
-/// 2026-09-05: `method_meta(...).is_some()` 을 "표에 있다" 로 읽고 종단 응답을 가르면
-/// `claude.children` · `agent_stream.list` 는 물론 `markdown.no_such_thing` 같은 **오타까지**
-/// 마지막 단계(런타임 prefix)에 걸려 host 의 답을 받는다 — plugin 으로 갈 호출이 안 간다.
-/// 그 모수는 유한하지도 않다(그 prefix 아래 임의의 이름이 전부 해당된다).
+/// 정적 호스트 표에 정확히 등재된 이름인지 확인한다. prefix fallback은 제외한다.
+/// 이를 섞으면 플러그인 고유 이름과 그 아래 오타까지 호스트가 처리할 이름으로 오인한다.
 pub fn is_registered_name(method: &str) -> bool {
     METHOD_TABLE.iter().any(|(name, _)| *name == method)
         || DEBUG_METHODS.iter().any(|(name, _)| *name == method)
@@ -1162,12 +873,7 @@ pub fn is_registered_name(method: &str) -> bool {
 /// 전까지 안 바뀐다 — 갱신 절차는 파일 머리 주석과 `docs/dev-guide/release.md`.
 const FROZEN_BASELINE_0_7: &str = include_str!("../fixtures/method_baseline_0_7.txt");
 
-/// 이 이름이 **0.7.0 표면에 이미 있었는가.**
-///
-/// 두 값뿐인 이유는 답할 수 있는 것이 그것뿐이기 때문이다. 동결 파일은 0.7.0 시점의
-/// 이름 집합 하나이고, 그 뒤에 더해진 이름들이 **각각 언제** 들어왔는지는 어디에도 안
-/// 적혀 있다. 그 값을 지금 손으로 채우면 커밋 로그에서 추정한 수가 표의 값이 되고,
-/// 그것은 재현되지 않는다. 그래서 더 잘게 나누지 않는다.
+/// 0.7.0 기준 목록에 포함됐는지 구분한다. 이후 추가된 이름의 개별 도입 버전은 기록하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodSince {
     /// 0.7.0 동결 baseline 에 있던 이름. 그 버전 이상이면 어느 서버에나 있다.
@@ -1188,21 +894,8 @@ fn frozen_baseline_names() -> &'static std::collections::HashSet<&'static str> {
     })
 }
 
-/// 등재된 이름이 언제부터 있었는가. **미등록 이름은 `None`** — "없다" 와 "예전부터
-/// 있었다" 를 같은 값으로 답하지 않는다.
-///
-/// 값은 손으로 안 적는다. `METHOD_TABLE` 옆의 동결 파일이 유일한 모수이고, 이 함수는
-/// 그것을 읽을 뿐이다 — 표에 이름을 더하면 이 답이 **자동으로** 따라온다. 둘째 사본을
-/// 두면 표에 더하면서 이쪽을 빠뜨리는 것이 기본 동작이 된다([docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다] 이 같은 이유로
-/// `effect` 를 별도 테이블로 두지 않았다).
-///
-/// **답이 빌드 조합에 따라 갈리는 이름이 있다.** `DEBUG_METHODS` 는 debug 빌드에만 있으므로
-/// `debug.` 로 시작하는 이름은 debug 에서 `AfterFrozenBaseline`, release 에서 `None` 이다.
-/// 등록 여부를 먼저 보는 `is_registered_name` 의 성질을 그대로 물려받은 것이고, 동결
-/// baseline 에 그 접두사가 하나도 없어 **분류 자체는 안 흔들린다.** 다만 이 답을 내보내는
-/// capability 선언은 조합과 무관하므로, client 가 이 값으로 분기하면 그때 갈린다.
-///
-/// [docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다]: ../../../docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다
+/// 정적 등록 여부와 동결 목록으로 분류한다. 미등록 이름은 None이다.
+/// debug 이름은 release 표에서 빠지므로 release에서는 None이 된다.
 pub fn method_since(method: &str) -> Option<MethodSince> {
     if !is_registered_name(method) {
         return None;
@@ -1234,17 +927,13 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     if let Some(dot) = method.find('.')
         && is_registered_plugin_prefix(&method[..dot])
     {
-        // plugin namespace 아래의 이름은 **무엇이든** plugin 이 받는다. 요구 권한은
-        // 이름에서 나오는 `ipc.invoke:<prefix>` 하나라 정적 칸에 못 적는다 — 표시만
-        // 남기고 게이트가 그 토큰을 요구한다(`CallerContext::ensure_allowed`).
+        // 등록 prefix 아래 임의 이름은 ipc.invoke:<prefix>를 호출 게이트에서 확인한다.
         return Some(MethodMeta {
             plugin_callable: true,
             plugin_only: false,
             required: &[],
             namespace_forward: true,
-            // 이 이름을 구현하는 것은 plugin 이고 호스트는 그 뜻을 모른다. 그래서
-            // 재전달이 안전한지도 모르고, 모를 때 고를 값은 **가장 조심스러운 쪽**이다 —
-            // `Read` 로 두면 소비자가 마음대로 다시 보내도 된다고 읽는다.
+            // 플러그인 메서드의 부수효과는 알 수 없어 Mutate로 분류한다.
             effect: MethodEffect::Mutate,
             // forward 는 engine 라우터의 보존소 앞에서 plugin 으로 나간다 — 키를 실어도
             // 재생되지 않는다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
@@ -1254,18 +943,9 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     None
 }
 
-/// 이 이름에 멱등 키를 실으면 지켜지는가 — **이 프로세스가 아는 표로** 답한다.
-///
-/// 표가 이름을 모르면 [`KeyContract::Outside`] 다. 호스트의 보존소는 호스트가 아는 이름에만
-/// 닿을 수 있고, 표가 모르는 이름은 둘 중 하나다 — 존재하지 않는 메서드(`-32601`)이거나
-/// plugin namespace. 뒤쪽이 이 판정의 요점이다: **client 프로세스에는 namespace 소유 표가
-/// 없어서**(그 표는 호스트가 부팅 때 설치한다) 거기서 plugin 메서드는 `method_meta` 가 `None`
-/// 이 된다. 호스트 프로세스에서는 같은 이름이 namespace fallback 으로 해소돼 `Outside` 가
-/// 나온다 — 두 프로세스의 답이 같다.
-///
-/// 비용이 한 방향으로만 틀린다: 표보다 **새로운** 서버에 더해진 호스트 메서드는 옛 client 가
-/// `Outside` 로 읽어 키를 안 싣는다. 그때 호출자는 보내기 전에 거절을 받으므로 두 번째 효과는
-/// 안 난다.
+/// 이 프로세스의 정적 표가 선언한 키 계약. 모르는 이름은 Outside다.
+/// 호스트의 런타임 namespace 표 유무와 관계없이 플러그인 고유 이름은 Outside다.
+/// 서버가 더 새 메서드를 지원해도 옛 client는 전송 전에 거절할 수 있다.
 pub fn key_contract(method: &str) -> KeyContract {
     method_meta(method).map_or(KeyContract::Outside, |m| m.key_contract)
 }

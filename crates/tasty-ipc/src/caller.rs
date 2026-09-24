@@ -1,13 +1,6 @@
-//! IPC 호출자 컨텍스트 — local CLI/사용자 vs plugin process vs agent(자식 Claude 등) 구분.
-//!
-//! 호스트는 **요청에 답하기 전에** `CallerContext::ensure_allowed` 로 권한을 검사한다.
-//! Local 은 모든 메서드 통과, Plugin/Agent 는 매니페스트(또는 grant)에 선언된 권한과
-//! [`crate::method_meta`] 테이블을 대조한다.
-//!
-//! 검사가 **어느 자리에서** 도는지가 이 함수의 정확성만큼 중요하다 — 라우팅 도중
-//! 조기에 응답해 버리는 자리가 검사보다 앞에 있으면 이 함수는 호출조차 되지 않는다.
-//! 그 순서를 지키는 계약은 호스트 쪽 가드
-//! `every_routing_entry_gates_before_it_answers` 가 소유한다.
+//! Local·Plugin·Agent 호출자를 구분하고 요청 권한을 확인한다.
+//! Local은 이 권한 검사를 통과하며, 다른 호출자는 method_meta와 부여된 권한을 대조한다.
+//! 호스트는 조기 응답 전에 검사해야 한다. 라우팅 순서는 every_routing_entry_gates_before_it_answers가 확인한다.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -16,14 +9,9 @@ use std::sync::Arc;
 use crate::method_meta::method_meta;
 use tasty_plugin_manifest::Permission;
 
-/// 자식 프로세스에 발급하는 32바이트 random session token.
-///
-/// 환경변수 `TASTY_SESSION_TOKEN` 으로 자식에게 주입되고, 자식이 IPC envelope 에
-/// 함께 실어 보내면 호스트가 `SessionStore` 에서 검증해 `CallerContext::Agent` 로
-/// resolve 한다. 위조 방어가 1차 목표 — agent_id 만으로는 환경변수 set 만으로
-/// 가장 가능하므로 token 검증이 필수.
-///
-/// 인코딩은 hex (base64 의존성 추가 회피). 64 char ascii.
+/// 32바이트 난수를 64자 hex로 인코딩한 세션 토큰.
+/// 자식이 TASTY_SESSION_TOKEN을 요청에 실으면 SessionStore가 신원을 검증한다.
+/// agent_id 문자열만으로는 호출자를 인증하지 않는다.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct SessionToken(String);
 
@@ -166,7 +154,7 @@ impl CallerContext {
         matches!(self, CallerContext::Plugin { .. })
     }
 
-    /// 권한 셋 접근. Local/Internal 은 None (무제한이므로 셋 자체가 의미 없음).
+    /// 권한 집합. Local은 제한이 없어 None이다.
     pub fn permissions(&self) -> Option<&Arc<HashSet<Permission>>> {
         match self {
             CallerContext::Plugin { permissions, .. }
@@ -184,18 +172,8 @@ impl CallerContext {
         }
     }
 
-    /// telemetry/dispatcher 미들웨어가 쓰는 agent 식별자. 신뢰 여부는 이 값을 누가
-    /// 채워 넣는지에 달려 있다(`tasty_telemetry::AgentId` 는 plain wrapper — 자세한
-    /// 근거는 [`tasty_telemetry::agent_id`] 모듈 doc 참고).
-    ///
-    /// - `Agent` → 호스트-부여 `agent_id` (verifiable, session token 검증 통과)
-    /// - `Plugin` → manifest 의 `plugin_id` (telemetry 검증을 위해 점 등은 `_` 로 sanitize)
-    /// - `Local` → env `TASTY_AGENT_ID` (없으면 `_host`)
-    ///
-    /// Plugin id 는 reverse-domain (`com.tasty.claude`) 이라 점을 포함하는데
-    /// telemetry `validate_agent_id` 는 `[a-zA-Z0-9_-]` 만 허용하므로 sanitize
-    /// 하지 않으면 dispatcher 미들웨어가 매 IPC 호출마다 `InvalidAgentId` 로
-    /// warn 폭주한다. `AgentId::from_plugin_id` 가 안전한 형태로 매핑.
+    /// 텔레메트리에 쓸 호출자 ID. Agent는 검증한 세션 ID, Plugin은 매니페스트 ID를
+    /// 허용 문자로 변환한 값, Local은 TASTY_AGENT_ID 또는 _host다.
     pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
             CallerContext::Local => tasty_telemetry::AgentId::from_env(),
@@ -235,10 +213,8 @@ fn check_permissions(
         }
     }
     if meta.namespace_forward {
-        // 표에 없는 plugin namespace 이름. 권한 셋을 가진 caller 는 plugin 이든 agent 든
-        // 그 namespace 의 `ipc.invoke:<prefix>` 를 가져야 한다 — plugin→plugin forward 가
-        // 이미 요구하던 같은 토큰이다. 소유 plugin 자신의 호출은 forward 가 아니라
-        // trampoline(host 가 답한다)이라 면제한다.
+        // 표에 없는 namespace 메서드는 ipc.invoke:<prefix>가 필요하다.
+        // 소유 플러그인의 자기 namespace 호출만 면제하며, 같은 ID의 Agent는 면제하지 않는다.
         let prefix = method.split('.').next().unwrap_or("");
         let is_owner =
             caller_plugin_id.is_some_and(|id| crate::method_meta::plugin_owns_prefix(id, prefix));
@@ -376,9 +352,6 @@ mod tests {
         ));
     }
 
-    /// Gate5 AC4 (remote-screenshot-clipboard) — `ClipboardWrite` 없는 plugin 은
-    /// `clipboard.set_text` 호출이 거부돼야 한다. 물리 다중 머신 없이도 실제
-    /// 프로덕션 게이트 코드(`ensure_allowed`)를 직접 행사하는 결정론적 검증.
     #[test]
     fn plugin_missing_clipboard_write_denied_for_clipboard_set_text() {
         let c = plugin_with(&[Permission::SurfaceRead]);

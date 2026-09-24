@@ -1,8 +1,4 @@
-//! Port file (`~/.tasty/tasty.port`) 위치 + read/write 헬퍼.
-//!
-//! Server 인스턴스 없는 컨텍스트 (CLI 클라이언트 등) 가 사용 — free fn.
-//! 서버 측은 `TcpIpcServer::start_with_port_file` 안에서 `write_port_file_to`
-//! 를 직접 호출 + Drop 시 `effective_port_file_path()` 로 삭제.
+//! 데이터 루트의 tasty.port 조회와 저장. 기본 루트는 debug/release에 따라 구분한다.
 
 use std::path::{Path, PathBuf};
 
@@ -10,23 +6,13 @@ use anyhow::Result;
 
 use tasty_utils::path::tasty_home;
 
-/// 포트 파일 조회 실패 — **조건만** 알리고 표시 문구는 소비자가 고른다.
-///
-/// 이 크레이트는 wire framing/전송 계층이라 `tasty-i18n` 을 의존하지 않는다.
-/// 사용자에게 보일 문구는 그 실패를 화면에 내보내는 소비자(CLI)가 자기 로케일로
-/// 만든다 — leaf 크레이트가 문구를 소유하지 않는다는 원칙의 적용이다
-/// (`docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입`,
-/// `docs/dev-guide/i18n.md` "호출자 주입").
-///
-/// 아래 `Display` 는 그 경로를 타지 않는 소비자를 위한 **영어 기본 렌더링**이며
-/// `lang/en.toml` 의 대응 키와 문자 단위로 같아야 한다. 정합은 문구를 소유하는
-/// 쪽(`tasty_cli::port_file`)의 테스트가 강제한다.
+/// 포트 조회 실패 조건. 소비자가 번역하며 Display의 기본 영어는 CLI 카탈로그와 맞춘다.
 #[derive(Debug, thiserror::Error)]
 pub enum PortFileError {
     /// tasty home 을 확정하지 못해 포트 파일 경로 자체를 만들 수 없다.
     #[error("Could not determine config directory")]
     HomeUnresolved,
-    /// 포트 파일이 없다 — 실행 중인 인스턴스가 없다는 뜻이다(가장 흔한 원인).
+    /// 지정한 포트 파일이 없다. 인스턴스 미실행이나 다른 데이터 루트를 확인한다.
     #[error("No running tasty instance found (port file not found at {})", .path.display())]
     NotFound {
         /// 실제로 찾아본 경로. 홈이 갈릴 때(`TASTY_HOME`) 사용자가 대조하는 값이라

@@ -1,33 +1,17 @@
 #![forbid(unsafe_code)]
 
-//! Shared internationalization (i18n) store.
+//! Shared translations for the host and CLI, initialized once at startup.
+//! general.language selects the language; changing it requires a restart.
 //!
-//! Loads translation strings from the workspace `lang/*.toml` files at startup
-//! and exposes the global `t()` lookup. Lives in its own crate (rather than the
-//! main binary) so that **both** the GUI/host binary and the `tasty-cli` crate
-//! can read the *same* translation table: the CLI runs in-process inside the
-//! `tasty` binary, and because the global store is a single `OnceLock` in this
-//! shared crate, the `locale::init()` call made on the CLI boot path also makes
-//! `t()` work for strings emitted from the `tasty-cli` crate.
+//! Built-in en/ko/ja text is embedded in the binary. A user `<code>.toml` file
+//! overrides a built-in language. Other languages need `<code>/pack.toml` with
+//! a valid font declaration. Missing or invalid packs fall back to English
+//! without changing the setting; LoadReport records the reason.
 //!
-//! Language is configured in config.toml `general.language` field. Changing
-//! language requires restart.
-//!
-//! Three sources feed the table (`docs/dev-guide/i18n.md` "언어팩"):
-//! - built-in `en` / `ko` / `ja` embedded in the binary ([`BUILTIN_CODES`]);
-//! - a single `~/.tasty/lang/<code>.toml` — an **override** for a built-in code only;
-//! - a **language pack** directory `~/.tasty/lang/<code>/pack.toml` for any other
-//!   code. A pack must carry a `[font]` section ([`FontDecl`]); a missing or
-//!   malformed pack makes [`init`] fall back to English and report it
-//!   ([`LoadReport`]) so the GUI can warn the user — the setting itself is never
-//!   rewritten. Discovery for the settings combo is [`available_languages`].
-//!
-//! Plugins can dynamically register/unregister translation namespaces via
-//! [`register_namespace`] / [`unregister_namespace`]. Namespace strings are
-//! `Box::leak`ed to satisfy the `&'static str` lookup contract. The leak is
-//! acceptable because the string set is bounded: a plugin's namespace is shipped
-//! with the plugin, and a user language pack — whose size is chosen by the user,
-//! not by tasty — is capped at [`MAX_PACK_BYTES`] before it is ever parsed.
+//! Plugin namespaces can be registered and removed at runtime. Values use
+//! Box::leak to satisfy the static lookup lifetime, so replacing or removing a
+//! namespace does not free old strings. MAX_PACK_BYTES bounds individual user
+//! files, not total retained strings or installed plugin catalogs.
 
 pub mod font;
 pub mod plugin_catalog;
@@ -46,14 +30,8 @@ static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();
 /// reads it once after boot to surface the English-fallback warning as a toast.
 static LOAD_REPORT: OnceLock<LoadReport> = OnceLock::new();
 
-/// 내장 언어를 **한 자리**에서 선언한다 — 코드 목록과 `include_str!` 팔이 같은 줄에서
-/// 나온다.
-///
-/// 한때 이 둘은 손으로 적힌 두 벌이었고, 같아야 한다는 것을 지키는 것이 없었다. 넷째
-/// 언어를 넣으며 한쪽만 고치면 `is_builtin_code("fr") == true` 인데
-/// `builtin_toml("fr") == None` 이 되고, 그 갈림은 조용하다 — "내장이라고 말하는 것" 과
-/// "실제로 바이너리에 박힌 것" 이 다른 채로 돈다. `include_str!` 은 리터럴 경로를
-/// 요구해서 상수로는 못 뽑고, 매크로는 그 요구를 지키면서 목록을 하나로 만든다.
+/// 내장 코드 목록과 include_str! 경로를 한 선언에서 만든다.
+/// include_str!이 요구하는 리터럴 경로는 concat!으로 구성한다.
 macro_rules! builtin_languages {
     ($($code:literal),+ $(,)?) => {
         /// Language codes embedded in the binary (`lang/{code}.toml`).
@@ -73,10 +51,7 @@ builtin_languages!("en", "ko", "ja");
 /// Manifest file name inside a language pack directory.
 pub const PACK_FILE_NAME: &str = "pack.toml";
 
-/// Stands in for the language directory when the data root cannot be determined
-/// (no `TASTY_HOME`, no home directory). It is a label, not a path that is ever
-/// read — without a data root there is no user pack, so the fallback message only
-/// has to name the convention.
+/// 홈을 찾지 못했을 때 안내에 쓰는 표기. 실제로 읽는 경로가 아니다.
 const UNKNOWN_LANG_DIR: &str = "<tasty home>/lang";
 
 /// Whether `code` is one of the embedded languages.
@@ -192,15 +167,9 @@ impl fmt::Display for PackError {
     }
 }
 
-/// A toast-sized, single-line version of a rejection reason. `toml::de::Error`
-/// renders as multi-line ASCII art (source excerpt plus caret rows) and the toast
-/// is a summary channel with a hard character cap, so anything past the first line
-/// would push the message's instruction out of view. The full text still reaches
-/// the log — `Translations::warn_fallback` formats the error unabridged.
+/// One-line fallback reason for a toast. The log retains the full parse error.
 fn summarize_reason(error: &PackError) -> String {
-    /// Keeps the reason from crowding out the path and the instruction. The path
-    /// gets whatever is left ([`fit_path`]), so this budget is deliberately tight:
-    /// *which pack* is more actionable than *why* — the log has the full reason.
+    /// Leave room for the pack path and the recovery instruction.
     const MAX_CHARS: usize = 40;
     let text = error.to_string();
     let first = text.lines().next().unwrap_or_default().trim();
@@ -212,30 +181,15 @@ fn summarize_reason(error: &PackError) -> String {
     out
 }
 
-/// The toast body cap the host applies (`src/adapters/ui/toast.rs`
-/// `MAX_MESSAGE_CHARS`). Going over does not just lose the tail — the host appends
-/// a "(character limit)" notice, so the overflow is visible *and* the instruction
-/// is gone. The warning below is built to stay under it.
+/// Host toast character limit. Keep warnings within it so truncation does not remove the instruction.
 pub const TOAST_MAX_CHARS: usize = 200;
 
-/// Shortest fragment worth showing. Below this the fragment says nothing, so the
-/// message keeps the ellipsis and the log carries the real text.
-///
-/// Public because a test that asserts messages fit the cap has to know the floor:
-/// a skeleton that leaves less than this cannot be rescued by shrinking.
+/// Minimum useful fragment length. Callers must leave this much room in a toast template.
 pub const MIN_FRAGMENT_CHARS: usize = 12;
 
-/// Render a message that carries one variable-length fragment, shrinking **the
-/// fragment only** so the whole message fits [`TOAST_MAX_CHARS`].
-///
-/// `render` must interpolate its argument exactly once, which lets the budget be
-/// exact: everything except the fragment is rendered first (with an empty
-/// fragment) and whatever is left of the cap goes to the fragment.
-///
-/// The fragment is not required to be a path. A failure reason that *contains* a
-/// path is the other shape this serves: the host's own truncation drops the tail
-/// (`src/adapters/ui/toast.rs` `truncate_message`), and for a reason the tail is
-/// the OS error — the part that says *why*. Eliding the middle keeps both ends.
+/// Shorten only the variable fragment so the rendered message fits TOAST_MAX_CHARS.
+/// render must insert its argument exactly once. Middle elision keeps both
+/// the path prefix and trailing file name or OS error.
 pub fn fit_fragment(fragment: &str, render: impl Fn(&str) -> String) -> String {
     let skeleton = render("").chars().count();
     let budget = TOAST_MAX_CHARS
@@ -255,10 +209,8 @@ pub fn t_fmt_fit(key: &str, fragment: &str) -> String {
     fit_fragment(fragment, |f| t_fmt(key, f))
 }
 
-/// Drop the middle of `s` so it fits `max` chars, keeping both ends. The tail
-/// keeps roughly two thirds of the budget because it is the half that identifies:
-/// for a path it carries `<code>/pack.toml`, i.e. *which* pack; for a failure
-/// reason it carries the OS error, i.e. *why*.
+/// Keep both ends of s within max characters. About two thirds of the space
+/// goes to the end, which often contains the file name or OS error.
 fn elide_middle(s: &str, max: usize) -> String {
     let count = s.chars().count();
     if count <= max {
@@ -290,11 +242,8 @@ pub struct LanguagePack {
     strings: HashMap<String, String>,
 }
 
-/// [`flatten_catalog_toml`] 호출 계수기 — **테스트 전용**.
-///
-/// 발견 경로가 문자열 키를 flatten 하지 않는다는 것을 시간이 아니라 사실로 확인한다.
-/// 시간 비교는 부하에 따라 흔들려 회귀 신호가 되지 못한다. 스레드 로컬이라 테스트
-/// 하네스가 테스트마다 다른 스레드에서 돌려도 다른 테스트의 flatten 이 섞이지 않는다.
+/// 발견 경로의 flatten 호출 여부를 확인하는 테스트 전용 계수기.
+/// 스레드 로컬로 두어 다른 시험의 호출이 섞이지 않게 한다.
 #[cfg(test)]
 mod flatten_probe {
     use std::cell::Cell;
@@ -316,22 +265,8 @@ mod flatten_probe {
     }
 }
 
-/// 카탈로그 TOML 트리를 점 키로 평탄화한다 — `[settings.tab] general = "General"` 이
-/// `settings.tab.general` 이 된다. **문자열 leaf 만 카탈로그 항목이고**, 그 밖의 leaf
-/// (정수·불리언·배열·날짜)는 키를 만들지 않는다.
-///
-/// **왜 `pub` 인가.** 이 규칙이 "무엇이 번역 키인가" 의 정의이고, 그 정의를 쓰는 곳이
-/// 로더 하나가 아니다 — 정합 가드 `tests/i18n_key_parity.rs` 가 세 언어 파일의 키
-/// 집합을 비교하려면 같은 규칙으로 펴야 한다. 그 가드는 원래 같은 재귀를 **자기
-/// 파일에 복사해** 두고 주석으로 "로더와 같은 규칙" 이라고 적어 두었는데, 둘을 같게
-/// 잡아 주는 것이 그 주석뿐이었다. 로더가 leaf 취급을 바꾸면 가드는 옛 규칙으로 펴고,
-/// 그 어긋남은 **가드가 초록인 채로** 생긴다(가드가 못 보는 키는 parity 검사에도 안
-/// 올라온다). 그래서 사본을 지우고 이 함수를 부르게 했다 — 규칙이 하나면 갈라질 수 없다.
-///
-/// 노출은 그 호출을 위한 것이지 plugin·CLI 가 쓰라는 API 가 아니다. 다만 `doc(hidden)`
-/// 은 붙이지 않는다 — 무엇이 키가 되는지는 번역 파일을 쓰는 사람이 알아야 하는 규칙이다.
-///
-/// `map` 에 **누적**한다(덮어쓴다). 로더가 base(en) 위에 로케일을 겹치는 데 그대로 쓴다.
+/// TOML의 문자열 값을 점으로 연결한 키로 펼쳐 map에 추가·덮어쓴다.
+/// 정수·불리언·배열·날짜는 제외한다. 로더와 키 정합 검사가 같은 함수를 사용한다.
 pub fn flatten_catalog_toml(prefix: &str, value: &toml::Value, map: &mut HashMap<String, String>) {
     #[cfg(test)]
     flatten_probe::note();
@@ -349,48 +284,23 @@ pub fn flatten_catalog_toml(prefix: &str, value: &toml::Value, map: &mut HashMap
         toml::Value::String(s) => {
             map.insert(prefix.to_string(), s.clone());
         }
-        // Ignore non-string leaf values
         _ => {}
     }
 }
 
-/// Largest a language file may be. Anything bigger is rejected unparsed, with a
-/// `tracing::warn!`, and does not appear in the settings combo.
-///
-/// **Why 2 MiB.** The largest built-in file is `lang/ja.toml` — 89 KiB for ~1,300
-/// keys — and a pack is a translation of that same key set, so a real pack sits in
-/// that order of magnitude. This limit is ~23× that. The three things that
-/// legitimately inflate a pack compound to roughly 12×, still under the limit: a
-/// verbose language (~1.5×), heavy author comments (~2×), and the key set growing
-/// several-fold over the app's life (~4×).
-///
-/// The ceiling is also chosen so that hitting it stays cheap. Discovery cost is
-/// proportional to file size, so a pack sitting exactly at the limit costs about
-/// what scanning twenty ordinary packs costs — tens of milliseconds, not seconds.
-/// So even a deliberately maximal pack cannot make the first open of the settings
-/// window noticeably slower. (Order of magnitude on purpose: the absolute number
-/// is machine- and profile-dependent, and nothing here depends on its precision.)
-///
-/// The limit exists because the cost of reading a pack is proportional to a file
-/// the *user* placed. Without it a 200 MB file is accepted, read whole into
-/// memory, and parsed on the render thread the first time the settings window
-/// opens. If a real pack ever legitimately approaches this, raise the number here
-/// — the point is that the cost is bounded by something tasty chooses, not by
-/// whatever happens to be in `~/.tasty/lang/`.
+/// Maximum user language file size: 2 MiB. Larger files are rejected before TOML parsing.
+/// This bounds each file read; it does not bound the number of packs, total
+/// retained translations, or render-thread time. Raise it only when a valid
+/// pack needs more space and the parsing cost has been checked.
 pub const MAX_PACK_BYTES: u64 = 2 * 1024 * 1024;
 
-/// Read a language file, refusing anything over [`MAX_PACK_BYTES`].
-///
-/// Enforced with `Read::take` rather than a `metadata()` size check, so an
-/// oversized file is never read past the limit and the decision cannot race a
-/// file that grows between the check and the read. The size in the error is
-/// best-effort (`metadata`, for the message only) — the rejection already stands.
+/// Read at most MAX_PACK_BYTES + 1 bytes to detect an oversized file.
+/// A metadata check rejects obviously large files early; Read::take still
+/// enforces the bound if the file grows or does not report its size.
 fn read_capped(path: &Path) -> Result<String, PackError> {
     use std::io::Read;
     let file = std::fs::File::open(path).map_err(|e| PackError::Read(e.to_string()))?;
-    // 빠른 거부 — 100 MB 짜리를 상한만큼 읽고 나서 버리지 않는다. 판정의 근거는
-    // 아래 `take` 이고 이건 순수 최적화다: 파일이 커진 뒤 줄어드는 경합에서
-    // 이 검사를 통과하더라도 `take` 가 다시 잡는다.
+    // 이미 큰 파일은 상한만큼 읽기 전에 거절한다.
     if let Ok(meta) = file.metadata()
         && meta.len() > MAX_PACK_BYTES
     {
@@ -400,9 +310,7 @@ fn read_capped(path: &Path) -> Result<String, PackError> {
         });
     }
     let mut text = String::new();
-    // 판정 본체 — `metadata()` 크기를 믿지 않고 실제로 읽은 바이트로 자른다.
-    // 검사와 읽기 사이에 자라는 파일에도 상한이 성립하고, 크기를 보고하지 않는
-    // 파일(procfs 류)도 여기서 걸린다.
+    // metadata가 작거나 부정확해도 실제 읽기는 상한 + 1바이트로 제한한다.
     let read = file
         .take(MAX_PACK_BYTES + 1)
         .read_to_string(&mut text)
@@ -436,19 +344,9 @@ pub struct PackHead {
     pub font: FontDecl,
 }
 
-/// Extract the two things **discovery** needs from a pack manifest — `[meta] name`
-/// and `[font]`. Validation is identical to [`load_pack`], so "listed in the combo"
-/// still means "will load".
-///
-/// This is not a partial read: the file is read whole (under [`MAX_PACK_BYTES`])
-/// and the TOML is parsed to the end, exactly as [`load_pack`] does. What it skips
-/// is the flatten — walking every string leaf into an owned `HashMap`.
-///
-/// Kept separate from [`load_pack`] because the settings combo scans every pack in
-/// `~/.tasty/lang/` synchronously on the render thread the first time the window
-/// opens, and it needs two values out of a file that may hold thousands of keys.
-/// Going through `load_pack` there flattened every string leaf into an owned
-/// `HashMap` and then dropped it — work proportional to the pack, thrown away.
+/// Read and validate the pack metadata needed for discovery: meta.name and font.
+/// The whole bounded file is parsed, but translation strings are not flattened.
+/// Pack validation rules are shared with load_pack.
 pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
     let table = parse_manifest(path)?;
     let font = match table.get("font") {
@@ -461,21 +359,11 @@ pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
     })
 }
 
-/// Read and validate `path` as the pack manifest of `code`. The `[font]` section
-/// is mandatory; `[meta] name` is optional. Every other string leaf becomes a
-/// translation key, overlaid on the English base at load time.
-///
-/// This is the **load** path — it produces the string table. Discovery needs only
-/// the two header values and must use [`load_pack_head`] instead.
-///
-/// A **blank value counts as "not translated"** and is dropped, so the English
-/// base shows through instead of a label-less button. A pack author leaving a key
-/// empty is the common case and a blank string on screen is hard to trace back to
-/// a key; deliberately blank text is rare and can still be written with a
-/// zero-width character (U+200B), which the trim does not eat — a no-break space
-/// would not do, since `str::trim` takes every Unicode `White_Space` char
-/// including U+00A0. Same rule as [`meta_name`] and [`non_empty_str`], which
-/// already reject blanks, and as the user override in [`Translations::apply_user_override`].
+/// Load a pack with a required font declaration and optional meta.name.
+/// String values outside font become translation keys over the English base.
+/// Empty or Unicode-whitespace-only values keep the lower translation layer.
+/// U+200B can represent intentionally blank text; U+00A0 is trimmed.
+/// Discovery uses load_pack_head to avoid building this string table.
 pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     let mut table = parse_manifest(path)?;
     let font = match table.get("font") {
@@ -483,8 +371,6 @@ pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
         Some(font) => parse_font_decl(font)?,
     };
     let display_name = meta_name(&table);
-    // 파싱한 테이블을 그대로 소비한다 — 예전에는 `table.clone()` 으로 문서 전체를
-    // 한 번 더 복제한 뒤 그 사본에서 `font` 만 지웠다.
     table.remove("font");
     let mut strings = HashMap::new();
     flatten_catalog_toml("", &toml::Value::Table(table), &mut strings);
@@ -502,24 +388,15 @@ pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     })
 }
 
-/// Remove keys whose value is blank (empty or whitespace only) and return how many
-/// were dropped. Used by **both** user-authored overlays — a pack ([`load_pack`])
-/// and a built-in override ([`Translations::builtin_strings`]) — so the same input
-/// means the same thing whichever file it was written in. The dropped key then
-/// resolves on the layer below: the English base for a pack, the built-in language
-/// for an override. See [`load_pack`] for why blank means "not translated".
+/// Remove empty or whitespace-only values and return the count. Packs and
+/// overrides share this rule, preserving their respective lower translation layers.
 fn drop_blank_values(strings: &mut HashMap<String, String>) -> usize {
     let before = strings.len();
     strings.retain(|_, v| !v.trim().is_empty());
     before - strings.len()
 }
 
-/// [`drop_blank_values`] plus the one warn line the two load paths owe the user.
-///
-/// `origin` names the file, `fallback` what shows through instead — that is the
-/// only thing that differs between a pack (English base) and a user override (the
-/// built-in language). Keeping both callers on one helper is why the rule cannot
-/// drift apart again the way it did once.
+/// Remove blank values and warn with the source file and fallback behavior.
 fn drop_blank_values_warned(map: &mut HashMap<String, String>, origin: &str, fallback: &str) {
     let blank = drop_blank_values(map);
     if blank > 0 {
@@ -586,8 +463,6 @@ fn parse_font_candidates(value: &toml::Value) -> Result<Vec<String>, PackError> 
     Ok(out)
 }
 
-// ── load report ─────────────────────────────────────────────────────────────
-
 /// How the requested language was resolved at load time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadOutcome {
@@ -642,14 +517,7 @@ impl LoadReport {
     }
 }
 
-// ── translation store ───────────────────────────────────────────────────────
-
-/// `namespaces` RwLock 의 poison 을 보고했는가(첫 1 회만).
-///
-/// 임계구역이 `HashMap` insert/remove/조회뿐이라 락을 든 채 죽은 스레드가 불변식을
-/// 깨지 않는다 — 복구가 맞다. 조용히 삼키면(`if let Ok`) read 쪽은 번역 조회가 통째로
-/// 건너뛰어져 사용자가 키를 그대로 보고, write 쪽은 namespace 등록/해제가 무음으로
-/// 유실돼 그 plugin 의 문자열이 전부 키로 노출된다.
+/// namespace 락의 poison은 한 번 보고하고 복구한다. 임계구역은 메모리 맵의 조회·변경이다.
 static NAMESPACES_POISONED: AtomicBool = AtomicBool::new(false);
 const NAMESPACES_WHAT: &str = "i18n plugin namespace overlays";
 
@@ -769,16 +637,8 @@ impl Translations {
         (strings, outcome)
     }
 
-    /// Overlay `<dir>/<code>.toml` onto `strings`. Returns the path when the file
-    /// was there and parsed — a missing or broken file leaves `strings` untouched.
-    ///
-    /// The overlay obeys the same **blank means "not translated"** rule as a pack
-    /// ([`load_pack`]) — the reason is the layer below, not the file shape: a blank
-    /// value that reaches the table paints a label-less button, and nothing on
-    /// screen says which key emptied it. What shows through differs, though. A pack
-    /// sits on the English base, so a dropped key falls back to English; an
-    /// override sits on the built-in `code` overlay, so a dropped key keeps **that
-    /// language's** own text.
+    /// Overlay a built-in language file. Missing or invalid files leave strings unchanged.
+    /// Blank values preserve the built-in language text.
     fn apply_user_override(
         strings: &mut HashMap<String, String>,
         dir: &Path,
@@ -816,9 +676,7 @@ impl Translations {
         lang_dir: Option<&Path>,
     ) -> Result<(HashMap<String, String>, LoadOutcome), LoadOutcome> {
         let Some(dir) = lang_dir else {
-            // 홈(데이터 루트)을 못 구하면 사용자 언어팩도 없다. 프로세스 CWD 의 `lang/`
-            // 을 읽으면 tasty 를 어디서 띄웠는지에 따라 UI 문자열이 바뀌고, CWD 를 보지
-            // 않는 `scan_languages` 와 규칙이 갈려 "목록에 있으면 로드된다" 가 깨진다.
+            // 홈을 찾지 못해도 CWD의 lang을 대신 읽지 않는다. 실행 위치에 따라 번역이 바뀌면 안 된다.
             return Err(LoadOutcome::PackMissing {
                 expected: pack_path(Path::new(UNKNOWN_LANG_DIR), code),
             });
@@ -973,12 +831,8 @@ impl Translations {
     }
 }
 
-/// Read a user TOML file. `Ok(None)` when it does not exist; `Err` for any
-/// other I/O failure or a parse error (the caller decides how loud to be).
-///
-/// Subject to the same [`MAX_PACK_BYTES`] limit as a pack — a built-in override
-/// (`~/.tasty/lang/<builtin>.toml`) is a user-placed file of the same shape, so
-/// leaving it uncapped would just move the unbounded read one path over.
+/// Read user TOML under MAX_PACK_BYTES. Missing files return Ok(None);
+/// other read or parse failures return Err for the caller to report.
 fn read_user_toml(path: &Path) -> Result<Option<toml::Value>, String> {
     if !path.exists() {
         return Ok(None);
@@ -998,11 +852,8 @@ fn leak_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
 
-// ── discovery ───────────────────────────────────────────────────────────────
-
-/// Languages the settings combo can offer: the built-ins (marking those with a
-/// user override) followed by every valid pack under `~/.tasty/lang/`, sorted by
-/// code. Same rules as [`init`], so what is listed is what will load.
+/// List built-ins, their valid overrides, and valid packs sorted by code.
+/// Pack metadata uses the same validation as init; file changes can affect later loading.
 pub fn available_languages() -> Vec<LanguageEntry> {
     scan_languages(user_lang_dir().as_deref())
 }
@@ -1131,7 +982,6 @@ fn pack_entry(dir: &Path, code: &str) -> Option<LanguageEntry> {
         tracing::warn!("i18n: {} ignored — {reason}", path.display());
         return None;
     }
-    // 발견은 `[meta]`/`[font]` 만 필요하다 — 문자열 키를 flatten 하지 않는다.
     match load_pack_head(&path) {
         Ok(head) => Some(LanguageEntry {
             code: code.to_string(),
@@ -1149,8 +999,6 @@ fn pack_entry(dir: &Path, code: &str) -> Option<LanguageEntry> {
         }
     }
 }
-
-// ── global API ──────────────────────────────────────────────────────────────
 
 /// Initialize the global translation store. Call once at startup. Returns what
 /// was loaded; on a missing/invalid language pack the table is English and the
@@ -1242,10 +1090,7 @@ mod tests {
 
     /// 테스트 전용 임시 디렉토리 (프로세스 id + 단조 카운터로 유일).
     fn temp_dir(tag: &str) -> PathBuf {
-        // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
-        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
-        // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
-        // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+        // 시각 해상도에 의존하지 않도록 PID와 단조 카운터로 임시 경로를 구분한다.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "tasty-i18n-{tag}-{}-{}",
@@ -1266,9 +1111,6 @@ mod tests {
     const YY_PACK_NO_FONT: &str = "[meta]\nname = \"Yy\"\n\n[button]\nok = \"YY\"\n";
     const BAD_PACK: &str = "[font\nbuiltin = true\n";
 
-    /// 완료 확인 시나리오: xx(정상 팩) · yy(font 없음) · ko.toml(내장 오버라이드) ·
-    /// zz.toml(단일 파일 새 코드) · bad(깨진 TOML) → 목록에는 xx 만 팩으로 오르고 ko 는
-    /// builtin+override, yy/zz/bad 는 제외.
     fn scenario_dir() -> PathBuf {
         let dir = temp_dir("scenario");
         write(dir.join("xx").join("pack.toml"), XX_PACK);
@@ -1312,23 +1154,17 @@ mod tests {
 
     #[test]
     fn load_from_without_a_data_root_never_reads_a_cwd_relative_pack() {
-        // 데이터 루트를 못 구하면 사용자 팩도 없다. 프로세스 CWD 의 `lang/<code>/pack.toml`
-        // 을 읽으면 실행 위치가 UI 문자열을 바꾸고, CWD 를 보지 않는 목록 API 와 규칙이
-        // 갈려 "목록에 있으면 로드된다" 가 깨진다.
         let (tr, report) = Translations::load_from("qq", None);
         assert_eq!(tr.language, "en");
         let LoadOutcome::PackMissing { expected } = &report.outcome else {
             panic!("expected PackMissing, got {:?}", report.outcome);
         };
         assert!(expected.starts_with(UNKNOWN_LANG_DIR), "{expected:?}");
-        // 목록도 같은 규칙 — 내장 외에는 아무것도 보이지 않는다.
         assert!(scan_languages(None).iter().all(|l| l.path.is_none()));
     }
 
     #[test]
     fn toast_reason_is_a_single_short_line() {
-        // toml 파서 원문은 여러 줄 ASCII 아트라 그대로 토스트에 넣으면 200자 상한에서
-        // 행동 지시가 잘린다. 요약은 첫 줄만, 상세는 로그(`warn_fallback`)로 간다.
         let dir = scenario_dir();
         let (_, report) = Translations::load_from("bad", Some(&dir));
         let LoadOutcome::PackInvalid { error, .. } = &report.outcome else {
@@ -1358,8 +1194,6 @@ mod tests {
         );
     }
 
-    /// 토스트가 200자 캡에 잘리면 호스트가 "(character limit)" 접미를 붙이고 **경로가
-    /// 사라진다**. 경로만 가운데를 생략해 캡 안에 들어가야 한다.
     #[test]
     fn warning_with_a_very_long_path_stays_under_the_toast_cap() {
         let deep: String = std::iter::repeat_n("verylongsegment", 40)
@@ -1388,9 +1222,6 @@ mod tests {
         );
     }
 
-    /// 실패 사유는 경로가 아니라 **경로를 품은 문장**이다. 호스트의 잘림은 꼬리를
-    /// 버리는데(`truncate_message`), 사유의 꼬리가 바로 OS 에러 — 왜 실패했는지다.
-    /// 가운데 생략은 어느 파일인지(머리)와 왜인지(꼬리)를 둘 다 남긴다.
     #[test]
     fn a_long_failure_reason_keeps_both_the_target_and_the_os_error() {
         let deep: String = std::iter::repeat_n("verylongsegment", 40)
@@ -1416,41 +1247,8 @@ mod tests {
         assert_eq!(msg, "pack at /home/u/.tasty/lang/zz/pack.toml");
     }
 
-    /// 이 단정 하나가 **명제 다섯**을 함께 태운다. 곱인 것이 결함이 아니라 **여기서는
-    /// 그것이 요점**이다 — 쪼개면 잃는 것이 있다.
-    ///
-    /// 실측(2026-09-07, 변이 하나씩 · `-p tasty-i18n --lib` 31 건 기준):
-    ///
-    /// ```text
-    /// M1 개수     BUILTIN_CODES 에서 ja 제거          죽는다 (동반 3)
-    /// M2 순서     ko 와 ja 를 맞바꿈                  죽는다 (동반 2)
-    /// M3 팔 매핑  `"ja"` 팔이 en.toml 을 가리킴       죽는다 (**혼자**, 1 failed)
-    /// M4 meta 값  lang/ja.toml 의 name 을 바꿈        죽는다 (**혼자**, 1 failed)
-    /// M5 추출     meta_name 이 늘 None                죽는다 (동반 3)
-    /// ```
-    ///
-    /// M1·M2·M5 는 다른 시험도 함께 죽으므로 그 축에는 다른 그물이 있다. **M3·M4 는 이
-    /// 시험만 죽는다** — 그 둘의 유일한 그물이다.
-    ///
-    /// # 쪼개면 무엇을 잃는가 — 시뮬레이션으로 쟀다
-    ///
-    /// "목록 축"(`BUILTIN_CODES` 가 `["en","ko","ja"]` 인가)과 "이름 축"(`lang/<code>.toml` 의
-    /// `[meta].name` 이 기대값인가)으로 쪼갠 판을 임시로 세우고 M3 을 걸었다:
-    ///
-    /// ```text
-    /// split_sim_list_axis  ... ok        ← 목록은 맞다
-    /// split_sim_name_axis  ... ok        ← 파일 안의 이름도 맞다
-    /// (이 시험)            ... FAILED    ← 그런데 ja 자리에 English 가 왔다
-    /// ```
-    ///
-    /// ⇒ **두 축이 각각 옳은데 교차가 틀린 상태**를 쪼갠 판은 못 본다. 잃는 것은 축이
-    /// 아니라 **축들의 교차**다: *목록은 맞는데 이름이 엉뚱한 파일에서 왔다.*
-    ///
-    /// 그래서 이 단정은 곱인 채로 둔다. 쪼개려는 안은 그 교차를 무엇이 지킬지를 함께
-    /// 내야 하고, 못 내면 쪼개지 않는 것이 맞다.
-    /// ☆ 곁 증거: 이 교차 검사가 `builtin_toml` 을 코드별로 확인하는 별도 시험(정본에
-    ///   적힌 코드가 전부 `is_some()` 인가)을 **지배**한다. 그 시험은 팔이 틀린 파일을
-    ///   가리키는 M3 을 못 잡아서, 세웠다가 몫이 0 으로 나와 접었다.
+    /// 코드·순서·표시 이름을 함께 대조한다. 목록과 파일을 따로 검사하면
+    /// ja 코드가 en.toml을 읽는 식의 잘못된 연결을 놓칠 수 있다.
     #[test]
     fn scan_without_user_dir_lists_builtins_with_meta_names() {
         let list = scan_languages(None);
@@ -1466,7 +1264,6 @@ mod tests {
             dir.join("qq").join("pack.toml"),
             "[font]\nfamily = \"Noto Sans\"\n\n[button]\nok = \"Q\"\n",
         );
-        // 내장 코드 이름의 디렉토리는 팩이 아니다 — 목록에 오르지 않는다.
         write(dir.join("ko").join("pack.toml"), XX_PACK);
         let list = scan_languages(Some(&dir));
         let qq = list.iter().find(|l| l.code == "qq").expect("qq listed");
@@ -1501,7 +1298,6 @@ mod tests {
                     "Noto Sans".to_string(),
                 ])),
             ),
-            // builtin = true 가 다른 키보다 우선한다.
             (
                 "[font]\nbuiltin = true\nfile = \"fonts/x.ttf\"\n",
                 Ok(FontDecl::Builtin),
@@ -1551,9 +1347,7 @@ mod tests {
         let dir = scenario_dir();
         let (tr, report) = Translations::load_from("xx", Some(&dir));
         assert_eq!(tr.get("button.ok"), "OKAY-XX");
-        // 팩에 없는 키는 영어 베이스.
         assert_eq!(tr.get("app.name"), "Tasty");
-        // [meta] 는 문자열 키로도 조회된다, [font] 는 문자열 테이블에 들어가지 않는다.
         assert_eq!(tr.get("meta.name"), "Xx Lang");
         assert_eq!(tr.get("font.builtin"), "font.builtin");
         assert_eq!(tr.language, "xx");
@@ -1571,16 +1365,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 같은 입력을 **두 로드 경로에 각각** 넣어 결과가 갈리지 않는지 본다.
-    ///
-    /// 한쪽만 검사하면 이 결함을 못 잡는다 — 실제로 팩 쪽에는 가드가 있었는데
-    /// override 쪽에는 없어서 같은 `key = ""` 가 한쪽에선 폴백, 다른 쪽에선 화면의
-    /// 빈칸이 됐다. 두 경로의 **폴백 대상은 다르다**(팩=영어 베이스, override=그 내장
-    /// 언어). 같아야 하는 것은 "빈 값이 문자열 테이블에 도달하지 않는다" 쪽이다.
+    /// 팩과 내장 override 모두 빈 값을 버리되 각각 영어·내장 언어로 돌아가는지 대조한다.
     #[test]
     fn a_blank_value_means_the_same_thing_in_a_pack_and_in_an_override() {
         let dir = temp_dir("blank-symmetry");
-        // 같은 본문: ok 는 채우고, cancel·save 는 비운다.
         let body = "[button]\nok = \"OK-EDIT\"\ncancel = \"\"\nsave = \"   \"\n";
         write(
             pack_path(&dir, "bl"),
@@ -1598,11 +1386,9 @@ mod tests {
             "override 경로를 실제로 지나야 이 테스트가 의미가 있다"
         );
 
-        // 채운 값은 양쪽 다 그대로 반영된다(가드가 멀쩡한 값까지 걷어내지 않는다).
         for (label, tr) in [("pack", &pack_tr), ("override", &ovr_tr)] {
             assert_eq!(tr.get("button.ok"), "OK-EDIT", "{label}");
         }
-        // 비운 값은 양쪽 다 화면에 도달하지 않는다 — 이것이 통일된 규칙이다.
         for (label, tr) in [("pack", &pack_tr), ("override", &ovr_tr)] {
             for key in ["button.cancel", "button.save"] {
                 assert!(
@@ -1611,19 +1397,13 @@ mod tests {
                 );
             }
         }
-        // 아래 층이 다르므로 보이는 문자열도 다르다: 팩은 영어, override 는 그 내장 언어.
         assert_eq!(pack_tr.get("button.cancel"), "Cancel");
         assert_eq!(ovr_tr.get("button.cancel"), "취소");
         assert_eq!(ovr_tr.get("button.save"), "저장");
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 문서가 안내하는 탈출구가 **실제로 trim 을 통과하는지.**
-    ///
-    /// `str::trim` 은 유니코드 `White_Space` 를 먹는다. NBSP(U+00A0)와 FIGURE
-    /// SPACE(U+2007)는 그 속성을 가지므로 "공백처럼 보이지만 안 먹힌다" 가 아니다 —
-    /// 예전 문서가 NBSP 를 예로 들었는데 그대로 따라 하면 값이 그냥 사라진다.
-    /// 실제로 남는 것은 `White_Space` 가 아닌 zero-width 계열이다.
+    /// Unicode White_Space는 제거하고 U+200B/U+2060은 유지한다.
     #[test]
     fn the_documented_escape_hatch_survives_the_trim() {
         for eaten in ["", " ", "\t", "\u{00A0}", "\u{2007}", "\u{3000}"] {
@@ -1645,7 +1425,6 @@ mod tests {
             "[font]\nbuiltin = true\n\n[button]\nok = \"OK-BL\"\ncancel = \"\"\nsave = \"   \"\n",
         );
         let pack = load_pack(&pack_path(&dir, "bl"), "bl").unwrap();
-        // 빈/공백 값은 팩 오버레이에서 빠진다.
         assert_eq!(
             pack.strings.get("button.ok").map(String::as_str),
             Some("OK-BL")
@@ -1655,7 +1434,6 @@ mod tests {
 
         let (tr, report) = Translations::load_from("bl", Some(&dir));
         assert_eq!(tr.get("button.ok"), "OK-BL");
-        // 화면에 빈 라벨이 아니라 영어가 나온다.
         assert_eq!(tr.get("button.cancel"), "Cancel");
         assert_eq!(tr.get("button.save"), "Save");
         assert!(!report.fell_back());
@@ -1665,7 +1443,6 @@ mod tests {
     #[test]
     fn load_from_missing_pack_falls_back_to_english_and_reports() {
         let dir = scenario_dir();
-        // zz.toml(단일 파일)만 있고 zz/pack.toml 은 없다 → 새 코드에 단일 파일은 팩이 아니다.
         let (tr, report) = Translations::load_from("zz", Some(&dir));
         assert_eq!(tr.language, "en");
         assert_eq!(tr.get("app.name"), "Tasty");
@@ -1681,7 +1458,6 @@ mod tests {
         );
         assert!(report.user_warning().is_some());
 
-        // 파일이 아예 없는 코드도 같은 경로.
         let (_, report) = Translations::load_from("nn", Some(&dir));
         assert_eq!(
             report.outcome,
@@ -1689,7 +1465,6 @@ mod tests {
                 expected: pack_path(&dir, "nn"),
             }
         );
-        // 사용자 디렉토리를 알 수 없어도 폴백은 성립한다.
         let (tr, report) = Translations::load_from("nn", None);
         assert_eq!(tr.language, "en");
         assert!(matches!(report.outcome, LoadOutcome::PackMissing { .. }));
@@ -1738,14 +1513,12 @@ mod tests {
         assert!(!report.fell_back());
         assert_eq!(report.user_warning(), None);
 
-        // 오버라이드 파일이 깨졌으면 내장 문자열 그대로 + Builtin 판정.
         write(dir.join("ja.toml"), BAD_PACK);
         let (tr, report) = Translations::load_from("ja", Some(&dir));
         assert_eq!(tr.language, "ja");
         assert_eq!(report.outcome, LoadOutcome::Builtin);
         assert_eq!(tr.get("button.ok"), "OK");
 
-        // 내장 코드에는 디렉토리 팩이 적용되지 않는다.
         write(dir.join("en").join("pack.toml"), XX_PACK);
         let (tr, report) = Translations::load_from("en", Some(&dir));
         assert_eq!(tr.get("button.ok"), "OK");
@@ -1755,14 +1528,12 @@ mod tests {
 
     #[test]
     fn namespace_register_lookup() {
-        // 직접 Translations 인스턴스로 테스트 (전역 OnceLock와 격리)
         let tr = Translations {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "en".to_string(),
             user_lang_dir: None,
         };
-        // 임시 lang dir 없이 직접 namespace 삽입해 lookup만 확인
         {
             let mut ns = tr.namespaces.write().unwrap();
             let mut m: HashMap<String, &'static str> = HashMap::new();
@@ -1829,7 +1600,6 @@ mod tests {
 
     #[test]
     fn register_namespace_from_lang_dir() {
-        // 임시 디렉토리에 en.toml/ko.toml 만들어서 register_namespace 검증
         let tmp = temp_dir("ns");
         std::fs::write(
             tmp.join("en.toml"),
@@ -1845,20 +1615,13 @@ mod tests {
             user_lang_dir: None,
         };
         tr.register_namespace("com.example.x", &tmp);
-        // ko에서 정의된 키
         assert_eq!(tr.get("plugin.x.title"), "새로고침");
-        // en에만 있는 키는 fallback으로 노출
         assert_eq!(tr.get("plugin.x.body"), "OnlyEn");
 
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// plugin 네임스페이스의 빈 값도 **번역 없음**이다 — 아래 층인 그 plugin 의 영어
-    /// 문자열이 보인다.
-    ///
-    /// 팩과 내장 오버라이드는 이미 이 규칙을 따른다(docs/dev-guide/i18n.md#언어팩-tastylangcodepacktoml). 네임스페이스만 빠져
-    /// 있으면 같은 실수가 plugin 에서만 라벨 없는 버튼이 되고, 규칙을 한 줄로 적을 수
-    /// 없어 다음 사람은 먼저 읽은 쪽을 믿는다.
+    /// 플러그인의 빈 번역도 영어 기본값을 유지한다.
     #[test]
     fn blank_namespace_values_fall_back_to_the_plugin_english_string() {
         let tmp = temp_dir("ns-blank");
@@ -1867,7 +1630,6 @@ mod tests {
             "[plugin.x]\ntitle = \"Refresh\"\nbody = \"Reload the view\"\n",
         )
         .unwrap();
-        // ko 가 body 를 비워 뒀다 — 번역을 잊은 흔한 형태.
         std::fs::write(
             tmp.join("ko.toml"),
             "[plugin.x]\ntitle = \"새로고침\"\nbody = \"\"\n",
@@ -1892,8 +1654,7 @@ mod tests {
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// 폭 0 문자는 빈 값이 아니다 — 일부러 비운 텍스트의 탈출구(docs/dev-guide/i18n.md#언어팩-tastylangcodepacktoml)가
-    /// 네임스페이스에서도 같아야 한다.
+    /// 의도적으로 빈 문자를 나타내는 U+2060은 플러그인 번역에서도 유지한다.
     #[test]
     fn zero_width_namespace_values_survive_the_blank_rule() {
         let tmp = temp_dir("ns-zw");
@@ -1919,10 +1680,7 @@ mod pack_size_and_discovery_tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
-        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
-        // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
-        // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+        // 시각 해상도에 의존하지 않도록 PID와 단조 카운터로 임시 경로를 구분한다.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "tasty-i18n-{tag}-{}-{}",
@@ -2004,7 +1762,6 @@ mod pack_size_and_discovery_tests {
         let (tr, report) = Translations::load_from("big", Some(&dir));
         assert_eq!(tr.language, "en");
         assert_eq!(tr.get("button.ok"), "OK");
-        // 요청 코드는 그대로 보고된다 — 설정값을 덮어쓰지 않는다는 계약의 관측점.
         assert_eq!(report.requested, "big");
         assert_eq!(report.effective, "en");
         assert!(report.fell_back());
@@ -2021,7 +1778,6 @@ mod pack_size_and_discovery_tests {
 
     #[test]
     fn a_pack_just_under_the_limit_still_loads() {
-        // 상한이 정상 팩을 자르지 않는다는 반대편 — 가장 큰 내장 파일의 23 배까지 통과.
         let dir = temp_dir("justunder");
         let path = dir.join("ok").join("pack.toml");
         write(
@@ -2038,7 +1794,6 @@ mod pack_size_and_discovery_tests {
     #[test]
     fn the_builtin_override_file_is_capped_too() {
         let dir = temp_dir("override-big");
-        // `<builtin>.toml` 도 사용자가 놓는 파일이다 — 여기만 열어두면 상한이 무의미하다.
         write(
             dir.join("ko.toml"),
             &pack_of_size(MAX_PACK_BYTES as usize + 4096),
@@ -2057,8 +1812,7 @@ mod pack_size_and_discovery_tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// "목록에 오르면 로드된다" — 발견(head)과 로드(full)의 수락/거절 판정이 같아야 한다.
-    /// 경량 경로를 따로 두면서 이 등가성이 깨지는 것이 가장 실질적인 회귀다.
+    /// 같은 입력의 발견/로드 판정을 대조한다.
     #[test]
     fn the_discovery_path_accepts_and_rejects_exactly_what_the_load_path_does() {
         let dir = temp_dir("parity");
@@ -2090,12 +1844,10 @@ mod pack_size_and_discovery_tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 발견이 문자열 키를 **하나도** flatten 하지 않는다 — 이 티켓의 비용 축 자체.
-    /// 시간이 아니라 호출 사실로 본다(시간 비교는 부하에 흔들려 회귀 신호가 못 된다).
+    /// 실행 시간 대신 호출 횟수로 발견 과정에서 문자열을 펼치지 않는지 확인한다.
     #[test]
     fn discovery_never_flattens_the_string_table() {
         let dir = temp_dir("cost");
-        // 팩 3 개 — 스캔이 전부를 훑는데도 flatten 이 0 이어야 한다.
         for code in ["aa", "bb", "cc"] {
             write(dir.join(code).join("pack.toml"), &pack_of_size(256 * 1024));
         }
@@ -2112,7 +1864,7 @@ mod pack_size_and_discovery_tests {
             "발견이 문자열을 flatten 했다 — `pack_entry` 가 `load_pack` 으로 되돌아갔다"
         );
 
-        // 반대편: 실제 로드는 flatten 한다(계수기가 살아 있다는 것도 함께 확인).
+        // 실제 로드는 계수를 늘려, 계수기 자체가 동작하는지도 확인한다.
         flatten_probe::reset();
         load_pack(&dir.join("aa").join("pack.toml"), "aa").unwrap();
         assert!(flatten_probe::count() > 0);

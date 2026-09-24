@@ -1,16 +1,6 @@
-//! IPC 명령을 **큐에서 꺼낸 쪽**의 누계 — dispatch 회차가 어디서 멈췄는가, 기한이 지나 실행하지
-//! 않은 명령이 몇인가, 그리고 지금 **실행 중인(in-flight)** 요청이 몇인가.
-//!
-//! 큐에 든 쪽은 입장 장부([`crate::admission::CommandAdmission`])가 센다. 이 모듈은 그 반대편,
-//! 메인 스레드가 한 회차에 명령을 꺼내다가 **왜 멈췄는가**를 센다. 회차는 셋 중 하나로 끝난다 —
-//! 큐가 비었다, 명령 수 예산에 닿았다, 시간 예산에 닿았다. 뒤의 둘은 "큐를 다 비우지 못했을 수
-//! 있다" 는 신호다. **"못 비웠다" 는 아니다** — 예산에 닿은 순간 큐를 더 들여다보지 않으므로 큐가
-//! 마침 비어 있었는지는 모른다. 남은 것이 있었는지는 입장 장부의 `queued_commands` 가 답한다.
-//!
-//! 원자값 일곱이고 호출 수와 무관하게 자라지 않는다. 저장소를 거치지 않는다([docs/architecture/ipc-server.md#요청-압력-게이지] 와 같은
-//! 축이다 — caller 로 나누지 않는 프로세스 게이지).
-//!
-//! [docs/architecture/ipc-server.md#요청-압력-게이지]: ../../../docs/architecture/ipc-server.md#요청-압력-게이지
+//! dispatch 회차·실행 전 만료·in-flight 요청을 센다.
+//! 예산에 도달해 회차를 멈췄다는 사실만으로 큐에 잔여 요청이 있다고 단정하지 않는다.
+//! 대기 중인 요청은 admission 장부가, 시작된 요청은 FlightTicket이 센다.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -41,8 +31,7 @@ pub struct DispatchStats {
 }
 
 impl DispatchStats {
-    /// 명령을 하나 이상 꺼낸 회차 하나를 센다. 빈 회차는 부르지 않는다 — `queue_before_gate`
-    /// 의 `drains` 와 같은 모수다.
+    /// 명령을 하나 이상 꺼낸 회차를 센다. queue_before_gate.drains와 같은 대상이다.
     pub fn record_round(&self, end: RoundEnd) {
         self.rounds.fetch_add(1, Ordering::Relaxed);
         match end {
@@ -62,10 +51,8 @@ impl DispatchStats {
         self.expired_before_run.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// 명령 하나가 실행을 시작했다 — in-flight 가 하나 는다. 표가 버려질 때 준다.
-    ///
-    /// 표는 명령의 실행 상태 칸(`crate::server::CommandLifecycle`)에 실려, 그 칸을 든 마지막
-    /// 쪽이 놓을 때 버려진다 — 소켓·주입 경로에서는 **응답을 기다리던 쪽이 돌아갈 때**다.
+    /// 실행 시작 시 in-flight를 늘리는 ticket을 반환한다. CommandLifecycle의
+    /// 마지막 보유자가 놓을 때 줄어든다. 응답 대기자가 먼저 떠나도 명령이 보유하면 유지된다.
     pub(crate) fn begin_flight(self: &Arc<Self>) -> FlightTicket {
         self.started.fetch_add(1, Ordering::Relaxed);
         let now = self.in_flight.fetch_add(1, Ordering::Relaxed) + 1;
@@ -97,9 +84,7 @@ pub struct FlightTicket {
 
 impl Drop for FlightTicket {
     fn drop(&mut self) {
-        // 표 하나당 한 번만 버려지므로 0 아래로 갈 길이 없다. 그래도 포화 뺄셈으로 둔다 —
-        // 게이지가 u64 최댓값으로 감기면 그 값을 읽는 쪽이 원인을 못 가른다. 클로저가 늘
-        // `Some` 을 돌려주므로 `Err` 갈래는 없다.
+        // 이미 0이면 줄이지 않고 경고해 unsigned wraparound를 피한다.
         if let Err(v) =
             self.stats
                 .in_flight
@@ -139,11 +124,7 @@ pub struct DispatchSnapshot {
     pub in_flight_max: u64,
 }
 
-/// 명령 큐의 한 시점 — 큐에 **든** 쪽(입장 장부)과 큐에서 **꺼낸** 쪽(dispatch 누계)을 한 번에
-/// 읽는다. 진단 응답이 읽을 자리다.
-///
-/// 입장 장부의 값을 여기서 다시 정의하지 않는다 — 바이트의 뜻과 반납 시점은
-/// [`crate::admission`] 이 정본이고, 이 타입은 그 스냅샷을 그대로 싣는다.
+/// 큐 입장 장부와 dispatch 통계를 함께 제공한다. 각 원천의 의미는 그대로 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CommandQueueSnapshot {
     /// 큐에 든 바이트·명령 수·거절 누계. 서버가 안 뜬 조립이면 `None`.

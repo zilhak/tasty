@@ -1,4 +1,4 @@
-//! tasty-memory unit tests — 원본 lib.rs 의 `#[cfg(test)] mod tests` 분리.
+//! 메모리 저장소의 권한·quota·만료·SQL 설정 시험.
 
 use super::*;
 
@@ -136,10 +136,8 @@ fn regular_owned_by_other_on_update() {
     };
     assert_eq!(owner, PLUGIN_A);
 
-    // 원래 owner는 정상.
     s.put(PLUGIN_A, &scope, "k", &text("v3"), &PutOpts::default())
         .unwrap();
-    // _host는 root로 통과.
     s.put(HOST_OWNER, &scope, "k", &text("v4"), &PutOpts::default())
         .unwrap();
 }
@@ -154,7 +152,6 @@ fn regular_owned_by_other_on_delete() {
     let err = s.delete(PLUGIN_B, &scope, "k", None).unwrap_err();
     assert!(matches!(err, MemoryError::OwnedByOther { .. }));
 
-    // _host는 root로 통과해 삭제 가능.
     s.delete(HOST_OWNER, &scope, "k", None).unwrap();
     assert!(s.get(&scope, "k").unwrap().is_none());
 }
@@ -165,7 +162,6 @@ fn read_is_shared_across_callers() {
     let scope = Scope::Global;
     s.put(PLUGIN_A, &scope, "k", &text("v"), &PutOpts::default())
         .unwrap();
-    // Plugin B도 읽을 수 있고, 응답에 owner=PLUGIN_A가 보인다.
     let entry = s.get(&scope, "k").unwrap().unwrap();
     assert_eq!(entry.owner.as_deref(), Some(PLUGIN_A));
 
@@ -174,16 +170,8 @@ fn read_is_shared_across_callers() {
     assert_eq!(list[0].owner.as_deref(), Some(PLUGIN_A));
 }
 
-/// owner 검사는 **이미 있는 행**만 지킨다 — 아직 없는 키는 누구든 만들 수 있고,
-/// 그러면 그 키의 owner 가 된다. 그래서 `tasty.audit.` 같은 호스트 namespace 는
-/// "호스트가 이미 쓴 키" 만 보호될 뿐, 그 옆에 새 키를 심는 것은 store 가 막지
-/// 않는다. 심은 행은 호스트 자신의 prefix 조회에 그대로 섞인다.
-///
-/// 이것을 막는 것은 store 가 아니라 IPC 핸들러의 예약 namespace 정책이다
-/// (`memory::HOST_KEY_NAMESPACE`, [docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다]). 그 전제를 여기 박아 둔다 — store 가
-/// 언젠가 namespace 를 직접 지키게 되면 이 테스트가 먼저 깨진다.
-///
-/// [docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다]: ../../../docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다
+/// 저장소는 기존 항목의 owner만 보호한다. 호스트 예약 namespace의 새 키 생성 제한은
+/// IPC 핸들러가 담당하며, 저장소만 직접 부르면 그런 키도 만들 수 있다.
 #[test]
 fn ownership_does_not_reserve_a_key_namespace() {
     let mut s = store();
@@ -197,7 +185,6 @@ fn ownership_does_not_reserve_a_key_namespace() {
     )
     .unwrap();
 
-    // 있는 행은 지켜진다.
     assert!(matches!(
         s.put(
             PLUGIN_A,
@@ -213,7 +200,6 @@ fn ownership_does_not_reserve_a_key_namespace() {
         Err(MemoryError::OwnedByOther { .. })
     ));
 
-    // 없는 키는 지켜지지 않는다 — 그리고 호스트의 prefix 조회에 섞인다.
     s.put(
         PLUGIN_A,
         &scope,
@@ -349,8 +335,7 @@ fn regular_quota_exceeded() {
     .unwrap();
 }
 
-/// `regular_used_bytes` 증분 카운터가 모든 변이 경로 후 실제 전체 스캔과 일치하는지
-/// (드리프트 회귀 가드). put(insert/update-grow/update-shrink)/delete/purge_scope 검증.
+/// 모든 변경 뒤 Regular 바이트 캐시를 실제 SUM(LENGTH(value))와 대조한다.
 #[test]
 fn regular_used_bytes_stays_consistent() {
     let mut s = store();
@@ -373,7 +358,6 @@ fn regular_used_bytes_stays_consistent() {
     .unwrap();
     assert_consistent(&s);
 
-    // update grow
     s.put(
         HOST_OWNER,
         &Scope::Global,
@@ -384,7 +368,6 @@ fn regular_used_bytes_stays_consistent() {
     .unwrap();
     assert_consistent(&s);
 
-    // update shrink
     s.put(
         HOST_OWNER,
         &Scope::Global,
@@ -408,7 +391,6 @@ fn regular_used_bytes_stays_consistent() {
     s.delete(HOST_OWNER, &Scope::Global, "a", None).unwrap();
     assert_consistent(&s);
 
-    // purge_scope 후에도 정합 (재계산 경로).
     s.purge_scope(&Scope::Surface(1)).unwrap();
     assert_consistent(&s);
     assert_eq!(s.regular_used_bytes, 0, "all entries removed → 0");
@@ -483,9 +465,7 @@ fn prune_prefix_keep_recent_caps_logs() {
     assert!(s.get(&Scope::Global, "tasty.audit.0007").unwrap().is_some());
     assert!(s.get(&Scope::Global, "tasty.audit.0006").unwrap().is_none());
     assert!(s.get(&Scope::Global, "tasty.audit.0000").unwrap().is_none());
-    // 비-로그 키 보존.
     assert!(s.get(&Scope::Global, "real.data").unwrap().is_some());
-    // 카운터 정합.
     assert_eq!(
         s.regular_used_bytes,
         MemoryStore::scan_regular_used(&s.conn)
@@ -519,7 +499,6 @@ fn prune_prefix_older_than_cuts_by_timestamp_in_key() {
         )
         .unwrap();
     }
-    // 다른 prefix 는 같은 ts 여도 건드리지 않는다.
     s.put(
         HOST_OWNER,
         &Scope::Global,
@@ -587,7 +566,6 @@ fn secret_quota_exceeded_per_owner() {
             ..
         }
     ));
-    // Plugin B 영역은 독립.
     s.put_secret(
         PLUGIN_B,
         &Scope::Global,
@@ -699,7 +677,6 @@ fn secret_isolated_between_owners() {
     let b = s.get_secret(PLUGIN_B, &scope, "tok").unwrap().unwrap();
     assert_eq!(b.value, text("B-token"));
 
-    // Plugin A가 자기 영역만 본다.
     let list_a = s
         .list_secret(PLUGIN_A, &scope, &ListOpts::default())
         .unwrap();
@@ -778,7 +755,6 @@ fn secret_stats_per_owner() {
     )
     .unwrap();
 
-    // stats 는 평문 byte 를 그대로 보고한다 (암호화 안 함).
     let a = s.stats_secret(PLUGIN_A, None).unwrap();
     assert_eq!(a.entries, 1);
     assert_eq!(a.bytes, 2);
@@ -820,7 +796,6 @@ fn purge_expired_removes_only_expired_rows() {
     let mut s = store();
     let scope = Scope::Workspace(1);
 
-    // 영구 entry
     s.put(
         PLUGIN_A,
         &scope,
@@ -829,7 +804,6 @@ fn purge_expired_removes_only_expired_rows() {
         &PutOpts::default(),
     )
     .unwrap();
-    // 이미 만료된 regular entry (expires_at = 과거)
     s.put(
         PLUGIN_A,
         &scope,
@@ -841,7 +815,6 @@ fn purge_expired_removes_only_expired_rows() {
         },
     )
     .unwrap();
-    // 만료된 secret entry
     s.put_secret(
         PLUGIN_B,
         &scope,
@@ -854,7 +827,6 @@ fn purge_expired_removes_only_expired_rows() {
     )
     .unwrap();
 
-    // read 시 expired 는 not-found
     assert!(s.get(&scope, "expired_reg").unwrap().is_none());
     assert!(
         s.get_secret(PLUGIN_B, &scope, "expired_sec")
@@ -898,7 +870,6 @@ fn purge_scope_clears_both_areas_for_that_scope_only() {
     s.put_secret(PLUGIN_B, &target, "sb", &text("z"), &PutOpts::default())
         .unwrap();
 
-    // 다른 scope 의 entry 는 건드리지 않는다
     s.put(PLUGIN_A, &other, "keep", &text("k"), &PutOpts::default())
         .unwrap();
 
@@ -938,7 +909,6 @@ fn put_records_created_then_updated_change() {
     assert_eq!(changes[0].kind, MemoryChangeKind::Updated);
     assert_eq!(changes[0].version, Some(v2));
 
-    // 두 번째 take 는 빈 vec
     assert!(s.take_pending_changes().is_empty());
 }
 
@@ -1020,14 +990,12 @@ fn list_supports_offset_limit_since_until() {
         s.put(PLUGIN_A, &scope, k, &text(k), &PutOpts::default())
             .unwrap();
     }
-    // 전체
     let all = s.list(&scope, &ListOpts::default()).unwrap();
     assert_eq!(
         all.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
         ["a", "b", "c", "d", "e"]
     );
 
-    // offset + limit
     let page = s
         .list(
             &scope,
@@ -1078,7 +1046,6 @@ fn query_filters_by_dot_path_equality() {
     .unwrap();
     s.put(PLUGIN_A, &scope, "t.3", &make("open"), &PutOpts::default())
         .unwrap();
-    // 텍스트 entry 는 query 에서 자동 제외
     s.put(
         PLUGIN_A,
         &scope,
@@ -1100,7 +1067,6 @@ fn query_filters_by_dot_path_equality() {
     keys.sort();
     assert_eq!(keys, ["t.1", "t.3"]);
 
-    // path 가 존재하지 않으면 0개
     let none = s
         .query(
             &scope,
@@ -1127,7 +1093,6 @@ fn export_and_import_roundtrip() {
         &PutOpts::default(),
     )
     .unwrap();
-    // Secret entry 가 있어도 export 에는 포함되지 않아야 한다
     s.put_secret(
         PLUGIN_A,
         &ws,
@@ -1141,22 +1106,18 @@ fn export_and_import_roundtrip() {
     assert_eq!(exported.len(), 2);
     assert!(exported.iter().all(|e| e.scope != "secret"));
 
-    // 다른 store 로 import
     let mut s2 = store();
     let stats = s2.import_regular(HOST_OWNER, &exported, false).unwrap();
     assert_eq!(stats.applied, 2);
     assert_eq!(stats.skipped, 0);
 
-    // 두 entry 모두 복원
     assert!(s2.get(&ws, "alpha").unwrap().is_some());
     assert!(s2.get(&sf, "beta").unwrap().is_some());
 
-    // 같은 store 에 다시 import (replace=false) → skip
     let stats = s2.import_regular(HOST_OWNER, &exported, false).unwrap();
     assert_eq!(stats.applied, 0);
     assert_eq!(stats.skipped, 2);
 
-    // replace=true → 모두 applied
     let stats = s2.import_regular(HOST_OWNER, &exported, true).unwrap();
     assert_eq!(stats.applied, 2);
     assert_eq!(stats.skipped, 0);
@@ -1184,10 +1145,7 @@ fn purge_scope_records_deleted_for_each_regular_key() {
     assert_eq!(changes[1].key, "b");
 }
 
-// ---- WAL 되감기 한도 ----
-//
-// 아래 세 테스트만 파일 기반 DB 를 쓴다(나머지는 인메모리) — WAL 은 파일이 있어야
-// 존재하고, 이 항목의 회귀는 "파일 크기" 로만 드러나기 때문이다.
+// WAL 파일 회수 시험은 in-memory가 아닌 임시 파일 DB를 사용한다.
 
 fn disk_store(dir: &std::path::Path) -> (MemoryStore, std::path::PathBuf) {
     let path = dir.join("memory.db");
@@ -1200,8 +1158,7 @@ fn wal_len(db_path: &std::path::Path) -> u64 {
     std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0)
 }
 
-/// 커밋 하나가 WAL 에 남기는 양을 키우려고 큰 값을 넣는다 — 기본 4KiB 페이지라
-/// 작은 값으로는 상한(4MiB)에 닿기까지 수천 커밋이 필요하다.
+/// 적은 commit으로 WAL 파일을 충분히 키우기 위해 큰 값을 저장한다.
 fn append_rows(s: &mut MemoryStore, scope: &Scope, from: usize, count: usize, bytes: usize) {
     let blob = "x".repeat(bytes);
     for i in from..from + count {
@@ -1226,8 +1183,7 @@ fn journal_size_limit_is_applied_to_disk_databases() {
         .unwrap();
     assert_eq!(limit, WAL_SIZE_LIMIT_BYTES);
 
-    // 상한이 autocheckpoint 임계(페이지 수 × page_size)와 같은 값이라는 것이
-    // 이 값을 고른 근거 자체다 — SQLite 기본값이 바뀌면 근거가 무너지므로 고정한다.
+    // 선택한 상한을 실제 SQLite 기본 페이지 수·페이지 크기와 대조한다.
     let pages: i64 = s
         .conn
         .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
@@ -1239,10 +1195,7 @@ fn journal_size_limit_is_applied_to_disk_databases() {
     assert_eq!(pages * page_size, WAL_SIZE_LIMIT_BYTES);
 }
 
-/// 실패·불일치가 **조용하지 않은가**. `tracing` 출력을 그대로 받아 본다.
-///
-/// 이 헬퍼가 없으면 "경고를 낸다" 가 소스를 읽어야만 보이는 주장으로 남는다.
-/// 같은 쓰임의 선례가 `crates/tasty-timer/src/waker_poison_tests.rs` 에 있다.
+/// 실제 tracing 경고를 캡처한다.
 fn captured_log(body: impl FnOnce()) -> String {
     use std::io::Write;
 
@@ -1275,11 +1228,7 @@ fn captured_log(body: impl FnOnce()) -> String {
     String::from_utf8(bytes).expect("UTF-8 log")
 }
 
-/// 읽기 전용 DB 에서 pragma 가 안 서는 것이 **관측된다**.
-///
-/// 이 갈래가 옛 코드에서 정확히 조용했다 — 세 pragma 를 `.ok()` 로 버렸으므로
-/// journal_mode 가 요청과 다른 채로 아무 흔적도 안 남았다. 읽기 전용 열기는 실제로
-/// 일어나는 조건이다(파일 권한 · 읽기 전용 마운트).
+/// 읽기 전용 DB에서 적용되지 않은 설정이 경고로 남는지 확인한다.
 #[test]
 fn a_read_only_database_says_that_the_requested_pragmas_did_not_take() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1301,7 +1250,6 @@ fn a_read_only_database_says_that_the_requested_pragmas_did_not_take() {
     assert!(log.contains("WARN"), "경고 수준이 아니다:\n{log}");
 }
 
-/// 정상 경로는 **조용하다** — 위 시험이 잡는 것이 경고 그 자체임을 못 박는다.
 #[test]
 fn a_healthy_database_logs_nothing_while_setting_its_pragmas() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1313,8 +1261,7 @@ fn a_healthy_database_logs_nothing_while_setting_its_pragmas() {
     assert!(log.is_empty(), "정상 열기에서 경고가 났다:\n{log}");
 }
 
-/// in-memory DB 의 `memory` 는 실패가 아니라 그 모드의 정상 결과다 — 경고가 없어야
-/// 한다. 이것이 없으면 위 경고가 매 테스트·매 부팅마다 울려 무의미해진다.
+/// in-memory의 journal_mode=memory에는 경고하지 않는다.
 #[test]
 fn an_in_memory_database_does_not_warn_about_its_own_journal_mode() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -1324,12 +1271,7 @@ fn an_in_memory_database_does_not_warn_about_its_own_journal_mode() {
     assert!(log.is_empty(), "in-memory 정상 결과에 경고가 났다:\n{log}");
 }
 
-/// 요청한 `journal_mode` 와 **실제 적용값**은 다른 축이다.
-///
-/// `pragma_update` 는 두 모드 모두 `Ok(())` 를 내므로 반환값만 보면 둘이 구별되지
-/// 않는다. 파일 DB 는 요청대로 `wal` 이 되고, in-memory DB 는 SQLite 가 WAL 을 못
-/// 쓰므로 조용히 `memory` 로 남는다. 이 시험이 그 둘을 각각 못 박는다 — 여기가
-/// 무너지면 "소스에 WAL 이라고 적혀 있다" 를 runtime 보장으로 쓴 것이 된다.
+/// pragma 호출의 성공과 실제 적용값을 구분해 파일·in-memory 모드를 각각 확인한다.
 #[test]
 fn the_effective_journal_mode_differs_between_a_file_and_an_in_memory_database() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1348,13 +1290,8 @@ fn the_effective_journal_mode_differs_between_a_file_and_an_in_memory_database()
     );
 }
 
-/// 이 항목의 본체 — 한 번 부푼 WAL 이 **다시 줄어드는가**.
-///
-/// "꾸준한 append 로는 안 자란다" 를 단정하면 공허한 테스트가 된다(실측: pragma 를
-/// 빼도 통과한다). autocheckpoint 가 WAL 내부를 순환 재사용하므로 평상시 파일 크기는
-/// pragma 와 무관하게 임계 근처에 머물기 때문이다. 실제로 갈리는 지점은 큰 트랜잭션
-/// 이나 VACUUM 으로 한 번 부푼 **뒤**다 — pragma 가 없으면 그 크기가 프로세스 수명
-/// 내내 고착되고(169MB 사례), 있으면 다음 되감기에서 상한으로 회수된다.
+/// VACUUM으로 커진 WAL이 다음 재사용 때 줄어드는지 확인한다.
+/// 일반 append만으로는 pragma가 없어도 파일 크기가 안정돼 이 차이를 검증할 수 없다.
 #[test]
 fn a_ballooned_wal_shrinks_back_under_the_limit() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1414,9 +1351,7 @@ fn checkpoint_truncate_reclaims_the_wal_without_losing_rows() {
 
 // ---- DB 지연 계측 ----
 
-/// commit 누계가 **성공한 쓰기 수**를 센다. 거부된 쓰기는 트랜잭션을 열고도
-/// commit 없이 돌아가므로 세면 안 된다 — 그러면 평균이 "쓰기 한 건이 걸리는
-/// 시간" 을 더는 뜻하지 않는다.
+/// 거절된 쓰기는 commit 누계에 포함하지 않는다.
 #[test]
 fn only_a_write_that_committed_is_counted_as_a_commit() {
     let mut s = store();
@@ -1450,8 +1385,7 @@ fn only_a_write_that_committed_is_counted_as_a_commit() {
     assert_eq!(gauge.snapshot().commits, 2);
 }
 
-/// checkpoint 는 commit 과 **다른 모수**다. 한 값에 섞이면 운영자가 "쓰기가
-/// 느리다" 와 "WAL 되감기가 느리다" 를 못 가른다.
+/// checkpoint를 commit과 별도로 집계한다.
 #[test]
 fn a_checkpoint_lands_in_its_own_population() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1475,14 +1409,7 @@ fn a_checkpoint_lands_in_its_own_population() {
     );
 }
 
-// ---- 적용값과 저장 실패 (RF20) ----
-
-/// 열린 스토어가 **되읽은 실제값**을 들고 있고, 두 모드가 각자의 허용 결과로 선다.
-///
-/// 파일 DB 와 in-memory DB 의 `journal_mode` 실제값이 달라도 둘 다 `degraded` 가
-/// 아니어야 한다 — 허용 결과표가 모드마다 한 열이기 때문이다. 표에서 열을 바꿔
-/// 읽으면(파일 DB 에 `memory` 를 허용) 이 시험이 아니라 아래 읽기 전용 시험이 죽고,
-/// 모드 판정을 뒤집으면 여기가 죽는다.
+/// 파일·in-memory DB가 각 모드의 허용값으로 적용됐는지 확인한다.
 #[test]
 fn an_open_store_carries_the_pragmas_that_took_in_each_mode() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1522,7 +1449,7 @@ fn an_open_store_carries_the_pragmas_that_took_in_each_mode() {
     );
 }
 
-/// 요청이 안 선 DB 는 **값으로** degraded 라고 말한다 — 경고 로그만이 아니다.
+/// 설정 불일치는 경고와 degraded 상태에 모두 반영한다.
 #[test]
 fn a_read_only_database_reports_itself_degraded() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1540,8 +1467,7 @@ fn a_read_only_database_reports_itself_degraded() {
     assert_eq!(j.effective.as_deref(), Some("delete"));
 }
 
-/// 파일 DB 에서 `memory` 는 허용 결과가 **아니다** — in-memory 의 정상값을 파일 DB
-/// 에 빌려주면 WAL 이 조용히 안 선 것을 삼킨다.
+/// 파일 DB의 memory 모드를 in-memory의 정상값으로 잘못 허용하지 않는다.
 #[test]
 fn a_file_database_in_memory_journal_mode_is_degraded() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1564,12 +1490,7 @@ fn a_file_database_in_memory_journal_mode_is_degraded() {
     );
 }
 
-/// 잠긴 DB 에 쓰면 **실패로** 돌아오고 원인이 `busy` 로 갈리며, 스토어의 메모리 쪽
-/// 상태(quota 카운터 · 변경 버퍼)는 실패 전 그대로다.
-///
-/// 이것이 "실패한 commit 을 정상 저장으로 표현하지 않는다" 의 저장 축이다. 카운터가
-/// 먼저 움직이면 다음 quota 판정이 디스크에 없는 바이트를 세고, 변경 버퍼가 먼저
-/// 움직이면 `memory.changed` 가 없는 쓰기를 알린다.
+/// DB 잠금으로 쓰기에 실패하면 busy로 분류하고 quota 캐시·변경 버퍼를 그대로 유지한다.
 #[test]
 fn a_write_to_a_locked_database_fails_as_busy_and_leaves_the_cache_untouched() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1636,7 +1557,7 @@ fn a_write_past_the_page_ceiling_fails_as_disk_full_and_leaves_the_cache_untouch
     assert!(s.take_pending_changes().is_empty());
 }
 
-/// 요청 거부는 저장 실패가 **아니다** — 저장소가 멀쩡히 답한 것이다.
+/// NotFound 같은 요청 거부는 저장 실패로 분류하지 않는다.
 #[test]
 fn a_refused_request_is_not_a_storage_failure() {
     let mut s = store();
@@ -1646,7 +1567,7 @@ fn a_refused_request_is_not_a_storage_failure() {
     assert_eq!(err.storage_failure(), None);
 }
 
-/// 초기화 오류가 저장 경로와 **같은 표**를 쓴다 — 깨진 파일은 `Corrupt` 로 간다.
+/// 초기화와 저장이 같은 오류 분류를 사용한다.
 #[test]
 fn opening_a_file_that_is_not_a_database_is_classified_as_corrupt() {
     let tmp = tempfile::tempdir().unwrap();

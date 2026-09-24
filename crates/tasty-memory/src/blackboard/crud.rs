@@ -126,12 +126,8 @@ pub fn bb_delete_field(
     )
 }
 
-/// bb 전체 (모든 필드 + 모든 snapshot + `_meta`) 삭제.
-///
-/// 필드 / snapshot / meta 순서로 삭제. 중간에 owner 불일치로 실패하면 거기까지
-/// 삭제된 상태로 에러를 전파한다 (transaction 없음 — `_host` caller 단순화 우선).
-///
-/// Returns: 삭제된 entry 총 개수.
+/// 필드·snapshot·meta 순서로 삭제하고 삭제 수를 반환한다. 트랜잭션으로 묶지 않으므로
+/// 중간에 권한 오류 등이 나면 그전까지 삭제된 상태로 오류를 반환한다.
 pub fn bb_delete(
     store: &mut dyn MemoryStorage,
     owner: &str,
@@ -155,11 +151,3 @@ pub fn bb_delete(
     }
     Ok(removed)
 }
-
-// ============================================================
-// Snapshot
-// ============================================================
-//
-// 한 snapshot 은 bb 의 한 시점을 통째로 직렬화해 `tasty.bb.<name>.snapshots.<sid>`
-// 키에 보관한다. snapshot 값 = JSON([`BlackboardSnapshot`]). restore 는 현재
-// fields 를 모두 지우고 snapshot 의 fields 를 동일 caller owner 로 다시 기록.

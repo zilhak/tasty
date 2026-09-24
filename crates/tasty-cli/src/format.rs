@@ -478,7 +478,7 @@ fn format_pane_list(result: &serde_json::Value) -> Result<()> {
 }
 
 /// timer.list의 타이머와 다음 hard deadline을 표시한다.
-/// Lax 타이머는 slack 기한이 지난 경우 hard deadline에 포함될 수 있다.
+/// Lax의 hard deadline은 next_due + slack이다.
 fn format_timer_list(result: &serde_json::Value) -> Result<()> {
     const HEADER: [&str; 5] = ["key", "interval", "next_due", "precision", "last_fired"];
     let empty = Vec::new();

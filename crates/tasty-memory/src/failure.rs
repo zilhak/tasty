@@ -1,18 +1,8 @@
-//! SQLite 오류의 **원인 분류** — 두 DB 의 초기화와 `memory.db` 의 저장이 같은 표를 쓴다.
-//!
-//! 한때 이 표는 두 자리(`memory.db` 의 `MemoryInitError` 와 본 바이너리 `state.db` 의
-//! `DbInitError`)에 글자 그대로 복제돼 있었고, 저장 경로에는 **아예 없었다** — 쓰기가
-//! 실패하면 `rusqlite::Error` 가 그대로 올라가 호출자가 "잠겨 있었다" 와 "디스크가 찼다"
-//! 와 "파일이 깨졌다" 를 고를 수 없었다. 처방이 셋 다 다르다(기다렸다 다시 · 공간을
-//! 비운다 · 복구·재생성). 그래서 표를 여기 하나로 두고 초기화 오류 타입은 이것을 자기
-//! variant 로 옮기기만 한다.
+//! SQLite 초기화와 저장 오류를 같은 원인 분류로 변환한다.
 
 use rusqlite::ErrorCode;
 
-/// SQLite 오류 하나가 어느 원인 갈래인가.
-///
-/// 이름(`as_str`)이 IPC 응답의 `error.data.storage_failure` 로 나가므로 **바꾸지
-/// 않는다** — 소비자가 이 문자열로 분기한다.
+/// SQLite 오류 분류. as_str의 값은 IPC error.data.storage_failure에 쓰이므로 호환성을 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageFailure {
     /// 다른 연결이 잠금을 쥐고 있었다(`SQLITE_BUSY` · `SQLITE_LOCKED`). 재시도로 풀릴 수 있다.
@@ -23,8 +13,7 @@ pub enum StorageFailure {
     Io,
     /// 파일이 SQLite DB 가 아니거나 깨졌다(`SQLITE_CORRUPT` · `SQLITE_NOTADB`).
     Corrupt,
-    /// 권한 또는 열기 실패(`SQLITE_PERM` · `SQLITE_CANTOPEN`). `CANTOPEN` 은 권한·존재·
-    /// 디렉터리 등 원인이 섞여 있지만 초기화 안내가 권한으로 묶어 왔으므로 그대로 둔다.
+    /// 권한 또는 열기 실패(SQLITE_PERM·SQLITE_CANTOPEN). CANTOPEN에는 경로 부재 등도 포함된다.
     PermissionDenied,
     /// 위 어디에도 안 드는 것(제약 위반 · SQL 오류 · SQLite 밖의 오류 등).
     Other,
@@ -67,7 +56,6 @@ mod tests {
         rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None)
     }
 
-    /// 표의 각 줄이 제 갈래로 간다. 한 줄이 다른 갈래로 새면 처방이 뒤바뀐다.
     #[test]
     fn each_sqlite_code_lands_in_its_own_branch() {
         use rusqlite::ffi::*;

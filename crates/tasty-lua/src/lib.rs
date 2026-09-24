@@ -1,26 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! Host-only Lua scripting layer for Tasty (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
+//! 등록된 사용자 Lua 스크립트를 전용 워커에서 실행한다. init.lua를 자동으로 읽지는 않는다.
+//! 호스트 API는 정해진 함수만 제공하며 이벤트 hook의 반환값은 호스트 동작을 취소하지 못한다.
 //!
-//! 사용자가 등록한 Lua 스크립트를 **명시 트리거**(1차: 단축키)로 실행한다. 부팅 시
-//! 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 등록 목록에서 배선된다.
-//! VM 은 전용 워커 스레드에서 돌고, tasty 접근은 열거된 고정 호스트 API 로만 한다.
-//! `tasty.on`/`fire` 이벤트 hook 배관은 유지되며 **observe-only** — 반환값으로 Tasty
-//! 동작을 바꿀 수 없고 외부 자동화(로그/알림/CLI 호출)만 한다.
-//!
-//! # 신뢰 모델
-//!
-//! 사용자가 자기 머신에서 자기 권한으로 작성하는 스크립트이므로 plugin escape 같은
-//! 위험은 없다. sandbox 의 목적은:
-//!
-//! - **DoS 보호**: 무한 루프/시간 초과 (`set_interrupt` + wall-clock deadline), 메모리 폭발 (memory cap)
-//! - **호스트 무결성**: native crash 유발 가능한 표면 차단 (debug, bytecode loader,
-//!   `package.loadlib`)
-//!
-//! `io` / `os.execute` 는 *제거하지 않는다*. 사용자가 자기 권한으로 임의 명령을
-//! 실행할 수 있는 환경에서 굳이 막을 이유가 없고, Lua hook 의 주된 용도가
-//! "외부 동작" 이라 차단 시 효용이 크게 떨어진다. 대신 `tasty.run_cli` 등 명시적
-//! 호스트 API 를 우선 권장.
+//! 스크립트는 사용자의 OS 권한으로 실행되며 io/os.execute를 제한하지 않는다.
+//! 신뢰할 수 없는 코드를 격리하는 보안 sandbox가 아니다. 메모리 상한과 Lua 명령 hook의
+//! 실행 기한을 적용하고 debug·bytecode 로더·package.loadlib를 제거한다.
+//! 외부 작업에는 tasty.run_cli 같은 호스트 API를 우선 사용한다.
 
 mod bridge;
 mod engine;

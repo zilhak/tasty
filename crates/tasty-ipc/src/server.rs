@@ -1,8 +1,4 @@
-//! IPC wire 타입 + 응답 헬퍼 — `IpcCommand` / `IpcWaker` / `send_response`.
-//!
-//! 서버 인스턴스 본문은 `crate::adapters::production::tcp_ipc_server::TcpIpcServer`
-//! 로 이전. 본 모듈은 wire 형식과 강결합된 타입 정의만 보유 —
-//! verify 자율 결정으로 ports/ 가 아닌 wire 모듈 옆에 둔다.
+//! IPC 명령·실행 상태·응답 채널과 메인 루프 깨우기 인터페이스.
 
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc};
@@ -13,16 +9,8 @@ use crate::dispatch::{DispatchStats, FlightTicket};
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 use tasty_telemetry::slow_requests::{HostOutcome, HostOutcomeCell};
 
-/// 호스트가 요청 하나에 붙이는 번호 — 프로세스 수명 동안 1 부터 1 씩 오른다.
-///
-/// **JSON-RPC `id` 와 다른 값이다.** `id` 는 호출자가 고르는 값이라 거의 늘 `1` 이다(정적 CLI
-/// 단발 · 호스트 주입이 전부 `1` 을 싣는다) — 동시에 떠 있는 요청 대부분이 같은 `id` 를 갖는다.
-/// 그래서 진단이 요청 하나를 가리키는 값은 호출자가 아니라 호스트가 정한다. **Event Bus 의
-/// `trace_id` 와도 다른 값이다** — 그것은 사건의 사슬을 잇고, plugin 이 보낸 값을 그대로 싣는다.
-/// 이름에 `trace` 를 안 쓰는 이유가 그 구분이다(docs/architecture/ipc-server.md#느린-요청-추적).
-///
-/// 만드는 길은 [`RequestSeq::next`] 하나다. 필드가 비공개라 다른 크레이트가 임의의 번호를
-/// 지어낼 수 없고, 가진 번호는 복사해 넘길 수만 있다.
+/// 호스트가 프로세스 안에서 발급하는 요청 번호. JSON-RPC id와 이벤트 trace_id와는 별개다.
+/// RequestSeq::next로 만들고 요청 전달 중에는 같은 번호를 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RequestSeq(u64);
 
@@ -52,20 +40,8 @@ impl std::fmt::Display for RequestSeq {
 pub struct IpcCommand {
     pub request: JsonRpcRequest,
     pub response_tx: mpsc::SyncSender<JsonRpcResponse>,
-    /// 이 명령이 큐에 들어간 순간(monotonic).
-    ///
-    /// 큐에서 기다린 시간과 handler 안에서 보낸 시간은 **다른 값**인데, 이 표시가 없으면
-    /// 둘을 가를 수 없다 — 응답이 느린 것만 보이고 그것이 적체인지 handler 비용인지
-    /// 고를 수 없다.
-    ///
-    /// `Clock` port 가 아니라 `Instant::now()` 인 이유: 명령을 만드는 두 자리(소켓 accept
-    /// 스레드와 plugin host-call 주입부)는 둘 다 `Core` 를 들고 있지 않다. 여기서 재는
-    /// 것은 도메인 시각이 아니라 큐 체류 시간이라 monotonic 원천이면 충분하다.
-    ///
-    /// 비공개인 것이 [`IpcCommand::new`] 강제의 **전부**다 — 이 필드가 `pub` 이면 다른
-    /// 크레이트가 구조체 리터럴로 임의 시각을 찍어도 컴파일되고, 그 경로는 생성자 호출자
-    /// 수를 세는 어떤 판정에도 안 잡힌다. 크레이트 밖에서 이 값을 직접 읽는 자리는 없고
-    /// 필요한 것은 [`IpcCommand::queue_wait`] 뿐이라 비공개로 두는 데 드는 비용이 없다.
+    /// 큐 진입 시각. 도메인 Clock 없이 만드는 소켓/주입 경로가 있어 Instant로 잰다.
+    /// 비공개 필드로 두어 모든 경로가 생성자를 거치게 한다.
     enqueued_at: Instant,
     /// 이 요청의 무게 — 요청 JSON 한 줄의 바이트 수(정의는 `crate::admission`).
     wire_bytes: usize,
@@ -86,15 +62,8 @@ pub struct IpcCommand {
 }
 
 impl IpcCommand {
-    /// 지금을 큐 진입 시각으로 찍어 명령을 만든다.
-    ///
-    /// 구조체 리터럴 대신 이 생성자를 쓰는 이유는 새 주입 경로가 시각을 **빠뜨릴 수
-    /// 없게** 하려는 것이다 — 빠뜨리면 그 경로의 대기 시간만 조용히 0 이 된다.
-    /// 그 강제는 이 doc 이 아니라 `enqueued_at` 의 비공개성이 한다: 크레이트 밖에서는
-    /// 리터럴로 이 타입을 만들 수 없으므로 주입 경로는 여기를 지날 수밖에 없다.
-    ///
-    /// 무게는 요청을 compact 직렬화한 길이로 잰다 — 줄 없이 만들어지는 명령(호스트 주입)의
-    /// 정의다. 받은 줄이 있으면 [`IpcCommand::with_wire_bytes`] 로 그 길이를 넘긴다.
+    /// 현재 시각과 compact JSON 바이트 길이로 명령을 만든다.
+    /// 받은 원문 줄이 있는 소켓 경로는 with_wire_bytes로 그 길이를 전달한다.
     pub fn new(request: JsonRpcRequest, response_tx: mpsc::SyncSender<JsonRpcResponse>) -> Self {
         let wire_bytes = weigh(&request);
         Self::with_wire_bytes(request, response_tx, wire_bytes)
@@ -109,11 +78,7 @@ impl IpcCommand {
         Self::build(request, response_tx, wire_bytes, RequestSeq::next())
     }
 
-    /// 이미 번호를 받은 요청을 **같은 요청으로** 다시 싸는 명령 — 새 번호를 받지 않는다.
-    ///
-    /// 멱등 키를 뗀 사본을 다른 응답 통로로 실행하는 층(본체의 멱등 relay)이 쓴다. 그 사본은
-    /// 호출자가 보낸 요청 그대로이므로, 새 번호를 받으면 요청 하나가 번호 둘로 갈려 그 안에서
-    /// 일어난 plugin 대기를 원 요청으로 되짚을 수 없다.
+    /// 멱등 relay처럼 같은 요청을 다른 응답 채널에 넘길 때 기존 번호를 유지한다.
     pub fn continuing(
         request: JsonRpcRequest,
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
@@ -183,18 +148,9 @@ impl IpcCommand {
         self.lifecycle.outcome.clone()
     }
 
-    /// 실행 **직전**에 부른다 — 이 명령을 지금 실행해도 되는가.
-    ///
-    /// 기한(큐 진입 + 호출자의 응답 대기 상한)이 지났으면 실행하지 않는다. 그 요청을 기다리던
-    /// 호출자는 이미 돌아갔거나 곧 돌아가므로, 지금 실행하면 결과를 아무도 못 받는 효과만
-    /// 남는다. 기다리던 쪽이 먼저 물러났어도(`withdraw`) 실행하지 않는다.
-    ///
-    /// `Run` 을 돌려준 뒤로 이 명령은 **시작된 것**이다 — 기다리는 쪽의 상한이 그 뒤에 지나면
-    /// 그 답은 "결과 불명" 이다.
-    ///
-    /// 판정은 `stats` 에 한 번 센다 — 실행 안 됨은 `expired_before_run` 에, 실행은 in-flight 에.
-    /// in-flight 의 몫은 이 명령의 실행 상태 칸에 실려, 응답을 기다리던 쪽까지 칸을 놓을 때
-    /// 빠진다([`crate::dispatch::DispatchSnapshot::in_flight`]).
+    /// 실행 직전에 기한과 철회 여부를 확인한다. Run 이후 만료는 결과 불명이다.
+    /// 시작 전 만료는 expired_before_run, 실행 시작은 in-flight에 기록한다.
+    /// in-flight는 명령과 응답 대기자가 모두 lifecycle을 놓을 때 해제된다.
     pub fn claim(&self, stats: &Arc<DispatchStats>) -> Claim {
         if let Some(bound) = self.wait_bound {
             let waited = self.queue_wait();
@@ -257,12 +213,8 @@ const QUEUED: u8 = 0;
 const STARTED: u8 = 1;
 const WITHDRAWN: u8 = 2;
 
-/// 명령 하나의 실행 전/후 상태. 꺼내는 쪽(메인 스레드)과 기다리는 쪽(연결 스레드)이 나눠 든다.
-///
-/// 상태는 한 방향으로만 한 번 움직인다 — `QUEUED` 에서 `STARTED`(꺼낸 쪽이 실행을 시작) 또는
-/// `WITHDRAWN`(기한이 지나 실행하지 않기로 함) 중 **먼저 온 쪽**으로. 비교-교환 하나로 정하므로
-/// 두 스레드가 같은 순간에 다퉈도 답이 하나다: 실행했으면 기다리는 쪽은 "결과 불명" 을, 안
-/// 했으면 "실행하지 않음" 을 말한다. 둘 다 말하는 경우는 없다.
+/// QUEUED에서 STARTED 또는 WITHDRAWN으로 한 번만 전환한다.
+/// 비교-교환으로 실행과 철회 중 하나만 성공하게 한다.
 #[derive(Debug, Default)]
 pub struct CommandLifecycle {
     state: AtomicU8,
@@ -368,7 +320,6 @@ mod tests {
         (IpcCommand::new(req, tx), rx)
     }
 
-    /// 꺼낸 쪽이 먼저 시작하면 기다리는 쪽의 만료는 "시작됨"(결과 불명)이다.
     #[test]
     fn a_started_command_cannot_be_withdrawn() {
         let (c, _rx) = cmd(Some(60_000));
@@ -377,7 +328,6 @@ mod tests {
         assert_eq!(waiter.withdraw(), Withdraw::Started);
     }
 
-    /// 기다리는 쪽이 먼저 물러나면 그 명령은 나중에 꺼내도 실행되지 않는다.
     #[test]
     fn a_withdrawn_command_is_not_run_when_taken_later() {
         let (c, _rx) = cmd(Some(60_000));
@@ -386,7 +336,6 @@ mod tests {
         assert_eq!(c.claim(&stats()), Claim::Withdrawn);
     }
 
-    /// 기한이 큐에서 지난 명령은 꺼낸 쪽이 실행하지 않고, 그 뒤 기다리는 쪽의 만료도 "실행 안 됨" 이다.
     #[test]
     fn a_command_past_its_deadline_is_expired_by_the_taker() {
         let (c, _rx) = cmd(Some(1));
@@ -402,7 +351,6 @@ mod tests {
         assert_eq!(waiter.withdraw(), Withdraw::NotRun);
     }
 
-    /// 기다리는 쪽이 적은 답은 명령이 내준 결과 칸에 보이고, 두 번째 답은 첫 답을 덮지 않는다.
     #[test]
     fn the_answer_the_waiter_records_shows_in_the_command_cell() {
         let (c, _rx) = cmd(Some(60_000));
@@ -434,7 +382,6 @@ mod tests {
         assert_eq!(cell.get(), Some(HostOutcome::Ok));
     }
 
-    /// 상한이 없거나 0 이면 기한도 없다 — 봉투 규약 그대로다.
     #[test]
     fn no_bound_or_zero_means_no_deadline() {
         for bound in [None, Some(0)] {
@@ -444,7 +391,6 @@ mod tests {
         }
     }
 
-    /// 두 쪽이 같은 순간에 다퉈도 답은 하나다 — 시작과 물러남이 둘 다 이기는 경우가 없다.
     #[test]
     fn a_race_between_taker_and_waiter_has_one_winner() {
         for _ in 0..200 {
@@ -481,7 +427,6 @@ mod tests {
         assert_eq!((s.in_flight, s.started, s.expired_before_run), (0, 1, 1));
     }
 
-    /// 꺼낸 쪽과 기다리는 쪽이 쓰는 "실행 안 됨" 답은 한 함수에서 나온다.
     #[test]
     fn the_not_run_answer_carries_its_code_the_id_and_the_bound() {
         let r = expired_before_run_response(serde_json::json!(4), Duration::from_millis(250));
@@ -495,9 +440,6 @@ mod tests {
         );
     }
 
-    /// 명령을 만드는 두 생성자가 같은 카운터에서 번호를 받는다 — 만들 때마다 새 번호이고,
-    /// 한 스레드가 차례로 만든 명령의 번호는 오른다(다른 시험이 같은 카운터를 동시에 써도
-    /// 이 순서는 안 깨진다 — 단조 카운터다).
     #[test]
     fn every_constructor_issues_a_fresh_increasing_request_seq() {
         let (a, _ra) = cmd(None);
@@ -514,7 +456,6 @@ mod tests {
         assert!(a.request_seq().get() >= 1, "0 is never issued");
     }
 
-    /// 같은 요청을 다시 싸는 명령은 번호를 새로 받지 않는다 — 원 요청의 번호를 그대로 든다.
     #[test]
     fn a_continuing_command_keeps_the_original_request_seq() {
         let (a, _ra) = cmd(None);

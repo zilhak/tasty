@@ -1,13 +1,7 @@
 ---@meta
---- EmmyLua stub for Tasty `~/.tasty/init.lua` scripting.
----
---- Drop this directory into LuaLS `workspace.library` to enable
---- autocomplete + type-checking for hook payloads.
----
----   .luarc.json (alongside init.lua):
----   {
----     "workspace.library": ["<TASTY_REPO>/crates/tasty-lua/meta"]
----   }
+--- LuaLS definitions for registered Tasty scripts.
+--- Add this directory to workspace.library in .luarc.json for completion and type checking.
+--- Example: { "workspace.library": ["<TASTY_REPO>/crates/tasty-lua/meta"] }
 
 ---@class tasty
 tasty = {}
@@ -28,13 +22,12 @@ function tasty.log(msg) end
 ---@param msg string
 function tasty.warn(msg) end
 
---- Fire an OS native notification via notify-rust.
+--- Not registered by the current host; this stub does not provide notifications.
 ---@param title string
 ---@param body string
 function tasty.notify(title, body) end
 
---- Spawn `tasty` CLI as a detached child process. Stdio is nulled.
---- Use this to drive the same automation surface the user has via shell.
+--- Ask the main thread to spawn the Tasty CLI without waiting for completion. Stdio is nulled.
 ---@param args string[]
 function tasty.run_cli(args) end
 

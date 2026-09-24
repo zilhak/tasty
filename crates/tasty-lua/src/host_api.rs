@@ -1,8 +1,4 @@
-//! Lua 측에 노출하는 호스트 API.
-//!
-//! `tasty.log` / `tasty.warn` 는 워커 스레드에서 직접 tracing 에 쓴다 (메인 무관).
-//! `tasty.run_cli` 는 프로세스 spawn 이 부수효과이므로 워커에서 직접 하지 않고
-//! [`HostCommand`] 로 메인 커맨드 큐에 넣는다 (docs/features/lua-hooks/index.md#실행-격리--안전-장치). 메인이 [`run_tasty_cli`] 로 적용.
+//! 로그는 워커에서 기록하고, CLI 실행 요청은 HostCommand로 메인 스레드에 전달한다.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -25,8 +21,7 @@ pub(crate) fn install(
 ) -> Result<(), LuaEngineError> {
     let tasty: Table = lua.globals().get("tasty").map_err(LuaEngineError::Init)?;
 
-    // tasty.tree() — 메인이 발행한 최신 스냅샷의 워크스페이스 트리를 Lua table 로 반환.
-    // 값 복사(스냅샷 핸들을 Lua 가 쥐지 않음) → read-only. (docs/features/lua-hooks/index.md#실행-격리--안전-장치 읽기 = 스냅샷)
+    // Lua에는 값을 복사해 반환하므로 호스트 스냅샷을 수정할 수 없다.
     let tree = lua
         .create_function(move |lua, ()| {
             let snap = match snapshot.lock() {
@@ -82,8 +77,7 @@ pub(crate) fn install(
     Ok(())
 }
 
-/// [`HostCommand::RunCli`] 적용 — 메인 스레드가 안전지점에서 호출한다.
-/// tasty 자기 실행파일을 CLI 인자와 함께 detached 로 spawn (발사 후 잊음).
+/// 메인 스레드에서 현재 Tasty 실행 파일을 CLI 인자로 실행한다. 완료는 기다리지 않는다.
 pub fn run_tasty_cli(args: &[String]) {
     let Some(exe) = current_exe() else {
         tracing::warn!(target: "tasty_lua", "run_cli: cannot resolve current_exe");
@@ -92,7 +86,7 @@ pub fn run_tasty_cli(args: &[String]) {
     let mut cmd = Command::new(exe);
     tasty_utils::process::hide_console(&mut cmd);
     cmd.args(args);
-    // stdio inherited 면 콘솔이 노이즈로 차므로 분리.
+    // 부모의 콘솔 입력·출력에 연결하지 않는다.
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

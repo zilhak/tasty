@@ -70,9 +70,9 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
     }
     // require는 이미 제거했고 바로 뒤에서 package도 제거하므로 개별 set 실패가 로더 접근을 남기지 않는다.
     if let Ok(pkg) = g.get::<Table>("package") {
-        let _ = pkg.set("loadlib", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
-        let _ = pkg.set("searchers", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
-        let _ = pkg.set("loaders", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
+        let _ = pkg.set("loadlib", Value::Nil); // package도 제거하므로 실패해도 로더에 접근할 수 없다.
+        let _ = pkg.set("searchers", Value::Nil); // package도 제거하므로 실패해도 로더에 접근할 수 없다.
+        let _ = pkg.set("loaders", Value::Nil); // package도 제거하므로 실패해도 로더에 접근할 수 없다.
     }
     g.set("package", Value::Nil)?;
 

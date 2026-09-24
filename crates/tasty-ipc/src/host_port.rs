@@ -1,8 +1,5 @@
-//! IPC dispatcher 가 호스트(Core/AppState) 와 결합하지 않도록 좁힌 trait.
-//!
-//! `caller.rs` / `audit.rs` 는 `&dyn IpcHostFacade` 만 받아 호스트 측 Core 직접
-//! 결합을 끊는다. 본 모듈은 그 trait + 보조 enum 의 단일 거주지 — 본 바이너리의
-//! `crate::core::ipc_facade` 가 유일한 impl 제공자.
+//! 호출자 판정과 감사 기록에서 호스트 구현 대신 사용하는 trait.
+//! 본체 core::ipc_facade가 세션 저장소와 감사 로그에 연결한다.
 
 use std::time::Duration;
 

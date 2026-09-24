@@ -1,44 +1,16 @@
 #![forbid(unsafe_code)]
 
-//! 에이전트 메모리 저장소 (`~/.tasty/memory.db`).
+//! SQLite 기반 키-값 저장소.
+//! Regular는 읽기를 공유하고 기존 항목의 수정·삭제는 owner 또는 _host만 허용한다.
+//! Secret는 owner를 기본키에 포함해 IPC에서 호출자별로 분리한다. 값은 평문 BLOB이며
+//! DB 파일에 직접 접근하는 프로세스로부터 보호하지 않는다.
 //!
-//! 에이전트와 plugin 이 작업 도중 누적·검색·공유하는 영속 키-값. 같은 SQLite
-//! 파일에 두 영역이 공존한다:
-//!
-//! - **Regular** (`memory.*`): 공유 네임스페이스. 모든 plugin 이 모든 entry 를
-//!   읽지만, 갱신·삭제는 `owner` 본인 또는 `_host` (CLI / 사용자) 만 가능.
-//! - **Secret** (`memory.secret.*`): plugin 별 사전 분할. owner 가 PK 일부라
-//!   다른 plugin 영역은 IPC 표면에서 개념 자체가 존재하지 않는다.
-//!
-//! `owner` 는 호스트가 [`CallerContext`] 로부터 자동 도출하는 값이다 — plugin 이
-//! 인자로 넘길 수 없고 본 크레이트에서는 **`&str` 으로 받기만 한다**. caller 가
-//! `_host` 인지 plugin 인지는 호출자 (호스트 IPC 라우터) 책임.
-//!
-//! ## Secret 의 보호 수준
-//!
-//! Secret value 는 **평문 BLOB** 으로 저장된다. AES-GCM/keyring 같은 데이터-앳-레스트
-//! 암호화는 하지 않는다. 현 시점에서 plugin process 가 OS-level sandbox 없이 호스트와
-//! 같은 권한으로 돌기 때문에, 어떤 종류의 디스크 암호화도 plugin 이 우회 가능하다
-//! (자세한 결정 배경은 `docs/design/systems/memory.md`).
-//!
-//! 따라서 secret 의 격리 약속은 **"plugin 간 IPC 격리"** 까지로 좁혀져 있다:
-//! plugin A 가 IPC 로 plugin B 의 secret 을 요청하면 owner 분리로 차단된다.
-//! 사용자/host, 그리고 DB 파일을 직접 여는 모든 행위자는 secret 을 평문으로 본다.
-//!
-//! ## 동기 모델
-//!
-//! Tasty 본 바이너리는 winit 이벤트 루프 + sync 코드 베이스다 (tokio 사용 안 함).
-//! `MemoryStore` 는 호스트 boot 가 `init_with_config` 로 만들어
-//! `Arc<Mutex<dyn MemoryStorage>>` 로 `Core` 에 inject 한다. IPC dispatch 는 메인
-//! 스레드에서 순차 호출되고, plugin process 호출도 별도 스레드의 mpsc 경로를 거쳐
-//! 결국 메인에서 처리되므로 단일 mutex 로 충분. worker thread (approval.await,
-//! output observer Memory sink) 는 Arc clone 을 capture 해 자기 수명에서 lock.
+//! owner는 호스트가 검증한 호출자로부터 정한다. 이 크레이트는 받은 문자열을 사용하므로
+//! 호출자 인증이나 호스트 예약 namespace 제한은 IPC 계층의 책임이다.
+//! 호스트는 MemoryStorage를 Arc<Mutex<_>>로 공유한다. 메인 IPC 처리와 워커 모두 같은
+//! 저장소 락을 사용하며 MemoryStore 자체는 Sync가 아니다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트의 let _ =를 제품 코드의 오류 처리 명부에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod failure;
@@ -71,13 +43,8 @@ use serde::{Deserialize, Serialize};
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
 pub use scope::{KEY_ALLOWED_CHARS, MAX_KEY_LEN, Scope, validate_key};
 
-/// 단일 값 최대 크기의 참고값 (1 MiB).
-///
-/// **집행 경로에 없다.** 실제 cap 은 `MemoryConfig::entry_max_bytes` 이고, 그 값은 호스트
-/// 부팅이 `[memory] entry_max_mb` 설정을 환산해 넣는다. `MemoryConfig::default()` 조차 이
-/// 상수를 안 읽고 자기 리터럴을 쓴다 — 그래서 여기를 고쳐도 아무 cap 도 안 움직인다.
-/// 실효 상한을 판정하려는 코드는 이것 말고 `MemoryConfig::entry_max_bytes` 나 그 설정
-/// 기본값을 좌변으로 삼아야 한다.
+/// 참고용 값이며 실제 크기 제한을 집행하지 않는다.
+/// 유효한 상한은 MemoryConfig::entry_max_bytes이고 호스트가 설정에서 환산한다.
 pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 /// Local caller (CLI / 사용자 / 호스트 내부) 의 owner sentinel. plugin id 의
@@ -144,13 +111,7 @@ pub enum MemoryError {
 }
 
 impl MemoryError {
-    /// 저장소 자체가 실패한 경우 그 원인 갈래. 요청 거부(`NotFound` · `CasConflict` ·
-    /// quota 등)는 저장소가 멀쩡히 답한 것이라 `None` 이다.
-    ///
-    /// 트랜잭션을 여는 자리 · 문장 실행 · `commit` 어디서 났든 `Db` 로 올라오므로
-    /// 트랜잭션 쓰기 네 자리(`put` · `delete` · `put_secret` · `delete_secret`)와 그
-    /// 밖의 단문 쓰기가 이 한 함수로 같은 표를 쓴다. 표는 초기화 오류와 같다
-    /// ([`StorageFailure`]).
+    /// SQLite 저장 실패를 분류한다. NotFound·CasConflict·quota 같은 요청 거부는 None이다.
     pub fn storage_failure(&self) -> Option<StorageFailure> {
         match self {
             MemoryError::Db(e) => Some(StorageFailure::classify(e)),
@@ -210,7 +171,7 @@ impl MemoryValue {
 }
 
 /// 한 entry. `version` 은 다음 CAS update 에서 expected 로 넘길 값.
-/// `owner` 는 regular 응답에서는 `Some`, secret 응답에서는 `None` (추상화 누수 방지).
+/// owner는 regular 응답에만 포함하고 secret 응답에서는 None이다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub scope: String,
@@ -246,9 +207,8 @@ pub struct ListOpts {
     pub offset: Option<usize>,
 }
 
-/// 변경 이벤트. put / delete / purge 후 호스트가 [`MemoryStore::take_pending_changes`]
-/// 로 가져가 Event Bus 의 `memory.changed` 로 broadcast 한다. **regular 영역만** 기록한다
-/// — secret 변경은 다른 plugin 에 노출하면 안 되므로 발화하지 않는다.
+/// Regular 변경만 기록한다. 호스트가 take_pending_changes로 꺼내 memory.changed를 발행한다.
+/// Secret 변경은 다른 플러그인에 노출하지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryChange {
     /// `surface:42` 같은 scope token (`Scope::as_token`).
@@ -270,25 +230,9 @@ pub enum MemoryChangeKind {
     Expired,
 }
 
-/// WAL 되감기 한도(바이트). 체크포인트가 WAL 을 되감을 때 이 크기를 넘는 부분이
-/// 잘려 나간다 — 활성 WAL 의 상한이 아니다(되감기가 막힌 동안은 이 값을 넘어 자란다).
-///
-/// **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다.** SQLite 는
-/// 체크포인트 후 WAL 파일을 재사용하려고 크기를 그대로 두기 때문이다. 그러면
-/// `wal_autocheckpoint` 임계(1000 페이지)를 **영구히 초과한 상태**가 되어 커밋마다
-/// 체크포인트가 트리거되고, 그 비용은 WAL 크기에 비례한다 — 실제로 169MB 로 고착된
-/// WAL 을 초당 수십 커밋이 매번 훑어 메인 스레드 CPU 를 상시 점유한 사례가 있다.
-///
-/// 값은 `wal_autocheckpoint` 임계와 **정확히 같게** 잡는다. 더 키우면 체크포인트가
-/// 훑는 상한이 그만큼 올라가 원래 문제를 완화만 하게 되고, 더 줄이면 임계에 닿기도
-/// 전에 매번 잘라내 grow/truncate 를 반복한다. 임계와 같은 값이면 정상 흐름에서는
-/// 잘라낼 것이 없고(파일이 임계 근처에서 안정), 큰 트랜잭션이나 리더 때문에 한 번
-/// 부푼 경우에만 되감기 시점에 회수된다.
-///
-/// 두 상수를 곱해 두는 이유는 그 "정확히 같게" 가 눈으로 확인되게 하기 위해서다 —
-/// 4MiB 처럼 적당히 반올림한 값을 쓰면 근거와 값이 조용히 어긋난다(실제로 1000 ×
-/// 4096 = 4,096,000B 이고 4MiB 가 아니다). `journal_size_limit_is_applied_to_disk_databases`
-/// 가 실행 중 SQLite 의 실제 기본값과 이 곱을 대조해 어긋나면 실패한다.
+/// WAL을 재사용하며 줄일 때 적용하는 journal_size_limit. 활성 WAL의 크기 상한은 아니다.
+/// 자동 checkpoint 기본 페이지 수 × 기본 페이지 크기로 정하며, 실행 시험이 실제 SQLite
+/// 설정과 이 관계를 대조한다. 1000 × 4096 = 4,096,000바이트로 4 MiB와 다르다.
 pub const WAL_SIZE_LIMIT_BYTES: i64 = WAL_AUTOCHECKPOINT_PAGES * DEFAULT_PAGE_SIZE_BYTES;
 
 /// SQLite 의 `wal_autocheckpoint` 기본값(페이지 수).
@@ -297,20 +241,15 @@ const WAL_AUTOCHECKPOINT_PAGES: i64 = 1000;
 /// SQLite 의 `page_size` 기본값(바이트).
 const DEFAULT_PAGE_SIZE_BYTES: i64 = 4096;
 
-/// MemoryStore. 디스크 파일을 단독으로 열어 mutex 보호. clone 불가.
+/// SQLite 연결을 소유한다. 공유할 때는 호출자가 mutex로 보호한다.
 pub struct MemoryStore {
     conn: Connection,
     config: MemoryConfig,
-    /// Regular 영역 변경 누적 버퍼. 호스트가 매 tick `take_pending_changes()` 로
-    /// drain 해 `memory.changed` host event 로 발화한다.
+    /// 호스트가 꺼내 memory.changed로 발행할 Regular 변경 목록.
     pending_changes: Vec<MemoryChange>,
-    /// Regular `memory` 테이블 value 바이트 총합 캐시. quota 검사를 호출마다
-    /// `SUM(LENGTH(value))` 전체 스캔(O(rows)) 하던 것을 O(1) 로 대체한다.
-    /// open 시 1회 계산하고, 모든 regular 변이 경로(put/delete/purge_*)에서
-    /// 증분 유지한다 (purge 는 드물어 재계산으로 정합 자동 교정).
+    /// Regular value 바이트 합. 열 때 계산하고 put/delete에서 증감하며 purge 뒤 재계산한다.
     regular_used_bytes: i64,
-    /// commit·checkpoint 지연 누계. 스토어가 열릴 때 함께 태어나고 `Arc` 로 밖에
-    /// 나간다 — 호스트가 이 값을 읽을 때 스토어 뮤텍스를 안 잡게 하기 위해서다.
+    /// 저장소 mutex 없이 조회할 수 있도록 별도 Arc로 공유하는 지연 누계.
     db_latency: std::sync::Arc<DbLatencyStats>,
     /// 열 때 건 연결 pragma 의 요청값과 되읽은 실제값. 열린 뒤로 안 바뀐다.
     applied_pragmas: pragma::AppliedPragmas,
@@ -373,7 +312,7 @@ impl MemoryStore {
         })
     }
 
-    /// 열 때 건 연결 pragma 가 실제로 섰는가 — 요청값·실제값·degraded 판정.
+    /// 연결 pragma의 요청값·실제값과 degraded 상태.
     pub fn applied_pragmas(&self) -> &pragma::AppliedPragmas {
         &self.applied_pragmas
     }
@@ -449,9 +388,7 @@ impl MemoryStore {
             )
             .optional()?;
 
-        // Quota: 추가될 byte 가 regular total 한도를 넘기지 않는지.
-        // `used_before`(캐시) - 기존 entry 크기 + 신규 크기 로 O(1) 계산.
-        // 전체 스캔(`SUM(LENGTH(value))`) 대신 증분 카운터 사용.
+        // 기존 값의 크기를 빼고 새 값의 크기를 더해 전체 스캔 없이 quota를 검사한다.
         let existing_size = existing.as_ref().map(|(_, _, sz)| *sz).unwrap_or(0);
         let projected = used_before - existing_size + bytes.len() as i64;
         if (projected as u64) > self.config.regular_quota_total_bytes {
@@ -518,8 +455,7 @@ impl MemoryStore {
         let commit_started = std::time::Instant::now();
         tx.commit()?;
         self.db_latency.record_commit(commit_started.elapsed());
-        // commit 성공 후에만 카운터 반영 — 위 에러/거부 경로는 모두 commit 이전에
-        // return 하므로 카운터는 항상 실제 테이블과 정합.
+        // commit 성공 뒤에만 카운터를 갱신해 거절·실패한 값을 세지 않는다.
         self.regular_used_bytes = projected;
         self.pending_changes.push(MemoryChange {
             scope: scope_token,
@@ -637,7 +573,6 @@ impl MemoryStore {
         let commit_started = std::time::Instant::now();
         tx.commit()?;
         self.db_latency.record_commit(commit_started.elapsed());
-        // 위 에러 경로는 commit 이전에 return → 여기 도달 시 실제 삭제됨.
         self.regular_used_bytes = (self.regular_used_bytes - deleted_size).max(0);
         self.pending_changes.push(MemoryChange {
             scope: scope_token,
@@ -788,9 +723,7 @@ impl MemoryStore {
     /// dot 표기로 lookup 해 `expected` 와 같은 entry 만 반환한다 (Equality 비교).
     /// list 처럼 prefix/limit/offset 지원.
     ///
-    /// `path` 형식: `"a.b.c"` — JSON object 의 중첩 필드. 배열 index 는 지원하지
-    /// 않는다 (1.0 에서는 단순함 우선 — jq 가 필요하면 호출자가 `memory.list` 후
-    /// 자체 처리).
+    /// path는 a.b.c 형식의 중첩 object 필드이며 배열 인덱스는 지원하지 않는다.
     pub fn query(
         &self,
         scope: &Scope,
@@ -798,13 +731,11 @@ impl MemoryStore {
         expected: &serde_json::Value,
         opts: &ListOpts,
     ) -> Result<Vec<MemoryEntry>> {
-        // 1) 일단 list 로 후보 entry 를 모두 수집 (limit/offset 은 후처리 단계에서 적용).
         let mut list_opts = opts.clone();
         list_opts.offset = None;
         list_opts.limit = None;
         let candidates = self.list(scope, &list_opts)?;
 
-        // 2) JSON entry 만 골라 path lookup → 일치하면 push
         let mut matched: Vec<MemoryEntry> = candidates
             .into_iter()
             .filter(|e| {
@@ -826,10 +757,7 @@ impl MemoryStore {
         Ok(matched.drain(offset..end).collect())
     }
 
-    /// Regular 영역의 모든 entry 를 export. scope 가 `Some` 이면 그 scope 만,
-    /// `None` 이면 전체. 만료 entry 는 포함하지 않음.
-    /// **Secret 영역은 절대 export 하지 않는다** — 명시적으로 plugin 별 격리를 깨야 하므로
-    /// 본 API 는 regular 만 다룬다.
+    /// 만료되지 않은 Regular 항목을 내보낸다. scope=None이면 전체이며 Secret는 포함하지 않는다.
     pub fn export_regular(&self, scope: Option<&Scope>) -> Result<Vec<MemoryEntry>> {
         let now = unix_ms_now();
         let mut entries = Vec::new();
@@ -1018,8 +946,7 @@ impl MemoryStore {
         Ok(new_version)
     }
 
-    /// Secret get. 응답 entry 의 `owner` 필드는 `None` 으로 두어 plugin 에게
-    /// 추상화 누수를 만들지 않는다.
+    /// Secret 조회. 응답의 owner 필드는 None이다.
     pub fn get_secret(&self, owner: &str, scope: &Scope, key: &str) -> Result<Option<MemoryEntry>> {
         validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
@@ -1291,7 +1218,6 @@ impl MemoryStore {
                 version: None,
             });
         }
-        // bulk delete 후 카운터 재계산 (purge 는 드물어 1회 스캔 허용 + 드리프트 교정).
         self.regular_used_bytes = Self::scan_regular_used(&self.conn);
         Ok(PurgeStats {
             regular: regular as u64,
@@ -1323,7 +1249,6 @@ impl MemoryStore {
                 version: None,
             });
         }
-        // bulk delete 후 카운터 재계산 (purge 는 드물어 1회 스캔 허용 + 드리프트 교정).
         self.regular_used_bytes = Self::scan_regular_used(&self.conn);
         Ok(PurgeStats {
             regular: regular as u64,
@@ -1337,15 +1262,10 @@ impl MemoryStore {
         std::mem::take(&mut self.pending_changes)
     }
 
-    /// `prefix` 로 시작하는 regular 로그 키 중 **가장 최근 `keep_recent` 개만 남기고**
-    /// 나머지를 **조용히(이벤트 없이)** 일괄 삭제. append-only 로그(audit/telemetry:
-    /// 키가 `prefix<zero-padded ts>.<seq>` 라 lexical=chronological)의 count 기반
-    /// retention 용 — `purge_*` 와 달리 `pending_changes` 를 만들지 않아 대량(수십만 행)
-    /// 정리 시 이벤트 폭발을 피한다. 삭제된 행 수를 반환.
-    ///
-    /// 나이 기반 retention 은 최근 활동량이 많으면(예: 에이전트 대량 IPC) 거의 줄지
-    /// 않으므로, count cap 으로 DB 를 확실히 bound 한다. 매칭 행이 `keep_recent` 이하면
-    /// no-op. `prefix` 의 `_`/`%`/`\` 는 escape.
+    /// prefix로 시작하는 로그 키를 내림차순으로 정렬해 최근 keep_recent개만 남긴다.
+    /// 키가 0으로 채운 시각을 포함해 문자열 순서가 시간 순서와 같은 로그용이다.
+    /// 변경 이벤트 없이 삭제하며 삭제 수를 반환한다. scope는 구분하지 않는다.
+    /// prefix의 LIKE 특수문자는 이스케이프한다.
     pub fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {
         let like = format!(
             "{}%",
@@ -1362,9 +1282,7 @@ impl MemoryStore {
                  SELECT key FROM memory WHERE key LIKE ?1 ESCAPE '\\'
                  ORDER BY key DESC LIMIT 1 OFFSET ?2
              )",
-            // `keep_recent as i64` 가 음수가 되면 OFFSET 이 무효가 되어 **전량 삭제**로
-            // 돌변한다. 실제로 쓰이는 값은 만 단위지만, 상한을 "사실상 무제한" 으로
-            // 주려는 호출자가 나오면 조용히 로그를 다 지우게 되므로 여기서 막는다.
+            // u64를 그대로 i64로 줄여 음수가 되면 OFFSET이 0처럼 적용될 수 있다.
             params![like, keep_recent.min(i64::MAX as u64) as i64],
         )?;
         if n > 0 {
@@ -1373,15 +1291,8 @@ impl MemoryStore {
         Ok(n as u64)
     }
 
-    /// `prefix` 로 시작하는 regular 로그 키 중 **`{ts:013}` 이 `cutoff_ms` 미만인
-    /// 것**을 조용히 일괄 삭제. [`Self::prune_prefix_keep_recent`] 의 시간 기준
-    /// 짝이며, 같은 전제(키가 `prefix<zero-padded 13자리 ts>...` 라 lexical =
-    /// chronological)에 기댄다 — 그래서 값 역직렬화도, 행 materialize 도 없이
-    /// 키 범위 DELETE 한 번으로 끝난다.
-    ///
-    /// 개수 상한만으로는 "오래됐지만 상한 안" 인 로그가 영원히 남고, 시간 상한만으로는
-    /// 유입이 빠를 때 상한이 무의미해진다. 둘을 함께 걸 수 있게 짝으로 둔다.
-    /// 삭제된 행 수를 반환. `prefix` 의 `_`/`%`/`\` 는 escape.
+    /// prefix 뒤 13자리 시각이 cutoff_ms 미만인 로그를 이벤트 없이 삭제한다.
+    /// 개수 제한과 함께 사용하며 삭제 수를 반환한다. prefix의 LIKE 특수문자는 이스케이프한다.
     pub fn prune_prefix_older_than(&mut self, prefix: &str, cutoff_ms: u64) -> Result<u64> {
         let like = format!(
             "{}%",
@@ -1390,8 +1301,7 @@ impl MemoryStore {
                 .replace('_', "\\_")
                 .replace('%', "\\%")
         );
-        // `prefix{cutoff:013}` 미만 = ts 가 cutoff 미만. 같은 ts 의 행은 뒤에 `.seq`
-        // 등이 붙어 경계 키보다 크므로 남는다(경계 포함 여부는 ms 단위라 무의미).
+        // 같은 시각에 .seq가 붙은 키는 경계보다 커서 남는다.
         let boundary = format!("{prefix}{cutoff_ms:013}");
         let n = self.conn.execute(
             "DELETE FROM memory WHERE key LIKE ?1 ESCAPE '\\' AND key < ?2",
@@ -1403,16 +1313,8 @@ impl MemoryStore {
         Ok(n as u64)
     }
 
-    /// WAL 내용을 본체로 흡수하고 WAL 파일을 0 바이트로 잘라낸다.
-    ///
-    /// [`WAL_SIZE_LIMIT_BYTES`] 는 되감기 때만 작동해 커지는 것 자체는 못 막고, 이미 커진
-    /// 파일은 되감기가 일어나야 줄어든다. 이 메서드는 그 되감기를 부팅 시 한 번 강제해
-    /// 기존 인스턴스의 비대한 WAL 을 즉시 회수한다.
-    ///
-    /// 반환값은 체크포인트가 **끝까지** 수행됐는지 여부다. `PRAGMA
-    /// wal_checkpoint(TRUNCATE)` 는 다른 커넥션이 읽는 중이면 busy=1 로 돌아오며,
-    /// 이때 파일은 그대로 남는다 — 실패가 아니라 "이번엔 못 줄였다" 이므로 호출자가
-    /// 로그 수준을 정할 수 있게 에러가 아닌 bool 로 돌려준다.
+    /// WAL을 checkpoint하고 0바이트로 줄인다.
+    /// busy로 끝나면 false이며 파일이 남을 수 있다. 다른 SQLite 오류는 Err로 반환한다.
     pub fn checkpoint_truncate(&mut self) -> Result<bool> {
         // (busy, log_pages, checkpointed_pages) 한 행을 돌려준다.
         let started = std::time::Instant::now();
@@ -1555,8 +1457,7 @@ fn enospc() -> i32 {
     112
 }
 
-/// 원인 표는 [`StorageFailure`] 하나다 — 저장 경로와 같은 표를 쓴다. `Io` 는 초기화
-/// 안내에 따로 된 문구가 없어 `Other` 로 간다(이 표가 생기기 전과 같은 갈래).
+/// StorageFailure와 같은 분류를 쓴다. 별도 초기화 안내가 없는 Io는 Other로 변환한다.
 fn classify_sql(err: rusqlite::Error, path: &Path) -> MemoryInitError {
     match StorageFailure::classify(&err) {
         StorageFailure::Busy => MemoryInitError::Busy(path.to_path_buf()),
@@ -1573,11 +1474,6 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> MemoryInitError {
 pub fn default_db_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("memory.db"))
 }
-
-// ---- Init helper ----
-//
-// 글로벌 `OnceLock<STORE>` + `with_store` 인프라는 폐기됐다.
-// host 가 `init_with_config` 로 Arc 를 받아 `Core.memory` 에 직접 inject 한다.
 
 /// 앱 시작 시 1회. Settings.memory 에서 도출한 [`MemoryConfig`] 로 연다.
 /// 새 `Arc<Mutex<MemoryStore>>` 를 반환 — caller (host bin 의 boot) 가 Core 에 inject.

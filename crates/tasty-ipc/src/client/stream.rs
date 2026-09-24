@@ -1,11 +1,4 @@
-//! Client-side streaming-channel transport (attach/detach step 1).
-//!
-//! Upgrades a freshly connected TCP socket into the framed streaming channel by
-//! sending the `stream.open` handshake line, then reading the server's `Control`
-//! ack frame. After that the socket carries length-prefixed binary frames in
-//! both directions (see [`crate::stream`]).
-//!
-//! Transport only — attach semantics arrive in later steps.
+//! stream.open으로 JSON-RPC 소켓을 길이 기반 바이너리 프레임 연결로 전환한다.
 
 use std::io::{BufReader, Write};
 use std::net::TcpStream;
@@ -31,18 +24,12 @@ impl StreamConnection {
         Self::open_with(stream, proto, None, None, None)
     }
 
-    /// Like [`open`](Self::open) but requests attach to `target` (a surface_id):
-    /// the server acquires the exclusive lock, pushes the initial screen
-    /// snapshot, then streams output (attach/detach step 4). The attach result
-    /// (success/`attach_error`) arrives as a *separate* `Control` frame after the
-    /// handshake ack — callers must read it (see `commands::attach`).
+    /// surface를 attach한다. handshake ack 다음의 attached/attach_error Control을 별도로 읽어야 한다.
     pub fn open_attach(stream: TcpStream, proto: u32, target: u32) -> Result<(Self, u32)> {
         Self::open_with(stream, proto, Some(target), None, None)
     }
 
-    /// Like [`open_attach`](Self::open_attach) but attaches a whole workspace
-    /// (attach/detach step 6): the server mirrors every terminal in the workspace
-    /// and the connection's `Data` frames are surface-prefixed (`decode_mux`).
+    /// workspace 전체를 attach한다. Data payload는 surface ID로 시작하는 mux 형식이다.
     pub fn open_attach_workspace(
         stream: TcpStream,
         proto: u32,
@@ -51,13 +38,9 @@ impl StreamConnection {
         Self::open_with(stream, proto, None, Some(workspace), None)
     }
 
-    /// bulk 파일 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)로 업그레이드한다. `open_attach_workspace`
-    /// 와 달리 workspace 를 mirror 하지 않고(= holder 가 되지 않고), 이 연결의 `Data`
-    /// 프레임을 서버가 파일 청크(`encode_bulk_chunk`)로 분류하도록 bulk 로 태깅한다.
-    /// `workspace` 는 저장·인가의 결속 대상(서버는 그 ws 에 활성 holder 가 있을 때만
-    /// 수락). 같은 `ssh -L` 터널의 `127.0.0.1:<local_port>` 에 두 번째로 열어 대화형
-    /// attach 스트림과 소켓을 분리한다(HOL 방지). ※ 클라 송신 경로(`upload_file_over_bulk`)가
-    /// 이 진입점을 호출한다.
+    /// workspace holder와 별개의 bulk 연결을 연다. Data는 PTY 입력 대신 파일 청크다.
+    /// 대상 workspace에 활성 holder가 있어야 서버가 전송을 허용한다.
+    /// 대화형 attach가 파일 전송을 기다리지 않도록 같은 SSH 터널에서 별도 소켓을 쓴다.
     pub fn open_bulk(stream: TcpStream, proto: u32, workspace: u32) -> Result<(Self, u32)> {
         Self::open_with(stream, proto, None, None, Some(workspace))
     }
@@ -73,10 +56,7 @@ impl StreamConnection {
         // 옵션이 공유되므로 여기서 한 번만 걸면 이후 모든 `recv()`(핸드셰이크 ack 대기
         // 포함)에 적용된다.
         stream.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT))?;
-        // Nagle 해제 — 서버측(`tcp_ipc_server::prepare_stream`)과 대칭. 프레임 하나가
-        // 곧 한 번의 상호작용(키 입력 / 리사이즈 / 구조 op)이라, Nagle 이 켜져 있으면
-        // 세그먼트가 쪼개진 프레임마다 상대의 delayed ACK(~40ms)를 기다리게 된다.
-        // 실패해도 연결 자체는 유효하므로 에러로 올리지 않는다.
+        // 작은 프레임의 분할 전송이 delayed ACK를 기다리지 않도록 Nagle을 끈다.
         if let Err(e) = stream.set_nodelay(true) {
             tracing::warn!("attach stream: TCP_NODELAY 설정 실패(지연 증가 가능): {e}");
         }

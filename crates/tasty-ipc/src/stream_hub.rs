@@ -1,19 +1,6 @@
-//! Server-side streaming push registry for the attach/detach feature (step 1).
-//!
-//! Holds one bounded push sink per upgraded stream connection so the main loop
-//! can push frames to a specific client *without ever blocking* (slow clients
-//! drop frames, then get disconnected). The IPC accept threads register and
-//! unregister sinks; the main loop pushes and drains inbound frames.
-//!
-//! Security (decisions.md #5): the streaming channel carries no token of its own
-//! — trust is delegated to SSH + 127.0.0.1 loopback. No auth layer here.
-//!
-//! See `docs/dev-guide/attach-behavior.md` ("SSH 터널", "IPC 표면").
-//!
-//! 이 모듈은 전송 수단(TCP)을 모른다 — sink 는 `std::sync::mpsc` 채널이고, 소켓에
-//! 쓰고 읽는 쪽(accept 스레드)은 본체 adapter(`src/adapters/production/tcp_ipc_server.rs`)
-//! 에 있다. 그래서 본체 core 가 adapter 를 거치지 않고 이 허브를 쓸 수 있다
-//! (docs/architecture/index.md#크레이트를-나누는-기준).
+//! 연결마다 유한 push 큐를 둔다. 큐가 가득 차면 프레임을 버리고 연속 유실이 한도를 넘으면 끊는다.
+//! 소켓 I/O는 호스트 adapter가 맡고 이 허브는 채널·수신 메시지 분류만 담당한다.
+//! 별도 인증 토큰은 없으며 SSH와 loopback 연결을 신뢰 경계로 사용한다.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -40,29 +27,21 @@ pub enum StreamInbound {
         client_id: StreamClientId,
         frame: StreamFrame,
     },
-    /// A stream client requested attach to a surface (`stream.open` with a
-    /// `target`). The main loop acquires the lock, taps output, and pushes the
-    /// initial snapshot (attach/detach step 4). Routed via the inbound channel
-    /// because the accept thread cannot touch the engine (main-loop owned).
+    /// surface attach 요청. 엔진에 접근할 수 있는 메인 루프에서 점유·snapshot·tap을 처리한다.
     AttachRequest {
         client_id: StreamClientId,
         target_surface_id: u32,
     },
-    /// A stream client requested attach to a whole workspace (`stream.open` with
-    /// `target_workspace`, attach/detach step 6). The main loop mirrors every
-    /// terminal surface in the workspace and hides non-terminals (decision 3).
+    /// workspace attach 요청. 터미널과 비터미널의 표현은 메인 루프가 구성한다.
     AttachWorkspaceRequest {
         client_id: StreamClientId,
         target_workspace_id: u32,
     },
-    /// A stream client's connection closed (EOF / read error / detach). The main
-    /// loop releases any attach locks that client held (attach/detach step 3).
+    /// 연결이 끝났다. 메인 루프가 해당 client의 점유를 해제한다.
     Disconnected { client_id: StreamClientId },
 }
 
-/// Classified inbound messages for one `pump_inbound` drain (attach/detach step
-/// 4). The main loop applies each to the engine; classification lives here
-/// (no engine access) while interpretation lives in the main loop.
+/// 한 번의 pump_inbound가 분류한 메시지. 실제 엔진 처리는 메인 루프가 수행한다.
 #[derive(Default)]
 pub struct PumpOutcome {
     /// Clients whose connections closed — release their attach locks.
@@ -75,38 +54,20 @@ pub struct PumpOutcome {
     /// In workspace mode the bytes are surface-prefixed (`decode_mux`); the main
     /// loop demuxes based on whether the client holds a workspace.
     pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
-    /// `(client_id, op_id, op, origin)` structural-op forward requests from mirror
-    /// clients (a mirror workspace's split/new-tab/close/move, forwarded to run
-    /// on this authoritative instance). The main loop verifies the client is the
-    /// workspace holder, executes via the existing IPC handlers, and replies with
-    /// a [`StreamControl::StructuralResult`](crate::stream::StreamControl).
-    /// `origin` is already resolved ([`ForwardOrigin::of_wire`](crate::stream::ForwardOrigin::of_wire)
-    /// — an absent wire field is a user's op), so no consumer reads the option.
+    /// 원격 구조 변경 요청. 메인 루프가 holder를 확인하고 도메인 함수를 호출한다.
+    /// origin은 이미 ForwardOrigin::of_wire로 해석됐으며 생략은 User다.
     pub structural_ops: Vec<(
         StreamClientId,
         u64,
         crate::stream::StructuralOp,
         crate::stream::ForwardOrigin,
     )>,
-    /// `(client_id, remote surface_id, cols, rows)` client-driven resize requests
-    /// from mirror clients ([`StreamControl::ClientResize`](crate::stream::StreamControl)).
-    /// The main loop verifies the client is the anchor surface's workspace holder,
-    /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
-    /// tap echoes the settled grid back as a `Resize` (no extra push here).
+    /// 원격 PTY 크기 요청. 메인 루프가 holder를 확인하고 resize한다. 크기 확정은 기존 tap이 통지한다.
     pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
-    /// `(client_id, remote surface_id)` attention 해제 edge 요청
-    /// ([`StreamControl::ClientAttentionClear`](crate::stream::StreamControl)).
-    /// 미러 사용자가 그 surface 를 확인(실-포커스 / 알림 읽음)했다는 판정을 소유
-    /// 인스턴스로 옮긴 것이다. 메인 루프가 anchor surface 워크스페이스의 holder 임을
-    /// 검증한 뒤 서버 레코드를 지운다 — 결과는 기존 attention diff push 가
-    /// `kind: null` 로 미러에 되돌려 확정한다(추가 push 없음).
+    /// mirror 사용자의 attention 해제 요청. holder를 확인한 뒤 원격 상태를 지운다.
+    /// 이후 attention 변경 통지가 mirror에 반영된다.
     pub attention_clear_requests: Vec<(StreamClientId, u32)>,
-    /// `(client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused)`
-    /// mesh-mirror subscribe/geometry-update requests from an attach client
-    /// ([`StreamControl::MeshContext`](crate::stream::StreamControl)). The
-    /// subscribe request itself doubles as capability negotiation — no
-    /// separate handshake. The main loop validates holder authority +
-    /// mesh whitelist membership before applying to `CoreState::mesh_mirror`.
+    /// mesh 구독·크기·테마·포커스 요청. 메인 루프가 holder와 지원 종류를 확인한다.
     #[allow(clippy::type_complexity)]
     pub mesh_context_requests: Vec<(
         StreamClientId,
@@ -131,45 +92,20 @@ pub struct PumpOutcome {
         u32,
         tasty_plugin_protocol::protocol::RawInputWire,
     )>,
-    /// `(client_id, msg)` — screenshot→remote-clipboard upload chunks/commit
-    /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::stream::StreamControl)
-    /// variant (that enum is a concurrent workstream's file) — it rides the same
-    /// `StreamTag::Control` channel as a raw JSON payload with an "event" tag value
-    /// `StreamControl`'s tagged parse doesn't recognize, so it falls through to the
-    /// `Err(_)` arm below rather than colliding with a real `StreamControl` message.
+    /// capture 업로드 제어 메시지. StreamControl과 다른 event 태그를 쓰며 그 파싱 실패 뒤 확인한다.
     pub capture_uploads: Vec<(StreamClientId, CaptureUploadMsg)>,
-    /// `(client_id, msg)` — file picker directory-listing requests from a
-    /// mirror client (mirror asking the remote/holder side to list a directory
-    /// over the same attach channel, capture-upload pattern). Same "not a
-    /// `StreamControl` variant" rationale as `capture_uploads` above — rides the
-    /// `StreamTag::Control` channel as a raw JSON "event"-tagged payload, tried
-    /// after `CaptureUploadMsg` fails to parse.
+    /// 원격 디렉터리 조회. 같은 Control 채널에서 capture 메시지 다음으로 파싱한다.
     pub list_dir_requests: Vec<(StreamClientId, ListDirRequestMsg)>,
-    /// `(client_id, msg)` — 원격 attach mirror 세션의 git 조회 요청(status/log/
-    /// worktrees snapshot 또는 단일 파일 diff). `list_dir_requests` 와 동일한 이유로
-    /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
+    /// 원격 Git 조회. 별도의 event 태그를 가진 Control JSON이다.
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
-    /// `(client_id, msg)` — 원격 attach mirror 세션의 markdown 원문 조회 요청
-    /// (docs/dev-guide/attach-behavior.md#markdown-content-채널). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
-    /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
+    /// 원격 markdown 원문 조회. 별도의 event 태그를 가진 Control JSON이다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
-    /// `(client_id, event)` — native bulk 파일 전송(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)의 begin/chunk/commit 을
-    /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
-    /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
-    /// 두 벡터로 담으면 라우팅이 chunk 를 begin 보다 먼저 처리해(별도 pass) 미등록
-    /// transfer 에 청크를 흘려 **전량 폐기 + 빈 파일 성공 오보**가 난다. 그래서 스크린샷
-    /// capture(`CaptureChunk`/`CaptureCommit` 단일 벡터)와 동형으로 순서를 보존한다 —
-    /// 라우팅은 이 벡터를 순서대로 match 해 등록/누적/확정한다. 결속 workspace 는 이
-    /// 이벤트가 아니라 연결-단위 bulk 결속([`StreamHub::bulk_workspace`])에서 조회.
+    /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
+    /// chunk를 begin보다 먼저 처리할 수 있다. 결속 workspace는 연결의 bulk_workspace에서 찾는다.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
 }
 
-/// native bulk 파일 전송의 client→server 이벤트를 **도착 순서 그대로** 담기 위한
-/// 통합 enum. begin/commit 은 wire 상 [`StreamControl::BulkBegin`](crate::stream::StreamControl)
-/// / [`StreamControl::BulkCommit`](crate::stream::StreamControl) (Control 프레임),
-/// chunk 는 [`decode_bulk_chunk`](crate::stream::decode_bulk_chunk)로 뜯은 Data
-/// 프레임이지만, `PumpOutcome` 는 이 셋을 한 벡터에 순서보존해 라우팅이 begin→chunk→
-/// commit 을 올바른 순서로 처리하게 한다(capture 의 `CaptureUploadMsg` 와 동형).
+/// Control의 begin/commit과 Data의 chunk를 한 순서로 처리하기 위한 이벤트.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BulkEvent {
     /// 전송 시작 — 파일명·총 크기 통지. `total_size` 는 수신측 사전 용량 승인(`begin_bulk_transfer`)의 입력.
@@ -208,12 +144,8 @@ pub enum CaptureUploadMsg {
     CaptureCommit { upload_id: u64, file_name: String },
 }
 
-/// File picker mid-session control messages — mirror client asking the
-/// remote/holder side to list a directory. See [`PumpOutcome::list_dir_requests`]
-/// doc for why this lives outside `StreamControl`. Trust model matches the screenshot
-/// capture-upload channel: "attach occupancy = trust", no separate `FsRead`-style
-/// permission gate (a local plugin IPC method's gate does not apply here
-/// — see docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그).
+/// attach holder가 원격 디렉터리를 조회하는 제어 메시지.
+/// 일반 플러그인 IPC의 FsRead 검사가 아니라 해당 연결의 workspace 점유를 확인한다.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ListDirRequestMsg {
@@ -221,10 +153,7 @@ pub enum ListDirRequestMsg {
     ListDirRequest { request_id: u64, dir: String },
 }
 
-/// git-viewer(원격) mid-session control messages — mirror client asking the
-/// remote/holder side for git status/log/worktrees or a single-file diff. Same
-/// "outside `StreamControl`" rationale and trust model as [`ListDirRequestMsg`]
-/// (attach occupancy = trust, `client_holds_workspace`).
+/// attach holder의 원격 Git 조회. client_holds_workspace로 점유를 확인한다.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum GitQueryRequestMsg {
@@ -245,10 +174,7 @@ pub enum GitQueryRequestMsg {
     },
 }
 
-/// markdown mirror(docs/dev-guide/attach-behavior.md#markdown-content-채널) mid-session control messages — mirror client 가
-/// 원격/holder 쪽에 그 markdown surface 가 열고 있는 문서의 **원문**을 요청한다.
-/// [`ListDirRequestMsg`] 과 같은 "outside `StreamControl`" 근거와 신뢰 모델
-/// (attach 점유 = 신뢰, `client_holds_workspace`).
+/// attach holder의 원격 markdown 원문 조회. 디렉터리 조회와 같은 점유 조건을 적용한다.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum MarkdownContentRequestMsg {
@@ -268,8 +194,7 @@ pub enum GitQueryKind {
 }
 
 impl GitQueryKind {
-    /// wire `kind` 필드 문자열. 서버 회신 조립(`attach_runtime`)과 클라이언트
-    /// 요청 조립(`attach_client`) 양쪽이 공유해 두 곳의 문자열이 drift 하지 않게 한다.
+    /// 서버 응답과 클라이언트 요청이 공유하는 kind 문자열.
     pub fn as_wire_str(self) -> &'static str {
         match self {
             GitQueryKind::Snapshot => "snapshot",
@@ -283,39 +208,19 @@ struct StreamSink {
     tx: SyncSender<StreamFrame>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
-    /// 이 연결이 [`StreamControl::Loss`](crate::stream::StreamControl) 를 받겠다고
-    /// 선언했는가. 선언은 client 가 보내는
-    /// [`ClientLossNotify`](crate::stream::StreamControl::ClientLossNotify) 프레임
-    /// 하나뿐이고, 선언하지 않은 연결은 종전과 **완전히 같게** 동작한다(조용한 drop).
+    /// ClientLossNotify를 받아 손실 통지를 활성화했는지. 선언 전에는 조용히 버린다.
     loss_notify: bool,
-    /// 이 연결에 대해 **마지막 통지 이후** 버린 프레임 수. 통지를 실제로 태운 순간에만
-    /// 0 으로 돌아간다 — 선언하지 않은 연결에서도 센다(나중에 선언해도 그때까지의 공백을
-    /// 한 번에 말할 수 있어야 한다).
+    /// 마지막 Loss 이후 유실한 프레임 수. 선언 전에도 세며 통지를 큐에 넣은 뒤에만 초기화한다.
     pending_loss: u64,
-    /// `loss_notify && pending_loss > 0` 의 사본 — 이 연결에 **갚을 통지가 있다.** [`SinkReceiver`]
-    /// 가 한 장을 꺼낼 때마다 읽는다. 빚이 없는 평상시에 write 스레드가 sink 맵 잠금을 잡지
-    /// 않게 하려는 것이라, 참값은 언제나 위 두 칸이고 이 칸은 그 둘이 바뀌는 자리
-    /// ([`StreamHub::sync_owed`])에서만 따라 쓴다.
+    /// loss_notify && pending_loss > 0의 캐시. 대기 중인 통지가 없으면
+    /// 수신자가 sink 맵을 잠그지 않도록 두며 sync_owed에서 갱신한다.
     owes_notice: Arc<AtomicBool>,
-    /// 이 연결의 sink 에 **들어가 있고 아직 write 스레드가 안 가져간** 프레임 수. push 가
-    /// 넣기 전에 +1(실패하면 되돌린다), [`SinkReceiver`] 가 꺼낼 때 −1 이다.
-    ///
-    /// 연결마다 따로 두는 이유는 끊긴 연결의 몫을 빼기 위해서다 — 연결이 끊기면 큐에 남은
-    /// 프레임은 채널과 함께 사라지는데, 허브 전체 카운터 하나로 세면 그 몫을 뺄 자리가 없어
-    /// 값이 영구히 떠오른다. 연결별로 세고 **살아 있는 연결만** 합하면 저절로 빠진다
-    /// ([`StreamHub::loss`]).
+    /// 큐에 있고 writer가 아직 꺼내지 않은 프레임 수. 넣기 전에 늘리고 실패하면 되돌린다.
+    /// 연결별로 세고 살아 있는 연결만 합해 끊긴 연결의 잔량이 통계에 남지 않게 한다.
     queued: Arc<AtomicU64>,
 }
 
-/// [`StreamHub::register`] 가 돌려주는 sink 의 수신 끝. 연결의 write 스레드가 이것을 비워
-/// 소켓에 쓴다.
-///
-/// `Receiver` 를 그대로 주지 않는 이유는 꺼낼 때 [`StreamSink::queued`] 를 내려야 해서다 —
-/// `SyncSender` 는 길이를 알려 주지 않으므로 backlog 는 넣는 쪽과 꺼내는 쪽이 함께 세야만
-/// 값이 된다. 꺼내는 경로가 이 타입의 메서드뿐이라 −1 을 빠뜨릴 수 없다.
-///
-/// 꺼내는 순간은 sink 에 **자리가 생기는** 순간이기도 하다. 그래서 밀린 손실 통지도 여기서
-/// 갚는다 — [`took`](Self::took).
+/// writer가 큐에서 꺼낼 때 backlog를 줄이고 대기 중인 Loss를 다시 넣는 수신 인터페이스.
 pub struct SinkReceiver {
     rx: Receiver<StreamFrame>,
     queued: Arc<AtomicU64>,
@@ -327,15 +232,8 @@ pub struct SinkReceiver {
 }
 
 impl SinkReceiver {
-    /// 한 장을 꺼낸 뒤의 일 — backlog 을 내리고, 밀린 손실 통지가 있으면 **지금** 갚는다.
-    ///
-    /// 통지가 밀리는 것은 버리던 순간 큐가 차 있었기 때문이고, 그 뒤 처음 자리가 생기는 것이
-    /// 바로 이 순간이다. 여기서 넣으면 통지는 큐의 맨 끝, 즉 버리기 전에 들어간 마지막
-    /// 프레임 바로 뒤에 선다 — 소비자는 공백 앞을 다 읽자마자 통지를 읽는다.
-    ///
-    /// 이 자리가 없으면 통지는 **다음 push 나 다음 inbound** 를 기다린다. 버린 프레임이 그
-    /// 연결의 마지막 출력이었고 소비자가 아무것도 안 보내면(CLI mirror-dump 는 심장박동이
-    /// 없다) 소비자는 공백 앞을 다 읽고도 공백을 모른 채 끝난다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실).
+    /// 한 프레임을 꺼낸 직후 backlog를 줄이고 밀린 Loss를 넣는다.
+    /// 유실 전 프레임 뒤에 통지가 놓이며 다음 push나 inbound를 기다릴 필요가 없다.
     fn took(&self, frame: StreamFrame) -> StreamFrame {
         self.queued.fetch_sub(1, Ordering::Relaxed);
         if self.owes_notice.load(Ordering::Acquire) {
@@ -387,25 +285,15 @@ pub enum PushResult {
     Disconnected,
 }
 
-/// 이 허브가 **지금까지 잃은 것**. [`StreamSink::lag`] 과 다른 물음에 답한다 —
-/// `lag` 은 성공 한 번에 0 으로 돌아가는 *연속* drop 수라, 단발 손실이 섞여 있어도
-/// 끝에서 보면 0 이다. 여기 두 수는 **안 내려간다.**
-///
-/// 두 칸을 나눠 둔 이유는 손실의 성질이 다르기 때문이다. `frames` 는 연결이 **살아
-/// 있는데** 사라진 프레임이라 소비자가 알 길이 없고, `lagged_out` 은 연결이 끊겨
-/// 소비자가 이미 아는 손실이다. 한 수로 합치면 "조용한 손실이 있었나" 를 못 묻는다.
+/// 누적 유실 프레임 수와 지연으로 끊은 연결 수.
+/// 전송 성공 때 초기화하는 연속 유실 수 lag와 구분한다.
 #[derive(Debug, Default)]
 struct StreamLoss {
     frames: AtomicU64,
     lagged_out: AtomicU64,
 }
 
-/// [`StreamHub::loss`] 가 돌려주는 한 시점의 값.
-///
-/// 세 수가 서로 다른 것을 잰다(`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
-/// 앞의 둘은 프로세스 수명 **누계**라 안 내려가고, `backlog` 만 **지금** 의 값이라 내려간다.
-/// 셋 다 연결별 연속 drop 수(`StreamSink::lag`)와 다르다 — 그것은 성공 한 번에 0 이 되는
-/// 강제분리의 좌변이고 밖에 안 나간다.
+/// 누적 유실 두 값과 현재 backlog. backlog만 큐 소비·연결 해제에 따라 줄어든다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StreamLossSnapshot {
     /// 연결이 살아 있는데 sink 가 차서 버린 프레임 수 — **조용한 손실**.
@@ -417,8 +305,7 @@ pub struct StreamLossSnapshot {
     pub backlog: u64,
 }
 
-/// 연결 하나의 sink 가 담을 수 있는 프레임 수. 밖에 내보내는 이유는 [`StreamLossSnapshot::backlog`]
-/// 가 얼마나 상한에 가까운지를 같은 응답에서 읽게 하려는 것이다.
+/// 진단 응답에 제공하는 연결 하나의 큐 용량.
 pub const SINK_CAPACITY: usize = SINK_CAP;
 
 /// Context handed to each accepted connection so it can register a stream sink,
@@ -436,12 +323,8 @@ pub struct StreamContext {
 pub struct StreamHub {
     sinks: Arc<Mutex<HashMap<StreamClientId, StreamSink>>>,
     next_id: Arc<AtomicU32>,
-    /// bulk 파일 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그): `client_id → 결속 workspace_id`. 이 맵에
-    /// 든 연결의 `Data` 프레임은 PTY 입력이 아니라 파일 청크로 분류되고(연결-단위
-    /// 태깅 — [`pump_inbound`](Self::pump_inbound)), begin/commit 인가 시 서버가 그
-    /// workspace 의 holder 존재를 검증하는 결속 근거가 된다(조사 §6). 핸드셰이크에서
-    /// [`register_bulk`](Self::register_bulk)로 등록, [`unregister`](Self::unregister)
-    /// 로 정리.
+    /// bulk 연결과 workspace의 매핑. Data를 파일 청크로 분류하고
+    /// begin/commit 때 해당 workspace에 holder가 있는지 확인하는 데 쓴다.
     bulk_bindings: Arc<Mutex<HashMap<StreamClientId, u32>>>,
     /// 누적 손실. 클론이 공유한다 — 허브는 accept 스레드마다 클론되므로 `Arc` 밖에
     /// 두면 스레드마다 다른 수를 센다.
@@ -454,13 +337,7 @@ impl Default for StreamHub {
     }
 }
 
-/// sink 맵 · bulk 결속 맵의 poison 을 각각 첫 1 회만 보고한다.
-///
-/// 둘 다 임계구역이 `HashMap` 조작뿐이라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
-/// 반대로 `push` 는 메인 루프의 pump 경로에서 도는지라 패닉하면 창 전체가 죽는다.
-/// 조용히 버리면 등록되지 않은 클라이언트가 프레임을 영영 못 받고(에러도 없다),
-/// `push` 는 살아 있는 연결을 `Unknown` 으로 접는다. 근거
-/// `docs/dev-guide/error-handling.md` "락 poison".
+/// 메모리 맵의 poison을 각각 한 번 보고하고 복구한다. 조회 실패를 미등록 연결로 취급하지 않는다.
 static SINKS_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static BULK_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -508,15 +385,7 @@ impl StreamHub {
         }
     }
 
-    /// 이 연결이 손실 통지를 받겠다고 선언했음을 기록한다
-    /// ([`StreamControl::ClientLossNotify`](crate::stream::StreamControl::ClientLossNotify)).
-    ///
-    /// 선언을 handshake 가 아니라 프레임으로 받는 이유는 판을 게이트로 쓸 수 없기
-    /// 때문이다 — 서버는 `StreamOpenParams::proto` 를 **동등 비교**하므로 판을 올리면
-    /// 기능이 좁아지는 것이 아니라 구 peer 의 attach 가 거절된다. 같은 모양을
-    /// `MeshContext` 구독이 이미 쓴다("구독 요청 자체가 capability 협상").
-    ///
-    /// 멱등. 이미 끊긴 연결에 대해서는 아무것도 하지 않는다.
+    /// ClientLossNotify 선언을 기록한다. 반복 호출은 같으며 이미 끊긴 연결은 무시한다.
     pub fn enable_loss_notify(&self, id: StreamClientId) {
         if let Some(sink) =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
@@ -561,13 +430,9 @@ impl StreamHub {
         let Some(sink) = sinks.get_mut(&id) else {
             return PushResult::Unknown;
         };
-        // 손실은 **큐가 찼을 때** 난다. 그래서 통지를 그 순간에 같은 큐로 보내면 통지도
-        // 함께 사라진다 — 손실을 알리는 프레임이 손실의 첫 희생자가 된다. 대신 빚으로
-        // 적어 두고(`pending_loss`), 큐에 자리가 생기는 **첫 순간** — write 스레드가 한 장을
-        // 꺼낼 때([`SinkReceiver`]) — 에 갚는다. 여기 push 의 맨 앞에서도 한 번 더 시도한다.
-        // 그 자리가 곧 스트림에서 공백이 난 지점이라, 소비자는 순번 없이도 통지 앞뒤로
-        // 연속/불연속을 가를 수 있다. 자리가 아직 없으면 빚은 그대로 남고 다음 기회에
-        // 다시 시도한다 — 통지는 **태워진 순간에만** 지워진다.
+        // 큐가 가득 차 생긴 손실이므로 Loss도 바로 넣지 못할 수 있다.
+        // pending_loss를 보존하고 수신자가 자리를 비울 때 또는 다음 push 전에 다시 넣는다.
+        // 통지가 큐에 들어가기 전에는 누계를 초기화하지 않는다.
         Self::repay_pending_loss(sink);
         match Self::try_enqueue(sink, frame) {
             Ok(()) => {
@@ -575,8 +440,7 @@ impl StreamHub {
                 PushResult::Sent
             }
             Err(TrySendError::Full(_)) => {
-                // 이 프레임은 어느 갈래로 가든 사라진다 — 끊는 갈래도 이것을 못 보낸다.
-                // 그래서 세는 자리가 분기 **앞**이다.
+                // 연결을 끊는 경우에도 마지막 프레임은 유실됐으므로 분기 전에 센다.
                 self.loss.frames.fetch_add(1, Ordering::Relaxed);
                 sink.pending_loss += 1;
                 Self::sync_owed(sink);
@@ -596,19 +460,9 @@ impl StreamHub {
         }
     }
 
-    /// 밀린 손실 통지를 갚는다. 부르는 자리는 셋이다 — write 스레드가 한 장을 꺼낸 직후
-    /// ([`SinkReceiver`] — 큐에 자리가 생기는 첫 순간이라 통지가 공백 지점에 선다),
-    /// [`push`](Self::push) 가 본 프레임을 태우기 **직전**, [`pump_inbound`](Self::pump_inbound)
-    /// 의 끝(선언이 손실보다 늦게 온 연결).
-    ///
-    /// 갚을 자리가 없으면(선언 안 함 · 빚 없음 · 큐가 아직 참) 아무것도 안 하고 빚을
-    /// 그대로 둔다. 통지가 자리를 차지해 바로 뒤의 본 프레임이 떨어질 수 있는데, 그것이
-    /// 의도다: 그 한 장은 다음 통지의 수에 합산되고, 반대로 통지를 뒤로 미루면 소비자가
-    /// **이미 불연속인 데이터를 연속으로 그린 뒤에** 통지를 받는다.
-    ///
-    /// `lag` 은 건드리지 않는다. 그 수는 "소비자가 따라오고 있는가" 를 재고
-    /// [`LAG_LIMIT`] 강제분리의 좌변인데, 서버가 스스로 넣은 통지의 성공을 소비자의
-    /// 진척으로 세면 느린 소비자가 그 한도를 영원히 피할 수 있다.
+    /// 수신자의 dequeue 직후, 새 push 직전, inbound 처리 끝에 밀린 Loss를 넣는다.
+    /// 선언 전이거나 큐가 가득 찼으면 누계를 유지한다. 통지를 우선 넣어 바로 뒤의
+    /// 데이터가 다시 버려져도 다음 Loss로 알린다. 통지 성공은 소비자의 진척이 아니므로 lag를 초기화하지 않는다.
     fn repay_pending_loss(sink: &mut StreamSink) {
         if !Self::owes(sink) {
             return;
@@ -630,7 +484,7 @@ impl StreamHub {
         }
     }
 
-    /// 이 연결에 태우지 못한 통지가 있는가 — 선언했고 빚이 있다.
+    /// 손실 통지를 선언했고 아직 알리지 않은 유실이 있는지 확인한다.
     fn owes(sink: &StreamSink) -> bool {
         sink.loss_notify && sink.pending_loss != 0
     }
@@ -654,13 +508,7 @@ impl StreamHub {
         sent
     }
 
-    /// 모든 연결의 밀린 손실 통지를 갚는다 — [`pump_inbound`](Self::pump_inbound) 가 끝에서
-    /// 부른다.
-    ///
-    /// 통지를 공백 지점에 세우는 것은 write 스레드 쪽([`SinkReceiver`])이다. 이 자리가 따로
-    /// 필요한 것은 그 자리가 못 보는 갈래다 — 손실이 **선언보다 먼저** 났고 소비자가 그
-    /// 사이 큐를 다 비운 연결. 꺼낼 때는 아직 선언 전이라 갚을 것이 없었고, 선언이 들어온
-    /// 뒤에는 꺼낼 것이 없다. 자리가 아직 없으면 빚은 그대로다 — 규칙은 `push` 와 같다.
+    /// 선언 전에 유실됐고 이미 큐를 비운 연결도 이번 inbound 처리 뒤 Loss를 받을 수 있게 한다.
     fn repay_all_pending_loss(&self) {
         let mut sinks =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
@@ -669,13 +517,7 @@ impl StreamHub {
         }
     }
 
-    /// 지금까지의 누적 손실. 호출자가 `push` 의 반환을 안 봐도 손실이 값으로 남는
-    /// 유일한 자리다 — 제품 코드 37 자리 중 31 이 `let _ =` 로 버리고, 결과를 보는
-    /// 여섯도 `Dropped` 를 따로 다루지 않는다(다섯은 `Unknown`/`Disconnected` 에만
-    /// 반응해 계속 보내고, 하나는 `Sent` 외 전부를 한 덩어리로 로그한다).
-    ///
-    /// `backlog` 은 지금 등록된 연결만 합한다 — 끊긴 연결의 큐는 채널과 함께 사라졌으므로
-    /// 그 몫을 셀 이유가 없다([`StreamSink::queued`]).
+    /// 누적 유실과 살아 있는 연결들의 현재 backlog를 읽는다. push 결과를 무시한 호출의 손실도 포함한다.
     pub fn loss(&self) -> StreamLossSnapshot {
         let backlog =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
@@ -694,15 +536,8 @@ impl StreamHub {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
 
-    /// Drain inbound messages routed from stream clients (called by the main loop
-    /// on `AppEvent::StreamReady`). Classifies them into a [`PumpOutcome`] the
-    /// main loop applies to the engine — disconnects free locks, attach requests
-    /// acquire + snapshot + tap, `Data` frames route to the held surface's PTY.
-    ///
-    /// `Data` frames from a *non-attached* client are step-1 echo clients: the
-    /// main loop echoes them back (debug only) since they aren't routed by
-    /// `feed_attached_input`. Classification here has no engine access, so it
-    /// returns all `Data` frames as `input_frames` and lets the main loop decide.
+    /// 수신 메시지를 종류별로 분류한다. 엔진 접근과 점유·입력 처리 자체는 메인 루프가 맡는다.
+    /// 일반 Data는 input_frames, bulk 연결의 Data는 bulk_events로 반환한다.
     pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> PumpOutcome {
         let mut out = PumpOutcome::default();
         while let Ok(msg) = inbound_rx.try_recv() {
@@ -719,9 +554,7 @@ impl StreamHub {
                     .workspace_attach_requests
                     .push((client_id, target_workspace_id)),
                 StreamInbound::Frame { client_id, frame } => {
-                    // 연결-단위 bulk 태깅: bulk 전용 연결이면 그 Data 는 PTY 입력이
-                    // 아니라 파일 청크다(같은 `StreamTag::Data` 를 두 의미로 쓰므로
-                    // 연결 단위로 구분해야 한다 — docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그, 전용 연결이 필수인 이유).
+                    // 같은 Data 태그라도 bulk 연결이면 파일 청크로 분류한다.
                     let bulk_ws = self.bulk_workspace(client_id);
                     match frame.tag {
                         crate::stream::StreamTag::Data if bulk_ws.is_some() => {
@@ -745,14 +578,7 @@ impl StreamHub {
                             out.input_frames.push((client_id, frame.payload));
                         }
                         crate::stream::StreamTag::Control => {
-                            // Client→server Control messages: `StructuralOp`
-                            // (split/new-tab/close/move forward), `ClientResize`
-                            // (client-driven mirror geometry), and the native
-                            // bulk transfer control-plane (`BulkBegin`/`BulkCommit`).
-                            // Any other `StreamControl` variant (server→client only)
-                            // is ignored; a payload that isn't a `StreamControl` at
-                            // all falls to `Err` and is tried against the screenshot
-                            // capture-upload mini-protocol before being dropped.
+                            // client→server 제어 메시지만 분류한다. 다른 형태는 별도 event parser로 확인한다.
                             match serde_json::from_slice(&frame.payload) {
                                 Ok(crate::stream::StreamControl::StructuralOp {
                                     op_id,
@@ -821,10 +647,7 @@ impl StreamHub {
                                 }) => {
                                     out.mesh_input_events.push((client_id, surface_id, input));
                                 }
-                                // 손실 통지 선언. 메인 루프를 거치지 않고 여기서 바로
-                                // 허브 상태에 적는다 — 엔진을 한 줄도 안 보는 연결 단위
-                                // 사실이고, 선언과 그 다음 `push` 사이에 메인 루프 tick 을
-                                // 끼우면 그 사이의 공백을 놓친다.
+                                // 연결별 선언이므로 허브에서 바로 기록한다.
                                 Ok(crate::stream::StreamControl::ClientLossNotify {}) => {
                                     self.enable_loss_notify(client_id);
                                 }
@@ -852,10 +675,7 @@ impl StreamHub {
                                 }
                             }
                         }
-                        // Ping/Detach carry no step-4 payload. Ping's only job is
-                        // completing the accept thread's `read_frame` call so the
-                        // socket's read timeout resets (heartbeat protocol) — no
-                        // state to track here.
+                        // Ping/Detach에는 엔진에 전달할 입력 payload가 없다.
                         _ => {}
                     }
                 }
@@ -914,13 +734,10 @@ mod tests {
     fn slow_client_drops_then_disconnects() {
         let hub = StreamHub::new();
         let id = hub.alloc_id();
-        // Keep the receiver alive but never drain it so the sink fills up.
         let _rx = hub.register(id);
-        // Fill the bounded sink (SINK_CAP frames accepted).
         for _ in 0..SINK_CAP {
             assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
         }
-        // Next pushes are dropped until LAG_LIMIT, then the client is dropped.
         let mut saw_disconnect = false;
         for _ in 0..LAG_LIMIT {
             match hub.push(id, frame(StreamTag::Data, b"x")) {
@@ -936,9 +753,6 @@ mod tests {
         assert_eq!(hub.client_count(), 0);
     }
 
-    /// 누적 손실은 **안 내려간다** — `StreamSink::lag` 이 성공 한 번에 0 이 되는 것과
-    /// 다른 물음에 답한다. 단발 drop 뒤에 성공이 오면 `lag` 으로는 아무 일도 없던 것처럼
-    /// 보이고, 그것이 이 카운터가 있는 이유다.
     #[test]
     fn a_single_drop_survives_the_success_that_follows_it() {
         let hub = StreamHub::new();
@@ -950,13 +764,11 @@ mod tests {
             "시작이 0 이 아니다"
         );
 
-        // sink 를 채운다 — 여기까지는 손실이 없다.
         for _ in 0..SINK_CAP {
             assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
         }
         assert_eq!(hub.loss().frames_dropped, 0, "성공만 했는데 손실을 셌다");
 
-        // 한 장 잃는다.
         assert_eq!(
             hub.push(id, frame(StreamTag::Data, b"lost")),
             PushResult::Dropped
@@ -964,11 +776,9 @@ mod tests {
         assert_eq!(hub.loss().frames_dropped, 1);
         assert_eq!(hub.loss().clients_lagged_out, 0, "끊지도 않았는데 셌다");
 
-        // 소비자가 한 칸을 비우면 다음 push 는 성공하고 `lag` 은 0 으로 돌아간다.
         rx.recv().expect("한 장은 이미 큐에 있다");
         assert_eq!(hub.push(id, frame(StreamTag::Data, b"y")), PushResult::Sent);
 
-        // 그래도 잃은 한 장은 남아 있다 — 이것이 `lag` 과 갈리는 자리다.
         assert_eq!(
             hub.loss().frames_dropped,
             1,
@@ -976,9 +786,6 @@ mod tests {
         );
     }
 
-    /// 끊는 갈래도 그 프레임을 못 보낸다. 그래서 `frames_dropped` 는 끊김 직전의
-    /// 마지막 한 장까지 세고, 끊긴 연결 수는 **따로** 센다 — 한 수로 합치면
-    /// "조용한 손실이 있었나" 를 못 묻는다.
     #[test]
     fn the_frame_that_triggers_the_disconnect_is_counted_as_lost_too() {
         let hub = StreamHub::new();
@@ -1003,8 +810,6 @@ mod tests {
         assert_eq!(loss.clients_lagged_out, 1);
     }
 
-    /// 손실 통지를 선언하지 **않은** 연결은 종전과 완전히 같다 — 큐에 들어오는 것이
-    /// 프레임 하나도 안 늘어난다. 이 시험이 지키는 것은 "기존 peer 무영향" 이다.
     #[test]
     fn a_client_that_never_declares_sees_no_extra_frame() {
         let hub = StreamHub::new();
@@ -1037,8 +842,6 @@ mod tests {
         assert_eq!(drained.len(), SINK_CAP - 1, "큐 길이가 달라졌다");
     }
 
-    /// 통지의 값은 **수만이 아니라 자리**다. 공백이 난 지점, 즉 공백을 넘어 살아남은
-    /// 첫 프레임 **바로 앞**에 들어가야 소비자가 순번 없이 앞뒤를 가를 수 있다.
     #[test]
     fn the_notice_lands_between_the_last_survivor_and_the_first_frame_after_the_gap() {
         let hub = StreamHub::new();
@@ -1058,7 +861,6 @@ mod tests {
                 PushResult::Dropped
             );
         }
-        // 소비자가 두 칸을 비운다 — 한 칸은 통지가, 한 칸은 본 프레임이 쓴다.
         rx.recv().expect("한 장 비운다");
         rx.recv().expect("두 장 비운다");
         assert_eq!(
@@ -1090,9 +892,6 @@ mod tests {
         );
     }
 
-    /// 통지 자체가 막히는 갈래 — 큐가 아직 차 있으면 통지는 **안 태워지고 빚으로 남는다.**
-    /// 그 사이에 더 잃으면 빚이 커지고, 결국 한 번에 갚는다. 빚을 태우기도 전에 지우면
-    /// 그 공백은 영영 안 알려진다.
     #[test]
     fn a_notice_that_cannot_be_sent_is_kept_as_debt_and_paid_in_full_later() {
         let hub = StreamHub::new();
@@ -1106,14 +905,12 @@ mod tests {
                 PushResult::Sent
             );
         }
-        // 자리가 없는 동안의 두 번 — 통지도 본 프레임도 못 들어간다.
         for _ in 0..2 {
             assert_eq!(
                 hub.push(id, frame(StreamTag::Data, b"gap")),
                 PushResult::Dropped
             );
         }
-        // 한 칸만 비우면 그 칸은 통지가 쓴다(본 프레임은 또 떨어진다).
         rx.recv().expect("한 장 비운다");
         assert_eq!(
             hub.push(id, frame(StreamTag::Data, b"gap")),
@@ -1135,9 +932,6 @@ mod tests {
         );
     }
 
-    /// 통지를 태운 것은 **소비자의 진척이 아니다.** `lag` 을 같이 0 으로 돌리면 느린
-    /// 소비자가 [`LAG_LIMIT`] 강제분리를 영원히 피한다. 좌변: 한 칸이 비어 통지가
-    /// 들어간 바로 그 push 에서 연속 drop 수가 한도에 닿아야 한다.
     #[test]
     fn sending_the_notice_does_not_count_as_the_consumer_keeping_up() {
         let hub = StreamHub::new();
@@ -1162,7 +956,6 @@ mod tests {
         );
     }
 
-    /// 선언은 메인 루프를 거치지 않고 `pump_inbound` 가 바로 허브에 적는다.
     #[test]
     fn pump_inbound_records_the_loss_notify_declaration() {
         let hub = StreamHub::new();
@@ -1205,8 +998,6 @@ mod tests {
         );
     }
 
-    /// 허브는 accept 스레드마다 클론된다. 카운터가 `Arc` 밖에 있으면 클론마다 다른 수를
-    /// 세고, 어느 수도 전체 손실이 아니게 된다.
     #[test]
     fn a_clone_of_the_hub_counts_into_the_same_total() {
         let hub = StreamHub::new();
@@ -1223,7 +1014,6 @@ mod tests {
         assert_eq!(hub.loss().frames_dropped, 1, "클론이 자기 수를 따로 셌다");
     }
 
-    /// backlog 은 **지금** 쌓인 양이라 꺼내면 내려가고, 누계 둘과 섞이지 않는다.
     #[test]
     fn backlog_rises_with_queued_frames_and_falls_as_the_writer_takes_them() {
         let hub = StreamHub::new();
@@ -1243,7 +1033,6 @@ mod tests {
         assert_eq!(loss.frames_dropped, 0, "backlog 이 손실 누계로 샜다");
     }
 
-    /// 넣지 못한 프레임은 backlog 에 안 남는다 — 가득 찬 sink 의 몫은 정확히 용량이다.
     #[test]
     fn a_refused_frame_does_not_count_as_backlog() {
         let hub = StreamHub::new();
@@ -1260,8 +1049,6 @@ mod tests {
         assert_eq!(hub.loss().frames_dropped, 1);
     }
 
-    /// 끊긴 연결의 큐는 채널과 함께 사라진다. 그 몫이 합에 남으면 backlog 이 영구히
-    /// 떠오른다 — 살아 있는 연결만 합한다.
     #[test]
     fn a_disconnected_client_leaves_nothing_in_the_backlog() {
         let hub = StreamHub::new();
@@ -1284,11 +1071,6 @@ mod tests {
         assert_eq!(hub.loss().backlog, 1, "끊긴 연결의 큐가 합에 남았다");
     }
 
-    /// ★ 통지는 **소비자가 공백 앞을 다 읽는 즉시** 뒤따른다 — 그 연결에 다음 push 도, 어떤
-    /// inbound 도 없어도. 버린 프레임이 그 연결의 마지막 출력이고 소비자가 아무것도 안 보내면
-    /// (CLI mirror-dump) 예전에는 통지가 다음 push 나 다음 inbound 까지 밀려, 소비자는 공백
-    /// 앞을 다 읽고도 공백을 모른 채 끝났다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). 통지가 공백 앞 마지막 프레임 **바로
-    /// 뒤**에 있어야 하므로 위치까지 본다.
     #[test]
     fn a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss() {
         let hub = StreamHub::new();
@@ -1305,7 +1087,6 @@ mod tests {
             hub.push(id, frame(StreamTag::Data, b"gap")),
             PushResult::Dropped
         );
-        // 이후 이 연결로 밀리는 것도, 이 연결이 보내는 것도 없다. 소비자는 비우기만 한다.
         let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         assert_eq!(
             drained.len(),
@@ -1324,10 +1105,6 @@ mod tests {
         assert_eq!(hub.loss().backlog, 0, "꺼낸 통지가 backlog 에 남았다");
     }
 
-    /// 선언이 손실보다 **늦게** 온 연결 — 소비자가 선언 전에 큐를 다 비웠으면 write 스레드
-    /// 쪽은 갚을 기회가 없다(꺼낼 때는 선언 전, 선언 뒤에는 꺼낼 것이 없다). 그 갈래는
-    /// `pump_inbound` 가 선언을 적은 바로 그 배치의 끝에서 갚는다 — 선언 전에 센 공백도
-    /// 한 번에 말한다.
     #[test]
     fn a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch() {
         let hub = StreamHub::new();
@@ -1368,7 +1145,6 @@ mod tests {
             matches!(notice, crate::stream::StreamControl::Loss { frames: 1 }),
             "선언 전에 센 공백을 말해야 한다: {notice:?}"
         );
-        // 갚은 빚은 다시 안 나간다.
         tx.send(StreamInbound::Frame {
             client_id: id,
             frame: frame(StreamTag::Ping, b""),
@@ -1378,10 +1154,6 @@ mod tests {
         assert!(rx.try_recv().is_err(), "갚은 통지가 되풀이됐다");
     }
 
-    /// 선언이 손실 **뒤**, 소비자가 큐를 비우기 **전**에 온 연결 — 선언이 write 스레드 쪽
-    /// 사본(`owes_notice`)을 켜야 꺼내는 순간 통지가 나간다. 선언 자리가 사본을 안 맞추면
-    /// 사본은 "선언 전이라 빚 없음" 에 머물고, 소비자는 공백 앞을 다 읽고도 통지를 못 받는다
-    /// (`pump_inbound` 가 이 연결의 inbound 를 한 번 더 받기 전까지).
     #[test]
     fn a_declaration_between_the_loss_and_the_drain_is_repaid_by_the_write_thread() {
         let hub = StreamHub::new();
@@ -1411,7 +1183,6 @@ mod tests {
         assert_eq!(notice, crate::stream::StreamControl::Loss { frames: 1 });
     }
 
-    /// 선언하지 않은 연결에는 `pump_inbound` 도 아무것도 넣지 않는다 — 구 peer 무영향.
     #[test]
     fn pump_inbound_adds_nothing_for_a_client_that_never_declared() {
         let hub = StreamHub::new();
@@ -1508,15 +1279,11 @@ mod tests {
             out.structural_ops,
             vec![(8u32, 3u64, op, crate::stream::ForwardOrigin::Agent)]
         );
-        // Not misclassified as input.
         assert!(out.input_frames.is_empty());
     }
 
     #[test]
     fn pump_inbound_ignores_unknown_control() {
-        // A Control frame that is not a client→server message (e.g. a Resize,
-        // which is server→client only) must not be classified as a structural op
-        // or a resize request.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let payload = serde_json::to_vec(&crate::stream::StreamControl::Resize {
@@ -1552,7 +1319,6 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.resize_requests, vec![(8u32, 12u32, 203usize, 57usize)]);
-        // Not misclassified as a structural op or input.
         assert!(out.structural_ops.is_empty());
         assert!(out.input_frames.is_empty());
     }
@@ -1634,9 +1400,6 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_capture_chunk_and_commit() {
-        // The capture-upload mini-protocol lives outside `StreamControl` — its
-        // payloads must fail the `StreamControl` parse (unrecognized "event") and
-        // fall through to the `CaptureUploadMsg` attempt.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let chunk = serde_json::json!({
@@ -1680,7 +1443,6 @@ mod tests {
             }
             other => panic!("expected CaptureCommit, got {other:?}"),
         }
-        // Not misclassified as a structural op / resize / input frame.
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());
@@ -1688,8 +1450,6 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_list_dir_request() {
-        // File picker: same "outside StreamControl" pattern as capture upload,
-        // tried only after CaptureUploadMsg fails to parse.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let req = serde_json::json!({
@@ -1719,7 +1479,6 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_git_query_request() {
-        // git-viewer(원격): list_dir_request 와 동일한 "outside StreamControl" 패턴.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let req = serde_json::json!({
@@ -1764,7 +1523,6 @@ mod tests {
         assert_eq!(hub.bulk_workspace(5), None);
         hub.register_bulk(5, 42);
         assert_eq!(hub.bulk_workspace(5), Some(42));
-        // 다른 client 는 영향 없음.
         assert_eq!(hub.bulk_workspace(6), None);
         hub.unregister(5);
         assert_eq!(hub.bulk_workspace(5), None);
@@ -1772,8 +1530,6 @@ mod tests {
 
     #[test]
     fn pump_inbound_bulk_connection_data_is_chunk_not_input() {
-        // bulk 로 태깅된 연결의 Data 는 파일 청크(bulk_events::Chunk)로 분류되고
-        // input_frames(PTY)로 새지 않는다.
         let hub = StreamHub::new();
         hub.register_bulk(7, 3); // client 7 = bulk 연결(ws 3 결속)
         let (tx, inbound_rx) = mpsc::channel();
@@ -1800,7 +1556,6 @@ mod tests {
 
     #[test]
     fn pump_inbound_non_bulk_data_still_input() {
-        // 비-bulk 연결의 Data 는 종전대로 PTY 입력으로 간다(회귀 방지).
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         tx.send(StreamInbound::Frame {
@@ -1853,17 +1608,12 @@ mod tests {
             out.bulk_events[1],
             (9u32, BulkEvent::Commit { transfer_id: 100 })
         );
-        // 구조 op / capture 로 오분류되지 않음.
         assert!(out.structural_ops.is_empty());
         assert!(out.capture_uploads.is_empty());
     }
 
     #[test]
     fn pump_inbound_preserves_bulk_begin_chunk_commit_order() {
-        // 회귀 방지(Gate4): begin+chunk*2+commit 이 **한 배치**에 함께 drain 돼도
-        // bulk_events 가 도착 순서를 그대로 보존해야 한다(분리 벡터였을 때의
-        // chunk-before-begin data-loss 결함 재발 방지). 라우팅이 이 순서대로 처리하면
-        // begin→append→append→finalize 로 전량 저장된다.
         use crate::stream::{StreamControl, encode_bulk_chunk};
         let hub = StreamHub::new();
         hub.register_bulk(5, 2);
@@ -1908,10 +1658,6 @@ mod tests {
         ));
         assert!(matches!(events[3], BulkEvent::Commit { transfer_id: 7 }));
     }
-
-    // begin/chunk/commit 이 한 배치로 와도 저장 bytes 가 온전한가를 `BulkTransferRegistry`
-    // 까지 이어 재는 end-to-end 시험은 본체 `src/core/bulk_transfer.rs` 에 있다 — 이
-    // 크레이트는 본체 core 를 참조할 수 없다. 순서 보존 자체는 바로 위 시험이 여기서 잰다.
 
     #[test]
     fn pump_inbound_reports_disconnects() {

@@ -1,14 +1,5 @@
-//! Streaming channel codec for the attach/detach feature (step 1).
-//!
-//! A normal line-delimited JSON-RPC connection can be *upgraded* to a streaming
-//! channel by sending `{"method":"stream.open",...}` as its first line. After the
-//! upgrade the socket carries length-prefixed binary frames instead of JSON
-//! lines, so the server can push bytes/events to the client continuously.
-//!
-//! Frame layout: `[tag: u8][len: u32 BE][payload: len bytes]`.
-//!
-//! This layer is *transport only* — attach semantics (lock / mirror /
-//! placeholder) live above it. See `docs/dev-guide/attach-behavior.md`.
+//! stream.open을 첫 줄로 보내 JSON-RPC 연결을 바이너리 스트림으로 전환한다.
+//! 프레임은 [tag:u8][len:u32 BE][payload] 형식이다. 점유·mirror 처리는 상위 계층이 맡는다.
 
 use std::io::{self, Read, Write};
 use std::time::Duration;
@@ -19,24 +10,14 @@ use serde::{Deserialize, Serialize};
 /// to the streaming channel.
 pub const STREAM_OPEN_METHOD: &str = "stream.open";
 
-/// Current streaming protocol version.
-///
-/// The server compares this for **equality** against the client's declared
-/// `StreamOpenParams::proto` and refuses the connection when they differ
-/// (`validate_stream_proto`). So this number is a hard compatibility gate, not a
-/// feature level: raising it does not narrow what a peer is told, it stops the
-/// peer from attaching at all. Additive stream features are therefore declared
-/// separately — see [`crate::capability::CAPABILITIES`] for the server side and
-/// [`StreamControl::ClientLossNotify`] for the client side — and this constant
-/// moves only when a frame's *existing* meaning changes.
+/// handshake에서 동일한 값인지 비교하는 프로토콜 버전. 변경하면 기존 peer 연결이 거절된다.
+/// 추가 기능은 capability와 ClientLossNotify 같은 별도 선언으로 협상한다.
 pub const STREAM_PROTO: u32 = 1;
 
 /// Frame header length: 1-byte tag + 4-byte big-endian payload length.
 pub const FRAME_HEADER_LEN: usize = 5;
 
-/// Maximum accepted frame payload length (1 MiB). Frames larger than this are
-/// rejected and the connection is closed — guards against malicious or runaway
-/// length prefixes (wezterm issue #7527 OOM lesson).
+/// 프레임 payload 상한(1 MiB). 초과하면 할당 전에 거절하고 연결을 끝낸다.
 pub const MAX_FRAME_LEN: u32 = 1 << 20;
 
 /// Idle interval between application-level [`StreamTag::Ping`] heartbeats sent
@@ -54,9 +35,9 @@ pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(20);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum StreamTag {
-    /// Raw bytes (future PTY output / echo payload).
+    /// PTY 출력 또는 echo 등의 바이트 payload.
     Data = 0,
-    /// UTF-8 JSON control message (handshake ack; future resize/detach metadata).
+    /// handshake와 세션 제어용 UTF-8 JSON.
     Control = 1,
     /// Application-level keepalive. Sent with an empty payload by either peer's
     /// write side when idle for [`HEARTBEAT_INTERVAL`]; receiving *any* frame
@@ -105,30 +86,20 @@ impl StreamFrame {
 pub struct StreamOpenParams {
     #[serde(default)]
     pub proto: u32,
-    /// attach 대상 surface_id. `Some` 이면 서버가 핸드셰이크 직후 그 surface 를
-    /// 이 연결의 client 로 attach 한다(배타 점유 + 초기 스냅샷 + 출력 forward).
-    /// `None` 이면 순수 스트림(단계 1 echo) — attach 의미 없음.
+    /// attach할 surface ID. 지정하면 handshake 뒤 점유와 초기 snapshot 전송을 요청한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<u32>,
-    /// attach 대상 workspace_id(단계 6). `Some` 이면 서버가 그 workspace 의 모든
-    /// 터미널 surface 를 mirror 하고 비-터미널은 placeholder 로 숨긴다. 이 연결의
-    /// 모든 `Data` 프레임은 **surface-prefixed**(`[u32 surface_id BE][bytes]`, D3)다.
-    /// `target` 와 상호배타 — 둘 다 지정되면 서버가 거부한다.
+    /// attach할 workspace ID. 터미널별 Data에는 surface ID prefix가 붙는다.
+    /// target과 함께 지정하면 서버가 거절한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_workspace: Option<u32>,
-    /// bulk 파일 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그). `Some(ws)` 이면 이 연결은 대화형 attach 를
-    /// 하지 않고(= workspace holder 가 되지 않음), 그 `Data` 프레임을 PTY 입력이 아니라
-    /// **파일 청크**(`decode_bulk_chunk`)로 분류하도록 서버가 이 연결을 bulk 로 태깅한다.
-    /// 결속 workspace(`ws`)는 저장·인가의 대상: 서버는 이 ws 에 활성 holder 가 존재할
-    /// 때만 전송을 수락한다(전용 연결 자체는 holder 가 아니므로 별도 결속 필요 —
-    /// 조사 §6). `target`/`target_workspace` 와 상호배타(bulk 연결은 mirror 하지 않는다).
+    /// bulk 파일 연결을 묶을 workspace ID. 대화형 holder가 되지 않으며 Data는 파일 청크다.
+    /// 서버는 해당 workspace에 활성 holder가 있어야 전송을 허용한다. 다른 target과 상호 배타다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bulk_workspace: Option<u32>,
 }
 
-/// workspace attach(단계 6, D3) 의 `Data` 프레임 다중화 인코딩.
-/// 페이로드 앞에 4바이트 BE surface_id 를 붙여 한 연결로 N 개 터미널의 바이트를
-/// 구분해 실어 보낸다. surface 단위(단계 4) 연결은 이 prefix 를 쓰지 않는다(bare).
+/// workspace Data에 4바이트 big-endian surface ID를 붙인다. 단일 surface 연결에는 쓰지 않는다.
 pub fn encode_mux(surface_id: u32, bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + bytes.len());
     out.extend_from_slice(&surface_id.to_be_bytes());
@@ -186,41 +157,14 @@ pub struct StreamAck {
     pub error: Option<String>,
 }
 
-/// Server→client control events pushed over the attach stream *during* a live
-/// session (after the handshake ack/descriptor). Tagged JSON on the `event`
-/// field — **extensible**: new mid-session control events (e.g. structural ops:
-/// tab/pane open/close) add a variant here without allocating a new
-/// [`StreamTag`]. The one-shot handshake descriptors (`attached` /
-/// `attached_workspace` / `attach_error`) and the `force_detached` signal remain
-/// ad-hoc JSON read positionally by the client; this enum covers the streaming
-/// control messages that arrive mid-session.
-///
-/// Clients deserialize each mid-session `Control` payload into this enum and act
-/// on the variants they know; a payload that does not match any variant (an
-/// older handshake shape or a newer event) fails to deserialize and is ignored,
-/// keeping the protocol forward/backward compatible.
-///
-/// **That silence is only safe while a missed variant costs nothing.** It holds for
-/// every variant here but one: each is either idempotent state the next tick
-/// re-pushes, or a reply correlated by id, or a request the sender can repeat. A
-/// variant whose absence changes how the *already delivered* data must be read
-/// cannot be added under this rule, because ignoring it is not "missing an event",
-/// it is "believing a lie". [`StreamControl::Loss`] is that case, and it is gated by
-/// an explicit client declaration ([`StreamControl::ClientLossNotify`]) instead —
-/// a client that never declares never receives it.
+/// 세션 중 전달하는 event 태그 기반 Control 메시지. handshake descriptor는 별도 JSON이다.
+/// 모르는 variant는 역직렬화에 실패하고 소비자가 무시한다. Loss는 출력의 연속성을 바꾸므로
+/// ClientLossNotify를 선언한 클라이언트에만 보낸다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
-    /// A mirrored remote terminal's grid settled at a new size. The client
-    /// resizes its mirror surface to match. This is the **authoritative confirm**
-    /// of the geometry the client requested via [`StreamControl::ClientResize`]:
-    /// the remote PTY is the single source of truth for the real grid (it owns
-    /// the reflow), and it echoes the settled size back here. The client applies
-    /// its mirror grid **only** from this echo (never optimistically from the
-    /// local pane), so mirror content is always replayed at the size the remote
-    /// actually reflowed to — no desync.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: 원격 PTY에 적용된 크기. 클라이언트는 로컬 요청값이 아니라
+    /// 이 응답으로 mirror 크기를 바꿔 원격 reflow 결과와 맞춘다.
     Resize {
         /// Remote surface id. The client maps it to its local mirror surface id
         /// (workspace attach) or applies it to its sole mirror (surface attach).
@@ -228,40 +172,17 @@ pub enum StreamControl {
         cols: usize,
         rows: usize,
     },
-    /// A remote surface's busy/idle activity state (the same foreground-process
-    /// heuristic `CoreState::refresh_busy_surfaces` already computes for the
-    /// remote's own local terminals) flipped. The client applies `busy` to its
-    /// mirror surface's own busy-state tracking (mirror terminals have no local
-    /// PTY, so they can never compute this themselves — this push is the *only*
-    /// source for mirror activity). Consumed by the workspace sidebar's "running"
-    /// status dot (`busy_count`), which is otherwise blind to mirror workspaces.
-    ///
-    /// Pushed once per 1Hz busy-poll tick per occupied surface whose busy value
-    /// actually changed since the last push (idempotent state, not a delta — a
-    /// dropped/lagged frame self-heals on the next tick since the server always
-    /// re-diffs from its live busy set, never from a client ack).
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: 원격 surface의 busy/idle 상태. mirror의 활동 표시에 사용한다.
+    /// 서버는 1Hz 조회에서 바뀐 값을 보낸다. 송신 전에 변화 캐시가 갱신되므로
+    /// 버려진 프레임을 다음 tick이 같은 값으로 다시 보내지는 않는다.
     Activity {
         /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
         surface_id: u32,
         busy: bool,
     },
-    /// The client (mirror side) requests the remote PTY be resized to the grid of
-    /// its **local mirror pane**. Mirror geometry is **client-driven**: the pane
-    /// the user placed the mirror in decides the grid, and the client pushes that
-    /// intent here. The server resizes the real remote PTY (`Terminal::resize`),
-    /// which reflows and echoes the settled size back as
-    /// [`StreamControl::Resize`] — the client applies its mirror grid from that
-    /// echo, not optimistically. Anchored on the **remote surface id** (mapped
-    /// from the local mirror id before send). The occupying stream connection is
-    /// the workspace's attach holder, so the connection itself proves the
-    /// authority to drive geometry (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry hard occupancy, docs/dev-guide/attach-behavior.md#리사이즈-전파-mirror-geometry).
-    ///
-    /// Direction: **client→server**. No explicit reply — the resulting
-    /// [`StreamControl::Resize`] echo (present only when the grid actually
-    /// changed) is the confirmation; an identical request is a no-op on the
-    /// remote (`resize_grid` returns false → no echo).
+    /// 클라이언트→서버: 로컬 mirror pane에 맞는 PTY 크기를 요청한다.
+    /// 서버가 holder를 확인하고 resize한 뒤 Resize로 확정 크기를 보낸다.
+    /// 크기가 같아 변경하지 않았으면 별도 응답은 없다.
     ClientResize {
         /// Remote surface id (the client maps its local mirror id to this before
         /// sending). The server resolves the enclosing workspace and verifies the
@@ -270,94 +191,40 @@ pub enum StreamControl {
         cols: usize,
         rows: usize,
     },
-    /// The client (mirror side) reports that the user **checked** a mirrored
-    /// surface, so the remote should drop its attention record for it. The clear
-    /// rule itself is unchanged and instance-local ("real render-time focus =
-    /// checked", plus marking that surface's notifications read); this frame only
-    /// carries the verdict to the instance that *owns* the surface, because a
-    /// mirror user's focus can never reach the remote's own clear paths.
-    ///
-    /// Sent on the **removal edge only** — the client emits it when a clear
-    /// actually removed a record, never periodically. Holding focus therefore
-    /// produces exactly one frame, and a clear on a surface with no record emits
-    /// nothing. Anchored on the **remote surface id** (mapped from the local
-    /// mirror id before send). The occupying stream connection is the workspace's
-    /// attach holder, so the connection itself proves the authority (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry
-    /// hard occupancy) — the same model as [`StreamControl::ClientResize`].
-    ///
-    /// No echo loop: the remote's clear makes its next attention diff push a
-    /// `kind: null` [`StreamControl::Attention`], which the mirror applies to an
-    /// already-empty record — no removal edge, no further frame.
-    ///
-    /// Direction: **client→server**. No reply.
+    /// 클라이언트→서버: 사용자가 mirror surface를 확인해 attention을 지웠다는 통지.
+    /// 실제 레코드가 제거됐을 때만 보내며 holder를 확인한 서버가 원격 상태도 지운다.
+    /// 서버의 Attention(None)을 이미 빈 mirror에 적용해도 제거가 없어 다시 통지하지 않는다.
+    /// 별도 응답은 없다.
     ClientAttentionClear {
         /// Remote surface id whose attention record should be dropped. The server
         /// resolves the enclosing workspace and verifies the requesting client is
         /// its attach holder before applying.
         surface_id: u32,
     },
-    /// A structural change (split / new-tab / close / move) performed in a
-    /// **mirror** workspace, forwarded to the remote (authoritative) instance so
-    /// it runs there and spawns real PTYs — instead of leaking a local shell into
-    /// the mirror. Anchored on **remote surface ids** (the only ids the client
-    /// maps back to the remote): the server resolves pane/tab/workspace from its
-    /// own tree. The occupying stream connection *is* the attach holder, so the
-    /// connection itself proves the authority to mutate the workspace (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry
-    /// hard occupancy).
-    ///
-    /// Direction: **client→server**. The server replies with a
-    /// [`StreamControl::StructuralResult`] carrying the same `op_id`.
+    /// 클라이언트→서버: mirror의 구조 변경을 원격에서 실행하도록 요청한다.
+    /// anchor는 원격 surface ID다. 서버가 자신의 트리에서 pane/tab/workspace를 찾고
+    /// holder를 확인한 뒤 같은 op_id의 StructuralResult를 보낸다.
     StructuralOp {
         /// Client-assigned monotonic id, echoed back in the result so the client
         /// can correlate the reply (and toast on failure).
         op_id: u64,
         op: StructuralOp,
-        /// Who asked for this op on the client — its user's own hand or an agent
-        /// (IPC/CLI) driving the client. The server decides from this alone
-        /// whether a forwarded close lands on its restore stack: an agent's close
-        /// must not, because the restore stack is user state
-        /// (`docs/identity.md` principle 1).
-        ///
-        /// **Optional, and absent means [`ForwardOrigin::User`].** Clients from
-        /// before this field never send it, and every close they forwarded was
-        /// kept restorable — reading absence as `User` keeps exactly that. A new
-        /// client always sends it. See
-        /// `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
+        /// 사용자 또는 에이전트 요청인지 구분한다. 서버의 복원 기록과 탭 선택에 사용한다.
+        /// 이전 client와의 호환을 위해 필드 생략은 User다. 새 client는 항상 보낸다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         origin: Option<ForwardOrigin>,
     },
-    /// Result of a forwarded [`StreamControl::StructuralOp`]. `ok=false` carries a
-    /// `reason` — most notably a **remote-unsupported surface kind** (e.g. a
-    /// plugin `markdown` kind present locally but not on the remote host, whose
-    /// kind registry is the authority for what it can create). The client shows a
-    /// failure toast; neither side changes structure on a rejected op.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: 구조 변경 결과. 거절 시 reason을 보내며 해당 작업은 적용하지 않는다.
+    /// 예를 들어 원격에 등록되지 않은 surface 종류는 만들 수 없다.
     StructuralResult {
         op_id: u64,
         ok: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
-    /// Full re-sync of a mirror workspace's structure after a forwarded
-    /// [`StreamControl::StructuralOp`] succeeded on the remote (authoritative)
-    /// instance — the reverse-reflection channel (3단계). Rather than a minimal
-    /// per-surface diff (which would force the client to track remote pane/tab
-    /// ids — it only maps *surfaces*, a 2단계 invariant), the server pushes the
-    /// **entire** post-op workspace tree plus per-surface descriptors, and the
-    /// client rebuilds its mirror with survivor terminals preserved (existing
-    /// mirror grids keep their local ids → no scrollback loss). This covers
-    /// split / new-tab / close-cascade / move-tab uniformly.
-    ///
-    /// `tree` / `surfaces` are the same shapes the handshake descriptor
-    /// (`attached_workspace`) carries, so client-side `build_mirror_workspace`
-    /// is reused verbatim. The client derives added/removed by diffing
-    /// `surfaces`' remote ids against its `remote_to_local` map, so no explicit
-    /// diff is carried.
-    ///
-    /// Direction: **server→client**. Pushed immediately after the
-    /// [`StreamControl::StructuralResult`] (ok=true) for the op that changed the
-    /// structure, so the client applies the (silent) success then re-syncs.
+    /// 서버→클라이언트: 구조 변경 후 workspace 전체 트리와 surface descriptor.
+    /// handshake와 같은 형식이며, 클라이언트는 살아남은 터미널의 로컬 ID·스크롤백을 유지한다.
+    /// 전달된 op의 결과라면 성공 StructuralResult 다음에 보내고, 서버 자체 구조 변화도 이 형식을 쓴다.
     StructuralDelta {
         /// Remote workspace id (the client maps it to its local mirror
         /// workspace; a mirror session hosts exactly one workspace so this is
@@ -400,17 +267,9 @@ pub enum StreamControl {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
-    /// The attach client's mesh mirror pane pushes the plugin egui-mesh context
-    /// (geometry/scale/theme/focus) it wants the remote surface driven with —
-    /// mirrors `SurfaceSetContextParams` minus the per-frame input batch (that's
-    /// [`StreamControl::MeshInput`]). Sending this **is** the subscribe signal
-    /// (no separate handshake capability negotiation, mirroring the existing
-    /// [`StreamControl::ClientResize`] "request itself declares intent"
-    /// pattern): the server activates mesh forwarding for `surface_id`
-    /// the first time it sees one of these, and re-drives the remote plugin's
-    /// `set_context` any time geometry/theme/focus changes thereafter.
-    ///
-    /// Direction: **client→server**.
+    /// 클라이언트→서버: mirror pane의 크기·배율·테마·포커스.
+    /// 첫 메시지가 mesh 구독을 시작하고 이후 변경은 원격 플러그인의 set_context에 반영한다.
+    /// 입력 묶음은 별도 MeshInput으로 전달한다.
     MeshContext {
         /// Remote surface id (client-mapped, like every other mirror message).
         surface_id: u32,
@@ -429,125 +288,42 @@ pub enum StreamControl {
         #[serde(default)]
         focused: bool,
     },
-    /// Local input captured over the mesh mirror pane, forwarded verbatim as a
-    /// `RawInputWire` batch (the same wire shape the host already sends plugins
-    /// via `SurfaceSetContextParams.raw_input` — no new event schema). Includes
-    /// `PointerGone`/focus/modifier state, not just discrete clicks/keys, so the
-    /// remote plugin's hover/focus state never drifts from the client's.
-    ///
-    /// Direction: **client→server**. No reply — the resulting
-    /// [`StreamControl`]`::Mesh*` data push (once the remote repaints) is the
-    /// only feedback, same as local (same-process) egui-mesh input forwarding.
+    /// 클라이언트→서버: RawInputWire 입력 묶음. PointerGone·포커스·modifier도 포함한다.
+    /// 별도 응답 없이 원격 repaint의 MeshData로 화면 결과를 받는다.
     MeshInput {
         surface_id: u32,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     },
-    /// The client requests the remote re-send **all** of a mesh surface's
-    /// current texture state as a `full_textures=true` frame — sent when the
-    /// client detects a `frame_seq` chain break (fresh subscribe, or a gap after
-    /// reconnect: the server's `SharedBuffer` poll only ever sees the *latest*
-    /// generation, so a client that missed intermediate texture deltas has no
-    /// other way to recover a consistent state). The server answers by setting
-    /// `SurfaceSetContextParams.need_full_textures = true` on its next forward to
-    /// the plugin.
-    ///
-    /// Direction: **client→server**. No explicit ack — the next
-    /// [`StreamTag::MeshData`] chunk sequence for this `surface_id` arriving with
-    /// `full_textures = true` (carried in the chunk header,
-    /// `mesh_stream::MeshChunkMeta`) is the confirmation.
+    /// 클라이언트→서버: frame_seq가 끊겼을 때 전체 텍스처를 다시 요청한다.
+    /// 서버는 다음 set_context에 need_full_textures를 켠다. 별도 ack 대신
+    /// 해당 surface의 full_textures=true인 MeshData가 도착했는지 확인한다.
     MeshFullResendRequest { surface_id: u32 },
-    /// A remote surface's **attention** state (the "needs your attention" signal
-    /// the remote's own producers raise — completion IPC/CLI, Claude plugin hooks,
-    /// OSC 133 command completion, toast notifications) changed. The mirror side
-    /// applies it to its own `AttentionStore` so the sidebar count badges, surface
-    /// border and tab title color reflect the remote state.
-    ///
-    /// Attention's source of truth is the instance that **owns the surface**: every
-    /// producer runs where the PTY is, and `AttentionKind::NeedsInput` in particular
-    /// is only ever raised by a hook on that instance — a mirror can never derive it
-    /// locally. Like [`StreamControl::Activity`], this push is therefore the *only*
-    /// source of attention for a mirror surface, and the mirror only reflects it.
-    ///
-    /// `kind: None` means **cleared** (no attention record) — clearing is not a
-    /// separate variant, it is the absence of a kind. The frame is idempotent state,
-    /// not a delta: pushed once per 1Hz tick per occupied surface whose value actually
-    /// changed since the last push, so a dropped/lagged frame self-heals on the next
-    /// tick (the server always re-diffs from its live store, never from a client ack).
-    ///
-    /// That self-healing covers **transport loss only**. If the client mutates its
-    /// own store, the server's value is unchanged and nothing is re-pushed, so the
-    /// two stay diverged. See the attention section of
-    /// `docs/dev-guide/attach-behavior.md` for the hole that is currently open on
-    /// the clear axis and which follow-up work closes it.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: surface 소유 인스턴스의 attention 상태. None은 해제를 뜻한다.
+    /// mirror는 이 값을 AttentionStore에 반영한다. 서버는 바뀐 값만 보내므로
+    /// 유실된 프레임이 다음 tick에 자동 재전송되거나 client의 임의 상태 변경이 복구되지는 않는다.
     Attention {
         /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
         surface_id: u32,
         /// The attention kind now recorded on the remote, or `None` if cleared.
         kind: Option<AttentionKindWire>,
     },
-    /// A remote surface's working directory, as the remote instance itself resolves
-    /// it (terminal: OSC 7 cache, then the PTY process's cwd from the OS; other
-    /// kinds: the surface's own `source_cwd`). Mirror terminals have no local PTY,
-    /// so without OSC 7 they can never compute this themselves — like
-    /// [`StreamControl::Activity`], this push is the *only* source that works for
-    /// every shell. The client stores it as a **remote-origin** path: the two
-    /// instances' filesystems differ, so it is never used for a local filesystem
-    /// operation (docs/dev-guide/attach-behavior.md#surface-cwd-전파).
-    ///
-    /// Not gated by the remote's `inherit_cwd` setting — this is an observation, not
-    /// an execution; the consumer applies that gate.
-    ///
-    /// `cwd: None` means the remote no longer knows the cwd — the client drops its
-    /// stored value so a stale path does not linger. The frame is idempotent state,
-    /// not a delta: pushed once per 1Hz tick per occupied surface whose value (or
-    /// holder) changed since the last push, so a dropped/lagged frame self-heals on
-    /// the next tick.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: 원격이 확인한 cwd. None이면 mirror의 저장값도 지운다.
+    /// 원격 경로이므로 로컬 파일 작업에 사용하지 않는다. 서버의 inherit_cwd와 무관하게
+    /// 관측값을 보내며 실행 시 그 설정의 적용 여부는 소비자가 판단한다.
+    /// 값이나 holder가 바뀔 때 보내며 유실 후 다음 tick의 재전송은 보장하지 않는다.
     Cwd {
         /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
         surface_id: u32,
         /// The remote path, or `None` if the remote cwd is unknown.
         cwd: Option<String>,
     },
-    /// The requested `surface_id` in a [`StreamControl::MeshContext`] is not a
-    /// mesh-mirrorable surface on the remote (not found, not a bundled
-    /// egui-mesh-whitelisted kind, or the surface's plugin isn't running) — a
-    /// **one-shot explicit error**, mirroring the existing
-    /// `execute_forwarded_structural_op` `ok:false`+`reason` convention:
-    /// explicit failure over silent drop, so the client never waits forever
-    /// for mesh data that will never arrive.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: mesh mirror가 불가능한 surface의 오류.
+    /// 대상 부재·지원 kind 아님·플러그인 미실행 등의 reason을 보낸다.
     MeshError { surface_id: u32, reason: String },
-    /// Frames for this client were **dropped** before they reached the socket —
-    /// the server's per-client push sink filled up and the pushes in between were
-    /// discarded. Everything the client receives *after* this frame is
-    /// discontinuous with everything it received *before* it.
-    ///
-    /// This is the one control event whose absence changes the meaning of the data
-    /// already delivered. Every other variant is either idempotent state that
-    /// self-heals on the next tick or a reply the client correlates by id, so a
-    /// client that does not understand it loses nothing. A client that does not
-    /// understand *this* one keeps rendering a broken byte stream as if it were
-    /// continuous. That is why it is **not** sent unless the client asked for it —
-    /// see [`StreamControl::ClientLossNotify`].
-    ///
-    /// Position is the payload. The frame is emitted at the point in the stream
-    /// where the gap happened (immediately before the first frame that survives
-    /// the gap), so the consumer can split "before" from "after" without any
-    /// sequence numbering. It carries no surface id: the sink is per *connection*,
-    /// and a workspace attach muxes every mirrored surface through it, so the gap
-    /// belongs to the connection and not to one surface.
-    ///
-    /// What to do about the gap is **not** decided here — the recovery contract
-    /// differs per data kind (PTY byte delta vs. state snapshot vs. mesh vs. bulk)
-    /// and is follow-up work. This frame only says that a gap happened and how big
-    /// it was.
-    ///
-    /// Direction: **server→client**.
+    /// 서버→클라이언트: 이 연결의 push 큐에서 프레임이 유실됐다.
+    /// ClientLossNotify를 선언한 연결에만 보내며 새 출력보다 먼저 큐에 넣는다.
+    /// 유실 뒤에 선언하면 그전의 누적 손실도 알린다. 여러 surface가 같은 연결을 쓰므로 surface ID는 없다.
+    /// 복구는 PTY·상태·mesh·bulk 소비자가 각자의 규칙으로 처리한다.
     Loss {
         /// Frames dropped for this connection since the previous `Loss` frame (or
         /// since the connection opened, if this is the first). Counts frames, not
@@ -555,29 +331,10 @@ pub enum StreamControl {
         /// are gone before anyone counts them.
         frames: u64,
     },
-    /// The client declares that it understands [`StreamControl::Loss`] and wants to
-    /// be told about gaps. Until this arrives the server drops frames exactly as it
-    /// always has, silently — so a client built before `Loss` existed sees no change
-    /// at all.
-    ///
-    /// The declaration is a frame rather than a handshake field on purpose.
-    /// `StreamOpenParams::proto` is compared for **equality** by the server
-    /// (`validate_stream_proto`), so raising [`STREAM_PROTO`] does not gate a
-    /// feature — it refuses the connection outright. Feature negotiation therefore
-    /// goes where this codebase already puts it: an explicit request frame, the same
-    /// shape [`StreamControl::MeshContext`] uses ("the subscribe request itself
-    /// doubles as capability negotiation — no separate handshake").
-    ///
-    /// The other direction is answered by the RPC capability table: a server that
-    /// supports this declares `ipc.stream.loss-notify` in `system.info`
-    /// ([`crate::capability::CAPABILITIES`]). A client that sends this frame to a
-    /// server that does not have it gets the old behaviour — the frame is an unknown
-    /// variant there and is ignored, which is exactly right.
-    ///
-    /// Idempotent: sending it twice is the same as sending it once, and there is no
-    /// way to turn it back off (nothing needs to).
-    ///
-    /// Direction: **client→server**. No reply.
+    /// 클라이언트→서버: Loss 통지를 받을 수 있다고 선언한다. 반복해도 같고 해제 기능은 없다.
+    /// 선언 전에는 손실을 조용히 처리한다. 지원하지 않는 구 서버는 이 variant를 무시한다.
+    /// 서버 지원 여부는 system.info의 ipc.stream.loss-notify로 확인한다.
+    /// STREAM_PROTO는 동등 비교이므로 이 추가 기능 때문에 버전을 올리지 않는다.
     ClientLossNotify {},
 }
 
@@ -634,17 +391,8 @@ pub enum StructuralOp {
         surface_kind: String,
         #[serde(default)]
         params: serde_json::Value,
-        /// Working directory the new surface should inherit, as resolved by the
-        /// client from the surface being converted. A path **string** (not
-        /// `PathBuf`) because wire encoding must not depend on the sender's
-        /// platform path representation — same convention as the `list_dir`
-        /// family's `dir: String`.
-        ///
-        /// Absent (`None`) whenever the client cannot resolve one — a mirror
-        /// terminal is detached (no PTY), so it only knows a cwd when the remote
-        /// shell emitted OSC 7. The server then resolves the cwd from its own
-        /// authoritative surface, so this field is an optimization, not the only
-        /// source of truth.
+        /// 변환 대상이 사용할 원격 cwd. 플랫폼에 의존하지 않는 경로 문자열이다.
+        /// client가 모르면 None으로 보내고 서버가 원래 surface에서 찾는다.
         #[serde(default)]
         cwd: Option<String>,
     },
@@ -653,31 +401,14 @@ pub enum StructuralOp {
         source_surface_id: u32,
         target_surface_id: u32,
     },
-    /// Restore the most recently closed item of the workspace containing the
-    /// anchor surface, into the pane containing it.
-    ///
-    /// Unlike every other variant the client does **not** describe what to
-    /// create — what comes back is whatever the server's restore stack holds for
-    /// that workspace. Expressing this as a `NewTab` would mean the client
-    /// inventing a kind and params, which is not a restore: the scrollback lives
-    /// on the server's disk and the PTY has to be spawned there.
-    /// See `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
+    /// anchor의 workspace 복원 스택에서 마지막 항목을 복원한다.
+    /// 클라이언트가 종류·내용을 정하지 않으며 서버가 저장된 스크롤백과 PTY를 복원한다.
     RestoreClosedItem { anchor_surface_id: u32 },
 }
 
-/// Who asked the client for a forwarded [`StreamControl::StructuralOp`].
-///
-/// Only the server's restore stack reads it today: a close whose origin is
-/// [`ForwardOrigin::Agent`] is not snapshotted there. An absent field on the wire
-/// is [`ForwardOrigin::User`] — see [`ForwardOrigin::of_wire`].
-///
-/// **A value this build does not know is read as `Agent`, never rejected.** A
-/// later client may send a third origin; failing to parse it would drop the
-/// whole frame (no `StructuralResult`, a silent failure), so the value is
-/// tolerated instead. It is read as `Agent` because the only thing the origin
-/// decides is whether user state (the restore stack) is touched, and leaving it
-/// alone is the side `docs/identity.md` principle 1 protects. Absence stays
-/// `User` — that is what clients from before the field meant.
+/// 전달된 구조 변경의 호출 주체. 서버의 복원 기록과 사용자 탭 선택에 사용한다.
+/// 생략/null은 옛 client와 같은 User다. 모르는 값은 프레임을 거절하지 않고 Agent로 읽어
+/// 사용자 상태를 변경하는 권한을 주지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ForwardOrigin {
@@ -707,13 +438,7 @@ impl ForwardOrigin {
     }
 }
 
-/// `StructuralResult.reason` for a forwarded restore that found nothing in the
-/// anchor workspace's restore stack.
-///
-/// A **sentinel, not prose**: the client tells this case apart from a genuine
-/// failure to show a different message ("nothing to restore" reads as an error
-/// under the generic forward-failure wording). Both sides depend on this crate,
-/// so the string has one definition rather than two spellings that can drift.
+/// 원격 복원 스택이 비었음을 구분하는 프로토콜 값. 사용자 문구가 아니므로 번역하지 않는다.
 pub const STRUCTURAL_REASON_RESTORE_EMPTY: &str = "restore_empty";
 
 impl StructuralOp {
@@ -792,14 +517,8 @@ impl StructuralOp {
     }
 }
 
-/// Attention kind carried over the wire ([`StreamControl::Attention`]).
-///
-/// The host's own `AttentionKind` (`src/core/state/attention.rs`) is crate-private
-/// and `tasty-ipc` has no dependency on the host crate, so the wire gets its own
-/// representation and both sides convert at the boundary. The serialized strings
-/// are deliberately the **same** as the `surface.completion` IPC `kind` parameter
-/// (`"completion"` / `"needs_input"`), so one vocabulary covers the producer IPC and
-/// the attach channel.
+/// 호스트 AttentionKind와 변환하는 wire 타입. surface.completion의
+/// completion/needs_input 문자열과 같은 이름을 사용한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttentionKindWire {
@@ -832,16 +551,9 @@ fn default_terminal_kind() -> String {
     "terminal".to_string()
 }
 
-/// Write a single framed message (`[tag][len BE][payload]`), then flush.
-///
-/// 헤더와 payload 를 **한 버퍼로 합쳐 `write_all` 1 회**로 내보낸다. `TcpStream` 은
-/// 버퍼링이 없어 `write_all` 을 3 번 나눠 부르면 그대로 3 개의 TCP 세그먼트가 되고,
-/// Nagle 이 켜진 소켓에서는 첫 1 바이트가 unACKed 인 동안 나머지가 상대의 delayed
-/// ACK(~40ms)까지 붙잡힌다 — attach 스트림은 프레임 하나가 곧 한 번의 상호작용이라
-/// 그 지연이 매 입력·출력마다 그대로 체감된다(실측: loopback 왕복 43ms → 2ms).
-/// 소켓측 `TCP_NODELAY`(`crates/tasty-ipc/src/client/stream.rs`, `tcp_ipc_server.rs`)와
-/// 이중 방어다: 여기서 합쳐도 payload 가 MSS 를 넘으면 마지막 조각이 다시 Nagle 에
-/// 걸릴 수 있으므로 둘 다 필요하다.
+/// 헤더와 payload를 한 버퍼에 모아 write_all을 한 번 호출한 뒤 flush한다.
+/// 소켓의 TCP_NODELAY와 함께 작은 프레임의 분할 전송 지연을 줄인다.
+/// write_all 내부에서 부분 쓰기를 재시도할 수 있어 단일 syscall을 보장하지는 않는다.
 pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::Result<()> {
     let len: u32 = payload
         .len()
@@ -861,17 +573,9 @@ pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::R
     w.flush()
 }
 
-/// Read a single framed message. Returns `Err` on EOF, an unknown tag, or a
-/// length prefix exceeding [`MAX_FRAME_LEN`].
-///
-/// Deliberate design: if a socket read timeout (heartbeat protocol) fires
-/// while only part of the 5-byte header (or payload) has been read, this
-/// propagates that `Err` immediately rather than retrying — any bytes already
-/// consumed by the interrupted `read_exact` are discarded, so a retry would
-/// desync from the frame boundary. Every read loop that calls this (server,
-/// GUI client, CLI client) treats *all* `Err` results — EOF, malformed frame,
-/// or a mid-frame timeout alike — as an unconditional disconnect, so no caller
-/// ever tries to resume a torn frame on the same connection.
+/// EOF·알 수 없는 tag·초과 길이·읽기 timeout은 오류다.
+/// 헤더나 payload를 일부 읽은 뒤 오류가 나면 같은 연결에서 재시도하지 않는다.
+/// read_exact가 소비한 바이트를 복원할 수 없어 프레임 경계가 어긋날 수 있다.
 pub fn read_frame<R: Read>(r: &mut R) -> io::Result<StreamFrame> {
     let mut hdr = [0u8; 5];
     r.read_exact(&mut hdr)?;
@@ -911,10 +615,7 @@ mod tests {
         }
     }
 
-    /// 프레임 하나는 반드시 **1 회의 `write` 로** 나가야 한다. 헤더/payload 를 나눠
-    /// 쓰면 버퍼링 없는 `TcpStream` 에서 세그먼트가 쪼개지고, Nagle 이 켜진 소켓은
-    /// 뒷조각을 상대의 delayed ACK(~40ms)까지 붙잡는다 — attach 의 매 입력·출력에
-    /// 그 지연이 그대로 얹혔던 회귀를 고정한다.
+    /// 전체 입력을 받는 시험 writer에서 헤더·payload를 나눠 쓰지 않는지 확인한다.
     #[test]
     fn write_frame_emits_one_write_call() {
         struct CountingWriter {
@@ -951,18 +652,13 @@ mod tests {
 
     #[test]
     fn heartbeat_timeout_has_jitter_margin_over_interval() {
-        // timeout 이 interval 보다 넉넉히 커야 한다 — 한 heartbeat 를 놓쳐도(스케줄링
-        // 지연/일시적 혼잡) 바로 오탐 disconnect 로 이어지지 않게. 최소 2 회분 이상의
-        // 여유(문서화된 설계는 4 배).
+        // 한 번의 지연으로 끊기지 않도록 heartbeat보다 충분히 긴 timeout을 유지한다.
         assert!(HEARTBEAT_TIMEOUT >= HEARTBEAT_INTERVAL * 2);
         assert_eq!(HEARTBEAT_TIMEOUT, HEARTBEAT_INTERVAL * 4);
     }
 
     #[test]
     fn ping_frame_has_empty_payload_roundtrip() {
-        // heartbeat 로 실제 보내는 형태(빈 payload)가 그대로 왕복되는지 — 태그 자체는
-        // frame_roundtrip 에서 이미 검증하지만, 여기선 heartbeat 가 실제로 쓰는 정확한
-        // 모양(빈 payload)만 별도로 못박아 둔다.
         let mut buf = Vec::new();
         write_frame(&mut buf, StreamTag::Ping, &[]).unwrap();
         let mut cur = Cursor::new(buf);
@@ -1017,7 +713,6 @@ mod tests {
         let (sid, rest) = decode_mux(&enc).unwrap();
         assert_eq!(sid, 42);
         assert_eq!(rest, b"hello");
-        // empty payload still carries the id.
         let empty = encode_mux(7, b"");
         let (sid2, rest2) = decode_mux(&empty).unwrap();
         assert_eq!(sid2, 7);
@@ -1033,14 +728,12 @@ mod tests {
     #[test]
     fn bulk_chunk_roundtrip() {
         let enc = encode_bulk_chunk(0x0102_0304_0506_0708, 42, b"payload");
-        // sub-header: 8 bytes transfer_id BE + 4 bytes seq BE.
         assert_eq!(&enc[..8], &0x0102_0304_0506_0708u64.to_be_bytes());
         assert_eq!(&enc[8..12], &42u32.to_be_bytes());
         let (tid, seq, rest) = decode_bulk_chunk(&enc).unwrap();
         assert_eq!(tid, 0x0102_0304_0506_0708);
         assert_eq!(seq, 42);
         assert_eq!(rest, b"payload");
-        // empty payload still carries the full header.
         let empty = encode_bulk_chunk(7, 0, b"");
         let (tid2, seq2, rest2) = decode_bulk_chunk(&empty).unwrap();
         assert_eq!(tid2, 7);
@@ -1050,10 +743,8 @@ mod tests {
 
     #[test]
     fn decode_bulk_chunk_rejects_truncated() {
-        // anything shorter than the 12-byte sub-header is a torn frame.
         assert!(decode_bulk_chunk(&[]).is_none());
         assert!(decode_bulk_chunk(&[0u8; 11]).is_none());
-        // exactly 12 bytes = valid header, empty payload.
         assert!(decode_bulk_chunk(&[0u8; 12]).is_some());
     }
 
@@ -1073,7 +764,6 @@ mod tests {
         assert!(s.contains(r#""event":"bulk_commit""#));
         assert_eq!(serde_json::from_str::<StreamControl>(&s).unwrap(), commit);
 
-        // success (path, no reason) and failure (reason, no path).
         let ok = StreamControl::BulkResult {
             transfer_id: 9,
             ok: true,
@@ -1129,7 +819,6 @@ mod tests {
             rows: 45,
         };
         let s = serde_json::to_string(&msg).unwrap();
-        // tagged on `event` = "resize" (snake_case).
         assert!(s.contains(r#""event":"resize""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
@@ -1142,7 +831,6 @@ mod tests {
             busy: true,
         };
         let s = serde_json::to_string(&msg).unwrap();
-        // tagged on `event` = "activity" (snake_case).
         assert!(s.contains(r#""event":"activity""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
@@ -1157,8 +845,6 @@ mod tests {
             let back: StreamControl = serde_json::from_str(&s).unwrap();
             assert_eq!(back, msg);
         }
-        // 값 소멸 edge 는 `null` 로 표현된다 — 키가 빠진 프레임과 구분할 필요는 없지만
-        // 구버전 파서가 모르는 variant 로 무시하는 것은 `event` 태그 하나로 정해진다.
         let cleared = r#"{"event":"cwd","surface_id":3,"cwd":null}"#;
         assert_eq!(
             serde_json::from_str::<StreamControl>(cleared).unwrap(),
@@ -1177,8 +863,6 @@ mod tests {
             rows: 57,
         };
         let s = serde_json::to_string(&msg).unwrap();
-        // tagged on `event` = "client_resize" (snake_case) — distinct from the
-        // server→client "resize" so the two directions never collide.
         assert!(s.contains(r#""event":"client_resize""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
@@ -1186,8 +870,6 @@ mod tests {
 
     #[test]
     fn client_resize_and_resize_are_distinct_events() {
-        // A ClientResize (client→server) must not deserialize as a Resize
-        // (server→client) or vice-versa — the direction is carried by the tag.
         let client = serde_json::to_string(&StreamControl::ClientResize {
             surface_id: 1,
             cols: 80,
@@ -1236,7 +918,6 @@ mod tests {
             origin: Some(ForwardOrigin::User),
         };
         let s = serde_json::to_string(&msg).unwrap();
-        // outer tagged on `event`, inner op tagged on `kind`.
         assert!(s.contains(r#""event":"structural_op""#));
         assert!(s.contains(r#""kind":"split_surface""#));
         assert!(s.contains(r#""direction":"horizontal""#));
@@ -1293,10 +974,7 @@ mod tests {
         }
     }
 
-    /// A client from before the `origin` field sends no such key. That op must
-    /// still parse, and must stand for a user's close — every close such a client
-    /// forwarded was restorable, and reading absence otherwise would silently
-    /// take the undo away from its users.
+    /// origin을 보내지 않는 client의 close도 User로 읽어 기존 복원 동작을 유지한다.
     #[test]
     fn a_structural_op_without_origin_is_a_users_op() {
         let raw =
@@ -1314,10 +992,7 @@ mod tests {
         assert_eq!(ForwardOrigin::of_wire(origin), ForwardOrigin::User);
     }
 
-    /// The field's spelling on the wire, and its tolerance on an old server: an
-    /// unknown key inside a known variant is ignored by serde (no
-    /// `deny_unknown_fields` on `StreamControl`), so an old server reads a new
-    /// client's op as before — the field is dropped, not the frame.
+    /// 알려진 variant의 새 필드는 구 parser가 무시하되 프레임 전체를 버리지 않는다.
     #[test]
     fn the_origin_field_is_spelled_and_ignored_as_documented() {
         let msg = StreamControl::StructuralOp {
@@ -1334,9 +1009,7 @@ mod tests {
         assert!(serde_json::from_str::<StreamControl>(unknown_key).is_ok());
     }
 
-    /// A value this build does not know must not cost the frame: it is read as
-    /// `Agent` (the side that leaves the restore stack alone), whatever its type.
-    /// Absence is still `User`, and the two known values read as themselves.
+    /// 모르는 origin은 Agent, 생략/null은 User로 읽는다.
     #[test]
     fn an_unknown_origin_keeps_the_frame_and_reads_as_agent() {
         let with = |origin: &str| {
@@ -1452,7 +1125,6 @@ mod tests {
 
     #[test]
     fn stream_control_structural_result_roundtrip() {
-        // success (no reason) and failure (with reason).
         let ok = StreamControl::StructuralResult {
             op_id: 9,
             ok: true,
@@ -1494,8 +1166,6 @@ mod tests {
 
     #[test]
     fn structural_delta_not_confused_with_other_events() {
-        // A StructuralDelta payload must not deserialize as Resize/StructuralOp/
-        // StructuralResult (and vice versa) — the `event` tag keeps them distinct.
         let delta = serde_json::to_string(&StreamControl::StructuralDelta {
             workspace_id: 1,
             tree: serde_json::Value::Null,
@@ -1506,7 +1176,6 @@ mod tests {
             StreamControl::StructuralDelta { workspace_id, .. } => assert_eq!(workspace_id, 1),
             other => panic!("expected StructuralDelta, got {other:?}"),
         }
-        // A resize event stays a resize.
         assert!(matches!(
             serde_json::from_str::<StreamControl>(
                 r#"{"event":"resize","surface_id":1,"cols":80,"rows":24}"#
@@ -1541,7 +1210,6 @@ mod tests {
 
     #[test]
     fn structural_op_with_anchor_surface_id() {
-        // Local anchor swapped for the remote id before send.
         let local = StructuralOp::SplitPane {
             anchor_surface_id: 5, // local mirror id
             direction: SplitAxis::Vertical,
@@ -1550,7 +1218,6 @@ mod tests {
         };
         let remote = local.with_anchor_surface_id(100);
         assert_eq!(remote.anchor_surface_id(), 100);
-        // MoveSurface swaps source, keeps target.
         let mv = StructuralOp::MoveSurface {
             source_surface_id: 1,
             target_surface_id: 2,
@@ -1579,9 +1246,7 @@ mod tests {
         use tasty_plugin_protocol::protocol::ThemeWire;
         use tasty_type_appearance::theme::ThemeColors;
 
-        // raw JSON 문자열로 ThemeColors 를 만든다(44필드라 `json!` 매크로가 재귀
-        // 한계에 걸림, `set_context_theme_snapshot_round_trips` 의 패턴 재사용).
-        // 값 자체는 무관 — round-trip 동일성만 본다.
+        // 큰 ThemeColors 객체가 json! 재귀 한도를 넘지 않도록 JSON 문자열로 만든다.
         const COLORS_JSON: &str = r##"{
             "crust":"#11111b","mantle":"#181825","base":"#1e1e2e","surface0":"#313244",
             "surface1":"#45475a","surface2":"#585b70","overlay0":"#6c7086","overlay1":"#7f849c",
@@ -1616,7 +1281,6 @@ mod tests {
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
 
-        // theme 없이도(headless-only, 클라이언트 테마 미확정 등) round-trip.
         let no_theme = StreamControl::MeshContext {
             surface_id: 6,
             width_px: 100,
@@ -1678,8 +1342,6 @@ mod tests {
 
     #[test]
     fn mesh_events_are_distinct_from_each_other_and_existing_events() {
-        // event tag 가 서로 다른 mesh variant 로 오인식되지 않는지 + 기존 이벤트와도
-        // 섞이지 않는지.
         let ctx = serde_json::to_string(&StreamControl::MeshContext {
             surface_id: 1,
             width_px: 1,
@@ -1699,7 +1361,6 @@ mod tests {
             serde_json::from_str::<StreamControl>(&resend).unwrap(),
             StreamControl::MeshFullResendRequest { .. }
         ));
-        // 기존 이벤트(resize)가 mesh variant 로 잘못 파싱되지 않는다.
         let resize = serde_json::to_string(&StreamControl::Resize {
             surface_id: 1,
             cols: 80,
@@ -1725,7 +1386,6 @@ mod tests {
         assert_eq!(back.target_workspace, Some(9));
         assert_eq!(back.target, None);
         assert_eq!(back.bulk_workspace, None);
-        // 구버전(필드 없음) 호환.
         let old: StreamOpenParams = serde_json::from_str(r#"{"proto":1}"#).unwrap();
         assert_eq!(old.target_workspace, None);
         assert_eq!(old.bulk_workspace, None);
@@ -1733,7 +1393,6 @@ mod tests {
 
     #[test]
     fn open_params_bulk_workspace_roundtrip_and_backward_compat() {
-        // bulk 필드 추가 = 하위호환: 새 필드로 직렬화한 payload 도, 옛 payload 도 모두 파싱.
         let p = StreamOpenParams {
             proto: 1,
             target: None,
@@ -1746,7 +1405,6 @@ mod tests {
         assert_eq!(back.bulk_workspace, Some(7));
         assert_eq!(back.target, None);
         assert_eq!(back.target_workspace, None);
-        // bulk_workspace 를 모르는 옛 서버가 만든 payload(필드 없음)도 그대로 수용.
         let old: StreamOpenParams =
             serde_json::from_str(r#"{"proto":1,"target_workspace":3}"#).unwrap();
         assert_eq!(old.bulk_workspace, None);
@@ -1772,20 +1430,14 @@ mod tests {
         assert_eq!(back, msg);
     }
 
-    /// 이 enum 의 전방 호환 규약 — 모르는 `event` 는 **파싱 실패**다. `Loss` 를 선언
-    /// 없이 보내면 안 되는 이유가 이것이다: `Loss` 를 모르는 빌드에게 그 프레임은 이
-    /// `Err` 와 같은 모양이고, 소비자는 `Err` 를 무시하므로 **"손실 없음" 과 구별되지
-    /// 않는다.** 좌변은 `is_err()` 하나다 — 구 빌드를 여기서 실행할 수는 없으므로 그
-    /// 빌드가 겪는 것을 같은 경로(모르는 event)로 재현한다.
+    /// 모르는 event의 파싱 실패를 확인한다. 구 peer도 Loss를 무시하므로 명시적 선언이 필요하다.
     #[test]
     fn an_unknown_event_fails_to_parse_so_a_missed_loss_reads_as_no_loss() {
         let from_a_newer_build = r#"{"event":"a_variant_that_does_not_exist_here","frames":9}"#;
         assert!(serde_json::from_str::<StreamControl>(from_a_newer_build).is_err());
     }
 
-    /// handshake 판은 **동등 비교**라 기능 게이트로 못 쓴다. 이 시험은 그 사실 자체가
-    /// 아니라 *판이 안 움직였다*는 것을 고정한다 — `Loss` 를 더하면서 판을 올리면
-    /// 구 peer 의 attach 가 통째로 거절된다.
+    /// 추가 Loss 기능 때문에 기존 peer와의 handshake 버전이 바뀌지 않았는지 확인한다.
     #[test]
     fn adding_a_control_variant_does_not_move_the_handshake_version() {
         assert_eq!(STREAM_PROTO, 1);

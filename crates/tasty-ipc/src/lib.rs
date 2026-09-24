@@ -1,11 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! Tasty 호스트와 외부 caller (CLI / agent / plugin) 간 IPC wire framing 과
-//! caller-context 모델.
-//!
-//! 본 바이너리 `src/adapters/ipc/` 의 wire/framing/method 모듈을 이 crate 로
-//! 이동했다. handler (`crate::adapters::ipc::handler`) 는 본 바이너리에 잔존
-//! (AppState/Core 결합 깊음).
+//! 호스트와 CLI·에이전트·플러그인이 공유하는 IPC 전송 형식과 호출자 모델.
+//! 도메인 핸들러와 실제 서버 adapter는 호스트 본체가 구현한다.
 
 pub mod admission;
 pub mod alias;
@@ -25,7 +21,5 @@ pub mod server;
 pub mod session;
 pub mod stream;
 pub mod stream_hub;
-
-// 테스트는 method_meta.rs / session.rs 에서 각각 *_tests.rs 를 로드 (co-located).
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

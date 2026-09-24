@@ -1,19 +1,6 @@
-//! Plan — workspace 단위 선언적 work breakdown.
-//!
-//! Plan 은 "할 일 트리" 의 상태만 보관한다 — 스케줄러도 실행기도 아니다.
-//! 한 plan 은 `tasty.plan.<plan_id>` key 한 개로 직렬화 (단일 JSON value).
-//! 따라서 step 갱신 한 번이 전체 plan JSON 의 put 한 번에 대응한다.
-//!
-//! agent.task_* (DAG + scheduler) 와 다른 표면:
-//!   - Plan: 상태 기록용. step state 변경은 agent/사용자가 직접 호출.
-//!   - Task: 실행기. ready → running → done 을 호스트가 진행.
-//!
-//! Plan 은 다음 invariants 를 강제한다:
-//!   - `id` 는 `[a-z0-9_-]+`, 1..=64 자.
-//!   - `steps` 의 step id 는 unique (중복 금지).
-//!   - 총 step 수 (flat) 는 [`PLAN_STEP_MAX`] (256) 이하.
-//!   - `depends_on` 의 step id 는 같은 plan 내 다른 step 을 가리켜야 함.
-//!   - dependency 사이클 금지.
+//! workspace별 할 일과 상태를 저장한다. 스케줄러나 실행기가 아니며 상태는 호출자가 갱신한다.
+//! tasty.plan.<plan_id> 키 하나에 JSON 전체를 저장하므로 step 변경도 전체 값을 다시 쓴다.
+//! ID 형식·길이, 중복 step, 총 step 수, 의존 대상 존재와 순환 여부를 검증한다.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -40,7 +27,7 @@ pub enum PlanStepState {
     Skipped,
 }
 
-/// Plan step. ordering 은 `depends_on` 으로 표현 — 배열 순서는 표시 순서일 뿐.
+/// 의존 순서는 depends_on으로 정한다. 배열 순서는 표시용이다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanStep {
     pub id: String,
@@ -100,7 +87,7 @@ pub fn plan_key(plan_id: &str) -> String {
     format!("{PLAN_KEY_PREFIX}{plan_id}")
 }
 
-/// 한 plan 의 모든 invariants 검증. step 수, id 중복, depends_on 유효성, 사이클.
+/// step 수·ID 중복·의존 대상과 순환 여부를 검증한다.
 fn validate_plan(plan: &Plan) -> Result<()> {
     validate_plan_id(&plan.id)?;
     if plan.title.is_empty() {
@@ -150,7 +137,6 @@ fn validate_plan(plan: &Plan) -> Result<()> {
         }
     }
 
-    // depends_on 의 ref 유효성.
     for step in &plan.steps {
         for dep in &step.depends_on {
             if dep == &step.id {
@@ -168,7 +154,6 @@ fn validate_plan(plan: &Plan) -> Result<()> {
         }
     }
 
-    // 사이클 검출 (DFS).
     let adj: HashMap<&str, Vec<&str>> = plan
         .steps
         .iter()
@@ -265,7 +250,7 @@ pub fn plan_get(
     plan_from_entry(&entry).map(Some)
 }
 
-/// 한 entry → Plan 디시리얼. JSON 이 아니거나 형식 깨졌으면 에러.
+/// 항목을 Plan으로 역직렬화한다. JSON이 아니거나 형식이 다르면 오류다.
 fn plan_from_entry(entry: &MemoryEntry) -> Result<Plan> {
     let MemoryValue::Json(v) = &entry.value else {
         return Err(MemoryError::InvalidContentType(format!(
@@ -334,7 +319,6 @@ pub fn plan_remove_step(
     cas: Option<u64>,
 ) -> Result<u64> {
     update_plan(store, owner, workspace_id, plan_id, cas, |plan| {
-        // 다른 step 이 의존하지 않는지.
         for s in &plan.steps {
             if s.id != step_id && s.depends_on.iter().any(|d| d == step_id) {
                 return Err(MemoryError::InvalidKey(format!(

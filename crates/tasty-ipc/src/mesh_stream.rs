@@ -1,23 +1,13 @@
-//! attach mesh mirror(plugin egui-mesh surface)의 바이너리 chunk 프로토콜.
-//!
-//! mesh 프레임(`mesh_wire::encode_paint` 가 만든 POD 바이트, `tasty-plugin-protocol`)은
-//! 큰 텍스처(512×512 RGBA 급이면 ~1MiB)를 포함할 수 있어 [`crate::stream::MAX_FRAME_LEN`]
-//! (1MiB)을 쉽게 초과한다. JSON(`StreamControl`)+base64 는 33% 오버헤드를 더하므로
-//! 배제하고, 여기서는 opaque 바이트를 청크로 쪼개 [`crate::stream::StreamTag::MeshData`]
-//! 프레임으로 나른다 — **이 crate 는 mesh 바이트를 디코드하지 않는다**(`mesh_wire` 는
-//! egui-mesh feature 에 묶여 있어 non-GUI 빌드에 새는 것을 막는다).
-//!
-//! 헤더 레이아웃 (전부 big-endian, [`MESH_CHUNK_HEADER_LEN`] 바이트):
-//! `[surface_id:u32][frame_id:u64][chunk_index:u32][chunk_count:u32][total_len:u32]
-//!  [generation:u64][frame_seq:u64][full_textures:u8]` + 이어서 chunk payload 바이트.
+//! mesh 바이트를 MeshData 청크로 나누고 재조립한다. mesh 내부 형식은 해석하지 않는다.
+//! 헤더는 big-endian surface_id:u32, frame_id:u64, chunk_index:u32, chunk_count:u32,
+//! total_len:u32, generation:u64, frame_seq:u64, full_textures:u8 순서다.
 
 use std::collections::HashMap;
 
 /// 청크 헤더의 고정 와이어 크기(바이트).
 pub const MESH_CHUNK_HEADER_LEN: usize = 4 + 8 + 4 + 4 + 4 + 8 + 8 + 1;
 
-/// 한 [`crate::stream::StreamTag::MeshData`] 프레임에 실을 수 있는 chunk payload 최대
-/// 길이 — frame 전체(헤더+payload)가 [`crate::stream::MAX_FRAME_LEN`] 을 넘지 않도록.
+/// MeshData payload의 청크 헤더와 데이터 합이 MAX_FRAME_LEN을 넘지 않도록 정한 데이터 한도.
 pub const MESH_CHUNK_MAX_PAYLOAD: usize =
     (crate::stream::MAX_FRAME_LEN as usize) - MESH_CHUNK_HEADER_LEN;
 
@@ -78,11 +68,8 @@ pub fn decode_mesh_chunk(buf: &[u8]) -> Option<(MeshChunkMeta, &[u8])> {
     Some((meta, &buf[MESH_CHUNK_HEADER_LEN..]))
 }
 
-/// 한 mesh frame(opaque 바이트)을 [`MESH_CHUNK_MAX_PAYLOAD`] 이하 청크들로 쪼개,
-/// 각각 [`encode_mesh_chunk`] 로 이미 인코드된 [`crate::stream::StreamTag::MeshData`]
-/// 프레임 payload 목록을 반환한다(호출자는 `write_frame(w, StreamTag::MeshData, payload)`
-/// 로 순서대로 내보내면 된다). `bytes` 가 비어 있어도 최소 1개 청크(빈 payload)를
-/// 만들어 chunk_count=1 불변식을 지킨다.
+/// mesh 바이트를 헤더까지 인코딩한 청크 payload 목록으로 나눈다.
+/// 입력이 비어 있어도 빈 청크 하나를 반환한다. 호출자는 순서대로 MeshData 프레임에 실어 보낸다.
 pub fn split_mesh_frame(
     surface_id: u32,
     frame_id: u64,
@@ -132,9 +119,7 @@ struct InFlight {
     received: HashMap<u32, Vec<u8>>,
 }
 
-/// client 가 여러 mesh surface 의 청크를 뒤섞어 받아도(같은 스트림, 여러 surface_id)
-/// frame_id 단위로 올바르게 재조립하는 상태 머신. surface 당 하나씩 두는 것을 권장
-/// (다른 surface 의 frame_id 재조립 상태를 서로 침범하지 않도록 `surface_id` 로도 키잉).
+/// surface_id와 frame_id로 진행 상태를 구분해 섞여 들어오는 청크를 재조립한다.
 #[derive(Default)]
 pub struct MeshFrameAssembler {
     inflight: HashMap<(u32, u64), InFlight>,
@@ -156,9 +141,7 @@ impl MeshFrameAssembler {
         if meta.chunk_count == 0 || meta.chunk_index >= meta.chunk_count {
             return Err(MeshAssembleError::Malformed);
         }
-        // 방어: chunk_count 개가 최대 payload 크기로 채워도 total_len 에 못 미치면
-        // (즉 total_len 이 도달 불가능하게 큼) 손상/악의적 메타로 거부한다. 실제
-        // payload 초과 확인은 각 청크 삽입 시점에도 별도로 한다(아래).
+        // 청크 수 × 최대 payload로도 total_len을 채울 수 없으면 거절한다.
         let max_possible = (meta.chunk_count as u64) * (MESH_CHUNK_MAX_PAYLOAD as u64);
         if meta.total_len as u64 > max_possible {
             return Err(MeshAssembleError::LengthMismatch);
@@ -250,7 +233,6 @@ mod tests {
 
     #[test]
     fn split_and_reassemble_large_frame() {
-        // MAX_FRAME_LEN(1MiB) 을 초과하는 합성 mesh 바이트.
         let bytes: Vec<u8> = (0..(crate::stream::MAX_FRAME_LEN as usize * 2 + 777))
             .map(|i| (i % 256) as u8)
             .collect();
@@ -260,8 +242,7 @@ mod tests {
             "must actually split across multiple chunks"
         );
 
-        // 각 청크를 실제 StreamTag::MeshData 프레임으로 왕복(프레이밍 계층까지 포함)
-        // 시켜 MAX_FRAME_LEN 위반이 없는지도 함께 검증한다.
+        // 실제 프레임으로 왕복해 payload 상한도 함께 확인한다.
         let mut assembler = MeshFrameAssembler::new();
         let mut result = None;
         for chunk in &chunks {
@@ -306,7 +287,6 @@ mod tests {
         assert_eq!(chunks_b.len(), 2);
 
         let mut assembler = MeshFrameAssembler::new();
-        // interleave: a0, b0, a1, b1
         assert!(assembler.push_chunk(&chunks_a[0]).unwrap().is_none());
         assert!(assembler.push_chunk(&chunks_b[0]).unwrap().is_none());
         let (meta_a, assembled_a) = assembler.push_chunk(&chunks_a[1]).unwrap().unwrap();
@@ -319,7 +299,6 @@ mod tests {
 
     #[test]
     fn malicious_total_len_is_rejected() {
-        // chunk_count=1 인데 total_len 이 실제 도달 가능한 최댓값을 초과.
         let meta = MeshChunkMeta {
             surface_id: 1,
             frame_id: 1,
@@ -338,8 +317,6 @@ mod tests {
 
     #[test]
     fn total_len_not_matching_actual_assembled_is_rejected() {
-        // 단일 청크인데 total_len 이 실제 payload 길이와 다름(각 청크는 유효 범위
-        // 내지만 합산이 안 맞는 손상 케이스).
         let meta = MeshChunkMeta {
             surface_id: 1,
             frame_id: 1,
@@ -364,7 +341,6 @@ mod tests {
         let mut assembler = MeshFrameAssembler::new();
         assert!(assembler.push_chunk(&chunks[0]).unwrap().is_none());
         assembler.forget_surface(5);
-        // 남은 청크만 넣으면 인덱스가 다 안 모여 여전히 None (구 상태가 안 남아있단 방증).
         assert!(assembler.push_chunk(&chunks[1]).unwrap().is_none());
     }
 }

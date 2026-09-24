@@ -1,9 +1,5 @@
-//! `memory.db` 스키마.
-//!
-//! 0.x experimental 정책: 마이그레이션 체인을 누적하지 않고 single SCHEMA_SQL을
-//! 적용한다. `user_version == 0`이면 신규 DB로 간주해 일괄 적용, 같은 버전이면
-//! no-op, 다른 버전이면 `SchemaMismatch` 에러로 호출자에게 위임한다 (0.7 직전에
-//! 최종 freeze 후 누적 migration으로 전환 예정).
+//! memory.db 스키마. user_version=0이면 전체 스키마를 적용한다.
+//! 같은 버전은 유지하고 다른 버전은 SchemaMismatch로 호출자에게 전달한다.
 
 use rusqlite::Connection;
 
@@ -16,7 +12,7 @@ const SCHEMA_SQL: &str = r#"
     --   key:   1..256 [a-z0-9._-]+
     --   value: 직렬화된 바이트열. content_type으로 해석 (application/json | text/plain | application/octet-stream).
     --   version: 낙관적 락(CAS). update마다 +1.
-    --   owner:  caller로부터 호스트가 도장찍는 값. plugin id(reverse-DNS) 또는 '_host'.
+    --   owner:  caller로부터 호스트가 정하는 값. plugin id(reverse-DNS) 또는 '_host'.
     CREATE TABLE IF NOT EXISTS memory (
         scope TEXT NOT NULL,
         key TEXT NOT NULL,
@@ -44,7 +40,7 @@ const SCHEMA_SQL: &str = r#"
 
     -- Secret memory. 각 plugin마다 자기 전용 영역 — owner가 PK 일부라 다른 plugin이
     -- 같은 (scope, key)를 충돌 없이 가질 수 있다. value blob은 평문 저장이며,
-    -- 보호 약속은 IPC 표면에서의 owner 격리 한 가지 (자세한 위협 모델은 lib.rs / memory-system.md).
+    -- 보호 약속은 IPC에서의 owner 격리이며 DB 파일 접근을 막지는 않는다.
     CREATE TABLE IF NOT EXISTS memory_secret (
         owner TEXT NOT NULL,
         scope TEXT NOT NULL,

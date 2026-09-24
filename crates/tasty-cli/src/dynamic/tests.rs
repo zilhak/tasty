@@ -223,7 +223,6 @@ fn flag_with_value_maps_to_params() {
     assert_eq!(p["prompt"], Value::String("hello".into()));
 }
 
-/// 플래그와 stdin 모두 비수치 입력을 거절해야 한다.
 fn spawn_group(entry: &PluginCliEntry) -> &CliArgGroup {
     entry
         .cli

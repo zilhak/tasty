@@ -1,14 +1,5 @@
-//! 바인딩 **매칭** — `"ctrl+shift+n"` 같은 문자열을 winit/egui 의 `(key, mods)` 와 대조한다.
-//!
-//! 이 판정은 단축키 디스패치만의 것이 아니다 — webview 자식 창이 올린 키를 호스트가
-//! 가로챌지 정하는 자리(`host_api::webview::keys`)도 같은 규칙을 쓴다. 규칙이 `gui`
-//! feature 뒤의 UI 모듈 안에 있으면 그쪽이 UI 에 묶인다. 규칙만 잎으로 내린다.
-//!
-//! 문자열을 축과 키 토큰으로 쪼개는 **파싱**은 그 문자열을 소유한 크레이트에 있다
-//! (`tasty_settings::keybindings::parse`) — 단축키 이식 번들의 `option` 판정이 같은
-//! 규칙을 써야 하는데 이 모듈은 `gui` feature 뒤라 그쪽에서 안 보이기 때문이다
-//! (`docs/features/keybindings/index.md#이식-번들--구성-전량을-파일-한-장으로`).
-//! 여기 남은 것은 파싱 결과를 실제 키 이벤트와 맞추는 플랫폼 규칙이다.
+//! 바인딩 문자열을 winit/egui 키 이벤트와 대조한다. 단축키와 webview 키 전달이 같은 규칙을 쓴다.
+//! 문자열 파싱은 tasty_settings::keybindings::parse가 맡고, 이 크레이트는 플랫폼별 매칭을 담당한다.
 
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
@@ -79,12 +70,8 @@ fn token_to_egui_key(token: &str) -> Option<egui::Key> {
     })
 }
 
-/// 바인딩 문자열이 `ctrl`/`alt`/`option` 중 하나 이상을 요구하는지 판정한다.
-/// `shift` 단독과 수식 없는 키는 `false`.
-///
-/// webview 키 포워딩 정책(`host_api/webview/keys.rs`)이 "페이지에 남길 키" 와
-/// "host 가 가져갈 키" 를 가르는 기준으로 쓴다 — 파싱 규칙을 그쪽에 복제하지
-/// 않도록 여기서 한 번만 판정한다.
+/// ctrl/alt/option 중 하나 이상을 요구하는지 확인한다. shift 단독은 false다.
+/// webview가 페이지에 남길 키와 호스트로 전달할 키를 구분할 때 사용한다.
 pub fn binding_has_modifier(binding: &str) -> bool {
     match parse_binding(binding) {
         Some(p) => p.ctrl || p.alt || p.option,
@@ -99,9 +86,7 @@ pub fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
         return false;
     };
 
-    // Modifier-only key presses must never trigger any shortcut, regardless of
-    // how the binding is spelled. This is the structural guard that prevents
-    // "Ctrl alone" from ever matching.
+    // modifier 자체를 누른 이벤트는 단축키를 실행하지 않는다.
     if let Key::Named(n) = key
         && matches!(
             n,
@@ -132,8 +117,7 @@ pub fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     #[cfg(not(target_os = "macos"))]
     let alt_matches = mods.alt_key() == parsed.alt;
 
-    // macOS: "option" modifier maps to Option key (alt_key in winit).
-    // On non-macOS, "option" bindings never match (option is always false).
+    // option 바인딩은 macOS에서만 매칭한다.
     #[cfg(target_os = "macos")]
     let option_matches = mods.alt_key() == parsed.option;
     #[cfg(not(target_os = "macos"))]

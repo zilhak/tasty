@@ -1,15 +1,5 @@
-//! Cache — workspace 단위 TTL-기반 키-값 캐시.
-//!
-//! `tasty.cache.<key>` 키로 regular memory 영역에 저장된다. 각 entry 는 반드시
-//! TTL 을 가져야 하며 (`cache_put { ttl_secs }`), 만료 entry 는 read 시 자동 제외.
-//!
-//! 사용 시나리오:
-//!   - 비용이 큰 계산 결과 캐시 (LLM 응답, 외부 API 호출 등)
-//!   - hot-path lookup table
-//!
-//! `key` 는 호출자가 의미 있는 식별자로 직접 지정한다 (예: 입력의 SHA256 hex
-//! 문자열). 검증은 일반 memory key 와 동일 (`[a-z0-9._-]+`, ≤200 chars —
-//! `tasty.cache.` prefix 와 합쳐 256 한도 안에 들어오도록).
+//! workspace별 TTL 캐시. tasty.cache.<key>에 저장하며 만료된 항목은 조회에서 제외한다.
+//! key는 호출자가 정하고 [a-z0-9._-]+, 최대 200자다. ttl_secs는 양수여야 한다.
 
 use crate::{
     ListOpts, MemoryEntry, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope,
@@ -101,9 +91,8 @@ pub fn cache_invalidate(
     }
 }
 
-/// workspace 의 모든 캐시 entry 삭제 (owner 가 modify 권한 있는 entry 만).
-///
-/// Returns: 삭제된 entry 수.
+/// workspace 캐시를 순서대로 삭제하고 삭제 수를 반환한다.
+/// 수정 권한이 없는 항목 등 첫 오류에서 멈추며 앞서 삭제한 항목은 복원하지 않는다.
 pub fn cache_clear(store: &mut dyn MemoryStorage, owner: &str, workspace_id: u32) -> Result<usize> {
     let scope = Scope::Workspace(workspace_id);
     let opts = ListOpts {
@@ -202,7 +191,6 @@ mod tests {
             60,
         )
         .unwrap();
-        // 다른 키도 추가해서 캐시만 삭제되는지 검증.
         s.put(
             HOST_OWNER,
             &Scope::Workspace(1),
@@ -281,7 +269,6 @@ mod tests {
     #[test]
     fn expired_entry_is_none() {
         let mut s = open();
-        // expires_at = 과거 시각으로 직접 set.
         let opts = PutOpts {
             expires_at: Some(1),
             cas: None,

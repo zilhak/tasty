@@ -1,22 +1,7 @@
-//! Agent session token 영속 + 검증.
-//!
-//! `claude.spawn` 등으로 호스트가 띄운 자식 프로세스에 1:1 로 발급된
-//! [`SessionToken`] 의 라이프사이클을 관리한다. 자식이 IPC envelope 에 토큰을
-//! 함께 보내면 [`SessionStore::resolve`] 가 신원을 검증해 [`AgentSession`] 을
-//! 돌려준다 — 호스트는 이 정보로 [`CallerContext::Agent`] 를 만들어 권한 게이트를
-//! 적용한다.
-//!
-//! 영속 키:
-//! - `tasty.session.<token>` (scope=Global) — token 자체를 key suffix 로 사용.
-//!   token 은 64-char lowercase hex 라 memory key 허용 문자(`[a-z0-9._-]`) 안에
-//!   들어맞는다. memory.db 디스크 보호는 별도 phase 의 OS keyring/secret scope
-//!   이전으로 미룬다 (위협 모델: 신뢰하는 에이전트의 버그 격리).
-//!
-//! 만료/revoke 정책:
-//! - `expires_at_ms` 가 있고 `now_ms` 가 그보다 크면 만료 — `resolve` 가 `None`
-//!   을 돌려주고, `list`/`gc` 가 메모리에서 제거.
-//! - `revoke` 는 `revoked=true` 로 마킹만 한다. revoked 세션은 `resolve` 에서
-//!   `None`. `gc` 가 함께 제거.
+//! 세션 토큰을 전역 memory의 tasty.session.<token> 키에 저장하고 검증한다.
+//! 디스크 암호화나 OS keyring 보호는 이 저장소가 제공하지 않는다.
+//! 만료 시각에 도달한 세션은 resolve에서 제거하며, revoked 세션은 거절한다.
+//! list도 만료·철회 항목을 정리한다. 호스트는 검증 결과로 호출자 권한을 구성한다.
 
 use std::collections::HashSet;
 
@@ -70,7 +55,7 @@ pub struct AgentSession {
     pub temp_grants: Vec<TempGrant>,
     /// unix ms.
     pub created_at_ms: u64,
-    /// unix ms. 없으면 자식 프로세스 lifetime 과 동일 (revoke 만으로 종료).
+    /// 만료 시각(unix ms). 없으면 명시적으로 revoke할 때까지 만료되지 않는다.
     pub expires_at_ms: Option<u64>,
     /// `revoke` 호출 후 `true`.
     #[serde(default)]
@@ -78,12 +63,9 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
-    /// base + 만료되지 않은 temp grant 의 합집합. 알 수 없는 토큰은 drop.
+    /// base 권한과 저장된 임시 grant를 합친다. 알 수 없는 토큰은 제외한다.
+    /// 이 함수는 만료를 검사하지 않으므로 호출 전에 만료 grant를 제거해야 한다.
     pub fn permission_set(&self) -> HashSet<Permission> {
-        // now 미지정 호출 호환을 위해 만료 검사 없이 모두 합친다 — 만료된 항목은
-        // store level 에서 evict 후 호출돼야 한다. 호출자가 만료를 신경 쓰지 않는
-        // 만료된 temp grant 도 그대로 포함됨 — resolve 가 store 에서 만료 처리한
-        // 후 호출되는 것이 일반 흐름.
         self.permissions
             .iter()
             .chain(self.temp_grants.iter().map(|g| &g.permission))
@@ -149,8 +131,7 @@ impl<'a> SessionStore<'a> {
         }
     }
 
-    /// 새 세션 발급. 토큰은 호출자가 만들어 환경변수 등으로 주입할 수 있도록 함께
-    /// 돌려준다. agent_id 는 비어 있을 수 없다.
+    /// 새 토큰과 세션을 발급한다. 호출자가 토큰을 자식에게 전달하며 agent_id는 비어 있을 수 없다.
     pub fn issue(
         &mut self,
         agent_id: impl Into<String>,
@@ -206,9 +187,7 @@ impl<'a> SessionStore<'a> {
         }
     }
 
-    /// 토큰을 검증. 만료/revoked 세션은 `Ok(None)`.
-    /// 만료된 항목은 디스크에서도 함께 정리 (lazy gc).
-    /// 만료된 temp grant 는 leave 시 evict 후 persist 한다.
+    /// 만료·철회 세션은 None이다. 만료 세션은 삭제하고 만료 grant를 제거한 세션은 다시 저장한다.
     pub fn resolve(&mut self, token: &SessionToken, now_ms: u64) -> Result<Option<AgentSession>> {
         let mut session = match self.get_raw(token)? {
             Some(s) => s,
@@ -295,7 +274,6 @@ impl<'a> SessionStore<'a> {
         let before = session.temp_grants.len();
         session.temp_grants.retain(|g| g.permission != permission);
         let removed = before != session.temp_grants.len();
-        // 만료 evict 도 함께 — 어차피 저장하니까.
         let evicted = session.evict_expired_grants(now_ms);
         if removed || evicted {
             self.put(token, &session)?;

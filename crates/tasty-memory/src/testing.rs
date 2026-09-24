@@ -1,7 +1,4 @@
-//! `testing::InMemoryStorage` — 맵 기반 mock. test 시 SQLite 우회.
-//!
-//! 현재는 stub — Phase D.3.C 의 test 작성 시 필요한 메서드 부터 채운다.
-//! 미구현 메서드는 `unimplemented!()` — 호출 시 panic 으로 알려준다.
+//! SQLite 대신 사용하는 맵 기반 시험 저장소. 구현하지 않은 메서드는 패닉한다.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -16,17 +13,11 @@ use crate::{
 #[allow(dead_code)]
 pub struct InMemoryStorage {
     config: MemoryConfig,
-    /// (scope, key) → entry. `BTreeMap` 이라 순회가 (scope, key) 오름차순이다 — 운영
-    /// `MemoryStore::list` 의 `ORDER BY key ASC` 와 같은 순서를 `list` 가 내게 하려는 것이다.
-    /// `HashMap` 이면 순서가 실행마다 달라 목록 순서에 기대는 시험이 운에 맡겨진다.
+    /// list가 키 순서를 유지하도록 (scope, key) 순으로 저장한다.
     regular: BTreeMap<(String, String), MemoryEntry>,
     secret: HashMap<(String, String, String), MemoryEntry>, // (owner, scope, key) → entry
     pending: Vec<MemoryChange>,
-    /// `purge_scope` 가 불린 scope token 을 호출 순서대로 기록한다.
-    ///
-    /// 실제 `MemoryStore::purge_scope` 는 매 호출 끝에 `memory` 테이블 풀스캔을 하므로
-    /// "결과는 같지만 두 번 불린다" 가 그대로 비용이 된다. 결과만 검사하는 테스트는 그
-    /// 중복을 잡지 못하니(두 번째 호출은 0행 삭제라 상태가 동일하다) 호출 자체를 센다.
+    /// 결과가 같아도 중복 호출을 검출할 수 있도록 purge_scope 호출을 순서대로 기록한다.
     purge_scope_calls: Vec<String>,
 }
 
@@ -45,8 +36,7 @@ impl InMemoryStorage {
         }
     }
 
-    /// 지금까지 이 scope 로 `purge_scope` 가 불린 횟수. 삭제된 행 수가 아니라 **호출
-    /// 수** 다 — 중복 호출은 두 번째부터 0행을 지우므로 상태로는 구별되지 않는다.
+    /// 삭제된 행 수가 아닌 해당 scope의 purge_scope 호출 수.
     pub fn purge_scope_call_count(&self, scope: &Scope) -> usize {
         let token = scope.as_token();
         self.purge_scope_calls
@@ -285,8 +275,7 @@ mod tests {
         entries.into_iter().map(|e| e.key).collect()
     }
 
-    /// `list` 는 운영 저장소와 같은 순서(키 오름차순)로 돌려준다 — 넣은 순서와 무관하게,
-    /// 실행마다 같게. 같은 입력을 운영 저장소에 넣은 결과와 견준다.
+    /// 같은 입력에서 운영 저장소와 키 정렬 순서가 같은지 대조한다.
     #[test]
     fn list_returns_keys_in_the_same_order_as_the_real_store() {
         let inserted = ["b.2", "a.10", "c", "a.9", "a.1", "b.1"];

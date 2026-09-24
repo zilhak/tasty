@@ -1,13 +1,5 @@
-//! Plugin이 contributes한 IPC namespace prefix를 호스트가 추적하기 위한 registry.
-//!
-//! 호스트 IPC dispatcher는 `<prefix>.<method>` 메서드를 받았을 때 이 registry로
-//! 어느 plugin에 forward할지 해결한다.
-//!
-//! **이 표가 답하는 것은 "누가 소유하는가" 하나이고, 재료는 설치된 매니페스트다**
-//! (`refresh_packages` 가 채운다). "지금 살아 있는가" 는 다른 물음이며 같은 자리에서
-//! `processes` 검사가 따로 답한다(`validate_namespace_call` → `-32002`). 두 물음을 이
-//! 표 하나에 겹쳐 두면 꺼진 plugin 의 메서드가 "그런 메서드 없다" 로 답해 거짓이 된다
-//! — 근거는 [CLI + IPC namespace](../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
+//! 설치된 매니페스트의 IPC prefix 소유자를 기록한다. 실행 중인지 여부와는 별개다.
+//! 프로세스 상태와 호출 가능 여부는 validate_namespace_call에서 따로 확인한다.
 
 use std::collections::HashMap;
 
@@ -43,7 +35,7 @@ impl IpcNamespaceRegistry {
         Ok(())
     }
 
-    /// plugin이 unload될 때 그 plugin이 등록한 모든 prefix를 한 번에 제거.
+    /// 해당 플러그인이 등록한 prefix를 모두 제거한다.
     pub fn unregister_plugin(&mut self, plugin_id: &str) {
         if let Some(prefixes) = self.plugin_to_prefixes.remove(plugin_id) {
             for p in prefixes {
@@ -57,10 +49,7 @@ impl IpcNamespaceRegistry {
         self.plugin_to_prefixes.keys().cloned().collect()
     }
 
-    /// 한 plugin 이 점유한 prefix 들. 없으면 빈 슬라이스.
-    ///
-    /// 해제할 때 **매니페스트를 다시 찾지 않고** 여기서 꺼내 쓰라고 있다 — 패키지가
-    /// 디스크에서 사라진 뒤에는 매니페스트 조회가 실패해 mirror 가 남는다.
+    /// 해당 플러그인의 prefix 목록. 패키지가 삭제돼도 이 목록으로 등록을 해제할 수 있다.
     pub fn prefixes_of(&self, plugin_id: &str) -> &[String] {
         self.plugin_to_prefixes
             .get(plugin_id)
@@ -68,19 +57,13 @@ impl IpcNamespaceRegistry {
             .unwrap_or(&[])
     }
 
-    /// 표를 통째로 비운다. 소유를 **다시 계산해** 갈아끼우는 쪽이 쓰는 자리다 —
-    /// 항목을 하나씩 지우는 것과 결과가 같지만, 계산을 락 밖에서 끝내고 여기서 한 번에
-    /// 대입하면 임계구역에 다른 코드가 끼지 않는다.
+    /// 소유자 목록을 다시 구성하기 전에 모든 항목을 지운다.
     pub fn clear(&mut self) {
         self.prefix_to_plugin.clear();
         self.plugin_to_prefixes.clear();
     }
 
-    /// 이 prefix 를 누가 점유하고 있는가 — **있다/없다** 하나만 묻는다.
-    ///
-    /// `resolve` 와 물음이 다르다: 저쪽은 메서드명을 받아 소유자를 돌려주고, 여기는
-    /// prefix 자체를 받아 참/거짓만 낸다. 락 뒤에서 조회할 때 소유자 문자열을 빌려
-    /// 나올 수 없기 때문에(guard 수명) 참/거짓으로 답하는 물음이 따로 필요하다.
+    /// prefix의 등록 여부만 확인한다. resolve는 메서드명에서 소유자를 찾는다.
     pub fn owns_prefix(&self, prefix: &str) -> bool {
         self.prefix_to_plugin.contains_key(prefix)
     }
