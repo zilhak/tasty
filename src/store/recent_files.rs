@@ -1,23 +1,9 @@
-//! 최근 연 파일 저장소 (generic per-kind).
+//! 종류별 최근 파일 목록. 데이터 루트의 state.db에 저장하며 창들이 캐시를 공유한다.
+//! 매니페스트의 records_recent를 사용하는 파일 열기 경로와 directory 같은 내장 종류가 기록한다.
 //!
-//! 저장: `~/.tasty/state.db` (SQLite) — `recent_files(kind, path, opened_at)` 테이블.
-//! DB 가 소유한 인메모리 캐시를 모든 창의 `AppState.recent_files` 가 공유하며,
-//! 매 뮤테이션마다 DB에 반영된다. host 는
-//! 특정 surface_kind 이름을 모르고, 매니페스트 `records_recent` 를 선언한 kind 만
-//! 파일-open 진입점에서 기록 대상이 된다(generic per-kind — kind 하드코딩 없음).
-//! 그 외에 builtin host surface 가 자체 kind 로 직접 적재하기도 한다(예: explorer 가
-//! 이동 확정한 cwd 를 `"directory"` kind 로 — `add`/`get` 은 kind 문자열만 다를 뿐 동일 경로).
-//!
-//! **레거시 마이그레이션**: 이전 버전의 `recent_markdown(path, opened_at)` 데이터는
-//! 앱 시작 시 1회 `recent_files` 로 복사된다(`kind='markdown'`). meta 플래그로 정확히
-//! 한 번만 복사해 pruned 엔트리의 부활을 막고, old 테이블은 남겨둔다(데이터 유실 금지).
-//!
-//! **중복 정리**: 같은 파일을 가리키는 다른 경로 표기(구분자 `\`↔`/`, `\\?\`
-//! verbatim prefix, `.`/`..` 세그먼트, Windows 대소문자 차)가 서로 다른 키로
-//! 들어와 중복 행이 생기던 버그를 막는다. dedup 은 **정규화 키**(`dedup_key`)로
-//! 비교하되 저장/표시/열기에는 **원본 raw path** 를 그대로 쓴다(과교정 방지).
-//! DB 스키마는 fresh-start 정책(마이그레이션 체인 없음)이라, 기존 저장분의 중복은
-//! `load()` 시 1회성 정리 패스로 접는다.
+//! 중복 비교는 정규화한 경로로 하고 표시·열기에는 원래 경로를 사용한다.
+//! 로드할 때 기존 중복 행을 정리하며, recent_markdown의 이전 데이터도 이관한다.
+//! DB 쓰기에 실패해도 메모리 캐시 변경은 유지된다.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -30,7 +16,7 @@ const MAX_ENTRIES: usize = 10;
 
 #[derive(Default, Clone)]
 pub struct RecentFiles {
-    /// surface_kind → 최신순 경로 목록. `records_recent` 를 선언한 kind 만 채워진다.
+    /// 종류별 최신순 경로 목록.
     by_kind: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
@@ -41,12 +27,9 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// dedup 비교 전용 정규화 키. 같은 파일을 가리키는 다른 표기를 하나로 접기 위한
-/// 것으로 **표시·열기용이 아니다** — 원본 raw path 는 그대로 보존한다.
-///
-/// - `strip_verbatim_prefix`: `\\?\` extended-length prefix 제거.
-/// - `lexically_normalize`: `.`/`..` 붕괴 + (Windows) 구분자 `/`→`\` 통일.
-/// - Windows: 파일시스템이 대소문자 무시라 대소문자만 다른 경로는 같은 파일 → case fold.
+/// 중복 비교용 경로 키. 파일시스템의 동일 파일 여부를 확인하지는 않는다.
+/// verbatim 접두사와 . / .. 표기를 정리하고 Windows에서는 소문자로 바꾼다.
+/// 표시·열기에는 원래 경로를 사용한다.
 fn dedup_key(path: &str) -> String {
     let stripped = tasty_utils::path::strip_verbatim_prefix(path);
     let normalized = tasty_utils::path::lexically_normalize(Path::new(&stripped));
@@ -61,9 +44,7 @@ fn dedup_key(path: &str) -> String {
     }
 }
 
-/// opened_at 내림차순으로 정렬된 `(path, opened_at)` 행에서 `dedup_key` 가 같은
-/// 항목을 접는다. 첫 등장(=최신)만 `kept` 로, 나머지 raw path 는 `stale`(삭제 대상)
-/// 로 분류. `kept` 는 입력 순서(최신순)를 유지한다. **순수 함수** — DB 접근 없음.
+/// 최신순 입력에서 같은 정규화 키의 첫 항목을 남기고 나머지를 삭제 대상으로 분류한다.
 fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<String>, Vec<String>) {
     let mut seen: HashSet<String> = HashSet::new();
     let mut kept = Vec::new();
@@ -79,12 +60,7 @@ fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<String>, Vec<String>) {
 }
 
 impl RecentFiles {
-    /// 같은 state.db 를 쓰는 창들은 캐시도 공유한다. 읽을 때 DB 를 다시 열지 않는다.
-    ///
-    /// `recent_files` 테이블을 보장(레거시 DB 대비)하고 `recent_markdown` 레거시
-    /// 데이터를 1회 마이그레이션한 뒤, kind 별로 로드한다. 기존 저장분의 중복(구분자/
-    /// 대소문자/verbatim 차로 갈라진 행)을 정규화 키 기준으로 접어(최신 opened_at 만
-    /// 남기고 나머지 행 DELETE) 로드한다.
+    /// 같은 DB의 창들이 캐시를 공유한다. 최초 로드에서 이전 테이블 이관과 중복 정리를 시도한다.
     pub fn load() -> Self {
         crate::db::with_state_db(Self::for_db).unwrap_or_default()
     }
@@ -131,11 +107,10 @@ impl RecentFiles {
         crate::poison::recover_mutex(self.by_kind.lock(), "recent files cache", &POISONED)
     }
 
-    /// `kind` 의 최근 목록에 `path` 를 최신으로 추가한다(정규화 dedup + 상한).
+    /// 종류별 최신 목록에 추가하고 중복·개수 상한을 정리한다.
     pub fn add(&mut self, kind: &str, path: String) {
         let key = dedup_key(&path);
-        // 인메모리: 같은 정규화 키를 가진 옛 표기를 제거하고 최신 raw path 를 앞에.
-        // 캐시 순서와 DB 쓰기 순서가 서로 뒤집히지 않도록 저장까지 같은 락 안에서 한다.
+        // 캐시 갱신과 DB 저장 순서가 뒤바뀌지 않도록 같은 락 안에서 처리한다.
         let mut by_kind = self.lock();
         let list = by_kind.entry(kind.to_string()).or_default();
         list.retain(|p| dedup_key(p) != key);
@@ -144,8 +119,6 @@ impl RecentFiles {
         let ts = now_secs();
         if crate::db::with_state_db(|db| {
             ensure_recent_files_table(&db.conn);
-            // 같은 정규화 키의 기존 행(다른 raw 표기)을 제거한 뒤 upsert — DB 에도
-            // dedup 을 반영해 중복 행이 물리적으로 남지 않게 한다.
             purge_same_key(&db.conn, kind, &key, &path);
             upsert_recent(&db.conn, kind, &path, ts);
         })
@@ -157,9 +130,7 @@ impl RecentFiles {
     }
 }
 
-/// `recent_files` 테이블을 보장한다. fresh DB 는 schema 로 이미 생성되지만, 레거시
-/// (user_version 이 이미 SCHEMA_VERSION 인) DB 는 이 테이블이 없을 수 있어 방어적으로
-/// 만든다. `IF NOT EXISTS` 라 기존 데이터는 건드리지 않는다.
+/// 이전 DB에도 테이블이 있도록 생성한다. 실패하면 경고를 남긴다.
 fn ensure_recent_files_table(conn: &rusqlite::Connection) {
     if let Err(e) = conn.execute(
         "CREATE TABLE IF NOT EXISTS recent_files (
@@ -174,10 +145,8 @@ fn ensure_recent_files_table(conn: &rusqlite::Connection) {
     }
 }
 
-/// 레거시 `recent_markdown` 데이터를 `recent_files`(kind='markdown')로 **정확히 1회**
-/// 복사한다. meta 플래그(`recent_files_migrated`)로 재실행을 막아, 사용자가 이후 pruned
-/// 시킨 엔트리가 매 부팅마다 부활하는 것을 방지한다. old 테이블은 남겨둔다(데이터 유실
-/// 금지). 복사 실패 시 플래그를 세우지 않아 다음 부팅에 재시도한다.
+/// recent_markdown을 이관하고 완료 플래그로 재실행을 막는다. 원래 테이블은 유지한다.
+/// 복사나 플래그 기록에 실패하면 다음 로드에서 다시 시도할 수 있다.
 fn migrate_recent_markdown(conn: &rusqlite::Connection) {
     let migrated: bool = conn
         .query_row(
@@ -250,11 +219,9 @@ fn delete_paths(conn: &rusqlite::Connection, kind: &str, paths: &[String]) {
     }
 }
 
-/// `key` 와 정규화 키가 같지만 raw path 는 `keep_path` 와 다른 기존 행을 `kind` 안에서
-/// 삭제한다. (kind 별 상한 MAX_ENTRIES 라 전체 스캔 비용 무시 가능.)
+/// 정규화 키가 같고 원래 표기만 다른 경로를 종류별로 삭제한다.
 fn purge_same_key(conn: &rusqlite::Connection, kind: &str, key: &str, keep_path: &str) {
-    // `query_kind_rows` 는 파라미터를 0개 바인딩하므로 WHERE 절에 placeholder 를 두면
-    // NULL 로 처리돼 매치가 0 이 된다. WHERE 없이 전체를 읽고 아래에서 Rust 로 kind 필터.
+    // query_kind_rows는 인자를 바인딩하지 않으므로 전체 조회 후 kind를 거른다.
     let existing = query_kind_rows(conn, "SELECT kind, path, opened_at FROM recent_files");
     let stale: Vec<String> = existing
         .into_iter()
@@ -331,11 +298,8 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn dedup_key_folds_separator_and_case_windows() {
-        // 구분자 `\`↔`/` + 대소문자 차이는 같은 키로 접힌다.
         assert_eq!(dedup_key(r"E:\a\B.md"), dedup_key("E:/a/b.md"),);
-        // verbatim `\\?\` prefix 유무도 같은 키.
         assert_eq!(dedup_key(r"\\?\E:\a\b.md"), dedup_key(r"E:\a\b.md"),);
-        // `.`/`..` 세그먼트 붕괴.
         assert_eq!(dedup_key(r"E:\a\md\..\b.md"), dedup_key(r"E:\a\b.md"),);
     }
 
@@ -348,16 +312,13 @@ mod tests {
     #[test]
     #[cfg(not(windows))]
     fn dedup_key_folds_normalization_unix() {
-        // Unix: 구분자/verbatim 은 no-op, `.`/`..` 만 붕괴. 대소문자는 구분 유지.
         assert_eq!(dedup_key("/a/md/../b.md"), dedup_key("/a/b.md"));
         assert_eq!(dedup_key("/a/./b.md"), dedup_key("/a/b.md"));
-        // Unix 파일시스템은 대소문자 구분 → 다른 파일.
         assert_ne!(dedup_key("/a/B.md"), dedup_key("/a/b.md"));
     }
 
     #[test]
     fn dedup_rows_keeps_latest_per_key() {
-        // 최신순(opened_at DESC) 입력. 같은 파일의 두 표기가 접혀야 한다.
         #[cfg(windows)]
         let (raw_new, raw_old, other) = (r"E:\a\b.md", "E:/a/B.md", r"E:\a\c.md");
         #[cfg(not(windows))]
@@ -391,8 +352,6 @@ mod tests {
         assert!(rf.get("markdown").is_empty());
     }
 
-    /// explorer 최근 디렉토리(kind="directory")도 generic 경로를 그대로 탄다 —
-    /// 최신순·중복제거·상한(MAX_ENTRIES)·kind 격리. explorer address_bar 후보 소스.
     #[test]
     fn directory_kind_recent_latest_first_dedup_and_cap() {
         let mut rf = RecentFiles::default();
@@ -401,7 +360,6 @@ mod tests {
         #[cfg(not(windows))]
         let mk = |i: usize| format!("/dir{i}");
 
-        // 상한(10) 초과로 12개 적재 → 최신 10개만, 최신순.
         for i in 0..12 {
             rf.add("directory", mk(i));
         }
@@ -410,20 +368,18 @@ mod tests {
         assert_eq!(list[0], mk(11)); // 마지막 add 가 맨 앞.
         assert_eq!(list[9], mk(2)); // 가장 오래된 유지분.
 
-        // 재방문 → 중복 없이 맨 앞으로.
         rf.add("directory", mk(2));
         let list = rf.get("directory");
         assert_eq!(list.len(), MAX_ENTRIES);
         assert_eq!(list[0], mk(2));
         assert_eq!(list.iter().filter(|p| **p == mk(2)).count(), 1);
 
-        // kind 격리 — markdown 은 비어 있다.
         assert!(rf.get("markdown").is_empty());
     }
 
     #[test]
     fn add_and_get_in_memory_dedup() {
-        // DB 가 없어도 인메모리 캐시 뮤테이션은 동작한다(add 는 DB 실패를 trace 로 흡수).
+        // DB가 없어도 캐시는 갱신돼야 한다.
         let mut rf = RecentFiles::default();
         #[cfg(windows)]
         let (p1, p1_alt, p2) = (r"E:\a\b.md", "E:/a/B.md", r"E:\a\c.md");
@@ -432,14 +388,12 @@ mod tests {
 
         rf.add("markdown", p2.to_string());
         rf.add("markdown", p1.to_string());
-        // 같은 파일의 다른 표기 → 옛 표기 제거 후 최신 raw 를 앞에.
         rf.add("markdown", p1_alt.to_string());
 
         let list = rf.get("markdown");
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], p1_alt.to_string());
         assert_eq!(list[1], p2.to_string());
-        // kind 격리 — 다른 kind 는 빈 목록.
         assert!(rf.get("html").is_empty());
     }
 }

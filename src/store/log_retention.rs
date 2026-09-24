@@ -1,76 +1,14 @@
-//! IPC 관측 로그 3종(audit · telemetry event · telemetry anomaly)의 보존 정책 —
-//! **단일 소스**.
+//! memory.db의 audit·telemetry event·telemetry anomaly 보존 정책.
+//! 부팅 시 ALL을 순회하며, 실행 중에는 기록 추가와 Tick::LogPrune에서 maybe_prune을 부른다.
 //!
-//! 세 로그 모두 append-only 로 `memory.db` 에 쌓이고, 셋 다 IPC 호출량에 정비례한다.
-//! 상한을 각자 들고 있으면 어긋난다: 실제로 audit 은 런타임 경로가 "30일", 부팅
-//! 경로가 "5만 건" 이라는 **720배 차이 나는 두 값**을 따로 들고 있었고, 그래서
-//! 어느 쪽도 실효가 없었다(런타임은 30일 미만이라 0건 삭제, 부팅은 재시작 전까지
-//! 미집행). 정책과 집행을 이 모듈 한 곳에 모아 그 재발을 막는다. 근거는
-//! [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md).
+//! 개수와 보존 기간을 기준으로 삭제를 시도한다. 주기 사이에는 keep을 초과할 수 있고,
+//! 스케줄 지연이나 저장소 오류가 있으면 정리가 더 늦어진다. 엄격한 메모리·디스크 상한은 아니다.
+//! 결정 근거는 [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md)를 참고한다.
 //!
-//! ## 이 표의 범위는 `memory.db` 다 — 파일 로그는 각자의 자리에 있다
-//!
-//! "단일 소스" 는 **`memory.db` 에 쌓이는 관측 로그**에 대한 말이다. **파일로** 쌓이는
-//! 로그는 여기 못 들어온다 — [`LogRetention`] 이 키 prefix 와 `MemoryStorage` 를 좌변으로
-//! 쓰는데 파일에는 prefix 도 행 수도 없다. 그래서 정책이 각자의 구현 옆에 산다. 아는
-//! 자리를 **수를 못 박지 않고** 열거한다(세어 두면 다음에 하나가 늘 때 그 수가 조용히
-//! 거짓이 된다).
-//!
-//! **뿌리가 한 곳이 아니다.** 완료 알림 로그만 `TASTY_PARENT_HOME` 을 먼저 보고
-//! (`tasty_utils::notify` 의 `resolve_home`) 나머지는 `tasty_home()` 이다. 두 값이 갈리면
-//! (`TASTY_PARENT_HOME=/A` · `TASTY_HOME=/B`) 완료 알림 로그만 `/A/notify/` 로 가고 나머지는
-//! `/B/` 에 남는다. `~/.tasty` 와 `~/.tasty-debug` 의 debug/release 격리가 그 갈림 위에 서
-//! 있으므로, 아래 각 항목에 붙은 경로 표기를 그대로 읽어라.
-//!
-//! - **완료 알림 로그**(`<parent_home>/notify/<surface>.log`) — 바이트 상한 하나이고,
-//!   도달하면 그 파일을 **전량** 버린다. 시간 상한도 파일 수 상한도 없고, 회수는 호스트
-//!   부팅의 디렉토리 삭제뿐이다. 버린 바이트 누계는 옆 `<surface>.log.meta` 에 남는다
-//!   (ADR-0041). 보존 범위·유실·인스턴스 정체성의 정본은
-//!   `crates/tasty-utils/src/notify.rs` 의 모듈 문서와
-//!   [ADR-0041](../../docs/adr/0041-agent-state-and-completion.md).
-//! - **hook 전달 실패 로그**(`<tasty_home>/hook-failures.log`) — 같은 바이트 값(256 KiB)
-//!   에서 `.log.1` 로 **1 단 로테이션**한다(보존 상한은 그 2 배).
-//!   `crates/tasty-cli/src/hook_failure.rs`.
-//! - **호스트 파일 로그**(`<tasty_home>/debug.log` · dev 는 `debug-dev.log`) —
-//!   **상한이 아예 없다.** `crash_report::open_host_log_file` 이 부팅 때 `File::create` 로
-//!   여는 것이 유일한 회수이고, 한 세션 안에서는 무한히 자란다(실측 2026-09-20: 격리 홈의
-//!   debug 인스턴스가 부팅 1 분에 `debug-dev.log` 2.9 MB). 같은 파일의 `crash-reports/`
-//!   디렉토리도 같은 루트이고 역시 상한이 없다. **"무한 성장 방어" 라는 이 모듈의 주제에
-//!   가장 가까운 자리인데 정책이 없는 쪽**이라, 지도에서 빼면 다음 사람이 못 찾는다.
-//! - **plugin 프로세스 로그**(`<tasty_home>/plugins-logs/<plugin id>.log`) — plugin 의
-//!   stdout·stderr **전량**이 그대로 들어간다(`process.rs` 의 `PluginProcess::spawn` 이
-//!   `File::create` 한 핸들을 `Stdio::from` 으로 넘긴다. 디렉토리는
-//!   `manager/lifecycle.rs` 가 `tasty_home().join("plugins-logs")` 로 만든다).
-//!   **상한도 로테이션도 파일 수 상한도 없다** — 회수는 **다음 spawn 의 `File::create`
-//!   truncate 하나**뿐이라, 다시 안 뜨는 plugin 의 로그는 영구히 남는다(실측 2026-09-21:
-//!   `~/.tasty-debug/plugins-logs` 에 번들 plugin 이 아닌 시험 fixture id
-//!   `com.example.autoreload_test.log` 가 남아 있다). 위 `debug.log` 와 같은 성질이고,
-//!   완료 알림 로그를 비울 때 남기는 warn도 이 파일에 기록된다.
-//!   완료 로그의 보존 규칙은 ADR-0041을 따른다.
-//!
-//! 즉 임계값이 같은 둘도 **버리는 방식이 다르고**, 아예 임계값이 없는 것도 있다. 여기에
-//! 새 로그를 더할 때 매체를 먼저 보고, 파일이면 이 표가 아니라 그 구현 옆에 정책을 적되
-//! 이 목록에 한 줄을 남긴다.
-//!
-//! ## 두 축을 함께 건다
-//!
-//! - **개수 상한(`keep`)** — DB 크기를 bound 한다. 집행이 주기적이라(아래
-//!   [`PRUNE_INTERVAL_MS`]) 그 사이 유입만큼은 상한을 넘을 수 있다 —
-//!   정상 상태 최대치는 `keep + 1시간치 유입`이고, 집행마다 다시 `keep` 으로
-//!   떨어진다. 유입 속도가 아무리 빨라도 무한히 늘지는 않는다는 것이 이 축의
-//!   보장이다.
-//! - **시간 상한(`ttl_ms`)** — "상한 안이지만 이미 무의미하게 오래된" 로그를 지운다.
-//!   유입이 끊긴 인스턴스에서는 개수 상한이 영원히 안 걸리기 때문이다.
-//!
-//! 한 축만 걸면 반대쪽에 사각이 생긴다. 다만 유입 속도가 시간 상한을 무의미하게
-//! 만드는 로그(telemetry event)는 개수 상한만 건다 — 아래 [`TELEMETRY_EVENT`] 참고.
-//!
-//! ## 두 경로가 같은 구현을 부른다
-//!
-//! - **부팅**: `boot::maintain_memory_at_boot` 이 [`ALL`] 을 순회.
-//! - **런타임**: 세 로그의 append 경로와 주기 타이머(`Tick::LogPrune`)가 모두
-//!   [`maybe_prune`] 를 호출한다. 게이트가 프로세스 전역이라 누가 먼저 도착하든
-//!   주기당 1회만 돈다.
+//! 파일 로그에는 이 정책을 적용하지 않는다. 완료 알림은 tasty_utils::notify,
+//! hook 실패는 crates/tasty-cli/src/hook_failure.rs, 호스트 로그는 crash_report,
+//! 플러그인 로그는 tasty_host_plugin::process에서 관리한다.
+//! 완료 알림 로그는 TASTY_PARENT_HOME을 우선하며 나머지는 tasty_home()을 사용한다.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -78,8 +16,7 @@ use tasty_memory::MemoryStorage;
 
 /// 로그 한 종류의 보존 정책.
 pub struct LogRetention {
-    /// 이 로그의 memory 키 prefix. 키는 `{prefix}{ts:013}...` 형태여야 한다 —
-    /// 두 prune 이 모두 "lexical = chronological" 에 기댄다.
+    /// `{prefix}{ts:013}...` 형식의 키 접두사. 문자열 정렬이 시간순과 같아야 한다.
     pub prefix: &'static str,
     /// 남길 최대 행 수.
     pub keep: u64,
@@ -88,7 +25,7 @@ pub struct LogRetention {
 }
 
 impl LogRetention {
-    /// 이 정책을 1회 집행한다. 삭제된 행 수를 반환하며, 실패는 warn 후 0.
+    /// 삭제에 성공한 행 수를 합산한다. 실패한 삭제는 경고를 남기고 다음 처리를 계속한다.
     pub fn enforce(&self, mem: &mut dyn MemoryStorage, now_ms: u64) -> u64 {
         let mut removed = 0u64;
         if let Some(ttl) = self.ttl_ms {
@@ -106,68 +43,40 @@ impl LogRetention {
     }
 }
 
-/// 시간 상한 공통값 — **50시간**(사용자 지정). 하루를 넘겨 "어제 그 사고" 를 되짚을
-/// 수 있고, 30일처럼 append rate 와 양립 불가능하지도 않은 지점이다(일 ~100MB 유입에
-/// 30일이면 3GB 로, `memory.db` 의 1GB regular quota 를 애초에 넘는다).
+/// audit와 anomaly의 공통 보존 기간: 50시간.
 pub const LOG_TTL_MS: u64 = 50 * 60 * 60 * 1_000;
 
-/// IPC audit — deny 만 기록되므로 평시 유입이 거의 없다. 상한은 폭주 방어용 안전망.
 pub const AUDIT: LogRetention = LogRetention {
     prefix: crate::store::audit::AUDIT_KEY_PREFIX,
     keep: 50_000,
     ttl_ms: Some(LOG_TTL_MS),
 };
 
-/// telemetry raw event — **개수 상한만** 건다.
-///
-/// 시간 상한은 이 유입 속도에 맞지 않는다: 실측 시간당 28,075건이라 50시간이면
-/// 1,403,750건으로, 개수 상한(2만)의 70배이고 문제를 발견했을 당시 행 수(30만)의
-/// 4.5배다. 즉 시간 상한을 걸면 지금보다 나빠진다.
-///
-/// raw event 는 조회의 유일한 SoT 다(영속 rollup bucket 은 존재하지 않는다). 그래서
-/// 이 상한이 곧 **telemetry 조회 가능 범위**다 — "최근 2만 이벤트".
+/// 원본 이벤트를 최근 20,000개로 정리한다. 별도 시간 제한은 없으며,
+/// 조회는 남아 있는 원본 이벤트로 집계한다.
 pub const TELEMETRY_EVENT: LogRetention = LogRetention {
     prefix: tasty_telemetry::EVENT_KEY_PREFIX,
     keep: 20_000,
     ttl_ms: None,
 };
 
-/// telemetry anomaly — 셋 중 가장 좁다.
-///
-/// 자동 대응이 없는 **읽히지 않는 경고**라(소비처가 `telemetry.anomaly.list` 조회
-/// 하나뿐이다) 오래 보관해서 얻는 값이 가장 작다. 그럼에도 폴링형 워크로드에서는
-/// `SlowLoop` 이 params 조합 수만큼 배증돼 시간당 1,000건대로 쌓인다(실측 18시간
-/// 21,102건). 5,000 은 그 최악 유입의 4시간치이자, 평상시로는 수개월치다.
 pub const TELEMETRY_ANOMALY: LogRetention = LogRetention {
     prefix: tasty_telemetry::ANOMALY_KEY_PREFIX,
     keep: 5_000,
     ttl_ms: Some(LOG_TTL_MS),
 };
 
-/// 부팅·런타임 양쪽이 순회하는 전체 목록. 새 관측 로그를 추가하면 여기에 넣는다 —
-/// 넣지 않으면 정리 경로가 없는 로그가 된다(anomaly 가 정확히 그 상태였다).
+/// 부팅·런타임 공통 목록. 새 관측 로그의 정책도 여기에 등록한다.
 pub const ALL: [LogRetention; 3] = [AUDIT, TELEMETRY_EVENT, TELEMETRY_ANOMALY];
 
-/// 런타임 집행 주기 — 1시간. 스캔이 아니라 인덱스 DELETE 두 방이지만, IPC 마다
-/// 돌 이유는 없으므로 시간으로 상한한다.
+/// 매 요청마다 정리하지 않도록 1시간 간격으로 제한한다.
 pub const PRUNE_INTERVAL_MS: u64 = 60 * 60 * 1_000;
 
-/// 마지막 집행 시각(프로세스 전역). 부팅 후 첫 호출에서도 1회 돈다(last=0) —
-/// 이미 쌓여 있던 로그가 재시작 없이도 그 즉시 정리된다.
+/// 마지막 정리 시도 시각. 프로세스 전체가 공유한다.
 static LAST_PRUNE_MS: AtomicU64 = AtomicU64::new(0);
 
-/// 주기가 찼으면 [`ALL`] 을 집행한다. **두 종류의 드라이버가 이 함수 하나를 부른다.**
-///
-/// - **append 경로** — 세 로그의 append 직후. 유입이 활발할 때 정리가 유입에 얹혀
-///   돌아 "쌓는 동안에는 안 지우는" 사각이 없다.
-/// - **주기 타이머** — `app/timers.rs` 의 `Tick::LogPrune`. append 경로만 두면 **셋 다
-///   조용한 인스턴스에서는 아무것도 돌지 않는다**(audit 이 allow 기록을 그만두면서
-///   append 자체가 희소해졌다). 재시작 없이 오래 떠 있는 데스크톱 인스턴스가 정확히
-///   그 조건이다.
-///
-/// 세 로그와 두 드라이버가 **같은 게이트([`LAST_PRUNE_MS`])** 를 공유한다. 누가 먼저
-/// 도착하든 주기당 1회만 돌고, 그래서 타이머 tick 이 아무리 자주 와도 무해하다 — 이
-/// 성질이 보완 구조를 안전하게 만든다(새 게이트를 만들지 않는 이유).
+/// 기록 추가와 타이머가 공유하는 정리 진입점.
+/// 마지막 시도 후 간격이 지났으면 ALL을 실행한다. 삭제 실패도 이번 시도로 센다.
 pub fn maybe_prune(mem: &mut dyn MemoryStorage, now_ms: u64) {
     let last = LAST_PRUNE_MS.load(Ordering::Relaxed);
     if now_ms.saturating_sub(last) < PRUNE_INTERVAL_MS {
@@ -216,8 +125,6 @@ mod tests {
         .len()
     }
 
-    /// 정책 테이블이 세 prefix 를 **전부** 덮는지. anomaly 가 목록에서 빠져 있어
-    /// 유일하게 회수 불가능한 로그였던 것이 이 트랙의 출발점이다.
     #[test]
     fn every_ipc_log_prefix_has_a_policy() {
         let covered: Vec<&str> = ALL.iter().map(|p| p.prefix).collect();
@@ -228,12 +135,11 @@ mod tests {
         ] {
             assert!(
                 covered.contains(&expected),
-                "'{expected}' 에 보존 정책이 없다 — 정리 경로 없는 로그가 된다"
+                "'{expected}'의 보존 정책이 목록에 없다"
             );
         }
     }
 
-    /// 상한을 넘긴 행이 개수 기준으로 잘리고, 다른 prefix 는 건드리지 않는다.
     #[test]
     fn count_cap_trims_only_its_own_prefix() {
         let mut mem = InMemoryStorage::new();
@@ -250,9 +156,7 @@ mod tests {
         assert_eq!(rows(&mem, "tasty.audit."), 3);
         assert_eq!(rows(&mem, "tasty.telemetry.event."), 10);
 
-        // 남는 것은 **최신** 쪽이어야 한다. telemetry 조회가 raw event 를 즉석
-        // 집계하므로(영속 bucket 없음), 정리가 최신을 지우면 "방금 것" 이 조회에서
-        // 사라진다 — 상한이 곧 조회 범위라는 계약이 여기서 성립한다.
+        // 원본 이벤트로 조회를 집계하므로 최신 행을 남겨야 한다.
         let survivors: Vec<String> = mem
             .list(
                 &Scope::Global,
@@ -273,8 +177,6 @@ mod tests {
         }
     }
 
-    /// 시간 상한은 개수 상한 안에 있는 행도 지운다 — 유입이 끊긴 인스턴스에서
-    /// 개수 상한이 영원히 안 걸리는 사각을 메우는 것이 이 축의 존재 이유다.
     #[test]
     fn ttl_removes_rows_that_the_count_cap_would_keep() {
         let mut mem = InMemoryStorage::new();

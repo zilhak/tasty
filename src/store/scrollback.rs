@@ -1,23 +1,12 @@
-//! `~/.tasty/scrollback/<persist_id>.bin` 디스크 영속 저장소.
+//! 데이터 루트의 scrollback/<persist_id>.bin 저장소.
+//! 레이아웃 슬롯의 scrollback_ref가 파일을 가리키며 포맷은
+//! tasty_terminal::disk_scrollback::serialize_lines를 따른다.
 //!
-//! 레이아웃 슬롯(`~/.tasty/layouts/NN.json`)의
-//! `SavedSurface::Terminal { scrollback_ref }` 가 가리키는
-//! 파일을 관리한다. 직렬화 포맷은 `tasty_terminal::disk_scrollback::serialize_lines`
-//! 와 동일 (magic + version + line records). lifecycle 은 host 책임:
-//!
-//! - capture: `restore_surface_content` 옵션 on 일 때 `write` 호출
-//! - restore: 파일이 존재하면 `read` 후 inject
-//! - surface close: `delete`
-//! - 앱 시작 **1 회**: `gc_orphans(known_ids)` — `known_ids` 는 **전 슬롯**
-//!   `scrollback_ref` 의 합집합이다(`core::layout_persistence::migrate_and_gc_on_boot`).
-//!   슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 파일을 지운다. 읽을 수 없는
-//!   슬롯이 하나라도 있으면 그 부팅에서는 정리를 **전면 스킵**한다 — 무엇을
-//!   참조하는지 모르는 채 지우면 손상은 JSON 하나인데 손실은 scrollback 전체가 된다
-//! - 옵션 ON → OFF 전환: `clear_all()`
-//!
-//! Public API 는 `~/.tasty/scrollback/` 디렉터리를 사용한다. 내부 helper
-//! (`*_in`) 는 임의 경로를 받아 단위 테스트가 process-global HOME 을
-//! 건드리지 않게 한다.
+//! 내용 복원 옵션이 켜졌을 때 캡처·저장하고, 복원 시 읽어 터미널에 넣는다.
+//! 닫기에서는 삭제를, 옵션을 끌 때는 전체 정리를 시도한다. 부팅 GC는
+//! 열거된 슬롯의 참조를 모으며 그중 읽지 못한 슬롯이 있으면 생략한다.
+//! 목록 조회 실패·항목 열거 오류까지 보호하는 것은 아니다(core::layout_persistence).
+//! *_in 함수는 시험용 임시 디렉터리를 받아 실제 사용자 홈을 건드리지 않는다.
 
 use std::collections::HashSet;
 use std::fs;
@@ -27,14 +16,11 @@ use std::path::{Path, PathBuf};
 use tasty_terminal::ScrollbackLine;
 use tasty_terminal::disk_scrollback::{deserialize_lines, serialize_lines};
 
-/// scrollback 서브디렉. debug/release 격리는 루트(`tasty_home()`)가 담당하므로
-/// 서브디렉 접미사(`-debug`)는 두지 않는다 — debug 는 `~/.tasty-debug/scrollback/`,
-/// release 는 `~/.tasty/scrollback/`.
+// 루트 경로 선택과 debug/release 구분은 tasty_home()에서 처리한다.
 const SUBDIR: &str = "scrollback";
 const EXT: &str = "bin";
 
-/// Return `~/.tasty/scrollback/` (debug: `~/.tasty-debug/scrollback/`).
-/// `None` 이면 home 디렉터리를 알 수 없음.
+/// 데이터 루트의 scrollback 디렉터리. 루트를 구하지 못하면 None이다.
 pub fn scrollback_dir() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|h| h.join(SUBDIR))
 }
@@ -46,7 +32,7 @@ fn file_path_in(dir: &Path, persist_id: &str) -> Option<PathBuf> {
     Some(dir.join(format!("{persist_id}.{EXT}")))
 }
 
-/// Write `lines` atomically to `<dir>/<persist_id>.bin`.
+/// 임시 파일에 쓴 뒤 rename으로 대상 경로를 교체한다.
 fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     let path = file_path_in(dir, persist_id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid persist_id"))?;
@@ -57,17 +43,13 @@ fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Resul
     fs::rename(&tmp, &path)
 }
 
-/// scrollback 파일 한 개를 읽은 결과.
-///
-/// "없음" 과 "못 읽음" 을 **구분한다.** 복원 경로는 읽은 뒤 원본을 지우는데
-/// (`core::restore_rebuild`), 둘을 같은 `None` 으로 뭉개면 일시적 IO 오류나 손상 파일에도
-/// 빈 값으로 폴백한 뒤 원본을 지워 복구 기회를 없앤다.
+/// 파일 부재와 읽기 실패를 구분한다. 복원 실패 시 원본을 남겨 재시도할 수 있어야 한다.
 pub enum ScrollbackRead {
     /// 정상적으로 읽고 역직렬화했다(빈 목록일 수 있다).
     Loaded(Vec<ScrollbackLine>),
-    /// 파일이 없다 — 저장된 적 없거나 이미 소비됐다. 정상.
+    /// 경로를 찾지 못했다.
     Absent,
-    /// 파일이 있는데 읽거나 해석하지 못했다(또는 persist_id 가 무효). 원본을 지우면 안 된다.
+    /// 읽기·해석에 실패했거나 persist_id가 무효다. 원본은 지우지 않는다.
     Unreadable,
 }
 
@@ -89,7 +71,6 @@ fn read_in(dir: &Path, persist_id: &str) -> ScrollbackRead {
     }
 }
 
-/// 읽어온 바이트를 역직렬화한다. 실패는 손상이므로 원본을 지우지 않게 `Unreadable`.
 fn decode_lines(path: &Path, bytes: &[u8]) -> ScrollbackRead {
     match deserialize_lines(bytes) {
         Some(lines) => ScrollbackRead::Loaded(lines),
@@ -114,10 +95,7 @@ fn delete_in(dir: &Path, persist_id: &str) {
     }
 }
 
-/// `known` 에 없는 `<dir>/*.bin` 을 지운다. `pub(crate)` 인 이유: layout 슬롯
-/// union GC(`core::layout_persistence`)가 tempdir 로 단위 테스트되려면 디렉터리를
-/// 직접 받는 진입점이 필요하다 — process-global `scrollback_dir()` 을 쓰는
-/// [`gc_orphans`] 만으로는 테스트가 실제 홈을 건드린다.
+/// known에 없는 bin 파일을 삭제한다. 임시 디렉터리로 GC를 시험할 수 있도록 경로를 받는다.
 pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -147,8 +125,6 @@ pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     }
 }
 
-// ── Public API (uses `~/.tasty/scrollback/`) ──
-
 pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
     write_in(&dir, persist_id, lines)
@@ -166,8 +142,7 @@ pub fn delete(persist_id: &str) {
     delete_in(&dir, persist_id);
 }
 
-/// 부팅 시 고아 scrollback 회수. 호출자는 GUI 의 레이아웃 복원 경로뿐이다
-/// (headless 는 `gc_orphans_in` 을 직접 부른다).
+/// GUI 부팅의 GC 진입점. headless에서는 gc_orphans_in을 직접 사용한다.
 #[cfg(feature = "gui")]
 pub fn gc_orphans(known: &HashSet<String>) {
     let Some(dir) = scrollback_dir() else { return };
@@ -198,7 +173,6 @@ mod tests {
     use super::*;
     use termwiz::cell::CellAttributes;
 
-    /// 정상 로드돼야 하는 자리.
     fn expect_lines(dir: &Path, id: &str) -> Vec<ScrollbackLine> {
         match read_in(dir, id) {
             ScrollbackRead::Loaded(lines) => lines,
@@ -227,23 +201,9 @@ mod tests {
         assert!(out[1].wrapped);
     }
 
-    /// 닫은 항목 복원 payload 의 전 구간: 살아 있는 터미널 → 캡처
-    /// (`ClosedSurface`) → `persist_closed_scrollback` → 디스크 → `read_in`.
-    ///
-    /// 캡처가 저장 표현(`ScrollbackLine`)을 그대로 넘기도록 바뀌었다(이전에는
-    /// `to_cells()` 로 cell 마다 `String` 을 재할당한 뒤 같은 표현으로 재압축).
-    /// 그 변경이 복원 payload 를 바꾸지 않았음을 두 층위에서 고정한다:
-    ///
-    /// 1. **직렬화 바이트 동일** — 새 캡처 경로와 옛 재압축 경로가 만드는
-    ///    디스크 바이트가 완전히 같다. 표현 변경이 저장물에 새는지를 직접 잡는다.
-    /// 2. **왕복 보존** — 실제 write → read 후 라인 수 / 텍스트 / `wrapped` 가
-    ///    원본과 같다.
-    ///
-    /// 주의: 디스크 포맷(`disk_scrollback::attr_flags`)이 싣는 속성은
-    /// bold/half·italic·underline·strikethrough + fg/bg 뿐이라 `reverse` 등은
-    /// 왕복에서 떨어진다. 이 테스트의 범위 밖(포맷 자체의 선존재 한계이며
-    /// 고치려면 `FORMAT_VERSION` bump 가 필요하다) 이라 속성은 1번의 바이트
-    /// 동일성으로만 확인하고, 2번에서는 포맷이 보장하는 것만 본다.
+    // 캡처·직렬화·디스크 왕복을 검사한다. 셀로 풀어 재압축한 결과와 바이트도 대조한다.
+    // 디스크 포맷에 없는 reverse 같은 속성은 왕복에서 사라지므로,
+    // 속성은 바이트 비교로 확인하고 왕복은 텍스트·행 수·wrapped를 비교한다.
     #[test]
     fn capture_persist_restore_round_trip_preserves_lines() {
         use tasty_terminal::Terminal;
@@ -253,20 +213,18 @@ mod tests {
         for i in 0..40 {
             t.feed_bytes(format!("plain{i:03}\r\n").as_bytes());
             t.feed_bytes(b"\x1b[1;31mbold-red\x1b[0m tail\r\n");
-            // 20 컬럼을 넘겨 auto-wrap 을 유발한다 → wrapped=true 라인이 생긴다.
             t.feed_bytes(b"0123456789012345678901234567890123456789\r\n");
             t.feed_bytes("\x1b[7m한글한글한글\x1b[0m\r\n".as_bytes());
         }
         let total = t.scrollback_len();
         assert!(total > 100, "스크롤백이 충분히 쌓여야 한다 (len={total})");
 
-        // 캡처 (새 경로) — close 가 실제로 타는 함수.
         let mut item = crate::model::ClosedItem::Surface {
             surface: crate::model::closed_item::ClosedSurface::from_surface_id(1, Some(&t)),
             tab_name: "round-trip".to_string(),
         };
 
-        // 옛 경로 재현: cell 로 풀었다가 같은 표현으로 재압축.
+        // 비교를 위해 각 셀로 풀었다가 다시 압축한다.
         let legacy: Vec<ScrollbackLine> = (0..total)
             .map(|i| {
                 ScrollbackLine::new(
@@ -288,14 +246,12 @@ mod tests {
         });
         let id = persisted_id.expect("스크롤백이 디스크로 영속화되어야 한다");
 
-        // 1. 표현 변경이 저장 바이트를 바꾸지 않았다.
         assert_eq!(
             serialize_lines(&captured),
             serialize_lines(&legacy),
             "새 캡처 경로의 직렬화 결과가 옛 재압축 경로와 다르다"
         );
 
-        // 2. 실제 왕복에서 라인 수 / 텍스트 / wrapped 가 보존된다.
         let got = expect_lines(dir.path(), &id);
         assert_eq!(got.len(), total, "복원 라인 수가 원본과 다르다");
         for (i, line) in got.iter().enumerate() {
@@ -318,7 +274,7 @@ mod tests {
                 .iter()
                 .flat_map(|l| l.to_cells())
                 .any(|(_, a)| a != CellAttributes::default()),
-            "비-default 속성이 없으면 1번의 바이트 동일성이 속성을 못 본다"
+            "기본값과 다른 속성이 있어야 직렬화 결과에서 속성도 비교할 수 있다"
         );
     }
 
@@ -331,8 +287,6 @@ mod tests {
         ));
     }
 
-    /// 손상 파일은 "없음" 이 아니라 "못 읽음" 이다 — 복원 경로가 이 구분을 보고 원본을
-    /// 지울지 결정한다(`core::restore_rebuild`).
     #[test]
     fn corrupt_file_reports_unreadable() {
         let dir = tempfile::tempdir().expect("tempdir");

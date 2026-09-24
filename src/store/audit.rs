@@ -1,42 +1,17 @@
-//! IPC audit log 의 **저장**.
+//! IPC 감사 기록의 저장·조회·정리. 기록 여부는 crate::adapters::ipc::audit에서 정한다.
+//! IPC 경로는 거부된 호출만 기록하므로 전체 호출 이력으로 사용할 수 없다.
+//! 승인 기록(tasty.approval.*)은 별도로 저장한다.
 //!
-//! 여기에는 레코드 형태 · 키 · 조회 · 정리가 있다. 누가 무엇을 기록할지 정하는
-//! dispatcher hook 은 [`crate::adapters::ipc::audit`] 에 남는다 — 그쪽은
-//! `CallerContext` 를 읽어 protocol 타입으로 옮기는 **IPC 입력** 책임이고,
-//! 이 모듈은 그 결과를 어디에 어떻게 쌓는지만 안다. 도메인(`core::ipc_facade`)이
-//! 기록을 쌓으려고 inbound adapter 를 들여다보던 것이 이 분리의 이유다.
-//!
-//! **거부(deny)된 IPC 호출만** `tasty.audit.{ts:013}.{seq:04}` 키로 영속한다.
-//! method 와 무관하게 모든 deny 를 남기며, allow 는 남기지 않는다 — 폴링형
-//! 에이전트 워크로드에서 allow 가 초당 14건씩 영구 레코드를 만들어 `memory.db`
-//! 최대 유입원이 됐기 때문이다(18시간 실행에서 371,936행, deny 는 0건).
-//! 그 대가로 "agent 가 무엇을 호출했나" 를 사후에 되짚는 용도는 사라졌다.
-//! 결정의 근거·대안·재검토 조건은
-//! [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md).
-//!
-//! 남은 용도는 권한 거부 사고 추적이다. capability elevation 은 이 로그에 의존하지
-//! 않는다 — 승인 자체는 `tasty.approval.*`(`handler::approval::ApprovalRecord`)로
-//! 별도 영속되고, elevation 발행 트리거도 deny 경로(`app::ipc::caller_gate`)라
-//! 그대로 기록된다.
-//!
-//! 보존 정책은 [`log_retention`](crate::store::log_retention) 이 소유한다 —
-//! audit 만의 값이 아니라 관측 로그 3종이 공유하는 정책이고, 과거 이 모듈이 자체
-//! 상수를 들고 있다가 부팅 경로와 720배 어긋났던 곳이다. 집행 지점 2개:
-//! 1. load 시 lazy evict — query 가 호출될 때 만료 record 를 함께 삭제.
-//! 2. **런타임 주기 집행** ([`log_retention::maybe_prune`], append 경로 + 주기 타이머, 최대 1시간
-//!    1회) — query 전용 lazy 만으론 아무도 조회하지 않는 일반 사용에서 디스크가 무한
-//!    축적된다 (macOS soak 실측 ~68.5KB/min, AI 에이전트 워크로드 기준 일 ~100MB).
-//!
-//! 스토리지는 Global scope — workspace 가 닫혀도 audit 은 유지되어야 한다.
-//! workspace_id 는 record 안에 함께 기록.
+//! workspace가 닫혀도 남도록 Global scope에 저장하며 workspace_id는 레코드에 넣는다.
+//! 조회 시 만료 기록을 제외하고 삭제를 시도한다. 주기 정리는 log_retention과
+//! 같은 정책을 사용한다. 결정 근거는
+//! [ADR-0009](../../docs/adr/0009-state-storage-and-retention.md)를 참고한다.
 
 use serde::{Deserialize, Serialize};
 use tasty_memory::{ListOpts, MemoryError, MemoryValue, PutOpts, Scope};
 
 pub const AUDIT_KEY_PREFIX: &str = "tasty.audit.";
-/// 조회 경로가 쓰는 보존 기간 — 정리 경로와 **같은 값**이어야 하므로 정책 테이블
-/// (`log_retention::AUDIT`)에서 가져온다. 두 경로가 각자 숫자를 들고 있다가 어긋난
-/// 것이 이 서브시스템의 retention 이 무력했던 원인이다.
+/// 조회와 정리 경로에서 같은 보존 기간을 사용한다.
 pub const DEFAULT_RETENTION_MS: u64 = crate::store::log_retention::LOG_TTL_MS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,9 +166,8 @@ impl<'a> AuditStore<'a> {
         Ok(())
     }
 
-    /// 모든 record 를 시간 순으로 반환. `now_ms` 보다 30일 이상 오래된 record 는
-    /// evict (lazy retention). retention 은 `retention_ms=0` 으로 끄면 evict 없음
-    /// (테스트용).
+    /// retention_ms보다 오래된 기록을 제외하고 시간순으로 반환한다.
+    /// 만료 기록 삭제 실패는 무시하며, retention_ms=0이면 만료 처리를 하지 않는다.
     pub fn list(&mut self, retention_ms: u64, now_ms: u64) -> Result<Vec<AuditRecord>> {
         let opts = ListOpts {
             prefix: Some(AUDIT_KEY_PREFIX.to_string()),
@@ -271,13 +245,9 @@ impl<'a> AuditStore<'a> {
         Ok(s)
     }
 
-    /// `tail -f` 스타일 폴링. `(after_ts_ms, after_seq)` 보다 strictly 큰 record
-    /// 만 시간 순으로 반환. 커서가 없으면 현재 latest record 의 (ts, seq) 를
-    /// 그대로 돌려준다 — 호출자가 그 다음 호출부터 새로 들어온 것만 받게 된다
-    /// (`tail -f -n 0` 시멘틱). `limit` 가 있으면 cap.
-    ///
-    /// 반환 `next_after_ts_ms` / `next_after_seq` 는 마지막 반환된 record 의 값,
-    /// 새 record 가 없으면 입력 커서 그대로.
+    /// 커서 (after_ts_ms, after_seq)보다 뒤의 기록을 시간순으로 반환한다.
+    /// 커서가 없으면 기록 없이 최신 커서만 반환하므로 다음 호출부터 새 기록을 받는다.
+    /// 다음 커서는 마지막 반환 항목이며, 새 항목이 없으면 입력 커서를 유지한다.
     #[cfg(any(feature = "gui", test))]
     pub fn follow(
         &mut self,
@@ -292,7 +262,6 @@ impl<'a> AuditStore<'a> {
         let cursor = (after_ts_ms.unwrap_or(0), after_seq.unwrap_or(0));
         let cursor_given = after_ts_ms.is_some() || after_seq.is_some();
         if !cursor_given {
-            // 초기 호출: latest 의 (ts,seq) 만 반환, record 는 빈 배열.
             let last = all.last().map(|r| (r.ts_ms, r.seq)).unwrap_or((0, 0));
             return Ok((Vec::new(), last.0, last.1));
         }
@@ -421,9 +390,6 @@ mod tests {
         assert_eq!(all[2].ts_ms, 2_000);
     }
 
-    /// 만료 record 삭제는 이제 정책 테이블의 키 범위 DELETE 가 한다 — audit 이
-    /// 자체 스캔(전 record 를 값까지 materialize)을 들고 있을 이유가 없어졌다.
-    /// 여기서는 그 경로가 audit 키에 대해 실제로 동작하는지만 확인한다.
     #[test]
     fn shared_retention_evicts_expired_audit_rows_by_key() {
         use tasty_memory::MemoryStorage;
@@ -444,7 +410,6 @@ mod tests {
                     .unwrap();
             }
         }
-        // ttl 5000ms, now 10000 → cutoff 5000: 1_000 만 만료.
         let policy = crate::store::log_retention::LogRetention {
             prefix: AUDIT_KEY_PREFIX,
             keep: 1_000, // 개수로는 안 걸리게 — 시간 축만 본다
@@ -484,7 +449,6 @@ mod tests {
                 AuditDecision::Allow,
             ))
             .unwrap();
-        // retention=10000, now=51000 → cutoff=41000. ts=1000 (오래됨) 만 evict.
         let alive = store.list(10_000, 51_000).unwrap();
         assert_eq!(alive.len(), 1);
         assert_eq!(alive[0].ts_ms, 50_000);
@@ -535,28 +499,24 @@ mod tests {
             ))
             .unwrap();
 
-        // caller_id="a" 만.
         let q = AuditQuery {
             caller_id: Some("a".into()),
             ..Default::default()
         };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 2);
 
-        // method prefix "memory." (모두 매칭).
         let q = AuditQuery {
             method_prefix: Some("memory.".into()),
             ..Default::default()
         };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 4);
 
-        // method prefix "memory.put" 만.
         let q = AuditQuery {
             method_prefix: Some("memory.put".into()),
             ..Default::default()
         };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 3);
 
-        // decision=Deny 만.
         let q = AuditQuery {
             decision: Some(AuditDecision::Deny),
             ..Default::default()
@@ -565,14 +525,12 @@ mod tests {
         assert_eq!(denies.len(), 1);
         assert_eq!(denies[0].caller_id, "b");
 
-        // since=3 (ts 3,4 만).
         let q = AuditQuery {
             since_ms: Some(3),
             ..Default::default()
         };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 2);
 
-        // limit=2.
         let q = AuditQuery {
             limit: Some(2),
             ..Default::default()
@@ -610,9 +568,7 @@ mod tests {
         assert_eq!(s.total, 4);
         assert_eq!(s.allow, 3);
         assert_eq!(s.deny, 1);
-        // by_caller: a=3, b=1.
         assert_eq!(s.by_caller, vec![("a".into(), 3), ("b".into(), 1)]);
-        // by_method: memory.put=2, memory.get=1, surface.list=1 (tie 는 알파벳).
         assert_eq!(s.by_method[0], ("memory.put".into(), 2));
     }
 
@@ -632,14 +588,12 @@ mod tests {
                 ))
                 .unwrap();
         }
-        // 초기 호출: cursor 없음 → 빈 + latest 커서.
         let (recs, next_ts, next_seq) = store
             .follow(&AuditQuery::default(), None, None, 0, 1_000, None)
             .unwrap();
         assert!(recs.is_empty());
         assert_eq!((next_ts, next_seq), (30, 0));
 
-        // 새 record 가 들어옴.
         store
             .append(&rec(
                 40,
@@ -661,7 +615,6 @@ mod tests {
             ))
             .unwrap();
 
-        // 직전 커서 (30, 0) 으로 다시 호출 → 40,0 과 40,1 만.
         let (recs, next_ts, next_seq) = store
             .follow(&AuditQuery::default(), Some(30), Some(0), 0, 1_000, None)
             .unwrap();
@@ -670,7 +623,6 @@ mod tests {
         assert_eq!((recs[1].ts_ms, recs[1].seq), (40, 1));
         assert_eq!((next_ts, next_seq), (40, 1));
 
-        // 또 호출 → 새 게 없으면 빈 + 커서 그대로.
         let (recs, next_ts, next_seq) = store
             .follow(&AuditQuery::default(), Some(40), Some(1), 0, 1_000, None)
             .unwrap();
@@ -713,7 +665,6 @@ mod tests {
             ))
             .unwrap();
 
-        // 필터 caller=a, cursor=(0,0).
         let q = AuditQuery {
             caller_id: Some("a".into()),
             ..Default::default()
@@ -721,7 +672,6 @@ mod tests {
         let (recs, _, _) = store.follow(&q, Some(0), Some(0), 0, 1_000, None).unwrap();
         assert_eq!(recs.len(), 2);
 
-        // limit=1.
         let (recs, next_ts, next_seq) = store
             .follow(&q, Some(0), Some(0), 0, 1_000, Some(1))
             .unwrap();
@@ -745,12 +695,10 @@ mod tests {
                 ))
                 .unwrap();
         }
-        // before_ms=50 → ts<50 인 1,10 만 삭제.
         let removed = store.clear(Some(50)).unwrap();
         assert_eq!(removed, 2);
         let remain = store.list(0, 10_000).unwrap();
         assert_eq!(remain.len(), 2);
-        // 전체 삭제.
         let removed = store.clear(None).unwrap();
         assert_eq!(removed, 2);
         assert!(store.list(0, 10_000).unwrap().is_empty());

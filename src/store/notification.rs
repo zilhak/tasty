@@ -6,10 +6,8 @@ use std::time::{Duration, Instant};
 
 use crate::model::{SurfaceId, WorkspaceId};
 
-/// Unique notification identifier.
 type NotificationId = u64;
 
-/// A single notification entry.
 pub struct Notification {
     pub id: NotificationId,
     pub source_workspace: WorkspaceId,
@@ -20,24 +18,22 @@ pub struct Notification {
     pub read: bool,
 }
 
-/// Stores and manages terminal notifications with FIFO eviction.
+/// 알림을 합치고 개수 상한에 도달하면 오래된 항목부터 제거한다.
+/// surface attention은 별도 저장소이며 호출자가 갱신한다.
 pub struct NotificationStore {
     notifications: std::collections::VecDeque<Notification>,
     max_count: usize,
     next_id: Arc<AtomicU64>,
-    /// Coalesce window in milliseconds.
     coalesce_ms: u64,
 }
 
 impl NotificationStore {
-    /// Create a notification store with a custom coalesce window.
     #[cfg(test)]
     pub fn with_coalesce_ms(coalesce_ms: u64) -> Self {
         Self::with_counter(coalesce_ms, Arc::new(AtomicU64::new(1)))
     }
 
-    /// Each engine owns its panel, but notification IDs share the instance's
-    /// creation order so global IPC lists can merge entries without collisions.
+    /// 창별 저장소가 같은 ID 카운터를 공유해 전역 IPC 조회에서 항목을 구분한다.
     pub fn with_counter(coalesce_ms: u64, next_id: Arc<AtomicU64>) -> Self {
         Self {
             notifications: std::collections::VecDeque::new(),
@@ -47,9 +43,7 @@ impl NotificationStore {
         }
     }
 
-    /// Add a notification, coalescing if the same source sent one within the coalesce window.
-    /// Returns `Some(id)` for a newly-created notification, `None` when the call coalesced
-    /// into an existing entry (Event Bus 발화 시 신규 알림만 broadcast하기 위한 분기).
+    /// 같은 출처의 최근 알림에 합치면 None, 새로 추가하면 Some(id)을 반환한다.
     pub fn add(
         &mut self,
         source_workspace: WorkspaceId,
@@ -60,7 +54,6 @@ impl NotificationStore {
         let now = Instant::now();
         let coalesce_window = Duration::from_millis(self.coalesce_ms);
 
-        // Coalesce: if same source sent a notification recently, merge
         if let Some(existing) = self.notifications.iter_mut().rev().find(|n| {
             n.source_workspace == source_workspace
                 && n.source_surface == source_surface
@@ -80,17 +73,11 @@ impl NotificationStore {
             return None;
         }
 
-        // FIFO eviction
         while self.notifications.len() >= self.max_count {
             self.notifications.pop_front();
         }
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-
-        // NOTE: surface attention 발동은 이제 producer(호출처)가 담당한다
-        // (`CoreState::raise_attention`). NotificationStore 는 알림 엔트리
-        // 저장/coalesce 만 책임진다 — attention 은 producer 중립 공유 상태이자
-        // NotificationStore 와 별개 저장소다.
 
         self.notifications.push_back(Notification {
             id,
@@ -104,14 +91,12 @@ impl NotificationStore {
         Some(id)
     }
 
-    /// Total unread notification count.
     #[cfg(any(feature = "gui", test))]
     pub fn unread_count(&self) -> usize {
         self.notifications.iter().filter(|n| !n.read).count()
     }
 
-    /// Whether any unread notification originates from the given surface.
-    /// 알림 읽음 처리 시 그 surface 의 highlight 를 지워도 되는지 판단하는 데 쓰인다.
+    /// 이 surface에 읽지 않은 알림이 있는지 확인해 highlight 해제 여부를 판단한다.
     #[cfg(any(feature = "gui", test))]
     pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
         self.notifications
@@ -119,12 +104,11 @@ impl NotificationStore {
             .any(|n| !n.read && n.source_surface == surface_id)
     }
 
-    /// Get all notifications (newest last).
+    /// 오래된 항목부터 반환한다.
     pub fn all(&self) -> impl DoubleEndedIterator<Item = &Notification> + ExactSizeIterator {
         self.notifications.iter()
     }
 
-    /// Mark a specific notification as read.
     #[cfg(any(feature = "gui", test))]
     pub fn mark_read(&mut self, id: NotificationId) {
         if let Some(n) = self.notifications.iter_mut().find(|n| n.id == id) {
@@ -132,7 +116,6 @@ impl NotificationStore {
         }
     }
 
-    /// Mark all notifications as read.
     #[cfg(any(feature = "gui", test))]
     pub fn mark_all_read(&mut self) {
         for n in &mut self.notifications {
@@ -191,11 +174,9 @@ mod tests {
 
     #[test]
     fn coalescing() {
-        // With a large coalesce window, notifications from the same source should merge
         let mut store = NotificationStore::with_coalesce_ms(60000);
         store.add(1, 1, "Title".into(), "first".into());
         store.add(1, 1, "Title".into(), "second".into());
-        // Should still be 1 notification (coalesced)
         assert_eq!(store.all().len(), 1);
         let n = store.all().next().unwrap();
         assert!(n.body.contains("first"));
@@ -233,7 +214,6 @@ mod tests {
     #[test]
     fn fifo_eviction() {
         let mut store = NotificationStore::with_coalesce_ms(0);
-        // Default max is 100
         for i in 0..110 {
             store.add(1, i as u32, format!("N{}", i), "".into());
         }
