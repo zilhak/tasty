@@ -1,31 +1,16 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Maximum number of raw output bytes one terminal retains (1 MiB).
-///
-/// This is the retention window *and* the ceiling on a single read: a read
-/// cannot return more than what is retained, so no separate server-side read
-/// cap exists. Consumers ask for less with `max_bytes`.
-///
-/// The value lives here only. A copy in the IPC layer would be a second place
-/// to change and the two would drift silently — the event ring names the same
-/// hazard (`docs/reference/event-catalog.md#지나간-사건--위치로-읽는다`).
+/// Raw output retention limit (1 MiB). A read cannot cover more raw bytes than this.
+/// max_bytes may request less; decoded text can be longer than the raw bytes.
 pub const OUTPUT_RETENTION_MAX_BYTES: usize = 1_048_576;
 
 /// Disambiguates two streams created inside the same nanosecond.
 static NEXT_STREAM_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// Mint a token that identifies one terminal's output stream.
-///
-/// A surface id is reused when a surface closes and another opens, and
-/// `surface.respawn_terminal` replaces the terminal under a surface id that
-/// does not change at all. Either way a consumer's saved position would
-/// silently address bytes it never saw. The token makes that case a value:
-/// carry the token with the position and a mismatch is an error rather than
-/// somebody else's output.
-///
-/// The wall clock supplies the part that survives a host restart (positions
-/// restart at 0, so a counter alone would repeat). The counter supplies the
-/// part the clock cannot: two terminals built in the same nanosecond.
+/// Combine a timestamp and a process counter to identify an output stream.
+/// A terminal respawn keeps its surface ID but gets a new stream token, so an old
+/// cursor cannot silently read the replacement's output. The counter distinguishes
+/// streams created at the same timestamp; the timestamp reduces reuse across restarts.
 fn mint_stream_id() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -37,18 +22,9 @@ fn mint_stream_id() -> String {
 
 /// Where a read starts.
 pub enum OutputCursor {
-    /// The agent's server-held mark (`surface.set_mark`).
-    ///
-    /// A mark that trimming has passed still holds its position, so the read
-    /// starts at the oldest retained byte and `skipped` says how much was lost
-    /// in between.
-    ///
-    /// **With no mark ever set, `skipped` is zero even when trimming has
-    /// dropped output.** There is no position to measure a gap from: the read
-    /// asks from the oldest retained byte and starts there. So a zero here
-    /// means "nothing was lost since the mark", not "nothing was lost". A
-    /// consumer that needs the second answer holds its own position
-    /// ([`OutputCursor::At`]).
+    /// The terminal's shared server-held mark. If trimming has passed it, report skipped bytes.
+    /// Without a mark, start at the oldest retained byte and report skipped=0 even if
+    /// earlier output was trimmed. Consumers needing their own loss history should use At.
     Mark,
     /// An absolute position the consumer holds. The server keeps no state for
     /// it, so two consumers reading this way never move each other.
@@ -67,14 +43,8 @@ pub struct OutputReadRequest {
     pub expect_stream: Option<String>,
 }
 
-/// What one read says.
-///
-/// **`raw_bytes` and `text.len()` are different numbers and only the first one
-/// is in cursor units.** Lossy UTF-8 decoding replaces malformed bytes with
-/// U+FFFD (3 bytes) and `strip_ansi` removes bytes, so the text can be both
-/// longer and shorter than the region it came from. A consumer that advances
-/// by `text.len()` desynchronises from the stream; it advances by
-/// `next_cursor`.
+/// One output read. Cursor positions count raw bytes, not text.len(): lossy UTF-8
+/// decoding can expand bytes, while ANSI stripping removes them. Continue at next_cursor.
 #[derive(Debug)]
 pub struct OutputRead {
     pub text: String,
@@ -83,10 +53,8 @@ pub struct OutputRead {
     /// Where this read actually started. Differs from the requested position
     /// exactly when `skipped` is not zero.
     pub cursor: u64,
-    /// Where the next read continues. Equal to `retention_end` means the
-    /// consumer is caught up, and the next read returns empty text until more
-    /// output arrives — that is the only "end" this stream has, since a live
-    /// terminal never closes its output.
+    /// Next raw byte position. At retention_end the reader has caught up and reads
+    /// empty output until more bytes arrive. This position alone does not indicate process exit.
     pub next_cursor: u64,
     /// Oldest retained position.
     pub retention_start: u64,
@@ -99,47 +67,23 @@ pub struct OutputRead {
     pub stream: String,
 }
 
-/// Why a read was refused. Both arms mean the consumer's position cannot be
-/// honoured; answering with bytes anyway would hand it output it must not
-/// treat as a continuation.
+/// The supplied cursor cannot identify a valid continuation in this stream.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OutputReadError {
-    /// The position names bytes this stream has not produced yet. Reading from
-    /// a live terminal, that position may become valid later — which is why
-    /// this cannot be answered with an empty read: the consumer would wait for
-    /// a continuation that, when it arrives, is unrelated to what it last saw.
+    /// A position beyond the output produced so far. Rejected rather than treated as an empty read.
     AheadOfStream { cursor: u64, retention_end: u64 },
     /// The position was taken from a different stream — the surface id was
     /// reused, or the terminal was respawned under it.
     StreamMismatch { expected: String, actual: String },
 }
 
-/// Raw PTY output buffer with three ways to say where a read starts.
+/// Raw PTY output with three independent ways to select the start:
+/// - read_mark: one explicit server-held mark per terminal; reads do not move it.
+/// - scan_mark: a scanner cursor advanced by each read, separate from read_mark.
+/// - OutputCursor::At: a consumer-owned position; the server stores no cursor for it.
 ///
-/// - `read_mark`: owned by the agent-facing mark API (`surface.set_mark`,
-///   `surface.read_since_mark`, `surface.parse_since_mark`). An agent moves it
-///   explicitly and reads are non-destructive, so the same window can be read
-///   again. One per terminal, not one per consumer.
-/// - `scan_mark`: owned by a periodic output scanner
-///   (`surface.read_since_scan_mark`). It advances on every read, so a scanner
-///   polling in a loop receives only the bytes that arrived since its previous
-///   poll instead of the whole buffer, and it never moves the agent's mark.
-/// - a position the **consumer** holds and passes in ([`OutputCursor::At`]).
-///   The buffer keeps no state for it, so any number of consumers read this
-///   way without moving each other.
-///
-/// The first two are separate so that neither consumer shifts the other's
-/// window. A scanner sharing `read_mark` was measured to re-read up to the
-/// whole buffer on every poll and to jump silently whenever an agent called
-/// `surface.set_mark`
-/// (`docs/features/terminal-output/index.md#출력-스캐너-전용-커서`).
-///
-/// **Positions are absolute and never go backwards.** They count raw bytes
-/// this terminal has produced since it started, so trimming the front moves
-/// `base` and leaves every mark where it was. A mark that trimming has passed
-/// is still a number the buffer can compare against, which is how a read can
-/// say how much it lost instead of quietly starting over
-/// (`docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`).
+/// Positions count raw bytes from stream creation. Trimming moves base, not saved marks,
+/// so reads can report the gap between a mark and the oldest retained byte.
 pub(crate) struct OutputBuffer {
     buffer: Vec<u8>,
     /// Absolute position of `buffer[0]`.
@@ -172,18 +116,9 @@ impl OutputBuffer {
         }
     }
 
-    /// Declare that what arrives from here on does not continue what came
-    /// before: give the stream a new token.
-    ///
-    /// A mirror terminal replays bytes another instance sent, and that
-    /// transport can lose some of them or hand over a fresh snapshot after a
-    /// re-attach. Either way the bytes on both sides of that point are not one
-    /// continuous stream, so a position taken before it must not be read as
-    /// if it were — the same hazard the token already names for a replaced
-    /// terminal. Positions keep counting and the retained bytes stay, so a
-    /// reader that never sends the token sees nothing change; one that does
-    /// gets a stream mismatch instead of bytes across the gap
-    /// (`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
+    /// Issue a new token when mirror output is no longer continuous, such as after
+    /// transport loss or a fresh attach snapshot. Keep retained bytes and positions.
+    /// Readers supplying the old token get a mismatch; tokenless readers do not detect the gap.
     pub fn renew_stream(&mut self) {
         self.stream = mint_stream_id();
     }
@@ -193,12 +128,8 @@ impl OutputBuffer {
         self.read_mark = Some(self.end());
     }
 
-    /// Read output since the last mark. If no mark was set, reads from the
-    /// beginning of what is retained.
-    ///
-    /// Kept as the compatibility path for `surface.read_since_mark`: the text
-    /// is what it always was. What the mark cannot say on its own — that
-    /// trimming passed it — is in [`Self::read`]'s `skipped`.
+    /// Compatibility text read from the mark, or the oldest retained byte if unset.
+    /// Use read to obtain skipped-byte information as well.
     pub fn read_since_mark(&self, strip_ansi: bool) -> String {
         self.read_from(self.mark_position(), OUTPUT_RETENTION_MAX_BYTES, strip_ansi)
             .text
@@ -232,26 +163,10 @@ impl OutputBuffer {
         ))
     }
 
-    /// Read the output accumulated since the previous scan-cursor read and
-    /// advance the scan cursor past it.
-    ///
-    /// Reading and advancing are one operation on purpose. Split into two calls
-    /// they leave a window in which appended output is passed over by the
-    /// advance and therefore reported to nobody.
-    ///
-    /// The returned slice starts wherever the previous read stopped, which is a
-    /// byte offset and not a boundary of anything. Two kinds of thing get split
-    /// there, and a caller that matches on the text has to tolerate both:
-    ///
-    /// - An escape sequence straddling two reads. With `strip_ansi` the leftover
-    ///   half survives into the text; a caller that needs whole sequences should
-    ///   ask for the raw bytes instead.
-    /// - A multi byte character straddling two reads. Each half is lossy decoded
-    ///   on its own, so both come out as U+FFFD and the character is gone from
-    ///   the text on either side. `read_since_mark` has the same property at its
-    ///   own start offset, so this is not particular to the scan cursor; what is
-    ///   particular is that an advancing cursor creates a new such offset on
-    ///   every read.
+    /// Read and advance the scanner cursor in one operation so appended output cannot
+    /// fall between those steps. The start may split an escape sequence or UTF-8 character.
+    /// ANSI stripping can leave a partial sequence; lossy decoding replaces split characters.
+    /// Consumers needing intact sequences must preserve and decode raw bytes themselves.
     pub fn take_since_scan_mark(&mut self, strip_ansi: bool) -> String {
         let text = self
             .read_from(
@@ -299,13 +214,8 @@ impl OutputBuffer {
     }
 }
 
-/// How many of `bytes` to take when at most `max` are wanted, moved back off a
-/// UTF-8 continuation byte so that `max` does not cut a character in half.
-///
-/// Backing off costs at most three bytes and they arrive on the next read. It
-/// is skipped when it would take nothing at all, because a read that returns
-/// zero bytes while bytes are waiting never makes progress — a consumer with a
-/// small `max_bytes` in front of a multi byte character would loop forever.
+/// Shorten the read by up to three bytes to avoid ending inside a UTF-8 character.
+/// If that would return nothing, keep the requested size so a small cap still makes progress.
 fn cut_before_split_char(bytes: &[u8], max: usize) -> usize {
     if max >= bytes.len() {
         return bytes.len();
@@ -698,13 +608,8 @@ mod tests {
 
     #[test]
     fn the_stream_token_does_not_rest_on_the_clock_alone() {
-        // 두 터미널이 같은 나노초에 서면 시계만으로는 같은 표지가 나오고, 그러면
-        // 재사용된 surface id 위에서 옛 위치가 조용히 통과한다. 그 갈래는 시험이
-        // 재현할 수 없으므로 **표지의 모양**을 잰다 — 시계 뒤에 매번 달라지는
-        // 마디가 붙어 있는가.
-        //
-        // 반대쪽 마디(시계)는 호스트 재시작을 건너서도 달라지기 위한 것이고,
-        // 그쪽은 한 프로세스 안에서 잴 수 없다.
+        // A process counter distinguishes tokens even when the timestamp is identical.
+        // This test checks that component; it does not simulate a host restart.
         let tail = |id: String| id.split_once('-').map(|(_, t)| t.to_string());
         let a = tail(mint_stream_id()).expect("표지에 시계 뒤 마디가 있다");
         let b = tail(mint_stream_id()).expect("표지에 시계 뒤 마디가 있다");

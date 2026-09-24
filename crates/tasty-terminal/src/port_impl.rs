@@ -1,4 +1,4 @@
-//! `TerminalProcess` trait 의 `Terminal` impl — 기존 inherent 메서드들 delegation.
+//! TerminalProcess implementation using Terminal methods.
 
 use crate::Terminal;
 use crate::events::TerminalEvent;

@@ -1,8 +1,4 @@
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트의 반환값 무시는 허용하되 제품 코드의 반환값 무시는 계속 검사한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 mod accessors;
 mod color;
@@ -55,14 +51,7 @@ static PTY_DROP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 /// `PtyBackend::drop` 누적 횟수 — [`pty_drop_totals`] 참조.
 static PTY_DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// 지금까지 `PtyBackend::drop` 이 소비한 (총 시간, 횟수).
-///
-/// 호스트 종료 계측(`S5b pty_drop`)용이다. surface 가 많으면 이 Drop 이 surface
-/// 수만큼 직렬로 도는데, 그 구간은 `event_loop.exit()` 이후라 화면으로 덮을 수
-/// 없어 사용자 체감에 직결된다. drop 하나하나를 로그로 남기면 surface 수만큼
-/// 줄이 늘어 읽기 어려우므로 프로세스 전역 누적기로 모으고, 호스트가 App drop
-/// **전후 델타**를 찍는다 — 일반 surface 닫기의 drop 도 같이 누적되므로 절대값이
-/// 아니라 델타로만 읽어야 한다.
+/// PTY Drop의 누적 시간과 횟수. 특정 종료 구간의 비용은 호출 전후 차이로 계산한다.
 pub fn pty_drop_totals() -> (std::time::Duration, u64) {
     use std::sync::atomic::Ordering;
     (
@@ -79,16 +68,11 @@ pub struct TerminalConfig<'a> {
     pub args: &'a [&'a str],
     pub surface_id: u32,
     pub working_dir: Option<&'a std::path::Path>,
-    /// PTY master fd 에 동기적으로 미리 써넣을 바이트. writer thread 가 spawn
-    /// 되기 전에 직접 write_all + flush 되므로, child shell 이 stdin 을 처음 read
-    /// 하는 순간 무조건 이 바이트가 첫 입력으로 들어온다. TUI 세션 복원
-    /// (`claude -r <uuid>\r`) 처럼 spawn 과 동시에 실행되어야 할 명령을 넘기는 용도.
-    /// 호출자는 줄바꿈(`\r`) 등 submit 문자를 직접 포함해야 한다.
+    /// 자식 생성 뒤 writer 스레드보다 먼저 PTY에 직접 쓰는 초기 입력.
+    /// 줄바꿈 등 제출 문자도 호출자가 포함한다. 셸 초기화가 입력 큐를 비우면
+    /// 유실될 수 있으므로 자식이 이 입력을 읽는다는 보장은 없다.
     pub initial_input: Option<&'a str>,
-    /// 자식 셸 프로세스에 추가로 심을 환경변수. `GeneralSettings::effective_shell_envs`
-    /// (zsh `ZDOTDIR` 스왑 등 셸 통합 자동 주입용) 가 채운다 — args 기반 주입
-    /// (bash `--rcfile`)과 달리 CLI 인자가 아니라 환경변수로만 넘길 수 있는
-    /// 값이 있어 별도 필드로 분리했다.
+    /// 자식 셸에 추가할 환경변수. ZDOTDIR 등 셸 통합 설정도 포함한다.
     pub extra_env: &'a [(&'a str, &'a str)],
 }
 
@@ -129,16 +113,10 @@ pub struct CellInfo {
 /// 갱신한다 — 메인(winit) 스레드는 파싱을 하지 않는다.
 struct PtyBackend {
     _writer_thread: thread::JoinHandle<()>,
-    /// 살아 있는 동안 항상 `Some`. `Option` 인 이유는 오직 [`PtyBackend::drop`] 이
-    /// **자기 계측 구간 안에서** master 를 해제하기 위해서다 — 필드는 `Drop::drop`
-    /// 본문이 끝난 *뒤* 해제되므로, `take()` 하지 않으면 Windows ConPTY close
-    /// (`ClosePseudoConsole`, 자식 종료를 기다린다)가 `PTY_DROP_NANOS` 밖으로
-    /// 새어나가 종료/close 계측이 실제 비용을 과소평가한다.
+    /// Drop의 계측 구간 안에서 master를 take해 해제한다. 살아 있는 동안은 Some이다.
     pty_master: Option<Box<dyn portable_pty::MasterPty + Send>>,
-    /// `Some` for a normally-owned PTY (Surface 터미널). `None` only after
-    /// [`Terminal::take_child`] hands the waitable child off to an external owner
-    /// (headless `pty_registry` exit-watcher, docs/features/headless-pty/index.md#내부-동작-headless-valid) — Surface 터미널은 절대
-    /// take_child 를 호출하지 않으므로 항상 `Some` 이고 kill/reap 경로가 그대로 산다.
+    /// 외부 exit watcher가 take_child로 가져가기 전까지 소유하는 자식.
+    /// Surface 터미널은 자식을 넘기지 않고 자체 kill/reap을 사용한다.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
     /// shared `TerminalState` off the input thread.
@@ -146,36 +124,17 @@ struct PtyBackend {
 }
 
 impl Drop for PtyBackend {
-    /// 정상 종료 경로(surface 닫기 / 앱 quit)에서 자식 셸을 best-effort 로 종료한다.
-    /// PTY master close 로 인한 HUP 에만 의존하지 않고 명시적으로 kill 한다. 이미
-    /// 종료된 경우의 오류는 무시(로그만). 비정상 종료(크래시 등 Drop 미실행) 경로는
-    /// [`tasty_reaper`] 의 Job Object 결박이 커버한다.
+    /// 정상 Drop에서는 자식 종료를 시도한다. Windows의 비정상 종료 처리는
+    /// Job Object에 등록된 자식에 한해 tasty_reaper가 맡는다.
     fn drop(&mut self) {
-        // take_child 로 자식이 이관된 경우(headless pty_registry) kill/reap 소유권도
-        // 그쪽으로 넘어갔으므로 여기서는 아무것도 하지 않는다. Surface 터미널은 항상
-        // `Some` 이라 아래 경로가 그대로 실행된다.
+        // take_child로 넘긴 자식의 종료·회수는 새 소유자가 맡는다.
         let Some(child) = self.child.as_mut() else {
             return;
         };
-        // 종료 Drop tail 계측(S5b) / close 계측(C5b) 누적 — 개별 로그 대신 합계를
-        // 모은다.
         let t_drop = std::time::Instant::now();
-        // unix: 종료 신호는 여기서 보내되 **기다리지는 않는다**. portable-pty 의
-        // `ChildKiller::kill`(unix)은 SIGHUP 을 보낸 뒤 자체 유예 루프에서
-        // `try_wait` 를 최대 5 회, 사이사이 `thread::sleep(50ms)` 를 4 회 끼워 폴링한다
-        // (portable-pty-0.8.1 `src/lib.rs` 의 `impl ChildKiller for
-        // std::process::Child`). 첫 `try_wait` 는 SIGHUP 직후라 거의 항상 아직
-        // 안 죽은 상태로 걸려서, **정상 경로에서도 매번 50ms 를 통째로 잔다**
-        // (실측: surface 당 50.2~50.4ms 가 고정적으로 발생, 12 탭 워크스페이스
-        // close 의 cleanup 604ms 중 604ms 가 이 sleep). 워크스페이스 close 는 이
-        // Drop 을 leaf surface 수만큼 렌더 스레드에서 직렬 반복하므로 탭 수에
-        // 그대로 비례한다.
-        //
-        // 그 유예/escalation 은 바로 아래 detached reap 스레드가 이미 **더 촘촘하게**
-        // (5ms × 40회 = 같은 200ms 상한) 수행한다. 즉 메인 스레드의 유예 루프는
-        // 순수 중복이라, unix 에서는 SIGHUP 만 직접 보내고 대기는 전부 스레드에
-        // 넘긴다. Windows 경로는 `kill()` 이 `TerminateProcess` 한 방이라 유예
-        // 루프가 없어 그대로 둔다.
+        // Unix는 SIGHUP만 보내고 대기·강제 종료·회수는 아래 스레드에 맡긴다.
+        // portable-pty kill의 동기 유예 대기를 메인 스레드에서 반복하지 않기 위해서다.
+        // Windows는 기존 kill 경로를 사용한다.
         #[cfg(unix)]
         let signalled_pid = child.process_id();
         #[cfg(unix)]
@@ -201,12 +160,7 @@ impl Drop for PtyBackend {
         if let Err(e) = child.kill() {
             tracing::trace!("pty child kill on drop failed (already exited?): {e}");
         }
-        // unix: portable-pty 의 kill() 은 SIGHUP 송신뿐 reap 이 없고, 살아있는 동안의
-        // try_wait 폴링(process() 의 exit 감지)도 close 시점엔 더 이상 돌지 않는다 —
-        // 회수하지 않으면 zombie 가 PID 테이블에 남는다 (macOS soak 실측: s9 30분
-        // churn 중 16개 누적). 메인 스레드를 막지 않도록 detached thread 에서
-        // 유예 poll → SIGKILL escalation 으로 reap 한다. 셸은 SIGHUP 후 보통 수 ms
-        // 안에 죽으므로 정상 경로 비용은 poll 1~2회다.
+        // 메인 스레드 밖에서 유예 대기 후 필요하면 SIGKILL을 보내고 자식을 회수한다.
         #[cfg(unix)]
         if let Some(pid) = signalled_pid {
             std::thread::spawn(move || {
@@ -220,8 +174,7 @@ impl Drop for PtyBackend {
                         _ => return, // >0 회수 완료, -1 이미 회수됨/자식 아님
                     }
                 }
-                // 200ms 유예 내 미종료 — SIGHUP 을 무시하는 자식. SIGKILL 은 무시
-                // 불가능하므로 blocking waitpid 가 곧바로 끝난다.
+                // 유예가 끝나면 SIGKILL을 보내고 회수한다. waitpid의 완료 시간은 보장하지 않는다.
                 // SAFETY: kill syscall. pid 는 아직 미회수 자식(위 waitpid 가 0 반환)
                 // 이므로 재사용될 수 없다.
                 unsafe {
@@ -249,8 +202,7 @@ impl Drop for PtyBackend {
 /// A server-side subscriber to a terminal's raw PTY output.
 struct OutputTap {
     tx: mpsc::SyncSender<Vec<u8>>,
-    /// Consecutive `Full` count; the tap is dropped once it exceeds the limit
-    /// (a persistently slow subscriber must not pin memory or stall the pump).
+    /// Consecutive Full sends. Remove the subscriber when this reaches the limit.
     lag: u32,
 }
 
@@ -258,21 +210,12 @@ struct OutputTap {
 const OUTPUT_TAP_CAP: usize = 1024;
 /// Consecutive `Full` sends after which a slow tap is unsubscribed.
 const OUTPUT_TAP_LAG_LIMIT: u32 = 64;
-/// Bounded capacity for each resize tap channel. Resizes are rare and coalescing
-/// is acceptable (the client only needs the latest size), so a small buffer is
-/// ample; a persistently full channel is treated as a live-but-behind client and
-/// the message is simply dropped for that tick.
+/// Resize channel capacity. Full drops that update but retains the subscriber;
+/// it does not replace an older queued update with the newest one.
 const RESIZE_TAP_CAP: usize = 8;
 
-/// VTE 상태 머신 — surface grid · parser · modes · scrollback · output buffer ·
-/// events. **파서 스레드와 메인 스레드가 `Arc<Mutex<TerminalState>>` 로 공유** 한다
-/// (docs/features/terminal/index.md#vte-에뮬레이션). 파서 스레드는 raw 청크마다 락을 잡아 [`TerminalState::ingest`] 를
-/// 수행하고 즉시 해제하므로, 메인 스레드의 렌더/IPC/이벤트 수집은 최대 1 청크
-/// 파싱 시간만 대기한다.
-///
-/// 필드 가시성은 기존 `Terminal` 과 동일 — crate root 에 정의되어 submodule
-/// (`accessors`/`resize`/`scrollback`/`modes`/…) 의 `impl TerminalState` 에서
-/// root-private 필드에 접근한다.
+/// 파서와 메인 스레드가 공유하는 VTE 상태. 파서는 raw 청크마다 락을 얻고 해제한다.
+/// 렌더·IPC·리사이즈도 같은 락을 사용하므로 경합할 수 있다.
 pub(crate) struct TerminalState {
     /// Primary screen buffer.
     pub(crate) primary_surface: Surface,
@@ -286,16 +229,10 @@ pub(crate) struct TerminalState {
     /// `None` until wired. Lives in the shared state because VTE responses
     /// (DSR/DA) are emitted from the parser thread during ingest.
     input_tx: Option<mpsc::Sender<Vec<u8>>>,
-    /// PTY writer 스레드가 지금까지 flush 완료한 write 개수 + 대기자 깨우기용
-    /// condvar. `enqueued_count` 와 비교해 "이 write 가 실제로 PTY 에 flush 됐는지"
-    /// 를 폴링 없이 확인하는 데 쓴다([`io::WriteAck`], tell/spawn 제출 순서 보장—
-    /// 본문 write 완료 전에 제출 `\r` 이 먼저 도달해 paste 휴리스틱에 먹히는 걸
-    /// 막는다). detached(mirror) 터미널은 writer 스레드가 없어 절대 증가하지
-    /// 않는다 — `WriteAck::wait` 는 타임아웃으로 자연 종료.
+    /// PTY flush 완료 횟수와 대기용 condvar. WriteAck가 입력의 실제 쓰기 완료를 확인한다.
+    /// detached 터미널에는 writer가 없으므로 횟수가 증가하지 않는다.
     write_progress: WriteProgress,
-    /// `input_tx` 로 실제 enqueue 성공한 총 횟수. `write_progress` 와 비교해 "내
-    /// write" 가 몇 번째인지 판별하는 용도 전용 — [`io::WriteAck`] 가 없으면
-    /// 아무도 읽지 않는다.
+    /// input_tx에 넣은 횟수. WriteAck가 기다릴 순번을 정한다.
     enqueued_count: u64,
     /// Server-side raw output subscribers. Each tap receives the exact raw PTY
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
@@ -492,9 +429,7 @@ pub(crate) const CURSOR_OUTPUT_SUPPRESS_WINDOW: std::time::Duration =
 /// Minimum interval between child-alive `try_wait` syscalls in `process()`.
 pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// First gap between the parser thread's post-EOF wakes. The gaps double up to
-/// [`ALIVE_CHECK_INTERVAL`] — the usual EOF-to-waitable window is far shorter than
-/// the first gap, so an ordinary exit costs one extra wake at most.
+/// Initial post-EOF wake interval, doubled up to ALIVE_CHECK_INTERVAL until exit is handled.
 pub(crate) const EOF_REWAKE_FIRST: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// Default horizontal tab stops: a stop at column 0 and every 8th column.
@@ -511,29 +446,18 @@ const WRITE_PROGRESS_WHAT: &str = "the PTY write-progress counter";
 static WRITE_PROGRESS_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 공유 `TerminalState` 락의 poison 복구 공용 보고 좌표(첫-1 회). 파서 스레드와 메인
-/// 스레드가 한 `Arc<Mutex<TerminalState>>` 를 나눠 갖는다 — 인스턴스는 여럿이나 첫-1 회
-/// 보고를 한 좌표로 모은다(hot path 라 매번 찍으면 그 로그가 자기 진단을 덮는다).
+/// 공유 상태 락의 poison 복구를 프로세스에서 처음 한 번 보고한다.
 pub(crate) const STATE_WHAT: &str = "the terminal state";
 pub(crate) static STATE_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 렌더 waker 락의 poison 복구 공용 보고 좌표(첫-1 회). 담는 것은 콜백 하나뿐이라
-/// 복구가 안전하다.
+/// 렌더 콜백 락의 poison 복구를 처음 한 번 보고한다.
 pub(crate) const WAKER_WHAT: &str = "the terminal render waker";
 pub(crate) static WAKER_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// [`WriteProgress`] 의 카운터 락. writer 스레드와 [`io::WriteAck`] 가 **둘 다** 이
-/// 한 곳을 지난다.
-///
-/// poison 이면 복구한다. ① 임계구역은 `u64` 증가와 condvar 대기뿐이라 깨진 채 남을
-/// 불변식이 없다. ② 패닉의 대가는 크고 비대칭이다 — writer 스레드에서 패닉하면 그
-/// 스레드가 죽어 **이후 모든 PTY write 가 영영 나가지 않고**(터미널이 입력을 안 받는
-/// 상태로 굳는다), `WriteAck::wait` 쪽에서 패닉하면 그것을 부른 IPC 핸들러 스레드가
-/// 죽는다. 조용히 건너뛰는 것도 답이 아니다: poison 은 sticky 라 카운터가 영구히 멎고,
-/// 그러면 `wait` 는 **실제로 flush 가 끝난 뒤에도** 매번 타임아웃까지 기다렸다가
-/// `false` 를 돌려준다 — 느려진 것이 결함으로 보이지 않는다.
+/// writer와 WriteAck가 함께 쓰는 완료 횟수 락. poison을 복구하고 처음 한 번 보고한다.
+/// 복구 없이 갱신을 건너뛰면 PTY 쓰기가 끝나도 대기자는 완료를 확인하지 못한다.
 pub(crate) fn lock_write_progress(count: &Mutex<u64>) -> std::sync::MutexGuard<'_, u64> {
     tasty_utils::poison::recover_mutex(
         count.lock(),
@@ -564,9 +488,7 @@ pub(crate) fn run_writer_loop(
     }
 }
 
-/// PTY 자식 프로세스에 넘길 [`CommandBuilder`] 를 조립한다(shell arg/env/cwd).
-/// `Terminal::new` 의 cognitive complexity 상한 때문에 뺐다 — 인라인이었을 때와
-/// 동작은 동일.
+/// 자식 셸의 인자·환경변수·작업 디렉터리를 구성한다.
 fn build_shell_command(
     shell: &str,
     args: &[&str],
@@ -595,16 +517,8 @@ fn build_shell_command(
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
-    // host 가 확정한 데이터 루트를 모든 터미널 env 에 주입한다(정보성 broadcast).
-    // conductor 자신이 떠 있는 이 PTY 셸이 completion-log 경로
-    // (`<tasty_home>/notify/...`)를 판별하려면 부모 루트를 알아야 한다(머신에
-    // ~/.tasty 와 ~/.tasty-debug 가 공존하면 어느 쪽인지 모름).
-    //
-    // 이 값은 `TASTY_PARENT_HOME` 으로 주입한다 — **`TASTY_HOME` 이 아니다.**
-    // `TASTY_HOME` 은 tasty_home()(self-determination, override 전용)의 1순위라,
-    // release 터미널 안에서 debug 빌드를 실행하면 그 debug 프로세스가 부모의
-    // release 루트를 override 로 오인해 ~/.tasty-debug 격리가 깨지고 release 의
-    // 포트파일을 덮어쓰는 사고가 난다. 정보성 값은 별도 이름으로 분리한다.
+    // 자식이 부모의 데이터 경로를 찾도록 정보용 TASTY_PARENT_HOME을 전달한다.
+    // TASTY_HOME으로 주입하면 자식 Tasty의 debug/release별 경로 선택을 덮어쓰게 된다.
     if let Some(home) = tasty_utils::path::tasty_home() {
         cmd.env("TASTY_PARENT_HOME", &home);
     }
@@ -631,9 +545,7 @@ fn build_shell_command(
     cmd
 }
 
-/// PTY writer 스레드를 띄우고 `(input 채널 sender, join handle, flush 진행률
-/// 카운터)` 를 반환한다. `Terminal::new` 의 cognitive complexity 상한 때문에
-/// 채널/Arc 준비까지 통째로 뺐다.
+/// PTY writer를 시작하고 입력 sender·스레드 핸들·완료 카운터를 반환한다.
 fn spawn_pty_writer(
     pty_writer: Box<dyn Write + Send>,
 ) -> (mpsc::Sender<Vec<u8>>, thread::JoinHandle<()>, WriteProgress) {
@@ -739,12 +651,8 @@ impl TerminalState {
         changed
     }
 
-    /// termwiz `Surface` 는 모든 변경을 내부 change log(`Vec<Change>`)에
-    /// append-only 로 누적하고, 소비자가 `flush_changes_older_than` 으로 비워
-    /// 주기를 기대하는 설계다. tasty 는 diff 스트림을 쓰지 않고 grid 셀을 직접
-    /// 읽으므로(process-then-render) 이 로그의 소비자가 없다 — 비우지 않으면
-    /// 출력 줄당 ~380B 가 영구 누적된다 (soak s4 실측: 5000줄 명령당 호스트
-    /// RSS +1.9MB, ED3 로도 해제 불가). ingest 말미에서 전량 비운다.
+    /// termwiz의 변경 로그를 비운다. Tasty는 diff가 아니라 grid를 읽으므로
+    /// 이 로그를 소비하지 않으며, 남겨 두면 출력마다 메모리가 누적된다.
     fn flush_surface_change_logs(&mut self) {
         let seq = self.primary_surface.current_seqno();
         self.primary_surface.flush_changes_older_than(seq);
@@ -761,14 +669,8 @@ impl TerminalState {
         rx
     }
 
-    /// Currently registered output tap count (disconnected taps are only
-    /// pruned lazily on the next `fan_out_to_taps`, so this can over-count
-    /// until the next ingest). Not `#[cfg(test)]`-gated because it must be
-    /// callable from the downstream `tasty` crate's own test suite (a
-    /// dependent crate never sees a dependency's test-only items) — lets a
-    /// regression test assert a caller registered exactly one tap instead of
-    /// accidentally two — a double tap duplicated echoed input on attach
-    /// clients (`docs/dev-guide/attach-behavior.md`).
+    /// Registered output taps, including disconnected ones until the next ingest removes them.
+    /// Public to support downstream tests, where dependency cfg(test) items are unavailable.
     pub(crate) fn output_tap_count(&self) -> usize {
         self.output_taps.len()
     }
@@ -781,9 +683,7 @@ impl TerminalState {
         rx
     }
 
-    /// Fan a `(cols, rows)` change out to all resize subscribers. Drops any
-    /// disconnected or persistently-full subscriber (a resize is a rare, tiny
-    /// message — a full channel means the client is gone).
+    /// Send a resize update. Full channels lose this update; disconnected subscribers are removed.
     fn fan_out_resize(&mut self, cols: usize, rows: usize) {
         if self.resize_taps.is_empty() {
             return;
@@ -862,34 +762,14 @@ impl Terminal {
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
-        // 자식 셸을 호스트 프로세스 수명에 결박한다(Windows Job Object). tasty 가
-        // 크래시·taskkill /f·디버거 stop 등으로 죽어도 셸 트리가 고아로 남지 않는다.
-        // 미초기화(테스트/CLI)·비-Windows 는 no-op.
+        // Windows Job Object에 자식 등록을 시도한다. 미초기화·다른 OS에서는 동작하지 않는다.
         tasty_reaper::adopt_pid(child.process_id());
 
         let mut pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;
 
-        // PTY master 의 첫 바이트로 initial_input 을 동기 write — 이 write 가 우리가 그
-        // master 에 넣는 첫 바이트이므로, 자식이 이것을 읽는다면 **첫 입력으로** 읽는다.
-        //
-        // ★ "자식이 이것을 반드시 읽는다" 는 여기서 보장하지 못한다. 이 write 는 위
-        // `spawn_command` **뒤**라, 쓰는 시점에 자식은 이미 돌고 있다 — 자식이 자기
-        // 라인 에디터를 켜면서 입력 큐를 버리면(`tcsetattr` 의 `TCSAFLUSH`, `tcflush`)
-        // 이 바이트는 에코만 남기고 사라진다. 그래서 이것은 보장이 아니라 경주다.
-        //
-        // 잰 것(2026-09-08, 리눅스): zsh 5.9 · bash 5.2 를 `-li` 로 띄우고 spawn 과 write
-        // 사이 간격을 0 / 2 / 5 / 10 / 20 / 40 / 80 / 150 ms 로 두 번씩 — 32 시행 전부
-        // 자식이 0.04~0.20 s 에 이 입력으로 종료했다. **유실 0 이다.** 다만 이 값이 받쳐
-        // 주는 것은 "리눅스의 이 두 셸에는 그 창이 없다" 까지고, 다른 OS·다른 셸·다른
-        // rc 파일까지는 아니다.
-        //
-        // 이 문장을 다시 "무조건" 으로 올리려면 둘 중 하나가 필요하다.
-        //  (a) 순서를 바꿔 경주를 없앤다 — `openpty` 직후, `spawn_command` **전에** 쓰면
-        //      자식이 존재하기도 전에 큐에 들어가므로 "자식이 처음 read 할 때" 라는 전제가
-        //      코드로 성립한다(그래도 시작 시 큐를 버리는 셸에는 여전히 안 통한다).
-        //  (b) 우리가 출하하는 OS·기본 셸 조합마다 라인 에디터 초기화가 입력 큐를 버리는지를
-        //      재서, 버리는 조합이 없음을 값으로 남긴다.
+        // writer 스레드가 시작되기 전에 초기 입력을 쓴다. 자식은 이미 실행 중이므로
+        // 셸의 tcflush/TCSAFLUSH 등으로 입력이 사라질 수 있다.
         if let Some(input) = config.initial_input
             && !input.is_empty()
         {
@@ -916,16 +796,8 @@ impl Terminal {
         let parser_eof = Arc::new(AtomicBool::new(false));
         let exit_settled = Arc::new(AtomicBool::new(false));
 
-        // Parser thread: read raw PTY bytes and ingest them into the shared state
-        // OFF the input thread. The lock is taken per 8KB chunk and released
-        // immediately, so the main thread waits at most one chunk's parse time.
-        //
-        // The thread holds a *weak* ref to the state: once the `Terminal` handle
-        // is dropped (surface closed), `upgrade()` fails and the thread exits
-        // instead of parsing the orphaned child's output forever. This mirrors
-        // the old reader-thread behaviour, where a dropped `action_rx` made the
-        // next `send` fail and broke the loop — without it, a dropped terminal's
-        // parser thread would burn CPU and grow memory until the child exits.
+        // Parse PTY chunks on a worker, releasing the state lock between chunks.
+        // Keep only a weak state reference so dropping the terminal stops further ingest.
         let state_weak = Arc::downgrade(&state);
         let dirty_t = Arc::clone(&dirty);
         let eof_t = Arc::clone(&parser_eof);
@@ -972,15 +844,8 @@ impl Terminal {
             // check (bypassing the throttle), and wake to drive it.
             eof_t.store(true, Ordering::Release);
             dirty_t.store(true, Ordering::Release);
-            // EOF is not exit. The kernel closes the child's descriptors (our EOF)
-            // before the child becomes waitable, so the alive check the first wake
-            // drives can still see it running — and with the PTY silent nothing else
-            // ever wakes this terminal again: `ProcessExited` was never emitted and
-            // the dead surface stayed open (measured on Linux, 2026-09-23: 2 of 35
-            // headless runs of `exit` in a shell; the traced one read `alive=true` on
-            // that check 0 ms after EOF and saw no wake afterwards). So keep waking,
-            // with gaps doubling up to the alive-check throttle, until the handle has
-            // settled the exit or been dropped.
+            // EOF can precede a waitable child exit. Keep waking with increasing intervals
+            // until the handle observes exit, transfers the child, or is dropped.
             let mut gap = EOF_REWAKE_FIRST;
             loop {
                 let w = {

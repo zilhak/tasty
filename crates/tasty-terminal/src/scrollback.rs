@@ -6,25 +6,9 @@ use crate::TerminalState;
 use crate::disk_scrollback;
 use termwiz::surface::{Change, Position};
 
-/// One scrollback line, stored column-compactly to avoid a heap allocation per
-/// cell.
-///
-/// The naive `Vec<(String, CellAttributes)>` form allocates one `String` plus
-/// one `CellAttributes` clone *per column*; a full scrollback (10k lines ×
-/// ~180 columns) turns into millions of tiny allocations. Instead a line keeps:
-/// - `text`: every cell's grapheme concatenated into a single buffer,
-/// - `cell_lens`: the byte length of each cell's grapheme within `text` (so
-///   exact per-cell boundaries are preserved, including multi-byte graphemes),
-/// - `attr_runs`: run-length-encoded attributes — adjacent cells that share the
-///   same `CellAttributes` collapse into one `(run_len, attrs)` entry.
-///
-/// This makes the allocation count per line constant (3 headers) instead of
-/// column-proportional, while reproducing the original cell stream exactly via
-/// [`ScrollbackLine::cells`].
-///
-/// `wrapped == true` means this line was scrolled off because the terminal
-/// auto-wrapped at the right edge — i.e. the next line is a logical
-/// continuation, not a hard newline. Used for wrap-aware copy.
+/// A line stored as joined text, per-cell byte lengths, and runs of equal attributes.
+/// This avoids retaining a separate String per cell. cells reconstructs borrowed cell views.
+/// wrapped marks a presumed soft wrap for copy; capture uses a heuristic and may misclassify a full row.
 #[derive(Debug, Clone)]
 pub struct ScrollbackLine {
     pub(crate) text: String,
@@ -34,9 +18,7 @@ pub struct ScrollbackLine {
 }
 
 impl ScrollbackLine {
-    /// Build from the legacy owned `Vec<(String, CellAttributes)>` form (cells
-    /// in column order). Kept for producers and tests that still hand over owned
-    /// cells; the cells are compressed on the way in.
+    /// Compress owned cells in column order.
     pub fn new(cells: Vec<(String, CellAttributes)>, wrapped: bool) -> Self {
         Self::from_cells(cells.iter().map(|(s, a)| (s.as_str(), a)), wrapped)
     }
@@ -95,9 +77,7 @@ impl ScrollbackLine {
         }
     }
 
-    /// Reconstruct the legacy owned `Vec<(String, CellAttributes)>` form. Used
-    /// by consumers that still need owned cells (search, selection, IPC); the
-    /// allocation is transient, not retained in the scrollback buffer.
+    /// Return owned cells for consumers such as search, selection, and IPC.
     pub fn to_cells(&self) -> Vec<(String, CellAttributes)> {
         self.cells()
             .map(|(s, a)| (s.to_string(), a.clone()))
@@ -299,16 +279,9 @@ impl Scrollback {
         }
     }
 
-    /// Get a full line (cells + `wrapped`) by index as an owned
-    /// [`ScrollbackLine`]. Works for both memory and disk-backed lines.
-    ///
-    /// 벌크 캡처(닫은 항목 스냅샷 / layout 영속화)가 라인마다 부르는 경로다.
-    /// `line_owned` + `line_wrapped` 를 따로 부르면 두 배로 비싸진다:
-    /// 메모리 라인은 `to_cells` 가 cell 마다 `String` 을 새로 할당하고
-    /// `CellAttributes` 를 복제한 뒤 곧바로 같은 RLE 표현으로 재압축되고,
-    /// 디스크 라인은 같은 인덱스를 두 번 읽어 `File::open` 이 2배가 된다.
-    /// 저장 표현이 이미 `ScrollbackLine` 이므로 여기서는 그대로 돌려준다 —
-    /// 메모리 라인의 비용은 헤더 3개 복제로 고정된다(cell 수 비례가 아니다).
+    /// Return a complete line, including wrapped, from memory or disk.
+    /// Keeping the compact representation avoids expanding and recompressing every cell.
+    /// Cloning still copies the text, lengths, and attribute runs; cost depends on line size.
     pub fn line_full(&self, index: usize) -> Option<ScrollbackLine> {
         let disk_count = self.disk.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
         if index < disk_count {
@@ -442,13 +415,7 @@ impl TerminalState {
         self.scrollback.line_full(index)
     }
 
-    /// 스크롤백 전량을 인덱스 순서(0 = 가장 오래된 라인)로 회수한다.
-    ///
-    /// 캡처 전용 벌크 경로다 — 호출자가 `0..scrollback_len()` 을 돌며
-    /// [`scrollback_line_full`](Self::scrollback_line_full) 을 부르는 것과 결과는
-    /// 같지만, `Terminal` 핸들(`handle.rs`) 경유 시 라인마다 잡히는 state mutex 를 한 번으로
-    /// 줄인다. 그 mutex 는 PTY 파서 스레드가 `ingest` 로 잡는 것과 같은 것이라,
-    /// 라인당 lock 은 만재 스크롤백에서 파서와 수만 회 경합한다.
+    /// 스크롤백을 오래된 순서로 복제한다. Terminal 핸들 경유 시 전체를 한 번의 락으로 처리한다.
     pub fn scrollback_lines_all(&self) -> Vec<crate::ScrollbackLine> {
         let total = self.scrollback_len();
         let mut out = Vec::with_capacity(total);
@@ -556,18 +523,9 @@ impl TerminalState {
         to_draw.len()
     }
 
-    /// Capture the top line(s) from the surface before a scroll change is applied.
-    ///
-    /// Each captured line is tagged with a `wrapped` flag so the next line is
-    /// known to be a logical continuation (used by wrap-aware copy). termwiz
-    /// `Surface::print_text` does NOT set its own wrap bit when the cursor
-    /// runs off the right edge — it just advances `ypos` — so we recover the
-    /// flag heuristically: a line is treated as soft-wrapped when its
-    /// rightmost cell is occupied by a non-space grapheme. Lines that ended in
-    /// a real `\n` almost always have trailing whitespace; lines that wrapped
-    /// at the right edge filled the last column. False positives (a hard
-    /// newline that happened to fill the row) merge two lines on copy, which
-    /// is a strictly better outcome than the prior unconditional `\n` join.
+    /// Capture rows before scrolling. termwiz does not retain a wrap flag here, so a
+    /// nonblank rightmost cell is treated as a soft wrap. A hard newline after a full row
+    /// can be misclassified and cause copied lines to join.
     pub(crate) fn capture_top_lines(&self, count: usize) -> Vec<crate::scrollback::ScrollbackLine> {
         let surface = self.surface();
         let cols = self.cols;
@@ -613,48 +571,19 @@ impl TerminalState {
             scroll_count,
         } = change
         {
-            // termwiz `scroll_region_up` evicts at most `region_size` rows. When
-            // `scroll_count` exceeds the region (a top-anchored partial region with
-            // an over-sized SU), capturing `scroll_count` rows would also copy rows
-            // *below* the region — which stay on screen — producing duplicates in
-            // scrollback. Clamp to the region so only genuinely evicted top rows
-            // are captured (see ADR/verification: E2). The clamp lives here at the
-            // callsite, not in `capture_top_lines`, because the auto-wrap path
-            // (`apply_text_honoring_scroll_region`) calls `capture_top_lines(1)`
-            // and is region-agnostic.
+            // Capture at most region_size rows: a larger scroll count must not copy
+            // rows below the region that remain visible.
             let count = (*scroll_count).min(*region_size);
             let captured = self.capture_top_lines(count);
             self.push_scrolled_off(captured);
         }
     }
 
-    /// Apply a `Change::Text` so that it honors the active DECSTBM scroll
-    /// region, capturing every row that scrolls off the top on the way.
-    ///
-    /// termwiz `Surface::print_text` knows nothing about scroll regions: it
-    /// advances the cursor one row per auto-wrap / newline and, once past the
-    /// **last screen row**, scrolls the *whole* grid internally (no
-    /// `ScrollRegionUp` Change) and discards the evicted top line. Two separate
-    /// problems follow from that, and this is the single place both are fixed:
-    ///
-    /// 1. **Scrollback.** Tasty owns the scrollback, so every eviction must be
-    ///    observed. The evicted content is generated within the same
-    ///    `add_change`, so a pre-apply snapshot is empty — instead the text is
-    ///    split at the exact byte offsets where a scroll will occur, each
-    ///    segment is applied, and the (now-populated) top row is snapshotted
-    ///    right before the scroll consumes it.
-    /// 2. **Region containment.** With a partial region the cursor reaching the
-    ///    region bottom must scroll *the region*, not walk below it. Left to
-    ///    termwiz, an auto-wrapped long line at the region bottom writes over
-    ///    the rows the application reserved outside the region (a TUI's input
-    ///    bar), and the rows pushed up out of the region are never handed to
-    ///    scrollback — the history simply disappears. So the region scroll is
-    ///    emitted explicitly here and the offending grapheme is withheld from
-    ///    termwiz until the cursor has been repositioned.
-    ///
-    /// Runs for both screens. On the alternate screen the region containment
-    /// still applies, but nothing is captured — alt-screen output must not
-    /// leak into the primary screen's history.
+    /// Apply text within the DECSTBM region and capture rows evicted from the top.
+    /// termwiz scrolls the whole screen internally, so split text where scrolling occurs
+    /// and capture each row after earlier text has populated it. For a partial region,
+    /// scroll explicitly and reposition before printing the next grapheme.
+    /// Apply region limits on both screens, but never add alternate-screen rows to history.
     pub(crate) fn apply_text_honoring_scroll_region(&mut self, text: String) {
         // Same bounds the explicit-newline path uses (`perform_index`), so an
         // auto-wrap and an LF at the same row scroll the same rows.
@@ -675,16 +604,8 @@ impl TerminalState {
             }
             match brk.kind {
                 BreakKind::SurfaceScroll => {
-                    // termwiz performs this scroll itself when the next segment
-                    // is applied — snapshot the row it is about to consume.
-                    //
-                    // The alternate screen is the common case for this branch, not
-                    // an exotic one: a full-screen TUI sets no DECSTBM, so every
-                    // alt-screen auto-wrap at the last row lands here. Capturing
-                    // would read the *alt* surface (`capture_top_lines` follows
-                    // `surface()`) into the single primary scrollback, and
-                    // `push_scrolled_off` would also shift the primary's
-                    // `saved_line_tails` and the user's `scroll_offset`.
+                    // Capture before termwiz's full-screen scroll, except on the alternate
+                    // screen, whose output must not alter primary history or saved tails.
                     if !self.use_alternate {
                         let captured = self.capture_top_lines(1);
                         self.push_scrolled_off(captured);

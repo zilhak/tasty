@@ -1,6 +1,4 @@
-//! `Terminal` 핸들의 grid/VTE 상태 접근자 — 공유 `TerminalState` 락을 잡아
-//! 위임하는 thin wrapper 들 (docs/features/terminal/index.md#vte-에뮬레이션). 외부(`src/`)의 `terminal.X()` 호출처가
-//! 그대로 동작하도록 기존 `Terminal` API 시그니처를 보존한다.
+//! TerminalState를 잠가 호출하는 Terminal 접근자. 참조를 락 밖으로 반환할 수 없으면 복제한다.
 
 use termwiz::cell::CellAttributes;
 use termwiz::surface::line::Line;
@@ -9,8 +7,6 @@ use crate::search::{SearchError, SearchMatch, SearchOptions};
 use crate::{CellInfo, CursorShape, MouseTrackingMode, ScrollbackLine, Terminal};
 
 impl Terminal {
-    // ── Surface (owned snapshots — guard 밖으로 ref 를 빼낼 수 없으므로 복제) ──
-
     /// Active surface dimensions `(cols, rows)`.
     pub fn dimensions(&self) -> (usize, usize) {
         self.with_surface(|s| s.dimensions())
@@ -31,8 +27,6 @@ impl Terminal {
                 .collect()
         })
     }
-
-    // ── Modes ──
 
     pub fn application_cursor_keys(&self) -> bool {
         self.lock_state().application_cursor_keys()
@@ -84,8 +78,6 @@ impl Terminal {
         self.lock_state().find_fake_cursor_cell()
     }
 
-    // ── Screen / cell inspection ──
-
     pub fn screen_text(&self, include_dim: bool) -> String {
         self.lock_state().screen_text(include_dim)
     }
@@ -110,8 +102,6 @@ impl Terminal {
         self.lock_state().cell_attrs(row, col)
     }
 
-    // ── Snapshot / search ──
-
     pub fn snapshot_as_vt(&self) -> Vec<u8> {
         self.lock_state().snapshot_as_vt()
     }
@@ -123,8 +113,6 @@ impl Terminal {
     ) -> Result<Vec<SearchMatch>, SearchError> {
         self.lock_state().search(query, options)
     }
-
-    // ── Scrollback ──
 
     pub fn scroll_offset(&self) -> usize {
         self.lock_state().scroll_offset()
@@ -170,12 +158,7 @@ impl Terminal {
         self.lock_state().scrollback_line_full(index)
     }
 
-    /// 스크롤백 전량을 **한 번의 lock** 으로 회수한다 (캡처 전용 벌크 경로).
-    ///
-    /// `0..scrollback_len()` 을 돌며 [`scrollback_line_full`](Self::scrollback_line_full)
-    /// 을 부르는 것과 결과는 같지만, 라인마다 잡히던 state mutex 가 1회로 준다.
-    /// 그 mutex 는 파서 스레드가 `ingest` 로 잡는 것과 동일해(docs/features/terminal/index.md#vte-에뮬레이션), 만재
-    /// 스크롤백을 라인당 lock 으로 캡처하면 파서와 수만 회 경합한다.
+    /// 스크롤백 전체를 한 번의 락으로 복제한다. 행마다 파서와 락을 경쟁하지 않도록 한다.
     pub fn scrollback_lines_all(&self) -> Vec<ScrollbackLine> {
         self.lock_state().scrollback_lines_all()
     }

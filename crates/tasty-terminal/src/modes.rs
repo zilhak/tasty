@@ -7,12 +7,8 @@ use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
 use super::{CursorShape, MouseTrackingMode, TerminalState};
 
-/// 1000 / 1002 / 1003 의 **독립 모드 레지스터**.
-///
-/// xterm 에서 셋은 서로 별개의 on/off 비트고, 실효 동작은 켜진 것 중 **가장 넓은 것**
-/// 으로 정해진다(1003 ⊃ 1002 ⊃ 1000). 하나를 끄는 것이 다른 것을 끄지 않는다.
-/// 실효 레벨([`MouseTrackingMode`]) 하나만 저장하면 이 정보가 손실돼서, 앱이
-/// `1003h` 뒤에 `1002l` 을 보내는 것만으로 트래킹이 통째로 꺼진다.
+/// Independent bits for modes 1000, 1002, and 1003. The broadest enabled mode wins.
+/// Disabling one mode leaves the others unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct MouseTrackingRegisters {
     /// 1000 — 버튼 press/release 만.
@@ -103,10 +99,8 @@ impl TerminalState {
             DecPrivateModeCode::ClearAndEnableAlternateScreen => {
                 // Mode 1049: save cursor, switch to alt screen, clear it
                 if enable {
-                    // Save cursor on primary
                     let pos = self.primary_surface.cursor_position();
                     self.alt_saved_cursor = Some((pos.0, pos.1));
-                    // Create alternate surface if needed
                     if self.alternate_surface.is_none() {
                         self.alternate_surface = Some(Surface::new(self.cols, self.rows));
                     }
@@ -116,7 +110,6 @@ impl TerminalState {
                         self.swap_pen_for_surface_switch();
                     }
                     self.use_alternate = true;
-                    // Clear alternate screen
                     if let Some(alt) = &mut self.alternate_surface {
                         alt.add_change(Change::ClearScreen(ColorAttribute::Default));
                         alt.add_change(Change::CursorPosition {
@@ -133,7 +126,6 @@ impl TerminalState {
                         self.swap_pen_for_surface_switch();
                     }
                     self.use_alternate = false;
-                    // Restore cursor on primary
                     if let Some((x, y)) = self.alt_saved_cursor.take() {
                         self.apply_or_stage_change(Change::CursorPosition {
                             x: Position::Absolute(x),
@@ -177,16 +169,12 @@ impl TerminalState {
                 self.bracketed_paste = enable;
             }
             DecPrivateModeCode::MouseTracking => {
-                // Mode 1000 — 자기 비트만 건드린다. 1002/1003 이 켜져 있으면 그대로
-                // 유지되고 실효 레벨도 그쪽이 이긴다.
                 self.update_mouse_tracking(|r| r.click = enable);
             }
             DecPrivateModeCode::ButtonEventMouse => {
-                // Mode 1002
                 self.update_mouse_tracking(|r| r.cell_motion = enable);
             }
             DecPrivateModeCode::AnyEventMouse => {
-                // Mode 1003
                 self.update_mouse_tracking(|r| r.any_event = enable);
             }
             DecPrivateModeCode::SGRMouse => {
@@ -248,20 +236,13 @@ impl TerminalState {
         self.bracketed_paste
     }
 
-    /// Current mouse tracking mode — 켜진 세 레지스터에서 계산한 **실효 레벨**.
-    ///
-    /// 소비 측은 이 레벨만 보면 되므로 저장 형식이 3 비트로 바뀌어도 시그니처는 그대로다.
+    /// 켜진 세 모드 중 가장 넓은 마우스 트래킹 범위.
     pub fn mouse_tracking(&self) -> MouseTrackingMode {
         self.mouse_tracking.effective()
     }
 
-    /// 모드 레지스터 하나를 갱신하며 "첫 마우스 캡처 안내" 플래그를 관리한다.
-    ///
-    /// 무장/해제는 **실효 레벨의 엣지**로 판정한다 — `None → ON` 에서만 무장하고
-    /// (ON→ON 전환, 예 1000→1002 는 재무장 안 함), `ON → None` 에서 disarm 한다
-    /// (세션당 1회, docs/features/terminal/index.md#마우스-입력). 실효 레벨이 안 바뀌는 갱신(예 1003 이 켜진 채
-    /// `1002l`)은 무장 상태도 건드리지 않는다 — 예전엔 이런 갱신이 트래킹과 함께
-    /// 무장까지 날려서, 트래킹이 살아 있는데 안내가 다시 안 뜨는 상태가 됐다.
+    /// 모드 하나를 갱신한다. 전체 트래킹이 처음 켜질 때만 안내를 준비하고,
+    /// 모두 꺼지면 해제한다. 켜진 모드 사이의 전환은 안내를 다시 준비하지 않는다.
     fn update_mouse_tracking(&mut self, f: impl FnOnce(&mut MouseTrackingRegisters)) {
         let before = self.mouse_tracking.effective();
         f(&mut self.mouse_tracking);
@@ -273,9 +254,7 @@ impl TerminalState {
         }
     }
 
-    /// 무장된 "첫 마우스 캡처 안내" 플래그를 소비한다 — 무장돼 있었으면 `true` 를 반환하고
-    /// 즉시 disarm 해 같은 트래킹 세션에서 다시 뜨지 않게 한다. 좌·우 클릭 보고 경로가
-    /// 같은 플래그를 공유하므로, 먼저 호출한 쪽만 true 를 받는다 (첫 상호작용 1회).
+    /// 첫 캡처 안내를 소비한다. 같은 트래킹 세션에서는 처음 호출한 쪽만 true를 받는다.
     pub fn take_mouse_capture_hint(&mut self) -> bool {
         let armed = self.mouse_capture_hint_armed;
         self.mouse_capture_hint_armed = false;
@@ -333,6 +312,4 @@ impl TerminalState {
         }
         found
     }
-
-    // ---- Scrollback buffer methods (delegated to Scrollback) ----
 }

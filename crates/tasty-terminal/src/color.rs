@@ -1,12 +1,5 @@
-//! OSC color-query palette.
-//!
-//! `tasty-terminal` stores no theme — cell colors are `ColorAttribute`s and the
-//! actual RGB lives in the renderer. To answer OSC color *queries* (OSC 10/11/12
-//! dynamic colors and OSC 4 ANSI palette) with the colors the renderer truly
-//! draws, the host plumbs its resolved theme palette in via
-//! [`crate::Terminal::set_color_palette`]. The palette is refreshed on terminal
-//! creation and on every theme change, so a query always reflects the current
-//! theme.
+//! Palette supplied by the host for OSC 10/11/12 and OSC 4 color queries.
+//! The host updates it when creating the terminal and when changing themes.
 
 /// 8-bit-per-channel RGB color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,10 +14,7 @@ impl TerminalRgb {
         Self { r, g, b }
     }
 
-    /// Encode as the xterm 16-bit-per-channel form `rgb:RRRR/GGGG/BBBB`. Each
-    /// 8-bit channel is widened by `* 0x101` (xterm replicates the byte), matching
-    /// what xterm and other terminals report so querying apps see consistent
-    /// precision.
+    /// Encode rgb:RRRR/GGGG/BBBB by repeating each 8-bit channel byte.
     pub(crate) fn to_x11_16bit(self) -> String {
         format!(
             "rgb:{:04x}/{:04x}/{:04x}",

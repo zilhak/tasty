@@ -1,15 +1,7 @@
-//! 초기 화면 bulk 스냅샷 직렬화 (attach 단계 4, decisions.md #6 = 셀 bulk MVP).
-//!
-//! attach 직후 client mirror 를 현재 서버 화면으로 초기화하기 위해, 현재 visible
-//! 화면을 VT 바이트로 재직렬화한다. client mirror 는 이 바이트를 `feed_bytes` 로
-//! 같은 termwiz 파서에 먹여 grid 를 재구성한다(렌더러/스크롤백/검색 스택 재사용 —
-//! design-attached.md §4.2 접근 A). 이후 화면 변화는 원시 PTY tap 바이트(delta)로
-//! 전달되므로, 스냅샷은 1 회성이다.
-//!
-//! 범위(MVP): 현재 visible 화면 + 커서 위치 + 핵심 모드(alt-screen / DECCKM /
-//! bracketed paste / 커서 가시성). scrollback 재생은 범위 밖(단계 4 화면 일치까지).
-//! 속성: fg/bg(palette index + truecolor), bold/dim/italic/underline/blink/reverse/
-//! invisible/strikethrough/overline.
+//! attach 초기 화면을 VT 바이트로 만들어 mirror의 feed_bytes에 전달한다.
+//! 이후 변화는 raw PTY 출력으로 보낸다. 현재 화면·커서·주요 모드만 포함하며
+//! 스크롤백은 포함하지 않는다. 색·굵기·dim·italic·밑줄·blink·reverse·invisible·
+//! strikethrough·overline을 기록하되 일부 밑줄 모양은 단일 밑줄로 근사한다.
 
 use termwiz::cell::{CellAttributes, Intensity, Underline};
 use termwiz::color::ColorAttribute;
@@ -18,8 +10,7 @@ use termwiz::surface::Surface as TwSurface;
 use crate::TerminalState;
 
 impl TerminalState {
-    /// 현재 화면을 mirror 가 `feed_bytes` 로 재구성할 VT 바이트로 직렬화한다.
-    /// (attach 초기 bulk 스냅샷, decisions.md #6.)
+    /// 현재 화면을 mirror가 feed_bytes로 읽을 VT 바이트로 직렬화한다.
     pub fn snapshot_as_vt(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::new();
 
@@ -88,9 +79,7 @@ impl TerminalState {
     }
 }
 
-/// 한 셀의 전체 속성을 `ESC[0;...m` 형태의 SGR 시퀀스로 직렬화한다.
-/// 항상 reset(`0`)으로 시작하므로 직전 상태와 무관하게 절대 속성을 표현한다
-/// (delta 계산 불필요 → 견고). 호출부는 직전 emit 한 문자열과 비교해 중복만 줄인다.
+/// 셀 속성을 reset으로 시작하는 SGR로 변환한다. 호출자가 같은 문자열의 반복을 생략한다.
 fn sgr_for(attrs: &CellAttributes) -> String {
     let mut codes: Vec<String> = vec!["0".to_string()];
 
@@ -105,7 +94,7 @@ fn sgr_for(attrs: &CellAttributes) -> String {
     match attrs.underline() {
         Underline::None => {}
         Underline::Double => codes.push("21".to_string()),
-        // single/curly/dotted/dashed 는 단계 4 에서 single(`4`)로 근사.
+        // single/curly/dotted/dashed는 단일 밑줄로 근사한다.
         _ => codes.push("4".to_string()),
     }
     match attrs.blink() {

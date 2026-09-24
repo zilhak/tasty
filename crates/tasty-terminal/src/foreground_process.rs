@@ -1,7 +1,4 @@
-//! Foreground process detection for PTY child processes.
-//!
-//! Returns (process_name, pid) of the foreground process group leader
-//! for the controlling terminal of the given shell PID.
+//! Unix foreground process-group lookup and Windows process-tree approximation.
 
 /// Info about the foreground process.
 #[derive(Debug, Clone)]
@@ -59,18 +56,8 @@ pub fn get_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
     }
 }
 
-/// Resolve the foreground process for many shell PIDs at once.
-///
-/// On Windows the per-PID lookup snapshots *every* system process
-/// (`CreateToolhelp32Snapshot`, ≈ several ms with a few hundred processes).
-/// Calling [`get_foreground_process`] once per surface therefore put
-/// `O(surfaces × processes)` on the main thread every busy-poll tick. This
-/// batch path takes **one** snapshot and resolves all PIDs against it.
-///
-/// On Linux/macOS the per-PID lookup is already a single `/proc` read or
-/// libproc syscall, so this just maps [`get_foreground_process`] over the slice.
-///
-/// The returned vector is index-aligned with `shell_pids`.
+/// Resolve multiple shell PIDs, returning results in the same order.
+/// Windows shares one system process snapshot across all lookups. Linux/macOS query each PID.
 pub fn resolve_foreground_many(shell_pids: &[u32]) -> Vec<Option<ForegroundProcessInfo>> {
     #[cfg(windows)]
     {
@@ -115,12 +102,7 @@ fn linux_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
 
 #[cfg(target_os = "macos")]
 fn macos_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
-    // Use the proc_pidinfo libproc syscall instead of forking `ps`. The old path
-    // forked `ps` twice per call (~ms each in posix_spawn); at 1Hz over every live
-    // surface that blocked the main thread enough to stall workspace switching.
-    // proc_bsdinfo carries both the controlling-terminal foreground pgid (e_tpgid)
-    // and the process name, so two syscalls (µs each) replace the two forks.
-    // Same approach as cwd.rs (lsof fork -> proc_pidinfo).
+    // libproc supplies the foreground group ID and its leader's name without spawning ps.
     let bsd = macos_proc_bsdinfo(shell_pid)?;
     let tpgid = bsd.e_tpgid;
     if tpgid == 0 {
@@ -198,11 +180,8 @@ struct WindowsProcessSnapshot {
 impl WindowsProcessSnapshot {
     /// Take a single `TH32CS_SNAPPROCESS` snapshot and build the child map.
     /// Returns `None` if the snapshot could not be created.
-    // 이유: ToolHelp snapshot 순회는 `CreateToolhelp32Snapshot` → `Process32FirstW` →
-    //       `Process32NextW` 가 한 흐름이라 사이에 안전한 문장을 끼울 자리가 없다.
-    //       블록 안의 SAFETY 주석이 그 셋을 함께 정당화한다 — 쪼개면 같은 주석이 셋이 된다.
-    //       파일이 아니라 이 함수에 거는 것은 이 파일이 크로스플랫폼이라서다(442 줄, Windows
-    //       는 cfg 로 갈린 일부) — 파일 단위로 걸면 나머지 플랫폼의 새 위반까지 가린다.
+    // 이유: ToolHelp 핸들 생성과 Process32FirstW/NextW 순회를 한 unsafe 블록에서 처리한다.
+    // 다른 플랫폼의 unsafe 검사를 유지하기 위해 이 함수에만 허용한다.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     fn capture() -> Option<Self> {
         use std::collections::HashMap;
@@ -217,11 +196,8 @@ impl WindowsProcessSnapshot {
             fn drop(&mut self) {
                 // SAFETY: CloseHandle on a HANDLE obtained from
                 // CreateToolhelp32Snapshot is the documented release path.
-                // self.0이 INVALID_HANDLE_VALUE이거나 이미 닫혔어도 CloseHandle은
-                // Err만 반환하고 UB를 일으키지 않는다 (Win32 보장).
+                // Drop에서 핸들 해제를 시도하고 실패는 trace로 남긴다.
                 unsafe {
-                    // CloseHandle은 invalid handle에 대해 ERROR_INVALID_HANDLE을 반환할 뿐
-                    // UB를 일으키지 않는다. Drop 경로에서 추가로 로그를 남길 가치 없음.
                     if let Err(e) = CloseHandle(self.0) {
                         tracing::trace!("ToolHelp snapshot CloseHandle: {e}");
                     }
@@ -268,24 +244,10 @@ impl WindowsProcessSnapshot {
         }
     }
 
-    /// Resolve the foreground program for `shell_pid`: the **shallowest
-    /// non-shell descendant** of the shell, breaking ties at the same depth by
-    /// lowest PID for a deterministic, stable choice.
-    ///
-    /// Windows has no Unix-style `tcgetpgrp` and ConPTY exposes no foreground
-    /// process group, so this is a heuristic approximation of the tty foreground
-    /// program, not the real thing. Interactive agents (claude/node) constantly
-    /// spawn and reap short-lived helpers (bash/git/rg/…); picking the *deepest*
-    /// leaf made the displayed name flicker frame-to-frame as whichever transient
-    /// helper happened to be alive got chosen. The shallowest non-shell
-    /// descendant is the outermost user-launched program (e.g. `node`) — stable,
-    /// and what the user perceives as running.
-    ///
-    /// Nested shells are walked through but never chosen (`pwsh → cmd → node`
-    /// resolves to `node`). Fallbacks, in order: if the shell has no non-shell
-    /// descendant, return the deepest leaf (an inner idle shell still shows a
-    /// name); if there is no descendant at all, return the shell's own info —
-    /// matching Linux/macOS where tpgid resolves to the shell itself when idle.
+    /// Choose the shallowest non-shell descendant, breaking ties by lowest PID.
+    /// ConPTY exposes no Unix-style foreground group, so this is a heuristic.
+    /// Walk through nested shells. If no non-shell descendant exists, use the deepest
+    /// leaf; without descendants, use the shell itself.
     fn resolve(&self, shell_pid: u32) -> Option<ForegroundProcessInfo> {
         use std::collections::VecDeque;
         // BFS level-by-level from shell_pid. The explicit (depth, pid) comparison
@@ -392,9 +354,7 @@ mod windows_tree {
         WindowsProcessSnapshot { entries, children }
     }
 
-    // shell(100) → node(200) → {bash(300), git(301), rg(302)}.
-    // node is the shallowest non-shell descendant; the deep transient helpers
-    // (which used to win as the deepest leaf and caused the flicker) are ignored.
+    // Ignore transient descendants below the shallowest non-shell process.
     #[test]
     fn picks_shallowest_non_shell_over_deep_helpers() {
         let snap = snapshot(&[

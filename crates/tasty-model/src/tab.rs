@@ -642,7 +642,7 @@ mod tests {
         assert!(result.is_none(), "spawn 실패 시 None");
         assert!(
             tab.is_surface_deferred(sid),
-            "spawn 실패 후에도 deferred 유지되어 재시도 가능해야 함 (수정 전엔 stranded)"
+            "생성 실패 뒤에도 재시도에 필요한 복원 정보를 유지해야 한다"
         );
 
         assert!(tab.ensure_initialized(sid).is_none());

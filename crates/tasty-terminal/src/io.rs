@@ -1,9 +1,4 @@
-//! IO 경로 — 입력 송신 / change apply.
-//!
-//! 입력 송신(`write_input`/`send_terminal_response`)과 change apply 는 락 안에서
-//! 도는 `TerminalState` 에 둔다 — VTE 핸들러가 파서 스레드에서 DSR/DA 응답을
-//! PTY 로 되쓰기 때문이다. 사용자 입력 API(`send_key`/`send_bytes`)는 핸들
-//! (`Terminal`) 이 락을 잡아 위임한다 (docs/features/terminal/index.md#vte-에뮬레이션).
+//! PTY 입력·터미널 응답 송신과 화면 변경 적용. TerminalState 락 안에서 처리한다.
 
 use std::sync::mpsc;
 use std::time::Duration;
@@ -13,24 +8,16 @@ use termwiz::surface::Change;
 
 use crate::{Terminal, TerminalState, WriteProgress};
 
-/// [`Terminal::send_key_with_ack`] 가 반환하는 완료 확인 핸들.
-///
-/// 어느 스레드에서든 `wait()` 로 "이 write 를 writer 스레드가 실제로 PTY 에
-/// write_all+flush 완료했는지" 를 블로킹 대기(타임아웃 포함)할 수 있다.
-/// `TerminalState` 락은 잡지 않으므로 그 자체로는 메인 스레드를 막지 않는다 —
-/// 단 이 이점을 얻으려면 호출자가 반드시 메인 스레드가 **아닌** 다른 스레드에서
-/// `wait()` 해야 한다. 메인 스레드에서 직접 부르면 고정 sleep 과 동일한 blocking
-/// 문제가 재발한다.
+/// PTY writer의 write_all+flush 완료를 기다리는 핸들.
+/// wait는 블로킹하므로 메인 스레드 밖에서 호출한다.
 pub struct WriteAck {
     progress: WriteProgress,
     target: u64,
 }
 
 impl WriteAck {
-    /// writer 스레드가 이 write 를 포함해 최소 `target` 개를 flush 할 때까지
-    /// 대기한다. 도달하면 `true`. `timeout` 내 도달 못 하면(detached 터미널이라
-    /// writer 스레드 자체가 없거나, 죽었거나, 너무 느린 경우) `false` — 호출자는
-    /// 이 경우도 최선 노력으로 다음 단계를 진행해야 한다(무한 대기 금지).
+    /// writer의 완료 횟수가 target에 도달하면 true를 반환한다.
+    /// detached 터미널처럼 writer가 없거나 대기 제한 안에 완료하지 못하면 false다.
     pub fn wait(&self, timeout: Duration) -> bool {
         let (lock, cvar) = &*self.progress;
         let guard = crate::lock_write_progress(lock);
@@ -45,17 +32,8 @@ impl WriteAck {
     }
 }
 
-/// `wait_timeout_while` 의 결과를 판정한다 — poison 은 복구하되 **첫 1 회 보고**한다.
-///
-/// condvar 는 깨어나며 락을 다시 잡으므로 poison 을 한 번 더 만난다. 여기서 `false` 로
-/// 떨어지면 이미 flush 가 끝난 write 를 "미완료" 로 보고하게 되므로 복구가 답이다.
-/// 다만 **진입 시점의 `lock_write_progress` 가 이미 보고했다고 가정할 수 없다** — 그때
-/// 락이 성했다면 아무것도 안 남았고, poison 이 **대기 중에** 생기는 순서가 정확히 그
-/// 경우다. 조용한 복구는 조용한 유실과 구분되지 않는다.
-///
-/// 보고 대상을 전역 static 이 아니라 **인자로** 받는 이유는 테스트다. 전역 플래그로
-/// 단언하면 같은 바이너리의 다른 테스트가 먼저 true 로 만들어 **거짓 초록**이 된다 —
-/// 실제로 이 판정을 `into_inner()` 로 되돌린 변이가 그 형태로 살아남았다.
+/// Condvar 대기 중 발생한 poison도 복구하고 처음 한 번 보고한다.
+/// 시험에서 다른 호출의 보고와 혼동하지 않도록 보고 플래그를 인자로 받는다.
 fn resolve_wait<T>(
     outcome: Result<
         (T, std::sync::WaitTimeoutResult),
@@ -109,8 +87,6 @@ impl TerminalState {
             if let Err(e) = sink.send(bytes) {
                 tracing::warn!("terminal input channel closed during input: {e}");
             } else {
-                // `write_progress` 와 비교해 "이 write 가 몇 번째인지" 판별하는
-                // 용도 전용 — [`WriteAck`] 가 없으면 아무도 읽지 않는다.
                 self.enqueued_count += 1;
             }
         } else {
@@ -119,11 +95,8 @@ impl TerminalState {
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
-        // Always apply changes immediately to keep surface state (especially
-        // cursor position) current. Many VTE operations read cursor_position() at
-        // generation time to produce absolute-positioned changes. Tasty's
-        // architecture is process-then-render, so immediate application doesn't
-        // cause visual tearing — the renderer always sees the final state.
+        // VTE 명령이 현재 커서 위치를 읽으므로 변경을 즉시 적용한다.
+        // 렌더러는 상태 락을 얻은 뒤 처리된 화면을 읽는다.
         self.apply_change(change);
     }
 
@@ -190,10 +163,8 @@ impl Terminal {
         }
     }
 
-    /// Wire a detached mirror's input forwarding sink. When the terminal has no
-    /// PTY, `send_bytes`/`send_key` forward to this sink (the attach stream).
-    /// PTY-backed terminals already have their writer channel wired and ignore
-    /// reconfiguration through this path in practice.
+    /// Set the input channel, typically to forward a detached mirror's input to attach.
+    /// This replaces the current sender even if the terminal owns a PTY.
     pub fn set_input_sink(&mut self, sink: mpsc::Sender<Vec<u8>>) {
         self.lock_state().input_tx = Some(sink);
     }
@@ -210,10 +181,7 @@ impl Terminal {
         self.lock_state().write_input(text.as_bytes().to_vec());
     }
 
-    /// [`Terminal::send_key`] 와 동일하게 non-blocking 큐잉하지만, writer 스레드가
-    /// 이 바이트를 실제로 write_all+flush 완료했음을 (다른 스레드에서) 나중에
-    /// 확인할 수 있는 [`WriteAck`] 를 함께 반환한다. `send_key`(ack 없는
-    /// fire-and-forget)의 동작은 이 메서드와 무관하게 그대로다.
+    /// send_key처럼 큐에 넣고, 다른 스레드에서 PTY flush 완료를 기다릴 WriteAck도 반환한다.
     pub fn send_key_with_ack(&mut self, text: &str) -> WriteAck {
         let mut state = self.lock_state();
         state.write_input(text.as_bytes().to_vec());
@@ -236,19 +204,7 @@ mod tests {
     use super::*;
     use crate::WriteProgress;
 
-    /// poison 이 **대기 중에** 생겨도 그 복구가 흔적을 남기는가.
-    ///
-    /// [`WriteAck::wait`] 는 진입할 때 한 번만 복구 헬퍼를 거친다. 그때 락이 성했다면
-    /// 아무 보고도 없고, 그 뒤 `wait_timeout_while` 안에서 락을 놓고 자는 동안 다른
-    /// 스레드가 poison 을 만들면 깨어나며 만나는 `Err` 는 헬퍼 **밖**이다 — 예전에는
-    /// 그 자리가 `into_inner()` 로 조용히 복구했다. 위의 다른 테스트는 `wait()` **전에**
-    /// poison 을 만들어 이 순서를 안 만든다.
-    ///
-    /// 헬퍼 **밖**에서 만난 poison 을 복구할 때 첫 1 회 보고가 나는가.
-    ///
-    /// 국소 `AtomicBool` 을 쓰므로 결정적이다 — 전역 플래그로 같은 단언을 했더니
-    /// `into_inner()` 로 되돌린 변이가 **살아남았다**(다른 테스트가 먼저 플래그를
-    /// 올린다). 그래서 판정기를 인자 받는 형태로 뺐다.
+    /// Condvar 재획득에서 발생한 poison도 보고하는지 독립 플래그로 확인한다.
     #[test]
     fn resolve_wait_reports_the_poison_it_recovers() {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -282,8 +238,7 @@ mod tests {
         );
     }
 
-    /// 이 테스트가 보는 것은 **그 순서가 실제로 만들어진다**는 것뿐이다 — 그 순서에서
-    /// 보고가 나는지는 아래 `resolve_wait` 테스트가 국소 플래그로 결정적으로 본다.
+    /// 대기 중 다른 스레드가 poison을 만드는 실행을 검사한다. 보고 플래그는 별도 시험에서 확인한다.
     #[test]
     fn a_poison_can_arrive_while_the_waiter_is_parked() {
         let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
@@ -294,8 +249,7 @@ mod tests {
                 progress: for_waiter,
                 target: 1,
             };
-            // 카운터를 올리지 않으므로 타임아웃으로 끝난다 — 이 테스트가 보는 것은
-            // 반환값이 아니라 깨어나며 만난 poison 이 남긴 흔적이다.
+            // 카운터를 올리지 않으므로 반환값은 시간 초과다.
             ack.wait(Duration::from_millis(600))
         });
 
@@ -315,12 +269,7 @@ mod tests {
         assert!(timed_out, "카운터를 안 올렸으므로 타임아웃이 정상이다");
     }
 
-    /// poison 이 걸린 뒤에도 write 완료가 보고되고 확인되는가.
-    ///
-    /// 겨냥하는 곳은 두 자리다. writer 스레드는 카운터 증가를 조용히 건너뛰었고,
-    /// [`WriteAck::wait`] 는 곧바로 `false` 를 돌려줬다. poison 은 sticky 라 둘 다
-    /// 영구다 — PTY 쓰기 자체는 계속 되므로 겉으로는 멀쩡하고, `wait` 를 부르는
-    /// 경로만 매번 타임아웃까지 기다렸다가 "완료 못 함" 으로 떨어진다.
+    /// poison 뒤에도 writer가 완료 횟수를 올리고 WriteAck가 그 완료를 확인하는지 검사한다.
     #[test]
     fn a_poisoned_write_counter_still_acks_completed_writes() {
         let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
@@ -343,8 +292,7 @@ mod tests {
         tx.send(b"hello".to_vec())
             .expect("writer 스레드가 살아 있어야 한다");
 
-        // 그리고 그 완료를 `wait` 가 실제로 확인해 준다. 타임아웃을 넉넉히 주므로
-        // `false` 는 "느렸다" 가 아니라 "poison 경로로 떨어졌다" 는 뜻이다.
+        // writer의 완료를 기다린다. 실패만으로 러너 지연과 복구 오류를 구분할 수는 없다.
         let ack = WriteAck {
             progress: Arc::clone(&progress),
             target: 1,

@@ -26,11 +26,8 @@ pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
-    // Use proc_pidinfo syscall instead of lsof subprocess.
-    // lsof fork+exec takes 10-54ms per call; proc_pidinfo is microseconds.
-    //
-    // Struct sizes verified with C sizeof():
-    //   vinfo_stat=136, vnode_info=152, vnode_info_path=1176, proc_vnodepathinfo=2352
+    // Query libproc directly rather than spawning lsof. C layout sizes:
+    // vinfo_stat=136, vnode_info=152, vnode_info_path=1176, proc_vnodepathinfo=2352.
     use std::mem::MaybeUninit;
 
     const PROC_PIDVNODEPATHINFO: libc::c_int = 9;
@@ -59,14 +56,11 @@ fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
         rdir: VnodeInfoPath,
     }
 
-    // Compile-time size check
     const _: () = assert!(std::mem::size_of::<ProcVnodePathInfo>() == 2352);
 
     let mut info = MaybeUninit::<ProcVnodePathInfo>::zeroed();
-    // SAFETY: proc_pidinfo는 darwin libproc 시스템콜로 thread-safe (Apple 문서).
-    // info는 MaybeUninit::zeroed로 alloc, ptr+size를 정확히 sizeof(ProcVnodePathInfo)=2352
-    // 만큼 넘긴다 (위 const assert로 컴파일 타임 검증). PTY worker thread에서 호출되어도
-    // 동시 호출은 다른 pid 대상이므로 race 없음.
+    // SAFETY: zeroed storage is valid for these integer/array fields. The pointer and size
+    // describe this call's local ProcVnodePathInfo, whose layout is checked above.
     let ret = unsafe {
         libc::proc_pidinfo(
             pid as libc::c_int,
@@ -79,8 +73,7 @@ fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
     if ret <= 0 {
         return None;
     }
-    // SAFETY: ret > 0면 proc_pidinfo가 info를 전체 채웠다 (size만큼 write 보장).
-    // assume_init은 zeroed 초기화 후 syscall write로 모든 바이트가 valid 상태.
+    // SAFETY: all fields were valid after zero-initialization, including any bytes not written by libproc.
     let info = unsafe { info.assume_init() };
     let path_bytes = &info.cdir.path;
     let len = path_bytes

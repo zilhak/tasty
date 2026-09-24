@@ -302,14 +302,14 @@ mod tests {
             "지원 배율 집합이 바뀌었다. 같이 고칠 자리가 둘이다:\n\
              · `crates/tasty-type-appearance/src/theme.rs` 의 `SUPPORTED_ZOOMS` 사본\n\
              · docs/design/systems/theme.md#토큰에-없는-값과-배율 의 굵기 축 서술 — 새 배율에서 `border_width`(1) 가 \
-             `(1 * z).round() != 1` 이 되면 그 축에도 대가가 생긴다"
+             `(1 * z).round() != 1`이면 테두리가 1픽셀과 달라지는 경우를 설명해야 한다"
         );
 
         for unknown in ["huge", "tiny", ""] {
             assert_eq!(
                 AppearanceSettings::ui_scale_factor_for(unknown),
                 1.0,
-                "목록 밖 `{unknown}` 이 medium 이 아닌 배율을 냈다 — 집합이 안 닫혔다"
+                "알 수 없는 배율 `{unknown}`은 medium 배율을 사용해야 한다"
             );
         }
     }

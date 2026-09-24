@@ -7,17 +7,13 @@ use termwiz::color::ColorAttribute;
 
 use crate::scrollback::ScrollbackLine;
 
-/// Magic + version stamped at the head of every disk scrollback file. Bumped
-/// whenever the on-disk layout changes; old files are simply truncated and
-/// re-created (no backwards compatibility — Tasty is pre-1.0).
+/// Disk scrollback magic. Change FORMAT_VERSION when changing the serialized layout.
 pub const FILE_MAGIC: &[u8; 4] = b"TSSB";
 pub const FORMAT_VERSION: u32 = 3;
 const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
 
-/// Serialize a batch of scrollback lines into a self-contained byte blob.
-/// Layout: `FILE_MAGIC | FORMAT_VERSION:u32 | { len:u32 | line_bytes }*`.
-/// Pairs with [`deserialize_lines`]. Used by the host crate's persistence
-/// layer (`~/.tasty/scrollback/*.bin`).
+/// Serialize lines as FILE_MAGIC | FORMAT_VERSION:u32 | { len:u32 | line_bytes }*.
+/// The host stores this blob under its data directory.
 pub fn serialize_lines(lines: &[ScrollbackLine]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(HEADER_LEN as usize + lines.len() * 64);
     buf.extend_from_slice(FILE_MAGIC);
@@ -31,8 +27,7 @@ pub fn serialize_lines(lines: &[ScrollbackLine]) -> Vec<u8> {
     buf
 }
 
-/// Parse a byte blob produced by [`serialize_lines`]. Returns `None` if the
-/// header doesn't match or the version is newer than this build supports.
+/// Read a serialized blob. Reject mismatched magic or version; keep complete records before a truncated tail.
 pub fn deserialize_lines(data: &[u8]) -> Option<Vec<ScrollbackLine>> {
     if data.len() < HEADER_LEN as usize {
         return None;
@@ -73,14 +68,8 @@ pub struct DiskScrollback {
 
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
-        // 격리축은 **프로세스**다. `surface_id` 공간은 인스턴스마다 독립이고 매 실행
-        // 1 부터 재발급되므로(`IdGenerator::next_surface`), 이름에 프로세스 성분이 없으면
-        // 같은 프로필 두 벌이 같은 번호의 파일을 서로 truncate 한다. pid 를 이름에 실어
-        // 그것을 막는다 — 이 하나가 debug↔release 축도 함께 덮는다(둘은 서로 다른
-        // 프로세스라 pid 가 다르다). 같은 형태의 처방은 `prompt_file::path_for` 를 따른다.
-        //
-        // 하위 디렉터리는 격리가 아니라 **묶음**이다(debug 빌드 산출물을 한자리에 모아
-        // 식별을 돕는다). 격리를 지는 것은 파일명의 pid 다.
+        // Surface IDs repeat across instances, so include the process ID to avoid sharing a temp file.
+        // The debug subdirectory groups files; the PID distinguishes running processes.
         let subdir = if cfg!(debug_assertions) {
             "tasty-scrollback-debug"
         } else {
@@ -93,7 +82,6 @@ impl DiskScrollback {
             std::process::id(),
             surface_id
         ));
-        // Truncate any existing file and write the header.
         let mut f = File::create(&file_path)?;
         f.write_all(FILE_MAGIC)?;
         f.write_all(&FORMAT_VERSION.to_le_bytes())?;
@@ -210,18 +198,15 @@ fn serialize_line(line: &ScrollbackLine) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.push(if line.wrapped { 1 } else { 0 });
 
-    // Concatenated cell text.
     let text_bytes = line.text.as_bytes();
     buf.extend_from_slice(&(text_bytes.len() as u32).to_le_bytes());
     buf.extend_from_slice(text_bytes);
 
-    // Per-cell grapheme byte lengths.
     buf.extend_from_slice(&(line.cell_lens.len() as u32).to_le_bytes());
     for &len in &line.cell_lens {
         buf.extend_from_slice(&len.to_le_bytes());
     }
 
-    // RLE attribute runs.
     buf.extend_from_slice(&(line.attr_runs.len() as u32).to_le_bytes());
     for (run_len, attrs) in &line.attr_runs {
         buf.extend_from_slice(&run_len.to_le_bytes());
@@ -259,7 +244,6 @@ fn deserialize_line(data: &[u8]) -> ScrollbackLine {
     let wrapped = data[0] != 0;
     pos += 1;
 
-    // Concatenated cell text.
     if pos + 4 > data.len() {
         return ScrollbackLine::new(Vec::new(), wrapped);
     }
@@ -272,7 +256,6 @@ fn deserialize_line(data: &[u8]) -> ScrollbackLine {
     let text = String::from_utf8_lossy(&data[pos..pos + text_len]).to_string();
     pos += text_len;
 
-    // Per-cell grapheme byte lengths.
     if pos + 4 > data.len() {
         return ScrollbackLine::from_raw_parts(text, Vec::new(), Vec::new(), wrapped);
     }
@@ -288,7 +271,6 @@ fn deserialize_line(data: &[u8]) -> ScrollbackLine {
         pos += 2;
     }
 
-    // RLE attribute runs.
     let mut attr_runs = Vec::new();
     if pos + 4 <= data.len() {
         let run_count =
@@ -423,9 +405,7 @@ mod tests {
 
     #[test]
     fn preserves_multibyte_unicode_cells() {
-        // CJK (3-byte UTF-8), an emoji (4-byte), and an attributed wide char —
-        // exercises exact per-cell byte boundaries + attrs across the compact
-        // text+lens+RLE form (regression guard against grapheme byte desync).
+        // Check multibyte cell boundaries and attribute runs together.
         let mut bold = CellAttributes::default();
         bold.set_intensity(Intensity::Bold);
         let mut italic = CellAttributes::default();
@@ -447,7 +427,6 @@ mod tests {
         assert!(out.wrapped);
         assert_eq!(cells.len(), 5);
 
-        // Exact grapheme content + byte length preserved per cell.
         assert_eq!(cells[0].0, "가");
         assert_eq!(cells[0].0.len(), 3);
         assert_eq!(cells[1].0, "나");
@@ -457,7 +436,6 @@ mod tests {
         assert_eq!(cells[4].0, "漢");
         assert_eq!(cells[4].0.len(), 3);
 
-        // Attributes preserved (incl. RLE runs straddling multibyte cells).
         assert_eq!(cells[0].1.intensity(), Intensity::Bold);
         assert_eq!(cells[1].1.intensity(), Intensity::Normal);
         assert!(!cells[1].1.italic());

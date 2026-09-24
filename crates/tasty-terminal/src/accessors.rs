@@ -117,18 +117,10 @@ impl Terminal {
         self.busy_with_foreground(shell_pid, info.as_ref())
     }
 
-    /// Same busy decision as [`is_busy`](Self::is_busy), but the (expensive on
-    /// Windows) foreground lookup is supplied by the caller. The batch poll in
-    /// `refresh_busy_surfaces` resolves every surface's foreground from a single
-    /// system snapshot and then calls this per terminal, turning a per-surface
-    /// snapshot into one snapshot per tick. `shell_pid` must be this terminal's
-    /// own child PID and `foreground` the result of resolving it.
-    ///
-    /// The decision carries state (`busy_latch`), in the order docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나 fixes:
-    /// the shell holding the foreground and the output going quiet release first
-    /// and clear the latch; input echo is consulted last and only when the latch
-    /// does not name the current foreground. Asking twice in a row returns the
-    /// same answer — the latch is only set when the answer is already `true`.
+    /// is_busy와 같은 판정에 호출자가 조회한 foreground를 사용한다.
+    /// shell_pid는 이 터미널의 자식 PID여야 하며 foreground는 그 PID의 조회 결과여야 한다.
+    /// 셸 복귀나 출력 중단은 busy를 해제하고, 입력 에코는 새 busy 진입만 막는다.
+    /// 이미 busy인 프로세스는 입력만으로 idle로 바뀌지 않는다.
     pub fn busy_with_foreground(
         &self,
         shell_pid: u32,
@@ -142,12 +134,8 @@ impl Terminal {
             self.clear_busy_latch();
             return false;
         }
-        // Non-blocking: `refresh_busy_surfaces` polls every terminal at 1Hz, and a
-        // blocking lock here would wait on each busy parser thread mid-ingest,
-        // spiking the input thread's tail latency (docs/features/terminal/index.md#vte-에뮬레이션). A contended lock
-        // means the parser is actively ingesting output → that is "busy". That
-        // `true` is a guess, not an observation, so it neither sets nor clears
-        // the latch (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나).
+        // 렌더 스레드를 기다리게 하지 않도록 락이 사용 중이면 busy로 추정한다.
+        // 직접 관측한 결과가 아니므로 기존 latch는 바꾸지 않는다.
         let st = match self.state.try_lock() {
             Ok(st) => st,
             Err(std::sync::TryLockError::WouldBlock) => return true,
@@ -180,11 +168,8 @@ impl Terminal {
         self.busy_latch.store(BUSY_LATCH_NONE, Ordering::Relaxed);
     }
 
-    /// PTY 가 마지막으로 non-empty 출력을 낸 시각. `IdleTimeout` 훅의 idle
-    /// 경과시간 계산에 쓰인다. 논블로킹(docs/features/terminal/index.md#vte-에뮬레이션) — 락이 막혀 있으면 파서가
-    /// 한창 ingest 중이라는 뜻이므로 "지금 막 활동 중"으로 간주해
-    /// `Instant::now()` 를 반환한다(`busy_with_foreground` 의 WouldBlock=busy
-    /// 처리와 동형).
+    /// 마지막으로 처리한 비어 있지 않은 출력 시각. 락이 사용 중이면 최근 활동으로
+    /// 간주해 현재 시각을 반환한다. IdleTimeout 계산에 사용한다.
     pub fn last_output_at(&self) -> std::time::Instant {
         match self.state.try_lock() {
             Ok(st) => st.last_output_at,
@@ -214,8 +199,7 @@ impl Terminal {
         {
             match self.state.try_lock() {
                 Ok(st) => st.should_suppress_cursor_during_output(),
-                // Parser holds the lock while ingesting output, so this is exactly
-                // the burst window where drawing an intermediate cursor is noisy.
+                // 락 경합 중에는 커서의 중간 위치를 그리지 않는다.
                 Err(std::sync::TryLockError::WouldBlock) => true,
                 Err(std::sync::TryLockError::Poisoned(p)) => tasty_utils::poison::recover_poisoned(
                     p,
@@ -244,9 +228,7 @@ impl Terminal {
         self.lock_state().set_cached_cwd(cwd);
     }
 
-    /// Current window title (last value emitted via OSC 0/2), if any. The host
-    /// projects the focused surface's title onto its tab name — mirrors the
-    /// `get_cwd` lock pattern (short lock to clone the field).
+    /// Last OSC 0/2 window title. The host uses the focused surface's title as its tab name.
     pub fn current_title(&self) -> Option<String> {
         self.lock_state().current_title.clone()
     }
@@ -261,8 +243,7 @@ impl Terminal {
         }
     }
 
-    /// Check if the child process has exited. Returns false if exited. A detached
-    /// mirror (no child) is always considered alive.
+    /// Returns false after observing child exit. Without an owned child, returns true.
     pub fn check_process_alive(&mut self) -> bool {
         match self.pty.as_mut().and_then(|pty| pty.child.as_mut()) {
             Some(child) => !matches!(child.try_wait(), Ok(Some(_status))),
@@ -271,15 +252,9 @@ impl Terminal {
         }
     }
 
-    /// Hand off ownership of the waitable child process so an external owner (the
-    /// headless `pty_registry` exit-watcher, docs/features/headless-pty/index.md#내부-동작-headless-valid) can call `child.wait()` for a
-    /// real exit code. After this the terminal's own exit-detection
-    /// ([`check_process_alive`](Self::check_process_alive)) and Drop-time kill/reap
-    /// no longer apply to that child — the new owner is responsible for kill/reap.
-    ///
-    /// Returns `None` if already taken or if this is a detached mirror with no PTY.
-    /// Surface terminals never call this, so their child stays `Some` and their
-    /// lifecycle (Drop-kill, zombie reaping) is unchanged.
+    /// Transfer the waitable child to an external owner, such as the headless exit watcher.
+    /// The new owner must kill and reap it; this terminal stops checking or cleaning it up.
+    /// Returns None when no child is owned. Surface terminals retain their child.
     pub fn take_child(&mut self) -> Option<Box<dyn portable_pty::Child + Send + Sync>> {
         // The new owner reaps the exit; the parser thread's post-EOF wakes, which
         // exist to drive this handle's own exit check, would only spin.
@@ -292,12 +267,8 @@ impl Terminal {
         self.lock_state().take_events()
     }
 
-    /// Like [`take_events`](Self::take_events) but never blocks: if the parser
-    /// thread currently holds the state lock (mid-chunk ingest), returns `None`
-    /// and leaves the events buffered for a later poll. The host's per-wake event
-    /// drain iterates *every* terminal, so a blocking take would re-serialize the
-    /// input thread against all busy parser threads — defeating docs/features/terminal/index.md#vte-에뮬레이션. Events
-    /// are never lost: the parser wakes the loop again after each ingest.
+    /// Take buffered events without waiting for the state lock. On contention, return None
+    /// and leave them for a later poll. Parsing wakes the loop after each ingest.
     pub fn try_take_events(&mut self) -> Option<Vec<TerminalEvent>> {
         match self.state.try_lock() {
             Ok(mut st) => Some(st.take_events()),

@@ -18,7 +18,6 @@ impl TerminalState {
         let old_cols = self.cols;
         let old_rows = self.rows;
 
-        // Save/restore line tails on the primary surface when cols change
         if cols != old_cols && !self.use_alternate {
             self.save_or_restore_line_tails(old_cols, cols, rows);
         }
@@ -28,14 +27,11 @@ impl TerminalState {
             self.handle_rows_shrink(rows, old_rows);
         }
 
-        // Save cursor position before resize for grow restoration
         let old_cursor = self.primary_surface.cursor_position();
 
         self.cols = cols;
         self.rows = rows;
-        // Tab stops are column-indexed; rebuild the default grid when the width
-        // changes (custom HTS/TBC stops are reset on resize, matching xterm's
-        // default-on-resize behaviour).
+        // Column changes reset custom tab stops to the default grid.
         if cols != old_cols {
             self.tab_stops = crate::default_tab_stops(cols);
         }
@@ -50,12 +46,10 @@ impl TerminalState {
             rows_restored = self.handle_rows_grow(rows, old_rows);
         }
 
-        // Restore saved tails onto the surface after resize expanded cols
         if cols > old_cols && !self.use_alternate {
             self.restore_tails_to_surface(old_cols, cols);
         }
 
-        // Always restore cursor position after all resize operations.
         if !self.use_alternate {
             use termwiz::surface::Position;
             let cursor_y = (old_cursor.1 + rows_restored).min(rows.saturating_sub(1));
@@ -64,20 +58,14 @@ impl TerminalState {
                 x: Position::Absolute(cursor_x),
                 y: Position::Absolute(cursor_y),
             });
-            // The grow/tail restore paths emit `AllAttributes` per restored cell
-            // directly on the surface, leaving its pen at the last cell's attrs —
-            // a restoration artifact that bypasses `mirror_pen`. Re-apply the
-            // logical pen so the surface pen and `current_pen` stay aligned and a
-            // subsequent plain `Text` (or Overline/UnderlineColor/VerticalAlign
-            // SGR) is not painted with the leftover attributes.
+            // Restoring cells bypasses mirror_pen and leaves the surface pen at the last cell.
+            // Restore the logical pen before processing subsequent text or SGR changes.
             self.primary_surface
                 .add_change(Change::AllAttributes(self.current_pen.clone()));
         }
 
-        // Reset scroll region on resize
         self.scroll_region = None;
-        // Notify attached mirrors of the authoritative new grid so they resize in
-        // lockstep (no-op when there are no subscribers).
+        // Notify resize subscribers. Their bounded queues can drop an update.
         self.fan_out_resize(cols, rows);
         true
     }
@@ -88,7 +76,6 @@ impl TerminalState {
         let (_, cursor_y) = self.primary_surface.cursor_position();
         let rows_to_remove = old_rows - new_rows;
 
-        // Count blank lines below the cursor
         let lines = self.primary_surface.screen_lines();
         let mut blank_below = 0;
         for i in ((cursor_y + 1)..old_rows).rev() {
@@ -99,10 +86,8 @@ impl TerminalState {
             }
         }
 
-        // How many top lines need to be pushed to scrollback
         let lines_to_scroll = rows_to_remove.saturating_sub(blank_below);
         if lines_to_scroll > 0 {
-            // Capture top lines to scrollback
             let captured = self.capture_top_lines(lines_to_scroll);
             let count = captured.len();
             for line in captured {
@@ -110,12 +95,10 @@ impl TerminalState {
             }
             // These lines are owed back to a symmetric grow.
             self.restorable_scrollback_count += count;
-            // Shift saved_line_tails
             for _ in 0..count.min(self.saved_line_tails.len()) {
                 self.saved_line_tails.remove(0);
             }
 
-            // Scroll the surface up to remove the captured lines
             self.primary_surface.add_change(Change::ScrollRegionUp {
                 first_row: 0,
                 region_size: old_rows,
@@ -140,7 +123,6 @@ impl TerminalState {
             return 0;
         }
 
-        // Pop from scrollback (most recent first = back of deque)
         let mut to_restore: Vec<crate::scrollback::ScrollbackLine> = Vec::new();
         for _ in 0..restore_count {
             if let Some(line) = self.scrollback.pop_back() {
@@ -151,15 +133,12 @@ impl TerminalState {
         self.restorable_scrollback_count -= actual_restored;
         to_restore.reverse(); // oldest first
 
-        // Surface is already resized to new_rows.
-        // Scroll current content down to make room at top.
         self.primary_surface.add_change(Change::ScrollRegionDown {
             first_row: 0,
             region_size: new_rows,
             scroll_count: actual_restored,
         });
 
-        // Write restored lines at the top.
         for (row, line) in to_restore.iter().enumerate() {
             self.primary_surface.add_change(Change::CursorPosition {
                 x: Position::Absolute(0),
@@ -173,7 +152,6 @@ impl TerminalState {
             }
         }
 
-        // Shift saved_line_tails to match shifted content positions
         if !self.saved_line_tails.is_empty() {
             let mut shifted = vec![Vec::new(); actual_restored];
             shifted.append(&mut self.saved_line_tails);
@@ -223,13 +201,11 @@ impl TerminalState {
         let lines = self.primary_surface.screen_lines();
         let line_count = lines.len();
 
-        // Ensure saved_line_tails has enough entries
         if self.saved_line_tails.len() < line_count {
             self.saved_line_tails.resize(line_count, Vec::new());
         }
 
         if new_cols < old_cols {
-            // Cols shrinking: capture cells at indices [new_cols..] before termwiz truncates
             for (i, line) in lines.iter().enumerate() {
                 let mut tail_cells: Vec<(String, CellAttributes)> = line
                     .visible_cells()
@@ -244,7 +220,6 @@ impl TerminalState {
             }
         }
 
-        // Trim saved_line_tails to match new row count
         self.saved_line_tails.truncate(new_rows);
     }
 
@@ -261,7 +236,6 @@ impl TerminalState {
             let cells_to_restore = restore_count.min(tail.len());
             let restored: Vec<(String, CellAttributes)> = tail.drain(..cells_to_restore).collect();
 
-            // Position cursor at (old_cols, row) and write each cell
             self.primary_surface.add_change(Change::CursorPosition {
                 x: Position::Absolute(old_cols),
                 y: Position::Absolute(row),

@@ -183,12 +183,7 @@ fn line_text(cells: &[(String, termwiz::cell::CellAttributes)]) -> String {
     cells.iter().map(|(s, _)| s.as_str()).collect()
 }
 
-/// Convert a byte offset in the line's text to its cell column index.
-///
-/// Cell columns account for wide characters (CJK, fullwidth, …) occupying 2
-/// columns, matching the renderer's column layout (`cell_index()` /
-/// `unicode_width`). Counting chars instead would under-count every preceding
-/// wide character and shift the highlight left.
+/// Convert a byte offset to a display column, accounting for wide characters.
 fn cell_col_at_byte(s: &str, byte_offset: usize) -> usize {
     termwiz::cell::unicode_column_width(&s[..byte_offset], None)
 }
@@ -273,32 +268,25 @@ mod tests {
 
     #[test]
     fn find_literal_multibyte() {
-        // Columns are cell columns: each wide (CJK) char occupies 2 columns, so
-        // "나다" inside "가나다라" starts at column 2 (after the 2-wide "가") and
-        // ends at column 6. Char-index counting would wrongly yield (1, 3) and
-        // shift the highlight left.
+        // 나다 spans columns 2..6 after the two-column 가.
         let results = find_literal("가나다라", "나다", false, false);
         assert_eq!(results, vec![(2, 6)]);
     }
 
     #[test]
     fn find_literal_wide_then_ascii() {
-        // Mixed wide + ASCII: "한글code" → "code" starts after two 2-wide chars
-        // (columns 0..4), so it spans columns 4..8.
         let results = find_literal("한글code", "code", false, false);
         assert_eq!(results, vec![(4, 8)]);
     }
 
     #[test]
     fn find_whole_word_filters_partial() {
-        // "cat" appears inside "category" — should not match with whole_word.
         let results = find_literal("cat category catastrophe cat!", "cat", false, true);
         assert_eq!(results, vec![(0, 3), (25, 28)]);
     }
 
     #[test]
     fn find_whole_word_with_underscore() {
-        // Underscores are word chars; `foo` inside `foo_bar` should not match.
         let results = find_literal("foo foo_bar foo", "foo", false, true);
         assert_eq!(results, vec![(0, 3), (12, 15)]);
     }
