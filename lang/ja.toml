@@ -1974,19 +1974,19 @@ help = "ディレクトリパス（explorer 種別のとき）"
 help = "URL（html 種別のとき）"
 
 [cli.help._root.new.workspace.arg.ssh_profile]
-help = "このワークスペースを保存済みの SSH プロファイル（リモートマシン）に対応づける。ワークスペースが有効化されると、ホストが自動的に attach する（SSH トンネル + ワークスペースのミラー）"
+help = "保存済み SSH プロファイルのリモートホストにこのワークスペースを対応づけます。有効にすると SSH トンネルで自動接続し、リモートワークスペースをミラーリングします。"
 
 [cli.help._root.new.workspace.arg.ssh]
-help = "保存済みプロファイルを使わず、その場限りのインライン SSH 先に対応づける。例: --ssh user@host。`--ssh-profile` とは併用不可"
+help = "保存済みプロファイルを使わずに SSH 接続先を直接指定します (例: --ssh user@host)。`--ssh-profile` とは併用できません。"
 
 [cli.help._root.new.workspace.arg.remote_workspace]
-help = "attach 先となるリモート tasty 側のワークスペース ID"
+help = "接続先となるリモート tasty のワークスペース ID"
 
 [cli.help._root.new.workspace.arg.category]
 help = "ワークスペースを入れるカテゴリ（名前または ID）。既定は normal"
 
 [cli.help._root.new.workspace.arg.surface]
-help = "このサーフェス ID を持つウィンドウにワークスペースを作成し、--cwd を省略するとそのサーフェスの作業ディレクトリを引き継ぐ。省略するとユーザーが見ているウィンドウに作成する"
+help = "このサーフェスが属するウィンドウにワークスペースを作成します。--cwd を省略すると、そのサーフェスの作業ディレクトリを使います。このオプションを省略すると、ユーザーが見ているウィンドウに作成します。"
 
 [cli.help._root.new.tab]
 about = "指定したペインに新しいタブを作成する"
@@ -2032,14 +2032,14 @@ help = "対象サーフェス ID（必須）"
 
 [cli.help._root.close.workspace]
 about = "ID を指定してワークスペースをまるごと閉じる — 中のペイン・タブ・サーフェスもすべて"
-long = "ID を指定してワークスペースをまるごと閉じる — 中のペイン・タブ・サーフェスもすべて。\n\n取り消せない: ワークスペース内のターミナルはすべて終了し、そのワークスペースはユーザーの再オープン履歴に入らず、スクロールバックも残らない。再び開けるのはユーザーが手で閉じたものだけである。\n\n対象は常に `--id` で明示する（`tasty list workspaces` を参照） — 画面に何が見えているかから推測することはない。ユーザーが見ていないワークスペースを閉じても、いま画面にあるワークスペースはそのまま残る。自分のサーフェスを含むワークスペースは拒否し、リモート attach セッションをミラーしているワークスペースと、最後に残った 1 つのワークスペースも拒否する — ウィンドウを閉じるのは別の判断であり、`tasty close window` を参照。"
+long = "ID で指定したワークスペースと、その中のすべてのペイン、タブ、サーフェスを閉じます。\n\nこの操作は取り消せません。ワークスペース内のターミナルをすべて終了し、再オープン履歴やスクロールバックには残しません。再オープンできるのは、ユーザーが画面で直接閉じた項目だけです。\n\n対象の ID は `--id` で指定してください (`tasty list workspaces` を参照)。現在の画面から対象を選ぶことはありません。別のワークスペースを閉じても、現在表示中のワークスペースは変わりません。呼び出したサーフェスが属するワークスペース、リモート attach セッションをミラーリングするワークスペース、最後の 1 つのワークスペースは閉じられません。ウィンドウを閉じるには `tasty close window` を使ってください。"
 
 [cli.help._root.close.workspace.arg.id]
 help = "対象ワークスペース ID（必須）"
 
 [cli.help._root.close.window]
 about = "ID を指定してウィンドウを閉じる"
-long = "ID を指定してウィンドウを閉じる。\n\n対象は常に `--id` で明示する（`tasty list windows` を参照）。最後に残った主ウィンドウは拒否する — 終了はユーザーの行為である。"
+long = "ID で指定したウィンドウを閉じます。\n\n対象の ID は `--id` で指定してください (`tasty list windows` を参照)。最後のメインウィンドウは閉じられません。アプリの終了はユーザーが直接行う必要があります。"
 
 [cli.help._root.close.window.arg.id]
 help = "対象ウィンドウ ID（必須）"
@@ -2089,7 +2089,7 @@ long = "インスタンス起動後のIPC負荷と診断統計を表示します
 about = "通知一覧"
 
 [cli.help._root.list.timers]
-about = "登録済みタイマーと、いまこのインスタンスを起こしているものを表示する"
+about = "登録済みタイマーと、現在のインスタンスの待機を解除する要因を表示"
 
 [cli.help._root.list.hooks]
 about = "フック一覧"
@@ -2107,7 +2107,7 @@ about = "解決済みのグローバルテーマのスナップショットを�
 about = "あるサーフェス種別で最近開いたファイルの一覧"
 
 [cli.help._root.list.recent.arg.kind]
-help = "問い合わせるサーフェス種別（例: `markdown`）。ホストは種別名を知らない — 呼び出し側が渡す"
+help = "照会するサーフェスの種類 (例: `markdown`)。ホストは種類名を選ばないため、呼び出し側で指定してください。"
 
 [cli.help._root.list.queue]
 about = "キューの状態を表示する（保留メッセージ数 + プレビュー）"
@@ -2128,13 +2128,13 @@ help = "フックを設定するサーフェス ID (既定: フォーカス中)"
 help = "イベント種別: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
 
 [cli.help._root.set.hook.arg.command]
-help = "イベント発火時に実行するインラインのシェルコマンド (後方互換 — 匿名フックハンドラとして包む)。--handler とは併用できない"
+help = "イベント発生時に実行するシェルコマンドです。従来の形式との互換性を保つため、匿名のフックハンドラーとして処理します。--handler とは併用できません。"
 
 [cli.help._root.set.hook.arg.handler]
-help = "束ねる共有フックハンドラの id (例: host/my-handler)。そのハンドラがフックのトリガ元を受け付ける必要がある。--command とは併用できない"
+help = "接続する共有フックハンドラーの ID (例: host/my-handler)。このフックの発生元に対応するハンドラーを指定してください。--command とは併用できません。"
 
 [cli.help._root.set.hook.arg.once]
-help = "一度発火したらフックを削除する"
+help = "イベントが一度発生したらフックを削除します。"
 
 [cli.help._root.set.mark]
 about = "サーフェスに読み取りマークを設定する"
@@ -2158,10 +2158,10 @@ help = "新しいサブタイトル"
 help = "新しい説明"
 
 [cli.help._root.set.workspace.arg.ssh_profile]
-help = "このワークスペースを保存済みの SSH プロファイル (リモートマシン) に対応づける"
+help = "このワークスペースを保存済み SSH プロファイルのリモートホストに対応づけます。"
 
 [cli.help._root.set.workspace.arg.ssh]
-help = "使い捨てのインライン SSH 対象に対応づける (例: --ssh user@host)"
+help = "SSH 接続先を直接指定します (例: --ssh user@host)。"
 
 [cli.help._root.set.workspace.arg.remote_workspace]
 help = "アタッチ先となるリモート tasty 側のワークスペース id"
@@ -2191,16 +2191,16 @@ help = "対象サーフェスの id"
 help = "読み込む URL"
 
 [cli.help._root.set.global-hook]
-about = "グローバルフックを設定する — サーフェスに紐づかず、スケジュールで発火する"
+about = "サーフェスに関係なく、スケジュールに従って実行するグローバルフックを設定"
 
 [cli.help._root.set.global-hook.arg.condition]
 help = "条件: interval:SECS, once:SECS"
 
 [cli.help._root.set.global-hook.arg.command]
-help = "条件が発火したときに実行するシェルコマンド"
+help = "条件を満たしたときに実行するシェルコマンド"
 
 [cli.help._root.set.global-hook.arg.label]
-help = "人が読めるラベル (任意)"
+help = "表示名 (任意)"
 
 [cli.help._root.move]
 about = "リソースの移動・並べ替え（タブ、ワークスペース）"
@@ -2219,7 +2219,7 @@ help = "移動先の位置（0 起点）"
 
 [cli.help._root.move.workspace]
 about = "ワークスペースを別の位置へ移動する"
-long = "ワークスペースを別の位置へ移動する\n\n`--id` を使うほうがよい: ワークスペース ID はそれを持つウィンドウまで指すので、どのウィンドウにフォーカスがあっても命令の意味が変わらない。`--from` は 1 つのウィンドウ内の位置なので、フォーカスのあるウィンドウに着地する。"
+long = "ワークスペースの順序を変えます。\n\n`--id` を使うと、フォーカスに関係なく指定したワークスペースが属するウィンドウ内で移動します。`--from` はフォーカス中の 1 つのウィンドウ内の位置を指定するため、現在のフォーカスによって対象が変わります。"
 
 [cli.help._root.move.workspace.arg.id]
 help = "移動するワークスペース ID（推奨、--from とは併用不可）"
@@ -2268,7 +2268,7 @@ about = "別ホストのサーフェス・ワークスペースにリモート�
 
 [cli.help._root.remote.attach]
 about = "SSH経由でリモートのサーフェス/ワークスペースに一度だけattach"
-long = "SSH経由でリモートのサーフェス/ワークスペースに一度だけattachします。`ssh -L` トンネルを開いてattachセッションを実行します。接続先は `--ssh` または `--profile` で指定します。"
+long = "SSH 経由でリモートのサーフェスやワークスペースに一時的に接続します。\n\n`ssh -L` トンネルを通して attach セッションを実行します。接続先は `--ssh` または `--profile` で指定してください。"
 
 [cli.help._root.remote.attach.arg.surface]
 help = "対象サーフェスID（明示指定。フォーカスから推測しません）。`--workspace` と併用不可"
@@ -2277,7 +2277,7 @@ help = "対象サーフェスID（明示指定。フォーカスから推測し�
 help = "対象ワークスペースID。全ターミナルをツリーとしてミラーリングします。位置引数 `surface` と併用不可。ターミナル以外のサーフェスはプレースホルダーで表示"
 
 [cli.help._root.remote.attach.arg.dump_after]
-help = "ミラーダンプモード：attach後N ms出力を収集し、ミラー画面をstdoutへ出力して終了（GUIなしの自動検証）。ワークスペースモードではサーフェスごとに区切って出力"
+help = "接続後 N ms の間出力を集め、ミラー画面を stdout に出力して終了します。GUI なしの自動検証に使います。ワークスペースモードではサーフェスごとに区切って出力します。"
 
 [cli.help._root.remote.attach.arg.send]
 help = "attach直後に一度送る入力（エスケープを解釈：\\\\n \\\\r \\\\t \\\\xNN）。非対話型検証用"
@@ -2295,10 +2295,10 @@ help = "占有されたサーフェス/ワークスペースのattachロック�
 help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"
 
 [cli.help._root.remote.attach.arg.profile]
-help = "保存済みtasty-attachプロファイル名でattach。`~/.tasty/remote-profiles.toml` からユーザー/ポート/認証鍵/追加オプションを取得します。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+help = "保存済みの tasty-attach プロファイルで接続します。`~/.tasty/remote-profiles.toml` からユーザー、ポート、認証鍵、追加オプションを読み取ります。`--ssh` とは併用できません。`--remote-tasty` と `--remote-port-mode` の代わりにプロファイルの値を使います。"
 
 [cli.help._root.remote.attach.arg.remote_tasty]
-help = "リモートhostのtastyバイナリのパス。ポート探索のサブコマンド段階（`ssh host <path> port`）で使用。既定値は \"tasty\"（リモートPATH上にあると想定）"
+help = "リモートホストの tasty 実行ファイルのパスです。ポート照会コマンド (`ssh host <path> port`) に使います。既定値は \"tasty\" で、リモートの PATH 上にある必要があります。"
 
 [cli.help._root.remote.attach.arg.remote_port_mode]
 help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
@@ -2320,10 +2320,10 @@ long = "SSH 経由でリモートの tasty インスタンスに接続できる�
 help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"
 
 [cli.help._root.remote.check.arg.profile]
-help = "保存済みtasty-attachプロファイル名で確認。`~/.tasty/remote-profiles.toml` からユーザー/ポート/認証鍵/追加オプションを取得します。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+help = "保存済みの tasty-attach プロファイルで確認します。`~/.tasty/remote-profiles.toml` からユーザー、ポート、認証鍵、追加オプションを読み取ります。`--ssh` とは併用できません。`--remote-tasty` と `--remote-port-mode` の代わりにプロファイルの値を使います。"
 
 [cli.help._root.remote.check.arg.remote_tasty]
-help = "リモートhostのtastyバイナリのパス。ポート探索のサブコマンド段階（`ssh host <path> port`）で使用。既定値は \"tasty\"（リモートPATH上にあると想定）"
+help = "リモートホストの tasty 実行ファイルのパスです。ポート照会コマンド (`ssh host <path> port`) に使います。既定値は \"tasty\" で、リモートの PATH 上にある必要があります。"
 
 [cli.help._root.remote.check.arg.remote_port_mode]
 help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
@@ -2385,7 +2385,7 @@ help = "送るテキスト"
 help = "対象サーフェス ID（既定: フォーカス中）"
 
 [cli.help._root.send.text.arg.wait_idle]
-help = "人が入力中なら送らない — 判断と送信を一手で行う。代わりに \"sent\": false と \"reason\": \"typing\" を報告する。`tasty is-typing` で先に確かめる方法ではこうはならない — 2 つのコマンドの間に入力が始まりうる"
+help = "入力中かどうかの確認と送信を同じ処理内で行います。ユーザーが入力中なら送信せず、\"sent\": false と \"reason\": \"typing\" を返します。`tasty is-typing` を別に呼ぶと、2 つのコマンドの間にユーザーが入力を始める可能性があります。"
 
 [cli.help._root.send.key]
 about = "ターミナルサーフェスにキーを送る（enter, tab, escape, up, down など）"
@@ -2421,13 +2421,13 @@ help = "サーフェス ID（既定: フォーカス中のターミナル）"
 help = "出力から ANSI エスケープシーケンスを取り除く"
 
 [cli.help._root.read.since-mark.arg.cursor]
-help = "マークの代わりにこの位置から読む: 前回の読み取りの next_cursor。サーバーは何も保持しないため、複数の読み手が互いを動かさない。同じ応答の --stream が必要"
+help = "マークの代わりに前回の応答の next_cursor から読みます。サーバーは呼び出し側ごとの読み取り位置を保存しないため、他の呼び出し側の位置には影響しません。同じ応答の --stream も指定してください。"
 
 [cli.help._root.read.since-mark.arg.stream]
-help = "前回の応答のストリーム識別子。別ストリームの位置(サーフェスが再利用されたかターミナルが再起動された)は適用されず拒否される"
+help = "前回の応答のストリームトークンです。サーフェスの再利用やターミナルの再起動でストリームが変わった場合、その位置からの読み取り要求は拒否されます。"
 
 [cli.help._root.read.since-mark.arg.max_bytes]
-help = "この読み取りが返す生の出力バイト数の上限(サーバーが 1..=保持サイズで切り詰める — 0 は無制限ではなく 1 バイトとして扱い、無制限で読むにはこのフラグを省く)。残りは next_cursor から続けて読む"
+help = "今回読み取る生の出力の最大バイト数です。サーバーは 1 から保持サイズまでに制限し、0 は上限 1 バイトとして扱います。個別の上限を設けない場合はこのオプションを省略してください。残りは next_cursor から読み取ります。"
 
 [cli.help._root.read.parse-since-mark]
 about = "最後のマーク以降の出力を組み込みパーサーで解析する（path/url/prompt_boundary/exit_code）"
@@ -2439,7 +2439,7 @@ help = "サーフェス ID（既定: フォーカス中のターミナル）"
 help = "カンマ区切りのパーサー id。既定 = 組み込みすべて"
 
 [cli.help._root.read.queue]
-about = "サーフェスのメッセージキューから読む（最も古いメッセージを消費する）"
+about = "サーフェスのメッセージキューから最も古いメッセージを読み取り、取り除きます。"
 
 [cli.help._root.read.queue.arg.surface]
 help = "サーフェス ID（既定: フォーカス中）"
@@ -2448,7 +2448,7 @@ help = "サーフェス ID（既定: フォーカス中）"
 help = "送信元サーフェス ID で絞り込む"
 
 [cli.help._root.read.queue.arg.peek]
-help = "消費せずに覗く"
+help = "メッセージを取り除かずに読み取ります。"
 
 [cli.help._root.read.queue.arg.clear]
 help = "読まずにメッセージをすべて消す"
@@ -2463,7 +2463,7 @@ help = "サーフェス ID（既定: フォーカス中）"
 help = "画面の最後の空でない行を末尾として、最大 N 行を読み取ります。末尾の空行は飛ばし、不足する行を主バッファーのスクロールバックで補います。画面内容とスクロールバックの合計が N 行未満なら、ある行をすべて返します。代替画面 (フルスクリーン TUI) でも主バッファーのスクロールバックを目印なしで前に付けるため、TUI の画面内容の前にシェル履歴が含まれる場合があります。"
 
 [cli.help._root.read.screen.arg.show_dim]
-help = "淡色セル（ゴースト候補、例: Claude Code の補完オーバーレイ）も含める。既定では除外する — 未送信の UI 候補を実際のバッファ内容と取り違えないためである"
+help = "淡色で表示されたセルも含めます (例: Claude Code の補完候補)。未送信の候補を実際の出力と取り違えないよう、既定では除外します。"
 
 [cli.help._root.read.commands]
 about = "サーフェスに記録されたシェルコマンドの一覧（OSC 133）"
@@ -2499,7 +2499,7 @@ about = "通知を作成する"
 help = "通知本文"
 
 [cli.help._root.notify.arg.title]
-help = "任意の通知タイトル。省略時はhostが翻訳済みの既定値（`notification.default_title`）を設定します。CLI独自の英語既定値はありません"
+help = "通知タイトル (任意)。省略するとホストが現在の言語の既定タイトル (`notification.default_title`) を使います。CLI で英語のタイトルを別に指定することはありません。"
 
 [cli.help._root.unset]
 about = "リソースを削除する（フック、グローバルフック）"
@@ -2615,7 +2615,7 @@ help = "実行するフックイベント名（必須）"
 
 [cli.help._root.surface.attention]
 about = "サーフェスの注意表示を照会または解除"
-long = "サーフェスの注意表示を照会または解除します。`completion` の逆の操作です。他の解除経路（実際の描画フォーカスと通知の閲覧）はGUIローカルイベントのため、headlessインスタンスではこれが唯一の解除方法です。"
+long = "サーフェスの注意表示を照会または解除します。`completion` で付けた表示を消すコマンドです。画面へのフォーカスや通知の閲覧による解除は GUI でのみ動作するため、ヘッドレスではこのコマンドで解除してください。"
 
 [cli.help._root.surface.attention.get]
 about = "サーフェスに記録された注意の種類を出力：\"completion\"、\"needs_input\"、未設定ならnull"
@@ -2626,7 +2626,7 @@ help = "サーフェスID（必須）"
 
 [cli.help._root.surface.attention.clear]
 about = "サーフェスの注意表示を解除"
-long = "サーフェスの注意表示を解除します。対象は必ず --surface で指定し、フォーカスから推測しません。表示がない場合も成功し \"cleared\": false を返します。リモートattachセッションが強く占有中のサーフェスと、リモートワークスペースのミラーサーフェスは拒否します。いずれも注意表示はサーフェスを所有するインスタンスに属します。"
+long = "サーフェスの注意表示を解除します。対象は --surface で指定し、フォーカスからは選びません。注意表示がなければ成功応答に \"cleared\": false を返します。リモート attach セッションが占有するサーフェスと、リモートワークスペースのミラーサーフェスは拒否されます。この場合はサーフェスを所有するインスタンス側で解除してください。"
 
 [cli.help._root.surface.attention.clear.arg.surface]
 help = "サーフェスID（必須）"
@@ -2695,7 +2695,7 @@ long = "子ターミナルにメッセージを送信します（改行を維持
 help = "送信するメッセージ。改行を維持し自動で確定"
 
 [cli.help._root.terminal.tell.arg.surface]
-help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
+help = "対象サーフェス ID (既定値: 呼び出し元の TASTY_SURFACE_ID)"
 
 [cli.help._root.terminal.children]
 about = "指定した親サーフェスの子を一覧表示"
@@ -2735,7 +2735,7 @@ help = "親サーフェスID（既定値：既知の親が一つならその親�
 help = "再生成する子インデックス"
 
 [cli.help._root.terminal.respawn.arg.cwd]
-help = "作業ディレクトリを上書き（新しいcwdでPTYを置換）"
+help = "新しい作業ディレクトリを指定して PTY を置き換えます。"
 
 [cli.help._root.terminal.respawn.arg.command]
 help = "再生成後に再実行するコマンド"
@@ -2768,7 +2768,7 @@ help = "子サーフェスID"
 help = "新しい状態：idle、needs_input、active"
 
 [cli.help._root.terminal.adopt]
-about = "新しいタブを作らず既存のサーフェスを子として登録（弱い占有）。既に他の親の子である場合（先に解除が必要）、または強い占有（リモートattach）状態の場合は失敗"
+about = "新しいタブを作らずに既存のサーフェスを子として登録し、ソフト占有として表示します。既に子として登録されている場合は、先に登録を解除してください。リモート attach が占有中のサーフェスは登録できません。"
 
 [cli.help._root.terminal.adopt.arg.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -2795,11 +2795,11 @@ help = "親サーフェスID（既定値：既知の親が一つならその親�
 help = "解除する子インデックス"
 
 [cli.help._root.pty]
-about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list） — サーフェス・タブを持たないバックグラウンド PTY。`terminal` とは別の名前空間"
+about = "サーフェスやタブのないバックグラウンド PTY を管理します (spawn/write/read/wait/kill/list)。`terminal` とは別のコマンドです。"
 
 [cli.help._root.pty.spawn]
-about = "サーフェス/タブのないheadless PTYを作成。PTY IDを返す"
-long = "サーフェス/タブのないheadless PTYを作成してPTY IDを返します。コマンドがあればPTYのシェルで即時実行します。なければシェルだけを起動し、`pty write` で操作します。"
+about = "サーフェスやタブのないヘッドレス PTY を作成し、PTY ID を返します。"
+long = "サーフェスやタブのないヘッドレス PTY を作成し、PTY ID を返します。コマンドを指定すると PTY のシェルですぐに実行します。省略するとシェルだけを起動するため、`pty write` で入力を送ってください。"
 
 [cli.help._root.pty.spawn.arg.cwd]
 help = "PTYの作業ディレクトリ"
@@ -2808,7 +2808,7 @@ help = "PTYの作業ディレクトリ"
 help = "作成時に実行するコマンドトークン（例：`pty spawn -- echo hi`）"
 
 [cli.help._root.pty.write]
-about = "実行中のheadless PTYに入力を書き込む（そのまま送信。確定には改行を含める）"
+about = "実行中のヘッドレス PTY に入力をそのまま送ります。コマンドを実行するには改行を含めてください。"
 
 [cli.help._root.pty.write.arg.id]
 help = "対象PTY ID"
@@ -2817,19 +2817,19 @@ help = "対象PTY ID"
 help = "PTYのstdinに送るテキスト"
 
 [cli.help._root.pty.read]
-about = "headless PTYの現在の画面テキストを読み取る"
+about = "ヘッドレス PTY の現在の画面テキストを表示"
 
 [cli.help._root.pty.read.arg.id]
 help = "対象PTY ID"
 
 [cli.help._root.pty.read.arg.lines]
-help = "末尾N行（既定値：表示中の全画面）。末尾の空行を除き不足分をスクロールバックで補い、実際に出力された末尾N行を返します。上限はグリッドではなく内容です。代替画面（全画面TUI）では主バッファーのスクロールバックから補い、境界表示はないため、Nが大きいと以前のシェル出力がTUI画面の上に付くことがあります。"
+help = "末尾の N 行を読みます。省略すると現在表示中の全画面を読みます。画面末尾の空行を除き、不足分をスクロールバックで補うため、画面グリッドの最後の N 行とは異なります。画面内容とスクロールバックが不足すれば N 行未満を返します。代替画面 (全画面 TUI) でも主バッファーのスクロールバックを目印なしで前に付けるため、TUI 画面の前に以前のシェル出力が含まれる場合があります。"
 
 [cli.help._root.pty.read.arg.show_dim]
-help = "淡色セル（ゴースト候補、例: Claude Code の補完オーバーレイ）も含める。既定では除外する — 未送信の UI 候補を実際のバッファ内容と取り違えないためである"
+help = "淡色で表示されたセルも含めます (例: Claude Code の補完候補)。未送信の候補を実際の出力と取り違えないよう、既定では除外します。"
 
 [cli.help._root.pty.wait]
-about = "headless PTYの終了状態を照会（即時に戻る、非ブロッキング）"
+about = "ヘッドレス PTY の終了を待たずに、現在の状態をすぐに返します。"
 
 [cli.help._root.pty.wait.arg.id]
 help = "対象PTY ID"
@@ -2841,16 +2841,16 @@ about = "headless PTYのプロセスを終了しスロットを回収"
 help = "対象PTY ID"
 
 [cli.help._root.pty.list]
-about = "生存する全headless PTYを一覧表示（フォーカス非依存、常に全件）"
+about = "現在のフォーカスに関係なく、実行中のすべてのヘッドレス PTY を一覧表示します。"
 
 [cli.help._root.pty.attach-surface]
-about = "headless PTYをペイン配下の実際のサーフェス/タブへ昇格。同じプロセスとスクロールバックを移して状態を維持し、PTY IDをheadless一覧から削除"
+about = "ヘッドレス PTY をペイン内の新しいサーフェスとタブに移します。同じプロセスとスクロールバックを保持し、PTY ID はヘッドレス一覧から除きます。"
 
 [cli.help._root.pty.attach-surface.arg.pty_id]
-help = "昇格するPTY ID"
+help = "サーフェスへ移す PTY ID"
 
 [cli.help._root.pty.attach-surface.arg.pane_id]
-help = "昇格したターミナルを配置するペイン（新しいバックグラウンドタブ）"
+help = "ターミナルを新しいバックグラウンドタブとして追加するペイン"
 
 [cli.help._root.is-typing]
 about = "サーフェスが現在タイピング中かを確認する（直近 5 秒以内のキー入力・貼り付けの有無）"
@@ -2860,7 +2860,7 @@ help = "サーフェス ID（既定: フォーカス中）"
 
 [cli.help._root.wake]
 about = "遅延サーフェスの PTY を起動する（すでに実行中なら何もしない）"
-long = "遅延サーフェスのPTYを起動（実行中なら何もしません）。送信コマンドは対象を自動で起動するため、入力なしでPTYだけを開始する場合に使います。"
+long = "起動を保留していたサーフェスの PTY を起動します。既に実行中なら何もしません。入力を送るコマンドは PTY を自動起動するため、入力なしで PTY だけを起動したい場合に使ってください。"
 
 [cli.help._root.wake.arg.surface]
 help = "サーフェス ID（既定: フォーカス中）"
@@ -2869,7 +2869,7 @@ help = "サーフェス ID（既定: フォーカス中）"
 about = "デバッグ・診断コマンド（IME シミュレーション、生のキー入力など） — debug ビルド専用"
 
 [cli.help._root.debug.attach]
-about = "ローカルループバックでサーフェス/ワークスペースにattachしてミラーリング（debugビルド専用）。ローカルself-attachはユーザーのミラー操作を再現するため、エージェント/ユーザー操作分離方針に従いrelease表面から隔離されます。リモートattachにはreleaseの `tasty remote attach` を使用"
+about = "ローカルループバックでサーフェスやワークスペースに接続し、ミラーリングします (debug ビルド専用)。ユーザーのミラー操作を再現する機能のため、release ビルドのコマンドからは除外します。リモート接続は release でも `tasty remote attach` を使用できます。"
 
 [cli.help._root.debug.attach.arg.surface]
 help = "対象サーフェスID（明示指定。フォーカスから推測しません）。`--workspace` と併用不可"
@@ -2979,13 +2979,13 @@ help = "macOS仮想キーコード（例：7=KeyX、35=KeyP、49=Space）"
 about = "イベントバスの照会と注入（debugビルド専用）"
 
 [cli.help._root.debug.event-bus.list-subscribers]
-about = "指定イベントキーを購読するpluginを一覧表示"
+about = "指定したイベントキーを購読するプラグインの一覧"
 
 [cli.help._root.debug.event-bus.list-subscribers.arg.key]
 help = "イベントキー（例：\"surface.closed\"）"
 
 [cli.help._root.debug.event-bus.publish]
-about = "host側から任意のイベントを発行"
+about = "ホストから任意のイベントを発行"
 
 [cli.help._root.debug.event-bus.publish.arg.key]
 help = "イベントキー"
@@ -2997,7 +2997,7 @@ help = "JSONペイロード（既定値：`{}`）"
 help = "イベント範囲：\"system\"（既定値）または \"surface\""
 
 [cli.help._root.debug.event-bus.trace]
-about = "指定trace_idの最近のイベントエンベロープを出力"
+about = "指定した trace_id を持つ最近のイベントメッセージを表示"
 
 [cli.help._root.debug.event-bus.trace.arg.trace_id]
 help = "trace_id（例：\"h2a\"）"
@@ -3009,7 +3009,7 @@ about = "拡張フックの照会と手動呼び出し（debugビルド専用）
 about = "拡張フックを手動実行（指定拡張にextension.invoke_hookを送り応答を返す）"
 
 [cli.help._root.debug.extension.invoke-hook.arg.extension_id]
-help = "拡張plugin ID（インストール済みかつ実行中であること）"
+help = "拡張プラグインの ID。インストール済みで実行中である必要があります。"
 
 [cli.help._root.debug.extension.invoke-hook.arg.kind]
 help = "フック種別：\"event\" または \"ipc\""
@@ -3039,22 +3039,22 @@ about = "キーでツールメニュー項目を実行"
 help = "ツール項目のキーです（`<plugin_id>/<tool_id>`、例：`com.tasty.clipboard-viewer/open-viewer`）"
 
 [cli.help._root.debug.popup]
-about = "pluginポップアップの照会と開閉（debugビルド専用）"
+about = "プラグインポップアップの照会と開閉 (debug ビルド専用)"
 
 [cli.help._root.debug.popup.list]
 about = "全ポップアップ宣言と現在開いているインスタンスを一覧表示"
 
 [cli.help._root.debug.popup.open]
-about = "pluginポップアップインスタンスを開く"
+about = "プラグインのポップアップインスタンスを開く"
 
 [cli.help._root.debug.popup.open.arg.plugin_id]
-help = "plugin ID（例：\"com.example.popper\"）"
+help = "プラグイン ID (例: \"com.example.popper\")"
 
 [cli.help._root.debug.popup.open.arg.popup_id]
-help = "plugin内のポップアップID"
+help = "プラグイン内のポップアップ ID"
 
 [cli.help._root.debug.popup.open.arg.context]
-help = "popup.openペイロードとして送る任意のコンテキストJSON"
+help = "popup.open に渡すコンテキスト JSON (任意)"
 
 [cli.help._root.debug.popup.close]
 about = "IDでポップアップインスタンスを閉じる"
@@ -3063,28 +3063,28 @@ about = "IDでポップアップインスタンスを閉じる"
 help = "`popup open` が返したポップアップインスタンスID"
 
 [cli.help._root.debug.host-popup]
-about = "host組み込みポップアップの照会と直接開閉（debugビルド専用）。ユーザーのクリックなしでtools_menu / port_scanner / command_palette / remote_toolなどを強制的に開いて表示を検証"
+about = "ホストの組み込みポップアップを照会し、直接開閉します (debug ビルド専用)。ユーザーのクリックなしで tools_menu / port_scanner / command_palette / remote_tool などを開き、表示を検証するために使います。"
 
 [cli.help._root.debug.host-popup.list]
-about = "全host組み込みポップアップを一覧表示（IDとタイトルキー）"
+about = "ホスト組み込みポップアップの ID とタイトルキーの一覧"
 
 [cli.help._root.debug.host-popup.open]
-about = "IDでhostポップアップをフォーカス中のウィンドウ中央に強制的に開く"
+about = "ID で指定したホストポップアップをフォーカス中のウィンドウの中央に開きます。"
 
 [cli.help._root.debug.host-popup.open.arg.popup_id]
-help = "hostポップアップID（例：\"tools_menu\"、\"port_scanner\"、\"command_palette\"）"
+help = "ホストポップアップ ID (例: \"tools_menu\"、\"port_scanner\"、\"command_palette\")"
 
 [cli.help._root.debug.host-popup.open.arg.workspace_scope]
 help = "ウィンドウではなくアクティブワークスペースの範囲で開き、範囲による表示条件を検証（例：\"dag_list\"）"
 
 [cli.help._root.debug.host-popup.open.arg.surface_scope]
-help = "ウィンドウではなくフォーカス中の surface スコープで開く — surface scrim と surface 境界のインセットを実際に動かせる"
+help = "フォーカス中のサーフェス内にポップアップを開き、背景を覆う表示とサーフェス境界の余白を検証します。"
 
 [cli.help._root.debug.host-popup.close]
-about = "IDでhostポップアップを閉じる"
+about = "ID で指定したホストポップアップを閉じる"
 
 [cli.help._root.debug.host-popup.close.arg.popup_id]
-help = "hostポップアップID"
+help = "ホストポップアップ ID"
 
 [cli.help._root.debug.fullscreen]
 about = "全画面ステージの照会と直接開始/終了（debugビルド専用）。ポップアップのタイトルバーをクリックせずウィンドウにステージを表示し、全画面状態をダンプして表示を検証"
@@ -3129,7 +3129,7 @@ help = "バナーID（例：\"mouse-capture\"）"
 help = "対象範囲トークン：view | workspace:<i> | pane:<id> | tab:<pane>:<i> | surface:<id>"
 
 [cli.help._root.debug.banner.close]
-about = "IDでバナーを閉じる（表示中なら待機列の先頭を昇格）"
+about = "ID でバナーを閉じます。表示中のバナーを閉じると、待機列の次のバナーを表示します。"
 
 [cli.help._root.debug.banner.close.arg.banner_id]
 help = "バナーID"
