@@ -36,7 +36,7 @@ fn main() {
     }
     let adrs = collect(&root).unwrap_or_else(|e| fail(&e));
     if adrs.is_empty() {
-        fail("ADR 을 하나도 못 찾았다 — 루트가 틀렸거나 수집이 죽었다");
+        fail("ADR을 찾지 못했다. 저장소 루트와 수집 범위를 확인한다.");
     }
     let path = root.join(INDEX);
     let current = std::fs::read_to_string(&path)

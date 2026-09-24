@@ -677,10 +677,7 @@ fn scan_links(line: &str) -> Vec<String> {
 fn cited_markdown_links_resolve_from_their_own_document() {
     let root = &tasty_doc_guards::repo_root();
     let docs = docs_of(root);
-    assert!(
-        !docs.is_empty(),
-        "문서를 하나도 못 읽었다 — 모수가 0 이면 언제나 초록이다"
-    );
+    assert!(!docs.is_empty(), "문서를 읽지 못해 인용을 검사할 수 없다");
 
     let mut checked = 0usize;
     let mut broken = Vec::new();
@@ -912,7 +909,7 @@ fn every_gathered_but_unjudged_file_declares_its_format() {
     }
     assert!(
         unjudged > 0,
-        "판정에서 빠지는 파일이 하나도 없다 — 이 단정이 헛돌고 있다는 뜻이다"
+        "제외되는 파일을 찾지 못해 제외 범위를 대조할 수 없다"
     );
     assert!(
         undeclared.is_empty(),

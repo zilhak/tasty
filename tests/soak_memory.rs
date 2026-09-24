@@ -1,24 +1,19 @@
-//! 메모리 누수 soak 하네스 — 장시간(시간~하루) 반복 워크로드를 돌리며 4계층
-//! 지표(트리 RSS / 핸들·fd / 자식 프로세스 / GPU 리소스 카운트)를 JSONL 로 기록한다.
-//!
-//! CI 대상이 아니다 — `#[ignore]` 라 명시 실행으로만 돈다:
+//! 장시간 반복 작업 중 프로세스 트리 RSS, 핸들·fd, 자식 프로세스, GPU 자원 수를 JSONL로 기록한다.
+//! 기본 실행에서는 제외하며 명시적으로 실행한다:
 //!
 //! ```bash
 //! SOAK_SCENARIO=s9 SOAK_DURATION_SECS=86400 \
 //!   cargo test --release --test soak_memory -- --ignored --nocapture
 //! ```
 //!
-//! 판정은 하네스가 하지 않는다 — `scripts/soak/analyze.py` 가 JSONL 을 읽어
-//! warmup 제외 OLS 기울기 + 기준선 복귀를 판정한다. 절차 전체:
-//! `docs/dev-guide/memory-leak-soak.md`.
+//! 이 하네스는 누수 여부를 판정하지 않는다. scripts/soak/analyze.py가 워밍업 이후 기울기와 기준선 복귀를 분석한다.
+//! 절차는 docs/dev-guide/memory-leak-soak.md를 따른다.
 //!
-//! env:
-//! - `SOAK_SCENARIO`       s1|s2|s4|s6|s7|s8|s9 (기본 s9=mixed)
-//! - `SOAK_DURATION_SECS`  soak 시간 (기본 600)
-//! - `SOAK_CYCLES`         사이클 수 상한 (기본 무제한 — 시간으로만 종료)
-//! - `SOAK_CHECKPOINT_EVERY` 체크포인트 간격(사이클, 기본 10)
-//! - `SOAK_OUT_DIR`        JSONL 출력 디렉토리 (기본 OS 임시 디렉토리 아래 `tasty-soak/` —
-//!   `std::env::temp_dir()`; 실제 파일 경로는 시작 시 stdout 에 찍힌다)
+//! - SOAK_SCENARIO: s1|s2|s4|s6|s7|s8|s9, 기본 s9 혼합 작업.
+//! - SOAK_DURATION_SECS: 실행 시간, 기본 600초.
+//! - SOAK_CYCLES: 반복 횟수 상한, 기본은 시간으로만 제한.
+//! - SOAK_CHECKPOINT_EVERY: 기록 간격, 기본 10회.
+//! - SOAK_OUT_DIR: 출력 디렉터리, 기본은 OS 임시 디렉터리 아래 tasty-soak. 실제 경로는 시작 때 출력한다.
 
 mod common;
 
@@ -44,18 +39,10 @@ fn now_epoch() -> f64 {
         .unwrap_or(0.0)
 }
 
-// ── 외부 측정 (sysinfo + 플랫폼별 핸들/fd) ──────────────────────────────
-
-/// tasty 루트 + 모든 자손 프로세스의 RSS 합산과 이름별 자손 카운트.
-/// 셸/conhost/plugin 프로세스 누수(L4)와 트리 전체 메모리(L2)를 함께 본다.
 fn sample_process_tree(root_pid: u32) -> Value {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
-    // tasks 를 끈 refresh kind 가 필수 — 기본 refresh_processes 는 Linux 에서
-    // task(스레드)까지 Process 로 나열하는데, 스레드는 소속 프로세스의 RSS 를
-    // 그대로 보고하므로 트리 합산이 스레드 수만큼 뻥튀기된다 (실측: root
-    // 373MB × 스레드 57개 ≈ 21GB, false-FLAG 유발). Windows/macOS 는 task
-    // 나열이 없어 동작 불변.
+    // Linux 스레드 항목은 프로세스 RSS를 다시 보고하므로 tasks를 제외해 중복 합산하지 않는다.
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
@@ -63,11 +50,9 @@ fn sample_process_tree(root_pid: u32) -> Value {
     );
     let procs = sys.processes();
 
-    // parent → children 인덱스를 만들어 루트에서 BFS.
     let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for (pid, p) in procs {
-        // 방어선: refresh kind 가 tasks 를 안 켜도, 혹시 나열된 스레드 항목은
-        // 제외한다 (thread_kind 는 Linux task 에서만 Some).
+        // refresh 설정과 별도로 스레드 항목을 제외한다.
         if p.thread_kind().is_some() {
             continue;
         }
@@ -101,8 +86,7 @@ fn sample_process_tree(root_pid: u32) -> Value {
             } else {
                 let name = p.name().to_string_lossy().into_owned();
                 *by_name.entry(name.clone()).or_insert(0) += 1;
-                // 이름별 RSS 합산 — 트리 성장이 어느 자식(plugin/셸)에서
-                // 나는지 attribution 없이도 1차 특정할 수 있게 한다.
+                // 어느 자식 종류에서 메모리가 늘었는지 비교하도록 이름별로도 합산한다.
                 *rss_by_name.entry(name).or_insert(0) += p.memory();
             }
         }
@@ -116,8 +100,7 @@ fn sample_process_tree(root_pid: u32) -> Value {
     })
 }
 
-/// 루트 프로세스의 OS 핸들(Windows) / fd(Linux/macOS) 수. 체크포인트에서만
-/// 호출되므로 셸-아웃 비용은 무시 가능.
+/// 체크포인트에서 루트 프로세스의 핸들 또는 fd 수를 수집한다.
 fn sample_handle_count(pid: u32) -> Option<u64> {
     #[cfg(target_os = "windows")]
     {
@@ -147,16 +130,11 @@ fn sample_handle_count(pid: u32) -> Option<u64> {
     }
 }
 
-// ── 시나리오 ────────────────────────────────────────────────────────────
-
-/// S1: tab churn — 탭 생성 → 셸 준비 대기 → 닫기. ConPTY/셸 프로세스 수명(L4)과
-/// surface 단위 GPU/모델 정리 경로(L2·L3)를 두드린다.
 fn cycle_tab_churn(inst: &TastyInstance, pane_id: u64) {
     let r = inst.call("tab.create", json!({ "pane_id": pane_id }));
     let surface_id = r["surface_id"]
         .as_u64()
         .expect("tab.create returned surface_id");
-    // tab.create 응답에는 tab_id 가 없다 — tab.list 에서 surface_id 로 역조회.
     let tabs = inst.call("tab.list", json!({ "pane_id": pane_id }));
     let tab_id = tabs["tabs"]
         .as_array()
@@ -166,8 +144,7 @@ fn cycle_tab_churn(inst: &TastyInstance, pane_id: u64) {
         })
         .and_then(|t| t["id"].as_u64())
         .expect("created tab not found in tab.list");
-    // 셸이 실제로 프롬프트를 그릴 때까지 대기 — PTY 가 완전히 살아난 뒤 닫아야
-    // "생성 직후 파괴" 편법 경로가 아니라 정상 수명 경로를 검증한다.
+    // 생성 직후 닫지 않도록 화면에 출력이 나타날 때까지 기다린다. 프롬프트 종류까지 확인하지는 않는다.
     let start = Instant::now();
     loop {
         if !inst.screen_text_of(surface_id).trim().is_empty() {
@@ -183,8 +160,6 @@ fn cycle_tab_churn(inst: &TastyInstance, pane_id: u64) {
     std::thread::sleep(Duration::from_millis(100));
 }
 
-/// S2: split churn — surface split → 준비 대기 → 닫기. per-surface GPU 리소스와
-/// 레이아웃 트리 정리 경로(L2·L3)를 두드린다. sibling 그리드 재계산도 유발.
 fn cycle_split_churn(inst: &TastyInstance, surface0: u64) {
     let r = inst.call(
         "split",
@@ -208,21 +183,14 @@ fn cycle_split_churn(inst: &TastyInstance, surface0: u64) {
     std::thread::sleep(Duration::from_millis(100));
 }
 
-/// S6 이 번갈아 여는 view — 셋은 서로 다른 정리 경로를 탄다.
 #[derive(Clone, Copy, Debug)]
 enum ViewKind {
-    /// 호스트 view store — 렌더될 때 view 가 생기고 닫을 때 `drop_view` 로 지운다
-    /// (model-view-split.md 가 경고하는 정확히 그 누수 지점).
     Explorer,
-    /// plugin egui-mesh — 렌더되는 동안 `egui_mesh_targets` 에 target 이 서고, 닫은 뒤 다음
-    /// 프레임의 retain 이 지운다.
     Image,
-    /// plugin webview — plugin 프로세스 쪽 per-surface 상태와 host 의 shared buffer 매핑.
     Markdown,
 }
 
 impl ViewKind {
-    /// 사이클 번호로 고른다 — 재현성을 위해 난수 없이.
     fn nth(n: u64) -> Self {
         match n % 3 {
             0 => Self::Explorer,
@@ -232,7 +200,6 @@ impl ViewKind {
     }
 }
 
-/// 창마다의 값 하나를 합친다. 없는 칸(main 이 아닌 창의 `explorer_views` 등)은 0 이다.
 fn sum_over_windows(gpu: &Value, pick: impl Fn(&Value) -> u64) -> u64 {
     gpu["windows"]
         .as_array()
@@ -240,8 +207,7 @@ fn sum_over_windows(gpu: &Value, pick: impl Fn(&Value) -> u64) -> u64 {
         .unwrap_or(0)
 }
 
-/// 그 view 가 **지금 렌더되고 있다는** 관측값. explorer 는 view store 의 view 수, image 는
-/// egui-mesh target 수다. markdown(webview)은 호스트가 세는 값이 없어 `None` 이다.
+/// explorer view와 image mesh target의 창별 합이다. 해당 서피스의 렌더 완료를 직접 확인하는 값은 아니다. Markdown은 대응 카운터가 없어 None이다.
 fn rendered_count(inst: &TastyInstance, kind: ViewKind) -> Option<u64> {
     let gpu = inst.call("system.gpu_stats", json!({}));
     match kind {
@@ -255,18 +221,8 @@ fn rendered_count(inst: &TastyInstance, kind: ViewKind) -> Option<u64> {
     }
 }
 
-/// S6: plugin/host view churn — explorer · image · markdown 을 번갈아 **보이는 자리에** 열고
-/// 닫는다. 열 때는 `surface0` 을 surface 단위로 분할한다 — 분할한 surface 는 `surface0` 이 든
-/// 탭(사용자가 보고 있는 탭) 안에 서므로 곧바로 렌더된다.
-///
-/// 새 탭(`tab.create`)으로 열지 않는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고
-/// (ADR-0017), release 에는 탭을 고르는 API 가 없다(원칙 3). 그렇게 열면 view store 와 egui-mesh
-/// 경로를 아예 안 탄 채 초록이 난다.
-///
-/// 렌더됐는지는 열어 둔 채로 잰다 — 닫은 뒤의 체크포인트는 경로를 안 탔을 때도 기준선(0)이라
-/// 그 값으로는 못 가른다. explorer · image 는 `rendered_count` 가 기준선보다 커질 때까지
-/// 기다리고, 끝내 안 커지면 **실패한다**(경로를 안 탄 soak 는 통과가 아니라 미측정이다).
-/// markdown 은 호스트가 세는 값이 없어 고정 대기 후 닫는다.
+/// 새 탭은 자동 선택되지 않으므로 보이는 탭의 서피스를 분할해 연다.
+/// Explorer·Image는 자원 수 증가를 확인한 뒤 닫는다. Markdown은 대응 카운터가 없어 고정 시간만 기다린다.
 fn cycle_plugin_view_churn(inst: &TastyInstance, surface0: u64, kind: ViewKind) {
     let before = rendered_count(inst, kind);
     let mut params = json!({
@@ -303,8 +259,7 @@ fn cycle_plugin_view_churn(inst: &TastyInstance, surface0: u64, kind: ViewKind) 
                 }
                 assert!(
                     start.elapsed() < Duration::from_secs(30),
-                    "S6: {kind:?} surface {new_sid} was never rendered \
-                     (count stayed {now}, before {before}) — the scenario is not measuring its path"
+                    "S6: {kind:?} surface {new_sid} resource count did not increase (count {now}, before {before})"
                 );
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -315,30 +270,21 @@ fn cycle_plugin_view_churn(inst: &TastyInstance, surface0: u64, kind: ViewKind) 
     std::thread::sleep(Duration::from_millis(100));
 }
 
-/// 입력 유실 incident 카운터 — split close(resize) 직후 `surface.send` 의 첫
-/// 바이트가 유실되는 레이스가 실측됐다("seq"→"eq"). 하네스는 이를 은폐하지 않고
-/// 계수해 checkpoint JSONL 에 기록한 뒤 재시도한다 — 24h soak 이 레이스 빈도를
-/// 정량화하는 부수 신호가 된다.
+/// not found 출력이 나온 재시도 횟수다. 입력 유실의 단서로 기록하지만 이 문자열만으로 첫 바이트 유실을 확정하지는 않는다.
 static INPUT_INCIDENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// S4: heavy output — 대량 출력으로 스크롤백 링버퍼·VTE 파서·glyph atlas 를
-/// 두드린다. scrollback_lines 가 유한하므로 워밍업 후 RSS 는 평평해야 정상.
 fn cycle_heavy_output(inst: &TastyInstance, surface_id: u64) {
     for attempt in 0..3 {
         inst.set_mark(surface_id);
-        // 5000줄 — 반드시 scrollback 상한(격리 config 10000줄) 미만이어야 한다.
-        // 초과하면 mark 가 링버퍼에서 밀려나 read_since_mark 판정이 flaky 해진다.
+        // mark 이후 출력이 보존 범위를 넘지 않도록 출력량을 격리 설정의 스크롤백 상한보다 작게 둔다.
         inst.send_text(surface_id, "seq 1 5000\n");
         let start = Instant::now();
         loop {
             let out = inst.read_since_mark(surface_id);
-            // 명령 echo("seq 1 5000")에는 "4999" 가 없으므로 완료 판정으로 안전.
+            // 명령 자체의 에코에는 없는 출력값으로 진행을 확인한다.
             if out.contains("4999") {
                 return;
             }
-            // 입력 유실 레이스 감지 — 첫 바이트가 사라져 셸이 명령을 못 찾음.
-            // 셸별 메시지: bash/zsh "command not found", dash(Ubuntu /bin/sh)
-            // "eq: not found" — 공통 부분문자열 "not found" 로 매치한다.
             if out.contains("not found") {
                 INPUT_INCIDENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("S4: input-loss incident (attempt {attempt}) — first byte dropped");
@@ -352,11 +298,9 @@ fn cycle_heavy_output(inst: &TastyInstance, surface_id: u64) {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    panic!("S4: input corruption persisted after 3 attempts");
+    panic!("S4: command-not-found output persisted after 3 attempts");
 }
 
-/// S7: IPC churn — 상태 무변화 조회를 연타한다. `call` 은 매번 새 TCP 연결을
-/// 열므로 per-connection 상태와 telemetry 버킷 축적(L2 용의 지점)을 검증한다.
 fn cycle_ipc_churn(inst: &TastyInstance) {
     for _ in 0..25 {
         inst.call("surface.list", json!({}));
@@ -364,16 +308,12 @@ fn cycle_ipc_churn(inst: &TastyInstance) {
     }
 }
 
-/// S8: idle — 아무것도 안 함. 타이머/폴링 루프의 바닥 드리프트 측정.
 fn cycle_idle() {
     std::thread::sleep(Duration::from_secs(30));
 }
 
-// ── 체크포인트 ──────────────────────────────────────────────────────────
-
 fn checkpoint(inst: &TastyInstance, scenario: &str, cycle: u64) -> Value {
-    // quiesce — 닫힌 surface 의 지연 정리(다음 프레임 retain, 자식 프로세스 종료)가
-    // 카운트에 반영될 시간을 준다.
+    // 지연 정리가 반영될 시간을 둔다. 고정 대기이므로 정리 완료를 동기화하지는 않는다.
     std::thread::sleep(Duration::from_secs(2));
     let gpu = inst.call("system.gpu_stats", json!({}));
     let surfaces = inst
@@ -394,8 +334,6 @@ fn checkpoint(inst: &TastyInstance, scenario: &str, cycle: u64) -> Value {
     })
 }
 
-// ── 메인 루프 ───────────────────────────────────────────────────────────
-
 #[test]
 #[ignore = "장시간 soak — SOAK_* env 로 명시 실행 (docs/dev-guide/memory-leak-soak.md)"]
 fn soak() {
@@ -405,10 +343,7 @@ fn soak() {
     let checkpoint_every = env_u64("SOAK_CHECKPOINT_EVERY", 10).max(1);
     let out_dir = std::env::var_os("SOAK_OUT_DIR")
         .map(PathBuf::from)
-        // 이유: SOAK_OUT_DIR 미지정 시의 폴백 디렉토리다(ADR-0045 공유 임시 경로 격리). 격리는 디렉토리가
-        //       아니라 파일명이 진다 — 아래 out_path 가 `soak-{scenario}-{epoch}.jsonl` 로 매
-        //       실행 유일하고, create_dir_all 은 멱등이며, 이 테스트는 #[ignore] 라 동시 자동
-        //       실행되지 않는다(SOAK_* env 로 수동 단독 실행).
+        // 이유: 수동 실행의 공용 기본 출력 폴더다. 파일명은 시나리오와 초 단위 시각이므로 같은 시나리오를 동시에 실행하면 충돌할 수 있다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-soak"));
 
     std::fs::create_dir_all(&out_dir).expect("failed to create SOAK_OUT_DIR");
@@ -447,7 +382,6 @@ fn soak() {
             "s6" => cycle_plugin_view_churn(&inst, surface0, ViewKind::nth(cycle)),
             "s7" => cycle_ipc_churn(&inst),
             "s8" => cycle_idle(),
-            // s9 mixed — 결정적 가중 혼합 (재현성 위해 난수 없이 cycle 인덱스로).
             "s9" => match cycle % 8 {
                 0 | 1 => cycle_tab_churn(&inst, pane_id),
                 2 => cycle_split_churn(&inst, surface0),
@@ -472,8 +406,6 @@ fn soak() {
         }
     }
 
-    // 최종 체크포인트 — 기준 상태(탭 1개) 복귀 후 카운트. analyze.py 의
-    // 기준선 복귀 판정(L3·L4 정수 엄격)이 이 마지막 레코드를 쓴다.
     let cp = checkpoint(&inst, &scenario, cycle);
     writeln!(out, "{cp}").unwrap();
     out.flush().unwrap();

@@ -31,7 +31,7 @@ fn root_manifest() -> String {
 fn the_cli_crate_is_still_a_production_dependency_of_the_root_package() {
     let manifest = root_manifest();
     let all = declared_deps(&manifest);
-    println!("[ADR-0048 좌변] 루트 매니페스트 의존 {} 개", all.len());
+    println!("[ADR-0048 검사 범위] 루트 매니페스트 의존 {} 개", all.len());
     assert!(
         all.len() >= MIN_ROOT_DEPS,
         "루트 매니페스트 의존을 {}개만 읽었다(하한 {MIN_ROOT_DEPS}). 파서와 의존 목록을 확인한다.",
@@ -63,7 +63,7 @@ fn the_root_lib_target_still_cannot_hand_the_fixtures_to_tests() {
     );
     let test_only = test_only_files(&root, &sources);
     println!(
-        "[ADR-0048 좌변] src 스캔 {} 파일 · 선언상 출하 안 되는 파일 {} 개",
+        "[ADR-0048 검사 범위] src 스캔 {} 파일 · 선언상 test 전용 파일 {} 개",
         sources.len(),
         test_only.len()
     );

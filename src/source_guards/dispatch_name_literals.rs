@@ -303,7 +303,7 @@ fn no_delegated_router_escapes_the_roster() {
     assert_eq!(
         found,
         listed,
-        "`{DELEGATED_PARAM}: &str` 로 갈래를 치는데 명부와 어긋나는 자리가 있다.\n  \
+        "`{DELEGATED_PARAM}: &str` 로 분기하지만 명부와 어긋나는 자리가 있다.\n  \
          명부에 없음(새 라우터 — `DELEGATED_ROUTERS` 에 넣어라): {:?}\n  \
          명부에만 있음(사라졌거나 이름이 바뀌었다): {:?}",
         found.difference(&listed).collect::<Vec<_>>(),

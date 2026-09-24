@@ -10,7 +10,7 @@
 //! 무관하게 실행하며, 조건문 파이프의 pipefail 표기는 아래 별도 검사에서 확인한다.
 //! 자동 실행 경로는 docs/dev-guide/ci-gates.md에 있다.
 
-// 테스트의 값 무시를 출하 코드의 lint 목록에서 제외한다.
+// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 use std::path::{Path, PathBuf};
 

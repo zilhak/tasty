@@ -382,7 +382,7 @@ fn find_notification_title(lines: &[&str], idx: usize) -> Option<String> {
     None
 }
 
-/// 테스트 아이템 본문만 건너뛰어 테스트 모듈 뒤의 출하 코드도 검사한다.
+/// 테스트 아이템 본문만 건너뛰어 테스트 모듈 뒤의 제품 코드도 검사한다.
 #[derive(Default)]
 struct TestRegion {
     skipping: bool,

@@ -31,7 +31,7 @@ pub enum Form {
     Preamble,
     /// 위 어디에도 안 드는 네 자리. **고치지 않는다.**
     Bare,
-    /// `NNNN-<slug>.md` 인데 그 slug 의 파일이 없다(이미 죽은 인용 · 픽스처). **고치지 않는다.**
+    /// `NNNN-<slug>.md` 인데 그 slug 의 파일이 없다(대상이 사라진 인용 · 픽스처). **고치지 않는다.**
     UnknownFile,
 }
 

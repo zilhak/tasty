@@ -504,7 +504,7 @@ fn cited_anchors_resolve_to_a_heading() {
 
     let judged = intra + cross;
     println!(
-        "앵커 좌변: 문서 {} 개 · 판정 {judged} 건(문서내 {intra} · 크로스파일 {cross})",
+        "앵커 검사 범위: 문서 {} 개 · 판정 {judged} 건(문서내 {intra} · 크로스파일 {cross})",
         docs.len()
     );
     assert!(
@@ -685,8 +685,8 @@ fn the_walk_skips_dot_directories_and_takes_only_markdown() {
         measured: 3,
         measured_on: "2026-09-08",
         counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
-        why_this_gap: "이 합성 트리의 `.md` 수다. 갈래를 더 시험하려고 파일을 더하는 것은 \
-                       정상 변경이라 실측에 붙이면 그때마다 빨개진다.",
+        why_this_gap: "이 합성 트리의 `.md` 수다. 새 조건을 시험하려고 파일을 더하는 것은 \
+                       정상 변경이라 하한을 실제 개수에 맞추면 그 변경마다 실패한다.",
     };
     let found = scanned_docs_under(&root, &root, &floor).expect("합성 트리 순회가 하한에 걸렸다");
     let mut rels: Vec<String> = found.iter().map(|f| f.rel.clone()).collect();

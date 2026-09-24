@@ -10,7 +10,7 @@ use gui_common::shared;
 use serde_json::json;
 use std::time::{Duration, Instant};
 
-/// 입력 헬퍼의 포커스·키 간격 sleep도 포함한 전체 응답 시간 상한이다.
+/// 입력 헬퍼의 포커스·키 간격 sleep도 측정 시간에 포함한다.
 const MAX_UI_RESPONSE_MS: u128 = 1000;
 
 fn measure_ui_latency<F, C>(

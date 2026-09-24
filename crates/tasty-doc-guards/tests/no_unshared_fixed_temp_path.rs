@@ -210,7 +210,10 @@ fn distinct_discriminators_are_not_caught() {
         chains.iter().all(|c| c.duplicates.is_empty()),
         "다른 판별자를 겹친다고 했다 — {chains:?}"
     );
-    assert!(!chains.is_empty(), "사슬 자체를 못 찾았다 — 좌변이 비었다");
+    assert!(
+        !chains.is_empty(),
+        "메서드 호출 체인을 찾지 못해 경로 판정을 확인할 수 없다"
+    );
 }
 
 /// 실패 종류마다 올바른 조치와 경로를 안내하는지 검사한다.

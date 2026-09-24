@@ -2,7 +2,7 @@
 //! 기본값 상수를 직접 쓰면 사용자가 바꾼 설정을 반영하지 못한다.
 //! 실제 컨텍스트 값을 읽는 동작은 src/plugin_bridge/wire_scroll.rs의 one_notch_per_context가 검사한다.
 //! 여기서는 새 경로도 등록 규칙을 따르는지 파일별 소스 표지로 확인한다.
-// 테스트의 값 무시를 출하 코드의 lint 목록에서 제외한다.
+// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use tasty_doc_guards::cfg_predicate as cfg_span;

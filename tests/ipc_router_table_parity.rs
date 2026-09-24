@@ -77,7 +77,7 @@ fn match_arm_methods(src: &str) -> Vec<String> {
             .unwrap_or_else(|| panic!("{}행의 `match` 가 닫히지 않는다", source.line_of(open)));
         let arms = source
             .match_arms(open..close + 1)
-            .unwrap_or_else(|e| panic!("dispatch 팔을 못 읽었다 — {e}"));
+            .unwrap_or_else(|e| panic!("match 분기를 읽지 못했다: {e}"));
         for arm in arms {
             for alt in source.alternatives(&arm.pattern) {
                 if let Some(name) = source.plain_string(&alt)
@@ -159,15 +159,15 @@ fn every_router_arm_is_registered_in_method_table() {
     // 2026-09-23 측정: 줄 패턴311, method 비교46, match 판독321. 하한은 각각 측정값의 약80%다.
     assert!(
         arm_scanned >= 250,
-        "`\"…\" =>` 줄 팔을 {arm_scanned} 개밖에 못 찾았다(실측 311) — 줄 판독이 깨졌을 가능성이 크다"
+        "줄 형식의 메서드 후보를 {arm_scanned}개만 찾았다(당시 측정311). 판독 범위를 확인한다."
     );
     assert!(
         eq_scanned >= 36,
-        "`… .method == \"…\"` 비교를 {eq_scanned} 개밖에 못 찾았다(실측 46) — 비교 판독이 깨졌을 가능성이 크다"
+        "method 비교의 메서드 후보를 {eq_scanned}개만 찾았다(당시 측정46). 판독 범위를 확인한다."
     );
     assert!(
         judge_scanned >= 250,
-        "판정기로 읽은 dispatch 팔을 {judge_scanned} 개밖에 못 찾았다(실측 321) — 판정기 판독이 깨졌을 가능성이 크다"
+        "match 분기의 메서드 후보를 {judge_scanned}개만 찾았다(당시 측정321). 판독 범위를 확인한다."
     );
     // 줄 패턴 판독의 이름이 같은 파일의 match 판독 결과에도 있는지 비교한다.
     // 두 방법은 입력 형식이 다르며 같은 이름이 다른 위치에 있어도 통과하므로 위치별 일치를 증명하지는 않는다.
@@ -180,10 +180,7 @@ fn every_router_arm_is_registered_in_method_table() {
     missing.dedup();
     assert!(
         missing.is_empty(),
-        "라우터에 분기가 있는데 METHOD_TABLE/DEBUG_METHODS/PREFIX_RULES 어디에도 \
-         등재되지 않은 메서드가 있다. plugin 에 열 것이면 plugin(&[..]) 으로, \
-         local caller 전용으로 둘 것이면 local_only() 로 **명시 등재**하라 \
-         (미등재는 UnknownMethod 거부라 의도와 구분되지 않는다):\n  {}",
+        "라우터에서 읽은 메서드 후보가 권한 표에 없다. 실제 분기를 확인해 플러그인 허용 대상은 plugin으로, 로컬 호출 전용은 local_only로 등록한다:\n  {}",
         missing.join("\n  ")
     );
 }

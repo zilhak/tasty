@@ -155,7 +155,7 @@ fn no_unregistered_census_phrase_lives_in_the_crate() {
         assert!(!why.trim().is_empty(), "{path} 의 제외에 사유가 없다");
         assert!(
             repo_root().join(path).exists(),
-            "{path} 가 없다 — 제외 명부에 죽은 자리가 남았다"
+            "{path} 가 없다. 제외 명부에서 이동·삭제 여부를 확인한다."
         );
     }
 

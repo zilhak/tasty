@@ -1,5 +1,5 @@
 //! 파일 크기 게이트의 이름 기반 제외를 선언·Cargo 타깃·생성 표지와 대조한다.
-//! 출하 파일을 *_tests.rs 등으로 이름만 바꿔 검사에서 빼는 것을 막는다.
+//! test 전용이 아닌 파일을 *_tests.rs 등으로 이름만 바꿔 검사에서 빼는 것을 막는다.
 //! 반대로 test 전용 파일이 이름 때문에 검사되고 복잡도 예외 목록에도 있다면 제외 기준을 재검토한다.
 //! 실제 SLOC을 다시 계산하지 않고 예외 목록과의 교집합을 확인한다.
 //! 제외 패턴과 임계값은 scripts/check-file-size.sh에서 읽는다.
@@ -224,7 +224,7 @@ fn every_name_skipped_file_is_really_not_shipped() {
     );
     assert!(
         bad.is_empty(),
-        "파일 이름 외에 SLOC 제외 근거가 없다. test 전용·Cargo 타깃·생성 여부를 확인하고, 출하 코드라면 제외 이름으로 우회하지 말고 복잡도 예외 절차를 따른다:\n  {}",
+        "파일 이름 외에 SLOC 제외 근거가 없다. test 전용·Cargo 타깃·생성 여부를 확인하고, 제품 코드라면 제외 이름으로 우회하지 말고 복잡도 예외 절차를 따른다:\n  {}",
         bad.join("\n  ")
     );
 }
@@ -274,7 +274,7 @@ fn this_guard_is_inside_the_population_it_judges() {
     );
 }
 
-/// 복합 test 조건·path 속성으로 연결한 시험 파일과 출하 진입점을 함께 대조한다.
+/// 복합 test 조건·path 속성으로 연결한 시험 파일과 제품 코드 진입점을 함께 대조한다.
 #[test]
 fn the_declaration_parser_still_sees_the_two_shapes_that_once_fooled_it() {
     let test_only = test_only_files();
@@ -300,7 +300,7 @@ fn the_declaration_parser_still_sees_the_two_shapes_that_once_fooled_it() {
     );
     assert!(
         !has(&["src", "main.rs"]),
-        "출하 진입점을 test 전용 파일로 잘못 분류했다"
+        "제품 코드 진입점을 test 전용 파일로 잘못 분류했다"
     );
 
     assert!(
@@ -353,7 +353,7 @@ fn a_shipping_file_renamed_to_a_test_name_is_caught() {
     // 너무 작은 파일로만 우회를 검증하지 않도록 합성 대상의 크기도 확인한다.
     assert!(
         victim.lines >= 200,
-        "가장 큰 출하 파일이 {}줄({})로 합성 대상의 최소 크기에 못 미친다",
+        "가장 큰 test 전용이 아닌 파일이 {}줄({})로 합성 대상의 최소 크기에 못 미친다",
         victim.lines,
         victim.rel
     );
@@ -379,7 +379,7 @@ fn a_shipping_file_renamed_to_a_test_name_is_caught() {
     let (after, skipped_after) = bypassing(&mutated, &patterns);
     assert!(
         after.contains(&renamed),
-        "출하 파일 {}({}줄)을 {renamed}로 바꾼 우회를 검출하지 못했다: {after:?}",
+        "test 전용이 아닌 파일 {}({}줄)을 {renamed}로 바꾼 우회를 검출하지 못했다: {after:?}",
         victim.rel,
         victim.lines
     );
@@ -425,7 +425,7 @@ fn a_name_skipped_file_that_starts_shipping_is_caught_without_changing_any_count
     assert_eq!(
         after,
         vec![victim.rel.clone()],
-        "이름을 그대로 둔 {}가 출하 코드로 바뀌었는데 제외 우회를 검출하지 못했다",
+        "이름을 그대로 둔 {}가 제품 코드로 바뀌었는데 제외 우회를 검출하지 못했다",
         victim.rel
     );
 }
@@ -486,7 +486,7 @@ fn a_measured_file_entering_the_review_list_is_caught_even_when_the_list_size_is
     only_outsider.insert(outsider.clone());
     assert!(
         costing(&measured, &only_outsider).is_empty(),
-        "모수 밖 파일 `{outsider}` 이 목록에 있는 것을 위반으로 읽었다 — 출하 코드가 임계를 \
+        "모수 밖 파일 `{outsider}` 이 목록에 있는 것을 위반으로 읽었다 — 제품 코드가 임계를 \
          넘어 심사받는 것은 게이트의 정상 동작이다"
     );
 }
@@ -533,7 +533,7 @@ fn a_name_that_merely_looks_exempt_no_longer_buys_an_exemption() {
     });
     assert!(
         victim.lines >= 200,
-        "고른 출하 파일이 {}줄({})로 합성 대상의 최소 크기에 못 미친다",
+        "고른 test 전용이 아닌 파일이 {}줄({})로 합성 대상의 최소 크기에 못 미친다",
         victim.lines,
         victim.rel
     );
@@ -572,7 +572,7 @@ fn a_name_that_merely_looks_exempt_no_longer_buys_an_exemption() {
         let (after, _) = bypassing(&mutated, &patterns);
         assert!(
             after.contains(&smuggled),
-            "출하 파일을 {smuggled}로 옮긴 이름 기반 제외를 검출하지 못했다: {after:?}"
+            "test 전용이 아닌 파일을 {smuggled}로 옮긴 이름 기반 제외를 검출하지 못했다: {after:?}"
         );
     }
 }

@@ -1,5 +1,5 @@
 //! 한 파일 안의 test 전용 블록을 줄 구조를 유지하며 가린다.
-//! 별도 자식 파일 전체의 출하 여부는 shipping_scope에서 분류하므로 두 검사는 서로 대체할 수 없다.
+//! 별도 자식 파일 전체의 test 전용 여부는 shipping_scope에서 분류하므로 두 검사는 서로 대체할 수 없다.
 //! 조건식은 공용 implies로 판단한다. not(test)나 any(test, unix)를 test 전용으로 지우면 안 된다.
 
 use tasty_doc_guards::cfg_predicate::implies;
@@ -97,7 +97,7 @@ mod detector {
         );
     }
 
-    /// test 전용이 아닌 조건은 출하 코드를 포함할 수 있어 지우지 않는다.
+    /// test 전용이 아닌 조건은 제품 코드를 포함할 수 있어 지우지 않는다.
     #[test]
     fn a_cfg_that_does_not_imply_test_is_left_alone() {
         assert!(

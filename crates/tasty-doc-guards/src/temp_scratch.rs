@@ -103,7 +103,7 @@ mod tests {
         );
         assert!(
             leaked.is_dir(),
-            "손 정리 갈래는 남는다 — 이것이 오늘의 결함이다"
+            "수동 정리 전에 panic하면 임시 디렉터리가 남아야 한다"
         );
         let raii = raii
             .lock()
@@ -112,7 +112,7 @@ mod tests {
             .expect("경로가 잡혔어야 한다");
         assert!(
             !raii.exists(),
-            "RAII 갈래는 패닉해도 지워진다: {}",
+            "RAII 정리는 panic 후에도 임시 디렉터리를 삭제해야 한다: {}",
             raii.display()
         );
 

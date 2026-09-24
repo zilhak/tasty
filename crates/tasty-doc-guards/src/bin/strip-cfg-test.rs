@@ -35,7 +35,7 @@ fn main() {
         eprintln!(
             "usage: strip-cfg-test [--blank-test-only-files] [--neutralize-char-literal-quotes] \
              <out-dir> <repo-root> <scan-root>...\n\
-             출하되지 않는 줄을 빈 줄로 바꾼 사본을 <out-dir> 아래에 만든다.\n\
+             test 전용인 줄을 빈 줄로 바꾼 사본을 <out-dir> 아래에 만든다.\n\
              --blank-test-only-files: `#[cfg(test)] mod x;` 로만 선언된 파일도 통째로 비운다.\n\
              --neutralize-char-literal-quotes: 문자 리터럴 안의 `\"` 를 안전한 글자로 바꾼다\n\
              (줄 수를 세는 계측기용 — 내용 동등을 묻는 소비자는 쓰면 안 된다)."

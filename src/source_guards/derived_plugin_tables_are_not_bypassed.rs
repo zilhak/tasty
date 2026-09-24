@@ -187,11 +187,11 @@ fn the_shared_table_type_is_named_only_where_it_is_owned() {
 
     assert!(
         !test_only_outside.is_empty(),
-        "두 크레이트 밖에서 `{TABLE_TYPE}` 사용을 찾지 못했다. 타입 이름·마스킹·스캔을 확인하고, 비교하던 테스트가 사라졌다면 다른 테스트 사용처로 대체한다. 빈 결과만으로 출하 코드에 사용이 없다고 판단하지 않는다."
+        "두 크레이트 밖에서 `{TABLE_TYPE}` 사용을 찾지 못했다. 타입 이름·마스킹·스캔을 확인하고, 비교하던 테스트가 사라졌다면 다른 테스트 사용처로 대체한다. 빈 결과만으로 제품 코드에 사용이 없다고 판단하지 않는다."
     );
     assert!(
         shipping_outside.is_empty(),
-        "소유 크레이트 밖의 출하 코드에서 `{TABLE_TYPE}`을 쓴다. 공유 표를 직접 바꾸면 namespaces_write 검색으로 찾지 못한다. 접근 경로를 제한하거나 검사 방식을 갱신한다:\n  {}",
+        "소유 크레이트 밖의 제품 코드에서 `{TABLE_TYPE}`을 쓴다. 공유 표를 직접 바꾸면 namespaces_write 검색으로 찾지 못한다. 접근 경로를 제한하거나 검사 방식을 갱신한다:\n  {}",
         shipping_outside.join("\n  ")
     );
 }
@@ -296,7 +296,7 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
         }
         assert!(
             *peers >= MIN_PEERS_IN_SCOPE,
-            "{}의 검사 범위에서 갱신 파일 외에 {peers}개만 찾았다(하한 {MIN_PEERS_IN_SCOPE}). 소유 크레이트 {}의 실제 출하 파일 수와 비교한다. 검사 범위가 잘못 줄었다면 home과 소유 prefix 계산을 고친다. 실제 파일이 줄었을 때만 근거를 남겨 하한을 조정하며 0으로 낮추지 않는다.",
+            "{}의 검사 범위에서 갱신 파일 외에 {peers}개만 찾았다(하한 {MIN_PEERS_IN_SCOPE}). 소유 크레이트 {}의 실제 test 전용이 아닌 파일 수와 비교한다. 검사 범위가 잘못 줄었다면 home과 소유 prefix 계산을 고친다. 실제 파일이 줄었을 때만 근거를 남겨 하한을 조정하며 0으로 낮추지 않는다.",
             DERIVED[n].what,
             DERIVED[n]
                 .home

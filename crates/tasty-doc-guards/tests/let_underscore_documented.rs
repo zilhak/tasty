@@ -1,4 +1,4 @@
-//! 출하 코드의 `let _ =`에 값을 버리는 이유를 적었는지 확인한다.
+//! 제품 코드의 `let _ =`에 값을 버리는 이유를 적었는지 확인한다.
 //! 타입을 알 수 없는 텍스트 검사이므로 Result 외의 값도 대상이다.
 //! 정책은 docs/dev-guide/error-handling.md의 의도적 무시 절에 있다.
 //!
@@ -7,7 +7,7 @@
 //! 이 범위는 pre-commit C.6이 허용하는 위치를 포함한다. 주석의 타당성은 사람이 검토한다.
 //!
 //! tests 디렉터리와 벤치마크 타깃, 테스트 아이템과 test를 요구하는 cfg 범위는 제외한다.
-//! `all(test, ...)`는 제외하지만 `any(test, ...)`는 출하 코드일 수 있어 제외하지 않는다.
+//! `all(test, ...)`는 제외하지만 `any(test, ...)`는 제품 코드일 수 있어 제외하지 않는다.
 //! 따라서 테스트에서 값을 버려 검증을 빠뜨리는 문제는 이 검사로 찾을 수 없다.
 //!
 //! 코드 검색에서는 주석·리터럴을 지우고, 사유 검색에서는 리터럴만 지운다.
@@ -122,7 +122,7 @@ fn is_ident_byte(b: u8) -> bool {
 }
 
 /// test 또는 이를 포함한 all 조건만 테스트 전용으로 본다.
-/// any(test, ...)는 다른 조건으로 출하될 수 있으므로 제외하지 않는다.
+/// any(test, ...)는 다른 조건으로 제품 코드로 사용될 수 있으므로 제외하지 않는다.
 fn cfg_requires_test(pred: &str) -> bool {
     let p = pred.trim();
     if p == "test" {
@@ -324,7 +324,7 @@ fn every_let_underscore_in_production_code_says_why() {
 
 const TARGET_EXEMPTION: &str = "#![allow(clippy::let_underscore_must_use)]";
 
-/// 테스트에서만 lint를 면제해 출하 코드의 목록은 유지한다.
+/// 테스트에서만 lint를 면제해 제품 코드의 목록은 유지한다.
 const CRATE_EXEMPTION: &str = "#![cfg_attr(test, allow(clippy::let_underscore_must_use))]";
 
 fn mentions_exemption(line: &str) -> bool {
@@ -353,7 +353,7 @@ fn crate_roots(root: &Path, rel: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// 출하 코드 검사와 같은 마스킹·테스트 범위 판정을 쓴다.
+/// 제품 코드 검사와 같은 마스킹·테스트 범위 판정을 쓴다.
 /// 통합 테스트는 #[test] 밖의 헬퍼도 테스트 코드이므로 whole_file로 포함한다.
 fn test_scope_sites(text: &str, whole_file: bool) -> Vec<usize> {
     let code_src = tasty_doc_guards::source_text::mask_non_code(text);
@@ -392,7 +392,7 @@ fn item_is_exempt(code: &[&str], line: usize) -> bool {
     }
 }
 
-/// 출하 코드의 값 무시 목록에 테스트가 섞이지 않도록 lint 면제를 확인한다.
+/// 제품 코드의 값 무시 목록에 테스트가 섞이지 않도록 lint 면제를 확인한다.
 /// 타입을 모르는 검사이므로 각 문장 대신 크레이트 루트나 테스트 타깃에 면제를 요구한다.
 #[test]
 fn test_scope_stays_out_of_the_lint_roster() {
@@ -481,7 +481,7 @@ fn test_scope_stays_out_of_the_lint_roster() {
     report.dedup();
     assert!(
         report.is_empty(),
-        "테스트 코드의 `let _`에 lint 면제가 없다({}곳).\n{}\n출하 코드의 값 무시 목록에 테스트가 섞이지 않도록 표시된 타깃이나 크레이트 루트에 면제를 추가한다(docs/dev-guide/error-handling.md).",
+        "테스트 코드의 `let _`에 lint 면제가 없다({}곳).\n{}\n제품 코드의 값 무시 목록에 테스트가 섞이지 않도록 표시된 타깃이나 크레이트 루트에 면제를 추가한다(docs/dev-guide/error-handling.md).",
         report.len(),
         report.join("\n")
     );

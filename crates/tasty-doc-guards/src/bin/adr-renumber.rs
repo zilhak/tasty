@@ -204,7 +204,7 @@ fn render_report(plan: &Plan, moves: &[(String, String)], deleted: &BTreeSet<Str
     section(
         &mut out,
         "매핑 밖 번호가 새 번호와 겹치는 자리",
-        "지금 없는 ADR(이미 죽은 인용 · 픽스처)을 부르는데, 그 번호를 재번호 뒤 다른 ADR 이 받는다. \
+        "지금 없는 ADR(대상이 사라진 인용 · 픽스처)을 부르는데, 그 번호를 재번호 뒤 다른 ADR 이 받는다. \
          도구는 안 고친다 — 고치기 전까지 그 자리는 **엉뚱한 ADR 을 가리킨다.**",
         &plan.collisions,
     );
@@ -218,7 +218,7 @@ fn render_report(plan: &Plan, moves: &[(String, String)], deleted: &BTreeSet<Str
     section(
         &mut out,
         "slug 가 실재 파일과 다른 파일명 (안 고친다)",
-        "`NNNN-<slug>.md` 인데 그 파일이 없다. 이미 죽은 링크거나 픽스처다.",
+        "`NNNN-<slug>.md` 인데 그 파일이 없다. 대상이 사라진 링크거나 픽스처다.",
         &plan.stale_slug,
     );
     section(

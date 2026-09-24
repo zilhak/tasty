@@ -150,7 +150,7 @@ pub fn path_is_under(entry: &str, path: &[String]) -> bool {
     segs.len() <= path.len() && segs.iter().zip(path).all(|(a, b)| *a == b)
 }
 
-/// 한 파일의 **출하되는** 코드가 부르는 크레이트 루트 항목. `(1-기준 줄번호, 이름, 그 줄 원문)`.
+/// 한 파일의 test 조건으로 제외되지 않은 코드가 부르는 크레이트 루트 항목. `(1-기준 줄번호, 이름, 그 줄 원문)`.
 ///
 /// `classify` 가 경로를 받아 표의 이름을 돌려주면 그 자리가 잡힌다. 경로를 파일 전체에서
 /// 읽고(줄을 넘는 경로 · 여러 줄 중괄호 import) 줄 번호는 경로 항목이 시작한 오프셋으로
@@ -267,9 +267,9 @@ fn names_the_crate_alone(code: &str, i: usize, end: usize) -> bool {
     followed_by_as && (before.ends_with('{') || before.ends_with(','))
 }
 
-/// 한 파일의 **출하되는** 코드가 부르는 외부 크레이트 경로 — `(1-기준 줄번호, 경로, 그 줄 원문)`.
+/// 한 파일의 test 조건으로 제외되지 않은 코드가 부르는 외부 크레이트 경로 — `(1-기준 줄번호, 경로, 그 줄 원문)`.
 /// 경로는 `::` 로 이은 전체다(`egui::Context`). 인라인 `#[cfg(test)]` 줄은 빼고, 다른 cfg
-/// (`feature = "gui"` 등)는 **안 뺀다** — 게이트 뒤라도 출하된다. 한 줄의 같은 경로는 한 자리다.
+/// (`feature = "gui"` 등)는 **안 뺀다** — 다른 빌드 조건에서는 사용될 수 있다. 한 줄의 같은 경로는 한 자리다.
 pub fn shipped_external_references(text: &str, roots: &[&str]) -> Vec<(usize, String, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let gated = cfg_gated_lines(&lines, "test");

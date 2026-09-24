@@ -61,7 +61,7 @@ fn violations(
             continue;
         };
         if gated.get(i).copied().unwrap_or(false) {
-            continue; // 인라인 #[cfg(test)] — 출하 밖
+            continue; // 인라인 #[cfg(test)] — test 전용
         }
         // 40줄 안에 종결자가 없으면 판정하지 않는다.
         let mut end = None;
@@ -223,7 +223,7 @@ fn an_inline_cfg_test_scroll_area_is_not_a_violation() {
                egui::ScrollArea::vertical().show(ui, |_| {});\n    }\n}\n";
     assert!(
         probe(src, SCROLL_AREA_CTORS, SCROLL_AREA_ENDS, None).is_empty(),
-        "인라인 cfg(test) 안의 자리가 위반으로 잡혔다 — 출하 판정이 안 걸렸다"
+        "인라인 cfg(test) 안의 자리가 위반으로 잡혔다 — test 코드 제외 판정이 안 걸렸다"
     );
 }
 

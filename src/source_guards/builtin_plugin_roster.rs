@@ -178,7 +178,7 @@ mod tests {
         assert_eq!(
             arms.len(),
             2,
-            "{BUILTIN_SRC} 의 BUILTINS 갈래가 2 개가 아니다: {:?}",
+            "{BUILTIN_SRC} 의 BUILTINS의 빌드 조건별 정의가 2개가 아니다: {:?}",
             arms.iter().map(|(l, _)| l).collect::<Vec<_>>()
         );
         assert!(
@@ -200,7 +200,11 @@ mod tests {
     /// 코드 목록을 별도로 수집한 매니페스트와 대조한다.
     #[test]
     fn the_manifests_on_disk_and_the_builtin_table_name_the_same_plugins() {
-        let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
+        let code = builtin_arms()
+            .into_iter()
+            .next()
+            .expect("BUILTINS 정의 없음")
+            .1;
         let disk = manifest_specs();
         assert!(
             disk.len() >= 5,
@@ -218,7 +222,11 @@ mod tests {
 
     #[test]
     fn both_docs_that_copy_the_builtin_table_still_match_it() {
-        let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
+        let code = builtin_arms()
+            .into_iter()
+            .next()
+            .expect("BUILTINS 정의 없음")
+            .1;
         let packaging = packaging_specs();
         assert_eq!(
             code,
@@ -240,7 +248,11 @@ mod tests {
     /// 같은 개수의 다른 플러그인으로 바꿔 집합 비교가 실패하는지 확인한다.
     #[test]
     fn swapping_one_entry_is_caught_although_the_count_is_unchanged() {
-        let code = builtin_arms().into_iter().next().expect("갈래 없음").1;
+        let code = builtin_arms()
+            .into_iter()
+            .next()
+            .expect("BUILTINS 정의 없음")
+            .1;
         let mut mutated = code.clone();
         let victim = code.iter().next().expect("빈 집합").clone();
         mutated.remove(&victim);

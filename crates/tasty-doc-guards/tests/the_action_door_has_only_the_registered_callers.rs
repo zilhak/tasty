@@ -6,7 +6,7 @@
 //! 디스패치의 match 항목은 KeybindingSettings에 있어야 한다. 반대로 모든 설정 필드가
 //! 이 함수에서 처리되는 것은 아니므로 역방향 일치는 요구하지 않는다.
 
-// 테스트의 임시 파일 정리 실패는 무시하며 출하 코드의 값 무시 lint 목록에서 제외한다.
+// 테스트의 임시 파일 정리 실패는 무시하며 제품 코드의 값 무시 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::collections::BTreeSet;

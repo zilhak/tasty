@@ -429,6 +429,7 @@ fn widening_the_left_side_moves_the_judged_count() {
 #[test]
 fn the_reported_maximum_names_the_largest_judged_file() {
     let d = scan_synth_root();
+    // 파일 SLOC 임계 1000보다 작은 입력으로 최댓값과 남은 여유를 확인한다.
     write_rs(d.path(), "extra/zz_tall.rs", 500);
     widen_scan_dirs(d.path());
     let (code, text) = run_scan_gate(d.path());

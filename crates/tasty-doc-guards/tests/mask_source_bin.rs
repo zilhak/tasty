@@ -1,7 +1,7 @@
 //! mask-source 바이너리의 기본 모드와 --keep-comments 출력이 구분되는지 확인한다.
 //! 마스킹 알고리즘은 source_text 단위 테스트에서 검사한다.
 
-// 테스트의 값 무시를 출하 코드의 lint 목록에서 제외한다.
+// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};

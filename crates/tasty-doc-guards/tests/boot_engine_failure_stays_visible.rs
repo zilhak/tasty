@@ -57,7 +57,7 @@ fn boot_error_screen_renderer_exists() {
 fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
     let src = read("src/app/boot_machine.rs");
 
-    // 두 실패 갈래(워커 Err, disconnect fallback) 모두 진단을 보이는 경로로 넘긴다.
+    // 두 실패 경로(워커 Err, disconnect fallback) 모두 진단을 보이는 경로로 넘긴다.
     let routed = src
         .matches("boot_error_info = Some(boot_engine_error_info(")
         .count();

@@ -862,7 +862,7 @@ fn the_prescription_names_the_token_path_not_a_same_value_one() {
             broken.contains("경로가 이어지지 않는다")
                 && broken.contains("중첩 묶음")
                 && broken.contains("전체 경로로 import"),
-            "경로가 끊긴 자리를 다른 갈래로 보냈다: {broken}"
+            "해소되지 않는 경로를 다른 결과로 분류했다: {broken}"
         );
     }
 }

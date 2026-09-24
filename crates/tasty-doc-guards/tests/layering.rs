@@ -441,8 +441,8 @@ fn the_router_reports_a_planted_reference_and_routes_the_rest_away() {
         measured: 8,
         measured_on: "2026-09-08",
         counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
-        why_this_gap: "이 합성 트리의 파일 수다. 갈래를 하나 더 시험하려고 파일을 \
-                       더하는 것은 정상 변경이라 실측에 붙이면 그때마다 빨개진다.",
+        why_this_gap: "이 합성 트리의 파일 수다. 새 조건을 시험하려고 파일을 \
+                       더하는 것은 정상 변경이라 하한을 실제 개수에 맞추면 그 변경마다 실패한다.",
     };
     let files = walk_src_under(&src, &root, &floor).expect("합성 트리 순회가 하한에 걸렸다");
     let rels: Vec<String> = files.iter().map(|f| f.rel.clone()).collect();
@@ -468,7 +468,7 @@ fn the_router_reports_a_planted_reference_and_routes_the_rest_away() {
     assert_eq!(
         routed.new_violations.len(),
         1,
-        "심은 참조가 보고 갈래로 안 갔다: {:#?}",
+        "추가한 참조가 보고 대상에 포함되지 않았다: {:#?}",
         routed.new_violations
     );
     let hit = &routed.new_violations[0];
@@ -480,12 +480,12 @@ fn the_router_reports_a_planted_reference_and_routes_the_rest_away() {
     assert_eq!(
         routed.baseline_hit,
         vec!["src/zone/legacy.rs".to_owned()],
-        "한시 허용이 제 갈래로 안 갔다"
+        "한시 허용 참조가 해당 분류에 포함되지 않았다"
     );
     assert_eq!(
         routed.test_only_hit,
         vec!["src/zone/gated.rs".to_owned()],
-        "범위 밖이 제 갈래로 안 갔다"
+        "범위 밖 참조가 해당 분류에 포함되지 않았다"
     );
     for bucket in [
         &routed.new_violations,
@@ -494,7 +494,7 @@ fn the_router_reports_a_planted_reference_and_routes_the_rest_away() {
     ] {
         assert!(
             !bucket.iter().any(|h| h.contains("adapters/cli.rs")),
-            "면제 경로가 어느 갈래로든 새어 나왔다: {bucket:#?}"
+            "제외 경로가 검사 결과에 포함됐다: {bucket:#?}"
         );
         assert!(
             !bucket.iter().any(|h| h.contains("mentions.rs")),

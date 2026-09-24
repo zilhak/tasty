@@ -1,4 +1,4 @@
-//! 출하 코드에서 락 poison을 보고 없이 복구하는 곳을 찾는다.
+//! 제품 코드에서 락 poison을 보고 없이 복구하는 곳을 찾는다.
 //! 판정 범위는 poison_recovery 모듈, 정책은 docs/dev-guide/error-handling.md의 락 poison 절에 있다.
 //! 소스 텍스트를 읽으므로 본체 빌드 없이 검사할 수 있다.
 //!

@@ -1,4 +1,4 @@
-//! webhook과 hook handler의 출하 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
+//! webhook과 hook handler의 제품 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
 //! 내부 IPC 호출은 tasty_ipc::host_call::HostIpcInjector로 주입해야 한다(ADR-0002).
 //! 같은 크레이트 안의 경계이므로 컴파일러가 의존 방향을 제한하지 않는다.
 //! 공유 crate_paths 파서로 경로를 읽고 파일·인라인 test 전용 코드를 제외한다.
@@ -85,7 +85,7 @@ fn automation_runners_do_not_name_an_inbound_adapter() {
         }
     }
     println!(
-        "[자동화 실행부 경계] 출하 파일 {shipped} 개 · inbound adapter 참조 {} 자리",
+        "[자동화 실행부 경계] test 전용이 아닌 파일 {shipped} 개 · inbound adapter 참조 {} 자리",
         offenders.len()
     );
     assert!(

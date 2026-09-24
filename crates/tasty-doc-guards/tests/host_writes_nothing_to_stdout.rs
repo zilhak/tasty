@@ -1,4 +1,4 @@
-//! 루트 패키지 출하 코드의 print·println 사용을 찾아 stdout 정책을 재검토하게 한다(ADR-0043).
+//! 루트 패키지 제품 코드의 print·println 사용을 찾아 stdout 정책을 재검토하게 한다(ADR-0043).
 //! CLI의 broken pipe 종료 처리를 host에 그대로 적용하면 자식 stdin 파이프 오류로 host까지 종료될 수 있다.
 //! 주석·문자열과 파일·인라인 테스트 코드는 제외한다. CLI 크레이트의 출력은 별도 검사 대상이다.
 //! stdout 핸들로 직접 쓰는 경우는 찾지 못하고, 루트 코드가 실제 host 경로인지도 사람이 확인해야 한다.
@@ -55,14 +55,14 @@ fn the_shipped_host_has_no_direct_stdout_write() {
     }
 
     println!(
-        "[ADR-0043 좌변] 루트 패키지 `.rs` {} 개 · 출하 밖 {} 개 · 판정 {judged_files} 개",
+        "[ADR-0043 검사 범위] 루트 패키지 `.rs` {} 개 · test 전용 {} 개 · 판정 {judged_files} 개",
         sources.len(),
         not_shipped.len()
     );
 
     assert!(
         offenders.is_empty(),
-        "루트 출하 코드에서 stdout 매크로 호출을 찾았다:\n{}\n실제 host 경로인지 확인한다. 진단이면 tracing을 사용하고 stdout이 필요하다면 ADR-0043의 CLI·host 오류 처리 경계를 재검토한다. host의 SIGPIPE 처리를 바꾸면 자식 파이프 오류가 host를 종료시킬 수 있다.",
+        "루트 제품 코드에서 stdout 매크로 호출을 찾았다:\n{}\n실제 host 경로인지 확인한다. 진단이면 tracing을 사용하고 stdout이 필요하다면 ADR-0043의 CLI·host 오류 처리 경계를 재검토한다. host의 SIGPIPE 처리를 바꾸면 자식 파이프 오류가 host를 종료시킬 수 있다.",
         offenders.join("\n")
     );
 }
@@ -115,7 +115,7 @@ mod t {
     assert_eq!(
         got,
         vec![2],
-        "출하되는 줄 하나(2 행)만 잡혀야 한다. 8 행이 함께 잡히면 인라인 \
-         `#[cfg(test)]` 필터가 죽은 것이고, 13 행이 잡히면 주석 마스킹이 죽은 것이다."
+        "test 전용이 아닌 줄 하나(2 행)만 잡혀야 한다. 8 행이 함께 잡히면 인라인 \
+         `#[cfg(test)]` 필터가 적용되지 않은 것이고, 13 행이 잡히면 주석 마스킹이 적용되지 않은 것이다."
     );
 }

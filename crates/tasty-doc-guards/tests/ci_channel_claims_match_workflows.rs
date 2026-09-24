@@ -1483,7 +1483,7 @@ fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
     let invocations = automatic_test_invocations(&root);
     assert!(
         !invocations.is_empty(),
-        "자동 잡의 `cargo test` 호출을 하나도 못 뽑았다 — 추출이 죽었다"
+        "자동 잡의 cargo test 호출을 찾지 못했다. 수집 범위와 명령 판독을 확인한다."
     );
     let selected = invocations.iter().any(|(_, tail)| {
         let (filters, exact) = positive_filters(tail);
@@ -1510,7 +1510,7 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
     let gui_fns = test_fns_with_ignore(&gui_text);
     assert!(
         gui_fns.len() > 10,
-        "gui_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽었다",
+        "gui_tests에서 시험을 {}건만 추출했다. 함수 판독을 확인한다.",
         gui_fns.len()
     );
     let running: Vec<&String> = gui_fns
@@ -1602,7 +1602,7 @@ fn the_gui_ignored_layer_has_no_single_value() {
     }
     assert!(
         scanned > 0,
-        "`gui_tests` 를 언급하는 문서를 하나도 못 찾았다 — 수집이 죽었다"
+        "gui_tests를 언급하는 문서를 찾지 못했다. 문서 수집 범위를 확인한다."
     );
     assert!(
         carries_marker,
@@ -2946,7 +2946,7 @@ fn gate_list_audit(root: &Path, floor: &Floor) -> GateListAudit {
                     .collect();
                 if named.is_empty() {
                     none_named += 1;
-                    continue; // 실행 목록이 아니다 (좌변 1 겹)
+                    continue; // 실행 목록이 아니므로 제외한다
                 }
                 named_any += 1;
                 // 전체 목록 주장은 워크플로가 스크립트들보다 먼저 나오거나 스크립트를 둘 이상 열거한 경우로 한정한다.

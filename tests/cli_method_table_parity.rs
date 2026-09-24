@@ -274,7 +274,7 @@ fn every_cli_method_string_is_registered_in_method_table() {
         .collect();
     assert!(
         stale.is_empty(),
-        "NOT_SENT_SENTINELS 에 있으나 소스에 없다 — 갈래가 사라졌으면 목록에서도 지울 것:\n  {}",
+        "NOT_SENT_SENTINELS 에 있으나 소스에 없다 — 해당 경로가 삭제됐다면 목록에서도 지울 것:\n  {}",
         stale.join("\n  ")
     );
 }

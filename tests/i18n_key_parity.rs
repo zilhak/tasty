@@ -820,7 +820,7 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 // 사용처 확인은 Rust·TOML의 키 토큰과 동적 조립 형태를 본다. 문서와 주석의 단순 언급은 소비로 세지 않는다.
 
 /// 일반 템플릿 검사로 확인할 수 없는 동적 키 namespace와 조립 파일이다.
-/// clap 도움말처럼 여러 점 구간을 조립하는 키도 있다. 실제 사용처가 없다고 기록한 ORPHAN_KEYS와 구별한다.
+/// clap 도움말처럼 여러 점 구간을 조립하는 키도 있다. 사용처 검사에서 찾지 못한 키를 기록한 ORPHAN_KEYS와 구별한다.
 const ASSEMBLED_NAMESPACES: &[(&str, &str)] = &[
     ("cli.help.", "crates/tasty-cli/src/help_i18n.rs"),
     ("tutorial.step_", "src/adapters/ui/tutorial/catalog.rs"),

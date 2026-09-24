@@ -141,11 +141,6 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "과거 사건 서술 — 파일을 가른 이유",
     ),
     (
-        "src/source_guards/sloc_gate_skip_proxy.rs",
-        Kind::Dated,
-        "ADR-0047 의 결론을 비유로 인용",
-    ),
-    (
         "scripts/check-frozen-sum-ratchet.sh",
         Kind::Dated,
         "옛 어긋남 사건의 기록 · 계측 편향의 시점 재측정",
@@ -735,10 +730,10 @@ mod judgment_wording {
     fn the_note_offers_the_roster_or_a_rewrite_but_not_a_relabel() {
         let m = mislabeled_meaning_note("a/b.md", "파일 SLOC", "check-file-size", 7, "사유");
         assert!(m.contains("a/b.md:7"), "{m}");
-        assert!(m.contains("CLAIMS"), "명부로 옮기라는 갈래가 없다: {m}");
+        assert!(m.contains("CLAIMS"), "명부로 옮기라는 안내가 없다: {m}");
         assert!(
             m.contains("문장을 다시 써라"),
-            "다시 쓰라는 갈래가 없다: {m}"
+            "다시 작성하라는 안내가 없다: {m}"
         );
         assert!(
             m.contains("검사를 통과하려고 제외 분류만 바꾸지 않는다"),

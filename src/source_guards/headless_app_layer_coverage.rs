@@ -143,7 +143,7 @@ fn outside_roster<'a>(
         .collect()
 }
 
-/// 등록 함수 밖에 추가된 이름도 확인한다. 합성 시험의 리터럴은 출하 코드가 아니므로 먼저 test 구간을 제외한다.
+/// 등록 함수 밖에 추가된 이름도 확인한다. 합성 시험의 리터럴은 제품 코드가 아니므로 먼저 test 구간을 제외한다.
 #[test]
 fn no_method_name_lives_outside_the_roster() {
     let src = read(HEADLESS_PUMP);
@@ -478,7 +478,7 @@ fn a_cover_claim_dies_with_its_evidence() {
         assert!(
             pump.contains(token),
             "`{item}` 을 헤드리스가 답한다고 적혀 있는데 그 근거인 `{token}` 이 \
-             `{HEADLESS_PUMP}` 에 없다. 갈래가 사라졌으면 이 줄도 지우고, 사유가 \
+             `{HEADLESS_PUMP}` 에 없다. 처리 경로가 삭제됐다면 이 줄도 지우고, 사유가 \
              필요하면 `NOT_IN_HEADLESS` 로 옮겨라"
         );
         let without = pump.replace(token, "");

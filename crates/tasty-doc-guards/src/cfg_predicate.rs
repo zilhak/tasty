@@ -307,7 +307,7 @@ mod cfg_span_tests {
         );
         assert!(
             g[5] && g[6],
-            "raw string 속 `}}` 에 속아 블록이 일찍 닫혔다 — 테스트 코드가 출하로 세어진다"
+            "raw string 속 `}}` 에 속아 블록이 일찍 닫혔다 — 테스트 코드가 제품 코드로 집계된다"
         );
         assert!(!g[7], "블록이 닫힌 뒤까지 게이트로 셌다");
     }
@@ -322,7 +322,7 @@ mod cfg_span_tests {
         assert!(
             !g[7] && !g[8],
             "raw string 이 여는 `{{` 만 담아 depth 가 안 닫혔고, 스팬이 파일 끝까지 늘어나 \
-             출하 코드가 게이트 안으로 사라졌다: {g:?}"
+             제품 코드가 게이트 안으로 사라졌다: {g:?}"
         );
     }
 
@@ -413,7 +413,7 @@ mod cfg_attr_tests {
     fn an_inner_crate_attribute_that_requires_test_is_out_of_shipping() {
         let g = marked(&format!("{}\npub fn shipped() {{}}", attr("!", "test")));
         assert!(g[0], "크레이트 루트의 `#![cfg_attr(test, …)]` 를 못 봤다");
-        assert!(!g[1], "출하되는 항목까지 지웠다");
+        assert!(!g[1], "test 전용이 아닌 항목까지 지웠다");
     }
 
     #[test]
@@ -450,7 +450,7 @@ mod cfg_attr_tests {
         assert!(!g[0], "속성과 무관한 코드까지 지웠다");
         assert!(g[1] && g[2], "속성 위의 근거 주석이 남아 차분에 잡힌다");
         assert!(g[3]);
-        assert!(!g[4], "속성 아래의 출하 코드를 지웠다");
+        assert!(!g[4], "속성 아래의 제품 코드를 지웠다");
     }
 
     #[test]

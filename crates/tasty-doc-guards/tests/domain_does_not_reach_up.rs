@@ -1,4 +1,4 @@
-//! 도메인(src/core·src/ports)의 출하 코드가 조립·어댑터·GUI를 직접 참조하는지 검사한다.
+//! 도메인(src/core·src/ports)의 제품 코드가 조립·어댑터·GUI를 직접 참조하는지 검사한다.
 //! 같은 크레이트 안의 의존 방향은 컴파일러가 제한하지 않으므로 별도로 확인한다(ADR-0002).
 //! 상위 모듈 참조, gui 조건의 개수, GUI 크레이트 경로를 각각 검사한다.
 //! 기존 gui 조건 안에 새 GUI 참조를 넣으면 조건 수는 그대로라 경로 검사도 필요하다.
@@ -87,12 +87,12 @@ const UPPER: &[(&str, &str)] = &[
     ("debug_info", "`app::debug_info` 의 별칭"),
 ];
 
-/// 출하 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
+/// 제품 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
 /// headless에 소비자가 없는 정의를 제외하는 조건 자체는 허용한다(ADR-0003).
 /// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
 const GUI_GATES_IN_DOMAIN: usize = 262;
 
-/// 2026-09-21 실측 92파일(core84·ports8, 출하 91)을 기준으로 둔 수집 하한.
+/// 2026-09-21 실측 92파일(core84·ports8, test 전용이 아닌 파일 91)을 기준으로 둔 수집 하한.
 const MIN_DOMAIN_FILES: usize = 80;
 
 /// 도메인 모듈 루트까지 수집됐는지 확인할 파일.
@@ -110,12 +110,12 @@ fn upper_match(path: &[String]) -> Option<&'static str> {
         .find(|n| path_is_under(n, path))
 }
 
-/// 출하 코드의 상위 참조를 줄 번호·이름·원문으로 반환한다.
+/// 제품 코드의 상위 참조를 줄 번호·이름·원문으로 반환한다.
 fn upper_references(rel: &str, text: &str) -> Vec<(usize, &'static str, String)> {
     shipped_references(rel, text, upper_match)
 }
 
-/// 한 파일의 출하되는 줄에서 코드로 쓰인 `feature = "gui"` 개수.
+/// 한 파일의 test 전용이 아닌 줄에서 코드로 쓰인 `feature = "gui"` 개수.
 fn gui_gates(text: &str) -> usize {
     let lines: Vec<&str> = text.lines().collect();
     let gated = cfg_gated_lines(&lines, "test");
@@ -127,7 +127,7 @@ fn gui_gates(text: &str) -> usize {
         .sum()
 }
 
-/// 출하되는 도메인 파일 `(레포 상대 경로, 원문)`. 하한·앵커를 여기서 확인한다.
+/// test 전용이 아닌 도메인 파일 `(레포 상대 경로, 원문)`. 하한·앵커를 여기서 확인한다.
 fn shipped_domain_sources() -> Vec<(PathBuf, String)> {
     let root = repo_root();
     // 부모 선언을 따라가야 test-only 여부가 정해지므로 `src` 전체를 모은 뒤 거른다.
@@ -171,13 +171,13 @@ fn the_domain_does_not_name_an_upper_layer() {
         }
     }
     println!(
-        "[도메인 경계] 출하 도메인 파일 {} 개 · 상위 참조 {} 자리",
+        "[도메인 경계] 제품 도메인 파일 {} 개 · 상위 참조 {} 자리",
         sources.len(),
         offenders.len()
     );
     assert!(
         offenders.is_empty(),
-        "도메인 출하 코드가 상위 계층을 참조한다:\n{}\nADR-0002에 따라 도메인 타입은 도메인에서 정의하고, 창 연산은 도메인이 선언한 trait을 창 쪽에서 구현한다. GUI 동작은 GUI 쪽으로 옮긴다. 예외 목록을 추가해 통과시키지 않는다.",
+        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0002에 따라 도메인 타입은 도메인에서 정의하고, 창 연산은 도메인이 선언한 trait을 창 쪽에서 구현한다. GUI 동작은 GUI 쪽으로 옮긴다. 예외 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }
@@ -252,7 +252,7 @@ const OS_WINDOW_PATHS: &[&str] = &[
 /// 기존 GUI 참조를 (파일, 경로)로 기록한다. 조건 수가 그대로여도 새 참조가 생겼는지 확인한다.
 const GUI_CRATE_PATHS_IN_DOMAIN: &[(&str, &str)] = &[];
 
-/// 출하 코드의 GUI 크레이트 경로를 줄 번호·경로·원문으로 반환한다.
+/// 제품 코드의 GUI 크레이트 경로를 줄 번호·경로·원문으로 반환한다.
 fn gui_crate_references(text: &str, crates: &[String]) -> Vec<(usize, String, String)> {
     let mut roots: Vec<&str> = crates.iter().map(String::as_str).collect();
     roots.extend(OS_WINDOW_PATHS.iter().filter_map(|p| p.split("::").next()));
@@ -287,7 +287,7 @@ fn the_domain_names_no_gui_crate_beyond_the_pinned_list() {
         }
     }
     println!(
-        "[도메인 GUI 크레이트] 크레이트 {} 개 · 출하 도메인 파일 {} 개 · 자리 {} (고정 목록 {})",
+        "[도메인 GUI 크레이트] 크레이트 {} 개 · 제품 도메인 파일 {} 개 · 자리 {} (고정 목록 {})",
         crates.len(),
         sources.len(),
         found.len(),
@@ -442,7 +442,7 @@ mod tests {
     assert_eq!(
         gui_gates(src),
         1,
-        "출하 코드의 gui 조건은 8행 하나다. 주석과 테스트 블록의 조건은 세지 않는다."
+        "제품 코드의 gui 조건은 8행 하나다. 주석과 테스트 블록의 조건은 세지 않는다."
     );
     assert_eq!(module_depth("src/core/mod.rs"), 1);
     assert_eq!(module_depth("src/core/attach.rs"), 2);

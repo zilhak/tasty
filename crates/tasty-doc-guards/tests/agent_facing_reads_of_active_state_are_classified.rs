@@ -192,7 +192,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "src/state/ipc_window.rs",
         Attribution,
         2,
-        "포트 메서드 active_workspace_index 의 구현 이름과 그 몸체의 읽기 — 핸들러 호출 자리의 분류를 물려받는다. 호출 자리 11 곳은 Attribution 7 · Report 3 · PolicyScope 1 로 명부에 있고 대상을 고르는 자리는 0 이다; 한 구현이 여러 갈래로 나뉠 수 없어 가장 많은 Attribution 에 둔다",
+        "포트 메서드 active_workspace_index 의 구현 이름과 그 몸체의 읽기 — 핸들러 호출 자리의 분류를 물려받는다. 호출 자리 11 곳은 Attribution 7 · Report 3 · PolicyScope 1 로 명부에 있고 대상을 고르는 자리는 0 이다; 한 구현에 여러 분류를 적용할 수 없어 가장 많은 Attribution 에 둔다",
     ),
     (
         "src/app/dispatch/intents.rs",
@@ -232,7 +232,7 @@ fn count_needles(text: &str) -> usize {
         .sum::<usize>()
 }
 
-/// (스캔한 파일 수, 파일별 출하 코드의 출현 수).
+/// (스캔한 파일 수, 파일별 제품 코드의 출현 수).
 /// 파일 내부 test 구간과 test 모듈로만 선언된 파일을 모두 제외한다.
 fn measure() -> (usize, BTreeMap<String, usize>) {
     let root = repo_root();
@@ -369,7 +369,7 @@ fn every_row_carries_a_reason() {
     );
 }
 
-/// 출하 코드만 세는지 합성 입력의 원문과 마스킹 결과를 비교한다.
+/// 제품 코드만 세는지 합성 입력의 원문과 마스킹 결과를 비교한다.
 #[test]
 fn the_extractor_counts_shipped_code_only() {
     let fixture = concat!(
@@ -384,7 +384,7 @@ fn the_extractor_counts_shipped_code_only() {
     let n = count_needles(&shipped_code(fixture));
     assert_eq!(
         n, 1,
-        "출하 코드의 한 건만 세야 한다 — 주석·문자열·cfg(test) 안의 셋은 빼고. 실제 {n}"
+        "제품 코드의 한 건만 세야 한다 — 주석·문자열·cfg(test) 안의 셋은 빼고. 실제 {n}"
     );
     // 원문에는 주석·문자열·테스트를 포함해 네 번 나타난다.
     assert_eq!(

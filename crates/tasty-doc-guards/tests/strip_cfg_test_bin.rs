@@ -3,7 +3,7 @@
 //! SLOC 검사는 문자 중화를 쓰지만 내용 변경을 보는 플러그인 버전 검사는 쓰면 안 된다.
 //! cfg_attr의 test 전용 속성 제거도 실제 바이너리 출력으로 확인한다.
 
-// 테스트의 값 무시를 출하 코드의 lint 목록에서 제외한다.
+// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};
@@ -52,7 +52,7 @@ fn fixture(root: &Path) {
     )
     .unwrap();
     std::fs::write(src.join("attrs.rs"), attrs_fixture()).unwrap();
-    // 계측기(`tokei`)가 문자열의 시작으로 오독하는 형태 — 출하되는 코드다.
+    // 계측기(`tokei`)가 문자열의 시작으로 오독하는 형태 — test 전용이 아닌 코드다.
     std::fs::write(
         src.join("quotes.rs"),
         "pub fn q(c: char) -> u8 {\n    match c {\n        '\"' => 2,\n        _ => 1,\n    }\n}\n",
@@ -97,7 +97,7 @@ fn the_flag_makes_char_literal_quotes_safe_for_the_line_counter() {
         }
         assert!(
             got.contains("pub fn q(c: char)"),
-            "출하 코드가 사라졌다: {got:?}"
+            "제품 코드가 사라졌다: {got:?}"
         );
         let original =
             std::fs::read_to_string(root.path().join("crates/demo/src/quotes.rs")).unwrap();
@@ -176,12 +176,12 @@ fn a_shipping_file_survives_either_way() {
         let helper = std::fs::read_to_string(out.path().join("crates/demo/src/helper.rs")).unwrap();
         assert!(
             helper.contains("pub fn ship()"),
-            "출하되는 파일이 지워졌다 (flag={flag:?}): {helper:?}"
+            "test 전용이 아닌 파일이 지워졌다 (flag={flag:?}): {helper:?}"
         );
     }
 }
 
-/// test 전용 cfg_attr만 지우고 not(test) 속성과 속성이 붙은 출하 아이템은 남겨야 한다.
+/// test 전용 cfg_attr만 지우고 not(test) 속성과 속성이 붙은 test 전용이 아닌 항목은 남겨야 한다.
 #[test]
 fn a_cfg_attr_that_requires_test_is_stripped_and_its_opposite_is_not() {
     for (i, flag) in [None, Some("--blank-test-only-files")]
@@ -195,11 +195,11 @@ fn a_cfg_attr_that_requires_test_is_stripped_and_its_opposite_is_not() {
         let got = std::fs::read_to_string(out.path().join("crates/demo/src/attrs.rs")).unwrap();
         assert!(
             !got.contains("cfg_attr(test"),
-            "`test` 를 요구하는 속성이 출하 사본에 남았다 (flag={flag:?}): {got:?}"
+            "`test` 를 요구하는 속성이 test 코드를 제외한 사본에 남았다 (flag={flag:?}): {got:?}"
         );
         assert!(
             got.contains("cfg_attr(not(test)"),
-            "프로덕션 전용 속성을 지웠다 — 출하 코드가 판정 밖으로 나간다 (flag={flag:?}): {got:?}"
+            "프로덕션 전용 속성을 지웠다 — 제품 코드가 판정 밖으로 나간다 (flag={flag:?}): {got:?}"
         );
         assert!(
             got.contains("pub fn ship_one()") && got.contains("pub fn ship_two()"),
