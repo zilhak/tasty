@@ -37,9 +37,9 @@ impl Retiring {
         }
         match self.handle.take().map(JoinHandle::join) {
             Some(Ok(outcome)) => outcome,
-            // 대기 스레드가 패닉했다. 자식은 `PendingShutdown` 의 Drop 이 회수했다.
+            // 대기 스레드가 패닉했다. 남은 핸들의 Drop이 종료·회수를 시도한다.
             Some(Err(_)) => {
-                tracing::warn!("plugin retire thread panicked — the child was reaped on drop");
+                tracing::warn!("plugin retire thread panicked");
                 ShutdownOutcome::Killed
             }
             None => ShutdownOutcome::NoChild,

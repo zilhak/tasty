@@ -1,13 +1,5 @@
-//! `agent_stream.*` IPC 핸들러.
-//!
-//! 등록은 **surface_id 를 명시적으로 지정**하는 것만 지원한다 — "전부 watch" 와일드카드는
-//! 두지 않는다. 이유는 두 가지다:
-//!
-//! - 대상을 ID 로 직접 지정한다는 tasty 의 포커스 독립 원칙(`docs/identity.md` §2.3)과
-//!   같은 결이다. 와일드카드는 "지금 떠 있는 것들" 이라는 암묵적·시점 의존 대상 집합을
-//!   만든다.
-//! - transcript 는 대화 전문이다. 요청하지 않은 세션까지 자동으로 tail 하면 중계 범위가
-//!   호출자의 의도를 넘는다. 여러 대상이 필요하면 surface 마다 명시적으로 등록한다.
+//! agent_stream.* IPC 핸들러. 대화 기록은 surface별로 명시해서 추적한다.
+//! 요청하지 않은 세션까지 중계하지 않도록 전체 자동 등록은 제공하지 않는다.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -28,14 +20,12 @@ use crate::sse::{ConfigError, ServeConfig};
 const POLL_DEFAULT_LIMIT: u64 = 100;
 const POLL_MAX_LIMIT: u64 = 1000;
 
-/// `request_id` 의 바이트 상한. 웹훅 `${body.request_id}` 는 외부 입력이라 상한이 없으면
-/// 거대한 값이 TurnState 에 저장돼 그 턴의 모든 이벤트(SSE·poll)에 복제되는 증폭이 된다.
-/// FE correlation 토큰(UUID·nanoid·복합키)에 넉넉한 512 바이트에서 자르지 않고 거부한다.
+/// request_id의 바이트 상한. 턴의 모든 이벤트에 복사되므로 긴 외부 입력은 거절한다.
 const MAX_REQUEST_ID_LEN: usize = 512;
 
 type Shared = Arc<Mutex<StreamRegistry>>;
 
-/// mutex poisoning 은 tail 스레드가 패닉했다는 뜻 — 조용히 성공한 척하지 않는다.
+/// 잠금을 보유한 스레드가 패닉했으면 오류로 반환한다.
 fn lock<'a>(
     registry: &'a Shared,
     tr: &Translator,
@@ -49,15 +39,7 @@ fn lock<'a>(
     })
 }
 
-/// params 에서 대상 surface id 를 읽는다.
-///
-/// **"키가 없다" 와 "값이 surface id 일 수 없다" 를 가른다.** 예전에는 둘 다
-/// `missing_surface` 로 답했다 — 즉 `surface: 999999999999` 처럼 **값을 실어 보낸**
-/// 요청에 "대상을 안 줬다" 고 답했다. 호출자는 자기가 준 값을 서버가 못 본 줄 알고
-/// 같은 값을 다시 보낸다. 값이 있는데 없다고 하는 답은 조용한 오답이다.
-///
-/// 여기서 판정하는 것은 **형식**뿐이다 — 그 id 의 surface 가 실제로 사는지는 별개
-/// 질문이고, 그쪽은 각 핸들러가 host 에 묻는다([`require_live_surface`]).
+/// 대상 id의 형식을 확인한다. 누락과 잘못된 값을 구분하며 실제 존재 여부는 별도로 확인한다.
 fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     let Some(raw) = params.get("surface").or_else(|| params.get("surface_id")) else {
         return Err(IpcMethodError::invalid_params(
@@ -75,25 +57,9 @@ fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodErro
         })
 }
 
-/// 레지스트리가 "이 surface 는 안 보고 있다" 고 답했을 때, 그것이 **없는 surface** 인지
-/// 확인한다.
-///
-/// 없는 surface 에 "보고 있지 않다" 고 답하면 살아 있는 미watch surface 와 **완전히 같은
-/// 문장**이 나온다(실측: 존재하지 않는 424242 와 살아 있는 1 이 같은 답). 호출자는
-/// `watch` 를 부르면 되는 줄 알고 다시 부르고, 거기서야 다른 이유로 실패한다.
-///
-/// **문구는 한 벌뿐이다** — [`tasty_utils::target::unowned_target_message`] 가 정본이고
-/// 호스트도 같은 함수를 부른다. 이 문장을 여기서 다시 쓰던 동안 실제로 어긋나 있었다:
-/// 호스트는 `(named by '<메서드>')` 에 **요청의 메서드 이름**을 넣는데 복제본은 인자
-/// 이름(`'surface'`)을 박아 두어 문장의 뜻이 달랐다. lang 파일에 두는 것도 같은 이유로
-/// 답이 아니다 — 로케일마다 바이트가 갈리면 이 문구를 문자열로 가르는 소비자가 깨진다.
-/// 그래서 바이트 동일이 **테스트의 단언이 아니라 호출 구조**로 보장된다.
-///
-/// `method` 는 **호출자가 부른 메서드**(`agent_stream.turn_start` 등)다 — 생존을 되묻느라
-/// 내부적으로 부른 host 호출의 이름이 아니다. 호출자가 이름으로 지목한 것이 그쪽이다.
-///
-/// 판정은 **좁게 틀린다**: host 호출이 실패하면 `surface_exists` 가 `true` 로 떨어져
-/// 예전 문장("보고 있지 않다")으로 돌아간다. 살아 있는 surface 를 "없다" 고 말하지 않는다.
+/// 추적하지 않는 대상이 실제로 존재하는지 확인한다.
+/// 없는 대상이면 공용 오류 형식에 호출자가 사용한 메서드 이름을 넣는다.
+/// 호스트 조회 자체가 실패하면 원래의 미등록 오류를 유지한다.
 fn require_live_surface<H: HostCall>(
     host: &H,
     surface_id: u32,
@@ -110,16 +76,8 @@ fn require_live_surface<H: HostCall>(
     ))
 }
 
-/// `resolve` 가 낸 실패를 IPC 에러로 옮긴다.
-///
-/// `surface_id`·`method` 를 받는 이유는 마지막 갈래 하나 때문이다: 호스트가 "그런 대상은
-/// 없다" 고 거절한 것을 **그대로 실어 보내면 괄호 안이 내부 호출 이름**(`surface.meta.get`)
-/// 이 된다. 그 이름은 호출자가 지목한 적이 없다 — 지목한 것은 이 메서드다. 실측
-/// (2026-09-05): `agent_stream.watch` 에 없는 id 를 주면 `(named by 'surface.meta.get')`
-/// 이 돌아왔고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에
-/// 세 가지 이름이 나오면 호출자는 그 괄호를 못 읽는다.
-///
-/// 그 외의 host 실패는 그대로 넘긴다 — 거기 담긴 사유가 유일한 정보다.
+/// 기록 경로 조회 오류를 IPC 오류로 바꾼다. 대상 부재 오류에는 내부 host 호출 대신
+/// 호출자가 사용한 메서드 이름을 넣고, 다른 호스트 오류는 그대로 전달한다.
 fn resolve_error_message(
     tr: &Translator,
     err: &ResolveError,
@@ -157,13 +115,8 @@ fn resolve_error_message(
     }
 }
 
-/// `agent_stream.watch` — 대상 surface 의 세션 transcript tail 을 시작한다.
-///
-/// 세션 id meta 가 없으면 **거부한다**. 어떤 파일을 볼지 결정할 수 없는데도 등록을
-/// 받아주면 호출자는 스트림이 붙었다고 믿은 채 아무것도 못 받는다(조용한 무동작 금지).
-///
-/// 반대로 세션 id 는 알지만 파일이 아직 없는 것은 정상 상태다 — 세션 시작 직후의 race
-/// 이므로 `awaiting_transcript` 로 등록하고 tail 루프가 계속 재해석한다.
+/// 지정한 surface의 대화 기록 추적을 시작한다. 세션 id가 없으면 거절한다.
+/// id는 있지만 파일이 아직 없으면 awaiting_transcript로 등록해 계속 찾는다.
 pub(crate) fn handle_watch<H: HostCall>(
     host: &H,
     registry: &Shared,
@@ -210,11 +163,8 @@ pub(crate) fn handle_watch<H: HostCall>(
     }))
 }
 
-/// 웹훅 값 슬롯으로 넘어오는 `request_id` 를 읽는다. `${body.request_id}` 는 전체
-/// 플레이스홀더면 JSON 타입을 보존하므로(문자열이면 문자열, 숫자면 숫자) 둘 다 받아
-/// 문자열로 정규화한다. 없거나 빈 값이면 거부한다 — correlation id 는 요청자만 알 수 있는
-/// 값이라(웹훅 응답은 고정 ACK) 매칭의 유일한 성립 경로다. 자체 생성하면 FE 가 그 값을
-/// 알 방법이 없다.
+/// request_id 문자열이나 숫자를 문자열로 읽는다.
+/// 웹훅의 응답은 고정 ACK이므로 이벤트와 요청을 연결할 id는 호출자가 제공해야 한다.
 fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMethodError> {
     let raw = match params.get("request_id") {
         Some(Value::String(s)) => s.clone(),
@@ -237,15 +187,9 @@ fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMeth
     Ok(trimmed.to_string())
 }
 
-/// `agent_stream.turn_start` — surface 에 correlation 턴을 연다.
-///
-/// 웹훅 IpcSequence 의 **첫 스텝**으로 쓴다(두 번째가 `claude.tell`). 이 호출이 먼저
-/// 끝나야 그 사이 도착하는 transcript 이벤트가 누락 없이 `request_id` 로 태깅된다 —
-/// `execute_sequence` 가 스텝을 **순차** 실행하므로 순서가 보장된다(`src/hook_handler/exec.rs`).
-///
-/// 턴은 그 surface 의 다음 `turn_end`(정상 종료·취소·오류·해제·세션 소멸) 가 닫는다.
-/// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(docs/plugins/agent-stream/index.md#내부-동작),
-/// 훅 구독은 claude plugin 이 활성일 때만 성립하는 의존을 새로 만들기 때문이다.
+/// 추적 중인 surface의 다음 이벤트에 request_id를 붙일 턴을 연다.
+/// 웹훅 순차 실행에서 claude.tell보다 먼저 호출해야 응답 기록에 id를 붙일 수 있다.
+/// 턴은 기록의 turn_end 등으로 닫으며, 별도의 claude-idle 훅에는 의존하지 않는다.
 pub(crate) fn handle_turn_start<H: HostCall>(
     host: &H,
     registry: &Shared,
@@ -268,8 +212,7 @@ pub(crate) fn handle_turn_start<H: HostCall>(
     )
     .map_err(|e| {
         let msg = turn_error_message(tr, surface_id, &e);
-        // "안 보고 있다" 는 **없는 surface** 에도 같은 말이 된다 — 그 자리에서만 host 에
-        // 되묻는다(정상 경로엔 왕복이 붙지 않는다).
+        // 미등록인 경우에만 대상 존재 여부를 확인한다.
         match e {
             TurnError::NotWatched => {
                 require_live_surface(host, surface_id, "agent_stream.turn_start", msg)
@@ -313,8 +256,7 @@ pub(crate) fn handle_unwatch<H: HostCall>(
     let surface_id = require_surface(&params, tr)?;
     let mut reg = lock(registry, tr)?;
     if !reg.remove(surface_id, crate::record::REASON_UNWATCHED) {
-        // 보고 있던 surface 는 죽어 있어도 여기까지 안 온다(위 `remove` 가 참) — 즉
-        // 죽은 대상의 뒷정리를 막지 않는다. 생존을 되묻는 것은 **레지스트리에 없을 때**뿐이다.
+        // 등록된 대상은 이미 종료됐어도 정리한다. 미등록인 경우에만 존재 여부를 확인한다.
         let fallback = IpcMethodError::new(tr.t_replace(
             "agent_stream.error.not_watched",
             "{surface}",
@@ -359,27 +301,10 @@ pub(crate) fn handle_poll(
     Ok(lock(registry, tr)?.poll_json(filter_surface, after_seq, limit))
 }
 
-/// `agent_stream.serve` — SSE 엔드포인트를 연다.
-///
-/// 이미 떠 있으면 **끄고 새 설정으로 다시 연다**(`replaced: true`). 포트/토큰을 바꾸려고
-/// 별도 명령을 쓰게 만들 이유가 없고, "요청한 설정으로 열려 있다" 는 결과가 호출 횟수와
-/// 무관하게 같아진다.
-///
-/// # 불변: 실행 중인 엔드포인트 ↔ 영속 스냅샷은 어긋나지 않는다
-///
-/// 이 함수(와 [`handle_serve_stop`])가 반환한 뒤, 스냅샷의 `serve` 절은 **이 프로세스에서
-/// 실제로 떠 있는(혹은 떠 있지 않은) 엔드포인트를 그대로** 기술한다. 어긋나면 다음 강제
-/// 재시작 때 plugin 기동 시의 `restore_endpoint` 가 사용자가 닫혔다고 믿는
-/// 주소를 열거나, 열려 있다고 믿는 주소를 열지 않는다 — 대화 전문이 나가는 채널에서
-/// 그것은 docs/plugins/agent-stream/index.md#sse-엔드포인트 의 명시적 실행 규칙(명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
-///
-/// 불변을 지키는 규칙은 둘이다.
-///
-/// 1. **아직 아무것도 바꾸지 않았으면 실패를 그대로 올린다.** 첫 레지스트리 락이
-///    poisoned 면 옛 리스너도 스냅샷도 손대기 전이라, 에러로 빠지는 것이 곧 정합이다.
-/// 2. **이미 바꿨으면 기록은 실패하지 않는다.** 리스너를 내렸거나 새로 띄운 뒤의
-///    스냅샷 기록은 [`persist_serve_config`] 로 하며, 그 함수는 poisoned 락을
-///    복구해서라도 쓴다. 여기서 `?` 로 빠지면 "실행 주소 ≠ 스냅샷" 이 그대로 남는다.
+/// SSE 엔드포인트를 연다. 기존 서버는 닫고 새 설정으로 다시 연다.
+/// 처음 잠금 확인에 실패하면 기존 서버를 유지한다. 이미 서버를 바꾼 뒤에는
+/// poison 상태라도 메모리 설정을 갱신하고 저장을 시도한다.
+/// 디스크 쓰기에 실패하면 다음 재시작이 이전 설정을 읽을 수 있다.
 pub(crate) fn handle_serve(
     registry: &Shared,
     server: &mut Option<SseServer>,
@@ -399,31 +324,23 @@ fn handle_serve_with(
 ) -> Result<Value, IpcMethodError> {
     let config = serve_config_from(&params, tr)?;
     let replaced = server.is_some();
-    // 옛 리스너를 내리기 **전에** 레지스트리 락을 한 번 잡아 둔다. 순서를 뒤집으면
-    // 락이 poisoned 인 경우 옛 엔드포인트만 닫힌 채 `?` 로 빠져나가, 스냅샷에는 옛 설정이
-    // 남는다 — 다음 재시작이 사용자가 닫혔다고 믿는 엔드포인트를 다시 연다.
+    // 기존 서버를 닫기 전에 잠금을 확인해, 여기서 실패하면 서버와 설정을 그대로 둔다.
     let hub = lock(registry, tr)?.hub();
-    // 새로 bind 하기 전에 옛 리스너를 반드시 내린다 — 같은 포트로 재기동하는 흔한 경우에
-    // 남겨두면 "주소가 이미 사용 중" 으로 실패한다.
+    // 같은 주소로 다시 열 수 있도록 기존 서버를 먼저 닫는다.
     if let Some(mut old) = server.take() {
         old.shutdown();
     }
     let started = match start(config.clone(), hub, registry.clone()) {
         Ok(started) => started,
         Err(e) => {
-            // 옛 리스너는 이미 내려갔고 새 bind 는 실패했다 — 런타임 상태는 "닫힘" 이다.
-            // 스냅샷에 옛 설정을 남겨두면 다음 강제 재시작/`enable` 때
-            // `restore_endpoint` 가 사용자가 닫혔다고 믿는 엔드포인트를 조용히 다시 연다.
-            // 대화 전문이 나가는 채널에서 "닫힌 줄 알았는데 열림" 은 docs/plugins/agent-stream/index.md#sse-엔드포인트 의 실행 규칙
-            // (명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
+            // 기존 서버도 닫혔으므로 설정을 비우고 저장을 시도한다.
             persist_serve_config(registry, None);
             return Err(bind_failed_message(tr, &config, &e));
         }
     };
     let info = started.to_json();
     *server = Some(started);
-    // 여기서부터는 실패로 빠질 수 없다 — 새 엔드포인트가 이미 떠 있으므로 스냅샷도
-    // 반드시 그 주소를 가리켜야 한다(위 불변 규칙 2).
+    // 이미 연 서버의 설정을 메모리에 반영하고 저장을 시도한다.
     persist_serve_config(registry, Some(config));
     let mut info = info;
     if let Some(map) = info.as_object_mut() {
@@ -443,26 +360,14 @@ fn bind_failed_message(tr: &Translator, config: &ServeConfig, detail: &str) -> I
     )
 }
 
-/// 스냅샷의 `serve` 절을 지금의 런타임 상태로 맞춘다 — **실패하지 않는다.**
-///
-/// 호출 시점에는 리스너를 이미 내렸거나 새로 띄운 뒤다. 그 상태를 기록하지 못하고
-/// 빠져나가면 "실행 주소 ≠ 스냅샷" 이 남아, 다음 재시작이 엉뚱한 주소를 연다
-/// (`handle_serve` 의 불변 참고). 그래서 락이 poisoned 여도 `PoisonError::into_inner`
-/// 로 복구해 기록한다.
-///
-/// 오염된 데이터를 쓰게 되지 않는가 — 여기서 바꾸는 `serve` 절은 **요청 파라미터에서
-/// 검증을 마치고 온 값**이라 패닉한 스레드가 만지던 것과 무관하다. 함께 직렬화되는
-/// 나머지(watch 목록·offset·`next_seq`)는 패닉으로 찢어지지 않는 Rust 값이고, 최악이라야
-/// 한 tick 낡은 offset 이나 앞선 `seq` 인데 둘 다 tail 의 at-least-once 재개(docs/plugins/agent-stream/index.md#내부-동작)가
-/// 이미 감당하는 범위다. 반면 기록을 건너뛰면 손실이 확정적이다.
+/// 서버 변경 뒤에는 poison 상태라도 serve 설정을 현재 값으로 교체하고 저장을 시도한다.
+/// 이 복구가 다른 필드의 부분 갱신을 되돌리거나 디스크 저장 성공을 보장하지는 않는다.
 fn persist_serve_config(registry: &Shared, config: Option<ServeConfig>) {
     let mut reg = match registry.lock() {
         Ok(reg) => reg,
         Err(poisoned) => {
             tracing::warn!(
-                "agent-stream: the registry lock is poisoned (the tail thread panicked) — \
-                 recovering it to record the SSE endpoint state, otherwise a restart would \
-                 reopen an address that is no longer the live one"
+                "agent-stream: recovering the poisoned registry lock to update the SSE endpoint state"
             );
             poisoned.into_inner()
         }
@@ -471,10 +376,7 @@ fn persist_serve_config(registry: &Shared, config: Option<ServeConfig>) {
     reg.save_if_dirty();
 }
 
-/// `agent_stream.serve_stop` — 엔드포인트를 닫고 열린 구독을 정리한다.
-///
-/// [`handle_serve`] 와 같은 불변을 지킨다: 리스너를 내린 **뒤**의 스냅샷 기록은 실패로
-/// 빠질 수 없다. 빠지면 사용자가 닫은 엔드포인트가 스냅샷에 남아 다음 재시작에 되살아난다.
+/// 서버를 닫고 설정을 비운 뒤 저장을 시도한다. 디스크 실패는 save_if_dirty가 기록한다.
 pub(crate) fn handle_serve_stop(
     registry: &Shared,
     server: &mut Option<SseServer>,
@@ -499,8 +401,7 @@ pub(crate) fn handle_serve_info(server: &Option<SseServer>) -> Result<Value, Ipc
 }
 
 fn serve_config_from(params: &Value, tr: &Translator) -> Result<ServeConfig, IpcMethodError> {
-    // 포트 범위를 벗어난 값은 "지정하지 않음" 으로 접지 않는다 — 그러면 `--port 70000`
-    // 이 "포트가 지정되지 않았다" 로 안내되어 원인과 다른 메시지가 나간다.
+    // 범위 밖 포트는 미지정과 다른 오류로 알린다.
     let port = match params.get("port").and_then(Value::as_u64) {
         Some(raw) => u16::try_from(raw).map_err(|_| {
             IpcMethodError::invalid_params(&tr.t_replace(
@@ -554,12 +455,11 @@ mod tests {
 
     struct StubHost {
         session: Option<&'static str>,
-        /// `surface.locate` 가 돌려줄 값. 기본은 살아 있음 —
-        /// [`live()`] 로 만든다. 없는 surface 를 재는 테스트만 false 를 쓴다.
+        /// surface.locate 응답의 exists. 기본 시험 대상은 존재한다.
         exists: bool,
     }
 
-    /// 살아 있는 surface 를 답하는 host. 기존 테스트의 전제를 그대로 유지한다.
+    /// 존재하는 surface를 반환하는 시험용 호스트.
     fn live() -> StubHost {
         StubHost {
             session: None,
@@ -583,9 +483,7 @@ mod tests {
 
     use crate::sse::server::test_support::ReservedEndpoint;
 
-    /// 레지스트리 락을 실제로 poisoned 로 만든다 — 락을 쥔 스레드를 패닉시키는 것이
-    /// 유일한 방법이라(std 에 강제 poison API 가 없다) 그대로 재현한다. 이 테스트가
-    /// 일부러 낸 패닉이라는 것을 출력에서 알아볼 수 있게 메시지를 남긴다.
+    /// 잠금을 보유한 스레드에서 의도적으로 패닉을 일으켜 poison 상태를 만든다.
     fn poison_registry(registry: &Shared) {
         let target = registry.clone();
         let joined = std::thread::spawn(move || {
@@ -604,8 +502,7 @@ mod tests {
 
     #[test]
     fn the_snapshot_records_the_closed_endpoint_even_when_the_lock_is_poisoned() {
-        // `serve_stop` 은 리스너를 먼저 내리고 나서 스냅샷을 쓴다 — 그 사이에 락이
-        // poisoned 면 예전 코드는 `?` 로 빠져 "닫았는데 스냅샷엔 남아 있음" 이 됐다.
+        // 잠금이 poison 상태여도 서버를 닫은 뒤의 설정을 저장해야 한다.
         let dir = tempfile::tempdir().expect("tempdir");
         let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
         let tr = Translator::default();
@@ -654,8 +551,7 @@ mod tests {
 
     #[test]
     fn a_poisoned_lock_before_anything_changes_is_reported_without_touching_the_endpoint() {
-        // 아직 아무것도 안 바꾼 시점의 실패는 그대로 올린다 — 그때는 에러를 내는 쪽이
-        // 정합이다(옛 엔드포인트도 스냅샷도 손대지 않았다).
+        // 서버 변경 전 잠금 확인에 실패하면 기존 서버·설정을 유지한다.
         let dir = tempfile::tempdir().expect("tempdir");
         let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
         let tr = Translator::default();
@@ -742,8 +638,7 @@ mod tests {
             err.message
         );
 
-        // 런타임도 스냅샷도 "닫힘" 이어야 한다 — 다음 재시작이 옛 설정을 되살리면
-        // 사용자가 닫혔다고 믿는 채널로 대화 전문이 다시 나간다.
+        // 새 bind가 실패하면 서버와 저장 설정 모두 닫힘 상태여야 한다.
         assert!(server.is_none(), "the runtime endpoint is closed");
         assert!(registry.lock().expect("lock").serve_config().is_none());
         let snapshot: Value = serde_json::from_str(
@@ -793,7 +688,7 @@ mod tests {
         );
         assert!(
             !err.message.contains("serve_port_required"),
-            "포트 미지정 안내로 접히면 원인이 가려진다: {}",
+            "범위 밖 포트를 미지정으로 안내해서는 안 된다: {}",
             err.message
         );
     }
@@ -981,7 +876,7 @@ mod tests {
             "{}",
             err.message
         );
-        // 거부된 요청은 어떤 턴도 열지 않는다 — 증폭 벡터가 저장 단계에 닿지 않는다.
+        // 거절한 요청으로 턴을 만들지 않는다.
         assert!(!registry.lock().expect("lock").has_open_turn(3));
     }
 
@@ -999,11 +894,7 @@ mod tests {
         assert!(registry.lock().expect("lock").has_open_turn(3));
     }
 
-    /// 없는 surface 를 **호스트가 실제로 답하는 방식**으로 답하는 host.
-    ///
-    /// `{exists:false}` 가 아니라 요청 거절이다 — 실측(2026-09-05, 격리 헤드리스
-    /// 인스턴스). 스텁이 `{exists:false}` 를 쓰면 이 테스트는 프로덕션에서 한 번도
-    /// 돌지 않는 경로를 재게 된다(그 함정에 `pump` 의 기존 회귀가 걸려 있었다).
+    /// 존재하지 않는 대상을 호스트의 공용 오류로 거절하는 stub.
     struct RejectingHost;
 
     impl HostCall for RejectingHost {
@@ -1013,8 +904,7 @@ mod tests {
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
             match method {
-                // 없는 대상에는 **어느 호스트 호출이든** 같은 모양으로 거절한다 — 실측이
-                // 그렇다. 그래서 스텁도 메서드마다 다른 답을 흉내 내지 않는다.
+                // 두 조회 모두 공용 대상 부재 오류를 사용한다.
                 "surface.locate" | "surface.meta.get" => Err(PluginError::HostCall {
                     method: method.to_string(),
                     message: tasty_utils::target::unowned_target_message("surface", sid, method),
@@ -1025,12 +915,7 @@ mod tests {
         }
     }
 
-    /// `watch` 도 **호출자가 부른 메서드**를 괄호에 넣는다 — 내부 호출 이름이 아니다.
-    ///
-    /// 실측(2026-09-05): 없는 id 로 `agent_stream.watch` 를 부르면 호스트의 거절이 그대로
-    /// 실려 나와 `(named by 'surface.meta.get')` 이 됐다. 호출자는 그 이름을 지목한 적이
-    /// 없고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에 세 가지
-    /// 이름이 나오면 그 괄호는 읽을 수 없는 칸이 된다.
+    /// 대상 부재 오류는 내부 조회가 아닌 호출자의 메서드 이름을 알려야 한다.
     #[test]
     fn watch_names_the_method_the_caller_called() {
         let tr = Translator::default();
@@ -1049,10 +934,7 @@ mod tests {
         );
     }
 
-    /// 값을 실어 보냈는데 그 값이 surface id 가 될 수 없으면 **"안 줬다" 가 아니다.**
-    ///
-    /// 실측(2026-09-05, 격리 헤드리스 인스턴스): 세 메서드 전부 `surface: 999999999999`
-    /// 에 `missing_surface` 로 답했다 — 키를 아예 뺀 요청과 **글자 하나 다르지 않았다.**
+    /// 잘못된 id와 누락한 id를 다른 오류로 알려야 한다.
     #[test]
     fn a_surface_value_out_of_u32_range_is_not_reported_as_missing() {
         let tr = Translator::default();
@@ -1071,7 +953,7 @@ mod tests {
         );
         assert_ne!(
             absent.message, too_big.message,
-            "두 사정이 같은 문장이면 호출자는 같은 값을 다시 보낸다"
+            "누락한 값과 잘못된 값은 다른 오류로 안내해야 한다"
         );
         // 양방향 — 정상 값은 그대로 통과한다.
         assert_eq!(
@@ -1080,10 +962,7 @@ mod tests {
         );
     }
 
-    /// **없는 surface** 에 "안 보고 있다" 고 답하지 않는다 — 두 메서드 모두.
-    ///
-    /// 실측(같은 회차): 존재하지 않는 424242 와 **살아 있는** 1 이 `turn_start`·`unwatch`
-    /// 에서 같은 문장을 받았다. 호출자는 `watch` 를 부르면 되는 줄 알고 다시 부른다.
+    /// 존재하지 않는 대상은 단순 미등록과 구분한다.
     #[test]
     fn a_missing_surface_is_not_reported_as_merely_unwatched() {
         let tr = Translator::default();
@@ -1102,11 +981,7 @@ mod tests {
             json!({ "surface": 424_242 }),
         )
         .expect_err("없는 surface 는 거절");
-        // 단언 대상이 **정본 함수의 출력 그대로**다. 예전에는 `contains("no_live_surface")`
-        // 로 **번역 키 이름**을 봤는데, 그건 키가 lang 파일에 없을 때 키를 그대로 돌려주는
-        // 스텁 Translator 덕에 통과하던 것이라 문장에 대해 아무것도 안 재고 있었다.
-        // 여기서 재는 것은 포맷이 아니라 **`method` 자리에 무엇이 들어가는가** 다 —
-        // 틀렸던 것이 정확히 그 자리(인자 이름 `'surface'`)였다.
+        // 공용 오류의 정확한 출력과 메서드 이름을 확인한다.
         assert_eq!(
             dead_turn.message,
             tasty_utils::target::unowned_target_message(
@@ -1120,8 +995,7 @@ mod tests {
             tasty_utils::target::unowned_target_message("surface", 424_242, "agent_stream.unwatch")
         );
 
-        // **양방향** — 살아 있지만 watch 안 한 surface 는 예전 문장 그대로여야 한다.
-        // 이쪽이 무너지면 위 둘은 "전부 없는 surface 라고 답한다" 는 뜻이 된다.
+        // 존재하는 대상의 미등록 오류는 그대로 유지한다.
         let live_turn = handle_turn_start(
             &live(),
             &shared(),

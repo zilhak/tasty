@@ -1,8 +1,4 @@
-//! reboot 시퀀스 중 CLI 를 몰라도 성립하는 조각.
-//!
-//! **여기 없는 것이 더 중요하다.** `EXIT_WAIT` / `RETURN_WAIT`(종료·복귀 대기 한도)는
-//! 각 CLI 의 실측치라 plugin 마다 다르고, 지금 값이 같은 `CTRL_C_COUNT` 같은 상수도
-//! 원인이 CLI 쪽에 있어 공유하지 않는다. 화면 마커·안내문 키도 마찬가지다.
+//! CLI에 공통인 reboot 인자 처리와 화면 확인. 대기 시간·키 입력·안내문은 각 플러그인이 정한다.
 
 use std::thread;
 use std::time::Duration;
@@ -13,17 +9,10 @@ use tasty_plugin_sdk::HostHandle;
 /// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
 pub const DEFAULT_DELAY_SECS: u64 = 5;
 
-/// 문구 확인 후 추가 Enter 전까지 대기. tell 의 본문/`\r` 분리 write 도 TUI 부팅
-/// 직후엔 한 read burst 로 합쳐져 `\r` 이 paste 로 흡수될 수 있다(실측: 문구가
-/// 입력창에 미제출로 잔류). 이미 제출된 경우 빈 입력창 Enter 는 no-op 이므로
-/// 확인 후 별도 Enter 1회는 항상 안전하다.
+/// 붙여넣기와 함께 전달된 Enter가 제출로 처리되지 않을 수 있어 추가 Enter 전에 기다린다.
 const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
 
-/// 안내문 = 기본 문구 + (있으면) 빈 줄 하나를 사이에 둔 추가 텍스트.
-///
-/// **기본 문구를 여기서 짓지 않고 받는다.** 짝의 두 plugin 이 서로 다른 카탈로그
-/// 키를 쓰는데, 한쪽 함수가 자기 키를 안에서 찾고 있었다 — 그러면 이 조립 규칙이
-/// 그 키에 묶여 공유가 안 된다. 규칙은 "빈 줄 하나" 하나뿐이고 그것만 여기 있다.
+/// 기본 안내문과 추가 텍스트 사이에 빈 줄 하나를 넣는다. 번역된 문구는 호출자가 제공한다.
 pub fn build_notice(base: &str, extra: Option<&str>) -> String {
     match extra {
         Some(t) => format!("{base}\n\n{t}"),
@@ -38,8 +27,7 @@ pub fn screen_text<H: crate::host_call::HostCall>(host: &H, surface_id: u32) -> 
         .and_then(|r| r.get("text").and_then(|t| t.as_str().map(str::to_string)))
 }
 
-/// 지금 화면에 문구가 보이는가. 조회 실패는 **`false`** — 못 봤다는 것을 봤다로
-/// 읽으면 확인 없이 다음 단계로 넘어간다.
+/// 화면에 문구가 있는지 확인한다. 조회 실패는 false로 처리한다.
 pub fn screen_contains<H: crate::host_call::HostCall>(
     host: &H,
     surface_id: u32,
@@ -50,8 +38,7 @@ pub fn screen_contains<H: crate::host_call::HostCall>(
         .unwrap_or(false)
 }
 
-/// `--delay`(기본 [`DEFAULT_DELAY_SECS`]) / `--prompt`(안내문 뒤에 덧붙일 추가
-/// 텍스트) 파싱. 빈 프롬프트는 `None` 으로 접는다 — "안 줬다" 와 같은 뜻이다.
+/// delay와 prompt를 읽는다. 빈 prompt는 생략한 것으로 처리한다.
 pub fn parse_options(params: &Value) -> (u64, Option<String>) {
     let delay = params
         .get("delay")
@@ -65,7 +52,7 @@ pub fn parse_options(params: &Value) -> (u64, Option<String>) {
     (delay, extra)
 }
 
-/// session id 가 셸에 평문으로 들어가므로 uuid 계열 문자만 허용한다.
+/// 셸에 그대로 넣을 session id를 영문·숫자·하이픈·밑줄로 제한한다.
 pub fn is_safe_session_id(id: &str) -> bool {
     !id.is_empty()
         && id
@@ -73,8 +60,7 @@ pub fn is_safe_session_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// 안내문이 화면에 뜬 것을 확인한 뒤 Enter 를 한 번 더 보낸다 — [`NOTICE_SUBMIT_DELAY`]
-/// 의 이유. `agent` 는 로그 식별용 이름("claude" / "codex")이다.
+/// 추가 Enter를 보낸다. 화면 확인은 호출자가 먼저 수행해야 한다.
 pub fn ensure_submitted(host: &HostHandle, surface_id: u32, agent: &str) {
     thread::sleep(NOTICE_SUBMIT_DELAY);
     if let Err(e) = host.call(

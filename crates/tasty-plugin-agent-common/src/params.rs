@@ -2,9 +2,7 @@
 
 use serde_json::{Map, Value};
 
-/// 요청 params 에서 지정한 키들을 **존재할 때만** 그대로 새 Map 에 복사한다. CLI
-/// 인자를 호스트 `terminal.*` 로 pass-through 하는 용도 — 없는 키를 `null` 로 채워
-/// 보내면 호스트가 "값을 명시했다" 로 읽는 자리가 있어 존재 여부를 보존한다.
+/// 있는 키만 새 Map에 복사한다. 없는 키를 null로 만들면 값이 지정된 것으로 해석될 수 있다.
 pub fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
     let mut out = Map::new();
     for k in keys {
@@ -15,26 +13,16 @@ pub fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
     out
 }
 
-/// `u32` 필드를 읽다 실패한 갈래. [`TargetSurfaceError`] 와 마찬가지로 **문구를 짓지
-/// 않는다** — 어느 키를 어떻게 이름 댈지는 plugin 마다 다르고, 실제로 짝의 두
-/// plugin 이 다르게 이름 댄다(한쪽은 파라미터마다 전용 카탈로그 키, 다른 쪽은
-/// `{key}` 를 끼우는 공용 키).
+/// u32 인자 오류. 사용자 메시지는 각 플러그인이 자기 번역으로 만든다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum U32FieldError {
-    /// 키가 없거나 `null` 이다. **둘을 안 가른다** — 호출자가 값을 안 준 것과
-    /// `null` 을 명시한 것은 "지목이 없다" 는 같은 뜻이고, 가르면 같은 부재에
-    /// 답이 둘이 된다.
+    /// 키가 없거나 null이다.
     Missing,
     /// 값이 왔는데 32 비트 정수가 아니다.
     Malformed { raw: String },
 }
 
-/// params 의 `key` 를 `u32` 로 읽는다 — **자르지 않는다.**
-///
-/// 이 세 줄이 짝의 두 plugin 에 각각 적혀 있었다. 판정은 셋이다: 키 부재와 `null` 을
-/// 같게 볼 것인가 · `as_u64` 로 읽을 것인가 · 32 비트를 넘는 값을 자를 것인가.
-/// 세 답이 두 벌로 적혀 있으면 한쪽만 고쳐지는 날 조용히 갈린다 — 특히 마지막은
-/// `4_294_967_297 as u32 == 1` 이라 **잘린 id 가 실재하는 다른 대상**이 된다.
+/// u32 범위의 정수를 읽는다. 큰 값을 잘라 다른 surface id로 해석하지 않는다.
 pub fn u32_field(params: &Value, key: &str) -> Result<u32, U32FieldError> {
     let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
         return Err(U32FieldError::Missing);
@@ -46,40 +34,23 @@ pub fn u32_field(params: &Value, key: &str) -> Result<u32, U32FieldError> {
         })
 }
 
-/// 대상 parent surface 를 읽다 실패한 갈래. 문구는 **plugin 이** 자기 카탈로그로
-/// 만든다 — 두 plugin 의 i18n namespace 가 다르므로 여기서 문자열을 짓지 않는다.
+/// 대상 surface 인자 오류. 사용자 메시지는 플러그인이 만든다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetSurfaceError {
-    /// 값이 왔는데 32 비트 정수가 아니다. **자르지 않고** 거절한다 —
-    /// `4_294_967_297 as u32` 는 `1` 이고, 잘린 id 는 실재할 수 있는 다른 surface 다.
+    /// 값이 u32 정수가 아니다. 큰 값을 잘라서 쓰지 않는다.
     Malformed { key: &'static str, raw: String },
-    /// 두 이름이 서로 다른 대상을 가리킨다. 어느 쪽을 골라도 절반의 호출자에게는
-    /// 지목하지 않은 대상이 되므로 고르지 않는다.
+    /// surface와 surface_id가 서로 다른 대상을 가리킨다.
     Conflict { surface: u32, surface_id: u32 },
 }
 
-/// 대상 parent surface — `surface` / `surface_id` **두 이름을 한 필드로** 읽는다.
-/// 아무 이름도 안 왔으면 `None`.
-///
-/// 두 이름이 생긴 내력: 매니페스트의 CLI 인자는 `surface`, 호스트 IPC 의 표준 키는
-/// `surface_id`, 그래서 CLI 는 두 키를 모두 채워 보낸다(`crates/tasty-cli` 의 dynamic
-/// runner). 그 이중 기입이 어긋남을 가려서, **raw IPC 호출에서만** 드러났다.
-///
-/// 실측(2026-09-05, 격리 인스턴스): 두 plugin 다 `kill` 이 대상을 `forward` 로만
-/// 넘겨서, `surface_id` 로 지목한 호출은 **아무 대상도 안 실은 호출**이 됐고 호스트의
-/// 유일-parent 폴백에 떨어졌다. 존재하지 않는 surface 999 를 지목한
-/// `claude.kill` / `codex.kill` 이 성공을 돌려주며 남의 자식을 죽였다 — 폴백은
-/// namespace 를 가리지 않아서 `codex.kill` 이 claude 자식을 죽이는 것까지 관측됐다.
-/// 같은 값을 `surface` 로 주면 호스트가
-/// `no live surface 999 … a named target is never resolved by focus` 로 막는다.
-/// **이름이 달라서 그 가드를 우회한 것이다.**
+/// surface와 surface_id를 같은 대상 필드로 읽는다. 둘 다 없거나 null이면 None.
+/// 둘을 함께 지정했다면 값이 같아야 한다. 어느 이름으로 지정해도
+/// 유효하지 않은 대상을 무시하고 기본 대상에 적용해서는 안 된다.
 pub fn target_surface(params: &Value) -> Result<Option<u32>, TargetSurfaceError> {
     let mut surface = None;
     let mut surface_id = None;
     for key in ["surface", "surface_id"] {
-        // 같은 판정을 두 번 적지 않는다 — 부재·null·자르지 않음의 세 답이
-        // [`u32_field`] 한 곳에 있다. 여기서 하는 일은 그 갈래에 **키 이름을
-        // 붙이는 것**뿐이다(이 축은 키가 둘이라 어느 쪽이 틀렸는지를 말해야 한다).
+        // 공통 u32 판정 결과에 잘못된 키 이름을 붙인다.
         let v = match u32_field(params, key) {
             Ok(v) => v,
             Err(U32FieldError::Missing) => continue,
@@ -107,7 +78,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 두 이름이 **같은 필드**다 — 어느 쪽으로 지목해도 같은 대상이 나온다.
+    /// 어느 이름으로 지정해도 같은 대상이 나온다.
     #[test]
     fn either_name_names_the_same_target() {
         for p in [json!({ "surface": 7 }), json!({ "surface_id": 7 })] {
@@ -119,8 +90,7 @@ mod tests {
         }
     }
 
-    /// 아무 이름도 안 주면 `None` 이다 — 호출자가 그때 아무것도 안 싣도록,
-    /// 여기서 값을 **지어내지 않는다.** 폴백이 곧 `--surface` 생략 동작이다.
+    /// 두 필드가 없으면 호출자가 기본 대상 선택을 적용할 수 있도록 None을 반환한다.
     #[test]
     fn naming_no_target_yields_none() {
         assert_eq!(target_surface(&json!({ "child": 0 })), Ok(None));
@@ -153,8 +123,7 @@ mod tests {
         );
     }
 
-    /// 부재와 `null` 은 같은 답이다 — 이 규칙이 두 plugin 에 각각 적혀 있었고,
-    /// 양쪽에 그것을 지키는 시험도 따로 있었다.
+    /// 부재와 null은 같은 Missing으로 처리한다.
     #[test]
     fn an_absent_key_and_an_explicit_null_read_the_same() {
         assert_eq!(u32_field(&json!({}), "child"), Err(U32FieldError::Missing));

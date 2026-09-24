@@ -4,8 +4,7 @@ use serde_json::{Value, json};
 
 use crate::host_call::HostCall;
 
-/// 자식 항목의 `state` 문자열. 없으면 `None` — 상태를 모르는 것과 특정 상태인 것을
-/// 호출자가 가를 수 있게 남긴다.
+/// 자식 상태를 읽는다. 상태가 없으면 None으로 남겨 알려진 상태와 구분한다.
 pub fn state_of(child: &Value) -> Option<&str> {
     child.get("state").and_then(|s| s.as_str())
 }
@@ -28,32 +27,21 @@ pub fn join_indices(indices: &[u64]) -> String {
         .join(", ")
 }
 
-/// spawn 경고의 문턱값 기본치 — 설정(`spawn_child_warn_threshold`)이 없을 때.
+/// spawn_child_warn_threshold 설정을 읽지 못했을 때 쓸 기본 경고 기준.
 pub const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
 
-/// spawn 경고를 지을 때 쓰는 자식 인구. **문구는 안 만든다** — 두 plugin 의 i18n
-/// namespace 와 placeholder 형태가 달라서, 문장은 부르는 쪽이 짓는다.
+/// spawn 경고에 필요한 자식 수와 상태. 안내문은 각 플러그인의 번역으로 만든다.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpawnCensus {
     pub total: usize,
     pub idle: Vec<u64>,
-    /// **확정된 stale 만** 담는다 — 아래 [`spawn_census`] 의 근거 참조.
+    /// confirmed 상태인 stale 자식만 포함한다.
     pub stale: Vec<u64>,
     pub threshold: f64,
 }
 
-/// parent surface 의 자식들을 세어 spawn 경고의 재료를 만든다.
-///
-/// 이 스무 줄이 짝의 두 plugin 에 **주석까지 글자 그대로** 두 벌 있었고, 둘을 같게
-/// 유지하는 것은 아무것도 없었다(그 사이 인자 순서만 갈려 있었다 —
-/// `(host, parent, tr)` vs `(host, tr, parent)`).
-///
-/// `stale` 은 확정(`foreground_is_shell`)인 것만 센다 — `heuristic` stale 은
-/// SIGSTOP·긴 추론·무출력 명령과 관측상 구별되지 않아, 그것까지 "respawn 후보" 로
-/// 부르면 일하는 자식을 재시작하라고 권하게 된다. `docs/dev-guide/api-conventions.md`
-/// 가 같은 이유로 `stale` 을 기본 terminal state 집합에서 뺀 것과 같은 판단이다.
-///
-/// 자식 목록을 못 읽으면 `None` — "자식이 0" 과 "못 물어봤다" 를 안 섞는다.
+/// 자식 상태와 경고 기준을 읽는다. 목록 조회에 실패하면 None을 반환한다.
+/// heuristic stale은 긴 작업·출력 중단과 구분하기 어려워 재시작 후보에서 제외한다.
 pub fn spawn_census<H: HostCall>(host: &H, parent_surface_id: u32) -> Option<SpawnCensus> {
     let resp = host
         .call("terminal.children", json!({ "surface": parent_surface_id }))
@@ -91,7 +79,7 @@ mod tests {
             json!({ "index": 3, "state": "running" }),
         ];
         let idle = indices_with(&children, |c| state_of(c) == Some("idle"));
-        assert_eq!(idle, vec![1], "index 없는 항목이 0 으로 둔갑하지 않는다");
+        assert_eq!(idle, vec![1], "index가 없는 항목은 목록에서 제외해야 한다");
         assert_eq!(join_indices(&[1, 3]), "1, 3");
         assert_eq!(join_indices(&[]), "");
     }
@@ -115,8 +103,7 @@ mod tests {
         }
     }
 
-    /// 휴리스틱 stale 은 respawn 후보가 아니다 — 이 규칙이 두 plugin 에 주석까지
-    /// 똑같이 두 벌 있었고, 그것을 지키는 시험은 **어느 쪽에도 없었다**.
+    /// heuristic stale은 재시작 후보에 넣지 않는다.
     #[test]
     fn only_confirmed_stale_children_count_as_respawn_candidates() {
         let host = FakeHost(vec![(
@@ -125,8 +112,7 @@ mod tests {
                 { "index": 0, "state": "idle" },
                 { "index": 1, "state": "stale", "confidence": "confirmed" },
                 { "index": 2, "state": "stale", "confidence": "heuristic" },
-                // `confidence` 를 안 싣는 옛 호스트 응답 — 안 센다. 경고가 과하게
-                // 나가는 것보다 안전한 쪽으로 실패한다.
+                // confidence가 없는 옛 응답도 재시작 후보에서는 제외한다.
                 { "index": 4, "state": "stale" },
                 { "index": 3, "state": "running" },
             ]}),
@@ -141,8 +127,7 @@ mod tests {
         );
     }
 
-    /// 자식 목록을 못 읽으면 `None` 이다 — 그것을 "자식 0" 으로 읽으면 경고가
-    /// 조용히 사라진다.
+    /// 조회 실패를 자식이 없는 상태로 처리하지 않는다.
     #[test]
     fn a_failed_children_call_is_none_not_zero() {
         assert_eq!(spawn_census(&FakeHost(vec![]), 1), None);
