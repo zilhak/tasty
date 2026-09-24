@@ -70,8 +70,8 @@ impl HexColor {
         }
     }
 
-    /// Multiply alpha by `factor` (saturating). RGB는 보존되며, premultiplied로
-    /// 변환된 시점의 효과는 egui::Color32::gamma_multiply과 시각적으로 동등하다.
+    /// RGB를 유지하고 alpha에 factor를 곱한 뒤 0..=255로 제한한다.
+    /// premultiplied RGBA 전체를 곱하는 egui::Color32::gamma_multiply와는 계산이 다르다.
     #[inline]
     pub fn gamma_multiply(self, factor: f32) -> Self {
         let a = ((self.a as f32) * factor).clamp(0.0, 255.0) as u8;
@@ -97,15 +97,12 @@ impl HexColor {
         ]
     }
 
-    /// theme 색 → GPU 표현 변환. **정상 변환 경로**.
-    ///
-    /// GPU buffer struct(`BgInstance.bg_color` 등) 와 렌더러 함수 시그니처는 모두
-    /// [`GpuRgba`] 를 받으므로 호출자는 이 메서드를 거쳐야 한다.
+    /// 테마 색을 GPU 버퍼용 GpuRgba로 변환한다.
     pub const fn to_gpu_rgba(self) -> GpuRgba {
         GpuRgba::from_hex_color(self)
     }
 
-    /// theme 색 → GPU 3채널 표현 (ANSI 팔레트 등). **정상 변환 경로**.
+    /// 테마 색을 GPU 팔레트용 3채널 값으로 변환한다.
     pub const fn to_gpu_rgb(self) -> GpuRgb {
         GpuRgb::from_hex_color(self)
     }
@@ -117,9 +114,7 @@ impl HexColor {
     /// 변환하므로, RGB 채널이 단순히 `r * a / 255`가 아니라 감마 보정된 값으로
     /// 저장된다.
     ///
-    /// `egui-compat` 기능이 켜져 있을 때만 노출된다. 헤드리스 플러그인 프로세스는
-    /// `default-features = false`로 컴파일하면 이 변환 헬퍼 없이 `HexColor` 자체만
-    /// 사용한다.
+    /// egui-compat 기능을 켠 경우에만 제공한다.
     #[cfg(feature = "egui-compat")]
     #[allow(clippy::disallowed_methods)] // reason: HexColor → egui 변환 헬퍼의 정의 본거지
     pub fn to_egui(self) -> egui::Color32 {
@@ -154,10 +149,7 @@ impl HexColor {
         Self::from_hex_const(hex)
     }
 
-    /// `from_hex` 의 const fn 버전. [`hex!`] 매크로가 컴파일 타임 검증에 사용.
-    ///
-    /// byte 단위 hex digit 변환 — `u8::from_str_radix` 가 stable const fn 이
-    /// 아니므로 직접 작성. 동작은 [`Self::from_hex`] 와 동일.
+    /// from_hex의 const 버전. hex! 매크로의 컴파일 시점 검증에 사용한다.
     #[allow(clippy::disallowed_methods)] // reason: hex 문자열 파싱 결과를 HexColor 로 조립하는 정의 본거지
     pub const fn from_hex_const(hex: &str) -> Option<Self> {
         let bytes = hex.as_bytes();
@@ -247,12 +239,7 @@ const fn hex_pair(bytes: &[u8], i: usize) -> Option<u8> {
     Some(hi * 16 + lo)
 }
 
-/// 컴파일 타임에 hex 문자열을 검증해서 [`HexColor`] const 로 expansion.
-///
-/// `pub const X: HexColor = hex!("#1e1e2e");` 처럼 const 컨텍스트에서 사용 가능.
-/// 잘못된 hex 는 빌드 에러로 잡힌다 — 런타임 검증 불필요.
-///
-/// 지원 포맷: `#RGB`, `#RRGGBB`, `#RRGGBBAA` (leading `#` 선택).
+/// #RGB·#RRGGBB·#RRGGBBAA 문자열을 컴파일 시점에 검증한다. 앞의 #은 생략할 수 있다.
 ///
 /// # 예시
 ///
@@ -319,8 +306,7 @@ pub struct GpuRgba([f32; 4]);
 pub struct GpuRgb([f32; 3]);
 
 impl GpuRgba {
-    /// 보관 중인 raw `[f32; 4]` 추출. wgpu vertex layout, JSON 직렬화 등에 사용.
-    /// 색을 **새로 만드는** 게 아니라 **꺼내는** 용도.
+    /// 저장된 배열을 반환한다. GPU 버퍼와 직렬화에서 사용한다.
     #[inline]
     pub const fn as_array(self) -> [f32; 4] {
         self.0
@@ -354,18 +340,9 @@ impl GpuRgba {
         ])
     }
 
-    /// ⚠ **외부 입력 전용**.
-    ///
-    /// 다음 경우에만 사용:
-    /// - termwiz `SrgbaTuple` 등 외부 라이브러리가 만든 색 데이터를 GPU 표현으로 받기
-    /// - 사용자 픽커/브러시 픽셀 값
-    /// - 디스크에서 복원된 scrollback 색
-    /// - 테스트 더미
-    ///
-    /// **theme 색을 만들거나 색을 "디자인" 하는 용도로는 절대 사용 금지.**
-    /// 그건 반드시 `~/.tasty/themes/*.toml` 또는 tasty-core 의 const 를 통해야 한다.
-    ///
-    /// 호출 시 반드시 위 사유 중 하나를 주석으로 명시할 것.
+    /// 외부 라이브러리·사용자 픽셀·복원된 scrollback·테스트 데이터에만 사용한다.
+    /// 테마 색은 테마 파일이나 tasty-themes의 기본 팔레트에서 정의하고 정상 변환을 거쳐야 한다.
+    /// 호출부에는 허용된 입력 출처를 주석으로 남긴다.
     #[inline]
     pub const fn dangerously_force_from_array(arr: [f32; 4]) -> Self {
         Self(arr)
@@ -398,7 +375,7 @@ impl GpuRgb {
         Self([c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0])
     }
 
-    /// ⚠ **외부 입력 전용**. 사용 가이드는 [`GpuRgba::dangerously_force_from_array`] 참고.
+    /// 외부 입력 전용. 허용 범위는 GpuRgba::dangerously_force_from_array와 같다.
     #[inline]
     pub const fn dangerously_force_from_array(arr: [f32; 3]) -> Self {
         Self(arr)
@@ -407,8 +384,7 @@ impl GpuRgb {
 
 #[cfg(test)]
 mod tests {
-    // 테스트는 HexColor 생성/변환 round-trip 을 검증하려고 원시 색상값을 직접
-    // 만든다 (UI 색 "디자인" 이 아니라 primitive 자체의 테스트). clippy 의 정상 예외 경로.
+    // 색 변환 자체를 검사하므로 합성 색상 사용을 허용한다.
     #![allow(clippy::disallowed_methods)]
 
     use super::*;

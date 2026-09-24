@@ -1,4 +1,4 @@
-//! `InMemoryThemeStore` — disk 우회. test 시 mocha fallback 만.
+//! 파일 입출력 없이 Mocha에서 시작하는 테스트용 테마 저장소.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
@@ -14,9 +14,7 @@ use crate::scan::ThemeEntry;
 use crate::state::resolve;
 use crate::store::ThemeStoreError;
 
-/// 이 test double 의 락은 자료구조 임계구역이라 poison 을 복구한다. 조용한 복구는
-/// 조용한 유실과 구분되지 않으므로 헬퍼로 첫-1 회 보고를 태운다(다른 크레이트의
-/// 테스트가 이 double 을 공유하므로 poison 이 실제로 다른 스레드의 패닉일 수 있다).
+/// 다른 스레드의 패닉으로 poison이 생겨도 값을 복구하며 최초 한 번 로그를 남긴다.
 const STORE_WHAT: &str = "the in-memory theme store";
 static STORE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
@@ -54,7 +52,7 @@ impl ThemeStorage for InMemoryThemeStore {
     }
 
     fn apply(&self, _ctx: &mut dyn ThemeApplyContext, _id: &str) {
-        // test stub — disk scan 안 함. ctx 갱신만 필요하면 추가.
+        // 이 테스트 저장소는 디스크 조회나 테마 ID 적용을 실행하지 않는다.
     }
 
     fn rescan(&self) -> Result<Vec<ThemeEntry>, ThemeStoreError> {

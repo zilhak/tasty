@@ -1,8 +1,7 @@
-# Catppuccin Latte — 기본 라이트 테마.
-# 빌트인이지만 fallback 은 없다. ~/.tasty/themes/latte.toml 을 사용자가 지우면
-# 사라진다 (사용자 의도 존중).
-#
-# 모든 색상 필드는 optional. 누락된 필드는 이전에 적용된 테마 값을 유지한다.
+# Catppuccin Latte — 내장 라이트 테마.
+# Tasty 홈에서 이 파일만 삭제하면 자동 복원하지 않는다.
+# TOML 테마가 하나도 없으면 초기 설치로 보고 Mocha와 함께 생성한다.
+# 일부 색만 정의한 사용자 테마에서는 누락된 필드의 이전 값을 유지한다.
 
 label = "Catppuccin Latte"
 is_light = true
@@ -19,10 +18,8 @@ overlay1 = "#8c8fa1"
 overlay2 = "#7c7f93"
 text     = "#4c4f69"
 subtext1 = "#5c5f77"
-# upstream catppuccin latte 는 #6c6f85 지만 base(#eff1f5) 와의 대비가 4.37:1 로
-# WCAG AA(4.5:1) 미달이다. subtext0 -> subtext1 램프 위에서 4.5:1 을 넘는 지점으로
-# 내렸다 (base 4.99:1 / mantle 4.64:1). 대비 규칙은 docs/design/systems/theme.md
-# "UI 디자인 규칙" 의 "텍스트 대비" 행.
+# 본문 대비를 확보하도록 조정한 색이다. base와 4.99:1, mantle과 4.64:1 대비를 갖는다.
+# docs/design/systems/theme.md의 텍스트 대비 규칙을 따른다.
 subtext0 = "#63667c"
 placeholder = "#9ca0b0"
 

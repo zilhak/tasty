@@ -1,43 +1,15 @@
 #![forbid(unsafe_code)]
 
-//! Appearance schema/primitives for Tasty.
+//! 색·테마 타입과 UI 치수를 정의한다.
+//! 저장소 내부 의존성은 다른 tasty-type-* 크레이트로 제한하며 순환을 허용하지 않는다.
+//! 테마 파일 입출력과 설정 관리는 상위 크레이트에서 처리한다.
 //!
-//! **Type-layer crate** — `tasty-type-*` 그룹 내부 (`tasty-type-geometry` 등) 에만
-//! 의존할 수 있다. 도메인/IO crate (`tasty-core`, `tasty-themes`, `tasty-settings`,
-//! 본 바이너리) 의존은 금지. type-\* 그룹 내 순환도 금지.
-//!
-//! 제공 타입:
-//! - [`color::HexColor`] — `#RRGGBB(AA)` 직렬화 색상 래퍼 (straight RGBA u8)
-//! - [`color::GpuRgba`] — wgpu vertex buffer 에 직접 들어가는 straight RGBA `[f32; 4]` newtype
-//! - [`color::GpuRgb`]  — 3채널 변형 (ANSI 팔레트용)
-//! - [`theme::SurfaceTheme`] / [`theme::PartialSurfaceTheme`] — surface 종류별 focused/unfocused × bg/fg
-//! - [`theme::ThemeColors`] / [`theme::PartialColors`] — 색상 풀세트 schema + Option-wrap partial
-//! - [`theme::ThemeSizing`] / [`theme::SIZING`] — UI 폭/높이/간격 공통 const
-//! - [`theme::Theme`] — 평평한 인스턴스 (색 + sizing + 도출 overlay + is_light)
-//!
-//! GPU newtype 들은 `#[repr(transparent)]` + `bytemuck::Pod` 라 셰이더 layout /
-//! GPU buffer 의 byte 표현이 raw `[f32; N]` 과 정확히 동일. 런타임 오버헤드 0.
-//!
-//! ## 색 생성 정책
-//!
-//! - **정상 경로**: theme 색 → `HexColor` → `to_gpu_rgba()`. theme 색은
-//!   `~/.tasty/themes/*.toml` 또는 `tasty-themes` 의 const 에서만 정의.
-//! - **외부 입력 전용**: [`color::GpuRgba::dangerously_force_from_array`].
-//!   - termwiz ANSI true-color escape
-//!   - 사용자 픽커/브러시 픽셀 값
-//!   - 디스크에서 복원된 scrollback 색 데이터
-//!   - 테스트 더미
-//!
-//! 색을 "디자인" 하거나 "새로 만들기" 위해 `dangerously_force_*` 를 사용하면 안 된다.
-//! 항상 theme 파일 또는 tasty-themes 의 fallback const 를 통해야 한다.
-//!
-//! 상세는 `docs/design/systems/theme.md#색-생성-정책` 참고.
+//! HexColor는 직렬화용 straight RGBA이고 GpuRgba/GpuRgb는 GPU 배열과 같은 메모리 표현이다.
+//! 테마 색은 파일이나 tasty-themes의 기본 팔레트에서 정의해 정상 변환 함수를 사용한다.
+//! dangerously_force_*는 외부 픽셀·복원 데이터·테스트 값에만 사용한다.
+//! 자세한 허용 범위는 docs/design/systems/theme.md#색-생성-정책을 따른다.
 
-// 이유: 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을
-// 제외하므로, 여기서 나는 `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수
-// 없다. 끄지 않으면 프로덕션의 진짜 신호가 그 안에 묻힌다 —
-// `docs/dev-guide/error-handling.md`.
+// 테스트에서 사용하지 않는 반환값을 버리는 것은 허용한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod color;
@@ -53,8 +25,7 @@ mod semantic_color_generated;
 /// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
 mod generated_component;
 
-/// 그림자 정책 집행 가드(소스 스캔). lib 유닛 테스트로 두는 이유는 그 모듈 doc 참고
-/// (`tests/` 로 옮기면 자동 실행 채널을 잃는다 — 되돌리지 마라).
+/// 그림자 선택 정책의 소스 검사. CI의 패키지 lib 검사에 포함한다.
 #[cfg(test)]
 mod shadow_policy_guard;
 #[cfg(test)]

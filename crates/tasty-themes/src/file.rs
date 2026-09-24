@@ -1,7 +1,4 @@
-//! `ThemeFile` — TOML 표면. 모든 색상 필드는 `Option`.
-//!
-//! 누락된 필드는 `apply_partial` 로 base 에 반영될 때 그냥 무시되므로,
-//! 사용자가 일부 색상만 정의한 partial 테마도 자연스럽게 적용된다.
+//! TOML 테마 파일. 일부 필드만 지정하면 나머지는 기존 색상을 유지한다.
 
 use std::collections::BTreeMap;
 
@@ -27,9 +24,7 @@ pub struct ThemeFile {
     pub terminal: TerminalSection,
     #[serde(default)]
     pub ansi: AnsiSection,
-    /// `[surfaces.<id>]` sub-tables. id 는 surface kind ("terminal", "markdown",
-    /// plugin id 등). 빌트인 미정의 id 도 그대로 파싱돼 `PartialColors.surface_themes`
-    /// 로 흘러 들어가므로 plugin 확장이 자연스럽다.
+    /// 서피스 종류별 색상. 내장 종류 외의 ID도 읽어 플러그인 색상으로 사용할 수 있다.
     #[serde(default)]
     pub surfaces: BTreeMap<String, PartialSurfaceTheme>,
 }
@@ -70,8 +65,7 @@ pub struct AccentSection {
     pub rosewater: Option<HexColor>,
 }
 
-/// `[terminal]` sub-table — terminal-specific 색 (모든 surface 공통 아님).
-/// 셀의 default fg/bg 는 `[surfaces.terminal]` 로 옮겨갔다.
+/// 터미널 전용 색상. 기본 글자·배경색은 surfaces.terminal에 있다.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct TerminalSection {
@@ -115,8 +109,7 @@ impl ThemeFile {
         Ok(file)
     }
 
-    /// 모든 색상 필드를 `PartialColors` 의 평평한 형태로 풀어낸다.
-    /// is_light 는 별도 반환 — 호출자가 settings 에 반영할지 결정.
+    /// 색상 필드를 PartialColors로 모으고 밝기 모드는 별도로 반환한다.
     pub fn to_partial(&self) -> (PartialColors, Option<bool>) {
         let p = PartialColors {
             crust: self.palette.crust,
@@ -172,14 +165,13 @@ impl ThemeFile {
 }
 
 #[cfg(test)]
-// 테스트 더미 색 생성 — 정상 운영 경로 아님.
+// 색 변환 검사를 위한 합성 색상 사용을 허용한다.
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::mocha_fallback_colors;
 
-    /// 빌트인 mocha.toml 텍스트가 `mocha_fallback_colors()` 와 완전히 일치하는지 확인.
-    /// 어긋나면 런타임에 사용자가 보는 색상과 fallback 이 달라진다.
+    /// TOML 전체 색상과 내장 fallback을 비교한다.
     #[test]
     fn builtin_mocha_toml_matches_fallback_const() {
         let text = crate::MOCHA_TOML_TEXT;
@@ -187,9 +179,8 @@ mod tests {
         assert_eq!(file.is_light, Some(false));
         let (partial, _) = file.to_partial();
 
-        // 빈 base 에 partial 을 적용하면 풀 세트로 채워져야 한다 (mocha 는 풀 세트).
         let mut base = mocha_fallback_colors();
-        // base 를 일부러 다르게 만든 뒤 partial 적용 결과가 mocha_fallback_colors() 와 같은지 확인.
+        // 다른 기본값에 적용해도 내장 색상 전체가 복원되는지 확인한다.
         base.crust = HexColor::from_rgb(0, 0, 0);
         base.text = HexColor::from_rgb(0, 0, 0);
         base.apply_partial(&partial);
@@ -203,7 +194,7 @@ mod tests {
         let file = ThemeFile::parse(text).expect("latte.toml must parse");
         assert_eq!(file.is_light, Some(true));
         let (partial, _) = file.to_partial();
-        // 라뜨도 풀 세트로 정의 — 주요 필드 일부만 spot-check.
+        // Latte의 대표 필드를 확인한다.
         assert_eq!(partial.text, Some(HexColor::from_rgb(0x4c, 0x4f, 0x69)));
         assert_eq!(partial.blue, Some(HexColor::from_rgb(0x1e, 0x66, 0xf5)));
         assert_eq!(

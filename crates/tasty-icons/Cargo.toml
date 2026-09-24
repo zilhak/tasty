@@ -7,18 +7,14 @@ description = "Canonical line/fill icon set (SVG single source) shared by host, 
 repository = "https://github.com/zilhak/tasty"
 
 [dependencies]
-# egui 는 optional·default off — build-dependency 로 링크될 때(플러그인 build.rs)
-# egui 가 붙지 않도록 한다. 0.31 default-features=false 는 host/gallery/plugin 이
-# 쓰는 통일 인스턴스와 동일 버전이라 Image/Color32 타입이 정합한다.
+# 플러그인 build.rs는 SVG만 읽으므로 egui를 기본 의존성에 넣지 않는다.
 egui = { version = "0.31", default-features = false, optional = true }
 
 [features]
 default = []
 egui = ["dep:egui"]
 
-# 잉크 박스를 **재는** 시험용. 자산의 광학 보정은 수치가 아니라 래스터로만 확인된다 —
-# 경로 문자열을 눈으로 읽어서는 cap 이 더하는 1px 이 안 보인다. 셋 다 host egui_extras
-# 의 svg feature 가 이미 Cargo.lock 에 들인 버전 그대로라 새 의존이 늘지 않는다.
+# SVG를 래스터로 그려 실제 도형의 경계를 검사한다.
 [dev-dependencies]
 resvg = "0.37"
 tiny-skia = "0.11"

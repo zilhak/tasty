@@ -1,20 +1,13 @@
-//! 빌트인 Catppuccin Mocha fallback.
-//!
-//! `~/.tasty/themes/mocha.toml` 로드에 실패해도 이 함수의 결과가 마지막 보루로 적용된다.
-//! `MOCHA_TOML_TEXT` (lib.rs) 와 시각적으로 동일해야 하며, `tests` 에서 강제한다.
-//!
-//! `BTreeMap` 을 들고 있는 ThemeColors 가 더 이상 const fn 으로 빌드 불가능해서
-//! const 값 대신 함수로 노출한다. 호출 비용은 µs 단위 — 부팅 시 1회 + 테마 fallback 케이스.
+//! Mocha 파일을 읽지 못했을 때 사용할 내장 색상.
+//! 내장 mocha.toml과 같은 색인지 검사한다.
 
 use std::collections::BTreeMap;
 
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::{SurfaceTheme, Theme, ThemeColors};
 
-/// 최후의 fallback 색상 세트. `tasty-themes` 가 mocha.toml 로드에 실패하면 이걸 쓴다.
-// 빌트인 mocha 색 정의. theme 색 디자인의 정당한 출처 중 하나이므로
-// `HexColor::from_rgb` / `from_rgba` 사용이 정당.
-#[allow(clippy::disallowed_methods)] // reason: 빌트인 mocha 색상값 리터럴 정의 본거지
+/// Mocha를 읽지 못했을 때 사용할 전체 색상 집합.
+#[allow(clippy::disallowed_methods)] // reason: 내장 Mocha 팔레트를 정의하는 곳이다.
 pub fn mocha_fallback_colors() -> ThemeColors {
     let mut surface_themes = BTreeMap::new();
     surface_themes.insert("terminal".to_string(), terminal_surface());
@@ -77,7 +70,7 @@ pub fn mocha_fallback_colors() -> ThemeColors {
     }
 }
 
-/// 최후의 fallback `Theme` 인스턴스. 전역 RwLock 초기값을 LazyLock 으로 빌드할 때 사용.
+/// 전역 테마의 최초 값으로도 사용하는 Mocha 테마.
 pub fn mocha_fallback() -> Theme {
     Theme::with_colors(mocha_fallback_colors(), false)
 }
@@ -93,8 +86,7 @@ fn terminal_surface() -> SurfaceTheme {
     }
 }
 
-/// 빌트인 markdown SurfaceTheme. crust 배경(webview 렌더 경로의 유일한 배경) + Mocha text/subtext.
-/// unfocused 가 mantle 인 게 terminal 과 다름 — markdown 은 한 단계 더 어두운 톤(webview 경로 미사용, 잔존값).
+/// Markdown의 기본 색상. 웹뷰는 focused_bg를 배경으로 사용한다.
 #[allow(clippy::disallowed_methods)] // reason: 빌트인 mocha 색상값 리터럴 정의
 fn markdown_surface() -> SurfaceTheme {
     SurfaceTheme {

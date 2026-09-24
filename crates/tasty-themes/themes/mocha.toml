@@ -1,8 +1,6 @@
-# Catppuccin Mocha — 기본 다크 테마.
-# 빌트인 fallback. ~/.tasty/themes/mocha.toml 이 없거나 파싱 실패 시
-# 이 파일의 내용이 자동으로 다시 풀린다.
-#
-# 모든 색상 필드는 optional. 누락된 필드는 이전에 적용된 테마 값을 유지한다.
+# Catppuccin Mocha — 내장 다크 테마.
+# Tasty 홈의 파일을 읽거나 파싱할 수 없으면 이 내용으로 복원한다.
+# 일부 색만 정의한 사용자 테마에서는 누락된 필드의 이전 값을 유지한다.
 
 label = "Catppuccin Mocha"
 is_light = false
@@ -43,8 +41,7 @@ vi_cursor_bg = "#b4befe"               # lavender — vi copy mode cursor cell
 search_match_bg = "#f9e2af4d"          # yellow @ ~30% alpha
 search_match_active_bg = "#f9e2afb3"   # yellow @ ~70% alpha
 
-# surface kind 별 focused/unfocused × bg/fg. plugin 이 자기 surface id 에 대한 색을
-# 정의하려면 [surfaces.<plugin-id>] 형태로 추가하면 된다.
+# 서피스 종류별 포커스·비포커스 색상. 사용자 테마에서는 surfaces.<kind>를 추가할 수 있다.
 [surfaces.terminal]
 focused_bg   = "#000000"
 focused_fg   = "#cdd6f4"   # = text

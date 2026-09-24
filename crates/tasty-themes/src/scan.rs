@@ -1,6 +1,5 @@
-//! `~/.tasty/themes/*.toml` 디렉토리 스캔 + 사용 가능한 테마 목록 캐시.
-//!
-//! 파일명 stem = 테마 id. 잘못된 파일은 `warn!` 후 스킵.
+//! Tasty 홈의 themes 디렉터리에서 TOML 파일을 읽어 목록을 캐시한다.
+//! 파일명이 테마 ID이며 읽기·파싱에 실패한 항목은 경고 후 건너뛴다.
 
 use std::fs;
 use std::sync::atomic::AtomicBool;
@@ -20,15 +19,14 @@ pub struct ThemeEntry {
     pub file: ThemeFile,
 }
 
-/// 부팅 시 1회 캐시. `rescan()` 으로 명시적 갱신 가능.
+/// 첫 조회 때 채우는 캐시. rescan으로 명시적으로 갱신한다.
 static CACHE: OnceLock<Mutex<Vec<ThemeEntry>>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<Vec<ThemeEntry>> {
     CACHE.get_or_init(|| Mutex::new(do_scan().unwrap_or_default()))
 }
 
-/// 임계구역이 `Vec` 통째 교체와 복제뿐이라 복구가 맞다. 조용히 두면 목록이 낡거나 빈
-/// 채로 굳는 것이 **설정 화면에 테마가 안 보인다** 로만 드러나 원인을 되짚을 수 없다.
+/// 목록 복제·교체 중 poison이 발생하면 값을 복구하고 최초 한 번 로그를 남긴다.
 pub(crate) const CACHE_WHAT: &str = "the theme scan cache";
 pub(crate) static CACHE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
@@ -104,10 +102,7 @@ mod poison_tests {
     use super::*;
     use std::sync::atomic::Ordering;
 
-    /// 복구는 이 자리에 **이미** 있었다 — 이번에 더한 것은 관측뿐이라, "poison 이어도 값이
-    /// 나온다" 만 보는 테스트는 헬퍼를 되돌려도 그대로 통과한다(변이가 안 죽는다). 그래서
-    /// 보고 플래그가 실제로 뒤집혔는지를 함께 본다. 그 플래그가 곧 `tracing::error!` 가
-    /// 나갔다는 증거이고, `unwrap_or_else(into_inner)` 로 되돌리면 `false` 로 남는다.
+    /// poison 뒤에도 캐시가 유지되고 복구 보고 플래그가 설정되는지 확인한다.
     #[test]
     fn a_poisoned_scan_cache_still_lists_and_says_so() {
         let before = scan_themes().len();

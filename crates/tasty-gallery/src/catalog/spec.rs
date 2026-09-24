@@ -5,16 +5,16 @@ use tasty_type_appearance::theme::Theme;
 /// 예제 영역의 레이아웃 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StageVariant {
-    /// flex wrap, padding 26 — 기본 무대.
+    /// 가로로 배치하고 폭을 넘으면 다음 줄로 보낸다.
     #[default]
     Wrap,
-    /// padding 0 — 풀블리드 데모 (Table / Tab strip 등).
+    /// 안쪽 여백 없이 표·탭바 등을 보여준다.
     Tight,
     /// 세로 적층.
     Column,
     /// 가로 중앙 정렬.
     Center,
-    /// 단독 큰 데모 (모달 프레임 등) — radius 전체.
+    /// 큰 단독 예제를 세로로 배치한다.
     Solo,
 }
 
@@ -39,7 +39,6 @@ fn col(h: impl Into<egui::Color32>) -> egui::Color32 {
 
 /// 구역 제목과 아래 구분선을 그린다.
 pub fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
-    // margin-top 46 ≈ spacing_xl(24) + spacing_lg(16).
     ui.add_space(theme.spacing_xl.value() + theme.spacing_lg.value());
     ui.label(
         egui::RichText::new(title.to_uppercase())
@@ -53,7 +52,6 @@ pub fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
 
 /// 예제 제목과 사용 상황 설명을 그린다.
 pub fn spec(ui: &mut egui::Ui, theme: &Theme, title: &str, when: Option<&str>) {
-    // margin-top 26 ≈ spacing_xl(24).
     ui.add_space(theme.spacing_xl.value());
     ui.label(
         egui::RichText::new(title)
@@ -79,7 +77,6 @@ pub fn stage(
     variant: StageVariant,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    // padding 26 ≈ spacing_xl(24); tight 은 0.
     let pad = match variant {
         StageVariant::Tight => 0.0,
         _ => theme.spacing_xl.value(),

@@ -1,7 +1,4 @@
-//! 테마 적용·resolve 흐름. settings 의 두 레이어(`theme_base`, `theme_overrides`)를
-//! `Theme` 인스턴스로 합치고, 테마 변경 이벤트에서 base 를 누적 mutate 한다.
-//!
-//! 이 crate 의 "이벤트에서 인스턴스를 수정/merge" 책임의 본체.
+//! 기본 색과 사용자 변경분을 병합하고 테마 선택에 맞춰 설정을 갱신한다.
 
 use crate::apply_context::ThemeApplyContext;
 use crate::fallback::mocha_fallback_colors;
@@ -11,13 +8,8 @@ use crate::scan::scan_themes;
 use crate::store::{BUILTIN_MOCHA_ID, rewrite_mocha_fallback};
 use tasty_type_appearance::theme::Theme;
 
-/// 전역 `Theme` 이 색 파일이 아니라 **설정**에서 받아와야 하는 값들.
-///
-/// 하나로 묶는 이유는 인자를 빠뜨리는 것이 **이미 사고를 냈기** 때문이다 —
-/// `ui_zoom` 을 안 실은 install 이 전역 Theme 을 배율 1.0 으로 되돌려 다른 윈도우의 UI 가
-/// 줄어든 적이 있고, 그 사유가 호출부 주석에 남아 있다. 값이 하나 더 늘 때마다 인자가
-/// 하나 더 느는 형태였으면 그 사고가 값마다 반복된다. 묶어 두면 새 값이 생겨도 호출부
-/// 모양이 안 변하고, 채우는 자리는 [`ThemeRuntime`] 을 만드는 한 곳으로 모인다.
+/// 테마 색 파일과 별도로 설정에서 전달해야 하는 UI 배율·모션 설정.
+/// 새 Theme를 설치할 때 이 값들도 함께 전달한다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ThemeRuntime {
     /// host UI zoom 배율 (`appearance.ui_scale_factor()`).
@@ -51,26 +43,21 @@ pub fn resolve_with_runtime<C: ThemeApplyContext + ?Sized>(ctx: &C, rt: ThemeRun
     t
 }
 
-/// `resolve()` 결과를 전역 `Theme` 에 박는다.
-/// 등록된 plugin surface defaults 도 함께 머지 (사용자 정의 kind 는 보존).
+/// 병합한 테마와 플러그인 기본 색을 전역에 설치한다. 사용자 정의 종류는 유지한다.
 pub fn install_global<C: ThemeApplyContext + ?Sized>(ctx: &C) {
     install_global_with_runtime(ctx, ThemeRuntime::default())
 }
 
-/// `install_global` 의 일반화 — 설정에서 오는 런타임 값을 반영한 Theme 으로 전역 슬롯
-/// 을 갱신한다.
+/// 런타임 설정을 반영해 전역 테마를 설치한다.
 pub fn install_global_with_runtime<C: ThemeApplyContext + ?Sized>(ctx: &C, rt: ThemeRuntime) {
     let mut t = resolve_with_runtime(ctx, rt);
     crate::plugin_defaults::apply_plugin_defaults_to(&mut t);
     set_theme(t);
 }
 
-/// id 로 테마를 적용한다.
-/// - `scan_themes()` 캐시에서 해당 id 의 `ThemeFile` 을 찾는다.
-/// - 없으면 mocha 로 fallback. id == "mocha" 인데도 못 찾으면 `MOCHA_FALLBACK_COLORS` 사용
-///   + `rewrite_mocha_fallback()` 으로 디스크 복구.
-/// - 찾은 partial 을 `theme_base` 에 apply (누락 필드는 base 유지).
-/// - `theme_overrides` 클리어, `theme_id` 갱신, `is_light` 가 파일에 있으면 갱신.
+/// 캐시에서 테마를 찾아 기본 색에 병합하고 사용자 변경분을 비운다.
+/// 없는 ID는 Mocha로 대체하며 Mocha도 없으면 파일 복구를 시도하고 내장 값을 사용한다.
+/// ID와 파일에 명시된 밝기 모드도 갱신한다. 전역 테마 설치는 별도로 호출해야 한다.
 pub fn apply_theme<C: ThemeApplyContext + ?Sized>(ctx: &mut C, id: &str) {
     let resolved_id = apply_inner(ctx, id, /* allow_mocha_recursion */ true);
     ctx.set_theme_id(&resolved_id);
@@ -96,9 +83,8 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
         return id.to_string();
     }
 
-    // 찾을 수 없음. mocha 로 fallback.
     if id == BUILTIN_MOCHA_ID {
-        // mocha 자체가 캐시에 없다 → 디스크 복구 후 in-memory const 적용.
+        // 파일 복구가 실패해도 내장 색상으로 계속 진행한다.
         if let Err(e) = rewrite_mocha_fallback() {
             tracing::warn!("failed to rewrite mocha fallback: {e}");
         }
@@ -106,12 +92,12 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
             tracing::debug!("rescan after mocha rewrite failed: {e}");
         }
         let const_file = ThemeFile::parse(crate::MOCHA_TOML_TEXT)
-            .expect("embedded mocha.toml must parse (compile-time guaranteed)");
+            .expect("embedded mocha.toml must be valid TOML");
         let user_kinds: std::collections::HashSet<String> =
             const_file.surfaces.keys().cloned().collect();
         crate::plugin_defaults::record_user_defined_surface_kinds(user_kinds);
         let (partial, is_light) = const_file.to_partial();
-        // mocha 는 풀 세트라 base 가 통째로 덮어쓰여진다 — 안전을 위해 먼저 fallback 로 초기화.
+        // 현재 기본 색을 내장 전체 색상으로 먼저 초기화한다.
         *ctx.theme_base_mut() = mocha_fallback_colors();
         ctx.theme_base_mut().apply_partial(&partial);
         if let Some(l) = is_light {
@@ -183,8 +169,7 @@ mod tests {
         }
     }
 
-    /// 이 값이 `Theme` 까지 실려 가지 않으면 위젯이 설정을 읽을 방법이 없다 —
-    /// 실제로 그랬고(넘기는 자리가 0 이었다), 그래서 이 축을 여기서 붙잡는다.
+    /// 설정에서 전달한 모션 감소 값이 Theme에 반영되는지 확인한다.
     #[test]
     fn runtime_values_reach_the_resolved_theme() {
         let ctx = TestCtx::mocha();
@@ -196,7 +181,6 @@ mod tests {
             },
         );
         assert!(t.reduced_motion);
-        // 기본(설정을 모르는 문맥)은 꺼짐이어야 한다 — 모션을 임의로 끄지 않는다.
         assert!(!resolve(&ctx).reduced_motion);
     }
 
@@ -206,7 +190,6 @@ mod tests {
         ctx.overrides.blue = Some(HexColor::from_rgb(0, 0xff, 0));
         let t = resolve(&ctx);
         assert_eq!(t.blue, HexColor::from_rgb(0, 0xff, 0));
-        // 그 외 필드는 base 그대로
         assert_eq!(t.crust, mocha_fallback_colors().crust);
         assert!(!t.is_light);
     }
@@ -217,11 +200,8 @@ mod tests {
         ctx.is_light = true;
         let t = resolve(&ctx);
         assert!(t.is_light);
-        // is_light=true 면 overlay 가 검정 기반.
         assert_eq!(t.hover_overlay.r, 0);
     }
 
-    // apply_theme 통합 테스트는 scan_themes 캐시가 디스크 의존이라
-    // 단위 테스트로는 다루기 어렵다 (TempDir 으로 tasty_home 재정의 불가).
-    // 통합 시나리오는 본 바이너리에서 자체 검증으로 처리.
+    // apply_theme의 전역 스캔 캐시는 이 단위 검사에서 실제 디스크와 격리하지 않는다.
 }

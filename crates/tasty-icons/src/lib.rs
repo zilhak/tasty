@@ -1,28 +1,13 @@
-//! Canonical line/fill icon set — Tasty 의 아이콘 단일 소스.
-//!
-//! 아이콘 한 개는 `Icon` const 하나로 노출되며, 다음 두 소비 경로가 **바이트 동일한
-//! 같은 `<svg>` 문자열**을 공유한다:
-//!
-//! · host / gallery 런타임 (egui_extras svg 로더): `feature = "egui"` 를 켜고
-//!   [`Icon::image`] 으로 `<Image>` 를 만들어 `tint` 로 테마 색을 입힌다.
-//! · plugin build.rs (빌드타임 usvg 베이크): `[build-dependencies]` 로 이 크레이트를
-//!   egui 없이 링크해 [`Icon::svg`]/[`Icon::body`] 를 usvg 에 먹인다.
-//!
-//! path 는 디자인 시스템 번들(`Tasty Design System`)의 `icons.json` 매니페스트
-//! (개별 `icons/<name>.svg` 글리프의 machine-readable SoT, `components/core/Icon.jsx`
-//! `ICON_PATHS` 와 동기) 를 전사했다. 각 항목의 `fill` boolean 으로 stroke/filled 를
-//! 분기한다. 24×24 viewBox, 2px stroke, round cap/join. stroke 는 white 로 고정하고
-//! 소비처가 `tint` 로 currentColor 를 재현한다 — 색을 글리프에 박지 않는다.
+//! 호스트·갤러리·플러그인 빌드가 공유하는 SVG 아이콘.
+//! egui 기능을 켜면 Icon::image로 읽고, 빌드 스크립트에서는 svg/body를 직접 읽는다.
+//! 디자인의 icons.json에 대응하며 흰색 도형에 소비자가 테마 색을 입힌다.
 
-/// line/fill 아이콘 한 개. 아래 필드는 모두 `&'static str`/`bool` 이라 egui 없이도
-/// 컴파일된다(build.rs 는 egui 를 링크하지 않고 `svg`/`body` 만 읽는다).
+/// egui 없이도 SVG를 읽을 수 있는 아이콘 정의.
 #[derive(Clone, Copy, Debug)]
 pub struct Icon {
-    /// 완성 `<svg viewBox="0 0 24 24" …>` 문서. egui_extras 로더 + build.rs usvg 가
-    /// 이 문자열을 읽는다.
+    /// 완성 SVG 문서. egui 로더와 플러그인 빌드 스크립트가 공유한다.
     pub svg: &'static str,
-    /// inner 마크업만(`<path>/<rect>/<circle>` 시퀀스). 디자인 `d` 와 바이트 동일 —
-    /// 검증/대체 소비자용.
+    /// SVG 안쪽의 path·rect·circle 마크업.
     pub body: &'static str,
     /// egui 이미지 캐시 키(`bytes://tasty_icon_<uri>.svg`).
     pub uri: &'static str,
@@ -32,10 +17,7 @@ pub struct Icon {
 
 #[cfg(feature = "egui")]
 impl Icon {
-    /// 정사각 `size` (logical px) + `tint` 색의 egui `Image`.
-    ///
-    /// 실제 SVG 텍스처화는 앱이 설치한 egui_extras 로더가 담당한다
-    /// (host `install_image_loaders`, gallery 동일).
+    /// 지정한 논리 크기와 색으로 이미지를 만든다. 앱에 SVG 로더가 설치돼 있어야 한다.
     pub fn image(self, size: f32, tint: egui::Color32) -> egui::Image<'static> {
         egui::Image::from_bytes(self.uri, self.svg.as_bytes())
             .fit_to_exact_size(egui::vec2(size, size))
@@ -147,7 +129,6 @@ stroke_icon!(
     "chevrons_right",
     r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
 );
-// markdown 주소창 go(design `mdGo`). 신규 글리프.
 stroke_icon!(
     ARROW_RIGHT,
     "arrow_right",
@@ -390,7 +371,6 @@ stroke_icon!(
     "keyboard",
     r#"<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>"#
 );
-// image 편집 툴바 undo/redo. 신규 글리프(design plugins.jsx ImgBtn).
 stroke_icon!(
     UNDO,
     "undo",
@@ -407,16 +387,8 @@ stroke_icon!(
     "theme",
     r#"<path d="M12 3a9 9 0 1 0 9 9c-2 0-3-1-3-3s1-3-1-5-3-1-4-1z"/>"#
 );
-// 빈 상태/설정 없음(design `sun`).
-//
-// 광선을 당긴 기하(2026-09-20 결정): 직선 광선은 3→5 / 19→21, 대각 광선은 중심에서
-// ±6.4 → ±5 다(옛 ±7 → ±5). 광학 보정을 **토큰이 아니라 자산에서** 한 것이다 — 크기
-// 토큰을 sun 에만 따로 주면 치수가 테마 상태가 되고, 오버슈트가 `sun` 이 그려지는 다른
-// 자리(테마 토글·설정)로 따라간다.
-//
-// 그래서 잉크 박스가 `theme` 링과 같은 2..22(24 의 83%)가 된다. 옛 기하는 광선이 2..22
-// 에서 시작해 cap 까지 1..23(92%)이었고, 그 9% 가 같은 12px 슬롯에서 sun 만 커 보이게
-// 했다. `sun_and_theme_share_an_ink_box` 가 두 글리프를 실제로 래스터해 그 등식을 잰다.
+// SUN과 THEME이 같은 아이콘 슬롯에서 비슷한 크기로 보이도록 도형 자체의 범위를 맞춘다.
+// 테마별 크기로 보정하지 않으며 아래 래스터 검사가 두 도형의 경계 차이를 확인한다.
 stroke_icon!(
     SUN,
     "sun",
@@ -430,11 +402,8 @@ stroke_icon!(
 );
 
 // ── Modifier keys (macOS) ──
-// macOS modifier 키 심볼(⌘ U+2318/⌥ U+2325/⇧ U+21E7) 벡터 대체. egui 는 폰트
-// fallback 체인에 등록된 폰트만 쓰는데 U+2325(⌥)를 포함하는 폰트가 하나도 없어
-// tofu box 로 깨진다(design `cmdKey`/`optionKey`/`shiftKey`) — 텍스트로 타이핑하는
-// 대신 이 글리프를 그린다. 기존 COMMAND(범용 "명령" 개념 아이콘, 사각형 안
-// 사각형)와는 별개 — COMMAND 는 ⌘ 키캡의 대체가 아니다.
+// macOS 보조 키는 폰트에 해당 문자가 없어도 표시되도록 SVG로 제공한다.
+// 범용 명령 아이콘 COMMAND는 키캡 기호 CMD_KEY와 구분한다.
 stroke_icon!(
     CMD_KEY,
     "cmd_key",
@@ -456,15 +425,10 @@ mod tests {
     use super::*;
     use usvg::TreeParsing as _;
 
-    /// 래스터 배율. 24 좌표계의 0.1 을 한 픽셀로 잰다 — cap 이 더하는 1 을 놓치지 않고,
-    /// 안티에일리어싱 가장자리를 셈에서 가를 만큼은 촘촘하다.
+    /// 24단위 좌표계의 0.1을 한 픽셀로 측정한다.
     const SCALE: u32 = 10;
 
-    /// 글리프를 실제로 **래스터해** 잉크의 경계 상자를 24 좌표계로 돌려준다.
-    ///
-    /// 경로 문자열을 읽어서는 이 값이 안 나온다 — `stroke-linecap="round"` 가 끝점 바깥으로
-    /// 굵기의 절반(=1)을 더 칠하고, 그 1 이 이 자산에서 문제가 됐던 바로 그 양이다.
-    /// 그래서 숫자를 눈으로 대조하지 않고 칠해진 픽셀을 센다.
+    /// SVG를 래스터로 그려 둥근 선 끝을 포함한 도형 경계를 24단위 좌표로 반환한다.
     fn ink_box(icon: Icon) -> (f32, f32, f32, f32) {
         let side = 24 * SCALE;
         let tree = usvg::Tree::from_str(icon.svg, &usvg::Options::default())
@@ -490,7 +454,11 @@ mod tests {
                 }
             }
         }
-        assert!(any, "{}: 칠해진 픽셀이 없다 — 래스터가 죽었다", icon.uri);
+        assert!(
+            any,
+            "{}: 래스터 결과에 기준 불투명도 이상의 픽셀이 없다",
+            icon.uri
+        );
         let unit = SCALE as f32;
         (
             min_x as f32 / unit,
@@ -500,23 +468,14 @@ mod tests {
         )
     }
 
-    /// `sun` 의 잉크 박스가 `theme` 링과 같다 — 2026-09-20 결정의 검증값(24 의 83%).
-    ///
-    /// **`sun` 만 따로 재지 않는다.** 이 결정이 고친 것은 "sun 이 크다" 가 아니라 "같은
-    /// 12px 슬롯에서 두 글리프의 잉크가 다르다" 이므로, 좌변은 한 글리프의 수가 아니라
-    /// **두 글리프의 관계**다.
-    ///
-    /// **그 관계를 등식으로 쓰지 않는 이유를 측정으로 적어 둔다.** `theme` 전체의 잉크는
-    /// 위쪽으로 1.75 까지 간다 — 그것은 링이 아니라 **안쪽 초승달 노치**의 큐빅이 y=3 위로
-    /// 부풀기 때문이다. 합성 입력으로 갈라 쟀다: 열린 호만(`M12 3a9 9 0 1 0 9 9`) 2.00 ·
-    /// 같은 반지름의 온전한 원 2.00 · 노치 곡선만 1.80. 그래서 `sun == theme` 로 쓰면
-    /// 이 시험은 노치의 부풀기를 sun 의 결함으로 신고한다.
+    /// SUN과 THEME의 가로·아래 경계를 비교한다.
+    /// THEME의 초승달 곡선은 위로 더 뻗으므로 위쪽 경계에는 별도 허용 차이를 둔다.
     #[test]
     fn sun_and_theme_share_an_ink_box() {
         let sun = ink_box(SUN);
         let theme = ink_box(THEME);
 
-        // 결정이 준 값 — 링과 같은 2..22, 24 의 83%.
+        // SUN은 24단위 viewBox 안에서 2..22 범위를 사용한다.
         assert_eq!(
             sun,
             (2.0, 2.0, 22.0, 22.0),
@@ -528,14 +487,13 @@ mod tests {
             "잉크 박스가 뷰박스의 {fraction:.4} — 83% 가 아니다"
         );
 
-        // 가로 축은 노치가 안 건드린다 — 거기서는 두 글리프가 **같아야** 한다.
+        // 초승달 곡선이 가로 경계를 바꾸지 않으므로 이 축은 같아야 한다.
         assert_eq!(
             (sun.0, sun.2),
             (theme.0, theme.2),
             "가로 잉크가 다르다: sun {sun:?} · theme {theme:?}"
         );
-        // 세로는 노치가 위로 부푼 만큼만 `theme` 이 넓다. 그 폭이 커지면 둘 중 하나가
-        // 움직인 것이고, 어느 쪽이든 이 자산 짝을 다시 봐야 한다.
+        // THEME의 위쪽 곡선에 허용한 차이만 인정한다.
         assert!(
             sun.1 - theme.1 >= 0.0 && sun.1 - theme.1 <= 0.25,
             "세로 잉크 차가 {:.2} — 노치 부풀기(0.25) 밖이다: sun {sun:?} · theme {theme:?}",
