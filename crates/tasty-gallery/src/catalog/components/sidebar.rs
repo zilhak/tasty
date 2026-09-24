@@ -1,12 +1,4 @@
-//! `sidebar` specimen — Sidebar & rail (research §2.5 Layouts).
-//!
-//! 좌측 네비게이션. 두 폭:
-//! - **Full 212**: 로고+워드마크 헤더 / "Workspaces" railHead / 워크스페이스 행
-//!   (dot + name + badge, 활성행 surface-active + 2px inset accent) / footer
-//!   (Tools·Plugins·Settings ghost 블록, 상단 border).
-//! - **Collapsed rail 52**: 로고 24 + IconButton 28 슬롯들.
-//!
-//! Theme 토큰만으로 정적 재현 (binary 미의존).
+//! 펼친 사이드바와 접힌 레일의 정적 예제. 워크스페이스·카테고리·상태 배지를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{TagVariant, tag};
@@ -16,9 +8,7 @@ use crate::catalog::icons::{
 };
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 워크스페이스 행 데모 데이터: (name, badge, active, mirror). mirror=원격 워크스페이스
-/// 로컬 mirror → 이름과 subtitle 사이 별도 줄의 "REMOTE" pill(디자인 2026-07-13
-/// workspace-remote-indicator).
+/// (이름, 배지, 활성 여부, 원격 미러 여부). 원격 미러는 이름 아래 별도 줄에 표시한다.
 type WsRow = (&'static str, Option<&'static str>, bool, bool);
 /// 카테고리 섹션 데모 데이터: (label, collapsed, rows).
 type CategorySection = (&'static str, bool, &'static [WsRow]);
@@ -74,11 +64,7 @@ fn mirror_pill_line_h(theme: &Theme) -> f32 {
         .max(theme.workspace_mirror_icon_size().value())
 }
 
-/// Full 행 — 이름 줄 **아래** 별도 줄에 sky "REMOTE" pill(아이콘+`tag()`)을 그린다
-/// (디자인 2026-07-13 workspace-remote-indicator). `row`는 이름 행 자체의 rect(1줄
-/// 기준), pill 은 그 바로 아래(`spacing_xs` 간격)에 그려진다. mirror 가 아니면 아무것도
-/// 그리지 않는다(리플로 없음, 호출부가 행 높이를 미리 `mirror_pill_line_h()`만큼 늘려
-/// 놓아야 한다).
+/// 원격 미러는 이름 아래에 REMOTE 배지를 표시한다. 호출자가 추가 행 높이를 확보해야 한다.
 fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f32, mirror: bool) {
     if !mirror {
         return;
@@ -100,9 +86,7 @@ fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f
     tag(&mut tag_ui, theme, "REMOTE", TagVariant::Remote, false);
 }
 
-/// Collapsed 아바타 우하단 mirror corner chip — bg-sidebar halo(반경 spacing_sm) +
-/// 중앙 `>_→` glyph(spacing_sm, workspace_mirror_fg). notif(우상단)·attached(둘레
-/// ring)와 채널 분리.
+/// 접힌 아바타의 원격 표시는 오른쪽 아래에 놓아 알림 점·연결 테두리와 구분한다.
 fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
     let halo_r = theme.spacing_sm.value();
     let glyph = theme.spacing_sm.value();
@@ -119,12 +103,8 @@ fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
     );
 }
 
-/// 워크스페이스 행 우측 개수 배지 — 본체 `paint_workspace_count_badge`(sidebar/view.rs)
-/// 와 동일한 디자인 Badge: `fill` 채움 pill + count(mono, badge-font-size),
-/// text-on-accent. min-width/height=badge-size, padding-x=badge-padding-x,
-/// pill(반경=높이/2). `right_edge` 에서 좌측으로(offset 만큼 밀어) 앵커 —
-/// 두 배지를 나란히(NeedsInput 좌·Completion 우) 그릴 때 offset 으로 위치를 뗀다.
-/// 반환값은 이 배지가 차지한 폭(다음 배지의 offset 산정용).
+/// 오른쪽 끝에서 offset만큼 떨어진 곳에 개수 배지를 그린다.
+/// 반환한 폭은 다음 배지를 배치할 때 사용한다.
 fn paint_ws_count_badge_at(
     p: &egui::Painter,
     theme: &Theme,
@@ -213,7 +193,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     let row_h = theme.item_height_interactive.value(); // 28
     let mut y = rect.min.y + pad;
 
-    // ── header: logo + wordmark ──
     let logo = theme.sidebar_logo_size.value(); // 22
     let logo_c = egui::pos2(rect.min.x + pad + logo * 0.5, y + logo * 0.5);
     paint_icon(
@@ -232,7 +211,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     );
     y += logo + theme.spacing_xs.value() + theme.spacing_md.value();
 
-    // ── railHead: "WORKSPACES" ──
     p.text(
         egui::pos2(rect.min.x + pad, y),
         egui::Align2::LEFT_TOP,
@@ -242,7 +220,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     );
     y += theme.spacing_lg.value();
 
-    // ── workspace rows ──
     for (name, badge, active, mirror) in WORKSPACES {
         let row = egui::Rect::from_min_size(
             egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
@@ -254,7 +231,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
                 theme.corner_radius_sm.value(),
                 egui::Color32::from(theme.surface_active()),
             );
-            // 2px inset accent bar.
             let bar = egui::Rect::from_min_size(
                 row.min,
                 egui::vec2(theme.tab_indicator_width.value(), row.height()),
@@ -263,8 +239,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         }
         let dot_r = theme.status_dot_size.value() * 0.5;
         let dc = egui::pos2(row.min.x + theme.spacing_md.value() + dot_r, row.center().y);
-        // dot 은 실행상태 전용(running=accent-success / idle=status-dot-idle —
-        // 공용 `StatusDot` 위젯의 Idle 과 같은 role 이다). mirror 는 별도 축.
+        // 실행 상태 점과 원격 연결 표시는 별개다.
         p.circle_filled(
             dc,
             dot_r,
@@ -289,7 +264,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         if let Some(b) = badge {
             paint_ws_count_badge(&p, theme, row, b);
         }
-        // mirror 면 이름 아래 별도 줄에 "REMOTE" pill — 그만큼 행 높이를 늘린다.
         mirror_pill_line(ui, theme, row, name_x, *mirror);
         let extra = if *mirror {
             theme.spacing_xs.value() + mirror_pill_line_h(theme)
@@ -299,7 +273,6 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         y += row_h + extra + theme.spacing_xs.value();
     }
 
-    // ── footer: border-top + ghost rows (bottom-anchored) ──
     let footer_h = row_h * FOOTER.len() as f32 + pad;
     let footer_top = rect.max.y - footer_h;
     p.hline(
@@ -354,7 +327,6 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
     let cx = rect.center().x;
     let mut y = rect.min.y + theme.spacing_md.value();
 
-    // 로고 24.
     let logo = theme.sidebar_logo_collapsed_size.value(); // 24
     paint_icon(
         ui,
@@ -365,7 +337,6 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
     );
     y += logo + theme.spacing_md.value();
 
-    // IconButton 28 슬롯들.
     let slot = theme.item_height_interactive.value(); // 28
     for (i, glyph) in RAIL_SLOTS.iter().enumerate() {
         let area =
@@ -382,8 +353,7 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
             *glyph,
             area.center(),
             theme.icon_glyph_size_md.value(),
-            // 쉬고 있는 rail 글리프는 물러나는 chrome 이다 — 본체 `paint_icon_button`
-            // 과 같은 `glyph-dim`. 첫 슬롯은 눌린 상태 전시라 축이 다르다.
+            // 비활성 레일 아이콘은 본체와 같은 glyph-dim 색을 쓴다.
             egui::Color32::from(if i == 0 {
                 theme.text_primary()
             } else {
@@ -446,7 +416,6 @@ fn paint_ws_row(
     if let Some(b) = badge {
         paint_ws_count_badge(&p, theme, rect, b);
     }
-    // mirror 면 이름 아래 별도 줄에 "REMOTE" pill(호출부가 행 높이를 늘려 놓는다).
     mirror_pill_line(ui, theme, rect, name_x, mirror);
 }
 
@@ -467,14 +436,9 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
     let mut y = rect.min.y + pad;
 
     for (i, (label, collapsed, rows)) in CATEGORY_SECTIONS.iter().enumerate() {
-        // 비-첫 섹션 간격 (본체 그룹 렌더의 섹션 간 add_space 와 동일 토큰 — 헤더가
-        // 밴드로 승격되면서 space-sm(8)→space-md(12)).
         if i > 0 {
             y += theme.spacing_md.value();
         }
-        // ── 카테고리 헤더: 밴드(bg-app + 상/하 hairline) + chevron(▼/▶) + 대문자
-        // 캡스 라벨(secondary) + 우측 워크스페이스 카운트. 상하 space-sm 대칭 인셋
-        // (본체 draw_category_header 와 동일 — 헤더가 밴드로 승격되며 space-xs 에서 확대).
         let chevron = if *collapsed {
             CHEVRON_RIGHT
         } else {
@@ -525,8 +489,7 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
         );
         y += ch_size + pad_y;
 
-        // ── 행 (접힘/빈 카테고리는 생략). 헤더 바로 아래 별도 rule 은 그리지 않는다 —
-        // 헤더 밴드의 bottom hairline이 이미 그 경계를 그린다(이중선 방지). ──
+        // 헤더가 이미 아래쪽 선을 그리므로 구분선을 덧그리지 않는다.
         if !*collapsed && !rows.is_empty() {
             for (name, badge, active, mirror) in *rows {
                 let row = egui::Rect::from_min_size(
@@ -564,7 +527,6 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
     let mut y = rect.min.y + theme.spacing_md.value();
 
     for (_label, collapsed, rows) in CATEGORY_SECTIONS {
-        // `---` 경계 버튼 — 폭 slot-spacing_sm 의 얇은 선.
         let line_w = theme.sidebar_collapsed_slot_width.value() - theme.spacing_sm.value();
         let line = egui::Rect::from_center_size(
             egui::pos2(cx, y + theme.spacing_lg.value() * 0.5),
@@ -573,7 +535,6 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
         p.rect_filled(line, 0.0, egui::Color32::from(theme.border_default()));
         y += theme.spacing_lg.value() + theme.spacing_xs.value();
 
-        // 접힌 카테고리는 아바타 생략(`---` 만).
         if !*collapsed {
             for (name, _badge, active, mirror) in *rows {
                 let area = egui::Rect::from_center_size(
@@ -604,7 +565,6 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
                         theme.text_muted()
                     }),
                 );
-                // mirror 아바타 → 우하단 sky corner chip.
                 if *mirror {
                     mirror_corner_chip(ui, theme, area);
                 }
@@ -789,16 +749,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Full 은 워크스페이스를 이름·badge 까지 펼치고, 접으면 52px rail 로 줄어 \
-         아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시. \
-         원격 워크스페이스 로컬 mirror 는 status dot(실행상태)과 별개로 — full 은 이름과 \
-         subtitle 사이 별도 줄의 sky \"REMOTE\" pill, rail 은 아바타 우하단 sky corner \
-         chip(workspace-mirror-fg)으로 표시(notif 우상단 / attached 둘레 ring 과 채널 분리). \
-         카테고리 토글 on 이면 chevron 헤더로 그룹화(빈·접힌 카테고리는 헤더/`---` 만), \
-         레일은 카테고리 경계를 `---` 버튼으로 표시한다. attention 배지는 kind 별로 \
-         2개까지 공존한다 — NeedsInput 이 항상 좌측, Completion 이 우측(카운트가 하나뿐일 \
-         때의 기존 자리)이며 사이 간격은 badge-group-gap(=spacing-xs). 접힌 rail 은 dot \
-         하나만 그리므로 kind 우선순위(needs-input > completion > running)로 대표색 \
-         하나를 고른다.",
+        "펼친 사이드바는 이름과 배지를 표시하고 접힌 레일은 아이콘 중심으로 보여준다. 원격 미러는 펼친 행의 REMOTE 배지 또는 아바타 오른쪽 아래 표시로 구분한다. 카테고리에는 접기 버튼이 있으며 접힌 레일에서는 경계선으로 표시한다. 응답 대기 배지는 완료 배지 왼쪽에 놓인다. 레일의 점 하나는 응답 대기, 완료, 실행 순서로 대표 상태를 표시한다.",
     );
 }

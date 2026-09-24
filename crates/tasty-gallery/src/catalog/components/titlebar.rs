@@ -1,30 +1,6 @@
-//! `titlebar` specimen — CSD 창 타이틀바 (Layouts).
-//!
-//! 본체 `src/adapters/ui/titlebar/view.rs::draw_titlebar_view` 의 구조 전사.
-//! 본체는 `TopBottomPanel::top` 으로 `egui::Context` 에 직접 붙지만, 갤러리는
-//! 부유 배치/패널을 넘겨받지 않으므로(`docs/dev-guide/gallery-first.md`) 넘겨받은
-//! `Ui` 안에 바 rect 를 할당하고 **그 rect 기준**으로만 같은 순서로 그린다.
-//!
-//! 그리는 순서(본체와 동일):
-//! 1. 바 배경 — `titlebar_bg()` / 비활성이면 `titlebar_bg_inactive()`.
-//! 2. DE 가변 컨트롤 클러스터 — 지름 `window_button_size`(24), 측면 끝 여백
-//!    `spacing_sm`, 버튼 간 `spacing_xs`. **Right 측면은 역순으로 그린다** — 그래야
-//!    `[min, max, close]` 의 마지막(close)이 가장 바깥에 온다.
-//! 3. 드래그 영역 — 좌측 inset(macOS 신호등)과 우측 strip 을 뺀 나머지. 버튼 rect
-//!    와 겹치지 않아 버튼 클릭이 드래그로 새지 않는다(정적 specimen 이라 히트영역은
-//!    그리지 않고 치수만 meta 에 적는다).
-//! 4. 하단 1px 보더 — `border_width` × `titlebar_border()`.
-//!
-//! 글리프는 지름의 0.22 를 반경 extent 로 쓰는 painter 직선이다 — min=가로선,
-//! max=정사각 stroke, close=×. close 만 hover/press 배경이 `accent_window_close`
-//! (시스템 red)이고 글리프가 `text_on_window_close` 로 뒤집힌다.
-//!
-//! **macOS 변형은 무대에 행으로 두지 않는다.** 그 경로에서 tasty 는 버튼을 그리지
-//! 않고 좌측 슬롯만 비우므로, 정적 specimen 으로 그리면 화면에는 빈 밴드만 남는다.
-//! 갤러리는 사람이 눈으로 보고 판정하는 물건이라 "그릴 것이 없어서 비어 있는 것"과
-//! "렌더가 실패해 비어 있는 것"을 화면만으로 구별할 수 없으면 정보가 0 이 아니라
-//! 음수가 된다. 그래서 이 변형은 아래 note 로 서술한다(inset 폭은 본체
-//! `titlebar/mod.rs::MACOS_TRAFFIC_LIGHT_INSET` = 78).
+//! CSD 타이틀바의 활성·비활성·닫기 호버 상태 예제.
+//! 본체 패널 대신 주어진 Ui 영역에 그린다. 오른쪽 버튼은 닫기가 가장 바깥에 오도록 역순 배치한다.
+//! macOS는 네이티브 버튼을 사용하므로 이 예제에서 별도 버튼 행을 그리지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -146,7 +122,6 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, active: bool, hovered_close: bool) {
     );
     let p = ui.painter_at(rect);
 
-    // ① 배경.
     let bg = if active {
         theme.titlebar_bg()
     } else {
@@ -154,10 +129,8 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, active: bool, hovered_close: bool) {
     };
     p.rect_filled(rect, 0.0, bg.to_egui());
 
-    // ② 컨트롤 클러스터.
     window_buttons(&p, theme, rect, active, hovered_close);
 
-    // ③ 하단 1px 보더.
     p.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
@@ -218,11 +191,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "버튼 집합·순서·측면은 DE 마다 달라 데이터로 받는다(`TitlebarControls`). Right 측면은 \
-         목록의 마지막이 가장 바깥에 오도록 역순으로 그린다. Windows 캡션은 전용 경로 \
-         (46px · close hover red)로 그린다. macOS 는 네이티브 신호등을 유지하므로 tasty 가 \
-         버튼을 하나도 그리지 않고 좌측 78px 슬롯을 드래그 대상에서만 빼둔다 — 그 변형은 \
-         정적으로 그리면 빈 밴드와 렌더 실패가 화면상 구별되지 않아 무대에 행으로 두지 \
-         않고 여기 글로 남긴다.",
+        "본체는 데스크톱 환경이 제공한 버튼 목록·순서·위치를 따른다. 오른쪽 버튼은 역순으로 배치해 닫기를 바깥에 둔다. Windows 캡션은 별도 경로로 그리고 macOS는 네이티브 신호등을 유지한다. 이 갤러리는 일반 버튼의 활성·비활성·호버 상태만 보여준다.",
     );
 }

@@ -1,10 +1,4 @@
-//! `segmented` specimen — 디자인 T11 explorer view-mode 세그먼트 토글 (design §3.4).
-//!
-//! 본체와 **동일한** `tasty_ui_widgets::segmented` 공용 위젯을 호출(demo=main).
-//! explorer 툴바의 grid/list/detail 전환이 1차 사용처. 활성 세그먼트는
-//! accent-primary fill + text-on-accent, 비활성은 text-secondary(+hover overlay).
-//!
-//! i18n 키 후보(본체 반영 시): `explorer.view.grid/list/detail`.
+//! 공용 segmented 위젯의 단일 선택 예제.
 
 use std::cell::RefCell;
 

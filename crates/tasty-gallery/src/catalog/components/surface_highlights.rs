@@ -1,18 +1,6 @@
-//! `surfaces` specimen — Surface focus states (research §2.5 Layouts).
-//!
-//! 터미널 surface 가 포커스 상태에 따라 어떻게 보이는지. 디자인 3 상태:
-//! - **focused**: bg = `surface("terminal").focused_bg`(#000), 선명.
-//! - **unfocused**: bg = `unfocused_bg`, opacity 0.92 로 살짝 가라앉음.
-//! - **agent**: focused 와 같은 bg + pulsing `accent-agent` dot 으로 에이전트 점유 표시.
-//!
-//! fakePane = 헤더(StatusDot + Tag) + 프롬프트(mono + blink 커서 8×15).
-//! 본체 view 변경 시 시각 동기화는 수동 (gallery 는 binary 미의존).
-//!
-//! **focus 와 attention 의 관계** (완료/응답대기 테두리는
-//! [`occupancy_borders`](super::occupancy_borders) 참고): surface 가 여기서 그리는
-//! `focused` 상태를 **실제로** 얻으면(에이전트 주입이 아닌 실 사용자 포커스, `gpu.rs`)
-//! `AttentionStore` 의 그 surface 레코드가 kind 무관하게 clear 된다 — `Completion` 이든
-//! `NeedsInput` 이든 이 해제 경로는 kind 를 구분하지 않는 단일 규칙이다.
+//! 터미널의 포커스·비포커스·에이전트 상태를 정적으로 비교한다.
+//! 본체에서 실제 사용자 포커스를 받으면 Completion과 NeedsInput을 모두 해제한다.
+//! 이 예제 자체는 포커스 전환이나 알림 상태 변경을 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -25,7 +13,6 @@ enum State {
     Agent,
 }
 
-/// 디자인 fakePane — 헤더(dot+tag) + 프롬프트 한 줄 + blink 커서.
 fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     let term = theme.surface("terminal");
     let w = theme.field_width_lg.value(); // 200
@@ -33,7 +20,6 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let p = ui.painter_at(rect);
 
-    // 배경: focused/agent = focused_bg(#000), unfocused = unfocused_bg + 0.92 dim.
     // unfocused 표면 배경 디밍. 대응 토큰 없음.
     const UNFOCUSED_DIM_OPACITY: f32 = 0.92;
     let bg = match state {
@@ -58,7 +44,6 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     );
 
     let pad = theme.spacing_sm.value();
-    // 헤더: status dot + tag.
     let dot_r = theme.status_dot_size.value() * 0.5;
     let dot_c = egui::pos2(rect.min.x + pad + dot_r, rect.min.y + pad + dot_r);
     let (dot, tag) = match state {
@@ -78,14 +63,12 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
         },
     );
 
-    // 프롬프트: mono 한 줄 + blink 커서 블록 8×15.
     let prompt_y = rect.min.y + pad + theme.status_dot_size.value() + theme.spacing_md.value();
     let prompt = "$ cargo build";
     let font = egui::FontId::monospace(theme.font_size_term_sm.value());
     let galley = p.layout_no_wrap(prompt.to_string(), font.clone(), fg);
     p.galley(egui::pos2(rect.min.x + pad, prompt_y), galley.clone(), fg);
 
-    // 커서 블록: 8×15 (status_dot_size × spacing_lg 근사).
     let cur_x = rect.min.x + pad + galley.size().x + theme.spacing_xs.value();
     let cur_rect = egui::Rect::from_min_size(
         egui::pos2(cur_x, prompt_y),
@@ -93,7 +76,6 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     );
     match state {
         State::Unfocused => {
-            // 비포커스: 빈 커서(테두리만).
             p.rect_stroke(
                 cur_rect,
                 0.0,
@@ -127,9 +109,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("focused bg", "#000 (terminal.focused_bg)"),
             ("unfocused bg", "unfocused_bg · opacity 0.92"),
-            ("agent", "pulsing accent-agent dot"),
-            ("header", "StatusDot + Tag"),
-            ("cursor", "blink block 8×15"),
+            ("agent", "static accent-agent dot in this example"),
+            ("header", "painted dot + state label"),
+            ("cursor", "static block from status-dot-size × spacing-lg"),
             (
                 "attention on focus",
                 "clear_attention — kind(Completion/NeedsInput) 무관 단일 해제 규칙",
@@ -158,10 +140,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "포커스된 surface 만 순흑(#000) — 나머지는 0.92 로 살짝 가라앉혀 \
-         '지금 어디에 입력되는가' 를 한눈에 구분한다. agent 점유는 별도 색 dot 으로. \
-         이 focused 전환은 완료/응답대기 테두리(occupancy_borders specimen 의 \
-         completed·needs-input 클러스터) 해제와도 맞물린다 — surface 가 실 포커스를 \
-         얻으면 그 attention 레코드가 kind(Completion·NeedsInput) 와 무관하게 지워진다.",
+        "이 예제는 테마의 포커스·비포커스 터미널 배경을 사용하고 비포커스 배경을 0.92로 흐리게 한다. 에이전트 상태는 별도 색의 점으로 표시한다. 본체의 실제 사용자 포커스 전환은 해당 서피스의 완료·응답 대기 알림도 해제한다.",
     );
 }

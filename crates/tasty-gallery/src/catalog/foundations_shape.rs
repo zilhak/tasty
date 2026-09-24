@@ -1,8 +1,4 @@
-//! Foundations Shape specimen — 디자인(4) "Radius · border · motion".
-//!
-//! Spec "Crisp and rectilinear — it's a terminal". 작은 radius(4/2), pill, 1px
-//! border, 그리고 4px 그리드에 스냅된 fixed control height(tree 22 · control 28 ·
-//! tab 24). UI 모션은 90–120ms, 터미널 콘텐츠 모션은 0ms.
+//! 모서리 반경·테두리·컨트롤 높이·동작 시간 토큰 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{BadgeVariant, badge};
@@ -15,7 +11,6 @@ fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 데모 box 치수 — field_width_xs(90) × spacing_xl*2(48), 토큰 합성.
     let box_w = theme.field_width_xs.value();
     let box_h = theme.spacing_xl.value() * 2.0;
 
@@ -45,7 +40,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("radius", "4px (sm 2px) — never round"),
+            ("radius", "4px (sm 2px); pill uses full radius"),
             ("border", "1px border-default"),
             ("UI motion", "90–120ms ease-ui"),
             ("terminal motion", "0ms — content never animates"),

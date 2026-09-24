@@ -1,28 +1,6 @@
-//! Settings window — 디자인(4) Overlays `settings` Spec.
-//!
-//! 권위 원본: `ui_kits/terminal/overlays/settings_window.jsx` (settings-ia-restructure,
-//! 2026-06-17 · 크기확대 2026-06-26). 1100×700 카드, **7탭 L1 IA**
-//! (General / Terminal / Appearance / Keybindings / File Handler / Misc / Plugins),
-//! 좌측 "Settings" 타이틀 + 세로 구분선을 가진 상단 밴드(높이 44 — close ✕ 없음,
-//! 닫기는 footer Cancel + OS 타이틀바),
-//! **L2 200px** 섹션 사이드바(검색 아이콘 필터 + 섹션 리스트, plugin 섹션은
-//! accent-agent dot), content, footer(Cancel/Save).
-//!
-//! **boolean = `switch()`** (디자인 규약: 모든 boolean 설정행은 `<Switch>`).
-//! 유일한 예외는 Appearance › Colors override 행의 "Default" 토글로, 거기서만
-//! `checkbox()` 를 쓴다 (jsx `ColorOverridePicker`).
-//!
-//! 정적 specimen 은 L2 를 탐색할 수 없으므로, content 영역은 선택된 Theme 섹션
-//! (스와치 그리드)을 1차로 보이고, 그 아래 구분선 뒤에 Appearance 의 나머지
-//! 컨트롤 어휘(General 의 switch 행 + Colors 의 checkbox 행)를 **카탈로그**로 함께
-//! 노출한다 — 본체 설정창이 쓰는 컨트롤을 cut 하지 않는다(docs/dev-guide/gallery-first.md#순서-필수 갤러리 완전성).
-//! General(L1) › General 의 **언어 콤보**(`language_select`)도 같은 카탈로그에 있다 —
-//! 내장 3 + 사용자 언어팩 N, `[meta] name` 이 없는 팩의 코드 폴백, 설정값이 목록에
-//! 없을 때의 `<code> (not found)` 행(값을 덮어쓰지 않는다)까지 세 케이스를 한 번에 보인다.
-//!
-//! 본체 트랙과 **같은 위젯·같은 토큰**: `tasty_ui_widgets::{switch,checkbox,select,Input}`
-//! (셸/밴드/사이드바/푸터 토큰은 `widgets::dialog` 키트 공유). 스와치 strip 색은
-//! 갤러리 토큰 규율상 literal preset hex 대신 **theme 팔레트 토큰**으로 구조만 전사한다.
+//! 설정 창의 탭·사이드바·입력 컨트롤 예제.
+//! 사이드바 탐색은 구현하지 않아 테마와 일반 컨트롤, 언어 선택을 한 화면에 모았다.
+//! 테마 스와치는 실제 프리셋 파일을 읽지 않고 현재 Theme 팔레트로 구성한다.
 
 use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
@@ -47,8 +25,7 @@ const CONTENT_MAX_W: LogicalPx = LogicalPx(620.0);
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
-/// L1 상단 탭 (jsx `L1_LABEL`: FileHandler → "Handler" — S13 일반화, 내부 키는
-/// FileHandler 유지). 활성 = Appearance.
+/// 상단 탭 목록. 이 예제는 Appearance를 선택한다.
 const L1_TABS: &[&str] = &[
     "General",
     "Terminal",
@@ -140,9 +117,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         .max(theme.measure_sm);
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings 는 별도 창(`SettingsView`)이라 살아 있는 콘텐츠 위에 뜨지도,
-        // 터미널 뷰포트를 점유하지도 않는다 — 본체 `src/view/settings/` 도 그림자를
-        // 그리지 않는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래.
+        // 별도 설정 창의 콘텐츠이므로 팝업 그림자를 그리지 않는다.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
@@ -206,8 +181,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── L1 상단 밴드 ───────────────────────────────────────────────────────────
-
 fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
@@ -217,7 +190,6 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
             ui.horizontal(|ui| {
                 ui.set_min_height(band_h.value());
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                // 좌측 "Settings" 타이틀 (bold 14px) + 세로 구분선.
                 ui.label(
                     egui::RichText::new("Settings")
                         .size(theme.font_size_max.value())
@@ -235,8 +207,7 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
                     egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
                 );
                 ui.add_space(theme.spacing_sm.value());
-                // 탭들. 우측 close ✕ 는 없다 — 닫기는 footer Cancel + OS 타이틀바
-                // 로 일원화(중복 닫기 동작 방지).
+                // 닫기는 푸터 Cancel과 OS 타이틀바를 사용한다.
                 for (i, t) in L1_TABS.iter().enumerate() {
                     l1_tab(ui, theme, t, band_h, i == L1_ACTIVE);
                 }
@@ -278,8 +249,6 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, acti
     }
 }
 
-// ── L2 섹션 사이드바 ───────────────────────────────────────────────────────
-
 fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
@@ -287,10 +256,8 @@ fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
             ui.set_width(L2_WIDTH.value());
             ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // 부모(`draw` 의 `horizontal_top`)가 가로 레이아웃이라 Frame 의 child Ui 도 가로로
-            // 흐른다 — 사이드바 내부(필터 → 구분선 → 섹션 리스트)는 세로 적층으로 명시한다.
+            // 상위 가로 배치와 달리 사이드바 내부는 세로로 쌓는다.
             ui.vertical(|ui| {
-                // 검색 필터 (search 아이콘 + placeholder) — 자체 padding + border-bottom.
                 kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                     STATE.with(|s| {
                         let st = &mut *s.borrow_mut();
@@ -303,7 +270,6 @@ fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
                     });
                 });
                 kit::hsep(ui, theme);
-                // 섹션 리스트.
                 kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                     for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
@@ -361,8 +327,6 @@ fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     );
 }
 
-// ── content ────────────────────────────────────────────────────────────────
-
 fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: LogicalPx) {
     egui::Frame::new()
         .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
@@ -370,21 +334,16 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
             ui.set_min_width(content_w.value());
             ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            // 아래 `theme_swatch` 가 f32 폭을 받는다 — 그 관문까지가 이번 회차 밖이라
-            // 여기서 한 번 벗긴다. 상한은 컬럼에 **한 번** 건다 — 블록마다 걸면 블록끼리
-            // 값이 갈린다.
+            // 모든 콘텐츠 블록에 같은 최대폭을 적용한다.
             let inner = (content_w - theme.spacing_lg.scaled(2.0))
                 .min(CONTENT_MAX_W)
                 .value();
-            // 위 사이드바와 같은 이유 — content 의 섹션/행은 세로 적층.
             ui.vertical(|ui| {
-                // ── Theme preset (선택된 L2 = Theme) ──
                 mono(ui, theme, "Theme preset");
                 let cw =
                     ((inner - theme.spacing_sm.value()) * 0.5).max(theme.field_width_md.value());
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    // strip 색은 theme 팔레트 토큰 (literal preset hex 대신 구조 전사).
                     theme_swatch(
                         ui,
                         theme,
@@ -421,7 +380,6 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
                  in the Colors section — switching presets clears those overrides.",
                 );
 
-                // ── 컨트롤 어휘 카탈로그 (정적 specimen 은 L2 탐색 불가 → 나머지 섹션 동봉) ──
                 ui.add_space(theme.spacing_sm.value());
                 kit::hsep(ui, theme);
                 ui.add_space(theme.spacing_sm.value());
@@ -430,7 +388,6 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
 
-                    // General — boolean = Switch.
                     mono(ui, theme, "General");
                     row(ui, theme, "Font family:", |ui| {
                         select(
@@ -457,12 +414,9 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
                         range_track(ui, theme, theme.field_width_lg.value(), st.opacity);
                     });
 
-                    // Colors — 유일한 checkbox 예외 ("Default" override 행).
                     mono(ui, theme, "Colors");
                     override_row(ui, theme, "blue", "#74c7ec", &mut st.color_default);
 
-                    // General(L1) › General — 언어 콤보. 내장 3 + 언어팩 N(`fr` 표시 이름 · `xx` 코드
-                    // 폴백) + 설정값이 목록에 없을 때의 `zz (not found)` 행(값 보존).
                     mono(ui, theme, "General › Language");
                     row(ui, theme, "Language:", |ui| {
                         language_select(
@@ -491,7 +445,7 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
                     note(
                         ui,
                         theme,
-                        "Built-in en/ko/ja plus every ~/.tasty/lang/<code>/pack.toml. A pack without a \
+                        "Built-in en/ko/ja plus packs in the Tasty home's lang/<code>/pack.toml. A pack without a \
                          [meta] name shows its code (xx); a configured code with no pack stays \
                          selected as 'zz (not found)' instead of being overwritten.",
                     );
@@ -524,14 +478,12 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
     let overridden = !*default;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        // override 표식 dot.
         let d = theme.status_dot_size.value();
         let (dr, _) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::hover());
         if overridden {
             ui.painter()
                 .circle_filled(dr.center(), d * 0.5, theme.accent_primary().to_egui());
         }
-        // 필드명 (mono).
         let fg = if overridden {
             theme.text_primary()
         } else {
@@ -551,7 +503,6 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
             egui::FontId::monospace(theme.font_size_body.value()),
             fg.to_egui(),
         );
-        // 값 (mono 정적 필드).
         kit::field(
             ui,
             theme,
@@ -560,7 +511,6 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
             !overridden,
             true,
         );
-        // 스와치 (값 색 — theme.blue 토큰으로 근사).
         let s = theme.icon_glyph_size_sm.value();
         let (sr, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
         ui.painter().rect(
@@ -570,7 +520,6 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
             egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
             egui::StrokeKind::Inside,
         );
-        // "Default" — 유일한 checkbox.
         checkbox(ui, theme, default, "Default", true);
     });
 }
@@ -589,7 +538,6 @@ fn theme_swatch(
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(width, strip_h + label_h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
-    // 색 strip (가로 균등 분할).
     let strip_rect = egui::Rect::from_min_size(rect.min, egui::vec2(width, strip_h));
     let n = strip.len().max(1) as f32;
     let seg = width / n;
@@ -601,7 +549,6 @@ fn theme_swatch(
             c.to_egui(),
         );
     }
-    // 라벨 바 (bg-panel).
     let label_rect = egui::Rect::from_min_size(
         egui::pos2(rect.left(), rect.top() + strip_h),
         egui::vec2(width, label_h),
@@ -618,7 +565,6 @@ fn theme_swatch(
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.text_primary().to_egui(),
     );
-    // 외곽 border + active ring.
     let (border, bw) = if active {
         (theme.accent_primary(), theme.focus_ring_width.value())
     } else {
@@ -652,8 +598,6 @@ fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
     );
 }
 
-// ── footer ─────────────────────────────────────────────────────────────────
-
 fn footer(ui: &mut egui::Ui, theme: &Theme) {
     kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
         ui.horizontal(|ui| {
@@ -668,8 +612,6 @@ fn footer(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 }
-
-// ── content 헬퍼 ─────────────────────────────────────────────────────────────
 
 /// Mono 섹션 헤더 — mono 10 uppercase muted (jsx `Mono`).
 fn mono(ui: &mut egui::Ui, theme: &Theme, text: &str) {

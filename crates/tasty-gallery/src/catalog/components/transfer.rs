@@ -1,22 +1,6 @@
-//! Remote file-transfer feedback popups — progress + failed.
-//!
-//! 디자인 canonical: `gallery/overlays-shared.jsx` `TransferProgressFrame` /
-//! `TransferErrorFrame` — scrim 중앙 headless 모달 2종. 본체
-//! `src/adapters/ui/popup/transfer.rs` (PopupDef `transfer_progress` /
-//! `transfer_error`) 의 시각 미러다 (갤러리는 main 바이너리 비의존 → 구조·토큰만 전사).
-//!
-//! **progress 는 시스템 최초 determinate progress bar** — recessed 4px track
-//! (`--tasty-progress-track-bg` = bg-app) + accent fill (`--tasty-progress-fill-bg`
-//! = accent-primary), 0ms 무애니(바이트 수신 시에만 fill 폭 이동). indeterminate
-//! `Spinner` 와 구분된다.
-//!
-//! 전사 스펙 (jsx inline style → LogicalPx / Theme):
-//! - 프레임: width `--tasty-transfer-popup-width`(400) · bg-panel · 1px border-strong
-//!   · radius · modal shadow.
-//! - 헤더: `padding 12/14` · gap 8 · borderBottom separator. glyph(download/warn) +
-//!   제목 14/600 + (progress) marginLeft-auto mono pct.
-//! - 바디: `padding 14` · column gap 10.
-//! - 푸터: `padding 10/14` · borderTop separator · 우측정렬 버튼(gap 8). danger-fill 금지.
+//! 원격 파일 전송의 진행·실패 팝업 예제.
+//! 진행 막대는 비율을 바로 반영하며 애니메이션을 추가하지 않는다.
+//! 실제 전송이나 배경 어둡게 하기는 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -27,7 +11,6 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant};
 use crate::catalog::widgets::dialog as kit;
 
-// ── 프레임 고정 치수 (디자인 raw px — 화면 전용, token-policy §c) ──
 /// `--tasty-transfer-popup-width` (size-400).
 const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
@@ -41,8 +24,7 @@ const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
 /// 바디 내부 요소 gap (디자인 10 — raw).
 const BODY_GAP: LogicalPx = LogicalPx(10.0);
 
-/// 09a — 전송 진행 팝업 specimen (단일 파일 + 다중 파일 행반복). 프레임을 클러스터에
-/// 직접 렌더한다(실제 scrim dim 은 본체 `draw.rs` 소유 — file_picker specimen 관례).
+/// 단일·다중 파일 전송의 진행 상태를 비교한다.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "receiving (mid-transfer)", |ui| {
@@ -83,7 +65,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// 09b — 전송 실패 팝업 specimen (거부=dismiss 단독 / 전송중 실패=dismiss+retry).
+/// 시작 전 거부와 전송 중 실패의 확인·재시도 버튼을 비교한다.
 pub fn draw_error(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "rejected before start (capacity)", |ui| {
@@ -146,7 +128,6 @@ fn header_band(
     title: &str,
     trailing: Option<&str>,
 ) {
-    // 콘텐츠 높이 = max(glyph 16, 제목 14 line) ≈ 20; 패딩 12/12.
     let content_h = LogicalPx(20.0);
     let band_h = HEADER_PAD_Y.scaled(2.0) + content_h;
     let (rect, _) = ui.allocate_exact_size(
@@ -219,7 +200,6 @@ fn progress_card(ui: &mut egui::Ui, theme: &Theme, rows: &[ProgressRow]) {
 
 /// 한 파일 진행 행 — 파일명 → determinate bar → done/total · rate.
 fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
-    // 파일명 행 (glyph + mono ellipsis name).
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         kit::icon(
@@ -240,7 +220,6 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
     ui.add_space(BODY_GAP.value());
     progress_bar(ui, theme, row.pct);
     ui.add_space(BODY_GAP.value());
-    // done/total · rate — space-between.
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!("{} / {}", row.done, row.total))
@@ -267,9 +246,7 @@ fn progress_bar(ui: &mut egui::Ui, theme: &Theme, pct: u32) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let r = theme.corner_radius_sm.value();
-    // recessed track (bg-app — 패널보다 어둡게).
     ui.painter().rect_filled(rect, r, theme.bg_app().to_egui());
-    // accent fill — 폭 = pct%, 0ms (바이트 진행이 곧 폭).
     let frac = (pct.min(100) as f32) / 100.0;
     if frac > 0.0 {
         let fill = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * frac, h));
@@ -290,7 +267,6 @@ fn error_card(ui: &mut egui::Ui, theme: &Theme, name: &str, reason: &str, retry:
             None,
         );
         body_region(ui, |ui| {
-            // <p> "<b>{name}</b> could not be received." — mono bold name + 산문.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(

@@ -1,8 +1,4 @@
-//! Rename popup — 디자인(4) Overlays `rename` Spec.
-//!
-//! 360px 모달. title + 키 힌트(↵/Esc) + autofocus Input(block) + Cancel/Rename.
-//! workspace/tab/subtitle rename 의 단일 view — 차이는 제목·버퍼뿐이다(디자인은
-//! rename 1 Spec, 기존 widgets/dialog 와 통합).
+//! 워크스페이스·탭·부제 이름 변경 팝업의 정적 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -24,7 +20,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         kit::caption(ui, theme, "Press ↵ to confirm, Esc to cancel.", false);
                     });
                 });
-                // autofocus Input (block) — gallery 는 정적 값으로 표시(focus 경합 회피).
+                // 예제끼리 포커스를 다투지 않도록 입력값은 정적으로 그린다.
                 kit::field(ui, theme, None, "tasty-core", false, false);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

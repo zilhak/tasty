@@ -1,14 +1,4 @@
-//! Foundations 색 specimen — 디자인(4) Foundations 의 색 3 Spec.
-//!
-//! 디자인은 색을 토큰 grid 가 아니라 **역할 데모**로 보여준다. 한 `draw` 가 아니라
-//! 4 개로 분할:
-//! - [`elevation`] — surface ramp (bg-app→…→surface-active 중첩, 그림자 없이 tint 로만 깊이)
-//! - [`text`] — text tint 위계 (primary→placeholder) + placeholder Input
-//! - [`accents`] — accent 역할 매핑 (primary/info/success/warning/danger/agent + demo 위젯)
-//! - [`terminal`] — 터미널 콘텐츠 셀 색 (ANSI 16 + selection/vi-cursor/search 상태 채움),
-//!   UI accent role 과 구분되는 별개 축
-//!
-//! 모든 색·치수는 `Theme` 토큰에서만 가져온다.
+//! 배경 단계, 텍스트 위계, 강조색 역할, 터미널 색을 Theme 값으로 비교한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Input, StatusKind, TagVariant, status_dot, tag};
@@ -20,18 +10,11 @@ fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
     c.into()
 }
 
-// ── elevation (surface ramp) ────────────────────────────────────────────────
-
-/// Spec "Depth reads through surface tint; shadow is for floating surfaces only".
-///
-/// UI 표면(ramp)에는 lift 가 없다. 그림자는 떠 있는 표면만 받고 그것도 두 값으로
-/// 갈린다 — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자): 뷰포트를 점유하면 modal, anchored + scrim-less 면
-/// popover, 둘 어디에도 안 들어가면 없음.
+/// 배경색 단계는 그림자 없이 비교한다. 그림자는 팝오버·모달 같은 떠 있는 화면에 사용한다.
 pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
         ui.scope(|ui| {
             ui.set_max_width(theme.measure_sm.value());
-            // bg-app → bg-sidebar → bg-panel → surface-raised 중첩, 깊이는 tint 로만.
             ramp(ui, theme, ec(theme.bg_app()), "bg-app", |ui| {
                 ramp(ui, theme, ec(theme.bg_sidebar()), "bg-sidebar", |ui| {
                     ramp(ui, theme, ec(theme.bg_panel()), "bg-panel", |ui| {
@@ -136,8 +119,6 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, fill: egui::Color32, label: &str) {
         });
 }
 
-// ── text (hierarchy by color) ────────────────────────────────────────────────
-
 /// Spec "Hierarchy by text color, on any surface".
 pub fn text(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
@@ -176,7 +157,6 @@ pub fn text(ui: &mut egui::Ui, theme: &Theme) {
             "glyph-dim",
             "Dim chrome glyph — receding, never disabled",
         );
-        // placeholder 는 Input 의 빈 상태로 시연.
         let mut buf = String::new();
         Input::new()
             .placeholder("Placeholder — text-placeholder")
@@ -222,8 +202,6 @@ fn text_row(ui: &mut egui::Ui, theme: &Theme, color: egui::Color32, tok: &str, s
         );
     });
 }
-
-// ── accents (roles, not decoration) ──────────────────────────────────────────
 
 /// Spec "Accents map to roles, not decoration".
 pub fn accents(ui: &mut egui::Ui, theme: &Theme) {
@@ -328,12 +306,10 @@ fn accent_row(
 ) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-        // 16px 색 swatch.
         let s = theme.spacing_lg.value();
         let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
         ui.painter()
             .rect_filled(r, theme.corner_radius_sm.value(), swatch);
-        // role 라벨 (token + 용도) 고정폭.
         ui.allocate_ui(egui::vec2(theme.tab_width.value(), s), |ui| {
             ui.vertical(|ui| {
                 ui.label(
@@ -353,13 +329,7 @@ fn accent_row(
     });
 }
 
-// ── terminal / ANSI palette ──────────────────────────────────────────────────
-
-/// Spec "The colors a terminal cell paints with — not UI chrome".
-///
-/// 터미널 셀이 칠하는 16 ANSI(normal 8 + bright 8) + Tasty 가 셀 위에 직접 칠하는
-/// 4 상태 채움(selection / vi cursor / search). UI accent role 과 같은 hue 를
-/// 공유해도 **다른 축** — accent-success(green) 와 ansi-green 은 서로 다른 역할이다.
+/// 터미널의 ANSI 색과 선택·검색·커서 색. UI의 강조색과 값이 같아도 역할을 구분한다.
 pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
     let normal: [(&str, &str, egui::Color32); 8] = [
         ("ansi-black", "30", ec(theme.ansi_black)),
@@ -383,13 +353,11 @@ pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
     ];
 
     stage(ui, theme, StageVariant::Column, |ui| {
-        // ANSI 16 — normal / bright 를 hue 로 짝지어 2열.
         ui.columns(2, |cols| {
             ansi_col(&mut cols[0], theme, "normal · SGR 30–37", &normal);
             ansi_col(&mut cols[1], theme, "bright · SGR 90–97", &bright);
         });
 
-        // 터미널 상태 채움 — 가짜 터미널 줄 위에 시연 + 토큰 행.
         ui.vertical(|ui| {
             ui.label(
                 egui::RichText::new("TERMINAL STATE FILLS — PAINTED ONTO CELLS")
@@ -551,7 +519,6 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            // 줄 1: 프롬프트.
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(
@@ -567,7 +534,6 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
                         .color(fg),
                 );
             });
-            // 줄 2: selection / search-match / active-match / vi-cursor 채움.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 let seg = |ui: &mut egui::Ui,

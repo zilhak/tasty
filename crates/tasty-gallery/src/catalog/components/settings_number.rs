@@ -1,14 +1,5 @@
-//! `settings-number` specimen — 설정 창의 **숫자 한 모양** 미러.
-//!
-//! 디자인 `gallery/overlays-windows.jsx` 의 "Numbers in settings — one shape".
-//! 설정 안에 숫자 컨트롤이 셋(정적 suffix 를 단 mono Input · drag 숫자 · 제안된
-//! stepper) 있었고 **첫째로 통일**했다. 상태 셋을 그대로 전시한다 — default ·
-//! out of range · disabled.
-//!
-//! 갤러리는 main 바이너리에 의존하지 않으므로 본체
-//! `src/view/settings/ui/tabs/number.rs` 의 `number_field` 를 공유 위젯
-//! (`tasty_ui_widgets::Input`)으로 **미러**한다(갤러리 확립 패턴). 확정 판정 자체
-//! (`commit`)는 본체 쪽 단위 테스트가 든다 — 여기서는 **보이는 것**만 고정한다.
+//! 숫자 입력의 기본·범위 초과·비활성 상태 예제.
+//! 편집 중에는 값을 유지하고 확정할 때 범위를 제한한다. 본체와 같은 공용 Input을 쓴다.
 
 use std::cell::RefCell;
 
@@ -101,8 +92,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
         ui.allocate_ui(
             egui::vec2(ROW_WIDTH.value(), theme.input_height().value()),
             |ui| {
-                // 오른쪽부터 채운다 — 단위 · 필드 · 라벨. 폭을 손으로 나누지 않아야
-                // 라벨이 남는 자리를 그대로 갖는다.
+                // 단위와 필드를 오른쪽에 놓고 남은 폭을 라벨에 준다.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     let muted = if enabled {
@@ -110,7 +100,6 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
                     } else {
                         theme.text_disabled()
                     };
-                    // 단위 12(`font_size_term_sm`) — 아래 경고 줄의 11 과 다르다.
                     ui.label(
                         egui::RichText::new("%")
                             .size(theme.font_size_term_sm.value())
@@ -146,7 +135,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
     });
 }
 
-/// 지금 친 글자가 확정되면 값이 끌려가는가. 본체 `number::out_of_range` 미러.
+/// 확정 시 범위 제한으로 값이 바뀌는지 확인한다. 본체 number::out_of_range와 같은 계산이다.
 fn out_of_range(buf: &str) -> Option<f64> {
     let typed = buf.trim().parse::<f64>().ok()?;
     if !typed.is_finite() {

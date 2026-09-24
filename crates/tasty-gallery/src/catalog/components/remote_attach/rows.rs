@@ -72,8 +72,7 @@ pub(super) fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: 
     );
 }
 
-/// 원격이 닿기는 하는데 ws 가 없을 때 새 행 아래 붙는 muted 한 줄. 이름 열은 위
-/// 행들과 같은 정렬선에서 시작한다(선행 dot 슬롯 폭 스페이서).
+/// 연결됐지만 워크스페이스가 없을 때의 안내. 이름 열을 다른 행과 맞춘다.
 pub(super) fn empty_line(ui: &mut egui::Ui, theme: &Theme, profile: &str) {
     let width = ui.available_width();
     let h = theme.spacing_xs.value() * 2.0 + theme.font_size_caption.value() * theme.line_height_ui;
@@ -91,9 +90,7 @@ pub(super) fn empty_line(ui: &mut egui::Ui, theme: &Theme, profile: &str) {
     );
 }
 
-/// 이름 열 앞의 status-dot 슬롯(8px)을 할당한다. 목록의 **모든** 행이 이 한 함수로
-/// 슬롯을 잡으므로 이름 열의 좌측 정렬선이 픽셀 동일해진다 — 새 행의 14px 글리프는
-/// 슬롯보다 넓지만 좌우로 대칭 overflow 하므로 정렬선을 밀지 않는다.
+/// 모든 행에 같은 점 슬롯을 확보한다. 더 큰 새 행 아이콘은 슬롯 중심에 놓는다.
 pub(super) fn dot_slot(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
     let (slot, _) = ui.allocate_exact_size(
         egui::vec2(
@@ -105,9 +102,7 @@ pub(super) fn dot_slot(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
     slot
 }
 
-/// ws 행의 실행 dot — 같은 슬롯 안에 그린다. `status_dot` 은 라벨이 비어도 dot 뒤에
-/// 자기 gap 을 할당하므로 그대로 부르면 이름 열이 새 행보다 밀린다. 슬롯을 먼저
-/// 잡고 그 안의 child 에 그려서, 위젯이 삼키는 여백이 정렬선에 새지 않게 한다.
+/// StatusDot이 추가하는 라벨 간격이 열 정렬을 밀지 않도록 고정 슬롯 안에 그린다.
 fn dot_slot_status(ui: &mut egui::Ui, theme: &Theme, kind: StatusKind, pulse: bool) {
     let slot = dot_slot(ui, theme);
     let mut c = ui.new_child(
@@ -165,7 +160,6 @@ pub(super) fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
             .size(theme.font_size_body.value())
             .color(name_c.to_egui()),
     );
-    // panes 아이콘 + count.
     kit::icon(
         &mut child,
         icons::SPLIT,
@@ -184,7 +178,6 @@ pub(super) fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
                 theme,
                 "in use",
                 theme.border_attached().to_egui(),
-                // 본체와 같은 tint 짝 토큰.
                 theme.tint_fill_alpha(),
                 theme.tint_border_alpha(),
                 false,

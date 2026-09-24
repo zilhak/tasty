@@ -1,9 +1,4 @@
-//! `tabbar` specimen — Pane tab strip (research §2.5 Layouts).
-//!
-//! 한 pane 안의 탭 줄. tab 24×150, strip 은 bg-sidebar + 하단 border.
-//! Tab×3 + `+` IconButton, 우측에 Split / Search. 활성 탭은 bg-panel +
-//! accent top bar 로 구분. 본체 `src/adapters/ui/tab_bar/tab.rs` 의 시각 패턴을
-//! Theme 토큰만으로 정적 재현 (binary 미의존).
+//! 페인 탭바의 활성 표시와 응답 대기·완료 알림 색을 비교하는 정적 예제.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -12,10 +7,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
 
-/// Attention kind 데모 탭 3개: (name, active, kind). `kind` 는 본체
-/// `PaneTabBarView.tab_attention_kind` — `Some(NeedsInput)`/`Some(Completion)`/
-/// `None`. 디자인 확정 위계(NeedsInput → Completion → active → 평상시)를 3탭에서
-/// 동시에 보여준다(need-input 탭은 active 가 아니어도 노랑이 이긴다).
+/// 응답 대기 > 완료 > 활성 > 평상시 순서의 제목 색을 보여주는 예제.
 const ATTENTION_TABS: &[(&str, bool, Option<Kind>)] = &[
     ("waiting.rs", false, Some(Kind::NeedsInput)),
     ("done.rs", true, Some(Kind::Completion)),
@@ -35,7 +27,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
     let p = ui.painter_at(rect);
 
-    // strip bg-sidebar + 하단 border.
     p.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
     p.hline(
         rect.x_range(),
@@ -64,8 +55,7 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
                 rect.y_range(),
                 egui::Stroke::new(
                     theme.border_width.value(),
-                    // `separator` 는 premultiplied 저장이라 `to_egui_premultiplied()` 로
-                    // 벗긴다 — 본체(`src/adapters/ui/tab_bar/`)와 같은 경로다.
+                    // 이미 premultiply된 구분선 색에 알파를 다시 곱하지 않는다.
                     theme.tab_separator().to_egui_premultiplied(),
                 ),
             );
@@ -84,7 +74,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         x += tab_w;
     }
 
-    // `+` IconButton (탭 뒤).
     let icon = theme.icon_glyph_size_md.value();
     let plus_rect = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(bar_h, bar_h));
     paint_icon(
@@ -95,7 +84,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         egui::Color32::from(theme.text_secondary()),
     );
 
-    // 우측: Split + Search.
     let search_rect = egui::Rect::from_min_size(
         egui::pos2(rect.max.x - bar_h, rect.min.y),
         egui::vec2(bar_h, bar_h),
@@ -165,8 +153,7 @@ fn attention_strip(ui: &mut egui::Ui, theme: &Theme) {
                 rect.y_range(),
                 egui::Stroke::new(
                     theme.border_width.value(),
-                    // `separator` 는 premultiplied 저장이라 `to_egui_premultiplied()` 로
-                    // 벗긴다 — 본체(`src/adapters/ui/tab_bar/`)와 같은 경로다.
+                    // 이미 premultiply된 구분선 색에 알파를 다시 곱하지 않는다.
                     theme.tab_separator().to_egui_premultiplied(),
                 ),
             );
@@ -234,11 +221,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "활성 탭만 bg-panel 로 떠오르고 상단에 2px accent bar — 강조는 색이 아니라 \
-         '바닥에서 들어올린' elevation 으로 준다. 아래 두번째 strip 은 attention kind 별 \
-         제목 색 위계를 보여준다 — needs-input(노랑)이 completion(파랑)보다, completion 이 \
-         active(text-primary)보다 우선한다(둘째 탭처럼 active 이면서 completion 이면 파랑이 \
-         이긴다). attention 은 포커스 시 해제되므로 실제로는 active 탭이 attention 틴트를 \
-         갖는 충돌이 거의 없다 — 이 순서는 방어적 규칙이다.",
+        "활성 탭은 bg-panel 배경과 상단 accent 선으로 표시한다. 제목 색은 응답 대기, 완료, 활성 순서로 고른다. 실제 사용자 포커스를 받으면 알림이 해제되지만, 이 예제는 활성 상태와 알림이 함께 있을 때의 우선순위도 보여준다.",
     );
 }

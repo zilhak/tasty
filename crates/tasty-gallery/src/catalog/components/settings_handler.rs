@@ -1,13 +1,5 @@
-//! Settings › Handler 탭의 L2 서브탭 **콘텐츠** specimen 4 종.
-//!
-//! 전사 원본: `ui_kits/terminal/overlays/settings_window.jsx` `body()` 의
-//! FileHandler 분기(File Extension Mapping / File Detectors / File Handlers,
-//! jsx:910-964) + `HookHandlers`/`HookRow` 컴포넌트(jsx:442-545).
-//!
-//! `settings` specimen(창 셸)은 L2 를 탐색할 수 없어 이 서브탭 콘텐츠들이
-//! 카탈로그에서 누락돼 있었다(docs/dev-guide/gallery-first.md#순서-필수 갤러리 완전성 갭) — 여기서 서브탭별
-//! Spec 으로 노출한다. 갤러리는 본체 registry 에 의존할 수 없으므로 jsx 의
-//! seed 데이터를 그대로 쓴다. 본체 대응: `src/view/settings/ui/file_handler_tab/`.
+//! 확장자 연결, 파일 감지기, 파일 핸들러, 훅 설정의 예제.
+//! 실제 레지스트리를 읽지 않고 준비된 데이터로 표시한다.
 
 use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
@@ -48,8 +40,6 @@ fn row_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     );
 }
 
-// ── File Extension Mapping (jsx:911-928) ─────────────────────────────────
-
 const EXT_HANDLERS: &[&str] = &[
     "Image viewer",
     "Log viewer",
@@ -72,11 +62,9 @@ thread_local! {
 
 pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
+        // 설정 창 내부 콘텐츠이므로 그림자를 추가하지 않는다.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                // 헤더 행 — Mono 헤드 좌 + "Add mapping" ghost sm 우 (jsx:914-917).
                 ui.horizontal(|ui| {
                     mono_head(ui, theme, "Extension → handler");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -118,7 +106,6 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                                 },
                             );
                         });
-                        // jsx: 마지막 행은 borderBottom 없음.
                         if i + 1 < EXT_ROWS.len() {
                             row_separator(ui, theme, resp.response.rect);
                         }
@@ -147,8 +134,6 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── File Detectors (jsx:929-947) ─────────────────────────────────────────
-
 /// jsx seed: (name, desc, on).
 const DETECTOR_ROWS: &[(&str, &str, bool)] = &[
     (
@@ -176,8 +161,6 @@ thread_local! {
 
 pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Detection passes (priority order)");
@@ -239,8 +222,6 @@ pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── File Handlers (jsx:950-964) ──────────────────────────────────────────
-
 /// jsx seed: (name, kind tag, on).
 const HANDLER_ROWS: &[(&str, &str, bool)] = &[
     ("Image viewer", "image", true),
@@ -256,8 +237,6 @@ thread_local! {
 
 pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Registered file handlers");
@@ -311,8 +290,6 @@ pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 }
-
-// ── Hook Handlers (jsx HookHandlers/HookRow, 442-545) ────────────────────
 
 /// jsx `SEED_HOOKS` 미러 행.
 #[derive(Clone)]
@@ -399,8 +376,6 @@ fn origin_variant(origin: &str) -> TagVariant {
 
 pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 HOOK_STATE.with(|s| {
@@ -447,7 +422,6 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
 fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-    // ── intro: 설명 paragraph(flex 1, measure-md) + "Add handler" 버튼 ──
     ui.horizontal_top(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
             if Button::new("Add handler")
@@ -482,7 +456,6 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
         });
     });
 
-    // ── "Add handler" 인라인 draft 카드 (jsx `adding && …`) ──
     if st.adding {
         egui::Frame::new()
             .fill(theme.surface_raised().to_egui())
@@ -509,8 +482,7 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                     "tasty notify \"$TASTY_HOOK_*\"",
                     &mut st.draft_cmd,
                 );
-                // Align::Min(상단) — 본체 hook_handlers.rs 와 동일 이유(Frame 안
-                // 마지막 요소, Align::Center 는 잔여 세로 공간 전체로 확장됨).
+                // 가운데 정렬이 남은 높이를 모두 차지하지 않도록 위쪽에 맞춘다.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     let can_add = !st.draft_id.trim().is_empty();
@@ -545,7 +517,6 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
             });
     }
 
-    // ── Mono caps 섹션 헤드 + rows ──
     mono_head(ui, theme, "Registered hook handlers");
     let mut remove: Option<usize> = None;
     for i in 0..st.hooks.len() {
@@ -591,13 +562,10 @@ fn draw_hook_row(
             })
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                // line 1 — id · origin Tag · prio · (우측) Switch + remove.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // 출처가 그 자리를 정한다 — user 행만 휴지통, 나머지는 자물쇠.
-                        // 레지스트리가 시작마다 host/plugin 기본값을 다시 심으므로
-                        // 거기 지우기를 두면 시스템이 되돌리는 것을 약속하는 셈이다.
+                        // 호스트·플러그인 기본 항목은 재등록되므로 사용자 항목에만 삭제를 제공한다.
                         if st.hooks[i].user {
                             if IconButton::new()
                                 .variant(IconButtonVariant::Ghost)
@@ -636,7 +604,6 @@ fn draw_hook_row(
                         });
                     });
                 });
-                // line 2 — "Shell cmd:" 라벨(74) + mono Input (disabled 시 편집 불가).
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     let seq = st.hooks[i].seq;
@@ -652,8 +619,7 @@ fn draw_hook_row(
                         },
                     );
                     if seq {
-                        // 여러 스텝을 설정 행 안에서 고칠 자리가 없다 — 한 줄 요약만
-                        // 둔다(스텝은 `→` 로 잇는다).
+                        // 단계별 편집 대신 동작 순서를 한 줄로 표시한다.
                         ui.label(
                             egui::RichText::new(st.hooks[i].cmd.clone())
                                 .monospace()

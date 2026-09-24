@@ -1,8 +1,4 @@
-//! Foundations Type specimen — 디자인(4) "Type" Spec.
-//!
-//! Spec "Two families, hard 14px cap, hierarchy by weight". 두 패밀리(UI sans /
-//! mono D2Coding), 14px UI 상한, 위계는 크기가 아니라 weight 로. typeScaleRow
-//! 4 행 (heading 13/600 · body 13/400 · caption 11/400 · mono 14).
+//! 제목·본문·설명·고정폭 글꼴의 크기와 강조를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -51,8 +47,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("UI cap", "font-size-max 14px — UI never exceeds"),
-            ("heading", "body size + weight 600 (not larger)"),
+            (
+                "UI cap",
+                "font-size-max 14px at scale 1; larger roles are separate",
+            ),
+            (
+                "heading",
+                "body size; strong color approximates design weight 600",
+            ),
             ("mono", "D2Coding, term/code surfaces"),
         ],
         &[
@@ -70,8 +72,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "위계는 크기가 아니라 weight 로 — heading 은 body 와 같은 13px 에 600 weight 만 더한다. \
-         egui RichText 는 normal / strong(600) 만 노출해 medium(500)·bold(700) 세분화는 미지원.",
+        "디자인의 제목은 본문과 같은 기본 크기에 굵기 600을 사용한다. 이 egui 예제의 RichText::strong은 글꼴 굵기를 바꾸지 않고 강조색을 선택하므로 그 차이를 색으로 근사한다.",
     );
 }
 

@@ -1,19 +1,5 @@
-//! `script-confirm` specimen — Lua 스크립트 TOFU 변경 확인 팝업 (Overlays).
-//!
-//! 본체 `src/adapters/ui/popup/script_confirm.rs::draw_script_confirm_view` 의
-//! 구조 전사. 그 view 는 이미 props 분리(`ScriptConfirmProps { theme, name }`)가
-//! 끝나 있고 `AppState`/`CoreState` 를 모르지만, 본체 binary 안에 있고 라벨을
-//! `t()` 로 직접 조립하므로 갤러리가 호출할 수는 없다 — 같은 순서·같은 토큰으로
-//! 복제한다(`docs/dev-guide/gallery-first.md` "이미 본체에만 있는 view").
-//!
-//! 수직 스택 4단 (`item_spacing.y = spacing_sm`):
-//! 1. 제목 — `font_size_body` semibold `text_primary`.
-//! 2. 스크립트 이름 — `font_size_caption` **mono** `text_muted`, 넘치면 truncate.
-//! 3. 경고 줄 — `tag`(Warning) + `font_size_caption` `text_secondary` 안내문,
-//!    `item_spacing.x = spacing_sm`.
-//! 4. `spacing_xs` 여백 뒤 푸터 — 우측정렬 `Run anyway`(Primary) / `Cancel`(Ghost).
-//!
-//! 팝업 기본 크기는 `popup/defs.rs` 의 360×150 — 폭 360 을 그대로 쓴다.
+//! 등록 후 내용이 바뀐 Lua 스크립트의 실행 확인 예제.
+//! 본체 뷰를 직접 호출하지 않고 같은 순서와 Theme 값으로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -30,7 +16,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
         kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-            // ① 제목 (본체는 font_size_body — kit::title 의 font_size_max 가 아니다).
+            // 본체 제목은 kit::title과 다른 font_size_body를 사용한다.
             ui.label(
                 egui::RichText::new("Script changed since registration")
                     .size(theme.font_size_body.value())
@@ -38,7 +24,6 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
                     .color(theme.text_primary().to_egui()),
             );
 
-            // ② 스크립트 이름 — mono, muted, truncate.
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(name)
@@ -49,7 +34,6 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
                 .truncate(),
             );
 
-            // ③ 경고 태그 + 안내문.
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 tag(ui, theme, "changed", TagVariant::Warning, false);
@@ -64,7 +48,6 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
 
             ui.add_space(theme.spacing_xs.value());
 
-            // ④ 푸터 — 우측정렬, Run 이 가장 오른쪽.
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     Button::new("Run anyway")

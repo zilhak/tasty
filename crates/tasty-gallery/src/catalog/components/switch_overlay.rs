@@ -1,16 +1,5 @@
-//! `switch-overlay` specimen — Switch-number overlay (디자인 `gallery/overlays.jsx`
-//! Switch-number overlay 섹션).
-//!
-//! modifier(탭=tab_switch_modifier·기본 Ctrl / 워크스페이스=workspace_switch_modifier·
-//! 기본 Alt)를 **누르고 있는 동안** 각 항목의 leading indicator(탭 아이콘 / ws status
-//! dot / collapsed letter avatar)를 숫자 키캡으로 **제자리 교체**한다. 폭/리플로 변화
-//! 없는 16px slot, scrim 없음. 현재 항목은 **accent-filled** 키캡으로 구분.
-//!
-//! 키캡은 본체 공용 위젯 `tasty_ui_widgets::num_keycap` 을 그대로 호출한다 — specimen
-//! 이 자체 키캡을 재구현하지 않고 본체와 **동일 위젯을 공유**한다(gallery-first). 형상은
-//! `kbd()` 레시피(surface-raised fill + border-strong + 하단 2px edge + mono micro),
-//! active 변종만 accent_primary fill + text_on_accent 숫자. 신규 Theme 필드 없음 —
-//! P0 매핑대로 기존 접근자(`docs/design/systems/design-token-mapping.md` switch-overlay).
+//! 탭·워크스페이스·카테고리 전환용 숫자 키캡 예제. 공용 num_keycap을 사용한다.
+//! 아이콘이나 상태 점의 자리를 그대로 사용하며 활성 항목은 채운 키캡으로 구분한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -19,18 +8,13 @@ use tasty_ui_widgets::num_keycap;
 use crate::catalog::icons::{CHEVRON_DOWN, CHEVRON_RIGHT, FILE, MockGlyph, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-// 키캡 slot 폭은 본체 `num_keycap` 이 읽는 것과 같은 토큰
-// (`switch-overlay-size` → `kbd-size`)에서 온다 — 값을 베끼지 않는다.
 fn keycap_size(theme: &Theme) -> LogicalPx {
     theme.switch_overlay_size()
 }
 /// 워크스페이스 이름과 설명 사이의 줄 간격. 행 높이와 설명 중심이 같은 간격을 쓴다.
 const WORKSPACE_TEXT_LINE_GAP: LogicalPx = LogicalPx(1.0);
 
-/// 공용 `num_keycap` 위젯을 키캡 slot 중앙(`center`)에 배치한다.
-/// specimen 은 painter 로 절대 위치에 레이아웃하므로, 위젯을 키캡 rect 크기의 child UI
-/// 안에서 호출해 제자리에 그린다(본체와 동일 위젯 공유 — 재구현 금지).
-/// `active` = 현재 탭/워크스페이스 → accent_primary fill + text_on_accent 숫자.
+/// 지정한 슬롯 안에서 공용 숫자 키캡을 그린다.
 fn keycap_at(ui: &mut egui::Ui, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
     let rect = egui::Rect::from_center_size(
         center,
@@ -51,8 +35,6 @@ fn paint_glyph(
     glyph.image(size, color).paint_at(ui, r);
 }
 
-// ── Tab switch overlay ──────────────────────────────────────────────
-
 /// (glyph, label, digit, active)
 const TABS: &[(MockGlyph, &str, &str, bool)] = &[
     (TERMINAL, "server", "1", false),
@@ -68,7 +50,6 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let bw = theme.border_width.value();
     let font = egui::FontId::proportional(theme.font_size_body.value());
 
-    // 탭 폭 = pad + 아이콘slot(16) + gap + 라벨폭 + pad (디자인 fit-content).
     let widths: Vec<LogicalPx> = TABS
         .iter()
         .map(|(_, label, _, _)| {
@@ -84,7 +65,6 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             pad + keycap_size(theme) + gap + lw + pad
         })
         .collect();
-    // `LogicalPx` 에는 `Sum` 이 없다 — 더하기로 접는다(빈 목록은 `Default` = 0).
     let total = widths
         .iter()
         .copied()
@@ -123,7 +103,6 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
             );
         }
-        // leading 16px slot: held → 숫자 키캡, else 표면 아이콘.
         let slot_c = egui::pos2(
             tab.min.x + (pad + keycap_size(theme).scaled(0.5)).value(),
             tab.center().y,
@@ -223,8 +202,6 @@ pub fn draw_tab(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── Workspace switch overlay ────────────────────────────────────────
-
 /// (digit, name, sub, status, active)
 const WS_ROWS: &[(&str, &str, &str, WsStatus, bool)] = &[
     ("1", "tasty-core", "main · 2 tabs", WsStatus::Running, false),
@@ -270,7 +247,6 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         egui::Color32::from(theme.bg_sidebar()),
     );
 
-    // 헤더 "WORKSPACES".
     p.text(
         egui::pos2(
             rect.min.x + theme.spacing_sm.value(),
@@ -296,7 +272,6 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         } else if i > 0 {
-            // 행간 divider — 텍스트 시작(32)부터 우측 끝까지.
             p.hline(
                 (rect.min.x + text_x_off.value())..=rect.max.x,
                 row.min.y,
@@ -312,7 +287,6 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         if held {
             keycap_at(ui, theme, slot_c, digit, *active);
         } else {
-            // status dot — 16px slot 중앙에 8px dot.
             p.circle_filled(
                 slot_c,
                 theme.status_dot_size.value() * 0.5,
@@ -476,18 +450,8 @@ pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── Category switch overlay (Ctrl+Shift, 기본값) ─────────────────────
-//
-// 디자인 B/C (`overlays-shared.jsx` CatSwitchSidebarMock / CatSwitchRailMock).
-// 카테고리 축은 독립 `category_switch_modifier`(기본 `ctrl+shift`)를 가지며 workspace-switch
-// 와 **modifier-exclusive** — 카테고리 조합 홀드 중에는 카테고리 헤더만 키캡을 얻고,
-// 워크스페이스 행은 status dot 을 그대로 유지한다.
-//
-// - Full: 키캡은 카테고리 헤더 행 **우측 정렬**(`[chevron] LABEL … [cap]`). chevron
-//   은 접힘/자동확장(D) 을 나타내는 load-bearing 요소라 교체하지 않는다.
-// - Rail: 라벨이 없으니 각 경계선(`---`) 슬롯 **중앙**에 키캡을 얹는다(선의 자리가
-//   키캡의 자리). 접힌/빈 카테고리도 `---` 를 유지하므로 키캡을 받는다.
-// - 번호: reserved normal("Workspaces")=1, 1–9 then 0(10th), 11th+ 키캡 없음.
+// 카테고리 헤더는 접기 버튼을 유지하고 숫자를 오른쪽에 덧붙인다.
+// 접힌 레일에서는 카테고리 경계 슬롯 중앙에 숫자를 놓는다.
 
 /// 카테고리 헤더 한 줄(chevron + 라벨 + 우측 키캡). `n=None` → 11번째+ (키캡 없음).
 struct CatHead {
@@ -557,7 +521,6 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let name_lh = theme.font_size_body + theme.spacing_xs; // ≈17
     let row_h = pad + name_lh + pad;
 
-    // 전체 높이 = Σ(헤더 + 행들) + 아래 패딩.
     let mut total = theme.spacing_sm; // paddingBottom 8
     for (_, rows) in CAT_GROUPS {
         total += head_h + row_h * rows.len() as f32;
@@ -574,14 +537,13 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
 
     let mut y = LogicalPx(rect.min.y);
     for (head, rows) in CAT_GROUPS {
-        // ── 카테고리 헤더 ──
         let hrect = egui::Rect::from_min_size(
             egui::pos2(rect.min.x, y.value()),
             egui::vec2(w.value(), head_h.value()),
         );
         let hcy =
             (LogicalPx(hrect.min.y) + head_margin_top + head_pad_v + head_line.scaled(0.5)).value();
-        // chevron (load-bearing — 교체 금지). 접힘=우향, 확장=하향.
+        // 접힘 상태를 알려주는 화살표는 숫자 키캡으로 교체하지 않는다.
         let chev_c = egui::pos2(rect.min.x + (pad + chev.scaled(0.5)).value(), hcy);
         let glyph = if head.collapsed {
             CHEVRON_RIGHT
@@ -595,7 +557,6 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             theme.font_size_body.value(),
             egui::Color32::from(theme.text_muted()),
         );
-        // 라벨 (mono uppercase micro).
         p.text(
             egui::pos2(rect.min.x + (pad + chev + head_gap).value(), hcy),
             egui::Align2::LEFT_CENTER,
@@ -603,7 +564,6 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             egui::FontId::monospace(head_line.value()),
             egui::Color32::from(theme.text_muted()),
         );
-        // 우측 정렬 키캡 (held + n 있을 때만).
         if held && let Some(d) = head.n {
             let cap_c = egui::pos2(
                 rect.max.x - (pad + keycap_size(theme).scaled(0.5)).value(),
@@ -613,7 +573,6 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         }
         y += head_h;
 
-        // ── 워크스페이스 행 (status dot 유지 — modifier-exclusive) ──
         for (i, (name, status, active)) in rows.iter().enumerate() {
             let row = egui::Rect::from_min_size(
                 egui::pos2(rect.min.x, y.value()),

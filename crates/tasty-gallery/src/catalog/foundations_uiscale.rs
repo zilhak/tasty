@@ -1,12 +1,5 @@
-//! Foundations UI-scale specimen — 디자인(4) "UI scale — sidebar zoom".
-//!
-//! Spec "One multiplier scales the sidebar; everything else stays fixed". 한 배율
-//! (`ui-scale`)이 사이드바 루트의 zoom 으로만 소비된다. 3 stop(sm 0.8 / md 1.0 /
-//! lg 1.2)을 같은 사이드바 행(StatusDot + 라벨 + Badge)에 적용해 비교한다.
-//! 타이틀바·탭·페인·다이얼로그는 영향받지 않는다.
-//!
-//! `ui-scale` 배율 토큰은 아직 `Theme` 에 없어(연속 zoom 값) 디자인 stop 값을
-//! 리터럴로 둔다 — 길이가 아니라 무차원 배율이다.
+//! 사이드바 행을 세 배율로 그려 비교한다. 배율은 길이가 아닌 무차원 값이다.
+//! 이 예제의 표시 범위가 본체 전체의 배율 적용 범위를 뜻하지는 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -35,8 +28,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("stops", "0.8 / 1.0 / 1.2"),
             ("active value", "ui-scale"),
-            ("consumed by", "sidebar root zoom only"),
-            ("excluded", "title bar · tabs · panes · dialogs"),
+            ("consumed by", "sidebar rows in this example"),
+            ("excluded", "surrounding gallery content"),
             ("control", "Appearance › Display"),
         ],
         &[
@@ -49,7 +42,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "배율은 사이드바 루트의 zoom 으로만 적용된다 — 터미널 셀 크기·탭·다이얼로그는 그대로 고정.",
+        "이 예제는 같은 사이드바 행의 치수를 배율별로 비교한다. 본체는 Theme의 배율 정책에 따라 공용 컨트롤에도 배율을 적용하며 제외 항목은 따로 관리한다.",
     );
 }
 
@@ -71,18 +64,15 @@ fn scaled_sidebar_row(ui: &mut egui::Ui, theme: &Theme, scale: f32) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value() * scale;
-                // dot (agent).
                 let d = theme.status_dot_size.value() * scale;
                 let (r, _) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::hover());
                 ui.painter()
                     .circle_filled(r.center(), d * 0.5, ec(theme.accent_agent()));
-                // 라벨.
                 ui.label(
                     egui::RichText::new("agent · zsh")
                         .size(theme.font_size_body.value() * scale)
                         .color(ec(theme.text_secondary())),
                 );
-                // count badge.
                 mini_badge(ui, theme, "2", scale);
             });
         });

@@ -1,12 +1,4 @@
-//! Gallery specimen 빌딩 블록 — research §1.3 primitive 의 egui 1:1 대응.
-//!
-//! 문서형 셸(`host_shell`)이 페이지를 `Section > Spec` 트리로 렌더할 때,
-//! 그리고 Round 2 의 각 페이지 specimen 본문(`Spec::draw`)이 무대/클러스터/메타를
-//! 조립할 때 호출하는 공용 헬퍼.
-//!
-//! 모든 색·치수·폰트는 `Theme` 토큰에서만 가져온다 (raw px / `from_rgb` 금지).
-//! Theme 에 정확히 대응하는 토큰이 없는 디자인 치수(예: section margin 46)는
-//! 의미가 가장 가까운 spacing 토큰의 합/근사로 도출한다.
+//! 갤러리의 구역·예제·설명·토큰 표를 배치하는 공용 헬퍼.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -110,9 +102,7 @@ pub fn stage(
             StageVariant::Center => {
                 ui.vertical_centered(add_contents);
             }
-            // Solo("단독 큰 데모")·Tight("풀블리드 padding 0") 의 디자인 의도는 둘 다
-            // 세로 단일 컬럼. catch-all horizontal_wrapped 로 떨어지면 콘텐츠가 가로로
-            // 흘러 배치가 무너지고(markdown 은 columns 음수폭 panic) → 세로 적층으로 명시.
+            // 큰 단독 예제와 여백 없는 예제는 세로 배치를 사용한다.
             StageVariant::Solo | StageVariant::Tight => {
                 ui.vertical(add_contents);
             }
@@ -150,7 +140,6 @@ pub fn cluster(
 /// 치수표 + 토큰칩 — 좌 "Layout spec" dl / 우 "Tokens used" 칩 (research `.meta`).
 /// `tokens` 가 비면 1컬럼(Layout spec)만 그린다.
 pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[TokenChip]) {
-    // 본문 컬럼 폭 제약 — 무대 팽창 시 상자가 컬럼 밖으로 넘치지 않게(note 와 같은 근본).
     body_column(ui, |ui| {
         egui::Frame::new()
             .fill(col(theme.bg_panel()))
@@ -224,14 +213,8 @@ pub(crate) fn body_column_width_id() -> egui::Id {
     egui::Id::new("g_body_column_width")
 }
 
-/// 본문 컬럼 폭으로 제약된 하위 ui 를 할당해 `add` 를 그린다.
-///
-/// specimen 무대(`stage`)가 컬럼보다 넓게 그리면 그 뒤 본문 top_down ui 의 max_rect 가
-/// 그만큼 늘어나(available_width 팽창), **본문 컬럼 레벨 헬퍼가 줄바꿈/배치되지 않고
-/// 창 우측에서 잘린다** — `.wrap()` 만으로는 팽창한 폭에 맞춰져 소용이 없다. host_shell 이
-/// 매 프레임 심어두는 본문 컬럼 폭으로 폭을 고정해 그 안에서 확실히 배치한다(없으면
-/// available_width 폴백). 본문 산문 헬퍼는 전부 이걸 통과하므로 새 헬퍼가 생겨도 같은
-/// 팽창에 자동으로 안전하다 — 소비자마다 폭을 다시 심지 않는다.
+/// 예제가 가용 폭을 늘려도 설명이 창 밖으로 잘리지 않도록 본문 컬럼 폭에 맞춘다.
+/// 저장된 컬럼 폭이 없으면 현재 가용 폭을 사용한다.
 fn body_column<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let wrap_w = ui
         .data(|d| d.get_temp::<f32>(body_column_width_id()))
@@ -272,12 +255,8 @@ pub fn dont(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color32) {
     ui.add_space(theme.spacing_sm.value());
-    // 본문 컬럼 폭 제약 — 무대 팽창 시 do_/dont tint 상자가 컬럼 밖으로 넘쳐 텍스트가
-    // 창 우측에서 잘리지 않게(note/meta 와 같은 근본).
     body_column(ui, |ui| {
-        // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서
-        // gamma_multiply 로 도출 — git_viewer specimen 의 9~10% tint 와 동일 관행
-        // (raw from_rgba_* 는 disallowed-methods 로 금지).
+        // 배경은 강조색의 낮은 알파로 만든다.
         const ACCENT_TINT_OPACITY: f32 = 0.12;
         let tint = accent.gamma_multiply(ACCENT_TINT_OPACITY);
         let resp = egui::Frame::new()

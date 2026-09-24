@@ -1,7 +1,4 @@
-//! Tools menu — 디자인(4) Overlays `tools` Spec.
-//!
-//! 160px 팝오버 메뉴. 사이드바 하단(Tools 버튼)에 anchored, **scrim 없음**.
-//! builtin 4 + separator + plugin 2. 색·치수는 Theme 토큰.
+//! 사이드바 Tools 버튼에 붙는 팝오버 예제. 배경을 어둡게 하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;

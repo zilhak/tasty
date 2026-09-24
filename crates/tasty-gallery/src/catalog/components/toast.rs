@@ -1,22 +1,6 @@
-//! Toast 카드 스택 데모 (Tier 3 재분류).
-//!
-//! 본체 `src/adapters/ui/toast.rs::draw_toast_view` 의 *우측 하단 스택 시각* 을
-//! mock props 로 재현. ToastManager 의 *상태 관리* (push / coalesce / lifetime /
-//! fade) 는 그대로 유지된다 — 갤러리는 미리 계산된 alpha 만 주입.
-//!
-//! 그리기는 본체와 **같은 함수**(`tasty_ui_widgets::draw_toast_scopes`)를 부른다 —
-//! 미러가 아니다. props 분리 패턴(`docs/dev-guide/gallery-first.md`).
-//!
-//! 대표 상태 (6 가지):
-//! 1. Single Info (정상)
-//! 2. Single Success
-//! 3. Single Warning
-//! 4. Single Error
-//! 5. 긴 메시지 (줄바꿈 wrap)
-//! 6. 스택 4 개 (Info → Success → Warning → Error, fade alpha 그라데이션)
-//!
-//! Note: Tooltip 레이어 위치 결정은 본체에서만 의미가 있으므로 데모는 카드 그룹을
-//! 한 frame area 안에 우측 하단 앵커로 그려 *상대 위치* 만 시각화한다.
+//! 공용 draw_toast_scopes로 토스트 종류·줄바꿈·스택을 비교한다.
+//! 메시지와 불투명도는 예제 데이터이며 수명·중복 합치기·시간 경과는 실행하지 않는다.
+//! 본체의 레이어 위치 대신 예제 영역 오른쪽 아래에 배치한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -27,11 +11,7 @@ use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastViewProps, draw_toas
 
 use crate::catalog::toast_card::ToastKind;
 
-// ── specimen 무대 치수 ────────────────────────────────────────────────────────
-//
-// 토스트가 뜨는 "scope" 를 흉내 내는 데모 캔버스 크기다. 디자인 토큰이 아니라
-// **무대 크기**라 Theme 에서 오지 않는다 — 케이스마다 다른 것은 그 케이스가 무엇을
-// 보여야 하는지(1줄 · wrap · 스택)에 달려 있기 때문이다.
+// 한 줄·여러 줄·스택을 비교할 예제 영역의 크기.
 
 /// 모든 케이스 공통 가로. wrap 케이스가 80% 폭 클램프를 실제로 넘도록 정한 값.
 const SPECIMEN_W: LogicalPx = LogicalPx(480.0);
@@ -57,7 +37,6 @@ fn frame_case(
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    // Frame 배경 — bg_panel()(=base) 색으로 *어디에 떠 있는지* 가시화.
     painter.rect_filled(
         rect,
         theme.corner_radius.value(),
@@ -73,7 +52,6 @@ fn frame_case(
         egui::StrokeKind::Inside,
     );
 
-    // 좌상단에 "scope" 라벨 — 데모임을 알림.
     painter.text(
         egui::pos2(
             rect.min.x + theme.spacing_sm.value(),
@@ -82,7 +60,6 @@ fn frame_case(
         egui::Align2::LEFT_TOP,
         "scope (frame)",
         egui::FontId::proportional(theme.font_size_micro.value()),
-        // dim 라벨 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
         egui::Color32::from(theme.text_placeholder()),
     );
 
@@ -94,18 +71,14 @@ fn frame_case(
         theme,
         scopes: &scopes,
     };
-    // 본체가 부르는 바로 그 함수다. 본체는 Tooltip 레이어 painter 를, 여기는 무대
-    // frame 의 painter 를 넘긴다 — 그리는 본문은 하나다.
     draw_toast_scopes(&painter, &props);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
-        egui::RichText::new(
-            "ToastViewProps + draw_toast_view — AppState/CoreState 비의존 view 함수.",
-        )
-        .small()
-        .color(egui::Color32::from(theme.text_muted())),
+        egui::RichText::new("ToastViewProps + draw_toast_scopes — 본체와 공유하는 그리기 함수.")
+            .small()
+            .color(egui::Color32::from(theme.text_muted())),
     );
     vspace(ui, theme.spacing_xs);
     ui.label(
@@ -117,12 +90,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
     vspace(ui, theme.spacing_md);
 
-    // 여섯 케이스를 접지 않고 전부 세운다. 예전에는 `ScrollArea` 로 감쌌는데, 페이지
-    // 스크롤 안에 놓인 그 영역이 케이스 1 frame 의 위쪽 일부만큼만 높이를 잡았고,
-    // 카드는 frame **우하단**에 앵커되므로 전부 그 클립 밖에 그려져 한 장도 안 보였다.
-    // 갤러리는 접으면 캡처에서 사라진다 — 무대는 펼쳐 둔다.
+    // 페이지 안에서 각 예제가 잘리지 않도록 모두 펼쳐 놓는다.
     ui.vertical(|ui| {
-        // Case 1 — Info
         ui.label(
             egui::RichText::new("Case 1 — Info (blue accent, alpha=1.0)")
                 .strong()
@@ -142,7 +111,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
         vspace(ui, theme.spacing_lg);
 
-        // Case 2 — Success
         ui.label(
             egui::RichText::new("Case 2 — Success (green accent)")
                 .strong()
@@ -162,7 +130,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
         vspace(ui, theme.spacing_lg);
 
-        // Case 3 — Warning
         ui.label(
             egui::RichText::new("Case 3 — Warning (yellow accent)")
                 .strong()
@@ -182,7 +149,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
         vspace(ui, theme.spacing_lg);
 
-        // Case 4 — Error
         ui.label(
             egui::RichText::new("Case 4 — Error (red accent)")
                 .strong()
@@ -202,7 +168,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
         vspace(ui, theme.spacing_lg);
 
-        // Case 5 — Long body (wrap)
         ui.label(
             egui::RichText::new("Case 5 — 긴 본문 (max_width 80% 내 줄바꿈 wrap)")
                 .strong()
@@ -227,7 +192,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
         vspace(ui, theme.spacing_lg);
 
-        // Case 6 — 스택 4 개 (fade 그라데이션)
         ui.label(
             egui::RichText::new(
                 "Case 6 — 4 toast 스택 (id 오름차순: Info → Success → Warning → Error). \
@@ -269,9 +233,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         vspace(ui, theme.spacing_md);
         ui.label(
             egui::RichText::new(
-                "⚠ 본체는 Tooltip 레이어에 그려 모든 UI 위에 표시. lifetime (2s) + \
-                     fade-in (80ms) / fade-out (160ms) 은 ToastManager 가 매 프레임 \
-                     alpha 로 계산해 view 에 전달 — view 는 시간 의존 없음.",
+                "본체 ToastManager가 수명과 불투명도를 계산해 전달한다. 그리기 함수는 시간을 재지 않으며, 이 예제는 불투명도를 고정해 비교한다.",
             )
             .small()
             .color(egui::Color32::from(theme.text_muted())),

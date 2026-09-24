@@ -1,5 +1,5 @@
 //! 보조 키를 누르는 동안 나타나는 단축키 안내 패널의 예제.
-//! 갤러리는 표시가 끝난 상태만 그리며 키 누름·해제와 이동·크기 조절을 처리하지 않는다.
+//! 갤러리는 패널이 열린 상태만 그리며 키 누름·해제와 이동·크기 조절을 처리하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd};

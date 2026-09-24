@@ -1,31 +1,15 @@
-//! Popup frame (제목바 + 콘텐츠 영역) 그리기 공통 헬퍼.
-//!
-//! `convert` / `approval` / `file_handler_picker` / `widgets::dialog` 가 각각
-//! 인라인 중복하던 popup frame chrome — `surface0` 배경 + `surface2` border +
-//! `surface1` 제목바 (28px) + 제목 텍스트 + 콘텐츠 child Ui — 을 한곳으로 통합한다.
-//!
-//! 28px 가운데 제목바 이디엄은 디자인 canon 이므로 값/구성은 그대로 두고 중복만 제거.
-//! 색·폰트·치수는 모두 `Theme` 토큰을 사용하므로 시각 무변경 dedup.
-//!
-//! 콘텐츠 영역 inset 은 호출부마다 달랐으므로 `ContentInset` 으로 명시 전달한다:
-//! - `INSET` (approval / dialog): 좌우 8px, 상단 +4px 추가.
-//! - `FLUSH` (convert / file_handler_picker): 좌우 0, 상단 추가 0.
+//! 제목바와 콘텐츠 영역을 그리는 공용 팝업 프레임.
+//! 콘텐츠 여백과 그림자는 호출자가 팝업 종류에 맞게 지정한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 /// 본체 popup 상수 — 제목바 높이.
 pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
-/// 본체 popup 상수 — 콘텐츠 상/하 여백.
-///
-/// 본체(`adapters::ui::popup::content_margin`)는 이 자리를 `Theme.spacing_xs` 에서
-/// 읽는다. 여기서는 같은 값을 그 토큰의 정본(`semantic.space-xs` = `primitive.size-4`)
-/// 에서 직접 가져온다 — 갤러리의 `Theme` 은 `with_colors` 로만 만들어져 zoom 재굽기를
-/// 거치지 않으므로(스케일 세그는 egui `set_zoom_factor` 쪽이다) 두 경로의 값이 같고,
-/// 리터럴 사본을 둘 이유가 없다.
+/// 본체 popup 콘텐츠의 위아래 여백. 본체 Theme.spacing_xs와 같은 토큰을 읽는다.
+/// 갤러리는 Theme 치수에 배율을 곱하지 않고 egui 전역 배율을 사용한다.
 pub const CONTENT_MARGIN: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
-/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변. 사본이 아니라 공유 상수를 읽는다
-/// (종전에는 이 파일이 정의를 들고 본체가 리터럴을 썼다 — 방향이 반대였다).
+/// 본체 popup과 공유하는 타이틀바 버튼 크기.
 pub const TITLE_BTN_SIZE: LogicalPx = tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE;
 /// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백. 본체는 이 자리에
 /// `Theme.spacing_xs` 를 쓴다(간격이라 배율을 탄다). 갤러리는 egui 전역 zoom 이라
@@ -61,12 +45,8 @@ impl TitleButtons {
     };
 }
 
-/// 타이틀바 우측 버튼군을 그린다. 본체가 `ctx.layer_painter` 하나로 타이틀바 전체를
-/// 그리므로(그 구간엔 `Ui` 가 없다) 두 글리프 모두 painter 직선이다 — 형상은
-/// canonical `close`/`fit` 글리프와 같고, SVG `Image` 를 쓸 수 없을 뿐이다.
-///
-/// 반환값은 제목 텍스트가 침범하면 안 되는 **버튼군 좌변** — 제목 elide 가용 폭의
-/// 기준이다(본체 `PopupState::title_buttons_left_x`).
+/// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다.
+/// 제목은 이 경계를 넘지 않도록 줄여야 한다.
 pub fn draw_title_buttons(
     painter: &egui::Painter,
     theme: &Theme,
@@ -139,15 +119,8 @@ impl ContentInset {
     };
 }
 
-/// `total_h` 로 높이를 직접 받아 popup frame 을 그린다 (높이 계산은 호출부 책임).
-///
-/// `paint` 는 콘텐츠 영역에 묶인 child Ui 를 받는다.
-///
-/// `shadow` 는 셸 **아래** 깔리는 lift 그림자다. 호출부가 넘기는 이유는 SCOPE RULE
-/// (docs/design/systems/theme.md#떠-있는-표면의-그림자)의 갈래가 popup 마다 다르기 때문이다 — 본체 `PopupManager` 도 같은 자리를
-/// popup id 로 갈라(`adapters/ui/popup/draw.rs::popup_shadow`) 알림 패널에는 그림자를
-/// 안 그린다. 여기서 modal 을 못 박으면 그 세 번째 갈래를 전시하는 specimen 이 본체와
-/// 어긋난다.
+/// 호출자가 지정한 높이·여백·그림자로 프레임을 그린다.
+/// paint는 콘텐츠 영역의 child Ui를 받는다. 알림창처럼 그림자가 없는 종류도 허용한다.
 #[allow(clippy::too_many_arguments)] // reason: popup frame 은 chrome 파라미터가 본래 많다.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -167,13 +140,10 @@ pub fn draw(
     let painter = ui.painter_at(frame_rect);
 
     let bg: egui::Color32 = theme.surface_raised().into();
-    // 타이틀바 배경 채움 — 값-동일 surface_hover()(=surface1).
     let title_bg: egui::Color32 = theme.surface_hover().into();
-    // popup 프레임 보더 — surface2 값의 border role `border-frame`.
     let border: egui::Color32 = theme.border_frame().into();
     let text_color: egui::Color32 = theme.text_primary().into();
 
-    // 배경보다 먼저 — 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은 순서).
     if let Some(shadow) = shadow {
         painter.add(
             shadow
@@ -226,9 +196,7 @@ pub fn draw(
             frame_rect.max.y - CONTENT_MARGIN.value(),
         ),
     );
-    // 콘텐츠는 항상 세로 스택이다(본체 popup 콘텐츠와 동일). `new_child` 는 부모 Ui 의
-    // 레이아웃을 상속하므로, 호출부가 가로 컨텍스트(`cluster` 의 horizontal_wrapped)면
-    // 세로 스택이 가로로 흐르고 세로 중앙 정렬까지 걸린다 — 레이아웃을 명시해 끊는다.
+    // 상위 가로 레이아웃을 상속하지 않도록 콘텐츠의 세로 방향을 명시한다.
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(content_rect)

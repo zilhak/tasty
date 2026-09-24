@@ -1,7 +1,4 @@
-//! Search bar Ctrl/⌘F — 디자인(4) Overlays `search` Spec.
-//!
-//! 360×28 한 줄 바. headless — 포커스 surface 우상단에 sticky, **scrim 없음**.
-//! Input(flex) + 카운터(40) + ▲▼ + Aa/.*/ab 토글 + divider + close.
+//! 서피스 오른쪽 위 검색줄 예제. 배경을 어둡게 하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -16,7 +13,6 @@ const WIDTH: LogicalPx = LogicalPx(360.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         bar(ui, theme, "2/3", false);
-        // 0 매치 — 카운터 red.
         bar(ui, theme, "0/0", true);
     });
 
@@ -54,7 +50,6 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
         kit::region_sym(ui, theme.spacing_sm, theme.spacing_xs, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                // 검색어 Input (flex).
                 let counter_w = theme.field_width_xs.scaled(0.5);
                 let trailing = counter_w
                     + theme.item_height_interactive.scaled(4.0)
@@ -62,7 +57,6 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                 let input_w =
                     (WIDTH - theme.spacing_sm.scaled(2.0) - trailing).max(LogicalPx(80.0));
                 kit::field(ui, theme, Some(input_w), "tasty", false, false);
-                // 카운터.
                 let counter_color = if no_match {
                     theme.accent_danger()
                 } else {
@@ -74,14 +68,11 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                         .size(theme.font_size_caption.value())
                         .color(counter_color.to_egui()),
                 );
-                // ▲▼.
                 icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
                 icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
-                // Aa / .* / ab 토글.
                 toggle_chip(ui, theme, "Aa", false);
                 toggle_chip(ui, theme, ".*", false);
                 toggle_chip(ui, theme, "ab", true);
-                // divider.
                 let h = theme.item_height_interactive.value() * 0.6;
                 let (r, _) = ui.allocate_exact_size(
                     egui::vec2(theme.border_width.value(), h),
@@ -92,7 +83,6 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                     r.y_range(),
                     egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
                 );
-                // close.
                 icon_btn(ui, theme, icons::CLOSE, false);
             });
         });

@@ -1,36 +1,13 @@
-//! `scrim-scope` specimen — scrim 은 popup 이 소속된 **scope 의 rect** 를 덮는다.
-//!
-//! 셸 목업(`shell_mock`) 하나 위에 props 를 바꿔 가며 같은 장면을 그린다 —
-//! titlebar · 접힌 사이드바 레일 · pane 탭바 · surface 둘 · 상태바. props 는
-//! `scope`(Window/Surface) · `split`(좌우/상하) · `child`(자식 picker 동반) ·
-//! `narrow`(소속 surface 를 좁게) · `clamp`(popup 이 scope 보다 커서 눌림).
-//!
-//! 결정표가 정한 것만 그린다:
-//! - **Window scope** — 커맨드 팔레트 · 설정 · 모든 가운데 confirm 은 **창 전체** scrim 을
-//!   그대로 쓴다. target 바인딩이 없는 호환 경로도 여기에 남는다.
-//! - **Surface scope** — scrim 이 소속 surface rect 만 덮는다. **보더는 포함하고 인접
-//!   surface · 사이드바 · 탭바 · 상태바는 제외**한다.
-//! - **radius** — scope 대상 자신의 radius 를 따른다. 오늘의 셸에서 surface 는 0 이라
-//!   surface scope 의 scrim 은 직각이고, 창은 `corner_radius` 를 따른다.
-//! - **알파** — `--tasty-scrim-bg` 한 벌(`Theme::scrim`). scope 가 둘이라고 알파를 두
-//!   벌로 만들지 않는다.
-//! - **scope 당 scrim 한 번** — 부모 popup 과 자식 file picker 가 같은 scope 를 공유하면
-//!   scrim 은 **한 번만** 깔린다. 자식이 두 번째를 덧그리면 알파가 겹쳐 같은 토큰이 두
-//!   배로 어두워진다. z 는 scrim 0 · 부모 1 · 자식 2.
-//! - **8px inset** — popup 은 scope rect 에서 `spacing_sm` 만큼 안쪽으로 눌린다.
-//!
-//! 이 Spec 이 **바꾸지 않는 것**: 입력 차단(dim ≠ block) · Esc/바깥클릭 순서 · draft
-//! 수명과 부모/자식 숨김-복원 정책 · 그림자 두 값과 그 3-갈래 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자).
+//! 창 전체와 서피스 범위의 배경 어둡게 하기(scrim)를 비교하는 정적 예제.
+//! 서피스 테두리는 포함하고 인접 서피스와 창 UI는 제외한다. 모서리는 범위의 형태를 따른다.
+//! 부모와 자식 팝업이 범위를 공유하면 같은 알파로 한 번만 그린다. 팝업은 범위 안쪽에 배치한다.
+//! 입력 차단·닫기 순서·초안 수명은 이 예제에서 검증하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-// ── specimen 무대 치수 ────────────────────────────────────────────────────
-// 전부 Theme 토큰의 배수로 적는다. 수를 그대로 적으면 그 값이 `size-*` 스케일 안일 때
-// 토큰 값을 손으로 다시 쓴 자리가 되고(그 자리는 토큰이 움직여도 안 따라간다),
-// `src/source_guards/on_scale_length_literal.rs` 가 그것을 센다.
 /// 셸 목업의 바깥 치수. 폭은 measure-md, 높이는 크롬 셋에 body 를 얹은 값이다.
 fn shell_size(theme: &Theme) -> egui::Vec2 {
     egui::vec2(
@@ -142,15 +119,8 @@ fn split_body(body: egui::Rect, props: ShellProps, divider: f32) -> (egui::Rect,
     }
 }
 
-/// surface 한 칸 — 터미널 배경 + 1px 보더 + 가짜 프롬프트 줄. 보더는 surface rect
-/// 안쪽에 그려지므로 scope rect 가 보더를 **포함**한다.
-///
-/// 콘텐츠 줄이 있어야 dim 이 눈에 남는다 — 빈 검정 칸은 scrim 을 씌워도 검정이라,
-/// "인접 surface 는 안 어두워진다" 가 그림으로 안 읽힌다.
-///
-/// 두 칸을 **같은 채움·같은 글자색**(focused)으로 그린다. 포커스 색차를 같이 얹으면
-/// 두 칸이 달라 보이는 원인이 둘이 되어, 이 specimen 이 재려는 것(scrim 이 한 칸에만
-/// 닿는다)을 그림만 보고는 가릴 수 없다.
+/// 배경을 어둡게 한 차이를 볼 수 있도록 터미널 내용을 그린다.
+/// 두 서피스는 같은 색으로 칠해 포커스 색상 차이가 비교에 섞이지 않게 한다.
 fn paint_surface(p: &egui::Painter, theme: &Theme, rect: egui::Rect) {
     let term = theme.surface("terminal");
     let (fill, fg) = (term.focused_bg, term.focused_fg);
@@ -200,8 +170,7 @@ fn paint_chrome(
     );
 }
 
-/// popup 카드 한 장 — fill + 1px border-strong + modal shadow + 가운데 라벨.
-/// 그림자 갈래는 이 Spec 이 안 바꾼다(docs/design/systems/theme.md#떠-있는-표면의-그림자) — 뷰포트를 점유하는 표면이라 modal.
+/// 창 중앙 팝업 형태의 카드이므로 modal 그림자를 사용한다.
 fn paint_card(
     p: &egui::Painter,
     theme: &Theme,
@@ -218,8 +187,7 @@ fn paint_card(
         egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         egui::StrokeKind::Inside,
     );
-    // 제목은 좌상단이다 — 가운데 두면 자식 카드가 부모 위에 얹혔을 때 부모의 정체가
-    // 가려져, "자식이 부모 위에 있다" 와 "부모가 없다" 가 그림에서 구분되지 않는다.
+    // 자식 카드가 겹쳐도 부모의 제목이 보이도록 왼쪽 위에 놓는다.
     p.text(
         rect.min + egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value()),
         egui::Align2::LEFT_TOP,
@@ -236,7 +204,6 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
     let radius = theme.corner_radius.value();
     let divider = theme.border_width.value();
 
-    // 창 배경 + 1px 프레임.
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
     p.rect_stroke(
         rect,
@@ -245,7 +212,6 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
         egui::StrokeKind::Inside,
     );
 
-    // titlebar · status bar · 접힌 사이드바 레일 · pane 탭바 — 전부 토큰 치수.
     let titlebar = egui::Rect::from_min_size(
         rect.min,
         egui::vec2(rect.width(), theme.titlebar_height.value()),
@@ -294,7 +260,6 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
         "pane tabs",
     );
 
-    // surface 둘. 첫째가 popup 의 소속 surface다.
     let body = egui::Rect::from_min_max(
         egui::pos2(rail.right(), tabs.bottom()),
         egui::pos2(rect.right(), status.top()),
@@ -303,8 +268,7 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
     paint_surface(&p, theme, owner);
     paint_surface(&p, theme, adjacent);
 
-    // ── scrim: scope 당 한 번 ─────────────────────────────────────────────
-    // rect 는 scope 대상의 rect, radius 는 그 대상 자신의 radius.
+    // 같은 범위의 부모·자식 팝업에는 scrim을 한 번만 그린다.
     let (scrim_rect, scrim_radius) = match props.scope {
         Scope::Window => (rect, radius),
         Scope::Surface => (owner, SURFACE_RADIUS.value()),
@@ -332,7 +296,6 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
         "Convert surface",
     );
     if props.child {
-        // 자식은 같은 scope 를 상속한다 — scrim 을 **덧그리지 않는다**. z 만 부모 위.
         let offset = theme.spacing_lg.value();
         let want = child_card_size(theme);
         let child = egui::Rect::from_center_size(
@@ -348,8 +311,6 @@ fn shell_mock(ui: &mut egui::Ui, theme: &Theme, props: ShellProps) {
         );
     }
 }
-
-// ── Spec 1 — window scope vs surface scope ────────────────────────────────
 
 pub fn draw_scope(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -434,19 +395,9 @@ pub fn draw_scope(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "scrim 이 덮는 rect 는 popup 이 소속된 scope 의 rect다. 커맨드 팔레트 · 설정 · \
-         모든 가운데 confirm 은 창 전체를 계속 덮고, target 바인딩이 없는 호환 경로도 \
-         거기 남는다 — 바인딩이 없으면 좁힐 대상이 없기 때문이다. surface scope 만 \
-         소속 surface 로 좁아지며, 경계는 그 surface 의 보더를 포함하고 인접 \
-         surface · 사이드바 · 탭바 · 상태바는 제외한다. radius 는 새 값이 아니라 \
-         scope 대상 자신의 radius 이고, 오늘의 셸에서 surface radius 는 0 이라 직각으로 \
-         떨어진다. 좁은 surface 에서는 popup 이 scope rect 에서 8px inset 안쪽으로 눌린다 \
-         — 어둡게 하는 것과 입력을 막는 것은 다른 일이라, 이 Spec 은 dim 만 다루고 입력 \
-         차단 · Esc/바깥클릭 순서는 그대로 둔다.",
+        "Window 예제는 창 전체를, Surface 예제는 해당 서피스와 테두리를 어둡게 한다. 인접 서피스와 사이드바·탭바·상태바는 Surface 범위에서 제외한다. 서피스 모서리는 직각이며 팝업은 spacing-sm만큼 안쪽에 배치하고 범위를 넘는 부분은 자른다. 입력 차단과 닫기 순서는 별도 동작이다.",
     );
 }
-
-// ── Spec 2 — 부모 + 자식이 scope 하나를 나눠 쓴다 ─────────────────────────
 
 pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -489,7 +440,7 @@ pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new(
                 "scrim-bg",
-                "painted once — a second pass would double the alpha",
+                "painted once — a second pass would darken the background",
                 theme.scrim().into(),
             ),
             TokenChip::new("bg-panel", "parent card fill", theme.bg_panel().into()),
@@ -511,12 +462,6 @@ pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "부모 popup 과 그것이 연 file picker 는 같은 scope 를 공유한다 — 자식은 부모의 \
-         scope 를 물려받으므로 scrim 은 그 scope 에 한 번만 깔리고, 두 카드는 그 위에 \
-         z 만 나눠 얹힌다(scrim 0 · 부모 1 · 자식 2). 두 카드가 서로 다른 그리기 경로에서 \
-         나오더라도 scrim 의 주인은 scope 하나다. 자식이 자기 scrim 을 덧그리면 알파가 \
-         겹쳐, 같은 값을 쓰는데도 자식이 열린 순간 배경이 한 단 더 어두워진다 — 이 \
-         specimen 의 왼쪽(부모만)과 오른쪽(부모+자식)의 배경 밝기가 같아야 한다는 것이 \
-         그 판정이다. 부모/자식의 숨김-복원 정책과 draft 수명은 이 Spec 이 바꾸지 않는다.",
+        "부모 팝업과 자식 파일 선택기는 같은 범위를 공유한다. 배경은 한 번만 어둡게 하고 그 위에 부모와 자식을 순서대로 그린다. 따라서 부모만 있을 때와 자식이 함께 있을 때의 배경 밝기가 같아야 한다.",
     );
 }

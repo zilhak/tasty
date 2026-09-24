@@ -1,8 +1,4 @@
-//! Foundations Spacing specimen — 디자인(4) "Spacing — the 4px grid, in use".
-//!
-//! Spec "Five steps, each with a job". 추상 갭이 아니라 **실사용 데모**로 다섯 스텝을
-//! 보여준다: xs(4 chip gap) · sm(8 button pair) · md(12 card padding) · lg(16 column)
-//! · xl(24 region). 모든 치수는 4 의 배수이고 spacing 토큰에서만 가져온다.
+//! 기본 간격 토큰을 배지·버튼·카드·컬럼·구역에 적용한 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{BadgeVariant, Button, ButtonVariant, badge};
@@ -16,14 +12,12 @@ fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        // xs(4) — 촘촘한 chip 묶음 사이 gap.
         use_row(ui, theme, "space-xs", "4 · chip gap", |ui, theme| {
             ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
             badge(ui, theme, "3", BadgeVariant::Danger);
             badge(ui, theme, "new", BadgeVariant::Agent);
             badge(ui, theme, "ok", BadgeVariant::Success);
         });
-        // sm(8) — 버튼 쌍 사이 gap.
         use_row(ui, theme, "space-sm", "8 · button pair", |ui, theme| {
             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
             Button::new("Cancel")
@@ -31,7 +25,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .show(ui, theme);
             Button::new("Confirm").show(ui, theme);
         });
-        // md(12) — 카드 내부 padding.
         use_row(ui, theme, "space-md", "12 · card padding", |ui, theme| {
             egui::Frame::new()
                 .fill(ec(theme.surface_raised()))
@@ -49,14 +42,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     );
                 });
         });
-        // lg(16) — 컬럼 사이 gap.
         use_row(ui, theme, "space-lg", "16 · column gap", |ui, theme| {
             ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
             for label in ["Column A", "Column B"] {
                 col_block(ui, theme, label);
             }
         });
-        // xl(24) — region 분리 gap.
         use_row(ui, theme, "space-xl", "24 · region gap", |ui, theme| {
             ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
             for label in ["Region 1", "Region 2"] {
@@ -70,8 +61,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("grid", "4 / 8 / 12 / 16 / 24"),
-            ("rule", "multiples of 4px only"),
-            ("heights", "control heights snap to the grid"),
+            ("rule", "spacing tokens use 4px steps"),
+            ("heights", "control heights use their own tokens"),
         ],
         &[
             TokenChip::new("space-xs", "4 · tight", ec(theme.accent_primary())),
@@ -84,7 +75,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "모든 간격·높이는 4px 그리드의 배수 — 어긋난 값은 디자인 결함이다.",
+        "기본 간격은 4·8·12·16·24px 토큰을 사용한다. 컨트롤 높이는 별도 토큰을 따르므로 트리 행의 22px처럼 4의 배수가 아닌 값도 있다.",
     );
 }
 

@@ -1,14 +1,4 @@
-//! Icons 카탈로그 페이지 — 디자인(4) `gallery/icons.jsx` 의 `system-rules` Section
-//! + 8 job 그룹 Section 미러.
-//!
-//! 글리프의 canonical 소스는 [`tasty_icons`] 크레이트다 — 이 모듈은 재노출만 하고
-//! (중복 path 정의 제거), 카탈로그 페이지 트리·타일 렌더만 담당한다. specimen 이
-//! 쓰던 `MockGlyph`/`.image()` API 는 `Icon` 을 `MockGlyph` 로 별칭해 보존한다.
-//! 색은 글리프에 박지 않고 감싸는 컨트롤의 전경색을 상속한다 — 타일에서는 `theme.*`
-//! 토큰으로 tint 한다.
-//!
-//! 페이지 트리(Section/Spec 헤딩)는 `catalog.rs` 가, 각 Spec 본문은 여기의 draw
-//! 함수가 그린다 — `draw_system_rules` + 8 그룹 draw(`draw_actions` 등).
+//! tasty-icons의 아이콘을 용도별로 보여준다. 도형은 공용 크레이트에서 가져오고 색은 Theme로 지정한다.
 
 use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
@@ -18,14 +8,12 @@ use tasty_ui_widgets::{IconButton, Input};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, stage};
 
-/// specimen 이 쓰던 `MockGlyph` = 크레이트 `Icon`. `.image(size, color)` 그대로 동작.
+/// 예제에서 사용할 공용 Icon 타입의 별칭.
 pub use tasty_icons::Icon as MockGlyph;
 pub use tasty_icons::*;
 
 /// 한 글리프 카탈로그 항목: (글리프, canonical name, role).
 type Entry = (MockGlyph, &'static str, &'static str);
-
-// ── job 그룹별 글리프 슬라이스 (icons.jsx GROUPS 순서/구성 미러) ──
 
 const ACTIONS: &[Entry] = &[
     (PLUS, "plus", "create / add"),
@@ -113,9 +101,7 @@ const KEYS: &[Entry] = &[
     (SHIFT_KEY, "shiftKey", "Shift key symbol (⇧)"),
 ];
 
-// ── icongrid 타일 치수 (icons.jsx `.icongrid` / `.icontile`) ──
-//
-// Theme 에 대응 토큰이 없는 카탈로그 그리드 전용 치수 — 디자인 px 를 주석으로 명시.
+// 대응 Theme 토큰이 없는 아이콘 카탈로그 전용 치수.
 /// `.icongrid` auto-fill `minmax(132px, 1fr)` 의 셀 폭.
 const TILE_W: LogicalPx = LogicalPx(132.0);
 /// `.icontile` 높이 — padding 18/13 + glyph-box 36 + name/role.
@@ -137,14 +123,11 @@ fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
     c.into()
 }
 
-// ── system-rules Section ──────────────────────────────────────────────
-
 /// 아이콘 시스템 규칙 — size 스케일 / currentColor / IconButton 데모 + meta.
 pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Wrap, |ui| {
         cluster(ui, theme, "size scale — set via size prop", |ui| {
-            // 26 / 20 / 16(default) / 14 / 12 — 데모 대상이 곧 size 스케일이라
-            // 직접 값을 쓴다(prim_spinner 전례). 16 = icon-glyph-size-md.
+            // 크기 비교가 목적이므로 각 크기를 직접 지정한다.
             for s in [26.0_f32, 20.0, 16.0, 14.0, 12.0] {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
@@ -161,7 +144,7 @@ pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
             }
         });
         cluster(ui, theme, "inherits currentColor", |ui| {
-            let size = theme.icon_glyph_size_md.value() + theme.spacing_xs.value(); // 16+4≈18
+            let size = theme.icon_glyph_size_md.value() + theme.spacing_xs.value(); // 16 + 4 = 20
             let tints: [(MockGlyph, egui::Color32); 4] = [
                 (REFRESH, ec(theme.text_muted())),
                 (ALERT_TRIANGLE, ec(theme.accent_warning())),
@@ -225,8 +208,6 @@ pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ── 8 job 그룹 Section — 각자 icongrid 만 그린다 ──────────────────────
-
 pub fn draw_actions(ui: &mut egui::Ui, theme: &Theme) {
     icongrid(ui, theme, ACTIONS);
 }
@@ -264,7 +245,6 @@ fn icongrid(ui: &mut egui::Ui, theme: &Theme, icons: &[Entry]) {
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                // gap 1px → 사이로 separator 배경이 비쳐 hairline 격자.
                 ui.spacing_mut().item_spacing =
                     egui::vec2(theme.border_width.value(), theme.border_width.value());
                 for (g, name, role) in icons {
@@ -281,7 +261,6 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     );
     let painter = ui.painter_at(rect);
 
-    // 셀 배경 — panel, hover 시 overlay-hover (web .icontile:hover).
     let bg = if resp.hovered() {
         ec(theme.overlay_hover())
     } else {
@@ -289,9 +268,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     };
     painter.rect_filled(rect, 0.0, bg);
 
-    // 글리프 — padding-top 18 + glyph-box 36 중심.
     let glyph_cy = LogicalPx(rect.top()) + theme.spacing_lg + TILE_GLYPH_NUDGE_Y + GLYPH_BOX / 2.0;
-    // hover 시 글리프도 secondary→primary 로 (web .icontile:hover .glyph).
     let glyph_color = if resp.hovered() {
         ec(theme.text_primary())
     } else {
@@ -305,7 +282,6 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
         glyph_color,
     );
 
-    // name (mono 12 primary) + role (micro muted).
     let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm;
     painter.text(
         egui::pos2(rect.center().x, name_y.value()),
