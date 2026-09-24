@@ -1,22 +1,11 @@
-//! Windows 보조 핸들 채널 — Named Pipe 서버측 구현 (overlapped I/O).
+//! Windows Named Pipe의 공유 메모리 핸들 전달 채널.
+//! DuplicateHandle 결과를 HandleAttach.handle에 담아 NDJSON으로 보낸다.
 //!
-//! Unix 의 `AF_UNIX` socket + `SCM_RIGHTS` 에 대응한다. 버퍼 핸들을 ancillary data 로
-//! 실을 필요는 없다 — `tasty_shm::prepare_send` 의 `DuplicateHandle` 이 이미 plugin
-//! 프로세스 핸들 테이블에 HANDLE 을 복제하므로, 그 결과 u64 를 `HandleAttach.handle` 에
-//! in-band 로 실어 평범한 NDJSON 라인으로 보낸다.
-//!
-//! **왜 overlapped I/O 인가**: 이 채널은 full-duplex 다 — host 는 HandleAttach 를 write
-//! 하면서 동시에 reader 스레드가 plugin 의 Dirty 를 blocking read 한다. Windows 의
-//! *동기* 파일 핸들은 같은 file object 에 대한 I/O 를 직렬화하므로(그리고 `DuplicateHandle`
-//! 은 같은 file object 를 가리킴), reader 의 blocking `ReadFile` 이 `WriteFile` 을 막아
-//! HandleAttach 전송이 데드락된다. `FILE_FLAG_OVERLAPPED` + per-op event 로 read/write
-//! 를 비직렬화해 이를 푼다. 각 stream 은 자기 event 를 소유하므로 서로 간섭하지 않는다.
+//! 동기 핸들은 대기 중인 read가 write를 막을 수 있어 overlapped I/O를 사용한다.
+//! 복제한 stream마다 완료 event를 따로 소유한다.
 
-// 이유: 이 파일 전체가 Win32 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
-//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
-//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
-//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
-//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+// 이유: Win32 FFI 호출에 필요한 raw 포인터·핸들 조작을 같은 블록에 둔다.
+// 안전한 래퍼로 바꾸면 파일 단위 면제를 다시 검토한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 #![cfg(windows)]
 

@@ -1,5 +1,4 @@
-//! `EventBus` 재발화 hop 하한 단위 테스트 — plugin 이 적어 보낸 hop 을 믿지 않고,
-//! 응답 전인 dispatch 가 있으면 hop 을 올린다(docs/reference/event-catalog.md#재발행과-응답).
+//! 미응답 dispatch가 있을 때 plugin 발행의 hop 하한을 확인한다.
 
 use std::collections::VecDeque;
 
@@ -49,11 +48,7 @@ fn last_hop_in_ring(bus: &EventBus) -> u8 {
     got.events.last().expect("링이 비었다").1.meta.hop
 }
 
-/// 서로의 사건에 **hop 0 · 새 trace** 로 반응하는 두 plugin. plugin 이 적은 hop 을
-/// 믿으면 이 루프는 영영 안 끝난다 — SDK 의 `publish_fresh` 로 반응하면 바로 이
-/// 모양이다. 반응은 dispatch 응답 **전에** 도착한다(SDK 는 `on_event` 를 마친 뒤에
-/// 응답한다). 호스트가 하한을 걸면 hop 이 한 번에 하나씩 올라 `MAX_HOP` 을 넘는 순간
-/// 끊긴다.
+/// 두 plugin이 응답 전에 hop=0으로 재발행해도 호스트가 hop을 올려 상한에서 거절하는지 확인한다.
 #[test]
 fn two_plugins_answering_each_other_with_hop_zero_stop_at_max_hop() {
     let bus = two_plugins_that_answer_each_other();
@@ -98,8 +93,7 @@ fn two_plugins_answering_each_other_with_hop_zero_stop_at_max_hop() {
     );
 }
 
-/// 호스트 사건(hop 0)을 받고 응답하기 전에 publish 하면 hop 1 이다 — 사건 카탈로그의
-/// "plugin 재발화 시 +1" 이 plugin 의 관례가 아니라 호스트가 정하는 값이 된다.
+/// 호스트 이벤트에 대한 응답 전에 발행하면 hop 하한이 1이 된다.
 #[test]
 fn a_publish_before_answering_a_host_event_gets_hop_one() {
     let bus = EventBus::new();
@@ -116,8 +110,7 @@ fn a_publish_before_answering_a_host_event_gets_hop_one() {
     assert_eq!(last_hop_in_ring(&bus), 1);
 }
 
-/// 응답이 온 뒤의 publish 는 반응이 아니라 새 발화다 — 하한이 없다. 주기적으로
-/// 발화하는 plugin 이 사건을 받았다는 이유만으로 hop 이 쌓이지 않는다.
+/// dispatch 응답 뒤에는 hop 하한을 적용하지 않는다.
 #[test]
 fn a_publish_after_the_answer_is_a_fresh_publish() {
     let bus = EventBus::new();
@@ -194,8 +187,7 @@ fn an_answer_the_bus_did_not_record_is_not_claimed() {
     );
 }
 
-/// 재시작한 plugin 은 옛 프로세스가 받던 dispatch 에 응답하지 않는다 — 정리하지
-/// 않으면 새 프로세스의 publish 가 영영 하한에 걸린다.
+/// plugin을 정리하면 이전 프로세스의 미응답 기록도 제거한다.
 #[test]
 fn clearing_a_plugin_drops_what_it_was_answering() {
     let bus = EventBus::new();

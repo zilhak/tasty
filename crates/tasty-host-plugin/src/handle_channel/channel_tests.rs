@@ -1,10 +1,7 @@
 //! `HandleStream` / `HandleListener` 단위 테스트 (unix 전용).
 
 #![cfg(all(test, unix))]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 이유: 테스트는 호출 결과보다 단언으로 결과를 확인하며 let _ 사유 검사 대상이 아니다.
 #![allow(clippy::let_underscore_must_use)]
 
 use super::*;
@@ -101,10 +98,7 @@ fn send_handle_delivers_fd_via_scm_rights() {
     }
 }
 
-/// 02c-6 happy path: 호스트에서 shm을 만들어 fd를 보내고, plugin 측에서 받아
-/// 매핑한 뒤 동일 영역에 쓴 바이트가 호스트에서 보이는지 확인.
-/// 또한 plugin 측에서 Dirty를 보내고 호스트의 HandleStreamReader가 디코드하는지도
-/// 검증.
+/// 공유 메모리 fd를 전달해 양쪽 매핑의 바이트와 Dirty 메시지 수신을 확인한다.
 #[cfg(unix)]
 #[test]
 fn shared_buffer_roundtrip_via_handle_channel() {
@@ -187,12 +181,9 @@ fn shared_buffer_roundtrip_via_handle_channel() {
     assert!(aux.is_none(), "Dirty에는 ancillary fd 없음");
     assert_eq!(got_dirty, dirty);
 
-    // SAFETY: payload는 method scope 끝까지 살아 있어야 send 측 fd가 유효.
-    // 명시적 drop으로 의도 표시.
+    // 전송에 사용한 핸들의 소유권을 정리한다.
     drop(payload);
-    // plugin이 받은 매핑은 plugin_mem이 자체 소유 (Drop에서 munmap).
-    // recv_with_fd가 반환한 fds[0]은 tasty_shm::receive로 소유권 이전됨.
-    // 명시적 drop으로 scope 끝 정리 시점을 코드에 박아둔다 (host_mem도 동일).
+    // 수신 fd는 plugin_mem이 소유하며 Drop에서 해제한다.
     drop(host_mem);
     drop(plugin_mem);
 }

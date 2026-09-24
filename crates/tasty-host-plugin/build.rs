@@ -1,6 +1,6 @@
 //! 공개키 두 슬롯을 OUT_DIR에 준비해 bundle_sig가 빌드에 포함할 수 있게 한다.
 //! 파일이 없거나 길이가 맞지 않으면 32바이트 zero 값으로 채워 컴파일은 계속한다.
-//! release 계열 빌드에서 두 슬롯 모두 사용할 키가 없으면 경고한다.
+//! release 계열 빌드에서 두 슬롯 모두 zero로 준비되면 경고한다.
 //! 키 준비: docs/dev-guide/plugin-packaging.md.
 
 use std::path::{Path, PathBuf};
@@ -28,8 +28,7 @@ fn main() {
         return;
     }
 
-    // 두 슬롯 모두 검증에 쓸 키가 없는 경우만 경고한다. release 또는 dev 어느 슬롯이든
-    // 길이가 맞고 zero가 아닌 키가 있으면 아래 조건은 false다.
+    // 32바이트 nonzero 파일이 어느 한쪽에라도 있으면 경고하지 않는다.
     let release_is_zero = read_key(release_key)
         .map(|b| b.iter().all(|x| *x == 0))
         .unwrap_or(true);

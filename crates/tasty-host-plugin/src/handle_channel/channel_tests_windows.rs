@@ -1,15 +1,8 @@
-//! Windows 보조 핸들 채널 end-to-end 라운드트립 검증.
-//!
-//! GUI 없이 전송 계층 전체를 실행한다: `HandleListener::bind`(CreateNamedPipeW/accept)
-//! → raw 클라이언트가 CreateFileW 로 connect + 인증 → host 가 실제 `tasty_shm` 공유
-//! 메모리를 만들어 `DuplicateHandle` 로 복제(same-process) → HandleAttach in-band
-//! 핸들 전송 → 클라이언트가 `tasty_shm::receive` 로 매핑해 host 가 쓴 바이트를 읽어
-//! 일치하는지 확인. named pipe R/W · auth 핸드셰이크 · 핸들 복제/수신을 한 번에 검증.
+//! Windows Named Pipe 인증과 공유 메모리 핸들 전달·수신을 검증한다.
+//! 같은 프로세스 안에서 핸들을 복제하고 두 매핑의 바이트를 비교한다.
 
 #![cfg(all(test, windows))]
-// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
-// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
-// — docs/dev-guide/error-handling.md.
+// 이유: 테스트는 let _ 사유 검사 대상이 아니다.
 #![allow(clippy::let_underscore_must_use)]
 use std::io;
 use std::ptr;
@@ -183,10 +176,8 @@ fn windows_handle_channel_round_trip() {
     drop(mem);
 }
 
-/// full-duplex 데드락 회귀 방지. host 의 aux reader 스레드가 blocking read 중일 때
-/// send_handle(write)이 막히지 않아야 한다. 동기 파일 핸들이면 같은 file object 의
-/// I/O 직렬화로 write 가 pending read 뒤에서 데드락하지만, overlapped I/O 는 이를 푼다.
-/// 이 테스트가 없으면 `windows_handle_channel_round_trip`(reader 미기동)은 회귀를 못 잡는다.
+/// reader가 대기하는 동안에도 write가 완료되는지 확인한다.
+/// 같은 file object의 동기 I/O 직렬화를 피하도록 overlapped I/O를 사용한다.
 #[test]
 fn windows_handle_channel_concurrent_read_write_no_deadlock() {
     let listener = HandleListener::bind().expect("bind");
@@ -227,7 +218,7 @@ fn windows_handle_channel_concurrent_read_write_no_deadlock() {
         let _ = reader.recv_message();
         read_done_tx.send(()).ok();
     });
-    // reader 가 blocking read 에 확실히 진입하도록 잠시 양보.
+    // reader가 읽기를 시작할 기회를 준다. 진입 완료를 확인하는 동기화는 아니다.
     thread::sleep(Duration::from_millis(100));
 
     // 이 write 는 reader 의 pending read 뒤에서 직렬화되면 데드락한다(동기 핸들). overlapped

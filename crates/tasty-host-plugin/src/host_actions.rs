@@ -1,25 +1,5 @@
-//! 호스트의 의미론적 단축키 액션 카탈로그.
-//!
-//! plugin이 매니페스트에서 `binding_mode = "inherit:<host_action>"`를 선언할 때
-//! 참조할 수 있는 액션 id 화이트리스트와, 해당 id에 대응하는 호스트
-//! `KeybindingSettings` 필드를 조회하는 헬퍼를 제공한다.
-//!
-//! id 화이트리스트 자체(`INHERITABLE_HOST_ACTIONS`)는 `tasty-plugin-manifest`가
-//! 소유한다 — 매니페스트 로드 시점 validate(`validate_contributed_commands`)도
-//! 같은 목록을 참조해야 하는데, 그 crate는 `KeybindingSettings`(호스트 설정)에
-//! 의존하지 않으므로 id 목록만 그쪽에 두고 여기서 재노출한다. 이 모듈은 id →
-//! 실제 키 목록 해석(`host_action_for`)만 담당.
-//!
-//! 화이트리스트는 의도적으로 좁게 시작 (clipboard 4종). 추가 요청 시
-//! 케이스별로 검토 후 확장한다 — plugin이 임의 호스트 액션에 inherit하면
-//! 의미 매핑이 모호해진다.
-//!
-//! # inherit 가능한 액션 (현재)
-//!
-//! - `clipboard.copy`
-//! - `clipboard.paste`
-//! - `clipboard.cut`
-//! - `select_all`
+//! plugin이 상속할 수 있는 호스트 단축키를 설정에서 읽는다.
+//! 허용된 액션 ID 목록은 매니페스트 검증과 공유하며 tasty-plugin-manifest가 소유한다.
 
 use tasty_settings::KeybindingSettings;
 

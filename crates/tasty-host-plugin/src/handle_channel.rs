@@ -1,10 +1,5 @@
-//! 호스트 측 보조 핸들 채널.
-//!
-//! 메인 TCP 채널([`crate::listener::HostListener`])은 fd/HANDLE을 운반할 수
-//! 없으므로, 보조 채널을 별도로 둔다. Unix는 `AF_UNIX` socket, Windows는 Named Pipe.
-//!
-//! 02b에서 인증 핸드셰이크 + 채널 분배만 구현됐고, 02c에서 [`HandleStream::send_handle`]
-//! (SCM_RIGHTS / DuplicateHandle)과 [`HandleStreamReader`](dirty 메시지 수신)가 추가됐다.
+//! 공유 메모리 핸들을 전달하는 보조 채널.
+//! Unix는 AF_UNIX 소켓의 SCM_RIGHTS, Windows는 Named Pipe 메시지의 handle 필드를 사용한다.
 
 use std::collections::HashMap;
 #[cfg(unix)]
@@ -50,11 +45,7 @@ impl HandleStream {
         self.write_all(&buf)
     }
 
-    /// NDJSON 한 줄과 함께 ancillary data로 fd/HANDLE을 송신한다.
-    ///
-    /// `msg`는 [`HandleChannelMessage::HandleAttach`]여야 한다 (호출자가 보장).
-    /// Unix는 `sendmsg(2)` + `SCM_RIGHTS`, Windows는 Named Pipe write로 직렬화된
-    /// HANDLE u64를 NDJSON 라인 뒤에 이어 보낸다 (02c는 Unix만 구현).
+    /// HandleAttach 한 줄과 fd를 SCM_RIGHTS로 함께 보낸다.
     #[cfg(unix)]
     pub fn send_handle(
         &mut self,
@@ -108,9 +99,7 @@ impl HandleStream {
         }
     }
 
-    /// 수신 측 reader를 분리해서 반환. write 핸들은 self에 남는다.
-    /// Unix: [`std::os::unix::net::UnixStream::try_clone`]으로 fd를 dup.
-    /// Windows: 미구현.
+    /// Unix 소켓을 복제해 reader를 만들고 원본은 송신에 사용한다.
     #[cfg(unix)]
     pub fn reader(&self) -> io::Result<HandleStreamReader> {
         let cloned = self.inner.try_clone()?;
@@ -251,20 +240,8 @@ impl HandleStreamReader {
     }
 }
 
-/// 보조 채널 listener. 호스트 부팅 시 한 번만 bind한다.
-///
-/// accept 스레드 하나가 모든 incoming connection을 받고, plugin이 보낸 첫 줄의
-/// `AuthMessage`로 토큰을 매칭한 뒤 [`HandleListener::expect_connection`]을 호출한
-/// caller에게 stream을 분배한다.
-///
-/// Unix/Windows 양쪽 구현 완료. [`HandleListener::bind`]가 Unix는 `AF_UNIX` socket을,
-/// Windows는 Named Pipe(overlapped accept 루프)를 연다.
-/// 보조 핸들 채널의 handshake 대기 맵 poison 을 보고했는가(첫 1 회만).
-///
-/// [`crate::listener`] 의 메인 TCP handshake 맵과 같은 형태다 — 임계구역이 `HashMap`
-/// insert/remove 뿐이라 패닉이 나도 불변식이 성립하므로 복구가 맞다. 조용히 버리면
-/// 등록이 안 된 채 caller 의 `recv` 만 흘러 **plugin 이 왜 aux 채널을 못 여는지 timeout
-/// 으로만 보이고**, 수락 쪽에서 버리면 이미 연결한 plugin 이 무음으로 거절된다.
+/// 보조 채널 인증 대기 맵의 poison을 처음 한 번만 보고하는 표지.
+/// 등록된 대기자를 잃지 않도록 맵을 복구해 사용한다.
 static HANDLE_PENDING_POISONED: AtomicBool = AtomicBool::new(false);
 const HANDLE_PENDING_WHAT: &str = "plugin aux handle channel pending map";
 
@@ -285,20 +262,9 @@ impl HandleListener {
         use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::SystemTime;
 
-        // (pid, nanos) 만으로는 같은 프로세스의 동시 bind(테스트 병렬 실행 등)가 동일
-        // 나노초에 겹쳐 경로가 충돌할 수 있다 — 프로세스 전역 단조 시퀀스로 유일성 보장.
-        //
-        // nanos 는 이전 프로세스가 남긴 stale 파일과의 충돌 회피용으로 유지한다.
-        // **아래 `remove_file` 이 있는데도 필요한 이유**(2026-09-08 실측): pid 는
-        // 재사용되고, 재사용된 pid + 같은 seq 는 옛 프로세스의 socket 과 같은 경로를
-        // 짓는다. 그 잔재를 아래에서 지우려 하지만 `/tmp` 는 sticky(`drwxrwxrwt`)라
-        // **다른 사용자가 만든 파일은 못 지운다** — 그때 unlink 도 bind 도 실패한다.
-        // nanos 가 그 경우의 경로를 갈라 준다.
-        //
-        // ★ 이 항을 상수로 바꿔도 `cargo test -p tasty-host-plugin` 은 202 개 전부
-        // 초록이다(실측). 이 축은 한 프로세스 안에서 재질 수 없다 — 지우기 전에
-        // 위 문단을 읽어라. `temp_path` 가드가 시계 성분을 "약하다" 고 부르는 것은
-        // **프로세스-내 축**에 대한 이야기이고, 이 자리는 그 축을 seq 가 진다.
+        // 같은 프로세스의 동시 bind는 단조 seq로 구분한다.
+        // nanos는 PID가 재사용된 뒤 예전 소켓 경로와 충돌할 가능성을 줄인다.
+        // /tmp의 다른 사용자 파일은 sticky bit 때문에 아래 정리로 지울 수 없다.
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
 
@@ -347,9 +313,7 @@ impl HandleListener {
         })
     }
 
-    /// 보조 채널을 bind. Windows 는 Named Pipe 서버 인스턴스를 만들고 accept 루프를
-    /// 띄운다. Unix `bind` 와 동형이되, socket file 대신 파이프 이름(`\\.\pipe\...`)을
-    /// endpoint 로 쓴다.
+    /// Windows Named Pipe listener와 accept 스레드를 만든다.
     #[cfg(windows)]
     pub fn bind() -> io::Result<Self> {
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -395,11 +359,8 @@ impl HandleListener {
         }
     }
 
-    /// 해당 token에 대한 mailbox를 등록하고 stream receiver를 반환한다. blocking 없이
-    /// 즉시 반환하므로, plugin spawn이 N개 직렬로 일어나는 상황에서 startup 지연을
-    /// 일으키지 않는다. 호출자는 [`HandleListener::cancel_token`]으로 mailbox 정리
-    /// 책임을 가지거나, 자연히 Receiver가 drop될 때까지 둔다 (다음 accept 시 SendError로
-    /// 자동 정리).
+    /// 토큰의 대기 채널을 등록하고 receiver를 즉시 반환한다.
+    /// 사용하지 않으면 cancel_token으로 지운다. receiver만 버리면 다음 연결의 송신 실패 때 정리된다.
     pub fn register_token(&self, token: &str) -> mpsc::Receiver<HandleStream> {
         let (tx, rx) = mpsc::channel();
         tasty_utils::poison::recover_mutex(
@@ -773,9 +734,7 @@ mod unix_wire {
             msg.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
             msg.msg_controllen = cmsg_space as _;
 
-            // SAFETY: msg.msg_control이 유효한 64B 버퍼를 가리키고 msg.msg_controllen이 그 안에 들어감.
-            // CMSG_FIRSTHDR / CMSG_DATA / write_unaligned 가 단일 cmsg 헤더 구성에 묶여
-            // 하나의 atomic 한 작업이라 블록 분할이 불필요.
+            // SAFETY: msg_control은 유효한 64바이트 버퍼이며 controllen은 그 범위 안이다.
             #[allow(clippy::multiple_unsafe_ops_per_block)]
             unsafe {
                 let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);
@@ -860,8 +819,7 @@ mod unix_wire {
                 // SAFETY: CMSG_DATA는 cmsg 안의 data 시작 포인터.
                 let data_ptr = unsafe { libc::CMSG_DATA(cmsg) } as *const libc::c_int;
                 for i in 0..n_fds {
-                    // SAFETY: data_ptr 부터 n_fds * sizeof(c_int) 범위 내. add 와
-                    // read_unaligned 가 cmsg 단일 fd 읽기로 묶여있어 분할 시 가독성 저하.
+                    // SAFETY: data_ptr부터 n_fds * sizeof(c_int) 범위 안의 fd를 읽는다.
                     #[allow(clippy::multiple_unsafe_ops_per_block)]
                     let fd = unsafe { std::ptr::read_unaligned(data_ptr.add(i)) };
                     fds.push(fd);
@@ -874,9 +832,6 @@ mod unix_wire {
         Ok((n as usize, fds))
     }
 }
-
-// Windows Named Pipe 구현은 02c에서 채워진다. 02b에서는 module이 빈 placeholder를
-// 가지지만, type 참조가 컴파일되도록 stub 타입만 둔다.
 
 #[cfg(windows)]
 mod windows;

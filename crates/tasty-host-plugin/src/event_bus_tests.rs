@@ -163,7 +163,7 @@ fn debug_list_subscribers_matches_subscribed_plugins() {
 #[test]
 fn debug_trace_returns_recent_envelopes_by_id() {
     let bus = EventBus::new();
-    // 3건 발화 — 같은 trace_id 2건 + 다른 1건.
+    // 같은 trace_id 두 건과 다른 한 건을 발행한다.
     let mut e1 = env("surface.created", EventOrigin::Host);
     e1.meta.trace_id = "h1".into();
     let mut e2 = env("surface.closed", EventOrigin::Host);
@@ -193,12 +193,7 @@ fn unicast_to_plugin_bypasses_subscribers_and_uses_zero_sub_id() {
     assert_eq!(dispatch.sub_id, 0);
 }
 
-/// 버스가 poison 돼도 구독 등록·정리·fan-out 이 계속 동작한다.
-///
-/// `.expect()` 이던 시절에는 이 호출들이 전부 패닉했다. 버스는 `PluginManager` 가
-/// 소유해 **메인 스레드**에서 fan-out 되므로 그 패닉은 모든 창의 터미널 세션을
-/// 함께 죽인다 — `Inner` 가 구독 목록과 권한 맵뿐이라 데이터는 멀쩡한데도 그랬다
-/// (`docs/dev-guide/error-handling.md` "락 poison").
+/// 락만 poison시킨 뒤에도 구독 등록·해제·전달이 동작하는지 확인한다.
 #[test]
 fn a_poisoned_bus_keeps_serving_subscriptions_and_fan_out() {
     let bus = EventBus::new();
@@ -260,8 +255,7 @@ fn positions_never_repeat_and_never_go_backwards() {
     assert_eq!(got.events[0].0, 5, "밀려난 자리의 위치가 재사용됐다");
 }
 
-/// 보존 밖 요청에 **조용히 처음부터 주지 않는다.** 건너뛴 수를 함께 준다 —
-/// 그것이 없으면 소비자는 자기가 받은 첫 사건이 진짜 첫 사건인 줄 안다.
+/// 보관 범위 밖의 요청에는 생략한 이벤트 수를 함께 반환한다.
 #[test]
 fn asking_for_a_position_that_scrolled_away_says_how_many_were_skipped() {
     let bus = EventBus::new();
@@ -373,12 +367,8 @@ fn an_empty_bus_answers_with_a_position_and_no_events() {
     assert!(!got.truncated);
 }
 
-/// 재시작하면 위치가 0 부터 다시 매겨진다. 소비자가 그것을 **알 수 있어야** 한다 —
-/// 세대 표지가 없으면 옛 위치가 새 세대의 다른 사건을 가리킨다.
-///
-/// 두 세대는 서로 다른 프로세스라 시계가 흐른 뒤에 선다. 그래서 둘째 버스는 시계가 첫
-/// 표지를 지난 뒤에 세운다 — 바로 잇달아 세우면 해상도가 µs 인 macOS 에서 같은 값이
-/// 나온다(CI 실측: 두 값 모두 `…376000`). 그 겹침은 제품에 없는 경로다.
+/// 시각이 다른 두 버스의 세대 표지를 비교한다.
+/// 시계 해상도 때문에 연속 생성의 값이 같을 수 있어 다음 시각까지 기다린다.
 #[test]
 fn two_buses_do_not_share_a_generation_marker() {
     let a = EventBus::new();
@@ -434,8 +424,7 @@ fn a_blocking_fetch_gives_up_and_answers_with_the_position() {
     assert_eq!(got.next_offset, 0, "빈 답이어도 이어 붙을 위치는 온다");
 }
 
-/// 기다리던 쪽이 **발화로 깨어난다.** 짧은 잠을 반복하는 구조였다면 응답 지연의
-/// 바닥이 그 잠 길이가 되고, 이 시험은 그 바닥을 넘는 값으로 통과한다.
+/// 새 이벤트가 발생하면 대기자가 깨어나 해당 이벤트를 받는지 확인한다.
 #[test]
 fn a_publish_wakes_the_one_that_was_waiting() {
     use std::sync::Arc;
@@ -452,8 +441,7 @@ fn a_publish_wakes_the_one_that_was_waiting() {
     assert_eq!(got.events[0].1.key, "agent.barrier_closed");
 }
 
-/// 필터에 안 맞는 발화로 깨어나면 **답을 만들지 않고 남은 시간을 마저 기다린다.**
-/// 깨어난 횟수가 답의 크기를 바꾸면 시끄러운 버스에서 빈 답이 쏟아진다.
+/// 필터에 맞지 않는 이벤트로 깨어나도 바로 빈 응답을 반환하지 않는다.
 #[test]
 fn waking_on_something_the_filter_rejects_keeps_waiting() {
     use std::sync::Arc;
@@ -605,8 +593,7 @@ command="x"
 
 // ── 세대 표지 ────────────────────────────────────────────────────────────────
 
-/// 시계가 1970 이전이라 벽시계로 표지를 못 만드는 기계에서도 두 세대의 표지가 다르다.
-/// 고정값(예전의 0)으로 떨어지면 소비자는 `had != got` 만 보므로 재시작을 모른다.
+/// 시계 오류 시 고정값을 쓰지 않는지 두 생성 결과를 비교한다.
 #[test]
 fn a_clock_before_the_unix_epoch_still_gives_each_generation_its_own_epoch() {
     use std::time::{Duration, UNIX_EPOCH};

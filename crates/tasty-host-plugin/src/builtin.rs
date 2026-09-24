@@ -1,23 +1,9 @@
-//! 기본 제공 플러그인 (built-in) 인프라.
+//! 번들 플러그인을 찾아 사용자 데이터 루트에 설치·동기화한다.
+//! 명시적으로 제거한 plugin은 자동 복구하지 않으며 외부 plugin과 같은 실행·권한 모델을 쓴다.
 //!
-//! Tasty는 일부 plugin (예: explorer, codex)을 본 바이너리와 함께 배포한다. 이들은:
-//!
-//! 1. **번들 위치**에서 디스커버됨 — 배포 패키지(release/dist): 실행 파일 옆
-//!    `plugins/` 디렉터리, debug workspace 빌드: workspace 를 자동
-//!    탐색해 `target/<profile>/builtin-plugins/`를 채움 (`ensure_dev_bundle`).
-//! 2. **첫 실행 시** `~/.tasty/plugins/<id>/`에 복사됨 — 사용자가 손댈 수 있는
-//!    실제 설치 위치는 사용자 디렉터리 한 곳뿐. `plugins.toml`의
-//!    `removed_builtins`에 등록된 id는 자동 복사하지 않는다.
-//! 3. **uninstall** 시 `removed_builtins`에 추가되어 다음 실행에서 재등장하지 않음.
-//!
-//! 외부 플러그인과의 차이는 *발생지*뿐이다. 디스커버리·실행·권한 모델은 동일하다.
-//!
-//! 위 2 는 **첫 설치**만 설명한다. 첫 복사 이후 플러그인 코드/매니페스트를 고쳤을
-//! 때 **호스트 재시작 없이** 실행 중 tasty 에 반영하는 절차(재빌드 → `upgrade-builtins`
-//! 재sync → `disable`/`enable` respawn)는 `docs/dev-guide/plugin-development.md` §9.1
-//! 참조. 재sync 는 **버전이 갈래를 고르고 그 갈래 안에서 내용이 판정한다**: 같은 버전이면
-//! 내용이 다른 파일만 옮기고, 번들이 높으면 전량 덮어쓰고, **설치본이 더 높으면 내용을 안
-//! 보고 건너뛴다**(그 경우만 `upgrade-builtins --force` 로 내린다).
+//! 같은 버전은 내용이 다른 파일만 복사하고, 번들 버전이 높으면 전체를 교체한다.
+//! 설치본 버전이 더 높으면 건너뛰며 --force로 덮어쓸 수 있다.
+//! 설치 절차: docs/dev-guide/plugin-development.md#91-실행-중인-tasty-에-번들-플러그인만-반복-갱신-호스트-재빌드재시작-불필요.
 
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -36,7 +22,6 @@ struct BuiltinSpec {
     bin_name: &'static str,
 }
 
-// explorer 는 T11 에서 host builtin surface 로 승격됨 — plugin 번들에서 제거.
 #[cfg(windows)]
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
@@ -139,14 +124,10 @@ pub fn is_builtin_plugin(id: &str) -> bool {
     BUILTINS.iter().any(|b| b.id == id)
 }
 
-/// 자동 builtin upgrade 시 *어떤* 분기로 처리할지 결정한 결과.
-///
-/// `install_builtins_if_needed` 의 already-present 분기와 신규 `upgrade_builtins`
-/// 양쪽에서 공유. mtime 비신뢰성을 피하기 위해 manifest 의 `version` (semver)
-/// 을 1차 기준으로 사용한다.
+/// 설치본과 번들의 버전을 비교해 선택한 동기화 방식.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BuiltinUpgradeDecision {
-    /// 변경 없음 (installed >= bundle, 또는 bundle 매니페스트 corrupt).
+    /// 설치본이 더 높거나 번들 버전을 읽지 못해 건너뛴다.
     Skip,
     /// 같은 semver — **내용 기반** idempotent sync (dev workspace hotfix). mtime 은 안 본다:
     /// 시각이 보존된 채 배포된 파일(`cp -p`·아카이브 해제)도 내용이 다르면 반영해야 한다.
@@ -174,13 +155,8 @@ fn read_bundle_version(src: &Path) -> Option<semver::Version> {
         .and_then(|m| semver::Version::parse(&m.version).ok())
 }
 
-/// installed / bundle / force 입력으로 upgrade 의사 결정.
-///
-/// 규칙 (verify §5.5 반영):
-/// - force=true → 무조건 `ForceOverwrite`
-/// - bundle 매니페스트 파싱 실패 → `Skip` (corrupt bundle 보호)
-/// - installed 파싱 실패 + bundle ok → `ResyncSameVersion` (사용자 dir 손상 복구)
-/// - 둘 다 ok → bundle vs installed semver 비교
+/// force를 우선 적용하고 그 외에는 번들과 설치본 버전을 비교한다.
+/// 번들 버전을 읽지 못하면 건너뛰고, 설치본만 읽지 못하면 내용 비교로 복구한다.
 pub(crate) fn decide_builtin_upgrade(
     installed: Option<&semver::Version>,
     bundle: Option<&semver::Version>,
@@ -207,11 +183,7 @@ pub(crate) fn decide_builtin_upgrade(
     }
 }
 
-/// dest 에 있는데 src 에 없는 항목을 제거한다 — **이 층만** 본다(재귀는 호출자가 한다).
-///
-/// **복사 정책과 독립이다.** 이 단계의 값은 src 목록과 dest 목록의 *차집합*이라 복사를
-/// 얼마나 하든 같다. 한 함수에 묶여 있으면 복사 정책을 바꿀 때 청소가 함께 사라지는데,
-/// 그 소실은 조용하다 — 옛 잔존 파일은 어떤 단정도 안 건드리고 사용자 홈에서만 쌓인다.
+/// 이 디렉터리에서 원본에 없는 대상 항목을 제거한다. 하위 순회는 호출자가 한다.
 fn prune_dest_not_in_src(src: &Path, dest: &Path) -> std::io::Result<()> {
     let src_names: HashSet<OsString> = std::fs::read_dir(src)?
         .filter_map(|e| e.ok())
@@ -230,17 +202,7 @@ fn prune_dest_not_in_src(src: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 파일 하나를 옮길지 정하는 술어. **훑기와 청소는 셋이 같고 이것만 다르다.**
-///
-/// 새 갈래를 더하려면 여기 arm 을 더해야 하고, 그러면 [`sync_dir`] 의 `match` 가 exhaustive 라
-/// **복사 판정을 반드시 쓰게 된다 — 청소는 공짜로 따라온다.** 이 리팩터의 값 전부가 거기 있다.
-/// 전에는 훑기가 셋으로 갈라져 있었고, 셋 중 하나([`sync_dir_if_newer`])만 청소를 빠뜨린 채
-/// 오래 있었다. 그 소실은 조용했다 — 옛 잔존 파일은 어떤 단정도 안 건드린다.
-///
-/// ★ **이것이 닫는 것은 한 부류뿐이다.** "셋 중 하나가 청소를 빠뜨린다" 는 원리적으로 못 나게
-/// 되지만, "호출부가 술어를 잘못 고른다" 는 그대로 남는다 — 부팅마다 번들 전량을 다시 쓰던
-/// 결함이 정확히 그 부류였다(리터럴 `force` 하나). 다만 그때 조용했던 이유가 **이름이 술어를
-/// 숨긴 것**이었고, 여기서는 고른 값이 이름 옆에 적힌다.
+/// 파일 복사 조건. 디렉터리 순회와 불필요한 파일 제거는 sync_dir가 공통으로 처리한다.
 #[derive(Clone, Copy)]
 enum CopyPolicy {
     /// 판정 없이 덮어쓴다 — 버전이 다를 때의 전량 교체.
@@ -251,14 +213,8 @@ enum CopyPolicy {
     ContentDiffers,
 }
 
-/// 한 층을 훑어 `src` 를 `dst` 에 맞춘다: `create_dir_all` → **청소** → 항목마다
-/// (디렉터리면 재귀 · 파일이면 `policy`).
-///
-/// 청소([`prune_dest_not_in_src`])는 **층마다** 돌고 복사 정책과 독립이다 — src 목록과 dest
-/// 목록의 차집합이라 복사를 얼마나 하든 값이 같다.
-///
-/// 반환값은 **무엇이든 썼는가**다. 세 호출자 중 하나만 그 값을 쓰지만, 여기서 잃으면 그
-/// 사실이 함수 안에서 사라지므로 한 자리에서 돌려준다.
+/// 하위 디렉터리를 순회해 원본에 없는 항목을 제거하고 정책에 맞는 파일을 복사한다.
+/// 반환값은 파일 복사 여부다. 삭제만 수행한 경우는 포함하지 않는다.
 fn sync_dir(src: &Path, dst: &Path, policy: CopyPolicy) -> std::io::Result<bool> {
     std::fs::create_dir_all(dst)?;
     prune_dest_not_in_src(src, dst)?;
@@ -283,11 +239,7 @@ fn sync_dir(src: &Path, dst: &Path, policy: CopyPolicy) -> std::io::Result<bool>
     Ok(wrote)
 }
 
-/// dest 의 모든 파일을 src 기준으로 강제 교체 (mtime 무시).
-/// src 에 없는 dest 의 파일/디렉토리는 *제거* — 옛 버전의 잔존 파일 정리
-/// ([`prune_dest_not_in_src`], 층마다 돈다).
-///
-/// 술어를 [`CopyPolicy::Always`] 로 고정한 [`sync_dir`] 이다 — 호출부는 이 이름으로 고른다.
+/// 원본의 모든 파일을 복사하고 원본에 없는 대상 항목을 제거한다.
 fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
     sync_dir(src, dest, CopyPolicy::Always).map(|_| ())
 }
@@ -328,31 +280,19 @@ pub fn bundle_root() -> Option<PathBuf> {
     None
 }
 
-/// exe-relative 경로들에서 bundle root 검색. 추출 사유: FHS fallback 진입 전
-/// `current_exe()` 실패 (테스트 환경 등) 가 전체 None 으로 단락되지 않도록.
+/// 실행 파일 기준 번들 탐색. 실행 파일 경로 조회에 실패해도 FHS 탐색은 계속할 수 있게 분리한다.
 fn bundle_root_exe_relative() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     bundle_root_from_exe_dir(exe.parent()?)
 }
 
-/// 실행 파일이 `exe_dir` 에 있을 때의 exe-relative 번들 루트 — [`bundle_root`] 에서 환경변수
-/// override 와 FHS 경로를 뺀 갈래이고, debug 에서는 그 안의 dev 스테이징([`ensure_dev_bundle`])도
-/// 그대로 돈다.
-///
-/// `pub` 인 이유는 통합 테스트 하네스 하나다: 번들을 부르는 스위트는 격리 홈에 번들을 hardlink
-/// 로 미리 넣는데, 그 원본이 **자식 인스턴스가 부팅하며 고를 번들과 같아야** host 의 내용 판정이
-/// "이미 같다" 로 떨어진다. 같은 답을 하네스에 따로 적으면 사본이 갈린다
-/// (`docs/dev-guide/e2e-tests.md#명부-안-스위트는-번들을-hardlink-로-받는다`).
+/// 실행 파일 기준으로 번들을 찾는다. debug에서는 개발 번들도 준비한다.
+/// 통합 테스트도 이 함수를 사용해 자식 인스턴스와 같은 번들을 선택한다.
 pub fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        // .app 번들: `Contents/Resources/plugins/`. exe 옆(`Contents/MacOS/`)이
-        // 아닌 이유는 codesign 이 `Contents/MacOS/` 하위의 실행 파일 디렉터리를
-        // nested bundle 로 파싱하려다 실패하기 때문(bundle format unrecognized).
-        // 아래 exe-relative 보다 먼저 본다 — 구 배치가 남아 있어도 새 것 우선.
-        // exe 가 `Contents/MacOS/` 안에 있을 때로 한정한다. 그 확인이 없으면 번들이
-        // 아닌 배치(예: `target/<profile>/tasty`)에서 우연히 `../Resources/plugins`
-        // 가 존재할 때 exe 옆 `plugins/` 를 가로챈다.
+        // macOS codesign이 실행 파일 디렉터리를 nested bundle로 오해하지 않도록
+        // Contents/Resources/plugins를 사용한다. 실제 Contents/MacOS 배치에서만 찾는다.
         let bundle_contents = exe_dir
             .parent()
             .filter(|_| exe_dir.file_name().is_some_and(|n| n == "MacOS"));
@@ -381,12 +321,8 @@ pub fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// debug workspace 빌드에서 workspace를 자동 탐색하여
-/// `target/<profile>/builtin-plugins/`에 등록된 builtin plugin들의
-/// manifest+binary+lang을 동기화. mtime 및 동률 시 내용 비교로 복사하므로 매 부팅 비용은
-/// 작다. 한 plugin이라도 동기화에 성공했으면 Some(bundle_root). workspace를 못 찾으면
-/// (= 배포 패키지처럼 `crates/`가 없으면) `sync_builtin_dev`가 전부 false 를 반환하여
-/// None. 따라서 진짜 배포본에서는 자연히 no-op.
+/// debug 실행 파일 위의 워크스페이스에서 매니페스트·바이너리·번역을 동기화한다.
+/// 하나라도 준비되면 번들 경로를 반환하며 워크스페이스가 없으면 동기화하지 않는다.
 fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
     // exe_dir = .../target/<profile>
     let target_dir = exe_dir.parent()?; // .../target
@@ -437,9 +373,8 @@ fn sync_builtin_dev(
     true
 }
 
-/// mkdir + 매니페스트 + 바이너리 복사 — 이 중 하나라도 실패하면 dev bundle
-/// 자체가 무효(fatal). sig/lang 은 별도 best-effort 스텝으로 분리되어 있다.
-/// 세 스텝을 `&&`로 묶어 첫 실패에서 단락 — 순서·조건은 원본과 동일.
+/// 디렉터리 생성, 매니페스트·바이너리 복사는 하나라도 실패하면 중단한다.
+/// 서명과 번역 복사는 별도로 시도한다.
 fn sync_builtin_dev_required(
     plugin_bin: &Path,
     src_manifest: &Path,
@@ -491,85 +426,17 @@ fn sync_builtin_dev_lang(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) 
     }
 }
 
-/// 개발 빌드의 crate `lang/` → staging `lang/` 동기화. src 가 더 새것일 때만 복사하고,
-/// src 에 없는 dest 항목은 층마다 지운다([`prune_dest_not_in_src`]).
-///
-/// ## 청소가 왜 이 함수에서 빠져 있었나
-///
-/// 이 자리는 오래 **복사 전용**이었다. 형제 둘(`overwrite_builtin_dir` · `sync_dir_by_content`)은
-/// 청소를 하고 doc 에 그렇게 적었는데, 이 함수만 청소도 doc 도 없었다 — 의도된 예외가 아니라
-/// 빠뜨린 쪽이다.
-///
-/// 그 소실이 조용했던 이유는 **같은 "스테이징" 단계를 셸도 하기 때문**이다. `Justfile` 의
-/// `build-plugins` · `build-plugin` 과 `scripts/build-linux.sh` · `scripts/build-macos-dmg.sh` 는
-/// 전부 `rm -rf <dest>/lang` 뒤 전량 복사라 삭제가 이미 들어 있다. 그래서 잔존물은
-/// **호스트가 부팅 때 스스로 스테이징하는 갈래**([`ensure_dev_bundle`])에서만 생겼고, 다음 셸
-/// 스테이징까지만 살았다. 좁지만 죽은 경로는 아니다 — `cargo build --workspace` 후 그냥 실행하는
-/// 것이 안내된 개발 흐름이다.
-///
-/// 잔존의 대가는 i18n 이다. crate 에서 지운 lang 파일이 staging 에 남으면, 홈 설치는 **그 staging
-/// 을 src 로** 삼아 prune 하므로([`sync_dir_by_content`]) 홈에서도 안 지워진다. 즉 지울 수 있는
-/// 지점이 여기 하나뿐이었는데 여기에만 청소가 없었다.
-///
-/// ## dest 는 번들 전용이라는 전제
-///
-/// prune 은 **지우는** 동작이라 dest 에 사용자 파일이 섞이면 안 된다. 호출자는 하나뿐이고
-/// ([`sync_builtin_dev_lang`]) 그 dest 는 `<exe_dir>/builtin-plugins/<id>/lang` 이다.
-/// [`bundle_root`] 의 환경변수 override 와 exe 옆 `plugins/` 는 이 갈래에 **도달하기 전에**
-/// 반환되므로, 여기 오는 dest 는 이 코드가 만든 빌드 산출물 디렉터리뿐이다. 위 셸 경로들이 같은
-/// 디렉터리를 통째로 `rm -rf` 하고 있으니, 층별 prune 은 이미 통용되는 것보다 약하다.
-/// 다른 호출자를 붙일 때 이 전제를 같이 확인해라 — 안 맞으면 붙일 곳이 여기가 아니다.
-///
-/// ## 훑는 함수가 왜 셋인가
-///
-/// 셋의 차이는 **파일 단위 복사 술어 하나**뿐이다 — 무조건([`copy_atomic`]) · mtime 과 동률내용
-/// ([`copy_if_newer`]) · 내용([`copy_file_if_content_differs`]). 훑기와 prune 은 같고, 지금은
-/// 실제로 하나다: 셋 다 술어를 [`CopyPolicy`] 로 넘겨 [`sync_dir`] 을 부르는 이름일 뿐이다.
-/// 그래서 위 "청소가 빠져 있었다" 는 **다시 날 수 없다** — 청소는 훑기 안에 한 번 있고, 술어를
-/// 무엇으로 고르든 따라온다. 이 함수는 그 셋 중 하나를 이름으로 고르는 자리다.
+/// 개발 번들의 번역 파일을 동기화한다. 수정 시각이 같으면 내용을 비교한다.
+/// 원본에서 사라진 파일도 제거하므로 대상에는 사용자 파일을 섞으면 안 된다.
+/// 현재 호출 대상은 이 코드가 준비한 builtin-plugins/<id>/lang 디렉터리다.
 fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
     sync_dir(src, dst, CopyPolicy::NewerThenContent).map(|_| ())
 }
 
-/// src가 dest보다 더 최신이거나 dest가 없으면 복사. dest가 더 새것이면 no-op이고,
-/// **mtime이 같으면 내용으로 판정한다.**
-///
-/// ## 동률에서 왜 내용을 보나
-///
-/// 전에는 `sm <= dm`이 곧 no-op이었다. 그 한 줄이 두 가지를 한꺼번에 흡수했다.
-///
-/// - **같은 눈금**에 떨어진 두 파일은 순서를 알 수 없다. 판정 불가를 "안 바뀜"으로 읽는다.
-/// - 더 나쁜 쪽: `cp -p`·아카이브 해제·rsync는 mtime을 **원본 것으로 되돌린다.** 그래서
-///   시각이 같고 **내용이 다른** 파일이 정확히 이 갈래로 들어온다. 우리 배포 경로의
-///   실제 형태다.
-///
-/// 그 흡수의 대가는 조용하다 — 낡은 plugin 바이너리가 최신 매니페스트를 달고 설치되고,
-/// 그것은 **정상 부팅해 정상 응답한다**(`manager::pump`의 version drift 경고가 그
-/// 회귀를 적어 두고 있다). 그래서 동률은 skip이 아니라 **비교의 방아쇠**로 쓴다.
-///
-/// ## 왜 전량 비교가 아닌가 — 실측
-///
-/// 형제 경로(홈 설치)는 [`sync_dir_by_content`]로 **항상** 내용을 본다. 여기서 같은 것을
-/// 하면 debug 번들 기준 양쪽 2.31 GB를 매 부팅 읽는다: 더운 캐시 **1.09 s**, 찬 캐시
-/// **1.56 s**(페이지를 `posix_fadvise(DONTNEED)`로 비우고 잰 값. 같은 계기로 262 MB
-/// 파일 하나가 찬 0.228 s / 더운 0.020 s라 비움이 실제로 들었다). 부팅은 대개 찬 캐시라
-/// 그 값을 그대로 문다.
-///
-/// 동률에서만 비교하면 그 비용이 **정상 흐름에 안 붙는다** — 재빌드한 파일은 mtime이
-/// 앞서므로 읽지 않고 복사하고, 안 바뀐 파일은 dest가 더 새것이라 읽지 않고 건너뛴다.
-/// 읽는 것은 시각이 정확히 겹친 파일뿐이고, 그것이 위 두 갈래가 사는 자리다.
-/// 실측: 지금 트리에서 동률은 **0 건**이라 이 판정이 읽는 바이트가 **0**이다(부팅 시각
-/// 전후 비교에서도 지연이 안 나온다).
-///
-/// ★ 그래서 비용과 값이 **같은 조건에 걸려 있다**: 비용이 생기는 때는 동률이 생길 때뿐이고,
-/// 동률이 생기는 그때가 바로 이 판정이 값을 내는 때다. 동률이 없으면 공짜고, 동률이 있으면
-/// 그것을 읽는 것이 이 함수의 존재 이유다. 한쪽만 보고 "읽기가 붙었다"고 되돌리지 마라.
-///
-/// ## 남는 구멍 (선언한다)
-///
-/// **dest가 더 새것인데 내용이 다른 경우는 여전히 못 본다.** dest는 이 함수만 쓰므로
-/// 그 mtime은 복사 시각이고, src가 나중에 **더 옛 시각을 달고** 바뀌어야 성립한다
-/// (`-p`를 단 복원 등). 그 갈래를 닫으려면 전량 비교로 돌아가야 하고, 위 값이 그 대가다.
+/// 원본이 더 새로우면 복사하고, 시각이 같으면 내용이 다를 때만 복사한다.
+/// cp -p나 압축 해제로 시각이 같아져도 내용 변경을 반영하기 위한 비교다.
+/// 매번 번들 전체를 읽는 비용을 피하려 대상이 더 새로우면 비교하지 않는다.
+/// 따라서 과거 시각을 유지한 채 원본 내용만 바꾼 경우는 놓칠 수 있다.
 fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<bool> {
     if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest))
         && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified())
@@ -586,22 +453,9 @@ fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
-/// `std::fs::copy`의 안전 대체 — temp 파일에 쓰고 atomic rename으로 dest에 swap.
-///
-/// macOS에서 같은 경로에 binary를 in-place 덮어쓰면 kernel이 캐시한 code signature가
-/// invalid로 판정되어 다음 exec 시 `SIGKILL (Code Signature Invalid)`로 죽는다
-/// (Taskgated). rename은 inode를 교체하므로 kernel이 새 시그니처를 다시 읽는다.
-///
-/// Linux/Windows에서도 동일하게 동작 — partial-write race 방지 효과까지 덤으로 얻는다.
-///
-/// macOS: rename 성공 후 `dest`의 `com.apple.quarantine` xattr을 best-effort로
-/// 제거한다(`strip_quarantine`) — dist(.app) 번들은 Finder가 quarantine된 DMG에서
-/// 드래그/추출될 때 내부 파일에도 재귀적으로 quarantine xattr을 남기고, 이 상태로
-/// 남은 plugin 바이너리는 ad-hoc 서명(비공증)이라 Gatekeeper가 exec 자체를 막는다.
-/// plugin 서브프로세스가 조용히 spawn 실패하면 host는 frame을 영원히 못 받아
-/// surface가 완전히 빈 채로 멈춘다 — 이미 앱 자체의 Gatekeeper 승인을 통과해
-/// 실행 중인 이 프로세스가 자신이 번들에서 방금 풀어낸 리소스의 quarantine을
-/// 스스로 제거하는 것은 안전하다.
+/// 같은 디렉터리의 임시 파일에 복사한 뒤 rename으로 대상을 교체한다.
+/// macOS에서 실행 파일을 제자리 덮어쓰면 캐시된 코드 서명과 달라져 실행이 거부될 수 있다.
+/// 교체 후 macOS quarantine 속성 제거도 시도하며 실패는 로그에 남긴다.
 fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
     let parent = dest.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -711,23 +565,9 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     }
 }
 
-/// `install_builtins_if_needed` Step 1 — 번들에서 복사/갱신.
-///
-/// builtin 은 호스트 소유 리소스다(사용자가 직접 편집하는 용도가 아니다). 그래서 부팅마다
-/// 번들 쪽으로 맞추되, **무엇을 쓸지는 판정한다** — dest 가 없으면 통째로 복사하고, 있으면
-/// [`install_builtin_overwrite_present`] 가 버전으로 갈래를 고른 뒤 같은 버전 갈래에서는
-/// **내용**으로 파일 단위 판정을 한다([`sync_dir_by_content`]). mtime 은 어느 갈래에도 없다.
-/// dev(`just run`)·배포(dmg) 모두 같은 경로다.
-///
-/// **버전 bump 없이 내용만 고친 plugin 도 반영된다** — 같은 버전 갈래가 내용을 보기 때문이다.
-/// 반영 안 되는 경우가 하나 남는다: **설치본이 번들보다 높은 버전일 때는 건너뛴다.** 예전에는
-/// 이 자리에 force 가 박혀 있어 그 경우까지 덮어썼는데, force 를 걷어내며 원래의 판정
-/// (`installed >= bundle` → Skip)이 살아났다. 낡은 브랜치의 빌드를 띄우면 홈에 남은 더 높은
-/// 버전이 유지된다는 뜻이고, 그때 되돌리는 수단은 `tasty plugin upgrade-builtins --force` 다.
-///
-/// 단 사용자가 명시 제거한 builtin(`is_builtin_removed`)은 복원하지 않는다.
-///
-/// 반환값: `true` 면 항목별 실패(warn 후 계속) — caller 는 Step 2 를 건너뛰고 다음 spec.
+/// 번들에서 신규 설치하거나 버전·내용 비교로 갱신한다. 명시적으로 제거한 plugin은 제외한다.
+/// 설치본이 더 높은 버전이면 유지하며 되돌리려면 upgrade-builtins --force를 사용한다.
+/// true는 실패를 뜻하며 호출자는 권한 갱신을 건너뛰고 다음 plugin을 처리한다.
 fn install_builtin_bundle_step(
     mgr: &PluginManager,
     spec: &BuiltinSpec,
@@ -776,14 +616,7 @@ fn install_builtin_fresh_copy(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bo
     false
 }
 
-/// already-present builtin 을 번들 대비 갱신.
-///
-/// **force 를 넘기지 않는다.** 예전에는 여기서 `true` 를 박아 판정이 항상 `ForceOverwrite` 로
-/// 떨어졌고, 그래서 같은 번들로 재부팅해도 번들 전량(debug 45 파일 ≈ 1.1 GB)을 다시 썼다. 그때
-/// 쓰기를 정당화한 것은 "mtime 이 거짓일 수 있다" 였는데, 지금은 같은 버전 갈래가 mtime 이 아니라
-/// **내용**으로 판정하므로([`sync_dir_by_content`]) 그 보험이 필요 없다.
-///
-/// 반환값: `true` 면 실패(warn 후 계속) — caller 는 Step 2 skip.
+/// 이미 설치된 plugin을 강제 덮어쓰기 없이 갱신한다. true면 실패다.
 fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bool {
     let installed_v = read_installed_version(dest);
     let bundle_v = read_bundle_version(src);
@@ -814,10 +647,10 @@ fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path
     }
 }
 
-/// `Skip` 갈래에 오는 두 경우. 이름이 하나면 뒤쪽이 앞쪽 뒤에 숨는다.
+/// 건너뛴 설치본이 번들과 같은 버전인지 더 높은 버전인지 구분한다.
 #[derive(Debug, PartialEq, Eq)]
 enum SkipCase {
-    /// 설치본과 번들이 같은 버전 — 진짜로 최신이다.
+    /// 설치본과 번들이 같은 버전이다.
     UpToDate,
     /// 설치본이 번들보다 **높다.** 최신이 아니라 번들보다 **앞선** 것이고, 이번 부팅은
     /// 번들을 반영하지 않는다.
@@ -835,18 +668,8 @@ fn classify_skip(
     }
 }
 
-/// `Skip` 갈래의 로그.
-///
-/// ## 왜 한 문장이면 안 되나
-///
-/// 이 자리는 예전에 두 경우를 `up-to-date` 한 문장에 뭉쳐 `debug!` 로 흘렸다. release 파일
-/// 로그는 warn 이상만 남으므로, **설치본이 번들보다 높아 이번 부팅이 번들을 안 쓴 사실이
-/// 어디에도 안 남았다.** 빌드 쪽에는 이미 같은 함정의 경고가 있다("낡은 채로 조용히
-/// 실행된다") — 이건 그 설치 경로 판이고, worktree 를 여러 개 두고 서로 다른 tip 에서
-/// 부팅하면 실제로 다른 worktree 가 설치한 바이너리를 조용히 쓰게 된다.
-///
-/// 그래서 앞선 경우는 **warn** 으로 올리고, 문장에서 "up-to-date" 를 뺀다(최신이 아니라
-/// 앞선 것이다). 되돌리는 수단을 문장 안에 이름으로 넣어, 로그만 보고 조치할 수 있게 한다.
+/// 설치본이 더 높으면 이번 번들을 적용하지 않았다는 경고와 강제 갱신 명령을 남긴다.
+/// 같은 버전의 확인 메시지는 debug 레벨로 남긴다.
 fn log_builtin_skip(
     id: &str,
     installed_v: Option<&semver::Version>,
@@ -906,8 +729,6 @@ fn install_builtin_grant_step(mgr: &mut PluginManager, spec: &BuiltinSpec, dest:
     if !dest.exists() {
         return false;
     }
-    // F.B.11-4: bridge::validate_bin_extras 는 본 바이너리 chain — discover 와 동일하게
-    // install/add 경로의 caller 가 chain 한다.
     let Ok(manifest) = Manifest::load(dest) else {
         return false;
     };
@@ -943,7 +764,7 @@ pub struct BuiltinUpgradeItem {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BuiltinUpgradeAction {
-    /// 변경 없이 통과 — installed >= bundle, 동일 버전 mtime resync, 사용자 제거 등.
+    /// 설치 건너뜀 또는 같은 버전의 내용 동기화 결과. 상세는 reason에 담는다.
     Skipped {
         installed_version: Option<String>,
         bundle_version: Option<String>,
@@ -980,16 +801,9 @@ pub struct BuiltinUpgradeReport {
     pub items: Vec<BuiltinUpgradeItem>,
 }
 
-/// 사용자/AI 가 명시 호출하는 builtin 재설치 진입점.
-///
-/// `install_builtins_if_needed` 와의 차이:
-/// - `force` 입력으로 동일/하위 버전도 덮어쓸 수 있음 (recovery).
-/// - 각 plugin 당 한 줄 report 항목 반환 — CLI/IPC 응답으로 노출.
-/// - 변경된 항목이 있으면 PluginManager 의 packages/extensions 를 재계산.
-///
-/// 실행 중 plugin process 의 binary 가 교체될 수 있다 (POSIX 는 inode 교체로 안전,
-/// Windows 는 sharing violation 가능). 본 함수는 *process 재시작을 수행하지 않는다*
-/// — 새 binary 는 다음 plugin restart (또는 부팅) 후 효과 발생.
+/// 명시적인 번들 업데이트. force와 제거 목록 복구, 실행 중 plugin의 재시작 옵션을 받는다.
+/// plugin별 결과를 반환하고 파일이 변경된 항목의 매니저 상태를 갱신한다.
+/// 회수 중이던 프로세스의 재시작 예약도 보존한다.
 pub fn upgrade_builtins(
     mgr: &mut PluginManager,
     force: bool,
@@ -1039,8 +853,7 @@ pub fn upgrade_builtins(
     BuiltinUpgradeReport { items }
 }
 
-/// §2.E.1 의사결정: `restore_all` 이 true 이면 전체 clear (restore_removed 무시).
-/// 그렇지 않으면 명시된 id 만 unmark. 변경이 있었으면 plugins.toml 저장.
+/// restore_all이면 제거 목록 전체를, 아니면 지정된 ID만 복구하고 변경을 저장한다.
 fn restore_removed_builtins(
     mgr: &mut PluginManager,
     restore_removed: &[String],
@@ -1082,9 +895,7 @@ struct SpecUpgrade {
     changed: bool,
 }
 
-/// UpgradeVersion / ForceOverwrite 공통 스텝: (선택적 swap-shutdown) → overwrite →
-/// (선택적 respawn). 순서·조건을 원본 그대로 보존한다.
-/// Ok(SwapResult) 성공, Err(item) 은 Failed report 항목 (caller 는 그대로 push + skip).
+/// 파일 교체 뒤 선택적으로 수행한 재시작 결과.
 struct SwapResult {
     was_restarted: bool,
     restart_error: Option<String>,
@@ -1159,10 +970,7 @@ fn verify_builtin_bundle_trust(
                 reason,
                 ..
             }) => {
-                // 임베드 + known_plugins.toml 모두 거부. release 빌드의 builtin 은
-                // *반드시* 임베드 키로 통과되어야 하므로, Untrusted = 사실상 차단.
-                // trust 모달은 외부 plugin 경로용(0.7+ marketplace) 이며 builtin
-                // 흐름엔 노출하지 않는다.
+                // builtin 업데이트는 신뢰되지 않은 서명을 거절한다. 여기서 승인 UI를 열지 않는다.
                 tracing::warn!(
                     "builtin '{}' is untrusted (reason: {reason:?}, fp: {fingerprint})",
                     plugin_id
@@ -1251,11 +1059,8 @@ fn apply_builtin_upgrade_decision(
     force: bool,
     restart_running: bool,
 ) -> SpecUpgrade {
-    // 방금 disable 되었거나 무응답 재시작 중인 plugin 은 옛 프로세스가 아직 빠지는 중일 수
-    // 있다 — 둘 다 회수를 기다리지 않는다. 그 디렉토리에 **실제로 쓰는 갈래만** 그 회수를
-    // 끝까지 기다린다(실행 중인 파일은 Windows 에서 덮어쓰거나 지울 수 없고 Linux 에서는
-    // `ETXTBSY` 가 난다). 쓰지 않는 갈래가 기다리면 메인 스레드가 이유 없이 최대 2 s 선다 —
-    // 그때 회수는 뒤에서 이어지고 재기동 예약도 회수 기록과 함께 남는다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
+    // 회수 중인 프로세스의 파일을 실제로 변경할 때만 회수를 기다린다.
+    // 변경이 없으면 회수와 재시작 예약을 그대로 둔다.
     let mut respawn = false;
     let upgrade = match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
         BuiltinUpgradeDecision::Skip => SpecUpgrade {
@@ -1324,9 +1129,7 @@ fn apply_builtin_upgrade_decision(
             }
         }
     };
-    // 회수 중이던 것이 무응답 재시작이나 회수 중에 온 enable 이었으면 그 재기동 예약을
-    // 여기서 잇는다 — 기다리며 예약을 가져왔으므로 안 이으면 enabled 인 plugin 이 꺼진 채
-    // 남는다(새 파일로 뜬다).
+    // 회수를 기다리며 가져온 재시작 예약을 새 파일로 이어간다.
     if respawn {
         mgr.start_if_still_wanted(spec.id);
     }
@@ -1372,8 +1175,7 @@ fn resync_same_version(
                     },
                 },
             },
-            // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
-            // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
+            // 같은 버전이라도 복사한 파일이 있으면 후속 갱신 대상으로 알린다.
             changed: wrote,
         },
     };
@@ -1474,15 +1276,8 @@ fn finalize_builtin_upgrades(mgr: &mut PluginManager, dest_root: &Path, changed_
     }
 }
 
-/// 기존 builtin grant entry에 매니페스트 신규 permission 만 증분 추가.
-///
-/// 기존 사용자의 `plugins.toml`에 이미 plugin entry가 있는 경우 (`grants` map에
-/// 키가 있는 상태), `install_builtins_if_needed`의 step 2 첫 번째 분기 (entry
-/// 없을 때만 set_granted)는 동작하지 않는다. 새 버전 builtin이 매니페스트에
-/// permission을 추가했을 때 이 helper로 신규 token만 증분 grant 한다.
-///
-/// 기존 grant token은 제거하지 않는다 (사용자가 명시적으로 deny 했을 가능성).
-/// 반환값: 신규 token이 하나라도 추가되면 true.
+/// 기존 권한에 새 매니페스트의 권한을 추가한다. 기존 토큰은 제거하지 않는다.
+/// 하나라도 추가했으면 true를 반환한다.
 fn apply_builtin_permission_diff(
     config: &mut PluginsConfig,
     id: &str,
@@ -1526,29 +1321,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 번들 → 설치 디렉터리 동기화. **내용이 다른 파일만** 쓰고, src 에 없는 dest 항목은 층마다
-/// 지운다([`prune_dest_not_in_src`]).
-///
-/// **mtime 을 판정에 쓰지 않는다.** 예전에는 이 자리가 mtime 비교였고, 그러면 번들 쪽 mtime 이
-/// 거짓일 때(`cp -p`·아카이브 해제처럼 mtime 을 보존하는 경로) **새 파일을 건너뛴다.** 그
-/// 위험 때문에 부팅 경로는 아예 무조건 덮어쓰기를 골랐었고, 그 대가가 같은 번들로 재부팅해도
-/// 번들 전량을 다시 쓰는 것이었다. 내용으로 판정하면 둘 다 필요 없다.
-///
-/// 반환값은 **무엇이든 썼는가**다. 호출자가 그 값으로 "같은 버전인데 내용이 바뀌었다" 를
-/// 보고·재기동 판정에 쓴다 — 안 돌려주면 그 사실이 이 함수 안에서 사라진다.
+/// 내용이 다른 파일을 복사하고 원본에 없는 대상 항목을 제거한다.
+/// mtime은 비교하지 않는다. 반환값은 파일 복사 여부이며 삭제만 한 경우는 false다.
 fn sync_dir_by_content(src: &Path, dst: &Path) -> std::io::Result<bool> {
     sync_dir(src, dst, CopyPolicy::ContentDiffers)
 }
 
-/// 내용이 다를 때만 복사. 판정 순서가 **비용 순서**이고, 어느 단계에도 mtime 이 없다.
-///
-/// 1. dest 가 없다 → 복사
-/// 2. 크기가 다르다 → 복사 (해시 불필요 — 재빌드는 대개 여기서 걸린다)
-/// 3. 크기가 같다 → 양쪽을 **바이트로** 비교 (해시가 아니다 — 아래 함수 주석)
-///
-/// "크기와 mtime 이 둘 다 같으면 해시를 생략" 하는 지름길은 **넣지 않는다.** 그 한 줄이
-/// mtime 을 판정에 도로 들여서, 번들 mtime 이 거짓이고 크기까지 같은 경우에 이 함수가 사려던
-/// 내성이 사라진다 — 그리고 그 사라짐은 조용하다(거짓 mtime 이 실제로 올 때까지 증상이 없다).
+/// 대상이 없거나 크기·내용이 다르면 복사한다. mtime은 비교에 사용하지 않는다.
 fn copy_file_if_content_differs(src: &Path, dst: &Path) -> std::io::Result<bool> {
     if !file_content_differs(src, dst)? {
         return Ok(false);
@@ -1569,21 +1348,8 @@ fn file_content_differs(src: &Path, dst: &Path) -> std::io::Result<bool> {
     files_differ_bytewise(src, dst)
 }
 
-/// 두 파일을 **바이트로** 비교한다. 통째로 안 올리고 64 KiB 씩 흘려 읽어 첫 불일치에서 끊는다.
-///
-/// ## 왜 해시가 아닌가 — 잰 값이다
-///
-/// 처음엔 양쪽 sha256 을 비교했다. 그것은 같은 물음에 **더 비싼 답**이다: 읽는 바이트는
-/// 똑같이 양쪽 전부인데, 그 위에 암호 연산이 얹히고 **불일치를 만나도 끝까지 읽는다.**
-/// 번들 45 파일 ≈ 1.1 GB(debug), 더운 캐시, 세 회 평균:
-///
-/// | 판정 | 시간 |
-/// |------|------|
-/// | 양쪽 sha256 | 4.31 s |
-/// | 바이트 비교 | **0.20 s** |
-///
-/// 해시가 필요한 것은 원격 대조나 서명처럼 **한쪽만 있을 때**다. 두 파일이 모두 로컬에
-/// 있으면 요약본을 만들 이유가 없다 — 같은지만 물으면 되고, 그 답에는 충돌 논증도 필요 없다.
+/// 두 파일을 64KiB씩 바이트로 비교하고 첫 차이에서 멈춘다.
+/// 해시 계산 없이 동일 여부를 확인하며 전체 파일을 메모리에 올리지 않는다.
 fn files_differ_bytewise(a: &Path, b: &Path) -> std::io::Result<bool> {
     const CHUNK: usize = 64 * 1024;
     let (mut fa, mut fb) = (std::fs::File::open(a)?, std::fs::File::open(b)?);
@@ -1634,14 +1400,11 @@ mod tests {
 
     #[test]
     fn explorer_is_not_builtin_plugin() {
-        // T11: explorer 는 host builtin surface 로 승격되어 plugin 번들에서 제거됨.
         assert!(!is_builtin_plugin("com.tasty.explorer"));
     }
 
     #[test]
     fn claude_design_is_not_builtin_plugin() {
-        // docs/dev-guide/gallery-first.md#순서-필수: 별도 프로젝트로 분리하며
-        // tasty 본체 번들에서 완전히 제거됨.
         assert!(!is_builtin_plugin("com.tasty.claude-design"));
     }
 
@@ -1791,22 +1554,13 @@ mod tests {
         f.set_modified(t).unwrap();
     }
 
-    /// 판정 기준으로 쓰는 **알려진 옛 시각**. 1970 + 1e6 초 = 1970-01-12.
-    ///
-    /// 시험이 "다시 쓰였나" 를 물을 때 두 스냅샷의 mtime 을 서로 비교하면 파일시스템 틱에
-    /// 의존한다 — 두 쓰기가 같은 틱에 들어가면 나노초까지 같아서 **다시 썼는데도 같다**로
-    /// 읽힌다(CI 러너에서 실제로 났다. 우리 디스크는 틱이 잘게 나뉘어 초록이었다).
-    /// 대신 쓰기 전에 dest 를 이 값으로 찍어 두면, 다시 쓰인 파일은 "지금" 이 되어 이 값과
-    /// **반드시** 다르고 안 쓰인 파일은 이 값 **그대로**다. 해상도와 무관해진다.
+    /// 재복사를 확인할 기준 시각. 대상 파일을 과거로 설정해 파일시스템의 시간 해상도에
+    /// 따라 연속된 두 쓰기가 같은 시각으로 기록되는 문제를 피한다.
     fn stale_stamp() -> std::time::SystemTime {
         std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000)
     }
 
-    /// dest 의 모든 파일 mtime 을 [`stale_stamp`] 로 찍는다.
-    ///
-    /// ☆ 곁효과가 하나 있고 그게 이롭다 — 이러면 dest 가 src 보다 **오래된** 상태가 된다.
-    /// mtime 을 보는 정책이라면 그것만으로 전량 재복사를 하므로, 아래 단정들은 "내용으로
-    /// 판정한다" 까지 함께 묻게 된다.
+    /// 대상 파일들을 기준 과거 시각으로 설정한다. 내용이 같으면 원본이 더 새로워도 복사하지 않아야 한다.
     fn stamp_all_stale(dir: &std::path::Path) {
         for e in std::fs::read_dir(dir).unwrap() {
             set_mtime(&e.unwrap().path(), stale_stamp());
@@ -1825,10 +1579,7 @@ mod tests {
         v
     }
 
-    /// 스테이징 경로(`copy_if_newer`)의 동률 갈래 — **세 방향을 한 자리에서 묻는다.**
-    ///
-    /// 시계에 안 기댄다: 두 파일을 **같은 알려진 값**으로 찍는다. `cp -p`·아카이브 해제·
-    /// rsync 가 mtime 을 원본 것으로 되돌린 상태가 정확히 이 모양이다.
+    /// 같은 시각의 파일에서 내용이 같거나 다른 경우와 대상이 더 새로운 경우를 구분한다.
     #[test]
     fn a_staged_copy_with_the_same_mtime_is_judged_by_content() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1844,7 +1595,7 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&dest).unwrap(),
             "new",
-            "시각이 같고 내용이 다르면 복사해야 한다 — 이 갈래가 낡은 바이너리를 들여보냈다"
+            "시각이 같아도 내용이 다르면 복사해야 한다"
         );
 
         // ② 시각도 내용도 같다 → 안 써야 한다. 판정은 옛 스탬프가 남아 있는가로 한다.
@@ -1857,9 +1608,7 @@ mod tests {
             "같은 내용을 다시 쓰면 안 된다 — 옛 시각이 그대로여야 한다"
         );
 
-        // ③ **선언한 구멍**: dest 가 더 새것이면 내용을 안 본다. 이 단정은 결함을 막는
-        // 것이 아니라 **범위를 고정한다** — 넓히려면 전량 비교로 돌아가야 하고 그 대가는
-        // `copy_if_newer` 의 doc 에 값으로 적혀 있다.
+        // 대상이 더 새로우면 내용을 비교하지 않는 현재 한계를 확인한다.
         std::fs::write(&src, "newer content").unwrap();
         set_mtime(&src, stale_stamp());
         set_mtime(&dest, stale_stamp() + std::time::Duration::from_secs(1));
@@ -1867,14 +1616,13 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&dest).unwrap(),
             "new",
-            "dest 가 더 새것이면 내용을 안 본다 — 선언된 구멍이다"
+            "대상이 더 새로우면 현재 정책은 내용을 비교하지 않는다"
         );
     }
 
     #[test]
     fn second_sync_of_the_same_bundle_writes_nothing() {
-        // 이 시험이 이 변경의 값 자체다 — 같은 번들로 두 번 돌면 두 번째는 아무것도 안 쓴다.
-        // 판정은 mtime 스냅샷 차분이다(쓰였으면 mtime 이 움직인다).
+        // 같은 번들을 두 번 동기화하면 두 번째에는 복사하지 않아야 한다.
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
         let dest = tmp.path().join("dest");
@@ -1883,10 +1631,7 @@ mod tests {
         std::fs::write(src.join("tasty-plugin.toml"), "version = \"0.1.0\"").unwrap();
 
         sync_dir_by_content(&src, &dest).unwrap();
-        // ★ 옛 시각으로 찍고 나서 묻는다. 이 단정은 방향이 반대라 **거짓 빨강**은 못 만들지만
-        // **거짓 초록**은 만든다 — 다시 썼는데 두 쓰기가 같은 틱이면 값이 같아 통과한다.
-        // 그쪽이 더 위험하다: 안 보이기 때문이고, 이 시험은 위 주석대로 "이 변경의 값 자체"
-        // 라서 그 러너에서는 아무것도 안 재게 된다.
+        // 재복사를 놓치지 않도록 대상 시각을 과거로 설정한 뒤 비교한다.
         stamp_all_stale(&dest);
         let first = mtimes(&dest);
         sync_dir_by_content(&src, &dest).unwrap();
@@ -1962,8 +1707,7 @@ mod tests {
 
     #[test]
     fn a_lying_mtime_does_not_hide_a_different_file() {
-        // ★ 이 변경의 존재 이유. src 가 dest 보다 **오래된** mtime 을 갖고 크기까지 같은데
-        // 내용이 다르다 — mtime 판정이면 건너뛰고, 내용 판정이면 복사한다.
+        // 크기가 같고 원본 시각이 더 오래돼도 내용이 다르면 복사한다.
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
         let dest = tmp.path().join("dest");
@@ -1984,8 +1728,7 @@ mod tests {
         );
     }
 
-    /// 이 스코프 동안 나가는 tracing 이벤트를 문자열로 모은다. 레벨을 **이름이 아니라
-    /// 실제 이벤트**로 확인하려는 것이라, 판정 함수를 다시 부르는 대조가 되지 않는다.
+    /// tracing 이벤트를 받아 실제 로그 레벨과 메시지를 검사한다.
     fn capture_logs(f: impl FnOnce()) -> String {
         use std::sync::{Arc, Mutex};
         #[derive(Clone)]
@@ -2012,8 +1755,7 @@ mod tests {
 
     #[test]
     fn a_home_copy_ahead_of_the_bundle_is_warned_not_hidden() {
-        // release 파일 로그는 warn 이상만 남는다. 이 경우가 debug 로 나가면 "이번 부팅이
-        // 번들을 안 썼다" 가 어디에도 안 남는다 — 그 침묵이 이 시험이 겨누는 것이다.
+        // 설치본이 더 높아 번들을 적용하지 않으면 warn으로 알려야 한다.
         let (i, b) = (v("0.1.60"), v("0.1.59"));
         let logs = capture_logs(|| log_builtin_skip("com.tasty.x", Some(&i), Some(&b)));
 
@@ -2030,7 +1772,7 @@ mod tests {
 
     #[test]
     fn an_equal_version_stays_quiet() {
-        // 반대 팔 — 진짜 up-to-date 까지 warn 으로 올리면 경고가 배경 소음이 된다.
+        // 같은 버전은 경고하지 않는다.
         let (i, b) = (v("0.1.60"), v("0.1.60"));
         let logs = capture_logs(|| log_builtin_skip("com.tasty.x", Some(&i), Some(&b)));
 
@@ -2052,8 +1794,7 @@ mod tests {
 
     #[test]
     fn a_difference_past_the_first_chunk_is_still_seen() {
-        // 바이트 비교는 64 KiB 씩 흘려 읽는다. 첫 청크만 보고 답하면 번들 바이너리처럼 큰
-        // 파일에서 **뒷부분만 바뀐 변경**을 통째로 놓친다 — 크기가 같으면 그 앞 단계도 안 걸러준다.
+        // 첫 64KiB 뒤에서 바뀐 내용도 확인해야 한다.
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
         let dest = tmp.path().join("dest");
@@ -2098,8 +1839,7 @@ mod tests {
 
     #[test]
     fn prune_removes_only_what_src_lacks_and_copies_nothing() {
-        // 청소 **단독** 단정. 이 시험이 없으면 "복사 정책을 바꿨더니 청소가 조용히
-        // 사라졌다" 를 아무것도 못 잡는다 — 잔존 파일은 다른 단정을 안 건드린다.
+        // 복사와 별도로 원본에 없는 항목의 삭제를 확인한다.
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
         let dest = tmp.path().join("dest");
@@ -2140,8 +1880,7 @@ mod tests {
 
         sync_dir_if_newer(&src, &dest).unwrap();
 
-        // ⓪ 대조군 — src 에 있는 것은 남아야 한다. 이 두 줄이 없으면 "지울 것만 지웠다" 와
-        // "다 지웠다" 가 같은 모양으로 통과한다.
+        // 원본에 남은 파일은 삭제하지 않아야 한다.
         assert!(dest.join("en.toml").exists(), "src 에 있는 파일을 지웠다");
         assert!(dest.join("ko.toml").exists(), "src 에 있는 파일을 지웠다");
         assert!(
@@ -2150,16 +1889,8 @@ mod tests {
         );
     }
 
-    /// [`CopyPolicy::Always`] 를 다른 둘과 가르는 성질은 **내용이 같아도 쓴다** 하나뿐이다.
-    ///
-    /// 그리고 그 차이는 **내용으로 관측되지 않는다** — 결과 파일이 어느 쪽이든 같아서, mtime 으로만
-    /// 보인다. 이 시험이 없으면 누가 `Always` 를 `ContentDiffers` 로 접어도 스위트가 전부 초록이다
-    /// (변이로 확인했다). arm 이 셋인 이유가 셋이 갈린다는 것인데, 한 갈림이 안 잡히면 enum 이
-    /// 조용히 둘로 접힌다.
-    ///
-    /// 시계에 안 기댄다 — dest 를 [`stale_stamp`] 로 찍어 두면 다시 쓰인 파일은 "지금" 이 되어 그
-    /// 값과 반드시 다르고, 안 쓰인 파일은 그 값 그대로다. 두 스냅샷을 서로 비교하지 않으므로
-    /// 파일시스템 눈금과 무관하다.
+    /// Always는 같은 내용도 다시 쓰고 ContentDiffers는 건너뛰는지 확인한다.
+    /// 파일 내용을 비교해서는 구분할 수 없어 대상의 과거 mtime이 바뀌었는지 검사한다.
     #[test]
     fn the_forced_overwrite_rewrites_even_when_the_content_is_identical() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2181,11 +1912,10 @@ mod tests {
         assert_ne!(
             mtime_of(&dest),
             stale_stamp(),
-            "Always 가 내용이 같다고 건너뛰었다 — 그러면 ContentDiffers 와 구별되지 않는다"
+            "Always는 같은 내용도 다시 복사해야 한다"
         );
 
-        // ⓪ 대조군 — 같은 입력에 ContentDiffers 를 걸면 **안 써야** 한다. 이 칸이 없으면 위
-        // 단정이 "이 계기는 아무 mtime 이나 움직인다" 와 구별되지 않는다.
+        // 같은 입력을 내용 비교 정책으로 처리하면 다시 쓰지 않는다.
         let (src, dest) = build("by-content");
         assert!(
             !sync_dir_by_content(&src, &dest).unwrap(),
@@ -2198,12 +1928,7 @@ mod tests {
         );
     }
 
-    /// 세 이름이 **같은 훑기**를 쓰되 술어만 다르다는 것을 한 입력에서 가른다.
-    ///
-    /// 판별 입력은 하나뿐이다 — **dest 가 더 새것이고 내용이 다르다.** 그때만 셋의 답이
-    /// 갈린다(내용이 같으면 뒤 둘이 같아지고, dest 가 더 옛것이면 셋이 다 쓴다). 합치기
-    /// 전에는 이 칸을 재는 시험이 없었다: 세 함수가 각자 자기 시험만 갖고 있어서
-    /// **셋을 같은 입력에 대 본 적이 없었다.**
+    /// 대상이 더 새롭고 내용이 다를 때 세 복사 정책의 결과를 비교한다.
     #[test]
     fn the_three_wrappers_differ_only_in_the_copy_predicate() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2224,7 +1949,11 @@ mod tests {
 
         let (src, dest) = build("always");
         overwrite_builtin_dir(&src, &dest).unwrap();
-        assert_eq!(read(&dest), "new", "Always 가 판정을 했다");
+        assert_eq!(
+            read(&dest),
+            "new",
+            "Always는 대상의 시각과 관계없이 덮어써야 한다"
+        );
 
         let (src, dest) = build("newer");
         sync_dir_if_newer(&src, &dest).unwrap();
@@ -2245,8 +1974,7 @@ mod tests {
             "ContentDiffers 가 내용이 다른데 안 썼다"
         );
 
-        // ⓪ 대조군 — dest 가 아예 없으면 셋 다 쓴다. 이 칸이 없으면 위 "old" 단정이
-        // "이 술어는 아무것도 안 쓴다" 와 구별되지 않는다.
+        // 대상이 없으면 세 정책 모두 파일을 만들어야 한다.
         for label in ["z-always", "z-newer", "z-content"] {
             let src = tmp.path().join(label).join("src");
             let dest = tmp.path().join(label).join("dest");

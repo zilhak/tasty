@@ -1,27 +1,5 @@
-//! Plugin extension 상태 관리.
-//!
-//! `[extends]` 블록을 선언한 plugin은 다른 plugin(target)의 IPC/이벤트 흐름을
-//! 가로채는 *확장 plugin*이 된다. 본 모듈은 어떤 extension이 어떤 target에 대해
-//! 활성 상태인지를 추적한다.
-//!
-//! **상태 머신**:
-//!
-//! ```text
-//! ┌─────────┐  user enable          ┌────────┐
-//! │Disabled │ ───────────────────▶ │Pending │ ─┐  target compatible &
-//! └─────────┘                       └────────┘ │  not conflicting
-//!     ▲                                  ▲    ▼
-//!     │  user disable                    │ ┌────────┐
-//!     │                                  └─│ Active │
-//!     │                                    └────────┘
-//!     │  user disable                       │
-//!     └─────────────────────────────────────┘
-//!
-//! Conflict: 같은 target을 잡은 다른 active extension이 이미 있을 때.
-//! ```
-//!
-//! 본 PR(2/7)은 *상태 추적*만 한다. 실제 hook 실행은 후속 PR(4 event, 5 ipc)에서
-//! 이 registry의 `active_extension_for_target`을 조회해 dispatch한다.
+//! 대상 plugin을 확장하는 plugin의 활성 상태를 관리한다.
+//! 비활성 설정, 대상의 존재·버전·권한을 확인한 뒤 같은 대상을 확장하는 후보 간 충돌을 정한다.
 
 use std::collections::HashMap;
 
@@ -79,8 +57,7 @@ impl ExtensionRegistry {
         self.states.get(extension_id)
     }
 
-    /// `target_id`를 확장하는 *active* extension plugin id (있다면).
-    /// hook dispatch 시 사용 — 단일 A+ per A 제약이라 0 또는 1개만 반환.
+    /// 대상별 활성 확장은 최대 하나이며 hook 실행에 사용한다.
     pub fn active_extension_for_target(&self, target_id: &str) -> Option<&str> {
         self.states.iter().find_map(|(ext_id, state)| match state {
             ExtensionState::Active { target_id: t, .. } if t == target_id => Some(ext_id.as_str()),
@@ -102,10 +79,8 @@ impl ExtensionRegistry {
     /// - `has_extension_grant`: (extension_id, target_id) → 사용자가 `ext:<target>` 권한을
     ///   grant했는가. extension은 매니페스트에 토큰을 declare해도 grant 전엔 Pending 유지.
     ///
-    /// 충돌 결정 규칙(단일 A+ per A): 같은 target을 잡은 후보 extension이 둘 이상이면
-    /// **plugin id의 사전식 순서 최솟값**이 Active를 차지하고 나머지는 Conflict.
-    /// 결정적·재현 가능한 정책으로 1.0에서는 충분. 사용자가 우선순위를 조정하고
-    /// 싶으면 충돌하는 한쪽을 disable한다.
+    /// 같은 대상의 활성 후보가 여럿이면 ID 사전순으로 첫 항목을 선택한다.
+    /// 다른 후보를 쓰려면 앞선 후보를 비활성화한다.
     pub fn recompute(
         &mut self,
         manifests: &[&Manifest],
