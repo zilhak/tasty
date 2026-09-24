@@ -1,8 +1,4 @@
-//! 선택 노드 상세 — **콘텐츠만**.
-//!
-//! 도킹(우측 288px 패널이냐 하단 220px 시트냐)은 이 모듈이 정하지 않는다. 호출자가
-//! 자리를 잡아 `ui` 를 넘기고 여기서는 그 안을 채운다. 팝오버로 같은 내용을 띄우는
-//! 화면이 생겨도 **콘텐츠 구현은 이 하나뿐**이어야 두 자리의 내용이 갈리지 않는다.
+//! 선택 노드의 상세 내용. 위치와 구분선 방향은 호출부에서 정한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, margin_all, tag, vspace};
@@ -20,8 +16,7 @@ pub enum DetailAction {
     Close,
 }
 
-/// 상세가 어느 자리에 놓였는가. **콘텐츠가 아니라 자리**의 속성이라
-/// [`draw_detail`] 이 아니라 자리를 정한 쪽이 들고 있다.
+/// 상세 패널의 배치 위치.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DetailDock {
     /// 캔버스 오른쪽 고정폭 패널 — 캔버스와의 경계는 **왼쪽 세로선**.
@@ -55,10 +50,7 @@ pub fn draw_detail(
 ) -> Option<DetailAction> {
     let mut action = None;
 
-    // 도킹 자리를 통째로 채운다 — 캔버스와의 경계가 색으로 끊겨야 별개 영역으로 읽힌다.
-    // **구분선은 여기서 그리지 않는다**: 어느 변에 그어야 하는지는 이 콘텐츠가 아니라
-    // 자리를 정한 쪽만 안다(우측 패널이면 왼쪽 세로선, 하단 시트면 위쪽 가로선).
-    // 호출자가 [`dock_divider`] 로 긋는다.
+    // 배경은 채우되 위치에 따른 구분선은 호출부에서 그린다.
     let dock = ui.available_rect_before_wrap();
     ui.painter()
         .rect_filled(dock, 0.0, theme.dag_detail_bg().to_egui());
@@ -67,8 +59,6 @@ pub fn draw_detail(
         .inner_margin(margin_all(theme.dag_detail_padding()))
         .show(ui, |ui| {
             ui.set_min_width(dock.width() - theme.dag_detail_padding().value() * 2.0);
-            // 캔버스는 item_spacing 을 0 으로 눌러 두었다(픽셀 단위 페인팅) — 텍스트
-            // 문서인 상세는 그 설정을 물려받으면 라벨과 값이 붙어버린다.
             ui.spacing_mut().item_spacing =
                 egui::vec2(theme.spacing_xs.value(), theme.spacing_xs.value());
             egui::ScrollArea::vertical()
@@ -147,10 +137,7 @@ pub fn draw_detail(
     action
 }
 
-/// 이름 + 닫기 · 상태 + 종류 · task id. 닫기가 눌렸으면 `true`.
-///
-/// 종류는 정의 목록의 한 행이 아니라 상태 옆 `Tag` 다 — "무슨 상태인가" 와 "무슨
-/// 종류인가" 는 같은 층위의 분류라 나란히 읽혀야 한다.
+/// 이름·상태·종류·ID와 닫기 버튼.
 fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) -> bool {
     let (bar, _, label_fg) = status_colors(theme, node.status);
     let mut close = false;
@@ -198,8 +185,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) -> bool {
             false,
         );
     });
-    // task id 는 CLI(`tasty agent task-get <id>`)로 이어지는 유일한 손잡이라
-    // 선택 가능한 텍스트로 둔다.
+    // CLI에서 사용할 task ID는 선택·복사할 수 있게 한다.
     ui.add(
         egui::Label::new(
             egui::RichText::new(&node.id)
@@ -235,10 +221,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, value: &str) {
     });
 }
 
-/// 라벨 + mono 블록. `max_h` 를 넘으면 안에서 스크롤한다.
-///
-/// `copy` 는 라벨 행 우측에 복사 버튼을 붙인다. 로그 tail 은 수십 줄이라 드래그
-/// 선택으로 온전히 집기 어렵다 — 그 두 블록만 버튼을 갖는다.
+/// 높이를 넘으면 스크롤하는 텍스트 블록. copy면 복사 버튼도 표시한다.
 fn labeled_block(
     ui: &mut egui::Ui,
     theme: &Theme,

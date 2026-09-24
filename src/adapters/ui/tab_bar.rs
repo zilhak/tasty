@@ -1,15 +1,5 @@
-//! Pane tab bars — pane 별 상단 탭 표시 + 사용자 입력 (focus / drag / context menu / 새 탭).
-//!
-//! ## Split: wrapper / view / action
-//!
-//! 순수 시각 `draw_pane_tab_bars_view` 는 [`PaneTabBarsProps`] 만 받고
-//! [`PaneTabBarsOutput`] (collected actions + measured height) 만 반환한다.
-//! AppState/CoreState/`theme::theme()` 비의존. Gallery (`tasty-gallery`) 는
-//! view 를 mock props 로 mirror 해서 시각 검증.
-//!
-//! wrapper `draw_pane_tab_bars` 는 (a) state/engine 에서 props 추출,
-//! (b) view 호출, (c) 반환된 [`TabBarAction`] 리스트를 state mutation 으로 변환,
-//! (d) measured height 를 `state.tab_bar_height` 에 기록.
+//! pane별 탭바. 앱 상태에서 화면 입력을 만들고 반환된 동작과 측정 높이를 반영한다.
+//! 공용 화면 함수는 앱 상태 없이 갤러리에서도 사용할 수 있다.
 
 mod apply;
 mod tab;
@@ -149,20 +139,9 @@ pub enum TabBarAction {
 }
 
 impl TabBarAction {
-    /// 이 액션이 유래한 pane. `Some` 이면 처리 전에 그 pane 으로 focus 를 옮긴다
-    /// (탭바 primary-click 계열 — 탭 클릭/닫기/스크롤/빈 영역 클릭/+·split·search 버튼).
-    /// 우클릭 컨텍스트 메뉴는 대상 `pane_id`/`tab_index` 를 메뉴 항목에 그대로 실어
-    /// 나르므로 focus 이동이 필요 없다(조회/메뉴-오픈이지 조작 commit 이 아님).
-    ///
-    /// `DragStart` 도 focus 이동 대상에 포함한다 — egui 0.31.1 의 `clicked()`/
-    /// `drag_started_by()` 는 같은 press-release 상호작용에서 발생 프레임이 겹치지
-    /// 않고 상호 배타적이라(`clicked()` 는 pointer-up 프레임에서만, `drag_started_by()`
-    /// 는 그 이전에 drag threshold 를 넘는 프레임에서만 세팅됨 — vendored
-    /// `egui-0.31.1/src/{context.rs,interaction.rs}` 확인), 비-focused pane 의 탭을
-    /// 클릭 없이 곧장 드래그하면 `SwitchTab` 없이 `DragStart` 만 단독으로 발생한다.
-    /// 이 경우에도 "탭바 조작은 그 pane 을 조작하는 행위"라는 원칙(위 문단)을 그대로
-    /// 적용해 focus 가 따라가야 한다. `DragUpdate`/`DragEnd` 는 이미 `DragStart` 에서
-    /// focus 가 이동한 뒤에 오는 후속 프레임이라 별도 이동이 불필요.
+    /// 직접 조작할 pane. 클릭·드래그 시작은 먼저 포커스를 옮긴다.
+    /// 드래그는 클릭 없이 시작할 수 있어 별도로 포함한다. 후속 드래그 프레임은 다시 옮기지 않는다.
+    /// 우클릭 메뉴는 대상 ID를 전달하며 열 때 포커스를 바꾸지 않는다.
     fn focus_target_pane(&self) -> Option<u32> {
         match *self {
             TabBarAction::SwitchTab { pane_id, .. }
@@ -188,8 +167,7 @@ impl TabBarAction {
 #[derive(Default)]
 pub struct PaneTabBarsOutput {
     pub actions: Vec<TabBarAction>,
-    /// 첫 pane 의 탭 바 높이. 측정 못 했으면 None. 좌표계는 주석이 아니라 **타입**이
-    /// 보증한다 — egui 가 준 logical 높이를 `to_physical(scale_factor)` 로 변환해 담는다.
+    /// 첫 pane에서 측정한 탭바 높이를 물리 픽셀로 변환한 값. 측정하지 못했으면 None이다.
     pub measured_height_physical: Option<PhysicalPx>,
 }
 
@@ -204,9 +182,7 @@ fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Ta
         .collect()
 }
 
-/// Wrapper — state/engine 에서 props 추출 → view 호출 → action 적용.
-///
-/// 시그니처는 기존과 동일 (외부 호출처 무영향).
+/// 화면 입력을 만들고 결과를 앱 상태에 반영한다.
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut AppState,
@@ -246,8 +222,6 @@ pub fn draw_pane_tab_bars(
                             .find_surface_by_id(t.focused_surface)
                             .map(|s| s.kind())
                             .unwrap_or("terminal");
-                        // kind→아이콘: registry 의 SurfaceKindDef.icon 이름을 host
-                        // 아이콘 세트로 해석(하드코딩 없음). 미선언/미등록은 FILE.
                         engine
                             .surface_registry
                             .get(kind)
@@ -275,10 +249,7 @@ pub fn draw_pane_tab_bars(
         current_x: d.current_x,
     });
 
-    // switch-number overlay — `switch_overlay()` 스냅샷(사용자 입력 ModifiersChanged 로만
-    // 갱신)에서 Tab 대상 + 그릴 focused pane id 를 읽는다. 그 pane 의 탭바에서만 키캡을
-    // 그리므로 비-focused pane 에는 거짓 안내가 뜨지 않는다. 스냅샷은 egui raw_input 의
-    // 사용자 키 입력만 반영 → IPC/CLI/에이전트로는 강제 표시될 수 없다(순수 미리보기).
+    // 사용자 modifier 입력으로 갱신한 스냅샷에서 키캡을 표시할 pane을 읽는다.
     let switch_overlay_pane = state.switch_overlay().and_then(|o| match o.target {
         crate::adapters::ui::switch_overlay::SwitchTarget::Tab => o.pane_id,
         crate::adapters::ui::switch_overlay::SwitchTarget::Workspace
@@ -411,9 +382,7 @@ mod tests {
         run_view_on(&egui::Context::default(), panes, drag)
     }
 
-    /// [`run_view`] 와 동일하되 호출자가 `egui::Context` 를 직접 제공한다 — 활성
-    /// 탭 추종 스크롤은 프레임 간 상태를 `ctx` persistent memory 에 추적하므로,
-    /// "여러 프레임에 걸친 변화"를 검증하려면 같은 ctx 를 재사용해 여러 번 호출해야 한다.
+    /// 같은 Context로 여러 프레임을 그려 활성 탭의 자동 스크롤을 검사한다.
     fn run_view_on(
         ctx: &egui::Context,
         panes: Vec<PaneTabBarView>,
@@ -479,15 +448,8 @@ mod tests {
         })
     }
 
-    // 아래 스크롤 보정 테스트들의 공통 지오메트리 (tab_w=160, separator_w=1,
-    // plus_w=28, right_icons_w=56, arrow_w=20 — `draw_pane_tab_bars_view` 상수와 동일):
-    // pane 폭 800 · 탭 8개 → content_w=1316, avail_w=744, needs_scroll,
-    // viewport_w=704, max_scroll=612.
-
     #[test]
     fn switching_to_offscreen_tab_scrolls_it_into_view() {
-        // 탭 8개, 화면에는 앞쪽 몇 개만 보이는 좁은 pane 폭. 마지막 탭(인덱스 7)으로
-        // 전환 — 현재 뷰포트(scroll=0) 밖.
         let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 7, true);
         let out = run_view(vec![pane], None);
 
@@ -504,8 +466,6 @@ mod tests {
 
     #[test]
     fn switching_to_first_tab_wraps_scroll_back_into_view() {
-        // 마지막 탭에서 스크롤이 오른쪽 끝까지 밀려난 상태(scroll=max_scroll)에서
-        // 첫 탭(인덱스 0)으로 wrap-around 전환 — 왼쪽으로 다시 보정돼야 한다.
         let ctx = egui::Context::default();
         let mut pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 7, true);
         pane.scroll_offset = 612.0; // max_scroll
@@ -521,9 +481,7 @@ mod tests {
 
     #[test]
     fn active_tab_unchanged_does_not_override_manual_scroll() {
-        // 같은 ctx 로 두 프레임 연속 렌더 — active_tab 도 pane 지오메트리도 바뀌지
-        // 않았다면, 활성 탭(0)이 사용자가 화살표로 스크롤해 가려 놓은 상태(scroll=400,
-        // 탭 0 은 뷰포트 밖)라도 보정을 강제하면 안 된다.
+        // 활성 탭·크기가 그대로면 사용자가 이동한 스크롤을 덮어쓰지 않는다.
         let ctx = egui::Context::default();
         let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
         run_view_on(&ctx, vec![pane], None);
@@ -541,9 +499,7 @@ mod tests {
 
     #[test]
     fn pane_resize_reveals_correction_even_without_active_change() {
-        // 1프레임: 넓은 pane(2000px) — 스크롤 불필요, 탭 7 전체가 이미 보임.
-        // 2프레임: 같은 ctx, 같은 active_tab(7) 이지만 pane 이 800px 로 좁아져
-        // 스크롤이 필요해짐 — active_tab 은 안 바뀌었어도 지오메트리 변화로 보정돼야 한다.
+        // 활성 탭은 그대로이고 pane만 좁아진 경우에도 필요한 스크롤을 보정한다.
         let ctx = egui::Context::default();
         let wide = mk_pane_w(
             1,
@@ -570,8 +526,6 @@ mod tests {
 
     #[test]
     fn viewport_that_already_shows_active_tab_emits_no_correction() {
-        // 첫 탭(인덱스 0)이 활성이고 scroll=0 이면 이미 뷰포트 안 — 아무 보정도
-        // 필요 없다(경계값: 스크롤 화살표/"+" 버튼 폭을 뺀 뒤에도 첫 탭은 항상 보임).
         let pane = mk_pane(1, &["A", "B", "C", "D", "E", "F", "G", "H"], 0, true);
         let out = run_view(vec![pane], None);
         assert_eq!(auto_scroll_offset(&out, 1), None);
@@ -611,7 +565,6 @@ mod tests {
             current_x: 240.0,
         });
         let out = run_view(panes, drag);
-        // drag overlay 자체는 actions 를 추가하지 않음
         assert!(out.actions.is_empty());
     }
 
@@ -626,10 +579,7 @@ mod tests {
         crate::model::Tab::new_with_surface(1, "t".to_string(), surface)
     }
 
-    /// mirror surface(로컬 PTY 없음, `set_mirror_surface_busy` 로만 채워짐)를 담은
-    /// 탭도 `compute_tab_is_busy` 가 busy 로 판정해야 한다 — `busy_surfaces` 를 직접
-    /// 참조하던 예전 코드는 mirror surface 를 절대 못 봐서 dot 이 안 떴던 버그의
-    /// 회귀 테스트.
+    /// 로컬 PTY가 없는 mirror surface도 원격 busy 상태로 탭 표시를 갱신한다.
     #[test]
     fn compute_tab_is_busy_true_for_mirror_only_surface() {
         let mut engine = test_engine();

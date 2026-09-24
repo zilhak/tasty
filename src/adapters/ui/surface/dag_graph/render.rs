@@ -7,25 +7,15 @@ use super::chrome::{self, ChromeAction, NARROW_DETAIL_SHEET};
 use super::detail::{DetailAction, DetailDock, dock_divider, draw_detail};
 use super::view::{DagGraphView, DagTarget, layout_config};
 
-/// 이 화면의 **크롬을 누가 드는가**.
-///
-/// 탭 surface 는 자기 상단 띠와 캔버스 오버레이를 스스로 갖는다. workspace popup 의
-/// 디테일은 다르다 — 거기서는 `DrillDown` 의 **back bar 가 그 화면의 크롬**이고,
-/// 헤더를 한 벌 더 얹으면 한 노드를 보는 화면에 띠가 둘이 된다. 그래서 그 갈래는
-/// 헤더도 캔버스 줌 클러스터도 그리지 않고, back bar 에서 눌린 조작만 받아 적용한다.
+/// surface는 자체 헤더·줌 버튼을 그리고 팝업은 back bar의 버튼 동작을 받아 처리한다.
 pub enum DagChrome {
     /// 탭 surface — 헤더 띠 + 캔버스 위 줌 클러스터를 이 함수가 그린다.
     Own,
-    /// popup 디테일 — back bar 가 크롬이다. 괄호 안은 **이미 눌린** 조작이다
-    /// (back bar 는 본문보다 먼저 그려지므로 이 시점에 답이 나와 있다).
+    /// 본문보다 먼저 처리된 팝업 back bar 동작.
     BackBar(Option<ChromeAction>),
 }
 
-/// 그래프 화면 한 벌 — (헤더) + 캔버스 + (선택 시) 상세.
-///
-/// 대상은 [`DagTarget`] 으로만 받는다. 탭 surface 든 workspace popup 이든 이
-/// 함수가 유일한 그리기 경로이고, 호출자는 대상 필드를 빌려주고 화면 폭과
-/// [`DagChrome`] 을 정할 뿐이다 — 좁으면(<640) 상세가 자동으로 하단 시트로 내려간다.
+/// 공용 그래프 렌더링. 화면 폭에 따라 상세를 오른쪽 또는 아래에 배치한다.
 pub fn draw_dag_graph(
     ui: &mut egui::Ui,
     target: DagTarget<'_>,
@@ -38,7 +28,6 @@ pub fn draw_dag_graph(
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
 
     let Some(data) = view.data.clone() else {
-        // 첫 폴링 전 한 프레임. 여기서 스피너를 돌리면 0.5 초짜리 깜빡임만 남는다.
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, theme.dag_canvas_bg().to_egui());
         return;
@@ -65,7 +54,6 @@ pub fn draw_dag_graph(
         );
         return;
     }
-    // 위에서 비었으면 이미 반환했다.
     let graph = data
         .current
         .as_ref()
@@ -77,7 +65,6 @@ pub fn draw_dag_graph(
 
     let direction = *target.direction;
     let cfg = layout_config(theme, direction);
-    // 캐시 조회 — 그래프 모양이 그대로면 좌표를 다시 계산하지 않는다.
     let layout = view.layout(direction, &cfg);
     let graph_size = egui::vec2(layout.width.value(), layout.height.value());
 
@@ -90,7 +77,6 @@ pub fn draw_dag_graph(
     let wide = surface_width >= NARROW_DETAIL_SHEET.value();
 
     let mut detail_action = None;
-    // 캔버스 위 줌 클러스터에서 나온 조작. 헤더와 동시에 눌릴 수 없어 뒤에서 합친다.
     let mut canvas_action = None;
     let mut viewport = ui.available_size();
 
@@ -187,30 +173,22 @@ fn apply_chrome(
 ) {
     match action {
         Some(ChromeAction::SelectDag(id)) => {
-            // 사용자가 명시적으로 고른 순간부터 대상이 고정된다 — 폴링의 자동 선택이
-            // 더 이상 개입하지 않는다.
+            // 사용자가 고른 DAG로 대상을 고정하고 다음 프레임에 즉시 조회한다.
             *target.dag_id = Some(id);
             view.selected = None;
-            // 대상이 바뀌었으니 다음 프레임에 바로 다시 읽는다 — 500ms 를 기다리면
-            // 고른 DAG 대신 이전 그래프가 한 박자 더 남는다.
             view.invalidate_poll();
         }
         Some(ChromeAction::ToggleDirection) => {
-            // 선택은 유지한다 — 같은 그래프를 다른 축으로 다시 그릴 뿐이라, 보던
-            // 노드를 놓치게 만들 이유가 없다. auto-fit 키에 방향이 들어 있어 프레이밍
-            // 은 다음 프레임에 새로 맞춰진다.
+            // 방향이 바뀌어도 선택은 유지하고 자동 맞춤은 다음 프레임에 다시 계산한다.
             *target.direction = target.direction.toggled();
         }
         Some(ChromeAction::Fit) => {
             view.fit(graph_size, viewport, theme.dag_canvas_padding().value());
         }
         Some(ChromeAction::Zoom(steps)) => {
-            // 버튼으로 줌할 때 고정되는 점은 캔버스 한가운데다 — 보고 있던 부분이
-            // 화면 밖으로 밀려나지 않는다.
             view.zoom_by(steps, viewport / 2.0);
         }
         Some(ChromeAction::Refresh) => {
-            // 사용자가 명시적으로 요청했으니 폴링 주기를 기다리지 않는다.
             view.invalidate_poll();
         }
         None => {}

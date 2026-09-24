@@ -39,7 +39,7 @@
 //! ## 큐와 멱등성
 //!
 //! queue_admission은 큐 진입을 시도한 요청을 센다. 현재 바이트·명령·주입 명령 수는
-//! 감소할 수 있고 peak_bytes와 refused_bytes/refused_depth는 누계다.
+//! 감소할 수 있다. peak_bytes는 지금까지의 최대 크기, refused_bytes/refused_depth는 거절 누계다.
 //! limit_bytes/limit_injected_depth는 실제 적용하는 상한이다. 서버가 없는 구성에서는 null이다.
 //! queue_dispatch는 처리 회차, 개수·시간 예산으로 멈춘 회차, 실행 전 만료, 시작한 요청을 센다.
 //! in_flight는 실행을 시작한 뒤 명령 또는 응답 대기자가 CommandLifecycle을 보유하는 동안
@@ -80,7 +80,7 @@
 //!
 //! 큐 대기·handler·플러그인 대기에는 각각 bounds_us와 counts를 함께 제공한다.
 //! counts는 누적값이 아니며 서로 겹치지 않는 구간의 건수다. bounds_us보다 한 칸 많고
-//! 마지막은 상한 초과 구간이다. 합은 관측 수이며 마지막 구간의 크기는 us_max로 확인한다.
+//! 마지막은 상한 초과 구간이다. 합은 관측 수이며 관측된 최대 시간은 us_max로 확인한다.
 //! DB와 연결에는 분포가 없다. DB 계측은 다른 크레이트의 타입을 사용하며 accept 값은 상한이다.
 //! 측정하지 않은 항목을 0으로 채우지 않는다. 관측이 없는 평균도 null로 구분한다.
 

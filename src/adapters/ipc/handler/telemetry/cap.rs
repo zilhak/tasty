@@ -399,8 +399,8 @@ pub(super) fn fire_cap_action(
     }
 }
 
-/// 처음 상한을 넘으면 승인을 요청한다. 승인 후 cap.reset으로 해제해야 호출을 재개한다.
-/// triggered가 있는 동안 재발행하지 않는다. reset 후 다시 임계를 넘으면 새로 요청한다.
+/// 처음 상한에 도달하면 승인을 요청한다. 승인 후 cap.reset으로 해제해야 호출을 재개한다.
+/// triggered가 있는 동안 재발행하지 않는다. reset 후 다시 상한에 도달하면 새로 요청한다.
 pub(super) fn fire_require_approval(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,

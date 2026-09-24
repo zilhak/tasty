@@ -1,28 +1,6 @@
-//! surface 별 뷰 상태 + 폴링 게이트 + 레이아웃 캐시.
-//!
-//! `DagGraphSurface`(모델)는 "어떤 DAG 를 어느 방향으로 보는가" 만 들고 있고,
-//! 여기 있는 것들은 전부 **휘발성**이다 — 재시작하면 auto-fit 부터 다시 시작한다.
-//!
-//! # 폴링
-//!
-//! runner 는 별도 스레드(500ms tick)라 그 상태 변화가 egui 렌더 루프를 깨우지
-//! 않는다. 그래서 **보이는 동안만** 다음 폴링 시각을 중앙 타이머 허브에 걸어 두고
-//! (`Tick::DagGraph(surface_id)`, `docs/dev-guide/timer-hub.md`), 그 tick 이 창을
-//! dirty 로 표시해 도는 프레임에서 [`DagGraphViewStore::poll`] 이 memory store 를
-//! 다시 읽는다. **보이지 않으면 아무것도 예약하지 않는다** — 안 보이는 탭이 유휴
-//! CPU 를 태우지 않게 하려는 것이다.
-//!
-//! 예약을 스스로 소멸시키던 egui `request_repaint_after`(뷰가 그려질 때만 갱신)와
-//! 달리 허브 등록은 저절로 사라지지 않는다. 그래서 이 스토어는 매 프레임 **이번에
-//! 보인 surface 집합**만 데드라인으로 내보내고([`DagGraphViewStore::pending_poll_deadlines`]),
-//! 호스트가 그 집합에 없는 키를 취소한다 — 닫히거나 가려진 뷰 때문에 영원히
-//! 깨어나는 누수가 구조적으로 불가능해진다.
-//!
-//! # 레이아웃 캐시
-//!
-//! 캐시 키는 **`(노드 id 나열, 엣지 나열, 방향, 치수)`** 다. `TaskState` 는 키에
-//! 들어가지 않는다 — 상태만 바뀌었는데 좌표를 다시 계산하면 0.5 초마다 노드가
-//! 미세하게 튄다. 노드/엣지가 실제로 추가·삭제될 때만 재배치한다.
+//! surface별 이동·배율·선택과 조회·레이아웃 캐시.
+//! 보이는 surface만 다음 조회 시각을 내보내고 호스트가 나머지 타이머를 취소한다.
+//! 레이아웃 캐시는 ID·엣지·방향·치수를 비교하며 task 상태만 바뀌면 좌표를 유지한다.
 
 use std::collections::HashMap;
 use std::hash::{Hash as _, Hasher as _};
@@ -34,7 +12,7 @@ use tasty_type_appearance::theme::Theme;
 
 use super::model::{DagData, DagListEntry, DagStatus, RunnerBadgeData, build_graph};
 
-/// 폴링 주기. runner tick(500ms)과 맞춘다 — 더 자주 읽어봐야 새 값이 없다.
+/// DAG 데이터 조회 주기.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// 줌 범위와 단위. 길이가 아니라 배율이라 `LogicalPx` 대상이 아니다.
@@ -67,13 +45,7 @@ impl Lod {
     }
 }
 
-/// 그래프 화면이 실제로 필요로 하는 **관찰 대상**.
-///
-/// surface 는 `DagGraphSurface` 의 필드를, workspace popup 은 자기 dialog 상태를
-/// 빌려준다 — 렌더 코드는 자기가 탭 안인지 팝업 안인지 몰라야 두 경로가 같은
-/// 그림을 그린다. 대상 workspace 는 여기 없다: 렌더는 이미 읽어 둔
-/// [`DagGraphView::data`] 만 그리고, workspace 는 그 데이터를 **채울 때**만
-/// 필요하다([`DagGraphView::poll_if_stale`]).
+/// surface와 팝업이 공유하는 관찰 대상. 워크스페이스는 데이터 조회 시 별도로 받는다.
 pub struct DagTarget<'a> {
     /// 보고 있는 DAG. 헤더 드롭다운 선택이 여기 반영된다.
     pub dag_id: &'a mut Option<String>,
@@ -104,12 +76,7 @@ impl DagPollRequest {
     }
 }
 
-/// 캐시된 레이아웃 한 벌.
-///
-/// `Rc` 로 감싸는 이유는 소유권 한 가지뿐이다 — 렌더는 레이아웃을 읽으면서 동시에
-/// `&mut DagGraphView`(줌/팬/선택 갱신)를 잡아야 하는데, 캐시에서 참조를 빌려 오면
-/// 그 둘이 겹친다. 500 노드짜리 좌표를 프레임마다 복사하지 않으려면 값 복제가
-/// 아니라 참조계수 복제여야 한다.
+/// 캐시된 좌표를 읽으며 뷰 상태도 바꿀 수 있도록 Rc로 공유한다.
 struct CachedLayout {
     key: u64,
     layout: std::rc::Rc<GraphLayout>,
@@ -129,8 +96,7 @@ pub struct DagGraphView {
     pub offset: egui::Vec2,
     /// 선택된 task id.
     pub selected: Option<String>,
-    /// `(dag id, 방향, 뷰포트 버킷)` — auto-fit 이 이미 돈 조합. 폴링으로는 절대
-    /// 바뀌지 않는 값들로만 구성해, 데이터 갱신이 프레이밍을 건드리지 못하게 한다.
+    /// 자동 맞춤을 적용한 DAG·방향·뷰포트 조합.
     fit_key: Option<String>,
     layout: Option<CachedLayout>,
 }
@@ -163,11 +129,7 @@ impl DagGraphView {
         self.last_poll.map(|t| t + POLL_INTERVAL)
     }
 
-    /// 폴링 게이트를 지나면 memory store 를 다시 읽는다.
-    ///
-    /// surface 는 [`DagGraphViewStore::poll`] 을 거쳐, popup 은 자기 draw_fn 에서
-    /// 직접 부른다(popup 은 `engine` 을 통째로 받으므로 렌더 루프의 재차입 제약이
-    /// 없다). 주기·실패 처리를 한곳에 두어 두 경로가 갈라지지 않게 한다.
+    /// surface와 팝업이 공유하는 주기별 데이터 조회.
     pub fn poll_if_stale(
         &mut self,
         engine: &crate::core::CoreState,
@@ -185,8 +147,7 @@ impl DagGraphView {
                 self.data = Some(data);
             }
             Err(e) => {
-                // 데이터는 마지막으로 성공한 것을 그대로 둔다 — 일시적 실패로
-                // 그래프가 사라졌다 나타나면 읽는 사람이 더 혼란스럽다.
+                // 일시적 실패에는 마지막으로 읽은 그래프를 유지한다.
                 tracing::warn!(target: "tasty::dag", "dag poll failed: {e}");
                 self.error = Some(e);
             }
@@ -210,7 +171,6 @@ impl DagGraphView {
             let layout = std::rc::Rc::new(self.compute_layout(cfg));
             self.layout = Some(CachedLayout { key, layout });
         }
-        // 위에서 반드시 채웠다.
         std::rc::Rc::clone(
             &self
                 .layout
@@ -229,11 +189,10 @@ impl DagGraphView {
         layout_dag(&ids, &edges, cfg)
     }
 
-    /// 레이아웃 캐시 키. **상태를 넣지 않는다** — 이 파일 상단의 불변식.
+    /// 상태를 제외한 레이아웃 캐시 키.
     fn shape_key(&self, direction: DagDirection, cfg: &LayoutConfig) -> u64 {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         direction.as_str().hash(&mut h);
-        // 치수가 바뀌면(테마 zoom 등) 좌표도 바뀐다.
         for px in [
             cfg.node_size.0,
             cfg.node_size.1,
@@ -256,11 +215,7 @@ impl DagGraphView {
         h.finish()
     }
 
-    /// auto-fit 을 이번 조합에서 아직 안 돌렸으면 `true` 를 돌려주고 표시해 둔다.
-    ///
-    /// 뷰포트는 32px 버킷으로 뭉갠다 — 1px 흔들림마다 다시 fit 하면 리사이즈 중
-    /// 화면이 요동친다. 폴링은 키의 어느 성분도 건드리지 않으므로 **데이터 갱신은
-    /// 절대 fit 을 발화시키지 않는다**.
+    /// 같은 DAG·방향·32px 단위 뷰포트에서는 자동 맞춤을 한 번만 수행한다.
     pub fn take_fit(
         &mut self,
         dag_id: &str,
@@ -323,16 +278,13 @@ impl DagGraphViewStore {
         self.views.entry(surface_id).or_default()
     }
 
-    /// surface 가 닫힐 때 호출 — 뷰 상태를 버린다. `visible` 에서도 빼야 한다:
-    /// 남겨두면 사라진 surface 의 폴링 타이머가 계속 재등록돼 누수가 된다.
+    /// 닫힌 surface의 상태와 조회 예약 대상을 함께 지운다.
     pub fn drop_view(&mut self, surface_id: SurfaceId) {
         self.views.remove(&surface_id);
         self.visible.retain(|s| *s != surface_id);
     }
 
-    /// 이번 프레임에 보인 뷰들의 다음 폴링 시각. 호스트가 이 목록 그대로
-    /// `Tick::DagGraph(surface_id)` 를 동기화하고, **목록에 없는 키는 취소**한다.
-    /// 아직 한 번도 안 읽은 뷰는 `now`(= 다음 프레임에 즉시).
+    /// 보이는 뷰의 다음 조회 시각. 호스트는 여기에 없는 타이머를 취소한다.
     pub fn pending_poll_deadlines(&self, now: Instant) -> Vec<(SurfaceId, Instant)> {
         self.visible
             .iter()
@@ -343,10 +295,7 @@ impl DagGraphViewStore {
             .collect()
     }
 
-    /// 이번 프레임에 보이는 DAG surface 들의 데이터를 필요하면 새로 읽는다.
-    ///
-    /// 렌더 루프 **진입 전에** 호출한다 — 루프 안에서는 `engine` 이 workspace/pane/
-    /// tab 에 배타 차용돼 store 를 읽을 수 없다(explorer 의 outbox 패턴과 같은 제약).
+    /// 렌더링의 engine 대여가 시작되기 전에 보이는 DAG 데이터를 읽는다.
     pub fn poll(&mut self, engine: &crate::core::CoreState, requests: &[DagPollRequest]) {
         self.note_visible(requests);
         for req in requests {
@@ -356,17 +305,10 @@ impl DagGraphViewStore {
                 req.dag_id.as_deref(),
             );
         }
-        // 이번 프레임에 보이지 않은 surface 의 뷰는 남겨 둔다(줌/선택 유지). 정리는
-        // surface 종료 시 `drop_view` 가 한다.
     }
 
-    /// 이번 프레임에 보인 집합으로 `visible` 을 **통째로 교체**한다.
-    ///
-    /// 폴링 타이머의 수명을 결정하는 유일한 지점이다. 배경 탭으로 밀린 surface 는
-    /// (닫히지 않았으므로 `drop_view` 를 타지 않고) 오직 여기서만 빠진다 — 그래서
-    /// 호출부는 `requests` 가 **비어 있어도 반드시** `poll` 을 불러야 한다. 빈
-    /// 프레임을 건너뛰면 옛 id 가 남아 호스트가 지난 데드라인을 매 프레임 재등록하고,
-    /// 이벤트 루프가 쉬지 못한다.
+    /// 보이는 대상 목록을 교체한다. 모두 숨겨진 프레임도 빈 requests로 호출해야
+    /// 이전 대상의 타이머가 다시 등록되지 않는다.
     fn note_visible(&mut self, requests: &[DagPollRequest]) {
         self.visible.clear();
         self.visible.extend(requests.iter().map(|r| r.surface_id));
@@ -405,10 +347,8 @@ fn fetch(
             .cloned()
             .collect();
         let mut graph = build_graph(summary, &subset);
-        // 사이클은 검출만 — 그래프는 그대로 그린다(레이아웃 엔진이 FAS 로 역엣지를
-        // 걷어내고 배치한다). 판정 자체는 `group_tasks_into_dags` 가 이미 했으니
-        // 여기서는 배너 문구가 필요한 경우에만 한 번 더 돌려 메시지를 얻는다.
-        // `UnknownDependency`(그룹 밖 참조)는 사이클이 아니므로 배너를 띄우지 않는다.
+        // 순환 관계가 있어도 그래프는 그린다. 배너에 표시할 경로만 추가로 찾으며
+        // 그룹 밖 의존성 오류는 순환 경고로 처리하지 않는다.
         graph.cycle = if summary.has_cycle {
             match TaskGraph::build(&subset).detect_cycles() {
                 Err(tasty_agent::AgentError::DependencyCycle(msg)) => Some(msg),
@@ -452,11 +392,7 @@ fn fetch(
     })
 }
 
-/// 어떤 DAG 를 그릴지 고른다.
-///
-/// 명시 지정이 있으면 그것뿐이다 — 없는 id 를 다른 DAG 로 슬쩍 대체하지 않는다
-/// (사용자가 고른 대상이 사라졌다는 사실 자체가 화면에 드러나야 한다).
-/// 미지정이면 진행 중인 그래프를 먼저, 그다음 가장 최근에 갱신된 것을 고른다.
+/// 지정한 DAG가 없으면 대체하지 않는다. 미지정이면 실행 중인 것, 그다음 최근 갱신한 것을 고른다.
 fn pick_target<'a>(
     summaries: &'a [tasty_agent::DagSummary],
     dag_id: Option<&str>,
@@ -498,8 +434,6 @@ mod tests {
         }
     }
 
-    /// 뷰가 닫히면 폴링 데드라인 목록에서도 사라져야 한다 — 남으면 호스트가
-    /// 사라진 surface 의 타이머를 계속 재등록해 500ms 마다 영원히 깨어난다.
     #[test]
     fn dropping_a_view_removes_it_from_the_poll_deadlines() {
         let now = Instant::now();
@@ -515,11 +449,7 @@ mod tests {
         );
     }
 
-    /// **회귀 방지(gate4-22)** — DAG surface 를 *닫지 않고* 배경 탭으로 보내면
-    /// 그 프레임의 요청 목록이 빈 채로 들어온다. 그때 `visible` 이 비어야 호스트가
-    /// 폴링 타이머를 걷는다. 남으면 지난 데드라인이 매 프레임 재등록돼 스핀한다.
-    ///
-    /// `drop_view` 는 **닫는 경로에만** 걸리므로 이 경로를 대신해 주지 못한다.
+    /// 닫히지 않고 배경으로 간 뷰는 상태를 남기되 조회 예약에서는 제외한다.
     #[test]
     fn a_frame_with_no_visible_dag_view_clears_the_poll_deadlines() {
         let now = Instant::now();
@@ -528,7 +458,6 @@ mod tests {
         store.note_visible(&[req(7)]);
         assert_eq!(store.pending_poll_deadlines(now).len(), 1);
 
-        // 배경 탭 전환 — 닫지 않았으므로 뷰 상태(줌/선택)는 남지만 예약은 사라진다.
         store.note_visible(&[]);
         assert!(store.pending_poll_deadlines(now).is_empty());
         assert!(
@@ -537,7 +466,6 @@ mod tests {
         );
     }
 
-    /// 여러 뷰 중 하나만 배경으로 밀리는 경우 — 남은 것만 예약을 유지한다.
     #[test]
     fn only_the_views_visible_this_frame_keep_their_deadlines() {
         let now = Instant::now();
@@ -553,7 +481,6 @@ mod tests {
         assert_eq!(due[0].0, 9);
     }
 
-    /// 아직 한 번도 안 읽은 뷰는 즉시 읽어야 하고, 읽은 뒤에는 다음 주기로 밀린다.
     #[test]
     fn poll_deadline_advances_after_a_read() {
         let now = Instant::now();
@@ -594,7 +521,6 @@ mod tests {
             ..DagGraphView::default()
         };
         let anchor = egui::vec2(100.0, 50.0);
-        // 앵커 아래의 그래프 좌표는 줌 전후로 같아야 한다.
         let before = (anchor - v.offset) / v.zoom;
         v.zoom_by(2.0, anchor);
         let after = (anchor - v.offset) / v.zoom;
@@ -614,13 +540,9 @@ mod tests {
         let vp = egui::vec2(800.0, 600.0);
         assert!(v.take_fit("d:a", DagDirection::LeftRight, vp));
         assert!(!v.take_fit("d:a", DagDirection::LeftRight, vp));
-        // 1px 흔들림은 같은 버킷 — 다시 fit 하지 않는다.
         assert!(!v.take_fit("d:a", DagDirection::LeftRight, vp + egui::vec2(1.0, 0.0)));
-        // 방향 전환은 새 프레이밍.
         assert!(v.take_fit("d:a", DagDirection::TopDown, vp));
-        // 대상 DAG 전환도.
         assert!(v.take_fit("d:b", DagDirection::TopDown, vp));
-        // 큰 리사이즈도.
         assert!(v.take_fit("d:b", DagDirection::TopDown, vp + egui::vec2(200.0, 0.0)));
     }
 
@@ -631,11 +553,8 @@ mod tests {
             summary("d:two", "waiting", 20),
         ];
         assert_eq!(pick_target(&summaries, Some("d:two")).unwrap().id, "d:two");
-        // 없는 id 는 대체하지 않는다.
         assert!(pick_target(&summaries, Some("d:gone")).is_none());
-        // 미지정이면 running 우선.
         assert_eq!(pick_target(&summaries, None).unwrap().id, "d:one");
-        // running 이 없으면 최신 갱신.
         let idle = vec![
             summary("d:one", "succeeded", 10),
             summary("d:two", "waiting", 20),
@@ -644,9 +563,7 @@ mod tests {
         assert!(pick_target(&[], None).is_none());
     }
 
-    /// **이 기능의 핵심 불변식.** 캐시 키에 `TaskState` 가 들어가면 0.5 초 폴링에서
-    /// 상태가 바뀔 때마다 좌표가 다시 계산돼 노드가 미세하게 튄다. 노드/엣지가 그대로면
-    /// 어떤 상태 조합이 와도 같은 키여야 한다.
+    /// 상태만 바뀌면 레이아웃 캐시 키는 유지한다.
     #[test]
     fn shape_key_ignores_task_state() {
         let cfg = LayoutConfig::default();
@@ -659,7 +576,6 @@ mod tests {
         };
         let waiting = v.shape_key(DagDirection::LeftRight, &cfg);
 
-        // 같은 노드/엣지, 상태만 8 종을 오간다.
         for state in [
             DagStatus::Ready,
             DagStatus::Running,
@@ -677,7 +593,6 @@ mod tests {
             );
         }
 
-        // 반대로 **모양**이 바뀌면 반드시 달라져야 한다 — 노드 추가.
         v.data = Some(graph_data(&[
             ("a", DagStatus::Waiting),
             ("b", DagStatus::Waiting),
@@ -685,7 +600,6 @@ mod tests {
         ]));
         assert_ne!(v.shape_key(DagDirection::LeftRight, &cfg), waiting);
 
-        // 방향과 치수도 좌표를 바꾸므로 키의 성분이다.
         v.data = Some(graph_data(&[
             ("a", DagStatus::Waiting),
             ("b", DagStatus::Waiting),

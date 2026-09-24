@@ -1,11 +1,5 @@
-//! 캔버스 페인팅과 인터랙션.
-//!
-//! 노드/엣지는 위젯이 아니라 [`egui::Painter`] 직접 페인팅이다. 노드 수백 개마다
-//! 위젯을 할당하면 매 프레임 id/레이아웃 비용이 노드 수에 비례해 붙는데, 이 화면에
-//! 필요한 상호작용은 **hover 와 클릭 하나씩**뿐이라 직접 히트테스트가 훨씬 싸다.
-//!
-//! 좌표계는 두 개다. **그래프 좌표**(레이아웃 엔진이 준 logical px)와 **화면 좌표**.
-//! 변환은 `canvas.min + offset + graph * zoom` 하나뿐이며 [`Transform`] 이 소유한다.
+//! DAG 노드·엣지를 painter로 그리고 클릭·호버를 직접 판별한다.
+//! 그래프 좌표는 canvas.min + offset + graph * zoom으로 화면 좌표에 옮긴다.
 
 use tasty_dag_layout::GraphLayout;
 use tasty_design_tokens::generated::component::dag::EDGE_DIM_OPACITY;
@@ -37,15 +31,8 @@ impl Transform {
     }
 }
 
-/// 캔버스를 그리고 상호작용을 처리한다. 반환값은 캔버스 위 크롬(줌 클러스터)에서
-/// 나온 조작이다.
-///
-/// 키 단축키는 **여기서 만들지 않는다**. tasty 의 모든 단축키는 `KeybindingSettings`
-/// 를 거쳐야 하고(`docs/design/policies/key-mapping.md`), 이 캔버스가 자체 조합을
-/// 박으면 그 조합이 이미 배정된 전역 액션과 조용히 겹친다. 방향 전환·fit·줌은
-/// 우하단 줌 클러스터의 버튼이 담당한다.
-// 이유: 인자 하나가 곧 캔버스가 받는 상태 하나다. 구조체로 묶으면 크롬 갈래
-// (`DagChrome`)가 정하는 값과 매 프레임 계산되는 값이 한 자루에 섞인다.
+/// 캔버스와 조작 버튼을 그린다. 전역 단축키와 충돌하지 않도록 자체 키 조합은 등록하지 않는다.
+// 이유: DagChrome이 정하는 값과 프레임마다 계산하는 상태를 각각 전달한다.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_canvas(
     ui: &mut egui::Ui,
@@ -55,8 +42,7 @@ pub fn draw_canvas(
     layout: &GraphLayout,
     direction: DagDirection,
     now_ms: u64,
-    // 캔버스 위에 줌 클러스터를 띄우는가. popup 디테일은 back bar 가 그것을 들기
-    // 때문에 `false` 이고, 그러면 그 자리는 pan·선택을 **비켜가지 않는다**.
+    // 팝업에서는 back bar가 줌 버튼을 그리므로 캔버스에 버튼 영역을 남기지 않는다.
     own_zoom_cluster: bool,
 ) -> Option<ChromeAction> {
     let (rect, response) =
@@ -65,14 +51,12 @@ pub fn draw_canvas(
     painter.rect_filled(rect, 0.0, theme.dag_canvas_bg().to_egui());
 
     let graph_size = egui::vec2(layout.width.value(), layout.height.value());
-    // auto-fit 은 (DAG, 방향, 뷰포트 버킷) 조합마다 딱 한 번이다. 폴링으로 상태가
-    // 바뀌었다고 다시 맞추면 사용자가 잡아 둔 시야가 0.5 초마다 리셋된다.
+    // 같은 DAG·방향·뷰포트에서는 자동 맞춤을 반복하지 않아 사용자의 이동·배율을 유지한다.
     if !graph.nodes.is_empty() && view.take_fit(&graph.id, direction, rect.size()) {
         view.fit(graph_size, rect.size(), theme.dag_canvas_padding().value());
     }
 
-    // 줌 클러스터는 캔버스 위에 떠 있다 — 그 자리에서 시작한 클릭·드래그는 pan 도
-    // 선택도 아니다. 히트테스트보다 먼저 자리를 알아야 하므로 rect 를 미리 잡는다.
+    // 줌 버튼 영역을 미리 확보해 캔버스 이동·선택에서 제외한다.
     let cluster = own_zoom_cluster.then(|| super::chrome::zoom_cluster_rect(theme, rect));
     interact(
         ui,
@@ -127,7 +111,6 @@ pub fn draw_canvas(
             theme.dag_node_width().value(),
             theme.dag_node_height().value(),
         );
-        // 화면 밖 카드는 그리지 않는다 — 500 노드에서 대부분이 여기서 걸러진다.
         if !rect.intersects(r.expand(theme.dag_node_selected_ring_width().value())) {
             continue;
         }
@@ -146,10 +129,7 @@ pub fn draw_canvas(
         }
     }
 
-    // 다음 폴링 시점의 wakeup 은 중앙 타이머 허브가 예약한다(`Tick::DagGraph`) —
-    // egui `request_repaint_after` 는 delay > 0 이면 idle frame loop 방지를 위해
-    // repaint 콜백 단계에서 drop 되므로(`gfx/gpu.rs`) 여기서 걸어도 깨어나지 않는다.
-    // **보이는 동안만** 예약되는 성질은 그대로다(`DagGraphViewStore::poll` 참조).
+    // 양수 request_repaint_after는 GPU 콜백이 무시하므로 타이머 허브에서 보이는 뷰만 예약한다.
 
     super::chrome::draw_canvas_chrome(ui, theme, rect, cluster, view, layout, direction, lod)
 }
@@ -166,8 +146,7 @@ fn interact(
     graph: &DagGraphData,
     layout: &GraphLayout,
 ) {
-    // 중클릭 드래그는 노드 위에서도 pan 이다. 좌클릭 드래그는 빈 곳에서만 pan —
-    // 노드 위 좌클릭 드래그를 pan 으로 삼으면 "노드를 옮기는 화면" 으로 오독된다.
+    // 중간 버튼은 노드 위에서도 이동하고 왼쪽 버튼은 빈 배경에서만 이동한다.
     let tr = Transform {
         origin: rect.min + view.offset,
         zoom: view.zoom,
@@ -208,8 +187,6 @@ fn interact(
             view.offset += scroll;
         }
     }
-    // `Esc` 는 단축키 배정이 아니라 "열린 것을 닫는다" 는 OS 공통 관례라 예외다 —
-    // `KeybindingSettings` 에 노출되는 조합이 아니고 재배정 대상도 아니다.
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         view.selected = None;
     }
@@ -230,11 +207,9 @@ fn node_at(layout: &GraphLayout, tr: &Transform, theme: &Theme, p: egui::Pos2) -
         .map(|(i, _)| i)
 }
 
-/// 배경 점 격자. 그래프 좌표에 고정돼 pan/zoom 을 따라 움직인다 — 화면에 고정하면
-/// 팬 중에 배경만 정지해 보여 오히려 이동이 안 읽힌다.
+/// 그래프 좌표에 고정해 화면 이동·배율을 따르는 배경 격자.
 fn paint_dot_grid(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tr: &Transform) {
     let gap = theme.dag_canvas_dot_gap().value() * tr.zoom;
-    // 너무 촘촘해지면 점이 뭉쳐 회색 판이 된다 — 그 배율에서는 격자를 접는다.
     if gap < 6.0 {
         return;
     }
@@ -384,10 +359,8 @@ fn paint_arrow(painter: &egui::Painter, size: f32, color: egui::Color32, points:
     ));
 }
 
-/// 절대 실행되지 않을 경로 — 실패/취소/스킵 노드의 하류 전부.
-///
-/// 상류가 죽었는데도 대기 상태로 남아 있는 노드는 "곧 돌 것" 처럼 보이는데 실제로는
-/// 영원히 돌지 않는다. 그 사실이 카드에 드러나야 사용자가 재시도 지점을 찾는다.
+/// 실패·취소·스킵 노드의 하류 중 흐리게 표시할 노드를 고른다.
+/// fallback 연결과 종료된 노드는 제외하며, 실제 실행 가능 여부를 판정하는 함수는 아니다.
 fn dead_path(graph: &DagGraphData) -> Vec<bool> {
     let mut dead = vec![false; graph.nodes.len()];
     for (i, n) in graph.nodes.iter().enumerate() {
@@ -395,11 +368,10 @@ fn dead_path(graph: &DagGraphData) -> Vec<bool> {
             dead[i] = true;
         }
     }
-    // 노드 수만큼 반복하면 어떤 위상이든 수렴한다(사이클이 있어도 종료한다).
+    // 반복 횟수를 노드 수로 제한해 순환 관계에서도 종료한다.
     for _ in 0..graph.nodes.len() {
         let mut changed = false;
         for e in &graph.edges {
-            // fallback 엣지는 상류 실패가 **발동 조건**이라 죽은 경로가 아니다.
             if e.relation == DagRelation::Fallback {
                 continue;
             }
@@ -412,7 +384,6 @@ fn dead_path(graph: &DagGraphData) -> Vec<bool> {
             break;
         }
     }
-    // 이미 끝난 노드는 흐리게 하지 않는다 — 결과 자체는 읽어야 하는 정보다.
     for (i, n) in graph.nodes.iter().enumerate() {
         if n.status.is_terminal() {
             dead[i] = false;

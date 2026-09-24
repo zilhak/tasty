@@ -1,13 +1,5 @@
-//! Explorer (내장 파일 관리자) surface 의 egui 렌더링 (T11).
-//!
-//! `ExplorerPanel` (model) 의 내비게이션 상태 + `ExplorerView` (host view store) 의
-//! 디렉토리 캐시/선택을 받아 한 surface 영역을 그린다. 레이아웃은 갤러리 specimen
-//! (`explorer_tab_bar` / `explorer_view_cells` / `explorer_context_menu` 등) 의 구조를
-//! 1:1 전사하고, 색·치수·폰트는 전부 `Theme` 토큰에서 가져온다(하드코딩 금지).
-//!
-//! 렌더 중 발생한 사용자 조작은 즉시 적용하지 않고 [`ExplorerAction`] 으로 모아
-//! 호출자(`egui_panels`)가 렌더 루프 종료 후 적용한다(markdown/empty 의 deferred
-//! action 패턴과 동일 — 렌더 중 `engine`/`state` 가변 차용 충돌 회피).
+//! 파일 탐색기 렌더링. 모델의 탐색 상태와 ExplorerView의 목록·선택으로 화면을 그린다.
+//! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
 pub mod ops;
 pub mod view;
@@ -24,21 +16,17 @@ use tasty_ui_widgets::{
 };
 
 use crate::adapters::ui::icons::{self, Icon};
-// 즐겨찾기 저장소는 `CoreState` 가 소유하는 영속 타입이라 도메인 쪽에 산다.
-// 이 파일은 그 항목 타입을 그릴 때만 쓰므로 옛 모듈 이름으로 별칭만 든다.
 use crate::core::explorer_favorites as favorites;
 use crate::i18n::{t, t_fmt};
 use crate::settings::EffectiveFont;
 use crate::theme;
 use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 
-// ── grid 셀 치수 (4px 그리드 — explorer_view_cells specimen 과 동일) ──
 /// grid 셀 폭.
 const CELL_W: LogicalPx = LogicalPx(80.0);
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
-// ── Favorites 하단 고정(pin) 영역 치수 (design favPinHeight) ────────────────
 /// 기본 고정 높이.
 const FAV_PIN_BASE_H: LogicalPx = LogicalPx(240.0);
 /// 사이드바 본문 높이가 이 값 미만이면 고정 높이 대신 비율(`FAV_PIN_RATIO`)을 쓴다.
@@ -113,15 +101,13 @@ pub fn draw_explorer(
     let mut action: Option<ExplorerAction> = None;
 
     ui.set_min_size(ui.available_size());
-    // explorer 표면 전체 rect — 하위 위젯이 처리하지 못한 우클릭을 아래 catch-all 이
-    // 이 rect 기준으로 흡수한다(툴바/내부 탭바/상태줄/빈 사이드바 등 chrome 영역).
+    // 하위 위젯이 처리하지 않은 우클릭은 탐색기 전체 영역에서 받는다.
     let surface_rect = ui.max_rect();
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
 
     ui.vertical(|ui| {
         tab_strip(ui, theme, panel, &mut action);
         toolbar(ui, theme, panel, view, id_suffix, recent_dirs, &mut action);
-        // toolbar ↔ content 구분선.
         let (sep_rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), theme.border_width.value()),
             egui::Sense::hover(),
@@ -132,18 +118,15 @@ pub fn draw_explorer(
             egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         );
 
-        // 본문: 사이드바 | content.
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Min),
             |ui| {
-                // 사이드바 (고정폭).
                 ui.allocate_ui_with_layout(
                     egui::vec2(SIDEBAR_W.value(), ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| sidebar(ui, theme, panel, view, favorites, &mut action, mirror_ws_id),
                 );
-                // 사이드바 ↔ content 세로 구분선.
                 let (vrect, _) = ui.allocate_exact_size(
                     egui::vec2(theme.border_width.value(), ui.available_height()),
                     egui::Sense::hover(),
@@ -153,7 +136,6 @@ pub fn draw_explorer(
                     vrect.y_range(),
                     egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
                 );
-                // content.
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
@@ -174,12 +156,8 @@ pub fn draw_explorer(
         );
     });
 
-    // 표면 전체 catch-all: 그리드 셀·트리 노드·즐겨찾기·content 빈 영역 등 하위 위젯이
-    // 이미 `action` 을 세웠으면 건드리지 않는다. 그 외 explorer chrome(툴바/내부 탭바/
-    // 상태줄/사이드바 빈 영역)의 우클릭은 여기서 Empty 메뉴로 선점한다 — 안 그러면
-    // egui_panels 의 generic surface fallback 이 explorer 위에 "터미널 ID 복사" 메뉴를
-    // 띄운다(불가침 원칙 §1·§2: 파일 브라우저에 무관한 surface-op 메뉴 노출 금지).
-    // 권한 거부 루트는 붙여넣기가 무의미하므로 제외(content 빈영역 규칙과 동일).
+    // 탐색기 빈 영역에서도 탐색기 메뉴를 사용한다. 하위 위젯이 처리한 클릭은 건드리지 않는다.
+    // 권한 거부 경로는 붙여넣을 수 없어 제외한다.
     if action.is_none() && !matches!(view.state, LoadState::NoPermission) {
         let pos = ui.input(|i| {
             if i.pointer.secondary_clicked() {
@@ -203,7 +181,6 @@ pub fn draw_explorer(
     action
 }
 
-// ── 내부 탭 strip (explorer_tab_bar specimen 전사) ──────────────────────────
 fn tab_strip(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -238,7 +215,6 @@ fn tab_strip(
             .unwrap_or_else(|| tab.cwd.to_string_lossy().to_string());
         let galley =
             ui.fonts(|f| f.layout_no_wrap(label.clone(), font.clone(), egui::Color32::WHITE));
-        // 폭 = pad + folder + gap + label + gap + close + pad (design ExpTab).
         let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
         let tab_rect =
             egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tab_w, bar_h));
@@ -259,7 +235,6 @@ fn tab_strip(
         if is_active {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
-            // 상단 2px accent 인디케이터 (design ExpTab boxShadow inset 0 2px 0).
             let indicator = egui::Rect::from_min_size(
                 tab_rect.min,
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
@@ -276,7 +251,6 @@ fn tab_strip(
         } else {
             theme.text_muted().to_egui()
         };
-        // folder 아이콘 (라벨 앞, 항상 text-muted — design ExpTab).
         let folder_rect = egui::Rect::from_min_size(
             egui::pos2(tab_rect.min.x + pad_x, tab_rect.center().y - icon_xs / 2.0),
             egui::vec2(icon_xs, icon_xs),
@@ -320,7 +294,6 @@ fn tab_strip(
         x += tab_w;
     }
 
-    // 끝 `＋` 새 탭.
     let plus_rect = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(bar_h, bar_h));
     let plus_resp = ui.interact(
         plus_rect,
@@ -344,7 +317,6 @@ fn tab_strip(
     }
 }
 
-// ── 툴바: nav 버튼 + 편집형 PathField 주소창 + view-mode segmented ──────────
 #[allow(clippy::too_many_arguments)]
 fn toolbar(
     ui: &mut egui::Ui,
@@ -405,9 +377,7 @@ fn toolbar(
 
         ui.add_space(theme.spacing_sm.value());
 
-        // 주소표시줄 flex:1, view-mode 토글 flex:none (design ExpToolbar). 토글 실제
-        // 폭을 예측 계산해 예약하고, 남은 폭을 주소표시줄에 준 뒤 그 안에서 clip →
-        // 어떤 경로 길이에서도 서로 침범하지 않는다.
+        // 보기 모드 버튼 폭을 먼저 확보하고 남은 폭에 주소창을 제한한다.
         let seg_w = seg_toggle_width(theme);
         let gap = theme.spacing_sm.value();
         let addr_w = (ui.available_width() - seg_w - gap).max(0.0);
@@ -520,13 +490,8 @@ fn seg_toggle(
     }
 }
 
-/// 주소표시줄 — 공용 편집형 [`PathField`](design `PathField`/`ExpToolbar`): folderOpen leading +
-/// mono 경로(idle=secondary / editing=primary) + Go(arrow-right). 클릭→편집, 임의 경로 타이핑
-/// 후 `↵`/Go 로 디렉토리 이동. `recent_dirs`(최근 방문 디렉토리, host `RecentFiles`)를 자동완성
-/// 후보로 준다 — PathField 의 substring 필터가 타이핑에 맞춰 좁힌다.
-///
-/// 편집 상태(`addr_buffer`/`addr_editing`/`addr_active`)는 per-surface [`ExplorerView`] 소유.
-/// id_salt 는 surface(`id_suffix`) + 내부 탭 index 로 고유화해 다중 surface/탭 충돌을 막는다.
+/// 경로를 편집해 Enter·Go로 이동하는 공용 PathField. 최근 디렉터리를 후보로 전달한다.
+/// 상태는 surface별로, egui ID는 surface·내부 탭별로 구분한다.
 #[allow(clippy::too_many_arguments)]
 fn address_bar(
     ui: &mut egui::Ui,
@@ -539,7 +504,6 @@ fn address_bar(
     action: &mut Option<ExplorerAction>,
 ) {
     let current_str = current.display().to_string();
-    // 후보 = 최근 방문 디렉토리(최신순). PathField 는 `&[&str]` 를 받으므로 슬라이스 변환.
     let candidates: Vec<&str> = recent_dirs.iter().map(String::as_str).collect();
     let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         icons::FOLDER_OPEN
@@ -568,7 +532,6 @@ fn address_bar(
             &candidates,
             &current_str,
         );
-    // 확정 이동 — explorer 는 **디렉토리만** 대상(파일/오타는 no-op). Revert/None 은 무동작.
     if let PathFieldOutcome::Navigate(input) = outcome
         && action.is_none()
         && let Some(dir) = navigate_target(&input)
@@ -577,9 +540,7 @@ fn address_bar(
     }
 }
 
-/// PathField 확정 문자열을 이동 대상 디렉토리로 해석. **존재하는 디렉토리**일 때만 `Some`.
-/// 파일/존재하지 않는 경로/오타는 `None`(이동 no-op) — explorer 는 디렉토리만 열 수 있어
-/// markdown(파일 대상)과 반대 가드다.
+/// 입력이 실제 로컬 디렉터리일 때만 이동 대상으로 반환한다.
 fn navigate_target(input: &str) -> Option<PathBuf> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -589,7 +550,6 @@ fn navigate_target(input: &str) -> Option<PathBuf> {
     (path.exists() && path.is_dir()).then_some(path)
 }
 
-// ── 사이드바: 디렉토리 트리 ───────────────────────────────────────────────
 #[allow(clippy::too_many_arguments)]
 fn sidebar(
     ui: &mut egui::Ui,
@@ -608,12 +568,9 @@ fn sidebar(
     );
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    // 현재 폴더 — 트리/즐겨찾기 하이라이트 기준 (design active).
     let current = panel.current_root().to_path_buf();
 
-    // 2-region 고정 분할: 상단 Files 는 flex(남는 공간 전부) + 자체 스크롤, 하단
-    // Favorites 는 계산된 고정 높이 + 자체 스크롤. 경계는 트리 길이와 무관한 고정
-    // 좌표에 그려진다(design "hard 전환", 보간 없음).
+    // 트리와 하단 즐겨찾기에 독립 스크롤 영역을 주고 즐겨찾기 높이를 먼저 확보한다.
     let fav_h = favorites_pin_height(full.y);
     let files_h = (full.y - fav_h - theme.border_width.value()).max(0.0);
 
@@ -634,7 +591,6 @@ fn sidebar(
         },
     );
 
-    // 트리 ↔ 즐겨찾기 구분선 — 하단 고정 영역의 상단 경계(고정 좌표).
     let (sep, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), theme.border_width.value()),
         egui::Sense::hover(),
@@ -649,7 +605,6 @@ fn sidebar(
         egui::vec2(full.x, fav_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            // Favorites 섹션 — 캡션은 항상 표시(0개여도 발견 가능), 비면 empty state.
             sidebar_caption(ui, theme, t("explorer.sidebar.favorites"));
             egui::ScrollArea::vertical()
                 .id_salt("explorer_sidebar_favorites")
@@ -682,7 +637,6 @@ fn favorites_pin_height(body_h: f32) -> f32 {
 fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
     let inset = theme.spacing_sm.value();
     ui.add_space(theme.spacing_xs.value());
-    // 1행: 흐린 별(opacity 0.55) + 캡션.
     ui.horizontal(|ui| {
         ui.add_space(inset);
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
@@ -706,7 +660,6 @@ fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
                 .color(theme.text_muted().to_egui()),
         );
     });
-    // 2행: 힌트 — "Right-click a folder → {Add to favorites}." ("Add to favorites"만 text-muted).
     ui.horizontal_wrapped(|ui| {
         ui.add_space(inset);
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -716,7 +669,6 @@ fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
         );
         let action_label = t("explorer.context_menu.add_to_favorites");
         let micro = theme.font_size_caption.value();
-        // 치환된 action 스팬만 text-muted 로 강조, 나머지는 text-placeholder.
         if let Some(pos) = hint.find(&action_label) {
             let (before, rest) = hint.split_at(pos);
             let after = &rest[action_label.len()..];
@@ -760,7 +712,6 @@ fn favorite_row(
         0,
         false,
         false,
-        // 별 색은 accent-warning 고정(tree_row 가 넘기는 `c` 무시).
         Some(&|ui, rect, _c| star.image(rect.height(), star_color).paint_at(ui, rect)),
         &fav.label,
         None,
@@ -787,7 +738,6 @@ fn favorite_row(
 
 fn sidebar_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.add_space(theme.spacing_xs.value());
-    // design SideHead: font-mono·10·uppercase·text-muted.
     ui.horizontal(|ui| {
         ui.add_space(theme.spacing_sm.value());
         ui.label(
@@ -819,7 +769,6 @@ fn tree_node(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| dir.to_string_lossy().to_string());
     let folder = icons::FOLDER;
-    // 폴더 아이콘은 text-muted 고정(design TreeNode) — tree_row 의 `c` 무시.
     let folder_color = theme.text_muted().to_egui();
     let selected = dir == current;
     let resp = tree_row(
@@ -834,8 +783,7 @@ fn tree_node(
         selected,
         true,
     );
-    // 클릭: chevron 영역(좌측)은 펼침 토글, 그 외는 이동. 단순화를 위해 좌측
-    // chevron 슬롯폭(≈20) 안이면 토글, 아니면 navigate.
+    // chevron 영역은 펼치기, 나머지 영역은 해당 경로로 이동한다.
     if resp.clicked() {
         let toggle_zone = resp.rect.left() + depth as f32 * theme.spacing_md.value() + 24.0;
         let pointer = ui.input(|i| i.pointer.interact_pos());
@@ -850,8 +798,7 @@ fn tree_node(
             *action = Some(ExplorerAction::Navigate(dir.to_path_buf()));
         }
     }
-    // 트리 폴더 우클릭 → 단일 폴더 컨텍스트 메뉴(우측 목록과 동일 + 새 탭/루트 설정).
-    // content 선택집합과 무관하므로 Single target 을 직접 구성(view.selected 미조작).
+    // 트리 우클릭은 본문 선택을 바꾸지 않고 해당 폴더의 메뉴를 연다.
     if resp.secondary_clicked() && action.is_none() {
         let pos = ui
             .input(|i| i.pointer.interact_pos())
@@ -887,7 +834,6 @@ fn tree_node(
     }
 }
 
-// ── content: grid / list / detail + 상태 + 상태줄 ──────────────────────────
 #[allow(clippy::too_many_arguments)]
 fn content(
     ui: &mut egui::Ui,
@@ -902,14 +848,12 @@ fn content(
     let mode = panel.active_tab().view_mode;
     let root = panel.current_root().to_path_buf();
 
-    // content 본문(상태줄 높이 제외).
     let status_h = theme.item_height_interactive.value();
     let body_h = (ui.available_height() - status_h).max(0.0);
     let body = ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), body_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            // 비-Ok 상태(권한/에러)는 중앙 텍스트로.
             match &view.state {
                 LoadState::NoPermission => {
                     centered_state(ui, theme, t("explorer.state.no_permission"));
@@ -1176,7 +1120,6 @@ fn grid_view(
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing =
             egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
-        // 목록 최상단 `..` 특수 셀 (파일시스템 루트 아닐 때).
         if let Some(p) = &parent {
             let dd = dotdot_entry(p.clone());
             let resp = grid_cell(ui, theme, &dd, false, false, font);
@@ -1195,11 +1138,7 @@ fn grid_view(
     });
 }
 
-/// grid 셀 한 개 (explorer_view_cells specimen 전사).
-///
-/// `cut` 이면 전경(아이콘 글리프 + 라벨)을 `opacity_cut`(50%) 로 디밍한다 — 선택/hover
-/// 배경은 그대로 두어 cut+selected 조합도 선택이 또렷이 보이게 한다(design cell-state
-/// matrix "cut (50% opacity) until paste").
+/// 그리드 셀. 잘라내기 대기 중에는 전경만 흐리게 하며 선택·호버 배경은 유지한다.
 fn grid_cell(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -1208,9 +1147,7 @@ fn grid_cell(
     cut: bool,
     font: &EffectiveFont,
 ) -> egui::Response {
-    // design GridCell: glyph 16 (icon_glyph_size_md) — 아이콘 배경 박스 없음.
     let glyph = theme.icon_glyph_size_md.value(); // 16
-    // 라벨: caption(11) — 사용자 explorer 폰트를 caption 상한으로 clamp. line_h ≈ round(11 × 1.3)=14.
     let label_font = font.font_size.max(1.0).min(theme.font_size_caption.value());
     let label_line_h = (label_font * 1.3).round();
     // 고정 3줄 예약 — 짧은 이름도 3줄분 높이를 잡아 그리드 행 정렬을 균일하게 유지.
@@ -1224,7 +1161,6 @@ fn grid_cell(
         ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
-    // 선택 = surface-active 배경만(추가 accent 보더 없음 — design). hover = overlay-hover.
     if selected {
         p.rect_filled(
             rect,
@@ -1239,7 +1175,6 @@ fn grid_cell(
         );
     }
 
-    // cut-pending 셀은 전경을 opacity_cut(50%) 로 디밍.
     let fg_dim = |c: egui::Color32| {
         if cut {
             c.gamma_multiply(theme.opacity_cut())
@@ -1247,8 +1182,6 @@ fn grid_cell(
             c
         }
     };
-    // 아이콘: 박스 없이 상단 중앙에 확대 글리프 (design glyphColor: 폴더/파일 text-muted,
-    // 이미지 accent-info).
     let (icon, glyph_color) = entry_icon(theme, e);
     let glyph_rect = egui::Rect::from_center_size(
         egui::pos2(
@@ -1260,8 +1193,7 @@ fn grid_cell(
     icon.image(glyph, fg_dim(glyph_color))
         .paint_at(ui, glyph_rect);
 
-    // 라벨: 폭 기준 wrap, 최대 3줄, 넘치면 마지막 줄 '…'. 블록은 top 정렬(수직 중앙 아님).
-    // 선택 시 text-primary, 비선택 시 text-secondary (design GridCell). cut 디밍은 유지.
+    // 이름은 위에서부터 최대 세 줄로 표시하고 넘치면 끝을 줄인다.
     let label_color = fg_dim(if selected {
         theme.text_primary().to_egui()
     } else {
@@ -1270,7 +1202,6 @@ fn grid_cell(
     let mut job = egui::text::LayoutJob {
         halign: egui::Align::Center,
         wrap: egui::text::TextWrapping {
-            // 좌우 패딩 spacing_xs(4) 씩 제외한 내부 폭 (design padding "8px 4px").
             max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
             max_rows: 3,
             overflow_character: Some('…'),
@@ -1311,7 +1242,6 @@ fn list_view(
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
     let entries = view.entries.clone();
-    // 목록 최상단 `..` 특수 행 (파일시스템 루트 아닐 때).
     if let Some(p) = parent_nav_target(root) {
         let up = icons::FOLDER;
         let resp = tree_row(
@@ -1331,8 +1261,6 @@ fn list_view(
         }
     }
     for e in &entries {
-        // design ExpListMini: glyph 색 고정(폴더/파일 text-muted, 이미지 accent-info)
-        // — 선택 상태와 무관. tree_row 가 넘기는 `c` 대신 entry_icon 색을 쓴다.
         let (icon, glyph_color) = entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
@@ -1384,7 +1312,6 @@ fn detail_view(
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Name),
         },
-        // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
         TableColumn {
             title: t("explorer.column.size"),
             width: TableColumnWidth::Initial {
@@ -1417,7 +1344,6 @@ fn detail_view(
         SortDir::Asc => TableSortDir::Asc,
         SortDir::Desc => TableSortDir::Desc,
     };
-    // `..` 는 렌더 전용 로컬 행으로만 넣는다(`view.entries` 불변). 목록 최상단.
     let parent = parent_nav_target(root);
     let mut rows: Vec<DirEntryInfo> = Vec::with_capacity(view.entries.len() + 1);
     if let Some(p) = &parent {
@@ -1454,7 +1380,6 @@ fn detail_view(
                             let sz = th.icon_glyph_size_md.value();
                             let (rect, _) =
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            // design DetailRow glyph 색: 폴더/파일 text-muted, 이미지 accent-info.
                             let (icon, c) = entry_icon(th, row);
                             icon.image(sz, dim(c)).paint_at(ui, rect);
                             ui.label(
@@ -1464,9 +1389,7 @@ fn detail_view(
                             );
                         });
                     }
-                    // Size — mono·11 (font-mono/fontSize 11), 우측 정렬 + 8px 우측 패딩
-                    // (design paddingRight 8 → Date 와 시각적 간격). Table 이 Right 컬럼을
-                    // right_to_left 로 그리므로 셀 시작의 add_space 가 값을 8px 왼쪽으로 당긴다.
+                    // 오른쪽 정렬 셀의 앞 여백으로 날짜 열과 간격을 둔다.
                     1 => {
                         ui.add_space(th.spacing_sm.value());
                         let text = if row.name == ".." {
@@ -1480,7 +1403,6 @@ fn detail_view(
                                 .color(dim(th.text_muted().to_egui())),
                         );
                     }
-                    // Date — mono·11 (design font-mono/fontSize 11).
                     2 => {
                         let text = if row.name == ".." {
                             String::new()
@@ -1493,7 +1415,6 @@ fn detail_view(
                                 .color(dim(th.text_muted().to_egui())),
                         );
                     }
-                    // Type — caption(11) text-muted (design fontSize 12).
                     _ => {
                         let text = if row.name == ".." {
                             String::new()
@@ -1556,7 +1477,6 @@ fn detail_view(
     }
 }
 
-// ── 작은 헬퍼들 ────────────────────────────────────────────────────────────
 fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &str) -> bool {
     let sz = theme.item_height_interactive.value();
     let sense = if enabled {
@@ -1614,7 +1534,6 @@ mod tests {
         assert_eq!(favorites_pin_height(560.0), 224.0);
         assert_eq!(favorites_pin_height(420.0), 168.0);
         assert_eq!(favorites_pin_height(300.0), 120.0);
-        // 하한 미만으로 내려가지 않는다.
         assert_eq!(favorites_pin_height(100.0), 120.0);
         assert_eq!(favorites_pin_height(0.0), 240.0);
     }
@@ -1624,7 +1543,6 @@ mod tests {
     fn navigate_target_accepts_existing_dir() {
         let dir = env!("CARGO_MANIFEST_DIR");
         assert_eq!(navigate_target(dir), Some(PathBuf::from(dir)));
-        // 앞뒤 공백은 무시.
         assert_eq!(
             navigate_target(&format!("  {dir}  ")),
             Some(PathBuf::from(dir))

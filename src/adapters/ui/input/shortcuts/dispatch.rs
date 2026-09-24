@@ -390,7 +390,6 @@ impl MainView {
                 }
             }
             "enter_copy_mode" => {
-                // 팔레트가 닫힌 다음 프레임의 포커스로 복사 모드 진입 여부를 판단한다.
                 state.dialogs.pending_enter_copy_mode = true;
             }
             "copy_path" => {

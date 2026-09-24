@@ -1,18 +1,8 @@
-//! Pure view 함수 + props/action — CSD 공통 titlebar 의 시각 / 입력 처리.
-//!
-//! 본 모듈은 `AppState` / `CoreState` / winit `Window` / 글로벌 `theme::theme()`
-//! 에 접근하지 않는다. 호출처 wrapper (`titlebar::draw_titlebar`) 가 props 추출 +
-//! action → winit window 조작 매핑을 담당한다. gallery 는 같은 view 를 mock props
-//! 로 호출해 시각 검증한다 — props 분리 패턴(`docs/dev-guide/gallery-first.md`).
+//! 앱·OS 상태에 직접 접근하지 않는 타이틀바 렌더링. 클릭·드래그 결과는 호출부에서 처리한다.
 
 use crate::theme::Theme;
 
-/// CSD titlebar 가 tasty 측에서 직접 그리는 윈도우 컨트롤 버튼.
-///
-/// Linux(P6)에서 DE(GNOME/KDE 등)별로 집합·순서가 달라지므로 데이터 드리븐으로
-/// 둔다. macOS 는 네이티브 신호등을 유지(`controls: None`)하고 Windows 캡션은
-/// P5 후속이라 이 enum 을 쓰지 않는다 — 그 빌드에선 variant 가 구성되지 않으므로
-/// dead_code 를 허용한다(렌더/매핑 코드는 전 플랫폼 공통 컴파일).
+/// Linux에서 그릴 창 버튼. macOS는 네이티브 버튼, Windows는 caption.rs를 사용한다.
 // 이유: Linux DE 버튼만 이 enum 을 구성한다 — macOS 신호등·Windows 캡션 빌드엔 생성처가 없다.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,8 +17,7 @@ pub enum WindowButton {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlSide {
-    // 이유: DE 감지(GNOME=좌측 등) 전까지는 `titlebar/mod.rs::os_controls()` 가
-    // 단일 우측 프리셋만 생성 — 후속 DE 프리셋 확장 시 첫 실사용처가 된다.
+    // 이유: 현재 os_controls는 오른쪽 배치만 사용하며 왼쪽 배치는 생성하지 않는다.
     #[allow(dead_code)]
     Left,
     Right,
@@ -44,7 +33,7 @@ pub struct TitlebarControls {
     pub side: ControlSide,
 }
 
-/// 공통 titlebar view 의 입력. 색은 P1 titlebar 토큰, 높이는 사전 해상.
+/// 타이틀바 화면 입력.
 pub struct TitlebarProps<'a> {
     pub theme: &'a Theme,
     /// 윈도우 포커스 여부 — active/inactive 디밍 결정.
@@ -88,19 +77,11 @@ pub enum TitlebarAction {
 pub struct TitlebarDrawResult {
     /// wrapper 가 winit window 조작/app 이벤트로 변환할 사용자 의도.
     pub actions: Vec<TitlebarAction>,
-    /// 마우스가 타이틀바의 실제 인터랙티브 버튼(창 컨트롤·Windows 캡션) 위인지.
-    /// `AppState.resize_edge_widget_hovered` 로 흘러가 `try_begin_os_resize` 가
-    /// 가장자리 margin 안에서 리사이즈를 양보할지 판단할 때 쓰인다 — 버튼이 없는
-    /// 빈 타이틀바 여백은 여기 포함되지 않아 리사이즈가 항상 우선한다.
+    /// 버튼 위에서만 가장자리 리사이즈보다 버튼 조작을 우선한다. 빈 여백은 제외한다.
     pub resize_priority_hovered: bool,
 }
 
-/// 공통 CSD titlebar 를 `egui::TopBottomPanel::top` 으로 그린다.
-///
-/// full-width 상단 바 + 배경/하단 보더(active/inactive 디밍) + 드래그/더블클릭 보고.
-/// `controls` 가 있으면 DE 가변 버튼(min·max·close)을 측면에 그리고 그 영역은
-/// 드래그에서 카브-아웃한다(클릭이 드래그로 새지 않게). macOS 신호등 영역은
-/// `left_inset` 으로 카브-아웃한다.
+/// 상단 바와 창 버튼을 그린다. 버튼·macOS 네이티브 버튼 영역은 드래그에서 제외한다.
 pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> TitlebarDrawResult {
     let th = props.theme;
     let mut actions = Vec::new();
@@ -119,7 +100,6 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
         .show(ctx, |ui| {
             let rect = ui.max_rect();
 
-            // ── DE 가변 컨트롤 버튼(Linux, 있으면) 먼저 배치해 strip 폭을 확정한다 ──
             let mut left_controls_w = 0.0_f32;
             let mut right_controls_w = 0.0_f32;
             if let Some(controls) = &props.controls
@@ -139,9 +119,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
                 }
             }
 
-            // ── Windows 캡션 버튼(우측). 전용 caption.rs(46px, close-hover red)로 그리고
-            //    그 폭을 우측 strip 으로 잡는다. Windows 는 controls=None 이라 위 DE 블록과
-            //    배타적. ──
+            // Windows는 별도 캡션 버튼을 오른쪽에 배치한다.
             #[cfg(target_os = "windows")]
             {
                 let caption_w = super::caption::cluster_width(th);
@@ -152,14 +130,10 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
                 let caption_result = super::caption::draw_caption_buttons(ui, caption_rect, props);
                 actions.extend(caption_result.actions);
                 resize_priority_hovered |= caption_result.hovered;
-                // Windows 는 controls=None(위 DE 블록과 배타)이라 사실상 = caption_w.
-                // max 로 합성해 두 경로가 한 변수로 흐르게 한다 (dead-store 경고 방지 겸).
                 right_controls_w = right_controls_w.max(caption_w);
             }
 
-            // 드래그 영역 = 전체에서 좌측 inset(신호등/좌측버튼)·우측 strip(DE 버튼/Windows
-            // 캡션)을 뺀 나머지. 버튼 rect 와 겹치지 않게 해 버튼 클릭이 드래그로 새는 것을
-            // 막는다.
+            // 창 버튼 영역을 뺀 나머지에서만 드래그를 시작한다.
             let drag_left = rect.left() + props.left_inset + left_controls_w;
             let drag_right = rect.right() - right_controls_w;
             if drag_right > drag_left {
@@ -179,7 +153,6 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
                 }
             }
 
-            // 하단 1px 보더 (ui_kit `--tasty-titlebar-border`).
             ui.painter().hline(
                 rect.x_range(),
                 rect.bottom() - 0.5,
@@ -212,15 +185,12 @@ fn draw_window_buttons(
     let strip_w = edge_pad * 2.0 + d * n as f32 + gap * (n.saturating_sub(1)) as f32;
     let cy = rect.center().y;
 
-    // 측면에 따라 첫 버튼의 중심 x 와 진행 방향을 정한다.
     let (mut cx, step) = match controls.side {
         ControlSide::Right => (rect.right() - edge_pad - d * 0.5, -(d + gap)),
         ControlSide::Left => (rect.left() + edge_pad + d * 0.5, d + gap),
     };
 
-    // Right 측면일 때 buttons 의 마지막이 가장 바깥(끝)에 오도록 역순으로 그린다 —
-    // [min, max, close] + Right → close 가 가장 우측. step 이 음수라 첫 그리기를
-    // close 부터 하면 close 가 우측 끝. 따라서 Right 는 역순 순회.
+    // 오른쪽 배치에서는 마지막 버튼이 바깥쪽에 오도록 역순으로 그린다.
     let order: Vec<&WindowButton> = match controls.side {
         ControlSide::Right => controls.buttons.iter().rev().collect(),
         ControlSide::Left => controls.buttons.iter().collect(),
@@ -241,7 +211,6 @@ fn draw_window_buttons(
         *hovered |= resp.hovered();
 
         let is_close = matches!(button, WindowButton::Close);
-        // hover/active 배경: close 는 시스템 red, 그 외는 overlay.
         let bg = if resp.is_pointer_button_down_on() {
             if is_close {
                 Some(th.accent_window_close())
@@ -261,7 +230,6 @@ fn draw_window_buttons(
             ui.painter().circle_filled(center, d * 0.5, bg.to_egui());
         }
 
-        // 글리프 색: close hover 시 white, 그 외 active/inactive 디밍.
         let fg = if is_close && resp.hovered() {
             th.text_on_window_close()
         } else if props.active {

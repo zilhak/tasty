@@ -28,7 +28,7 @@ impl MainView {
 
     /// 처리하지 못하면 false로 반환해 탐색기 파일 복사 등 다음 경로로 넘긴다.
     pub(crate) fn run_copy(&mut self) -> bool {
-        // 붙여넣기 직후 Ctrl+C는 오타 방지 설정에 따라 복사·SIGINT 없이 안내만 한다.
+        // 붙여넣기 직후 짧은 시간 동안은 오타 방지를 위해 복사·SIGINT 없이 안내만 한다.
         if let Some(t) = self.last_terminal_paste_at
             && t.elapsed() < crate::view::main::PASTE_CTRL_C_COOLDOWN
         {

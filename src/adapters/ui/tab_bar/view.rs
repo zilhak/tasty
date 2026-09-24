@@ -17,12 +17,9 @@ pub fn draw_pane_tab_bars_view(
 
     let tab_w = props.tab_width;
     let label_font_size = props.tab_font_size;
-    // 탭바는 host UI zoom 영향 받지 않는다 (사용자 제약). zoom-aware 토큰 (item_height_tab /
-    // font_size_body / font_size_caption) 대신 zoom 미적용 tab_bar_* 토큰 사용.
+    // 탭바는 host UI zoom을 적용하지 않는 tab_bar_* 토큰을 사용한다.
     let bar_h = th.tab_bar_height.value();
     let plus_w: f32 = 28.0;
-    // 우측 고정 IconButton (Split / Search) — 디자인 TabStrip 우측 클러스터.
-    // 디자인 IconButton sm(control-height-tab) 에 맞춰 "+" 와 동일 폭.
     let icon_btn_w: f32 = 28.0;
     let icon_glyph: f32 = 14.0;
     let arrow_w: f32 = 20.0;
@@ -49,13 +46,8 @@ pub fn draw_pane_tab_bars_view(
         let max_scroll = geometry.max_scroll.value();
         let mut scroll = info.scroll_offset.clamp(0.0, max_scroll);
 
-        // 활성 탭 추종 스크롤 — 활성 인덱스가 바뀌었거나(키보드/마우스 전환 공통)
-        // pane 지오메트리(폭/탭 수)가 바뀌어 이전엔 보이던 활성 탭이 뷰포트 밖으로
-        // 밀려난 경우에만 보정한다. 매 프레임 무조건 트리거하면 사용자가 화살표로
-        // 수동 스크롤해 둔 상태(활성 탭 변경 없음)를 덮어써 버리므로, 직전 프레임과
-        // 비교 가능한 상태를 `egui::Context` persistent memory 에 추적한다
-        // (`switch_overlay::appear_fade` 와 동일 패턴 — view 는 AppState/CoreState
-        // 비의존을 유지하면서 프레임 간 상태를 ctx 에 위임).
+        // 활성 탭이나 pane 크기·탭 수가 바뀌었을 때만 필요한 스크롤을 보정한다.
+        // 매 프레임 보정하면 사용자가 옮긴 스크롤을 덮어쓰므로 이전 값을 Context에 보관한다.
         let scroll_track_id = egui::Id::new("tab_bar_active_scroll_track").with(info.pane_id);
         let prev_track: Option<(usize, f32, usize)> = ctx.data(|d| d.get_temp(scroll_track_id));
         let active_changed = match prev_track {
@@ -90,7 +82,6 @@ pub fn draw_pane_tab_bars_view(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 let bg = if info.is_focused {
-                    // component tab_bg()=mantle 라 부적합 — focus strip 은 surface-raised 값.
                     th.surface_raised()
                 } else {
                     th.bg_sidebar()
@@ -108,21 +99,18 @@ pub fn draw_pane_tab_bars_view(
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
 
-                            // Left arrow
                             if needs_scroll {
                                 let can_left = scroll > 0.0;
                                 let (r, resp) = ui.allocate_exact_size(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                // disabled 화살표 — `text-disabled`(neutral-700).
                                 let arrow_color = if can_left {
                                     th.text_muted()
                                 } else {
                                     th.text_disabled()
                                 };
                                 if resp.hovered() && can_left {
-                                    // hover 채움 — canonical `overlay-hover`.
                                     ui.painter().rect_filled(
                                         r,
                                         0.0,
@@ -143,7 +131,6 @@ pub fn draw_pane_tab_bars_view(
                                 }
                             }
 
-                            // Clipped tab area
                             let clip_start_x = ui.cursor().min.x;
                             let clip_rect = egui::Rect::from_min_size(
                                 egui::pos2(clip_start_x, ui.cursor().min.y),
@@ -168,10 +155,7 @@ pub fn draw_pane_tab_bars_view(
                                     egui::StrokeKind::Inside,
                                 );
                             } else if viewport_resp.clicked() {
-                                // 탭이 없는 빈 영역 primary click — 탭 전환 없이 그
-                                // pane 으로 focus 만 이동. 탭 rect 클릭 시에도 같은
-                                // 프레임에 SwitchTab 이 함께 emit 될 수 있으나 동일
-                                // pane_id 라 focus 적용은 멱등(idempotent).
+                                // 빈 영역 클릭은 탭 전환 없이 pane 포커스만 바꾼다.
                                 output.actions.push(TabBarAction::FocusPane {
                                     pane_id: info.pane_id,
                                 });
@@ -199,14 +183,11 @@ pub fn draw_pane_tab_bars_view(
                                 .value();
                             }
 
-                            // Separator before "+"
                             {
                                 let sep = egui::Rect::from_min_size(
                                     egui::pos2(x, clip_rect.min.y),
                                     egui::vec2(separator_w, bar_h),
                                 );
-                                // 탭 구분선 — canonical `tab-separator`. premultiplied
-                                // 저장이라 `to_egui_premultiplied()` 로 벗긴다.
                                 painter.rect_filled(
                                     sep,
                                     0.0,
@@ -215,7 +196,6 @@ pub fn draw_pane_tab_bars_view(
                                 x += separator_w;
                             }
 
-                            // "+" button
                             {
                                 let plus_rect = egui::Rect::from_min_size(
                                     egui::pos2(x, clip_rect.min.y),
@@ -229,7 +209,6 @@ pub fn draw_pane_tab_bars_view(
                                         egui::Sense::click(),
                                     );
                                     if resp.hovered() {
-                                        // hover 채움 — canonical `overlay-hover`.
                                         painter.rect_filled(
                                             plus_rect,
                                             0.0,
@@ -270,21 +249,18 @@ pub fn draw_pane_tab_bars_view(
                                 }
                             }
 
-                            // Right arrow
                             if needs_scroll {
                                 let can_right = scroll < max_scroll;
                                 let (r, resp) = ui.allocate_exact_size(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                // disabled 화살표 — `text-disabled`(neutral-700).
                                 let arrow_color = if can_right {
                                     th.text_muted()
                                 } else {
                                     th.text_disabled()
                                 };
                                 if resp.hovered() && can_right {
-                                    // hover 채움 — canonical `overlay-hover`.
                                     ui.painter().rect_filled(
                                         r,
                                         0.0,
@@ -305,8 +281,6 @@ pub fn draw_pane_tab_bars_view(
                                 }
                             }
 
-                            // 우측 IconButton 클러스터 — Split / Search (디자인 TabStrip).
-                            // 탭바는 zoom 비적용 → 고정 px. "+" 와 동일 호버 스타일.
                             for (icon, is_split) in [(icons::SPLIT, true), (icons::SEARCH, false)] {
                                 let (r, resp) = ui.allocate_exact_size(
                                     egui::vec2(icon_btn_w, bar_h),
@@ -318,7 +292,6 @@ pub fn draw_pane_tab_bars_view(
                                     th.text_muted()
                                 };
                                 if resp.hovered() {
-                                    // hover 채움 — canonical `overlay-hover`.
                                     ui.painter().rect_filled(
                                         r,
                                         0.0,
@@ -352,7 +325,6 @@ pub fn draw_pane_tab_bars_view(
         }
     }
 
-    // Drag overlay (ghost tab + insert marker)
     if let Some(ref drag) = props.drag
         && let Some(pane_info) = props.panes.iter().find(|i| i.pane_id == drag.pane_id)
     {

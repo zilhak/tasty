@@ -1,11 +1,5 @@
-//! 안내 말풍선(Callout) — 244px 기준폭을 뷰포트에 맞춘다. 제목·본문·`step/total`·dot rail·
-//! 목록/이전/다음 및 실습 버튼 + 4방 tail. **edge-avoidance layout pass**(선호순서 below→
-//! above→right→left, 뷰포트 오버플로 시 flip, 8px 안전영역 clamp, clamp 후에도
-//! tail 은 마커 모서리를 계속 조준)는 순수 함수 [`place_callout`] 로 분리해 단위
-//! 테스트한다.
-//!
-//! 디자인 SoT `gallery/overlays-tutorial.jsx::Callout` 의 host 대응. 버튼은 DS
-//! `Button` 재사용, 색·간격·반경은 `Theme` 토큰.
+//! 튜토리얼 안내 말풍선. 화면 공간에 맞춰 방향을 고르고 넘치면 위치를 조정한다.
+//! 배치는 place_callout에서 계산하며 표시 값은 Theme와 공용 버튼을 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -22,16 +16,7 @@ const TAIL_OFF_H: LogicalPx = LogicalPx(28.0);
 /// left/right tail 의 상단 기준 앵커 offset(디자인 top:24).
 const TAIL_OFF_V: LogicalPx = LogicalPx(24.0);
 
-/// 스텝 레일 점의 지름. 스케일 밖(5) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고
-/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
-/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
-/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
-/// **같은 5 를 `src/view/settings/ui/tabs/appearance.rs` 의 `COLOR_OVERRIDE_DOT_SIZE`
-/// 도 쓴다** — 무관한 두 화면이 독립적으로 고른 값이라 드리프트가 아니라 역할일
-/// 가능성이 높고, 그 판단이 서면 둘이 한 토큰으로 모인다.
-///
-/// 이것은 상태 점이 아니라 **진행 표시(pagination)** 점이다 — 위 두 자리가 한 토큰으로
-/// 모이더라도 이 자리가 거기 속하는지는 별개 물음이다.
+/// 단계 표시 점의 지름. 상태 점과 역할이 달라 같은 숫자의 다른 토큰으로 대체하지 않는다.
 const STEP_RAIL_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
 /// 마커가 말풍선의 어느 쪽에 있는지 = tail 방향.
@@ -70,7 +55,6 @@ pub fn place_callout(
     safe: f32,
 ) -> Placement {
     let safe_rect = screen.shrink(safe);
-    // 후보 pos + tail (선호순서).
     let below = (
         egui::pos2(
             marker.center().x - TAIL_OFF_H.value(),
@@ -102,7 +86,6 @@ pub fn place_callout(
         .find(|(pos, _)| fits(egui::Rect::from_min_size(*pos, size), safe_rect))
         .unwrap_or(below);
 
-    // 안전영역 clamp.
     pos.x = pos.x.clamp(
         safe_rect.min.x,
         (safe_rect.max.x - size.x).max(safe_rect.min.x),
@@ -112,7 +95,6 @@ pub fn place_callout(
         (safe_rect.max.y - size.y).max(safe_rect.min.y),
     );
 
-    // tail 은 마커 중심을 계속 조준 — offset 재계산 + tail 범위로 clamp.
     let tail_offset = match tail {
         Tail::Up | Tail::Down => {
             LogicalPx(marker.center().x - pos.x).clamp(TAIL, LogicalPx(size.x) - TAIL)
@@ -417,7 +399,6 @@ mod tests {
 
     #[test]
     fn prefers_below_when_room() {
-        // 마커가 화면 상단 → 아래에 공간 충분 → below(tail Up).
         let marker = egui::Rect::from_min_size(egui::pos2(400.0, 40.0), egui::vec2(120.0, 60.0));
         let p = place_callout(marker, SIZE, screen(), 12.0, 8.0);
         assert_eq!(p.tail, Tail::Up);
@@ -426,7 +407,6 @@ mod tests {
 
     #[test]
     fn flips_above_when_no_room_below() {
-        // 마커가 화면 하단 → 아래 공간 없음 → above(tail Down).
         let marker = egui::Rect::from_min_size(egui::pos2(400.0, 720.0), egui::vec2(120.0, 60.0));
         let p = place_callout(marker, SIZE, screen(), 12.0, 8.0);
         assert_eq!(p.tail, Tail::Down);
@@ -435,7 +415,6 @@ mod tests {
 
     #[test]
     fn clamps_into_safe_area() {
-        // 마커가 좌측 끝 → below pos.x 가 음수여도 안전영역으로 clamp.
         let marker = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(40.0, 40.0));
         let p = place_callout(marker, SIZE, screen(), 12.0, 8.0);
         assert!(p.pos.x >= 8.0, "clamped to left safe margin: {}", p.pos.x);
@@ -443,11 +422,9 @@ mod tests {
 
     #[test]
     fn tail_keeps_aiming_after_clamp() {
-        // clamp 후에도 tail offset 은 [TAIL, w-TAIL] 범위 내에서 마커 중심을 향한다.
         let marker = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(40.0, 40.0));
         let p = place_callout(marker, SIZE, screen(), 12.0, 8.0);
         assert!(p.tail_offset >= TAIL && p.tail_offset <= LogicalPx(SIZE.x) - TAIL);
-        // 마커 중심 x 는 pos.x + tail_offset 근처.
         let aim_x = LogicalPx(p.pos.x) + p.tail_offset;
         assert!(
             (aim_x - LogicalPx(marker.center().x)).abs() <= LogicalPx(SIZE.x),

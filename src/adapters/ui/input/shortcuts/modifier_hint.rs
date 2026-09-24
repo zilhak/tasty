@@ -122,7 +122,7 @@ pub fn build_hint_sections(
         };
         for b in bindings {
             let Some(parsed) = parse_binding(b) else {
-                continue; // 더블탭·무 modifier·modifier 단독 → 제외
+                continue;
             };
             let combo = parsed.combo();
             if !combo.contains_all(held) {

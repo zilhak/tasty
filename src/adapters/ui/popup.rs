@@ -93,7 +93,7 @@ pub struct PopupDef {
     pub title_fn: Option<fn(&AppState, &crate::core::CoreState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
-    /// 매 프레임 크기를 계산한다. 사용자가 직접 리사이즈한 동안에는 적용하지 않는다.
+    /// 매 프레임 크기를 계산한다. 사용자가 크기를 지정한 팝업에는 적용하지 않는다.
     pub sizer: Option<fn(&AppState, &crate::core::CoreState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,

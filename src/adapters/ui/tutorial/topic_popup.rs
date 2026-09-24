@@ -1,10 +1,4 @@
-//! 주제 목록 팝업 — 튜토리얼 진입 표면(CenteredFocused PopupDef). 제목 + 스크롤
-//! 가능한 주제 리스트(이름+설명, hover/선택 상태) + "진행" 버튼. 팝업 셸(bg-panel
-//! + border-strong + scrim)은 `PopupManager` 가 제공하고, 이 draw_fn 은 내부
-//! 콘텐츠만 그린다(headless).
-//!
-//! 디자인 SoT `gallery/overlays-tutorial.jsx::TopicPopup/Topic` 의 host 대응.
-//! "진행" 클릭 → `TutorialRuntime::request_start` 로 시작 큐 + 팝업 close.
+//! 튜토리얼 주제 선택. PopupManager의 셸 안에 목록과 시작·재개 버튼을 표시한다.
 
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{
@@ -50,7 +44,6 @@ pub fn draw_tutorial_topics_popup(
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     let width = ui.available_width();
 
-    // ── 헤더 (제목 + ✕) ──
     egui::Frame::new()
         .inner_margin(egui::Margin {
             left: th.spacing_lg.value() as i8,
@@ -67,9 +60,6 @@ pub fn draw_tutorial_topics_popup(
                         .color(th.text_primary().to_egui()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // 닫기 affordance — banner/갤러리 dismiss_x 와 동일한 Ghost/Sm
-                    // IconButton + icons::CLOSE(SVG). raw "✕"(U+2715) 는 UI 폰트에
-                    // 글리프가 없어 tofu 위험 + 픽토그래픽 게이트 위반.
                     if IconButton::new()
                         .variant(IconButtonVariant::Ghost)
                         .size(ControlSize::Sm)
@@ -87,7 +77,6 @@ pub fn draw_tutorial_topics_popup(
         });
     hsep(ui, &th, width);
 
-    // ── 주제 리스트 (max-height 200 → 내부 스크롤) ──
     egui::Frame::new()
         .inner_margin(egui::Margin::same(th.spacing_sm.value() as i8))
         .show(ui, |ui| {
@@ -120,7 +109,6 @@ pub fn draw_tutorial_topics_popup(
         });
     hsep(ui, &th, width);
 
-    // ── 푸터 (Esc 힌트 + 진행) ──
     egui::Frame::new()
         .inner_margin(egui::Margin {
             left: th.spacing_lg.value() as i8,
@@ -209,7 +197,6 @@ fn topic_row(
         .fill(fill)
         .stroke(egui::Stroke::new(th.border_width.value(), border))
         .corner_radius(th.corner_radius.value())
-        // 디자인 전사값 10px 유지 — 토큰 산술(4×2.5)로 표현 (그리드 스냅은 디자인 몫).
         .inner_margin(margin_all(th.spacing_xs * 2.5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());

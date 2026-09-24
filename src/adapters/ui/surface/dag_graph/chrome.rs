@@ -1,16 +1,5 @@
-//! 캔버스를 둘러싼 것들 — 헤더 · 러너 배지 · 줌 클러스터 · 미니맵 · 사이클 배너 ·
-//! LOD 칩 · 빈 상태.
-//!
-//! 좁은 폭에서는 **정보 밀도가 아니라 우선순위** 로 접는다. 러너 배지(그래프가
-//! 진행 중인가)와 사이클 배너(그래프가 애초에 돌 수 없는가)는 마지막까지 남고,
-//! 줌 퍼센트 숫자와 미니맵처럼 없어도 조작이 가능한 것부터 사라진다.
-//!
-//! # 헤더와 크롬은 다른 레이어다
-//!
-//! 헤더 띠는 **정체성**(어떤 DAG 를, 얼마나, 누가 돌리고 있나)만 싣는다. 줌·fit·
-//! 방향처럼 캔버스를 직접 조작하는 것들은 헤더가 아니라 캔버스 위에 뜨는
-//! 오버레이(우하단 미니맵 + 그 아래 줌 클러스터)다 — 조작 대상 옆에 붙어 있어야
-//! 손이 왕복하지 않고, `dag-chrome-bg`/`-border` 도 그 덩어리를 위한 토큰이다.
+//! DAG 헤더·실행 상태·이동 및 배율 버튼·미니맵·안내 표시.
+//! 폭이 좁으면 줌 숫자·미니맵부터 숨기고 러너 상태와 순환 관계 경고는 남긴다.
 
 use tasty_dag_layout::GraphLayout;
 use tasty_model::DagDirection;
@@ -35,12 +24,7 @@ pub enum ChromeAction {
     Refresh,
 }
 
-/// 상단 헤더 — DAG 선택 · 진척 · 러너 배지 · 새로고침.
-///
-/// `surface_width` 가 [`NARROW_DETAIL_SHEET`] 미만이면 **2 줄로 접는다**: 첫 줄은
-/// 정체성(어떤 DAG 를, 얼마나), 둘째 줄은 러너 상태와 새로고침. 한 줄로 밀어 넣으면
-/// 좁은 폭에서 배지가 picker 를 밀어내 DAG 이름이 먼저 잘리는데, 그건 이 화면에서
-/// 제일 먼저 읽어야 하는 정보다.
+/// 좁으면 DAG 이름·진행률과 러너 상태·새로고침을 두 줄로 나눈다.
 pub fn draw_header(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -51,9 +35,7 @@ pub fn draw_header(
     let stacked = surface_width < NARROW_DETAIL_SHEET.value();
     let row_h = theme.dag_chrome_height().value();
 
-    // `dag-chrome-*` 는 **줌 클러스터 덩어리**의 토큰이다. 헤더 띠는 surface 의
-    // 상단 띠이므로 sidebar 계열 배경 + `separator` 헤어라인을 쓴다 — 색 값은
-    // 지금 같지만(별칭) 토큰이 갈리는 날 헤더가 클러스터를 따라가면 안 된다.
+    // 헤더는 사이드바 계열 토큰을 사용한다. 줌 버튼 토큰과 현재 값이 같아도 역할은 다르다.
     egui::Frame::NONE
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
@@ -70,8 +52,7 @@ pub fn draw_header(
                         egui::vec2(ui.available_width(), row_h),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
-                            // 좁은 줄에서는 알약만 남긴다 — 재개 힌트는 캡션이라
-                            // 잘리면 명령이 반쪽이 되어 오히려 위험하다.
+                            // 좁은 헤더에서는 잘린 명령이 보이지 않도록 재개 안내를 숨긴다.
                             runner_badge(ui, theme, &data.runner);
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -87,9 +68,7 @@ pub fn draw_header(
             } else {
                 ui.horizontal_centered(|ui| {
                     identity_group(ui, theme, data, &mut action);
-                    // 이 줄은 오른쪽부터 채운다 — 먼저 넣은 것이 더 오른쪽에 놓이므로
-                    // 읽는 순서를 데이터로 적고 그 **역순**으로 넣는다. 순서를 손으로
-                    // 뒤집어 적으면 그 뒤집기가 어디에도 안 남아 판정할 것이 없다.
+                    // 오른쪽부터 배치하므로 읽는 순서의 역순으로 넣는다.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for item in header_right_paint_order() {
                             match item {
@@ -107,8 +86,7 @@ pub fn draw_header(
             }
         });
 
-    // 헤더 ↔ 캔버스 구분선. `separator` 는 알파가 이미 곱해진 색이라
-    // premultiplied 로 읽는다 — `to_egui()` 로 읽으면 한 번 더 곱해져 옅어진다.
+    // separator는 이미 알파가 곱해진 색이므로 premultiplied로 읽는다.
     let (sep, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), theme.border_width.value()),
         egui::Sense::hover(),
@@ -131,8 +109,6 @@ fn identity_group(
     data: &DagData,
     action: &mut Option<ChromeAction>,
 ) {
-    // 이 띠가 무엇에 대한 것인지 알리는 글리프. 탭 제목이 없는 popup 자리에서도
-    // 같은 화면임을 알아보는 손잡이다.
     ui.add(icons::GIT_TREE.image(
         theme.icon_glyph_size_sm.value(),
         theme.dag_chrome_fg().to_egui(),
@@ -205,13 +181,7 @@ fn dag_picker(ui: &mut egui::Ui, theme: &Theme, data: &DagData) -> Option<String
     picked
 }
 
-/// 러너 배지. `stalled`(할 일이 있는데 아무도 안 돌린다)는 1급 경고다 — 이 화면이
-/// 없으면 사용자는 "왜 안 도는지" 를 CLI 로 파헤쳐야 한다.
-///
-/// 알약은 **StatusDot + 문구** 두 채널이다. 색만으로 생사를 표기하면 색각 이상
-/// 사용자에게 통째로 사라지고, 반대로 점만 있으면 "몇 개가 대기 중인가" 가 빠진다.
-/// 재개 힌트 캡션은 [`resume_hint`] 가 따로 그린다 — 줄이 오른쪽부터 채워지는 자리라
-/// 캡션을 알약보다 **먼저** 넣어야 알약 오른쪽에 놓인다.
+/// 점과 문구로 러너 상태를 함께 표시한다. 재개 안내는 별도로 그린다.
 fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
     let stalled = runner.is_stalled();
     let (bg, border, fg, dot, text) = if runner.crashed {
@@ -261,10 +231,7 @@ fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
         .corner_radius(theme.dag_runner_radius().value())
         .inner_margin(margin_sym(theme.dag_runner_padding_x(), theme.spacing_xs))
         .show(ui, |ui| {
-            // 점 + 문구를 **한 번의 exact 할당**으로 배치한다. 중첩 레이아웃을 쓰면
-            // 오른쪽 정렬 줄 안에서 알약이 남은 폭을 통째로 삼켜 헤더를 밀어낸다.
-            // mono 로 짠다 — running/ready 카운트가 0.5 초마다 바뀌는 자리라
-            // 비례폭이면 숫자가 한 자리 늘 때마다 알약 폭이 출렁인다.
+            // 필요한 폭만 확보해 헤더를 밀지 않는다. 숫자에는 고정폭 글꼴을 쓴다.
             let font = egui::FontId::monospace(theme.font_size_caption.value());
             let galley = ui.painter().layout_no_wrap(text, font, fg.to_egui());
             let d = theme.status_dot_size().value();
@@ -293,8 +260,6 @@ fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
         .response;
 
     if runner.crashed || stalled {
-        // 실행 가능한 복구 수단을 그대로 적는다. 이 화면에는 러너를 켜는 버튼이
-        // 없다 — 관찰 전용 surface 라 상태를 바꾸지 않는다.
         resp.on_hover_text(resume_hint_text());
     }
 }
@@ -318,18 +283,13 @@ const HEADER_RIGHT_READING_ORDER: [HeaderRightItem; 3] = [
     HeaderRightItem::Refresh,
 ];
 
-/// 재개 힌트를 이루는 조각을 **읽는 순서**로 — `(번역 키, mono 인가)`.
-///
-/// 같은 순서를 호버 텍스트와 캡션 두 자리가 쓴다. 전에는 두 자리가 각각 손으로 적고
-/// 있었고, 한쪽만 고치면 툴팁과 화면이 서로 다른 문장을 말하게 돼 있었다.
+/// 툴팁과 화면이 공유하는 재개 안내 순서와 고정폭 글꼴 여부.
 const RESUME_HINT_PARTS: [(&str, bool); 2] = [
     ("dag.runner.resume_hint_lead", false),
     ("dag.runner.resume_hint_command", true),
 ];
 
-/// 오른쪽부터 채우는 줄에 넣을 순서 — 먼저 넣은 것이 더 오른쪽에 놓이므로 읽는 순서의
-/// **역순**이다. 이 뒤집기가 계약 전부라, 사라지면 화면이 좌우로 뒤집히고 컴파일도
-/// 시험도 아무 말을 안 한다.
+/// 오른쪽부터 배치할 때 쓰는 역순.
 fn header_right_paint_order() -> impl Iterator<Item = HeaderRightItem> {
     HEADER_RIGHT_READING_ORDER.into_iter().rev()
 }
@@ -348,14 +308,11 @@ fn resume_hint_text() -> String {
         .join(" ")
 }
 
-/// 재개 명령 캡션. 툴팁 전용이면 호버하지 않는 사용자에게는 복구 수단이 존재하지
-/// 않는 것과 같다 — 알약 옆에 **상시** 붙인다(좁은 헤더에서만 접는다).
+/// 좁은 헤더가 아니면 배지 옆에 재개 명령을 표시한다.
 fn resume_hint(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
     if !runner.crashed && !runner.is_stalled() {
         return;
     }
-    // 명령만 mono 로 갈라 그린다 — 셸에 그대로 붙여 넣는 문자열이라 문자 폭이
-    // 고정돼야 인자 경계가 눈에 잡힌다(갤러리 specimen 이 전사한 형태).
     let caption = |ui: &mut egui::Ui, text: String, mono: bool| {
         let mut rich = egui::RichText::new(text)
             .size(theme.font_size_caption.value())
@@ -365,9 +322,6 @@ fn resume_hint(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
         }
         ui.label(rich);
     };
-    // 이 줄도 오른쪽부터 채워지므로 읽는 순서의 **역순**으로 넣는다.
-    // 둘 사이 간격은 줄의 기본 item_spacing(=spacing_sm) 이 그대로 맡는다 —
-    // specimen 이 명시한 값과 같은 토큰이라 따로 벌리지 않는다.
     for (key, mono) in resume_hint_paint_order() {
         caption(ui, t(key).to_string(), *mono);
     }
@@ -376,11 +330,7 @@ fn resume_hint(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
 
 /// 줌 퍼센트 판독창 폭.
 const ZOOM_READOUT_WIDTH: LogicalPx = LogicalPx(46.0);
-/// 이 폭 아래에서는 판독창을 접고 버튼만 남긴다.
-///
-/// 미니맵의 `dag-minimap-min-surface` 와 달리 이 값은 대응 디자인 토큰이 없다 —
-/// 시안이 좁은 폭 축약을 미니맵에 대해서만 명시했다. 토큰이 생기면 `Theme` 에서
-/// 가져오도록 바꾼다.
+/// 이 폭보다 좁으면 줌 숫자를 숨긴다. 대응 디자인 토큰은 없다.
 const NARROW_ZOOM_LABEL: LogicalPx = LogicalPx(400.0);
 /// 상세를 우측 패널로 둘 수 있는 최소 surface 폭. 그 아래는 하단 시트다.
 pub const NARROW_DETAIL_SHEET: LogicalPx = LogicalPx(640.0);
@@ -443,10 +393,7 @@ fn cluster_cell(
     enabled && resp.on_hover_text(tooltip).clicked()
 }
 
-/// `−  %  +  |  fit  dir` — 28px 한 줄, 1px 보더로 묶인 한 덩어리.
-///
-/// 캔버스 위 오버레이라 헤더가 아니라 여기서 그린다. 버튼을 헤더로 올리면 조작
-/// 대상(그래프)과 손잡이가 화면 양 끝으로 갈라진다.
+/// 캔버스 위의 줌·맞춤·방향 버튼.
 fn draw_zoom_cluster(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -468,10 +415,7 @@ fn draw_zoom_cluster(
 
     let side = theme.dag_chrome_height();
     let mut x = rect.min.x;
-    // 폭을 `LogicalPx` 로 받는다. 호출 인자가 전부 Theme 값이거나 명명 길이 상수라
-    // 여기서 받으면 그 값들이 벗겨지지 않은 채 들어오고, 벗기는 자리가 egui 로 나가는
-    // 이 본문 안으로 모인다. 벗기기 총수는 거의 그대로다(이 파일 53 → 52) — 얻는 것은
-    // 개수가 아니라 위치다.
+    // LogicalPx를 받아 egui 계산에서만 숫자로 꺼낸다.
     let mut cell = |w: LogicalPx| {
         let r = egui::Rect::from_min_size(
             egui::pos2(x, rect.min.y),
@@ -531,8 +475,6 @@ fn draw_zoom_cluster(
     ) {
         action = Some(ChromeAction::Fit);
     }
-    // 방향 글리프는 **지금** 어느 방향인지를 보여준다 — 버튼이 무엇으로 바뀌는지가
-    // 아니라 현재 상태를 읽는 쪽이 그래프와 대조하기 쉽다.
     let dir_icon = match direction {
         DagDirection::LeftRight => icons::ARROW_RIGHT,
         DagDirection::TopDown => icons::ARROW_DOWN,
@@ -551,16 +493,14 @@ fn draw_zoom_cluster(
     action
 }
 
-/// 캔버스 위 오버레이 전부 — 우하단 미니맵 + 그 아래 줌 클러스터, 좌하단 LOD 칩.
-// 이유: 갤러리 `dag/chrome.rs::paint_canvas_chrome` 이 이 서명을 1:1 로 전사한다.
-// 인자를 묶으면 두 쪽이 갈라져 그 대조가 끊긴다.
+/// 캔버스의 미니맵·줌 버튼·축약 표시.
+// 이유: 갤러리에서도 같은 인자 구성을 사용해 렌더링을 대조한다.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_canvas_chrome(
     ui: &mut egui::Ui,
     theme: &Theme,
     canvas: egui::Rect,
-    // 이 캔버스 위에 줌 클러스터를 띄울 자리. popup 디테일은 back bar 가 그것을
-    // 들기 때문에 `None` 이고, 그러면 미니맵이 캔버스 바닥까지 내려온다.
+    // 팝업이 back bar에 줌 버튼을 두면 미니맵은 캔버스 하단에 놓는다.
     cluster: Option<egui::Rect>,
     view: &DagGraphView,
     layout: &GraphLayout,
@@ -578,14 +518,8 @@ pub fn draw_canvas_chrome(
     action
 }
 
-/// popup 디테일의 back bar actions 슬롯 — **compact 줌 클러스터 + 러너 배지**.
-///
-/// 디테일에는 두 번째 헤더를 두지 않는다. back bar 가 그 화면의 크롬이고 여기
-/// 들어가는 것은 둘뿐이다 — 줌은 그것이 배율을 바꾸는 그래프 **옆에** 있어야 하고,
-/// 러너 배지는 지금 보고 있는 노드가 속한 실행을 설명한다. DAG selector 는 **안
-/// 넣는다**: back bar 제목이 이미 그 DAG 를 부르고, 노드 디테일이 열린 채로 DAG 를
-/// 바꾸는 것은 뜻이 없다. 새로고침도 안 넣는다 — popup 은 열려 있는 동안 0.5 초마다
-/// 스스로 다시 읽는다.
+/// 팝업 back bar의 줌·러너 표시. 제목이 대상을 나타내고 주기적으로 조회하므로
+/// DAG 선택기·새로고침 버튼은 중복으로 두지 않는다.
 pub fn draw_detail_backbar_actions(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -593,7 +527,6 @@ pub fn draw_detail_backbar_actions(
     view: &DagGraphView,
     direction: DagDirection,
 ) -> Option<ChromeAction> {
-    // 이 줄은 **오른쪽부터** 채워진다. 읽는 순서는 줌 → 러너이므로 그 역순으로 넣는다.
     runner_badge(ui, theme, &data.runner);
     let (rect, _) = ui.allocate_exact_size(zoom_cluster_size(theme, true), egui::Sense::hover());
     draw_zoom_cluster(ui, theme, rect, view, direction)
@@ -615,8 +548,7 @@ pub fn draw_cycle_banner(ui: &mut egui::Ui, theme: &Theme, cycle: &[String]) {
                         .size(theme.font_size_caption.value())
                         .color(fg),
                 );
-                // 경로는 mono 로 갈라 읽는다. 마지막에 첫 id 를 다시 붙여 **닫힌
-                // 고리**임을 눈으로 보여준다 — 열린 나열은 사이클로 안 읽힌다.
+                // 첫 ID를 끝에 다시 붙여 순환 관계를 표시한다.
                 let path = match cycle.first() {
                     Some(head) => format!("{} \u{2192} {head}", cycle.join(" \u{2192} ")),
                     None => String::new(),
@@ -633,7 +565,6 @@ pub fn draw_cycle_banner(ui: &mut egui::Ui, theme: &Theme, cycle: &[String]) {
         .response
         .rect;
 
-    // 아래 변에만 선을 긋는다 — 캔버스와의 경계지 떠 있는 상자가 아니다.
     ui.painter().hline(
         dock.x_range(),
         dock.max.y,
@@ -673,14 +604,11 @@ pub fn paint_lod_chip(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, 
     );
 }
 
-/// 우하단 미니맵. surface 가 좁으면 그리지 않는다 — 캔버스를 가리는 손해가 크다.
-/// 자리는 줌 클러스터 **바로 위**다(두 오버레이가 한 기둥으로 읽힌다).
+/// 좁은 화면에서는 숨기는 미니맵. 줌 버튼 위에 배치한다.
 fn paint_minimap(
     ui: &egui::Ui,
     theme: &Theme,
     canvas: egui::Rect,
-    // 미니맵 아래에 무엇이 있든 그 **윗변** — 줌 클러스터가 있으면 그 top, 없으면
-    // 캔버스 바닥에서 inset 만큼 올라온 선이다. 없는 덩어리 위에 띄울 수는 없다.
     stack_bottom: f32,
     view: &DagGraphView,
     layout: &GraphLayout,
@@ -751,10 +679,7 @@ fn paint_minimap(
     );
 }
 
-/// 빈 상태 2 종 — "workspace 에 DAG 가 없다" 와 "지정한 DAG 가 사라졌다".
-///
-/// 글리프 → 제목 → 본문을 한 덩어리로 묶어 **세로 정중앙**에 놓는다. 1/3 지점에
-/// 두면 아래가 휑하게 비어 화면이 로딩 중인 것처럼 읽힌다.
+/// DAG가 없거나 지정한 DAG가 사라진 경우를 구분해 가운데 안내한다.
 pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Option<&str>) {
     let (icon, title, hint) = if data.target_missing {
         (
@@ -778,8 +703,6 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Opti
             let gap = theme.spacing_sm.value();
             let title_font = egui::FontId::proportional(theme.font_size_body.value());
             let title_h = ui.fonts(|f| f.row_height(&title_font));
-            // 본문은 measure_sm 안에서만 접는다 — 넓은 화면에서 한 줄로 늘어지면
-            // 눈이 되돌아올 지점을 잃는다.
             let measure = theme
                 .measure_sm
                 .value()
@@ -827,9 +750,6 @@ pub fn is_empty(graph: Option<&DagGraphData>) -> bool {
 mod tests {
     use super::*;
 
-    /// 오른쪽부터 채우는 줄에서는 **먼저 넣은 것이 더 오른쪽**에 놓인다. 그래서 화면에서
-    /// 읽히는 순서와 코드가 부르는 순서가 반대여야 한다. 뒤집기를 빠뜨리면 헤더가 좌우로
-    /// 뒤집힌 채 컴파일되고, 이 순서를 보는 시험이 없으면 아무것도 그 말을 안 해준다.
     #[test]
     fn the_header_right_group_is_painted_in_reverse_reading_order() {
         let painted: Vec<HeaderRightItem> = header_right_paint_order().collect();
@@ -860,9 +780,7 @@ mod tests {
         );
     }
 
-    /// 위 두 시험은 각자 리터럴을 적는다. 그 리터럴이 명부와 따로 놀지 않는지 — 즉
-    /// 칠하는 순서가 **정말로 명부의 역순**인지 — 를 따로 묶는다. 명부만 재정렬하고
-    /// 리터럴을 안 고치면 위에서 잡히고, 둘을 함께 고치면 여기서 잡힌다.
+    /// 실제 그리기 순서가 읽는 순서의 역순인지 확인한다.
     #[test]
     fn both_paint_orders_are_exact_reverses_of_their_rosters() {
         let mut painted: Vec<HeaderRightItem> = header_right_paint_order().collect();
@@ -875,10 +793,7 @@ mod tests {
         assert_eq!(hint, reading);
     }
 
-    /// 툴팁은 같은 명부를 쓰되 **뒤집지 않는다** — 문장은 읽는 순서 그대로다.
-    /// 두 소비자가 같은 명부에서 서로 다른 방향으로 읽는 것이 이 자리의 요점이라,
-    /// 한쪽이 다른 쪽을 따라가면(둘 다 정방향/둘 다 역방향) 화면이나 툴팁 중 하나가
-    /// 거꾸로 읽힌다.
+    /// 툴팁은 화면 배치와 달리 읽는 순서대로 이어 붙인다.
     #[test]
     fn the_tooltip_reads_forwards_while_the_line_paints_backwards() {
         let reading: Vec<&str> = RESUME_HINT_PARTS.iter().map(|(key, _)| *key).collect();

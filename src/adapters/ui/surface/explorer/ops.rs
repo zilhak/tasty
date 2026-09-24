@@ -1,8 +1,5 @@
-//! Explorer 파일 조작 (T11): 붙여넣기(copy/move)·삭제·이름변경의 순수 fs 헬퍼.
-//!
-//! UI/state 비의존 — 호출부(redraw)가 결과(개수/에러)를 toast/로그로 옮긴다.
-//! 충돌은 `unique_dest` 로 "(copy)" 사본을 만들어 회피하고, 디렉토리 자기 자신/
-//! 하위로의 붙여넣기는 무한 재귀 방지를 위해 거부한다.
+//! 파일 복사·이동·삭제·이름 변경. 결과 표시는 호출부에서 맡는다.
+//! 이름 충돌은 사본 이름으로 피하고 자기 자신·하위 디렉터리로의 붙여넣기는 거절한다.
 
 use std::path::{Path, PathBuf};
 
@@ -68,14 +65,12 @@ pub fn transfer(src: &Path, dest_dir: &Path, cut: bool) -> std::io::Result<PathB
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no file name"))?;
-    // 자기 자신 또는 그 하위로의 붙여넣기 거부 (무한 재귀/모순 방지).
     if dest_dir == src || dest_dir.starts_with(src) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "cannot paste into itself",
         ));
     }
-    // cut 인데 이미 dest_dir 안에 있으면 변화 없음.
     if cut && src.parent() == Some(dest_dir) {
         return Ok(src.to_path_buf());
     }
@@ -114,8 +109,7 @@ pub fn paste_all(paths: &[PathBuf], dest_dir: &Path, cut: bool) -> (usize, Optio
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트는 의도적으로 무시하는 결과가 많아 let _ 사유 검사에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -131,7 +125,6 @@ mod tests {
         std::fs::write(&d1, b"x").unwrap();
         let d2 = unique_dest(&dir, "a.txt");
         assert_eq!(d2, dir.join("a (copy 2).txt"));
-        // 충돌 없으면 그대로.
         assert_eq!(unique_dest(&dir, "z.txt"), dir.join("z.txt"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -141,9 +134,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tasty_ops_self_{}", std::process::id()));
         let sub = dir.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
-        // dir → dir/sub (하위) 거부.
         assert!(transfer(&dir, &sub, true).is_err());
-        // dir → dir (자기 자신) 거부.
         assert!(transfer(&dir, &dir, false).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }

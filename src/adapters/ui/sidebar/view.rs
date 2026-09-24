@@ -1,9 +1,4 @@
-//! Pure view 함수 + props/action — Full / Collapsed sidebar 의 시각 / 입력 처리.
-//!
-//! 본 모듈은 AppState / CoreState / 글로벌 `theme::theme()` 에 접근하지 않는다.
-//! 호출처 wrapper (`full.rs::draw_full_sidebar`, `collapsed.rs::draw_collapsed_sidebar`)
-//! 가 props 추출 + action 매핑을 담당한다. gallery 는 같은 view 를 mock props
-//! 로 호출해 시각 검증한다 — props 분리 패턴(`docs/dev-guide/gallery-first.md`).
+//! 앱 상태 없이 사이드바를 그려 사용자 동작을 반환한다. 호출부가 상태를 읽고 결과를 반영한다.
 
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
@@ -11,19 +6,11 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
-// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
-// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
-// "스케일 밖 폰트 값".
-
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
-/// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
-/// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
+/// 사이드바의 워크스페이스 행 입력.
 #[derive(Debug, Clone)]
 pub struct WorkspaceEntryView {
     pub name: String,
@@ -39,16 +26,14 @@ pub struct WorkspaceEntryView {
     /// `Completion` 보다 우선순위가 높다 — collapsed dot 은 이 값이 0 초과면 항상
     /// 노랑을 택한다.
     pub needs_input_count: usize,
-    /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
+    /// 다른 클라이언트가 점유 중인지. 점 또는 아바타 둘레의 링으로 표시한다.
     pub attached: bool,
     /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
     pub is_mirror: bool,
     pub is_active: bool,
 }
 
-/// 워크스페이스 카테고리 섹션 1개(사이드바 폴더). `entries` 는 그 카테고리에 속한
-/// 워크스페이스를 **전역 인덱스 동반**으로 담는다 — 사이드바 action(클릭/드래그)이
-/// `engine.workspaces` 의 전역 인덱스로 동작하므로 그룹 렌더에서도 전역 인덱스를 보존한다.
+/// 카테고리별 행과 전역 인덱스. 클릭·드래그 동작이 같은 워크스페이스를 가리키도록 전역 인덱스를 유지한다.
 #[derive(Debug, Clone)]
 pub struct CategorySectionView {
     pub id: crate::model::WorkspaceCategoryId,
@@ -81,12 +66,9 @@ pub struct SidebarFullProps<'a> {
     pub mirror_pill_label: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 버튼에 danger 배지를 그린다.
     pub plugin_alert: usize,
-    /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
-    /// 각 워크스페이스의 leading status dot 을 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
+    /// 워크스페이스 전환 modifier가 눌렸는지. 상태 점 대신 설정된 슬롯 키캡을 표시한다.
     pub workspace_switch_held: bool,
-    /// 카테고리 quick-switch overlay — `workspace_switch_modifier`+Shift(기본 Alt+Shift) 홀드
-    /// 시 true(folders 기능 on 전제). 카테고리 헤더 우측에 섹션 번호 키캡을 표시. Workspace
-    /// 와 상호 배타(Shift 유무) — 동시 true 아님.
+    /// 카테고리 전환 modifier가 눌렸는지. 헤더에 해당 슬롯 키캡을 표시한다.
     pub category_switch_held: bool,
 }
 
@@ -109,11 +91,9 @@ pub struct SidebarCollapsedProps<'a> {
     pub tools_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 레일 버튼에 danger 배지.
     pub plugin_alert: usize,
-    /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
-    /// 각 워크스페이스의 leading letter avatar 를 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
+    /// 워크스페이스 전환 modifier가 눌렸는지. 문자 아이콘 대신 슬롯 키캡을 표시한다.
     pub workspace_switch_held: bool,
-    /// 카테고리 quick-switch overlay — `workspace_switch_modifier`+Shift 홀드 시 true. 각
-    /// 카테고리 경계 `---` 슬롯 중앙에 섹션 번호 키캡을 표시(디자인 C). folders 기능 on 전제.
+    /// 카테고리 전환 modifier가 눌렸는지. 카테고리 버튼 자리에 설정된 슬롯 키캡을 표시한다.
     pub category_switch_held: bool,
 }
 
@@ -189,13 +169,8 @@ pub enum SidebarCollapsedAction {
 /// [`draw_full_sidebar_view`] 의 반환값 — 사용자 액션 + 가장자리 리사이즈 우선권 판정.
 pub struct SidebarFullDrawResult {
     pub actions: Vec<SidebarFullAction>,
-    /// 마우스가 사이드바의 실제 클릭 가능 위젯(헤더 접기, Tools/Plugins/Settings,
-    /// 카테고리 헤더, 워크스페이스 카드, New workspace) 위인지. `AppState.resize_edge_widget_hovered`
-    /// 에 OR 로 합성된다 — 서쪽 가장자리 리사이즈 마진이 사이드바 폭 안에 있을 때
-    /// (사이드바가 보이는 상태) 위젯 단위로만 리사이즈를 양보하기 위함. 목록 아래
-    /// 빈 배경의 우클릭 캐처(`Sense::click`, 컨텍스트 메뉴 전용)는 실제 콘텐츠가
-    /// 아니라 의도적으로 제외한다(타이틀바 드래그 rect 와 동일 이유 — 빈 여백은
-    /// 항상 리사이즈 우선).
+    /// 실제 버튼·행 위에서는 창 가장자리 리사이즈보다 위젯 조작을 우선한다.
+    /// 빈 배경의 우클릭 영역은 제외해 리사이즈가 가능하게 한다.
     pub resize_priority_hovered: bool,
 }
 
@@ -207,8 +182,7 @@ pub struct SidebarCollapsedDrawResult {
     pub resize_priority_hovered: bool,
 }
 
-// Sidebar 의 모든 zoom-sensitive 길이는 Theme 토큰에서 가져온다 (Z-1/Z-2 에서
-// host UI zoom 곱셈이 토큰 자체에 박힘). 아래는 토큰에서 도출하는 헬퍼.
+// 배율이 필요한 치수는 Theme에서 읽는다.
 fn btn_height(th: &Theme) -> f32 {
     th.item_height_tab.value()
 }
@@ -272,11 +246,7 @@ impl BadgeVariant {
     }
 }
 
-/// 워크스페이스 행 개수 배지 — 디자인 Badge variant="primary"/"warning"
-/// (accent 채움 pill + count, 99 초과 시 "99+"). Badge specimen 토큰 전사:
-/// min-width/height=badge-size, padding-x=badge-padding-x, font=mono badge-font-size,
-/// pill(반경=높이/2), 전경 text-on-accent. `right_to_left` 레이아웃 안에서 크기를
-/// allocate 하고 그 자리에 painter 로 그린다.
+/// 공용 배지 치수로 개수를 표시한다. 99를 넘으면 99+로 줄인다.
 fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize, variant: BadgeVariant) {
     let label = if count > 99 {
         "99+".to_string()
@@ -292,7 +262,6 @@ fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize, vari
     let pad_x = th.badge_padding_x().value();
     let w = (galley.size().x + pad_x * 2.0).max(size);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, size), egui::Sense::hover());
-    // pill = 완전 라운드(반경 = 높이/2).
     ui.painter().rect_filled(rect, size / 2.0, variant.fill(th));
     let gp = egui::pos2(
         rect.center().x - galley.size().x / 2.0,
@@ -314,9 +283,7 @@ fn card_inner_margin_y(th: &Theme) -> i8 {
     th.spacing_xs.value() as i8
 }
 
-/// 그룹 모드 드롭존 1개 — 섹션(헤더+행, 빈/접힌 카테고리는 헤더만)의 판정·표시 정보.
-/// spans 는 렌더 순서대로 연속이라(이전 섹션의 end_y 가 곧 다음 섹션의 시작) 시작 y 를
-/// 따로 들지 않는다 — 비-첫 섹션 헤더 위 8px gap 도 그 섹션의 드롭존에 포함된다.
+/// 연속된 카테고리별 드롭 영역. 앞 섹션의 end_y부터 시작하므로 헤더 위 간격도 포함된다.
 struct SectionSpan {
     id: crate::model::WorkspaceCategoryId,
     /// 섹션이 끝나는 y (다음 섹션 시작 = 이 값).
@@ -327,18 +294,13 @@ struct SectionSpan {
     has_visible_rows: bool,
 }
 
-/// 드래그 커서 y → 대상 섹션. release(드롭) 판정과 insert marker(가이드)가 **같은
-/// 규칙을 공유**해 "가이드가 가리키는 곳 = 놓았을 때 실제 결과" 불변식을 지킨다.
-/// 규칙: y 가 끝나기 전인 첫 섹션(위로 벗어나면 첫 섹션), 아래로 벗어나면 마지막 섹션.
+/// 드롭 결과와 표시선을 같은 규칙으로 정한다. 위·아래 바깥은 첫·마지막 섹션에 속한다.
 /// 평면 모드는 spans 가 비어 None.
 fn resolve_drop_section(spans: &[SectionSpan], y: f32) -> Option<&SectionSpan> {
     spans.iter().find(|s| y < s.end_y).or_else(|| spans.last())
 }
 
-/// 활성 워크스페이스 자동 스크롤 트리거 판정. `prev` 는 직전 프레임에 저장해 둔 active
-/// 전역 인덱스(`None` 이면 아직 한 번도 기록된 적 없는 최초 프레임), `current` 은 이번
-/// 프레임의 active 전역 인덱스. 최초 프레임에 트리거하지 않아야 시작 시 불필요한 점프가
-/// 없고, 값이 그대로면 사용자가 수동으로 스크롤해 둔 상태를 덮어쓰지 않는다.
+/// 최초 프레임은 제외하고 활성 인덱스가 바뀔 때만 자동 스크롤해 사용자 스크롤을 유지한다.
 fn should_scroll_to_active_workspace(prev: Option<Option<usize>>, current: Option<usize>) -> bool {
     matches!(prev, Some(prev) if prev != current)
 }
@@ -354,23 +316,19 @@ pub fn draw_full_sidebar_view(
     let mut resize_priority_hovered = false;
     let th = props.theme;
 
-    // 헤더 — 워드마크 `tasty.` + 접기 (ui_kit Sidebar 상단).
     egui::TopBottomPanel::top("workspace_sidebar_header")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show_inside(ui, |ui| {
-            // 디자인 chrome.jsx Sidebar 헤더 padding-top: space-md (10→12 스냅).
             vspace(ui, th.spacing_md);
             let (collapsed, hovered) = draw_sidebar_header(ui, th, props.collapse_label);
             resize_priority_hovered |= hovered;
             if collapsed {
                 actions.push(SidebarFullAction::Collapse);
             }
-            // 디자인 chrome.jsx Sidebar 헤더 padding-bottom: space-xs (6→4 스냅 — parity-notes 잔차 해소).
             vspace(ui, th.spacing_xs);
         });
 
-    // 바닥 고정 섹션 (Tools / Plugins / Settings). 접기는 헤더로 이동.
     egui::TopBottomPanel::bottom("workspace_sidebar_bottom")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
@@ -379,7 +337,6 @@ pub fn draw_full_sidebar_view(
             ui.separator();
             vspace(ui, STRUCT_GAP_2);
 
-            // Tools
             let tools_resp = draw_ghost_block_button(ui, th, Some(icons::TOOLS), props.tools_label);
             resize_priority_hovered |= tools_resp.hovered();
             if tools_resp.clicked() {
@@ -387,7 +344,6 @@ pub fn draw_full_sidebar_view(
             }
             vspace(ui, STRUCT_GAP_2);
 
-            // Plugins (확인 필요 plugin 있으면 우측에 danger 배지)
             let plug_resp = draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
             resize_priority_hovered |= plug_resp.hovered();
             if plug_resp.clicked() {
@@ -398,7 +354,6 @@ pub fn draw_full_sidebar_view(
             }
             vspace(ui, STRUCT_GAP_2);
 
-            // Settings
             let settings_resp =
                 draw_ghost_block_button(ui, th, Some(icons::SETTINGS), props.settings_label);
             resize_priority_hovered |= settings_resp.hovered();
@@ -408,12 +363,7 @@ pub fn draw_full_sidebar_view(
             vspace(ui, th.spacing_sm);
         });
 
-    // 활성 워크스페이스로 자동 스크롤 — `props.workspaces` 는 그룹/평면 모드 공통으로
-    // 전체 목록을 담으므로 여기서 active 전역 인덱스를 한 번만 구하면 모든 전환 경로
-    // (quick-switch, 카테고리 경계 이동, 클릭)를 커버한다. egui 메모리에 직전 프레임의
-    // active 인덱스를 저장해 두고, 판정 자체는 순수 함수 `should_scroll_to_active_workspace`
-    // 로 분리(단위 테스트 대상) — 매 프레임 강제 스크롤하면 사용자의 수동 스크롤을
-    // 덮어쓰게 되므로 "실제로 바뀐 프레임"에만 트리거한다.
+    // 전체 워크스페이스의 활성 인덱스를 기록해 실제로 바뀐 프레임에만 스크롤한다.
     let active_idx = props.workspaces.iter().position(|w| w.is_active);
     let active_scroll_track_id = egui::Id::new("sidebar_workspace_active_scroll_track");
     let prev_active_idx: Option<Option<usize>> = ui.data(|d| d.get_temp(active_scroll_track_id));
@@ -424,24 +374,15 @@ pub fn draw_full_sidebar_view(
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            // 디자인 chrome.jsx: 목록 블록은 행/구분선이 세로 gap 없이 맞붙는다
-            // (WorkspaceRow 들이 flex column, 사이 margin 0). egui 기본 item_spacing.y
-            // (=spacing_xs≈4) 가 선택 행 배경과 상/하 구분선 사이에 틈을 만들어 0 으로 둔다.
-            // 섹션 간 간격은 아래 add_space 들이 명시적으로 준다.
+            // 행 배경·구분선 사이가 벌어지지 않도록 행 간격은 없애고 섹션 간격만 별도로 준다.
             ui.spacing_mut().item_spacing.y = 0.0;
             vspace(ui, th.spacing_sm);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
-            // 그룹 모드 드롭존 판정용 — 각 섹션(헤더+행, 빈 카테고리는 헤더만).
             let mut section_spans: Vec<SectionSpan> = Vec::new();
 
             if let Some(sections) = props.categories {
-                // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
-                // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
                 for (sec_i, section) in sections.iter().enumerate() {
-                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-md — 헤더가 밴드로
-                    // 승격되면서 space-sm(8)보다 한 단 넓혀졌다). 헤더 앞에 두어 gap 이 이
-                    // 섹션의 드롭존에 포함된다 (spans 는 end_y 연속 — 이전 섹션 end_y 부터가
-                    // 이 섹션이므로 gap 도 이쪽에 귀속).
+                    // 헤더 앞의 간격도 이 섹션 드롭 영역에 포함한다.
                     if sec_i > 0 {
                         ui.add_space(th.spacing_md.value());
                     }
@@ -453,9 +394,7 @@ pub fn draw_full_sidebar_view(
                         section.entries.len(),
                     );
                     resize_priority_hovered |= header.hovered;
-                    // 디자인 B: Alt+Shift 홀드 시 헤더 행 **우측 정렬** 키캡(섹션 번호). chevron
-                    // 대체 아님 — chevron 은 접힘상태·auto-expand 회전 담당(load-bearing). 11번째+
-                    // 카테고리(슬롯 밖)는 키캡 없음. active = 이 섹션이 현재 워크스페이스 소유.
+                    // 카테고리 키캡은 오른쪽에 표시하고 접힘 상태 chevron은 유지한다.
                     if props.category_switch_held {
                         if let Some(digit) =
                             crate::adapters::ui::switch_overlay::category_digit(props.kb, sec_i)
@@ -492,12 +431,8 @@ pub fn draw_full_sidebar_view(
                         });
                     }
                     if !section.collapsed && !section.entries.is_empty() {
-                        // 목록 블록 상단 보더는 그리지 않는다 — 헤더 밴드의 bottom hairline이
-                        // 이미 그 경계를 그린다(이중선 방지, 디자인 "헤더 밑 첫 행의 top border
-                        // 는 그리지 말 것" 규칙).
-                        // 키캡은 **active 카테고리**에서만, 그 카테고리 내 **로컬 인덱스**
-                        // 로 표시(전역 인덱스 아님). 비활성 카테고리 행은 키캡 미표시 —
-                        // 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(표시=동작).
+                        // 헤더가 아래쪽 경계선을 그리므로 첫 행에 중복 선을 두지 않는다.
+                        // 활성 카테고리에서만 로컬 인덱스로 키캡을 표시해 실제 전환 순서와 맞춘다.
                         let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
                         for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
                             if row_i > 0 {
@@ -522,10 +457,7 @@ pub fn draw_full_sidebar_view(
                                 &mut resize_priority_hovered,
                             );
                         }
-                        // 하단 보더 없음 — 그룹 경계는 헤더 아래 상단 보더 1줄만
-                        // (디자인 rowList bottomBorder=false, 2026-07-02 고아 구분선 제거).
                     }
-                    // 빈/접힌 카테고리도 헤더 영역이 드롭존(그 카테고리로 편입).
                     section_spans.push(SectionSpan {
                         id: section.id,
                         end_y: ui.cursor().min.y,
@@ -534,21 +466,17 @@ pub fn draw_full_sidebar_view(
                     });
                 }
             } else {
-                // 평면 렌더(토글 off) — 단일 "워크스페이스" heading + 전체 행.
                 draw_section_heading(ui, th, props.workspaces_heading);
                 vspace(ui, th.spacing_xs);
 
-                // 디자인 chrome.jsx:141-149 — 목록 블록 상단 보더 (separator).
                 if !props.workspaces.is_empty() {
                     draw_list_separator(ui, th, 0.0);
                 }
 
                 for (i, ws) in props.workspaces.iter().enumerate() {
-                    // 행 사이 1px 구분선, 좌측 32px 들여쓰기 (디자인 margin-left:32px).
                     if i > 0 {
                         draw_list_separator(ui, th, 32.0);
                     }
-                    // 평면 모드(카테고리 off): 전역=로컬 → 전역 인덱스가 곧 슬롯 인덱스.
                     let switch_digit = if props.workspace_switch_held {
                         crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
                     } else {
@@ -567,14 +495,11 @@ pub fn draw_full_sidebar_view(
                     );
                 }
 
-                // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
                 if !props.workspaces.is_empty() {
                     draw_list_separator(ui, th, 0.0);
                 }
             }
 
-            // Drag release / drop marker / ghost preview. card_rects 는 (전역 인덱스,
-            // rect) 를 담으므로 position → 전역 인덱스 매핑으로 그룹/평면 모두 정확.
             if let Some(drag) = props.drag {
                 let released = !ui.input(|i| i.pointer.primary_down());
                 if released {
@@ -587,8 +512,6 @@ pub fn draw_full_sidebar_view(
                         .map(|(gi, _)| *gi)
                         .unwrap_or(drag.ws_idx);
                     let drop = (target != drag.ws_idx).then_some(target);
-                    // 드롭 위치가 속한 카테고리(그룹 모드) — marker 와 같은 규칙
-                    // (resolve_drop_section). 평면 모드는 spans 가 비어 None.
                     let target_category =
                         resolve_drop_section(&section_spans, drag.current_y).map(|s| s.id);
                     actions.push(SidebarFullAction::DragReleased {
@@ -596,9 +519,7 @@ pub fn draw_full_sidebar_view(
                         target_category,
                     });
                 } else {
-                    // Insert marker — release 와 같은 규칙(resolve_drop_section)으로 대상
-                    // 섹션을 판정. 빈/접힌 카테고리(행 rect 없음)는 헤더 바로 아래에
-                    // 그린다 (놓으면 그 카테고리로 편입 — 가이드 = 드롭 결과).
+                    // 빈·접힌 카테고리는 헤더 아래에 드롭 표시선을 그린다.
                     if let Some(sec) = resolve_drop_section(&section_spans, drag.current_y)
                         .filter(|s| !s.has_visible_rows)
                     {
@@ -608,7 +529,6 @@ pub fn draw_full_sidebar_view(
                         );
                         ui.painter().rect_filled(line, 0.0, th.accent_primary());
                     } else {
-                        // 행 경계(reorder 가이드) — 기존 card_rects 규칙.
                         let insert_idx = card_rects
                             .iter()
                             .position(|(_, rect)| drag.current_y < rect.center().y)
@@ -631,7 +551,6 @@ pub fn draw_full_sidebar_view(
                         }
                     }
 
-                    // Ghost card.
                     if let Some(ws) = props.workspaces.get(drag.ws_idx)
                         && let Some((_, first_rect)) = card_rects.first()
                     {
@@ -659,9 +578,7 @@ pub fn draw_full_sidebar_view(
             }
 
             vspace(ui, th.spacing_xs);
-            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 카테고리 헤더 메뉴 /
-            // 레일 `---` 팝업의 Add workspace 로 이동했기 때문. 배경 우클릭 메뉴는 새 카테고리 ·
-            // 원격 워크스페이스 추가뿐이다(`handle_sidebar_background_native_menu` 참고).
+            // 카테고리를 사용하면 추가 버튼 대신 카테고리 메뉴에서 워크스페이스를 만든다.
             if props.categories.is_none() {
                 let new_ws_resp =
                     draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
@@ -682,13 +599,8 @@ pub fn draw_full_sidebar_view(
                 vspace(ui, th.spacing_xs);
             }
 
-            // 목록 아래 빈 배경 우클릭 → 배경 컨텍스트 메뉴(새 카테고리 / 원격
-            // 워크스페이스 추가). 그룹·평면 모드 공통(이전엔 그룹 모드 한정이었으나
-            // 평면 모드 배경 우클릭에도 원격 추가를 노출하도록 대칭화,
-            // `docs/features/workspace-category/index.md` 참고).
-            // 남은 스크롤 영역 전체를 우클릭 감지 영역으로. 이 캐처는 빈 배경이라
-            // resize_priority_hovered 에 넣지 않는다 — 타이틀바 드래그 rect 와 동일 이유
-            // (SidebarFullDrawResult::resize_priority_hovered 문서 참고).
+            // 목록 아래 빈 배경은 새 카테고리·원격 추가 메뉴를 제공한다.
+            // 실제 콘텐츠가 아니므로 리사이즈 우선권을 가로채지 않는다.
             let remaining = ui.available_size_before_wrap();
             if remaining.y > 1.0 {
                 let (_bg_rect, bg_resp) = ui.allocate_exact_size(
@@ -717,15 +629,12 @@ pub fn draw_collapsed_sidebar_view(
     let mut resize_priority_hovered = false;
     let th = props.theme;
 
-    // 헤더 — 로고 + 펼치기(») 버튼 (ui_kit CollapsedSidebar 상단).
     egui::TopBottomPanel::top("workspace_sidebar_collapsed_header")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show_inside(ui, |ui| {
-            // 디자인 chrome.jsx CollapsedSidebar padding-top: space-sm (10→8 스냅).
             vspace(ui, th.spacing_sm);
             ui.vertical_centered(|ui| {
-                // 로고 (collapsed) — 상단, expand 버튼 위.
                 let logo_size = th.sidebar_logo_collapsed_size.value();
                 let logo_vec = egui::vec2(logo_size, logo_size);
                 let (logo_rect, _) = ui.allocate_exact_size(logo_vec, egui::Sense::hover());
@@ -743,7 +652,6 @@ pub fn draw_collapsed_sidebar_view(
                 let color: egui::Color32 = if resp.hovered() {
                     th.text_secondary().into()
                 } else {
-                    // 물러나는 chrome glyph — `glyph-dim`(disabled 아님).
                     th.glyph_dim().into()
                 };
                 let sz = th.icon_glyph_size_md.value();
@@ -755,7 +663,6 @@ pub fn draw_collapsed_sidebar_view(
                     actions.push(SidebarCollapsedAction::Expand);
                 }
             });
-            // 디자인 chrome.jsx rail expand(«) marginBottom: space-sm (6→8 스냅).
             vspace(ui, th.spacing_sm);
         });
 
@@ -768,7 +675,6 @@ pub fn draw_collapsed_sidebar_view(
                 ui.separator();
                 vspace(ui, STRUCT_GAP_2);
 
-                // Tools
                 let (tools_btn_rect, tools_resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 resize_priority_hovered |= tools_resp.hovered();
@@ -779,7 +685,6 @@ pub fn draw_collapsed_sidebar_view(
                 }
                 vspace(ui, STRUCT_GAP_2);
 
-                // Plugins (확인 필요 plugin 있으면 우상단에 danger 배지)
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 resize_priority_hovered |= resp.hovered();
@@ -792,7 +697,6 @@ pub fn draw_collapsed_sidebar_view(
                 }
                 vspace(ui, STRUCT_GAP_2);
 
-                // Settings
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 resize_priority_hovered |= resp.hovered();
@@ -807,11 +711,8 @@ pub fn draw_collapsed_sidebar_view(
     ui.vertical_centered(|ui| {
         vspace(ui, th.spacing_xs);
         if let Some(sections) = props.categories {
-            // 그룹 렌더(토글 on) — 카테고리마다 `---` 버튼 + (접힘 아니면) 소속 아바타.
-            // 접힌/빈 카테고리는 `---` 버튼만. normal 항상 맨 위(sections 순서).
+            // 접힌·빈 카테고리도 버튼을 표시하며 해당 modifier를 누르면 슬롯 키캡으로 바꾼다.
             for (sec_i, section) in sections.iter().enumerate() {
-                // 디자인 C: Alt+Shift 홀드 시 `---` 슬롯 중앙에 섹션 번호 키캡. 11번째+ 없음.
-                // active = 이 섹션이 현재 워크스페이스 소유. (접힘/빈 카테고리도 `---` 존재 → 키캡.)
                 let cat_keycap = if props.category_switch_held {
                     crate::adapters::ui::switch_overlay::category_digit(props.kb, sec_i).map(|d| {
                         let active = section.entries.iter().any(|(_, ws)| ws.is_active);
@@ -835,7 +736,6 @@ pub fn draw_collapsed_sidebar_view(
                     });
                 }
                 if !section.collapsed {
-                    // active 카테고리에서만, 로컬 인덱스로 키캡(full 사이드바와 동일).
                     let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
                     for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
                         let switch_digit = if props.workspace_switch_held && active_sec {
@@ -856,7 +756,6 @@ pub fn draw_collapsed_sidebar_view(
                 }
             }
         } else {
-            // 평면 렌더(토글 off) — 전체 아바타 나열.
             for (i, ws) in props.workspaces.iter().enumerate() {
                 let switch_digit = if props.workspace_switch_held {
                     crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
@@ -875,8 +774,6 @@ pub fn draw_collapsed_sidebar_view(
             }
         }
 
-        // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 rail 카테고리
-        // 팝업 Add workspace 로 이동했기 때문.
         if props.categories.is_none() {
             vspace(ui, STRUCT_GAP_2);
             let (rect, resp) =
@@ -959,14 +856,10 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
     let mut collapse = false;
     let mut hovered = false;
     ui.horizontal(|ui| {
-        // 디자인 chrome.jsx Sidebar 헤더 padding-left 12 (패널 좌우 margin 0).
         hspace(ui, th.spacing_md);
-        // 로고(수박 PNG) + 워드마크 `tasty.` 락업 — 부팅 로딩 화면과 공유하는
-        // 단일 소스 (`brand::draw_wordmark`).
         brand::draw_wordmark(ui, th, th.sidebar_logo_size, th.sidebar_wordmark_font_size);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 디자인 chrome.jsx Sidebar 헤더 padding-right 12 (패널 좌우 margin 0).
             hspace(ui, th.spacing_md);
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
             hovered = resp.hovered();
@@ -974,7 +867,6 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
             }
-            // 평소: subtext1 (--text-secondary), hover: text (--text-primary). 톤 한 단계 상향.
             let color: egui::Color32 = if resp.hovered() {
                 th.text_primary().into()
             } else {
@@ -1022,19 +914,8 @@ struct HeaderInteraction {
     hovered: bool,
 }
 
-/// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — 밴드(bg-app 면 + 상/하
-/// hairline) + chevron + 대문자 캡스 라벨 + 우측 워크스페이스 카운트. 접힘 시 chevron
-/// 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경이 밴드 위에 얹힌다(밴드를
-/// 대체하지 않음). 좌클릭=접힘 토글, 우클릭=컨텍스트 메뉴 좌표. 라벨은 muted 에서
-/// secondary 로 승격됐다(행보다 아래로 읽히던 문제 수정) — egui UI 폰트에 합성 bold 가
-/// 없어(`Theme::sidebar_category_header_fg` 참고) weight 신호는 이 색 승격만으로 낸다.
-/// 디자인 padding: 상하=space-sm 대칭(기존 space-xs 에서 확대), 좌우=space-sm.
-///
-/// `count`(카테고리 소속 워크스페이스 수, 접힘 여부 무관 — 필터링 안 함)는 우측에 상시
-/// 노출한다. 디자인은 이 자리를 hover-reveal `+`(카테고리에 워크스페이스 추가) 버튼과
-/// 공유하고 hover 시 카운트가 페이드아웃하도록 규정하지만, 그 `+` 버튼 자체가 아직 이
-/// 코드베이스에 없어(grep 확인) 페이드아웃할 대상이 없다 — `+` 버튼이 실제로 추가될 때
-/// 이 자리에 hover 교대 로직을 함께 넣는다.
+/// 카테고리 이름·접힘 상태·개수. 클릭은 접기·펼치기, 우클릭은 메뉴를 연다.
+/// 현재는 추가 버튼이 없어 개수를 항상 표시한다.
 fn draw_category_header(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1072,7 +953,6 @@ fn draw_category_header(
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
     let row_center_y = rect.min.y + pad_top + label_h / 2.0;
-    // chevron 12px. 접힘=우향, 펼침=하향 (디자인 rotate(90deg) 를 아이콘 교체로).
     let chevron_size = 12.0;
     let chevron_rect = egui::Rect::from_center_size(
         egui::pos2(rect.min.x + pad_left + chevron_size / 2.0, row_center_y),
@@ -1086,7 +966,6 @@ fn draw_category_header(
     let fg = th.sidebar_category_header_fg();
     icon.image(chevron_size, fg.into())
         .paint_at(ui, chevron_rect);
-    // 라벨 — 디자인 textTransform:uppercase (카테고리명도 대문자). 모노 캡스.
     let text_x = chevron_rect.max.x + gap;
     let mut job = egui::text::LayoutJob::default();
     job.append(
@@ -1102,8 +981,6 @@ fn draw_category_header(
     let galley = ui.painter().layout_job(job);
     let pos = egui::pos2(text_x, row_center_y - galley.size().y / 2.0);
     ui.painter().galley(pos, galley, fg.into());
-    // 우측 워크스페이스 카운트 — 10px mono, text-disabled, 우측 gutter에 pad_right 만큼
-    // 여백을 두고 정렬.
     let mut count_job = egui::text::LayoutJob::default();
     count_job.append(
         &count.to_string(),
@@ -1135,21 +1012,14 @@ fn draw_category_header(
     }
 }
 
-/// Full 사이드바 워크스페이스 행 1개 — card 렌더 + 클릭/우클릭/드래그 action 을
-/// `actions` 로 보고하고 (전역 인덱스, rect) 를 `card_rects` 에 누적한다. 그룹/평면
-/// 렌더가 공유한다. `global_idx` 는 반드시 `engine.workspaces` 의 전역 인덱스여야
-/// action(WorkspaceClicked/DragStart 등)이 올바른 대상을 가리킨다.
+/// 워크스페이스 행과 드래그 영역을 그린다. 액션 대상은 전역 인덱스다.
 fn draw_ws_row(
     ui: &mut egui::Ui,
     props: &SidebarFullProps<'_>,
     global_idx: usize,
     ws: &WorkspaceEntryView,
-    // switch-number overlay: workspace_switch_modifier 홀드 시 leading status dot 을
-    // 대체할 키캡 문자. 호출부(섹션 루프)가 로컬 인덱스·active 카테고리 여부를 판단해
-    // 넘긴다. None 이면 원래 status dot 유지.
+    // 호출부가 활성 카테고리의 로컬 슬롯 키를 결정한다. 없으면 상태 점을 유지한다.
     switch_digit: Option<&str>,
-    // 활성 인덱스가 이번 프레임에 바뀌었을 때만 true — 이 행이 active 면 뷰포트 안으로
-    // 스크롤을 보정한다(호출부에서 프레임당 한 번 계산, 매 프레임 강제 스크롤 방지).
     should_scroll_to_active: bool,
     actions: &mut Vec<SidebarFullAction>,
     card_rects: &mut Vec<(usize, egui::Rect)>,
@@ -1273,12 +1143,8 @@ fn paint_icon_button(
     icon.image(icon_size, color).paint_at(ui, icon_rect);
 }
 
-/// 레일 카테고리 경계 `---` 버튼 (chrome.jsx `RailCategoryBtn` 전사). 클릭 시 버튼
-/// rect 를 반환(우측 앵커 팝업 위치 계산용). 폭=slot_width(디자인 size-36 자리, 아바타
-/// 열 정렬), 높이=spacing_lg(=size-16), 내부 선 폭=slot_width-spacing_sm(=size-24)·
-/// 높이=border_width, idle=separator / hover=text-muted.
-/// `keycap` = `Some((digit, active, fade))` 이면 디자인 C 대로 `---` 라인 대신 그 슬롯
-/// 중앙에 카테고리 번호 키캡을 그린다(Alt+Shift 홀드). `None` 이면 기존 `---` 라인.
+/// 카테고리 레일 버튼. 클릭한 영역을 팝업 위치 계산에 넘긴다.
+/// keycap이 있으면 선 대신 슬롯 키캡을 표시한다.
 fn draw_rail_category_button(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1295,7 +1161,6 @@ fn draw_rail_category_button(
             .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
     match keycap {
-        // 디자인 C: `---` 슬롯 자리가 그대로 키캡이 된다(라인 대체).
         Some((digit, active, fade)) => {
             crate::adapters::ui::switch_overlay::paint_keycap(
                 ui.painter(),
@@ -1335,17 +1200,13 @@ fn draw_collapsed_avatar(
     resize_priority_hovered: &mut bool,
 ) {
     let th = props.theme;
-    // 디자인 (chrome.jsx CollapsedSidebar): 워크스페이스 이름 첫 글자 대문자,
-    // mono 13 bold. 빈 이름이면 라벨 생략 (한글/이모지도 안전하게 chars().next()).
+    // 빈 이름은 생략하고 첫 문자를 대문자로 표시한다.
     let label = ws
         .name
         .chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_default();
-    // G3: 디자인 IconButton.active — active = bg overlay-active + 글자색
-    // accent-primary(blue), 테두리 없음. inactive = bg 없음 + 글자색 text-muted.
-    // G4: notif 의 글자색(yellow) 표현은 제거 — notif 는 우상단 dot 으로만.
     let text_color: egui::Color32 = if ws.is_active {
         th.accent_primary().into()
     } else {
@@ -1362,9 +1223,7 @@ fn draw_collapsed_avatar(
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
-    // switch-number overlay: workspace_switch_modifier 홀드 시 letter avatar 자리에
-    // 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지). 키캡 문자는 호출부가 판단.
-    // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
+    // 키캡으로 바꿔도 모서리 상태 점은 유지한다.
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
         ui.ctx(),
         th,
@@ -1389,26 +1248,20 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
-    // 우상단 dot — notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring,
-    // mirror 는 우하단 corner chip(아래) 로 분리 — dot 은 실행상태 전용
-    // (디자인 2026-07-02 workspace-mirror-indicator: sky "remote" fill 제거).
-    // 접힌 rail 은 24px 크롬 계열 — 점 가족 규칙상 compact 6.
+    // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
     let dot_radius = th.status_dot_size_compact().value() * 0.5;
     let dot_pad = 4.0;
     let dot_center = egui::pos2(
         rect.max.x - dot_pad - dot_radius,
         rect.min.y + dot_pad + dot_radius,
     );
-    // 우선순위(디자인 확정): NeedsInput(노랑) > Completion(파랑) > running(초록).
-    // 52px 레일에서 dot 2개는 기각됐다 — 최고 랭크 kind 1개만 색으로 표시(카운트는
-    // 확장 사이드바 배지가 담당).
+    // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
     if ws.needs_input_count > 0 {
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
         ui.painter()
             .circle_filled(dot_center, dot_radius, th.accent_warning());
     } else if ws.completion_count > 0 {
-        // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
         ui.painter()
@@ -1417,8 +1270,6 @@ fn draw_collapsed_avatar(
         ui.painter()
             .circle_filled(dot_center, dot_radius, th.accent_success());
     }
-    // attached(다른 client 점유) → 아바타 둘레 lavender ring. 굵기는
-    // `status-dot-attached-ring-width`(2). red(error) 재사용 분리.
     if ws.attached {
         ui.painter().rect_stroke(
             rect,
@@ -1430,11 +1281,7 @@ fn draw_collapsed_avatar(
             egui::StrokeKind::Inside,
         );
     }
-    // 디자인 CollapsedSidebar mirror chip: 아바타 우하단 sky corner chip. pill(size-12) +
-    // boxShadow spread(size-2) 는 둘 다 bg-sidebar → 반경 spacing_sm(=size-8) 의
-    // bg-sidebar halo 로 합성 렌더(아바타/이웃과 시각 분리). glyph=spacing_sm(=size-8, `>_→`
-    // TERMINAL_PROMPT), tint=workspace_mirror_fg. 채널 분리: notif=우상단 / mirror=우하단 /
-    // attached=둘레 ring — 셋이 겹치지 않는다.
+    // mirror 표시는 배경색으로 둘러 다른 알림·점유 표시와 구분한다.
     if ws.is_mirror {
         let halo_r = th.spacing_sm.value();
         let glyph = th.spacing_sm.value();
@@ -1442,8 +1289,6 @@ fn draw_collapsed_avatar(
         let chip_center = egui::pos2(rect.max.x - inset, rect.max.y - inset);
         ui.painter()
             .circle_filled(chip_center, halo_r, th.bg_sidebar());
-        // paint_at: layout 을 건드리지 않는 순수 페인트(아바타 rect 는 위에서 이미 할당됨).
-        // collapsed 의 다른 인디케이터(notif/attached)와 동일하게 per-chip tooltip 은 없다.
         let glyph_rect = egui::Rect::from_center_size(chip_center, egui::vec2(glyph, glyph));
         icons::TERMINAL_PROMPT
             .image(glyph, th.workspace_mirror_fg().into())
@@ -1467,53 +1312,30 @@ fn draw_workspace_card(
     // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
     switch_fade: f32,
 ) -> egui::Rect {
-    // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움 (`--surface-active`
-    // = catppuccin surface2).
     let bg = if ws.is_active {
         th.surface_active().to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
 
-    // 디자인 chrome.jsx WorkspaceRow: 행은 좌우 margin 없이 사이드바 폭을 꽉 채우고
-    // (active bg full-bleed), 모서리는 사각(border-radius 없음). 좌우 padding 10 은
-    // inner_margin 이 갖는다. 과거 outer_margin(6,0) + corner_radius(2) 는 배경을
-    // 가장자리에서 6px 떼어 좌측 accent bar(아래)와 우측 보더 사이에 틈을 만들었다.
-    let frame = egui::Frame::new()
-        .fill(bg)
-        // 좌측은 상태 dot 여백을 줄이기 위해 spacing_xs(4), 우측은 "!" highlight
-        // 배지 위치 유지를 위해 spacing_sm(8) 으로 비대칭 적용.
-        .inner_margin(egui::Margin {
-            left: th.spacing_xs.value() as i8,
-            right: card_inner_margin_x(th),
-            top: card_inner_margin_y(th),
-            bottom: card_inner_margin_y(th),
-        });
+    // 행 배경은 모서리와 바깥 여백 없이 사이드바 폭을 채운다.
+    let frame = egui::Frame::new().fill(bg).inner_margin(egui::Margin {
+        left: th.spacing_xs.value() as i8,
+        right: card_inner_margin_x(th),
+        top: card_inner_margin_y(th),
+        bottom: card_inner_margin_y(th),
+    });
 
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
-            // 중 ws-level 데이터로 결정 가능한 case 만 표시. dot 은 항상 렌더하고
-            // 색만 상태별로 분기한다 (디자인 StatusDot 은 idle 에도 점을 그림).
-            // fill: running(busy_count>0) → accent-success
-            //       > idle → `status-dot-idle` (StatusDot Idle 과 같은 role).
-            //       mirror(원격 origin)는 fill 이 아니라 아래 "REMOTE" pill 로 표시한다.
-            // attached(다른 client 점유)는 fill 이 아니라 dot 을 감싸는 ring
-            //   (디자인 StatusDot attached prop — 굵기·offset 은
-            //   `status-dot-attached-ring-width` · `-offset` 토큰). red 는
-            //   error 전용으로 보존 — attached 에 red 재사용 시 error 와 충돌하므로 분리.
-            // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
-            // 슬롯 폭 = spacing_sm(현재 점 지름 `badge-dot-size` 와 같은 값, 좌우 내부
-            // 패딩 0) — dot 유무와 무관하게 항상 점유되어 라벨 시작 x 가 흔들리지
-            // 않는다. 높이는 행 높이 안정을 위해 16px 유지.
+            // 실행 상태는 점 색, 다른 클라이언트 점유는 링, mirror는 별도 줄로 표시한다.
+            // 점 자리는 항상 확보해 이름 시작 위치가 바뀌지 않게 한다.
             let dot_slot = egui::vec2(th.spacing_sm.value(), 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             if let Some(digit) = switch_digit {
-                // switch-number overlay: dot 슬롯(8px) 중앙에 16px 키캡을 그린다. 슬롯
-                // 할당은 그대로라 라벨 시작 x 불변 → 리플로 없음. 키캡 좌/우 edge 는
-                // 카드 좌측 inner edge ~ 라벨 시작 사이에 정확히 들어간다(겹침 0).
+                // 같은 슬롯 가운데 키캡을 그려 이름 시작 위치를 유지한다.
                 crate::adapters::ui::switch_overlay::paint_keycap(
                     ui.painter(),
                     th,
@@ -1523,25 +1345,16 @@ fn draw_workspace_card(
                     switch_fade,
                 );
             } else {
-                // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
-                // dot 은 실행상태 전용 — mirror(원격 origin)는 이름과 subtitle 사이 별도
-                // 줄의 "REMOTE" pill 로 분리. sky "remote" fill 제거.
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
-                    // idle 상태 점 — StatusDot Idle 과 같은 role(`status-dot-idle`).
                     th.status_dot_idle().into()
                 };
-                // 지름은 `badge-dot-size` 에서 온다 — 여기 4 를 박으면 같은 슬롯에
-                // 겹쳐 그려지는 키캡만 `ui_zoom` 을 타서 배율에서 둘이 갈린다.
-                // `tasty_ui_widgets::paint_badge_dot` 을 부르지 못하는 이유는 색뿐이다:
-                // idle 색 `status_dot_idle` 에 대응하는 `BadgeVariant` 가 없다.
+                // 키캡과 배율을 맞추도록 토큰 지름을 쓴다. idle에 맞는 BadgeVariant가 없어 직접 그린다.
                 let dot_r = th.badge_dot_size().value() * 0.5;
                 ui.painter()
                     .circle_filled(dot_rect.center(), dot_r, dot_color);
-                // attached → dot 을 감싸는 lavender ring. offset 은 **점 바깥 edge →
-                // ring 안쪽 edge** 로 재므로 반지름은 dot 반지름 + offset + 굵기 절반.
-                // 총 bbox = dot + 2×(offset + 굵기) 로 24px 바 안에 남는다.
+                // 링의 offset은 점의 바깥쪽에서 링 안쪽까지의 거리다.
                 if ws.attached {
                     let ring_w = th.status_dot_attached_ring_width().value();
                     ui.painter().circle_stroke(
@@ -1554,22 +1367,14 @@ fn draw_workspace_card(
                     dot_resp.on_hover_text(occupied_hover);
                 }
             }
-            // G5/J4: active 이름 text-primary, inactive 이름 text-secondary (한 단계
-            // 어두움). 강조는 색으로만 — 디자인엔 굵기 차이가 없어 .strong() 미사용.
             let name_color = if ws.is_active {
                 th.text_primary()
             } else {
                 th.text_secondary()
             };
 
-            // 디자인 위계: title 13px(font_size_body), 단일 줄 ellipsis. badge 를 먼저
-            // 우측에 점유시킨 뒤 남은 좌측 폭을 title 이 채우며 길면 말줄임한다
-            // (truncate 가 가용폭을 모두 먹어 badge 를 밀어내지 않도록 reserve-first).
-            //
-            // 디자인 확정: 배지 자리(우측)는 kind 와 무관하게 유지 — kind 1개면 그
-            // 자리 단독 차지, 2개면 NeedsInput(노랑)이 앞(좌측)·Completion(파랑)이
-            // 뒤(우측, 기존 자리), 사이 간격은 badge-group-gap(=spacing_xs). Completion
-            // 을 먼저 그려야 right_to_left 레이아웃에서 가장 오른쪽에 앉는다.
+            // 배지 폭을 먼저 확보하고 남은 폭에 이름을 줄여 표시한다.
+            // 오른쪽부터 그리므로 Completion 뒤에 NeedsInput을 넣어 왼쪽에 배치한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ws.completion_count > 0 {
                     paint_workspace_count_badge(ui, th, ws.completion_count, BadgeVariant::Primary);
@@ -1598,15 +1403,10 @@ fn draw_workspace_card(
             });
         });
 
-        // mirror(원격 워크스페이스 로컬 mirror)는 타이틀 행의 leading glyph 가
-        // 아니라 이름과 subtitle 사이 별도 줄의 sky "REMOTE" pill 로 표시한다
-        // (가시성 강화). subtitle 유무와 독립 — subtitle 이 없어도 그린다. collapsed rail 의
-        // corner chip(이 함수 밖)은 이 변경과 무관, 그대로 유지.
+        // mirror 표시는 부제 유무와 무관하게 이름 아래 별도 줄에 둔다.
         if ws.is_mirror {
             vspace(ui, STRUCT_GAP_1);
             let resp = ui.horizontal(|ui| {
-                // 타이틀 시작 x 정렬: subtitle/description 과 동일 인셋
-                // (dot 슬롯 spacing_sm=8 + item_spacing spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
                 ui.spacing_mut().item_spacing.x = th.workspace_mirror_gap().value();
                 ui.add(icons::TERMINAL_PROMPT.image(
@@ -1625,16 +1425,10 @@ fn draw_workspace_card(
         }
 
         if !ws.subtitle.is_empty() {
-            // 디자인 margin-top 1px (title 과의 위계 간격).
             vspace(ui, STRUCT_GAP_1);
             ui.horizontal(|ui| {
-                // 타이틀 시작 x 정렬: dot 슬롯(spacing_sm=8) + item_spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
-                // 디자인 WorkspaceRow subtitle: sidebar_button_label_font_size (11px —
-                // 2026-07-02 디자인 판정: 12 는 터미널 전용, font-size-caption 스냅)
-                // 본문 sans, text-muted, 단일 줄 ellipsis. "짧은 라벨"로 읽히도록
-                // 코드체(mono) 가 아니라 일반 UI 폰트로 그린다 (위계: description 보다
-                // 한 단계 크고 진함).
+                // 부제는 이름과 정렬하고 일반 UI 글꼴을 사용한다.
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(&ws.subtitle)
@@ -1647,13 +1441,10 @@ fn draw_workspace_card(
         }
 
         if !ws.description.is_empty() {
-            // 디자인 margin-top 3px (subtitle 보다 한 단계 넓은 위계 간격).
             vspace(ui, STRUCT_GAP_3);
             ui.horizontal(|ui| {
-                // 서브타이틀과 동일하게 타이틀 시작 x 정렬: 슬롯(spacing_sm=8)+spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
-                // 디자인 description: 11px(font_size_caption), text-placeholder(가장 흐린
-                // 톤), line-height 1.35, 긴 설명문은 최대 2줄 후 말줄임(2-line clamp).
+                // 설명은 이름과 정렬하고 최대 두 줄로 줄인다.
                 let size = th.font_size_caption.value();
                 let mut job = egui::text::LayoutJob {
                     wrap: egui::text::TextWrapping {
@@ -1682,14 +1473,11 @@ fn draw_workspace_card(
     let card_rect = response.response.rect;
 
     if !ws.is_active && response.response.hovered() {
-        // full-bleed 행 — bg 와 동일하게 사각(상/하 구분선과 틈 없이 맞붙도록).
         ui.painter()
             .rect_filled(card_rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
 
-    // Active 좌측 2px inset accent bar (디자인 `boxShadow: inset 2px 0 0 var(--accent-primary)`).
-    // 카드 좌측 가장 안쪽 모서리(x 0~2). dot 슬롯은 좌측 inner_margin(spacing_xs=4)
-    // 부터 시작 → bar(0~2)와 dot(4~12)가 2px 간격으로 겹치지 않는다.
+    // 활성 표시선은 행 안쪽에 그려 상태 점과 겹치지 않게 한다.
     if ws.is_active {
         let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
@@ -1740,17 +1528,13 @@ mod tests {
             mock_span(1, 150.0, false),
             mock_span(2, 200.0, false),
         ];
-        // 섹션 내부.
         assert_eq!(resolve_drop_section(&spans, 50.0).map(|s| s.id), Some(0));
         assert_eq!(resolve_drop_section(&spans, 120.0).map(|s| s.id), Some(1));
         assert_eq!(resolve_drop_section(&spans, 160.0).map(|s| s.id), Some(2));
-        // 위로 벗어남 → 첫 섹션.
         assert_eq!(resolve_drop_section(&spans, -10.0).map(|s| s.id), Some(0));
-        // 아래로 벗어남 → 마지막 섹션.
         assert_eq!(resolve_drop_section(&spans, 999.0).map(|s| s.id), Some(2));
         // 경계값: 섹션 간 gap 은 end_y 연속으로 다음 섹션에 귀속 (y == 이전 end_y).
         assert_eq!(resolve_drop_section(&spans, 100.0).map(|s| s.id), Some(1));
-        // marker 분기 조건(has_visible_rows) — 빈/접힌 섹션만 헤더 marker.
         assert!(resolve_drop_section(&spans, 50.0).unwrap().has_visible_rows);
         assert!(
             !resolve_drop_section(&spans, 120.0)
@@ -1761,29 +1545,24 @@ mod tests {
 
     #[test]
     fn resolve_drop_section_empty_spans_yields_none() {
-        // 평면 모드(토글 off): spans 비어 있음 → None (기존 reorder 경로 유지).
         assert!(resolve_drop_section(&[], 42.0).is_none());
     }
 
     #[test]
     fn should_scroll_to_active_workspace_skips_first_frame() {
-        // 최초 프레임(직전 기록 없음) — 시작 시 불필요한 점프 방지.
         assert!(!should_scroll_to_active_workspace(None, Some(3)));
         assert!(!should_scroll_to_active_workspace(None, None));
     }
 
     #[test]
     fn should_scroll_to_active_workspace_skips_when_unchanged() {
-        // 활성 인덱스가 그대로면 사용자가 수동 스크롤해 둔 상태를 덮어쓰지 않는다.
         assert!(!should_scroll_to_active_workspace(Some(Some(3)), Some(3)));
         assert!(!should_scroll_to_active_workspace(Some(None), None));
     }
 
     #[test]
     fn should_scroll_to_active_workspace_triggers_on_change() {
-        // quick-switch/카테고리 경계 이동 등으로 active 전역 인덱스가 바뀐 프레임.
         assert!(should_scroll_to_active_workspace(Some(Some(3)), Some(7)));
-        // 워크스페이스가 전부 닫혀 active 가 없어진 경우도 "바뀜"으로 취급.
         assert!(should_scroll_to_active_workspace(Some(Some(3)), None));
         assert!(should_scroll_to_active_workspace(Some(None), Some(0)));
     }
@@ -1875,8 +1654,6 @@ mod tests {
 
     #[test]
     fn collapsed_view_grouped_renders_rail_without_panic() {
-        // normal(펼침, 2 아바타) + Services(접힘) + Archived(빈) — `---` 버튼/아바타/
-        // 접힘/빈 경로 전부 패닉 없이 layout 되는지.
         let workspaces = vec![mock_ws("a", true), mock_ws("b", false), mock_ws("c", false)];
         let sections = vec![
             CategorySectionView {
@@ -1920,9 +1697,7 @@ mod tests {
 
     #[test]
     fn mirror_indicator_renders_full_and_collapsed_without_panic() {
-        // is_mirror=true 워크스페이스: full 은 이름과 subtitle 사이 별도 줄의 "REMOTE"
-        // pill, collapsed 는 아바타 우하단 corner chip 을 그린다. busy+
-        // attached+notif 와 공존하는 mirror 행도 섞어 채널 분리 렌더 경로를 no-panic 검증.
+        // mirror·점유·알림이 함께 있는 행도 렌더링한다.
         let mut mirror = mock_ws("infra", false);
         mirror.is_mirror = true;
         let mut mirror_busy = mock_ws("data-pipeline", true);
@@ -1938,8 +1713,7 @@ mod tests {
 
     #[test]
     fn full_view_switch_overlay_held_renders_keycaps_without_panic() {
-        // switch-number overlay 활성(workspace_switch_held=true): 11개 ws — 1~9 는 키캡,
-        // 10번째+(index ≥ 9)는 status dot 유지. keycap draw 경로가 패닉 없이 layout 되는지.
+        // 설정 슬롯을 넘는 워크스페이스까지 포함해 키캡·기본 표시를 함께 확인한다.
         let ws: Vec<_> = (0..11)
             .map(|i| mock_ws(&format!("ws-{i}"), i == 1))
             .collect();
@@ -1969,14 +1743,12 @@ mod tests {
                 subtitle: "a subtitle label that is also fairly long for ellipsis".into(),
                 description: long_desc.into(),
                 busy_count: 0,
-                // 150 → "99+" cap 경로도 함께 no-panic 검증.
                 completion_count: 150,
                 needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
                 is_active: true,
             },
-            // title-only and title+subtitle and title+description combinations.
             WorkspaceEntryView {
                 name: "title only".into(),
                 subtitle: String::new(),
@@ -2042,7 +1814,6 @@ mod tests {
 
     #[test]
     fn full_view_grouped_renders_sections_without_panic() {
-        // normal(펼침, 2행) + Services(접힘, 1행) + Archived(빈) — 헤더/행/접힘/빈 경로 전부.
         let workspaces = vec![mock_ws("a", true), mock_ws("b", false), mock_ws("c", false)];
         let sections = vec![
             CategorySectionView {
@@ -2070,10 +1841,7 @@ mod tests {
 
     #[test]
     fn grouped_switch_overlay_local_index_paths_do_not_panic() {
-        // 카테고리 그룹 + workspace_switch_held. active 워크스페이스(전역 3)가
-        // 두 번째 카테고리에 속하고, 그 카테고리 로컬 인덱스는 [0,1] — 첫 카테고리
-        // (비활성)는 키캡 미표시(None), 활성 카테고리는 로컬 인덱스 기준 키캡. 두 경로
-        // (active/비active 카테고리, 로컬 인덱스 산출) 가 패닉 없이 layout 되는지.
+        // 활성 카테고리의 로컬 인덱스로만 키캡을 표시한다.
         let workspaces = vec![
             mock_ws("a", false),
             mock_ws("b", false),
@@ -2085,14 +1853,12 @@ mod tests {
                 id: 0,
                 label: "WORKSPACES".into(),
                 collapsed: false,
-                // 전역 [0,1] — 비활성 카테고리 → 키캡 미표시.
                 entries: vec![(0, mock_ws("a", false)), (1, mock_ws("b", false))],
             },
             CategorySectionView {
                 id: 1,
                 label: "Services".into(),
                 collapsed: false,
-                // 전역 [2,3] — active(d) 포함 → 로컬 인덱스 0,1 로 키캡.
                 entries: vec![(2, mock_ws("c", false)), (3, mock_ws("d", true))],
             },
         ];

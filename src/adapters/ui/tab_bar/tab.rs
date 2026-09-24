@@ -5,19 +5,10 @@ use crate::adapters::ui::{icons, zoomed_px};
 use crate::core::AttentionKind;
 use tasty_type_geometry::length::LogicalPx;
 
-/// 활성 탭 마커가 `Dot` 일 때의 점 지름. 스케일 밖(4) — 점 치수 토큰은
-/// `status-dot-size`(8) 하나뿐이라 여기를 그리로 보내면 점이 두 배가 된다.
-/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
-///
-/// **이 상수가 생긴 이유가 값이 아니라 이름이다.** 종전에는 밑줄 마커의 *두께*
-/// (`tab-indicator-width`, 2)를 그대로 점의 *반지름*으로 재사용하고 있었다. 두 치수는
-/// 의미가 달라 한쪽만 바뀌어야 하는 날이 오는데, 이름을 공유하면 그때 둘이 같이 움직인다.
-/// 지금 두 값이 짝(2 ↔ 4)인 것은 **우연이다** — 밑줄 두께가 바뀌어도 이 점은 안 바뀐다.
+/// 점 형태의 활성 표시 지름. 대응 역할 토큰이 없어 별도로 두며 밑줄 두께와 구분한다.
 const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
 
-/// busy 점과 탭 라벨 사이 여백. 종전에는 `let dot_pad: f32 = 6.0;` 인라인 리터럴이었다 —
-/// 이름이 없으면 이 값이 점 지름(`tab-dot-size`, 6)과 **같은 값이라는 사실**도, 그것이 우연이라는 사실도
-/// 소스에서 안 읽힌다. 선언이 아니라 `let` 이라 선언 축 가드에도 안 걸렸다.
+/// busy 점과 탭 이름 사이 간격. 점 지름과는 별도 치수다.
 const TAB_BUSY_DOT_PAD: LogicalPx = LogicalPx(6.0);
 
 /// Inputs shared by the tab slots in one clipped pane strip.
@@ -54,22 +45,15 @@ pub(super) fn draw_tab(
     let label_font_size = props.tab_font_size;
     let h_padding: f32 = 8.0;
     let active_indicator_h = th.tab_indicator_width.value();
-    // 점 치수와 그 옆 여백도 배율을 탄다 — 같은 탭 안의 라벨 폰트와 탭바 높이가
-    // `Theme` 에서 와서 이미 타므로, 점만 고정이면 1.2 에서 점이 상대적으로 쪼그라든다
-    // (ADR-0035). 값 자체를 토큰으로 스냅하는 것은
-    // 별개 물음이고 그쪽은 같은 ADR 이 스냅하지 말라고 정해 두었다.
-    // busy 점 지름은 `tab-dot-size` — 24px 탭 strip 안이라 compact 6 이다.
+    // 점·여백은 같은 탭의 다른 요소와 배율을 맞춘다.
     let dot_radius = th.tab_dot_size().scaled(0.5);
-    // 라벨이 점에 내주는 폭 = 지름 + 여백. 논리 길이로 더하고 여기서 한 번만 벗긴다.
     let dot_reserve = (th.tab_dot_size() + zoomed_px(th, TAB_BUSY_DOT_PAD)).value();
     if i > 0 {
         let sep = egui::Rect::from_min_size(
             egui::pos2(x, clip_rect.min.y),
             egui::vec2(separator_w, bar_h),
         );
-        // 탭 구분선 — canonical `tab-separator`. `separator` 는 premultiplied
-        // 바이트로 저장되므로 `to_egui_premultiplied()` 로 벗긴다 — `to_egui()` 는
-        // 한 번 더 곱해 8% 선을 2/255 로 만들어 사실상 안 보이게 한다.
+        // separator는 알파가 이미 곱해진 색이므로 premultiplied로 읽는다.
         painter.rect_filled(sep, 0.0, th.tab_separator().to_egui_premultiplied());
         x += separator_w;
     }
@@ -85,10 +69,7 @@ pub(super) fn draw_tab(
         } else {
             bg
         };
-    // 탭 제목 색 위계(디자인 확정): NeedsInput → Completion →
-    // active → 평상시. attention 은 포커스 시 해제되므로
-    // active 탭이 attention 틴트를 갖는 실제 충돌은 없다
-    // (방어적 순서일 뿐).
+    // 제목 색 우선순위: NeedsInput > Completion > 활성 탭 > 기본.
     let text_color = match tab_kind {
         Some(AttentionKind::NeedsInput) => th.accent_warning(),
         Some(AttentionKind::Completion) => th.accent_primary(),
@@ -111,10 +92,8 @@ pub(super) fn draw_tab(
                 );
                 painter.rect_filled(line_rect, 0.0, th.accent_primary());
             }
-            // Fill: 배경은 위에서 이미 bg_panel() 로 채움 — 추가 마커 없음.
             ActiveTabIndicator::Fill => {}
             ActiveTabIndicator::Dot => {
-                // 탭 상단 중앙의 accent 점 마커.
                 let r = zoomed_px(th, TAB_ACTIVE_DOT_SIZE).value() * 0.5;
                 let center = egui::pos2(tab_rect.center().x, tab_rect.min.y + r * 2.0);
                 painter.circle_filled(center, r, th.accent_primary());
@@ -131,7 +110,6 @@ pub(super) fn draw_tab(
         painter.circle_filled(dot_center, dot_radius.value(), color);
     }
 
-    // kind 아이콘 (leading) — ui_kit tab strip.
     let icon_size = 14.0;
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(
@@ -140,19 +118,14 @@ pub(super) fn draw_tab(
         ),
         egui::vec2(icon_size, icon_size),
     );
-    // switch-number overlay: tab_switch_modifier 홀드 + 단축키
-    // 있는 탭(1–9,0)은 아이콘 자리를 숫자 키캡으로 in-place 교체.
-    // focused pane(switch_overlay_pane) 의 탭바에서만 — 비-focused
-    // pane 은 held 여도 아이콘 유지(거짓 안내 방지).
-    // 폭/text_x 는 불변(아이콘 slot 중앙에 키캡) → 리플로 없음.
+    // 포커스된 pane에서 슬롯 키가 있는 탭만 아이콘 대신 키캡을 표시한다. 슬롯 폭은 유지한다.
     let switch_digit = crate::adapters::ui::switch_overlay::tab_keycap_for(
         props.kb,
         props.switch_overlay_pane,
         info.pane_id,
         i,
     );
-    // 등장 페이드(90ms, motion-ui-fast) — 이 pane 의 오버레이
-    // 활성 여부로 매 프레임 구동(키캡 미표시 프레임 포함 priming).
+    // 키캡이 없는 프레임에도 페이드 상태를 갱신한다.
     let overlay_active = props.switch_overlay_pane == Some(info.pane_id);
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
         ui.ctx(),
@@ -171,9 +144,7 @@ pub(super) fn draw_tab(
         );
     } else {
         let icon = info.tab_icons.get(i).copied().unwrap_or(icons::FILE);
-        // Image::paint_at 은 ui.painter()(=탭바 전폭 clip)를 쓰므로
-        // 배경/텍스트와 달리 뷰포트 밖으로 새어 화살표/우측 버튼과
-        // 겹친다. paint 동안만 ui clip 을 뷰포트로 좁혀 정합.
+        // 아이콘이 화살표·버튼 위로 넘치지 않게 그리는 동안 clip을 좁힌다.
         let prev_clip = ui.clip_rect();
         ui.set_clip_rect(clip_rect.intersect(prev_clip));
         icon.image(icon_size, text_color.into())
@@ -181,9 +152,7 @@ pub(super) fn draw_tab(
         ui.set_clip_rect(prev_clip);
     }
 
-    // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
     let text_x = icon_rect.max.x + 6.0;
-    // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽.
     let mut text_right = dot_right - 4.0;
     if is_busy {
         text_right -= dot_reserve;
@@ -223,9 +192,7 @@ pub(super) fn draw_tab(
             } else {
                 th.text_muted().into()
             };
-            // kind 아이콘과 동일: paint 동안만 ui clip 을 뷰포트로
-            // 좁혀 우측 경계 탭의 close ✕ 가 화살표/버튼 위로
-            // 새지 않게 한다(배경/텍스트 클립과 일관).
+            // 닫기 아이콘도 뷰포트 안에서만 그린다.
             let prev_clip = ui.clip_rect();
             ui.set_clip_rect(clip_rect.intersect(prev_clip));
             icons::CLOSE.image(cs, cc).paint_at(ui, close_rect);

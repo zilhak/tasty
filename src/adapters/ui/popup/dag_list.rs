@@ -220,7 +220,6 @@ pub fn draw_dag_list_popup(
     let view = dag.view;
     // back bar에서 받은 동작을 본문에 전달한다.
     let backbar_action: std::cell::RefCell<Option<ChromeAction>> = std::cell::RefCell::new(None);
-    // back bar에서 받은 동작을 본문에 전달한다.
     // DrillDown은 두 Fn 클로저 중 하나만 실행하므로 공유 상태를 RefCell로 빌린다.
     let cell = std::cell::RefCell::new(dag);
     let actions = |ui: &mut egui::Ui, theme: &Theme| {

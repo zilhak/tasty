@@ -1,15 +1,11 @@
-//! 화면이 소비하는 DAG 데이터 형태 + `Task` 레코드로부터의 변환.
-//!
-//! 렌더 코드가 `tasty_agent::Task` 를 직접 읽지 않게 하는 경계다. 캔버스는 여기서
-//! 만든 [`DagData`] 만 보므로, task 스키마가 바뀌어도 파장이 이 파일에서 멈춘다.
+//! Task 레코드를 DAG 화면에서 사용할 데이터로 바꾼다.
 
 use tasty_agent::{DagSummary, Task, TaskCommand, TaskState};
 
 use crate::core::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use crate::i18n::{t, t_fmt, t_fmt2};
 
-/// 노드 상태 8종. 색·글리프·라벨 3 채널을 모두 여기서 결정한다 — 색 단독으로
-/// 상태를 표현하지 않는다는 접근성 규칙의 집행 지점이다.
+/// 색·기호·번역 라벨로 함께 표시하는 노드 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DagStatus {
     Waiting,
@@ -23,14 +19,7 @@ pub enum DagStatus {
 }
 
 impl DagStatus {
-    /// 8 종 전부, 화면에 나열하는 고정 순서(대기 → 실행 → 종료 → 예외).
-    /// "어휘 전체" 를 보여야 하는 곳이 이 순서를 쓴다.
-    ///
-    /// 지금은 이 crate 안에 소비자가 없다 — 유일했던 소비자인 DAG 목록 상태 필터가
-    /// 비교 대상(rollup)의 실제 어휘인 [`Self::ROLLUP_ALL`] 로 옮겨갔기 때문이다.
-    /// 그래도 남겨 두는 이유는 이것이 **개별 task 상태의 정본 열거**이고 순서까지
-    /// 고정한 값이라, 8 종을 나열해야 하는 화면(노드 범례 등)이 생길 때 순서를 다시
-    /// 정하지 않기 위함이다. 갤러리 쪽 같은 목록은 별도 타입으로 따로 들고 있다.
+    /// 개별 task 상태 전체와 표시 순서. DAG 목록 필터는 ROLLUP_ALL을 사용한다.
     #[allow(dead_code)]
     pub const ALL: [DagStatus; 8] = [
         DagStatus::Waiting,
@@ -43,18 +32,8 @@ impl DagStatus {
         DagStatus::Unknown,
     ];
 
-    /// DAG **rollup** 어휘 6 종 — [`Self::ALL`] 과 같은 순서에서 `Cancelled` 와
-    /// `Unknown` 만 빠진 것.
-    ///
-    /// 개별 task 는 8 종 전부가 될 수 있지만 DAG 하나의 대표 상태를 뽑는
-    /// `DagStateCounts::rollup` 은 `"running"` / `"failed"` / `"succeeded"` /
-    /// `"skipped"` / `"ready"` / `"waiting"` **여섯 문자열만** 반환한다 —
-    /// `"cancelled"` 나 `"unknown"` 을 내는 분기가 없다(cancelled 가 섞인 DAG 는
-    /// `"skipped"` 로, unknown 이 남은 DAG 는 `"waiting"` 으로 롤업된다). 그래서
-    /// rollup 값을 비교하는 필터가 [`Self::ALL`] 을 나열하면 그 둘은 어떤 DAG 와도
-    /// 일치하지 않는 죽은 선택지가 된다.
-    ///
-    /// 노드 상태 표기처럼 "어휘 전체" 가 필요한 곳은 계속 [`Self::ALL`] 을 쓴다.
+    /// DAG 집계에서 반환하는 여섯 상태. Cancelled는 Skipped로, Unknown은 Waiting으로
+    /// 집계되므로 목록 필터에서는 두 개별 상태를 제외한다.
     pub const ROLLUP_ALL: [DagStatus; 6] = [
         DagStatus::Waiting,
         DagStatus::Ready,
@@ -91,14 +70,7 @@ impl DagStatus {
         }
     }
 
-    /// 색이 아닌 **모양** 채널.
-    ///
-    /// 어휘를 기하도형(U+25xx)·수학기호에서만 고른다. 체크/엑스(U+2713/2717)나
-    /// 화살촉(U+276F)은 딩뱃 블록이라 UI 프로포셔널 폰트에서 tofu 로 떨어지고
-    /// (`crates/tasty-doc-guards/tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 막는다),
-    /// 이모지 폴백은 컬러로 대체돼 색 채널과 중복된다 — 어느 쪽이든 3 채널이
-    /// 2 채널로 줄어 이 표기의 목적이 사라진다. 그래서 채움/외곽선과 원/삼각/
-    /// 마름모/사선이라는 **형태 차이**만으로 8 종을 구분한다.
+    /// 글꼴 누락과 컬러 이모지 대체를 피하려 기하·수학 기호로 상태를 구분한다.
     pub fn glyph(self) -> &'static str {
         match self {
             DagStatus::Waiting => "\u{25E6}",   // ◦ 흰 불릿
@@ -126,18 +98,17 @@ impl DagStatus {
         }
     }
 
-    /// 노드 카드 자체가 디밍되는 상태 — 실행되지 않기로 확정된 자리다.
+    /// 취소·스킵 상태의 카드는 흐리게 표시한다.
     pub fn is_dimmed(self) -> bool {
         matches!(self, DagStatus::Cancelled | DagStatus::Skipped)
     }
 
-    /// 여기서 **나가는** 엣지가 죽은 경로인지. 실패도 포함한다 — 실패 노드의
-    /// 하류는 (fallback 이 아니면) 진행되지 않는다.
+    /// 하류 경로를 흐리게 표시할 시작 상태. 실행 정책을 평가하는 판정은 아니다.
     pub fn kills_outgoing(self) -> bool {
         self.is_dimmed() || self == DagStatus::Failed
     }
 
-    /// terminal 상태(더 이상 전이하지 않음).
+    /// 화면에서 완료된 것으로 세는 상태.
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
@@ -263,14 +234,13 @@ pub struct DagListEntry {
 pub struct RunnerBadgeData {
     pub running: bool,
     pub crashed: bool,
-    /// **보고 있는 DAG 안의** ready 개수. workspace 전체가 아니다 — 화면이 12 개
-    /// 짜리 DAG 를 띄운 채 옆 DAG 의 ready 를 합산하면 배지가 거짓말을 한다.
+    /// 현재 DAG 안의 Ready 개수. 워크스페이스 전체 개수는 아니다.
     pub ready: usize,
     pub running_count: usize,
 }
 
 impl RunnerBadgeData {
-    /// 아무도 그래프를 진행시키지 않는데 할 일이 남은 상태 — 1급 경고.
+    /// 할 일이 남았지만 러너가 진행하지 않는 상태.
     pub fn is_stalled(&self) -> bool {
         !self.running && !self.crashed && self.ready > 0
     }
@@ -290,10 +260,7 @@ pub struct DagData {
     pub target_missing: bool,
 }
 
-/// `DagSummary` 목록 + 그 DAG 의 task 부분집합 → 화면 데이터.
-///
-/// `tasks` 는 **그 DAG 에 속한 task 만** 이어야 한다(호출자가 `DagSummary::task_ids`
-/// 로 걸러 넘긴다) — 엣지 수집이 목록 밖 참조를 엣지로 만들지 않게 하려는 것이다.
+/// 해당 DAG에 속하는 task만 받아 화면 데이터로 바꾼다.
 pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
     let index: std::collections::HashMap<&str, usize> = tasks
         .iter()
@@ -414,15 +381,10 @@ pub fn format_clock(epoch_ms: u64) -> String {
     }
 }
 
-/// 밀리초 → `1.2s` / `24s` / `3m 04s` / `1h 02m` (en 기준).
-///
-/// 단위 표기와 자릿수 배치를 통째로 번역 키에 맡긴다 — `s`/`m`/`h` 는 영어 약어라
-/// 로케일마다 관례가 다르고(ja `秒`/`分`, ko `초`/`분`), 어느 단위를 앞세우는지도
-/// 번역자가 정할 수 있어야 한다. 숫자 자체는 여기서 이미 자리를 맞춰 넣는다.
+/// 시간 값의 단위와 자릿수 표기는 번역 키에서 정한다.
 pub fn format_duration_ms(ms: u64) -> String {
     let secs = ms / 1000;
     if secs < 10 {
-        // 10 초 미만은 소수 한 자리 — 짧은 task 가 전부 "0s" 로 뭉개지지 않게.
         return t_fmt2(
             "dag.duration.sub_ten",
             &secs.to_string(),

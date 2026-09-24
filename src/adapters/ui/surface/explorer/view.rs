@@ -1,8 +1,4 @@
-//! Host-side per-surface state for `ExplorerPanel` rendering (T11).
-//!
-//! `ExplorerPanel` (model) 은 식별 + 내비게이션(내부 탭/히스토리/뷰모드)만 보유하고,
-//! 디렉토리 엔트리 캐시·선택 집합·사이드바 트리 펼침 같은 무거운 GUI 상태는 본 뷰
-//! 스토어에 둔다 (markdown/image 뷰 스토어와 동형). surface id 로 keying.
+//! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 보관한다.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -26,9 +22,7 @@ pub enum LoadState {
     Error(String),
 }
 
-/// (ADR-0022) 원격 mirror 디렉토리 응답 소프트 타임아웃 — File Picker
-/// (`file_picker.rs::LIST_DIR_SOFT_TIMEOUT`)와 동일 값. 상수 자체를 공유하진 않는다
-/// (두 모듈이 서로를 참조할 근거가 없는 독립 소비자 — 값의 우연한 일치일 뿐).
+/// 원격 디렉터리 응답의 UI 대기 제한. 로컬 동기 읽기에는 적용하지 않는다.
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0022 — `ExplorerView` 가
@@ -45,10 +39,7 @@ enum RemoteLoadState {
     Error(String),
 }
 
-/// `ExplorerView` 가 이번 프레임에 새로 만든 원격 list_dir 요청. 렌더 루프 중엔
-/// `engine`(`CoreState::pending_list_dir_forward`)을 재차입할 수 없어(egui_panels 의
-/// `ws`/`pane`/`tab`/`surface` 가 이미 `engine` 을 배타 차용 중) 여기 임시로 쌓아두고,
-/// 호출자가 루프 종료 후 [`ExplorerViewStore::drain_outbox`] 로 옮긴다.
+/// 렌더 중 만든 원격 조회 요청. engine을 다시 빌릴 수 없어 루프 종료 뒤 outbox를 옮긴다.
 pub(crate) struct ExplorerListRequest {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
@@ -146,9 +137,7 @@ impl ExplorerView {
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
         let tab = panel.active_tab();
-        // 주소창: 비편집 시 항상 활성 탭 cwd 로 재동기화(탭 전환/nav 로 cwd 가 바뀌면 버퍼도
-        // 따라간다). 편집 중이면 사용자 입력을 보존한다. 엔트리 reload 여부와 독립이므로
-        // 아래 early-return 보다 앞에 둔다.
+        // 편집 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다. 목록 갱신과는 별개다.
         if !self.addr_editing {
             let cwd = tab.root.display().to_string();
             if self.addr_buffer != cwd {
@@ -193,19 +182,13 @@ impl ExplorerView {
                 };
             }
         }
-        // 트리 펼침 캐시도 새로고침 시 무효화.
         if dir_changed || self.tree_children.is_empty() {
-            // (펼침 자체는 유지 — 다음 트리 렌더에서 lazy 재로드)
             self.tree_children.clear();
         }
         self.loaded = Some(key);
     }
 
-    /// (ADR-0022) 원격 mirror 경로: `dir` 의 원격 상태를 확인해 필요하면 새
-    /// `list_dir_request` 를 큐잉(`outbox`)하고, 이미 있는 상태(Loading/Loaded/Error)를
-    /// `entries`/`state` 에 반영한다. 응답 자체(`Loaded`/`Error` 전이)는
-    /// [`Self::apply_remote_list_dir_result`] 가 담당 — 여기서는 절대 동기 IO 를 하지
-    /// 않는다.
+    /// 경로별 원격 요청을 만들거나 저장된 결과를 표시한다. 실제 응답 반영은 apply_remote_list_dir_result에서 한다.
     fn sync_remote(
         &mut self,
         dir: &Path,
@@ -222,8 +205,7 @@ impl ExplorerView {
         let refresh = self.reload_requested;
         self.reload_requested = false;
 
-        // soft timeout — Loading 상태에서 응답이 오래 안 오면 연결 끊김으로 간주
-        // (File Picker 의 `LIST_DIR_SOFT_TIMEOUT` 과 동일 값/근거).
+        // 응답 대기가 제한 시간을 넘으면 조회 오류로 표시한다.
         if let Some(RemoteLoadState::Loading { sent_at, .. }) = self.remote_state.get(dir)
             && sent_at.elapsed() > LIST_DIR_SOFT_TIMEOUT
         {
@@ -236,7 +218,6 @@ impl ExplorerView {
         let need_request = match self.remote_state.get(dir) {
             None => true,
             Some(RemoteLoadState::Loading { .. }) => false,
-            // Loaded/Error — 사용자가 명시적으로 새로고침을 요청했을 때만 재조회.
             Some(_) => refresh,
         };
         if need_request {
@@ -281,9 +262,7 @@ impl ExplorerView {
         self.loaded = Some(key);
     }
 
-    /// 이 view 안에서 `request_id` 로 대기 중인 경로를 찾는다. host 가 응답 라우팅
-    /// 전 이걸로 "이 view 가 실제로 이 요청을 기다리는가"를 판정해, stale/불일치
-    /// 응답은 여기서 `None` 을 돌려받아 조용히 무시한다(ADR-0022).
+    /// 현재 기다리는 요청 ID의 경로만 반환한다. 오래되거나 다른 요청이면 None이다.
     fn find_pending_dir(&self, request_id: u64) -> Option<PathBuf> {
         self.remote_state
             .iter()
@@ -295,11 +274,8 @@ impl ExplorerView {
             })
     }
 
-    /// (ADR-0022) `MirrorEvent::ListDirResult` 도착 시 App 레이어가 호출. 이 view 가
-    /// `request_id` 를 실제로 기다리던 경로에 한해 반영 — 응답이 그 경로의 현재
-    /// 활성 root 와 같으면 `entries`/`state` 도 함께 갱신, 아니면(트리 펼침 요청)
-    /// `tree_children` 캐시만 채운다. 두 소비처(메인 목록/좌측 트리)가 같은 경로
-    /// 캐시(`remote_state`)를 공유하므로 한 번의 응답으로 둘 다 최신화될 수 있다.
+    /// 기다리는 요청의 응답을 경로 캐시에 반영한다. 현재 디렉터리이면 본문도 갱신하며
+    /// 트리와 본문이 같은 경로를 보고 있으면 같은 응답을 함께 사용한다.
     pub(crate) fn apply_remote_list_dir_result(
         &mut self,
         request_id: u64,
@@ -474,9 +450,7 @@ impl ExplorerViewStore {
         self.views.remove(&sid);
     }
 
-    /// 지금 들고 있는 view 수 — `system.gpu_stats` 가 창마다 싣는다. view 는 surface 가 처음
-    /// 렌더될 때 생기고 [`Self::drop_view`] 로 사라지므로, surface 를 닫은 뒤에도 줄지 않으면 그것이
-    /// 누수다(메모리 soak 의 기준선 복귀 판정).
+    /// 현재 뷰 개수. system.gpu_stats에서 닫힌 surface의 상태 정리를 확인할 때 쓴다.
     pub(crate) fn view_count(&self) -> usize {
         self.views.len()
     }
@@ -533,10 +507,8 @@ mod tests {
         let mut panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
         let mut view = ExplorerView::new();
         view.sync(&panel, None);
-        // 편집 진입 후 타이핑.
         view.addr_editing = true;
         view.addr_buffer = "/tmp/typed".to_string();
-        // cwd 가 바뀌어도(다른 탭/nav) 편집 중이면 버퍼 유지.
         panel
             .active_tab_mut()
             .navigate_to(PathBuf::from("/tmp/beta"));
@@ -555,7 +527,6 @@ mod tests {
         panel
             .active_tab_mut()
             .navigate_to(PathBuf::from("/tmp/beta"));
-        // 탭 전환/nav 적용 시 편집 취소 → 다음 sync 가 새 cwd 로 맞춘다.
         view.cancel_addr_edit();
         assert!(!view.addr_editing);
         view.sync(&panel, None);
@@ -574,7 +545,6 @@ mod tests {
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].local_ws_id, 7);
         assert_eq!(drained[0].dir, PathBuf::from("/remote/project"));
-        // outbox 는 drain 후 비어야 다음 프레임에 중복 재요청하지 않는다.
         assert!(view.drain_outbox().is_empty());
     }
 

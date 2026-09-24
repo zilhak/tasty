@@ -374,7 +374,7 @@ pub fn on_close_command_palette_popup(
 }
 
 /// 현재 검색 결과 수에 맞춰 카드 높이를 계산한다. 사용자 리사이즈 전까지 매 프레임 적용된다.
-/// 라벨·아이콘은 만들지 않고 개수만 센다. 폭은 고정이며 여기서 UI 배율을 적용한다.
+/// 표시 항목 전체를 만들지는 않고 검색 결과 수로 높이를 정한다. 폭에는 UI 배율을 적용한다.
 pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();

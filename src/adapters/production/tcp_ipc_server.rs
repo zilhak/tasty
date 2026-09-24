@@ -51,7 +51,7 @@ enum LineRead {
 /// 정상 사용에서 포화되면 system.pressure의 connections와 거절 로그로 재검토한다.
 pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 
-/// 한 회차의 처리 건수를 제한해 다른 이벤트가 기다릴 수 있게 한다.
+/// 한 회차의 처리 건수를 제한해 다른 이벤트도 처리할 수 있게 한다.
 /// 연결 상한과 같은 값을 사용하며 시간 예산도 별도로 적용한다(ADR-0007).
 /// 한 연결은 응답을 기다린 뒤 다음 요청을 보내지만 회차 중 새 요청이 들어올 수 있으므로
 /// 연결 수를 회차 전체의 처리 건수로 해석하지 않는다.
@@ -114,7 +114,7 @@ struct ConnectionSlot {
 
 impl ConnectionSlot {
     /// 상한 안에서 연결 슬롯을 확보한다. 포화 진입은 warn, 반복 거절은 debug로 남긴다.
-    /// 로그 수준과 무관하게 거절 횟수는 모두 집계하며 슬롯이 반환되면 다음 warn을 허용한다.
+    /// 로그 수준과 무관하게 거절 횟수는 모두 집계하며 다시 연결을 수락하면 포화 로그 플래그를 초기화한다.
     fn try_acquire(stats: &Arc<ConnectionStats>, saturated: &AtomicBool) -> Option<Self> {
         let limit = MAX_CONCURRENT_CONNECTIONS as u64;
         if stats.try_open(limit).is_none() {

@@ -1,7 +1,4 @@
-//! CSD 공통 titlebar 어댑터 — full-width 상단 바 + 드래그/더블클릭 → winit window 조작.
-//!
-//! view/wrapper 분리: 순수 [`view`] (props→actions) + 본 wrapper (props 추출 +
-//! action → winit window 조작 브리지). OS별 컨트롤(신호등/캡션 버튼)은 P4~P6.
+//! 공용 타이틀바를 그리고 사용자 동작을 winit 창 조작으로 전달한다.
 
 mod caption;
 mod view;
@@ -25,19 +22,12 @@ pub use view::{TitlebarAction, TitlebarControls, TitlebarProps, draw_titlebar_vi
 const MACOS_TRAFFIC_LIGHT_INSET: tasty_type_geometry::length::LogicalPx =
     tasty_type_geometry::length::LogicalPx(78.0);
 
-/// titlebar 가 차지하는 상단 inset (physical px) — `compute_terminal_rect` 의
-/// `top_inset` 인자 + egui SidePanel 시작 오프셋의 단일 진실원.
-///
-/// P3 에서 titlebar 는 항상 그려지므로 항상 실제 높이를 반환한다.
+/// 타이틀바가 차지하는 물리 높이. 터미널 영역과 사이드바의 시작 위치에 사용한다.
 pub fn top_inset(scale_factor: f32) -> PhysicalPx {
     theme::theme().titlebar_height.to_physical(scale_factor)
 }
 
-/// Linux CSD 의 DE 가변 버튼 프리셋을 반환한다.
-///
-/// 현재는 단일 기본 프리셋(우측 min·max·close, KDE-Breeze 류)으로 시작한다.
-/// DE 감지(GNOME=close만/우측 등) 및 사용자 설정 노출은 후속. macOS/Windows 는
-/// `None` — macOS 는 네이티브 신호등, Windows 캡션은 전용 caption.rs 로 그린다(P5).
+/// Linux는 오른쪽 최소화·최대화·닫기 버튼을 사용한다. DE 자동 감지는 하지 않는다.
 #[cfg(target_os = "linux")]
 fn os_controls() -> Option<TitlebarControls> {
     use view::{ControlSide, WindowButton};
@@ -56,17 +46,8 @@ fn os_controls() -> Option<TitlebarControls> {
     None
 }
 
-/// 공통 CSD titlebar 를 그리고, view 가 보고한 드래그/더블클릭/버튼 클릭을 winit
-/// window 조작 또는 app 이벤트로 브리지한다. `run_egui_frame` 의 egui 클로저
-/// 최상단에서 호출한다 — `TopBottomPanel::top` 이 먼저 등록되어야 사이드바
-/// `SidePanel` 이 그 아래에서 시작한다.
-///
-/// Windows 캡션 close 버튼도 `TitlebarAction::Close` 를 보고해 macOS/Linux 와 동일한
-/// proxy(`AppEvent::CloseWindow`) 경로로 라우팅된다.
-///
-/// `state.resize_edge_widget_hovered` 를 이 프레임의 타이틀바 버튼 hover 결과로
-/// **덮어쓴다**(OR 아님) — 프레임당 titlebar 가 가장 먼저 그려지므로 여기가 그 값의
-/// 리셋 지점이다(`draw_status_bar` 가 이어서 자신의 결과를 OR 로 누적).
+/// 타이틀바를 사이드바보다 먼저 그린다. 닫기 버튼은 공용 CloseWindow 이벤트로 전달한다.
+/// 가장자리 버튼 hover도 여기서 초기화하고 이후 화면에서 누적한다.
 pub fn draw_titlebar(
     ctx: &egui::Context,
     state: &mut AppState,
@@ -74,7 +55,6 @@ pub fn draw_titlebar(
     proxy: &EventLoopProxy<AppEvent>,
 ) {
     let th = theme::theme();
-    // macOS 만 네이티브 신호등 폭만큼 좌측 슬롯을 비운다. 그 외 OS 는 0.
     #[cfg(target_os = "macos")]
     let left_inset = MACOS_TRAFFIC_LIGHT_INSET.value();
     #[cfg(not(target_os = "macos"))]
@@ -93,8 +73,7 @@ pub fn draw_titlebar(
     for action in result.actions {
         match action {
             TitlebarAction::StartDrag => {
-                // 드래그 시작 시점(마우스 눌린 상태)에 호출해야 OS 가 윈도우 이동을
-                // 받는다. 실패(예: 일부 플랫폼/상태)는 치명적이지 않으므로 로그만.
+                // 창 이동은 마우스를 누른 상태에서 시작해야 한다. 실패하면 로그를 남긴다.
                 if let Err(e) = window.drag_window() {
                     tracing::warn!("titlebar drag_window failed: {e}");
                 }
@@ -106,17 +85,13 @@ pub fn draw_titlebar(
                 window.set_minimized(true);
             }
             TitlebarAction::Close => {
-                // 네이티브 CloseRequested 와 동일 라이프사이클로 라우팅(원칙 1: 사용자
-                // 클릭 → app 이벤트, IPC 비노출). App::user_event 가 per-window 처리.
                 crate::shortcuts::send_app_event(proxy, AppEvent::CloseWindow(window.id()));
             }
         }
     }
 }
 
-/// 8방향 [`winit::window::ResizeDirection`] → egui 리사이즈 커서 아이콘 매핑.
-/// 통합 리사이즈 경로(MainView hit-test)가 저장한 hover 방향을 egui 프레임에서
-/// 커서로 적용할 때 쓴다. 순수 매핑이라 OS 무관하게 컴파일된다.
+/// 창 리사이즈 방향을 egui 커서로 바꾼다.
 pub fn resize_cursor(dir: winit::window::ResizeDirection) -> egui::CursorIcon {
     use winit::window::ResizeDirection as D;
     match dir {

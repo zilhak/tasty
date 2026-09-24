@@ -1,25 +1,11 @@
 #![cfg(target_os = "windows")]
-//! Windows CSD 캡션 버튼 (minimize / maximize·restore / close).
-//!
-//! 디자인: 각 버튼 `caption_width`(46px) 폭 × titlebar full height, 우측 정렬 클러스터
-//! (좌→우 = minimize, maximize, close). hover bg = `overlay-hover`, press bg =
-//! `overlay-active`. close hover 만 시스템 red(`accent-window-close`) bg + 흰
-//! 글리프(`text-on-window-close`). 글리프는 벡터 스트로크로 painter 직접 렌더.
-//! 색·폭은 모두 P1 titlebar 토큰(`crates/tasty-type-appearance`)에서만 가져온다.
-//!
-//! 본 모듈은 `view.rs` 와 함께 순수 view 계층이다 — winit `Window` / 글로벌 theme 에
-//! 접근하지 않고 props(theme 참조 포함)와 egui `Ui` 만으로 동작한다.
+//! Windows 최소화·최대화/복원·닫기 버튼. 화면 입력과 Theme만 받아 그린다.
 
 use super::view::{TitlebarAction, TitlebarProps};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-/// 글리프 한 변 크기 (logical points). 46px 버튼 안의 중앙 ~10px 박스.
-///
-/// **아이콘 글리프 스케일 밖(10)** — 그 스케일은 12 · 14 · 15 · 16 이고 10 은 없다.
-/// `primitive.font-size-10` 이 있지만 그건 텍스트 가족이라 글리프 치수의 근거가 되지
-/// 않는다(ADR-0035). 인접 tier(12)로 맞추는 것은 값이 바뀌는
-/// 디자인 변경이라 스냅하지 않고 이름과 사유만 둔다.
+/// 글리프 크기. 대응 아이콘 토큰이 없어 글꼴 크기나 인접 아이콘 값으로 대체하지 않는다.
 const GLYPH: LogicalPx = LogicalPx(10.0);
 /// 글리프 스트로크 굵기 (logical points). UI kit 1px 보더 관습과 동일.
 const GLYPH_STROKE: LogicalPx = LogicalPx(1.0);
@@ -50,7 +36,6 @@ pub fn draw_caption_buttons(
     let mut actions = Vec::new();
     let mut hovered = false;
 
-    // 좌→우: minimize, maximize, close.
     for (idx, kind) in [Glyph::Minimize, Glyph::Maximize, Glyph::Close]
         .into_iter()
         .enumerate()
@@ -69,7 +54,6 @@ pub fn draw_caption_buttons(
         let pressed = resp.is_pointer_button_down_on();
         let is_close = matches!(kind, Glyph::Close);
 
-        // 배경: close hover 만 시스템 red, 그 외엔 overlay hover/active.
         let painter = ui.painter();
         if is_close && btn_hovered {
             painter.rect_filled(cell, 0.0, th.accent_window_close().to_egui());
@@ -79,8 +63,6 @@ pub fn draw_caption_buttons(
             painter.rect_filled(cell, 0.0, th.overlay_hover().to_egui());
         }
 
-        // 글리프 색: close hover=white, 그 외 hover=text-primary,
-        // 평상시=active/inactive 디밍된 titlebar fg.
         let glyph_color = if is_close && btn_hovered {
             th.text_on_window_close().to_egui()
         } else if btn_hovered {
@@ -124,7 +106,6 @@ fn paint_glyph(
     let stroke = egui::Stroke::new(GLYPH_STROKE.value(), color);
     match kind {
         Glyph::Minimize => {
-            // 중앙 수평선.
             painter.line_segment(
                 [
                     egui::pos2(c.x - h.value(), c.y),
@@ -134,7 +115,6 @@ fn paint_glyph(
             );
         }
         Glyph::Maximize if !maximized => {
-            // 단일 사각형 외곽선.
             painter.rect_stroke(
                 egui::Rect::from_center_size(c, egui::vec2(GLYPH.value(), GLYPH.value())),
                 0.0,
@@ -166,7 +146,6 @@ fn paint_glyph(
             );
         }
         Glyph::Close => {
-            // X (두 대각선).
             painter.line_segment(
                 [
                     egui::pos2(c.x - h.value(), c.y - h.value()),

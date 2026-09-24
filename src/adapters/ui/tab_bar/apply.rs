@@ -4,12 +4,7 @@ use super::{PaneTabBarView, TabBarAction, compute_drop_index};
 use crate::state::AppState;
 use egui::emath::GuiRounding as _;
 
-/// 탭바 유래 액션을 상태에 반영한다. egui `Context` 비의존이라 단위 테스트 가능.
-///
-/// primary-click 계열 액션은 개별 처리 전에 그 pane 으로 `focused_pane` 을 먼저
-/// 옮긴다([`TabBarAction::focus_target_pane`]) — 탭바 클릭은 그 pane 을 직접
-/// 조작하는 사용자 행위이므로, 콘텐츠 영역 클릭(경로 B)과 대칭으로 focus 가 따라가는
-/// 것이 일관된 동작이다.
+/// 탭바 동작을 처리한다. 직접 조작은 대상 pane으로 먼저 포커스를 옮긴다.
 pub fn apply_tab_bar_actions(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -52,8 +47,6 @@ pub fn apply_tab_bar_actions(
                 }
             }
             TabBarAction::RequestSplit { pane_id: _ } => {
-                // 단축키(`split_pane_vertical`)와 동일 경로. focus 는 위에서 이미 대상
-                // pane 으로 이동했다(cascade 가 새 pane 으로 다시 focus 이동).
                 use crate::intent::Intent;
                 use crate::model::SplitDirection;
                 state.dispatch_intent(
@@ -64,8 +57,6 @@ pub fn apply_tab_bar_actions(
                 );
             }
             TabBarAction::OpenSearch { pane_id: _ } => {
-                // 단축키(`find`)와 동일 경로 — 대상 pane 활성 surface 에 검색창을 연다.
-                // focus 는 위에서 이미 대상 pane 으로 이동했다.
                 open_search_for_focused_terminal(state, engine);
             }
             TabBarAction::ScrollLeft { pane_id } => {
@@ -89,8 +80,6 @@ pub fn apply_tab_bar_actions(
             TabBarAction::AutoScrollToActiveTab { pane_id, offset } => {
                 apply_auto_scroll(state, engine, pane_id, offset);
             }
-            // 빈 영역 클릭은 focus 이동이 전부다(탭 전환 없음) — 위 pre-match 에서 이미
-            // 처리됐으므로 여기선 추가 작업이 없다.
             TabBarAction::FocusPane { pane_id: _ } => {}
             TabBarAction::OpenContextMenu {
                 pane_id,
@@ -148,14 +137,7 @@ pub fn apply_tab_bar_actions(
     }
 }
 
-/// [`TabBarAction::OpenSearch`] 적용 — `apply_tab_bar_actions`의 cognitive complexity 를
-/// 낮추기 위해 분리.
-///
-/// `keybinding.rs`/`dispatch.rs`의 `kb.find` 게이트와 동일한 이유로 focused surface 가
-/// Terminal 일 때만 처리한다 — `search_bar` popup 은 `find_terminal_by_id` 로만 동작해
-/// 다른 kind 에서는 항상 빈 0/0 오버레이가 된다. 이 버튼은 활성 탭의 kind 와 무관하게
-/// 항상 렌더되므로(pane 마다 고정 노출), 단축키 경로만 고치고 이 경로를 놓치면 같은
-/// 버그가 마우스 클릭으로 그대로 재현된다.
+/// 검색 버튼은 터미널에서만 동작한다. 검색창은 terminal 데이터만 읽는다.
 fn open_search_for_focused_terminal(state: &mut AppState, engine: &mut crate::core::CoreState) {
     use crate::adapters::ui::popup::PopupScope;
     use crate::intent::{OpenPopupMode, UiIntent};
@@ -179,9 +161,7 @@ fn open_search_for_focused_terminal(state: &mut AppState, engine: &mut crate::co
     }
 }
 
-/// [`TabBarAction::AutoScrollToActiveTab`] 적용 — view 가 계산한 보정 오프셋을
-/// 그대로 pane 에 반영한다. `apply_tab_bar_actions` 의 cognitive complexity 를
-/// 낮추기 위해 분리.
+/// 화면에서 계산한 자동 스크롤 오프셋을 pane에 반영한다.
 fn apply_auto_scroll(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -197,8 +177,7 @@ fn apply_auto_scroll(
     }
 }
 
-/// [`TabBarAction::DragEnd`] 적용 — drag 중이던 탭을 실제 drop 위치로 옮긴다.
-/// `apply_tab_bar_actions` 의 cognitive complexity 를 낮추기 위해 분리.
+/// 드래그한 탭을 놓은 위치로 옮긴다.
 fn apply_drag_end(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,

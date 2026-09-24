@@ -1,14 +1,5 @@
-//! 도구 메뉴 팝업. 사이드바의 "도구" 버튼 위에 떠서 도구 목록을 보여준다.
-//!
-//! 항목은 모두 plugin 출처 — 활성 + `ui.tool_item` 권한 grant된 plugin이
-//! `[[contributes.tool]]`로 선언한 항목. `AppState::tool_registry`에 동기화돼 있다.
-//! Clipboard History 등 과거 호스트 빌트인 항목은 builtin plugin으로 이전됨.
-//!
-//! 클릭 시 dispatch:
-//! - `ToolAction::Event` → `state.pending_tool_events`에 enqueue (App 메인 루프가
-//!   PluginManager로 발화).
-//! - `ToolAction::OpenSurface` → focused pane에 `add_kind_tab`.
-//! - `ToolAction::OpenPopup` → pending_popup_opens enqueue.
+//! 사이드바 도구 메뉴. 본체 항목과 활성·권한 허용된 플러그인의 도구 항목을 표시한다.
+//! 플러그인 이벤트·팝업 요청은 큐에 넣고 surface 열기는 사용자 포커스 pane을 대상으로 한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
@@ -98,7 +89,6 @@ pub fn draw_tools_menu(
     let th = theme::theme();
     let width = ui.available_width();
 
-    // Built-in entries first.
     let mut open_popup: Option<&'static str> = None;
     let mut open_workspace_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
@@ -151,9 +141,7 @@ pub fn draw_tools_menu(
         return PopupAction::Close;
     }
     if let Some(popup_id) = open_popup {
-        // 명령 팔레트/포트 스캐너 등은 모달 popup — center + focus 가 자연스러우므로
-        // CenteredFocused 로 발화. 기존 코드는 raw `open` 만 호출해 중앙 정렬/포커스가
-        // 빠져 있던 버그를 함께 해결한다.
+        // 본체 팝업은 가운데 열고 포커스를 준다.
         state.dispatch_intent(
             UiIntent::OpenPopup {
                 id: popup_id,
@@ -207,10 +195,7 @@ pub fn draw_tools_menu(
     PopupAction::None
 }
 
-/// 도구 항목을 실행한다. plugin 항목의 action 종류별 처리.
-///
-/// 이 함수는 사용자 클릭에서만 호출된다 (포커스 의존 동작 — focused pane에 surface
-/// 추가). IPC 경유 `debug.tool.invoke`는 별도 경로로 pane/tab id를 명시한다.
+/// 사용자 클릭의 플러그인 도구를 실행한다. debug.tool.invoke는 대상 ID를 받는 별도 경로다.
 pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, item: &ToolItem) {
     match &item.action {
         ToolAction::Event { event_key } => {
@@ -227,14 +212,8 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
             );
         }
         ToolAction::OpenPopup { popup_id } => {
-            // `<plugin_id>/<popup_id>` 형식. split하여 plugin_manager로 dispatch할
-            // 수 있도록 pending_popup_opens에 enqueue. App 메인 루프가 drain.
-            //
-            // 사용자 메뉴 클릭은 활성 surface 컨텍스트에 매여 있으므로 focus surface 의
-            // 컨텍스트(cwd · mirror 판별)를 실어 plugin 이 popup.open 단계에서 쓰게 한다.
-            // `local_surface_id` 는 popup 이 이 mirror surface 를 앵커로 원격 조회
-            // (`git_viewer.query` IPC)를 트리거할 때 그대로 echo 한다. 키 목록과 의미는
-            // `AppState::popup_surface_context`.
+            // plugin/id를 나누어 팝업 요청을 큐에 넣는다. 사용자 포커스 surface의
+            // cwd·mirror 정보를 함께 전달하며 local_surface_id는 원격 조회 대상에 사용한다.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
                 let origin = state.focused_surface_id(engine);
                 let context = state.popup_surface_context(engine, origin);
@@ -256,27 +235,12 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
     }
 }
 
-/// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
-/// 계산한다 (convert popup 과 동일 패턴). draw 시 `allocate_exact_size` 사이의
-/// vertical gap 이 이 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
-///
-/// Theme 토큰 자체가 host UI zoom 곱셈을 이미 반영하므로 (Z-1/Z-2) 여기서
-/// 별도 `ui_scale_factor()` 곱셈 없이 그대로 사용한다.
+/// 실제 렌더링과 같은 항목 간격. Theme에 이미 배율이 적용돼 있다.
 fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
     theme::theme().spacing_xs.value().round_ui()
 }
 
-/// 빌트인 + 플러그인 항목 개수에 맞춘 popup 크기 계산.
-///
-/// content height = N·ITEM_HEIGHT + (N−1)·item_spacing
-///                  + (separator 가 들어가면 2·item_spacing)
-/// popup height   = content_margin()·2 + content_h + safety_margin
-///                  (headless 이므로 title_bar_height() 는 빠진다)
-///
-/// separator 는 `menu_separator` 위젯이며 세로로 `add_space(spacing_xs)` 를 상하로
-/// 소비한다(hline 은 painter 직접 호출이라 레이아웃 공간을 잡지 않음). item_spacing
-/// == spacing_xs 이므로 소비량은 `2·item_spacing` 이고, spacing_xs 가 zoom 곱을
-/// 이미 반영하므로 zoom 변화에도 자동 정합된다.
+/// 본체·플러그인 항목과 구분선 여백을 포함한 메뉴 크기. 타이틀바는 없는 팝업이다.
 fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
     let total = builtin_count + plugin_count;
     let total = total.max(1);
@@ -303,15 +267,12 @@ pub fn tools_menu_sizer(state: &AppState, engine: &crate::core::CoreState) -> eg
     )
 }
 
-/// PopupDef.default_size — register 시점 placeholder. registry 가 비어있을 수 있으므로
-/// BUILTIN_TOOLS 만 가정. sizer 가 매 프레임 재계산하므로 실제 렌더링에는 영향 없음.
+/// 등록 시에는 본체 항목으로 계산하고 렌더링 때 sizer로 갱신한다.
 pub fn tools_menu_default_size() -> egui::Vec2 {
     tools_menu_size_for(BUILTIN_TOOLS.len(), 0, theme::theme().spacing_xs.value())
 }
 
-/// 사이드바 도구 버튼이 popup 을 띄울 때 위치 계산용으로 호출한다.
-/// `default_size` 대신 *현재 등록된 plugin 도구 수* 까지 반영한 정확한 크기를 받아야
-/// popup top 이 버튼 위쪽 정확한 위치에 align 된다.
+/// 메뉴 위치 계산에 사용할 현재 본체·플러그인 항목의 크기.
 pub fn tools_menu_current_size(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
     tools_menu_sizer(state, engine)
 }
@@ -322,7 +283,6 @@ mod size_tests {
 
     #[test]
     fn fits_builtin_only_medium_scale() {
-        // ui_scale=1.0 → spacing_xs(4.0). BUILTIN 4 개, plugin 0 개, separator 없음.
         let size = tools_menu_size_for(4, 0, 4.0);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.0);
@@ -337,7 +297,6 @@ mod size_tests {
 
     #[test]
     fn fits_builtin_plus_plugin_with_separator() {
-        // BUILTIN 4 + plugin 3 → separator 1 개 추가됨.
         let size = tools_menu_size_for(4, 3, 4.0);
         let needed = popup::content_margin().scaled(2.0)
             + ITEM_HEIGHT.scaled(7.0)
@@ -353,7 +312,6 @@ mod size_tests {
 
     #[test]
     fn fits_plugin_only_no_separator() {
-        // BUILTIN 0 + plugin 5 (hypothetical) → separator 없음.
         let size = tools_menu_size_for(0, 5, 4.0);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(5.0) + LogicalPx(4.0 * 4.0);
@@ -363,13 +321,11 @@ mod size_tests {
     #[test]
     fn empty_does_not_underflow() {
         let size = tools_menu_size_for(0, 0, 4.0);
-        // total.max(1) 이 적용되어 최소 한 줄 분량은 확보된다.
         assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + ITEM_HEIGHT);
     }
 
     #[test]
     fn scales_with_ui_scale_1_2() {
-        // ui_scale=1.2 → spacing ≈ 4.78. 4 항목 기준 spacing 누적이 늘어나도 fit.
         let size = tools_menu_size_for(4, 0, 4.78);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.78);
