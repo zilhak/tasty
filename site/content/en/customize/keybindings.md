@@ -1,4 +1,4 @@
-<!-- source-hash: 8a2c9811225a -->
+<!-- source-hash: b5881fc12921 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -140,7 +140,7 @@ To import:
 
 Good to know:
 
-- Quick switch moves one axis at a time (Tab · Workspace · Category) — the modifier and the slot keys move together.
+- Quick-switch settings are imported as separate Tab, Workspace, and Category groups. Each group’s modifier and numbered keys are applied together.
 - Plugin keybindings that exist only on this computer are not removed just because the file lacks them. Conversely, keybindings for plugins not installed on this computer are not imported, and the comparison view says so in one line.
 - If parts of the file had to be skipped (a file written by a newer tasty, actions this version doesn't know), they are listed one per line in a **Read with warnings** box above the comparison. With four or more, three show and the rest open with **Show N more**.
 - If you pick something that isn't a keybinding file, you get **This file can't be read as keybindings** instead of the comparison, and nothing changes. Use **Choose another file** to try again.
@@ -173,10 +173,10 @@ Recording rules:
 
 "Go to n" · "next/previous" for Tabs · Workspaces · categories are grouped under a **one modifier + one key** rule. Change it at the bottom of the **Tab** sub-tab and the bottom of the **Workspace** sub-tab.
 
-- The **Tab switch modifier** · **Workspace switch modifier** · **Category switch modifier** dropdowns — defaults `Ctrl` · `Alt` · `Ctrl+Shift`. Changing one changes all slots on that axis at once (10 for tabs · 9 for Workspaces · 10 for categories).
+- The **Tab switch modifier** · **Workspace switch modifier** · **Category switch modifier** dropdowns — defaults `Ctrl` · `Alt` · `Ctrl+Shift`. Changing one changes all numbered keys in that group at once (10 for tabs · 9 for Workspaces · 10 for categories).
 - The slot buttons **Tab 1:** ~ **Tab 10:** and so on — press a single key without a modifier (**Press a key (no modifier)...**). For example, changing slot 1 to `Q` makes `Ctrl+Q` go to Tab 1, and the number badge shown on the Tab while the modifier is held changes to `Q` as well.
 - **Next tab:** · **Previous tab:** and so on — likewise a single key. Defaults are vi-style `L`/`H` (Tabs), `J`/`K` (Workspaces · categories).
-- Choosing **Custom** in the dropdown abandons the rule and records a completely different combination for each slot (such as `Ctrl+Alt+1`). No number badge is shown in this mode. Going back to the rule mode resets that axis to its defaults.
+- Choosing **Custom** in the dropdown abandons the rule and records a completely different combination for each slot (such as `Ctrl+Alt+1`). No number badge is shown in this mode. Going back to the rule mode resets that group to its defaults.
 
 <a id="keybindings-do-nothing-while-a-popup-has-focus"></a>
 

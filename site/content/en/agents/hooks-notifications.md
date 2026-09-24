@@ -1,4 +1,4 @@
-<!-- source-hash: 18ba4238e683 -->
+<!-- source-hash: c7057b921f07 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -66,7 +66,7 @@ Instead of `--command`, you can attach a pre-registered **hook handler** by name
 tasty hook-handler list                                     # registered handlers (host / plugin / user)
 tasty set hook --surface 42 --event bell --handler user/my-handler
 tasty hook-handler get --id user/my-handler                 # one handler in full, including what it does
-tasty hook-handler dispatch --id user/my-handler            # fire by hand to test
+tasty hook-handler dispatch --id user/my-handler            # run directly to test
 tasty hook-handler reload                                   # re-read ~/.tasty/hook-handlers.toml
 ```
 
@@ -90,7 +90,7 @@ The change is saved to `~/.tasty/hook-handlers.toml` right away. One thing does 
 
 User handlers are added and edited in the **Settings** › **Handler** › **Hook Handlers** tab. Saving writes them to `~/.tasty/hook-handlers.toml`, and you can also write the file directly (apply with `tasty hook-handler reload`).
 
-Every row shows who planted it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins plant their handlers again on every start. A handler that chains several internal actions shows that chain on one line, and the tab cannot change it — use `tasty hook-handler upsert` above, or edit the file and run `tasty hook-handler reload`.
+Every row shows who registered it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins register their handlers again on every start. A handler that chains several internal actions shows that chain on one line, and the tab cannot change it — use `tasty hook-handler upsert` above, or edit the file and run `tasty hook-handler reload`.
 
 ```toml
 [[handler]]
@@ -158,9 +158,9 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 
 ## Webhooks (outside → Tasty)
 
-Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one designated port and issues an unguessable URL for each webhook.
+Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one designated port and issues a URL that is difficult to guess for each webhook.
 
-Webhooks use an unguessable URL and an optional fixed token (`--auth-*`). **HMAC signature verification is not supported**, so signature headers from external services are not checked. **Without authentication, anyone who can reach the URL can request the action.** Include the authentication options you need when registering a webhook.
+Webhooks use a URL that is difficult to guess and an optional fixed token (`--auth-*`). **HMAC signature verification is not supported**, so signature headers from external services are not checked. **Without authentication, anyone who can reach the URL can request the action.** Include the authentication options you need when registering a webhook.
 
 ### Port settings
 
@@ -171,7 +171,7 @@ tasty webhook config --port 28429   # change the port — applied after restart
 
 - The settings file is `~/.tasty/webhooks.toml`. On first run, `28429` is written as the default.
 - If the port is empty or the bind fails, Tasty keeps the configured port and displays a warning. Check the port setting and restart Tasty.
-- **The listener binds every network interface.** Without opening any forwarding it is already reachable from the same network (an office LAN, public Wi-Fi). Router forwarding and the firewall are what you open to let *the internet* in; they are not what keeps it closed until then. Leave HTTPS to a reverse proxy in front.
+- **The webhook server accepts connections on all network interfaces.** If the host firewall allows it, devices on the same network, such as an office LAN or public Wi-Fi, can reach it without router forwarding. Check firewall and authentication settings even if you do not expose it to the internet. Use a reverse proxy for HTTPS.
 
 ### Registering
 

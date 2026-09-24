@@ -65,7 +65,7 @@ tasty unset global-hook --hook <HOOK_ID>
 tasty hook-handler list                                     # 등록된 핸들러 (host / plugin / user)
 tasty set hook --surface 42 --event bell --handler user/my-handler
 tasty hook-handler get --id user/my-handler                 # 한 건을 자세히 (하는 일까지)
-tasty hook-handler dispatch --id user/my-handler            # 손으로 발화해 테스트
+tasty hook-handler dispatch --id user/my-handler            # 직접 실행해 테스트
 tasty hook-handler reload                                   # ~/.tasty/hook-handlers.toml 다시 읽기
 ```
 
@@ -88,7 +88,7 @@ tasty hook-handler remove --id user/my-handler
 
 사용자 핸들러는 **설정** <!-- en: Settings --> › **핸들러** <!-- en: Handler --> › **훅 핸들러** <!-- en: Hook Handlers --> 탭에서 추가·편집합니다. 저장하면 `~/.tasty/hook-handlers.toml` 에 기록되며, 파일을 직접 써도 됩니다 (`tasty hook-handler reload` 로 반영).
 
-목록의 각 줄에는 그것을 심은 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 심기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 탭 안에서는 고칠 수 없습니다 — 위의 `tasty hook-handler upsert` 로 바꾸거나, 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
+목록의 각 줄에는 핸들러를 등록한 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 등록하기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 탭 안에서는 고칠 수 없습니다 — 위의 `tasty hook-handler upsert` 로 바꾸거나, 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
 
 ```toml
 [[handler]]
@@ -156,7 +156,7 @@ tasty approval await --id "$ID"            # 응답이 올 때까지 대기, 결
 
 ## 웹훅 (외부 → Tasty)
 
-CI 나 다른 서비스가 HTTP 요청을 보내 Tasty 안의 동작을 일으키게 합니다. Tasty 는 지정 포트 하나를 열고, 웹훅마다 추측할 수 없는 URL 을 발급합니다.
+CI 나 다른 서비스가 HTTP 요청을 보내 Tasty 안의 동작을 일으키게 합니다. Tasty 는 지정 포트 하나를 열고, 웹훅마다 추측하기 어려운 URL을 발급합니다.
 
 웹훅은 추측하기 어려운 URL과 선택적으로 설정하는 고정 토큰(`--auth-*`)을 사용합니다. **HMAC 서명 검증은 지원하지 않으므로**, 외부 서비스가 보낸 서명 헤더는 검사하지 않습니다. **인증을 설정하지 않으면 URL에 접근할 수 있는 누구나 동작을 요청할 수 있습니다.** 필요한 인증 옵션을 등록할 때 함께 지정하세요.
 
@@ -169,7 +169,7 @@ tasty webhook config --port 28429   # 포트 변경 — 재시작 후 반영
 
 - 설정 파일은 `~/.tasty/webhooks.toml`. 처음 실행 시 `28429` 가 기본으로 기록됩니다.
 - 포트가 비어 있거나 bind 에 실패하면 Tasty 는 다른 포트로 바꾸지 않으며 화면에 경고를 표시합니다. 포트 설정을 확인하고 Tasty를 다시 시작하세요.
-- **리스너는 모든 네트워크 인터페이스에 bind 합니다.** 포워딩을 열지 않아도 같은 네트워크(사내망·공용 Wi-Fi 등)에서는 이미 닿습니다 — 공유기 포워딩·방화벽은 *인터넷에서* 들어오게 할 때 여는 것이지, 그 전까지 닫혀 있다는 뜻이 아닙니다. HTTPS 는 앞단 리버스 프록시에 맡깁니다.
+- **웹훅 서버는 모든 네트워크 인터페이스에서 연결을 받습니다.** 호스트 방화벽이 허용하면 공유기 포워딩 없이도 같은 네트워크(사내망·공용 Wi-Fi 등)에서 접근할 수 있습니다. 인터넷 공개 여부와 별개로 방화벽과 인증 설정을 확인하세요. HTTPS는 앞단 리버스 프록시에서 처리합니다.
 
 ### 등록
 

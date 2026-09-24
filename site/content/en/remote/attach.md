@@ -1,4 +1,4 @@
-<!-- source-hash: b7395825d68d -->
+<!-- source-hash: b97bbf22d239 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -19,7 +19,7 @@ There are two kinds of profile. Both are stored in `~/.tasty/remote-profiles.tom
 | Kind | Holds | Used for |
 |---|---|---|
 | `ssh` | **Connection details only** — host · user · port · identity | `tasty tool ssh` connections; referenced by attach profiles |
-| `tasty-attach` | The attach spec — the connection (a reference to an ssh profile, or entered directly) plus the remote tasty path · port discovery mode | attach and remote queries use **only this kind** |
+| `tasty-attach` | Attach connection settings (a reference to an ssh profile, or entered directly) plus the remote tasty path · port discovery mode | attach and remote queries use **only this kind** |
 
 Trying to attach directly with an `ssh` profile is refused. Always create one `tasty-attach` profile.
 
@@ -98,7 +98,11 @@ tasty remote attach --ssh me@10.0.0.5 --workspace 3        # one-off, without a 
 tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/proj   # create a Workspace on the remote
 ```
 
-- A Workspace attach mirrors the terminals inside it, including the split structure. Image Surfaces show their content as well, and clicks and key presses reach the remote. The explorer can only be browsed — renaming, deleting and opening files are blocked. Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — only the refresh button changes color (if the remote Tasty is a headless build, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, and once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file. HTML Surfaces still only take up their place; their content is not shown yet.
+- A Workspace attach mirrors the terminals inside it, including the split structure.
+- Image Surfaces show their content as well, and clicks and key presses reach the remote.
+- The explorer can only be browsed — renaming, deleting and opening files are blocked.
+- Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — only the refresh button changes color (if the remote Tasty is a headless build, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, and once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file.
+- HTML Surfaces appear as empty areas; their content is not shown yet.
 - `--raw` works only at the Surface level.
 - Unless you pass `--no-reconnect`, it automatically tries to reconnect when SSH drops.
 - If a slow link makes you miss part of the screen the remote was sending, the remote says so and the attach re-attaches on its own to fetch the screen again, printing a one-line notice in your terminal. An attach that prints the screen and exits re-attaches up to three times per run; if it still misses something, it prints the result and then warns that part of the screen may be missing. `--raw` re-attaches with no limit and redraws the screen from scratch. Input given with `--send` is not sent again.
@@ -160,7 +164,7 @@ tasty settings set-remote-transfer --dir ~/Downloads/tasty --max-mb 2000
 |---|---|
 | `kind='ssh'` refused | You passed an ssh profile to `--profile`. Create a `tasty-attach` profile and specify that |
 | Remote tasty not found | Is Tasty running on the remote? Verify the port with `tasty tool remote-profile detect --name <n>`. If it is not on PATH, specify the executable path or `--port-mode file-unix` |
-| Timeout | Host reachability · firewall. ssh profile `--option ConnectTimeout=<seconds>` |
+| Timeout | Check whether you can reach the host and whether the firewall permits the connection. ssh profile `--option ConnectTimeout=<seconds>` |
 | SSH connection failed | Authentication · host key. First check that `tasty tool ssh <ssh profile>` connects |
 | Workspace attach refused | One of the terminals inside it is already occupied by another client. Force-detach on the remote |
 | Screen flickers briefly when first attaching | Normal behavior while the remote re-lays out to your Pane size |

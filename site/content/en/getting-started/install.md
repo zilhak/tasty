@@ -1,4 +1,4 @@
-<!-- source-hash: 4e9c5afd97ac -->
+<!-- source-hash: 48c61db95a8b -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -40,11 +40,11 @@ chmod +x Tasty-{ver}-x86_64.AppImage && ./Tasty-{ver}-x86_64.AppImage
 tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 ```
 
-- `.deb` / `.rpm` put the `tasty` command on PATH and add an icon to the app menu. The package pulls in the required libraries automatically.
+- `.deb` / `.rpm` put the `tasty` command on PATH and add an icon to the app menu. The package manager installs the required libraries.
 - GPU acceleration (Vulkan) is used when `libvulkan1` / `vulkan-loader` is present. Without it, Tasty still installs and runs, using OpenGL, or software rendering if that fails too.
-- `.AppImage` bundles all libraries. You register it in the app menu yourself (use `appimaged`, or put a `.desktop` file in `~/.local/share/applications/`).
+- `.AppImage` bundles libraries used to run Tasty. You register it in the app menu yourself (use `appimaged`, or put a `.desktop` file in `~/.local/share/applications/`).
 - `.tar.gz` requires you to set up PATH and the menu entry yourself. If a required system library is missing, `tasty` tells you what is missing and exits.
-- The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. They are also set up to be uploaded to the release page, though no release has been published that way yet.
+- The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. The release process also uploads these notice files separately to the release page.
 - The build baseline is Ubuntu 24.04 (glibc 2.39), so on older distributions (Ubuntu 20.04, Debian 11, etc.) it may fail to start with a `GLIBC_2.39 not found` error. No separate build is provided for older distributions.
 
 ## macOS
@@ -58,7 +58,7 @@ To clear the warning directly from the terminal:
 xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```
 
-Right after the first launch, macOS permission prompts (Downloads · Documents · Desktop folders, Screen Recording) appear one after another. Why they appear and how to answer them is in [Troubleshooting](../help/troubleshooting.md#macos-permission-prompts).
+After the first launch, macOS may show permission prompts for the Downloads, Documents, and Desktop folders, followed by Screen Recording. Which prompts appear depends on prior permission choices and macOS policy. Why they appear and how to answer them is in [Troubleshooting](../help/troubleshooting.md#macos-permission-prompts).
 
 ## Windows
 
@@ -95,7 +95,7 @@ Shells opened inside Tasty get the `tasty` command on PATH automatically. On mac
 
 ## GPU requirements
 
-Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it prints a "GPU adapter not found" message and exits. Installing or updating the GPU driver resolves this in most cases. All distributed install files are GUI builds, so they do not run on servers without a GPU.
+Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it prints a "GPU adapter not found" message and exits. Installing or updating the GPU driver resolves this in most cases. All distributed install files are GUI builds. To run on a server without a graphical desktop, use the headless build below.
 
 ## Headless build
 

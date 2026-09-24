@@ -1,4 +1,4 @@
-<!-- source-hash: ea412632f10b -->
+<!-- source-hash: d6a2b7dcbdbf -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -8,9 +8,9 @@ Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or m
 | Theme | File | Brightness | Notes |
 |------|------|------|------|
 | **Catppuccin Mocha** | `~/.tasty/themes/mocha.toml` | Dark | The default theme. If you delete or break it, it is restored to the original on the next launch |
-| **Catppuccin Latte** | `~/.tasty/themes/latte.toml` | Light | Created once on first launch. If you delete it, it stays deleted |
+| **Catppuccin Latte** | `~/.tasty/themes/latte.toml` | Light | Created when the theme folder is empty. If other themes remain, a deleted Latte file is not recreated |
 
-Both files are managed by Tasty, so **do not edit them directly** — they are reverted to the original content on every launch. To change colours, use "Changing just a few colours" or "Making your own" below.
+Both files are managed by Tasty, so **do not edit them directly** — Mocha and any existing Latte file are restored to their bundled contents on launch. To change colours, use "Changing just a few colours" or "Making your own" below.
 
 ## Switching themes
 
@@ -135,7 +135,7 @@ Rules:
 
 - Colours use the `#RGB` · `#RRGGBB` · `#RRGGBBAA` formats. With 8 digits, the last two are opacity.
 - `[surfaces.<kind>]` holds the focused / unfocused background · text colours per Surface kind. Besides `terminal` · `markdown` you can use kind names registered by plugins, and kinds you do not define are drawn with safe default colours.
-- Translucent colours such as hover · selection highlights, and spacing · font sizes, are not in the theme file. They are derived automatically from `is_light`.
+- Translucent effects such as hover and selection highlights are derived from `is_light`. Spacing and font sizes are not configured in the theme file.
 - When making a light theme, be sure to write `is_light = true`. The direction of the overlay colours (black tint / white tint) depends on this value.
 
 To apply the file you made, open **Settings** > **Appearance** > **Theme**. The folder is re-read every time this tab is opened, so no restart is needed. When the card appears, click it and **Save**.

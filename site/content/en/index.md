@@ -1,4 +1,4 @@
-<!-- source-hash: cea56397222e -->
+<!-- source-hash: 6c997f5d7cc2 -->
 # Tasty guide
 
 Tasty is a GPU-accelerated terminal where you and your AI agents work together. On Windows, macOS, and Linux, you can organize projects into workspaces and open several terminals side by side. Agents use the `tasty` CLI to create terminals, run commands, and read the results.
@@ -35,7 +35,7 @@ Start with installation and a first look if you are new to Tasty. If you already
 
 ## Remote · plugins
 
-- [Working remotely](remote/attach.md) — Mirroring another machine's Tasty onto your screen with profiles and SSH.
+- [Working remotely](remote/attach.md) — Connecting to Tasty on another computer with profiles and SSH.
 - [Plugins](plugins/index.md) — Installing, permissions, an introduction to the bundled plugins.
 
 ## Help

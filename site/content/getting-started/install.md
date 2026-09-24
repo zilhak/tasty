@@ -39,11 +39,11 @@ chmod +x Tasty-{ver}-x86_64.AppImage && ./Tasty-{ver}-x86_64.AppImage
 tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 ```
 
-- `.deb` / `.rpm` 은 `tasty` 명령을 PATH 에 등록하고 앱 메뉴에 아이콘을 넣습니다. 필요한 라이브러리는 패키지가 자동으로 끌어옵니다.
+- `.deb` / `.rpm` 은 `tasty` 명령을 PATH 에 등록하고 앱 메뉴에 아이콘을 넣습니다. 패키지 매니저가 필요한 라이브러리를 함께 설치합니다.
 - GPU 가속(Vulkan)은 `libvulkan1` / `vulkan-loader` 가 있을 때 씁니다. 없어도 설치·실행은 되고 OpenGL 로, 그것도 안 되면 소프트웨어 렌더링으로 동작합니다.
-- `.AppImage` 는 라이브러리를 모두 포함합니다. 앱 메뉴 등록은 직접 합니다(`appimaged` 사용 또는 `.desktop` 파일을 `~/.local/share/applications/` 에 두기).
+- `.AppImage`는 실행에 쓰는 라이브러리를 함께 묶어 배포합니다. 앱 메뉴 등록은 직접 합니다(`appimaged` 사용 또는 `.desktop` 파일을 `~/.local/share/applications/` 에 두기).
 - `.tar.gz` 는 PATH 등록과 메뉴 등록을 직접 해야 합니다. 필요한 시스템 라이브러리가 없으면 `tasty` 실행 시 무엇이 빠졌는지 안내하고 종료합니다.
-- 라이선스 고지(Tasty 의 MIT 본문 · 함께 번들하는 폰트와 markdown 렌더링 엔진의 라이선스 본문 · 제3자 고지 문서)는 산출물 안에 함께 들어 있습니다. `.deb` 은 `/usr/share/doc/tasty/`, `.rpm` 과 `.AppImage` 는 `usr/share/licenses/tasty/`, `.tar.gz` 는 압축을 푼 디렉토리 최상단입니다. 릴리스 페이지에서도 따로 내려받을 수 있도록 해 두었지만, 그렇게 올라간 릴리스는 아직 없습니다.
+- 라이선스 고지(Tasty 의 MIT 본문 · 함께 번들하는 폰트와 markdown 렌더링 엔진의 라이선스 본문 · 제3자 고지 문서)는 산출물 안에 함께 들어 있습니다. `.deb` 은 `/usr/share/doc/tasty/`, `.rpm` 과 `.AppImage` 는 `usr/share/licenses/tasty/`, `.tar.gz` 는 압축을 푼 디렉토리 최상단입니다. 릴리스 배포 절차는 이 고지 파일들을 릴리스 페이지에도 별도로 올립니다.
 - 빌드 기준이 Ubuntu 24.04(glibc 2.39)라서 그보다 오래된 배포판(Ubuntu 20.04, Debian 11 등)에서는 `GLIBC_2.39 not found` 오류로 실행되지 않을 수 있습니다. 구배포판용 빌드는 따로 제공하지 않습니다.
 
 ## macOS
@@ -57,7 +57,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```
 
-첫 실행 직후에는 macOS 권한 프롬프트(다운로드 · 문서 · 데스크탑 폴더, 화면 기록)가 차례로 뜹니다. 왜 뜨는지와 어떻게 답할지는 [문제 해결](../help/troubleshooting.md#macos-권한-프롬프트) 에 있습니다.
+첫 실행 직후에는 macOS 권한 프롬프트(다운로드 · 문서 · 데스크탑 폴더, 화면 기록)가 차례로 뜰 수 있습니다. 표시 여부는 기존 승인 상태와 macOS 정책에 따라 다릅니다. 왜 뜨는지와 어떻게 답할지는 [문제 해결](../help/troubleshooting.md#macos-권한-프롬프트) 에 있습니다.
 
 ## Windows
 
@@ -94,7 +94,7 @@ Tasty 안에서 연 셸에는 `tasty` 명령이 자동으로 PATH 에 들어갑�
 
 ## GPU 요구사항
 
-Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 "GPU 어댑터를 찾을 수 없음" 메시지를 내고 종료합니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 배포되는 설치 파일은 모두 GUI 빌드라 GPU 없는 서버에서는 실행되지 않습니다.
+Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 "GPU 어댑터를 찾을 수 없음" 메시지를 내고 종료합니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 배포되는 설치 파일은 모두 GUI 빌드입니다. 그래픽 화면 없이 서버에서 실행하려면 아래 headless 빌드를 사용하세요.
 
 ## headless 빌드
 

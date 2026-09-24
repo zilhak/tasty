@@ -1,4 +1,4 @@
-<!-- source-hash: 347d1d2567bb -->
+<!-- source-hash: f2c50991c84d -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -106,23 +106,11 @@ When the parent is Claude Code, subscribe to the completion log with Monitor.
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
 
-Log messages follow the app language. The file is truncated at 256 KiB. When a claude child and a
-codex child write to the same log, **a line is either there whole or not there at all** - two lines
-never interleave and a line is never cut in the middle. **Restarting tasty clears
-the completion log the previous run left behind** - lines written before a restart cannot be read
-back afterwards. You can read the file without Monitor, but file reading alone guarantees neither
-automatic resumption nor permanent retention.
+Log messages follow the app language. Claude and Codex children record notifications one line at a time in the same file. **Restarting Tasty deletes completion logs from the previous run.** Reading a log without Monitor does not provide automatic resumption or permanent storage.
 
-What the log keeps is **the tasty instance you are running right now**, and the size limit is
-**bytes only**. There is no time limit and no limit on the number of files - the completion log of
-a tab you closed stays where it is until the next restart. At 256 KiB the file is **emptied whole
-rather than trimmed back to the last 256 KiB**, so anything you had not read yet goes with it.
-What disappears here is whole lines too - a line is never cut in the middle. How much was thrown
-away is written to the log at that moment, so you can trace afterwards why a notification never
-arrived. If you read the completion log yourself and pick up where you left off, also look at the
-`<number>.log.meta` file next to it. Its `retention_start` is the total number of bytes emptied so
-far. Compare your read position with that value to learn how much disappeared unread while you
-were away. A Monitor subscription does not need this file.
+Before writing, if the file is already **256 KiB** or larger, Tasty empties it rather than keeping the last 256 KiB. Adding a line or concurrent writes can take it beyond that size, and unread notifications may be lost. Normal cleanup removes whole lines and logs the discarded byte count. There is no time limit or file-count limit; a closed tab’s log stays until the next restart.
+
+If you read logs directly and resume later, also keep track of `retention_start` in the adjacent `<number>.log.meta` file. It counts the total bytes removed by cleanup. Compare it with your saved read position to detect a gap. Cleanup or metadata-write failures can leave losses out of that total, so this does not detect every missing notification. Monitor subscriptions do not need to read this metadata file.
 
 **Do not run two copies of tasty against the same data folder.** The one that starts later wipes
 the completion-log folder as it boots, which takes the live log the earlier one was writing to.
@@ -146,8 +134,8 @@ When a temporary API error such as a server overload ends Claude's turn, Tasty c
 
 `launch`/`spawn`/`respawn` bypass shell `codex` aliases and functions in sh/bash/zsh and Windows Git Bash, running Codex installed on `PATH`. Specify approval and sandbox options through the flags below or global settings. Alias/function bypass for `reboot` applies on Linux/macOS. Windows `reboot` keeps its existing launch behavior and does not yet bypass aliases or functions.
 
-- **Approval**: `--approval untrusted|on-request|never`. If you pass nothing, it runs with **`never`** — to prevent automation from getting stuck forever at an approval prompt. Specify `untrusted` / `on-request` only when a person is beside it to approve.
-- **Sandbox**: `--sandbox read-only|workspace-write|danger-full-access`. If not given, the Codex default. `read-only` suits children used for review and cross-checking.
+- **Approval**: `--approval untrusted|on-request|never`. Without a per-call option, Tasty uses the plugin’s global default. If that is unset or **Inherit**, it uses **`never`** so automation does not wait for an approval response. Specify `untrusted` / `on-request` only when a person is beside it to approve.
+- **Sandbox**: `--sandbox read-only|workspace-write|danger-full-access`. Without a per-call option, Tasty uses the plugin’s global default. If that is unset or Inherit, it leaves the choice to Codex. `read-only` suits children used for review and cross-checking.
 - `--full-auto`: bypasses both approval and sandbox. Cannot be combined with `--approval`/`--sandbox`.
 - The global defaults are **Default approval policy** / **Default sandbox mode** at **Settings** › **Plugins** › **Codex**. Per-call flags take precedence.
 
@@ -158,7 +146,7 @@ In environments where nested sandboxes are not possible, such as containers, if 
 `tasty claude launch/spawn/respawn/reboot/child-profile` accept the child's permission mode as a flag.
 
 - `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — passed straight through to Claude Code.
-- **If you pass nothing, no flag is added at all.** The child starts with the Claude Code settings you already use. Unlike Codex it does not quietly become "never ask" — Claude Code has no separate sandbox axis, so making it stop asking is the same as letting it run unrestricted.
+- **Without a per-call option, Tasty uses the plugin’s global default.** If that is unset or **Inherit**, no permission-mode flag is added and the existing Claude Code settings apply. Tasty does not automatically switch it to a mode that skips approval.
 - If a child pausing for approval would break an unattended run, name the mode you want on that call. A paused child’s state is also delivered through the configured [receiving channel](#4-receiving-completion-notifications).
 - The global default is **Default permission mode for child sessions** at **Settings** › **Plugins** › **Claude Code**. It defaults to **Inherit** (no flag), and per-call flags take precedence.
 - If the settings JSON behind `--profile` / `--profile-file` sets `permissions.defaultMode`, it cannot be combined with `--permission-mode` — the two decide the same thing, so you get an error asking you to pick one.

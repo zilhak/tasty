@@ -1,4 +1,4 @@
-<!-- source-hash: 40dfca36208b -->
+<!-- source-hash: cf669932596f -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -18,7 +18,7 @@ tasty list info            # version and the queried window’s Workspace count 
 
 ## Terms and IDs
 
-Tasty's screen is nested as **Workspace > Pane > Tab > Surface**. A Surface is one terminal. Every target in the CLI is addressed directly by this ID — the result is the same no matter which window has focus.
+Tasty's screen is nested as **Workspace > Pane > Tab > Surface**. A Surface displays content such as a terminal or a Markdown document. A command with an explicit target ID uses that target regardless of which window has focus.
 
 ```sh
 tasty list tree            # whole hierarchy as a tree
@@ -45,7 +45,7 @@ Each row of `list workspaces` has the form `name (id:N) (pane count)`. The activ
 
 ## Basic pattern: mark → send → read since mark
 
-This is the standard procedure for extracting just the result of a single command.
+Set a marker before sending a command, then read the output after it. Other output from the same terminal may be included too.
 
 1. `tasty set mark` — leave a marker at the current output position.
 2. `tasty send text "command\r"` — send the text. `\r` is Enter.
@@ -71,7 +71,7 @@ tasty is-typing --surface 42                  # whether a person pressed a key o
 
 ### When several agents read the same terminal: read from a position you hold
 
-There is only one mark per Surface, so when several agents watch the same terminal, one agent's `set mark` moves the others' reading window. To stay out of each other's way, **each reader holds its own position**.
+There is only one mark per Surface, so when several agents watch the same terminal, one agent's `set mark` moves the others' reading window. To stay out of each other's way, **each reader saves its own position**.
 
 ```sh
 tasty read since-mark --surface 42 --strip-ansi --max-bytes 65536
@@ -80,7 +80,7 @@ tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
 ```
 
 - The reply (JSON) carries `next_cursor` (where to read next), `stream` (a token for the terminal that position belongs to) and `skipped` (how many bytes left the buffer before you could read them). **Always continue from `next_cursor`** — counting from the length of `text` drifts by however much colour code was stripped.
-- Tasty remembers nothing for a read that gives a position, so any number of readers never push each other. The mark does not move either.
+- Tasty does not store a read position per reader. Each request uses the position you send, without changing another reader’s position or the shared mark.
 - Use `--cursor` only together with `--stream`. If the Surface was closed and another opened under the same number, or its terminal was restarted, the old position is refused with an error instead of being applied — read once without a position to start over.
 - A non-zero `skipped` is what disappeared before you read it. The output buffer keeps only the most recent 1 MiB.
 - `--max-bytes` lowers how much one read returns. Continue from `next_cursor` for the rest. `0` does not mean "no limit" — it is treated as 1 byte. To read without a limit, leave `--max-bytes` out.
@@ -92,7 +92,11 @@ tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
 tasty --response-timeout-ms 5000 read screen --surface 42
 ```
 
-Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. If the time runs out while the request is still waiting its turn inside Tasty, the command ends with `Error (-32067): …` instead. Then **nothing ran**, so you can send it again as is. Without the flag, or with `0`, there is no bound. It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing. An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above. That check counts against the same time: if Tasty is stuck and even the check does not finish in time, the request is not sent and the command ends with `Error (-32067): …`, so you can send it again as is.
+Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. If the time runs out while the request is still waiting its turn inside Tasty, the command ends with `Error (-32067): …` instead. Then **nothing ran**, so you can send it again as is. Without the flag, or with `0`, there is no bound.
+
+It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing.
+
+An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above. That check counts against the same time: if Tasty is stuck and even the check does not finish in time, the request is not sent and the command ends with `Error (-32067): …`, so you can send it again as is.
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
 
@@ -143,7 +147,11 @@ tasty close self                                        # close this very Surfac
 
 A tab opened with `tasty new tab` does not change the tab the person was looking at, whatever its kind. The new tab is added at the end of the pane and stays in the background until the person picks it. The reply's `active_tab` is the tab currently selected in that pane, not the new one, so use the reply's `surface_id` to work with the new tab. A tab the person opens by shortcut or menu is selected right away.
 
-A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one. To create a workspace in the new window, give a Surface ID from that window with `tasty new workspace --surface <ID>` — `tasty list windows` shows the `workspace_ids` of each window, and `tasty list surfaces` shows the `workspace_id` of each Surface. If no window holds the Surface you give, the command ends with an error instead of landing in another window. Without `--cwd`, the new workspace takes its working directory from the Surface you give (not from the one the person is looking at in that window). The new window appears behind the window the person was looking at and does not take keyboard input (macOS · Windows). On Linux, X11 asks the window manager to do the same, but whether it does is up to the window manager, and on Wayland the compositor decides. Either way, the window that untargeted commands go to does not change.
+A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one.
+
+To create a workspace in the new window, give a Surface ID from that window with `tasty new workspace --surface <ID>` — `tasty list windows` shows the `workspace_ids` of each window, and `tasty list surfaces` shows the `workspace_id` of each Surface. If no window holds the Surface you give, the command ends with an error instead of landing in another window. Without `--cwd`, the new workspace takes its working directory from the Surface you give (not from the one the person is looking at in that window).
+
+The new window appears behind the window the person was looking at and does not take keyboard input (macOS · Windows). On Linux, X11 asks the window manager to do the same, but whether it does is up to the window manager, and on Wayland the compositor decides. Either way, the window that untargeted commands go to does not change.
 
 The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
 never takes the window down with it; it is refused instead, so reach for `tasty close window` when
@@ -188,7 +196,7 @@ tasty session list
 tasty session revoke --token <token>
 ```
 
-A child holding the issued token in `TASTY_SESSION_TOKEN` may use exactly the permissions named on it.
+When a child uses the issued token as `TASTY_SESSION_TOKEN`, Tasty checks its requests against the permissions on that token.
 
 Commands that a plugin adds (`tasty markdown recent`, `tasty codex spawn` and so on) need a permission too.
 For `tasty <command> …`, add `--permission ipc.invoke:<command>` — `tasty markdown …` needs
@@ -277,7 +285,7 @@ If Tasty cannot open its memory file (`~/.tasty/memory.db`) when it starts — t
 
 ## Pulling signals out of the output (observers)
 
-Watch the output as it scrolls past and collect only the **structured signals** — paths · URLs · exit codes · prompt boundaries. Use it so a script can react to those signals without a person watching the screen.
+Observers find and record paths, URLs, exit codes, and prompt boundaries in terminal output. Scripts can use these records without a person watching the screen.
 
 ```sh
 tasty output observe start --surface 42 --parsers exit_code,url --sink file
@@ -299,7 +307,7 @@ tasty telemetry top --by agent --metric tokens    # top by agent
 tasty telemetry timeseries --metric tokens --window 1h
 ```
 
-`record` attributes the call to the caller automatically (`TASTY_AGENT_ID`). To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
+Without `--agent`, `record` uses the caller ID identified by Tasty. An agent using a session token uses that session’s ID. A local call without a token uses `TASTY_AGENT_ID` from the running Tasty process, or `_host` if unset. To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
 
 ## Other queries and settings
 
@@ -326,7 +334,7 @@ The `file-handler reload` response has a `rejected` list. It holds the `id` and 
 - `missing_detector_or_action` — an entry you made yourself (`user/…`) is missing either which files it handles (`detector`) or what to do (`action`). The entry is dropped.
 - `target_not_contributed` — the entry changes a built-in or plugin handler, but that handler is not there right now. Either the plugin is off or the `id` is wrong. The entry is kept, and it applies as soon as the plugin is on. If it is still listed after you turn the plugin on, check the `id`.
 
-`file-handler detectors` shows, for each file format detector, the values in effect now (display name, icon, whether it is on, rules) together with what each source contributed (`contributions`). A source is `host` (built in), `plugin:<id>` or `user` (the settings file). Use it to check whether a value from your settings file actually won — `contributions` are listed in the order they were installed, so look at the values in effect above them to see which one applied.
+`file-handler detectors` shows, for each file format detector, the values in effect now (display name, icon, whether it is on, rules) together with what each source contributed (`contributions`). A source is `host` (built in), `plugin:<id>` or `user` (the settings file). Use it to check whether a value from your settings file took effect — `contributions` are listed in the order they were installed, so look at the values in effect above them to see which one applied.
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 
@@ -507,7 +515,7 @@ per-limit total, so it is a different value.
 | Send a key | `tasty send key enter --surface ID` |
 | Set a mark | `tasty set mark --surface ID` |
 | Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
-| Continue reading from a held position | `tasty read since-mark --surface ID --cursor N --stream S` |
+| Continue from a saved read position | `tasty read since-mark --surface ID --cursor N --stream S` |
 | Bound the reply wait | `tasty --response-timeout-ms MS <command>` |
 | Read the screen | `tasty read screen --surface ID --lines N` |
 | Notification | `tasty notify "body" --title "title"` |
@@ -516,7 +524,7 @@ per-limit total, so it is a different value.
 
 ## Troubleshooting
 
-- **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
+- **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. The file may be left over from an earlier run, or the CLI may be checking another instance’s path ([Troubleshooting](../help/troubleshooting.md)).
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
 - **An error line containing `"sent":false`** — the Tasty you are connected to is an older version that does not know that feature (reading from a position, bounding the reply wait, and so on). The request was not sent. The name under `capability` says what is missing.

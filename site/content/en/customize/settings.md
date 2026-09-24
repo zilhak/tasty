@@ -1,4 +1,4 @@
-<!-- source-hash: 645f89928560 -->
+<!-- source-hash: 352d99a0da79 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -25,8 +25,8 @@ Press the same shortcut again to close the settings window.
 - Seven top tabs: **General** · **Terminal** · **Appearance** · **Keybindings** · **Handler** · **Misc** · **Plugins**.
 - The list on the left holds that tab's sections. Typing into **Filter sections…** above it filters the list. Switching tabs clears the filter text.
 - Changes are written to the file and applied on screen only when you press **Save**. **Cancel** discards them all. There is no close button in the header.
-- Only a **Language** change requires restarting Tasty after saving.
-- Numeric entries are **typed**, never dragged. Nothing pulls the value while you type; it settles into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field turns red with one line under it naming the range and the value that will actually be saved.
+- Changes to **Language** and performance settings marked as requiring a restart take effect after you save and restart Tasty.
+- Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field turns red with one line under it naming the range and the value that will actually be saved.
 
 ## Entries by tab
 
@@ -61,7 +61,7 @@ Set **Link click modifier** to **Disable left-click opening** to prevent left-cl
 | **Colors** | Override the current theme's colours entry by entry — [Themes](themes.md) |
 | **General** | **Default Font Settings**: **Font family** · **Custom font file** · **Font size** (default 14) · **Line height** · **Font DPI scaling** (Auto / Fixed). Plus **Ligatures** · **Background opacity** |
 | **Display** | **UI Scale** — Small / Medium / Large |
-| **Tasty** | App chrome colours — **Accent** · **Sidebar background** · **Active tab indicator** (Underline / Fill / Dot) |
+| **Tasty** | Button, sidebar, and tab colours — **Accent** · **Sidebar background** · **Active tab indicator** (Underline / Fill / Dot) |
 | **Terminal** | The terminal Surface's **Focused background** · **Unfocused background** and font override |
 | **Explorer** | Explorer-only font override |
 | **Markdown** · **HTML** | Pages added by plugins — the Markdown font override and **Allow remote content**, and the HTML viewer's **Default zoom** · **Color scheme** · **Allow remote content** · **Sandbox scripts** |
@@ -118,7 +118,7 @@ ok = "OK"
 cancel = "Annuler"
 ```
 
-- **`[font]` cannot be left out.** Text without a font promise can render as □, so
+- **`[font]` cannot be left out.** Text without a font choice can render as □, so
   the person writing the pack has to say which font it expects.
 - **The declared font applies across the whole UI.** The font named by `file` ·
   `family` · `candidates` is added behind the built-in font, so the language's
@@ -221,7 +221,7 @@ the text that language ships with stays on screen, and you never get a blank spo
 
 ## The settings file `~/.tasty/config.toml`
 
-Everything in the settings window is stored in this single file. Missing keys are read as defaults, so you only need to write the ones you need.
+General settings are stored in this file. Handler tables, theme files, and other items described above use their separate paths. Missing keys are read as defaults, so you only need to write the ones you need.
 
 ```toml
 [general]

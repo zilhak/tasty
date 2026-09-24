@@ -34,7 +34,7 @@ Tasty는 나와 AI 에이전트가 함께 일하는 GPU 가속 터미널입니�
 
 ## 원격 · 플러그인
 
-- [원격 작업 이어가기](remote/attach.md) — 프로필과 SSH 로 다른 컴퓨터의 Tasty 를 내 화면에 비추기.
+- [원격 작업 이어가기](remote/attach.md) — 프로필과 SSH로 다른 컴퓨터에서 실행 중인 Tasty에 연결하기.
 - [플러그인](plugins/index.md) — 설치, 권한, 번들 플러그인 소개.
 
 ## 도움말

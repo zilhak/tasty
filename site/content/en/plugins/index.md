@@ -1,4 +1,4 @@
-<!-- source-hash: 4cbb480659f6 -->
+<!-- source-hash: a0b2d7dfa8bc -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -29,7 +29,7 @@ How to use each Surface kind is in [Opening files](../using/files.md). There are
 
 In the **Settings** window, plugin pages appear in two places.
 
-- **Appearance** > **Markdown** — The font override for the Markdown Surface only.
+- **Appearance** > **Markdown** — Font settings applied only to Markdown Surfaces.
 - **Appearance** > **HTML** — **Default zoom** (%) · **Color scheme** (follow theme / light / dark) · **Allow remote content** (off by default — blocks external http/https resources) · **Sandbox scripts** (on by default).
 - **Plugins** > **Claude Code** — **Spawn child warning threshold** and so on.
 - **Plugins** > **Codex** — **Spawn child warning threshold** · **Default approval policy** · **Default sandbox mode**.
@@ -76,7 +76,7 @@ Installing grants the permissions the plugin requests. Review the permission lis
 
 ## Permissions
 
-A plugin declares the permissions it needs in advance, and Tasty rejects any request without a granted permission. Common names and their meanings:
+A plugin declares the permissions it needs in advance. Tasty rejects requests to the host when the required permission has not been granted. Common names and their meanings:
 
 | Permission | What it allows |
 |------|-------------|
@@ -124,7 +124,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
-`disable` returns without waiting for the plugin to exit. A plugin that does not respond is force-stopped in the background after at most 2 seconds. If you `enable` it in the meantime, `enable` waits for the previous process to exit and then starts the plugin right away, so it can take up to 2 seconds. When `enable` returns, the plugin is already running and ready to use.
+`disable` starts shutdown, normally in the background. If the plugin has not exited after a 2-second grace period, Tasty attempts to force-stop it. Those 2 seconds are not a limit on the entire operation; waiting for the OS to finish the process can take longer. An `enable` during shutdown waits for the previous process to finish before starting a new one. It does not wait for the new plugin to finish connecting. Requests may wait for that connection; check the logs if startup or connection fails.
 
 ```sh
 tasty plugin list

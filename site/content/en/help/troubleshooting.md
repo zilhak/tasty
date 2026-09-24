@@ -1,4 +1,4 @@
-<!-- source-hash: 95c2fd9d3d9b -->
+<!-- source-hash: 19b65e3dd96d -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -31,7 +31,7 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **Linux: the AppImage does not run** — it lacks the execute bit or FUSE is missing. Run `chmod +x Tasty-*.AppImage` first; if it still fails, start it with `./Tasty-*.AppImage --appimage-extract-and-run`.
 - **Linux: it does not start, with `GLIBC_2.39 not found`** — your distribution is older than the build baseline (Ubuntu 24.04), for example Ubuntu 20.04 · Debian 11. There is no build for older distributions.
 - **Linux `.tar.gz`: it exits saying a library is missing** — `tasty` lists the missing library and exits. Install the packages it names (`libfreetype6` · `libfontconfig1` · `libgtk-3` · `libwebkit2gtk-4.1` and so on). To have them pulled in automatically, use the `.deb` / `.rpm` instead.
-- **"No GPU adapter found" appears and it exits** — there is no GPU driver (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty uses Vulkan when `libvulkan1` / `vulkan-loader` is present, OpenGL when it is not, and software rendering if that fails too. On a server · VM with no GPU at all, the distributed files cannot run.
+- **"No GPU adapter found" appears and it exits** — Tasty could not find a usable GPU adapter (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty uses Vulkan when `libvulkan1` / `vulkan-loader` is present, OpenGL when it is not, and software rendering if that fails too. To run on a server or VM without a graphical desktop, use a [headless build](../getting-started/install.md#headless-build).
 - **Windows: "Git Bash not found"** — Tasty uses Git Bash as the shell on Windows. Install Git for Windows, or set the bash path yourself in **Settings** > **Terminal** > **Shell**.
 - **It exits right after starting with "Database initialization error"** — read the message body. "The database is locked" means another Tasty is already running. "corrupted" / "schema version mismatch" means you can back up `~/.tasty/state.db`, delete it, and start fresh. Only the recent-files list and tutorial progress are lost.
 - **You typed `tasty` inside a Tasty terminal but no new window appeared** — run with no arguments inside Tasty, it shows the help instead of opening a new window. For a new window use `tasty new window` (it leaves the focus on the window you were looking at); to force the GUI to launch, `tasty --launch`.
@@ -40,28 +40,28 @@ The install procedure itself is in [Install](../getting-started/install.md).
 
 ## macOS permission prompts
 
-**Symptom** — a series of permission prompts appears right after the first launch. The order is the Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording. The window works normally while the prompts are up.
+**Symptom** — permission prompts may appear after the first launch. Tasty checks the Downloads, Documents, and Desktop folders, connected external or network volumes, then screen recording. Which prompts appear depends on prior permission choices and macOS policy. These checks run separately from the app’s screen processing.
 
-**Cause** — when a command run inside the terminal reads a file, macOS attributes that access to Tasty (Terminal.app · iTerm2 behave the same). Left alone, a prompt would pop up mid-task the first time a new folder is touched and stall the agent, so Tasty asks up front right after startup. Items already allowed · denied are not asked again; only newly mounted volumes get an extra prompt. There is no setting to turn this off — turning it off would not make the prompts disappear, they would just appear sporadically during your work instead.
+**Cause** — when a command run inside the terminal reads a file, macOS attributes that access to Tasty (Terminal.app · iTerm2 behave the same). Left alone, a prompt would pop up mid-task the first time a new folder is touched and stall the agent, so Tasty asks up front right after startup. Previously answered prompts usually do not appear again. There is no setting to disable the startup check, and macOS may still request more permissions during later work.
 
 **How to answer**
 
 | Prompt | If you do not allow it | To change it later |
 |---|---|---|
-| Folder access (Downloads · Documents · Desktop · volumes) | The prompt appears again, at that moment, from the command that uses the folder | System Settings > Privacy & Security > Files and Folders |
+| Folder access (Downloads · Documents · Desktop · volumes) | Commands that read or write that folder may fail | System Settings > Privacy & Security > Files and Folders |
 | Screen recording | The `Ctrl+Alt+S` screenshot-to-clipboard feature only shows a "Screen recording permission is required" notice. Once denied, it is not asked again | System Settings > Privacy & Security > Screen & System Audio Recording |
 
 You can see the current state in the **Settings** > **General** > **Permissions** tab (only shown on macOS).
 
-- **A "Grant Tasty Full Disk Access" notice appeared** — it appears at every start while Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away, and the notice stops appearing from the next start. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. There is no setting to turn the notice off: recording that you dismissed it would leave no way to tell you when the permission is reset later.
-- **The notice keeps coming back even though I granted it** — this happens when you build Tasty yourself. An ad-hoc signed build looks like a **different app** to macOS after every rebuild, so the permission is discarded. Create the "Tasty Dev" certificate once with `./scripts/macos-codesign-identity.sh --create` and install a build signed with it; the permission then survives rebuilds. Right after switching, remove the old Tasty entry from the list and add the new one.
+- **A "Grant Tasty Full Disk Access" notice appeared** — it appears at every start while Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away, and the notice stops appearing from the next start. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. There is no setting to disable this notice. Tasty checks the current state at each startup.
+- **The notice keeps coming back even though I granted it** — the signature of a locally built app or macOS permission settings may have changed. Rebuilding with ad-hoc signing can require you to grant permission again. Create the "Tasty Dev" certificate once with `./scripts/macos-codesign-identity.sh --create` and use it to sign later builds. This does not guarantee that permissions will persist; check their state in System Settings too. Right after switching, remove the old Tasty entry from the list and add the new one.
 - **The Full Disk Access status shows "Unknown"** — macOS offers no API to ask whether an app has this permission, so the status is an estimate. When the file used for the estimate does not exist on your macOS version, there is nothing to judge from, so it reads Unknown and the startup notice is not shown. No feature is blocked by this value.
 - **"Tasty would like to access data from other apps" keeps appearing for every app folder** — paths like `~/Library/Application Support/<app>` are asked per app, so they cannot be asked up front. Granting Full Disk Access as above makes them go away.
 - **"wants to control another app" appears when you use `osascript`** — the Automation permission must be approved per target app, and Full Disk Access does not cover it. There is nothing Tasty can do in advance.
 
 ## The window freezes or crashes
 
-- **The window does not respond to clicks · key input · the CLI at all** — when it freezes for more than 5 seconds, `~/.tasty/crash-reports/hang-*.log` is written automatically. If the file's `Render phase` is `acquire` / `submit` / `present`, the problem is on the GPU driver side — update the driver. Tasty does not recover on its own, so force-quit it and start it again.
+- **The window does not respond to clicks · key input · the CLI at all** — when it freezes for more than 5 seconds, `~/.tasty/crash-reports/hang-*.log` is written automatically. A `Render phase` of `acquire` / `submit` / `present` records where rendering was stalled. A GPU driver issue is one possibility, so check for driver updates. Tasty does not recover on its own, so force-quit it and start it again.
 - **It exited suddenly** — look at `~/.tasty/crash-reports/crash-*.log`. Attach this file when you report the problem.
 
 ## My settings or window layout look like they were reset
@@ -77,12 +77,9 @@ You can see the current state in the **Settings** > **General** > **Permissions*
 
 ## The `tasty` command cannot connect
 
-- **`No running tasty instance found (port file not found at …)`** — no Tasty is running. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one. A wrong argument (broken JSON, a `--cwd` folder that does not exist, and so on) is reported before this message, so if you see this message the arguments themselves passed.
-- **The port file exists but it cannot connect** — a previous Tasty exited abnormally and left only the port file behind. Make sure Tasty is not running, then delete the file and start it again.
+- **`No running tasty instance found (port file not found at …)`** — there is no port file at the path checked by the CLI. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one. A wrong argument (broken JSON, a `--cwd` folder that does not exist, and so on) is reported before this message, so if you see this message the argument checks performed before connecting passed.
+- **The port file exists but it cannot connect** — it may be left over from an earlier run, or the CLI may be looking at another instance’s path. Check the path in the error and `TASTY_HOME`, then confirm that the Tasty instance using that file has stopped. Only delete the file if it belongs to that stopped instance. Do not delete it solely because a process-name search found nothing.
 
-  ```sh
-  pgrep -x 'tasty|tasty\.bin' || rm ~/.tasty/tasty.port
-  ```
 
 - **`tasty: command not found`** — inside a terminal that Tasty opened it is on the PATH automatically, and a `.deb` · `.rpm` · `.msi` install puts it on the PATH for other terminal apps too. With any other install method you have to add it yourself. The path for each install method is in [Install location](../getting-started/install.md#install-locations).
 
@@ -125,7 +122,7 @@ If that still does not help, look at `~/.tasty/hook-failures.log` and `tasty plu
 
 Open **Listening ports...** from the **Tools** menu in the sidebar. It shows the TCP ports opened by processes started from Tasty terminals, together with the port · process · Workspace · Tab.
 
-- By default only the LISTEN state is shown. If the list is empty and "No ports match the state filter" is displayed, it does not mean there are no ports — use the **State** button on the right of the filter row to turn on other states and click **Apply**.
+- By default only the LISTEN state is shown. If the list is empty and "No ports match the state filter" is displayed, ports in other states may still exist — use the **State** button on the right of the filter row to turn on other states and click **Apply**.
 - To include processes outside Tasty, turn on **Show all (system-wide)**.
 - Click a row to select it and use **Copy address** to put `host:port` on the clipboard.
 - Add a port to favorites with the star icon and it always stays at the top, surviving restarts (`~/.tasty/port-favorites.toml`).

@@ -1,4 +1,4 @@
-<!-- source-hash: c9b51f4f0d28 -->
+<!-- source-hash: faac5ab94118 -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -46,12 +46,12 @@ Use the following Tasty functions in your scripts.
 | `tasty.tree()` | Reads the window · Workspace · Tab · Surface structure as a table. It is a read-only copy |
 | `tasty.run_cli(args)` | Runs a `tasty` command. Pass a single string or a table of strings |
 | `tasty.log(msg)` · `tasty.warn(msg)` | Writes to the log |
-| `tasty.on(event, cb)` | Registers a function to be called when an event fires. It can only observe; it cannot change what Tasty does |
+| `tasty.on(event, cb)` | Registers a function to be called when an event fires. It can run follow-up work, but cannot cancel or alter an event that has already happened |
 
 Actually operating Tasty is mostly done with `tasty.run_cli`. Whether you create a Workspace or send a notification, anything you can do with the [CLI](../agents/cli.md) works here too.
 
 ```lua
--- When a new Workspace is created, attach a log window on the right.
+-- Log the Workspace count and send a notification.
 local tree = tasty.tree()
 tasty.log("workspaces: " .. tostring(#tree))
 tasty.run_cli({ "notify", "New Workspace", "--title", "script" })
@@ -71,7 +71,7 @@ Other files pulled in with `require` are not checked.
 ## Execution limits
 
 - There is a memory ceiling, and going over it aborts just that run.
-- A script that never finishes, such as an infinite loop, is aborted after a while. Only the script thread is aborted; Tasty keeps running.
+- Tasty checks a time limit while executing Lua instructions and stops infinite loops. It may not interrupt a script immediately while it waits for file I/O or an external command. The app’s screen runs separately.
 - Only text source is accepted. Precompiled bytecode is rejected.
 - The debug library and the arbitrary-code-loading functions are blocked.
 

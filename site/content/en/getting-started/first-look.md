@@ -1,4 +1,4 @@
-<!-- source-hash: 608378c88d68 -->
+<!-- source-hash: 132f29e7a1c1 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -28,12 +28,12 @@ Choose **Topics** or press `Esc` to stop, and **Resume** to continue later. Comp
 
 - **Title bar** — Drag to move the window, double-click to maximize. On Linux · Windows, Tasty draws the minimize · maximize · close buttons itself; on macOS the traffic-light buttons on the left are used as they are.
 - **Sidebar** — The Workspace list and the entry points for tools · plugins · settings.
-- **Work area** — Where the actual work happens. It is made up of the four terms below.
+- **Work area** — Where you arrange terminals and documents, using the four components below.
 - **Status bar** — The state of the current terminal and quick buttons.
 
 ## The four terms — Workspace · Pane · Tab · Surface
 
-Tasty's screen nests in this order. If it is confusing at first, open **Tools** > **Tutorial…** in the sidebar and follow the guidance drawn directly on the screen.
+These parts of the screen fit inside one another in this order. If it is confusing at first, open **Tools** > **Tutorial…** in the sidebar and follow the guidance drawn directly on the screen.
 
 | Term | Meaning | Similar concept |
 |------|----|------------|

@@ -1,4 +1,4 @@
-<!-- source-hash: f5c3454989df -->
+<!-- source-hash: ac04c8db714f -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -17,7 +17,11 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 
 The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` is HTML, and a folder is Explorer. When nothing settles which one opens it, the **Open file with…** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
 
-That window shows the file path and the format it recognised at the top, and below it one row per handler you can pick — an icon, a name, and where it came from (**built-in** · **you** · **plugin**). Anything you used before is gathered under **Recent** with when you used it — just now, minutes ago, hours ago, yesterday, then days ago, and **past a week it becomes a date** like `2026-09-13` (by then what you notice is when it was, not how many days back). Leave the window open across midnight and the wording follows. One click selects, a double click opens straight away. The choice is used **once** — nothing is registered for the format, and the same window appears next time you open that file. To settle on a handler, use the **Settings** > **Handler** tab. Close the window with `Esc` or **Cancel**.
+The **Open file with…** window lists the file path, detected format, and available handlers. Each handler has an icon, a name, and its origin (**built-in** · **you** · **plugin**).
+
+**Recent** shows previously used handlers and when you used them: just now, minutes ago, hours ago, yesterday, or days ago. After a week, it shows a date such as `2026-09-13`. The display updates if the window stays open across midnight.
+
+One click selects a handler; a double-click opens the file. This choice applies **only this time**. It does not register a default for the file type, so the chooser can appear again for the same file. Set a default under **Settings** > **Handler**. Press `Esc` or **Cancel** to close the chooser.
 
 A Surface opened from a file is split · moved · closed · restored on restart just like any other Surface. The Tab name becomes the file name.
 
@@ -123,7 +127,7 @@ Press **Tools** > **Git** in the sidebar and a window appears showing the reposi
 - **Refresh** picks up external changes. There are no writes such as commit · staging.
 - The **Open Git Viewer** shortcut is assigned under **Settings** > **Keybindings** > **Plugins** (no default).
 
-The branch name in the status bar is always shown, independently of this window ([A first look](../getting-started/first-look.md#status-bar)).
+The status bar can show the current repository’s branch independently of this window ([A first look](../getting-started/first-look.md#status-bar)).
 
 ## Empty Surface
 

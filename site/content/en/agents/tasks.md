@@ -1,4 +1,4 @@
-<!-- source-hash: 15ee8c63fd97 -->
+<!-- source-hash: b77c0c6511ac -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -28,7 +28,7 @@ BUILD=$(tasty agent task-create --workspace-id 2 --name build \
   --command '{"kind":"run","command":["cargo","build"]}' | jq -r .id)
 ```
 
-Creating one returns a task ID. Use that ID to wire dependencies and to query state.
+Creating one returns a task ID. Use that ID to define dependencies and to query state.
 
 | Command kind | What it does |
 |---|---|
@@ -57,7 +57,7 @@ Every task listed in `--depends-on` has to finish before this task becomes ready
 
 It is easy to get the placement wrong. `abort` and `continue_downstream` have to be attached to the **following** task for them to count toward that task's readiness decision, while `fallback` has to go the other way, on the task that **can fail** itself. Using a policy on the wrong task will not give you the intended failure handling.
 
-A task used as a fallback has to be created before the main task. To stop the runner from running it first in the meantime, create the fallback with `--reserved-for-fallback`. It then does not run until a main task that references it exists.
+A task used as a fallback has to be created before the main task. To stop the runner from running it first in the meantime, create the fallback with `--reserved-for-fallback`. The reservation prevents it from running before the main task is created. Once linked, it continues waiting until the main task fails and activates the fallback.
 
 ## Passing results from earlier tasks
 
@@ -127,12 +127,12 @@ tasty events follow --filter 'agent.*' | while read -r line; do
 done
 ```
 
-- **The reader holds the position, not Tasty.** Pass the `next_offset` that comes back as the next `--offset` and you carry on from where you stopped. For a single read rather than a loop, use `tasty events fetch --offset <number>`.
+- **Save your read position on the receiving side.** Pass the `next_offset` that comes back as the next `--offset` and you carry on from where you stopped. For a single read rather than a loop, use `tasty events fetch --offset <number>`.
 - Events live in memory only, and only the most recent ones are kept. If you were away long enough for the ones in between to fall out, you are **not** quietly given the oldest ones instead — you are told how many were missed. That notice is kept out of the event stream, so the `while read` above is not disturbed.
-- Restarting Tasty clears the events and starts positions over. If the `epoch` that comes with an answer differs from the one your position came from, that position belongs to a previous generation.
+- Restarting Tasty clears the events and starts positions over. If the `epoch` that comes with an answer differs from the one your position came from, that position belongs to the previous Tasty run.
 - If the connection drops, `follow` tells you the `--offset` and `--epoch` to reattach with and exits. Run it again with those, and if Tasty restarted in the meantime you are told so and get the new events from their start. With `--reconnect` it does not exit but reconnects every second and carries on.
 - What comes out today is **a task finishing** and **a barrier closing**. Why something failed is not carried in the event — use `tasty agent task-get` for that.
-- A slow reader queues nothing on the Tasty side.
+- Tasty does not keep growing a separate queue for a slow reader. Check for missed events if the reader falls behind the shared recent-event history.
 
 ## Concurrency limits and signals
 
