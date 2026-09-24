@@ -1,9 +1,8 @@
-//! `Core` — pane/surface split. `src/core/mod.rs` 의 `impl Core` 분할.
+//! pane 또는 탭 안의 surface를 분할한다.
 
 use super::*;
 
 impl Core {
-    /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
     pub(super) fn apply_split_pane(
         engine: &mut crate::core::CoreState,
         target_pane_id: u32,
@@ -21,13 +20,11 @@ impl Core {
         let new_surface_id = engine.next_ids.next_surface();
         let is_terminal = kind == "terminal";
 
-        // Phase 1: engine 의 불변 의존 추출
         let cols = engine.default_cols;
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(new_surface_id);
 
-        // Phase 2: 새 pane 구성
         let new_pane = if is_terminal {
             let terminal = crate::model::Pane::spawn_terminal(
                 new_surface_id,
@@ -58,17 +55,13 @@ impl Core {
             crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
 
-        // Phase 3: workspace pane tree mutate
         engine.workspaces[ws_idx]
             .pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
 
-        // Phase 4: engine mutate (pane borrow 끝)
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
 
-        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         let ws_id = engine.workspaces[ws_idx].id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
@@ -81,7 +74,7 @@ impl Core {
         }])
     }
 
-    /// `DomainIntent::SplitSurface` 본문. tab 안에서 surface 추가 (pane tree 변경 X).
+    /// 탭 안에 surface를 추가한다. 터미널 생성은 대상 조회보다 먼저이며 뒤의 실패 시 store 삽입을 되돌리지 않는다.
     pub(super) fn apply_split_surface(
         engine: &mut crate::core::CoreState,
         target_surface_id: u32,
@@ -93,8 +86,6 @@ impl Core {
         let new_surface_id = engine.next_ids.next_surface();
         let is_terminal = kind == "terminal";
 
-        // Phase 1: 새 surface 생성. terminal 은 store 에 직접 insert 후 marker leaf 만,
-        // 그 외는 registry.
         let new_surface: Box<dyn crate::model::Surface> = if is_terminal {
             let cols = engine.default_cols;
             let rows = engine.default_rows;
@@ -124,7 +115,6 @@ impl Core {
             )?
         };
 
-        // Phase 2: tab 안 split
         let (ws_idx, pane_id) = engine
             .find_workspace_index_for_surface(target_surface_id)
             .ok_or_else(|| anyhow::anyhow!("surface {} not found", target_surface_id))?;
@@ -137,12 +127,9 @@ impl Core {
             pane.split_surface_by_id_with_surface(target_surface_id, direction, new_surface)?;
         }
 
-        // Phase 3: engine mutate (pane borrow 끝)
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
 
-        // attach 점유 중인 workspace 에 새로 생긴 멤버라면 편입 + 즉시 tap
-        // (로컬 생성 경로 gap — forward-op 경로와 대칭으로 점유를 상속해야 한다).
         let ws_id = engine.workspaces[ws_idx].id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 

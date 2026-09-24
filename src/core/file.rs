@@ -30,6 +30,6 @@ impl Core {
 fn user_config_path() -> PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handlers.toml"))
-        // 홈이 없을 때 쓰는 공유 설정 경로이며 인스턴스별로 격리하지 않는다.
+        // 이유: 홈이 없을 때 쓰는 공유 설정 경로이며 인스턴스별로 격리하지 않는다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handlers.toml"))
 }

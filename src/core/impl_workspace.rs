@@ -1,12 +1,11 @@
-//! `Core` — workspace 생성/이동/메타 + layout 저장/복원 + tab/pane 복구. `src/core/mod.rs` 의 `impl Core` 분할.
+//! workspace 생성·이동·메타데이터와 레이아웃 저장·닫힌 항목 복원을 처리한다.
 
 use super::*;
 use crate::core::pty_registry::PTY_ID_BASE;
 
 impl Core {
-    /// `DomainIntent::RestoreClosedItem` 본문. closed_items 에서 `scope` 가 정하는
-    /// 항목을 pop → kind 별 rebuild + engine attach. AppState 의존 부분
-    /// (active_workspace 변경) 은 cascade 가 처리하므로 본 함수는 *engine mutate* 만.
+    /// scope에 맞는 항목을 꺼내 engine에 복원한다. App의 활성 workspace 변경은 호출자가 맡는다.
+    /// 복원 중 실패해도 꺼낸 항목이나 이미 만든 자원을 되돌리는 처리는 여기서 하지 않는다.
     pub(super) fn apply_restore_closed_item(
         engine: &mut crate::core::CoreState,
         target_pane_id: Option<u32>,
@@ -70,9 +69,7 @@ impl Core {
                 let Some(rebuilt) = restore_rebuild::rebuild_pane(engine, pane) else {
                     return nothing();
                 };
-                // Surface/Tab 복원과 동일 관례 — 닫힐 당시 워크스페이스가 아니라
-                // 호출 시점 focused pane(=사용자가 지금 보는 워크스페이스)을
-                // "현재 컨텍스트"로 삼는다.
+                // 닫힐 당시 위치 대신 호출자가 지정한 대상 pane의 workspace에 복원한다.
                 let Some(pane_id) = target_pane_id else {
                     return nothing();
                 };
@@ -92,10 +89,7 @@ impl Core {
                     was_first,
                 );
                 if let Some(rebuilt) = leftover {
-                    // sibling 이 그 사이 사라졌다(추가로 더 닫혔거나, 원래
-                    // 다른 워크스페이스에 있었다) — 호출 시점 focused pane
-                    // 기준 fallback split. `pane_id` 는 방금 이 workspace 안에서
-                    // 찾았으므로 여기선 항상 성공한다.
+                    // 옛 sibling이 없으면 대상 pane을 분할해 넣는다.
                     if ws
                         .pane_layout_mut()
                         .split_pane_in_place(pane_id, direction, rebuilt)
@@ -144,7 +138,6 @@ impl Core {
         }
     }
 
-    /// `DomainIntent::RespawnTerminal` 본문. 새 Terminal 생성 → engine.replace_terminal_by_id.
     pub(super) fn apply_respawn_terminal(
         engine: &mut crate::core::CoreState,
         surface_id: u32,
@@ -187,8 +180,7 @@ impl Core {
         }
     }
 
-    /// `DomainIntent::MoveWorkspace` 본문. workspaces 벡터의 from→to 이동.
-    /// active_workspace 보정은 cascade 에서 처리 (Core 는 state 모름).
+    /// 벡터의 위치를 바꾸며 App의 활성 workspace 인덱스는 호출자가 보정한다.
     pub(super) fn apply_move_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -213,9 +205,6 @@ impl Core {
         }
     }
 
-    /// `DomainIntent::UpdateWorkspaceMeta` 본문. `workspace_id` 로 찾고 None
-    /// 아닌 필드만 갱신. cascade (`cascade_workspace_meta_updated`) 가 host
-    /// event 발화.
     pub(super) fn apply_update_workspace_meta(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -253,10 +242,6 @@ impl Core {
         }])
     }
 
-    /// `DomainIntent::CreateWorkspace` 본문. engine 에 새 workspace + pane +
-    /// tab + surface 를 생성하고 `WorkspaceCreated` event 를 반환한다.
-    /// host event 발화 (WorkspaceRenamed) + (User origin 이면) active 전환은
-    /// cascade (`cascade_workspace_created`) 에서 처리한다.
     pub(super) fn apply_create_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -265,15 +250,8 @@ impl Core {
         Ok(vec![apply_create_workspace_inner(engine, params)?])
     }
 
-    /// 시스템 내부 invariant restorer — bootstrap / close 후 자동 재생성 /
-    /// closed_item precondition 용. `kind="terminal"` + auto name + cwd 미지정.
-    /// Intent 큐를 우회하므로 cascade 도중 호출해도 재진입 위험 없음.
-    ///
-    /// 옛 `AppState::add_workspace` 의 의미를 그대로 유지 — *동작 보존* 위해
-    /// host event (WorkspaceCreated/Renamed) 발화하지 않는다. plugin 알림은
-    /// 사용자/에이전트 의도 경로 (`DomainIntent::CreateWorkspace`) 만.
-    ///
-    /// 반환: 새 workspace 의 index (`engine.workspaces.len() - 1`).
+    /// 내부 초기화·빈 창 보충용 terminal workspace를 만들고 인덱스를 반환한다.
+    /// 생성 이벤트를 dispatcher에 넘기지 않으므로 여기서는 plugin 생성 알림을 보내지 않는다.
     pub(crate) fn create_default_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -285,13 +263,8 @@ impl Core {
         }
     }
 
-    /// `DomainIntent::SaveLayoutNow` 본문. settings + force gate 를 통과하면
-    /// 디스크에 저장 + `layout_dirty.clear()`. 옛 `App::flush_layout_persistence`
-    /// 의 조건 분기 + 옛 `Core::save_layout` wrapper 본문을 흡수.
-    ///
-    /// **debounce 는 여기서 재지 않는다** — `force=false` 호출은 호스트의
-    /// `Tick::LayoutFlush` 타이머가 데드라인에 도달했을 때만 오므로, 이 시점엔
-    /// 이미 debounce 를 통과한 것이다(`docs/dev-guide/timer-hub.md`).
+    /// 설정·변경 여부·보호된 슬롯을 확인해 저장을 시도한다. debounce 대기는 호출자가 맡는다.
+    /// LayoutSaved는 저장 생략 때도 반환되며 실제 쓰기 성공을 뜻하지 않는다.
     #[cfg(any(feature = "gui", test))]
     pub(super) fn apply_save_layout_now(
         engine: &mut crate::core::CoreState,
@@ -307,19 +280,12 @@ impl Core {
         if !should_save {
             return CoreEvent::LayoutSaved;
         }
-        // 부팅 때 이 슬롯을 읽지 못했으면 디스크에 사용자 레이아웃이 그대로 남아 있다.
-        // 지금 상태를 쓰면 그것을 대체하므로 저장을 건너뛴다 — 로드 실패는 이미
-        // `layout_persistence` 가 error 로 남겼고, 여기서는 매 flush 마다 반복되므로
-        // debug 로만 흔적을 둔다.
+        // 읽지 못한 기존 사용자 레이아웃을 현재의 빈 상태로 덮지 않도록 저장을 막는다.
         if engine.layout_slot_protected {
             tracing::debug!("layout save skipped: slot is locked because it could not be read");
             return CoreEvent::LayoutSaved;
         }
-        // engine 이 점유한 슬롯에만 쓴다 — 창(engine)마다 자기 파일이라
-        // `App::flush_layout_persistence` 가 전 engine 을 돌아도 서로 덮어쓰지 않는다.
-        // `None` 은 headless engine — 복원 자체를 적용하지 않으므로 저장도 하지
-        // 않는다. 저장을 건너뛰어도 `LayoutSaved` 는 그대로 반환한다(위쪽
-        // `should_save` 스킵과 같은 의미론).
+        // engine이 가진 슬롯에만 쓴다. 슬롯이 없으면 저장하지 않는다.
         let Some(slot) = engine.layout_slot else {
             return CoreEvent::LayoutSaved;
         };
@@ -328,11 +294,7 @@ impl Core {
         CoreEvent::LayoutSaved
     }
 
-    /// `DomainIntent::ApplyPendingLayoutRestore` 본문. engine 의
-    /// `pending_layout_restore` 를 take 해 `SavedLayout::restore` 호출. 성공 시
-    /// `restored_active_workspace` 도 take 해 CoreEvent payload 로 caller 에게 넘김.
-    /// caller (window_lifecycle.rs::create_app_state) 가 결과 받아
-    /// `state.switch_workspace` 수행.
+    /// 대기 중인 저장 레이아웃을 꺼내 복원하고 활성 workspace 후보를 반환한다.
     #[cfg(feature = "gui")]
     pub(super) fn apply_apply_pending_layout_restore(
         engine: &mut crate::core::CoreState,
@@ -344,10 +306,7 @@ impl Core {
             };
         };
 
-        // 복원이 surface_id 를 발급하기 *전에* 카운터 floor 를 memory.db 의 최대 stale
-        // Scope::Surface id 위로 올린다. surface_meta 는 영속되지만 surface_id 는 매 실행
-        // 재발급되므로, 이래야 복원 surface 자체가 재사용 id(=stale 메타 보유)와 겹치지
-        // 않아 capture 가 남의 restore.command 를 읽지 않는다.
+        // 새 ID가 이전 실행의 surface 메타데이터와 겹치지 않도록 복원 전에 발급 기준을 올린다.
         {
             let mut guard = crate::poison::recover_mutex(
                 engine.memory.lock(),
@@ -364,10 +323,7 @@ impl Core {
             };
         }
 
-        // 복원으로 확정된 live id 외 모든 Surface scope 를 정리한다. 위 floor 시딩
-        // (`seed_surface_id_floor`)은 새 surface 가 stale 메타와 겹치는 것만 막고 죽은
-        // scope 자체를 지우지는 않으므로, 강제 종료 등으로 graceful close 가 호출되지
-        // 못해 남은 stale 메타가 무한 누적되는 것을 여기서 끊는다.
+        // 발급 기준만 올리면 죽은 scope는 남으므로 복원된 live ID 목록으로 따로 정리한다.
         {
             let live: std::collections::HashSet<u32> = engine
                 .workspaces
@@ -396,9 +352,7 @@ impl Core {
     }
 }
 
-/// `DomainIntent::CreateWorkspace` 가 운반하는 생성 파라미터 — `apply_create_workspace`
-/// / `apply_create_workspace_inner` 양쪽이 개념적으로 하나의 "생성 요청" 을 낱개
-/// 인자로 재나열하지 않도록 묶는다. 필드 구성은 `DomainIntent::CreateWorkspace` 와 1:1.
+/// workspace 생성 요청. 사용자 요청과 내부 기본 workspace 생성이 같은 구현을 사용한다.
 pub(crate) struct WorkspaceCreationParams {
     pub(crate) cwd: Option<std::path::PathBuf>,
     pub(crate) kind: String,
@@ -410,8 +364,6 @@ pub(crate) struct WorkspaceCreationParams {
 }
 
 impl WorkspaceCreationParams {
-    /// 시스템 invariant restorer (`create_default_workspace` 등) 가 쓰는 기본값 —
-    /// cwd 미지정 terminal, 이름/카테고리 자동.
     pub(crate) fn terminal() -> Self {
         Self {
             cwd: None,
@@ -425,11 +377,6 @@ impl WorkspaceCreationParams {
     }
 }
 
-/// `DomainIntent::CreateWorkspace` 의 *순수 engine* 구현. `Core::apply_create_workspace`
-/// 와 `Core::create_default_workspace` 양쪽이 공유.
-///
-/// 반환: `CoreEvent::WorkspaceCreated`. host event (WorkspaceRenamed) +
-/// (User origin 이면) active 전환은 호출 측 cascade 책임.
 pub(crate) fn apply_create_workspace_inner(
     engine: &mut crate::core::CoreState,
     params: WorkspaceCreationParams,
@@ -501,7 +448,6 @@ pub(crate) fn apply_create_workspace_inner(
         crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
     };
 
-    // 카테고리 소속 지정(존재하는 카테고리만). 없거나 dangling 이면 normal(기본) 유지.
     if let Some(cat_id) = category
         && engine.category_index(cat_id).is_some()
     {
@@ -543,14 +489,8 @@ pub(crate) fn apply_create_workspace_inner(
     })
 }
 
-/// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
-/// *모든* workspace 순회 (포커스 독립).
-/// `scope` 가 정하는 후보 중 가장 최근 항목을 복원 스택에서 꺼낸다(ADR-0023).
-///
-/// `Workspace` 스코프는 그 워크스페이스에서 닫힌 항목만 본다. 워크스페이스 통째 항목은
-/// 출처가 `None` 이라 여기 원리적으로 안 걸리고, 그래서 "새 워크스페이스를 만들어 놓고
-/// delta 에는 안 잡히는" 갈래가 forward 경로에 **도달하지 못한다** — pop 한 뒤 거부하면
-/// 항목만 잃으므로, 배제는 pop 이전이어야 한다.
+/// scope에 맞는 최신 복원 항목만 꺼낸다. workspace 전체 항목은 출처가 None이므로 Workspace 필터에서 제외된다.
+/// 꺼낸 뒤 거절하면 항목을 잃으므로 후보 선택 때 범위를 적용한다.
 fn pop_for_scope(
     engine: &mut crate::core::CoreState,
     scope: crate::core::intent::RestoreScope,
@@ -577,17 +517,9 @@ fn push_tab_to_pane(
     false
 }
 
-/// 복원 직전 surface 카운터 floor 시딩 — memory.db 의 stale `Scope::Surface` 최대 id 위로
-/// 올려 재사용을 원천 차단한다.
-///
-/// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 floor 산정에서 제외하고 그 자리에서
-/// purge 한다.** 포함하면 오염된 scope 하나가 카운터를 PTY 공간으로 밀어 올리고, 그 실행이
-/// 발급한 surface 들이 다시 memory.db 에 기록되어 다음 부팅의 floor 를 유지하는 **비가역
-/// 래칫**이 된다(`docs/adr/0017-workspace-identity-and-focus.md`). 제외 + purge
-/// 이므로 이미 래칫이 걸린 인스턴스도 부팅 한 번으로 정상 범위로 복귀한다.
-///
-/// purge 되는 scope 는 정의상 이전 실행의 잔재다(부팅 시점에 live surface 는 아직 없다) —
-/// 곧이어 도는 `purge_dead_surfaces` 가 어차피 지울 대상이므로 추가 손실이 없다.
+/// 저장 메타데이터에서 조회한 최대 surface ID를 기준으로 발급 기준을 높인다.
+/// PTY 범위의 scope는 삭제를 시도하고 최대값 계산에서 제외해 잘못된 ID가 다음 실행에 이어지지 않게 한다.
+/// 이미 높아진 발급 기준을 낮추거나 ID 범위 소진을 막는 함수는 아니다.
 #[cfg(any(feature = "gui", test))]
 pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
@@ -601,10 +533,7 @@ pub(crate) fn seed_surface_id_floor(
         );
     }
     let mem_max = crate::surface_meta::SurfaceMetaStore::max_surface_id(mem);
-    // `max_surface_id` 의 상한은 `PTY_ID_BASE - 1` 이므로 `mem_max + 1` 은 overflow 하지
-    // 않는다. floor 는 정상 경로에서 PTY 공간 아래에 머문다 — 단 `mem_max` 가 상한
-    // (`0x7FFF_FFFF`)일 때만 `mem_max + 1 == PTY_ID_BASE` 가 되어 경계에 닿는다. 한 실행이
-    // 20 억 개 가까운 surface 를 발급해야 도달하므로 여기서 clamp 하지 않는다.
+    // 최대 surface ID가 PTY_ID_BASE - 1이면 다음 값은 PTY 경계에 닿는다. 여기서는 clamp하지 않는다.
     ids.bump_surface_floor(mem_max + 1);
 }
 
@@ -633,7 +562,6 @@ mod surface_id_floor_tests {
 
     #[test]
     fn pty_space_scopes_do_not_ratchet_the_floor() {
-        // memory.db 가 PTY id 공간을 침범한 scope 로 오염된 상태(실사용 관측값 재현).
         let mut mem = InMemoryStorage::new();
         SurfaceMetaStore::set(&mut mem, PTY_ID_BASE + 499, "restore.command", "polluted").unwrap();
         SurfaceMetaStore::set(&mut mem, 3, "restore.command", "legit").unwrap();

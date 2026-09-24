@@ -69,7 +69,7 @@ impl CoreState {
             StreamTag::Control,
             serde_json::to_vec(&attached).unwrap_or_default(),
         );
-        let _ = hub.push(client_id, attached_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+        let _ = hub.push(client_id, attached_frame); // 실패한 통지는 재시도하지 않는다.
         let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot)); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
 
         let hub2 = hub.clone();
@@ -1929,7 +1929,7 @@ pub(crate) fn reject_attach(
         StreamTag::Control,
         serde_json::to_vec(&msg).unwrap_or_default(),
     );
-    let _ = hub.push(client_id, error_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+    let _ = hub.push(client_id, error_frame); // 실패한 거절 통지는 재시도하지 않는다.
     let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new())); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
 }
 

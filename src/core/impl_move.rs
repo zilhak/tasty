@@ -1,13 +1,10 @@
-//! `Core` — surface move(cut & attach). `src/core/mod.rs` 의 `impl Core` 분할.
+//! surface를 다른 surface 위치로 옮긴다. 원본 터미널은 유지하고 덮어쓴 대상의 후속 정리를 반환한다.
 
 use super::*;
 
 impl Core {
-    /// `DomainIntent::MoveSurface` 본문 (T9). source(A) 를 살아있는 채로 떼어
-    /// target(B) 위치로 replace 한다. B 는 닫힌다(PTY kill). **A 의 Terminal/store/
-    /// scrollback 은 절대 만지지 않는다(PTY 보존 — R1).** 모든 위치 탐색은
-    /// surface_id 검색식이라 focused_* 같은 사용자 포커스 상태에 의존하지 않는다
-    /// (포커스 독립 원칙). 슬롯 비움도 여기서 처리한다.
+    /// source를 트리에서 떼어 target 위치에 붙인다. Terminal store는 여기서 지우지 않는다.
+    /// target 정리는 반환된 이벤트의 호출자가 맡는다. 성공하지 않아도 cut 슬롯은 비운다.
     pub(super) fn apply_move_surface(
         engine: &mut crate::core::CoreState,
         source_id: u32,
@@ -15,7 +12,6 @@ impl Core {
     ) -> CoreEvent {
         use crate::core::intent::CascadeLevel;
 
-        // 이 intent 가 적용되는 시점에 cut 슬롯은 소비된다 (성공/no-op 무관).
         engine.pending_move_surface = None;
 
         let noop = || CoreEvent::MoveSurfaceApplied {
@@ -28,7 +24,6 @@ impl Core {
             workspaces_now_empty: false,
         };
 
-        // 가드 (명세 항목 6): self-ref / source 무효(이미 닫힘) / target 무효 → no-op.
         if source_id == target_id {
             return noop();
         }
@@ -39,8 +34,6 @@ impl Core {
             return noop();
         }
 
-        // 1) A 를 트리에서 떼어내 살아있는 Box 획득 (store 불변). sole 이면 A 의 옛
-        //    tab/pane/workspace 를 구조적으로 닫고 그 cascade 정보를 함께 받는다.
         let (
             a_box,
             cascade_level,
@@ -66,10 +59,7 @@ impl Core {
         )
     }
 
-    /// `apply_move_surface` 헬퍼 — 떼어낸 A(source) 를 B(target) 위치로 옮겨
-    /// 붙인다. B 위치 재검색(1 단계가 인덱스를 바꿨을 수 있어 매번 id 재검색) /
-    /// leaf replace / focused_surface 승계를 담당. 세 실패 분기 모두 구조적으로
-    /// unreachable 인 방어 코드라 동일한 `moved: false` 이벤트 조립을 공유한다.
+    /// source를 떼는 동안 위치가 바뀔 수 있어 target을 ID로 다시 찾는다.
     #[allow(clippy::too_many_arguments)]
     fn attach_a_to_target(
         engine: &mut crate::core::CoreState,
@@ -82,12 +72,8 @@ impl Core {
         workspace_purged: Option<(usize, u32)>,
         workspaces_now_empty: bool,
     ) -> CoreEvent {
-        // `moved: false` 이벤트도 1 단계가 실제로 지운 것(탭/pane/workspace)을 그대로
-        // 싣는다. 소비자(`App::handle_core_event`)가 `moved` 로 cascade 를 막으므로
-        // `workspace_purged` 는 이 분기에서 **쓰이지 않는다** — 그래도 비우지 않는 것은,
-        // 이벤트가 "무슨 일이 일어났는가" 를 기술해야지 "소비자가 무엇을 쓸 것인가" 를
-        // 미리 판단하면 안 되기 때문이다. 세 실패 분기 모두 구조적으로 unreachable 인
-        // 방어 코드라(아래 각 주석) 실제로 여기 실린 값이 버려지는 일은 없다.
+        // 실패 결과에도 이미 지운 tab·pane·workspace 정보를 싣는다.
+        // 호출자의 moved 검사 때문에 이 정보로 후속 정리가 실행되지 않을 수 있다.
         let fail =
             |closed_tab_ids: &[u32], closed_pane_ids: &[u32]| CoreEvent::MoveSurfaceApplied {
                 moved: false,
@@ -99,29 +85,24 @@ impl Core {
                 workspaces_now_empty,
             };
 
-        // 2) B 위치 *재검색* + b_tab_idx/b_persist 수집.
         let Some((ws_idx, pane_id, b_tab_idx, b_persist)) =
             Self::locate_target_slot(engine, source_id, target_id)
         else {
             return fail(&closed_tab_ids, &closed_pane_ids);
         };
 
-        // 3) B leaf 를 A 로 replace. B 의 옛 id-marker 는 drop 되지만 B 의 Terminal 은
-        //    아직 store 에 남아있다 → 4 단계 cleanup 이 PTY kill.
+        // target의 트리 항목만 교체한다. Terminal store 정리는 반환 이벤트로 요청한다.
         let replaced = Self::replace_b_with_a(engine, ws_idx, pane_id, b_tab_idx, target_id, a_box);
         if !replaced {
             tracing::error!(
                 source_id,
                 target_id,
-                "move surface: B replace failed (unreachable)"
+                "move surface: failed to replace target B"
             );
             return fail(&closed_tab_ids, &closed_pane_ids);
         }
 
-        // B(target) 가 이 탭의 focused 였다면 그 자리를 A 가 승계하므로 focused_surface
-        // 를 A 로 이어준다 (put_surface 는 sole 케이스에서 이미 A 로 세팅하지만, split
-        // replace_surface 는 focused_surface 를 갱신하지 않아 dangling 방지 필요).
-        // 그 후 새 focused 의 title 로 탭 제목을 재투영해 죽는 B 의 title 이 남지 않게 한다.
+        // split leaf 교체는 focused_surface를 바꾸지 않으므로 직접 이어주고 제목도 갱신한다.
         Self::transfer_focus_to_a(engine, ws_idx, pane_id, b_tab_idx, source_id, target_id);
         engine.mark_layout_dirty();
         engine.refresh_tab_osc_title(source_id);
@@ -137,10 +118,7 @@ impl Core {
         }
     }
 
-    /// B(target) 위치 *재검색* (1 단계가 같은-tab 형제 끌어올림 / workspace 제거로
-    /// 인덱스를 바꿨을 수 있음 — 인덱스 캐시 금지, 매번 id 재검색. 구조적 증명상
-    /// B 는 A detach 후에도 항상 살아있다 — B≠A, 공유 구조면 형제 승격) + 그
-    /// tab 안 인덱스(b_tab_idx) + scrollback persist_id 수집.
+    /// source 제거가 인덱스를 바꿀 수 있어 target 위치와 scrollback 저장 ID를 다시 조회한다.
     fn locate_target_slot(
         engine: &crate::core::CoreState,
         source_id: u32,
@@ -152,7 +130,7 @@ impl Core {
                 tracing::error!(
                     source_id,
                     target_id,
-                    "move surface: target vanished after detaching source (unreachable)"
+                    "move surface: target not found after detaching source"
                 );
                 return None;
             }
@@ -171,18 +149,13 @@ impl Core {
         let b_tab_idx = match b_tab_idx {
             Some(i) => i,
             None => {
-                tracing::error!(
-                    source_id,
-                    target_id,
-                    "move surface: B tab not found (unreachable)"
-                );
+                tracing::error!(source_id, target_id, "move surface: target B tab not found");
                 return None;
             }
         };
         Some((ws_idx, pane_id, b_tab_idx, b_persist))
     }
 
-    /// B leaf 를 A 로 replace.
     fn replace_b_with_a(
         engine: &mut crate::core::CoreState,
         ws_idx: usize,
@@ -198,16 +171,13 @@ impl Core {
             .expect("pane re-search must hit (just found above)");
         let tab = &mut pane.tabs[b_tab_idx];
         if tab.is_split() {
-            // split 안 leaf 교체 — tab name 불변.
             tab.layout_mut().replace_surface(target_id, a_box)
         } else {
-            // B 가 sole 이던 tab — A 가 그 tab 의 단독 surface 가 된다.
             tab.put_surface(a_box);
             true
         }
     }
 
-    /// B(target) 가 이 탭의 focused 였다면 A(source) 로 승계.
     fn transfer_focus_to_a(
         engine: &mut crate::core::CoreState,
         ws_idx: usize,
@@ -225,12 +195,8 @@ impl Core {
         }
     }
 
-    /// `apply_move_surface` 헬퍼 — A(source) 를 트리에서 떼어 살아있는 Box 로 반환.
-    /// **A 의 Terminal/store/scrollback 은 절대 만지지 않는다(PTY 보존).** A 가 split
-    /// 안 leaf 면 형제를 끌어올리고(`Surface` level), sole-in-tab 이면 그 tab/pane/
-    /// workspace 를 `apply_close_surface` Case 2/3/4 와 동형으로 구조적 close 한다 —
-    /// 단 **A 의 cleanup_surface/terminals.remove/snapshot 은 일절 없다**(A 는 살아서
-    /// 이동). A 못 찾으면 None.
+    /// source의 Box를 떼어 반환한다. 비게 된 tab·pane·workspace는 지우되
+    /// 이동할 Terminal store 항목과 scrollback은 유지하며 닫기 snapshot도 만들지 않는다.
     #[allow(clippy::type_complexity)]
     fn detach_surface_for_move(
         engine: &mut crate::core::CoreState,
@@ -240,8 +206,7 @@ impl Core {
         crate::core::intent::CascadeLevel,
         Vec<u32>,
         Vec<u32>,
-        // A 의 옛 자리가 workspace 째 사라졌다면 그 **(인덱스, id)**. 인덱스는
-        // cascade 가 `active_workspace` 를 대상 기준으로 보정하는 데 쓴다.
+        // 제거한 workspace의 (인덱스, ID). 호출자가 활성 workspace 위치를 보정할 때 쓴다.
         Option<(usize, u32)>,
         bool,
     )> {
@@ -249,7 +214,6 @@ impl Core {
 
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(source_id)?;
 
-        // tab_idx + sole/split 판정.
         let (tab_idx, is_split) = {
             let ws = &engine.workspaces[ws_idx];
             let pane = ws.pane_layout().find_pane(pane_id)?;
@@ -263,7 +227,6 @@ impl Core {
             found?
         };
 
-        // Split tab: 형제 끌어올림, A 의 Box 만 반환. 구조적 close 없음.
         if is_split {
             let (a_box, source_tab_focused) = {
                 let ws = &mut engine.workspaces[ws_idx];
@@ -272,24 +235,21 @@ impl Core {
                 let layout = tab.take_layout();
                 let (new_layout, extracted) = layout.extract_surface(source_id);
                 tab.put_layout(new_layout);
-                // A 가 이 tab 의 focused 였다면 형제 승격에 맞춰 focused_surface 를
-                // 살아있는 surface 로 재배정 (close_surface 와 동일 패턴, dangling 방지).
+                // 떠난 source를 계속 선택하지 않도록 남은 surface로 바꾼다.
                 if tab.focused_surface == source_id
                     && let Some(first_id) = tab.layout().first_surface_id()
                 {
                     tab.focused_surface = first_id;
                 }
-                let a_box = extracted?; // split 안이면 형제가 있어 항상 Some.
+                let a_box = extracted?;
                 (a_box, tab.focused_surface)
             };
             engine.mark_layout_dirty();
-            // A 가 떠난 source tab 의 제목을 새 focused(형제)의 title 로 재투영해
-            // A 의 stale title 이 배경 탭에 남지 않게 한다.
+            // source의 옛 제목이 남은 탭에 남지 않도록 다시 계산한다.
             engine.refresh_tab_osc_title(source_tab_focused);
             return Some((a_box, CascadeLevel::Surface, vec![], vec![], None, false));
         }
 
-        // sole-in-tab: 구조 정보 수집 후 A 의 Box salvage → 구조적 close.
         let (tabs_len, panes_len, tab_id) = {
             let ws = &engine.workspaces[ws_idx];
             let pane = ws.pane_layout().find_pane(pane_id)?;
@@ -300,7 +260,7 @@ impl Core {
             )
         };
 
-        // sole leaf 에서 A 의 Box 추출 (tab.layout_opt 는 잠시 None — 동기 경로라 안전).
+        // take_layout 뒤에는 잠시 layout이 없다. 같은 동기 호출 안에서 tab을 제거하거나 돌려놓는다.
         let a_box = {
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
@@ -308,7 +268,6 @@ impl Core {
             match tab.take_layout() {
                 crate::model::SurfaceLayout::Leaf(b) => b,
                 other => {
-                    // sole 인데 split — 예상 밖. 원복 후 포기.
                     tab.put_layout(other);
                     return None;
                 }
@@ -316,7 +275,6 @@ impl Core {
         };
 
         if tabs_len > 1 {
-            // Case 2: tab close (pane/workspace 유지).
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
             pane.remove_tab_preserving_active(tab_idx);
@@ -325,7 +283,6 @@ impl Core {
         }
 
         if panes_len > 1 {
-            // Case 3: pane close (workspace 유지).
             let ws = &mut engine.workspaces[ws_idx];
             ws.close_pane_preserving_focus(pane_id);
             engine.mark_layout_dirty();
@@ -339,8 +296,6 @@ impl Core {
             ));
         }
 
-        // Case 4: workspace close. (이동에서 A 가 sole-in-workspace 면 B 는 다른
-        //  workspace 에 있으므로 workspaces 가 비지 않는다 — 그래도 일반식으로 계산.)
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         let workspaces_now_empty = engine.workspaces.is_empty();
@@ -366,20 +321,15 @@ mod move_surface_tests {
         CoreState::new(80, 24, waker).expect("engine")
     }
 
-    /// R1(PTY 보존) 잠금: A 를 B 위치로 이동해도 A 의 Terminal 은 store 에 그대로
-    /// 남고(이동=분리+재부착, kill 아님), 이벤트는 B 를 cleanup 대상으로 보고한다.
-    /// B 의 store 제거는 cascade(dispatch_domain) 책임이라 apply 단계에선 미발생.
+    /// 실제 PTY 대신 detached Terminal을 써서 store 항목과 정리 대상 반환을 확인한다.
     #[test]
     fn move_preserves_source_terminal_and_reports_b_cleanup() {
         let mut engine = test_engine();
-        // 기본 워크스페이스의 단일 surface = A. detached mirror 를 직접 등록해
-        // 실제 PTY 스폰 없이 deterministic 하게 store 점유를 만든다.
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .terminals
             .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
 
-        // A 와 같은 tab 에 B 를 split 으로 추가.
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
         engine.workspaces[ws_idx]
@@ -392,14 +342,12 @@ mod move_surface_tests {
             .terminals
             .insert(b, tasty_terminal::Terminal::new_detached(80, 24));
 
-        // 사전 조건.
         assert!(engine.terminals.contains(a));
         assert!(engine.terminals.contains(b));
         assert!(engine.find_workspace_index_for_surface(b).is_some());
 
         let ev = Core::apply_move_surface(&mut engine, a, b);
 
-        // 이벤트: moved=true, B 가 cleanup 대상.
         match ev {
             CoreEvent::MoveSurfaceApplied {
                 moved, b_cleanup, ..
@@ -410,25 +358,20 @@ mod move_surface_tests {
             other => panic!("unexpected event: {other:?}"),
         }
 
-        // R1: A 의 Terminal 은 store 에 그대로 (PTY 보존).
         assert!(
             engine.terminals.contains(a),
             "source terminal must survive move"
         );
-        // A 는 여전히 트리에 존재.
         assert!(engine.find_workspace_index_for_surface(a).is_some());
-        // B 의 id-marker 는 replace 로 트리에서 사라짐. 단, B 의 Terminal store
-        // 제거는 cascade(dispatch_domain) 책임이라 apply 직후엔 아직 남아있다.
+        // target의 store 제거는 호출자의 후속 처리이므로 여기서는 아직 남아 있어야 한다.
         assert!(engine.find_workspace_index_for_surface(b).is_none());
         assert!(
             engine.terminals.contains(b),
-            "apply 단계는 B store 를 건드리지 않는다 (cascade 가 kill)"
+            "apply 직후에는 B의 Terminal store 항목도 남아 있어야 한다"
         );
-        // cut 슬롯 소비.
         assert!(engine.pending_move_surface.is_none());
     }
 
-    /// self-ref(source==target) 는 no-op.
     #[test]
     fn move_self_ref_is_noop() {
         let mut engine = test_engine();
@@ -439,11 +382,9 @@ mod move_surface_tests {
             ev,
             CoreEvent::MoveSurfaceApplied { moved: false, .. }
         ));
-        // no-op 여도 슬롯은 소비된다.
         assert!(engine.pending_move_surface.is_none());
     }
 
-    /// target 부재(이미 닫힘) 는 no-op, A 는 무사.
     #[test]
     fn move_missing_target_is_noop() {
         let mut engine = test_engine();
@@ -458,7 +399,6 @@ mod move_surface_tests {
             ev,
             CoreEvent::MoveSurfaceApplied { moved: false, .. }
         ));
-        // A 는 그대로 살아있고 슬롯만 소비.
         assert!(engine.terminals.contains(a));
         assert!(engine.find_workspace_index_for_surface(a).is_some());
         assert!(engine.pending_move_surface.is_none());

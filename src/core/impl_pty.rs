@@ -1,11 +1,8 @@
-//! `Core` — PTY 파이프라인(system loop wrapper). `src/core/mod.rs` 의 `impl Core` 분할.
+//! PTY 출력을 읽고 터미널 이벤트·크기 변경을 처리한다.
 
 use super::*;
 
-/// Helper: layout / tab_bar 기반으로 surface_id 별 *목표 grid (cols, rows)* 를
-/// 수집. 본 helper 는 read-only 로 workspaces 만 순회한다 — `terminals` store 에는
-/// 직접 접근하지 않으므로 caller 가 결과를 받아 `engine.terminals.get_mut` 로
-/// resize 호출할 때 borrow 충돌이 없다.
+/// workspace만 읽어 목표 grid를 모은다. 이후 Terminal store를 변경할 때 borrow가 겹치지 않게 한다.
 #[cfg(feature = "gui")]
 fn collect_terminal_resize_targets(
     tab_bar_h: crate::model::PhysicalPx,
@@ -45,13 +42,7 @@ fn collect_terminal_resize_targets(
 }
 
 impl Core {
-    /// 특정 surface 의 PTY 출력 drain + TerminalEvent → CoreEvent 변환.
-    /// observer_router (OutputAppended) / command_index (PromptBoundary) /
-    /// 시스템 clipboard (OSC 52) 의 부수효과는 본 함수가 직접 처리. 나머지
-    /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
-    // headless 도 이 함수를 쓴다 — `boot::handle_terminal_output` 이 targeted wake
-    // (`AppEvent::TerminalOutput(Some(sid))`)를 이 경로로 보낸다. gui 의 targeted
-    // polling 전용이라는 서술이 한동안 붙어 있었으나 사실이 아니었다.
+    /// 지정 터미널의 출력을 읽고 engine에 쌓인 터미널 이벤트를 처리한다. GUI·헤드리스가 함께 사용한다.
     pub(crate) fn process_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -62,8 +53,6 @@ impl Core {
         ProcessPtyOutcome { events }
     }
 
-    /// 모든 workspace 의 모든 terminal 을 drain + 변환. 반환: cascade 가 처리할
-    /// CoreEvent 목록.
     pub(crate) fn process_all_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -73,9 +62,7 @@ impl Core {
         ProcessPtyOutcome { events }
     }
 
-    /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
-    /// command_index / system clipboard 의 *직접 부수효과* 는 본 함수가 처리하고,
-    /// cascade 가 필요한 event 만 Vec<CoreEvent> 로 반환.
+    /// observer·명령 이력·클립보드는 여기서 처리하고 App 후속 처리가 필요한 이벤트를 반환한다.
     fn drain_terminal_events(&mut self, engine: &mut crate::core::CoreState) -> Vec<CoreEvent> {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
@@ -125,8 +112,6 @@ impl Core {
         out
     }
 
-    /// PTY 출력 청크 도착 — observer_router 라인 버퍼에 먹이고, OutputMatch 훅
-    /// (완성된 라인 단위 매칭) + OSC 133 셸 통합 미설치 힌트를 발화한다.
     fn handle_output_appended(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -135,8 +120,7 @@ impl Core {
         out: &mut Vec<CoreEvent>,
     ) {
         let completed_lines = engine.observer_router.dispatch_text(sid, text);
-        // OutputMatch 훅 발사도 이 라인 버퍼를 공유 — 완성된 라인 단위로만
-        // 매칭한다(패턴이 청크 경계에 걸쳐 있으면 라인이 완성될 때까지 매칭 안 됨).
+        // 청크 경계와 무관하게 완성된 줄만 OutputMatch에 넘긴다.
         if engine.hook_manager.has_output_match_hook(sid) {
             for line in completed_lines {
                 out.push(CoreEvent::TerminalOutputMatch {
@@ -145,18 +129,13 @@ impl Core {
                 });
             }
         }
-        // OSC 133 셸 통합 미설치 감지 — 첫 출력 시각을 기록하고, 지연 시간이
-        // 지나도록 PromptBoundary 를 한 번도 못 받았으면 안내 배너 cascade 를
-        // 1 회 요청한다.
+        // 첫 출력 이후 경계 보고가 없으면 셸 통합 안내를 요청한다. 이 경로는 출력이 올 때 실행된다.
         engine.note_first_output(sid);
         if engine.take_shell_integration_hint_due(sid) {
             out.push(CoreEvent::TerminalShellIntegrationHint { surface_id: sid });
         }
     }
 
-    /// OSC 133 prompt boundary phase 도착 — command_index cap 알림 + D phase
-    /// (명령 완료 + exit code, highlight 자동 발동/hook 커스터마이즈 cascade 공용)
-    /// 를 발화한다.
     fn handle_prompt_boundary(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -185,8 +164,7 @@ impl Core {
                 body,
             });
         }
-        // 항상 발화(필터 없음) — cascade 가 highlight 자동 발동 + hook
-        // 커스터마이즈 경로 둘 다 처리한다.
+        // 명령 이력 저장 성공 여부와 무관하게 D 경계는 완료 후속 처리로 넘긴다.
         if phase == 'D' {
             let exit_code = crate::core::command_index::extract_exit_code(payload);
             out.push(CoreEvent::TerminalCommandCompleted {
@@ -196,21 +174,13 @@ impl Core {
         }
     }
 
-    /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
-    /// 반환: 여전히 pending 이 남았는지 (redraw 재요청 신호).
+    /// resize 제한 주기에 따라 반영하고 미처리 요청이 남았는지 반환한다.
     #[cfg(feature = "gui")]
     pub(crate) fn flush_pty_resizes(engine: &mut crate::core::CoreState) -> bool {
         engine.flush_all_pty_resizes()
     }
 
-    /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
-    /// `state.resize_all(engine, ...)` 의 진입점. 탭 바 높이는 창이 정하는 값이라
-    /// (`AppState::tab_bar_height`) 호출자가 값으로 넘긴다 — 도메인이 창 상태 전체를
-    /// 받지 않게 하려는 것이다.
-    ///
-    /// TerminalSurface 는 id-marker 라 `Surface::resize_all` 은
-    /// no-op. Terminal 본체는 `engine.terminals` (TerminalStore) 가 owner 이므로
-    /// 여기서 직접 store 를 두드려 resize 한다.
+    /// 레이아웃의 목표 크기를 Terminal store에 적용한다. 탭 바 높이는 창 계층이 값으로 넘긴다.
     #[cfg(feature = "gui")]
     pub(crate) fn resize_all_terminals(
         tab_bar_height: crate::model::PhysicalPx,
@@ -229,24 +199,13 @@ impl Core {
             scale_factor,
         );
         for (sid, cols, rows) in targets {
-            // hard-점유된 surface(원격 client 가 mirror 로 구동 중인 서버측 실제 PTY)는
-            // client-driven geometry(ADR-0022) — 점유 client 가 유일 구동자다. 이 host
-            // 창의 레이아웃 sweep 이 원격 창 grid 로 되돌리면 client 의 ClientResize 가
-            // 무력화되어 mirror 가 host 창 크기에 고정(레터박스)된다. 따라서 점유 중인
-            // surface 는 여기서 skip 하고, 오직 `apply_attached_workspace_resize`(holder
-            // 검증 후 client 요청 크기 적용)만 이 surface 의 grid 를 설정하게 한다. detach 로
-            // lock 이 풀리면 다음 sweep 부터 host 창이 다시 구동한다(원복).
+            // 점유 client가 정한 크기를 서버 창 레이아웃으로 덮지 않는다.
             if engine.attach.is_hard_occupied(sid) {
                 continue;
             }
             if let Some(t) = engine.terminals.get_mut(sid) {
-                // mirror(detached) 터미널은 client-driven geometry(ADR-0022):
-                // 로컬 pane 목표 grid 를 로컬에 **직접 적용하지 않고**(로컬 grid 는
-                // server 의 `Resize` echo 로만 갱신 → 원격 reflow 전 잘못된 grid 에
-                // 바이트가 재생되는 desync 방지) 원격 PTY 를 그 크기로 구동하도록
-                // forward 큐에 넣는다. 목표가 현재 mirror grid 와 같으면(정상상태)
-                // enqueue 하지 않는다 — 전송할 변화가 없다. (transient 중복은
-                // dispatch 의 세션 last-forwarded dedup 이 흡수한다.)
+                // mirror에 먼저 크기를 적용하면 서버의 reflow 전 출력과 어긋날 수 있다.
+                // 서버에 resize를 요청하고 echo를 받아 로컬 크기를 바꾼다.
                 if t.is_detached() {
                     if t.cols() != cols || t.rows() != rows {
                         engine.pending_resize_forward.insert(sid, (cols, rows));
@@ -258,9 +217,7 @@ impl Core {
         }
     }
 
-    /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
-    /// `Tick::Busy` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
-    /// (window mark_dirty 결정 신호).
+    /// busy 집합이 바뀌었는지 반환해 창의 다시 그리기 여부를 정한다.
     #[cfg(feature = "gui")]
     pub(crate) fn update_busy_surfaces(engine: &mut crate::core::CoreState) -> bool {
         engine.refresh_busy_surfaces()
