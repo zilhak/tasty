@@ -1,21 +1,6 @@
-//! `PathField` — 주소창용 편집형 경로 필드(Explorer / Markdown 공용).
-//!
-//! 디자인 `PathField`(gallery `plugins.jsx`)의 소스 조립: [`crate::AutoComplete`] 트리거
-//! (Input 언어 + 후보 드롭다운) + 우측 Go [`crate::IconButton`]. 두 surface 가 **같은 필드 +
-//! 같은 후보 드롭다운 + 같은 편집/이동 계약**을 공유한다.
-//!
-//! 계약:
-//! - **상태 호출측 소유**: `buffer`(편집 텍스트) / `editing`(포커스=편집모드) / `active`
-//!   (keyboard-active 행)를 프레임마다 `&mut` 로 대여받아 갱신한다. 위젯은 글로벌 상태 없음.
-//! - **아이콘 주입**: leading / Go 아이콘은 [`IconPainter`] 로 주입한다(위젯 내부 아이콘 상수
-//!   금지 — 본체=glyph, 플러그인=baked 벡터를 흡수).
-//! - **idle=secondary / editing=primary**: 비편집 시 mono 경로를 text-secondary 로 낮추고
-//!   (AutoComplete `trigger_text_color`), 편집 진입 시 Input 기본 text-primary.
-//! - **경로 문자열만 emit**: file vs directory 해석은 소비처 몫. 확정 시 [`PathFieldOutcome::Navigate`]
-//!   가 경로 문자열만 담는다.
-//! - **id_salt 필수**: host 다중 surface/tab 충돌 방지(각 필드 고유 id).
-//!
-//! 결정 로직([`decide`])은 순수 함수라 단위테스트로 격리한다.
+//! 자동 완성 입력과 이동 버튼을 조합한 경로 필드.
+//! 호출자가 입력·편집·선택 상태와 고유 ID, 아이콘을 제공한다.
+//! 확정 결과는 경로 문자열이며 파일·디렉터리 해석과 실제 이동은 호출자가 맡는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -47,11 +32,8 @@ enum Decision {
     Revert,
 }
 
-/// AutoComplete 행위 + Go 클릭 + 포커스 이탈을 이동/원복/무동작으로 매핑한다.
-///
-/// 우선순위: **Esc(Cancel) > 행 확정(Pick) > 버퍼 확정(Submit) > Go 클릭 > 확정 없는
-/// blur(원복) > None**. Go 클릭은 blur-원복보다 앞선다 — Go 클릭이 트리거 포커스를 뺏어
-/// 같은 프레임에 `lost_focus` 를 유발하지만, 그건 이동 확정이지 취소가 아니기 때문이다.
+/// Esc, 후보 확정, 버퍼 확정, Go 클릭, 포커스 이탈 순서로 처리한다.
+/// Go 클릭이 같은 프레임에 포커스도 해제하므로 이동 확정을 포커스 이탈에 따른 원복보다 먼저 처리한다.
 fn decide(action: &AutoCompleteAction, lost_focus: bool, go_clicked: bool) -> Decision {
     match action {
         AutoCompleteAction::Cancel => Decision::Revert,
@@ -119,7 +101,7 @@ impl<'a> PathField<'a> {
         self
     }
 
-    /// 후보 필터 모드 — 기본 `Substring`. 소비처가 v1(필터 없음)을 원하면 `None`.
+    /// 기본은 Substring. 필터 없이 전체 후보를 보이려면 None을 사용한다.
     pub fn match_mode(mut self, match_mode: crate::MatchMode) -> Self {
         self.match_mode = match_mode;
         self
@@ -155,8 +137,7 @@ impl<'a> PathField<'a> {
         self
     }
 
-    /// Go 버튼 hover tooltip(i18n 라벨). egui 엔 웹 aria 가 없어 tooltip 으로 노출한다.
-    /// 미지정 시 tooltip 없음(기존 호출 무변경).
+    /// 호출자가 번역한 Go 버튼 도움말. 지정하지 않으면 표시하지 않는다.
     pub fn go_tooltip(mut self, go_tooltip: &'a str) -> Self {
         self.go_tooltip = Some(go_tooltip);
         self
@@ -185,7 +166,6 @@ impl<'a> PathField<'a> {
         let go_side = ControlSize::Sm.height(theme);
         let field_w = (total_w - go_side - gap).max(0.0);
 
-        // leading/row 아이콘 — row 는 미지정 시 leading 재사용(양 주소창 관례).
         let leading = self.leading_icon;
         let row = self.row_icon.or(self.leading_icon);
 
@@ -194,7 +174,6 @@ impl<'a> PathField<'a> {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
 
-            // 트리거 = AutoComplete(mono 경로 + 후보 드롭다운). idle 은 secondary 로 낮춘다.
             let mut ac = crate::AutoComplete::new(self.id_salt)
                 .mono(true)
                 .match_mode(self.match_mode)
@@ -216,16 +195,10 @@ impl<'a> PathField<'a> {
             }
             let out = ac.show(ui, theme, buffer, candidates, active);
 
-            // 편집모드 = 트리거의 egui memory 포커스(단일 진실). `has_focus()` 는
-            // viewport focused(RawInput.focused)에 게이트돼 있어 쓰지 않는다 — 편집모드는
-            // 위젯 포커스 상태 머신이고, viewport focused 는 렌더 게이트(커서 깜빡임·
-            // 드롭다운 표시)로만 작용해야 한다. has_focus 를 쓰면 focused=false 프레임
-            // (plugin 재-paint / surface blur)마다 editing 이 false 로 떨어져 진입 재감지
-            // 루프(주소창 진동)를 만든다. blur-원복은 memory 기반 lost_focus 가 담당.
+            // 창 포커스가 없는 재그리기에서도 편집 상태를 유지하도록 egui Memory의 위젯 포커스를 읽는다.
+            // viewport 포커스에 따라 달라지는 has_focus는 편집 상태 판단에 사용하지 않는다.
             *editing = out.response.ctx.memory(|m| m.has_focus(out.response.id));
 
-            // Go 버튼 — arrow-right IconButton(sm). 클릭 = 현재 버퍼 확정.
-            // tooltip 은 버튼 response 에 붙인다(값 있을 때만 — 디자인 aria-label 대체).
             let go_clicked = if let Some(go) = self.go_icon {
                 let mut resp = crate::IconButton::new()
                     .size(ControlSize::Sm)
@@ -246,7 +219,6 @@ impl<'a> PathField<'a> {
                     PathFieldOutcome::Navigate(path)
                 }
                 Decision::Revert => {
-                    // Esc / 확정 없는 포커스 이탈 → 원래 경로 원복.
                     *buffer = current_path.to_string();
                     out.response.surrender_focus();
                     PathFieldOutcome::Revert
@@ -254,7 +226,6 @@ impl<'a> PathField<'a> {
             };
         });
 
-        // 닫히면 keyboard-active 커서 리셋(다음 오픈은 active 없음부터).
         if !*editing {
             *active = None;
         }

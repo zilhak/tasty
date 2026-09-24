@@ -1,26 +1,11 @@
-//! `warning_callout` — bordered warning callout 박스 (디자인 Settings › Terminal
-//! TUI 섹션 jsx:623-632).
-//!
-//! 좌측 경고 삼각 아이콘 + caption 본문을, 1px warning 보더 + 옅은 warning 틴트
-//! 배경의 라운드 박스로 감싼다. 플레인 경고 텍스트(`accent_warning` + `.small()`)를
-//! 대체해, 토글 바로 아래에 시각적으로 붙는 한 블록으로 만든다.
-//!
-//! 색: `border` = `accent-warning` 40% / `bg` = `accent-warning` 12% — 디자인의
-//! `color-mix(in srgb, var(--tasty-accent-warning) 40%/12%, transparent)` 를
-//! `gamma_multiply` 알파 감쇠로 근사한다(chip/banner 의 tinted chip·디밍 전례와
-//! 동일 idiom). 보더 두께·라운드·간격·폰트는 전부 `&Theme` 토큰.
-//!
-//! 아이콘 시스템은 **호출측 소유** — `tasty-ui-widgets` 는 본체 icons 에 의존하지
-//! 않으므로, 본체는 `icons::ALERT_TRIANGLE`, 갤러리는 `catalog::icons::ALERT_TRIANGLE`
-//! 를 각각 [`IconPainter`] 클로저로 주입한다(IconButton/banner 선례).
+//! 아이콘과 줄바꿈 본문을 경고색 상자로 묶는다. 아이콘은 호출자가 전달한다.
+//! 배경은 공통 tint_fill_alpha, 테두리는 이 위젯의 비율을 egui 색에 곱한다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
 
-/// `color-mix(in srgb, accent-warning X%, transparent)` 근사 — 알파 감쇠. 채움은
-/// `tint-fill-alpha` 로 모였고, 테두리 계수는 디자인이 "채움만" 으로 한정한 부분
-/// 사용이라(docs/design/systems/theme.md#ui-코드의-색상-접근) 이 자리 고유 값으로 남는다.
+/// 경고 테두리의 비율. 배경 채움만 공통 tint_fill_alpha를 사용한다.
 const BORDER_MIX: f32 = 0.4;
 
 /// bordered warning callout — leading 경고 삼각 아이콘 + wrapping caption 본문.
@@ -49,11 +34,9 @@ pub fn warning_callout(
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                // leading 경고 삼각 글리프 — warning tint.
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
                 paint_icon(ui, rect, warning);
-                // caption 본문 — 남는 폭에서 wrap.
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(text)

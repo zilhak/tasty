@@ -1,20 +1,12 @@
-//! 토글 primitive — `Checkbox` / `Switch` (디자인 `components/forms/*`).
-//!
-//! 상호작용 컨트롤: `&mut bool` 을 받아 클릭 시 토글하고 `response.changed()` 로
-//! 알린다. disabled 는 opacity 0.5. checked 외형은 즉시(기능) — Motion 계약.
-//! egui 한계: focus-visible outline 은 키보드 포커스가 드물어 생략(장식).
+//! bool 상태를 바꾸는 체크박스와 스위치. 변경하면 response.changed로 알린다.
+//! 상태는 즉시 표시하며 키보드 포커스 테두리는 구현하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
-/// 체크마크 꺾은선 굵기. 같은 이유로 대응 토큰 없음 → Rust-only. `icon_stroke_width`(1.5)
-/// 는 popup 타이틀바의 전사 글리프 전용이라(theme.md "painter 전사 글리프") 여기 쓰지 않는다.
+/// 체크마크 선 굵기. 창 버튼용 icon_stroke_width와 역할이 달라 별도로 둔다.
 const CHECK_STROKE: f32 = 2.0;
 
-/// `checkbox` 가 라벨을 자르지 않고 그리는 데 필요한 폭 — 박스 + gap + 라벨.
-///
-/// 체크박스 행을 담는 컨테이너가 **자기 폭을 먼저 정해야** 할 때 쓴다(예: MultiSelect
-/// 메뉴는 "가장 넓은 행" 을 재서 min(트리거) ~ max(320) 사이로 클램프한다). 박스·gap·
-/// 폰트 값을 호출측이 다시 조립하면 [`checkbox`] 와 조용히 어긋나므로 여기서 소유한다.
+/// 체크박스·간격·라벨의 전체 폭. 메뉴 등에서 필요한 폭을 먼저 계산할 때 사용한다.
 pub fn checkbox_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     let galley = ui.fonts(|f| {
         f.layout_no_wrap(
@@ -41,10 +33,7 @@ pub fn checkbox(
     let bw = theme.border_width.value();
     let box_sz = theme.checkbox_size().value();
 
-    // 라벨은 가용 폭(박스+gap 을 뺀 나머지)을 넘으면 말줄임 — 디자인 Checkbox 의
-    // `.tasty-check__label { flex:1; min-width:0; ellipsis }` 규칙. 폭이 넉넉한
-    // 보통의 호출부에서는 잘릴 일이 없고, 폭이 제한된 컨테이너(예: MultiSelect 메뉴)
-    // 안에서만 발동해 라벨이 보더를 넘어 잘려나가는 대신 "…" 로 끝난다.
+    // 상자가 차지한 폭을 제외한 공간에 맞춰 라벨을 줄인다.
     let label_max = (ui.available_width() - box_sz - gap).max(0.0);
     let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
@@ -178,8 +167,7 @@ pub fn switch(
             theme.border_default().to_egui(),
         )
     };
-    // 트랙 radius = pill(height/2 idiom). switch-radius 는 sentinel 9999 라 구현
-    // 관습을 유지(값 불일치 → 이식 제외).
+    // 완전히 둥근 트랙이 되도록 높이의 절반을 반경으로 사용한다.
     ui.painter().rect(
         track,
         track_h * 0.5,

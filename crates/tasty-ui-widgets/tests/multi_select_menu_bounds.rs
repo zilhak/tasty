@@ -1,17 +1,5 @@
-//! `multi_select` 팝업 메뉴의 크기 제약 계약 테스트.
-//!
-//! 디자인 `components/forms/MultiSelect` 가 확정한 두 제약을 고정한다.
-//!
-//! 1. 옵션이 많아도 메뉴가 세로로 무한정 늘어나지 않는다 —
-//!    `multiselect_menu_max_height`(= `autocomplete_max_height`, 220) 에서 멈추고
-//!    내부 스크롤로 넘어간다.
-//! 2. 라벨이 길어도 메뉴가 가로로 무한정 늘어나지 않는다 —
-//!    `multiselect_menu_max_width`(320) 에서 멈추고 행 라벨이 말줄임된다.
-//!
-//! 짧은 목록(기존 DAG 상태 필터 모양)은 두 제약 어디에도 닿지 않아 **크기가 그대로**
-//! 라는 것도 함께 고정한다 — 제약 도입이 기존 소비자를 건드리지 않았다는 회귀 가드다.
-//!
-//! headless `egui::Context` 구동 패턴은 선례 `multi_select_toggle.rs` 를 따른다.
+//! 긴 목록의 높이 제한·스크롤과 긴 라벨의 메뉴 폭 제한을 검사한다.
+//! 짧은 목록은 트리거 폭을 유지하는지도 확인한다.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -116,31 +104,8 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
         .expect("팝업 Area 가 배치되지 않았다 — 열리지 않았을 가능성")
 }
 
-/// 팝업 프레임이 본문 바깥에 더하는 가로 여유 — 위젯이 쓰는 **그 함수를 부른다.**
-///
-/// 예전에는 같은 산술을 여기에 다시 적고 "위젯 쪽 `popup_chrome_width` 와 같은 계산"
-/// 이라고 주석에 적었는데, 지키는 것이 없었다. 게다가 그 사본은 `Style::default()` 를
-/// 쓰고 위젯은 `ui.style()` 을 써서 **산술이 같아도 입력이 달랐다** — 두 값이 우연히
-/// 같을 때만 참인 문장이었다.
-///
-/// ★ 다만 이 값은 아래 단정들에서 **지지항이 아니다.** 상한에 더하는 여유로만 쓰이고,
-/// 실측치가 상한에서 그보다 멀리 떨어져 있다. 그러니 이 함수를 고쳐도 초록인 것은
-/// **덮였다는 뜻이 아니다** — 여기 있는 이유는 상한을 "본문 상한 + 프레임 여유" 로
-/// **읽히게** 쓰기 위해서이지 그 여유를 검사하기 위해서가 아니다.
-///
-/// 그 사실은 값을 박지 않고 **재는 법으로** 남긴다(여유가 얼마나 남는지는 테마·폰트에
-/// 따라 변한다). `popup_chrome_width` 의 계수를 흔들고 이 파일을 돌려라 —
-/// **키우는 쪽만 재면 안 된다**(여유가 넓어지는 방향은 언제나 더 초록이라 무정보다):
-///
-/// ```text
-/// f=crates/tasty-ui-widgets/src/multi_select.rs
-/// for k in 0.0 1.0 4.0; do
-///   sed -i "s/+ [0-9.]* \* frame.stroke.width/+ $k * frame.stroke.width/" $f
-///   out=$(cargo test -p tasty-ui-widgets --test multi_select_menu_bounds 2>&1); echo "$k rc=$?"
-/// done   # 끝나면 2.0 으로 되돌린다
-/// ```
-///
-/// 하나라도 빨개지면 그때부터는 지지항이니 이 문단을 지워라.
+/// 실제 위젯과 같은 style·함수로 프레임 여유를 계산한다.
+/// 아래 높이 상한에는 여유가 있어 프레임 계산의 작은 오류까지 검출하지는 못한다.
 fn chrome() -> f32 {
     tasty_ui_widgets::popup_chrome_width(&egui::Style::default())
 }
@@ -199,8 +164,7 @@ fn short_option_lists_are_untouched_by_the_clamps() {
     );
 }
 
-/// `multiselect_menu_max_height` 는 AutoComplete 드롭다운과 **같은 값**을 공유한다
-/// (디자인 판정 — 값 신설 없이 재사용). 한쪽만 바뀌면 여기서 걸린다.
+/// 다중 선택과 자동 완성 목록이 같은 높이 상한을 사용하는지 확인한다.
 #[test]
 fn menu_max_height_reuses_the_autocomplete_value() {
     let theme = tasty_themes::mocha_fallback();

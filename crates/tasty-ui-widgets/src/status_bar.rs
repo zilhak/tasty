@@ -1,51 +1,19 @@
-//! 작업영역(작업 컬럼) 하단 StatusBar 의 **순수 시각** — 디자인
-//! `ui_kits/terminal/work.jsx` 의 `StatusBar` 컴포넌트 대응.
-//!
-//! ## 구성 (확정 — 명세는 `docs/features/workspace-status-bar/index.md`)
-//! 이 바는 **포커스 surface 의 읽기 전용 요약 + 키보드 리마인더 하나**다. 어느 항목도
-//! 목적지가 아니다(포커스를 옮기는 항목이 없다).
-//!
-//! - 높이 `theme.status_bar_height`(24), `bg_app` 배경 + 상단 `border_width` separator.
-//! - 좌측(순서 고정): **git 브랜치**(글리프 + 이름) · **surface id**(mono `s3·p1`) ·
-//!   **shell** · **grid**(`120×32`).
-//! - 우측: **팔레트 단축키**(Kbd 키캡) · **테마 글리프**(`sun`/`theme`).
-//!   테마 종류는 색이 아니라 글리프가 들고, 이름 텍스트는 달지 않는다.
-//! - **값이 없는 항목은 자리째 없다** — dash 를 그리지 않는다. repo 밖이면 브랜치
-//!   항목 자체가 없고, detached HEAD 면 그 자리에 short sha 가 온다(호출자가 넣는다).
-//!
-//! ## 좁아질 때 접는 순서 ([`drop_level`])
-//! `1` grid → `2` shell → `3` surface id → `4` 팔레트 키캡 → `5` 브랜치 **텍스트**
-//! (브랜치 글리프는 남는다). **테마 글리프는 어느 단계에서도 안 빠진다.**
-//! 폭이 floor 보다 좁으면 마지막 단계에서 멈춘다 — 더 접을 것이 없다.
-//!
-//! ## 이 crate 가 소유하지 않는 것
-//! - **`egui::Area` / `LayerId`** — 부유 배치와 z-order 는 본체 정책이라 호출자가
-//!   소유한다. 이 view 는 넘겨받은 [`egui::Ui`] 안에 크기를 할당하고 **그 rect 기준**
-//!   으로만 그린다(절대 화면 좌표 비의존) — 그래서 갤러리 specimen 처럼 화면 원점이
-//!   아닌 카드 안에 놓여도 좌표가 어긋나지 않는다.
-//! - **i18n** — 이 crate 는 `tasty-i18n` 을 의존하지 않는다(`multi_select` 와 동일
-//!   정책). 라벨·tooltip 문자열은 [`StatusBarData`] 필드로 호출자가 주입한다.
+//! 포커스된 서피스의 정보와 팔레트·테마 버튼을 그리는 상태바.
+//! 브랜치·서피스 ID·셸·그리드는 표시 전용이며 값이 없으면 해당 항목과 간격도 생략한다.
+//! 폭이 부족하면 그리드, 셸, 서피스 ID, 팔레트 키캡, 브랜치 이름 순서로 숨긴다.
+//! 브랜치 아이콘과 테마 아이콘은 마지막에도 남으며 더 좁으면 잘릴 수 있다.
+//! 배치할 Ui와 번역 문구는 호출자가 제공한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::chip::{kbd, kbd_width};
 
-// 디자인 inline 레이아웃 값(`gallery/layouts.jsx` 의 `statusbar` specimen: 컨테이너
-// `padding: "0 10px"` + `gap: 10`). 4px 그리드 밖이지만 겨루는 컴포넌트 토큰이 없어
-// 이 출처가 곧 근거다. **셀마다 패딩을 주는 형태가 아니다** — 바깥 여백 한 번과
-// 항목 사이 gap 이라, 인접한 두 항목 사이는 20 이 아니라 10 이다.
+// 디자인의 바깥 여백과 항목 사이 간격. 각 셀의 패딩이 아니므로 중복해서 더하지 않는다.
 const BAR_PAD_X: LogicalPx = LogicalPx(10.0);
 const ITEM_GAP: LogicalPx = LogicalPx(10.0);
 
-/// 브랜치 항목(글리프 + gap + 이름) 전체가 차지할 수 있는 최대 폭. 넘으면 이름을
-/// 말줄임한다 — 디자인 성분의 `maxWidth: 160` 그대로다.
-///
-/// 값은 `size-160` 위에 있지만 **이 자리를 가리키는 컴포넌트 토큰이 없다.** 값이
-/// 같은 `Theme` 필드는 `field_width_md`(폼 입력 폭)·`dag_minimap_width` 뿐이라 뜻이
-/// 다르고, 같은 수라고 그 이름이 이 자리의 이름은 아니다. 그래서 `on_scale_length_literal`
-/// 이 이 한 자리를 계상한다 — 처방은 "토큰으로 바꿔라" 가 아니라 "이 치수에 이름을
-/// 줄 것인가" 이고, 그것은 디자인 결정이다.
+/// 브랜치 아이콘과 이름을 합친 최대 폭. 대응하는 컴포넌트 토큰이 없어 별도로 둔다.
 const BRANCH_MAX_W: LogicalPx = LogicalPx(160.0);
 
 /// 좌측 클러스터의 항목 수 — [`items_at`] 배열의 앞쪽 몇 칸이 좌측인지.
@@ -57,10 +25,7 @@ const MAX_DROP_LEVEL: u8 = 5;
 /// view 입력 — 한 프레임 분의 StatusBar 표시 데이터.
 #[derive(Clone, Debug, Default)]
 pub struct StatusBarData {
-    /// 브랜치 슬롯의 표시 문자열 — 브랜치명, 또는 detached HEAD 면 `@ <short sha>`.
-    /// **표지는 호출자가 이미 붙여서 넘긴다**(본체는 상태바 wrapper, 갤러리는 specimen
-    /// 리터럴). 이 view 는 받은 문자열을 그대로 그린다.
-    /// repo 가 아니면 `None` → **항목 자체가 없다**(dash 를 그리지 않는다).
+    /// 브랜치명 또는 detached HEAD 표시를 호출자가 완성해 전달한다. None이면 항목을 생략한다.
     pub branch: Option<String>,
     /// focus surface id(숫자). "Copy Terminal ID" 가 복사하는 값과 동일.
     pub surface_id: Option<u32>,
@@ -72,8 +37,7 @@ pub struct StatusBarData {
     pub grid: Option<(usize, usize)>,
     /// 현재 테마가 light 인지 — `sun`(light) / `theme`(dark) 글리프를 가른다.
     pub theme_is_light: bool,
-    /// 팔레트 단축키(예: `"Cmd+K"`). **키캡으로 그린다.** 바인딩이 없으면 빈 문자열
-    /// 이고, 그때는 값이 없는 것이므로 **항목 자체가 없다**.
+    /// 키캡으로 그릴 팔레트 단축키. 비어 있으면 항목을 생략한다.
     pub palette_keys: String,
     /// 팔레트 키캡 hover tooltip.
     pub palette_tooltip: String,
@@ -99,12 +63,8 @@ pub struct StatusBarDrawResult {
     pub resize_priority_hovered: bool,
 }
 
-/// 순수 시각 — `Theme` + [`StatusBarData`] 로 하단 바(`width` × `status_bar_height`)를
-/// 그리고, 사용자 클릭을 [`StatusBarAction`] 으로 수집해 반환한다.
-///
-/// 전달된 `ui` 에서 크기를 할당하고 **그 반환 `Rect` 기준**으로 separator 위치와
-/// spacer 폭을 계산한다 — 화면 절대 좌표에 의존하지 않으므로 본체(Area 안)와
-/// 갤러리(카드 안) 어디에 놓여도 같은 결과가 나온다.
+/// 전달된 Ui에서 영역을 할당해 상태바를 그리고 클릭 결과를 반환한다.
+/// 화면 원점이 아닌 할당 영역의 좌표를 사용한다.
 pub fn draw_status_bar_view(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -113,24 +73,19 @@ pub fn draw_status_bar_view(
 ) -> StatusBarDrawResult {
     let mut actions = Vec::new();
     let mut resize_priority_hovered = false;
-    // 디자인은 두 글꼴을 쓴다 — surface id 와 grid 만 mono(`--tasty-font-mono`)이고
-    // 브랜치 이름·셸 이름은 UI 글꼴이다. 크기는 둘 다 caption(11).
+    // 서피스 ID와 그리드는 고정폭, 브랜치와 셸 이름은 UI 글꼴을 사용한다.
     let mono = egui::FontId::monospace(th.font_size_caption.value());
     let text = egui::FontId::proportional(th.font_size_caption.value());
     let muted: egui::Color32 = th.text_muted().into();
     let hover: egui::Color32 = th.text_secondary().into();
     let item_glyph: egui::Color32 = th.statusbar_glyph().into();
-    // 테마 표시는 색이 아니라 글리프가 든다 — light 는 `sun`, dark 는 `theme`.
-    // 색은 그 자리의 전용 role(`statusbar-theme-glyph` → `glyph-dim`)이라 두 테마에서
-    // 같다. 종류를 색으로 알리던 accent_warning()/accent_agent() 갈림은 없어졌다.
+    // 밝은 테마는 sun, 어두운 테마는 theme 아이콘으로 구분한다.
     let theme_glyph_tint: egui::Color32 = th.statusbar_theme_glyph().into();
     let theme_glyph = if data.theme_is_light {
         tasty_icons::SUN
     } else {
         tasty_icons::THEME
     };
-    // 바의 인라인 글리프(branch · shell · grid · theme)는 **한 자리**에서 크기를 받는다 —
-    // 색 role(`statusbar-glyph`)만 있고 크기 role 이 없어 semantic 을 직접 읽던 자리다.
     let glyph_size = th.statusbar_glyph_size();
     let bg: egui::Color32 = th.bg_app().into();
     let bar_h = th.status_bar_height;
@@ -140,7 +95,6 @@ pub fn draw_status_bar_view(
         egui::Sense::hover(),
     );
     ui.painter().rect_filled(rect, 0.0, bg);
-    // 상단 1px separator (디자인: borderTop 1px separator).
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
@@ -170,8 +124,7 @@ pub fn draw_status_bar_view(
         && shown[0].is_some()
     {
         gap_before(&mut bar, &mut drawn);
-        // level 5 에서는 글리프만 남는다 — 이름을 접어도 "어느 브랜치인가" 는 사라지지만
-        // "repo 안이다" 는 남는다.
+        // 이름을 숨겨도 저장소 안에 있다는 아이콘은 남긴다.
         let name = (level < MAX_DROP_LEVEL).then_some(branch.as_str());
         branch_cell(
             &mut bar,
@@ -203,11 +156,9 @@ pub fn draw_status_bar_view(
         text_cell(&mut bar, bar_h, &mono, muted, &grid_label(grid), None);
     }
 
-    // flex spacer — 할당된 rect 기준(절대 좌표 비의존).
     bar.add_space(spacer.value());
 
-    // ── 우측 클러스터 ──
-    // spacer 가 좌우를 가르므로 우측 첫 항목 앞에는 gap 을 또 넣지 않는다.
+    // 좌우 그룹 사이 간격은 spacer가 담당한다.
     drawn = 0;
     if shown[4].is_some() {
         gap_before(&mut bar, &mut drawn);
@@ -253,14 +204,8 @@ fn grid_label((cols, rows): (usize, usize)) -> String {
     format!("{cols}×{rows}")
 }
 
-/// 항목 하나씩의 폭 — **그리기 전에** 알아야 축소 단계를 고를 수 있다.
-///
-/// 값이 없는 항목은 `None` 이다 — 0 이 아니라 **자리가 없다**는 뜻이고, 그래서 그
-/// 항목 앞뒤의 gap 도 들지 않는다. 디자인이 "dash 를 그리지 않는다" 로 말한 것이
-/// 여기서는 `Option` 이다.
-///
-/// `branch` 는 항목 전체(글리프 + gap + 이름, [`BRANCH_MAX_W`] 로 상한),
-/// `branch_glyph` 는 이름을 접었을 때 남는 글리프만.
+/// 그리기 전에 축소 단계를 선택하기 위한 항목별 폭. None인 항목은 간격도 차지하지 않는다.
+/// branch는 이름을 포함한 폭, branch_glyph는 이름을 숨겼을 때의 폭이다.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct ItemWidths {
     branch: Option<LogicalPx>,
@@ -411,8 +356,7 @@ fn branch_cell(
     }
 }
 
-/// [`branch_cell`] 의 치수·색. 디자인 성분의 `gap: 4` 는 `space-xs` 이고, 그 값은
-/// `Theme` 에서 온다 — 이 파일에 다시 적지 않는다.
+/// 브랜치 아이콘의 간격과 색상.
 struct BranchCellStyle {
     glyph_size: LogicalPx,
     /// 글리프와 이름 사이 gap(`space-xs`).
@@ -490,12 +434,8 @@ fn measure_items(
 mod tests {
     use super::*;
 
-    /// 모든 항목이 값을 가진 상태. 폭은 재지 않고 **자리 판정만** 본다 — 단계마다
-    /// 어떤 항목이 남는지가 이 함수의 계약이다.
+    /// 서로 다른 합성 폭으로 각 단계에서 남는 항목을 확인한다.
     fn full() -> ItemWidths {
-        // 값은 **자리 판정용 픽스처**다 — 실제 토큰 값이 아니라 서로 구별되는 수이고,
-        // `size-*` 스케일에 겹치지 않게 고른다(겹치면 `on_scale_length_literal` 의
-        // 테스트 사각이 자란다 — 디자인 값을 옮겨 적는 자리가 아닌데도).
         ItemWidths {
             branch: Some(LogicalPx(100.0)),
             branch_glyph: Some(LogicalPx(13.0)),

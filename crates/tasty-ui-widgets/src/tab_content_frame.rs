@@ -1,8 +1,4 @@
-//! Tab content padding frame — 탭 내부 콘텐츠를 모달 테두리에서 일정
-//! 거리 (`tokens::TAB_CONTENT_PADDING`) 만큼 띄우는 단순 wrapper.
-//!
-//! 본체 settings modal 의 ScrollArea 내부와 갤러리 `layout_2depth::draw_content`
-//! 가 공통으로 사용.
+//! 탭 안쪽 여백과 설정 콘텐츠의 최대 폭을 적용한다.
 
 use crate::tokens;
 
@@ -14,11 +10,7 @@ pub fn tab_content_frame(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui))
         .show(ui, |ui| content(ui));
 }
 
-/// 설정 창 콘텐츠 컬럼 — `tab_content_frame` 의 패딩 안에서 폭을 `max_width` 로 막는다.
-///
-/// 상한을 **한 자리**에 두려고 이름을 붙였다. 서브탭마다 걸면 서브탭끼리 값이 갈리고,
-/// 그때 갈린 것을 알아차릴 자리가 없다. full-bleed 서브탭은 이 컬럼을 자기 레이아웃으로
-/// 대체하므로 애초에 이 함수를 안 지난다.
+/// 여백 안의 콘텐츠 폭을 제한한다. 전체 폭을 쓰는 하위 탭은 자체 레이아웃을 사용한다.
 pub fn settings_content_column(
     ui: &mut egui::Ui,
     max_width: tasty_type_geometry::length::LogicalPx,
@@ -60,8 +52,7 @@ mod tests {
         seen
     }
 
-    /// 창이 넓으면 상한이 이긴다 — 그것이 이 컬럼이 존재하는 이유다.
-    /// 창이 좁으면 남은 폭이 이긴다 — 상한은 최소 폭이 아니다.
+    /// 넓은 창은 상한을 따르고 좁은 창은 남은 폭보다 커지지 않아야 한다.
     #[test]
     fn the_cap_binds_only_when_there_is_more_room_than_it() {
         let cap = LogicalPx(620.0);

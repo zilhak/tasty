@@ -36,7 +36,7 @@ const FLOOR: LogicalPx = LogicalPx(60.0);
 /// 디자인 specimen 의 긴 브랜치 그대로다.
 const LONG_BRANCH: &str = "feat/dag-detail-and-runner-badge";
 
-/// 긴 브랜치를 단 기본값 — 축소 사다리를 한 내용으로 이어 보이려고 세 행이 공유한다.
+/// 세 폭의 예제에서 같은 긴 브랜치를 사용해 축소 단계를 비교한다.
 fn long_branch() -> StatusBarData {
     StatusBarData {
         branch: Some(LONG_BRANCH.into()),

@@ -1,18 +1,5 @@
-//! `multi_select` 상호작용 계약 테스트.
-//!
-//! 다중선택이 단일 `select` 와 갈리는 지점은 전부 **팝업 생존**에 걸려 있다 — 항목
-//! 하나를 눌렀다고 닫히면(`CloseOnClick`) 여러 개를 켤 방법이 없다. 그래서 이 파일은
-//! 렌더 픽셀이 아니라 다음 넷을 고정한다.
-//!
-//! 1. 항목을 연속으로 토글해도 팝업이 열린 채 유지된다.
-//! 2. 팝업 바깥을 클릭하면 닫힌다.
-//! 3. 선택이 바뀐 프레임에서만 `true` 를 반환한다.
-//! 4. 트리거 요약 라벨이 0개 / N개 / 전부 3갈래로 갈린다.
-//! 5. 행 단위 disabled 마스크가 켜진 행은 클릭해도 선택이 바뀌지 않는다.
-//! 6. 일괄 토글 행(opt-in)이 전부 켜기 / 전부 끄기를 오가고, 끄면 아예 자리를 안 쓴다.
-//!
-//! headless `egui::Context` 구동 패턴과 실제 `Theme` 사용은 선례
-//! `path_field_focus.rs` / `table_row_click.rs` 를 그대로 따른다.
+//! 다중 선택의 연속 토글·바깥 클릭·요약 문구·비활성 행·일괄 선택을 검사한다.
+//! 픽셀 대신 실제 egui 프레임의 결과와 팝업 상태를 확인한다.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -101,7 +88,7 @@ fn frame_all(
     frame_full(ctx, theme, selected, disabled, Some(ALL_TOGGLE), events)
 }
 
-/// 모든 축을 다 받는 본체.
+/// 마스크와 일괄 토글을 포함한 한 프레임을 실행한다.
 fn frame_full(
     ctx: &egui::Context,
     theme: &Theme,
@@ -133,10 +120,7 @@ fn frame_full(
     }
 }
 
-/// 팝업 `i` 번째 행(체크박스 박스 중앙)의 화면 좌표.
-///
-/// 팝업은 트리거 바로 아래에 붙으므로 트리거 rect 에서 역산한다. 추정이 빗나가면
-/// 체크가 켜지지 않아 테스트가 실패하므로, 좌표 가정 자체도 함께 검증된다.
+/// 트리거 영역에서 옵션 행의 클릭 위치를 계산한다. 실제 선택 변경으로 위치가 맞는지도 확인한다.
 fn row_pos(theme: &Theme, trigger: Rect, i: usize, margin: f32) -> Pos2 {
     let row_h = theme
         .checkbox_size()
@@ -199,7 +183,6 @@ fn consecutive_item_toggles_keep_the_popup_open() {
     frame(&ctx, &theme, &mut selected, Vec::new());
     let margin = popup_margin(&ctx);
 
-    // 2) 행 3개를 연속 클릭 — 매번 팝업이 살아 있어야 한다.
     for i in 0..3 {
         let f = frame(
             &ctx,
@@ -207,10 +190,7 @@ fn consecutive_item_toggles_keep_the_popup_open() {
             &mut selected,
             click(row_pos(&theme, trigger, i, margin)),
         );
-        assert!(
-            f.open,
-            "{i}번째 항목을 누른 뒤 팝업이 닫혔다 — CloseOnClick 회귀"
-        );
+        assert!(f.open, "{i}번째 항목을 누른 뒤 팝업이 닫혔다");
         assert!(f.changed, "{i}번째 항목 클릭이 변경으로 보고되지 않았다");
         assert!(selected[i], "{i}번째 항목이 켜지지 않았다: {selected:?}");
     }
@@ -259,17 +239,14 @@ fn disabled_rows_ignore_clicks_while_others_still_toggle() {
     let theme = tasty_themes::mocha_fallback();
     let ctx = egui::Context::default();
     let mut selected = vec![false, true, false, false];
-    // 0번은 꺼진 채, 1번은 켜진 채 비활성 — 두 조합 모두 클릭이 먹지 않아야 한다.
+    // 비활성 행은 켜짐·꺼짐 상태와 무관하게 변경되지 않아야 한다.
     let disabled = [true, true, false, false];
     let mask = Some(&disabled[..]);
 
     let f = frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
     let trigger = f.trigger;
     let f = frame_masked(&ctx, &theme, &mut selected, mask, click(trigger.center()));
-    assert!(
-        f.open,
-        "트리거는 살아 있어야 한다 — 행 disabled 는 컨트롤 disabled 가 아니다"
-    );
+    assert!(f.open, "비활성 행이 있어도 컨트롤 자체는 열 수 있어야 한다");
     frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
     let margin = popup_margin(&ctx);
 
@@ -290,7 +267,6 @@ fn disabled_rows_ignore_clicks_while_others_still_toggle() {
         assert!(f.open, "disabled 행 클릭은 팝업 안 클릭이라 닫히면 안 된다");
     }
 
-    // 같은 팝업의 활성 행은 기존과 똑같이 토글된다 — 마스크가 전체를 얼리지 않는다.
     let f = frame_masked(
         &ctx,
         &theme,
@@ -302,8 +278,7 @@ fn disabled_rows_ignore_clicks_while_others_still_toggle() {
     assert_eq!(selected, vec![false, true, true, false]);
 }
 
-/// 마스크가 옵션보다 짧거나 `None` 이면 그 인덱스는 활성이다 — 마스크 없는 기존
-/// 호출부가 조용히 전부 비활성이 되는 회귀를 막는다.
+/// 마스크가 없거나 짧으면 나머지 행은 활성 상태다.
 #[test]
 fn a_short_mask_leaves_the_remaining_rows_enabled() {
     let theme = tasty_themes::mocha_fallback();
@@ -368,7 +343,7 @@ fn summary_replaces_only_the_first_placeholder() {
     assert_eq!(multi_select_summary(&labels, &[true, false]), "1 of {}");
 }
 
-/// 액션 행 하나로 전부 켜고 전부 끈다 — 그 사이 팝업은 계속 살아 있어야 한다.
+/// 일괄 선택과 해제를 반복해도 팝업은 열려 있어야 한다.
 #[test]
 fn all_toggle_selects_then_clears_every_option() {
     let theme = tasty_themes::mocha_fallback();
@@ -414,8 +389,7 @@ fn all_toggle_selects_then_clears_every_option() {
     );
 }
 
-/// 끄면(=`None`) 액션 행도 구분선도 **자리를 쓰지 않는다** — 같은 좌표가 켜면 액션
-/// 행, 끄면 0 번 옵션 행이라는 대비로 고정한다(끈 쪽 렌더 회귀 방지).
+/// 일괄 토글을 끄면 같은 위치가 첫 옵션 행에 속해야 한다.
 #[test]
 fn without_all_toggle_the_top_row_is_the_first_option() {
     let theme = tasty_themes::mocha_fallback();
@@ -443,9 +417,7 @@ fn without_all_toggle_the_top_row_is_the_first_option() {
     );
 }
 
-/// 일괄 토글은 disabled 행을 **켤 때도 끌 때도** 건드리지 않는다. 판정도 토글 가능한
-/// 행만 보므로, disabled 행이 꺼져 있어도 라벨이 "Clear all" 로 넘어가 다음 클릭이
-/// 실제로 전부를 끈다(전부-선택에 영원히 묶이지 않는다).
+/// 전체 선택·해제 모두 비활성 행을 보존하고 활성 행만으로 다음 동작을 판단한다.
 #[test]
 fn all_toggle_leaves_disabled_rows_untouched_in_both_directions() {
     let theme = tasty_themes::mocha_fallback();
@@ -482,8 +454,7 @@ fn all_toggle_leaves_disabled_rows_untouched_in_both_directions() {
     assert!(f.open);
 }
 
-/// 토글 가능한 행이 하나도 없으면 액션 행은 눌러도 아무 것도 바꾸지 않는다(변경
-/// 보고도 없다) — 빈 목록·전부 비활성에서 조용히 `true` 를 뱉지 않게 고정한다.
+/// 변경할 활성 행이 없으면 일괄 토글도 변경을 보고하지 않는다.
 #[test]
 fn all_toggle_reports_nothing_when_no_row_is_toggleable() {
     let theme = tasty_themes::mocha_fallback();

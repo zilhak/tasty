@@ -1,8 +1,5 @@
-//! `StatusDot` — 상태 점 + 라벨 (디자인 `components/feedback/StatusDot`).
-//!
-//! dot 8px + gap 6 + caption 라벨(text-secondary). `pulse` 면 확장·페이드 링
-//! (scale 0.6→1.8, opacity 0.5→0, 1.6s ease-out). `reduced_motion` 이면 링 생략.
-//! tasty Theme 에 status-dot 토큰이 없어 accent-* 로 매핑.
+//! 상태 점과 선택적인 라벨. 색상과 점 크기는 Theme의 상태 점 토큰을 사용한다.
+//! pulse가 켜지고 reduced_motion이 꺼진 경우에만 확장·페이드 링을 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -25,9 +22,6 @@ pub enum StatusKind {
 impl StatusKind {
     fn color(self, theme: &Theme) -> egui::Color32 {
         match self {
-            // 다섯 상태 전부 `status-dot-*` component 색 대응. Idle 은 토큰 정합 과정에서(docs/design/systems/theme.md#ui-코드의-색상-접근)
-            // text-muted 에서 canonical `status-dot-idle` 로 옮겼다 —
-            // 의도된 시각 변화다(subtext0 → status-idle).
             StatusKind::Running => theme.status_dot_success().to_egui(),
             StatusKind::Idle => theme.status_dot_idle().to_egui(),
             StatusKind::Agent => theme.status_dot_agent().to_egui(),
@@ -37,12 +31,7 @@ impl StatusKind {
     }
 }
 
-/// 상태 점 + 라벨을 한 줄로 그린다. `pulse` + `!reduced_motion` 이면 링 애니메이션.
-///
-/// **라벨이 비면 점만 그리고 폭도 점 하나뿐이다.** 라벨 없는 점이 필요한 자리(행
-/// 좌측의 실행 표시 등)가 이 위젯을 그대로 부를 수 있어야 하는데, 뒤따르는 라벨이
-/// 없는데도 `GAP` 을 할당하면 그 자리만 정렬선이 밀린다. 소비자가 폭을 되빼는 래퍼를
-/// 쓰게 만들지 않는다 — 되빼는 값은 그때마다 다시 손으로 적히고 여기 상수와 갈린다.
+/// 상태 점과 라벨을 그린다. 라벨이 비면 간격 없이 점 하나의 폭만 사용한다.
 pub fn status_dot(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -59,7 +48,6 @@ pub fn status_dot(
         egui::Color32::PLACEHOLDER,
     );
     let h = dot.max(galley.rect.height());
-    // 라벨이 없으면 gap 도 없다 — 뒤에 붙을 것이 없는 여백이다.
     let w = dot
         + if label.is_empty() {
             0.0

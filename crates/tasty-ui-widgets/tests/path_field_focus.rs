@@ -1,13 +1,6 @@
-//! `PathField` 편집모드(editing)와 viewport focus 의 분리 회귀 테스트.
-//!
-//! 재현 대상 버그(markdown 주소창 진동): egui `has_focus()` 는 viewport focused
-//! (`RawInput.focused`)에 게이트돼 있어, plugin SDK `repaint_last` 의 focused=false
-//! 재-run 프레임마다 editing 이 false 로 떨어지고, 다음 실제 프레임이 "편집 진입" 을
-//! 재감지해 buffer clear + 재-paint 를 무한 재점화했다 — placeholder ↔ 편집필드가
-//! 프레임마다 교대하는 진동. editing 판정을 egui memory 포커스 기반으로 분리해 끊는다.
-//!
-//! markdown plugin 의 `paint()` 루프(버퍼 sync → draw → 편집 진입 시 recent fetch +
-//! buffer clear + focused=false 재-run)를 headless 로 미러링한다.
+//! 창 포커스와 위젯의 편집 상태를 구분하는 검사.
+//! 빈 입력·focused=false인 재그리기에서도 편집 진입이 반복되지 않아야 한다.
+//! 현재 Markdown의 HTML 주소창을 재현하는 검사는 아니다.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -15,13 +8,13 @@ use tasty_ui_widgets::{Input, PathField, PathFieldOutcome};
 
 const FILE_PATH: &str = "E:/docs/readme.md";
 
-/// markdown plugin 의 주소창 상태 미러 + 계약 검증용 카운터.
+/// 경로 필드의 상태와 편집 진입 횟수.
 struct AddrState {
     buffer: String,
     editing: bool,
     active: Option<usize>,
     recent: Vec<String>,
-    /// host `recent.query` 호출 미러 — "편집 진입당 1회" 계약 검증.
+    /// 편집 진입에 따른 후보 조회 횟수.
     fetch_recent_calls: usize,
     /// 편집 진입 전이(false→true) 감지 횟수 — 클릭 1회당 1회여야 한다.
     entry_transitions: usize,
@@ -40,21 +33,8 @@ impl AddrState {
     }
 }
 
-/// 상단 바 안에 놓인 `PathField` 의 draw — 이 시험의 하네스다.
-///
-/// 이 모양은 markdown 주소창에서 왔지만 **지금 그 주소창의 미러가 아니다.** markdown 주소창은
-/// 문서 HTML 이라 더 이상 이 위젯을 안 쓰고(`docs/plugins/markdown/index.md`), 그 바의 높이는
-/// 문서 CSS 의 `--md-addr-bar-h` 가 정한다. 여기 40 은 그 값을 따라가지 않는 **이 시험만의
-/// 좌표**이고, 아래 `FX`/`FY` 가 그것에서 나온다.
-///
-/// 그 결합에는 **여유가 있다** — 필드가 세로 중앙 정렬이고 자기 높이를 가지므로, 좌표를
-/// 조금 흔들어도 클릭은 여전히 필드 안에 떨어진다. 변이로 잰 폭은 이렇다(세 시험 기준):
-/// `FY` 는 **12..38 에서 전부 통과**하고 11 이하 · 39 이상에서 둘이 죽으며, 바 높이는
-/// **15 이상이면 통과**하고 14 이하에서 둘이 죽는다. 그러니 "높이를 바꾸면 클릭이 밖으로
-/// 나간다" 는 그 폭 **밖에서만** 참이다 — 절반으로 줄여도 초록이다. 바꿀 일이 생기면 그
-/// 폭을 먼저 다시 재라.
-///
-/// 재는 것은 바의 크기가 아니라 focus 루프가 끊기는지다.
+/// 고정 높이의 테스트용 표시줄에 PathField를 그린다.
+/// 실제 제품 표시줄의 크기나 픽셀 정합은 검사하지 않는다.
 fn draw(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState) {
     let bar_frame = egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
@@ -92,7 +72,7 @@ fn draw(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState) {
     });
 }
 
-/// host build_raw_input 미러: screen_rect + focused + events.
+/// 화면 영역·창 포커스·이벤트를 포함한 테스트 입력.
 fn raw(focused: bool, events: Vec<Event>) -> RawInput {
     RawInput {
         screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))),
@@ -115,15 +95,12 @@ fn ptr_btn(x: f32, y: f32, pressed: bool) -> Event {
     }
 }
 
-// 필드 위치: 위 draw 가 쓰는 바 높이 40 안, x=200 은 필드 내부. FY 는 그 절반(바 중앙)이다.
-// 흔들어도 되는 폭은 위 `draw` 의 doc 주석에 실측으로 적혀 있다.
+// 위 표시줄 안의 클릭 위치. 실제 편집 진입 여부로 이 위치를 확인한다.
 const FX: f32 = 200.0;
 const FY: f32 = 20.0;
 
-/// markdown plugin `paint()` 미러 — set_context 1회 (버퍼 sync + draw + 조건부
-/// entry repaint). SDK 수정으로 entry repaint 는 직전 focused(=true)를 보존하지만,
-/// 여기서는 **미수정 SDK 의 최악 조건(focused=false 재-run)** 을 그대로 재현해
-/// PathField 수정 단독으로도 루프가 끊기는지 검증한다.
+/// 편집 진입 후 focused=false로 한 번 더 그리는 조건을 만든다.
+/// 재그리기가 편집 진입을 반복시키지 않는지 위젯만 검사한다.
 fn paint(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState, input: RawInput) {
     if !addr.editing {
         addr.buffer = FILE_PATH.to_string();
@@ -165,8 +142,7 @@ fn editing_survives_unfocused_rerun() {
     });
     assert!(addr.editing, "클릭 press 프레임에 편집모드 진입");
 
-    // focused=false + 빈 events 재-run (SDK repaint_last 의 미수정 최악 조건 /
-    // 실제 surface blur 와 동형) → editing 은 memory 포커스 기반이라 유지된다.
+    // 창 포커스가 없는 빈 재그리기에서도 위젯의 편집 상태는 유지돼야 한다.
     let _out = ctx.run(raw(false, vec![]), |c| draw(c, &theme, &mut addr));
     assert!(
         addr.editing,
@@ -174,9 +150,7 @@ fn editing_survives_unfocused_rerun() {
     );
 }
 
-/// ③ markdown paint 루프 미러를 클릭 후 12 프레임(마우스 jitter 8 + 무입력 4) 돌려
-/// 편집 진입 전이가 클릭 1회뿐이고 buffer 재클리어·editing 진동이 없음을 단언한다.
-/// (recent.query "편집 진입당 1회" 계약 — main.rs 의 fetch_recent — 도 함께 고정.)
+/// 클릭 뒤 12프레임 동안 편집 진입·후보 조회가 한 번만 발생하고 버퍼가 유지되는지 확인한다.
 #[test]
 fn entry_repaint_does_not_reignite_flicker_loop() {
     let theme = tasty_themes::mocha_fallback();
@@ -240,12 +214,8 @@ fn entry_repaint_does_not_reignite_flicker_loop() {
     );
 }
 
-/// `AutoComplete`(따라서 `PathField`)의 드롭다운 origin 은 트리거 `Input` 이 반환하는
-/// `Response.rect` 를 그대로 anchor 로 쓴다(`autocomplete.rs` `resp.rect.left_bottom()`).
-/// 그 `rect` 가 내부 TextEdit rect(leading icon 만큼 우측으로 밀림)가 아니라 outer(테두리)
-/// rect 여야, explorer/markdown 주소창처럼 항상 leading icon 을 지정하는 호출에서 드롭다운이
-/// 주소 표시줄과 좌우로 어긋나지 않는다. leading icon 유무에 따라 outer rect 가 달라지면
-/// (=내부 TextEdit rect 가 새는 회귀) 이 테스트가 잡는다.
+/// 입력 응답은 내부 TextEdit이 아닌 필드 전체 영역이어야 한다.
+/// 아이콘 유무에 따라 팝오버 앵커가 밀리지 않는지 비교한다.
 #[test]
 fn input_outer_rect_unaffected_by_leading_icon() {
     let theme = tasty_themes::mocha_fallback();
@@ -279,14 +249,12 @@ fn input_outer_rect_unaffected_by_leading_icon() {
     assert_eq!(
         rect_with_icon.width(),
         200.0,
-        "outer rect 폭은 지정한 width 그대로여야 한다 \
-         (버그: TextEdit 내부 rect 는 icon/padding 만큼 좁았다)"
+        "필드 전체 폭은 지정한 width와 같아야 한다"
     );
     assert_eq!(
         rect_with_icon.left(),
         rect_without_icon.left(),
-        "leading icon 유무와 무관하게 outer rect 좌측 경계는 동일해야 한다 \
-         (버그: icon 이 있으면 TextEdit 내부 rect 만큼 우측으로 밀렸었다)"
+        "아이콘 유무와 무관하게 필드의 왼쪽 경계는 같아야 한다"
     );
     assert_eq!(
         rect_with_icon.height(),

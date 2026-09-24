@@ -10,7 +10,6 @@ use crate::icon_button::IconPainter;
 
 const CHEVRON_SLOT: f32 = 14.0;
 const ICON_GLYPH: f32 = 14.0;
-// per-level indent 는 디자인 `--tasty-tree-row-indent` = space-md(12) → theme 토큰에서.
 const GAP: f32 = 6.0;
 
 /// 트리 행. `selected` 면 surface-active. 클릭 응답 반환(행 전체 클릭).
@@ -29,7 +28,6 @@ pub fn tree_row(
 ) -> egui::Response {
     let height = theme.tree_row_height().value();
     let pad_l = theme.tree_row_gap().value();
-    // pad_r·radius 는 대응 tree-row component 토큰 없음 → semantic.
     let pad_r = theme.spacing_sm.value();
     let radius = theme.corner_radius_sm.value();
     let body = theme.tree_row_font_size().value();
@@ -70,11 +68,9 @@ pub fn tree_row(
 
     let mut x = rect.left() + pad_l + depth as f32 * indent_per_depth;
 
-    // chevron (has_children 일 때만 — leaf 면 슬롯만 비움).
     let chev_c = egui::pos2(x + CHEVRON_SLOT * 0.5, rect.center().y);
     if has_children {
         let s = 3.0;
-        // open → ▾ (아래), closed → ▸ (오른쪽).
         let pts = if open {
             vec![
                 egui::pos2(chev_c.x - s, chev_c.y - s * 0.6),
@@ -109,7 +105,6 @@ pub fn tree_row(
         x += ICON_GLYPH + GAP;
     }
 
-    // meta (우측, mono micro(10) muted).
     let mut right = rect.right() - pad_r;
     if let Some(m) = meta {
         let g = ui.painter().layout_no_wrap(

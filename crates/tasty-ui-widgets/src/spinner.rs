@@ -1,19 +1,5 @@
-//! `Spinner` — 짧은 백그라운드 작업용 비결정형 진행 표시
-//! (디자인 `components/feedback/Spinner`).
-//!
-//! 디자인 계약:
-//! - 기본 16px(아이콘 가족 `--tasty-icon-size-md`), 얇은 회전 arc + 저대비 track.
-//! - track 은 `text-muted` 색 + opacity 0.22, arc 는 같은 색 opacity 1.
-//! - viewBox 24 기준 stroke 2 → 반경 `12 - stroke`. arc 는 상단에서 시작하는 90° 호.
-//! - 회전: 0.9s linear infinite (디자인 `tasty-spin`).
-//! - `prefers-reduced-motion`: 회전 정지 + 3-dot 정적 표시(디자인 fallback).
-//!
-//! egui 에는 `prefers-reduced-motion` 매체 질의가 없으므로 tasty 는 이 값을
-//! `Theme` 에 실어 나른다 — 스피너는 **기본으로 `theme.reduced_motion` 을 읽는다.**
-//! 종전에는 호출부가 명시적으로 넘겨야 했고, 실제로 넘기는 자리가 레포 전체에
-//! 하나도 없어서 설정을 켜도 스피너가 계속 돌았다. 결정은
-//! `docs/design/systems/theme.md#모션-설정과-시간-단위`. 색은 호출부 지정이 없으면
-//! `theme.text_muted()` 를 쓴다.
+//! 회전하는 호로 진행 중임을 표시한다. 기본 색은 text_muted다.
+//! Theme의 모션 감소 설정이 켜지면 회전 대신 정적인 점 세 개를 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -55,12 +41,8 @@ impl Spinner {
         self
     }
 
-    /// 사용자 설정(`theme.reduced_motion`)을 **무시하고** 모션 여부를 고정한다.
-    ///
-    /// 이건 예외 전용이다 — 실행 중인 설정과 무관하게 두 상태를 **동시에 보여야
-    /// 하는** 자리에만 쓴다(갤러리 specimen 이 유일한 그런 자리다). 제품 화면에서
-    /// 이걸 부르면 접근성 설정을 되돌리는 것이므로, 새로 부르기 전에 그 자리가
-    /// 정말 "설정을 무시해야 하는" 자리인지 먼저 답해라.
+    /// 모션 감소 설정을 덮어쓴다. 두 상태를 나란히 보여주는 갤러리 등에만 사용한다.
+    /// 제품 화면에서는 사용자 접근성 설정을 따라야 한다.
     pub fn reduced_motion(mut self, reduced_motion: bool) -> Self {
         self.reduced_motion = Some(reduced_motion);
         self
@@ -74,7 +56,6 @@ impl Spinner {
 
     /// 그리고 hover 응답을 반환한다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
-        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(docs/design/systems/theme.md#ui-코드의-색상-접근).
         let size = self
             .size
             .unwrap_or_else(|| theme.icon_glyph_size_md.value());
@@ -92,22 +73,16 @@ impl Spinner {
 
         let painter = ui.painter();
         let center = rect.center();
-        // viewBox 24 → 실제 size 로 스케일.
         let scale = size / VIEWBOX;
         let stroke_w = STROKE_VB * scale;
         let radius = (VIEWBOX * 0.5 - STROKE_VB) * scale;
 
-        // track — 전체 원, 저대비.
         let track_color = color.gamma_multiply(TRACK_ALPHA);
         painter.circle_stroke(center, radius, egui::Stroke::new(stroke_w, track_color));
 
-        // arc — 상단에서 시작하는 90° 호, 시간에 따라 회전.
         let t = ui.ctx().input(|i| i.time);
-        // 회전 주기 — 디자인 `animation: tasty-spin 0.9s linear infinite`
-        // (`component.spinner-duration` = 900ms). 종전에는 `SPIN_PERIOD: f64 = 0.9`
-        // 라는 위젯 로컬 상수였고, 단위가 이름에도 없어 스캐너가 0.9ms 로 읽었다.
+        // Theme의 회전 주기를 초 단위로 변환한다.
         let phase = (t / theme.spinner_duration().to_secs_f64()).rem_euclid(1.0) as f32;
-        // -90°(상단) 기준 시작 + 회전 위상.
         let start = -std::f32::consts::FRAC_PI_2 + phase * std::f32::consts::TAU;
         draw_arc(
             ui,

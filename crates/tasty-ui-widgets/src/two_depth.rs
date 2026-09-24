@@ -1,27 +1,12 @@
-//! Two-depth layout — 좌측 sub-menu 패널 + 우측 콘텐츠 idiom.
-//!
-//! **현재 소비처는 갤러리 primitive specimen `components/prim_layout_shell.rs` 하나뿐이다.**
-//! 본체 settings 는 이 패턴을 안 쓴다 — 그쪽 L2 사이드바는 모달 셸이 소유하는
-//! `SidePanel`(`src/view/settings/ui.rs` `draw_l2_sidebar`, 폭 200, 오른쪽 1px vline)이라
-//! 여기처럼 콘텐츠 안에 놓이는 둥근 테두리 패널이 아니다. 갤러리 `layout_2depth` 도
-//! 자기 painter 로 그린다. 폭도 다르다 — 이 위젯은 `tokens::SUB_TAB_PANEL_WIDTH`(150)
-//! 고정이고 settings 는 200 이다. 즉 같은 idiom 의 다른 구현이 아니라 **다른 idiom** 이다.
-//! - 좌측: 고정 폭 (`tokens::SUB_TAB_PANEL_WIDTH`) `Frame` + `crust` 배경 + `surface0` 1px 보더.
-//! - 우측: `set_max_height(available_height)` 만 걸린 vertical 영역.
-//! - 좌·우 사이 `tokens::PANEL_SPACING` (8px) 의 horizontal gap.
-//!
-//! `available_height` 는 호출자가 계산해서 넘긴다 — 모달/패널마다 header/footer 보정값이 달라
-//! widget 측이 추정할 수 없다.
+//! 고정 폭의 왼쪽 목록과 오른쪽 콘텐츠를 나란히 배치한다.
+//! 현재 갤러리 레이아웃 예제에서 사용하며 본체 Settings의 사이드바와는 구조·폭이 다르다.
+//! 호출자가 헤더·푸터를 제외한 가용 높이를 계산해 전달해야 한다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::tokens;
 
-/// 좌측 sub-menu 패널 + 우측 콘텐츠 영역을 그린다.
-///
-/// `left` 클로저 안에서는 `ui.selectable_label(...)` 같은 sub-tab 라벨 리스트를 그린다.
-/// `content` 클로저는 우측 vertical 영역에서 호출된다 — `set_max_height` 가 이미 걸려
-/// 있으므로 추가로 높이 제약을 걸 필요 없다.
+/// left는 왼쪽 패널에서, content는 최대 높이가 제한된 오른쪽 세로 영역에서 실행한다.
 pub fn two_depth_layout(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -32,11 +17,7 @@ pub fn two_depth_layout(
     two_depth_layout_inner(ui, theme, available_height, None, left, content);
 }
 
-/// `two_depth_layout` + 좌측 패널 상단에 L2 섹션 필터 입력 슬롯.
-///
-/// `filter` 는 검색 문자열의 mutable backing store. 입력 박스는 widget 이 그리지만
-/// *실제 항목 필터링은 호출자의 `left` 클로저* 가 `*filter` 를 읽어 수행한다 —
-/// widget 은 어떤 항목이 있는지 모르기 때문. `placeholder` 는 hint 텍스트.
+/// 왼쪽 패널 위에 필터 입력을 추가한다. 실제 목록 필터링은 left 클로저가 맡는다.
 pub fn two_depth_layout_filtered(
     ui: &mut egui::Ui,
     theme: &Theme,

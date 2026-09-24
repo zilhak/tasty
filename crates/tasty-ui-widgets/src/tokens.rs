@@ -1,11 +1,5 @@
-//! Layout 상수 — `tasty-egui-theme::Theme` 토큰이 아닌 layout-level 값.
-//!
-//! 폭·패딩·corner·stroke 등 *위젯 구조* 와 직결된 값을 한 곳에 모은다.
-//! 색·폰트는 `Theme` 에서 가져가므로 여기엔 두지 않는다.
-//!
-//! SIZING 과 의미가 겹치는 값은 매직넘버로 재정의하지 않고 `SIZING` 을 단일
-//! 소스로 참조한다 (이름은 "이 위치에서 어떤 토큰을 쓰는지" 의미론을 보존).
-//! `LogicalPx(pub f32)` 의 `.0` 필드는 const 컨텍스트에서 접근 가능하다.
+//! 공용 위젯의 구조 치수. 같은 의미의 값은 SIZING을 참조한다.
+//! 색과 글꼴은 Theme에서 읽고, 대응 토큰이 없는 치수는 아래에 이유와 함께 둔다.
 
 use tasty_type_appearance::theme::SIZING;
 use tasty_type_geometry::length::LogicalPx;
@@ -14,7 +8,6 @@ use tasty_type_geometry::length::LogicalPx;
 pub const SUB_TAB_PANEL_WIDTH: f32 = SIZING.tab_width.0;
 
 /// 좌측 패널 Frame 의 inner margin (px, symmetric). = `SIZING.spacing_sm`.
-/// (이전 6 은 4px 그리드 위반이었다 → spacing_sm 으로 정합.)
 pub const PANEL_INNER_MARGIN: i8 = SIZING.spacing_sm.0 as i8;
 
 /// 좌측 패널 Frame 의 corner radius. = `SIZING.corner_radius`.
@@ -30,23 +23,9 @@ pub const PANEL_SPACING: f32 = SIZING.spacing_sm.0;
 /// settings 모달 본체와 갤러리의 layout idiom 공통 표준.
 pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
 
-// ── 구조 간격 상수 — DTCG primitive 직접 대응 (semantic 부재, Rust-only) ──
-//
-// 디자인은 4px 그리드 spacing 스텝 밖의 미세 구조 간격에 primitive `size-1/2/3`
-// 을 직접 쓴다 — 요소 간 간격 리듬이 아니라 컴포넌트 내부 구조를 맞추는 값이라
-// spacing 스텝 체계 밖에 둔 것. Rust 에는 대응 semantic 이 없고 `tasty-design-tokens` 의
-// `generated::primitive` 는 pub(crate) 라, 위젯 레벨 상수로 둔다 (crate 정책:
-// SIZING 에 없는 디자인 값의 단일 위치). `vspace`/`hspace` 헬퍼와 함께 사용.
-//
-// **`STRUCT_GAP_*` 는 host UI zoom 을 타지 않는다** — 평범한 `const` 라
-// `Theme::with_colors_and_zoom` 의 배율 경로에 없다. 의도된 것이다: 승격해봐야
-// 얻는 게 없기 때문이다. `zoomed()` 는 `(px * z).round()` 라 지원 배율
-// (0.85 / 1.0 / 1.2)에서 1px 는 셋 다 1 로, 2px 는 2/2/2 로 **원값 그대로**
-// 되돌아온다. 3px 는 3/3/4, 4px 는 3/4/5 로 ±1px 만 흔들리는데, 이 값들은 요소
-// 크기가 아니라 구조 hairline/nudge 라 그 ±1px 가 리듬을 개선하지 않는다. 같은
-// 이유로 `Theme` 의 `border_width`(1px)·`tab_indicator_width`(2px)도 `zoomed()`
-// 를 거치지 않는다. 크기가 zoom 을 따라가야 하는 값이면 `STRUCT_GAP_*` 가 아니라
-// `Theme` 필드로 둔다(예: `icon_glyph_size_row_action`).
+// 구조 보정 간격은 UI 배율을 적용하지 않는다.
+// 1px·2px는 지원 배율에서 반올림 결과가 같고, 3px·4px도 고정 보정값으로 유지한다.
+// 요소 크기처럼 배율을 따라야 하는 값은 이 상수 대신 Theme 접근자로 관리한다.
 
 /// 구조 간격 1px = DTCG `primitive.size-1`.
 /// 예: 사이드바 WorkspaceRow subtitle 의 margin-top (디자인 chrome.jsx
@@ -63,24 +42,10 @@ pub const STRUCT_GAP_2: LogicalPx = LogicalPx(2.0);
 /// `marginTop: var(--tasty-size-3)`).
 pub const STRUCT_GAP_3: LogicalPx = LogicalPx(3.0);
 
-/// 구조 간격 4px = DTCG `primitive.size-4`.
-/// control-internal nudge (spacing 리듬 아님) — 예: 다이얼로그 close 버튼 마진 x,
-/// 포트스캐너 검색줄 x nudge. 값 자체는 그리드 상(4px)이지만, 다른 `STRUCT_GAP_*`
-/// 처럼 요소 간 간격 리듬으로 반복 사용되는 스케일이 아니라 컨트롤 내부 위치를
-/// 맞추는 1회성 보정값이라 별도 상수로 구분한다.
+/// 컨트롤 내부 위치를 맞추는 고정 간격. 반복되는 요소 간 간격과 구분한다.
 pub const STRUCT_GAP_4: LogicalPx = LogicalPx(4.0);
 
-// ── toast 카드 구조 치수 — 본체와 갤러리 specimen 의 **단일 출처** ──────────────
-//
-// 이 값들은 본체 `src/adapters/ui/toast.rs` 와 갤러리
-// (`catalog/toast_card.rs` · `catalog/components/toast.rs`)에 **각각 정의**돼 있었다.
-// 값이 같아 보여도 정의가 둘이면 언제든 갈릴 수 있고, 갈린 뒤에는 어느 쪽이 정본인지
-// 알 방법이 없다 — "본체와 동일" 이라고 적힌 주석이 실제로는 자체 사본이었던 사고가
-// 같은 라운드의 다른 리뷰에서 나왔다. 그래서 값을 옮기지 않고 **정의를 여기 하나로**
-// 모은다(값 무변경).
-//
-// 아래 넷은 `SIZING` 과 값이 정확히 같으므로 매직넘버로 재정의하지 않고 참조한다 —
-// 이름이 "이 위치에서 어떤 토큰을 쓰는지" 를 남긴다(이 파일 상단 규칙).
+// 본체와 갤러리가 공유하는 토스트 구조 치수.
 
 /// 스코프 가장자리에서의 안쪽 여백. = `SIZING.spacing_md`.
 pub const TOAST_SCOPE_MARGIN: f32 = SIZING.spacing_md.0;
@@ -92,12 +57,9 @@ pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
 
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
-/// 토큰 정합 과정에서(docs/design/systems/theme.md#ui-코드의-색상-접근) 그리드 밖 6 을 8 로 올렸다(의도된 시각 변화).
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
 
-/// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
-/// `wrap_width`(= max_width - PADDING_X*2 - ACCENT_BAR_WIDTH)가 음수가 되지 않도록
-/// 최소 한 글자 분량의 여유를 보장한다.
+/// 좁은 스코프에서 카드 폭을 제한할 때 사용하는 하한. 본문 줄바꿈 폭은 별도로 1 이상으로 제한한다.
 pub const TOAST_MIN_INNER_WIDTH: f32 = 48.0;
 
 /// 스코프 폭의 80% 를 쓰되 그 결과가 이 값보다 작아지지 않게 하는 하한.
@@ -105,25 +67,14 @@ pub const TOAST_MIN_MAX_WIDTH: f32 = 80.0;
 
 // ── 빈/로딩/오류 중앙 블록 — file_picker · remote_attach 공통 이디엄 ────────────
 
-/// 그 블록 맨 위 스피너·글리프의 한 변. 아이콘 스케일(12·14·15·16) 밖이고 대응
-/// `Theme` 토큰이 없다 — 이 블록만의 구조 크기다. 본체 popup 둘과 갤러리 specimen
-/// 둘, 네 곳이 같은 값을 각자 들고 있던 것을 여기로 모았다.
+/// 빈 상태·로딩·오류 블록의 아이콘 크기. 대응 Theme 토큰이 없다.
 pub const CENTER_GLYPH_SIZE: f32 = 22.0;
 
-/// 그 블록의 공칭 높이 — 본체 popup(`file_picker`). 세로 가운데 정렬의 기준이다.
-///
-/// **갤러리 specimen 은 [`CENTER_BLOCK_H_SPECIMEN`](120)을 쓴다 — 값이 갈려 있다.**
-/// 어느 쪽이 맞는지는 디자인 질문이라 값을 맞추지 않고 정의만 한곳에 모았다.
+/// 본체의 중앙 정렬 블록 높이. 갤러리 높이와 다른 상태이며 디자인 확인 전에는 맞추지 않는다.
 pub const CENTER_BLOCK_H_POPUP: f32 = 100.0;
 
-/// 같은 블록의 갤러리 specimen 값. [`CENTER_BLOCK_H_POPUP`] 참고 — 불일치는 의도가
-/// 아니라 미해결 상태다.
+/// 갤러리의 중앙 정렬 블록 높이. 본체와의 차이는 아직 해결되지 않았다.
 pub const CENTER_BLOCK_H_SPECIMEN: f32 = 120.0;
-
-// ── 본체 ↔ 갤러리 specimen 이중 정의였던 나머지 ─────────────────────────────────
-//
-// toast 상수와 같은 형태로 발견된 것들이다. 값이 같아 보여도 정의가 둘이면 갈릴 수
-// 있고, 이 둘은 실제로 주석까지 서로 다르게 적혀 있었다(같은 값에 다른 근거).
 
 /// 빈 상태 글리프 크기 — 아이콘 스케일(12·14·15·16) 밖의 일회성 값. 설정
 /// Misc › Scripts 와 그 갤러리 specimen 이 같은 상수를 읽는다.
@@ -145,29 +96,10 @@ pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 /// `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
 pub const TRANSFER_CARD_PAD_X: i8 = 10;
 
-// ── 스케일 밖 코너 반경 — DTCG radius 스케일에 대응이 없는 값 (docs/design/systems/theme.md#토큰에-없는-값과-배율) ──
-//
-// DTCG radius 스케일은 `radius-2` · `radius-4` · `radius-8` · `radius-full` 뿐이고
-// `Theme` 의 `corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 가 그
-// 셋을 그대로 노출한다. 아래 값들은 어디에도 없다. docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 **가까운 토큰으로
-// 스냅하지 않는다** — 스냅은 픽셀을 바꾸는 디자인 결정이고, 리터럴 정리가 곁다리로
-// 할 일이 아니다. 이름과 사유를 붙여 드리프트를 눈에 보이게 두고, 수렴 여부는 디자인
-// 판단으로 넘긴다.
-//
-// **대가는 폰트 축과 같다**: 명명 const 는 `Theme::with_colors_and_zoom` 의 `zoomed()`
-// 경로 밖이라 `ui_scale` 을 타지 않는다. 그리고 `corner_radius*` 토큰은 **탄다**
-// (`zoomed(SIZING.corner_radius)`) — 그래서 이 자리들만 배율 0.85 / 1.2 에서 고정
-// 반경으로 남는다. 굵기 쪽(`border_width` · `icon_stroke_width`)이 애초에 zoom 을 타지
-// 않는 것과 다르다. 반경은 대가가 실재한다.
-//
-// `.corner_radius()` 는 `impl Into<CornerRadius>` 를 받고 `From<f32>` 가
-// `same(radius.round() as u8)` 이라, f32 로 넘기는 것은 `CornerRadius::same(n)` 과
-// 값이 같다.
+// 대응하는 디자인 반경 토큰이 없는 값이다. 가까운 토큰으로 바꾸면 화면이 달라지므로 그대로 유지한다.
+// 이 상수들은 UI 배율을 적용하지 않아 Theme의 모서리 반경과 배율 동작이 다르다.
 
-/// 부팅 화면 chrome(버튼 · 인셋 프레임)의 코너 반경. **스케일 밖 6px.**
-/// 디자인의 `component.button-radius` 는 `semantic.radius`(4)인데 부팅 전 셸
-/// (`shell_setup` · `boot_error`)만 6 을 쓴다. 의도인지 표류인지 소스에 신호가 없어
-/// 값을 그대로 두고 이름만 붙였다.
+/// 부팅 화면 버튼·안쪽 프레임의 반경. 대응 토큰 없이 쓰는 고정값이다.
 pub const BOOT_CHROME_CORNER_RADIUS: f32 = 6.0;
 
 /// 부팅 셸 카드의 코너 반경. **스케일 밖 12px.** 떠 있는 패널용 토큰
@@ -178,78 +110,32 @@ pub const BOOT_CARD_CORNER_RADIUS: f32 = 12.0;
 /// `component.badge-radius` 는 `semantic.radius-sm`(2)다.
 pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;
 
-// ── popup 타이틀바 버튼 — 본체와 갤러리가 공유하는 구조값 ────────────────────
-//
-// 이름이 **갤러리에만** 있고 본체는 리터럴로 쓰고 있었다(`let size = 20.0;` ·
-// `- 4.0`). 방향이 반대인 형태다 — 보통은 본체에 이름이 있고 갤러리가 사본을 두는데,
-// 여기서는 갤러리가 "본체 popup 상수" 라고 적어 두고 본체가 그것을 모른다. 인라인
-// 리터럴이라 선언만 보는 가드에도 안 걸렸다. 공유 자리(이 파일)로 올려 한 곳에서
-// 읽게 한다.
-
-/// popup 타이틀바 우측 버튼(close · 전체화면) 한 변. **size 스케일 밖 20px.**
-///
-/// DTCG 의 `primitive.size-*` 에 20 이 없다(`font-size-20` 은 있으나 폰트 가족이라
-/// 길이로 쓸 값이 아니다). docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 가까운 토큰(16 · 22)으로 스냅하지 않는다 —
-/// 스냅은 픽셀을 바꾸는 디자인 결정이다. 이름과 사유를 붙여 두고 값은 디자인 판단으로
-/// 넘긴다.
-///
-/// **배율**: 이 상수 자체는 `zoomed()` 밖이지만, 본체는 이 값을 그대로 쓰지 않고
-/// UI 배율을 먹여 쓴다. 이 버튼이 앉는 타이틀바 높이가 `item_height_interactive`(배율을
-/// 탄다)에서 오고 옆 간격도 `spacing_xs`(탄다)라, 버튼만 고정이면 1.2 배에서 커진 띠
-/// 안에 작은 버튼이 남는다 — docs/design/systems/theme.md#토큰에-없는-값과-배율 의 컨테이너와 콘텐츠 배율 정합.
-/// 갤러리는 egui 전역 zoom 을 쓰므로(docs/design/systems/theme.md#토큰에-없는-값과-배율) 이 값을 그대로 읽는다.
+/// 팝업 제목줄 버튼의 크기. 대응하는 size 토큰이 없어 별도로 둔다.
+/// 본체는 여기에 UI 배율을 곱하고 갤러리는 egui 전역 배율을 사용하므로 그대로 읽는다.
 pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
 
-// ── PluginAvatar — 디자인 전사 치수 (본체 · 갤러리 공용) ──────────────────────
-//
-// 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` 의 `PluginAvatar` 는 한 변을
-// 인자로 받고 두 자리에서 서로 다른 값으로 불린다(목록 행 32 · 상세 identity 46).
-// 둘 다 DTCG primitive 에 정확히 있지만(`size-32` · `size-46`) **대응 semantic 이 없고**
-// `tasty-design-tokens` 의 `generated::primitive` 는 `pub(crate)` 라 밖에서 부를 이름이
-// 없다 — 위 `STRUCT_GAP_*` 와 같은 사정이라 같은 자리(위젯 레벨 상수)에 둔다. `Theme`
-// 쪽에서 값이 같은 필드(`sidebar_collapsed_slot_width` 32 · `caption_width` 46)를
-// 참조하지 않는 것은 뜻이 다른 축이기 때문이다.
+// 플러그인 아바타는 목록과 상세에서 크기가 다르다. 같은 값의 다른 역할 토큰으로 대체하지 않는다.
 
 /// plugin 목록 행 왼쪽 아바타 한 변. 디자인 `<PluginAvatar size={32}>`
 /// (Installed 목록 · Attention 목록 공통).
 pub const PLUGIN_AVATAR_ROW_SIZE: LogicalPx = LogicalPx(32.0);
 
-/// 상세 identity 블록 아바타 한 변. 디자인 `<PluginAvatar size={46}>`.
-/// **4px 그리드 밖 46px** 이지만 DTCG primitive 에는 `size-46` 이 있다 — 그리드 스텝에
-/// 없는 것과 primitive 에 없는 것은 다른 물음이다.
+/// 플러그인 상세 아바타의 크기. 디자인의 size-46에 대응한다.
 pub const PLUGIN_AVATAR_DETAIL_SIZE: LogicalPx = LogicalPx(46.0);
 
-/// plugin 목록 행 높이. 디자인 행은 `padding: var(--tasty-space-sm)` 위아래에 32px
-/// 아바타가 앉는 flex 행이라 높이가 아바타에서 나온다 — 그래서 값을 따로 적지 않고
-/// 조립한다. 아바타가 들어오기 전 본체·갤러리가 쓰던 40 은 이 구성으로 32 아바타를
-/// 담지 못한다(40 − 패딩 12 = 28).
+/// 목록 행은 아바타 높이와 위아래 여백을 합산한다.
 pub const PLUGIN_LIST_ROW_HEIGHT: LogicalPx =
     LogicalPx(PLUGIN_AVATAR_ROW_SIZE.0 + SIZING.spacing_sm.0 * 2.0);
 
-// ── File handler picker — 디자인 전사 치수 (본체 popup · 갤러리 specimen 공용) ─────
-//
-// 디자인 canonical `gallery/overlays-shared.jsx` 의 `FileHandlerFrame` / `FhRow` /
-// `FhGroup` / `FhHeader` / `FhFooter` 가 inline raw px 로 들고 있는 값들이다. 대부분이
-// 4px 그리드 스텝 밖이라 `SIZING` 에 대응이 없다 — token-policy §c(화면 전용 raw px,
-// `docs/design/systems/design-token-mapping.md` 의 transfer 항목과 같은 갈래).
-//
-// 위 `CENTER_*` · `TOAST_*` 와 같은 이유로 **정의를 여기 하나로** 둔다: 본체와 갤러리가
-// 각자 module const 로 들면 값이 같아 보여도 언제든 갈리고, 갈린 뒤에는 어느 쪽이 정본인지
-// 알 방법이 없다.
+// 파일 핸들러 선택기에서 본체와 갤러리가 공유하는 화면별 치수.
 
 /// 프레임 고정 폭. 디자인 `width: 420`.
 pub const FH_FRAME_WIDTH: LogicalPx = LogicalPx(420.0);
 
-/// 헤더 · fallback 스트립 · footer · empty 블록의 좌우 안쪽 여백. 디자인 14 — 그리드 밖.
-///
-/// **값이 `icon_glyph_size_sm`(14) · `font_size_max`(14)와 겹치지만 그 축이 아니다** —
-/// 이것은 프레임 가장자리 여백이고 저 둘은 글리프 한 변과 폰트 크기다. 겹치는 토큰을
-/// 부르면 "아이콘이 커지면 여백도 커진다" 는 없는 관계가 생긴다. spacing 스텝
-/// (4·8·12·16)에는 14 가 없어 부를 이름이 실제로 없다.
+/// 파일 핸들러 프레임의 좌우 여백. 같은 수의 아이콘·글꼴 토큰과 역할이 달라 공유하지 않는다.
 pub const FH_EDGE_PAD_X: LogicalPx = LogicalPx(14.0);
 
-/// 헤더 위 여백. 디자인 `padding: "14px 14px 10px"` 의 첫 값. 값이 스케일의 14 와
-/// 겹치는 사정은 [`FH_EDGE_PAD_X`] 와 같다 — 여백 축이라 그 토큰을 부르지 않는다.
+/// 헤더 위 여백. 아래 여백과 값이 다르다.
 pub const FH_HEADER_PAD_TOP: LogicalPx = LogicalPx(14.0);
 
 /// 헤더 아래 여백. 같은 선언의 셋째 값 — 위아래가 다르다(10).
@@ -271,21 +157,13 @@ pub const FH_ROW_GAP: LogicalPx = LogicalPx(10.0);
 /// 행 둘째 줄(origin · id · when) 조각 사이 gap. 디자인 `gap: 5` — 그리드 밖.
 pub const FH_ID_LINE_GAP: LogicalPx = LogicalPx(5.0);
 
-/// long 상태에서 목록 영역이 스크롤로 전환되는 높이 상한. 디자인 `maxHeight: 264`.
-///
-/// 디자인 Meta 는 이 값에 "(~8 rows)" 를 붙이지만 그것은 **파생값의 어림**이다 — 행 하나가
-/// 패딩 8+8 에 13px/11px 두 줄이라 264 에 8 행이 들어가지 않는다. 전사하는 것은 명시된
-/// 264 쪽이고, 몇 행이 보이는지는 폰트 metrics 가 정한다.
+/// 긴 목록의 최대 높이. 보이는 행 수는 글꼴과 행 여백에 따라 달라진다.
 pub const FH_LIST_MAX_HEIGHT: LogicalPx = LogicalPx(264.0);
 
 /// long 상태 목록 하단 페이드 띠의 높이. 디자인 `height: 20` — 그리드 밖.
 pub const FH_LIST_FADE_HEIGHT: LogicalPx = LogicalPx(20.0);
 
-/// empty 블록의 위아래 여백. 디자인 `padding: "32px 14px"` 의 첫 값.
-///
-/// **값이 `PLUGIN_AVATAR_ROW_SIZE`(32)·`sidebar_collapsed_slot_width`(32)와 겹치지만
-/// 그 축이 아니다** — 저 둘은 정사각 요소의 한 변이고 이것은 블록 여백이다. spacing
-/// 스텝의 최대는 `spacing_xl`(24)라 32 를 부를 이름이 없다.
+/// 빈 상태 블록의 위아래 여백. 같은 값의 아바타 크기와 구분한다.
 pub const FH_EMPTY_PAD_Y: LogicalPx = LogicalPx(32.0);
 
 /// 행 둘째 줄의 id 를 **앞에서** 자르기 시작하는 길이(문자). 디자인
@@ -295,34 +173,15 @@ pub const FH_ID_ELIDE_MAX: usize = 34;
 /// [`FH_ID_ELIDE_MAX`] 초과 시 남기는 뒤쪽 문자 수 — 앞에 붙는 `…` 한 글자를 뺀 값.
 pub const FH_ID_ELIDE_TAIL: usize = FH_ID_ELIDE_MAX - 1;
 
-/// 헤더 경로 한 줄이 실제로 쓸 수 있는 가로 폭. 프레임 폭에서 좌우 보더와 좌우 여백을
-/// 뺀 값이다 — 디자인이 `420 − 1×2 − 14×2 = 390` 으로 값을 줬고, 여기서는 그 산식을
-/// 토큰으로 다시 적어 세 항 중 하나가 움직이면 따라오게 한다. 보더도 `SIZING` 에서
-/// 가져온다: `2.0` 을 박으면 보더가 굵어져도 이 폭이 안 따라오고, 그때 경로는 넘치는
-/// 것이 아니라 **조용히 한 글자 더 잘린다.**
+/// 경로 한 줄의 가용 폭. 프레임에서 좌우 테두리와 여백을 뺀다.
 pub const FH_TARGET_LINE_BOX: LogicalPx =
     LogicalPx(FH_FRAME_WIDTH.0 - SIZING.border_width.0 * 2.0 - FH_EDGE_PAD_X.0 * 2.0);
 
-/// 헤더 경로 mono 한 칸이 **깔릴 때** 차지하는 가로 폭.
-///
-/// 폰트가 말하는 공칭 advance 가 아니다. D2Coding 11px 의 공칭 advance 는 5.5556px
-/// (`egui::Fonts::glyph_width`)지만, egui 는 레이아웃에서 글리프 advance 를 정수
-/// 픽셀로 반올림하므로 실제로 깔리는 폭은 한 칸에 6px 다(ppp=1, 아무도
-/// `round_text_to_pixels` 를 끄지 않는다).
-///
-/// 이 구분이 값을 바꾼다 — 공칭 5.5556 으로 예산을 잡으면 70 자가 나오고, 그 70 자는
-/// 깔리면 419.56px 라 라인 박스(390px)를 29.56px 넘겨 painter 가 잘라낸다. 모델이
-/// "들어간다" 고 판정한 문자열이 화면에서는 잘리는, 가장 조용한 형태의 오류다. 그래서
-/// 재는 쪽(`crate::file_handler::target_budget_chars` 의 인자)도 단일 글리프 폭이
-/// 아니라 **한 글자 늘 때의 증분**을 넘긴다.
+/// D2Coding 11px, 배율 1, 픽셀 반올림을 사용하는 배치에서 한 글자 추가 시 늘어나는 폭.
+/// 공칭 글리프 폭과 다르므로 실제 측정 시에도 문자열의 증가분을 사용해야 한다.
 pub const FH_TARGET_MONO_ADVANCE: LogicalPx = LogicalPx(6.0);
 
-/// 헤더 경로 앞자름의 **파생 상한** — 글리프 폭을 못 잴 때만 쓴다.
-///
-/// 디자인이 정한 규칙은 개수가 아니라 측정이다(`crate::file_handler::target_budget_chars`).
-/// 이 수는 그 측정이 불가능할 때의 대체값이고, [`FH_TARGET_LINE_BOX`] 를
-/// [`FH_TARGET_MONO_ADVANCE`] 로 나눈 몫이다. **이전의 잠정값 48 은 폐기됐다** —
-/// 들어가는 경로를 잘랐다.
+/// 글자 폭을 측정할 수 없을 때 사용하는 상한. 가용 폭을 위 증가분으로 나눈 값이다.
 pub const FH_TARGET_ELIDE_FALLBACK: usize = 65;
 
 /// Recent 그룹 행 글리프의 흐리기. 디자인 `opacity: dim && !plugin ? 0.8 : 1` — plugin

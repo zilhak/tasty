@@ -1,19 +1,5 @@
-//! `Tooltip` — 앵커 hover/focus 시 뜨는 불투명 hover 버블
-//! (디자인 `components/feedback/Tooltip`).
-//!
-//! 디자인 계약:
-//! - 불투명 카드: bg=`surface-raised`, 1px `border-strong` 보더, radius=`--tasty-radius`,
-//!   shadow=`shadow-popover`. **화살표(꼬리) 없음.**
-//! - 텍스트: `text-secondary`, `font-size-caption`(11), `line-height-ui`(1.4), 좌측 정렬,
-//!   `white-space: normal`(줄바꿈).
-//! - padding: y=`space-xs`(4) x=`space-sm`(8). max-width=`tooltip-max-width`(240px).
-//!   앵커와의 offset=`space-xs`(4).
-//! - placement: top(기본)/bottom/left/right — 앵커 rect 중앙 기준.
-//!
-//! egui 기본 tooltip(`on_hover_text`)의 전역 스타일/delay 를 건드리지 않기 위해
-//! 커스텀 위젯으로 그린다. 표시 여부(hover delay 등)는 호출부([`crate::HelpHint`])가
-//! 판정하고, 이 위젯은 넘겨받은 `anchor` rect 기준으로 버블을 **그리기만** 한다
-//! (specimen 의 강제 open 도 같은 경로).
+//! 앵커 주변에 도움말 버블을 그린다. 위치는 위·아래·왼쪽·오른쪽 중에서 선택한다.
+//! 호버와 대기 시간은 호출자가 판단하며 egui 전역 도움말 설정은 바꾸지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -101,7 +87,7 @@ impl<'a> Tooltip<'a> {
             egui::TextFormat {
                 font_id: egui::FontId::proportional(caption),
                 color: theme.text_secondary().to_egui(),
-                // line-height-ui(1.4) = 절대 줄 높이(px) = caption × 1.4.
+                // 줄 높이는 caption 글꼴 크기에 line_height_ui를 곱한다.
                 line_height: Some(caption * theme.line_height_ui),
                 ..Default::default()
             },

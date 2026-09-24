@@ -354,7 +354,7 @@ fn code_block(ui: &mut egui::Ui, theme: &Theme, lines: &[Vec<CodeToken>]) {
 }
 
 /// grid + zebra 테이블 (md-table 토큰) — header(surface-raised) 밴드 + base/zebra 본문
-/// + 외곽·가로·세로 격자선(border-strong). 값 사다리 mantle<base<surface0<surface1.
+/// 외곽·가로·세로 격자선은 border-strong을 사용한다.
 fn table(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
     let pad_x = theme.md_table_cell_padding_x().value();

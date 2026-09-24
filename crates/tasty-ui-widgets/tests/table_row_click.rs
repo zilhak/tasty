@@ -1,12 +1,5 @@
-//! `Table` 행 클릭 계약 회귀 테스트.
-//!
-//! 재현 대상 버그: `selectable(true)` 표에서 셀 텍스트(`ui.label`) 위를 클릭하면
-//! 행이 선택되지 않았다. egui 기본 `interaction.selectable_labels = true` 가
-//! 라벨에 `Sense::click_and_drag()` 를 붙이는데, 이 라벨은 셀 `Ui` 의 sense 보다
-//! 나중에 등록되므로 hit-test 동률에서 앞선다 → `tr.response()` 가 클릭을 못 받고
-//! `clicked_row` 가 `None` 으로 떨어진다(글자 위 hover 커서도 I-beam 이 됐다).
-//!
-//! 근거·트레이드오프: `docs/architecture/ui-widgets-crate.md#행-선택-표의-클릭과-복사`.
+//! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다.
+//! 본문 텍스트 선택과 헤더 정렬 클릭의 구분은 docs/architecture/ui-widgets-crate.md를 따른다.
 
 use std::cell::RefCell;
 
@@ -157,8 +150,7 @@ fn selectable_row_click_lands_on_cell_text() {
     assert_eq!(
         out.clicked_row,
         Some(1),
-        "셀 텍스트 위 클릭이 행 클릭으로 잡혀야 한다 \
-         (버그: 라벨이 hit-test 를 가져가 clicked_row 가 None 이었다)"
+        "셀 텍스트 위 클릭이 행 클릭으로 처리돼야 한다"
     );
 }
 

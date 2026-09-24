@@ -1,16 +1,5 @@
-//! `draw_status_bar_view` 계약 회귀 테스트 (headless egui).
-//!
-//! 네 가지를 고정한다:
-//! ① 팔레트 키캡 / 테마 글리프 클릭이 각각 `OpenPalette` / `ToggleTheme` 를 보고한다.
-//! ② 그 두 셀 위의 hover 가 `resize_priority_hovered` 를 세우고, 비클릭 좌측
-//!    클러스터에서는 세우지 않는다(윈도우 엣지 리사이즈 우선권 판정).
-//! ③ **부모 `Ui` 가 화면 원점이 아닌 임의 위치에 있어도** 셀 배치가 동일하다 —
-//!    view 가 절대 화면 좌표를 쓰면 갤러리 카드(임의 y) 안에서 좌표가 어긋난다.
-//!    이관 전 구현이 `rect.x_range()` / `rect.width()` 같은 절대 rect 를 직접 쓰던
-//!    자리의 회귀 테스트다.
-//! ④ **좁아지면 접힌다** — 바 폭을 줄이면 팔레트 키캡이 사라지고(4 단계), 그 뒤에도
-//!    테마 글리프는 남아 클릭을 받는다. 단계 선택 자체(어느 순서로 접는가)는 view 의
-//!    단위 테스트가 들고, 여기서는 **그 결과가 실제 히트박스로 나타나는지**만 본다.
+//! 상태바의 클릭·리사이즈 우선권·상대 좌표 배치·좁은 폭에서의 클릭 영역을 검사한다.
+//! 축소 단계의 선택은 단위 검사가 담당하고 여기서는 실제 입력 결과를 확인한다.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -82,9 +71,7 @@ fn frame(
     frame_w(ctx, theme, origin, BAR_W, d, events)
 }
 
-/// 우측 클러스터 두 셀의 중심 x — 우측 끝에 flush 로 붙는다(spacer 가 밀어냄).
-/// 바깥 여백 10 · 항목 사이 gap 10 · 테마 글리프 `statusbar-glyph-size` · 팔레트는
-/// 키캡이라 폭을 `kbd_width` 가 준다(view 가 재는 것과 **같은 함수**다).
+/// 공용 키캡 폭과 바깥 여백으로 오른쪽 두 버튼의 클릭 좌표를 계산한다.
 fn right_cluster_centers(
     ctx: &egui::Context,
     theme: &Theme,
@@ -198,7 +185,6 @@ fn layout_is_relative_to_the_parent_ui_not_the_screen_origin() {
         vec![StatusBarAction::OpenPalette]
     );
     assert!(hover_at(&ctx, &theme, origin, pos2(theme_x, y)).resize_priority_hovered);
-    // 화면 원점(0,0) 근처는 이제 바 바깥이다 — 아무 셀도 잡히지 않아야 한다.
     assert!(
         !hover_at(&ctx, &theme, origin, pos2(5.0, 5.0)).resize_priority_hovered,
         "바가 옮겨갔는데 화면 원점에서 hover 가 잡히면 절대 좌표를 쓰고 있는 것이다"
@@ -213,17 +199,14 @@ fn the_palette_cap_drops_before_the_theme_glyph() {
     let origin = Pos2::ZERO;
     let y = origin.y + 12.0;
 
-    // 팔레트 키캡까지 접히는 폭 — 좌측은 브랜치 글리프만, 우측은 테마 글리프만 남는다.
     let narrow = BAR_PAD_X * 2.0 + theme.icon_glyph_size_xs.value() * 2.0 + ITEM_GAP + 1.0;
     let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin, narrow);
 
-    // 테마 글리프는 남아 있다 — 제자리(우측 끝)에서 클릭을 받는다.
     assert_eq!(
         click_at_w(&ctx, &theme, origin, narrow, pos2(theme_x, y)).actions,
         vec![StatusBarAction::ToggleTheme],
         "테마 글리프는 어느 단계에서도 빠지지 않는다"
     );
-    // 팔레트 키캡이 있던 자리에는 이제 아무것도 없다.
     assert!(
         click_at_w(&ctx, &theme, origin, narrow, pos2(palette_x, y))
             .actions

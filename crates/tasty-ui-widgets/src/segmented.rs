@@ -1,12 +1,4 @@
-//! `segmented` — 세그먼트 토글 (디자인 T11 explorer view-mode toggle, design §3.4).
-//!
-//! 한 컨테이너 안에 상호 배타 선택지를 가로로 묶은 토글. explorer 의 grid/list/detail
-//! 전환이 1차 사용처지만, 특정 도메인에 묶이지 않은 **공용 위젯**으로 일반화한다
-//! (`labels` 슬라이스 + 현재 선택 index → 새로 클릭된 index).
-//!
-//! 토큰: 컨테이너 surface-raised + 1px border-strong + radius, 활성 세그먼트
-//! accent-primary fill + text-on-accent, 비활성 text-secondary(+hover overlay-hover),
-//! 세그먼트 간 1px separator. 색·치수·폰트는 전부 `Theme` 토큰.
+//! 서로 배타적인 선택지를 한 줄로 묶는다. 클릭한 새 인덱스를 반환하며 색과 치수는 Theme에서 읽는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -38,7 +30,6 @@ pub fn segmented(
             ui.horizontal(|ui| {
                 for (i, label) in labels.iter().enumerate() {
                     let active = i == selected;
-                    // 세그먼트 폭 = 텍스트 폭 + 좌우 패딩.
                     let galley = ui.fonts(|f| {
                         f.layout_no_wrap(
                             (*label).to_string(),
@@ -50,7 +41,6 @@ pub fn segmented(
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(seg_w, h), egui::Sense::click());
 
-                    // 세그먼트 간 separator (비활성 인접 경계에만).
                     if i > 0 && !active && i.checked_sub(1) != Some(selected) {
                         ui.painter().vline(
                             rect.left(),
@@ -62,7 +52,6 @@ pub fn segmented(
                         );
                     }
 
-                    // 배경: active accent-primary, hover overlay-hover.
                     if active {
                         ui.painter()
                             .rect_filled(rect, radius_sm, theme.accent_primary().to_egui());

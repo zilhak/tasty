@@ -29,7 +29,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]로 페이지별 캡처를 지정한다.
+/// `TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]`로 페이지별 캡처를 지정한다.
 /// 한 인스턴스에서 페이지 선택·대기·캡처를 반복한 뒤 종료한다. y는 본문 스크롤 위치다.
 struct ShotPlan {
     /// (catalog index, 스크롤 오프셋, png 경로) 목록.
@@ -64,7 +64,7 @@ fn parse_shot_env() -> Option<ShotPlan> {
     })
 }
 
-/// TASTY_GALLERY_SIZE=<w>x<h>로 창 크기를 지정한다. 넓은 예제의 캡처에 사용한다.
+/// `TASTY_GALLERY_SIZE=<w>x<h>`로 창 크기를 지정한다. 넓은 예제의 캡처에 사용한다.
 fn window_size() -> (f64, f64) {
     const DEFAULT: (f64, f64) = (1100.0, 720.0);
     let Ok(raw) = std::env::var("TASTY_GALLERY_SIZE") else {

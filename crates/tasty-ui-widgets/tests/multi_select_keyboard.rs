@@ -1,17 +1,5 @@
-//! `multi_select` 키보드 내비게이션 계약 테스트.
-//!
-//! 마우스 계약은 `multi_select_toggle.rs` 가 고정한다. 이 파일은 **마우스 없이** 끝까지
-//! 조작되는지만 본다 — 폼 컨트롤이라 키보드만으로 완결되지 않으면 접근성이 깨진다.
-//!
-//! 1. 트리거에 포커스가 있으면 `↓`/`Enter` 가 팝업을 연다.
-//! 2. `↑`/`↓` 가 active 행을 옮기고, `Space`/`Enter` 가 그 행을 토글하되 **닫지 않는다**.
-//! 3. active 이동은 `disabled` 행을 건너뛴다.
-//! 4. `Home`/`End` 가 첫/마지막 **활성** 행으로 간다.
-//! 5. `Esc` 는 팝업만 닫고 **키를 소비하며**(상위 팝업·모달로 새지 않는다) 포커스는
-//!    트리거에 남긴다 — 곧바로 `↓` 로 다시 열린다.
-//! 6. `Tab` 은 팝업을 닫되 키는 남긴다(포커스 이동은 egui 기본 동작 몫).
-//!
-//! headless `egui::Context` 구동 패턴은 선례 `multi_select_toggle.rs` 를 따른다.
+//! 마우스 없이 열기·이동·선택·닫기를 수행하고 비활성 행을 건너뛰는지 검사한다.
+//! Esc는 소비한 뒤 트리거 포커스를 유지하고 Tab은 다음 위젯으로 전달해야 한다.
 
 use egui::{Event, Key, Modifiers, Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -60,10 +48,9 @@ fn key(key: Key) -> Vec<Event> {
 struct Frame {
     /// 프레임이 끝난 시점에 팝업이 열려 있는지.
     open: bool,
-    /// 위젯이 그려진 **뒤에도** `Esc` 가 입력 큐에 남아 있는지 — 남아 있으면 상위
-    /// Esc 핸들러(부모 popup / 모달)까지 같은 키가 새어 간다는 뜻이다.
+    /// 위젯 처리 뒤 Esc가 입력 큐에 남아 있는지.
     esc_left: bool,
-    /// 같은 판정의 `Tab` 판. 이쪽은 **남아야** 포커스가 다음 위젯으로 넘어간다.
+    /// 포커스 이동을 위해 Tab은 입력 큐에 남아 있어야 한다.
     tab_left: bool,
 }
 
@@ -129,13 +116,11 @@ fn enter_opens_then_space_toggles_without_closing() {
         "여는 Enter 가 행을 토글해서는 안 된다"
     );
 
-    // ↓ 로 첫 행을 짚고 Space 로 토글 — 팝업은 열린 채여야 한다.
     frame(&ctx, &theme, &mut selected, None, key(Key::ArrowDown));
     let f = frame(&ctx, &theme, &mut selected, None, key(Key::Space));
     assert!(f.open, "Space 토글은 팝업을 닫지 않는다");
     assert_eq!(selected, vec![true, false, false, false]);
 
-    // 이어서 ↓ + Enter — 연속 토글이 되어야 다중선택이다.
     frame(&ctx, &theme, &mut selected, None, key(Key::ArrowDown));
     let f = frame(&ctx, &theme, &mut selected, None, key(Key::Enter));
     assert!(f.open, "Enter 토글도 팝업을 닫지 않는다");
@@ -150,11 +135,9 @@ fn arrow_up_walks_backwards_and_wraps() {
 
     focus_trigger(&ctx, &theme, &mut selected);
     frame(&ctx, &theme, &mut selected, None, key(Key::Enter));
-    // 커서 없이 ↑ → 마지막 행부터 들어온다.
     frame(&ctx, &theme, &mut selected, None, key(Key::ArrowUp));
     frame(&ctx, &theme, &mut selected, None, key(Key::Space));
     assert_eq!(selected, vec![false, false, false, true]);
-    // 마지막 행에서 ↓ → 첫 행으로 순환.
     frame(&ctx, &theme, &mut selected, None, key(Key::ArrowDown));
     frame(&ctx, &theme, &mut selected, None, key(Key::Space));
     assert_eq!(selected, vec![true, false, false, true]);
@@ -299,7 +282,6 @@ fn active_row_resets_on_each_open() {
 
     focus_trigger(&ctx, &theme, &mut selected);
     frame(&ctx, &theme, &mut selected, None, key(Key::Enter));
-    // 마지막 행까지 내려간 뒤 닫는다.
     frame(&ctx, &theme, &mut selected, None, key(Key::End));
     frame(&ctx, &theme, &mut selected, None, key(Key::Escape));
     // 다시 열면 커서가 없어야 한다 — Space 만 눌러서는 아무 행도 토글되지 않는다.
@@ -310,7 +292,6 @@ fn active_row_resets_on_each_open() {
         vec![false; OPTIONS.len()],
         "새로 연 팝업의 커서는 초기화된다"
     );
-    // 그 상태에서 ↓ 는 다시 첫 행부터다.
     frame(&ctx, &theme, &mut selected, None, key(Key::ArrowDown));
     frame(&ctx, &theme, &mut selected, None, key(Key::Space));
     assert_eq!(selected, vec![true, false, false, false]);

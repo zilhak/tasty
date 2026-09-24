@@ -384,7 +384,6 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     sidebar_logo_collapsed_size: LogicalPx(24.0),
     sidebar_wordmark_font_size: LogicalPx(17.0),
     sidebar_section_heading_font_size: LogicalPx(10.0),
-    // 사이드바 섹션 제목은 caption 글꼴을 사용한다.
     sidebar_button_label_font_size: LogicalPx(11.0),
     sidebar_collapsed_slot_width: LogicalPx(32.0),
     sidebar_collapsed_icon_height: LogicalPx(22.0),
@@ -1865,7 +1864,7 @@ mod tests {
     }
 
     /// markdown surface 인라인 표 토큰이 semantic 접근자 포인터로 매핑되고,
-    /// 채움 값 사다리(mantle < base < surface0 < surface1)가 유지되는지 고정.
+    /// 각 배경이 지정한 색상 필드에 연결되는지 확인한다.
     #[test]
     fn md_table_tokens_map_to_semantics_and_keep_ladder() {
         let th = Theme::with_colors(distinct_colors(), false);
@@ -1879,7 +1878,7 @@ mod tests {
         assert_eq!(th.md_table_cell_padding_x(), th.spacing_sm);
         assert_eq!(th.md_table_cell_padding_y(), th.spacing_xs);
 
-        // 값 사다리: zebra(mantle) < 행(base) < 헤더(surface0) < 격자선(surface1).
+        // 줄무늬·행·헤더·격자선이 서로 다른 색상 필드를 사용하는지 확인한다.
         assert_eq!(th.md_table_row_bg_zebra(), th.mantle);
         assert_eq!(th.md_table_row_bg(), th.base);
         assert_eq!(th.md_table_header_bg(), th.surface0);

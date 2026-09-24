@@ -1,15 +1,7 @@
-//! `status_dot` 의 **폭 계약** 회귀 테스트 (headless egui).
-//!
-//! 라벨 없는 점이 필요한 자리가 이 위젯을 그대로 부를 수 있어야 한다. 라벨이 비었는데도
-//! dot 뒤에 gap 을 할당하면 그 자리만 정렬선이 밀리고, 소비자는 폭을 되빼는 래퍼를 쓰게
-//! 된다 — 그 되빼는 값은 위젯 안의 상수와 독립으로 적히므로 한쪽만 바뀌면 갈린다.
-//!
-//! 술어를 **"gap 이 라벨과 함께 있고 라벨 없이는 없다"** 로 세운다. 폭 하나만 재면
-//! 라벨 있는 경우가 맞는지 알 수 없고, 차이만 재면 dot 지름이 토큰에서 오는지 알 수 없다.
+//! 라벨이 없으면 점 크기만, 라벨이 있으면 간격과 글자 폭까지 할당하는지 검사한다.
+//! 배율을 바꿨을 때 점의 크기도 달라지는지 확인한다.
 
-// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
-// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
-// — docs/dev-guide/error-handling.md.
+// 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
 #![allow(clippy::let_underscore_must_use)]
 use egui::{Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -76,6 +68,6 @@ fn the_dot_diameter_follows_the_token_at_every_zoom() {
     let two = theme(2.0);
     assert!(
         allocated_width(&two, "") > allocated_width(&one, ""),
-        "배율을 안 탄다 — 지름이 토큰이 아니라 지역 상수에서 온다"
+        "배율을 키우면 라벨 없는 점의 폭도 커져야 한다"
     );
 }

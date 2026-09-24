@@ -1,36 +1,14 @@
-//! `PluginAvatar` — plugin 이름 머리글자 사각 아바타.
-//!
-//! 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` 의 `PluginAvatar` 전사.
-//! 네 자리에서 불린다 — Installed 목록 행 · Installed 상세 identity · Attention 목록
-//! 행 · Attention 상세 identity.
-//!
-//! ## 디자인과 갈린 두 자리 (둘 다 의도)
-//!
-//! **색.** 디자인은 배경·보더·글자를 `CAT_COLOR[plugin.cat]` 으로 칠하고, 그 표에 없는
-//! 카테고리면 `var(--tasty-accent-primary)` 로 떨어진다. tasty 매니페스트에는 카테고리
-//! 필드가 없어서(`crates/tasty-plugin-manifest/src/types.rs` 의 `Manifest`) **그
-//! fallback 갈래 하나만 도달 가능**하다. 색을 인자로 받게 해 두지 않은 것은 그래서다 —
-//! 부를 수 있는 값이 하나뿐인 인자는 호출부마다 같은 상수를 다시 적게 만든다.
-//!
-//! **글자 크기.** 디자인이 한때 쓰던 `Math.round(size * 0.42)` 는 목록(32)에서 13 이라
-//! `font_size_body` 와 맞았지만 상세(46)에서 19 가 나와 **UI 폰트 상한 14 를 넘었고**
-//! (`docs/design/systems/theme.md` "UI 폰트 최대"), 그래서 여기서는 상한 쪽을 따라
-//! 상세 글리프를 `font_size_max` 로 잘랐다(비율로는 0.42 → 0.30).
-//!
-//! 디자인은 그 뒤 비율을 버리고 크기를 토큰으로 못박았다 —
-//! `--tasty-plugin-avatar-initial-font-size-sm`(= `font-size-max`, 14) ·
-//! `-lg`(= `font-size-16`, 16, 워드마크와 같은 급의 **승인된 MARK 예외**). 즉 목록 쪽은
-//! 13 → 14, 상세 쪽은 14 → 16 이 정본이다. **아직 채택하지 않았다** — 상세의 16 은
-//! tasty 쪽 UI 폰트 상한에 예외를 하나 더 등재하는 일이라(그 목록은 theme.md 와
-//! `src/design_token_guard.rs` 가 함께 갖는다) 그림자 정합 작업의 범위 밖이다.
+//! 플러그인 이름의 첫 글자로 사각 아바타를 그린다.
+//! 매니페스트에 카테고리가 없어 기본 강조색을 사용한다.
+//! 현재 목록은 font_size_body, 상세는 font_size_max를 사용한다.
+//! 디자인의 별도 아바타 글꼴 토큰은 아직 적용하지 않았으며 이 파일에서 임의로 바꾸지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::tokens::{PLUGIN_AVATAR_DETAIL_SIZE, PLUGIN_AVATAR_ROW_SIZE};
 
-/// 아바타가 앉는 자리. 한 변과 글리프 크기가 함께 정해진다 — 둘을 따로 받으면 호출부
-/// 넷에서 짝이 갈린다.
+/// 아바타가 표시되는 위치에 따라 크기와 글꼴을 함께 선택한다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PluginAvatarSize {
     /// 목록 행 왼쪽 (디자인 `size={32}`).
@@ -49,7 +27,7 @@ impl PluginAvatarSize {
         }
     }
 
-    /// 머리글자 글리프 크기. 모듈 doc "글자 크기" 참고 — 상세는 상한으로 잘린다.
+    /// 목록과 상세 위치에 맞는 글꼴 크기.
     #[inline]
     fn font(self, theme: &Theme) -> LogicalPx {
         match self {
@@ -93,8 +71,7 @@ pub fn paint_plugin_avatar(
     if label.is_empty() {
         return;
     }
-    // 디자인은 mono 700 이다. egui 는 별도 bold family 없이 굵기를 못 낸다
-    // (`design-parity-notes.md` "egui 세금") — 크기·색만 따른다.
+    // 별도 굵은 글꼴을 등록하지 않아 굵기는 재현하지 않는다.
     painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,

@@ -1,22 +1,6 @@
-//! `Table` — 디자인 `components/data/Table` 의 공용 위젯.
-//!
-//! `egui_extras::TableBuilder` 의 boilerplate(컬럼 정의·sticky 헤더·정렬 인디케이터·
-//! 행 선택·내부 스크롤 cap)를 감싸 *선언적* API 로 노출한다. 색·폰트·간격은 모두
-//! `Theme` 토큰에서 가져오며 하드코딩하지 않는다.
-//!
-//! 디자인 계약 (port_scanner 7컬럼 표가 첫 적용 사례):
-//! - 헤더: caption 폰트 + strong, active 정렬 컬럼은 `text` 색 + ▲/▼, 비활성은
-//!   `subtext0`. 헤더 행은 egui_extras 기본 동작으로 스크롤 시 상단 고정(sticky).
-//! - 본문: 행 단위 클릭 선택(`selectable`), 선택 행은 egui `set_selected` 하이라이트.
-//! - 컬럼 폭/정렬은 [`TableColumn`] 으로 컬럼마다 지정. 본문 셀 내용은 호출자가
-//!   `cell` 클로저로 `(ui, theme, row, col_index)` 를 받아 직접 렌더한다.
-//! - `selectable(true)` 인 표의 본문 셀 서브트리는 `interaction.selectable_labels = false`
-//!   로 고정된다 — 행 전체가 클릭 타겟이라는 계약을 지키기 위해 셀 텍스트의 드래그
-//!   선택/복사를 포기한다 (`docs/architecture/ui-widgets-crate.md#행-선택-표의-클릭과-복사`).
-//!   헤더 셀은 영향을 받지 않으며, 정렬 클릭은 명시 `Sense::click()` 으로 유지된다.
-//!   `selectable(false)` 인 표는 egui 기본값 그대로라 셀 텍스트를 선택할 수 있다.
-//!
-//! 본체(`tasty`)·갤러리 양쪽에서 동일 위젯을 호출 → 시각 100% 동기화.
+//! 컬럼·고정 헤더·선택·스크롤을 제공하는 공용 표. 셀 내용은 호출자가 그린다.
+//! 행 선택을 켜면 본문 라벨의 텍스트 선택을 꺼서 글자 위 클릭도 행에 전달한다.
+//! 헤더의 정렬 클릭은 유지하며 행 선택을 끈 표는 egui의 텍스트 선택 설정을 따른다.
 
 use egui_extras::{Column, TableBuilder};
 use tasty_type_appearance::theme::Theme;
@@ -111,10 +95,7 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
-    /// 인스턴스 ID salt. 한 화면에 표가 2개 이상이면 egui 자동 ID 가 충돌하므로
-    /// (내부 `TableBuilder`/`ScrollArea` Id 가 동일 → "First use of ... ID" 경고),
-    /// 인스턴스마다 서로 다른 salt 를 주어 ID 네임스페이스를 분리한다.
-    /// 미지정 시 기존 동작(부모 ui 의 Id 네임스페이스 그대로) 유지.
+    /// 여러 표가 함께 있을 때 각 표의 위젯·스크롤 ID를 구분한다. 미지정이면 부모 ID를 사용한다.
     pub fn id_salt(mut self, salt: impl std::hash::Hash) -> Self {
         self.id_salt = Some(egui::Id::new(salt));
         self
@@ -162,12 +143,8 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
-    /// 가로 스크롤. 켜면 본문(헤더+행)을 [`egui::ScrollArea::horizontal`] 로 감싸,
-    /// 컬럼 고정폭 합이 가용폭을 넘으면 좌우 스크롤이 생긴다(말줄임 대신). 이 모드에선
-    /// 모든 컬럼이 고정폭([`TableColumnWidth::Exact`])이어야 한다 — `Remainder` 는
-    /// 스크롤 영역 안에서 폭이 발산한다. sticky 헤더는 본문과 수평 동기 이동하며
-    /// 세로로는 고정 유지된다. egui_extras `TableBuilder` 는 네이티브 가로 스크롤이
-    /// 없어 이 래핑이 필요하다.
+    /// 헤더와 본문을 함께 가로로 스크롤한다. 세로 스크롤에서는 헤더를 고정한다.
+    /// Remainder가 스크롤 안에서 폭을 늘릴 수 있으므로 이 모드는 Exact 컬럼만 사용해야 한다.
     pub fn horizontal_scroll(mut self, on: bool) -> Self {
         self.horizontal_scroll = on;
         self
@@ -189,8 +166,7 @@ impl<'a, K> Table<'a, K> {
     where
         K: Copy + PartialEq,
     {
-        // table-font-size(=body) 를 기본 헤더/행 높이 산출의 기준 폰트로 쓴다.
-        // (header/row 높이 자체는 대응 component 토큰 없어 body+오프셋 유지.)
+        // 별도 행 높이 토큰이 없어 본문 글꼴 크기에 기본 여백을 더한다.
         let body_f = theme.table_font_size().value();
         let header_h = self.header_height.unwrap_or(body_f + 10.0);
         let row_h = self.row_height.unwrap_or(body_f + 14.0);
@@ -207,14 +183,11 @@ impl<'a, K> Table<'a, K> {
         let max_scroll_height = self.max_scroll_height;
         let header_fill = self.header_fill;
         let horizontal_scroll = self.horizontal_scroll;
-        // 가로 스크롤 모드에서 sticky 헤더 띠가 본문 전체폭을 덮도록, 컬럼 고정폭
-        // 합(+컬럼 간 간격)을 미리 잰다. 비-스크롤 모드에선 쓰이지 않는다.
+        // 헤더 배경이 가로 스크롤의 전체 콘텐츠 폭을 덮도록 미리 계산한다.
         let total_w = fixed_total_width(columns, LogicalPx(ui.spacing().item_spacing.x));
 
-        // 헤더 띠 + TableBuilder 본체를 그리는 코어. `band_w` 는 sticky 헤더 배경 띠의
-        // 가로 폭(가로 스크롤 시 본문 전체폭, 아니면 ui 폭).
         let mut draw_core = |ui: &mut egui::Ui, band_w: LogicalPx| {
-            // sticky 헤더 배경: egui_extras 는 셀 배경 API 가 없어 painter 로 직접 칠한다.
+            // 셀 배경 API 대신 헤더 배경을 직접 그린다.
             if let Some(fill) = header_fill {
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(ui.max_rect().left(), ui.cursor().top()),
@@ -226,9 +199,7 @@ impl<'a, K> Table<'a, K> {
             let mut builder = TableBuilder::new(ui)
                 .striped(striped)
                 .resizable(false)
-                // 드래그 패닝 끄기 — TableBuilder 는 자기 안에서 ScrollArea 를 만들고
-                // 그 기본값이 true 다. 데스크톱 마우스에서 드래그는 행 선택·텍스트
-                // 선택의 의도라, 내용이 포인터를 따라 미끄러지면 그 의도와 충돌한다.
+                // 행·텍스트 선택을 드래그 스크롤로 오인하지 않도록 패닝을 끈다.
                 .drag_to_scroll(false)
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
             if selectable {
@@ -257,12 +228,7 @@ impl<'a, K> Table<'a, K> {
                             tr.set_selected(is_selected(row));
                             for (c, col) in columns.iter().enumerate() {
                                 tr.col(|ui| {
-                                    // 행 선택 모드에선 셀 텍스트가 행 클릭을 가로채지 못하게
-                                    // 라벨 선택성을 끈다. egui 기본 `selectable_labels=true` 는
-                                    // `ui.label` 에 `Sense::click_and_drag()` 를 붙이고, 이 라벨은
-                                    // 셀 `Ui` 의 sense 보다 나중에 등록되므로 hit-test 동률에서
-                                    // 앞선다 → 글자 위에서 `tr.response()` 가 클릭을 못 받는다.
-                                    // 셀 서브트리에만 적용되며 헤더(정렬 클릭)에는 닿지 않는다.
+                                    // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
                                     if selectable {
                                         ui.style_mut().interaction.selectable_labels = false;
                                     }
@@ -289,18 +255,12 @@ impl<'a, K> Table<'a, K> {
                 });
         };
 
-        // 표 본체(헤더 + ScrollArea/Body). `id_salt` 가 있으면 `push_id` 로 감싸
-        // 인스턴스마다 Id 네임스페이스를 분리한다. push_id 는 동일 가용 영역을
-        // 상속하는 투명 scope 라 시각엔 영향이 없다.
         let mut run = |ui: &mut egui::Ui| {
             if horizontal_scroll {
-                // 본문 전체(헤더+행)를 가로 ScrollArea 로 감싼다 → 컬럼 합이 가용폭을
-                // 넘으면 좌우 스크롤. set_min_width 로 컨텐츠 폭을 고정폭 합으로 잡아
-                // 헤더/본문이 함께 수평 이동한다(헤더는 세로로는 TableBuilder 가 고정).
+                // 헤더와 행을 같은 가로 스크롤 안에 놓는다.
                 egui::ScrollArea::horizontal()
                     .auto_shrink([false, true])
-                    // 가로축도 끈다 — 안쪽 TableBuilder 가 이미 꺼져 있어, 여기만 켜 두면 같은 표가
-                    // 세로로는 안 끌리고 가로로는 끌리는 갈린 동작이 된다.
+                    // 세로와 마찬가지로 가로 드래그 패닝도 끈다.
                     .drag_to_scroll(false)
                     .show(ui, |ui| {
                         ui.set_min_width(total_w.value());
