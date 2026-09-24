@@ -1,11 +1,9 @@
-//! 도구 메뉴 클릭으로 enqueue 된 tool 이벤트 publish.
+//! 도구 메뉴가 요청한 이벤트를 플러그인에 전달한다.
 
 use crate::app::App;
 
 impl App {
-    /// 도구 메뉴 클릭으로 enqueue된 이벤트 큐(`pending_tool_events`)를 모든 AppState
-    /// 에서 drain해 PluginManager로 publish한다. payload는 plugin 작성자가 정의한 임의
-    /// JSON value를 그대로 전달 (현재 `{ "tool_id": "<plugin_id>/<tool_id>" }`).
+    /// 이벤트 payload는 플러그인이 정의한 JSON 그대로 전달한다.
     pub(crate) fn dispatch_pending_tool_events(&mut self) {
         let mut drained: Vec<(String, serde_json::Value)> = Vec::new();
         for w in self.view.views.values_mut() {
@@ -23,8 +21,7 @@ impl App {
             return;
         };
         for (key, payload) in drained {
-            // tool 트리거 이벤트는 system scope. 매니페스트 events_emitted에 등록되지 않은
-            // 임의 키도 호스트 발화는 허용 (publish 권한 검사는 plugin 발화 경로에만 적용).
+            // 호스트 이벤트는 플러그인 발행 경로의 publish 권한·선언 검사 대상이 아니다.
             mgr.emit_host_event(&key, &payload, tasty_plugin_protocol::EventScope::System);
         }
     }

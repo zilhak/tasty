@@ -1,14 +1,10 @@
-//! Surface close lifecycle 이벤트 broadcast.
+//! surface 닫기 이벤트를 플러그인에 전달한다.
 
 use crate::app::App;
 
 impl App {
-    /// 모든 윈도우/parked state의 surface close lifecycle 큐를 비우고 구독 plugin에
-    /// broadcast한다. `is_user_close` bool → `LifecycleReason` enum 매핑은
-    /// 여기서 수행 (state/ 레이어가 plugin/ 의존을 갖지 않게).
-    ///
-    /// Event Bus 1.0 `surface.closed`로 broadcast. (PR 4에서 옛 `surface.lifecycle`
-    /// IPC 폐기. plugin은 `event_subscribe = ["surface.closed"]`로 구독한다.)
+    /// 모든 창·parked 상태의 닫기 큐를 처리한다. state가 plugin 타입에 의존하지 않도록
+    /// 사용자 닫기 여부를 여기서 LifecycleReason으로 변환한다.
     pub(crate) fn dispatch_pending_surface_lifecycle(&mut self) {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::LifecycleReason;
@@ -31,9 +27,7 @@ impl App {
             return;
         };
         for ev in drained {
-            // plugin surface 면 소유 plugin 에 surface.destroy 통지 + host 측
-            // RemoteSurfaceEntry/mesh frame 정리 (아니면 no-op). 이 호출이 빠지면
-            // plugin 프로세스의 per-surface 상태가 영원히 남는다 (soak S6 실측).
+            // 일반 닫기 알림과 별도로 소유 플러그인의 surface 자원도 정리한다.
             mgr.destroy_remote_surface(ev.surface_id, ev.kind);
             let bus_reason = if ev.is_user_close {
                 LifecycleReason::User

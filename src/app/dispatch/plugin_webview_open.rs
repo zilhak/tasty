@@ -1,13 +1,5 @@
-//! `webview.open_external` — plugin 이 **자기 webview surface** 안의 외부 링크를 OS 기본
-//! 핸들러로 연다.
-//!
-//! plugin 프로세스는 OS 열기를 직접 하지 않는다. host 의 OS 열기 자리
-//! (`terminal_link::open_uri`)로 모아야 debug 스위치(ADR-0045)가 그것도 기록하고, 무엇이
-//! 열리는지를 host 가 한 자리에서 본다. 근거·대안은 ADR-0030.
-//!
-//! 판정은 [`authorize`] 하나다 — surface 가 호출 plugin 소유의 plugin surface 이고, URL 에
-//! 스킴이 있으며 `javascript:` 가 아니어야 한다. surface→plugin 매핑은 각 view 의
-//! `core_state` 만 알아서 이 판정은 App 층에 있다(`banner.open` 의 D1 과 같은 자리).
+//! 플러그인의 외부 URL 열기를 호스트로 모아 소유자와 URL을 검사한다.
+//! terminal_link::open_uri를 사용해 debug OS 열기 기록 설정도 적용한다.
 
 use serde_json::json;
 use tasty_host_plugin::manager::PendingPluginCall;
@@ -15,9 +7,7 @@ use tasty_host_plugin::manager::PendingPluginCall;
 use crate::app::App;
 
 impl App {
-    /// `webview.open_external { surface_id, url }` 인터셉트. 권한(`surface.write`)은 진입부
-    /// pre-gate 가 이미 봤다. 연 결과는 `{ "opened": bool }` 이고, OS 가 열기를 거절한 것은
-    /// 오류가 아니라 `false` 다(원인은 `open_uri` 가 경고로 남긴다).
+    /// 권한은 진입부 게이트에서 검사한다. OS 열기 실패는 opened=false로 반환한다.
     pub(super) fn handle_ipc_webview_open_external(&mut self, call: &PendingPluginCall) {
         let (result, error, code) = match self.webview_open_request(call) {
             Ok(url) => (
@@ -32,7 +22,6 @@ impl App {
         }
     }
 
-    /// 요청을 읽고 판정한다. 통과하면 열 URL.
     fn webview_open_request(&self, call: &PendingPluginCall) -> Result<String, String> {
         let surface_id =
             crate::adapters::ipc::handler::params::read_u32(&call.params, "surface_id")
@@ -48,8 +37,7 @@ impl App {
         Ok(url.trim().to_string())
     }
 
-    /// 살아 있는 창에서 `surface_id` 를 가진 plugin surface 의 소유 plugin. 없으면 `None` —
-    /// 보이지 않는(parked) 창의 surface 에서 온 클릭은 없다.
+    /// MainView의 RemoteSurface 소유자를 찾는다. parked 상태는 조회하지 않는다.
     fn plugin_surface_owner(&self, surface_id: u32) -> Option<String> {
         self.view.views.values().find_map(|w| {
             let surface = w.as_main()?.core_state.find_surface_by_id(surface_id)?;
@@ -61,11 +49,8 @@ impl App {
     }
 }
 
-/// 열어도 되는가. `owner` 는 `surface_id` 가 가리키는 plugin surface 의 소유 plugin 이다.
-///
-/// - 남의 surface · 없는 surface 는 거절한다 — plugin 은 자기 surface 에서 일어난 일만 연다.
-/// - URL 은 스킴이 있어야 한다(`https:` · `mailto:` 등). 스킴 없는 문자열은 파일 경로이고
-///   그것은 `file_handler.dispatch` 의 일이다. `javascript:` 는 거절한다.
+/// 호출자가 surface 소유자여야 하며 스킴 없는 경로와 javascript URL은 거절한다.
+/// 실제 클릭이 있었는지나 surface가 WebView로 렌더되는지는 이 함수가 확인하지 않는다.
 pub(crate) fn authorize(
     owner: Option<&str>,
     caller: &str,

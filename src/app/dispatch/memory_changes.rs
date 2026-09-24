@@ -1,11 +1,9 @@
-//! `tasty-memory` regular 영역의 변경을 `memory.changed` 로 broadcast.
+//! regular 메모리 변경을 memory.changed 이벤트로 전달한다.
 
 use crate::app::App;
 
 impl App {
-    /// `tasty-memory` regular 영역의 누적 변경을 drain 해 `memory.changed` host
-    /// event 로 broadcast. secret 영역 변경은 store 가 발화 큐에 넣지 않으므로
-    /// 자동으로 누락된다 (다른 plugin 누설 방지).
+    /// secret 변경은 저장소가 이벤트 큐에 넣지 않아 다른 플러그인에 전달되지 않는다.
     pub(crate) fn dispatch_pending_memory_changes(&mut self) {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::payloads::{

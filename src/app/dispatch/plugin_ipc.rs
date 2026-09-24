@@ -1,4 +1,4 @@
-//! plugin process 가 보낸 IPC 호출 dispatch.
+//! 플러그인 IPC를 검사한 뒤 호스트 또는 다른 플러그인으로 전달한다.
 
 use serde_json::json;
 use tasty_host_plugin::manager::PendingPluginCall;
@@ -7,15 +7,8 @@ use crate::app::App;
 use crate::ipc;
 
 impl App {
-    /// plugin process가 보낸 IPC 호출들을 라우터로 디스패치하고 결과를 plugin에 회신.
-    ///
-    /// 게이트 3종(권한 / telemetry cap / rate limit)은 **갈래 분기보다 먼저** 돈다
-    /// (ADR-0012). 인터셉트 갈래들이 각자 `ensure_allowed` 만 부르던 때에는 권한 한
-    /// 축만 걸리고 cap·rate·audit 가 통째로 빠졌다 — 거부가 기록되지도 않았다.
-    ///
-    /// 호출 메서드가 다른 plugin이 점유한 namespace prefix와 매칭되면
-    /// `forward_namespace_call_from_plugin` 경로로 우회 (응답은 target plugin이 줄
-    /// 때까지 보류되며 main loop 다음 tick에서 caller plugin에 `ipc.result`로 회신).
+    /// 모든 분기 전에 공통 게이트를 통과한다. 권한용 ensure_allowed만 따로 호출하지 않는다.
+    /// 다른 플러그인의 namespace 호출은 비동기로 전달하며 그 응답을 기다린다.
     pub(crate) fn process_plugin_ipc_calls(&mut self) {
         let calls = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.take_pending_plugin_calls(),
@@ -37,8 +30,6 @@ impl App {
                     continue;
                 }
             };
-            // shared buffer 생성은 main 채널 + 보조 채널을 동시에 다뤄야 해서
-            // dispatcher에 노출하지 않고 매니저가 직접 처리한다.
             if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
                 self.handle_ipc_shared_buffer_create(&call);
                 continue;
@@ -59,13 +50,7 @@ impl App {
                 self.handle_ipc_webview_open_external(&call);
                 continue;
             }
-            // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
-            // 검증/forward를 plugin_manager에 위임한다. 응답은 비동기.
-            //
-            // self-call(caller가 prefix owner와 동일)인 경우는 forward하지 않고
-            // 호스트 dispatcher로 통과시킨다. plugin이 자기 namespace 메서드의
-            // 구현을 호스트 본문에 위임하는 trampoline 패턴(예: com.tasty.image)을
-            // 지원하기 위함. 호스트에 동명 메서드가 없으면 일반 -32601이 떨어진다.
+            // 자기 namespace 요청은 호스트 구현으로 위임할 수 있어 다른 플러그인 요청만 forward한다.
             if let Some(mgr) = self.plugin_manager.as_mut()
                 && mgr.namespace_belongs_to_other(&call.method, &call.plugin_id)
             {
@@ -81,9 +66,7 @@ impl App {
         }
     }
 
-    /// `host.shared_buffer.create` 인터셉트 — main 채널 + 보조 채널을 동시에
-    /// 다뤄야 해서 dispatcher에 노출하지 않고 매니저가 직접 처리한다. params에서
-    /// size를 꺼내 manager에 위임 → 매니저가 fd/HANDLE 송신 + RPC 응답을 모두 처리.
+    /// main·보조 채널을 함께 사용하는 공유 버퍼 생성은 매니저가 처리한다.
     fn handle_ipc_shared_buffer_create(&mut self, call: &PendingPluginCall) {
         let size = call
             .params
@@ -100,17 +83,13 @@ impl App {
         }
     }
 
-    /// popup.close 인터셉트 — PluginManager가 App에 있어 일반 라우터로 도달 불가.
-    /// 권한(ui.popup)은 진입부 pre-gate 가 이미 봤다 — 여기서는 instance_id 가 호출자
-    /// plugin 소유인지만 확인하고 PluginRequest 사유로 close.
+    /// 공통 권한 검사 뒤 인스턴스 소유자를 확인한다.
     fn handle_ipc_popup_close(&mut self, call: &PendingPluginCall) {
         let (result, error) = {
             let instance_id = call.params.get("instance_id").and_then(|v| v.as_u64());
             match instance_id {
                 None => (None, Some("popup.close: missing 'instance_id'".to_string())),
                 Some(id) => {
-                    // 소유권 검증만 매니저를 빌려서 하고 곧바로 반납한다 —
-                    // 아래 close 는 `&mut self` 를 다시 잡는다.
                     let owns = self.plugin_manager.as_ref().map(|m| {
                         m.popup_instances()
                             .find(|(iid, _)| *iid == id)
@@ -126,10 +105,7 @@ impl App {
                             )),
                         ),
                         Some(true) => {
-                            // 매니저를 직접 치지 않는다 — 렌더가 수집하는 close 큐로
-                            // 합류시켜야 `cancel_child_file_picker` 연쇄 정리가 이
-                            // 경로에서도 돈다(ADR-0036). 큐는 같은 tick 의
-                            // `dispatch_plugin_popup_events` 가 drain 하므로 지연 없다.
+                            // 공통 닫기 큐를 거쳐 자식 파일 피커도 취소되게 한다.
                             self.enqueue_plugin_popup_close(
                                 id,
                                 tasty_plugin_protocol::PopupCloseReason::PluginRequest,
@@ -145,13 +121,11 @@ impl App {
         }
     }
 
-    /// banner.open (A3) — plugin 이 자기 surface 에 egui-mesh 배너를 띄운다.
-    /// ui.banner 권한 게이트 + D1 소유권 검증(자기 surface 만)은 open_plugin_banner 가.
+    /// 권한은 진입부 게이트, surface 소유권은 open_plugin_banner에서 검사한다.
     fn handle_ipc_banner_open(&mut self, call: &PendingPluginCall) {
         let (result, error) = {
             let banner_id = call.params.get("banner_id").and_then(|v| v.as_str());
-            // `surface_id` 를 자르지 않는다 — 잘린 값은 실재하는 **다른 surface** 를
-            // 가리켜, plugin 이 남의 배너 자리를 성공적으로 차지한다.
+            // 범위를 넘는 ID를 잘라 다른 surface ID로 바꾸지 않는다.
             let surface_id =
                 crate::adapters::ipc::handler::params::read_u32(&call.params, "surface_id");
             match (banner_id, surface_id) {
@@ -174,7 +148,6 @@ impl App {
         }
     }
 
-    /// banner.close (A3) — plugin 이 자기 배너 인스턴스를 닫는다.
     fn handle_ipc_banner_close(&mut self, call: &PendingPluginCall) {
         let (result, error) = {
             match call.params.get("instance_id").and_then(|v| v.as_u64()) {
@@ -206,16 +179,13 @@ impl App {
         }
     }
 
-    /// 인터셉트/forward 대상이 아닌 일반 호출 — 호스트 dispatcher로 통과.
     fn handle_ipc_default_dispatch(
         &mut self,
         call: &PendingPluginCall,
         checked: &ipc::handler::CheckedRequest<'_>,
     ) {
         let response = self.dispatch_checked(checked);
-        // 코드를 함께 넘긴다. 여기서 버리면 plugin 이 그 실패를 `?` 로 흘릴 때 외부
-        // 호출자가 받는 코드가 전부 `-32000` 이 된다 — 호스트가 "인자를 고쳐라"
-        // (`-32602`)로 거절한 것까지 "서버 사정" 으로 바뀐다.
+        // 원래 오류 코드를 보존해야 인자 오류가 일반 서버 오류로 바뀌지 않는다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),
             None => (response.result, None, None),
@@ -225,8 +195,7 @@ impl App {
         }
     }
 
-    /// plugin 호출의 caller 컨텍스트. pre-gate 와 기본 갈래가 같은 것을 써야 한다 —
-    /// 게이트가 본 caller 와 핸들러가 본 caller 가 갈리면 게이트가 무의미해진다.
+    /// 사전 검사와 실제 라우팅에서 같은 caller를 사용한다.
     fn plugin_caller(call: &PendingPluginCall) -> ipc::caller::CallerContext {
         ipc::caller::CallerContext::Plugin {
             plugin_id: call.plugin_id.clone(),
@@ -234,7 +203,6 @@ impl App {
         }
     }
 
-    /// plugin 호출을 JSON-RPC 요청으로 옮긴다. pre-gate 와 기본 갈래가 공유한다.
     fn plugin_call_request(call: &PendingPluginCall) -> ipc::protocol::JsonRpcRequest {
         ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
@@ -253,41 +221,37 @@ mod tests {
     use std::collections::HashSet;
     use tasty_plugin_manifest::Permission;
 
-    /// 이 파일의 소스 — 테스트 모듈 자신은 뺀다. 안 빼면 아래 문자열 리터럴이
-    /// 스캔 대상에 걸려 가드가 자기를 보고 통과한다.
+    /// 시험 문자열을 실제 호출로 오인하지 않도록 test 모듈 앞까지만 읽는다.
     fn source() -> &'static str {
         let full = include_str!("plugin_ipc.rs");
         full.split("\n#[cfg(test)]").next().unwrap_or(full)
     }
 
-    /// 스캐너가 살아 있는가 — 찾는 형태가 실제로 있고, 없는 형태는 없다고 나오는가.
-    /// 이게 없으면 아래 테스트들이 "위반 없음" 인지 "아무것도 안 봄" 인지 못 가른다.
+    /// 실제 소스에서 검사할 호출·분기와 주석 속 이름이 모두 남아 있는지 확인한다.
     #[test]
     fn the_scanner_sees_this_file() {
         let src = source();
         assert!(
             src.contains("pub(crate) fn process_plugin_ipc_calls"),
-            "진입 함수를 못 찾았다 — 이름이 바뀌었으면 이 가드도 같이 고쳐라"
+            "진입 함수를 찾지 못했다. 이름이나 형태가 바뀌었는지 확인한다."
         );
         assert!(
             !src.contains("#[cfg(test)]"),
-            "테스트 모듈이 스캔 대상에 남아 있다 — 가드가 자기 리터럴을 본다"
+            "스캔 대상에 테스트 모듈이 남아 있어 시험 문자열을 실제 소스로 읽을 수 있다."
         );
         assert!(
             src.matches("if call.method ==").count() >= 4,
-            "갈래 분기를 못 찾았다: {}",
+            "메서드 분기가 하한보다 적다: {}",
             src.matches("if call.method ==").count()
         );
-        // 판정 형태는 **호출 형태**여야 한다. 맨 이름은 산문(주석)에도 나오므로,
-        // 그걸로 세면 주석 한 줄이 가드를 영구히 빨갛게 만든다.
+        // 아래 ensure_allowed 설명은 호출 형태와 주석 속 이름을 구별하는 대조 입력이다.
         assert!(
             src.contains("ensure_allowed"),
-            "산문 앵커가 사라졌다 — 호출 형태 판정이 산문과 갈리는지 확인할 수 없다"
+            "ensure_allowed 설명이 없어 호출 형태와 주석 속 이름의 구별을 확인할 수 없다."
         );
     }
 
-    /// 게이트는 갈래 분기보다 **먼저** 돈다. 어느 한 갈래라도 게이트 위로 올라오면
-    /// 그 갈래는 권한·cap·rate·audit 를 통째로 건너뛴다 — 그게 ADR-0012가 고친 것이다.
+    /// 원문의 게이트 호출 위치가 첫 메서드 분기보다 앞서는지 확인한다.
     #[test]
     fn the_entry_gates_before_it_branches() {
         let src = source();
@@ -299,35 +263,28 @@ mod tests {
             .expect("갈래 분기를 못 찾았다");
         assert!(
             gate < first_branch,
-            "게이트({gate})가 첫 갈래({first_branch})보다 뒤에 있다 — \
-             그 사이의 갈래는 검사 없이 응답한다"
+            "원문에서 게이트({gate})가 첫 메서드 분기({first_branch})보다 뒤에 있다."
         );
     }
 
-    /// 갈래 핸들러가 자기 권한 검사를 따로 들고 있으면 안 된다. 들고 있으면 그 갈래만
-    /// 권한 한 축을 보고 cap·rate·audit 는 계속 빠진 채 "게이트가 있다" 로 읽힌다 —
-    /// 수정 전 상태가 정확히 그거였다.
+    /// 분기 안에서 권한 검사만 따로 호출하는 형태가 남았는지 확인한다.
     #[test]
     fn no_branch_carries_its_own_permission_check() {
         let src = source();
         let n = src.matches(".ensure_allowed(").count();
         assert_eq!(
             n, 0,
-            "갈래가 자기 권한 검사를 들고 있다({n} 곳) — 권한 판단은 진입부 \
-             pre-gate 한 자리에서만 한다"
+            "분기 안의 권한 검사 호출이 {n}곳이다. 진입부의 공통 게이트를 사용하는지 확인한다."
         );
     }
 
-    /// 진입부에는 면제가 없다 — 모든 갈래가 게이트를 탄다. `host.shared_buffer.create`
-    /// 는 `METHOD_TABLE` 에 등재돼 있어(현재 요구 토큰 없음) 게이트를 통과하지, 게이트를
-    /// 건너뛰는 것이 아니다. 면제를 하나라도 되살리면 그 메서드만 cap·rate·audit 밖으로
-    /// 빠지므로 수를 0 으로 박는다.
+    /// shared buffer도 공통 게이트를 통과한다. 면제 표지나 알려진 조기 continue 형태를 검사한다.
     #[test]
     fn the_entry_gates_every_branch_without_exemption() {
         let src = source();
         assert!(
             !src.contains("PRE_GATE_EXEMPT"),
-            "면제 목록이 되살아났다 — 게이트 밖으로 빼는 대신 METHOD_TABLE 에 등재해라"
+            "면제 목록 표지가 있다. METHOD_TABLE 등록과 공통 게이트 적용 여부를 확인한다."
         );
         assert!(
             !src.contains("continue;\n            }\n            let caller"),
@@ -335,9 +292,7 @@ mod tests {
         );
     }
 
-    /// 헤드리스 진입부도 같은 순서를 지킨다. GUI 만 재고 넘어가면 절반만 닫힌다 —
-    /// 헤드리스의 일반 경로는 `handle_with_caller` 직결이라 안쪽 게이트를 타지만,
-    /// 인터셉트는 그 함수에 도달하지 않아 게이트 밖이었다.
+    /// 헤드리스 소스에서도 게이트와 첫 인터셉트의 원문 위치를 비교한다.
     #[test]
     fn the_headless_entry_also_gates_before_it_intercepts() {
         let src = include_str!("../../boot/headless_plugins.rs");
@@ -354,20 +309,16 @@ mod tests {
             .expect("헤드리스 인터셉트를 못 찾았다");
         assert!(
             gate < intercept,
-            "게이트({gate})가 인터셉트({intercept})보다 뒤에 있다 — \
-             그 갈래는 검사 없이 응답한다"
+            "원문에서 게이트({gate})가 인터셉트({intercept})보다 뒤에 있다."
         );
         assert_eq!(
             body.matches("call.method ==").count(),
             1,
-            "헤드리스가 이름으로 가로채는 갈래가 하나가 아니다 — 늘었으면 각각이 \
-             게이트 뒤인지 확인해야 한다"
+            "헤드리스의 메서드명 분기 수가 달라졌다. 각 분기가 게이트 뒤에 있는지 확인한다."
         );
     }
 
-    /// 양방향 대조 — 막히는 것만 세면 "전부 막았다" 와 구별이 안 된다. 합성 권한
-    /// 집합으로 세운다: 실제 plugin 매니페스트를 쓰면 그 매니페스트가 바뀌는 순간
-    /// 이 테스트는 조용히 거짓 초록이 된다.
+    /// 허용·거절을 모두 확인하며 실제 매니페스트 변경에 영향받지 않도록 합성 권한을 사용한다.
     #[test]
     fn the_gate_denies_without_the_token_and_allows_with_it() {
         let without = crate::ipc::caller::CallerContext::Plugin {
@@ -384,8 +335,7 @@ mod tests {
         );
         assert!(
             with.ensure_allowed("banner.open").is_ok(),
-            "ui.banner 를 들고도 banner.open 이 막혔다 — 통제군이 죽으면 \
-             '전부 막혔다' 와 구별되지 않는다"
+            "ui.banner 권한이 있는 호출도 거절됐다. 허용 입력이 통과하는지 확인한다."
         );
     }
 }
