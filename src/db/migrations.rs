@@ -1,16 +1,5 @@
-//! 단일 schema 모델.
-//!
-//! 0.4 fresh-start 정책: 하위 호환을 위한 마이그레이션 체인은 제거됐다.
-//! 신규 DB(`user_version == 0`)는 `SCHEMA_SQL`을 한 번 적용하고 `user_version`을
-//! `SCHEMA_VERSION`으로 박는다. 다른 버전이면 `SchemaMismatch` 에러를 반환해서
-//! 호출자가 사용자에게 안내한 뒤 종료한다.
-//!
-//! **이미 같은 버전이면 additive ensure 다 — no-op 이 아니다.** v1 이 나간 뒤에 생긴
-//! 테이블은 버전을 안 올리고 그 갈래로만 기존 DB 에 닿으므로, 거기서 `SCHEMA_SQL` 뒤에
-//! 붙는 `CREATE TABLE IF NOT EXISTS` 들이 다시 돌아야 한다. 그 갈래에 무엇을 넣어도
-//! 되는 것은 아니다 — 규칙과 근거는 `docs/design/systems/storage.md` 의 "단일 schema
-//! 모델" 절에 있고, `an_existing_database_still_gets_the_tutorial_table` 이 고정한다.
-//! (`memory.db` 쪽은 같은 모양이되 그 갈래가 진짜 `no-op` 이다 — 섞어 읽지 마라.)
+//! 새 DB에는 현재 스키마를 만들고 다른 user_version은 오류로 거부한다.
+//! 같은 버전도 tutorial_progress 생성문을 다시 실행한다. 기존 테이블 구조 전체를 검사하거나 고치지는 않는다.
 
 use rusqlite::Connection;
 
@@ -68,11 +57,6 @@ impl From<rusqlite::Error> for DbSchemaError {
     }
 }
 
-/// 새 DB라면 schema 를 적용하고, 같은 버전이면 **additive ensure**(`CREATE TABLE IF NOT
-/// EXISTS` 만 다시 돌린다), 다른 버전이면 mismatch.
-///
-/// 같은-버전 갈래가 no-op 이 아니라는 것이 이 함수에서 제일 놓치기 쉬운 지점이다 —
-/// 모듈 머리말 참조.
 pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
     let current: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
 
@@ -121,9 +105,6 @@ mod tests {
         assert_eq!(ver, SCHEMA_VERSION);
     }
 
-    /// 이름이 `second_call_is_noop` 이 아닌 이유: 두 번째 호출이 버전을 안 바꾸는 것은
-    /// 참이지만 **그 갈래 자체는 no-op 이 아니다**(additive ensure). 식별자가 그 낱말을
-    /// 들고 있으면 이 파일에서 그 오해를 지운 의미가 없어진다.
     #[test]
     fn a_second_call_leaves_the_version_alone() {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -135,17 +116,10 @@ mod tests {
         assert_eq!(ver, SCHEMA_VERSION);
     }
 
-    /// 이미 `SCHEMA_VERSION` 인 DB 에도 `tutorial_progress` 가 보장된다.
-    ///
-    /// **왜 이것을 따로 고정하나.** fresh-start 정책은 마이그레이션 체인이 없다는 뜻이고,
-    /// 그래서 v1 이 나간 뒤에 생긴 테이블은 `current == SCHEMA_VERSION` 갈래의 additive
-    /// ensure 로만 기존 DB 에 닿는다. 그 갈래는 버전을 안 올리므로 스키마 변경을 여기에
-    /// 얹어도 버전 값으로는 아무 신호가 안 난다 — 실측하면 그 줄을 지워도 나머지 시험이
-    /// 전부 초록이었다. 없으면 기존 사용자의 튜토리얼 진행이 런타임 warn 으로만 깨진다.
+    /// 기존 버전 DB에 tutorial_progress 테이블이 없던 경우도 생성하는지 확인한다.
     #[test]
     fn an_existing_database_still_gets_the_tutorial_table() {
         let mut conn = Connection::open_in_memory().unwrap();
-        // v1 이 나갈 때의 DB — 본 스키마만 있고 뒤에 생긴 테이블은 없다.
         conn.execute_batch(SCHEMA_SQL).unwrap();
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)
             .unwrap();
@@ -181,8 +155,6 @@ mod tests {
 
     #[test]
     fn older_user_version_is_mismatch() {
-        // 0.4 이전 DB가 user_version=1로 박혀 있었다면 SCHEMA_VERSION이 같아 OK가 맞다.
-        // 하지만 명시적으로 다른 값을 갖고 있으면 mismatch.
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "user_version", 2u32).unwrap();
         let err = ensure_schema(&mut conn).unwrap_err();

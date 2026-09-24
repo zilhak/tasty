@@ -1,19 +1,10 @@
-//! identify 결과 · picker 결과를 적용한다 — GUI 동작이다.
-//!
-//! 매칭 handler 가 없으면 picker popup 을 열고(`state.dialogs`·`state.popups` 를 만진다),
-//! 있으면 1 순위를 실행한다. 두 함수 모두 창 상태(`AppState`)를 바꾸므로 도메인(`core`)이
-//! 아니라 이 GUI 쪽 모듈에 있다. 호출자는 `App::apply_identify_result`(`AppEvent::IdentifyDone`)
-//! 와 `App::dispatch_pending_picker_results` 다.
+//! 비동기 식별·picker 결과를 GUI 상태에 적용한다.
 
 use crate::core::{Core, CoreState};
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
 use crate::state::{AppState, FileHandlerPickerResult};
 
-/// IdentifyWorker 의 비동기 detect 결과 적용. `event_handler` 가
-/// `AppEvent::IdentifyDone` 수신 시 직접 호출. detector 매칭 handler 가
-/// 있으면 1순위 자동 실행, 없으면 picker popup 오픈 (state.dialogs +
-/// state.popups mutate). 옛 `file_dispatch::apply_identify_result` 본문 흡수.
 pub(crate) fn apply_identify_result(
     core: &mut Core,
     state: &mut AppState,
@@ -36,9 +27,7 @@ pub(crate) fn apply_identify_result(
     };
     let target = DispatchTarget::File(target);
     if handlers.is_empty() {
-        // 이 detector 에 매칭되는 handler 가 없다 — 시스템에 등록된 다른
-        // handler 라도 fallback 후보로 보여준다(picker 의 empty-state 완화).
-        // 선택되어도 이 detector 에 영구 등록되지 않는 1회성 dispatch.
+        // 매칭이 없으면 전체 핸들러를 일회성 선택지로 보여준다. detector 연결을 저장하지 않는다.
         let fallback = engine.file_handler.all_handlers();
         crate::file::dispatch::open_picker(
             state,
@@ -55,9 +44,7 @@ pub(crate) fn apply_identify_result(
         }
         return;
     }
-    // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
     let first = handlers.into_iter().next().expect("non-empty checked");
-    // 파일 대상은 모든 핸들러가 받으므로(`handler_accepts_target`) 거절되지 않는다.
     crate::file::dispatch::execute_handler_action(
         core,
         state,
@@ -70,11 +57,8 @@ pub(crate) fn apply_identify_result(
     );
 }
 
-/// Picker popup 결과를 적용 — `redraw.rs` frame end 가 직접 호출.
-/// `Selected(id)` 면 handler 실행 + recent 기록, `Cancelled` 면 no-op.
-/// 옛 `file_dispatch::consume_picker_result` 본문 흡수. dialogs 슬롯 해제는
-/// caller (redraw) 가 본 method 호출 *전에* 처리한다 — 빠른 popup 재오픈
-/// 시에도 결과 중복 처리 없음을 보장하기 위함.
+/// 선택된 핸들러 실행을 요청한다. picker 상태 해제는 호출자가 먼저 처리한다.
+/// 핸들러가 사라진 경우에도 선택 이력을 기록하는 현재 동작이 있다.
 pub(crate) fn apply_file_picker_result(
     core: &mut Core,
     state: &mut AppState,
@@ -100,7 +84,7 @@ pub(crate) fn apply_file_picker_result(
         engine.record_file_handler_pick(&handler_id);
         return;
     };
-    // Record only accepted actions; rejected targets must not return as recent picks.
+    // true는 요청 수락을 뜻하며 외부 프로그램이나 plugin의 최종 성공 확인은 아니다.
     if crate::file::dispatch::execute_handler_action(
         core,
         state,
@@ -115,7 +99,6 @@ pub(crate) fn apply_file_picker_result(
     }
 }
 
-/// Non-selection results have no handler action or recent entry.
 fn selected_handler_id(result: FileHandlerPickerResult) -> Option<crate::file::handler::HandlerId> {
     match result {
         FileHandlerPickerResult::Selected(id) => Some(id),
@@ -142,9 +125,7 @@ mod tests {
     use super::*;
     use crate::core::builder::CoreBuilder;
 
-    /// `mirror_structural_guard_tests::build_test_core` 와 동형(모든 port
-    /// mock/in-memory 주입). `apply_identify_result` 의 empty-handler 분기는 어떤
-    /// port 도 건드리지 않지만 메서드 자체가 `Core` 를 요구해 완전한 인스턴스가 필요.
+    /// 직접 쓰지 않는 port도 Core 생성에 필요하므로 검사 대역을 주입한다.
     pub(super) fn build_test_core() -> (Core, CoreState) {
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
@@ -179,10 +160,6 @@ mod tests {
         (core, engine)
     }
 
-    /// Case A — detector 가 매칭하는 handler 는 0개지만(`html-system` /
-    /// `directory-system` 같은 host default 는 다른 detector 용으로 항상 존재)
-    /// picker 는 empty-state 로 떨어지지 않고 `all_handlers()` fallback 을
-    /// 후보로 노출해야 한다.
     #[test]
     fn picker_falls_back_to_all_handlers_when_no_detector_match() {
         let (mut core, mut engine) = build_test_core();
@@ -225,8 +202,6 @@ mod tests {
         );
     }
 
-    /// URL 대상을 URL 을 못 받는 핸들러(Ipc)로 실행하려 하면 picker 결과가 와도 실행하지
-    /// 않는다 — plugin 에 `{"path": "https://…"}` 가 가지 않고, recent 에도 안 남는다.
     #[test]
     fn picker_result_does_not_run_an_ipc_handler_on_a_url_target() {
         use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;

@@ -5,11 +5,7 @@ use winit::raw_window_handle::HasWindowHandle;
 
 use super::DragResult;
 
-/// 드래그 결과 cell 의 poison 을 보고했는가(첫 1 회만).
-///
-/// 임계구역은 `Option<DragResult>` 한 칸이라 패닉이 나도 불변식이 성립하고, 읽는 쪽이
-/// 메인 스레드라 패닉하면 창 전체가 죽는다 — 복구가 맞다. 조용히 버리면 결과가
-/// `Accepted` 로 fallback 해 **사용자가 취소한 드래그가 수락으로 보고된다**.
+/// poison 로그를 한 번만 남긴다. 기존 결과를 버리면 기본 Accepted로 잘못 바뀔 수 있어 보존한다.
 static DRAG_RESULT_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 const DRAG_RESULT_WHAT: &str = "file drag result cell";

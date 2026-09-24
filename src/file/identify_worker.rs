@@ -1,10 +1,4 @@
-//! 비동기 파일 식별 worker.
-//!
-//! 콜사이트(예: mouse hover, Ctrl+click) 가 `spawn()` 으로 식별 요청을 던지면
-//! background thread 가 `FileFormatRegistry::identify` 를 호출하고, 결과를 winit
-//! `EventLoopProxy` 를 통해 `AppEvent::IdentifyDone` 으로 main thread 에 돌려준다.
-//!
-//! Phase B 인프라 — 콜사이트 본 연결은 Phase C 의 mouse.rs 변경에서 시작한다.
+//! 파일 식별을 작업 스레드에서 수행하고 요청 origin과 함께 이벤트 루프로 돌려보낸다.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,7 +8,6 @@ use winit::event_loop::EventLoopProxy;
 use crate::AppEvent;
 use crate::file::format::{DetectDepth, FileFormatRegistry, FileTarget};
 
-/// 식별 요청의 진단용 식별자. 각 요청은 독립적으로 완료된다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IdentifyRequestId(pub u64);
 
@@ -39,12 +32,8 @@ impl IdentifyWorker {
         }
     }
 
-    /// 식별 요청을 백그라운드 thread 로 디스패치. 즉시 반환한다.
-    ///
-    /// 결과는 main thread 의 winit event loop 가 `AppEvent::IdentifyDone` 으로 받는다.
-    /// 동시 요청이 여러 개여도 worker 들은 독립적으로 동작하며, 결과는 도착 순서가
-    /// 보장되지 않는다. 완료는 각 요청의 origin으로 전달하며 최신 요청 하나만 남기지
-    /// 않는다. 취소 API는 없고 origin 소멸 시 완료를 안전하게 폐기한다.
+    /// 요청마다 스레드를 만든다. 결과 순서나 동시 스레드 수 제한·취소 기능은 없다.
+    /// origin이 사라졌는지 확인하고 결과를 버리는 일은 GUI 적용 경로가 맡는다.
     pub fn spawn(
         &self,
         target: FileTarget,
@@ -82,7 +71,6 @@ impl crate::core::identify_port::IdentifySpawner for IdentifyWorker {
         dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
     ) {
-        // 요청 id 는 도메인이 추적하지 않는다(포트 문서).
         let _id = self.spawn(
             target,
             depth,
@@ -97,11 +85,9 @@ impl crate::core::identify_port::IdentifySpawner for IdentifyWorker {
 mod tests {
     use super::*;
 
-    /// `IdentifyRequestId` 가 단조 증가하는지.
+    /// 독립 카운터의 증가만 검사한다. 실제 worker의 ID 발급 호출이나 overflow는 검사하지 않는다.
     #[test]
     fn request_ids_are_monotonic() {
-        // EventLoopProxy 가 없는 환경 (단위 테스트) 에서는 spawn 호출 자체가 어렵다.
-        // 대신 next_id 의 fetch_add 동작을 직접 검증.
         let counter = AtomicU64::new(1);
         let a = counter.fetch_add(1, Ordering::Relaxed);
         let b = counter.fetch_add(1, Ordering::Relaxed);

@@ -186,7 +186,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert!(state.pending_intents.is_empty());
     assert_eq!(engine.file_handler_recent.list().len(), recent_before);
 
-    // Preserve the pane while removing the explicitly named origin.
+    // pane은 남기고 명시 origin만 지워 포커스 대체 실행 여부를 확인한다.
     core.apply(
         &mut engine,
         DomainIntent::CreateTab {
@@ -240,16 +240,14 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert_eq!(engine.file_handler_recent.list().len(), recent_before);
 }
 
-/// ADR-0031의 축 — **에이전트** 가 명시 origin 으로 연 결과는 선택하지 않는다. 비동기
-/// 완료가 사용자가 보고 있던 탭을 갈아치우면 안 되기 때문이다. 사용자 경로는 반대이고
-/// 그것은 [`a_user_origin_selects_its_result_tab`] 이 고정한다(ADR-0031).
+/// 에이전트가 연 결과는 원래 사용자 선택을 유지해야 한다.
 #[test]
 fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine) = crate::state::tests::test_state();
     let origin = engine.workspaces[0].all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
-    // Select the new tab so the saved selection differs from the origin.
+    // 원래 origin과 선택된 탭을 다르게 둔다.
     core.apply(
         &mut engine,
         DomainIntent::CreateTab {
@@ -287,9 +285,7 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     }
 }
 
-/// ADR-0031 — 사용자가 자기 손으로 연 결과는 **선택된다.** explorer 더블클릭이 이 경로이고,
-/// 같은 pane 에 붙는다는 라우팅 계약(ADR-0031)은 그대로다. 두 단정이 함께 있어야 한다 —
-/// 선택만 보면 후보 B(origin 을 버려 focused pane 으로 보내기)도 통과한다.
+/// 사용자 결과는 선택돼야 하며 origin의 pane에 추가돼야 한다. 선택만 보면 잘못된 pane을 놓친다.
 #[test]
 fn a_user_origin_selects_its_result_tab() {
     let (mut core, _) = build_test_core();
@@ -325,6 +321,5 @@ fn a_user_origin_selects_its_result_tab() {
         after.tabs[after.tabs.len() - 1].id,
         "선택은 방금 append 된 탭이어야 한다"
     );
-    // 라우팅은 안 바뀐다 — `Intent::NewTab` 으로 위임되지 않았다(그쪽은 focused pane 을 고른다).
     assert!(state.pending_intents.is_empty());
 }

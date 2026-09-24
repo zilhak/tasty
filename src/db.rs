@@ -1,54 +1,8 @@
-//! SQLite 기반 영속 상태 저장소 (`~/.tasty/state.db`).
-//!
-//! 대상 도메인:
-//! - 최근 파일 (markdown / html)
-//! - 클립보드 히스토리 스키마 자리 (실제 기록 연결은 별도 단계)
-//!
-//! 사용자 설정(config.toml)이나 쉘 스크립트(bashrc)는 이 저장소에
-//! 들어가지 않는다 — 텍스트 편집/버전관리 대상은 그대로 파일 유지.
-//!
-//! ## 누가 이 저장소를 여는가
-//!
-//! **여는 쪽은 GUI 부팅 하나다.** [`init`] 과 [`default_db_path`] 는
-//! `cfg(feature = "gui")` 이고, 부르는 자리는 `src/app/` 의 부팅 경로 둘뿐이다.
-//! 헤드리스 빌드에는 이 DB 를 여는 코드가 **컴파일되지도 않는다** — 실측하면 헤드리스
-//! 데몬의 홈에는 `memory.db` 만 생기고 `state.db` 는 파일도 로그도 남지 않는다.
-//!
-//! 그래서 [`with_state_db`] 가 돌려주는 `None` 은 **"열려 있지 않다"** 는 뜻이다. 락이
-//! 깨진 경우는 여기 오지 않는다 — 그 함수가 복구해 `Some` 으로 돌려준다. 남는 출처는
-//! **둘**이고, 이 값으로는 **둘이 안 갈린다**:
-//!
-//! 1. 헤드리스라 여는 코드가 아예 없다
-//! 2. GUI 가 열다 실패했다
-//!
-//! **2 를 "앱이 끝나니까 안 보인다" 로 배제하지 마라 — 실측하면 보인다.** 부팅은
-//! `init()` 의 에러를 던지지 않고 변수에 담고(`src/app/boot_machine.rs` 의
-//! `init_boot_db_and_theme`), 상태를 **먼저** 만든 뒤(그 생성자 안에 소비자가 하나 있다 —
-//! `AppState::new` 의 `RecentFiles::load()`) 그제서야 안내 모달을 띄운다. 그 모달의
-//! `on_close` 가 `Exit(1)` 이라 **종료는 사용자가 확인을 누를 때** 나고, 그때까지 창은
-//! 살아 있고 IPC 도 답한다(실측: 열기를 실패시킨 채 30 초 뒤에도 생존, `recent.query` 가
-//! 헤드리스와 **글자 하나 다르지 않은** `{"recent":[]}` 를 돌려줬다).
-//!
-//! **소비자 계약은 그대로다**: `None` 은 오류가 아니라 "지금 이 프로세스에는 영속 저장이
-//! 없다" 이고, 기본값으로 떨어지면 된다. 바뀐 것은 **그 위에 무엇을 얹으면 안 되는가**다 —
-//! `None` 을 보고 *왜* 없는지 판단하지 마라. 특히 "`None` 이면 저장 실패를 사용자에게
-//! 안내하지 않는다" 류의 분기를 넣으면 DB 가 깨진 사용자에게 아무 안내도 안 간다. 그
-//! 구분에 필요한 `DbInitError` 는 부팅이 모달로 바꾼 뒤 **버린다**(어디에도 안 남는다).
-//! 구분이 필요해지면 먼저 그 값을 남기는 것부터 해야 하고, 그것은 동작 변경이다.
-//!
-//! ## `memory.db` 와 섞지 마라
-//!
-//! 에이전트 메모리(`crates/tasty-memory/`)는 **헤드리스에서도 열린다.** 접근자 이름도
-//! 다르다 — 저쪽은 `with_memory`, 이쪽은 [`with_state_db`]. 두 저장소가 공유하는 것은
-//! 연결 pragma 를 거는 함수 하나뿐이고(`tasty_memory::pragma::apply_connection_pragmas`),
-//! 수명·소유자·스키마 정책은 전부 별개다.
-//!
-//! 접근 규칙:
-//! - 메인 프로세스 단독 접근. 자식 CLI 프로세스는 IPC로 메인에 위임한다.
-//! - `init()`이 먼저 호출되어야 함. 실패하면 `DbInitError`로 반환되며,
-//!   호출자는 사용자에게 안내한 뒤 종료해야 한다 — 인메모리 폴백 없음.
+//! GUI의 state.db 연결. 헤드리스의 memory.db와는 수명·스키마가 다르다.
+//! init 실패는 부팅 코드가 안내 모달로 처리하며 확인 전에도 상태 조회가 일어날 수 있다.
+//! with_state_db의 None은 미초기화만 나타내므로 헤드리스와 GUI 초기화 실패를 구별할 수 없다.
+//! 사용자 설정과 셸 스크립트는 이 DB에 저장하지 않는다.
 
-// Disk initialization belongs to GUI boot; pure database tests also exercise it.
 #[cfg(any(feature = "gui", test))]
 mod migrations;
 
@@ -65,16 +19,14 @@ pub use migrations::DbSchemaError;
 
 pub struct Db {
     pub conn: Connection,
-    /// DB 수명에 묶인 최근 파일 캐시. 창마다 새 스냅샷을 만들지 않는다.
+    /// 여러 창이 같은 DB 수명의 최근 파일 캐시를 사용한다.
     pub(crate) recent_files: Option<crate::recent_files::RecentFiles>,
-    /// 열 때 건 연결 pragma 의 요청값과 되읽은 실제값(`system.pressure` 의
-    /// `db_pragmas.state_db`). 열린 뒤로 안 바뀐다.
+    /// 연결을 열 때 기록한 pragma 요청값·확인값. 이후 변경을 실시간으로 조회하지는 않는다.
     pub(crate) applied_pragmas: tasty_memory::pragma::AppliedPragmas,
 }
 
 #[cfg(any(feature = "gui", test))]
 impl Db {
-    /// 디스크 경로로 엶. 실패 시 Err.
     pub fn open(path: &Path) -> Result<Self, DbInitError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| classify_io(e, parent))?;
@@ -84,10 +36,7 @@ impl Db {
     }
 
     fn prepare(mut conn: Connection, path: &Path) -> Result<Self, DbInitError> {
-        // state.db 는 memory.db 와 **별개의 prepare** 를 쓰지만 연결 pragma 는 같아야
-        // 한다. 사본을 두면 한쪽만 고쳐지므로 두 DB 가 같은 함수를 부른다 —
-        // WAL·synchronous·foreign_keys 와 WAL 되감기 한도, 그리고 그 결과를 어떻게
-        // 관측하는지까지 그 함수의 doc 에 있다.
+        // 연결 옵션 정책은 memory.db와 공유하고 스키마 준비는 별도로 수행한다.
         let applied_pragmas = tasty_memory::pragma::apply_connection_pragmas(&conn, path);
 
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
@@ -104,7 +53,6 @@ impl Db {
     }
 }
 
-/// `init()` 결과. 각 variant가 사용자에게 보여줄 i18n key와 인자를 알고 있다.
 #[derive(Debug)]
 #[cfg(any(feature = "gui", test))]
 pub enum DbInitError {
@@ -119,7 +67,6 @@ pub enum DbInitError {
 
 #[cfg(any(feature = "gui", test))]
 impl DbInitError {
-    /// i18n key와 포맷용 인자 0~2개. main 쪽에서 `t`/`t_fmt`/`t_fmt2`로 분기한다.
     pub fn user_message_i18n(&self) -> (&'static str, Vec<String>) {
         match self {
             DbInitError::HomeDirMissing => ("db_error.home_missing", vec![]),
@@ -164,16 +111,12 @@ impl std::error::Error for DbInitError {}
 fn classify_io(err: io::Error, path: &Path) -> DbInitError {
     match err.kind() {
         io::ErrorKind::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
-        // io::ErrorKind::StorageFull은 nightly. raw OS 코드로 우회 가능하지만
-        // 실용성이 낮으므로 메시지에 의존한다.
         _ if err.raw_os_error() == Some(disk_full_os_error()) => DbInitError::DiskFull,
         _ => DbInitError::Other(format!("{path:?}: {err}", path = path.display())),
     }
 }
 
-/// "볼륨이 찼다" 를 OS 가 내는 raw 코드. `io::ErrorKind::StorageFull` 이 nightly 인 동안
-/// 이것이 그 판정의 유일한 자리다 — 값을 두 벌 두지 않으려고 db 밖에서도 이것을 부른다
-/// (`keybindings_tab::import_export::ExportFailReason::of_io`).
+/// 디스크 용량 부족의 OS 오류 코드. 다른 파일 저장 오류 분류에서도 사용한다.
 #[cfg(unix)]
 #[cfg(any(feature = "gui", test))]
 pub(crate) fn disk_full_os_error() -> i32 {
@@ -186,9 +129,7 @@ pub(crate) fn disk_full_os_error() -> i32 {
     112 // ERROR_DISK_FULL
 }
 
-/// 원인 표는 `memory.db` 와 같은 하나다(`tasty_memory::StorageFailure`) — 두 DB 가
-/// 표를 각자 들고 있으면 한쪽만 고쳐진다. `Io` 는 이 안내에 따로 된 문구가 없어
-/// `Other` 로 간다(그 표가 생기기 전과 같은 갈래).
+/// memory.db와 같은 SQLite 오류 분류를 사용한다. 일반 I/O 오류는 Other로 안내한다.
 #[cfg(any(feature = "gui", test))]
 fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
     use tasty_memory::StorageFailure;
@@ -196,7 +137,6 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
         StorageFailure::Busy => DbInitError::Busy(path.to_path_buf()),
         StorageFailure::Corrupt => DbInitError::Corrupt(path.to_path_buf()),
         StorageFailure::DiskFull => DbInitError::DiskFull,
-        // CANTOPEN은 권한/존재/디렉터리 등 복합 원인 — 권한으로 묶는다.
         StorageFailure::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
         StorageFailure::Io | StorageFailure::Other => {
             DbInitError::Other(format!("{}: {err}", path.display()))
@@ -206,17 +146,15 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
 
 static DB: OnceLock<Mutex<Db>> = OnceLock::new();
 
-/// `state.db` 접근 락의 poison 을 보고했는가(첫 1 회만).
 static DB_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const DB_WHAT: &str = "state.db connection";
 
-/// `state.db` 경로 (`tasty_home()/state.db`). `None`이면 홈 디렉터리 미확인.
 #[cfg(feature = "gui")]
 pub fn default_db_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("state.db"))
 }
 
-/// 앱 시작 시 1회 호출. 실패하면 호출자가 사용자에게 안내하고 종료해야 한다.
+/// GUI 부팅에서 초기화한다. 실패 안내와 이후 종료는 호출자가 맡는다.
 #[cfg(feature = "gui")]
 pub fn init() -> Result<(), DbInitError> {
     if DB.get().is_some() {
@@ -225,38 +163,13 @@ pub fn init() -> Result<(), DbInitError> {
     let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
     let db = Db::open(&path)?;
     tracing::info!("opened state.db at {}", path.display());
-    // OnceLock::set은 이미 set된 경우(Err)에만 실패하며, 위의 is_some() 검사가
-    // 통과해 여기 도달했으므로 race(다른 스레드가 동시 호출)인 경우만 Err.
-    // 두 스레드가 동일한 default_db_path를 두고 경쟁하는 케이스라 결과는 동일하다.
+    // 동시에 초기화한 연결이 먼저 등록됐다면 그 연결을 유지한다.
     let _ = DB.set(Mutex::new(db)); // 이미 초기화된 경우 무시 (OnceLock idempotent)
     Ok(())
 }
 
-/// `state.db` 싱글톤 접근. 열려 있지 않으면 `None`.
-///
-/// **이름이 `with_db` 가 아닌 이유**: 이 크레이트에는 SQLite 접근자가 둘이고
-/// (`with_memory` 가 `memory.db` 쪽), 호출부만 봐서는 어느 저장소인지 구분이 안 됐다.
-/// 둘이 같은 파일에 함께 나오는 자리가 없어 오독이 조용하다.
-///
-/// 헤드리스 빌드의 최근 파일 조회도 이 경로를 지난다. 연결 타입과 접근자는 두 빌드가
-/// 공유하되 여는 것은 GUI 부팅뿐이므로, 헤드리스에서는 항상 `None` 이다. **GUI 에서도
-/// `None` 이 올 수 있다** — 열기에 실패한 창이 안내 모달을 닫기 전까지 살아 있고, 그
-/// 구간을 지나는 소비자가 있다. 둘은 이 값으로 안 갈린다 — 모듈 머리말의 "누가 이
-/// 저장소를 여는가" 를 봐라.
-///
-/// Recent-file queries also use this path in headless builds. Keep the connection
-/// type and accessor shared even though only GUI boot initializes this database;
-/// an uninitialized database continues to return None to its existing callers.
-///
-/// Recent-file queries also use this path in headless builds. Keep the connection
-/// type and accessor shared even though only GUI boot initializes this database;
-/// an uninitialized database continues to return None to its existing callers.
-///
-/// poison 은 복구한다. 미완 트랜잭션은 unwind 때 rusqlite 의 RAII guard 가 rollback
-/// 하므로 연결은 불변식을 유지하고, 여기서 패닉하면 메인 스레드를 포함한 아무 데서나
-/// 호출되는 접근자라 창 전체가 죽는다. 조용히 `None` 을 돌려주면 호출자가 **"DB 가
-/// 아직 없다" 와 "락이 깨졌다" 를 구분할 수 없어**, 설정·최근 항목 저장이 원인 없이
-/// 사라진다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
+/// 초기화되지 않았으면 None이다. poison은 로그 후 기존 연결로 복구하며 None으로 숨기지 않는다.
+/// 이 접근자가 트랜잭션·캐시의 논리적 정합을 다시 검증하는 것은 아니다.
 pub fn with_state_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
     let mutex = DB.get()?;
     let mut guard: MutexGuard<'_, Db> =
@@ -268,10 +181,7 @@ pub fn with_state_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
 mod tests {
     use super::*;
 
-    /// `state.db` 는 `memory.db` 와 **별개의 `prepare`** 를 쓰지만 연결 pragma 는 한
-    /// 함수(`tasty_memory::pragma::apply_connection_pragmas`)에서 온다 — 사본이 없으니
-    /// 두 DB 의 상한이 서로 갈릴 수는 없다. 갈릴 수 있는 것은 **이 경로가 그 함수를
-    /// 계속 부르는가** 이고, `prepare` 에서 그 호출을 빼면 죽는 시험이 여기다.
+    /// Db::prepare가 공용 pragma 설정을 실제로 적용하는지 확인한다.
     #[test]
     fn journal_size_limit_matches_the_memory_store() {
         let tmp = tempfile::tempdir().unwrap();

@@ -171,7 +171,8 @@ impl CoreState {
         }
     }
 
-    /// 트리는 유지하고 store의 Terminal을 교체한 뒤 기존 Terminal을 drop한다. 없으면 Err다.
+    /// 트리는 유지하고 store의 Terminal을 교체한 뒤 기존 Terminal을 drop한다.
+    /// 기존 ID가 없으면 새 Terminal을 등록한 상태에서 Err를 반환한다.
     pub fn replace_terminal_by_id(
         &mut self,
         surface_id: u32,
