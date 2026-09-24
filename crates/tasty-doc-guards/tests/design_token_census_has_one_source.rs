@@ -1,54 +1,23 @@
-//! 토큰 census 를 말하는 자리가 **정본 하나와 갈리지 않는가.**
-//!
-//! 정본은 `crates/tasty-design-tokens/tests/freshness.rs` 의
-//! `token_census_matches_design_export` 다 — 티어별 셋과 합계 하나를 `assert_eq!` 로
-//! 박아 두어, vendor json 이 바뀌면 그 자리가 빨개진다.
-//!
-//! ## 왜 필요한가 — 같은 수가 세 자리에 있고 둘만 낡았다
-//!
-//! 그 수를 **산문으로 다시 적은 자리가 둘** 더 있다(크레이트 README 의 갱신 절차 4 단계,
-//! 크레이트 모듈 주석). 둘 다 정본에서 파생되지 않는다 — 손으로 적힌 사본이다.
-//!
-//! 실제로 갈렸다. `statusbar-glyph-size` 한 종이 들어와 census 가 817 → 818 이 된 회차에
-//! `freshness.rs` 만 818 로 갔고, 두 산문은 817 로 남았다. 빌드도 시험도 CI 도 전부
-//! 초록이었다 — 그 두 자리를 읽는 것이 레포에 없었기 때문이다. 그 상태에서 다음 사람이
-//! README 의 절차를 따라 "census 가 817 에서 바뀌었나" 를 판단하면 **틀린 기준과 견준다.**
-//!
-//! ## 무엇을 재는가
-//!
-//! - [`CLAIMS`] 의 각 자리가 정본과 **같은 수**를 적는가.
-//! - 그 크레이트 안에 **등록 안 된 census 서술**이 새로 생기지 않았는가. 자리를 하나
-//!   늘리고 명부에 안 올리면 그 자리는 영구히 안 보인다.
-//!
-//! ## 오차 방향
-//!
-//! **더 잡는 쪽으로 틀린다.** census 꼴(`a/b/c` 삼중항, `총 N 토큰`)을 쓰는 다른 문장이
-//! 그 크레이트에 생기면 등록을 요구한다. 그 처방(명부에 올려라 · 사유와 함께 제외해라)은
-//! 아무것도 헐겁게 만들지 않는다.
-//!
-//! ## 자동 채널
-//!
-//! `doc-guards.yml` 이 main push · PR 마다 이 크레이트를 돌린다(경로 필터 없음).
+//! tasty-design-tokens의 토큰 수 설명을 freshness.rs의 token_census_matches_design_export 기준값과 대조한다.
+//! 크레이트 안의 추적 Rust·Markdown 파일에서 census라는 말이나 현재 총 토큰 수 문구가 나오면
+//! CLAIMS 또는 사유를 적은 EXCLUDED에 등록하도록 한다. 일반적인 산문 의미를 판독하는 검사는 아니다.
+//! doc-guards.yml이 경로 필터 없이 main push·PR에서 실행한다.
 
 use std::path::PathBuf;
 
 const CANONICAL: &str = "crates/tasty-design-tokens/tests/freshness.rs";
 const CRATE_DIR: &str = "crates/tasty-design-tokens";
 
-/// census 를 산문으로 다시 적는 자리 — (파일, 그 수 **직전**의 고정 문구).
-///
-/// 문구로 집는 이유는 위치가 움직이기 때문이다. 문구가 바뀌면 그 자리를 못 찾아
-/// 실패하므로, 조용히 사면되는 갈래가 없다.
+/// 숫자 바로 앞 문구로 설명 위치를 찾는다. 문구가 바뀌면 함께 갱신해야 한다.
 const CLAIMS: &[(&str, &str)] = &[
     ("crates/tasty-design-tokens/README.md", "토큰 census("),
     ("crates/tasty-design-tokens/src/lib.rs", "component, 총 "),
 ];
 
-/// 등록 안 된 census 서술 검사에서 뺄 자리와 사유. **여유 0** 이다.
+/// 등록 검사에서 제외하는 파일과 근거.
 const EXCLUDED: &[(&str, &str)] = &[(
     CANONICAL,
-    "정본 자신이다. 여기 적힌 수는 사본이 아니라 판정하는 값이고, 지난 회차 수를 함께 \
-     적는 것이 그 파일의 일이다",
+    "검사의 기준값을 직접 선언하는 파일이다. 문서에 복제한 설명 수치와 구분한다.",
 )];
 
 fn repo_root() -> PathBuf {
@@ -108,7 +77,6 @@ fn canonical_census() -> (u32, u32, u32, u32) {
     (p, s, c, total)
 }
 
-/// 정본이 실제로 읽혔는가 — 이것이 먼저 통과해야 아래 대조의 초록이 뜻을 갖는다.
 #[test]
 fn the_canonical_census_is_actually_read() {
     let (p, s, c, total) = canonical_census();
@@ -120,7 +88,7 @@ fn the_canonical_census_is_actually_read() {
     ] {
         assert!(
             n > 0,
-            "정본에서 {what} census 를 {n} 으로 읽었다 — 0 이면 아래 대조가 안 보고 초록이 된다"
+            "기준 파일에서 {what} 수를 {n}으로 읽었다. 집합 비교 전에 숫자 추출을 확인한다."
         );
     }
     assert_eq!(
@@ -130,7 +98,6 @@ fn the_canonical_census_is_actually_read() {
     );
 }
 
-/// 명부의 자리가 실재하고, 정본과 같은 수를 적는가.
 #[test]
 fn every_prose_copy_states_the_canonical_census() {
     let (p, s, c, total) = canonical_census();
@@ -140,8 +107,7 @@ fn every_prose_copy_states_the_canonical_census() {
         let src = read(path);
         let Some(hit) = src.find(needle) else {
             problems.push(format!(
-                "{path}: 고정 문구 `{needle}` 이 없다 — 그 문장이 바뀌었으면 이 명부도 \
-                 함께 고쳐라(못 찾은 채 넘어가면 그 자리는 영구히 안 보인다)"
+                "{path}: 숫자 앞 문구 {needle}가 없다. 설명을 바꿨다면 CLAIMS도 갱신한다."
             ));
             continue;
         };
@@ -155,7 +121,7 @@ fn every_prose_copy_states_the_canonical_census() {
                 "{path}: 합계를 {claimed} 로 적는데 정본은 {total} 이다"
             ));
         }
-        // 삼중항이 이어지면 그것도 본다 — README 가 `818 = 121/143/554` 꼴로 적는다.
+        // 총합 뒤에 티어별 a/b/c가 있으면 함께 대조한다.
         let tail = &rest[after..];
         if let Some(eq) = tail.find('=')
             && tail[..eq].trim().is_empty()
@@ -176,13 +142,11 @@ fn every_prose_copy_states_the_canonical_census() {
 
     assert!(
         problems.is_empty(),
-        "토큰 census 의 산문 사본이 정본(`{CANONICAL}`)과 갈렸다. 정본이 맞으면 산문을 \
-         고치고, 산문이 맞으면 정본이 먼저 틀린 것이므로 vendor 갱신부터 다시 본다:\n  {}",
+        "토큰 수 설명이 {CANONICAL}의 기준값과 다르다. 디자인 원본을 확인해 기준값과 설명을 맞춘다:\n  {}",
         problems.join("\n  ")
     );
 }
 
-/// 등록 안 된 census 서술이 그 크레이트에 새로 생기지 않았는가.
 #[test]
 fn no_unregistered_census_phrase_lives_in_the_crate() {
     let registered: Vec<&str> = CLAIMS.iter().map(|(p, _)| *p).collect();
@@ -210,7 +174,7 @@ fn no_unregistered_census_phrase_lives_in_the_crate() {
     let files: Vec<&str> = listed.lines().filter(|l| !l.is_empty()).collect();
     assert!(
         files.len() >= 5,
-        "{CRATE_DIR} 에서 {} 개만 봤다 — 순회가 죽었으면 아래는 안 봐서 나온 초록이다",
+        "{CRATE_DIR}에서 추적 파일을 {}개만 읽었다. 수집 범위를 확인한다.",
         files.len()
     );
 
@@ -229,8 +193,6 @@ fn no_unregistered_census_phrase_lives_in_the_crate() {
 
     assert!(
         unregistered.is_empty(),
-        "census 를 서술하는 자리가 명부 밖에 있다: {unregistered:?}. 그 수를 주장하면 \
-         `CLAIMS` 에, 주장이 아니면 사유와 함께 `EXCLUDED` 에 넣어라 — 어느 쪽도 아니면 \
-         그 자리는 정본이 움직여도 안 따라온다"
+        "토큰 수 설명이 미등록 파일에 있다: {unregistered:?}. 수치 주장이면 CLAIMS에, 다른 용도이면 EXCLUDED에 사유와 함께 등록한다."
     );
 }

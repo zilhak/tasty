@@ -1,62 +1,18 @@
-//! **debug 게이트된 핸들러는 모듈 선언에 cfg 가 붙은 파일에 산다** — 배치를 판정한다.
-//!
-//! 프로젝트 규칙(`docs/identity.md` 원칙 1 / `CLAUDE.md` "핵심 원칙" 1)은 두 문장으로
-//! 돼 있고 **둘은 다른 물음**이다:
-//!
-//! - **판단 기준**(사람용): "에이전트가 자기 작업에 필요한가 vs 사용자 조작을 재현하는가".
-//! - **집행 형태**(코드용): "debug 핸들러는 **모듈 선언에 cfg 가 붙은 별도 파일**로 모은다".
-//!
-//! 이 가드는 **뒤쪽만** 묻는다. 앞쪽은 의미 물음이라 텍스트로 안 갈리고, 갈리는 척하면
-//! 이름 규약을 흉내 내게 된다. 뒤쪽은 순수 배치 규칙이라 의미를 하나도 안 묻고
-//! 판정된다 — 그래서 이 축은 만들 수 있고, 원칙 명부의 다른 [구두] 항목(2.3 의 셋)이
-//! 못 만들어진 이유와 **다른 이유로** 못 만들어지고 있었다. 2.3 은 "보고 vs 선택" 이 같은
-//! 식별자라 갈릴 수 없었고, 여기는 **의미 물음과 배치 물음을 안 갈랐던 것**뿐이다.
-//!
-//! # 판별식
-//!
-//! `src/adapters/ipc/` 아래 각 파일에서 `#[cfg(...debug_assertions...)]` 로 게이트된
-//! **최상위 항목**을 센다. 그 파일이 아래 둘 중 하나면 통과다:
-//!
-//! - 파일 머리에 `#![cfg(debug_assertions)]` 가 있다(파일 통째가 debug).
-//! - 부모 모듈 파일의 `mod <이름>;` 선언에 `debug_assertions` cfg 가 붙어 있다.
-//!
-//! 둘 다 아니면 **그 항목은 배치 축에서 노출된다** — 아래 [`KNOWN_PARENT_SITES`] 에
-//! 자리로 등록돼 있지 않는 한 위반이다.
-//!
-//! # 이 가드가 단정하지 않는 것
-//!
-//! - **그 항목이 사용자 조작 재현인지.** 안 묻는다(위 참조). 배치만 본다.
-//! - **release 에 안 나가는지.** 그건 `tests/ipc_release_table_excludes_input_reproduction.rs`
-//!   가 `METHOD_TABLE` 로 답하는 다른 물음이다. 이 가드는 그것을 대체하지 않는다.
-//! - **cfg 표현식의 의미.** `all(debug_assertions, feature = "gui")` 와 `debug_assertions`
-//!   를 구별하지 않는다 — 둘 다 "debug 게이트" 로 센다. 그 구별이 필요한 자리는 아래
-//!   허용 명부의 사유가 대신 적는다.
+//! IPC의 최상위 debug 조건부 항목이 별도 모듈에 모여 있는지 확인한다.
+//! 파일 머리의 내부 cfg나 부모의 mod 선언을 읽고, 예외는 이름과 사유로 등록한다.
+//! 사용자 조작 재현인지의 의미 판단과 release 빌드 제외 여부는 검사하지 않는다.
+//! release 메서드 목록은 tests/ipc_release_table_excludes_input_reproduction.rs에서 별도로 확인한다.
+//! cfg는 문자열로 판독하며 논리식을 계산하지 않는다. 배치 규칙은 docs/identity.md의 원칙1을 따른다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 스캔 뿌리 — 이 규칙이 말하는 영역.
 const SCAN_ROOT: &str = "src/adapters/ipc";
 
-/// 훑어야 할 최소 게이트 항목 수 — **모수가 살아 있다는 증거**.
-///
-/// 실측 30(2026-09-06). 여유를 두고 25 로 둔다 — 이것은 래칫이 아니라 **생존 바닥**이다.
-/// 정당한 제거마다 수를 고치게 만들면 그 수정이 습관이 되고, 습관이 되면 스캔이 죽었을
-/// 때도 같은 손이 움직인다(수 하나로 상태를 든 가드가 태생적으로 갖는 형태).
-///
-/// ★ 이 수를 **내려서 통과시키지 마라.** 내리면 "스캔이 죽었다" 와 "게이트된 항목이
-/// 없다" 가 같은 초록이 된다. debug 핸들러가 실제로 줄어 이 하한이 걸리면, 값을 고치기
-/// 전에 `rg 'cfg\(.*debug_assertions' src/adapters/ipc/` 로 **줄어든 자리를 먼저 세라**.
+/// 2026-09-06 실측30개에 여유를 둔 하한25다. 미달하면 실제 항목 감소와 추출 실패를 구별한다.
 const MIN_GATED_ITEMS: usize = 25;
 
-/// 부모 파일(모듈 선언에 cfg 가 없는 곳)에 사는 것이 **지금 허용되는** 자리.
-///
-/// 자리로 적는다 — 부류로 적으면 도망길이 된다. 각 줄에 **왜 여기 있는가**를 붙인다.
-///
-/// 지금 남은 둘은 **라우팅 지점**뿐이다. 한때 핸들러 본체 셋과 헬퍼 하나가 여기 있었는데,
-/// 그것들은 옮길 곳이 없어서(유일한 debug 모듈이 gui 게이트였다) 부모에 살던 부채였다 —
-/// `handler/debug_state.rs` 를 만들어 옮겼다. 아래 [`every_allowed_parent_site_still_exists`]
-/// 가 그 정리를 강제한다: 옮기고 명부를 안 지우면 빨개진다.
+/// 부모에 남겨야 하는 라우팅 항목만 이름과 사유로 허용한다.
 const KNOWN_PARENT_SITES: &[(&str, &str)] = &[
     (
         "route_debug_handler",
@@ -87,11 +43,7 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 그 줄이 debug 게이트 어트리뷰트인가.
-///
-/// `not(debug_assertions)` 는 **반대 방향**이다 — release 전용 코드이고 이 규칙의 대상이
-/// 아니다. 그래서 그 형태를 먼저 지우고 남은 것을 본다. 안 지우면 release 전용 헬퍼가
-/// debug 배치 위반으로 잡힌다(실측으로 그렇게 잡혔다).
+/// not(debug_assertions) 문자열을 제거한 뒤 debug_assertions가 남는지 본다. cfg 논리식을 계산하지 않는다.
 fn is_debug_gate(line: &str) -> bool {
     let t = line.trim();
     if !(t.starts_with("#[cfg(") || t.starts_with("#![cfg(")) {
@@ -101,7 +53,7 @@ fn is_debug_gate(line: &str) -> bool {
         .contains("debug_assertions")
 }
 
-/// 파일 통째가 debug 인가 — 머리의 내부 어트리뷰트.
+/// 파일 머리의 내부 cfg에서 debug_assertions 문자열을 찾는다. 부정 조건까지 구별하지는 않는다.
 fn whole_file_is_debug(text: &str) -> bool {
     text.lines()
         .take_while(|l| {
@@ -111,10 +63,7 @@ fn whole_file_is_debug(text: &str) -> bool {
         .any(|l| l.trim().starts_with("#![cfg(") && l.contains("debug_assertions"))
 }
 
-/// 부모 모듈 파일에서 `mod <이름>;` 선언을 찾아 그 앞의 cfg 를 본다.
-///
-/// 부모는 형제 `<디렉토리>.rs` 또는 `<디렉토리>/mod.rs` 다. 못 찾으면 "cfg 없음" 으로
-/// 센다 — 없는 쪽으로 세야 놓치지 않는다.
+/// 형제 디렉터리명.rs 또는 디렉터리/mod.rs에서 선언의 cfg를 찾는다. 못 찾으면 없음으로 판정한다.
 fn declaration_is_debug_gated(root: &Path, file: &Path) -> bool {
     let Some(stem) = file.file_stem().and_then(|s| s.to_str()) else {
         return false;
@@ -139,7 +88,6 @@ fn declaration_is_debug_gated(root: &Path, file: &Path) -> bool {
             if decl != format!("mod {stem};") {
                 continue;
             }
-            // 선언 바로 위에 붙은 어트리뷰트 줄들을 거슬러 본다.
             let mut j = i;
             while j > 0 {
                 j -= 1;
@@ -160,9 +108,7 @@ fn declaration_is_debug_gated(root: &Path, file: &Path) -> bool {
     false
 }
 
-/// 한 파일의 **최상위** debug 게이트 항목 이름들 — 파일 순회와 분리된 판정기.
-///
-/// 최상위만 센다(들여쓰기 0). 함수 안의 게이트는 배치 물음이 아니라 그 함수 안의 분기다.
+/// 공백으로 들여쓴 항목을 제외해 최상위 항목만 추출한다.
 fn gated_items(text: &str) -> Vec<(usize, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let mut out = Vec::new();
@@ -170,7 +116,6 @@ fn gated_items(text: &str) -> Vec<(usize, String)> {
         if line.starts_with("#![") || !is_debug_gate(line) || line.starts_with(' ') {
             continue;
         }
-        // 어트리뷰트 뒤의 첫 비-어트리뷰트/비-주석 줄이 그 항목이다.
         let mut j = i + 1;
         while j < lines.len() {
             let t = lines[j].trim();
@@ -184,7 +129,7 @@ fn gated_items(text: &str) -> Vec<(usize, String)> {
             continue;
         }
         let head = lines[j].trim_start();
-        // `mod x;` 선언은 **규칙이 요구하는 형태 그 자체**다 — 노출 대상이 아니라 통과 조건이다.
+        // cfg가 붙은 mod 선언은 분리 규칙을 충족하는 항목으로 구분한다.
         let is_mod_decl = head
             .trim_start_matches("pub(crate) ")
             .trim_start_matches("pub ")
@@ -211,7 +156,6 @@ fn every_debug_gated_item_lives_in_a_cfg_declared_file() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join(SCAN_ROOT), &mut files);
-    // 부모 파일 자신(`handler.rs`)도 대상이다.
     files.push(root.join("src/adapters/ipc/handler.rs"));
     files.sort();
     files.dedup();
@@ -228,14 +172,11 @@ fn every_debug_gated_item_lives_in_a_cfg_declared_file() {
         {
             continue;
         }
-        // 구분자 정규화는 한 벌만 둔다 — 손으로 펴면 Windows 에서 `\\` 가 남고
-        // 그 어긋남은 조용한 0 이다.
         let rel =
             tasty_doc_guards::source_text::repo_relative(file.strip_prefix(&root).unwrap_or(file))
                 .display()
                 .to_string();
         for (line, name) in items {
-            // `mod` 선언은 그 자체가 게이트다 — 부모에 있는 것이 정상이다.
             if name.starts_with("mod ") || KNOWN_PARENT_SITES.iter().any(|(n, _)| *n == name) {
                 continue;
             }
@@ -245,39 +186,23 @@ fn every_debug_gated_item_lives_in_a_cfg_declared_file() {
 
     assert!(
         gated >= MIN_GATED_ITEMS,
-        "debug 게이트 항목을 {gated} 개만 찾았다(하한 {MIN_GATED_ITEMS}) — 스캔이 죽었거나 \
-         게이트 형태가 바뀌었다. 그러면 아래 판정은 빈 집합을 훑고 조용히 통과한다. \
-         ★ 수를 내려서 통과시키지 마라: 줄어든 자리를 먼저 세라."
+        "debug 조건부 항목을 {gated}개만 읽었다(하한 {MIN_GATED_ITEMS}). 실제 항목 수와 cfg 형태를 확인한 뒤 하한 변경 여부를 판단한다."
     );
 
     assert!(
         exposed.is_empty(),
-        "debug 로 게이트된 항목이 **모듈 선언에 cfg 가 없는 파일**에 있다:\n{}\n\n\
-         규칙의 집행 형태는 배치다 — debug 전용 코드는 `#[cfg(debug_assertions)]` 가 붙은 \
-         `mod` 선언을 가진 파일에 모은다. 그래야 그 파일을 통째로 지우는 것만으로 release \
-         표면이 깨끗이 사라지는지 눈으로 확인된다.\n  \
-         고치는 길 둘: (가) 그 항목을 이미 cfg 선언된 모듈로 옮겨라. (나) 옮길 곳이 없으면 \
-         **새 debug 모듈을 만들어라** — `debug` 모듈은 gui 게이트라 headless 에서 사라지므로, \
-         headless 에서도 살아야 하는 핸들러는 그쪽으로 못 간다. 선례가 있다: `debug_nav` · \
-         `debug_terminal` · `debug_plugin` 은 gui 게이트 없이 `#[cfg(debug_assertions)]` 만 \
-         붙어 선언돼 있다.\n  \
-         ★ 라우팅 지점은 예외다(부모에 살아야 한다). 그런 자리는 이 파일의 \
-         `KNOWN_PARENT_SITES` 에 **자리와 사유**로 등록한다 — 부류로 넓히지 마라.",
+        "debug 조건부 항목이 분리되지 않은 파일에 있다:\n{}\ncfg가 붙은 모듈로 옮기거나 새 모듈을 만든다. 헤드리스에서도 필요한 핸들러를 gui 전용 모듈로 옮기면 안 된다. 부모에 필요한 라우팅 항목만 KNOWN_PARENT_SITES에 이름과 사유를 등록한다.",
         exposed.join("\n")
     );
 }
 
-/// 허용 명부가 **살아 있는가** — 등록만 해 두고 자리가 사라진 항목을 잡는다.
-///
-/// 죽은 예외는 다음 사람에게 "이 부류는 봐준다" 로 읽힌다. 실제로 그 이름이 부모에
-/// 남아 있을 때만 명부에 있어야 한다.
+/// 오래된 예외가 같은 이름의 새 항목을 숨기지 않도록 부모에 항목이 남아 있는지 확인한다.
 #[test]
 fn every_allowed_parent_site_still_exists() {
     let root = repo_root();
     let text = std::fs::read_to_string(root.join("src/adapters/ipc/handler.rs"))
         .expect("handler.rs 를 읽지 못했다");
     let names: Vec<String> = gated_items(&text).into_iter().map(|(_, n)| n).collect();
-    // `mod` 선언은 허용 명부의 대상이 아니다 — 위 판정에서 이미 통과 조건이다.
     let dead: Vec<&str> = KNOWN_PARENT_SITES
         .iter()
         .map(|(n, _)| *n)
@@ -285,13 +210,10 @@ fn every_allowed_parent_site_still_exists() {
         .collect();
     assert!(
         dead.is_empty(),
-        "허용 명부에 있는데 부모 파일에 그 자리가 없다: {dead:?}\n  \
-         옮겼으면 명부에서도 지워라 — 남겨 두면 다음에 같은 이름이 부모에 생겼을 때 \
-         조용히 통과한다."
+        "부모 파일에서 사라진 예외다: {dead:?}. 이동한 항목의 예외를 제거해 같은 이름의 새 항목이 통과하지 않게 한다."
     );
 }
 
-/// 판독기가 **양쪽 답을 다 낸다**.
 #[test]
 fn the_reader_answers_both_yes_and_no() {
     let gated = "#[cfg(debug_assertions)]\nfn handle_x() {}\n";
@@ -306,19 +228,16 @@ fn the_reader_answers_both_yes_and_no() {
     let combined = "#[cfg(all(debug_assertions, feature = \"gui\"))]\nmod debug;\n";
     assert_eq!(gated_items(combined), vec![(1, "mod debug".to_string())]);
 
-    // 반대 방향 — release 전용은 이 규칙의 대상이 아니다.
     let release_only = "#[cfg(not(debug_assertions))]\nfn only_in_release() {}\n";
     assert!(gated_items(release_only).is_empty());
 }
 
-/// 함수 **안**의 게이트는 배치 물음이 아니다 — 들여쓰기로 가른다.
 #[test]
 fn a_gate_inside_a_function_is_not_a_placement_question() {
     let text = "fn handle_request() {\n    #[cfg(debug_assertions)]\n    let x = 1;\n}\n";
     assert!(gated_items(text).is_empty());
 }
 
-/// 파일 통째가 debug 인 형태를 알아본다 — `popup.rs` 가 그 형태다.
 #[test]
 fn an_inner_attribute_marks_the_whole_file() {
     let text = "//! doc\n\n#![cfg(debug_assertions)]\n\nfn f() {}\n";
@@ -326,26 +245,13 @@ fn an_inner_attribute_marks_the_whole_file() {
     assert!(!whole_file_is_debug("fn f() {}\n"));
 }
 
-/// **양성 대조 — 디스크를 읽는 두 판독.**
-///
-/// 이 파일의 텍스트 술어([`gated_items`]·[`whole_file_is_debug`]·[`is_debug_gate`])는
-/// 이미 셋이 건다. 안 걸려 있던 것은 디스크를 읽는 둘이다:
-/// [`rs_files`](순회)와 [`declaration_is_debug_gated`](부모 모듈에서 선언을 찾는 판독).
-///
-/// 뒤쪽이 특히 값이 크다. 그것은 **"못 찾으면 게이트 없음"** 으로 세는데, 그 기본값이
-/// 위반 쪽이라 판독이 조용히 좁아지면 **없는 위반**이 뜬다. 그 처방("이 항목을 cfg 선언된
-/// 파일로 옮겨라")은 이미 옳게 배치된 파일에 대해 참이 아니다. 하한(`MIN_GATED_ITEMS`)은
-/// 항목 수만 보므로 이 방향을 못 본다.
-///
-/// ★ 여기 쓰는 모듈·파일 이름은 전부 합성이다 — `SCAN_ROOT` 나
-/// `KNOWN_PARENT_SITES` 의 값을 안 쓴다.
+/// 실제 IPC 파일과 무관한 합성 트리로 순회 범위와 두 부모 모듈 형식을 확인한다.
 #[test]
 fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
     let probe = Scratch::new("debug-placement");
     let root = probe.path();
     std::fs::create_dir_all(root.join("outer/inner")).expect("합성 트리를 만들지 못했다");
 
-    // 부모는 형제 `<디렉토리>.rs` 다.
     std::fs::write(
         root.join("outer.rs"),
         "#[cfg(debug_assertions)]\n\
@@ -355,7 +261,6 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
          mod inner;\n",
     )
     .expect("합성 부모(.rs) 실패");
-    // 부모는 `<디렉토리>/mod.rs` 이기도 하다.
     std::fs::write(
         root.join("outer/inner/mod.rs"),
         "#[cfg(not(debug_assertions))]\n\
@@ -378,17 +283,13 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
     ] {
         std::fs::write(root.join(f), "fn x() {}\n").expect("합성 모듈 실패");
     }
-    // `.rs` 가 아닌 것 — 순회 밖이다.
     std::fs::write(root.join("outer/notes.md"), "#[cfg(debug_assertions)]\n")
         .expect("합성 문서 실패");
 
-    // ── 판독 1: 순회 ────────────────────────────────────────────────────
     let mut found = Vec::new();
     rs_files(root, &mut found);
     let mut rels: Vec<String> = found
         .iter()
-        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
-        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
         .map(|p| {
             tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&root).unwrap_or(p))
                 .display()
@@ -415,7 +316,6 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
         "`.rs` 가 아닌 파일을 모았다 — 문서가 이 어트리뷰트를 인용만 해도 판정에 들어온다"
     );
 
-    // ── 판독 2: 선언이 cfg 로 게이트됐는가 ──────────────────────────────
     let gated = |rel: &str| declaration_is_debug_gated(root, &root.join(rel));
 
     assert!(
@@ -428,8 +328,7 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
     );
     assert!(
         !gated("outer/after_gated.rs"),
-        "**앞 선언에 붙은** 어트리뷰트를 뒤 선언의 것으로 셌다 — 게이트 안 된 항목이 \
-         게이트된 것으로 통과한다"
+        "앞 모듈 선언의 cfg를 뒤 선언의 조건으로 잘못 읽었다"
     );
     assert!(
         !gated("outer/plain.rs"),
@@ -441,10 +340,8 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
     );
     assert!(
         !gated("outer/inner/orphan.rs"),
-        "어느 부모도 선언하지 않은 파일을 게이트된 것으로 셌다 — 기본값은 '게이트 없음' 이라야 \
-         놓치지 않는다"
+        "부모 선언이 없는 파일을 cfg로 제한된 모듈로 판정했다"
     );
-    // `mod.rs` 자신은 자기 부모가 아니다.
     assert!(
         !gated("outer/inner/mod.rs"),
         "`mod.rs` 가 자기 자신을 부모로 읽었다"

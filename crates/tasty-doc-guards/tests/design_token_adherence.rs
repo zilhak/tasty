@@ -1,47 +1,17 @@
-//! 시각 토큰 준수 가드 — 간격/폰트 크기/선 굵기 리터럴의 재유입을 차단한다.
+//! UI 소스의 인라인 간격·폰트·선 굵기·반경 값과 primitive 색 접근을 검사한다.
+//! 간격은 typed 헬퍼와 Theme 값을, 폰트·색·선 굵기는 역할에 맞는 토큰을 사용한다.
+//! 대응 토큰이 없는 구조값은 이유가 드러나는 이름의 상수로 둔다.
+//! 색 생성자 호출은 clippy disallowed_methods도 검사한다.
 //!
-//! `CLAUDE.md` "UI 디자인 (필수)" 가 강제하는 네 축 중 색은 clippy
-//! `disallowed_methods`(deny)가 컴파일 단계에서 막고, 나머지 셋(간격·폰트 크기·선
-//! 굵기)을 이 파일이 맡는다. 셋 다 같은 형태(`<접두>(<숫자>`)라 판정기
-//! [`violating_prefix`] 하나를 공유한다 — 토큰을 넘기는 정상 코드
-//! (`Stroke::new(th.border_width.value(), ..)`)는 숫자로 시작하지 않아 걸리지 않는다.
+//! 이 크레이트는 GUI 의존성이 없으며 doc-guards.yml의 경로 필터 없는 main push·PR와
+//! crossplatform-check.yml의 Windows 잡에서 실행된다. 전체 구성은 docs/dev-guide/ci-gates.md를 따른다.
+//! 컴파일만으로는 실행되지 않는다. 직접 확인하려면 cargo test -p tasty-doc-guards --test design_token_adherence --locked를 쓴다.
 //!
-//! `add_space`/`Margin`에 숫자를 직접 넣는 대신 typed 헬퍼와 Theme의 간격 값을 쓴다.
-//! 이 가드는 인라인 숫자가 다시 들어오는지 소스에서 검사한다. 자동 실행 채널은
-//! `doc-guards.yml`의 main push·PR 검사다(경로 필터 없음). GUI 의존성이 없는 크레이트라
-//! 기본·헤드리스 조합 모두 검사할 수 있고, `crossplatform-check.yml`의 Windows 잡도
-//! 이 크레이트를 실행한다. 컴파일만으로는 소스 검사가 실행되지 않으므로 관련 변경을
-//! 커밋하기 전에 `cargo test -p tasty-doc-guards --test design_token_adherence --locked`로
-//! 확인한다. 전체 채널은 `docs/dev-guide/ci-gates.md`를 따른다.
-//!
-//! **스코프 밖(의도적)**: `const NAME: LogicalPx = LogicalPx(N)` 같은 **명명 구조 상수**는
-//! 금지하지 않는다 — 그게 구조값(사이드바 폭·카드 크기·control nudge)의 *권장* 해결책이다
-//! — structural 값은 magic number 대신 명명 const 로 둬야 의미가 이름에 남는다.
-//! 이 가드가 잡는 건 4px 리듬 자리에 박힌 인라인 리터럴뿐이다.
-//!
-//! # 가드가 막지 못하는 것 (실측 — 회피 변이로 확인)
-//!
-//! 소스 텍스트 스캔이라 **한계가 있고, 그 한계를 여기 적어 둔다.** 이 목록이 없으면
-//! "가드가 폰트/간격 축을 강제한다" 는 문서 문장이 사실보다 강해진다 — 실제로 이
-//! 파일의 앞 라운드가 그 상태였다(`crates/tasty-doc-guards/tests/let_underscore_documented.rs` 와 같은 방식).
-//! 아래는 전부 **컴파일되고 `cargo fmt --check` 도 통과하는** 형태다.
-//!
-//! | 형태 | 예 | 왜 못 잡나 |
-//! |---|---|---|
-//! | 괄호 감싸기 | `.size((13.0))` | 접두 뒤 첫 문자가 `(` 라 숫자 검사에 걸리지 않는다 |
-//! | 인라인 주석 | `.size(/*x*/ 13.0)` | 같음 |
-//! | 개행 + 주석 줄 | `.size(` ⏎ `// c` ⏎ `13.0)` | 다음 줄 프로브가 **한 줄만** 본다. 그 줄이 주석이면 그대로 빠져나간다 |
-//! | 형변환 | `.size(f32::from(13u8))` | 첫 문자가 `f` |
-//! | 매크로 | `.size(sz!())` | 같음 |
-//! | 단항 마이너스 | `add_space(-8.0)` | 첫 문자가 `-` |
-//! | 명명 const 경유 | `const S: f32 = 10.5; .size(S)` | **설계상 허용**(위 "스코프 밖") — 단 **값이 토큰과 같은 const** 는 예외다. 그건 스케일 밖 값이 아니라 토큰의 복사본이라 `src/design_token_guard.rs` 가 따로 잡는다 |
-//! | 변수 경유 | `let s = 13.0; .size(s)` | 같은 이유. 값의 출처를 소스 스캔으로 따라갈 수 없다 |
-//! | egui 기본 스타일 | `Style::default()` 가 주는 크기 | 소스에 숫자가 없다 |
-//!
-//! 이것들을 닫으려면 텍스트 스캔이 아니라 **AST/HIR 수준 lint** 가 필요하다. 여기서
-//! 막는 것은 *레포에 실제로 나타나는 관용구*이고, 위 목록은 "우연히 새는 것" 이 아니라
-//! **의도적으로 우회해야 나오는 형태**다 — 가드의 목적(무심코 되돌리는 것을 막는다)은
-//! 그 선까지다.
+//! 소스 문자열과 첫 숫자만 읽는 검사이므로 다음 형태를 모두 잡지는 못한다.
+//! 괄호로 감싼 값, 인라인 주석, 다음 줄이 주석인 호출, 형변환·매크로·음수,
+//! 상수·변수 경유 값, egui 기본 스타일의 값은 누락될 수 있다.
+//! 상수의 역할이나 값의 출처는 추적하지 않는다. 토큰과 같은 값을 복제한 일부 명명 상수는
+//! src/design_token_guard.rs가 별도로 검사한다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::source_text::repo_relative;
@@ -54,18 +24,12 @@ const SCAN_ROOTS: &[&str] = &[
     "src/gfx/gpu",
     "crates/tasty-gallery/src",
     "crates/tasty-ui-widgets/src",
-    // Theme 를 egui 로 잇는 어댑터 크레이트. `stroke1()` 같은 헬퍼가 여기 살아서
-    // 리터럴이 들어오면 호출부 전체로 전파된다. 편입 시점 위반 0 이라 allowlist
-    // 없이 그대로 넣었다 — 공짜 커버리지다.
+    // 공용 egui 어댑터의 리터럴은 여러 UI 호출부에 영향을 주므로 함께 검사한다.
     "crates/tasty-egui-theme/src",
 ];
 
-/// primitive 색 필드 접근 스캔 대상 — host UI 계층 + 위젯 크레이트. semantic 접근자
-/// 전수 이식이 끝난 범위다(남은 건수는 이 파일의
-/// [`no_primitive_color_field_access_in_host_ui`] 가 실시간으로 답한다 — 여기 숫자로
-/// 적으면 다음 병합에 썩는다). 위젯 크레이트도 primitive 절대 불가
-/// (ADR-0035): 재사용 위젯이라도 색은 semantic role 접근자로만 읽는다. 제외:
-/// - `crates/tasty-gallery/src`: 팔레트 데모가 raw primitive 를 의도적으로 노출.
+/// host UI와 위젯에서는 primitive 색 필드 대신 역할별 접근자를 사용한다(ADR-0035).
+/// 팔레트 원색을 보여 주는 갤러리는 제외한다.
 const COLOR_SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
@@ -73,17 +37,10 @@ const COLOR_SCAN_ROOTS: &[&str] = &[
     "crates/tasty-ui-widgets/src",
 ];
 
-/// raw 픽토그래픽 글리프 스캔 대상 — **host 전용**(widgets/gallery 미포함). gallery
-/// specimen 은 ↑↓↵→◀▶ 를 대량 사용하므로 SCAN_ROOTS 재사용 시 오검출된다(연구 §3).
-/// 플러그인(`crates/tasty-plugin-*`)도 미포함 — S-11 과 비중첩.
+/// host UI의 글리프만 검사한다. 기호 견본이 있는 갤러리와 위젯·플러그인은 제외한다.
 const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu"];
 
-/// 호출부 길이 리터럴 축의 스캔 모수 — 본체 UI 전부에서 **갤러리만** 뺀다.
-///
-/// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 리터럴도 함께
-/// 커지므로 거기서는 결함이 아니다(ADR-0039). 제외의 사유가 그것 하나이므로
-/// 제외도 그것 하나로 적는다 — 남기는 쪽(`"src/"` 같은 경로 모양)으로 적으면 갤러리가
-/// 아닌 위젯 크레이트까지 사유 없이 함께 빠진다.
+/// 갤러리는 egui 전역 zoom으로 리터럴도 확대하므로 길이 검사에서 제외한다(ADR-0039).
 const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
@@ -92,9 +49,7 @@ const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
     "crates/tasty-egui-theme/src",
 ];
 
-/// 길이를 직접 받는 egui 호출부. 이 접두 뒤에 숫자가 오면 그 길이는 `Theme` 밖이라
-/// **본체에서 `ui_scale` 을 안 탄다**(본체는 egui `zoom_factor` 를 1.0 으로 고정하고
-/// 배율을 `zoomed()` 로만 먹인다 — ADR-0039).
+/// 본체는 egui zoom_factor가1이라 Theme 밖에 직접 적은 길이에 UI 배율이 적용되지 않는다.
 const LENGTH_SETTER_PREFIXES: &[&str] = &[
     "set_min_width(",
     "set_max_width(",
@@ -108,20 +63,9 @@ const LENGTH_SETTER_PREFIXES: &[&str] = &[
     "desired_height(",
 ];
 
-/// **한시 목록 — 줄어들기만 한다.** [`ALLOWLIST_PREFIXES`] 와 성격이 다르므로 합치지
-/// 않는다(`crates/tasty-doc-guards/tests/layering.rs` 가 같은 이유로 세 목록을 갈라
-/// 둔다).
-///
-/// - `ALLOWLIST_PREFIXES` 는 **정책** 면제다 — 사유가 "이 경로는 검사 범위 밖이다" 라
-///   덮을 것이 지금 없어도 남는다(docs/dev-guide/guard-population.md).
-/// - 이 목록의 사유는 전부 한 가지다: **"이 자리의 값이 `field_width_*` tier 밖이라
-///   아직 토큰이 없다."** 그 사유가 사라지면(= 리터럴이 없어지면) 항목도 사라져야 하고,
-///   아래 단언이 그것을 양방향으로 강제한다.
-///
-/// 여섯 자리를 지금 고치지 않는 이유는 값이 바뀌기 때문이다 — tier 를 넓힐지 이 여섯을
-/// tier 로 스냅할지는 디자인 판정이고, 자리마다 이름을 주면 드리프트가 정당해 보여
-/// 눈에 안 보이게 된다(ADR-0035). **이 가드가 답하는 것은 그 질문이 아니라 "일곱째가
-/// 새로 들어오는가" 다.**
+/// 대응 field_width 토큰이 없는 기존 리터럴의 한시 목록.
+/// 값을 기존 토큰에 맞출지 새 토큰을 만들지는 디자인 판단이므로 검사에서 임의로 바꾸지 않는다.
+/// 리터럴이 제거되면 항목도 제거한다. 범위 예외인 ALLOWLIST_PREFIXES와 구분한다.
 const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
     (
         "src/view/settings/ui/file_handler_tab/extension_mapping.rs",
@@ -155,21 +99,11 @@ const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// 코퍼스 하한 — 스캔이 비면 위반도 0 이 되어 가드가 조용히 통과한다.
-/// 실측 2026-09-07: **186**(하한 150, 여유 36). 루트별로는 `src/view` 55 ·
-/// `src/adapters/ui` 90 · `src/gfx/gpu` 8 · `crates/tasty-ui-widgets/src` 32 ·
-/// `crates/tasty-egui-theme/src` 1 이다.
-///
-/// 이 수 아래로 내려가면 **큰 루트 하나가 통째로 안 걷힌 것**이다 — 위 분해에서 36 을
-/// 넘는 루트는 셋뿐이라 그중 하나가 빠져야 여기 걸린다. 작은 둘(8·1)이 사라지는 것은
-/// 이 하한이 **못 본다**: 그쪽은 루트마다 따로 확인하는
-/// `the_scan_roots_are_directories` 의 몫이고, 지금 그 시험은 `src/gfx/gpu` 하나만
-/// 걷어 본다. 나머지 넷은 어느 쪽도 개별로는 안 본다.
+/// 2026-09-07 실측186파일에 하한150을 뒀다. 여유36보다 작은 누락은 잡지 못한다.
+/// length_setter_literals_under는 각 루트가 비었는지도 별도로 확인한다.
 const MIN_LENGTH_SETTER_SCANNED_FILES: usize = 150;
 
-/// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
-/// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.
-/// `text` 는 `text_primary`/`text_muted` 등 semantic 접근자의 접두라 경계 검사로 가른다.
+/// 역할별 접근자로 바꿔야 하는 primitive 필드. text_primary 같은 긴 이름은 경계로 구분한다.
 const PRIMITIVE_COLOR_FIELDS: &[&str] = &[
     "crust",
     "mantle",
@@ -198,12 +132,7 @@ const PRIMITIVE_COLOR_FIELDS: &[&str] = &[
     "rosewater",
 ];
 
-/// 금지 패턴: `<prefix>` 뒤 (공백 무시) 첫 문자가 숫자면 인라인 리터럴로 본다.
-/// typed 헬퍼(`margin_all(th.spacing_md)`)·토큰(`spacing_xs.value()`)은 숫자로 시작하지
-/// 않으므로 걸리지 않는다.
-///
-/// 폰트 크기는 `th.font_size_*` 또는 component 접근자(`th.badge_font_size()` 등),
-/// 선 굵기는 `th.border_width`/`focus_ring_width`/`icon_stroke_width` 로 바꾼다.
+/// 접두어 뒤 첫 숫자를 인라인 값으로 판정한다. 토큰·명명 상수는 이 검사에서 제외된다.
 const FORBIDDEN_PREFIXES: &[&str] = &[
     "add_space(",
     "Margin::same(",
@@ -211,72 +140,29 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "inner_margin(",
     "FontId::proportional(",
     "FontId::monospace(",
-    // `proportional`/`monospace` 는 **이것의 얇은 래퍼**다. 셋째 경로를 열어두면
-    // 앞의 둘을 막은 의미가 없다 — 같은 폰트를 `FontId::new(13.0, Proportional)`
-    // 로 그대로 만들 수 있다. 전역 폰트 치환(`Style::text_styles`)도 결국 `FontId`
-    // 를 만들어야 하므로 이 셋을 다 막으면 그 경로의 리터럴도 함께 닫힌다.
+    // 두 폰트 생성자의 공통 경로인 new도 포함한다.
     "FontId::new(",
     "Stroke::new(",
-    // `RichText::new(..).size(13.5)` — `FontId::*` 와 **같은 결함의 다른 표기**다.
-    // egui 에서 폰트 크기를 지정하는 두 경로가 이 둘이라 한쪽만 막으면 다른 쪽으로
-    // 그대로 재유입된다. `Spinner::size()`(위젯 지름)도 같은 이름이라 함께 걸리는데,
-    // 그건 폰트가 아니므로 아래 allowlist 로 그 자리만 면제한다.
+    // RichText 크기와 Spinner 지름이 같은 메서드명이라 지름 견본만 별도로 면제한다.
     ".size(",
-    // 아이콘 글리프 **크기** 축. `icon_glyph_size_xs 12` · `_sm 14` · `_row_action 15` ·
-    // `_md 16` 이 실재하므로 이 자리의 리터럴은 "토큰이 없어서" 가 아니라 **토큰 우회**다.
-    // 스케일 밖 값(13 · 17 · 22 · 26 · 28 · 30)은 ADR-0035와 같게 명명 const 로 둔다 —
-    // 그래서 이 접두에는 allowlist 항목이 없다(이식을 먼저 끝내고 넣었다).
+    // 아이콘 크기도 토큰을 사용하고 스케일 밖 값은 이유를 적은 명명 상수로 둔다(ADR-0035).
     ".image(",
-    // 코너 반경 축. **접두가 둘인 이유가 이 축의 교훈이다** — 다수가
-    // `.corner_radius(egui::CornerRadius::same(12))` 로 한 겹 감싸여 있어서
-    // `.corner_radius(` 뒤에 숫자가 오지 않는다. 한쪽만 넣으면 축의 절반이 열린 채로
-    // 닫혔다고 읽힌다(`Margin::same(` 을 `inner_margin(` 과 따로 넣은 것과 같은 이유).
-    //
-    // 스케일은 `corner_radius_sm 2` · `corner_radius 4` · `corner_radius_lg 8` 이고
-    // DTCG 도 `radius-2/4/8/full` 뿐이다. 밖의 값(3 · 6 · 12)은 스냅하지 말고
-    // ADR-0035 대로 사유를 적은 명명 const 로 둔다 —
-    // `tasty_ui_widgets::tokens` 의 `BOOT_CHROME_CORNER_RADIUS` ·
-    // `BOOT_CARD_CORNER_RADIUS` · `TAG_PILL_CORNER_RADIUS` 가 그것이다.
-    // 전부 0 이면 `CornerRadius::ZERO`(`Margin::ZERO` 와 같은 관례).
-    //
-    // **이 축은 굵기 축과 대가가 다르다**: `corner_radius*` 는 `zoomed()` 를 타고
-    // `border_width` 는 안 탄다. 그래서 반경을 명명 const 로 빼면 그 자리만 배율에서
-    // 고정된다 — 스케일 밖 여섯 자리가 감수한 값이다. 이식 후 allowlist 항목 0.
+    // 직접 반경을 넘기는 형태와 CornerRadius 생성자로 감싼 형태를 모두 검사한다.
+    // 스케일 밖 반경을 명명 상수로 빼면 그 값에는 Theme의 배율이 적용되지 않는다는 차이가 있다.
     ".corner_radius(",
     "CornerRadius::same(",
 ];
 
-/// 숫자 인자 검사로는 잡히지 않는 **금지 형태**. 접두 규칙은 "접두 뒤 첫 문자가
-/// 숫자인가" 를 보는데, 구조체 리터럴은 필드명이 먼저 와서 그 검사를 그대로
-/// 빠져나간다(`egui::Stroke { width: 2.0, color }`). 실제 회피 변형 검증에서 이
-/// 형태로 한 번 뚫렸다.
-///
-/// 여기 있는 형태는 **값과 무관하게** 금지다 — 토큰을 넣든 리터럴을 넣든 쓰지 말고
-/// 생성자(`Stroke::new(<토큰>, ..)` · `FontId::proportional(<토큰>)`)를 쓴다. 그래야
-/// 접두 규칙이 계속 유효하다.
-///
-/// 이 두 이름은 **반환 타입 시그니처**(`fn stroke1(..) -> egui::Stroke {`)로도 나타나는데,
-/// 그건 구조체 리터럴이 아니다. 아래 `->` 규칙이 그 둘을 가르므로 **allowlist 항목이
-/// 필요 없다** — 면제가 아니라 판별로 푼다.
+/// 구조체 필드는 숫자보다 이름이 먼저 나와 접두어 숫자 검사로 잡지 못한다.
+/// Stroke·FontId는 토큰을 넘기는 생성자를 쓰도록 구조체 리터럴 자체를 금지한다.
+/// 반환 타입 선언과는 앞의 ->로 구분한다.
 const FORBIDDEN_FORMS: &[&str] = &["Stroke {", "FontId {"];
 
-/// 스캔 예외 — **(경로, 접두, 구조 술어)** 셋이다.
-///
-/// 파일 통째로 빼면 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않는다. 그래서
-/// 예전부터 (경로, 접두) 쌍이었는데, **접두는 이름이지 구조가 아니라서** 그것만으로는
-/// 여전히 넓다 — `prim_spinner.rs` 의 `.size(` 면제는 위젯 지름을 빼주려던 것인데
-/// 같은 파일의 **폰트** `.size()` 까지 덮고 있었다(Gate4 J5).
-///
-/// 세 번째 칸이 그 구조다: `Some(marker)` 면 **같은 줄에서 접두 앞에 그 문자열이
-/// 있을 때만** 면제한다. 지름 면제는 `Some("Spinner::new()")` 라, 수신자가 스피너가
-/// 아닌 `.size(` 는 같은 파일에서도 그대로 잡힌다. `None` 은 그 파일 전체에서 그
-/// 접두를 면제한다 — 파일의 존재 이유 자체가 그 접두일 때만 쓴다(typed 헬퍼의 구현).
-///
-/// 면제의 **전제가 무너지면 가드가 알아채야** 한다:
-/// [`the_spinner_exemption_discriminates_receiver`] 가 그것을 변이로 확인한다.
+/// (파일, 접두어, 선행 문자열 표지)로 면제한다.
+/// 표지가 있으면 같은 줄의 접두어 앞에 있어야 한다. 실제 수신자 타입을 판정하는 것은 아니다.
+/// None은 해당 파일의 그 접두어 전체를 면제하므로 typed 헬퍼 구현에만 사용한다.
 const ALLOWLIST_PREFIXES: &[(&str, &str, Option<&str>)] = &[
-    // typed 간격 헬퍼의 구현 자체 — 내부에서 raw `add_space`/`Margin` 을 호출하고
-    // doc 주석에 예시 리터럴을 담는다. 폰트·선굵기는 면제 대상이 아니다.
+    // 간격 헬퍼 구현은 raw 간격 호출이 필요하다. 폰트·선 굵기는 면제하지 않는다.
     ("crates/tasty-ui-widgets/src/spacing.rs", "add_space(", None),
     (
         "crates/tasty-ui-widgets/src/spacing.rs",
@@ -293,13 +179,7 @@ const ALLOWLIST_PREFIXES: &[(&str, &str, Option<&str>)] = &[
         "inner_margin(",
         None,
     ),
-    // spinner 크기 카탈로그 — 이 specimen 의 **내용 자체가** 여러 지름을 나란히
-    // 보이는 것이다. `.size()` 는 여기서 폰트가 아니라 위젯 지름이고, 값이 하나로
-    // 수렴하면 specimen 이 성립하지 않는다.
-    //
-    // 면제는 **수신자가 스피너인 줄에만** 걸린다 — 같은 specimen 이 라벨 텍스트에도
-    // `RichText::..size()` 를 쓰기 때문이다. 파일만 보고 빼면 그 폰트 자리가 함께
-    // 빠져나간다.
+    // Spinner 지름 견본만 면제한다. 같은 파일의 RichText 크기는 계속 검사해야 한다.
     (
         "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
         ".size(",
@@ -307,41 +187,30 @@ const ALLOWLIST_PREFIXES: &[(&str, &str, Option<&str>)] = &[
     ),
 ];
 
-/// 면제의 **전제 검사** — 면제가 "이 파일" 이 아니라 "이 파일의 이 구조" 에 걸려
-/// 있는지 가른다. 전제가 무너진 줄(수신자가 스피너가 아닌 `.size(`)에서 면제가
-/// 풀리지 않으면 이 테스트가 죽는다.
-///
-/// 실제 소스에 변이를 주입해 확인한 판정 셋을 그대로 고정한 것이다: 스피너 지름은
-/// 통과, 같은 파일의 `RichText` 폰트는 적발, 다른 파일의 스피너도 적발.
 #[test]
 fn the_spinner_exemption_discriminates_receiver() {
     const SPIN: &str = "crates/tasty-gallery/src/catalog/components/prim_spinner.rs";
 
-    // 지름 — 면제된다.
     assert!(exempt(
         SPIN,
         ".size(",
         "            Spinner::new().size(12.0).show(ui, theme);"
     ));
-    // 같은 파일의 폰트 — 수신자가 다르므로 면제되지 않는다.
     assert!(!exempt(
         SPIN,
         ".size(",
         "            ui.label(RichText::new(\"x\").size(13.0));"
     ));
-    // 다른 파일의 스피너 — 면제는 파일 한정이므로 걸린다.
     assert!(!exempt(
         "crates/tasty-gallery/src/catalog/components/empty_surface.rs",
         ".size(",
         "    Spinner::new().size(30.0);"
     ));
-    // 마커가 접두 **뒤**에 있으면 수신자가 아니다 — 주석으로 면제를 살 수 없다.
     assert!(!exempt(
         SPIN,
         ".size(",
         "    x.size(13.0); // Spinner::new()"
     ));
-    // 구조 술어가 없는 면제(typed 헬퍼의 구현)는 그 파일 전체에서 걸린다.
     assert!(exempt(
         "crates/tasty-ui-widgets/src/spacing.rs",
         "add_space(",
@@ -349,20 +218,13 @@ fn the_spinner_exemption_discriminates_receiver() {
     ));
 }
 
-/// **면제마다 그 면제를 겨냥한 변이가 붙는다.** `spacing.rs` 의 네 항목은 구조 술어가
-/// `None` 이라 파일 전체에서 그 접두를 면제한다 — 가장 넓은 형태다. 그래서 "면제 창
-/// 안쪽에 *다른 축의* 진짜 위반을 심으면 잡히는가" 를 여기서 묻는다.
-///
-/// 답은 잡혀야 한다. `None` 면제는 **접두 하나**에만 걸리지 파일에 걸리지 않는다.
 #[test]
 fn the_typed_helper_exemption_does_not_cover_other_axes() {
     const SP: &str = "crates/tasty-ui-widgets/src/spacing.rs";
 
-    // 면제된 접두 — 그 파일의 존재 이유다.
     assert!(exempt(SP, "add_space(", "    ui.add_space(8.0);"));
     assert!(exempt(SP, "Margin::same(", "    Margin::same(12.0)"));
 
-    // 같은 파일의 **다른 축**은 면제되지 않는다.
     for form in [
         ".size(",
         "FontId::proportional(",
@@ -378,7 +240,6 @@ fn the_typed_helper_exemption_does_not_cover_other_axes() {
         );
     }
 
-    // 그리고 실제 판정에서도 잡힌다.
     assert_eq!(
         violating_prefix(SP, "    ui.label(RichText::new(x).size(13.0));", ""),
         Some(".size(")
@@ -389,14 +250,8 @@ fn the_typed_helper_exemption_does_not_cover_other_axes() {
     );
 }
 
-/// 반환 타입 시그니처를 넘기는 규칙도 **면제**다(형태가 있는데 안 잡는다). 그 창
-/// 안쪽에 진짜 구조체 리터럴을 심으면 잡혀야 한다.
-///
-/// **의도된 false negative 도 함께 고정한다**: 시그니처 줄은 잡지 않는 것이 옳다.
-/// 나중에 누가 이 규칙을 넓히면 그 결정이 여기서 실패로 드러난다.
 #[test]
 fn the_return_signature_skip_only_covers_signatures() {
-    // 시그니처 — 의도적으로 안 잡는다.
     assert_eq!(
         violating_prefix("src/view/x.rs", "fn s(..) -> egui::Stroke {", ""),
         None
@@ -406,7 +261,6 @@ fn the_return_signature_skip_only_covers_signatures() {
         None
     );
 
-    // 같은 줄 모양이지만 구조체 리터럴 — 잡힌다.
     assert_eq!(
         violating_prefix(
             "src/view/x.rs",
@@ -415,8 +269,6 @@ fn the_return_signature_skip_only_covers_signatures() {
         ),
         Some("Stroke {")
     );
-    // 시그니처 뒤에 리터럴이 이어 붙은 형태도 잡힌다 — `->` 하나가 줄 전체를 사면하지
-    // 않는다.
     assert_eq!(
         violating_prefix(
             "src/view/x.rs",
@@ -427,19 +279,10 @@ fn the_return_signature_skip_only_covers_signatures() {
     );
 }
 
-/// 반경 축의 **두 접두가 서로를 대신하지 못한다**는 것을 고정한다.
-///
-/// 이 축은 셋을 세 번 틀리게 셌다(3 → 7 → 9). 3 은 `.corner_radius(` 뒤에 숫자가
-/// 오는 형태만 봐서, 7 은 모수를 스캔 루트로 잡아 `src/gfx/gpu/boot_error.rs` 를 빼서
-/// 나온 값이다. **패턴을 고쳐도 모수가 틀리면 다시 적게 센다** — 그래서 접두 하나로
-/// 닫혔다고 읽히는 길을 여기서 막는다.
-///
-/// 접두를 하나로 줄이면 이 테스트가 죽는다. 그것이 이 테스트의 용도다.
 #[test]
 fn the_corner_radius_axis_needs_both_prefixes() {
     const F: &str = "src/view/x.rs";
 
-    // 감싸인 형태 — `.corner_radius(` 뒤는 `e` 라 그 접두로는 절대 안 잡힌다.
     assert_eq!(
         violating_prefix(
             F,
@@ -448,13 +291,11 @@ fn the_corner_radius_axis_needs_both_prefixes() {
         ),
         Some("CornerRadius::same(")
     );
-    // 벗은 형태 — `CornerRadius::same(` 이 줄에 아예 없다.
     assert_eq!(
         violating_prefix(F, "        .corner_radius(4.0)", ""),
         Some(".corner_radius(")
     );
 
-    // 처방된 세 출구는 전부 통과한다 — 토큰 · 명명 const · 명명 ZERO.
     for ok in [
         "        .corner_radius(th.corner_radius.value())",
         "        .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)",
@@ -468,16 +309,7 @@ fn the_corner_radius_axis_needs_both_prefixes() {
     }
 }
 
-/// 모수가 **파일 열거가 아니라 디렉토리**여야 하는 이유를 고정한다.
-///
-/// `src/gfx/gpu` 는 예전에 `shell_setup.rs` 한 파일로 등재돼 있었다. 그 뒤 같은
-/// 디렉토리에 `boot_error.rs` 가 생겼고, **이미 등재된 접두**(`Stroke::new(`)를 쓰는
-/// 위반 넷을 조용히 들여왔다 — 가드는 초록이었고 축은 열려 있었다. 파일 열거는 새
-/// 파일을 기본 제외로 만든다.
-///
-/// 실측으로 확인한 형태다: 모수를 파일로 되돌린 채 위반을 심으면
-/// `no_inline_visual_token_literals` 는 **통과한다.** 그 조건에서 유일하게 우는 것이
-/// 이 테스트다.
+/// 개별 파일을 루트로 등록하면 같은 디렉터리에 추가된 UI 파일을 놓칠 수 있다.
 #[test]
 fn the_gpu_scan_root_is_a_directory_not_a_file() {
     assert!(
@@ -491,9 +323,6 @@ fn the_gpu_scan_root_is_a_directory_not_a_file() {
             "스캔 루트에 개별 `.rs` 파일이 있다: {roots:?}"
         );
     }
-    // 그리고 그 루트가 실제로 파일을 걷어 온다 — 경로가 틀리면 조용히 0 이 된다.
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let mut files = Vec::new();
@@ -505,8 +334,7 @@ fn the_gpu_scan_root_is_a_directory_not_a_file() {
     );
 }
 
-/// `rel` 파일의 `line` 에서 `form` 이 면제되는가. 구조 술어가 있으면 **그 줄에서
-/// 접두보다 앞에** 마커가 있어야 한다.
+/// 문자열 표지가 있으면 같은 줄에서 접두어 앞에 있는 경우만 면제한다.
 fn exempt(rel: &str, form: &str, line: &str) -> bool {
     ALLOWLIST_PREFIXES.iter().any(|(path, prefix, marker)| {
         *path == rel
@@ -531,11 +359,7 @@ fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static s
         let mut from = 0;
         while let Some(idx) = line[from..].find(form) {
             let start = from + idx;
-            // `fn stroke1(..) -> egui::Stroke {` / `fn mono(..) -> egui::FontId {`
-            // 같은 **반환 타입**은 구조체 리터럴이 아니다. 형태 앞의 경로 한정자
-            // (`egui::`)를 걷어낸 뒤 `->` 로 끝나면 시그니처이므로 넘긴다 —
-            // `crates/tasty-egui-theme` 를 스캔에 넣을 때 실제로 이 위양성이 났다
-            // (그때는 `egui::` 때문에 `->` 검사가 빗나갔다).
+            // 반환 타입을 구조체 리터럴로 오해하지 않도록 타입 경로 앞의 ->를 확인한다.
             let head = line[..start]
                 .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == ':');
             if !head.trim_end().ends_with("->") {
@@ -551,11 +375,7 @@ fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static s
         let mut from = 0;
         while let Some(idx) = line[from..].find(prefix) {
             let after = &line[from + idx + prefix.len()..].trim_start();
-            // 접두가 줄 끝에서 열린 채 끝나면(`.size(` 뒤에 아무것도 없음) 인자는 다음
-            // 줄에 있다. 한 줄만 보면 `.size(\n    13.0)` 형태로 그냥 빠져나간다 —
-            // 실제로 이 회피 변형에 한 번 뚫렸다. `rustfmt` 가 짧은 호출은 한 줄로
-            // 되돌리므로 레포에 들어오긴 어렵지만, 가드의 회피 난이도를 포매터
-            // 하나에만 의존시키지 않는다.
+            // 호출이 열린 채 행이 끝나면 바로 다음 한 줄만 검사한다.
             let probe = if after.is_empty() {
                 next_line.trim_start()
             } else {
@@ -581,14 +401,12 @@ fn violating_color(_rel: &str, line: &str, _next: &str) -> Option<String> {
         let mut from = 0;
         while let Some(idx) = line[from..].find(receiver) {
             let start = from + idx;
-            // receiver 앞 문자가 word char 면 `xtheme.` 같은 부분매치 → 스킵.
             let before_ok =
                 start == 0 || !is_word_char(line[..start].chars().next_back().unwrap_or(' '));
             let after = &line[start + receiver.len()..];
             if before_ok {
                 for &field in PRIMITIVE_COLOR_FIELDS {
                     if let Some(rest) = after.strip_prefix(field) {
-                        // 필드명 뒤 문자가 word char 면 semantic 접근자(text_primary 등) → 스킵.
                         let next = rest.chars().next();
                         if !matches!(next, Some(c) if is_word_char(c)) {
                             return Some(format!("{receiver}{field}"));
@@ -602,8 +420,7 @@ fn violating_color(_rel: &str, line: &str, _next: &str) -> Option<String> {
     None
 }
 
-/// `target` 하위 `.rs` 파일을 모아, 각 라인에 `detect(rel, line)` 을 적용해 위반을
-/// 수집한다. 주석 라인(`//`)은 스킵 — 파일 단위 면제는 없다([`ALLOWLIST_PREFIXES`]).
+/// 루트 아래 Rust 파일에 판정을 적용한다. //로 시작하는 줄만 주석으로 제외한다.
 fn collect_violations(
     root: &Path,
     target: &str,
@@ -615,8 +432,7 @@ fn collect_violations(
     gather_rs_files(&path, &mut files);
     assert!(
         !files.is_empty(),
-        "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다 — 경로가 바뀌었거나 \
-         읽기에 실패했다. 조용한 미스캔은 위양성보다 나쁘므로 여기서 실패시킨다."
+        "스캔 루트 {target}에서 Rust 파일을 찾지 못했다. 경로와 읽기 오류를 확인한다."
     );
     for file in files {
         let rel = file
@@ -625,11 +441,8 @@ fn collect_violations(
             .to_string_lossy()
             .replace('\\', "/");
         let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
-        // 판정기가 "다음 줄" 을 볼 수 있어야 한다 — 호출 인자가 줄바꿈으로 넘어간
-        // 형태(`.size(` 개행 `13.0)`)를 한 줄만 보고는 잡지 못한다.
         let lines: Vec<&str> = contents.lines().collect();
         for (i, line) in lines.iter().enumerate() {
-            // 주석 라인(// 로 시작)은 스킵 — doc/설명의 예시 리터럴 false positive 방지.
             if line.trim_start().starts_with("//") {
                 continue;
             }
@@ -648,32 +461,16 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
         }
         return;
     }
-    let entries = std::fs::read_dir(path).unwrap_or_else(|e| {
-        panic!(
-            "스캔 대상 디렉토리를 읽을 수 없다: {} — {e}. 조용히 건너뛰면 가드가 \
-             아무것도 검사하지 않은 채 통과한다.",
-            path.display()
-        )
-    });
+    let entries = std::fs::read_dir(path)
+        .unwrap_or_else(|e| panic!("스캔 디렉터리를 읽지 못했다: {} — {e}", path.display()));
     for entry in entries.flatten() {
         gather_rs_files(&entry.path(), out);
     }
 }
 
-/// 링 토큰(`focus_ring_width`)이 **바** 자리에 쓰였는가. 두 토큰은 값이 둘 다 2 라
-/// 서로 바꿔 써도 zoom 1 에서는 아무 일도 일어나지 않는다 — 그래서 조용히 섞인다.
-/// 실제로 갤러리 9자리가 좌측 accent 바·탭 밑줄을 `focus_ring_width` 로 그리고
-/// 있었다.
-///
-/// 판별은 **구조**로 한다: 바는 크기 벡터가 필요해 `vec2(<굵기>, <길이>)` 형태로
-/// 나타나고, 링은 `Stroke::new(<굵기>, <색>)` 이라 크기 벡터를 만들지 않는다. 즉
-/// **`vec2(` 안에 `focus_ring_width` 가 있으면 그건 링이 아니라 바**이고, 정본은
-/// `tab_indicator_width` 다(값 2 로 동일, 대신 zoom 을 타지 않는다 — 호스트의 바가
-/// 원래 그렇다).
-///
-/// **한계**: 굵기를 먼저 지역 변수에 담는 형태(`let bar_w = ..focus_ring_width..;`)
-/// 나 좌표 산술(`pos2(x, bottom - ..)`)은 못 잡는다. 이식 당시 그 두 형태가 각각
-/// 1자리씩 있었다.
+/// vec2 이후 같은 줄의 focus_ring_width를 바 용도로 의심해 보고한다.
+/// 링과 바는 값이 같아도 배율 적용이 달라 바에는 tab_indicator_width를 사용한다.
+/// 변수 경유나 좌표 산술은 찾지 못하며 인자·타입을 정밀하게 분석하지 않는다.
 fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     for (i, line) in lines.iter().enumerate() {
         if line.trim_start().starts_with("//") {
@@ -684,7 +481,7 @@ fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
         };
         if line[v..].contains("focus_ring_width") {
             out.push(format!(
-                "  {}:{} — `vec2(.. focus_ring_width ..)` 는 바다.                  `tab_indicator_width` 를 쓸 것",
+                "  {}:{} — vec2 이후에 focus_ring_width가 있다. 바 용도라면 tab_indicator_width를 사용한다.",
                 rel,
                 i + 1
             ));
@@ -692,13 +489,8 @@ fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     }
 }
 
-/// 접두 규칙이 구조적으로 못 보는 두 관용구 — **레포에 실제로 존재하던 형태**만
-/// 닫는다. 회피 변이 목록의 나머지(괄호 감싸기·매크로 등)는 레포에 없고 의도적
-/// 우회로만 나오므로, 모듈 doc 의 "가드가 막지 못하는 것" 에 한계로 적어 두었다.
 #[test]
 fn no_literal_margin_fields_or_item_spacing() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let mut violations = Vec::new();
@@ -741,12 +533,9 @@ fn no_literal_margin_fields_or_item_spacing() {
 
 #[test]
 fn no_inline_visual_token_literals() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
-    // 형태 규칙(`FORBIDDEN_FORMS`)은 숫자 인자와 무관하게 금지라 `<숫자>` 를 붙이지
-    // 않는다 — 붙이면 "숫자만 빼면 통과" 로 잘못 읽힌다.
+    // 구조체 리터럴은 값과 무관하게 금지하므로 숫자만 바꾸면 된다고 안내하지 않는다.
     let detect = |rel: &str, line: &str, next: &str| {
         violating_prefix(rel, line, next).map(|p| {
             if FORBIDDEN_FORMS.contains(&p) {
@@ -787,30 +576,14 @@ fn numeric_literal(tok: &str) -> Option<f32> {
     t.parse::<f32>().ok()
 }
 
-/// **0 은 4px 그리드의 원점이지 예외가 아니다.** 그리드는 0 · 4 · 8 · 12 … 이고 0 은
-/// 그 첫 항이다 — "여백 없음" 은 규칙을 벗어난 값이 아니라 규칙 안의 값이다. 그래서
-/// 이 가드의 규칙은 처음부터 0 을 포함한다(면제 목록에 얹은 예외가 아니다). `top: 0` ·
-/// `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 **관용구**라 레포 전반에
-/// 퍼져 있는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
-///
-/// **가드가 가르지 못하는 것**: `Margin { left: 0, right: 8, .. }` 같은 **부분 0** 이
-/// "왼쪽은 붙인다" 는 의도인지 아직 안 채운 미완성인지는 소스에 신호가 없다. 네 변이
-/// 전부 0 인 것은 가른다 — 그건 `Margin::ZERO` 라고 쓰면 되기 때문이다.
+/// 0은 간격 없음으로 허용한다. 일부 필드가0인 의도는 판별하지 못하고 네 변 모두0인 경우는 Margin::ZERO를 안내한다.
 fn is_zero(v: f32) -> bool {
     v == 0.0
 }
 
-/// `egui::Margin { left: 14, .. }` 의 **필드 값** 위반. `Stroke {` 처럼 형태 자체를
-/// 막을 수는 없다 — 네 변을 따로 주는 방법이 구조체 리터럴밖에 없기 때문이다
-/// (`Margin::same`/`symmetric` 은 대칭 전용). 그래서 형태 대신 값을 본다.
-///
-/// `.inner_margin(` 접두 규칙은 여기 무력하다: `inner_margin(egui::Margin {` 는
-/// 접두 뒤 첫 문자가 `e` 라 숫자 검사를 그대로 빠져나간다. 실제 회피 변이에서
-/// 이 형태로 뚫렸고, 레포에 이미 열 자리가 있었다.
+/// 비대칭 마진은 구조체 리터럴이 필요하므로 형태를 금지하지 않고 필드 값을 검사한다.
 fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     let mut depth = 0usize;
-    // 여러 줄 블록의 시작 줄과, 그 블록이 지금까지 본 필드 종류. 네 변이 전부 리터럴
-    // 0 이면 `Margin::ZERO` 로 쓸 자리다.
     let mut block_start = 0usize;
     let mut zero_fields = 0usize;
     let mut other_fields = 0usize;
@@ -850,7 +623,6 @@ fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
             continue;
         }
         if line.contains("Margin {") && !line.trim_end().ends_with("Margin {") {
-            // 한 줄 리터럴(`Margin { left: 14, .. }`) — 같은 줄에서 필드를 훑는다.
             for part in line.split(&['{', ',', '}'][..]) {
                 if let Some((name, rest)) = part.split_once(':')
                     && matches!(name.trim(), "left" | "right" | "top" | "bottom")
@@ -874,9 +646,7 @@ fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     }
 }
 
-/// `ui.spacing_mut().item_spacing.y = 8.0` 계열. **이 lane 이 두 자리에서 고친 바로
-/// 그 형태**인데 재유입은 막혀 있지 않았다. `.x`/`.y` 개별 대입과 `= vec2(a, b)`
-/// 통째 대입을 모두 본다(대입문이 다음 줄로 넘어가는 형태 포함).
+/// item_spacing의 x·y 대입과 벡터 대입에서 숫자를 찾는다. 현재 줄과 이어진 최대 세 줄을 읽는다.
 fn item_spacing_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     for (i, line) in lines.iter().enumerate() {
         if line.trim_start().starts_with("//") {
@@ -888,11 +658,10 @@ fn item_spacing_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
         let Some(rel_eq) = line[eq..].find('=') else {
             continue;
         };
-        // `==` 비교나 `item_spacing.x` 뒤의 다른 문장은 대상이 아니다.
+        // == 비교를 대입으로 읽지 않도록 제외한다.
         if line[eq + rel_eq..].starts_with("==") {
             continue;
         }
-        // 대입문 전체를 `;` 까지 이어 붙인다 — `= egui::vec2(\n 0.0,\n 0.0);` 형태.
         let mut stmt = line[eq + rel_eq + 1..].to_string();
         let mut j = i;
         while !stmt.contains(';') && j + 1 < lines.len() && j - i < 3 {
@@ -911,26 +680,19 @@ fn item_spacing_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     }
 }
 
-/// 픽토그래픽 글리프 금지 범위(Tier-A) — UI 프로포셔널 폰트에서 tofu 나는 계열만
-/// 좁게 잡는다: 이모지·픽토그래프(U+1F000–1FAFF) + 딩뱃(U+2700–27BF). 화살표(↑↓→↵)·
-/// 기하도형(▲▼▾)·기술기호(⌘)·경고기호(⚠)는 kbd 힌트·라벨 구분자·콤보 affordance 로
-/// 정당하게 쓰이므로 **범위 밖**(연구 §3). CJK·따옴표 등 텍스트도 자동 제외된다.
+/// 이모지·픽토그래프와 딩뱃 범위를 검사한다. 화살표·기하 도형·기술 기호·경고 기호 등은 이 범위 밖이다.
 fn is_forbidden_pictographic(cp: u32) -> bool {
     (0x1F000..=0x1FAFF).contains(&cp) || (0x2700..=0x27BF).contains(&cp)
 }
 
-/// `line` 에서 픽토그래픽 글리프를 찾으면 그 표현을 돌려준다. **두 형태 모두** 검사:
-/// ① 리터럴 코드포인트(누가 U+1F4C2 를 그대로 붙여넣음) ② `\u{HEX}` 이스케이프 파싱 후 범위검사.
-/// 주석 라인 skip 은 상위 `collect_violations` 가 처리한다.
+/// 리터럴 문자와 Unicode 이스케이프를 같은 코드포인트 범위로 검사한다.
 fn violating_glyph(_rel: &str, line: &str, _next: &str) -> Option<String> {
-    // ① 리터럴 char.
     for ch in line.chars() {
         let cp = ch as u32;
         if is_forbidden_pictographic(cp) {
             return Some(format!("U+{cp:04X} `{ch}`"));
         }
     }
-    // ② `\u{HEX}` 이스케이프.
     let needle = "\\u{";
     let mut from = 0;
     while let Some(rel) = line[from..].find(needle) {
@@ -951,8 +713,6 @@ fn violating_glyph(_rel: &str, line: &str, _next: &str) -> Option<String> {
 
 #[test]
 fn no_raw_pictographic_glyph() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let mut violations = Vec::new();
@@ -969,8 +729,6 @@ fn no_raw_pictographic_glyph() {
 
 #[test]
 fn no_primitive_color_field_access_in_host_ui() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let mut violations = Vec::new();
@@ -985,18 +743,9 @@ fn no_primitive_color_field_access_in_host_ui() {
     );
 }
 
-/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
-///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md). 가리키는 것이 실재한다는
-/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
-/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
-///
-/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
-/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+/// 정책 예외는 경로의 존재만 확인한다. 현재 일치 건수가 없다고 필요 없어진 예외로 단정하지 않는다.
 #[test]
 fn allowlist_prefixes_point_at_paths_that_exist() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let missing = tasty_doc_guards::missing_referents(
@@ -1009,9 +758,7 @@ fn allowlist_prefixes_point_at_paths_that_exist() {
     );
 }
 
-/// 호출부 길이 리터럴을 `(파일, 접두, 값)` 으로 모은다 — **줄 번호를 담지 않는다.**
-/// 담으면 위쪽에 한 줄만 들어가도 한시 목록이 통째로 썩어, 목록이 결함과 무관하게
-/// 흔들린다.
+/// 무관한 줄 이동으로 기준이 바뀌지 않도록 (파일, 접두어, 값)으로 기록한다.
 fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
     length_setter_literals_under(
         root,
@@ -1020,11 +767,7 @@ fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
     )
 }
 
-/// 위 판독의 알맹이 — **스캔 루트와 하한을 인자로 받는다.**
-///
-/// 정본 값에 묶어 두면 이 추출을 합성 트리로 잴 길이 없다. 레포의 UI 파일 수(실측 185)와
-/// 합성 트리의 파일 수는 애초에 다른 모수이고, 상수 하나가 둘을 다 판정하려 들면 둘 중
-/// 하나는 반드시 틀린다.
+/// 작은 합성 트리도 검사할 수 있도록 루트와 하한을 인자로 받는다.
 fn length_setter_literals_under(
     root: &Path,
     scan_roots: &[&'static str],
@@ -1067,7 +810,7 @@ fn length_setter_literals_under(
                             .chars()
                             .take_while(|c| c.is_ascii_digit() || *c == '.')
                             .collect();
-                        // 숫자가 아니면 토큰을 넘긴 것이다 — 이 축이 원하는 형태다.
+                        // 접두어 바로 뒤가 숫자가 아니면 여기서는 판정하지 않는다.
                         if value.is_empty() || !value.starts_with(|c: char| c.is_ascii_digit()) {
                             continue;
                         }
@@ -1079,36 +822,15 @@ fn length_setter_literals_under(
     }
     assert!(
         scanned >= floor,
-        "스캔 파일이 {scanned}개뿐이다(하한 {floor}) — \
-         코퍼스가 비면 위반도 0 이다.\n\
-         ★ 판별은 이미 위에 있다 — 이 순회는 [`LENGTH_SETTER_SCAN_ROOTS`] 를 하나씩 돌면서 \
-         **루트마다** 빈 것을 따로 잡는다. 그러니 여기까지 왔다는 것은 어느 루트도 비지 \
-         않았다는 뜻이고, 남는 갈래는 하나다: 루트들이 다 살아 있는데 합이 줄었다.\n\
-         밖에서 세는 법:\n\
-             find src/view src/adapters/ui src/gfx/gpu crates/tasty-ui-widgets/src \
-                  crates/tasty-egui-theme/src -name '*.rs' | wc -l\n\
-         2026-09-06 실측 185. 그 수도 같이 줄었으면 UI 코드가 정말 줄어든 것이다.\n\
-         ★ 이 하한을 내려서 통과시키지 마라 — 이 축이 겨냥하는 것은 새로 들어오는 리터럴이라, \
-         코퍼스가 좁아진 만큼 정확히 그만큼이 안 보이게 된다.\n\
-         루트가 정당하게 옮겨 갔으면 하한이 아니라 [`LENGTH_SETTER_SCAN_ROOTS`] 를 고쳐라."
+        "스캔 파일이 {scanned}개로 하한 {floor}보다 적다. 각 루트가 빈 경우는 앞에서 검사하므로 전체 감소와 일부 누락을 확인한다. 루트가 이동했다면 LENGTH_SETTER_SCAN_ROOTS를 갱신한다. 수집 오류를 하한 변경으로 통과시키지 않는다."
     );
     out.sort();
     out
 }
 
-/// 호출부에 길이 리터럴이 **새로** 들어오지 않는다.
-///
-/// 이 축의 결함은 토큰이 아니라 배율이다. 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
-/// UI 배율을 `Theme::with_colors_and_zoom` 의 `zoomed()` 로만 적용하므로, 호출부에 적힌
-/// 숫자는 `ui_scale` 을 안 탄다 — 같은 리터럴이 갤러리에서는 결함이 아니다(ADR-0039).
-///
-/// **하한(`<= n`)이 아니라 집합 동등으로 본다.** 건수 고정은 빨개지기는 해도 무엇이
-/// 늘었는지 말하지 않고, 한 방향(늘어남)만 보면 자리가 고쳐졌을 때 목록이 그대로 남아
-/// "이미 부채" 라는 신호가 조용히 살아남는다. 동등은 두 방향을 다 이름으로 뱉는다.
+/// 리터럴 집합을 양방향으로 대조해 새 값과 제거된 값의 오래된 예외를 함께 찾는다.
 #[test]
 fn no_new_length_literal_at_call_sites() {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let root = tasty_doc_guards::repo_root();
     let root = root.as_path();
     let found = length_setter_literals(root);
@@ -1144,34 +866,14 @@ fn no_new_length_literal_at_call_sites() {
     );
     assert!(
         gone.is_empty(),
-        "한시 목록이 가리키는 리터럴이 사라졌다 — 고쳤으면 목록에서도 지워라. 남겨 두면 \
-         \"여기는 원래 부채\" 라는 신호가 아무것도 안 덮은 채 살아남는다:\n{}",
+        "한시 목록의 리터럴이 소스에서 사라졌다. 수정된 항목은 목록에서도 제거한다:\n{}",
         show(&gone)
     );
 }
 
-/// **양성 대조 — 순회와 길이 추출.**
-///
-/// 이 파일의 면제 술어 넷은 이미 걸려 있다(`the_spinner_exemption_discriminates_receiver`
-/// 등). 안 걸려 있던 것은 [`gather_rs_files`](모든 축이 공유하는 순회)와
-/// [`length_setter_literals_under`](길이 리터럴 추출)이다.
-///
-/// 추출 쪽에 조용한 갈래가 하나 있다. 접두 명부에는 **서로 감싸는 짝**이 있다
-/// (`set_min_height(` 안에 `min_height(` 가 있다). 낱말 경계 검사가 죽으면 한 자리가
-/// **두 번** 세어진다.
-///
-/// 위 축이 기준선과 집합 동등이니 그때 시끄럽게 죽을 것 같지만 — **재 보니 아니었다.**
-/// 낱말 경계 검사를 지우고 돌리면 이 대조 없이는 rc=0 이다(2026-09-08 실측). 지금
-/// 레포에 감싸는 접두 짝이 **숫자 인자와 함께** 나타나는 자리가 없어서, 중복 계수가
-/// 일어날 입력 자체가 없기 때문이다. 즉 그 검사는 지금 **아무 시험도 죽일 수 없는**
-/// 줄이었고, 그런 줄은 다음 사람이 "안 쓰는 것 같다" 며 지운다. 이 대조가 그 줄에
-/// 입력을 준다.
-///
-/// ★ 접두의 *값*은 여기 안 베낀다. 감싸는 짝을 명부에서 **런타임에 찾아** 쓴다 —
-/// 그래서 이 대조는 명부에 무엇이 들었는지가 아니라 **경계로 가른다는 사실**을 잰다.
+/// 접두어 목록에서 긴 이름이 짧은 이름을 포함하는 짝을 찾아, 같은 호출을 중복 수집하지 않는지 확인한다.
 #[test]
 fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
-    // 명부 안에서 "긴 것이 짧은 것을 접미로 품는" 짝을 찾는다.
     let (outer, inner) = LENGTH_SETTER_PREFIXES
         .iter()
         .find_map(|o| {
@@ -1203,20 +905,16 @@ fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
         format!("fn deep(ui: &mut Ui) {{\n    ui.{inner}120.0);\n}}\n"),
     )
     .expect("합성 하위 소스 실패");
-    // `.rs` 가 아닌 것 — 순회 밖이다.
     std::fs::write(
         root.join("zone/notes.md"),
         format!("문서가 `ui.{outer}42.0)` 를 인용한다\n"),
     )
     .expect("합성 문서 실패");
 
-    // ── 판독 1: 순회 ────────────────────────────────────────────────────
     let mut files = Vec::new();
     gather_rs_files(&root.join("zone"), &mut files);
     let mut rels: Vec<String> = files
         .iter()
-        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
-        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
         .map(|p| {
             repo_relative(p.strip_prefix(&root).unwrap_or(p))
                 .display()
@@ -1234,9 +932,7 @@ fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
         "`.rs` 가 아닌 파일을 모았다 — 이 접두를 **인용만** 하는 문서가 판정에 들어온다"
     );
 
-    // ── 판독 2: 길이 리터럴 추출 ────────────────────────────────────────
-    //
-    // 하한은 이 합성 트리의 성질로 준다 — 정본 150 은 다른 모수의 것이다.
+    // 실제 UI 파일 수가 아닌 합성 트리의 하한을 넘긴다.
     let got = length_setter_literals_under(root, &["zone"], 2);
     assert_eq!(
         got,
@@ -1252,8 +948,7 @@ fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
             .filter(|(rel, _, v)| rel == "zone/a.rs" && v == "12.5")
             .count(),
         1,
-        "감싸는 접두 짝에서 한 자리를 두 번 셌다 — 낱말 경계 검사가 죽었다. 그러면 \
-         기준선 동등이 시끄럽게 깨지지만 그 처방은 중복 계수에 대해 참이 아니다"
+        "긴 접두어 안의 짧은 접두어까지 같은 호출로 중복 집계했다"
     );
     assert!(
         !got.iter().any(|(_, _, v)| v == "99.0"),

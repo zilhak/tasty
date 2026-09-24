@@ -1,23 +1,7 @@
-//! `contributes` 권한 게이트 표가 코드와 문서에서 1:1 로 맞는지 검증한다.
-//!
-//! 게이트를 하나 늘리면 두 곳을 고쳐야 한다 — 매니페스트 검증 코드와
-//! `docs/dev-guide/plugin-permissions.md` 의 표. 문서 쪽을 빠뜨려도 컴파일도 테스트도
-//! 통과하므로 수동 대조로는 놓친다(실제로 `[[contributes.banner]]` 행이 표에서 빠진 채로
-//! 유지된 적이 있다). 매니페스트 작성자에게는 그 표가 정본이라, 표에 없는 게이트는
-//! **거부는 되는데 왜 거부되는지 문서에 없는 권한**이 된다.
-//!
-//! **이 크레이트에 사는 이유는 채널이다.** 이 가드의 입력은 전부 `docs/**` 인데,
-//! 본체 패키지의 통합 테스트를 돌리는 `check-headless` 는 push 트리거에
-//! `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 있다 — **그 문서만 고치는
-//! push 에서 정확히 안 도는** 형태였다. 실측(2026-09-05, 연속 push 30 구간): 전부 무시
-//! 대상 경로인 push 가 2 건이었다. 여기 doc-guards 는 경로 필터가 없다(ADR-0048).
-//!
-//! 대가로 `ContributesGate::ALL` 을 런타임에 열거하지 못하고 표를 텍스트로 읽는다
-//! (`tasty_doc_guards::manifest_text`). 판독이 진짜 표와 갈리는 위험은 본체 패키지의
-//! `tests/contributes_gate_readings_agree.rs` 가 받는다 — 거기서는 링크해 열거할 수 있다.
-//!
-//! 그래서 양방향을 다 본다. 문서에만 있는 행(삭제된 게이트의 잔재)도, 코드에만 있는
-//! 게이트(문서 누락)도 잡는다.
+//! contributes 권한 표와 매니페스트 검증 코드의 게이트를 양방향으로 대조한다.
+//! 문서만 바꾼 push도 검사하도록 경로 필터 없는 doc-guards 크레이트에 둔다(ADR-0048).
+//! 런타임 열거 대신 manifest_text로 소스를 읽는다. 실제 ContributesGate::ALL과의 일치는
+//! 루트의 tests/contributes_gate_readings_agree.rs에서 별도로 확인한다.
 
 const DOC: &str = "docs/dev-guide/plugin-permissions.md";
 
@@ -37,18 +21,9 @@ fn code_gates() -> Vec<(String, String)> {
 /// 표를 찾는 기준. 문서에 표가 여럿이라 헤더 행으로 특정한다.
 const TABLE_HEADER: &str = "| contributes | 요구 권한 |";
 
-/// 셀에서 **첫 백틱 코드 스팬**을 뽑는다.
-///
-/// 표의 셀은 `` `[[contributes.commands]]` (`action.kind = "open_popup"`) `` 나
-/// `` `ui.settings_page` (카테고리 무관) `` 처럼 토큰 뒤에 사람이 읽는 단서가 붙는다.
-/// 그 단서는 **백틱 밖**에 있으므로 코드 스팬만 뽑으면 자연히 잘린다 — 그래서 대조를
-/// `starts_with` 로 느슨하게 할 이유가 없고 **정확 일치**로 본다.
-///
-/// 느슨하게 두면 문서 쪽 토큰의 접미사 오타(`ui.tool_item_TYPO`)가 그대로 통과한다 —
-/// 문서↔코드 drift 를 잡는 것이 이 가드의 존재 이유인데 그 한 방향이 뚫린다.
+/// 셀의 첫 백틱 코드만 대조한다. 뒤 설명은 제외하되 토큰 접미사 오타는 놓치지 않도록 정확히 비교한다.
 fn code_span(cell: &str) -> String {
     let mut parts = cell.split('`');
-    // split 결과: [백틱 앞, 코드 스팬, 백틱 뒤, …]
     parts.next();
     match parts.next() {
         Some(span) if !span.trim().is_empty() => span.trim().to_string(),
@@ -71,7 +46,6 @@ fn doc_rows(text: &str) -> Vec<(String, String)> {
             if cells.len() != 2 {
                 panic!("{DOC}: 게이트 표 행의 열 수가 2가 아니다: {line}");
             }
-            // 구분선(`---`)이 섞여 들어오면 코드 스팬을 찾기 전에 걸러낸다.
             if cells[0].trim().starts_with("---") {
                 return None;
             }
@@ -116,8 +90,7 @@ fn every_doc_row_has_a_code_gate() {
     );
 }
 
-/// 행 수와 게이트 수가 같아야 위 두 테스트가 실제로 전단사를 보장한다 — 한쪽만으로는
-/// 한 행이 두 게이트에 매칭되는 경우를 못 잡는다.
+/// 한 문서 행이 여러 게이트와 일치하는 경우를 놓치지 않도록 총개수도 대조한다.
 #[test]
 fn the_doc_table_and_the_code_table_are_the_same_size() {
     assert_eq!(

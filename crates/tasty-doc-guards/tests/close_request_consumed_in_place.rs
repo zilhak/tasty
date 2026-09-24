@@ -1,41 +1,14 @@
-//! `MainView::request_close` 가 세운 플래그를 **세운 그 App 경로 안에서** 치우는지
-//! 소스 구조로 고정하는 가드.
-//!
-//! `request_close` 는 `close_requested` 플래그만 세운다. 그 플래그를 읽어 창을 치우는
-//! 자리는 원래 `App::dispatch_window_event_to_view` 의 handler 직후 하나뿐이었고, 그래서
-//! 창 이벤트 **밖**(`about_to_wait`)에서 MainView 가 마지막 워크스페이스를 닫으면
-//! 플래그는 다음 창 이벤트까지 서 있었다. 그 사이 `engine.workspaces` 는 비어 있고, 다음
-//! 창 이벤트가 `RedrawRequested` 면 렌더 경로(`forward_egui_mesh_context` →
-//! `surface_regions` → `active_workspace`)가 빈 Vec 을 인덱싱해 죽는다. 다른 이벤트가
-//! 먼저 오면 그 dispatch 가 치워서 살아남는다 — 확률로 죽는 레이스였다(Linux Xvfb 실측:
-//! webview 에 포커스를 둔 채 `close_workspace` 단축키로 마지막 워크스페이스를 닫는 시나리오).
-//!
-//! 이 레이스는 GPU·창·OS 이벤트 순서가 있어야 재현되므로 단위 시험으로 못 잡는다. 그래서
-//! 두 사실을 소스로 박는다.
-//!
-//! 1. **생산자 명부** — `.request_close()` 를 부르는 파일 집합이 [`PRODUCERS`] 와 같다.
-//!    새 파일이 플래그를 세우기 시작하면 여기서 멈춰, 그 경로가 창 이벤트 안에서 도는지
-//!    분류하게 한다.
-//! 2. **App 진입점의 짝** — `src/app/` 에서 MainView 의 닫기 가능 진입점([`ENTRIES`])을
-//!    부르는 자리마다, **같은 함수 안에서 그 뒤에** `self.close_self_requesting_windows()`
-//!    가 온다. 창 이벤트 dispatch 경로(`w.handle_event(..)` 직후의 단일 창 정리)는 이
-//!    진입점들을 직접 부르지 않으므로 이 규칙 밖이다.
-//!
-//! **이 가드가 못 보는 것**: 진입점 집합의 완전성. `ENTRIES` 는 [`PRODUCERS`] 의 호출부를
-//! 손으로 거슬러 올라가 만든 목록이고(`handle_shortcut` · `dispatch_action_by_id` ·
-//! `handle_double_tap_shortcut` · `poll_pending_native_menu`), 전이 도달 가능성을 기계로
-//! 재는 채널은 없다. 생산자 명부가 바뀔 때 그 목록을 다시 거슬러 올라가라.
-//!
-//! **안 고른 대안**: `dispatch_window_event_to_view` 진입 시 선 플래그를 먼저 소비하는 것 —
-//! 창 이벤트 앞은 막지만 같은 `about_to_wait` 뒤쪽·다음 `process_ipc` 가 빈 창을 볼 틈이
-//! 남는다. **재검토 조건**: 창 이벤트 밖 MainView 진입점이 늘어 이 짝 규칙의 유지 비용이
-//! 커지면, 짝 대신 App 이 `about_to_wait` 끝에서 한 번 전역 sweep 하는 형태로 바꾼다.
+//! MainView가 닫기를 요청한 뒤 같은 App 진입 경로에서 창을 정리하는지 소스 형태로 확인한다.
+//! 다음 창 이벤트까지 미루면 빈 워크스페이스가 redraw나 IPC에 노출될 수 있다.
+//! request_close 호출 파일과 창 이벤트 밖 진입점마다 뒤따르는 정리 호출을 대조한다.
+//! 창 이벤트 dispatch의 단일 창 정리는 이 진입점 목록 밖이다.
+//! 진입점의 완전성과 전이 호출은 판정하지 못한다. 생산자가 바뀌면 호출 경로를 직접 검토해야 한다.
+//! 창 이벤트 밖 진입점이 늘어 목록 유지가 어려워지면 about_to_wait 끝에서 전체를 정리하는 방식을 재검토한다.
 
 use std::path::PathBuf;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
-/// `.request_close()` 를 코드로 부르는 파일 전부(레포 상대). 정의(`fn request_close`)가
-/// 있는 `src/view/main.rs` 는 호출이 아니므로 안 든다.
+/// request_close의 정의가 아닌 호출 파일을 등록한다.
 const PRODUCERS: &[&str] = &[
     "src/adapters/ui/input/shortcuts/dispatch.rs",
     "src/adapters/ui/input/shortcuts/double_tap.rs",
@@ -52,9 +25,7 @@ const ENTRIES: &[&str] = &[
 
 const SWEEP: &str = "self.close_self_requesting_windows()";
 
-/// 현재 `src/app/` 안의 진입점 호출 자리 수. 0 으로 떨어지면 규칙 2 가 아무것도 안 잰
-/// 초록이 되므로 하한으로 박는다(실측: `webview_keys.rs` 의 `handle_shortcut` 하나 +
-/// `event_handler.rs` 의 `poll_pending_native_menu` 하나).
+/// App 진입점 수. 수집이 비어 정리 호출 검사가 생략되는 경우를 막는다.
 const ENTRY_SITES: usize = 2;
 
 fn sources(roots: &[&str]) -> Vec<(PathBuf, String)> {
@@ -76,10 +47,7 @@ fn request_close_producers_are_the_known_set() {
     known.sort();
     assert_eq!(
         found, known,
-        "`.request_close()` 를 부르는 파일 집합이 바뀌었다. 새 자리가 창 이벤트 dispatch \
-         **밖**(about_to_wait · user_event · IPC)에서 돌 수 있으면, 그 App 경로가 같은 \
-         함수 안에서 `close_self_requesting_windows()` 를 부르게 하고 ENTRIES 를 갱신하라. \
-         그러지 않으면 워크스페이스가 빈 창이 다음 RedrawRequested 를 받는다."
+        "request_close 호출 파일이 달라졌다. 창 이벤트 밖에서 실행될 수 있다면 해당 App 함수가 뒤이어 close_self_requesting_windows를 호출하는지 확인하고 ENTRIES를 갱신한다."
     );
 }
 
@@ -121,7 +89,6 @@ fn app_entry_calls_are_followed_by_the_sweep() {
     );
     assert_eq!(
         sites, ENTRY_SITES,
-        "src/app 의 진입점 호출 자리 수가 {sites} 다(기대 {ENTRY_SITES}). 늘었으면 새 자리도 \
-         위 규칙을 지키는지 보고 상수를 맞춰라. 0 이면 이 시험은 아무것도 안 잰다."
+        "App 진입점 호출이 {sites}곳으로 기준 {ENTRY_SITES}와 다르다. 수집 누락과 새 호출 경로를 확인하고 기준값을 갱신한다."
     );
 }

@@ -169,14 +169,12 @@ fn the_scan_separates_a_marker_outside_the_pruned_names_from_one_inside() {
 
     let outside = base.join("tools").join("cache");
     let inside = base.join("target").join("nested");
-    // 공통 제외 이름 밖에 있는 등록된 캐시도 비교한다.
     let excused = base.join(KNOWN_OUTSIDE[0].0).join("debug");
     for dir in [&outside, &inside, &excused] {
         std::fs::create_dir_all(dir).expect("프로브 디렉토리를 만들지 못했다");
         std::fs::write(dir.join("CACHEDIR.TAG"), CACHEDIR_LINE).expect("표식을 쓰지 못했다");
     }
 
-    // 검사 전에 합성 표식이 실제로 생성됐는지 확인한다.
     for dir in [&outside, &inside, &excused] {
         assert!(
             tasty_doc_guards::is_build_cache_dir(dir),
