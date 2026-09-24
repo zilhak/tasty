@@ -115,7 +115,7 @@ fn wait_until_free(server: &TastyInstance, surface_id: u64, within: Duration) ->
     None
 }
 
-/// 프로토콜 불일치 연결을 유지한 채 점유가 없는지 본다. 먼저 닫으면 EOF 정리가 실패한 입장을 가릴 수 있다.
+/// 프로토콜 불일치 연결을 유지한 채 점유가 없는지 본다. 먼저 닫으면 EOF 정리가 점유를 회수해, 거절됐어야 할 연결이 점유를 얻은 오류를 놓칠 수 있다.
 #[test]
 fn proto_mismatch_never_takes_occupancy_and_leaves_the_workspace_attachable() {
     let server = common::shared();
