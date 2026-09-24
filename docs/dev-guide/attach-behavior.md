@@ -395,7 +395,11 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
   보낸다. 재연결 때 `install_sender`로 sender만 교체해 두 리더가 같은 stdin을 읽는
   경합을 피한다.
 
-- **남는 유실 창(정확한 범위)**: 세션 전환의 아주 짧은 순간 — 이전 세션이 끝나 슬롯이 아직 `None` 이거나 이미 rx 가 drop 된 죽은 sender 를 가리키는 동안 사용자가 타이핑하면, 리더 스레드는 그 청크의 송신에 실패한다. 이때 리더 스레드는 (좀비가 되지 않도록) **종료하지 않고 그 청크만 버린 뒤 계속 읽는다** — 슬롯 자체는 절대 건드리지 않는다(ABA 경쟁 방지 불변식: 슬롯에 대한 쓰기는 `install_sender` 만 수행). 이 창은 "재연결이라는 명확한 이벤트 근방"으로 국한되며, 좀비 누적처럼 시간이 지날수록 커지지 않는다. 진짜 stdin EOF/에러가 이 창(슬롯이 비어있는 동안)에 겹치면 별도 `AtomicBool` latch 에 기억해뒀다가, 다음 세션이 `install_sender` 로 sender 를 설치하는 시점에 즉시 `RawEvent::StdinEof` 를 전달한다(그러지 않으면 EOF 통지가 영영 유실돼 다음 세션이 이미 닫힌 stdin 을 무한정 기다리게 될 수 있다). 이 창을 버퍼링으로 완전히 닫는 것은 이번 스코프 밖이다(선택적 후속 확장).
+- **재연결 중 입력이 사라질 수 있는 구간**: 이전 세션이 끝나 슬롯이 `None`이거나 수신 측이 이미 종료된 sender를 가리킬 때는 입력 청크를 보내지 못한다. 리더 스레드는 **그 청크만 버리고 계속 읽는다.**
+  슬롯을 바꾸는 함수는 `install_sender`뿐이다. 리더 스레드가 슬롯까지 수정해 새 연결을 덮어쓰지 않도록 한다(ABA 경쟁 방지).
+  입력 유실은 재연결 중 세션을 바꾸는 구간에서 발생하며, 리더 스레드가 누적돼 시간이 갈수록 커지는 문제는 아니다.
+  슬롯이 비어 있는 동안 stdin EOF나 오류가 발생하면 별도 `AtomicBool`에 기록한다. 다음 세션의 `install_sender`가 sender를 설치할 때 `RawEvent::StdinEof`를 바로 전달해, 이미 닫힌 stdin을 계속 기다리지 않도록 한다.
+  현재는 재연결 중 보내지 못한 입력을 버퍼에 보관하지 않는다.
 - **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 면 SSH 없이 직접 attach(동일 머신 다중 인스턴스 검증).
 
 ## 연결 생존 확인 (read timeout + heartbeat)
@@ -596,8 +600,8 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   `command.invoked` 와 동일 메커니즘)으로 `git_viewer.query_result` 이벤트를 plugin 에 전달만
   한다. 요청 트리거도 plugin→host `git_viewer.query` IPC(비동기 accept — `request_id` 만 즉시
   회신하고 실제 forward 는 `CoreState.pending_git_query_forward` 를 다음 tick 에 drain)로 plugin
-  이 직접 건다. **soft timeout 없음** — 소유자가 host 프로세스 밖(plugin)이라 파일 피커와 같은
-  매 프레임 판정 루프를 둘 자리가 마땅치 않아 이번 스코프에서 구현하지 않았다. 세션 자체가
+  이 직접 건다. **응답 대기 시간 제한(soft timeout)은 없다.** 파일 피커와 달리 요청을 관리하는
+  플러그인이 별도 프로세스로 실행되며, 호스트의 프레임마다 대기 시간을 확인하는 처리가 없다. 세션 자체가
   끊기는 경우는 보내기 전(send-time 실패)이든 보낸 뒤(`cleanup_mirror_workspace` 가
   `request_id=0` sentinel 로 강제 abandon)든 즉시 `ok:false` 로 커버된다 — 빠진 건 "연결은 계속
   살아있는데 원격 tasty 프로세스 자체가 응답만 안 주는" 좁은 경우다. ADR-0022의

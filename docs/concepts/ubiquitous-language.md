@@ -56,17 +56,14 @@
 | Surface | 서피스 | サーフェス |
 | Workspace | 워크스페이스 | ワークスペース |
 
-- **범위는 사용자 표면이다** — `lang/*.toml`(호스트 · 번들 plugin)과 `site/content` 의
-  한국어 가이드. `docs/` 산문은 안 든다: 바로 위 Window 정의가 "winit OS 창 자원" 이라고
-  쓰는 것처럼, 개발자 문서는 개념을 풀어 설명하느라 보통명사를 쓴다. 그쪽까지 한 낱말로
-  모으려면 별개 결정이 필요하고 그 결정은 없다.
+- **이 표기 규칙은 화면 문구와 사용자 가이드에 적용한다.** `lang/*.toml`(호스트·번들 플러그인)과 `site/content`의 한국어 가이드가 대상이다.
+  `docs/`의 개발자 설명에는 적용하지 않는다. 예를 들어 위 Window 정의의 "winit OS 창 자원"처럼 개념을 설명할 때 보통명사를 사용할 수 있다.
 - **`창` 은 Window 를 가리킬 때만 금지다.** Popup 이나 Modal 을 가리키는 `창`(알림 창 ·
   Git 뷰어 창 · 확인 창)과 낱말이 다른 `주소창` 은 그대로 둔다 — 판정 기준은 아래 §View 내부
   의 Window / Popup 구분이고, OS 창을 소유하는 것(= `View` 구현)만 `윈도우` 다.
 - 일본어 “새 윈도우”는 메뉴·설정에서 모두 `新しいウィンドウ`로 쓴다. 이 규칙은 그 동작 이름에만 적용한다. `[pane_context_menu]`의 `新規ターミナル`과 `[explorer.tab]`의 `新しいタブ`까지 같은 단어로 바꾸지 않는다.
-- 집행: `crates/tasty-doc-guards/tests/one_concept_one_word_on_the_user_facing_surface.rs`.
-  은퇴한 표기(`패인` · `ウインドウ`)는 예외 없이 0 이고, `창` 은 Window 가 아닌 자리만
-  좌표와 근거를 붙여 그 파일의 명부에 남는다.
+- `crates/tasty-doc-guards/tests/one_concept_one_word_on_the_user_facing_surface.rs`에서 검사한다.
+  이전 표기인 `패인`·`ウインドウ`는 사용하지 않는다. `창`을 OS Window 이외의 뜻으로 사용하는 경우에는 해당 검사 파일에 위치와 근거를 등록한다.
 
 ### View 내부 (→ hierarchy.md, `design/systems/`)
 
@@ -107,7 +104,7 @@
 
 ### attach (→ [attach-behavior.md](../dev-guide/attach-behavior.md))
 
-- **server / client** — 점유당하는 쪽(PTY 권위 owner, 항상 loopback 으로만 받음) / 점유하는 쪽(원격성을 흡수). "로컬/원격" 은 **client 측 개념**.
+- **server / client** — 서버는 PTY를 관리하며 점유 요청을 받고, loopback 주소에서만 연결을 받는다. 클라이언트는 서버에 연결해 대상을 점유하고 입력·출력을 전달한다. "로컬/원격"은 **클라이언트에서 서버에 연결하는 방식**을 구분하는 말이다.
 - **mirror** — client 가 받은 출력으로 PTY 없이 재구성한 복제 화면. GUI mirror = 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 띄운 것.
 - **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0020](../adr/0020-remote-connection-profiles.md).)
 - **SSH 위임(SSH delegation)** — 시스템 `ssh` 바이너리에 원격 연결을 맡기는 기능. 프로세스 실행, 터널 수명, 원격 포트 찾기, 재시도 간격, 취소를 `tasty-ssh`가 담당하며 CLI와 GUI가 함께 사용한다. 포트 찾기·프로필 재감지·대화형 접속은 터널 기능과 구분한다.
@@ -134,7 +131,9 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 | Tab | Window(탭) | Tab |
 | Surface(terminal) | Pane | Pane(split) |
 
-## 코드 심볼 크로스워크
+<a id="코드-심볼-크로스워크"></a>
+
+## 용어와 코드 심볼의 대응
 
 | 용어 | Rust 심볼 |
 |------|-----------|

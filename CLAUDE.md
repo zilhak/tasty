@@ -23,16 +23,18 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 
 작업 전에 [Tasty의 기본 원칙](docs/identity.md)을 읽는다. 아래는 코드 작업에 적용하는 주요 규칙이다.
 
-1. **사용자 행동 ↔ 에이전트 행동 분리** — 에이전트 행동(IPC/CLI)의 부수효과가 사용자 상태(포커스 / 닫은 항목 히스토리 / 선택·스크롤·커서)에 닿지 않는다. 사용자 입력 재현(키/마우스 주입, popup 강제 open/close, 메뉴 강제 invoke, 포커스 전환)은 release 에 없고 `#[cfg(debug_assertions)]` debug 격리로만 존재한다. debug 핸들러는 **모듈 선언에 cfg 가 붙은 별도 파일**로 모은다(디렉토리 이름이 아니라 그 성질이 기준이다 — `src/adapters/ipc/handler/` 의 `debug.rs`·`popup.rs` 등). 판단 기준: *에이전트가 자기 작업에 필요한가(→ release) vs 사용자 조작을 재현하는가(→ debug)*. 상세 [`docs/dev-guide/debug-ipc.md`](docs/dev-guide/debug-ipc.md).
-2. **AI 에이전트 조작 가능성** — 에이전트 기능(surface/tab/workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등)은 **IPC + CLI 양면** 으로 동작해야 한다. GUI 전용 에이전트 기능 금지. 부족하면 추가한다.
-3. **포커스 독립성** — 모든 명령은 대상을 ID 로 직접 지정, list 는 전 워크스페이스 순회, 활성 상태 의존 동작 금지, release 엔 포커스 변경 API 없음. 상세 [`docs/design/policies/focus.md`](docs/design/policies/focus.md).
-4. **크로스 플랫폼** — Windows/macOS/Linux 모두 1급. 플랫폼 분기는 `#[cfg(...)]`, 한 OS 전용 기능도 다른 OS 컴파일이 깨지지 않게.
+1. **사용자 행동 ↔ 에이전트 행동 분리** — 에이전트의 IPC·CLI 호출은 사용자의 포커스, 닫은 항목 히스토리, 선택·스크롤·커서를 바꾸지 않는다.
+   에이전트가 자기 작업에 사용하는 기능은 release에서 제공한다. 키·마우스 입력, 팝업 열기·닫기, 메뉴 실행, 포커스 전환처럼 사용자 조작을 재현하는 기능은 debug 빌드에서만 제공한다.
+   해당 핸들러는 **모듈 선언에 `#[cfg(debug_assertions)]`가 붙은 별도 파일**에 둔다. 폴더 이름만 debug인 것으로는 충분하지 않다. `src/adapters/ipc/handler/`의 `debug.rs`·`popup.rs`가 그 예다. 상세 조건은 [debug IPC 가이드](docs/dev-guide/debug-ipc.md)를 따른다.
+2. **AI 에이전트 조작 가능성** — surface·tab·workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등의 기능은 **IPC와 CLI 양쪽에서 제공한다.** 에이전트에게 필요한 기능이 GUI에만 있거나 아직 없다면 추가한다.
+3. **포커스 독립성** — 모든 명령은 대상을 ID로 직접 지정한다. 목록 조회는 모든 워크스페이스를 확인하며, 현재 활성 상태에 의존해 동작하지 않는다. release에는 포커스 변경 API를 제공하지 않는다. 상세 규칙은 [포커스 정책](docs/design/policies/focus.md)을 따른다.
+4. **크로스 플랫폼** — Windows·macOS·Linux를 동등하게 지원한다. OS별 코드는 `#[cfg(...)]`로 구분하고, 한 OS 전용 기능이 다른 OS의 컴파일을 깨뜨리지 않도록 한다.
 
 # 작업 규칙
 
 ## 시작 전 (필수)
 
-1. [`docs/identity.md`](docs/identity.md) 먼저 읽기 — Tasty 정체성과 불가침 원칙. 모든 설계의 축.
+1. [`docs/identity.md`](docs/identity.md)를 먼저 읽는다. Tasty의 목적과 모든 설계에서 지켜야 할 원칙을 설명한다.
 2. [`docs/concepts/ubiquitous-language.md`](docs/concepts/ubiquitous-language.md) — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
 3. 해당 작업 영역의 가이드 문서 확인 — [`docs/index.md`](docs/index.md) 에서 전체 인덱스 확인.
 
@@ -51,8 +53,8 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 - **사용자에게 보이는 동작**(메뉴·단축키·설정 키·CLI 명령·설치 절차)이 바뀌면 공개 사이트의 사용자 가이드 [`site/content/`](site/content/index.md) 도 같은 커밋에서 갱신한다. 가이드는 `docs/` 명세와 독자가 다르다(설치해서 쓰는 사람) — 소스 경로·ADR·IPC 메서드명을 넣지 않는다. 영어 번역(`site/content/en/`)을 손봤으면 `--stamp` 한다 ([`docs/dev-guide/site.md`](docs/dev-guide/site.md)).
 - 해당 카테고리의 인덱스(예: [`docs/features/index.md`](docs/features/index.md), [`docs/dev-guide/index.md`](docs/dev-guide/index.md))를 갱신. [`docs/index.md`](docs/index.md) 는 카테고리 진입점 표라, 카테고리 자체가 신설/폐지될 때만 손댄다.
 - 구현 히스토리는 남기지 않는다. **현재 상태만** 기술한다.
-- docs 문서에 마크다운 체크박스(task list)를 넣지 않는다 — 체크 상태는 진행 추적이라 transient 다. Acceptance Criteria 는 평문 Given/When/Then 불릿, 검증·절차 항목은 평문 불릿이나 번호 목록 ([`docs/documentation-model.md`](docs/documentation-model.md) §6). `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` 가 강제한다.
-- 같은 사실을 고치기 전에 인용을 검색하고 변경 뒤 코드·문서를 함께 대조한다. 같은 목록을 여러 곳에서 관리하면 정합 검사도 확인한다([`docs/dev-guide/duplicated-sets.md`](docs/dev-guide/duplicated-sets.md)). 규율 본문은 [`docs/documentation-model.md`](docs/documentation-model.md) §6.
+- docs 문서에는 마크다운 체크박스(task list)를 넣지 않는다. 진행 상태는 계속 바뀌므로 로컬 작업 문서에서 관리한다. 완료 조건은 Given/When/Then 형식의 평문 불릿으로, 검증·절차 항목은 평문 불릿이나 번호 목록으로 적는다([`docs/documentation-model.md`](docs/documentation-model.md) §6). `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs`가 이를 검사한다.
+- 같은 사실을 고치기 전에 인용을 검색하고 변경 뒤 코드·문서를 함께 대조한다. 같은 목록을 여러 곳에서 관리하면 서로 일치하는지 검사한다([`docs/dev-guide/duplicated-sets.md`](docs/dev-guide/duplicated-sets.md)). 자세한 규칙은 [`docs/documentation-model.md`](docs/documentation-model.md) §6에 있다.
 - 검사가 특정 사실을 보장한다고 쓸 때는 해당 결함을 실제로 검출하는지 확인한다. 확인한 범위와 한계는 [문서 작성 규칙](docs/documentation-model.md)과 [자체 검증](docs/dev-guide/self-verification.md)에 따라 적는다.
 - 결정의 *근거 / 대안 / 재검토 조건* 은 `docs/adr/`의 ADR에 남긴다. design/ 본문은 결정의 *현재 운영 상태* 만 기술. ADR 작성/수정 시 [`docs/adr/template.md`](docs/adr/template.md) 의 작성규칙을 먼저 읽는다 — 무엇이 ADR 이 될 자격인지와 쓰기 전에 기존 ADR 을 찾는 법은 그 안의 "새 ADR 을 쓰기 전에" 가 정한다.
 
@@ -154,7 +156,7 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 - `PhysicalPx`: GPU, wgpu, winit 마우스 좌표, `Rect` 필드
 - `LogicalPx`: egui UI, Theme 상수, 사이드바 너비
 - 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수. 사각형은 `PhysicalRect` / `LogicalRect` 짝으로 네 변을 한 번에 변환한다.
-- **강제 수단이 둘이다**: 두 좌표계를 *섞는* 것은 컴파일러가 막고, 변환을 *빠뜨리는* 것(`.value()` 로 벗겨서 `× ppp` / `÷ scale_factor`)은 `src/dpi_conversion_guard.rs` 가 막는다. 타입만으로는 후자가 안 잡힌다.
+- 두 좌표계의 타입을 섞어 쓰면 컴파일 오류가 난다. `.value()`로 숫자를 꺼낸 뒤 필요한 `× ppp` 또는 `÷ scale_factor` 변환을 빠뜨리는 경우는 `src/dpi_conversion_guard.rs`에서 검사한다. 타입 검사만으로는 이 누락을 찾을 수 없다.
 
 상세: [`docs/concepts/typed-length.md`](docs/concepts/typed-length.md).
 
@@ -187,7 +189,7 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 
 **tasty 의 모든 단축키는 `KeybindingSettings` 로 노출되며, 코드에 하드코딩되어서는 안 된다.** macOS NSMenu / Windows AcceleratorTable / Linux Wayland 같은 OS 메뉴 측 key equivalent 도 `KeybindingSettings` 의 대응 binding 값을 따라가야 한다.
 
-예외 (수정 불가능한 단축키) — **OS 자체가 박아두어 tasty 가 무력화 / 덮어쓰기 / 가로채기 모두 불가능한 단축키**는 그대로 둔다 (예: macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등). 이 케이스는 애초에 tasty 가 등록할 수도 끌 수도 없는 것이므로 정책의 범위 밖이다.
+예외는 **OS가 관리하며 Tasty가 변경·해제·가로채기할 수 없는 단축키**다. macOS Spotlight의 `Cmd+Space`나 OS 전역 윈도우 전환 등이 해당한다. Tasty가 제어할 수 없는 단축키는 설정에 노출하는 대상에서 제외한다.
 
 Tasty가 직접 등록하는 NSMenu·AcceleratorTable 메뉴의 key equivalent는 `KeybindingSettings`의 binding을 사용한다. 대응 binding이 없으면 비워 둔다. `cut:`·`performClose:`·`miniaturize:`·`hide:`처럼 OS 표준 selector를 사용해도 단축키를 상수로 지정할 수는 없다. `with_default_menu(false)`로 만든 메뉴의 단축키는 Tasty가 관리한다.
 
@@ -226,7 +228,7 @@ tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등
 - [`docs/dev-guide/debug-ipc.md`](docs/dev-guide/debug-ipc.md) — debug 빌드 전용 IPC + 격리 정책
 - [`docs/dev-guide/model-view-split.md`](docs/dev-guide/model-view-split.md) — Model + Host View 분리 패턴
 - [`docs/dev-guide/gpu-rendering.md`](docs/dev-guide/gpu-rendering.md) — GPU 렌더링 구조
-- [`docs/dev-guide/agent-runner.md`](docs/dev-guide/agent-runner.md) — **Task DAG executor.** 여러 AI 에이전트가 같은 tasty 인스턴스를 공유할 때 쓰는 협업 primitive 6종(`agent.*`: task DAG · barrier · semaphore · lease · reducer · rate-limit). 기획/인터페이스는 [`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md)
+- [`docs/dev-guide/agent-runner.md`](docs/dev-guide/agent-runner.md) — 작업 의존 관계(DAG)에 따라 작업을 실행하는 방법. 여러 AI 에이전트가 같은 Tasty를 사용할 때 필요한 협업 기능 6종(`agent.*`: task DAG · barrier · semaphore · lease · reducer · rate-limit)을 설명한다. 기능과 인터페이스는 [`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md)에 있다.
 - [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md)(민감 데이터는 그 문서 §6 의 [민감 데이터 절](docs/dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)), [`plugin-permissions.md`](docs/dev-guide/plugin-permissions.md) — Plugin 제작. **번들 plugin 코드를 고친 뒤 실행 중 tasty 인스턴스에 재빌드·재시작 없이 반영할 때도 이 문서 §9.1** (빌드 → 재서명 → `disable` → `upgrade-builtins` → `enable` 순서) — "새 plugin 만들기"가 아니라도 반드시 먼저 확인한다.
 
 ## 자체 검증

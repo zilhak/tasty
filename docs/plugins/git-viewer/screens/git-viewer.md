@@ -105,9 +105,11 @@ popup을 닫으면 핸들을 해제한다. 다중 thread dispatch나 저장소 �
 
 ## 갤러리 specimen
 
-`crates/tasty-gallery/src/catalog/components/git_viewer.rs` — Overlays › `Git worktree viewer
-popup`. context strip · 섹션 strip · 2줄 worktree 행 · Changes · Commits · diff well 을 토큰·구조
-정합으로 전사(픽셀 동일성 비목표 — ADR-0035 완전성). 디자인·갤러리·제품 구현의 대응표:
+`crates/tasty-gallery/src/catalog/components/git_viewer.rs`의 Overlays › `Git worktree viewer
+popup`에서 확인한다. 상단 정보 영역, 섹션 제목, 두 줄로 표시한 워크트리 행,
+Changes·Commits 목록과 diff 영역에 디자인의 구조와 토큰을 반영한다.
+픽셀까지 똑같이 재현하는 것은 목표가 아니며, 필요한 UI 요소를 빠짐없이 포함하는 기준은 ADR-0035를 따른다.
+디자인·갤러리·제품 구현의 대응표:
 [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#git-viewer-plugins).
 
 ## 시각 소스
