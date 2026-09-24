@@ -63,7 +63,7 @@ limit_body = "surface {}: API 에러가 {}번 연달아 나서({}) 자동 재개
 done_message = "surface {}: 상태 변경 (호출: {})"
 stop_failure_hint = " — API 에러({})로 턴이 끝나 입력을 기다리는 중"
 stalled_message = "surface {}: 오류 뒤 출력이 멈췄습니다. 자식은 아직 active 상태이며 완료 신호가 없어 작업이 멈췄을 수 있습니다."
-stalled_no_error_message = "surface {}: 오랫동안 출력과 완료 신호가 없습니다. 작업이 멈췄거나 훅이 전달되지 않은 입력창에서 기다리는 중일 수 있습니다."
+stalled_no_error_message = "surface {}: 오랫동안 출력과 완료 신호가 없습니다. 작업이 멈췄거나 훅이 전달되지 않은 상태로 입력을 기다리는 중일 수 있습니다."
 stalled_hint = " 마지막 오류: {}"
 
 [claude.launch]

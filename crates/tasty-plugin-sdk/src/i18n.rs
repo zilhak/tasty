@@ -27,8 +27,7 @@ pub struct Translator {
 }
 
 impl Translator {
-    /// `lang_dir`에서 `en.toml`을 base로 로드한 뒤, `locale != "en"`이면
-    /// `<locale>.toml`을 덮어쓴다. 파일이 없으면 조용히 무시 (키 자체 반환).
+    /// en.toml을 읽고 활성 언어 파일의 값을 덮어쓴다. 번역을 찾지 못한 키는 그대로 반환한다.
     pub fn load(lang_dir: &Path, locale: &str) -> Self {
         Self::load_with_overrides(lang_dir, locale, "", None)
     }

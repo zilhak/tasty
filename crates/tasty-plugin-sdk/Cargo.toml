@@ -18,11 +18,8 @@ tasty-i18n = { path = "../tasty-i18n" }
 anyhow = "1"
 thiserror = "1"
 
-# egui-mesh plugin SDK 헬퍼 (A1-S4, 옵셔널). 기본 빌드는 egui 의존 없이 유지한다 —
-# plugin 은 무거운 host 의존 없이 컴파일 가능해야 한다 (lib.rs 불변식). egui-mesh
-# surface 를 그리는 plugin 만 이 feature 를 켠다. protocol 의 egui-mesh 코덱과 동일
-# egui 인스턴스로 unify 되도록 epaint serde OFF + bytemuck ON 을 맞추고, plugin 이
-# 자기 폰트 atlas 를 소유하도록 default_fonts 를 켠다.
+# egui-mesh 기능을 켜는 플러그인만 egui와 기본 폰트를 사용한다.
+# 프로토콜 코덱과 같은 egui 타입을 사용하도록 bytemuck을 함께 켠다.
 egui = { version = "0.31", default-features = false, features = [
     "bytemuck",
     "default_fonts",

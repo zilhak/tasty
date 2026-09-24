@@ -14,9 +14,14 @@
 ## [Unreleased]
 
 ### Added
-- `PluginRequest` 에 `dropped_requests: u64` (optional + default 0 — additive, api_version 유지) — 호스트 → plugin 요청 큐가 가득 차면 호스트는 그 요청을 **기다리지 않고 버린다**([ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md)). 버려진 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 몰랐다. 이제 그 뒤로 **실제 큐에 들어가는 다음 요청**에 그 사이 버린 수가 실린다. 0 이면 직렬화에서 빠지므로 구버전 plugin 이 보는 바이트는 종전과 같고, 알 수 없는 필드는 기본 Serde 동작으로 무시된다. SDK 노출은 `Plugin::on_host_dropped_requests`(기본 no-op) · `HostHandle::dropped_by_host()` · 자동 `warn` 로그. 근거는 [ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md).
-- `IpcCallResult` 에 `error_code: Option<i32>` (optional + default — additive, api_version 유지) — 호스트가 plugin caller 에게 돌려주는 `ipc.result` 가 JSON-RPC 코드를 함께 싣는다. 종전에는 메시지만 가서, 다른 plugin 을 부른 plugin 은 실패 사유를 문자열로 뒤져야 했다. 구버전 호스트가 보낸 모양은 `None` 으로 읽힌다. 근거는 [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
-- `PluginEvent::BannerInvalidated { instance_id }` — 위 `PopupInvalidated` 의 egui-mesh banner 대응. banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가 `viewport_output` 으로 다음 pass 를 요청할 수 있는데(hover fade·스크롤 스무딩·스피너) 그 요청을 host 로 올리는 자리가 없었다 — SDK 가 값을 계산해 놓고 버렸다. `#[serde(other)]` fallback(`PluginEvent::Unknown`) 대상이라 구버전 host 는 안전하게 무시한다. (additive, api_version 유지)
+
+- `PluginRequest`에 `dropped_requests: u64`를 추가했다. 호스트 요청 큐가 포화되면 기다리지 않고 요청을 버리며, 다음으로 큐에 넣는 요청에 그 수를 전달한다. 기본값은 0이고, 0이면 직렬화에서 생략한다. 알 수 없는 필드는 기본 Serde 동작으로 무시된다. 선택 필드 추가이므로 `api_version`은 유지한다. [ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md).
+
+  SDK는 `Plugin::on_host_dropped_requests` 콜백과 `HostHandle::dropped_by_host()` 조회, `warn` 로그로 이 수를 알린다. 콜백의 기본 구현은 아무것도 하지 않는다.
+
+- `IpcCallResult`에 `error_code: Option<i32>`를 추가해 `ipc.result`로 JSON-RPC 오류 코드도 전달한다. 호출자는 메시지 문자열뿐 아니라 코드로 실패를 구분할 수 있다. 필드가 없는 구버전 호스트의 응답은 `None`으로 읽는다. 선택 필드 추가이므로 `api_version`은 유지한다. [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
+
+- `PluginEvent::BannerInvalidated { instance_id }`를 추가했다. `PopupInvalidated`와 같은 방식으로 배너의 다음 렌더링을 요청한다. SDK가 egui의 `viewport_output`에서 받은 재렌더 요청을 호스트에 전달할 때 사용한다. `#[serde(other)]`가 있는 구버전 호스트는 `PluginEvent::Unknown`으로 읽어 무시한다. 변형 추가이며 `api_version`은 유지한다.
 
 ## [0.10.2] - 2026-08-29
 

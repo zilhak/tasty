@@ -20,21 +20,13 @@ use crate::error::PluginError;
 use crate::handle_channel::HandleClient;
 use crate::shared_buffer::SharedBuffer;
 
-/// 호스트 호출 결과. 워크스페이스 plugin이 `match` 분기에 쓰지 않고 `?`로만
-/// 흘려보내는 경우가 대부분이라, 표준 [`PluginError`]로 합쳤다.
+/// 호스트 호출의 결과 타입.
 pub(crate) type HostCallResult = Result<Value, PluginError>;
 pub(crate) type PendingCalls = Arc<Mutex<HashMap<u64, mpsc::Sender<HostCallResult>>>>;
 
-/// 두 pending 맵의 poison 을 각각 첫 1 회만 보고한다 — poison 은 sticky 라 이후 모든
-/// 호출이 같은 경로를 탄다.
-///
-/// 임계구역은 `HashMap` 의 insert/remove 뿐이라 패닉이 나도 불변식이 성립한다. 방침표는
-/// plugin 프로세스 하나가 죽는 범위라면 패닉을 허용하지만, **복구가 가능한 자료구조에서
-/// 프로세스를 버리는 것은 재시작보다 비싸다** — `runtime.rs` 의 `fd_pending` 도 같은
-/// 이유로 복구를 택했다. 소켓 쓰기(writer)만 데이터를 신뢰할 수 없어 패닉을 유지한다.
-///
-/// 조용히 버리면 `deliver_ipc_result` 가 응답을 배달하지 못해 **이후 모든 host call 이
-/// timeout** 이 되고, 정리 경로에서 버리면 죽은 항목이 맵에 누적된다.
+/// 두 pending 맵의 poison을 각각 처음 한 번 보고한다.
+/// 맵 정리와 응답 전달은 복구한 잠금으로 계속 처리한다. 소켓 writer의 poison은
+/// 메시지가 일부만 쓰였을 수 있어 이와 다르게 처리한다.
 static PENDING_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static FD_PENDING_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -62,7 +54,7 @@ pub struct HostHandle {
     writer: Arc<Mutex<TcpStream>>,
     pending: PendingCalls,
     next_call_id: Arc<AtomicU64>,
-    /// host call의 최대 대기 시간. 기본 60초. 호출 전에 변경 가능.
+    /// 송신 후 응답 채널을 기다리는 시간. 기본 60초이며 잠금·송신 시간은 포함하지 않는다.
     pub timeout: Duration,
     /// 보조 핸들 채널의 writer. 없으면 shared buffer 기능 비활성.
     handle_writer: Option<Arc<Mutex<HandleClient>>>,
@@ -101,18 +93,9 @@ impl HostHandle {
         }
     }
 
-    /// 메인 recv 루프가 끝났을 때 부른다 — 대기 중인 host call 을 전부
-    /// [`PluginError::HostClosed`] 로 깨우고, 이후의 call 도 기다리지 않게 한다.
-    ///
-    /// 루프가 끝나면 `ipc.result` 를 읽을 스레드가 없다. 그런데 worker 는 shutdown 앞에
-    /// 쌓인 요청을 계속 처리하므로, 그중 하나가 host 를 부르면 결과가 배달될 길 없이
-    /// [`Self::timeout`](기본 60 s)까지 선다. 그 동안 `run` 이 worker join 에서 서고,
-    /// 호스트는 shutdown 유예(2 s) 뒤 프로세스를 강제 종료한다. plugin 입장에서 그 call 의
-    /// 뜻은 "호스트가 떠났다" 이므로 그 에러로 즉시 돌려준다.
-    ///
-    /// 순서가 경합을 닫는다: 여기서는 플래그를 먼저 켜고 맵을 비우고, [`Self::call`] 은
-    /// 맵에 넣은 **뒤에** 플래그를 본다. 맵 락이 둘을 줄 세우므로, 비우기 전에 넣은 call 은
-    /// 여기서 깨고 비운 뒤에 넣은 call 은 자기 확인에서 플래그를 본다.
+    /// 수신 루프 종료 시 대기 중인 호스트 호출에 HostClosed를 전달한다.
+    /// 먼저 종료 플래그를 켜고 pending 맵을 비운다. 새 호출은 맵에 등록한 뒤
+    /// 종료 플래그를 검사하므로 등록 시점이 겹쳐도 결과를 기다리지 않게 한다.
     pub(crate) fn fail_pending_calls(&self) {
         self.host_gone.store(true, Ordering::SeqCst);
         let drained: Vec<(u64, mpsc::Sender<HostCallResult>)> = tasty_utils::poison::recover_mutex(
@@ -130,12 +113,8 @@ impl HostHandle {
         }
     }
 
-    /// 호스트가 이 plugin 에게 보내려다 **버린** 요청의 누적 수.
-    ///
-    /// 호스트 → plugin 큐는 유한하고 포화 시 거절이라(docs/architecture/ipc-server.md#플러그인-채널의-상한), 밀리는 plugin 은
-    /// 자기에게 오던 요청이 사라지는 것을 원리적으로 알 수 없었다. 이 값이 0 이 아니면
-    /// **이 plugin 이 소비를 못 따라가고 있다** — 자체 작업량을 줄이거나(polling 간격,
-    /// 렌더 빈도) 사용자에게 알릴 판단 근거다. 단조 증가하고 절대 줄지 않는다.
+    /// 호스트가 큐 포화로 버렸다고 이 SDK에 알려 온 요청의 누적 수.
+    /// 현재 부하뿐 아니라 앞서 발생한 포화도 포함한다.
     pub fn dropped_by_host(&self) -> u64 {
         self.dropped_by_host.load(Ordering::Relaxed)
     }
@@ -172,19 +151,10 @@ impl HostHandle {
         self
     }
 
-    /// plugin 자신의 백그라운드 스레드가 자기 네임스페이스 IPC 메서드(예: 이
-    /// plugin이 등록한 `"markdown.reload"`)를 트리거한다.
-    ///
-    /// [`Self::call`]과 달리 host를 왕복하지 않는다 — 호스트 dispatcher
-    /// (`plugin_ipc.rs`)는 caller가 네임스페이스 owner 자신이면 forward하지 않고
-    /// host-native dispatch로 통과시키는 trampoline 정책이라, plugin 자신의
-    /// 네임스페이스 메서드를 `call()`로 부르면 항상 `-32601 Method not found`로
-    /// 실패한다. 이 메서드는 worker 큐에 직접 enqueue해 `&mut plugin`을 쥔 단일
-    /// worker 스레드에서 `handle_ipc_method`를 바로 실행시킨다 — read/재생성이
-    /// 여전히 같은 함수·같은 스레드로 수렴하므로 레이스가 없다.
-    ///
-    /// fire-and-forget이다 — host가 요청한 적 없는 call이라 돌려줄 응답 대상이
-    /// 없다. 실패는 worker 스레드가 `tracing::warn!`으로 로그만 남긴다.
+    /// 자기 IPC 메서드를 호스트를 거치지 않고 플러그인 워커 큐에 넣는다.
+    /// HostHandle::call은 자기 네임스페이스 요청을 호스트 구현으로 전달하므로
+    /// 플러그인 내부 함수를 실행하려면 이 메서드를 사용한다.
+    /// 반환값은 큐에 넣은 결과이며, 실행 실패는 워커가 로그에 남긴다.
     pub fn self_invoke(&self, method: impl Into<String>, params: Value) -> Result<(), PluginError> {
         let tx = self
             .self_invoke_tx
@@ -211,7 +181,7 @@ impl HostHandle {
         Ok(())
     }
 
-    /// 호스트 IPC 메서드를 동기로 호출한다. 응답까지 [`Self::timeout`]만큼 block.
+    /// 호스트 IPC를 호출한다. 송신 뒤 응답 채널 대기에 timeout을 적용한다.
     pub fn call(&self, method: impl Into<String>, params: Value) -> Result<Value, PluginError> {
         let method_str = method.into();
         let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
@@ -356,13 +326,8 @@ impl HostHandle {
         Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }
 
-    /// Windows: Unix 판과 같은 모양이되 핸들을 fd 대신 in-band HANDLE u64 로 받는다.
-    /// host 가 `DuplicateHandle` 로 우리 프로세스 테이블에 복제한 파일 매핑 핸들을
-    /// 보조 채널 라인으로 받아 `tasty_shm::receive(Handle)` 로 매핑한다.
-    ///
-    /// **하나로 묶지 않는다.** 두 판이 받는 것이 fd 와 HANDLE 로 다르고 그 차이가 몸통
-    /// 전체에 퍼져 있어 공유할 알맹이가 없다 — `#[cfg]` 로 갈리는 것이 필연이다.
-    /// 여기서 "같은 모양" 은 지켜야 할 계약이 아니라 읽는 사람을 위한 유비다.
+    /// Windows 공유 메모리 생성. 호스트가 DuplicateHandle로 복제한 HANDLE을
+    /// 보조 채널에서 받아 tasty_shm::receive로 매핑한다.
     #[cfg(windows)]
     pub fn create_shared_buffer(&self, size: usize) -> Result<SharedBuffer, PluginError> {
         let handle_writer = self
@@ -471,8 +436,7 @@ pub(crate) fn deliver_ipc_result(
 mod tests {
     use super::*;
 
-    /// 테스트 전용: 더미 stream으로 HostHandle 생성. 실제로 call하면 write
-    /// 실패하므로 호출은 하지 말 것. timeout 동작 검증 등 internal state 테스트용.
+    /// 테스트용 HostHandle. 상대 소켓은 바로 닫으므로 실제 응답은 받을 수 없다.
     fn dummy_handle() -> HostHandle {
         // TcpStream::connect로 실제 소켓을 안 만들고 가짜를 만들려면 listener
         // 페어가 필요 — 여기서는 PendingCalls만 검증한다.
@@ -519,10 +483,7 @@ mod tests {
         }
     }
 
-    /// 호스트가 준 코드가 waiter 까지 온다 — 그리고 **표시 문구는 안 바뀐다**.
-    ///
-    /// 문구를 읽는 소비자가 이미 있다(agent-stream 의 "그런 surface 는 없다" 판정).
-    /// 코드를 더하는 변경이 그 판정을 깨면 안 되므로 두 축을 한 자리에서 못 박는다.
+    /// 오류 코드가 전달되면서 기존 Display 문자열도 유지되는지 확인한다.
     #[test]
     fn deliver_carries_the_host_error_code_without_changing_the_message() {
         let handle = dummy_handle();
@@ -539,7 +500,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "host call 'call#21' failed: no live surface 999 (named by 'terminal.parent')",
-            "표시 문구에 코드가 새어 들어갔다 — 문구를 읽는 판정이 깨진다"
+            "오류 코드를 추가해도 기존 Display 문자열은 유지해야 한다"
         );
         match err {
             PluginError::HostCall { code, .. } => assert_eq!(code, Some(-32602)),

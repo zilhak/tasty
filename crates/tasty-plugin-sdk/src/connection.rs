@@ -1,15 +1,8 @@
 //! 호스트와의 양방향 NDJSON 채널.
 //!
-//! Plugin 부팅 흐름:
-//! 1. [`Connection::connect`] — 호스트 포트에 TCP connect (인증 전 상태).
-//! 2. [`Connection::authenticate`] — [`AuthMessage`] 송신 후 호스트의 `AuthAck`
-//!    응답을 5초 안에 받으면 본 루프 진입. 거부 시 [`PluginError::HandshakeRejected`],
-//!    무응답 시 [`PluginError::HandshakeTimeout`].
-//! 3. [`Connection::send_event`]로 호스트에 알림 송신 (Hello, Log, IpcCall 등).
-//! 4. [`Connection::try_recv`]로 호스트의 요청을 한 줄씩 수신.
-//!
-//! 편의 메서드 [`Connection::connect_and_authenticate`]는 1+2를 합친 것이며
-//! 기존 호출자 호환을 위해 남아 있다.
+//! connect로 TCP 연결을 열고 authenticate로 인증 응답을 읽는다.
+//! 인증 읽기에는 5초의 소켓 timeout을 적용한다. 전체 핸드셰이크 시간의 상한은 아니다.
+//! 인증 후에는 send_event로 알림을 보내고 try_recv로 요청을 받는다.
 
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
@@ -22,8 +15,7 @@ use tasty_plugin_protocol::{
 use crate::env::PluginEnv;
 use crate::error::{PluginError, Result};
 
-/// 호스트가 AuthAck를 보낼 때까지 기다리는 최대 시간.
-/// 호스트 측 `AUTH_READ_TIMEOUT`(5s)과 동일하게 맞춰 둔다.
+/// AuthAck 읽기에 적용하는 소켓 timeout.
 pub(crate) const AUTH_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 /// 정상 메시지 루프에서의 read timeout. `try_recv` 패턴을 흉내내기 위해 짧게.
 const RUN_READ_TIMEOUT: Duration = Duration::from_millis(50);
@@ -52,11 +44,8 @@ impl Connection {
                 source,
             }
         })?;
-        // 메시지마다 작은 쓰기가 오가는 요청/응답 채널이라 Nagle 을 끈다. 켜 두면 한
-        // 메시지의 뒤 조각이 앞 조각의 ACK 를 기다리고, 받는 쪽은 ACK 를 최대 수십 ms
-        // 미루므로 왕복마다 그만큼이 붙는다. 호스트도 자기 끝에서 같은 설정을 한다
-        // (`docs/dev-guide/plugin-development.md` "전송 지연"). 실패해도 채널은 동작하므로
-        // 기록만 한다.
+        // 작은 메시지를 보낼 때의 전송 지연을 줄이기 위해 Nagle을 끈다.
+        // 설정 실패는 경고로 남기고 연결을 계속 사용한다.
         if let Err(e) = stream.set_nodelay(true) {
             tracing::warn!("plugin: TCP_NODELAY on the host channel failed: {e}");
         }
@@ -68,11 +57,9 @@ impl Connection {
         })
     }
 
-    /// AuthMessage를 송신하고 호스트의 AuthAck 한 줄을 [`AUTH_ACK_TIMEOUT`] 안에
-    /// 수신한다. ok=false면 [`PluginError::HandshakeRejected`], 시간 안에 안 오면
-    /// [`PluginError::HandshakeTimeout`].
-    ///
-    /// 성공하면 read timeout을 짧은 값(50ms)으로 복구해 try_recv 패턴이 동작한다.
+    /// 인증 메시지를 보내고 응답 한 줄을 읽는다. 읽기 동안 AUTH_ACK_TIMEOUT을
+    /// 적용한 뒤 정상 루프의 50ms timeout으로 되돌린다. 거절 응답은 HandshakeRejected,
+    /// 읽기 시간 초과나 빈 응답은 HandshakeTimeout으로 처리한다.
     pub fn authenticate(&mut self, env: &PluginEnv) -> Result<()> {
         let auth = AuthMessage {
             plugin_id: env.plugin_id.clone(),
@@ -81,7 +68,6 @@ impl Connection {
         let line = serde_json::to_string(&auth)?;
         tasty_plugin_protocol::write_line(&mut self.writer, &line)?;
 
-        // AuthAck 한 줄 수신. 호스트가 silent drop했던 과거 버그를 막기 위함.
         self.writer.set_read_timeout(Some(AUTH_ACK_TIMEOUT))?;
         // reader 쪽도 같은 stream이므로 read_timeout이 공유된다.
         let mut ack_line = String::new();
@@ -315,8 +301,7 @@ mod tests {
         handle.join().expect("fake host thread");
     }
 
-    /// 호스트 채널은 Nagle 이 꺼져 있어야 한다. 켜져 있으면 응답 줄의 개행 조각이
-    /// 호스트의 지연 ACK 를 기다려 plugin 호출마다 약 40 ms 가 붙는다.
+    /// 연결한 소켓에 TCP_NODELAY를 설정했는지 확인한다.
     #[test]
     fn connect_disables_nagle_on_the_host_channel() {
         let (port, handle) = spawn_fake_host(FakeHostBehavior::AckOk);
@@ -390,8 +375,7 @@ mod tests {
         handle.join().expect("fake host thread");
     }
 
-    /// 핸드셰이크 동시성 — 두 plugin이 거의 동시에 connect해도 각각 정확한 ack를 받는다.
-    /// 호스트 listener의 stream 매칭이 token으로 격리되므로 SDK 측에서도 race가 없어야 한다.
+    /// 별도 가짜 호스트 두 개에 동시에 연결해 각각의 인증 결과를 받는지 확인한다.
     #[test]
     fn handshake_is_robust_to_concurrent_connects() {
         let barrier = Arc::new(Barrier::new(2));

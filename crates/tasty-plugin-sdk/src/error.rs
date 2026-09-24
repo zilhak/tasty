@@ -1,11 +1,5 @@
-//! SDK 도메인 에러.
-//!
-//! [`PluginError`]는 SDK 함수에서 발생할 수 있는 모든 실패 모드를 표현한다.
-//! Plugin 작성자는 `?`로 흘려 전파하거나, 분기가 필요할 때 variant로 매칭한다.
-//!
-//! IPC 응답 표면에서는 [`crate::plugin::IpcMethodError`]를 그대로 쓴다. SDK
-//! 내부 에러를 IPC 응답으로 흘릴 때는 `From<PluginError> for IpcMethodError`
-//! 변환이 자동으로 동작한다.
+//! SDK의 작업 실패를 나타내는 오류 타입.
+//! IPC 응답에는 IpcMethodError로 변환해 전달한다.
 
 use std::time::Duration;
 
@@ -15,7 +9,7 @@ pub type Result<T, E = PluginError> = std::result::Result<T, E>;
 /// SDK 작업 중 발생할 수 있는 에러.
 #[derive(Debug, thiserror::Error)]
 pub enum PluginError {
-    /// 필수 환경변수가 비어 있다.
+    /// 필수 환경변수를 읽지 못했다.
     #[error("missing env var: {0}")]
     EnvMissing(&'static str),
 
@@ -43,19 +37,12 @@ pub enum PluginError {
     #[error("host rejected handshake: {}", reason.as_deref().unwrap_or("(no reason)"))]
     HandshakeRejected { reason: Option<String> },
 
-    /// 호스트가 AuthAck를 보내기 전 타임아웃. 호스트가 죽었거나, 토큰
-    /// 매칭 단계에서 stream을 silent drop했을 가능성.
+    /// 인증 응답 읽기에서 timeout 또는 빈 응답을 받았다.
     #[error("host did not send auth_ack within timeout")]
     HandshakeTimeout,
 
-    /// 호스트 호출 응답에 호스트가 명시한 에러.
-    ///
-    /// `code` 는 호스트가 준 JSON-RPC 코드다. **표시 문구에는 안 들어간다** —
-    /// 이 메시지 모양을 읽는 소비자가 이미 있고(예: agent-stream 의 "그런 surface 는
-    /// 없다" 판정), 코드를 더하는 것이 그 판정을 깨서는 안 된다. 코드는
-    /// [`crate::plugin::IpcMethodError`] 로 변환될 때 쓰인다.
-    ///
-    /// `None` 은 "호스트가 코드를 안 줬다" 이고, 그때만 server error(-32000)로 떨어진다.
+    /// 호스트 호출에서 받은 오류. code가 없으면 IpcMethodError 변환 시 -32000을 쓴다.
+    /// 표시 문자열을 읽는 기존 호출자를 위해 code는 Display에 넣지 않는다.
     #[error("host call '{method}' failed: {message}")]
     HostCall {
         method: String,

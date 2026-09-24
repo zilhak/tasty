@@ -8,7 +8,6 @@
 //! impl Plugin for MyExplorer {
 //!     fn id(&self) -> &str { "com.example.explorer" }
 //!     fn version(&self) -> &str { "0.1.0" }
-//!     fn surface_kinds(&self) -> Vec<&str> { vec!["explorer"] }
 //!
 //!     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
 //!         SurfaceResult { display_name: Some("Files".into()), ..Default::default() }
@@ -96,18 +95,14 @@ impl std::fmt::Debug for PopupSetContextCtx {
     }
 }
 
-/// 매니페스트 `[[contributes.commands]]`로 등록한 command가 사용자 단축키
-/// 매칭으로 호출됐을 때 전달되는 컨텍스트.
+/// 매니페스트의 contributes.command로 등록한 명령이 호출될 때의 컨텍스트.
 #[derive(Debug, Clone)]
 pub struct CommandInvokeCtx {
     pub surface_id: u32,
     pub command_id: String,
 }
 
-/// `webview.navigation_attempt` 콜백 컨텍스트 — webview(`rendering = "webview"`) surface
-/// 가 navigation 을 시도(링크 클릭 등)함. "원격 http(s) 차단" 판정과는 독립적으로, 호스트가
-/// 차단했는지 여부와 무관하게 모든 시도(로컬 파일 링크 포함)마다 도착한다. fire-and-forget
-/// 이므로 반환값 없음.
+/// 호스트가 WebView의 이동 시도 URL을 전달할 때의 컨텍스트. 반환값은 없다.
 #[derive(Debug, Clone)]
 pub struct WebviewNavigationAttemptCtx {
     pub surface_id: u32,
@@ -314,15 +309,8 @@ impl IpcMethodError {
     }
 }
 
-/// Plugin 핸들러 안에서 SDK 호출이 실패하면 `?` 한 번으로 IPC 응답까지
-/// 흘려보낼 수 있게 자동 변환을 제공한다.
-///
-/// **호스트가 코드를 준 실패는 그 코드를 그대로 낸다.** 그러지 않으면 호스트가
-/// "인자를 고쳐라"(`-32602`)로 거절한 것이 plugin 을 거치는 순간 "서버 사정"
-/// (`-32000`)이 되어, 호출자가 재시도 정책을 반대로 고른다 — 같은 잘못에 답이
-/// 둘인 형태다(ADR-0004의 오류 구분과 같은 기준).
-///
-/// 코드가 없는 실패(SDK 자체의 연결·인코딩 오류 등)는 종전대로 server error(-32000).
+/// SDK 오류를 IPC 오류로 바꾼다. 호스트가 준 오류 코드는 유지하며,
+/// 코드가 없는 오류는 -32000으로 처리한다.
 impl From<crate::error::PluginError> for IpcMethodError {
     fn from(err: crate::error::PluginError) -> Self {
         let message = err.to_string();
@@ -369,8 +357,7 @@ pub trait Plugin: Send + 'static {
     /// fire-and-forget — 이 콜백은 반환값이 없다. 기본 구현은 no-op.
     fn paint_surface(&mut self, _ctx: SurfaceSetContextCtx) {}
 
-    /// `command.invoke` — 매니페스트로 등록한 command가 사용자 단축키 매칭으로
-    /// 호출됨. tree가 None이면 호스트는 이전 tree 유지. 기본 구현은 no-op.
+    /// 사용자 단축키에 매칭된 명령을 처리하고 SurfaceResult를 반환한다.
     fn handle_command(&mut self, _ctx: CommandInvokeCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
@@ -410,9 +397,7 @@ pub trait Plugin: Send + 'static {
     /// plugin은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.
     fn on_popup_closed(&mut self, _ctx: PopupClosedCtx) {}
 
-    /// `banner.open` — 매니페스트 `[[contributes.banner]]`로 contribute한 banner의 새
-    /// 인스턴스가 열림(A3). banner 는 egui-mesh 채널(`paint_banner`)로만 그리므로 초기
-    /// tree 가 없다. plugin 은 인스턴스별 렌더 상태를 초기화한다. 기본 구현은 no-op.
+    /// 배너가 열렸을 때 인스턴스별 상태를 준비한다. 콘텐츠는 paint_banner에서 그린다.
     fn open_banner(&mut self, _ctx: BannerOpenCtx) {}
 
     /// `banner.set_context` — egui-mesh banner 인스턴스의 렌더 컨텍스트(크기/ppp/raw
@@ -451,18 +436,10 @@ pub trait Plugin: Send + 'static {
     /// 핸들은 받아도 의미 없는 호출만 가능하다.
     fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {}
 
-    /// 호스트가 이 plugin 에게 보내려던 요청 `dropped` 건을 **버렸다**.
-    ///
-    /// 호스트 → plugin 큐는 유한하고 포화 시 대기가 아니라 거절이다(그 방향에서
-    /// 기다리면 호스트 프레임이 선다). 그래서 밀리는 plugin 은 자기에게 오던 요청이
-    /// 소리 없이 사라지는 것을 원리적으로 알 수 없었다. 이 콜백이 그것을 알린다 —
-    /// 호출은 **드롭 뒤 처음 도착한 요청을 처리하기 직전** 한 번이고, 그때까지 쌓인
-    /// 수를 합쳐서 넘긴다.
-    ///
-    /// 무엇이 버려졌는지는 알 수 없다(호스트도 안 들고 있다). 그러므로 재요청이 아니라
-    /// **자기 작업량을 줄이는 것**이 처방이다 — polling 간격을 늘리거나 렌더 빈도를
-    /// 낮추거나, 사용자에게 알린다. 누적값은 [`HostHandle::dropped_by_host`] 로 아무
-    /// 스레드에서나 읽을 수 있다. 기본 구현은 no-op — SDK 가 이미 warn 로그를 남긴다.
+    /// 호스트가 포화로 버렸다고 알려 온 요청 수. 워커가 다음 요청을 처리하기 전에
+    /// 그때까지 누적된 수를 한 번 전달한다. 어떤 요청인지는 이 값으로 알 수 없다.
+    /// 기본 콜백은 아무것도 하지 않으며 SDK가 경고를 남긴다. 누적 수는
+    /// HostHandle::dropped_by_host로 조회할 수 있다.
     fn on_host_dropped_requests(&mut self, _dropped: u64) {}
 }
 
@@ -482,11 +459,7 @@ mod ipc_method_error_tests {
     use super::IpcMethodError;
     use crate::error::PluginError;
 
-    /// 호스트가 준 코드가 외부 응답까지 온다.
-    ///
-    /// 이 변환이 코드를 버리던 동안, 호스트가 `-32602`("인자를 고쳐라")로 거절한 것이
-    /// plugin 을 거치면 `-32000`("서버 사정")이 됐다. 두 코드는 호출자의 **재시도 정책**을
-    /// 반대로 가른다 — 앞엣것은 인자를 고쳐 다시 걸고, 뒤엣것은 포기한다.
+    /// SDK 오류를 IPC 오류로 바꿔도 호스트가 준 코드를 유지하는지 확인한다.
     #[test]
     fn a_host_supplied_code_survives_the_plugin_boundary() {
         let err = PluginError::HostCall {
@@ -495,7 +468,7 @@ mod ipc_method_error_tests {
             code: Some(-32602),
         };
         let out: IpcMethodError = err.into();
-        assert_eq!(out.code, -32602, "호스트 코드가 -32000 으로 뭉개졌다");
+        assert_eq!(out.code, -32602, "호스트가 준 오류 코드를 유지해야 한다");
         assert!(
             out.message
                 .contains("no live surface 999 (named by 'terminal.parent')"),

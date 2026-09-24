@@ -5,8 +5,7 @@
 //! `TASTY_PLUGIN_HANDLE_ENDPOINT`가 비어 있으면 보조 채널을 사용하지 않는다 (host가
 //! 활성화하지 않은 경우).
 //!
-//! 02b에서 핸드셰이크만 검증됐고, 02c에서 [`HandleClientReader`](host가 보내는
-//! `HandleAttach` + ancillary fd 수신)와 plugin → host `Dirty` 송신 경로가 추가됐다.
+//! HandleAttach로 공유 메모리 핸들을 받고 Dirty로 변경 영역을 알린다.
 
 #[cfg(unix)]
 use std::collections::VecDeque;
@@ -69,7 +68,7 @@ impl HandleClient {
         let mut reader = BufReader::new(cloned);
         let mut ack_line = String::new();
         let read_result = reader.read_line(&mut ack_line);
-        // ack 후 timeout 해제 (이후 read는 blocking이 아니라 호출자 정책에 따라).
+        // 인증 뒤 읽기 timeout을 해제한다. 이후 수신은 블로킹 방식이다.
         stream.set_read_timeout(None)?;
         match read_result {
             Ok(0) => Err(PluginError::HandshakeTimeout),
@@ -164,8 +163,7 @@ impl HandleClient {
         Ok(())
     }
 
-    /// read timeout 조정. Windows 동기 파이프는 per-read timeout 을 두지 않는다 — no-op.
-    /// 보조 채널은 host 가 신뢰하는 자식 프로세스와만 통신하므로 무한 대기 위험이 낮다.
+    /// Windows 파이프에는 이 메서드로 읽기 timeout을 설정하지 않는다.
     #[cfg(windows)]
     #[allow(clippy::unused_self)]
     pub fn set_read_timeout(&self, _timeout: Option<Duration>) -> Result<()> {
@@ -354,12 +352,7 @@ mod unix_wire {
             if level == libc::SOL_SOCKET && ty == libc::SCM_RIGHTS {
                 // SAFETY: header 크기 계산.
                 let header_len = unsafe { libc::CMSG_LEN(0) } as usize;
-                // 이유: `cmsghdr.cmsg_len` 의 타입이 플랫폼마다 다르다 — glibc-linux 는
-                // `size_t`(= usize)라 이 캐스트가 항등이지만, **BSD 계열(macOS 포함)과
-                // musl 은 `socklen_t`(u32)** 라 캐스트가 실제로 넓힌다. clippy 는 지금
-                // 컴파일 중인 타깃 하나만 보므로 linux 에서만 "불필요" 라고 말한다 —
-                // 그 제안을 따르면 macOS 컴파일이 깨진다(실측: 같은 파일을
-                // `--target aarch64-apple-darwin` 으로 돌리면 이 경고가 안 난다).
+                // cmsghdr.cmsg_len의 타입은 플랫폼마다 달라 usize로 변환한다.
                 #[allow(clippy::unnecessary_cast)]
                 let data_len = (len as usize).saturating_sub(header_len);
                 let n_fds = data_len / mem::size_of::<libc::c_int>();
@@ -381,13 +374,8 @@ mod unix_wire {
     }
 }
 
-/// SDK 측 Named Pipe 클라이언트(overlapped I/O). host 의
-/// [`super::windows::PipeServerStream`] 대응.
-///
-/// **왜 overlapped**: reader 스레드가 HandleAttach 를 blocking read 하는 동안 writer 가
-/// Pong/Dirty 를 write 한다. Windows 동기 파일 핸들은 같은 file object 의 I/O 를 직렬화해
-/// (DuplicateHandle 도 같은 object) read 가 write 를 막는 데드락이 생긴다. per-op event 를
-/// 쓰는 overlapped I/O 로 read/write 를 비직렬화한다.
+/// Windows Named Pipe 클라이언트. 같은 파이프 객체의 읽기가 쓰기를 막지 않도록
+/// overlapped I/O와 연산별 완료 이벤트를 사용한다.
 #[cfg(windows)]
 mod windows {
     use std::io;
@@ -444,7 +432,7 @@ mod windows {
     unsafe impl Sync for OwnedHandle {}
 
     fn make_event() -> Result<OwnedHandle> {
-        // SAFETY: Win32 CreateEventW. 수동 리셋(false)·초기 비신호(false)·무명.
+        // SAFETY: 유효한 인자를 전달한다. 자동 리셋·초기 비신호 상태의 무명 이벤트를 만든다.
         let h = unsafe { CreateEventW(ptr::null(), 0, 0, ptr::null()) };
         if h.is_null() {
             return Err(PluginError::Io(io::Error::last_os_error()));
@@ -590,11 +578,7 @@ mod windows {
         }
 
         /// 현재 프로세스 내 파이프 핸들 복제(새 event). reader/writer 스레드 분리용.
-        // 이유: `DuplicateHandle` 은 `GetCurrentProcess()` 두 번을 인자로 받는다 — 그 셋을
-        //       가르려면 pseudo-handle 을 밖에서 따로 unsafe 로 얻어야 하고, 그러면 블록이
-        //       셋이 되면서 읽는 사람이 볼 것만 늘어난다. 파일이 아니라 이 함수에 거는 것은
-        //       이 파일이 Win32 전용이 아니라서다(844 줄 중 cfg(windows) 12 자리) — 파일
-        //       단위로 걸면 크로스플랫폼 부분의 새 위반까지 함께 가린다.
+        // 이유: 현재 프로세스 핸들 조회와 DuplicateHandle 호출을 한 블록에 둔다.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         pub(super) fn try_clone(&self) -> Result<Self> {
             let mut dup: HANDLE = ptr::null_mut();
@@ -767,9 +751,7 @@ mod tests {
         // SAFETY: bytes 필드 접근. union 두 필드 같은 메모리 공유.
         msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
         msg.msg_controllen = cmsg_space as _;
-        // SAFETY: cmsg_buf에 64B 여유. cmsg 헤더 채우기.
-        // CMSG_FIRSTHDR / CMSG_DATA / write_unaligned 가 단일 cmsg 헤더 구성에 묶여
-        // 하나의 atomic 한 작업이라 블록 분할이 불필요.
+        // SAFETY: cmsg 버퍼에는 헤더와 fd를 담을 공간이 있고 계산한 data 위치에 쓴다.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);

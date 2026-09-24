@@ -1,34 +1,9 @@
-//! egui-mesh plugin SDK 헬퍼 (A1-S4).
+//! 플러그인의 egui Context로 그린 결과를 공유 버퍼로 전달한다.
+//! 호스트의 set_context 입력을 받아 egui 실행, tessellation과 mesh 인코딩을 한다.
+//! 출력 해시가 직전과 같으면 송신을 생략하되 전체 텍스처 복구 요청은 처리한다.
 //!
-//! plugin 프로세스가 **자기 egui [`Context`] 와 폰트 atlas 를 소유**하고, host 가 보낸
-//! `surface.set_context`([`SurfaceSetContextParams`]) 를 받아 egui 를 구동·tessellate 한 뒤
-//! POD 바이트로 인코드해 shared buffer 로 host 에 회신하는 흐름을 은닉한다. plugin 작성자는
-//! UI closure(`|egui_ctx| { egui::CentralPanel... }`) 만 구현하면 된다.
-//!
-//! ## 흐름 (research-a1 §2-1·§2-5)
-//! ```text
-//! host → plugin: surface.set_context { width_px, height_px, ppp, raw_input }
-//!   │  [`build_raw_input`]: 물리 px → 논리 포인트, RawInputWire → egui RawInput
-//!   ▼
-//! ctx.run(raw_input, run_ui)  ── plugin 이 자기 Fonts/atlas 소유
-//!   │  FullOutput { shapes, textures_delta, pixels_per_point }
-//!   ▼
-//! ctx.tessellate(shapes, ppp) → Vec<ClippedPrimitive>   (tessellate 는 plugin 이 수행)
-//!   │  mesh_wire::encode_paint(§3) → POD 바이트
-//!   ▼
-//! SharedBuffer write + commit(Release)
-//! plugin → host: PluginEvent::PaintFrame { surface_id, buffer_id, generation }
-//! ```
-//!
-//! ## generation (invalidate 시에만 송신)
-//! 정적 화면은 매 frame 무조건 보내지 않는다. [`EguiMeshSurface::run_frame`] 은 인코드된
-//! 바이트의 해시를 직전 frame 과 비교해, **출력이 바뀐 frame 만** 송신한다(host 는 그래도
-//! footer generation 비교로 한 번 더 거른다).
-//!
-//! ## 폰트
-//! 기본은 egui `default_fonts`(plugin 소유 atlas). host 와의 폰트 parity 가 필요하면
-//! [`EguiMeshSurface::context`] 로 [`Context`] 를 받아 `set_fonts` 로 동일 폰트를 설치한다
-//! (B1 markdown 이식 단계의 관심사).
+//! Context와 폰트 atlas는 플러그인 소유다. 호스트와 글꼴을 맞추려면
+//! context().set_fonts로 같은 폰트를 설치한다.
 
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -57,8 +32,7 @@ use crate::host::HostHandle;
 #[cfg(any(unix, windows))]
 use crate::shared_buffer::SharedBuffer;
 
-/// egui `Rect` → 와이어 `RectWire`. 좌상단 + 크기로 옮긴다(음수 크기가 생기지 않도록
-/// egui 의 `width()`/`height()` 를 그대로 쓴다 — egui 가 정상 rect 를 보장한다).
+/// egui 사각형을 좌상단 좌표와 너비·높이로 옮긴다.
 fn rect_wire(r: Rect) -> RectWire {
     RectWire {
         x: r.min.x,
@@ -68,10 +42,7 @@ fn rect_wire(r: Rect) -> RectWire {
     }
 }
 
-/// egui-mesh 렌더 코어 — surface/popup 공통. 자기 egui [`Context`](폰트 atlas 포함),
-/// 직전 출력 해시(invalidate 판정), shared buffer(unix) 를 들고 있다. surface 와 popup 은
-/// 회신 알림(`PaintFrame` vs `PopupPaintFrame`)만 다르고 run_frame/commit 로직은 동일해
-/// 이 코어를 공유한다([`EguiMeshSurface`] / [`EguiMeshPopup`] 가 얇게 감싼다).
+/// Surface, Popup, Banner가 공유하는 egui 렌더 상태와 버퍼 전송 기능.
 struct EguiMeshCore {
     ctx: Context,
     /// 직전 frame 에 인코드한 mesh 바이트의 해시. 같으면 정적 화면으로 보고 송신 생략.
@@ -93,43 +64,24 @@ struct EguiMeshCore {
     /// mesh POD 블록을 쓰는 shared buffer. 필요 크기보다 작아지면 재생성한다.
     #[cfg(any(unix, windows))]
     buffer: Option<SharedBuffer>,
-    /// 직전 `render()` 가 egui `viewport_output` 에서 읽은 self-repaint 요청(있다면).
-    /// egui 의 스크롤 스무딩 등 다중 프레임 애니메이션이 `ctx.request_repaint_after`로
-    /// "다음 pass 도 그려달라"고 신호하면 여기 채워진다. 이 채널은 host-side 이벤트가
-    /// 있을 때만 pass 를 구동하므로(`docs/dev-guide/egui-mesh-channel.md` "set_context
-    /// 송신 정책"), 이 신호를 누군가 읽어 host 에 재-invalidate 를 요청하지 않으면
-    /// 유휴 상태에서 애니메이션이 방치된다([`EguiMeshSurface`]가 소비).
+    /// egui가 요청한 다음 렌더링 지연. 호스트에 갱신 요청을 보내는 데 쓴다.
     pending_self_repaint: Option<Duration>,
-    /// 직전 `render()` 의 `platform_output.commands` 중 `OutputCommand::CopyText` —
-    /// `Event::Copy` 를 처리한 frame 에서 plugin 자신의 텍스트 선택(selectable label /
-    /// `TextEdit`)이 있었을 때만 채워진다. 클립보드 기록은 plugin 이 직접 한다
-    /// (docs/dev-guide/plugin-packaging.md#정책-현행) — 이 필드는 그 값을 host round-trip 없이 plugin 코드로 넘겨주는
-    /// 통로일 뿐이다.
+    /// 직전 렌더에서 나온 첫 번째 비어 있지 않은 CopyText 값.
+    /// 호출자가 가져가 OS 클립보드에 기록할 수 있다.
     last_copied_text: Option<String>,
-    /// 직전 `render()` 의 `platform_output.ime` — IME 를 원하는 위젯(`TextEdit`)이 그
-    /// pass 에 focus 중이었다면 그 위치(콘텐츠 로컬 논리 포인트). OS IME 후보창은
-    /// plugin 이 그리는 mesh 밖의 OS 소유 창이라 plugin 이 위치를 정할 수 없고, winit
-    /// 창을 쥔 host 만 정할 수 있다 — 이 필드는 그 값을 PaintFrame 알림에 실어 host 로
-    /// 돌려보내는 통로다.
+    /// 직전 렌더의 IME 위젯 위치. 콘텐츠 영역의 논리 좌표로 호스트에 전달한다.
     last_ime_cursor: Option<ImeCursorWire>,
 }
 
 /// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
 struct MeshFrame {
     bytes: Vec<u8>,
-    /// 이 frame 의 textures_delta 가 누적 텍스처 상태 **전체**를 full image 로 담는가.
-    /// (첫 frame 은 자연-full, `need_full_textures` 응답은 합성-full.) host 는 full
-    /// frame 을 체인 연속성과 무관하게 수락하고 자기 텍스처 상태를 리셋한다.
+    /// 이 프레임에 전체 텍스처 상태를 담았는가.
     full_textures: bool,
 }
 
-/// 직전 set_context 의 재-paint 재현에 필요한 host-side 컨텍스트 스냅샷.
-/// **입력 이벤트는 담지 않는다** — 재-paint 는 identity 불변식상 빈 events 로만 한다
-/// (가짜 사용자 입력 무주입). `focused` 는 이벤트가 아니라 지속 상태라 캐시해 재현한다
-/// (identity 불변식 무위반) — 재-paint 프레임이 focused=false 로 떨어지면 포커스 의존
-/// UI(커서·드롭다운·focused 배경)가 재-paint 에서만 퇴행하는 결함이 생긴다. theme 은
-/// plugin 의 draw closure 가 캐시된 값을 다시 쓸 수 있도록 [`EguiMeshCore::last_theme`]
-/// 로 노출한다.
+/// 입력 없이 다시 그릴 때 사용할 크기·배율·포커스·테마.
+/// 사용자 이벤트는 저장하지 않는다. focused는 상태값이므로 유지한다.
 struct CachedContext {
     width_px: u32,
     height_px: u32,
@@ -141,18 +93,12 @@ struct CachedContext {
 impl EguiMeshCore {
     fn new() -> Self {
         let ctx = Context::default();
-        // egui 내장 키보드 줌(Cmd/Ctrl +/-/0)을 끈다 — 배율은 host 가 ui_zoom(설정) +
-        // native ppp 로 제어한다. 켜두면 forward 된 Cmd+= 등이 plugin Context 의
-        // zoom_factor 를 올려 메모리에 눌러앉고, host 와 달리 리셋 경로가 없어 서피스가
-        // 예기치 않게 확대된 채 유지된다(본체 `gpu.rs` 도 동일 이유로 끈다).
+        // 배율은 호스트 설정을 따르므로 egui의 별도 키보드 줌을 끈다.
         ctx.options_mut(|opts| {
             opts.zoom_with_keyboard = false;
         });
-        // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
-        // 애니메이션을 끈다. egui 기본값은 최대 300ms 인데(`ScrollAnimation::default`),
-        // `docs/design/systems/theme.md` "UI 디자인 규칙" 의 애니메이션 상한은 150ms 이고,
-        // egui-mesh 는 애니메이션 프레임 하나가 곧 프로세스 간 왕복 한 번이다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
-        // dark/light 두 style 에 모두 박아 테마가 바뀌어도 유지된다.
+        // 프로그램으로 요청한 스크롤의 애니메이션을 끈다.
+        // 추가 프레임마다 호스트와 메시지를 주고받는 비용을 줄인다.
         ctx.all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
         Self {
             ctx,
@@ -168,9 +114,8 @@ impl EguiMeshCore {
         }
     }
 
-    /// 한 frame 을 그려 POD mesh 바이트를 만든다. 출력이 직전과 byte 단위로 동일하면
-    /// (정적 화면) `None` — 호출자는 송신을 생략한다. `need_full` 이면 dedup 을 우회하고
-    /// 누적 텍스처 상태 전체를 full 로 동봉한다(host 텍스처 상태 복구).
+    /// 한 프레임을 인코딩한다. 직전 출력과 해시가 같으면 None을 반환한다.
+    /// need_full이면 생략하지 않고 누적 텍스처 전체를 보낸다.
     #[allow(clippy::too_many_arguments)] // reason: set_context 렌더 컨텍스트 전체
     fn run_frame(
         &mut self,
@@ -195,15 +140,8 @@ impl EguiMeshCore {
         self.render(raw, need_full, run_ui)
     }
 
-    /// 마지막 캐시된 컨텍스트(geom/ppp/focused)로 **빈 이벤트 + 직전 focused 보존** 재-run
-    /// 한다. plugin 이 out-of-band 로 상태를 바꾼 뒤 화면을 갱신할 때 쓴다. 첫 set_context
-    /// 전(캐시 없음)이면 `None`(no-op). 출력이 직전과 동일하면(상태 변경이 화면에 안 걸림)
-    /// `None`.
-    ///
-    /// identity 불변식: 재-run 의 `raw_input.events` 는 빈 배열 — 가짜 사용자 입력을
-    /// 주입하지 않는다. `focused` 는 이벤트가 아니라 지속 상태라 직전 set_context 값을
-    /// 그대로 재현한다(false 로 떨어뜨리면 `has_focus()` 게이트가 커서·드롭다운 등
-    /// 포커스 의존 UI 를 재-paint 프레임에서만 퇴행시킨다).
+    /// 캐시한 크기·배율·포커스로 다시 그리되 사용자 이벤트는 넣지 않는다.
+    /// 캐시가 없거나 출력 해시가 같으면 None을 반환한다.
     fn repaint_last(&mut self, run_ui: impl FnMut(&Context)) -> Option<MeshFrame> {
         let (width_px, height_px, ppp, focused) = {
             let c = self.last_ctx.as_ref()?;
@@ -223,34 +161,23 @@ impl EguiMeshCore {
         self.last_ctx.as_ref().and_then(|c| c.theme.as_ref())
     }
 
-    /// 직전 `render()` 가 egui `viewport_output` 에서 읽은 self-repaint 지연(있다면).
-    /// egui 의 스크롤 스무딩(`unprocessed_scroll_delta` drain, egui 0.31
-    /// `input_state/mod.rs`) 등 다중 프레임 애니메이션이 아직 안 끝났으면 `Duration`
-    /// 이 채워진다(0 이면 즉시). 완전히 안정되면 `None`.
+    /// 직전 렌더의 repaint_delay. 요청이 없으면 None, 즉시 요청이면 0이다.
     fn pending_self_repaint(&self) -> Option<Duration> {
         self.pending_self_repaint
     }
 
-    /// 직전 `render()` 가 처리한 `Event::Copy` 로 텍스트 선택이 복사됐다면 그 문자열을
-    /// 1회 소비(take)해 반환한다. 선택이 없었거나 `Event::Copy` 가 없던 frame 이면 `None`.
+    /// 직전 렌더에서 얻은 CopyText를 한 번 꺼낸다. 값이 없으면 None이다.
     fn take_copied_text(&mut self) -> Option<String> {
         self.last_copied_text.take()
     }
 
-    /// 직전 `render()` 가 관측한 IME 커서 영역(콘텐츠 로컬 논리 포인트). `take_*` 가
-    /// 아니라 **복사**다 — 클립보드처럼 한 번 소비하고 끝나는 사건이 아니라 "지금 어디에
-    /// 포커스가 있는가" 라는 지속 상태이고, dedup 으로 frame 송신이 생략된 tick 에도
-    /// 값이 유효하다.
+    /// 직전 렌더의 IME 커서 위치를 복사한다. 송신을 생략해도 최신 렌더 값을 유지한다.
     fn ime_cursor(&self) -> Option<ImeCursorWire> {
         self.last_ime_cursor
     }
 
-    /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
-    /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
-    ///
-    /// `need_full` 이면 이 frame 의 delta 대신 누적 텍스처 상태 **전체**를 full image 로
-    /// 동봉하고 dedup 을 우회한다 — host 가 텍스처 상태를 잃었다고 알린 상황이므로,
-    /// 출력 바이트가 직전과 같더라도 반드시 재송신해야 회복된다.
+    /// 렌더링과 인코딩 후 출력 해시를 비교한다. 같으면 None을 반환한다.
+    /// need_full이면 해시 비교로 생략하지 않고 누적 텍스처 전체를 넣는다.
     fn render(
         &mut self,
         raw: RawInput,
@@ -258,31 +185,20 @@ impl EguiMeshCore {
         run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
         let full = self.ctx.run(raw, run_ui);
-        // 이번 pass 가 `Event::Copy` 를 처리해 텍스트 선택을 복사했다면 채워진다(egui
-        // 내장 selectable-label/TextEdit 복사 로직 — `OutputCommand::CopyText` 로
-        // 나온다, 옛 `PlatformOutput::copied_text` 필드는 deprecated). 매 render() 마다
-        // 갱신되므로 다음 pass 에 선택이 없으면 자연히 지워진다.
         self.last_copied_text = full.platform_output.commands.iter().find_map(|c| match c {
             OutputCommand::CopyText(text) if !text.is_empty() => Some(text.clone()),
             _ => None,
         });
-        // 이 pass 에 IME 를 원하는 위젯이 focus 중이었다면 그 위치. host 가 이 값으로 OS
-        // IME 후보창 위치를 정한다. 매 render() 마다 갱신되므로 포커스가 풀리면 자연히
-        // `None` 이 된다 — host 는 `None` 을 "이 mesh 는 IME 대상이 아니다" 로 읽는다.
         self.last_ime_cursor = full.platform_output.ime.map(|ime| ImeCursorWire {
             rect: rect_wire(ime.rect),
             cursor_rect: rect_wire(ime.cursor_rect),
         });
-        // egui 가 이번 pass 에서 추가 pass 를 요청했는지 읽어둔다 — dedup(아래) 으로
-        // 이번 frame 이 송신 생략되더라도 유실되지 않도록 매 render() 마다 갱신한다.
-        // egui-mesh 는 단일 ROOT viewport 만 쓴다(`build_raw_input` 이 viewport_id 를
-        // 항상 기본값 ROOT 로 둔다) — `Duration::MAX` 는 egui 관례상 "요청 없음".
+        // 송신을 생략해도 다음 렌더 요청은 보관한다. Duration::MAX는 요청 없음이다.
         self.pending_self_repaint = full
             .viewport_output
             .get(&egui::ViewportId::ROOT)
             .map(|v| v.repaint_delay)
             .filter(|d| *d < Duration::MAX);
-        // tessellate 는 plugin 이 수행한다(폰트 atlas 를 plugin 이 소유, research-a1 §2-1).
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
         // 이 frame 의 delta 를 누적 상태에 먼저 반영한다 — full 재구성은 항상 최신 상태 기준.
         let naturally_full = self.accumulate_textures(&full.textures_delta);
@@ -389,8 +305,9 @@ impl EguiMeshCore {
             .as_ref()
             .expect("ensure_buffer guarantees a buffer");
 
-        // SAFETY: 이 buffer 는 코어가 단독 소유한다(동시 mutate 없음). host 는 commit 의
-        // generation footer(fetch_add Release)로 half-painted frame 을 거른다.
+        // SAFETY: ensure_buffer가 쓰기 길이를 확보하고 이 코어는 버퍼에 대한
+        // 자체 쓰기를 직렬로 처리한다. 그러나 호스트의 동시 읽기를 배제하는 절차는
+        // 이 경로에 없으며, 뒤의 generation 갱신만으로 그 안전 조건이 충족되지는 않는다.
         unsafe {
             buffer.as_mut_slice()[..bytes.len()].copy_from_slice(bytes);
         }
@@ -406,9 +323,7 @@ impl EguiMeshCore {
         if !big_enough {
             let cap = needed.max(4096).next_power_of_two();
             let new_buf = host.create_shared_buffer(cap)?;
-            // 성장 교체: 구버퍼 폐기를 host 에 통지해 host 측 매핑도 해제시킨다.
-            // 통지가 없으면 구세대 버퍼의 host 매핑이 plugin 수명 내내 남는다.
-            // 실패는 leak 1건 유지일 뿐이라 frame 진행을 막지 않는다 — warn 만.
+            // 이전 버퍼의 해제를 호스트에 알린다. 전송 실패는 경고로 남기고 계속 그린다.
             if let Some(old) = self.buffer.replace(new_buf)
                 && let Err(e) = host.notify(&PluginEvent::SharedBufferReleased { id: old.id() })
             {
@@ -419,10 +334,7 @@ impl EguiMeshCore {
     }
 }
 
-/// self-repaint 타이머에 등록된 요청 1건 — 마감시각 + 발화 시 풀 가드 + 실제 알림.
-///
-/// `fire` 는 `HostHandle` 을 이미 캡처한 클로저다(타이머 자체는 host 를 모른다 —
-/// 순수 스케줄러라 테스트에서 host 없이 구동할 수 있다).
+/// 예약한 렌더 알림의 기한, 중복 방지 플래그와 실행 함수.
 #[cfg(any(unix, windows))]
 struct SelfRepaintRequest {
     deadline: std::time::Instant,
@@ -430,27 +342,12 @@ struct SelfRepaintRequest {
     fire: Box<dyn FnOnce() + Send>,
 }
 
-/// self-repaint 알림을 지연 발사하는 **상주 타이머 스레드**. 프로세스당 하나
-/// ([`SelfRepaintTimer::global`]) 를 첫 요청 때 lazily 띄우고 이후 계속 재사용한다 —
-/// plugin 프로세스에는 타임아웃 기반 이벤트 루프가 없어(메인 루프가 blocking
-/// `read_line`) 지연 알림에는 별도 스레드가 필요하지만, 요청마다 새로 만들 이유는
-/// 없다. 스크롤 스무딩처럼 `repaint_delay` 가 0 인 애니메이션은 프레임마다 요청을
-/// 내므로, 요청당 스레드를 만들면 매 프레임 생성·소멸이 반복된다.
+/// 프로세스에서 공유하는 렌더 알림 타이머. 가장 이른 기한까지 기다리고
+/// 새 요청이 들어오면 기한을 다시 계산한다. 인스턴스별 대기 요청은 하나다.
 ///
-/// 대기 중인 요청은 surface/popup 인스턴스당 최대 1건(arm 가드)이라 `Vec` 선형
-/// 탐색으로 충분하다. 스레드는 가장 이른 마감시각까지 [`std::sync::Condvar`] 로
-/// 자며, 새 요청이 들어오면 깨어나 마감시각을 다시 계산한다.
-///
-/// ## 상주화가 만드는 단일 실패점 방어
-/// 스레드가 하나뿐이라 그것이 죽으면 프로세스 전체의 self-repaint 가 **영구 무음
-/// 정지**한다(`schedule_self_repaint` 주석의 과거 회귀가 그대로 재발한다). 사용자가
-/// 원인을 알 수 없는 실패 모양이므로 세 겹으로 막는다.
-///
-/// - 발사 클로저 panic 은 [`Self::run`] 이 요청 단위로 삼킨다 — 루프는 유지된다.
-/// - 그 밖의 이유로 루프가 풀리면 대기 요청의 가드를 전부 풀고 `running` 을 되돌려
-///   **다음 요청이 스레드를 재기동**한다([`Self::ensure_running`]).
-/// - 스레드 자체를 못 띄우면 그 요청만 1회용 스레드로 폴백해 알림을 살린다
-///   ([`Self::fire_on_one_shot_thread`]) — 상주화 이전 동작과 같은 경로다.
+/// 알림 함수의 패닉은 요청별로 처리한다. 루프가 끝나면 대기 요청과 플래그를 정리해
+/// 다음 요청에서 스레드를 다시 만들 수 있게 한다. 스레드 생성에 실패하면
+/// 해당 요청만 별도 타이머 스레드로 시도한다.
 #[cfg(any(unix, windows))]
 struct SelfRepaintTimer {
     pending: std::sync::Mutex<Vec<SelfRepaintRequest>>,
@@ -479,13 +376,8 @@ impl SelfRepaintTimer {
         TIMER.get_or_init(SelfRepaintTimer::new)
     }
 
-    /// 상주 스레드가 없으면 띄운다. 이미 살아 있으면 no-op. 반환값은 **큐를 드레인할
-    /// 스레드가 존재하는가** — false 면 호출자가 폴백해야 한다(그러지 않으면 요청이
-    /// 큐에 쌓인 채 영원히 발사되지 않는다).
-    ///
-    /// `Once` 가 아니라 `running` 플래그를 쓰는 이유: `Once` 는 spawn 이 실패해도
-    /// "완료" 로 확정돼 재시도 경로가 사라진다. 여기서는 성공했을 때만 플래그가 남고,
-    /// 스레드가 어떤 이유로든 풀리면 되돌아가 다음 요청이 재기동한다.
+    /// 상주 타이머를 사용할 수 있는지 확인하고 없으면 생성한다.
+    /// 생성 실패나 스레드 종료 뒤에도 다시 시도할 수 있도록 running을 관리한다.
     fn ensure_running(&'static self) -> bool {
         if self
             .running
@@ -502,9 +394,7 @@ impl SelfRepaintTimer {
         let spawned = std::thread::Builder::new()
             .name("plugin-self-repaint-timer".into())
             .spawn(move || {
-                // 요청별 panic 은 `run` 이 삼키므로 여기까지 오는 것은 스케줄러 자체의
-                // 이상이다. 조용히 사라지면 self-repaint 가 영구 정지하므로 error 로
-                // 남기고, 대기 요청의 가드를 풀어 다음 프레임이 재-arm 할 수 있게 한다.
+                // 스케줄러가 종료되면 대기 플래그를 해제해 다음 요청이 다시 시도할 수 있게 한다.
                 let panicked =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run())).is_err();
                 self.release_pending_on_exit(panicked);
@@ -522,14 +412,7 @@ impl SelfRepaintTimer {
         true
     }
 
-    /// 요청 등록. `armed` 가 이미 세팅돼 있으면 **아무것도 하지 않는다**(중복 알림
-    /// 방지) — 등록에 성공한 요청만 큐에 들어가고, 발화 시 가드가 풀린다.
-    ///
-    /// `delay` 가 단조 시계의 표현 범위를 넘기면(plugin 이 "사실상 영원히" 를 뜻하는
-    /// 관용구로 거의 `Duration::MAX` 에 가까운 값을 요청한 경우 — `render` 의 필터는
-    /// `Duration::MAX` 자신만 걸러낸다) 요청을 버린다. `Instant + Duration` 은 넘칠 때
-    /// panic 하므로 여기서 `checked_add` 로 먼저 막는다 — CAS **전에** 판정해 가드가
-    /// armed 로 고착되지 않게 한다.
+    /// 중복 요청은 생략한다. 시간 범위를 넘는 delay는 플래그를 설정하기 전에 거절한다.
     fn arm(
         &'static self,
         armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -554,8 +437,7 @@ impl SelfRepaintTimer {
             return;
         }
         if !self.ensure_running() {
-            // 상주 스레드를 못 띄웠다 — 큐에 넣으면 드레인할 주체가 없어 영구 유실이
-            // 된다. 이 요청만 상주화 이전과 같은 1회용 스레드로 발사한다.
+            // 상주 스레드를 만들지 못하면 이 요청만 별도 스레드에서 시도한다.
             self.fire_on_one_shot_thread(armed, delay, fire);
             return;
         }
@@ -564,9 +446,7 @@ impl SelfRepaintTimer {
             armed: std::sync::Arc::clone(armed),
             fire: Box::new(fire),
         };
-        // 락 poisoning 은 대기열(Vec)의 정합을 깨지 않는다 — 알림 발사는 락 밖에서
-        // 하므로 사용자 코드 panic 이 이 락을 물고 죽을 수 없다. 유실이 곧 회귀
-        // (`schedule_self_repaint` 주석의 "유휴 상태 방치")이므로 복구해 계속 쓴다.
+        // 알림은 잠금 밖에서 실행한다. 큐 잠금이 poison되면 복구해 대기 요청 처리를 계속한다.
         let mut pending = self
             .pending
             .lock()
@@ -576,9 +456,8 @@ impl SelfRepaintTimer {
         self.wake.notify_one();
     }
 
-    /// 상주 스레드를 못 띄웠을 때의 폴백 — 상주화 이전과 동일한 1회용 스레드.
-    /// 이것마저 실패하면 알림은 포기하되 **가드는 풀어** 다음 프레임이 재시도할 수
-    /// 있게 한다(가드를 armed 로 두면 그 인스턴스는 영구히 재-arm 하지 못한다).
+    /// 상주 타이머 생성 실패 시 요청별 스레드를 시도한다. 이것도 실패하면
+    /// 플래그를 풀어 나중 요청에서 다시 시도할 수 있게 한다.
     fn fire_on_one_shot_thread(
         &self,
         armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -647,11 +526,7 @@ impl SelfRepaintTimer {
         );
     }
 
-    /// 마감이 지난 요청이 생길 때까지 자고, 생기면 그것들을 큐에서 빼 반환한다.
-    ///
-    /// 락 획득 3곳은 [`Self::arm`] 과 같은 이유로 poisoning 을 복구해 계속 쓴다 —
-    /// 대기열은 락 안에서만 다뤄지는 `Vec` 이라 정합이 깨질 수 없고, 여기서 포기하면
-    /// 대기 중인 알림이 통째로 유실된다.
+    /// 기한이 지난 요청을 큐에서 꺼낸다. 잠금이 poison되면 복구해 계속 사용한다.
     fn take_due(&self) -> Vec<SelfRepaintRequest> {
         let mut pending = self
             .pending
@@ -690,13 +565,8 @@ impl SelfRepaintTimer {
     }
 }
 
-/// [`EguiMeshCore::pending_self_repaint`] 가 있으면(egui 가 다음 pass 를 요청), 그
-/// 지연 뒤 `notify` 를 1회 실행하도록 **상주 타이머 스레드**
-/// ([`SelfRepaintTimer::global`]) 에 요청을 건다 — 요청마다 스레드를 만들지 않는다.
-/// `armed`(이 코어 인스턴스가 소유한 가드)가 이미 세팅돼 있으면 아무것도 하지 않는다
-/// — 타이머가 fire 하면 다시 풀리고, 그 다음 `render()` 가 여전히 지연이 필요하면
-/// 재-arm 한다(자연 수렴, idle 상태에서 요청이 쌓이지 않는다). Surface/Popup/Banner
-/// 공용 — 각자 자기 id 를 실은 `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
+/// egui의 다음 렌더 요청을 공용 타이머에 예약한다. 대기 중이면 중복 예약하지
+/// 않으며 알림 직전에 플래그를 풀어 다음 렌더에서 다시 예약할 수 있게 한다.
 #[cfg(any(unix, windows))]
 fn arm_self_repaint_timer(
     delay: Duration,
@@ -717,10 +587,7 @@ fn arm_self_repaint_timer(
 pub struct EguiMeshSurface {
     surface_id: u32,
     core: EguiMeshCore,
-    /// `schedule_self_repaint` 가 상주 타이머([`SelfRepaintTimer`])에 중복 요청을
-    /// 걸지 않도록 하는 가드. 타이머가 fire 하면 다시 풀리고(`False`), 그 다음
-    /// `render()` 가 여전히 지연이 필요하면 재-arm 한다 — 대기 요청은 인스턴스당
-    /// 최대 1건이라 중복 알림 없이 자연 수렴한다.
+    /// 이 인스턴스의 타이머 중복 예약을 막는 플래그. 알림 실행 전에 해제한다.
     #[cfg(any(unix, windows))]
     self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -748,12 +615,8 @@ impl EguiMeshSurface {
         &self.core.ctx
     }
 
-    /// `set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
-    ///
-    /// 출력이 직전 frame 과 byte 단위로 동일하면(정적 화면) `None` 을 반환한다 — 호출자는
-    /// 송신을 생략한다. 단, `params.need_full_textures` 면 dedup 을 우회하고 누적 텍스처
-    /// 상태 전체를 full 로 동봉한다. IPC/buffer 의존이 없어 단위 테스트로
-    /// set_context→tessellate→encode 라운드를 그대로 검증할 수 있다.
+    /// set_context 입력으로 한 프레임을 인코딩한다. 출력 해시가 같으면 생략하며
+    /// need_full_textures 요청이 있으면 전체 텍스처를 포함한다.
     pub fn run_frame(
         &mut self,
         params: &SurfaceSetContextParams,
@@ -783,10 +646,7 @@ impl EguiMeshSurface {
         self.core.last_theme()
     }
 
-    /// 직전 `run_frame`/`paint` 가 처리한 `RawInputEventWire::Copy` 로 텍스트 선택이
-    /// 복사됐다면 그 문자열을 1회 소비해 반환한다(egui `Event::Copy` → 내장
-    /// selectable-label/`TextEdit` 복사 로직). plugin 은 이 값을 OS 클립보드에 직접
-    /// 쓴다(docs/dev-guide/plugin-packaging.md#정책-현행 — 비-샌드박스 프로세스라 host round-trip 이 필요 없다).
+    /// 직전 렌더에서 나온 CopyText를 한 번 꺼낸다. OS 클립보드 기록은 호출자가 맡는다.
     pub fn take_copied_text(&mut self) -> Option<String> {
         self.core.take_copied_text()
     }
@@ -820,15 +680,8 @@ impl EguiMeshSurface {
         Ok(Some(generation))
     }
 
-    /// egui 가 `viewport_output` 으로 self-repaint 를 요청했으면(스크롤 스무딩 등 남은
-    /// 다중 프레임 애니메이션), 그 지연 뒤 host 에 [`PluginEvent::SurfaceInvalidated`]
-    /// 를 보내 기존 idle-invalidate 재forward 경로에 편승한다
-    /// (`docs/dev-guide/egui-mesh-channel.md` "plugin self-repaint" · "idle
-    /// invalidate"). host 의 `forward_egui_mesh_context` 는 host-side 이벤트(입력/
-    /// geom/theme 변경 등)가 있을 때만 다음 pass 를 구동하므로, 이 신호가 없으면
-    /// 유휴 상태(무입력)에서 egui 내장 애니메이션이 끝까지 재생되지 못하고 방치된다
-    /// (스크롤 델타가 남은 채 정지) — 이후 무관한 입력(마우스 이동 등)이 와야만
-    /// 뒤늦게 몰아서 반영되는 버그의 원인.
+    /// egui가 다음 프레임을 요청하면 호스트에 SurfaceInvalidated를 보내도록 예약한다.
+    /// 이 알림이 있어야 사용자 입력이 없어도 다음 렌더링을 요청할 수 있다.
     #[cfg(any(unix, windows))]
     fn schedule_self_repaint(&self, host: &HostHandle) {
         let Some(delay) = self.core.pending_self_repaint() else {
@@ -840,10 +693,7 @@ impl EguiMeshSurface {
         });
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
-    /// 재-paint 한다(옵션 A). 캐시된 geom/ppp/focused 로 재-run → 출력이 바뀌면
-    /// [`PluginEvent::PaintFrame`] 송신, 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
-    /// host 는 이 PaintFrame 에 깨어나 재합성한다(별도 재-forward 왕복 불필요).
+    /// 사용자 이벤트 없이 캐시한 컨텍스트로 다시 그리고 필요한 프레임을 보낸다.
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -961,9 +811,7 @@ impl EguiMeshPopup {
         Ok(Some(generation))
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
-    /// 재-paint 한다(옵션 A). 출력이 바뀌면 [`PluginEvent::PopupPaintFrame`] 송신,
-    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
+    /// 사용자 이벤트 없이 캐시한 컨텍스트로 다시 그리고 필요한 팝업 프레임을 보낸다.
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -1095,9 +943,7 @@ impl EguiMeshBanner {
         Ok(Some(generation))
     }
 
-    /// out-of-band 상태 변경 뒤 **빈 이벤트 + 직전 focused 보존**으로 마지막 컨텍스트를
-    /// 재-paint 한다(옵션 A). 출력이 바뀌면 [`PluginEvent::BannerPaintFrame`] 송신,
-    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`.
+    /// 사용자 이벤트 없이 캐시한 컨텍스트로 다시 그리고 필요한 배너 프레임을 보낸다.
     #[cfg(any(unix, windows))]
     pub fn repaint_last(
         &mut self,
@@ -1136,8 +982,7 @@ impl EguiMeshBanner {
     }
 }
 
-/// full image `base` 위에 증분 patch 를 (x, y) 오프셋으로 합성한다. kind 불일치나
-/// 경계 초과는 egui delta 계약 위반 — 기록만 하고 버린다(다음 full 재전송으로 자가 회복).
+/// 전체 이미지에 부분 변경을 적용한다. 종류가 다르거나 범위를 벗어나면 경고 후 버린다.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: ImageData 종류(Color/Font)별 bounds-check + copy 나열 — egui delta 계약상 두 kind 처리가 구조적으로 대칭이라 분해해도 절반짜리 로직 두 함수로만 흩어짐.
 fn patch_image(base: &mut ImageData, patch: &ImageData, [x, y]: [usize; 2]) {
     match (base, patch) {
@@ -1235,13 +1080,8 @@ fn expand_events(events: &[RawInputEventWire]) -> Vec<Event> {
     out
 }
 
-/// 스크롤 델타를 [`EGUI_SMOOTH_WHEEL_LIMIT`] 아래 조각들로 쪼개 **같은 프레임**에 넣는다.
-///
-/// 쪼개지 않으면 host 가 보낸 휠 한 번(예: 50pt)이 egui 의 다중 프레임 스무딩을 타고,
-/// egui-mesh 는 그 프레임 하나하나가 self-repaint 알림 → `set_context` → 전체 egui pass
-/// 라는 **프로세스 간 왕복**이 된다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계). 조각의 합은 원본과 같으므로 스크롤 이동량은
-/// 보존되고, 잔여 델타가 남지 않으므로 "입력이 멈춘 뒤 델타가 남아 뒤늦게 반영되는"
-/// 회귀([`EguiMeshSurface::schedule_self_repaint`] 가 막는 상황)도 생기지 않는다.
+/// 휠 델타를 egui의 smooth 판정 기준보다 작은 조각으로 나눠 같은 프레임에 넣는다.
+/// 큰 델타의 다중 프레임 스무딩에 필요한 호스트 왕복을 줄이기 위한 처리다.
 fn push_scroll_events(out: &mut Vec<Event>, delta: Vec2) {
     let len = delta.length();
     let parts = if len.is_finite() && len > 0.0 {
@@ -1619,9 +1459,7 @@ mod tests {
         assert!(!raw.focused, "default wire maps to focused=false");
     }
 
-    /// 재-paint 는 직전 set_context 의 focused 를 보존해야 한다 — focused=false 로
-    /// 재-run 하면 `has_focus()` 의 viewport 게이트가 꺼져 포커스 의존 UI(커서·드롭다운·
-    /// editing 상태머신)가 재-paint 프레임에서만 퇴행한다(markdown 주소창 진동의 원인).
+    /// 입력 없이 다시 그릴 때에도 직전 focused 값을 유지하는지 확인한다.
     #[test]
     fn repaint_last_preserves_last_focused() {
         let mut surface = EguiMeshSurface::new(1);
@@ -1933,11 +1771,7 @@ mod tests {
         }
     }
 
-    /// 회귀 방지: egui 가 `ctx.request_repaint_after` 로 "다음 pass 도
-    /// 그려달라"고 요청하면, `render()` 는 그 신호를 버리지 않고
-    /// `pending_self_repaint()` 로 노출해야 한다 — 과거에는 `full.viewport_output`
-    /// 을 완전히 무시해 이 정보가 유실됐다(markdown 트랙패드 스크롤이 유휴 상태에서
-    /// 몰아서 뒤늦게 반영되던 결함의 근본 원인).
+    /// egui의 다음 렌더 요청이 pending_self_repaint에 남는지 확인한다.
     #[test]
     fn render_captures_egui_repaint_request_instead_of_dropping_it() {
         let mut surface = EguiMeshSurface::new(1);
@@ -2023,14 +1857,7 @@ mod tests {
         });
     }
 
-    /// 이 작업의 본체 계약(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계): 큰 휠 델타(물리 notch 가 `mouse.rs` 에서 `*50.0`
-    /// 스케일된 값)를 쪼개 넣으면, 쪼개지 않고 한 건으로 넣을 때보다 **뒤따르는 왕복 수가
-    /// 뚜렷하게 줄어든다.**
-    ///
-    /// 쪼개지 않으면 egui 가 `is_smooth=false` 로 판정해 `unprocessed_scroll_delta` 에
-    /// 적립하고 여러 pass 에 걸쳐 지수완화로 소진하며, 그 동안 매 pass
-    /// `wants_repaint_after() == ZERO` 를 돌려준다. 쪼개면 판정선 아래라 입력 pass 에서
-    /// 전량 소비된다.
+    /// 휠 델타를 분할하면 원래 한 건을 그대로 보낼 때보다 추가 렌더 횟수가 줄어드는지 확인한다.
     #[test]
     fn splitting_a_wheel_delta_cuts_the_follow_up_repaint_passes() {
         let delta = vec2(0.0, -50.0);
@@ -2111,14 +1938,7 @@ mod tests {
         });
     }
 
-    /// host 가 보내는 모양 그대로의 휠 델타가 **실제로 콘텐츠를 움직이는지**.
-    ///
-    /// 기존 스크롤 테스트들은 왕복 횟수(`passes_until_settled`)와 분할 형태만 보고
-    /// offset 을 단정하지 않았고, 입력 헬퍼(`raw_with`)는 포인터를 아예 넣지 않는다 —
-    /// 포인터가 없으면 egui 는 hover 대상을 못 찾아 델타를 소비하지 않으므로, 그 조합은
-    /// "델타는 도착하는데 화면이 안 움직인다" 를 구조적으로 볼 수 없다. 이 테스트가
-    /// 그 구간을 지난다: PointerMoved 로 hover 를 세우고, 분할된 델타를 넣고, offset 이
-    /// 델타만큼 움직였는지 본다.
+    /// 포인터가 놓인 스크롤 영역에서 분할한 휠 델타만큼 콘텐츠가 이동하는지 확인한다.
     #[test]
     fn a_wheel_delta_actually_moves_the_scroll_offset() {
         let (w, h, ppp) = (320u32, 200u32, 1.0f32);
@@ -2155,11 +1975,7 @@ mod tests {
             offset.get()
         );
 
-        // 음성 대조: 포인터가 **한 번도** 오지 않은 surface 는 같은 델타로 움직이지
-        // 않는다. host 는 커서 이동 시에만 `PointerMoved` 를 싣고 휠 이벤트에는 좌표를
-        // 넣지 않으므로(`egui_mesh_push_scroll`), hover 가 서지 않은 채 도착한 델타는
-        // 소비되지 않는 것이 정상이다 — 이 대조가 없으면 위 단정은 "어디서 굴려도
-        // 움직인다" 는 더 강한(그리고 틀린) 주장과 구별되지 않는다.
+        // 포인터가 없는 경우에는 같은 델타로 스크롤되지 않는지 함께 확인한다.
         let mut never_hovered = EguiMeshCore::new();
         let idle = std::cell::Cell::new(f32::NAN);
         let mut idle_frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
@@ -2180,7 +1996,7 @@ mod tests {
         assert_eq!(
             idle.get(),
             0.0,
-            "hover 가 서지 않은 surface 는 휠로 움직이지 않아야 한다"
+            "포인터가 없는 surface는 휠 입력으로 움직이지 않아야 한다"
         );
     }
 
@@ -2248,12 +2064,8 @@ mod tests {
         );
     }
 
-    /// [`EguiMeshBanner`] 도 같은 [`EguiMeshCore`] 를 쓴다 — 위 popup 시험과 동형이다.
-    ///
-    /// **덮는 범위는 딱 그것이다**: 코어가 banner 에 대해서도 `pending_self_repaint` 를
-    /// 채운다는 것. 이 시험은 `run_frame` 만 부르고 그 경로는
-    /// `schedule_self_repaint` 를 안 지나므로, **배선을 전부 지워도 이 시험은 초록이다.**
-    /// 그 자리는 아래 `banner_paint_notifies_the_host_of_a_self_repaint_request` 가 본다.
+    /// Banner도 egui의 다음 렌더 요청을 보관하는지 확인한다.
+    /// 이 시험은 run_frame만 호출하므로 실제 알림 송신은 아래 소켓 시험에서 확인한다.
     #[test]
     fn banner_also_captures_egui_repaint_request() {
         let mut banner = EguiMeshBanner::new(1);
@@ -2283,25 +2095,9 @@ mod tests {
         );
     }
 
-    /// 값을 **알림으로 바꾸는 자리**를 본다 — 위 시험이 원리적으로 못 덮는 곳이다.
-    /// `paint` → `schedule_self_repaint` → 상주 타이머 → `host.notify` 를 끝까지 지나
-    /// `BannerInvalidated` 한 줄이 실제로 소켓에 나가는지 확인한다. loopback 소켓으로
-    /// [`HostHandle`] 을 세우는 형태는 `host.rs` 의 시험 모듈에 있는 것과 같다.
-    ///
-    /// **이 시험이 덮는 범위는 plugin 쪽 끝까지다.** host 쪽 네 자리는 둘로 갈린다.
-    /// 앞 두 자리(`pump` 누적 · `take_invalidated_banners` 드레인)는 `tasty-host-plugin`
-    /// 의 `manager/pump.rs` 시험 모듈이 **GUI 없이 순수 단위 시험으로** 덮는다
-    /// (`banner_invalidated_accumulates_and_drains_once` ·
-    /// `banner_and_popup_invalidations_land_in_separate_accumulators`) — 그 층은 이
-    /// 크레이트 밖이지만 인스턴스는 필요 없다. 뒤 두 자리
-    /// (`mark_invalidated_banners_dirty` 의 `AppState::plugin_mesh_banner_pending_repaint`
-    /// 예약 · `banner_render.rs` 의 forward 게이트)를 덮는 자동 시험은 **없다** — 그 둘은 `AppState` 와 렌더 경로에
-    /// 걸려 있어 GUI 인스턴스가 있어야 지난다.
-    ///
-    /// 두 frame 을 그리는 이유: 첫 frame 은 출력이 새로 나와 `commit`(host RPC)까지
-    /// 가려 한다. 같은 화면을 한 번 더 그리면 출력이 dedup 되어 mesh 는 안 나가고
-    /// (`Ok(None)`) **예약만 남는다** — 그 갈래가 바로 `paint` 가 early return **앞에서**
-    /// 예약해야 하는 이유이기도 하다.
+    /// paint에서 타이머를 거쳐 BannerInvalidated가 소켓으로 나가는지 확인한다.
+    /// 출력을 먼저 안정시켜 mesh 송신은 생략하고 알림 예약만 수행하게 한다.
+    /// 이 시험은 플러그인의 송신까지 확인하며 호스트의 실제 렌더링은 실행하지 않는다.
     #[cfg(any(unix, windows))]
     #[test]
     fn banner_paint_notifies_the_host_of_a_self_repaint_request() {
@@ -2347,17 +2143,14 @@ mod tests {
                 break;
             }
         }
-        assert!(
-            settled,
-            "정적 화면으로 안 잠겼다 — 아래 단정의 전제가 깨졌다"
-        );
+        assert!(settled, "시험 전에 출력이 안정되어야 한다");
         let sent = banner.paint(&host, &params, |ctx| {
             ctx.request_repaint_after(Duration::from_millis(5));
             ui(ctx);
         });
         assert!(
             matches!(sent, Ok(None)),
-            "같은 화면이라 mesh 는 안 나가야 한다 — 실제 {sent:?}"
+            "같은 출력은 mesh 송신을 생략해야 한다: {sent:?}"
         );
 
         host_side
@@ -2366,7 +2159,7 @@ mod tests {
         let mut line = String::new();
         BufReader::new(host_side)
             .read_line(&mut line)
-            .expect("host 가 알림 한 줄을 받아야 한다 — 안 오면 배선이 끊긴 것이다");
+            .expect("호스트가 렌더 요청 알림 한 줄을 받아야 한다");
         let payload: serde_json::Value = serde_json::from_str(&line).expect("알림이 json 이다");
         let event: PluginEvent =
             serde_json::from_value(payload["event"].clone()).expect("event 필드가 PluginEvent 다");
@@ -2376,10 +2169,7 @@ mod tests {
         );
     }
 
-    /// `RawInputEventWire::Copy` 가 `map_event` 를 거쳐 실제 `egui::Event::Copy` 로
-    /// 도착하는지 확인한다 — markdown 복사 회귀의 근본 원인은 host 가 이 이벤트를
-    /// plugin 의 egui `Context` 가 아니라 자기 자신의 top-level `Context` 에 주입하던
-    /// 것이었다. wire → `Event` 매핑 자체가 다시 끊기지 않도록 고정한다.
+    /// Copy 입력이 egui::Event::Copy로 변환되는지 확인한다.
     #[test]
     fn copy_wire_event_maps_to_egui_copy() {
         assert_eq!(map_event(&RawInputEventWire::Copy), Some(Event::Copy));

@@ -1340,7 +1340,7 @@ mod tests {
     // 다만 스레드 실행 순서를 강제하지 않으므로 매번 포화를 보장하는 시험은 아니다.
     const OVERFLOW_ROUNDS: u64 = 1000;
 
-    /// 개수 상한을 시험할 때 바이트 상한에 먼저 걸리지 않도록 넉넉하게 둔다.
+    /// 메시지 개수 제한을 시험할 때 바이트 제한에 먼저 걸리지 않도록 여유를 둔다.
     fn roomy_queue<T>(direction: Direction) -> (MeteredSender<T>, MeteredReceiver<T>) {
         let ledger = ChannelLedger::new(ChannelLimits::default());
         metered_channel(1, ledger.open_queue("com.example.x", direction))

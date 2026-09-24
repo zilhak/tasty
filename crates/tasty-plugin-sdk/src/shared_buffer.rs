@@ -1,25 +1,11 @@
-//! Plugin 쪽에서 호스트와 공유하는 zero-copy 픽셀/바이트 buffer.
+//! 플러그인과 호스트가 함께 매핑하는 바이트 버퍼.
+//! HostHandle::create_shared_buffer로 만들고 commit으로 변경을 알린다.
 //!
-//! [`crate::HostHandle::create_shared_buffer`]가 반환하는 타입. 내부적으로
-//! [`tasty_shm::SharedMemory`] 매핑과 보조 핸들 채널의 writer를 함께 들고 있어, plugin이
-//! 영역을 직접 메모리에 쓰고 [`SharedBuffer::commit`]로 호스트에 변경 영역을
-//! 알릴 수 있다.
-//!
-//! # 동기화 — atomic generation footer
-//!
-//! 영역의 시작 8바이트는 [`tasty_shm::footer`]의 `AtomicU64 generation`이고,
-//! plugin 사용자에게는 보이지 않는다 (`as_mut_slice`/`as_slice`/`len`은 모두 user
-//! 영역만 반환). 권장 패턴:
-//!
-//! 1. `as_mut_slice()`로 user 영역에 픽셀을 쓴다.
-//! 2. `commit(rect)`를 호출하면 `fetch_add(1, Release)` + Dirty 메시지가 한 묶음으로
-//!    호스트에 송신된다.
-//! 3. 호스트는 매 frame `generation`을 Acquire load + 픽셀 read + 다시 Acquire load
-//!    하여 두 값이 같을 때만 안정된 frame으로 인정한다.
-//!
-//! 이 규약을 따르면 plugin의 부분 write 도중 호스트가 읽는 race(half-painted frame)가
-//! 발생하지 않는다. 단, 단일 frame 내 read가 자주 실패(skip)할 만큼 빠르게 commit하면
-//! 호스트가 frame을 건너뛸 수 있다 — 그 경우 다음 frame에서 회복.
+//! 앞의 8바이트는 atomic generation이며 사용자 slice에서는 제외한다.
+//! commit은 Release 연산으로 세대를 증가시킨 뒤 Dirty 메시지를 보낸다.
+//! 세대 변경과 메시지 송신은 하나의 원자적 연산이 아니며, 송신은 실패할 수 있다.
+//! 세대 일치만으로 payload를 읽는 동안 다음 쓰기를 막거나 일관된 프레임을
+//! 보장하지는 않는다. Slice의 안전 조건은 호출자가 별도로 지켜야 한다.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -70,9 +56,8 @@ impl SharedBuffer {
 
     /// 현재 generation 값을 Acquire load. 호스트와 디버깅 시 사용.
     pub fn generation(&self) -> u64 {
-        // SAFETY: SharedMemory 영역의 시작 8바이트는 mmap 페이지 정렬로 8B aligned.
-        // tasty_shm::footer의 SAFETY 조건을 충족.
-        // mem.as_slice() 와 footer::load 가 한 read 흐름이라 분할 불필요.
+        // SAFETY: 매핑 시작은 8바이트 정렬이고 길이는 footer::SIZE 이상이다.
+        // footer는 AtomicU64로 접근한다. payload의 동시 접근 안전을 뜻하지는 않는다.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             tasty_shm::footer::load(self.mem.as_slice(), Ordering::Acquire)
@@ -83,9 +68,9 @@ impl SharedBuffer {
     ///
     /// # Safety
     ///
-    /// 호스트가 같은 영역을 동시 mutate 중일 수 있으므로, 호출자가 (1) 그 시점이 안전함을
-    /// 알거나 (2) 잘못 읽은 결과를 수용해야 한다. 자세한 조건은
-    /// [`tasty_shm::SharedMemory::as_slice`] 문서 참조.
+    /// 반환한 참조가 유효한 동안 같은 메모리에 다른 스레드나 프로세스가
+    /// 쓰지 않음을 호출자가 보장해야 한다. 잘못 읽은 결과를 허용하는 것으로
+    /// 이 조건을 대신할 수는 없다.
     pub unsafe fn as_slice(&self) -> &[u8] {
         // SAFETY: SharedMemory의 안전 조건을 호출자가 보장.
         unsafe { tasty_shm::footer::user_slice(self.mem.as_slice()) }
@@ -98,27 +83,20 @@ impl SharedBuffer {
     ///
     /// # Safety
     ///
-    /// [`Self::as_slice`]의 조건에 더해, 동시 read/write가 비결정성을 일으킨다는 점을
-    /// 호출자가 수용해야 한다. footer 8바이트는 본 슬라이스에 포함되지 않으므로 plugin이
-    /// 의도치 않게 atomic을 손상시킬 수 없다.
+    /// 반환한 가변 참조가 유효한 동안 같은 메모리에 대한 다른 읽기와 쓰기를
+    /// 모두 배제해야 한다. Footer를 제외한 slice라는 사실만으로 동시 접근을
+    /// 막을 수는 없다.
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn as_mut_slice(&self) -> &mut [u8] {
         // SAFETY: 위 docstring 조건을 호출자가 보장. footer는 분리되어 user에게 보이지 않음.
         unsafe { tasty_shm::footer::user_slice_mut(self.mem.as_mut_slice()) }
     }
 
-    /// generation을 1 증가시키고 호스트에 Dirty 메시지를 송신한다.
-    ///
-    /// 권장 호출 순서:
-    ///
-    /// 1. `as_mut_slice()`로 픽셀을 모두 쓴다.
-    /// 2. 본 함수를 호출한다. atomic increment(Release)로 호스트가 일관된 frame을 볼
-    ///    수 있게 되고, 보조 채널로 dirty rect가 송신된다.
-    ///
-    /// `rect`가 `None`이면 전체 영역이 dirty.
+    /// generation을 증가시키고 Dirty 메시지를 보낸다. rect가 None이면 전체 영역이다.
+    /// 이 함수는 payload에 대한 다른 읽기·쓰기를 막지 않는다.
     pub fn commit(&self, rect: Option<PixelRect>) -> Result<(), PluginError> {
-        // SAFETY: footer atomic 접근. SharedMemory 영역은 mmap 페이지 정렬이라 8B aligned.
-        // mem.as_slice() 와 footer::fetch_add 가 한 atomic 흐름이라 분할 불필요.
+        // SAFETY: 매핑 시작은 8바이트 정렬이고 길이는 footer::SIZE 이상이다.
+        // footer의 세대 값은 atomic 연산으로만 변경한다.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             tasty_shm::footer::fetch_add(self.mem.as_slice(), 1, Ordering::Release);
@@ -131,14 +109,8 @@ impl SharedBuffer {
         w.send_message(&msg)
     }
 
-    /// (호환용) generation 증가 없이 dirty 메시지만 송신.
-    ///
-    /// 새 코드는 [`commit`]을 사용해 atomic 동기화를 함께 받아야 한다. 본 함수는
-    /// generation footer를 사용하지 않는 시나리오(예: 단순 디버깅, 단일 frame 후
-    /// 즉시 종료)나, plugin이 직접 generation을 관리하는 고급 사용처를 위한 escape
-    /// hatch다.
-    ///
-    /// [`commit`]: Self::commit
+    /// generation을 바꾸지 않고 Dirty 메시지만 보낸다.
+    /// 세대도 갱신하려면 Self::commit을 사용한다.
     pub fn mark_dirty(&self, rect: Option<PixelRect>) -> Result<(), PluginError> {
         let msg = HandleChannelMessage::Dirty { id: self.id, rect };
         let mut w = self
@@ -243,8 +215,8 @@ mod tests {
 
     #[test]
     fn double_load_detects_in_flight_write() {
-        // tear 감지 패턴: plugin이 commit 직전(fetch_add 호출 전)에 write 중이면,
-        // host가 before/after load 사이에 plugin이 commit하면 두 값이 다르다.
+        // 두 조회 사이에 commit하면 generation 값이 달라지는지 확인한다.
+        // 동시 읽기·쓰기의 안전성을 검사하는 시험은 아니다.
         let (buf, host_mem, _r) = make_pair(64);
         // SAFETY: 단일 thread 시나리오.
         unsafe {

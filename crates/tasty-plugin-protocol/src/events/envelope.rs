@@ -2,8 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 이벤트 재발행의 최대 단계. 호스트에서 시작할 때 hop은 0이며,
-/// 플러그인이 받은 이벤트를 다시 발행하면 증가한다. 한도를 넘으면 호스트가 거절한다.
+/// 이벤트 hop의 상한. 호스트는 이 값을 초과한 이벤트를 거절한다.
 pub const MAX_HOP: u8 = 16;
 
 /// 한 줄에 담기는 이벤트 메시지의 최상위 구조.
@@ -20,8 +19,7 @@ pub struct EventEnvelope {
     pub meta: EventMeta,
 }
 
-/// 모든 이벤트가 공유하는 메타데이터. trace_id는 한 이벤트에서 이어진
-/// 재발행을 같은 흐름으로 찾아볼 수 있도록 유지한다.
+/// 모든 이벤트가 공유하는 메타데이터. trace_id는 관련 이벤트를 묶어 조회하는 식별자다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EventMeta {
     pub trace_id: String,

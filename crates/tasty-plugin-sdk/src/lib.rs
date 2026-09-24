@@ -3,11 +3,7 @@
 //! 작성자는 [`Plugin`] trait를 구현하고 [`run`]을 호출하면 된다. SDK가
 //! 호스트와의 핸드셰이크/메시지 루프/JSON 직렬화를 처리한다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 /// 빌드타임 베이크된 벡터 아이콘을 egui painter 로 그리는 helper. `egui-mesh` feature 를
@@ -16,8 +12,7 @@
 pub mod baked_icon;
 pub mod bus;
 pub mod connection;
-/// egui-mesh plugin SDK 헬퍼 (A1-S4). `egui-mesh` feature 를 켰을 때만 컴파일된다 —
-/// 기본 빌드는 egui 의존 없이 유지(lib.rs 불변식).
+/// egui-mesh 기능을 켰을 때 제공하는 렌더링 도우미.
 #[cfg(feature = "egui-mesh")]
 pub mod egui_surface;
 pub mod env;

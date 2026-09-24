@@ -293,7 +293,7 @@ mod path_tests {
         ] {
             assert!(selected_path(&params, &tr).is_err());
         }
-        // 경로 문자열만 비교하며 이 위치에 파일이나 디렉터리를 만들지 않는다.
+        // 이유: 경로 문자열만 비교하며 이 위치에 파일이나 디렉터리를 만들지 않는다.
         let dir = std::env::temp_dir();
         assert_eq!(
             selected_path(&json!({"codex_home":dir,"config_file":null}), &tr).unwrap(),

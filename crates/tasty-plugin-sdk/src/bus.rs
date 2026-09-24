@@ -4,8 +4,7 @@
 //! 이벤트는 호스트가 보낸 `event.dispatch` request로 도착해 [`Plugin::on_event`]가
 //! 호출된다.
 //!
-//! 발화 권한과 구독 권한은 매니페스트의 `event_subscribe`/`event_publish` 패턴으로
-//! 호스트가 결정한다 — plugin은 클라이언트 측에서 별도 권한 검사를 하지 않는다.
+//! 이벤트 발행과 구독 권한은 호스트가 매니페스트 패턴으로 검사한다.
 
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -50,14 +49,12 @@ impl BusHandle {
         self.send(PluginEvent::EventUnsubscribe { sub_id })
     }
 
-    /// 자기 namespace의 이벤트를 발화. `trace_id`/`hop`은 fresh 발화 가정으로
-    /// 호출 측이 채우지 않아도 되도록 [`Self::publish_fresh`]가 합리적인 기본값을 만든다.
+    /// 이벤트를 호스트에 보낸다. 새 이벤트의 메타데이터는 publish_fresh로 만들 수 있다.
     pub fn publish(&self, envelope: EventEnvelope) -> Result<(), PluginError> {
         self.send(PluginEvent::EventPublish { envelope })
     }
 
-    /// 권장 헬퍼: 호스트에서 새 trace_id를 발급한 신선한 envelope로 발화.
-    /// payload는 임의 JSON, scope는 `System` 또는 `Surface` 중 택1.
+    /// SDK에서 trace_id를 만들고 hop을 0으로 설정해 이벤트를 보낸다.
     pub fn publish_fresh(
         &self,
         key: impl Into<String>,
@@ -91,8 +88,8 @@ impl BusHandle {
     }
 }
 
-/// 단순한 단조-증가 trace id 생성기. 매니페스트가 짧은 hop chain만 다루므로 충돌 가능성
-/// 무시. 호스트 측 envelope 분석에서 plugin prefix가 식별자 역할을 한다.
+/// 현재 시각의 마이크로초 값과 프로세스 내부 카운터로 trace_id를 만든다.
+/// 여러 프로세스 사이의 유일성까지 보장하지는 않는다.
 fn fresh_trace_id() -> String {
     use std::sync::atomic::AtomicU64;
     static COUNTER: AtomicU64 = AtomicU64::new(1);

@@ -1,20 +1,6 @@
-// Tasty plugin WIT (WASI Preview 2 component model) — Phase J.C POC.
-//
-// 설계 결정:
-// - JSON-string marshal: ctx/result 타입의 WIT record 변환을 회피하고 모두 string
-//   으로 직렬화 (POC 단순화). 비용은 wasm-poc.md §3 에서 측정 후 평가.
-//   주의: UiNode/UiEvent DSL 은 C1 에서 native protocol 에서 제거됨 — wasm plugin 의
-//   UI 저작 경로는 현재 없다 (user plugin 개방은 1.0 이후, docs/dev-guide/egui-mesh-channel.md#데이터-흐름). 아래
-//   handle-popup-event / handle-surface-event 시그니처는 POC 잔존물로, native
-//   호스트에는 대응 wire 메서드(popup.event / surface.event)가 더 이상 없다.
-// - exports = Plugin trait 의 callback 7 종 (init / open-popup / handle-popup-event
-//   / on-popup-closed / create-surface / handle-surface-event / handle-ipc-method).
-// - imports = host-call (generic IPC), log, tr (i18n lookup).
-//   clipboard-history 는 host_port::file 미사용. surface 조작은 host-call 의
-//   ui.* 메서드로 통합. → POC imports 3 종.
-//
-// 본 인터페이스는 POC 전용. production manifest schema (Entry::Wasm) 도입 시
-// typed-record 방식으로 재설계 평가 필요.
+// 실험용 WASI Preview 2 플러그인 인터페이스.
+// 요청과 결과는 JSON 문자열로 전달한다. 아래 UI 이벤트는 실험용 인터페이스이며
+// 현재 네이티브 호스트의 메시지 형식과 다르다.
 
 package tasty:plugin@0.1.0-poc;
 
@@ -28,8 +14,7 @@ interface host {
     /// 구조화 로그. level = "error" | "warn" | "info" | "debug" | "trace".
     log: func(level: string, msg: string);
 
-    /// i18n key lookup. host 가 plugin lang/ 디렉터리를 미리 로드해 보관 (Sub-6.5).
-    /// fallback: 매치 없으면 key 자체 반환.
+    /// 번역 키와 언어를 호스트 구현에 전달한다.
     tr: func(key: string, locale: string) -> string;
 }
 
@@ -37,8 +22,7 @@ interface lifecycle {
     /// plugin 시작. locale 은 호스트가 전달 (BCP-47, 예: "ko-KR").
     init: func(plugin-id: string, locale: string);
 
-    /// popup open 요청. ctx-json = PopupOpenCtx 직렬화.
-    /// 반환 = PopupOpenResult JSON (현재 빈 객체 "{}" — 콘텐츠는 mesh 채널 전용).
+    /// 팝업 열기 요청과 결과를 JSON 문자열로 주고받는다.
     open-popup: func(ctx-json: string) -> string;
 
     /// popup 이벤트 처리. ctx-json = PopupEventCtx, 반환 = PopupEventResult.

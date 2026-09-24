@@ -1,19 +1,11 @@
 //! Plugin 부트스트랩 + 메시지 루프.
 //!
-//! `run(plugin)`은 두 스레드 구조로 동작한다:
+//! 메인 스레드는 호스트 요청을 읽고 ipc.result를 대기 중인 호출에 전달한다.
+//! 그 밖의 요청은 워커 큐에 넣어 플러그인 콜백을 순서대로 실행한다.
+//! 워커가 호스트 응답을 기다리는 동안에도 메인 스레드는 수신을 계속한다.
 //!
-//! - **메인 스레드 (receiver)**: 호스트로부터 NDJSON 한 줄씩 받는다. 받은 메시지가
-//!   `ipc.result`면 매칭되는 `HostHandle::call` 대기자에게 결과를 전달. 그 외 모든
-//!   `PluginRequest`는 worker queue로 enqueue.
-//! - **worker 스레드 (dispatcher)**: queue에서 request를 pop해 plugin에 dispatch.
-//!   dispatch 안에서 [`HostHandle::call`]을 통해 호스트를 동기 호출하면 메인이
-//!   계속 recv 가능하므로 deadlock 없이 결과가 회신된다.
-//!
-//! shutdown 요청은 메인이 즉시 ack 보내고, 메인 루프를 빠져나오면 worker 큐에
-//! [`WorkerItem::Stop`] 을 넣는다 — worker 는 그 앞에 쌓인 요청까지 처리한 뒤 멈춘다.
-//! 그 요청들이 부르는 host call 은 결과를 읽어 줄 루프가 없으므로 기다리지 않고
-//! [`crate::PluginError::HostClosed`] 를 받는다([`HostHandle::fail_pending_calls`]).
-//! 큐가 닫히기를 기다리지 않는 이유는 `Stop` 의 문서를 본다.
+//! 수신 루프가 끝나면 대기 중인 호출에 HostClosed를 전달하고 워커 큐에 Stop을 넣는다.
+//! 워커는 Stop 앞의 요청까지 처리한 뒤 종료한다.
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -54,14 +46,8 @@ pub(crate) enum WorkerItem {
     /// 스레드(= `&mut plugin` 을 쥔 유일한 스레드)에서 실행시키기 위한 요청.
     /// host가 보낸 적 없는 call이라 응답을 돌려줄 곳이 없다 — fire-and-forget.
     SelfInvoke { method: String, params: Value },
-    /// 메인 recv 루프가 끝났다(shutdown 요청 · 호스트 연결 종료 · 수신 에러) — worker 는
-    /// 이 항목 앞에 쌓인 것까지 처리하고 멈춘다.
-    ///
-    /// sender 를 전부 drop 해 큐를 닫는 것으로는 worker 가 안 멈춘다: self-invoke 용
-    /// sender 클론을 [`HostHandle`] 이 들고 있고, 그 `HostHandle` 은 `run` 자신과 worker 가
-    /// 쥐며 `on_start` 로 plugin 에게도 넘어가 plugin 의 백그라운드 스레드에 남는다. 큐가
-    /// 영영 안 닫히면 `run` 이 worker join 에서 서고, 프로세스가 안 끝나 호스트가
-    /// shutdown 유예(2 s) 뒤 강제 종료한다.
+    /// 수신 루프가 끝났음을 알린다. 워커는 이 항목 앞의 요청까지 처리하고 종료한다.
+    /// 백그라운드 스레드가 sender 복사본을 갖고 있을 수 있어 큐가 닫히기만 기다리지 않는다.
     Stop,
 }
 
@@ -167,7 +153,7 @@ fn run_with_env<P: Plugin>(plugin: P, env: &PluginEnv) -> Result<()> {
                 if req.dropped_requests > 0 {
                     tracing::warn!(
                         "host dropped {} request(s) to this plugin before this one — \
-                         this plugin is not draining its queue fast enough",
+                         the host request queue was full",
                         req.dropped_requests
                     );
                     host.record_dropped_by_host(req.dropped_requests);
@@ -272,15 +258,9 @@ fn spawn_handle_reader(
     Ok((host, thread))
 }
 
-/// macOS 전용: 부모(tasty) 프로세스 사망을 감시해 self-exit 하는 watchdog 스레드.
-///
-/// macOS 는 Linux 의 `PR_SET_PDEATHSIG` 등가물이 없어 호스트 측에서 자식 수명을
-/// 커널 레벨로 결박할 수 없다. 대신 자식이 직접 부모 PID 를 폴링한다 — 호스트가
-/// 주입한 `TASTY_HOST_PID`(없으면 시작 시점의 `getppid`)를 기준으로, 부모가 죽어
-/// 재부모화되면 `getppid` 값이 달라지므로 그때 프로세스를 종료한다.
-///
-/// 폴링 주기는 500ms — 종료 지연 수백 ms 는 명세상 허용. 즉시성이 문제되면
-/// kqueue `EVFILT_PROC`/`NOTE_EXIT` 로 교체 검토.
+/// macOS에서는 부모 PID를 500ms 간격으로 확인한다. TASTY_HOST_PID가 없으면
+/// 시작 시점의 getppid를 기준으로 삼고 값이 바뀌면 프로세스를 종료한다.
+/// 스케줄링 지연까지 포함한 종료 시간의 상한은 아니다.
 #[cfg(target_os = "macos")]
 fn spawn_parent_death_watchdog() {
     // SAFETY: getppid 는 부작용 없는 async-signal-safe 호출이다.
@@ -331,10 +311,7 @@ fn handle_reader_loop(
                 }
                 HandleChannelMessage::Ping { seq } => {
                     let pong = HandleChannelMessage::Pong { seq };
-                    // poison 이면 보내지 않는다 — 이 임계구역도 소켓 쓰기라
-                    // 반쯤 쓰인 메시지 위에 이어 쓰면 안 된다(`send_event` 주석 참조).
-                    // 다만 **조용히** 건너뛰지는 않는다: pong 이 끊기면 호스트가 채널을
-                    // 죽은 것으로 보는데, 그 원인이 어디에도 안 남으면 추적이 불가능하다.
+                    // 소켓 잠금이 poison되면 메시지가 일부만 쓰였을 수 있어 pong을 보내지 않고 경고한다.
                     match writer.lock() {
                         Ok(mut w) => {
                             if let Err(e) = w.send_message(&pong) {
@@ -374,9 +351,7 @@ fn deliver_buffer_handle(
         tracing::warn!("handle channel: HandleAttach without fd (request_id={request_id})");
         return;
     };
-    // poison 을 `.ok()` 로 버리면 대기 중인 waiter 를 못 찾아 "미매칭" 으로 흘러가고,
-    // 그 waiter 는 영영 fd 를 못 받는다. 이 맵은 `HashMap<u64, Sender<_>>` 뿐이고
-    // 임계구역은 `remove` 하나라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
+    // 대기자를 찾을 수 있도록 poison된 맵 잠금을 복구한다.
     let sender = fd_pending
         .lock()
         .unwrap_or_else(|poisoned| {
@@ -413,9 +388,7 @@ fn deliver_buffer_handle(fd_pending: &SharedBufferFdPending, request_id: u64, au
         tracing::warn!("handle channel: HandleAttach without handle (request_id={request_id})");
         return;
     };
-    // poison 을 `.ok()` 로 버리면 대기 중인 waiter 를 못 찾아 "미매칭" 으로 흘러가고,
-    // 그 waiter 는 영영 fd 를 못 받는다. 이 맵은 `HashMap<u64, Sender<_>>` 뿐이고
-    // 임계구역은 `remove` 하나라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
+    // 대기자를 찾을 수 있도록 poison된 맵 잠금을 복구한다.
     let sender = fd_pending
         .lock()
         .unwrap_or_else(|poisoned| {
@@ -459,9 +432,7 @@ fn worker_loop<P: Plugin>(
     writer: Arc<Mutex<TcpStream>>,
     host: HostHandle,
 ) {
-    // dispatch가 시작되기 전에 plugin에 1회 시작 알림. plugin이 여기서 자체
-    // background thread를 spawn하면 host call이 안전하게 동작한다 (메인 recv
-    // 루프가 이미 동작 중이므로 ipc.result delivery 가능).
+    // 첫 요청 전에 플러그인을 초기화한다. 호스트 응답은 별도 메인 스레드가 읽는다.
     let bus = crate::bus::BusHandle::new(writer.clone(), plugin.id().to_string());
     plugin.on_start(host.clone(), bus);
     for item in req_rx.iter() {
@@ -527,12 +498,9 @@ fn handle_ipc_result_request(
     }
 }
 
-/// **poison 시 패닉을 유지하는 자리다.** 임계구역이 소켓에 줄을 쓰고 flush 하므로,
-/// 락을 든 채 죽은 스레드는 **줄이 끊긴 채로** 남겨 뒀을 수 있다. 그 위에 이어 쓰면
-/// 프로토콜의 "한 메시지 = 한 줄" 불변식이 깨져 호스트 파서가 어긋난다 — 여기서는
-/// 데이터를 신뢰할 수 없으므로 복구가 오답이다. 폭발 반경도 이 plugin 프로세스 하나로
-/// 한정된다(plugin 스레드 spawn 정책과 같은 근거,
-/// [`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+/// 소켓 writer가 poison되면 메시지가 일부만 쓰였을 수 있어 패닉으로 중단한다.
+/// 같은 연결에 이어 쓰면 NDJSON 메시지 경계가 깨질 수 있다.
+/// 관련 정책: [오류 처리](../../../docs/dev-guide/error-handling.md).
 pub(crate) fn send_event(writer: &Arc<Mutex<TcpStream>>, event: &PluginEvent) -> Result<()> {
     let payload = serde_json::json!({ "event": event });
     let line = serde_json::to_string(&payload)?;

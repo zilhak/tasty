@@ -18,11 +18,8 @@ pub struct HostState {
 
 impl HostState {
     pub fn new(bridge: Arc<dyn HostBridge + Send + Sync>) -> Self {
-        // Sandbox 검증의 핵심: WasiCtx 를 *최소 권한* 으로 빌드.
-        //   - preopen 0 (filesystem 차단)
-        //   - inherit_stdio 만 (stdio 도 host 측 통제 가능)
-        //   - sockets / clocks / random 은 기본값 (random 은 plugin 내부 PRNG 시드용 허용)
-        // wasi-preview2 의 capability injection 모델 — *주입 안 한 것은 사용 불가*.
+        // 표준 입출력을 상속하고 디렉터리는 preopen하지 않는다.
+        // 그 밖의 WASI 기능은 이 버전의 WasiCtx 기본 설정을 사용한다.
         let wasi = WasiCtx::builder().inherit_stdio().build();
         Self {
             wasi,

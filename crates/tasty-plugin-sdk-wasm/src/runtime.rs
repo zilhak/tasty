@@ -1,8 +1,4 @@
-//! WasmPluginRuntime — wasmtime component instance wrapper.
-//!
-//! POC 단계 핵심: load + init + open-popup 의 round-trip 이 동작하는 것을 보이는
-//! 최소 코드. wit-bindgen 으로 자동 생성된 host bindings 를 사용하면 더 깔끔하지만,
-//! POC 에서는 dependency 단순화를 위해 wasmtime 의 raw component API 만 사용.
+//! wasmtime의 component API로 컴포넌트를 읽고 export를 호출한다.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -35,9 +31,7 @@ impl WasmPluginRuntime {
 
         let mut linker: Linker<HostState> = Linker::new(&engine);
 
-        // WASI Preview 2 standard imports — *최소 capability*.
-        // POC sandbox 검증: 본 linker 등록을 누락한 import (filesystem, sockets) 는
-        // 컴포넌트 instantiate 단계에서 "unknown import" 에러로 차단됨.
+        // WASI Preview 2 import를 등록한다. 접근 자원은 HostState의 WasiCtx 설정을 따른다.
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker).context("wasi-p2 add_to_linker")?;
 
         install_tasty_host_imports(&mut linker)?;

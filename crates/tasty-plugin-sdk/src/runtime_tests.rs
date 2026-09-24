@@ -336,11 +336,8 @@ fn worker_loop_invokes_on_start_once_before_dispatch() {
     assert_eq!(*called.lock().unwrap(), 1);
 }
 
-/// self-invoke 는 host 왕복(`ipc.invoke` 프레이밍) 없이 `handle_ipc_method` 로 직접
-/// 라우팅되어야 한다 — plugin 자신의 네임스페이스 메서드를 `HostHandle::call`로
-/// 부르면 host 의 self-call 미forward 정책 때문에 `-32601`이 나는 문제(`file_watch` 의
-/// idle auto-reload 회귀)의 재발 방지 테스트. `caller_plugin_id`는 plugin 자신의
-/// id가 채워진다.
+/// self-invoke가 호스트를 거치지 않고 handle_ipc_method에 전달되는지 확인한다.
+/// caller_plugin_id에는 플러그인 자신의 ID가 들어간다.
 #[test]
 fn worker_loop_self_invoke_routes_to_handle_ipc_method_directly() {
     let last = Arc::new(Mutex::new(None));
@@ -478,11 +475,7 @@ impl Plugin for DropRecorder {
     }
 }
 
-/// host 가 버린 수는 **dispatch 직전에 한 번만** plugin 에게 전달돼야 한다.
-///
-/// reader 스레드는 그 수를 `HostHandle` 에 쌓아 두기만 한다 — `&mut plugin` 을 쥔
-/// 스레드가 worker 하나뿐이라 꺼내는 자리도 거기다. 꺼낸 뒤 0 이 되지 않으면 같은
-/// 수가 요청마다 다시 보고되어, plugin 이 보는 값이 실제로 버려진 수가 아니게 된다.
+/// 호스트가 보고한 누적 드롭 수를 첫 dispatch 직전에 한 번만 전달하는지 확인한다.
 #[test]
 fn worker_loop_reports_host_drops_once_before_dispatch() {
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -590,9 +583,7 @@ fn run_plugin_against_fake_host<P: Plugin + Send + 'static>(
     (stream, reader, done_rx)
 }
 
-/// shutdown 요청을 받으면 `run` 이 돌아와야 한다 — 호스트는 프로세스 종료를 2 s 기다린 뒤
-/// 강제 종료한다. worker 큐를 닫는 것만으로는 worker 가 안 끝난다: plugin 이 쥔
-/// `HostHandle` 이 self-invoke sender 를 들고 있어서다(`WorkerItem::Stop` 문서).
+/// HostHandle이 sender 복사본을 가진 상태에서도 shutdown으로 run이 종료되는지 확인한다.
 #[test]
 fn run_returns_after_shutdown_even_when_plugin_keeps_host_handle() {
     let (mut stream, mut reader, done_rx) = run_against_fake_host();
@@ -655,12 +646,8 @@ fn send_line(stream: &mut TcpStream, req: &PluginRequest) {
     stream.flush().unwrap();
 }
 
-/// shutdown 앞에 쌓인 요청이 host 를 부르면, 결과를 읽어 줄 recv 루프가 이미 끝나
-/// 있다. 그 call 이 [`HostHandle::timeout`](60 s)까지 서면 `run` 도 서고 호스트가
-/// 2 s 뒤 강제 종료한다 — 그러지 말고 "호스트가 떠났다" 로 곧바로 돌아와야 한다.
-///
-/// 두 갈래를 함께 본다: 루프가 끝날 때 **이미 기다리던** call(첫 요청)과, 끝난 **뒤에**
-/// 시작한 call(둘째 요청 — worker 가 Stop 앞에서 처리한다).
+/// 수신 루프 종료 전에 기다리던 호출과 종료 뒤 시작한 호출이 모두
+/// 응답 timeout을 기다리지 않고 HostClosed로 끝나는지 확인한다.
 #[test]
 fn host_calls_left_at_shutdown_fail_fast_instead_of_timing_out() {
     let (outcome_tx, outcome_rx) = mpsc::channel();
