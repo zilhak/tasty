@@ -8,7 +8,7 @@ use crate::core::CoreState;
 impl CoreState {
     /// 점유 터미널의 화면을 사본에 적용하고 점유가 끝난 사본은 지운다.
     /// snapshot의 clear·home으로 이전 화면을 덮으며 크기가 바뀌면 사본을 다시 만든다.
-    /// live 터미널을 하나라도 갱신했으면 true다.
+    /// 터미널 사본을 하나라도 갱신했으면 true다.
     pub(crate) fn refresh_readonly_views(&mut self) -> bool {
         let attached: Vec<u32> = self
             .attach
