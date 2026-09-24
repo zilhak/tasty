@@ -1,25 +1,25 @@
 # CWD 정책
 
-각 surface 가 자기 "현재 폴더"(cwd)를 **정의·갱신**하는 방식. 이 cwd 는 surface 전환·새 탭 cwd 상속·split carry·터미널 링크 해석·닫힌 항목 복원에 쓰인다. 앞 절들은 *각 surface 가 자기 cwd 를 어떻게 정의/갱신하는가* 이고, 생성·변환 시 cwd 가 *손실 없이 carry* 되는 invariant 는 아래 [Surface cwd invariant](#surface-cwd-invariant) 절이다.
+surface의 현재 폴더(cwd)는 종류 전환, 새 탭·분할의 폴더 상속, 터미널 링크 해석, 닫은 항목 복원에 쓰인다. 이 문서는 종류별 cwd와 [생성·변환 중 전달 규칙](#surface-cwd-invariant)을 설명한다.
 
-호스트는 `CoreState::surface_cwd(sid)`(`src/core/state/surface_cwd.rs`)로 조회 — terminal kind 면 `engine.terminals.get(sid).get_cwd()`(store 경유), 그 외는 `Surface::source_cwd()`. 반환값은 출처가 구분된 `SurfaceCwd`(`Local` / `Remote`)이고, mirror 워크스페이스의 surface 는 `Remote` 다 — 원격 경로가 로컬 실행 자리로 새지 않게 하는 규칙은 아래 [§3-2](#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다).
+호스트는 `CoreState::surface_cwd(sid)`(`src/core/state/surface_cwd.rs`)로 조회한다. 터미널은 `engine.terminals.get(sid).get_cwd()`, 나머지는 `Surface::source_cwd()`를 사용한다. 반환 타입 `SurfaceCwd`는 `Local`과 `Remote`를 구분한다. mirror workspace의 cwd는 항상 원격 값이며 [로컬 실행에는 사용하지 않는다](#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다).
 
 ## Surface 별 cwd
 
 | Surface | "현재 폴더" 정의 | 갱신 트리거 | host 가 아는 방법 |
 |---------|------------------|-------------|------------------|
 | **Terminal** | shell 의 `$PWD` | shell 이 OSC 7 송신 시 | termwiz parse → `cached_cwd`(store), `get_cwd()` 로 조회 |
-| **Markdown** / **Image** | 열린 파일의 parent | *불변* | `source_cwd()` = `file.parent()` |
-| **Empty** | 생성 시 carry 된 cwd | 불변 | `source_cwd()` = `self.cwd` |
+| **Markdown** / **Image** | 열린 파일의 부모 디렉터리 | *불변* | `source_cwd()` = `file.parent()` |
+| **Empty** | 생성할 때 전달받은 cwd | 불변 | `source_cwd()` = `self.cwd` |
 | **Explorer**(host 내장) | 생성 시 프로젝트 루트 | *불변* — 안에서 폴더를 옮겨도 안 바뀐다 | `source_cwd()` = 고정 cwd (`crates/tasty-model/src/explorer_panel.rs`) |
-| **기타 RemoteSurface** | 각 plugin 의미 | 각 plugin | `surface.set_cwd` 권장, 미구현 시 None(호환 OK) |
+| **기타 RemoteSurface** | 각 plugin의 정의 | 각 plugin | `surface.set_cwd` 권장, 미구현 시 None(기존 호환 유지) |
 
-- **불변 surface**(Markdown/Image/Empty): 사용자가 그 안에서 위치를 이동할 수단이 없어 갱신 메커니즘 불요 — `source_cwd()` 정적 반환.
-- **동적 surface**(Terminal): 사용자가 안에서 이동(`cd`) → 갱신 메커니즘 필수.
+- **불변 surface**(Markdown/Image/Empty): 사용자가 내부에서 폴더를 바꾸지 않으므로 `source_cwd()`가 고정값을 반환한다.
+- **동적 surface**(Terminal): 사용자가 `cd`로 이동하므로 cwd를 갱신해야 한다.
 
 ## 터미널 OSC 7
 
-셸이 프롬프트마다 `\e]7;file://hostname/path\e\\` 를 보내면 즉시 `cached_cwd` 반영(비용 0, 이벤트 기반). 캐시가 비면 `get_cwd()` 는 OS 조회로 폴백한다 — Linux `/proc/<pid>/cwd` · macOS `proc_pidinfo` · Windows 없음(`crates/tasty-terminal/src/cwd.rs`). 코드: `crates/tasty-terminal/src/vte_handler/osc.rs`(수신), `accessors.rs`(`get_cwd`/`set_cached_cwd`).
+셸이 프롬프트마다 `\e]7;file://hostname/path\e\\` 를 보내면 이벤트 처리 중 `cached_cwd`를 갱신한다. 캐시가 비면 `get_cwd()` 는 OS 조회로 폴백한다 — Linux `/proc/<pid>/cwd` · macOS `proc_pidinfo` · Windows 없음(`crates/tasty-terminal/src/cwd.rs`). 코드: `crates/tasty-terminal/src/vte_handler/osc.rs`(수신), `accessors.rs`(`get_cwd`/`set_cached_cwd`).
 
 | 셸 | OSC 7 |
 |----|-------|
@@ -27,27 +27,29 @@
 | bash | 수동 (`PROMPT_COMMAND='printf "\033]7;file://%s%s\033\\" "$HOSTNAME" "$PWD"'`) |
 | PowerShell 7+ | 수동 (`prompt` 함수) |
 
-OSC 7 이 오면 그 surface 가 속한 탭의 이름도 다시 매긴다 — 탭의 focused surface 의 cwd 마지막 이름(홈이면 `~`)이고, 명시 이름과 OSC 제목이 있으면 그쪽이 이긴다. 두 빌드 조합이 같다: gui 는 `TerminalCwdChanged` → `SurfaceCwdChanged` cascade 가, headless 는 PTY drain(`src/boot.rs`)이 `intent::headless::apply_terminal_cwd_changed` 로 같은 engine 갱신을 한다([headless-build-boundaries](../../dev-guide/headless-build-boundaries.md) "두 조합이 같게 하는 것"). 시험 `tests/e2e_tests.rs` 의 `an_osc7_cwd_becomes_the_tab_name` 이 두 조합에서 같은 단언을 본다.
+OSC 7을 받으면 소속 탭의 이름도 갱신한다. 탭에서 포커스된 surface의 cwd 마지막 경로 요소를 쓰며 홈은 `~`로 표시한다. 명시한 이름과 OSC 제목이 있으면 이를 우선한다. GUI는 `TerminalCwdChanged` → `SurfaceCwdChanged`, 헤드리스는 PTY 처리(`src/boot.rs`)의 `intent::headless::apply_terminal_cwd_changed`로 같은 engine 상태를 갱신한다([헤드리스 가이드](../../dev-guide/headless-build-boundaries.md)). `tests/e2e_tests.rs`의 `an_osc7_cwd_becomes_the_tab_name`이 두 빌드에서 같은 결과를 확인한다.
 
 셸이 OSC 7 을 안 보내면 `cached_cwd` 가 비어, 새 분할의 부모 cwd 상속은 Linux/macOS 에선 위 OS 조회가 대신하고 Windows 에선 동작하지 않는다(프롬프트 설정으로 해결). (Windows 는 합성 rcfile 로 bash 의 OSC 7 emit 강제 — [terminal](../../features/terminal/index.md).)
 
 ## `surface.set_cwd` IPC (RemoteSurface)
 
-동적 cwd plugin surface 가 host 에 통보:
+plugin은 surface의 cwd가 바뀌면 호스트에 알린다.
 
 ```jsonc
 { "method": "surface.set_cwd", "params": { "surface_id": 42, "cwd": "/foo/bar" } }  // cwd: null 도 허용(해제)
 ```
 
-- 권한 `surface.write`. plugin 은 *사용자 인지 "현재 폴더" 가 바뀐 모든 path* 에 발사(단일 setter 로 모으는 패턴 권장 — 누락 방지). host 는 `RemoteSurface.cwd` 에 보관, `source_cwd()` 가 반환 → 기존 carry 경로에 자동 합류. 옛 SDK(이 IPC 모름)는 None 으로 남음(추가만 — 호환 유지).
+권한은 `surface.write`다. plugin은 사용자가 보는 현재 폴더가 바뀌는 모든 경로에서 이 메서드를 호출한다. 공용 setter를 사용하면 누락을 줄일 수 있다. 호스트는 `RemoteSurface.cwd`에 저장하고 `source_cwd()`로 반환해 기존 상속 경로에 전달한다. 이 IPC를 사용하지 않는 옛 SDK는 None을 유지한다.
 
-## Surface cwd invariant
+<a id="surface-cwd-invariant"></a>
 
-Surface 의 `cwd` 가 변환/생성 경로 전구간에서 **손실 없이 carry** 되어야 한다는 규칙. 사용자 의도와 무관한 *호스트 시작 cwd*(예: `cargo run` 시점의 working dir)가 새 surface 의 cwd 행세를 하지 않도록 한다.
+## cwd 전달 규칙
+
+Surface의 `cwd`는 생성·변환 경로 전체에서 전달해야 한다. 빠뜨린 값을 호스트 시작 디렉터리(예: `cargo run`을 실행한 폴더)로 대신하지 않는다.
 
 ### 동기
 
-Terminal(`/foo/bar`) → Explorer 변환 시, 예전엔 변환 타깃이 cwd 를 carry 하지 않아 Explorer 가 `std::env::current_dir()` 로 fallback 했다. 결과적으로 사용자가 `cd /foo/bar` 한 터미널에서 변환해도 호스트 프로세스 시작 dir 이 root 로 표시되는 버그가 났다.
+예를 들어 `/foo/bar`에서 작업하는 터미널을 Explorer로 바꾸면 같은 폴더를 표시해야 한다. cwd를 빠뜨리고 `std::env::current_dir()`로 대체하면 호스트를 시작한 폴더가 표시된다.
 
 ### 규칙
 
@@ -58,11 +60,11 @@ Terminal(`/foo/bar`) → Explorer 변환 시, 예전엔 변환 타깃이 cwd 를
 | impl | source_cwd |
 |------|-----------|
 | `TerminalSurface` | `None` — cwd 는 terminal store(`get_cwd()`) 경유, `CoreState::surface_cwd()` 가 분기 |
-| `EguiMeshSurface`(plugin egui-mesh surface) | 자기 file 의 parent (자체 의미 우선; file 없으면 None) |
-| `EmptySurface` | carry 한 `self.cwd` (없으면 None) |
+| `EguiMeshSurface`(plugin egui-mesh surface) | 자신이 연 파일의 부모 디렉터리. 파일이 없으면 None |
+| `EmptySurface` | 전달받은 `self.cwd` (없으면 None) |
 | `ExplorerPanel` | 활성 탭의 **고정 cwd**(프로젝트 루트) — 현재 폴더(current)를 하위로 오가도 스폰 cwd 는 cwd 불변. cwd↔current 분리는 [features/explorer](../../features/explorer/index.md) |
 | `AttachMeshSurface` / `DagGraphSurface` | `None` |
-| `RemoteSurface`(plugin surface) | `None` — plugin 이 `ctx.cwd` 로 받아 자체 보유, host trait 에는 비노출. host carry 는 `SurfaceCreateCtx.cwd` 로 *한 번만* 전달 |
+| `RemoteSurface`(plugin surface) | 생성 시 전달한 값 또는 `surface.set_cwd`로 갱신한 값을 저장해 반환. 값이 없으면 `None` |
 
 #### 2. carry 경로 강제 — `SurfaceKindDef::create` 시그니처
 
@@ -71,7 +73,7 @@ pub create: Arc<dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value)
     -> anyhow::Result<Box<dyn Surface>> + Send + Sync>,
 ```
 
-두 번째 인자 `Option<&Path>` 가 cwd. 모든 builtin + remote plugin kind 등록자가 이 시그니처를 따라 host 가 cwd 를 *모든* 생성 경로에 일관 주입한다. `CoreState::create_surface_via_registry` 호출자(워크스페이스 첫 surface · 새 탭 · ConvertSurface · SplitPane · SplitSurface)가 cwd 를 받아 전달.
+두 번째 인자 `Option<&Path>`가 cwd다. 기본 제공 종류와 plugin 종류 모두 이 인자를 받는다. `CoreState::create_surface_via_registry`의 호출자(워크스페이스 첫 surface·새 탭·ConvertSurface·SplitPane·SplitSurface)가 cwd를 전달한다.
 
 #### 3. `ConvertSurfaceTarget::Kind` 에 cwd 동봉
 
@@ -82,7 +84,7 @@ pub(crate) enum ConvertSurfaceTarget {
 }
 ```
 
-호출자가 명시 안 하면(`cwd: None`) intent handler(`src/intent/surface.rs::convert`)가 source surface 에서 carry 한다 — **fallback 결정은 항상 intent handler 가 담당**, 호출자가 임의로 `None` 고정 금지.
+호출자가 `cwd: None`으로 보내면 `src/intent/surface.rs::convert`가 원본 surface에서 가져온다. 생략된 cwd의 대체값은 이 핸들러가 정하며, 호출자가 임의로 None에 고정하지 않는다.
 
 ##### 3-1. mirror(원격 attach) forward 경로도 같은 불변식 대상
 
@@ -90,17 +92,17 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 
 | 단계 | 담당 | 값 |
 |------|------|----|
-| client → wire | `src/core/impl_mirror.rs` (`build_mirror_forward_op`) | intent 에 **명시된** cwd 만 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror surface 에서 carry 한 cwd 는 원격 출처(§3-2)라 로컬 carry 헬퍼가 `None` 을 돌려주므로 싣지 않는다 — 서버가 자기 PTY 에서 resolve 하는 값이 진실 원천이고 client 가 가진 값은 그 사본이다 |
+| client → wire | `src/core/impl_mirror.rs` (`build_mirror_forward_op`) | intent 에 **명시된** cwd 만 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror surface 에서 carry 한 cwd 는 원격 출처(§3-2)라 로컬 carry 헬퍼가 `None` 을 돌려주므로 싣지 않는다 — 실제 기준은 서버가 자기 PTY에서 읽은 값이며 클라이언트 값은 그 사본이다 |
 | 원격 실행 | `src/core/attach_runtime.rs` (`execute_forwarded_structural_op`) | op 의 `cwd` 가 비어 있으면 `AppState::resolve_inherit_cwd_from_surface` 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
 | 관측 push (server → client) | `CoreState::forward_surface_cwd` → `StreamControl::Cwd` → client `mirror_surface_cwd` 맵 | 서버가 1Hz 로 점유 surface 의 cwd 를 자기 트리에서 계산해 값이 바뀐 것만 holder 에 보낸다. 실행이 아니라 **관측**이다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)) |
 
-서버측 resolve 는 로컬 convert 와 같은 헬퍼를 쓰므로 **원격 인스턴스의 `inherit_cwd` 설정 게이트를 그대로 적용**한다(실행 주체의 설정 의미론을 따르는 쪽이 로컬 실행과 대칭). `cwd` 키가 없는 구버전 client 의 op 도 이 서버측 resolve 로 커버된다. **이 게이트는 실행 경로(서버측 resolve)에 한정된다** — 관측 push 는 `inherit_cwd` 와 무관하게 raw cwd 를 보내고, 게이트는 소비 시점(client)이 건다. `inherit_cwd` 는 "새 surface 가 cwd 를 상속하는가" 이지 "cwd 를 아는가" 가 아니다.
+서버측 resolve 는 로컬 convert 와 같은 헬퍼를 쓰므로 **원격 인스턴스의 `inherit_cwd` 설정 게이트를 그대로 적용**한다(실행하는 인스턴스의 설정을 따름). `cwd` 키가 없는 구버전 client 의 op 도 이 서버측 resolve 로 커버된다. **이 게이트는 실행 경로(서버측 resolve)에 한정된다** — 관측 push 는 `inherit_cwd` 와 무관하게 raw cwd 를 보내고, 게이트는 소비 시점(client)이 건다. `inherit_cwd` 는 "새 surface 가 cwd 를 상속하는가" 이지 "cwd 를 아는가" 가 아니다.
 
 ##### 3-2. 원격 출처 cwd 는 로컬 실행 경로로 새지 않는다
 
 두 인스턴스의 파일시스템은 다르다. surface cwd 의 판정은 `CoreState::surface_cwd`(`src/core/state/surface_cwd.rs`) 하나이고 반환 타입 `SurfaceCwd` 가 출처를 가른다 — `Local(PathBuf)` / `Remote(RemoteCwd)`. mirror 워크스페이스에 속한 surface 의 값은 출처(OSC 7 캐시 · explorer root · plugin surface 의 `set_cwd`)와 무관하게 `Remote` 이고, `RemoteCwd` 에는 `Path` 로 가는 변환이 없다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)). 분류는 **값이 어디서 들어왔는가가 아니라 surface 가 어느 워크스페이스에 있는가**로 한다 — 그래서 cwd 가 들어오는 경로(`surface.set_cwd` IPC, `plugin_bridge/remote_kind.rs` 의 생성 시 `set_cwd`)를 따로 막지 않아도 나가는 쪽에서 한 번에 걸린다.
 
-`AppState::resolve_inherit_cwd` / `resolve_inherit_cwd_from_surface` 는 `inherit_cwd` 게이트를 건 뒤 **`Local` 만** 돌려준다. 소비 지점 판정(판정 근거는 그 자리의 mirror 게이트 위치다):
+`AppState::resolve_inherit_cwd` / `resolve_inherit_cwd_from_surface` 는 `inherit_cwd` 게이트를 건 뒤 **`Local` 만** 돌려준다. 사용처별 처리 방식은 다음과 같다.
 
 | 소비 지점 | cwd 가 가는 곳 | 판정 |
 |---|---|---|
@@ -123,7 +125,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 pub struct SurfaceCreateCtx { pub surface_id: u32, pub kind: String, pub cwd: Option<PathBuf>, pub params: Value }
 ```
 
-host→plugin IPC `surface.create` payload 의 top-level `cwd` 키로 직렬화. plugin 은 ① `params` 명시 → ② `ctx.cwd` carry → ③ 자체 fallback(예: home) 순으로 결정. 옛 SDK(cwd 키 모름)는 무시 — JSON-RPC 호환.
+호스트에서 plugin으로 보내는 `surface.create` 메시지의 최상위 `cwd` 키에 넣는다. plugin은 명시한 `params`, 전달받은 `ctx.cwd`, 자체 기본값(예: 홈) 순서로 선택한다. 옛 SDK는 모르는 cwd 키를 무시하므로 JSON-RPC 호환을 유지한다.
 
 #### 5. Explorer root fallback (host builtin)
 
@@ -135,15 +137,15 @@ Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer`
 4. (홈 조회 실패 시) 프로세스 cwd 를 **절대경로로 확정**해서
 5. (그것도 실패 시) 파일시스템 루트 — Windows 는 `%SystemDrive%\`(없으면 `C:\`). `"\"` 단독은 드라이브 문자가 없어 `Path::is_absolute()` 가 false 라 절대경로 보장이 깨진다
 
-1·2 의 값이 **상대경로면 채택하지 않고** 3 단계로 내려간다. 상대 root 를 프로세스 cwd 기준으로 절대화하는 선택지는 이 불변식이 금지한 "호스트 시작 cwd 가 root 행세" 를 그대로 되살리므로 채택하지 않았다. `"."` 를 root 로 두는 것은 `std::env::current_dir()` 폴백을 **지연 평가**하는 것과 동작상 같으면서, 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가므로 더 나쁘다.
+1·2의 값이 상대경로면 사용하지 않고 3단계로 넘어간다. 프로세스 cwd를 기준으로 절대경로를 만들면 사용자가 요청한 폴더 대신 호스트 시작 폴더를 쓰게 된다. `"."`를 그대로 저장해도 같은 문제가 생기며, 주소창·경로 복사·attach `list_dir` 응답에 상대경로가 노출된다.
 
 4 단계(프로세스 cwd)는 홈 조회가 실패하는 환경(HOME 없는 컨테이너 등)의 최후 수단이다 — 생성 시점에 절대경로로 확정하므로 상대경로가 UI·wire 로 새지 않는다.
 
 같은 규칙이 **snapshot 복원**(`explorer_tab_from_json`)에도 적용된다 — `root` 키가 없거나 값이 상대경로인 구 `layout.json`(과거 폴백이 저장한 `"."` 포함)은 복원 시 홈으로 교정된다. 상대 `cwd` 키는 (이미 절대로 확정된) current 를 따른다.
 
-구현의 단일 진실원천은 `tasty_model::explorer_panel::{default_root, resolve_root}` 이고, 생성(`create`)·복원(`explorer_tab_from_json`)·빈 탭 목록 복원(`ExplorerPanel::from_tabs`) 세 경계가 모두 이를 호출한다.
+이 규칙은 `tasty_model::explorer_panel::{default_root, resolve_root}` 에 구현한다. 생성(`create`)·복원(`explorer_tab_from_json`)·빈 탭 목록 복원(`ExplorerPanel::from_tabs`)이 모두 이 함수를 호출한다.
 
-주의: 이 폴백은 "cwd 가 애초에 주어지지 않았을 때" 의 방어선이지 cwd carry(§2·§3)의 대체가 아니다. carry 할 cwd 가 있는데 전달하지 않아 홈으로 떨어지는 것은 여전히 해당 생성 경로의 버그다.
+홈 등의 대체값은 cwd가 주어지지 않았을 때만 사용한다. 상속할 cwd를 빠뜨려 홈이 선택됐다면 해당 생성 경로의 결함이다.
 
 ### 강제 / 위반 검출
 

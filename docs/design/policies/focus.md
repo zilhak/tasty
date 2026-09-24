@@ -1,8 +1,6 @@
 # 포커스 정책 (운영 상세)
 
-> 정체성 차원의 근거는 [identity §2.3 포커스 독립성](../../identity.md). 본 문서는 *현재 운영 동작* 만 기술한다. 계층 용어(View)는 [concepts/hierarchy](../../concepts/hierarchy.md).
-
-**포커스(활성 윈도우/탭/워크스페이스/Pane/Surface)는 사용자의 것**이다 — 사용자가 지금 무엇을 보고 어디에 입력하는지의 시점. 에이전트 행동(IPC/CLI)은 포커스를 바꾸지 않으며, release 엔 포커스 변경 API 가 없다.
+포커스는 사용자가 보고 입력하는 창·워크스페이스·pane·탭·surface를 나타낸다. 에이전트의 IPC/CLI 요청은 이를 바꾸지 않으며 release에는 포커스 변경 API가 없다. 이유는 [포커스 독립성 원칙](../../identity.md), 계층 용어는 [구조 계층](../../concepts/hierarchy.md)을 따른다.
 
 ## 계층
 
@@ -32,9 +30,11 @@ Engine
 
 Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포커스 이동과 탭 전환이 일어난다 (단축키/클릭). 단축키는 [`KeybindingSettings`](key-mapping.md) — 하드코딩 아님. 이 내부 포커스는 그 View 가 OS 포커스를 갖고 Modal 이 비활성일 때만 동작한다.
 
-**탭바 클릭 → 그 pane 으로 focus 이동**: 콘텐츠 영역 클릭과 대칭으로, 비-focused pane 의 탭바(탭 본체·탭이 없는 빈 영역·스크롤 화살표·"+"/split/search 버튼)를 primary click 하면 그 pane 으로 focus 가 이동한다. 탭바는 그 pane 을 직접 조작하는 사용자 행위이므로 클릭 대상 pane 과 focus 가 어긋나면 안 된다(비-focused pane 의 탭을 클릭해도 탭 전환만 일어나고 focus 는 그대로 남는 것은 결함). 빈 영역 클릭은 탭 전환 없이 focus 만 옮긴다. 우클릭 컨텍스트 메뉴(탭/pane/새 탭 버튼)는 대상 `pane_id`/`tab_index` 를 메뉴 항목에 직접 실어 나르므로 focus 이동이 필요 없다 — 우클릭은 조회/메뉴-오픈이지 조작 commit 이 아니다. 구현: `src/adapters/ui/tab_bar.rs` `TabBarAction::focus_target_pane` + `src/adapters/ui/tab_bar/apply.rs` `apply_tab_bar_actions`.
+탭바를 기본 버튼으로 클릭하면 해당 pane으로 포커스를 옮긴다. 탭 자체뿐 아니라 빈 영역·스크롤 화살표·추가·분할·검색 버튼도 포함한다. 빈 영역에서는 탭을 바꾸지 않고 pane 포커스만 옮긴다.
 
-이 규칙은 **사용자 마우스 클릭**에 의한 focus 이동이므로 아래 "CLI/IPC 포커스 독립 원칙"(에이전트/명령 유래 focus 강제 금지)과 별개다 — 혼동 금지. 그 원칙은 IPC/CLI 명령이 focus 를 대상 결정 수단으로 쓰거나 강제 변경하는 것을 막는 것이지, 사용자가 GUI 를 직접 클릭했을 때 그 결과로 focus 가 따라가는 것을 막지 않는다.
+우클릭 메뉴는 `pane_id`·`tab_index`로 대상을 전달하므로 포커스를 옮기지 않는다. 이 동작은 사용자가 GUI에서 직접 클릭한 결과이며, 에이전트가 포커스를 바꾸지 못하게 하는 IPC 규칙과는 별개다.
+
+구현은 `src/adapters/ui/tab_bar.rs`의 `TabBarAction::focus_target_pane`과 `src/adapters/ui/tab_bar/apply.rs`의 `apply_tab_bar_actions`에 있다.
 
 ## CLI/IPC 포커스 독립 원칙
 
@@ -92,7 +92,9 @@ TASTY_SURFACE_ID는 호출자가 있는 surface이며 사용자 포커스와 다
 새 대상 키는 `every_id_key_a_handler_reads_is_routed_or_exempt`의 대조 대상이며,
 대상이 아닌 키는 구체적인 사유와 함께 제외한다.
 
-## 폴백으로 가는 메서드는 이름과 사유로 남는다
+<a id="폴백으로-가는-메서드는-이름과-사유로-남는다"></a>
+
+## 기본 라우팅을 사용하는 메서드
 
 `src/source_guards/unrouted_dispatch_reasons.rs`는 라우팅 대상 키가 드러나지 않는 메서드를 분류한다.
 명부에는 주인 창이 정해지지 않아도 답이 올바른 이유를 적는다.
@@ -119,15 +121,11 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
 파일 열기는 명시 origin의 engine·pane을 비동기 완료와 picker 선택까지 유지하고,
 대상이 사라졌으면 다른 창에 열지 않는다. 사용자 파일 열기와 에이전트 파일 열기의 선택 차이는 아래 절을 따른다.
 
-## 라우팅 아래에도 층이 하나 더 있다 — 그 층은 대상을 안 고른다
+<a id="라우팅-아래에도-층이-하나-더-있다--그-층은-대상을-안-고른다"></a>
 
-위의 폴백은 **창을 고르는** 한 층이다. 창이 정해진 뒤 핸들러가 그 창의 활성 포인터를
-다시 읽는 층이 하나 더 있고, 그 사실이 여기 적혀 있지 않아 읽는 사람이 "핸들러가
-`active_workspace` 를 읽는다" 를 위반으로 볼지 설계로 볼지 가를 수 없었다.
+## 핸들러의 활성 상태 조회
 
-**가른 결과: 대상을 포커스로 고르는 핸들러는 없다.** 출하 코드에서 에이전트가 닿는
-IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전수로 뽑아 쓰임새별로
-가르면 다섯 부류이고, 어느 것도 요청의 **대상**을 포커스로 정하지 않는다.
+라우터가 창을 정한 뒤 핸들러도 그 창의 활성 상태를 읽을 수 있다. 응답·기본값·계측·알림에 사용하는 것과 명시한 요청 대상을 포커스로 바꾸는 것은 구분한다. `src/adapters/ipc/`에서 사용하는 경우는 다음 다섯 부류다.
 
 | 부류 | 하는 일 | 판정 |
 |---|---|---|
@@ -137,14 +135,9 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 | 알림 배치 | cap 임계·이상 탐지·승인 요청 알림이 활성 워크스페이스에 뜬다 | 사용자에게 보이라고 두는 자리라 에이전트 대상 결정이 아니다 |
 | 효과 scope | `debug.host_popup.open` 의 `workspace_scope` | debug 전용. 사용자 조작 재현이라 창 종속이 뜻 자체다 |
 
-두 번째 부류가 이 축에서 유일하게 관측 가능한 흔들림이다 — **인자를 명시하지 않은
-호출은 재현 가능하지 않다.** 금지가 아니라 성질이고, 재현이 필요하면 인자를 준다.
-요청이 이미 대상을 댄 자리에서는 그 대상이 귀속을 정하고, 아무것도 대지 않은 자리에만
-포커스 기본값이 남는다. 자리별 갈래와 남긴 이유는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
+기본값에 활성 상태를 사용하는 요청은 인자를 생략하면 같은 호출도 결과가 달라질 수 있다. 재현 가능한 결과가 필요하면 인자를 명시한다. 요청이 대상을 지정했다면 기록도 그 대상에 귀속한다. 구체적인 예외와 이유는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md)을 따른다.
 
-세 번째 부류는 **감사 로그를 workspace 로 조회할 때만 드러난다.** 행의 workspace 는
-요청의 대상이 아니므로, 그 열로 "이 워크스페이스에서 무슨 일이 있었나" 를 물으면
-답이 어긋난다.
+계측 태그의 workspace는 요청 대상이 아닐 수 있다. 따라서 이 필드만으로 해당 workspace에서 발생한 작업이라고 판단하지 않는다.
 
 ### 재는 명령
 
@@ -160,8 +153,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
     grep -rn 'for ws in &engine.workspaces\|engine.workspaces.iter()' <out>/src/adapters/ipc
     grep -oE '"[a-z_.]+" =>' src/app/dispatch/list_global.rs
 
-`focused_view_id` 는 핸들러 층에 **0** 이어야 한다 — 창을 고르는 것은 라우터의 일이고,
-핸들러는 이미 정해진 창 안에서만 산다. 그 값이 0 이 아니게 되면 층이 섞인 것이다.
+핸들러는 라우터가 정한 창 안에서 실행하므로 `focused_view_id`를 직접 읽는 곳이 0이어야 한다. 새 접근이 생기면 창 선택을 핸들러가 대신하고 있는지 확인한다.
 
 `approval.request`의 기록은 명시 workspace_id, 지정 surface의 workspace, 활성 workspace 순서로 귀속한다.
 외부 요청의 없는 surface는 라우터가 먼저 거절한다. 핸들러를 직접 부른 내부 경로는 같은 검사를 중복하지 않는다.
@@ -174,9 +166,9 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 ## 삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다
 
-**시야가 움직이는 경우는 하나뿐 — 사용자가 보고 있던 대상 *자체* 가 사라졌을 때다.** 보고 있지 않은 워크스페이스/탭/pane 이 닫혔는데 화면이 바뀌면 결함이다. 근거 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
+사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)).
 
-활성 포인터 셋 중 둘은 **인덱스**가 진실 소스다 — `AppState::active_workspace` 와 `Pane::active_tab`. 인덱스는 앞쪽 원소가 빠지면 손대지 않아도 **가리키는 대상이 바뀐다.** 그래서 범위 초과 clamp 만으로는 부족하고, 제거 위치를 기준으로 함께 당겨야 한다.
+`AppState::active_workspace`와 `Pane::active_tab`은 인덱스다. 앞 항목을 지우면 같은 인덱스가 다른 항목을 가리키므로, 범위 안으로 제한하는 것만으로는 부족하다. 삭제 위치에 맞춰 인덱스도 줄여야 한다.
 
 | 계층 | 포인터 | 제거가 앞쪽일 때 | 제거된 것이 보던 대상일 때 |
 |---|---|---|---|
@@ -185,10 +177,10 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 | pane | `Workspace::focused_pane`(id) | 그대로 — id 는 밀리지 않는다 | 생존 pane 으로 재배정 |
 
 - 이 보정은 **origin 으로 분기하지 않는다.** 대상 기준 보정은 사용자 경로(컨텍스트 메뉴로 앞쪽 탭 닫기)에서도 옳다. origin 게이트는 "에이전트가 새로 만든 것으로 포커스를 옮기지 않는다"(`cascade_workspace_created` · `cascade_surface_split`)처럼 이동 여부가 정책적으로 갈리는 곳에만 쓴다.
-- 카테고리 quick-switch 착지점(`AppState::category_last_active`)은 인덱스가 아니라 **워크스페이스 id** 를 값으로 든다. 그래서 제거·재정렬 어느 쪽으로도 밀리지 않는다 — 보정 대상이 아니다. 착지 시점에 id 로 워크스페이스를 찾고, 사라졌거나 다른 카테고리로 옮겨졌으면 그 카테고리의 first 로 폴백한다.
+- 카테고리 빠른 전환의 복귀 대상(`AppState::category_last_active`)은 인덱스가 아니라 **워크스페이스 id** 를 값으로 든다. 그래서 제거·재정렬 어느 쪽으로도 밀리지 않는다 — 보정 대상이 아니다. 전환할 때 id 로 워크스페이스를 찾고, 사라졌거나 다른 카테고리로 옮겨졌으면 그 카테고리의 첫 workspace로 폴백한다.
 - 원격 attach 로 forward 된 구조 변경(`execute_forwarded_structural_op`)과 mirror 워크스페이스 teardown 도 같은 close 경로를 타므로 같은 규칙이 적용된다.
 
-구현: tab 은 `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`), workspace 는 `active_index_after_removal` + `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`), pane 은 각 close 경로의 `was_focused` 가드. 제거 위치는 `CoreEvent::SurfaceClosed { workspace_purged }` 로 cascade 에 전달된다 — Core 는 `active_workspace` 를 모르고, cascade 시점엔 워크스페이스가 이미 사라져 위치를 알 수 없기 때문이다. 워크스페이스를 제거하는 **새 경로**를 추가하면 그 헬퍼를 함께 태운다.
+구현: tab 은 `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`), workspace 는 `active_index_after_removal` + `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`), pane 은 각 close 경로의 `was_focused` 가드. 제거 위치는 `CoreEvent::SurfaceClosed { workspace_purged }` 로 cascade 에 전달된다 — Core 는 `active_workspace` 를 모르고, cascade 시점엔 워크스페이스가 이미 사라져 위치를 알 수 없기 때문이다. 워크스페이스를 제거하는 **새 경로**를 추가하면 그 함수를 함께 호출한다.
 
 ## 자기 자신 닫기 보호 (Self-Close Protection)
 
@@ -200,18 +192,28 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 ## 에이전트 닫기와 포커스
 
-에이전트가 **보고 있지 않은** 대상을 닫아도 사용자 화면은 움직이지 않는다.
+에이전트가 **사용자가 보고 있지 않은** 대상을 닫아도 사용자 화면은 움직이지 않는다.
 
-- `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 헬퍼를 반드시 함께 태운다.
+- `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 함수를 반드시 함께 호출한다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
-- 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 축을 나타내는 값을 여럿 두면 그중 하나만 갈리는 사고가 난다.
-- 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크 · 파일열기 팝업) "IPC 로 들어왔는가" 는 좌변이 아니다. plugin 이 그 호출에 **자기 popup** 을 `owner_popup_instance` 로 실으면, host 는 호출자가 그 popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력(포인터 버튼 · 키 누름)을 받았을 때만 사용자로 친다 — 외부 IPC 호출자는 같은 키를 실어도 에이전트다([ADR-0031](../../adr/0031-file-handler-routing.md)). webview 에서 오는 중계(markdown 문서 안의 링크)는 plugin 이 통지받은 navigation 의 URL 을 `user_navigation_url` 로 되대고, host 는 native 엔진이 그 시도를 사용자 제스처로 보고했고 그 surface 의 지금 페이지를 소유 plugin 이 썼으며 그 plugin 에 통지한 마지막 시도일 때만 그 한 번을 사용자로 친다 — 근거는 plugin 의 자기 신고가 아니라 host 가 직접 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어, 에이전트가 쓴 페이지 위의 사람 클릭은 근거가 되지 않는다(재지 않은 예외 하나: 그 클릭의 시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — [파일 열기 가이드의 사용자 동작 판정](../../features/file-handler/index.md)). macOS 는 엔진이 그 값을 주지 않아 에이전트로 도착한다 ([ADR-0031](../../adr/0031-file-handler-routing.md)). 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0031](../../adr/0031-file-handler-routing.md)).
-- `workspace.closed` host event 는 origin 과 무관하게 발화한다. 워크스페이스가 사라졌다는 사실 자체는 누가 닫았든 같기 때문이다. 워크스페이스를 제거하는 경로는 셋(GUI·IPC 닫기 · Core cascade · 인라인 cascade)이고, 발화는 각 경로가 아니라 그 셋이 공유하는 초크포인트 `AppState::after_workspace_removed`(`src/state.rs`)가 한다 — 경로마다 각자 쏘던 때 인라인 cascade 하나가 실제로 빠져 있었다. 워크스페이스를 제거하는 새 경로를 추가하면 그 초크포인트를 반드시 지나게 한다.
+- 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 요청 출처를 여러 값으로 나타내면 일부만 갱신되는 오류가 생길 수 있다.
+- `workspace.closed` 이벤트는 누가 닫았는지와 관계없이 보낸다. GUI·IPC 닫기, Core 연관 정리, 인라인 정리는 모두 `AppState::after_workspace_removed`(`src/state.rs`)를 거친다. 새 제거 경로도 이 공통 함수를 사용한다.
+
+### 파일 열기의 사용자 동작 판정
+
+`FileDispatchOrigin`은 결과 탭 선택 여부와 후속 Intent의 출처를 정한다. 비동기 파일 식별이 끝날 때까지 이 값을 전달한다. plugin이 사용자 클릭을 IPC로 중계할 수 있으므로 IPC를 사용했다는 사실만으로 에이전트 요청이라고 판단하지 않는다.
+
+- plugin이 `owner_popup_instance`를 보내면 호스트는 그 plugin이 팝업 소유자인지, 팝업이 포인터 버튼이나 키 누름으로 확정 입력을 받았는지 확인한다. 외부 IPC 호출자는 같은 값을 보내도 에이전트 요청이다.
+- WebView 링크는 plugin이 통지받은 URL을 `user_navigation_url`로 보낸다. 호스트가 확인한 사용자 제스처이며, 현재 페이지를 소유 plugin이 작성했고, 그 plugin에 알린 마지막 탐색 시도일 때만 한 번 사용자 요청으로 인정한다.
+- `webview.set_url`은 에이전트도 호출할 수 있다. 에이전트가 작성한 페이지의 클릭은 사용자 요청으로 인정할 근거가 아니다. 페이지 작성자가 바뀐 뒤 늦게 도착한 탐색 이벤트의 구분은 아직 완전히 검증되지 않았다.
+- macOS 엔진은 같은 제스처 정보를 제공하지 않아 에이전트 요청으로 처리한다.
+
+상세 조건과 한계는 [파일 열기 가이드](../../features/file-handler/index.md), 결정 이유는 [ADR-0031](../../adr/0031-file-handler-routing.md)에 있다.
 
 workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace를 거절한다.
 호출자 자신을 포함한 대상도 자기 닫기 보호를 따른다. mirror는 attach 해제로 정리한다.
 GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 마지막 workspace를 닫을 수 없다.
-확인용 force 플래그는 요구하지 않지만 되돌릴 수 없는 동작임을 help와 사용자 문서에 표시한다.
+확인용 force 플래그는 요구하지 않지만 되돌릴 수 없는 동작임을 도움말과 사용자 문서에 표시한다.
 일부 점유 surface만 남기는 부분 workspace.close는 수행하지 않는다.
 
 ## 에이전트가 만든 창과 포커스
@@ -224,14 +226,14 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
     `ipc_sequence` 도 여기로 온다.
   - 창 생성 실패를 누구에게 알릴지도 같은 값이 가른다. 새 경로도 이 값을 정해 넘긴다.
 - `User` 창은 `focused_view_id` 를 새 창으로 옮긴다. `Agent` 창은 옮기지 않는다. 그래서 뒤이은
-  대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에 떨어진다. 새 창에 워크스페이스를
+  대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에서 실행된다. 새 창에 워크스페이스를
   만들려면 그 창의 surface 를 `workspace.create` 의 `surface_id`(CLI `tasty new workspace --surface`)로
   지목한다 — `window_id` 는 창 자체를 다루는 요청(닫기 · 스크린샷 등)에만 쓴다
   ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
   그 `surface_id` 는 `cwd` 를 생략했을 때의 상속 원본도 정한다 — 지목했는데 그 창의 포커스 surface 를
   읽으면 결과가 사용자가 그 창에서 보는 탭에 좌우되기 때문이다
   ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
-  - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창이 잡는다. 빼앗을 포커스가 없다.
+  - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창을 기본 대상으로 삼는다.
 - 에이전트 창은 숨긴 채 만들어, 등록 뒤 사용자가 보던 창 **뒤에** 키 포커스 없이 보인다
   (`tasty_platform::window_stacking::show_behind`). OS 마다 할 수 있는 데까지다.
   - macOS · Windows: 사용자 창 바로 아래에 둔다. 키 포커스를 가져가지 않는다.
@@ -247,7 +249,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 
 ## 에이전트가 만든 탭과 선택
 
-에이전트가 탭을 만들어도 그 pane 의 활성 탭은 그대로다 — 위 "에이전트가 만든 창" 의 탭 판이다.
+에이전트가 탭을 만들어도 그 pane 의 활성 탭은 그대로다 .
 
 - 선택 여부는 `DomainIntent::CreateTab` 의 `activate` **하나**가 정한다. 각 진입점이 값을 정해
   싣는다.
@@ -268,23 +270,17 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 
 근거는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
 
-## 원격이 점유한 surface 는 닫기 요청이 죽이지 않는다
+<a id="원격이-점유한-surface-는-닫기-요청이-죽이지-않는다"></a>
 
-하드 점유(ADR-0021)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다. 닫기는
-비가역이고 — 되돌리기 스택에 남는 것은 살아 있는 PTY 가 아니라 같은 명령으로 새 세션을
-여는 레시피다 — 그래서 **닫기 요청은 거절한다.** 에이전트 경로만이 아니라 **사용자
-경로도 같다**: 여기서 보호 대상은 로컬 사용자가 아니라 원격 사용자이고, 로컬 사용자는
-점유 표시 위의 강제 끊기 버튼으로 점유를 회수한 뒤 닫을 수 있어 갇히지 않는다.
+## hard 점유 대상의 닫기 보호
 
-- 규칙의 소유자는 `AppState::refuse_if_hard_occupied` 하나다. 닫기 진입점은 자기가 죽일
-  **대상 집합만** 넘긴다 — 워크스페이스 닫기는 그 워크스페이스의 surface 전부, 탭·페인
-  닫기는 그 안의 전부, surface 닫기는 그 하나.
-- **요청 경로만 이 검사를 지난다.** 셸이 스스로 끝나서 도는 사후 정리는 이미 죽은 프로세스를
-  치우는 것이라 거절하면 좀비 surface 가 남는다. 그래서 검사는 공용 cascade 초크포인트가
-  아니라 사용자 제스처·에이전트 요청의 진입점에 붙는다.
-- IPC 는 토스트가 아니라 사유가 실린 에러로 거절한다. `surface.close_self` 도 예외가 아니다
-  — 그 메서드는 호출자를 확인하지 않고 params 의 id 를 받으므로, 예외로 두면 그대로 우회
-  통로가 된다.
+hard 점유 대상은 원격 사용자가 사용 중이므로 로컬 사용자와 에이전트의 닫기 요청을 모두 거절한다. 닫은 항목 복원은 같은 명령으로 새 세션을 만들 뿐 기존 PTY 작업을 되살리지 못한다. 로컬 사용자는 점유 표시의 강제 끊기로 점유를 회수한 뒤 닫을 수 있다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+
+닫기 진입점은 `AppState::refuse_if_hard_occupied`에 닫을 surface 집합을 넘긴다. workspace·tab·pane은 그 안의 모든 surface, surface 닫기는 해당 하나를 검사한다.
+
+이 검사는 사용자·에이전트의 닫기 요청에만 적용한다. 이미 종료된 셸의 사후 정리를 막으면 화면에 종료된 surface가 남으므로 공용 정리 함수에서는 거절하지 않는다.
+
+IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.close_self`도 예외가 아니다. 해당 메서드는 호출자 대신 params의 ID로 대상을 받으므로 예외를 두면 보호를 우회할 수 있다.
 
 ## 재정렬에서도 포커스 대상은 보존된다
 
@@ -299,10 +295,10 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 `AppState::move_workspace`, 그리고 `CoreEvent::WorkspaceMoved` 의 `cascade_workspace_moved`
 (IPC `workspace.move` 도 이쪽). 규칙은 **한 곳에만** 있다: 순수함수
 `active_index_after_move` 와 그것을 적용하는 `AppState::fix_workspace_pointers_after_move`.
-재정렬하는 새 경로를 추가하면 그 헬퍼를 함께 태운다 — 규칙을 복제하면 어느 경로로
+재정렬하는 새 경로를 추가하면 그 함수를 함께 호출한다 — 규칙을 복제하면 어느 경로로
 재정렬했느냐에 따라 포커스가 달라진다.
 
-카테고리 quick-switch 착지점은 id 를 들어 이 축의 보정 대상이 아니다(위 참조).
+카테고리 빠른 전환의 복귀 대상은 ID로 저장하므로 인덱스 보정이 필요 없다.
 
 카테고리 안의 표시 순서는 입력 단계에서 전체 workspace 인덱스로 바꾼다.
 카테고리 CRUD나 소속 변경만으로 workspace 배열 순서와 활성 인덱스를 바꾸지 않는다.
@@ -318,6 +314,6 @@ category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 �
 - 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
 - 탭 생성의 선택 분기: `DomainIntent::CreateTab` 의 `activate` → `Core::apply_create_tab`(`src/core/impl_tab.rs`) 이 `Pane::add_surface_tab` / `Pane::add_surface_tab_background`(`crates/tasty-model/src/pane.rs`) 중 하나를 고른다. 값을 정하는 진입점은 `structural_exec::create_tab`(`src/core/structural_exec.rs`) 의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
-- 워크스페이스 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory purge): `AppState::after_workspace_removed`(`src/state.rs`).
+- 워크스페이스 제거 후 공통 뒷정리(`workspace.closed` 전달과 workspace 범위 memory 정리): `AppState::after_workspace_removed`(`src/state.rs`).
 
 외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).

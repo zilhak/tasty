@@ -1,8 +1,8 @@
 # 배너 시스템
 
-**Banner** 는 parent(스코프) 상단에 떠서 **안내(info) + 그에 따른 즉시·임시 조치(action)** 를 제공하는 지속·인터랙티브 오버레이다 — 예: TUI 가 마우스를 캡쳐(DECSET 1000/1002/1003)해 드래그 선택이 막혔을 때 "왜 막혔는지 + 우회 방법" 을 띄우는 안내. Modal / Popup / Toast 에 이은 **4번째 오버레이 개념** 이며, `PopupManager`/`ToastManager` 가 아니라 별도 매니저로 관리된다. 용어 구분은 [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md).
+배너는 소속 영역 상단에 안내와 즉시 할 수 있는 조치를 표시하는 오버레이다. TUI가 마우스를 캡처(DECSET 1000/1002/1003)해 드래그 선택이 막혔을 때 이유와 우회 방법을 알리는 것이 한 예다. Popup·Toast와 별도 관리자를 사용한다. 용어는 [통합 용어집](../../concepts/ubiquitous-language.md)을 따른다.
 
-> **시각 토큰은 디자인 수령 후 Theme 토큰으로 확정됨.** 배너 전용 Tier-3 토큰이 본체 Theme 에 도입되어, 아래 px 수치(margin 8px, radius 8px 등)는 모두 토큰 접근자로 노출된다(섹션 "형태" 참조). 하드코딩 없음.
+색과 치수는 아래 Theme 접근자로 읽는다. 숫자를 호출부에 직접 쓰지 않는다.
 
 ## 정체성 — 왜 별도 개념인가
 
@@ -20,13 +20,7 @@
 
 ## 포지셔닝 — Popup / Banner / Toast
 
-세 컴포넌트 모두 parent 기준으로 floating 되는 패널이지만 **목적** 이 다르다.
-
-- **Popup** = 독립적인 **기능** 을 하는 컴포넌트. parent 와 연결되는 기능도 popup 으로 구현.
-- **Banner** = parent 의 상태/조작에 따른 **info + 그에 따른 조치(action)** 를 손쉽게 하기 위한 컴포넌트.
-- **Toast** = parent 의 상태/조작에 따른 **info 만** 표시하는 컴포넌트.
-
-배너의 본 용도는 **사용자 안내 + 즉시/임시 action 부착** 이다. 단순 정보 표시에도 쓸 수 있으나 **내용이 적으면 Toast 를 권장** 한다 — 배너는 action 이 붙거나 내용이 있을 때 쓴다.
+Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표시를 담당한다. 모두 부모 영역 위에 표시하지만 역할이 다르다. 배너에 단순 정보를 넣을 수도 있으나 내용이 짧고 조치가 없으면 Toast를 사용한다.
 
 ## 위치 규칙
 
@@ -55,7 +49,7 @@
 - **floating overlay** — parent 영역을 나눠 차지하지 않고 그 **위에 떠서 덮는다**(Toast/Popup 과 동일). 배너 height 이외의 모든 공간이 그대로 하단 콘텐츠 공간이 된다.
 - 너비: parent 폭 **100% − 좌우 margin**.
 - margin: **상 8px / 좌 8px / 우 8px**, **하단 margin 없음**(`spacing_sm`).
-- border-radius: **8px**(약간 둥근 사각형 패널) — `corner_radius_lg`(= `--tasty-radius-8`, 시스템 기본 4px 의 의도적 2배). 이 단차는 ADR 근거로 토큰화.
+- border-radius: **8px**(약간 둥근 사각형 패널) — `corner_radius_lg`(= `--tasty-radius-8`, 시스템 기본 4px 의 의도적 2배). 기본 반경과 구분된 토큰을 사용한다.
 - 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`draw_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
 - 배경 / 보더 / 그림자: **Theme 토큰** — `banner_bg()`(→ `surface_raised`/surface0) 배경 + 1px `banner_border()`(→ `border_strong`) 보더 + `shadow_popover()`(= `--tasty-shadow-popover`) 그림자. 본문 색은 `banner_fg()`(→ text_primary), leading 글리프 기본색은 `banner_icon_fg()`(→ text_muted, 심각도 배너는 override), 카운트다운은 `banner_countdown_fg()`(→ text_muted). 하위 스코프 디밍은 `opacity_recessed()`(0.4), 페이드 모션은 없다(`banner_fade()` 는 생성만 되고 소비처가 없다).
 
@@ -66,21 +60,19 @@
 - **기본 배너(TTL 없음)**: X(닫기) 버튼이 **평소 숨김**, **배너 위 hover 시에만 표시**.
 - **TTL 배너**: 평소 그 자리에 **카운트다운 숫자(초 단위)** 표시 → **hover 시 X 로 전환**.
 - X 클릭 시 배너 닫힘(사용자 행동).
-- 닫기 affordance 는 갤러리 specimen `dismiss_x()` 와 동일하게 **Ghost/Sm `IconButton` + `icons::CLOSE`(SVG line-icon)** 로 그린다 — raw 유니코드 글리프(`"✕"`)는 UI 폰트에 글리프가 없어 tofu(□)로 렌더되므로 금지(gallery parity). 색은 IconButton 의 해소색(ghost: text-secondary → hover text-primary)을 따른다. 카운트다운 숫자는 `banner_countdown_fg()` 유지.
-
-
+- 닫기 버튼은 갤러리의 `dismiss_x()`와 같은 Ghost/Sm `IconButton`과 `icons::CLOSE` SVG를 사용한다. `"✕"` 문자는 UI 폰트에 없으면 빈 사각형으로 표시되므로 사용하지 않는다. 색은 IconButton의 기본 색을 따른다(ghost: text-secondary, hover: text-primary). 카운트다운은 `banner_countdown_fg()`를 사용한다.
 
 ## "더보기"(⋯) 컨텍스트 메뉴 — mouse-capture 배너 전용
 
 mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더보기" ⋯ 트리거가
-같은 affordance 열에 나란히 놓인다. 다른 배너 kind 는 이 트리거를 갖지 않는다.
+같은 버튼 열에 나란히 놓인다. 다른 배너 kind 는 이 트리거를 갖지 않는다.
 
 - **노출 조건**: X 와 동일 — 배너 hover 시에만. 단 ⋯ 의 컨텍스트 메뉴가 열려 있는 동안은
   hover 여부와 무관하게 **계속 표시 + active(강조) 상태 유지** — 재사용하려면 ⋯ 재클릭.
 - **배치**: ⋯ 가 X 왼쪽, 사이 4px gap(`spacing_xs`). 이 배너는 항상 2 슬롯 몫(56px =
   2×24 + gap 4 + gap 4)을 본문 우측에 예약한다 — hover 진입/이탈로 본문 폭이 흔들리지
   않도록, hover 전에도 예약 폭은 고정이다(다른 배너는 기존 1 슬롯 28px 그대로).
-- **트리거 아이콘**: 신규 SVG `icons::MORE` — 수평 3-dot(`M5 12h.01M12 12h.01M19 12h.01`).
+- **트리거 아이콘**: SVG `icons::MORE` — 수평 3-dot(`M5 12h.01M12 12h.01M19 12h.01`).
 - **메뉴**: host `PopupDef` 의 `headless: true` 컨텍스트 메뉴(`popup-implementation.md`).
   앵커는 트리거 버튼 아래 4px, 우측 정렬 — 뷰포트 하단 공간이 없으면 위로 flip. outside
   click/Esc 로 닫힘(scrim 없음), ↑↓/Enter/Esc 키보드 내비게이션은 기존 headless 메뉴와 동일.
@@ -96,9 +88,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   하나의 문자열로 합쳐 ellipsis 하면 로케일에 따라(특히 en) 프로그램 이름부터 잘리기
   때문이다. 고정 텍스트는 줄바꿈/truncate 없음, 프로그램 이름 세그먼트만 축소+ellipsis,
   전체 이름은 항목 tooltip 으로 보완한다.
-- 두 블랙리스트 모두 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다 — 이 메뉴는
-  그 목록에 진입하는 **두 번째 경로**일 뿐, 저장/매칭 로직은 [ADR-0015](../../adr/0015-terminal-user-input-routing.md)
-  그대로다. 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
+- 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 저장·매칭 규칙을 사용한다([ADR-0015](../../adr/0015-terminal-user-input-routing.md)).
 
 ## TTL (살아있는 시간)
 
@@ -139,7 +129,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 ## IPC / debug
 
-- **터미널 텍스트 읽기**(`surface.read_since_mark` 등)에는 **배너 정보를 포함하지 않는다**(텍스트 오염 방지). 배너는 egui `Order::Foreground` overlay 로 그려져 termwiz 그리드 버퍼에 닿지 않으므로(`surface/query.rs` 의 read 경로에 banner 참조 없음) read 표면과 **구조적으로 분리**된다 — 별도 필터링 없이도 grid read 결과에 섞이지 않는다. debug+gui 빌드 실측으로 확인(배너 표시 후 `surface.read_*` 호출 시 배너 텍스트 미포함).
+- `surface.read_since_mark` 등 터미널 읽기에는 배너 텍스트를 넣지 않는다. 배너는 egui의 `Order::Foreground`로 그려지며 termwiz 그리드와 분리돼 있다. 별도 텍스트 필터는 필요 없다.
 - **debug 빌드 전용** 으로만 배너를 읽고 제어한다. debug 메서드는 사용자 입력 재현/내부 상태 덤프 격리 정책(`#[cfg(debug_assertions)]` + `feature="gui"`, [debug-ipc](../../dev-guide/debug-ipc.md))을 따르며, release 라우터에는 등록되지 않는다. IPC 메서드(= CLI `tasty debug banner <sub>`):
   - `debug.banner.list` (`list`) — 빌트인 def 목록 + 현재 표시/대기 상태 + 기하 덤프.
     표시 중인 배너마다 셸 rect(논리)와 plugin egui-mesh 콘텐츠 rect(물리)를 낸다.
@@ -153,11 +143,24 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 ## 구조
 
-배너 매니저는 별도 모듈(`src/adapters/ui/banner.rs`)로 둔다(Toast 가 `toast.rs` 로 분리된 것과 동일). 분류 enum(`BannerId`/`BannerScope`)은 GUI 비의존이라 `crates/tasty-model/src/banner_kind.rs` 에 잔류한다([model-view-split](../../dev-guide/model-view-split.md)).
+배너 관리자는 `src/adapters/ui/banner.rs`에 있다. GUI가 없어도 쓰는 `BannerId`·`BannerScope`는 `crates/tasty-model/src/banner_kind.rs`에 둔다([model-view-split](../../dev-guide/model-view-split.md)).
 
-- **`BannerDef`** — 정적·데이터 지향 정의(고유 id, TTL 유무, 콘텐츠 draw 함수). id 가 곧 kind. `defs::all_defs()`/`defs::find(&str)` 로 조회.
-- **`BannerState`** — 큐/TTL 단위 인스턴스(id, scope, ttl_ms, remaining_ms, `content`). `persistent`/`with_ttl`/`plugin_mesh` 생성자. `content: BannerContentSource { Host, PluginMesh{..} }` 로 콘텐츠 원천만 분기하고(host 정의 `content_fn` vs plugin egui-mesh), 큐/TTL/z-order/위치 생명주기는 host 소유 단일 지점(`BannerManager`)이 공유한다. 동적 plugin 인스턴스는 `BannerKey`(`Host(id)`/`Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다. plugin egui-mesh 배너 채널 전체는 [egui-mesh-channel.md](../../dev-guide/egui-mesh-channel.md) 의 "banner 채널(A3)".
-- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `more_menu_open_for: Option<&BannerScope>`(현재 "더보기" 메뉴가 열려 있는 스코프 — 호출자가 popup 시스템에서 조립해 넘긴다, `BannerManager` 자신은 popup 을 모른다)를 받아 `BannerDrawResult { hovered, more_clicked }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 연결([input-layer](../../architecture/input-layer.md)). `more_clicked: Option<(BannerScope, egui::Rect)>` 는 "더보기" 트리거가 클릭된 스코프 + 버튼 rect — 호출자가 이를 받아 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다. **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
+| 타입 | 역할 |
+|---|---|
+| `BannerDef` | 고유 ID, TTL 여부, 콘텐츠 그리기 함수의 정적 정의. `defs::all_defs()`·`defs::find(&str)`로 조회 |
+| `BannerState` | id·scope·ttl_ms·remaining_ms·content를 담는 인스턴스. `persistent`·`with_ttl`·`plugin_mesh`로 생성 |
+| `BannerContentSource` | Host의 `content_fn`과 PluginMesh의 egui-mesh 콘텐츠 구분 |
+| `BannerKey` | `Host(id)`·`Plugin(instance_id)`로 정적 배너와 동적 plugin 배너를 같은 큐에서 구분 |
+| `BannerManager` | 스코프당 1개 표시·최대 5개 대기, TTL·배치·겹침·디밍·마우스 입력 관리 |
+
+큐와 TTL 처리인 `push`·`close_shown`·`advance`는 egui 없이 단위 테스트로 확인한다. plugin 배너도 같은 수명 관리를 사용하며 채널 규칙은 [egui-mesh 가이드](../../dev-guide/egui-mesh-channel.md)의 banner 절을 따른다.
+
+`draw()`는 `LayoutContext`에서 배치 영역을 계산한다. 호출자가 현재 더보기 메뉴의 scope를 `more_menu_open_for: Option<&BannerScope>`로 전달하며, BannerManager가 팝업을 직접 조회하지는 않는다. 반환값은 `BannerDrawResult { hovered, more_clicked }`다.
+
+- `hovered`는 `AppState.banner_hovered`를 통해 [입력 계층](../../architecture/input-layer.md)에 전달한다.
+- `more_clicked: Option<(BannerScope, egui::Rect)>`는 버튼의 scope와 사각형이다. 호출자가 이 값으로 대상 필드를 채우고 컨텍스트 메뉴를 연다.
+
+마우스는 scope 전체가 아니라 실제 카드 영역에서만 소비한다. 그렇지 않으면 배너 아래 터미널 클릭까지 막힌다. 배치 영역(`banner_zone`)과 입력 영역(`card_rects`)을 구분하며, 카드 영역은 직전 프레임 값을 사용해 1프레임 늦게 반영된다. 위치가 고정된 persistent 배너에서는 이 지연이 드러나지 않는다.
 
 모든 배너 문자열은 `t("banner.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)). 모든 색·치수는 Theme 토큰([theme.md](theme.md)).
 
@@ -167,4 +170,4 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - [toast.md](toast.md) — 휘발성 알림(info 만, 입력 통과)
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리(발생 정책 근거)
-- [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) — 배너를 별도 4번째 개념으로 둔 결정
+- [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) — 배너의 입력과 수명 규칙

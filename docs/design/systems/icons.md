@@ -6,14 +6,12 @@ tasty 의 라인/필 아이콘 세트 규칙. 지오메트리(SVG path)의 **단
 
 ## 단일 소스 — `crates/tasty-icons`
 
-아이콘 지오메트리는 오직 **`tasty-icons` 크레이트**가 소유한다(never-inline 계약 —
-소비처는 `<path>` 를 절대 재정의·재인라인하지 않는다). 한 글리프는 `Icon` const 하나로
+아이콘의 SVG 도형은 `tasty-icons` 크레이트에서 정의한다. 사용하는 곳에서 `<path>`를 다시 정의하지 않는다. 한 글리프는 `Icon` const 하나로
 노출되고, 본체·갤러리·위젯이 모두 이 const 를 참조한다.
 
 `tasty-icons` 는 **수기 전사**다. `crates/tasty-icons/src/lib.rs` 가 `stroke_icon!` /
 `fill_icon!` 매크로로 `Icon` const 를 손으로 정의하며, 각 path 는 디자인 시스템 번들의
-`icons.json` 매니페스트(글리프 machine-readable SoT, `components/core/Icon.jsx`
-`ICON_PATHS` 와 동기)를 전사한 것이다. 레포에는 매니페스트 사본·코드 생성물·생성
+`icons.json` 매니페스트에서 옮긴 것이다. 이 매니페스트는 디자인의 `components/core/Icon.jsx` 안 `ICON_PATHS`와 일치해야 한다. 레포에는 매니페스트 사본·코드 생성물·생성
 스크립트가 없다 — const 자체가 정적 소스다.
 
 ## `Icon` 구조 + 2 소비 경로
@@ -34,14 +32,14 @@ pub struct Icon {
    `egui::Image` 를 만든다. 실제 SVG 텍스처화는 앱이 설치한 `egui_extras` svg 로더
    (`gpu.rs` 의 `install_image_loaders`, 갤러리 동일)가 담당한다.
 2. **plugin build.rs 빌드타임** — `[build-dependencies]` 로 이 크레이트를 **egui 없이**
-   링크해 `Icon::svg` / `Icon::body` 를 usvg 에 먹여 베이크한다. egui optional·default off
+   링크해 `Icon::svg` / `Icon::body` 를 usvg로 읽어 선분 데이터로 바꾼다. egui optional·default off
    구조라 build-dependency 로 붙어도 egui 가 링크되지 않는다.
 
 ### 색: currentColor → white + tint
 
 24×24 viewBox, 2px stroke, round cap/join. stroke 는 **white 로 고정**하고, 소비처가
 `tint` 로 테마 색을 입혀 `currentColor` 를 재현한다 — 색을 글리프에 박지 않는다. egui/resvg
-가 `currentColor` 를 직접 물지 못하기 때문에 white 고정 + tint 트릭으로 우회한다.
+가 `currentColor`를 직접 처리하지 못해 흰색 원본에 tint를 적용한다.
 
 ### fill 규약
 
@@ -70,29 +68,21 @@ pub struct Icon {
 
 ## 아이콘 추가 절차
 
-새 글리프 추가는 **디자인 영역**이다. [디자인 변경 워크플로]를 따른다: 디자인 요청 →
-갱신된 매니페스트 수령 → `tasty-icons` 에 `stroke_icon!` / `fill_icon!` const 를 **수기로
-추가**. 소스에 임의 path 를 새로 인라인하지 않는다(never-inline 계약).
-
-[디자인 변경 워크플로]: 디자인 자체를 바꾸는 변경(디자인에 없는 글리프 추가)은 소스부터
-고치지 않고 디자인 측에 먼저 요청한다. 이미 디자인에 있는 글리프를 소스가 아직 전사하지
-못한 경우(누락)만 소스에 const 를 더한다.
+새 글리프는 [디자인 변경 절차](../../dev-guide/design-change-workflow.md)에 따라 요청한다. 갱신된 매니페스트를 받은 뒤 `tasty-icons`에 `stroke_icon!`·`fill_icon!` 상수를 추가한다. 이미 디자인에 있으나 코드에 빠진 글리프는 해당 상수를 추가하면 된다. 디자인에 없는 도형을 소스에서 임의로 만들지 않는다.
 
 ## 정합 보장 방식
 
-자동 코드 생성은 **없다**(수기 전사이므로 생성 파이프라인 자체가 없다).
-정합은 두 축으로 보장한다:
+코드는 자동 생성하지 않는다. 다음 두 가지를 검사한다.
 
-- **(a) 존재성은 컴파일러가 강제** — 없는 글리프를 참조하면 빌드가 실패한다. `icons::CLOSE`
+- **심볼 존재 확인** — 없는 글리프를 참조하면 빌드가 실패한다. `icons::CLOSE`
   같은 심볼 참조가 핵심 사용법이므로, 오타·미정의 글리프는 컴파일 단계에서 걸린다.
-- **(b) canonical ↔ const 정합은 가드가 대조한다** — `crates/tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs`
-  가 레포 안의 canonical 사본(`site/vendor/`)과 `tasty-icons` const 를 대조한다(`doc-guards.yml`, main push · PR).
+- **디자인 사본과 상수 비교** — `crates/tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs`
+  가 저장소의 디자인 사본(`site/vendor/`)과 `tasty-icons` const 를 대조한다(`doc-guards.yml`, main push · PR).
   원격 원본과 그 사본 사이의 차이는 이 가드 밖이다.
 
 ## 알려진 한계
 
-- **루트 `assets/icons/chevron-{left,right}.svg`**: 코드 참조가 없는 pre-existing dead asset.
-  정리 후보이나 이 문서 시점에서는 그대로 둔다.
+- `assets/icons/chevron-{left,right}.svg`는 코드에서 사용하지 않는 파일이다.
 
 ### 플러그인에서 선 아이콘을 그릴 때
 

@@ -1,20 +1,20 @@
 # 갤러리 완전성 정책 (운영 상세)
 
-> *왜* 이렇게 결정했는지(근거·대안·재검토 조건)는 [ADR-0035](../../adr/0035-shared-design-and-theme.md). 본 문서는 결정의 *현재 운영 상태* 만 기술한다.
+공용 구현과 갤러리 유지의 결정 이유는 [ADR-0035](../../adr/0035-shared-design-and-theme.md)에 있다.
 
-**갤러리(`crates/tasty-gallery`)는 본체의 모든 UI 컴포넌트를 노출한다. 어떤 컴포넌트도 갤러리에서 빠지지 않는다 — cut 금지.**
+갤러리(`crates/tasty-gallery`)에는 본체의 모든 UI 컴포넌트를 포함한다.
 
 ## 핵심 규칙
 
-- 본체에 존재하는 **modal · popup · 공용 위젯 · 레이아웃 idiom** 은 빠짐없이 갤러리 카탈로그(`catalog.rs::pages()`)에 specimen 으로 등록한다.
-- 디자인 산출물(`Tasty Design System`)의 gallery 페이지가 일부 컴포넌트를 카탈로그에서 **생략(cut)** 하더라도, 그걸 근거로 갤러리에서 제거하지 않는다. 생략은 디자인 측 결함으로 본다.
-- 카탈로그 1차 분류는 디자인 gallery 의 5분류(**Foundations / Components / Icons / Overlays / Layouts**)에 더해, 플러그인 유래 specimen 을 네이티브와 분리해 모으는 **Plugins** 페이지와, 완결 조립 화면(위젯 아님) 단위 specimen 을 모으는 **Chrome** 페이지를 둔다(총 7분류). 플러그인이 제공하는 viewer/popup(clipboard · git · markdown · image · html)은 네이티브 섹션이 아니라 Plugins 아래에, 부팅 로딩 화면처럼 여러 위젯이 조립된 앱 크롬 단위 화면은 Chrome 아래에 등록한다.
+- 본체의 modal·popup·공용 위젯·반복 레이아웃은 모두 갤러리 카탈로그(`catalog.rs::pages()`)에 예제로 등록한다.
+- 디자인 산출물(`Tasty Design System`)의 카탈로그에 빠진 컴포넌트도 갤러리에서 제거하지 않는다. 디자인 카탈로그를 보완한다.
+- 카탈로그는 디자인의 5분류(**Foundations / Components / Icons / Overlays / Layouts**)와 **Plugins**, **Chrome**을 합친 7분류다. clipboard·git·markdown·image·html의 뷰어와 팝업은 Plugins에, 부팅 로딩 화면처럼 여러 위젯으로 구성한 앱 화면은 Chrome에 등록한다.
 
 ## demo=main — 갤러리가 곧 본체
 
 갤러리와 본체는 가능한 한 같은 view-only 함수를 호출한다. 같은 함수라도 rect·테마·배율·입력이 다르면 화면이 달라지므로 같은 조건의 캡처로 확인한다.
 
-본체 상태와 그리기 props를 분리하는 방법은 [model-view-split](../../dev-guide/model-view-split.md), 공용 함수 위치는 [ui-widgets-crate](../../architecture/ui-widgets-crate.md)를 따른다. 바이너리에만 있는 함수는 props를 분리했더라도 갤러리가 직접 호출할 수 없다. 공용 위젯 크레이트로 옮겨야 한다. 옮기기 전에는 갤러리에서 빼지 않고 로컬 mock props를 사용하는 시각 복제 예제를 유지한다.
+본체 상태와 그리기 props를 분리하는 방법은 [model-view-split](../../dev-guide/model-view-split.md), 공용 함수 위치는 [ui-widgets-crate](../../architecture/ui-widgets-crate.md)를 따른다. 바이너리에만 있는 함수는 props를 분리했더라도 갤러리가 직접 호출할 수 없다. 공용 위젯 크레이트로 옮겨야 한다. 옮기기 전에는 갤러리에서 빼지 않고 로컬 예시 데이터를 사용하는 시각 복제 예제를 유지한다.
 
 ## 미러를 두기 전에 먼저 없앨 수 있는지 본다
 
@@ -48,14 +48,14 @@ enum만 같다고 화면이 같은 것은 아니다. 복사한 치수와 종류�
 
 1. 갤러리 소스에서 그 컴포넌트를 **빼지 않는다.**
 2. 누락분을 디자인에 다시 포함하도록 [디자인 변경 워크플로](../../dev-guide/design-change-workflow.md)에 따라 디자인 요청문서를 작성한다.
-3. 갱신된 디자인을 받은 뒤 그 기준으로 갤러리 specimen 을 정합한다.
+3. 갱신된 디자인을 받은 뒤 그 기준으로 갤러리 예제를 맞춘다.
 
-즉 디자인↔갤러리 항목 불일치는 **항상 디자인 측을 보강해서** 해소한다.
+
 
 ## 관련
 
 - [ADR-0035](../../adr/0035-shared-design-and-theme.md) — 결정 근거.
 - [dev-guide/gallery-first](../../dev-guide/gallery-first.md) — 새 컴포넌트는 디자인→갤러리→본체 순서.
 - [design/systems/design-gallery-mapping](../systems/design-gallery-mapping.md) — 디자인 jsx ↔ 갤러리 항목 ↔ 본체 함수 3자 매핑.
-- [design/systems/theme](../systems/theme.md) — UI 디자인 규칙 표. 무대 치수가 그리드·배율 축의 모수 밖인 근거가 그 표의 두 행에 있다.
-- [ui-widgets-crate › 무엇을 공용 위젯으로](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로) — 보편 컴포넌트는 공용 위젯으로(완전성의 부품 단위 기반).
+- [design/systems/theme](../systems/theme.md) — 토큰 사용과 검사 범위. 갤러리 전시 공간의 예외는 위 절을 따른다.
+- [ui-widgets-crate › 무엇을 공용 위젯으로](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로) — 공용 위젯으로 옮길 컴포넌트의 기준.

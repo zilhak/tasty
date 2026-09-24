@@ -15,7 +15,7 @@
 시간은 Theme 접근자 `modhint_hold_delay`와 `motion_hold_reveal_shift`에서 읽는다.
 Shift의 1200ms는 코드 접근자의 값이며 같은 이름의 duration primitive가 있다고 가정하지 않는다.
 
-최초 press에서 타이머를 시작한다. Ctrl에 Shift를 추가하는 조합 변경은 타이머를 재시작하지 않는다.
+처음 키를 누를 때 타이머를 시작한다. Ctrl에 Shift를 추가하는 조합 변경은 타이머를 재시작하지 않는다.
 현재 조합으로 지연을 다시 계산하므로 Shift 단독 대기 중 다른 보조키를 누르면 일반 지연을 적용한다.
 
 아직 표시되지 않은 동안 등록된 단축키를 실제 키 입력에서 소비하면 타이머를 다시 시작한다.
@@ -33,7 +33,7 @@ Shift의 1200ms는 코드 접근자의 값이며 같은 이름의 duration primi
 정확히 같은 조합뿐 아니라 추가로 누를 수 있는 조합도 보여 준다. 헤더와 섹션은 같은 `combo_keycaps`를 사용한다.
 
 바인딩과 역할이 모두 없어도 섹션은 유지하고 `modifier_hint.empty` 문구를 보여 준다.
-미할당을 고장이나 비활성으로 오해하지 않게 하기 위해서다. 빈 행은 키캡·아이콘·배경 없이 muted 텍스트만 그린다.
+미할당을 고장이나 비활성으로 오해하지 않게 하기 위해서다. 빈 행은 키캡·아이콘·배경 없이 약하게 표시한 텍스트만 그린다.
 `modhint_empty_fg`, `modhint_empty_row_gap`, `modhint_empty_row_min_height`를 사용하며
 값과 디자인 출처는 토큰 매핑 문서에서 관리한다. 행에는 hover·focus·click 동작을 붙이지 않는다.
 
@@ -44,7 +44,7 @@ Shift의 1200ms는 코드 접근자의 값이며 같은 이름의 duration primi
 
 ## 발화 정책
 
-실제 사용자 hold가 표시를 시작한다. release IPC로 강제 표시할 수 없다.
+사용자가 실제로 보조키를 누르고 있을 때 표시를 시작한다. release IPC로 강제 표시할 수 없다.
 검증은 GUI debug 전용 `debug.modifier_hint.hold`와 `.state`를 사용한다.
 상태 응답의 visible·empty는 실제 draw와 같은 모델을 사용한다.
 새 단축키 소비 경로는 표시 전 타이머를 재설정해야 하는지 확인한다.

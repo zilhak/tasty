@@ -1,40 +1,40 @@
 # Action Dispatch (Intent 큐)
 
-호스트 내부에서 모듈 경계를 넘는 동작(popup open, preset apply, surface split 등)을 **Intent 큐**로 통일 발화·처리하는 모델. plugin↔host 경계의 read 채널인 [Event Bus](../../reference/event-catalog.md)와는 **다른 layer**다. 코드: `src/intent.rs` + `src/intent/<domain>.rs`.
+호스트의 모듈 경계를 넘는 동작은 Intent 큐에 등록해 처리한다. 팝업 열기, 프리셋 적용, surface 분할 등이 여기에 해당한다. 이미 일어난 일을 plugin에 알리는 [Event Bus](../../reference/event-catalog.md)와는 역할이 다르다. 구현은 `src/intent.rs`와 `src/intent/<domain>.rs`에 있다.
 
 ## 왜 큐인가
 
-같은 동작(예: command palette popup 열기)을 단축키·도구 메뉴·IPC·plugin·우클릭 등 여러 진입점에서 발화한다. 직접 호출하면 `mem::take` 로 비워진 매니저에 호출돼 **noop 버그**가 나거나, draw 콜백 안에서 자기 매니저를 mutate 못 한다. **모든 진입점이 Intent 를 큐에 던지고, 메인 루프 단계에서 일관 처리**하면 발화 위치와 무관해진다.
+명령 팔레트 열기 같은 동작은 단축키·메뉴·IPC·plugin 등 여러 곳에서 요청한다. 그리기 콜백에서 매니저를 직접 변경하려 하면 대여 충돌이 나거나, `mem::take`로 잠시 비워 둔 매니저에 요청해 아무 일도 일어나지 않을 수 있다. 요청을 큐에 넣고 메인 루프에서 처리하면 요청 위치와 처리 시점을 분리할 수 있다.
 
 ## 용어
 
 | 용어 | 정의 |
 |------|------|
-| **Intent** | 호스트 내부 명령 — "다음 메인 루프 단계에 무엇을 할지". 큐 통과. Event Bus 키와 다른 네임스페이스 |
-| **Event** | [Event Bus](../../reference/event-catalog.md)의 사건(이미 일어난 일의 알림). plugin 구독. Intent 와 다른 layer |
-| **Origin** | Intent 발화 주체 — `User { source }` / `Agent { source }`. 핸들러가 정책 분기에 사용 |
-| **Cascade** | Intent A 핸들러가 발화하는 파생 Intent B. 별 origin 종류 없이 A 의 origin 전파 |
-| **Bridge** | Intent 처리 결과 → Event Bus 변환 단일 지점(`meta.origin`/`trace_id` 채움) |
+| **Intent** | 다음 메인 루프 단계에서 처리할 호스트 내부 명령. Event Bus 키와 별도 이름 공간을 사용 |
+| **Event** | 이미 일어난 일을 [Event Bus](../../reference/event-catalog.md)로 알리는 이벤트. plugin이 구독 |
+| **Origin** | 요청 출처인 `User { source }` 또는 `Agent { source }`. 핸들러가 사용자·에이전트 정책을 구분할 때 사용 |
+| **Cascade** | Intent 처리 중 추가로 등록하는 Intent. 원래 요청의 origin을 유지 |
+| **Bridge** | 처리 결과를 Event Bus 메시지로 바꾸는 공통 경로. `meta.origin`과 `trace_id`를 생성 |
 
 ## 핵심 원칙 — Intent 의 위치
 
-> **Intent 는 "의도" 다 — 흐름의 *시작점* 에만 존재한다. 끝에서 결과로 나오거나 중간에서 정보 전달용으로 쓰이면 안 된다.**
+Intent는 동작을 요청할 때 사용한다. 처리 결과나 중간 데이터를 전달하는 용도로 반환하지 않는다.
 
-흐름은 한 방향: `이벤트 → 해석된 의도(Intent→큐) → 처리(drain) → 결과(state mutate / cascade)`.
+흐름은 `이벤트 → Intent 등록 → 큐 처리 → 상태 변경 또는 추가 Intent 등록` 순서다.
 
-- **이벤트→Intent 변환 함수 리턴은 OK**(시작점): `fn parse(e) -> Option<Intent>`.
-- **처리 핸들러가 Intent 를 *리턴 경로로* 흘려보내면 금지** — cascade 는 핸들러 *본문 안에서* `state.dispatch_intent(...)` 로 큐에 enqueue. 반환 경로로 흘리면 호출 트리가 재귀가 되어 큐 모델이 깨진다.
-- **Intent 는 응답 데이터를 갖지 않는다**(`Result<Intent>`, 응답 필드 금지). 응답이 필요한 mutate(새 ID 발급, 분기용 status)는 Intent 가 아니라 **Core method**(sync 리턴) 또는 **Query(read)** 로.
+- 이벤트를 해석하는 함수는 `fn parse(e) -> Option<Intent>`처럼 Intent를 반환할 수 있다.
+- 처리 핸들러가 추가 작업을 요청할 때는 본문에서 `state.dispatch_intent(...)`를 호출한다. 반환값으로 Intent를 전달해 호출자가 재귀 처리하게 만들지 않는다.
+- Intent에는 응답 데이터를 넣지 않는다. 새 ID나 처리 상태를 받아야 하면 결과를 반환하는 Core 메서드를 사용하고, 상태 조회에는 Query를 사용한다.
 
-| 유형 | 메커니즘 | 응답 |
+| 유형 | 처리 방식 | 응답 |
 |------|----------|------|
-| Query | `&CoreState` 직접 read | 데이터 |
-| **Intent** (fire-and-forget) | enqueue → cascade | 없음 |
-| Core method | `core.create_workspace(...) -> WorkspaceCreated` | sync 리턴 |
+| Query | `&CoreState` 직접 조회 | 데이터 |
+| Intent | 큐에 등록한 뒤 처리 | 없음 |
+| Core method | `core.create_workspace(...) -> WorkspaceCreated` | 동기 반환값 |
 
 ### 사용자 입력 대기 = 반드시 2 Intent 분리
 
-"확인 popup → 응답 → 후속" 같은 *사용자 입력 대기* 는 **한 Intent 안에서 wait 하지 않는다.** 1차 Intent(popup 띄움 + 컨텍스트를 state 에 저장 + 종료) / 2차 Intent(응답 시 state 에서 읽어 진행 또는 폐기)로 분리한다.
+확인 팝업의 사용자 응답을 한 Intent 안에서 기다리지 않는다. 첫 Intent는 팝업을 열고 대기 상태를 저장한 뒤 끝낸다. 응답이 오면 두 번째 Intent가 저장된 상태를 읽어 실행하거나 취소한다.
 
 ```rust
 Intent::PresetApplyRequest{kind,name} → handler: state.dialogs.pending_preset_apply = Some(ctx);
@@ -43,11 +43,11 @@ Intent::PresetApplyConfirmed → handler: let Some(ctx)=…take() else {return};
 Intent::PresetApplyCancelled → handler: …pending_preset_apply = None;
 ```
 
-이유: 사용자 응답은 *무한정* — 한 Intent 가 메모리에 lock 되면 그동안의 state 변경(window close, settings change)에 취약하고 큐가 정체된다. 명시적 분리는 *진행 중 컨텍스트* 가 state 에 보여 디버깅도 쉽다. (시스템 내부의 유한-시간 multi-step cascade 는 핸들러 본문 cascade enqueue 로 충분.)
+사용자는 언제 응답할지 정해져 있지 않다. 그동안 큐를 막지 않아야 하며, 창 닫기나 설정 변경도 처리해야 한다. 대기 상태를 별도로 저장하면 진행 중인 작업도 확인할 수 있다. 사용자 대기 없이 끝나는 내부 후속 작업은 핸들러에서 추가 Intent를 등록하면 된다.
 
 ## Intent 자료형
 
-`Intent` 는 **flat enum**(nested 안 함). variant 는 `src/intent.rs`, 도메인 핸들러는 `src/intent/<domain>.rs`(popup/preset/surface/tab/pane/workspace). 발화 시 envelope 으로 감싼다:
+`Intent`는 `Ui(UiIntent)`, `Domain(DomainIntent)`와 프리셋·탭 등 개별 작업 변종을 가진다. 정의는 `src/intent.rs`, 도메인 핸들러는 `src/intent/<domain>.rs`에 있다. 큐에 넣을 때 요청 출처를 함께 전달한다.
 
 ```rust
 pub struct DispatchedIntent { pub body: Intent, pub origin: IntentOrigin, pub trace_id: Option<String> }
@@ -56,55 +56,85 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 //   AgentSource: Ipc / Plugin(String) / Cli
 ```
 
-**Cascade origin**: popup A→B cascade 에서 B 의 origin 은 A 의 origin 을 그대로 명시 전달(`별 Cascade variant 없음`). "왜 이 popup 이 열렸나" 를 origin 이 정확히 가리켜 audit 에서 시작점 추적 가능.
+팝업 A의 처리에서 B를 열면 B에도 A의 origin을 전달한다. 별도의 Cascade 출처를 만들지 않는다. `DispatchedIntent.trace_id`는 현재 생성자에서 `None`이며 Event Bus의 `trace_id`와는 별개다.
 
-## 발화 / 처리
+<a id="발화--처리"></a>
 
-- **발화**: `state.dispatch_intent(dispatched)` = `Vec::push` 한 줄(fire-and-forget). ergonomics 빌더 `.from_user_shortcut("…")` / `.from_user_menu("…")` / `.cascaded_from(intent)`.
-- **발화(IPC 엔진 핸들러)**: 핸들러는 창을 받지 않으므로 요청 하나의 `IntentOutbox` 에 `out.push(dispatched)` 한다. 진입점(게이트 · 엔진 라우터 `dispatch_routed` · `record_plugin_rss_samples`)이 요청이 끝날 때 출구를 그 창 큐 끝으로 옮긴다 — 반환 경로가 아니라 본문 안의 enqueue 이고, 한 요청 안의 순서는 넣은 순서 그대로(게이트가 낸 것이 먼저)다. 근거: [ADR-0002](../../adr/0002-domain-execution-and-ports.md).
-- **처리**: 메인 루프의 `App::dispatch_pending_intents` 가 모든 window/parked_state 를 순회 drain. 처리 순서는 발화 순서 전체가 아니라 **클래스별 부분순서**(`classify_intent` 이 단일 정의점): 같은 state 내 non-Domain(`Immediate`) 은 FIFO 즉시 처리, `Intent::Domain` 은 전부 뒤로 밀려 단계 C(`run_domain_cascade`)에서 FIFO, `AppearanceChanged` 는 프레임 끝 1회로 축약. 따라서 같은 state 에서 Domain↔non-Domain 클래스 간 재정렬은 설계상 의도(borrow 분리 제약). drain 중 새로 발화한 Intent 는 **다음 프레임**(재진입 방지, `mem::take` 후 별 Vec 순회).
-- **처리(headless)**: window 가 없어 위 drain 이 통째로 `gui` feature 게이트이므로, headless 는 `crate::intent::headless::drain_pending_intents` 가 engine 하나짜리로 같은 계약을 수행한다 — IPC 요청 처리 직후(**응답 송신 전**) · plugin 호출 결과 회신 전 · 메인 루프 블로킹 대기 직전. cascade 는 gui `handle_core_event` 중 engine 상태로 완결되는 것만(attention · notification 적재 · terminal mark · settings 적용/저장) 수행하고(OSC 7 cwd 의 탭 이름 갱신은 intent 가 아니라 PTY drain 이 `intent::headless::apply_terminal_cwd_changed` 로 직접 한다), view redraw/toast/theme 재설치·알림음은 소비처가 없어 제외한다. 근거·범위: [ADR-0003](../../adr/0003-headless-behavior.md).
-- **host event(headless)**: 같은 세 지점과 PTY 출력 처리 끝(`src/boot.rs`)에서 `crate::intent::headless::drain_pending_host_events` 가 `pending_host_events` 를 통째로 비우되, 소비자가 plugin event bus 뿐이 아닌 종류만 적용한다 — 오늘 그것은 `HookFired` 하나이고 push 완료 전략으로 대기 중인 agent task 를 마감한다. 나머지 종류는 버린다(headless 에 bus 발화 배선이 없다). 근거·대안·재검토 트리거: [ADR-0003](../../adr/0003-headless-behavior.md).
-- **핸들러 분기**: trait dispatch 아니라 **도메인 함수 분기**(`match &intent.body`). `&mut AppState` 를 trait object 가 통째 잡으면 partial mutation 이 borrow checker 를 못 통과하기 때문.
-- **에러**: 핸들러 안에서 `tracing::warn!`(패닉 금지, `let _=` 금지). 사용자에게 보여야 하면 `state.toasts.push`.
+## 요청 등록과 처리
+
+`state.dispatch_intent(dispatched)`는 요청을 큐에 넣는다. 요청 출처를 붙이는 빌더로 `.from_user_shortcut("…")`, `.from_user_menu("…")`, `.cascaded_from(intent)`를 사용한다.
+
+IPC 엔진 핸들러는 창 대신 요청별 `IntentOutbox`를 받는다. 핸들러는 `out.push(dispatched)`로 요청을 넣고, 진입점의 게이트·`dispatch_routed`·`record_plugin_rss_samples`가 요청 종료 시 창 큐로 옮긴다. 한 요청 안에서는 추가한 순서를 유지하므로 게이트가 만든 Intent가 먼저 처리된다. [ADR-0002](../../adr/0002-domain-execution-and-ports.md)를 따른다.
+
+GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리한다. 전체 등록 순서를 그대로 따르지는 않으며 `classify_intent`가 정한 종류별로 처리한다.
+
+| 종류 | 처리 순서 |
+|---|---|
+| `Immediate` | 같은 state에서 FIFO로 즉시 처리 |
+| `Intent::Domain` | 단계 C인 `run_domain_cascade`에서 FIFO로 처리 |
+| `AppearanceChanged` | 프레임 끝에 한 번만 처리 |
+
+Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다.
+
+헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
+
+- IPC 요청 처리 직후, 응답을 보내기 전
+- plugin 호출 결과를 회신하기 전
+- 메인 루프가 대기하기 직전
+
+attention·notification 적재, terminal mark, 설정 적용·저장처럼 engine 상태만으로 끝나는 작업을 처리한다. 화면 다시 그리기·토스트·테마 재설치·알림음은 제외한다. OSC 7 cwd의 탭 이름 갱신은 Intent가 아니라 PTY 처리에서 `intent::headless::apply_terminal_cwd_changed`를 직접 호출한다.
+
+헤드리스의 `drain_pending_host_events`도 위 세 시점과 PTY 출력 처리 끝에서 실행한다. `pending_host_events`를 비우고 `HookFired`로 push 완료를 기다리는 agent task를 마감한다. 일반 plugin Event Bus 전달 경로는 없어 나머지 이벤트는 버린다. 지원 범위와 이유는 [ADR-0003](../../adr/0003-headless-behavior.md)을 따른다.
+
+핸들러는 `match &intent.body`로 도메인 함수를 선택한다. AppState 전체를 trait object가 대여하면 필요한 필드만 따로 변경하기 어렵기 때문이다. 오류는 `tracing::warn!`으로 기록하고, 사용자에게 알려야 할 실패는 사용자·에이전트 정책에 따라 토스트로 표시한다. 패닉을 일으키거나 `let _ =`로 오류를 버리지 않는다.
 
 ## Intent → Event Bus Bridge
 
-핸들러가 mutation 성공 후 `state.pending_host_events` 에 host event 를 push → 단일 bridge(`src/app/dispatch/host_events.rs` → `PluginManager::emit_host_event`)가 [Event Bus](../../reference/event-catalog.md) envelope 으로 변환:
+변경을 마친 핸들러가 `state.pending_host_events`에 이벤트를 넣는다. `src/app/dispatch/host_events.rs`의 공통 경로가 `PluginManager::emit_host_event`를 호출해 [Event Bus](../../reference/event-catalog.md) 메시지로 바꾼다.
 
-| envelope | 규칙 |
-|----------|------|
-| `meta.origin` | 항상 `{kind:host}`(`EventOrigin::Host`) — intent origin 을 반영하지 않는다 |
-| `meta.trace_id` | 이벤트마다 새 발급(`h<seq 16진>`) — intent 값을 이어받지 않는다 |
-| `meta.scope` | 핸들러가 mutation 결과 보고 채움 |
-| `meta.hop` | 호스트 발화이므로 `0` |
+| 필드 | 규칙 |
+|------|------|
+| `meta.origin` | 항상 `{kind:host}`(`EventOrigin::Host`). Intent의 origin을 복사하지 않음 |
+| `meta.trace_id` | 이벤트마다 새로 발급하는 `h<seq 16진>`. Intent 값을 이어받지 않음 |
+| `meta.scope` | 핸들러가 변경 결과를 기준으로 지정 |
+| `meta.hop` | 호스트가 만든 이벤트이므로 `0` |
 
 ## User vs Agent 정책
 
-dispatcher 가 강제 거부하지 않고 **핸들러 작성자가 `origin.is_user()` 로 분기**(PR 리뷰 강제):
+핸들러는 `origin.is_user()`로 요청 출처를 구분한다. dispatcher가 모든 정책 위반을 자동 거절하지는 않으므로 핸들러를 검토할 때 확인한다.
 
 | 동작 | User | Agent |
 |------|------|-------|
-| popup open(UI Intent 발화) | 가능 | **금지**(debug 사용자 입력 재현 IPC 제외) |
-| closed-tab restore push · OS 윈도우 focus · Workspace activate · Window 생성 | 가능 | **금지**(focus 독립) |
+| UI Intent로 팝업 열기 | 허용 | 금지. debug 사용자 입력 재현 IPC는 예외 |
+| 닫은 항목 복원 기록 추가·OS 창 포커스·workspace 활성화 | 허용 | 금지 |
 
-> **UI Intent vs Domain Intent**(제1 분류축): UI(popup open/close/toggle) 또는 Domain(나머지). release 의 Domain 처리 흐름은 UI Intent 를 발화할 수 없고 **타입 차원에서 강제**된다(Core 가 `UiIntent` 를 모름). 자동 popup/toast/dialog 는 release 에 없다. 자매 정책: [popup](../systems/popup.md) · [toast](../systems/toast.md) 의 "발화 정책 (CRITICAL)".
+에이전트의 새 창 생성은 별도 `window.create` 경로로 허용하며 기존 사용자 포커스를 유지한다. [포커스 정책](../policies/focus.md)을 따른다.
+
+Core는 `UiIntent`를 모르므로 release의 Domain 처리에서 UI Intent를 만들 수 없다. 팝업·토스트·대화상자의 표시 조건은 [팝업](../systems/popup.md)과 [토스트](../systems/toast.md)를 따른다. 원격 연결 상태 토스트처럼 허용된 예외를 일반 에이전트 요청의 성공·실패 알림으로 확대하지 않는다.
 
 ## intent-discipline 강제
 
-도메인 직접 **변이** 호출은 `scripts/check-intent-discipline.sh` 가 금지한다 — popup 만이 아니라 preset · surface · tab · pane · workspace 여섯 도메인이다. 채널은 `script-gates.yml`(main push · PR).
+`scripts/check-intent-discipline.sh`는 popup·preset·surface·tab·pane·workspace의 직접 변경 API 호출을 검사한다. `script-gates.yml`의 main push와 PR에서 실행하도록 설정돼 있다.
 
-술어는 **변이 API 를 열거**한다(`open`/`open_centered`/`open_centered_focused`/`open_with_scope`/`open_at_top_of_scope`/`open_at_focused`/`close`/`toggle*`). 질의(`is_open`·`get_mut`·`open_geometry`)는 대상이 아니다 — 접두어로 뭉뚱그리면 질의가 변이로 잡힌다.
+검사 대상은 `open`·`open_centered`·`open_centered_focused`·`open_with_scope`·`open_at_top_of_scope`·`open_at_focused`·`close`·`toggle*`다. 조회 함수인 `is_open`·`get_mut`·`open_geometry`는 포함하지 않는다.
 
-**대상이 아닌 자리 셋**: ① 주석·문자열 리터럴(코드가 아니다) ② `#[cfg(test)] mod` 본문과 `*_tests.rs`(도메인이 **피험자**다 — 규율은 도메인을 *도구로* 쓸 때의 규칙이다) ③ 이름만 같은 다른 타입의 메서드(패턴별 면제 경로).
+다음 내용은 제외한다.
 
-예외는 `// intent-exempt: <사유>` 주석으로 suppress — **같은 줄 · 바로 위 · 바로 아래** 어디든 인정한다. 현재 예외는 popup 자기-close cleanup(on_close 훅에서 큐의 다음 항목), 처리 핸들러 본문의 cascade, 응답이 필요한 mutate(Core method sync 리턴), 그리고 focus 보존을 위해 큐를 우회한 자리 하나다. 호스트 모든 Intent 가시화는 debug 전용 `intent::watch`(`src/intent/watch.rs`)가 `tracing::debug!` 로(release 제거). 부르는 자리가 GUI 메인 루프의 drain 이라 gui 빌드에만 있다 — headless 의 drain(`intent::headless`)은 이 로그를 안 남긴다.
+- 실제 호출이 아닌 주석·문자열 리터럴
+- 도메인 자체를 시험하는 `#[cfg(test)] mod` 본문과 `*_tests.rs`
+- 이름만 같은 다른 타입의 메서드. 패턴별 예외 경로로 관리한다.
+
+허용할 호출은 같은 줄이나 바로 위·아래에 `// intent-exempt: <사유>`를 적는다. 현재 예외에는 팝업의 `on_close` 정리, 핸들러의 후속 요청, 응답이 필요한 동기 Core 호출, 포커스 보존을 위해 큐를 우회한 호출이 있다.
+
+`intent::watch`(`src/intent/watch.rs`)는 GUI debug 빌드의 큐 처리에서 `tracing::debug!` 로그를 남긴다. release와 헤드리스 큐 처리에는 이 로그가 없다.
 
 ## dedup
 
-같은 popup id 의 OpenPopup 이 동일 사이클에 중복 들어오면 핸들러가 `state.popups.is_open(id)` 로 두 번째를 무시(큐 push 시점엔 dedup 안 함 — origin/trace_id 다른 둘을 같다 볼 근거 없음).
+같은 처리 주기에 같은 popup ID의 OpenPopup이 중복되면 핸들러가 `state.popups.is_open(id)`로 두 번째 요청을 무시한다. 큐에 넣는 시점에는 origin과 trace_id가 다른 요청을 같은 것으로 판단하지 않는다.
 
 ## 관련
 
-- [popup](../systems/popup.md) · [toast](../systems/toast.md) — 발화 정책 · [focus](../policies/focus.md) — 독립성
-- [reference/event-catalog](../../reference/event-catalog.md) — Event Bus envelope · [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md)
+- [popup](../systems/popup.md) · [toast](../systems/toast.md) — 표시 조건
+- [focus](../policies/focus.md) — 사용자 포커스 보호
+- [reference/event-catalog](../../reference/event-catalog.md) — Event Bus 메시지
+- [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md) — 팝업 구현

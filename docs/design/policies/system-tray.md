@@ -1,62 +1,57 @@
 # 시스템 트레이 정책 (운영 상세)
 
-> 결정 근거·대안·재검토 조건은 [docs/adr/0016-window-platform-and-shutdown.md](../../adr/0016-window-platform-and-shutdown.md). 본 문서는 *현재 운영 동작* 만 기술한다.
+GUI 앱이 백그라운드로 들어가면 가능한 환경에서 트레이나 상태 영역을 사용한다. 트레이를 등록할 수 없으면 앱을 중단하지 않고 태스크바·도크를 통해 돌아올 수 있게 한다. 결정 이유는 [ADR-0016](../../adr/0016-window-platform-and-shutdown.md)에 있다.
 
-tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에서 트레이/상태 영역으로 들어간다 (best-effort)**.
-
-> **출처: 자동 채널 없음 — 어느 OS 에서도 이 동작을 실행으로 보는 테스트가 없다.** 트레이는 데스크톱 세션이 있어야 등록되고, 저장소의 자동 채널 중 integration·e2e 를 도는 것은 Linux 뿐이며 그중 트레이를 부르는 것은 하나도 없다(`create_tray_icon`·`poll_menu_event` 를 호출하는 자리는 `src/app/` 뿐이고 테스트에는 없다). **다시 재려면**: 세 OS 각각에서 데스크톱 세션으로 GUI 를 띄우고 마지막 윈도우를 닫아 트레이 등록 여부를 눈으로 확인해야 한다. 이 문서의 OS 별 표(아래)의 값도 같은 출처를 갖는다. 트레이가 없는 환경은 조용히 생략하고 태스크바/도크 최소화로 폴백한다(graceful degradation). 구현은 `tray-icon` 0.22 단일 크레이트 + OS별 `cfg` 분기다.
+구현은 `tray-icon` 0.22와 OS별 분기를 사용한다. 아래 표는 구현과 플랫폼 요구 조건을 설명한다. 메뉴가 실제로 표시되고 클릭되는지는 자동 테스트로 확인하지 않으므로 각 OS의 데스크톱에서 마지막 창 닫기와 트레이 복귀를 직접 확인해야 한다.
 
 ## 트레이 생성
 
-- **한 번만 생성하고 앱 생존 동안 유지**한다(`tray_icon.is_none()` 가드). macOS 는 백그라운드 시 윈도우를 파기·재생성하므로, 트레이를 매번 다시 만들지 않도록 이 가드가 필요하다.
-- 생성 실패(미가용 환경)면 `create_tray_icon()` 이 **`None` 을 반환**하고 경고 로그만 남긴다 — 앱을 중단시키지 않는다. 이후 동선은 태스크바/도크 최소화 폴백.
-- 메뉴 항목: **Show Window · New Window · Quit**. 항목 라벨과 아이콘 툴팁은 `t("tray.*")`(`show_window` / `new_window` / `quit` / `tooltip`)에서 가져와 `general.language` 를 따른다 — 트레이는 세 OS 공통의 사용자 표면이라 [i18n](../../dev-guide/i18n.md) 예외가 아니다.
-- 아이콘은 임베드 PNG(`app_icon::tray_icon()`), macOS 는 `with_icon_as_template(true)` 로 메뉴 바 라이트/다크 틴팅에 맡긴다(타 OS 는 no-op).
+- `tray_icon.is_none()`일 때 한 번 생성하고 앱 종료까지 유지한다. macOS에서 창을 파기·재생성할 때도 트레이는 재사용한다.
+- 생성 실패 시 `create_tray_icon()`은 경고를 기록하고 `None`을 반환한다. 이후 태스크바·도크 복귀 경로를 사용한다.
+- 메뉴는 **Show Window · New Window · Quit**이다. 라벨과 툴팁은 `t("tray.*")`의 `show_window`·`new_window`·`quit`·`tooltip`을 사용해 `general.language`를 따른다([국제화](../../dev-guide/i18n.md)).
+- 아이콘은 포함된 PNG(`app_icon::tray_icon()`)를 사용한다. macOS의 `with_icon_as_template(true)`는 메뉴 바의 밝고 어두운 테마에 맞춰 OS가 색을 적용하게 한다. 다른 OS에서는 이 옵션이 동작하지 않는다.
 
 ## 백그라운드 진입 / 복귀 (OS별)
 
 | OS | 백그라운드 진입 | 복귀("Show Window") |
 |----|----------------|---------------------|
-| **Windows** | 트레이 있으면 윈도우 `set_visible(false)` 로 숨김(생존 유지), 없으면 `set_minimized(true)` 태스크바 | `TrayShowWindow` → `set_visible(true)` + `set_minimized(false)` |
-| **Linux** | Windows 와 동일 (트레이 있으면 숨김, 없으면 최소화) | Windows 와 동일 |
-| **macOS** | 기존 모델 유지 — 윈도우 **파기 + state 파킹**(dock reopen 시 복원). 트레이와 무관하게 동작 | 트레이 "Show Window" 는 **살아있는 main view 가 있으면** 그 창을 `set_minimized(false)` + `focus_window()` 로 맨 앞에 올리고(`focused_view_id` 우선, 없으면 첫 main view), **하나도 없을 때(전부 파킹)만** `CreateWindow` 로 라우팅 → 파킹된 state 를 꺼내 복원(dock reopen 과 동일 경로). 이미 떠 있는 창이 있는데 중복 생성하지 않는다 |
+| Windows | 트레이가 있으면 `set_visible(false)`로 창을 숨기고, 없으면 `set_minimized(true)`로 최소화 | `TrayShowWindow` → `set_visible(true)` + `set_minimized(false)` |
+| Linux | Windows와 동일 | Windows와 동일 |
+| macOS | 창을 파기하고 state를 parked 상태로 보관. 트레이 유무와 무관 | 살아 있는 main view가 있으면 `focused_view_id`가 가리키는 창, 없으면 첫 main view를 복원·포커스. 모든 창이 parked 상태일 때만 `CreateWindow`로 복원. dock reopen과 같은 경로 |
 
-- **New Window**: 세 OS 모두 `CreateWindow`.
-- **Quit**: 세 OS 모두 `Shutdown`.
+**New Window**는 `CreateWindow`, **Quit**은 `Shutdown`을 보낸다. 두 동작의 메뉴 분기는 세 OS가 공통으로 사용한다(`src/app/event_handler.rs`). 메뉴 클릭은 이벤트 루프마다 `poll_menu_event()`로 확인하며, 내부에서는 `MenuEvent::receiver().try_recv()`를 사용한다.
 
-  이 둘의 출처는 **소스 모양**이다 — `src/app/event_handler.rs` 의 트레이 메뉴 분기에서 `show_window` arm 만 `#[cfg(target_os = "macos")]` 로 갈리고 `new_window`·`quit` arm 에는 플랫폼 분기가 없다. 블록 전체는 `any(windows, target_os = "macos", target_os = "linux")` + `feature = "gui"` 게이트라 세 조합이 컴파일되며, 그것은 세 OS **컴파일** 채널이 본다(`.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`). **그 채널이 안 보는 것**: 메뉴 항목이 실제로 뜨는지, 클릭이 실제로 도달하는지. 그쪽은 아래 항목과 같다.
-- 메뉴 클릭은 매 이벤트 루프 tick 에서 `poll_menu_event()`(`MenuEvent::receiver().try_recv()`)로 폴링한다.
+<a id="graceful-degradation"></a>
 
-## graceful degradation
+## 트레이가 없는 환경
 
-트레이가 없거나 tasty 가 지원하지 못하는 환경(미니멀 WM, AppIndicator 호스트 없음, 디스플레이 없음 등)에서는 트레이 등록을 **조용히 생략**하고 백그라운드 동선이 자동으로 태스크바/도크 최소화로 떨어진다. 사용자에게 에러를 띄우지 않는다 — "최대한 활용하되, 없으면 없는 대로" 가 원칙.
+미니멀 WM, AppIndicator 호스트 부재, 디스플레이 부재 등으로 트레이를 등록하지 못하면 사용자 오류창을 띄우지 않는다. Windows·Linux는 창을 최소화하고 macOS는 기존 dock 복귀 경로를 유지한다.
 
 ## Linux 특이사항 (GTK)
 
-`tray-icon` 의 Linux 백엔드(StatusNotifierItem/AppIndicator)는 **GTK 가 초기화돼 있고 GTK 이벤트 루프가 같은 스레드에서 도는 것**을 전제한다. tasty 는 전용 GTK 메인 루프를 두지 않고:
+`tray-icon`의 Linux 백엔드(StatusNotifierItem/AppIndicator)는 GTK 초기화와 같은 스레드의 이벤트 처리가 필요하다. Tasty는 별도 GTK 메인 루프를 만들지 않는다.
 
-- 트레이 생성 직전 `gtk::init()` 을 **지연 호출**한다. 실패(디스플레이/GTK 없음)하면 bail → `None` → 폴백.
-- winit 이벤트 루프의 매 tick(`about_to_wait`)에서 **비차단** `gtk::main_iteration_do(false)` 로 GTK 이벤트를 펌프한다(`pump_gtk_events()`). 처리할 게 없으면 즉시 반환하므로 렌더 루프를 막지 않는다.
-- 런타임 의존: `libgtk-3`, `libappindicator3`(또는 `libayatana-appindicator3`), `libxdo`. 빌드 의존은 각 `-dev` 패키지.
+- 트레이 생성 직전에 `gtk::init()`을 호출한다. 실패하면 `None`을 반환하고 트레이 없는 환경의 동작을 따른다.
+- winit의 `about_to_wait`에서 `pump_gtk_events()`가 비차단 `gtk::main_iteration_do(false)`를 호출한다. 처리할 이벤트가 없으면 즉시 반환한다.
+- 런타임에는 `libgtk-3`, `libappindicator3` 또는 `libayatana-appindicator3`, `libxdo`가 필요하다. 빌드에는 해당 `-dev` 패키지가 필요하다.
 
 ### DE 가용성 (best-effort 범위)
 
-| 데스크톱 환경 | 트레이 |
+| 데스크톱 환경 | 트레이 지원 조건 |
 |--------------|--------|
-| KDE Plasma | SNI 네이티브 — 동작 |
-| GNOME / Ubuntu | AppIndicator 확장 있으면 동작 |
-| XFCE / Cinnamon / MATE | 동작 |
-| 미니멀 WM / 트레이 없는 환경 | 미등록(폴백) |
+| KDE Plasma | 네이티브 SNI 사용 |
+| GNOME / Ubuntu | AppIndicator 확장 필요 |
+| XFCE / Cinnamon / MATE | 환경의 트레이 지원 사용 |
+| 미니멀 WM / 트레이 없는 환경 | 등록하지 않고 대체 복귀 경로 사용 |
 
 ## 스레드 제약
 
-- **macOS**: 트레이는 메인 스레드에서, 이벤트 루프가 이미 도는 상태에서 생성해야 한다. tasty 의 생성 지점은 winit 메인 스레드 윈도우 셋업(루프 가동 후)이라 충족.
-- **Linux**: GTK 소유 스레드(= winit 메인 스레드)에서 생성하고 같은 스레드에서 펌프한다.
+- **macOS**: 이벤트 루프가 시작된 뒤 메인 스레드에서 생성한다. Tasty는 winit 메인 스레드의 창 설정 단계에서 생성한다.
+- **Linux**: GTK를 소유한 winit 메인 스레드에서 생성하고 이벤트도 처리한다.
 
 ## 코드 위치
 
-- `crates/tasty-platform/src/system_tray.rs` — `create_tray_icon()`(미가용 시 `None`), `poll_menu_event()`, `pump_gtk_events()`(Linux), `TrayMenuIds`. `cfg(all(any(windows, macos, linux), feature = "gui"))`.
-- `src/app/event_handler.rs` — 생성(1회 가드)·백그라운드 진입(OS별)·복귀·메뉴 폴링·GTK 펌프 배선.
-- `src/app/event.rs` — `TrayShowWindow` 이벤트.
-- `crates/tasty-platform/src/app_icon.rs` — 트레이 아이콘.
-</content>
+- `crates/tasty-platform/src/system_tray.rs`: `create_tray_icon()`, `poll_menu_event()`, Linux의 `pump_gtk_events()`, `TrayMenuIds`. GUI 기능이 켜진 Windows·macOS·Linux에서 컴파일한다.
+- `src/app/event_handler.rs`: 생성, OS별 백그라운드 진입과 복귀, 메뉴·GTK 이벤트 처리.
+- `src/app/event.rs`: `TrayShowWindow` 이벤트.
+- `crates/tasty-platform/src/app_icon.rs`: 트레이 아이콘.
