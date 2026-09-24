@@ -1,4 +1,4 @@
-//! `~/.tasty/plugins.toml` — plugin enabled/disabled + 권한 grant + 단축키 영속화.
+//! 데이터 루트의 plugins.toml: 플러그인 활성 상태·권한·단축키를 저장한다.
 //!
 //! 형식:
 //! ```toml
@@ -209,24 +209,19 @@ impl PluginsConfig {
             .and_then(|m| m.get(command_id))
     }
 
-    /// 사용자 override 가 마지막으로 바뀐 시점의 전역 epoch. 값이 그대로면 override
-    /// 내용도 그대로다 — plugin 단축키에서 파생된 스냅샷의 캐시 무효화 키로 쓴다
-    /// (webview 키 포워딩 정책, `docs/design/systems/webview.md#키보드--별도-계약`).
-    /// 디스크에서 갓 읽어온 config 는 0 이며, 소비자는 "이전 값과 다른가" 만 보므로
-    /// 첫 조회에서 자연히 한 번 계산된다.
+    /// 단축키 변경 시 갱신하는 번호. 파생 스냅샷의 캐시를 무효화하는 데 쓴다.
+    /// 디스크에서 읽은 설정의 초기값은 0이다.
     pub fn shortcut_revision(&self) -> u64 {
         self.shortcut_revision
     }
 
-    /// plugin 단축키 override 전량 — 단축키 이식 번들의 **export 원본**이다
-    /// (`keybinding_bundle`). 설정 창의 `PluginShortcutSnapshot` 은 등록된 command 만
-    /// 담아 비활성·미등록 plugin 의 override 가 빠지므로 그쪽을 원본으로 쓰지 않는다.
+    /// 내보내기에 사용할 전체 override. 등록된 명령만 있는 UI 스냅샷과 달리
+    /// 비활성·미등록 플러그인의 설정도 포함한다.
     pub fn shortcut_overrides(&self) -> &BTreeMap<String, BTreeMap<String, ShortcutOverride>> {
         &self.keybindings
     }
 
-    /// override 맵 전량을 교체한다 — 이식 번들 import 의 착지점. `shortcut_revision` 을
-    /// 올려 파생 스냅샷 캐시(webview 키 포워딩 등)를 무효화한다.
+    /// 가져온 override로 전체 목록을 교체하고 shortcut_revision을 갱신한다.
     pub fn replace_shortcut_overrides(
         &mut self,
         overrides: BTreeMap<String, BTreeMap<String, ShortcutOverride>>,

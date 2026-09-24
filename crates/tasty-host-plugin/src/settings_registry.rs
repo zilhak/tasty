@@ -1,19 +1,5 @@
-//! Plugin 이 `[[contributes.settings_pages]]` 로 선언한 설정 sub-page 의 동적 레지스트리.
-//!
-//! Plugin manifest 수신 시 (hello/handshake 후) host 가 본 registry 에 등록하고,
-//! plugin disable / 재시작 시 자동으로 정리한다. 설정 모달의 sub-tab 영역은 본
-//! registry 를 순회해 카테고리별로 sub-tab 을 합성한다 (Step 5 의 UI 책임).
-//!
-//! 이 모듈은 **렌더 정책이나 storage 접근을 포함하지 않는다** — 단순 데이터 컨테이너.
-//!
-//! ## `SettingsCategory::Other(_)` 정책
-//!
-//! Plugin 이 host 가 아직 모르는 카테고리를 선언한 경우 `tracing::warn!` 로 경고만
-//! 출력하고 page 는 그대로 보관한다. drop 하지 않는 이유는, host 측 카테고리
-//! enum 이 후속 버전에서 확장되면 보존된 page 가 자동으로 합쳐지도록 하기 위함.
-//!
-//! Host 가 인지하는 카테고리 (현재): `Appearance`, `General`, `Keybindings`, `Plugin`.
-//! 그 외는 `Other(_)`.
+//! 플러그인이 선언한 설정 페이지를 보관한다. hello 뒤 등록하고 비활성화·재시작 때 지운다.
+//! 알려지지 않은 카테고리도 경고 후 보관하되, 해당 카테고리의 표시 여부는 호스트 UI가 정한다.
 
 use tasty_plugin_manifest::{SettingsCategory, SettingsPageContribute};
 
@@ -64,8 +50,7 @@ impl SettingsPageRegistry {
         self.pages.iter()
     }
 
-    /// 주어진 카테고리에 속하는 entry 만 필터링한다. Step 5 의 sub-tab 합성에서
-    /// 카테고리별로 호출.
+    /// 카테고리에 속한 페이지를 가져온다.
     pub fn by_category<'a>(
         &'a self,
         category: &'a SettingsCategory,

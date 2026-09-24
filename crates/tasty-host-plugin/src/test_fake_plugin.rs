@@ -1,8 +1,4 @@
-//! 테스트 전용 — **실제로 기동에 성공하는** 가장 작은 plugin.
-//!
-//! 인증 한 줄을 보내고 소켓이 닫힐 때까지 읽기만 한다. 그래서 `PluginManager` 가 띄우면
-//! `is_running` 이 참이 되고, 요청에는 답하지 않는다. bash 의 `/dev/tcp` 를 쓰므로 unix 에서만
-//! 쓴다.
+//! Unix 시험용 플러그인. bash /dev/tcp로 인증한 뒤 요청을 읽기만 하고 응답하지 않는다.
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;

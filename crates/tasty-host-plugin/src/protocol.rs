@@ -1,8 +1,4 @@
-//! Plugin ↔ Host wire types는 `tasty-plugin-protocol` 크레이트로 이동했다.
-//! 호스트 코드 호환을 위해 thin re-export만 남긴다.
-//!
-//! 이 모듈은 protocol API surface를 한 곳에서 노출하는 역할이므로, 호스트 본문이
-//! 일부 항목을 직접 참조하지 않더라도 의도적으로 그대로 둔다.
+//! 호스트 코드에서 사용할 tasty-plugin-protocol의 공개 타입을 다시 내보낸다.
 
 #![allow(unused_imports)]
 

@@ -1,12 +1,4 @@
-//! 사이드바 도구 메뉴에 표시되는 항목 레지스트리.
-//!
-//! Plugin이 `[[contributes.tool]]`로 선언한 항목을 정렬된 목록으로 관리한다.
-//! Clipboard history 등 과거 호스트 빌트인 항목은 모두 builtin plugin
-//! (`com.tasty.clipboard-history` 등)으로 이전되었다.
-//!
-//! 이 모듈은 **렌더링이나 dispatch 정책을 포함하지 않는다** — 단순 데이터 컨테이너.
-//! tools_menu UI는 `visible_items()`로 정렬된 목록을 받아 그리고, 클릭 시
-//! `ToolAction`을 보고 호스트가 적절히 실행한다.
+//! 사이드바 도구 항목을 정렬해 제공한다. 렌더링과 ToolAction 실행은 호스트가 맡는다.
 
 use tasty_plugin_manifest::ToolAction;
 
@@ -14,8 +6,7 @@ use tasty_plugin_manifest::ToolAction;
 #[derive(Debug, Clone)]
 pub struct ToolItem {
     pub source: ToolSource,
-    /// 항목 전역 식별자. 빌트인은 `"builtin:<name>"`, plugin 항목은
-    /// `"<plugin_id>/<tool_id>"`.
+    /// 전역 식별자. 플러그인 항목은 <plugin_id>/<tool_id>를 쓴다.
     pub key: String,
     /// `t()`에 전달할 i18n 키. 키가 없으면 원본 문자열 fallback.
     pub label_i18n_key: String,
@@ -27,8 +18,7 @@ pub struct ToolItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolSource {
-    /// Plugin이 `[[contributes.tool]]`로 등록한 항목. 해당 plugin이 비활성/제거되면
-    /// 자동 제거.
+    /// 플러그인이 contributes.tool로 선언한 항목.
     Plugin {
         plugin_id: String,
         /// plugin 내부에서의 tool id (매니페스트의 `[[contributes.tool]].id`).

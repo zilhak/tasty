@@ -1,38 +1,11 @@
-//! 플러그인 자식 프로세스의 수명을 호스트(tasty)에 결박하는 크로스 플랫폼 추상화.
-//!
-//! tasty 가 정상/비정상(하드 크래시·`taskkill /f`·디버거 강제종료) 어느 경로로
-//! 종료되든 플러그인 프로세스(와 그 자식)가 함께 종료되도록 OS 커널 메커니즘에
-//! 묶는다. `PluginProcess::shutdown` / `Drop` 의 `child.kill()` 만으로는 비정상
-//! 경로에서 정리가 돌지 않아 좀비 플러그인이 잔존할 수 있는데, 이를 메우는 것이
-//! 본 타입의 목적이다.
-//!
-//! OS 별 메커니즘 (단일 인터페이스 `new`/`prepare`/`adopt` 뒤에 숨김):
-//!
-//! - **Windows**: Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`). 호스트가 Job
-//!   핸들을 [`PluginManager`](crate::manager::PluginManager) 수명 동안 소유하며,
-//!   호스트 프로세스가 죽어 핸들이 닫히는 순간 OS 가 Job 내 전 프로세스를 강제
-//!   종료한다. Job 멤버십은 자식에 상속되므로 플러그인이 띄운 손자(node/chrome)도
-//!   함께 커버된다. `adopt` 가 각 플러그인 자식을 Job 에 assign.
-//! - **Linux**: `prctl(PR_SET_PDEATHSIG, SIGKILL)` (자식 `pre_exec`). 부모(tasty)
-//!   사망 시 커널이 *직속* 플러그인에 SIGKILL 을 보낸다. 손자 프로세스는 범위 밖
-//!   (고아 허용 — GUI 가시 프로세스라 사용자 인지·종료 가능). **주의**: PDEATHSIG
-//!   는 fork 한 *스레드* 종료에 발화하므로 spawn 은 반드시 [`spawn_bound`] 를
-//!   거쳐 영속 spawner 스레드에서 일어나야 한다 (linux imp 문서 참조).
-//!
-//! [`spawn_bound`]: PluginReaper::spawn_bound
-//! - **macOS**: PDEATHSIG 등가물이 없어 호스트 측 결박이 불가능하다. `prepare` 가
-//!   호스트 PID 를 `TASTY_HOST_PID` env 로 주입하고, 실제 self-exit 는 plugin SDK
-//!   런타임(`tasty-plugin-sdk`)의 부모-사망 watchdog 이 수행한다.
-//! - **그 외 OS**: 전부 no-op stub.
-//!
-//! 모든 실패는 호출부에서 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로
-//! degrade 한다 — 결박 실패가 플러그인 기능이나 호스트를 죽여서는 안 된다.
+//! 호스트 종료에 맞춰 플러그인 프로세스를 정리하기 위한 플랫폼별 지원.
+//! Windows는 Job Object에 등록한 프로세스를, Linux는 PDEATHSIG를 설정한 직속 자식을 대상으로 한다.
+//! Linux에서는 영속 spawner 스레드를 써야 짧게 실행되는 호출 스레드의 종료 영향을 피할 수 있다.
+//! macOS는 TASTY_HOST_PID를 전달하고 SDK의 부모 감시에 의존한다. 나머지 OS는 no-op이다.
+//! 초기화·등록 실패나 SDK 미사용까지 포함한 종료 보장은 아니다.
 
-// 이유: 이 파일 전체가 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
-//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
-//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
-//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
-//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+// 이유: FFI의 연결된 포인터·핸들 연산을 같은 unsafe 블록에서 처리한다.
+// 이 예외는 새 unsafe 연산도 가리므로 안전한 래퍼로 옮길 때 다시 검토한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
 #[cfg(windows)]
@@ -44,17 +17,13 @@ mod imp {
     use tasty_reaper::JobObject;
     use windows_sys::Win32::Foundation::HANDLE;
 
-    /// Windows Job Object 기반 reaper. Job Object primitive 는 [`tasty_reaper`] 에서
-    /// 공유하며, 본 타입은 그 job 을 **자기 소유**(`PluginManager` 수명에 결박)한다 —
-    /// 터미널 셸을 결박하는 전역 job 과는 별개 인스턴스다(둘 다 `KILL_ON_JOB_CLOSE`
-    /// 라 프로세스 사망 시 동일하게 정리된다). `job` 이 `None` 이면 결박 비활성.
+    /// 매니저가 소유한 별도 Job Object. None이면 등록하지 않는다.
     pub struct PluginReaper {
         job: Option<JobObject>,
     }
 
     impl PluginReaper {
-        /// Job Object 를 생성한다. 실패 시 Err — 호출부가 warn 후
-        /// [`disabled`](Self::disabled) 로 degrade 한다.
+        /// Job Object를 만든다. 실패하면 호출자가 경고하고 disabled를 사용한다.
         pub fn new() -> io::Result<Self> {
             Ok(Self {
                 job: Some(JobObject::new()?),
@@ -70,9 +39,7 @@ mod imp {
         /// 여기선 할 일이 없다.
         pub fn prepare(&self, _cmd: &mut Command) {}
 
-        /// 준비된 Command 를 실제 spawn 한다. Windows 는 Job Object 가 프로세스
-        /// 수명에 결박되므로 호출 스레드에서 직접 spawn 해도 안전하다
-        /// (Linux 판의 스레드 우회는 PDEATHSIG 전용 — 그쪽 문서 참조).
+        /// Windows에서는 호출 스레드에서 실행하고 이후 adopt로 Job에 등록한다.
         pub fn spawn_bound(&self, mut cmd: Command) -> io::Result<Child> {
             cmd.spawn()
         }
@@ -104,17 +71,8 @@ mod imp {
     /// spawner 스레드로 보내는 spawn 요청: (준비된 Command, 결과 반송 채널).
     type SpawnJob = (Command, SyncSender<io::Result<Child>>);
 
-    /// PDEATHSIG 는 부모 *프로세스*가 아니라 **fork 한 스레드**가 종료할 때 발화한다
-    /// (man prctl 의 경고). 부트 워커 같은 단명 스레드에서 plugin 을 spawn 하면
-    /// 그 스레드가 부팅을 마치고 종료하는 순간 plugin 전원이 SIGKILL 을 받는다
-    /// (실측: 매 부팅마다 전 plugin 즉사 → 60s healthcheck 가 재스폰할 때까지
-    /// plugin 기능 전멸). 이를 막기 위해 모든 plugin spawn 을 프로세스 수명과
-    /// 함께 가는 전용 스레드로 우회시킨다 — PDEATHSIG 가 이 스레드에 결박되므로
-    /// 사실상 호스트 프로세스 수명에 결박된다(원래 의도한 시맨틱).
-    ///
-    /// 반환 `None` = spawner 스레드 생성 실패(리소스 고갈 등). 호출부는 직접
-    /// spawn 으로 degrade 한다 — 결박이 스레드 수명에 좌우되는 원래 위험으로
-    /// 돌아갈 뿐 spawn 자체는 성공해야 한다.
+    /// PDEATHSIG가 일시적인 호출 스레드의 종료에 반응하지 않도록 영속 스레드에서 실행한다.
+    /// 스레드를 만들지 못하면 None을 반환하며, 호출자는 자기 스레드에서 실행한다.
     fn spawner() -> Option<&'static Sender<SpawnJob>> {
         static TX: OnceLock<Option<Sender<SpawnJob>>> = OnceLock::new();
         TX.get_or_init(|| {
@@ -123,8 +81,7 @@ mod imp {
                 .name("plugin-spawner".into())
                 .spawn(move || {
                     while let Ok((mut cmd, reply)) = rx.recv() {
-                        // 수신측이 먼저 죽었으면(호출부 panic 등) 보낼 곳이 없을 뿐
-                        // — spawn 결과 유실은 해당 plugin 시작 실패로 이미 표면화된다.
+                        // 의도적 무시: 호출자가 사라졌으면 실행 결과를 전달할 곳이 없다.
                         let _ = reply.send(cmd.spawn());
                     }
                 });
@@ -162,17 +119,15 @@ mod imp {
             }
         }
 
-        /// 준비된 Command 를 실제 spawn 한다. Linux 는 영속 spawner 스레드에서
-        /// fork 해 PDEATHSIG 를 프로세스 수명에 결박한다 ([`spawner`] 참조).
-        /// 채널 왕복이 불가능한 경우에만 호출 스레드 직접 spawn 으로 degrade.
+        /// 영속 spawner에서 실행한다. 스레드 생성 실패 때만 호출 스레드로 대신한다.
+        /// 작업 전달이나 결과 수신 실패는 오류로 반환한다.
         pub fn spawn_bound(&self, mut cmd: Command) -> io::Result<Child> {
             let Some(tx) = spawner() else {
                 return cmd.spawn();
             };
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             if tx.send((cmd, reply_tx)).is_err() {
-                // spawner 스레드가 죽었다(정상 경로에선 발생하지 않음). Command 는
-                // 이미 이동했으므로 degrade 불가 — 에러로 표면화한다.
+                // Command를 이미 전달했으므로 다시 실행할 수 없다.
                 return Err(io::Error::other("plugin-spawner thread is gone"));
             }
             reply_rx
@@ -192,8 +147,7 @@ mod imp {
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                 return Err(io::Error::last_os_error());
             }
-            // prctl 설정과 fork 사이에 부모가 이미 죽었을 race 를 메운다:
-            // 재부모화(getppid == 1)됐으면 즉시 종료.
+            // 부모가 먼저 종료돼 PID 1 아래로 이동했다면 즉시 종료한다.
             if libc::getppid() == 1 {
                 libc::_exit(0);
             }
@@ -206,8 +160,7 @@ mod imp {
 mod imp {
     use std::process::{Child, Command};
 
-    /// macOS reaper. 호스트 측엔 결박 메커니즘이 없어 `TASTY_HOST_PID` env 주입만
-    /// 담당하고, 실제 self-exit 는 plugin SDK 런타임의 watchdog 이 수행한다.
+    /// 부모 PID를 전달한다. 종료 감시는 SDK 런타임이 맡는다.
     pub struct PluginReaper;
 
     impl PluginReaper {
@@ -224,8 +177,7 @@ mod imp {
             cmd.env("TASTY_HOST_PID", std::process::id().to_string());
         }
 
-        /// 준비된 Command 를 실제 spawn 한다. macOS 는 자식 측 watchdog 이 호스트
-        /// PID 를 폴링하므로(스레드 무관) 호출 스레드에서 직접 spawn 해도 안전하다.
+        /// 호출 스레드에서 실행한다. SDK는 부모 프로세스의 PID를 확인한다.
         pub fn spawn_bound(&self, mut cmd: Command) -> std::io::Result<Child> {
             cmd.spawn()
         }
@@ -268,8 +220,7 @@ mod imp {
 pub use imp::PluginReaper;
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트의 정리 작업에서 결과를 의도적으로 무시한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::PluginReaper;
@@ -281,11 +232,8 @@ mod tests {
         assert!(reaper.is_ok(), "reaper init failed: {:?}", reaper.err());
     }
 
-    /// PDEATHSIG 스레드 결박 회귀 테스트: 단명 스레드에서 spawn_bound 로 띄운
-    /// 자식은 그 스레드가 죽어도 살아있어야 한다. spawn_bound 가 영속 spawner
-    /// 스레드를 경유하지 않으면(=호출 스레드에서 직접 fork) PDEATHSIG 가 호출
-    /// 스레드 종료 시 발화해 자식이 SIGKILL 로 죽는다 — 부트 워커에서 스폰된
-    /// plugin 전원이 부팅 직후 전멸하던 실제 버그의 최소 재현.
+    /// 짧게 실행되는 스레드에서 spawn_bound를 호출해도 그 스레드의 종료가
+    /// 자식에 PDEATHSIG를 보내지 않아야 한다.
     #[cfg(target_os = "linux")]
     #[test]
     fn spawn_bound_child_survives_caller_thread_exit() {
@@ -298,12 +246,11 @@ mod tests {
         })
         .join()
         .expect("spawner-caller thread panicked");
-        // 호출 스레드는 위 join 시점에 이미 종료 — PDEATHSIG 가 그 스레드에
-        // 결박돼 있었다면 SIGKILL 은 즉시 배달된다. 여유를 두고 관찰.
+        // 호출 스레드가 끝난 뒤에도 자식이 살아 있는지 잠시 후 확인한다.
         std::thread::sleep(std::time::Duration::from_millis(300));
         let state = child.try_wait().expect("try_wait failed");
         // 테스트 종료 전 정리 (살아있을 때만 의미 있음).
-        let _ = child.kill(); // 실패는 이미 죽은 경우뿐 — 아래 assert 가 판정.
+        let _ = child.kill(); // 정리 시도이며 종료 상태는 아래에서 확인한다.
         let _ = child.wait();
         assert!(
             state.is_none(),
@@ -313,9 +260,7 @@ mod tests {
 
     #[test]
     fn disabled_reaper_adopt_is_noop() {
-        // disabled() 는 child 핸들 없이도 만들어지고, 실제 adopt 는 spawn 경로에서만
-        // 호출되므로 여기선 생성만 검증한다(이미 죽은/없는 child 로 adopt 호출 시
-        // 호출부가 warn 으로 흡수하는 계약).
-        let _ = PluginReaper::disabled(); // 생성만 검증 — 반환 Result 의도적 무시(아래 단순 construct 테스트).
+        // 자식 핸들 없이 비활성 reaper를 만들 수 있는지만 확인한다.
+        let _ = PluginReaper::disabled(); // 의도적 무시: 생성 가능 여부만 확인한다.
     }
 }

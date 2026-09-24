@@ -1,13 +1,7 @@
-//! Plugin 자식 프로세스 + 호스트와의 양방향 채널.
-//!
-//! `PluginProcess::spawn(...)`는:
-//! 1. 토큰 생성
-//! 2. 자식 프로세스 spawn (env로 host port + token + plugin id 전달, stdout/stderr는 로그 파일)
-//! 3. 연결 대기(timeout 10s)와 송신/수신 스레드 가동을 `plugin-connect-<id>` 스레드에 맡기고
-//!    **즉시 돌아온다** — 그 사이의 요청은 송신 큐에 쌓였다가 연결 뒤 나간다(`connect`, docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화)
-//! 4. 채널은 mpsc 로 호스트 메인 루프에 노출
-//!
-//! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
+//! 플러그인 자식 프로세스와 양방향 채널.
+//! spawn은 자식을 실행한 뒤 연결 대기를 별도 스레드에 맡긴다.
+//! 연결 전 요청은 큐에 쌓이며, 연결 뒤 송수신 스레드가 처리한다.
+//! 수신 시각을 last_pong에 기록해 무응답 여부를 판단한다.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -31,13 +25,8 @@ use channel_bytes::{
 };
 use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
 
-// plugin 프로세스 상태를 지키는 내부 락들의 poison 보고 플래그(각 첫 1 회만).
-//
-// 셋 다 임계구역이 자료구조/값 조작뿐이라(타임스탬프 · 상태 enum · dirty 맵) 락을 든 채
-// 죽은 스레드가 불변식을 깨지 않는다 — 복구가 맞다. 조용히 삼키면: pong 갱신이 유실돼
-// plugin 이 죽은 것으로 오판돼 kill 되고(last_pong), aux 채널이 있는데 없는 것으로
-// 보이며(handle_state), 프레임 dirty 영역이 통째로 사라진다(dirty_rects). 자유 함수에서도
-// 쓰므로 모듈 static 으로 둔다.
+// 내부 상태 잠금은 poison을 처음 한 번 알리고 기존 값을 재사용한다.
+// 복구 자체가 패닉 전의 부분 변경을 되돌리는 것은 아니다.
 static LAST_PONG_POISONED: AtomicBool = AtomicBool::new(false);
 const LAST_PONG_WHAT: &str = "plugin last-pong timestamp";
 static HANDLE_STATE_POISONED: AtomicBool = AtomicBool::new(false);
@@ -45,15 +34,11 @@ const HANDLE_STATE_WHAT: &str = "plugin aux handle stream state";
 static DIRTY_RECTS_POISONED: AtomicBool = AtomicBool::new(false);
 const DIRTY_RECTS_WHAT: &str = "plugin dirty-rects map";
 
-// HandleStream 락은 위 셋과 반대다 — 임계구역이 소켓에 프레임을 쓰므로 락을 든 채 죽은
-// 스레드가 반쪽 프레임을 남길 수 있다. poison 을 `into_inner` 로 복구해 이어 쓰면 프레이밍이
-// 깨진다(= `writer` 가 FORBIDDEN_LOCKS 에 있는 것과 같은 이유). 그래서 복구하지 않고 이
-// 연산을 건너뛰되, 조용히는 아니다 — 첫 1 회 보고한다(aux_reader_loop 의 pong 과 같은 판단).
+// 보조 채널 쓰기 중 패닉이 나면 프레임 일부만 전송됐을 수 있다.
+// 이 잠금은 복구해 계속 쓰지 않고 연산을 생략하며 처음 한 번 경고한다.
 static WITH_HANDLE_STREAM_POISONED: AtomicBool = AtomicBool::new(false);
 
-/// 보조 채널 stream을 mailbox에서 가져올 때 첫 호출 한도. plugin SDK가 HandleClient::connect
-/// 완료 → 호스트 accept thread가 stream을 우편함에 채울 때까지 ms 단위 정도면 충분하지만,
-/// startup 직후 호출 가능성을 고려해 500ms 여유.
+/// 보조 채널의 첫 사용 시 연결을 기다리는 한도. 시작 직후 호출을 고려해 500ms를 둔다.
 const HANDLE_STREAM_MATERIALIZE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// 보조 핸들 채널 상태 머신. spawn 시점에 Pending(rx) 또는 Unavailable로 초기화되고,
@@ -65,47 +50,29 @@ enum HandleStreamState {
     /// 한 번 materialize 완료. write 핸들은 Arc로 공유 — reader 스레드가 Pong을
     /// 응답할 때도 같은 stream을 쓴다.
     Ready(Arc<Mutex<HandleStream>>),
-    /// 보조 채널 미지원 (handle_listener bind 실패 / Windows stub) 또는 reader
-    /// 분리 실패. 향후 호출이 항상 None을 반환하도록 sticky.
+    /// 보조 채널을 사용할 수 없거나 reader 분리에 실패했다. 이후 호출도 None을 반환한다.
     Unavailable,
 }
 
-/// 호스트↔plugin 세 채널의 용량.
-///
-/// 셋 다 무제한 `mpsc::channel` 이었다. 무제한 큐는 소비자가 멈추면 생산자의 속도만큼
-/// 메모리를 먹고, 그 자리가 셋이라 한 plugin 이 멈추면 세 방향으로 자란다. 여기서
-/// 고치는 것은 **유한하게 만드는 것**이고 조이는 것이 아니다.
-///
-/// 이 수들은 **파생이 아니다.** 프로토콜에 한 프레임당 메시지 수의 상한이 없고
-/// (`pending_requests` 도 `HashMap` 이라 상한이 없다) 관측된 분포도 없다. 고른 근거는
-/// 두 가지뿐이다 — (1) 호스트 pump 는 매 프레임 세 큐를 **끝까지** 비우므로 한 프레임
-/// 분량의 버스트를 여러 번 담을 수 있으면 정상 사용은 절대 상한에 안 닿는다,
-/// (2) 셋의 곱이 작다: 채널 3 × 1024 × 번들 plugin 9 = 27,648 개의 메시지 슬롯이고
-/// 메시지 하나가 수 KB 라도 수십 MB 다. 상한에 닿는지 재는 법은 docs/architecture/ipc-server.md#플러그인-채널의-상한 에 있다.
+/// 호스트→플러그인 요청 큐의 개수 상한. 응답·이벤트 큐도 같은 용량을 쓴다.
+/// 관측된 정상 부하에서 계산한 값은 아니므로, 포화 발생 여부를 계속 확인해야 한다.
+/// 직렬화 바이트의 상한은 channel_bytes가 별도로 적용한다.
 pub(crate) const REQUEST_QUEUE_CAPACITY: usize = 1024;
 /// plugin → 호스트 응답 큐 용량. 근거는 [`REQUEST_QUEUE_CAPACITY`] 와 같다.
 pub(crate) const RESPONSE_QUEUE_CAPACITY: usize = 1024;
 /// plugin → 호스트 이벤트 큐 용량. 근거는 [`REQUEST_QUEUE_CAPACITY`] 와 같다.
 pub(crate) const EVENT_QUEUE_CAPACITY: usize = 1024;
 
-/// 호스트 → plugin 요청을 큐에 못 넣은 이유.
-///
-/// 무제한 채널일 때는 실패 이유가 하나뿐이었다(수신단 소멸). 유한해지면서 **포화**가
-/// 생겼고, 둘은 성질이 다르다 — 소멸은 영구이고 포화는 일시적이다. 호출부가 로그에서
-/// 둘을 가를 수 있어야 "plugin 이 죽었다" 와 "plugin 이 밀리고 있다" 를 구분한다.
+/// 요청을 큐에 넣지 못한 이유. 일시적인 포화와 수신단 종료를 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestSendError {
-    /// 큐가 찼다 — writer 스레드가 소켓에 못 밀어 넣고 있다. 요청은 버려진다.
+    /// 큐가 가득 차 요청을 버렸다.
     Full,
-    /// 바이트 상한 — 이 큐의 누적이나 모든 plugin 채널의 합계가 넘친다
-    /// ([`channel_bytes`], docs/architecture/ipc-server.md#플러그인-채널의-상한). 요청은 버려진다. 개수 포화(`Full`)와 가르는 이유는
-    /// 처방이 다르기 때문이다 — 개수는 plugin 이 안 읽는 것이고, 합계는 **다른** plugin
-    /// 이 자리를 먹은 것일 수 있다.
+    /// 이 큐 또는 전체 플러그인 채널의 바이트 상한을 넘어 요청을 버렸다.
     OverBytes(Refusal),
-    /// writer 스레드가 끝났다 — 프로세스 종료 또는 소켓 끊김.
+    /// 송신 큐의 수신단이 종료됐다.
     Disconnected,
-    /// 요청을 줄로 직렬화하지 못했다. `serde_json::Value` 를 담은 요청이라 실제로는 안
-    /// 나지만, 났을 때 "끊겼다" 로 보고하면 거짓이 된다.
+    /// 요청을 JSON 한 줄로 직렬화하지 못했다.
     Encode,
 }
 
@@ -114,12 +81,11 @@ impl std::fmt::Display for RequestSendError {
         match self {
             Self::Full => write!(
                 f,
-                "request queue full ({REQUEST_QUEUE_CAPACITY}) — plugin is not draining"
+                "request queue full ({REQUEST_QUEUE_CAPACITY}) — request rejected"
             ),
-            Self::OverBytes(Refusal::Queue) => write!(
-                f,
-                "request queue over its byte budget — plugin is not draining"
-            ),
+            Self::OverBytes(Refusal::Queue) => {
+                write!(f, "request queue over its byte budget — request rejected")
+            }
             Self::OverBytes(Refusal::Total) => write!(
                 f,
                 "plugin channels over their total byte budget — the host is holding too much \
@@ -133,13 +99,7 @@ impl std::fmt::Display for RequestSendError {
     }
 }
 
-/// 요청 한 건을 큐에 넣되 **절대 블록하지 않는다.**
-///
-/// 블록하지 않는 것이 정책의 핵심이다. 이 함수를 부르는 12 자리는 거의 전부 호스트
-/// main thread 의 pump 안이고(`PluginManager::pump` → `apply_collected_events` ·
-/// `drain_host_cmds`), 거기서 블록하면 큐가 찼다는 이유로 **프레임이 통째로 멈춘다.**
-/// 그래서 포화는 대기가 아니라 거절로 처리하고, 거절은 호출부가 이미 들고 있던
-/// "보내기 실패" 갈래로 흘려보낸다.
+/// 큐가 찼을 때 기다리지 않고 거절한다. 메인 스레드가 송신 때문에 멈추지 않게 한다.
 pub(crate) fn try_send_request<T>(
     tx: &mpsc::SyncSender<T>,
     req: T,
@@ -154,18 +114,10 @@ pub(crate) fn try_send_request<T>(
 pub struct PluginProcess {
     pub plugin_id: String,
     child: Option<Child>,
-    /// 비공개인 것이 정책 강제의 전부다 — `pub` 이면 형제 모듈이 `.send()` 로
-    /// 블로킹 송신을 되살릴 수 있고, 그 자리는 컴파일러가 안 잡는다. 송신은
-    /// [`PluginProcess::try_send_request`] 하나로만 들어간다.
-    ///
-    /// 싣는 것은 요청이 아니라 **이미 직렬화한 줄**이다. 바이트 상한은 넣기 전에 크기를
-    /// 알아야 판정할 수 있고, 크기를 알려면 직렬화해야 한다 — 그래서 직렬화를 writer
-    /// 스레드에서 송신 자리로 옮겼다. 두 번 직렬화하지 않으려고 그 결과를 그대로 싣는다.
+    /// 직렬화한 요청 줄. 바이트 상한을 검사한 결과를 writer가 그대로 쓴다.
+    /// 비공개로 두어 다른 모듈이 blocking send를 직접 호출하지 못하게 한다.
     req_tx: MeteredSender<String>,
-    /// 포화로 **버린** 요청 수 가운데 아직 plugin 에게 안 알린 몫. 다음으로 큐에
-    /// 실제로 들어가는 요청이 이 값을 싣고 그만큼 뺀다
-    /// ([`PluginRequest::dropped_requests`]). 송신은 호스트 main thread 한 곳에서만
-    /// 일어나지만(pump), 이 필드는 `&self` 메서드에서 갱신되므로 원자값이다.
+    /// 포화로 버렸지만 아직 알리지 못한 요청 수. 다음으로 큐에 들어가는 요청에 싣고 뺀다.
     dropped_requests: AtomicU64,
     pub resp_rx: MeteredReceiver<PluginResponse>,
     pub event_rx: MeteredReceiver<PluginEvent>,
@@ -176,24 +128,20 @@ pub struct PluginProcess {
     /// "전체 갱신" sticky flag. 호스트 main loop이 frame 합성 시 `take_dirty_rects`로
     /// drain한다.
     dirty_rects: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
-    /// 연결 대기의 결과 자리. 연결 대기 스레드가 채우고 매니저가 pump 에서 한 번 거둔다.
+    /// 연결 대기 결과는 매니저가 pump에서 한 번 가져간다.
     connect: Arc<connect::ConnectSlot>,
-    /// 매니저가 거둔 연결 성사 시각. `None` 이면 아직 연결 중이다 — 연결에 실패한 프로세스는
-    /// `processes` 에서 빠지므로 여기 남지 않는다. 요청의 시한을 연결 성사부터 세는 데
-    /// 쓴다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
+    /// 연결 완료 시각부터 요청 deadline을 계산한다. None이면 아직 연결 중이다.
     connected_at: Option<Instant>,
 }
 
 #[cfg(test)]
 impl PluginProcess {
-    /// 송신 큐의 수신단을 살려 둔 stub — 호스트가 plugin 에 **무엇을 보냈는지**를
-    /// 재는 자리. [`PluginProcess::stub_for_test`] 는 rx 를 즉시 버려서 모든 송신이
-    /// `Disconnected` 로 떨어지므로, 보낸 내용을 단정할 수 없다.
+    /// 시험에서 보낸 요청을 읽을 수 있도록 수신단을 유지하는 stub.
     pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, RequestTap) {
         Self::stub_with_request_rx_capacity(plugin_id, REQUEST_QUEUE_CAPACITY)
     }
 
-    /// 위와 같되 큐 용량을 고른다 — 포화를 재려면 1024 건을 쓸 수 없다.
+    /// 큐 용량을 지정해 포화를 시험하는 stub.
     pub(crate) fn stub_with_request_rx_capacity(
         plugin_id: &str,
         capacity: usize,
@@ -205,7 +153,7 @@ impl PluginProcess {
         )
     }
 
-    /// 위와 같되 바이트 장부를 고른다 — 바이트 상한을 재려면 작은 상한이 필요하다.
+    /// 바이트 상한을 지정해 시험하는 stub.
     pub(crate) fn stub_with_request_rx_in(
         plugin_id: &str,
         capacity: usize,
@@ -218,21 +166,19 @@ impl PluginProcess {
         (proc, RequestTap(req_rx))
     }
 
-    /// 실제 자식을 든 stub — 회수 경로(`manager::retire`)가 자식이 빠질 때까지 무엇을
-    /// 하는지 재는 자리. 송신 큐는 [`Self::stub_for_test`] 와 같이 끊겨 있어 shutdown
-    /// 요청은 안 닿는다 — 자식은 스스로 끝나거나 deadline 뒤 kill 된다.
+    /// 실제 자식을 회수하는 시험용 stub. 송신 큐는 끊겨 있어 shutdown 요청은 전달되지 않는다.
     pub(crate) fn stub_with_child(plugin_id: &str, child: Child) -> Self {
         let mut proc = Self::stub_for_test(plugin_id);
         proc.child = Some(child);
         proc
     }
 
-    /// 아직 연결 결과가 안 거둬진 프로세스로 만든다 — 연결 전에 보낸 요청의 시한을 재려고.
+    /// 연결 전 요청의 deadline을 시험하도록 연결 대기 상태로 바꾼다.
     pub(crate) fn mark_connecting_for_test(&mut self) {
         self.connected_at = None;
     }
 
-    /// 마지막 pong 을 `by` 만큼 과거로 민다 — 무응답 재시작을 60 초 기다리지 않고 재려고.
+    /// 실제 대기 없이 무응답 상태를 시험하도록 마지막 수신 시각을 과거로 옮긴다.
     pub(crate) fn backdate_pong_for_test(&self, by: Duration) {
         let mut last = self.last_pong.lock().expect("fresh mutex");
         *last = Instant::now()
@@ -240,8 +186,7 @@ impl PluginProcess {
             .expect("the clock goes back far enough");
     }
 
-    /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
-    /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
+    /// 자식이 없고 송수신 채널이 끊겨 있는 단위 테스트용 stub.
     pub(crate) fn stub_for_test(plugin_id: &str) -> Self {
         let ledger = ChannelLedger::new(ChannelLimits::default());
         let (req_tx, _req_rx) = metered_channel(
@@ -274,15 +219,12 @@ impl PluginProcess {
 
 #[cfg(test)]
 thread_local! {
-    /// 자식을 띄운 직후 호출 스레드를 이만큼 세운다 — 시험 전용. 부하로 호출 스레드가 밀리는
-    /// 상황을 결정적으로 만든다: 그 사이 곧바로 연결한 plugin 이 인증하므로, 연결을 받을
-    /// 자리를 자식을 띄운 **뒤에** 여는 구현이면 그 인증이 토큰 없음으로 거절된다.
+    /// 자식 실행 직후 호스트를 지연시켜, 빠른 연결도 인증 정보 등록 뒤에 처리되는지 시험한다.
     pub(crate) static AFTER_CHILD_SPAWN_DELAY: std::cell::Cell<Duration> =
         const { std::cell::Cell::new(Duration::ZERO) };
 }
 
-/// 시험이 호스트가 **무엇을 보냈는지** 읽는 자리. 큐에는 직렬화된 줄이 들어 있으므로
-/// 꺼낼 때 요청으로 되돌린다 — 되돌린 값이 곧 plugin 이 소켓에서 읽을 값이다.
+/// 송신 큐의 JSON 줄을 요청으로 읽는 시험용 수신단.
 #[cfg(test)]
 pub(crate) struct RequestTap(MeteredReceiver<String>);
 
@@ -322,14 +264,10 @@ impl PluginProcess {
         )?;
         inject_plugin_data_env(&mut cmd, package, &log_path)?;
 
-        // 연결을 받을 자리는 자식을 띄우기 **전에** 연다 — 빠르게 connect 한 plugin 이 토큰
-        // 없음으로 거절되지 않게(보조 채널 mailbox 와 같은 이유). spawn 이 실패하면 이
-        // 값이 버려지며 등록을 거둔다.
+        // 빠르게 연결하는 플러그인도 인증할 수 있도록 자식 실행 전에 등록한다.
         let pending = listener.register(&token);
 
-        // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
-        // 결박되므로(단명 부트 워커에서 직접 spawn 하면 그 스레드 종료 시 plugin
-        // 전원 SIGKILL) 영속 spawner 스레드에서 fork 해야 한다. 타 OS 는 직접 spawn.
+        // Linux PDEATHSIG는 fork한 스레드의 수명에 연결되므로 영속 spawner에서 실행한다.
         let child = reaper.spawn_bound(cmd).map_err(|e| {
             anyhow::anyhow!(
                 "failed to spawn plugin '{}' ({}): {}",
@@ -342,8 +280,7 @@ impl PluginProcess {
         #[cfg(test)]
         std::thread::sleep(AFTER_CHILD_SPAWN_DELAY.with(std::cell::Cell::get));
 
-        // spawn 직후 자식이 살아있는 시점에 Job 에 assign(Windows). 실패해도
-        // 플러그인 기능은 정상이며 수명 결박만 누락되므로 warn 후 진행한다.
+        // Windows Job Object 등록 실패는 경고하고 실행을 계속한다.
         if let Err(e) = reaper.adopt(&child) {
             tracing::warn!(
                 "plugin '{}' lifetime adopt failed — process not bound to host lifetime: {e}",
@@ -351,9 +288,7 @@ impl PluginProcess {
             );
         }
 
-        // 보조 채널은 별도 mailbox로 받는다 — blocking하지 않는다. plugin이 connect하면
-        // listener accept thread가 stream을 receiver로 넣어 둠. shared buffer 사용 시점에
-        // 비로소 try_recv로 가져온다. plugin이 영영 connect 안 해도 startup 지연 0.
+        // 보조 채널 연결은 기다리지 않고, shared buffer를 처음 사용할 때 가져온다.
 
         let last_pong = Arc::new(Mutex::new(Instant::now()));
         let id = &package.manifest.id;
@@ -370,9 +305,7 @@ impl PluginProcess {
             ledger.open_queue(id, Direction::Event),
         );
 
-        // 연결 대기는 여기서 하지 않는다 — 부르는 자리가 호스트 메인 스레드라 최대 10 s 가
-        // 모든 IPC 와 프레임을 세운다. 송신 큐는 이미 살아 있으므로 연결 전의 요청은 쌓였다가
-        // 연결 뒤 나간다.
+        // 연결은 별도 스레드에서 기다린다. 그동안 요청은 송신 큐에 쌓인다.
         let connect = connect::start(connect::ConnectJob {
             plugin_id: id.clone(),
             log_path,
@@ -404,8 +337,7 @@ impl PluginProcess {
         })
     }
 
-    /// 연결 대기의 결과가 났으면 한 번만 꺼낸다 — 매니저가 pump 에서 거둔다. 아직 연결
-    /// 중이거나 이미 거뒀으면 `None`.
+    /// 완료된 연결 결과를 한 번만 가져간다. 대기 중이거나 이미 가져갔으면 None.
     pub(crate) fn take_connect_outcome(&self) -> Option<connect::ConnectOutcome> {
         self.connect.take()
     }
@@ -415,23 +347,18 @@ impl PluginProcess {
         self.connected_at
     }
 
-    /// 매니저가 연결 성사를 거뒀을 때 부른다.
+    /// 매니저가 연결 성공 결과를 처리했을 때 호출한다.
     pub(crate) fn mark_connected(&mut self, at: Instant) {
         self.connected_at = Some(at);
     }
 
-    /// 연결 대기의 결과가 날 때까지 `deadline` 까지 기다린다 — 부팅 워커처럼 기다려도
-    /// 되는 자리만 부른다. 결과는 꺼내지 않는다.
+    /// deadline까지 연결 결과를 기다리되 결과는 꺼내지 않는다. 부팅 워커 등에서 사용한다.
     pub(crate) fn wait_connect_settled(&self, deadline: Instant) {
         self.connect.wait_settled(deadline);
     }
 
-    /// 보조 핸들 채널 stream을 첫 호출 시 materialize한 뒤 closure로 노출한다.
-    ///
-    /// 첫 호출은 mailbox에서 짧은 timeout(`HANDLE_STREAM_MATERIALIZE_TIMEOUT`)으로
-    /// 대기하며, 성공하면 reader 스레드를 함께 spawn해 dirty 수신을 시작한다.
-    /// 이후 호출은 캐시된 stream을 lock한 뒤 closure에 넘긴다. 보조 채널이
-    /// 활성화되지 않은 plugin이면 `None`.
+    /// 보조 채널의 첫 사용 시 짧게 연결을 기다리고 reader 스레드를 시작한다.
+    /// 이후에는 저장한 stream을 잠가 closure에 전달한다. 사용할 수 없으면 None.
     pub fn with_handle_stream<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut HandleStream) -> R,
@@ -443,7 +370,7 @@ impl PluginProcess {
                 if !WITH_HANDLE_STREAM_POISONED.swap(true, Ordering::Relaxed) {
                     tracing::error!(
                         "plugin aux handle stream lock poisoned — skipping this shared-buffer op; \
-                         a thread panicked mid-frame and continuing would corrupt framing"
+                         a frame may have been partially written before the panic"
                     );
                 }
                 return None;
@@ -563,23 +490,14 @@ impl PluginProcess {
         self.child.as_ref().map(|c| c.id())
     }
 
-    /// 호스트 → plugin 요청을 큐에 넣는다. **블록하지 않는다** — 근거는
-    /// [`try_send_request`] 의 doc.
-    ///
-    /// 포화로 버린 수를 **여기서** 싣는다. 별도 통지를 만들면 그 통지도 같은(찬) 큐를
-    /// 써야 해서 자기모순이므로, 다음으로 실제 들어가는 요청에 얹는다
-    /// ([`PluginRequest::dropped_requests`]). 실린 만큼만 빼므로, load 와 send 사이에
-    /// 늘어난 몫은 그 다음 요청이 싣는다 — 누락도 중복도 없다.
-    ///
-    /// 바이트 상한도 여기서 판정한다([`channel_bytes`], docs/architecture/ipc-server.md#플러그인-채널의-상한) — 그래서 직렬화도
-    /// 여기서 한다. 바이트로 버린 것도 개수로 버린 것과 같이 plugin 에게 알린다: plugin
-    /// 입장에서는 둘 다 "오던 요청이 사라졌다" 다.
+    /// 요청을 직렬화하고 개수·바이트 상한 안에서 큐에 넣는다. 포화 시 기다리지 않는다.
+    /// 앞서 버린 요청 수는 다음으로 큐에 들어가는 요청에 함께 보낸다.
+    /// 별도 알림을 보내면 그 알림도 가득 찬 큐에 넣어야 하기 때문이다.
     pub fn try_send_request(&self, req: PluginRequest) -> Result<(), RequestSendError> {
         self.try_send_request_as(req, Admission::Data)
     }
 
-    /// [`Self::try_send_request`] 에 갈래를 준 형태. 제어(ping · shutdown)는 합계 상한을
-    /// 면제한다 — 근거는 [`Admission`].
+    /// ping·shutdown은 전체 바이트 상한만 면제한다. 개별 큐의 상한은 유지한다.
     fn try_send_request_as(
         &self,
         mut req: PluginRequest,
@@ -599,8 +517,7 @@ impl PluginProcess {
         match self.req_tx.try_send(line, bytes, admission) {
             Ok(()) => {
                 if carried > 0 {
-                    // 송신은 호스트 main thread 한 곳뿐이라(pump) 이 뺄셈이 되감기지
-                    // 않는다 — 실린 값 말고는 아무도 안 뺀다.
+                    // 단일 송신자가 실제로 실어 보낸 수만 뺀다.
                     self.dropped_requests.fetch_sub(carried, Ordering::Relaxed);
                 }
                 Ok(())
@@ -641,14 +558,8 @@ impl PluginProcess {
         .elapsed()
     }
 
-    /// shutdown 요청만 보내고 **대기하지 않고** 즉시 반환한다. 반환된
-    /// [`PendingShutdown`] 이 자식 소유권을 가져가므로(`child.take()`), 남은
-    /// `PluginProcess` 가 이 자리에서 drop 돼도 [`PluginProcess::drop`] 의 즉시
-    /// kill 이 graceful 대기를 앞지르지 않는다.
-    ///
-    /// 요청 전송과 대기를 분리해 두면 호출자가 여러 plugin 의 요청을 먼저 전부
-    /// 뿌린 뒤 대기 구간만 겹칠 수 있다 — 총 소요가 Σ(개별 대기) 가 아니라
-    /// max(개별 대기) 로 수렴한다.
+    /// 종료를 요청하고 자식 핸들을 PendingShutdown으로 옮긴다. 여기서는 기다리지 않는다.
+    /// 여러 플러그인에 먼저 요청한 뒤 공유 deadline으로 기다릴 수 있다.
     pub fn begin_shutdown(mut self, deadline: Instant) -> PendingShutdown {
         if let Err(e) = self.try_send_request_as(
             PluginRequest::new("shutdown", serde_json::json!({}), u64::MAX),
@@ -664,9 +575,8 @@ impl PluginProcess {
         }
     }
 
-    /// 연결이 끝내 안 온 프로세스를 내린다 — 요청을 읽을 소켓이 없으므로 shutdown 요청을
-    /// 보내지 않고, 곧바로 kill 할 핸들을 돌려준다(deadline 이 지금이다). kill 과 회수는
-    /// 핸들을 쥔 쪽이 한다 — 메인 스레드가 아니라 회수 스레드다(`manager::retire`).
+    /// 연결에 실패한 자식은 종료 요청 없이 바로 강제 종료하도록 핸들을 반환한다.
+    /// 실제 kill과 회수는 핸들을 받은 쪽에서 처리한다.
     pub(crate) fn abandon(mut self) -> PendingShutdown {
         let now = Instant::now();
         PendingShutdown {
@@ -677,30 +587,19 @@ impl PluginProcess {
         }
     }
 
-    /// 요청 전송 + 종료 대기를 한 번에 하는 블로킹 형태 — 단건 경로(plugin
-    /// disable / 재시작 / swap)용. 반환 시점에 자식은 회수(exit 관측 또는
-    /// kill+wait 완료)돼 있다.
-    ///
-    /// 반환값은 종료 계측(`S4a plugin_shutdown_one`)의 `reason` 필드용이다 —
-    /// 어느 plugin 이 graceful 시간 안에 못 빠졌는지 가리려면 소요 ms 만으로는
-    /// 부족하고 사유가 함께 있어야 한다.
+    /// 종료 요청과 대기를 함께 수행한다. 결과는 종료 로그의 reason 값으로 사용한다.
     pub fn shutdown(self, timeout: Duration) -> ShutdownOutcome {
         self.begin_shutdown(Instant::now() + timeout).wait()
     }
 }
 
-/// 자식 종료를 관측하는 폴링 간격. `try_wait` 는 논블로킹이라 간격이 그대로
-/// 관측 해상도가 된다 — 짧게 하면 종료 감지가 빨라지지만 대기 스레드의 busy
-/// 비율이 오른다.
+/// 자식 종료 확인 주기. 짧을수록 빨리 확인하지만 대기 스레드의 호출 횟수가 늘어난다.
 pub const CHILD_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// [`PluginProcess::begin_shutdown`] 이 반환하는 종료 대기 핸들.
-///
-/// shutdown 요청 전송은 이미 끝났고 남은 것은 자식 종료 관측뿐이다. `poll` 은
-/// 논블로킹이라 여러 핸들을 번갈아 폴링하면 대기 구간이 서로 겹친다.
+/// 종료 요청 이후 자식의 상태를 확인하고 deadline 뒤 강제 종료를 시도하는 핸들.
 pub struct PendingShutdown {
     plugin_id: String,
-    /// 아직 회수하지 않은 자식. 종료를 관측했거나 kill 을 마친 순간 `None` 이 된다.
+    /// 아직 정리하지 않은 자식 핸들.
     child: Option<Child>,
     /// graceful 종료를 기다려 주는 한계 시각. 초과하면 force kill.
     deadline: Instant,
@@ -717,8 +616,8 @@ impl PendingShutdown {
         self.started.elapsed()
     }
 
-    /// 논블로킹 폴링. 자식이 아직 살아 있고 deadline 전이면 `None`.
-    /// `Some` 을 한 번 반환한 시점에 자식은 회수 완료 상태다.
+    /// deadline 전에는 try_wait로 확인하고 살아 있으면 None을 반환한다.
+    /// deadline을 넘었거나 확인에 실패하면 kill과 wait를 호출하므로 이 경로는 기다릴 수 있다.
     pub fn poll(&mut self) -> Option<ShutdownOutcome> {
         let Some(child) = self.child.as_mut() else {
             return Some(ShutdownOutcome::NoChild);
@@ -731,8 +630,7 @@ impl PendingShutdown {
             Ok(None) if Instant::now() <= self.deadline => None,
             // deadline 초과. 강제 종료로 넘어간다.
             Ok(None) => Some(self.force_kill()),
-            // try_wait 자체가 실패하면 더 기다려도 관측할 방법이 없다 — 기존
-            // `wait_for_child_exit` 와 같이 즉시 kill 경로로 보낸다.
+            // 종료 상태를 읽지 못하면 강제 종료를 시도한다.
             Err(e) => {
                 tracing::trace!("plugin child try_wait failed: {e}");
                 Some(self.force_kill())
@@ -750,8 +648,7 @@ impl PendingShutdown {
         }
     }
 
-    /// kill 실패는 이미 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든
-    /// 호스트가 추가로 할 수 있는 일이 없으므로 trace 로만 흔적을 남긴다.
+    /// 강제 종료와 회수를 시도한다. OS 호출 실패는 trace로 기록한다.
     fn force_kill(&mut self) -> ShutdownOutcome {
         if let Some(mut child) = self.child.take() {
             if let Err(e) = child.kill() {
@@ -767,23 +664,15 @@ impl PendingShutdown {
 
 impl Drop for PendingShutdown {
     fn drop(&mut self) {
-        // 폴링을 끝내기 전에 핸들이 버려진 경우에만 남아 있다 — 좀비를 만들지
-        // 않기 위해 여기서 회수한다.
+        // 폴링이 끝나기 전에 핸들을 버려도 남은 자식의 종료·회수를 시도한다.
         if self.child.is_some() {
             self.force_kill();
         }
     }
 }
 
-/// 여러 plugin 의 종료 대기를 **겹쳐서** 진행하는 집합 핸들.
-///
-/// 생성 시점에 이미 모든 대상에 shutdown 요청이 나가 있어야 한다
-/// ([`PluginProcess::begin_shutdown`]). 이후 `poll` 을 반복 호출하면 각 자식의
-/// 대기가 서로 독립적으로 진행되므로 전체 소요는 개별 deadline 의 max 로
-/// 수렴한다.
-///
-/// 스레드를 쓰지 않는 것은 의도다 — 호출자가 프레임 루프 안에서 논블로킹으로
-/// 돌릴 수 있어야 종료 화면 같은 것을 그리면서 대기할 수 있다.
+/// 여러 자식의 정상 종료 대기를 겹쳐 처리한다. 생성 전에 종료 요청을 모두 보내야 한다.
+/// deadline 이후의 kill·wait는 블로킹할 수 있어 전체 소요 시간을 보장하지 않는다.
 pub struct ShutdownBatch {
     pending: Vec<PendingShutdown>,
     total: usize,
@@ -821,7 +710,7 @@ impl ShutdownBatch {
         self.pending.is_empty()
     }
 
-    /// 논블로킹 — 이번 라운드에 종료가 관측된 plugin 들의 결과만 반환한다.
+    /// 이번 순회에서 종료 처리를 마친 플러그인의 결과를 반환한다.
     pub fn poll(&mut self) -> Vec<ShutdownReport> {
         let mut done = Vec::new();
         self.pending.retain_mut(|p| match p.poll() {
@@ -838,7 +727,7 @@ impl ShutdownBatch {
         done
     }
 
-    /// 전부 회수될 때까지 블로킹. 반환 시점에 잔존 자식은 없다.
+    /// 모든 종료 핸들의 처리가 끝날 때까지 기다린다.
     pub fn wait(&mut self) -> Vec<ShutdownReport> {
         let mut all = Vec::new();
         loop {
@@ -856,28 +745,14 @@ impl ShutdownBatch {
 pub enum ShutdownOutcome {
     /// 자식이 deadline 안에 스스로 종료했다.
     Graceful,
-    /// deadline 초과 → `child.kill()` 로 강제 종료했다.
+    /// 강제 종료·회수 경로를 실행했다. OS 호출 실패는 별도 로그에 남는다.
     Killed,
     /// 회수할 자식 핸들이 없었다 (이미 이관/종료됨).
     NoChild,
 }
 
 impl ShutdownOutcome {
-    /// 로그 필드용 표기 — **맨 소문자 토큰**(`[a-z][a-z0-9_]*`)이고 닫힌 집합이다.
-    /// 부팅 계측의 `reason = satisfied|deadline` 이 같은 모양을 쓴다.
-    ///
-    /// ★ 그 짝은 **저장소 전역 관례가 아니다.** 같은 이름의 필드가 여러 곳에 있고 값의
-    /// 모양이 서로 다르다 — `agent-stream` 은 `stream:` 을 앞에 붙인 이름공간 토큰
-    /// (`turn_end{reason=stream:turn_timeout}`)을 쓰고, `hook-failures.log` 의 `reason`
-    /// 은 애초에 **산문**이라 언어까지 갈린다(`docs/dev-guide/cli-structure.md#에이전트-훅-전달-실패-기록`). 그래서 "reason 은 늘
-    /// 맨 토큰" 으로 일반화한 관측자는 그런 자리에서 조용히 0 을 센다.
-    ///
-    /// ★ 위는 **본보기이지 명부가 아니다** — 수를 안 적는 이유가 그것이다. 갈래를 세어
-    /// 적으면 넷째가 생기는 순간 그 수가 조용히 거짓이 되고, 그 수를 지키는 것은 없다.
-    ///
-    /// 이쪽 절반(값 셋의 모양·구별)은 아래 단정이 잡는다. 반대쪽 절반(부팅의 인라인
-    /// 리터럴)은 **아무것도 안 잡는다** — 크레이트가 갈려 부를 수도, 타입으로 묶을 수도
-    /// 없어서 이 문장은 주석에 머문다. 부팅 쪽 표기가 바뀌면 여기는 조용히 낡는다.
+    /// 종료 로그용 고정 값. 다른 로그의 reason 필드도 같은 형식이라고 가정하지 않는다.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Graceful => "graceful",
@@ -900,10 +775,8 @@ impl Drop for PluginProcess {
     }
 }
 
-/// `PluginProcess::spawn` 의 `Command` 조립 스텝 — entry/args/필수 env 설정 후
-/// 보조 채널 endpoint 를 알려주고 mailbox 를 등록한다. mailbox 등록은 *child
-/// spawn 전*에 일어나야 SDK 가 빠르게 connect 해도 accept thread 가 매핑할
-/// sender 를 찾을 수 있다. `log_file`/`log_clone` 은 stdout/stderr 로 소비된다.
+/// 실행 명령과 환경 변수를 준비한다. 보조 채널은 빠른 연결을 받을 수 있도록
+/// 자식 실행 전에 mailbox를 등록한다. 두 로그 파일은 stdout/stderr로 넘긴다.
 fn build_plugin_command(
     package: &PluginPackage,
     listener: &HostListener,
@@ -939,13 +812,8 @@ fn build_plugin_command(
     Ok((cmd, handle_stream_rx))
 }
 
-/// 활성 로케일 env 주입. 이 크레이트는 `tasty-i18n` 에 의존하지 않는다 — 활성 언어는
-/// host 본 바이너리가 부팅 시(`src/boot/locale.rs`, 스레드 생성 전 단일 스레드 구간)
-/// 자기 프로세스 env 에 set 한 `TASTY_LOCALE` / `TASTY_LOCALE_FONT` 를 그대로 자식에
-/// propagate 한다. `Command` 는 host env 를 상속하므로 두 값은 명시하지 않아도
-/// 흘러가지만, 계약을 코드에 드러내고(host 본 바이너리 밖 — 테스트 · 다른 호스트 — 에서
-/// 쓰일 때의 `en` 폴백) 빈 폰트 값이 자식에 남지 않게 여기서 확정한다. 값은 spawn 시점에
-/// 고정된다 — 근거 `docs/dev-guide/i18n.md#plugin-네임스페이스`.
+/// 호스트의 언어와 폰트 경로를 자식 환경에 전달한다.
+/// 빈 언어는 en으로, 빈 폰트 경로는 환경 변수 제거로 처리한다.
 fn inject_locale_env(cmd: &mut Command) {
     let (locale, font) = locale_env_for_child(
         std::env::var_os("TASTY_LOCALE"),
@@ -974,8 +842,7 @@ fn locale_env_for_child(
     (locale, font.filter(|v| !v.is_empty()))
 }
 
-/// plugin별 격리 디렉터리 env 주입. 디렉터리 생성은 호스트가 미리 보장한다 —
-/// plugin이 fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
+/// 플러그인별 데이터·설정 경로를 전달하고 필요한 디렉터리 생성을 시도한다.
 fn inject_plugin_data_env(
     cmd: &mut Command,
     package: &PluginPackage,
@@ -1002,13 +869,8 @@ fn inject_plugin_data_env(
     cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
     cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
     cmd.env("TASTY_PLUGIN_LOG_PATH", log_path);
-    // host 가 부팅 시 확정한 데이터 루트를 자식에 정보성으로 내려준다
-    // (completion-log 경로 판별용). **`TASTY_HOME` 이 아니라
-    // `TASTY_PARENT_HOME`** 으로 주입한다 — `TASTY_HOME` 은 tasty_home()
-    // (self-determination, override 전용)의 1순위라, 정보성 값을 그 이름으로
-    // 주입하면 자식이 그걸 자기 데이터 루트 override 로 오인한다(release 안에서
-    // debug 실행 시 격리 붕괴). notify_log_path() 가 `TASTY_PARENT_HOME` 을
-    // 최우선으로 보므로 writer(plugin)/reader(conductor) 경로는 계속 일치한다.
+    // 부모 데이터 루트는 TASTY_PARENT_HOME으로 전달한다.
+    // TASTY_HOME에 넣으면 자식이 자기 데이터 루트의 override로 해석한다.
     cmd.env("TASTY_PARENT_HOME", &home);
     Ok(())
 }
@@ -1066,8 +928,7 @@ fn spawn_rx_thread(
     Ok(())
 }
 
-/// `line` 의 길이가 곧 그 메시지가 큐에 들고 있는 바이트다 — 디코드한 값의 크기를 다시
-/// 재지 않는다. 받은 줄이 plugin 이 실제로 보낸 양이고, 상한이 묶으려는 것도 그것이다.
+/// 큐의 바이트 사용량은 받은 JSON 줄의 길이로 센다. 디코드된 값의 메모리 크기는 아니다.
 fn handle_incoming_line(
     line: &str,
     resp_tx: &MeteredSender<PluginResponse>,
@@ -1146,10 +1007,7 @@ fn handle_incoming_event(
 ///
 /// EOF가 도착하면 (plugin 종료/재시작 또는 정상 shutdown) 조용히 종료.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: 4-arm 평면 메시지
-// dispatch 루프 — HandleAttach arm 의 fd 소유권 정리만 플랫폼별 cfg 분기다.
-// `aux: Option<RawFd>` (unix) / `Option<u64>` (windows) 로 타입이 cfg 에 따라
-// 달라서 arm 을 별 함수로 뽑으려면 cfg 게이트를 그대로 복제해야 하고, fd
-// close 책임 소재가 흐려질 위험이 이득보다 크다 — 이 자리에 두는 편이 더 안전.
+// 메시지별 얕은 dispatch이며 플랫폼별 fd 소유권 처리를 같은 함수에 둔다.
 fn aux_reader_loop(
     mut reader: HandleStreamReader,
     dirty: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
@@ -1162,10 +1020,7 @@ fn aux_reader_loop(
                 merge_dirty(&dirty, id, rect);
             }
             Ok((HandleChannelMessage::Ping { seq }, _)) => {
-                // poison 이면 보내지 않는다 — 임계구역이 소켓 쓰기라 반쯤 쓰인 메시지
-                // 위에 이어 쓰면 프레이밍이 깨진다(plugin SDK 쪽 pong 과 같은 판단).
-                // 다만 **조용히** 건너뛰지 않는다: pong 이 끊기면 상대가 이 채널을 죽은
-                // 것으로 보는데, 그 원인이 어디에도 안 남으면 추적이 불가능하다.
+                // 패닉으로 프레임 일부만 쓰였을 수 있으므로 poison이면 전송을 생략하고 알린다.
                 match writer.lock() {
                     Ok(mut w) => {
                         if let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq }) {
@@ -1260,7 +1115,7 @@ fn generate_token() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    // 단순한 의사 랜덤 — 단계 07에서 강화 가능 (rand 크레이트 등).
+    // 시각에서 계산한 토큰이며 암호학적 난수는 아니다.
     let a = (nanos as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let b = ((nanos >> 64) as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     format!("{a:016x}{b:016x}")
@@ -1274,11 +1129,7 @@ mod tests {
         PluginRequest::new("noop", serde_json::json!({}), id)
     }
 
-    /// 포화로 버린 수는 **다음으로 실제 큐에 들어가는 요청**이 싣는다.
-    ///
-    /// 별도 통지 메시지를 만들 수 없다는 것이 요점이다 — 그 통지도 같은 큐를 써야
-    /// 하는데 그 큐가 찼기 때문에 통지가 생긴 것이다. 그래서 plugin 이 하나라도
-    /// 소비해 자리가 난 순간, 그때까지 버린 수가 합쳐져 실린다.
+    /// 포화로 버린 요청 수를 다음으로 큐에 들어가는 요청에 합쳐 보낸다.
     #[test]
     fn the_next_delivered_request_carries_what_saturation_dropped() {
         let (proc, rx) = PluginProcess::stub_with_request_rx_capacity("com.example.slow", 1);
@@ -1302,8 +1153,7 @@ mod tests {
         assert_eq!(proc.unreported_drops(), 0, "실은 만큼 빠져야 한다");
     }
 
-    /// 장부에 오르는 바이트는 **소켓에 나가는 줄의 길이**(개행 포함)다 — 추정이 아니다.
-    /// 그리고 writer 가 꺼내면 장부에서 내려간다.
+    /// 개행을 포함한 JSON 줄 길이를 집계하고 writer가 꺼낼 때 뺀다.
     #[test]
     fn the_ledger_counts_the_wire_bytes_of_a_queued_request() {
         let ledger = ChannelLedger::new(ChannelLimits::default());
@@ -1321,8 +1171,7 @@ mod tests {
         assert_eq!(ledger.snapshot().total_bytes, 0, "꺼낸 줄이 장부에 남았다");
     }
 
-    /// 바이트 상한으로 버린 요청도 개수 포화와 **같이** plugin 에게 알린다 — plugin 입장에서
-    /// 둘은 같은 사건(오던 요청이 사라졌다)이다. 호출부 로그에서는 둘이 갈린다.
+    /// 바이트 상한으로 버린 요청도 플러그인에 알리며 로그에서는 개수 포화와 구분한다.
     #[test]
     fn a_request_over_the_byte_budget_is_dropped_and_reported_like_a_full_queue() {
         let ledger = ChannelLedger::new(ChannelLimits {
@@ -1351,9 +1200,7 @@ mod tests {
         );
     }
 
-    /// 합계가 **다른 plugin** 으로 찬 동안에도 제어(ping · shutdown)는 들어간다 — 같은
-    /// 순간 일반 요청은 합계로 거절된다. 면제가 없으면 건강한 plugin 이 남의 포화 때문에
-    /// ping 을 못 받아 무응답 재시작되고, shutdown 을 못 받아 graceful 없이 kill 된다.
+    /// 다른 플러그인이 전체 바이트 상한을 채워도 ping·shutdown은 보낼 수 있어야 한다.
     #[test]
     fn control_requests_pass_a_total_filled_by_another_plugin() {
         let ledger = ChannelLedger::new(ChannelLimits {
@@ -1392,8 +1239,7 @@ mod tests {
         );
         assert_eq!(ledger.snapshot().refused_over_total, 1);
 
-        // 면제는 판정만 건너뛴다 — 들어간 제어 요청도 합계에 **센다.** 안 세면 writer 가
-        // 꺼낼 때 올리지 않은 몫을 빼서 다른 큐의 몫을 깎는다(차감이 포화 뺄셈이라 조용하다).
+        // 상한 판정을 면제한 제어 요청도 바이트 합계에는 넣고 꺼낼 때 뺀다.
         let wire: usize = received
             .iter()
             .map(|r| serde_json::to_string(r).unwrap().len() + 1)
@@ -1405,9 +1251,7 @@ mod tests {
         );
     }
 
-    /// 제어가 면제받는 것은 **합계뿐**이다 — 큐 상한은 그대로 받는다. 그 큐를 채운 것은
-    /// 그 plugin 자신이고, 안 읽는 plugin 의 ping 이 막혀 무응답으로 재시작되는 것이
-    /// healthcheck 의 뜻이다.
+    /// 제어 요청도 개별 큐의 상한은 적용받는다.
     #[test]
     fn control_requests_still_obey_the_queue_byte_limit() {
         let ledger = ChannelLedger::new(ChannelLimits {
@@ -1434,12 +1278,8 @@ mod tests {
         assert_eq!(ledger.snapshot().refused_over_queue, 2);
     }
 
-    /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**
-    ///
-    /// 포화 송신을 본 스레드에서 직접 부르면 안 된다. 정책이 블로킹 `send` 로
-    /// 되돌아갔을 때 그 호출은 영영 안 돌아오고, 그러면 시험이 **빨개지는 대신
-    /// 멈춘다** — 멈춘 시험은 실패보다 나쁘다(스위트 전체가 서고 원인도 안 보인다).
-    /// 판정을 timeout 으로 받으면 같은 회귀가 실패 한 줄로 나온다.
+    /// 포화 송신은 별도 스레드에서 시도하고 제한 시간 안에 반환하는지 확인한다.
+    /// blocking send로 바뀌어도 시험 전체가 멈추지 않도록 한다.
     fn verdict_off_thread(
         tx: &mpsc::SyncSender<PluginRequest>,
         id: u64,
@@ -1447,20 +1287,15 @@ mod tests {
         let tx = tx.clone();
         let (done_tx, done_rx) = mpsc::channel();
         std::thread::spawn(move || {
-            // 의도적 무시: 본 스레드가 timeout 으로 이미 포기했으면 수신단이 사라져
-            // 이 send 가 실패하는데, 그 경우는 아래 `expect` 가 이미 시험을 빨갛게
-            // 만든 뒤다 — 여기서 또 보고할 것이 없다.
+            // 의도적 무시: timeout으로 시험이 실패한 뒤 수신단이 사라졌으면 회신할 필요가 없다.
             let _ = done_tx.send(try_send_request(&tx, a_request(id)));
         });
         done_rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("포화 송신이 안 돌아왔다 — 정책이 기다리고 있다(블로킹)")
+            .expect("포화 송신이 제한 시간 안에 반환하지 않았다")
     }
 
-    // 큐가 차면 **기다리지 않고 거절한다.** 이 시험의 요점은 반환값만이 아니라
-    // **돌아온다는 것** 자체다 — 이 정책을 부르는 12 자리는 거의 전부 호스트 main
-    // thread 의 pump 안이고(`PluginManager::pump` → `apply_collected_events` ·
-    // `drain_host_cmds`), 거기서 기다리면 큐가 찼다는 이유로 프레임이 통째로 멈춘다.
+    // 큐가 차면 기다리지 않고 거절해야 한다.
     #[test]
     fn a_full_queue_is_refused_instead_of_awaited() {
         let (tx, _rx) = mpsc::sync_channel::<PluginRequest>(1);
@@ -1468,9 +1303,7 @@ mod tests {
         assert_eq!(verdict_off_thread(&tx, 2), Err(RequestSendError::Full));
     }
 
-    // 포화와 소멸은 **다른 사건**이다. 무제한 채널일 때는 실패 이유가 소멸 하나뿐이라
-    // 호출부가 가를 필요가 없었는데, 유한해지면서 일시적 실패가 생겼다. 둘이 같은
-    // 값으로 뭉개지면 로그에서 "밀리는 중" 과 "죽었다" 를 못 가른다.
+    // 일시적인 큐 포화와 수신단 종료를 다른 오류로 알려야 한다.
     #[test]
     fn saturation_is_told_apart_from_a_dead_writer() {
         let (tx, rx) = mpsc::sync_channel::<PluginRequest>(1);
@@ -1484,13 +1317,10 @@ mod tests {
         );
     }
 
-    // 용량이 실제로 걸려 있다. `sync_channel(0)` 은 rendezvous 라 첫 건부터 거절되고,
-    // 무제한으로 되돌리면 이 자리가 컴파일부터 안 된다 — 상수가 **쓰인다**는 것을
-    // 그 둘 사이의 값으로 고정한다.
+    // 선언한 용량까지 받아들이고 그다음 요청은 거절해야 한다.
     #[test]
     fn the_request_queue_holds_exactly_its_capacity() {
-        // 컴파일 시점에 본다 — 런타임 `assert!` 은 상수 비교라 clippy 가 잡고,
-        // 잡히는 쪽이 맞다: 0 이면 rendezvous 라 아래 루프가 한 건도 못 넣는다.
+        // 용량 0인 rendezvous 채널은 첫 요청도 보관하지 못하므로 제외한다.
         const { assert!(REQUEST_QUEUE_CAPACITY > 0) };
         let (tx, _rx) = mpsc::sync_channel::<PluginRequest>(REQUEST_QUEUE_CAPACITY);
         for i in 0..REQUEST_QUEUE_CAPACITY {
@@ -1504,25 +1334,13 @@ mod tests {
         );
     }
 
-    // plugin → 호스트 방향은 **거절이 아니라 대기**다. 응답을 버리면 그 요청이 영영
-    // 답을 못 받고(호스트는 deadline 으로만 회수한다 — docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화), 이벤트를 버리면
-    // 등록·수명 전이가 조용히 빠진다. 여기 sender 는 reader 스레드 하나뿐이라 블록해도
-    // 호스트 프레임이 안 멈추고, 멈추는 것은 소켓 읽기 — 그것이 plugin 에 거는
-    // backpressure 다.
-    //
-    // 재는 자리는 생산 경로 그 자체(`handle_incoming_response`)다. 로컬 채널로
-    // `sync_channel` 의 성질을 재면 std 를 재는 것이지 이 코드를 재는 것이 아니다.
-    //
-    // ★ 모수를 크게 잡는 이유: 용량 1 짜리 큐에 **한 건만** 흘려 보내면 보내는 쪽과
-    // 받는 쪽의 순서가 안 정해져서, 버리는 구현(`try_send`)이어도 수신자가 먼저
-    // 비워 둔 순간에 걸리면 통과한다 — 실제로 그 형태로 짰다가 변이가 **살아남았다.**
-    // 한 건이 아니라 용량의 여러 배를 연속으로 흘리면 버리는 구현은 가득 찬 순간을
-    // 반드시 만난다. 이 시험의 방향은 안전하다: 블로킹 구현은 절대 안 잃으므로
-    // **거짓 빨강이 없고**, 부하가 어떻든 한쪽으로만 틀릴 수 있다.
+    // 플러그인 응답·이벤트는 큐가 차도 버리지 않고 reader 스레드에서 기다린다.
+    // 실제 수신 처리 함수를 거쳐 순서와 개수를 확인한다.
+    // 큐 용량보다 많은 메시지를 보내 포화가 일어날 가능성을 높인다.
+    // 다만 스레드 실행 순서를 강제하지 않으므로 매번 포화를 보장하는 시험은 아니다.
     const OVERFLOW_ROUNDS: u64 = 1000;
 
-    /// 개수를 재는 두 시험이 바이트 장부의 판정에 먼저 걸리지 않게 넉넉한 장부를 쓴다 — 이
-    /// 시험들이 재는 것은 **개수** 포화의 답이다(바이트 쪽은 `channel_bytes` 의 시험).
+    /// 개수 상한을 시험할 때 바이트 상한에 먼저 걸리지 않도록 넉넉하게 둔다.
     fn roomy_queue<T>(direction: Direction) -> (MeteredSender<T>, MeteredReceiver<T>) {
         let ledger = ChannelLedger::new(ChannelLimits::default());
         metered_channel(1, ledger.open_queue("com.example.x", direction))
@@ -1587,11 +1405,7 @@ mod tests {
         writer.join().unwrap();
     }
 
-    /// 종료 계측의 `reason` 값은 **맨 소문자 토큰**이고 서로 구별된다.
-    ///
-    /// 이 로그는 사람이 아니라 기계가 읽는다 — 값에 공백·대문자·구분자가 섞이면 그것을
-    /// 세던 관측자가 **실패가 아니라 0** 을 낸다(안 보인다). 그래서 모양을 단정으로 박는다.
-    /// 값 자체는 `docs/architecture/shutdown-sequence.md` 가 인용한다(`reason="killed"`).
+    /// 종료 로그의 reason이 서로 다르고 소문자·숫자·밑줄 형식을 따르는지 확인한다.
     #[test]
     fn shutdown_reasons_are_distinct_bare_lowercase_tokens() {
         let all = [
@@ -1610,9 +1424,12 @@ mod tests {
             assert!(
                 v.chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
-                "맨 소문자 토큰이어야 한다(공백·대문자·구분자 금지): {v}"
+                "소문자·숫자·밑줄만 허용한다: {v}"
             );
-            assert!(!seen.contains(&v), "두 결말이 같은 표기를 쓴다: {v}");
+            assert!(
+                !seen.contains(&v),
+                "다른 종료 결과는 다른 값이어야 한다: {v}"
+            );
             seen.push(v);
         }
     }

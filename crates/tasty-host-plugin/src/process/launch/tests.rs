@@ -65,10 +65,7 @@ fn sdk() {
     );
     assert_eq!(catalog.t("launch.fallback"), "English fallback");
     assert_eq!(catalog.t("launch.empty"), "Installed empty fallback");
-    // 두 쪽을 모두 canonicalize 한다. 한쪽만 하면 Windows 에서 `\\?\` verbatim 접두가 그쪽에만
-    // 붙어 같은 디렉토리가 다르게 보인다(`current_dir` 은 접두 없는 `C:\…` 를 돌려준다).
-    // macOS 의 `/var` → `/private/var` 처럼 임시 경로가 symlink 를 거치는 경우를 흡수하려는
-    // 원래 의도는 그대로다.
+    // 양쪽 경로를 canonicalize해 Windows verbatim 접두어와 임시 경로 symlink 차이를 없앤다.
     assert_eq!(
         std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap(),
         std::fs::canonicalize(std::env::var_os("INSTALL_CWD").unwrap()).unwrap()
@@ -146,8 +143,7 @@ fn host() {
     }
 }
 
-/// 설치 경로가 없어도 커맨드 구성 자체는 성공한다 — 존재 여부는 spawn 과 entry 조회가
-/// 판정한다. 그 둘을 여기서 갈라 둔다.
+/// 설치 경로가 없어도 명령 구성은 가능하며, 실제 실행은 별도로 실패해야 한다.
 fn assert_missing_paths_still_build(binary: &Path) {
     for entry in ["not-installed-probe", "bin/not-installed-probe"] {
         let cmd = command(&package(Path::new("does-not-exist"), entry)).unwrap();
@@ -159,10 +155,8 @@ fn assert_missing_paths_still_build(binary: &Path) {
         binary.to_str().unwrap(),
     ))
     .unwrap();
-    // 없는 것은 실행 파일이 아니라 작업 디렉토리다. 그 실패의 종류는 OS 가 정한다 —
-    // Unix 는 자식이 `chdir` 에서 `ENOENT` 를 받아 `NotFound`, Windows 는 `CreateProcessW`
-    // 가 `ERROR_DIRECTORY`(267)를 돌려 `NotADirectory` 다(CI 실측). 제품은 이 종류로
-    // 분기하지 않는다 — spawn 실패는 메시지와 고정 `spawn_failed` 로만 나간다.
+    // 없는 작업 디렉터리의 오류는 OS마다 다르다: Unix는 NotFound, Windows는 NotADirectory.
+    // 제품은 이 구분 대신 spawn_failed로 보고한다.
     #[cfg(windows)]
     let expected = std::io::ErrorKind::NotADirectory;
     #[cfg(not(windows))]
@@ -170,8 +164,7 @@ fn assert_missing_paths_still_build(binary: &Path) {
     assert_eq!(missing.spawn().unwrap_err().kind(), expected);
 }
 
-/// 행렬 한 칸. 축이 여덟이라 인자로 늘어놓으면 호출부에서 어느 것이 어느 축인지
-/// 안 보인다 — 이름 붙은 구조체로 받는다.
+/// 실행 조건 하나. 이름 있는 필드로 조건을 구분한다.
 struct Case<'a> {
     root: &'a Path,
     install: &'a Path,
@@ -186,8 +179,7 @@ struct Case<'a> {
     user: &'a str,
 }
 
-/// 사용자 override 파일을 축이 시키는 상태로 놓는다. `missing` 은 남아 있던 것을
-/// 지우는 것까지가 상태다 — 앞 칸이 쓴 파일이 남으면 이 칸은 자기 축을 안 재게 된다.
+/// 사용자 override 파일을 준비한다. missing이면 이전 조건에서 만든 파일도 지운다.
 fn place_user_override(user_path: &Path, user: &str) {
     if user == "missing" {
         if user_path.exists() {
@@ -203,8 +195,7 @@ fn place_user_override(user_path: &Path, user: &str) {
     write(user_path, &format!("[launch]\nlabel='{value}'\nempty=''\n"));
 }
 
-/// cwd 쪽에 같은 이름의 그림자 카탈로그를 놓거나 치운다. 놓았을 때 그 값이 안 읽혀야
-/// 설치 경로가 cwd 가 아니라 plugin dir 을 뿌리로 삼는다는 것이 재어진다.
+/// CWD에 같은 이름의 카탈로그를 두어도 설치 경로의 값을 읽는지 확인한다.
 fn place_shadow(shadow: bool, wrong_install: &Path, wrong_user: &Path, effective: &str) {
     if shadow {
         write(
@@ -222,8 +213,7 @@ fn place_shadow(shadow: bool, wrong_install: &Path, wrong_user: &Path, effective
     }
 }
 
-/// 한 칸을 실제로 돌린다 — host 쪽 카탈로그 조회와 SDK 쪽 자식 프로세스가 **같은 값**을
-/// 보는지 묻고, 관측한 축을 행렬에 남긴다.
+/// 호스트와 SDK 자식이 같은 값을 읽는지 확인하고 실행 조건과 결과를 기록한다.
 fn run_case(case: &Case) -> serde_json::Value {
     let Case {
         root,
