@@ -1,15 +1,10 @@
-//! 모든 MainView의 도구 메뉴 (사이드바) 를 PluginManager의 현재 상태로 갱신.
+//! 현재 플러그인 상태를 도구 메뉴에 반영한다.
 
 use crate::app::App;
 
 impl App {
-    /// PluginManager의 현재 `plugin_tool_items()`를 모든 MainView의 AppState로
-    /// 푸시한다. plugin 라이프사이클 변경 후(install/enable/disable/grant ui.tool_item
-    /// /revoke ui.tool_item/uninstall) 호출해야 사이드바 도구 메뉴가 갱신된다.
-    ///
-    /// INVARIANT: main + parked 두 곳 모두 갱신. parked (macOS minimize) 만 있는
-    /// 동안 plugin 라이프사이클 변경이 일어나면, restore 시 옛 도구 메뉴가
-    /// 살아나는 버그가 됨. settings broadcast 와 동일 패턴.
+    /// 플러그인 활성 상태나 ui.tool_item 권한이 바뀌면 갱신한다.
+    /// 창 복원 때 옛 목록을 표시하지 않도록 parked 상태도 함께 갱신한다.
     pub(crate) fn refresh_tool_registry(&mut self) {
         let items = match self.plugin_manager.as_ref() {
             Some(mgr) => mgr.plugin_tool_items(),

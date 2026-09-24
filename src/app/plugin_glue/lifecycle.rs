@@ -1,13 +1,5 @@
-//! Plugin lifecycle mutate 의 `App` method wrapper.
-//!
-//! 옛 `plugin::handler::handle_{install,remove,enable,disable,grant,revoke}`
-//! 가 PluginManager 를 직접 mutate 했다. 본 wrapper 는 IPC handler 에서
-//! PluginManager 접근을 분리 — handler 는 input parsing 만 하고 *App method*
-//! 가 mutate + CoreEvent 발화.
-//!
-//! 단일 발화 경로: `App::plugin_<op>` → CoreEvent → `handle_core_event` cascade →
-//! `PendingHostEvent::Plugin*` enqueue → `host_events.rs` drain →
-//! `PluginManager.event_bus broadcast`.
+//! 플러그인을 설치·제거하고 권한과 레지스트리를 갱신한다.
+//! 결과 이벤트의 후속 처리는 App이 담당한다.
 
 use crate::app::App;
 use crate::core::intent::{CoreEvent, PluginRegistryChange};
@@ -29,7 +21,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
     Ok(())
 }
 
-/// 매니페스트 + granted 를 다시 교집합하여 manager 의 in-memory 권한 set 을 갱신.
+/// 매니페스트에 선언되고 사용자에게 허용된 권한만 매니저에 반영한다.
 fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
     let Some(pkg) = mgr
         .packages()
@@ -50,9 +42,6 @@ fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
     mgr.set_plugin_permissions(plugin_id, perms);
 }
 
-/// `pkg.manifest.surface_kinds` 선언들을 `registry` 에 등록 (rendering
-/// 방식별 remote/webview/egui-mesh 분기) 하고, 각 등록에 대한
-/// `PluginSurfaceKindRegistered` CoreEvent 를 모아 반환한다.
 fn register_plugin_surface_kinds(
     registry: &crate::core::surface_registry::SurfaceKindRegistry,
     plugin_id: &str,
@@ -105,13 +94,11 @@ fn register_plugin_surface_kinds(
     events
 }
 
-/// `pkg.manifest.contributes.window` 선언들을 로그로 남기고 각각에 대한
-/// `PluginWindowDeclared` CoreEvent 를 모아 반환한다.
 fn collect_window_declared_events(plugin_id: &str, pkg: &PluginPackage) -> Vec<CoreEvent> {
     let mut events = Vec::new();
     for w in &pkg.manifest.contributes.window {
         tracing::info!(
-            "plugin '{}' declared window '{}' (runtime spawn: pending — schema-only in 1.0)",
+            "plugin '{}' declared window '{}' (window creation is not implemented here)",
             plugin_id,
             w.id
         );
@@ -123,12 +110,8 @@ fn collect_window_declared_events(plugin_id: &str, pkg: &PluginPackage) -> Vec<C
     events
 }
 
-/// remove 앞단 — plugin 을 내리고 옛 프로세스가 **사라질 때까지** 기다린다.
-///
-/// disable 은 옛 프로세스의 회수를 기다리지 않는다. 뒤에서 그 프로세스가 실행 중인
-/// 디렉토리를 지우므로 여기서는 회수가 끝날 때까지 기다린다 — 실행 중인 파일은 Windows 에서
-/// 지워지지 않는다. 재기동 예약은 이어받지 않는다 — 지우는 plugin 이고, 앞의 disable 이
-/// 예약을 이미 내렸으므로 참이 오는 것은 예상 밖이다.
+/// Windows에서는 실행 중인 파일을 지울 수 없어 disable 뒤 프로세스 회수까지 기다린다.
+/// 제거할 플러그인이므로 남아 있는 재시작 예약은 사용하지 않는다.
 fn stop_before_remove(mgr: &mut PluginManager, plugin_id: &str) {
     if let Err(e) = mgr.disable(plugin_id) {
         tracing::warn!("disable before remove failed: {e}");
@@ -142,10 +125,7 @@ fn stop_before_remove(mgr: &mut PluginManager, plugin_id: &str) {
 }
 
 impl App {
-    /// `plugin.install` IPC handler 의 본문. 파일 시스템 복사 + manifest 등록 +
-    /// auto-grant + 자동 enable. CoreEvent 2종 (Installed + 자동 EnableToggled)
-    /// 반환. 에러 시 `(JsonRpcResponse-equivalent String, Vec<>)` 분리 — caller
-    /// 가 JSON-RPC 응답 코드 결정.
+    /// 설치 후 권한을 허용하며 비활성 설정이 없으면 실행한다. JSON-RPC 응답 코드는 호출자가 정한다.
     pub(crate) fn plugin_install(
         &mut self,
         src_path: std::path::PathBuf,
@@ -182,11 +162,8 @@ impl App {
         if let Err(e) = mgr.config.save() {
             tracing::warn!("plugins.toml save failed: {e}");
         }
-        // 유도는 **원본을 바꾸는 마지막 쓰기 뒤**에 온다. `extensions` 는 packages 와
-        // config(비활성 여부 · `ext:` 권한) 둘 다에서 계산되므로, `set_granted` 앞에서
-        // 계산하면 방금 준 권한을 안 본 값이 남는다. 지금까지 그것이 안 보이던 이유는
-        // 아래 `enable` 이 한 번 더 계산하기 때문인데, 그 호출은 `is_disabled` 일 때
-        // 건너뛴다 — 즉 무해함이 다른 분기에 얹혀 있었다.
+        // 확장자는 packages와 권한 설정에 의존하므로 마지막 설정 변경 뒤 다시 계산한다.
+        // 아래 enable은 생략될 수 있어 그 호출의 재계산에만 의존할 수 없다.
         mgr.recompute_extensions();
         mgr.debug_assert_extensions_fresh();
 
@@ -209,8 +186,6 @@ impl App {
         Ok(events)
     }
 
-    /// `plugin.remove` IPC handler 의 본문. graceful shutdown + 디스크 삭제 +
-    /// registry 갱신. CoreEvent::PluginRegistryChanged 반환.
     pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
         let hook_event_registry = self.core_state().plugin_hook_events.clone();
         let surface_registry = self.core_state().surface_registry.clone();
@@ -218,8 +193,7 @@ impl App {
             anyhow::bail!("plugin manager not initialized");
         };
         stop_before_remove(mgr, &plugin_id);
-        // 켜진 채 지우는 plugin 은 `plugin.disable` 을 안 거치므로 kind 철회를 여기서 한다
-        // (ADR-0026). 이미 꺼져 있던 것이면 철회돼 있어 no-op 이다.
+        // IPC disable을 거치지 않고 제거하는 경우에도 등록된 kind를 철회한다.
         surface_registry.withdraw_plugin(&plugin_id);
         let plugin_dir = crate::plugin::plugin_root()
             .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?
@@ -229,34 +203,16 @@ impl App {
         }
         std::fs::remove_dir_all(&plugin_dir)
             .map_err(|e| anyhow::anyhow!("remove dir failed: {e}"))?;
-        // 제거를 **기록**한다 — 번들 plugin 은 디스크에서 지우는 것만으로는 제거되지
-        // 않는다. 다음 부팅의 `install_builtins_if_needed` 가 다시 놓기 때문이다.
-        // `mark_builtin_removed` 는 외부 plugin 이면 no-op 이라 번들/비번들 구분이
-        // 이 함수 하나에 모여 있다.
-        //
-        // **이 호출은 진입점이 아니라 여기 있어야 한다.** 설정 모달의 Uninstall 만
-        // 이걸 부르고 IPC `plugin.remove` 는 안 불렀던 적이 있다 — 같은 이름의 조작이
-        // 진입점에 따라 다른 일을 했고, GUI 로는 되고 에이전트로는 안 되는 동작이라
-        // 불가침 원칙 2 를 어겼다. 공용 본문에 두면 다음 진입점이 잊을 수 없다.
-        // 되돌리는 수단: `plugin.upgrade_builtins { restore_removed: [...] }` ·
-        // CLI `--restore-removed` / `--restore-removed-all` (ADR-0026).
+        // 번들 플러그인이 다음 부팅에 자동 재설치되지 않도록 제거 의사를 기록한다.
+        // GUI와 IPC가 공유하는 이 경로에 두며 upgrade_builtins의 restore_removed로 되돌린다.
         crate::plugin::mark_builtin_removed(mgr, &plugin_id);
-        // 비활성 자국은 **설치된 것에 대한** 상태다. 제거된 id 를 거기 남겨 두면 그
-        // 자국이 다음 설치의 기본값을 조용히 정한다 — 되돌림(`restore_removed`)으로
-        // 다시 놓은 plugin 이 이유 없이 꺼진 채로 온다. 제거 의사는 이제 제 자리
-        // (`removed_builtins`)에 적히므로 이 자국은 남길 이유가 없다.
+        // 제거 후 재설치할 때 과거 비활성 설정을 물려받지 않게 지운다.
         if mgr.config.enable(&plugin_id)
             && let Err(e) = mgr.config.save()
         {
             tracing::warn!("plugins.toml save failed after clearing disabled mark: {e}");
         }
-        // 설치 목록을 **다시 발견**한다 — 손으로 `packages` 만 지우면 안 된다.
-        // `ipc_namespaces` 는 이제 설치된 매니페스트에서 유도되는 표라
-        // (ADR-0026) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면
-        // 지운 plugin 의 prefix 가 남아, 그 이름의 호출이 `-32002 plugin '<id>'
-        // is not running` 으로 거절된다 — 설치조차 안 돼 있는데. 호스트가 같은
-        // 이름에 구현을 갖고 있으면 그 구현이 그 상태에서 가려진다.
-        // `plugin_install` 이 이미 같은 함수를 쓴다(두 방향을 대칭으로 둔다).
+        // packages만 지우면 namespace 예약이 남을 수 있어 설치 목록과 파생 표를 함께 갱신한다.
         mgr.refresh_packages();
         mgr.command_registry.unregister_plugin(&plugin_id);
         crate::i18n::unregister_namespace(&plugin_id);
@@ -269,20 +225,12 @@ impl App {
         }])
     }
 
-    /// `plugin.enable` IPC handler 의 본문. spawn 실패 시 Err 즉시 반환.
-    ///
-    /// 본체는 `crate::ipc::handler::plugin` 에 있다 — 헤드리스 pump 가 같은 함수를
-    /// 부른다(`docs/dev-guide/headless-ipc-surface.md`). 여기 남는 것은 `App` 이
-    /// 자기 매니저를 넘겨 주는 일뿐이다.
+    /// GUI와 헤드리스가 같은 enable 구현을 사용한다.
     pub(crate) fn plugin_enable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
         crate::ipc::handler::plugin::enable(self.plugin_manager.as_mut(), plugin_id)
     }
 
-    /// `plugin.disable` IPC handler 의 본문. graceful shutdown. unloaded 도
-    /// 함께 발화 (was_running 분기 — 옛 lifecycle.rs:317 의 의미를 cascade 가
-    /// 흡수). 결정 §7.2: reason 은 항상 `User`.
-    ///
-    /// 본체 위치는 [`Self::plugin_enable`] 와 같다 — 두 조합이 같은 함수를 부른다.
+    /// GUI와 헤드리스가 같은 disable 구현을 사용한다.
     pub(crate) fn plugin_disable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
         let surface_registry = self.core_state().surface_registry.clone();
         crate::ipc::handler::plugin::disable(
@@ -292,8 +240,6 @@ impl App {
         )
     }
 
-    /// `plugin.grant` IPC handler 의 본문. permission 토큰 검증 + grant +
-    /// in-memory 권한 갱신 + (ext:* 이면) extension 재계산.
     pub(crate) fn plugin_grant(
         &mut self,
         plugin_id: String,
@@ -330,7 +276,6 @@ impl App {
         }])
     }
 
-    /// `plugin.revoke` IPC handler 의 본문.
     pub(crate) fn plugin_revoke(
         &mut self,
         plugin_id: String,
@@ -353,11 +298,7 @@ impl App {
         }])
     }
 
-    /// `plugin.upgrade_builtins` IPC handler 의 본문. bundle 기준으로 builtin plugin
-    /// 디렉토리를 재설치하고 디스크에 적용된 항목별 `BuiltinUpgradeAction` 리포트를
-    /// 반환한다. `Upgraded` / `Reinstalled` 항목은 *per-id N 회* `PluginRegistryChange::
-    /// Installed { version }` CoreEvent 를 발화 (verify §0 결정 1·2 반영 — 신 batch
-    /// variant 추가 없이 기존 `Installed` 재사용).
+    /// 번들 갱신 결과와 함께 실제 Upgraded·Reinstalled 항목마다 Installed 이벤트를 반환한다.
     pub(crate) fn plugin_upgrade_builtins(
         &mut self,
         force: bool,
@@ -395,23 +336,15 @@ impl App {
         Ok((report, events))
     }
 
-    /// `PluginManager::pump` 가 반환한 (plugin_id, version) 쌍 리스트로부터
-    /// surface_kind registry 등록 + `registered_plugins.insert` + CoreEvent
-    /// (PluginLoaded / PluginSurfaceKindRegistered) 발화 처리. surface_registry
-    /// 가 set 안 된 상태 (test/headless) 면 등록 skip — 다음 pump tick 에서 다시
-    /// 시도하지 못하므로 (hello_pairs 는 1회성) 본 substep 범위에서는 그대로
-    /// 옛 pump.rs 동작과 일치 (deferred 등록 없이 무시).
+    /// hello가 끝난 플러그인의 hook·surface kind를 등록하고 Loaded 이벤트를 전달한다.
+    /// surface_registry가 없으면 surface 등록은 건너뛰며 이 hello 결과를 재시도용으로 보관하지 않는다.
     pub(crate) fn finalize_plugin_hello(&mut self, hello_pairs: Vec<(String, String)>) {
         if hello_pairs.is_empty() {
             return;
         }
-        // concrete registry 는 본 바이너리 CoreState 에서 직접 가져온다.
-        // (plugin manager 가 가진 surface_registry 필드는 trait object 라
-        // remote_kind/egui_mesh 등 closure 등록 함수가 받지 못한다.)
-        // mgr 차용 전에 미리 추출.
+        // 등록 함수는 구체 타입을 요구하므로 매니저의 trait object 대신 CoreState에서 가져온다.
         let core_registry = self.core_state().surface_registry.clone();
-        // hook 이벤트 레지스트리는 surface_registry 유무와 무관하게 (headless 포함)
-        // 항상 집계한다 — hook 검증은 surface 렌더링과 독립적이다.
+        // hook 검증은 화면 렌더링과 독립적이어서 surface_registry가 없어도 등록한다.
         let hook_event_registry = self.core_state().plugin_hook_events.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
@@ -456,11 +389,10 @@ impl App {
             }
         } else {
             tracing::debug!(
-                "plugin manager has no surface_registry; deferring registration of {} plugin(s)",
+                "plugin manager has no surface_registry; skipping surface registration of {} plugin(s)",
                 hello_pairs.len()
             );
-            // surface_registry 없으면 surface_kind 등록은 skip — 옛 pump.rs 동작.
-            // PluginLoaded 는 그래도 발화 (process spawn 자체는 성공).
+            // surface 등록을 생략해도 hello 완료에 대한 Loaded 이벤트는 전달한다.
             for (plugin_id, version) in &hello_pairs {
                 events.push(CoreEvent::PluginLoaded {
                     plugin_id: plugin_id.clone(),

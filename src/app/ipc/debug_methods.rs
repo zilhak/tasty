@@ -1,5 +1,4 @@
-//! step 3 (debug 빌드 only): debug.event_bus.* / debug.extension.invoke_hook / debug.popup.* /
-//! debug.fullscreen.*.
+//! debug 빌드의 App 단위 조작·조회 요청을 처리한다.
 
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
@@ -10,9 +9,7 @@ use crate::ipc::server::{IpcCommand, send_response};
 
 impl App {
     pub(crate) fn ipc_step_debug(&mut self, cmd: &IpcCommand) -> IpcStep {
-        // 설정 모달을 코드로 강제로 연다 — 사용자 조작(설정 열기) 재현이라 debug 전용.
-        // 시각 검증 자동화(렌더 스크린샷 ↔ 디자인 픽셀 대조)의 진입점.
-        // open 경로는 App-level `AppEvent::OpenSettings`(proxy) 라 여기서 처리한다.
+        // 설정 창 열기는 App 이벤트로 처리하며 예약 접수만 즉시 응답한다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.settings.open" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -38,20 +35,12 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의
-        // 재현이라 debug 전용이다. 위 `debug.settings.open` 의 짝처럼 보이지만 대상이
-        // 다르다: 그쪽은 설정 창만 열고, 이쪽은 **활성 모달이 무엇이든** 닫는다.
-        // release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과
-        // 같은 선이다 — 모달을 닫는 것은 에이전트의 작업이 아니라 사용자 조작이다.
+        // 설정에 한정하지 않고 현재 활성 모달을 닫는다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.modal.close_request" {
             return self.ipc_handle_debug_modal_close_request(cmd);
         }
-        // 임의 Lua 주입 (debug 전용, ADR-0027) — App 소유 lua_engine 워커로 실행.
-        // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
-        // 임의 Lua 주입 (debug 전용, ADR-0027) — App 소유 lua_engine 워커로 실행.
-        // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
-        // 본체는 헤드리스 pump 와 **같은 함수**를 쓴다 — 두 벌로 두면 갈라진다.
+        // 임의 Lua 실행은 debug 전용이며 헤드리스와 같은 함수를 사용한다.
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let response = crate::core::app_surface_debug::lua_eval(
@@ -94,11 +83,7 @@ impl App {
                     id,
                     &cmd.request.params,
                 ),
-                // close 만 App-level glue 를 거친다 — 매니저를 직접 치면 렌더가
-                // 수집하는 close 큐를 건너뛰어 `cancel_child_file_picker` 연쇄
-                // 정리가 안 돈다. debug 강제 close 가 release 경로(plugin 의
-                // `popup.close`)와 다른 코드를 타면 이 표면으로 하는 검증 자체가
-                // 실제 동작을 못 비춘다.
+                // 공통 닫기 큐를 거쳐 자식 파일 피커도 정리한다.
                 "debug.popup.close" => {
                     match params::read_int::<u64>(&cmd.request.params, "instance_id") {
                         Err(msg) => host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
@@ -130,18 +115,14 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // plugin egui-mesh banner(A3) 강제 open/close — 사용자 조작 재현이라 debug 전용.
-        // `{ plugin_id?, banner_id, surface_id }` / `{ instance_id }`. host manager +
-        // 소유 view 의 BannerManager 를 함께 다뤄야 해 App-level glue 를 호출한다.
+        // 배너는 매니저와 소유 창 상태를 함께 갱신한다.
         #[cfg(feature = "gui")]
         if cmd.request.method.starts_with("debug.plugin_banner.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let params = &cmd.request.params;
             let response = match cmd.request.method.as_str() {
                 "debug.plugin_banner.open" => {
-                    // surface id 는 관문에서 **폭에 맞게** 읽는다 — `as u32` 로 자르면
-                    // 범위 밖 값이 실재하는 다른 surface 를 가리킨다. 잘못 온 값은
-                    // 안 온 것과 갈라서 답한다.
+                    // 범위 밖 값을 잘라 다른 surface ID로 바꾸지 않는다.
                     let sid = match params::read_u32(params, "surface_id") {
                         Ok(v) => v,
                         Err(msg) => {
@@ -155,7 +136,7 @@ impl App {
                     match (params.get("banner_id").and_then(|v| v.as_str()), sid) {
                         (Some(bid), Some(sid)) => {
                             let bid = bid.to_string();
-                            // debug 트리거는 소유권 검증 우회(caller=None) — 실 소유 plugin 으로 연다.
+                            // debug 요청은 소유자 검사를 생략하되 실제 소유 플러그인으로 연다.
                             match self.open_plugin_banner(None, &bid, sid) {
                                 Ok(iid) => host_ipc::protocol::JsonRpcResponse::success(
                                     id,
@@ -193,14 +174,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 전체화면 무대 강제 진입/종료/조회 — 사용자 조작(popup 타이틀바의 전체화면
-        // 버튼) 재현이라 debug 전용.
-        //
-        // `route_debug_handler` 가 아니라 여기 있는 이유: 그 라우터는 `AppState`
-        // (= `MainView` 하나)만 받아 **다른 창을 볼 수 없다.** 무대는 창 단위라
-        // (`docs/design/systems/fullscreen-stage.md`) `window_id` 로 창을 지목하지
-        // 못하면 창 2 개에 각각 무대를 띄우는 시나리오 자체를 구동할 수 없다.
-        // `self.view.views` 순회는 App 레벨에서만 가능하다.
+        // 전체화면 무대는 창별 상태라 모든 창을 볼 수 있는 App에서 처리한다.
         #[cfg(feature = "gui")]
         if cmd.request.method.starts_with("debug.fullscreen.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -212,13 +186,7 @@ impl App {
     }
 }
 
-/// `debug.fullscreen.*` — 전체화면 무대의 에이전트 진입/조회 표면.
-///
-/// 무대는 창 하나에 하나(`docs/design/systems/fullscreen-stage.md`)라 모든 메서드가
-/// 창을 대상으로 한다. `window_id` 는 지정하면 그 창, 미지정이고 main 창이 하나면 그
-/// 창, 여럿이면 에러다. 포커스된 창으로 조용히 폴백하지 않는다
-/// (`docs/design/policies/focus.md`). 대상은 항상 main 창이다 — 상세는
-/// [`App::pick_debug_window`].
+/// 전체화면 무대는 MainView만 대상으로 한다. ID가 없으면 MainView 하나일 때만 선택한다.
 #[cfg(feature = "gui")]
 impl App {
     fn ipc_debug_fullscreen(
@@ -244,8 +212,7 @@ impl App {
         let Some(stage_id) = params.get("stage_id").and_then(|v| v.as_str()) else {
             return host_ipc::protocol::JsonRpcResponse::invalid_params(id, "Missing 'stage_id'");
         };
-        // 창을 고르기 **전에** 무대 id 를 검증한다. 모르는 id 를 조용한 no-op 으로
-        // 흘리면 오타가 "열렸는데 안 보인다" 로 보인다.
+        // 잘못된 무대 ID를 열기 성공처럼 처리하지 않는다.
         if crate::fullscreen_stages::find(stage_id).is_none() {
             let known: Vec<&str> = crate::fullscreen_stages::all_metas()
                 .iter()
@@ -286,8 +253,7 @@ impl App {
             );
         }
         let opened = main.state.fullscreen_stage_id();
-        // App 레벨 경로는 라우팅이 세워주는 dirty 가 없다. 무대 진입은 OS 창 전환
-        // (`sync_window_fullscreen`)까지 프레임 안에서 일어나므로 직접 유도한다.
+        // 일반 라우터를 거치지 않아 무대와 OS 전체화면 동기화에 필요한 repaint를 직접 요청한다.
         main.base.dirty = true;
         main.base.winit.request_redraw();
         host_ipc::protocol::JsonRpcResponse::success(
@@ -301,22 +267,8 @@ impl App {
         )
     }
 
-    /// `debug.modal.close_request` — 열려 있는 모달에 **창 닫기 요청**을 흘린다.
-    ///
-    /// 왜 필요한가: 설정 모달을 키보드로 닫는 경로가 없다(`SettingsView::handle_event`
-    /// 에 Escape 분기가 없고, `open_settings_modal` 은 이미 열려 있으면 그냥 return 해서
-    /// `Ctrl+,` 도 토글이 아니다). 남은 길은 창 닫기 요청과 egui 액션 둘인데, WM 없는
-    /// Xvfb 에는 앞의 것을 보낼 손이 없다 — 실측(2026-09-07): 창은 `WM_DELETE_WINDOW` 를
-    /// 광고하는데 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러
-    /// winit 이 `GetGeometry` 에서 패닉했고, `wmctrl -i -c` 는 `_NET_CLOSE_WINDOW` 를
-    /// root 에 보내는 것이라 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과).
-    ///
-    /// 그래서 그 요청이 **도달한 뒤의 처리**를 여기서 직접 부른다. 상위가
-    /// `ViewAction::Close` 를 받고 하는 일과 **같은 함수**다
-    /// (`handle_active_modal_window_event`). 건너뛰는 것은 `SettingsView` 의
-    /// `CloseRequested` arm 하나인데, 그 arm 이 하는 일은 `should_close` 를 세우고
-    /// `Close` 를 반환하는 것뿐이라 관측 가능한 차이가 없다 — 창이 그 직후 사라져서
-    /// 아무도 그 값을 읽지 않는다.
+    /// OS 창 관리자 없이도 활성 모달 닫기를 재현하도록 close_active_modal을 호출한다.
+    /// SettingsView의 CloseRequested 이벤트 자체를 주입하는 경로는 아니다.
     #[cfg(feature = "gui")]
     fn ipc_handle_debug_modal_close_request(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -328,8 +280,6 @@ impl App {
             &cmd.response_tx,
             host_ipc::protocol::JsonRpcResponse::success(
                 response_id,
-                // 열린 모달이 없었다는 것과 닫았다는 것을 **가른다.** 둘을 같은 모양으로
-                // 내면 호출자가 "닫혔다" 를 확인할 방법이 없다.
                 serde_json::json!({"closed": was_open}),
             ),
         );
@@ -411,17 +361,8 @@ impl App {
         )
     }
 
-    /// `window_id` 파라미터를 실제 창으로 해석한다.
-    ///
-    /// 실패 시 `(JSON-RPC code, message)`. 미지정 + 창 여럿은 에러이지 폴백이 아니다 —
-    /// "지금 보고 있는 창" 이라는 개념에 기대면 에이전트 명령이 사용자 포커스에
-    /// 의존하게 된다.
-    ///
-    /// `ui.screenshot` 과 달리 **명시한 id 도 main 창만** 받는다. 무대는 main 창에만
-    /// 존재하므로(`docs/design/systems/fullscreen-stage.md`) 모달 id 를 받을 자리가
-    /// 없다 — 캡처(읽기)와 달리 이건 무대를 여닫는 행동이라, 대상 집합을 넓히면
-    /// 사용자 조작 영역인 모달까지 에이전트 행동 대상이 된다
-    /// (`docs/adr/0018-explicit-capture-and-fullscreen-stage.md`).
+    /// MainView ID를 해석한다. 캡처와 달리 모달·preset은 대상이 아니다.
+    /// ID가 없을 때 포커스를 쓰지 않고 MainView가 하나인 경우만 선택한다.
     fn pick_debug_window(
         &self,
         params: &serde_json::Value,

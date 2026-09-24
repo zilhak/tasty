@@ -1,6 +1,4 @@
-//! Plugin 매니저와 `App` 사이의 glue 코드.
-//!
-//! 핫 패스(IPC dispatch) 가 아닌, 모달/단축키/스냅샷 같은 보조 경로.
+//! 플러그인 매니저를 모달·단축키·화면 표시 상태와 연결한다.
 
 pub(crate) mod lifecycle;
 pub(crate) mod palette_commands;

@@ -1,29 +1,17 @@
-//! step 4: focused window 가 필요한 메서드 (GPU/IME/debug 도구).
-//!
-//! - `surface.ime_*` (debug only — 창 IME 조합 상태를 강제로 세팅하는 사용자
-//!   입력 재현이고, 대상을 ID 로 받지 못한 채 포커스된 창에 작용한다)
-//! - `debug.info` (debug only)
-//!
-//! 이 step 은 통째로 debug 표면이다 — release 빌드에서는 어떤 메서드도 여기
-//! 걸리지 않는다.
-//!
-//! `ui.screenshot` was promoted to a release, focus-independent method — it now
-//! lives in the `app_methods` step (targets window/surface by ID, not focus).
+//! 포커스 창을 사용하는 debug 입력·조회 메서드. release에서는 처리하지 않는다.
+//! ID로 대상을 지정하는 ui.screenshot은 app_methods에 있다.
 
 #[cfg(debug_assertions)]
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
-use crate::ipc::server::IpcCommand;
-// 응답을 실제로 만들어 보내는 것은 debug 경로뿐이다 — release stub 은 곧바로
-// `NotHandled` 만 돌려준다.
 #[cfg(debug_assertions)]
 use crate::ipc as host_ipc;
+use crate::ipc::server::IpcCommand;
 #[cfg(debug_assertions)]
 use crate::ipc::server::send_response;
 
-/// 모르는 `unit` 값은 기본값으로 삼키지 않고 거절한다 — 오타를 point 로 대신 재면
-/// 테스트가 의도한 것과 다른 환산 경로를 재고도 통과한다.
+/// 잘못된 단위를 기본값으로 바꾸면 다른 주입 경로를 시험하게 되므로 거절한다.
 #[cfg(debug_assertions)]
 fn reject_unknown_scroll_unit(cmd: &IpcCommand) -> IpcStep {
     let response = host_ipc::protocol::JsonRpcResponse::error(
@@ -35,8 +23,6 @@ fn reject_unknown_scroll_unit(cmd: &IpcCommand) -> IpcStep {
     IpcStep::Handled
 }
 
-/// 잘못 온 params 는 기본값으로 삼키지 않고 거절한다 — 삼키면 주입이 의도한 것과
-/// 다른 좌표·버튼을 재고도 "injected: true" 로 답한다.
 #[cfg(debug_assertions)]
 fn reject_bad_params(cmd: &IpcCommand, msg: &str) -> IpcStep {
     let response = host_ipc::protocol::JsonRpcResponse::error(
@@ -48,11 +34,8 @@ fn reject_bad_params(cmd: &IpcCommand, msg: &str) -> IpcStep {
     IpcStep::Handled
 }
 
-/// 두 포인터 주입 경로(mesh · egui)가 **같은 키를 같은 방식으로** 읽게 한다.
-///
-/// 종전에는 두 블록이 각자 `p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5)` 를
-/// 적고 있었다 — 한쪽만 고치면 다른 쪽은 안 고쳐지고, 그 갈림은 아무 데서도 안 터진다.
-/// 스칼라는 관문(`handler::params`)을 지난다: 잘못 온 값은 기본값이 되지 않는다.
+/// 두 포인터 주입 경로에서 숫자 인자를 같은 방식으로 읽는다.
+/// 알 수 없는 버튼 번호는 Left, event_type은 Move가 된다.
 #[cfg(debug_assertions)]
 fn read_pointer_params(
     p: &serde_json::Value,
@@ -60,7 +43,7 @@ fn read_pointer_params(
 ) -> Result<(f32, f32, crate::view::main::debug_input::InjectPointer), String> {
     use crate::view::main::debug_input::InjectPointer;
 
-    // fx, fy ∈ [0,1] surface-local 정규화 좌표 (기본 중앙).
+    // 좌표는 비율로 받으며 여기서 0..1 범위로 제한하지는 않는다.
     let fx = params::read_f64(p, "fx")?.unwrap_or(0.5) as f32;
     let fy = params::read_f64(p, "fy")?.unwrap_or(0.5) as f32;
     let button = match params::read_int::<u64>(p, "button")?.unwrap_or(0) {
@@ -92,8 +75,6 @@ fn read_pointer_params(
 }
 
 impl App {
-    /// release 빌드에는 window-required 메서드가 하나도 없다 — 이 step 전체가
-    /// debug 표면이라 통째로 사라진다. cfg 가드는 이 stub 한 쌍뿐이다.
     #[cfg(not(debug_assertions))]
     pub(crate) fn ipc_step_window_required(&mut self, _cmd: &IpcCommand) -> IpcStep {
         IpcStep::NotHandled
@@ -101,13 +82,7 @@ impl App {
 
     #[cfg(debug_assertions)]
     pub(crate) fn ipc_step_window_required(&mut self, cmd: &IpcCommand) -> IpcStep {
-        // `surface.ime_` 접두는 **이름 판정이지만 이름이 곧 성질이다** — 이 접두를 가진
-        // 메서드 집합과 `handle_ime_method` 가 실제로 푸는 arm 집합이 지금 정확히 같다
-        // (다섯). 그래서 성질로 다시 써도 집합이 안 달라진다.
-        //
-        // 다만 그 일치는 저절로 유지되지 않는다. IME 메서드를 **다른 이름으로** 더하면
-        // 이 관문이 안 걸어 창 없이 통과하고, 그 실패는 조용하다. 새 IME 메서드는 이
-        // 접두를 쓰거나, 안 쓸 거면 아래 `==` 나열에 함께 적어라.
+        // 새 창 의존 메서드를 추가하면 이 분류도 갱신해야 한다.
         let is_window_required = cmd.request.method.starts_with("surface.ime_")
             || cmd.request.method == "debug.info"
             || cmd.request.method == "debug.inject_window_mouse"
@@ -139,9 +114,7 @@ impl App {
             .and_then(|w| w.as_main_mut())
         {
             Some(w) => w,
-            // focused id 가 있는데 MainView 가 아니면 (모달 등) 본 step 으로 처리 불가 —
-            // 이 케이스를 옛 코드는 `continue` (드롭) 으로 처리했다. 동일 의미를
-            // Handled 로 표현 (응답 전송 없음 → client 가 timeout).
+            // 현재 ID가 MainView를 가리키지 않으면 별도 응답 없이 처리됨으로 반환한다.
             None => return IpcStep::Handled,
         };
 
@@ -164,7 +137,6 @@ impl App {
         if cmd.request.method == "debug.inject_window_mouse" {
             use crate::view::main::debug_input::ScrollUnit;
             let params = &cmd.request.params;
-            // 이 경로는 종전까지 항상 winit `LineDelta` 를 합성했으므로 기본이 line 이다.
             let Some(unit) = ScrollUnit::from_name(
                 params
                     .get("unit")
@@ -189,15 +161,11 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // egui-mesh popup(A2) 입력 forward 검증용 — winit 핸들러가 아니라 egui 입력 큐에
-        // 직접 주입한다(popup 은 egui input 을 통해 plugin 으로 forward 되기 때문). 좌표는
-        // window 정규화 (fx,fy ∈ [0,1] 논리). release 미노출, debug 격리(원칙 1·3).
+        // winit 이벤트 대신 egui 입력 큐에 넣어 popup 입력 전달을 시험한다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_mouse" {
             use crate::view::main::debug_input::ScrollUnit;
             let params = &cmd.request.params;
-            // 이 경로는 종전까지 항상 `MouseWheelUnit::Point` 를 합성했으므로 기본이
-            // point 다 — 기존 호출자가 단위를 넘기지 않아도 같은 것을 재현한다.
             let Some(unit) = ScrollUnit::from_name(
                 params
                     .get("unit")
@@ -222,9 +190,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 문자 입력은 키 입력과 다른 이벤트다 — egui 가 문자를 받는 경로는
-        // `Event::Text` 뿐이라 `inject_egui_key` 로는 `TextEdit` 에 쿼리가 안 들어간다.
-        // 옆 칸이지 새 축이 아니다.
+        // TextEdit의 문자 입력은 키 이벤트와 별도의 Text 이벤트다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_text" {
             let params = &cmd.request.params;
@@ -258,9 +224,6 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // read-only debug dump: 마우스 라우팅이 만든 로컬 텍스트 선택 상태를 그대로 노출한다
-        // (input 안전망 — press→move→release 주입 후 selection 회귀를 단언). 부수효과 0,
-        // 사용자 상태를 변경하지 않으므로 관찰 전용. debug 격리(원칙 1·3), release 미노출.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.selection" {
             let sel = w.text_selection.as_ref();
@@ -288,12 +251,9 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // read-only debug dump: 우클릭 라우팅이 세운 대기 중 컨텍스트 메뉴(종류/대상 surface).
-        // 우클릭 주입 후 메뉴 라우팅 회귀를 단언한다. 관찰 전용, debug 격리, release 미노출.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.pending_menu" {
-            // 주입 경로가 세운 메뉴는 `debug_captured_menu` 로 가로채져 있다(팝업 회피).
-            // live pending 이 있으면(비-주입 경로) 그걸, 아니면 포획본을 관찰한다.
+            // 실제 열린 메뉴가 없으면 주입 시 캡처한 메뉴 정보를 조회한다.
             let menu = w
                 .state
                 .dialogs
@@ -318,10 +278,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // read-only debug dump: 현재 포커스된 surface id (없으면 null). click-to-activate
-        // 라우팅(비활성 surface 좌클릭 → 포커스 전환) 회귀를 단언한다. `surface.list` 는
-        // engine 단위라 view-layer 포커스를 노출하지 않으므로 별도 관찰 IPC 가 필요하다.
-        // 관찰 전용, debug 격리, release 미노출.
+        // engine 목록과 별개인 view의 포커스 surface를 조회한다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.focused_surface" {
             let focused = w.state.focused_surface_id(&w.core_state);
@@ -347,7 +304,6 @@ impl App {
     }
 }
 
-/// `PendingNativeMenu` variant → (kind 문자열, 대상 surface_id). 관찰용 debug dump 전용.
 #[cfg(debug_assertions)]
 fn pending_menu_kind(menu: &crate::state::PendingNativeMenu) -> (&'static str, Option<u32>) {
     use crate::state::PendingNativeMenu as M;

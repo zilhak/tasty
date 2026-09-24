@@ -1,10 +1,9 @@
-//! Plugins 모달이 표시할 현재 설치된 plugin 들의 snapshot.
+//! Plugins 모달에 설치 목록과 확인이 필요한 플러그인을 표시한다.
 
 use crate::app::App;
 use crate::{plugin, plugins_ui};
 
 impl App {
-    /// Build a snapshot of currently installed plugins for the plugins modal.
     pub(crate) fn snapshot_plugins(&self) -> plugins_ui::PluginsSnapshot {
         let Some(mgr) = self.plugin_manager.as_ref() else {
             return plugins_ui::PluginsSnapshot::default();
@@ -23,7 +22,6 @@ impl App {
                     homepage: pkg.manifest.homepage.clone(),
                     enabled: !mgr.config.is_disabled(id),
                     running: mgr.is_running(id),
-                    // spawn 반복 실패로 자동 비활성화된 plugin → error 상태로 표시.
                     health_error: mgr.is_auto_disabled(id),
                     builtin: plugin::is_builtin_plugin(id),
                     surface_kinds: pkg
@@ -39,8 +37,6 @@ impl App {
                         .commands
                         .iter()
                         .map(|cmd| {
-                            // 효과 단축키 = override 우선, 없으면 매니페스트 default.
-                            // (단축키 하드코딩 금지 — 모두 선언/설정에서 도출.)
                             let keybinding = match mgr.config.shortcut_override(id, &cmd.id) {
                                 Some(ov) => {
                                     crate::plugin::registry_state::shortcut_override_display(Some(
@@ -61,9 +57,7 @@ impl App {
             })
             .collect();
 
-        // "확인 필요" 목록: trust gate 거부분(mgr.rejected) + enable 상태인데 반복
-        // 실패로 자동 비활성화된 plugin(health error). 후자는 packages 에도 있어
-        // Installed 목록에 함께 노출되지만, Attention 탭으로도 끌어올린다.
+        // 자동 비활성화된 플러그인은 설치 목록과 확인 필요 목록에 함께 표시한다.
         use crate::plugin::discovery::RejectionReason;
         let mut attention: Vec<plugins_ui::AttentionEntry> = mgr
             .rejected
@@ -91,7 +85,7 @@ impl App {
             .collect();
         attention.extend(mgr.packages().iter().filter_map(|pkg| {
             let id = &pkg.manifest.id;
-            // 사용자가 직접 끈 plugin 은 정상 종료 — error 아님.
+            // 사용자가 직접 끈 플러그인은 오류로 표시하지 않는다.
             if !mgr.is_auto_disabled(id) || mgr.config.is_disabled(id) {
                 return None;
             }

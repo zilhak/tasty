@@ -6,7 +6,6 @@ use crate::app::App;
 use crate::view;
 
 impl App {
-    /// Open the plugins modal window.
     pub(crate) fn open_plugins_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.view.is_modal_active() {
             return;
@@ -23,8 +22,7 @@ impl App {
             attrs = attrs.with_window_icon(Some(icon));
         }
 
-        // 모달 창·GPU 생성 실패는 패닉이 아니다 — 기존 창들을 살리고 안내만 띄운 뒤
-        // 모달 열기를 취소한다.
+        // 창·GPU 생성이 실패해도 기존 창은 유지하고 모달 열기만 취소한다.
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {

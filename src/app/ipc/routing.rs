@@ -1,5 +1,4 @@
-//! step 5 (마지막 fallback): plugin namespace forward → focused window /
-//! parked state 라우터.
+//! 플러그인 namespace로 전달하거나 요청 대상을 가진 창·parked engine으로 라우팅한다.
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
@@ -12,12 +11,7 @@ impl App {
         cmd: &IpcCommand,
         checked: &host_ipc::handler::CheckedRequest<'_>,
     ) -> IpcStep {
-        // Plugin namespace forward: 메서드가 plugin contribute 한 prefix 에 매칭되면
-        // owner plugin 으로 forward. 응답은 plugin 이 줄 때까지 보류되며 다음 tick 에서
-        // `plugin_manager.handle_plugin_response` 가 client 에 회신.
-        //
-        // 멱등 키를 실은 **표의** `Mutate`(`image.open` 등)는 보존소를 먼저 지난다 — 헤드리스와
-        // 같은 함수다(ADR-0005). plugin 고유 이름은 거기서 개입하지 않는다(ADR-0005).
+        // 공용 메서드 표의 변경 요청은 멱등 키를 확인한다. 플러그인 고유 메서드는 개입하지 않는다.
         if let Some(mgr) = self.plugin_manager.as_mut()
             && mgr.owns_namespace(&cmd.request.method)
         {
@@ -35,16 +29,12 @@ impl App {
             return IpcStep::Handled;
         }
 
-        // list 류는 모든 engine 결과를 합쳐 반환 (포커스 독립 원칙).
         if let Some(resp) = self.dispatch_list_global(&cmd.request) {
             send_response(&cmd.response_tx, resp);
             return IpcStep::Handled;
         }
 
-        // 대상을 **지목한** 요청과 안 한 요청을 가른다(핵심 원칙 3).
-        //
-        // 지목한 요청: owner main → parked owner → **에러**. 포커스로 안 샌다.
-        // 안 한 요청: owner(=`"workspace"` 문자열 대상) → focused main → parked[0].
+        // 명시한 자원이 없으면 오류다. 대상이 없는 요청만 workspace 이름·포커스·첫 parked 상태를 사용한다.
         let named = crate::core::request_target::request_resource_id(
             &cmd.request.method,
             &cmd.request.params,
@@ -84,8 +74,7 @@ impl App {
                 return IpcStep::Handled;
             }
         }
-        // parked owner 검사 — 창 순회와 **같은 리소스 집합**을 봐야 한다. 한쪽만
-        // 새 kind 를 알면 그 리소스는 창에서 못 찾힌 뒤 parked 에서도 안 잡힌다.
+        // 창과 parked 상태가 같은 종류의 자원을 찾도록 공용 판정을 사용한다.
         let owner_in_parked = named.and_then(|rid| {
             self.parked_states
                 .iter_mut()

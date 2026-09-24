@@ -1,12 +1,10 @@
-//! Plugin 명령 단축키 관련 — draft 적용, snapshot, 키 입력 매칭.
+//! 플러그인 명령 단축키의 설정·조회·키 입력 처리.
 
 use crate::app::App;
 use crate::plugin::registry_state::shortcut_override_display;
 use crate::{plugin, settings_ui, shortcuts};
 
-/// `apply_plugin_shortcut_draft`의 단일 (plugin_id, command_id) 항목 적용.
-/// 값이 `Some(ov)`이면 set, `None`이면 clear. 실제로 값이 바뀐 경우에만
-/// `command.shortcut_changed` emit 용 튜플을 반환한다.
+/// 실제 설정이 바뀐 항목만 반환해 변경 이벤트를 보낸다.
 fn apply_single_shortcut_override(
     mgr: &mut plugin::PluginManager,
     plugin_id: String,
@@ -30,8 +28,6 @@ fn apply_single_shortcut_override(
     local_changed.then_some((plugin_id, command_id, new_display, prev_display))
 }
 
-/// `apply_plugin_shortcut_draft`에서 모인 변경분에 대해
-/// `command.shortcut_changed` host event를 순서대로 emit.
 fn emit_shortcut_changed_events(
     mgr: &mut plugin::PluginManager,
     emit_queue: Vec<(String, String, Option<String>, Option<String>)>,
@@ -50,8 +46,6 @@ fn emit_shortcut_changed_events(
 }
 
 impl App {
-    /// SettingsView가 회수해 온 plugin shortcut override draft를 PluginsConfig에
-    /// 반영하고 디스크에 저장. 값이 `Some(ov)`이면 set, `None`이면 clear.
     pub(crate) fn apply_plugin_shortcut_draft(
         &mut self,
         draft: std::collections::BTreeMap<
@@ -82,12 +76,10 @@ impl App {
         }
     }
 
-    /// Plugins 키바인딩 서브탭에 표시할 snapshot.
     pub(crate) fn snapshot_plugin_shortcuts(&self) -> settings_ui::PluginShortcutSnapshot {
         let Some(mgr) = self.plugin_manager.as_ref() else {
             return settings_ui::PluginShortcutSnapshot::default();
         };
-        // plugin_id → display name map (매니페스트의 name).
         let name_for: std::collections::HashMap<&str, &str> = mgr
             .packages()
             .iter()
@@ -116,8 +108,7 @@ impl App {
         settings_ui::PluginShortcutSnapshot { rows }
     }
 
-    /// 단축키 가져오기/내보내기가 쓰는 plugin 쪽 원본 — override 전량(등록 여부 무관)과
-    /// 설치된 plugin 목록.
+    /// 가져오기·내보내기는 등록 여부와 무관하게 저장된 override 전체를 사용한다.
     pub(crate) fn plugin_bundle_context(&self) -> settings_ui::PluginBundleContext {
         let Some(mgr) = self.plugin_manager.as_ref() else {
             return settings_ui::PluginBundleContext::default();
@@ -137,15 +128,8 @@ impl App {
         }
     }
 
-    /// 사용자 키 입력이 plugin 명령에 매칭되면 dispatch 한다. 호출자(event_handler)는
-    /// normal window dispatch를 skip해 host action이 trigger되지 않게 한다.
-    ///
-    /// 우선순위: 포커스된 plugin surface가 있으면 **그 plugin의 커맨드**(scope 무관 —
-    /// 이미 포커스 조건을 만족)만 후보로 본다. 없으면 등록된 **모든** plugin의
-    /// `CommandScope::Global` 커맨드를 후보로 본다 — `scope = "global"`(기본값)의
-    /// "어디서나 동작" 계약을 실제로 만족시키는 경로. `Surface` scope 커맨드는 이
-    /// 두번째 경로에 나타나지 않으므로 회귀 없이 그대로 "owner surface 포커스 시에만
-    /// 동작"을 유지한다.
+    /// 포커스된 플러그인이 있으면 그 플러그인의 모든 scope를, 없으면 전체 Global 명령을 찾는다.
+    /// 처리했으면 호출자는 일반 창 키 처리를 생략해 같은 키가 두 번 실행되지 않게 한다.
     pub(crate) fn try_plugin_shortcut(
         &mut self,
         id: winit::window::WindowId,
@@ -158,7 +142,7 @@ impl App {
         let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
             return false;
         };
-        // physical key fallback (IME 영향 회피) — keyboard.rs와 동일 규칙
+        // IME가 바꾼 문자 대신 물리 키를 우선해 수정키 조합을 해석한다.
         let mods = main.base.modifiers;
         let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
             shortcuts::physical_key_to_logical(&ke.physical_key)
@@ -169,17 +153,13 @@ impl App {
         self.dispatch_plugin_shortcut_key(id, &shortcut_key, mods)
     }
 
-    /// `(key, mods)` 만으로 plugin 명령 단축키를 매칭·실행한다. winit `KeyEvent` 경로
-    /// (`try_plugin_shortcut`)와 native webview 포워딩 경로가 **같은 게이트·같은
-    /// 우선순위**를 쓰도록 실제 판정을 여기 한 곳에 둔다. `winit::event::KeyEvent` 는
-    /// 합성 생성이 불가능하므로 포워딩 경로는 이 진입점을 쓴다.
+    /// winit과 native webview 입력이 같은 차단 조건·우선순위를 사용한다.
     pub(crate) fn dispatch_plugin_shortcut_key(
         &mut self,
         id: winit::window::WindowId,
         shortcut_key: &winit::keyboard::Key,
         mods: winit::keyboard::ModifiersState,
     ) -> bool {
-        // Modal이 활성화되면 plugin shortcut은 동작하지 않는다.
         if self.view.is_modal_active() {
             return false;
         }
@@ -189,13 +169,7 @@ impl App {
         let Some(main) = w.as_main_mut() else {
             return false;
         };
-        // overlay/popup이 키를 가져갈 상태면 patcher. plugin popup 도 포함한다 —
-        // 그 popup 이 키를 받는 동안 surface 단축키가 같은 키를 또 소비하면 이중
-        // 처리다(키 게이트와 같은 단일 출처를 쓴다).
-        //
-        // 전체화면 무대도 같이 막는다. 이 경로는 `dispatch_window_event_to_view` **이전에**
-        // 호출되므로(`app/event_handler.rs`) `keyboard.rs` 의 0단계 무대 게이트가 아예 도달하지
-        // 못한다 — 무대 중 plugin 단축키 발화는 여기서 직접 막아야 한다.
+        // 일반 창 키 처리보다 먼저 실행되므로 popup·overlay·전체화면 무대의 키를 여기서 보호한다.
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return false;
         }
@@ -205,7 +179,6 @@ impl App {
         );
         let host_kb = main.core_state.settings.keybindings.clone();
 
-        // (plugin_id, command_id, 대상 surface — Surface 경로만 Some) 매칭 결과.
         let matched = {
             let Some(mgr) = self.plugin_manager.as_ref() else {
                 return false;
@@ -241,11 +214,8 @@ impl App {
             .and_then(|e| e.action.clone());
 
         if let Some(action) = action {
-            // action이 선언된 command: 호스트가 직접 실행 (`[[contributes.tool]]`과 동일
-            // 처리). Event Bus `command.invoked`는 informational로 여전히 발사하지만,
-            // 옛 `command.invoke` IPC(`handle_command`)는 이 경로에서 아예 발사하지
-            // 않는다 — action과 handle_command 동시 실행 시 popup 중복 오픈 등의
-            // 부작용을 막기 위함(`CommandDecl::action` 문서 참조).
+            // action과 command.invoke를 함께 실행하면 같은 명령이 두 번 처리된다.
+            // 호스트 action만 실행하되 command.invoked 알림은 보낸다.
             if let Some(mgr) = self.plugin_manager.as_mut() {
                 crate::plugin_bridge::key_dispatch::emit_command_invoked(
                     mgr, &plugin_id, &cmd_id, surface_id,

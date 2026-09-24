@@ -1,12 +1,9 @@
-//! Plugins 모달이 큐에 쌓아둔 lifecycle 액션 (install/enable/grant/...) 을 매니저에 적용.
+//! Plugins 모달에서 요청한 작업을 실행한다.
 
 use crate::app::App;
 use crate::{plugin, plugins_ui, window};
 
-/// `TrustAndInstall` 의 핵심 절차 — known-plugins.toml 에 trust entry 추가 후
-/// 일반 `plugin_install` 흐름 진행. trust 저장에 실패하면 install 자체 중단
-/// (출처 미상 plugin 이 trust DB 미반영 상태로 disk 에 남아 다음 discover 에서
-/// silent-loaded 되는 시나리오 차단).
+/// 신뢰 정보 저장이 실패하면 설치하지 않는다. 신뢰 기록 없이 플러그인 파일만 남지 않게 한다.
 fn record_trust_then_install(
     app: &mut App,
     src_path: &str,
@@ -32,11 +29,6 @@ fn record_trust_then_install(
     app.plugin_install(std::path::PathBuf::from(src_path))
 }
 
-/// `Install`/`TrustAndInstall` 공용 — `plugin_install` 이 반환한 이벤트 목록에서
-/// `CoreEvent::PluginRegistryChanged` 의 `plugin_id` 를 추출한다. 두 arm 모두 성공
-/// toast 문구에 실제로 설치된 plugin id 를 넣기 위해 동일한 패턴을 썼었다
-/// (fallback 값만 서로 다름 — 호출부에서 `.unwrap_or_default()` /
-/// `.unwrap_or(plugin_id.clone())` 로 처리).
 fn extract_installed_plugin_id(events: &[crate::core::intent::CoreEvent]) -> Option<String> {
     events.iter().find_map(|ev| match ev {
         crate::core::intent::CoreEvent::PluginRegistryChanged { plugin_id, .. } => {
@@ -47,9 +39,7 @@ fn extract_installed_plugin_id(events: &[crate::core::intent::CoreEvent]) -> Opt
 }
 
 impl App {
-    /// `SetEnabled` action — enable/disable 토글을 매니저에 반영하고 결과 이벤트를
-    /// cascade 한다. 실패는 toast 없이 로그만 남긴다 (이 액션은 원래 그렇게 조용히
-    /// 처리되던 흐름을 그대로 보존).
+    /// 활성 상태 변경 실패는 toast 없이 로그로만 알린다.
     fn handle_set_enabled(&mut self, id: String, enabled: bool) {
         let result = if enabled {
             self.plugin_enable(id.clone())
@@ -64,10 +54,6 @@ impl App {
         }
     }
 
-    /// `Uninstall` action — plugin 을 제거한다.
-    ///
-    /// removed 표시는 `plugin_remove` 본문이 한다. 여기서 따로 부르지 않는다 —
-    /// 예전에는 이 자리에만 있어서 IPC `plugin.remove` 가 그 기록을 남기지 않았다.
     fn handle_uninstall(&mut self, id: String) {
         match self.plugin_remove(id.clone()) {
             Ok(events) => {
@@ -79,7 +65,6 @@ impl App {
         }
     }
 
-    /// `Reapprove` action — 재신뢰 절차를 실행하고 결과를 toast 로 변환한다.
     fn handle_reapprove(&mut self, id: String) -> (String, crate::adapters::ui::ToastKind) {
         match self.reapprove_plugin(&id) {
             Ok(()) => (
@@ -96,15 +81,12 @@ impl App {
         }
     }
 
-    /// `OpenInstallDir` action — 설치 경로를 OS 파일 탐색기 등으로 연다.
     fn handle_open_install_dir(&self, path: &str) {
         if !crate::terminal_link::open_uri(path) {
             tracing::warn!("plugins modal: open install dir failed: {path}");
         }
     }
 
-    /// `Install` action — 서명 검증된(또는 이미 신뢰된) plugin 을 설치하고 결과를
-    /// toast 로 변환한다.
     fn handle_install(&mut self, src_path: &str) -> (String, crate::adapters::ui::ToastKind) {
         match self.plugin_install(std::path::PathBuf::from(src_path)) {
             Ok(events) => {
@@ -122,8 +104,6 @@ impl App {
         }
     }
 
-    /// `TrustAndInstall` action — known-plugins.toml 에 trust entry 를 먼저 기록한
-    /// 뒤 일반 install 흐름을 진행하고 결과를 toast 로 변환한다.
     #[allow(clippy::too_many_arguments)]
     fn handle_trust_and_install(
         &mut self,
@@ -157,10 +137,8 @@ impl App {
         }
     }
 
-    /// `Attention` 탭의 `Re-approve` — 권한 변경으로 거부된 plugin 을 현재 매니페스트
-    /// 권한으로 재신뢰한다. known-plugins.toml 의 권한 스냅샷을 디스크 매니페스트와
-    /// 맞추고(다음 trust 검증 통과), grant 갱신 + discover 재호출 + enable 으로 즉시
-    /// 로드한다. UnknownKey/SignatureInvalid 는 키 자체가 신뢰 불가라 대상 아님.
+    /// 기존 신뢰 키는 유지하고 현재 매니페스트의 권한을 다시 승인한다.
+    /// 저장 후 재검색·enable을 시도하며, 이 함수가 서명 유효성을 보장하는 것은 아니다.
     fn reapprove_plugin(&mut self, id: &str) -> anyhow::Result<()> {
         use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
 
@@ -199,8 +177,6 @@ impl App {
         Ok(())
     }
 
-    /// Drain pending actions from the plugins modal and apply them to the manager.
-    /// Refreshes the modal's snapshot after applying.
     pub(crate) fn process_plugins_window_actions(&mut self) {
         let Some(modal_id) = self.view.active_modal_id else {
             return;
@@ -221,7 +197,6 @@ impl App {
         }
 
         let mut pending_toasts: Vec<(String, crate::adapters::ui::ToastKind)> = Vec::new();
-        // X 닫기 / Configure 진입점은 모달을 닫는다 (Configure 는 추가로 Settings 오픈).
         let mut close_modal = false;
         let mut open_settings_plugin_tab = false;
 
@@ -267,15 +242,10 @@ impl App {
             }
         }
 
-        // 모든 lifecycle action 이후 도구 메뉴를 갱신. install/enable/disable/
-        // uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
-        // 바뀌었을 수 있으므로 매번 다시 수집한다 (low-cost).
         self.refresh_tool_registry();
         self.refresh_palette_plugin_commands();
 
-        // Close / Configure: 모달을 닫는다. 단일 모달 불변식상 Settings 를 열려면
-        // 먼저 plugins 모달을 닫아야 한다. Configure 는 닫은 뒤 Settings 오픈 이벤트
-        // 를 발행하고, open_settings_modal 이 Plugin 탭으로 진입한다.
+        // 한 번에 하나의 모달만 열 수 있어 Plugins를 먼저 닫은 뒤 Settings를 요청한다.
         if close_modal {
             self.close_active_modal();
             if open_settings_plugin_tab {
@@ -299,13 +269,10 @@ impl App {
 
 #[cfg(test)]
 mod rfc3339_tests {
-    /// 초 정밀도 UTC RFC3339 형식 (`YYYY-MM-DDTHH:MM:SSZ`) 정규식 검증.
-    /// `KnownPluginEntry.trusted_at` 가 toml 직렬화/외부 비교를 견디려면
-    /// 항상 동일한 모양이어야 한다.
+    /// UTC 초 단위 형식의 길이·접미사·구분자 위치를 확인한다.
     #[test]
     fn now_rfc3339_is_seconds_z_utc() {
         let s = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        // 예: "2026-06-09T10:54:38Z"
         assert_eq!(s.len(), 20, "unexpected length: {s}");
         assert!(s.ends_with('Z'), "must end with Z: {s}");
         assert_eq!(s.as_bytes()[4], b'-');
