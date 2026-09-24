@@ -10,10 +10,8 @@ directories = "6"
 tracing = "0.1"
 
 [features]
-# 소비 crate 의 테스트가 `tasty_home()` 을 스레드 로컬로 재지정할 수 있게 하는 훅
-# (`push_home_override`/`pop_home_override`). 프로덕션(release)에는 컴파일되지 않는다 —
-# 소비 crate 의 **dev-dependency** 에서만 켠다. 이 crate 자신의 unit test 는 `cfg(test)`
-# 로 같은 훅을 본다. 근거: `docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때`.
+# 소비 크레이트의 dev-dependency에서만 켜는 스레드 로컬 홈 경로 override.
+# release 여부와 무관하게 feature를 켜면 컴파일된다.
 test-support = []
 
 [dev-dependencies]

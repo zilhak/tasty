@@ -1,22 +1,9 @@
-//! 중앙 타이머 허브 — 메인 루프의 시간축 폴링을 한 곳에서 스케줄한다.
-//!
-//! 호스트는 주기 작업마다 전용 ticker 스레드를 만들거나 매 프레임 `Instant` elapsed
-//! 게이트를 두는 대신, 이 허브에 **키**를 등록하고 매 프레임 `drain_due` 로 due 한
-//! 키만 받아 실행한다. 콜백을 담지 않는 것이 설계의 핵심이다 — 실행부는 호출자의
-//! 평범한 `match` 로 남아 `&mut self` 재빌림 문제가 생기지 않는다.
-//!
-//! 정책·통합 절차 전체는 `docs/dev-guide/timer-hub.md`.
-//!
-//! # 결정론
-//!
-//! 모든 시각 인자는 호출자가 넘긴다(`now`). 내부에서 `Instant::now()` 를 부르지
-//! 않으므로 단위 테스트가 가짜 기준시각으로 완전히 결정론적이다.
+//! 키별 타이머를 등록하고 실행할 시점이 된 키를 drain_due로 반환한다.
+//! 콜백은 저장하지 않으며 호출자가 키에 해당하는 작업을 실행한다.
+//! 시각은 호출자가 전달하므로 시험에서 기준시각을 직접 제어할 수 있다.
+//! 통합 방법: docs/dev-guide/timer-hub.md.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트의 반환값 무시는 허용하되 제품 코드의 반환값 무시는 계속 검사한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod waker;
@@ -30,11 +17,10 @@ pub use waker::spawn_timer_waker;
 /// 타이머가 깨우기를 요구하는 강도.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Precision {
-    /// 데드라인에 반드시 깨운다. [`TimerHub::next_deadline`] 을 앞당긴다.
+    /// next_due를 깨우기 목표 시각으로 사용한다.
     Strict,
-    /// 데드라인이 지나도 그 자체로는 wakeup 을 유발하지 않는다. 다른 이유로 깨어난
-    /// 프레임에서 함께 실행된다(coalescing). `deadline + slack` 을 넘기면 hard
-    /// deadline 으로 승격돼 반드시 깨운다 — starvation 방지.
+    /// next_due + slack을 깨우기 목표 시각으로 사용한다. 그보다 일찍 다른 이유로
+    /// 깨어나도 next_due가 지났으면 drain_due에서 함께 반환한다.
     Lax { slack: Duration },
 }
 
@@ -61,8 +47,7 @@ struct Entry<K> {
 }
 
 impl<K> Entry<K> {
-    /// 이 타이머가 이벤트 루프를 깨우기를 요구하는 시각.
-    /// Lax 는 slack 을 넘기기 전까지 깨움을 요구하지 않는다.
+    /// 깨우기 목표 시각. Strict는 next_due, Lax는 next_due + slack이다.
     fn hard_deadline(&self) -> Instant {
         match self.precision {
             Precision::Strict => self.next_due,
@@ -174,8 +159,8 @@ impl<K: Copy + Eq> TimerHub<K> {
         due
     }
 
-    /// 가장 가까운 hard deadline. `None` 이면 깨울 이유가 없다(무기한 대기 가능).
-    /// Lax 타이머는 `deadline + slack` 을 넘기기 전까지 이 값에 기여하지 않는다.
+    /// 등록된 타이머의 가장 이른 hard deadline. Lax도 미래의 next_due + slack으로 즉시 참여한다.
+    /// None은 등록된 타이머가 없다는 뜻이며 다른 이벤트의 깨우기 필요성은 판단하지 않는다.
     pub fn next_deadline(&self) -> Option<Instant> {
         self.entries.iter().map(Entry::hard_deadline).min()
     }
@@ -202,7 +187,7 @@ impl<K: Copy + Eq> TimerHub<K> {
     }
 }
 
-/// 0 주기는 매 프레임 무한 발화가 되므로 최소 단위로 끌어올린다(등록 실수 방어).
+/// 0 주기를 최소 단위로 바꿔 다음 due가 같은 시각에 머무르지 않게 한다.
 fn normalize(interval: Duration) -> Duration {
     if interval.is_zero() {
         Duration::from_nanos(1)
@@ -428,7 +413,7 @@ mod tests {
         let t0 = Instant::now();
         let mut hub = TimerHub::new();
         hub.every(K::Busy, Duration::ZERO, Precision::Strict, t0);
-        // 0 이면 next_due 가 영원히 now 라 매 프레임 무한 발화한다 — 최소 단위로 승격.
+        // 0 주기는 최소 단위로 바뀌어야 한다.
         assert!(hub.next_deadline().is_some_and(|d| d > t0));
     }
 }

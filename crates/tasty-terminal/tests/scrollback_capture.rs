@@ -1,18 +1,7 @@
-//! Scrollback-capture integrity verification (E1 width-mismatch, E2 partial-region
-//! over-scroll). Drives the REAL ingest path via `Terminal::new_detached` +
-//! `feed_bytes`, so the production VTE handlers are exercised directly. Oracles:
-//!   A) "tall screen" ground truth: feed the same bytes into a screen tall enough
-//!      that nothing scrolls, so capture logic never fires and the pure termwiz
-//!      layout is the oracle. subject(scrollback ++ visible) must equal it.
-//!   B) marker uniqueness: every unique marker appears exactly once across
-//!      (scrollback ∪ visible). 0 = loss, >1 = duplication.
-//!
-//! This file only ADDS a test; it never modifies production code. Bugs found are
-//! reported, not fixed.
+//! 실제 ingest 경로의 스크롤백 보존을 검사한다.
+//! 같은 입력을 스크롤이 없는 큰 화면과 비교하고, 고유 표지가 전체 버퍼에 한 번씩 남는지 센다.
 
 use tasty_terminal::Terminal;
-
-// ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Text of one scrollback line (cells joined, trailing blanks trimmed).
 fn scrollback_row_text(t: &Terminal, i: usize) -> String {
@@ -143,8 +132,6 @@ fn oracle_b(name: &str, t: &Terminal, markers: &[&str]) -> bool {
     ok
 }
 
-// ── E1 root-cause characterization: the two width functions ───────────────────
-
 /// Directly compare the two width sources that the capture path and termwiz use,
 /// for a set of tricky graphemes. Prints any disagreement. This does not assert
 /// (it characterizes the divergence regardless of whether capture misaligns).
@@ -188,8 +175,6 @@ fn e1_width_function_divergence_report() {
     }
     eprintln!("=== total width divergences: {divergences} ===");
 }
-
-// ── Scenarios ─────────────────────────────────────────────────────────────────
 
 const COLS: usize = 10;
 const H_SMALL: usize = 4;
@@ -268,10 +253,7 @@ fn s4_mixed_width_boundary() {
     );
 }
 
-/// S5 — ⚠️E2: partial top-anchored region, scroll_count > region_size.
-/// H=6, fill L00..L05, set margins rows1..4 (region [0,3], size 4), cursor into
-/// region, then SU 100. Predicted bug: L04/L05 (outside region) duplicated into
-/// scrollback while staying on screen.
+/// 부분 영역보다 큰 SU를 보내도 영역 밖 행이 이력에 복제되면 안 된다.
 #[test]
 fn s5_partial_region_overscroll() {
     let mut t = Terminal::new_detached(COLS, 6);

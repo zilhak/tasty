@@ -2,10 +2,7 @@
 //! reading its stdout closes the pipe mid-REPL, instead of panicking on a
 //! `BrokenPipe` write error.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 이유: 테스트 본문의 반환값 무시는 정책상 허용한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::io::{Read, Write};

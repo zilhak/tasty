@@ -1,4 +1,4 @@
-//! VTE handler: cursor 도메인.
+//! Cursor movement, scroll regions, and cursor reports.
 
 use termwiz::escape::csi::{Cursor, CursorStyle, CursorTabulationControl, TabulationClear};
 use termwiz::surface::{Change, Position};
@@ -19,14 +19,8 @@ impl TerminalState {
                 scroll_count: 1,
             }]
         } else {
-            // Normal line feed — just move cursor down.
-            // Use CursorPosition instead of Text("\n") because:
-            // 1. termwiz Surface's print_text("\n") calls scroll_screen_up() at the
-            //    bottom row, which ignores scroll regions and scrolls the entire screen.
-            // 2. During synchronized output (mode 2026), changes are staged and flushed
-            //    later. The cursor position at flush time may differ from when this
-            //    decision was made, causing Text("\n") to trigger unexpected scrolls.
-            // CursorPosition with Relative(1) safely clamps at the bottom without scrolling.
+            // Position the cursor explicitly: termwiz's Text newline can scroll the
+            // entire grid instead of respecting the active region.
             vec![Change::CursorPosition {
                 x: Position::Relative(0),
                 y: Position::Relative(1),
@@ -194,17 +188,8 @@ impl TerminalState {
                 }
             }
             Cursor::SetTopAndBottomMargins { top, bottom } => {
-                // The stored region is normalized into the grid here, at the one
-                // place it is written, so every reader agrees on its bounds.
-                // xterm does the same at parse time (`CASE_DECSTBM`: a bottom
-                // past `MaxRows(screen)` becomes `MaxRows(screen)`), and without
-                // it the readers diverge: `scroll_region_params` saturates the
-                // size while `region_bounds` hands back the raw row, so an
-                // out-of-range `CSI 3;100r` made an explicit LF and an auto-wrap
-                // scroll two different regions on the same screen.
-                //
-                // `rows` only changes in `resize`, which clears the region
-                // outright, so a normalized region cannot go stale.
+                // Normalize margins when storing them so explicit LF and auto-wrap use
+                // the same region. A resize clears this region before dimensions change.
                 let last_row = self.rows.saturating_sub(1);
                 let top_val = (top.as_zero_based() as usize).min(last_row);
                 // `clamp`'s lower bound keeps `top <= bottom` for an inverted

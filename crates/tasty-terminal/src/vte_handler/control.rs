@@ -1,4 +1,4 @@
-//! VTE handler: control 도메인.
+//! Control characters and SGR attributes.
 
 use termwiz::cell::{AttributeChange, CellAttributes};
 use termwiz::escape::ControlCode;
@@ -57,7 +57,7 @@ impl TerminalState {
             CSI::Cursor(cursor) => self.map_cursor(cursor),
             CSI::Edit(edit) => self.map_edit(edit),
             CSI::Mode(_mode) => {
-                // Handled in process() via handle_mode() before reaching here.
+                // Mode actions are handled by ingest before this dispatch.
                 vec![]
             }
             CSI::Device(device) => {
@@ -105,13 +105,8 @@ impl TerminalState {
                 // consistent. Not commonly needed for basic terminal emulation.
                 vec![]
             }
-            // These three SGRs have no `AttributeChange` variant in termwiz, so
-            // they cannot be applied as a single-field `Change::Attribute`.
-            // Clone the mirrored pen, set the one field, and replace the whole
-            // pen via `AllAttributes` so other attributes are preserved. Without
-            // this, `build_cell_info` would always report the default values
-            // (overline=false / underline_color="default" / vertical_align=
-            // "baseline") regardless of the actual sequence.
+            // These SGR fields have no single-field AttributeChange. Update a clone
+            // of the mirrored pen and replace all attributes to preserve the other fields.
             Sgr::Overline(on) => {
                 let mut pen = self.current_pen.clone();
                 pen.set_overline(on);

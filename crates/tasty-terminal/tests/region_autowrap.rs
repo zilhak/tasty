@@ -1,18 +1,7 @@
-//! 부분 스크롤 영역(DECSTBM) 안에서의 자동 줄바꿈 계약.
-//!
-//! termwiz `Surface::print_text` 는 scroll region 을 모른다 — 커서가 마지막 화면
-//! 행을 넘어설 때만, 그것도 화면 전체를 스크롤한다. 그래서 하단에 입력창을 남기는
-//! 부분 영역에서 긴 줄이 자동 줄바꿈되면 커서가 영역 **밖으로** 내려가 입력창을
-//! 덮어쓰고, 위로 밀려난 이력은 scrollback 에 적재되지 않은 채 사라졌다
-//! (Codex 세션 재개 출력이 긴 URL 중간에서 끊겨 보이던 증상).
-//!
-//! 이 파일은 실제 ingest 경로(`Terminal::new_detached` + `feed_bytes`)를 몬다.
-//! 판정 축은 누적 줄 수가 아니라 **셀 내용 · 순서 · 중복 부재 · wrapped 속성 ·
-//! 커서 위치 · 사용자 scroll_offset** 이다.
+//! 실제 ingest 경로로 DECSTBM 영역의 자동 줄바꿈을 검사한다.
+//! 영역 밖 셀 보존, 스크롤백의 순서·중복·wrapped, 커서와 scroll_offset을 확인한다.
 
 use tasty_terminal::Terminal;
-
-// ── helpers ──────────────────────────────────────────────────────────────────
 
 fn new_term(cols: usize, rows: usize) -> Terminal {
     let mut t = Terminal::new_detached(cols, rows);
@@ -40,14 +29,14 @@ fn scrollback(t: &Terminal) -> Vec<String> {
         .collect()
 }
 
-/// scrollback(오래된 것부터) ++ 화면 — 마커 계수/순서 판정의 좌변.
+/// 표지 개수와 순서를 확인할 스크롤백 + 화면 내용.
 fn buffer(t: &Terminal) -> Vec<String> {
     let mut rows = scrollback(t);
     rows.extend(screen(t));
     rows
 }
 
-/// 청크 분할 비의존성 판정의 좌변 — (scrollback, 화면, 커서).
+/// 청크 크기별로 비교할 스크롤백·화면·커서.
 type Snapshot = (Vec<String>, Vec<String>, (usize, usize));
 
 /// `chunk` 바이트씩 잘라 넣는다. UTF-8 / 제어 시퀀스 경계를 가로질러도 파서가
@@ -58,9 +47,7 @@ fn feed_chunked(t: &mut Terminal, bytes: &[u8], chunk: usize) {
     }
 }
 
-/// 완료 확인 방법의 결정론 최소 fixture 바이트열.
-/// 10열×6행, 5행 `INPUT` / 6행 `STATUS`, `CSI 1;4r` 로 1~4행 영역,
-/// 4행 1열에서 `ABCDEFGHIJK` → `CR LF` → `AFTER`.
+/// 입력창 두 행을 남긴 10열×6행 화면에서 영역 하단 자동 줄바꿈을 만드는 바이트열.
 const MIN_FIXTURE: &[u8] =
     b"\x1b[2J\x1b[H\x1b[5;1HINPUT\x1b[6;1HSTATUS\x1b[1;4r\x1b[4;1HABCDEFGHIJK\r\nAFTER";
 
@@ -69,8 +56,6 @@ fn min_fixture_term() -> Terminal {
     t.feed_bytes(MIN_FIXTURE);
     t
 }
-
-// ── 최소 fixture ─────────────────────────────────────────────────────────────
 
 /// 영역 하단의 자동 줄바꿈이 영역 안에서 스크롤되는가 — 셀 내용과 커서까지.
 #[test]
@@ -168,8 +153,6 @@ fn inner_region_does_not_feed_scrollback() {
     assert_eq!(rows[1], "R2");
     assert_eq!(rows[3], "YY", "초과분은 영역 하단에 남는다");
 }
-
-// ── 경계 조합 ────────────────────────────────────────────────────────────────
 
 /// 한 줄짜리 영역(top=0): 매 줄바꿈이 그 한 행을 회수한다.
 #[test]
@@ -305,8 +288,6 @@ fn resize_clears_the_region_and_keeps_wrapping_sane() {
     assert_eq!(rows[3], "K");
 }
 
-// ── 대체 화면 ────────────────────────────────────────────────────────────────
-
 /// 대체 화면에서도 같은 영역 계약이 성립하고, 그 출력이 primary 이력을
 /// 오염시키지 않는다.
 #[test]
@@ -341,8 +322,6 @@ fn alternate_screen_honors_the_region_without_touching_primary_history() {
     assert_eq!(t.scrollback_len(), 0);
 }
 
-// ── 청크 분할 비의존성 ───────────────────────────────────────────────────────
-
 /// 같은 바이트를 1 / 4096 / 65536 바이트로 잘라 넣어도 결과가 같다.
 /// 자르는 위치를 문자 경계에 맞추지 않으므로 UTF-8·제어 시퀀스도 가로지른다.
 #[test]
@@ -370,8 +349,6 @@ fn chunking_does_not_change_the_result() {
     }
 }
 
-// ── 넓은 글자 / 결합 문자 ────────────────────────────────────────────────────
-
 /// 전각·결합 문자·emoji 가 영역 하단에서 줄바꿈해도 영역 밖으로 안 나간다.
 #[test]
 fn wide_and_combining_graphemes_wrap_inside_the_region() {
@@ -392,8 +369,6 @@ fn wide_and_combining_graphemes_wrap_inside_the_region() {
         rows[3]
     );
 }
-
-// ── wrapped 속성 / 사용자 scroll_offset ──────────────────────────────────────
 
 /// 자동 줄바꿈으로 밀려난 행은 `wrapped`(논리적 연속) 로, 명시적 개행으로 밀려난
 /// 행은 그렇지 않게 기록된다.
@@ -436,11 +411,7 @@ fn user_scroll_offset_is_compensated() {
     );
 }
 
-// ── DECAWM ───────────────────────────────────────────────────────────────────
-
-/// DECAWM(`CSI ?7l`) 은 **현재 미지원** 이다 — termwiz Surface 가 언제나 자동
-/// 줄바꿈한다. 이 테스트는 그 현황을 못박아 이번 수정의 회귀와 구분한다:
-/// 줄바꿈은 여전히 일어나지만, 그래도 영역 밖으로 나가지는 않는다.
+/// DECAWM 해제는 현재 미지원이다. 자동 줄바꿈은 계속되지만 스크롤 영역을 벗어나면 안 된다.
 #[test]
 fn autowrap_off_is_unsupported_but_still_region_confined() {
     let mut t = new_term(10, 6);
@@ -454,11 +425,7 @@ fn autowrap_off_is_unsupported_but_still_region_confined() {
     assert_eq!(rows[5], "STATUS");
 }
 
-// ── 통합 fixture (Codex 재개 패턴) ───────────────────────────────────────────
-
-/// 84열×40행, 하단 두 행을 입력창으로 남기는 부분 영역에 84열보다 긴 링크와
-/// 후속 메시지 표식을 흘린다. 실제 재개 출력이 긴 URL 중간에서 끊겨 보이던
-/// 그 조합이다 — 링크 이후 모든 표식이 원래 순서로 남아야 한다.
+/// 84열보다 긴 링크를 부분 스크롤 영역에 출력한 뒤 모든 후속 표지가 순서대로 남는지 확인한다.
 #[test]
 fn long_link_then_following_messages_all_survive() {
     const LINK: &str = "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#in-page_navigation_and_table_of_contents";
@@ -559,10 +526,7 @@ fn saved_and_restored_output_keeps_the_recovered_history() {
     }
 }
 
-/// DECSTBM 이 **없는** 대체 화면 — full-screen TUI(vim/less/htop)의 정상 경로다.
-/// 위 테스트는 영역을 깔아 영역 스크롤 갈래만 밟으므로 이 갈래를 한 번도 안 잰다.
-/// 여기서 재는 것: 대체 화면의 자동 줄바꿈이 화면 전체를 미는 갈래에서도 primary
-/// 이력·reflow 데이터·사용자 뷰포트가 그대로여야 한다.
+/// 전체 alternate screen의 자동 스크롤도 primary 이력·reflow·scroll_offset을 바꾸면 안 된다.
 #[test]
 fn alternate_full_screen_wrap_does_not_touch_primary_history() {
     let mut t = new_term(20, 5);
@@ -668,10 +632,7 @@ fn inverted_margins_normalize_to_one_row_for_both_paths() {
     );
 }
 
-/// 상단 마진까지 화면 밖인 요청(`CSI 100;200r` — 6행 화면)도 그리드 안으로
-/// 정규화된다. 상단을 안 클램프하면 하단 정규화의 `clamp(top, last)` 가 하한이
-/// 상한보다 커져 그 자리에서 패닉한다 — 원격 프로그램이 보낸 한 줄이 파서
-/// 스레드를 죽이는 형태라, 조용한 오동작이 아니라 크래시다.
+/// 위아래 마진이 모두 화면 밖이어도 마지막 행 안으로 정규화해야 한다.
 #[test]
 fn a_top_margin_past_the_last_row_is_normalized_not_a_panic() {
     let mut t = new_term(10, 6);
@@ -690,14 +651,8 @@ fn a_top_margin_past_the_last_row_is_normalized_not_a_panic() {
     );
 }
 
-/// 부분 영역 안에서 EL1(`CSI 1K`)이 걸친 커서를 만나도 **영역을 스크롤하지 않는다.**
-///
-/// 소거는 커서를 움직이지 않는 연산이고 지우는 범위는 커서 칸까지다. 걸친 커서
-/// (`cursor_position()` 의 열이 `cols`)는 마지막 열에 올라앉은 것이므로 행 전체
-/// (`cols` 칸)가 범위이지 그보다 한 칸 많지 않다 — 한 칸이 더 찍히면 그것이 다음
-/// 행으로 넘어가 **소거 명령이 줄바꿈을 일으킨다.** 부분 영역에서는 그 줄바꿈이
-/// 영역 스크롤 한 번 + 빈 이력 한 줄로 드러나므로, 이 파일이 그 자리를 잰다.
-/// 경계 네 자리와 전체 화면 케이스는 `erase_boundaries.rs` 가 따로 잰다.
+/// 부분 영역 하단에서 EL1이 pending wrap을 보존하고 스크롤을 일으키지 않는지 확인한다.
+/// 일반 화면의 네 경계는 erase_boundaries.rs에서 검사한다.
 #[test]
 fn el1_at_a_parked_cursor_does_not_scroll_the_region() {
     let mut parked = new_term(10, 6);
@@ -717,8 +672,7 @@ fn el1_at_a_parked_cursor_does_not_scroll_the_region() {
         "걸친 상태가 보존된다 — 소거가 커서를 움직이지 않는다"
     );
 
-    // 걸치지 않았으면(9자) 그 전부터 아무 일도 없었다 — 원인이 영역이 아니라 소거
-    // 범위였음을 가르는 대조군이다.
+    // pending wrap이 아닌 경우와 비교한다.
     let mut inside = new_term(10, 6);
     inside.feed_bytes(b"\x1b[2J\x1b[H\x1b[1;4r\x1b[4;1H");
     inside.feed_bytes(b"ABCDEFGHI");

@@ -1,43 +1,11 @@
-//! 락 poison 복구 헬퍼.
+//! 락 poison을 복구하고 지정된 플래그마다 처음 한 번 보고하는 헬퍼.
+//! 보호한 데이터의 불변식이 유지되는 곳에서만 사용한다. 부분 프레임이 남을 수 있는
+//! 소켓 writer나 신뢰할 수 없는 승인 상태에는 적용하지 않는다.
+//! 각 호출자는 복구·오류 전파·보고 후 건너뛰기 중 적절한 처리를 선택해야 한다.
+//! 자세한 규칙은 docs/dev-guide/error-handling.md의 락 poison 절을 따른다.
 //!
-//! 방침 전문은 저장소의 `docs/dev-guide/error-handling.md` "락 poison" 절이다. 요약하면
-//! 판단은 두 질문으로 갈린다 — 임계구역이 불변식을 깨진 채 남길 수 있는가(→ 아니면
-//! 복구), 그리고 여기서 패닉하면 무엇이 죽는가(→ 프로세스 전체면 패닉 금지).
-//!
-//! 본 모듈은 **첫 번째 질문의 답이 "아니오" 인 지점**(자료구조 조작만 하는 임계구역)이
-//! 쓰는 복구 경로만 제공한다. 데이터를 신뢰할 수 없는 지점은 복구하면 안 되므로 여기를
-//! 쓰지 않고 각자 에러를 반환한다(예: `tasty-approval` 의 `StorePoisoned`).
-//!
-//! ## 왜 본체가 아니라 여기 있나 (앞선 결정을 무엇이 바꿨나)
-//!
-//! 이 헬퍼를 처음 만든 작업은 **leaf 크레이트로 올리지 않기로 명시적으로 결정**했고
-//! 근거가 둘이었다: ① 소비자가 하나뿐인 추상은 모양을 잘못 잡기 쉽다 ② 복구가 오답인
-//! 크레이트(`tasty-approval` 같은)에 복구 헬퍼를 노출하면 잘못된 기본값을 심는다.
-//!
-//! **①은 전제가 무너졌다.** 지금 소비자는 넷이다 — 본체(`crate::poison` 재수출),
-//! `tasty-host-plugin` 의 handshake 대기 맵, `tasty-telemetry` 의 탐지 창,
-//! `tasty-plugin-sdk` 의 host call pending 맵. 셋이 같은 모양(자료구조 임계구역 +
-//! 첫 1 회 보고)을 각자 다시 만들 자리에 있었으므로 "하나뿐" 이 더는 참이 아니다.
-//!
-//! **②는 그대로 살아 있다.** 다만 그 예시로 든 `tasty-approval` 은 `tasty-utils` 를
-//! 의존하지 않아 헬퍼가 보이지 않는다. 대신 **복구가 오답인 지점을 가진 다른 두
-//! 크레이트가 의존한다** — `tasty-plugin-sdk`(runtime 의 writer 는 패닉 유지)와
-//! `tasty-cli`(attach 의 writer 는 복구하지 않는다). 그래서 우려 자체는 유효하고,
-//! 사람이 조심하는 것으로 닫지 않는다: 아래 `forbidden_lock_guard` 가 **복구하면 안
-//! 되는 락을 소스 스캔으로 고정**한다.
-//!
-//! 반대로 헬퍼를 **일부러 쓰지 않는** 크레이트도 있다(`tasty-plugin-agent-stream` ·
-//! `tasty-cli`). 한 파일 안에서 지점마다 답이 갈리고 그 판단이 이미 인라인으로 적혀
-//! 있으면, 그중 한 곳만 헬퍼로 바꾸는 것은 형태를 둘로 늘릴 뿐이다.
-//!
-//! ## 쓰는 법
-//!
-//! 보호 대상 타입은 `?Sized` 다 — `Mutex<dyn MemoryStorage>` 처럼 trait object 를
-//! 감싼 락도 같은 헬퍼를 지나야 관측이 한 곳에 모인다.
-//!
-//! 여기 있는 함수는 모두 **첫 1 회만** 로그를 남긴다. poison 은 sticky 라 한 번 걸리면
-//! 이후 모든 호출이 이 경로를 타는데, 여기 오는 지점은 프레임·PTY 출력 단위로 도는 hot path 가
-//! 많아 매번 남기면 정작 그 로그를 묻어 버린다.
+//! 여러 크레이트가 공유하며 ?Sized도 지원한다. 아래 소스 검사는 복구 금지 스트림과
+//! 사유 없이 건너뛴 락 실패를 검사한다. 타입 검사기를 대신하는 것은 아니다.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{
@@ -107,13 +75,8 @@ pub fn recover_try_write<'a, T: ?Sized>(
     }
 }
 
-/// 이미 손에 쥔 `PoisonError` 를 **첫 1 회 보고**하고 안쪽 값을 돌려준다.
-///
-/// `Condvar::wait_timeout_while` 처럼 같은 락을 이 모듈 **밖에서 다시 만나는** 경로가
-/// 쓴다. 그 재획득의 `Err` 는 [`recover_mutex`] 를 거치지 않으므로, 진입할 때 아직
-/// poison 이 아니었다면 그 회차는 **한 줄도 남기지 않고** 복구된다 — 대기 중에 poison 이
-/// 생기는 순서가 정확히 그렇다. 조용한 복구는 조용한 유실과 구분되지 않으므로 여기서
-/// 같은 첫-1 회 보고를 태운다.
+/// 이미 받은 PoisonError를 복구하고 처음 한 번 보고한다.
+/// Condvar 대기 중 poison이 생기면 최초 lock 검사에서 발견하지 못하므로 재획득도 처리해야 한다.
 pub fn recover_poisoned<T>(
     poisoned: std::sync::PoisonError<T>,
     what: &str,
@@ -206,46 +169,17 @@ mod tests {
     }
 }
 
-/// 이 헬퍼를 **써서는 안 되는 락**을 소스 스캔으로 고정한다.
-///
-/// 헬퍼를 leaf 크레이트로 올리면서 생긴 위험을 닫는다: 복구가 오답인 지점을 가진
-/// 크레이트도 이제 `tasty-utils` 를 의존하므로(`tasty-plugin-sdk` · `tasty-cli`),
-/// 헬퍼가 그 파일들에서 **보인다.** 사람이 조심해서 막을 종류가 아니라 가드로 막는다.
-///
-/// **왜 크레이트 목록이 아니라 락 이름인가**: 복구가 오답인 것은 크레이트도 파일도
-/// 함수도 아니라 **그 락**이다. 실제로 `tasty-plugin-sdk` 의 `HostHandle::call` 은
-/// 한 함수 안에서 writer 락(에러 반환)과 pending 맵(복구)을 함께 잡는다 — 크레이트나
-/// 함수 단위로 금지하면 정당한 복구까지 걸린다.
-///
-/// **판정은 순수 함수로 뽑아 두었다**([`recovered_forbidden_lines`] ·
-/// [`silently_skipped_lock_lines`]). 파일 순회 안에 인라인으로 두면 면제를 겨냥한
-/// 변이를 합성 입력으로 찌를 수 없어, 변이가 "레포에 진짜 위반을 심는" 방식으로만
-/// 가능해진다 — 느리고 트리를 더럽힌다. 아래 합성 입력 테스트가 그 변이를 영구히
-/// 붙박은 것이다.
-///
-/// **이 테스트는 `tests/` 가 아니라 lib 유닛 테스트다** — `tests/*.rs` 는 컴파일만
-/// 자동으로 검사되고 실행 채널이 수동뿐이라, 소스를 런타임에 읽는 가드에게는 그
-/// 안전망이 0 이다. 관례(`tests/*_chokepoint.rs`)를 깨는 것이니 되돌리지 마라.
+/// 복구 금지 스트림과 사유 없는 락 실패 생략을 소스에서 검사한다.
+/// 한 함수가 writer와 pending 맵을 함께 잡을 수 있어 크레이트 전체를 금지하지 않는다.
+/// 파일 순회와 판정을 분리해 같은 함수에 합성 입력도 전달한다.
+/// lib 단위 시험에 두어 lib를 실행하는 CI에서도 실제 소스 검사가 수행되게 한다.
 #[cfg(test)]
 mod forbidden_lock_guard {
     use std::path::{Path, PathBuf};
 
-    /// 이 헬퍼로 복구하면 안 되는 락 식별자와 그 이유.
-    ///
-    /// **명부의 술어(무엇의 명부인가): 임계구역이 프레임·레코드 경계를 갖는가.**
-    /// 락이 지키는 것이 소켓/스트림에 프레임(한 줄=한 메시지)을 쓰는 자리면, 락을 든 채
-    /// 죽은 스레드가 반쪽 프레임을 남길 수 있다. poison 을 `into_inner` 로 복구해 그 위에
-    /// 이어 쓰면 프레이밍이 깨져 상대가 쓰레기를 읽는다 — 그래서 복구가 오답이고,
-    /// skip(+보고) 또는 전파가 맞다. 자료구조·값 슬롯(경계 없음)은 이 명부의 반대편이라
-    /// 복구가 옳다(그쪽은 아래 축 2 가 "조용히 삼키지 말라" 로 지킨다).
-    ///
-    /// 이 술어에 걸리는 피보호 타입은 [`FORBIDDEN_STREAM_TYPES`] 이고, 그 타입을 감싼
-    /// 락의 바인딩 이름이 아래 목록이다 — 이름이 아니라 **타입이 근거**다.
-    /// `stream_typed_lock_names_are_all_listed` 가 그 타입의 새 락(다른 이름)이 목록 밖에
-    /// 생기면 실패시켜, "이름 둘짜리 명부" 가 조용히 낡는 것을 막는다.
-    ///
-    /// **이유를 함께 적는 것이 목록의 절반이다.** 근거 없는 금지 목록은 언젠가 통째로
-    /// 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를 함께 남긴다.
+    /// 부분 프레임 뒤에 이어 쓰면 안 되는 락 이름과 처리 이유.
+    /// 타입 목록으로 새 스트림 락 이름의 누락도 검사한다. 파일 로그의 부분 줄 허용과
+    /// 자료구조 복구는 별도이며, 모든 파일·값 슬롯에 복구가 안전하다는 뜻은 아니다.
     const FORBIDDEN_LOCKS: &[(&str, &str)] = &[
         (
             "writer",
@@ -270,25 +204,15 @@ mod forbidden_lock_guard {
         ),
     ];
 
-    /// [`FORBIDDEN_LOCKS`] 의 술어에 걸리는 피보호 타입 — 프레임 I/O 스트림.
-    ///
-    /// 명부의 근거는 이름이 아니라 이 타입들이다. `fs::File`(줄 단위 로그, 반쪽 줄 허용)·
-    /// 자료구조·값 슬롯은 경계가 없어 여기 없다.
+    /// 프레임 스트림 타입. fs::File 로그와 자료구조는 이 금지 목록에 포함하지 않는다.
     const FORBIDDEN_STREAM_TYPES: &[&str] = &["TcpStream", "HandleStream", "HandleClient"];
 
-    /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다.
-    ///
-    /// **하한만으로는 부족하다** — 스캔 대상이 1000개를 넘으므로 수백 개가 빠져도
-    /// 이 값을 안 건드리고, 위반이 0 건인 파일이 빠지면 offender 목록도 안 움직여
-    /// 아무 신호가 없다. 부분 누락은 아래 `the_scan_reaches_every_crate_and_both_cfg_sides`
-    /// 가 집합으로 잡는다. 이 상수는 그 위의 조잡한 안전망일 뿐이다.
+    /// 잘못된 루트나 빈 스캔을 잡는 최소 파일 수. 부분 누락은 아래 크레이트·cfg 집합 검사로 확인한다.
     const MIN_FILES_SCANNED: usize = 200;
     const MIN_RECOVER_CALLS: usize = 30;
     const MIN_LOCK_STATEMENTS: usize = 150;
 
-    /// `recover_*(` 를 찾을 때 쓰는 needle. **조각을 붙여 만든다** — 이 파일 안에
-    /// 완성된 리터럴이 나타나면 스캐너가 자기 자신을 위반으로 집는다. 파일 통째
-    /// 면제(`SELF_PATH`)를 두는 대신 needle 쪽에서 없앤 것이라, 면제가 하나 줄었다.
+    /// 검사 코드 자체가 실제 호출로 잡히지 않도록 검색 문자열을 나눠 만든다.
     fn recover_needles() -> [String; 4] {
         let stem = "recover_";
         [
@@ -299,16 +223,8 @@ mod forbidden_lock_guard {
         ]
     }
 
-    // ── 순수 판정기 ──────────────────────────────────────────────────────
-    //
-    // 파일 순회·경로 처리와 분리해 두어 합성 입력으로 찌를 수 있다.
-
-    /// `#[cfg(test)]` 모듈 구간을 빈 줄로 지운다(줄 번호는 보존).
-    ///
-    /// **왜 파일이 아니라 이 단위로 면제하는가**: 락 방침은 프로덕션 경로의 것이고,
-    /// 테스트는 poison 을 **일부러** 만들어 확인하는 자리라 금지 형태가 정당하게
-    /// 나타난다. 이 파일 자신의 스캐너 코드와 합성 입력도 같은 이유로 여기에 걸린다 —
-    /// 즉 자기 제외를 따로 두지 않아도 된다.
+    /// cfg(test) 항목을 빈 줄로 바꾸되 원래 줄 번호를 유지한다.
+    /// 시험에서 의도적으로 만드는 poison 경로와 합성 입력은 제품 코드 검사에서 제외한다.
     fn mask_test_modules(src: &str) -> String {
         let lines: Vec<&str> = src.lines().collect();
         let mut masked: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
@@ -318,10 +234,7 @@ mod forbidden_lock_guard {
                 i += 1;
                 continue;
             }
-            // `#[cfg(test)]` 가 붙는 항목은 `mod` 만이 아니다 — `impl` · `fn` · `use` 에도
-            // 붙는다. 뒤따르는 속성 줄을 건너뛴 다음 **그 항목 하나**의 범위를 잡는다.
-            // (여기서 "다음 `mod`" 를 찾으면 사이에 낀 프로덕션 코드까지 통째로 지워
-            // 진짜 위반이 가려진다 — 실제로 그 형태로 변이가 살아남았다.)
+            // 다음 mod까지 지우지 않고 cfg(test)가 붙은 항목 하나만 제거한다.
             let mut j = i + 1;
             while j < lines.len() && lines[j].trim_start().starts_with("#[") {
                 j += 1;
@@ -401,14 +314,8 @@ mod forbidden_lock_guard {
         spans
     }
 
-    /// `<name>.lock()` / `.write()` / `.read()` / `.try_write()` 형태로 그 락을 잠그는가.
-    /// 점 주변 공백을 걷어 `self .writer .lock()` 을 `self.writer.lock()` 로 만든다.
-    ///
-    /// rustfmt 는 한 줄이 100 자를 넘으면 메서드 체인을 **수신자에서** 쪼갠다
-    /// (`self` / `.writer` / `.lock()`). 아래 매칭은 이름과 동사가 붙어 있어야 하므로,
-    /// 쪼개진 순간 같은 코드가 가드 밖으로 나간다 — 사람의 실수가 아니라 **서식 변경만으로**
-    /// 뚫린다. 문자열 리터럴 안의 `" . "` 도 함께 붙지만, 그 방향의 오탐은 가드가 더 많이
-    /// 잡는 쪽이라 안전하다.
+    /// 락 호출의 점 앞뒤 공백을 없애 여러 줄로 쓴 메서드 체인도 찾는다.
+    /// 텍스트 기반 처리이며 Rust의 실제 수신자 타입을 확인하지는 않는다.
     fn tighten_dot_chains(text: &str) -> String {
         let mut out = String::with_capacity(text.len());
         let mut pending_ws = false;
@@ -429,10 +336,7 @@ mod forbidden_lock_guard {
         out
     }
 
-    /// 한 문(statement) 단위로 잇는다 — 축 2 가 줄 단위면 쪼개진 체인을 원리적으로 못 본다.
-    ///
-    /// 괄호 깊이가 0 으로 돌아오고 `;` · `{` · `}` 로 끝나면 한 문으로 본다. 줄 번호는
-    /// **시작 줄**을 쓴다(신고 좌표가 위쪽을 가리켜야 사람이 찾는다).
+    /// 괄호 깊이가 0이고 ;/{/}로 끝나는 줄까지 한 문으로 모은다. 시작 줄 번호를 보관한다.
     fn statement_spans(masked: &str) -> Vec<(usize, String)> {
         let mut out = Vec::new();
         let mut buf = String::new();
@@ -473,8 +377,8 @@ mod forbidden_lock_guard {
         out
     }
 
-    /// 줄을 넘어 이어지는 렉서 상태(블록 주석 · 원시 문자열). 일반 문자열·문자 리터럴은
-    /// 한 줄 안에서 닫힌다고 보고(러스트에서 개행을 담으려면 원시 문자열을 쓴다) 처리한다.
+    /// 블록 주석과 raw 문자열 상태만 줄 사이에 보관한다.
+    /// 여러 줄의 일반 문자열은 처리하지 못하는 스캐너 한계다.
     #[derive(Default)]
     struct LineLexer {
         in_block_comment: bool,
@@ -641,18 +545,8 @@ mod forbidden_lock_guard {
             .collect()
     }
 
-    /// std 락 획득 verb. **빈 괄호**만 센다 — `io::Read::read(buf)`/`Write::write(buf)` 는
-    /// 버퍼 인자를 받으므로, 빈 괄호 `.read()`/`.write()` 는 `RwLock` 이다(타입 판별점).
-    /// 트리에 parking_lot·`tokio::sync`·`.lock().await` 가 0 이라(실측) `.lock()` 은 전부 std.
-    ///
-    /// ★ **"std 다" 가 "결과가 `LockResult` 다" 를 뜻하지는 않는다.** 이 트리에는 `lock`
-    /// 이라는 이름의 자체 헬퍼가 **넷** 있고(`src/store/recent_files.rs` ·
-    /// `crates/tasty-timer/src/waker.rs` · `src/webhook/registry.rs` ·
-    /// `src/webhook/abuse.rs`), 전부 `recover_mutex` 로 복구한 **guard 를 바로** 돌려준다 —
-    /// `Result` 가 아니다. 넷 다 안쪽은 std 락이므로 위 문장은 참이지만, verb 만 보고 뒤에
-    /// 오는 체인을 `Result` 로 읽으면 틀린다.
-    /// 그 혼동이 실제로 main 을 빨갛게 만들었다 —
-    /// [`silently_skipped_lock_lines`] 의 doc 참조.
+    /// 인자가 없는 락 메서드 표기. 버퍼 인자를 받는 IO read/write와 구분한다.
+    /// 같은 이름의 자체 헬퍼가 guard를 직접 반환할 수도 있으므로 실제 타입의 증거는 아니다.
     const LOCK_VERBS: &[&str] = &[
         ".lock()",
         ".read()",
@@ -662,98 +556,18 @@ mod forbidden_lock_guard {
         ".try_write()",
     ];
 
-    /// 의도된 삼킴임을 그 자리에 밝히는 사유 마커.
-    ///
-    /// ★ **`check-allow-reason` 과 같은 관례가 아니다** — 한때 그렇게 적혀 있었고 그
-    /// 문장이 거짓이었다. 실제 차이는 두 방향이다:
-    ///
-    /// ```text
-    /// 셸 게이트   reason: | 이유: | complexity-exempt: | SAFETY:   (+ 뒤에 내용 필수)
-    /// 여기        reason: | 이유: | 사유:                            (마커만 봐도 통과)
-    /// ```
-    ///
-    /// 즉 `SAFETY`·`complexity-exempt:` 를 쓴 사람은 여기서 거부당하고, `사유:` 를 쓴
-    /// 사람은 셸 게이트에서 거부당한다 — **둘 다 "같은 관례" 라는 그 문장을 정확히 따른
-    /// 사람이다.** 지키는 것이 없는 동일성 주장은 갈리고, 갈린 뒤에도 계속 같다고 말한다.
-    ///
-    /// 지금은 두 집합을 **일부러 다르게 둔다**(여기는 poison 삼킴 사유라 `SAFETY` 가
-    /// 어울리지 않는다). 합칠 생각이면 셸 쪽 `REASON_MARKERS` 가 정본이고, 그때는 이
-    /// 주석이 아니라 **가드**로 묶어라 — 주석은 갈림을 못 막는다.
-    ///
-    /// ★ 2026-09-08 부터 갈림이 **하나 더 생겼다**: 셸 쪽은 마커 뒤에 내용이 있어야
-    /// 근거로 인정하고 `SAFETY` 에도 콜론을 요구한다. 여기는 아직 마커만 본다. 위 표에
-    /// 그 열을 적어 두었다 — 합칠 때 옮길 것은 목록만이 아니다.
+    /// 의도적으로 생략한 실패 처리의 사유 마커. 이 검사는 마커 존재만 확인한다.
+    /// check-allow-reason과 다르다: 여기서는 사유:를 허용하고 SAFETY:/complexity-exempt:는
+    /// 허용하지 않으며, 셸 검사는 마커 뒤 설명까지 요구한다.
     const REASON_MARKERS: &[&str] = &["이유:", "reason:", "사유:"];
 
-    /// 축 2(넓힘) — **어떤** std 락이든 poison 을 조용히 지나치는 문.
+    /// 락 결과를 유지한다고 간주하는 메서드 체인 단계.
+    /// 이 단계만 거쳐 unwrap_or/unwrap_or_default에 도달하면 실패를 생략한 것으로 본다.
+    /// map 뒤의 unwrap_or_default도 검사하지만, unwrap으로 guard를 얻은 뒤의 Option 처리는 제외한다.
     ///
-    /// 첫 sweep 은 [`FORBIDDEN_LOCKS`] 만 봤다. 이 판정기는 그 밖의 락도 본다 — 조용한
-    /// 삼킴은 poison 을 버리고 임계구역을 건너뛰는데 아무것도 안 깨지는 **조용한** 결함이라
-    /// 명부는 시끄러운 쪽이어야 한다: 삼킴은 복구/전파거나, 의도면 그 자리에 사유.
-    ///
-    /// 삼킴 형태: 락 verb 직후 `.ok()` · **락 결과에 걸린** `.unwrap_or(_default)` ·
-    /// `if/while/&& let Ok(` (else 없음). poison 을 다루는 형태 — 복구(`into_inner`·
-    /// `recover_*`)·전파(`unwrap`·`expect`·`?`·`map_err`)·`let Ok..else`·`match` — 는 삼킴이
-    /// 아니다. `.ok()` 는 **락 verb 바로 뒤**만 본다(`x.lock().unwrap().foo().ok()` 를
-    /// 오탐하지 않게).
-    ///
-    /// # `.unwrap_or*` 가 **한 문 아무 데나**가 아니라 락 결과에 걸려야 하는 이유
-    ///
-    /// 한때 이 갈래는 문 안에 락 verb 와 `.unwrap_or` 가 **둘 다 있기만 하면** 잡았다.
-    /// 그 느슨함이 `src/store/recent_files.rs` 를 잡아 main 을 빨갛게 만들었다 — 거기서
-    /// `.unwrap_or_default()` 는 락 결과가 아니라 **guard 내용물의 `Option`** 에 걸리고,
-    /// poison 은 그 앞의 헬퍼가 이미 `recover_mutex` 로 복구한다.
-    ///
-    /// 처방을 `.ok()` 와 같은 "락 verb 바로 뒤" 로 맞추는 것은 **가드를 죽이는 수정**이다.
-    /// 컴파일러로 갈래별 도달 가능성을 쟀다(2026-09-20):
-    ///
-    /// ```text
-    /// m.lock().unwrap_or_default()                    컴파일 안 됨 — MutexGuard: Default 없음
-    /// a.lock().unwrap_or(b.lock().unwrap())           컴파일 됨 · 진짜 삼킴 (바로 뒤)
-    /// m.lock().map(|g| g.len()).unwrap_or_default()   컴파일 됨 · 진짜 삼킴 (바로 뒤 아님)
-    /// m.try_lock().map(..).unwrap_or_default()        컴파일 됨 · 진짜 삼킴 (바로 뒤 아님)
-    /// ```
-    ///
-    /// 즉 **바로 뒤 형태 중 하나는 애초에 쓸 수 없고**(`unwrap_or_default`), 진짜로 새는
-    /// 형태는 `.map(..)` 을 거쳐 온다. "바로 뒤" 로 좁혔으면 못 쓰는 갈래만 남기고 쓸 수
-    /// 있는 갈래를 통째로 놓쳤을 것이다.
-    ///
-    /// 그래서 가르는 축은 **거리가 아니라 타입**이다: 락 verb 와 `.unwrap_or*` 사이에
-    /// [`RESULT_PRESERVING_STEPS`] 만 있으면 그 `.unwrap_or*` 는 여전히 `LockResult` 에
-    /// 걸려 있고, 하나라도 다른 것이 끼면 값은 이미 락 결과가 아니다.
-    ///
-    /// # 이 좁힘이 **못 막는 것** (잔여 오탐, 지금 트리에는 없다)
-    ///
-    /// 판정기는 텍스트를 읽지 타입을 모른다. `MutexGuard<T>` 는 `T` 로 `Deref` 하므로
-    /// `T` 가 `Option`/`Result` 면 guard 에도 `.as_ref()`·`.map(` 이 **글자 그대로** 붙고,
-    /// 그때 이 판정기는 그것을 Result 보존 단계로 읽는다:
-    ///
-    /// ```text
-    /// self.lock().as_ref().unwrap_or(d).clone()   // lock() 은 guard 를 주는 헬퍼
-    /// ```
-    ///
-    /// 실제로 컴파일된다(2026-09-20 rustc 로 확인). 지금 트리에 이 조합이 없는 이유는
-    /// 값이지 설계가 아니다. `lock` 이라는 이름의 자체 헬퍼는 넷이고, 그중 **점이 붙는
-    /// 것**(`&self` 를 받아 `x.lock()` 으로 불리는 것)은 둘이다:
-    ///
-    /// ```text
-    /// src/store/recent_files.rs   fn lock(&self) -> MutexGuard<HashMap<..>>   점 있음
-    /// crates/tasty-timer/src/waker.rs  fn lock(&self) -> MutexGuard<State>    점 있음
-    /// src/webhook/registry.rs     fn lock() -> MutexGuard<WebhookState>       점 없음
-    /// src/webhook/abuse.rs        fn lock() -> MutexGuard<AbuseTracker>       점 없음
-    /// ```
-    ///
-    /// 점 없는 둘은 호출이 `lock()` 이라 verb(`.lock()`)에 애초에 안 걸린다. 점 있는 둘은
-    /// `T` 가 `HashMap` 과 구조체라 `.as_ref()` 로 `Option` 이 안 나온다. `T` 가
-    /// `Option`/`Result` 인 헬퍼가 새로 생기면 그때 여기서 오탐이 난다.
-    ///
-    /// 그 조합이 생기면 여기서 오탐이 난다. 그때 고칠 자리는 이 판정기가 아니라 **그
-    /// 헬퍼의 이름**일 수 있다 — 락 verb 와 같은 이름이 판정기를 혼동시키는 것이 근본이다.
-    /// `Result` 를 **그대로 이어 주는** 체인 단계. 락 verb 뒤에 이것만 오면 그 다음의
-    /// `.unwrap_or*` 는 아직 `LockResult` 에 걸린다 — 즉 삼키는 것이 poison 이다.
-    ///
-    /// 여기 없는 것(`.get(` · `.unwrap()` · `.len()` …)이 하나라도 끼면 값은 이미 락
-    /// 결과가 아니고, 그 `.unwrap_or*` 가 삼키는 것은 poison 이 아니다.
+    /// 문법만 보는 검사이므로 guard를 직접 반환하는 자체 lock 헬퍼 뒤에 as_ref/map이
+    /// 붙으면 오탐할 수 있다. 지원하지 않는 메서드 체인은 놓칠 수 있으며 타입 추론은 하지 않는다.
+    /// 합성 입력은 실제로 컴파일 가능한 락 실패 생략과 일반 값 처리를 함께 대조한다.
     const RESULT_PRESERVING_STEPS: &[&str] = &[
         ".map(",
         ".map_err(",
@@ -786,11 +600,8 @@ mod forbidden_lock_guard {
         None
     }
 
-    /// 어떤 락 verb 에서 출발해 [`RESULT_PRESERVING_STEPS`] 만 거쳐 `.unwrap_or(` ·
-    /// `.unwrap_or_default()` 에 닿는가. 닿으면 그 `.unwrap_or*` 는 락 결과에 걸려 있다.
-    ///
-    /// **`.unwrap_or_else(` 는 여기 안 걸린다** — `.unwrap_or(` 로 시작하지 않기 때문이고,
-    /// 그것이 옳다: 이 트리에서 그 형태는 전부 `into_inner()` 복구다(축 1 이 따로 본다).
+    /// 락 호출 뒤 허용된 체인만 거쳐 unwrap_or/unwrap_or_default에 도달하는지 검사한다.
+    /// unwrap_or_else는 이 검사에 포함하지 않는다. 복구 금지 락은 별도 검사도 적용한다.
     fn unwrap_or_rides_the_lock_result(tight: &str) -> bool {
         for verb in LOCK_VERBS {
             let mut search = 0usize;
@@ -878,8 +689,7 @@ mod forbidden_lock_guard {
         false
     }
 
-    /// 축 2 가 **본** std 락 문의 수. 판정기가 죽어 아무 락도 못 보면(verb 목록이
-    /// 망가지면) 위반이 0 이라 게이트가 조용히 통과한다 — 그 거짓 초록을 막는 모수다.
+    /// 스캐너가 찾은 락 문 수. 인식 실패로 빈 위반 목록이 나와 통과하는 일을 막는다.
     fn lock_statements_seen(masked: &str) -> usize {
         statement_spans(masked)
             .into_iter()
@@ -931,8 +741,6 @@ mod forbidden_lock_guard {
             .map(|t| mask_test_modules(&t.replace('\r', "")))
     }
 
-    // ── 합성 입력 판정기 테스트 (면제를 겨냥한 변이가 여기 붙박여 있다) ──
-
     #[test]
     fn detects_a_forbidden_recovery_on_one_line_and_across_lines() {
         let one = r#"let mut w = poison::recover_mutex(self.writer.lock(), W, &P);"#;
@@ -947,7 +755,7 @@ mod forbidden_lock_guard {
         );
     }
 
-    /// 면제 ①(주석 줄)을 겨냥한 변이 — 면제 창 **안쪽**과 **바깥쪽**을 함께 고정한다.
+    /// 주석 행만 제외하고 실제 코드 행은 검사하는지 확인한다.
     #[test]
     fn the_comment_exemption_does_not_swallow_real_code() {
         let commented = "// poison::recover_mutex(self.writer.lock(), W, &P);";
@@ -980,11 +788,7 @@ mod forbidden_lock_guard {
         );
     }
 
-    /// 면제 ②의 **범위**를 겨냥한 변이 — `#[cfg(test)]` 는 `mod` 에만 붙지 않는다.
-    ///
-    /// 이 케이스가 실제로 위반 하나를 가렸다: 판정기가 "`#[cfg(test)]` 다음의 `mod`"
-    /// 를 찾는 바람에 `#[cfg(test)] impl` 과 한참 뒤의 `mod tests` **사이의 프로덕션
-    /// 코드 전체**를 마스킹했고, 그 안의 진짜 위반이 사라져 변이가 살아남았다.
+    /// cfg(test) 항목 사이에 있는 제품 코드를 잘못 지우지 않는지 확인한다.
     #[test]
     fn the_test_module_exemption_does_not_swallow_code_between_items() {
         let src = "#[cfg(test)]\nimpl Foo {\n    fn helper() {}\n}\n\
@@ -1032,17 +836,8 @@ mod forbidden_lock_guard {
         }
     }
 
-    /// `.unwrap_or*` 갈래는 **거리가 아니라 타입**으로 가른다.
-    ///
-    /// 여섯 입력을 한 실행에 넣는다 — 앞 넷은 락 결과에 걸린 진짜 삼킴(잡아야 한다),
-    /// 뒤 둘은 값이 이미 락 결과가 아닌 자리(봐줘야 한다). **양쪽이 다 있어야** 이
-    /// 판정이 뜻을 갖는다: 양성만 재면 판정기가 전부 잡는 상태와 구분되지 않고, 음성만
-    /// 재면 판정기가 죽은 상태와 구분되지 않는다.
-    ///
-    /// 각 줄의 도달 가능성은 rustc 로 쟀다(2026-09-20) — 표는
-    /// [`silently_skipped_lock_lines`] 의 doc 에 있다. 특히 `m.lock().unwrap_or_default()`
-    /// 는 **컴파일되지 않으므로** 여기 양성으로 안 넣는다. 넣으면 못 쓰는 형태를 지키게
-    /// 된다.
+    /// 실제 락 결과의 실패 생략 네 경우와 일반 값 처리 두 경우를 대조한다.
+    /// MutexGuard에는 Default가 없으므로 lock().unwrap_or_default() 자체는 양성 예제로 쓰지 않는다.
     #[test]
     fn unwrap_or_is_judged_by_what_it_unwraps_not_by_distance() {
         // 잡아야 한다 — `.unwrap_or*` 가 아직 `LockResult` 에 걸려 있다.
@@ -1062,8 +857,7 @@ mod forbidden_lock_guard {
 
         // 봐줘야 한다 — `.unwrap_or*` 가 걸린 값이 이미 락 결과가 아니다.
         for spared in [
-            // main 을 빨갛게 만들었던 자리의 모양. `lock()` 은 guard 를 돌려주는 헬퍼고
-            // `.unwrap_or_default()` 는 `HashMap::get(..).cloned()` 의 `Option` 에 걸린다.
+            // 자체 lock 헬퍼 뒤 HashMap 조회의 Option을 처리하는 경우.
             "let v = self.lock().get(kind).cloned().unwrap_or_default();",
             // 진짜 std 락이지만 poison 은 `unwrap()` 이 패닉으로 전파한다.
             "let n = m.lock().unwrap().get(k).copied().unwrap_or_default();",
@@ -1075,11 +869,7 @@ mod forbidden_lock_guard {
         }
     }
 
-    /// 금지 목록에 없는 락은 두 축 모두 건드리지 않는다(의도된 false negative).
-    /// rustfmt 가 체인을 **수신자에서** 쪼개도 두 축이 그대로 본다.
-    ///
-    /// 여섯 입력을 한 실행에 넣는다 — 셋은 사각이었던 형태(D·C·F), 셋은 대조군(A·E·B)이다.
-    /// 대조군이 없으면 "추출이 통째로 망가져 전부 빈 것" 과 구분되지 않는다.
+    /// 한 줄·인자 줄바꿈·수신자 줄바꿈 모두 같은 위반을 찾는지 대조한다.
     #[test]
     fn a_receiver_split_across_lines_is_still_seen() {
         // A — 한 줄 복구 (대조군, 축 1)
@@ -1119,10 +909,7 @@ mod forbidden_lock_guard {
         );
     }
 
-    /// 두 축의 범위가 다르다. 축 1(복구 금지)은 **명부에 있는 락만** 본다 — 명부 밖
-    /// 락의 복구는 정당하다. 축 2(무음 지나침)는 **명부와 무관하게** 어떤 std 락이든
-    /// 본다: 조용한 삼킴은 그 자체가 결함이라 시끄러운 쪽이어야 한다. `pending`
-    /// 은 명부 밖이지만 poison 을 아무 말 없이 버리므로 축 2 는 잡는다.
+    /// 복구 금지는 목록의 락만 검사한다. 실패를 조용히 생략하는 형태는 목록 밖 락도 검사한다.
     #[test]
     fn axis1_is_list_scoped_but_axis2_sees_every_lock() {
         let recovered = "let g = poison::recover_mutex(self.pending.lock(), W, &P);";
@@ -1165,16 +952,8 @@ mod forbidden_lock_guard {
 
     // ── 트리 스캔 테스트 ─────────────────────────────────────────────────
 
-    /// 스캔 **모집단**을 집합으로 못박는다.
-    ///
-    /// 기대 집합을 스캐너와 **다른 순회 방법**으로 만든다 — `rust_sources` 는 재귀
-    /// 스택 순회인데 여기서는 `crates/` 를 한 겹만 나열한다. 같은 방법으로 기대값을
-    /// 만들면 스캐너의 버그가 기대값에도 그대로 들어가 항상 통과한다.
-    ///
-    /// ②의 앵커 둘은 **cfg 양방향**을 하나씩 집는다. 이 가드는 컴파일된 심볼이 아니라
-    /// 디스크의 텍스트를 읽으므로 `--no-default-features` 조합에서도 같은 파일을 봐야
-    /// 하는데, 그 사실이 하한으로는 안 드러난다(빠져도 하한 위다). 앵커가 그것을
-    /// 조합마다 직접 증명한다.
+    /// 재귀 스캔과 별도로 크레이트 src 목록을 만들고 누락을 검사한다.
+    /// GUI와 headless 파일을 각각 확인해 현재 컴파일 cfg 밖의 파일도 읽는지 검사한다.
     #[test]
     fn the_scan_reaches_every_crate_and_both_cfg_sides() {
         let root = repo_root();
@@ -1286,8 +1065,7 @@ mod forbidden_lock_guard {
         );
     }
 
-    /// 금지 목록이 낡지 않았는가 — 각 락이 **여전히** 트리에 있어야 한다. 사라졌다면
-    /// 목록에서 빼야 하고, 그대로 두면 아무것도 지키지 않는 항목이 남는다.
+    /// 금지 목록의 락이 여전히 소스에 존재하는지 확인한다.
     #[test]
     fn every_forbidden_lock_still_exists_in_the_tree() {
         let root = repo_root();
@@ -1309,13 +1087,8 @@ mod forbidden_lock_guard {
         }
     }
 
-    /// 명부의 술어를 **타입으로** 못박는다 — 프레임 스트림 타입([`FORBIDDEN_STREAM_TYPES`])을
-    /// 감싼 락이 새로 생기면, 그 이름이 무엇이든 [`FORBIDDEN_LOCKS`] 에 있어야 한다.
-    ///
-    /// 이름 목록만 두면 "셋째(다음 스트림 락)는 안 걸린다". 이 테스트가 선언을
-    /// 타입으로 훑어, 명부에 없는 이름이 프레임 타입을 감싸는 순간 실패한다 — 명부가
-    /// 조용히 낡는 것을 막는다. 익명 자리(enum variant 등 `이름:` 없는 선언)는 바인딩
-    /// 이름이 없어 사용처(`writer`/skip-report)로 덮이므로 여기서 세지 않는다.
+    /// 프레임 스트림 타입을 감싼 이름 있는 락 선언이 모두 금지 목록에 있는지 확인한다.
+    /// 익명 반환 타입 등 이름: 형태가 없는 선언은 이 검사에서 세지 않는다.
     #[test]
     fn stream_typed_lock_names_are_all_listed() {
         let root = repo_root();

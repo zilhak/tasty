@@ -17,12 +17,8 @@ use directories::BaseDirs;
 ///    루트 자체를 갈라 debug 인스턴스가 release 데이터(state.db / layout.json /
 ///    memory.db / plugins / 포트파일 등)를 공유·오염하지 않게 격리한다.
 ///
-/// AI 에이전트가 경로를 외우기 쉽게 단일화 (Linux 규약상 `~/.config/tasty/` 가
-/// 자연스럽지만, agent 접근성 우선).
 pub fn tasty_home() -> Option<PathBuf> {
-    // 0) 테스트 override (feature-gated) — 이 **스레드**에 한해 최우선. `TASTY_HOME` env 를
-    //    전혀 읽지 않으므로(프로세스 전역이라 병렬 테스트·다른 완주와 경합한다) 완전히
-    //    격리된다. 자세한 계약·구멍은 [`push_home_override`] 참고.
+    // 테스트 override는 이 스레드에만 적용하며 환경변수보다 우선한다.
     #[cfg(any(test, feature = "test-support"))]
     if let Some(dir) = home_override::current() {
         return Some(dir);
@@ -43,19 +39,9 @@ pub fn tasty_home() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().join(dirname))
 }
 
-/// 테스트가 `tasty_home()` 을 임시 루트로 고정하는 스레드 로컬 override 스택.
-///
-/// 이 스레드에서 [`push_home_override`] 로 세운 값이 있으면 `tasty_home()` 이 `TASTY_HOME`
-/// env 를 **읽기도 전에** 그것을 돌려준다. env 를 만지지 않으므로 병렬 테스트·다른 git
-/// worktree 완주와 경합하지 않는다(그게 이 훅의 존재 이유다 — 처방 등급 ⓒ 계열, 근거는
-/// `docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때`).
-///
-/// **구멍: 자식 스레드에는 상속되지 않는다.** 프로덕션이 `std::thread::spawn` 등으로 만든
-/// 스레드 본문에서 `tasty_home()` 을 읽으면 이 override 를 보지 못하고 실제 홈/env 로
-/// 폴백한다. 그 구멍이 host-plugin 스위트에서 실제로 걸리는 자리가 0 이라는 측정 위에서
-/// 이 처방을 골랐고, 그 전제는 host-plugin 의
-/// `tests::spawned_thread_bodies_do_not_read_tasty_home` 소스 스캔 가드가 지킨다(전제가
-/// 깨지면 docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 를 다시 연다).
+/// 테스트용 홈 경로 스택. 현재 스레드에서는 환경변수보다 우선하며 전역 env를 바꾸지 않는다.
+/// 자식 스레드에는 상속되지 않아 그 스레드는 실제 홈이나 TASTY_HOME을 읽을 수 있다.
+/// 격리 검증은 docs/dev-guide/unit-test-isolation.md를 따른다.
 #[cfg(any(test, feature = "test-support"))]
 mod home_override {
     use std::cell::RefCell;
@@ -80,12 +66,8 @@ mod home_override {
     }
 }
 
-/// 이 스레드의 `tasty_home()` 을 `dir` 로 고정한다. [`pop_home_override`] 와 짝을 이루는
-/// 스택이라 중첩해도 안전하다 — RAII 가드가 생성 시 push, drop 시 pop 하면 된다.
-///
-/// **env 를 만지지 않는다.** 그래서 이 override 를 쓰는 테스트는 `set_var` 를 부르는
-/// 테스트(홈 해석 자체가 검증 대상이라 env 가 피험자인 소수)와 병렬로 돌아도 읽기-쓰기
-/// 경합이 없다. 자식 스레드 비상속 구멍은 [`home_override`] 문서 참고.
+/// 이 스레드의 홈 경로를 추가한다. RAII 가드에서 pop_home_override와 역순으로 짝지어야 한다.
+/// 환경변수는 바꾸지 않으며 자식 스레드에 상속하지 않는다.
 #[cfg(any(test, feature = "test-support"))]
 pub fn push_home_override(dir: PathBuf) {
     home_override::push(dir);
@@ -107,26 +89,11 @@ pub fn os_home_dir() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
 }
 
-/// 읽거나 해석하지 못한 사용자 파일을 옆자리로 옮겨 보존한다. 성공하면 옮긴 경로.
-///
-/// 설정·레이아웃처럼 **해석 실패를 기본값으로 폴백하는** 경로에서 쓴다. 그런 경로의
-/// 진짜 위험은 폴백 자체가 아니라 **그 뒤의 저장**이다 — 기본값을 원래 자리에 쓰면
-/// 사용자가 쓴 원본이 사라진다. 원본을 먼저 옮겨 두면 이후 저장이 새 파일을 만들어도
-/// 데이터가 남는다.
-///
-/// `rename` 이므로 원본 자리는 비고, 다음 로드는 "파일 없음"(정상 기본값 경로)이 된다 —
-/// 같은 파일에 대해 백업이 반복 생성되지 않는다. `<name>.bak` 이 이미 있으면 덮어쓰지
-/// 않고 `<name>.bak.2`, `.bak.3` … 를 찾는다. 먼저 만들어진 백업이 더 원본에 가깝기
-/// 때문이다.
-///
-/// **실패하면 호출자는 그 자리에 쓰면 안 된다.** 원본을 보호할 다른 수단이 없다.
-/// 읽기 자체가 실패한 경우(권한·IO 오류)에는 이 함수를 부르지 않는다 — 내용을 확인하지
-/// 못한 파일을 옮기면 일시적 오류에도 사용자 파일이 자리를 뜬다.
-///
-/// `Ok(None)` 은 **옮길 것이 이미 없었다**는 뜻이다. 부팅 중 같은 파일을 두 곳에서
-/// 읽으면(설정은 실제로 그렇다) 둘 다 해석에 실패하고, 한쪽이 먼저 옮긴 뒤 다른 쪽의
-/// `rename` 이 `NotFound` 로 실패한다. 이때 원본은 이미 안전하게 백업에 있으므로 저장을
-/// 막을 이유가 없다 — 실패로 취급하면 경합에 진 쪽이 애먼 저장 금지를 걸어버린다.
+/// 해석에 실패한 파일을 백업 이름으로 옮긴다. 읽기 자체가 실패한 파일에는 사용하지 않는다.
+/// 성공하면 원래 경로가 비고 이후 저장이 새 파일을 만들 수 있다. 실패하면 덮어쓰면 안 된다.
+/// 이미 존재하는 .bak, .bak.2 등을 건너뛰며 상한까지 자리를 찾는다. 이름 선택과 rename은
+/// 원자적이지 않으므로 동시 백업에서 기존 파일이 덮어써지지 않는다고 보장하지는 않는다.
+/// Ok(None)은 rename 시 원본을 찾지 못했다는 뜻이며, 다른 호출이 먼저 옮겼을 수 있다.
 pub fn preserve_corrupt_file(path: &Path) -> std::io::Result<Option<PathBuf>> {
     let Some(candidate) = next_backup_slot(path) else {
         return Err(std::io::Error::new(
@@ -158,25 +125,13 @@ fn next_backup_slot(path: &Path) -> Option<PathBuf> {
     Some(candidate)
 }
 
-/// [`preserve_corrupt_file`] 이 **지금 부르면 예산 소진으로 실패하는가** — 파일을
-/// 건드리지 않고 자리만 센다.
-///
-/// 보존은 첫 저장 시점에 일어나는데, 그보다 훨씬 이른 **부팅 알림** 시점에 이미
-/// "이 파일은 옆으로 옮겨질 것" 이라고 말할지 "옮기지 못해 저장이 막힌다" 고 말할지를
-/// 정해야 한다. 그 판정을 예산 계산을 복제하지 않고 여기서 함께 답한다 — 두 곳이
-/// 어긋나면 사용자에게 **사실과 반대인 안내**가 나간다(보관됐다고 알리고 실제로는
-/// 보관되지 않는다).
-///
-/// 판정과 실제 보존 사이에 다른 프로세스가 `.bak` 을 지우거나 만들 수 있다 — 이 값은
-/// 알림 문구를 고르는 데만 쓰고, 저장 여부는 [`preserve_corrupt_file`] 의 실제 결과가
-/// 정한다.
+/// 현재 백업 이름이 모두 사용 중인지 확인한다. 안내 문구 선택용으로만 사용한다.
+/// 실제 보존 전 다른 프로세스가 파일을 바꿀 수 있으므로 저장 여부는 보존 결과로 판단한다.
 pub fn backup_budget_is_exhausted(path: &Path) -> bool {
     next_backup_slot(path).is_none()
 }
 
-/// `config.toml` + `bak` → `config.toml.bak`. `Path::with_extension` 은 기존 확장자를
-/// **대체**하므로(`config.bak`) 쓸 수 없다 — 원래 이름이 백업에 그대로 남아야 사용자가
-/// 무엇의 백업인지 안다.
+/// 기존 확장자를 바꾸지 않고 백업 접미사를 붙인다: config.toml + bak → config.toml.bak.
 fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(".");
@@ -184,9 +139,7 @@ fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// 홈 아래 경로를 `~/…` 로 줄여 **표시용** 문자열로 만든다. 홈 밖이거나 홈을 못 찾으면
-/// 원래 경로 그대로. 파일 접근에 쓰라고 만든 값이 아니다 — 표 한 칸을 홈 접두사가
-/// 통째로 잡아먹는 것을 막는 용도다.
+/// 홈 경로를 ~/로 줄인 표시용 문자열. 파일 접근에 사용하지 않는다.
 pub fn tilde_abbreviate(p: &Path) -> String {
     match os_home_dir().and_then(|home| p.strip_prefix(home).ok().map(Path::to_path_buf)) {
         Some(rest) => format!("~/{}", rest.display()),
@@ -194,21 +147,9 @@ pub fn tilde_abbreviate(p: &Path) -> String {
     }
 }
 
-/// 자식 프로세스·외부 도구에 넘길 경로에서 Windows verbatim(extended-length,
-/// `\\?\`) prefix 를 제거한다.
-///
-/// `std::fs::canonicalize` 는 Windows 에서 `\\?\C:\...` 형태의 verbatim 경로를
-/// 돌려준다. 이 경로가 자식 PTY 의 working_dir 로 전달되면 자식의 `process.cwd()`
-/// 가 `\\?\...` 가 되는데, 일부 도구(예: Claude Code/bun 의 `pathToFileURL`)는
-/// 이를 file URL 로 변환하지 못해 깨진다. 그래서 외부로 내보내는 경로는 일반
-/// 형태로 되돌린다.
-///
-/// - `\\?\UNC\server\share\..` → `\\server\share\..`
-/// - `\\?\C:\..`               → `C:\..`
-/// - 이미 일반 경로 / 비-Windows → 입력 그대로 (no-op)
-///
-/// strip 로직은 `#[cfg(windows)]` 안에만 존재하므로 다른 플랫폼의 동작은 변하지
-/// 않는다.
+/// 외부 도구 호환을 위해 Windows verbatim 접두사를 제거한다.
+/// \\?\UNC\server는 \\server로, \\?\C:\는 C:\로 바꾼다.
+/// 일반 경로와 비 Windows 입력은 그대로 반환한다.
 pub fn strip_verbatim_prefix(p: &str) -> String {
     #[cfg(windows)]
     {
@@ -222,17 +163,8 @@ pub fn strip_verbatim_prefix(p: &str) -> String {
     p.to_string()
 }
 
-/// 경로의 `.` / `..` 세그먼트를 **순수 lexical** 로(파일시스템 접근 없이) 붕괴시킨다.
-///
-/// `std::path::absolute` 와의 차이: `absolute` 는 Unix 에서 symlink 안전성 때문에
-/// `..` 를 보존한다(`/a/b/../c` 를 `/a/c` 로 줄이면 `b` 가 symlink 일 때 실제 대상과
-/// 달라지므로). 이 함수는 **모든 플랫폼에서 동일하게** `..` 를 붕괴시킨다 —
-/// markdown 링크의 표시/dedup 용도에는 lexical 붕괴가 사용자 의도에 맞고 dedup 키가
-/// 안정적이다.
-///
-/// 트레이드오프: 붕괴 대상 세그먼트가 symlink 이면 lexical 결과가 OS 의 실제 해석과
-/// 달라질 수 있다(`b` 가 symlink 면 `/a/b/../c` ≠ `/a/c`). markdown 링크 용도에서는
-/// 이 동작이 의도된 것이며 허용된다. 루트/prefix 위로는 올라가지 않는다.
+/// 파일시스템을 조회하지 않고 .과 ..를 정리한다. 루트 위로 올라가지는 않는다.
+/// 심볼릭 링크가 있으면 OS가 해석한 경로와 달라질 수 있으므로 표시·중복 제거에 사용한다.
 pub fn lexically_normalize(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -344,10 +276,7 @@ mod tests {
         assert_eq!(strip_verbatim_prefix(r"\\?\X"), r"\\?\X");
     }
 
-    // `tilde_abbreviate` 는 홈을 `os_home_dir()` 로 찾는다. 테스트에서 `HOME` 을
-    // 갈아끼우는 대신(edition 2024 의 `set_var` 는 unsafe 이고 병렬 테스트와
-    // 레이스가 난다) 실제 홈을 입력 생성에 그대로 쓴다 — 홈 값 자체가 아니라
-    // "홈 접두사를 `~` 로 바꾼다" 는 규칙만 검증하면 되기 때문이다.
+    // HOME을 바꾸지 않고 실제 홈을 입력으로 사용해 표시 규칙만 검사한다.
     #[test]
     fn tilde_abbreviate_replaces_home_prefix() {
         let Some(home) = os_home_dir() else {
@@ -405,8 +334,7 @@ mod tests {
         assert_eq!(from_slash("src/file/format.rs"), "src/file/format.rs");
     }
 
-    /// 백업은 원래 이름을 통째로 남기고(`config.toml.bak`), 두 번째부터 번호가 붙는다 —
-    /// 먼저 만들어진 백업이 더 원본에 가까우므로 덮어쓰지 않는다.
+    /// 기존 백업을 건너뛰고 다음 번호를 사용하는지 확인한다.
     #[test]
     fn backups_do_not_clobber_each_other() {
         let tmp = tempfile::tempdir().unwrap();
@@ -425,8 +353,7 @@ mod tests {
         assert!(!path.exists(), "원본은 자리를 떠야 다음 저장이 안전하다");
     }
 
-    /// 옮길 것이 이미 없으면 실패가 아니다. 부팅 중 같은 파일을 두 곳에서 읽으면 한쪽이
-    /// 먼저 옮기고, 다른 쪽은 여기로 온다 — 그때 저장을 막으면 애먼 금지가 걸린다.
+    /// 원본이 이미 없으면 이동할 파일이 없다는 결과를 반환한다.
     #[test]
     fn already_moved_file_is_not_a_failure() {
         let tmp = tempfile::tempdir().unwrap();

@@ -1,10 +1,5 @@
-/// Integration tests for VTE processing: input, deletion, editing.
-///
-/// These drive the **production** ingest path: a detached `Terminal`
-/// (`Terminal::new_detached`) feeds bytes straight into `TerminalState::ingest`
-/// — the same handlers used with a real PTY — with no PTY, child, or threads.
-/// This is fast and deterministic while still exercising the real VTE dispatch
-/// (so OSC/CSI/SGR handlers are validated, not a copy).
+//! 실제 detached Terminal에 바이트를 넣어 VTE 입력·편집·응답을 검사한다.
+//! 실제 PTY나 셸 없이 제품의 ingest와 핸들러를 사용한다.
 use std::sync::mpsc::{self, Receiver};
 
 use tasty_terminal::{Terminal, TerminalEvent, TerminalEventKind};
@@ -73,10 +68,6 @@ impl Term {
     }
 }
 
-// ============================================================
-// Basic text input
-// ============================================================
-
 #[test]
 fn type_hello() {
     let mut t = Term::new(80, 24);
@@ -106,18 +97,12 @@ fn carriage_return_overwrites() {
     assert_eq!(t.row(0), "XYcdef");
 }
 
-// ============================================================
-// Backspace (the actual bug reported)
-// ============================================================
-
 #[test]
 fn backspace_moves_cursor_left() {
     let mut t = Term::new(80, 24);
     // Shell typically sends: "abc" then BS+space+BS to erase 'c'
     t.feed_str("abc\x08 \x08");
-    // After: cursor was at 3, BS moves to 2, space writes ' ' at 2 (cursor now 3),
-    // BS moves back to 2. Result: "ab " with cursor at 2.
-    // But visually it's "ab" (the space replaced 'c')
+    // BS + 공백 + BS로 마지막 글자를 지우고 커서를 그 칸에 둔다.
     assert_eq!(t.row(0), "ab");
 }
 
@@ -132,8 +117,6 @@ fn backspace_at_start_of_line_stays() {
 #[test]
 fn backspace_shell_erase_pattern() {
     let mut t = Term::new(80, 24);
-    // Simulate typing "helo" then pressing backspace and typing "lo"
-    // Shell sends: "helo" + BS+SP+BS + "lo"
     t.feed_str("helo\x08 \x08lo");
     assert_eq!(t.row(0), "hello");
 }
@@ -141,16 +124,10 @@ fn backspace_shell_erase_pattern() {
 #[test]
 fn multiple_backspace_erase() {
     let mut t = Term::new(80, 24);
-    // Type "abcde" then erase last 3 characters
     t.feed_str("abcde");
-    // Three BS+SP+BS sequences
     t.feed_str("\x08 \x08\x08 \x08\x08 \x08");
     assert_eq!(t.row(0), "ab");
 }
-
-// ============================================================
-// Cursor movement (CSI sequences)
-// ============================================================
 
 #[test]
 fn cursor_move_right() {
@@ -187,10 +164,6 @@ fn cursor_column_absolute() {
     assert_eq!(t.row(0), "01234X6789");
 }
 
-// ============================================================
-// Erase operations
-// ============================================================
-
 #[test]
 fn erase_to_end_of_line() {
     let mut t = Term::new(80, 24);
@@ -221,10 +194,6 @@ fn erase_to_end_of_display() {
     assert_eq!(t.row(2), "");
 }
 
-// ============================================================
-// Overwrite (CR + new text)
-// ============================================================
-
 #[test]
 fn overwrite_line() {
     let mut t = Term::new(80, 24);
@@ -239,10 +208,6 @@ fn overwrite_with_erase() {
     assert_eq!(t.row(0), "new text");
 }
 
-// ============================================================
-// SGR (colors/attributes) — verify they don't break text
-// ============================================================
-
 #[test]
 fn sgr_colored_text() {
     let mut t = Term::new(80, 24);
@@ -256,10 +221,6 @@ fn sgr_bold_text() {
     t.feed(b"\x1b[1mbold\x1b[0m");
     assert_eq!(t.row(0), "bold");
 }
-
-// ============================================================
-// Alternate screen
-// ============================================================
 
 #[test]
 fn alternate_screen_switch() {
@@ -281,10 +242,6 @@ fn alternate_screen_switch() {
     assert_eq!(t.row(0), "main screen"); // original content restored
 }
 
-// ============================================================
-// Bracketed paste
-// ============================================================
-
 #[test]
 fn bracketed_paste_mode() {
     let mut t = Term::new(80, 24);
@@ -297,10 +254,6 @@ fn bracketed_paste_mode() {
     assert!(!t.bracketed_paste());
 }
 
-// ============================================================
-// Application cursor keys
-// ============================================================
-
 #[test]
 fn application_cursor_keys_mode() {
     let mut t = Term::new(80, 24);
@@ -312,10 +265,6 @@ fn application_cursor_keys_mode() {
     t.feed(b"\x1b[?1l"); // disable
     assert!(!t.application_cursor_keys());
 }
-
-// ============================================================
-// Synchronized output
-// ============================================================
 
 #[test]
 fn synchronized_output_applies_immediately() {
@@ -333,10 +282,6 @@ fn synchronized_output_applies_immediately() {
     assert!(!t.synchronized_output());
 }
 
-// ============================================================
-// Device status / cursor position report
-// ============================================================
-
 #[test]
 fn cursor_position_report_responds_with_one_based_coordinates() {
     let mut t = Term::new(80, 24);
@@ -351,12 +296,6 @@ fn status_report_returns_terminal_ok() {
     t.feed(b"\x1b[5n");
     assert_eq!(String::from_utf8_lossy(&t.sent_bytes()), "\x1b[0n");
 }
-
-// ============================================================
-// OSC handling — proves the production ingest path runs the real
-// OSC handler (the old duplicate harness dropped all OSC sequences,
-// so this regression guard could not have passed before unification).
-// ============================================================
 
 #[test]
 fn osc_set_window_title_emits_event() {
@@ -427,10 +366,6 @@ fn osc_title_pathlike_non_shell_basename_still_sets() {
     assert!(has_title_changed(&t.take_events()));
 }
 
-// ============================================================
-// Full reset
-// ============================================================
-
 #[test]
 fn full_reset() {
     let mut t = Term::new(80, 24);
@@ -444,36 +379,22 @@ fn full_reset() {
     assert_eq!(t.row(0), ""); // screen cleared
 }
 
-// ============================================================
-// Line wrapping
-// ============================================================
-
 #[test]
 fn line_wrapping() {
     let mut t = Term::new(10, 24);
     t.feed_str("0123456789wrap");
-    // "0123456789" fills row 0, "wrap" goes to row 1
     assert_eq!(t.row(0), "0123456789");
     assert_eq!(t.row(1), "wrap");
 }
-
-// ============================================================
-// Tab character
-// ============================================================
 
 #[test]
 fn tab_character() {
     let mut t = Term::new(80, 24);
     t.feed_str("a\tb");
     let row = t.row(0);
-    // Tab should advance cursor, 'a' and 'b' should both be present
     assert!(row.starts_with("a"));
     assert!(row.contains("b"));
 }
-
-// ============================================================
-// Edge cases
-// ============================================================
 
 #[test]
 fn empty_input() {
@@ -511,14 +432,9 @@ fn unicode_text() {
 #[test]
 fn mixed_ascii_and_escape() {
     let mut t = Term::new(80, 24);
-    // Simulate a colorized prompt: "\x1b[32m$ \x1b[0mhello"
     t.feed(b"\x1b[32m$ \x1b[0mhello");
     assert_eq!(t.row(0), "$ hello");
 }
-
-// ============================================================
-// DECSTR — Soft Reset (CSI ! p)
-// ============================================================
 
 #[test]
 fn decstr_resets_sgr_to_default() {

@@ -1,24 +1,12 @@
 //! 테스트 전용 공용 유틸리티 — 프로세스 전역 상태(env · `TASTY_HOME`)를 테스트 동안만
 //! 갈아끼우는 RAII 가드와, 플랫폼별로 형태가 다른 절대경로 조립.
 //!
-//! 소비자의 **dev-dependency** 로만 들어간다 — 여기 있는 것은 출하되지 않는다.
+//! 소비자의 dev-dependency로만 사용하며 제품 바이너리에는 포함하지 않는다.
 
 use std::sync::{Mutex, MutexGuard};
 
-/// `TASTY_HOME` 환경변수를 건드리는 테스트들이 공유하는 직렬화 락.
-///
-/// `std::env::set_var`/`remove_var` 는 프로세스 전역 상태를 변경하고, Rust 기본
-/// 테스트 러너는 여러 테스트를 동시에 실행한다. 본체에서 `TASTY_HOME` 을
-/// 변경하는 모든 테스트(본체의 `platform::screen_capture`, `webhook::config`)는 이 락을
-/// 먼저 획득해야 서로 간섭 없이 안전하다.
-///
-/// 직접 잡을 일은 없다 — [`TastyHomeGuard`] 가 락 획득과 원값 복원을 함께 맡는다.
-///
-/// ★ **그 문장을 컴파일러가 지킨다.** 이 static 은 크레이트 비공개다(`pub` 이 아니다) —
-/// 밖에서 이름을 부르면 컴파일 오류다. 종전에는 소스 스캔 하나가 그 일을 대신했는데,
-/// 텍스트로 재는 것보다 **못 쓰게 만드는 것**이 싸고 확실하다. 넓히려면 먼저 물어라:
-/// 락만 손에 넣고 값을 직접 바꾸는 경로가 생기면 [`TastyHomeGuard`] 가 묶은 셋(락 ·
-/// 이전 값 보관 · `Drop` 복원) 중 뒤 둘이 빠지고, 그 오염은 단독 실행에서 재현되지 않는다.
+/// TASTY_HOME 변경 시험의 공통 락. TastyHomeGuard가 이전 값 보관·복원과 함께 관리한다.
+/// 락만 얻고 복원을 빠뜨리는 호출을 막기 위해 크레이트 밖에는 노출하지 않는다.
 static TASTY_HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// [`TASTY_HOME_ENV_LOCK`] 복구 보고의 대상 이름과 1 회 보고 플래그.
@@ -26,16 +14,8 @@ const LOCK_WHAT: &str = "TASTY_HOME_ENV_LOCK";
 static LOCK_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 테스트가 `TASTY_HOME` 을 임시 디렉토리로 갈아끼우는 동안 쓰는 RAII 가드.
-///
-/// 생성 시 [`TASTY_HOME_ENV_LOCK`] 을 잡고 **이전 값을 기억한 뒤** 임시 디렉토리를
-/// 가리키게 하며, `Drop` 에서 그 값을 그대로 되돌린다(원래 없었으면 제거). 락은
-/// 복원이 끝난 뒤 풀린다.
-///
-/// 수동 `set_var` / `remove_var` 쌍으로 대신하면 두 가지가 샌다 — 단언 실패로
-/// 패닉하면 복원 줄에 도달하지 못하고, `remove_var` 로 끝내면 원래 `TASTY_HOME`
-/// 이 설정돼 있던 환경에서 그 값을 잃는다. 어느 쪽이든 같은 프로세스의 뒤따르는
-/// 테스트가 오염된 환경을 물려받아, 변경과 무관한 실패가 생긴다.
+/// TASTY_HOME을 임시 디렉터리로 바꾸고 Drop에서 원값을 복원한다.
+/// 원래 없던 값은 제거하며, 복원을 마친 뒤 직렬화 락을 놓는다.
 pub struct TastyHomeGuard {
     // drop 순서 = 선언 순서다. env 복원 → 임시 디렉토리 삭제 → 락 해제 순으로 끝나야
     // 하므로 이 셋의 순서를 바꾸지 않는다(복원과 정리가 모두 락 보유 중에 끝난다).
@@ -47,9 +27,7 @@ pub struct TastyHomeGuard {
 impl TastyHomeGuard {
     /// 락 획득 → 이전 값 보관 → 새 임시 디렉토리로 `TASTY_HOME` 설정.
     pub fn new() -> Self {
-        // 앞선 테스트가 이 락을 들고 패닉하면 poison 이 남는다. 복구해서 계속 가되
-        // 조용히 넘기지 않는다 — 공용 헬퍼가 한 번만 보고하고 값을 돌려준다
-        // (docs/dev-guide/error-handling.md "락 poison").
+        // 앞선 시험의 패닉으로 생긴 poison은 복구하고 처음 한 번 보고한다.
         let lock = tasty_utils::poison::recover_mutex(
             TASTY_HOME_ENV_LOCK.lock(),
             LOCK_WHAT,
@@ -70,31 +48,13 @@ impl TastyHomeGuard {
     }
 }
 
-/// 이 스레드의 `tasty_home()` 을 **이 가드 전용 임시 디렉토리**로 고정하는 RAII 가드.
+/// 이 스레드의 tasty_home을 가드 전용 임시 디렉터리로 지정한다.
+/// 환경변수보다 먼저 적용되는 스레드 로컬 override이므로 전역 락 없이 병렬로 쓸 수 있다.
+/// 생성 뒤에도 파일을 쓰는 CoreState는 수명 전체에 걸쳐 가드를 유지해야 한다.
+/// 같은 스레드의 여러 인스턴스도 디렉터리를 공유하지 않는다.
 ///
-/// [`TastyHomeGuard`] 와 목적은 같고 수단이 다르다. 그쪽은 `TASTY_HOME` env 를 갈아끼우므로
-/// 프로세스 전역이라 전용 락으로 직렬화해야 한다. 이쪽은
-/// [`tasty_utils::path::push_home_override`] 의 **스레드 로컬** 스택을 쓴다 — env 를 읽기도
-/// 전에 이기고, 락이 없어 병렬 실행을 막지 않는다(docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 의 테스트 전용 경로 주입).
-///
-/// # 왜 `CoreState` 가 이것을 들고 있는가
-///
-/// 격리해야 하는 것이 **생성 시점의 읽기 여섯 자리로 끝나지 않기** 때문이다. `child-terminals.json`
-/// 은 생성 이후의 임의 시점에 `save()` 로 쓰이고, `file-handler-recent.json` 은 쓸 때마다 경로를
-/// 다시 해석하며, `zsh-integration/.zshenv` 는 셸 설정을 조립할 때 만들어진다. 그래서 override 는
-/// 생성자가 잠깐 세웠다 내리는 것이 아니라 **그 engine 이 사는 동안** 서 있어야 한다.
-///
-/// 디렉토리가 engine 마다 다른 것도 계약이다. 스레드마다 하나로 공유하면 같은 스레드에서
-/// 앞 시험이 남긴 레지스트리를 뒤 시험이 **읽는다** — 사용자 홈에서 일어나던 그 되먹임이
-/// 임시 디렉토리로 자리만 옮긴 꼴이고, `--test-threads=1` 에서는 스위트 전체가 한 디렉토리를
-/// 공유하게 된다.
-///
-/// # 구멍
-///
-/// 스레드 로컬이라 **자식 스레드에는 상속되지 않는다.** 프로덕션이 띄운 스레드 본문이
-/// `tasty_home()` 을 읽으면 이 override 를 못 보고 실제 홈으로 폴백한다. 그 구멍이 이 스위트에서
-/// 걸리는 자리가 0 이라는 것은 측정으로 받쳤다 — 빈 `TASTY_HOME` 으로 완주한 뒤 그 디렉토리가
-/// 비어 있는지 보는 것이 그 측정이고, 절차는 `docs/dev-guide/unit-test-isolation.md` 에 있다.
+/// 자식 스레드에는 상속되지 않는다. 그 스레드가 tasty_home을 호출하면 실제 환경 경로를
+/// 읽을 수 있다. 격리 검증 절차는 docs/dev-guide/unit-test-isolation.md를 따른다.
 pub struct IsolatedHome {
     // drop 순서 = 선언 순서. override 를 먼저 내리고 그 다음에 디렉토리를 지운다 — 반대면
     // 지워진 경로를 가리키는 override 가 잠깐 살아 있다.
@@ -124,13 +84,7 @@ impl IsolatedHome {
     }
 }
 
-/// 테스트용 절대경로 조립 — 절대경로 형태가 플랫폼마다 다르다(`/tmp/x` vs `C:\tmp\x`).
-///
-/// explorer root 처럼 `Path::is_absolute()` 로 채택 여부를 판정하는 코드의 테스트에서
-/// 유닉스 리터럴을 그대로 쓰면 Windows 에서 상대경로로 판정돼 기대값이 뒤집힌다
-/// (`tasty_model::resolve_root` 가 폴백을 태운다).
-///
-/// `abs_path("tmp/exp")` → `/tmp/exp`(unix) · `C:\tmp\exp`(Windows).
+/// 플랫폼에 맞는 시험용 절대경로. tmp/exp는 Unix의 /tmp/exp, Windows의 C:\tmp\exp가 된다.
 pub fn abs_path(rel: &str) -> std::path::PathBuf {
     #[cfg(windows)]
     {
@@ -142,17 +96,8 @@ pub fn abs_path(rel: &str) -> std::path::PathBuf {
     }
 }
 
-/// 임의의 환경변수 하나를 테스트 동안만 바꿔두는 RAII 가드.
-///
-/// [`TastyHomeGuard`] 와 같은 이유로 존재한다 — env 는 프로세스 전역이라, 테스트가
-/// `set_var` 로 바꾼 뒤 `remove_var` 로 "정리" 하면 원래 값이 있던 환경에서 그 값을
-/// 잃고, 단언 실패로 패닉하면 정리 자체가 건너뛰어진다. 어느 쪽이든 같은 프로세스의
-/// 뒤따르는 테스트가 오염된 환경을 물려받는다.
-///
-/// 직렬화 락은 이 가드가 잡지 않는다 — 어떤 키를 어느 테스트끼리 직렬화할지는
-/// 호출부의 책임이다. `TASTY_HOME` 은 [`TastyHomeGuard`] 가 전용 락과 함께 이 가드를
-/// 감싸 쓴다(그래서 이 타입은 플랫폼과 무관하게 항상 사용된다 — OS 별로 미사용이 되어
-/// `dead_code` 경고를 내지 않는다).
+/// 환경변수를 바꾸고 Drop에서 원값을 복원한다. 직접 직렬화 락을 얻지는 않으므로
+/// 호출자가 동시 환경변수 접근을 조율해야 한다. TASTY_HOME은 TastyHomeGuard를 사용한다.
 pub struct EnvVarGuard {
     key: &'static str,
     prev: Option<std::ffi::OsString>,

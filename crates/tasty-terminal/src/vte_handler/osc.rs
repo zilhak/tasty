@@ -1,4 +1,4 @@
-//! VTE handler: osc 도메인.
+//! OSC metadata, clipboard events, and terminal queries.
 
 use std::sync::Arc;
 
@@ -11,14 +11,8 @@ use termwiz::surface::{Change, CursorVisibility};
 use crate::foreground_process::is_known_shell_name;
 use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
-/// 셸 실행파일 경로 형태의 제목인지 판정한다 (예: ConPTY 가 spawn 시 콘솔 기본
-/// 제목으로 세팅하는 `C:\Program Files/Git/bin/bash.exe`). 이런 제목은 사용자
-/// 의미가 없어 `current_title` 세팅·`TitleChanged` 발화 모두에서 무시한다 —
-/// 하류(이벤트 변환)만 막으면 `refresh_tab_osc_title` 직접 투영 경로로 샌다.
-///
-/// 이중 조건으로 오탐을 좁힌다: 경로 형태(`/`·`\`·`:` 포함)이면서 basename 이
-/// known shell 일 때만 참. bare `"bash"` 나 `"user@host: ~/dev"` 는 통과한다.
-/// 혼합 슬래시 케이스 커버를 위해 `/` 와 `\` 둘 다 구분자로 취급한다.
+/// Ignore shell executable paths used as default titles. Require both a path separator
+/// or colon and a known shell basename, so bare shell names and prompt titles remain valid.
 fn looks_like_shell_exe_path(title: &str) -> bool {
     if !title.contains(['/', '\\', ':']) {
         return false;
@@ -75,8 +69,7 @@ impl TerminalState {
                         path
                     }
                 };
-                // Cache the CWD so get_cwd() can return it instantly without
-                // spawning an external process (critical on Windows).
+                // Cache the reported directory for get_cwd.
                 self.cached_cwd = Some(std::path::PathBuf::from(&path));
                 self.events.push(TerminalEvent {
                     surface_id: 0,
@@ -102,26 +95,15 @@ impl TerminalState {
                     });
                 }
             }
-            // OSC 8 (SetHyperlink): state-transition command. An open
-            // (`OSC 8 ; params ; URI`) attaches the hyperlink to every cell
-            // printed afterward; a close (`OSC 8 ; ;`, empty URI) clears it.
-            // Emitting it as an attribute change lets termwiz's surface pen
-            // hold the state, so subsequent Print cells inherit it automatically
-            // — no separate current_hyperlink field is needed. FullReset/DECSTR
-            // clear it via AllAttributes(default), which zeroes the pen hyperlink.
+            // Store OSC 8 in the surface pen so subsequent cells inherit the link.
+            // An empty URI closes it; full/soft reset clears the pen hyperlink.
             OperatingSystemCommand::SetHyperlink(opt) => {
                 self.apply_or_stage_change(Change::Attribute(AttributeChange::Hyperlink(
                     opt.map(Arc::new),
                 )));
             }
-            // OSC 10/11/12 (… up to 19): dynamic colors. `OSC 10 ; spec ; spec …`
-            // assigns fg, then bg, then cursor in sequence, so the n-th entry maps
-            // to color number `base + n`. Only *queries* (`?`) are answered — with
-            // the plumbed theme RGB; set requests are ignored (no palette-override
-            // storage yet — H3 scope). Color numbers tasty has no source for
-            // (13..=19) are left unanswered. The response reflects the OSC number
-            // and uses ST termination (xterm convention; neovim rejects the BEL
-            // form).
+            // Dynamic color queries use base + entry index. Answer only known colors
+            // from the host palette; ignore color assignments. Replies end with ST.
             OperatingSystemCommand::ChangeDynamicColors(first_color, colors) => {
                 let Some(palette) = self.color_palette.clone() else {
                     return;
@@ -141,10 +123,8 @@ impl TerminalState {
                     }
                 }
             }
-            // OSC 4: ANSI palette colors. Each pair queries one palette index;
-            // a query (`?`) is answered with the theme RGB for that index. Indices
-            // outside the 16 theme-defined ANSI colors (the fixed xterm cube/ramp)
-            // are left unanswered. Set requests are ignored (H3 scope).
+            // OSC 4 answers theme palette queries for indices 0..16. Ignore assignments
+            // and indices in the fixed xterm cube/grayscale range.
             OperatingSystemCommand::ChangeColorNumber(pairs) => {
                 let Some(palette) = self.color_palette.clone() else {
                     return;
@@ -179,13 +159,8 @@ impl TerminalState {
                     kind: TerminalEventKind::ClipboardQuery,
                 });
             }
-            // OSC 133 — termwiz 는 "133" 을 미리 알려진 코드로 취급해
-            // `Unspecified` 대신 이 전용 variant 로 구조화해 반환한다(A/C/D 는
-            // 항상 이 경로 — B 는 셸이 `cmd=` 등 부가 토큰을 붙이면 termwiz 의
-            // 엄격한 단일-토큰 파서가 실패해 `Unspecified` 로 폴백하고, 그 경우는
-            // 아래 `Unspecified` 분기가 그대로 처리한다). tasty 공통
-            // `PromptBoundary{phase, payload}` 로 평평하게 만들어 이후
-            // command_index/hook 배선이 phase 문자만 보고 동작하게 한다.
+            // termwiz handles standard OSC 133 markers here. Additional tokens can
+            // fall back to Unspecified below. Both paths emit PromptBoundary.
             OperatingSystemCommand::FinalTermSemanticPrompt(prompt) => {
                 use termwiz::escape::osc::FinalTermSemanticPrompt as Ftsp;
                 let (phase, payload) = match prompt {
@@ -206,13 +181,8 @@ impl TerminalState {
             OperatingSystemCommand::Unspecified(params) => {
                 if let Some(first) = params.first() {
                     if first == b"133" {
-                        // OSC 133 ; <A|B|C|D> [; payload ...] (BEL or ST).
-                        // params[0] = "133", params[1] = "A"/"B"/"C"/"D" (or with payload),
-                        // params[2..] = extra payload tokens (often `cmd=...`, exit_code, etc).
-                        // (실제로는 termwiz 가 133 을 알려진 코드로 처리해 위
-                        // `FinalTermSemanticPrompt` 로 먼저 매칭되므로, 이 분기는
-                        // termwiz 의 엄격 파서가 실패하는 케이스(B 에 `cmd=` 등 부가
-                        // 토큰이 붙어 `bail!` 하는 경우)의 폴백으로만 도달한다.
+                        // Fallback for OSC 133 markers that termwiz did not parse into its
+                        // dedicated variant, such as B with additional cmd tokens.
                         if let Some(second) = params.get(1)
                             && let Some(&phase_byte) = second.first()
                             && matches!(phase_byte, b'A' | b'B' | b'C' | b'D')
@@ -270,15 +240,8 @@ impl TerminalState {
         }
     }
 
-    /// XtGetTcap (`DCS + q Pt ST`): a request for termcap/terminfo capability
-    /// strings, where `Pt` is one or more hex-encoded capability names joined by
-    /// `;` (termwiz decodes them to ASCII for us). tasty does not yet expose a
-    /// capability database, so every queried cap is answered with the invalid /
-    /// unsupported reply `DCS 0 + r <hexcap> ST` (status 0), echoing the
-    /// requested name back as hex. This says "that cap is currently not provided"
-    /// — distinct from silence, which leaves the querying app waiting on a
-    /// timeout. This is a *current* limitation; real cap answers (status 1,
-    /// `DCS 1 + r <cap>=<hexvalue> ST`) may be added later.
+    /// Answer XtGetTcap with unsupported status 0 and the requested hex name.
+    /// No capability database is provided; replying avoids leaving the query unanswered.
     pub(crate) fn handle_xtgettcap(&mut self, names: &[String]) {
         for name in names {
             let mut response = String::from("\x1bP0+r");
@@ -290,14 +253,9 @@ impl TerminalState {
         }
     }
 
-    /// XTWINOPS (`CSI Ps ; ... t`): window operations. tasty answers only the
-    /// cell-based size reports and the title stack. Window *manipulation*
-    /// (move/resize/maximize/iconify/fullscreen/raise/lower) and window
-    /// position/state/title probes are deliberately ignored — an agent-driven
-    /// escape must not manipulate or probe the user's window (identity: user vs
-    /// agent separation). Pixel size reports (14t/16t) are also unanswered:
-    /// tasty has no pixel/image model (docs/features/terminal/index.md#비-목표) and cell pixel metrics live in
-    /// the renderer, not the terminal model. See docs/features/terminal/index.md#비-목표.
+    /// Answer cell-size reports and title-stack operations. Ignore window manipulation
+    /// and window position/state/title probes to keep terminal output from controlling
+    /// the user's window. Pixel-size queries are unsupported; pixel metrics belong to the renderer.
     pub(crate) fn handle_window(&mut self, window: Window) {
         match window {
             // Text area / screen size in character cells: `CSI 8 ; rows ; cols t`

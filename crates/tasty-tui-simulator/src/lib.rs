@@ -112,19 +112,8 @@ pub fn run(command: &Option<Commands>) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Interactive REPL
-// ═══════════════════════════════════════════════════════════════════
-
-/// Handle a single REPL command, writing its VTE output to `out`. Returns
-/// `Err` the moment any write fails (e.g. `BrokenPipe` because the peer
-/// surface already closed) so the caller can stop the loop instead of
-/// propagating a panic — same "write failure = peer gone = quiet exit"
-/// policy `flood_mode` already established, applied here per-command.
-///
-/// `quit`/`exit-code`/`crash`/`panic` terminate the process unconditionally
-/// (there is no caller left to report an error to), so their own writes are
-/// best-effort rather than `?`.
+/// Write one REPL command's VTE output and return write errors to the caller.
+/// Process-terminating commands cannot return an error, so they ignore their final write result.
 fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()> {
     match cmd {
         // ── Screen control ──
@@ -418,12 +407,7 @@ fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()>
     Ok(())
 }
 
-/// Consumes an I/O result from a REPL stdout write/flush: a closed peer pipe
-/// (`BrokenPipe`, expected when the surface/test-harness on the other end
-/// goes away mid-command) means "stop the loop quietly", while any other I/O
-/// failure (disk full, permission denied, ...) is a simulator bug and must
-/// keep panicking so it isn't silently swallowed. Returns `true` when the
-/// caller should stop.
+/// Stop quietly on BrokenPipe. Other output errors retain the simulator's panic behavior.
 fn should_stop_repl(result: io::Result<()>) -> bool {
     match result {
         Ok(()) => false,
@@ -459,9 +443,7 @@ fn interactive_mode() {
             break;
         }
 
-        // Ack after every command so the test can synchronize. The peer may
-        // have closed the pipe between the command write above and here —
-        // treat that the same as any other write failure.
+        // Acknowledge the command; handle a closed output pipe like other writes.
         let ack = out
             .flush()
             .and_then(|()| write!(out, "OK\r\n"))
@@ -471,10 +453,6 @@ fn interactive_mode() {
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Flood stress mode
-// ═══════════════════════════════════════════════════════════════════
 
 /// Continuously redraw the full screen with per-cell truecolor SGR + glyph,
 /// changing colors every frame so every cell is dirty. Used to reproduce
@@ -557,10 +535,6 @@ fn flood_mode(rate_ms: u64, cols: u16, rows: u16, frames: u64, inline: bool) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════
-
 fn parse_two_u16(s: &str) -> Option<(u16, u16)> {
     let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.len() >= 2 {
@@ -584,11 +558,6 @@ fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
         .collect()
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Inline scenario helpers (used by both interactive "scenario" cmd
-// and one-shot subcommands)
-// ═══════════════════════════════════════════════════════════════════
 
 fn scenario_cursor_inline(
     out: &mut io::Stdout,
@@ -655,20 +624,13 @@ fn scenario_scroll_region_inline(out: &mut io::Stdout) -> io::Result<()> {
     Ok(())
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// One-shot scenario subcommands (for manual use)
-// ═══════════════════════════════════════════════════════════════════
-
 fn clear_and_setup(out: &mut io::Stdout) {
     write!(out, "\x1b[2J\x1b[H").unwrap();
     out.flush().unwrap();
 }
 
-/// Writes the completion marker and (unless `exit`) blocks until the peer
-/// signals it's done inspecting the screen. Callers propagate/best-effort
-/// per their own context — the one-shot subcommands below are already at
-/// their last statement when they call this, so they just discard the
-/// result (nothing left to do if the peer is already gone).
+/// Write the completion marker and, unless exit is set, wait for inspection input.
+/// One-shot callers ignore errors because they have no further work to perform.
 fn finish(out: &mut io::Stdout, marker: &str, exit: bool) -> io::Result<()> {
     write!(out, "\x1b[999;1H{marker}")?;
     out.flush()?;

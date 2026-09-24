@@ -1,4 +1,4 @@
-//! VTE handler: esc 도메인.
+//! ESC sequences: charset, tab stops, reset, and screen alignment.
 
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;

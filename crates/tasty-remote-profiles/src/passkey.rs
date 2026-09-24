@@ -2,7 +2,7 @@
 //! 자격증명 목록은 passkeys.toml에 경로로 저장한다. path는 사용자 파일을 참조하고
 //! inline은 Tasty가 passkeys/<name> 파일을 만들어 관리한다. 비밀 파일은 암호화하지 않는다.
 //! Unix의 inline 파일 권한은 0600으로 설정하며 디렉터리 0700 설정 실패는 무시한다.
-//! 목록 TOML의 0600 설정도 최선 시도이고, 비 Unix에서는 별도 권한을 설정하지 않는다.
+//! 목록 TOML의 0600 권한 설정 실패는 무시한다. 비 Unix에서는 별도 권한을 설정하지 않는다.
 
 use std::fs;
 use std::path::{Path, PathBuf};

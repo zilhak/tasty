@@ -1,28 +1,11 @@
-//! Golden cell-grid snapshot tests for the terminal render-critical path.
+//! 실제 VTE ingest 결과를 텍스트·셀 속성 스냅샷과 비교한다. 커서·줄바꿈·스크롤 영역·
+//! 소거·SGR을 검사하며 GPU 픽셀과 호스트 위젯 배치는 포함하지 않는다.
+//! raw escape를 detached 터미널에 넣으므로 GUI나 실제 PTY 없이 실행한다.
+//! CI의 headless 조합에서 자동 실행한다. check-headless는 전체 suite를 실행하지만,
+//! default 조합의 --lib --bins 명령은 이 integration target을 실행하지 않는다.
+//! 실행 범위는 docs/dev-guide/ci-gates.md 참조.
 //!
-//! These pin the *deterministic text representation* of the cell grid produced
-//! by the production VTE ingest path (`Terminal::new_detached` → `feed_bytes`,
-//! the same handlers a real PTY drives). The input sequences mirror the
-//! high-level commands of `tasty-tui-simulator` (see
-//! `crates/tasty-tui-simulator/src/lib.rs` — e.g. `cursor`, `print`, `bold`,
-//! `scroll-region`), but are written as raw escapes so the test needs no GUI
-//! surface and runs headless inside `cargo test --workspace`. This test runs
-//! automatically in the headless combination only (`check-headless` runs the whole
-//! suite); the default-combination job is `--lib --bins` and never sees integration
-//! targets (see `docs/dev-guide/ci-gates.md`).
-//!
-//! Scope is deliberately narrow (see `docs/dev-guide/e2e-tests.md#tui-테스트-가이드--시뮬레이터--셀-검증--골든-스냅샷`):
-//!   - COVERED: cursor positioning/layout, line wrapping, scroll-region scroll,
-//!     erase-display, and per-cell SGR attributes (bold/italic/underline/
-//!     inverse/strikethrough + palette fg/bg).
-//!   - NOT COVERED here: GPU pixel rendering (environment-dependent → unfit for
-//!     golden), and chrome/widget layout (lives in `src/view`, needs the GUI
-//!     harness). Those remain on manual visual verification
-//!     (`docs/ai-verification/screenshot-methods.md#시각-판정-체크리스트`).
-//!
-//! Why text (not pixels): the grid's deterministic text form is stable across
-//! OS/GPU, so a logic regression (e.g. SGR bold no longer applied) flips a
-//! golden line and fails the test, while pixel goldens would be flaky.
+//! 시각 검증 범위: docs/ai-verification/screenshot-methods.md#시각-판정-체크리스트.
 
 use tasty_terminal::Terminal;
 
@@ -90,11 +73,6 @@ fn styled_cells(term: &Terminal) -> String {
     lines.join("\n")
 }
 
-// ============================================================
-// Critical path 1 — cursor absolute positioning + layout
-// (simulator: `cursor <r> <c>` / `print`)
-// ============================================================
-
 #[test]
 fn golden_cursor_positioning_layout() {
     let mut t = Terminal::new_detached(12, 4);
@@ -111,10 +89,6 @@ Z";
     assert_eq!(grid_text(&t), expected);
 }
 
-// ============================================================
-// Critical path 2 — line wrapping (autowrap onto next row)
-// ============================================================
-
 #[test]
 fn golden_line_wrapping() {
     let mut t = Terminal::new_detached(10, 3);
@@ -126,11 +100,6 @@ abcd
 ";
     assert_eq!(grid_text(&t), expected);
 }
-
-// ============================================================
-// Critical path 3 — scroll region (DECSTBM) scroll-up
-// (simulator: `scroll-region <top> <bottom>`)
-// ============================================================
 
 #[test]
 fn golden_scroll_region_scroll_up() {
@@ -153,10 +122,6 @@ r4
     assert_eq!(grid_text(&t), expected);
 }
 
-// ============================================================
-// Critical path 4 — erase display below cursor (CSI J)
-// ============================================================
-
 #[test]
 fn golden_erase_display_below() {
     let mut t = Terminal::new_detached(8, 4);
@@ -172,14 +137,6 @@ aaa
 ";
     assert_eq!(grid_text(&t), expected);
 }
-
-// ============================================================
-// Critical path 5 — per-cell SGR attributes
-// (simulator: `bold`/`italic`/`underline`/`inverse`/`strikethrough`/`fg`)
-//
-// This is the canonical regression guard: breaking SGR application (e.g.
-// dropping bold) flips the matching golden line and fails the test.
-// ============================================================
 
 #[test]
 fn golden_sgr_attributes() {

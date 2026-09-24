@@ -1,19 +1,11 @@
-//! Surface/일반 waker 생성 인터페이스.
-//!
-//! 본 바이너리의 `WinitWakerFactory` (egui/winit 기반) 가 production impl 이며,
-//! 헤드리스 컨텍스트는 `NoopWakerFactory` 를 쓴다.
-//!
-//! 이 모듈은 plugin manager 가 본 바이너리(`crate::waker`) 결합 없이 동일 trait
-//! 을 사용할 수 있도록 tasty-terminal 안에 위치한다.
+//! Interface for surface-specific and general wake callbacks.
+//! The host supplies GUI or headless implementations; tests may use NoopWakerFactory.
 
 use std::sync::Arc;
 
 use crate::events::Waker;
 
-/// surface 별 / 일반 waker 생성 인터페이스.
-///
-/// production 경로는 본 바이너리의 winit-기반 impl 로 `CoreState` 에 주입된다.
-/// 헤드리스 / 테스트는 [`NoopWakerFactory`] 사용.
+/// Creates wake callbacks without coupling plugins to the host event loop.
 pub trait WakerFactory: Send + Sync + 'static {
     /// 특정 surface 의 PTY 데이터 도착 통지용 waker.
     fn make_targeted_waker(&self, surface_id: u32) -> Waker;

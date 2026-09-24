@@ -1,14 +1,7 @@
-//! 데드라인 기반 wakeup 스레드 — 허브가 정한 다음 데드라인까지만 자고 호스트를 깨운다.
-//!
-//! 고정 주기 ticker 스레드를 대체한다. 주기가 고정이 아니라 [`TimerHub::next_deadline`]
-//! 이므로 등록된 타이머가 없으면 무기한 park 하고(= idle wakeup 0), 타이머가 등록되면
-//! `Condvar` 로 즉시 재무장한다.
-//!
-//! **이벤트 루프의 `WaitUntil` 대신 이 스레드가 정확성을 책임지는 이유**: 창이 없거나
-//! (macOS 최소화 = window 파괴, tray 상주) 사실상 없는 상태에서 이벤트 루프가 계속
-//! 깨어난다는 보장이 플랫폼마다 다르다. 근거·판단 전체는 `docs/dev-guide/timer-hub.md`.
-//!
-//! [`TimerHub::next_deadline`]: crate::TimerHub::next_deadline
+//! 다음 타이머 시각을 기다렸다가 호스트를 깨우는 전용 스레드.
+//! 시각이 없으면 등록·종료 알림을 기다리고, 갱신되면 Condvar로 대기를 다시 계산한다.
+//! 창이 없는 상태에서도 이벤트 루프의 WaitUntil에만 의존하지 않도록 분리한다.
+//! 실제 실행 시각은 스레드 스케줄링의 영향을 받는다. 통합 방법은 docs/dev-guide/timer-hub.md 참조.
 
 use std::sync::Arc;
 use std::sync::Condvar;
@@ -106,8 +99,7 @@ pub fn spawn_timer_waker(mut fire: impl FnMut() -> bool + Send + 'static) -> Tim
             }
         });
     if let Err(e) = spawned {
-        // 스레드를 못 띄우면 시간축이 통째로 멈춘다 — 조용히 넘기지 않는다.
-        // (호스트는 계속 동작하되 주기 작업이 다른 wakeup 에 편승하게 된다.)
+        // 스레드 생성 실패를 기록한다. 주기 작업은 호스트가 다른 이유로 깨어날 때 처리할 수 있다.
         tracing::error!("timer waker thread spawn failed: {e}");
     }
     TimerWakerHandle { waker }

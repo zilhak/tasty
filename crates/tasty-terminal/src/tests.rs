@@ -79,8 +79,6 @@ fn cursor_suppression_expires_after_output_quiets() {
     assert!(!terminal.should_suppress_cursor_during_output());
 }
 
-// ---- DECSET/DECRST mode toggling tests ----
-
 #[test]
 fn decset_application_cursor_keys() {
     let terminal = test_terminal(80, 24);
@@ -172,8 +170,7 @@ fn decset_mouse_tracking() {
     }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
 
-    // 1003 만 껐다 — 1000 은 **아직 켜져 있는 독립 레지스터**라 실효 레벨이 Click 으로
-    // 내려앉을 뿐 트래킹이 꺼지지는 않는다(예전 모델은 여기서 None 이었다).
+    // 1003을 꺼도 1000이 남아 Click 모드를 유지한다.
     let actions = parser.parse_as_vec(b"\x1b[?1003l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
@@ -191,8 +188,7 @@ fn decset_mouse_tracking() {
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 }
 
-/// 1000/1002/1003 은 서로 독립된 모드 레지스터다 — 하나를 꺼도 나머지는 산다.
-/// 앱이 보내는 바이트 순서만으로 트래킹이 통째로 꺼지던 버그의 회귀 방지선.
+/// 한 마우스 모드를 꺼도 다른 모드가 유지되는지 확인한다.
 #[test]
 fn mouse_modes_are_independent_registers() {
     let mut terminal = test_terminal(80, 24);
@@ -223,9 +219,7 @@ fn mouse_modes_are_independent_registers() {
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 }
 
-/// 실효 레벨이 ON 으로 유지되는 부분 해제는 캡처 안내 무장을 날리지 않는다.
-/// 예전 모델에서는 `1002l` 하나가 트래킹과 무장을 함께 지워서, 트래킹이 살아 있는데도
-/// 안내가 영영 안 뜨는 상태가 됐다.
+/// 다른 모드가 켜져 있으면 부분 해제 뒤에도 첫 캡처 안내를 유지한다.
 #[test]
 fn mouse_capture_hint_survives_partial_disable() {
     let mut terminal = test_terminal(80, 24);
@@ -295,8 +289,6 @@ fn mouse_capture_hint_disarms_on_ris() {
     assert!(terminal.take_mouse_capture_hint());
 }
 
-// ---- Alternate screen tests ----
-
 #[test]
 fn alternate_screen_switching() {
     let terminal = test_terminal(80, 24);
@@ -363,8 +355,6 @@ fn alternate_screen_resize() {
     assert_eq!(rows, 40);
 }
 
-// ---- Arrow key mode switching ----
-
 #[test]
 fn arrow_key_sequences_normal_vs_application() {
     let terminal = test_terminal(80, 24);
@@ -379,8 +369,6 @@ fn arrow_key_sequences_normal_vs_application() {
     }
     assert!(terminal.application_cursor_keys());
 }
-
-// ---- Full reset test ----
 
 #[test]
 fn full_reset_clears_modes() {
@@ -408,8 +396,6 @@ fn full_reset_clears_modes() {
     assert!(!terminal.bracketed_paste());
     assert!(!terminal.is_alternate_screen());
 }
-
-// ---- Scrollback capture: implicit scroll via line wrap ----
 
 fn first_scrollback_text(terminal: &Terminal, index: usize) -> String {
     terminal
@@ -439,14 +425,9 @@ fn scrollback_captured_on_lf_at_bottom_row() {
     assert_eq!(first_scrollback_text(&terminal, 0), "row0");
 }
 
-// ---- Soft-wrap flag is captured into scrollback ----
-
 #[test]
 fn soft_wrapped_line_records_wrap_flag_in_scrollback() {
-    // 10-col terminal, write 25 chars on one logical line then a real LF.
-    // termwiz auto-wraps at col 10, producing 3 visual rows. With only
-    // 4 screen rows, hitting LF after the wrap pushes the first wrapped
-    // row into scrollback — and that scrollback line must keep wrapped=true.
+    // 25글자를 10열에 출력해 wrap된 행을 만든 뒤 스크롤백으로 밀어낸다.
     let mut terminal = test_terminal(10, 4);
     let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars
     terminal.process_bytes(&payload);
@@ -479,8 +460,6 @@ fn hard_newline_line_is_not_wrapped() {
     );
 }
 
-// ---- Regression: wrap-induced scroll at the bottom row must be captured ----
-
 /// Join every scrollback line (oldest→newest) plus every visible row into a
 /// single string, so a marker can be counted across the whole buffer.
 fn all_buffer_text(terminal: &Terminal) -> String {
@@ -503,10 +482,7 @@ fn all_buffer_text(terminal: &Terminal) -> String {
     out
 }
 
-/// When a long line auto-wraps at the right edge while the cursor is already on
-/// the bottom row, termwiz scrolls the grid internally (no `ScrollRegionUp`
-/// Change is emitted). The evicted top row MUST still land in scrollback;
-/// otherwise scrolling back loses content. This reproduces the loss bug.
+/// Auto-wrap으로 termwiz 내부에서 밀어낸 행도 스크롤백에 남아야 한다.
 #[test]
 fn wrap_induced_scroll_at_bottom_row_reaches_scrollback() {
     let mut terminal = test_terminal(10, 4);
@@ -527,11 +503,7 @@ fn wrap_induced_scroll_at_bottom_row_reaches_scrollback() {
     assert_eq!(first_scrollback_text(&terminal, 3), "3333333333");
 }
 
-/// Conservation property: when wrap (not LF) drives the scrolling, every unique
-/// marker must remain exactly once across (scrollback ∪ visible screen). A
-/// missing marker = loss; a marker appearing twice = duplication. Catches both
-/// faces of the bug in one assertion. Uses a continuous no-newline payload so
-/// the scroll path is purely auto-wrap (the uncaptured path).
+/// Auto-wrap만으로 스크롤할 때 각 표지가 화면과 스크롤백 전체에 정확히 한 번 남아야 한다.
 #[test]
 fn wrapping_lines_are_preserved_exactly_once() {
     let mut terminal = test_terminal(10, 4);
@@ -556,10 +528,7 @@ fn wrapping_lines_are_preserved_exactly_once() {
     }
 }
 
-/// Reproduces the on-screen duplication symptom: after content has wrap-scrolled
-/// into history, a TUI repaints the visible region in place (absolute cursor
-/// moves, no re-emission of committed lines). The committed markers must not end
-/// up both in scrollback AND on screen — i.e. still exactly once each.
+/// 화면을 제자리에서 다시 그려도 이미 스크롤된 표지가 복제되면 안 된다.
 #[test]
 fn repaint_after_wrap_scroll_does_not_duplicate_committed_lines() {
     let mut terminal = test_terminal(10, 4);
@@ -744,8 +713,6 @@ fn resize_ping_pong_does_not_accumulate_visible_lines_when_cursor_is_high() {
     }
 }
 
-// ---- Mirror foundation: new_detached + feed_bytes ----
-
 /// A representative byte sequence exercising text, CR/LF, SGR color/intensity,
 /// absolute cursor moves, EraseLine, a DECSET mode toggle, and a clear.
 const MIRROR_SEQ: &[u8] = b"hello\r\n\x1b[31mred\x1b[0m world\r\n\x1b[2J\x1b[H\x1b[1mbold\x1b[0m\x1b[?1h\x1b[3;5Hxy\x1b[K";
@@ -851,14 +818,7 @@ fn feed_bytes_reports_change() {
     assert!(t.feed_bytes(b"x"), "text feed changes the surface");
 }
 
-/// `try_take_events` 는 **상태 락을 못 잡으면 건너뛴다** — 그 성질이 docs/features/terminal/index.md#vte-에뮬레이션 의 근거이고
-/// 호스트의 이벤트 배수(`CoreState::collect_events`)가 그 위에 서 있다. 성질 자체를 재는
-/// 대조가 여태 없었다.
-///
-/// 없으면 무엇이 조용해지는가: 누군가 이 함수를 막는 take 로 바꿔도 **호스트는 초록**이다
-/// (건너뛰지 않으면 이벤트는 오히려 더 많이 잡힌다). 그리고 반대 방향의 대가 — 한 번만
-/// 묻는 호출자에게 이 건너뜀이 **유실로 보인다**는 것 — 도 아무 데도 안 적혀 있어서,
-/// `src/state/tests.rs` 의 OSC 133 시험이 그 자리에서 확률적으로 깨졌다(전수 42 회 중 1 회).
+/// 상태 락을 얻지 못하면 이벤트를 버리지 않고 남긴 채 None을 반환해야 한다.
 #[test]
 fn try_take_events_skips_while_the_state_lock_is_held_but_take_events_waits() {
     let mut t = Terminal::new_detached(40, 12);
@@ -868,15 +828,13 @@ fn try_take_events_skips_while_the_state_lock_is_held_but_take_events_waits() {
     let guard = held.lock().expect("아직 성한 락");
     assert!(
         t.try_take_events().is_none(),
-        "락을 쥐고 있는 동안 `try_take_events` 는 건너뛴다 — 이 성질이 없으면 입력 스레드가 \
-         바쁜 파서 스레드들과 직렬화된다(docs/features/terminal/index.md#vte-에뮬레이션)"
+        "상태 락을 얻지 못하면 try_take_events는 기다리지 않고 None을 반환해야 한다"
     );
     drop(guard);
 
     assert!(
         !t.take_events().is_empty(),
-        "건너뛴 이벤트는 **버려진 것이 아니라 버퍼에 남아** 있다 — 막는 take 는 그것을 집는다. \
-         비어 있으면 건너뜀이 곧 유실이라는 뜻이고, 그러면 위 성질의 대가가 설계가 아니라 버그다"
+        "락 경합 때 남겨 둔 이벤트를 다음 take에서 읽을 수 있어야 한다"
     );
 }
 
@@ -927,10 +885,7 @@ fn osc52_write_still_emits_clipboard_set() {
     );
 }
 
-// OSC 133 — termwiz parses "133" into its own dedicated
-// `FinalTermSemanticPrompt` variant (never `Unspecified`, for A/C/D at least),
-// so this must produce a `PromptBoundary` event via that variant's match arm,
-// not the (now largely dead for A/C/D) `Unspecified` fallback.
+// OSC 133 전용 파서 결과가 PromptBoundary 이벤트로 변환되는지 검사한다.
 #[test]
 fn osc133_a_phase_emits_prompt_boundary() {
     let mut t = Terminal::new_detached(80, 24);
@@ -957,11 +912,7 @@ fn osc133_c_phase_emits_prompt_boundary() {
     );
 }
 
-// D phase is the one the command-completed hook wiring depends on — termwiz
-// always parses it into `FinalTermSemanticPrompt::CommandStatus{status,..}`
-// (never falls back to `Unspecified`), so the exit code must round-trip
-// through the `status.to_string()` payload into `PromptBoundary{phase: 'D',
-// payload}`.
+// OSC 133 D의 종료 코드는 전용 파서 결과에서 payload로 전달한다.
 #[test]
 fn osc133_d_phase_carries_exit_code_as_payload() {
     let mut t = Terminal::new_detached(80, 24);
@@ -1095,14 +1046,7 @@ fn detached_input_without_sink_is_dropped() {
     t.send_key("Z");
 }
 
-// ---- Server-side output tap (fan-out) ----
-//
-// These tests use detached terminals, NOT `test_terminal` (real PTY): a real
-// PTY spawns a shell whose banner output is ingested asynchronously and races
-// with the injected bytes — the tap's first message can be a banner chunk and
-// full-grid comparisons get polluted (observed flaky on Windows/cmd). Tap
-// fan-out lives in the shared `ingest` path, so detached exercises the exact
-// same code under test, deterministically.
+// Detached 터미널로 실제 ingest 경로를 쓰되 비동기 셸 배너가 시험 입력에 섞이지 않게 한다.
 
 #[test]
 fn output_tap_receives_raw_bytes_and_replays_to_mirror() {
@@ -1131,10 +1075,6 @@ fn output_tap_is_non_destructive() {
 
 #[test]
 fn output_tap_count_reflects_registrations() {
-    // Regression guard: a caller that means to tap a
-    // surface exactly once must end up with exactly one registered tap — a
-    // second accidental `add_output_tap()` call for the same surface fans
-    // every subsequent chunk (including echoed keystrokes) out twice.
     let mut t = Terminal::new_detached(40, 12);
     assert_eq!(t.output_tap_count(), 0);
     let _rx1 = t.add_output_tap();
@@ -1197,8 +1137,6 @@ fn detached_mirror_is_detached_and_resizes_grid() {
     mirror.resize(120, 40);
     assert_eq!((mirror.cols(), mirror.rows()), (120, 40));
 }
-
-// ---- Initial bulk snapshot (snapshot_as_vt, attach step 4) ----
 
 /// Snapshot-specific grid comparison. Unlike [`assert_grid_eq`], this does NOT
 /// compare raw `visible_cells()` counts: termwiz back-fills a row to full width
@@ -1306,18 +1244,13 @@ fn snapshot_as_vt_preserves_alt_screen() {
     );
 }
 
-// ---- check_process_alive throttle tests ----
-
 #[test]
 fn alive_check_throttled_within_window() {
     let mut t = test_terminal(80, 24);
     // In-the-past init: the first process() must check immediately.
     assert!(t.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
 
-    // 이 자리가 재는 것은 "`process()` 가 도장을 다시 찍었나" 다. 그것을 벽시계 예산으로
-    // 물으면(`first.elapsed() < ALIVE_CHECK_INTERVAL`) 굶은 러너에서 빨개지고, 그 빨강이
-    // 코드를 지목한다. 도장 자체를 비교하면 예산이 아예 없어진다 — 대조군보다 나은
-    // 처방이라 여기는 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 에서 말하는 외부 부하 가 아니다.
+    // 첫 process 호출이 검사 시각을 갱신했는지 직접 비교한다.
     let before = t.last_alive_check;
     t.process();
     let first = t.last_alive_check;
@@ -1335,31 +1268,9 @@ fn alive_check_throttled_within_window() {
 
 #[test]
 fn process_exited_eventually_emitted() {
-    // 대기는 두 축이다 — 이벤트(waker) 우선, 상한은 제품의 alive-check 폴 주기로 자른다.
-    // parser 스레드가 새 데이터/EOF 마다 waker 를 부르므로 정상 경로에선 wake 즉시 process() 해
-    // 수십 ms 에 끝난다. 그러나 부하가 높으면 종료 시의 EOF-waker 가 유실·지연될 수 있어
-    // (sync_channel(1) 신호 병합 + 스케줄 밀림) 순수 이벤트 대기만으로는 자식이 이미 죽었는데도
-    // 대기자가 안 깨는 창이 남는다(형태 C 의 잔여 — 옛 5s+50ms 폴링을 이벤트로 바꿔도 남는다).
-    // 그래서 recv 상한을 ALIVE_CHECK_INTERVAL 로 잘라, wake 가 안 와도 그 주기마다 process() 가
-    // 돌며 제품이 이미 가진 try_wait 폴백으로 종료를 잡는다(process() 는 wake 없이 그 주기 throttle
-    // 로 try_wait 한다). deadline 은 그 위의 최후 안전망이라 넉넉히 둔다.
-    //
-    // ★ 이 두 축이 **다 살아 있어도** 이 시험은 빨개진다. 두 축은 "자식이 죽은 것을
-    // 우리가 언제 보나" 만 답하고, 자식이 **죽는다는 것 자체**는 답하지 않는다. 그것은
-    // 여기 안 적힌 기계에 걸려 있다 — 로그인+대화형 셸이 그 러너에서 뜨는 것, 그리고
-    // spawn 보다 뒤에 쓰는 `initial_input` 이 그 셸의 첫 입력으로 들어가는 것.
-    // 실측(2026-09-08, 리눅스): 자식이 안 죽게 두면 이 루프는 예산을 다 쓰고 그동안
-    // try_wait 폴백은 61 회 돌았다 — 폴백은 멀쩡했고 자식이 안 죽었을 뿐이다.
-    // 그래서 실패문이 그 둘을 갈라 적는다(아래). 근거·재검토 조건은 docs/dev-guide/self-verification.md#시간-측정과-실패-진단.
-    //
-    // **이 빨강을 재현하는 법**(이 시험이 macOS 에서만 깨져 붙을 수 없을 때 쓴다).
-    // 자식이 안 죽는 조건을 손으로 만들면 리눅스에서 같은 실패가 그대로 난다 —
-    // 인자를 무시하고 종료하지 않는 프로그램(`exec sleep 600` 한 줄짜리 셸 스크립트면
-    // 된다)을 `SHELL` 로 두고 이 시험 하나만 돌린다. 예산을 다 쓰고 죽으며, 실패문이
-    // `process()` 횟수와 `alive=true` 를 찍는다. 폴백이 정말 돌았는지 바깥에서 대조하려면
-    // 리눅스에서 `strace -f -c -e trace=wait4` 로 그 시험 바이너리를 감싸고 `wait4` 계수를
-    // 실패문의 `process()` 횟수와 맞춰 본다(2026-09-08 실측: 둘 다 61).
-    // SyncSender + try_send: waker 콜백이 절대 블록되지 않아야 parser 스레드가 멈추지 않는다.
+    // wake를 기다리되 ALIVE_CHECK_INTERVAL마다 process를 호출해 종료를 다시 확인한다.
+    // 셸 기동과 initial_input 수신 여부는 환경에 따라 달라질 수 있다. 실패 시
+    // 호출 횟수·마지막 alive 판정·화면 꼬리를 함께 남긴다. waker는 블로킹하지 않는다.
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
     let waker: Waker = Arc::new(move || {
         // 버퍼(1)가 이미 차 있으면 깨우기 신호가 대기 중이라는 뜻이라, 이번 send 실패는 무시해도
@@ -1381,12 +1292,11 @@ fn process_exited_eventually_emitted() {
     )
     .expect("terminal creation");
 
-    // 예산은 경주 예산이 아니라 안전망이다 — 근거와 재검토 조건은 docs/dev-guide/self-verification.md#시간-측정과-실패-진단.
+    // 셸 종료를 기다릴 전체 제한. 종료 감지뿐 아니라 셸 기동·입력 전달 시간도 포함한다.
     const BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
     let started = std::time::Instant::now();
     let deadline = started + BUDGET;
     let mut seen = false;
-    // process() 를 몇 번 돌렸는가 — 실패 갈래에서 "폴백이 안 돌았다" 를 배제하는 값이다.
     let mut polls = 0usize;
     while std::time::Instant::now() < deadline {
         t.process();
@@ -1399,21 +1309,14 @@ fn process_exited_eventually_emitted() {
             seen = true;
             break;
         }
-        // 상한을 ALIVE_CHECK_INTERVAL 로 자른다(위 함수 주석) — wake 가 오면 그 전에 즉시 깨고,
-        // 안 와도 이 주기마다 process() 가 try_wait 폴백을 돌린다. 폴링으로의 회귀가 아니라
-        // 이벤트 우선 + 제품 폴 주기 폴백이다. remaining 으로 한 번 더 자르는 건 남은 deadline 을
-        // 넘기지 않으려는 것(마지막 반복).
+        // wake가 없어도 alive-check 주기마다 확인하며 전체 남은 시간을 넘겨 기다리지 않는다.
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         // wake 로 깼는지 상한으로 깼는지 구분할 필요가 없다 — 루프 상단의 process()+이벤트 검사와
         // deadline 조건이 다음 반복에서 판정한다. 그래서 recv 결과는 무시한다.
         let _ = rx.recv_timeout(remaining.min(ALIVE_CHECK_INTERVAL));
     }
     if !seen {
-        // 실패 갈래에서만 관측을 꺼낸다 — 정상 경로는 이 줄에 안 온다.
-        //
-        // 이 자리가 빨개지는 러너(자체 호스팅 macOS)에는 붙어서 못 본다. 그래서 실패문이
-        // 스스로 갈리게 값을 싣는다: ① 폴백이 돌 자리가 몇 번 있었나 ② 마지막에 자식이
-        // 살아 있었나. ② 가 답을 정한다 — alive 면 감지가 아니라 자식을 봐야 한다.
+        // 실패 시 실제 관측값을 남기되 이 값만으로 원인을 단정하지 않는다.
         let alive = t.check_process_alive();
         let screen = t.lock_state().screen_text(false);
         let visible = screen.trim_end();
@@ -1426,29 +1329,17 @@ fn process_exited_eventually_emitted() {
             .rev()
             .collect();
         panic!(
-            "ProcessExited 가 예산 {BUDGET:?} 안에 안 나왔다(경과 {elapsed:?}). \
-             process() 를 {polls} 회 돌렸고 그 호출마다 {ALIVE_CHECK_INTERVAL:?} throttle 의 \
-             try_wait 폴백이 돌 자리가 있었다. 마지막 판정: 자식 alive={alive} — \
-             true 면 자식이 안 죽은 것이라 감지가 아니라 자식(로그인 셸 기동·initial_input 전달)을 \
-             봐야 하고, false 면 죽었는데 process() 가 못 본 것이다. \
-             화면 꼬리=\"{tail}\" — 이 글자가 우리가 보낸 \"exit\\r\" 의 에코일 수 있다. \
-             에코는 자식이 아니라 라인 디시플린이 내므로 자식이 떴다는 증거가 아니다. \
-             예산 인상은 이 사건의 처방이 아니다(docs/dev-guide/self-verification.md#시간-측정과-실패-진단).",
+            "ProcessExited가 제한 {BUDGET:?} 안에 나오지 않았다(경과 {elapsed:?}). \
+             process() 호출 {polls}회, 종료 검사 간격 {ALIVE_CHECK_INTERVAL:?}, 마지막 alive={alive}. \
+             화면 꼬리=\"{tail}\". 화면의 exit 에코만으로 셸이 입력을 처리했다고 판단할 수 없다.",
             elapsed = started.elapsed(),
             tail = tail.escape_default(),
         );
     }
 }
 
-/// PTY EOF 가 자식 종료보다 먼저 오는 창에서도 `ProcessExited` 가 나온다 — **wake 만으로**.
-///
-/// 호스트는 PTY 가 조용해진 터미널을 wake 없이는 `process()` 하지 않는다(headless 는
-/// 그 surface 를 다시 부를 자리가 아예 없다). EOF 직후 한 번의 wake 가 이끈 alive 판정이
-/// 아직 좀비가 안 된 자식을 보면, 그 뒤로 아무도 안 깨워 종료가 영영 안 보였다 — 서버
-/// shell `exit` 가 holder 에 delta 로 안 가던 CI 실패의 원인이다. 커널에서 그 창은 보통
-/// 짧아 경주로는 재현이 들쭉날쭉하므로, 여기서는 자식이 PTY 를 **먼저 닫고 1 초 뒤에**
-/// 죽게 해 창을 결정적으로 넓힌다. 대기 루프는 일부러 폴링 폴백 없이 wake 에만 반응한다
-/// (위 `process_exited_eventually_emitted` 와 다른 점) — 폴링이 있으면 이 결함이 가려진다.
+/// 자식이 PTY를 닫고 1초 뒤 종료하게 해 EOF가 종료보다 먼저 오는 상황을 만든다.
+/// 폴링 없이 wake만 받아도 ProcessExited가 나와야 한다.
 #[cfg(unix)]
 #[test]
 fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
@@ -1509,14 +1400,8 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
     );
 }
 
-/// 위 시험의 반대쪽 — 재-wake 가 **멈추는** 조건을 고정한다. `ProcessExited` 를 낸 뒤에는
-/// `exit_settled` 가 서서 parser 스레드의 EOF 꼬리가 끝나야 한다. 그 플래그를 안 세우면 꼬리는
-/// 핸들이 drop 될 때까지 500 ms 마다 깨운다(docs/features/terminal/index.md#프로세스-종료--절전-복귀) — 이 시험이 아니면 그 회귀는 아무
-/// 결과도 안 바꿔 조용히 남는다.
-///
-/// 종료 판정 뒤에 합법적으로 올 수 있는 wake 는 최대 한 번이다: 판정이 EOF 보다 먼저 났으면
-/// EOF 가 한 번 깨우고 멈추고, EOF 가 먼저였으면 꼬리가 플래그를 읽은 직후·세워지기 직전에
-/// 한 번 더 깨울 수 있다. 둘은 동시에 안 일어난다.
+/// ProcessExited 뒤 반복 wake가 멈춰야 한다. EOF 또는 이미 진행 중인 wake 하나는
+/// 종료 판정과 경합해 늦게 올 수 있으므로 허용한다.
 #[cfg(unix)]
 #[test]
 fn eof_rewakes_stop_once_the_exit_is_settled() {
@@ -1573,8 +1458,6 @@ fn eof_rewakes_stop_once_the_exit_is_settled() {
          once the exit was settled"
     );
 }
-
-// ---- OutputAppended observer gate tests ----
 
 /// Concat of all OutputAppended texts — termwiz may deliver "hello" as one
 /// PrintString or a chain of Print(c), so individual events are not stable.
@@ -1635,12 +1518,8 @@ fn detached_terminal_never_emits_process_exited() {
     );
 }
 
-// ---- H4: SGR Overline(53) / UnderlineColor(58) / VerticalAlign(73-75) ----
-// These SGRs have no termwiz `AttributeChange` variant, so they are applied via
-// the mirrored pen + `Change::AllAttributes`. `cell_info` must report the real
-// cell state instead of the default values. Production path: new_detached +
-// feed_bytes (the `TestTerminal` map_sgr clone drops these, so it cannot be used
-// here without a false pass).
+// Overline·UnderlineColor·VerticalAlign은 mirrored pen을 통한 실제 ingest 경로로 확인한다.
+// 단순 TestTerminal의 SGR 변환은 이 항목을 생략하므로 사용하지 않는다.
 
 #[test]
 fn sgr_overline_reflected_in_cell_info() {
@@ -1720,7 +1599,6 @@ fn sgr_reset_clears_overline_and_align() {
 
 #[test]
 fn sgr_overline_does_not_regress_basic_attributes() {
-    // Sanity: introducing the pen mirror must not break standard SGR reporting.
     let mut t = Terminal::new_detached(80, 24);
     t.feed_bytes(b"\x1b[1;4;7mX");
     let info = t.cell_info(0, 0).expect("cell 0,0");
@@ -1753,8 +1631,6 @@ fn osc8_hyperlink_attaches_uri_to_cells_then_clears() {
         "hyperlink must not leak past the OSC 8 close"
     );
 }
-
-// ---- DECSCUSR (CSI Ps SP q): cursor shape ----
 
 #[test]
 fn decscusr_sets_cursor_shape() {
@@ -1796,8 +1672,6 @@ fn decscusr_survives_soft_reset() {
     t.feed_bytes(b"\x1b[!p"); // DECSTR soft reset
     assert_eq!(t.cursor_shape(), CursorShape::BlinkingBar);
 }
-
-// ---- OSC color queries (H3): answer with the plumbed theme palette ----
 
 /// Distinct per-channel test palette so each color number's response is
 /// unambiguous. fg/bg/cursor and a couple of ANSI entries use values that
@@ -1910,11 +1784,7 @@ fn osc_color_set_request_is_not_answered() {
     assert!(rx.try_recv().is_err(), "set request must not respond");
 }
 
-// ---- pen-mirror surface-boundary sync (07/H4 follow-up) ----
-// termwiz keeps a separate pen per surface; the direct `add_change` paths
-// (alt-screen switch, resize reflow, scrollback prefill) bypass `mirror_pen`.
-// These assert that `current_pen` stays aligned with the *active* surface so
-// cell_info never reports a stale attribute leaked across a surface boundary.
+// 화면 전환·리사이즈의 직접 add_change 경로도 활성 화면의 pen과 일치해야 한다.
 
 #[test]
 fn alt_screen_entry_does_not_leak_primary_pen_into_cell_info() {
@@ -1994,8 +1864,6 @@ fn resize_restore_does_not_leave_stale_pen() {
     );
 }
 
-// ---- DECALN (ESC # 8): screen alignment fill ----
-
 #[test]
 fn decaln_fills_screen_with_e() {
     let mut t = Terminal::new_detached(8, 3);
@@ -2010,8 +1878,6 @@ fn decaln_fills_screen_with_e() {
     // DECALN homes the cursor.
     assert_eq!(t.cursor_position(), (0, 0));
 }
-
-// ---- NEL (ESC E): next line (index + carriage return) ----
 
 #[test]
 fn nel_moves_to_next_line_col0() {
@@ -2031,8 +1897,6 @@ fn nel_scrolls_at_bottom() {
     assert_eq!(t.screen_row(0, true), "r1");
     assert_eq!(t.screen_row(1, true), "r2");
 }
-
-// ---- REP (CSI b): repeat last printed character ----
 
 #[test]
 fn rep_repeats_last_character() {
@@ -2056,8 +1920,6 @@ fn rep_without_prior_print_is_noop() {
     t.feed_bytes(b"\x1b[5b"); // nothing printed yet
     assert_eq!(t.screen_row(0, true), "");
 }
-
-// ---- HT / CHT / CBT / HTS / TBC: tab stops ----
 
 #[test]
 fn ht_advances_to_8col_tab_stop() {
@@ -2126,8 +1988,6 @@ fn tbc_3_clears_all_stops() {
     assert_eq!(t.cursor_position().0, 39);
 }
 
-// ---- DECSCNM (DEC private mode 5): reverse screen ----
-
 #[test]
 fn decscnm_toggles_reverse_flag() {
     let mut t = Terminal::new_detached(10, 2);
@@ -2146,8 +2006,6 @@ fn decscnm_reset_by_full_reset() {
     t.feed_bytes(b"\x1bc"); // RIS
     assert!(!t.screen_reverse());
 }
-
-// ---- DECOM (DEC private mode 6): origin mode ----
 
 #[test]
 fn decom_makes_cup_region_relative() {
@@ -2192,8 +2050,6 @@ fn decom_reset_by_full_reset() {
     t.feed_bytes(b"\x1b[1;1HA");
     assert_eq!(t.screen_row(0, true), "A");
 }
-
-// ---- XTWINOPS (CSI ... t): size reports + title stack ----
 
 #[test]
 fn xtwinops_reports_text_area_cells() {
@@ -2248,8 +2104,6 @@ fn xtwinops_title_stack_push_pop() {
     assert_eq!(restored, "first");
 }
 
-// ---- DEC line drawing charset (ESC ( 0 / SO / SI) ----
-
 #[test]
 fn dec_line_drawing_maps_box_chars() {
     let mut t = Terminal::new_detached(10, 2);
@@ -2279,8 +2133,6 @@ fn dec_line_drawing_reset_by_ris() {
     assert_eq!(t.screen_row(0, true), "q");
 }
 
-// ---- busy 판정: 입력 에코 억제 창을 갱신하는 write 의 구분 ----
-
 #[test]
 fn terminal_query_response_does_not_suppress_busy() {
     // 터미널이 커서 위치 질의에 응답한 직후에 나온 출력은 "사용자 입력 에코" 가 아니다.
@@ -2297,7 +2149,7 @@ fn terminal_query_response_does_not_suppress_busy() {
 
 #[test]
 fn user_input_still_suppresses_echo() {
-    // 기존 정책 유지: 사용자 입력 직후 200ms 안의 출력은 에코로 간주해 억제한다.
+    // 사용자 입력 직후의 출력은 에코 억제 대상이다.
     let mut terminal = Terminal::new_detached(80, 24);
     terminal.send_key("x");
     terminal.process_bytes(b"x");
@@ -2322,8 +2174,6 @@ fn terminal_query_response_still_reaches_pty() {
     assert_eq!(terminal.lock_state().enqueued_count, 1);
 }
 
-// ---- busy 판정: 입력은 진입만 막고 유지는 못 끊는다 (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나) ----
-
 const FAKE_SHELL_PID: u32 = 1;
 
 fn fake_fg(name: &str, pid: u32) -> foreground_process::ForegroundProcessInfo {
@@ -2333,8 +2183,7 @@ fn fake_fg(name: &str, pid: u32) -> foreground_process::ForegroundProcessInfo {
     }
 }
 
-/// 두 타임스탬프를 "지금으로부터 얼마 전" 으로 직접 박는다. 실시간 경과에 기대지
-/// 않으므로 판정이 부하와 무관하게 결정론적이다.
+/// 출력·입력 시각을 직접 설정한다. 판정 시각까지 실제 스케줄 지연이 생길 수는 있다.
 fn set_times(t: &Terminal, output_ago: std::time::Duration, input_ago: std::time::Duration) {
     let now = std::time::Instant::now();
     let mut st = t.lock_state();

@@ -1,14 +1,5 @@
-//! 스크롤백 벌크 캡처(`Terminal::scrollback_lines_all`)의 동등성 검증.
-//!
-//! 닫은 항목 스냅샷(`ClosedSurface::from_surface_id_with_restore`)과 layout
-//! 영속화(`layout_persistence::scrollback`)는 라인당 `scrollback_line_full` 대신
-//! 이 벌크 경로로 스크롤백을 회수한다. 벌크화와 함께 `scrollback_line_full` 자체도
-//! `line_owned`(cell 마다 `String` 재할당) + `line_wrapped`(같은 인덱스 재조회) 조합
-//! 대신 저장 표현인 `ScrollbackLine` 을 그대로 돌려주도록 바뀌었다.
-//!
-//! 두 변경 모두 **표현이 보존될 때만** 정당하다. 캡처 결과가 selection / search /
-//! link 가 보는 `line_owned` / `line_wrapped` 와 어긋나면 복원된 스크롤백의 내용,
-//! cell 속성, wrap 이음새가 원본과 달라진다. 여기서 그 등가를 고정한다.
+//! 스크롤백 전체 복제가 행별 조회와 같은 셀 내용·속성·wrapped를 반환하는지 확인한다.
+//! 메모리와 디스크 저장을 모두 검사한다.
 
 use tasty_terminal::Terminal;
 use termwiz::cell::CellAttributes;
@@ -38,9 +29,7 @@ fn per_line(t: &Terminal) -> Vec<tasty_terminal::ScrollbackLine> {
         .collect()
 }
 
-/// selection / search / link 가 쓰는 **변경되지 않은** 접근자로 회수한 기대값.
-/// `line_owned` / `line_wrapped` 는 이번 최적화가 건드리지 않았으므로, 캡처
-/// 결과를 여기에 맞추는 것이 곧 "표현이 보존됐다" 는 뜻이다.
+/// 셀 내용과 wrapped를 별도로 조회해 비교값을 만든다.
 fn legacy(t: &Terminal) -> Vec<(Vec<(String, CellAttributes)>, bool)> {
     (0..t.scrollback_len())
         .map(|i| {
@@ -138,15 +127,11 @@ fn bulk_capture_preserves_cells_wrapped_and_attrs() {
     );
 }
 
-/// 디스크 스왑이 켜진 스크롤백에서도 등가다. 이 경로는 이전에 `line_owned` /
-/// `line_wrapped` 가 같은 인덱스를 독립적으로 읽어 라인당 `File::open` 이 2회
-/// 발생했다 — 이제 1회다. 결과가 같아야 그 축소가 정당하다.
+/// 디스크 저장에서도 전체 복제와 행별 조회가 같은 결과를 반환해야 한다.
 #[test]
 fn bulk_capture_matches_per_line_on_disk_backed_scrollback() {
     let mut t = Terminal::new_detached(COLS, ROWS);
-    // 실행 중 인스턴스와도, 같은 머신의 다른 테스트 완주와도 경로가 겹치지 않도록 이 프로세스
-    // 고유의 surface id 를 쓴다 (경로는 `temp_dir()/tasty-scrollback-debug/surface-<id>.scrollback`
-    // — 고정 id 면 병렬 완주끼리 같은 파일을 건드려 확률적 red 가 난다. docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 의 고정 경로 충돌).
+    // PID가 포함된 임시 파일명과 별도 surface ID로 다른 인스턴스·시험의 파일을 구별한다.
     t.enable_disk_scrollback(std::process::id());
     // 메모리 상한을 낮게 잡아 초과분이 디스크로 밀려나게 한다.
     t.set_scrollback_limit(32);
@@ -159,8 +144,6 @@ fn bulk_capture_matches_per_line_on_disk_backed_scrollback() {
     );
 
     let bulk = t.scrollback_lines_all();
-    // 라인당 경로와의 등가(벌크화 검증) + legacy 접근자와의 등가(표현 보존 검증).
-    // 후자가 디스크 이중 읽기를 단일 읽기로 줄인 변경의 실제 방어선이다.
     let per = per_line(&t).iter().map(explode).collect::<Vec<_>>();
     assert_same("disk-bulk-vs-perline", &bulk, &per);
     assert_same("disk-legacy-accessors", &bulk, &legacy(&t));
