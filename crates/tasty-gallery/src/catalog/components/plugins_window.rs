@@ -1,33 +1,5 @@
-//! `plugins-window` specimen — Plugins 관리자 창 (Overlays).
-//!
-//! 본체 `src/view/plugins/ui.rs::draw_plugins_panel` + `ui/list.rs::draw_list_tab`
-//! 의 구조 전사. 그 함수는 이미 props 분리(`PluginsSnapshot` / `PluginsUiState` /
-//! `Vec<PluginsAction>`)가 끝나 `AppState`/`CoreState` 를 모르지만, 글로벌
-//! `theme::theme()` 를 읽고 `TopBottomPanel`/`SidePanel` 을 `Context` 에 직접
-//! 붙이므로 갤러리가 호출할 수는 없다 — 같은 구조를 rect 기준으로 복제한다.
-//!
-//! 가로 3열, 세로 2단:
-//! - **헤더 밴드**(높이 48) — plug 아이콘 + 타이틀 + 1px 세로 구분선 +
-//!   세그먼트 탭 3개(`Installed N` / `Attention N` / `Add plugin`), 우측 클러스터는
-//!   오른쪽부터 X 닫기 → 필터 입력(Installed 탭에서만).
-//! - **좌측 목록**(폭 240) — 아바타(32) + 2줄 텍스트 열(이름 13 / 부제 10 muted).
-//!   행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm` 위아래에 아바타가
-//!   앉는 flex 행이라 값이 아니라 구성이 정본이다(`PLUGIN_LIST_ROW_HEIGHT`).
-//!   builtin 은 이름 뒤 `•`, 비활성/실행중은 부제에 `·` 로 이어 붙는다.
-//!   health error + enabled 인 행만 우측에 danger dot.
-//! - **우측 상세** — 아바타(46) + 이름 + 버전 tag + built-in 배지, id(muted), 설명,
-//!   (health error 면) danger 박스, authors/homepage.
-//!
-//! **토큰 이관** (구조 보존, 값은 가장 가까운 토큰으로): 헤더 48 =
-//! `item_height_interactive + spacing_lg + spacing_xs`, 아이콘 17 →
-//! `icon_glyph_size_md`, 타이틀 14 → `font_size_max`, 구분선 20 →
-//! `spacing_lg + spacing_xs`, 닫기 28 → `item_height_interactive`, 필터 200 →
-//! `field_width_lg`, 이름 13 → `font_size_body`, 부제 10 → `font_size_micro`.
-//! 행 높이는 이관 대상이 아니다 — 아바타에서 도출된다(위 "좌측 목록").
-//!
-//! 세그먼트 탭의 셋(12.5/9.5/10.5)은 한때 가장 가까운 토큰으로 근사했으나 docs/design/systems/theme.md#ui-코드의-색상-접근 의
-//! 결정이 본체를 12 / `badge-font-size`(10) / `font-size-micro`(10) 로 스냅했다 —
-//! 근사가 없어졌으므로 specimen 도 같은 값을 같은 이름으로 읽는다.
+//! 플러그인 관리 창의 Installed·Attention·Add plugin 예제.
+//! 본체 뷰는 Context에 직접 패널을 붙이므로 여기서는 같은 구성을 주어진 영역에 그린다.
 
 mod add;
 mod attention;
@@ -40,9 +12,7 @@ use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use crate::catalog::icons::{CLOSE, PLUG};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 세그먼트 탭 라벨 — 본체 `ui.rs` 의 `SEGMENT_TAB_LABEL_PRIMITIVE_12` 와 같은 자리다.
-/// DTCG primitive `font-size-12` 를 직접 쓴다(12px 은 primitive 에는 있지만 semantic
-/// role 이 배정돼 있지 않아 `Theme` 필드가 없다).
+/// 본체 SEGMENT_TAB_LABEL_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
 const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
@@ -56,22 +26,12 @@ enum Tab {
     Add { preview: bool },
 }
 
-/// 본체 `SidePanel::left("plugins_list").exact_width` 와 같은 값을 같은 곳에서 읽는다 —
-/// Installed·Attention 두 탭이 같은 접근자를 쓰므로(`ui/list.rs` · `ui/attention.rs`)
-/// 갤러리도 상수를 새로 짓지 않고 접근자를 부른다.
+/// 본체 Installed·Attention 목록과 같은 너비 접근자를 사용한다.
 fn list_w(theme: &Theme) -> f32 {
     theme.plugins_side_panel_width().value()
 }
 
-/// 창 데모 무대 크기 — 본체 Plugins 창은 `TopBottomPanel`/`SidePanel` 조합으로 창
-/// 전체를 채우므로 전사할 고정 크기가 없다. 그래서 무대는 갤러리가 정하되, 값을
-/// 새로 짓지 않고 토큰으로 조립한다.
-///
-/// - 폭 = `list_w`(본체 목록 폭) + `measure_md` — 상세 컬럼을 본문 측정 토큰 하나로
-///   잡으면 목록/상세 경계가 무대 폭에 종속되지 않는다.
-/// - 높이 = `measure_sm` — 헤더(48) + 40px 행 3개가 잘리지 않는 가장 작은 측정 토큰.
-///   단 Installed 는 상세 블록이 열셋이라 그 높이에 안 들어간다. 본체는 그때
-///   `ScrollArea` 로 접지만 갤러리는 접으면 캡처에서 사라지므로 `measure_xl` 로 늘린다.
+/// 예제 창의 크기. 상세 정보를 한눈에 비교하도록 Installed 화면은 더 높게 잡는다.
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
         Tab::Installed { .. } => theme.measure_xl,
@@ -215,8 +175,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     let cy = rect.center().y;
     let mut x = rect.min.x + theme.spacing_md.value();
 
-    // plug 아이콘 — 본체가 읽는 역할 그대로. 값은 accent-attention 과 같은 peach 지만
-    // 이름이 다르다(장식 글리프이지 주의 환기가 아니다).
+    // 헤더 아이콘은 주의 환기가 아닌 장식용 색을 쓴다.
     let icon = theme.icon_glyph_size_md.value();
     PLUG.image(icon, theme.plugins_header_glyph().to_egui())
         .paint_at(
@@ -225,7 +184,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
         );
     x += icon + theme.spacing_xs.value();
 
-    // 타이틀.
     let title_font = egui::FontId::proportional(theme.font_size_max.value());
     let title = p.layout_no_wrap(
         "Plugins".to_string(),
@@ -239,7 +197,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     );
     x += title.size().x + theme.spacing_sm.value();
 
-    // 세로 구분선 (1px × 20).
     let div_h = theme.spacing_lg.value() + theme.spacing_xs.value();
     p.rect_filled(
         egui::Rect::from_min_size(
@@ -251,7 +208,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     );
     x += theme.border_width.value() + theme.spacing_sm.value();
 
-    // 세그먼트 탭 3개.
     let tab_y = cy - (theme.item_height_tab.value() + STRUCT_GAP_2.value()) * 0.5;
     x += segment_tab(
         ui,
@@ -272,9 +228,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
         egui::pos2(x, tab_y),
         &Segment {
             label: "Attention",
-            // 본체는 언제나 `snapshot.attention.len()` 을 넘기고, 0 을 지우는 것은
-            // `segment_tab` 안의 `count > 0` 규칙이다 — 여기서 미리 지우면 그 규칙이
-            // 갤러리에서 한 번도 안 걸린다.
+            // 0개일 때 배지가 사라지는 규칙도 이 함수에서 확인한다.
             count: Some(match tab {
                 Tab::Attention { empty: true } => 0,
                 _ => attention::ENTRIES.len(),
@@ -296,7 +250,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
         },
     );
 
-    // 우측 클러스터 — 오른쪽부터 X → 필터 입력.
     let close = theme.item_height_interactive.value();
     let close_rect = egui::Rect::from_min_size(
         egui::pos2(
@@ -318,7 +271,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
             ),
         );
 
-    // 목록이 있는 Installed 탭에서만 필터가 나타난다 — 본체와 같다.
     if !matches!(tab, Tab::Installed { .. }) {
         return;
     }
@@ -367,7 +319,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
     let body_top = header_rect.bottom();
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, body_top), rect.max);
 
-    // Installed·Attention 은 목록+상세 2열, Add 는 단일 열 — 본체와 같은 갈래다.
     let panes = |body: egui::Rect| {
         let list_rect =
             egui::Rect::from_min_max(body.min, egui::pos2(body.min.x + list_w(theme), body.max.y));
@@ -406,7 +357,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 본체는 한 번에 한 상태만 그리지만 갤러리는 cut 하지 않는다 — 전부 전시한다.
     for (label, tab) in [
         (
             "Installed",
@@ -504,7 +454,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "세 탭은 서로 다른 일을 한다 — Installed 는 설치된 plugin 의 상태·권한·명령을 보고, \
          Attention 은 서명·권한 변경으로 등록이 거부됐거나 런타임에서 실패한 plugin 만 모아 \
-         이유와 다음 수를 보여주며, Add plugin 은 로컬 폴더 경로로 설치한다. 검색 입력은 \
+         이유와 필요한 조치를 보여주며, Add plugin 은 로컬 폴더 경로로 설치한다. 검색 입력은 \
          목록이 있는 Installed 탭에서만 나타난다. 사용자가 직접 끈 plugin 은 error 가 아니라 \
          정상 종료이므로 danger dot 이 붙지 않는다.",
     );

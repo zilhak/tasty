@@ -1,23 +1,6 @@
-//! `info-modal` specimen — 부팅 안내/에러 알림 모달 (Overlays).
-//!
-//! 본체 `src/adapters/ui/info_modal.rs::draw_info_modal` 의 구조 전사.
-//! 큐(`DialogState.info_modal_queue`) head 를 보여주고 [OK]/Enter/Escape 로 pop
-//! 하는 popup 이며, 큐가 빌 때까지 다음 메시지가 이어서 뜬다.
-//!
-//! - **frame**: 폭 `DEFAULT_WIDTH` 440, 높이는 body 길이로 산출해 140..360 clamp.
-//!   제목은 큐 head 의 `title` 이 **타이틀바**에 실린다(`PopupDef.title_fn`).
-//! - **body**: 콘텐츠 영역 좌우 8 / 상하 4 inset(`ContentInset::INSET` 과 동일)
-//!   안에 `font_size_body` `text_primary` 산문 한 덩어리. **세로 스크롤한다** —
-//!   높이 산출이 글자 수 추정이라 실제 줄바꿈과 어긋나고, 어긋나도 프레임은
-//!   360 에서 잘리므로 긴 본문은 어차피 넘친다. 스크롤이 없으면 넘친 만큼이
-//!   아래 footer 를 프레임 밖으로 밀어낸다.
-//! - **footer**: `bottom_up(RIGHT)` 로 바닥에 붙이고 `spacing_xs` 여백 뒤
-//!   `right_to_left` — **[OK] 가 가장 오른쪽**, 추가 버튼이 그 왼쪽에 붙는다.
-//!   추가 버튼은 OS 설정 패널로 보내는 안내(macOS Full Disk Access)처럼
-//!   "안내만으로 끝나지 않는" 모달에서만 생긴다.
-//!
-//! **토큰 이관 1건**: 본체는 버튼을 egui 기본 `ui.button` 으로 그린다 → specimen 은
-//! 공용 `tasty_ui_widgets::Button`(`docs/architecture/ui-widgets-crate.md#무엇을-공용-위젯으로` 목표 상태).
+//! 부팅 안내·오류 메시지 팝업의 정적 예제.
+//! 본문은 높이를 제한해 스크롤하고 확인 버튼은 오른쪽 아래에 둔다.
+//! 본체와 달리 버튼은 공용 tasty-ui-widgets::Button을 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -57,7 +40,7 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         h,
         ContentInset::INSET,
         TitleButtons::CLOSE,
-        // 뷰포트를 점유하는 centered 표면 → modal 그림자(docs/design/systems/theme.md#떠-있는-표면의-그림자).
+        // 창 중앙 팝업이므로 modal 그림자를 쓴다.
         Some(theme.shadow_modal()),
         |ui| {
             // 본체와 같은 규칙 — 본문이 넘치면 스크롤하고 버튼 행은 자리를 지킨다.

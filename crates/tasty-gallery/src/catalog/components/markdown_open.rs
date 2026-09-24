@@ -1,7 +1,4 @@
-//! Markdown open — 디자인(4) Overlays `markdown` Spec.
-//!
-//! 420px 모달. title + 파일명 mono; 2개 Choice 카드버튼(Edit / Preview, on =
-//! accent border + ring); 각 카드 icon + title + sub; Cancel / Open preview.
+//! 마크다운 파일을 편집하거나 미리 볼 방식을 선택하는 팝업 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -23,7 +20,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::title(ui, theme, "Open markdown file");
                     kit::caption(ui, theme, "README.md", true);
                 });
-                // 2 Choice 카드.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
                     let cw = (WIDTH - theme.spacing_md.scaled(3.0)).scaled(0.5);

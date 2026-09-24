@@ -1,9 +1,4 @@
-//! Listening ports — 디자인(4) Overlays `ports` Spec.
-//!
-//! 660×520 모달. 헤더(port icon + title + count Tag + filter + columns + refresh +
-//! close) · Show-all 체크행 · 즐겨찾기 섹션(bounded, system-wide LISTEN/NONE) ·
-//! 최소폭 컬럼 Table(가로 스크롤, Workspace 숨김 케이스, leading fav 컬럼) ·
-//! footer(count + Copy address + Close). 색·치수는 Theme 토큰, Table 은 공용 위젯.
+//! 수신 포트 목록·상태 필터·즐겨찾기 예제. 실제 포트 조회는 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -112,7 +107,6 @@ const ROWS: &[PortRow] = &[
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            // 헤더 (padding 10x14).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -130,7 +124,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             theme,
                             &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
                         );
-                        // 컬럼 chooser 트리거(컬럼 표시/숨김). Refresh 옆.
                         IconButton::new().variant(IconButtonVariant::Ghost).show(
                             ui,
                             theme,
@@ -158,11 +151,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             kit::hsep(ui, theme);
 
-            // Show-all 체크행 (padding 8x14).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    // 체크박스 mock (checked).
                     let s = theme.icon_glyph_size_md.value();
                     let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
                     ui.painter().rect_filled(
@@ -174,26 +165,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .image(s, theme.text_on_accent().to_egui())
                         .paint_at(ui, r);
                     kit::body(ui, theme, "Show all (system-wide)");
-                    // 우측 정렬 상태 필터 버튼(적용 변형 — accent 채움).
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         funnel_button(ui, theme, "State · 1/3", true);
                     });
                 });
             });
 
-            // 즐겨찾기 섹션 (design FavoritesSection) — 캡션(22px: "Favorites · N" +
-            // 우측 "system-wide") + bounded 리스트(최대 112px, 행 22px). bg-sidebar
-            // 배경 + 하단 separator. 별 컬럼 폭은 메인 테이블과 정렬
-            // (`component.port-star-col-width`).
-            // 혼합 상태(매칭 1 + NONE 1) — 빈 상태는 아래 별도 stage 에서 시연한다.
             draw_favorites_section(ui, theme, FAVORITE_ROWS);
 
-            // Table — 컬럼별 최소폭 + 가로 스크롤. 최소폭 합(708)이 660 프레임을 넘어
-            // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
-            // 상태(컬럼 표시/숨김 시각 케이스). leading fav 컬럼(28px, 헤더 라벨 없음)
-            // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
-            // 컬럼 폭은 본체 `column_layout` 의 최소폭 미러다 — 이름이 있는 둘
-            // (별 컬럼 폭 · Process 최소폭)은 토큰으로 받고 나머지는 아직 토큰이 없다.
+            // 컬럼 최소폭을 유지하고 넘치면 가로로 스크롤한다. Workspace는 숨긴 예제다.
+            // 별 컬럼은 항상 표시하며 폭이 지정된 토큰이 없는 열은 본체의 최소폭을 사용한다.
             kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
                 let cols = vec![
                     col(
@@ -218,7 +199,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ),
                     col(
                         "Process",
-                        // 본체의 최소폭과 같은 role — `port-process-col-min-width`.
                         TableColumnWidth::Exact(theme.port_process_col_min_width()),
                         TableAlign::Left,
                     ),
@@ -245,10 +225,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             kit::hsep(ui, theme);
 
-            // footer (padding 8x14).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
-                    // 본체 footer 카운터는 disabled 잉크다 — `text-disabled`.
                     ui.label(
                         egui::RichText::new("5 of 5 ports")
                             .size(theme.font_size_caption.value())
@@ -267,14 +245,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
-    // 상태 필터 — 닫힘 버튼 + 열린 드롭다운(체크박스 목록 + 일괄 조작). 본체 신규 UI 라
-    // gallery-first 로 닫힘/적용/열림 3상태를 노출한다(적용 변형은 위 모달 show-all 행).
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 닫힘(미적용) 버튼 — surface-raised + border.
         funnel_button(ui, theme, "State", false);
-        // 열린 드롭다운 카드(min-width 216).
-        // 열린 드롭다운은 funnel 버튼 옆에 붙어 살아 있는 콘텐츠 위에 뜬다
-        // (anchored + scrim-less) — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 popover.
+        // 버튼에 붙는 드롭다운이므로 popover 그림자를 쓴다.
         kit::frame_card_popover(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 kit::caption(ui, theme, "Filter by state", true);
@@ -305,13 +278,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
-    // 즐겨찾기 섹션 — 빈 상태(0개). design §6.4 확정: 0개여도 캡션은 유지하고
-    // 흐린 별(37%) + 안내 문구 1행을 보여준다(Explorer 사이드바 즐겨찾기와 동일
-    // 관례). 위 모달의 "즐겨찾기 1개 이상"(혼합 상태) 시연과 별개로 gallery-first
-    // 정책에 따라 노출한다.
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 이 카드는 위 모달의 **한 섹션**을 떼어 보이는 것이다 — 그 자체로 떠 있는
-        // 표면이 아니므로 모달 단차를 겹쳐 그리지 않는다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
+        // 팝업 전체가 아닌 내부 섹션 예제이므로 그림자를 추가하지 않는다.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             draw_favorites_section(ui, theme, &[]);
         });
@@ -451,10 +419,7 @@ fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'
     }
 }
 
-/// `FavoritesSection` mock — 캡션(22px: "Favorites"(+개수, 0개면 생략) + 우측
-/// "system-wide") + bounded 리스트(최대 112px, 행 22px) 또는 빈 상태(흐린 별 37% +
-/// 안내 1행). `favorites` 가 비면 빈 상태를 그린다(design §6.4). 본체
-/// `port_scanner.rs::draw_favorites_section` 전사.
+/// 즐겨찾기 캡션과 높이가 제한된 목록. 비어 있어도 캡션과 안내는 표시한다.
 fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[FavoriteRow]) {
     let fav_row_h = theme.item_height_tree.value();
     let fav_ir = egui::Frame::NONE
@@ -478,7 +443,6 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                 );
 
                 if favorites.is_empty() {
-                    // 빈 상태 — Explorer 사이드바 즐겨찾기와 동일 관례(흐린 별 + 안내 1행).
                     ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(), fav_row_h),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -591,8 +555,7 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
                 .color(color),
         );
     };
-    // 컬럼: fav / Port / Proto / Address / Process / State / copy (Workspace 는
-    // chooser 로 숨김). c==0 은 leading fav 컬럼(28px, 나머지는 기존대로 1 씩 밀림).
+    // Workspace 컬럼은 이 예제에서 숨긴다.
     let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
     match c {
         0 => star(ui, theme, row.favorited),

@@ -1,10 +1,4 @@
-//! 안내 — jsx `IeNotices` · `IeBlockG`: 버린 plugin 정보 줄 · 마이그레이션 불필요 안내문 ·
-//! 알림 블록(파싱 실패 · 내보내기 실패 · 번들 경고).
-//!
-//! 경계: 본체 `import_export/notices.rs` 와 같은 자리 — 표·카드가 아닌 알림 자리의 그리기다.
-//!
-//! 알림 블록은 **레시피 하나**다(jsx `IeBlockG`) — 톤 · 글리프 · 제목(+개수) · 본문 · 액션 행.
-//! 실패와 경고는 톤만 다르다.
+//! 가져오기·내보내기의 정보, 경고, 오류 안내. 공통 블록에 색과 동작을 지정한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
@@ -50,8 +44,7 @@ pub(super) fn dropped_notice(ui: &mut egui::Ui, theme: &Theme) {
 
 /// jsx `IeBlockG` — 톤 틴트 배경 + 톤 테두리 · 헤더(글리프 · 제목 · 우측 개수) · 본문 · 액션
 /// 행(버튼 라벨과 variant). 눌린 액션의 인덱스를 돌려준다.
-// reason: 레시피의 칸(톤 · 글리프 · 제목 · 개수 · 본문 · 액션)이 그대로 인자다 — 본체 짝과 같은
-// 모양이다.
+// reason: 공통 안내 블록의 색, 아이콘, 제목, 개수, 본문, 동작을 각각 받는다.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn notice_block(
     ui: &mut egui::Ui,

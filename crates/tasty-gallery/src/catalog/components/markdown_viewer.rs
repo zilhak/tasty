@@ -1,34 +1,6 @@
-//! `markdown_viewer` specimen — Markdown surface 문서 디자인의 egui 근사 (Layouts).
-//!
-//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md`, [내부 동작](../../../../../docs/plugins/markdown/index.md#내부-동작)
-//! 참고): `crates/tasty-plugin-markdown` 은 Stage B 부터 **native OS webview**(host 가 만드는
-//! overlay — WebKitGTK/WKWebView/WebView2)에 sanitize 된 HTML 문서를 올려 그린다. plugin 이
-//! `pulldown-cmark` 로 HTML 을 생성하고, Theme 에서 캡처한 색·크기·간격을 CSS custom property
-//! 로 주입한 `<style>` 을 문서에 인라인한다(`render.rs::theme_css`) — egui 렌더 채널이 아니므로
-//! host 가 pixel 단위로 관여하지 않는다.
-//!
-//! **CSS-driven 주석 (이 specimen 은 CSS 출력의 근사):** 갤러리는 실제 webview 를 띄우지
-//! 않으므로(egui 카탈로그), 같은 토큰·계층을 **손으로 전사**한 것이다 — 실제 브라우저 렌더와
-//! 픽셀 동일성은 비목표. CSS 채널이므로 egui_commonmark 시절과 달리 아래는 더 이상 "라이브러리
-//! 제약"이 아니라 **plugin 이 스스로 결정한 디자인**이다:
-//! - **heading 사다리**: `render.rs::heading_sizes_px` 가 `font-size-prose-h1`(h1)↔
-//!   `font-size-body`(h6) 사이를 5단계 선형보간한다 — CSS 라 per-level 픽셀을 자유롭게 override
-//!   할 수 있지만, 현재는 이 선형보간을 디자인으로 채택했다(egui_commonmark 시절의 시각적
-//!   사다리를 유지). h2 근사 계수(0.835)는 이 선형보간의 근사치.
-//! - **본문 leading** 은 CSS `line-height` 로 완전히 제어 가능(라이브러리 제약 없음).
-//! - **표**는 실제 `<table>` — header 밴드(`md-table-header-bg`/`-fg`)·zebra·8/4px 셀 패딩
-//!   전부 CSS 로 직접 달성한다(egui `Grid::striped` 우회가 더 이상 필요 없음). 이 specimen 은
-//!   egui `Frame`+수동 grid 로 같은 시각 결과를 손으로 흉내낸다.
-//! - inline bold 는 CSS `font-weight` 로 실제 굵기 차이가 난다(specimen 은 egui 에 합성
-//!   weight 가 없어 text-primary 승격으로만 신호).
-//!
-//! **주소창**: 더 이상 공유 `PathField` egui 위젯이 아니다 — HTML 문서 자체에 내장된
-//! `<input>`+`<button>`(`render.rs::addr_bar_html`/`nav_script`)이라 host egui 컴포넌트가
-//! 아니게 됐다. 이 specimen 은 그 HTML chrome 의 정적 근사만 그린다(라이브 PathField 소비 아님).
-//!
-//! **인라인 이미지** (`![alt](path)`) — 렌더러가 파일 바이트를 `data:` URI 로 문서 안에 싣는다
-//! (`render.rs::inline_local_images`). 이 specimen 은 파일 I/O 없이 placeholder
-//! rect 로 근사한다 — 아래 `image_block`.
+//! 마크다운 플러그인의 HTML 화면을 egui로 근사한 예제. 실제 WebView는 실행하지 않는다.
+//! 제목 크기·표·구문 강조·알림은 Theme 값을 사용하되 브라우저와의 픽셀 일치는 보장하지 않는다.
+//! 주소창과 목차는 정적으로 그리며 이미지는 파일을 읽지 않고 대체 영역을 표시한다.
 
 mod document;
 
@@ -51,9 +23,6 @@ const TILE_H: LogicalPx = LogicalPx(132.0);
 const ADDR_BAR_W: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 0. 상단 주소창 chrome — 더 이상 host egui 위젯(PathField)이 아니라 문서 HTML 에 내장된
-    //    `<input>`+`<button>`(`render.rs::addr_bar_html`) 이다. host 컴포넌트가 아니게 됐으므로
-    //    라이브 편집 상태(idle/editing)를 소비하지 않고, 그 HTML chrome 의 정적 근사만 그린다.
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         spec::cluster(
             ui,
@@ -73,18 +42,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
-    // 1. 전체 element catalog 문서.
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.set_max_width(DOC_W.value());
         document(ui, theme);
     });
 
-    // 2. heading 계층 type-scale 시트 (h1–h6 + p + small).
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         type_scale(ui, theme);
     });
 
-    // 3. 상태 chrome (load-fail / empty / loading).
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "load failed", |ui| {
             tile(ui, theme, |ui| {
@@ -134,10 +100,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "addr bar",
-                // The height is not restated here. It lives once, as `--md-addr-bar-h` in the
-                // markdown renderer's stylesheet, and three other rules read it from there; a
-                // number copied into this table would keep displaying the old one after that
-                // declaration moved.
+                // 높이는 렌더러 CSS의 --md-addr-bar-h를 기준으로 관리한다.
                 "--md-addr-bar-h sticky top · bg-sidebar · in-document HTML chrome",
             ),
             (
@@ -245,32 +208,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "A read-only Markdown surface — the plugin renders sanitized HTML in a native OS \
-         webview (native WebView), injecting Theme tokens as CSS custom properties so the \
-         colors and type scale follow the design. The heading ladder is a 5-step linear \
-         interpolation between the Heading anchor (prose-h1 20) and Body (13), fully \
-         controlled by the plugin's own CSS generator (no library constraint left) — h2/h3 \
-         still read alike by design choice, not limitation. GFM alert blockquotes \
-         (`> [!NOTE]`/`TIP`/`IMPORTANT`/`WARNING`/`CAUTION`) each get their own accent \
-         color, icon, and localized header label baked into the document at generation time — \
-         CSS alone can't branch on the UI language, so `render.rs` resolves the label via its \
-         own `Translator` and carries it across the sanitize boundary as a `data-label` \
-         attribute the CSS then echoes back with `content: attr(data-label)`. This specimen \
-         hand-transcribes the same tokens as an approximation of that CSS output (the gallery \
-         does not embed a live webview). Every heading also gets a GitHub-compatible auto slug \
-         `id` (`render.rs::collect_headings`/`Slugger` — lowercase, Unicode-aware, deduped with \
-         `-1`/`-2` suffixes, no explicit `{#id}` syntax) and a document-top collapsible `<nav>` \
-         TOC is generated from them (`render.rs::toc_nav_html`) — clicking an entry is a plain \
-         same-document anchor jump, reusing the existing anchor-only pass-through rather than \
-         the `#tasty-nav:` interception scheme. Fenced code blocks get client-side syntax \
-         highlighting from a vendored, offline highlight.js bundle (`render.rs::highlight_script` \
-         — inserted only when the document actually has a code block, same conditional pattern as \
-         the mermaid bundle), with `hljs-*` token colors mapped to this plugin's own Catppuccin- \
-         style `Theme` hues (`render.rs::hljs_css`) instead of a fixed vendored theme, so \
-         highlighted code follows the active tasty theme. This specimen's code block hand-tokenizes \
-         the same sample the way highlight.js's `rust` grammar would, to approximate that CSS \
-         output. Below the document: the heading type-scale, and the load-fail / empty / loading \
-         chrome that replaces a raw `Error:` body.",
+        "The plugin renders sanitized HTML in a native WebView and applies Theme values through CSS. It interpolates heading sizes between prose-h1 and body, generates heading IDs and a collapsible table of contents, and uses a bundled highlight.js for fenced code. GFM alerts use localized labels and distinct colors. This gallery reproduces those elements with egui and fixed example data; it does not run the browser, highlighting script or navigation.",
     );
 }
 
@@ -366,10 +304,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// 상단 주소창 chrome — Stage B 부터 host egui 위젯이 아니라 문서 HTML 에 내장된
-/// `<input>`+`<button>`(`render.rs::addr_bar_html`)이라, 더 이상 공유 `PathField` 를
-/// 라이브 소비하지 않는다(그 위젯 자체를 markdown 이 안 쓴다). 이 specimen 은 그 HTML
-/// chrome 을 정적으로 근사한다 — file 아이콘 + 경로 텍스트 + Go 아이콘, idle 상태 하나만.
+/// 문서 안 HTML 주소창을 정적으로 그린다. 경로 편집은 지원하지 않는다.
 fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
@@ -415,13 +350,7 @@ fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
-/// TOC chrome (`render.rs::toc_nav_html`) — collapsible `<nav>` auto-inserted between the address
-/// bar and the document body, from headings auto-slugged in `render.rs::collect_headings`(no
-/// explicit `{#id}` syntax — module design decision: auto slugs only). Like `address_bar` this
-/// is an in-document HTML element, not a host egui widget, so this specimen is a static
-/// always-expanded approximation (no live collapse/click-scroll state in the gallery) — indent
-/// per level mirrors `theme_css`'s `.tasty-toc-l<N>` rules (`--md-space-sm` × depth). The item
-/// list below mirrors [`document`]'s own headings.
+/// 문서 목차를 항상 펼친 상태로 그린다. 클릭 이동·접기 동작은 구현하지 않는다.
 fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
         .fill(theme.surface_raised().to_egui())

@@ -1,9 +1,5 @@
-//! Spec 4 — 첫 시안이 비워 둔 값 여섯(jsx gallery `IeExportFailG` · `IeBundleNoticesG` ·
-//! `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG`).
-//!
-//! 경계: 본체 `import_export/` 의 `entry`(Export 행의 notice 자리) · `notices`(알림 블록
-//! 레시피) · `migrate`(충돌 개수 줄 · modifier placeholder)가 그리는 상태를 한 Spec 에 모은다.
-//! 그리기 자체는 그 모듈들의 것을 부른다 — 여기서 새로 짓지 않는다.
+//! 내보내기 실패, 여러 경고, 줄 번호 없는 파싱 오류, 충돌, 미선택 상태 예제.
+//! 실제 그리기는 entry·notices·migrate의 공통 함수를 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ButtonVariant, select, select_or_placeholder};
@@ -139,11 +135,7 @@ pub fn draw_open_values(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Why the notices are one block and the info line is not in it. Tone is the sorting key, \
-         not topic: a reader scans for \"is anything wrong\". Merging an unactionable fact into a \
-         warning-toned block makes the whole block unactionable-looking; splitting the warnings \
-         into one block each makes a wall where one thing is needed — read it, then go look at \
-         the table.",
+        "Warnings share one block. Informational notices stay outside it so the reader can distinguish problems from facts that need no action.",
     );
     spec::dont(
         ui,

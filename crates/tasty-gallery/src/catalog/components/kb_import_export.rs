@@ -1,36 +1,7 @@
-//! Settings › Keybindings › Import / Export — 디자인(4) Overlays `kbimportexport` Section.
-//!
-//! 전사 원본: `ui_kits/terminal/overlays/kb_import_export.jsx`(`KbImportExportSubtab` ·
-//! `IeDiffTable` · `IeMigrateCard`/`IeMigrateRow` · `IeActionRow`) +
-//! `ui_kits/terminal/overlays/settings_window.jsx`(`KB_L2_SEPARATED` · 창 자체 toast) +
-//! `gallery/overlays-windows.jsx` 의 Spec 4 종(`IeL2Tail` · `IeEntry` · `IeGrid` ·
-//! `IeMigrateG` · `IeBackBarG` · `IeNotices` · `IeBlockG` · `IeExportFailG` · `IeBundleNoticesG` ·
-//! `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG`).
-//!
-//! 본체 자리: `src/view/settings/ui/keybindings_tab.rs` 의 서브탭. 갤러리는 본체 binary 에
-//! 의존하지 않으므로 같은 위젯(`DrillDown` · `Button` · `checkbox` · `select` · `tag`)과
-//! 같은 토큰으로 **미러**한다(`settings_handler` · `settings_remote_transfer` 전례).
-//!
-//! 디자인이 이 화면에서 **새로 정의한 축이 셋**이다 — 기존 컴포넌트를 흉내 내지 않고
-//! 정본 정의대로 그린다.
-//!
-//! - **L2 separator** — L2 행 모델에 "위에 구분선" 축. 필터가 활성이면 숨는다.
-//! - **표 그룹 헤더** — 네 열을 가로지르는 한 행: 전체 선택 체크 · 접힘 chevron ·
-//!   그룹명(mono micro caps) · `N changed · M total`. 열 헤더를 반복하지 않는다.
-//! - **표 선택 열** — 32px 선두 열. 행 단위 적용.
-//!
-//! 전사 노트 — 관례를 따른 자리: `letter-spacing-caps` 는 mono micro uppercase 로,
-//! `fontWeight: 600` 은 색 강조로 둔다(`preset.rs` · `hook_handlers.rs` 관례). 앞쪽은 egui
-//! 한계가 아니다 — `RichText::extra_letter_spacing` 이 있고, 막힌 것은 `0.04em` 이 em 이라
-//! DTCG 생성기가 스킵해 Rust 상수가 없다는 쪽이다(`dtcg.rs` 의 `Skip::EmUnit`). `color-mix(in srgb, tone X%, transparent)` 는 `gamma_multiply` 알파 감쇠로 근사한다
-//! (`warning_callout` 전례). 폰트 10/11/12/13 은 `font_size_micro`/`caption`/`term_sm`/`body`.
-
-//!
-//! 모듈 경계는 본체 `keybindings_tab/import_export/` 와 **같은 이름**으로 가른다 — 화면 단위 그리기는
-//! `entry`(Spec 1) · `diff_table`(Spec 2) · `migrate`(Spec 3) · `notices` · `open_values`(Spec 4 —
-//! 첫 시안이 비워 둔 값 여섯) · `remaining_values`(Spec 5 — 그 회차가 남긴 나머지), 공용 칠하기 헬퍼는
-//! `paint`. 이 파일은 데모 데이터 · 상호작용 상태 · 두 Spec 이 함께 쓰는 `detail_frame` 과 치수
-//! 상수를 든다(치수 상수는 본체 짝과의 값 일치 가드가 이 경로에서 읽는다).
+//! 단축키 가져오기·내보내기의 진입 화면, 비교 표, 호환성 처리, 오류 안내 예제.
+//! 본체 바이너리에 의존하지 않고 공용 위젯으로 화면을 재현한다.
+//! em 단위 자간 토큰은 생성기가 지원하지 않아 적용하지 않으며,
+//! 굵기 차이는 글자색으로, color-mix는 알파 조절로 근사한다.
 
 mod diff_table;
 mod entry;
@@ -62,10 +33,7 @@ const ENTRY_W: LogicalPx = LogicalPx(620.0);
 const PREVIEW_H: LogicalPx = LogicalPx(420.0);
 /// 마이그레이션 DrillDown 높이 — back bar + 미완료 카드.
 const MIGRATION_H: LogicalPx = LogicalPx(440.0);
-// 아래 치수 중 32 · 288 · 120 은 `size-*` 스케일 위의 값이다(140 은 스케일에 아직 없다). 디자인은
-// 이 넷에 컴포넌트 토큰을 열었지만 vendor 한 DTCG export 에는 아직 그 이름이 없어 읽을 수 없다 —
-// 그래서 지금은 명명 상수다. semantic 별칭인 둘(카드 inset `space-md` · 슬롯 높이
-// `control-height-tab`)은 이미 Theme 에서 읽는다.
+// 이 치수의 디자인 토큰 이름이 저장된 DTCG에 없어 명명 상수를 사용한다.
 /// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
 /// 마이그레이션 행 라벨 열 — 디자인 `--tasty-kb-ie-action-column-width`(→ `size-288`, ja 최장 액션
@@ -84,8 +52,6 @@ const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
 const CONFLICT_SUMMARY_FROM: usize = 2;
 /// 경고 블록이 접기 전에 보이는 줄 수.
 const NOTICE_FOLD_AT: usize = 3;
-
-// ── 데모 데이터 (jsx `IE_GROUPS` · `IE_MIGRATE` · `IE_DISCARDED` 미러) ─────────────
 
 const IE_FILE: &str = "tasty-keybindings-2026-09-09.toml";
 const IE_DISCARDED: &str = "k8s-lens, s3-browser";
@@ -218,8 +184,6 @@ struct MigrateRow {
     fanout: Option<&'static str>,
 }
 
-// ── 상호작용 상태 (정적 specimen 이지만 새 축 셋은 눌러 볼 수 있게) ────────────────
-
 struct State {
     changed_only: bool,
     collapsed: BTreeSet<&'static str>,
@@ -296,8 +260,7 @@ fn detail_frame(
                     toggle.set(true);
                 }
             };
-            // 콘텐츠 영역을 높이째 잡아야 DrillDown 의 내부 스크롤이 그 높이를 채운다 —
-            // stage 안의 가용 높이는 콘텐츠만큼이라 그대로 두면 본문이 한 줄로 접힌다.
+            // DrillDown 본문이 한 줄로 줄어들지 않도록 사용할 높이를 먼저 확보한다.
             ui.allocate_ui_with_layout(
                 egui::vec2(SPECIMEN_W.value(), height.value()),
                 egui::Layout::top_down(egui::Align::Min),

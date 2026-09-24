@@ -1,6 +1,4 @@
-//! 칠하기 헬퍼 — 안내문 · 캡션 · 아이콘 · 고정 폭 라벨 · 말줄임 galley.
-//!
-//! 경계: 본체 `import_export/paint.rs` 와 같은 자리 — 두 Spec 이상이 함께 쓰는 원자 그리기다.
+//! 단축키 가져오기·내보내기 예제의 텍스트·아이콘 그리기 헬퍼.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;

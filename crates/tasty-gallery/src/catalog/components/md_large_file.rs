@@ -1,8 +1,4 @@
-//! Markdown large-file confirm — 디자인(4) Overlays `MdLargeFilePopup` Spec.
-//!
-//! 360px 모달. title + 파일 경로 mono; 경고 태그(크기) + 안내문 한 줄; Cancel / Open.
-//! 대용량 확인 팝업은 **plugin 소유**(`crates/tasty-plugin-markdown` 의 `draw_confirm`)
-//! 이며 이 specimen 은 그 plugin 컴포넌트의 디자인 SoT 다 — 토큰·구조 정합.
+//! 마크다운 플러그인의 대용량 파일 확인 팝업 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;

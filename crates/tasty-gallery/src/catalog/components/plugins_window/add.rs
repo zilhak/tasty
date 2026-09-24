@@ -1,25 +1,10 @@
-//! `Add plugin` 탭 specimen — 본체 `src/view/plugins/ui/add.rs` 의 구조 전사.
-//!
-//! 본체는 상태가 둘이고 같은 `CentralPanel` 을 갈아 끼운다.
-//!
-//! - **경로 입력**(`draw_add_input`) — 라벨 → 입력 + Verify → 구분선 → 폴더 찾기.
-//! - **매니페스트 프리뷰**(`draw_add_preview`) — 제목 → 이름/버전 → id → 설명 →
-//!   authors/homepage → source → surface kinds → permissions → (미신뢰면)
-//!   경고 영역 → 구분선 → Add / Cancel.
-//!
-//! 두 상태를 나란히 전시한다 — 한 화면에 하나만 나오는 것은 본체 동작이고,
-//! 갤러리는 두 상태가 다 있는 것을 보여야 한다.
-//!
-//! **미신뢰 경고**(`draw_untrusted_warning`)는 trust 상태로 갈린다. 여기서는
-//! 공개키가 있어 신뢰 등록이 가능한 경우(`UntrustedWithPubkey`)를 그린다 —
-//! 그 경우만 Add 버튼이 살아 있어 버튼 활성 규칙까지 함께 보인다.
+//! 플러그인 추가의 경로 입력과 매니페스트 확인 예제.
+//! 미신뢰 플러그인 예제는 공개키가 있어 신뢰 등록이 가능한 경우만 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
-/// 경로 입력은 남은 폭을 다 먹고 옆 `Verify` 자리만 비운다 — 본체
-/// `desired_width(ui.available_width() - 90.0)`. 그 90 은 토큰과 같은 값이라
-/// (`field_width_xs`) 갤러리는 raw 숫자 대신 토큰으로 같은 폭을 만든다.
+/// 경로 입력 오른쪽의 Verify 버튼 공간을 확보한다.
 fn field_width(theme: &Theme, available: f32) -> f32 {
     (available - theme.field_width_xs.value()).max(theme.field_width_xs.value())
 }

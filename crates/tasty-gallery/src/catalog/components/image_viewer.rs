@@ -1,19 +1,5 @@
-//! `image_viewer` specimen — Image surface(viewer / canvas) 의 egui chrome (Layouts).
-//!
-//! 본체 렌더 경로(docs/dev-guide/egui-mesh-channel.md#데이터-흐름): image 는 egui-mesh plugin 이다 —
-//! `crates/tasty-plugin-image/src/render.rs::draw` 가 상단 control bar + 그 아래 이미지
-//! 영역(배경 `bg_sidebar`)을 자기 egui `Context` 에서 그려 mesh 로 host 가 합성한다. control bar
-//! viewer 모드 버튼은 chevron-left/right(prev/next) · refresh · edit · plus(new) — 본체는
-//! `tasty-icons` 빌드타임 베이크 벡터를 그리고, 이 specimen 은 같은 canonical 아이콘의
-//! egui_extras 글리프 렌더(`tasty_icons::<NAME>.image()`)로 미러한다(raw 유니코드 제거).
-//! 가운데 파일명 라벨(`subtext0`→`text_muted`), 우측 zoom 그룹 `Fit · + · % · -`(텍스트
-//! 버튼 — 본체도 `text_button`). 이미지가 없으면
-//! 영역 중앙에 `no_image` 안내(`subtext0`). 새 이미지는 blank canvas(기본 800×600).
-//!
-//! 갤러리는 본체 crate·실제 텍스처에 의존하지 않으므로 두 상태를 painter + 토큰으로
-//! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표:
-//! - **viewer** — 툴바 전체 + 캔버스에 표시된 그림(테두리 + IMAGE fallback glyph 대역).
-//! - **no image** — 툴바(refresh/new) + 캔버스 중앙 fallback glyph + "No image".
+//! 이미지 플러그인의 툴바와 이미지 유무에 따른 화면 예제.
+//! 실제 텍스처를 읽지 않으며 아이콘과 Theme 값으로 구성을 재현한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -22,7 +8,6 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-// ── surface 타일 대표 치수 + control 버튼 치수(host add_sized 고정값) ──
 /// 본문 폭(전시 박스).
 const PANE_W: LogicalPx = LogicalPx(560.0);
 /// 캔버스 영역 높이(전시 박스).
@@ -91,9 +76,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 /// surface = control bar + canvas. `loaded`=true 면 그림, false 면 fallback.
 fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
-    // image surface 는 pane 안에 사는 콘텐츠지 떠 있는 표면이 아니다 — 본체
-    // (`tasty-plugin-image`)도 셸 그림자를 그리지 않는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의
-    // 세 번째 갈래.
+    // 탭 내부 콘텐츠이므로 팝업 그림자를 그리지 않는다.
     kit::frame_card_flat(ui, theme, PANE_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
         let pad = theme.spacing_sm;
@@ -103,12 +86,9 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
             ui.allocate_exact_size(egui::vec2(w, total_h.value()), egui::Sense::hover());
         let p = ui.painter_at(rect);
 
-        // ── control bar ──
         let by = LogicalPx(rect.top()) + pad;
         let mut x = LogicalPx(rect.left()) + pad;
-        // viewer 모드: 이미지 있으면 prev/next/refresh/edit/new, 없으면 refresh/new 만.
-        // 본체 플러그인이 tasty-icons 베이크 벡터를 쓰므로 specimen 도 같은 canonical
-        // 아이콘을 egui_extras 글리프로 렌더해 미러한다(raw 유니코드 글리프 제거).
+        // 이미지가 없으면 새 이미지·새로고침 버튼만 표시한다.
         let glyphs: &[icons::Icon] = if loaded {
             &[
                 icons::CHEVRON_LEFT,
@@ -123,7 +103,6 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         for g in glyphs {
             x = button(&p, ui, theme, x, by, BTN_W, *g);
         }
-        // 파일명 / 상태 라벨.
         x += pad;
         let name = if loaded { "diagram.png (2/5)" } else { "—" };
         p.text(
@@ -136,7 +115,6 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         // zoom 그룹 (우측 정렬): Fit + % - 를 오른쪽부터 역순 배치.
         zoom_group(&p, theme, LogicalPx(rect.right()) - pad, by);
 
-        // bar 하단 separator.
         let canvas_top = rect.top() + bar_h.value();
         p.hline(
             rect.x_range(),
@@ -144,7 +122,6 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
             egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
         );
 
-        // ── canvas (mantle 배경) ──
         let canvas = egui::Rect::from_min_max(
             egui::pos2(rect.left(), canvas_top),
             egui::pos2(rect.right(), rect.bottom()),
@@ -156,7 +133,7 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         );
 
         if loaded {
-            // fit-to-window 그림: 테두리 프레임 + 중앙 fallback glyph(텍스처 대역).
+            // 실제 텍스처 대신 아이콘으로 이미지 영역을 표시한다.
             let pic = egui::Rect::from_center_size(
                 canvas.center(),
                 egui::vec2(canvas.height() * 1.3, canvas.height() * 0.78),
@@ -179,7 +156,6 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
                 theme.text_muted().to_egui(),
             );
         } else {
-            // fallback glyph + 안내 텍스트.
             let g = canvas.center() - egui::vec2(0.0, theme.spacing_lg.value());
             glyph(
                 ui,
@@ -224,7 +200,6 @@ fn button(
         egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
         egui::StrokeKind::Inside,
     );
-    // 중앙 글리프 — 본체 툴바 베이크 벡터를 canonical 아이콘 렌더로 미러(sm=14px, primary).
     let gs = theme.icon_glyph_size_sm.value();
     let gr = egui::Rect::from_center_size(r.center(), egui::vec2(gs, gs));
     icon.image(gs, theme.text_primary().to_egui())
@@ -235,13 +210,11 @@ fn button(
 /// 우측 정렬 zoom 그룹 — 오른쪽 끝 `right_x` 에서 `-`, `%`, `+`, `Fit` 순으로 역배치.
 fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: LogicalPx, y: LogicalPx) {
     let gap = theme.spacing_xs;
-    // `-` 버튼.
     let minus = egui::Rect::from_min_size(
         egui::pos2((right_x - BTN_W).value(), y.value()),
         egui::vec2(BTN_W.value(), BTN_H.value()),
     );
     btn_box(p, theme, minus, "-");
-    // 퍼센트 라벨.
     let pct_x = LogicalPx(minus.left()) - gap;
     let pct = p.text(
         egui::pos2(pct_x.value(), (y + BTN_H.scaled(0.5)).value()),
@@ -250,13 +223,11 @@ fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: LogicalPx, y: LogicalPx
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );
-    // `+` 버튼.
     let plus = egui::Rect::from_min_size(
         egui::pos2(pct.left() - (gap + BTN_W).value(), y.value()),
         egui::vec2(BTN_W.value(), BTN_H.value()),
     );
     btn_box(p, theme, plus, "+");
-    // `Fit` 버튼.
     let fit = egui::Rect::from_min_size(
         egui::pos2(plus.left() - (gap + FIT_W).value(), y.value()),
         egui::vec2(FIT_W.value(), BTN_H.value()),

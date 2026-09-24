@@ -1,13 +1,5 @@
-//! `Installed` 탭 — 본체 `src/view/plugins/ui/list.rs::draw_list_tab` 구조 전사.
-//!
-//! 상세 컬럼(본체 `list.rs:130-310`)은 블록이 열셋이고 그중 넷만 여기 있었다.
-//! 나머지 아홉(빈 상태 · health error 박스 · homepage · Status/Configure ·
-//! Surface kinds · Permissions · Commands · Install path/Log · Uninstall 2 분기)을
-//! 마저 전사한다.
-//!
-//! 본체는 상세를 `ScrollArea` 에 담아 넘치면 스크롤한다. 갤러리는 정지 화면이 판정
-//! 수단이라 스크롤을 두지 않고 **무대를 늘려** 전량이 한 컷에 들어오게 한다 —
-//! 스크롤로 가린 부분은 캡처에 안 나오고, 안 나오는 것은 검증되지 않는다.
+//! 설치된 플러그인의 목록·상세·제거 확인 예제.
+//! 본체 상세는 스크롤하지만 갤러리는 전체 내용을 비교할 수 있게 예제 높이를 늘린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
@@ -110,10 +102,7 @@ pub(super) const ROWS: &[Row] = &[
     },
 ];
 
-/// 좌측 목록 (폭 `plugins_side_panel_width`) — 아바타 + 2줄 행.
-///
-/// 행 높이는 아바타에서 나온다(`PLUGIN_LIST_ROW_HEIGHT`) — 디자인 행이
-/// `padding: space-sm` 위아래에 32px 아바타가 앉는 flex 행이라 그렇다.
+/// 목록 행의 높이는 아바타와 위아래 패딩으로 정한다.
 pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, detail: Detail) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
@@ -149,7 +138,6 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, deta
             PluginAvatarSize::Row,
         );
 
-        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: var(--tasty-space-sm)`.
         let name_pos = r.min + pad + egui::vec2(avatar + theme.spacing_sm.value(), 0.0);
         p.text(
             name_pos,
@@ -184,7 +172,6 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, deta
     }
 }
 
-/// 라벨 한 줄 — 본체 `ui.label(format!("{}:", t(...)))`.
 fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -193,7 +180,6 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// muted small 한 줄 — 본체 `.small().color(text_muted)`.
 fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -202,10 +188,7 @@ fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// health error 경고 박스 — enabled + error 인 행에만. 사용자가 끈 plugin 은
-/// 정상 종료라 error 가 아니다(본체 주석과 같은 조건).
-///
-/// 채움/테두리는 본체와 같은 `tint-fill-alpha` / `tint-border-alpha` 짝이다.
+/// 활성 플러그인의 실행 오류만 강조한다. 사용자가 비활성화한 상태는 오류로 표시하지 않는다.
 fn health_box(ui: &mut egui::Ui, theme: &Theme) {
     let danger = theme.accent_danger().to_egui();
     egui::Frame::new()
@@ -286,11 +269,7 @@ fn paths(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     muted(ui, theme, &format!("Log: {}", row.log_path));
 }
 
-/// 마지막 줄 — 평상시엔 `Uninstall` 하나, 누른 뒤엔 경고 + 확인/취소.
-///
-/// 본체는 셋 다 평범한 `ui.button` 이라 파괴적 동작에도 danger variant 가 없다.
-/// 갤러리는 본체를 전사하는 자리이므로 여기서 variant 를 올리지 않는다 — 올리면
-/// 본체에 없는 시각을 갤러리가 만들어 낸다.
+/// 본체와 같은 일반 버튼으로 제거 동작과 확인·취소를 표시한다.
 fn uninstall(ui: &mut egui::Ui, theme: &Theme, row: &Row, confirming: bool) {
     if !confirming {
         Button::new("Uninstall")
@@ -333,7 +312,6 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
     };
     let row = &ROWS[i];
 
-    // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
     child.horizontal_top(|ui| {
         plugin_avatar(ui, theme, row.name, PluginAvatarSize::Detail);
         ui.vertical(|ui| {

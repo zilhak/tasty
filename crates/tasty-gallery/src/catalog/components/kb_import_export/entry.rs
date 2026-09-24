@@ -1,6 +1,4 @@
-//! Spec 1 — L2 배치 · 진입 화면(jsx `IeL2Tail` · `IeEntry` · `IeActionRow`) · 내보내기 피드백.
-//!
-//! 경계: 본체 `import_export/entry.rs` 와 같은 자리 — 진입 화면에만 나오는 그리기다.
+//! 단축키 가져오기·내보내기 진입 화면과 완료 안내 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, checkbox};
@@ -12,8 +10,6 @@ use crate::catalog::widgets::dialog as kit;
 
 use super::paint::{caption, glyph_at, intro};
 use super::{ENTRY_W, IE_FILE, STATE};
-
-// ── Spec 1: L2 배치 · 진입 화면 · 내보내기 피드백 ─────────────────────────────────
 
 pub fn draw_entry(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -90,11 +86,7 @@ pub fn draw_entry(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Why a popup for the file picker and not another drill-down step: the drill-down is \
-         already spoken for by the preview (list ⇄ detail), and the same picker serves both \
-         directions — Export needs a save target, Import an open target. The settings window \
-         already runs a PopupManager for the shortcut-conflict confirm, so this adds a case, \
-         not a mechanism.",
+        "The comparison preview uses DrillDown. Import and Export share a separate file picker popup for choosing an input file or save target, managed by the settings window’s PopupManager.",
     );
     spec::dont(
         ui,
@@ -271,9 +263,7 @@ pub(super) fn action_row(
         });
 }
 
-/// 내보내기 완료 — 설정 창 자체 `ToastManager` 의 success 카드에 해석된 경로.
-///
-/// 치수·색은 본체 토스트와 같은 함수(`draw_single_card`)에서 온다 — 여기서 다시 계산하지 않는다.
+/// 본체와 같은 draw_single_card 함수로 내보내기 완료 토스트를 그린다.
 fn export_toast(ui: &mut egui::Ui, theme: &Theme) {
     let text = format!("Exported to ~/tasty/{IE_FILE}");
     toast_card::draw_single_card(ui, theme, ToastKind::Success, &text, 1.0);

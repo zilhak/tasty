@@ -1,8 +1,4 @@
-//! `Button` primitive specimen — 디자인(4) `components/buttons/Button` 카드.
-//!
-//! 본체 팝업과 **동일한** `tasty_ui_widgets::Button` 을 호출한다(mirror 아님 —
-//! demo=main). variant(primary/secondary/ghost/danger/agent) × size(sm/md/lg) ×
-//! icon × state 를 `cluster` 로 묶고, 하단 `meta` 로 치수/토큰을 노출한다.
+//! 공용 Button의 종류·크기·아이콘·비활성 상태 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};

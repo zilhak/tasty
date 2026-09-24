@@ -1,17 +1,5 @@
-//! `plugin-settings` specimen — plugin-기여 설정 페이지의 **행 합성** 미러.
-//!
-//! 디자인 `(3) ui_kits/terminal/overlays/settings_window.jsx:240-248` 의 HTML viewer
-//! 페이지: `Default zoom` / `Color scheme` / `Allow remote content` / `Sandbox scripts`
-//! + Note. 각 행은 label 좌 / 컨트롤 우 (Row).
-//!
-//! 갤러리는 main 바이너리에 의존하지 않으므로, 본체 `src/view/settings/ui/tabs/appearance.rs`
-//! 의 `plugin_setting_row` + `draw_plugin_{toggle,select,number}` 레이아웃·토큰을 공유 위젯
-//! (`tasty_ui_widgets::{switch,select}`)로 **미러**한다 (갤러리 확립 패턴 — `prim_forms` /
-//! `settings` specimen 과 동일).
-//!
-//! number 행: 디자인·본체·specimen 모두 **설정 창의 숫자 한 모양**이다 — mono `Input`
-//! (width xs, 자릿수 우측 정렬) + 필드 밖 정적 suffix + **확정 때만 clamp**. 그 모양
-//! 자체(상태 셋)는 [`super::settings_number`] specimen 이 따로 전시한다.
+//! 플러그인 설정 페이지를 공용 위젯으로 재현한 예제.
+//! 숫자는 편집 중 그대로 두고 확정할 때만 범위를 제한한다.
 
 use std::cell::RefCell;
 
@@ -25,7 +13,7 @@ use crate::catalog::widgets::dialog as kit;
 /// 디자인 settings detail 영역(HTML viewer 페이지) 프레임 폭 근사.
 const WIDTH: LogicalPx = LogicalPx(440.0);
 
-/// Default zoom 이 확정될 때 끌려오는 범위(본체 plugin 매니페스트의 min/max 재현).
+/// Default zoom을 확정할 때 적용할 범위(본체 plugin 매니페스트의 min/max 재현).
 const ZOOM_MIN: f64 = 25.0;
 const ZOOM_MAX: f64 = 500.0;
 
@@ -65,11 +53,9 @@ thread_local! {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // Settings › Appearance 안의 plugin 기여 설정 **페이지**다 — 창 셸에 얹힌
-        // 콘텐츠라 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
+        // 설정 창 내부의 페이지이므로 팝업 그림자를 그리지 않는다.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                // 페이지 헤더 — Mono "HTML viewer".
                 ui.label(
                     egui::RichText::new("HTML viewer")
                         .monospace()
@@ -78,9 +64,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
-                    // Default zoom — 설정 창의 숫자 한 모양(본체 `number::number_field`
-                    // 미러). right_to_left 이라 suffix 가 가장 우측, 그 왼쪽에 필드.
-                    // 확정(blur / ↵) 때만 25..=500 으로 끌어오고, 치는 동안은 그대로 둔다.
+                    // 확정할 때만 25..=500 범위로 제한한다. suffix는 입력 오른쪽에 둔다.
                     row(ui, theme, "Default zoom:", |ui| {
                         ui.label(
                             egui::RichText::new("%")
@@ -108,7 +92,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             }
                         }
                     });
-                    // Color scheme — Select(width field_width_md).
                     row(ui, theme, "Color scheme:", |ui| {
                         select(
                             ui,
@@ -120,11 +103,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             true,
                         );
                     });
-                    // Allow remote content — Switch (off).
                     row(ui, theme, "Allow remote content:", |ui| {
                         switch(ui, theme, &mut st.allow_remote, None, true);
                     });
-                    // Sandbox scripts — Switch (on).
                     row(ui, theme, "Sandbox scripts:", |ui| {
                         switch(ui, theme, &mut st.sandbox, None, true);
                     });
@@ -142,7 +123,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         );
                     });
                 });
-                // Note.
                 ui.add_space(theme.spacing_sm.value());
                 ui.label(
                     egui::RichText::new(
@@ -193,7 +173,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut 
     });
 }
 
-/// 지금 친 글자가 확정되면 값이 끌려가는가 — 그럴 때만 danger 테두리가 켜진다.
+/// 확정 시 범위 제한으로 값이 바뀔 입력인지 확인한다. 해당 입력은 오류 테두리로 표시한다.
 fn zoom_out_of_range(buf: &str) -> Option<f64> {
     let typed = buf.trim().parse::<f64>().ok()?;
     if !typed.is_finite() {

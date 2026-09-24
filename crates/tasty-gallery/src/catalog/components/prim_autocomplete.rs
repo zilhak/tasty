@@ -1,10 +1,5 @@
-//! `AutoComplete` primitive specimen — 디자인 `forms/AutoComplete` 카드.
-//!
-//! 자유입력 트리거 + 후보 드롭다운(typeahead). 트리거=Input, 컨테이너=menu container +
-//! shadow lift, 후보 행=MenuItem 언어 + middle-ellipsis + 매치 highlight. 디자인 gallery
-//! Spec 의 상태 매트릭스(idle / open / filtered+highlight / overflow→scroll / empty /
-//! hover·keyboard-active / 두 아이콘 컨텍스트)를 정적 인라인 드롭다운으로 전사하고, 실제
-//! 합성·필터·키내비·스크롤은 하단 "interactive" 라이브 인스턴스로 노출한다.
+//! 자동 완성의 정적 상태 예제와 실제 공용 위젯.
+//! 아래의 interactive 예제에서 필터·키보드 이동·스크롤을 확인할 수 있다.
 
 use std::cell::RefCell;
 
@@ -88,7 +83,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
 
         stage(ui, theme, StageVariant::Column, |ui| {
-            // A · IDLE — 닫힌 트리거만(mono 경로 + leading folderOpen 아이콘).
             cluster(ui, theme, "idle — closed trigger", |ui| {
                 Input::new()
                     .mono(true)
@@ -97,7 +91,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .show(ui, theme, &mut st.idle_buf);
             });
 
-            // B · OPEN — 전체 후보(row 0 keyboard-active, 나머지는 hover).
             cluster(
                 ui,
                 theme,
@@ -120,7 +113,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
-            // C · FILTERED + HIGHLIGHT — "tasty" 매치 구간 accent 강조.
             cluster(
                 ui,
                 theme,
@@ -143,7 +135,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
-            // D · OVERFLOW → 내부 스크롤(maxDropdownHeight 132 초과).
             cluster(ui, theme, "overflow → internal scroll (max 132)", |ui| {
                 pinned(
                     ui,
@@ -161,7 +152,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
 
-            // E · EMPTY / no match — 단일 muted 행.
             cluster(ui, theme, "empty / no match", |ui| {
                 pinned(
                     ui,
@@ -179,7 +169,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
 
-            // F · HOVER vs KEYBOARD-ACTIVE — row 1 keyboard-active(진함), 나머지 hover(약함).
             cluster(
                 ui,
                 theme,
@@ -202,7 +191,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
-            // G · 두 아이콘 컨텍스트 — 실제 합성(라이브: 포커스→필터→키내비→스크롤).
             cluster(
                 ui,
                 theme,

@@ -1,22 +1,7 @@
-//! `surfaces` specimen — Occupancy & attention borders (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry, docs/features/surface-highlight/index.md#내부-동작-headless-valid).
-//!
-//! surface 테두리 = **하나의 시각 채널**. 네 상태가 색으로만 구분된다:
-//! - **occupied · soft**: green 1px(`accent-occupied-soft`). 주체(원격 사용자/AI 에이전트)
-//!   가 점유하나 write 제한 없음(협조 신호). force-detach 없음.
-//! - **occupied · hard**: peach 1px(`accent-occupied-hard`) + readonly(mirror-observe) +
-//!   우상단 force-detach. 기존 remote-attach 테두리 흡수.
-//! - **completed**: blue 2px(`accent-primary`). `AttentionStore` 의 `AttentionKind::Completion`
-//!   레코드가 소스 — 포커스 시 clear.
-//! - **needs-input**: yellow 2px(`accent-warning`). `AttentionKind::NeedsInput` 레코드가
-//!   소스 — 응답 대기(승인 필요 등), 포커스 시 clear. `Completion` 보다 우선순위가 높다
-//!   (디자인 rank 30 > 10).
-//!
-//! 우선순위(소스 규칙, 토큰 아님): NeedsInput > 점유(soft/hard) > Completion. 점유 중
-//! surface 는 Completion 테두리를 억제하지만, NeedsInput 은 억제하지 않는다 — 점유는
-//! "정상적으로 잡혀 작업 중"이란 뜻인데 그게 "사용자에게 뭔가 물어보려고 멈췄다"는
-//! 신호를 가리면 안 되기 때문이다.
-//! 본체 렌더는 `egui_panels.rs::draw_occupied_overlays`(soft/hard) +
-//! `divider.rs::draw_surface_highlights_view`(completed/needs-input). 시각 동기화는 수동.
+//! 점유·응답 대기·완료에 따른 테두리 예제.
+//! 우선순위는 NeedsInput > 점유 > Completion이다. 응답 대기는 점유 중에도 보여야 한다.
+//! soft 점유는 쓰기를 허용하며 hard 점유는 읽기 전용과 강제 연결 해제를 표시한다.
+//! Completion과 NeedsInput은 포커스를 받으면 지워진다. 본체와의 시각적 일치는 직접 확인한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -44,7 +29,6 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     let h = theme.spacing_xl.value() * 6.0; // 144
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
 
-    // tier 별 테두리 색·굵기 (전부 Theme 토큰).
     let (border_color, border_w, label, sub, readonly) = match kind {
         Kind::Soft => (
             theme.accent_occupied_soft(),
@@ -78,7 +62,6 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     let border_color = egui::Color32::from(border_color);
 
     let p = ui.painter_at(rect);
-    // 본문 배경 = focused_bg(#000), 테두리 = tier 색.
     p.rect_filled(
         rect,
         theme.corner_radius.value(),
@@ -91,7 +74,6 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         egui::StrokeKind::Inside,
     );
 
-    // 헤더: label(tier 색) + sub(muted). bottom separator + panel bg.
     let pad = theme.spacing_sm.value();
     let header_h = theme.status_dot_size.value() + pad * 2.0;
     let header_rect =
@@ -113,7 +95,6 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         egui::FontId::monospace(theme.font_size_micro.value()),
         border_color,
     );
-    // sub 라벨(mono label 폭 근사 뒤).
     let label_w = label.len() as f32 * theme.font_size_micro.value() * 0.6;
     p.text(
         egui::pos2(
@@ -126,7 +107,6 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         egui::Color32::from(theme.text_muted()),
     );
 
-    // 본문: 프롬프트 두 줄.
     let body_y = header_rect.max.y + theme.spacing_md.value();
     let mono = egui::FontId::monospace(theme.font_size_term_sm.value());
     p.text(
@@ -172,11 +152,7 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     }
 }
 
-/// 사이드바 우클릭 -> 강제 끊기의 확인 다이얼로그 (destructive confirm).
-///
-/// holder 를 사람이 읽을 수 있는 식별자로 못 보여준다 — 서버는 transport 를 모르고
-/// 항상 loopback 으로 받으며 들고 있는 것은 숫자 client id 뿐이다. 그래서 본문은
-/// **대상 워크스페이스 이름 + 끊었을 때의 결과**로만 쓴다.
+/// 점유자의 숫자 client ID 대신 워크스페이스 이름과 연결 해제 결과를 안내한다.
 fn force_detach_confirm(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, CONFIRM_WIDTH, kit::panel_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
@@ -286,17 +262,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "네 상태가 하나의 테두리 채널을 색으로만 나눈다 — 얇은 엣지에서도 서로 \
-         혼동되지 않아야 한다. blue(완료)는 green(soft)·peach(hard) 사이에서 가장 \
-         구분성이 높다(sky 는 1px 에서 green 과 너무 가까워 배제). 점유 중이면 completed \
-         테두리를 억제해 점유색만 남기지만, needs-input(yellow)은 억제되지 않는다 — \
-         '지금 답하지 않으면 멈춘다'는 신호를 점유가 가리면 안 되기 때문이다. \
-         completed/needs-input 클러스터는 `AttentionStore` 의 `AttentionKind::Completion`/ \
-         `NeedsInput` 레코드를 각각 그린다 — 탭 제목·워크스페이스 배지도 같은 kind 우선순위 \
-         (NeedsInput > Completion)를 따른다. 강제 끊기 확인은 **두 번째 진입점**의 폼이다 \
-         — 서피스 오버레이의 × 는 그 워크스페이스로 전환해야만 보이므로, 사이드바 행 \
-         우클릭에서 같은 행동을 380px destructive confirm 으로 한 번 거쳐 실행한다. \
-         본문에 점유자를 식별자로 적지 않는다: 서버는 transport 를 모르고 숫자 client id \
-         만 들고 있어, 그 값을 보이면 뜻 없는 수가 불안만 준다.",
+        "테두리는 응답 대기, 점유, 완료 순서로 표시한다. 점유 중에는 완료 테두리를 숨기지만 응답 대기는 계속 알린다. 탭 제목과 워크스페이스 배지도 응답 대기를 완료보다 우선한다. 강제 연결 해제는 서피스의 × 또는 사이드바 우클릭 메뉴에서 시작하며, 확인창은 워크스페이스 이름과 연결 해제 결과를 안내한다.",
     );
 }

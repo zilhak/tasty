@@ -1,24 +1,5 @@
-//! `notifications` specimen — 알림 패널 popup (Overlays).
-//!
-//! 본체 `src/adapters/ui/notification.rs::draw_notification_content_inner` 의
-//! 구조 전사. `popup/defs.rs` 의 `notifications` 정의는 350×400 이고, **전체화면
-//! 무대를 선언한 유일한 popup** 이라 타이틀바에 fullscreen 버튼이 X 왼쪽에 붙는다.
-//!
-//! 세로 구성:
-//! 1. **헤더 행** — 좌측 `"{n} unread"`(caption, `text_muted`), 우측 정렬
-//!    `Mark all read` 버튼(sm).
-//! 2. **separator**.
-//! 3. **목록** — 본체와 같이 `ScrollArea`(auto_shrink 없음)에 담아 패널 밖으로
-//!    흘러나가지 않는다. 항목 없으면 중앙에 muted `No notifications`.
-//!    항목 하나는 `Frame`(unread 면 `accent-primary` 저알파 배경, read 면 투명)
-//!    + `spacing_xs` inner margin + `corner_radius` 이고 그 안이
-//!      `[* ] 제목 … 경과시간` / `본문` / `워크스페이스명 + Jump` 3줄이다.
-//!      항목 사이 간격은 `STRUCT_GAP_2`.
-//!
-//! **토큰 이관 2건** (값 보존):
-//! - 본체 unread 배경은 primitive `theme().blue.with_alpha(20)` 직접 접근이다 →
-//!   specimen 은 semantic `accent_primary()`(= 같은 blue) 로 읽는다.
-//! - 본체 `ui.small_button` → 공용 `Button`(`ControlSize::Sm`).
+//! 알림 목록·빈 상태와 전체화면 진입 버튼의 정적 예제.
+//! 목록만 스크롤하며 미확인 알림을 배경색과 별표로 구분한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -78,8 +59,7 @@ fn entry_row(ui: &mut egui::Ui, theme: &Theme, e: &Entry) {
         .inner_margin(egui::Margin::same(theme.spacing_xs.value() as i8))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            // 본체는 `ui.horizontal` 이지만 그 안의 right_to_left 가 남은 세로를
-            // 전부 차지해(centered) 행이 패널 높이만큼 부푼다. 행 높이를 묶는다.
+            // right_to_left 배치가 남은 높이를 모두 차지하지 않도록 행 높이를 제한한다.
             let row_h = theme.font_size_body.value() + theme.spacing_xs.value();
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), row_h),
@@ -139,9 +119,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
         PANEL_H,
         ContentInset::INSET,
         TitleButtons::FULLSCREEN_AND_CLOSE,
-        // 그림자 없음 — 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작해
-        // anchored 도 centered 도 아니다(docs/design/systems/theme.md#떠-있는-표면의-그림자 의 세 번째 갈래). 본체
-        // `popup/draw.rs::SHADOWLESS_POPUPS` 와 같은 판정이다.
+        // 본체 SHADOWLESS_POPUPS에 포함된 알림 창은 그림자를 그리지 않는다.
         None,
         |ui| {
             let unread = if empty {
@@ -168,7 +146,6 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 },
             );
             ui.separator();
-            // 본체와 같이 목록만 스크롤 영역에 담는다 — 패널 밖으로 흘러나가지 않는다.
             egui::ScrollArea::vertical()
                 .id_salt(if empty { "notif_empty" } else { "notif_list" })
                 .auto_shrink([false, false])

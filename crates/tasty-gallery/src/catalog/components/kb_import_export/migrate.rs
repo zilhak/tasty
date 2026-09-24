@@ -1,7 +1,4 @@
-//! Spec 3 — Option 마이그레이션 카드(jsx `IeMigrateCard`/`IeMigrateRow`): 미완료 · 완료 · 충돌 ·
-//! unbound, 그리고 같은 Spec 아래 놓이는 안내 묶음.
-//!
-//! 경계: 본체 `import_export/migrate.rs` 와 같은 자리 — 마이그레이션 카드 한 덩어리의 그리기다.
+//! Option 키를 사용할 수 없는 환경에서 대체 조합을 고르는 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
@@ -19,15 +16,12 @@ use super::{
     State, Widget, detail_frame,
 };
 
-// ── Spec 3: Option 마이그레이션 — 미완료 · 완료 · 충돌 · unbound · 불필요 · 실패 ─────────
-
 pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
             STATE.with(|s| {
                 let st = &mut *s.borrow_mut();
-                // back bar(미해결 2) 아래 미완료 카드 — Apply 비활성.
                 detail_frame(
                     ui,
                     theme,
@@ -106,17 +100,12 @@ pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Two disabled Applies, two reasons. Preset shows a disabled button relabelled Applied \
-         (nothing left to do). Here the label stays Apply and the reason is carried next to it \
-         as “{n} unresolved” plus the card counter — a disabled button whose cause is off-screen \
-         is a dead end, and relabelling would claim the import already happened.",
+        "Apply stays disabled while bindings need a replacement. The button keeps its label, with an unresolved count beside it and details in the card.",
     );
     spec::dont(
         ui,
         theme,
-        "Don't make “dropped plugin overrides” a warning callout. Nothing is wrong and there is \
-         no action — a warning triangle on an unactionable fact trains people to ignore \
-         triangles. It is one muted info line naming the plugins.",
+        "Dropped plugin overrides are listed as muted information. They need no further action, so they do not use a warning callout.",
     );
 }
 
@@ -271,7 +260,6 @@ pub(super) fn card(
                      disabled until none are left."
                 },
             );
-            // 충돌 개수 줄 — 2 건부터. 행마다의 인라인 이유는 그대로 남는다.
             if conflicts >= CONFLICT_SUMMARY_FROM {
                 conflict_summary(ui, theme, conflicts);
             }
@@ -321,7 +309,6 @@ fn migrate_row(
     // jsx `padding: space-sm 0 · borderTop separator · gap 4` — 간격을 명시로만 준다.
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        // 행 상단 separator.
         let w = ui.available_width();
         let (sep, _) = ui.allocate_exact_size(
             egui::vec2(w, theme.border_width.value()),

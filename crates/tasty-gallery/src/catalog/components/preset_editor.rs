@@ -1,17 +1,5 @@
-//! `preset-editor` specimen — 프리셋 데모 레이아웃 미리보기(read-only) + 편집 상태
-//! (selected surface 2px accent outline + 설정·remove handle cluster)를 모두 시연한다.
-//! leaf 파라미터 편집은 칸 안이 아니라 surface 설정 화면이 한다 — 그 specimen 은
-//! `preset_surface_settings.rs`. 디자인 `(3) gallery/preset_editor.jsx` 의 `SurfaceView` / `Pane` /
-//! `PaneTree` / `SurfaceBox` 표시 부분을 구조까지 1:1 전사한다.
-//!
-//! 갤러리 specimen 은 정적(Theme-only, binary 미의존)이라 mini-tab 클릭 전환은
-//! 본체에서만 동작한다 — 여기서는 각 pane 의 **활성 탭**만 그린다.
-//!
-//! 3종 구조 레벨을 서로 다른 시각 weight 로 구분:
-//!  - Pane split (상위 레이아웃) → 테두리 카드 + **5px bg-app gap** (무거운 divider).
-//!  - Surface split (하위 레이아웃) → **1px border-default hairline** (가벼운 divider).
-//!  - Surface leaf → kind 아이콘 + 표시명 + 값 요약(`키 값`, 가운데, mono). 좁으면 degrade.
-//!  - Mini tab strip → 20px, bg-sidebar. 활성 = bg-panel + 2px accent 하단 bar + kind 아이콘.
+//! 프리셋의 읽기 전용 미리보기와 편집 상태 예제. 실제 탭 전환·편집은 처리하지 않는다.
+//! 서피스의 설정값은 요약만 표시하며 상세 입력 화면은 preset_surface_settings에서 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -56,12 +44,7 @@ const LEAF_SUMMARY_MIN_H: LogicalPx = LogicalPx(72.0);
 /// 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
 const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 
-// ── specimen 박스 치수 ───────────────────────────────────────────────────────
-//
-// 데모 박스의 가로·세로다. 디자인 토큰이 아니라 **무대 크기**라 Theme 에서 오지
-// 않는다 — 값이 케이스마다 다른 이유는 그 케이스가 무엇을 보여야 하는지에 있고,
-// leaf 쪽 값들은 위 degrade 임계(96×72 · 46)의 위/아래를 각각 밟도록 고른 것이다.
-// 임계를 바꾸면 이 박스들도 함께 봐야 한다.
+// 표시 내용이 줄어드는 크기 기준의 위·아래를 보여주는 예제 영역. 기준 변경 시 함께 확인한다.
 
 /// Workspace scope — pane split 이 가로로 자라 다른 둘보다 넓다.
 const SCOPE_BOX_W_WIDE: LogicalPx = LogicalPx(320.0);
@@ -83,8 +66,6 @@ const LEAF_BOX_ICON_ONLY: (f32, f32) = (40.0, 40.0);
 const EDIT_BOX: (f32, f32) = (300.0, 240.0);
 /// 직접조작 박스 — 경계 split 존 + mini tab strip 을 함께 보인다.
 const DIRECT_BOX: (f32, f32) = (320.0, 200.0);
-
-// ── 정적 preview 모델 (디자인 build* 트리 전사) ──────────────────────
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -209,7 +190,6 @@ fn psplit(row: bool, ratio: f32, a: Pane, b: Pane) -> Pane {
     }
 }
 
-// 디자인 buildWorkspace / buildTab / buildPane 전사.
 fn build_workspace() -> Scope {
     Scope::PaneTree(psplit(
         true,
@@ -258,8 +238,6 @@ fn build_pane() -> Scope {
     ))
 }
 
-// ── rect 분할 헬퍼 ──────────────────────────────────────────────────
-
 /// `rect` 를 split 비율로 나눈다. `divider` 만큼을 가운데 띠로 빼고 first/second 에 분배.
 /// 반환 = (first, divider_rect, second). surface 는 divider 를 1px hairline 으로 칠하고,
 /// pane 은 divider 를 칠하지 않아 bg-app 공백(=상위 divider)으로 남긴다.
@@ -298,8 +276,6 @@ fn split_rects(
     }
 }
 
-// ── 재귀 렌더 ───────────────────────────────────────────────────────
-
 /// 하위 레이아웃(surface split). Leaf = kind 박스, Split = 1px hairline 으로 분할.
 fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
     match node {
@@ -319,20 +295,13 @@ fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
     }
 }
 
-/// surface leaf — bg-app fill, 가운데 kind 아이콘(accent) + 표시명(mono, secondary) +
-/// 값 요약(중앙 정렬). 본체 `demo_layout.rs::draw_leaf_preview` 와 같은 규칙으로 그린다:
-/// 값이 채워진 필드를 `키 값` 한 줄로, 박스 <96×72 → 요약 숨김, 짧은 축 <46 → kind명도 숨김.
-///
-/// **본체를 부르지 않는 것이 의도다.** 갤러리는 본체를 비추는 specimen 이라 본체 함수를
-/// 부르면 거울이 아니라 본체 자신이 되고, 본체가 틀리게 그려도 갤러리가 똑같이 틀리게
-/// 그려 대조가 사라진다(`docs/dev-guide/gallery-first.md`).
+/// 서피스 종류와 설정값 요약을 표시한다. 작은 영역에서는 요약·이름 순서로 숨긴다.
 fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &DemoLeaf) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());
 
     let icon = theme.icon_glyph_size_md;
     let label_h = theme.font_size_caption;
-    // summary-gap = 행↔행, kind명↔요약, 라벨↔값 gap 모두 space-xs.
     let gap = theme.spacing_xs;
     let row_h = theme.font_size_caption;
 
@@ -462,8 +431,7 @@ fn draw_pane_tree(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Pan
             first,
             second,
         } => {
-            // divider(=PANE_GAP) 는 칠하지 않는다 — preview body 의 bg-app 이 그대로 비쳐
-            // 무거운 상위 divider 가 된다 (surface hairline 보다 의도적으로 두껍게).
+            // 패널 사이 틈에는 배경을 남겨 얇은 서피스 구분선과 구별한다.
             let (r1, _gap, r2) = split_rects(rect, *row, *ratio, PANE_GAP);
             draw_pane_tree(ui, theme, r1, first);
             draw_pane_tree(ui, theme, r2, second);
@@ -485,7 +453,6 @@ fn draw_pane_card(
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
-    // mini tab strip.
     let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
@@ -502,7 +469,6 @@ fn draw_pane_card(
         );
         if on {
             p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
-            // 2px accent 하단 bar.
             let bar = egui::Rect::from_min_size(
                 egui::pos2(
                     tab_rect.min.x,
@@ -513,7 +479,6 @@ fn draw_pane_card(
             p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }
         if i > 0 {
-            // 탭 사이 separator (borderRight).
             p.vline(x.value(), strip.y_range(), egui::Stroke::new(bw, sep));
         }
         let icon_c = egui::pos2(
@@ -542,11 +507,9 @@ fn draw_pane_card(
         );
         x += tw;
     }
-    // strip border-bottom.
     ui.painter_at(rect)
         .hline(strip.x_range(), strip.max.y, egui::Stroke::new(bw, sep));
 
-    // 활성 탭 본문 — padding 3, bg-app.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
     let inner = body.shrink(BODY_PAD.value());
     let active_tab = tabs.get(active).or_else(|| tabs.first());
@@ -554,7 +517,6 @@ fn draw_pane_card(
         draw_surf(ui, theme, inner, &t.layout);
     }
 
-    // 카드 외곽 border.
     ui.painter_at(rect).rect_stroke(
         rect,
         radius,
@@ -573,13 +535,6 @@ fn tab_kind(t: &DemoTab) -> Kind {
         }
     }
 }
-
-// ── 편집 상태 렌더 (디자인 `SurfaceBox` edit + `MiniHandle`) ──
-//
-// 정적 specimen 이라 인터랙션은 없다 — "편집 모드의 시각"만 보인다. 모든 surface 가
-// 1px separator outline 을 달고, `selected`(방문 순서 index) surface 는 2px accent
-// inset outline + 우상단 handle cluster(설정 · remove)를 보인다. 선택돼도 가운데는
-// 비선택과 같은 kind 아이콘 + 표시명이다 — 칸 안에 폼을 그리지 않는다.
 
 /// 편집 트리 순회 상태 — leaf 방문 순서 index 로 선택 leaf 를 지정한다.
 struct EditWalk {
@@ -649,7 +604,6 @@ fn draw_surface_box_edit(
         theme.text_secondary().to_egui(),
     );
 
-    // outline: 선택 = 2px accent, 비선택 = 1px separator (편집 가능 영역 표시).
     if selected {
         let bw = theme.tab_indicator_width.value();
         ui.painter_at(rect).rect_stroke(
@@ -670,8 +624,7 @@ fn draw_surface_box_edit(
     }
 }
 
-/// 우상단 handle cluster mock — `[설정(톱니)] [remove(danger)]`. split-right/down
-/// 핸들은 경계 hover-split 존이 대체해 제거됐다.
+/// 선택한 서피스의 설정·제거 버튼 예제.
 fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let remove = egui::Rect::from_min_size(
         egui::pos2(
@@ -685,9 +638,7 @@ fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) 
     mini_handle_mock(ui, theme, remove, icons::TRASH, true);
 }
 
-/// 경계 split 존 overlay mock — Left 존 활성 예시(밴드 채움 + 안쪽 변 2px 분할선).
-/// 정적 specimen 이라 crosshair 커서·실시간 hover 추적은 없다 — "존 활성"을 **고정
-/// 상태**로만 전사한다(본체 live 와 100% 동형 불가 → parity-notes).
+/// 왼쪽 분할 영역이 활성인 상태만 그린다. 실제 호버 추적은 처리하지 않는다.
 fn draw_split_zone_overlay_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let x = rect.min.x + rect.width() * SPLIT_ZONE_EDGE;
     let band = egui::Rect::from_min_max(rect.min, egui::pos2(x, rect.max.y));
@@ -750,7 +701,6 @@ fn draw_scope_body(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, scope: &S
     match scope {
         Scope::PaneTree(p) => draw_pane_tree(ui, theme, rect, p),
         Scope::TabFrame(s) => {
-            // 단일 탭 본문처럼 프레임(테두리 + radius + padding 3), strip 없음.
             let radius = theme.corner_radius.value();
             let bw = theme.border_width.value();
             let p = ui.painter_at(rect);
@@ -793,7 +743,6 @@ fn scope_demo(
                     .color(theme.text_muted().to_egui()),
             );
         });
-        // LivePreview outer: padding 10, bg-app, radius, 1px border-default.
         let (canvas, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
         let radius = theme.corner_radius.value();
         let bw = theme.border_width.value();
@@ -839,8 +788,7 @@ fn leaf_summary_demo(
 }
 
 /// 라벨 붙은 **편집 상태** scope 데모 한 칸 — selected surface 기준.
-// 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트(ui/theme/라벨/크기 등)라
-// context struct 로 묶어도 호출부에서 다시 풀어써야 해 이득이 없다. 정책 #2(데모 코드) 허용.
+// reason: 갤러리 예제의 제목, 크기, 테마, 선택 상태를 한 번에 받아 그린다.
 #[allow(clippy::too_many_arguments)]
 fn scope_demo_edit(
     ui: &mut egui::Ui,
@@ -890,10 +838,7 @@ fn scope_demo_edit(
     });
 }
 
-/// 편집 직접조작(preset-edit-03) mock — pane 카드 편집 상태에서 세 신규 마우스
-/// affordance 를 **고정 상태 예시**로 전사한다: ① 경계 hover-split 존 overlay(본문
-/// leaf 의 Left 존 활성), ② mini tab close `×`(active 탭 rest + hover 탭 강조 두 상태),
-/// ③ add-tab `+`(hover 상태). 정적이라 실제 hover/crosshair 추적은 없다(parity-notes).
+/// 분할 영역·탭 닫기·탭 추가 버튼을 고정된 호버 상태로 보여준다.
 fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
@@ -901,7 +846,6 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
-    // mini tab strip.
     let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
@@ -1003,17 +947,14 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         theme.text_secondary().to_egui(),
     );
 
-    // strip border-bottom.
     ui.painter_at(rect)
         .hline(strip.x_range(), strip.max.y, egui::Stroke::new(bw, sep));
 
-    // 활성 탭 본문 — 단일 leaf(비선택) + 경계 split 존(Left 활성) overlay.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
     let inner = body.shrink(BODY_PAD.value());
     draw_surface_box_edit(ui, theme, inner, Kind::Editor, false);
     draw_split_zone_overlay_mock(ui, theme, inner);
 
-    // 카드 외곽 border.
     ui.painter_at(rect).rect_stroke(
         rect,
         radius,
@@ -1110,9 +1051,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
-    // leaf 값 요약 — 미선택 leaf 가 kind 아이콘 + kind명 아래에 설정값(`키 값`)을
-    // 요약한다. path-like(cwd/file)=앞자름(꼬리 유지), command/url=뒤자름. degrade:
-    // <96×72 → 요약 숨김, 짧은 축 <46 → 아이콘만.
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         let term = DemoLeaf {
             kind: Kind::Terminal,
@@ -1170,7 +1108,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
-    // 편집 상태: selected surface 2px accent outline + 설정 · remove handle cluster.
     let edit_tab = build_tab();
     let edit_surf = match &edit_tab {
         Scope::TabFrame(s) => s,
@@ -1189,8 +1126,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
-    // 편집 직접조작(preset-edit-03): 경계 hover-split 존 · mini tab close × · add-tab +.
-    // 정적이라 고정 상태 예시로 전사(hover/crosshair 는 본체 live 전용 — parity-notes).
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         scope_demo_direct(
             ui,

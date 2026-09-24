@@ -1,15 +1,5 @@
-//! `modifier-hint` specimen — Modifier hint 오버레이 (디자인 `gallery/overlays-popups.jsx`
-//! "Modifier hints" 섹션, `overlays-shared.jsx:1435-1545` 의 `ModifierHintPanelG`).
-//!
-//! modifier(Ctrl/Alt/Shift, macOS 는 Cmd/Option 추가)를 **누르고 있는 동안** 500ms 홀드
-//! 뒤 사이드바 하단에 뜨는 안내 패널. 4분류(Popup/Toast/Banner/Modal) 밖의 신규 요소 —
-//! **키보드 포커스 없음 + 마우스 인터랙티브(드래그/리사이즈/X) + 홀드 수명**. 릴리즈 즉시
-//! 소멸. 본체는 `src/adapters/ui/modifier_hint_overlay.rs`.
-//!
-//! specimen 은 갤러리가 본체 binary 에 의존할 수 없어 시각 layout 을 **복제**하되, 색·치수는
-//! 전부 `Theme` 의 `modhint_*()` 접근자(=본체와 동일 토큰)에서 가져온다. 홀드 라이프사이클은
-//! 정적으로 재현할 수 없으므로 "revealed(표시 완료)" 상태 한 장을 그리고 수명주기는 note 로
-//! 설명한다. 섹션 정렬 = 조합 크기 오름차순 → `Ctrl < Alt < Shift`(본체 modifier-hint-02).
+//! 보조 키를 누르는 동안 나타나는 단축키 안내 패널의 예제.
+//! 갤러리는 표시가 끝난 상태만 그리며 키 누름·해제와 이동·크기 조절을 처리하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd};
@@ -135,16 +125,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Center, |ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
-            // 각 패널을 고유 id scope 로 감싼다 — panel() 내부 ScrollArea 가 auto-id 를
-            // 쓰는데 4 개가 같은 소스 위치라 held 가 같은 두 "Ctrl" 패널을 포함해 id 가
-            // 충돌했다(egui 가 "ScrollArea ID … 중복" 마커를 그리고, 공유된 스크롤 상태로
-            // 패널들이 겹쳐 그려졌다). push_id 로 내부 auto-id 전체를 인스턴스별로 분기한다.
+            // 같은 키 조합을 보여주는 패널끼리도 스크롤 ID가 겹치지 않게 한다.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
                 ui.push_id("mh_ctrl", |ui| panel(ui, theme, "Ctrl", CTRL_SECTIONS));
                 ui.push_id("mh_shift", |ui| panel(ui, theme, "Shift", SHIFT_SECTIONS));
             });
-            // 빈 조합 플레이스홀더(docs/design/systems/modifier-hint.md#표시와-소멸) — 혼재(채워진+빈) · 전체 빈 패널.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
                 ui.push_id("mh_ctrl_mixed", |ui| {
@@ -211,8 +197,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 
-    // 아래 설명 문구가 아직 값을 문자열에 박아 두고 있어 theme 에서 읽은 두
-    // 타이밍 값은 이 specimen 에서 쓰이지 않는다 — 미사용 경고만 억제한다.
+    // 타이밍은 아래 정적 설명으로만 표시한다.
     let _ = (held, fade);
     spec::note(
         ui,
@@ -268,16 +253,12 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
         .shadow(theme.shadow_popover().to_egui());
 
     let resp = frame.show(ui, |ui| {
-        // frame 이 horizontal_top 안에 있어 inner ui 가 horizontal 레이아웃을 상속한다 —
-        // 명시적으로 세로 적층으로 바꾸지 않으면 drag_strip 과 아래 ScrollArea 가 가로로
-        // 배치돼(ScrollArea 가 strip 오른쪽 x+w 에서 시작) 리스트 본문이 패널 밖에 그려졌다.
+        // 상위의 가로 레이아웃을 상속하지 않도록 세로 방향을 명시한다.
         ui.vertical(|ui| {
             ui.set_width(w);
             ui.set_height(h);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             drag_strip(ui, theme, w, held);
-            // 스크롤 리스트 (남은 높이). specimen 은 정적이라 세로 오버플로가 없지만
-            // 본체와 동일하게 ScrollArea 로 감싸 스크롤 어포던스를 재현한다.
             let list_h = h - theme.modhint_strip_height().value() - bw;
             egui::ScrollArea::vertical()
                 .max_height(list_h)
@@ -296,7 +277,6 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
     let br = egui::pos2(rect.right() - pad, rect.bottom() - pad);
     let col: egui::Color32 = theme.text_muted().to_egui();
     let stroke = egui::Stroke::new(bw, col);
-    // 두 개의 짧은 대각선 (바깥 긴 획 + 안쪽 짧은 획).
     ui.painter().line_segment(
         [egui::pos2(br.x - g, br.y), egui::pos2(br.x, br.y - g)],
         stroke,
@@ -317,7 +297,6 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, strip_h), egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 0.0, theme.modhint_strip_bg().to_egui());
-    // 하단 1px separator.
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - bw * 0.5,
@@ -357,10 +336,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
 fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) {
     let pad = theme.modhint_pad().value();
     let inner_w = w - pad * 2.0;
-    // 패딩(pad)만큼 안쪽에서 시작하는 inner_w 폭 컬럼. 예전엔 `ui.min_rect().min` 기준
-    // 절대 좌표로 child 를 잡았는데, panel 이 horizontal_top 안의 auto_shrink 무한폭
-    // ScrollArea 라 그 기준점이 상자 밖(우측)으로 어긋나 리스트 본문이 패널 밖에 그려졌다.
-    // 좌/상 패딩은 add_space 로, 폭은 allocate_ui 로 고정해 흐름 기준으로 배치한다.
+    // 패딩과 고정 폭을 레이아웃으로 지정해 스크롤 영역 밖에 배치되지 않게 한다.
     ui.add_space(pad);
     ui.horizontal(|ui| {
         ui.add_space(pad);
@@ -392,9 +368,7 @@ fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section]) {
                 empty_row(ui, theme);
             } else {
                 for (label, binding, plugin) in sec.rows {
-                    // 행 키캡은 leaf 키만 — chord head 가 이미 modifier 를 담당한다. 디자인 SoT
-                    // `overlays-shared.jsx` 의 `r.keys.startsWith(s.keys+"+") ? r.keys.slice(...)`
-                    // 를 1:1 전사: `SECTIONS` mock 은 full chord 를 유지하고 렌더에서만 접두를 뗀다.
+                    // 조합 헤더에 보조 키가 있으므로 행 키캡에서는 같은 접두어를 뺀다.
                     let prefix = format!("{}+", sec.chord);
                     let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
                     hint_row(ui, theme, label, leaf, *plugin);
@@ -433,7 +407,6 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         if plugin {
-            // agent dot — status-dot-size, accent-agent (modhint-agent-dot).
             let d = theme.status_dot_size().value();
             let (r, _) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::hover());
             ui.painter()
@@ -455,10 +428,7 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
     });
 }
 
-/// 빈 조합 플레이스홀더 행 — muted 텍스트("바인딩 없음"). 부재 신호라 리스트에서 가장
-/// 조용하다: 키캡 없음 · wash 없음 · leading 글리프 없음 · 정적(호버/포커스 없음). 본체
-/// `modifier_hint_overlay.rs draw_empty_row` 전사. 갤러리는 mock 이라 문구를 하드코딩
-/// (본체는 `t("modifier_hint.empty")`).
+/// 빈 조합은 키캡·배경·아이콘 없이 안내 텍스트만 표시한다.
 fn empty_row(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal(|ui| {
         // 키캡 행(24px)보다 타이트한 20px 최소 높이(디자인 §6-5).

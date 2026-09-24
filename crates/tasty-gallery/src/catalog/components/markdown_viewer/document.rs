@@ -1,13 +1,5 @@
-//! markdown 문서 본문 specimen — heading 사다리 · inline run · 리스트 3종 · 이미지 ·
-//! 코드 블록 · 표 · blockquote · alert · hr.
-//!
-//! 부모 모듈은 이 문서를 **둘러싸는 것**(전시 스테이지, type-scale 시트, 주소창 chrome,
-//! 목차 chrome, 상태 타일)을 그린다. 이쪽은 그 안에 들어가는 문서 한 장이고, 둘 사이에
-//! 오가는 것은 카드 폭(`DOC_W`)과 텍스트 헬퍼(`rich`)뿐이다.
-//!
-//! 여기 그려지는 것은 전부 CSS 출력의 손 근사다 — 갤러리에는 webview 가 없어서
-//! `crates/tasty-plugin-markdown` 의 `render.rs` 가 내는 결과를 라이브로 소비하지 않는다.
-//! 부모 모듈 머리말이 그 채널과 근사의 한계를 전부 적는다.
+//! 마크다운의 제목·본문·목록·이미지·코드·표·인용·알림 예제.
+//! WebView나 플러그인 렌더러를 실행하지 않고 egui로 근사한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::checkbox;
@@ -16,8 +8,6 @@ use crate::catalog::icons;
 
 use super::{DOC_W, rich};
 
-/// 대표 마크다운 문서 — 6단계 heading + inline runs + 리스트 3종 + table + nested
-/// blockquote + code + hr.
 pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
         .fill(theme.bg_app().to_egui()) // crust — the webview render path's only background (no focus signal)
@@ -62,7 +52,6 @@ pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
                 )],
             );
             heading(ui, theme, 3, "Lists");
-            // bullet · nested bullet · ordered · task.
             bullet_row(
                 ui,
                 theme,
@@ -90,12 +79,10 @@ pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
             heading(ui, theme, 3, "Alerts (GFM)");
             alerts(ui, theme);
 
-            // h4/h5/h6 — 작은 계층(secondary → muted → UPPER) 노출.
             heading(ui, theme, 4, "Subsection (h4)");
             heading(ui, theme, 5, "Minor note (h5)");
             heading(ui, theme, 6, "Label (h6)");
 
-            // horizontal rule.
             ui.add_space(theme.spacing_sm.value());
             hr(ui, theme);
             ui.add_space(theme.spacing_xs.value());
@@ -268,17 +255,11 @@ fn bullet_row(ui: &mut egui::Ui, theme: &Theme, depth: usize, marker: &str, text
 fn task_row(ui: &mut egui::Ui, theme: &Theme, mut done: bool, text: &str) {
     ui.horizontal(|ui| {
         ui.add_space(theme.spacing_lg.value());
-        // checkbox 는 라벨까지 그려 주므로 라벨을 직접 넘긴다.
         checkbox(ui, theme, &mut done, text, false);
     });
 }
 
-/// 인라인 이미지 — webview 가 실제로 그리는 raster 를 손으로 근사한다(갤러리는 파일
-/// I/O 도, live webview 도 갖지 않는다). 실제 로드 경로: 렌더러가 sanitize 뒤에 로컬
-/// `<img src>` 를 파일로 풀어 `data:` URI 로 바꿔 문서 안에 싣는다
-/// (`render.rs::inline_local_images`) — 엔진은 문서 밖 파일을 읽지 않는다. alt 텍스트는
-/// 표준 `<img alt>` 로 스크린리더/로드실패 fallback 에 쓰이지만, 정적 specimen 에서는 항상
-/// 보이는 캡션으로 대신 노출한다.
+/// 이미지 파일을 읽지 않고 대체 영역과 alt 설명을 그린다.
 fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {
     let (w, h) = (200.0, 120.0);
     egui::Frame::new()
@@ -307,9 +288,7 @@ fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {
     ));
 }
 
-/// One highlight.js token scope, hand-mapped to the same `Theme` hue `render.rs::hljs_css` uses
-/// (this specimen mirrors that mapping by hand — it doesn't consume it live, the gallery has no
-/// webview to run highlight.js in).
+/// 플러그인 hljs_css와 같은 색을 쓰는 구문 종류. 실제 highlight.js는 실행하지 않는다.
 #[derive(Clone, Copy)]
 enum TokenKind {
     Plain,
@@ -322,10 +301,7 @@ enum TokenKind {
 /// One token's text + [`TokenKind`] — a code-block line is a `Vec<CodeToken>`.
 struct CodeToken(&'static str, TokenKind);
 
-/// `fn main() { format!("hi from tasty"); }` tokenized the way highlight.js's `rust` grammar
-/// would split it, each token tagged with the `hljs-*` scope `render.rs::hljs_css` colors it by:
-/// `fn` = keyword (mauve), `main` = title/function (blue), `format!` = built_in (red),
-/// the string literal = string (green), everything else = plain (text-secondary, unchanged).
+/// 미리 나눈 코드 토큰 예제. 실제 구문 분석은 하지 않는다.
 fn rust_snippet_tokens() -> [Vec<CodeToken>; 3] {
     [
         vec![
@@ -344,10 +320,7 @@ fn rust_snippet_tokens() -> [Vec<CodeToken>; 3] {
     ]
 }
 
-/// Code block — each line rendered as colored `CodeToken` runs, approximating highlight.js's
-/// `<span class="hljs-*">` output (`render.rs::highlight_script`) painted through
-/// `render.rs::hljs_css`'s Theme-derived token colors, rather than the single flat-color mono
-/// block this specimen used before syntax highlighting existed.
+/// 토큰별 색을 적용해 구문 강조 결과를 근사한다.
 fn code_block(ui: &mut egui::Ui, theme: &Theme, lines: &[Vec<CodeToken>]) {
     let body = theme.font_size_body.value();
     let token_color = |kind: TokenKind| match kind {
@@ -394,7 +367,6 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
     let margin = egui::Margin::symmetric(pad_x as i8, pad_y as i8);
     let cols = 3usize;
 
-    // 셀 렌더 — index 2(Count)는 mono + 우측정렬 숫자열(디자인 §2-3 num).
     let cell = |ui: &mut egui::Ui, i: usize, text: &str, color: egui::Color32| {
         let lay = if i == 2 {
             egui::Layout::right_to_left(egui::Align::Min)
@@ -414,7 +386,6 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
         });
     };
 
-    // 헤더 신호는 색+배경(text-primary), 본문은 text-secondary.
     let row = |ui: &mut egui::Ui, cells: [&str; 3], header: bool| {
         let color = if header {
             theme.md_table_header_fg().to_egui()
@@ -444,7 +415,6 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            // 헤더 밴드 (상단 2모서리 라운드).
             egui::Frame::new()
                 .fill(theme.md_table_header_bg().to_egui())
                 .corner_radius(egui::CornerRadius {
@@ -456,12 +426,10 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
                 .inner_margin(margin)
                 .show(ui, |ui| row(ui, ["Resource", "Kind", "Count"], true));
             table_divider(ui, theme);
-            // 첫 본문행 = base(줄무늬 없음).
             egui::Frame::new()
                 .inner_margin(margin)
                 .show(ui, |ui| row(ui, ["surface", "viewer", "12"], false));
             table_divider(ui, theme);
-            // 짝수 본문행(2행째) = zebra(mantle) + 마지막이므로 하단 2모서리 라운드.
             egui::Frame::new()
                 .fill(theme.md_table_row_bg_zebra().to_egui())
                 .corner_radius(egui::CornerRadius {
@@ -474,8 +442,7 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
                 .show(ui, |ui| row(ui, ["popup", "overlay", "8"], false));
         });
 
-    // 세로 컬럼 격자선 — egui columns 는 세로선을 그리지 않으므로 표 전체 높이에 걸쳐
-    // 컬럼 경계마다 수동 draw. 마지막 열 오른쪽 선은 외곽과 겹치므로 생략(i in 1..cols).
+    // egui columns가 세로선을 그리지 않으므로 열 경계만 직접 그린다.
     let content = out.response.rect;
     let inner_w = content.width() - col_gap;
     if inner_w > col_gap * (cols as f32 - 1.0) {
@@ -507,7 +474,6 @@ fn table_divider(ui: &mut egui::Ui, theme: &Theme) {
 /// nested blockquote — left bar(border-strong) + muted 본문, 1단계 중첩.
 fn blockquote(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
-    // 좌측 강조 바 폭 — spec.rs accent_bar 좌측 바와 동일하게 tab_indicator_width(2px) 토큰.
     let bar_w = theme.tab_indicator_width.value();
     let gap = theme.spacing_md.value();
     quote_block(ui, theme, bar_w, gap, |ui| {
@@ -563,12 +529,7 @@ fn quote_block(
     );
 }
 
-/// GitHub 스타일 alert blockquote(`> [!NOTE]` 등) 5종 — `render.rs::ALERT_KINDS`(icon/accent/
-/// label 매핑) 과 `render.rs::alert_css`(배경 12% tint 유도)의 손 근사. 실제 CSS 출력은
-/// 좌측 accent 바만 쓰지만(다른 blockquote 와 동일 `border-left`), 이 specimen 은 egui
-/// `Frame` 의 표준 paint-order 이점(배경이 자식 콘텐츠보다 먼저 그려짐이 보장됨)을 살리려
-/// 4변 보더로 근사한다 — 픽셀 동일성은 애초에 이 파일의 비목표(모듈 doc 참고).
-/// (glyph, accent accessor, label, body) — one [`alerts`] row.
+/// GFM 알림의 아이콘·색·라벨·본문. 브라우저의 왼쪽 선은 egui Frame의 네 면 보더로 근사한다.
 type AlertSpec = (
     icons::MockGlyph,
     fn(&Theme) -> tasty_type_appearance::color::HexColor,

@@ -1,19 +1,5 @@
-//! `Attention` 탭 specimen — 본체 `src/view/plugins/ui/attention.rs` 의 구조 전사.
-//!
-//! 본체는 좌측 `SidePanel` 목록 + 우측 `CentralPanel` 상세이고, 상세는
-//! identity → 사유 배너 → 사유별 detail → separator → 액션 바 순이다. 갤러리는
-//! `Context` 에 패널을 붙일 수 없으므로 같은 구조를 rect 기준으로 복제한다
-//! (같은 파일의 Installed 탭과 같은 방식).
-//!
-//! **사유 4 종을 전부 보인다.** 목록에 네 행이 있고, 선택 행은 권한 변경이라
-//! 상세가 권한 diff 를 보여준다. 나머지 세 사유의 배너·detail 은 `reason_cards`
-//! 가 한 줄로 함께 전시한다 — 본체는 한 번에 하나만 그리므로 그 편차는
-//! 갤러리 쪽 전시 장치다.
-//!
-//! 본체의 사유 라벨·지문·본문은 한때 스케일 밖 폰트 값(10.5 · 11.5 · 12.5)을
-//! 썼고 갤러리는 가장 가까운 semantic 토큰으로 근사했다. 그 근사는 이제 없다 —
-//! 본체가 `font_size_micro`(10) · `font_size_caption`(11) · 12 로 스냅돼
-//! 두 쪽이 같은 값을 읽는다.
+//! 서명·권한·실행 오류로 확인이 필요한 플러그인 예제.
+//! 본체는 선택한 하나를 표시하지만 갤러리는 네 사유를 나란히 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -23,10 +9,7 @@ use tasty_ui_widgets::{
     plugin_avatar, tag,
 };
 
-/// 본체 `attention.rs` 의 `ATTN_PRIMITIVE_12` 와 같은 자리 — DTCG primitive
-/// `font-size-12` 를 직접 쓴다. 12px 는 primitive 에는 있지만 semantic role 이
-/// 배정돼 있지 않아 `Theme` 필드가 없다. 값을 본체에서 베끼는 것이 아니라 같은
-/// primitive 를 같은 이유로 부르는 것이다.
+/// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
 const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -166,7 +149,6 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             PluginAvatarSize::Row,
         );
 
-        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: var(--tasty-space-sm)`.
         let name_pos = r.min + pad + egui::vec2(avatar + theme.spacing_sm.value(), 0.0);
         p.text(
             name_pos,
@@ -182,7 +164,6 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             egui::FontId::proportional(theme.font_size_micro.value()),
             sev_color(theme, entry.kind),
         );
-        // 우측 severity dot — 본체는 사유 색, Installed 목록의 health dot 과는 다른 축.
         p.circle_filled(
             egui::pos2(r.max.x - theme.spacing_md.value(), r.center().y),
             theme.status_dot_size.value() * 0.5,
@@ -196,8 +177,6 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     let color = sev_color(theme, kind);
     egui::Frame::new()
-        // 채움·보더는 severity 색에서 도출한다 — 본체 `draw_detail` 과 같은 tint 짝
-        // 토큰을 읽으므로 비율이 갈릴 자리가 없다.
         .fill(color.gamma_multiply(theme.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
@@ -331,7 +310,6 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-    // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
     child.horizontal_top(|ui| {
         plugin_avatar(ui, theme, entry.name, PluginAvatarSize::Detail);
         ui.vertical(|ui| {
@@ -370,9 +348,7 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     action_bar(&mut child, theme, entry.kind);
 }
 
-/// 빈 상태 — 본체 `draw_empty_state`. 목록 패널은 그대로 두고 상세 쪽만 안내로 바뀐다.
-///
-/// 상단 여백 48 은 그리드 스텝 밖이라 본체가 `spacing_xl * 2` 로 쓴다 — 같게 둔다.
+/// 상세 영역의 빈 상태. 목록 배경과 너비는 유지한다.
 pub(super) fn empty_detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
@@ -402,11 +378,7 @@ pub(super) fn empty_list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
 }
 
-/// 사유 4 종을 나란히 — 본체는 선택된 하나만 그리므로 이 묶음은 갤러리 전시용이다.
-///
-/// 부모(`spec::cluster`)가 `horizontal_wrapped` 라 두 가지를 되돌려야 한다 — 카드 안에서
-/// 세로 흐름(안 그러면 `reason_detail` 행들이 한 줄로 이어 붙어 오른쪽으로 넘친다)과,
-/// 카드끼리의 위쪽 정렬(cross-align 이 Center 라 높이가 다른 카드가 계단처럼 내려간다).
+/// 비교 카드마다 세로 배치와 위쪽 정렬을 적용해 내용이 가로로 넘치지 않게 한다.
 pub(super) fn reason_cards(ui: &mut egui::Ui, theme: &Theme) {
     let card_w = theme.measure_sm.value() * 0.5;
     ui.with_layout(

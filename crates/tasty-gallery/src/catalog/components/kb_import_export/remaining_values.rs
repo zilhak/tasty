@@ -1,8 +1,4 @@
-//! Spec 5 — 첫 회차가 비워 둔 나머지(jsx gallery Spec "Open values — unknown failure reason,
-//! counts of one, and the 620 cap").
-//!
-//! 경계: Spec 4 와 같은 블록 레시피를 **다른 갈래**로 든다 — 사유를 모르는 내보내기 실패와
-//! 알림이 하나뿐인 경고 블록. 그리기는 `notices` 의 레시피를 그대로 부른다.
+//! 알 수 없는 내보내기 실패와 경고가 한 건일 때의 안내 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::ButtonVariant;
@@ -14,8 +10,7 @@ use super::notices::{notice_block, notice_line};
 use super::paint::{caption, intro_secondary};
 use super::{IE_FILE, SPECIMEN_W};
 
-/// 사유를 모르는 실패의 가운데 구절 — 고정 집합의 catch-all. OS 가 낸 문장이 여기 들어가지
-/// **않는다**는 것이 이 갈래의 결정이다.
+/// 분류하지 못한 오류에 쓸 고정 문구. OS 메시지는 별도 줄에 표시한다.
 const UNKNOWN_CLAUSE: &str = "the write didn't finish.";
 /// OS 가 낸 문장 — 문장 안이 아니라 아래 제 줄에 싣는다. 한 줄, 말줄임, 전문은 tooltip.
 const OS_MESSAGE: &str = "os error 28: No space left on device";
@@ -68,10 +63,7 @@ pub fn draw_remaining_values(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Why the clause is a fixed set of four. The sentence has to read the same in three \
-         languages, so its middle cannot be whatever the OS happened to say. Tasty maps what it \
-         can recognise — read-only, permission, disk full — and everything else takes one \
-         catch-all clause that still says the one thing that matters: the write did not finish.",
+        "Tasty selects one of four translated explanations: read-only, permission denied, disk full, or an unfinished write. The raw OS message appears on a separate line so it does not break the translated sentence.",
     );
     spec::dont(
         ui,

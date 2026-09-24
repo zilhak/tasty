@@ -1,14 +1,6 @@
-//! `preseteditor-settings` specimen — 프리셋 편집기의 **surface 설정 화면**. 디자인
-//! `gallery/preset_editor.jsx` 의 `SurfaceSettings` + `SettingsDemo` 상태 프레임 5종을
-//! 전사한다(본체 `src/adapters/ui/preset/surface_settings.rs`).
-//!
-//! 세 상자: 헤더(kind 아이콘 · 표시명 · mono breadcrumb · dirty 일 때 unsaved 점) /
-//! 유일하게 스크롤되는 본문(한 열 폼, Kind 다음 kind 선언 필드, dir/file 은 입력 +
-//! Browse 한 줄) / 높이 고정 footer(`[Cancel ghost] [OK primary]`, 변경 없으면 OK 비활성).
-//!
-//! 정적 specimen 이라 입력은 프레임마다 샘플 값으로 돌아간다 — draft·확인·취소는 본체에서만
-//! 동작한다. 필드 타입도 본체가 그리는 것(text · dir · file)만 쓴다 — 디자인 데모의
-//! `number`/`select` 필드는 본체에 없는 타입이라 text 로 그린다(parity-notes).
+//! 프리셋의 서피스 설정 예제. 헤더·스크롤 본문·고정 푸터를 보여준다.
+//! 입력값은 매 프레임 예제 값으로 돌아가며 저장·취소는 처리하지 않는다.
+//! 본체의 필드 타입에 맞춰 text·dir·file만 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -351,8 +343,7 @@ fn draw_demo(ui: &mut egui::Ui, theme: &Theme, d: &Demo, salt: usize) {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 무대가 본문 컬럼보다 넓어져 wrap 이 안 꺾이므로(다섯 프레임이 한 줄로 흘러 페이지 클립에
-    // 잘린다) 줄을 명시한다 — 한 줄 세 프레임이 컬럼 안에 든다.
+    // 고정 폭 예제가 한 줄로 넘치지 않도록 한 줄에 놓을 개수를 지정한다.
     let demos = demos();
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         for (row, chunk) in demos.chunks(ROW_LEN).enumerate() {

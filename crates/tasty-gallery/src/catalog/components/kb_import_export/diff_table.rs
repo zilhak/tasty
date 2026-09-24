@@ -1,6 +1,4 @@
-//! Spec 2 — 가져오기 미리보기의 비교 표(jsx `IeDiffTable`): 그룹 헤더 · 선택 열 · 긴 표.
-//!
-//! 경계: 본체 `import_export/diff_table.rs` 와 같은 자리 — detail 본문 중 표 한 덩어리의 그리기다.
+//! 가져오기 비교 표의 그룹 헤더, 선택 열, 긴 목록 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::checkbox;
@@ -13,8 +11,6 @@ use super::{
     GROUP_CHEVRON_GAP, GROUPS, Group, IE_FILE, PLUGIN_DOT_GAP, PREVIEW_H, Row, SELECT_COL_W, STATE,
     State, counts, detail_frame, selected_count,
 };
-
-// ── Spec 2: 가져오기 미리보기 — 그룹 헤더 · 선택 열 · 긴 표 ───────────────────────
 
 pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
@@ -117,7 +113,6 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
 
-        // ── 열 헤더 (padding: 0 space-md space-sm) ──
         let head_font = egui::FontId::monospace(theme.font_size_micro.value());
         let head_h = ui.fonts(|f| f.row_height(&head_font)) + pad_y;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(w, head_h), egui::Sense::hover());
@@ -151,9 +146,7 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
                 let key = (g.id, r.action);
                 let row_h = diff_row_height(ui, theme, r);
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::hover());
-                // 선택 열 — 체크박스 가운데.
-                // `checkbox` 는 라벨이 비어도 박스 뒤 gap 을 차지하므로, 박스 중심이 열 중심에
-                // 오도록 시작점을 잡는다.
+                // 라벨이 없어도 체크박스 뒤에 간격이 붙으므로 박스 중심을 기준으로 배치한다.
                 let box_sz = theme.checkbox_size().value();
                 let sel_rect = egui::Rect::from_min_size(
                     egui::pos2(rect.left() + (col_w[0] - box_sz) * 0.5, rect.top()),
@@ -174,9 +167,7 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
                         }
                     },
                 );
-                // Action — body text-secondary + 부제(plugin 점 · 슬롯 수).
                 action_cell(ui, theme, rect, x_off[1] + pad_x, col_w[1] - pad_x * 2.0, r);
-                // Current — mono muted.
                 let mono = egui::FontId::monospace(theme.font_size_term_sm.value());
                 value_cell(
                     ui,
@@ -187,7 +178,6 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
                     mono.clone(),
                     theme.text_muted().to_egui(),
                 );
-                // Imported — blocked warning / changed accent-primary / 동일 muted.
                 let fg = if r.blocked {
                     theme.accent_warning()
                 } else if r.cur != r.next {
@@ -253,7 +243,6 @@ fn group_header(
                     }
                 }
             }
-            // chevron + 그룹명 — 한 버튼(접힘 토글).
             let glyph = theme.icon_glyph_size_sm.value();
             let galley = ui.painter().layout_no_wrap(
                 g.label.to_uppercase(),

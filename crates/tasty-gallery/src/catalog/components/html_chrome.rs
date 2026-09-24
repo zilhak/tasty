@@ -1,17 +1,5 @@
-//! `html_chrome` specimen — HTML(webview) surface 의 host chrome (Layouts).
-//!
-//! HTML surface 는 `rendering = "webview"` kind 로, host 가 OS-level **native WebView
-//! overlay** 를 surface 위에 붙인다(`src/core/surface_registry/webview_kind.rs`,
-//! `src/host_api/webview/*`). 실제 페이지 픽셀은 OS WebView 가 그리므로 **콘텐츠는
-//! 토큰 무관** — tasty 가 토큰으로 책임지는 것은 overlay 가 붙기 전/실패 시의 *chrome*
-//! 뿐이다. 따라서 이 specimen 은 얇게 chrome 상태만 전사한다:
-//!
-//! - **boundary** — overlay 가 마운트되는 타일 경계(테두리 + web view 영역 표식).
-//! - **placeholder** — URL 미지정(navigation 전) 안내.
-//! - **loading** — overlay attach·탐색 중 spinner.
-//! - **error** — 로드 실패(`accent_danger` + alert glyph).
-//!
-//! 콘텐츠 영역 자체는 비워둔다(네이티브 overlay 가 덮음). 색·치수·폰트는 전부 `Theme`.
+//! 네이티브 WebView 영역의 경계와 로딩·오류 안내 예제.
+//! 갤러리는 웹 페이지를 띄우지 않고 주변 UI만 Theme 값으로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -20,7 +8,6 @@ use tasty_ui_widgets::Spinner;
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-// ── chrome 타일 대표 치수 (콘텐츠는 OS overlay — 경계 박스만 전시) ──
 /// chrome 타일 폭.
 const TILE_W: LogicalPx = LogicalPx(240.0);
 /// chrome 타일 높이.
@@ -125,7 +112,6 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
                 egui::vec2(TILE_W.value(), TILE_H.value()),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
-                    // 콘텐츠 블록을 세로 가운데쯤에 오도록 위쪽 여백.
                     ui.add_space(theme.spacing_xl.value() * 2.0);
                     add(ui);
                 },
@@ -133,12 +119,10 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// 중앙 정렬 glyph(정사각 tint).
 fn glyph(ui: &mut egui::Ui, g: icons::MockGlyph, size: f32, color: impl Into<egui::Color32>) {
     ui.add(g.image(size, color.into()));
 }
 
-/// 캡션 한 줄(body · 지정색).
 fn label(ui: &mut egui::Ui, theme: &Theme, text: &str, color: impl Into<egui::Color32>) {
     ui.label(
         egui::RichText::new(text)
@@ -147,7 +131,6 @@ fn label(ui: &mut egui::Ui, theme: &Theme, text: &str, color: impl Into<egui::Co
     );
 }
 
-/// 글리프와 라벨 사이 간격.
 fn gap(ui: &mut egui::Ui, theme: &Theme) {
     ui.add_space(theme.spacing_sm.value());
 }
