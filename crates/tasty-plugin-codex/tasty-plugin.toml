@@ -25,10 +25,7 @@ command = "tasty-plugin-codex"
 [[contributes.ipc_namespace]]
 prefix = "codex"
 
-# 이 plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 카탈로그.
-# host 가 `hook.set` / `surface.fire_hook` 등록을 (내장 ∪ 활성 plugin 선언) 으로
-# 검증하므로, 여기 선언되지 않은 키는 plugin 활성 상태여도 거부된다.
-# `process-exit` 은 host 내장 이벤트라 선언 불필요.
+# 호스트가 등록·발생 요청을 검증할 이벤트 목록. 내장 process-exit은 선언하지 않는다.
 [[contributes.hook_events]]
 key = "codex-idle"
 description = "Codex instance became idle (Stop / Interrupt hook)"
@@ -43,12 +40,12 @@ description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
     { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal", description_i18n_key = "codex.cli.sub.launch.description" },
-    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition.", description_i18n_key = "codex.cli.sub.spawn.description" },
+    { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. Registers hooks for idle, input-wait and exit notifications to the parent.", description_i18n_key = "codex.cli.sub.spawn.description" },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent", description_i18n_key = "codex.cli.sub.children.description" },
     { name = "parent",        ipc_method = "codex.parent",        args = "parent_args",        description = "Return the parent Codex surface id for a given child surface", description_i18n_key = "codex.cli.sub.parent.description" },
     { name = "state",         ipc_method = "codex.state",         args = "state_args",         description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)", description_i18n_key = "codex.cli.sub.state.description" },
-    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a notification is sent to the caller surface every time the target becomes idle, and once more when it exits — not just the first transition.", description_i18n_key = "codex.cli.sub.tell.description" },
-    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: notify caller surface that a spawned/told child changed state, clean up the sibling once-hook, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm the sibling hooks so future transitions keep notifying until the child actually exits. Invoked by hooks registered from spawn/tell — not meant for direct use.", description_i18n_key = "codex.cli.sub.notify-caller.description" },
+    { name = "tell",          ipc_method = "codex.tell",          args = "tell_args",          description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When a caller surface is provided, registers hooks for idle, input-wait and exit notifications.", description_i18n_key = "codex.cli.sub.tell.description" },
+    { name = "notify-caller", ipc_method = "codex.notify_caller", args = "notify_caller_args", description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use.", description_i18n_key = "codex.cli.sub.notify-caller.description" },
     { name = "broadcast",     ipc_method = "codex.broadcast",     args = "broadcast_args",     description = "Broadcast text to all children of a parent Codex instance", description_i18n_key = "codex.cli.sub.broadcast.description" },
     { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index", description_i18n_key = "codex.cli.sub.kill.description" },
     { name = "respawn",       ipc_method = "codex.respawn",       args = "respawn_args",       description = "Respawn a child Codex instance", description_i18n_key = "codex.cli.sub.respawn.description" },
@@ -62,8 +59,8 @@ subcommands = [
 flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"codex\")", help_i18n_key = "codex.cli.arg.launch_args.workspace.help" },
     { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching codex", help_i18n_key = "codex.cli.arg.launch_args.directory.help" },
-    { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to codex as --task <text>", help_i18n_key = "codex.cli.arg.launch_args.task.help" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.launch_args.approval.help" },
+    { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed as the Codex prompt argument", help_i18n_key = "codex.cli.arg.launch_args.task.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never.", help_i18n_key = "codex.cli.arg.launch_args.approval.help" },
     { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.launch_args.sandbox.help" },
     { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.launch_args.full_auto.help" },
 ]
@@ -96,7 +93,7 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn", help_i18n_key = "codex.cli.arg.spawn_args.prompt.help" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)", help_i18n_key = "codex.cli.arg.spawn_args.role.help" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab", help_i18n_key = "codex.cli.arg.spawn_args.nickname.help" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset, so unattended automation is never stalled by an approval prompt — pass this only to opt into an interactive policy", help_i18n_key = "codex.cli.arg.spawn_args.approval.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never.", help_i18n_key = "codex.cli.arg.spawn_args.approval.help" },
     { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files", help_i18n_key = "codex.cli.arg.spawn_args.sandbox.help" },
     { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.spawn_args.full_auto.help" },
 ]
@@ -136,7 +133,7 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child", help_i18n_key = "codex.cli.arg.respawn_args.prompt.help" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Replace the role label of the child", help_i18n_key = "codex.cli.arg.respawn_args.role.help" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Replace the display nickname of the child", help_i18n_key = "codex.cli.arg.respawn_args.nickname.help" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.respawn_args.approval.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never.", help_i18n_key = "codex.cli.arg.respawn_args.approval.help" },
     { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.respawn_args.sandbox.help" },
     { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.respawn_args.full_auto.help" },
 ]
@@ -146,7 +143,7 @@ flags = [
     { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.reboot_args.surface.help" },
     { name = "delay",     type = "u32",    flag = "--delay",     required = false, help = "Seconds to wait before killing Codex (default: 5)", help_i18n_key = "codex.cli.arg.reboot_args.delay.help" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Codex", help_i18n_key = "codex.cli.arg.reboot_args.prompt.help" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.reboot_args.approval.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never.", help_i18n_key = "codex.cli.arg.reboot_args.approval.help" },
     { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.reboot_args.sandbox.help" },
     { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.reboot_args.full_auto.help" },
 ]
@@ -162,14 +159,8 @@ flags = [
 
 [contributes.cli.arg_groups.no_args]
 
-# 완료 판정 전략 — `codex.spawn` 의 기본 완료 판정(결정 6).
-# poll_method 는 owner 자기 namespace 로만 제한되므로(결정 2) 호스트
-# `terminal.state`(결정 3, terminal namespace 소유)를 직접 참조할 수 없다 —
-# 그래서 이 plugin 자신의 `codex.state`(그 위에 얇게 위임하는 wrapper,
-# handlers.rs 참고)를 poll_method 로 둔다. `needs_input` 은 이제 실제로 관측되지만
-# (PermissionRequest hook) terminal 목록에 넣지 않는다 — 승인 대기는 작업 완료가
-# 아니라 사람이 응답해야 풀리는 중간 상태라, 그것을 성공 종결로 읽으면 답을 안 한
-# 자식의 산출물을 downstream 이 전제하게 된다.
+# 완료 전략은 같은 namespace의 codex.state를 조회한다.
+# needs_input은 사용자 응답 대기이므로 작업 완료로 처리하지 않는다.
 [[contributes.completion_strategy]]
 id = "spawn-wait"
 priority = 100
@@ -178,30 +169,15 @@ default_for_methods = ["codex.spawn"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "codex.state"
-# `codex.spawn` 응답의 `child_surface_id` 를 poll 호출(`codex.state`) 의
-# 필수 파라미터 `surface` 로 옮긴다 — claude 와 키 이름이 다르다
-# (`handlers.rs` 의 `require_u32(&params, "surface")`). 매핑이 없으면
-# poll params 가 비어 매 tick 실패한다.
+# spawn 응답의 자식 ID를 상태 조회의 surface 인자로 전달한다.
 map_from_response = { child_surface_id = "surface" }
 state_field = "state"
 terminal_states = ["idle"]
-# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
-# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
-# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+# exited는 실패로 종료해 작업의 on_failure 정책을 적용한다.
 failure_states = ["exited"]
 
-# 완료 판정 전략 — `codex.tell` 의 기본 완료 판정(결정 6).
-# 이게 없으면 `tell` 노드는 dispatch 응답만 보고 즉시 성공한다 — 자식이 메시지를
-# 받기만 하면 끝난 것으로 처리돼, 일을 시작하기도 전에 downstream 이 출발한다.
-# spawn-wait 와 같은 이유로 poll_method 는 자기 namespace 의 `codex.state` 이고,
-# 같은 이유로 `needs_input` 은 terminal 목록에 넣지 않는다(승인 대기는 완료가
-# 아니다 — 위 spawn-wait 주석).
-#
-# spawn 과 달리 tell 은 **이미 존재하는** 자식을 대상으로 하므로 시작 시점의
-# registry 상태가 직전 턴의 `idle` 로 오염돼 있을 수 있다. 호스트 `terminal.tell`
-# 이 본문 주입 성공 직후 그 플래그를 내리므로(`clear_idle_for_new_prompt`,
-# `src/adapters/ipc/handler/terminal.rs`) 첫 tick 이 stale idle 을 읽지 않는다 —
-# 그 호스트 동작이 이 전략의 전제다.
+# tell도 전달 접수 뒤 idle까지 기다린다.
+# 이전 턴의 idle을 읽지 않도록 호스트가 새 프롬프트 전달 때 상태를 초기화해야 한다.
 [[contributes.completion_strategy]]
 id = "tell-wait"
 priority = 100
@@ -210,16 +186,11 @@ default_for_methods = ["codex.tell"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "codex.state"
-# `codex.tell` 은 호스트 `terminal.tell` 의 응답을 그대로 돌려주고, 그 응답은
-# `{"sent": true, "surface_id": <n>}` 이다 — spawn 과 달리 소스 키가
-# `child_surface_id` 가 아니라 `surface_id` 다. 대상 키는 claude 와 달리
-# `surface` 다(`handlers.rs` 의 `require_u32(&params, "surface")`).
+# tell 응답의 surface_id를 상태 조회의 surface 인자로 전달한다.
 map_from_response = { surface_id = "surface" }
 state_field = "state"
 terminal_states = ["idle"]
-# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
-# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
-# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
+# exited는 실패로 종료해 작업의 on_failure 정책을 적용한다.
 failure_states = ["exited"]
 
 [[contributes.settings_pages]]
@@ -240,9 +211,7 @@ kind = "select"
 id = "default_approval_policy"
 label_key = "codex.settings.default_approval_policy"
 storage_key = "default_approval_policy"
-# "inherit"(또는 미설정)을 골라도 런타임은 무조건 "never"로 해석한다(핸들러의
-# resolve_policy_args 하드코드 기본값 — 승인 프롬프트가 무인 spawn 자식을 영구 정지시키는
-# 문제 재발 방지). 이 select 의 기본 선택도 실제 동작과 일치하도록 "never"로 둔다.
+# 승인 설정이 inherit이거나 없을 때도 핸들러의 최종 기본값은 never다.
 default = "never"
 options = [
     { value = "inherit",    label_key = "codex.settings.approval.inherit" },

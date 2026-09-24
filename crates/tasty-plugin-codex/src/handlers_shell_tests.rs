@@ -67,8 +67,7 @@ fn external_codex_preserves_argv_environment_and_prompt() {
     tracing::info!("PASS {executions} production builder executions");
 }
 
-/// sh 는 어디에나 있어야 한다. 나머지 셸은 설치돼 있을 때만 돌린다 — 없는 것과
-/// 있는데 못 뜨는 것은 다른 사실이라 뒤쪽은 그대로 터뜨린다.
+/// sh는 필수이며 다른 셸은 설치돼 있을 때만 실행한다. 실행 실패는 시험 실패로 처리한다.
 fn shell_is_installed(shell: &str) -> bool {
     match isolated_shell(shell).args(["-c", ":"]).output() {
         Ok(output) => {
@@ -83,9 +82,7 @@ fn shell_is_installed(shell: &str) -> bool {
     }
 }
 
-/// 한 셸 × 한 래퍼 조합에서 프로덕션 빌더가 만든 명령줄을 전부 실행하고, 실행한
-/// 횟수를 돌려준다. 그 수가 호출자의 하한 단정을 지탱한다 — 조합이 조용히 건너뛰어도
-/// 합이 안 늘어 드러난다.
+/// 각 셸·래퍼 조합에서 제품 명령을 실행한 횟수를 반환한다. 생략된 실행은 하한 검사로 잡는다.
 fn exercise_wrapper(
     shell: &str,
     wrapper: &str,

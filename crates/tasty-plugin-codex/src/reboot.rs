@@ -1,31 +1,13 @@
-//! `codex.reboot` — surface 안의 codex 를 종료하고 같은 세션으로 재기동한다.
+//! 같은 터미널의 Codex를 재시작하고 저장된 세션 ID로 재개한다.
 //!
-//! claude plugin 의 `reboot`(crates/tasty-plugin-claude/src/reboot.rs)와 목적 동형.
-//! 단, **진행 판정 방식이 다르다**: claude 는 `surface.foreground_process` 이름
-//! (baseline) 비교로 종료/복귀를 판정하지만, Windows 의 codex 는 npm shim 체인
-//! (`sh.exe → node.exe → codex.exe`)에서 sh.exe 가 먼저 죽어 부모 체인이 끊기고,
-//! 고아가 된 node/codex 는 surface 셸의 자손으로 걸리지 않아 전경 이름이 항상
-//! 셸로 나온다(실측 2026-07-12). 그래서 codex 는 **화면 마커 카운트 증가**로
-//! 판정한다:
-//! - 종료: codex 가 exit 시 항상 출력하는 `run codex resume` 힌트 라인
-//! - 복귀: 기동 배너 `>_ OpenAI Codex`
+//! Windows의 npm 실행 체인에서는 전경 이름을 읽기 어려워 화면 문구로 진행을 추정한다.
+//! Ctrl+C 뒤에는 run codex resume, 재기동 뒤에는 OpenAI Codex의 등장 횟수가
+//! 요청 시점보다 늘어나야 한다. 임의 출력도 일치할 수 있고 화면에서 지워질 수도 있어
+//! 프로세스 종료·복귀를 확정하거나 입력의 안전을 보장하는 검사는 아니다.
 //!
-//! 요청 시점 카운트 대비 **증가**를 요구하므로 화면에 남아있는 과거 마커에
-//! 속지 않는다. 마커 문자열은 codex CLI 출력에 결합돼 있다(v0.142 실측) —
-//! codex 가 문구를 바꾸면 폴링이 timeout 으로 안전 중단되고 아무것도 타이핑하지
-//! 않는다(보수적 실패).
-//!
-//! codex 특화 나머지:
-//! - session id 는 surface meta `codex-session-id`(session-start hook 이 stdin
-//!   JSON payload 의 `session_id` 로 기록)에서 캡처.
-//! - resume 명령은 `codex resume <id>` + `-c check_for_update_on_startup=false`.
-//!   업데이트 프롬프트("Update now / Skip")가 기동을 가로채면 안내 프롬프트의
-//!   제출 Enter 가 "Update now" 를 확정해 버리는 사고가 나므로 반드시 끈다(실측).
-//! - codex TUI 는 Ctrl+C 1회로 즉시 종료된다(실측). 여분의 Ctrl+C 는 셸 프롬프트
-//!   에서 no-op 이므로 claude 와 같은 4회 시퀀스를 그대로 쓴다. 이미 스스로
-//!   종료돼 있던 경우도 여분 Ctrl+C 는 무해하나, exit 마커가 증가하지 않으므로
-//!   보수적으로 중단된다(이미 죽은 codex 의 reboot 는 지원하지 않는다).
-//! - SessionEnd는 현재 세션 meta를 지우며 reboot는 종료 전에 세션과 연결 문맥을 캡처한다.
+//! 세션 ID와 화면의 기준 횟수는 종료 전에 읽는다.
+//! 재시작 안내의 Enter가 업데이트 메뉴를 선택하지 않도록 업데이트 확인을 끈다.
+//! 각 단계에서 조회나 시간 제한 검사가 실패하면 이후 명령 전송을 중단한다.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -40,14 +22,8 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::resolve_policy_args;
 
-/// in-flight 집합의 락. 임계구역이 `HashSet<u32>` 의 insert/remove 뿐이라 패닉이
-/// 지나가도 남는 값이 성립한다 — 복구가 답이다.
-///
-/// **획득과 해제의 답이 다르다는 점이 이 락의 요점이다.** 획득(`insert`)은 실패를
-/// 호출자에게 에러로 돌려주면 그만이지만, 해제(`remove`)를 조용히 건너뛰면 그
-/// `surface_id` 가 집합에 **영구히 남아** 이후 모든 reboot 이 "already in progress" 로
-/// 거절된다. poison 은 sticky 라 한 번 걸리면 모든 surface 의 해제가 같이 막혀
-/// 기능 전체가 잠긴다. 그래서 해제 쪽은 복구하고 이유를 남긴다.
+/// 진행 중 집합에 넣을 때 poison이면 요청을 거부한다.
+/// 제거할 때는 내부 값을 사용해 ID가 남아 이후 요청을 계속 막는 일을 피한다.
 const INFLIGHT_WHAT: &str = "the codex reboot in-flight set";
 static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -61,30 +37,23 @@ const SCREEN_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const EXIT_WAIT: Duration = Duration::from_secs(8);
 /// resume 명령 후 codex 복귀(배너 마커 증가) 대기 한도.
 const RETURN_WAIT: Duration = Duration::from_secs(20);
-/// 복귀 감지 후 TUI 입력 준비 grace.
+/// 복귀 문구를 확인한 뒤 TUI 초기화를 기다리는 시간.
 const TUI_READY_GRACE: Duration = Duration::from_secs(3);
 /// 안내 프롬프트 제출 시도 횟수 / 재시도 간격 / 제출→화면 검증 대기.
 const NOTICE_ATTEMPTS: u32 = 4;
 const NOTICE_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
-/// codex 종료 시 출력되는 힌트 라인의 식별 조각 (v0.142 실측:
-/// "To continue this session, run codex resume <id>").
+/// 종료 안내에서 찾는 부분 문자열.
 const EXIT_MARKER: &str = "run codex resume";
-/// codex 기동 배너의 식별 조각 (v0.142 실측: "│ >_ OpenAI Codex (v0.142.2)").
+/// 시작 배너에서 찾는 부분 문자열.
 const BANNER_MARKER: &str = "OpenAI Codex";
 /// 화면 검증에 쓰는 안내문 선두 조각.
 const NOTICE_SNIPPET: &str = "tasty codex reboot";
 
-/// 안내 프롬프트의 번역 키. 값은 `lang/{en,ko,ja}.toml` 에 있다.
-///
-/// 문구는 번역되지만 **선두 조각 [`NOTICE_SNIPPET`] 은 로케일과 무관하게 고정**이다 —
-/// 화면 검증이 그 조각으로 "안내가 실제로 떴는가" 를 판정하기 때문이다. 세 언어 값이
-/// 모두 그 조각으로 시작하는 것은 `notice_starts_with_the_snippet_in_every_locale` 가
-/// 못 박는다. 형제 plugin(claude)의 `claude.reboot.notice` 와 같은 구조다.
+/// 안내문의 번역 키. 화면 확인에 쓰므로 모든 언어에서 NOTICE_SNIPPET으로 시작해야 한다.
 const REBOOT_NOTICE_KEY: &str = "codex.reboot.notice";
 
-/// `codex.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
-/// 로 넘긴 뒤 즉시 응답한다 — 호출한 codex 가 턴을 마무리할 시간을 준다.
+/// 검증과 상태 조회를 마친 뒤 재시작 절차를 별도 스레드에 맡기고 응답한다.
 pub(crate) fn handle_reboot(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
@@ -93,12 +62,9 @@ pub(crate) fn handle_reboot(
 ) -> Result<Value, IpcMethodError> {
     let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let (delay_secs, extra_prompt) = parse_options(params);
-    // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
-    // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
-    // 전역 기본값 > codex 자체 기본값)로 해석한다.
+    // 기동과 같은 우선순위로 정책을 정한다. 최종 승인 기본값은 never다.
     let policy_args = resolve_policy_args(host, params, tr)?;
 
-    // 요청 시점 캡처.
     let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
         return Err(IpcMethodError::new(crate::handlers::t_args(
@@ -111,7 +77,7 @@ pub(crate) fn handle_reboot(
         )));
     }
 
-    // 마커 기준 카운트도 요청 시점에 스냅샷 — 과거 exit/기동 잔상에 속지 않기 위함.
+    // 이미 화면에 남은 문구와 구분하도록 현재 횟수를 기록한다.
     let Some(screen) = screen_text(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_replace(
             "codex.reboot.screen_unreadable",
@@ -143,8 +109,7 @@ pub(crate) fn handle_reboot(
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
-    // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
-    // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
+    // 스레드에는 번역기를 빌려주지 않고 완성된 안내문을 넘긴다.
     let thread_notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
@@ -187,16 +152,13 @@ pub(crate) fn handle_reboot(
     }))
 }
 
-/// surface meta 에서 codex session id 를 읽는다. 없으면 에러 — hook 미설치/미trust
-/// 이거나 그 surface 에서 codex session-start hook 이 아직 발화하지 않은 것.
+/// 세션 ID 메타데이터를 읽는다. 조회 실패나 값 부재는 오류로 반환한다.
 fn fetch_session_id(
     host: &HostHandle,
     surface_id: u32,
     tr: &Translator,
 ) -> Result<String, IpcMethodError> {
-    // 호스트 에러는 `PluginError::HostCall` 의 Display 가 이미
-    // `host call '<method>' failed: <message>` 라 다시 감싸지 않는다 — 감싸면 그
-    // 접두가 사용자에게 두 번 나간다(`handlers::host_call` 의 같은 주석 참조).
+    // 호스트 오류에 이미 있는 접두어를 다시 붙이지 않는다.
     let resp = host
         .call(
             "surface.meta.get",
@@ -218,18 +180,10 @@ fn fetch_session_id(
     Ok(session_id)
 }
 
-/// 셸에 전송할 resume 명령 (제출 `\r` 포함). POSIX OS 에서는 alias/function 을
-/// 우회하고 Windows 는 기존 bare codex 실행어를 유지한다(셸 종류는 여기서 모른다).
-/// `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
-/// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
-/// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
-/// codex 에도 기존 실행 옵션을 전달한다. remote resume의 훅 검토를 없앤다고
-/// 보장하지 않으며, 복귀 배너가 없으면 안내 입력을 보내지 않는다.
-///
-/// `policy_args` 는 `handlers::resolve_policy_args` 가 만든 `-a ...`/`-s ...`/
-/// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열) — resume 된
-/// codex 도 원래 기동과 같은 승인/샌드박스 정책 해석 규칙을 따른다
-/// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조).
+/// 제출 문자(\r)를 포함한 resume 명령을 만든다.
+/// POSIX에서는 alias/function을 우회하고 Windows에서는 기존 codex 명령을 유지한다.
+/// 업데이트 확인을 끄고 호출자가 정한 정책과 훅 신뢰 우회 플래그를 전달한다.
+/// 이 플래그가 원격 resume의 훅 검토 화면까지 없애지는 않을 수 있다.
 pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
     // Windows surfaces may use Git Bash, cmd, or PowerShell. Preserve the existing
     // token until the receiving shell family is known; cmd switches break in MSYS.
@@ -253,7 +207,7 @@ fn exit_marker_count(screen: &str) -> usize {
     count_occurrences(screen, EXIT_MARKER)
 }
 
-/// 겹치지 않는 부분 문자열 등장 횟수. 순수 함수 — 단위 테스트 대상.
+/// 겹치지 않는 부분 문자열의 등장 횟수를 센다.
 pub(crate) fn count_occurrences(hay: &str, needle: &str) -> usize {
     if needle.is_empty() {
         return 0;
@@ -261,8 +215,7 @@ pub(crate) fn count_occurrences(hay: &str, needle: &str) -> usize {
     hay.matches(needle).count()
 }
 
-/// 전체 시퀀스 (background thread). 각 단계 실패는 warn 로그 후 중단 —
-/// 살아있는 TUI/셸에 잘못된 텍스트를 흘리지 않는 것이 최우선.
+/// 별도 스레드에서 각 단계를 실행한다. 실패하면 경고 후 중단한다.
 #[allow(clippy::too_many_arguments)]
 fn run_reboot_sequence(
     host: &HostHandle,
@@ -277,7 +230,7 @@ fn run_reboot_sequence(
     thread::sleep(Duration::from_secs(delay_secs));
 
     if screen_text(host, surface_id).is_none() {
-        tracing::warn!("codex reboot s{surface_id}: surface gone before kill — aborting");
+        tracing::warn!("codex reboot s{surface_id}: screen unavailable before Ctrl+C; aborting");
         return;
     }
 
@@ -297,11 +250,8 @@ fn run_reboot_sequence(
     }
 }
 
-/// Ctrl+C ×N 전송 후 exit 마커("run codex resume" 힌트)가 요청 시점(`exit_c0`)보다
-/// 늘어날 때까지 확인. 실패 시 `false` — 살아있는 codex TUI 입력창에 resume 명령이
-/// 타이핑되는 사고 방지.
+/// Ctrl+C를 보낸 뒤 종료 안내 문구가 요청 때보다 늘었는지 확인한다.
 fn kill_codex_via_ctrlc(host: &HostHandle, surface_id: u32, exit_c0: usize) -> bool {
-    // codex 는 Ctrl+C 1회로 종료된다(실측). 여분은 셸 프롬프트에서 no-op.
     for _ in 0..CTRL_C_COUNT {
         if let Err(e) = host.call(
             "surface.send_combo",
@@ -313,22 +263,18 @@ fn kill_codex_via_ctrlc(host: &HostHandle, surface_id: u32, exit_c0: usize) -> b
         thread::sleep(CTRL_C_INTERVAL);
     }
 
-    // 종료 확인: exit 마커가 요청 시점보다 늘어날 때까지. 실패 시 절대 진행 금지 —
-    // 살아있는 codex TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
     if !poll_screen(host, surface_id, EXIT_WAIT, |s| {
         exit_marker_count(s) > exit_c0
     }) {
         tracing::warn!(
-            "codex reboot s{surface_id}: exit marker did not appear after {CTRL_C_COUNT}x Ctrl+C — aborting (nothing sent)"
+            "codex reboot s{surface_id}: exit marker count did not increase after {CTRL_C_COUNT}x Ctrl+C; resume command not sent"
         );
         return false;
     }
     true
 }
 
-/// resume 명령 전송 + 기동 배너 마커가 요청 시점(`banner_c0`)보다 늘어날 때까지
-/// 확인. 미복귀면 `false` — 안내 프롬프트도 보내지 않는다(셸 프롬프트에 평문이
-/// 명령으로 실행되는 사고 방지).
+/// resume 명령을 보내고 시작 배너가 요청 때보다 늘었는지 확인한다.
 fn resume_and_wait(
     host: &HostHandle,
     surface_id: u32,
@@ -344,8 +290,6 @@ fn resume_and_wait(
         return false;
     }
 
-    // 복귀 확인: 기동 배너가 요청 시점보다 늘어날 때까지. 미복귀면 안내 프롬프트도
-    // 보내지 않는다 — 셸 프롬프트에 평문이 명령으로 실행되는 사고 방지.
     if !poll_screen(host, surface_id, RETURN_WAIT, |s| {
         count_occurrences(s, BANNER_MARKER) > banner_c0
     }) {
@@ -358,9 +302,7 @@ fn resume_and_wait(
     true
 }
 
-/// 안내 프롬프트를 제출하고 화면에 실제로 나타났는지 검증한다. TUI 초기화 중
-/// PTY 입력이 유실될 수 있어 확인될 때까지 재시도한다. (배너 증가를 확인한 뒤에만
-/// 도달하므로 셸에 타이핑될 위험은 배너 확인이 차단한다.)
+/// 안내문을 보내고 화면에서 선두 문구를 찾는다. 제한된 횟수만큼 재시도한다.
 fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
     for attempt in 1..=NOTICE_ATTEMPTS {
         if let Err(e) = host.call(
@@ -387,7 +329,7 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
     false
 }
 
-/// 화면 텍스트가 조건을 만족할 때까지 폴링. 조회 실패(surface 소멸)는 즉시 false.
+/// 화면을 폴링한다. 조회 실패 시 중단하고, 조건 불일치 시 경과 시간을 확인한다.
 fn poll_screen(
     host: &HostHandle,
     surface_id: u32,
@@ -464,12 +406,7 @@ mod tests {
         assert!(n.ends_with("\n\nsoak 이어서"));
     }
 
-    /// **세 로케일 모두** 안내문이 화면 검증 조각으로 시작한다.
-    ///
-    /// 전달 성공 판정(`deliver_notice`)이 [`NOTICE_SNIPPET`] 을 화면에서 찾는 것으로
-    /// 이뤄진다 — 번역문이 그 조각을 잃으면 안내는 떴는데 **못 떴다고 판정**해
-    /// 재시도를 반복하다 경고를 남긴다. 그 회귀는 그 언어를 쓰는 사용자에게만
-    /// 나타나므로 한 언어만 보는 테스트로는 안 잡힌다.
+    /// 모든 언어에서 화면 확인에 사용할 선두 문구를 유지해야 한다.
     #[test]
     fn notice_starts_with_the_snippet_in_every_locale() {
         for code in ["en", "ko", "ja"] {
@@ -482,12 +419,12 @@ mod tests {
         }
     }
 
-    /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
+    /// 언어별 카탈로그를 사용하는지 확인한다.
     #[test]
     fn notice_changes_with_the_locale() {
         let en = build_notice(&test_translator_for("en").t(REBOOT_NOTICE_KEY), None);
         let ko = build_notice(&test_translator_for("ko").t(REBOOT_NOTICE_KEY), None);
-        assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
+        assert_ne!(en, ko, "언어가 달라도 같은 문구를 반환했다");
     }
 
     #[test]
@@ -501,9 +438,7 @@ mod tests {
         assert_eq!(count_occurrences("", "x"), 0);
     }
 
-    /// `exit_marker_count` 자체를 재는 유일한 시험. 이 래퍼를 부르던 자리가 원격
-    /// detach 마커와 함께 사라져 본문을 아무 마커로 바꿔도 스위트가 전부 초록이 됐다
-    /// (변이로 확인). 아래 둘째 단언이 그 갈래를 죽인다.
+    /// 종료 안내와 시작 배너를 구분해 세는지 확인한다.
     #[test]
     fn exit_marker_count_counts_only_the_quit_hint() {
         assert_eq!(
@@ -550,8 +485,7 @@ mod tests {
                 .is_err()
         );
 
-        // 자르지 않는다 — `u32::MAX + 2` 를 자르면 1 이 되고, 그것은 실재할 수 있는
-        // 다른 surface 의 id 다. `handlers::require_u32` 와 같은 갈래.
+        // 범위를 넘는 ID를 잘라 다른 대상을 선택하지 않아야 한다.
         assert!(
             crate::handlers::require_target_surface(
                 &json!({ "surface": u64::from(u32::MAX) + 2 }),

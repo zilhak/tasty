@@ -5,7 +5,7 @@ desc = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
 "settings.default_approval_policy" = "Default approval policy"
 "settings.default_sandbox_mode" = "Default sandbox mode"
-"settings.approval.inherit" = "Inherit (codex default)"
+"settings.approval.inherit" = "Default approval policy (never)"
 "settings.approval.untrusted" = "Untrusted (prompt for untrusted commands)"
 "settings.approval.on_request" = "On request (model decides)"
 "settings.approval.never" = "Never (no approval prompts)"
@@ -38,8 +38,8 @@ no_active_session = "no active codex session on surface {surface} (codex-session
 [codex.params]
 missing = "Missing required '{key}' parameter"
 missing_target_surface = "Missing required 'surface' (or 'surface_id') parameter"
-not_a_number = "'{key}' was given as {raw} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, target"
-surface_conflict = "'surface' and 'surface_id' name different targets (surface={surface}, surface_id={surface_id}) — send one of them, or the same value in both"
+not_a_number = "Invalid '{key}' value: {raw}. Use an unsigned integer that fits in 32 bits. Larger values are rejected to avoid selecting a different target."
+surface_conflict = "'surface' and 'surface_id' select different targets (surface={surface}, surface_id={surface_id}). Specify one field, or use the same value in both."
 invalid_choice = "invalid '{flag}' value '{value}' (expected one of: {valid})"
 full_auto_conflict = "'full_auto' cannot be combined with 'approval'/'sandbox' — it already bypasses both"
 missing_message = "Missing required 'message' parameter"
@@ -48,7 +48,7 @@ missing_event = "Missing required 'event' parameter"
 
 [codex.hook]
 requires_surface = "hook requires --surface to identify the child"
-unknown_event = "unknown hook event '{event}' (supported: stop, prompt-submit, session-start)"
+unknown_event = "unknown hook event '{event}' (supported: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt, session-end)"
 
 [codex.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id': {resp}"
@@ -72,7 +72,7 @@ write_failed = "could not write the codex config file: {detail}"
 description = "Launch a new workspace and start Codex in its terminal"
 
 [codex.cli.sub.spawn]
-description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition."
+description = "Create a child Codex instance in a split surface. Waits for host responses, then returns without waiting for the child task to finish. Registers hooks for idle, input-wait and exit notifications to the parent."
 
 [codex.cli.sub.children]
 description = "List children of the specified Codex parent"
@@ -84,10 +84,10 @@ description = "Return the parent Codex surface id for a given child surface"
 description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)"
 
 [codex.cli.sub.tell]
-description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a notification is sent to the caller surface every time the target becomes idle, and once more when it exits — not just the first transition."
+description = "Send a message with line breaks preserved and submit it. Waits for host responses, then returns without waiting for the task to finish. When a caller surface is provided, registers hooks for idle, input-wait and exit notifications."
 
 [codex.cli.sub.notify-caller]
-description = "Internal: notify caller surface that a spawned/told child changed state, clean up the sibling once-hook, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm the sibling hooks so future transitions keep notifying until the child actually exits. Invoked by hooks registered from spawn/tell — not meant for direct use."
+description = "Internal: report a child state change and remove matching once-hooks. If the target surface can still be found, register the completion hooks again. Called by spawn/tell hooks; not intended for direct use."
 
 [codex.cli.sub.broadcast]
 description = "Broadcast text to all children of a parent Codex instance"
@@ -117,10 +117,10 @@ help = "Workspace name to create (defaults to \"codex\")"
 help = "Working directory to cd into before launching codex"
 
 [codex.cli.arg.launch_args.task]
-help = "Initial task passed to codex as --task <text>"
+help = "Initial task passed as the Codex prompt argument"
 
 [codex.cli.arg.launch_args.approval]
-help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never."
 
 [codex.cli.arg.launch_args.sandbox]
 help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
@@ -165,7 +165,7 @@ help = "Role label attached to the child (used by broadcast --role)"
 help = "Display nickname shown on the tab"
 
 [codex.cli.arg.spawn_args.approval]
-help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset, so unattended automation is never stalled by an approval prompt — pass this only to opt into an interactive policy"
+help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never."
 
 [codex.cli.arg.spawn_args.sandbox]
 help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files"
@@ -219,7 +219,7 @@ help = "Replace the role label of the child"
 help = "Replace the display nickname of the child"
 
 [codex.cli.arg.respawn_args.approval]
-help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never."
 
 [codex.cli.arg.respawn_args.sandbox]
 help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
@@ -237,7 +237,7 @@ help = "Seconds to wait before killing Codex (default: 5)"
 help = "Extra text appended to the reboot notice prompt sent to the restarted Codex"
 
 [codex.cli.arg.reboot_args.approval]
-help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+help = "Approval policy: untrusted|on-request|never. Overrides default_approval_policy for this call. If omitted, uses that setting; inherit or no setting resolves to never."
 
 [codex.cli.arg.reboot_args.sandbox]
 help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
