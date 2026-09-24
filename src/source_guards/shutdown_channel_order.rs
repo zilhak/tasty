@@ -1,48 +1,16 @@
-//! plugin 종료의 **채널 순서 계약**을 못 박는다 — shutdown 요청은 `surface.closed`
-//! **뒤에** 같은 `req_tx` 에 놓여야 한다.
-//!
-//! ## 계약
-//!
-//! plugin worker 는 자기 `req_tx` 를 순서대로 소비한다. 그래서 host 가 shutdown 요청을
-//! surface 정리보다 **먼저** 넣으면, worker 는 자기 surface 들이 닫혔다는 것을 못 본 채
-//! 종료 처리로 들어간다. 그 상태는 조용하다 — 컴파일도 되고, 종료는 어차피 프로세스를
-//! 회수하므로 화면에도 로그에도 안 나온다. plugin 이 `surface.closed` 에서 하던 정리
-//! (열린 파일 flush · 외부 프로세스 종료 · 캐시 저장)만 조용히 건너뛴다.
-//!
-//! ## 그 계약을 지키는 것은 **한 함수 안의 호출 배치**다
-//!
-//! `App::shutdown_step_closing_surfaces` 가 `shutdown_close_surfaces()` 를 부른 **뒤에**
-//! `begin_plugin_shutdown()` 을 부른다. 요청 발송을 다음 스텝(S4 대기)으로 미루면 계약이
-//! 깨지는 것이 아니라 — 그 스텝은 어차피 나중이라 순서는 유지된다 — **대기 겹침이
-//! 사라진다.** 진짜로 깨지는 배치는 두 호출을 이 함수 안에서 맞바꾸는 것이다.
-//!
-//! ## 왜 이 가드가 필요했나
-//!
-//! 이 계약을 진술하는 주석이 **세 자리**에 흩어져 있었고 셋 다 산문뿐이었다:
-//! `src/app/shutdown_machine.rs`(집행 자리) · `src/app/shutdown_cascade.rs`(요청 발송) ·
-//! `crates/tasty-host-plugin/src/manager/lifecycle.rs`(수신 측). 사본이 셋이면 하나를
-//! 옮길 때 나머지 둘이 낡는다. 지금은 집행 자리 하나가 계약을 들고 나머지 둘이 그리로
-//! 가리키며, 값으로 무는 것은 이 가드다.
-//!
-//! ## 판정
-//!
-//! 지목한 함수 본문을 중괄호 균형으로 자르고, 주석을 지운 뒤 두 호출의 **위치**를
-//! 비교한다. 함수를 못 자르면 통과가 아니라 실패다 — 이름이 바뀌었는데 조용히 초록이
-//! 되는 것이 이 부류의 원래 사고다.
+//! 플러그인의 surface.closed 요청 뒤에 shutdown 요청을 같은 채널에 넣어야 한다.
+//! 순서가 바뀌면 플러그인이 surface 종료에 필요한 정리를 하기 전에 종료할 수 있다.
+//! shutdown_step_closing_surfaces의 두 호출 위치를 비교하며 실제 분기의 실행 여부는 확인하지 않는다.
+//! shutdown 발송을 다음 대기 단계로 옮기면 순서가 유지돼도 다른 정리와 대기를 겹칠 수 없게 된다.
 
 use super::{fn_body, repo_root, strip_comments};
 
-/// 계약을 집행하는 자리.
 const HOME: &str = "src/app/shutdown_machine.rs";
-/// 그 안에서 배치가 결정되는 함수.
 const STEP: &str = "fn shutdown_step_closing_surfaces";
-/// 먼저 와야 하는 호출 — `surface.closed` 들을 `req_tx` 에 넣는다.
 const FIRST: &str = "self.shutdown_close_surfaces()";
-/// 뒤에 와야 하는 호출 — shutdown 요청을 같은 `req_tx` 에 넣는다.
 const THEN: &str = "self.begin_plugin_shutdown()";
 
-/// The first drive can present immediately, before another normal redraw has a
-/// chance to synchronize native children. Moving the hide after it is too late.
+/// 첫 종료 프레임이 즉시 표시될 수 있으므로 네이티브 자식 숨김을 그보다 먼저 실행해야 한다.
 #[test]
 fn shutdown_entry_hides_native_children_before_the_first_drive() {
     let src = std::fs::read_to_string(repo_root().join(HOME)).unwrap();
@@ -62,10 +30,7 @@ fn step_body() -> String {
         .unwrap_or_else(|e| panic!("{HOME} 을 읽지 못했다: {e}"))
         .replace("\r\n", "\n");
     let body = fn_body(&src, STEP).unwrap_or_else(|| {
-        panic!(
-            "`{STEP}` 을 {HOME} 에서 자르지 못했다. 이름이 바뀌었거나 자리를 옮긴 것이니 \
-             이 가드의 상수를 함께 고쳐라 — 못 자른 상태의 초록은 통과가 아니라 미측정이다"
-        )
+        panic!("{HOME}에서 `{STEP}` 본문을 읽지 못했다. 함수 이름·이동 여부와 추출을 확인한다.")
     });
     strip_comments(&body)
 }
@@ -84,18 +49,13 @@ fn the_shutdown_request_is_queued_after_the_surface_closes() {
     });
     assert!(
         first < then,
-        "채널 순서 계약이 깨졌다: `{STEP}` 안에서 `{THEN}` 가 `{FIRST}` 보다 먼저 온다. \
-         plugin worker 는 `req_tx` 를 순서대로 소비하므로, 그 배치에서는 worker 가 자기 \
-         surface 가 닫혔다는 것을 못 본 채 종료 처리에 들어간다 — 컴파일도 되고 종료도 \
-         되며 화면에도 로그에도 안 나온다. 계약의 자리는 {HOME} 이다"
+        "`{STEP}`에서 `{THEN}`이 `{FIRST}`보다 앞에 있다. surface 종료 처리가 shutdown 요청보다 먼저 전달되도록 {HOME}의 호출 순서를 고친다."
     );
 }
 
 #[test]
 fn the_guard_reads_a_body_that_actually_has_both_calls() {
-    // 공허 방지 — 위 시험의 두 `find` 가 모두 실패해도 `unwrap_or_else` 가 패닉하므로
-    // 죽기는 한다. 여기서 따로 못 박는 것은 **잘라 온 것이 그 함수인가**다: `fn_body`
-    // 가 다른 함수를 잘라도 두 호출이 우연히 들어 있을 수 있다.
+    // 함수 추출이 다른 본문을 반환하지 않았는지 상태 전환도 확인한다.
     let body = step_body();
     assert!(
         body.contains("self.set_shutdown_phase(ShutdownPhase::StoppingPlugins)"),

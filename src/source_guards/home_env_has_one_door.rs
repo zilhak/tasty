@@ -14,7 +14,8 @@ const MUTATION: &[&str] = &["env::set_var(", "env::remove_var("];
 
 const HOME_KEYS: &[&str] = &["\"TASTY_HOME\"", "\"HOME\""];
 
-/// 출하 코드 예외의 (파일, 사유, 원문에 나타나면 재검토할 키). 키의 런타임 값을 평가하는 검사는 아니다.
+/// 출하 코드 예외의 (파일, 사유). HOME_KEYS 리터럴이 원문에 있으면 예외를 재검토한다.
+/// 키의 런타임 값을 평가하는 검사는 아니다.
 const PRODUCTION_EXCEPTIONS: &[(&str, &str)] = &[(
     "src/boot/locale.rs",
     "프로덕션이 OS 로케일을 자식 프로세스로 넘긴다 — 홈 키가 아니라 로케일 키다",

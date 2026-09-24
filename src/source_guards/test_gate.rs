@@ -1,32 +1,10 @@
-//! **한 파일 안에서** 테스트 게이트 뒤에 있는 구간을 지운다.
-//!
-//! # 이것은 "이 파일이 출하되는가" 가 아니다
-//!
-//! 그 물음의 판정기는 [`tasty_doc_guards::shipping_scope`] 다 — 선언 간선의 **전이
-//! 폐쇄**를 따르고 `#[path = "..."]` 도 푼다. 여기 있는 것은 그보다 좁은 물음이다:
-//!
-//! | 물음 | 판정기 | 답의 모양 |
-//! |---|---|---|
-//! | 이 **파일**이 출하되나 | `shipping_scope::test_only_files` | 파일 집합 |
-//! | 이 파일 **안의 어느 구간**이 게이트 뒤인가 | 여기 [`blank_test_modules`] | 같은 파일의 사본 |
-//!
-//! 둘은 서로를 대신하지 못한다. **출하되는 파일도 안에 `#[cfg(test)] mod tests { … }`
-//! 를 품는다** — 파일 단위 판정은 그 구간을 못 지우고, 구간 판정은 자식 파일을 못 찾는다.
-//! 그래서 파일 물음은 위임하고 여기서는 구간만 답한다.
-//!
-//! # 극성은 직접 안 센다
-//!
-//! 조건이 test 를 **함의하는가**는 [`tasty_doc_guards::cfg_predicate::implies`] 가
-//! 판정한다. 처음엔 조건 안에 `test` 토큰이 있는지만 봤는데 그것은 두 방향으로 틀린다 —
-//! `not(test)` 는 **반대**인데 게이트로 셌고(실측: `src/fullscreen_stages.rs` 의
-//! `RELEASE_METAS` 블록이 스캔에서 지워지고 있었다), `any(test, unix)` 는 다른 조건으로도
-//! 컴파일되는데 test 전용으로 셌다. 이쪽 오판은 **거짓 음성**이다 — 출하되는 코드를
-//! 지워 놓고 위반이 없다고 말한다.
+//! 한 파일 안의 test 전용 블록을 줄 구조를 유지하며 가린다.
+//! 별도 자식 파일 전체의 출하 여부는 shipping_scope에서 분류하므로 두 검사는 서로 대체할 수 없다.
+//! 조건식은 공용 implies로 판단한다. not(test)나 any(test, unix)를 test 전용으로 지우면 안 된다.
 
 use tasty_doc_guards::cfg_predicate::implies;
 
-/// 테스트 게이트 attribute 의 **끝 다음** 바이트 위치들. 조건이 test 를 **함의할 때만**
-/// 게이트로 본다 — 판정은 [`implies`] 에 위임한다(모듈 문서 "극성은 직접 안 센다").
+/// test를 요구하는 cfg 속성의 끝 다음 바이트 위치.
 pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
     let mut out = Vec::new();
     let mut from = 0usize;
@@ -51,7 +29,6 @@ pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
         }
         let Some(close) = end else { continue };
         if implies(&masked[body_start..close], "test") {
-            // 닫는 `)` 다음의 `]` 까지 건너뛴다.
             let after = masked[close..]
                 .char_indices()
                 .find(|(_, c)| *c == ']')
@@ -63,11 +40,7 @@ pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
     out
 }
 
-/// 테스트 게이트가 걸린 블록(`mod ... { … }` · 게이트가 붙은 식 블록)을 **줄 구조를
-/// 보존한 채** 지운다. 줄 번호가 밀리면 이 사본을 쓰는 가드가 엉뚱한 줄을 가리킨다.
-///
-/// 중괄호가 없는 `mod name;` 은 **별도 파일**이라 여기 대상이 아니다 — 그 파일을 통째로
-/// 빼는 것은 `shipping_scope::test_only_files` 의 일이다(모듈 문서의 표).
+/// 블록 내용은 줄바꿈을 보존해 가린다. 중괄호 없는 mod name;의 별도 파일은 shipping_scope에서 처리한다.
 pub(super) fn blank_test_modules(masked: &str) -> String {
     let bytes: Vec<char> = masked.chars().collect();
     let mut out: String = masked.to_string();
@@ -75,7 +48,6 @@ pub(super) fn blank_test_modules(masked: &str) -> String {
         let Some(open) = masked[from..].find('{').map(|o| from + o) else {
             continue;
         };
-        // 여는 중괄호 앞에 세미콜론이 있으면 그 attribute 는 블록이 아니다.
         if masked[from..open].contains(';') {
             continue;
         }
@@ -117,8 +89,6 @@ pub(super) fn blank_test_modules(masked: &str) -> String {
 mod detector {
     use super::*;
 
-    /// 합성 조건도 테스트 게이트다. 문자열 비교로 판정하면 이 형태가 통째로 샌다 —
-    /// 실측 자리는 `src/state.rs` 의 `fullscreen_stage_tests` 였다.
     #[test]
     fn a_composite_cfg_that_implies_test_is_a_gate() {
         assert!(
@@ -127,9 +97,7 @@ mod detector {
         );
     }
 
-    /// ★ 극성. `not(test)` 는 **프로덕션 전용**이라 지우면 안 된다 — 지우면 출하되는
-    /// 코드를 스캔에서 없애 놓고 "위반 없음" 이라고 말한다(거짓 음성). `any(test, …)` 도
-    /// test 전용이 아니다.
+    /// test 전용이 아닌 조건은 출하 코드를 포함할 수 있어 지우지 않는다.
     #[test]
     fn a_cfg_that_does_not_imply_test_is_left_alone() {
         assert!(
@@ -138,11 +106,10 @@ mod detector {
         );
         assert!(
             blank_test_modules("#[cfg(any(test, unix))]\nmod b {\n    X\n}\n").contains('X'),
-            "선언을 함의로 읽었다"
+            "다른 조건으로도 활성화되는 any를 test 전용으로 판단했다"
         );
     }
 
-    /// 줄 번호가 밀리면 이 사본을 쓰는 가드가 엉뚱한 줄을 가리킨다.
     #[test]
     fn it_blanks_without_moving_line_numbers() {
         let src = "a\n#[cfg(test)]\nmod t {\n    X\n}\nb\n";

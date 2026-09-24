@@ -304,11 +304,11 @@ fn the_validation_rejects_a_reserved_prefix() {
         .filter(|m| !m.contributes.ipc_namespace.is_empty());
     let mut manifest = with_namespace
         .next()
-        .expect("namespace 를 선언한 번들 매니페스트가 없다 — 대조군이 죽었다");
+        .expect("예약 prefix 검사에 쓸 namespace 선언을 찾지 못했다");
 
     manifest
         .validate()
-        .expect("실물 매니페스트가 흔들기 전에 이미 실패한다 — 대조가 성립 안 한다");
+        .expect("prefix를 바꾸기 전 매니페스트부터 유효성 검사에 실패했다");
 
     let reserved = tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES
         .first()

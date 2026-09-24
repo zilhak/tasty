@@ -1,40 +1,10 @@
-//! 프로세스 전역을 만지는 테스트는 **그 전역의 직렬화 락을 잡는다.**
+//! 프로세스 전역 상태를 쓰는 시험이 등록된 직렬화 락도 언급하는지 확인한다.
+//! 병렬 시험의 상태 변경이 서로 섞이지 않으려면 해당 전역에 접근하는 모든 시험이 같은 락을 사용해야 한다.
 //!
-//! `cargo test` 는 한 바이너리의 테스트를 병렬로 돌린다. 그래서 프로세스 전역(`static`
-//! 변수·환경변수·cwd)을 만지는 테스트끼리는 서로의 상태를 덮어써 순서 의존 flake 가 난다.
-//! 처방은 락 하나로 직렬화하는 것이고, 이 레포는 그렇게 하고 있다.
-//!
-//! **다만 락은 잡는 쪽끼리만 막는다.** 하나라도 락 밖에서 그 전역을 만지면 직렬화가 통째로
-//! 무효가 된다 — 그래서 이 규칙은 "이 락을 쓰자" 가 아니라 **"이 전역을 만지는 테스트가
-//! 전부 이 락을 잡는다"** 는 전수 명제다. 전수 명제인데 강제가 없으면, 다음에 그 전역을
-//! 만지는 테스트를 더하는 사람이 락의 존재를 알 길이 없다.
-//!
-//! # 재고 나서 안 것 — 명부가 이름으로는 안 모인다
-//!
-//! 2026-09-05 실측. 이름(`*TEST_LOCK`)으로 세면 **4** 개인데, 모양(`static …: Mutex<()>`)
-//! 으로 세면 **11** 개다. 나머지 일곱은 `SERIAL` · `ENV_LOCK` · `CWD_LOCK` · `TEST_SERIAL` ·
-//! `GLOBALS` · `HOME_ENV_LOCK` · `TASTY_HOME_ENV_LOCK` 이라 이름 규칙이 없다. 그리고 열하나
-//! 전부가 **같은 문장을 주석으로만** 갖고 있었다("이 전역을 만지는 테스트는 이 락을 잡아라").
-//! 채널이 있던 것은 둘뿐이다(`tasty-host-plugin` 의 홈 env 스캔, `tasty-cli` 의 cwd 가드).
-//!
-//! 그래서 명부의 완전성은 **모양으로** 판정한다 — [`every_serialization_lock_is_listed`].
-//!
-//! # 무엇을 재고 무엇을 안 재는가
-//!
-//! 재는 것은 **전역 변수**를 지키는 여섯이다. `static` 하나를 여러 테스트가 만지는 형태라
-//! "만지는가" 를 이름으로 판정할 수 있다.
-//!
-//! 안 재는 것은 **환경변수·cwd** 를 지키는 다섯이다. 그쪽은 만지는 자리가 `set_var` 나
-//! `set_current_dir` 이고 그 대상이 문자열 키라, 같은 술어로는 "무엇을 만지는가" 가 안
-//! 갈린다. 명부에는 남긴다 — 빠진 것이 아니라 **규칙이 다른 축**이라는 뜻이고, 그 다섯 중
-//! 둘은 이미 자기 채널을 갖고 있다.
-//!
-//! # 이 판정이 틀리는 방향
-//!
-//! 이름을 **언급**하면 만진 것으로 센다. 실제로는 안 만지는데 이름만 나오는 테스트가 있으면
-//! 락을 잡으라고 요구한다 — 거짓 양성이고, 시끄럽게 틀린다. 반대로 그 전역을 만지면서
-//! 이름을 하나도 안 쓰는 경로(함수 두 겹 너머의 간접 접근)는 못 본다. 그래서 접근면에는
-//! **전역을 쓰는 함수 이름들도 함께** 적는다.
+//! 전역 이름·접근 함수 이름과 락·획득 헬퍼 이름의 존재를 텍스트로 비교한다.
+//! 실제 획득·락 수명·실행 경로까지 보장하지 않으며 등록되지 않은 간접 접근은 놓칠 수 있다.
+//! 환경변수·cwd·외부 자원을 지키는 락은 별도 사유 명부로 관리한다.
+//! static Mutex<()>·RwLock<()> 형태의 선언을 모아 새 락의 미등록도 확인한다.
 
 use std::collections::BTreeSet;
 
@@ -42,29 +12,23 @@ use super::{
     mask_non_code, repo_root, rust_sources, rust_sources_with_integration_tests, word_positions,
 };
 
-/// 락이 지키는 것을 만지는 테스트를 어디까지 찾는가.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Scope {
-    /// 락이 선언된 파일 안만. **그 항목이 지키는 이름들이 파일 밖에서 안 보이는**
-    /// 경우다 — "지금 다른 파일이 안 만진다" 가 아니라 "만질 수 없다" 여야 한다.
-    /// 그 전제는 [`a_file_scoped_entry_guards_only_names_invisible_outside_it`] 가 본다.
+    /// 다른 파일에서 접근할 수 없을 때만 선언 파일 안으로 검사 범위를 제한한다.
     File,
-    /// 크레이트 전체. 락이나 접근면이 `pub`/`pub(crate)` 이라 다른 파일의 테스트도 닿는다.
+    /// 다른 파일에서 접근할 수 있어 크레이트 전체를 검사한다.
     Crate,
 }
 
 struct Serialized {
-    /// 락이 선언된 파일(레포 상대).
     file: &'static str,
-    /// 락 이름.
     lock: &'static str,
-    /// 락을 **잡는** 표현. 락 이름 자체와, 락을 잡아 가드를 돌려주는 헬퍼들.
+    /// 락 이름과 획득 헬퍼의 검색 형태.
     acquire: &'static [&'static str],
-    /// 이 락이 지키는 이름들 — 전역 자신과 그것을 읽고 쓰는 함수들.
+    /// 보호하는 전역 및 접근 함수의 검색 이름.
     guarded: &'static [&'static str],
     scope: Scope,
-    /// 왜 직렬화가 필요한가. 락마다 다르다 — 뭉뚱그리면 어느 것이 진짜 경합이고 어느
-    /// 것이 습관인지가 지워진다.
+    /// 이 상태를 병렬로 바꾸면 생기는 구체적인 경합.
     why: &'static str,
 }
 
@@ -80,9 +44,7 @@ const SERIALIZED: &[Serialized] = &[
             "reset_for_test",
         ],
         scope: Scope::Crate,
-        why: "락이 `pub` 이고 실제로 다른 파일의 테스트가 등록한다 — `state` 의 픽스처가 \
-              markdown kind 를 등록하는데 그것이 `!is_webview_kind(\"markdown\")` 단언 \
-              중에 끼어들면 단언이 깨진다",
+        why: "다른 파일의 시험도 webview kind를 등록한다. 동시에 markdown 미등록 상태를 확인하는 시험과 겹치면 단언이 실패할 수 있다.",
     },
     Serialized {
         file: "crates/tasty-platform/src/stall_watchdog.rs",
@@ -98,14 +60,9 @@ const SERIALIZED: &[Serialized] = &[
         lock: "TEST_SERIAL",
         acquire: &["TEST_SERIAL", "serial()"],
         guarded: &["STATE", "sweep"],
-        // `sweep` 이 `pub fn` 이다 — 다른 파일의 테스트가 락 없이 부를 수 있다.
-        // 종전 `Scope::File` 은 "지금 아무도 안 부른다" 에 기대고 있었다. 픽스처로
-        // 두 팔을 재서 확인했다: 다른 파일의 테스트가 `webhook::sweep()` 을 락 없이
-        // 부를 때 File 은 초록, Crate 는 빨강이었다 — 구멍이 실재했다.
+        // sweep이 공개 함수여서 다른 파일의 시험도 검사해야 한다.
         scope: Scope::Crate,
-        why: "웹훅 레지스트리가 프로세스 싱글턴이고 `sweep` 이 만료 엔트리를 **전부** \
-              지운다 — 한 테스트의 sweep 이 다른 테스트의 엔트리를 먼저 지운다. \
-              그 `sweep` 이 `pub` 이라 다른 파일에서도 닿는다",
+        why: "웹훅 등록부가 프로세스 전역이고 공개 sweep이 만료 항목을 지운다. 한 시험이 다른 시험의 항목을 먼저 삭제할 수 있다.",
     },
     Serialized {
         file: "crates/tasty-ipc/src/method_meta_tests.rs",
@@ -118,14 +75,8 @@ const SERIALIZED: &[Serialized] = &[
             "ns_unregister",
         ],
         scope: Scope::Crate,
-        why: "namespace 소유 표가 프로세스 전역으로 **설치**되고 설치는 1 회뿐이라, 이 \
-              바이너리의 테스트들이 같은 표를 함께 쓴다 — 내용을 비우고 채우는 것이 \
-              겹치면 다른 테스트가 보는 표가 달라진다",
+        why: "프로세스에 한 번 설치한 namespace 표를 모든 시험이 공유한다. 한 시험이 비우거나 채우는 중에 다른 시험이 읽으면 결과가 달라진다.",
     },
-    // `tasty-host-plugin` 쪽에는 짝이 **없다.** 예전에는 같은 전역 미러를 그 크레이트의
-    // 테스트도 만져서 락이 하나 더 필요했는데, 표가 `PluginManager` 에 매이면서 그
-    // 크레이트의 테스트는 각자 자기 매니저의 표만 만진다 — 공유하는 것이 없으면 직렬화할
-    // 것도 없다. 락을 지우는 것이 아니라 **경합을 없앤 것**이다.
     Serialized {
         file: "crates/tasty-themes/src/plugin_defaults.rs",
         lock: "TEST_LOCK",
@@ -137,8 +88,7 @@ const SERIALIZED: &[Serialized] = &[
     },
 ];
 
-/// 같은 모양이지만 지키는 것이 전역 **변수**가 아닌 락. 명부에는 남기고 규칙에서는 뺀다 —
-/// 빠진 것이 아니라 술어가 다르다는 뜻이다(모듈 문서 "무엇을 재고 무엇을 안 재는가").
+/// 전역 변수의 이름 비교 대신 다른 규칙으로 검사할 락과 근거.
 const OTHER_LOCKS: &[(&str, &str, &str)] = &[
     (
         "crates/tasty-test-support/src/lib.rs",
@@ -148,8 +98,7 @@ const OTHER_LOCKS: &[(&str, &str, &str)] = &[
     (
         "crates/tasty-host-plugin/src/test_support.rs",
         "HOME_ENV_LOCK",
-        "홈 관련 두 환경변수. **자기 채널이 있다** — 같은 모듈의 소스 스캔 테스트가 \
-         '두 키를 만지는 유일한 지점이 이 모듈' 을 못박는다",
+        "홈 환경변수 변경은 같은 모듈의 소스 검사에서 지원 가드를 통하도록 확인한다.",
     ),
     (
         "crates/tasty-settings/src/general.rs",
@@ -165,35 +114,23 @@ const OTHER_LOCKS: &[(&str, &str, &str)] = &[
     (
         "crates/tasty-cli/src/cwd_resolve.rs",
         "CWD_LOCK",
-        "프로세스 cwd. **자기 채널이 있다** — `set_current_dir` 재진입 가드가 같은 \
-         크레이트에 있다",
+        "프로세스 cwd를 보호한다. 같은 크레이트의 set_current_dir 재진입 검사에서 별도로 확인한다.",
     ),
     (
         "tests/attach_common/mod.rs",
         "WRITE_LOCK",
-        "attach 소켓의 쓰기 쪽. 전역 변수가 아니라 **하나의 스트림**을 지킨다 — \
-         heartbeat 스레드와 본 프레임이 섞이면 프로토콜이 깨진다",
+        "attach 스트림의 heartbeat와 본문 프레임 쓰기가 섞이지 않도록 직렬화한다.",
     ),
     (
         "tests/e2e_tests.rs",
         "WINDOW_EXCLUSIVE",
-        "창을 만드는 시나리오. 지키는 것이 프로세스 안의 값이 아니라 **GUI 창이라는 \
-         프로세스 밖 자원**이라 읽기/쓰기 두 차선으로 가른다",
+        "GUI 창을 사용하는 시나리오를 읽기·쓰기 락으로 구분한다. 프로세스 전역 변수의 보호와는 다르다.",
     ),
 ];
 
-/// 규칙이 실제로 보는 테스트 수의 하한 — **연기 검사**다. 스캐너가 죽거나 `#[test]` 를
-/// 못 자르면 0 이 되고, 0 은 "위반 없음" 으로 읽혀 조용히 통과한다.
-///
-/// 이 하한이 주장하는 것은 **스캐너의 죽음**뿐이다. "락을 안 잡는 새 테스트가 는다" 는
-/// 부류는 수가 **느는** 방향이라 하한이 원리적으로 못 본다 — 그쪽은 아래 규칙이 본다.
-/// 값의 근거: 2026-09-06 실측 **14**. 2026-09-05 에는 17 이었고, namespace 미러가
-/// 사라지면서 그것을 만지던 `tasty-host-plugin` 쪽 테스트들이 전역을 안 만지게 되어
-/// 줄었다 — **모수가 준 것이므로 이유를 적어 둔다.** 이유 없이 줄면 그것은 스캐너가
-/// 죽은 것과 구별되지 않는다.
+/// 2026-09-06 직렬화 대상 시험 14개를 측정했다. 대상이 비거나 크게 줄면 수집을 확인할 하한이다.
 const MIN_GUARDED_TESTS: usize = 10;
 
-/// `#[test]` 가 붙은 함수의 (이름, 본문). 입력은 마스킹된 소스여야 한다.
 fn test_fns(masked: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for at in word_positions(masked, "#[test]") {
@@ -236,8 +173,7 @@ fn crate_root(file: &str) -> String {
         .map_or_else(|| "src".to_string(), |(name, _)| format!("crates/{name}"))
 }
 
-/// 본문이 그 이름을 **단어로** 담는가. 부분 문자열로 보면 `STATE` 가
-/// `STATE_POISON_REPORTED` 를 잡는다(실측으로 거짓 양성이 났다).
+/// STATE와 STATE_POISON_REPORTED를 혼동하지 않도록 식별자 전체를 비교한다.
 fn mentions(body: &str, names: &[&str]) -> bool {
     names.iter().any(|n| {
         n.strip_suffix("()").map_or_else(
@@ -277,21 +213,15 @@ fn every_test_that_touches_a_serialized_global_holds_its_lock() {
     }
     assert!(
         seen >= MIN_GUARDED_TESTS,
-        "직렬화 대상 테스트를 {seen} 개밖에 못 찾았다(하한 {MIN_GUARDED_TESTS}, \
-         2026-09-06 실측 14). 스캐너가 죽었다 — 0 은 '위반 없음' 이 아니라 측정 실패다"
+        "직렬화 대상 시험을 {seen}개만 찾았다(하한 {MIN_GUARDED_TESTS}, 2026-09-06 측정 14개). 시험과 접근 이름의 수집을 확인한다."
     );
     assert!(
         violations.is_empty(),
-        "프로세스 전역을 만지는 테스트가 그 전역의 직렬화 락을 안 잡는다. 락은 **잡는 \
-         쪽끼리만** 막으므로, 하나만 밖에 있어도 그 락이 지키던 직렬화가 통째로 무효가 \
-         된다(다른 테스트들이 조용히 flaky 해진다): {violations:#?}"
+        "전역 상태를 쓰는 시험에서 직렬화 락의 사용을 찾지 못했다. 모든 접근이 같은 락으로 보호되는지 확인한다: {violations:#?}"
     );
 }
 
-/// 명부가 **모양으로** 완전한가 — 새 직렬화 락은 반드시 이 파일에 들어온다.
-///
-/// 이름으로 세면 안 모인다(모듈 문서: 이름 4 대 모양 11). 그래서 `static …: Mutex<()>`
-/// 선언을 전수로 걷어 명부와 맞댄다. 명부 밖의 락은 규칙이 아무것도 안 보는 자리다.
+/// static Mutex<()>·RwLock<()> 선언을 수집해 명부에 없는 락을 찾는다. 다른 타입·선언 형식은 놓칠 수 있다.
 #[test]
 fn every_serialization_lock_is_listed() {
     let listed: BTreeSet<(&str, &str)> = SERIALIZED
@@ -300,8 +230,7 @@ fn every_serialization_lock_is_listed() {
         .chain(OTHER_LOCKS.iter().map(|(f, l, _)| (*f, *l)))
         .collect();
     let mut found: BTreeSet<(String, String)> = BTreeSet::new();
-    // 이 가드의 대상은 **테스트 자신**이라 모수가 다르다 — 출하 코드만 보면
-    // `tests/` 의 통합 테스트가 통째로 안 보이고, 전수 명제가 전수가 아니게 된다.
+    // 루트 통합 시험도 프로세스 전역을 공유할 수 있어 수집에 포함한다.
     for (path, text) in rust_sources_with_integration_tests() {
         let rel = path.to_string_lossy().replace('\\', "/");
         for line in mask_non_code(&text).lines() {
@@ -315,8 +244,6 @@ fn every_serialization_lock_is_listed() {
             let Some((name, ty)) = rest.split_once(':') else {
                 continue;
             };
-            // 모양으로 판정하는 자리라 **모양이 곧 모수**다. `Mutex<()>` 만 보면
-            // `RwLock<()>` 로 쓴 락이 안 보인다 — 실측으로 하나 있었다.
             let ty = ty.replace(' ', "");
             if ty.contains("Mutex<()>") || ty.contains("RwLock<()>") {
                 found.insert((rel.clone(), name.trim().to_string()));
@@ -325,7 +252,7 @@ fn every_serialization_lock_is_listed() {
     }
     assert!(
         found.len() >= listed.len(),
-        "직렬화 락을 {} 개밖에 못 찾았다(명부 {}). 스캔이 죽었다",
+        "직렬화 락을 {}개만 찾았다(명부 {}개). 선언 수집을 확인한다.",
         found.len(),
         listed.len()
     );
@@ -336,14 +263,10 @@ fn every_serialization_lock_is_listed() {
         .collect();
     assert!(
         missing.is_empty(),
-        "명부에 없는 직렬화 락이 있다. 새 락은 새 전수 명제를 만든다 — 무엇을 지키는지와 \
-         그것을 만지는 테스트가 어디까지 있는지를 `SERIALIZED` 에 적어라. 전역 변수가 \
-         아니라 환경·cwd 를 지키는 것이면 사유와 함께 `OTHER_LOCKS` 에 적어라: {missing:?}"
+        "미등록 직렬화 락이다: {missing:?}. 보호하는 전역과 접근 범위를 SERIALIZED에 적거나, 환경변수·cwd 등 다른 자원이면 OTHER_LOCKS에 이유를 등록한다."
     );
 }
 
-/// 명부의 이름들이 **실재하는가.** 락이나 접근면이 사라지면 위 규칙은 대상이 없는 채로
-/// 초록이 된다 — 이름이 낡는 것과 위반이 없는 것은 다르다.
 #[test]
 fn each_entry_names_something_that_exists() {
     for entry in SERIALIZED {
@@ -385,30 +308,9 @@ fn each_entry_names_something_that_exists() {
     }
 }
 
-/// `OTHER_LOCKS` 의 각 항목이 기대는 **전제**: 그 락을 **밖에서 이름으로 못 부른다.**
-///
-/// 이 명부는 "규칙에서 뺀다" 는 표다. 그런 표는 한 번 적히면 아무도 그 자리를 다시 안
-/// 본다 — 면제는 그 자체가 도망길이라, 사유가 아직 참인지 묻는 장치가 따로 필요하다.
-///
-/// 여기서 면제가 안전한 이유의 절반은 **락이 모듈 비공개**라는 사실이다. 밖에서 이름을
-/// 못 부르면 "락만 손으로 잡고 지켜야 할 것을 만진다" 는 우회를 **쓸 수가 없다** —
-/// 훑어서 못 찾는 것이 아니라 컴파일이 거부한다. 가시성이 넓어지는 순간 그 절반이
-/// 사라지는데, 산문만 있으면 표는 그대로 남는다.
-///
-/// 실측(2026-09-07): 일곱 **전부**가 `pub` 없는 `static` 이다. 그래서 지금은 하나도
-/// 텍스트 가드를 필요로 하지 않는다. 이 시험은 그 상태가 조용히 뒤집히는 것을 막는다.
-/// ★ 그 방향으로 실제로 움직인 적이 있다 — `TASTY_HOME_ENV_LOCK` 은 `pub(crate)` 였고,
-/// 그때는 소스 스캔 하나가 이 일을 대신하고 있었다. 좁히면서 그 시험을 지웠다
-/// ([`super::home_env_has_one_door`]). 한 번 좁혀진 것은 다시 넓어질 수도 있다.
-///
-/// ☆ **판독기가 좁은 것은 의도다.** `static ENV_LOCK : Mutex<()>` 처럼 콜론 앞에 빈칸을
-/// 두면 이 판독기는 선언을 **못 찾고 패닉한다**(실측으로 확인했다). 못 찾은 것을
-/// "비공개다" 로 세면 이 시험은 언제나 초록이 되므로, 모르는 형태는 조용히 넘기지 않고
-/// 시끄럽게 죽는 쪽으로 둔다. 넓히려면 판독기를 넓히고 그 자리를 다시 재라.
-///
-/// **`SERIALIZED` 에는 같은 물음을 던지지 않는다.** 그쪽 락은 다른 파일의 테스트가
-/// **부르라고** 있는 것이라 넓은 가시성이 정상이다(실측: `WEBVIEW_KIND_TEST_LOCK` 은
-/// `pub static` 이다). 같은 문장을 두 명부에 걸면 맞는 자리까지 빨개진다.
+/// OTHER_LOCKS의 락이 비공개인 전제를 확인한다. 외부에 공개하려면 해당 자원을 보호하는 검증도 검토해야 한다.
+/// 선언 형식을 읽지 못하면 비공개로 추정하지 않고 실패시킨다. 콜론 앞 공백도 이 판독기는 지원하지 않는다.
+/// 다른 파일의 시험에서 쓰도록 공개한 SERIALIZED 락에는 이 조건을 적용하지 않는다.
 #[test]
 fn every_listed_lock_is_still_module_private() {
     let mut checked = 0usize;
@@ -423,7 +325,6 @@ fn every_listed_lock_is_still_module_private() {
             .find_map(|(i, l)| {
                 let t = l.trim_start();
                 let rest = t.strip_prefix("pub").map_or(t, |r| {
-                    // `pub`, `pub(crate)`, `pub(super)` … 어느 쪽이든 뒤의 `static` 을 본다.
                     r.trim_start()
                         .strip_prefix('(')
                         .and_then(|r| r.split_once(')'))
@@ -436,11 +337,7 @@ fn every_listed_lock_is_still_module_private() {
                     .then_some((i + 1, t.to_string()))
             })
             .unwrap_or_else(|| {
-                panic!(
-                    "{file} 에서 `static {lock}` 선언을 못 찾았다 — 이름이 바뀌었거나 \
-                     선언 형태가 이 판독기 밖이다. 못 찾은 것을 '비공개다' 로 세면 \
-                     이 시험은 언제나 초록이 된다"
-                )
+                panic!("{file}에서 static {lock} 선언을 읽지 못했다. 이름과 선언 형식을 확인한다.")
             });
         checked += 1;
         if decl.1.starts_with("pub") {
@@ -450,31 +347,17 @@ fn every_listed_lock_is_still_module_private() {
     assert_eq!(
         checked,
         OTHER_LOCKS.len(),
-        "명부 {} 중 {checked} 개만 읽었다 — 판독이 죽으면 아래 판정이 빈 목록을 보고 \
-         통과한다",
+        "명부 {}개 중 {checked}개만 읽었다. 선언 추출을 확인한다.",
         OTHER_LOCKS.len()
     );
     assert!(
         widened.is_empty(),
-        "아래 락이 모듈 밖으로 열렸다:\n{}\n\n\
-         `OTHER_LOCKS` 는 이 락들을 규칙에서 **빼는** 표이고, 그 면제가 안전한 이유의 \
-         절반이 \"밖에서 이름을 못 부른다\" 였다. 열린 순간 \"락만 잡고 지켜야 할 것을 \
-         만진다\" 는 우회가 다시 쓸 수 있게 된다.\n\
-         정말 넓혀야 하면, 그 항목이 잃은 절반을 대신할 것(그 우회를 잡는 스캔)을 \
-         함께 두고 사유에 그 자리를 적어라 — 넓히고 표만 남기는 것은 이행이 아니다",
+        "OTHER_LOCKS의 락이 공개됐다:\n{}\n외부 접근을 허용해야 한다면 해당 자원을 보호할 검사와 근거도 함께 갱신한다.",
         widened.join("\n")
     );
 }
 
-/// `Scope::File` 이 기대는 **전제**: 그 항목이 지키는 이름이 파일 밖에서 안 보인다.
-///
-/// File 로 두면 다른 파일의 테스트는 **아예 안 본다.** 그 좁힘이 옳으려면 "다른 파일이
-/// 만질 수 없다" 가 참이어야 한다 — "지금 아무도 안 만진다" 로는 부족하다. 오늘의
-/// 인구에 맞춰 판정 범위를 좁히면 그 인구가 늘 때 조용해진다.
-///
-/// 실측(2026-09-06): webhook 항목이 그 형태였다. `sweep` 이 `pub fn` 인데 scope 가
-/// `File` 이었고, 다른 파일의 테스트가 락 없이 그것을 불러도 판정이 안 봤다. 픽스처로
-/// 두 팔을 재서(File 초록 / Crate 빨강) 구멍이 실재함을 확인하고 `Crate` 로 옮겼다.
+/// 파일 단위 검사로 제한한 항목의 보호 대상 선언이 공개돼 있지 않은지 확인한다. 일부 선언 형태만 읽는 텍스트 검사다.
 #[test]
 fn a_file_scoped_entry_guards_only_names_invisible_outside_it() {
     let root = repo_root();
@@ -497,9 +380,7 @@ fn a_file_scoped_entry_guards_only_names_invisible_outside_it() {
                 checked += 1;
                 assert!(
                     !t.starts_with("pub"),
-                    "`{}` 의 `{name}` 이 파일 밖에서 보이는데 scope 가 File 이다. 그러면 \
-                     다른 파일의 테스트가 락 없이 만져도 판정이 **안 본다** — scope 를 \
-                     Crate 로 올리거나 그 이름을 닫아라: {}",
+                    "{}의 {name}이 공개돼 있지만 파일 안에서만 검사한다. 범위를 Crate로 넓히거나 공개 범위를 제한한다: {}",
                     e.file,
                     t.trim()
                 );
@@ -507,13 +388,12 @@ fn a_file_scoped_entry_guards_only_names_invisible_outside_it() {
         }
         assert!(
             found_any,
-            "`{}` 에서 지키는 이름의 선언을 하나도 못 찾았다 — 이 검사가 아무것도 안 보고 \
-             통과한다. 이름이 다른 파일로 옮겨졌으면 scope 도 다시 정해라",
+            "{}에서 보호 대상 선언을 찾지 못했다. 이동·이름·선언 형식과 검사 범위를 확인한다.",
             e.file
         );
     }
     assert!(
         checked > 0,
-        "File scope 항목이 하나도 없다 — 검사가 빈 채로 통과한다. 명부가 비었는지 확인해라"
+        "파일 범위로 검사할 항목이 없다. 명부와 검사 필요성을 확인한다."
     );
 }
