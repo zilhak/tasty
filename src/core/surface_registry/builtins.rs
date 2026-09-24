@@ -1,7 +1,4 @@
-//! 본체 7종 surface의 SurfaceKindDef 등록.
-//!
-//! create/restore/snapshot 함수만 채운다. render/on_close는 아직 없다 — 들어온다면
-//! egui_panels.rs 의 다운캐스트 분기를 dispatch 로 통합할 때다.
+//! host 내장 surface의 생성·복원·snapshot 동작을 등록한다.
 
 use std::sync::Arc;
 
@@ -17,15 +14,6 @@ use super::{
     SurfaceKindDef, SurfaceKindRegistry,
 };
 
-/// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
-///
-/// 부팅 시 등록: terminal / empty / **explorer**(T11 host builtin) / **dag_graph**.
-///
-/// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
-/// - `"image"`: `rendering = "egui-mesh"` 매니페스트로 egui-mesh 화이트리스트 매칭 후
-///   등록 (`surface_registry/egui_mesh.rs`).
-/// - `"markdown"`: `rendering = "webview"` 매니페스트로 webview overlay 플래그 +
-///   remote kind 로 등록 (`surface_registry/webview_kind.rs`, `plugin_bridge/remote_kind.rs`).
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
@@ -33,23 +21,12 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_dag_graph(registry);
 }
 
-/// 부팅 시 호스트가 직접 소유·등록하는 내장 kind 인지 여부.
-///
-/// 이 목록의 kind 는 host 가 egui 로 직접 렌더하므로, 외부/잔존 plugin 이 같은 kind
-/// 문자열을 remote kind 로 다시 선언해도 **덮어쓰지 못하게** 보호된다
-/// ([`crate::plugin_bridge::remote_kind::register_remote_kind`] 의 가드). 특히
-/// explorer 는 과거 `com.tasty.explorer` plugin 이 제공하던 remote kind 였으나 T11
-/// 에서 host builtin 으로 승격됐다 — 사용자 `~/.tasty/plugins/` 에 옛 plugin 이
-/// 남아 있어도 native explorer 가 항상 우선한다.
+/// plugin 등록 경로가 host 내장 종류를 덮어쓰지 않도록 확인하는 목록.
 pub fn is_host_builtin_kind(kind: &str) -> bool {
     matches!(kind, "terminal" | "empty" | "explorer" | "dag_graph")
 }
 
-// ── Terminal ────────────────────────────────────────────────────────────────
-//
-// Terminal은 PTY spawn이 호스트 책임이라 create/restore에서 자체적으로 surface를
-// 생성하지 않는다. 호출자(IPC handler / split_pane_targeted / SavedSurface::Terminal
-// 복원)가 별도 경로를 거치므로, 여기서는 안전한 sentinel만 반환한다.
+// Terminal의 PTY 생성·복원은 host가 별도로 처리하므로 이 등록의 create/restore는 오류를 반환한다.
 
 fn register_terminal(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
@@ -65,8 +42,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
             anyhow::bail!("terminal surfaces are restored via SavedSurface::Terminal, not Generic")
         }),
         snapshot: Arc::new(|_| None),
-        // terminal 은 cwd/startup 이 params 가 아니라 PresetSurface 전용 컬럼이므로
-        // target 을 Cwd/Startup 으로 라우팅한다 (편집기가 generic 하게 흡수).
+        // terminal의 cwd·startup은 params가 아닌 PresetSurface 전용 필드에 저장한다.
         preset_fields: vec![
             PresetFieldSpec {
                 id: "cwd".to_string(),
@@ -91,30 +67,20 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         ],
         param_aliases: std::collections::HashMap::new(),
         default_params: std::collections::HashMap::new(),
-        // terminal 은 GPU-PTY surface — 줌/복사/입력은 별도 경로. capability flags 없음.
+        // terminal 입력·줌·복사는 이 기능 플래그 대신 별도 PTY/GPU 경로를 쓴다.
         consumes_egui_input: false,
         zoomable: false,
         egui_copy: false,
         copy_path: false,
         egui_paste: false,
-        // terminal 표시명은 surface 자체 display_name 으로 결정 — 파라미터 basename 명명 없음.
         name_from_param: None,
-        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
-        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
         convert_requires_input: false,
         convert_input_popup: None,
     });
 }
 
-// ── Explorer ──────────────────────────────────────────────────────────────
-//
-// 본체 내장 파일 관리자 (T11). 과거엔 `com.tasty.explorer` plugin 의 remote kind
-// 였으나 본체 surface 로 승격됐다. create 는 `path` param(없으면 cwd, 그래도 없으면
-// 홈 디렉토리)으로 단일 탭 생성 — root 는 항상 절대경로다(`resolve_root`).
-// snapshot/restore 는 내부 탭 목록(root + view_mode + 정렬)과
-// 활성 탭 인덱스를 직렬화한다(결정 3 — 내부 탭은 surface 와 함께 복원). 히스토리
-// (back/forward)는 휘발성이라 직렬화하지 않는다.
+// Explorer는 내부 탭과 보기·정렬을 저장한다. 앞뒤 이동 이력은 저장하지 않는다.
 
 fn register_explorer(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
@@ -124,9 +90,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         display_name_i18n_key: "surface.kind.explorer",
         icon: Some("folder".to_string()),
         create: Arc::new(|sid, cwd, params| {
-            // 명시 path > carry cwd > 홈. 어느 단계든 상대경로면 채택하지 않는다 —
-            // 상대 root 는 프로세스 cwd 를 root 로 승격시키고 그 문자열이 주소창·
-            // 경로 복사·attach wire 로 새어나간다(surface-cwd 불변식 §5).
+            // 명시 path가 있으면 cwd보다 우선한다. 상대 path는 resolve_root가 기본 경로로 바꾸며 cwd로 재시도하지 않는다.
             let root = resolve_root(
                 params
                     .get("path")
@@ -134,8 +98,6 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                     .map(std::path::PathBuf::from)
                     .or_else(|| cwd.map(std::path::PathBuf::from)),
             );
-            // host(`create_surface_via_registry`)가 마지막 view mode 를 주입한다.
-            // 미지정 시 ExplorerViewMode::from_str 이 detail 로 fallback.
             let view_mode = params
                 .get("view_mode")
                 .and_then(|v| v.as_str())
@@ -169,8 +131,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .collect();
             Some(json!({ "tabs": tabs, "active": ex.active }))
         }),
-        // explorer create 는 params.path 미지정 시 cwd 를 루트로 쓴다 → 편집기가 cwd
-        // 컬럼으로 루트 디렉토리를 입력하게 target=Cwd 로 둔다(기존 동작 보존).
+        // params.path가 없으면 cwd를 쓰므로 편집기는 전용 cwd 필드에 저장한다.
         preset_fields: vec![PresetFieldSpec {
             id: "cwd".to_string(),
             label_key: "preset.edit.cwd".to_string(),
@@ -182,9 +143,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             derive_cwd: false,
         }],
         param_aliases: std::collections::HashMap::new(),
-        // kind별 기본값 주입(host 정책 토큰): view_mode 는 Settings 의 마지막 view mode,
-        // path 는 새 탭 컨텍스트(cwd 상속 없음)에서만 home 으로 보정된다(`@home` 은
-        // tab.create 만 해석 — split/preset/workspace 회귀 방지, 아래 해석기 참고).
+        // @home은 호출자가 홈을 제공한 새 탭 경로에서 해석한다. 상속 cwd 경로에서는 해석하지 않는다.
         default_params: std::collections::HashMap::from([
             (
                 "view_mode".to_string(),
@@ -192,35 +151,26 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             ),
             ("path".to_string(), "@home".to_string()),
         ]),
-        // explorer 는 host egui 위젯으로 렌더 → 키/IME 를 host egui 로 라우팅.
-        // 줌(폰트 크기)·select-all/copy-path 단축키 소비. copy(egui Copy)/paste 는 아님.
         consumes_egui_input: true,
         zoomable: true,
         egui_copy: false,
         copy_path: true,
         egui_paste: false,
-        // explorer 탭 표시명은 현재 폴더 `path` basename 으로 파생.
         name_from_param: Some("path".to_string()),
-        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
-        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
         convert_requires_input: false,
         convert_input_popup: None,
     });
 }
 
-/// snapshot JSON 한 항목 → `ExplorerTab` (히스토리 제외, cwd/current/view_mode/정렬 복원).
 fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
-    // current(현재 폴더). 구 스냅샷은 `root` 만 있다. 키가 없거나 값이 상대경로면
-    // 홈으로 교정한다 — 과거 폴백이 `"."` 를 그대로 저장한 layout.json 이 재시작
-    // 후에도 상대 root 로 되살아나지 않게 한다.
+    // root가 없거나 상대 경로이면 기본 경로로 보정한다.
     let current = resolve_root(
         v.get("root")
             .and_then(|x| x.as_str())
             .map(std::path::PathBuf::from),
     );
-    // cwd(고정 루트). 구 스냅샷 호환: 키 없으면 current 로 cwd·current 동일 설정.
-    // 상대 cwd 도 마찬가지로 (이미 절대경로로 확정된) current 로 맞춘다.
+    // cwd가 없는 옛 snapshot은 current를 사용하며 상대 cwd도 current로 바꾼다.
     let cwd = v
         .get("cwd")
         .and_then(|x| x.as_str())
@@ -240,15 +190,12 @@ fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
     tab
 }
 
-// ── Empty ───────────────────────────────────────────────────────────────────
-
 fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
         rendering: RegisteredRendering::HostEgui,
         source: KindSource::HostBuiltin,
         display_name_i18n_key: "surface.kind.empty",
-        // empty 는 placeholder — 전용 아이콘 없이 UI fallback(FILE).
         icon: None,
         create: Arc::new(|sid, cwd, _params| {
             Ok(
@@ -258,7 +205,6 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         }),
         restore: Arc::new(|sid, _data| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),
-        // empty 는 placeholder surface — 편집 필드 없음.
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
         default_params: std::collections::HashMap::new(),
@@ -268,9 +214,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
-        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
-        // builtin kind 는 convert 시 파일 입력이 필요 없다(즉시 변환).
         convert_requires_input: false,
         convert_input_popup: None,
     });
@@ -316,8 +260,6 @@ mod tests {
 
     #[test]
     fn empty_carries_cwd_from_create() {
-        // Surface cwd invariant: SurfaceKindDef.create 가 받은 cwd 가 EmptySurface
-        // 본체에 carry 되어 source_cwd() 로 그대로 노출되어야 한다.
         let reg = registry_with_builtins();
         let def = reg.get("empty").unwrap();
         let cwd = std::path::PathBuf::from("/tmp/carry-test");
@@ -331,13 +273,11 @@ mod tests {
         let def = reg
             .get("explorer")
             .expect("explorer is a host builtin kind");
-        // create: path param 우선.
         let root = abs_path("tmp/exp");
         let root_str = root.to_string_lossy().into_owned();
         let s = (def.create)(5, None, &json!({ "path": &root_str })).unwrap();
         assert_eq!(s.kind(), "explorer");
         assert_eq!(s.surface_id(), Some(5));
-        // snapshot → restore 라운드트립 (탭 cwd/current + 활성 인덱스 보존).
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert_eq!(snap["tabs"][0]["cwd"], root_str);
         assert_eq!(snap["tabs"][0]["root"], root_str);
@@ -353,7 +293,6 @@ mod tests {
 
     #[test]
     fn explorer_restore_old_snapshot_without_cwd() {
-        // 구 스냅샷 호환: `cwd` 키가 없으면 `root` 값으로 cwd·current 를 동일 설정.
         let root = abs_path("x");
         let old = json!({
             "tabs": [{"root": root.to_string_lossy(), "view_mode": "detail", "sort_column": "name", "sort_dir": "asc"}],
@@ -385,9 +324,6 @@ mod tests {
 
     #[test]
     fn explorer_create_without_path_or_cwd_falls_back_to_absolute_root() {
-        // path 도 cwd 도 없으면 홈(=`resolve_root` 의 최종 폴백)으로 떨어진다.
-        // 과거엔 `"."` 라 프로세스 cwd 가 root 행세를 하고 그 문자열이 UI·wire 로
-        // 새어나갔다(surface-cwd 불변식 §5).
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         let s = (def.create)(1, None, &json!({})).unwrap();
@@ -406,8 +342,6 @@ mod tests {
 
     #[test]
     fn explorer_create_rejects_relative_path_and_cwd() {
-        // 명시값이 상대경로여도 채택하지 않는다 — 프로세스 cwd 기준 절대화는
-        // 불변식이 금지한 "호스트 시작 cwd 가 root 행세" 를 되살리므로 폴백한다.
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         for s in [
@@ -431,7 +365,6 @@ mod tests {
 
     #[test]
     fn explorer_create_preserves_explicit_absolute_priority() {
-        // 폴백 추가가 앞 단계(명시 path > carry cwd)를 가로채지 않아야 한다.
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         let carry = abs_path("tmp/carry");
@@ -458,13 +391,10 @@ mod tests {
 
     #[test]
     fn explorer_restore_normalizes_relative_snapshot_root() {
-        // 이미 `"."` 로 저장된 기존 layout.json 이 재시작 후에도 상대 root 로
-        // 되살아나지 않아야 한다(마이그레이션 회귀 고정).
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         let home = crate::model::default_root();
 
-        // root/cwd 가 모두 "." 인 구 스냅샷.
         let dotted = json!({"tabs": [{"root": ".", "cwd": "."}], "active": 0});
         let ex = (def.restore)(1, &dotted).unwrap();
         let ex = ex
@@ -474,7 +404,6 @@ mod tests {
         assert_eq!(ex.cwd(), home.as_path());
         assert_eq!(ex.current_root(), home.as_path());
 
-        // root 키 자체가 없는 스냅샷.
         let missing = json!({"tabs": [{"view_mode": "detail"}], "active": 0});
         let ex = (def.restore)(2, &missing).unwrap();
         let ex = ex
@@ -484,7 +413,6 @@ mod tests {
         assert!(ex.cwd().is_absolute());
         assert_eq!(ex.cwd(), home.as_path());
 
-        // 탭 목록 자체가 빈 스냅샷(엣지) — default_root() 단일 탭.
         let empty = json!({"tabs": [], "active": 0});
         let ex = (def.restore)(3, &empty).unwrap();
         let ex = ex
@@ -493,7 +421,6 @@ mod tests {
             .unwrap();
         assert!(ex.cwd().is_absolute());
 
-        // 절대 root + 상대 cwd → cwd 는 (절대인) current 로 맞춘다.
         let xy = abs_path("x/y");
         let mixed = json!({"tabs": [{"root": xy.to_string_lossy(), "cwd": "."}], "active": 0});
         let ex = (def.restore)(4, &mixed).unwrap();
@@ -514,8 +441,6 @@ mod tests {
 
     #[test]
     fn explorer_capability_flags() {
-        // explorer 는 host egui 렌더 → 입력 라우팅 + 줌 + select-all/copy-path 소비.
-        // copy(egui Copy)/paste 는 아님.
         let reg = registry_with_builtins();
         let ex = reg.get("explorer").unwrap();
         assert!(ex.consumes_egui_input);
@@ -523,7 +448,6 @@ mod tests {
         assert!(ex.copy_path);
         assert!(!ex.egui_copy);
         assert!(!ex.egui_paste);
-        // terminal 은 GPU-PTY — capability flags 없음.
         let term = reg.get("terminal").unwrap();
         assert!(!term.consumes_egui_input);
         assert!(!term.zoomable);
@@ -531,19 +455,8 @@ mod tests {
     }
 }
 
-// ── DAG graph ─────────────────────────────────────────────────────────────
-//
-// Task DAG 관찰 surface. `agent.*` 는 host 소유 도메인이고 host 가 렌더에 필요한
-// 상태(memory store 의 task 레코드)를 전부 in-process 로 들고 있으므로 plugin 이
-// 아니라 host builtin 이다 — plugin 으로 만들면 host 가 이미 가진 데이터를 IPC 로
-// 되받아오는 우회가 된다(`docs/dev-guide/popup-implementation.md` 의 host/plugin
-// 선택 기준). 렌더 본문은 `src/adapters/ui/surface/dag_graph/`.
-//
-// create params: `dag_id`(관찰 대상, 미지정이면 view 가 자동 선택) ·
-// `workspace_id`(미지정이면 소속 workspace) · `direction`(`lr`|`td`, 기본 `lr`).
-// snapshot/restore 는 그 셋을 그대로 실어 재시작 후 같은 DAG·같은 방향으로
-// 돌아온다. 줌/팬/선택은 싣지 않는다 — 재시작 사이에 그래프 모양이 달라질 수
-// 있어 옛 뷰포트 복원은 엉뚱한 빈 곳을 보여준다(복원 직후 auto-fit 이 돈다).
+// DAG 데이터는 host가 보유하므로 내장 surface가 직접 조회한다.
+// 대상·방향은 저장하지만 달라진 그래프에 낡은 화면 위치를 적용하지 않도록 줌·팬·선택은 저장하지 않는다.
 
 fn register_dag_graph(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
@@ -586,8 +499,7 @@ fn register_dag_graph(registry: &SurfaceKindRegistry) {
             }
             Some(obj)
         }),
-        // 프리셋 편집기에는 관찰 대상만 노출한다 — 방향은 화면에서 토글하는 뷰
-        // 설정이지 프리셋이 고정할 값이 아니다.
+        // 프리셋은 관찰 대상만 받는다. 방향은 화면에서 바꾸는 설정이다.
         preset_fields: vec![PresetFieldSpec {
             id: "dag_id".to_string(),
             label_key: "preset.edit.dag_id".to_string(),
@@ -598,29 +510,21 @@ fn register_dag_graph(registry: &SurfaceKindRegistry) {
             default: None,
             derive_cwd: false,
         }],
-        // `--meta '{"dag":"…"}'` 축약을 canonical `dag_id` 로 흡수.
         param_aliases: std::collections::HashMap::from([("dag".to_string(), "dag_id".to_string())]),
         default_params: std::collections::HashMap::new(),
-        // 캔버스 pan/zoom/선택을 host egui 로 받는다.
         consumes_egui_input: true,
-        // `zoomable` 은 **UI 폰트 줌**(Ctrl+±)이다. 이 surface 의 Ctrl+휠은 그래프
-        // 줌이라 의미가 다르고, 둘을 겹치면 같은 제스처가 두 가지로 해석된다.
+        // UI 폰트 줌과 그래프 줌은 다르므로 같은 입력으로 둘을 함께 바꾸지 않는다.
         zoomable: false,
         egui_copy: false,
         copy_path: false,
         egui_paste: false,
-        // 탭 표시명은 surface 자체 `display_name`(explicit DAG 키) 로 정한다 —
-        // derived id 는 기계 문자열이라 basename 명명이 의미 없다.
         name_from_param: None,
-        // builtin kind 는 recent 기록 대상 아님(파일-open recent 는 plugin kind 소유).
         records_recent: false,
-        // 파일 인자가 없다 — convert 는 즉시 변환.
         convert_requires_input: false,
         convert_input_popup: None,
     });
 }
 
-/// `dag_id` 파라미터 정규화 — 공백만 있는 값은 "미지정" 과 같다.
 fn dag_id_param(v: &Value) -> Option<String> {
     v.get("dag_id")
         .and_then(|x| x.as_str())
@@ -629,7 +533,6 @@ fn dag_id_param(v: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `workspace_id` 파라미터 — 숫자 또는 숫자 문자열(CLI `--meta` 는 문자열로 오기 쉽다).
 fn parse_workspace_id(v: &Value) -> Option<u32> {
     v.as_u64()
         .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))

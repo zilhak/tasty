@@ -1,16 +1,6 @@
-//! Per-surface metadata store.
-//!
-//! `surface.meta.*` IPC + 내부 호출자는 모두 이 facade 를 거쳐 `tasty-memory` 의
-//! `Scope::Surface(id)` 위 `MemoryValue::Text` entry 로 저장된다. 모든 쓰기는
-//! `HOST_OWNER` 로 수행되므로 plugin 이 `surface.meta.set` 으로 쓴 키도 host 가
-//! 소유한다 (호환성 보존: 기존 surface.meta API 는 owner 가 없었다).
-//!
-//! 모든 메서드는 첫 인자로 `mem: &mut dyn MemoryStorage` 를 받는다 — 호출처가
-//! `Core::with_memory` / `AppState::with_memory` wrapper 안에서 facade 를
-//! 호출한다. Lock 재진입 위험을 막고 *port 단일 진입점* 정책에 부합.
-//!
-//! 반환 타입은 `io::Result<()>` / `Option<String>` 그대로 유지해 기존 호출자가
-//! 영속 실패 시 동작 변경 없이 그대로 동작한다.
+//! surface 메타데이터를 MemoryStorage의 Surface scope에 저장한다.
+//! surface.meta를 통한 쓰기의 소유자는 요청 plugin이 아니라 HOST_OWNER다.
+//! 호출자가 확보한 저장소를 받아 락을 다시 얻지 않는다.
 
 use std::collections::HashMap;
 use std::io;
@@ -22,23 +12,16 @@ fn memory_err_to_io(e: MemoryError) -> io::Error {
     io::Error::other(format!("memory: {e}"))
 }
 
-/// File-based per-surface metadata store (now forwarding to `tasty-memory`).
 pub struct SurfaceMetaStore;
 
 impl SurfaceMetaStore {
-    /// Surface 생성 시 호출. memory.db 는 scope 사전 생성 개념이 없으므로 no-op.
+    /// 메모리 저장소는 scope 사전 생성이 필요 없어 성공만 반환한다.
     pub fn ensure_created(_surface_id: u32) -> io::Result<()> {
         Ok(())
     }
 
-    // Surface 닫힘 시의 scope 전체 삭제는 여기 없다 — `AppState::purge_surface_memory_scope`
-    // (`src/state.rs`) 가 단독으로 소유한다. 여기에도 같은
-    // `purge_scope(Scope::Surface(id))` 래퍼를 두면 close 경로가 같은 풀테이블 스캔을
-    // surface 당 2회 돌린다(실제로 그랬다). 게다가 `Scope::Surface` 에는 plugin/Lua 가
-    // memory API 로 직접 쓴 키도 들어 있어 scope teardown 은 meta 키 네임스페이스
-    // facade 의 관심사가 아니다. **여기에 remove() 를 되살리지 말 것.**
+    // 닫힘 시 scope 전체 삭제는 AppState의 수명 정리가 맡는다. plugin/Lua가 직접 쓴 키도 함께 처리해야 한다.
 
-    /// 키 set. 값은 `text/plain` UTF-8 문자열로 저장된다.
     pub fn set(
         mem: &mut dyn MemoryStorage,
         surface_id: u32,
@@ -56,7 +39,7 @@ impl SurfaceMetaStore {
         .map_err(memory_err_to_io)
     }
 
-    /// 키 get. 만료/없음/비문자열 값은 `None`.
+    /// Text와 문자열로 변환한 JSON을 반환한다. 없음·만료·조회 실패·Binary는 None이다.
     pub fn get(mem: &mut dyn MemoryStorage, surface_id: u32, key: &str) -> Option<String> {
         let entry = mem.get(&Scope::Surface(surface_id), key).ok().flatten()?;
         match entry.value {
@@ -78,7 +61,7 @@ impl SurfaceMetaStore {
         }
     }
 
-    /// 키 unset. 기존 파일 기반 구현은 키가 없어도 silently OK 였으므로 NotFound 무시.
+    /// 없는 키 삭제는 성공으로 처리한다. 다른 저장소 오류는 반환한다.
     pub fn unset(mem: &mut dyn MemoryStorage, surface_id: u32, key: &str) -> io::Result<()> {
         match mem.delete(HOST_OWNER, &Scope::Surface(surface_id), key, None) {
             Ok(()) => Ok(()),
@@ -87,7 +70,7 @@ impl SurfaceMetaStore {
         }
     }
 
-    /// 키 list. 문자열로 변환 가능한 값만 반환.
+    /// Text·JSON만 문자열로 반환한다. 목록 조회 실패는 로그 후 빈 맵이다.
     pub fn list(mem: &mut dyn MemoryStorage, surface_id: u32) -> HashMap<String, String> {
         let entries = match mem.list(
             &Scope::Surface(surface_id),
@@ -110,25 +93,14 @@ impl SurfaceMetaStore {
                         out.insert(entry.key, s);
                     }
                 }
-                MemoryValue::Binary(_) => {
-                    // surface.meta is string-only; binary values are skipped silently.
-                }
+                MemoryValue::Binary(_) => {}
             }
         }
         out
     }
 
-    /// memory.db 에 존재하는 `Scope::Surface(id)` 중 **surface id 공간에 속하는**
-    /// (`id < PTY_ID_BASE`) 최대 id (없으면 0).
-    ///
-    /// 재시작 시 surface 카운터 seed 용 — id 재사용으로 인한 stale 메타 유입을
-    /// 막기 위해 복원 직전 카운터 floor 를 `max_surface_id + 1` 로 올린다.
-    ///
-    /// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 최대값 산정에서 제외한다.**
-    /// 포함하면 오염된 scope 하나가 카운터 floor 를 PTY 공간 위로 올리고, 그 실행이
-    /// 발급한 surface 들이 다시 memory.db 에 기록되어 floor 가 영구 유지되는 비가역
-    /// 래칫이 된다(`docs/adr/0017-workspace-identity-and-focus.md`).
-    /// 오염 scope 자체의 제거는 [`purge_out_of_range_surfaces`](Self::purge_out_of_range_surfaces).
+    /// PTY 범위 아래의 Surface ID 최대값. 없음·목록 조회 실패는 0이다.
+    /// 복원 시 발급 기준을 높일 때 PTY 범위의 기록까지 따라가지 않도록 제외한다.
     #[cfg(any(feature = "gui", test))]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
         let scopes = match mem.scopes() {
@@ -148,12 +120,8 @@ impl SurfaceMetaStore {
             .unwrap_or(0)
     }
 
-    /// PTY id 공간(`>= PTY_ID_BASE`)을 침범한 `Scope::Surface` 를 전부 purge.
-    /// 반환: 지운 스코프 수.
-    ///
-    /// 그런 id 를 가진 surface 는 존재할 수 없으므로(surface 카운터는 PTY 공간에
-    /// 진입하지 않는다) 여기 남은 것은 방어가 없던 시절의 잔재이거나 검증을 우회한
-    /// 쓰기의 산물이다. 부팅 시 한 번 정리해 이미 걸린 래칫을 해소한다.
+    /// PTY 범위에 들어간 Surface scope를 삭제하고 성공한 scope 수를 반환한다.
+    /// 목록 조회 실패는 0이고 개별 삭제 실패는 로그 후 계속한다. ID 발급기 자체의 범위 검사는 아니다.
     #[cfg(any(feature = "gui", test))]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
         let scopes = match mem.scopes() {
@@ -182,10 +150,8 @@ impl SurfaceMetaStore {
         purged
     }
 
-    /// `live` 에 없는 모든 `Scope::Surface(id)` 스코프를 purge. 반환: 지운 스코프 수.
-    /// 복원으로 확정된 live id 외 죽은 surface 메타(앱 강제 종료 등으로 graceful
-    /// close 의 `AppState::purge_surface_memory_scope` 가 호출되지 못한 잔재)를
-    /// 정리해 무한 누적을 막는다.
+    /// 전달받은 live 집합 밖의 Surface scope를 삭제한다. 호출자가 완전한 복원 집합을 넘겨야 한다.
+    /// 성공한 scope 수를 반환하며 목록·개별 삭제 실패는 로그로 남긴다.
     #[cfg(any(feature = "gui", test))]
     pub fn purge_dead_surfaces(
         mem: &mut dyn MemoryStorage,
@@ -217,8 +183,7 @@ impl SurfaceMetaStore {
         purged
     }
 
-    /// `Surface(*)` 스코프 전체를 훑어 `key=value` 인 첫 surface id 반환.
-    /// 닉네임 기반 pane 조회용. 정렬 보장 없음 (memory 의 scopes() 순서를 그대로 사용).
+    /// scope 열거 순서의 첫 key=value surface를 찾는다. 정렬하지 않으며 조회 실패는 None이다.
     pub fn find_by_value(mem: &mut dyn MemoryStorage, key: &str, value: &str) -> Option<u32> {
         let scopes = mem.scopes().ok()?;
         for token in scopes {
@@ -250,7 +215,6 @@ mod tests {
         seed(&mut mem, 2, "restore.command", "claude -r a");
         seed(&mut mem, 17, "restore.command", "claude -r b");
         seed(&mut mem, 9, "claude-session-id", "x");
-        // 비-surface scope 는 무시되어야 한다.
         mem.put(
             HOST_OWNER,
             &Scope::Workspace(99),
@@ -272,7 +236,6 @@ mod tests {
     fn max_surface_id_ignores_pty_space_scopes() {
         let mut mem = InMemoryStorage::new();
         seed(&mut mem, 3, "restore.command", "claude -r a");
-        // PTY id 공간을 침범한 오염 scope — floor 산정에 포함되면 비가역 래칫이 된다.
         seed(&mut mem, PTY_ID_BASE, "restore.command", "polluted");
         seed(&mut mem, PTY_ID_BASE + 499, "claude-session-id", "polluted");
         assert_eq!(
