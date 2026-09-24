@@ -1857,12 +1857,12 @@ accessibility_label = "Accessibility (key injection)"
 status_granted = "Granted"
 status_missing = "Not granted"
 status_unknown = "Unknown"
-detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it. File folders have no way to be asked about at all: asking is the prompt, so their state is unknown until you request them."
+detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears, and nothing in Tasty is blocked by it. File folders cannot be queried at all, because asking is itself the prompt, so their state is unknown until you request them."
 file_access_label = "File folders (Downloads · Documents · Desktop · volumes)"
 status_not_observable = "Cannot be observed"
 request_all = "Request all permissions"
-requesting = "Requesting permissions. Answer each prompt as it appears — the next one only shows once you answer the previous."
-request_note = "This requests the file folder and screen recording permissions one at a time. Items you already allowed or denied do not prompt again; a denied item can only be restored in System Settings. Full Disk Access cannot be requested by an app, so add Tasty yourself through the button above."
+requesting = "Requesting permissions. Answer each prompt as it appears. The next one only shows once you have answered the previous."
+request_note = "This requests the file folder and screen recording permissions one at a time. Items you have already allowed or denied do not prompt again, and a denied item can only be restored in System Settings. Full Disk Access cannot be requested by an app, so use the button above to add Tasty yourself."
 open_full_disk_access = "Open Full Disk Access settings"
 
 # 전체 디스크 접근은 Automation·화면 기록·손쉬운 사용 권한과 별개다.
@@ -1872,13 +1872,13 @@ body = """Commands you run in Tasty read and write files on your behalf, and mac
 
 Some permissions currently look like they are not granted. Settings > General > Permissions shows which ones and what state they are in.
 
-Full Disk Access — macOS has no way for an app to ask for this, so add Tasty yourself in System Settings > Privacy & Security > Full Disk Access. Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
+Full Disk Access: macOS has no way for an app to ask for this, so add Tasty yourself in System Settings > Privacy & Security > Full Disk Access. Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
 
-Screen recording — used by the screenshot feature. Turn it on in System Settings > Privacy & Security > Screen & System Audio Recording. Once you deny it, the app cannot ask again and only System Settings can turn it back on.
+Screen recording: this is used by the screenshot feature. Turn it on in System Settings > Privacy & Security > Screen & System Audio Recording. Once you deny it, the app cannot ask again and only System Settings can turn it back on.
 
 If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./scripts/macos-codesign-identity.sh --create). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
 
-Once you grant them, this notice stops appearing. There is no setting to turn it off: recording that you dismissed it would leave no way to tell you when a permission is reset later."""
+Once you grant them, this notice stops appearing. There is no setting to turn it off, because recording that you dismissed it would leave no way to tell you when a permission is reset later."""
 open_settings = "Open permission settings"
 
 # CLI 도움말. 영어 값은 소스에서 생성되는 clap 도움말과 정확히 같아야 한다.
