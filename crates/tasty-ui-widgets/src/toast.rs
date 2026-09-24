@@ -97,7 +97,7 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
             let max_x = scope_rect.max.x - SCOPE_MARGIN;
             let bottom_y = cursor_y;
             let top_y = bottom_y - toast_h;
-            // 위쪽 경계를 넘으면 더 오래된 토스트는 그리지 않는다. 단일 카드가 큰 경우는 clip으로 자른다.
+            // 위쪽 경계를 넘는 카드부터는 그리지 않는다.
             if top_y < scope_rect.min.y {
                 break;
             }
@@ -119,8 +119,8 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
     }
 }
 
-/// 배경·테두리·강조색에 alpha를 적용한 뒤 egui 색으로 변환한다.
-/// 변환 뒤 Color32::gamma_multiply를 적용하면 연산 공간이 달라 같은 결과가 나오지 않는다.
+/// 배경·테두리·본문색은 alpha를 적용한 뒤 egui 색으로 변환한다. 강조색은 변환 후 곱한다.
+/// 변환 뒤 Color32::gamma_multiply를 적용하면 연산 공간이 달라 결과가 달라질 수 있다.
 pub fn card_colors(theme: &Theme, kind: ToastKind, alpha: f32) -> CardColors {
     CardColors {
         bg: theme.surface_raised().gamma_multiply(alpha).into(),
