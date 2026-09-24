@@ -19,7 +19,7 @@ mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize�
 
 원격 Git 조회는 tasty-git-core의 데이터 타입과 조회 로직을 host와 plugin이 공유한다. git_viewer.query는 request_id를 먼저 반환하고 응답은 해당 plugin에 event로 전달한 뒤 repaint를 요청한다. 서버는 surface ID로 실제 원격 cwd를 찾는다. 원격 경로를 로컬 파일 경로로 해석하지 않는다.
 
-원격 explorer는 파일 피커의 list_dir 요청을 재사용한다. 디렉토리 탐색만 지원하고 파일 변경·더블클릭 내용 열기는 제공하지 않는다. 소비자 view가 경로별 pending 요청과 cache를 소유한다. 파일 피커의 단일 요청 상태를 여러 explorer가 공유하거나 host에 중복 registry를 만들지 않는다.
+원격 explorer는 파일 피커의 list_dir 요청을 재사용한다. 디렉토리 탐색만 지원하고 파일 변경·더블클릭 내용 열기는 제공하지 않는다. 각 view가 경로별 대기 요청과 캐시를 관리한다. 파일 피커의 단일 요청 상태를 여러 explorer가 공유하거나 host에 중복 registry를 만들지 않는다.
 
 markdown mirror는 HTML·픽셀 대신 원문 문자열을 전달하고 client plugin이 자신의 테마로 렌더한다. handshake에는 전용 markdown role과 표시용 원격 경로만 넣고 원문은 surface ID로 따로 요청한다. 모델은 후보를 모으고 host가 kind/plugin 허용 목록을 검증한다. html은 임의 URL일 수 있어 같은 원문 조회에 포함하지 않는다.
 
@@ -27,7 +27,7 @@ markdown mirror는 HTML·픽셀 대신 원문 문자열을 전달하고 client p
 
 JSON으로 직렬화한 원문은 700KiB 예산에서 UTF-8 문자 경계를 지켜 자른다. 원문 바이트 수만 재지 않는다. 잘린 문서는 toast로 알리고 본문을 수정하지 않는다. plugin 대용량 렌더 확인은 읽기 권한이 아니므로 host는 그 확인 대기 중인 파일도 전송 예산 안에서 읽을 수 있다.
 
-서버 markdown의 webview.set_url을 변경 신호로 사용하며 client는 stale 표시만 하고 사용자가 새로고침할 때 읽는다. 테마 변경처럼 원문이 같아도 신호가 올 수 있다. 상대경로 자산은 base_dir=None으로 두어 client 로컬 파일을 잘못 읽지 않게 하고 주소창 탐색은 비활성화한다.
+서버 markdown의 webview.set_url을 변경 신호로 사용하며 클라이언트는 원문이 변경됐다는 표시만 하고 사용자가 새로고침할 때 읽는다. 테마 변경처럼 원문이 같아도 신호가 올 수 있다. 상대경로 자산은 base_dir=None으로 두어 client 로컬 파일을 잘못 읽지 않게 하고 주소창 탐색은 비활성화한다.
 
 surface cwd는 서버가 1Hz로 확인해 바뀐 값만 holder에 push한다. diff cache는 holder와 값을 함께 기억해 새 holder가 초기값을 받는다. 알 수 없어진 cwd는 null로 보내 client cache를 지운다.
 
@@ -35,7 +35,7 @@ CoreState::surface_cwd는 Local(PathBuf)과 Remote(RemoteCwd)를 구분한다. R
 
 inherit_cwd는 실행할 때만 적용한다. cwd push 자체를 끄지 않으며 원격 구조 변경은 client의 캐시를 그대로 보내지 않고 서버가 현재 값을 찾는다. 명시 cwd만 요청에 담는다.
 
-markdown의 abandon(request_id=0)은 대기 요청 유무와 관계없이 연결 끊김을 뜻한다. 끊긴 문서는 옛 원문 대신 끊김 안내를 표시한다. 재연결 직후 survivor 문서마다 기존 changed 이벤트를 한 번 보낸다. 원문을 표시 중인 문서는 stale만 표시하고, 끊김·오류·미로딩 문서는 pending 요청이 없을 때 다시 요청한다. 성공 응답이 끊김 상태를 해제한다.
+markdown의 abandon(request_id=0)은 대기 요청 유무와 관계없이 연결 끊김을 뜻한다. 끊긴 문서는 옛 원문 대신 끊김 안내를 표시한다. 재연결 직후 재사용한 문서마다 기존 changed 이벤트를 한 번 보낸다. 원문을 표시 중인 문서는 변경 여부만 표시하고, 끊김·오류·미로딩 문서는 pending 요청이 없을 때 다시 요청한다. 성공 응답이 끊김 상태를 해제한다.
 
 client에 markdown kind가 아직 없으면 DeferredPlugin placeholder로 기다리고 등록 뒤 remote 복원 데이터를 사용해 생성한다. 같은 kind를 다른 plugin이 이미 등록했다면 잘못된 plugin으로 복원하지 않고 빈 surface로 남긴다.
 
@@ -57,11 +57,11 @@ cwd는 terminal만의 값이 아니므로 kind 전환과 모든 mirror 정리에
 
 ## Alternatives Considered
 
-로컬 grid를 먼저 바꾸면 서버의 이전 크기 출력이 잘못 줄바꿈된다. 서버 창 크기로 고정하면 client pane에 맞지 않는다. 배타 holder가 하나이므로 여러 client의 geometry 합의는 현재 필요 없다. 원격 파일 선택을 동기 host-call에 넣으면 이벤트 루프를 막으므로 비동기 요청을 사용한다.
+로컬 grid를 먼저 바꾸면 서버의 이전 크기 출력이 잘못 줄바꿈된다. 서버 창 크기로 고정하면 client pane에 맞지 않는다. 배타 holder가 하나이므로 여러 클라이언트 간 화면 크기 합의는 현재 필요 없다. 원격 파일 선택을 동기 host-call에 넣으면 이벤트 루프를 막으므로 비동기 요청을 사용한다.
 
 sftp/scp는 외부 subsystem과 별도 SSH 정보가 필요하고 수동 attach를 그대로 지원하지 못한다. SMB/NFS는 추가 서버·인증·포트가 필요하다. 이런 프로토콜의 별도 기능을 금지하는 결정은 아니다. Control+base64로 일반 파일을 보내면 전송량과 대화형 소켓 대기가 늘어난다.
 
-Git live handle을 직렬화할 수 없으므로 plain data를 공유한다. popup.set_context에는 임의 결과 payload가 없어 비동기 조회 응답을 대신할 수 없다. 최초 snapshot만 원격으로 읽으면 refresh·worktree 전환·diff가 동작하지 않는다. 파일 내용 fetch는 목록 조회와 달리 임시파일 수명·크기·MIME 정책이 필요하다.
+Git 핸들 자체를 직렬화할 수 없으므로 조회 결과 데이터만 공유한다. popup.set_context에는 임의 결과 payload가 없어 비동기 조회 응답을 대신할 수 없다. 최초 snapshot만 원격으로 읽으면 refresh·worktree 전환·diff가 동작하지 않는다. 파일 내용 가져오기는 목록 조회와 달리 임시파일 수명·크기·MIME 정책이 필요하다.
 
 서버 HTML은 크기가 크고 client 테마와 recent 상태를 반영하지 않는다. markdown을 mesh로 되돌리면 현재 WebView 렌더 구조를 다시 바꿔야 한다. 임시 로컬 파일로 받으면 원격 경로·감시·recent를 잘못 해석하고 파일 수명 정책도 필요하다. 자동 원문 갱신은 사용자의 읽던 위치를 바꿀 수 있다.
 
@@ -69,7 +69,7 @@ mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비
 
 ## Reconsideration Triggers
 
-고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 geometry 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 fetch 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
+고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 화면 크기 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 가져오기 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
 
 비-Tasty 호스트나 매우 큰 파일에서 native 전송이 불리하면 다른 프로토콜을 비교한다. bulk 인가·수명이 attach와 어긋나면 결속 방식을 검토한다. Git soft timeout·잘림 안내·동시 popup 격리 요구가 생기면 요청 상태를 보강한다. list_dir 소비자가 늘거나 파일 변경·내용 열기 요구가 생기면 라우팅과 권한을 함께 검토한다.
 

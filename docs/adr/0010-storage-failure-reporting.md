@@ -30,7 +30,7 @@ fallback에서 memory.db를 쓰는 IPC 성공 객체에는 durable:false를 추�
 초기화와 쓰기는 공용 StorageFailure 분류를 사용한다.
 쓰기는 기존 오류 코드·문구를 유지하고 구조화된 원인을 추가한다.
 commit 실패 시 quota와 변경 알림 버퍼는 갱신하지 않는다.
-공유 memory mutex의 poison 보고 flag는 port가 소유하여 같은 잠금을 중복 보고하지 않는다.
+공유 memory mutex의 poison 보고 여부는 port가 관리하여 같은 잠금의 오류를 중복 보고하지 않는다.
 
 ## Consequences
 
@@ -45,7 +45,7 @@ poison 복구 규칙은 memory store에 대한 것이며 프레임 stream에 일
 ## Alternatives Considered
 
 - pragma 반환값만 검사하면 성공으로 반환된 미적용 상태를 놓친다.
-- 설정 차이를 모두 초기화 실패로 올리면 사용 가능했던 DB를 새로 거절한다.
+- 설정 차이를 모두 초기화 실패로 처리하면 사용 가능했던 DB를 새로 거절한다.
 - memory fallback을 없애거나 모든 쓰기를 거절하면 세션 동안 가능한 작업까지 중단된다.
 - 오류마다 새 IPC 코드를 만들면 기존 코드 소비자의 호환이 깨진다.
 - 정상 응답에도 durable:true를 일괄 추가하면 모든 성공 응답이 바뀐다.
@@ -56,7 +56,7 @@ poison 복구 규칙은 memory store에 대한 것이며 프레임 stream에 일
 새 이름공간이 memory.db에 쓰면 durable 표시와 검증 대상에 추가한다.
 
 사용자가 fallback을 모르고 작업을 잃는 사례가 생기면 화면 안내를 검토한다.
-복수 memory store가 생기면 poison flag의 소유 범위도 다시 정한다.
+복수 memory store가 생기면 poison 보고 상태를 관리하는 범위도 다시 정한다.
 잠금·디스크 상한 실패와 rollback을 실제 저장소로 확인하되 합성 오류 검증을 실제 I/O 장애 검증과 구분한다.
 
 ## References

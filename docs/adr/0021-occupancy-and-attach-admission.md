@@ -13,13 +13,13 @@
 
 점유는 soft와 hard로 구분한다. soft는 지속적인 사용 관계를 표시하지만 로컬 입력을 허용한다. hard는 attach 소유자 외의 입력과 구조 변경을 제한한다. 대상은 한 소유자에게 속하고 소유자는 여러 대상을 사용할 수 있다. 점유 대상은 생성 방식과 무관하며 각 소비자가 허용 범위를 정한다.
 
-명시 해제는 소유자와 로컬 사용자(force-detach)가 수행한다. soft는 parent surface를 기록해 parent가 사라진 뒤 실제 사용자 focus 시 정리할 수 있다. hard는 연결 종료나 생존 확인 실패 때 회수한다.
+명시 해제는 소유자와 로컬 사용자(force-detach)가 수행한다. soft는 부모 surface를 기록해 부모가 사라진 뒤 사용자가 실제로 포커스했을 때 정리할 수 있다. hard는 연결 종료나 생존 확인 실패 때 회수한다.
 
 hard 점유에서도 로컬 선택·복사는 허용한다. 좌표와 복사 문자열은 사용자가 보는 readonly mirror에서 읽는다. 클릭 트래킹을 로컬 선택으로 처리하며 휠과 링크 실행은 차단한다. 휠은 live scroll_offset을 바꾸어 해제 뒤 화면을 어긋나게 할 수 있고, 오래된 mirror의 링크 실행에는 외부 부수효과가 있다.
 
-hard 점유의 연결 생존은 EOF와 heartbeat TTL로 판단한다. heartbeat 간격의 네 배 동안 아무 프레임도 받지 못하면 EOF와 같은 정리 경로를 사용한다. 사용자가 조작하지 않는 idle 시간만으로 점유를 해제하지 않는다.
+hard 점유의 연결 생존은 EOF와 heartbeat TTL로 판단한다. heartbeat 간격의 네 배 동안 아무 프레임도 받지 못하면 EOF와 같은 정리 경로를 사용한다. 사용자가 조작하지 않는 유휴 시간만으로 점유를 해제하지 않는다.
 
-hard 점유된 workspace의 terminal.spawn은 자원을 만들기 전에 거절한다. 만들어도 즉시 hard lock에 포함되어 요청자가 자기 자식에 입력할 수 없기 때문이다. workspace 이름·ID 해소는 실제 spawn과 같은 함수를 사용한다. holder의 구조 변경 forward는 별도 소유권 검증을 거쳐 실행한다.
+hard 점유된 workspace의 terminal.spawn은 자원을 만들기 전에 거절한다. 만들어도 즉시 hard lock에 포함되어 요청자가 자기 자식에 입력할 수 없기 때문이다. workspace 이름·ID 해소는 실제 spawn과 같은 함수를 사용한다. 점유자의 구조 변경 forward는 별도 소유권 검증을 거쳐 실행한다.
 
 terminal.spawn의 제한은 최종 pane ID를 해소한 뒤 실제 소속 workspace에서 검사한다. workspace 인자와 pane override가 다를 수 있으므로 workspace 인자만 검사하지 않는다. mirror workspace도 생성을 시작하거나 forward 큐에 넣기 전에 거절한다. child registry는 즉시 생성 ID가 필요한데 일반 mirror forward는 그 ID를 동기로 반환하지 않기 때문이다.
 
@@ -27,9 +27,9 @@ terminal.spawn의 제한은 최종 pane ID를 해소한 뒤 실제 소속 worksp
 
 원격 조회·프로필 CRUD의 신뢰는 SSH와 loopback에 의존하지만, 로컬 mirror workspace를 만드는 remote.attach는 local_only로 둔다. 원격 접근 자격만으로 무권한 plugin에 로컬 구조 변경 권한을 주지 않는다.
 
-로컬 사용자·에이전트의 닫기 요청은 대상 중 hard 점유 surface가 하나라도 있으면 전체를 거절한다. 공용 검사에 각 요청이 삭제할 surface 집합을 넘긴다. holder 자신의 forward와 이미 종료된 프로세스의 사후 정리는 정상 진행한다. holder 면제를 요청자가 임의로 넣는 플래그로 표현하지 않는다.
+로컬 사용자·에이전트의 닫기 요청은 대상 중 hard 점유 surface가 하나라도 있으면 전체를 거절한다. 공용 검사에 각 요청이 삭제할 surface 집합을 넘긴다. 점유자 자신의 forward와 이미 종료된 프로세스의 사후 정리는 정상 진행한다. 점유자 면제를 요청자가 임의로 넣는 플래그로 표현하지 않는다.
 
-새 attach와 이전 holder의 종료가 같은 inbound 배치에 있어도 끊긴 holder가 재접속을 막지 않는다. 배치 시작에서 disconnected 사실만 registry에 표시하고, acquire가 그 holder와 경쟁할 때만 즉시 회수한다. 경쟁이 없으면 기존 순서대로 잔여 입력을 처리한 뒤 배치 끝에서 해제한다. 표시도 배치 끝에서 제거한다.
+새 attach와 이전 점유자의 종료가 같은 inbound 배치에 있어도 끊긴 점유자가 재접속을 막지 않는다. 배치 시작에서 disconnected 사실만 registry에 표시하고, acquire가 그 점유자와 경쟁할 때만 즉시 회수한다. 경쟁이 없으면 기존 순서대로 잔여 입력을 처리한 뒤 배치 끝에서 해제한다. 표시도 배치 끝에서 제거한다.
 
 ## Consequences
 
@@ -47,13 +47,13 @@ pty.attach_surface가 점유된 workspace에 들어가는 유사한 경우까지
 
 선택까지 막으면 readonly 화면의 내용을 복사할 수 없다. live 터미널에서 복사하면 보이는 mirror와 문자열이 달라진다. mirror 휠을 지원하려면 별도 mutable 접근과 스크롤 상태 정책이 필요하다. heartbeat에 별도 만료 registry를 만들지 않고 기존 socket timeout·Disconnected 정리를 재사용한다.
 
-spawn 뒤 tell 오류만 개선하면 사용할 수 없는 자식을 성공으로 반환하는 문제는 남는다. 새 자식만 hard lock을 우회하면 holder의 배타 사용 규칙을 깨뜨린다.
+spawn 뒤 tell 오류만 개선하면 사용할 수 없는 자식을 성공으로 반환하는 문제는 남는다. 새 자식만 hard lock을 우회하면 점유자의 배타 사용 규칙을 깨뜨린다.
 
 forward 응답에서 ID를 못 찾은 뒤 오류만 바꾸면 원격 고아 탭이 남는다. 라우터의 workspace 검사만으로는 다른 pane 지정이 우회한다. 모든 mirror 구조 변경을 막거나 동기 왕복으로 바꾸는 것은 정상적인 forward까지 변경하므로 terminal.spawn에만 적용한다.
 
 버전이 틀린 연결의 TTL만 줄이면 정상 느린 연결도 끊으며, 애초에 사용할 수 없는 점유를 막지 못한다. 서버는 loopback의 자기 GUI와 SSH client를 구별하지 못해 self 검사 위치가 될 수 없다. 모든 닫기 공통 후처리에 검사를 두면 종료된 프로세스의 surface가 영구히 남는다. 원격 attach를 plugin에 무권한으로 열거나 소비자도 없는 새 권한을 미리 추가하지 않는다.
 
-종료 정리를 무조건 배치 앞에 두면 경쟁이 없는 마지막 입력도 잃는다. client에게 already_attached 재시도를 맡기면 실제 충돌과 구별하지 못한다. StreamHub sink 존재만으로 사망을 추정하면 등록 순서 때문에 살아 있는 holder를 빼앗을 수 있다.
+종료 정리를 무조건 배치 앞에 두면 경쟁이 없는 마지막 입력도 잃는다. client에게 already_attached 재시도를 맡기면 실제 충돌과 구별하지 못한다. StreamHub sink의 존재 여부만으로 연결 종료를 추정하면 등록 순서 때문에 살아 있는 점유자를 빼앗을 수 있다.
 
 ## Reconsideration Triggers
 

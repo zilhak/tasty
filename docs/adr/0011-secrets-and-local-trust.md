@@ -13,7 +13,7 @@ secret이라는 이름만으로 파일 암호화나 같은 사용자 프로세�
 
 ## Decision
 
-memory secret은 평문 BLOB으로 저장한다. 보장하는 것은 plugin별 IPC owner 격리다.
+memory secret은 평문 BLOB으로 저장한다. 보장하는 것은 IPC에서 plugin 소유자별로 접근을 제한하는 것이다.
 다른 plugin의 secret을 조회하거나 그 존재를 열거할 경로를 제공하지 않는다.
 DB 직접 읽기, 백업·동기화, 장치 도난 시의 비밀 보호는 보장하지 않는다.
 
@@ -23,12 +23,12 @@ inline 값은 Tasty가 권한을 제한한 파일로 만들고 Passkey 삭제 �
 사용자가 소유한 path 파일의 수명에는 관여하지 않는다.
 
 대화형 이름 입력은 경로 이동이 불가능한 허용 문자로 제한한다.
-자동 migration 이름은 거절 대신 치환하며 이 두 용도를 섞지 않는다.
+자동 이행으로 만드는 이름은 거절 대신 치환하며 이 두 용도를 섞지 않는다.
 IPC·CLI는 파일 내용을 반환하지 않고 마스킹한다.
 로컬 GUI와 승인된 plugin의 선언 타입 열람은 설치 신뢰에 따른 편의 기능이다.
 
-정말 민감한 자격증명은 plugin이 OS keyring이나 외부 보관소 정책으로 관리한다.
-Tasty 자체의 master passphrase 암호화와 자동 headless 해제는 현재 도입하지 않는다.
+민감한 자격증명은 plugin이 OS keyring이나 외부 보관소 정책으로 관리한다.
+Tasty 자체의 master passphrase 암호화와 헤드리스에서의 자동 잠금 해제는 현재 도입하지 않는다.
 
 ## Consequences
 
@@ -44,7 +44,7 @@ keyring을 쓴다는 사실만으로 모든 플랫폼에서 같은 사용자 공
 - host가 AES-GCM과 keyring만 추가해도 sandbox 없는 plugin의 접근 모델 전체를 해결하지 못한다.
 - 환경에 따라 암호화·평문 fallback을 섞으면 행별 형식과 복구가 복잡해진다.
 - inline 값을 TOML에 그대로 넣으면 표시·로그·백업에 노출되는 범위가 넓어진다.
-- master passphrase는 실제 저장 암호화를 제공할 수 있지만 무인 headless 접속과 해제 UX를 별도로 설계해야 한다.
+- master passphrase는 실제 저장 암호화를 제공할 수 있지만 무인 헤드리스 접속과 잠금 해제 절차를 별도로 설계해야 한다.
 
 ## Reconsideration Triggers
 

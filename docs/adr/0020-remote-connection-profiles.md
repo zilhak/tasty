@@ -13,7 +13,7 @@
 
 release CLI는 remote attach를 제공하고 로컬 attach 검증 진입점은 debug에 둔다. 서버 attach 수신은 공통으로 유지한다. 단발 화면 조회는 attach 세션 대신 read API를 사용한다. GUI client가 자기 서버 포트로 동기 attach하면 교착하므로 연결 전에 거절한다. 별도 프로세스의 debug attach 검증과 구분한다.
 
-원격 프로필은 열린 kind 문자열과 Str/List 필드의 레지스트리다. 동작은 소비자가 해석하며 자격증명은 passkey 이름으로 참조한다. 미등록 kind는 등록을 허용하되 경고한다. plugin은 선언한 kind만 접근하고 native 기능은 필요한 종류를 사용 시 검증한다.
+원격 프로필은 확장 가능한 kind 문자열과 Str/List 필드의 레지스트리다. 동작은 소비자가 해석하며 자격증명은 passkey 이름으로 참조한다. 미등록 kind는 등록을 허용하되 경고한다. plugin은 선언한 kind만 접근하고 기본 제공 기능은 필요한 종류를 사용 시 검증한다.
 
 ssh 프로필은 연결·셸 감지 정보, tasty-attach 프로필은 attach 설정을 담는다. attach는 ssh_ref를 매번 이름으로 다시 읽거나 인라인 SSH 정보를 사용한다. remote_tasty, port_mode, port_file은 attach 소유다. 명시 port_file이 자동 발견보다 우선한다.
 
@@ -23,7 +23,7 @@ ssh 프로필은 연결·셸 감지 정보, tasty-attach 프로필은 attach 설
 
 서버는 SSH 구현을 알 필요가 없다. 동일 SSH 정보의 변경은 이를 참조하는 attach에 즉시 적용된다. 참조가 없거나 비활성인 경우는 명시적으로 실패한다. 구 ssh-profiles 파일 자동 이관과 ssh 안의 attach 필드 해석은 제공하지 않는다.
 
-SSH extra_options의 ConnectTimeout은 기본값보다 먼저 전달해 사용자 값이 우선한다. 그러나 전체 45초는 넘길 수 없다. 느린 다중 hop 연결은 오탐으로 끝날 수 있다. 포트 발견의 제한된 출력 수집에서 파이프가 가득 차도 감시 시간이 끝나면 종료한다.
+SSH extra_options의 ConnectTimeout은 기본값보다 먼저 전달해 사용자 값이 우선한다. 그러나 전체 45초는 넘길 수 없다. 여러 서버를 경유하는 느린 연결은 정상이어도 시간 초과로 끝날 수 있다. 포트 발견의 제한된 출력 수집에서 파이프가 가득 차도 감시 시간이 끝나면 종료한다.
 
 ## Alternatives Considered
 

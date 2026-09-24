@@ -15,13 +15,13 @@
 
 터미널 surface 캡처는 자체 grid 크기의 오프스크린 텍스처로 렌더한다. 배경 탭과 워크스페이스도 활성화하지 않고 캡처한다. window 캡처는 chrome을 포함한 프레임이다.
 
-사용자용 전체화면 콘텐츠는 기존 workspace/pane/tab/surface와 별개인 stage로 만든다. 기존 popup을 확대하지 않고 같은 형상의 별도 인스턴스를 구성한다. 창마다 최대 하나를 허용하고 정적 StageDef 테이블에 등록된 콘텐츠만 열 수 있다. stage 상태는 저장하지 않는다.
+사용자용 전체화면 콘텐츠는 기존 workspace/pane/tab/surface와 별개인 stage로 만든다. 기존 popup을 확대하지 않고 같은 형태의 별도 인스턴스를 구성한다. 창마다 최대 하나를 허용하고 정적 StageDef 테이블에 등록된 콘텐츠만 열 수 있다. stage 상태는 저장하지 않는다.
 
 명시한 window ID는 main뿐 아니라 modal·preset 창도 캡처할 수 있다. 자동 선택은 main 창이 정확히 하나일 때만 가능하다. main이 없으면 그 사실을 오류로 반환하고 modal로 대체하지 않는다. window.list와 window.close는 main 창만 다룬다. 캡처를 허용한 것이 modal 조작 권한까지 넓히지는 않는다.
 
 ## Consequences
 
-터미널 surface 캡처는 unfocused 색을 쓰고 커서·선택·IME 오버레이를 포함하지 않는다. 공유 projection uniform을 임시 변경한 뒤 반드시 복원해야 한다. 동기 GPU readback은 자주 실행하는 경로로 설계하지 않는다. 임의 경로에 파일을 쓰므로 local_only로 두고 plugin에 노출하지 않는다.
+터미널 surface 캡처는 포커스되지 않았을 때의 색을 쓰고 커서·선택·IME 오버레이를 포함하지 않는다. 공유 projection uniform을 임시 변경한 뒤 반드시 복원해야 한다. 동기 GPU readback은 자주 실행하는 경로로 설계하지 않는다. 임의 경로에 파일을 쓰므로 local_only로 두고 plugin에 노출하지 않는다.
 
 가려진 콘텐츠는 다시 그리지 않지만 원격 attach mesh 전달과 스크린샷은 계속 처리한다. GPU 분기는 surface 오프스크린 캡처 뒤, 일반 레이아웃 렌더 앞에 두며 window capture와 present는 유지한다. native WebView는 별도로 숨긴다. PTY grid 변경은 stage를 닫은 첫 프레임까지 보류한다. 원본과 stage 데이터가 함께 바뀌어야 하면 콘텐츠가 그 공유를 명시적으로 구현해야 한다.
 
@@ -37,7 +37,7 @@ modal을 window.list에 넣으면 목록을 받은 모든 조작 API가 다시 �
 
 ## Reconsideration Triggers
 
-비터미널 오프스크린 캡처, 실제 focus 색과 오버레이 포함, 배치 창 캡처, plugin 권한이나 경로 제한이 필요해지면 캡처 범위와 권한을 다시 정한다.
+비터미널 오프스크린 캡처, 포커스된 상태의 색과 오버레이 포함, 배치 창 캡처, plugin 권한이나 경로 제한이 필요해지면 캡처 범위와 권한을 다시 정한다.
 
 원본과 stage의 실시간 동기화, 한 창의 여러 stage, 공통 레이아웃 계산 도입, stage 중 DPI·모니터 변경 문제가 생기면 독립 인스턴스와 grid 보류 정책을 검토한다.
 

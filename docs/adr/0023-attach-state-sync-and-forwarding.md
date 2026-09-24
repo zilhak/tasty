@@ -17,9 +17,9 @@ mirror의 닫은 항목 복원은 서버에서 수행한다. PTY와 scrollback�
 
 프레임을 잃으면 수신을 선언한 client에게 Loss{frames}를 보낸다. server는 ipc.stream.loss-notify capability를 알리고 client는 ClientLossNotify를 보낸다. 기존 프로토콜 번호를 올려 모든 구 client를 끊지 않는다. 선언하지 않은 연결의 바이트 흐름은 유지한다.
 
-전송 큐가 가득 차 손실 통지도 보낼 수 없으면 pending_loss에 보관한다. 통지를 실제로 넣은 뒤에만 그 수를 지운다. 통지 전송을 정상 데이터 소비로 간주해 연속 drop의 lag를 초기화하지 않는다.
+전송 큐가 가득 차 손실 통지도 보낼 수 없으면 pending_loss에 보관한다. 통지를 실제로 넣은 뒤에만 그 수를 지운다. 통지 전송을 정상 데이터 소비로 간주해 연속 전송 실패 횟수인 lag를 초기화하지 않는다.
 
-손실 복구는 연결이 운반하는 데이터 중 가장 강한 요구에 맞춘다. PTY delta는 snapshot을 다시 받고, 상태 snapshot은 오래됐다고 표시하며, mesh 조립은 종료하고 처음부터 구독한다. bulk는 결과 불명인 중단으로 처리해 자동 재시도하지 않는다. 이미 commit됐을 수 있기 때문이다.
+손실 복구는 연결이 전달하는 데이터 중 가장 강한 요구에 맞춘다. PTY delta는 snapshot을 다시 받고, 상태 snapshot은 오래됐다고 표시하며, mesh 조립은 종료하고 처음부터 구독한다. bulk는 결과 불명인 중단으로 처리해 자동 재시도하지 않는다. 이미 commit됐을 수 있기 때문이다.
 
 현재 workspace mirror는 재attach로 복구한다. Detach를 보내고 이전 연결의 EOF를 확인한 뒤 새 연결을 만든다. 서버는 Disconnected를 inbound에 넣은 뒤 소켓을 닫아 새 attach가 이전 해제 뒤에 도착하게 한다. GUI는 한 세션에서 재attach를 한 번에 하나만 진행한다. 진행 중 추가 Loss는 합산하며, 완료 뒤 다시 손실이 나면 재attach할 수 있다. parked engine의 복구는 창이 돌아올 때까지 미루되 연결과 출력 처리는 유지한다.
 
@@ -27,7 +27,7 @@ CLI dump는 최대 세 번 재attach하고 이후에도 손실이 있으면 stde
 
 밀린 Loss는 write 스레드가 큐에서 프레임 하나를 꺼내 빈 공간을 만든 직후 넣는다. 뒤따르는 출력이나 heartbeat를 기다리지 않는다. push 앞 재시도와 pump_inbound 끝 재시도도 유지해 선언이 손실보다 늦게 온 경우를 처리한다. 평소에는 원자 owes_notice만 읽고 필요한 때만 sink map을 잠근다. 수신자는 sender를 직접 소유하지 않고 Weak로 map에 접근해 연결 해제를 막지 않는다.
 
-forward 구조 요청은 origin을 전달한다. 새 client는 user_triggered에 따라 user 또는 agent를 항상 보낸다. 새 server는 user close만 복원 스택에 넣는다. 필드 생략과 null은 옛 client 호환을 위해 User, 모르는 값은 프레임을 버리지 않고 Agent로 해석한다. tab 선택도 같은 origin을 사용한다.
+forward 구조 요청은 요청 출처(origin)를 전달한다. 새 client는 user_triggered에 따라 user 또는 agent를 항상 보낸다. 새 server는 user close만 복원 스택에 넣는다. 필드 생략과 null은 옛 client 호환을 위해 User, 모르는 값은 프레임을 버리지 않고 Agent로 해석한다. tab 선택도 같은 origin을 사용한다.
 
 PTY 종료나 서버 로컬 멤버 추가로 바뀐 점유 workspace도 StructuralDelta로 보낸다. 변경 workspace 집합을 기록하고 정리가 끝난 뒤 전송한다. 새 멤버의 트리는 snapshot tap보다 먼저 보낸다. workspace가 사라지면 강제 detach하고 lock을 정리한다. forward는 자신의 Result와 Delta를 보낸 뒤 별도 변경 표시를 지워 중복을 피한다.
 
@@ -51,7 +51,7 @@ parked engine도 VT를 파싱하지만 toast·repaint는 생략하고 필요한 
 
 lag는 연속 실패 횟수, frames_dropped와 clients_lagged_out은 누계, backlog는 살아 있는 연결의 미전송 큐 길이 합이다. 누계와 backlog는 system.pressure에 sink_capacity와 함께 노출한다. 연결별 큐 길이를 합산해야 끊긴 연결의 backlog가 남지 않는다.
 
-Loss 재시도와 데이터 삽입 사이에 write 스레드가 공간을 만드는 경합에서는 데이터 한 장이 통지보다 앞설 가능성이 소스상 남는다. 과거 실행 실험에서는 재현하지 못했고 앞지르기 가드를 추가하지 않았다.
+Loss 재시도와 데이터 삽입 사이에 write 스레드가 공간을 만드는 경합에서는 데이터 프레임 하나가 통지보다 앞설 가능성이 소스상 남는다. 과거 실행 실험에서는 재현하지 못했고 앞지르기 가드를 추가하지 않았다.
 
 구 server는 origin 필드를 무시하므로 새 client의 agent close도 복원 스택에 남는다. 서버 업데이트가 필요하다. forward user origin은 snapshot 여부와 탭 선택을 정하지만 plugin lifecycle의 is_user_close와는 구분한다. StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동까지 지연될 수 있다.
 
@@ -59,7 +59,7 @@ Loss 재시도와 데이터 삽입 사이에 write 스레드가 공간을 만드
 
 ## Alternatives Considered
 
-창 없는 동안 쌓기만 하면 메모리 상한·구조 delta 보존·재생 지연 문제가 생긴다. 원격에 전송 보류를 요청해도 서버가 버퍼를 소유해야 한다. 최소화만으로 세션을 끊으면 사용자의 점유가 풀린다.
+창이 없는 동안 데이터를 쌓기만 하면 메모리 상한·구조 delta 보존·재생 지연 문제가 생긴다. 원격에 전송 보류를 요청해도 서버가 버퍼를 소유해야 한다. 최소화만으로 세션을 끊으면 사용자의 점유가 풀린다.
 
 holder별 별도 스택은 점유 전환 때 기록 위치를 바꾸고 로컬 undo 동작도 달라진다. 원격이 전역 스택을 pop한 뒤 거절하면 항목과 scrollback 수명을 되돌려야 한다. 서버에서 로컬 복원의 focus 후처리까지 실행하면 원격 조작이 서버 사용자의 화면을 바꾼다.
 
@@ -69,7 +69,7 @@ holder별 별도 스택은 점유 전환 때 기록 위치를 바꾸고 로컬 u
 
 dump 종료 직전 Ping·임의 대기 또는 주기 tick보다 큐 dequeue 시점이 실제 공간 확보를 직접 알 수 있다. 수신자에게 sender를 보관시키면 연결 종료 후에도 채널이 열려 남는다.
 
-origin 부재를 Agent로 읽으면 옛 사용자 undo를 깨고, 새 V2 variant는 구 server에서 op 전체가 사라진다. 모든 forward를 사용자나 에이전트로 통일하면 어느 쪽의 복원 규칙도 만족하지 못한다. 서버 구조 변화를 매 루프 fingerprint로 검사하기보다 공통 제거·편입 지점에서 표시한다. 구조 정리 도중 즉시 delta를 보내면 중간 트리와 Result 순서가 노출된다.
+요청 출처 생략을 Agent로 읽으면 옛 사용자 undo를 깨고, 새 V2 variant는 구 server에서 op 전체가 사라진다. 모든 forward를 사용자나 에이전트로 통일하면 어느 쪽의 복원 규칙도 만족하지 못한다. 서버 구조 변화를 매 루프 fingerprint로 검사하기보다 공통 제거·편입 지점에서 표시한다. 구조 정리 도중 즉시 delta를 보내면 중간 트리와 Result 순서가 노출된다.
 
 긴 dump에 경고만 해도 20초에서 끊기는 문제는 남고 값 제한은 기존 사용을 막는다. dump writer는 한 루프만 쓰므로 heartbeat 스레드가 필요 없다. 빈 창 렌더만 건너뛰면 IPC·입력이 같은 빈 workspace 상태에서 실패한다. convert를 Err로 바꾸면 로컬 toast와 image.open의 오류도 바뀌므로 이벤트의 사유만 확장한다.
 

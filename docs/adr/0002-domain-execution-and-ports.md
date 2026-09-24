@@ -16,11 +16,11 @@ IPC와 attach의 구조 변경이 서로 다른 함수를 사용하면 검증, �
 도메인은 `src/core`와 `src/ports`에 두고 상위 앱·adapter·GUI 모듈을 직접 참조하지 않는다.
 지금은 별도 core 크레이트를 만들지 않고 모듈 경계와 검사로 의존 방향을 유지한다.
 
-`core::structural_exec`가 구조 변경 검증·적용·cascade를 맡고 IPC와 forward가 함께 호출한다.
-결과는 도메인 값으로 반환하며 wire 오류·응답 조립은 각 진입점에서 한다.
-공용 정수·범위 검사는 `core::param_bag`에 두고 IPC 전용 nickname 해석까지 도메인에 넣지는 않는다.
+`core::structural_exec`가 구조 변경 검증·적용·연관 자원 정리를 맡고 IPC와 forward가 함께 호출한다.
+결과는 도메인 값으로 반환하며 전송용 오류·응답 조립은 각 진입점에서 한다.
+공용 정수·범위 검사는 `core::param_bag`에 두고 IPC 전용 별칭 해석까지 도메인에 넣지는 않는다.
 
-닫힌 surface의 회수와 close 결과 변환은 `core::structural_cascade`의 공용 함수가 맡는다.
+닫힌 surface의 회수와 닫기 결과 변환은 `core::structural_cascade`의 공용 함수가 맡는다.
 GUI에서만 소비하는 효과는 같은 본문 안에서 feature로 제한한다.
 매니저가 필요한 mesh 정리는 실행 결과로 알리고 매니저 소유자가 수행한다.
 
@@ -30,9 +30,9 @@ IPC engine 핸들러는 `IpcWindow`와 요청별 `IntentOutbox`를 사용한다.
 창 자체가 대상인 GUI·debug 핸들러는 별도 라우터에서 AppState를 받는다.
 `EntryWindow`는 창 전체를 다시 꺼내는 접근자를 제공하지 않는다.
 
-AppState를 둘째 상태 struct로 복제하지 않는다. GUI 전용 필드와 모듈을 컴파일에서 제외한다.
+AppState를 별도의 상태 구조체로 복제하지 않는다. GUI 전용 필드와 모듈을 컴파일에서 제외한다.
 CoreState에도 사용자 포커스·선택·히스토리가 있으므로 포트 도입만으로 사용자 보호가 끝나지는 않는다.
-요청 origin과 대상 선택 규칙을 함께 적용한다.
+요청 출처와 대상 선택 규칙을 함께 적용한다.
 
 ## Consequences
 
@@ -46,7 +46,7 @@ CoreState에도 사용자 포커스·선택·히스토리가 있으므로 포트
 ## Alternatives Considered
 
 - core 크레이트 추출은 GUI 조건·형제 모듈·공개 API를 넓게 정리해야 하며 현재 비용에 비해 이득이 작다.
-- 도메인에서 IPC 핸들러를 재사용하면 wire 왕복과 역의존이 남는다.
+- 도메인에서 IPC 핸들러를 재사용하면 전송 형식으로 바꾸고 다시 해석하는 과정과 역의존이 남는다.
 - 모든 창 상태를 노출하는 포트는 AppState 인자를 이름만 바꾼 것이어서 채택하지 않는다.
 - intent를 반환값으로 흩어 보내면 호출자가 큐 적재를 빠뜨릴 수 있어 요청의 공용 출구를 둔다.
 
@@ -57,7 +57,7 @@ CoreState에도 사용자 포커스·선택·히스토리가 있으므로 포트
 
 port 구현 파일을 추가하면 활성 상태 읽기 검사 대상에도 포함한다.
 헤드리스 intent 적용이 AppState 없이 가능해지면 pump 인자를 다시 좁힌다.
-IPC와 forward의 실패 문구 일치, 기존 문구 호환과 두 빌드의 cascade를 각각 검증한다.
+IPC와 forward의 실패 문구 일치, 기존 문구 호환과 두 빌드의 연관 자원 정리를 각각 검증한다.
 
 ## References
 
