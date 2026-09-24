@@ -8,9 +8,9 @@
 
 ## 목적
 
-[작업 영역](../work-area/index.md) 하단의 24px 바. 작업 컬럼 아래 strip 을 항상 차지한다(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). **포커스 surface 의 읽기 전용 요약 + 키보드 리마인더 하나**이고, 어느 항목도 목적지가 아니다 — 포커스를 옮기는 항목이 없다.
+[작업 영역](../work-area/index.md) 하단의 24px 바. 작업 컬럼 아래 strip 을 항상 차지한다(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). 포커스된 surface의 정보를 요약하고 명령 팔레트 단축키를 보여준다. 다른 workspace나 surface로 이동하는 버튼은 없다.
 
-표시 항목과 좁은 윈도우에서 접는 순서는 **확정이다**. 항목은 좌측이 git 브랜치 · surface id · shell · grid, 우측이 팔레트 단축키 키캡 · 테마 글리프이고, **값이 없는 항목은 자리째 없다**(dash 를 그리지 않는다). 접는 순서는 아래 "좁은 윈도우" 절에 있다.
+항목은 좌측이 git 브랜치 · surface id · shell · grid, 우측이 팔레트 단축키 키캡 · 테마 글리프이고, **값이 없는 항목은 자리째 없다**(dash 를 그리지 않는다). 접는 순서는 아래 "좁은 윈도우" 절에 있다.
 
 ## 내부 동작 (headless-valid)
 
@@ -22,14 +22,20 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 좌측 클러스터는 **현재 focus surface 를 read** 해 표시한다 — 표시 *대상 결정* 이 focus 에 의존하지만 *동작이 아니라 표시* 라 [포커스 독립성](../../identity.md) 에 위배되지 않는다(허용된 조회 read).
 
-- **브랜치 글리프 + 이름** — `git-branch` 글리프(`statusbar-glyph` 잉크)와 브랜치명. focus surface 의 cwd 기준 git 브랜치(`.git` 을 상위로 탐색해 `HEAD` 를 std::fs 로 파싱, git 바이너리/libgit2 비의존·크로스플랫폼). `.git` 이 디렉토리인 일반 repo 와 `gitdir:` 경로를 담은 **파일**인 worktree/submodule 을 모두 지원한다. repo 가 아니면 **항목 자체가 없고**, detached HEAD 면 그 자리에 short sha(`@ 4af6ac9`)가 온다. **`@ ` 표지를 붙이는 것은 그리는 쪽이다** — 파싱은 브랜치인지 detached 인지를 값으로만 돌려주고(`HeadState`), 표지는 상태바 wrapper 한 자리에서 입는다. 그래서 `@4af6ac9` 라는 **이름의 브랜치**는 표지가 덧붙지 않고 그 이름 그대로 나온다. 셸 프로세스명과 마찬가지로 매 프레임 파일 IO 가 아니라 **1Hz busy-poll 캐시**(`CoreState::status_bar_branch`)에서 읽는다 — `git checkout`/`cd` 반영이 최대 1초 늦고(캐시 변화는 redraw 를 유발하므로 터미널을 건드리지 않아도 반영된다), 캐시는 focus surface 한 칸만 갱신한다(headless 는 상태바를 렌더하지 않아 갱신하지 않음).
+- **브랜치 글리프 + 이름** — `git-branch` 글리프(`statusbar-glyph` 잉크)와 브랜치명.
+  focus surface 의 cwd 기준 git 브랜치(`.git` 을 상위로 탐색해 `HEAD` 를 std::fs 로 파싱, git 바이너리/libgit2 비의존·크로스플랫폼).
+  `.git` 이 디렉토리인 일반 repo 와 `gitdir:` 경로를 담은 **파일**인 worktree/submodule 을 모두 지원한다.
+  repo 가 아니면 **항목 자체가 없고**, detached HEAD 면 그 자리에 short sha(`@ 4af6ac9`)가 온다.
+  **`@ ` 표지를 붙이는 것은 그리는 쪽이다** — 파싱은 브랜치인지 detached 인지를 값으로만 돌려주고(`HeadState`), 표시는 상태바 wrapper에서 추가한다.
+  그래서 `@4af6ac9` 라는 **이름의 브랜치**는 표지가 덧붙지 않고 그 이름 그대로 나온다.
+  셸 프로세스명과 마찬가지로 매 프레임 파일 IO 가 아니라 **1Hz busy-poll 캐시**(`CoreState::status_bar_branch`)에서 읽는다 — `git checkout`/`cd` 반영이 최대 1초 늦고(캐시 변화는 redraw 를 유발하므로 터미널을 건드리지 않아도 반영된다), 캐시는 focus surface 한 칸만 갱신한다(headless 는 상태바를 렌더하지 않아 갱신하지 않음).
 - **surface id** — focus surface 의 숫자 ID("Copy Terminal ID" 와 동일 값)를 그 surface 를 담은 pane 과 함께 mono 로 찍는다(`s3·p1`). pane 을 못 찾으면 앞마디만(`s3`).
 - **shell** 과 **grid** — terminal 한정이고 **서로 독립한 두 항목**이다(포그라운드 프로세스명 · `120×32`). 하나만 있으면 그 하나만 나온다. 프로세스명은 매 프레임 OS 조회가 아니라 1Hz busy-poll 캐시(`CoreState::foreground_name`)에서 읽는다(최대 1초 지연). Windows 에선 셸의 *가장 얕은 non-shell 자손*을 표시 — 선택·플랫폼 메커니즘은 [busy-indicator](../../design/policies/busy-indicator.md). 그리드는 lock-free 핸들 캐시 read.
 
 ### 우측 액션 (clickable)
 
 - **팔레트 단축키** — 라벨 단어 없이 **Kbd 키캡**으로만 그린다. 값은 `KeybindingSettings`(`toggle_command_palette`) 에서 오고, 바인딩이 없으면 값이 없는 항목이라 **자리째 없다**. 누르면 명령 팔레트가 토글된다.
-- **테마 글리프** — 이름 텍스트 없이 글리프 하나. 누르면 latte ↔ mocha 전환(그 외 테마에서 누르면 latte). 테마 종류는 색이 아니라 글리프가 든다 — light 는 해 모양, dark 는 테마 글리프이고 색은 두 쪽 다 물러난 chrome 잉크(`statusbar-theme-glyph`)다.
+- **테마 글리프** — 이름 텍스트 없이 글리프 하나. 누르면 latte ↔ mocha 전환(그 외 테마에서 누르면 latte). 테마 종류는 아이콘으로 구분한다 — light 는 해 모양, dark 는 테마 글리프이고 색은 두 쪽 다 크롬 보조색(`statusbar-theme-glyph`)다.
 
 ### 좁은 윈도우 — 접는 순서
 
@@ -45,7 +51,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 ## 인터페이스
 
-- **사용자 트리거**: 팔레트 키캡 클릭(→ [command-palette](../command-palette/index.md)), 테마 글리프 클릭(→ 테마 설정). 좌측 클러스터는 표시 전용(비클릭). 어느 쪽도 포커스를 옮기지 않는다.
+- **사용자 트리거**: 팔레트 키캡 클릭(→ [command-palette](../command-palette/index.md)), 테마 글리프 클릭(→ 테마 설정). 좌측 클러스터는 표시 전용(비클릭). 현재 workspace와 surface 선택은 유지한다.
 - **AI Agent**: 없음 — 표시 위젯. 표시되는 값(브랜치/그리드 등)은 각 도메인 조회(`tasty list surfaces` 등)로 별도 접근.
 
 ## 비-목표 (Out of scope)
@@ -69,10 +75,10 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 ## 구현
 
-- view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브(text / branch / kbd / glyph-button)와 축소 판정(`ItemWidths`·`items_at`·`drop_level`)은 이 모듈 private 이고, 판정은 같은 파일의 단위 테스트가 든다 — 순서·"테마는 안 빠진다"·"없는 항목은 gap 도 안 든다". 히트박스까지 이어지는지는 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs` 가 본다.
-- wrapper(본체): `src/adapters/ui/status_bar.rs` `draw_status_bar`(Area 생성 + focus surface read → 데이터 추출 + i18n 라벨 주입, 액션 적용: 팔레트 intent / 테마 settings), `STATUS_BAR_AREA_ID`/`status_bar_layer_id`(z-order 배선의 단일 진실원), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
-- 브랜치 캐시: `src/core/state/branch.rs`(`git_branch` 상위 탐색 + worktree `gitdir:` 추적, `refresh_status_bar_branch`/`status_bar_branch`). 갱신 배선은 `src/app/busy.rs` 의 1Hz `poll_busy_states`(focus surface 만, 변화 시 `mark_dirty`).
-- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/status_bar.rs`(Layouts → Status bar) — 위 view 를 그대로 호출한다. 축소 변종은 단계를 박지 않고 **폭만** 넘긴다(단계는 view 가 정한다).
+- view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브(text / branch / kbd / glyph-button)와 축소 판정(`ItemWidths`·`items_at`·`drop_level`)은 이 모듈 private 이고, 판정은 같은 파일의 단위 시험으로 확인한다 — 순서·"테마는 안 빠진다"·"없는 항목은 gap 도 안 든다". 히트박스까지 이어지는지는 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs` 가 본다.
+- wrapper(본체): `src/adapters/ui/status_bar.rs` `draw_status_bar`(Area 생성 + focus surface read → 데이터 추출 + i18n 라벨 주입, 액션 적용: 팔레트 intent / 테마 settings), `STATUS_BAR_AREA_ID`/`status_bar_layer_id`(z-order를 정하는 공통 기준), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
+- 브랜치 캐시: `src/core/state/branch.rs`(`git_branch` 상위 탐색 + worktree `gitdir:` 추적, `refresh_status_bar_branch`/`status_bar_branch`). 갱신 연결은 `src/app/busy.rs` 의 1Hz `poll_busy_states`(focus surface 만, 변화 시 `mark_dirty`).
+- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/status_bar.rs`(Layouts → Status bar) — 위 view 를 그대로 호출한다. 축소 변종은 단계를 지정하지 않고 **폭만** 넘긴다(단계는 view 가 정한다).
 
 ## 화면
 

@@ -8,7 +8,7 @@
 
 ## 목적
 
-[MainView](../main-view/index.md) 윈도우의 **CSD(Client-Side Decorations) 타이틀바**와 OS별 데코레이션 전략. winit `with_default_menu(false)` 로 tasty 가 창틀을 직접 소유하므로, 타이틀바·캡션 버튼·리사이즈 보더를 OS별로 직접 처리한다. 원칙 4(Windows/macOS/Linux 모두 1급)의 집행 지점.
+[MainView](../main-view/index.md) 윈도우의 **CSD(Client-Side Decorations) 타이틀바**와 OS별 데코레이션 전략. winit `with_default_menu(false)` 로 tasty 가 창틀을 직접 소유하므로, 타이틀바·캡션 버튼·리사이즈 보더를 OS별로 직접 처리한다. Windows·macOS·Linux의 창 동작을 각각 지원한다.
 
 ## 내부 동작 (headless-valid)
 
@@ -27,8 +27,8 @@
 - **드래그 이동** (`StartDrag` → `drag_window`) — 빈 타이틀바 영역 드래그.
 - **더블클릭 maximize** (`ToggleMaximize` → `set_maximized`).
 - **캡션 버튼** (Linux/Windows, tasty 가 그림): `Minimize`/`ToggleMaximize`/`Close`. macOS 는 OS 신호등이라 tasty 가 안 그림(`controls=None`).
-- **Close** 는 네이티브 `CloseRequested` 와 동일 라이프사이클(`AppEvent::CloseWindow`)로 라우팅 — 사용자 클릭이라 IPC 비노출(원칙 1).
-- macOS 만 좌측 신호등 폭(`MACOS_TRAFFIC_LIGHT_INSET`)만큼 드래그 hit 영역을 carve-out.
+- **Close** 는 네이티브 `CloseRequested` 와 동일 라이프사이클(`AppEvent::CloseWindow`)로 라우팅 — 캡션 클릭 자체는 사용자 입력이며, 에이전트의 창 닫기는 별도 window.close 요청으로 처리한다.
+- macOS 만 좌측 신호등 폭(`MACOS_TRAFFIC_LIGHT_INSET`)만큼 드래그 hit 영역을 제외.
 
 ### 상단 inset
 
@@ -42,7 +42,7 @@
 - 대신 `AppState.resize_edge_widget_hovered`(**위젯 단위**)로 게이트한다. 타이틀바 창 버튼(`titlebar/view.rs::draw_window_buttons`)·Windows 캡션 버튼(`titlebar/caption.rs`)·상태바 클릭 요소(`status_bar.rs`)·사이드바 클릭 요소(`sidebar/view.rs` — 헤더 접기 버튼, Tools/Plugins/Settings/New Workspace, 카테고리 헤더, 워크스페이스 행/아바타, rail 카테고리 버튼 전부)가 각자 `Response::hovered()` 를 매 프레임 이 필드에 적재(타이틀바가 프레임당 첫 draw 라 리셋, 이후는 OR 누적) — 실제 버튼/행 위에서만 리사이즈가 양보되고, 빈 여백은 항상 리사이즈로 동작한다. 사이드바의 배경 우클릭 캐처(`bg_resp`, 빈 영역에서 컨텍스트 메뉴만 여는 캐처)는 타이틀바 드래그 rect 와 동일한 이유로 의도적으로 미적재 — 빈 시각 공간은 리사이즈에 양보해야 한다.
 - `resize_direction_at` 는 좌표가 가장자리 margin(`RESIZE_EDGE_MARGIN`) 안이면 8방향 `ResizeDirection` 을 돌려주는 순수 함수(OS 무관 컴파일·테스트).
 - `handle_mouse_input` 이 좌클릭 press 에서 hit-test → `Some(dir)` 이면 `drag_resize_window(dir)` 후 early-return.
-- `handle_cursor_moved` 가 hover 방향을 `AppState.pending_resize_cursor` 에 저장하고, egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 ↔ 커서를 적용한다(egui 가 매 프레임 winit 커서를 덮으므로 프레임 내 적용 필수). 이 경로는 `egui_consumed` 대신 `is_using_pointer()` 기반 hover 판정을 쓰므로(egui-winit `CursorMoved` 처리) 애초에 빈 여백에서 리사이즈 커서가 정상적으로 뜬다 — 클릭 게이트만 어긋나 있었다.
+- `handle_cursor_moved` 가 hover 방향을 `AppState.pending_resize_cursor` 에 저장하고, egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 ↔ 커서를 적용한다(egui 가 매 프레임 winit 커서를 덮으므로 프레임 내 적용 필수). 이 경로는 `egui_consumed` 대신 `is_using_pointer()` 기반 hover 판정을 쓰므로(egui-winit `CursorMoved` 처리) 애초에 빈 여백에서 리사이즈 커서가 정상적으로 뜬다 — 클릭에서도 같은 위젯 우선순위를 사용한다.
 - **커서 우선순위**: 보더 호버 중(`pending_resize_cursor` 가 `Some`)에는 리사이즈 커서(↔ 등)가 surface 커서(터미널 I-beam)·링크 hover(PointingHand)보다 **우선**한다. terminal surface 가 윈도우 우측 끝까지 full-bleed 로 닿아 8px 보더 픽셀을 자기 영역으로 포함하므로(`compute_terminal_rect` 우측 inset 없음), 프레임 직후 커서 덮어쓰기(`src/gfx/gpu.rs`)를 `pending_resize_cursor.is_none()` 으로 게이트해 보더 위에서만 리사이즈 커서를 보존한다. 보더 밖에선 `None` 이라 surface/링크 커서 동작 무변경, macOS 는 이 필드가 항상 `None` 이라 무영향.
 - **macOS 는 데코 있는 창**이라 OS 가 네이티브 보더에서 리사이즈를 처리한다 → 위 hit-test/커서 저장 블록은 `#[cfg(not(target_os = "macos"))]` 가드로 macOS 에서 컴파일·실행되지 않는다.
 
@@ -95,7 +95,7 @@ Linux  :                    [ _ ] [ ▢ ] [ ✕ ]   (DE 가변 캡션, tasty 가
 Windows:                    [ _ ] [ ▢ ] [ ✕ ]   (캡션 버튼 tasty, OS 캡션 제거 + 드롭섀도)
 ```
 
-- **드래그 영역** — 타이틀바 빈 공간(이동/더블클릭 maximize). macOS 는 좌측 신호등 폭만큼 carve-out.
+- **드래그 영역** — 타이틀바 빈 공간(이동/더블클릭 maximize). macOS 는 좌측 신호등 폭만큼 제외.
 - **OS 컨트롤**:
   - macOS — **OS 네이티브 신호등**(tasty 가 그리지 않음).
   - Linux — tasty 가 그리는 DE 가변 버튼(기본 우측 min·max·close).
@@ -116,8 +116,7 @@ Windows:                    [ _ ] [ ▢ ] [ ✕ ]   (캡션 버튼 tasty, OS 캡
 ## 관련
 
 - [architecture/boot-sequence.md](../../architecture/boot-sequence.md) "로딩 프레임" — 이 창이 표시되기 전, 부팅 상태 머신이 그리는 워드마크+스피너+phase 문구 로딩 화면.
-- [architecture/shutdown-sequence.md](../../architecture/shutdown-sequence.md) "종료 화면" — 창이 사라지기 전, 종료 상태 머신이 같은 락업을 문구만 바꿔 그리는 화면.
-</content>
+- [architecture/shutdown-sequence.md](../../architecture/shutdown-sequence.md) "종료 화면" — 창이 사라지기 전, 종료 상태 머신이 같은 로고·진행 표시를 종료 문구와 함께 그리는 화면.
 
 ## 생성 실패 처리
 

@@ -13,13 +13,26 @@
 ## 내부 동작 (headless-valid)
 
 - **데이터**: 각 `Workspace` 는 소속 카테고리 id(`category`)를 갖는다. `CoreState.categories: Vec<WorkspaceCategory>` 가 카테고리 목록이며 **Vec 순서 = 사이드바 섹션 순서**.
-- **`normal` 예약**: id `0`, 이름 `normal`, **`categories[0]` 위치 고정**. rename/delete 불가, 생성 시 이름으로 사용 불가(대소문자 무시). 미지정 워크스페이스의 기본 소속. `ensure_normal_category` 가 생성/복원 직후 이 불변식(0번 고정 + 발급기 floor + dangling 소속 귀속)을 보장한다.
+- **`normal` 예약**: id `0`, 이름 `normal`, **`categories[0]` 위치 고정**. rename/delete 불가, 생성 시 이름으로 사용 불가(대소문자 무시). 미지정 워크스페이스의 기본 소속. `ensure_normal_category` 가 생성/복원 직후 이 불변식(0번 고정 + ID 발급 하한 + 없는 카테고리 소속 정리)을 보장한다.
 - **이름 규칙**: trim 후 빈 이름 거부, `normal`(대소문자 무시) 예약어 거부, 기존 이름과 대소문자 무시 중복 거부.
 - **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다(원칙 1·3).
 - **reorder**: `categories` Vec 순서 변경. **from/to == 0 거부**(normal 0번 고정).
-- **인덱싱**: 사용자 active 워크스페이스는 전역 인덱스 단일 진실 소스로 유지([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
-- **워크스페이스 축 next/prev 의 카테고리 경계 넘기 옵션**: "다음/이전 워크스페이스" quick-switch(기본 vim 스타일 `j`/`k`, `next_workspace_in_active_category`/`prev_workspace_in_active_category`)는 기본적으로 활성 카테고리 **로컬 목록 안에서만** wrap-around 한다. 설정 → 일반 → "다음/이전 워크스페이스가 카테고리 경계를 넘음"(`workspace_switch_crosses_category`, 기본 off)을 켜면, 카테고리 마지막 워크스페이스에서 "다음"은 **다음 카테고리의 첫 워크스페이스**로, 카테고리 첫 워크스페이스에서 "이전"은 **이전 카테고리의 마지막 워크스페이스**로 넘어가며 카테고리 목록 자체도 wrap 한다. 착지는 항상 방향에 맞는 첫/마지막 워크스페이스이며, 아래 카테고리 quick-switch 의 **last-active 착지와는 다르다**(방향성 유지가 우선). 카테고리가 1개뿐이면(`workspace_categories_enabled` off 포함) 이 옵션이 on 이어도 기존 로컬 wrap 과 동일하게 동작한다. 이 옵션은 **워크스페이스 축**의 경계 동작이며, 아래의 **카테고리 축** quick-switch(`Ctrl+Shift`+숫자, `next_category`/`prev_category`)와는 독립적인 별개 기능이다 — 두 축을 함께 켜도 서로 간섭하지 않는다.
-- **카테고리 quick-switch (카테고리 조합+숫자, 기본 Ctrl+Shift)**: 기존 switch-number 오버레이 축을 재사용한다. 카테고리는 독립 축 `category_switch_modifier`(기본 `ctrl+shift`)를 가지며 그 조합이 `SwitchTarget::Category` 로 판정된다(`switch_overlay::switch_target_for` — 세 축 각각의 조합을 정확 일치 매칭). 워크스페이스 오버레이와 **modifier-exclusive** — 서로 다른 조합이라 동시에 그려지지 않는다(같은 조합을 갖는 상태는 설정 충돌 차단으로 저장 불가). 기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`)과 겹치지 않는다. 번호는 카테고리 순서대로 reserved `normal`("Workspaces")=1, 1–9 then 0(10th), 11번째+ 는 키캡 없음(작동 안 할 숫자는 칠하지 않음). 전환 시 (1) 대상이 접혀 있으면 `set_category_collapsed(false)` 로 **자동 확장**하고 슬롯 파일에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 착지(방문 이력 없으면 첫 워크스페이스). last-active 는 `AppState.category_last_active: HashMap<WorkspaceCategoryId, usize>` 에 `switch_workspace` 마다 기록된다. 슬롯 키는 `KeybindingSettings.category_switch_slot_keys`(기본 `["1".."9","0"]`). 오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(원칙 1). 전 기능은 folders 토글 on 게이트.
+- **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
+- **워크스페이스 축 next/prev 의 카테고리 경계 넘기 옵션**: "다음/이전 워크스페이스" quick-switch(기본 vim 스타일 `j`/`k`, `next_workspace_in_active_category`/`prev_workspace_in_active_category`)는 기본적으로 활성 카테고리 **로컬 목록 안에서만** wrap-around 한다.
+  설정 → 일반 → "다음/이전 워크스페이스가 카테고리 경계를 넘음"(`workspace_switch_crosses_category`, 기본 off)을 켜면, 카테고리 마지막 워크스페이스에서 "다음"은 **다음 카테고리의 첫 워크스페이스**로, 카테고리 첫 워크스페이스에서 "이전"은 **이전 카테고리의 마지막 워크스페이스**로 넘어가며 카테고리 목록 자체도 wrap 한다.
+  이동 대상은 항상 방향에 맞는 첫/마지막 워크스페이스이며, 아래 카테고리 quick-switch 의 **마지막 활성 workspace로의 이동와는 다르다**(방향성 유지가 우선).
+  카테고리가 1개뿐이면(`workspace_categories_enabled` off 포함) 이 옵션이 on 이어도 기존 로컬 wrap 과 동일하게 동작한다.
+  이 옵션은 **워크스페이스 축**의 경계 동작이며, 아래의 **카테고리 축** quick-switch(`Ctrl+Shift`+숫자, `next_category`/`prev_category`)와는 독립적인 별개 기능이다 — 두 축을 함께 켜도 서로 간섭하지 않는다.
+- **카테고리 quick-switch (카테고리 조합+숫자, 기본 Ctrl+Shift)**: 기존 switch-number 오버레이 축을 재사용한다.
+  카테고리는 독립 축 `category_switch_modifier`(기본 `ctrl+shift`)를 가지며 그 조합이 `SwitchTarget::Category` 로 판정된다(`switch_overlay::switch_target_for` — 세 축 각각의 조합을 정확 일치 매칭).
+  워크스페이스 오버레이와 **modifier-exclusive** — 서로 다른 조합이라 동시에 그려지지 않는다(같은 조합을 갖는 상태는 설정 충돌 차단으로 저장 불가).
+  기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`)과 겹치지 않는다.
+  번호는 카테고리 순서대로 reserved `normal`("Workspaces")=1, 1–9 then 0(10th), 11번째+ 는 키캡 없음(작동 안 할 숫자는 칠하지 않음).
+  전환 시 (1) 대상이 접혀 있으면 `set_category_collapsed(false)` 로 **자동 확장**하고 슬롯 파일에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 이동(방문 이력 없으면 첫 워크스페이스).
+  last-active 는 `AppState.category_last_active: HashMap<WorkspaceCategoryId, usize>` 에 `switch_workspace` 마다 기록된다.
+  슬롯 키는 `KeybindingSettings.category_switch_slot_keys`(기본 `["1".."9","0"]`).
+  오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(원칙 1).
+  전 기능은 folders 토글 on 게이트.
 - **영속**: 슬롯 파일(`~/.tasty/layouts/NN.json`)에 `categories`(이름·접힘 상태) + 각 워크스페이스의 `category` 가 저장된다. 둘 다 `#[serde(default)]` — 구버전 스냅샷은 카테고리 없이 로드되어 `normal` 단일로 무손실 마이그레이션된다.
 - **토글 마이그레이션**: `workspace_categories_enabled` on→off 시 normal 외 모든 카테고리를 제거하고 워크스페이스를 normal 로 귀속한다(전역 인덱스·active 불변).
 
@@ -33,7 +46,30 @@
   - `workspace_category.move {id,to_index}` / `tasty workspace-category move --id N --to B` — `id` 는 창을 건너 유일해 라우팅이 주인 창을 짚는다. 종전의 `{from_index,to_index}` (`--from A`)도 받지만 그 순번은 창 안의 위치라 **포커스된 창**에 떨어진다([focus](../../design/policies/focus.md)). 둘을 함께 주면 거절한다.
   - `workspace.create` / `workspace.update` 의 `category`(id 또는 이름) 파라미터 — `tasty new/set workspace --category <name|id>`
   - `workspace.list` 응답에 `category` / `category_name`
-- **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. on 이면 사이드바가 카테고리 섹션으로 그룹 렌더되고 **New Workspace(+) 버튼은 확장·축소 양쪽에서 숨긴다**(생성은 카테고리 헤더 메뉴·레일 `---` 팝업의 Add workspace 로 — 배경 우클릭 메뉴는 새 카테고리·원격 워크스페이스 추가뿐 — off 면 + 버튼 표시), 헤더 클릭(접힘 토글)·우클릭 컨텍스트 메뉴(빈 배경 → 새 카테고리/원격 워크스페이스 추가, 헤더 → 워크스페이스 추가(그 카테고리 소속 생성, normal 포함)/프리셋으로부터 워크스페이스 생성(저장된 `WorkspacePreset` 을 그 카테고리 소속으로 적용 — "+" 버튼 메뉴와 동일 팝업 재사용)/원격 워크스페이스 추가/이름변경/삭제/새 카테고리 — normal 은 추가·프리셋 생성·원격 추가·새 카테고리만, 워크스페이스 행 → 카테고리로 이동/새 카테고리)·축소 레일 `---` 팝업(Add workspace/Collapse/Rename/Delete)·드래그 앤 드롭(다른 카테고리로 이동)으로 조작한다. **단축키(`new_workspace`, 기본 `Alt+N`)·Command Palette·더블탭 변형으로 생성**하는 경우도 마우스 경로와 동일하게 카테고리 인지형이다 — `category` 를 고정값으로 넘기지 않고 현재 활성 워크스페이스가 속한 카테고리를 그대로 계승한다(parked 상태, 워크스페이스 0개일 때만 normal fallback). 토글 off 면 활성 워크스페이스가 항상 normal 이라 결과가 이전과 동일하다(회귀 없음). "원격 워크스페이스 추가"는 토글 off 인 배경 우클릭(flat 모드)·+ 버튼 우클릭에도 동일하게 뜨고, 워크스페이스 카드 우클릭에는 없다 — 자세한 배치 근거는 [`features/remote-attach/`](../remote-attach/index.md#원격-워크스페이스-추가-팝업-gui-picker--사용자-경로) 참고. 생성/이름변경은 360px 단일필드 다이얼로그(라이브 검증), 삭제는 destructive confirm 을 거친다.
+### 사용자 조작
+
+설정 → 일반의 "워크스페이스 카테고리"를 켜면 확장·축소 사이드바 모두 New Workspace(+)
+버튼을 숨기고 카테고리별로 표시한다.
+
+| 위치 | 조작 |
+|---|---|
+| 헤더 클릭 | 접기·펴기 |
+| 빈 배경 우클릭 | 새 카테고리, 원격 워크스페이스 추가 |
+| 헤더 우클릭 | 해당 카테고리에 워크스페이스 추가·프리셋 적용, 원격 추가, 이름 변경, 삭제, 새 카테고리 |
+| normal 헤더 우클릭 | 추가·프리셋 적용·원격 추가·새 카테고리만 허용 |
+| 워크스페이스 행 우클릭 | 카테고리로 이동, 새 카테고리 |
+| 축소 레일 `---` | Add workspace / Collapse / Rename / Delete 팝업 |
+| 다른 카테고리에 드롭 | 워크스페이스 소속 변경 |
+
+프리셋 적용은 + 버튼 메뉴와 같은 popup을 사용하되 선택한 카테고리에 적용한다.
+`new_workspace`(기본 `Alt+N`), Command Palette, 더블탭으로 만든 workspace도 현재 활성
+workspace의 카테고리를 이어받는다. parked 상태나 workspace가 없을 때만 normal을 쓴다.
+카테고리를 끈 상태에서는 활성 workspace가 항상 normal이므로 결과도 normal이다.
+
+"원격 워크스페이스 추가"는 카테고리를 끈 경우에도 빈 배경과 + 버튼의 우클릭 메뉴에 있으며,
+워크스페이스 카드 우클릭에는 없다([원격 추가](../remote-attach/index.md#원격-워크스페이스-추가-팝업-gui-picker--사용자-경로)).
+생성·이름 변경은 360px 단일 필드 창에서 입력 중 검증하고, 삭제는 확인 창을 거친다.
+
 - **전체 접기/펴기 단축키**: `KeybindingSettings.toggle_categories_collapsed`(기본 빈 binding — 사용자가 Settings › Keybindings 에서 지정). 하나라도 펼쳐져 있으면 전부 접고, 전부 접혀 있으면 전부 편다(normal 포함, `CoreState::toggle_all_categories_collapsed`). 카테고리 토글 off 면 매칭·consume 하지 않아 키가 다른 binding 으로 흐른다. Command Palette 파리티는 `dispatch_action_by_id("toggle_categories_collapsed")`.
 
 ## 비-목표 (Out of scope)

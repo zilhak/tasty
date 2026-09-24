@@ -29,8 +29,8 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 2. 경로·query·헤더를 정리하고 body 크기를 검사한다. 기본 1MiB를 넘으면 413이며, 상한 이내의 잘못된 UTF-8·JSON은 null로 취급한다.
 3. 등록 경로·lifetime·method·인증을 같은 registry 잠금 안에서 확인한다. 인증은 CountLimit 차감보다 먼저 한다.
 4. 매칭·인증에 성공하면 등록의 남은 횟수를 차감한다. 이 횟수는 접수된 시퀀스 수이며 내부 step 성공 횟수가 아니다.
-5. 401·404·405·413을 출처 실패에 집계한다.200·410·429는 세지 않는다.
-6. 고정 ACK를 보내고 별도 실행을 진행한다.413과 선차단 429는 `respond_and_close`로 연결을 닫는다.
+5. 401·404·405·413을 출처 실패에 집계한다. 200·410·429는 세지 않는다.
+6. 고정 ACK를 보내고 별도 실행을 진행한다. 413과 선차단 429는 `respond_and_close`로 연결을 닫는다.
 
 외부 값은 params의 문자열 leaf에 `${body.x}`·`${header.x}`·`${query.x}`로 치환한다.
 메서드명·객체 key·실행 순서는 owner가 고정한다. HTTP 응답에 시퀀스 결과를 넣지 않는다.
@@ -40,7 +40,7 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0032](../../adr/0032-webhook-admission.md)).
 
-그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — MVP 는 조건분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
+그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — 현재는 조건 분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
 
 | 상태 | 코드/바디 | 트리거 |
 |------|-----------|--------|
@@ -83,7 +83,7 @@ Persistent 토큰은 `webhooks.toml`에 평문으로 저장된다. Unix 파일 �
 
 ### body 상한 (요청당)
 
-JSON 입력은 기본 1MiB이며 `TASTY_WEBHOOK_MAX_BODY_BYTES`의 양수로 조정한다.0·파싱 실패는 기본값이다.
+JSON 입력은 기본 1MiB이며 `TASTY_WEBHOOK_MAX_BODY_BYTES`의 양수로 조정한다. 0·파싱 실패는 기본값이다.
 유효 Content-Length가 상한을 넘으면 application body 읽기 전에 거절한다.
 chunked·길이 미상은 상한+1 바이트를 읽어 초과를 구별하며 UTF-8 변환 전에 판정한다.
 초과 요청은 시퀀스를 실행하지 않고 CountLimit도 차감하지 않는다.
@@ -124,7 +124,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 ### 포트 설정 (설정값 only)
 
-리스너 포트는 **오로지 설정값**에서 온다 — tasty 가 임의 포트로 몰래 대체 bind 하지 않는다(자동 폴백 없음).
+리스너 포트는 **오로지 설정값**에서 온다 — tasty가 임의의 다른 포트에 바인딩하지 않는다(자동 폴백 없음).
 
 - 설정 파일이 처음 없으면 시드 포트 `28429`(User Ports 범위 임의값, 알려진 서비스 포트 아님)를 기록한다.
 - 포트가 비면 리스너를 띄우지 않고 경고한다(`PortNotConfigured`). bind 실패(충돌/권한)도 경고하고 사용자가 설정을 고치게 위임한다(`BindFailed`, 자동 회피 없음).
@@ -140,7 +140,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 | IPC | CLI | 동작 |
 |-----|-----|------|
-| `webhook.register` | `tasty webhook register` | 필요 메서드 + (`--handler <id>` xor `--sequence <json>`) + lifetime + 선택 인증 → `{id, url, ...}` 반환. `--method` 를 생략하면 CLI 는 `methods` 를 `null` 로 보내 서버 기본값 `POST` 가 선다(빈 배열은 서버가 거절한다). `--sequence` 가 JSON 으로 안 읽히면 CLI 가 요청을 보내지 않고 인자 이름과 원인을 찍은 뒤 종료 코드 1 로 끝난다 |
+| `webhook.register` | `tasty webhook register` | 필요 메서드 + (`--handler <id>` xor `--sequence <json>`) + lifetime + 선택 인증 → `{id, url, ...}` 반환. `--method` 를 생략하면 CLI 는 `methods` 를 `null` 로 보내 서버 기본값 `POST`를 사용한다(빈 배열은 서버가 거절한다). `--sequence` 가 JSON 으로 안 읽히면 CLI 가 요청을 보내지 않고 인자 이름과 원인을 찍은 뒤 종료 코드 1 로 끝난다 |
 | `webhook.list` | `tasty webhook list` | 전체 목록(각 항목 URL·메서드·steps·lifetime·인증여부) |
 | `webhook.info` | `tasty webhook info --id <id>` | 단일 상세 |
 | `webhook.unregister` | `tasty webhook unregister --id <id>` | 등록 해제(path 회수) |
@@ -157,7 +157,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 - **HTTPS/TLS 종단** — 리버스 프록시/공유기에 위임(사용자 요구가 "포워딩은 OS/공유기 몫").
 - **외부 발신자의 조회/응답 채널** — 응답은 ACK 전용. 내부 상태 조회는 로컬 소유자 채널(`list`/`info`)로만.
-- **웹훅에서의 OS 셸 실행** — 셸(`ShellCommand`)은 기존 훅(source `hook`) 전용, 웹훅 바인딩 불가. 셸 핸들러가 훅 트리거/수동 발화로 실행될 때 받는 `TASTY_HOOK_*` env 목록은 [hooks 문서의 셸 핸들러 환경변수 절](../hooks/index.md#셸-핸들러-환경변수-tasty_hook_) 참조.
+- **웹훅에서의 OS 셸 실행** — 셸(`ShellCommand`)은 기존 훅(source `hook`) 전용, 웹훅 바인딩 불가. 셸 핸들러가 훅 트리거/수동 실행로 실행될 때 받는 `TASTY_HOOK_*` env 목록은 [hooks 문서의 셸 핸들러 환경변수 절](../hooks/index.md#셸-핸들러-환경변수-tasty_hook_) 참조.
 - **plugin 의 웹훅 관리** — 현재 plugin 은 `webhook.register` 만 호출할 수 있다(나머지는 local-only).
 - **plugin 프로세스의 직접 소켓 소유** — 코어가 소켓을 소유한다.
 - **웹훅 외 프로토콜(raw TCP 등)** — HTTP 웹훅으로 확정.
