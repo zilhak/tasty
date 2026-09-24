@@ -1199,19 +1199,19 @@ mod tests {
         );
     }
 
-    // 실제 한국어 번역으로 작업 완료 알림의 뜻을 검사한다.
+    // 실제 한국어 번역으로 상태 변경 안내를 검사한다.
     fn test_translator_ko() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "ko")
     }
 
     #[test]
-    fn notify_done_message_leads_with_work_completion() {
+    fn notify_done_message_describes_state_change() {
         let tr = test_translator_ko();
         let msg = notify_done_message(&tr, "spawn", 42);
         assert!(
-            msg.contains("작업 완료"),
-            "완료 대상이 '작업'임이 드러나야 함: {msg}"
+            msg.contains("상태 변경"),
+            "상태 변경을 알리는 문구여야 한다: {msg}"
         );
         assert!(msg.contains("42"), "target surface 번호 누락: {msg}");
         assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");

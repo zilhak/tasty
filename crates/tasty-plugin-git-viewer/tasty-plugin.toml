@@ -14,8 +14,7 @@ command = "tasty-plugin-git-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
-# egui-mesh: plugin 이 popup 콘텐츠를 자기 프로세스에서 egui mesh 로 그리고, host 는
-# 셸(scrim/border/outside-click/Esc)만 그린 뒤 합성한다 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+# 내용은 플러그인이 mesh로 보내고 팝업 외곽은 호스트가 그린다.
 rendering = "egui-mesh"
 size_hint = { width = 960, height = 640 }
 anchor = "screen-center"
@@ -27,8 +26,7 @@ label_i18n_key = "git_viewer.tools_menu_item"
 action = { kind = "open_popup", popup_id = "com.tasty.git-viewer/viewer" }
 order_hint = 130
 
-# 단축키로 뷰어를 열기 위한 커맨드. Tools 메뉴 항목과 동일한 popup 을 연다
-# (default_keybinding 미지정 — 사용자가 설정 > 단축키 > 플러그인에서 직접 지정).
+# Tools 메뉴와 같은 팝업을 연다. 기본 단축키 없이 사용자가 직접 지정한다.
 [[contributes.commands]]
 id = "open_viewer"
 title_i18n_key = "git_viewer.command.open_viewer"

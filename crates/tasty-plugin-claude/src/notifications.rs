@@ -15,7 +15,7 @@ pub(crate) fn notify_done_command(
     )
 }
 
-/// 자식이 맡은 작업의 완료를 알린다. spawn/tell은 호출 방식으로 따로 표시한다.
+/// 자식의 상태 변경을 알린다. 입력 대기·종료도 포함하므로 작업 완료를 뜻하지는 않는다.
 pub(crate) fn notify_done_message(
     tr: &Translator,
     command_name: &str,

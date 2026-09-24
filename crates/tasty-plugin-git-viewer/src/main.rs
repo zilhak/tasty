@@ -1,16 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Git Viewer plugin — read-only git status / log / diff popup (**egui-mesh**).
-//!
-//! popup contribute (`trigger = ipc`, `rendering = egui-mesh`)로 등록되며, 사이드바 도구
-//! 메뉴의 "Git" 항목 클릭이 호스트의 `pending_popup_opens` 경로를 통해 `popup.open` 으로
-//! 전달된다. plugin 은 context payload 의 `cwd` 로 git repo 를 탐색해 status/log/diff 를
-//! 프로세스 내에서 직접 수집하고(host IPC 없음), 콘텐츠를 자기 egui Context 로 그려
-//! mesh 를 host 에 회신한다. host 는 셸(scrim/border/Esc/outside-click)만 소유한다.
-//!
-//! Theme 은 `popup.set_context` 의 `theme`(ThemeWire)로 매 frame 받아 host 와 동일
-//! `Theme` 로 재구성한다(markdown surface 와 동형). 상호작용(worktree 선택 / 파일→diff /
-//! Back / Refresh)은 forward 된 실제 사용자 입력으로 egui 안에서 처리된다.
+//! Git 상태·이력·차이를 읽어 보여 주는 egui-mesh 팝업.
+//! 로컬 저장소는 직접 읽고 원격 미러는 호스트 IPC로 조회한다.
+//! 호스트가 팝업 외곽과 입력을 관리하며 플러그인은 받은 테마로 내용을 그린다.
 
 mod render;
 
@@ -31,19 +23,16 @@ use tasty_type_appearance::theme::Theme;
 use tasty_plugin_sdk::EguiMeshPopup;
 
 const PLUGIN_ID: &str = "com.tasty.git-viewer";
-// Cargo.toml 이 SoT — 하드코딩 드리프트(0.1.8 vs 0.1.10 실재했음)를 컴파일 타임에 차단.
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: usize = 200;
-/// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) host → 이 plugin unicast 이벤트 key. host 측 대응값은
-/// `src/app/attach_client.rs::GIT_VIEWER_QUERY_RESULT_EVENT` — 공유 crate 가 없어
-/// 리터럴을 양쪽에 중복 정의한다(둘 다 바꿀 때 동기화 필요).
+/// 호스트가 조회 결과를 전달할 이벤트 이름. 양쪽 정의를 함께 갱신해야 한다.
 const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
 
 #[derive(Default)]
 pub(crate) struct ViewerState {
-    /// 현재 **활성** worktree 의 workdir (status/log/diff 가 바인딩된 대상).
+    /// 상태·이력·차이를 조회할 선택된 워크트리 경로.
     repo_path: Option<PathBuf>,
-    /// popup 이 받은 cwd 가 속한 worktree 의 workdir — `is_current` 판정용(불변).
+    /// 팝업을 처음 연 위치. is_current 표시의 기준으로 유지한다.
     current_workdir: Option<PathBuf>,
     /// main + 모든 linked worktree 종합 목록.
     worktrees: Vec<git::WorktreeEntry>,
@@ -54,52 +43,36 @@ pub(crate) struct ViewerState {
     log_entries: Vec<git::LogEntry>,
     selected_file: Option<usize>,
     diff_content: Option<git::DiffData>,
-    /// diff pane 의 가로 스크롤 콘텐츠 폭 캐시 — `(폭을 잰 mono 폰트 크기, 콘텐츠 폭)`.
-    /// diff 리스트는 보이는 라인만 그리므로(virtualization), 전 라인의 최장 폭을 한 번
-    /// 재 담아두지 않으면 스크롤 위치마다 가로 폭이 출렁인다. render 가 캐시 미스일 때
-    /// 채우고, [`ViewerState::set_diff`] 가 diff 를 바꿀 때 비운다.
+    /// 글꼴 크기별 diff의 전체 너비 캐시. 보이는 줄만 재면 스크롤 범위가 흔들린다.
+    /// set_diff가 내용을 바꿀 때 비우고 렌더링할 때 채운다.
     diff_width: Option<(f32, f32)>,
-    /// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
-    /// discover 대신 host 왕복(`git_viewer.query` IPC → `git_viewer.query_result`
-    /// event)으로 조회한다. None 이면 기존 로컬 경로(변경 없음).
+    /// 원격 미러면 호스트 IPC로 조회한다. 로컬 모드는 None이다.
     remote: Option<RemoteCtx>,
-    /// 최초 스냅샷/refresh/worktree 전환 응답이 아직 안 왔다 — render 가 "loading" 을 낸다.
+    /// 원격 응답을 기다리는 동안 loading을 표시한다.
     loading: bool,
-    /// 활성 worktree 의 열린 `Repository` 핸들 캐시 — 조작마다 다시 열지 않는다.
-    /// 접근은 [`ViewerState::take_repo`] / [`ViewerState::put_repo`] 한 쌍으로만 한다.
-    /// 원격(attach) 모드는 로컬 repo 를 열지 않으므로 항상 `None` 이다.
+    /// 선택한 로컬 저장소의 핸들. take_repo/put_repo로 사용하며 원격 모드에서는 없다.
     repo: Option<CachedRepo>,
 }
 
-/// 캐시된 `Repository` 핸들과 그 핸들이 바인딩된 workdir.
-///
-/// `git2::Repository` 는 `Send` 지만 `Sync` 는 아니다(`git2` 의
-/// `unsafe impl Send for Repository`). plugin 은 SDK 의 단일 `plugin-worker`
-/// 스레드에서 `&mut self` 로만 dispatch 되므로(`tasty-plugin-sdk` 의 `worker_loop`)
-/// 이 핸들을 상태에 보관해도 공유가 발생하지 않는다.
+/// 저장소 핸들과 경로. SDK의 단일 worker가 &mut self로 접근하므로 동시에 공유하지 않는다.
 struct CachedRepo {
     /// 이 핸들이 가리키는 working dir. 요청 경로와 다르면 캐시 미스로 본다.
     workdir: PathBuf,
     handle: git2::Repository,
 }
 
-/// mirror 모드 전용 상태 — host handle + 진행 중인 왕복 요청 추적.
+/// 원격 조회에 사용할 호스트와 대기 중 요청.
 struct RemoteCtx {
     host: HostHandle,
-    /// popup 이 anchor 된 **로컬** mirror surface id(`popup.open` context 의
-    /// `local_surface_id` echo) — host 가 attach 세션 매핑으로 원격 id 로 치환한다.
+    /// 호스트가 원격 ID로 변환할 로컬 미러 터미널 ID.
     local_surface_id: u32,
-    /// 마지막으로 보낸 요청의 id. 응답의 `request_id` 가 다르면 stale 로 버린다(다른
-    /// worktree 선택/refresh 로 새 요청이 이미 나간 뒤 도착한 이전 응답 등).
+    /// 마지막 요청 ID. 다른 ID의 응답은 버린다(연결 종료 알림의 0은 별도 처리).
     pending_request_id: Option<u64>,
-    /// pending 요청이 diff 조회였다면 그 대상 `status_entries` 인덱스. snapshot 요청이면
-    /// None(응답 kind 로 구분하지 않고 이 필드로 분기 — kind 문자열은 host wire 값 그대로).
+    /// 대기 중 diff 요청의 파일 인덱스. 응답 kind가 diff일 때 사용한다.
     pending_diff_idx: Option<usize>,
 }
 
-/// `git_viewer.query_result` 이벤트 payload wire — host
-/// `attach_client.rs::apply_attach_client_output` 의 `MirrorEvent::GitQueryResult` unicast
-/// 조립과 대칭.
+/// 호스트의 원격 Git 조회 결과.
 #[derive(serde::Deserialize)]
 struct GitQueryReplyWire {
     request_id: u64,
@@ -108,9 +81,7 @@ struct GitQueryReplyWire {
     kind: String,
     #[serde(default)]
     data: Option<Value>,
-    /// 서버가 payload 예산(700KiB) 초과로 status/log/diff 일부를 잘랐는가 — 잘려도
-    /// `data` 자체는 유효하므로 현재는 UI 배너 없이 무시한다(list_dir 의 toast 같은
-    /// 별도 채널이 popup 안엔 없음).
+    /// 서버가 크기 제한으로 내용을 잘랐는지 여부. 현재 화면에는 별도 안내를 표시하지 않는다.
     #[serde(default)]
     #[allow(dead_code)]
     truncated: bool,
@@ -118,9 +89,7 @@ struct GitQueryReplyWire {
     reason: Option<String>,
 }
 
-/// snapshot 응답 `data` wire — 필드명이 `tasty_git_core::WorktreeEntry`/`StatusEntry`/
-/// `LogEntry` 와 그대로 일치해 host `attach_runtime.rs::git_query_snapshot` 의 wire
-/// 조립과 대칭(별도 DTO 중복 없음).
+/// 원격 스냅샷 데이터. 항목 타입은 tasty-git-core와 공유한다.
 #[derive(serde::Deserialize)]
 struct SnapshotWire {
     active_worktree_path: String,
@@ -130,8 +99,7 @@ struct SnapshotWire {
 }
 
 impl ViewerState {
-    /// mirror(attach) surface 용 초기 상태 — 즉시 첫 스냅샷 요청을 보내고 loading 상태로
-    /// 시작한다. 로컬 `load`(discover_repo 직접 호출)와 대칭.
+    /// 원격 스냅샷을 요청하고 응답을 기다리는 상태로 시작한다.
     fn new_remote(host: HostHandle, local_surface_id: u32) -> Self {
         let mut s = ViewerState {
             remote: Some(RemoteCtx {
@@ -146,9 +114,8 @@ impl ViewerState {
         s
     }
 
-    /// host 에 `git_viewer.query{kind:snapshot}` 를 보낸다. `worktree_path` 는 이전
-    /// 응답이 돌려준 opaque 서버 경로 echo(worktree 전환/refresh) — None 이면 서버가
-    /// mirror surface 의 원격 cwd 로 새로 discover 한다(최초 로드).
+    /// 원격 스냅샷을 요청한다. 받은 서버 경로는 로컬 경로로 해석하지 않고 그대로 돌려보낸다.
+    /// 경로가 없으면 서버가 해당 터미널의 원격 cwd에서 저장소를 찾는다.
     fn request_remote_snapshot(&mut self, worktree_path: Option<String>) {
         let Some(remote) = self.remote.as_mut() else {
             return;
@@ -173,8 +140,7 @@ impl ViewerState {
         }
     }
 
-    /// host 에 `git_viewer.query{kind:diff}` 를 보낸다. `idx` 는 `status_entries` 내
-    /// 대상 인덱스(응답 적용 시 `pending_diff_idx` 로 재확인해 stale reply 를 거른다).
+    /// 선택한 파일의 원격 diff를 요청한다. 응답 때도 파일 인덱스를 대조한다.
     fn request_remote_diff(&mut self, idx: usize, diff_path: String) {
         let worktree_path = self
             .worktrees
@@ -202,8 +168,7 @@ impl ViewerState {
         }
     }
 
-    /// `on_event` 가 `git_viewer.query_result` 를 받을 때마다 호출 — `request_id` 가
-    /// 현재 pending 과 다르면 stale 응답으로 조용히 버린다.
+    /// 대기 중인 요청의 응답이나 연결 종료 알림만 반영한다.
     fn apply_remote_reply(&mut self, reply: GitQueryReplyWire) {
         let Some(remote) = self.remote.as_mut() else {
             return;
@@ -248,9 +213,7 @@ impl ViewerState {
             }
         };
         let active_path = PathBuf::from(&wire.active_worktree_path);
-        // 최초 스냅샷에서만 고정 — 로컬 `load`(current_workdir 는 popup open 시점 1회
-        // 설정)와 동일 불변식. worktree 전환/refresh 로는 갱신하지 않아 `is_current`
-        // 배지가 항상 "popup 을 연 위치" 를 가리킨다(선택 중인 worktree 와 별개).
+        // 현재 위치 배지는 처음 연 위치를 가리킨다. 워크트리 선택으로 바꾸지 않는다.
         if self.current_workdir.is_none() {
             self.current_workdir = Some(active_path.clone());
         }
@@ -268,9 +231,7 @@ impl ViewerState {
         self.worktrees = worktrees;
         self.status_entries = wire.status_entries;
         self.log_entries = wire.log_entries;
-        // diff 뷰는 원격 재조회가 필요해 snapshot 갱신에 자동으로 딸려 오지 않는다 —
-        // 선택된 파일이 새 목록에 없을 수도 있으므로 단순하게 닫는다(로컬처럼 같은
-        // 인덱스를 이어서 재요청하지 않음 — 흔치 않은 edge case 라 단순함을 우선).
+        // 파일 목록이 바뀌었을 수 있으므로 기존 diff를 닫는다.
         self.selected_file = None;
         self.set_diff(None);
     }
@@ -294,7 +255,6 @@ impl ViewerState {
         let Some(repo) = git::discover_repo(cwd) else {
             return s;
         };
-        // popup cwd 의 worktree workdir — is_current 의 기준점(이후 고정).
         let current_wd = repo
             .workdir()
             .map(|p| p.to_path_buf())
@@ -303,17 +263,12 @@ impl ViewerState {
         s.worktrees = git::collect_worktrees(&repo, &current_wd).unwrap_or_default();
         s.active_worktree = s.worktrees.iter().position(|w| w.is_current).unwrap_or(0);
 
-        // 활성 worktree 가 popup cwd 의 worktree(= 방금 연 `repo`)면 그 핸들을 그대로
-        // 쓴다 — 같은 repo 를 다시 열 이유가 없다. `is_current` 가 아닌 경우(cwd 의
-        // worktree 를 목록에서 못 찾아 0번으로 폴백)만 `bind_active` 가 대상 worktree 를
-        // 새로 연다.
+        // 처음 연 저장소가 선택된 워크트리면 핸들을 재사용한다.
         let active_is_current = s
             .worktrees
             .get(s.active_worktree)
             .is_some_and(|w| w.is_current);
         if s.worktrees.is_empty() || active_is_current {
-            // worktree 도출 실패(빈 목록)면 단일 repo 흐름으로 폴백하고, 활성이 곧
-            // 이 repo 면 그대로 바인딩한다 — 양쪽 다 `repo` 를 그대로 쓴다.
             s.repo_path = Some(current_wd.clone());
             s.refresh_collections(&repo);
             s.put_repo(current_wd, repo);
@@ -323,7 +278,7 @@ impl ViewerState {
         s
     }
 
-    /// `active_worktree` 가 가리키는 worktree 로 status/log 컬렉션을 재바인딩한다.
+    /// 선택한 워크트리의 상태와 이력을 다시 읽는다.
     fn bind_active(&mut self) {
         let Some(path) = self
             .worktrees
@@ -333,8 +288,6 @@ impl ViewerState {
         else {
             return;
         };
-        // worktree 가 바뀌면 `path` 가 캐시 키와 달라 자동으로 미스가 나고, 이전
-        // worktree 의 핸들은 그 자리에서 버려진다.
         let Some(repo) = self.take_repo(&path) else {
             self.error = Some(format!("repo lost at {}", path.display()));
             return;
@@ -347,8 +300,7 @@ impl ViewerState {
         self.put_repo(self.repo_path.clone().unwrap_or(path), repo);
     }
 
-    /// worktree 선택 — 활성 worktree 를 바꾸고 status/log/diff 를 재바인딩(읽기 전용).
-    /// 실제 checkout/working dir 변경 없음. invalid worktree 는 전환하지 않는다.
+    /// 조회 대상을 바꾼다. checkout이나 작업 경로 변경은 하지 않으며 유효하지 않은 항목은 거부한다.
     fn select_worktree(&mut self, idx: usize) {
         let Some(entry) = self.worktrees.get(idx) else {
             return;
@@ -356,14 +308,11 @@ impl ViewerState {
         if !entry.is_valid || idx == self.active_worktree {
             return;
         }
-        // `entry` 대여를 여기서 끝낸다 — 아래 `set_diff` 가 `&mut self` 를 잡는다.
         let path = entry.path.to_string_lossy().into_owned();
         self.selected_file = None;
         self.set_diff(None);
         self.error = None;
-        // 다른 worktree 로 간다 — 이전 worktree 의 핸들은 여기서 버린다(로컬 경로의
-        // `bind_active` 도 키 불일치로 미스가 나지만, 원격 경로는 아래에서 바로
-        // 돌아가므로 명시적으로 비워 낡은 핸들이 남지 않게 한다).
+        // 원격 모드에서도 이전 로컬 저장소 핸들이 남지 않게 비운다.
         self.repo = None;
         if self.remote.is_some() {
             self.active_worktree = idx;
@@ -383,13 +332,10 @@ impl ViewerState {
             self.request_remote_snapshot(worktree_path);
             return;
         }
-        // Refresh 는 "지금 상태를 다시 읽어달라" 는 명시적 요청이다. 캐시된 핸들을
-        // 여기서 **먼저 버려** 재조회가 항상 새로 연 repo 에서 이뤄지게 한다 —
-        // 최신성이 캐시 적중률보다 우선이므로, 외부 변경 반영 여부가 핸들 수명에
-        // 좌우되지 않는다.
+        // 명시적인 새로고침에서는 저장소를 다시 연다.
         self.repo = None;
 
-        // worktree 목록 재수집(외부 add/remove 반영) — current_workdir 기준.
+        // 외부에서 추가·삭제한 워크트리도 다시 수집한다.
         if let Some(current_wd) = self.current_workdir.clone() {
             let prev_active = self
                 .worktrees
@@ -406,8 +352,7 @@ impl ViewerState {
                         .or_else(|| self.worktrees.iter().position(|w| w.is_current))
                         .unwrap_or(0);
                 }
-                // 활성 worktree 가 방금 연 그 repo 라면 핸들을 넘겨 아래 재바인딩에서
-                // 재사용한다 — 한 번의 Refresh 안에서 같은 repo 를 두 번 열지 않는다.
+                // 이번에 연 저장소가 선택된 대상이면 다시 열지 않고 넘긴다.
                 if self.repo_path.as_deref() == Some(current_wd.as_path()) {
                     self.put_repo(current_wd, repo);
                 }
@@ -487,19 +432,14 @@ impl ViewerState {
         self.set_diff(None);
     }
 
-    /// `diff_content` 는 반드시 이 헬퍼로만 바꾼다 — 같이 무효화해야 하는
-    /// [`ViewerState::diff_width`] 캐시가 딸려 있다.
+    /// diff를 바꿀 때 너비 캐시도 함께 비운다.
     fn set_diff(&mut self, diff: Option<git::DiffData>) {
         self.diff_content = diff;
         self.diff_width = None;
     }
 
-    /// `workdir` 에 해당하는 `Repository` 를 꺼낸다 — 캐시가 같은 workdir 이면 그
-    /// 핸들을, 아니면 새로 열어 돌려준다(다른 worktree 의 캐시는 여기서 버려진다).
-    ///
-    /// **캐시는 항상 여기서 비워진다.** 호출자가 다 쓴 뒤 [`Self::put_repo`] 로
-    /// 돌려놓아야 다음 호출이 재사용하고, 에러로 중간에 빠져나가면 캐시가 빈 채로
-    /// 남아 다음 조작이 무조건 다시 연다 — 낡은 핸들이 살아남는 경로가 없다.
+    /// 경로가 같은 캐시 핸들을 꺼내거나 저장소를 새로 연다.
+    /// 재사용하려면 호출자가 사용 후 put_repo로 돌려놓아야 한다.
     fn take_repo(&mut self, workdir: &std::path::Path) -> Option<git2::Repository> {
         if let Some(cached) = self.repo.take()
             && cached.workdir == workdir
@@ -516,7 +456,7 @@ impl ViewerState {
 }
 
 struct GitViewerPlugin {
-    /// 단일 인스턴스 가드 — 최초 open 이 primary. 이후 인스턴스는 "이미 열림" 표시.
+    /// 첫 인스턴스만 내용을 표시하고 추가 인스턴스에는 이미 열림을 안내한다.
     primary: Option<u64>,
     /// primary 인스턴스의 상태.
     state: Option<ViewerState>,
@@ -525,8 +465,7 @@ struct GitViewerPlugin {
     /// CJK fallback 폰트를 이미 설치한 popup instance_id.
     fonts_installed: HashSet<u64>,
     tr: Translator,
-    /// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) `on_start` 에서 1 회 수신 — mirror popup 이 원격 git 조회를 트리거할 때
-    /// `ViewerState::new_remote` 에 clone 해 넘긴다.
+    /// 시작할 때 받은 호스트 핸들. 원격 조회 상태를 만들 때 복제해 넘긴다.
     host: Option<HostHandle>,
 }
 
@@ -550,12 +489,8 @@ fn cwd_from_context(context: &Value) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// `apply_remote_reply` 의 request_id 매칭 판정 — `RemoteCtx`(HostHandle 보유라 이
-/// crate 밖에서 생성 불가) 없이 순수 값만으로 단위 테스트할 수 있게 뽑아냈다.
-/// `reply_request_id == 0` 은 host 가 mirror workspace disconnect 시 쓰는 sentinel
-/// (`request_id` 실제 발급은 1부터 시작 — `App::notify_git_viewer_mirror_lost`) —
-/// "지금 뭔가 기다리고 있다면(=`pending_request_id.is_some()`) 무조건 버려라" 로
-/// 해석한다. 일반 id 는 정확히 일치해야 한다(stale/중복 응답 거부).
+/// 대기 중인 요청 ID와 일치하는 응답만 받는다.
+/// 0은 연결 종료 알림이므로 어떤 요청이든 대기 중이면 적용해 대기를 끝낸다.
 fn should_apply_remote_reply(pending_request_id: Option<u64>, reply_request_id: u64) -> bool {
     if reply_request_id == 0 {
         pending_request_id.is_some()
@@ -595,18 +530,15 @@ impl Plugin for GitViewerPlugin {
         PLUGIN_VERSION
     }
 
-    // popup-only plugin이라 surface 콜백은 빈 결과.
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        // egui-mesh popup 은 tree 를 안 그린다 — 빈 트리. 최초 인스턴스만 state 를 적재하고
-        // primary 로 삼는다. 이후 인스턴스는 paint_popup 에서 "이미 열림" 을 그린다.
+        // 첫 인스턴스만 상태를 읽는다. 추가 인스턴스에는 이미 열림을 안내한다.
         if self.primary.is_none() {
             self.primary = Some(ctx.instance_id);
-            // (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror workspace 면 로컬 discover 대신 host 왕복으로 조회한다
-            // (`tools_menu.rs` 가 context 에 `mirror`/`local_surface_id` 를 실어 보냄).
+            // 미러 터미널이면 로컬 저장소 대신 호스트를 통해 원격 저장소를 조회한다.
             let is_mirror = ctx
                 .context
                 .get("mirror")
@@ -671,7 +603,6 @@ impl GitViewerPlugin {
         };
 
         let is_primary = self.primary == Some(iid);
-        // 서로소 필드 — 동시 mutable 차용 안전.
         let tr = &self.tr;
         let state = &mut self.state;
         let is_new = !self.popups.contains_key(&iid);
@@ -699,12 +630,12 @@ impl GitViewerPlugin {
     }
 }
 
-/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+/// 전달받은 색·밝기·확대 비율로 테마를 만든다.
 fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
-/// plugin Context 에 CJK fallback 을 설치한다(한글/일문/한자 커밋 메시지·경로 tofu 방지).
+/// 구할 수 있는 시스템 CJK 폰트를 대체 폰트로 추가한다.
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bytes) = load_system_cjk_font_data() {
@@ -720,11 +651,7 @@ fn install_fonts(ctx: &egui::Context) {
                 .push("system_cjk".to_owned());
         }
     }
-    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
-    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
-    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
-    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
-    // `PluginEnv.locale_font` 와 같은 출처).
+    // 호스트와 같은 검사 함수로 언어팩 폰트를 대체 폰트 목록 끝에 추가한다.
     if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
         let path = std::path::PathBuf::from(path);
         if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
@@ -737,11 +664,11 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
+/// OS별 시스템 CJK 폰트 후보를 읽는다.
 fn load_system_cjk_font_data() -> Option<Vec<u8>> {
     #[cfg(windows)]
     {
-        // host font_registry::load_system_cjk_font_data 미러 (맑은 고딕).
+        // 맑은 고딕이 없으면 추가하지 않는다.
         if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
             return Some(data);
         }

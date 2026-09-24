@@ -60,7 +60,7 @@ limit_title = "Claude 自動再開を停止"
 limit_body = "surface {}: API エラーが {} 回連続したため（{}）自動再開を停止しました。セッションを確認して手動で続けてください。"
 
 [claude.notify]
-done_message = "surface {}: 作業完了 ({} 経由)"
+done_message = "surface {}: 状態変更 ({} 経由)"
 stop_failure_hint = " — API エラー（{}）でターンが終了し、入力待ちです"
 stalled_message = "surface {}: エラー以降 出力が止まっています — 子が停止した可能性があります (まだ active、完了シグナルなし)"
 stalled_no_error_message = "surface {}: 長時間 出力も完了シグナルもありません — 子が停止している可能性があります (フックが届かないプロンプトで待機中かもしれません)"

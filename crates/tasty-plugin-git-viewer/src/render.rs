@@ -1,14 +1,5 @@
-//! egui-mesh 자가 렌더 — git-viewer popup 콘텐츠(디자인 `overlays/git_viewer.jsx` 전사).
-//!
-//! host 는 셸(scrim/bg_panel/border/Esc/outside-click)만 그리고, 이 모듈이 content_rect
-//! 안쪽을 plugin egui 로 그린다. 색·폰트·간격은 모두 `Theme` 토큰에서 가져온다
-//! (디자인 토큰 = host catppuccin → 의미 토큰 매핑). 상호작용(worktree 선택 / 파일→diff /
-//! Back / Refresh)은 이 프레임 안에서 [`ViewerState`] 를 직접 mutate 한다 — set_context
-//! 만으로 구동되므로, 갱신된 pane 이 클릭 지점보다 **뒤에** 그려지도록 순서를 잡는다.
-//!
-//! 색 매핑: oid·refs·main·hunk = `accent_info`(sky),
-//! current·added·diff `+` = `accent_success`, locked·modified = `accent_warning`,
-//! invalid·deleted·unmerged·diff `-`·error = `accent_danger`, linked·`?` = neutral.
+//! Git 팝업의 내용 영역을 그린다.
+//! 워크트리·파일 선택이 같은 프레임에 반영되도록 선택 버튼 뒤에 상세 내용을 그린다.
 
 mod diff;
 
@@ -22,8 +13,8 @@ use diff::{diff_toolbar, draw_diff};
 use crate::ViewerState;
 use tasty_git_core::{FileStatus, LogEntry, StatusEntry, WorktreeEntry};
 
-// ── 디자인 고정 px (git_viewer.jsx 의 화면 전용 치수 — Theme 토큰에 대응 없음) ──
-/// worktree rail 고정 폭(jsx `width: 232`). 2줄 행이 어떤 프레임 폭에서도 안 넘치게 고정.
+// 공용 토큰에 대응하지 않는 화면 전용 치수.
+/// 워크트리 목록 너비.
 const RAIL_W: f32 = 232.0;
 /// 섹션 헤더 strip 높이(jsx `gvHeadStrip height: 28`).
 const SECTION_H: f32 = 28.0;
@@ -43,7 +34,7 @@ fn prop(size: f32) -> FontId {
     FontId::proportional(size)
 }
 
-/// popup 본문 진입점 — CentralPanel(bg_panel) 위에 header + context strip + body.
+/// 팝업의 헤더·저장소 정보·본문을 그린다.
 pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
     let frame = egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -67,7 +58,7 @@ pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, 
     });
 }
 
-/// 단일 인스턴스 가드용 — 두 번째 popup 인스턴스가 보여줄 "이미 열림" 중앙 메시지.
+/// 추가 인스턴스에 이미 열려 있다는 안내를 표시한다.
 pub(crate) fn draw_busy(ctx: &egui::Context, theme: &Theme, tr: &Translator) {
     let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
@@ -95,7 +86,6 @@ pub(crate) fn draw_busy(ctx: &egui::Context, theme: &Theme, tr: &Translator) {
     });
 }
 
-// ── header (row 1): Git 타이틀 + Refresh(secondary) ──
 fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
     let full_w = ui.available_width();
     let pad_x = theme.spacing_md.value();
@@ -104,7 +94,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Transl
     let h = pad_y * 2.0 + btn_h;
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
 
-    // 타이틀(아이콘 생략 — host UiNode 경로와 동일, primitive 매핑에 icon 없음).
     ui.painter().text(
         egui::pos2(rect.left() + pad_x, rect.center().y),
         Align2::LEFT_CENTER,
@@ -113,7 +102,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Transl
         theme.text_primary().to_egui(),
     );
 
-    // Refresh 버튼 — 우측 정렬(right_to_left child).
     let ctrl_rect = Rect::from_min_max(
         egui::pos2(rect.left(), rect.top() + pad_y),
         egui::pos2(rect.right() - pad_x, rect.top() + pad_y + btn_h),
@@ -134,7 +122,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Transl
     bottom_separator(ui, theme, rect);
 }
 
-// ── header (row 2): context strip — worktree · branch · oid · repo path ──
 fn context_strip(ui: &mut egui::Ui, theme: &Theme, state: &ViewerState, tr: &Translator) {
     let full_w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, CTX_H), Sense::hover());
@@ -178,7 +165,6 @@ fn context_strip(ui: &mut egui::Ui, theme: &Theme, state: &ViewerState, tr: &Tra
         tag(&mut cui, theme, &oid, TagVariant::Info, false);
     }
 
-    // repo path — 우측, mono caption, muted, 우측 영역에 clip.
     if let Some(path) = state
         .repo_path
         .as_ref()
@@ -220,7 +206,7 @@ fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
         );
 }
 
-/// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
+/// 원격 스냅샷 응답을 기다리는 동안 표시한다.
 fn loading(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
     let h = ui.available_height().max(1.0);
     ui.allocate_ui_with_layout(
@@ -260,13 +246,11 @@ fn nonrepo(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
     );
 }
 
-// ── body: rail(232) | right column ──
 fn body(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
     let avail = ui.available_rect_before_wrap();
     let rail_rect = Rect::from_min_size(avail.min, vec2(RAIL_W, avail.height()));
     let right_rect = Rect::from_min_max(egui::pos2(avail.min.x + RAIL_W, avail.min.y), avail.max);
 
-    // rail 우측 경계선.
     ui.painter().vline(
         avail.min.x + RAIL_W,
         rail_rect.y_range(),
@@ -305,8 +289,7 @@ fn draw_rail(
         return;
     }
     let mut clicked: Option<usize> = None;
-    // virtualization — 보이는 행만 레이아웃한다. `row_range` 는 **전체 목록 기준**
-    // 인덱스라 `select_worktree(idx)` 에 그대로 넘길 수 있다.
+    // 보이는 행만 그리되 인덱스는 전체 목록 기준으로 전달한다.
     egui::ScrollArea::vertical()
         .id_salt("gv_rail")
         .auto_shrink([false, false])
@@ -331,14 +314,13 @@ fn draw_rail(
                 }
             },
         );
-    // 클릭 → worktree 재바인딩. right column 은 이 뒤에 그려져 같은 프레임에 반영된다.
+    // 오른쪽 내용을 그리기 전에 선택한 워크트리를 반영한다.
     if let Some(idx) = clicked {
         state.select_worktree(idx);
     }
 }
 
-/// worktree 행 높이 — 2줄 + 상하 padding. theme 파생이지만 한 프레임 안에서 모든 행이
-/// 같은 값이라 `ScrollArea::show_rows` 의 균일 높이 전제를 만족한다.
+/// 모든 워크트리 행에 같은 높이를 사용해야 show_rows가 올바른 행을 고른다.
 fn wt_row_h(theme: &Theme) -> f32 {
     let pad_y = theme.spacing_sm.value();
     let line_gap = theme.spacing_xs.value();
@@ -347,7 +329,7 @@ fn wt_row_h(theme: &Theme) -> f32 {
     pad_y * 2.0 + l1_h + line_gap + l2_h
 }
 
-/// 2줄 worktree 행: line1 = name + type pill, line2 = short oid + state pill.
+/// 첫 줄은 이름·타입, 둘째 줄은 짧은 커밋 ID·상태를 표시한다.
 fn wt_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -380,7 +362,6 @@ fn wt_row(
         theme.text_secondary()
     };
 
-    // line 1: name (left, clipped) + type pill (right).
     let l1 = Rect::from_min_size(
         egui::pos2(rect.left() + pad_x, rect.top() + pad_y),
         vec2(full_w - pad_x * 2.0, l1_h),
@@ -406,7 +387,6 @@ fn wt_row(
         name_color.to_egui(),
     );
 
-    // line 2: oid (left, accent_info) + state pill (right).
     let l2 = Rect::from_min_size(
         egui::pos2(rect.left() + pad_x, l1.max.y + line_gap),
         vec2(full_w - pad_x * 2.0, l2_h),
@@ -418,7 +398,7 @@ fn wt_row(
                 .layout(Layout::right_to_left(Align::Center)),
         );
         let resp = tag(&mut t2, theme, &tr.t(label_key), variant, true);
-        // locked/invalid 사유를 hover tooltip 으로(jsx `title={wt.reason}`).
+        // 잠금·무효 상태의 이유를 툴팁으로 보여 준다.
         if let Some(reason) = &wt.lock_reason
             && !reason.is_empty()
         {
@@ -435,7 +415,6 @@ fn wt_row(
         );
     }
 
-    // 선택 행 좌측 2px inset accent bar.
     if selected {
         ui.painter().rect_filled(
             Rect::from_min_size(rect.min, vec2(2.0, rect.height())),
@@ -447,7 +426,7 @@ fn wt_row(
     resp.clicked() && wt.is_valid
 }
 
-/// worktree 상태 pill(current/locked/invalid). 없으면 None. (색 dot 포함)
+/// 워크트리 상태 태그. 무효·잠김·현재 위치 순으로 우선한다.
 fn wt_state_pill(wt: &WorktreeEntry) -> Option<(&'static str, TagVariant)> {
     if !wt.is_valid {
         Some(("git_viewer.wt_invalid", TagVariant::Danger))
@@ -471,7 +450,6 @@ fn draw_right(
     let top = Rect::from_min_size(area.min, vec2(area.width(), half));
     let bottom = Rect::from_min_max(egui::pos2(area.left(), area.top() + half), area.max);
 
-    // 상단 Changes | 하단 Commits↔Diff 사이 separator.
     ui.painter().hline(
         area.x_range(),
         area.top() + half,
@@ -509,8 +487,7 @@ fn draw_changes(
         return;
     }
     let mut clicked: Option<usize> = None;
-    // virtualization — `row_range` 는 **전체 목록 기준** 인덱스라 `load_diff(idx)` 가
-    // 받는 값의 의미가 바뀌지 않는다.
+    // 화면에 보이는 행의 전체 목록 인덱스로 diff를 연다.
     egui::ScrollArea::vertical()
         .id_salt("gv_changes")
         .auto_shrink([false, false])
@@ -540,7 +517,7 @@ fn draw_changes(
     }
 }
 
-/// Changes 행: 고정폭 상태 pill + 경로(dir muted / file primary, clip).
+/// 상태 태그와 파일 경로를 그린다.
 fn ch_row(ui: &mut egui::Ui, theme: &Theme, entry: &StatusEntry, selected: bool) -> bool {
     let full_w = ui.available_width();
     let pad_x = theme.spacing_md.value();
@@ -564,7 +541,6 @@ fn ch_row(ui: &mut egui::Ui, theme: &Theme, entry: &StatusEntry, selected: bool)
             .layout(Layout::left_to_right(Align::Center)),
     );
     cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    // 고정폭 상태 pill 자리.
     cui.allocate_ui_with_layout(
         vec2(STATUS_BADGE_W, CH_ROW_H),
         Layout::left_to_right(Align::Center),
@@ -572,7 +548,6 @@ fn ch_row(ui: &mut egui::Ui, theme: &Theme, entry: &StatusEntry, selected: bool)
             tag(ui, theme, glyph, variant, false);
         },
     );
-    // 경로 — dir(muted) + file(primary).
     let (dir, file) = split_path(&entry.path);
     let path_clip = Rect::from_min_max(
         egui::pos2(cui.cursor().left(), rect.top()),
@@ -622,10 +597,8 @@ fn draw_bottom(
     tr: &Translator,
     area: Rect,
 ) {
-    // diff 표시 중이면 툴바(Back) 먼저 — Back 클릭 시 close_diff 후 아래에서 commits 로 전환.
+    // 뒤로 가기를 먼저 처리해 같은 프레임에 커밋 목록으로 돌아간다.
     let showing_diff = state.selected_file.is_some() && state.diff_content.is_some();
-    // diff 툴바 높이는 `git-toolbar-height`(32) — control-height(28) 가 아닌
-    // 컨테이너 role 이다.
     let toolbar_h = if showing_diff {
         theme.git_toolbar_height().value()
     } else {
@@ -663,8 +636,7 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
         empty_line(&mut pane, theme, &tr.t("git_viewer.no_commits"));
         return;
     }
-    // virtualization — `LOG_LIMIT` 만큼 쌓여도 보이는 행만 레이아웃한다. 커밋 행은
-    // 클릭 대상이 아니라 인덱스 매핑 부담이 없다.
+    // 보이는 커밋 행만 그린다.
     egui::ScrollArea::vertical()
         .id_salt("gv_commits")
         .auto_shrink([false, false])
@@ -680,9 +652,7 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
         });
 }
 
-/// 커밋 summary 표시 문자열. `tasty-git-core` 는 값이 없으면 빈 문자열을 주고 자연어를
-/// 만들지 않는다(호출자 주입, docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입) — 빈 값의 문구는 여기서 plugin 자기
-/// lang 으로 고른다. 원격 mirror 조회도 같은 wire 라 로컬 언어로 표시된다.
+/// 비어 있는 커밋 제목은 플러그인의 언어로 안내한다. Git 데이터 자체는 번역하지 않는다.
 fn summary_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
     if entry.summary.is_empty() {
         tr.t("git_viewer.no_message")
@@ -691,7 +661,7 @@ fn summary_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
     }
 }
 
-/// 커밋 author 표시 문자열 — `summary_text` 와 같은 규약.
+/// 비어 있는 작성자 이름을 번역 문구로 대체한다.
 fn author_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
     if entry.author.is_empty() {
         tr.t("git_viewer.unknown_author")
@@ -700,7 +670,7 @@ fn author_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
     }
 }
 
-/// Commits 행: oid(info) + refs pills(info) + summary(flex) + author + time.
+/// 커밋 ID·참조 태그·제목·작성자·시각을 그린다.
 fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
     let full_w = ui.available_width();
     let pad_x = theme.spacing_md.value();
@@ -715,8 +685,7 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
     );
     let gap = theme.spacing_sm.value();
 
-    // oid(info)는 항상 그려지는 고정 요소라 폭을 먼저 측정해 둔다 — 우 cluster가
-    // (author 가 아무리 길어도) 이 영역을 절대 침범하지 못하게 clip 상한으로 쓴다.
+    // 작성자 영역이 커밋 ID를 가리지 않도록 ID 너비를 먼저 구한다.
     let oid_w = ui
         .painter()
         .layout_no_wrap(
@@ -728,15 +697,7 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
         .width();
     let right_clip_left = content.left() + oid_w + gap;
 
-    // 우 cluster: time + author (우측 정렬). author 가 길면 egui Label 은 자체적으로
-    // wrap/clip 하지 않고 폭 제한 없이 그려지므로(참고: `ch_row` 의 path clip 과 동일
-    // 이유), oid 영역을 덮어쓰지 않도록 명시적 상한을 건다 — 넘치는 부분은
-    // summary/pill 과 동일하게 픽셀 단위로 잘릴 뿐 ellipsis 는 없다.
-    //
-    // clip 은 반드시 `shrink_clip_rect`(부모 clip 과 교집합)로 좁힌다 —
-    // `set_clip_rect` 는 부모 clip 을 덮어쓴다. 이 행은 ScrollArea 안에서 그려지고
-    // `rect` 는 스크롤된 가상 콘텐츠 좌표라, 덮어쓰면 뷰포트 밖으로 밀려난 행의
-    // 라벨이 pane 경계를 넘어 그려진다.
+    // 긴 작성자 이름을 자르되 스크롤 영역 밖으로 그리지 않도록 부모 clip과 교차한다.
     let mut right = ui.new_child(
         UiBuilder::new()
             .max_rect(content)
@@ -758,17 +719,10 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
             .size(theme.font_size_term_sm.value())
             .color(theme.text_muted().to_egui()),
     );
-    // `min_rect()`는 clip 과 무관하게 라벨의 논리적(안 잘린) 전체 폭을 반영해 author 가
-    // 길면 content 밖(심지어 음수)까지 나갈 수 있다 — pill 상한은 실제로 화면에 보이는
-    // (=clip 된) 시작점을 써야 한다. author 가 짧아 clip 이 아예 걸리지 않는 보통
-    // 케이스는 natural 값이 이미 right_clip_left 보다 오른쪽이라 이 max 는 no-op —
-    // 8-refs 케이스 등 기존 동작에 영향 없다. author 가 길어 clip 이 걸리는 케이스는
-    // right_clip_left(=oid 우측 끝)로 클램프돼, pill 은 (남는 자리가 거의 없으므로)
-    // 대부분 "+N" 로도 다 못 그려질 수 있다 — oid 를 침범하지 않는 것이 우선이라 정상.
+    // 논리적 전체 너비 대신 실제로 보이는 작성자 영역을 태그 배치의 경계로 쓴다.
     let right_start = right.min_rect().left().max(right_clip_left);
 
-    // 좌 cluster: oid(info) + refs pills(info). pill 누적 폭이 right cluster를
-    // 침범하기 전까지만 그리고, 넘치면 남은 개수를 "+N" pill로 축약한다.
+    // 남은 너비만큼 참조 태그를 표시하고 나머지 개수는 +N으로 줄인다.
     let mut left = ui.new_child(
         UiBuilder::new()
             .max_rect(content)
@@ -826,9 +780,7 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
     );
 }
 
-// ── 공용 헬퍼 ──
-
-/// 섹션 헤더 strip — bg-sidebar + 하단 separator + uppercase mono micro muted 라벨.
+/// 섹션 헤더와 아래 구분선을 그린다.
 fn pane_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     let full_w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, SECTION_H), Sense::hover());
@@ -844,7 +796,7 @@ fn pane_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// 빈 pane 한 줄 — 중앙 italic muted.
+/// 비어 있는 목록의 안내를 중앙에 표시한다.
 fn empty_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     let full_w = ui.available_width();
     let h = ui
@@ -908,7 +860,7 @@ mod tests {
         Translator::load(&lang_dir, locale)
     }
 
-    /// git-core 가 준 빈 값은 plugin 의 lang 키로 대체되고, 값이 있으면 그대로 쓴다.
+    /// 빈 값은 번역 문구로 대체하고 값이 있으면 그대로 표시한다.
     #[test]
     fn empty_summary_and_author_fall_back_to_lang_keys() {
         let tr = translator("en");
@@ -920,7 +872,7 @@ mod tests {
         assert_eq!(author_text(&tr, &e), "alice");
     }
 
-    /// 폴백 문구는 plugin 로케일을 따른다 — host 언어가 아니라 plugin 이 받은 `TASTY_LOCALE`.
+    /// 받은 언어 설정에 따라 빈 값 안내를 번역해야 한다.
     #[test]
     fn fallback_follows_plugin_locale() {
         let e = entry("", "");

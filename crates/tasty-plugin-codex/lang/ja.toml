@@ -23,7 +23,7 @@ stale = " インデックス [{indices}] の子はエージェントプロセス
 codex = "Codex"
 
 [codex.notify]
-done_message = "surface {target} 作業完了 (呼び出し方式: {kind})"
+done_message = "surface {target} 状態変更 (呼び出し方式: {kind})"
 sandbox_hint = "⚠ sandbox の初期化に失敗した可能性があります(RTM_NEWADDR を検出)— この実行環境は入れ子の sandbox(bwrap)に対応していない可能性があります。--full-auto で再試行してください。"
 
 [codex.reboot]

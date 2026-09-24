@@ -1,8 +1,5 @@
-//! diff pane — 툴바(Back + 파일 경로) + gutter/sign/text 3열 라인 렌더.
-//!
-//! diff 는 다른 pane 과 달리 가로 스크롤을 갖는다 — 콘텐츠 폭을 전 라인의 최장
-//! 텍스트에서 구해 캐시하고(`width_cache`), 행별 tint 밴드도 같은 폭을 쓴다. 그
-//! 폭 계산이 이 pane 안에서만 닫히므로 rail/changes/commits 와 상태를 안 나눈다.
+//! diff의 도구 모음과 이전·이후 줄 번호, 부호, 텍스트를 그린다.
+//! 가로 스크롤 너비는 전체 줄의 최댓값으로 고정하고 각 줄의 배경은 해당 줄 길이만큼 칠한다.
 
 use egui::{Align, Align2, Color32, Layout, Rect, Sense, UiBuilder, vec2};
 use tasty_plugin_sdk::Translator;
@@ -59,7 +56,6 @@ pub(super) fn draw_diff(
     width_cache: &mut Option<(f32, f32)>,
     area: Rect,
 ) {
-    // recessed bg-app well.
     ui.painter()
         .rect_filled(area, 0.0, theme.bg_app().to_egui());
     let mut pane = ui.new_child(
@@ -72,8 +68,7 @@ pub(super) fn draw_diff(
         empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
         return;
     }
-    // (hunk 헤더 + 라인) 평탄화 — `starts[i]` = i 번째 hunk 헤더의 flat 행 인덱스.
-    // hunk 수만큼만 도는 prefix sum 이라 라인 수와 무관하게 싸다.
+    // 각 hunk 헤더의 전체 행 인덱스를 계산한다.
     let mut starts: Vec<usize> = Vec::with_capacity(diff.hunks.len());
     let mut total_rows = 0usize;
     for hunk in &diff.hunks {
@@ -81,9 +76,8 @@ pub(super) fn draw_diff(
         total_rows += 1 + hunk.lines.len();
     }
 
-    // 가로 폭은 전 라인의 최장 폭으로 **한 번만** 재서 캐시한다. 보이는 라인만 재면
-    // 스크롤할 때마다 콘텐츠 폭이 바뀌어 가로 스크롤이 출렁인다. 캐시 키는 폰트 크기
-    // (theme 변경 시 자동 재측정), 무효화는 `ViewerState::set_diff` 가 맡는다.
+    // 보이는 줄만 재면 스크롤 범위가 흔들리므로 전체 최장 너비를 캐시한다.
+    // 글꼴 크기가 바뀌거나 set_diff가 내용을 바꾸면 다시 계산한다.
     let sz = theme.font_size_caption.value();
     let row_w = match *width_cache {
         Some((cached_sz, w)) if cached_sz == sz => w,
@@ -120,14 +114,12 @@ pub(super) fn draw_diff(
         });
 }
 
-/// diff 한 줄의 높이 — hunk 헤더와 일반 라인이 같은 값이라 `show_rows` 의 균일 높이
-/// 전제를 만족한다.
+/// hunk 헤더와 일반 줄에 같은 높이를 사용한다.
 fn diff_row_h(theme: &Theme) -> f32 {
     (theme.font_size_caption.value() * 1.65).round()
 }
 
-/// diff 콘텐츠의 가로 폭 — 전 라인(hunk 헤더 포함) 중 최장 텍스트 기준. 캐시 미스일
-/// 때만 부르는 O(라인 수) 경로다.
+/// hunk 헤더를 포함한 전체 줄에서 필요한 최대 너비를 구한다.
 fn diff_content_w(ui: &egui::Ui, theme: &Theme, diff: &DiffData, sz: f32) -> f32 {
     let p = ui.painter();
     let mut w = 0.0f32;
@@ -140,9 +132,7 @@ fn diff_content_w(ui: &egui::Ui, theme: &Theme, diff: &DiffData, sz: f32) -> f32
     w
 }
 
-/// diff 한 줄이 자기 텍스트를 다 담는 데 필요한 최소 폭 — 거터 2칸 + 부호 컬럼 +
-/// 텍스트 + 우측 여백. 콘텐츠 폭(전 라인 최댓값)과 행별 tint 밴드 폭이 같은 식을
-/// 쓰도록 한 곳에 둔다.
+/// 줄 번호 두 칸·부호·텍스트·여백을 포함한 한 줄의 너비.
 fn diff_min_w(p: &egui::Painter, theme: &Theme, text: &str, sz: f32) -> f32 {
     DIFF_GUTTER_W * 2.0
         + DIFF_SIGN_W
@@ -194,9 +184,7 @@ fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
     } = row;
     let sz = theme.font_size_caption.value();
     let h = diff_row_h(theme);
-    // **할당** 폭은 호출자가 준 캐시값(전 라인 최장) — 모든 행이 같은 폭을 할당해야
-    // 보이는 라인만 그려도 콘텐츠 폭(=가로 스크롤 범위)이 스크롤 위치에 따라 출렁이지
-    // 않는다. 반면 아래 tint 밴드는 **행 자신의 폭**까지만 칠한다(할당 폭과 분리).
+    // 모든 행에 같은 전체 너비를 할당해 스크롤 범위를 유지한다.
     let avail = ui.available_width();
     let full_w = avail.max(row_w);
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
@@ -229,9 +217,7 @@ fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
         (false, DiffLineKind::Context) => (theme.text_primary().to_egui(), Color32::TRANSPARENT),
     };
     if bg != Color32::TRANSPARENT {
-        // 밴드 폭은 행 자신의 텍스트 기준 — 할당 폭(전 라인 최장)으로 칠하면 짧은
-        // ±/hunk 행의 밴드가 콘텐츠 끝까지 늘어나 기존 시각과 달라진다. 이 측정은
-        // 보이는 행에서만 일어나므로 virtualization 이 줄인 비용을 되돌리지 않는다.
+        // 배경만 해당 줄의 텍스트 너비에 맞춰 칠한다.
         let band_w = avail.max(diff_min_w(ui.painter(), theme, text, sz));
         ui.painter()
             .rect_filled(Rect::from_min_size(rect.min, vec2(band_w, h)), 0.0, bg);

@@ -23,7 +23,7 @@ stale = " Children at index [{indices}] no longer have an agent process running 
 codex = "Codex"
 
 [codex.notify]
-done_message = "surface {target} task complete (via {kind})"
+done_message = "surface {target} state changed (via {kind})"
 sandbox_hint = "⚠ sandbox init appears to have failed (RTM_NEWADDR detected) — this environment may not support a nested sandbox (bwrap). Try again with --full-auto."
 
 [codex.reboot]

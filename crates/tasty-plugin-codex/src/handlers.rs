@@ -365,7 +365,7 @@ fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -
     )
 }
 
-/// 자식이 맡은 작업의 완료를 알린다. spawn/tell은 호출 방식으로 따로 표시한다.
+/// 자식의 상태 변경을 알린다. 입력 대기·종료도 포함하므로 작업 완료를 뜻하지는 않는다.
 fn notify_caller_message(tr: &Translator, kind: &str, target: u32) -> String {
     tr.t("codex.notify.done_message")
         .replace("{target}", &target.to_string())
@@ -1873,11 +1873,11 @@ trusted_hash = "sha256:xyz"
     }
 
     #[test]
-    fn notify_caller_message_leads_with_work_completion() {
+    fn notify_caller_message_describes_state_change() {
         let msg = notify_caller_message(&test_translator_for("ko"), "spawn", 42);
         assert!(
-            msg.contains("작업 완료"),
-            "완료 대상이 '작업'임이 드러나야 함: {msg}"
+            msg.contains("상태 변경"),
+            "상태 변경을 알리는 문구여야 한다: {msg}"
         );
         assert!(msg.contains("42"), "target surface 번호 누락: {msg}");
         assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");
@@ -1907,13 +1907,13 @@ trusted_hash = "sha256:xyz"
 
     #[test]
     fn notify_caller_message_does_not_read_as_command_itself_completing() {
-        // spawn/tell 접수와 자식 작업 완료를 혼동하지 않도록 한다.
+        // spawn/tell 접수 완료로 오해하지 않도록 한다.
         let tr = test_translator_for("ko");
         for kind in ["spawn", "tell"] {
             let msg = notify_caller_message(&tr, kind, 7);
             assert!(
                 !msg.starts_with(&format!("{kind} 완료")),
-                "명령 접수와 작업 완료를 구분할 수 없는 문구다: {msg}"
+                "명령 자체의 완료로 읽히는 안내다: {msg}"
             );
         }
     }
