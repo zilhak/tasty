@@ -3144,31 +3144,31 @@ help = "対象範囲トークン（`show --scope` と同じ形式）"
 help = "新しい残り時間（秒）"
 
 [cli.help._root.debug.modifier-hint]
-about = "修飾キーヒントのホールド注入と描画状態ダンプ（debugビルド専用）。実際のキー保持なしで修飾キーの組み合わせを設定し、再計算した描画状態（絞り込まれた区分/遅延/表示状態）をダンプ"
+about = "修飾キーを押した状態を再現し、ヒントパネルの表示状態を照会します (debug ビルド専用)。実際のキー入力なしで組み合わせを指定し、表示する区分、遅延時間、表示の有無を確認します。"
 
 [cli.help._root.debug.modifier-hint.hold]
-about = "修飾キーホールドを注入（フラグなし＝解除）。`--elapsed-ms` で保持タイマーを遡らせ、表示遅延を即座に通過"
+about = "修飾キーを押した状態を指定します。フラグを省略すると離した状態になります。`--elapsed-ms` は既にキーを押し続けていた時間として扱い、表示遅延の検証に使います。"
 
 [cli.help._root.debug.modifier-hint.hold.arg.ctrl]
-help = "ctrl軸を保持"
+help = "Ctrl を押した状態に設定"
 
 [cli.help._root.debug.modifier-hint.hold.arg.alt]
-help = "`alt` トークンを保持。物理キーはmacOSではCommand、他ではAlt"
+help = "`alt` を押した状態に設定します。実際のキーは macOS では Command、それ以外では Alt です。"
 
 [cli.help._root.debug.modifier-hint.hold.arg.option]
-help = "`option` トークンを保持。実入力ではmacOSの物理Optionキーのみが生成するため、他のプラットフォームでは通常到達できない状態を強制設定"
+help = "`option` を押した状態に設定します。実入力でこの状態になるのは macOS の Option キーだけです。他のプラットフォームでは通常のキー入力で作れない状態の検証に使います。"
 
 [cli.help._root.debug.modifier-hint.hold.arg.shift]
-help = "shift軸を保持"
+help = "Shift を押した状態に設定"
 
 [cli.help._root.debug.modifier-hint.hold.arg.elapsed_ms]
-help = "この時間（ms）だけ保持タイマーを遡らせる（表示遅延を省略）"
+help = "この時間 (ms) だけ既にキーを押していた状態にします。"
 
 [cli.help._root.debug.modifier-hint.state]
 about = "オーバーレイ描画状態をダンプ（held / delay / alpha / visible / sections / header）"
 
 [cli.help._root.debug.settings]
-about = "設定モーダルを強制的に開く（debugビルド専用）。ショートカットやボタンクリックなしで開き、設定UIとデザインの表示整合性を検証"
+about = "ユーザー操作なしで設定画面を開きます (debug ビルド専用)。ショートカットやボタンクリックなしで、設定画面をデザインと比較するために使います。"
 
 [cli.help._root.debug.settings.open]
 about = "設定モーダルを強制的に開く。タブ/サブタブを指定可能"
@@ -3180,7 +3180,7 @@ help = "初期第1階層タブ：general | terminal | appearance | keybindings |
 help = "選択したタブの初期サブセクションです（--tabによって異なります）。例：appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|input|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc。不明なキーの場合はタブの既定値を維持します"
 
 [cli.help._root.debug.settings.apply]
-about = "実行中の設定に部分パッチを適用：JSONオブジェクトを現在の設定へ深くマージしUpdateSettingsとして送信（設定モーダルの保存と同じ経路でconfig.tomlに永続化）"
+about = "JSON オブジェクトの入れ子の項目を現在の設定にマージし、UpdateSettings で適用します。設定画面で保存するときと同じ処理で config.toml に保存します。"
 
 [cli.help._root.debug.settings.apply.arg.json]
 help = "設定パッチのJSONオブジェクト（部分指定可）。例：'{\"general\":{\"workspace_categories_enabled\":false}}'"
@@ -3195,22 +3195,22 @@ about = "アクティブモーダルの終了要求（debugビルド専用）。
 about = "アクティブモーダルへ終了要求を送信（なければ何もしません。応答の `closed` で区別）"
 
 [cli.help._root.debug.lua]
-about = "host workerへ任意のLuaを注入（debugビルド専用）。期限付きの隔離Lua workerでソースを実行。releaseにはこの経路はなく、ユーザー入力専用の規則を適用"
+about = "ホストの隔離された Lua ワーカーで任意のソースを実行します (debug ビルド専用)。実行時間には制限があります。release ビルドではユーザー入力専用の規則に従い、このコマンドを提供しません。"
 
 [cli.help._root.debug.lua.eval]
-about = "任意のLuaソースをhost workerに注入して実行（完了は待機しません）。効果はtasty.logなどのログで確認し、期限超過時はworkerが中断"
+about = "ホストの Lua ワーカーへソースを送り、完了は待ちません。`tasty.log` などで出力したログから結果を確認できます。実行時間の制限を超えるとワーカーが実行を中止します。"
 
 [cli.help._root.debug.lua.eval.arg.source]
 help = "実行するLuaソース。例：'tasty.log(\"hi from debug\")'"
 
 [cli.help._root.debug.lua.eval-file]
-about = "ファイルからLuaソースを読み取り注入（`eval` と同じworker経路）"
+about = "ファイルから Lua ソースを読み取り、`eval` と同じワーカーで実行します。"
 
 [cli.help._root.debug.lua.eval-file.arg.path]
 help = "読み取り実行する `.lua` ファイルのパス"
 
 [cli.help._root.debug.sim]
-about = "VTEシーケンスシミュレーター。単独の `tasty-tui-sim` バイナリと同じで、現在のサーフェス内で実行（stdoutに生のVTEを出力、IPCなし）。サブコマンドなしなら対話型REPL。全画面再描画の高負荷検証には `sim flood` を使用。debugビルド専用"
+about = "現在のサーフェスで、単独の `tasty-tui-sim` と同じ VTE シミュレーターを実行します。IPC を使わずに stdout へ VTE バイトを出力します。サブコマンドを省略すると対話型 REPL を起動します。全画面再描画の負荷検証には `sim flood` を使ってください。debug ビルド専用です。"
 
 [cli.help._root.debug.sim.interactive]
 about = "対話型REPL：stdinからコマンドを読み取る（サブコマンドなしの場合の既定値）"
@@ -3303,7 +3303,7 @@ about = "インデックスでフォーカス中のペインのアクティブ�
 help = "フォーカス中のペイン内のタブインデックス（0始まり）"
 
 [cli.help._root.debug.close-workspace]
-about = "インデックスでワークスペースを閉じる。閉じた項目の復元スタックを変更するコンテキストメニューの操作を再現。debug専用"
+about = "位置を指定してワークスペースを閉じます。コンテキストメニューの閉じる操作を再現し、閉じた項目の復元履歴に残します。debug ビルド専用です。"
 
 [cli.help._root.debug.close-workspace.arg.index]
 help = "ワークスペースインデックス（0始まり）"
@@ -3420,22 +3420,22 @@ help = "押下（既定値）、または `--pressed false` で解放"
 about = "GUIビルドでフォーカス中のeguiテキストフィールドに、物理キー入力なしで文字を入力します。Enter、Tab、Backspaceにはegui-keyを使います"
 
 [cli.help._root.debug.inject.egui-text.arg.text]
-help = "入力する文字。制御文字は拒否する — 実際の入力経路はそれを運ばず、テキストフィールドも捨てる"
+help = "入力する文字です。通常のテキスト入力では送られず、テキストフィールドでも無視される制御文字は使用できません。"
 
 [cli.help._root.debug.plugin-banner]
-about = "所有pluginを経由せずpluginバナーを強制開閉。debugビルド専用。`debug banner` はhost組み込みバナーを対象とします"
+about = "プラグインを経由せず、そのプラグインのバナーを直接開閉します (debug ビルド専用)。ホストの組み込みバナーには `debug banner` を使います。"
 
 [cli.help._root.debug.plugin-banner.open]
-about = "実際のplugin呼び出し元の所有権検査を省略し、サーフェスにpluginバナーを強制表示"
+about = "実際のプラグイン呼び出しで行う所有権検査を省略し、サーフェスにプラグインのバナーを開きます。"
 
 [cli.help._root.debug.plugin-banner.open.arg.banner_id]
-help = "所有pluginが宣言したバナーID"
+help = "プラグインが宣言したバナー ID"
 
 [cli.help._root.debug.plugin-banner.open.arg.surface]
 help = "対象サーフェスID（既定値：現在のサーフェス）"
 
 [cli.help._root.debug.plugin-banner.close]
-about = "IDでpluginバナーインスタンスを閉じる"
+about = "ID で指定したプラグインのバナーを閉じる"
 
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "`plugin-banner open` が返したバナーインスタンスID"
@@ -3444,7 +3444,7 @@ help = "`plugin-banner open` が返したバナーインスタンスID"
 about = "ストリーミングチャネルを開きサーバー→クライアントのpush経路を検証：N個のデータフレームを送り、それぞれのエコー応答を確認（debugビルド専用）"
 
 [cli.help._root.debug.stream-echo.arg.payload]
-help = "各フレームで送るペイロード（インデックス接尾辞 `#N` を追加）"
+help = "各フレームに送るデータ。末尾に通し番号 `#N` を付けます。"
 
 [cli.help._root.debug.stream-echo.arg.count]
 help = "送信してエコー応答を待つフレーム数"
@@ -3453,7 +3453,7 @@ help = "送信してエコー応答を待つフレーム数"
 about = "内部ツール（SSH 接続プロファイル、パスキーなど）"
 
 [cli.help._root.tool.ssh]
-about = "保存済みの ssh プロファイルで対話的な ssh セッションを開く (identity とポートは自動で注入される)。ローカル動作で IPC は使わない"
+about = "保存済み SSH プロファイルの認証鍵とポートを使って対話型 SSH セッションを開きます。ローカルで実行し、IPC は使いません。"
 
 [cli.help._root.tool.ssh.arg.profile]
 help = "接続に使う ssh プロファイル名"
@@ -3462,7 +3462,7 @@ help = "接続に使う ssh プロファイル名"
 help = "リモートホストで一度だけ実行するコマンド (省略すると対話シェル)。例: `tasty tool ssh gb10 --command hostname`"
 
 [cli.help._root.tool.remote-profile]
-about = "リモート接続プロファイルの管理 (ssh と tasty-attach の 2 種類)。ローカルファイルのみで IPC は使わない"
+about = "ssh と tasty-attach の 2 種類のリモート接続プロファイルを管理します。ローカルファイルを使い、IPC は呼び出しません。"
 
 [cli.help._root.tool.remote-profile.list]
 about = "保存済みプロファイルの一覧 (ssh と tasty-attach)"
@@ -3484,7 +3484,7 @@ help = "表の代わりに JSON で出力する"
 
 [cli.help._root.tool.remote-profile.add-ssh]
 about = "ssh 接続プロファイルを追加する (接続情報のみで attach の指定は持たない)"
-long = "ssh 接続プロファイルを追加する (接続情報のみで attach の指定は持たない)。\n\n`attach` はこの種類を受け付けない。このホストを経由してアタッチするには、このプロファイルを名前で参照する (`--ssh-ref`) tasty-attach プロファイルを別に作る。"
+long = "SSH 接続情報を持つプロファイルを作成します。attach 設定は含みません。\n\nこのプロファイルを `attach` に直接使うことはできません。このホストに attach するには、`--ssh-ref` でこの名前を参照する tasty-attach プロファイルを別に作成してください。"
 
 [cli.help._root.tool.remote-profile.add-ssh.arg.name]
 help = "プロファイルの一意な識別子"
@@ -3499,7 +3499,7 @@ help = "ssh のユーザー (host に user@ が付いていない場合)"
 help = "ssh のポート (既定: ssh config の値、無ければ 22)"
 
 [cli.help._root.tool.remote-profile.add-ssh.arg.identity]
-help = "identity ファイルのパス (-i)。path 種別の Passkey `<name>-key` として別に保存される"
+help = "認証鍵ファイルのパス (-i)。path 種別の Passkey `<name>-key` として別に保存します。"
 
 [cli.help._root.tool.remote-profile.add-ssh.arg.options]
 help = "追加の ssh -o オプション (複数回指定可)。例: --option ServerAliveInterval=30"
@@ -3511,28 +3511,28 @@ help = "リモートシェル: powershell | cmd | bash | zsh | auto (既定)"
 help = "UI に表示するラベル (任意)"
 
 [cli.help._root.tool.remote-profile.add-attach]
-about = "tasty-attach プロファイルを追加する。接続情報は参照 (`--ssh-ref <name>`) かインラインのフィールド (host, …) のどちらかだ"
+about = "tasty-attach プロファイルを作成します。`--ssh-ref <name>` で既存の SSH プロファイルを指定するか、host などの接続情報を直接入力してください。"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.name]
 help = "プロファイルの一意な識別子"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.ssh_ref]
-help = "参照する ssh プロファイル名 (変更に追従する)。指定するとインラインの接続フィールドは無視される"
+help = "参照する SSH プロファイル名です。そのプロファイルの最新の値を使い、直接入力した接続情報は無視します。"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.host]
-help = "インライン接続: ssh の接続先 (host | user@host | エイリアス)。`--ssh-ref` が無いときに使われる"
+help = "直接入力する SSH 接続先 (host | user@host | エイリアス)。`--ssh-ref` を省略した場合に使います。"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.user]
-help = "インライン接続: ssh のユーザー"
+help = "直接指定する SSH ユーザー"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.port]
-help = "インライン接続: ssh のポート"
+help = "直接指定する SSH ポート"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.identity]
-help = "インライン接続: identity ファイルのパス (-i)。path 種別の Passkey として別に保存される"
+help = "直接指定する認証鍵ファイルのパス (-i)。path 種別の Passkey として別に保存します。"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.options]
-help = "インライン接続: 追加の ssh -o オプション (複数回指定可)"
+help = "直接指定する追加の ssh -o オプション (複数回指定可)"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.remote_tasty]
 help = "リモートホスト側の tasty バイナリのパス (ポート発見に使う)。既定は \"tasty\""
@@ -3541,13 +3541,13 @@ help = "リモートホスト側の tasty バイナリのパス (ポート発見
 help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.port_file]
-help = "リモートのポートファイルを明示するパス (慣例外の場所)。指定すると慣例のパスより優先される"
+help = "既定の場所とは異なるリモートポートファイルのパスです。指定すると既定のパスより優先します。"
 
 [cli.help._root.tool.remote-profile.add-attach.arg.label]
 help = "UI に表示するラベル (任意)"
 
 [cli.help._root.tool.remote-profile.edit]
-about = "既存プロファイルのフィールドを更新する (与えたフィールドだけ上書きする)。種類はそのまま保たれる"
+about = "既存のプロファイルのうち、指定したフィールドだけを変更します。プロファイルの種類は変えません。"
 
 [cli.help._root.tool.remote-profile.edit.arg.name]
 help = "更新するプロファイル名"
@@ -3562,10 +3562,10 @@ help = "ssh のユーザー (host に user@ が付いていない場合)"
 help = "ssh のポート"
 
 [cli.help._root.tool.remote-profile.edit.arg.identity]
-help = "identity ファイルのパス (-i)。path 種別の Passkey として別に保存される"
+help = "認証鍵ファイルのパス (-i)。path 種別の Passkey として別に保存します。"
 
 [cli.help._root.tool.remote-profile.edit.arg.options]
-help = "追加の ssh -o オプション (複数回指定可)。保存済みの一覧に追記せず、丸ごと置き換える"
+help = "追加の ssh -o オプション (複数回指定可)。既存のオプション一覧全体を新しい一覧に置き換えます。"
 
 [cli.help._root.tool.remote-profile.edit.arg.ssh_ref]
 help = "tasty-attach: 代わりに参照する ssh プロファイル (名前で指定)"
@@ -3586,25 +3586,25 @@ help = "ssh: リモートシェル (powershell | cmd | bash | zsh | auto)"
 help = "UI に表示するラベル"
 
 [cli.help._root.tool.remote-profile.remove]
-about = "プロファイルを削除する (参照していた Passkey は共有され得るので残す)"
+about = "プロファイルを削除します。Passkey は他のプロファイルでも使われる可能性があるため残します。"
 
 [cli.help._root.tool.remote-profile.remove.arg.name]
 help = "削除するプロファイル名"
 
 [cli.help._root.tool.remote-profile.detect]
-about = "プロファイルを再検出する (ssh: リモートシェルを調べる / tasty-attach: リモートのポートを確認する)。SSH で接続する"
+about = "SSH で接続してプロファイルを再確認します。ssh プロファイルはリモートのシェルを、tasty-attach プロファイルはリモートポートを確認します。"
 
 [cli.help._root.tool.remote-profile.detect.arg.name]
 help = "再検出するプロファイル名"
 
 [cli.help._root.tool.remote-profile.list-local]
-about = "ローカルの ssh config にある Host エイリアスの一覧 (`~/.ssh/config` と Include ファイル)。接続はしない"
+about = "ローカル SSH 設定 (`~/.ssh/config` と Include ファイル) の Host エイリアスを一覧表示します。リモートへの接続は行いません。"
 
 [cli.help._root.tool.remote-profile.list-local.arg.json]
 help = "表の代わりに JSON で出力する"
 
 [cli.help._root.tool.remote-profile.import]
-about = "ローカル ssh config のエイリアスを ssh プロファイルとして取り込む (保存するのはエイリアスだけで、実際の値は ssh が解決する)"
+about = "ローカル SSH 設定のエイリアスをプロファイルに取り込みます。保存するのはエイリアスだけで、実際の接続値は SSH が設定ファイルから読み取ります。"
 
 [cli.help._root.tool.remote-profile.import.arg.from]
 help = "取り込む ssh config のエイリアス (`list-local` の ALIAS 列)"
@@ -3616,10 +3616,10 @@ help = "新しいプロファイルの一意な識別子"
 help = "UI に表示するラベル (任意)"
 
 [cli.help._root.tool.attach]
-about = "tasty-attach プロファイルでリモートのサーフェス・ワークスペースにアタッチする。`--list` はプロファイルの一覧を出すだけだ。ローカル動作"
+about = "tasty-attach プロファイルでリモートのサーフェスやワークスペースに接続します。ローカルコマンドとして実行し、`--list` を指定すると接続せずにプロファイル一覧だけを表示します。"
 
 [cli.help._root.tool.attach.arg.name]
-help = "アタッチに使う tasty-attach プロファイル名 (`--list` と一緒に省略するとプロファイル一覧だけを出す)"
+help = "接続に使う tasty-attach プロファイル名です。名前を省略して `--list` を指定すると、一覧だけを表示します。"
 
 [cli.help._root.tool.attach.arg.surface]
 help = "アタッチ先のリモートサーフェス id"
@@ -3646,22 +3646,22 @@ help = "接続が切れたときの自動再接続を無効にする"
 help = "tasty-attach プロファイルの一覧だけを出して終了する (アタッチしない)"
 
 [cli.help._root.tool.passkey]
-about = "Passkey (`~/.tasty/passkeys.toml`) — プロファイルが名前で参照する資格情報の保管庫。list/show は値を決して見せない。ローカルファイルのみで IPC は使わない"
+about = "プロファイルが名前で参照する認証情報を管理します (`~/.tasty/passkeys.toml`)。list/show は秘密の値を表示しません。ローカルファイルを使い、IPC は呼び出しません。"
 
 [cli.help._root.tool.passkey.add]
-about = "Passkey を追加または置き換える。`--path <file>` (ファイルを参照) か `--inline` (シークレットを直接入力) のどちらかを使う"
+about = "Passkey を追加または置き換えます。`--path <file>` で既存の鍵ファイルを指定するか、`--inline` で秘密の値を直接入力してください。"
 
 [cli.help._root.tool.passkey.add.arg.name]
-help = "プロファイルが参照する一意な識別子。英数字と '-' '_' だけが使える"
+help = "プロファイルが参照する一意の識別子。英数字、'-'、'_' だけを使用できます。"
 
 [cli.help._root.tool.passkey.add.arg.path]
-help = "path 種別: ユーザーが持つ既存の鍵ファイルのパス (`-i`)。`--inline` とは併用できない"
+help = "path 種別: ユーザーが持つ鍵ファイルのパス (-i)。`--inline` とは併用できません。"
 
 [cli.help._root.tool.passkey.add.arg.inline]
 help = "inline 種別: シークレットをファイルに保存します (Unix では 0600 権限)。値は `--value` または stdin から読み取ります。"
 
 [cli.help._root.tool.passkey.add.arg.value]
-help = "インラインの値 (省略すると stdin から読む)。`--inline` と一緒に使う"
+help = "直接保存する値。省略すると stdin から読み取ります。`--inline` と併用してください。"
 
 [cli.help._root.tool.passkey.list]
 about = "保存済み Passkey の一覧 (名前と種別のみ。値は決して表示しない)"
@@ -3679,7 +3679,7 @@ help = "表示する Passkey 名"
 help = "表の代わりに JSON で出力する"
 
 [cli.help._root.tool.passkey.remove]
-about = "Passkey を削除する (inline 種別は管理しているファイルも一緒に削除する)"
+about = "Passkey を削除します。inline 種別の場合は管理中の秘密ファイルも削除します。"
 
 [cli.help._root.tool.passkey.remove.arg.name]
 help = "削除する Passkey 名"
