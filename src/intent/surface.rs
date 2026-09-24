@@ -1,10 +1,4 @@
-//! Surface 도메인 Intent 핸들러.
-//!
-//! 정책:
-//! - **SplitSurface**: `DomainIntent::SplitSurface` forward. focused
-//!   surface_id 는 handler 안에서 결정. cascade 가 origin 보고 focus 이동.
-//! - **ConvertSurface**: target 분기 — `Terminal` / `Kind { kind, params }`
-//!   모두 `Core::apply_convert_surface` 본문 한 곳에서 처리.
+//! Surface 분할·변환 Intent를 Core에 전달한다.
 
 use super::{ConvertTarget, DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
@@ -92,25 +86,17 @@ fn convert(
             ConvertSurfaceTarget::Terminal { cwd }
         }
         ConvertTarget::Kind { cwd, kind, params } => {
-            // 옛 caller 호환: SurfaceKindDef 가 기대하는 canonical 키(예: markdown
-            // 의 `file`)로 registry 의 param_aliases(예: `file_path`→`file`)를 적용해
-            // generic 하게 정규화한다(kind 하드코딩 없음).
+            // file_path 같은 별칭을 등록된 kind가 사용하는 키로 정규화한다.
             let mut params = params.clone();
             if let Some(def) = engine.surface_registry.get(kind) {
                 def.normalize_param_aliases(&mut params);
             }
-            // Surface cwd invariant: 변환 시 cwd 손실 금지. 호출자가 명시 cwd 를
-            // 넘기지 않은 경우 source surface 에서 carry — 호스트 시작 cwd 같은
-            // 사용자 의도와 무관한 fallback 으로 흘러가지 않도록 한다.
+            // cwd가 생략되고 상속 설정이 켜져 있으면 변환할 surface의 로컬 cwd를 사용한다.
             let resolved_cwd = cwd
                 .clone()
                 .or_else(|| state.resolve_inherit_cwd_from_surface(engine, surface_id));
-            // 제자리 변환(주소창 navigate·convert 팝업 등)도 최근 목록 기록. `file` 키로
-            // 통일된 뒤라 여기서 1회 기록 — file 없으면 no-op. kind 하드코딩 없이 매니페스트
-            // `records_recent` 를 선언한 kind 만 기록(generic per-kind). 기록이 적용보다
-            // 앞이라 `get_live` 로 묻는다 — 철회된 kind(ADR-0026)는 아래 적용에서 거절되므로
-            // 기록하지 않는다. 위 alias 정규화는 `get` 그대로 둔다: 거절될 params 를 고칠
-            // 뿐 아무것도 남기지 않는다.
+            // 적용 전에 기록하므로 철회된 kind는 get_live로 제외한다.
+            // 별칭 정규화는 저장을 하지 않아 위에서는 get을 사용해도 된다.
             if engine
                 .surface_registry
                 .get_live(kind)

@@ -1,10 +1,4 @@
-//! Pane 도메인 Intent 핸들러.
-//!
-//! 정책:
-//! - **SplitPane**: `DomainIntent::SplitPane` forward. focused pane_id 는
-//!   handler 안에서 결정. cascade 가 origin 보고 focus 이동 분기.
-//! - ratio / focus 변경 API 는 S3=B 결정으로 마이그레이션 범위 외 — 사용자 단축키
-//!   전용 cascade (`close_active_pane` 등) 도 그대로 직접 호출 유지.
+//! 포커스된 pane의 분할을 Core에 요청하고 origin에 따라 후속 포커스를 처리한다.
 
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;

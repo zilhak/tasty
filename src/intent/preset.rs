@@ -1,27 +1,9 @@
-//! Preset 도메인 Intent 핸들러 + 공유 mutation 함수.
-//!
-//! 본 모듈은 두 가지 표면을 제공한다:
-//!
-//! 1. **Intent 핸들러** (`handle`): `dispatch_pending_intents` 가 호출.
-//!    inner 함수를 호출해 mutation 후 toast/cascade 처리.
-//!
-//! 2. **공유 mutation 함수** (`apply_inner`, `save_inner`, `delete_inner`,
-//!    `rename_inner`, `capture_inner`): IPC 핸들러가 sync 결과를 돌려주기 위해
-//!    직접 호출. 외부 caller 와 동일한 코드 경로를 보장한다.
-//!
-//! 정책 (action-dispatch.md 참조):
-//! - **ApplyPreset focus**: origin 으로 자동 분기 (User → focus=true, Agent → false).
-//! - **SavePreset naming**: `explicit_name` 우선, 없으면 `base_name` 으로 store.unique_name 자동.
-//! - **SavePreset cascade**: User origin 일 때만 save 후 PresetView 자동 오픈 + select.
-//!   Agent origin 은 cascade 미수행 (focus 독립성 원칙). `state.dialogs.pending_open_preset_window`
-//!   + `pending_preset_window_selection` 으로 main loop 에 신호.
-//! - **List/Get**: read-only — Intent 큐 안 거치고 IPC handler 가 직접 처리.
+//! 프리셋 Intent 처리와 IPC가 함께 사용하는 적용·저장 함수.
+//! Intent 경로는 origin에 따라 포커스와 창 열기를 처리하며, IPC는 inner 함수를 직접 호출해 응답한다.
 
 use super::{DispatchedIntent, Intent};
 
-/// preset Intent 가 운반하는 캡처된 preset payload.
-/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — CapturePreset 을
-/// 별도 Intent 로 두지 않기로 한 결정 반영.
+/// 호출자가 미리 캡처해 큐에 넣는 프리셋 데이터.
 #[derive(Debug, Clone)]
 pub enum ClonedPreset {
     Workspace(tasty_presets::WorkspacePreset),
@@ -46,9 +28,6 @@ use crate::state::AppState;
 use crate::state::preset_apply::{ApplyError, ApplyOptions};
 use tasty_presets::{PresetError, PresetKind};
 
-// ───────────────────────────────── Intent dispatcher ─────────────────────────────────
-
-/// preset 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
 pub fn handle(
     core: &crate::core::Core,
     state: &mut AppState,
@@ -101,13 +80,11 @@ fn apply(
     intent: &DispatchedIntent,
     target: PresetApplyTarget,
 ) {
-    // P1: focus 정책은 origin 으로 자동 분기.
     let focus = intent.origin.is_user();
     let options = ApplyOptions { focus };
 
     if let Err(e) = apply_inner(core, state, engine, target, options) {
         tracing::warn!("preset apply failed: {e}");
-        // 실패 toast 는 사용자 발화에서만 — 에이전트 발화의 실패는 로그로 끝난다(identity 원칙 1).
         #[cfg(feature = "gui")]
         if intent.origin.is_user() {
             state.toasts.push(
@@ -141,8 +118,7 @@ fn save(
         (Ok(_), PresetKind::Pane) => "preset.toast.saved_pane",
         (Err(_), _) => "preset.toast.save_failed",
     };
-    // 실패 toast 는 사용자 발화에서만 — 에이전트 발화의 실패는 아래 `warn` 로그로 끝난다
-    // (identity 원칙 1). 성공 toast 는 origin 과 무관하게 종전 그대로다.
+    // 실패 토스트는 사용자 요청에만 표시한다. 성공 토스트는 origin과 관계없이 표시한다.
     let show_toast = save_result.is_ok() || intent.origin.is_user();
     #[cfg(feature = "gui")]
     if show_toast {
@@ -159,7 +135,7 @@ fn save(
     }
     #[cfg(not(feature = "gui"))]
     {
-        let _ = (toast_key, show_toast); // headless: toast 소비자 없음, silent drop.
+        let _ = (toast_key, show_toast); // reason: 헤드리스에는 토스트 표시가 없다.
     }
 
     let saved_name = match save_result {
@@ -171,22 +147,18 @@ fn save(
         }
     };
 
-    // User origin cascade: save 후 PresetView 자동 오픈 + select.
-    // Agent origin 은 cascade 미수행 (focus 독립성). headless 에는 열 창도 이 요청을 비울
-    // 소비자(`process_pending_open_preset_window`)도 없어 요청 자체를 안 만든다.
+    // 저장한 프리셋 창을 여는 요청은 GUI의 사용자 동작에서만 만든다.
     #[cfg(feature = "gui")]
     if intent.origin.is_user() {
         state.dialogs.pending_open_preset_window = true;
         state.dialogs.pending_preset_window_selection = Some((kind, saved_name));
     }
-    // headless: 위 요청을 만들지 않고 토스트도 없으므로 창 상태와 세 값을 읽는 쪽이 없다.
+    // reason: 헤드리스는 토스트와 프리셋 창 요청을 만들지 않아 이 값들을 사용하지 않는다.
     #[cfg(not(feature = "gui"))]
     let _ = (state, intent, kind, saved_name);
 }
 
-// ───────────────────────────────── Shared mutation API ─────────────────────────────────
-
-/// `apply_*_preset` 결과를 IPC 가 그대로 응답에 실을 수 있도록 enum 으로 캡슐화.
+/// 적용으로 생성한 대상의 ID. IPC 응답에서도 사용한다.
 #[derive(Debug, Clone)]
 pub enum ApplyOutcome {
     Workspace { workspace_id: u32 },
@@ -194,15 +166,13 @@ pub enum ApplyOutcome {
     Pane { pane_id: u32 },
 }
 
-/// `save_inner` 결과 — 충돌 시 skip 된 경우를 명시.
 #[derive(Debug, Clone)]
 pub enum SaveOutcome {
     Saved(String),
-    /// `overwrite=false` + 이미 존재 → 저장 skip.
+    /// 이름이 이미 있고 overwrite=false여서 저장하지 않았다.
     SkippedExists,
 }
 
-/// 공유 mutation API: 발생 가능한 실패를 모두 enum 으로 노출.
 #[derive(Debug)]
 pub enum PresetMutationError {
     NotFound { kind: PresetKind, name: String },
@@ -224,7 +194,7 @@ impl std::fmt::Display for PresetMutationError {
 
 impl std::error::Error for PresetMutationError {}
 
-/// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
+// 적용 중 저장소 잠금을 유지하지 않도록 프리셋을 복사한다.
 fn clone_preset_from_store(
     core: &crate::core::Core,
     kind: PresetKind,
@@ -246,10 +216,8 @@ fn clone_preset_from_store(
     Ok(cloned)
 }
 
-/// preset apply 요청 — 무엇을(`kind`/`name`) 어디에(`target_pane_id`/
-/// `target_workspace_id`/`category`) 적용할지의 개념적 단위. `target_pane_id` /
-/// `target_workspace_id` 는 tab/pane apply 시에만, `category` 는 workspace apply
-/// 시에만 의미가 있다(다른 kind 에는 무시된다).
+/// 적용할 프리셋과 대상. Tab은 target_pane_id, Pane은 target_workspace_id,
+/// Workspace는 category를 사용하며 다른 종류의 필드는 무시한다.
 pub struct PresetApplyTarget<'a> {
     pub kind: PresetKind,
     pub name: &'a str,
@@ -258,7 +226,6 @@ pub struct PresetApplyTarget<'a> {
     pub category: Option<crate::model::WorkspaceCategoryId>,
 }
 
-/// preset save 요청 — 저장할 preset 과 naming/overwrite 정책의 개념적 단위.
 pub struct PresetSaveRequest<'a> {
     pub base_name: &'a str,
     pub explicit_name: Option<&'a str>,
@@ -266,7 +233,6 @@ pub struct PresetSaveRequest<'a> {
     pub preset: &'a ClonedPreset,
 }
 
-/// Preset 적용. store 에서 clone 후 lock 해제하고 본체를 호출한다.
 pub fn apply_inner(
     core: &crate::core::Core,
     state: &mut AppState,
@@ -304,8 +270,8 @@ pub fn apply_inner(
     }
 }
 
-/// `explicit_name`이 있으면 사용(overwrite=false면 충돌 시 `None` = skip 신호),
-/// 없으면 `base_name` 기반 unique_name 자동 부여.
+/// 이름을 직접 지정하고 overwrite=false이면 충돌 시 None을 반환한다.
+/// 이름을 지정하지 않으면 base_name으로 중복되지 않는 이름을 만든다.
 fn resolve_save_name(
     store: &tasty_presets::PresetStore,
     kind: PresetKind,
@@ -332,7 +298,6 @@ fn resolve_save_name(
     }
 }
 
-/// preset kind 별로 `name` 을 적용해 store 에 반영(overwrite 여부에 따라 대응 메서드 분기).
 fn store_preset(
     store: &mut tasty_presets::PresetStore,
     preset: ClonedPreset,
@@ -367,8 +332,8 @@ fn store_preset(
     }
 }
 
-/// Preset 저장. `explicit_name` 이 있으면 사용 (overwrite=false 면 충돌 시 skip),
-/// 없으면 `base_name` 기반 unique_name 자동 부여.
+/// 이름이 충돌하면 overwrite에 따라 덮어쓰거나 SkippedExists를 반환한다.
+/// explicit_name이 없으면 base_name으로 중복되지 않는 이름을 만든다.
 pub fn save_inner(
     core: &crate::core::Core,
     base_name: &str,
@@ -421,9 +386,8 @@ pub fn rename_inner(
         .map_err(PresetMutationError::Store)
 }
 
-/// Surface 식별자로 워크스페이스/탭/페인을 캡처해 ClonedPreset 으로 변환.
-/// IPC `preset.capture` 가 사용. UI 우클릭 경로는 자신이 직접 capture 한 뒤
-/// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
+/// kind에 맞는 워크스페이스·탭·pane ID로 프리셋을 캡처한다.
+/// IPC preset.capture가 사용하며, UI는 캡처한 데이터를 SavePreset에 담는다.
 pub fn capture_inner(
     engine: &crate::core::CoreState,
     kind: PresetKind,

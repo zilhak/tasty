@@ -1,25 +1,16 @@
-// 본 모듈의 `from_*` 메서드는 `From` trait 변환이 아니라 *intent 의 dispatch
-// source 부착* 의미 (예: `intent.from_user_shortcut(id)` = "이 intent 는 사용자
-// 단축키로 발화되었다고 표시"). 따라서 `self` 를 받는 것이 의도된 형태.
+// reason: from_*는 타입 변환 대신 요청 출처를 붙이는 빌더이므로 self를 받는다.
 #![allow(clippy::wrong_self_convention)]
 
-//! Host-internal action dispatch (Intent 큐).
+//! 호스트 내부 명령 큐.
 //!
-//! 설계: `docs/design/flows/action-dispatch.md`.
-//!
-//! 발화자는 `AppState::dispatch_intent`로 `DispatchedIntent`를 push만 한다.
-//! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
-//! (`intent::popup`, `intent::preset`, ...)로 분기한다. fire-and-forget.
-//!
-//! 본 모듈의 `from_*` 메서드는 `From` trait 변환이 아니라 *intent 의 dispatch
-//! source 부착* 의미. `self` 를 받는 것이 의도된 형태이며
-//! `clippy::wrong_self_convention` 은 모듈 단위로 허용한다.
+//! AppState::dispatch_intent로 넣은 명령을 App::dispatch_pending_intents가 꺼내
+//! 각 도메인 핸들러에 전달한다. 호출자는 실행 결과를 기다리지 않는다.
+//! 설계는 docs/design/flows/action-dispatch.md를 따른다.
 
 #[cfg(all(test, feature = "gui"))]
 mod apply_error_tests;
 pub mod closed_item;
-// gui 라이브러리에는 호출부가 없다(headless boot 전용). gui 의 `cargo test` 가 이 drain 을
-// 회귀 검증하도록 `test` 에서도 컴파일한다 — 근거는 그 모듈 주석.
+// 헤드리스용 큐 처리를 GUI 조합의 시험에서도 검증한다.
 #[cfg(any(not(feature = "gui"), test))]
 pub(crate) mod headless;
 pub mod pane;
@@ -28,7 +19,6 @@ pub mod preset;
 pub mod preset_capture;
 pub mod surface;
 pub mod tab;
-// 발화 로그 — 부르는 자리가 GUI 메인 루프의 intent drain 뿐이다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub mod watch;
 pub mod workspace;
@@ -37,24 +27,16 @@ use crate::model::SplitDirection;
 use crate::model::popup_kind::{PopupId, PopupScope};
 
 pub use preset::ClonedPreset;
-// 발화 주체는 도메인 실행(`core::structural_exec` 등)도 읽으므로 정의는 `core` 에 있다 —
-// 도메인이 이 GUI 큐 모듈을 거꾸로 부르지 않게 하려는 것이다. 기존 경로를 잇는다.
+// 도메인도 origin을 사용하므로 정의를 core에 두고 여기서는 재수출한다.
 #[cfg(any(feature = "gui", test))]
 pub use crate::core::origin::UserSource;
 pub use crate::core::origin::{AgentSource, IntentOrigin};
 
-/// `Core::apply` 가 반환한 에러를 도메인 핸들러가 공통 처리한다. mirror(원격 attach
-/// client) 워크스페이스에서 구조 변경을 시도해 거부된 경우
-/// ([`crate::core::MirrorStructuralBlocked`]) 사용자에게 차단 toast 를 띄우고,
-/// 철회된 kind 로 만들려다 거절된 경우([`crate::core::surface_registry::SurfaceKindWithdrawn`])
-/// 그 kind 를 제공하던 plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast 를 띄우고(ADR-0026),
-/// 그 외 에러는 `warn` 로그를 남긴다. `label` 은 로그용 컨텍스트(예: "SplitSurface").
-///
-/// **toast 는 사용자 origin 에서만 난다.** 에이전트 origin 의 차단은 사용자 발화와 같은
-/// 조건이어도 `warn` 로그로만 남긴다 — 에이전트 행동의 부수효과가 사용자 시각 상태에
-/// 닿지 않게 하는 것이다(identity 원칙 1, `docs/design/systems/toast.md` "트리거 정책").
-/// forward 로 큐잉된 에이전트 op 는 원격 실패 회신도 toast 가 아니라 로그로 가도록
-/// 여기서 표시한다([`crate::core::mark_last_forward_agent_origin`]).
+/// Core::apply의 오류를 처리한다. mirror 구조 변경 차단과 철회된 kind 오류는
+/// 사용자 요청일 때만 토스트로 알리고, 에이전트 요청은 로그로 남긴다.
+/// 그 밖의 오류는 warn으로 기록한다. label은 로그에서 작업을 구분하는 이름이다.
+/// 원격으로 전달한 에이전트 요청에는 실패 회신도 로그만 남기도록 표시한다.
+/// 사용자 표시 규칙은 docs/design/systems/toast.md를 따른다.
 pub fn report_apply_error(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
@@ -64,10 +46,7 @@ pub fn report_apply_error(
 ) {
     crate::core::mark_last_forward_agent_origin(engine, err, origin);
     if let Some(blocked) = err.downcast_ref::<crate::core::MirrorStructuralBlocked>() {
-        // forward 로 큐잉된 op 는 원격 실행 결과가 UX 를 결정한다 — 여기서 차단 toast 를
-        // 띄우지 않는다(성공 무음, 실패 시 App drain 이 forward 실패 toast — 에이전트 op 는
-        // 로그). forward 대상이 아닌 op(mirror↔local 경계를 넘는 move-surface, anchor 를
-        // 못 찾은 op)만 차단 신호를 낸다.
+        // 원격에 전달한 요청은 회신에서 실패를 처리하므로 여기서는 토스트를 띄우지 않는다.
         if blocked.forwarded {
             return;
         }
@@ -90,9 +69,7 @@ pub fn report_apply_error(
     }
 }
 
-/// 철회된 kind 로 만들려다 거절된 것을 알린다 — 사용자가 연 것이면 그 kind 를 제공하던
-/// plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast(ADR-0026), 에이전트 발화는 로그만(ADR-0036).
-// reason: 헤드리스 조합에는 toast 매니저가 없어 `state` 를 안 쓴다 — gui 조합만 쓴다.
+// reason: 헤드리스에는 토스트 매니저가 없어 state를 사용하지 않는다.
 #[cfg_attr(not(feature = "gui"), allow(unused_variables))]
 fn report_withdrawn_kind(
     state: &mut crate::state::AppState,
@@ -122,34 +99,19 @@ fn report_withdrawn_kind(
     );
 }
 
-/// 발화된 Intent. 메인 루프 drain 까지 `AppState::pending_intents` 에 머문다.
+/// 메인 루프가 처리할 때까지 AppState::pending_intents에 보관하는 명령.
 #[derive(Debug, Clone)]
 pub struct DispatchedIntent {
     pub body: Intent,
     pub origin: IntentOrigin,
-    /// 비어 있는 자리다 — **아무도 값을 발급하지 않는다.** 모든 생성자가 `None` 을 넣고, 값을
-    /// 넣는 두 helper([`DispatchedIntent::with_trace_id`] · [`Intent::cascaded_from`])는 비-테스트
-    /// 호출처가 없다. 새로 발급하는 bridge 도 없다. 읽는 자리는 debug 빌드의 intent watch 로그
-    /// 하나뿐이고 거기서도 늘 `None` 이다.
-    ///
-    /// 이름이 같지만 **Event Bus envelope 의 `trace_id` 와 무관하고**, IPC 요청을 가리키는 값도
-    /// 아니다 — IPC 요청 하나를 가리키는 값은 호스트가 발급하는
-    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0008).
+    /// 현재 제품 코드에서는 None이며 debug intent 로그만 이 값을 읽는다.
+    /// Event Bus의 trace_id와는 별개다. IPC 요청 번호는
+    /// [`tasty_ipc::server::RequestSeq`]를 사용한다.
     pub trace_id: Option<String>,
 }
 
-/// 호스트 내부 명령. flat enum — variant 가 늘어나도 nested 하지 않는다.
-///
-/// **분류축** (D.3.I — `intent-ui-vs-domain.md`):
-/// - `Ui(UiIntent)`: 사용자 시각 상태 변경 (popup open/close/toggle). headless
-///   빌드에서는 컴파일 타임에 사라진다 (Phase E).
-/// - 그 외 variant: Domain Intent — 영속 도메인 mutate. headless 빌드에서도 동작.
-///
-/// release 빌드에서 *시스템/Core/Domain handler 가 자동으로 `Ui` variant 를
-/// 발화* 하는 것은 금지된다 (`docs/design/systems/popup.md` "Popup 발화 정책").
-/// debug 빌드의 `debug.popup.*` IPC 만 예외.
-// 이유: `Ui`·`Domain` 을 뺀 variant 를 만드는 자리(단축키·메뉴·우클릭)가 GUI 뿐이라 headless 에서
-// 만들어지지 않는다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다.
+/// 호스트 내부 명령. UI·도메인 명령과 사용자 단축키용 명령을 같은 큐에 담는다.
+// 이유: 단축키·메뉴 전용 variant는 헤드리스에서 생성하지 않지만 큐 처리에서 열거한다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
@@ -160,29 +122,18 @@ pub struct DispatchedIntent {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub enum Intent {
-    /// UI Intent (popup 발화). 별 enum `UiIntent` 로 분리되어 분류축이 명시된다.
     Ui(UiIntent),
-    /// Domain Intent (영속 도메인 mutate). `crate::core::intent::DomainIntent` 를
-    /// 래핑하므로 같은 큐 (`pending_intents`) 로 발화 가능. dispatch_one_intent
-    /// 에서 `core.apply` 경로로 분기된다.
-    ///
-    /// 마이그레이션 진행: 현재 도메인 variant (ApplyPreset / SavePreset / ...)
-    /// 가 점진적으로 `DomainIntent` 안으로 흡수될 예정.
+    /// 도메인 명령도 같은 큐에 넣고 Core::apply로 전달한다.
     Domain(crate::core::intent::DomainIntent),
 
-    // ---- Preset 도메인 ----
-    /// Preset 적용. focus 정책은 origin 으로 자동 분기 (User=true, Agent=false).
+    /// 사용자 요청일 때만 적용 후 포커스를 옮긴다.
     ApplyPreset {
         kind: tasty_presets::PresetKind,
         name: String,
-        /// Workspace preset 적용 시 소속시킬 카테고리. `None` 이면 normal(기본).
-        /// 카테고리 헤더 우클릭 메뉴의 "프리셋으로부터 워크스페이스 생성" 이 그
-        /// 카테고리 id 를 실어 보낸다. Tab/Pane preset 에는 의미 없음(무시).
+        /// Workspace 프리셋의 소속 카테고리. None이면 normal이며 Tab/Pane에서는 무시한다.
         category: Option<crate::model::WorkspaceCategoryId>,
     },
-    /// Preset 저장. `explicit_name` 우선, 없으면 `base_name` 으로 `store.unique_name`.
-    /// User origin (우클릭) 은 보통 explicit_name=None + overwrite=false,
-    /// Agent origin (IPC) 은 explicit_name=Some + overwrite 명시.
+    /// explicit_name을 우선 사용하고, 없으면 base_name으로 중복되지 않는 이름을 만든다.
     SavePreset {
         base_name: String,
         explicit_name: Option<String>,
@@ -190,71 +141,60 @@ pub enum Intent {
         preset: ClonedPreset,
     },
 
-    // ---- Surface 도메인 ----
-    /// focused surface 를 split. focused 의존이므로 사용자 단축키 전용 (CLI/IPC 미노출).
-    SplitSurface { direction: SplitDirection },
-    /// Surface 의 kind 변환. Terminal 은 host 내장, 그 외는 plugin 등록 kind.
+    /// 포커스된 surface를 분할한다. 사용자 단축키용이며 IPC는 ID를 지정한다.
+    SplitSurface {
+        direction: SplitDirection,
+    },
+    /// Terminal은 호스트 내장 종류이며 나머지는 등록된 kind를 사용한다.
     ConvertSurface {
         surface_id: u32,
         target: ConvertTarget,
     },
 
-    // ---- Tab 도메인 ----
-    /// 새 탭 추가. `kind` None 이면 "terminal" fallback.
-    /// focused pane 에 추가 (사용자 동작). ID 명시 경로는 IPC handler 가 직접 처리.
+    /// 포커스된 pane에 탭을 추가한다. kind가 None이면 terminal을 사용한다.
     NewTab {
         kind: Option<String>,
         params: serde_json::Value,
     },
 
-    // ---- Pane 도메인 ----
-    /// focused pane 을 split. 사용자 단축키 전용 (focused 의존).
-    /// S3=B: ratio / focus 변경 API 는 Intent 미마이그레이션.
-    SplitPane { direction: SplitDirection },
+    /// 포커스된 pane을 분할하는 사용자 단축키 명령.
+    SplitPane {
+        direction: SplitDirection,
+    },
 
-    // ---- Workspace 도메인 ----
-    /// 새 워크스페이스 생성. `kind` None 이면 "terminal" fallback + active 전환
-    /// (사용자 동작 경로). 명시 kind 지정 시 background 경로 (active 전환 없음).
-    /// IPC `workspace.create` 는 sync return contract 가 필요하므로 직접 호출 유지.
-    /// W1=B: ActivateWorkspace 는 focus 독립성 원칙으로 Intent 미마이그레이션.
+    /// kind가 None이면 terminal을 사용한다. 사용자 요청일 때만 새 워크스페이스를 활성화한다.
+    /// IPC workspace.create는 동기 응답을 위해 직접 처리한다.
     NewWorkspace {
         kind: Option<String>,
         params: serde_json::Value,
-        /// 생성 시점 카테고리 소속. `None` 이면 normal(기본). 레일 카테고리 팝업의
-        /// "Add workspace" 가 해당 카테고리 id 를 실어 보낸다.
+        /// 새 워크스페이스의 소속 카테고리. None이면 normal이다.
         category: Option<crate::model::WorkspaceCategoryId>,
     },
 
-    // ---- Closed items 도메인 ----
-    /// closed_items 스택 top 복원. focused pane 의존 (사용자 단축키 전용).
-    /// handler 가 focused pane / workspace 비어있음 사전처리 후 DomainIntent 발화.
+    /// 최근 닫은 항목을 포커스된 pane에 복원한다. 필요한 워크스페이스는 먼저 만든다.
     RestoreClosedItem,
 }
 
-/// UI Intent — 사용자 시각 상태 변경. release 표면에서는 사용자 행동 (단축키 /
-/// 마우스 / 메뉴) 에서만 발화되며, 자동 발화는 금지된다 (`popup-system.md`,
-/// `toast-system.md`, `debug-ipc.md` 의 자매 정책 — `intent-ui-vs-domain.md` 2절).
-///
-/// Phase E 의 headless 빌드 (`--no-default-features` 또는 `feature = "gui"` off)
-/// 에서는 본 enum 자체가 컴파일 타임에 사라질 예정 — 그때 `Intent::Ui` variant
-/// 도 `#[cfg(feature = "gui")]` 가드된다. 본 commit 에서는 분류축 표시 + builder
-/// 도입만, cfg 가드는 후속.
-// 이유: popup 을 여닫는 발화가 사용자 입력(GUI)뿐이라 headless 에서 variant 가 만들어지지 않는다.
+/// 팝업과 테마 등 화면 상태를 바꾸는 명령.
+// 이유: 팝업 입력은 GUI에서 발생하며 헤드리스에서는 해당 variant를 만들지 않는다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(dead_code, reason = "only user input in the gui raises a popup intent")
 )]
 #[derive(Debug, Clone)]
 pub enum UiIntent {
-    /// popup 열기.
-    OpenPopup { id: PopupId, mode: OpenPopupMode },
-    /// popup 닫기.
-    ClosePopup { id: PopupId },
-    /// popup toggle (열려있으면 닫고, 닫혀있으면 열기).
-    TogglePopup { id: PopupId, mode: OpenPopupMode },
-    /// Theme 색상 또는 host UI zoom 배율이 바뀌었다. 모든 윈도우 (main + modal)
-    /// 의 GpuState 가 전역 `Theme` 인스턴스를 재빌드 후 egui ctx 에 reapply
-    /// 해야 한다. dispatcher 가 fan-out 처리.
+    OpenPopup {
+        id: PopupId,
+        mode: OpenPopupMode,
+    },
+    ClosePopup {
+        id: PopupId,
+    },
+    TogglePopup {
+        id: PopupId,
+        mode: OpenPopupMode,
+    },
+    /// 테마·UI 배율 변경을 모든 main/modal 창의 GPU 상태와 egui에 반영한다.
     AppearanceChanged,
 }
 
@@ -264,11 +204,6 @@ impl From<UiIntent> for Intent {
     }
 }
 
-/// `UiIntent` 발화 ergonomics — `Intent` 의 builder 들을 그대로 갖춰 호출처가
-/// `UiIntent::OpenPopup{...}.from_user_shortcut(...)` 형태로 발화할 수 있게 한다.
-///
-/// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
-/// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
 impl UiIntent {
     #[cfg(feature = "gui")]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
@@ -290,31 +225,25 @@ impl UiIntent {
         Intent::Ui(self).from_agent_ipc()
     }
 
-    /// agent plugin 발화 — `file_picker.trigger`(ADR-0036)가 실사용처.
     #[cfg(feature = "gui")]
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: 요청 출처별 빌더를 제공하지만 현재 CLI 호출부는 없다.
     #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Ui(self).from_agent_cli()
     }
 
-    /// cascade 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: origin을 이어받는 빌더이며 현재 호출부는 없다.
     #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Ui(self).cascaded_from(parent)
     }
 }
 
-/// `DomainIntent` 발화 ergonomics — `UiIntent` 와 동일 패턴. 단 `from_system()`
-/// 은 *Domain 한정* 으로 본 impl 에만 존재한다 — UI Intent 의 자동 발화 차단.
-///
-/// origin 분기 builder set — context_menu / agent_plugin / agent_cli / cascade
-/// 발화 경로가 wiring 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이
-/// 필요하므로 보존.
+// 시스템 요청용 빌더는 DomainIntent에만 둔다.
 impl crate::core::intent::DomainIntent {
     #[cfg(feature = "gui")]
     pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
@@ -335,21 +264,18 @@ impl crate::core::intent::DomainIntent {
         Intent::Domain(self).from_agent_ipc()
     }
 
-    /// agent plugin 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: 요청 출처별 빌더를 제공하지만 현재 플러그인 호출부는 없다.
     #[allow(dead_code)]
     pub(crate) fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Domain(self).from_agent_plugin(plugin_id)
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: 요청 출처별 빌더를 제공하지만 현재 CLI 호출부는 없다.
     #[allow(dead_code)]
     pub(crate) fn from_agent_cli(self) -> DispatchedIntent {
         Intent::Domain(self).from_agent_cli()
     }
 
-    /// 시스템 내부 cascade 발화 — PTY escape sequence 가 trigger 한 자동 cascade
-    /// 등. UI Intent 의 system 발화는 type-level 로 차단되므로 본 method 는
-    /// `DomainIntent` 에만 존재한다.
     pub(crate) fn from_system(self) -> DispatchedIntent {
         DispatchedIntent {
             body: Intent::Domain(self),
@@ -358,18 +284,15 @@ impl crate::core::intent::DomainIntent {
         }
     }
 
-    /// cascade 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: origin을 이어받는 빌더이며 현재 호출부는 없다.
     #[allow(dead_code)]
     pub(crate) fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         Intent::Domain(self).cascaded_from(parent)
     }
 }
 
-/// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
-/// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
-///
-/// `Kind` 의 `cwd` 는 호출자가 명시 또는 None (handler 가 source surface 에서 resolve).
-// 이유: surface 변환을 발화하는 자리(변환 입력 popup·메뉴)가 GUI 뿐이다.
+/// Surface 변환 대상. Terminal 외에는 surface_registry에 등록된 kind를 사용한다.
+// 이유: 변환을 요청하는 팝업과 메뉴는 GUI에만 있다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
@@ -381,39 +304,34 @@ impl crate::core::intent::DomainIntent {
 pub enum ConvertTarget {
     Terminal,
     Kind {
-        /// 변환 대상의 시작 cwd. None 이면 intent handler 가 source surface 로부터 resolve.
+        /// 시작 cwd. None이면 기존 surface에서 구한다.
         cwd: Option<std::path::PathBuf>,
         kind: String,
         params: serde_json::Value,
     },
 }
 
-/// popup open 위치/포커스 정책.
-// 이유: `UiIntent` 와 같다 — popup 을 여는 발화가 GUI 뿐이다.
+/// 팝업 위치와 포커스 정책.
+// 이유: 팝업 열기는 GUI 입력에서만 요청한다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(dead_code, reason = "only user input in the gui opens a popup")
 )]
 #[derive(Debug, Clone)]
 pub enum OpenPopupMode {
-    /// 위치 자유, focus 없음.
+    /// 위치를 지정하지 않고 포커스도 옮기지 않는다.
     Default,
-    /// 화면 중앙 + (user origin 이면) focus.
+    /// 화면 중앙에 열고 포커스를 옮긴다.
     CenteredFocused,
-    /// 특정 scope rect 기준 센터링.
+    /// 지정한 범위의 중앙에 연다.
     WithScope(PopupScope),
-    /// scope 상단 정렬.
+    /// 지정한 범위의 상단에 연다.
     AtTopOfScope(PopupScope),
-    /// 지정 위치 (context menu). egui::Pos2 — gui-only.
+    /// 컨텍스트 메뉴에서 지정한 위치에 연다.
     #[cfg(feature = "gui")]
     AtFocused(egui::Pos2),
 }
 
-/// 발화 ergonomics. `UiIntent::OpenPopup { ... }.from_user_shortcut("id")` 또는
-/// 도메인 variant 에서 `Intent::ApplyPreset { ... }.from_user_menu("id")` 형태.
-///
-/// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
-/// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
 impl Intent {
     #[cfg(any(feature = "gui", test))]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
@@ -458,7 +376,6 @@ impl Intent {
         }
     }
 
-    /// agent plugin 발화 — `file_picker.trigger`(ADR-0036)가 실사용처.
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -469,7 +386,7 @@ impl Intent {
         }
     }
 
-    /// agent CLI 발화 경로 wiring 전 — 실사용처 없음.
+    // reason: 요청 출처별 빌더를 제공하지만 현재 CLI 호출부는 없다.
     #[allow(dead_code)]
     pub fn from_agent_cli(self) -> DispatchedIntent {
         DispatchedIntent {
@@ -481,8 +398,8 @@ impl Intent {
         }
     }
 
-    /// cascade: 직전 Intent 의 origin 을 명시적으로 전파. `trace_id` 도 그대로.
-    /// 비-테스트 호출처 없음 — cfg(test) 에서만 직접 호출됨.
+    /// 이전 명령의 origin과 trace_id를 그대로 이어받는다.
+    // reason: 제품 코드에는 호출부가 없고 시험에서만 사용한다.
     #[allow(dead_code)]
     pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
         DispatchedIntent {
@@ -494,9 +411,8 @@ impl Intent {
 }
 
 impl DispatchedIntent {
-    /// `trace_id` 를 명시 지정한다. 비-테스트 호출처가 없다 — 이 값을 발급하는 IPC 핸들러는
-    /// 없고, IPC 요청의 호스트 번호는 이 칸이 아니라 [`tasty_ipc::server::RequestSeq`] 다
-    /// (ADR-0008).
+    /// 로그를 연결할 trace_id를 지정한다. IPC 요청 번호와는 별개다.
+    // reason: 제품 코드에는 호출부가 없고 시험에서만 사용한다.
     #[allow(dead_code)]
     pub fn with_trace_id(mut self, trace_id: impl Into<String>) -> Self {
         self.trace_id = Some(trace_id.into());
