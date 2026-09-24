@@ -1,4 +1,4 @@
-//! tasty-output parsers — sub-module 별로 분리.
+//! Cargo·pytest·Jest의 시험 결과 요약 파서.
 
 use std::sync::LazyLock;
 

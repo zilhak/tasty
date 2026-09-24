@@ -4,21 +4,13 @@ use super::SurfaceId;
 use super::surface_trait::Surface;
 use super::terminal_surface::{Deferred, DeferredPlugin, DeferredSpawn};
 
-/// 빈 surface placeholder. 일반적으로는 convert 버튼만 보여주는 비활성 패널이지만,
-/// `deferred`가 Some일 때는 layout 복원 직후 아직 실제화되지 않은 자리를 차지하는
-/// placeholder다. 실제화 대상은 두 가지다([`Deferred`]):
-/// - `Deferred::Terminal`: PTY가 아직 spawn되지 않은 터미널 자리.
-/// - `Deferred::Plugin`: plugin kind가 아직 `SurfaceKindRegistry`에 없는(부팅 창)
-///   non-terminal surface 자리. reify가 kind 등록을 기다렸다가 복원한다.
+/// 비활성 빈 surface 또는 복원 대기용 placeholder. Deferred::Terminal은 PTY 생성을,
+/// Deferred::Plugin은 kind 등록 뒤 복원을 기다린다.
 pub struct EmptySurface {
     pub id: SurfaceId,
-    /// 실제화 대기 파라미터. Some이면 이 surface는 reify 시 실제 surface로 교체될
-    /// 자리표시자다. terminal과 plugin이 동시에 될 수는 없어 enum 하나로 담는다.
+    /// 교체할 surface의 복원 정보. Terminal과 Plugin 중 하나만 지정할 수 있다.
     pub deferred: Option<Deferred>,
-    /// 연속 실제화 실패 횟수. reify 가 매 프레임(~60fps) 재시도하므로, 복원된
-    /// layout 의 shell 바이너리가 영구히 없거나 plugin kind 가 영영 안 오는 등 영구
-    /// 실패 시 폭주를 막기 위해 실패할 때마다 +1 하고, 상한에 도달하면 재시도를
-    /// 멈춘다 (transient 실패는 상한 전에 성공해 0 으로 의미를 잃는다).
+    /// PTY 생성의 연속 실패 횟수. 상한 뒤에는 반복 재시도를 멈춘다.
     pub spawn_attempts: u32,
     /// 호스트가 carry 한 시작 cwd. fresh empty 면 None — Surface cwd invariant
     /// (`docs/design/policies/cwd.md#surface-cwd-invariant`) 에 따라 다음 변환 시 후보로 사용.
@@ -122,10 +114,7 @@ impl Surface for EmptySurface {
                 })
             }
             Some(Deferred::Plugin(p)) => {
-                // Deferred plugin placeholder — 원래 kind 로 나오되 아직 못 쓰는
-                // 상태(`ready: false`)임을 응답에서 읽히게 한다. 에이전트가 "있다"
-                // 로만 세고 못 쓰는 것을 모르면 그 자체가 결함(원칙 2)이라, kind 를
-                // 그대로 노출하면서 ready 플래그로 구분한다.
+                // 원래 kind는 유지하되 아직 사용할 수 없음을 ready:false로 알린다.
                 serde_json::json!({
                     "type": "Pending",
                     "kind": p.kind,

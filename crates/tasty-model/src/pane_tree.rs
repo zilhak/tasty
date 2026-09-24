@@ -69,9 +69,7 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(pane) if pane.id == target_id => {
                 let new_pane_id = new_pane.id;
-                // Replace self (Leaf(orig)) with Leaf(new_pane); returns Leaf(orig).
                 let original_leaf = std::mem::replace(self, PaneNode::Leaf(new_pane));
-                // Replace self (Leaf(new_pane)) with the final Split; returns Leaf(new_pane).
                 let new_leaf = std::mem::replace(
                     self,
                     PaneNode::Split {
@@ -87,7 +85,6 @@ impl PaneNode {
                         })),
                     },
                 );
-                // Put the real new leaf into second.
                 if let PaneNode::Split { second, .. } = self {
                     **second = new_leaf;
                 }
@@ -95,7 +92,6 @@ impl PaneNode {
             }
             PaneNode::Leaf(_) => Some(new_pane), // not found, return pane back
             PaneNode::Split { first, second, .. } => {
-                // Try first; if not found, new_pane is returned and we try second.
                 let remaining = first.split_pane_in_place(target_id, direction, new_pane);
                 if let Some(pane) = remaining {
                     second.split_pane_in_place(target_id, direction, pane)
@@ -113,14 +109,12 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(_) => false, // Can't close the root pane
             PaneNode::Split { first, second, .. } => {
-                // Check if first child is the target leaf
                 let first_is_target =
                     matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
                 let second_is_target =
                     matches!(second.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
 
                 if first_is_target {
-                    // Remove first, promote second
                     let old = std::mem::replace(
                         self,
                         PaneNode::Leaf(Pane {
@@ -150,7 +144,6 @@ impl PaneNode {
                     }
                     return true;
                 }
-                // Recurse into children
                 first.close_pane(target_id) || second.close_pane(target_id)
             }
         }
@@ -315,10 +308,7 @@ impl PaneNode {
         }
     }
 
-    /// attach 단계 J 후속: pane 레벨 이진트리를 JSON 으로 직렬화(direction/ratio
-    /// 보존). `SurfaceLayout::to_tree_json_full` 과 대칭 — Leaf 는 `Pane::to_attach_json`
-    /// (id+tabs, 기존 평면 "panes" 원소와 동일 shape)에 `"type":"Leaf"` 를 얹고,
-    /// Split 은 direction/ratio/first/second 를 담는다.
+    /// pane 이진트리의 분할 방향·비율과 각 pane의 탭을 JSON으로 반환한다.
     pub fn to_tree_json_full(&self) -> serde_json::Value {
         match self {
             PaneNode::Leaf(pane) => {
@@ -344,14 +334,8 @@ impl PaneNode {
         }
     }
 
-    // ─── BinaryTree alias (외부 caller 0 변경 보장) ────────────────────────
-    //
-    // 외부 호출처들은 `crate::model::BinaryTree` 를 import 하지 않으므로
-    // trait method 가 dot-call scope 에 없다. 따라서 trait 와 *이름이 같은*
-    // 메서드들은 inherent alias 로 보존하고, UFCS 로 trait 본체에 위임한다
-    // (`self.compute_rects(...)` 로 호출하면 inherent 가 재선택되어 무한 재귀).
-    // 이름이 다른 id-시리즈 (`all_pane_ids` / `next_pane_id` / `prev_pane_id`) 도
-    // 동일한 위임 패턴으로 보존한다.
+    // trait import 없이도 쓰도록 inherent 메서드를 제공한다.
+    // self.method는 자신을 다시 호출하므로 BinaryTree의 구현을 명시해 위임한다.
 
     pub fn all_pane_ids(&self) -> Vec<PaneId> {
         <Self as BinaryTree>::all_ids(self)

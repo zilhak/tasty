@@ -17,15 +17,9 @@ const MAX_CLOSED_ITEMS: usize = 10;
 /// 참조로 들어오면 `&|id| store.get(id)` 같은 closure 로 wrapping 한다.
 pub type TerminalLookup<'a> = dyn Fn(SurfaceId) -> Option<&'a tasty_terminal::Terminal> + 'a;
 
-/// Scrollback payload of a closed surface.
-///
-/// A freshly-captured surface holds [`Inline`](ClosedScrollback::Inline) — a
-/// transient in-memory copy that lives only until [`persist_closed_scrollback`]
-/// runs (during the host's `push_closed_item`). Once persisted, the closed item
-/// retains only a [`Persisted`](ClosedScrollback::Persisted) reference into
-/// `~/.tasty/scrollback/`, so its retained scrollback cost is a single id
-/// string instead of up to 10k lines per surface.
-/// [`Empty`](ClosedScrollback::Empty) means the surface had no scrollback.
+/// 닫힌 surface의 스크롤백. 캡처 직후 Inline이고 호스트가 저장에 성공하면
+/// Persisted ID만 남긴다. 저장 실패 때는 복원을 위해 Inline을 유지한다.
+/// Empty는 스크롤백이 없음을 뜻한다.
 pub enum ClosedScrollback {
     Empty,
     Inline(VecDeque<ScrollbackLine>),
@@ -106,15 +100,8 @@ pub enum ClosedItem {
         tab_name: String,
     },
     Tab(ClosedTab),
-    /// A whole pane (removed via the last-tab-in-pane cascade or the
-    /// dedicated `close_pane` shortcut). `sibling_pane_id`/`direction`/
-    /// `ratio`/`was_first` capture the split geometry at close time — the
-    /// pane itself is always a direct leaf child of some `Split` node (see
-    /// `PaneNode::close_pane`), so this is enough to splice it back in via
-    /// `PaneNode::insert_pane_beside` on restore. `sibling_pane_id` is a
-    /// still-live anchor pane on the *other* side of that split; if it no
-    /// longer exists at restore time, restoration falls back to splitting
-    /// the caller's currently focused pane instead.
+    /// 닫힌 pane과 분할 위치. 복원은 저장한 sibling_pane_id 옆에 다시 삽입하며
+    /// 그 pane이 없으면 호출자의 포커스 pane을 대신 사용한다.
     Pane {
         pane: ClosedPane,
         sibling_pane_id: PaneId,
@@ -166,14 +153,8 @@ impl ClosedSurface {
             })
             .collect();
 
-        // Capture scrollback as a transient inline copy. The host's
-        // `push_closed_item` persists it to disk (see `persist_closed_scrollback`)
-        // and replaces it with a lightweight reference, so the retained closed
-        // item does not hold the full scrollback in memory.
-        //
-        // 벌크 API 를 쓴다 — 라인당 `scrollback_line_full` 은 라인마다 terminal
-        // state mutex 를 잡고, 워크스페이스 close 는 그 비용을 (탭 수 x 라인 수)
-        // 만큼 렌더 스레드에서 한 프레임에 치른다.
+        // 호스트가 닫기 후 디스크로 옮기기 전의 임시 복사본이다.
+        // 줄마다 terminal mutex를 잠그지 않도록 한 번에 읽는다.
         let scrollback: VecDeque<ScrollbackLine> = terminal.scrollback_lines_all().into();
         let scrollback = if scrollback.is_empty() {
             ClosedScrollback::Empty
@@ -245,15 +226,12 @@ impl ClosedPanel {
                 focused_surface: tab.focused_surface,
             });
         }
-        // Single surface tab
         let surface = tab.surface();
         Self::from_surface(surface, snapshot, terminal_lookup)
     }
 
-    /// Capture from a single Surface (trait object). Terminal 은 PTY 로직이 별도라
-    /// 직접 처리하고, 그 외는 모두 `snapshot` 클로저를 통해 registry 경로로 간다.
-    /// 클로저가 `None`을 반환하면 (Html/Empty/RemoteSurface 등 휘발성)
-    /// 함수도 `None`을 반환한다.
+    /// Terminal은 직접 캡처하고 나머지는 호스트의 snapshot 콜백을 사용한다.
+    /// 콜백이 None이면 복원 목록에서 제외한다.
     pub fn from_surface(
         surface: &dyn Surface,
         snapshot: SnapshotFn<'_>,
@@ -444,11 +422,7 @@ fn inject_into_pane_node(node: &mut ClosedPaneNode, lookup: &dyn Fn(SurfaceId) -
     }
 }
 
-// ── Scrollback persistence: host-driven post-pass over a ClosedItem ──
-//
-// `tasty-model` cannot reach the host's disk store (`src/store/scrollback.rs`),
-// so the host supplies the I/O via closures and these walkers apply it across
-// every `ClosedSurface` in the tree — mirroring `inject_restore_commands`.
+// 디스크 I/O는 호스트 콜백으로 받아 모델의 각 ClosedSurface에 적용한다.
 
 /// Visit every [`ClosedSurface`] in a [`ClosedItem`] mutably.
 fn visit_surfaces_mut(item: &mut ClosedItem, f: &mut dyn FnMut(&mut ClosedSurface)) {
@@ -579,8 +553,7 @@ pub fn collect_scrollback_refs(item: &ClosedItem, out: &mut Vec<String>) {
     });
 }
 
-/// 스냅샷 규모 — close 계측(`tasty::close` C1)이 "ms 가 무엇에 비례하는가" 를
-/// 판정하려면 surface 수와 스크롤백 라인 수가 함께 필요하다.
+/// 닫기 시간과 함께 기록할 snapshot 크기.
 #[derive(Default, Clone, Copy)]
 pub struct SnapshotExtent {
     /// 스냅샷에 담긴 surface 수.
@@ -603,18 +576,10 @@ pub fn snapshot_extent(item: &ClosedItem) -> SnapshotExtent {
     out
 }
 
-/// 복원 스택의 한 엔트리 — 항목과 그 **출처 워크스페이스**.
-///
-/// 출처를 함께 싣는 이유는 스택이 한 인스턴스 안에서 **두 사용자에게 공유되기**
-/// 때문이다: 그 기계 앞에 앉은 사용자와, 워크스페이스를 원격에서 점유한 mirror
-/// 사용자가 같은 스택을 본다. 출처가 없으면 mirror 사용자의 복원이 다른 워크스페이스
-/// 항목을 가져가고, 그 복원 결과는 anchor 워크스페이스 밖이라 되반영 delta 에도 안
-/// 잡힌다("서버에는 생겼는데 client 에는 아무 일도 없는" 상태). 결정·대안은
-/// `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
+/// 복원 항목과 원래 workspace. 로컬·원격 사용자가 스택을 공유하므로
+/// mirror 복원 요청이 다른 workspace의 항목을 가져가지 않도록 출처를 보관한다.
 pub struct ClosedEntry {
-    /// 닫힐 당시 이 항목이 속해 있던 워크스페이스. [`ClosedItem::Workspace`] 는
-    /// 자기가 워크스페이스라 어디에도 속하지 않으므로 `None` 이고, 그래서 워크스페이스
-    /// 스코프 pop 의 후보가 **원리적으로** 되지 않는다.
+    /// 닫힐 때의 workspace. workspace 전체를 닫은 항목은 None이라 workspace별 복원에서 제외한다.
     pub origin_workspace: Option<WorkspaceId>,
     pub item: ClosedItem,
 }
@@ -659,12 +624,8 @@ impl ClosedItemStore {
         evicted.map(|e| e.item)
     }
 
-    /// 가장 최근 항목부터 거슬러 올라가며 `keep` 가 참인 **첫** 엔트리를 꺼낸다.
-    /// 술어의 인자는 그 엔트리의 출처 워크스페이스([`ClosedEntry::origin_workspace`]).
-    ///
-    /// 스코프 없는 전역 pop 을 남기지 않은 것은 의도다 — 복원 요청에는 언제나 "누가
-    /// 어느 워크스페이스에서 눌렀는가" 가 붙어 있고, 호출부가 그 맥락을 술어로 적게
-    /// 만들면 "그냥 top 을 꺼내는" 갈래가 실수로 생기지 않는다.
+    /// 최근 항목부터 찾아 keep(origin_workspace)가 참인 첫 항목을 꺼낸다.
+    /// 호출자가 요청의 workspace 범위를 명시하도록 전역 pop은 제공하지 않는다.
     pub fn pop_matching(
         &mut self,
         keep: impl Fn(Option<WorkspaceId>) -> bool,
@@ -673,7 +634,7 @@ impl ClosedItemStore {
         self.items.remove(idx).map(|e| e.item)
     }
 
-    /// 라이브러리 표준 accessor — "복원 가능 항목 없음" UI 분기 후보.
+    /// 복원 가능한 항목이 없는지 확인한다.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -727,14 +688,12 @@ mod tests {
             Some("ref-1".to_string())
         });
 
-        // Inline copy is gone; only a reference remains.
         assert_eq!(captured_len, 2);
         match scrollback_of(&item) {
             ClosedScrollback::Persisted(id) => assert_eq!(id, "ref-1"),
             _ => panic!("expected Persisted"),
         }
 
-        // collect_scrollback_refs surfaces the reference for cleanup.
         let mut refs = Vec::new();
         collect_scrollback_refs(&item, &mut refs);
         assert_eq!(refs, vec!["ref-1".to_string()]);
@@ -742,19 +701,16 @@ mod tests {
 
     #[test]
     fn persist_normalizes_empty_inline_and_keeps_inline_on_write_failure() {
-        // Empty inline → Empty (no reference, no persist call).
         let mut empty = surface_item(1, ClosedScrollback::Inline(VecDeque::new()));
         persist_closed_scrollback(&mut empty, &mut |_| panic!("must not persist empty"));
         assert!(matches!(scrollback_of(&empty), ClosedScrollback::Empty));
 
-        // Write failure (None) keeps the Inline copy so restore still works.
         let mut item = surface_item(2, ClosedScrollback::Inline([line("x")].into()));
         persist_closed_scrollback(&mut item, &mut |_| None);
         match scrollback_of(&item) {
             ClosedScrollback::Inline(lines) => assert_eq!(lines.len(), 1),
             _ => panic!("expected Inline kept on failure"),
         }
-        // No reference to clean up when nothing was persisted.
         let mut refs = Vec::new();
         collect_scrollback_refs(&item, &mut refs);
         assert!(refs.is_empty());
@@ -770,7 +726,6 @@ mod tests {
                     .is_none()
             );
         }
-        // The (MAX+1)-th push evicts the oldest (id 0) so its files can be freed.
         let evicted = store
             .push(
                 surface_item(999, ClosedScrollback::Persisted("ref-evicted".into())),
@@ -806,7 +761,6 @@ mod tests {
             );
         }
 
-        // 스택 top 은 ws 9 의 것이지만 ws 7 스코프는 자기 것만 본다.
         let got = store.pop_matching(|o| o == Some(7)).expect("ws 7 item");
         match got {
             ClosedItem::Surface { surface, .. } => assert_eq!(surface.id, 1),

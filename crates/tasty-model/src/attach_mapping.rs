@@ -1,13 +1,6 @@
-//! 워크스페이스 ↔ 컴퓨터(SSH) attach 매핑 (attach/detach 단계 7).
-//!
-//! "워크스페이스1 = a컴퓨터, 워크스페이스2 = b컴퓨터" 를 표현하는 데이터. model 은
-//! **데이터만 보관**하고 프로필 "해석"(→SSH 터널 수립, attach)은 호스트/CLI 가 한다
-//! (tasty-model deps-free 유지 — `tasty-ssh-profiles` 에 의존하지 않는다).
-//!
-//! - 저장 프로필 참조([`WorkspaceAttachTarget::Profile`]) 또는 1회성 인라인
-//!   ([`WorkspaceAttachTarget::Inline`]) 둘 다 지원(decisions 10).
-//! - 매핑은 `Workspace.attach_mapping` 으로 들고, `SavedWorkspace.attach_mapping` 으로
-//!   layout.json 에 영속한다(재시작 후 활성화 시 자동 재attach).
+//! workspace의 원격 attach 대상. 저장 프로필 참조 또는 인라인 SSH 대상을 보관한다.
+//! 프로필 해석과 터널 연결은 호스트·CLI가 맡으며 이 모델은 SSH 구현에 의존하지 않는다.
+//! 호스트가 SavedWorkspace.attach_mapping으로 저장하고 활성화 때 재연결에 사용한다.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,8 +28,7 @@ pub enum WorkspaceAttachTarget {
 pub struct WorkspaceAttachMapping {
     /// 원격 대상(프로필 참조 또는 인라인).
     pub target: WorkspaceAttachTarget,
-    /// 원격 tasty 의 attach 대상 workspace_id(원칙 3 — ID 명시). None 이면 attach 시
-    /// 명시 필요(자동 attach 는 None 일 때 skip — 호스트가 안내).
+    /// 원격 workspace ID. None이면 연결할 때 지정해야 하며 자동 attach는 건너뛴다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_workspace: Option<u32>,
 }

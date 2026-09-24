@@ -507,7 +507,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("session.issue", plugin(Mutate, &[AgentManage])),
         ("session.revoke", plugin(Idempotent, &[AgentManage])),
         ("session.list", local_only(Read)),
-        // ── attach.* (배타 attach 점유 제어 — attach/detach 단계 3·4) ──────
+        // attach 점유 제어
         // 스트림 점유는 handshake에서 처리한다. JSON-RPC attach 제어는 여기 등록한다.
         // SSH와 loopback 연결을 신뢰 경계로 사용하며 추가 권한 토큰은 요구하지 않는다.
         ("attach.acquire", plugin(Idempotent, &[])),
@@ -591,7 +591,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ),
         // 이미 연 항목의 목록만 반환하며 파일을 읽지 않아 SurfaceRead를 요구한다.
         ("recent.query", plugin(Read, &[SurfaceRead])),
-        // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
         // ── git_viewer.* (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그
         // — 원격 attach mirror git 조회 트리거) ─
         // 원격 Git 조회를 비동기로 요청한다. request_id 뒤 실제 결과는 event.dispatch로 받는다.
@@ -607,8 +606,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자신의 팝업 인스턴스만 닫을 수 있다. 소유권은 호스트가 검사한다.
         ("popup.close", plugin_only(Idempotent, &[UiPopup])),
-        // ── banner (plugin → host, A3) ────────────────────────────────
-        // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
+        // 플러그인 배너
+        // 자기 배너를 소유 surface에 표시한다. App에서 소유권을 확인한다.
         ("banner.open", plugin_only(Idempotent, &[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
         ("banner.close", plugin_only(Idempotent, &[UiBanner])),

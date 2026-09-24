@@ -1,22 +1,6 @@
-//! Linux native context menu using GTK 3 Menu + popup_at_rect (X11 only).
-//!
-//! GTK is initialized lazily on first call. Unlike the macOS / Windows
-//! backends — which track the popup inside the run loop / message pump the
-//! main window already owns and therefore answer synchronously — GTK needs an
-//! event loop of *its own* iterated to drive the menu. Spinning that loop
-//! inline would block winit's event loop for as long as the menu is up (no
-//! `_NET_WM_PING` reply → the WM paints the app "not responding", no input,
-//! no rendering), so this backend **returns immediately** with
-//! `MenuOutcome::Pending` and hands back a [`GtkMenuHandle`] the caller pumps
-//! once per frame until it reports a result. See
-//! `docs/dev-guide/context-menu.md#네이티브-메뉴-api-cratestasty-platformsrcnative_menu`.
-//!
-//! `popup_at_rect` (rather than `popup_at_pointer(None)`) needs a real
-//! `GdkWindow` to anchor the menu to — tasty's window is owned by winit, not
-//! GTK, so there is no `GdkWindow` for it by default. We wrap the winit
-//! window's raw X11 XID as a foreign `GdkWindow` (same pattern as
-//! `host_api/webview/linux.rs`) purely to give GTK a valid display/screen
-//! context to position and grab from.
+//! GTK 3 기반 X11 컨텍스트 메뉴. 사용자 선택을 기다리지 않고 Pending 핸들을 반환한다.
+//! 호출자는 매 프레임 poll로 GTK 이벤트를 처리한다. winit 창의 XID를 GdkWindow로 감싸
+//! popup_at_rect의 위치·grab 기준 창으로 사용한다.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -29,11 +13,7 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::{MenuItem, MenuOutcome};
 
-/// Watchdog bound. With the async contract this no longer guards against the
-/// app freezing (nothing blocks any more) — it guards against a *ghost menu*:
-/// if the grab fails and the user never clicks the menu itself, nothing would
-/// ever fire `selection-done` and the popup would sit on screen forever with
-/// the caller's continuation pinned behind it.
+/// 선택 완료 신호가 오지 않는 메뉴를 닫아 핸들의 후속 처리가 영구 대기하지 않게 한다.
 const WATCHDOG: Duration = Duration::from_secs(30);
 
 fn ensure_gtk() -> bool {
@@ -64,10 +44,7 @@ fn watchdog_duration() -> Duration {
     WATCHDOG
 }
 
-/// debug 훅: grab 을 시도조차 하지 않아 "grab 실패" 상태를 결정적으로 만든다
-/// (`TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL`). 실제 grab 실패는 물리 마우스
-/// 클릭에서만 재현되므로(합성 입력으로는 안 됨) 이 경로가 유일한 자동 검증
-/// 수단이다. release 미노출.
+/// debug에서 grab을 생략해 실패 후 dismiss·timeout 처리를 재현한다.
 #[cfg(debug_assertions)]
 fn force_grab_failure() -> bool {
     std::env::var_os("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL").is_some()
@@ -78,12 +55,7 @@ fn force_grab_failure() -> bool {
     false
 }
 
-/// An on-screen GTK popup menu whose result has not been collected yet.
-///
-/// Owns everything the popup's lifetime depends on: the `gtk::Menu` itself
-/// (a function local in the old blocking implementation), the shared cells the
-/// signal handlers write to, the watchdog source, and the X11 display the
-/// grab must be released on.
+/// 메뉴와 신호 상태·watchdog·X11 display를 메뉴가 닫힐 때까지 보유한다.
 pub struct GtkMenuHandle {
     menu: gtk::Menu,
     display: gdkx11::X11Display,
@@ -97,11 +69,8 @@ pub struct GtkMenuHandle {
 }
 
 impl GtkMenuHandle {
-    /// Service the menu once and report whether it closed.
-    ///
-    /// Non-blocking by construction: `main_iteration_do(false)` returns
-    /// immediately when nothing is queued, so this drains what GTK already has
-    /// and hands control straight back to the caller's frame loop.
+    /// GTK 이벤트가 빌 때까지 처리하고 닫힘 결과를 반환한다.
+    /// 새 이벤트를 기다리지는 않지만 이벤트 처리 시간의 상한을 두지는 않는다.
     pub(super) fn poll(&mut self) -> Option<Option<u32>> {
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
@@ -128,8 +97,6 @@ impl GtkMenuHandle {
         self.release();
         self.finished = true;
         if self.timed_out.get() {
-            // 과거엔 grab 상태를 조회하지 않고 "likely a pointer grab failure"
-            // 라고 단정했다 — 실제 `grabbed` 값을 찍어 추정과 사실을 구분한다.
             tracing::warn!(
                 "native context menu popup timed out after {:?} without selection-done (pointer grab was {}) — forcing close",
                 self.watchdog,
@@ -176,13 +143,7 @@ impl Drop for GtkMenuHandle {
     }
 }
 
-/// 이미 경고한 `(winit 배율 비트, GDK 배율)` 조합.
-///
-/// 우클릭마다 로그가 뜨면 그 줄은 읽히지 않는다. 그렇다고 프로세스당 한 번
-/// (`Once`)으로 막으면 **배율이 다른 모니터로 창을 옮겨 어긋남의 모양이 바뀐 것**
-/// 을 놓치는데, 그 변화가 정확히 진단에 필요한 값이다. 그래서 횟수가 아니라
-/// **조합**으로 막는다 — 로그 줄 수는 우클릭 수가 아니라 서로 다른 배율 조합의
-/// 수(모니터 수 정도)에 비례한다. `f64` 는 비트로 넣어 정확 비교한다.
+/// 이미 경고한 winit·GDK 배율 조합. 같은 조합은 중복 보고하지 않고 새 조합은 알린다.
 static WARNED_ANCHOR_SCALES: Mutex<Vec<(u64, i32)>> = Mutex::new(Vec::new());
 
 /// 위 경고-억제 셋 락의 poison 복구 공용 보고 좌표(첫-1 회). 복구는 안전하다(억제는 부가).
@@ -190,24 +151,9 @@ const WARNED_ANCHOR_SCALES_WHAT: &str = "native-menu anchor-scale warning set";
 static WARNED_ANCHOR_SCALES_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 네이티브 메뉴 앵커 좌표계의 **전제**(winit 배율 == GDK 배율)가 깨졌으면 경고한다.
-///
-/// [`show_context_menu`] 에 넘기는 `x`/`y` 는 winit(=egui) **논리** 좌표다. GTK 는
-/// 같은 수를 `popup_at_rect` 에서 **GDK 논리** 좌표로 읽고 GDK 배율로 물리에
-/// 올린다. 두 배율이 같을 때만 그 수가 같은 점을 가리킨다 — 즉 이 좌표 전달을
-/// 맞게 만드는 것은 산술이 아니라 **전제**이고, 그 전제는 어디서도 강제되지
-/// 않는다. winit 은 `WINIT_X11_SCALE_FACTOR`/Xft.dpi 를, GDK 는 `GDK_SCALE` 을
-/// 서로 **다른 출처**에서 읽기 때문이다.
-///
-/// 전제가 깨지면 메뉴는 클릭 지점이 아니라 `winit 배율 / GDK 배율` 만큼 옮겨진
-/// 자리에 뜬다(실측: winit 2 · GDK 1 에서 클릭 `(500,96)` → 메뉴 `+250+48`).
-/// 산술을 고치지 않는 이유는 고칠 수 없어서가 아니라, **실기기 HiDPI X11 에서
-/// 두 값이 실제로 갈리는지**를 확정하지 못해 어느 쪽으로 맞출지가 정해지지 않기
-/// 때문이다. 그래서 전제를 주석으로만 두지 않고 깨진 순간을 로그로 남긴다 —
-/// 그 관측은 실사용자 환경에서만 만들어진다.
-///
-/// 측정 절차와 실측값: `docs/ai-verification/dpi-scale-verification.md`
-/// ("네이티브 메뉴 앵커는 winit 배율 == GDK 배율을 전제한다").
+/// winit 논리 좌표를 GDK 논리 좌표로 그대로 전달하므로 두 배율이 다르면 위치가 어긋날 수 있다.
+/// 각 라이브러리가 다른 설정을 읽어 이 일치가 보장되지 않으므로 실제 불일치를 경고한다.
+/// 좌표 변환은 여기서 수정하지 않는다. 확인 절차는 docs/ai-verification/dpi-scale-verification.md를 따른다.
 pub fn warn_if_menu_anchor_scale_premise_broken(winit_scale: f64) {
     if !ensure_gtk() {
         return;
@@ -279,11 +225,7 @@ pub fn show_context_menu(
             return MenuOutcome::Ready(None);
         }
     };
-    // Foreign reference to tasty's own (winit-owned) window — not a new
-    // window, just enough of a `GdkWindow` for popup_at_rect to anchor to.
-    // 이 창은 winit 이 오래 전에 만든 것이라 webview 쪽과 달리 생성 경합은 없다.
-    // 그래도 NULL 은 올 수 있고(종료 중 창이 이미 파괴된 경우), 그때 우클릭 하나로
-    // 프로세스가 죽으면 안 된다 — 이 함수의 다른 실패 분기와 같이 메뉴를 안 띄운다.
+    // winit의 기존 창을 GdkWindow로 감싼다. 이미 파괴된 창 등으로 조회에 실패하면 메뉴를 열지 않는다.
     let rect_window = match crate::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window)
     {
         Ok(w) => w,
@@ -323,19 +265,8 @@ pub fn show_context_menu(
         });
     }
 
-    // Explicit outside-click dismiss. GTK's own menu-shell deactivate logic
-    // apparently keys off its own bookkeeping of "do I hold a grab", which
-    // isn't reliably set here (no trigger `GdkEvent` to grab a timestamp
-    // from — winit already consumed it) even though a grab does get
-    // established (see below) — so don't depend on it. Instead watch
-    // button-press-events on the menu directly: any press whose coordinates
-    // land outside the menu's own allocation must be one redirected here by
-    // the grab below (a real in-menu click is, by definition, inside it) —
-    // treat that as "clicked outside" and dismiss ourselves.
-    //
-    // This is the *grabbed* dismiss path; when the grab fails the press never
-    // reaches GTK at all and winit sees it instead — `mouse.rs` then calls
-    // `MenuHandle::dismiss` on the handle returned below.
+    // 메뉴 밖으로 전달된 클릭은 직접 닫는다. grab이 실패해 GTK에 클릭이 오지 않으면
+    // 호스트 winit 입력 경로가 MenuHandle::dismiss를 호출한다.
     {
         let done = Rc::clone(&done);
         menu.connect_button_press_event(move |menu_widget, event| {
@@ -350,23 +281,8 @@ pub fn show_context_menu(
         });
     }
 
-    // Best-effort pointer/keyboard grab, via GDK's own `Seat::grab` (not
-    // raw Xlib `XGrabPointer`) so the resulting events flow through GDK's
-    // normal (XInput2-based) event pipeline and actually reach the
-    // button-press-event handler above — a raw core-protocol Xlib grab
-    // redirects clicks at the X11 level too, but GDK3's event source only
-    // recognizes XInput2 events, so those redirected clicks never turned
-    // into a `GdkEventButton` at all (confirmed empirically: the handler
-    // above never fired for outside clicks under a raw Xlib grab).
-    // Without a grab at all, clicks outside the menu route to whatever
-    // window is under them (tasty's own main window) and the menu never
-    // sees them — so the handler above never gets a chance to run.
-    //
-    // Deferred to an idle callback (rather than done inline, or in the
-    // widget "map" signal) so it runs *after* `popup_at_rect` below has
-    // fully mapped the popup server-side — "map" fires as part of GTK's own
-    // default handler for the signal, before the underlying map request is
-    // guaranteed flushed, and grabbing too early fails.
+    // GDK 이벤트 경로로 클릭을 받으려고 Seat::grab을 사용한다.
+    // popup_at_rect의 map이 처리된 뒤 grab하도록 idle 콜백에 등록한다.
     let grabbed: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     {
         let grabbed = Rc::clone(&grabbed);
@@ -427,12 +343,7 @@ pub fn show_context_menu(
         None,
     );
 
-    // Safety net: without a real trigger event, `popup_at_rect` can still
-    // fail to establish a pointer/keyboard grab (no timestamp to grab with)
-    // under some window-manager / XWayland combinations, in which case
-    // `selection-done` never fires. Nothing blocks any more, so this is no
-    // longer a freeze guard — it stops a menu nobody can dismiss from sitting
-    // on screen (and its continuation from being pinned) indefinitely.
+    // grab이나 완료 신호가 실패해 메뉴가 남아 있을 때 watchdog으로 닫는다.
     let watchdog = watchdog_duration();
     let timed_out: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let timeout_id = {
@@ -451,8 +362,6 @@ pub fn show_context_menu(
         })
     };
 
-    // Hand the live popup to the caller — no waiting here. The caller pumps
-    // `poll()` each frame; winit's event loop keeps running the whole time.
     MenuOutcome::Pending(super::MenuHandle::from_gtk(GtkMenuHandle {
         menu,
         display: x11_gdk_display,
@@ -487,15 +396,9 @@ mod tests {
         }
     }
 
-    /// grab 실패를 강제한 상태에서도 (a) `show_context_menu` 가 즉시 반환하고
-    /// (b) 폴링 한 번 한 번이 블로킹하지 않으며 (c) 워치독이 메뉴를 확실히
-    /// 걷어간다는 것을 실제 GTK 백엔드로 확인한다.
-    ///
-    /// 실행: `cargo test -p tasty-platform --lib --features gui -- --ignored
-    /// --test-threads=1 native_menu::linux` (X11 디스플레이 필요 — 잠깐 실제 메뉴가
-    /// 떴다 사라진다). **패키지와 feature 를 둘 다 줘야 한다** — 이 모듈은 크레이트의
-    /// 기본 feature 에 없어서, `--features gui` 를 빼면 필터에 0 건이 걸려 초록이 난다.
-    /// 물리 마우스 없이 재현 가능한 유일한 grab-실패 경로다.
+    /// X11의 실제 GTK 메뉴로 강제 grab 실패 뒤 반환·poll·watchdog 처리를 확인한다.
+    /// 실행: cargo test -p tasty-platform --lib --features gui -- --ignored --test-threads=1 native_menu::linux
+    /// 실제 메뉴가 잠시 뜨므로 격리 X11 디스플레이에서 실행한다. gui를 빼면 이 시험은 포함되지 않는다.
     #[test]
     #[ignore]
     fn forced_grab_failure_resolves_via_watchdog_without_blocking() {

@@ -201,10 +201,9 @@ impl IpcConnection {
         self.capabilities_within(session_token, None)
     }
 
-    /// 아직 기능을 조회하지 않았다면 bound 안에서 확인한다.
-    /// 확인 요청에는 밀리초를 올림해 싣고 소켓 읽기에도 같은 기한을 건다.
-    /// bound가 0이면 보내지 않는다. 만료는 CapabilityProbeExpired이며 원래 요청은 미전송이다.
-    /// 성공하면 읽기 timeout을 원래대로 돌린다.
+    /// 아직 기능을 조회하지 않았다면 확인 요청의 response_timeout_ms와 소켓 읽기 timeout을 설정한다.
+    /// 밀리초는 올림하며 bound=0이면 보내지 않는다. 쓰기와 여러 읽기를 합친 전체 소요 시간의 상한은 아니다.
+    /// 만료는 CapabilityProbeExpired이고 연결을 재사용하지 않는다. 만료 이외의 결과에서는 읽기 timeout을 None으로 돌린다.
     pub fn capabilities_within(
         &mut self,
         session_token: Option<&str>,
@@ -235,8 +234,8 @@ impl IpcConnection {
         Ok(self.capabilities.as_ref().expect("직전 분기가 채웠다"))
     }
 
-    /// 읽기 기한을 걸고 보낸다. 기한 만료와, 상대가 봉투 상한으로 답한 만료(`-32061` ·
-    /// `-32067`)는 [`CapabilityProbeExpired`] 로 모은다.
+    /// 각 소켓 읽기에 timeout을 설정한다. 쓰기나 부분 입력·빈 줄에 따른 반복 읽기 전체를 제한하지는 않는다.
+    /// 읽기 timeout과 서버의 -32061/-32067 응답은 CapabilityProbeExpired로 변환한다.
     fn send_within(
         &mut self,
         request: &JsonRpcRequest,
@@ -261,13 +260,12 @@ impl IpcConnection {
         if expired {
             return Err(CapabilityProbeExpired.into());
         }
-        // 기한 안에 답이 왔다. 뒤의 요청은 이 연결의 원래 규약(읽기 기한 없음)으로 기다린다.
+        // 성공과 만료 이외의 오류에서는 다음 요청의 읽기를 무기한으로 돌린다.
         self.reader.get_ref().set_read_timeout(None)?;
         sent
     }
 
-    /// [`IpcConnection::require_capability`] 와 같되, 확인 요청을 `bound` 안에 끝낸다
-    /// ([`IpcConnection::capabilities_within`]).
+    /// require_capability와 같되 capabilities_within의 요청·읽기 timeout 설정을 사용한다.
     pub fn require_capability_within(
         &mut self,
         name: &str,

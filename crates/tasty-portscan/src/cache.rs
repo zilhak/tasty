@@ -5,9 +5,8 @@ use std::time::{Duration, Instant};
 
 use crate::{CachedScan, ListeningPort};
 
-/// LRU-ish cache keyed by surface_id (or any caller-chosen key). Entries
-/// older than `ttl` are considered stale; callers should kick a fresh scan
-/// when the entry is missing or stale.
+/// Cache keyed by a caller-selected ID. Entries older than ttl are stale;
+/// the caller starts a refresh and removes entries it no longer needs.
 #[derive(Debug)]
 pub struct PortScanCache {
     ttl: Duration,
@@ -84,7 +83,6 @@ mod tests {
         let t1 = t0 + Duration::from_secs(6);
         assert!(cache.get_fresh(1, t1).is_none());
         assert!(cache.needs_refresh(1, t1));
-        // get_any still returns stale data.
         assert_eq!(cache.get_any(1).map(|s| s.len()), Some(1));
     }
 

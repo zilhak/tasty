@@ -10,15 +10,10 @@ pub struct Tab {
     pub name: String,
     /// Explicitly set tab name. When Some, overrides everything else.
     pub explicit_name: Option<String>,
-    /// OSC 0/2 로 받은 terminal window title. `explicit_name` 보다 낮고
-    /// `cached_display_name` 보다 높은 우선순위. cwd 변경 시 shell prompt 가
-    /// 새 OSC title 을 자연 발화하므로 cwd 도 자연 반영된다. layout.json
-    /// 영속 대상 아님 — runtime only.
+    /// OSC 0/2로 받은 런타임 제목. 명시 이름보다 낮고 cached_display_name보다 우선하며 저장하지 않는다.
     pub osc_title: Option<String>,
-    /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
-    /// Temporarily `None` during structural mutations (take_layout/put_layout pattern).
-    /// Deferred terminals live inside the layout as `EmptySurface { deferred_spawn: Some(..) }`
-    /// placeholders, NOT as a None layout.
+    /// surface의 이진트리. take_layout/put_layout 사이에만 None이다.
+    /// 지연 생성은 트리 안 EmptySurface의 Deferred 값으로 표현한다.
     pub layout_opt: Option<SurfaceLayout>,
     /// The focused surface ID within this tab's layout.
     pub focused_surface: SurfaceId,
@@ -139,15 +134,12 @@ impl Tab {
     #[track_caller]
     pub fn surface(&self) -> &dyn Surface {
         let layout = self.layout();
-        // For a single leaf, return it directly
         if let SurfaceLayout::Leaf(surface) = layout {
             return surface.as_ref();
         }
-        // For splits, return the focused leaf
         if let Some(leaf) = layout.find_surface(self.focused_surface) {
             return leaf;
         }
-        // Fallback: first leaf
         if let Some(first_id) = layout.first_surface_id()
             && let Some(leaf) = layout.find_surface(first_id)
         {
@@ -162,11 +154,9 @@ impl Tab {
     pub fn surface_mut(&mut self) -> &mut dyn Surface {
         let focused = self.focused_surface;
         let layout = self.layout_mut();
-        // For a single leaf, return it directly
         if let SurfaceLayout::Leaf(surface) = layout {
             return surface.as_mut();
         }
-        // Determine which ID to look up
         let target_id = if layout.contains_surface(focused) {
             focused
         } else {
@@ -286,9 +276,7 @@ impl Tab {
 
     // ── Initialization ──
 
-    /// deferred PTY spawn 을 영구 실패로 판단하기까지 허용하는 연속 시도 횟수.
-    /// transient 실패는 보통 1~2 프레임 내 성공하므로 그 전에 치유되고, 이 상한에
-    /// 도달하면 reify 의 매 프레임 재시도 폭주를 멈춘다.
+    /// PTY 생성의 연속 실패 뒤 재시도를 멈출 횟수.
     const MAX_SPAWN_ATTEMPTS: u32 = 5;
 
     /// 특정 surface_id에 해당하는 deferred placeholder를 찾아 PTY를 spawn하고
@@ -302,22 +290,17 @@ impl Tab {
         let layout = self.layout_opt.as_mut()?;
         let leaf = layout.find_leaf_mut(surface_id)?;
         let empty = leaf.as_any_mut().downcast_mut::<super::EmptySurface>()?;
-        // 영구 실패로 판단된 placeholder 는 더 이상 재시도하지 않는다. reify 는 매
-        // 프레임(~60fps) 호출되므로 이 가드가 없으면 초당 수십 회 spawn + 로그 플러드.
+        // 실패 상한에 도달한 placeholder는 더 이상 spawn하지 않는다.
         if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
             return None;
         }
-        // spawn 정보를 take 하지 않고 clone 한다. PTY spawn 이 실패해도
-        // placeholder 의 deferred_spawn 이 남아 있어야 다음 reify 트리거에서
-        // 재시도된다. (waker 는 Arc, 나머지는 작은 문자열/벡터라 clone 이 저렴.)
+        // 실패 뒤 재시도할 수 있도록 복원 정보를 take하지 않고 복사한다.
         let spawn = empty.deferred_spawn().cloned()?;
         let persist_id = spawn.scrollback_persist_id.clone();
         let terminal = match spawn_terminal_from_deferred(surface_id, spawn) {
             Ok(t) => t,
             Err(e) => {
-                // 실패: leaf 는 여전히 deferred EmptySurface 라 재시도 경로가 살아 있다.
-                // 실패 횟수를 누적해 상한에서 폭주를 멈춘다. transient 실패는 상한 전에
-                // 성공해 자가 치유된다.
+                // placeholder를 유지하고 연속 실패 횟수를 센다.
                 empty.spawn_attempts += 1;
                 if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
                     tracing::error!(
@@ -330,21 +313,14 @@ impl Tab {
                 return None;
             }
         };
-        // spawn 성공: 이제 placeholder 를 TerminalSurface marker 로 교체한다.
-        // (EmptySurface 전체가 drop 되므로 deferred_spawn 도 함께 사라진다.)
         let ts: Box<dyn Surface> = Box::new(TerminalSurface { id: surface_id });
         *leaf = ts;
         Some((terminal, persist_id))
     }
 
-    /// plugin placeholder(`Deferred::Plugin`)를 실제 surface 로 교체한다 —
-    /// `ensure_initialized`(terminal)의 plugin 짝. `restore` 는 host 가 넘기는
-    /// 클로저로 `(kind, snapshot)` 을 받아 surface 를 만든다: `tasty-model` 은
-    /// `SurfaceKindRegistry` 를 모르므로 registry 조회를 클로저로 주입한다(crate
-    /// 의존 방향 유지). kind 가 아직 registry 에 없으면(plugin hello 전) `restore`
-    /// 가 `None` 을 돌려 placeholder 가 그대로 남고 다음 reify 에서 재시도된다 —
-    /// 별도 재시도 상태를 얹지 않는 이유는 display-point reify 가 매 프레임 이
-    /// 경로를 다시 밟기 때문이다. leaf 가 plugin placeholder 가 아니면 `false`.
+    /// 호스트의 restore(kind, snapshot) 콜백으로 plugin placeholder를 교체한다.
+    /// None이면 그대로 남아 다음 reify에서 다시 시도한다. PTY 실패 횟수 제한과는 별개다.
+    /// plugin placeholder가 아니면 false다.
     pub fn reify_deferred_plugin<F>(&mut self, surface_id: SurfaceId, restore: F) -> bool
     where
         F: FnOnce(&str, &serde_json::Value) -> Option<Box<dyn Surface>>,
@@ -610,8 +586,6 @@ mod tests {
         Tab::new_with_surface(1, "t".to_string(), surface)
     }
 
-    // ㉮: kind 가 registry 에 등록되면(restore 가 Some) placeholder 가 실제 surface 로
-    // 교체된다.
     #[test]
     fn reify_deferred_plugin_replaces_when_restore_succeeds() {
         let sid = 7;
@@ -634,9 +608,7 @@ mod tests {
         assert!(!es.is_deferred());
     }
 
-    // ㉮: kind 가 아직 없으면(restore 가 None) placeholder 가 그대로 남아 다음 reify
-    // 에서 재시도 가능해야 한다. hello 가 영영 안 오면 이 상태가 유지된다(의도 —
-    // to_tree_json 이 ready:false 로 노출).
+    // kind 등록을 기다리는 동안에는 재시도 가능한 placeholder와 ready:false를 유지한다.
     #[test]
     fn reify_deferred_plugin_keeps_placeholder_when_kind_missing() {
         let sid = 7;
@@ -655,9 +627,7 @@ mod tests {
         );
     }
 
-    /// 핵심 회귀: PTY spawn 이 실패해도 placeholder 의 deferred_spawn 이 보존되어
-    /// surface 가 deferred 로 남고 다음 reify 트리거에서 재시도 가능해야 한다.
-    /// (수정 전: take-before-spawn 이라 실패 시 정보가 소실되어 영구 빈 surface.)
+    /// PTY 생성 실패 뒤에도 복원 정보가 남아 다시 시도할 수 있어야 한다.
     #[test]
     fn ensure_initialized_failure_keeps_surface_deferred() {
         let sid: SurfaceId = 42;
@@ -675,7 +645,6 @@ mod tests {
             "spawn 실패 후에도 deferred 유지되어 재시도 가능해야 함 (수정 전엔 stranded)"
         );
 
-        // 정보가 보존되었으므로 두 번째 reify 호출도 동일하게 재시도 가능.
         assert!(tab.ensure_initialized(sid).is_none());
         assert!(tab.is_surface_deferred(sid));
     }
@@ -701,7 +670,6 @@ mod tests {
         );
         assert!(tab.is_surface_deferred(sid));
 
-        // 상한보다 넉넉히 더 호출해도 매번 None.
         for _ in 0..(Tab::MAX_SPAWN_ATTEMPTS + 3) {
             assert!(
                 tab.ensure_initialized(sid).is_none(),
@@ -709,18 +677,14 @@ mod tests {
             );
         }
 
-        // 실패 카운터가 상한에서 capped — 더 늘지 않아 폭주가 멈췄다는 증거.
         assert_eq!(
             spawn_attempts_of(&tab, sid),
             Some(Tab::MAX_SPAWN_ATTEMPTS),
             "spawn_attempts 가 MAX 에서 capped 되어야 함"
         );
-        // placeholder 는 여전히 남는다 (TerminalSurface 로 교체되지 않음).
         assert!(tab.is_surface_deferred(sid));
     }
 
-    /// 성공 경로 회귀 고정: spawn 이 성공하면 leaf 가 TerminalSurface 로 교체되고
-    /// deferred 가 해제된다.
     #[test]
     fn ensure_initialized_success_replaces_leaf() {
         let sid: SurfaceId = 7;

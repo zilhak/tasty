@@ -7,8 +7,7 @@ description = "OS-native surface of tasty — crash/hang reports, native context
 repository = "https://github.com/zilhak/tasty"
 
 [dependencies]
-# 워크스페이스 크레이트 — 이 셋이 이 크레이트가 아는 tasty 의 전부다. App/View 는 안
-# 본다(docs/adr/0001-crate-dependency-boundaries.md): OS 신호가 App 에서 무엇이 되는지는 부르는 쪽이 정한다.
+# App/View에는 의존하지 않는다. OS 신호의 앱 동작은 호출자가 정한다.
 tasty-i18n = { path = "../tasty-i18n" }
 tasty-settings = { path = "../tasty-settings" }
 tasty-utils = { path = "../tasty-utils" }
@@ -17,15 +16,13 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# 아래는 전부 `gui` feature 뒤다 — headless 빌드는 crash_report 만 쓰고 윈도잉 스택을
-# 링크하지 않는다(본체의 optional 관행과 같은 형태).
+# 윈도잉 의존성은 gui feature에서만 사용한다.
 winit = { version = "0.30", optional = true }
 png = { version = "0.18", optional = true }
 tray-icon = { version = "0.22", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Full Disk Access 추정이 홈 디렉터리를 읽는다 — 본체의 `DirectoriesHome` 과 같은 해석을
-# 써야 두 답이 갈리지 않는다. macOS + gui 갈래에서만 부른다.
+# macOS 권한 조회도 본체와 같은 홈 디렉터리 해석을 사용한다.
 directories = { version = "6", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
@@ -51,8 +48,7 @@ gdkx11 = { version = "0.18", optional = true }
 x11-dl = { version = "2.21", optional = true }
 
 [dev-dependencies]
-# 프로세스 전역 env 와 `TASTY_HOME` 을 시험 동안만 갈아끼우는 RAII 가드. 출하되지
-# 않으므로 dev 전용이다(본체가 `crate::test_support` 로 부르던 것과 같은 크레이트).
+# 시험에서 환경변수와 격리 홈을 원상 복구한다.
 tasty-test-support = { path = "../tasty-test-support" }
 tempfile = "3"
 

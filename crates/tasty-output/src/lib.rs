@@ -1,16 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Semantic output parsers for tasty surfaces.
-//!
-//! 라인 단위 stateless 파서들로 구성. `parse_buffer` 가 입력 텍스트를 줄로 쪼개
-//! 각 활성 파서에 dispatch 하고 [`ParsedItem`] 들을 누적한다. ANSI escape 가
-//! 섞인 raw 라인을 그대로 받으므로, 파서는 필요하면 자체적으로 strip 한다.
-//!
-//! 빌트인 4종 (`Phase 2.1` 기준):
-//! - `path` — 파일 경로 (선택적 line/column suffix `:N` / `:N:C`)
-//! - `url` — `http`/`https`/`ftp`/`ssh`/`file` URL
-//! - `prompt_boundary` — OSC 133 `\x1b]133;A` / `B` / `C` / `D` 마커
-//! - `exit_code` — OSC 133 `D;<code>` 페이로드
+//! 터미널 출력에서 경로·URL·셸 마커·오류 등을 추출한다.
+//! ANSI를 포함한 문자열을 받으며 필요한 파서가 escape를 제거한다.
+//! 기본 파서 네 종류와 명시적으로 선택할 파서 여섯 종류는 registry에 등록한다.
 
 pub mod parsers;
 
@@ -33,13 +25,9 @@ pub struct ParsedItem {
     pub data: serde_json::Value,
 }
 
-/// 라인 단위 stateless 파서.
-///
-/// 단일 라인 파서는 [`parse_line`] 만 구현하면 된다 (기본 [`parse_block`] 이
-/// 라인별 dispatch). 멀티라인 파서 (compile_error, stack_trace 등) 는
-/// [`parse_block`] 을 override 하고 [`parse_line`] 은 no-op 으로 둔다.
-/// 옵저버 스트리밍 경로는 [`parse_line`] 만 호출하므로, 멀티라인 파서는
-/// `parse_buffer` (batch) 환경에서만 발화한다.
+/// 상태를 보관하지 않는 출력 파서. 단일 행 파서는 parse_line을, 여러 행의 문맥이
+/// 필요한 파서는 parse_block을 구현한다. 스트리밍 옵저버는 parse_line만 호출하므로
+/// 여러 행 파서는 배치 parse_buffer에서 사용한다.
 pub trait Parser: Send + Sync {
     /// 파서 id. CLI/IPC 의 `--parsers` 리스트에서 사용.
     fn id(&self) -> &'static str;
@@ -90,8 +78,8 @@ pub fn lookup(id: &str) -> Option<&'static dyn Parser> {
     registry().iter().copied().find(|p| p.id() == id)
 }
 
-/// `text` 를 라인 단위로 쪼개 활성화된 파서들로 dispatch. `parser_ids` 가
-/// `None` 이면 [`DEFAULT_PARSER_IDS`] 사용. 알 수 없는 id 는 `Err`.
+/// 지정한 파서로 text를 처리한다. 알 수 없는 ID는 Err로 반환한다.
+/// 기본 목록을 쓰려면 호출자가 DEFAULT_PARSER_IDS를 전달한다.
 pub fn parse_buffer<'a, I>(text: &str, parser_ids: I) -> Result<Vec<ParsedItem>, String>
 where
     I: IntoIterator<Item = &'a str>,
@@ -114,11 +102,7 @@ pub fn parse_buffer_with(text: &str, parsers: &[&'static dyn Parser]) -> Vec<Par
     out
 }
 
-/// ANSI escape 제거 — 파서 내부에서 plain text 매칭이 필요한 곳에서 쓴다.
-///
-/// 구현은 `tasty-ansi` 한 곳에 있다. 예전에는 이 크레이트와 `tasty-terminal` 에
-/// 사본이 하나씩 있었고 이름이 달라(`strip_ansi` vs `strip_ansi_escapes`) 갈라지는
-/// 것이 grep 으로도 안 보였다.
+/// tasty-ansi의 공통 구현으로 ANSI escape를 제거한다.
 pub(crate) use tasty_ansi::strip_ansi;
 
 #[cfg(test)]

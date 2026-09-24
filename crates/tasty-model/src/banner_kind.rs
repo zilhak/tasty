@@ -1,12 +1,4 @@
-//! Banner 분류 enum / id — UI 본문이 아닌 *분류* 만 model 에 둔다.
-//!
-//! `BannerState` / `BannerManager` (UI 동작 본문) 는 [`crate::adapters::ui::banner`]
-//! 에 잔류한다 (Toast 가 `ToastManager` 로, Popup 이 `PopupManager` 로 분리된 것과
-//! 동일한 구조). headless 빌드에서도 분류를 참조할 수 있도록 GUI 의존 0 으로 유지.
-//!
-//! 배너는 Modal / Popup / Toast 에 이은 4번째 오버레이 개념이다. 설계 문서는
-//! `docs/design/systems/banner.md`, 결정 근거는
-//! `docs/design/systems/banner.md#정체성--왜-별도-개념인가`.
+//! GUI에 의존하지 않는 배너 ID와 표시 범위. 실제 표시 상태와 관리는 호스트 UI가 맡는다.
 
 /// Banner 인스턴스의 고유 식별자. 정의 시점에 고정되는 static 문자열.
 ///
@@ -14,16 +6,9 @@
 /// 역할을 하며, 심각도 표현은 각 배너 정의가 자체적으로 처리한다.
 pub type BannerId = &'static str;
 
-/// Banner 의 대상 스코프. 어느 영역 위에 떠오르고 어디로 clamp 되는지, 그리고
-/// 계층 z-order(상위가 앞)와 디밍을 결정한다.
-///
-/// ⚠️ 최상위가 [`PopupScope::Window`](crate::popup_kind::PopupScope) 와 달리
-/// **`View`** 다. ubiquitous-language 상 `Window` = OS 창이므로, 워크스페이스에
-/// 비종속인 View-level 배너는 `View` 로 명명한다. (popup_kind 의 `Window` 는 화면
-/// 전체 clamp 라는 다른 의미라 재사용하지 않는다.)
-///
-/// 계층(상위 → 하위): **View > Workspace > Pane > Tab > Surface**. 상위 배너가
-/// 뜨면 하위 배너는 디밍(약 60% 투명)되어 뒤로 물러난다 — [`Self::priority`].
+/// 배너의 표시 영역과 겹침 우선순위. View > Workspace > Pane > Tab > Surface다.
+/// View는 이 타입의 기존 이름이며 팝업의 PopupScope::Window와 별개의 범위다.
+/// 상위 범위의 배너가 표시되면 하위 배너는 흐리게 표시한다.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BannerScope {
     /// View 자체(최상위). 워크스페이스 전환과 무관하게 그 View 의 플레이스홀더
@@ -40,10 +25,7 @@ pub enum BannerScope {
 }
 
 impl BannerScope {
-    /// 계층 우선순위 — 클수록 상위(앞에, 높은 z-index). 서로 다른 스코프의 배너가
-    /// 동시에 떠 있을 때 상·하위 판정과 디밍에 쓴다.
-    ///
-    /// View(4) > Workspace(3) > Pane(2) > Tab(1) > Surface(0).
+    /// 값이 클수록 앞에 표시하며 하위 배너의 흐림 처리에 사용한다.
     pub fn priority(&self) -> u8 {
         match self {
             BannerScope::View => 4,

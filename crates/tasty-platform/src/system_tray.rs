@@ -93,11 +93,6 @@ fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::erro
         gtk::init().map_err(|e| format!("GTK init failed: {e}"))?;
     }
 
-    // 형제 플랫폼 모듈이다. 본체의 `src/lib.rs` 가 이 모듈에 루트 별칭을 걸어 두었고
-    // (이 크레이트의 `lib.rs` 가 아니다 — 크레이트가 갈린 뒤로 그 이름이 두 파일을
-    // 가리킨다) 그 별칭으로 부르면 이름이 App 모듈과 앞부분을 공유해 훑는 쪽에서 App
-    // 결합으로 읽힌다 — 여기서 부르는 것은 임베드된 PNG 를 디코드하는 것뿐이고 App
-    // 상태는 안 지나간다.
     let icon =
         crate::app_icon::tray_icon().ok_or("failed to decode tray icon from embedded PNG")?;
 
@@ -121,14 +116,8 @@ pub fn poll_menu_event() -> Option<String> {
     MenuEvent::receiver().try_recv().ok().map(|e| e.id.0)
 }
 
-/// Pump pending GTK events so the tray (StatusNotifierItem) can dispatch menu
-/// clicks. No-op off Linux. Must be called from the GTK-owning thread (the
-/// winit main thread) on each event-loop tick while a tray exists.
-///
-/// `tray-icon` on Linux requires a running GTK event loop; tasty does not run a
-/// dedicated GTK main loop, so we drive non-blocking iterations from the winit
-/// loop. `main_iteration_do(false)` returns immediately when there is nothing
-/// to process, so this does not block the render loop.
+/// GTK를 소유한 스레드에서 대기 중 이벤트를 처리한다. tray가 있는 동안 호스트 루프가 호출한다.
+/// 새 이벤트를 기다리지는 않지만 개별 GTK 콜백의 실행 시간은 제한하지 않는다.
 #[cfg(target_os = "linux")]
 pub fn pump_gtk_events() {
     if gtk::is_initialized() {

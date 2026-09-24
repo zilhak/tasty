@@ -1,4 +1,4 @@
-//! tasty-output parsers — sub-module 별로 분리.
+//! 진행 막대·전송량·백분율 파서.
 
 use std::sync::LazyLock;
 
@@ -111,7 +111,3 @@ impl Parser for ProgressParser {
         }
     }
 }
-
-// ============================================================
-// compile_error (multi-line)
-// ============================================================

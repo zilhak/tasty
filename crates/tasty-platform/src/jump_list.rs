@@ -7,11 +7,8 @@
 //! converted to null-terminated UTF-16 at runtime instead.
 //! Only compiled on Windows.
 
-// 이유: 이 파일 전체가 Win32 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
-//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
-//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
-//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
-//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+// 이유: 이 파일은 Win32 COM 호출과 포인터·핸들 전달을 함께 처리하는 FFI 경계다.
+// 안전한 래퍼로 나누면 파일 단위 lint 면제를 다시 검토한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 #![cfg(windows)]
 
@@ -54,11 +51,9 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
     // re-query로 safe. IObjectArray/ICustomDestinationList 등 모든 호출은
     // 같은 thread에서 순차 실행되며 COM 객체는 Drop으로 자동 Release.
     unsafe {
-        // Get the current executable path
         let exe_path = std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;
         let exe_wide = wide_null(&exe_path.to_string_lossy());
 
-        // Create IShellLink for "New Window"
         let shell_link: IShellLinkW = windows::Win32::System::Com::CoCreateInstance(
             &ShellLink,
             None,
@@ -71,7 +66,6 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
         shell_link.SetDescription(PCWSTR(desc_wide.as_ptr()))?;
         shell_link.SetIconLocation(PCWSTR(exe_wide.as_ptr()), 0)?;
 
-        // Set PKEY_Title via IPropertyStore
         let property_store: IPropertyStore = shell_link.cast()?;
         let title_wide = wide_null(t("jump_list.new_window"));
         let title_pcwstr = PCWSTR(title_wide.as_ptr());
@@ -79,7 +73,6 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
         property_store.SetValue(&PKEY_TITLE, &propvar)?;
         property_store.Commit()?;
 
-        // Create collection and add the shell link
         let collection: IObjectCollection = windows::Win32::System::Com::CoCreateInstance(
             &EnumerableObjectCollection,
             None,
@@ -87,7 +80,6 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         collection.AddObject(&shell_link)?;
 
-        // Create the Jump List
         let dest_list: ICustomDestinationList = windows::Win32::System::Com::CoCreateInstance(
             &DestinationList,
             None,

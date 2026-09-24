@@ -1,8 +1,7 @@
 //! Preset 디스크 저장소.
 //!
 //! 위치: `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`
-//! 파일명이 정본 — `preset.name` 과 파일명이 다르면 파일명을 우선.
-//! 같은 kind 내 이름 중복 금지. `unique_name` 으로 자동 -N suffix.
+//! preset.name과 파일명이 다르면 파일명을 사용한다. 같은 kind 안의 이름은 중복할 수 없다.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -133,11 +132,9 @@ impl PresetStore {
         if !overwrite && self.contains_inner(kind, &name) {
             return Err(PresetError::AlreadyExists(kind, name));
         }
-        // 파일명 = preset 이름 (정본 일치)
+        // 파일명과 저장된 이름을 맞춘다.
         preset.set_name(name.clone());
-        // 결손/중복 surface id 를 저장 직전 정규화 — 신규(capture·minimal)·편집 저장
-        // 모두 이 choke point 를 지나므로, 디스크에 쓰이는 preset 은 항상 유효·고유한
-        // surface id 를 갖는다(반환값은 여기선 불필요). 편집 왕복(이미 고유)엔 no-op.
+        // 저장 전에 surface ID를 정규화한다.
         preset.normalize_surface_ids();
         let path = self.kind_dir(kind)?.join(format!("{name}.toml"));
         let serialized = toml::to_string_pretty(preset.serialize_ref())?;
@@ -312,13 +309,10 @@ fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
                 continue;
             }
         };
-        // 파일명 = 정본
+        // 파일명을 이름으로 사용한다.
         preset.set_name(stem.clone());
-        // surface id 마이그레이션: 구버전 TOML(id 없음)·결손/중복을 정규화하고, 변경이
-        // 있으면 디스크에 되써 마이그레이션을 영속화한다. 되쓰기는 best-effort —
-        // RO 파일시스템/권한 등으로 실패해도 메모리 정규화는 유효(멱등)하므로 store 는
-        // 정상 동작하고, 다음 로드에서 자연히 재시도된다. `let _` 로 삼키지 않고
-        // 반드시 로그를 남긴다(에러 처리 정책).
+        // 누락·중복 ID를 정규화했으면 디스크에 다시 쓴다. 실패는 경고하며
+        // 메모리 결과는 유지한다. 다음 로드에서 다시 시도한다.
         if preset.normalize_surface_ids() {
             match toml::to_string_pretty(&preset) {
                 Ok(s) => {
@@ -481,7 +475,6 @@ mod tests {
         assert!(s.get_workspace("main").is_some());
         assert!(!tmp.path().join("workspace/dev.toml").exists());
         assert!(tmp.path().join("workspace/main.toml").exists());
-        // 내부 name 도 변경
         assert_eq!(s.get_workspace("main").unwrap().name, "main");
     }
 
@@ -524,19 +517,16 @@ mod tests {
     fn load_skips_garbage_files() {
         let tmp = tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("workspace")).unwrap();
-        // garbage toml
         std::fs::write(
             tmp.path().join("workspace/bad.toml"),
             b"this is not toml [[[",
         )
         .unwrap();
-        // valid one
         std::fs::write(
             tmp.path().join("workspace/good.toml"),
             toml::to_string(&ws("good")).unwrap(),
         )
         .unwrap();
-        // wrong extension
         std::fs::write(tmp.path().join("workspace/skip.txt"), b"hi").unwrap();
 
         let s = PresetStore::load_from(tmp.path().into());
@@ -575,12 +565,10 @@ mod tests {
         assert!(!raw.contains("id"), "fixture must have no id field");
         std::fs::write(&path, raw).unwrap();
 
-        // 로드 → 결손 id 부여.
         let s = PresetStore::load_from(tmp.path().into());
         let got = s.get_workspace("legacy").unwrap();
         assert!(leaf_id(got).is_some(), "id assigned on load");
 
-        // 되쓰기로 영속화 — 디스크 파일에 id 가 기록되고, 재로드 시 같은 값.
         let on_disk = std::fs::read_to_string(&path).unwrap();
         assert!(
             on_disk.contains("id ="),
@@ -594,7 +582,6 @@ mod tests {
     fn saved_preset_has_surface_ids() {
         let tmp = tempdir().unwrap();
         let mut s = PresetStore::load_from(tmp.path().into());
-        // ws() 는 id:None 이지만 save 가 정규화해 id 를 부여.
         s.save_workspace(ws("dev")).unwrap();
         assert!(leaf_id(s.get_workspace("dev").unwrap()).is_some());
         let on_disk = std::fs::read_to_string(tmp.path().join("workspace/dev.toml")).unwrap();
@@ -608,7 +595,6 @@ mod tests {
         s.save_workspace(ws("dev")).unwrap();
         let path = tmp.path().join("workspace/dev.toml");
         let first = std::fs::read_to_string(&path).unwrap();
-        // 재로드(이미 id 존재) → 되쓰기 없음(내용 불변).
         let _ = PresetStore::load_from(tmp.path().into());
         let second = std::fs::read_to_string(&path).unwrap();
         assert_eq!(first, second, "no rewrite when ids already valid");

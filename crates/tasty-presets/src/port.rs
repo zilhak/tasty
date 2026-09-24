@@ -1,7 +1,4 @@
-//! `PresetStorage` trait — Hexagonal architecture 의 *internal port*.
-//!
-//! `PresetStore` (instance) 가 자체 impl. Core 가 `Arc<Mutex<dyn PresetStorage>>`
-//! 보유. test 시 `testing::InMemoryPresetStorage`.
+//! PresetStore와 시험용 저장소가 구현하는 공통 인터페이스.
 
 use crate::model::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 use crate::storage::PresetResult;

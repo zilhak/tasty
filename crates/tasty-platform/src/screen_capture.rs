@@ -1,43 +1,20 @@
-//! OS 네이티브 인터랙티브 화면 캡처 (원격 attach 스크린샷→클립보드용).
-//!
-//! `ui.screenshot`(`src/gfx/gpu/screenshot.rs`)은 tasty **자신이 렌더링한** 프레임만
-//! 캡처한다(GPU 텍스처 readback). 이 모듈은 그와 달리 **임의 화면**(다른 앱 포함)을
-//! 사용자가 인터랙티브하게 선택해 캡처하는, macOS `Cmd+Shift+4` 류 OS 자체 스크린샷과
-//! 동등한 기능이다 — tasty 코드에 이런 기능이 기존에 없었다(신규).
-//!
-//! 플랫폼별 구현:
-//! - **macOS**: `screencapture -i` — OS 표준 인터랙티브 선택 캡처.
-//! - **Linux**: Wayland 면 `grim`+`slurp`(영역 선택 후 캡처), 아니면(X11)
-//!   `gnome-screenshot -a` → `scrot -s` → ImageMagick `import` 순으로 설치된 도구를
-//!   찾아 사용한다. 디스플레이 서버 판별은 `WAYLAND_DISPLAY` 환경변수 존재 여부.
-//! - **Windows**: OS 표준 인터랙티브 선택 CLI 가 없다(Snipping Tool 의 `ms-screenclip:`
-//!   프로토콜은 결과를 클립보드 **이미지**로만 내놓아 "경로 텍스트 전달" 요구사항과
-//!   맞지 않는다) — PowerShell + `System.Drawing`으로 전체 가상 화면(다중 모니터 포함)을
-//!   캡처한다. 인터랙티브 영역 선택은 아니지만 Windows 7+ 어디서나 추가 설치 없이
-//!   동작하는 실용적 대안이다.
-//!
-//! 사용자가 캡처를 취소(Esc)하면 파일이 생성되지 않는다 — [`capture_interactive`]는
-//! 프로세스 exit code 가 아니라 **파일 존재 여부**로 성공/취소를 판정한다(도구별로
-//! 취소 시 exit code 관행이 다르므로 이게 유일하게 일관된 신호).
-//!
-//! 다만 파일 존재 여부 **하나로는** 세 경우가 구분되지 않는다 — macOS 에서 화면 기록
-//! 권한이 없으면 `screencapture` 가 아무 파일도 남기지 않아 사용자 취소와 똑같이 보인다.
-//! 그래서 [`CaptureError`] 로 세 상태를 나눈다: 캡처 직전 preflight 로 판정하는
-//! **권한 미승인**, 권한이 있는데 파일이 없는 **사용자 취소**, 도구 실행 자체의 **실패**.
+//! OS 도구로 화면을 캡처한다. macOS는 screencapture -i, Linux는 grim/slurp 또는
+//! gnome-screenshot/scrot/import를 사용하며 Windows는 PowerShell로 가상 화면 전체를 캡처한다.
+//! Windows 경로는 대화형 영역 선택이 아니다.
+//! macOS는 실행 전 화면 기록 권한을 조회한다. 그 뒤 결과 파일이 없으면 Cancelled로 분류한다.
+//! 일부 도구는 비정상 종료도 파일 부재로만 판정하므로 Cancelled가 사용자 취소만을 증명하지는 않는다.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// 인터랙티브 캡처가 파일을 내놓지 못한 이유. "파일이 안 생겼다" 로 뭉뚱그리면 권한
-/// 미승인이 사용자 취소와 구분되지 않아, 사용자에게는 둘 다 "아무 일도 안 일어남" 으로
-/// 보인다.
+/// 캡처를 완료하지 못한 이유.
 #[derive(Debug)]
 pub enum CaptureError {
     /// 화면 기록 권한 미승인 (macOS). 시스템 설정에서 사용자가 켜야 한다.
     PermissionDenied,
-    /// 권한은 있는데 결과 파일이 없다 — 사용자가 선택을 취소했다.
+    /// 도구 실행 뒤 결과 파일이 없어 취소로 분류했다.
     Cancelled,
-    /// 캡처 도구를 실행하는 것 자체가 실패했다(미설치·spawn 실패·비정상 종료).
+    /// 권한 조회 이후 준비·도구 실행에서 반환된 오류. 비정상 종료를 검사하는 경로도 포함한다.
     Tool(anyhow::Error),
 }
 
@@ -84,10 +61,7 @@ pub fn capture_interactive() -> Result<PathBuf, CaptureError> {
     Ok(path)
 }
 
-/// `~/.tasty/screenshots/` 를 만들고 그 안에 새 타임스탬프 파일 경로를 발급한다.
-/// 실제 OS 캡처 호출과 분리해둔 이유: 이 부분만 실제 화면 캡처 도구를 실행하지
-/// 않고 단위테스트로 검증하기 위함(도구 실행은 환경 의존적이고, 디스플레이가 없는
-/// 헤드리스 환경에서 일부 도구는 인터랙티브 선택을 무한 대기해 테스트를 멈춘다).
+/// 저장 디렉터리와 타임스탬프 경로를 만든다. 실제 화면 도구 없이 이 단계만 시험할 수 있다.
 fn next_screenshot_path() -> anyhow::Result<PathBuf> {
     let dir = tasty_utils::path::tasty_home()
         .ok_or_else(|| anyhow::anyhow!("no tasty home directory (TASTY_HOME/HOME unresolved)"))?
@@ -201,7 +175,7 @@ fn try_grim_slurp(path: &Path) -> anyhow::Result<bool> {
     }
 }
 
-/// GNOME(X11/Wayland 공용, portal 경유): `gnome-screenshot -a -f <path>`(영역 선택).
+/// GNOME 도구로 영역을 선택한다: gnome-screenshot -a -f <path>.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn try_gnome_screenshot(path: &Path) -> anyhow::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
@@ -228,11 +202,7 @@ mod tests {
 
     #[test]
     fn capture_interactive_dir_is_under_tasty_home() {
-        // 가드가 공유 락 획득 + TASTY_HOME 임시 격리 + 스코프 종료 시 원값 복원을
-        // 한꺼번에 맡는다(패닉 경로 포함). `next_screenshot_path` 만 호출한다 —
-        // `capture_interactive`/`capture_to_path` 는 실제 OS 캡처 도구를 실행하므로
-        // (headless 환경에 설치돼 있으면 디스플레이 없이 인터랙티브 선택을 무한
-        // 대기할 수 있음), 단위테스트에서는 절대 실행하지 않는다.
+        // 경로 생성만 확인한다. 사용자 화면을 캡처하거나 대화형 OS 도구를 실행하지 않는다.
         let home = tasty_test_support::TastyHomeGuard::new();
         let path = next_screenshot_path().expect("dir creation must succeed");
         assert!(path.starts_with(home.path().join("screenshots")));

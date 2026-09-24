@@ -1,4 +1,4 @@
-//! tasty-output parsers — sub-module 별로 분리.
+//! OSC 셸 경계·종료 코드·알림 파서.
 
 use std::sync::LazyLock;
 
@@ -76,10 +76,6 @@ impl Parser for ExitCodeParser {
     }
 }
 
-// ============================================================
-// osc_link (OSC 8)
-// ============================================================
-
 pub struct OscNotificationParser;
 
 static OSC_NOTIFY_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -127,7 +123,3 @@ impl Parser for OscNotificationParser {
         }
     }
 }
-
-// ============================================================
-// progress
-// ============================================================

@@ -2,19 +2,12 @@ use super::SurfaceId;
 pub use super::surface_layout::{SurfaceLayout, SurfaceRegion};
 use super::surface_trait::Surface;
 
-/// Surface 트리의 *terminal kind* placeholder.
-///
-/// PTY/Terminal/scrollback_persist 데이터는 모두 `CoreState::terminals`
-/// (`TerminalStore`) 가 owner. 본 struct 는 *Surface 트리에서 terminal kind 인
-/// leaf 라는 사실만 표시* 하는 id-only marker.
+/// 트리에서 터미널 ID만 보관하는 marker. PTY·스크롤백은 호스트 TerminalStore가 소유한다.
 pub struct TerminalSurface {
     pub id: SurfaceId,
 }
 
-/// Parameters needed to spawn a PTY later (lazy init).
-///
-/// `EmptySurface { deferred_spawn: Some(..) }` placeholder 의 본체. PTY 가 spawn
-/// 되는 시점에 TerminalSurface marker 로 교체된다.
+/// EmptySurface의 Deferred::Terminal에 보관할 PTY 생성 정보.
 #[derive(Clone)]
 pub struct DeferredSpawn {
     pub shell: Option<String>,
@@ -27,22 +20,15 @@ pub struct DeferredSpawn {
     pub rows: usize,
     pub waker: tasty_terminal::Waker,
     pub working_dir: Option<std::path::PathBuf>,
-    /// PTY spawn 직후 즉시 send_key 로 주입할 명령. 줄바꿈은 호출자가 붙이지 않고
-    /// `ensure_initialized` 가 `\r` 를 자동으로 덧붙여 submit 한다. TUI 세션 재개용
-    /// (예: `claude -r <uuid>`).
+    /// PTY 첫 입력으로 보낼 복원 명령. 생성 경로가 끝에 CR을 붙인다.
+    /// 호출자는 줄바꿈을 넣지 않는다. TUI 세션 재개에 사용한다.
     pub restore_command: Option<String>,
     /// 복원 시 layout.json 의 scrollback_ref 를 그대로 들고 있다가, PTY 가
     /// 실제로 spawn 되는 순간 `TerminalStore::set_scrollback_persist_id` 로 이관된다.
     pub scrollback_persist_id: Option<String>,
 }
 
-/// Non-terminal(plugin) surface 를 나중에 실제화하기 위한 파라미터.
-///
-/// `EmptySurface { deferred: Some(Deferred::Plugin(..)) }` placeholder 의 본체다.
-/// layout 복원 시점에 plugin 이 아직 hello 를 안 보내 `SurfaceKindRegistry` 에
-/// `kind` 가 없으면(부팅 창) 그 자리를 이 placeholder 가 차지하고, `kind` 가
-/// 등록되는 순간 reify 가 `snapshot` 으로 실제 surface 를 복원한다. `?` 전파로
-/// 형제 tab/pane 이 함께 유실되던 것을 막는 목적 — 상세 [`crate::empty_surface`].
+/// kind 등록을 기다리는 플러그인의 복원 정보. 등록 뒤 호스트의 restore 콜백에 전달한다.
 #[derive(Clone)]
 pub struct DeferredPlugin {
     /// surface kind 식별자(예: `"markdown"`). registry 등록을 기다리는 대상.
@@ -51,12 +37,7 @@ pub struct DeferredPlugin {
     pub snapshot: serde_json::Value,
 }
 
-/// `EmptySurface` 가 나중에 실제화될 자리표시자일 때 그 종류를 한 자리에 담는다.
-///
-/// terminal(PTY lazy spawn)과 plugin(kind registry 대기)의 두 지연이 있고, 한
-/// surface 가 **둘 다일 수는 없다** — `Option<DeferredSpawn>` 과
-/// `Option<DeferredPlugin>` 을 각각 필드로 두면 "둘 다 Some" 이라는 무의미 상태가
-/// 타입에 생기므로, enum 하나로 올려 그 상태를 컴파일러가 배제한다.
+/// 지연 생성 대상. 한 placeholder가 Terminal과 Plugin 정보를 동시에 갖지 못하도록 구분한다.
 #[derive(Clone)]
 pub enum Deferred {
     /// PTY 가 아직 안 뜬 터미널 자리.

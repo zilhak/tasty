@@ -28,8 +28,7 @@ pub use windows::show_context_menu;
 #[cfg(target_os = "linux")]
 pub use linux::warn_if_menu_anchor_scale_premise_broken;
 
-/// 비-Linux 백엔드는 앵커 좌표계가 하나뿐이라(NSMenu / TrackPopupMenu 가 창과
-/// 같은 좌표계를 쓴다) 어긋날 전제 자체가 없다 — 아무 것도 하지 않는다.
+/// 이 배율 비교는 Linux/GDK용이다. 다른 백엔드는 별도 비교를 수행하지 않는다.
 #[cfg(not(target_os = "linux"))]
 pub fn warn_if_menu_anchor_scale_premise_broken(_winit_scale: f64) {}
 
@@ -50,11 +49,8 @@ pub enum MenuOutcome {
     Pending(MenuHandle),
 }
 
-/// Handle to a context menu that is still on screen.
-///
-/// Polling never blocks: it services whatever the platform already has queued
-/// and hands control straight back, so the caller's frame loop keeps running
-/// while the menu is open.
+/// 아직 결과를 받지 않은 메뉴 핸들. poll로 대기 중 이벤트를 처리하며 사용자 선택을 기다리지 않는다.
+/// 플랫폼 이벤트 처리 자체의 실행 시간까지 제한하는 API는 아니다.
 pub struct MenuHandle(HandleImpl);
 
 enum HandleImpl {
@@ -174,8 +170,7 @@ impl MenuItem {
 mod tests {
     use super::*;
 
-    /// 비동기 계약의 핵심: 열려 있는 동안의 폴링은 **즉시** 돌아온다(호출자가
-    /// 프레임을 계속 돌릴 수 있다), 그리고 결과는 완료 시점에 딱 한 번 나온다.
+    /// 모의 핸들의 poll이 대기하지 않고 결과를 한 번만 반환하는지 확인한다.
     #[test]
     fn pending_menu_polls_return_immediately_until_resolved() {
         let mut handle = MenuHandle::debug_simulated(5, Some(42));

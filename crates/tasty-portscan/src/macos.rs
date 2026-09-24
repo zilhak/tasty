@@ -1,8 +1,4 @@
-//! macOS port enumeration via `lsof`.
-//!
-//! Strategy: run `lsof -iTCP -nP -p <pid1>,<pid2>,...` and parse each row,
-//! capturing the `(STATE)` token. This avoids linking against libproc and is
-//! good enough for the typical case (a handful of pids per surface).
+//! macOS TCP port enumeration with lsof -nP -a -iTCP -p <pids>.
 
 use std::collections::HashSet;
 use std::io;
@@ -36,10 +32,7 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     let pid_list: Vec<String> = pids.iter().map(|p| p.to_string()).collect();
     let pid_arg = pid_list.join(",");
 
-    // `-a` 는 필수: lsof 는 선택 조건(`-iTCP`, `-p`)을 기본 **OR** 로 결합한다.
-    // `-a` 없이는 "모든 TCP 소켓" OR "이 pid 들의 파일" = 사실상 전체 시스템 TCP 가
-    // 반환되어 pid 필터가 무력화된다(전체보기 OFF 가 전체 포트를 보이던 버그).
-    // `-a` 로 AND 결합 → 정확히 "이 pid 들이 소유한 TCP 소켓" 만.
+    // -a combines PID and TCP filters with AND; lsof otherwise combines them with OR.
     let output = Command::new("lsof")
         .args(["-nP", "-a", "-iTCP", "-p", &pid_arg])
         .output()?;
@@ -177,7 +170,6 @@ node    12345  ljh   23u  IPv6 0x1234567890abcdef      0t0  TCP [::1]:8080 (LIST
 ssh     54321  ljh   3u   IPv4 0x1234                  0t0  TCP 1.2.3.4:22->5.6.7.8:55 (ESTABLISHED)
 ";
         let results = parse_lsof(sample);
-        // All states are kept now; the established row uses its local endpoint.
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].pid, 12345);
         assert_eq!(results[0].port, 3000);

@@ -1,17 +1,6 @@
-//! tasty 의 **OS 경계** — crash/hang 리포트, 네이티브 컨텍스트 메뉴, 트레이, Windows
-//! jump list, CSD 윈도우 크롬, 화면 캡처, macOS 권한, 이벤트 루프 stall 워치독.
-//!
-//! 이 크레이트는 **OS 를 부르는 코드만** 담는다. 그 신호가 App 에서 무엇이 되는지는
-//! 부르는 쪽이 정한다 — 그래서 여기에는 `AppEvent` 도 `AppState` 도 없고, 콜백
-//! (`power_windows::OnResume` · `macos_delegate::DelegateActions`)을 받아 부를 뿐이다.
-//! 그 경계의 근거는 `docs/architecture/index.md#크레이트를-나누는-기준`,
-//! 폴더가 크레이트가 된 근거는 `docs/architecture/index.md#크레이트를-나누는-기준`.
-//!
-//! **본체와 잇는 이름은 그대로다** — 본 바이너리가 `use tasty_platform as platform;` 로
-//! 별칭을 걸어서, 호출부의 `crate::platform::…` 는 한 줄도 안 바뀌었다.
-//!
-//! `gui` feature 는 본체의 같은 이름 feature 가 켠다. 그 뒤에 있는 것이 윈도잉·GTK·
-//! AppKit·트레이를 드는 모듈 전부이고, headless 빌드가 쓰는 것은 [`crash_report`] 뿐이다.
+//! OS 메뉴·창·캡처·권한과 crash/hang 진단. 앱 동작은 호출자가 전달한 콜백으로 처리한다.
+//! 윈도잉 모듈은 gui feature에서만 사용하며 crash_report는 CLI·headless에서도 사용한다.
+//! debug_os_open은 debug 빌드에서 OS 열기를 기록으로 대신하는 격리 기능이다.
 
 #[cfg(feature = "gui")]
 pub mod app_icon;

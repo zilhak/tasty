@@ -1,21 +1,12 @@
-//! `ExplorerPanel` — 본체 내장 파일 관리자 surface (T11).
-//!
-//! image/markdown panel 과 같은 패턴: panel 은 **식별 + 내비게이션 상태만** 보유하고,
-//! 무거운 view state (디렉토리 엔트리 캐시, 선택 집합, 스크롤, 트리 펼침)는 host 의
-//! `ExplorerView` (`src/adapters/ui/surface/explorer/view.rs`) 에 둔다.
-//!
-//! surface 복구(restore) 시 내부 탭 목록이 함께 복구돼야 하므로(결정 3), 직렬화
-//! 대상인 **내부 탭(root 경로 + view_mode + 정렬)과 활성 탭 인덱스**는 panel 이 들고
-//! 있는다. snapshot/restore 의 JSON 변환은 host 의 `register_explorer`
-//! (`src/core/surface_registry/builtins.rs`) 가 담당해 본 crate 는 GUI/serde 무관을
-//! 유지한다.
+//! 파일 관리자 surface의 식별자와 내부 탭 상태. 각 탭의 경로·표시 방식·정렬과
+//! 활성 탭 인덱스를 보관한다. 디렉터리 캐시·선택·스크롤은 호스트 ExplorerView가 맡는다.
 
 use std::path::{Path, PathBuf};
 
 use super::SurfaceId;
 use super::surface_trait::Surface;
 
-/// content view 표현 방식 (design §3.2 — grid / list / detail).
+/// 파일 목록 표시 방식.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExplorerViewMode {
     /// 균등 아이콘 그리드.
@@ -37,8 +28,7 @@ impl ExplorerViewMode {
     }
 
     /// 식별자 → 모드. 알 수 없으면 `Detail` (디자인의 기본 보기).
-    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
-    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    // 알 수 없는 값도 기본값을 반환하므로 실패 가능한 FromStr 대신 별도 API를 쓴다.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
@@ -68,8 +58,7 @@ impl SortColumn {
         }
     }
 
-    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
-    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    // 알 수 없는 값도 기본값을 반환하므로 실패 가능한 FromStr 대신 별도 API를 쓴다.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
@@ -96,8 +85,7 @@ impl SortDir {
         }
     }
 
-    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
-    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    // 알 수 없는 값도 기본값을 반환하므로 실패 가능한 FromStr 대신 별도 API를 쓴다.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
@@ -115,13 +103,8 @@ impl SortDir {
     }
 }
 
-/// explorer 내부 탭 하나 — surface-local (결정 3).
-///
-/// **cwd(고정 루트) ↔ current(현재 폴더) 분리**: `cwd` 는 explorer 를 연 프로젝트 루트로
-/// 좌측 트리·스폰 cwd 의 기준이며 내비게이션에 불변. `root`(current) 는 우측 목록·상단
-/// breadcrumb 이 따라가는 탐색 폴더로, back/forward/go_up 이 이것만 움직인다. current 는
-/// cwd 하위로 제한되지 않고 파일시스템 어디로든 자유 이동할 수 있다(결정1).
-/// 선택·스크롤 같은 무거운 상태는 `ExplorerView` 에 둔다.
+/// 파일 관리자 내부 탭. cwd는 좌측 트리·새 터미널의 기준 경로이고 탐색으로 바뀌지 않는다.
+/// root는 현재 탐색 중인 경로이며 cwd 밖으로도 이동할 수 있다. 선택·스크롤은 뷰가 보관한다.
 #[derive(Clone, Debug)]
 pub struct ExplorerTab {
     /// 고정 루트(cwd) — explorer 를 연 프로젝트 폴더. 좌측 트리 루트 + 스폰 cwd 의 기준.
@@ -188,8 +171,7 @@ impl ExplorerTab {
         &self.root
     }
 
-    /// cwd 를 `folder` 로 재설정. current 도 folder 로 맞추고 히스토리를 비운다.
-    /// (explorer-03 "이 폴더로 루트 설정" 이 사용.)
+    /// cwd와 현재 경로를 folder로 맞추고 이동 이력을 비운다.
     pub fn set_cwd(&mut self, folder: PathBuf) {
         self.cwd = folder.clone();
         self.root = folder;
@@ -299,9 +281,7 @@ impl ExplorerPanel {
         &mut self.tabs[idx]
     }
 
-    /// 현재 활성 탭의 cwd·view mode 를 복제해 새 내부 탭을 추가하고 활성화한다
-    /// (current = cwd). view mode 는 같은 surface 안의 표시 형태 연속성을 위해
-    /// 활성 탭의 것을 승계한다(활성 탭 모드 = 사용자가 마지막에 고른 형태).
+    /// 활성 탭의 cwd·표시 모드로 새 탭을 열고 선택한다. 새 탭의 현재 경로는 cwd다.
     pub fn add_tab(&mut self) {
         let active = self.active_tab();
         let cwd = active.cwd.clone();
@@ -355,25 +335,13 @@ impl Surface for ExplorerPanel {
             .unwrap_or_else(|| cwd.to_string_lossy().to_string())
     }
     fn source_cwd(&self) -> Option<PathBuf> {
-        // 스폰 cwd 는 고정 프로젝트 루트(current 서브폴더가 아님) — 결정2.
+        // 새 터미널은 탐색 중인 하위 폴더가 아니라 고정 cwd를 상속한다.
         Some(self.cwd().to_path_buf())
     }
 }
 
-/// explorer root 의 최종 fallback — **항상 절대경로**를 반환한다.
-///
-/// 순서: `$HOME`/`%USERPROFILE%` → (홈 조회 실패 시) 프로세스 cwd 를 *절대경로로
-/// 확정* → 그것도 실패하면 파일시스템 루트.
-///
-/// 상대경로(`"."`)를 root 로 두는 것은 `std::env::current_dir()` 폴백을 지연
-/// 평가하는 것과 동작상 같으면서(모든 항목 경로가 프로세스 cwd 기준으로 해석됨),
-/// 그 문자열이 주소창·경로 복사·attach wire 로 그대로 새어나가므로 더 나쁘다.
-/// 그래서 이 함수는 어떤 경우에도 상대경로를 반환하지 않는다.
-/// 홈 조회가 실패하는 환경(HOME 없는 컨테이너 등)에서 프로세스 cwd 를 쓰는 것은
-/// 최후 수단이며, 그 경우에도 생성 시점에 절대경로로 확정해 외부로 상대경로가
-/// 새지 않게 한다.
-///
-/// 상세: `docs/design/policies/cwd.md#surface-cwd-invariant` §5.
+/// 홈, 현재 프로세스의 절대 cwd, 파일시스템 루트 순으로 기본 경로를 정한다.
+/// 상대경로 문자열이 주소창·경로 복사·attach에 전달되지 않게 즉시 절대경로로 확정한다.
 pub fn default_root() -> PathBuf {
     if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
         && home.is_absolute()
@@ -407,14 +375,8 @@ fn filesystem_root() -> PathBuf {
     PathBuf::from(std::path::MAIN_SEPARATOR_STR)
 }
 
-/// 후보 root 를 검증해 확정한다 — 절대경로면 그대로, 없거나 상대경로면
-/// [`default_root`].
-///
-/// 생성(`params["path"]` / carry cwd)·복원(snapshot) 양쪽 경계에서 같은 규칙을
-/// 적용해 "explorer root 는 항상 절대경로" 를 성립시킨다. 상대경로를 프로세스 cwd
-/// 기준으로 절대화하지 *않는* 이유는, 그렇게 하면 불변식이 금지하는 "호스트 시작
-/// cwd 가 root 행세" 가 그대로 되살아나기 때문이다. 이미 `"."` 로 저장된 구
-/// `layout.json` 스냅샷도 이 경로로 홈으로 교정된다.
+/// 절대경로 후보는 유지하고 없거나 상대경로면 default_root를 사용한다.
+/// 생성과 복원에 같은 규칙을 적용하며 상대경로를 호스트 시작 cwd 기준으로 해석하지 않는다.
 pub fn resolve_root(candidate: Option<PathBuf>) -> PathBuf {
     match candidate {
         Some(p) if p.is_absolute() => p,
@@ -449,8 +411,7 @@ mod tests {
 
     #[test]
     fn filesystem_root_is_absolute() {
-        // 홈·cwd 조회가 모두 실패하는 환경에서만 타는 분기라 `default_root` 테스트
-        // 로는 커버되지 않는다 — 직접 검증한다.
+        // 홈·cwd가 모두 없을 때의 분기를 직접 확인한다.
         let r = filesystem_root();
         assert!(r.is_absolute(), "filesystem_root must be absolute: {r:?}");
     }
@@ -519,7 +480,6 @@ mod tests {
         t.navigate_to(PathBuf::from("/proj/sub"));
         assert_eq!(t.cwd(), Path::new("/proj")); // cwd 불변
         assert_eq!(t.current(), Path::new("/proj/sub")); // current 이동
-        // 자유 이동: cwd 바깥(상위)도 허용
         t.navigate_to(PathBuf::from("/"));
         assert_eq!(t.cwd(), Path::new("/proj")); // 여전히 고정
         assert_eq!(t.current(), Path::new("/"));

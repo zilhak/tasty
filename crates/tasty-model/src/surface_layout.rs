@@ -29,9 +29,7 @@ pub enum SurfaceLayout {
 
 impl BinaryTree for SurfaceLayout {
     type Id = SurfaceId;
-    /// surface 보더는 **hairline** 이라 배율을 무시하는 것이 정답이다 —
-    /// 밀도와 무관하게 언제나 1 device px 로 남는다. 인자를 받고도 안 쓰는
-    /// 유일한 구현이고, 그것이 `PANE_BORDER_WIDTH` 와의 차이다.
+    /// surface 간격은 물리 두께를 사용하므로 배율을 적용하지 않는다.
     fn border_width(_scale_factor: f32) -> PhysicalPx {
         SURFACE_BORDER_WIDTH
     }
@@ -415,11 +413,7 @@ impl SurfaceLayout {
         }
     }
 
-    /// Full layout tree JSON including split **direction + ratio** (attach 단계 6,
-    /// R2). `Tab::to_tree_json` 의 SplitLayout 은 surface id 만 담아 분할 비율/방향이
-    /// 빠져 있어 원격 client 가 레이아웃을 정확히 복원할 수 없다. 이 메서드는 트리
-    /// 구조를 보존해 workspace attach 디스크립터(D4)가 client mirror 트리를 같은 비율로
-    /// 재구성하게 한다.
+    /// 원격 mirror가 구조를 복원할 수 있도록 분할 방향·비율·포커스와 surface ID를 보낸다.
     pub fn to_tree_json_full(&self) -> serde_json::Value {
         match self {
             SurfaceLayout::Leaf(surface) => serde_json::json!({
@@ -484,12 +478,7 @@ impl SurfaceLayout {
         }
     }
 
-    // ─── BinaryTree alias (외부 caller 0 변경 보장) ────────────────────────
-    //
-    // 외부 호출처가 `crate::model::BinaryTree` 를 import 하지 않으므로
-    // 동명 메서드는 UFCS 위임으로 보존하고, 이름 다른 id-시리즈도
-    // alias 로 노출한다. UFCS (`<Self as BinaryTree>::method`) 필수 —
-    // `self.method(...)` 로 호출하면 inherent 가 재선택되어 무한 재귀.
+    // trait import 없이 쓰는 inherent 메서드. 자기 재귀를 피하려 BinaryTree 구현을 명시해 위임한다.
 
     pub fn first_surface_id(&self) -> Option<SurfaceId> {
         <Self as BinaryTree>::first_id(self)
@@ -565,7 +554,6 @@ mod tests {
         }
     }
 
-    /// sole leaf (tab 유일 surface) extract → None, 트리 불변. 상위 cascade 필요 신호.
     #[test]
     fn extract_sole_leaf_returns_none() {
         let layout = leaf(1);
@@ -574,7 +562,6 @@ mod tests {
         assert_eq!(layout.all_surface_ids(), vec![1]);
     }
 
-    /// extract(first) → 형제(second)가 끌어올려지고, 제거된 surface 가 살아서 반환.
     #[test]
     fn extract_first_promotes_sibling_and_returns_box() {
         let layout = split(leaf(1), leaf(2));
@@ -597,7 +584,6 @@ mod tests {
         assert_eq!(layout.all_surface_ids(), vec![1]);
     }
 
-    /// 중첩 split 깊은 leaf extract: 재귀로 찾아 끌어올리고, 나머지 leaf 보존.
     #[test]
     fn extract_nested_leaf() {
         // split(1, split(2, 3))
@@ -608,7 +594,6 @@ mod tests {
         assert_eq!(layout.all_surface_ids(), vec![1, 3]);
     }
 
-    /// 없는 id extract → None, 트리 불변.
     #[test]
     fn extract_missing_id_is_noop() {
         let layout = split(leaf(1), leaf(2));

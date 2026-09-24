@@ -1,34 +1,12 @@
-//! macOS 권한 — 파일 TCC · 화면 기록 · 손쉬운 사용 pre-warm + Full Disk Access 추정/안내.
-//!
-//! macOS 는 보호 리소스에 **실제로 접근하는 그 순간**에만 권한 프롬프트를 띄운다.
-//! 파일 계열 TCC 서비스에는 "미리 물어보는" API 가 없으므로, 프롬프트 시점을 앞당기는
-//! 유일한 방법은 앱이 부팅 직후 그 리소스를 스스로 한 번 건드리는 것이다
-//! (디렉터리 1 회 `read_dir`). PTY 자식 프로세스(zsh, 그 안의 AI 에이전트)가 보호
-//! 폴더에 접근하면 macOS 가 그 접근의 responsible process 를 부모 GUI 앱으로 귀속
-//! 시키므로, 터미널 작업 *도중에* 프롬프트가 떠서 자율 진행이 멈추는 것이 원래
-//! 증상이다. 부팅 직후로 몰아두면 그 중단이 사라진다.
-//!
-//! 이미 허용/거부가 결정된 항목에는 프롬프트가 뜨지 않으므로 매 부팅 반복해도
-//! 무해하다 — "첫 실행" 플래그를 따로 두지 않는 이유다. 새 마운트는 실행할 때마다
-//! 달라져 1 회로는 못 덮고, 플래그만 남고 TCC 가 초기화된 상태(재설치·`tccutil reset`
-//! 이후)에서는 pre-warm 이 영영 안 도는 어긋남이 생긴다.
-//!
-//! 이 모듈은 **목록 결정**(순수, 전 플랫폼 컴파일·테스트 가능)과 **실제 접근**
-//! (`#[cfg(all(target_os = "macos", feature = "gui"))]`) 을 분리한다. cfg 로 잘린
-//! 코드는 rustc 가 타입체크 전에 걷어내므로, 로직을 순수부에 몰아둘수록 비-macOS
-//! 에서도 검증되는 면적이 넓어진다.
-//!
-//! 기능 문서: `docs/features/macos-permissions/index.md`.
-//!
-//! 순수부의 경계는 `cfg(any(target_os = "macos", test))` 다 — 모듈이 이미 `gui` 안쪽이라
-//! macOS 에서는 실행부가 부르고, 다른 OS 에서는 시험만 부른다. 그래서 비-macOS 의
-//! `--all-targets` 가 순수부를 타입체크하고, 라이브러리 구성에는 dead 가 남지 않는다.
+//! macOS 보호 폴더·화면 기록·손쉬운 사용의 권한 요청과 Full Disk Access 추정.
+//! 부팅 워커에서 리소스에 접근해 필요한 시스템 안내를 미리 유도한다.
+//! 매 부팅 현재 상태를 확인하며 승인·표시 여부 자체는 OS가 결정한다.
+//! 경로 목록과 상태 분류는 OS 접근과 분리해 다른 플랫폼에서도 시험한다.
 
 #[cfg(any(target_os = "macos", test))]
 use std::path::{Path, PathBuf};
 
-/// pre-warm 할 홈 하위 폴더 — `SystemPolicy{Downloads,Documents,Desktop}Folder` 대응.
-/// 순서가 곧 프롬프트가 뜨는 순서다.
+/// 홈 보호 폴더의 접근 순서.
 #[cfg(any(target_os = "macos", test))]
 const HOME_SUBDIRS: [&str; 3] = ["Downloads", "Documents", "Desktop"];
 
@@ -37,9 +15,7 @@ const HOME_SUBDIRS: [&str; 3] = ["Downloads", "Documents", "Desktop"];
 #[cfg(any(target_os = "macos", test))]
 const VOLUMES_ROOT: &str = "/Volumes";
 
-/// 목록 결정에 필요한 파일시스템 조회. 실제 IO 없이 결정 로직만 검증할 수 있도록
-/// 추상화한다 — TCC 가 없는 CI 에서 `read_dir` 을 돌리면 헤드리스 러너가 프롬프트를
-/// 기다리며 멈출 수 있고, 그 환경 의존성을 테스트에 들이지 않기 위함이다.
+/// 권한 프롬프트나 실제 파일 접근 없이 경로 선택을 시험하기 위한 인터페이스.
 #[cfg(any(target_os = "macos", test))]
 trait FsProbe {
     /// 디렉터리로 존재하는가. 없는 폴더는 읽어봐야 프롬프트가 안 뜨므로 건너뛴다.
@@ -72,14 +48,8 @@ impl FsProbe for RealFs {
     }
 }
 
-/// pre-warm 대상 경로를 **순서대로** 결정한다.
-///
-/// 홈 폴더 3 곳이 먼저고, 마운트된 볼륨이 마지막이다. 네트워크 볼륨의 `read_dir` 은
-/// 응답 없는 마운트에서 수 초~수십 초 걸리거나 영영 안 끝날 수 있어, 앞에 두면 사용자가
-/// 실제로 겪는 홈 폴더 프롬프트가 그만큼 늦어진다. 볼륨은 `/Volumes` 를 depth-1 로만
-/// 나열해 항목당 한 번씩만 건드린다.
-///
-/// 존재하지 않는 경로는 빠진다. `home` 이 `None` 이면 홈 항목 전체가 빠진다.
+/// 홈 세 폴더 다음에 정렬한 /Volumes 하위 디렉터리를 반환한다. 없는 경로는 제외한다.
+/// 목록을 만드는 파일시스템 조회도 지연될 수 있으므로 이 함수 자체가 즉시 끝난다고 보장하지 않는다.
 #[cfg(any(target_os = "macos", test))]
 fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
     let mut targets = Vec::new();
@@ -100,8 +70,7 @@ fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
             .into_iter()
             .filter(|p| fs.is_dir(p))
             .collect();
-        // `read_dir` 순서는 파일시스템 마음이라 프롬프트 순서가 실행마다 달라진다.
-        // 경로로 정렬해 사용자가 보는 순서를 고정한다.
+        // 파일시스템 열거 순서와 무관하게 접근 목록을 정렬한다.
         volumes.sort();
         targets.extend(volumes);
     }
@@ -109,16 +78,7 @@ fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
     targets
 }
 
-// CoreGraphics 의 화면 기록 권한 API. 파일 계열 TCC 와 달리 "미리 물어보는" 공개
-// API 가 있어서, 리소스를 몰래 건드려 유도할 필요 없이 정식으로 요청할 수 있다.
-// 새 크레이트를 들이지 않고 두 함수만 직접 선언한다 — `surface.raw_key` 의
-// CoreGraphics 선언(`src/adapters/ipc/handler/input_source.rs`)과 같은 방식.
-//
-// - `CGPreflightScreenCaptureAccess`: 현재 승인 상태만 조회한다. 프롬프트를 띄우지 않는다.
-// - `CGRequestScreenCaptureAccess`: 미결정 상태면 시스템 프롬프트를 띄운다. 이미 거부된
-//   상태면 프롬프트 없이 즉시 false 를 반환한다(사용자가 시스템 설정에서 직접 켜야 한다).
-//
-// 둘 다 macOS 10.15+ 이고 번들의 `LSMinimumSystemVersion` 은 11.0 이라 항상 존재한다.
+// CoreGraphics의 화면 기록 승인 조회·요청 API. 요청 결과와 실제 캡처 성공은 별개다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
@@ -139,8 +99,7 @@ pub fn screen_recording_authorized() -> bool {
     unsafe { CGPreflightScreenCaptureAccess() }
 }
 
-/// 비-macOS / headless — 화면 기록 권한이라는 개념이 없으므로 "승인됨"으로 답한다.
-/// 그래야 캡처 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
+/// macOS GUI 이외에서는 이 TCC 검사를 생략해 true를 반환한다. 캡처 성공 보장은 아니다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
 pub fn screen_recording_authorized() -> bool {
     true
@@ -163,33 +122,16 @@ fn prewarm_screen_recording() {
     tracing::debug!(granted, "prewarm: 화면 기록 권한 요청 결과");
 }
 
-// ── 손쉬운 사용 (Accessibility) ────────────────────────────────────────────────
-//
-// `surface.raw_key` 가 `CGEventPost` 로 시스템에 키를 주입하는데, 그 API 가
-// `kTCCServiceAccessibility` 를 요구한다. 승인이 없으면 **프롬프트 없이 이벤트가
-// 조용히 무시**돼 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다.
-//
-// 화면 기록과 같은 성격으로 사전 요청 API 가 있다. `AXIsProcessTrusted()` 는 프롬프트
-// 없이 현재 상태만 보고, `AXIsProcessTrustedWithOptions()` 에
-// `kAXTrustedCheckOptionPrompt: true` 를 넘기면 안내를 띄운다.
-//
-// **프롬프트는 그 자리에서 권한을 켜주지 않는다** — "시스템 설정을 열겠느냐" 안내이고,
-// 실제 토글은 사용자가 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서 한다.
-// 켠 뒤에도 실행 중 프로세스에 즉시 반영되지 않아 재시작이 필요한 경우가 많다.
-// 그래서 부팅당 1 회만 요청한다 — 미설정 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
-
-// 상태 조회 심볼. 소비자(주입 경로 · pre-warm · 설정 탭의 상태 행)가 전부 debug 로
-// 내려가 release 에서는 참조가 0 이 되므로, 선언도 같은 cfg 로 내린다
-// (gui 빌드는 `dead_code = deny` 라 선언만 남으면 빌드가 깨진다).
+// 손쉬운 사용 권한은 debug 전용 OS 키 주입에서 필요하다. 상태 조회는 안내를 띄우지 않고,
+// 요청은 시스템 설정으로 이동할 안내를 띄운다. 실제 승인은 사용자가 설정해야 한다.
+// 소비자와 같은 debug cfg로 FFI 선언을 제한한다.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
 }
 
-// 프롬프트를 띄우는 쪽(`prewarm_accessibility`)만 쓰는 심볼들. 그 함수가 debug 전용이
-// 되면서 release 에서는 참조가 0 이 되는데, gui 빌드는 `dead_code = deny` 라 선언만
-// 남아 있으면 빌드가 깨진다. 그래서 선언도 같은 cfg 로 내린다.
+// 권한 요청에서만 사용하는 debug 전용 심볼.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -219,15 +161,8 @@ unsafe extern "C" {
     fn CFRelease(cf: *const std::ffi::c_void);
 }
 
-/// 손쉬운 사용 권한이 지금 승인돼 있는가. 프롬프트를 띄우지 않는 순수 조회다.
-///
-/// **호출 시점마다 다시 묻는다** — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼
-/// 경우를 잘못 판정한다. 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있어서
-/// 캐시가 특히 위험하다.
-///
-/// **debug 빌드 전용.** 이 값을 읽는 곳은 셋뿐이고 셋 다 debug 다 — 주입 경로
-/// (`surface.raw_key`), pre-warm 요청, 설정 권한 탭의 상태 행. release 에는 이
-/// 권한을 소비하는 코드가 없으므로 상태를 물을 이유도 없다.
+/// debug OS 키 주입용 손쉬운 사용 승인 상태를 현재 시점에 조회한다.
+/// 부팅 값을 캐시하지 않으며 안내창은 띄우지 않는다.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 pub fn accessibility_trusted() -> bool {
     // SAFETY: 인자도 반환 포인터도 없는 ApplicationServices C 함수 호출 — 포인터
@@ -237,21 +172,14 @@ pub fn accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
-/// 비-macOS / headless — 손쉬운 사용 권한 개념이 없으므로 "승인됨" 으로 답한다.
-/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다. macOS 구현과 같은
-/// 이유로 debug 한정이다.
+/// macOS GUI 이외의 debug 빌드는 이 TCC 검사를 생략해 true를 반환한다.
 #[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
 pub fn accessibility_trusted() -> bool {
     true
 }
 
-/// 권한 판정 결과로 `surface.raw_key` 가 무엇을 할지. 승인 전에는 주입하지 않는다 —
-/// 승인 없이 `CGEventPost` 를 부르면 조용히 무시돼 "성공했다는데 아무 일도 안 일어남"
-/// 이 되고, 호출자가 원인을 알 방법이 없다.
-///
-/// 유일한 소비자(`surface.raw_key` 핸들러)가 debug 전용이라 release 에서는 참조가 0 이
-/// 된다 — gui 빌드는 `dead_code = deny` 라 선언만 남으면 빌드가 깨지므로 선언도 같은
-/// cfg 로 내린다. 순수 규칙 테스트는 release 테스트에서도 돌아야 하므로 `test` 를 포함한다.
+/// OS 키 주입의 승인 여부를 실제 FFI와 분리해 판정한다. 미승인이면 주입하지 않는다.
+/// 소비자는 debug 전용이며 순수 규칙 시험은 test 빌드에서도 사용한다.
 #[cfg(any(debug_assertions, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawKeyDecision {
@@ -271,15 +199,8 @@ pub fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
     }
 }
 
-/// 손쉬운 사용 권한을 **부팅당 1 회** 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다.
-///
-/// **debug 빌드 전용.** 이 권한을 소비하는 표면(`surface.raw_key` — `CGEventPost` 로
-/// OS 이벤트 스트림에 키 주입)이 debug 로 격리돼 있어
-/// ([사용자 입력 재현](../../../docs/dev-guide/plugin-permissions.md#사용자-입력-재현)),
-/// release 빌드에는 이 권한을 쓰는 코드가 하나도 없다. 소비자가 0 인데 첫 실행에
-/// "이 앱이 내 모든 입력을 볼 수 있게 해달라" 로 읽히는 프롬프트를 띄우는 것은
-/// 최소권한 원칙에 어긋난다. 그래서 요청 자체를 debug 로 내린다 — release 사용자는
-/// 이 프롬프트를 보지 않고, 손쉬운 사용은 켤 필요가 없는 항목이 된다.
+/// debug 부팅에서 손쉬운 사용 권한 안내를 요청한다. 이미 승인됐으면 생략한다.
+/// 실제 권한을 사용하는 OS 키 주입이 release에 없어 release에서는 요청하지 않는다.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 fn prewarm_accessibility() {
     if accessibility_trusted() {
@@ -314,27 +235,16 @@ fn prewarm_accessibility() {
     tracing::debug!(granted, "prewarm: 손쉬운 사용 권한 요청 결과");
 }
 
-// ── Full Disk Access ──────────────────────────────────────────────────────────
-//
-// FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한
-// **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 파일 pre-warm 이 못 덮는
-// AppData 계열을 없앨 수 있는 유일한 수단이다.
-//
-// 앱이 FDA 를 **요청할 방법은 없다** — 사용자가 시스템 설정에서 직접 추가해야 하고
-// `tccutil`/TCC.db 조작은 SIP 가 막는다. 앱이 할 수 있는 건 (a) 보유 추정과
-// (b) 해당 패널로 보내는 안내뿐이다.
+// Full Disk Access는 사용자가 시스템 설정에서 직접 부여한다.
+// 여기서는 보호 경로 접근으로 상태를 추정하고 설정 패널 안내만 제공한다.
 
 /// 시스템 설정의 전체 디스크 접근 권한 패널 딥링크.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub const FULL_DISK_ACCESS_SETTINGS_URL: &str =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
 
-/// FDA 보유를 **추정**하는 데 읽어보는 경로들. 앞쪽부터 시도해 하나라도 열리면
-/// 보유로 본다.
-///
-/// FDA 없이는 열리지 않는 것으로 알려진 경로를 읽어보는 우회 판정이다 — 보유 여부를
-/// 묻는 공개 API 자체가 없다. 이 경로들은 거부될 때 **프롬프트를 띄우지 않고 조용히**
-/// `EPERM` 을 내므로 백그라운드에서 안전하게 시도할 수 있다.
+/// FDA 추정에 사용하는 보호 경로. 하나라도 열리면 Granted로 분류한다.
+/// OS의 경로·보호 정책에 의존하는 추정이며 공개 승인 조회 API의 결과가 아니다.
 #[cfg(any(target_os = "macos", test))]
 fn fda_probe_paths(home: Option<&Path>) -> Vec<PathBuf> {
     let mut paths = vec![PathBuf::from(
@@ -348,16 +258,8 @@ fn fda_probe_paths(home: Option<&Path>) -> Vec<PathBuf> {
     paths
 }
 
-/// FDA 판정 결과. **3 상태다** — 보유·미보유 외에 **판정 불가**를 따로 둔다.
-///
-/// 판정은 "FDA 로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신하는 우회다. 그
-/// 경로가 사라지면(macOS 가 위치나 보호 정책을 바꾸면) 거부가 아니라 `NotFound` 가
-/// 오는데, 그것을 미보유로 접으면 **승인을 가진 사용자 전원에게** 안내가 매 부팅
-/// 뜬다. 안내에는 "다시 보지 않기" 가 없으므로 그 오탐에는 탈출구가 없다 — 그래서
-/// 거부(`PermissionDenied`)만 미보유로 세고, 나머지는 모른다고 답한다.
-///
-/// 가정이 아니다 — 보조 경로(`~/Library/Application Support/com.apple.TCC/TCC.db`)는
-/// 이미 존재하지 않는 macOS 가 있다(실측 Darwin 27).
+/// 보호 경로 조회로 추정한 FDA 상태. 하나라도 열리면 Granted, 열린 곳 없이
+/// PermissionDenied가 있으면 Denied, 그 외에는 Unknown이다. 경로 부재를 거부로 단정하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FullDiskAccess {
     /// 프로브 경로가 열렸다 — 보유로 본다.
@@ -381,20 +283,13 @@ fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAcc
     }
 }
 
-/// 부팅 안내를 띄울지 결정하는 **순수** 규칙 — FDA 가 **거부된 것으로 확인될 때만**
-/// 띄운다.
-///
-/// "한 번 띄웠다" 를 기록하지 않는다. 기록하면 그 뒤에 승인이 사라져도(ad-hoc 재빌드로
-/// 앱 identity 가 바뀌거나, 사용자가 회수하거나, `tccutil reset`) 영영 조용해진다 —
-/// 파일 pre-warm 이 "첫 실행" 플래그를 두지 않는 것과 같은 이유다(모듈 최상단 참고).
-/// 대신 매 부팅 상태를 다시 재고, 승인이 있으면 저절로 안 뜬다.
+/// Denied로 추정될 때만 부팅 안내를 표시한다. 과거 표시 여부 대신 매번 현재 상태를 사용한다.
 #[cfg(any(test, all(target_os = "macos", feature = "gui")))]
 fn should_show_fda_notice(access: FullDiskAccess) -> bool {
     matches!(access, FullDiskAccess::Denied)
 }
 
-/// 프로브 경로를 실제로 열어 FDA 상태를 잰다. 거부될 때 **프롬프트 없이 조용히**
-/// 실패하는 경로만 쓰므로 부팅 경로에서 불러도 안전하다.
+/// 보호 경로를 열어 FDA 상태를 추정한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub fn full_disk_access_state() -> FullDiskAccess {
     let probes: Vec<Option<std::io::ErrorKind>> = fda_probe_paths(home_dir().as_deref())
@@ -439,27 +334,16 @@ fn home_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
 }
 
-/// 부팅 직후 권한 프롬프트를 순차로 발화한다. 호출 즉시 반환한다.
-///
-/// **반드시 워커 스레드**다. 프롬프트가 떠 있는 동안 `read_dir`(과 화면 기록 요청)은
-/// 사용자가 응답할 때까지 리턴하지 않으므로, 메인 스레드(winit 이벤트 루프)에서
-/// 호출하면 프롬프트가 떠 있는 내내 UI 가 얼어붙고 `boot_total` 계측도 사용자 응답
-/// 시간만큼 부풀려진다.
-///
-/// **하나의 스레드에서 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다 —
-/// 순차면 앞의 것을 닫아야 다음이 뜬다. 순서는 파일 폴더 → 화면 기록 → 손쉬운 사용:
-/// 앞의 둘은 그 자리에서 허용/거부가 끝나지만 손쉬운 사용 프롬프트는 시스템 설정으로
-/// 사용자를 내보내므로, 그 이탈을 시퀀스 맨 끝에 둔다. 마지막 손쉬운 사용은 **debug
-/// 빌드에서만** 돈다 — release 에는 그 권한을 소비하는 코드가 없다
-/// (`prewarm_accessibility` 참고).
+/// 워커를 시작해 목록의 폴더, 화면 기록, debug 손쉬운 사용 순으로 요청한다.
+/// 파일 접근과 시스템 요청이 사용자 응답이나 네트워크를 기다릴 수 있어 메인 루프에서 실행하지 않는다.
+/// 호출자는 워커 완료를 기다리지 않는다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub fn spawn_prewarm() {
     std::thread::spawn(|| {
         let targets = prewarm_targets(home_dir().as_deref(), &RealFs);
         tracing::debug!(count = targets.len(), "prewarm: 파일 TCC 대상 결정");
         for path in targets {
-            // 결과는 버린다 — 거부는 사용자의 정당한 선택이라 정상 결과이고, 성공해도
-            // 엔트리를 쓸 데가 없다. 목적은 접근 시도 자체(= 프롬프트 발화)뿐이다.
+            // 접근 시도가 목적이다. 반환된 항목은 쓰지 않으며 거부도 오류 로그 대신 진단으로 남긴다.
             match std::fs::read_dir(&path) {
                 Ok(_) => tracing::debug!(path = %path.display(), "prewarm: 접근 허용"),
                 Err(err) => {
@@ -548,8 +432,7 @@ mod tests {
             decide_full_disk_access(&[Some(ErrorKind::PermissionDenied)]),
             FullDiskAccess::Denied
         );
-        // 경로가 전부 없으면 판정 불가다. 이 갈래를 `Denied` 로 접으면 승인을 가진
-        // 사용자에게도 안내가 매 부팅 뜬다 — 탈출구가 없으므로 접으면 안 된다.
+        // 모든 경로가 없으면 거부가 아닌 판정 불가다.
         assert_eq!(
             decide_full_disk_access(&[Some(ErrorKind::NotFound), Some(ErrorKind::NotFound)]),
             FullDiskAccess::Unknown
@@ -603,7 +486,6 @@ mod tests {
 
     #[test]
     fn missing_paths_are_skipped() {
-        // Documents 만 없는 홈.
         let fs = FakeFs::new(["/Users/t/Downloads", "/Users/t/Desktop"]);
         let targets = prewarm_targets(Some(Path::new("/Users/t")), &fs);
         assert_eq!(
@@ -664,8 +546,7 @@ mod tests {
 
     #[test]
     fn non_directory_volume_entries_are_skipped() {
-        // `/Volumes` 하위의 비-디렉터리(예: `.DS_Store`)는 대상이 아니다 — 파일을
-        // `read_dir` 해봐야 볼륨 프롬프트가 뜨지 않는다.
+        // /Volumes의 일반 파일은 디렉터리 접근 대상에서 제외한다.
         let fs = FakeFs::new(["/Volumes", "/Volumes/Backup"]).with_files(["/Volumes/.DS_Store"]);
         assert_eq!(
             prewarm_targets(None, &fs),

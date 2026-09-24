@@ -3,15 +3,8 @@ use std::path::PathBuf;
 
 use super::{PhysicalRect, SurfaceId};
 
-/// Common behavior for all Surface types.
-///
-/// Each surface type (TerminalSurface, EmptySurface, ExplorerPanel,
-/// RemoteSurface, EguiMeshSurface) implements this trait.
-/// All methods have default implementations suitable for non-terminal surfaces.
-///
-/// `Send` supertrait: Surface 트리를 담는 `CoreState` 가 부팅 워커 스레드에서
-/// 생성돼 채널로 메인에 전달되므로 (boot_machine 의 WaitingEngine), 모든 구현체는
-/// 스레드 간 이동 가능해야 한다.
+/// Surface 공통 동작. 부팅 워커에서 메인 스레드로 모델을 옮기므로 구현체는 Send여야 한다.
+/// kind, Any 접근자, cwd 등 필수 메서드는 각 구현체가 의미를 정한다.
 pub trait Surface: Any + Send {
     /// Stable identifier for this surface kind (lowercase, snake_case).
     /// 예: `"terminal"`, `"markdown"`. IPC/registry/플러그인이
@@ -47,40 +40,21 @@ pub trait Surface: Any + Send {
         self.all_surface_ids().contains(&surface_id)
     }
 
-    /// attach mesh mirror 후보 판별(`docs/dev-guide/attach-behavior.md` "mesh mirror 채널").
-    /// `Some((kind, plugin_id))` 를 반환하면 이 surface 는 plugin egui-mesh
-    /// surface 라는 뜻 — `Workspace::classify_attach_surfaces` 가 이 신호로
-    /// mesh 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)` 조합이
-    /// mirror 허용인지)은 이 crate 밖(앱 계층, `src/core/attach_runtime.rs`)의
-    /// 책임으로 남긴다 — `tasty-model` 은 자신에 의존하는 상위 crate(`src/`)의
-    /// `EguiMeshSurface` 구체 타입을 모른 채로 "mesh 기반이다" 라는 계약만 정의한다
-    /// (trait 정의는 하위 crate, 구현은 상위 crate — crate 의존 방향 유지).
-    ///
-    /// 기본 구현은 `None`(mesh 아님) — 대다수 surface(터미널/explorer 등)에 영향 없음.
+    /// mesh mirror 후보의 kind와 plugin ID. 실제 허용 여부는 호스트가 검사한다.
+    /// 모델은 구체적인 플러그인 타입을 참조하지 않는다. 기본값 None은 후보가 아님을 뜻한다.
     fn attach_mesh_info(&self) -> Option<(&str, &str)> {
         None
     }
 
-    /// attach content mirror 후보 판별(`docs/dev-guide/attach-behavior.md#markdown-content-채널`).
-    /// `Some((kind, plugin_id, file))` 를 반환하면 이 surface 는 **렌더 결과가 아니라
-    /// 원문**을 attach 채널로 나를 수 있다는 뜻 — `Workspace::classify_attach_surfaces`
-    /// 가 이 신호로 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)`
-    /// 조합이 이 채널을 타는지)은 [`Self::attach_mesh_info`] 와 **같은 이유로** 이
-    /// crate 밖(앱 계층, `src/core/attach_runtime.rs`)의 책임으로 남긴다.
-    ///
-    /// `file` 은 그 surface 가 열고 있는 **원격 절대경로**다. 없으면(파일 없이 열린
-    /// 빈 문서) `None` — 그 경우도 후보이긴 하다(빈 문서를 빈 문서로 mirror 한다).
-    /// 반환 위치가 owned 인 이유는 구현체(`RemoteSurface`)가 이 값을 mutex 뒤의
-    /// snapshot 캐시에서 꺼내 빌려줄 수 없기 때문이다.
-    ///
-    /// 기본 구현은 `None`(이 채널 대상 아님) — 대다수 surface 에 영향 없음.
+    /// 원문 mirror 후보의 kind·plugin ID·원격 파일 경로. 실제 허용 여부는 호스트가 검사한다.
+    /// 파일 경로 None은 빈 문서 후보이고 반환값 전체가 None이면 후보가 아니다.
+    /// 구현체의 잠긴 캐시에서 복사해 반환할 수 있도록 owned 값으로 받는다.
     fn attach_content_info(&self) -> Option<(&str, &str, Option<PathBuf>)> {
         None
     }
 
-    /// Resize-fitting hook. Layout 가 leaf 의 rect 를 알릴 때 호출. 기본 no-op.
-    /// 현재 모든 구현 (TerminalSurface 포함) 이 default 만 — Terminal resize 는
-    /// 별 PTY resize 경로로 분리. 본 메서드는 후속 surface kind 들의 옵션.
+    /// leaf 영역에 맞출 때 호출하는 선택적 hook. 기본값은 아무것도 하지 않는다.
+    /// 터미널 PTY 크기 변경은 별도 경로가 맡는다.
     fn resize_all(&mut self, _rect: PhysicalRect, _cell_width: f32, _cell_height: f32) {}
 
     /// The "source" working directory associated with this surface, if any.
@@ -90,11 +64,8 @@ pub trait Surface: Any + Send {
     /// 이 의미를 명시적으로 결정해야 한다 (Surface cwd invariant —
     /// `docs/design/policies/cwd.md#surface-cwd-invariant`).
     ///
-    /// - TerminalSurface: 터미널의 OSC 7 cwd (engine.terminals 경유 — trait 는
-    ///   None 반환; host 의 `CoreState::surface_cwd` 가 분기)
-    /// - EguiMeshSurface(markdown 등): 파일의 부모 디렉터리
-    /// - EmptySurface: None (또는 carry 받은 cwd)
-    /// - RemoteSurface: 호스트가 carry 한 cwd (None 또는 ctx.cwd 그대로)
+    /// TerminalSurface는 None이며 호스트가 TerminalStore에서 cwd를 구한다.
+    /// 다른 구현은 파일 부모 경로나 carry한 cwd 등 자기 의미에 맞는 값을 반환한다.
     fn source_cwd(&self) -> Option<PathBuf>;
 
     /// Display name for tab title. Default: type_name.

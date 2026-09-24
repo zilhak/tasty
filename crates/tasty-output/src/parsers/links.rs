@@ -1,4 +1,4 @@
-//! tasty-output parsers — sub-module 별로 분리.
+//! 파일 경로·URL·OSC 8 링크 파서.
 
 use std::sync::LazyLock;
 
@@ -45,9 +45,7 @@ impl Parser for PathParser {
             if !looks_path {
                 continue;
             }
-            // 한 글자 segment (예: "a.b") 도 일단 받지만 모두 영문자/숫자만이면 path 같지
-            // 않을 때 — 점 표기 식별자와 구분이 어렵다. 디렉터리 separator 가 있으면
-            // 무조건 path 로 본다. 없고 확장자만 있으면 last segment 가 3+ 자일 때만.
+            // 점 표기 식별자 오탐을 줄이려고 구분자 없는 경로의 확장자 앞 길이를 제한한다.
             let has_sep = s.contains('/') || s.contains('\\');
             if !has_sep {
                 let last_dot = s.rfind('.');
@@ -119,10 +117,6 @@ impl Parser for UrlParser {
     }
 }
 
-// ============================================================
-// prompt_boundary (OSC 133)
-// ============================================================
-
 pub struct OscLinkParser;
 
 static OSC_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -161,7 +155,3 @@ impl Parser for OscLinkParser {
         }
     }
 }
-
-// ============================================================
-// osc_notification (OSC 9 / OSC 777)
-// ============================================================

@@ -2,9 +2,7 @@ use super::tab::Tab;
 use super::{PaneId, SplitDirection, SurfaceId, TabId, TerminalSurface};
 use tasty_terminal::{Terminal, Waker};
 
-/// [`Pane::spawn_terminal`] 이 받는 shell-spawning 옵션 묶음.
-///
-/// 인자를 따로 받으면 `too_many_arguments` 임계를 넘어 struct 로 묶었다.
+/// Pane::spawn_terminal의 셸 실행 옵션.
 pub struct ShellSpawnOpts<'a> {
     pub cols: usize,
     pub rows: usize,
@@ -17,18 +15,14 @@ pub struct ShellSpawnOpts<'a> {
     pub extra_env: &'a [(&'a str, &'a str)],
 }
 
-/// 탭 전환 요청의 결과 — **성공/실패가 아니라 무엇이 일어났는가**다.
-///
-/// 가르는 이유는 [`Pane::goto_tab`] 의 doc 에 있다. 요점만: 세 갈래 중 둘은 정상이고
-/// 하나만 오류인데, 예전 `bool` 은 그 둘을 하나로 눌렀다.
+/// 탭 전환 결과. 변경 없음과 대상 부재를 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabSwitch {
     /// 다른 탭으로 옮겼다.
     Switched,
     /// 이미 그 탭을 보고 있었다 — 정상이고, 바뀐 것이 없을 뿐이다.
     AlreadyActive,
-    /// 그런 탭이 없다. 실제 탭 수를 함께 실어 보낸다 — 실패문이 "몇 개 중 몇 번" 을
-    /// 말할 수 있어야 호출자가 자기 인덱스를 의심할지 대상을 의심할지 가른다.
+    /// 대상 인덱스가 범위 밖이다. 실제 탭 수를 함께 반환한다.
     OutOfRange { tabs: usize },
     /// 포커스된 pane 이 없어 물음이 성립하지 않는다. [`Pane::goto_tab`] 은 이 갈래를
     /// 내지 않는다 — pane 을 찾아 주는 바깥 층이 더한다.
@@ -254,13 +248,7 @@ impl Pane {
         self.tabs.iter().any(|tab| tab.contains_surface(surface_id))
     }
 
-    /// Switch to tab by index (0-based).
-    ///
-    /// 세 갈래를 **따로** 돌려준다. 예전에는 `bool` 이었는데, 그러면 "안 바뀌었다" 와
-    /// "못 바꾼다" 가 같은 `false` 로 눌린다 — 이미 보고 있는 탭으로 전환하는 것은
-    /// 정상이고 바뀔 것이 없을 뿐인데, 호출자가 그것을 실패로 읽을 길이 없었다.
-    /// 실제로 IPC 핸들러가 그 `false` 를 전부 범위 밖으로 적었고, 그 문구를 믿고
-    /// "탭이 안 만들어졌다" 로 읽어 한 회차를 헛짚었다.
+    /// 0부터 시작하는 인덱스로 전환한다. 변경·이미 선택됨·대상 부재를 구분해 반환한다.
     pub fn goto_tab(&mut self, index: usize) -> TabSwitch {
         if index >= self.tabs.len() {
             TabSwitch::OutOfRange {
@@ -330,7 +318,6 @@ impl Pane {
         }
         let tab = self.tabs.remove(from);
         self.tabs.insert(to, tab);
-        // Adjust active_tab to follow the moved tab or account for the shift
         if self.active_tab == from {
             self.active_tab = to;
         } else if from < to && self.active_tab > from && self.active_tab <= to {
@@ -391,13 +378,7 @@ impl Pane {
 
 #[cfg(test)]
 mod goto_tab_branch_tests {
-    //! 탭 전환이 **네 갈래를 안 눌러서** 돌려주는지 고정한다.
-    //!
-    //! 예전에는 `bool` 하나였다. 그러면 "이미 그 탭이라 바뀔 게 없다" 와 "그런 탭이
-    //! 없다" 가 같은 `false` 라, IPC 핸들러가 둘 다 범위 밖으로 적었다 — 인덱스 0 이
-    //! 범위 안인데도 "Tab index 0 out of range" 가 나갔고, 그 문구를 믿고 "탭이 안
-    //! 만들어졌다" 로 읽어 한 회차를 헛짚었다. 그래서 여기서 고정하는 것은 값이 아니라
-    //! **두 갈래가 서로 다르다는 것**이다.
+    //! 변경 없음과 대상 부재를 서로 다른 결과로 반환하는지 확인한다.
     use super::*;
 
     /// 탭 3 개(id 10/11/12). `active_tab` 은 호출자가 정한다.
@@ -441,10 +422,6 @@ mod goto_tab_branch_tests {
         );
     }
 
-    /// ★ 이 결함의 본체 — 두 갈래가 **같은 값이면 안 된다**.
-    ///
-    /// 위 셋이 각각 통과해도 두 갈래가 같은 값으로 돌아오면 호출자는 여전히 못 가른다.
-    /// 그 자리를 따로 못 박는다.
     #[test]
     fn already_active_and_out_of_range_are_told_apart() {
         let mut already = pane_with_three_tabs(0);
@@ -459,11 +436,7 @@ mod goto_tab_branch_tests {
 
 #[cfg(test)]
 mod tab_removal_focus_tests {
-    //! 탭 제거가 `active_tab` 을 **대상 기준으로** 보존하는지 고정한다.
-    //!
-    //! `active_tab` 은 인덱스가 진실 소스라, 앞쪽 탭이 빠지면 손대지 않은 인덱스가
-    //! 다른 탭을 가리키게 된다 — 사용자가 아무 조작도 하지 않았는데 보던 탭이
-    //! 바뀌는 것이라 불가침 원칙 1 위반이다. 단정은 인덱스가 아니라 **탭 id** 로 한다.
+    //! 탭 제거 뒤에도 같은 탭을 보고 있는지 ID로 확인한다. 앞쪽 탭을 지우면 인덱스는 달라진다.
     use super::*;
 
     /// 탭 3 개(id 10/11/12)를 가진 pane. `active_tab` 은 호출자가 정한다.
@@ -517,8 +490,7 @@ mod tab_removal_focus_tests {
 
     #[test]
     fn close_tab_by_index_preserves_the_active_tab() {
-        // active 는 **가운데**(1)여야 한다. 마지막(2)이면 수정 전의 범위 초과 clamp
-        // 로도 우연히 같은 탭에 착지해 이 wrapper 가 헬퍼를 타는지 판별하지 못한다.
+        // 마지막 탭이면 단순 범위 보정도 같은 결과가 되므로 가운데 탭을 선택한다.
         let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
         assert!(pane.close_tab(0));
         assert_eq!(active_tab_id(&pane), 11);

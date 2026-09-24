@@ -6,11 +6,7 @@
 //! 호출부가 맡긴 콜백을 부르고, 원 메시지는 `DefSubclassProc` 로 winit 의 WndProc 에
 //! 그대로 넘긴다 (docs/features/terminal/index.md#프로세스-종료--절전-복귀).
 //!
-//! **이 모듈은 그 신호가 App 에서 무엇이 되는지 모른다.** OS 메시지를 가로채는 것이
-//! 이 자리의 일이고, 그것을 `AppEvent` 로 바꾸는 것은 후크를 설치하는 쪽의 일이다.
-//!
-//! macOS / Linux 는 Unix PTY 라 절전에 강건해 이 후킹 자체가 없다 (`platform.rs`
-//! 의 `#[cfg(all(windows, feature = "gui"))]`).
+//! 이 모듈은 OS 신호만 전달한다. 앱의 복구 동작은 호스트 콜백이 정한다.
 
 use std::ffi::c_void;
 
@@ -42,9 +38,7 @@ unsafe extern "system" fn subclass_proc(
 ) -> LRESULT {
     if umsg == WM_POWERBROADCAST {
         let event = wparam.0 as u32;
-        // PBT_APMRESUMEAUTOMATIC: 항상 resume 시 발사. PBT_APMRESUMESUSPEND: 사용자
-        // 조작에 의한 resume 일 때 추가로 발사. 둘 중 무엇이든 한 번 처리하면 충분하나
-        // resume 헬스 패스는 idempotent 하므로 둘 다 통과시켜도 무해하다.
+        // 자동 복귀와 사용자 복귀 신호가 모두 올 수 있으므로 호출자는 중복 호출에 안전해야 한다.
         if event == PBT_APMRESUMEAUTOMATIC || event == PBT_APMRESUMESUSPEND {
             // SAFETY: dwrefdata 는 install_resume_hook 에서 Box::into_raw 로 leak 한
             // OnResume 포인터다. 윈도우 수명 동안 유효하며(해제하지 않음), 이
@@ -58,10 +52,8 @@ unsafe extern "system" fn subclass_proc(
     unsafe { DefSubclassProc(hwnd, umsg, wparam, lparam) }
 }
 
-/// 메인 윈도우에 power-broadcast 서브클래스를 설치한다. 윈도우 생성 직후 1 회 호출.
-/// 실패해도 앱 동작에는 영향이 없으므로 경고만 남긴다.
-///
-/// `on_resume` 은 resume 신호마다 불린다. 무엇을 할지는 호출부가 정한다.
+/// 창 생성 뒤 절전 복귀 hook을 설치한다. 실패는 경고하고 앱 실행을 계속한다.
+/// on_resume은 복귀 신호마다 호출한다.
 pub fn install_resume_hook(window: &winit::window::Window, on_resume: OnResume) {
     let hwnd = match window.window_handle() {
         Ok(h) => match h.as_raw() {

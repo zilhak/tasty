@@ -266,13 +266,11 @@ mod tests {
 ";
         let mut map = HashMap::new();
         parse_proc_net_tcp(sample, false, &mut map);
-        // Both rows are kept now (no LISTEN-only filter).
         assert_eq!(map.len(), 2);
         let (addr, port, state) = map[&12345];
         assert_eq!(port, 8080);
         assert_eq!(addr, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         assert_eq!(state, PortState::Listen);
-        // 0x01 → ESTABLISHED.
         assert_eq!(map[&99999].2, PortState::Established);
     }
 }

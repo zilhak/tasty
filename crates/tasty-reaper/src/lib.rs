@@ -1,21 +1,7 @@
-//! 호스트(tasty)가 spawn 한 자식 프로세스(터미널 셸 등)를 호스트 프로세스 수명에
-//! 결박하는 크로스플랫폼 primitive.
-//!
-//! tasty 가 어떤 경로로 죽든 — 정상 종료 · 하드 크래시 · `taskkill /f` · 디버거 강제
-//! stop — 자식 셸 트리가 함께 종료되도록 OS 커널 메커니즘에 묶는다. 이것이 없으면
-//! Windows 에서는 부모 사망이 자식을 죽이지 않고 ConPTY 에도 "pseudoconsole 종료 ⇒
-//! 자식 종료" 보장이 없어 셸 트리가 고아로 잔존한다(디버그 세션마다 누적).
-//!
-//! OS 별 메커니즘:
-//! - **Windows**: Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`). job 핸들을 호스트
-//!   프로세스 수명 동안 소유하며, 호스트가 죽어 핸들이 닫히는 순간 OS 가 job 내 전
-//!   프로세스를 강제 종료한다. 멤버십은 자식에 상속되므로 셸의 손자도 커버된다.
-//! - **비-Windows**: no-op. tasty 종료 시 커널이 PTY master fd 를 닫아 셸 foreground
-//!   프로세스 그룹에 SIGHUP 이 전달되어 자동 정리되므로 별도 결박이 필요 없다
-//!   (portable-pty `CommandBuilder` 가 `pre_exec` 를 노출하지 않아 PDEATHSIG 설치도 불가).
-//!
-//! 모든 실패는 `tracing` 경고로 흡수한다 — 결박 실패가 호스트나 터미널 기능을 죽여서는
-//! 안 된다.
+//! Windows 자식을 KILL_ON_JOB_CLOSE Job Object에 등록한다.
+//! 등록된 프로세스는 호스트의 마지막 job 핸들이 닫힐 때 OS가 종료한다.
+//! 생성·등록 실패는 경고하고 호스트 실행을 계속하므로 모든 자식의 정리를 보장하지는 않는다.
+//! 비 Windows에서는 아무 작업도 하지 않는다. 해당 플랫폼의 PTY·자식 종료 처리는 호출자 책임이다.
 
 use std::sync::OnceLock;
 
@@ -155,8 +141,7 @@ mod imp {
 mod imp {
     use std::io;
 
-    /// 비-Windows: 결박 메커니즘 없음(SIGHUP 자동정리에 의존) — 전부 no-op stub.
-    /// 타입/시그니처는 Windows 와 동일해 호출부가 `#[cfg]` 분기 없이 쓴다.
+    /// 비 Windows에서는 OS 결속을 수행하지 않는다. 호출 인터페이스만 동일하게 제공한다.
     pub struct JobObject;
 
     impl JobObject {
@@ -176,24 +161,19 @@ mod tests {
 
     #[test]
     fn job_object_new_succeeds() {
-        // Windows: 실제 job 생성 / 비-Windows: stub 이 항상 Ok.
-        // 주: 현재 프로세스를 assign 하지 않는다 — KILL_ON_JOB_CLOSE job 이 drop 되면
-        // 테스트 러너 자신이 종료되기 때문. 여기선 생성/파괴 경로만 검증한다.
+        // 테스트 러너를 job에 등록하지 않는다. 여기서는 빈 job의 생성·해제만 확인한다.
         let job = JobObject::new();
         assert!(job.is_ok(), "JobObject::new failed: {:?}", job.err());
-        // drop 시 CloseHandle — 멤버가 없으므로 아무것도 죽지 않는다.
     }
 
     #[test]
     fn adopt_pid_none_is_noop() {
-        // pid 가 None 이면 전역 job 초기화 여부와 무관하게 즉시 반환(패닉/부수효과 없음).
         adopt_pid(None);
     }
 
     #[test]
     fn adopt_pid_without_init_is_noop() {
-        // init_host_reaper 미호출(테스트에선 호출 안 함) → HOST_JOB 미설정 →
-        // 존재하지 않는 pid 라도 OpenProcess 조차 시도하지 않고 조용히 no-op.
+        // 초기화하지 않은 전역 job에는 실제 프로세스를 등록하지 않는다.
         adopt_pid(Some(0xFFFF_FFFF));
     }
 }

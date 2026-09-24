@@ -1,39 +1,13 @@
-//! 이벤트 루프 stall 워치독 — winit 콜백이 임계 시간 안에 반환하지 않는 상황을
-//! 독립 스레드에서 관측해 로그로 남긴다. **복구는 하지 않는다(관측 전용).**
-//!
-//! ## 왜 필요한가
-//!
-//! winit `ApplicationHandler` 콜백은 전부 이벤트 루프 스레드에서 동기 실행되고,
-//! `WindowEvent::RedrawRequested` 처리 안에서 GPU 렌더가 같은 스레드로 돈다. 그래서
-//! GPU 호출 하나가 반환하지 않으면 이벤트 펌프 자체가 멎어 키·마우스·IPC 가 전부
-//! 무응답이 된다. 이때 panic 은 일어나지 않으므로 panic hook 도, crash report 도
-//! 남지 않는다 — 프로세스를 강제 종료하고 나면 **아무 증거도 남지 않는다**.
-//!
-//! 이 워치독은 그 상황에서 유일하게 살아 있는 관측자로서 "어느 콜백의 어느 단계에서
-//! 몇 초째 멎었는지" 를 남긴다. 기록처는 두 곳이다:
-//!
-//! - `tracing::error!(target: "tasty::stall")` — stderr + `~/.tasty/debug.log`(release 는 warn 이상).
-//! - `~/.tasty/crash-reports/hang-<ts>.log` — stall 당 1 개
-//!   ([`crate::crash_report::write_hang_report`]).
-//!
-//! 메인 스레드를 **의도적으로** 막는 구간(native 모달 등)은 [`without_stall_watch`] 로
-//! 감싸 보고 대상에서 뺀다 — 감싸지 않으면 정상 조작이 행으로 오탐된다.
-//!
-//! 파일 리포트를 따로 쓰는 이유는 두 가지다. (1) 사용자가 "멎었다" 를 겪은 뒤 실제로
-//! 확인하는 곳이 `crash-reports/` 다. (2) 공유 로그는 프로세스 시작마다 truncate 되므로
-//! 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 지워진다 — 리포트 파일은 살아남는다.
-//!
-//! 결정 근거·대안·재검토 조건: [`docs/dev-guide/crash-diagnostics.md#이벤트-루프-stall--hang-log-모든-빌드-자동`].
+//! 별도 스레드에서 winit 콜백의 무응답 시간과 마지막 렌더 단계를 기록한다. 복구는 수행하지 않는다.
+//! 오류 로그와 stall당 첫 hang 보고서를 남겨 호스트 재시작으로 공유 로그가 바뀌어도 기록을 보존한다.
+//! native 모달처럼 사용자 응답을 기다리는 정상 구간은 without_stall_watch로 제외한다.
+//! 단계 표시는 멈춘 위치를 좁히는 자료이며 GPU 드라이버 등 근본 원인을 확정하지는 않는다.
 
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-/// 콜백이 이 시간을 넘겨도 반환하지 않으면 처음 보고한다.
-///
-/// 정상 프레임은 수 ms 이고 `gpu.rs` 의 slow-render 경고선조차 30ms 다. 5 초는
-/// "느린 프레임" 으로 설명되지 않는 영역이라 오탐이 사실상 없고, 그러면서도 사용자가
-/// "멈췄다" 고 느끼기 시작하는 시점 근처다.
+/// 콜백이 반환하지 않았다고 처음 보고할 시간. 정상 블로킹 구간은 별도로 제외해야 한다.
 const REPORT_AFTER: Duration = Duration::from_secs(5);
 
 /// 같은 stall 이 계속될 때 재보고 간격 (로그 폭주 방지).
@@ -42,7 +16,7 @@ const REPEAT_EVERY: Duration = Duration::from_secs(30);
 /// 워치독 스레드 폴링 주기.
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// 진입 시각을 `u64` 나노초로 눕히기 위한 기준점.
+/// 콜백 시각을 나노초로 기록할 기준점.
 static ORIGIN: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 /// 콜백 진입/이탈 시퀀스. **홀수 = 콜백 안, 짝수 = 바깥.**
@@ -133,18 +107,9 @@ pub fn set_phase(phase: Phase) {
     PHASE.store(phase as u8, Ordering::Relaxed);
 }
 
-/// 메인 스레드를 **의도적으로** 오래 막는 구간을 실행한다 — 그 사이 워치독은 보고하지
-/// 않고, 구간이 끝나면 진입 시각을 다시 잡아 거기 쓴 시간이 stall 로 누적되지 않게 한다.
-///
-/// 대상은 native 모달처럼 "돌아오지 않는 것이 정상" 인 동기 호출이다. tasty 의 파일·폴더
-/// 선택(`rfd::FileDialog`)은 macOS 요구사항 때문에 메인 스레드에서 동기로 열리므로
-/// (`src/view/plugins/ui/add.rs` 참조 — 이 호출은 **사용자 조작 경로에만** 있다.
-/// IPC 쪽 대응물이던 `fs.pick_file` 은 "돌아오지 않는 모달은 에이전트 표면이 아니다"
-/// 로 제거됐다), 감싸지 않으면 사용자가 선택에 5 초만 써도
-/// `crash-reports/` 에 "GPU driver hang suspected" 리포트가 남는다. 그러면 "그 디렉토리에
-/// 파일이 있다 = 행이 있었다" 라는 이 워치독의 전제가 무너진다.
-///
-/// **메인 스레드를 막는 동기 호출을 새로 추가하면 이 래퍼를 통과시킨다.**
+/// 사용자 응답을 기다리는 native 모달 같은 정상 블로킹 구간의 보고를 중지한다.
+/// 구간 종료 뒤 콜백 진입 시각을 다시 잡아 대기 시간이 stall에 포함되지 않게 한다.
+/// 일반 파일·GPU 작업의 예상하지 못한 지연을 숨기는 용도로 사용하지 않는다.
 pub fn without_stall_watch<T>(f: impl FnOnce() -> T) -> T {
     let _pause = PauseGuard::enter();
     f()
@@ -244,7 +209,7 @@ fn report(stuck: Duration, first: bool) {
         stuck_ms,
         first,
         "event loop stalled — winit callback has not returned; \
-         input/IPC are blocked until it does (GPU driver hang suspected)"
+         main-loop input and IPC dispatch may be delayed; see the recorded site and phase"
     );
 
     if first {
@@ -287,10 +252,8 @@ fn watch_loop() {
 #[cfg(debug_assertions)]
 static DEBUG_STALL_MS: AtomicU64 = AtomicU64::new(0);
 
-/// 다음 프레임의 `present` 직전을 한 번 블로킹하도록 예약한다 (debug 전용).
-///
-/// 실제 드라이버 행을 결정적으로 재현할 수는 없으므로, "GPU 호출이 반환하지 않으면
-/// 이벤트 펌프가 멎는다" 는 구조를 재현하는 최소 수단으로 둔다.
+/// debug에서 다음 present 직전에 한 번 블로킹하도록 예약한다.
+/// 실제 GPU 드라이버 결함 대신 워치독의 감지·보고 경로를 시험한다.
 #[cfg(debug_assertions)]
 pub fn arm_debug_stall(ms: u64) {
     DEBUG_STALL_MS.store(ms, Ordering::Relaxed);

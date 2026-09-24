@@ -1,7 +1,4 @@
-//! In-memory PresetStorage — test 시 disk 우회.
-//!
-//! `PresetStore::load_from(tempdir)` 도 가능하지만 *순수 in-memory* 가 더 빠르고
-//! disk 사이드이펙트 없음.
+//! 디스크 없이 PresetStorage 계약을 시험하는 메모리 저장소.
 
 use std::collections::HashMap;
 

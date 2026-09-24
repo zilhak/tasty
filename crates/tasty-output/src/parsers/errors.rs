@@ -1,4 +1,4 @@
-//! tasty-output parsers — sub-module 별로 분리.
+//! 컴파일러 오류와 스택 트레이스를 읽는 배치 파서.
 
 use std::sync::LazyLock;
 
@@ -350,7 +350,3 @@ impl Parser for StackTraceParser {
         }
     }
 }
-
-// ============================================================
-// test_result (single-line summaries, but parser-level)
-// ============================================================

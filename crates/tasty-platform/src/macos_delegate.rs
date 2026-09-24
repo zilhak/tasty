@@ -4,9 +4,7 @@
 //! we inject methods directly into winit's existing delegate class at runtime.
 //! This is called after winit has set up its delegate (in `resumed()`).
 //!
-//! **AppKit 을 부르는 것이 이 자리의 일이고, dock 클릭이 App 에서 무엇이 되는지는
-//! 여기서 안 정한다.** 두 동작은 [`DelegateActions`] 로 바깥에서 주입된다 — Windows
-//! 절전 후크(`power_windows`)가 resume 신호를 다루는 방식과 같은 모양이다.
+//! dock/menu 동작은 호출자가 DelegateActions로 전달한다.
 
 use std::sync::OnceLock;
 
@@ -18,11 +16,7 @@ use objc2_foundation::{MainThreadMarker, NSString};
 
 use tasty_i18n::{t, t_fmt};
 
-/// dock / 앱 메뉴가 일으키는 두 동작. **이 모듈은 그것이 App 에서 무엇이 되는지
-/// 모른다** — 무엇을 할지는 [`store_actions`] 를 부르는 쪽이 정한다.
-///
-/// ObjC 콜백이 임의 스레드 판정 없이 읽을 수 있도록 `Send + Sync` 를 요구한다
-/// (`OnceLock` 을 `static` 으로 두려면 내용이 `Sync` 여야 한다).
+/// dock/menu 콜백에서 사용할 동작. 전역 OnceLock으로 공유하므로 Send + Sync가 필요하다.
 pub struct DelegateActions {
     /// dock reopen · dock 메뉴 · `tastyNewWindow:` 가 부른다.
     pub new_window: Box<dyn Fn() + Send + Sync + 'static>,
@@ -130,7 +124,6 @@ pub fn inject_delegate_methods() {
     // 문자열(c"B@:@B" 등)은 'static C string.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
-        // Get the class of winit's delegate and inject our methods into it.
         let cls: *mut AnyClass = msg_send![&*delegate, class];
 
         objc2::ffi::class_addMethod(
@@ -174,7 +167,6 @@ pub fn inject_delegate_methods() {
         );
     }
 
-    // Set up app menu
     // SAFETY: delegate는 Retained<dyn>, msg_send![,self]는 self pointer를 얻는 ObjC 표준 호출.
     // main thread에서 호출됨.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -183,25 +175,13 @@ pub fn inject_delegate_methods() {
     let settings = tasty_settings::Settings::load();
     setup_main_menu(&app, mtm, delegate_ptr, &settings.keybindings);
 
-    // Set Dock icon from embedded PNG (works even without .app bundle)
     set_dock_icon(&app);
 
     tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
-/// Settings 변경으로 [`tasty_settings::KeybindingSettings`] 가 갱신됐을 때
-/// NSMenu 의 key equivalent 표시를 새 binding 으로 갱신한다.
-///
-/// 호출 시점: `cascade_settings_updated` 직후 (Settings 모달 닫힘 시 등 single
-/// entry-point). 호출 스레드는 winit event loop 내부 → main thread 보장. 만약
-/// main thread 가 아니면 `MainThreadMarker::new()` 가 None 을 반환하므로 안전한
-/// no-op + warn 로그.
-///
-/// 구현: NSMenu 항목 갯수가 2 submenu 로 적어 전체 rebuild 비용 무시 가능 →
-/// [`setup_main_menu`] 를 통째로 재호출 (증분 갱신 대신). NSApplication / delegate
-/// 는 매번 `sharedApplication` + `app.delegate()` 로 재획득 — 별도 static 보관
-/// 불필요. delegate ptr 의 수명은 app 수명 동안 유효하며 setTarget 으로 새 NSMenuItem
-/// 의 target 으로 다시 설정된다.
+/// 키 설정 변경 뒤 메뉴를 다시 만든다. main thread가 아니면 경고하고 반환한다.
+/// NSApplication과 delegate를 다시 얻고 새 항목에 target을 지정한다.
 pub fn rebuild_main_menu(keybindings: &tasty_settings::KeybindingSettings) {
     let Some(mtm) = MainThreadMarker::new() else {
         tracing::warn!("rebuild_main_menu: not on main thread, skipping");
@@ -220,35 +200,10 @@ pub fn rebuild_main_menu(keybindings: &tasty_settings::KeybindingSettings) {
     tracing::debug!("macOS NSMenu rebuilt for KeybindingSettings change");
 }
 
-/// macOS 표준 menubar 등록. winit `with_default_menu(false)` 와 짝.
-///
-/// Application Menu (About/Hide/.../Quit) + File (New Window) + Window
-/// (Minimize/Zoom/Close Window) 3 개 submenu 를 등록한다. 표준 selector 는 first
-/// responder chain 으로 전달 (target=nil), `tastyQuit:` / `tastyNewWindow:` 만
-/// delegate target 지정.
-///
-/// Window 메뉴(CSD 전환에 따른 신호등 컨트롤 대응)는 표준 selector
-/// (`performMiniaturize:`/`performZoom:`/`performClose:`)를 쓰되, key equivalent 는
-/// [`KeybindingSettings`] 의 `minimize_window`/`maximize_window`/`close_window` 에서
-/// 가져오거나(없으면 빈 값) — 정책상 NSMenu 항목 단축키 하드코딩 금지. NSMenuItem 을
-/// 수동 생성하고 key equivalent 를 명시 설정하므로 AppKit 의 기본 단축키 자동 주입은
-/// 일어나지 않는다.
-///
-/// Edit 메뉴는 의도적으로 노출하지 않는다 — Cut/Copy/Paste/Select All 단축키는 winit
-/// `KeyboardInput` → 호스트의 단축키 디스패치(`src/adapters/ui/input/shortcuts/`)
-/// 흐름이 처리하므로 NSMenu 표시가 불필요하다. 이 크레이트는 그 흐름을 안 본다 —
-/// 크레이트 경계 밖이라 intra-doc 링크가 아니라 경로로 적는다.
-///
-/// tasty 특화 액션 (Quit / New Window) 의 key equivalent + modifier mask 는
-/// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다. 부팅 시 1 회 +
-/// Settings 의 KeybindingSettings 변경 시 [`rebuild_main_menu`] 가 본 함수를
-/// 재호출하여 전체 갱신.
-///
-/// 항목 라벨은 key equivalent 와 독립으로 `t("menu.macos.*")` 에서 가져온다
-/// (`docs/dev-guide/i18n.md` — OS 네이티브 메뉴도 사용자 표면이라 예외가 아니다).
-/// 앱 이름을 결합하는 About / Hide / Quit 은 `{}` placeholder 를 `t_fmt` 로 채워
-/// 언어별 어순(예: "Tasty 가리기" / "Tastyを非表示")에 대응한다. 매 호출마다 다시
-/// 조회하므로 [`rebuild_main_menu`] 경로에서도 현재 언어가 유지된다.
+/// App/File/Window 메뉴를 만든다. OS 표준 액션은 target=nil로 responder chain에 전달하고
+/// Quit/New Window는 Tasty delegate로 보낸다. Edit 동작은 호스트 키 디스패치가 처리한다.
+/// 단축키는 KeybindingSettings의 첫 바인딩을 쓰거나 비워 두며 고정값을 넣지 않는다.
+/// 라벨은 menu.macos.* 번역에서 매번 읽고 앱 이름은 t_fmt로 삽입한다.
 fn setup_main_menu(
     app: &NSApplication,
     mtm: MainThreadMarker,
@@ -407,20 +362,11 @@ fn binding_to_nsmenu_key(
     (key, mods)
 }
 
-/// 표준 NSResponder selector 용 NSMenuItem 생성 (target = nil → first responder chain).
-///
-/// `title` 은 호출부가 `t()` / `t_fmt` 로 만든 번역 문자열 — 여기서 `NSString` 으로
-/// 변환한다.
-///
-/// 단축키 (key equivalent / modifier mask) 인자를 의도적으로 받지 않는다 — tasty 의
-/// 단축키 정책상 NSMenu 항목의 key equivalent 는 [`KeybindingSettings`] 의 binding 에서
-/// 가져오거나 비어 있어야 한다. 본 헬퍼는 후자(빈 값) 경로 전용이므로 호출부에서
-/// 단축키를 박을 수 없게 시그니처에서 차단한다.
+/// 단축키 없는 표준 NSResponder 메뉴 항목. target=nil로 responder chain에 전달한다.
+/// title은 호출자가 번역해 전달한다. 단축키가 필요하면 설정 바인딩을 받는 별도 함수를 쓴다.
 fn make_std_item(mtm: MainThreadMarker, title: &str, selector: Sel) -> Retained<NSMenuItem> {
     let item = NSMenuItem::new(mtm);
     item.setTitle(&NSString::from_str(title));
-    // key equivalent 는 명시적으로 빈 문자열 — 정책상 NSMenu 항목 단축키는 KeybindingSettings
-    // 연동 경로(별도 NSMenuItem 직접 구성)에서만 설정된다.
     item.setKeyEquivalent(&NSString::from_str(""));
     // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit main-thread-only.
     // target 미설정 = nil = first responder chain (표준 selector 용).
@@ -432,13 +378,8 @@ fn make_std_item(mtm: MainThreadMarker, title: &str, selector: Sel) -> Retained<
     item
 }
 
-/// 표준 NSResponder selector + [`KeybindingSettings`] 연동 key equivalent NSMenuItem 생성.
-///
-/// selector 는 OS 표준(`performMiniaturize:`/`performZoom:`/`performClose:` 등),
-/// target = nil → first responder chain (key window 에 라우팅). key equivalent 는
-/// `binding` 첫 값에서 [`binding_to_nsmenu_key`] 로 변환하며, `None`/빈 값이면 빈
-/// 문자열로 단축키 미표시 — 정책상 NSMenu 항목 단축키는 KeybindingSettings 연동
-/// 또는 빈 값만 허용한다([`make_std_item`] 과 달리 binding 을 명시적으로 받는다).
+/// 설정 바인딩의 첫 단축키를 쓰는 표준 NSResponder 메뉴 항목.
+/// target=nil이며 바인딩이 없거나 비었으면 단축키도 비운다.
 fn make_keybound_std_item(
     mtm: MainThreadMarker,
     title: &str,
@@ -468,7 +409,6 @@ fn set_dock_icon(app: &NSApplication) {
     use objc2_app_kit::NSImage;
     use objc2_foundation::NSData;
 
-    // 형제 플랫폼 모듈 — 루트 별칭이 아니라 자기 경로로 부른다(`system_tray` 와 같다).
     let png_bytes = crate::app_icon::ICON_PNG_256;
     let data = NSData::with_bytes(png_bytes);
     let image = NSImage::initWithData(NSImage::alloc(), &data);
@@ -494,7 +434,6 @@ mod tests {
 
     #[test]
     fn binding_to_nsmenu_key_prefix_only_returns_empty_key() {
-        // "alt+" 만 있고 실제 키가 없으면 단축키 미표시 (key 빈 문자열).
         let (key, mods) = binding_to_nsmenu_key("alt+");
         assert_eq!(key.to_string(), "");
         assert_eq!(mods, NSEventModifierFlags::Command);
@@ -502,7 +441,6 @@ mod tests {
 
     #[test]
     fn binding_to_nsmenu_key_alt_maps_to_command() {
-        // 위치 기반 추상화: `alt+` → macOS Command.
         let (key, mods) = binding_to_nsmenu_key("alt+w");
         assert_eq!(key.to_string(), "w");
         assert_eq!(mods, NSEventModifierFlags::Command);

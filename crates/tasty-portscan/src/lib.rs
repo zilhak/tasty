@@ -6,7 +6,7 @@
 //!
 //! Implementation per OS:
 //! - Linux: parse `/proc/net/tcp` + `/proc/net/tcp6`, match inodes against `/proc/{pid}/fd/*`
-//! - macOS: `lsof -iTCP -nP -p <pids>` subprocess (no good API in stable Rust)
+//! - macOS: lsof -nP -a -iTCP -p <pids> with state-token parsing.
 //! - Windows: `GetExtendedTcpTable` Win32 API with `TCP_TABLE_OWNER_PID_ALL`
 
 mod cache;
@@ -48,7 +48,7 @@ pub enum PortState {
 }
 
 impl PortState {
-    /// Whether this is the `LISTEN` state (drives the green + pulse dot in the UI).
+    /// Whether this socket is listening.
     #[inline]
     pub fn is_listen(self) -> bool {
         matches!(self, PortState::Listen)
@@ -89,10 +89,8 @@ pub struct ListeningPort {
     pub state: PortState,
 }
 
-/// A TCP listening port observed across the whole system.
-///
-/// Unlike `ListeningPort`, `pid` is `Optional` because some platforms / privilege
-/// contexts cannot identify the owning process for every listener.
+/// System-wide TCP socket observation. The owner PID may be unavailable due to
+/// platform or access restrictions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SystemListeningPort {
     pub pid: Option<u32>,
@@ -106,7 +104,7 @@ pub struct SystemListeningPort {
 /// Scan TCP ports owned by any of the given PIDs, across all connection states.
 ///
 /// Returns a sorted, deduplicated list (by port + pid + addr). Empty `pids` yields empty.
-/// Errors during enumeration are logged at warn level and result in an empty vec.
+/// Top-level enumeration errors are logged and return an empty list. Inaccessible processes may be skipped.
 pub fn scan_for_pids(pids: &HashSet<u32>) -> Vec<ListeningPort> {
     if pids.is_empty() {
         return Vec::new();
@@ -150,8 +148,8 @@ fn scan_impl(_pids: &HashSet<u32>) -> Vec<ListeningPort> {
 
 /// Scan all TCP sockets on the system (all connection states), regardless of owning PID.
 ///
-/// Returns a sorted, deduplicated list. Errors during enumeration are logged at
-/// warn level and result in an empty vec.
+/// Returns a sorted, deduplicated list. Top-level errors are logged and return an empty list;
+/// per-process access failures may leave partial results.
 pub fn scan_all() -> Vec<SystemListeningPort> {
     let mut found = scan_all_impl();
     found.sort_by_key(|p| (p.port, p.pid.unwrap_or(0), p.addr.to_string()));

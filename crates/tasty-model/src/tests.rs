@@ -6,12 +6,10 @@ fn noop_waker() -> Waker {
     Arc::new(|| {})
 }
 
-/// Helper to create a PhysicalPx value concisely in tests.
 fn px(v: f32) -> PhysicalPx {
     PhysicalPx(v)
 }
 
-/// Helper to create a LogicalPx value concisely in tests.
 fn lp(v: f32) -> LogicalPx {
     LogicalPx(v)
 }
@@ -551,8 +549,6 @@ fn pane_node_close_pane_not_found() {
 
 #[test]
 fn surface_layout_find_surface_at() {
-    // Cannot easily test with real terminals, but we can test the layout structure
-    // This test validates the basic PhysicalRect-based lookup
     let rect = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
@@ -852,8 +848,6 @@ fn tab_ensure_initialized_replaces_placeholder_in_split() {
     assert_eq!(tab.deferred_surface_ids(), vec![12]);
 }
 
-// ---- workspace attach classification (단계 6) ----
-
 #[test]
 fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
     use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
@@ -881,10 +875,7 @@ fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
     assert!(class.explorers.is_empty());
 }
 
-// 회귀: Plugin deferred placeholder(hello 전)는 Terminal deferred 와 달리 터미널이
-// 아니라 non_terminal placeholder 로 분류돼야 한다. terminal 로 오분류하면 attach 가
-// 터미널 tap 을 걸려다 조용히 실패해 client mirror 에 "데이터 안 오는 빈 터미널" 로
-// 나타난다(deferred enum 을 is_deferred() bool 로 좁혀 읽던 자리의 결함).
+// Deferred::Plugin은 터미널 tap 대상이 아니라 placeholder로 분류한다.
 #[test]
 fn workspace_classify_attach_surfaces_puts_plugin_deferred_in_non_terminals() {
     use super::terminal_surface::DeferredPlugin;
@@ -917,8 +908,7 @@ fn workspace_classify_attach_surfaces_puts_plugin_deferred_in_non_terminals() {
     );
 }
 
-/// docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 — explorer 는 `non_terminals` 가 아니라 전용 `explorers` 버킷으로
-/// 분류되고, 활성 탭의 **현재(root)** 경로(고정 cwd 가 아니라)가 실려야 한다.
+/// explorer는 별도 후보로 분류하고 고정 cwd가 아닌 활성 탭의 현재 경로를 전달한다.
 #[test]
 fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_active_root() {
     use super::{ExplorerPanel, Pane, Workspace};
@@ -935,8 +925,7 @@ fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_act
     assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
 }
 
-/// content mirror 후보(docs/dev-guide/attach-behavior.md#markdown-content-채널)를 답하는 테스트용 surface. 본체 크레이트의
-/// `RemoteSurface` 가 이 자리를 채우지만 그 타입은 여기서 볼 수 없다 — 계약만 흉내낸다.
+/// 호스트 타입에 의존하지 않고 content mirror trait 계약만 재현하는 시험 surface.
 struct ContentSurface {
     id: SurfaceId,
     kind: &'static str,
@@ -968,9 +957,7 @@ impl super::Surface for ContentSurface {
     }
 }
 
-/// docs/dev-guide/attach-behavior.md#markdown-content-채널 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
-/// `content_candidates` 버킷으로 분류되고, kind·plugin_id·파일 경로가 함께 실려야 한다.
-/// 화이트리스트 판정은 이 crate 가 하지 않는다(앱 계층) — 여기서는 후보를 모으는 것까지다.
+/// content 후보의 kind·plugin ID·경로를 보존한다. 최종 허용 목록은 호스트 책임이다.
 #[test]
 fn workspace_classify_attach_surfaces_puts_content_surface_in_dedicated_bucket() {
     use super::{Pane, Workspace};
@@ -1004,8 +991,7 @@ fn workspace_classify_attach_surfaces_puts_content_surface_in_dedicated_bucket()
     );
 }
 
-/// 회귀: mesh 판정이 content 판정보다 **먼저**여야 한다. 두 신호를 다 답하는 surface 가
-/// content 버킷으로 새면 기존 image/mesh_demo 의 mesh mirror 가 조용히 끊긴다.
+/// 두 신호가 모두 있으면 mesh 분류를 우선한다.
 #[test]
 fn workspace_classify_attach_surfaces_prefers_mesh_over_content() {
     use super::{Pane, Workspace};
@@ -1129,10 +1115,7 @@ fn source_cwd_empty_surface_is_none() {
 
 #[test]
 fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
-    // 사용자 `config.toml` 의 shell 경로 오타(존재하지 않는 셸)는 회복 가능한 `Err`
-    // 로 표면화돼야 한다 — 이게 `CoreState::new_with_ids` 의 `?` → 창 생성 경로의
-    // Result 전파(새 창 실패 시 앱 생존)의 토대다. 여기가 panic 하면 그 위의 모든
-    // graceful 처리가 무의미해지므로 그 불변식을 고정한다.
+    // 잘못된 셸 경로는 복구 가능한 오류로 반환해야 한다.
     let bogus = "/nonexistent/definitely/not/a/real/shell-xyzzy";
     let result = Pane::spawn_terminal(
         1,
@@ -1154,19 +1137,10 @@ fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
 
 // ---- 보더 상수의 좌표계 (docs/concepts/typed-length.md#두-타입) ----
 
-/// 두 보더 상수가 **다른 좌표계**라는 것을 배율 2 에서 고정한다.
-///
-/// 배율 1 에서는 두 값이 각각 2·1 로 나오고, 그것은 상수가 논리든 물리든
-/// 똑같다 — 즉 **배율 1 관측으로는 이 결정을 지킬 수 없다.** 배율 2 에서만
-/// 갈린다: pane 보더는 논리라 4 로 커지고, surface 보더는 hairline 이라 1 에
-/// 머문다. 이 테스트가 그 갈림을 자동 채널로 만든다.
-///
-/// 이 단언이 깨지는 경우는 둘이다 — `PANE_BORDER_WIDTH` 를 물리로 되돌렸거나
-/// (그러면 4 가 2 가 된다), `SURFACE_BORDER_WIDTH` 를 논리로 바꿨거나
-/// (그러면 1 이 2 가 된다). 어느 쪽이든 docs/concepts/typed-length.md#두-타입 의 좌표계 규칙을 다시 검토해야 하는 변경이다.
+/// 배율 1에서는 좌표계 오류가 드러나지 않아 배율 2도 비교한다.
+/// pane은 논리 두께에 배율을 적용하고 surface는 물리 두께를 유지한다.
 #[test]
 fn border_constants_diverge_only_at_scale_two() {
-    // 배율 1: 두 상수의 좌표계가 달라도 관측값이 같다 — 판별 불가 구간.
     assert_eq!(
         <PaneNode as BinaryTree>::border_width(1.0),
         px(2.0),
@@ -1178,7 +1152,6 @@ fn border_constants_diverge_only_at_scale_two() {
         "배율 1 의 surface 보더"
     );
 
-    // 배율 2: 여기서 갈린다.
     assert_eq!(
         <PaneNode as BinaryTree>::border_width(2.0),
         px(4.0),
@@ -1191,9 +1164,7 @@ fn border_constants_diverge_only_at_scale_two() {
     );
 }
 
-/// 상수의 좌표계가 실제 레이아웃 계산까지 흘러가는지 — 값 하나가 아니라
-/// `compute_rects` 가 만든 간격으로 확인한다. 상수만 보면 "선언은 맞는데
-/// 레이아웃은 다른 경로로 두께를 정한다" 를 못 가른다.
+/// 상수 선언뿐 아니라 실제 레이아웃이 계산한 간격도 확인한다.
 #[test]
 fn pane_gap_in_computed_rects_follows_scale() {
     let node = PaneNode::Split {

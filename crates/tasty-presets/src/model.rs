@@ -30,26 +30,14 @@ pub trait LayoutPreset: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     fn name(&self) -> &str;
     fn set_name(&mut self, name: String);
 
-    /// preset 파일 **전체** 를 순회해 surface id 를 정규화한다. 결손(`None`)·중복 id 를
-    /// high-water mark 이후 번호로 결정적 재부여하고, 이미 유효·고유한 id 는 그대로 둔다.
-    /// 무언가 바뀌었으면 `true`(호출자는 이를 디스크 되쓰기 신호로 쓴다).
-    ///
-    /// 정규화 단위가 **파일 전체** 인 이유: Workspace preset 은 여러 pane·tab 의 surface
-    /// 를 담으므로 파일 안 모든 surface 를 통합 검사해야 파일 내 유일성이 보장된다
-    /// (탭 단위가 아니다). 멱등(idempotent) — 정규화된 preset 을 다시 정규화하면
-    /// `false` 를 반환하고 값이 안 바뀐다.
+    /// 파일 전체 surface의 누락·중복 ID를 다시 부여한다. 처음 나타난 고유 ID는 유지한다.
+    /// 변경했으면 true를 반환해 호출자가 디스크에 다시 저장할 수 있게 한다.
     fn normalize_surface_ids(&mut self) -> bool;
 }
 
-// ── surface id 정규화 (파일 내 유일성 보장) ──────────────────────────────
-//
-// 두 패스: (1) 기존 `Some` id 로 high-water mark 를 구하고, (2) 결손/중복을 그 위
-// 번호로 결정적 재부여한다. 세 preset 종류가 트리 모양만 다르고 로직은 같으므로
-// 공용 [`IdNormalizer`] + surface/pane-node walker 로 공유한다.
+// 먼저 기존 ID의 최댓값을 구하고 전체 트리를 다시 순회해 누락·중복 ID를 부여한다.
 
-/// 정규화 진행 상태. `next` = 다음에 부여할 번호(high-water mark). `claimed` = 이번
-/// 파일에서 이미 확정된 id 집합(최초 등장은 유지, 이후 중복은 재부여). `changed` =
-/// 하나라도 재부여했는지.
+/// 다음 ID와 이미 사용한 ID를 기억하는 정규화 상태.
 #[derive(Default)]
 struct IdNormalizer {
     next: u32,
@@ -151,17 +139,9 @@ pub enum PresetSplitDirection {
 /// `params` 는 SurfaceKindDef.snapshot 이 만든 임의 JSON — kind 별 의미.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PresetSurface {
-    /// preset 파일 **안에서만** 고유한 영속 식별자(preset-local). load→편집→save→재load
-    /// 를 관통해 특정 surface 를 안정적으로 지목하기 위한 것 — 향후 surface 단위 복구
-    /// 커맨드의 타겟(= "preset 이름 + surface id")이다.
-    ///
-    /// - 결손(`None`) = 구버전 TOML 또는 신규 생성 직후. 로드/저장 시
-    ///   [`LayoutPreset::normalize_surface_ids`] 가 결정적으로 채우므로 **정규화 후엔
-    ///   항상 `Some`** 이다. 그래서 `serde(default)` 로 하위호환한다.
-    /// - preset-local 이므로 전역 고유성은 요구하지 않는다(uuid 불요). `duplicate_preset`
-    ///   복제본이 같은 id 집합을 갖는 것이 오히려 옳다.
-    /// - 런타임 surface id 와는 **무관**하다 — apply 는 적용 시 런타임 id 를 새로 발급하고
-    ///   이 값을 쓰지 않는다.
+    /// preset 파일 안에서 사용하는 식별자. runtime surface ID와는 별개다.
+    /// 구버전이나 새 항목의 None은 로드·저장 때 정규화하며 최초 고유 ID는 유지한다.
+    /// 복제한 preset은 같은 ID를 가져도 되며 실제 적용 시 호스트가 runtime ID를 새로 발급한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<u32>,
 
@@ -411,7 +391,6 @@ mod tests {
         assert!(!toml_str.contains("cwd"));
         assert!(!toml_str.contains("startup_command"));
         assert!(!toml_str.contains("params"));
-        // id 도 None 이면 생략된다(하위호환 — 구버전 TOML 과 동일 출력).
         assert!(!toml_str.contains("id"));
         assert!(toml_str.contains("kind"));
     }
@@ -462,7 +441,6 @@ mod tests {
 
     #[test]
     fn normalize_assigns_missing_ids_deterministically() {
-        // 전부 결손 → 방문 순서로 0,1,2.
         let mut t = tab_preset(split(
             leaf_with_id(None),
             split(leaf_with_id(None), leaf_with_id(None)),
@@ -471,13 +449,11 @@ mod tests {
         let mut ids = Vec::new();
         surface_ids(&t.tab.layout, &mut ids);
         assert_eq!(ids, vec![Some(0), Some(1), Some(2)]);
-        // 멱등 — 재정규화는 변경 없음.
         assert!(!t.normalize_surface_ids());
     }
 
     #[test]
     fn normalize_preserves_existing_and_fills_gaps() {
-        // 일부만 있는 경우: 기존 값 유지, 결손만 high-water(=max+1) 이후로.
         let mut t = tab_preset(split(leaf_with_id(Some(5)), leaf_with_id(None)));
         assert!(t.normalize_surface_ids());
         let mut ids = Vec::new();
@@ -487,7 +463,6 @@ mod tests {
 
     #[test]
     fn normalize_reassigns_duplicates() {
-        // 중복 id: 최초 등장은 유지, 이후 중복은 재부여.
         let mut t = tab_preset(split(leaf_with_id(Some(3)), leaf_with_id(Some(3))));
         assert!(t.normalize_surface_ids());
         let mut ids = Vec::new();
@@ -541,7 +516,6 @@ mod tests {
         };
         let mut ws = ws;
         assert!(ws.normalize_surface_ids());
-        // 파일 전체 surface id 를 모아 유일성 검사.
         let mut all: Vec<u32> = Vec::new();
         fn walk(node: &PresetPaneNode, out: &mut Vec<u32>) {
             match node {

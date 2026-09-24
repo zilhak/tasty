@@ -1,23 +1,5 @@
-//! 파서 견고성 속성 테스트 (proptest).
-//!
-//! 모든 빌트인 파서는 **신뢰불가 터미널 출력 바이트 스트림**(에이전트/프로그램의
-//! stdout, 조작 가능한 OSC/CSI 시퀀스)을 입력으로 받는다. 계약은 "어떤 바이트가
-//! 와도 패닉하지 않고 graceful 하게 매치 실패(빈 결과)/부분 결과를 반환한다" 이다.
-//! 아래 proptest 들은 임의 입력(+ escape 시퀀스 섞은 입력)에 대해 `parse_buffer` 가
-//! **절대 패닉하지 않음**을 invariant 로 강제한다.
-//!
-//! ## unwrap triage 결과 (작업 02)
-//!
-//! 5개 파서 파일의 `.unwrap()` 분류:
-//! - **(a) 정규식 리터럴 unwrap** (`Regex::new(r"...").unwrap()`): 컴파일타임 상수.
-//!   起動 시 1회만 패닉 가능하고 기존 테스트가 매치를 커버 → 손대지 않음.
-//! - **(b) 런타임 캡처 unwrap** (`caps.name("x").unwrap()` / `caps.get(0).unwrap()`):
-//!   감사 결과 **전부 비선택(non-optional) named group 또는 group 0** 에 대한 것이라
-//!   매치 성공 시 항상 참여 → 패닉 불가. 선택적 분기(`(?:...)?`)에 있는 group
-//!   (rustc `code`, gcc `col`, python `func`/`msg`, rust panic `msg`, node `func`,
-//!   java `line`, cargo `ignored`/`measured`/`filtered`/`dur`, prompt `payload` 등)은
-//!   이미 `.map(...)` / `.and_then(...)` 로 graceful 처리되어 있음.
-//!   → 코드 변경 없이 안전. 본 proptest 가 그 invariant 를 회귀 방지로 고정한다.
+//! 임의 Unicode 문자열과 깨진 escape 조각으로 파서의 패닉 여부를 검사한다.
+//! 정규식·OSC의 선택적 분기를 포함한 입력을 생성하지만 모든 입력의 안전성을 증명하는 시험은 아니다.
 
 use proptest::prelude::*;
 
@@ -137,11 +119,9 @@ fn untrusted_input() -> impl Strategy<Value = String> {
     prop_oneof![arbitrary_text(), fragment_soup()]
 }
 
-/// 주어진 파서 id 가 어떤 입력에도 패닉하지 않음을 단언.
+/// 생성한 입력을 지정 파서에 넣는다. 패닉은 proptest가 재현·축소한다.
 fn assert_no_panic(id: &'static str, s: &str) -> Result<(), TestCaseError> {
-    // 패닉이 발생하면 proptest 가 케이스를 재현/축소해 실패로 보고한다.
-    // 반환값(Ok/Err)이 아니라 "패닉 없음" 이 invariant 다. id 는 모두 빌트인이므로
-    // lookup 은 Ok 여야 한다.
+    // 등록된 ID이므로 조회 실패도 시험 실패다.
     prop_assert!(parse_buffer(s, [id]).is_ok());
     Ok(())
 }

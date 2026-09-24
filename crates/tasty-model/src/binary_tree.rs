@@ -9,24 +9,14 @@ use super::{DividerInfo, FocusDirection, PhysicalPx, PhysicalRect, SplitDirectio
 pub trait BinaryTree: Sized {
     type Id: Copy + Eq;
 
-    /// 분할선(= 두 자식 사이 간격)의 **물리** 두께.
-    ///
-    /// 연관 상수가 아니라 메서드인 이유: 구현마다 원본 상수의 좌표계가 다르다.
-    /// pane 보더는 논리라 배율을 받아야 물리가 나오고(`PANE_BORDER_WIDTH`),
-    /// surface 보더는 hairline 이라 배율을 **무시하는 것이 정답**이다
-    /// (`SURFACE_BORDER_WIDTH`). 두 경우를 한 상수로 표현할 수 없다.
-    /// 근거: `docs/concepts/typed-length.md#두-타입`.
+    /// 두 자식 사이 간격의 물리 두께. pane의 논리 두께에는 배율을 적용하고
+    /// surface의 물리 두께에는 적용하지 않는다.
     fn border_width(scale_factor: f32) -> PhysicalPx;
 
     /// `Split` 일 때 (direction, ratio, &first, &second). `Leaf` 면 None.
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)>;
 
-    /// 변이용 split 접근자. `ratio` 만 `&mut`; `focus_second` 등 부가 필드는 노출하지 않음.
-    ///
-    /// 주의: `first`/`second` 가 `Box<Self>` 인 enum 에서는 `&mut **first` 형태로
-    /// 명시 deref 가 필요할 수 있다 (`Box<Self> -> Self -> &mut Self`). 패턴 매칭에서
-    /// `first` 가 `&mut Box<Self>` 로 바인딩되면 `DerefMut` coercion 으로 통과하지만
-    /// 명시 deref 가 더 안전.
+    /// Split의 가변 접근자. ratio와 두 자식만 노출하고 focus_second 같은 부가 상태는 제외한다.
     fn split_parts_mut(&mut self) -> Option<(SplitDirection, &mut f32, &mut Self, &mut Self)>;
 
     /// `Leaf` 일 때 그 id. `Split` 이면 None.
@@ -212,9 +202,7 @@ pub trait BinaryTree: Sized {
         }
     }
 
-    /// 패닉 의존성: leaf 가 `leaf_id() == None` 인 경우 (e.g. surface_id 가 없는
-    /// empty surface) `.expect(...)` 가 패닉. 기존 inherent `edge_leaf` 동작과
-    /// 의미적으로 *동일* — 신규 회귀가 아니다.
+    /// 선택한 leaf에 ID가 없으면 패닉한다.
     fn edge_leaf(&self, direction: FocusDirection) -> Self::Id {
         match self.split_parts() {
             None => self

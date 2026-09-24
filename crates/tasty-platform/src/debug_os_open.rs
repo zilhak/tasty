@@ -1,18 +1,6 @@
-//! debug 격리: OS 열기를 실행하지 않고 기록만 한다 (`TASTY_DEBUG_OS_OPEN_LOG`).
-//!
-//! tasty 가 OS 기본 핸들러(브라우저 · 파일 관리자 · 시스템 설정)에 무언가를 넘기는 자리는
-//! 격리 `TASTY_HOME` 과 전용 디스플레이로도 격리되지 않는다 — 브라우저는 이미 떠 있는
-//! 자기 인스턴스에 URL 을 넘기는 원격 제어 채널(DBus · 소켓 · LaunchServices)을 가져서,
-//! 검증용 인스턴스가 연 것이 **사용자의 브라우저 탭**으로 나타난다. 그래서 이 변수가
-//! 있으면 host 의 OS 열기 자리가 프로세스를 띄우지 않고 이 파일에 한 줄을 붙인다.
-//! 무엇이 열리려 했는지는 그 줄로 판정한다.
-//!
-//! 변수가 **있기만 하면** 억제한다(fail closed) — 값이 비었거나 파일에 못 쓰면 경고만
-//! 남기고 여전히 열지 않는다. 억제가 기록 실패에 달려 있으면 기록 경로의 오타 하나가
-//! 사용자 브라우저를 다시 연다.
-//!
-//! 모듈 선언에 `#[cfg(debug_assertions)]` 가 붙어 release 에는 없다. 절차와 근거는
-//! `docs/dev-guide/debug-ipc.md` 와 `docs/dev-guide/self-verification.md#os-열기와-지연-주입`.
+//! debug 빌드에서 OS 열기를 실행하지 않고 TASTY_DEBUG_OS_OPEN_LOG에 기록한다.
+//! 별도 TASTY_HOME·디스플레이를 써도 기본 브라우저가 사용자 인스턴스로 요청을 전달할 수 있다.
+//! 변수가 있으면 값이 비었거나 기록에 실패해도 열기를 억제하며 경고만 남긴다.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -29,8 +17,7 @@ pub fn intercepted(via: &str, target: &str) -> bool {
     record(std::env::var_os(ENV), via, target)
 }
 
-/// [`intercepted`] 의 판정만 떼어낸 것 — 환경변수를 건드리지 않고 시험하려고 둔다
-/// (`set_var` 는 프로세스 전역이고 시험은 병렬로 돈다).
+/// 환경변수를 직접 변경하지 않고 억제 규칙을 시험할 수 있도록 분리한다.
 fn record(dest: Option<OsString>, via: &str, target: &str) -> bool {
     let Some(dest) = dest else {
         return false;

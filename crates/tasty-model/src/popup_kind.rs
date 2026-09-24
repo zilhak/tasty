@@ -1,7 +1,4 @@
-//! Popup 분류 enum / id — UI 본문이 아닌 *분류* 만 model 에 둔다.
-//!
-//! `PopupState` / `PopupManager` (UI 동작 본문) 는 [`crate::adapters::ui::popup`] 잔류.
-//! headless 빌드에서도 intent 큐가 PopupScope 를 enqueue 할 수 있도록 GUI 의존 0 으로 유지.
+//! GUI에 의존하지 않는 팝업 ID와 표시 범위. 실제 표시와 관리는 호스트 UI가 맡는다.
 
 /// Popup 인스턴스의 고유 식별자. 정의 시점에 고정되는 static 문자열.
 pub type PopupId = &'static str;

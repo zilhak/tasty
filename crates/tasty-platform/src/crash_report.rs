@@ -13,14 +13,10 @@ use tracing_subscriber::EnvFilter;
 
 use tasty_utils::path::tasty_home;
 
-/// 보고서 머리의 `Version:` 에 찍을 **본체** 버전. [`init`] 이 받아 둔다.
-///
-/// 이 크레이트에서 `env!("CARGO_PKG_VERSION")` 를 쓰면 이 크레이트(`tasty-platform`)의
-/// 버전으로 풀린다 — 보고서를 받는 사람이 가를 값은 tasty 바이너리의 버전이므로,
-/// 그 값은 본체가 자기 크레이트에서 풀어 넘긴다(docs/architecture/index.md#크레이트를-나누는-기준: 의미는 부르는 쪽이 정한다).
+/// 보고서에 쓸 본체 버전. 이 크레이트의 CARGO_PKG_VERSION과 달라 init 호출자가 전달한다.
 static APP_VERSION: OnceLock<&'static str> = OnceLock::new();
 
-/// 보고서에 찍을 버전. [`init`] 전이면 `unknown` 이다 — 틀린 값보다 모른다는 값이 낫다.
+/// init 전에는 unknown을 반환한다.
 fn app_version() -> &'static str {
     APP_VERSION.get().copied().unwrap_or("unknown")
 }
@@ -118,14 +114,8 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
     Some(path)
 }
 
-/// 이벤트 루프 stall 리포트를 `~/.tasty/crash-reports/hang-<ts>.log` 로 남기고 경로를 돌려준다.
-///
-/// panic 리포트와 같은 디렉토리를 쓰는 이유: 사용자가 "앱이 멎었다" 를 겪은 뒤 실제로
-/// 들여다보는 곳이 거기다. 행(hang)은 panic 이 아니라 hook 이 발동하지 않으므로, 그
-/// 디렉토리가 비어 있으면 "아무 일도 없었다" 로 오독된다.
-///
-/// 공유 로그(`debug.log`)가 아니라 별도 파일인 이유: 그 로그는 host 프로세스가 뜰 때마다
-/// truncate 되므로, 행을 겪고 강제 종료 후 다시 띄우는 순간 증거가 지워진다.
+/// 이벤트 루프 무응답 보고서를 별도 hang 파일로 남긴다.
+/// 호스트 재시작이 공유 로그를 덮어써도 보고서는 유지된다.
 #[cfg(feature = "gui")]
 pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathBuf> {
     let dir = crash_report_dir()?;
@@ -144,40 +134,22 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
     writeln!(file).ok();
     writeln!(
         file,
-        "The winit event-loop callback above did not return within the watchdog threshold.\n\
-         While it is blocked, keyboard, mouse and IPC are all unprocessed — the window looks\n\
-         frozen even though the process is alive and no panic occurred.\n\
-         A render phase of `present`/`submit`/`acquire` points at the GPU driver, not at tasty\n\
-         logic: those calls have no application-level timeout and cannot be cancelled."
+        "The winit callback did not return within the watchdog threshold.\n\
+         Main-loop input and IPC dispatch may be delayed while it is blocked.\n\
+         The render phase identifies the last recorded region; it does not establish the cause.\n\
+         This watchdog records the stall and does not cancel the blocked operation."
     )
     .ok();
 
     Some(path)
 }
 
-/// Initialize crash reporting and tracing.
-///
-/// `app_version` 은 보고서 머리의 `Version:` 에 찍힌다 — 본체가 자기 크레이트에서
-/// `env!("CARGO_PKG_VERSION")` 으로 풀어 넘긴다([`APP_VERSION`]).
-///
-/// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.
-///   Initializes tracing with stderr output, plus a file layer under `~/.tasty/` (independent of
-///   the stderr `TASTY_LOG` filter — see `init_tracing`).
-///
-/// 파일 레이어는 여기서 *설치*만 되고 파일은 열지 않는다. 실제 파일을 여는 것은 host
-/// 프로세스(GUI / headless)가 부르는 [`enable_host_file_log`] 뿐이다 — 근거는
-/// [호스트 로그와 CLI 진단](../../../docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단).
-///
-/// **한계**: 그래서 이 함수와 [`enable_host_file_log`] 사이의 구간
-/// (`boot::run()` 의 `attach_windows_console_if_needed()` + `cli_routing::parse_or_route()`)
-/// 에서 발생한 로그는 host 프로세스에서도 **파일에 남지 않는다** — stderr 로만 나간다.
-/// 현재 그 구간에는 tracing 호출이 없어 실제 유실은 없지만, 라우팅 이전에 로그를
-/// 추가하면 파일 로그에서 조용히 빠진다. 파일에 반드시 남아야 하는 진단이라면 라우팅
-/// 이후로 옮기거나 전용 파일(`crash-*.log` / `hang-*.log` / `hook-failures.log`)을 쓴다.
+/// panic hook과 stderr·파일 로그 레이어를 설치한다. app_version은 본체 버전이다.
+/// 파일은 여기서 열지 않으며 GUI/headless 호스트가 enable_host_file_log를 호출한 뒤에만 기록한다.
+/// 그전 로그는 파일에 남지 않으므로 필요한 초기 진단은 stderr 또는 별도 보고서로 확인한다.
 pub fn init(app_version: &'static str) {
     set_app_version(app_version);
 
-    // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::force_capture();
 
@@ -189,13 +161,10 @@ pub fn init(app_version: &'static str) {
         eprintln!("{backtrace}");
     }));
 
-    // Initialize tracing
     init_tracing();
 }
 
-/// [`APP_VERSION`] 을 채운다. 두 번째 호출은 무시한다 — 한 프로세스의 버전은 하나이고,
-/// 부팅 경로의 호출자도 하나라 두 번째 값이 첫 값과 다를 이유가 없다. 먼저 들어간
-/// 값을 지키는 편이 이미 쓰였을지 모를 보고서와도 맞는다.
+/// 본체 버전을 한 번 저장한다. 이후 호출은 처음 값을 유지한다.
 fn set_app_version(version: &'static str) {
     if APP_VERSION.set(version).is_err() {
         tracing::debug!(
@@ -264,10 +233,7 @@ fn log_file_name() -> &'static str {
     }
 }
 
-/// 파일 레이어 필터. stderr 의 `TASTY_LOG` 와 독립적으로 고정된다 — dev 는
-/// `debug` 레벨(기존 동작 유지), release/dist 는 `warn` 이상만(디스크 사용량 제한 —
-/// attach disconnect 같은 진단 가치가 있는 로그만 release 사용자 환경에 보존하는 게
-/// 목적이라 전체 debug 상시 로깅까진 필요 없다).
+/// stderr의 TASTY_LOG와 독립된 파일 필터. debug 빌드는 debug, release는 warn 이상이다.
 fn file_env_filter() -> EnvFilter {
     if cfg!(debug_assertions) {
         EnvFilter::new("debug,wgpu_hal=warn,wgpu_core=warn,naga=warn")
@@ -276,21 +242,13 @@ fn file_env_filter() -> EnvFilter {
     }
 }
 
-/// stderr + file tracing, all build modes. stderr 필터는 `make_env_filter()`
-/// (`TASTY_LOG`, 기본 warn) 를, 파일 필터는 `file_env_filter()` 를 따른다.
-///
-/// 두 레이어 모두 **모든 프로세스**에 설치되지만, 파일 레이어의 출력은
-/// [`enable_host_file_log`] 를 부른 프로세스에서만 파일에 닿는다. 그래서 이 함수는
-/// CLI/GUI 판정 이전(= 프로세스 역할을 모르는 시점)에 불려도 안전하다 — stderr 로그는
-/// 부팅 첫 순간부터 나가고, 공유 로그 파일은 건드리지 않는다.
+/// stderr와 파일 레이어를 설치한다. 파일 출력은 enable_host_file_log 이후에만 시작한다.
 fn init_tracing() {
     use tracing_subscriber::Layer as _;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    // `fmt::layer()` 의 기본 writer 는 **stdout** 이다 — 그대로 두면 진단 로그가
-    // 명령 출력에 섞인다. 이 제품에서 stdout 은 에이전트가 파싱하는 채널이라
-    // (`tasty list tree | jq .`), 경고 한 줄이 JSON 앞에 붙는 것만으로 깨진다.
+    // stdout은 CLI 결과용이므로 진단을 stderr에 보낸다.
     let stderr_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_filter(make_env_filter());
@@ -305,19 +263,9 @@ fn init_tracing() {
         .init();
 }
 
-/// 공유 로그 파일(`$TASTY_HOME/debug{-dev}.log`)을 열어 파일 레이어를 활성화한다.
-/// **host 프로세스(GUI / headless)만** 부른다 — CLI 클라이언트도 같은 바이너리라
-/// 무조건 열면 실행할 때마다 host 가 쌓아둔 로그를 truncate 한다([docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단]).
-///
-/// host 는 데이터 루트당 하나이므로 시작 시 truncate 를 유지한다(rotation 불필요).
-/// 실패하면 stderr-only 로 자연스럽게 폴백한다.
-///
-/// **재호출은 무해하다(no-op).** 파일을 열기 *전에* 먼저 걸러낸다 — `File::create` 는
-/// 그 자체로 truncate 라, 열고 나서 `OnceLock::set` 실패로 되돌리면 이미 늦는다. 먼저
-/// 설치된 핸들이 원래 오프셋에 계속 쓰면서 파일 앞부분이 NUL 구멍이 되는, 본 ADR 이
-/// 고친 바로 그 손상이 축소판으로 재현된다.
-///
-/// [docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단]: ../../../docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단
+/// GUI/headless 호스트의 파일 로그를 연다. CLI는 호출하지 않아야 호스트 로그를 덮어쓰지 않는다.
+/// 순차 재호출은 파일을 열기 전에 거절한다. 열기에 실패하면 stderr만 사용한다.
+/// 동시 호출을 직렬화하는 API는 아니므로 호스트 시작 경로에서 한 번 호출한다.
 pub fn enable_host_file_log() {
     if let Some(reason) = install_host_log_file() {
         tracing::warn!("{reason}");
@@ -366,20 +314,8 @@ pub mod error_loop {
     const WINDOW_SECS: u64 = 1;
     const THRESHOLD: usize = 100;
 
-    /// `record` 가 잡는 락의 poison 보고 플래그 — 첫 1 회만 남긴다.
-    ///
-    /// 임계구역은 카운터 · 창 시작 시각 · 마지막 메시지 문자열 갱신뿐이라, 락을 든 채
-    /// 죽은 스레드가 불변식을 깨고 나갈 수 없다 — 복구가 맞다. 반대로 조용히 건너뛰면
-    /// **에러 루프 감지기 자신이 꺼진다**: 폭주하는 에러가 계속 세어지지 않아 크래시
-    /// 리포트가 영영 안 나오고, 그 사실도 어디에도 안 남는다.
-    ///
-    /// 매번 로그를 내지 않는 이유는 이 함수가 도는 자리다 — 렌더 · 이벤트 루프의 에러
-    /// 경로라 초당 `THRESHOLD` 회까지 불린다. poison 은 sticky 라 그대로 두면 그 로그가
-    /// 원인이 된 로그를 묻는다.
-    ///
-    /// 자기 패닉으로는 오염되지 않는다: 임계치 패닉은 `drop(inner)` 로 락을 놓은 뒤에
-    /// 나고, 패닉 훅([`super::init`] 의 `set_hook`)은 리포트를 쓰고 stderr 로 찍을 뿐
-    /// `record_error` 를 부르지 않는다. 그래서 재진입 경로가 없다.
+    /// 카운터·시각·문자열만 담는 락의 poison을 복구하고 한 번 보고한다.
+    /// 복구를 포기하면 오류 반복 감지가 꺼진다. 임계 패닉은 락을 놓은 뒤 발생한다.
     static DETECTOR_POISONED: AtomicBool = AtomicBool::new(false);
     const DETECTOR_WHAT: &str = "error-loop detector";
 
@@ -393,9 +329,6 @@ pub mod error_loop {
         inner: Mutex<Inner>,
     }
 
-    /// `new` 와 같다. 이 타입이 **크레이트 밖으로 나가면서** clippy 의
-    /// `new_without_default` 가 켜졌다 — 본체 안에 있던 동안은 crate 내부 타입이라
-    /// 그 lint 의 대상이 아니었다. 인자 없는 `new` 를 그대로 두려면 이 impl 이 짝이다.
     impl Default for ErrorLoopDetector {
         fn default() -> Self {
             Self::new()
@@ -413,8 +346,7 @@ pub mod error_loop {
             }
         }
 
-        /// Record an error occurrence. Panics (triggering crash report) if the
-        /// same error repeats more than `THRESHOLD` times within `WINDOW_SECS`.
+        /// 같은 메시지가 WINDOW_SECS 안에 THRESHOLD회에 도달하면 패닉으로 보고서를 남긴다.
         pub fn record(&self, msg: &str) {
             let mut inner = tasty_utils::poison::recover_mutex(
                 self.inner.lock(),
@@ -448,8 +380,7 @@ pub mod error_loop {
     /// Global error loop detector instance.
     static DETECTOR: LazyLock<ErrorLoopDetector> = LazyLock::new(ErrorLoopDetector::new);
 
-    /// Record an error for loop detection. Call this at recurring error sites
-    /// (render loop, event loop). Panics if the same error repeats >100 times/sec.
+    /// 반복 오류를 기록한다. 같은 메시지가 감지 창 안에서 임계 횟수에 도달하면 패닉한다.
     pub fn record_error(msg: &str) {
         DETECTOR.record(msg);
     }

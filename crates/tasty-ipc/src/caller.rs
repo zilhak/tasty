@@ -172,7 +172,7 @@ impl CallerContext {
         }
     }
 
-    /// 텔레메트리에 쓸 호출자 ID. Agent는 검증한 세션 ID, Plugin은 매니페스트 ID를
+    /// 텔레메트리에 쓸 호출자 ID. Agent는 세션에서 확인한 에이전트 ID, Plugin은 매니페스트 ID를
     /// 허용 문자로 변환한 값, Local은 TASTY_AGENT_ID 또는 _host다.
     pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
