@@ -10,7 +10,7 @@ const MANIFEST: &str = "clippy.toml";
 const DOC: &str = "docs/design/systems/theme.md";
 const SECTION: &str = "\n### clippy 강제 — disallowed-methods";
 
-/// 2026-09-08 실측6항목을 기준으로 둔다. 양쪽 수집이 함께 비어 집합 비교만 통과하지 않도록 확인한다.
+/// 2026-09-08 실측 6항목을 기준으로 둔다. 양쪽 수집이 함께 비어 집합 비교만 통과하지 않도록 확인한다.
 const MIN_ENTRIES: usize = 4;
 
 /// `(타입, 메서드)` — 두 표기가 만나는 좌표.

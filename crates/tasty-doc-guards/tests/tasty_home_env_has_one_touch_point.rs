@@ -17,8 +17,8 @@ use tasty_doc_guards::source_text::mask_non_code;
 /// 홈 환경을 관리하는 공유 타입의 정의 파일.
 const OWNER: &str = "crates/tasty-test-support/src/lib.rs";
 
-/// 빈 순회가 통과하지 않게 하는 하한이다. 2026-09-06의 기존 순회에서 제외 후591파일을 측정했다.
-/// 하한400은 파일 정리를 허용할 여유를 둔 값이다. 현재 OWNER는 src 밖에 있다.
+/// 빈 순회가 통과하지 않게 하는 하한이다. 2026-09-06의 기존 순회에서 제외 후 591파일을 측정했다.
+/// 하한 400은 파일 정리를 허용할 여유를 둔 값이다. 현재 OWNER는 src 밖에 있다.
 const MIN_SCANNED_FILES: usize = 400;
 
 const ENV_WRITE_CALLS: &[&str] = &["set_var(", "remove_var("];

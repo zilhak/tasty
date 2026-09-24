@@ -15,7 +15,7 @@ const GUARD_DIR: &str = "crates/tasty-doc-guards/tests";
 
 const PACKAGE: &str = "tasty-doc-guards";
 
-/// 2026-09-05 실측17개를 기준으로 둔 하한12다. 2026-09-07에는53개로 늘어 여유가 커졌다.
+/// 2026-09-05 실측 17개를 기준으로 둔 하한 12다. 2026-09-07에는 53개로 늘어 여유가 커졌다.
 /// 여유 안의 일부 누락은 검출하지 못한다. 실제 삭제·이동과 수집 실패를 구별해 기준을 갱신한다.
 const MIN_GUARDED: usize = 12;
 

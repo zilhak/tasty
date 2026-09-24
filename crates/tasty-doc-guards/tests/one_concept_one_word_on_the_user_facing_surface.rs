@@ -188,7 +188,7 @@ const PLUGIN_LANG_FLOOR: Floor = Floor {
     measured: 27,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "2026-09-07에 플러그인9개 × 언어3개로 27파일을 측정했다. 플러그인4개가 정리되는 경우를 허용한 하한15다. 더 줄면 실제 감소인지 수집 오류인지 확인한다.",
+    why_this_gap: "2026-09-07에 플러그인 9개 × 언어 3개로 27개 파일을 측정했다. 플러그인 4개가 정리되는 경우를 허용한 하한 15다. 더 줄면 실제 감소인지 수집 오류인지 확인한다.",
 };
 
 const GUIDE_FLOOR: Floor = Floor {
@@ -196,7 +196,7 @@ const GUIDE_FLOOR: Floor = Floor {
     measured: 18,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "한국어 가이드 원본의 Markdown 수다. 영어 번역은 제외한다. 장의 분리·통합을 허용할 여유를 두되 하한12 미만이면 실제 감소와 수집 오류를 확인한다.",
+    why_this_gap: "한국어 가이드 원본의 Markdown 수다. 영어 번역은 제외한다. 장의 분리·통합을 허용할 여유를 두되 하한 12 미만이면 실제 감소와 수집 오류를 확인한다.",
 };
 
 type Surface = (String, String);
@@ -384,7 +384,7 @@ fn each_canonical_word_is_still_present() {
     let n = total(&files, word);
     assert!(
         n >= floor,
-        "권장 표기 `{word}`가 {n}회뿐이다(하한 {floor}, 2026-09-07 측정134회). 번역 파일과 가이드 양쪽의 수집·문구를 확인한다."
+        "권장 표기 `{word}`가 {n}회뿐이다(하한 {floor}, 2026-09-07 측정 134회). 번역 파일과 가이드 양쪽의 수집·문구를 확인한다."
     );
 }
 
@@ -444,7 +444,7 @@ fn the_population_holds_both_kinds_of_user_facing_file() {
     let (langs, guides) = population_shape(&user_facing_files());
     assert!(
         population_is_balanced((langs, guides), (18, 12)),
-        "번역 파일 또는 가이드 수집이 부족하다: lang {langs}, 가이드 {guides}. 2026-09-07 측정은 각각30,18개다."
+        "번역 파일 또는 가이드 수집이 부족하다: lang {langs}, 가이드 {guides}. 2026-09-07 측정은 각각 30개, 18개다."
     );
 }
 

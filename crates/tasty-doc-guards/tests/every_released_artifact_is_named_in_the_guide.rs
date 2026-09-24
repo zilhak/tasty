@@ -19,7 +19,7 @@ const COMPRESSED_ROWS: &[(&str, &[&str])] = &[(
     ],
 )];
 
-/// 2026-09-06 실측15개에 여유를 둔 하한8. 수집 누락을 찾는 보조 검사다.
+/// 2026-09-06 실측 15개에 여유를 둔 하한 8. 수집 누락을 찾는 보조 검사다.
 const MIN_ARTIFACTS: usize = 8;
 
 fn repo_root() -> PathBuf {

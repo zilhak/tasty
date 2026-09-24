@@ -10,7 +10,7 @@ const SPAWN_MARK: &str = "::spawn()";
 /// 공용 SpawnOnceLatch와 인라인 AtomicBool 래치의 표지를 모두 인정한다.
 const LATCH_MARKS: &[&str] = &[".entering(", ".swap(true,"];
 
-/// 2026-09-08에 두 하네스를 측정했다. 한 하네스가 검사에서 빠지지 않도록 하한2로 둔다.
+/// 2026-09-08에 두 하네스를 측정했다. 한 하네스가 검사에서 빠지지 않도록 하한 2로 둔다.
 const MIN_INIT_CLOSURES: usize = 2;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -91,7 +91,7 @@ fn every_spawning_init_closure_latches_before_it_spawns() {
 
     assert!(
         seen >= MIN_INIT_CLOSURES,
-        "프로세스를 만드는 초기화 클로저를 {seen}개만 찾았다(하한 {MIN_INIT_CLOSURES}, 2026-09-08 측정2개). 하네스와 표지 {SPAWN_MARK}를 확인한다. 검사 누락을 하한 변경으로 숨기지 않는다."
+        "프로세스를 만드는 초기화 클로저를 {seen}개만 찾았다(하한 {MIN_INIT_CLOSURES}, 2026-09-08 측정 2개). 하네스와 표지 {SPAWN_MARK}를 확인한다. 검사 누락을 하한 변경으로 숨기지 않는다."
     );
     assert!(
         problems.is_empty(),

@@ -49,7 +49,7 @@ const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
     "crates/tasty-egui-theme/src",
 ];
 
-/// 본체는 egui zoom_factor가1이라 Theme 밖에 직접 적은 길이에 UI 배율이 적용되지 않는다.
+/// 본체는 egui zoom_factor가 1이라 Theme 밖에 직접 적은 길이에 UI 배율이 적용되지 않는다.
 const LENGTH_SETTER_PREFIXES: &[&str] = &[
     "set_min_width(",
     "set_max_width(",
@@ -99,7 +99,7 @@ const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// 2026-09-07 실측186파일에 하한150을 뒀다. 여유36보다 작은 누락은 잡지 못한다.
+/// 2026-09-07 실측 186파일에 하한 150을 뒀다. 여유 36보다 작은 누락은 잡지 못한다.
 /// length_setter_literals_under는 각 루트가 비었는지도 별도로 확인한다.
 const MIN_LENGTH_SETTER_SCANNED_FILES: usize = 150;
 
@@ -576,7 +576,7 @@ fn numeric_literal(tok: &str) -> Option<f32> {
     t.parse::<f32>().ok()
 }
 
-/// 0은 간격 없음으로 허용한다. 일부 필드가0인 의도는 판별하지 못하고 네 변 모두0인 경우는 Margin::ZERO를 안내한다.
+/// 0은 간격 없음으로 허용한다. 일부 필드가 0인 의도는 판별하지 못하고 네 변 모두 0인 경우는 Margin::ZERO를 안내한다.
 fn is_zero(v: f32) -> bool {
     v == 0.0
 }

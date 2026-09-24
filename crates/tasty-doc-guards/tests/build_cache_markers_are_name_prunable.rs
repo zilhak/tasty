@@ -52,7 +52,7 @@ const MARKER_FLOOR: Floor = Floor {
     counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
         "b134d28e3 — 이 좌표는 이력 재작성(1998055b1) 이전이라 지금 main 에서 도달 불가다. 값은 실측이고 좌표만 죽었다",
     ),
-    why_this_gap: "빌드 캐시를 만날 때 하위 순회를 멈추며, 로컬 디렉터리 상태에 따라 순회 수가 달라진다. 기준값369는 2026-09-08의 추적 경로에서 디렉터리를 센 값이다(git ls-tree -r --name-only <rev>). 당시 작업 트리에서는390개였다. 하한339의 여유30은 당시 크레이트 하나가 없어질 때 줄어드는 최대 디렉터리 수10의 세 배로 정했다. 옛 측정 SHA는 현재 이력에서 도달할 수 없다. 빈 디렉터리나 미추적 폴더 때문에 로컬 순회 수를 clean clone의 기준값으로 사용하면 안 된다.",
+    why_this_gap: "빌드 캐시를 만날 때 하위 순회를 멈추며, 로컬 디렉터리 상태에 따라 순회 수가 달라진다. 기준값 369는 2026-09-08의 추적 경로에서 디렉터리를 센 값이다(git ls-tree -r --name-only <rev>). 당시 작업 트리에서는 390개였다. 하한 339의 여유 30은 당시 크레이트 하나가 없어질 때 줄어드는 최대 디렉터리 수 10의 세 배로 정했다. 옛 측정 SHA는 현재 이력에서 도달할 수 없다. 빈 디렉터리나 미추적 폴더 때문에 로컬 순회 수를 clean clone의 기준값으로 사용하면 안 된다.",
 };
 
 /// 통합 타깃 순회의 하한.
@@ -63,7 +63,7 @@ const TARGET_FLOOR: Floor = Floor {
         + tasty_doc_guards::floored_walk::populations::CRATE_TEST_TARGETS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.counted_on,
-    why_this_gap: "루트와 크레이트의 통합 테스트 타깃 수를 합산한다. cc2e5e72e에서 합172(46+126), 하한122의 여유는50이다. fdca139c0..91ca7d37d의558커밋에서 루트 타깃의 최대 감소16, 크레이트 타깃의 감소0을 관측해, 같은 감소가 세 번 겹치는48을 허용하도록 정했다. 실제 수집 범위는 루트·크레이트 수집 검사와 경로 깊이의 합성 검사로 확인한다.",
+    why_this_gap: "루트와 크레이트의 통합 테스트 타깃 수를 합산한다. cc2e5e72e에서 합 172(46+126), 하한 122의 여유는 50이다. fdca139c0..91ca7d37d의 558커밋에서 루트 타깃의 최대 감소 16, 크레이트 타깃의 감소 0을 관측해, 같은 감소가 세 번 겹치는 48을 허용하도록 정했다. 실제 수집 범위는 루트·크레이트 수집 검사와 경로 깊이의 합성 검사로 확인한다.",
 };
 
 /// `CACHEDIR.TAG` 규격의 서명 줄. 여기서는 **판정이 아니라 입력**으로만 쓴다 —

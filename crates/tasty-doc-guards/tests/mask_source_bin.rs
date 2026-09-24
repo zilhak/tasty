@@ -14,7 +14,7 @@ struct Tmp(PathBuf);
 impl Tmp {
     fn new(tag: &str) -> Self {
         let d = std::env::temp_dir().join(format!("tasty-masksrc-{}-{tag}", std::process::id()));
-        // 이전 실행의 임시 파일을 정리한다. 삭제 실패는 뒤의 디렉터리 생성에서 확인한다.
+        // 이전 실행의 임시 파일을 정리한다. 삭제 실패는 무시한다.
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).expect("임시 디렉토리");
         Self(d)

@@ -14,7 +14,7 @@ const RUNNER_ROOTS: &[&str] = &["src/webhook", "src/hook_handler"];
 /// 두 실행부를 모두 수집했는지 확인할 파일.
 const RUNNER_ANCHORS: &[&str] = &["src/webhook/mod.rs", "src/hook_handler/mod.rs"];
 
-/// 수집 누락을 찾는 하한. 2026-09-22 실측18개(webhook10·hook_handler8).
+/// 수집 누락을 찾는 하한. 2026-09-22 실측 18개(webhook10·hook_handler8).
 const MIN_RUNNER_FILES: usize = 14;
 
 /// 금지할 루트 이름과 사유. src/lib.rs의 재노출 별칭도 포함한다.

@@ -17,7 +17,7 @@ const DOC_FLOOR: Floor = Floor {
     measured: 267,
     measured_on: "2026-09-24",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("9d1b15669"),
-    why_this_gap: "9d1b15669의 추적 Markdown267개를 기준으로 한다. 가장 큰 비-ADR 분류인 docs/features52개만큼 여유를 둔 하한215다. 작은 분류 하나의 누락까지 검출하지는 못하므로 검사 범위가 바뀌면 다시 측정한다.",
+    why_this_gap: "9d1b15669의 추적 Markdown267개를 기준으로 한다. 가장 큰 비-ADR 분류인 docs/features52개만큼 여유를 둔 하한 215다. 작은 분류 하나의 누락까지 검출하지는 못하므로 검사 범위가 바뀌면 다시 측정한다.",
 };
 
 /// recipe 수 하한. 2026-09-07 실측 16.
@@ -143,7 +143,7 @@ fn every_cited_just_recipe_exists() {
     let cited = citations(&root);
     assert!(
         known.len() >= MIN_RECIPES,
-        "Justfile에서 recipe를 {}개만 읽었다(2026-09-07 실측16). recipe 판독을 확인한다.",
+        "Justfile에서 recipe를 {}개만 읽었다(2026-09-07 실측 16). recipe 판독을 확인한다.",
         known.len()
     );
     assert!(

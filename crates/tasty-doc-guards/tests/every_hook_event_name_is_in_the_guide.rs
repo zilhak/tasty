@@ -10,7 +10,7 @@ use tasty_doc_guards::temp_scratch::Scratch;
 /// 가이드에 싣지 않는 이벤트와 사유.
 const NOT_IN_THE_GUIDE: &[(&str, &str)] = &[];
 
-/// 2026-09-06 실측6개를 기준으로 둔다. 미달하면 실제 이벤트 감소와 판독 실패를 구별한다.
+/// 2026-09-06 실측 6개를 기준으로 둔다. 미달하면 실제 이벤트 감소와 판독 실패를 구별한다.
 const MIN_EVENTS: usize = 4;
 
 fn repo_root() -> PathBuf {
@@ -58,7 +58,7 @@ const GUIDE_FLOOR: Floor = Floor {
     measured: 18,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "site/content의 한국어 Markdown만 세고 en 번역은 제외한다. 문서 분할·통합에 여유를 주되 하한12 미달이면 실제 감소와 순회 오류를 확인한다.",
+    why_this_gap: "site/content의 한국어 Markdown만 세고 en 번역은 제외한다. 문서 분할·통합에 여유를 주되 하한 12 미달이면 실제 감소와 순회 오류를 확인한다.",
 };
 
 fn guide_text(root: &Path) -> String {

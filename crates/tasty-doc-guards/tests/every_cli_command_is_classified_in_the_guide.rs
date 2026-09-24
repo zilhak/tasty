@@ -26,7 +26,7 @@ const NOT_IN_THE_GUIDE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 2026-09-06 실측42(core36·plugin6)에 여유를 둔 하한35. 감소 시 실제 명령 목록과 판독을 대조한다.
+/// 2026-09-06 실측 42(core36·plugin6)에 여유를 둔 하한 35. 감소 시 실제 명령 목록과 판독을 대조한다.
 const MIN_COMMANDS: usize = 35;
 
 fn repo_root() -> PathBuf {

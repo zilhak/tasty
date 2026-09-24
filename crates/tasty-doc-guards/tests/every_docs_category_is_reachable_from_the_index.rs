@@ -10,7 +10,7 @@ use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 
 const ROOT_INDEX: &str = "docs/index.md";
 
-/// 2026-09-07 실측9분류를 기준으로 둔 수집 하한.
+/// 2026-09-07 실측 9분류를 기준으로 둔 수집 하한.
 const MIN_CATEGORIES: usize = 6;
 
 fn repo_root() -> PathBuf {
@@ -82,7 +82,7 @@ fn every_category_has_its_own_index() {
     let cats = categories(&root);
     assert!(
         cats.len() >= MIN_CATEGORIES,
-        "docs/에서 분류를 {}개만 찾았다(2026-09-07 실측9). 수집 범위와 실제 문서 삭제를 확인한다.",
+        "docs/에서 분류를 {}개만 찾았다(2026-09-07 실측 9). 수집 범위와 실제 문서 삭제를 확인한다.",
         cats.len()
     );
     let missing = without_own_index(&cats, &root.join("docs"));

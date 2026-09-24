@@ -19,7 +19,7 @@ const LINTS_PREFIX: &str = "[workspace.lints.";
 /// 표의 위치 칸이 매니페스트 절을 가리킬 때의 형태 — `` `Cargo.toml [workspace.lints.rust]` ``.
 const LOCATION_PREFIX: &str = "Cargo.toml [workspace.lints.";
 
-/// 2026-09-08 측정12개(clippy7/rust5)보다 낮게 둔 하한. 실제 감소와 파싱 실패를 확인한다.
+/// 2026-09-08 측정 12개(clippy7/rust5)보다 낮게 둔 하한. 실제 감소와 파싱 실패를 확인한다.
 const MIN_LINTS: usize = 8;
 
 /// `(절, lint 이름)` → 레벨.

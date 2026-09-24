@@ -86,7 +86,7 @@ const COGNITIVE_CLAIMS: &[Claim] = &[
 /// 현재 파일 SLOC 임계값을 설명하는 파일과 해당 줄 수.
 const SLOC_CLAIMS: &[Claim] = &[
     (".github/workflows/complexity-check.yml", 1),
-    // 합성500줄이 임계 미만이라는 테스트의 전제도 현재 값 설명으로 분류한다.
+    // 합성 500줄이 임계 미만이라는 테스트의 전제도 현재 값 설명으로 분류한다.
     ("tests/file_sloc_gate_fails_loudly.rs", 1),
     ("docs/dev-guide/clippy-policy.md", 1),
     ("docs/dev-guide/complexity-gate.md", 3),
@@ -227,7 +227,7 @@ fn read(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("읽을 수 없다: {} — {e}", path.display()))
 }
 
-/// 설정값을 읽지 못하면 오류로 처리한다. 기본값0으로 대신하면 대조가 잘못 통과할 수 있다.
+/// 설정값을 읽지 못하면 오류로 처리한다. 기본값 0으로 대신하면 대조가 잘못 통과할 수 있다.
 fn source_value(source: (&str, &str)) -> String {
     let (file, prefix) = source;
     parse_source_value(file, prefix, &read(file))
@@ -401,7 +401,7 @@ const GATES: &[Gate] = &[
     },
 ];
 
-/// 검색 어휘와 같은 앞뒤2줄 범위에서 좁은 주제어를 찾는다.
+/// 검색 어휘와 같은 앞뒤 2줄 범위에서 좁은 주제어를 찾는다.
 fn subject_near_value(text: &str, value: &str, subject: &[&str]) -> Option<(usize, String)> {
     let lines: Vec<&str> = text.lines().collect();
     for (i, line) in lines.iter().enumerate() {
@@ -427,7 +427,7 @@ fn mislabeled_meaning_note(
     why: &str,
 ) -> String {
     format!(
-        "{file}:{line}은 OtherMeaning으로 제외됐지만(사유: {why}) {label} 주제어 {subject}가 값 근처에 있다. 현재 설정값을 설명한다면 *_CLAIMS로 옮긴다. 정말 다른 의미라면 구분이 드러나게 문장을 다시 써라. 갈래를 바꾸는 것은 처방이 아니다."
+        "{file}:{line}은 OtherMeaning으로 제외됐지만(사유: {why}) {label} 주제어 {subject}가 값 근처에 있다. 현재 설정값을 설명한다면 *_CLAIMS로 옮긴다. 정말 다른 의미라면 구분이 드러나게 문장을 다시 써라. 검사를 통과하려고 제외 분류만 바꾸지 않는다."
     )
 }
 
@@ -474,7 +474,7 @@ fn unclassified_note(rel: &str, label: &str, value: &str) -> String {
 /// 추적 텍스트 수집이 하한보다 작으면 오류 안내를 반환한다.
 fn scan_floor_note(seen: usize) -> Option<String> {
     (seen <= 500).then(|| {
-        format!("추적 텍스트 파일을 {seen} 개만 읽었다 — 모수가 무너지면 미분류 0 도 초록이 된다")
+        format!("추적 텍스트 파일을 {seen} 개만 읽었다 — 수집 범위를 확인한다. 읽은 파일이 없으면 위반도 발견할 수 없다")
     })
 }
 
@@ -489,7 +489,7 @@ fn stale_copy_note(
         return None;
     }
     Some(format!(
-        "  {rel}: {label} 값 {value}을 든 줄이 {seen} 개다(명부 {expected}). 줄었다면 낡은 값으로 남아 있을 수 있다. 늘었다면 새 사본이 생긴 것인지 확인한다.\n  [시점] 과거 기록의 값을 고치지 마라. 당시 사실을 유지하고 현재 값 설명의 줄 수만 갱신한다. 시점 안내는 ci_channel_claims_match_workflows.rs의 TIME_NOTE를 따른다."
+        "  {rel}: {label} 값 {value}을 든 줄이 {seen} 개다(명부 {expected}). 줄었다면 낡은 값으로 남아 있을 수 있다. 늘었다면 새 사본이 생긴 것인지 확인한다.\n  [시점] 과거 기록의 값을 고치지 마라. 당시 사실을 유지한다. 이 검사는 문맥과 관계없이 현재 숫자 토큰이 들어간 파일 전체의 줄을 세므로, 과거 기록에 같은 숫자가 있는 줄도 포함한다. 실제 집계 범위를 확인한 뒤 명부의 줄 수를 갱신한다. 시점 안내는 ci_channel_claims_match_workflows.rs의 TIME_NOTE를 따른다."
     ))
 }
 
@@ -542,7 +542,7 @@ fn the_gate_thresholds_have_no_stale_copies() {
     );
 }
 
-/// 다른 의미로 제외한 값 근처에 해당 게이트 주제어가 있는지 확인한다. 판정한 항목 수가0인 경우도 실패시킨다.
+/// 다른 의미로 제외한 값 근처에 해당 게이트 주제어가 있는지 확인한다. 판정한 항목 수가 0인 경우도 실패시킨다.
 #[test]
 fn a_different_meaning_exclusion_does_not_carry_the_gate_subject() {
     let values: Vec<String> = GATES.iter().map(|g| source_value(g.source)).collect();
@@ -565,7 +565,7 @@ fn a_different_meaning_exclusion_does_not_carry_the_gate_subject() {
     }
     assert!(
         checked > 0,
-        "OtherMeaning으로 판정한 파일·값 쌍이0개다. 분류 목록과 검색을 확인한다."
+        "OtherMeaning으로 판정한 파일·값 쌍이 0개다. 분류 목록과 검색을 확인한다."
     );
     assert!(
         wrong.is_empty(),
@@ -741,8 +741,8 @@ mod judgment_wording {
             "다시 쓰라는 갈래가 없다: {m}"
         );
         assert!(
-            m.contains("갈래를 바꾸는 것은 처방이 아니다"),
-            "가장 싼 수선을 금지하는 문장이 없다: {m}"
+            m.contains("검사를 통과하려고 제외 분류만 바꾸지 않는다"),
+            "제외 분류만 바꾸지 말라는 안내가 없다: {m}"
         );
     }
 
@@ -783,7 +783,7 @@ mod judgment_wording {
         assert!(scan_floor_note(9000).is_none());
         let m = scan_floor_note(3).expect("오류 안내가 있어야 한다");
         assert!(m.contains("3 개만 읽었다"), "{m}");
-        assert!(m.contains("미분류 0 도 초록"), "{m}");
+        assert!(m.contains("수집 범위를 확인한다"), "{m}");
     }
 
     #[test]

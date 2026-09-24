@@ -29,7 +29,7 @@ const ALLOWLIST: &[(&str, &str)] = &[(
     "debug 입력기는 요청 단위를 to_egui/to_winit_delta로 그대로 전달한다. 여기서 환산하면 입력 단위 재현이 달라진다. 같은 파일의 단위 보존 시험으로 확인한다.",
 )];
 
-/// 기존 환산 파일5개를 측정한 뒤 정상적인 파일 정리1개를 허용한 하한4다.
+/// 기존 환산 파일 5개를 측정한 뒤 정상적인 파일 정리 1개를 허용한 하한 4다.
 const MIN_CONVERSION_SITES: usize = 4;
 
 fn repo_root() -> PathBuf {

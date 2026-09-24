@@ -8,7 +8,7 @@ use tasty_doc_guards::repo_root;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{invokes_macro, mask_non_code, rust_sources};
 
-/// 2026-09-08 추적 src Rust 파일605개를 기준으로 둔 수집 하한.
+/// 2026-09-08 추적 src Rust 파일 605개를 기준으로 둔 수집 하한.
 const MIN_SOURCES: usize = 400;
 
 /// stdout 매크로만 등록한다. eprint·eprintln은 stderr라 제외한다.

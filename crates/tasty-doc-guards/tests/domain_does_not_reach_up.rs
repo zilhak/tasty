@@ -92,7 +92,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
 const GUI_GATES_IN_DOMAIN: usize = 262;
 
-/// 2026-09-21 실측92파일(core84·ports8, 출하91)을 기준으로 둔 수집 하한.
+/// 2026-09-21 실측 92파일(core84·ports8, 출하 91)을 기준으로 둔 수집 하한.
 const MIN_DOMAIN_FILES: usize = 80;
 
 /// 도메인 모듈 루트까지 수집됐는지 확인할 파일.

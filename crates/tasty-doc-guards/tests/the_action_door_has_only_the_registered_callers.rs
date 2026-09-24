@@ -25,7 +25,7 @@ const KEYBINDINGS: &str = "crates/tasty-settings/src/keybindings.rs";
 /// 직접 호출 파일과 허용 근거.
 const DOOR_CALLERS: &[(&str, &str)] = &[(
     "src/view/main/redraw.rs",
-    "Command Palette에서 고른 액션을 팝업이 닫힌 다음 프레임에 실행한다. 값은 state.command_palette.pending_run에서만 가져온다.",
+    "Command Palette에서 고른 액션을 팝업 렌더링과 닫기 처리가 끝난 뒤 실행한다. 값은 state.command_palette.pending_run에서만 가져온다.",
 )];
 
 /// 팔레트의 지연 실행 필드에 쓰는 파일과 근거.
@@ -39,7 +39,7 @@ const SLOT_WRITERS: &[(&str, &str)] = &[(
 const MIN_SOURCES: usize = 300;
 /// 액션 필드 하한. 2026-09-07 실측 71.
 const MIN_FIELDS: usize = 50;
-/// 디스패치 match 항목 하한. 2026-09-07 측정42개.
+/// 디스패치 match 항목 하한. 2026-09-07 측정 42개.
 const MIN_ARMS: usize = 30;
 
 fn repo_root() -> PathBuf {
@@ -110,7 +110,7 @@ fn the_palette_slot_has_only_the_registered_writers() {
         code_uses(PALETTE_SLOT, "src/state/command_palette.rs"),
         SLOT_WRITERS,
         "팔레트 지연 실행 필드의 쓰기 파일",
-        "필드에 쓰면 다음 프레임에 액션이 실행되므로 직접 호출과 함께 검토해야 한다.",
+        "필드에 쓰면 팝업 렌더링과 닫기 처리 뒤 액션이 실행되므로 직접 호출과 함께 검토해야 한다.",
     );
 }
 
@@ -127,7 +127,7 @@ fn the_action_set_is_derived_not_written() {
     );
     assert!(
         arms.len() >= MIN_ARMS,
-        "디스패치 match 항목을 {}개만 읽었다(2026-09-07 측정42개). 함수 형태와 파서를 확인한다.",
+        "디스패치 match 항목을 {}개만 읽었다(2026-09-07 측정 42개). 함수 형태와 파서를 확인한다.",
         arms.len()
     );
     let unknown: Vec<&String> = arms.difference(&fields).collect();

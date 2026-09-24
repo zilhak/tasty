@@ -37,7 +37,7 @@ const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
 /// ThemeRuntime이 전달하는 설정 필드. 늘면 ADR-0037의 별도 컨텍스트 조건을 검토한다.
 const RUNTIME_ROSTER: &[&str] = &["ui_zoom", "reduced_motion"];
 
-/// 2026-09-08 측정113필드보다 낮게 둔 파싱 하한. 실제 필드 정리를 허용할 여유를 둔다.
+/// 2026-09-08 측정 113필드보다 낮게 둔 파싱 하한. 실제 필드 정리를 허용할 여유를 둔다.
 const MIN_THEME_FIELDS: usize = 80;
 
 fn read(rel: &str) -> String {

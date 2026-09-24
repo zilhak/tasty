@@ -3,7 +3,7 @@
 //! 멤버 목록은 cargo metadata로 읽어 workspace exclude를 검사하지 않는다.
 //! metadata를 실행하거나 읽을 수 없으면 검사 실패로 처리한다.
 
-/// 2026-09-07 멤버52개를 측정한 뒤 정상적인 크레이트 정리를 허용할 여유를 둔 하한이다.
+/// 2026-09-07 멤버 52개를 측정한 뒤 정상적인 크레이트 정리를 허용할 여유를 둔 하한이다.
 const MIN_MEMBERS: usize = 40;
 
 #[derive(Debug, PartialEq, Eq)]

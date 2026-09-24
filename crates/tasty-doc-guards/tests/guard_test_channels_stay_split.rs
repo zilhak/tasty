@@ -15,7 +15,7 @@ const WORKFLOW_FLOOR: Floor = Floor {
     measured: 11,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "워크플로 yml 수집에서 소수 파일의 통폐합을 허용하는 하한8이다. 미달하면 실제 파일 감소와 수집 범위를 확인한다.",
+    why_this_gap: "워크플로 yml 수집에서 소수 파일의 통폐합을 허용하는 하한 8이다. 미달하면 실제 파일 감소와 수집 범위를 확인한다.",
 };
 
 fn repo_root() -> PathBuf {

@@ -111,7 +111,7 @@ fn absence_exempts(scope: &str) -> bool {
 }
 
 /// 추출 실패로 lib 테스트 이름이 거의 남지 않는 경우를 찾는 하한.
-/// 2026-09-06 실측5130에 비해 하한100은 낮아, 점진적인 누락을 검출하지는 못한다.
+/// 2026-09-06 실측 5130에 비해 하한 100은 낮아, 점진적인 누락을 검출하지는 못한다.
 const MIN_LIB_TESTS: usize = 100;
 
 /// 문서 수집이 크게 줄었는지 확인하는 하한.
@@ -182,7 +182,7 @@ const WORKFLOW_FLOOR: Floor = Floor {
     measured: 11,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "기준값11과 하한7의 차이4는 소수 워크플로의 통폐합을 허용하되 절반 이하만 수집하는 오류를 찾기 위한 여유다.",
+    why_this_gap: "기준값 11과 하한 7의 차이 4는 소수 워크플로의 통폐합을 허용하되 절반 이하만 수집하는 오류를 찾기 위한 여유다.",
 };
 
 /// 호출자가 만든 합성 디렉터리에도 쓰는 하한. 저장소 규모와 무관하게 빈 수집만 막는다.
@@ -191,7 +191,7 @@ const CALLER_SUPPLIED_FLOOR: Floor = Floor {
     measured: 1,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "호출자가 만든 디렉터리의 크기는 일정하지 않으므로 빈 수집만 막는 하한1을 쓴다. 저장소 전체 수집에는 별도 하한을 적용한다.",
+    why_this_gap: "호출자가 만든 디렉터리의 크기는 일정하지 않으므로 빈 수집만 막는 하한 1을 쓴다. 저장소 전체 수집에는 별도 하한을 적용한다.",
 };
 
 /// GitHub Actions가 읽는 .yml과 .yaml을 모두 수집한다.

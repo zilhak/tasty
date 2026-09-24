@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
 /// 오류를 무시한다고 분류한 자리의 기준값. 증가뿐 아니라 감소도 확인해 개선 후 기준을 낮춘다.
-/// 2026-09-08 실측29를 기준으로 뒀다. 빈 수집도 기준값과 달라 실패한다.
+/// 2026-09-08 실측 29를 기준으로 뒀다. 빈 수집도 기준값과 달라 실패한다.
 const SWALLOW_CAP: usize = 29;
 
 #[derive(PartialEq, Eq, Debug)]

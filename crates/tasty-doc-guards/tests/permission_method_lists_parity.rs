@@ -196,7 +196,7 @@ fn the_known_constructors_cover_what_the_source_defines() {
     let defined = constructors_in_source(&src);
     assert!(
         defined.len() >= 3,
-        "MethodMeta 생성자를 {}개만 찾았다(2026-09-05 측정3개). const fn의 반환 형식과 파서를 확인한다.",
+        "MethodMeta 생성자를 {}개만 찾았다(2026-09-05 측정 3개). const fn의 반환 형식과 파서를 확인한다.",
         defined.len()
     );
     let known: BTreeSet<String> = KNOWN_CTORS.iter().map(|(n, _)| (*n).to_string()).collect();

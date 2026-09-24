@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 const CRATE_DIR: &str = "crates/tasty-doc-guards";
 
-/// 2026-09-23의 bin 소스 파일과 Cargo metadata 모두4개였던 측정을 기준으로 둔다.
+/// 2026-09-23의 bin 소스 파일과 Cargo metadata 모두 4개였던 측정을 기준으로 둔다.
 /// 자동 발견 bin이 삭제되면 검사 대상도 함께 줄어드므로 별도로 하한을 둔다.
 /// 의도적인 삭제 때만 두 출처를 다시 확인해 하한을 갱신한다.
 const MIN_BINS: usize = 4;

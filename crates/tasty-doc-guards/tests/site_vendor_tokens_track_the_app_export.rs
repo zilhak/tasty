@@ -53,7 +53,7 @@ const LAGGING: &[(&str, &str)] = &[
 ];
 
 /// 빈 결과끼리 비교해 통과하지 않도록 토큰 수 하한을 둔다.
-/// 앱818·사이트791개를 측정했을 때 수집 실패를 찾을 수 있도록 그보다 낮게 정한 값이다.
+/// 앱 818·사이트 791개를 측정했을 때 수집 실패를 찾을 수 있도록 그보다 낮게 정한 값이다.
 const PARSE_FLOOR: usize = 400;
 
 /// 두 사본에서 알려진 토큰 하나를 실제로 읽었는지도 확인한다.
@@ -69,7 +69,7 @@ fn read(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("{} 를 못 읽었다: {e}", path.display()))
 }
 
-/// JSON 깊이1을 티어, 깊이2를 토큰으로 읽는다. $로 시작하는 메타 키는 제외한다.
+/// JSON 깊이 1을 티어, 깊이 2를 토큰으로 읽는다. $로 시작하는 메타 키는 제외한다.
 fn tier_keys(json: &str, tier: &str) -> BTreeSet<String> {
     let bytes = json.as_bytes();
     let mut keys = BTreeSet::new();

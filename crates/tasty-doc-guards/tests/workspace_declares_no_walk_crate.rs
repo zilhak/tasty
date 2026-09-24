@@ -258,7 +258,7 @@ fn walked(rels: &[&str]) -> Vec<Walked> {
         .collect()
 }
 
-/// 합성 이름4개 이상을 사용해 크레이트 추출과 파싱 하한을 함께 확인한다.
+/// 합성 이름 4개 이상을 사용해 크레이트 추출과 파싱 하한을 함께 확인한다.
 #[test]
 fn the_name_parser_keeps_symbols_and_drops_prose_and_the_standard_library() {
     // 공백 있는 산문과 비ASCII 이름은 서로 다른 필터로 제외되므로 둘 다 넣는다.

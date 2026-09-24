@@ -2,14 +2,14 @@
 //! 파일 머리의 내부 cfg나 부모의 mod 선언을 읽고, 예외는 이름과 사유로 등록한다.
 //! 사용자 조작 재현인지의 의미 판단과 release 빌드 제외 여부는 검사하지 않는다.
 //! release 메서드 목록은 tests/ipc_release_table_excludes_input_reproduction.rs에서 별도로 확인한다.
-//! cfg는 문자열로 판독하며 논리식을 계산하지 않는다. 배치 규칙은 docs/identity.md의 원칙1을 따른다.
+//! cfg는 문자열로 판독하며 논리식을 계산하지 않는다. 배치 규칙은 docs/identity.md의 원칙 1을 따른다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;
 
 const SCAN_ROOT: &str = "src/adapters/ipc";
 
-/// 2026-09-06 실측30개에 여유를 둔 하한25다. 미달하면 실제 항목 감소와 추출 실패를 구별한다.
+/// 2026-09-06 실측 30개에 여유를 둔 하한 25다. 미달하면 실제 항목 감소와 추출 실패를 구별한다.
 const MIN_GATED_ITEMS: usize = 25;
 
 /// 부모에 남겨야 하는 라우팅 항목만 이름과 사유로 허용한다.

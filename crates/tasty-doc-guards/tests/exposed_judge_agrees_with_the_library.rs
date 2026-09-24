@@ -13,7 +13,7 @@ use tasty_doc_guards::workflow_triggers::{
     automatic_job_bodies, filter_free_coverage, push_trigger,
 };
 
-/// 2026-09-07 de0572359에서 워크플로 파일·출력 행 모두11개였고 하한은8이다.
+/// 2026-09-07 de0572359에서 워크플로 파일·출력 행 모두 11개였고 하한은 8이다.
 /// 빈 디렉터리는 바이너리가 rc2로 거부하며, 이 하한은 실행 성공 후 출력이 크게 줄었는지 확인한다.
 /// 여유 안의 누락은 통과할 수 있다. 워크플로를 의도적으로 삭제할 때 파일 수와 출력 행을 함께 확인한다.
 const MIN_ROWS: usize = 8;

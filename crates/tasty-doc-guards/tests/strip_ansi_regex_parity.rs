@@ -19,7 +19,7 @@ fn extract_literal(line: &str) -> Option<String> {
 
 /// 한 루트의 수집 실패를 다른 루트가 가리지 않도록 각각 하한을 둔다.
 /// 정규식은 한 위치에만 있어야 하므로 발견 건수가 아니라 훑은 Rust 파일 수를 센다.
-/// 2026-09-07 측정 crates664/src598에서 파일 정리를 허용한 하한550/500이다.
+/// 2026-09-07 측정 crates664/src598에서 파일 정리를 허용한 하한 550/500이다.
 const MIN_SCANNED: [(&str, usize); 2] = [("crates", 550), ("src", 500)];
 
 /// 정규식 리터럴을 모으고 하한 검사에 쓸 Rust 파일 수를 반환한다.
@@ -108,7 +108,7 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
     }
 }
 
-/// 하위 Rust 파일만 수집하고 없는 경로는0개로 반환하는지 합성 트리에서 확인한다.
+/// 하위 Rust 파일만 수집하고 없는 경로는 0개로 반환하는지 합성 트리에서 확인한다.
 #[test]
 fn a_dead_root_scans_zero_and_only_rs_files_count() {
     let probe = Scratch::new("ansi-parity");
@@ -131,7 +131,7 @@ fn a_dead_root_scans_zero_and_only_rs_files_count() {
     let scanned = collect(dir, &mut found);
     assert_eq!(
         scanned, 2,
-        "합성 트리에서 하위 디렉터리를 포함한 Rust 파일2개를 수집해야 한다"
+        "합성 트리에서 하위 디렉터리를 포함한 Rust 파일 2개를 수집해야 한다"
     );
     assert_eq!(
         found.len(),
@@ -143,7 +143,7 @@ fn a_dead_root_scans_zero_and_only_rs_files_count() {
     assert_eq!(
         collect(&dir.join("does-not-exist"), &mut none),
         0,
-        "없는 경로의 수집 결과가0개가 아니다"
+        "없는 경로의 수집 결과가 0개가 아니다"
     );
     assert!(none.is_empty(), "죽은 뿌리에서 자리를 주웠다: {none:?}");
 }

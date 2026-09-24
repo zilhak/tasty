@@ -712,7 +712,7 @@ jobs:
         assert_eq!(
             steps.len(),
             6,
-            "픽스처에서 스텝을 {}개 읽었다(기대6). 지원하는 헤더 들여쓰기를 확인한다.",
+            "픽스처에서 스텝을 {}개 읽었다(기대 6). 지원하는 헤더 들여쓰기를 확인한다.",
             steps.len()
         );
         let jobs: Vec<&str> = steps.iter().map(|s| s.job.as_str()).collect();

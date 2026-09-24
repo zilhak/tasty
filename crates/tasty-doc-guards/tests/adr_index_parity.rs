@@ -15,7 +15,7 @@ use tasty_doc_guards::adr_index::{
 };
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 9d1b15669에서 ADR51편을 확인했다. 하한50은 수집 누락을 찾는 보조 검사다.
+/// 9d1b15669에서 ADR51편을 확인했다. 하한 50은 수집 누락을 찾는 보조 검사다.
 /// 개별 누락·중복은 헤더와 생성 행을 대조한다. 의도적으로 파일 수를 줄일 때만 다시 측정해 갱신한다.
 const MIN_ADRS: usize = 50;
 

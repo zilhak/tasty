@@ -31,7 +31,7 @@ fn only_at(hay: &str, needle: &str, what: &str) -> usize {
     hay.find(needle).expect("checked above")
 }
 
-/// 함수 시작부터4칸 들여쓰기의 다음 fn·pub fn·문서 주석 전까지 읽는 대략적인 범위다.
+/// 함수 시작부터 4칸 들여쓰기의 다음 fn·pub fn·문서 주석 전까지 읽는 대략적인 범위다.
 fn fn_body<'a>(src: &'a str, header: &str) -> &'a str {
     let start = src
         .find(header)
@@ -168,7 +168,7 @@ const PERSISTENCE_FLOOR: Floor = Floor {
     measured: 6,
     measured_on: "2026-09-08",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("ee7a32349"),
-    why_this_gap: "레이아웃 영속화 모듈의 Rust 파일은 2026-09-08의 ee7a32349에서6개였다. 당시 형제 모듈3272커밋의 한 변경에서 파일 수가 움직인 최대 단위1을 기준으로 여유2를 뒀다. 모듈을 하나의 파일로 합치는 변경은 이 범위를 넘으므로 실제 재구성과 수집 실패를 구별해 다시 측정해야 한다.",
+    why_this_gap: "레이아웃 영속화 모듈의 Rust 파일은 2026-09-08의 ee7a32349에서 6개였다. 당시 형제 모듈 3272커밋의 한 변경에서 파일 수가 움직인 최대 단위 1을 기준으로 여유 2를 뒀다. 모듈을 하나의 파일로 합치는 변경은 이 범위를 넘으므로 실제 재구성과 수집 실패를 구별해 다시 측정해야 한다.",
 };
 
 /// 모듈 파일과 같은 이름의 디렉터리를 함께 수집하도록 상위 core에서 시작해 접두어로 좁힌다.
