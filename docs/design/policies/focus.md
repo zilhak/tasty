@@ -141,7 +141,7 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
 
 ### 재는 명령
 
-    # 출하되는 줄만 남긴 사본을 만들고(테스트 코드가 같은 이름을 쓴다)
+    # 테스트 전용 코드를 제외한 사본을 만든다(테스트에서도 같은 이름을 쓴다)
     cargo run -q -p tasty-doc-guards --bin strip-cfg-test -- \
         --blank-test-only-files <out> . src/adapters/ipc src/app
     # 다섯 포인터를 센다

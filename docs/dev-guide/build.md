@@ -163,7 +163,7 @@ build-dependency 도 호스트가 Windows 일 때만 해석된다. 실측(2026-0
 `x86_64-w64-mingw32-windres` 가 있었는데도 그렇다.
 
 그래서 **Windows 가 아닌 호스트(실측은 Linux)에서 교차 빌드한 Windows exe 에는 아이콘도 VERSIONINFO 도 없고, 빌드는 그
-사실을 경고하지 않는다.** 출하 산출물은 이 갈래를 타지 않는다 — Windows 산출물은 네이티브 Windows
+사실을 경고하지 않는다.** 배포 산출물은 이 갈래를 타지 않는다 — Windows 산출물은 네이티브 Windows
 러너가 만든다(`.github/workflows/release.yml` 의 `runs-on: [self-hosted, Windows]` 잡). 교차 빌드한
 exe 는 컴파일·시험 확인용으로만 쓰고 배포물로 쓰지 않는다.
 
@@ -422,7 +422,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(`doc-guards.yml` 이 경로
 필터 없이 돌린다). 위 `tasty-cli` 가드와 달리 **면제 명부가 없다** — 기대값이 0 이다. 테스트
 (파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 검사 대상에서 제외한다. 같은 파일이 도메인
-출하 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
+테스트 전용이 아닌 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
 부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
 `egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md)).
 자동화 실행부(`src/webhook/` · `src/hook_handler/`)가 inbound adapter 를 부르는 방향은
