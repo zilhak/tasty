@@ -24,7 +24,7 @@
 메인 테이블 각 행 leading(Port 컬럼 앞) 28px 별 아이콘으로 `(addr, port)` 를 즐겨찾기에 등록/해제한다. 확인 절차 없이 클릭 즉시 토글.
 
 - **영속**: 전역(surface 무관)·`~/.tasty/port-favorites.toml`. `CoreState.port_favorites`(`PortFavorites`)가 부팅 시 로드하고, 토글 시 즉시 `save()` — 앱 재시작 후에도 유지된다.
-- **상단 즐겨찾기 섹션**: 팝업 필터 행과 테이블 사이에 항상 노출되는 bounded 섹션(캡션 22px + 리스트 최대 112px = 5행, 6번째부터 스크롤). 캡션은 "Favorites"(+개수, 0개면 개수 생략) 좌측 / "system-wide" 우측. 0개일 때도 캡션은 유지하고 안내 문구 1행을 보여준다(Explorer 사이드바 즐겨찾기와 동일 관례).
+- **상단 즐겨찾기 섹션**: 팝업 필터 행과 테이블 사이에 항상 노출되는 높이가 제한된 영역(캡션 22px + 리스트 최대 112px = 5행, 6번째부터 스크롤). 캡션은 "Favorites"(+개수, 0개면 개수 생략) 좌측 / "system-wide" 우측. 0개일 때도 캡션은 유지하고 안내 문구 1행을 보여준다(Explorer 사이드바 즐겨찾기와 동일 관례).
 - **system-wide 판정**: 즐겨찾기 섹션의 LISTEN/NONE 배지는 메인 테이블의 scope(Tasty/System)·검색·상태 필터와 **무관하게 항상 시스템 전체 기준**이다. 즐겨찾기가 1개 이상 등록되면 `scan_all()` 기반 별도 스캔(`AppState.port_favorites_scan`)이 병행 실행되어 각 즐겨찾기 항목을 매칭한다(0개면 스캔하지 않음). 매칭 있고 LISTEN → 실행중 배지(pulse), 매칭 있고 다른 상태 → waiting 배지, 매칭 자체가 없음(NONE) → idle 배지 + `NONE` 라벨(기존 `StatusDot` idle 상태 재사용, 새 색 없음).
 - **즐겨찾기 행 요약**: 별(항상 on, 클릭 시 제거) · `{addr}:{port}`(mono) · 매칭 있으면 `{process} · {pid}`(+workspace) 없으면 "not running" · 우측 상태 배지. 메인 테이블의 7컬럼 그리드를 그대로 쓰지 않는 요약형이다.
 
@@ -124,9 +124,9 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 ## 구현
 
 - crate `tasty-portscan` — `scan_all()` / `scan_for_pids(pids)` / `collect_descendant_pids(pid)`, OS 백엔드 분기(Linux `/proc/net/tcp`, macOS `lsof`, Windows `GetExtendedTcpTable`), 캐시 `cache.rs`.
-- popup: `src/adapters/ui/popup/port_scanner.rs` — `draw_port_scanner_popup`(state 결선) + `draw_port_scanner_view`(pure view).
+- popup: `src/adapters/ui/popup/port_scanner.rs` — `draw_port_scanner_popup`(상태 연결) + `draw_port_scanner_view`(pure view).
 - 비동기 상태: `AppState.port_scan: PortScanState`(메인 테이블, Tasty/System scope) + `AppState.port_favorites_scan: PortScanState`(즐겨찾기 전용, 항상 system-wide `scan_all()`, 즐겨찾기 1개 이상일 때만 kick). 둘 다 `kick_off_scan`/`poll_state` 를 공유하는 동일한 `PortScanState` 슬롯이다. 필터 상태: `egui::Memory`.
-- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`), `CoreState.port_favorites` 가 부팅 시 로드해 들고 다닌다. 별 토글은 `PortScannerAction::ToggleFavorite` → wrapper 가 `contains`/`add`/`remove` + `save()`.
+- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`), `CoreState.port_favorites` 가 부팅 시 불러와 보관한다. 별 토글은 `PortScannerAction::ToggleFavorite` → wrapper 가 `contains`/`add`/`remove` + `save()`.
 - gallery 데모: `crates/tasty-gallery/src/catalog/components/port_scanner.rs`.
 
 ## 화면
@@ -141,10 +141,10 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### UI 요소 인벤토리
 
-- **팝업 프레임**: 660×520 (디자인 canonical), headless.
+- **팝업 프레임**: 660×520 (디자인 원본), headless.
 - **헤더 행**: leading 포트 아이콘 + 제목 "Listening ports" + accent Tag(`{listening} listening` / `scanning…`) + 단일 라인 검색 입력 + 컬럼 chooser 아이콘 버튼 + Refresh 아이콘 버튼(상시 노출) + close(`×`).
 - **필터 행**: 좌측 `Show all (system-wide)`(ko `전체 보기`) 체크박스 — scope 토글 (Tasty ↔ System) + 우측 상태 필터 funnel 버튼.
-- **즐겨찾기 섹션**: 필터 행과 테이블 사이, 항상 노출(bounded — 캡션 22px + 리스트 최대 112px). 좌측 "Favorites"(+개수) / 우측 "system-wide". 0개면 흐린 별(37%) + 안내 문구 1행. 1개 이상이면 행마다 별(항상 on, 클릭 시 제거) · `{addr}:{port}`(mono) · `{process} · {pid}`(+workspace) 또는 "not running" · 우측 상태 배지(LISTEN → running+pulse, 그 외 매칭 → waiting, 매칭 없음 → idle+`NONE`). 5행 초과 시 스크롤.
+- **즐겨찾기 섹션**: 필터 행과 테이블 사이, 항상 노출(높이 제한 — 캡션 22px + 리스트 최대 112px). 좌측 "Favorites"(+개수) / 우측 "system-wide". 0개면 흐린 별(37%) + 안내 문구 1행. 1개 이상이면 행마다 별(항상 on, 클릭 시 제거) · `{addr}:{port}`(mono) · `{process} · {pid}`(+workspace) 또는 "not running" · 우측 상태 배지(LISTEN → running+pulse, 그 외 매칭 → waiting, 매칭 없음 → idle+`NONE`). 5행 초과 시 스크롤.
 - **컬럼 chooser 팝업**: 헤더 컬럼 아이콘 버튼 클릭 시 열린다. 컬럼별 체크박스로 표시/숨김 토글. Port 는 잠금(항상 표시). leading fav 컬럼은 chooser 대상이 아니다(항상 표시).
 - **테이블 (leading fav 컬럼 + 최대 7컬럼)**: 별(28px, 헤더 라벨 없음, 클릭 시 즐겨찾기 토글) + Port / Proto / Address / Process / Workspace / Tab / State (chooser 로 숨긴 컬럼은 제외).
   - 각 컬럼 최소폭 보유 — 보이는 컬럼 최소폭 합 > 본문 폭이면 본문이 **가로 스크롤**(말줄임 대신). sticky 헤더는 본문과 수평 동기 이동.

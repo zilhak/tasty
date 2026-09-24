@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) (surface/PTY id 공간 disjoint 집행)
+- **ADR**: [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) (surface와 PTY의 ID 범위 분리)
 - **코드**: `src/core/pty_registry.rs` (registry+exit-code) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
@@ -68,17 +68,17 @@ PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY I
 
 ### headless → 승격 흐름
 
-`pty.spawn` 으로 만든 PTY 는 완전히 숨겨져 있다(오직 `pty.*` 로만 조회/조작). 실제 화면이 필요해지면 같은 pty 를 `pty.attach_surface` 로 승격해 Tab 으로 만든다 — 프로세스·화면 상태가 그대로 옮겨지고, 이후로는 일반 terminal surface(`surface.*`)로 다룬다. 완전 숨김과 가시화 사이의 탈출구다.
+`pty.spawn` 으로 만든 PTY 는 완전히 숨겨져 있다(오직 `pty.*` 로만 조회/조작). 실제 화면이 필요해지면 같은 pty 를 `pty.attach_surface` 로 승격해 Tab 으로 만든다 — 프로세스·화면 상태가 그대로 옮겨지고, 이후로는 일반 terminal surface(`surface.*`)로 다룬다. 필요할 때만 화면에 연결하는 방식이다.
 
 ## 비-목표 (Out of scope)
 
 - **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(ADR-0021)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
-- **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess(`runner_host.rs` 의 `shell_children`) 를 이 primitive 위로 옮기는 것은 범위 밖이다. `Run` 은 bare subprocess + `Stdio::piped()` 캡처로 대응한다(argv 의미·exit code 주체·재시작 수명을 그대로 유지하는 게 우선이라 tty 지원은 필요해질 때 재검토) — [dev-guide/agent-runner](../../dev-guide/agent-runner.md#run-출력-캡처).
+- **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess(`runner_host.rs` 의 `shell_children`) 를 이 PTY 기능으로 옮기는 것은 범위 밖이다. `Run` 은 bare subprocess + `Stdio::piped()` 캡처로 대응한다(argv 의미·exit code 주체·재시작 수명을 그대로 유지하는 게 우선이라 tty 지원은 필요해질 때 재검토) — [dev-guide/agent-runner](../../dev-guide/agent-runner.md#run-출력-캡처).
 - **blocking wait** — `pty.wait` 는 즉시 반환 폴링이다(다른 poll-based 모델과 동일). 호출자가 반복 폴링한다.
 
 ## Acceptance Criteria
 
-- Given 상한 미만 When `pty.spawn{command}` Then disjoint 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
+- Given 상한 미만 When `pty.spawn{command}` Then surface와 겹치지 않는 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
 - Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then watcher 가 잡은 실제 exit_code 반환.
 - Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
 - Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 두 store 에서 함께 회수.

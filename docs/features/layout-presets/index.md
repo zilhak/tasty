@@ -18,7 +18,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 ### surface 영속 id
 
-각 `PresetSurface` 는 **preset 파일 내에서만 고유한** 영속 식별자 `id`(`Option<u32>`, TOML `id = N`)를 갖는다. load→편집→save→재load 를 관통해 같은 surface 를 안정적으로 지목하기 위한 것으로, 향후 surface 단위 복구 커맨드의 타겟(= "preset 이름 + surface id")이 된다.
+각 `PresetSurface` 는 **preset 파일 내에서만 고유한** 영속 식별자 `id`(`Option<u32>`, TOML `id = N`)를 갖는다. load→편집→save→재load 를 거쳐도 같은 surface 를 안정적으로 지목하기 위한 것으로, "preset 이름 + surface id"로 저장된 surface를 식별할 수 있다.
 
 - **preset-local**: 전역 고유성은 요구하지 않는다(uuid 불요). `duplicate_preset` 복제본은 같은 id 집합을 그대로 갖는 것이 옳다.
 - **하위호환·마이그레이션**: 구버전 TOML 에는 `id` 가 없다. `serde(default)` 로 결손을 허용하고, `LayoutPreset::normalize_surface_ids` 가 로드/저장 시 결손·중복 id 를 high-water mark 이후 번호로 **파일 전체 단위**(Workspace 는 모든 pane·tab 통합)로 결정적 재부여한다. 로드 시 정규화가 무언가 바꾸면 디스크에 되써 마이그레이션을 영속화한다(RO 파일시스템 등 되쓰기 실패는 로그만 남기고 메모리 정규화는 유지 — 멱등).
@@ -61,12 +61,12 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 ##### 편집 조작과 surface 설정
 
-- **surface 선택**: 편집 모드에서는 모든 surface 가 1px hairline 윤곽을 얻고, 칸 가운데를 한 번 클릭하면 **선택만** 된다 — 2px accent inset 윤곽 + 우측 상단 핸들 **둘**: **설정(톱니)** · **remove(제거)**. 선택은 아래 표준 단축키의 대상이라 한 번 클릭으로는 미리보기를 떠나지 않는다. 톱니를 누르거나 칸을 **더블클릭**하면 그 surface 의 설정 화면이 열린다. split-right/split-down 핸들은 아래 **경계 hover-split 존**이 대체해 제거됐다. 마지막 한 장 남은 surface 제거는 무효(트리에 0-surface 탭을 쓰지 않음).
+- **surface 선택**: 편집 모드에서는 모든 surface 가 1px hairline 윤곽을 얻고, 칸 가운데를 한 번 클릭하면 **선택만** 된다 — 2px accent inset 윤곽 + 우측 상단 핸들 **둘**: **설정(톱니)** · **remove(제거)**. 선택은 아래 표준 단축키의 대상이라 한 번 클릭으로는 미리보기를 떠나지 않는다. 톱니를 누르거나 칸을 **더블클릭**하면 그 surface 의 설정 화면이 열린다. 분할은 아래의 **경계 hover-split 영역**을 사용한다. 마지막 한 장 남은 surface 제거는 무효(트리에 0-surface 탭을 쓰지 않음).
 - **경계 hover-split 존 (마우스)**: 선택되지 않은 surface 의 4변 바깥 30% 밴드를 hover 하면 accent 22% 밴드 + 안쪽 변 2px accent 55% 분할선 overlay 가 뜨고 커서가 crosshair 로 바뀐다. 클릭하면 그 변으로 split 된다 — **좌/우 존 = 좌우(row) split, 상/하 존 = 상하(column) split**, **좌·상 존은 새 surface 가 first(좌/상)**, 우·하는 second. 축 길이가 46px 미만이면 그 축 밴드는 소멸(중앙 선택은 항상 가능). 선택된 surface 에서는 존이 뜨지 않는다(배경 클릭으로 선택 해제 후 가능). 기존 surface id 는 보존되고 새 surface 만 새 id 를 받는다.
 - **탭 삭제 `×` (마우스)**: 편집 모드에서 탭이 2개 이상인 pane 의 active/hover 탭 우측에 14×14 close `×` 가 노출된다(탭 1개면 숨김 + no-op — pane 은 항상 탭 ≥1). 클릭하면 그 탭이 삭제되고 active 인덱스가 재클램프된다.
-- **surface 설정 화면**: 오른쪽 detail 컬럼 **전체(툴바 + 미리보기)** 를 대신하는 세 상자다.
+- **surface 설정 화면**: 오른쪽 detail 컬럼 **전체(툴바 + 미리보기)** 를 대신하는 세 영역으로 구성된다.
   - **헤더**(높이 `preset-cfg-header-height` 44 — 대체되는 툴바와 같다): kind 아이콘(kind accent) · kind 표시명 · mono breadcrumb `preset › 페인 N › 탭 › 서피스 k`(`페인 N` 은 Workspace scope 에서만, 탭 이름은 Tab scope 가 아닐 때만). 좁으면 breadcrumb 이 말줄임된다. 오른쪽 끝에는 draft 가 저장본과 다를 때만 unsaved 표시(6px `preset-cfg-draft-fg` 점 + 캡션, tooltip "초안 — 확인을 누르면 적용됩니다"). back 버튼은 없다 — 나가는 길은 취소다.
-  - **본문**: 유일하게 스크롤되는 상자. padding `preset-cfg-form-padding`(16), 한 열 폼(최대 폭 `preset-cfg-form-max-width` 460, 필드 간격 `preset-cfg-field-gap` 12). 순서는 **종류**(Select) → 그 kind 가 선언한 필드(라벨 위, 입력 전체 폭). `dir`/`file_path` 필드는 mono 입력과 **찾아보기** 버튼(secondary, folderOpen 아이콘)을 한 줄에 둔다. 칸 크기와 무관하게 모든 필드가 온전히 보인다.
+  - **본문**: 스크롤되는 유일한 영역. padding `preset-cfg-form-padding`(16), 한 열 폼(최대 폭 `preset-cfg-form-max-width` 460, 필드 간격 `preset-cfg-field-gap` 12). 순서는 **종류**(Select) → 그 kind 가 선언한 필드(라벨 위, 입력 전체 폭). `dir`/`file_path` 필드는 mono 입력과 **찾아보기** 버튼(secondary, folderOpen 아이콘)을 한 줄에 둔다. 칸 크기와 무관하게 모든 필드가 온전히 보인다.
   - **footer**: 높이 고정 `preset-cfg-footer-height`(52), 상단 1px separator, 오른쪽 정렬 `[취소 ghost] [확인 primary]`(`button.cancel` / `button.ok`). **변경이 없으면 확인은 비활성**이다 — 변경 판정은 kind 와 현재 kind 가 선언한 키만 본다.
   - **draft**: 값은 draft 에만 쓰이고 트리는 확인 전까지 바뀌지 않는다. draft 안에서 kind 를 바꾸면 필드 목록이 바로 바뀐다 — 값은 지우지 않으므로 두 kind 가 함께 선언한 키(예: `cwd`)는 이어지고, 원래 kind 로 돌아오면 원래 값이 다시 보인다. 새 kind 필드 중 비어 있고 `default` 가 있는 것은 그 값으로 채워 보인다.
   - **확인**: surface 를 한 번에 교체하고 곧바로 저장한다. kind 가 원본과 같으면 선언 필드만 덮어써 **선언되지 않은 params 를 보존**하고, 다르면 kind 전환 정리 규칙(새 kind 가 안 쓰는 전용 컬럼·params 제거 + default 채움)을 **확인 시점에 한 번** 적용한다 — 중간에 거친 kind 때문에 원본 params 가 지워지지 않는다. 저장이 성공해야 미리보기로 돌아오고 그 칸은 **선택된 채** 남는다. **저장 실패** 시 설정 화면과 draft 를 그대로 두고 표준 에러 toast("프리셋 저장 실패")를 띄운다. 화면이 열린 사이 저장소의 레이아웃이 바뀌었으면 위 "저장소 변경과 편집 충돌" 규칙에 따라 저장하지 않는다.
@@ -75,7 +75,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
   - **열려 있는 동안**: 왼쪽 preset 리스트와 L1 scope 탭은 `preset-cfg-dim-opacity`(= disabled opacity)로 흐려지고 입력(클릭·hover·스크롤)을 받지 않는다. "자동 저장됨"·Done 은 툴바째 사라진다. 구조 편집 단축키는 동작하지 않는다(미리보기를 그리지 않는다). 창 밖에서 선택이 바뀌거나(컨텍스트 메뉴 "…프리셋으로 저장") 창을 닫으면 draft 는 취소와 똑같이 버리고 묻지 않는다.
   - **kind 드롭다운은 `SurfaceKindRegistry` 를 기준으로 삼는다** — 편집기(`PresetView`)가 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 스냅샷(`KindCatalog`)을 파생한다. 후보 목록은 런타임 등록 kind(플러그인 on/off)를 즉시 반영하고, 표시명은 registry 의 `display_name_i18n_key` 로 해석한다. `empty` 는 사용자가 직접 만들 수 없는 내부 kind 라 후보에서 제외한다. 설정 화면이 연 leaf 의 저장본 kind(와 draft 의 kind)가 목록에 없으면(비활성 플러그인 등) 유실 방지로 덧붙는다 — 꺼진 plugin kind 로도 되돌아갈 수 있다. registry 미주입(main window 부재 등)이면 정적 fallback 목록(`terminal`/`markdown`/`image`/`explorer`/`html`)을 사용한다.
 - **이름/subtitle 인라인 편집**: 편집 모드에서 툴바의 preset 이름은 텍스트 입력으로, subtitle 은 (Workspace 한정 실제 필드일 때) 입력으로 바뀌어 포커스 해제 시 store 에 commit 된다.
-- **트리 변형**: 편집 모델(`DemoLayout`)은 3계층 전부를 변형한다 — surface split · surface 제거 · 탭 추가(+) · **탭 삭제(×)** · **pane split** · **pane 제거**. 마우스로는 경계 hover-split 존(surface split·4방향·before/after)·remove 핸들(surface 제거)·`+` 버튼(탭 추가)·`×`(탭 삭제)로 트리거되고, 전부(pane split·pane 제거 포함)는 아래 **표준 단축키**로도 발화한다. 모든 변형은 기존 leaf/pane id 를 보존하며 자동 저장된다. 무효 가드: 마지막 surface 제거·마지막 탭 삭제(pane 은 항상 탭 ≥1)·루트 단일 pane 제거는 no-op. pane split 은 **Workspace scope 에서만** 유효(Pane/Tab scope 는 pane 트리가 없어 no-op).
+- **트리 변형**: 편집 모델(`DemoLayout`)은 3계층 전부를 변형한다 — surface split · surface 제거 · 탭 추가(+) · **탭 삭제(×)** · **pane split** · **pane 제거**. 마우스로는 경계 hover-split 존(surface split·4방향·before/after)·remove 핸들(surface 제거)·`+` 버튼(탭 추가)·`×`(탭 삭제)로 트리거되고, 전부(pane split·pane 제거 포함)는 아래 **표준 단축키**로도 실행한다. 모든 변형은 기존 leaf/pane id 를 보존하며 자동 저장된다. 무효 가드: 마지막 surface 제거·마지막 탭 삭제(pane 은 항상 탭 ≥1)·루트 단일 pane 제거는 no-op. pane split 은 **Workspace scope 에서만** 유효(Pane/Tab scope 는 pane 트리가 없어 no-op).
 - **표준 단축키 (focus 기반)**: 편집 모드에서 본체와 동일한 `KeybindingSettings` 단축키로 편집을 조작한다 — 코드에 키를 하드코딩하지 않고 설정 필드를 그대로 매칭한다(§단축키 정책). 대상은 **현재 선택된 surface(leaf)** 와 그 leaf 가 속한 pane 이다. 선택이 없으면 전부 no-op(임의 대상 조작 금지). 텍스트 입력(이름/subtitle) 포커스 중에는 문자 키가 입력으로 가도록 단축키 매칭을 차단한다. surface 설정 화면이 열린 동안에는 단축키가 동작하지 않는다.
 
   | 단축키 액션 (`KeybindingSettings`) | 대상 | 동작 |
@@ -87,7 +87,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
   | `split_pane_vertical` / `split_pane_horizontal` | 소속 pane | 좌우 / 상하 pane 분할(**Workspace scope 한정**) |
   | `close_pane` | 소속 pane | pane 제거(루트 단일 pane 이면 no-op) |
 
-  구현 위치는 `Act` enum 이 `demo_layout.rs` private 이고 편집 대상 `DemoLayout` 이 egui temp 캐시에만 살기 때문에 winit `handle_event` 가 아니라 egui 렌더 경로(`draw_preview` → `DemoLayout::apply_shortcut`)다. **제약**: double-tap 바인딩(`shift+shift`/`ctrl+ctrl`/`alt+alt`)은 `parse_binding` 이 거부하므로 편집기에서 지원하지 않는다 — 해당 액션에 double-tap 바인딩만 지정한 사용자는 일반 조합 바인딩을 추가로 지정해야 한다. 또 `KeybindingSettings` 스냅샷은 편집 창을 **열 때** 캡처되므로(appearance 주입과 동일), 설정 변경은 창을 다시 열어야 반영된다.
+  구현 위치는 `Act` enum 이 `demo_layout.rs` private 이고 편집 대상 `DemoLayout` 이 egui 임시 캐시에만 있기 때문에 winit `handle_event` 가 아니라 egui 렌더 경로(`draw_preview` → `DemoLayout::apply_shortcut`)다. **제약**: double-tap 바인딩(`shift+shift`/`ctrl+ctrl`/`alt+alt`)은 `parse_binding` 이 거부하므로 편집기에서 지원하지 않는다 — 해당 액션에 double-tap 바인딩만 지정한 사용자는 일반 조합 바인딩을 추가로 지정해야 한다. 또 `KeybindingSettings` 스냅샷은 편집 창을 **열 때** 캡처되므로(appearance 주입과 동일), 설정 변경은 창을 다시 열어야 반영된다.
 
 mini-tab strip 은 `tab_bar.rs`, split 라인은 `divider.rs` 위젯을 재사용한다.
 
@@ -106,7 +106,7 @@ Kind Select는 현재 키보드로 열 수 없어 진입할 때 autofocus하지 
 
 `preset.{list,get,save,delete,rename,capture,apply}`(`SurfaceRead`/`SurfaceWrite`) — `tasty preset {list,get,save,delete,rename,capture,apply}`. 표 → [reference/api](../../reference/api.md#구조--workspace--pane--tab--surface--split--tree).
 
-`preset.get`/`preset.save` 는 preset 을 JSON 으로 그대로 직렬화/역직렬화하므로 각 surface 의 영속 `id`(위 [surface 영속 id](#surface-영속-id))가 공개 스키마에 자동 노출·왕복된다 — 향후 surface 단위 타겟팅(`--surface-id N`)의 토대다. `save` 로 들어온 결손·중복 id 는 저장 시 정규화된다.
+`preset.get`/`preset.save` 는 preset 을 JSON 으로 그대로 직렬화/역직렬화하므로 각 surface 의 영속 `id`(위 [surface 영속 id](#surface-영속-id))가 공개 스키마에 자동 노출·왕복된다 — 실행 중 surface의 ID와는 별개다. `save` 로 들어온 결손·중복 id 는 저장 시 정규화된다.
 
 ## 관련
 

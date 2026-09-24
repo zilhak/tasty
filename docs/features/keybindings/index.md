@@ -18,15 +18,25 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
-그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)).
+그 문자열을 보조키와 일반 키로 나누는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)).
 
-**사이드바 "도구" 메뉴의 빌트인 항목 일곱은 전부 대응 필드를 갖는다** — `toggle_command_palette` · `open_port_scanner` · `open_remote_tool` · `open_preset_window` · `open_tutorial` · `toggle_dag_list` · `open_file_picker`. plugin 이 기여하는 도구 항목은 매니페스트의 `[[contributes.commands]]` 로 이미 단축키를 갖고 Plugins 서브탭에서 관리되므로, 호스트 빌트인만 필드가 없으면 **plugin 도구는 되고 호스트 도구는 안 되는** 역전이 남는다. 다섯(팔레트·DAG 목록 제외)은 네 프리셋 모두 기본값이 비어 있다 — 새 기본값 다섯을 네 프리셋에 넣으면 기존 콤보와의 충돌을 통과해야 하고, 통과하더라도 그 콤보를 이미 쓰던 사용자는 첫 로드에서 `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다.
+사이드바 도구 메뉴의 호스트 항목 일곱에는 각각 단축키 필드가 있다:
+`toggle_command_palette`, `open_port_scanner`, `open_remote_tool`, `open_preset_window`,
+`open_tutorial`, `toggle_dag_list`, `open_file_picker`. 팔레트와 DAG 목록을 제외한 다섯
+항목은 네 프리셋 모두 기본값이 비어 있다. 새 기본값을 넣으면 기존 사용자 조합과 충돌할
+수 있고, `remove_conflicts_from_defaults`가 충돌한 기본값을 제거할 수 있기 때문이다.
+plugin 도구의 단축키는 `[[contributes.commands]]`로 선언하고 Plugins 서브탭에서 관리한다.
 
 `open_preset_window`(도구 메뉴의 **프리셋** 윈도우 열기)와 `apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`(레이아웃 프리셋 **적용** picker)은 다른 것이다. 이름이 비슷해 섞기 쉬우므로 설정 화면에서도 서브탭이 갈린다 — 앞은 General, 뒤 셋은 대상 스코프를 따라 Workspace/Tab/Pane 이다.
 
 ### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
 
-번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조). modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다. **각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다. 카테고리도 1급 축으로 자기 modifier 필드를 갖는다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다. 세 축이 modifier·슬롯 배열·다음/이전을 대칭으로 갖는다는 사실 자체는 `SwitchAxis`/`SwitchStep`(`crud.rs`)이 타입으로 들고 있어, 축을 순회하는 쪽(설정 화면·이식 판정)이 필드 이름을 다시 나열하지 않는다 — 슬롯 수(탭 10 / 워크스페이스 9 / 카테고리 10)도 필드 타입이 쓰는 상수(`TAB_SWITCH_SLOT_COUNT` 등) 하나에서 나온다.
+번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조).
+modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다.
+**각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다.
+카테고리도 1급 축으로 자기 modifier 필드를 갖는다.
+이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.
+세 축이 modifier·슬롯 배열·다음/이전을 대칭으로 갖는다는 사실 자체는 `SwitchAxis`/`SwitchStep`(`crud.rs`)이 타입으로 들고 있어, 축을 순회하는 쪽(설정 화면·이식 판정)이 필드 이름을 다시 나열하지 않는다 — 슬롯 수(탭 10 / 워크스페이스 9 / 카테고리 10)도 필드 타입이 쓰는 상수(`TAB_SWITCH_SLOT_COUNT` 등) 하나에서 나온다.
 
 | 필드 | 타입 | 기본값 | 의미 |
 |------|------|--------|------|
@@ -44,7 +54,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
 
-1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, 비-macOS 7개·macOS option 축 포함 15개)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 쓰레기 값 저장을 원천 차단하고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
+1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, 비-macOS 7개·macOS option 축 포함 15개)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 잘못된 조합의 저장을 막고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
 2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번 / 카테고리 1~10번. 규칙 기반 축은 저장된 raw 키를 현재 modifier 조합과 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+Shift+1`) 라벨을 보여주고, 개별 지정 축은 슬롯 필드에 이미 저장된 **완전 콤보**를 그대로 표시한다.
 3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`(세 축 모두).
 
@@ -56,14 +66,20 @@ Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고
 
 modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER = "individual"`)을 고르면 그 축은 규칙 기반(modifier + raw 키 1개)을 벗어나, 슬롯마다 완전히 독립된 콤보(모디파이어 포함 자유 조합)를 일반 액션처럼 녹화한다. 슬롯 필드의 "의미"가 modifier 값에 따라 갈리는 암묵적 불변식이다 — 규칙 기반이면 raw 키 하나, 개별 지정이면 이미 완성된 콤보 문자열(예: `"ctrl+alt+1"`). sentinel 문자열은 4축 조합 파서(`Combo::parse_modifiers`)가 인식하는 `ctrl`/`shift`/`alt`/`option` 토큰 중 어느 것과도 안 맞아 파싱 실패(`None`)하므로, 파서 수정 없이 "이 축은 규칙 기반이 아니다"를 안전하게 표현한다.
 
-- **모드 전환 시 슬롯 이관/복원** — 규칙 기반 → 개별 지정으로 바꾸면 각 슬롯의 현재 합성 콤보(`구 modifier + raw`)가 그대로 슬롯 필드에 저장돼(`apply_modifier_transition`) 전환 직후 사용자 체감 동작이 100% 유지된다. 역방향(개별 지정 → 규칙 기반)은 개별 지정 콤보 문자열이 raw 로 역산 불가능(구조적 정보 유실)하므로 이 축을 기본값으로 복원한다(`reset_tab_switch_to_defaults` 등, `crud.rs`).
+- **모드 전환 시 슬롯 이관/복원** — 규칙 기반 → 개별 지정으로 바꾸면 각 슬롯의 현재 합성 콤보(`구 modifier + raw`)가 그대로 슬롯 필드에 저장돼(`apply_modifier_transition`) 전환 직후 현재 키 조합을 유지한다. 역방향(개별 지정 → 규칙 기반)은 개별 지정 콤보 문자열이 raw 로 역산 불가능(구조적 정보 유실)하므로 이 축을 기본값으로 복원한다(`reset_tab_switch_to_defaults` 등, `crud.rs`).
 - **디스패치** — 개별 지정 축은 `switch_target_for` 가 그 축을 절대 반환하지 않으므로(sentinel 파싱 실패) 규칙 기반과 다른 별도 경로를 탄다. `input/shortcuts/numeric.rs` 가 축별 modifier 를 직접 확인해 개별 지정이면 그 축의 다음/이전 raw 값(=완전 콤보)과 슬롯 배열을 `matches_binding` 으로 순회 매칭한다(next/prev 우선순위는 규칙 기반과 동일).
 - **switch-number 오버레이 소멸은 의도된 부작용** — 개별 지정 축은 `switch_target_for` 가 그 축을 절대 반환하지 않으므로 탭바/사이드바 숫자 키캡 오버레이가 자동으로 안 뜬다. 슬롯마다 콤보가 달라 통일된 숫자 힌트를 그릴 근거가 없기 때문.
 - 프리셋(Tasty/Mac/Windows/Linux)은 항상 규칙 기반 값만 가지며 개별 지정으로 바뀌지 않는다.
 
 #### dispatch — 키 입력 → 전환
 
-실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. **개별 지정 축**은 규칙 기반 판정보다 먼저 검사한다(세 축 각각 modifier == sentinel 이면 그 축의 next/prev·슬롯을 `matches_binding` 으로 직접 매칭 — 위 "개별 지정 모드" 참조, 카테고리 축은 folders 게이트도 함께 적용). 규칙 기반 축은 `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt, option)` 로 판정한다 — 세 축 각각의 modifier 조합(`Combo::parse_modifiers`)과 현재 눌린 조합이 **정확히 일치**할 때만 그 축이 잡힌다(단일 토큰은 조합의 부분집합이라 그대로 동작, `ctrl` 단독 ≠ `ctrl+shift`). 정확 일치라 축이 서로 새지 않고 우선순위 로직이 없다. `alt` 는 `"alt"` 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그 외 항상 false)으로 플랫폼 정규화된 값을 받는다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
+실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다.
+**개별 지정 축**은 규칙 기반 판정보다 먼저 검사한다(세 축 각각 modifier == sentinel 이면 그 축의 next/prev·슬롯을 `matches_binding` 으로 직접 매칭 — 위 "개별 지정 모드" 참조, 카테고리 축은 folders 게이트도 함께 적용).
+규칙 기반 축은 `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt, option)` 로 판정한다 — 세 축 각각의 modifier 조합(`Combo::parse_modifiers`)과 현재 눌린 조합이 **정확히 일치**할 때만 그 대상을 선택한다(단일 토큰은 조합의 부분집합이라 그대로 동작, `ctrl` 단독 ≠ `ctrl+shift`).
+정확 일치라 다른 대상의 조합과 섞이지 않고 우선순위 로직이 없다.
+`alt` 는 `"alt"` 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그 외 항상 false)으로 플랫폼 정규화된 값을 받는다.
+대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다.
+매칭 결과:
 
 - 탭: next/prev → `next_tab_in_pane`/`prev_tab_in_pane`, 슬롯 index → `goto_tab_in_pane(index)`.
 - 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
@@ -131,7 +147,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 `rendering = "webview"` kind(`markdown`·`html`)는 host 의 wgpu 표면이 아니라 **OS 자식 창/뷰**
 위에 그려진다(X11 child window + WebKitGTK / WKWebView subview / child HWND + WebView2).
 그 자식이 키보드 입력을 받으면 winit 최상위 창은 `WindowEvent::KeyboardInput` 을 아예 받지
-못하므로, 아무 조치가 없으면 그 상태에서 사용자가 설정한 단축키가 통째로 죽는다. 그래서 세
+못하므로, 아무 조치가 없으면 그 상태에서 사용자가 설정한 단축키가 동작하지 않는다. 그래서 세
 백엔드가 native 키를 가로채 host 로 올린다([ADR-0029](../../adr/0029-webview-host-integration.md)).
 
 - **계약은 한 곳**: 백엔드는 자기 native 키 표현(GDK keyval / NSEvent
@@ -148,14 +164,14 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   콤보 목록만 받는다([ADR-0029](../../adr/0029-webview-host-integration.md)).
 - **plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다** — 스냅샷은
   활성 plugin 의 모든 명령을 담는 상위집합이다(키가 host 에 도착하는 시점의 모델 포커스를
-  브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 발화 자체가 불가능하므로 claim
+  브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 실행할 수 없으므로 claim
   하면 키가 페이지에도 host 에도 안 가고 사라진다 — `is_disabled` 로 거른다. 도달 이후의
   우선순위 판정은 winit 경로와 같은 `dispatch_plugin_shortcut_key` 가 그대로 한다 — 모델
   포커스가 어떤 plugin surface 에 있으면 그 plugin 의 명령만 후보다([key-mapping.md](../../design/policies/key-mapping.md)).
 - **페이지 예약 콤보 대조는 콤보 동등성으로 한다** — plugin 매니페스트는 raw 문자열
   (`"Ctrl+F"`)이라 사용자 설정(`"ctrl+f"`)과 대소문자·modifier 순서가 다를 수 있어, 실제
   매칭과 같은 파싱 경로(`shortcuts::bindings_equivalent`)로 정규화해 비교한다. 원시 문자열
-  비교면 표기만 다른 예약 콤보가 필터를 뚫어 페이지의 find/copy 가 죽는다.
+  비교면 표기만 다른 예약 콤보가 필터를 뚫어 페이지의 find/copy가 동작하지 않는다.
 - **스냅샷은 매 프레임 만들지 않는다** — `sync_webviews` 가 `KeybindingSettings` 값과 두
   epoch(`PluginCommandRegistry::revision()` / `PluginsConfig::shortcut_revision()`)를 직전
   스냅샷과 비교해 달라진 프레임에만 재생성한다. epoch 는 프로세스 전역 단조 증가
@@ -174,19 +190,19 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 - **auto-repeat 필터는 플랫폼이 갈린다** — macOS(`isARepeat`)·Windows(`WasKeyDown`)는 걸러
   내고, **Linux/GDK 는 걸러내지 않는다**(GTK `key-press-event` 에 repeat 플래그가 없고,
   press/release 를 직접 세는 대체 판정은 X 서버의 detectable auto-repeat 설정에 따라 정상
-  press 를 삼킬 수 있다). host 단축키는 전부 edge 동작이라 반복 발화가 무해하고, winit
+  press 를 삼킬 수 있다). host 단축키는 전부 edge 동작이라 반복 입력을 같은 방식으로 처리하고, winit
   터미널 경로도 repeat 를 걸러내지 않아 tasty 내 다른 경로와 일관된다.
 - **모델 포커스는 클릭에만 따라간다** — 백엔드가 native 클릭/포커스 획득을 통지하면 host 가
   `focused_pane`/`focused_surface` 를 맞춘다. 키 도착은 근거로 쓰지 않는다(X11 은 포인터가
   자식 창 위이기만 해도 키를 넣으므로, 키를 근거로 삼으면 focus-follows-mouse 가 된다).
 - **overlay 개폐**: egui overlay 가 열려 webview 를 숨길 때 키보드 포커스를 host 창으로
-  회수한다(숨김과 포커스 해제는 세 OS 모두 별개). 닫힐 때 자동 복원은 하지 않는다.
+  돌린다(숨김과 포커스 해제는 세 OS 모두 별개). 닫힐 때 자동 복원은 하지 않는다.
   회수는 **창이 활성(`base.focused`)이고, 포커스가 실제로 그 webview 자식 안에 있을 때만**
   한다 — overlay 는 IPC 로도 열리므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
   포커스를 빼앗는다(불가침 원칙 1).
 - **폴링 tick 은 Linux 에서만 세워진다.** GDK 는 winit 과 다른 X 연결로 이벤트를 받아
   루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성인 동안만 16ms tick 으로 GTK 를
-  펌프한다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발화해 폴링이
+  펌프한다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발생해 폴링이
   필요 없다. **이 한정은 조건부 컴파일이 아니라 런타임 arm 분기다** — `Tick::WebviewKeyPoll`
   과 `WEBVIEW_KEY_POLL_INTERVAL`(`src/app/timers.rs`)은 `#[cfg(feature = "gui")]` 로만 게이트돼
   세 OS 모두 컴파일되고 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다), `reschedule_webview_key_poll` 의
@@ -221,17 +237,9 @@ Escape 는 순서대로 세 가지를 본다.
 3. **포커스된 host popup 이 있으면 푼다** — 포커스를 놓고, `close_on_outside_click` 인
    popup 만 닫는다.
 
-셋째는 새 정책이 아니라 **바깥 클릭에 이미 있던 의미의 두 번째 입구**다. 바깥을 클릭하면
-non-sticky popup 의 포커스가 풀리고 `close_on_outside_click` 인 것은 닫히는데, 그 길이
-마우스에만 있었다. 그래서 키보드만 쓰면 포커스된 popup 을 푸는 수단이 없었다.
-
-범위는 바깥 클릭보다 좁다 — **포커스된 하나만** 본다. 바깥 클릭은 좌표를 가지므로 "그 점을
-안 담은 popup 전부" 를 가리킬 수 있지만 Escape 에는 좌표가 없다. 좌표 없는 키를 같은 범위로
-쓰면 사용자가 가리킨 적 없는 popup 까지 닫힌다. 열려 있어도 **포커스가 없는** popup 은 그대로
-남는다.
-
-앞의 둘이 먼저인 이유: 그 둘은 포커스와 무관하게 **열려만 있으면** 먹는다. 셋째를 앞으로
-올리면 설정 창이 떠 있는 채로 다른 popup 이 포커스를 가질 때 Escape 가 설정을 안 닫는다.
+Escape는 포커스된 popup 하나에만 바깥 클릭과 같은 처리를 적용한다. 포커스 없는 popup은
+그대로 남긴다. 좌표가 있는 바깥 클릭과 달리 여러 popup을 대상으로 삼을 근거가 없기 때문이다.
+설정 창과 알림 패널을 먼저 확인하므로 다른 popup에 포커스가 있어도 이 두 화면부터 닫힌다.
 
 ### 편집 — 녹화 + 충돌
 
@@ -334,18 +342,36 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식-번들--구성-전량을-파일-한-장으로)을 파일로 쓰고 읽는 화면이다(`src/view/settings/ui/keybindings_tab/import_export.rs`, 행 모델 `import_export/model.rs` — 디자인 `kb_import_export.jsx`). L2 목록 **맨 끝**에 있고 위에 separator 가 붙는다(필터 검색 중에는 separator 를 숨긴다). Preset 과 같은 **full-bleed drill-down** 이다.
 
 - **진입 화면** — 안내문 + 행 둘: **Export**(secondary) · **Import**(primary).
-- **내보내기** — 설정 창의 로컬 파일 선택([native-file-picker](../native-file-picker/index.md#설정-창에서의-로컬-전용-재사용))을 저장 모드로 연다. 기본 파일명 `tasty-keybindings-<YYYY-MM-DD>.toml`, `.toml` 필터. 내보내는 원본은 **현재 draft**(저장 전 편집 포함)와 `plugins.toml` 의 override 전량(`PluginsConfig::shortcut_overrides`)이다. 쓰기에 성공하면 설정 창 자체 toast(Success)가 경로를 보여 준다. 쓰기에 실패하면 **Export 행 안**에 danger 알림 블록(경로 · 이유 · "Nothing was written.")이 뜨고 **Try again**(같은 경로로 다시 쓰기) · **Choose another location…**(블록을 닫고 저장 선택기를 다시 연다)을 싣는다. 블록이 떠 있는 동안 행의 **Export…** 버튼은 꺼진다 — 재시도 입구가 둘이 되지 않게. 실패는 toast 가 아니다: toast 는 저절로 사라지고 재시도를 못 싣는다. 이유 구절은 **고정 집합 넷**이다 — 읽기 전용 파일시스템(`ie_export_failure_read_only`) · 권한 없음(`_denied`) · 볼륨이 참(`_disk_full`) · 나머지를 접는 catch-all(`_unknown`, "the write didn't finish."). 집합이 고정인 이유는 그 구절이 세 언어에서 같은 문장으로 읽혀야 하기 때문이고, 그래서 **OS 가 낸 문장은 문장 안에 들어가지 않는다** — catch-all 갈래에서만 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip)로 따라붙는다. "볼륨이 참" 은 `io::ErrorKind::StorageFull` 이 아직 nightly 라 raw OS 코드로 본다(`db::disk_full_os_error`, db 초기화 쪽과 같은 상수). 로그(`tracing::error!`)도 함께 남는다.
+- **내보내기** — 설정 창의 로컬 파일 선택([native-file-picker](../native-file-picker/index.md#설정-창에서의-로컬-전용-재사용))을 저장 모드로 연다.
+  기본 파일명 `tasty-keybindings-<YYYY-MM-DD>.toml`, `.toml` 필터.
+  내보내는 원본은 **현재 draft**(저장 전 편집 포함)와 `plugins.toml` 의 override 전량(`PluginsConfig::shortcut_overrides`)이다.
+  쓰기에 성공하면 설정 창 자체 toast(Success)가 경로를 보여 준다.
+  쓰기에 실패하면 **Export 행 안**에 danger 알림 블록(경로 · 이유 · "Nothing was written.")이 뜨고 **Try again**(같은 경로로 다시 쓰기) · **Choose another location…**(블록을 닫고 저장 선택기를 다시 연다)을 싣는다.
+  블록이 떠 있는 동안 행의 **Export…** 버튼은 꺼진다 — 재시도 입구가 둘이 되지 않게.
+  실패는 toast 가 아니다: toast 는 저절로 사라지고 재시도를 못 싣는다.
+  이유 구절은 **고정 집합 넷**이다 — 읽기 전용 파일시스템(`ie_export_failure_read_only`) · 권한 없음(`_denied`) · 볼륨이 참(`_disk_full`) · 나머지를 접는 catch-all(`_unknown`, "the write didn't finish.").
+  집합이 고정인 이유는 그 구절이 세 언어에서 같은 문장으로 읽혀야 하기 때문이고, 그래서 **OS 가 낸 문장은 문장 안에 들어가지 않는다** — catch-all 갈래에서만 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip)로 따라붙는다.
+  "볼륨이 참" 은 `io::ErrorKind::StorageFull` 이 아직 nightly 라 raw OS 코드로 본다(`db::disk_full_os_error`, db 초기화 쪽과 같은 상수).
+  로그(`tracing::error!`)도 함께 남는다.
 - **가져오기** — 같은 선택기를 열기 모드로 열어 고른 파일을 `decode` 한다(`DecodeEnv` = 이 환경에 설치된 plugin id · 스크립트 레지스트리). 성공하면 detail 로 들어간다.
   - **파싱 실패**(`Toml`·`NotABundle`) — detail 에 danger 인라인 블록(파일 이름 · TOML span 에서 계산한 줄 번호)과 "다른 파일 고르기" 가 뜨고 back bar 액션은 숨는다. 줄 번호를 못 얻으면 줄 구절을 빼지 않고 "the file isn't TOML." 로 **바꾼다** — 가운데 문장은 언제나 이유를 말하고 앞뒤 문장은 두 형태에서 같다.
   - **버린 plugin override**(`DroppedUninstalledPlugin`) — 경고가 아니라 muted 정보 줄 하나(개수 · plugin id 목록).
-  - **번들 경고** — 경고 톤 알림 블록 **하나**에 한 줄씩 쌓고 헤더에 개수를 단다. 개수가 **하나면 단수형**이다 — 헤더(`ie_notices_count_one`)도, 모르는 액션 줄(`ie_notice_unknown_actions_one`)도. 굴절하는 것은 영어뿐이지만 키는 세 언어에 다 있다: 한 자리가 언어마다 다른 갈래를 타면 문구가 갈린다. 순서는 원문 순서가 아니라 고정이다: 새 스키마(`NewerVersion`) → 모르는 액션(`UnknownKeybindingField`, 몇 개든 한 줄에 이름 목록) → 빈 그룹. 세 줄까지 보이고 나머지는 **Show {n} more** 뒤로 접힌다(`import_export/bundle_notices.rs`). 줄이 하나면 접을 것이 없어 그 링크가 서지 않는다. 정보 줄은 이 블록에 들어가지 않는다 — 정렬 키가 주제가 아니라 톤이다. 화면 문구가 정해지지 않은 경고(`UnknownTopLevelKey` · `KeybindingFieldShapeMismatch` · `KeybindingsUnreadable` · `UnreadablePluginOverride` · `PluginOverridesUnreadable` · `DroppedUnknownScriptBinding`)는 로그(`tracing::warn!`)로만 남는다. "빈 그룹" 줄은 디자인 문구가 있지만 그것을 내는 경고가 코덱에 없다.
+  - **번들 경고** — 경고 톤 알림 블록 **하나**에 한 줄씩 쌓고 헤더에 개수를 단다.
+    개수가 **하나면 단수형**이다 — 헤더(`ie_notices_count_one`)도, 모르는 액션 줄(`ie_notice_unknown_actions_one`)도.
+    굴절하는 것은 영어뿐이지만 키는 세 언어에 다 있다: 한 자리가 언어마다 다른 처리를 따르면 문구가 달라진다.
+    순서는 원문 순서가 아니라 고정이다: 새 스키마(`NewerVersion`) → 모르는 액션(`UnknownKeybindingField`, 몇 개든 한 줄에 이름 목록) → 빈 그룹.
+    세 줄까지 보이고 나머지는 **Show {n} more** 뒤로 접힌다(`import_export/bundle_notices.rs`).
+    줄이 하나면 접을 것이 없어 그 링크를 표시하지 않는다.
+    정보 줄은 이 블록에 들어가지 않는다 — 정렬 키가 주제가 아니라 톤이다.
+    화면 문구가 정해지지 않은 경고(`UnknownTopLevelKey` · `KeybindingFieldShapeMismatch` · `KeybindingsUnreadable` · `UnreadablePluginOverride` · `PluginOverridesUnreadable` · `DroppedUnknownScriptBinding`)는 로그(`tracing::warn!`)로만 남는다.
+    "빈 그룹" 줄은 디자인 문구가 있지만 그것을 내는 경고가 코덱에 없다.
 - **diff 표** — 선두 **선택 열** + Action / Current / Imported. 행은 네 그룹이고 그룹마다 **헤더 행**(그룹 전체 선택 · 접기 chevron · 그룹명 · `N changed · M total`)이 붙는다.
   - **General** — 일반 콤보 필드 하나가 한 행(콤보 목록 전체).
   - **Quick switch** — 축(tab · workspace · category) 하나가 한 행. modifier · 슬롯 전부 · 다음/이전을 함께 옮긴다 — 슬롯은 raw 키라 modifier 와 떨어지면 뜻이 바뀐다.
   - **Scripts** — 현재와 번들의 **합집합**. 번들에 없는 현재 바인딩은 적용하면 사라지는 행으로 보인다.
   - **Plugin overrides** — **번들에 있는 명령만**. 이 환경에만 있는 override 는 표에 오르지 않고 바뀌지도 않는다.
   - 기본은 변경된 행만 보인다(back bar 의 **Show all {n}** / **Changed only** 토글). 선택은 해제한 행을 기억하는 방식이라 처음에는 모든 행이 선택돼 있다 — 변경 없는 행은 적용해도 값이 같다.
-- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)이 먼저 선다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
+- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 

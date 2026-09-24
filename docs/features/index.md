@@ -1,6 +1,9 @@
 # 기능 (Features)
 
-각 기능은 폴더 하나다 — `features/<f>/index.md`(기획, 내부 동작 · 1순위)와 화면(투영 · 0..N). 화면은 기획문서의 `## 화면` 절이 기본이고, 화면이 둘 이상이거나 자기 규칙을 가지면 `screens/<s>.md` 파일이다(기준은 documentation-model §3). 모델·작성 규칙은 [documentation-model.md](../documentation-model.md), 작성 전 [identity.md](../identity.md) 필독.
+기능별 폴더의 `index.md`에 목적과 내부 동작을 설명한다. 화면 설명은 그 문서의 `## 화면`
+절에 두고, 화면이 여럿이거나 별도 규칙이 필요하면 `screens/<s>.md`로 나눈다.
+작성 규칙은 [documentation-model.md](../documentation-model.md), 제품 원칙은
+[identity.md](../identity.md)를 따른다.
 
 양식: [`_feature.template.md`](_feature.template.md) (기획) · [`_screen.template.md`](_screen.template.md) (화면). 새 기능은 양식을 복사해 채운다.
 
@@ -40,7 +43,7 @@
 | [lua-hooks](lua-hooks/index.md) — Lua 스크립트(등록 + 단축키/이벤트 자동실행 트리거, host API) | 로컬 사용자 | [ADR-0027](../adr/0027-lua-and-hook-execution.md) |
 | [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | [DAG 그래프 surface](agent-collaboration/screens/dag-graph-surface.md) · [DAG 목록 popup](agent-collaboration/screens/dag-list-popup.md) |
 | [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
-| [headless-pty](headless-pty/index.md) — Surface 없는 PTY primitive (`tasty pty`, exit-code·승격) | AI Agent | 없음 (headless) |
+| [headless-pty](headless-pty/index.md) — Surface 없는 PTY (`tasty pty`, exit-code·승격) | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |
 | [telemetry](telemetry/index.md) — 텔레메트리 (IPC 진입 단일 관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |

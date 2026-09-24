@@ -22,7 +22,7 @@
 
 ### 슬롯 파일
 
-레이아웃은 `~/.tasty/layouts/NN.json` 슬롯 파일 하나 = engine(=창) 하나의 전체 상태다(워크스페이스 목록 · 활성 워크스페이스 · 카테고리). 슬롯 목록과 순서는 파일명의 숫자에서 전부 파생되며 별도 인덱스 파일을 두지 않는다 — 인덱스는 실제 파일과 desync 되는 두 번째 진실원이 된다. 번호는 2자리 zero-pad(`01.json`)이고 100 이상은 자연 확장된다.
+레이아웃은 `~/.tasty/layouts/NN.json` 슬롯 파일 하나 = engine(=창) 하나의 전체 상태다(워크스페이스 목록 · 활성 워크스페이스 · 카테고리). 슬롯 목록과 순서는 파일명의 숫자에서 전부 파생되며 별도 인덱스 파일을 두지 않는다 — 별도 인덱스는 실제 파일 목록과 어긋날 수 있다. 번호는 2자리 zero-pad(`01.json`)이고 100 이상은 자연 확장된다.
 
 write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬롯이 여러 개이므로 잘린 JSON 하나가 아래 scrollback 정리를 통해 다른 슬롯의 `.bin` 까지 잃게 만들 수 있다.
 
@@ -32,7 +32,7 @@ write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬�
 
 ### 읽지 못한 슬롯
 
-**"슬롯이 없다" 와 "슬롯을 못 읽었다" 는 다르게 다룬다.** 둘을 같은 값으로 뭉개면 권한 오류나
+**"슬롯이 없다" 와 "슬롯을 못 읽었다" 는 다르게 다룬다.** 둘을 같게 처리하면 권한 오류나
 손상된 JSON 이 "이 슬롯을 쓴 적 없음" 과 같아지고, 그 창이 이어서 자기 상태를 같은 슬롯에 저장해
 사용자의 창 구성을 대체한다.
 
@@ -50,7 +50,7 @@ write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬�
 사건을 모르는 상태가 된다.
 
 읽기 자체가 실패한 파일은 내용을 확인하지 못한 것이므로 옮기지 않는다 — 일시적 오류에 사용자
-레이아웃이 자리를 뜨면 안 된다. 미래 version 슬롯을 백업하지 않는 이유도 같다: 파일은 멀쩡하고
+레이아웃 파일의 위치까지 바뀌어서는 안 된다. 미래 version 슬롯을 백업하지 않는 이유도 같다: 파일은 멀쩡하고
 새 버전이 읽을 수 있으므로, 구버전으로 한 번 켰다고 신버전의 레이아웃이 사라지면 안 된다.
 
 백업 파일명은 `NN.json.bak` 이고 이미 있으면 `NN.json.bak.2` … `NN.json.bak.9` 로 늘어난다.
@@ -108,13 +108,20 @@ headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는�
 
 ### Plugin surface 복원 (hello 창)
 
-markdown·image 같은 **plugin surface** 는 호스트가 plugin 프로세스를 spawn 한 뒤 그 plugin 이 `hello` 를 보내 자기 kind 를 등록하기까지 짧은 창이 있다(부팅 부하에 따라 흔들린다). 레이아웃 복원이 이 창에 걸려 kind 가 아직 없으면, 그 surface 를 **kind/snapshot 을 보존한 placeholder 로** 복원한다 — 그 자리를 그냥 버리면 같은 pane 의 형제 tab(무고한 터미널 포함)과 상위 형제 pane 까지 함께 사라지기 때문이다. 화면에 표시될 때마다 도는 reify 가 kind 등록을 확인해 placeholder 를 실제 surface 로 채운다.
+markdown·image 같은 **plugin surface** 는 호스트가 plugin 프로세스를 spawn 한 뒤 그 plugin 이 `hello` 를 보내 자기 kind 를 등록하기까지 짧은 창이 있다(부팅 부하에 따라 흔들린다). 레이아웃 복원이 이 창에 걸려 kind 가 아직 없으면, 그 surface 를 **kind/snapshot 을 보존한 placeholder 로** 복원한다 — 그 자리를 그냥 버리면 같은 pane 의 형제 tab(다른 터미널 포함)과 상위 형제 pane 까지 함께 사라지기 때문이다. 화면에 표시될 때마다 도는 reify 가 kind 등록을 확인해 placeholder 를 실제 surface 로 채운다.
 
-plugin 이 끝내 뜨지 않으면(프로세스가 죽었거나 매니페스트에서 그 kind 가 사라진 경우) placeholder 가 **그대로 남는다 — 의도된 동작이다.** 이 상태는 두 얼굴을 갖는다: 사용자에게는 빈 자리로 보이고, 에이전트에게는 surface tree(`tasty list tree`)에서 원래 kind + `ready: false` + `pending_reason: "plugin_not_loaded"` 로 보인다. "있다" 와 "쓸 수 있다" 를 응답에서 가른 것이라 — 한쪽(빈 탭 표시 또는 `ready` 플래그)만 손대면 둘이 어긋난다. 상태를 바꿀 때는 두 얼굴을 함께 본다.
+plugin이 시작하지 못하거나 해당 kind를 더 이상 제공하지 않으면 placeholder를 유지한다.
+화면에는 빈 자리로 보이고, `tasty list tree`에는 원래 kind와 `ready: false`,
+`pending_reason: "plugin_not_loaded"`가 표시된다. surface가 존재하는 것과 사용할 준비가
+된 것을 구분하며, 화면과 API를 수정할 때 이 의미가 일치하도록 유지한다.
 
 ### TUI 세션 복원 (`restore.command`)
 
-claude plugin 등이 `tasty claude install` 로 SessionStart/End hook 을 걸면 세션 시작 시 `restore.command`(예: `claude -r <session-id>`)를 surface-meta 에 set. 호스트는 **agent-agnostic** 하게 `restore.command` 값만 읽어 복원에 쓴다 — 그 문자열이 무엇을 싣는지는 전적으로 plugin 소관이다. 예컨대 claude plugin 은 세션 프로필이 부착돼 있으면 `claude -r <id> --settings "<프로필 경로>"` 형태로 써서 **복원된 프로세스에도 프로필이 그대로 붙게** 한다([claude plugin](../../plugins/claude/index.md) "복원을 건너 프로필이 유지되는 방식") — 복원이 발급하는 새 surface id 때문에 surface meta 는 복원을 넘지 못하므로, 프로필을 실어 나르는 유일한 통로가 이 문자열이다. 명령 주입 타이밍은 PTY spawn 그 순간 — `TerminalConfig.initial_input` 으로 writer thread 시작 전 master fd 에 동기 write, child shell 의 첫 stdin read 에 무조건 첫 입력으로 들어감(추가 트리거 없이 spawn 과 동시 실행). 발동 경로 둘: 앱 재시작(레이아웃 복원) · [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T).
+claude plugin 등이 `tasty claude install` 로 SessionStart/End hook 을 걸면 세션 시작 시 `restore.command`(예: `claude -r <session-id>`)를 surface-meta 에 set.
+호스트는 에이전트 종류와 무관하게 `restore.command` 값만 읽어 복원에 쓴다 — 명령 내용은 plugin이 정한다.
+예컨대 claude plugin 은 세션 프로필이 부착돼 있으면 `claude -r <id> --settings "<프로필 경로>"` 형태로 써서 **복원된 프로세스에도 프로필이 그대로 붙게** 한다([claude plugin](../../plugins/claude/index.md) "복원을 건너 프로필이 유지되는 방식") — 복원이 발급하는 새 surface id 때문에 surface meta 는 복원을 넘지 못하므로, 프로필을 실어 나르는 유일한 통로가 이 문자열이다.
+명령 주입 타이밍은 PTY spawn 그 순간 — `TerminalConfig.initial_input` 으로 writer thread 시작 전 master fd 에 동기 write, child shell 의 첫 stdin read 에 무조건 첫 입력으로 들어감(추가 트리거 없이 spawn 과 동시 실행).
+발동 경로 둘: 앱 재시작(레이아웃 복원) · [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T).
 
 ## 저장하지 않는 것
 

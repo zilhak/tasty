@@ -8,7 +8,7 @@
 
 ## 목적
 
-사용자가 Lua 스크립트를 **등록**하고 **단축키에 연결**하거나 **lifecycle 이벤트 트리거에 바인딩(자동실행)**해 실행한다. 스크립트는 tasty 를 **열거된 고정 호스트 API 로만** 조작하며(첫 API `tasty.tree()`), 전용 워커 스레드에서 격리 실행된다. 부팅 시 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 명시 트리거로만 실행된다.
+사용자가 Lua 스크립트를 **등록**하고 **단축키에 연결**하거나 **lifecycle 이벤트 트리거에 바인딩(자동실행)**해 실행한다. 스크립트는 tasty 를 **열거된 고정 호스트 API 로만** 조작하며(첫 API `tasty.tree()`), 전용 워커 스레드에서 격리 실행된다. 부팅 시 `init.lua`를 자동으로 읽지 않는다 — 스크립트는 명시 트리거로만 실행된다.
 
 > **경계 = 호스트 API.** Lua 는 tasty 내부 state 에 직접 접근할 수 없다. 읽기는 메인이 발행한 스냅샷, 쓰기는 메인 커맨드 큐를 경유한다. 이벤트 hook `tasty.on` 콜백은 **observe-only** — 호스트 흐름을 바꿀 수 없다(plugin Event Bus([reference/event-catalog](../../reference/event-catalog.md))와 별개 경로).
 
@@ -40,22 +40,22 @@ Lua5.4의 instruction-count hook이 기한을 확인해 초과 job을 오류로 
 
 ### 무결성 (TOFU)
 
-등록 시 엔트리 파일의 SHA256 을 기록한다. 매 발화(단축키·자동실행)마다 현재 파일 해시와 비교한다:
+등록 시 엔트리 파일의 SHA256 을 기록한다. 실행(단축키·자동실행)할 때마다 현재 파일 해시와 비교한다:
 
 - **단축키(수동)**: 불일치 시 실행 전 **확인 popup**(승인 시 해시 갱신 후 실행). 사용자가 계기이므로 popup 이 정당.
-- **자동실행**: 불일치 시 **실행 차단 + `tracing::warn`** — 관리 창의 changed 배지로 확인하고 재승인해야 한다. 사용자 개입 없이 발화하므로 popup/배너를 띄우지 않고, 해시도 자동 갱신하지 않는다(자동 승인은 TOFU 무의미).
+- **자동실행**: 불일치 시 **실행 차단 + `tracing::warn`** — 관리 창의 changed 배지로 확인하고 재승인해야 한다. 사용자 개입 없이 발생하므로 popup/배너를 띄우지 않고, 해시도 자동 갱신하지 않는다(자동 승인은 TOFU 무의미).
 
-transitive `require` 의존 파일은 커버하지 않는다.
+`require`로 간접 로드하는 파일의 해시는 확인하지 않는다.
 
 ### 호스트 API
 
-`tasty.on(event, cb)` · `tasty.log/warn(msg)`(tracing) · `tasty.run_cli(args)`(메인 커맨드 큐 경유 detached spawn) · `tasty.tree()`(워크스페이스 트리 read, 스냅샷 경유). 표면은 열거된 것만 — 필요한 CRUD 마다 명시 등록으로 늘린다.
+`tasty.on(event, cb)` · `tasty.log/warn(msg)`(tracing) · `tasty.run_cli(args)`(메인 커맨드 큐 경유 detached spawn) · `tasty.tree()`(워크스페이스 트리 read, 스냅샷 경유). API는 열거된 것만 — 필요한 CRUD 마다 명시 등록으로 늘린다.
 
 ### 이벤트 hook
 
-`tasty.on` / `fire` 배관은 유지되며 observe-only 다. 발화 이벤트: `tasty.startup.post` + window/workspace/tab/pane/surface 의 `create.post`/`delete.post` + workspace·tab 의 `change.post`. payload 스키마는 `crates/tasty-lua/meta/tasty.lua`(EmmyLua stub)가 정답.
+`tasty.on` / `fire`는 이벤트 관찰용이다. 발생 이벤트: `tasty.startup.post` + window/workspace/tab/pane/surface 의 `create.post`/`delete.post` + workspace·tab 의 `change.post`. payload 스키마는 `crates/tasty-lua/meta/tasty.lua`(EmmyLua stub)를 따른다.
 
-> `change` 이벤트는 **사용자가 GUI 다이얼로그로 직접 바꾼 경우만** 발화한다 — IPC/CLI rename 은 발화 안 함. 부팅 자동로드가 폐기돼 hook 을 부팅에 자동 등록하는 경로는 없다. 이벤트-트리거 **자동실행**은 이 observe-hook 과 직교하는 별도 채널이다 — 콜백을 깨우는 게 아니라 같은 fire 지점에서 등록 목록의 바인딩 스크립트를 실행한다.
+> `change` 이벤트는 **사용자가 GUI 다이얼로그로 직접 바꾼 경우만** 발생한다 — IPC/CLI rename 은 발생 안 함. hook을 부팅에 자동 등록하지 않는다. 이벤트-트리거 **자동실행**은 이 콜백과 별개다 — 콜백을 깨우는 게 아니라 같은 fire 지점에서 등록 목록의 바인딩 스크립트를 실행한다.
 
 ## 인터페이스
 
@@ -63,23 +63,18 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 ## 설계 경계
 
-사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0027](../../adr/0027-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 발화 site · payload](#구현--발화-site--payload).
+사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0027](../../adr/0027-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 이벤트 발생 위치와 payload](#구현--발화-site--payload).
 
 <a id="위치-결정-adr-0031"></a>
 
 ### 실행 모델
 
-| 항목 | 결정 |
-|------|------|
-| 사용 주체 | **호스트 전용.** plugin 은 Lua 미사용 |
-| 등록·트리거 | 설정에 스크립트를 **등록**하고(SHA256 TOFU) **단축키 또는 이벤트 트리거(자동실행)로 실행**. 부팅 시 `~/.tasty/init.lua` 자동로드는 폐기 — 자동실행도 임의 로드가 아니라 등록 목록의 명시 트리거에서 배선. `require` 이름은 남지만 `package.searchers`·native 로더 제거로 일반 모듈 검색 제한 |
-| tasty 접근 | **열거된 고정 호스트 API 표면으로만.** state 직접 접근 불가, CRUD 전부 API. 첫 API 는 트리 조회 `tasty.tree()`(read) |
-| 실행 격리 | **전용 워커 스레드.** 읽기=메인 발행 스냅샷, 쓰기=메인 커맨드 큐. 무한 루프/시간 초과는 instruction-count deadline 훅으로 abort |
-| 무결성 | 등록 시 SHA256 기록 → **TOFU**. 수동 발화(단축키) 변경 시 확인 popup, 자동(이벤트) 발화 변경 시 **실행 차단 + `tracing::warn` + 관리창(Misc›Scripts) changed 배지**. 자동 경로는 popup/배너를 쓰지 않는다 — 발화에 사용자 계기가 없고, 배너는 사용자 직접 조작에서만 발사된다는 발화 정책과 충돌하기 때문. 해시 자동 갱신 금지(자동 승인은 TOFU 무의미) |
-| 권한 | 콜백 반환값은 이벤트를 취소·변형하지 않는다. 명시 호스트 API 호출은 별도 기능이다 |
-| 샌드박스 | OS 격리 없음. `io`/`os.execute`는 유지한다. 메모리·VM 실행 제한과 위험한 로더 제거는 호스트 안정성을 위한 조치다 |
+호스트만 Lua를 사용한다. plugin은 별도 OS 프로세스로 실행되며 Lua API를 제공하지 않는다.
+plugin에서 사용자 스크립트를 지원하려면 이 경계를 별도로 검토해야 한다(ADR-0025).
 
-> plugin 은 별 OS 프로세스로 격리돼 Rust 로 충분하므로 Lua 통로를 의도적으로 막았다. plugin 측 user-scripting 이 필요해지면 별도 채널을 새로 만든다(ADR-0025 와 함께 재검토).
+실행·무결성·메모리 제한은 위 [실행 격리](#실행-격리--안전-장치)와 [TOFU](#무결성-tofu)를
+따른다. 콜백 반환값으로 이벤트를 취소하거나 내용을 바꿀 수는 없다. 변경 작업은 명시적인
+호스트 API를 호출해야 한다. OS 접근은 격리하지 않으며 `io`와 `os.execute`를 허용한다.
 
 ### 이벤트 매트릭스 — post-only
 
@@ -96,7 +91,7 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 #### `change` = 사용자 직접 변경만
 
-`change.post` 는 **사용자가 GUI 다이얼로그로 직접 바꾼 경우에만** 발화. IPC/CLI rename 은 plugin 버스 이벤트(`workspace.renamed` 등)로는 가지만 Lua hook 으론 안 간다 — 자동화로 인한 변경까지 받으면 Slack 등에 중복 알림. 구현은 `PendingHostEvent` 의 `user_direct: bool`(GUI dialog=true, IPC handler=false)로 구분.
+`change.post` 는 **사용자가 GUI 다이얼로그로 직접 바꾼 경우에만** 발생. IPC/CLI rename 은 plugin 버스 이벤트(`workspace.renamed` 등)로는 가지만 Lua hook 으론 안 간다 — 자동화로 인한 변경까지 받으면 Slack 등에 중복 알림. 구현은 `PendingHostEvent` 의 `user_direct: bool`(GUI dialog=true, IPC handler=false)로 구분.
 
 ### 왜 post-only
 
@@ -104,23 +99,26 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 ### 콜백 모델
 
-`tasty.on(event, cb)`(동일 event 다중 등록, 순서대로). 인자는 단일 table(payload). 콜백 에러는 `tracing::warn!` 기록 후 다음 콜백 계속(한 ill-behaved hook 이 전체 dispatch 막지 않음). 리턴값 무시(observe-only). 호스트 API 표면(현재): `tasty.on`/`log`/`warn`/`run_cli`(커맨드 큐 경유)/`tree`(read).
+`tasty.on(event, cb)`(동일 event 다중 등록, 순서대로). 인자는 단일 table(payload). 콜백 에러는 `tracing::warn!` 기록 후 다음 콜백 계속(한 콜백의 오류가 다른 콜백을 막지 않음). 리턴값 무시(observe-only). 호스트 API 목록(현재): `tasty.on`/`log`/`warn`/`run_cli`(커맨드 큐 경유)/`tree`(read).
 
-이벤트 hook `fire`/`tasty.on` 배관은 유지되지만, 부팅 자동로드(init.lua)가 폐기되어 **hook 을 부팅에 자동 등록하는 경로는 없다.** 이벤트-트리거 **자동실행은 별도(직교) 채널로 구현되어 있다** — 콜백을 깨우는 것이 아니라, 등록 목록(`ScriptEntry.triggers`)에 바인딩된 스크립트 **소스를 트리거 발화 시 TOFU 재검 후 실행**한다(ADR-0027 의 "등록 목록에서 배선" 요구 충족).
+이벤트 자동실행은 콜백 등록과 별개다. `ScriptEntry.triggers`에 연결한 스크립트 소스를
+이벤트가 발생할 때 읽고 해시를 다시 확인한 뒤 실행한다.
 
 ### 자동실행 (autofire)
 
 - **트리거**: host 가 실제 fire 하는 lifecycle 이벤트 13 종 화이트리스트(`AUTO_TRIGGER_EVENTS`, `crates/tasty-settings/src/scripts.rs`)만 등록 가능. 저장은 `ScriptEntry.triggers`(단축키 combo 는 계속 `KeybindingSettings` 소유 — 이벤트 트리거는 combo 충돌 개념이 없어 scripts 소유).
 - **identity 정합**: 자동실행은 사용자가 config 에 직접 바인딩한 "사용자 설정 행동" — 에이전트 행동이 아니므로 release 에 존재한다(단축키 트리거와 동일 논리). 트리거 바인딩을 조작하는 IPC API 는 만들지 않는다(설정 UI/config 경유만).
-- **cascade 방어**: 자동실행 스크립트가 `run_cli` 로 자기 트리거 대상을 만들면 재발화 연쇄가 생긴다. per-job deadline 은 1 회 실행만 보므로, **재진입 가드**(`AutofireGuard`, `src/host_api/hooks/autofire.rs`)가 in-flight + 완료 직후 1 프레임 동안 신규 자동실행을 전역 억제해 연쇄를 유한하게 끊는다. origin(user/agent) 게이트는 미배선 — create 계열 이벤트에 origin 판별자가 없어(아래 [이벤트 ↔ 발화 site](#이벤트--발화-site)) 게이트에 의존할 수 없다.
+- **cascade 방어**: 자동실행 스크립트가 `run_cli` 로 자기 트리거 대상을 만들면 재발생 연쇄가 생긴다. per-job deadline 은 1 회 실행만 보므로, **재진입 가드**(`AutofireGuard`, `src/host_api/hooks/autofire.rs`)가 in-flight + 완료 직후 1 프레임 동안 신규 자동실행을 전역 억제해 연쇄를 유한하게 끊는다. origin(user/agent) 필터는 사용하지 않는다 — create 계열 이벤트에 origin 판별자가 없어(아래 [이벤트 발생 위치](#이벤트--발화-site)) 게이트에 의존할 수 없다.
 
 ### 향후 확장
 
-`pre.*`(intervention 권한 도입 시) · `tasty.shutdown.post`(shutdown fire 인프라) · surface `change.post`(GUI 타입 변경 경로 추가 시) · 호스트 API 표면 확대(mutation CRUD) · plugin Lua(미계획).
+`pre.*`(intervention 권한 도입 시) · `tasty.shutdown.post`(shutdown fire 인프라) · surface `change.post`(GUI 타입 변경 경로 추가 시) · 호스트 API 목록 확대(mutation CRUD) · plugin Lua(미계획).
 
-## 구현 — 발화 site · payload
+<a id="구현--발화-site--payload"></a>
 
-호스트가 Lua hook 을 발화하는 코드 경로와 wire payload 스키마. 사용자 동작은 위 [내부 동작](#내부-동작), 설계 배경(observe-only)은 위 [설계 경계](#설계-경계).
+## 구현 — 이벤트 발생 위치와 payload
+
+호스트가 Lua hook을 발생시키는 코드 경로와 wire payload 스키마. 사용자 동작은 위 [내부 동작](#내부-동작), 설계 배경(observe-only)은 위 [설계 경계](#설계-경계).
 
 ### 구성
 
@@ -133,9 +131,9 @@ crates/tasty-lua/
   meta/tasty.lua   # EmmyLua stub (LuaLS 용)
 ```
 
-`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0027). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
+`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다. 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
 
-이벤트 발화는 `hooks::lua::fire` 헬퍼 한 곳을 거친다(`src/host_api/hooks/lua.rs`):
+이벤트 발생은 `hooks::lua::fire` 헬퍼 한 곳을 거친다(`src/host_api/hooks/lua.rs`):
 
 ```rust
 fn fire<T: Serialize>(
@@ -146,19 +144,23 @@ fn fire<T: Serialize>(
 )
 ```
 
-`payload` 는 `serde_json::Value` 직렬화 후 Lua table 로 변환 — wire 필드 ↔ Lua table 필드 1:1(snake_case). 두 채널을 순서대로 태운다: ① observe-hook(`tasty.on` 콜백) fire, ② **자동실행**(`hooks::autofire::dispatch`) — `event` 를 트리거로 등록한 스크립트를 TOFU 재검 후 실행. `AutofireCtx` 가 필수 인자인 이유: 새 fire 지점을 추가할 때 자동실행 배선을 빠뜨릴 수 없게 시그니처로 강제한다.
+`payload` 는 `serde_json::Value` 직렬화 후 Lua table 로 변환 — wire 필드 ↔ Lua table 필드 1:1(snake_case). 두 처리를 순서대로 실행한다: ① observe-hook(`tasty.on` 콜백) fire, ② **자동실행**(`hooks::autofire::dispatch`) — `event` 를 트리거로 등록한 스크립트를 TOFU 재검 후 실행. `AutofireCtx` 가 필수 인자인 이유: 새 fire 지점을 추가할 때 자동실행 연결을 빠뜨릴 수 없게 시그니처로 강제한다.
 
-### 자동실행 (autofire) 배선
+<a id="자동실행-autofire-배선"></a>
+
+### 자동실행 연결
 
 `src/host_api/hooks/autofire.rs`:
 
 - `dispatch(lua, scripts, guard, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `run_script_tracked`(완료 추적) / 불일치 시 차단 + `tracing::warn`(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
-- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 재점화하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
+- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 다시 실행하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
 - 트리거 저장 = `ScriptEntry.triggers`(`Vec<AutoTrigger>`, serde default). 등록 가능 이벤트 화이트리스트 = `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`) — 아래 표의 이벤트와 1:1.
 
-### 이벤트 ↔ 발화 site
+<a id="이벤트--발화-site"></a>
 
-대부분 `dispatch_pending_host_events`(`src/app/dispatch/host_events.rs`)가 `PendingHostEvent` 를 소비하며 발화한다:
+### 이벤트 발생 위치
+
+대부분 `dispatch_pending_host_events`(`src/app/dispatch/host_events.rs`)가 `PendingHostEvent` 를 처리하며 이벤트를 발생시킨다:
 
 | 이벤트 | Payload |
 |--------|---------|
@@ -171,13 +173,13 @@ fn fire<T: Serialize>(
 | `pane.{create,delete}.post` | `PaneCreated` / `PaneClosed` |
 | `surface.{create,delete}.post` | `SurfaceCreated` / `SurfaceClosed` |
 
-> `surface.change.post` 는 발화 site 없음(GUI 에서 surface 타입 직접 변경 경로 추가 시 등록).
+> `surface.change.post` 는 이벤트 발생 위치 없음(GUI 에서 surface 타입 직접 변경 경로 추가 시 등록).
 
-`.create/.delete` 이벤트는 **origin 무관 발화**가 계약이다 — GUI 경로와 IPC 경로가 같은 cascade 를 공유한다(`src/app/dispatch_domain.rs` 의 `cascade_*` 를 GUI dispatcher 와 `src/adapters/ipc/handler/*` 양쪽이 호출). `window.delete.post` 는 공통 helper `App::close_main_window`(`src/app/event_handler.rs`)에서 발화하며, GUI 닫기(`request_close_window`)와 IPC `window.close` 가 모두 이를 경유한다 (plugin payload 의 `reason` 만 `user`/`ipc` 로 갈린다). origin 게이팅은 아래 `change.post` 의 user-direct 분기가 유일하다.
+`.create/.delete` 이벤트는 **origin과 관계없이 발생한다** — GUI 경로와 IPC 경로가 같은 cascade 를 공유한다(`src/app/dispatch_domain.rs` 의 `cascade_*` 를 GUI dispatcher 와 `src/adapters/ipc/handler/*` 양쪽이 호출). `window.delete.post` 는 공통 helper `App::close_main_window`(`src/app/event_handler.rs`)에서 발생하며, GUI 닫기(`request_close_window`)와 IPC `window.close` 가 모두 이를 경유한다 (plugin payload 의 `reason` 만 `user`/`ipc` 로 갈린다). origin 게이팅은 아래 `change.post` 의 user-direct 분기가 유일하다.
 
 #### change.post 의 user-direct 분기
 
-`PendingHostEvent::{WorkspaceRenamed, TabRenamed}` 가 `user_direct: bool` 을 들고 다닌다. rename dialog(사용자 직접 GUI)는 `true`, IPC 경유(`workspace.update`/`move`)는 `false`. plugin 이벤트 버스는 구분 없이 발화하되 **Lua hook 은 `user_direct==true` 일 때만** fire.
+`PendingHostEvent::{WorkspaceRenamed, TabRenamed}` 가 `user_direct: bool` 을 들고 다닌다. rename dialog(사용자 직접 GUI)는 `true`, IPC 경유(`workspace.update`/`move`)는 `false`. plugin 이벤트 버스는 구분 없이 전달하되 **Lua hook 은 `user_direct==true` 일 때만** fire.
 
 ### Payload 스키마
 
@@ -197,8 +199,8 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 
 ### 새 이벤트 추가
 
-1. `PendingHostEvent` variant 확인/추가 + 발화 site 배치(polling lifecycle detection 또는 imperative push).
-2. `dispatch_pending_host_events` 매치 절에 plugin 버스 emit + `hooks::lua::fire` 호출(`AutofireCtx` 필수 — 자동실행이 자동으로 함께 배선된다).
+1. `PendingHostEvent` variant 확인/추가 + 이벤트 발생 위치 배치(polling lifecycle detection 또는 imperative push).
+2. `dispatch_pending_host_events` 매치 절에 plugin 버스 emit + `hooks::lua::fire` 호출(`AutofireCtx` 필수 — 자동실행이 자동으로 함께 연결된다).
 3. 자동실행 트리거로도 열 거면 `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`)에 이벤트명 추가.
 4. 이 문서의 [이벤트 hook](#이벤트-hook) 목록 · [이벤트 매트릭스](#이벤트-매트릭스--post-only) · `crates/tasty-lua/meta/tasty.lua` stub 갱신.
 
@@ -209,7 +211,7 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ### 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0027 에서 제거됨.
+- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. `script.reload`는 제공하지 않는다.
 - 디버그: `TASTY_LOG=tasty_lua=debug` (본체가 읽는 변수는 `TASTY_LOG` 다 — [crash-diagnostics](../../dev-guide/crash-diagnostics.md)).
 
 ## 관련

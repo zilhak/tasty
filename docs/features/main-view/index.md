@@ -22,11 +22,11 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ### headless 와의 관계
 
-`MainView` 는 `CoreState` 위에 얹힌 **GUI 셸** 이다. headless 에선 MainView 가 없고 `CoreState`(Workspace/Surface/PTY) 만 동작한다 — 즉 도메인은 MainView 없이도 살아있고, MainView 는 그것을 사람에게 보여주는 투영. (→ [identity](../../identity.md) headless)
+`MainView` 는 `CoreState` 위에 얹힌 **GUI 셸** 이다. headless 에선 MainView 가 없고 `CoreState`(Workspace/Surface/PTY) 만 동작한다 — 즉 핵심 동작은 MainView 없이도 실행되며, MainView는 그 상태를 화면에 표시한다. (→ [identity](../../identity.md) headless)
 
 ### 크롬 합성
 
-화면은 **사이드바 + 작업 영역(탭 스트립 + surface 들) + 상태바** 로 구성되고, 윈도우 테두리는 CSD 타이틀바다. 각 영역의 상세는 화면 문서에서 하위 feature 로 연결한다 (연결 개념).
+화면은 **사이드바 + 작업 영역(탭 스트립 + surface 들) + 상태바** 로 구성되고, 윈도우 테두리는 CSD 타이틀바다. 각 영역의 상세는 화면 문서에서 하위 feature 로 연결한다.
 
 ### 입력
 
@@ -35,7 +35,7 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 ## 인터페이스
 
 - **사용자**: GUI 직접 입력(단축키/마우스). 사이드바·탭·surface 조작.
-- **AI Agent (IPC/CLI)**: 이 윈도우 *안의* surface/tab/workspace 를 ID 로 생성·조회·닫기 등. (MainView 자체를 여는 건 사용자 행동 — 멀티 윈도우 생성 단축키.)
+- **AI Agent (IPC/CLI)**: 이 윈도우 *안의* surface/tab/workspace 를 ID 로 생성·조회·닫기 등. `window.create`로 창도 생성할 수 있다. 에이전트가 만든 창은 사용자의 현재 포커스를 바꾸지 않는다.
 - **원격 접속 사용자**: 내부 surface/workspace 를 attach 로 점유.
 
 ## 비-목표
@@ -45,7 +45,7 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ## Acceptance Criteria
 
-- 앱 시작 시 MainView 가 기본 Workspace + 터미널 Surface 1개로 열린다.
+- 복원할 레이아웃이 없으면 MainView가 기본 Workspace와 터미널 Surface 1개로 열린다.
 - 사이드바에서 Workspace 를 전환하면 작업 영역이 해당 Workspace 로 바뀐다.
 - 새 윈도우(단축키) 시 독립 `CoreState` 를 가진 MainView 가 추가로 열린다.
 - AI Agent 가 IPC/CLI 로 특정 MainView 의 surface/tab/workspace 를 ID 로 조작할 수 있다.
@@ -65,7 +65,7 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 - **시각 소스**: `site/vendor/ui_kits/terminal/` (`chrome.jsx`, `work.jsx`) — claude design
 
-이 화면은 **합성 화면** 이다 — 각 영역은 *자기 위치/역할만* 적고, 내용은 하위 feature 문서로 **링크만** 한다 (연결 개념).
+이 화면은 **합성 화면** 이다 — 이 문서에는 영역의 위치와 역할을 적고, 세부 동작은 각 기능 문서로 연결한다.
 
 ### 레이아웃
 
