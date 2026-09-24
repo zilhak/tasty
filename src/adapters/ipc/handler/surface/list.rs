@@ -2,9 +2,6 @@ use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-// `_state` 는 미사용이지만 시그니처는 유지 — `App::collect_list` 의
-// `Fn(&AppState, &CoreState, Value)` generic 으로 workspace.list / pane.list
-// 핸들러와 공유하는 호출 컨벤션이다.
 pub(crate) fn handle_surface_list(
     engine: &crate::core::CoreState,
     id: serde_json::Value,
@@ -31,10 +28,8 @@ fn collect_tab_surface_info(
     out: &mut Vec<serde_json::Value>,
 ) {
     if tab.is_split() {
-        // Split tab: iterate through the layout
         collect_surface_layout_info(engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
-        // Single surface tab
         let surface = tab.surface();
         if let Some(node) = surface
             .as_any()
@@ -51,7 +46,6 @@ fn collect_tab_surface_info(
                 "rows": t.map(|x| x.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
                 "pty_ready": engine.terminals.contains(node.id),
-                // attach/detach 단계 3: 배타 점유 여부(free/점유 디스커버리).
                 "attached": engine.attach.is_hard_occupied(node.id),
             });
             if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
@@ -100,8 +94,6 @@ fn collect_surface_layout_info(
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
                 "busy": engine.is_surface_busy(id),
-                // attach/detach: 배타 점유 여부(surface 단위 단계 4 + workspace 단계 6).
-                // split 레이아웃의 leaf 도 단일-surface 경로와 동일하게 노출.
                 "attached": engine.attach.is_hard_occupied(id),
             });
             if let Some(terminal) = engine.terminals.get(id) {

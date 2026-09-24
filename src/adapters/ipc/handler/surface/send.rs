@@ -5,12 +5,8 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// Parse key combo strings like "ctrl+c", "ctrl+shift+c", "alt+x" into terminal bytes.
-///
-/// 왼쪽부터 `ctrl+`/`shift+`/`alt+` 프리픽스를 벗겨내고 남은 부분을 키 토큰으로 본다.
-/// `split('+')`을 쓰지 않는 이유는 `"ctrl++"`(Ctrl+`+`)처럼 키와 구분자가 충돌하는
-/// 경우를 올바르게 해석하기 위함. `"plus"`/`"minus"`/`"equals"` 같은 심볼 이름도
-/// 허용한다.
+/// modifier 접두어를 왼쪽부터 읽는다. ctrl++의 마지막 +는 키이므로 split으로 나누지 않는다.
+/// plus/minus/equals 이름도 허용한다.
 fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     if input.is_empty() {
         return None;
@@ -47,7 +43,6 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
         return None;
     }
 
-    // 심볼 이름을 단일 문자로 정규화.
     let key: &str = match rest.to_ascii_lowercase().as_str() {
         "plus" => "+",
         "minus" => "-",
@@ -86,18 +81,13 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// [`dispatch_send`] 결과 — hard-occupied(attach 로 잠긴)와 "진짜 없음"을 구분한다.
-/// 둘을 같은 "Surface not found" 메시지로 뭉뚱그리면 attach 로 점유된(하지만
-/// `list`류엔 여전히 보이는) surface 를 존재하지 않는다고 오인하게 된다(Gate4
-/// 판단필요 항목).
+/// 원격 점유와 대상 부재를 구분해 반환한다.
 enum SendOutcome {
     Sent,
     HardOccupied,
     NotFound,
 }
 
-/// `SendOutcome::HardOccupied`/`NotFound` 를 각기 다른 메시지로. 호출부 전체가
-/// 공유(문구 일관성).
 fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
     match outcome {
         SendOutcome::HardOccupied => format!(
@@ -108,7 +98,6 @@ fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
     }
 }
 
-/// 공용 dispatch — DomainIntent::SendToSurface 발화 후 결과 반환.
 fn dispatch_send(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
@@ -203,11 +192,10 @@ pub(crate) fn handle_surface_send_key(
         "f11" => b"\x1b[23~".to_vec(),
         "f12" => b"\x1b[24~".to_vec(),
         other => {
-            // Parse modifier+key combos like "ctrl+c", "alt+x"
             if let Some(combo_bytes) = parse_key_combo(other) {
                 combo_bytes
             } else {
-                // 알 수 없는 key 식별자 — raw text 로 fallback (옛 동작).
+                // 알 수 없는 키 이름은 호환 동작으로 일반 텍스트로 보낸다.
                 match dispatch_send(
                     core,
                     engine,
@@ -230,7 +218,7 @@ pub(crate) fn handle_surface_send_key(
             }
         }
     };
-    // sent 여부와 무관하게 response 는 success — 옛 동작 보존.
+    // 호환 응답: 실제 전송 여부와 관계없이 성공을 반환한다.
     let _outcome = dispatch_send(
         core,
         engine,
@@ -329,8 +317,6 @@ pub(crate) fn handle_surface_send_combo(
         }
     }
 }
-
-// handle_pane_focus / handle_surface_focus removed: focus is user-only.
 
 pub(crate) fn handle_surface_send_to(
     core: &mut crate::core::Core,

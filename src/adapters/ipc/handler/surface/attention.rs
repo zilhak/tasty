@@ -6,15 +6,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// `surface.attention.get` — 특정 surface 에 기록된 attention kind 를 조회한다.
-/// `completion.rs` 가 발동만 할 수 있던 상태에 대한 read 표면 — 해제(아래
-/// [`handle_attention_clear`])가 실제로 먹혔는지 확인할 수단이 headless 에는
-/// 아예 없었다(렌더도 알림 패널도 없다). surface_id 필수(포커스 독립 —
-/// 불가침 원칙 1).
-///
-/// 응답 `kind` 는 `"completion"` / `"needs_input"` / `null`(attention 없음) —
-/// `surface.completion` 파라미터 및 attach 스트림([`AttentionKindWire`])과 같은
-/// 어휘를 쓴다.
+/// 명시한 surface의 attention을 completion/needs_input/null로 반환한다.
 pub(crate) fn handle_attention_get(
     engine: &crate::core::CoreState,
     id: serde_json::Value,
@@ -36,28 +28,11 @@ pub(crate) fn handle_attention_get(
     )
 }
 
-/// `surface.attention.clear` — 특정 surface 의 attention 을 해제한다.
-/// `surface.completion` 의 역방향으로, raise-only 였던 IPC/CLI 표면을 대칭으로
-/// 만든다. 기존 clear producer 두 개(실 렌더 포커스 `gpu.rs`, 알림 읽음)는 전부
-/// GUI 로컬 사건이라 headless 인스턴스에는 해제 수단이 하나도 없었다.
-///
-/// - `surface_id` **필수** — 대상은 항상 ID 로 명시한다(포커스 독립).
-/// - `kind` **선택** — 주면 현재 기록된 kind 가 그 값일 때만 지운다(그 사이 다른
-///   producer 가 더 급한 kind 로 재발동한 것을 늦게 도착한 해제가 덮지 않도록).
-///   생략하면 kind 무관 해제. 알 수 없는 값은 조용히 무시하지 않고 거절한다 —
-///   `surface.completion` 은 하위 호환 때문에 미상 kind 를 `completion` 으로
-///   떨어뜨리지만, 여기서 같은 관용은 "지정한 kind 만 지운다" 는 계약을 조용히
-///   깨뜨린다.
-/// - attention 이 없던 surface 에 대한 호출도 성공한다(idempotent) — 응답의
-///   `cleared` 가 실제로 지웠는지를 알린다.
-/// - **하드 점유(원격 attach) 중인 surface 는 거절**한다. 점유 중에는 그 surface 의
-///   상태를 holder 세션이 소유하므로, 로컬 IPC 해제를 허용하면 서버 값만 지워져
-///   holder 미러와 갈라진다.
-/// - **mirror surface도 거절**한다(ADR-0024).
-///   미러의 attention 은 서버 push 만을 소스로 갖고(ADR-0024), 해제 forward 자격은
-///   "그 화면을 실제로 본 주체"(실 렌더 포커스 · 미러 로컬 알림 읽음)에게만 있다 —
-///   미러 인스턴스의 에이전트는 원격 surface 를 소유하지도, 그것을 보고 있지도 않다.
-///   발동 축의 억제(ADR-0024)와 대칭이다.
+/// 명시한 surface의 attention을 지운다. kind가 있으면 같은 종류만 지우고 잘못된 kind는 거절한다.
+/// 더 높은 우선순위의 새 알림을 늦게 도착한 해제 요청이 지우지 않게 하기 위해서다.
+/// 원래 알림이 없어도 성공하며 cleared로 실제 삭제 여부를 알린다.
+/// hard 점유와 mirror surface는 거절한다. 원격 알림은 소유 인스턴스가 관리하며,
+/// mirror의 해제 전달은 실제 포커스나 로컬 알림 읽음 같은 사용자 확인에서만 허용한다(ADR-0024).
 pub(crate) fn handle_attention_clear(
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -99,17 +74,11 @@ pub(crate) fn handle_attention_clear(
     }
     let previous = engine.attention_kind(surface_id);
     let cleared = previous.is_some() && kind.is_none_or(|k| previous == Some(k));
-    // 상태 변경은 **여기서** 적용한다. 라우터가 `surface_id` 로 owner engine 을 찾아
-    // 넘겨줬고 위에서 소속을 재확인했으므로 대상이 확정적이며, 무엇보다 Intent 큐를
-    // drain 하는 `App::dispatch_pending_intents` 는 gui 전용이라(`src/app.rs` 의
-    // `#[cfg(feature = "gui")] mod dispatch;`) headless 인스턴스에서는 아래 cascade 가
-    // 아예 존재하지 않는다 — enqueue 만 하면 headless 에는 해제 수단이 계속 0 개다.
+    // 헤드리스에도 즉시 반영한다. GUI 전용 intent 후속 처리만 기다리면 해제되지 않는다.
     if cleared {
         engine.clear_attention(surface_id);
     }
-    // cascade 는 gui 에서 소비처(테두리·탭·개수 배지) redraw 를 얹는다. 위에서 이미
-    // 지웠으므로 cascade 의 재적용은 no-op 이고, cascade 는 IPC 를 타지 않는 호출자
-    // (도메인 내부 producer)를 위해 자기 완결적으로 남는다.
+    // GUI는 후속 처리에서 화면을 갱신한다. 이미 지운 상태를 다시 지워도 결과는 같다.
     out.push(
         crate::core::intent::DomainIntent::SurfaceAttentionClear { surface_id, kind }
             .from_agent_ipc(),
@@ -125,9 +94,7 @@ pub(crate) fn handle_attention_clear(
     )
 }
 
-/// 대상 surface 가 라우팅된 engine 에 실제로 존재하는지 확인한다. IPC 라우터가
-/// `surface_id` 로 owner engine(main → parked)을 먼저 찾아 넘겨주므로, 여기서
-/// 없다면 어느 engine 에도 없다는 뜻이다.
+/// 라우터가 선택한 engine에 대상이 있는지 확인한다.
 fn require_existing_surface(
     engine: &crate::core::CoreState,
     surface_id: u32,
@@ -168,9 +135,6 @@ mod tests {
 
     use super::*;
 
-    /// mirror 워크스페이스의 surface에 대한 IPC 해제는 거절된다(ADR-0024).
-    /// 거절할 때는 아무 일도 하지 않고 성공을 답하지 말고 사유를 담은 오류를 반환해야
-    /// 에이전트가 "지웠다" 고 오인하지 않는다.
     #[test]
     fn clear_is_rejected_for_a_mirror_surface() {
         let (state, mut engine) = crate::state::tests::test_state();
@@ -192,14 +156,10 @@ mod tests {
             message.contains("mirror"),
             "거절 사유가 mirror 임을 밝혀야 한다: {message}"
         );
-        // 거절이므로 도메인 intent 도 발화되지 않는다 — cascade 가 뒤늦게 지우면
-        // 거절의 의미가 없다.
         assert!(out.is_empty());
     }
 
-    /// 조회는 mirror surface 에서도 허용된다 — 서버가 push 해 준 로컬 레코드를 읽는
-    /// 것이라 소유권 문제가 없고, 미러 사용자/에이전트가 배지 상태를 확인할 수단이
-    /// 사라지면 안 된다.
+    // mirror 조회는 서버가 보낸 로컬 기록을 읽을 뿐이므로 허용한다.
     #[test]
     fn get_is_allowed_for_a_mirror_surface() {
         let (state, mut engine) = crate::state::tests::test_state();
@@ -214,7 +174,6 @@ mod tests {
         );
     }
 
-    /// 비-mirror surface 는 그대로 해제된다(위 게이트가 일반 경로를 막지 않는지).
     #[test]
     fn clear_still_works_for_a_local_surface() {
         let (state, mut engine) = crate::state::tests::test_state();

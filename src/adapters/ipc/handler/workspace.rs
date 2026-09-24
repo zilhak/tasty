@@ -4,12 +4,8 @@ use super::params::{self, p_try};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// 단계 7 — workspace.create/update params 에서 SSH attach 매핑을 파싱한다.
-/// `attach_profile`(저장 프로필) 우선, 없으면 `attach_ssh`(1회성 인라인).
-/// 둘 다 없으면 None(매핑 없음).
-/// `Result` 를 반환하는 이유: 잘못된 `attach_remote_workspace` 를 `None` 으로 만들면
-/// **매핑 없음**과 구별되지 않아, 사용자가 지정한 원격 워크스페이스 대신 매핑 없이
-/// 조용히 진행된다.
+/// attach_profile을 우선하고 없으면 attach_ssh를 읽는다. 둘 다 없으면 매핑 없음이다.
+/// 잘못된 원격 workspace 값은 생략으로 처리하지 않고 거절한다.
 fn parse_attach_mapping(
     params: &serde_json::Value,
 ) -> Result<Option<WorkspaceAttachMapping>, String> {
@@ -44,10 +40,7 @@ fn parse_attach_mapping(
     Ok(None)
 }
 
-/// `attach_ssh` host 가 self(loopback) 대상(`127.0.0.1:PORT`/`localhost:PORT`/
-/// `[::1]:PORT`)인지 판정한다. release 빌드의 self-attach 매핑 차단에 쓴다(원칙 1 ②).
-/// (`src/app/auto_attach.rs::parse_loopback_port` 의 판정과 동일 규칙 — 그쪽은
-/// 공유 실행단 헬퍼라 보존하고, 여기선 입력단 거부용 술어만 둔다.)
+/// release 입력 제한에 쓰는 loopback 주소 형식 검사.
 #[cfg(not(debug_assertions))]
 fn is_loopback_attach_host(host: &str) -> bool {
     let h = if host.strip_prefix("[::1]:").is_some() {
@@ -60,9 +53,7 @@ fn is_loopback_attach_host(host: &str) -> bool {
     matches!(h, "127.0.0.1" | "localhost" | "::1")
 }
 
-/// release 빌드에서 self(loopback) attach 매핑을 입력단에서 거부한다(원칙 1 ②).
-/// 로컬 self-mirror 는 사용자 입력 재현 성격이라 debug 빌드 `tasty debug attach`
-/// 전용 — workspace 매핑(`--ssh 127.0.0.1:PORT`)으로 우회 self-attach 를 막는다.
+/// release에서는 loopback attach 매핑을 거절한다. 로컬 mirror 시험은 debug attach를 쓴다.
 #[cfg(not(debug_assertions))]
 fn reject_loopback_attach(
     params: &serde_json::Value,
@@ -99,7 +90,6 @@ fn resolve_category_param(
     }
 }
 
-/// 매핑을 JSON 으로 노출(workspace.list 의 read — 원칙 3 read 허용).
 fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
     match mapping {
         Some(m) => serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
@@ -127,9 +117,7 @@ pub fn handle_workspace_list(
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
-                // 지금 원격을 attach 한 client mirror 인지. `attach_mapping`(활성화 시
-                // attach 할 매핑)과는 다른 축이라 그걸로 유추할 수 없다. GUI 사이드바만
-                // 알던 정보를 에이전트 조회 경로에도 노출한다(원칙 2).
+                // 연결 설정과 현재 mirror 여부는 다르다.
                 "mirror": ws.mirror,
                 "category": ws.category,
                 "category_name": engine.category_name(ws.category),
@@ -139,13 +127,7 @@ pub fn handle_workspace_list(
     JsonRpcResponse::success(id, json!(workspaces))
 }
 
-/// `cwd` 를 생략한 `workspace.create` 의 상속 원본.
-///
-/// `surface_id` 를 지목했으면 **그 surface** 의 cwd 다 — 라우터가 그 키로 주인 창을 고른
-/// 뒤라 이 창(engine)에 있다. 지목이 없을 때만 이 창의 포커스 surface 로 떨어진다(기존 동작).
-/// 지목했는데 창의 포커스를 보면 결과가 사용자가 그 창에서 무엇을 보고 있는지에 좌우된다
-/// (원칙 3). 같은 키가 창과 원본을 함께 정하는 이유는
-/// `docs/adr/0043-cli-errors-and-diagnostic-logs.md`.
+/// surface_id를 지정하면 그 대상의 cwd를 쓴다. 생략한 경우만 창의 포커스 surface를 따른다.
 fn inherit_cwd_for_create(
     window: &dyn crate::ipc::window_port::IpcWindow,
     engine: &crate::core::CoreState,
@@ -157,14 +139,9 @@ fn inherit_cwd_for_create(
     }
 }
 
-/// `workspace.create` 의 params 에서 새 워크스페이스에 줄 cwd 를 정한다.
-///
-/// terminal 의 cwd inherit 은 호출자가 미리 결정해 payload 로 넘긴다 (Core 는
-/// focus state 모름). 그 외 kind 는 cwd 미사용. 새 워크스페이스는 로컬이므로 원본이
-/// mirror surface 면 inherit 은 `None`(= 홈)이고, 명시 `cwd` 는 그대로 존중한다
-/// (`docs/design/policies/cwd.md#surface-cwd-invariant` §3-2).
-/// 창을 지목한 `surface_id` 가 상속 원본이다. 숫자가 아닌 값은 거절한다 — 무시하면
-/// 라우팅도 못 짚은 채 포커스 surface 로 조용히 떨어진다.
+/// terminal 생성의 cwd를 정한다. 명시값이 우선하고 다른 kind에서는 사용하지 않는다.
+/// 원격 mirror의 경로는 로컬 workspace에 상속하지 않는다.
+/// 잘못된 surface_id는 포커스 대상으로 대체하지 않고 거절한다.
 fn resolve_create_cwd(
     params: &serde_json::Value,
     kind: &str,
@@ -176,8 +153,6 @@ fn resolve_create_cwd(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
-    // CLI 가 absolute path 로 정규화해 보낸다는 contract — 2 차 방어로 호스트도
-    // 디렉토리 존재 검증. plugin 의 직접 IPC 경로도 함께 보호.
     if let Some(p) = &explicit_cwd
         && !p.is_dir()
     {
@@ -201,7 +176,6 @@ pub fn handle_workspace_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    // release: self(loopback) attach 매핑 입력단 거부(원칙 1 ②).
     #[cfg(not(debug_assertions))]
     if let Some(resp) = reject_loopback_attach(params, &id) {
         return resp;
@@ -212,8 +186,6 @@ pub fn handle_workspace_create(
         .unwrap_or("terminal");
     let resolved_cwd = p_try!(resolve_create_cwd(params, kind, window, engine, &id));
 
-    // 필수 파라미터 검증 (registry create 함수도 검사하지만, 명확한 에러 메시지를 위해
-    // 선검증). registry 의 required_params(preset_fields.required)로 generic 검증.
     if let Some(def) = engine.surface_registry.get_live(kind)
         && let Some(missing) = def.first_missing_required_param(params)
     {
@@ -244,7 +216,6 @@ pub fn handle_workspace_create(
         name,
         subtitle,
         description,
-        // IPC 는 생성 후 resolve_category_param 으로 소속을 별도 지정하므로 여기선 None.
         category: None,
     };
 
@@ -253,7 +224,6 @@ pub fn handle_workspace_create(
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
 
-    // events 안에 정확히 하나의 WorkspaceCreated 가 들어있다.
     let Some(crate::core::intent::CoreEvent::WorkspaceCreated {
         id: workspace_id,
         index,
@@ -269,8 +239,7 @@ pub fn handle_workspace_create(
         );
     };
 
-    // cascade: host event 발화 (rename 필드 있을 때). IPC 는 Agent origin 이므로
-    // active 전환은 하지 않는다 (`cascade_workspace_created` 가 origin 보고 분기).
+    // 생성 이벤트를 알리되 에이전트 요청이므로 활성 workspace는 바꾸지 않는다.
     let agent_origin = crate::intent::IntentOrigin::Agent {
         source: crate::intent::AgentSource::Ipc,
     };
@@ -288,9 +257,7 @@ pub fn handle_workspace_create(
         },
     );
 
-    // S-WSCAT — 카테고리 소속 설정(있으면). 미지정이면 normal(생성자 기본값) 유지.
-    // 카테고리 변경은 사용자 active 에 닿지 않는다(원칙 1·3). attach_mapping 과 동형으로
-    // 직접 set + dirty.
+    // 카테고리를 지정하지 않으면 기본 normal을 유지한다. 사용자 선택은 바꾸지 않는다.
     match resolve_category_param(engine, params) {
         Ok(Some(cat_id)) => {
             engine.workspaces[index].set_category(cat_id);
@@ -300,7 +267,6 @@ pub fn handle_workspace_create(
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     }
 
-    // 단계 7 — SSH attach 매핑 설정(있으면). layout.json 영속을 위해 dirty 표시.
     if let Some(mapping) = match parse_attach_mapping(params) {
         Ok(v) => v,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
@@ -332,14 +298,11 @@ pub fn handle_workspace_update(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    // release: self(loopback) attach 매핑 입력단 거부(원칙 1 ②).
     #[cfg(not(debug_assertions))]
     if let Some(resp) = reject_loopback_attach(params, &id) {
         return resp;
     }
-    // workspace_id resolve — `id` 우선, 없으면 `index` 로 lookup.
-    // `id` 가 **왔는데 잘못된** 경우 `index` 로 흘러내리지 않는다 — 흘러내리면 오타
-    // 하나가 엉뚱한 워크스페이스를 성공적으로 가리킨다.
+    // id가 없을 때만 index를 쓴다. 잘못된 id를 index로 대체하면 다른 대상을 바꿀 수 있다.
     let id_param = match super::params::optional_u32(params, "id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -404,7 +367,6 @@ pub fn handle_workspace_update(
 
     window.cascade_workspace_meta_updated(workspace_id, name, subtitle, description);
 
-    // S-WSCAT — 카테고리 소속 변경(있으면). 사용자 active 불변(원칙 1·3).
     match resolve_category_param(engine, params) {
         Ok(Some(cat_id)) => {
             if let Err(e) = engine.set_workspace_category(workspace_id, cat_id) {
@@ -416,8 +378,7 @@ pub fn handle_workspace_update(
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     }
 
-    // 단계 7 — SSH attach 매핑 갱신/해제. `attach_clear` 가 우선(해제), 아니면 파싱한
-    // 매핑이 있으면 설정. 어느 쪽이든 layout.json 영속을 위해 dirty 표시.
+    // attach_clear가 우선이다. 변경은 layout.json에 저장하도록 표시한다.
     let clear = params
         .get("attach_clear")
         .and_then(|v| v.as_bool())
@@ -448,24 +409,11 @@ pub fn handle_workspace_update(
     )
 }
 
-/// `workspace.close` — 워크스페이스를 통째로 닫는다. 대상은 **id 로 직접 지정**하며
-/// (`index` 도 받지만 `workspace.update` 와 같은 보조 경로다) 활성 상태에 의존하지 않는다.
-///
-/// 사용자 상태를 건드리지 않기 위해 두 가지를 지킨다.
-///
-/// 1. **닫은 항목 히스토리에 쌓지 않는다** — `save_snapshot = false`. 되돌리기 스택은
-///    사용자가 자기 손으로 닫은 것만 담는다(원칙 1).
-/// 2. **포커스를 옮기지 않는다** — `close_workspace_at` 이 제거 직후
-///    `fix_workspace_pointers_after_removal` 로 인덱스 활성 포인터를 대상 기준으로
-///    보정한다. 활성 워크스페이스 자신을 닫을 때만 이동한다.
-///
-/// 거절은 넷이다(대상 해석 실패 제외) — caller 자신의 surface 가 든 워크스페이스 ·
-/// mirror 워크스페이스 · **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스** ·
-/// 마지막 하나 남은 워크스페이스. 근거는 [ADR-0017](../../../../docs/adr/0017-workspace-identity-and-focus.md).
-///
-/// 마지막 워크스페이스는 거부한다. GUI 는 그 경우 창까지 닫지만, 창을 없애는 것은
-/// 별개의 결정이라 에이전트에게는 `window.close` 라는 명시적 수단을 따로 준다 —
-/// 워크스페이스 하나를 닫으라는 요청이 창 종료로 번지지 않게 한다.
+/// ID로 workspace를 닫는다. index도 호환 입력으로 받는다.
+/// 사용자 복원 기록은 남기지 않고 기존 활성 대상이 유지되도록 위치를 보정한다.
+/// 활성 대상 자체를 닫았을 때만 다른 workspace로 이동한다.
+/// 자기 surface 포함·mirror·hard 점유·마지막 workspace는 거절한다(ADR-0017).
+/// 창 종료는 별도 window.close 요청이며 마지막 workspace 닫기로 대신하지 않는다.
 pub fn handle_workspace_close(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
@@ -500,8 +448,6 @@ pub fn handle_workspace_close(
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
     };
 
-    // 자기 자신 닫기 보호 — pane.close / tab.close 와 같은 규칙. 대상 워크스페이스에
-    // caller 의 surface 가 들어 있으면 이 요청은 자기 터미널을 죽인다.
     if let Some(caller) = super::caller_surface_id(params)
         && engine
             .find_workspace_index_for_surface(caller)
@@ -515,11 +461,7 @@ pub fn handle_workspace_close(
         );
     }
 
-    // mirror 워크스페이스는 원격을 attach 해 들고 있는 그림자다. 거두는 절차가
-    // 따로 있고(`app::attach_client` 의 `remove_mirror_workspace_from_engine` —
-    // mirror 터미널 · busy · attention · mesh 프레임까지 함께 걷는다) 이 경로는
-    // 그중 아무것도 하지 않는다. 같은 이유로 `surface.attention.clear` 도 mirror
-    // surface 를 거절한다. detach 는 attach 세션 쪽 수단을 쓴다.
+    // mirror는 터미널·busy·attention·mesh를 함께 정리하는 attach 해제 경로를 사용해야 한다.
     if engine.workspaces[ws_idx].mirror {
         return JsonRpcResponse::invalid_params(
             id,
@@ -528,12 +470,7 @@ pub fn handle_workspace_close(
         );
     }
 
-    // 원격 attach 가 **하드 점유** 중인 surface 가 하나라도 들어 있으면 거절한다.
-    // 점유 중에는 그 surface 를 holder 세션이 소유하고 원격 사용자가 지금 그
-    // 터미널을 쓰고 있다 — 여기서 닫으면 남의 작업이 예고 없이 죽는다. 같은 이유로
-    // `surface.attention.clear` 도 하드 점유 surface 를 거절한다(ADR-0017).
-    // mirror 검사와 별개다: mirror 는 "이 인스턴스가 원격을 비추는 그림자", 하드
-    // 점유는 "이 인스턴스의 surface 를 원격 클라이언트가 잡고 있는 상태" 다.
+    // 로컬 소유 surface라도 원격 클라이언트가 점유 중이면 닫지 않는다.
     if let Some(occupied) = engine.workspaces[ws_idx]
         .all_surface_ids()
         .into_iter()
@@ -554,18 +491,12 @@ pub fn handle_workspace_close(
     }
 
     let workspace_id = engine.workspaces[ws_idx].id;
-    // `ws_idx` 는 위에서 검증됐고 그 사이 워크스페이스가 제거되지 않으므로 `closed` 는
-    // 참일 수밖에 없다. 그래도 상수 `true` 를 싣지 않고 반환값을 그대로 싣는다 — 그
-    // 불변이 언젠가 깨지면 응답이 조용히 성공을 주장하는 대신 사실을 말한다.
     let closed =
         window.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
 }
 
-/// 마지막 워크스페이스 거절 문구. gui 는 창을 닫는 별개의 수단(`window.close`)을 권한다.
-/// 헤드리스에는 그 수단이 없다 — `window.close` 가 그 조합에서 `-32017`(gated out)이라, 권하면
-/// 실행할 수 없는 처방이 된다. 그래서 헤드리스는 닫을 수 없다는 사실만 말한다. 에러 코드는
-/// 두 조합 모두 `-32602` 그대로다.
+/// GUI에는 별도 창 닫기를 안내하고 그 기능이 없는 헤드리스에는 권하지 않는다.
 fn last_workspace_refusal() -> &'static str {
     if cfg!(feature = "gui") {
         "Refusing to close the last workspace — closing the window instead is a separate \
@@ -576,13 +507,8 @@ fn last_workspace_refusal() -> &'static str {
     }
 }
 
-/// 워크스페이스 순서 이동.
-///
-/// 대상은 **`id` 로 지목한다** — workspace id 는 engine 을 건너 유일해서 라우팅이 주인
-/// 창을 짚는다. `from_index` 는 창 안의 위치라 창이 정해지지 않으므로, 그 형태로 부르면
-/// 포커스된 창에 떨어진다(`docs/design/policies/focus.md`). 종전 호출을 깨지 않으려고
-/// 남겨 두었고 둘을 함께 주면 거절한다 — 어긋났을 때 조용히 한쪽을 고르지 않는다.
-/// `to_index` 는 지목된 창 **안에서의** 목적지라 창이 정해진 뒤에는 뜻이 분명하다.
+/// id로 소유 창과 workspace를 선택한다. from_index는 호환 입력으로 포커스된 창을 사용한다.
+/// 둘을 함께 지정하면 거절한다. to_index는 선택된 창 안의 목적지다.
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -601,7 +527,6 @@ pub fn handle_workspace_move(
         }
         (Some(ws_id), None) => match engine.find_workspace_index_for_id(ws_id as u32) {
             Some(i) => i,
-            // 라우팅이 주인 창으로 보냈으므로 여기 없으면 그 id 가 죽은 것이다.
             None => {
                 return JsonRpcResponse::invalid_params(id, format!("no workspace {ws_id}"));
             }
@@ -635,14 +560,11 @@ pub fn handle_workspace_move(
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }
 
-// workspace.select removed: focus is user-only (shortcuts/clicks).
-
 #[cfg(test)]
 mod close_tests {
     use super::*;
     use serde_json::json;
 
-    /// 워크스페이스를 하나 더 만들고 그 인덱스를 돌려준다.
     fn add_workspace(engine: &mut crate::core::CoreState) -> u32 {
         let event = crate::core::apply_create_workspace_inner(
             engine,
@@ -668,8 +590,6 @@ mod close_tests {
             err.code, -32602,
             "코드는 두 조합 모두 invalid_params 그대로"
         );
-        // gui 는 창을 닫는 별개의 수단을 권하고, 헤드리스는 그 수단(`window.close`)이
-        // gated out 이라 권하지 않는다 — 실행할 수 없는 처방을 싣지 않는다.
         if cfg!(feature = "gui") {
             assert!(
                 err.message.contains("use 'window.close' explicitly"),
@@ -692,11 +612,6 @@ mod close_tests {
         );
     }
 
-    /// 원격 attach 가 하드 점유한 surface 가 든 워크스페이스는 거절한다.
-    ///
-    /// 점유 중에는 그 터미널을 원격 사용자가 실제로 쓰고 있다. 이 검사가 없으면
-    /// 에이전트가 id 를 훑다가 남의 작업 세션을 예고 없이 죽인다 — 되돌릴 수도 없다.
-    /// (ADR-0017. 같은 판단의 선례는 `surface.attention.clear`.)
     #[test]
     fn closing_a_workspace_a_remote_session_occupies_is_refused() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -742,7 +657,6 @@ mod close_tests {
     fn closing_the_workspace_holding_your_own_surface_is_refused() {
         let (mut state, mut engine) = crate::state::tests::test_state();
         add_workspace(&mut engine);
-        // caller 자신의 surface 가 든 워크스페이스를 대상으로 지정한다.
         let target = engine.workspaces[0].id;
         let caller = engine.workspaces[0]
             .all_surface_ids()
@@ -764,12 +678,7 @@ mod close_tests {
         assert_eq!(engine.workspaces.len(), 2);
     }
 
-    /// 성공 경로 — 이 lane 이 주장하는 것 전부를 한 자리에서 고정한다.
-    ///
-    /// 거절 테스트만 있으면 `close_workspace_at` 호출 줄에 **도달조차 하지 않아**,
-    /// 대상 해석(원칙 3) · 활성 포인터 보정(ADR-0017) · 되돌리기 스택 미기록
-    /// (원칙 1) · 응답 계약이 전부 무방비로 남는다. 실제로 그 네 축의 변이가
-    /// 전부 생존했다.
+    // 성공 경로에서 명시 대상·활성 포인터·복원 기록·응답 ID를 함께 확인한다.
     #[test]
     fn closing_a_workspace_the_user_is_not_looking_at_leaves_the_view_alone() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -777,7 +686,6 @@ mod close_tests {
         add_workspace(&mut engine);
         assert_eq!(engine.workspaces.len(), 3);
 
-        // 사용자는 **마지막** 워크스페이스를 보고 있고, 에이전트는 **중간** 것을 닫는다.
         state.active_workspace = 2;
         let viewing_id = engine.workspaces[2].id;
         let target_idx = 1;
@@ -802,28 +710,23 @@ mod close_tests {
             "응답은 인덱스가 아니라 대상 워크스페이스 id 를 돌려줘야 한다"
         );
 
-        // 원칙 3 — 지정한 대상만 사라진다. 활성 워크스페이스를 닫지 않는다.
         assert_eq!(engine.workspaces.len(), 2);
         assert!(
             engine.workspaces.iter().all(|w| w.id != target_id),
             "대상이 아직 남아 있다"
         );
 
-        // ADR-0017 — 사용자가 보던 워크스페이스가 그대로여야 한다. 앞쪽이 빠지면
-        // 뒤가 한 칸 당겨지므로 인덱스는 2 에서 1 로 내려가되 **가리키는 대상은
-        // 같아야** 한다.
+        // 앞쪽 항목을 지워 인덱스가 바뀌어도 사용자가 보던 ID는 유지되어야 한다.
         assert_eq!(
             engine.workspaces[state.active_workspace].id, viewing_id,
             "앞쪽 워크스페이스를 닫았는데 사용자 시야가 다른 워크스페이스로 옮겨갔다"
         );
 
-        // 원칙 1 — 되돌리기 스택에 쌓지 않는다.
         assert!(
             engine.closed_items.is_empty(),
             "에이전트가 닫은 것이 사용자의 되돌리기 스택에 들어갔다"
         );
 
-        // 원칙 1 — plugin 에도 에이전트 close 로 나가야 한다.
         let events = state.take_pending_lifecycle_events();
         assert!(
             !events.is_empty(),
@@ -835,7 +738,6 @@ mod close_tests {
         );
     }
 
-    /// mirror 워크스페이스는 거둘 절차가 따로 있어 이 경로로 닫지 않는다.
     #[test]
     fn closing_a_mirror_workspace_is_refused() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -880,8 +782,6 @@ mod create_cwd_tests {
     use super::*;
     use serde_json::json;
 
-    /// explorer 탭을 열고 그 surface id 와 root 를 돌려준다. 새 탭이 포커스를 받으므로
-    /// 마지막에 연 것이 이 창의 포커스 surface 다.
     fn open_explorer(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -898,8 +798,7 @@ mod create_cwd_tests {
         (sid, root)
     }
 
-    /// `surface_id` 를 지목하면 창의 포커스가 아니라 **그 surface** 에서 상속한다(원칙 3).
-    /// 포커스를 다른 surface 에 두어, 둘이 같으면 통과하는 구현을 가른다.
+    // 요청 대상과 포커스 대상을 다르게 준비한다.
     #[test]
     fn a_named_surface_is_the_inherit_source_not_the_focus() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -914,7 +813,6 @@ mod create_cwd_tests {
         );
     }
 
-    /// 지목이 없으면 기존 동작 그대로 이 창의 포커스 surface 에서 상속한다.
     #[test]
     fn without_a_named_surface_the_focus_is_the_inherit_source() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -927,7 +825,6 @@ mod create_cwd_tests {
         );
     }
 
-    /// `surface_id` 가 숫자가 아니면 포커스로 떨어지지 않고 거절한다 — 아무것도 안 만든다.
     #[test]
     fn a_malformed_surface_id_is_rejected_not_ignored() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -948,9 +845,7 @@ mod create_cwd_tests {
         assert_eq!(engine.workspaces.len(), before);
     }
 
-    /// 핸들러가 params 에서 읽은 `surface_id` 가 상속 원본으로 **넘어가는지**를 params 로
-    /// 잰다. 헬퍼만 부르는 위 시험은 이 배선을 안 본다 — 핸들러가 `None` 을 넘기거나 키
-    /// 읽기를 지워도 초록이었다. 포커스를 다른 surface 에 두어 그 결함을 가른다.
+    // 헬퍼뿐 아니라 요청 파라미터가 실제 상속 원본으로 전달되는지도 확인한다.
     #[test]
     fn the_params_surface_id_reaches_the_inherit_source() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -973,12 +868,10 @@ mod create_cwd_tests {
         assert_eq!(got, Some(focused_root));
     }
 
-    /// 명시 `cwd` 는 지목한 surface 보다 앞서고, terminal 이 아닌 kind 는 cwd 를 안 쓴다.
     #[test]
     fn explicit_cwd_wins_and_non_terminal_kinds_take_no_cwd() {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let (named, _) = open_explorer(&mut state, &mut engine, "named/proj");
-        // 실재하는 디렉토리면 된다 — 핸들러가 명시 `cwd` 의 존재를 검사한다.
         let explicit = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let params = json!({ "surface_id": named, "cwd": explicit.to_string_lossy() });
 
@@ -997,20 +890,9 @@ mod create_cwd_tests {
         assert_eq!(got, None);
     }
 
-    /// 핸들러를 끝까지 불러 새 터미널을 **실제 PTY 로** 띄우고, 그 셸의 cwd 를 조회해
-    /// 핸들러가 계산한 값과 대조한다. 위 시험들은 cwd 를 **무엇으로 계산하는가**만 재서,
-    /// 생성 intent 에 `cwd: None` 을 실어도 전부 초록이었다 — 이 시험은 그 값이 생성
-    /// payload 에 **실리는가**를 잰다. 명시 `cwd` 와 지목 surface 상속 두 갈래를 다 본다.
-    ///
-    /// 셸은 `/bin/sh` 로 고정한다 — 사용자 rc 파일이 `cd` 하면 조회값이 흔들린다.
-    /// 셸 프로세스의 cwd 를 읽는 수단(`get_cwd_of_pid`)이 linux·macos 에만 있어 그 둘로 한정한다.
-    ///
-    /// **Windows 에는 이 채널이 없다.** 거기서 `get_cwd_of_pid` 는 항상 `None` 이고
-    /// (`crates/tasty-terminal/src/cwd.rs`), `Terminal::get_cwd` 는 OSC 7 캐시 다음에 그것을
-    /// 보므로 OSC 7 을 안 내는 셸의 cwd 는 조회되지 않는다. 누락 지점
-    /// (`cwd: resolved_cwd,`)은 플랫폼 공통 코드라 linux 채널이 같은 줄을 본다. Windows 에서
-    /// 이 사실을 재려면 PTY 가 아니라 `DomainIntent::CreateWorkspace` 를 가로채 그 `cwd`
-    /// 필드를 단언하는 수준의 시험이 필요하다.
+    // 실제 PTY의 cwd를 조회해 계산한 경로가 생성까지 전달되는지 확인한다.
+    // 사용자 rc 영향을 피하도록 /bin/sh를 사용한다. Windows는 get_cwd_of_pid가 없어 제외한다.
+    // 이 시험은 Windows의 실제 cwd를 검증하지 않으며 생성 payload 코드는 플랫폼 공통이다.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn the_resolved_cwd_reaches_the_new_terminals_shell() {
@@ -1048,7 +930,6 @@ mod create_cwd_tests {
         }
     }
 
-    /// 지목한 surface 가 있어도 `inherit_cwd` 를 끈 설정은 그대로 존중한다.
     #[test]
     fn a_named_surface_respects_inherit_cwd_off() {
         let (mut state, mut engine) = crate::state::tests::test_state();

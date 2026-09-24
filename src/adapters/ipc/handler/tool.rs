@@ -1,6 +1,4 @@
-//! Debug 전용 도구 메뉴 IPC. 사용자 클릭을 자동화로 재현하는 디버그 기능이므로
-//! release 빌드에 노출되지 않는다. `#[cfg(debug_assertions)]`로 감싸 컴파일 자체를
-//! debug 빌드에서만 한다.
+//! 도구 메뉴의 사용자 클릭을 재현하는 디버그 전용 IPC. release에서는 컴파일하지 않는다.
 
 #![cfg(debug_assertions)]
 

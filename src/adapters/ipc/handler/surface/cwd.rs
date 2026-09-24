@@ -1,8 +1,4 @@
-//! `surface.set_cwd` IPC 핸들러 — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
-//!
-//! explorer 가 root 변경 시 carry 후보 cwd 갱신, 이후 새 surface 생성 시
-//! resolve_inherit_cwd_from_surface 경로에서 자동 활용.
-//! webview::handle_set_url 과 동일 패턴 — `&CoreState` (immutable) 로 충분.
+//! 플러그인이 RemoteSurface의 cwd를 갱신한다. 이후 새 surface의 작업 폴더 선택에 사용한다.
 
 use crate::adapters::ipc::handler::params::require_u32;
 use serde_json::Value;

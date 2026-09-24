@@ -8,10 +8,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, record_rss_sample};
 
-/// Agent 타입 RSS self-report 감지. `telemetry.record`(`_batch`) 로 들어온
-/// 이벤트의 metric 이 [`tasty_telemetry::RSS_METRIC_NAME`] 이면 RssSurge
-/// 검출에 공급한다 — Plugin 타입(host sysinfo 직접 sampling)과 달리 PID 기반
-/// 측정이 구조적으로 불가능한 caller(원격/agent 프로세스) 를 위한 경로다.
+/// Agent가 보고한 RSS 이벤트를 이상 탐지에 전달한다. Plugin의 RSS는 호스트가 직접 측정한다.
 fn detect_rss_self_report(
     core: &Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -95,7 +92,7 @@ pub fn handle_record_batch(
         .get(window.active_workspace_index())
         .map(|ws| ws.id);
     let ts = now_ms();
-    // pre-validate all → 부분 실패 방지.
+    // 잘못된 입력으로 일부만 기록되지 않도록 전체 입력을 먼저 검사한다.
     let mut events = Vec::with_capacity(arr.len());
     for (i, item) in arr.iter().enumerate() {
         match build_event(item, default_agent.as_str(), default_ws, ts) {
@@ -125,7 +122,3 @@ pub fn handle_record_batch(
         }),
     )
 }
-
-// ============================================================
-// 조회 — memory prefix scan → pure aggregation
-// ============================================================

@@ -1,18 +1,7 @@
-//! `session.*` IPC 핸들러 — 자식 agent 에게 발급하는 [`SessionToken`] 관리.
-//!
-//! 호스트가 띄운 child 프로세스(예: `claude.spawn`)는 시작 시
-//! 환경변수 `TASTY_SESSION_TOKEN` 으로 토큰을 받아 모든 IPC envelope 에 첨부한다.
-//! 호스트는 [`crate::ipc::session::SessionStore`] 로 검증해
-//! [`CallerContext::Agent`] 로 분기 — agent_id 위조 방지의 핵심.
-//!
-//! 권한 모델:
-//! - `session.issue` 는 `AgentManage` 필요. 호출자(부모) 가 자식에게 권한을
-//!   넘긴다. 호스트는 자식에게 **자신이 가진 권한의 부분집합만** 발급할 수
-//!   있다 (escalation 방지). Local caller 는 무제한.
-//! - `session.revoke` 는 `AgentManage` 필요. 임의 토큰을 무효화 — 부모-자식
-//!   확인은 하지 않는다 (어차피 AgentManage 가 있으면 새 token 을 만들 수
-//!   있으므로 추가 게이트가 의미 없음).
-//! - `session.list` 는 host 전용 (`local_only`). 모든 활성 세션을 본다.
+//! 자식 에이전트의 세션 토큰을 발급·조회·무효화한다.
+//! 자식은 TASTY_SESSION_TOKEN을 IPC에 보내고 호스트가 SessionStore로 검증한다.
+//! issue/revoke에는 AgentManage 권한이 필요하다. 발급은 호출자의 권한 범위로 제한하며
+//! Local은 제한하지 않는다. revoke는 부모 관계를 따로 검사하지 않는다. list는 Local 전용이다.
 
 use super::params::{self, p_try};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,16 +29,9 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
     }
 }
 
-/// caller 가 자식 토큰에 `p` 를 넣을 수 있는가 — 자기 권한 셋에 있는 것만 넘긴다.
-///
-/// 예외 하나: plugin 은 **자기가 점유한 namespace** 의 `ipc.invoke:<prefix>` 를 쥐지 않고도
-/// 넘길 수 있다. 자기 namespace 호출은 게이트가 토큰 없이 통과시키므로 그 토큰은 plugin
-/// 자신에게 쓸모가 없고, 그렇다고 넘기지 못하면 자식 agent 가 발급자에게 돌아오는 호출
-/// (예: `claude.hook`)이 막힌다. 이 면제는 plugin 프로세스 caller 에만 선다 — agent 는
-/// 이미 받은 토큰 안에서만 넘긴다(ADR-0012).
-///
-/// `owns_prefix(plugin_id, prefix)` 는 운영에서 `tasty_ipc::method_meta::plugin_owns_prefix`
-/// 다. 인자로 받는 것은 소유 표가 프로세스 전역이라 테스트가 그것을 바꿔 끼울 수 없어서다.
+/// 호출자는 가진 권한만 넘길 수 있다. 플러그인은 자신이 소유한 namespace의 invoke 권한도
+/// 자식에게 줄 수 있어야 자식이 발급 플러그인에 다시 호출할 수 있다. Agent에는 이 예외가 없다.
+/// owns_prefix는 시험에서 전역 등록표를 바꾸지 않도록 주입한다(ADR-0012).
 fn caller_may_grant(
     caller: &CallerContext,
     p: &Permission,
@@ -118,7 +100,6 @@ pub fn handle_issue(
     };
     let ttl_ms = p_try!(params::opt_int::<u64>(params, "ttl_ms", &id));
 
-    // 권한 토큰을 Permission 으로 매핑하고, 알 수 없는 토큰을 거부.
     let mut perms: Vec<Permission> = Vec::with_capacity(perm_tokens.len());
     for t in &perm_tokens {
         match Permission::from_token(t) {
@@ -132,8 +113,6 @@ pub fn handle_issue(
         }
     }
 
-    // Escalation 방지: caller 가 가진 권한의 부분집합만 발급 가능.
-    // Local/Internal 은 무제한. Plugin/Agent 는 자기 권한 셋을 기준으로 검사.
     for p in &perms {
         if !caller_may_grant(caller, p, tasty_ipc::method_meta::plugin_owns_prefix) {
             return JsonRpcResponse::error(
@@ -430,10 +409,6 @@ pub fn handle_request_permission(
         None => JsonRpcResponse::error(id, -32603, "elevation publish failed"),
     }
 }
-
-// 옛 handler validation 단위 테스트 모듈은 제거했다.
-// 핸들러 시그니처에 `&Core` 가 들어가면서 mock 비용이 크고, 핵심인 영속 통합은
-// `crate::ipc::session::tests` 가 SessionStore 직접 호출로 이미 검증한다.
 
 #[cfg(test)]
 mod grant_tests {

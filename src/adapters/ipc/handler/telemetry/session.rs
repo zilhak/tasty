@@ -20,7 +20,6 @@ pub fn handle_session_summary(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    // workspace_id 가 없으면 모든 workspace 를 합산한다 — 포커스 독립 원칙.
     let workspace_id =
         match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
             Ok(v) => v,
@@ -53,7 +52,6 @@ pub fn handle_session_summary(
     JsonRpcResponse::success(id, json!({ "format": "markdown", "summary": md }))
 }
 
-/// 집계 결과. workspace_id / since / until 은 입력 그대로 echo.
 #[derive(serde::Serialize)]
 pub(super) struct SessionSummary {
     workspace_id: Option<u32>,
@@ -94,7 +92,6 @@ pub(super) fn build_session_summary(
     };
     let events = collect_events(core, &filter)?;
 
-    // Metric 별 sum. ipc_calls 는 분리.
     let mut metric_sum: BTreeMap<String, f64> = BTreeMap::new();
     let mut ipc_method_count: BTreeMap<String, u64> = BTreeMap::new();
     let mut ipc_total: u64 = 0;
@@ -120,10 +117,8 @@ pub(super) fn build_session_summary(
     top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     top.truncate(top_n_size);
 
-    // Approval 집계 — approval.history 의 prefix scan 재사용 패턴.
     let approvals = collect_approvals(core, workspace_id, since, until)?;
 
-    // Anomaly 집계 — Global scope prefix scan, 윈도우 적용.
     let anomalies = collect_anomalies(core, since, until)?;
 
     Ok(SessionSummary {
@@ -239,8 +234,7 @@ pub(super) fn collect_anomalies(
 pub(super) fn render_summary_markdown(s: &SessionSummary) -> String {
     use std::fmt::Write;
     let mut out = String::new();
-    // `String` 의 `fmt::Write` 는 절대 실패하지 않으므로(infallible) 내부에서 `?` 로
-    // 묶고 마지막에 한 번만 단언한다. 네트워크 전송이 아니라 인메모리 포맷팅이다.
+    // 메모리 String 포맷팅은 실패하지 않으므로 마지막에 한 번만 확인한다.
     let build = |out: &mut String| -> std::fmt::Result {
         writeln!(out, "# 세션 요약")?;
         writeln!(out)?;

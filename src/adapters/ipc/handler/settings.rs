@@ -1,6 +1,4 @@
-//! `settings.*` IPC 핸들러 — plugin 이 자기 자신의 `plugin_settings` 값을
-//! 런타임에 read-back. `plugin_id` 는 요청 파라미터로 받지 않고
-//! `CallerContext` 에서 강제 도출한다(다른 plugin 값 조회 불가).
+//! 요청의 plugin_id 대신 CallerContext의 owner로 플러그인 설정을 조회한다.
 
 use super::params::{self, p_try};
 use serde_json::{Value, json};
@@ -9,15 +7,8 @@ use crate::core::CoreState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// `settings.get_plugin_setting { storage_key }` →
-/// `{ "value": <PluginSettingValue as JSON> | null }`.
-///
-/// caller 가 `CallerContext::Plugin` 이 아니면(Local/Agent) — 이 핸들러는
-/// "plugin 자기 설정 read-back" 전용이라 Local/Agent 호출은 항상 값 없음으로
-/// 취급한다. `caller.owner()` 를 그대로 재사용(memory.rs/secret.rs 와 동일
-/// 관례) — Local 은 `HOST_OWNER`("_host") 로 조회되므로 plugin_settings 맵에
-/// 해당 키가 존재할 수 없어 자연히 `null` 이 반환된다. 별도 거부 분기를
-/// 두지 않는 편이 기존 owner() 관례와 일관되고 더 단순하다.
+/// caller.owner()와 storage_key에 해당하는 값을 반환한다. 없으면 null이다.
+/// Local은 _host, Plugin은 plugin_id, Agent는 agent_id를 키로 쓰며 별도 타입 거절은 없다.
 pub fn handle_get_plugin_setting(
     engine: &CoreState,
     caller: &CallerContext,
@@ -44,17 +35,14 @@ pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcRespo
     }
 }
 
-/// `settings.set_remote_transfer { dir?, max_mb? }` — 제공된 필드만 현재 설정 위에
-/// 덮어쓴 뒤 `UpdateSettings` intent 로 dispatch 한다(라이브 `engine.settings` 직접
-/// mutate 금지 — collapse 가 prev/new 를 비교하므로 pre-mutate 시 분기가 죽는다.
-/// clone 위에서만 수정). 이후 기존 파이프라인이 config.toml save 까지 처리한다.
+/// 현재 설정의 사본에 지정 필드만 합쳐 UpdateSettings로 적용한다.
+/// 원본을 미리 바꾸면 이전 값과의 차이를 잃으므로 후속 처리에서 저장까지 맡긴다.
 pub fn handle_set_remote_transfer(
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    // 라이브 설정의 clone 위에서만 수정(직접 mutate 금지).
     let mut new_settings = engine.settings.clone();
     let mut changed = false;
 
@@ -145,7 +133,6 @@ mod tests {
     #[test]
     fn get_remote_transfer_reflects_live_settings() {
         let mut e = engine();
-        // 라이브 설정을 직접 바꿔도(테스트 편의) get 이 그 값을 반영하는지 확인.
         e.settings.remote_transfer.dir = "/tmp/xfer".to_string();
         e.settings.remote_transfer.max_mb = 42;
         let resp = handle_get_remote_transfer(&e, json!(1));
@@ -163,8 +150,7 @@ mod tests {
             PluginSettingValue::Number(3.0),
         );
         let caller = plugin_caller("com.tasty.claude");
-        // 요청에 plugin_id 파라미터 자체가 없다 — caller 로 강제 스코프됨을
-        // 검증하는 게 핵심이라, params 에 넣어봐도 무시돼야 한다.
+        // 요청의 plugin_id로 다른 플러그인 설정을 읽을 수 없어야 한다.
         let resp = handle_get_plugin_setting(
             &e,
             &caller,

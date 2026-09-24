@@ -1,18 +1,5 @@
-//! `telemetry.*` IPC 핸들러 — 메트릭 기록·조회.
-//!
-//! `tasty-telemetry` 도메인의 얇은 어댑터. 이벤트마다 [`tasty_memory`] 에
-//! `tasty.telemetry.event.{ts:013}.{seq:04}` 키로 영속 (workspace_id 가
-//! 있으면 `workspace:<wid>` scope, 없으면 `global`). 조회 핸들러는 prefix
-//! scan + 도메인 pure aggregation 으로 응답을 만든다.
-//!
-//! 단계 4.1 범위:
-//! - `telemetry.record` / `telemetry.record_batch` — 단일/배치 기록
-//! - `telemetry.summary` — 집계 요약
-//! - `telemetry.timeseries` — 윈도우 버킷 시계열 (raw events 에서 즉시 집계)
-//! - `telemetry.top` — agent/workspace top-N
-//!
-//! 단계 4.2+ 에서 dispatcher 미들웨어가 자동으로 ipc.<method> 카운트를
-//! 기록하기 시작한다.
+//! 메트릭을 메모리 저장소에 기록하고 조회·집계한다.
+//! workspace_id가 있으면 해당 workspace scope, 없으면 global에 저장한다.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -32,16 +19,8 @@ pub(crate) fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 호출 전 cap 차단 체크.
-///
-/// Plugin caller 의 agent 에 대해, `triggered` 가 있고 action 이 `Pause` 또는
-/// `RequireApproval` 인 cap 이 하나라도 있으면 차단 사유 문자열을 반환한다.
-///
-/// 모든 메서드를 차단한다 (telemetry.* 포함). `telemetry.cap.reset` 으로 해제는
-/// **Local caller (CLI/사용자)** 만 가능 — Local 은 본 함수의 검사 대상이 아니므로
-/// 차단되지 않는다.
-///
-/// 차단 메시지는 cap_id / metric / action 을 포함해 디버깅을 돕는다.
+/// Pause/RequireApproval cap이 발동한 플러그인의 모든 IPC를 차단한다.
+/// Local은 이 검사 대상이 아니므로 cap.reset으로 해제할 수 있다.
 pub(crate) fn check_cap_block(
     core: &Core,
     caller: &CallerContext,
@@ -77,14 +56,8 @@ pub(crate) fn check_cap_block(
     None
 }
 
-/// dispatcher 미들웨어용 자동 카운트.
-///
-/// caller 가 `_host` 이거나 method 가 `telemetry.` 로 시작하면 skip한다 —
-/// 자기 자신을 측정하면 의미가 없고, telemetry 내부 호출은 재귀 폭주를 만든다.
-/// 메트릭 이름은 `ipc_calls`, 메서드 식별자는 `method` 태그로 들어간다 (도메인
-/// metric 검증이 `.` 을 허용하지 않으므로 `ipc_calls.<method>` 형태를 피한다).
-///
-/// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
+/// IPC 호출을 ipc_calls로 기록하고 메서드는 태그에 담는다.
+/// _host와 telemetry.*는 자기 집계를 피하려고 제외하며 기록 실패가 원래 호출을 막지는 않는다.
 pub(crate) fn record_ipc_call(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -124,8 +97,7 @@ pub(crate) fn record_ipc_call(
     }
 }
 
-/// IPC 호출 후 anomaly 검출. `AnomalyDetector::record_call` 이 CallBurst/
-/// SlowLoop 중 하나라도 발화를 보고하면 각각 영속하고 돌려준다 — 알림은 호출자가 낸다.
+/// 호출 후 CallBurst/SlowLoop를 검사해 저장한다. 알림은 호출자가 담당한다.
 fn detect_anomalies_after_ipc(
     core: &Core,
     engine: &mut crate::core::CoreState,
@@ -145,15 +117,8 @@ fn detect_anomalies_after_ipc(
     anomalies
 }
 
-/// RSS 샘플 1건을 anomaly detector 에 공급 + RssSurge 발화 시 영속·알림.
-///
-/// 두 caller type 이 각자 다른 경로로 이 함수에 도달한다:
-/// - Agent 타입: `telemetry.record`(`handle_record`/`handle_record_batch`)가
-///   metric == [`tasty_telemetry::RSS_METRIC_NAME`] 인 이벤트를 self-report
-///   로 받았을 때.
-/// - Plugin 타입: `App::about_to_wait` 이 `PluginManager` 가 sysinfo 로 직접
-///   sampling 한 (plugin_id, rss_bytes) 를 주기적으로 공급할 때
-///   ([`crate::adapters::ipc::handler::record_plugin_rss_samples`]).
+/// RSS 증가를 검사한다. Agent는 record/record_batch의 자기 보고를,
+/// Plugin은 호스트가 sysinfo로 수집한 샘플을 사용한다.
 pub(crate) fn record_rss_sample(
     core: &Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -196,7 +161,6 @@ fn parse_tags(v: Option<&Value>) -> std::result::Result<Vec<(String, String)>, S
     Ok(out)
 }
 
-/// 한 이벤트 입력 파라미터를 도메인 객체로 빌드. caller agent 가 디폴트.
 fn build_event(
     params: &Value,
     default_agent: &str,
@@ -235,8 +199,7 @@ fn build_event(
     Ok(ev)
 }
 
-/// 이벤트를 memory store 에 저장. seq 가 매 이벤트마다 새로 발급되어 동일
-/// ms 안에서 key 가 충돌하지 않는다.
+/// 같은 밀리초에 들어온 이벤트는 새 seq로 키 충돌을 피한다.
 fn persist_event(
     core: &Core,
     engine: &mut crate::core::CoreState,
@@ -251,10 +214,7 @@ fn persist_event(
         cas: None,
     };
     core.with_memory(|s| {
-        // 관측 로그 3종의 retention 을 여기서 태운다(주기 게이트가 있어 최대 1시간
-        // 1회). audit 이 allow 기록을 그만두면서 audit append 가 희소해졌으므로,
-        // **IPC 트래픽마다 확실히 도는 경로**가 이제 여기다. 정리가 유입에 얹혀
-        // 돌아야 "쌓는 동안에는 안 지우는" 사각이 생기지 않는다.
+        // 기록 유입 시 관측 로그를 정리한다. 공용 게이트로 최대 시간당 한 번 수행한다.
         crate::store::log_retention::maybe_prune(s, ev.ts);
         s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts)
     })

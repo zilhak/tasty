@@ -1,8 +1,4 @@
-//! `webview.*` IPC 핸들러 — plugin 이 webview-enabled surface 의 URL/navigation 제어.
-//!
-//! host 는 webview 토대 (native overlay) 만 제공하고, plugin 은 IPC 로 URL 설정.
-//! sync_webviews 가 매 프레임 RemoteSurface 의 webview_url 캐시를 읽어 native
-//! WebView 에 load_url 자동 호출.
+//! 플러그인이 RemoteSurface에 URL을 설정하면 sync_webviews가 native WebView에 반영한다.
 
 use super::params::require_u32;
 use serde_json::Value;
@@ -10,9 +6,7 @@ use serde_json::Value;
 use crate::plugin::PluginManager;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// attach mirror 문서의 변경 신호원(ADR-0022) — 다시 그려진 surface 를 attach
-/// client 들에 알린다. 화이트리스트·수신자·점유 없음의 판정은 전부
-/// `attach_runtime::notify_markdown_changed` 가 한다.
+/// 문서 변경을 attach 클라이언트에 알린다. 대상과 허용 종류는 attach_runtime이 검사한다.
 fn notify_content_changed(
     engine: &crate::core::CoreState,
     surface: &crate::plugin_bridge::remote_surface::RemoteSurface,
@@ -24,16 +18,9 @@ fn notify_content_changed(
     }
 }
 
-/// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
-///
-/// 시그니처는 *read-only* (`&CoreState`) — `&engine.workspaces` 순회 +
-/// `RemoteSurface::set_webview_url`(interior-mut `&self` 메서드) 만 호출. `handle_tree` 와
-/// 동일 패턴이다.
-///
-/// 이 메서드는 외부 호출자(에이전트)에게도 열려 있다. 그래서 `caller` 가 그 surface 의 소유
-/// plugin 인지를 페이지와 함께 적는다 — host 는 소유 plugin 이 쓴 페이지 위의 사용자 클릭만
-/// 사용자 행동의 근거로 기록한다(ADR-0031). 에이전트는 페이지를 계속 쓸 수 있지만, 그 페이지
-/// 위의 사용자 클릭을 파일 열기의 사용자 행동으로 바꾸지는 못한다.
+/// RemoteSurface에 URL과 페이지 작성자 정보를 기록한다.
+/// 외부 호출도 URL을 설정할 수 있지만 소유 플러그인이 쓴 페이지의 클릭만
+/// 파일 열기의 사용자 행동으로 인정한다(ADR-0031).
 pub fn handle_set_url(
     engine: &crate::core::CoreState,
     caller: &tasty_ipc::caller::CallerContext,
@@ -49,9 +36,7 @@ pub fn handle_set_url(
         None => return JsonRpcResponse::invalid_params(id, "missing 'url'"),
     };
 
-    // surface_id 와 일치하는 RemoteSurface 찾기 + set_webview_url 호출.
-    // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃 트리 전체를
-    // 조회한다 — surface 레벨 split(SurfaceGroup)의 비포커스 leaf 도 대상이다.
+    // 분할 탭의 비포커스 surface도 찾도록 레이아웃 전체를 순회한다.
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -70,8 +55,6 @@ pub fn handle_set_url(
                         notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
-                    // plugin 쪽에도 에러가 돌아가지만 그 줄은 plugin 로그에만 남는다.
-                    // 화면이 비는 증상을 host 로그만으로 가를 수 있게 여기서도 남긴다.
                     tracing::warn!(
                         "webview.set_url: surface {sid} is not a webview-enabled RemoteSurface"
                     );
@@ -88,7 +71,6 @@ pub fn handle_set_url(
     JsonRpcResponse::error(id, -32000, "surface_id not found")
 }
 
-/// `caller` 가 `rs` 를 소유한 plugin 인가 — `handle_set_url` 이 페이지 작성자로 적는 값이다.
 fn is_owner(
     caller: &tasty_ipc::caller::CallerContext,
     rs: &crate::plugin_bridge::remote_surface::RemoteSurface,
@@ -99,24 +81,15 @@ fn is_owner(
     )
 }
 
-/// webview 가 네비게이션을 시도한 URL 을 소유 plugin 에 통지(`webview.navigation_attempt`,
-/// host→plugin — `handle_set_url` 의 반대 방향). "원격 http(s) 차단" 판정과 독립적으로,
-/// 차단 여부와 무관하게 시도마다 항상 호출된다(호출부가 native backend 의
-/// decide-policy/NavigationStarting 콜백에서 캡처한 URL 을 매 프레임 poll 해 넘긴다).
-///
-/// surface_id 에 대응하는 webview-enabled `RemoteSurface` 가 없으면 조용히 no-op —
-/// 네비게이션 캡처와 surface 제거 사이에 프레임 경계가 끼어드는 정상적인 레이스다.
-///
-/// 통지한 plugin(그 surface 의 소유자)과 그 plugin 이 지금 페이지를 썼는가를 돌려준다 —
-/// 통지하지 않았으면 `None`. 호출부는 근거가 되는 시도(사용자 제스처 · 이 plugin 이 쓴 페이지)를 **바로 이 plugin 에** 묶어
-/// 기록하고, 근거가 못 되는 시도면 그 surface 의 기록을 지운다(ADR-0031).
+/// 차단 여부와 무관하게 navigation 시도를 소유 플러그인에 알린다.
+/// 처리 전에 surface가 제거됐으면 무시한다. 통지한 플러그인과 페이지 소유 여부를 반환한다.
+/// 호출자는 사용자 제스처 기록을 해당 플러그인에 연결하고 아닌 경우 이전 기록을 지운다(ADR-0031).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,
     engine: &crate::core::CoreState,
     surface_id: u32,
     url: &str,
 ) -> Option<crate::plugin_bridge::user_navigation::NavigationOwner> {
-    // `handle_set_url` 과 동일하게 레이아웃 트리 전체를 조회한다(split 비포커스 leaf 포함).
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -157,9 +130,7 @@ mod tests {
     use crate::model::SplitDirection;
     use serde_json::json;
 
-    /// 탭의 focused leaf 를 유지한 채 `kind` surface 를 형제 leaf 로 추가하고
-    /// 새 surface id 를 돌려준다. `Core::apply_split_surface`(`DomainIntent::SplitSurface`)
-    /// 의 모델 효과만 재현한다 — 새 leaf 는 비포커스다.
+    /// 포커스를 유지한 채 형제 surface를 추가한다. 실제 PTY를 만들지 않고 모델 변경만 재현한다.
     fn split_in_kind_surface(
         state: &crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -240,9 +211,6 @@ mod tests {
         panic!("remote surface {sid} not found");
     }
 
-    /// 페이지를 누가 썼는지가 surface 에 남는다 — 소유 plugin 이 쓰면 참, 외부 호출자(에이전트)나
-    /// 다른 plugin 이 쓰면 거짓이다. host 는 참인 페이지 위의 사용자 클릭만 사용자 행동의 근거로
-    /// 기록한다(ADR-0031). 쓴 적이 없는 surface 는 거짓에서 시작한다.
     #[test]
     fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -263,9 +231,7 @@ mod tests {
         assert!(!written_by(&plugin_caller("com.example.other")));
     }
 
-    /// 페이지 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌면 host 가 가져갈 때까지 전이
-    /// 표지가 선다 — 가져가면 내려간다. 소유 plugin 이 연달아 쓰거나 에이전트가 덮는 것은 전이가
-    /// 아니다(ADR-0031).
+    // 외부 작성자에서 소유 플러그인으로 바뀐 기록은 host가 읽을 때까지 유지한다.
     #[test]
     fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -297,8 +263,6 @@ mod tests {
         );
     }
 
-    /// split 탭의 **비포커스** leaf 도 `webview.set_url` 로 도달해야 한다.
-    /// 수정 전에는 `Tab::surface()`(포커스 leaf 1 개)만 봐서 `surface_id not found` 였다.
     #[test]
     fn set_url_reaches_non_focused_split_leaf() {
         let (state, mut engine) = crate::state::tests::test_state();
@@ -311,7 +275,6 @@ mod tests {
             &json!({ "file": "/workspace/proj/readme.md" }),
         );
 
-        // 포커스는 원래 터미널 leaf 에 남아 있어야 한다(= md_sid 는 비포커스 leaf).
         assert_eq!(focused_surface_id(&state, &engine), terminal_sid);
 
         let resp = set_url(&engine, md_sid);
@@ -323,7 +286,6 @@ mod tests {
         assert_eq!(resp.result, Some(json!({ "ok": true })));
     }
 
-    /// 3 leaf 중첩 split(`Split { first: Split{..}, second: Leaf }`)의 모든 leaf 가 조회된다.
     #[test]
     fn set_url_reaches_all_leaves_of_nested_split() {
         let (state, mut engine) = crate::state::tests::test_state();
@@ -354,7 +316,6 @@ mod tests {
         }
     }
 
-    /// 단독 leaf 탭(회귀 없음)과 존재하지 않는 id(기존 에러 보존).
     #[test]
     fn set_url_sole_leaf_ok_and_unknown_id_errors() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -376,11 +337,7 @@ mod tests {
         );
     }
 
-    /// markdown 문서가 다시 그려지면(`webview.set_url`) 워크스페이스를 점유한 attach client
-    /// 에 `markdown_changed` 가 간다 — ADR-0022의 신호원이 이 핸들러다. 수신자
-    /// 집합·화이트리스트 판정은 `attach_runtime::markdown_changed_tests` 가 따로 재고, 여기서
-    /// 재는 것은 **이 핸들러가 그 함수를 부르는가** 하나다(부르지 않아도 그쪽 시험은 초록이다).
-    /// 신호는 그 surface 에 대해 한 번만 가고, set_url 이 실패한 surface 에는 가지 않는다.
+    // 수신자 판정 단독 시험과 별도로 set_url이 실제 변경 통지를 호출하는지 확인한다.
     #[test]
     fn set_url_on_markdown_surface_signals_attached_clients() {
         use tasty_ipc::stream_hub::StreamHub;
@@ -418,14 +375,11 @@ mod tests {
         );
     }
 
-    /// webview 가 아닌 surface 는 기존대로 명시적 에러를 낸다(비포커스 leaf 라도).
     #[test]
     fn set_url_on_terminal_leaf_reports_not_webview() {
         let (state, mut engine) = crate::state::tests::test_state();
         let terminal_sid = focused_surface_id(&state, &engine);
-        // 탭을 split 로 만들기 위해 markdown leaf 를 붙인다. 이 테스트가 검사하는
-        // 대상은 터미널 leaf 쪽 응답이라 새 surface id 는 쓰지 않는다(반환값은
-        // `u32` — 삼켜지는 `Result` 가 아니다. 실패는 헬퍼 안에서 panic 한다).
+        // 분할만 준비한다. 검사 대상은 기존 터미널이며 새 surface ID는 사용하지 않는다.
         split_in_kind_surface(
             &state,
             &mut engine,

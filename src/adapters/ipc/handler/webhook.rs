@@ -1,21 +1,10 @@
-//! `webhook.*` IPC 핸들러 — 인바운드 웹훅 등록/조회/해제.
+//! 인바운드 웹훅 등록·조회·해제. 대상은 ID로 지정하고 목록은 전체를 반환한다.
+//! 웹훅 항목별 소유자 격리는 없다. 상태는 webhook/hook_handler의 전역 저장소에 있다.
 //!
-//! **불가침 원칙 2·3**: 웹훅 CRUD 는 에이전트 작업이라 IPC+CLI 양면 노출. 대상은
-//! opaque id 로 직접 지정하고 list 는 전 범위 조회 — 사용자 포커스/상태에 부수효과
-//! 없음. 웹훅에는 소유자/격리 개념이 없다(전체 목록 공개).
-//!
-//! 상태는 `crate::webhook` 전역 싱글턴 + `crate::hook_handler` 전역 레지스트리에
-//! 있으므로 engine/state 를 받지 않는다.
-//!
-//! ## 불변식 게이트 (등록 경로)
-//! - **source 게이트**: 핸들러 id 로 바인딩 시 `validate_binding(handler, Webhook)` 로
-//!   검증 → `source: hook` 전용·`ShellCommand` 는 여기서 거부(`invalid_params`).
-//! - **데이터/흐름 분리**: 인라인 시퀀스의 `method` 는 owner(로컬 CLI/IPC)가 준
-//!   리터럴이며, 외부 HTTP 페이로드는 이 등록 경로에 닿지 않는다.
-//! - **plugin caller 게이트(S11)**: `webhook.register` 는 `Network` 권한으로 plugin
-//!   도 호출 가능하지만, plugin 은 인라인 `sequence`(Local 권한 실행 → escalation)를
-//!   못 쓰고 자기 소유(`<plugin_id>/…`) hook 핸들러 id 만 바인딩할 수 있다. 시퀀스
-//!   정의는 owner(Local) 전용 채널로 유지된다.
+//! 등록한 핸들러는 Webhook source로 바인딩 가능한지 검사하며 셸/hook 전용은 거절한다.
+//! HTTP payload는 등록 경로에 들어오지 않고 실행할 메서드를 바꾸지 못한다.
+//! 플러그인은 Network 권한으로 자기 핸들러만 등록할 수 있다. Local 권한으로 실행되는
+//! 인라인 시퀀스를 임의 등록하면 권한을 우회할 수 있으므로 플러그인에는 허용하지 않는다.
 
 use super::params::{self, p_try};
 use serde_json::json;
@@ -42,11 +31,7 @@ const DEFAULT_METHODS: &[&str] = &["POST"];
 ///
 /// `handler` 와 `sequence` 중 정확히 하나를 지정한다.
 ///
-/// **Plugin caller 제약(S11)**: `webhook.register` 는 `Network` 권한으로 plugin 도
-/// 호출할 수 있으나, plugin 은 **인라인 `sequence` 를 쓸 수 없고**(owner=Local 만
-/// 임의 시퀀스를 정의 — 시퀀스는 Local 권한으로 실행되므로 escalation 방지)
-/// **자기 소유 hook 핸들러 id(`<plugin_id>/…`)만 바인딩**할 수 있다. 이 두 제약이
-/// "register 는 owner 채널" 불변식(research §3.1)을 plugin 확장에서도 지킨다.
+/// 플러그인은 인라인 sequence 대신 자기 소유 핸들러를 지정해야 한다.
 ///
 /// lifetime params (선택):
 /// - `persistent`: bool (기본 false → Temporary). true 면 재시작 후에도 복원.
@@ -58,7 +43,6 @@ pub fn handle_register(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    // plugin caller 면 그 plugin_id 를 잡아 시퀀스 금지 + 소유 핸들러 게이트에 쓴다.
     let plugin_caller: Option<&str> = match caller {
         CallerContext::Plugin { plugin_id, .. } => Some(plugin_id.as_str()),
         _ => None,
@@ -74,7 +58,6 @@ pub fn handle_register(
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
 
-    // 인증 설정 파싱(선택). 형식 오류는 등록 전 거부.
     let auth = match parse_auth(params) {
         Ok(auth) => auth,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
@@ -91,9 +74,7 @@ pub fn handle_register(
                 "specify exactly one of 'handler' or 'sequence', not both",
             );
         }
-        // ── 등록된 핸들러 id 로 바인딩 ──
         (Some(hid), None) => {
-            // plugin caller 는 자기 소유(`<plugin_id>/…`) 핸들러만 바인딩 가능.
             if let Some(pid) = plugin_caller {
                 let owned_prefix = format!("{pid}/");
                 if !hid.starts_with(&owned_prefix) {
@@ -112,7 +93,6 @@ pub fn handle_register(
                     format!("hook handler '{hid}' not found"),
                 );
             };
-            // source 게이트 — 셸/hook-전용 핸들러는 여기서 거부(불변식).
             if let Err(e) = validate_binding(&handler, TriggerSource::Webhook) {
                 return JsonRpcResponse::invalid_params(id, e.to_string());
             }
@@ -127,12 +107,7 @@ pub fn handle_register(
                 }
             }
         }
-        // ── 인라인 시퀀스 (owner 직접 정의 → 익명 웹훅 핸들러 등록) ──
         (None, Some(seq)) => {
-            // plugin 은 인라인 시퀀스 금지 — 시퀀스는 Local 권한으로 실행되므로
-            // plugin 이 임의 시퀀스를 등록하면 자기 권한 집합을 넘어선 IPC escalation
-            // 이 된다. 자기 매니페스트로 선언한(=사용자 인지+grant) hook 핸들러 id
-            // 로만 바인딩하게 강제한다(위 handler 분기).
             if let Some(pid) = plugin_caller {
                 return JsonRpcResponse::invalid_params(
                     id,
@@ -145,8 +120,7 @@ pub fn handle_register(
                 Ok(calls) if !calls.is_empty() => {
                     let anon = anonymous_handler(&calls);
                     let anon_id = anon.id.clone();
-                    // 익명 핸들러를 레지스트리에도 반영(조회/일관성). 실패해도 웹훅
-                    // 등록은 진행(calls 스냅샷을 웹훅 엔트리가 이미 소유).
+                    // 웹훅은 calls 사본을 보관하므로 핸들러 등록 실패와 별개로 사용할 수 있다.
                     if let Err(e) = hook_handler::global().upsert_full_handler(anon) {
                         tracing::warn!("anonymous hook handler upsert failed: {e}");
                     }
@@ -201,8 +175,6 @@ fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
         Persistence::Temporary
     };
 
-    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다 —
-    // 그 판정은 `params` 관문이 든다(부재와 형식 오류를 가르는 자리도 거기다).
     let ttl = params::read_int::<u64>(params, "ttl_secs")?;
     let count = params::read_int::<u64>(params, "count")?;
 
@@ -257,7 +229,6 @@ fn lifetime_json(lifetime: &Lifetime) -> serde_json::Value {
     }
 }
 
-/// `webhook.list` — 전체 웹훅 목록(포커스 독립, 전 범위).
 pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
     let items: Vec<_> = webhook::list()
         .into_iter()
@@ -266,7 +237,6 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "webhooks": items }))
 }
 
-/// `webhook.info` — 단일 웹훅 상세(id 지정).
 pub fn handle_info(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let Some(wid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
@@ -286,20 +256,10 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
     JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid }))
 }
 
-/// `webhook.config` — 리스너 바인드 포트 조회/설정(S8).
-///
-/// - `port` 미지정(또는 null): **조회** — 현재 활성(설정) 포트 + bind 여부 + 파일값.
-/// - `port` 지정: **설정** — `~/.tasty/webhooks.toml` 에 기록(다른 키 보존, S5 호환).
-///   리스너 재바인드는 하지 않으므로 실제 반영은 **재시작 시점**이다(`restart_required`).
-///
-/// 포트는 **설정값 only**(자동 폴백 없음). 유효 범위 1..=65535.
+/// port가 없거나 null이면 조회한다. 지정하면 설정 파일에 저장하며 재시작 후 적용한다.
+/// 자동 대체 포트 없이 1..=65535만 허용한다.
 pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    // CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 "조회" 로 취급한다.
-    // 폭(`u16`)을 판정에 맡긴다 — 종전에는 `as_u64()` 로 받아 범위를 손으로 보고
-    // `as u16` 으로 잘랐다. 잘린 포트는 **다른 포트**이고 1..=65535 검사를 이미 통과한
-    // 뒤였다.
     match p_try!(params::opt_int::<u16>(params, "port", &id)) {
-        // ── 설정 ──
         Some(port) => {
             if port == 0 {
                 return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
@@ -310,7 +270,6 @@ pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonR
                     format!("failed to persist webhook port: {e}"),
                 );
             }
-            // 활성 포트(=bind 된 포트)와 다르면 재시작이 필요함을 알린다.
             let restart_required = webhook::registry::configured_port() != Some(port);
             JsonRpcResponse::success(
                 id,
@@ -320,11 +279,9 @@ pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonR
                 }),
             )
         }
-        // ── 조회 ──
         None => JsonRpcResponse::success(
             id,
             json!({
-                // 활성(리스너가 쓰는) 포트 — 부팅 시 파일에서 로드된 값.
                 "port": webhook::registry::configured_port(),
                 "bound": webhook::registry::is_listener_bound(),
                 // 파일의 현재 값(런타임 set 후 재시작 전이면 활성값과 다를 수 있음).
@@ -334,7 +291,6 @@ pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonR
     }
 }
 
-/// `methods` 파라미터 파싱 — 대문자 정규화. 미지정 시 기본값.
 fn parse_methods(params: &serde_json::Value) -> Vec<String> {
     match params.get("methods") {
         Some(serde_json::Value::Array(arr)) => arr
@@ -427,9 +383,7 @@ fn anonymous_handler(calls: &[IpcCall]) -> HookHandler {
     }
 }
 
-/// 웹훅 엔트리 → JSON(조회 응답). 발급 URL·메서드·핸들러·lifetime(남은횟수/만료)
-/// 노출(로컬 owner 채널). 인증은 **위치/키만** 요약 노출하고 **토큰은 절대 싣지
-/// 않는다**(`auth_summary`).
+/// 발급 URL과 실행·수명 설정을 반환한다. 인증은 위치와 키만 공개하고 토큰은 제외한다.
 fn entry_json(e: &webhook::WebhookEntry, url: &str) -> serde_json::Value {
     json!({
         "id": e.id,
@@ -483,7 +437,6 @@ mod tests {
     #[test]
     fn plugin_cannot_bind_foreign_handler() {
         let caller = plugin_caller("com.example.p");
-        // 다른 owner(host/…) 핸들러 id — 소유 prefix 불일치로 조기 거부.
         let params = json!({ "handler": "host/notify" });
         let resp = handle_register(&caller, json!(1), &params);
         assert!(
@@ -499,9 +452,7 @@ mod tests {
 
     #[test]
     fn local_caller_inline_sequence_not_gated() {
-        // Local(owner) 은 인라인 시퀀스 허용 — plugin 게이트에 걸리지 않는다.
-        // (등록 자체는 listener 미기동 등 이후 경로에 의존하므로 여기선 "plugin
-        // 게이트 거부 메시지가 아님" 만 확인한다.)
+        // 실제 등록 성공이 아니라 플러그인 전용 거절 조건에 걸리지 않는지만 검사한다.
         let params = json!({
             "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
         });

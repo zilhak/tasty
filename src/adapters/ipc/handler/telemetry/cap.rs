@@ -1,4 +1,4 @@
-//! `telemetry.cap.*` — cost cap (예산) 관리 + cap 평가/발동.
+//! 사용량 상한(cap)의 등록·조회와 초과 시 처리를 담당한다.
 
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
@@ -68,7 +68,6 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
     serde_json::to_value(cap).unwrap_or(Value::Null)
 }
 
-/// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
     core: &Core,
     engine: &mut crate::core::CoreState,
@@ -164,7 +163,6 @@ pub fn handle_cap_list(
     JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
 }
 
-/// `telemetry.cap.remove` — cap 삭제.
 pub fn handle_cap_remove(
     core: &Core,
     _engine: &mut crate::core::CoreState,
@@ -192,10 +190,7 @@ pub fn handle_cap_remove(
     }
 }
 
-/// agent + metric + window 의 현재 누적값을 raw events 에서 즉시 집계.
-///
-/// `Op::Set` 은 sum 을 통째 교체. `Op::Inc/Dec` 는 누적. 4.1 의 `summarize_events`
-/// 와 동일 정책.
+/// agent/metric/window의 이벤트를 집계한다. Set은 값을 교체하고 Inc/Dec는 더하거나 뺀다.
 pub(super) fn compute_current_value(
     core: &Core,
     cap: &CostCap,
@@ -217,7 +212,7 @@ pub(super) fn compute_current_value(
         return Ok(0.0);
     }
     let summaries = summarize_events(events);
-    // metric/agent 가 단일이면 결과는 단일 entry. workspace_id 분리는 무시 — cap 은 agent 전체.
+    // cap은 agent 전체에 적용하므로 workspace별로 나누지 않는다.
     let sum: f64 = summaries.iter().map(|s| s.sum).sum();
     Ok(sum)
 }
@@ -317,17 +312,8 @@ pub fn handle_cap_reset(
     )
 }
 
-// ============================================================
-// Cap 평가 / 액션 발화
-// ============================================================
-
-/// 매 record 후 호출되는 best-effort 후크. agent+metric 이 일치하고 아직
-/// triggered 되지 않은 cap 들을 검사해 임계를 넘으면 `triggered` 마크 + 액션 발화.
-///
-/// 모든 실패는 warn 로그로만 — record 자체의 응답에는 영향이 없다.
-///
-/// `Notify`/`RequireApproval`/`Pause` 모두 여기서 발화된다 — `Pause`/`RequireApproval`
-/// 의 실제 IPC 차단은 호출 전 [`check_cap_block`](super::check_cap_block) 이 담당한다.
+/// 기록 후 상한을 검사해 triggered를 저장하고 액션을 실행한다. 실패는 경고로 남긴다.
+/// 실제 IPC 차단은 호출 전 check_cap_block에서 수행한다.
 pub(super) fn evaluate_caps_after_record(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -350,12 +336,10 @@ pub(super) fn evaluate_caps_after_record(
     }
 }
 
-/// `ev` 와 agent+metric 이 일치하고 아직 triggered 되지 않은 cap 인가.
 fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
     cap.agent == ev.agent && cap.metric == ev.metric && cap.triggered.is_none()
 }
 
-/// 현재 값을 계산해 임계를 넘었으면 `triggered` 마크 + 저장 + 액션 발화.
 fn try_trigger_cap(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -373,7 +357,6 @@ fn try_trigger_cap(
     if current < cap.threshold {
         return;
     }
-    // 임계 초과 — triggered 마크 후 액션 발화.
     cap.triggered = Some(tasty_telemetry::CapTriggered {
         at: now_ms(),
         value: current,
@@ -385,10 +368,8 @@ fn try_trigger_cap(
     fire_cap_action(core, window, out, engine, cap, current);
 }
 
-/// cap 액션을 실제 시스템으로 발화. `Notify` 는 알림만; `RequireApproval` 은
-/// approval.request 자동 발행 + IPC 차단; `Pause` 는 알림 + IPC 차단(차단 자체는
-/// `check_cap_block` 이 담당) — memory 상의 `triggered` 필드는 이미 기록됐으므로
-/// status 조회로도 확인 가능하다.
+/// Notify는 알림, RequireApproval은 승인 요청, Pause는 알림을 만든다.
+/// Pause/RequireApproval의 이후 IPC 차단은 check_cap_block이 담당한다.
 pub(super) fn fire_cap_action(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -403,9 +384,7 @@ pub(super) fn fire_cap_action(
             fire_require_approval(core, window, out, engine, cap, current)
         }
         CapAction::Pause => {
-            // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
-            // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
-            // 보이지 않도록.
+            // 차단은 진입 검사에서 하고 여기서는 사용자에게 이유를 알린다.
             fire_notify(window, out, engine, cap, current);
             tracing::info!(
                 "cap triggered (action {:?}): cap={} agent={} metric={} value={} threshold={}",
@@ -420,14 +399,8 @@ pub(super) fn fire_cap_action(
     }
 }
 
-/// `RequireApproval` 액션: cap 이 처음 triggered 되는 시점에
-/// host 가 approval.request 를 자동 발행한다. 이후 plugin 의 모든 IPC 는
-/// `check_cap_block` 이 거부 — 사용자는 popup 에서 승인 후 `cap.reset` 으로
-/// triggered 를 풀어야 plugin 이 재개된다 (또는 거부 후 그대로 둠).
-///
-/// 매 호출마다 새 approval 을 발행하지 않고, **cap-당 1회**만 발행 (triggered 가
-/// 비어 있을 때만 fire_cap_action 가 호출되므로 자연스럽게 단발). 추가 발행이
-/// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
+/// 처음 상한을 넘으면 승인을 요청한다. 승인 후 cap.reset으로 해제해야 호출을 재개한다.
+/// triggered가 있는 동안 재발행하지 않는다. reset 후 다시 임계를 넘으면 새로 요청한다.
 pub(super) fn fire_require_approval(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -472,9 +445,7 @@ pub(super) fn fire_require_approval(
     match core.request_approval(engine, req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(core, &change.record);
-            // 승인 팝업은 창 큐에 즉시 들어간다. 같은 평가에서 먼저 발화한 cap 의 알림이
-            // 출구에 남아 있으면 팝업이 그것을 앞지르므로, 출구를 먼저 창 큐로 옮겨 발화
-            // 순서대로 쌓이게 한다(ADR-0002).
+            // 먼저 발생한 알림보다 승인 팝업이 앞서지 않도록 outbox를 먼저 창 큐로 옮긴다.
             window.enqueue_intents(std::mem::take(out));
             #[cfg(feature = "gui")]
             window.enqueue_approval_popup(engine, &change.record);
@@ -493,8 +464,7 @@ pub(super) fn fire_require_approval(
     }
 }
 
-/// `Notify` 액션: 활성 워크스페이스에 notification 추가 + host event enqueue.
-/// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
+/// IPC를 거치지 않고 활성 workspace에 알림 intent를 추가한다.
 pub(super) fn fire_notify(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
@@ -523,7 +493,3 @@ pub(super) fn fire_notify(
         .from_system(),
     );
 }
-
-// ============================================================
-// Anomaly
-// ============================================================

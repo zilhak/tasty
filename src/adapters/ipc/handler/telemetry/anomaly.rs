@@ -1,9 +1,4 @@
-//! `telemetry.anomaly.*` — anomaly 영속/조회/발동.
-//!
-//! 보존은 관측 로그 3종 공통 정책(`store::log_retention`)을 따른다. 과거
-//! 이 로그만 TTL 도 부팅 정리 목록도 없어 **재시작해도 영원히 남는** 유일한 유입원
-//! 이었다(18시간 실행 21,102건). 근거는
-//! [ADR-0009](../../../../../docs/adr/0009-state-storage-and-retention.md).
+//! 이상 탐지 기록·조회·알림. 보존은 store::log_retention의 공통 정책을 따른다(ADR-0009).
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
@@ -14,13 +9,8 @@ use crate::core::Core;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// anomaly 1건 영속. **정리 경로를 두 겹으로 건다** — TTL 하나만으로는 부족하다.
-///
-/// `expires_at` 은 만료된 행을 조회에서 빼줄 뿐, 디스크에서 지우지는 않는다
-/// (`purge_expired` 는 `memory.gc` IPC 에서만 돌고 자동 호출자가 없다). 즉 TTL 만
-/// 걸면 "조회에는 안 보이는데 파일은 계속 커지는" 상태가 되어, 이 로그가 원래 앓던
-/// 문제가 그대로 남는다. 물리 삭제는 [`log_retention`](crate::store::log_retention)
-/// 의 상한이 부팅·런타임 양쪽에서 수행한다.
+/// expires_at은 조회에서 제외할 뿐 디스크에서 지우지 않는다.
+/// 물리 삭제는 부팅·실행 중 log_retention의 상한으로 별도 수행한다.
 pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Result<(), String> {
     let key = anomaly_key(anomaly.detected_at, &anomaly.id);
     let value = MemoryValue::Json(serde_json::to_value(anomaly).map_err(|e| e.to_string())?);
@@ -29,7 +19,6 @@ pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Re
         cas: None,
     };
     core.with_memory(|s| {
-        // 다른 두 로그와 같은 게이트 — anomaly 만 유입되는 인스턴스에서도 정리가 돈다.
         crate::store::log_retention::maybe_prune(s, anomaly.detected_at);
         s.put(
             tasty_memory::HOST_OWNER,
@@ -58,10 +47,7 @@ pub(super) fn fire_anomaly_notification(
         anomaly.kind.as_token(),
         anomaly.subject
     );
-    // kind 마다 detail 의 필드 구성이 달라(CallBurst/SlowLoop 는 window_ms+count,
-    // RssSurge 는 min_samples+latest_rss_bytes) 본문도 분기한다 — 과거엔
-    // `CALL_BURST_WINDOW_MS` 를 kind 무관하게 하드코딩해 SlowLoop/RssSurge 에
-    // 잘못된 윈도우 값을 표시했었다.
+    // CallBurst/SlowLoop는 시간·건수, RssSurge는 샘플 수·RSS로 설명한다.
     let body = match anomaly.kind {
         AnomalyKind::CallBurst | AnomalyKind::SlowLoop => {
             let count = anomaly

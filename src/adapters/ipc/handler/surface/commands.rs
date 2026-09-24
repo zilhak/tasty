@@ -78,8 +78,6 @@ pub(crate) fn handle_command_at(
     )
 }
 
-/// Internal helper. memory.list(scope=Surface(N), prefix="tasty.commands.") +
-/// 시간 오름차순 + JSON value 만 추출.
 struct CommandsReadError {
     message: String,
 }

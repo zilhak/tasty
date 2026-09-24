@@ -1,23 +1,12 @@
-//! IPC 엔진 핸들러가 **창 쪽에서 읽거나 갱신해야 하는 것** — 좁은 포트와 intent 출구.
+//! IPC 핸들러가 AppState 전체 대신 사용하는 창 연산과 요청별 intent 목록.
+//! 창 조회·workspace 변경·이벤트 큐 등 필요한 연산은 IpcWindow로 제공한다.
+//! 구조 변경은 도메인 포트 CascadeWindow를 함께 사용한다.
 //!
-//! 엔진 핸들러는 창 상태(`AppState`)를 인자로 받지 않는다. 창에 닿아야 하는 일은 두 갈래다.
+//! 핸들러는 IntentOutbox에 intent를 넣고 진입점이 창 큐 끝으로 옮긴다.
+//! 기존 큐 뒤에 요청 순서대로 추가하며, 진입 검사의 intent가 핸들러보다 먼저 들어간다.
+//! 이 순서는 handler/intent_order_tests.rs에서 확인한다.
 //!
-//! - **창에 묻거나 창을 갱신하는 연산** — 대상 생략 시의 기본 워크스페이스, cwd 상속,
-//!   워크스페이스 닫기·이동·생성 뒤의 포인터 보정, 호스트 이벤트 큐, preset 적용, 승인 팝업.
-//!   그 연산만 [`IpcWindow`] 로 선언하고 창 쪽(`state::ipc_window`)이 구현한다. 구조 실행이
-//!   부르는 창 연산은 이미 도메인 포트 [`CascadeWindow`] 에 있어 그것을 물려받는다.
-//! - **UI intent 발화** — 핸들러는 intent 를 창 큐(`AppState::pending_intents`)에 직접 넣지 않고
-//!   요청 하나의 [`IntentOutbox`] 에 넣는다. 진입점(`check_request` 의 게이트 · 라우터의
-//!   `dispatch_routed` · `record_plugin_rss_samples`)이 요청이 끝날 때 그 출구를 창 큐 끝으로
-//!   한 번에 옮긴다([`IpcWindow::enqueue_intents`]). 요청 하나 안의 적재 순서는 출구에 넣은
-//!   순서 그대로이고, 게이트가 낸 것이 핸들러가 낸 것보다 먼저다
-//!   (`handler/intent_order_tests.rs` 가 고정한다).
-//!
-//! 창 상태를 **실제로 조작하는** GUI·debug 전용 핸들러(popup · 배너 · 도구 메뉴 · 파일 선택기
-//! · debug 주입 · `ui.state`)는 이 포트의 대상이 아니다 — 그것들은 라우터 진입점
-//! (`handle_checked_request`)이 쥔 `AppState` 를 `EntryWindow` 를 거쳐 창 핸들러 라우터(`route_window_handler`)로
-//! 그대로 받는다. 근거와 경계는
-//! [ADR-0002](../../../docs/adr/0002-domain-execution-and-ports.md).
+//! 창 자체를 조작하는 GUI·debug 핸들러는 별도 라우터가 EntryWindow를 통해 호출한다(ADR-0002).
 
 use std::path::PathBuf;
 
@@ -25,23 +14,16 @@ use crate::core::CoreState;
 use crate::core::cascade_window::CascadeWindow;
 use crate::intent::DispatchedIntent;
 
-/// 엔진 핸들러가 쓰는 창 연산. 메서드마다 `AppState` 의 같은 일로 한 줄 위임된다
-/// (`state::ipc_window`) — 이 trait 은 핸들러가 무엇에 닿는지를 시그니처로 말하게 할 뿐
-/// 동작을 바꾸지 않는다.
+/// 엔진 핸들러에 필요한 창 연산. state::ipc_window가 구현한다.
 pub(crate) trait IpcWindow: CascadeWindow {
-    /// 이 창에서 로컬 사용자가 보고 있는 워크스페이스의 index.
-    ///
-    /// 대상을 생략한 요청의 기본 워크스페이스 · 응답의 "활성" 표시 · 기록의 기본 귀속이
-    /// 이 값을 읽는다. 포커스 독립성(원칙 3)과의 경계에 있는 읽기다 — 호출 자리마다 이 값을
-    /// 남길지(명시 수단이 있거나 좌변이 없는 자리) 요청이 댄 대상에서 끌어낼지를
-    /// [ADR-0017](../../../docs/adr/0017-workspace-identity-and-focus.md)
-    /// 이 자리별로 정했다(`approval.request` 는 `surface_id` 가 있으면 그 워크스페이스로 간다).
+    /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
+    /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0017).
     fn active_workspace_index(&self) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.
     fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf>;
 
-    /// 워크스페이스 생성 뒤 창 쪽 cascade(호스트 이벤트 · 활성 전환 판정).
+    /// workspace 생성 후 이벤트와 활성 선택 조건을 처리한다.
     fn cascade_workspace_created(
         &mut self,
         engine: &mut CoreState,
@@ -50,7 +32,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
         created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
     );
 
-    /// 워크스페이스 메타 갱신 뒤 창 쪽 cascade(이름이 바뀌었으면 호스트 이벤트).
+    /// workspace 이름 등 메타데이터 변경을 알린다.
     fn cascade_workspace_meta_updated(
         &mut self,
         workspace_id: u32,
@@ -93,15 +75,12 @@ pub(crate) trait IpcWindow: CascadeWindow {
         record: &tasty_approval::ApprovalRecord,
     );
 
-    /// `plugin_id` 가 소유한 popup 인스턴스 `instance_id` 가 이 창에 열려 있고 사용자의
-    /// 확정형 입력을 받았는가. plugin 이 자기 popup 안의 사용자 조작으로 host 를 부를 때
-    /// 그 호출을 사용자 행동으로 칠지 정한다(ADR-0031).
+    /// 호출 플러그인이 소유한 열린 팝업이 사용자의 확정 입력을 받았는지 확인한다.
     #[cfg(feature = "gui")]
     fn plugin_popup_user_activated(&self, plugin_id: &str, instance_id: u64) -> bool;
 
-    /// `plugin_id` 가 소유한 webview surface `surface_id` 의 기록된 사용자 navigation(가장 최근
-    /// 시도가 근거일 때만 있다)이 `url` 인가. 맞으면 그 기록을 **쓴다**(한 번만 참이다). plugin 이 자기
-    /// webview 안의 사용자 클릭으로 host 를 부를 때 그 호출을 사용자 행동으로 칠지 정한다(ADR-0031).
+    /// 호출 플러그인의 webview에서 기록한 사용자 URL인지 확인하고 기록을 소비한다.
+    /// 같은 navigation은 한 번만 사용자 요청 근거로 사용할 수 있다(ADR-0031).
     #[cfg(feature = "gui")]
     fn take_webview_user_navigation(&mut self, plugin_id: &str, surface_id: u32, url: &str)
     -> bool;
@@ -110,25 +89,19 @@ pub(crate) trait IpcWindow: CascadeWindow {
     fn enqueue_intents(&mut self, intents: IntentOutbox);
 }
 
-/// 요청 하나가 발화한 UI intent 의 출구. 핸들러는 창 큐가 아니라 여기에 넣는다.
-///
-/// 출구는 진입점이 만들고 요청이 끝날 때 [`IpcWindow::enqueue_intents`] 로 비운다. 핸들러가
-/// 출구에만 닿으면 "이 핸들러는 창 상태를 안 읽고 intent 만 낸다" 를 시그니처가 말한다.
+/// 요청별 intent 목록. 핸들러는 여기에 넣고 진입점이 창 큐로 옮긴다.
 #[derive(Default, Debug)]
 pub(crate) struct IntentOutbox(Vec<DispatchedIntent>);
 
 impl IntentOutbox {
-    /// intent 하나를 출구 끝에 넣는다.
     pub(crate) fn push(&mut self, intent: DispatchedIntent) {
         self.0.push(intent);
     }
 
-    /// 넣은 순서 그대로 꺼낸다.
     pub(crate) fn into_vec(self) -> Vec<DispatchedIntent> {
         self.0
     }
 
-    /// 넣은 것이 없는가.
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()

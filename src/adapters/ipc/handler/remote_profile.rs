@@ -1,9 +1,5 @@
-//! `remote.profile.*` IPC — 원격 접속 프로필 CRUD (원칙 2 보강).
-//! (구 `tool.ssh.*` / `ssh.profile.*` 는 `crates/tasty-ipc/src/alias.rs` 에서 정규화되어 도달.)
-//!
-//! 소켓만 가진 에이전트도 프로필을 관리할 수 있게 CLI(`tasty tool ssh`)와 같은
-//! `~/.tasty/remote-profiles.toml` 를 IPC 로도 노출한다. 프로필은 비밀을 담지 않고
-//! passkey 를 이름으로 참조만 한다. 포커스 비의존(원칙 3): 대상을 `name` 으로 지정.
+//! 원격 프로필을 이름으로 관리한다. 비밀값은 담지 않고 passkey 이름으로 참조한다.
+//! 이전 tool.ssh/ssh.profile 메서드는 alias 정규화를 거쳐 들어온다.
 
 use super::params::{self, p_try};
 use serde_json::{Value, json};
@@ -15,22 +11,12 @@ use tasty_remote_profiles::{
     user_config_path,
 };
 
-/// 이 네임스페이스(원격 프로필 / passkey)가 쓰는 tasty 전용 에러 코드 블록은 `-3204x` 다.
-/// 지금 쓰이는 건 아래 둘뿐이고 `-32042..-32049` 는 비어 있다.
-///
-/// **가리킨 대상이 없다.** get/remove/import 가 존재하지 않는 이름·alias 를 받았을 때.
+/// 존재하지 않는 프로필 이름 또는 SSH alias.
 const ERR_NOT_FOUND: i32 = -32040;
 
-/// **이름이 이미 있다.** `import` 가 기존 프로필 이름과 충돌했을 때.
-///
-/// JSON-RPC 표준 `-32602`(invalid params) 가 아니다 — `-32602` 는 "파라미터를 고쳐서
-/// 다시 보내라" 는 뜻이라 호출자가 요청을 뜯어보게 만들지만, 이름 충돌은 요청 자체는
-/// 멀쩡하고 **저장소 상태**가 부딪힌 것이다. 호출자가 할 일도 다르다 — 다른 이름을 쓰거나,
-/// 덮어쓰려면 `remote.profile.add`(upsert) 로 간다. 메시지 문자열을 파싱하지 않고
-/// 코드만으로 이 분기를 잡을 수 있어야 한다.
+/// import 이름 충돌. 다른 이름을 쓰거나 add의 upsert로 덮어쓸 수 있다.
 const ERR_NAME_CONFLICT: i32 = -32041;
 
-/// [`ImportError`] → 응답. 저장소를 읽지 않는 순수 매핑이라 홈 디렉토리 없이 테스트된다.
 fn import_error_response(id: Value, err: ImportError) -> JsonRpcResponse {
     match err {
         ImportError::UnknownAlias(a) => JsonRpcResponse::error(
@@ -50,14 +36,12 @@ fn profile_to_json(p: &RemoteProfile) -> Value {
     serde_json::to_value(p).unwrap_or(Value::Null)
 }
 
-/// `remote.profile.list` → 전 프로필 목록.
 pub(crate) fn handle_list(id: Value) -> JsonRpcResponse {
     let profiles = RemoteProfiles::load();
     let arr: Vec<_> = profiles.profiles.iter().map(profile_to_json).collect();
     JsonRpcResponse::success(id, json!({ "profiles": arr }))
 }
 
-/// `remote.profile.get` { name } → 한 프로필.
 pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
@@ -73,13 +57,9 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
-/// `remote.profile.add` → upsert.
-///
-/// 일반형: { name, kind?, label?, passkey_ref?, fields? } — **tasty-attach kind CRUD 는
-/// 이 일반 fields 경로로 양면 노출된다**(예: kind="tasty-attach", fields={ssh_ref,
-/// remote_tasty, port_mode, port_file}). ssh 편의형: kind=ssh 일 때 host/user/port/
-/// identity_file/extra_options/shell 을 받아 fields/passkey 로 접는다(shell→port_mode
-/// 도출). `identity_file` → path passkey.
+/// 일반 fields로 프로필을 추가·수정한다. tasty-attach도 같은 입력을 쓴다.
+/// ssh의 host/user/port/identity_file/extra_options/shell 편의 인자는 fields/passkey로 변환한다.
+/// identity_file은 path passkey이고 shell에서 port_mode를 도출한다.
 pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
@@ -91,7 +71,6 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    // 제네릭 fields (스칼라/문자열 리스트).
     if let Some(obj) = params.get("fields").and_then(|v| v.as_object()) {
         for (k, v) in obj {
             if let Some(s) = v.as_str() {
@@ -110,7 +89,6 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     let mut will_detect = false;
 
     if kind == "ssh" {
-        // ssh 편의형 — 구 tool.ssh.add 호환.
         if let Some(host) = params.get("host").and_then(|v| v.as_str()) {
             p.set_field("host", host.to_string());
         }
@@ -216,17 +194,10 @@ fn spawn_detect(name: String) {
     });
 }
 
-/// `remote.profile.list_local` → 로컬 ssh config(`~/.ssh/config` + Include)의 Host alias.
-///
-/// 읽기 전용 · 프로세스 spawn 없음(`ssh -G` 는 `Match exec` 를 실제로 실행하므로 쓰지
-/// 않는다). `hostname`/`user`/`port` 는 **표시 전용 hint** 라 프로필 저장에 쓰지 않는다.
-/// `config_exists` / `config_readable` 은 **빈 `aliases` 의 이유**를 가른다. 셋 다 빈
-/// 목록으로 떨어지지만 호출자가 할 일은 전부 다르다: 파일이 없으면(`exists:false`)
-/// 만들라고, 있는데 못 읽으면(`exists:true, readable:false`) 권한을 고치라고, 둘 다
-/// true 인데 비었으면 config 에 Host 가 없다고 안내해야 한다. GUI 는 in-process 라
-/// 파일을 직접 보면 되지만 IPC 호출자에겐 응답에 실려야만 보인다.
-/// `config_readable` 은 **최상위 파일 한정**이다(`Include` 는 검사하지 않는다 —
-/// 못 읽은 include 는 코어가 warn 로그를 남긴다).
+/// SSH config와 Include에서 Host alias를 읽는다. Match exec를 실행할 수 있는 ssh -G는 쓰지 않는다.
+/// hostname/user/port는 표시용이며 프로필에 복사하지 않는다.
+/// config_exists/readable로 파일 부재·읽기 실패·빈 목록을 구분한다.
+/// readable은 최상위 파일만 뜻하며 Include 읽기 실패는 코어에서 경고한다.
 pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
     let profiles = RemoteProfiles::load();
     let aliases: Vec<Value> = enumerate_hosts()
@@ -255,12 +226,8 @@ pub(crate) fn handle_list_local(id: Value) -> JsonRpcResponse {
     )
 }
 
-/// `remote.profile.import` { from, name, label? } → ssh config alias 를 프로필로 등록.
-///
-/// alias 문자열만 `host` 에 담는다 — `HostName`/`User`/`Port`/`ProxyJump` 를 펼쳐
-/// 복사하면 ssh config 가 바뀔 때 값이 어긋난다(해석은 접속 시점의 ssh 가 한다).
-/// **`handle_add` 와 달리 셸 자동 감지를 spawn 하지 않는다**: 감지는 실제 SSH 접속이라,
-/// 목록에서 여러 건을 가져오면 접속이 연쇄로 일어난다. 감지는 `remote.profile.detect`.
+/// alias만 host에 저장한다. 실제 접속 설정은 접속 시 SSH가 해석한다.
+/// 가져오기는 SSH 연결을 시작하지 않는다. 셸 감지는 detect로 별도 요청한다.
 pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(from) = params.get("from").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'from' parameter");
@@ -289,7 +256,6 @@ pub(crate) fn handle_import(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
-/// `remote.profile.remove` { name } → 제거.
 pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
@@ -314,7 +280,6 @@ pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
 mod tests {
     use super::*;
 
-    /// 코드값은 계약이다 — 바꾸면 이 테스트가 먼저 깨져야 한다.
     #[test]
     fn import_error_codes_are_distinct_and_stable() {
         let unknown = import_error_response(json!(1), ImportError::UnknownAlias("nope".into()));
@@ -322,7 +287,6 @@ mod tests {
         let code = |r: &JsonRpcResponse| r.error.as_ref().expect("error 응답이어야 한다").code;
         assert_eq!(code(&unknown), -32040);
         assert_eq!(code(&taken), -32041);
-        // 이름 충돌은 더 이상 표준 invalid_params 로 뭉뚱그리지 않는다.
         assert_ne!(code(&taken), -32602);
         assert!(taken.result.is_none());
     }

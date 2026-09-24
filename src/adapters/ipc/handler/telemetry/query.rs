@@ -12,7 +12,6 @@ use crate::core::Core;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// 공통 필터 파라미터. 핸들러 진입에서 파싱 후 events 를 수집한다.
 pub(super) struct QueryFilter {
     pub(super) metric: Option<String>,
     pub(super) agent: Option<String>,
@@ -79,12 +78,10 @@ impl QueryFilter {
     }
 }
 
-/// 모든 (또는 지정된) scope 에서 telemetry 이벤트를 수집해 필터링한다.
 pub(super) fn collect_events(
     core: &Core,
     filter: &QueryFilter,
 ) -> std::result::Result<Vec<TelemetryEvent>, String> {
-    // workspace_id 가 명시되면 해당 scope 만, 아니면 모든 scope 순회.
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {
         vec![Scope::Workspace(w)]
     } else {
@@ -100,9 +97,7 @@ pub(super) fn collect_events(
     let list_opts = ListOpts {
         prefix: Some(EVENT_KEY_PREFIX.to_string()),
         limit: None,
-        // updated_at 은 도메인 ts 와 거의 일치하지만 정확하지 않으므로 server
-        // 측에서 한 번 더 ev.ts 로 필터한다 (QueryFilter::matches). 여기서는
-        // 미리 좁힐 수 있을 때만 좁힌다.
+        // 저장 시각과 이벤트 시각은 다를 수 있어 QueryFilter에서 ev.ts로 다시 거른다.
         since: filter.since.map(|v| v as i64),
         until: filter.until.map(|v| v as i64),
         offset: None,
@@ -191,12 +186,9 @@ pub fn handle_timeseries(
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    // metric 은 시계열 응답에서 의미 있게 단일 metric 으로 제한.
     if filter.metric.is_none() {
         return JsonRpcResponse::invalid_params(id, "'metric' is required for timeseries");
     }
-    // since/until 을 window 경계로 정렬 보존하지는 않는다 — 도메인 함수가 align 처리.
-    // (재할당하지 않더라도 의미 없음 — 필터링 후 aggregate.)
     let _ = &mut filter; // 재할당 안 함 — reborrow 로 mut 바인딩 의도 표시(값 drop, Result 아님).
     let events = match collect_events(core, &filter) {
         Ok(e) => e,
@@ -261,9 +253,3 @@ pub fn handle_top(
         }),
     )
 }
-
-// ============================================================
-// Cost cap (CRUD + status/reset). eval/action 발화는 cap.rs 의
-// evaluate_caps_after_record/fire_cap_action, 차단은 handler.rs 의
-// check_cap_block 이 담당한다.
-// ============================================================

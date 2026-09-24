@@ -1,11 +1,6 @@
-//! Hexagonal architecture 의 *Adapter (port 의 구현)*.
-//!
-//! - `ipc/` — Inbound adapter (JSON RPC, plugin/CLI 통신)
-//! - `ui/` — Inbound adapter (egui draw, winit window, keyboard/mouse)
-//! - `cli/` — Inbound adapter (사용자 shell 진입점 + subcommand)
-//! - `plugin/` — Inbound adapter (plugin process 의 manifest/manager/channel)
-//! - `production/` — Outbound adapter 의 production 구현 (외부 crate 매핑)
-//! - `test/` — Outbound adapter 의 test mock
+//! 앱 진입점과 외부 시스템 연동.
+//! ipc/ui/cli/plugin은 요청을 받고 production은 외부 서비스를 구현한다.
+//! test에는 시험용 구현을 둔다.
 
 pub mod cli;
 pub mod ipc;
