@@ -1182,9 +1182,9 @@ format_unknown = "format unknown"
 suggested_heading = "Suggested"
 fallback_heading = "All handlers"
 fallback_caption = "No handler matches this format."
-fallback_notice = "One-time choice — nothing is registered for this format. This screen shows again next time."
+fallback_notice = "This choice applies only once and does not set a default for this format. You will be asked again next time."
 recent_heading = "Recent"
-recent_caption = "Recently used — not matched to this format."
+recent_caption = "Recently used handlers, regardless of this file format."
 default_tag = "default"
 origin_host = "built-in"
 origin_user = "you"
@@ -1206,7 +1206,7 @@ name_field_label = "File name"
 no_file_selected = "No file selected"
 hidden_folders_one = "Show 1 hidden folder"
 hidden_folders_many = "Show {} hidden folders"
-folder_not_save_target = "Folders aren't save targets — double-click {name} to open it."
+folder_not_save_target = "{name} is a folder. Double-click it to open it, then enter a file name."
 folder_open_enters = "{name} is a folder — {confirm} enters it."
 open_button = "Open"
 empty = "This folder is empty."
@@ -1215,7 +1215,7 @@ loading_body_local = "Reading the local directory."
 loading_body_remote = "Waiting for the remote directory listing."
 remote_confirm_copied = "Remote path copied to clipboard."
 remote_confirm_clipboard_failed = "Could not copy the remote path to clipboard."
-remote_listing_truncated = "The remote directory has too many entries to show all of them — the list was truncated."
+remote_listing_truncated = "The remote folder has too many entries. Only part of the list is shown."
 
 [filepicker.error_perm]
 title = "Permission denied"
@@ -1277,7 +1277,7 @@ pane = "pane {}"
 surface = "surface {}"
 open = "Surface settings"
 unsaved = "unsaved"
-unsaved_tooltip = "Draft — applied on OK"
+unsaved_tooltip = "Press OK to apply these changes"
 
 [preset.field]
 browse = "Browse…"
@@ -1363,7 +1363,7 @@ mirror_structural_forward_failed = "The remote workspace couldn't apply that cha
 mirror_restore_empty = "Nothing to restore in the remote workspace."
 # A mirrored markdown document arrived cut at the attach frame budget (the remote
 # file is bigger than one frame can carry), so the view below is incomplete.
-mirror_markdown_truncated = "The remote document is too large to show in full — the mirror shows it truncated."
+mirror_markdown_truncated = "The remote document is too large. Only part of it is shown in the mirror."
 # Shown when a close would destroy a surface a remote attach session hard-occupies.
 # Occupancy means someone is working in that terminal right now, so closing would kill
 # their session without warning. Reclaim it with the force-detach button, then close.
@@ -1432,8 +1432,8 @@ cancelled = "The port lookup was stopped."
 # i18n store (initialized on the CLI boot path before `run_client`).
 [cli.remote_check]
 not_found = "Remote tasty not found (target={}, discovery mode={})."
-tunnel_failed = "Remote tasty likely dead: port {} found but ssh -L tunnel setup failed (target={})."
-no_ipc_response = "Remote tasty dead (stale port): port {} found and tunnel established, but no IPC response (target={}). The port file remains but the server appears to be dead."
+tunnel_failed = "Remote port {} was found, but the ssh -L tunnel could not be established (target={})."
+no_ipc_response = "Remote port {} was found and the tunnel was established, but the IPC check failed (target={})."
 alive_full = "alive: {} (port {}, version {}, {} workspaces)"
 alive_version = "alive: {} (port {}, version {})"
 alive_basic = "alive: {} (port {})"
@@ -1465,7 +1465,7 @@ created = "Created remote workspace #{} '{}' on {} (index={})"
 unknown_shell = "Unknown --shell '{}' (powershell|cmd|bash|zsh|auto)"
 ssh_added = "Added: ssh profile '{}' ({})."
 ssh_updated = "Updated: ssh profile '{}' ({})."
-attach_ref_xor_host = "--ssh-ref and an inline --host cannot be used together (reference XOR inline)."
+attach_ref_xor_host = "--ssh-ref and --host cannot be used together. Choose one connection method."
 attach_needs_ref_or_host = "tasty-attach requires --ssh-ref <name> or an inline --host."
 attach_ref_missing = "Warning: the referenced ssh profile '{}' does not exist yet (it can be added later)."
 attach_added = "Added: tasty-attach profile '{}'."
@@ -1541,7 +1541,7 @@ connect_failed = "Could not connect to tasty instance on port {}: {}. Is tasty r
 # path-argument normalization (`--cwd` / plugin `path_kind` args). Bodies only — the caller
 # prefixes them (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`).
 [cli.cwd_resolve]
-current_dir_failed = "failed to read current_dir()"
+current_dir_failed = "failed to read the current working directory"
 cwd_not_accessible = "cwd '{}' does not exist or is not accessible"
 file_not_accessible = "file '{}' does not exist or is not accessible"
 cwd_empty = "cwd is empty"
@@ -1580,14 +1580,14 @@ metadata_not_json = "Error: --metadata must be valid JSON: {}"
 content_file_read_failed = "Error: failed to read --content file '{}': {}"
 
 [cli.contract]
-bound_not_applicable = "--response-timeout-ms bounds the reply of a single request, and this command does not send one: it loops, streams or runs locally. Nothing was sent."
+bound_not_applicable = "--response-timeout-ms sets the server response wait limit for a single request. This command loops, streams, or runs locally, so it does not accept the option. Nothing was sent."
 unsupported_missing = "The tasty instance does not declare '{}' (required version {}). Nothing was sent."
 unsupported_older = "The tasty instance declares '{}' at version {}, but version {} is required. Nothing was sent."
 
 [cli.events]
 epoch_changed = "tasty restarted: the event feed is a new generation, resuming from its start"
 skipped = "{} events left the ring before they could be read"
-ahead_of_stream = "position {} is past the end of the event feed (now {}): it belongs to an earlier generation, resuming from the start"
+ahead_of_stream = "Position {} is beyond the current end of the event feed ({}). Resuming from the start."
 connection_lost = "connection to tasty lost. To resume where you left off, follow again with: {}"
 reconnecting = "connection to tasty lost, reconnecting every second"
 
@@ -1607,14 +1607,14 @@ frame_echo_mismatch = "frame {}: echo mismatch — sent {}, got {}"
 
 [cli.plugin_cli]
 manifest_skipped = "warning: plugin manifest at {} skipped: {}"
-name_shadows_host_command = "warning: plugin cli command '{}' was not registered — a built-in tasty command already uses that name, so the plugin command was unreachable anyway"
+name_shadows_host_command = "warning: plugin CLI command '{}' was not registered because a built-in tasty command already uses that name"
 no_subcommand = "no subcommand supplied"
 not_plugin_command = "'{}' is not a plugin-contributed cli command"
 subcommand_required = "'{}' requires a subcommand"
 unknown_subcommand = "unknown subcommand '{} {}'"
-flag_repeated = "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)"
-flag_not_a_number = "--{} got '{}', which is not a number — rejected rather than ignored: an ignored value is indistinguishable from the flag being absent, so the command would silently fall back to its default target"
-flag_number_out_of_range = "--{} got '{}', which is a number but outside the range this flag accepts — rejected rather than truncated: a truncated id names a different, possibly real, target"
+flag_repeated = "--{} was specified {} times, but accepts only one value. Remove the repeated option."
+flag_not_a_number = "--{} value '{}' is not a number. The command was not run."
+flag_number_out_of_range = "--{} value '{}' is outside the allowed numeric range. The command was not run."
 auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
 arg_invalid = "--{}: {}"
@@ -1631,7 +1631,7 @@ doctor_rule_unsupported = "      ! rule kind \"{}\" unsupported in this host ver
 doctor_handlers = "Handlers contributed: {}"
 doctor_action_unknown = "(unknown: {})"
 doctor_action_none = "(no action)"
-doctor_unsupported_summary = "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml."
+doctor_unsupported_summary = "{} unsupported rules will be ignored."
 home_unresolved = "could not determine tasty home directory"
 root_unresolved = "could not determine plugin root directory"
 not_installed = "plugin '{}' not installed (no manifest at {})"
