@@ -998,7 +998,7 @@ mod tests {
                 assert_eq!(
                     fh_model::target_budget_chars(LogicalPx(one)),
                     70,
-                    "글리프 하나로 나누면 시안이 적은 70 이 나온다 — 고친 것이 이것이다"
+                    "단일 글리프 폭으로 계산한 대조값은 70이어야 한다"
                 );
                 assert_eq!(LogicalPx(two - one), FH_TARGET_MONO_ADVANCE);
             });

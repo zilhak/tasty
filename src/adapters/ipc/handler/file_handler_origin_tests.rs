@@ -221,7 +221,7 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     );
     assert!(
         !engine.pending_structural_forward[0].silent_failure,
-        "사용자 발화 op 의 원격 거절은 toast 로 간다"
+        "사용자가 요청한 원격 작업의 거절은 토스트로 표시한다"
     );
     assert_eq!(state.toasts.len(), 0);
 
@@ -236,7 +236,7 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     assert_eq!(engine.pending_structural_forward.len(), 1);
     assert!(
         engine.pending_structural_forward[0].silent_failure,
-        "에이전트 발화 op 의 원격 거절은 로그로 간다"
+        "에이전트가 요청한 원격 작업의 거절은 로그에 기록한다"
     );
 }
 

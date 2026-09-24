@@ -1,6 +1,4 @@
-//! 진입 화면(list view) — jsx `IeActionRow`. Export · Import 두 액션 행이 이 모양을 쓴다.
-//!
-//! 경계: 진입 화면에만 나오는 그리기다. 안내문 헬퍼는 detail 과 함께 쓰므로 `paint` 에 있다.
+//! 내보내기와 가져오기 버튼이 있는 진입 화면.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
@@ -9,11 +7,8 @@ use crate::adapters::ui::icons;
 
 use super::paint::glyph_at;
 
-/// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼,
-/// 그 아래 `notice` 자리(그 행이 시작한 일의 실패를 그 행 안에서 알린다).
-///
-/// `enabled == false` 면 trailing 버튼이 꺼진다 — notice 가 재시도를 들고 있는 동안 같은 일을
-/// 시작하는 입구가 둘이 되지 않게.
+/// 아이콘·제목·설명·버튼과 해당 작업의 실패 안내를 표시한다.
+/// 실패 안내의 재시도를 사용하는 동안 기존 버튼은 비활성화한다.
 // reason: jsx `IeActionRow` 의 prop(glyph · title · desc · action · notice)을 그대로 받는다 —
 // 묶으면 두 호출부가 같은 구조체를 채우는 코드만 늘어난다.
 #[allow(clippy::too_many_arguments)]

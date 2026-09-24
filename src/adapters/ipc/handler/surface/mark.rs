@@ -276,7 +276,7 @@ mod tests {
     fn no_cursor_arguments_reads_the_server_held_mark_exactly_as_before() {
         let p = ok(json!({}));
         assert!(matches!(p.req.from, tasty_terminal::OutputCursor::Mark));
-        assert!(!p.continuing, "이어 읽기를 안 물었다");
+        assert!(!p.continuing, "이어 읽기 인자가 없는데 continuing이 true다");
         assert!(p.req.expect_stream.is_none());
         assert!(!p.req.strip_ansi);
         assert_eq!(
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(
             r["next_cursor"].as_u64(),
             Some(112),
-            "text 는 3 바이트인데 구간은 12 바이트다 — 전진은 구간 쪽이다"
+            "반환 text 길이(3)가 아닌 읽은 구간 길이(12)만큼 커서를 이동해야 한다"
         );
         assert_eq!(r["cursor"].as_u64(), Some(100));
         assert_eq!(r["skipped"].as_u64(), Some(7));

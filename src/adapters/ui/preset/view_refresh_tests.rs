@@ -102,7 +102,7 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
     assert_eq!(
         cached_tabs(&ctx),
         2,
-        "보기 모드는 저장소의 새 판을 보여야 한다"
+        "보기 모드에는 저장소의 최신 내용이 표시되어야 한다"
     );
 
     let cache: DemoCache = ctx
@@ -176,7 +176,7 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
     assert_eq!(
         cached_tabs(&ctx),
         2,
-        "Edit 를 누른 프레임의 편집 모드가 옛 판으로 시작했다"
+        "Edit를 누른 프레임이 저장소의 이전 내용으로 편집을 시작했다"
     );
     let cache: DemoCache = ctx
         .data(|d| d.get_temp(demo_cache_id(&dev_key())))
@@ -184,7 +184,7 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
     assert_eq!(
         cache.base,
         LayoutBase::current(&store, PresetKind::Workspace, "dev"),
-        "기준 판이 옛것이면 첫 편집이 경합으로 버려진다"
+        "편집 기준이 최신 저장 내용과 일치해야 한다"
     );
 
     store

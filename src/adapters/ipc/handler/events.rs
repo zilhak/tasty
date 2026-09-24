@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn max_is_clamped_at_both_ends() {
         let zero = ok(serde_json::json!({ "max": 0 }));
-        assert_eq!(zero.max, 1, "0 을 주면 답이 영원히 비어 진전이 없다");
+        assert_eq!(zero.max, 1, "max=0은 최소 1건으로 보정해야 한다");
         let huge = ok(serde_json::json!({ "max": 999_999 }));
         assert_eq!(huge.max, MAX_MAX);
     }

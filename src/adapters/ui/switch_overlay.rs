@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(keycap_size(&two), two.switch_overlay_size().value());
         assert!(
             keycap_size(&two) > keycap_size(&one),
-            "배율을 안 타면 지역 상수로 되돌아간 것이다"
+            "키캡 치수에 Theme 배율이 적용되어야 한다"
         );
     }
 

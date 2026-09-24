@@ -332,6 +332,6 @@ fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
     assert_eq!(
         titles,
         ["Cap 'm_b' 임계 도달", "Cap 'm_a' 임계 도달"],
-        "한 출구에 넣은 intent 는 넣은 순서(배치 순서)대로 쌓여야 한다"
+        "같은 큐에 넣은 intent는 배치 순서를 유지해야 한다"
     );
 }

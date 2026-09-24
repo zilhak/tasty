@@ -37,7 +37,7 @@ const SETTINGS_HEADER_HEIGHT: LogicalPx = LogicalPx(44.0);
 const SETTINGS_TAB_UNDERLINE: LogicalPx = LogicalPx(2.0);
 /// L1 탭 사이 간격. 디자인 header `gap: 2`.
 const L1_TAB_GAP: LogicalPx = LogicalPx(2.0);
-/// 좌측 "Settings" 타이틀 ↔ 탭 구분선 높이. 디자인 jsx:468 `height: 20`.
+/// 설정 제목과 탭 사이의 구분선 높이.
 const SETTINGS_TITLE_DIVIDER_HEIGHT: LogicalPx = LogicalPx(20.0);
 /// 구분선 우측 여백. 디자인 jsx:468 `margin: 0 size-14 0 space-sm` 의 size-14.
 const SETTINGS_TITLE_DIVIDER_MARGIN_R: LogicalPx = LogicalPx(14.0);
@@ -46,10 +46,7 @@ const SETTINGS_FOOTER_PAD_X: i8 = 14;
 /// 단축키 가져오기 Apply 가 만난 충돌을 확인하는 popup id.
 const IMPORT_CONFLICT_POPUP_ID: &str = "keybinding_import_conflict";
 
-/// 단계 E: Plugins 서브탭에서 표시할 한 row.
-///
-/// `current_override`는 사용자가 plugins.toml에 저장해 둔 값 (없으면 매니페스트
-/// default 사용). UI는 read-only 표시이므로 변경은 다음 단계에서 추가.
+/// plugin 명령의 단축키 표시 자료. 저장된 override가 없으면 매니페스트 기본값을 쓴다.
 #[derive(Debug, Clone)]
 pub struct PluginShortcutRow {
     pub plugin_id: String,
@@ -85,9 +82,7 @@ pub(crate) enum AppearanceSubTab {
     /// app-chrome 테마 (accent / sidebar bg / active tab indicator) 전용 섹션.
     Tasty,
     Terminal,
-    /// Explorer (내장 파일 관리자) surface 전용 폰트 override 섹션 (T11). 과거엔
-    /// `com.tasty.explorer` plugin 이 settings page 로 contribute 했으나 host builtin
-    /// 승격 후 본체 고정 섹션이 됐다.
+    /// 내장 Explorer surface의 폰트 설정.
     Explorer,
     /// Plugin-contributed sub-tab. 복합키:
     /// - `plugin_id` = `SettingsPageEntry::plugin_id`
@@ -106,12 +101,7 @@ pub(crate) enum PluginSubTab {
     Plugin { plugin_id: String, page_id: String },
 }
 
-/// L2 section within the General L1 tab.
-///
-/// 디자인 General L2 = General / Notifications / Accessibility / Overlay /
-/// Remote transfer + Display(macOS 전용, `docs/design/policies/key-mapping.md` 참고).
-/// (Clipboard 는 플러그인 기능이라
-/// 네이티브 설정에서 제외, Updates 는 Misc 로 이동.)
+/// General 탭의 하위 섹션.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
     General,
@@ -122,24 +112,17 @@ pub(crate) enum GeneralSubTab {
     /// 원격(mirror) 파일 전송 수신측 저장 정책(저장 폴더 + 용량 상한). 백엔드는
     /// `RemoteTransferSettings`.
     RemoteTransfer,
-    /// Alt/Option/Shift 키 표시 스타일. macOS 전용 — 아이콘 글리프 개념이
-    /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
-    /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+    /// macOS의 Alt/Option/Shift 표시 방식. 다른 플랫폼에서는 목록에 넣지 않는다.
     // 이유: 이 variant 를 push 하는 것이 macOS 전용 분기뿐이다(위).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Display,
-    /// macOS 권한(TCC) 상태 표시 + 시스템 설정 바로가기. macOS 전용 — 다른 OS 에는
-    /// TCC 라는 개념이 없어 push 하지 않으며, `Display` 와 같은 이유로 variant 만 남긴다.
+    /// macOS TCC 권한 상태와 시스템 설정 바로가기.
     // 이유: `Display` 와 같다 — macOS 전용 분기만 push 한다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     MacosPermissions,
 }
 
-/// L2 section within the Terminal L1 tab.
-///
-/// 디자인 Terminal L2 = General(터미널 동작 설정) / Mouse Capture(마우스 캡처 안내
-/// 토글 + 블랙리스트 에디터) / Input(앱별 Shift+Enter) / TUI(OSC 52 클립보드 읽기 허용 토글 + 경고 callout) /
-/// Performance.
+/// Terminal 탭의 하위 섹션.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalSubTab {
     General,
@@ -149,13 +132,7 @@ pub(crate) enum TerminalSubTab {
     Performance,
 }
 
-/// L2 section within the Misc L1 tab.
-///
-/// 디자인 Misc L2 = `["Scripts", "Tastyrc"]`(Windows) / `["Scripts"]`(그 외).
-/// **Scripts 는 전 플랫폼·최상단** (Lua 스크립트 관리). `Tastyrc` 는 Windows
-/// 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는 dead variant 가 되지만
-/// exhaustive match 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로
-/// 경고만 억제한다.
+/// Misc 탭의 하위 섹션. Scripts는 모든 플랫폼, Tastyrc는 Windows에서만 표시한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
     Scripts,
@@ -181,8 +158,7 @@ pub struct SettingsUiState {
     active_tab: SettingsTab,
     /// Working copy of settings being edited.
     draft: Option<Settings>,
-    /// 언어 콤보 목록(내장 3 + 발견된 언어팩). 첫 draw 에서 1회 스캔(`None` → lazy) —
-    /// `~/.tasty/lang/` 의 변화는 설정 창을 다시 열 때 반영된다.
+    /// 내장 언어와 언어팩 목록. 처음 그릴 때 읽으며 디렉터리 변경은 창을 다시 열어야 반영된다.
     languages: Option<Vec<crate::i18n::LanguageEntry>>,
     /// Which keybinding field+slot is currently recording input (None = not recording).
     recording_field: Option<RecordingSlot>,
@@ -217,8 +193,7 @@ pub struct SettingsUiState {
     /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
     /// 디스크 저장. Cancel 시 폐기.
     pub(crate) fh_edit_draft: file_handler_tab::FileHandlerEditDraft,
-    /// Hook Handlers sub-tab 편집 draft. Save 시 전역 훅 핸들러 레지스트리에 commit +
-    /// `~/.tasty/hook-handlers.toml` 저장. Cancel 시 폐기.
+    /// 훅 핸들러 변경 초안. Save하면 레지스트리·사용자 설정 파일에 저장하고 Cancel하면 버린다.
     pub(crate) hook_edit_draft: file_handler_tab::HookHandlerEditDraft,
     /// Currently previewed preset name in the Preset sub-tab (None = no preview).
     selected_preset: Option<String>,
@@ -240,9 +215,7 @@ pub struct SettingsUiState {
     pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
-    /// Save 시 bashrc 저장이 실패한 사유. 모달이 닫힐 때 host App 이 회수해 main
-    /// window 의 토스트로 올린다 — 이 창은 Save 직후 닫히므로 여기서 띄우면
-    /// 사용자가 볼 수 없다(`plugin_shortcuts_draft` 와 같은 회수 경로).
+    /// Save 중 bashrc 저장 오류. 창을 닫은 뒤 App이 메인 창에 표시한다.
     pub(crate) bashrc_save_error: Option<String>,
     /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
     pub captured_winit_combo: Option<KeyCapture>,
@@ -255,8 +228,7 @@ pub struct SettingsUiState {
     /// - `Some(ShortcutOverride)`: 새 override 적용
     /// - `None`: clear (매니페스트 default로 복귀)
     ///
-    /// 모달 close 시 main App이 회수해 `PluginsConfig.keybindings`에 반영하고
-    /// 디스크에 저장한다.
+    /// Save로 닫았을 때만 App이 가져가 PluginsConfig.keybindings와 디스크에 반영한다.
     pub plugin_shortcuts_draft:
         std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     /// Plugin 이 contribute 한 settings page 들의 스냅샷. 모달 오픈 시
@@ -515,10 +487,7 @@ impl SettingsUiState {
     }
 }
 
-/// [`draw_settings_panel`] 에 전달되는 렌더 컨텍스트 묶음.
-///
-/// settings modal 진입점의 인자가 시기별로 누적되어 clippy `too_many_arguments`
-/// 임계치를 넘어 struct 로 묶음 — 이후 인자 추가 시 시그니처 변경 없이 필드만 늘린다.
+/// draw_settings_panel에 전달하는 데이터와 처리 대상.
 pub struct SettingsPanelCtx<'a> {
     pub settings: &'a mut Settings,
     pub ui_state: &'a mut SettingsUiState,
@@ -551,14 +520,8 @@ fn conflict_message_text(
     )
 }
 
-/// 충돌 팝업의 크기를 콘텐츠 기준으로 산정한다.
-///
-/// 안내문은 팝업 폭에서 wrap 되는데, wrap 줄 수가 폰트 metrics(플랫폼별 한글
-/// 폰트)·UI zoom·로케일·`conflicting_label` 길이에 따라 달라진다. 고정 높이로
-/// 등록하면 여유가 딱 3줄분뿐이라 4줄이 되는 순간 하단 버튼이 clip 으로 잘린다
-/// (macOS 재현). 실제 galley 높이를 재서 타이틀바·여백·버튼 높이를 더해 팝업
-/// 크기를 그때그때 결정하면 잘림이 사라진다. 폭은 zoom 을 곱해 콘텐츠 스케일과
-/// 정합시킨다(theme 토큰은 이미 zoom 반영, 고정 폭만 미반영이던 비대칭 제거).
+/// 폰트·언어·배율에 따라 달라지는 안내문 높이를 측정해 팝업 크기를 정한다.
+/// 고정 높이를 쓰면 긴 안내문 아래의 버튼이 잘릴 수 있다.
 fn conflict_popup_size(ui: &egui::Ui, th: &Theme, message: String, zoom: f32) -> egui::Vec2 {
     use crate::adapters::ui::popup::content_margin;
     let width = (340.0 * zoom).round();
@@ -574,13 +537,8 @@ fn conflict_popup_size(ui: &egui::Ui, th: &Theme, message: String, zoom: f32) ->
     conflict_popup_dims(th, galley.size().y, zoom)
 }
 
-/// 안내문 galley 높이(`label_h`)로부터 팝업 크기를 조립한다. galley 측정
-/// (egui fonts 의존)과 분리해 순수 계산만 담당 — 단위 테스트가 폰트 없이도 조립
-/// 로직(라벨↔버튼 공간 보장, zoom 폭 반영)을 검증할 수 있게 한다.
-///
-/// 세로: 타이틀바 + top margin + 라벨 galley + (라벨↔버튼 vspace) + 버튼행
-/// + bottom margin + 소폭 여유. 버튼행 높이는 `item_height_interactive`
-/// (zoom 반영)로 근사한다(실제 egui 버튼보다 넉넉).
+/// 측정한 안내문 높이에 타이틀바·여백·버튼 공간을 더한다.
+/// 버튼 높이는 배율을 반영한 item_height_interactive로 근사한다.
 fn conflict_popup_dims(th: &Theme, label_h: f32, zoom: f32) -> egui::Vec2 {
     use crate::adapters::ui::popup::{content_margin, title_bar_height};
     let width = (340.0 * zoom).round();
@@ -619,8 +577,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         ui_state.font_families = Some(font_config.list_families());
     }
 
-    // 언어 콤보 목록도 첫 접근 시 1회 스캔 — `~/.tasty/lang/` 디렉토리 I/O 를 매 프레임
-    // 반복하지 않는다.
+    // 언어팩 디렉터리는 처음 한 번만 읽는다.
     if ui_state.languages.is_none() {
         ui_state.languages = Some(crate::i18n::available_languages());
     }
@@ -737,11 +694,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                                     .auto_shrink([false, false])
                                     .drag_to_scroll(false)
                                     .show(ui, |ui| {
-                                        // 콘텐츠 컬럼 상한은 **여기 한 곳**에만 건다 —
-                                        // full-bleed 가 아닌 L2 서브탭이 전부 이것을
-                                        // 물려받는다. full-bleed 갈래는 컬럼 자체를 자기
-                                        // 레이아웃으로 대체하므로 위 분기에서 이 자리를
-                                        // 안 지난다.
+                                        // 자체 레이아웃을 쓰는 full-bleed 화면을 제외한 공통 너비 제한.
                                         tasty_ui_widgets::settings_content_column(
                                             ui,
                                             th.settings_content_max_width(),
@@ -763,10 +716,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의
                             // 별도 PopupManager. host Intent 큐(AppState.popups) 와 별개 —
                             // sub-modal 내부 lifecycle 이므로 직접 호출 유지.
-                            // 고정 크기(잘림 위험) 대신 콘텐츠 galley 높이로 팝업 크기를
-                            // 산정해 하단 버튼이 항상 보이게 한다. zoom 은 draft(현재 편집
-                            // 중 값) 기준. size 를 먼저 계산해 pending 불변 borrow 를 닫은 뒤
-                            // popups 를 가변으로 만진다.
+                            // 현재 편집 중인 배율로 크기를 먼저 구한 뒤 popups를 변경한다.
                             let conflict_size = if !ui_state.popups.is_open("keybinding_conflict") {
                                 ui_state.pending_binding.as_ref().map(|pending| {
                                     let zoom = draft.appearance.ui_scale_factor();
@@ -858,7 +808,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 });
         });
 
-    // Esc 는 좌표가 없어 한 popup 만 가져야 한다 — 둘 다 열려 있으면 위에 있는 쪽.
+    // Escape는 가장 위에 열린 팝업 하나만 처리한다.
     let escape_owner = settings_escape_owner(&ui_state.popups);
 
     // Draw popups (충돌 확인 · 파일 선택)
@@ -1026,11 +976,7 @@ fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
     }
 }
 
-// ── L2 사이드바 모델 ──────────────────────────────────────────────────────
-//
-// 디자인의 L2 영속 사이드바는 7 개 L1 탭의 sub-tab 집합을 한 컬럼으로 통합한다.
-// 각 row 는 클릭 시 적용할 typed sub-tab 선택값(`L2Select`)을 들고 있어, 셸이
-// sub-tab enum 별 분기를 모르고도 선택을 위임할 수 있다.
+// 하위 섹션 목록은 클릭 시 적용할 선택값을 함께 보관한다.
 
 /// L2 사이드바 한 row 가 클릭됐을 때 적용할 sub-tab 선택값.
 enum L2Select {
@@ -1241,7 +1187,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
     }
 }
 
-/// Appearance L2: 고정 6 섹션 + Appearance category plugin page.
+/// 고정 Appearance 섹션과 plugin이 제공한 페이지를 합친다.
 fn build_appearance_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
     let mut items: Vec<(AppearanceSubTab, String, bool)> = vec![
         (
@@ -1400,10 +1346,7 @@ fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
 
 // ── L1 헤더 밴드 ──────────────────────────────────────────────────────────
 
-/// 디자인 header band 전사 (settings_window.jsx): bg-sidebar 위 좌측 bold
-/// "Settings" 타이틀 + 세로 구분선 → 7 개 L1 탭(active 는 text-primary +
-/// 2px accent underline, inactive 는 text-muted). 우측 close ✕ 는 없다 —
-/// 닫기/취소는 footer Cancel + OS 타이틀바 close 로 일원화(중복 닫기 동작 방지).
+/// 설정 제목과 상위 탭을 그린다. 닫기는 하단 Cancel 또는 OS 닫기 버튼을 사용한다.
 fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) {
     let tabs = [
         (SettingsTab::General, t("settings.tab.general")),
@@ -1423,10 +1366,7 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
             bottom: 0,
         })
         .show(ui, |ui| {
-            // 디자인 header band 는 `alignItems:center, height:44`(jsx:465) — 밴드
-            // 전체 높이를 가진 영역을 명시 할당하고 `left_to_right(Center)` 로 콘텐츠를
-            // 세로 중앙 정렬한다. (`ui.horizontal` 만 쓰면 행이 콘텐츠 높이로 줄어
-            // 밴드 상단에 붙어 디자인과 어긋난다.)
+            // 콘텐츠 높이만큼 줄지 않도록 헤더 영역을 잡고 세로 중앙에 배치한다.
             let band_h = ui.available_height();
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), band_h),
@@ -1568,8 +1508,7 @@ fn draw_l2_sidebar(
                             clicked = Some(i);
                         }
                     }
-                    // 필터로 0건일 때만 안내. 섹션 자체가 0개(비-Windows Misc)면
-                    // 콘텐츠 empty-state 가 대신하므로 사이드바는 비워둔다.
+                    // 필터 결과가 없을 때만 안내한다. 섹션 자체가 없으면 본문이 안내한다.
                     if !any && !filter_lc.is_empty() {
                         ui.label(
                             egui::RichText::new(t("settings.filter.no_matches"))
@@ -1643,9 +1582,7 @@ fn sidebar_row(
 
 // ── 푸터 ──────────────────────────────────────────────────────────────────
 
-/// 콘텐츠 컬럼 하단 footer: 우측 정렬 Cancel(ghost) + Save(primary).
-/// Save 핸들러는 draft commit / scrollback 정리 / 테마 install / file-handler
-/// draft 커밋을 수행한다.
+/// 콘텐츠 아래의 Cancel과 Save 버튼.
 #[allow(clippy::too_many_arguments)]
 fn draw_settings_footer(
     ui: &mut egui::Ui,
@@ -1684,14 +1621,8 @@ fn draw_settings_footer(
     });
 }
 
-/// Save 클릭 시의 비-UI 커밋 로직 — draft 를 settings 에 반영하고, FileHandler/
-/// HookHandler 탭 draft 를 각 레지스트리에 commit + 디스크 저장까지 수행한다.
-/// 테마 install 은 여기서 하지 않는다. Save → 모달 close 시 `close_active_modal`
-/// 이 `UpdateSettings` 인텐트를 큐잉하고, `cascade_settings_updated`(about_to_wait,
-/// 렌더 밖)가 `install_global_with_runtime` 으로 전역 Theme 를 적용한다. 렌더 클로저는
-/// `draw_settings_panel` 의 `THEME.read()` guard 를 보유 중이므로, 여기서
-/// `set_theme`(=`THEME.write()`)을 호출하면 std RwLock self-deadlock 으로
-/// hang 한다. install 은 렌더 밖에서만.
+/// 설정과 핸들러 변경 초안을 저장한다. 전역 Theme 적용은 창을 닫은 뒤 처리한다.
+/// 렌더 중에는 THEME 읽기 락을 잡고 있어 여기서 쓰기 락을 잡으면 교착된다.
 fn commit_settings_save(
     settings: &mut Settings,
     ui_state: &mut SettingsUiState,
@@ -1721,10 +1652,7 @@ fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState)
     if let Some(bashrc) = &ui_state.bashrc_user_draft
         && let Err(reason) = crate::settings::general::save_user_bashrc(bashrc)
     {
-        // 로그는 사후 진단용이고, 사용자에게 도달하는 것은 회수되는 이 값이다.
-        // 저장 실패는 사용자 작업이 의미를 잃는 사건이라(`docs/dev-guide/
-        // error-handling.md` 레벨 표) 화면에 도달해야 한다 — 설정 화면을 쓰는
-        // 사용자는 로그를 보지 않는다.
+        // 설정 창을 닫은 뒤 메인 창에 표시할 수 있도록 오류를 보관한다.
         tracing::error!("save bashrc.user failed: {reason}");
         ui_state.bashrc_save_error = Some(reason);
     }
@@ -1764,8 +1692,7 @@ fn commit_file_handler_draft(
     }
 }
 
-/// Hook Handlers sub-tab draft 를 전역 훅 핸들러 레지스트리에 commit +
-/// `~/.tasty/hook-handlers.toml` 저장 (파일 핸들러와 동형 경로).
+/// 훅 핸들러 변경 초안을 레지스트리와 사용자 설정 파일에 저장한다.
 fn commit_hook_handler_draft(ui_state: &mut SettingsUiState) {
     let hh = std::mem::take(&mut ui_state.hook_edit_draft);
     if hh.has_changes() {
@@ -1788,8 +1715,7 @@ fn commit_hook_handler_draft(ui_state: &mut SettingsUiState) {
 /// 탭의 편집 draft(bashrc/extension-priority/file-handler/hook-handler/plugin 단축키)를 지운다.
 fn discard_settings_draft(ui_state: &mut SettingsUiState, result: &mut Option<bool>) {
     ui_state.bashrc_user_draft = None;
-    // plugin override draft 는 모달이 닫힐 때 host 가 회수해 적용하므로, 여기서 비우지 않으면
-    // Cancel 해도 적용된다(가져오기 Apply 는 그 draft 에 대량으로 쓴다).
+    // plugin 단축키 초안도 취소한다. App은 Save로 닫았을 때만 초안을 적용한다.
     ui_state.plugin_shortcuts_draft.clear();
     ui_state.extension_priority_draft = None;
     ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
@@ -1952,8 +1878,7 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
 mod tab_key_tests {
     use super::*;
 
-    /// S13 — L1 표시 라벨은 Handler 로 일반화됐지만 내부 키는 FileHandler 유지.
-    /// 신규 alias `handler` 와 기존 file_handler 계열 키가 모두 같은 탭으로 간다.
+    /// handler와 기존 file_handler 별칭이 같은 탭을 선택한다.
     #[test]
     fn handler_tab_key_aliases() {
         let mut st = SettingsUiState::new();
@@ -2017,10 +1942,7 @@ mod tab_key_tests {
         assert_eq!(result, Some(false));
     }
 
-    /// 충돌 팝업 크기 조립이 안내문 높이(=wrap 줄 수)에 비례해 커지고, 어떤 경우에도
-    /// 하단 버튼행 공간이 galley 아래에 포함된다 — 고정 120px 시절 macOS 에서 4줄 wrap
-    /// 시 버튼이 clip 으로 잘리던 회귀의 가드. galley 측정(egui fonts)과 분리된 순수
-    /// 조립 로직 `conflict_popup_dims` 를 직접 검증한다(테스트 Context 엔 폰트 미로드).
+    /// 안내문 높이에 맞춰 팝업이 커지고 버튼 공간을 확보하는지 확인한다.
     #[test]
     fn conflict_popup_dims_fits_content() {
         use crate::adapters::ui::popup::title_bar_height;

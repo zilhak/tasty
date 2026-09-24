@@ -1,18 +1,5 @@
-//! Settings UI 의 `FileHandler` 탭 — 표시명 "Handler" (S13 일반화: 내부 enum 키는
-//! `FileHandler` 유지, 라벨만 변경).
-//!
-//! sub-tab 4 종:
-//! - **File Detectors** — 등록된 detector 의 목록. Enabled 토글, user-origin 항목 삭제,
-//!   user 추가 (id + 확장자 list 기반 간단 form). 다른 rule kind 는 TOML 손편집으로.
-//! - **File Handlers** — 등록된 handler 의 목록. Enabled 토글, user-origin 항목 삭제,
-//!   user 추가 (id + detector dropdown + priority + action kind/params).
-//! - **File Extension Mapping** — 같은 확장자를 광고하는 여러 detector 의 우선순위 표 편집.
-//! - **Hook Handlers** — 공유 훅 핸들러 레지스트리(`src/hook_handler/`) 매핑 테이블
-//!   ([`hook_handlers`] 모듈).
-//!
-//! 파일 계열 편집은 `FileHandlerEditDraft` 에 쌓이고 Settings 의 Save 버튼이 registry 에
-//! commit + `~/.tasty/file-handlers.toml` 에 atomic write 한다. 훅 핸들러 편집은
-//! `HookHandlerEditDraft` → `~/.tasty/hook-handlers.toml` 로 동형 경로.
+//! Handler 설정: detector, handler, 확장자 우선순위와 훅 핸들러를 편집한다.
+//! 변경은 초안에 보관하고 Save에서 레지스트리와 사용자 TOML에 반영한다.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,8 +7,7 @@ use crate::file::format::{DetectorDecl, DetectorId, FileFormatRegistry};
 use crate::file::handler::{FileHandlerRegistry, HandlerId, UserHandlerUpsertDecl};
 use crate::i18n::t;
 
-/// FileHandler(표시명 "Handler") 탭의 sub-tab. 파일 라우팅 3종 + 훅 핸들러
-/// 레지스트리(S13 — enum 키는 FileHandler 유지, 라벨만 일반화).
+/// 파일 라우팅 설정 세 종류와 훅 핸들러 설정.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileHandlerSubTab {
     Detectors,
@@ -84,10 +70,7 @@ fn apply_detector_changes(
     file_format: &FileFormatRegistry,
 ) {
     for (id, enabled) in detector_enabled {
-        // enabled = true 인데 detector 가 host/plugin default 로 이미 enabled 면 user
-        // override 를 굳이 추가하지 않는다 (불필요한 user contribution 회피). 그러나
-        // 현재 상태를 정확히 모르므로 단순화: 항상 명시적으로 set, 동일 값이면 patch
-        // semantics 상 no-op.
+        // 사용자 요청을 명시적인 override로 반영한다.
         file_format.set_user_detector_disabled(id, !enabled);
     }
     for id in remove_detector {
@@ -156,8 +139,7 @@ enum AddHandlerActionKind {
 
 /// FileHandler 탭 콘텐츠. L2 사이드바(섹션 목록·필터·선택)는 settings 셸이
 /// 소유하므로 여기서는 활성 `sub_tab` 의 콘텐츠만 그린다.
-// sub-tab 4 종의 draft/registry 인자가 누적된 디스패치 표면 — settings 셸이 소유한
-// 상태를 그대로 위임받는 구조라 인자 축약보다 명시가 낫다.
+// 설정 창이 각 초안을 따로 소유하므로 참조를 각각 전달받는다.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_file_handler_tab(
     ui: &mut egui::Ui,

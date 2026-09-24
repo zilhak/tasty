@@ -1,27 +1,8 @@
-//! Keybindings › Import / Export 서브탭 — 단축키 구성 전량을 파일 하나로 옮긴다.
+//! 단축키 구성을 내보내고, 가져온 파일을 미리 본 뒤 선택한 행을 적용한다.
+//! Apply는 호스트·plugin 초안만 바꾸며 설정의 Save가 저장한다(ADR-0019).
 //!
-//! 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx`(`KbImportExportSubtab` ·
-//! `IeDiffTable` · `IeMigrateCard`/`IeMigrateRow` · `IeActionRow`) 전사. 갤러리 specimen 은
-//! `crates/tasty-gallery/src/catalog/components/kb_import_export.rs` 이고 같은 치수·토큰을 쓴다.
-//!
-//! - **List view** — 안내문 + 액션 행 둘(Export secondary · Import primary). 파일 선택은
-//!   설정 창 `PopupManager` 의 파일 선택 popup 이다(DrillDown 한 단계가 아니다 — 그 자리는
-//!   미리보기가 쓴다).
-//! - **Detail view** — 가져온 파일의 미리보기. back bar 우측에 "변경만/전체" 토글 · 미해결 수 ·
-//!   Apply. 본문은 안내문 → option 마이그레이션 카드(있을 때) → 버린 plugin 안내(있을 때) →
-//!   4 그룹 diff 표. 파일을 못 읽었으면 본문 대신 인라인 실패 블록.
-//! - **Apply 는 draft 까지** — 호스트 단축키는 settings draft, plugin override 는
-//!   `plugin_shortcuts_draft` 에 쓴다. footer Save 가 둘 다 커밋한다(Preset 과 같은 경계).
-//!
-//! 적용 규칙(행 단위 · 번들에 없는 plugin override 보존 · 비워 두기 · 충돌 판정 범위)의
-//! 근거는 `docs/adr/0019-keybinding-settings-and-hints.md`.
-//!
-//! 모듈 경계는 **상태·계산 대 화면 단위 그리기**다. 이 파일은 서브탭 상태와 그 전이(export ·
-//! import · apply)와 진입 함수를 들고, 계산은 `model`(행 모델) · `labels`(표시 문자열) ·
-//! `view_model`(한 프레임의 표시값) · `bundle_notices`(경고 블록에 오를 줄)가, 그리기는 jsx 컴포넌트 단위로 `entry`(`IeActionRow`) ·
-//! `diff_table`(`IeDiffTable`) · `migrate`(`IeMigrateCard`/`IeMigrateRow`) · `notices` 가,
-//! 그 넷이 함께 쓰는 칠하기 헬퍼는 `paint` 가 든다. 치수 상수는 여기 남는다 — 갤러리 짝과의
-//! 값 일치를 보는 가드가 이 경로에서 읽는다.
+//! 계산은 model·labels·view_model·bundle_notices, 화면은 entry·diff_table·migrate·notices에 있다.
+//! 치수는 갤러리의 kb_import_export와 대조하므로 이 파일에 둔다.
 
 mod bundle_notices;
 mod diff_table;
@@ -66,13 +47,8 @@ use notices::{ExportFailureAction, bundle_notices, dropped_notice, export_failur
 use paint::intro;
 use view_model::build_view_model;
 
-// 아래 치수 중 32 · 120 은 `size-*` 스케일 위의 값이다(140 은 스케일에 아직 없다). 디자인은
-// 이 셋에 컴포넌트 토큰을 열었지만(`kb-ie-select-column-width` · `kb-ie-from-column-width` ·
-// `kb-ie-slot-min-width`) vendor 한 DTCG export 에는 아직 그 이름이 없어 읽을 수 없다 — 그래서
-// 지금은 명명 상수다(갤러리 `kb_import_export.rs` 와 짝 — 두 값의 일치는
-// `gallery_copied_dimensions` 가 본다). 같은 회신이 연 토큰 중 semantic 별칭인 둘은 이미 읽는다:
-// 카드 inset 은 `space-md`(14 에서 스냅, 양축), 슬롯 높이는 `control-height-tab`
-// (`item_height_tab`).
+// 아래 전용 치수는 이름을 붙인 상수로 유지하며 gallery_copied_dimensions가 갤러리와 대조한다.
+// 카드 여백과 슬롯 높이는 Theme의 공통 토큰을 쓴다.
 /// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
 /// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
@@ -84,7 +60,7 @@ const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
 const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
 
-/// 충돌 개수 줄이 서는 최소 충돌 수 — 하나일 때는 행의 인라인 이유가 혼자 싣는다.
+/// 충돌 개수 요약을 표시할 최소 개수. 한 건이면 행의 사유만 표시한다.
 const CONFLICT_SUMMARY_FROM: usize = 2;
 
 /// 내보내기 파일 선택의 결과 키.
@@ -136,12 +112,8 @@ struct ExportFailure {
     reason: ExportFailReason,
 }
 
-/// 내보내기 실패의 이유 — 블록 본문 **가운데 구절**을 고른다. 앞뒤 문장(경로 · "Nothing was
-/// written.")은 갈래와 무관하게 같다.
-///
-/// 갈래가 고정 집합인 이유: 가운데 구절은 세 언어에서 같은 문장으로 읽혀야 하므로 OS 가 낸
-/// 문장이 그 자리에 올 수 없다. 알아볼 수 있는 셋만 이름을 갖고 나머지는 catch-all 하나로
-/// 접힌다 — 그 갈래에서만 OS 문장이 **본문 아래 제 줄**로 따라간다.
+/// 내보내기 오류의 번역 문구를 선택한다. 알려진 오류는 정해진 문구로,
+/// 나머지는 공통 문구와 별도 OS 오류 줄로 표시한다.
 enum ExportFailReason {
     /// 파일시스템이 읽기 전용이다.
     ReadOnly,
@@ -158,8 +130,7 @@ impl ExportFailReason {
         match e.kind() {
             std::io::ErrorKind::ReadOnlyFilesystem => ExportFailReason::ReadOnly,
             std::io::ErrorKind::PermissionDenied => ExportFailReason::PermissionDenied,
-            // `ErrorKind::StorageFull` 은 아직 nightly 다. `crate::db::classify_io` 와 같은
-            // 우회로 raw OS 코드를 본다 — 상수는 그쪽 하나만 둔다.
+            // StorageFull 대신 공용 raw OS 오류 분류를 사용한다.
             _ if e.raw_os_error() == Some(crate::db::disk_full_os_error()) => {
                 ExportFailReason::DiskFull
             }
@@ -167,7 +138,7 @@ impl ExportFailReason {
         }
     }
 
-    /// 본문 아래 제 줄에 실을 OS 문장 — catch-all 갈래에만 있다.
+    /// 공통 오류 문구 아래에 표시할 OS 오류. 미분류 오류에만 있다.
     fn os_message(&self) -> Option<&str> {
         match self {
             ExportFailReason::Unknown(message) => Some(message.as_str()),
@@ -270,7 +241,7 @@ impl ImportExportState {
         }
     }
 
-    /// `path` 를 읽어 미리보기를 세운다. 못 읽으면 실패 블록이 대신 선다.
+    /// 파일을 읽어 미리보기를 만들거나 실패 안내를 표시한다.
     pub(crate) fn import_from(
         &mut self,
         path: &Path,
@@ -322,7 +293,7 @@ impl ImportExportState {
         self.deselected.clear();
     }
 
-    /// 해소를 확정하고 고른 행을 두 draft 에 쓴다. 충돌이면 확인 문구를 세우고 멈춘다.
+    /// 선택한 행을 두 초안에 적용한다. 충돌이 있으면 확인을 기다린다.
     fn apply(
         &mut self,
         settings: &mut Settings,
@@ -405,7 +376,7 @@ fn read_bundle(
     })
 }
 
-/// 버린 plugin 을 정보 줄 몫으로 모은다. 화면 어디에도 안 오르는 경고는 로그로만 남는다.
+/// 설치되지 않은 plugin의 생략 정보를 모은다. 별도 표시 문구가 없는 경고는 로그에 남긴다.
 fn dropped_plugins(path: &Path, warnings: &[BundleWarning]) -> Vec<(String, usize)> {
     let mut dropped = Vec::new();
     for w in warnings {
@@ -715,10 +686,7 @@ mod tests {
         );
     }
 
-    /// 쓰지 못하면 toast 가 아니라 실패 블록이 선다. 디렉토리에서 쓰기 비트를 떼면 OS 는
-    /// `EACCES` 를 낸다 — 파일시스템이 읽기 전용인 것과 **다른 갈래**이고, 디자인이 그 둘에
-    /// 서로 다른 구절을 준다. 같은 경로가 다시 쓰일 수 있게 되면 성공이 블록을 걷는다
-    /// (재시도가 닫는 경로).
+    /// 쓰기 권한 오류를 실패 안내로 표시하고 재시도 성공 뒤 제거하는지 확인한다.
     #[cfg(unix)]
     #[test]
     fn a_failed_export_raises_the_inline_block_and_a_later_success_clears_it() {
@@ -734,13 +702,16 @@ mod tests {
         if std::fs::metadata(&path).is_ok() {
             return;
         }
-        assert!(state.toast.is_none(), "실패인데 toast 가 섰다");
+        assert!(
+            state.toast.is_none(),
+            "내보내기 실패에 성공 토스트가 표시됐다"
+        );
         let failure = state.export_failure.as_ref().expect("실패 블록이 없다");
         assert_eq!(failure.path, path);
         assert!(matches!(failure.reason, ExportFailReason::PermissionDenied));
         assert!(
             failure.reason.os_message().is_none(),
-            "알아본 갈래인데 OS 문장 줄이 딸려 나온다"
+            "분류된 오류에는 별도 OS 오류 줄을 표시하지 않는다"
         );
 
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
@@ -753,8 +724,7 @@ mod tests {
         assert!(state.take_toast().is_some(), "성공 toast 가 없다");
     }
 
-    /// 가운데 구절은 **고정 집합**이다 — 알아본 셋은 저마다 갈래를 갖고 OS 문장을 달지
-    /// 않으며, 나머지 하나만 catch-all 로 접히면서 그 문장을 아래 줄로 들고 간다.
+    /// 알려진 오류는 번역 문구만, 미분류 오류는 OS 오류도 표시한다.
     #[test]
     fn each_recognised_cause_takes_its_own_clause_and_only_the_catch_all_carries_the_os_text() {
         use std::io::{Error, ErrorKind};
@@ -771,7 +741,7 @@ mod tests {
             ExportFailReason::of_io(&Error::from_raw_os_error(crate::db::disk_full_os_error()));
         assert!(
             matches!(full, ExportFailReason::DiskFull),
-            "볼륨이 찬 것을 알아보지 못했다 — `ErrorKind::StorageFull` 이 nightly 라 raw 코드로 본다"
+            "OS의 용량 부족 오류가 DiskFull로 분류되어야 한다"
         );
         assert!(full.os_message().is_none());
 
@@ -779,7 +749,7 @@ mod tests {
         assert!(matches!(unknown, ExportFailReason::Unknown(_)));
         assert!(
             unknown.os_message().is_some(),
-            "알아보지 못한 갈래인데 OS 문장이 사라졌다 — 그러면 사용자가 볼 단서가 없다"
+            "미분류 오류에는 원래 OS 오류 문구가 포함되어야 한다"
         );
     }
 }

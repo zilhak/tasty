@@ -1,6 +1,4 @@
-//! 칠하기 헬퍼 — 안내문 · 아이콘 · 고정 폭 라벨 · 말줄임 galley.
-//!
-//! 경계: 특정 화면에 속하지 않고 두 화면 이상이 함께 쓰는 원자 그리기다.
+//! 여러 화면이 공유하는 안내문·아이콘·라벨 그리기 함수.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;

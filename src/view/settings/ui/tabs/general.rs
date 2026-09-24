@@ -3,12 +3,7 @@ use crate::settings::Settings;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{LanguageOption, LanguageSelectLabels, language_select, vspace};
 
-/// `languages` 는 설정 창이 연 시점에 스캔한 언어 목록(내장 3 + 언어팩 N —
-/// `crate::i18n::available_languages`). 콤보는 그 목록만 보여 주고, 현재 설정값이 목록에
-/// 없으면(팩 삭제 등) 값을 덮어쓰지 않고 `<code> (not found)` 행으로 유지한다.
-/// 휠 노치 거리 슬라이더의 범위. 하한은 0 이 아니다 — 0 이면 휠이 아무 데서도 안
-/// 움직여 설정 창을 스크롤해 되돌리는 것조차 막힌다. 상한은 한 노치가 화면을 통째로
-/// 넘기지 않을 정도로 둔다.
+/// 휠 한 칸의 이동 거리 범위. 0이면 설정 화면도 스크롤할 수 없으므로 제외한다.
 const WHEEL_LINE_SCROLL_MIN: LogicalPx = LogicalPx(10.0);
 const WHEEL_LINE_SCROLL_MAX: LogicalPx = LogicalPx(200.0);
 

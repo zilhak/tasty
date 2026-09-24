@@ -1,9 +1,5 @@
-//! 안내 — 버린 plugin 정보 줄 · 알림 블록(파싱 실패 · 내보내기 실패 · 번들 경고).
-//!
-//! 경계: 표·카드가 아닌 알림 자리의 그리기다.
-//!
-//! 알림 블록은 **레시피 하나**다 — 톤 · 글리프 · 제목(+개수) · 본문 · 액션 행. 실패와
-//! 경고는 톤만 다르다(디자인 `IeBlockG`). 블록마다 따로 지으면 한쪽 치수만 움직인다.
+//! 가져오기·내보내기의 오류와 경고, 생략된 plugin 정보를 표시한다.
+//! 공통 알림 형식을 사용해 제목·본문·버튼 배치를 맞춘다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
@@ -14,7 +10,7 @@ use crate::i18n::{t, t_fmt, t_fmt2};
 use super::paint::glyph_at;
 use super::{ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP};
 
-/// 버린 plugin override 안내 — 정보(경고 아님): 잘못된 것도 할 일도 없다.
+/// 설치되지 않은 plugin의 생략 정보를 표시한다.
 pub(super) fn dropped_notice(ui: &mut egui::Ui, th: &Theme, text: &str) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
@@ -117,10 +113,7 @@ fn failure_body(ui: &mut egui::Ui, th: &Theme, text: &str) {
     });
 }
 
-/// OS 가 낸 문장 한 줄 — 본문 아래 `space-xs`, mono caption, muted, **한 줄** 말줄임.
-///
-/// 문장 안에 끼우지 않는 이유: 그 문장은 세 언어의 문법을 깨고, 사용자가 손댈 수 있는 두
-/// 가지(어느 경로인가 · 아무것도 안 썼다)를 묻는다. 전문은 tooltip 으로만 본다.
+/// OS 오류는 번역 문장에 끼우지 않고 별도 한 줄로 표시한다. 전체 내용은 툴팁에 둔다.
 fn os_reason_line(ui: &mut egui::Ui, th: &Theme, message: &str) {
     ui.add_space(th.spacing_xs.value());
     ui.add(
@@ -172,8 +165,7 @@ pub(super) enum ExportFailureAction {
     ChooseAnother,
 }
 
-/// 내보내기 실패 — Export 액션 행 안의 인라인 블록. 재시도가 여기 살기 때문에 toast 가
-/// 아니다(toast 는 저절로 사라지고 재시도를 못 싣는다).
+/// 내보내기 실패와 재시도 버튼을 작업 행 안에 표시한다.
 pub(super) fn export_failure(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -224,8 +216,7 @@ pub(super) fn export_failure(
     })
 }
 
-/// 번들 경고 — 경고 톤 블록 **하나**에 한 줄씩, 헤더에 개수. 접힌 줄이 있으면
-/// "N 개 더 보기" 가 액션 행에 선다. 그것이 눌리면 true.
+/// 경고를 한 블록에 표시하고 더 보기 버튼이 눌렸는지 반환한다.
 pub(super) fn bundle_notices(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -233,8 +224,7 @@ pub(super) fn bundle_notices(
     expanded: bool,
 ) -> bool {
     let (shown, hidden) = super::bundle_notices::fold(lines.len(), expanded);
-    // 하나면 단수형. 영어만 굴절하지만 키는 세 언어에 다 있다 — 굴절이 없는 언어에서도
-    // 같은 갈래를 타야 개수 자리 하나가 두 문구로 갈리지 않는다.
+    // 하나일 때와 여러 개일 때의 번역 키를 구분한다.
     let count = if lines.len() == 1 {
         t("settings.keybindings.ie_notices_count_one").to_owned()
     } else {

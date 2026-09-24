@@ -252,7 +252,7 @@ mod tests {
         assert!(took_over_after(&owner));
         assert!(
             !remote_surface(&engine, md_sid).take_webview_owner_takeover(),
-            "가져가면 내려간다"
+            "전이 표시를 가져오면 초기화되어야 한다"
         );
         assert!(!took_over_after(&agent));
         assert!(set_url_as(&engine, &owner, md_sid).error.is_none());

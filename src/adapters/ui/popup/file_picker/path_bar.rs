@@ -170,13 +170,20 @@ mod menu_width_tests {
     fn the_menu_width_is_measured_inside_the_band_and_counts_the_whole_row() {
         let th = crate::theme::theme();
         let (floor, ceiling) = menu_band(&th);
-        assert!(floor < ceiling, "밴드가 뒤집혔다: {floor} .. {ceiling}");
+        assert!(
+            floor < ceiling,
+            "최소 너비가 최대 너비 이상이다: {floor} .. {ceiling}"
+        );
 
-        assert_eq!(menu_width(0.0, &th), floor, "짧은 경로가 바닥을 안 받았다");
+        assert_eq!(
+            menu_width(0.0, &th),
+            floor,
+            "짧은 경로에 최소 너비가 적용되지 않았다"
+        );
         assert_eq!(
             menu_width(ceiling * 2.0, &th),
             ceiling,
-            "긴 경로가 천장을 안 받았다"
+            "긴 경로에 최대 너비가 적용되지 않았다"
         );
 
         let chrome = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
@@ -189,7 +196,7 @@ mod menu_width_tests {
         );
         assert!(
             mid < ceiling,
-            "가운데 갈래가 천장에 붙었다 — 이 케이스가 아무것도 안 잰다"
+            "중간 너비를 검사할 입력이 최대 너비에 도달했다"
         );
     }
 }

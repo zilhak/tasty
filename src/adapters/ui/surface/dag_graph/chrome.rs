@@ -760,8 +760,7 @@ mod tests {
                 HeaderRightItem::ResumeHint,
                 HeaderRightItem::Pill,
             ],
-            "오른쪽부터 채우는 줄이라 새로고침을 먼저 넣어야 그것이 가장 오른쪽에 \
-             놓인다 — 이 순서가 뒤집히면 알약과 새로고침이 자리를 맞바꾼다"
+            "오른쪽부터 배치하므로 새로고침을 먼저 추가해야 상태 표시 오른쪽에 놓인다"
         );
     }
 
@@ -775,8 +774,7 @@ mod tests {
                 "dag.runner.resume_hint_command",
                 "dag.runner.resume_hint_lead",
             ],
-            "명령을 먼저 넣어야 명령이 오른쪽(알약 쪽)에 붙는다 — 뒤집히면 셸에 붙여 \
-             넣을 명령이 안내문 왼쪽으로 가서 문장이 거꾸로 읽힌다"
+            "명령을 먼저 추가해야 오른쪽부터 그린 결과가 안내문·명령 순서가 된다"
         );
     }
 
@@ -798,7 +796,10 @@ mod tests {
     fn the_tooltip_reads_forwards_while_the_line_paints_backwards() {
         let reading: Vec<&str> = RESUME_HINT_PARTS.iter().map(|(key, _)| *key).collect();
         let painted: Vec<&str> = resume_hint_paint_order().map(|(key, _)| *key).collect();
-        assert_ne!(reading, painted, "두 소비자가 같은 방향으로 읽고 있다");
+        assert_ne!(
+            reading, painted,
+            "화면 배치 순서는 툴팁 읽기 순서와 반대여야 한다"
+        );
 
         let text = resume_hint_text();
         let lead = t(RESUME_HINT_PARTS[0].0).to_string();

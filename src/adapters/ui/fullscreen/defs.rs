@@ -95,7 +95,7 @@ mod parity {
             .map(|m| m.id)
             .collect();
         let defs: BTreeSet<&str> = all_defs().iter().map(|d| d.id()).collect();
-        assert!(metas.len() >= 2, "메타 표가 비었다 — 0 은 통과가 아니다");
+        assert!(metas.len() >= 2, "무대 메타 항목이 최소 2개 있어야 한다");
         let orphan: Vec<&&str> = metas.difference(&defs).collect();
         assert!(
             orphan.is_empty(),

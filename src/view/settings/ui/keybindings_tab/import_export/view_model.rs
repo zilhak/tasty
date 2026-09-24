@@ -1,7 +1,4 @@
-//! 한 프레임의 표시값 — 미리보기와 현재 draft 를 견줘 표 · 마이그레이션 카드 · 안내문이 그릴
-//! 문자열과 판정을 미리 만든다.
-//!
-//! 경계: 그리기 함수들이 **읽기만** 하는 계산 결과다. `egui` 를 부르지 않고 상태를 바꾸지 않는다.
+//! 미리보기와 현재 초안을 비교해 화면에 필요한 값과 문구를 만든다. 상태는 변경하지 않는다.
 
 use std::collections::BTreeSet;
 
@@ -20,10 +17,7 @@ use super::model::{
 };
 use super::{ImportExportState, Preview};
 
-/// 경고 블록의 한 줄 — 알림 하나가 문장 하나다.
-///
-/// 모르는 액션이 하나면 **단수형**이다. 그 갈래의 문구는 개수를 이미 품고 있어 이름만 받는다
-/// (영어만 굴절하지만 키는 세 언어에 다 있다 — 한 자리가 두 문구로 갈리지 않게).
+/// 경고 한 줄의 문구. 알 수 없는 액션이 하나면 단수형 키를 사용한다.
 fn notice_line(notice: &BundleNotice) -> String {
     match notice {
         BundleNotice::NewerSchema { found, known } => t_fmt2(
@@ -302,13 +296,8 @@ pub(super) fn build_view_model(
 mod tests {
     use super::*;
 
-    /// 모르는 액션이 하나면 줄도 단수형이다 — 개수를 세는 자리가 "1" 로 남으면 영어에서
-    /// "1 unknown actions" 가 된다.
-    ///
-    /// 재는 것은 **어느 키를 고르는가**다 — 문턱이 정확히 1 인지. 문구 자체와 세 언어의
-    /// 자리 수는 다른 자리가 본다(`tests/i18n_key_parity.rs` 의 `key_sets_match_english` ·
-    /// `placeholders_match_english`). 단위 테스트는 카탈로그 없이 돌아 `t_fmt` 가 키를 그대로
-    /// 돌려주므로, 아래 단정은 카탈로그가 있든 없든 같은 답을 낸다.
+    /// 액션 수에 맞는 단수·복수 키를 고르는지 확인한다.
+    /// 번역과 placeholder 일치는 tests/i18n_key_parity.rs에서 확인한다.
     #[test]
     fn only_exactly_one_unknown_action_takes_the_singular_line() {
         let none = notice_line(&BundleNotice::UnknownActions(Vec::new()));
@@ -318,6 +307,6 @@ mod tests {
             "pane.zoom_cycle".into(),
         ]));
         assert_ne!(one, two, "하나와 둘이 같은 문구를 쓴다");
-        assert_ne!(one, none, "빈 목록이 단수형으로 샜다");
+        assert_ne!(one, none, "빈 목록에 단수형 문구를 사용했다");
     }
 }

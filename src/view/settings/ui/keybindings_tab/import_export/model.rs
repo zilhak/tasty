@@ -1,8 +1,4 @@
-//! 가져오기 미리보기의 자료 — 표의 행, 행 단위 적용, option 마이그레이션 행.
-//!
-//! 화면(`import_export.rs`)과 떼어 둔 이유는 적용 규칙을 창 없이 단정하기 위해서다 —
-//! "선택한 행만 draft 에 들어가고, 번들에 없는 plugin override 는 남는다" 는 egui 가 없어도
-//! 참이어야 한다.
+//! 가져오기 미리보기 행과 초안 적용을 계산한다. 창 없이 적용 규칙을 검증할 수 있다.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,7 +14,7 @@ use crate::settings::{KeybindingSettings, SwitchAxis, SwitchStep};
 /// `None` = override 제거(매니페스트 기본값 복귀).
 pub(crate) type PluginShortcutDraft = BTreeMap<(String, String), Option<ShortcutOverride>>;
 
-/// 표의 네 그룹 — 번들이 실어 나르는 네 자리.
+/// 번들의 일반·빠른 전환·스크립트·plugin 그룹.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Group {
     General,
@@ -106,7 +102,7 @@ pub(crate) struct MigrationRow {
     pub value: MigrationValue,
 }
 
-/// 지금 행들의 선택을 해소 계획으로 — `Unset` 은 계획에 안 들어간다.
+/// 사용자가 고른 대체값을 적용 계획으로 만든다. Unset은 제외한다.
 pub(crate) fn plan_of(rows: &[MigrationRow]) -> ResolutionPlan {
     rows.iter()
         .filter_map(|r| match &r.value {
@@ -228,8 +224,7 @@ fn axis_equal(axis: SwitchAxis, a: &KeybindingSettings, b: &KeybindingSettings) 
             .all(|s| axis.step(a, s) == axis.step(b, s))
 }
 
-/// 고른 행을 두 draft 에 쓴다 — 호스트 단축키는 `draft`, plugin override 는
-/// `plugin_draft`. 한쪽만 쓰면 Save 후에도 절반만 반영된다.
+/// 선택한 행을 호스트 단축키와 plugin 초안에 각각 적용한다.
 pub(crate) fn apply_rows<'a>(
     keys: impl IntoIterator<Item = &'a RowKey>,
     draft: &mut KeybindingSettings,

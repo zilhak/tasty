@@ -199,7 +199,8 @@ impl MainView {
             .reset_reveal_timer_if_not_shown(&theme);
     }
 
-    /// Escape로 설정 열기 요청을 취소하거나 알림·포커스된 팝업을 닫는다.
+    /// Escape로 설정 요청·알림을 처리하고 팝업 포커스를 해제한다.
+    /// 바깥 클릭으로 닫을 수 있는 팝업만 닫는다.
     fn try_consume_escape_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         if event.logical_key == Key::Named(NamedKey::Escape) {
             if self.state.settings_open_requested {
@@ -790,7 +791,7 @@ mod tests {
             assert_eq!(
                 stage_key_decision(true, &default_exit_bindings(), &key, no_mods()),
                 StageKeyDecision::ConsumeForStage,
-                "{key:?} 가 무대를 뚫고 내려갔다"
+                "무대가 열려 있는데 배경으로 {key:?} 입력이 전달됐다"
             );
         }
     }

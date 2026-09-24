@@ -231,12 +231,12 @@ fn every_ancestor_is_either_painted_or_behind_the_ellipsis() {
         .collect();
     assert!(
         !hidden.is_empty(),
-        "30 성분이 640 폭에 다 들어갔다 — 이 케이스가 아무것도 안 잰다"
+        "테스트 경로는 주어진 폭을 넘어 일부 조상 폴더가 접혀야 한다"
     );
     // 숨은 것은 전부 **가운데** 조상이다: root 와 현재 폴더는 접히지 않는 폭이다.
     assert!(
         !hidden.contains(&crumbs[0].label.as_str()),
-        "root 가 접혔다 — 이 폭은 사다리 바닥이 아니다"
+        "이 폭에서는 루트 경로가 표시되어야 한다"
     );
     assert!(
         !hidden.contains(&crumbs[crumbs.len() - 1].label.as_str()),
@@ -342,7 +342,7 @@ fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out
     );
     assert!(
         !shapes.iter().any(|(t, _, _)| t.contains("is a folder")),
-        "파일을 골랐는데 폴더 안내 줄이 섰다"
+        "파일을 선택했는데 폴더 안내가 표시됐다"
     );
 }
 
@@ -377,7 +377,7 @@ fn the_current_folder_elides_at_the_front_and_never_clips_without_an_ellipsis() 
     assert_ne!(
         current,
         format!("{long}-tail"),
-        "이 폭에서 안 줄었다 — 이 케이스가 아무것도 안 잰다"
+        "테스트 경로는 이 폭에서 말줄임되어야 한다"
     );
     assert!(
         current.starts_with('…'),

@@ -47,7 +47,7 @@ pub(super) fn draw_detectors(
                     let Some(det) = file_format.detector(id) else {
                         continue;
                     };
-                    // 효과 상태: draft 우선, 없으면 registry 상태.
+                    // 변경 초안이 있으면 레지스트리 값보다 우선 표시한다.
                     let want_enabled = fh
                         .detector_enabled
                         .get(id)
@@ -212,9 +212,8 @@ fn build_add_detector_decl(form: &AddDetectorForm) -> Result<DetectorDecl, Strin
     })
 }
 
-/// 한 행의 출처 칸 문구와 "user 항목 삭제" 버튼을 보일지. 둘 다 finalize 된 rule 의 origin 이
-/// 아니라 출처별 contribution 을 읽는다 — 같은 rule 을 plugin 도 적으면 dedupe 가 user origin 을
-/// 지우고, rule 없는 user patch 는 애초에 rule 이 없다(ADR-0031).
+/// 출처 표시와 삭제 버튼은 합쳐진 rule이 아닌 출처별 등록 자료를 읽는다.
+/// 중복 제거된 user rule이나 rule 없이 상태만 바꾼 user 항목도 표시해야 한다(ADR-0031).
 fn detector_row_origin(file_format: &FileFormatRegistry, id: &DetectorId) -> (String, bool) {
     (
         detector_origins_summary(&file_format.rule_origins(id)),

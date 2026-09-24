@@ -1,23 +1,6 @@
-//! Keybindings › Preset 서브탭 — drill-down (content-swap) 전사.
-//!
-//! 디자인 `settings_window.jsx` `PresetSubtab`/`PresetDiffTable`. 구 좌(120px 목록)/우(미리보기)
-//! split 을 [`DrillDown`] + [`ListCtrl`] 로 재작성:
-//!
-//! - **List view** — 풀폭 [`ListCtrl`] 프리셋 목록. 각 행: 이름 + 한 줄 설명 +
-//!   사용 중 프리셋에 trailing "Active" Tag(success·dot) + drill-in chevron.
-//!   selected 하이라이트(2px accent 바)도 사용 중 프리셋에 붙는다
-//!   (jsx `selectedId={activeId}`). 행 클릭 → 디테일 진입.
-//! - **Detail view** — back bar(← + "{이름} preset" 제목 + **우측 Apply**) 아래
-//!   Action/Current/{프리셋} 3열 diff 테이블. 변경 행은 accent-primary 강조(색상만,
-//!   bold 없음 — semibold 은 egui 폰트 두께 표현 한계로 색상 강조가 관례,
-//!   `button.rs` 참조).
-//! - **Apply 배치** — back bar 우측 슬롯. footer 의 Cancel/Save 와 물리적으로
-//!   분리: Apply = 선택 프리셋을 settings **draft** 에 기록(사용 중 프리셋이면
-//!   "Applied" 비활성 — 적용할 diff 없음), footer Save = draft 전체를 디스크에
-//!   커밋(다른 범위).
-//!
-//! 뷰 상태는 `selected_preset` 이 소유: `None` = List, `Some(name)` = Detail.
-//! 전환은 즉시(0ms) — DrillDown 위젯 계약.
+//! 단축키 프리셋 목록과 선택한 프리셋의 비교 화면.
+//! Apply는 설정 초안에만 반영하며, 하단 Save가 파일에 저장한다.
+//! selected_preset이 없으면 목록을, 있으면 해당 프리셋의 비교 표를 보여준다.
 
 use std::cell::Cell;
 
@@ -42,7 +25,7 @@ pub(super) fn draw_preset_subtab(
     // 사용 중(Active) 프리셋 — 현재 draft 와 모든 일반 바인딩이 일치하는 프리셋.
     let active_idx = names.iter().position(|n| preset_matches(keybindings, n));
 
-    // 디테일 대상. stale 이름(Some 인데 미존재)은 리스트 뷰로 강등.
+    // 선택한 프리셋이 없어졌으면 목록을 표시한다.
     let detail = selected_preset
         .as_deref()
         .and_then(|n| KeybindingSettings::preset_by_name(n).map(|p| (n.to_string(), p)));
@@ -207,13 +190,7 @@ fn diff_counts(current: &KeybindingSettings, preset: &KeybindingSettings) -> (us
     (changed, fields.len())
 }
 
-/// jsx `PresetDiffTable` 전사 — grid `minmax(0,1.6fr) 1fr 1fr`.
-///
-/// 헤더: mono micro(10) uppercase muted, padding 0/space-md/space-sm, 하단
-/// separator 헤어라인. 3열 = Action / Current / {프리셋 이름}.
-/// 셀: padding space-sm/space-md + 하단 헤어라인. Action 은 body(13)
-/// text-secondary, 바인딩 두 열은 mono term-sm(12) — Current 는 muted,
-/// 프리셋 열은 변경 시 text-primary(강조) / 동일 시 muted.
+/// 동작·현재 키·프리셋 키의 비교 표. 달라진 프리셋 값은 색으로 강조한다.
 fn draw_preset_diff_table(
     ui: &mut egui::Ui,
     th: &Theme,

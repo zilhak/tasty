@@ -1,14 +1,5 @@
-//! Misc 탭 콘텐츠 — Scripts(전 플랫폼, Lua 스크립트 관리) + tastyrc 편집(Windows 전용).
-//!
-//! 구 "Misc" 탭은 General L1 의 L2 섹션으로 분해됨 — Accessibility/Performance 는
-//! 각자 `accessibility.rs`/`performance.rs` 가 소유한다. 여기에는 Scripts 관리 창과
-//! (Windows) tastyrc 편집이 남는다.
-//!
-//! Scripts 관리 창 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
-//! `ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge` (구조 전사).
-//! 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/script_manager.rs`.
-//! 데이터는 `Settings.scripts`(`ScriptRegistry`), 바운드 단축키는
-//! `Settings.keybindings`에서 **조회만**(편집은 Keybindings › Scripts 소유).
+//! Lua 스크립트 관리와 Windows용 tastyrc 편집.
+//! 단축키는 조회만 하며 편집은 Keybindings의 Scripts 화면에서 한다.
 
 use std::collections::HashMap;
 use tasty_type_geometry::length::LogicalPx;
@@ -291,10 +282,7 @@ fn draw_script_row(
 
         if renaming {
             // 중앙 = Input + Save/Cancel (우측 액션·경로 숨김).
-            // Align::Min(상단) — 디자인 `ScriptRow`(jsx)는 행 컨테이너가
-            // `alignItems: "flex-start"`라 이 클러스터를 행 상단에 배치한다.
-            // `Align::Center`로 두면 egui 가 `horizontal_top` 안에서 이 ui 의
-            // `min_rect`를 잔여 세로 공간 전체로 확장시켜 행이 깨진다.
+            // 세로 중앙 정렬이 남은 높이까지 확장하지 않도록 상단 정렬한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 let cancel = Button::new(t("button.cancel"))
@@ -321,14 +309,7 @@ fn draw_script_row(
                 }
             });
         } else {
-            // 우측 클러스터(right-to-left) — 남는 폭을 채우고 우측 정렬.
-            // Align::Min(상단) — 디자인 `ScriptRow`(jsx)의 행 컨테이너가
-            // `alignItems: "flex-start"`라 이 클러스터도 행 상단에 배치되는 게
-            // 맞다(클러스터 자신의 내부 `alignItems: "center"`는 그 안 한 줄짜리
-            // 콘텐츠끼리의 정렬일 뿐, 행 전체 높이 기준 정렬이 아니다). 갤러리 미러
-            // `script_manager.rs`도 이미 `Align::Min`을 쓴다. `Align::Center`로 두면
-            // egui 가 `horizontal_top` 안에서 이 ui 의 `min_rect`를 잔여 세로 공간
-            // 전체로 확장시켜 행이 깨진다.
+            // 액션은 오른쪽부터 배치하되 행 높이가 늘지 않도록 상단 정렬한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 if confirming {
@@ -539,8 +520,7 @@ fn trigger_chip(
     let radius = th.corner_radius_sm.value();
     // 호버 오버레이 — 전경색 저알파 mix (위젯 공통 규칙과 동일 도출).
     if resp.hovered() {
-        // 대응 오버레이 토큰(`overlay_hover`)은 합성된 색이라 배율 자리에 못 넣는다.
-        // 값에 이름만 두고 수렴은 디자인 판단으로 남긴다.
+        // overlay_hover는 합성된 색이므로 여기의 혼합 비율 대신 쓸 수 없다.
         const HOVER_OVERLAY_OPACITY: f32 = 0.12;
         ui.painter()
             .rect_filled(rect, radius, fg.gamma_multiply(HOVER_OVERLAY_OPACITY));
@@ -693,9 +673,7 @@ fn draw_add_card(
                         .show(ui, th)
                         .clicked()
                     {
-                        // OS 네이티브 다이얼로그가 아니라 설정 창 안의 파일 선택을 연다 —
-                        // 포털 없는 Linux 에서 네이티브 다이얼로그는 끝나지 않는다
-                        // (docs/adr/0031-file-handler-routing.md).
+                        // 포털에 의존하지 않는 설정 창의 파일 선택을 사용한다(ADR-0031).
                         st.browse_requested = true;
                     }
                     Input::new()
@@ -845,10 +823,7 @@ mod tests {
         settings
     }
 
-    /// 회귀 가드 — `draw_script_row` 의 RTL 액션 클러스터가 `Align::Center` 일 때
-    /// egui 가 이 ui 의 `min_rect` 를 패널 잔여 세로 공간 전체로 확장시켜 첫 행이
-    /// 깨지던 문제. 등록 1/2/3 개 모두에서 각 행 높이가 콘텐츠 높이 상당(계측상
-    /// 50px 대)에 머무는지 확인한다 — 수정 전에는 734px(패널 잔여 높이)로 나왔다.
+    /// 스크립트 수와 관계없이 액션 영역이 패널 높이 전체로 늘어나지 않는지 확인한다.
     #[test]
     fn script_row_height_does_not_expand_to_panel_remainder() {
         let th = test_theme();

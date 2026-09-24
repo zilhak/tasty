@@ -773,10 +773,9 @@ mod tests {
             .collect();
         assert!(
             offenders.is_empty(),
-            "sticky_focus 이면서 바깥 클릭에 닫히지도 않는 popup 이 생겼다: {offenders:?}. \
-             그런 popup 에서는 바깥 클릭이 아무것도 안 하는데 Escape 는 포커스를 놓는다 — \
-             '둘은 같은 의미' 라고 적은 주석·사용자 문서가 그 순간부터 거짓이다. \
-             정책을 정하고(Escape 도 안 풀 것인가, 문서를 고칠 것인가) 그 결정을 여기 반영해라."
+            "sticky_focus와 close_on_outside_click=false를 함께 쓴 팝업: {offenders:?}. \
+             이 조합은 바깥 클릭과 Escape의 포커스 해제 동작이 다르다. \
+             의도한 조합이라면 팝업 정책과 문서, 이 검사를 함께 갱신해야 한다."
         );
     }
 

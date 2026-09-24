@@ -139,6 +139,6 @@ fn slots_do_not_pile_up_while_browsing() {
     assert_eq!(
         cached_tabs(&ctx, "dev"),
         1,
-        "돌아온 preset 은 저장소 판이다"
+        "다시 연 프리셋은 저장소의 최신 내용이어야 한다"
     );
 }

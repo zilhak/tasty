@@ -434,7 +434,7 @@ mod tests {
         let h = &v["handler_after_gate"];
 
         assert_eq!(q["drains"], 2);
-        assert_eq!(q["commands"], 8, "집어 든 명령 수의 합");
+        assert_eq!(q["commands"], 8, "처리 대상으로 꺼낸 명령 수의 합");
         assert_eq!(q["depth_max"], 5);
         assert_eq!(q["depth_mean"], 4);
         assert_eq!(q["wait_us_sum"], 200);
@@ -445,7 +445,7 @@ mod tests {
         );
         assert_eq!(
             q["wait_us_mean"], 100,
-            "분모는 대기를 기록한 수(2)다 — 회차 합(8)이면 한 스냅샷 안에서 모수가 갈린다"
+            "평균의 분모는 대기 측정 수(2)이며 회차별 명령 수의 합(8)이 아니다"
         );
 
         assert_eq!(h["calls"], 1);
@@ -455,7 +455,7 @@ mod tests {
 
         assert!(
             h.get("wait_us_max").is_none() && q.get("us_max").is_none(),
-            "두 모수가 같은 덩어리에 섞이면 안 된다"
+            "명령 수와 대기 측정 수를 구분해야 한다"
         );
     }
 
@@ -478,14 +478,17 @@ mod tests {
         assert_eq!(db["commit_us_mean"], 50);
         assert_eq!(db["checkpoints"], 1);
         assert_eq!(db["checkpoint_us_max"], 900);
-        assert_eq!(db["checkpoints_busy"], 1, "끝까지 못 간 되감기를 따로 센다");
+        assert_eq!(
+            db["checkpoints_busy"], 1,
+            "busy로 완료하지 못한 checkpoint를 따로 센다"
+        );
         assert_eq!(
             db["commit_us_max"], 60,
             "checkpoint 시간이 commit 최댓값으로 새면 안 된다"
         );
         assert!(
             v["handler_after_gate"].get("commits").is_none(),
-            "DB 모수가 handler 덩어리에 섞이면 안 된다"
+            "DB 계측을 handler 계측에 포함하면 안 된다"
         );
     }
 
@@ -531,19 +534,19 @@ mod tests {
                 && result.get("keyed_requests").is_some()
                 && result.get("slow_requests").is_some()
                 && result.get("gate_refusals").is_some(),
-            "덩어리들이 응답에 있어야 한다: {result}"
+            "계측 항목이 응답에 포함되어야 한다: {result}"
         );
         assert!(
             result["queue_admission"].is_null(),
-            "주입기가 없는 조립에서 장부 값을 지어냈다: {result}"
+            "주입기가 없는데 admission 계측값이 반환됐다: {result}"
         );
         assert!(
             result["stream_push"].is_null(),
-            "허브가 주입되지 않은 조립에서 스트림 값을 지어냈다: {result}"
+            "허브가 없는데 스트림 계측값이 반환됐다: {result}"
         );
         assert!(
             result["db_pragmas"]["memory_db"].is_null(),
-            "스토어가 없는 조립에서 적용값을 지어냈다: {result}"
+            "저장소가 없는데 DB 적용값이 반환됐다: {result}"
         );
     }
 
@@ -578,7 +581,7 @@ mod tests {
         let s = &v["state_db"];
         assert_eq!(
             s["degraded"], true,
-            "안 선 pragma 가 있는데 degraded 가 아니다"
+            "적용되지 않은 pragma가 있는데 degraded가 false다"
         );
         assert_eq!(s["pragmas"]["journal_mode"]["took"], false);
         assert_eq!(
@@ -589,11 +592,11 @@ mod tests {
 
         assert!(
             m["init_failure"].is_null(),
-            "대체가 아닌데 초기화 실패를 지어냈다"
+            "대체 저장소가 아닌데 초기화 오류가 반환됐다"
         );
         assert!(
             s.get("init_failure").is_none(),
-            "state.db 는 대체가 없다 — 칸을 싣지 않는다"
+            "state.db는 대체 저장소 오류 필드를 포함하지 않는다"
         );
 
         let none = db_pragmas_json(Some(&healthy), None, None);
@@ -691,7 +694,7 @@ mod tests {
             hub.push(id, StreamFrame::new(StreamTag::Data, b"lost".to_vec())),
             PushResult::Dropped
         );
-        rx.recv().expect("한 장 꺼낸다");
+        rx.recv().expect("프레임 하나를 받는다");
 
         let req = tasty_ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
@@ -715,7 +718,7 @@ mod tests {
         assert_eq!(
             s["backlog"],
             (SINK_CAPACITY - 1) as u64,
-            "꺼낸 한 장만큼 내려간 지금의 값이어야 한다: {s}"
+            "꺼낸 프레임을 제외한 현재 큐 크기여야 한다: {s}"
         );
         assert_eq!(s["sink_capacity"], SINK_CAPACITY);
     }
@@ -751,7 +754,7 @@ mod tests {
         }
         assert!(
             queue_admission_json(None).is_null(),
-            "장부가 없는데 값을 지어냈다"
+            "admission 계측이 없는데 값이 반환됐다"
         );
 
         let d = queue_dispatch_json(&DispatchSnapshot {
@@ -893,21 +896,33 @@ mod tests {
         .result
         .expect("result");
         let a = &result["queue_admission"];
-        assert_eq!(a["queued_bytes"], 40, "주입기가 든 장부가 아니다: {a}");
+        assert_eq!(
+            a["queued_bytes"], 40,
+            "주입기의 admission 계측값과 다르다: {a}"
+        );
         assert_eq!(a["queued_commands"], 1);
-        assert_eq!(a["refused_bytes"], 1, "거절 누계가 장부의 것이 아니다: {a}");
+        assert_eq!(
+            a["refused_bytes"], 1,
+            "바이트 제한 거절 수가 admission 계측과 다르다: {a}"
+        );
         assert_eq!(
             a["refused_depth"], 2,
-            "깊이 거절 누계가 장부의 것이 아니다: {a}"
+            "깊이 제한 거절 수가 admission 계측과 다르다: {a}"
         );
-        assert_eq!(a["queued_injected"], 0, "놓은 주입 표가 남아 있다: {a}");
+        assert_eq!(
+            a["queued_injected"], 0,
+            "반환한 주입 요청이 큐 집계에 남아 있다: {a}"
+        );
         assert_eq!(
             a["limit_bytes"], 50,
-            "상한은 그 장부가 집행하는 값이어야 한다"
+            "상한은 실제 admission 설정값이어야 한다"
         );
         assert_eq!(a["limit_injected_depth"], 3);
         let d = &result["queue_dispatch"];
-        assert_eq!(d["in_flight"], 1, "Core 의 dispatch 누계가 아니다: {d}");
+        assert_eq!(
+            d["in_flight"], 1,
+            "Core의 진행 중인 dispatch 수와 다르다: {d}"
+        );
         assert_eq!(d["started"], 1);
         assert_eq!(d["rounds"], 1);
         assert_eq!(d["rounds_stopped_by_time"], 1);
@@ -947,15 +962,15 @@ mod tests {
         assert_eq!(
             bounds.len(),
             tasty_telemetry::LATENCY_BUCKET_COUNT - 1,
-            "칸이 상한보다 하나 많다 — 그 하나가 넘침이다"
+            "분포 구간 수는 경계 수보다 하나 많아야 한다. 마지막은 상한 초과 구간이다"
         );
         assert_eq!(
             hh["bounds_us"], qh["bounds_us"],
-            "경계는 덩어리마다 같은 값이어야 한다"
+            "각 분포는 같은 경계값을 사용해야 한다"
         );
         assert_eq!(
             ph["bounds_us"], qh["bounds_us"],
-            "경계는 덩어리마다 같은 값이어야 한다"
+            "각 분포는 같은 경계값을 사용해야 한다"
         );
 
         let counts = |x: &serde_json::Value| -> Vec<u64> {
@@ -978,7 +993,7 @@ mod tests {
         );
         assert!(
             v["db"].get("us_hist").is_none() && v["connections"].get("us_hist").is_none(),
-            "분포가 없는 덩어리에 빈 분포를 넣지 않는다"
+            "분포를 제공하지 않는 항목에는 빈 배열도 넣지 않는다"
         );
     }
 
@@ -1032,7 +1047,7 @@ mod tests {
         assert!(
             v["handler_after_gate"].get("refused_saturated").is_none()
                 && v["connections"].get("calls").is_none(),
-            "자원 모수가 시간 덩어리에 섞이면 안 된다"
+            "자원 계측을 시간 계측 항목에 포함하면 안 된다"
         );
     }
 
@@ -1043,7 +1058,7 @@ mod tests {
             .expect("표에 등재돼 있어야 한다 — 없으면 거부가 정책인지 누락인지 갈리지 않는다");
         assert!(
             !meta.plugin_callable,
-            "프로세스 게이지는 caller 별 값이 아니라 plugin 표면이 아니다"
+            "프로세스 전체 계측은 plugin 호출자에게 공개하지 않는다"
         );
         assert!(!meta.plugin_only, "local 은 부를 수 있어야 한다");
     }

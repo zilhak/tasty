@@ -1,21 +1,10 @@
-//! 설정 창 안의 로컬 파일 선택 — 메인 창 파일 피커 popup 의 **순수 view 를 재사용**한다.
+//! 설정 창의 로컬 파일 선택. 메인 파일 피커의 draw_file_picker_view를 재사용한다.
+//! 별도 winit 창이므로 상태와 PopupManager는 설정 창이 소유한다.
 //!
-//! 설정 창은 메인 윈도우와 별개의 winit 창이라 메인 창 popup 스택에 사는 파일 피커를
-//! 그대로 열 수 없다. 대신 view(`draw_file_picker_view`)가 AppState/CoreState 에
-//! 기대지 않으므로, 상태를 이 창의 `SettingsUiState` 에 두고 이 창의 `PopupManager`
-//! 에서 같은 view 를 그린다.
-//!
-//! - **로컬 전용**: 원격(attach mirror) 조회 경로는 메인 창 App 루프가 소유한다. 설정은
-//!   이 인스턴스 자신의 구성이라 로컬 파일시스템만 본다.
-//! - **OS 네이티브 다이얼로그를 쓰지 않는 이유**: 포털 없는 Linux 에서 끝나지 않는다
-//!   (`docs/adr/0031-file-handler-routing.md`). 여기서
-//!   쓰는 `read_dir_entries` 는 프레임 안의 동기 I/O 라 느린 디스크에서는 그 프레임이
-//!   늘어지지만 **유한하게 끝난다** — 메인 창 파일 피커의 로컬 경로와 같은 성질이다.
-//! - **저장 모드**: view 의 footer 이름 칸이 편집 가능해지고 footer primary 버튼이 **유일한
-//!   확정 수단**이다. 목록에서 파일을 고르면 확정이 아니라 이름 칸이 채워지고, 이름이 고른
-//!   행과 달라지는 순간 선택이 풀린다 — "고른 파일" 과 "입력한 이름" 이 두 경로가 되지 않는다.
-//!
-//! 기능 문서: `docs/features/native-file-picker/index.md` "설정 창에서의 로컬 전용 재사용".
+//! 원격 조회 없이 로컬 파일시스템만 읽으며 native 포털에 의존하지 않는다.
+//! read_dir_entries는 동기 I/O여서 느리거나 응답 없는 파일시스템에서 UI가 멈출 수 있다.
+//! 저장 모드는 파일을 골라도 이름만 채우고 하단 버튼으로 확정한다.
+//! 기능 문서: docs/features/native-file-picker/index.md.
 
 use std::path::{Path, PathBuf};
 
@@ -258,9 +247,7 @@ impl ChooserSession {
         match action {
             FilePickerAction::None => None,
             FilePickerAction::Cancel => Some(FileChooserOutcome::Cancelled),
-            // 단일 클릭은 **고르기**다 — 파일이든 폴더든, 두 모드 모두(디자인 제스처 표).
-            // 저장 모드에서 이름 칸을 채우는 것은 파일 행뿐이다: 폴더는 저장 대상이 아니라
-            // 확정이 읽는 값이 될 수 없다. 고른 것이 폴더라는 사실은 footer 안내 줄이 말한다.
+            // 단일 클릭은 선택만 한다. 저장 모드의 이름 칸은 파일을 골랐을 때만 바꾼다.
             FilePickerAction::Select(name) => {
                 if self.is_save() && self.is_file_entry(&name) {
                     self.save_name = name.clone();
@@ -270,7 +257,7 @@ impl ChooserSession {
             }
             FilePickerAction::EditName(name) => {
                 if self.is_save() {
-                    // 이름이 고른 행과 달라지는 순간 선택이 풀린다 — 화면에 두 답이 남지 않는다.
+                    // 입력한 이름이 달라지면 기존 행 선택을 해제한다.
                     if self.selected.first() != Some(&name) {
                         self.selected.clear();
                     }
@@ -475,8 +462,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 걸러진 파일은 확정 대상이 아니고, 디렉토리는 **파일로** 확정되지 않는다.
-    /// 폴더를 고른 뒤의 확정은 결과가 아니라 이동이다 — 그 갈래는 아래 제스처 표가 잰다.
+    /// 필터에서 제외된 파일이나 디렉터리를 파일로 확정하지 않는다.
     #[test]
     fn directories_and_filtered_out_files_are_not_confirmable() {
         let dir = tempdir();
@@ -511,17 +497,17 @@ mod tests {
         assert_eq!(
             s.selected,
             vec!["sub".to_string()],
-            "폴더 단일 클릭이 안 골랐다"
+            "폴더를 한 번 클릭하면 선택되어야 한다"
         );
         assert_eq!(
             s.apply(FilePickerAction::Confirm),
             None,
-            "폴더를 고른 확정이 결과를 냈다"
+            "선택한 폴더를 열 때 파일 선택 결과를 반환하면 안 된다"
         );
         assert_eq!(
             s.current_dir,
             dir.join("sub"),
-            "폴더를 고른 확정이 안 들어갔다"
+            "확정하면 선택한 폴더로 이동해야 한다"
         );
         s.apply(FilePickerAction::NavigateUp);
         s.apply(FilePickerAction::Select("b.txt".into()));
@@ -538,29 +524,29 @@ mod tests {
         assert_eq!(
             s.selected,
             vec!["sub".to_string()],
-            "저장 모드에서 폴더 단일 클릭이 안 골랐다"
+            "저장 모드에서도 폴더를 한 번 클릭하면 선택되어야 한다"
         );
         assert_eq!(s.save_name, "keys.toml", "폴더가 이름 칸을 건드렸다");
         assert_eq!(
             s.apply(FilePickerAction::ConfirmEntry("sub".into())),
             None,
-            "저장 모드 폴더 더블클릭이 결과를 냈다"
+            "저장 모드의 폴더 더블클릭은 저장 결과를 반환하면 안 된다"
         );
         s.apply(FilePickerAction::NavigateInto("sub".into()));
         assert_eq!(
             s.current_dir,
             dir.join("sub"),
-            "폴더 더블클릭이 안 들어갔다"
+            "폴더를 더블클릭하면 해당 폴더로 이동해야 한다"
         );
         s.apply(FilePickerAction::NavigateUp);
         assert_eq!(
             s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
             None,
-            "저장 모드 파일 더블클릭이 확정까지 갔다"
+            "저장 모드의 파일 더블클릭은 저장을 확정하면 안 된다"
         );
         assert_eq!(
             s.save_name, "b.txt",
-            "저장 모드 파일 더블클릭이 이름을 안 채웠다"
+            "저장 모드의 파일 더블클릭은 이름 칸을 채워야 한다"
         );
 
         std::fs::remove_dir_all(&dir).ok();
@@ -579,7 +565,7 @@ mod tests {
         assert_eq!(s.current_dir, dir);
         let root_idx = 0;
         s.apply(FilePickerAction::NavigateTo(root_idx));
-        assert_eq!(s.current_dir.parent(), None, "첫 크럼은 루트다");
+        assert_eq!(s.current_dir.parent(), None, "첫 경로 항목은 루트다");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -632,8 +618,7 @@ mod tests {
         // 기존 파일을 고르면 그 이름이 입력으로 간다.
         s.apply(FilePickerAction::Select("b.txt".into()));
         assert_eq!(s.save_name, "b.txt");
-        // 디렉토리를 고르면 선택은 옮겨 가지만 **입력은 그대로**다 — 폴더는 저장 대상이
-        // 될 수 없으므로 확정이 읽는 값을 바꾸지 못한다.
+        // 폴더를 골라도 저장 파일명은 바꾸지 않는다.
         s.apply(FilePickerAction::Select("sub".into()));
         assert_eq!(s.save_name, "b.txt");
         assert_eq!(s.selected, vec!["sub".to_string()]);

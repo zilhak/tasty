@@ -6,8 +6,7 @@ use crate::i18n::t;
 use super::draw_intro_block;
 use tasty_ui_widgets::{hspace, vspace};
 
-/// Extension Mapping sub-tab. 광고된 모든 확장자 + draft 에 있는 확장자를 리스트로 표시,
-/// 각 확장자 옆에 후보 detector 들을 ↑↓ 버튼으로 재정렬 가능.
+/// 등록된 확장자와 편집 중인 확장자를 표시하고 detector 우선순위를 조정한다.
 pub(super) fn draw_extension_mapping(
     ui: &mut egui::Ui,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
@@ -38,8 +37,7 @@ pub(super) fn draw_extension_mapping(
         ],
     );
 
-    // 표시할 확장자 = (draft 의 확장자) ∪ (모든 광고 확장자 중 1개 이상 candidate 가 있는 것).
-    // candidate 가 2개 이상인 경우만 priority 의미가 있으므로 실제 노출은 후자 위주.
+    // 초안의 확장자와 등록된 후보가 있는 확장자를 함께 표시한다.
     let all_exts = file_format.all_advertised_extensions();
     let mut visible: std::collections::BTreeSet<String> = draft_map.keys().cloned().collect();
     for ext in &all_exts {

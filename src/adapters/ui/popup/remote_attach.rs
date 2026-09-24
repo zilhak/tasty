@@ -1508,7 +1508,10 @@ mod tests {
         poll_browse(&mut st, Duration::ZERO);
         assert!(matches!(st.conn, Conn::Error(_)), "상한 초과 → Error 전이");
         assert!(st.job.is_none(), "타임아웃 시 job 은 회수된다");
-        assert!(cancel.is_cancelled(), "타임아웃은 워커 취소까지 동반한다");
+        assert!(
+            cancel.is_cancelled(),
+            "타임아웃은 워커에 취소를 요청해야 한다"
+        );
     }
 
     /// 취소는 팝업을 닫지 않고 Initial 로 되돌린다(자식 ssh 취소 포함).
@@ -1531,7 +1534,7 @@ mod tests {
             "선택도 초기화(Initial 문구와 정합)"
         );
         assert!(st.job.is_none());
-        assert!(cancel.is_cancelled(), "워커의 자식 ssh 도 함께 취소된다");
+        assert!(cancel.is_cancelled(), "워커 취소 표지가 설정되어야 한다");
     }
 
     /// 취소 뒤 늦게 온 결과도 마지막 Arc와 함께 정리된다.

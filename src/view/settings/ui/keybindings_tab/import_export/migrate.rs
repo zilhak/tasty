@@ -1,7 +1,4 @@
-//! 마이그레이션 카드 — jsx `IeMigrateCard`/`IeMigrateRow`. option 조합의 대체값을 녹화 슬롯이나
-//! modifier 선택으로 받는다.
-//!
-//! 경계: detail 본문 중 마이그레이션 카드 한 덩어리의 그리기와, 그 행이 고치는 대체값·녹화 슬롯이다.
+//! Option 조합을 대체할 수식키나 키 조합을 입력받는 마이그레이션 화면.
 
 use tasty_host_plugin::keybinding_bundle::option_migration::ReplacementKind;
 use tasty_type_appearance::theme::Theme;
@@ -111,8 +108,7 @@ pub(super) fn migrate_card(
         });
 }
 
-/// 충돌 개수 줄 — 개수(danger 강조) 먼저, 이어서 무엇이 일어나는지. 행마다의 인라인 이유는
-/// 그대로 남으므로(어느 바인딩인지를 말한다) 이 줄은 목록을 되풀이하지 않는다.
+/// 충돌 건수를 표시한다. 각 바인딩의 사유는 해당 행에 남긴다.
 fn conflict_summary(ui: &mut egui::Ui, th: &Theme, conflicts: usize) {
     let size = th.font_size_term_sm.value();
     let mut job = egui::text::LayoutJob::default();
@@ -201,7 +197,7 @@ fn migrate_row(
                         MigrationValue::Set(v) => combos.iter().position(|n| n == v),
                         _ => None,
                     };
-                    // 안 고른 상태는 값이 아니다 — placeholder 색 · UI 폰트로 그리고 고르면 빠진다.
+                    // 미선택 상태는 placeholder로 표시한다.
                     if select_or_placeholder(
                         ui,
                         th,

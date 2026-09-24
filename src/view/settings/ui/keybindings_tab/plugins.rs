@@ -26,9 +26,8 @@ fn row_mode_of(ov: Option<&ShortcutOverride>, fallback: &BindingMode) -> RowMode
     }
 }
 
-/// override가 "row.current_override 또는 매니페스트 default와 동일"하면 draft에서
-/// 제거 (clear). 그게 아니면 draft에 누적. 결과적으로 모달 close 시 main이
-/// draft를 회수해 변경된 키만 plugins.toml에 반영.
+/// 저장된 override와 같으면 초안에서 지우고, 다르면 초안에 기록한다.
+/// App은 Save로 닫았을 때만 이를 plugins.toml에 반영한다.
 fn commit_row_change(
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     row: &PluginShortcutRow,
@@ -58,7 +57,7 @@ fn shortcut_override_eq(a: Option<&ShortcutOverride>, b: Option<&ShortcutOverrid
     }
 }
 
-/// Plugins 서브탭 본문 (단계 E-c: 변경 가능 UI).
+/// plugin 명령의 단축키 설정.
 pub(super) fn draw_plugins_subtab(
     ui: &mut egui::Ui,
     snapshot: &PluginShortcutSnapshot,
@@ -146,7 +145,7 @@ fn draw_plugin_command_row(
 ) {
     let th = crate::theme::theme();
     let key = (row.plugin_id.clone(), row.command_id.clone());
-    // 현재 effective override: draft가 우선, 없으면 row.current_override
+    // 초안이 있으면 저장된 override보다 우선 표시한다.
     let current_ov: Option<ShortcutOverride> = match draft.get(&key) {
         Some(o) => o.clone(),
         None => row.current_override.clone(),

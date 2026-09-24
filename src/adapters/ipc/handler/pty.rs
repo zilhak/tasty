@@ -487,7 +487,7 @@ mod tests {
     fn observed_pty_state(engine: &CoreState, pty_id: u32, sent: &str) -> String {
         let watcher = match engine.pty_registry.get(pty_id) {
             Some(e) => watch_phase_note(e.watch_phase()),
-            None => "registry 에 엔트리가 없다 — 위상을 못 읽었다",
+            None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",
         };
         let Some(t) = engine.find_terminal_by_id(pty_id) else {
             return format!(
@@ -530,7 +530,7 @@ mod tests {
         for note in ours {
             assert!(
                 !note.contains("자식이 안 죽었다"),
-                "우리 쪽 사건인데 자식을 지목했다: {note}"
+                "watcher 상태만으로 자식의 생존 여부를 단정했다: {note}"
             );
         }
         assert!(
@@ -555,7 +555,7 @@ mod tests {
         let mut seen: Vec<&str> = all.to_vec();
         seen.sort_unstable();
         seen.dedup();
-        assert_eq!(seen.len(), 4, "위상 문장이 겹친다: {all:?}");
+        assert_eq!(seen.len(), 4, "watcher 상태별 진단이 같아졌다: {all:?}");
     }
 
     #[test]
@@ -590,7 +590,7 @@ mod tests {
         assert!(spent.contains("제한 시간"), "{spent}");
         assert!(
             spent.contains("관측:"),
-            "예산 갈래가 관측을 안 담았다: {spent}"
+            "제한 시간 초과 진단에 관측 결과가 없다: {spent}"
         );
         assert!(
             !spent.contains("레지스트리에 없다"),
@@ -601,7 +601,7 @@ mod tests {
         assert!(odd.contains("일어나면 안 된다"), "{odd}");
         assert!(
             !odd.contains("레지스트리에 없다") && !odd.contains("안에 받지 못했다"),
-            "세 갈래가 안 갈렸다: {odd}"
+            "조기 반환 진단이 대상 부재나 시간 초과 진단과 구분되지 않는다: {odd}"
         );
     }
 

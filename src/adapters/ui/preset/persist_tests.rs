@@ -187,7 +187,7 @@ fn a_conflict_reloads_the_cache_and_tells_the_user() {
     assert_eq!(
         cache.layout.rebuild_pane_node().map(|n| count_ws_tabs(&n)),
         Some(2),
-        "미리보기가 에이전트의 판을 보여야 한다"
+        "미리보기에 에이전트가 저장한 내용이 표시되어야 한다"
     );
     assert_eq!(selected, None);
     assert_eq!(toasts.len(), 1);

@@ -12,12 +12,7 @@ use tasty_type_appearance::theme::{
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{HelpHint, TooltipPlacement, vspace};
 
-/// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
-///
-/// `page_id` 단독 매칭은 서로 다른 plugin 이 동일 id 를 contribute 할 경우 첫
-/// 매칭이 반환되어 다른 plugin 의 콘텐츠가 잘못 렌더된다. 전역 식별자는
-/// `<plugin_id>/<page_id>` (manifest types 460-462 참고) 이므로 이 헬퍼를 통한
-/// 복합키 매칭이 정답.
+/// plugin ID와 page ID를 함께 비교해 다른 plugin의 같은 이름 페이지와 구분한다.
 pub(super) fn find_plugin_settings_entry<'a>(
     entries: &'a [SettingsPageEntry],
     plugin_id: &str,
@@ -40,9 +35,7 @@ fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     });
 }
 
-/// Appearance 탭 콘텐츠. L2 사이드바(고정 6 섹션 + Appearance plugin page 합성·
-/// 필터·선택·fallback)는 settings 셸이 소유하므로 여기서는 활성 `sub_tab` 의
-/// 콘텐츠만 그린다.
+/// 선택한 Appearance 섹션을 그린다. 섹션 목록과 필터는 설정 창이 관리한다.
 pub fn draw_appearance_tab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -131,8 +124,7 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
         let is_current = settings.appearance.theme == entry.id;
         let clicked = draw_theme_swatch(ui, &th, &entry.label, &entry.file, is_current);
         if clicked && !is_current {
-            // 테마 변경 = base 누적 + overrides 클리어. 적용은 settings 저장 후
-            // (modal::on_save) GPU bridge 가 install_global 로 반영.
+            // 테마를 바꾸면 개별 색 override를 비운다. 실제 적용은 설정 저장 뒤에 처리한다.
             tasty_themes::apply_theme(&mut settings.appearance, &entry.id);
         }
         ui.add_space(th.spacing_xs.value());
@@ -180,9 +172,7 @@ fn draw_theme_swatch(
 
     let pad = th.spacing_sm.value();
     let stripe_h = THEME_SWATCH_STRIPE_HEIGHT.value();
-    // 라벨 줄 여백. 이 카드 높이 식은 `pad`(spacing_sm) · `gap`(spacing_xs) ·
-    // `font_size_body` 를 더하는데 셋 다 배율을 탄다 — 이 항만 평상수면 1.2 에서
-    // 글자는 커지고 여백은 그대로라 라벨이 카드에 낀다.
+    // 카드 여백도 글꼴·간격과 함께 Theme의 배율을 적용한다.
     let label_h = th.font_size_body.value() + th.spacing_xs.value();
     let gap = th.spacing_xs.value();
     let card_w = ui.available_width();
@@ -329,14 +319,11 @@ fn draw_appearance_general(
         });
 }
 
-/// UI-scale 토글 카드 치수 (디자인 jsx: Display scale cards). 새 컴포넌트라
-/// 파일 내 색-picker 상수와 동일하게 LogicalPx 로 둔다.
+/// UI 배율 선택 카드의 고정 치수.
 const DISPLAY_CARD_WIDTH: LogicalPx = LogicalPx(96.0);
 const DISPLAY_CARD_HEIGHT: LogicalPx = LogicalPx(76.0);
 
-/// Appearance > Display: UI scale (sm/md/lg) 토글 카드. 위젯만 교체 —
-/// 적용 범위(전역 egui zoom)는 불변. 각 카드는 실제 배율로 렌더된 "Aa"
-/// 프리뷰 + 라벨을 표시하고, 활성 카드는 accent 보더 + ring 으로 강조한다.
+/// UI 배율 선택 카드. 실제 배율의 글자 샘플과 선택 표시를 그린다.
 fn draw_appearance_display(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
@@ -411,7 +398,6 @@ fn display_scale_card(
         ui.painter().rect_stroke(
             rect,
             radius,
-            // 비활성 카드 보더 — surface2 값의 border role `border-frame`(픽셀 불변).
             egui::Stroke::new(
                 th.border_width.value(),
                 egui::Color32::from(th.border_frame()),
@@ -697,19 +683,12 @@ fn draw_appearance_explorer(
     );
 }
 
-/// surface kind id for the terminal — the `theme_overrides.surface_themes` /
-/// `theme_base.surface_themes` map key the background pickers bind to.
-/// 터미널 글꼴 크기 칸의 계약. 기본 글꼴 행과 surface override 행이 **같은 것**을 써야
-/// 하므로 한 자리에 둔다 — 한쪽만 고치면 같은 칸에서 두 범위가 갈린다.
-///
-/// 상수가 아니라 함수인 이유: 이 범위는 화면 길이가 아니라 **터미널 글꼴의 pt** 라
-/// `LogicalPx` 가 될 수 없고, 그렇다고 맨 `const f64` 로 두면 이름이 길이로 읽혀
-/// `length_constant_frontier` 가드에 걸린다(그 가드는 선언 한 줄만 본다).
+/// 기본 글꼴과 surface별 글꼴 입력이 공유하는 pt 범위. 화면 길이가 아니므로 LogicalPx를 쓰지 않는다.
 fn font_size_spec() -> super::number::NumberSpec<'static> {
     super::number::NumberSpec::int(6.0, 72.0)
 }
 
-/// 줄 높이(배수) 칸의 계약. 위와 같은 이유로 한 자리이고 같은 이유로 함수다.
+/// 기본 글꼴과 surface별 글꼴 입력이 공유하는 줄 높이 배수 범위.
 fn line_height_spec() -> super::number::NumberSpec<'static> {
     super::number::NumberSpec::int(0.8, 2.0).decimals(2)
 }
@@ -1032,13 +1011,7 @@ fn draw_surface_font_section(
     });
 }
 
-// ── Theme-color override picker (Appearance › Colors) ──────────────────
-// `AppearanceSettings.theme_overrides`(= flat `PartialColors`) 의 46 색 필드를
-// 6개 collapsible 그룹으로 편집한다. 각 행은 한 `PartialColors` 필드에 1:1 바인딩:
-// per-row "Default" 체크 = 필드 `None`(프리셋 base 추종) / 해제 = `Some(hex)`(override).
-// base 값은 resolved `theme_base` 에서 읽는다(하드코딩 없음). 프리셋 전환 시
-// `theme_overrides` 가 통째로 클리어되는 모델(`apply_theme`)과 일관 — picker 는
-// 그 단일 출처를 채울 뿐이다.
+// Colors 화면은 각 색 필드의 override를 편집한다. None이면 테마 기본값을 따른다.
 
 /// 색 스와치 한 변 (디자인 jsx: 18px). 4px 그리드 밖이고 대응 치수 토큰이 없다.
 const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
@@ -1047,11 +1020,7 @@ const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
 /// opacity 0.4 를 알파로 옮긴 값(102/255)이다. 대응 토큰이 없어 이름만 둔다.
 const SWATCH_INHERITED_ALPHA: u8 = 102;
 
-/// 색이 오버라이드됐음을 알리는 표시 점의 지름 (디자인 jsx: 5px). 점 치수 토큰은
-/// `status_dot_size`(8) 하나이고 `badge_`/`tab_`/`tag_dot_size` 가 그 별칭이라
-/// (theme.md "상태 점 지름"), 그리로 보내면 5 → 8 로 배율 1 에서 픽셀이 바뀐다.
-/// 게다가 이 점은 상태를 말하지 않는다 — 값이 기본값과 다르다는 표시라 역할도
-/// 다르다. 값을 지키고 이름만 남긴다(ADR-0035의 점 치수 축).
+/// 색 override 여부를 표시하는 점. 상태 점과 역할·크기가 달라 별도 치수를 유지한다(ADR-0035).
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
 /// hex 입력 폭 (디자인 jsx: 96px). 4px 그리드의 배수이되 대응 토큰이 없어 이름만 둔다.
@@ -1407,16 +1376,8 @@ fn draw_color_picker_row(
     });
 }
 
-/// Appearance > Plugin-contributed page. Renders each `SettingsItemDecl` in the
-/// page using a generic widget (currently only `FontOverride`).
-///
-/// The contract is fixed by `SettingsPageContribute`: host knows the *shape*
-/// (FontOverride → label + override grid + preview), plugin owns the *storage*
-/// (`appearance.plugin_font_overrides[storage_key]`). Color/Bool/Enum item
-/// kinds are not implemented yet; when added they route through the same dispatch.
-///
-/// Note: surface 색 picker 가 사라졌다. theme TOML
-/// (`~/.tasty/themes/<id>.toml` 의 `[surfaces.<storage_key>]`) 에서 직접 편집.
+/// plugin이 선언한 FontOverride·Toggle·Select·Number 항목을 공통 위젯으로 그린다.
+/// 글꼴은 plugin_font_overrides, 나머지는 plugin 설정 저장소의 storage_key를 사용한다.
 pub(super) fn draw_plugin_settings_page(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -1494,9 +1455,7 @@ pub(super) fn draw_plugin_settings_page(
     }
 }
 
-/// Plugin settings row 의 공통 레이아웃 — 라벨 좌 / 컨트롤 우 (디자인
-/// `settings_window.jsx:240-248` HTML 행: label 좌, 컨트롤 우 Row). 컨트롤은
-/// `right_to_left` 클로저 안에서 그려진다.
+/// plugin 설정의 라벨을 왼쪽, 입력 위젯을 오른쪽에 배치한다.
 fn plugin_setting_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::Ui)) {
     let th = crate::theme::theme();
     ui.add_space(th.spacing_sm.value());
@@ -1580,7 +1539,7 @@ fn draw_plugin_select(
     }
 }
 
-/// `Number` → 설정 창의 **숫자 한 모양**([`super::number`]). f64 read/write.
+/// plugin 숫자 설정을 공통 숫자 입력으로 편집한다.
 #[allow(clippy::too_many_arguments)]
 fn draw_plugin_number(
     ui: &mut egui::Ui,
@@ -2149,8 +2108,7 @@ mod tests {
             .expect("beta/theme should be found");
         assert_eq!(found_beta.plugin_id, "beta");
 
-        // page_id 만 보고 첫 매칭을 반환하던 버그 회귀 방지: beta 조회 시
-        // alpha 가 잘못 반환되면 안 된다.
+        // beta를 찾을 때 alpha가 반환되면 안 된다.
         assert_ne!(found_beta.plugin_id, found_alpha.plugin_id);
     }
 

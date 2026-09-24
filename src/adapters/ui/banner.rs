@@ -868,7 +868,7 @@ mod tests {
         assert_eq!(
             mgr.card_rect(&scope, &key),
             None,
-            "그린 적 없는 배너에 좌표가 있으면 그건 실측이 아니라 추측이다"
+            "렌더링하지 않은 배너에는 측정 좌표가 없어야 한다"
         );
 
         let drawn = egui::Rect::from_min_size(egui::pos2(8.0, 32.0), egui::vec2(1264.0, 50.0));

@@ -98,9 +98,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             );
             ui.end_row();
 
-            // 벨(BEL) 수신 시 벨 토스트(제목 `t("notification.bell_title")`) 표시 토글. off 면
-            // 토스트/소리만 억제하고
-            // 사용자가 등록한 bell 훅은 계속 발화한다.
+            // BEL 토스트·소리를 꺼도 사용자가 등록한 bell 훅은 계속 실행한다.
             ui.label(t("settings.terminal.bell_notification_label"));
             tasty_ui_widgets::switch(ui, &th, &mut settings.general.bell_notification, None, true);
             ui.end_row();
@@ -141,10 +139,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-/// Terminal › TUI L2 섹션 — 터미널 안 TUI/CLI 프로그램에 주는 권한 설정. 현재는
-/// OSC 52 클립보드 읽기 허용 토글 + 바로 아래 bordered warning callout(그 권한이
-/// 무엇을 여는지 경고). 설정 모델은 무변경(`GeneralSettings.allow_clipboard_read`,
-/// 기본 off) — Terminal › General 에서 분리해 옮긴 것이다.
+/// TUI의 OSC 52 클립보드 읽기 허용 설정과 권한 안내. 기본값은 꺼짐이다.
 pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
@@ -175,10 +170,8 @@ pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     );
 }
 
-/// Terminal › Mouse Capture L2 섹션 — 마우스 캡처 안내 배너 토글 + Shift 우회
-/// 설명 Note + 1px 구분선 + 캡처 비활성화 블랙리스트 에디터 + 1px 구분선 + 배너만
-/// 억제하는 블랙리스트 에디터(`mouse_capture_banner_blacklist`, 캡처 자체는
-/// 그대로 두고 안내 배너만 끈다 — 캡처 비활성화 블랙리스트와 독립적인 축).
+/// 마우스 캡처 안내와 제외 목록을 편집한다.
+/// 캡처 비활성화 목록과 안내 배너만 숨기는 목록은 별도로 적용한다.
 pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
@@ -195,9 +188,7 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
         );
     });
 
-    // Shift 우회를 설명하는 muted Note — `**...**` 로 감싼 구간(=Shift)만 강조한다
-    // (코드측 RichText, 문자열엔 마커만). 기존 muted 텍스트 패턴(`th.text_muted()`
-    // + `.small()`) 재사용.
+    // 번역 문구에서 **로 감싼 Shift 부분만 강조한다.
     vspace(ui, th.spacing_xs);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -227,10 +218,7 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
     });
     vspace(ui, th.spacing_md);
 
-    // 마우스 캡처 비활성화 블랙리스트 — 행 리스트 에디터(패턴 mono + × 제거) +
-    // 하단 Add 입력/버튼. 디자인 `BlacklistEditorG`(overlays-shared.jsx) 전사로,
-    // 옛 멀티라인 textarea(줄바꿈 구분)를 폐기한다. 매칭(trim/대소문자 무시/`*`)은
-    // 별도 헬퍼가 담당하므로 여기선 패턴 문자열만 보관한다.
+    // 제외 패턴을 편집한다. 패턴의 trim·대소문자·와일드카드 처리는 별도 헬퍼가 한다.
     ui.label(t("settings.terminal.mouse_capture_blacklist_label"));
     vspace(ui, th.spacing_xs);
 
@@ -271,7 +259,6 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
 
     // Add 행 — 입력 필드(남는 폭) + Add 버튼(입력 비면 disabled). 입력 버퍼는
     // 프레임 간 egui temp memory 에 보관한다(Settings 모델은 확정 패턴만 담는다).
-    // 6→8 스냅 (그리드 정합 — 폼 행 리듬).
     vspace(ui, th.spacing_sm);
     let add_id = ui.id().with("mouse_capture_blacklist_add");
     let mut add_buf: String = ui.data_mut(|d| d.get_temp::<String>(add_id).unwrap_or_default());

@@ -1,6 +1,4 @@
-//! 표시 문자열 — 번들의 자리·조합·override 를 사람이 읽는 이름으로 바꾼다.
-//!
-//! 경계: 설정·스냅샷을 **읽기만** 하는 문자열 계산이다. 그리기(`egui`)와 상태 전이는 여기 없다.
+//! 번들의 설정 항목과 키 조합을 표시 문자열로 바꾼다. 상태는 변경하지 않는다.
 
 use std::collections::BTreeMap;
 
@@ -55,7 +53,7 @@ impl Labels<'_> {
             .and_then(|r| r.manifest_default.as_deref())
     }
 
-    /// 한 자리의 사람이 읽는 이름 — 충돌 상대 표시와 마이그레이션 행 라벨.
+    /// 충돌 안내와 마이그레이션에 표시할 설정 항목 이름.
     pub(super) fn site(&self, site: &BindingSite) -> String {
         match site {
             BindingSite::GeneralBinding { field_id, .. } => {
@@ -123,7 +121,7 @@ impl Labels<'_> {
         }
     }
 
-    /// 축 한 행의 값 — 합성된 범위(`Alt+1…0`).
+    /// 빠른 전환 키 범위의 표시값. 예: Alt+1…0.
     pub(super) fn axis_summary(
         &self,
         axis: crate::settings::SwitchAxis,

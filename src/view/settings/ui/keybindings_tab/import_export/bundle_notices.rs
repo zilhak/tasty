@@ -1,11 +1,5 @@
-//! 번들 경고 — 가져온 파일의 경고를 화면이 한 블록에 쌓을 줄로 고른다.
-//!
-//! 경계: 경고 목록을 **읽기만** 하는 분류다. 문구·그리기는 `view_model` 과 `notices` 가 한다.
-//!
-//! 화면이 경고를 쌓는 규칙은 디자인이 정했다 — 경고는 톤이 같은 **한 블록**에 한 줄씩,
-//! 순서는 원문 순서가 아니라 **고정**(스키마 → 모르는 액션 → 빈 그룹), 세 줄까지 보이고
-//! 나머지는 접는다. 설치되지 않은 plugin 을 버린 것은 경고가 아니라 정보라 이 블록에 안
-//! 들어간다(`dropped` 정보 줄이 따로 든다).
+//! 가져오기 경고를 스키마, 알 수 없는 액션, 빈 그룹 순으로 정리한다.
+//! 세 줄까지 표시하고 나머지는 접는다. 생략된 plugin은 별도 정보 줄로 표시한다.
 
 use tasty_host_plugin::keybinding_bundle::BundleWarning;
 
@@ -31,12 +25,8 @@ impl BundleNotice {
     }
 }
 
-/// 경고 블록에 오를 줄 — 고정 순서.
-///
-/// 디자인 문구가 있는 경고만 줄이 된다. 나머지(모르는 최상위 키 · 필드 모양 불일치 · 절
-/// 통째 읽기 실패 · plugin override 읽기 실패 · 없는 script 바인딩)는 화면 문구가 정해지지
-/// 않아 여기 안 오르고, 호출부가 로그로만 남긴다 — [`is_shown`] 이 그 경계다. "빈 그룹"
-/// 줄은 디자인 문구가 있지만 그것을 내는 경고가 코덱에 없다.
+/// 화면 문구가 있는 경고를 정해진 순서로 반환한다. 나머지는 호출자가 로그에 남긴다.
+/// 빈 그룹 문구는 있으나 현재 코덱이 해당 경고를 만들지는 않는다.
 pub(super) fn bundle_notices(warnings: &[BundleWarning]) -> Vec<BundleNotice> {
     let mut out = Vec::new();
     let mut unknown = Vec::new();
@@ -57,7 +47,7 @@ pub(super) fn bundle_notices(warnings: &[BundleWarning]) -> Vec<BundleNotice> {
     out
 }
 
-/// 그 경고가 화면(정보 줄이나 경고 블록)에 오르는가 — 안 오르면 로그가 유일한 흔적이다.
+/// 화면에 표시할 경고인지 확인한다. 나머지는 로그에만 남는다.
 pub(super) fn is_shown(w: &BundleWarning) -> bool {
     matches!(
         w,
@@ -104,7 +94,7 @@ mod tests {
         );
     }
 
-    /// 모르는 액션은 몇 개든 한 줄이다 — 경고마다 줄을 세우면 블록이 목록이 된다.
+    /// 알 수 없는 액션은 개수와 관계없이 한 줄로 묶는다.
     #[test]
     fn unknown_actions_collapse_into_one_line() {
         let warnings = [unknown("a"), unknown("b"), unknown("c")];
@@ -130,8 +120,7 @@ mod tests {
         assert_eq!(fold(5, true), (5, 0));
     }
 
-    /// 줄이 하나면 접을 것이 없다 — 액션 행의 "N 개 더 보기" 는 숨은 수가 0 일 때 서지
-    /// 않으므로, 이 값이 0 이라는 것이 곧 그 링크가 없다는 뜻이다.
+    /// 한 줄만 있으면 숨겨진 줄 수는 0이다.
     #[test]
     fn a_single_notice_has_nothing_to_fold() {
         assert_eq!(fold(1, false), (1, 0));

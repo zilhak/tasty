@@ -96,7 +96,7 @@ fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
     assert_eq!(
         data["approval_id"],
         serde_json::to_value(&rec.request.id).unwrap(),
-        "격상 레코드를 지목할 id 가 봉투에 실려야 한다"
+        "승인 요청 기록의 ID가 응답에 포함되어야 한다"
     );
 }
 

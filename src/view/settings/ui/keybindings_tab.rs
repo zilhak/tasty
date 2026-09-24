@@ -5,18 +5,9 @@ use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use crate::settings_ui::PluginShortcutSnapshot;
 
-/// 키바인딩 탭 전 서브탭(`entries`/`quick_switch`/`entries_scripts`)이 공유하는
-/// 좌측 라벨 컬럼 고정폭. `remote_transfer.rs`(`LABEL_COL_WIDTH`)의 150px을
-/// 시작점으로 삼되, en/ko/ja 3개 언어 전체 라벨을 실제 프로덕션 egui 폰트
-/// 스택(`TextStyle::Body` = `Theme::font_size_body` 13.0px + CJK fallback, `label_width.rs`
-/// 참고)으로 실측한 결과 그대로 쓰면 잘리는 라벨이 있어 올렸다. 최장 실측치는
-/// ja `screenshot_to_clipboard_label`("スクリーンショットをクリップボードへ:")의
-/// 255.28px((?) 아이콘 슬롯 18px 포함) — 여기에 여유를 두고 4px 그리드에 맞춰
-/// 288로 고정한다. 이 실측치는 `label_width.rs`의 `labels_fit_within_fixed_column`
-/// 테스트로 항상 재현·재확인 가능하다(라벨 추가/번역 변경 시 실패해 알려준다).
-/// 서브탭마다 최장 라벨의 실측 폭이 달라 컬럼 폭이 제각각이던 문제를
-/// 이 상수로 통일한다. 4px 그리드 밖 화면 전용 고정 치수 — 대응 Theme 필드
-/// 없음(theme.md 참고).
+/// 모든 단축키 하위 화면에서 공유하는 라벨 열 폭.
+/// 세 언어의 라벨과 도움말 아이콘이 들어가는지 label_width의 검사로 확인한다.
+/// Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
 pub(super) const LABEL_COL_WIDTH: LogicalPx = LogicalPx(288.0);
 
 /// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
@@ -44,9 +35,7 @@ pub struct PendingBinding {
     pub conflicting_label: Option<String>,
 }
 
-/// quick-switch bare-key 슬롯의 대상 식별자. modifier 는 `tab_switch_modifier` /
-/// `workspace_switch_modifier` 에서 조합되고, 여기서는 raw 키가 어느 슬롯에
-/// 속하는지만 나타낸다.
+/// 탭·워크스페이스·카테고리 전환 키 슬롯. 수식키는 각 전환 설정과 조합한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BareTarget {
     /// 탭 quick-switch 슬롯 `idx`(0~9 → 표시 "1번"~"10번").
@@ -97,16 +86,8 @@ pub enum KeybindingsSubTab {
     ImportExport,
 }
 
-/// 필드를 **어느 서브탭 어느 자리**에 놓는가. 배치만 정하고 **라벨은 갖지 않는다** —
-/// 라벨은 SoT(`GENERAL_BINDING_FIELDS`)에 있고 [`entries_for`] 가 거기서 읽는다.
-///
-/// 예전에는 서브탭마다 `(field_id, label_key, desc)` 배열을 손으로 나열했고, 그래서
-/// SoT 에 있는 8 개가 어느 서브탭에도 안 그려진 채로 남았다(`toggle_command_palette` ·
-/// `find` 는 기본키로 동작하는데 설정 화면 어디에도 없었다). 같은 사본이 라벨 폭
-/// 회귀 가드에도 있었고 그쪽은 `fullscreen_stage_exit_label` 을 빠뜨리고 있었다.
-///
-/// 이 표에 **없는 필드는 사라지지 않는다** — General 끝에 붙는다. 자리를 정하는 것을
-/// 잊는 것과 화면에서 없어지는 것은 다른 일이어야 한다.
+/// 필드의 탭과 표시 순서를 지정한다. 라벨은 GENERAL_BINDING_FIELDS에서 읽는다.
+/// 배치를 지정하지 않은 필드는 General 끝에 표시한다.
 const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     // General
     ("toggle_settings", KeybindingsSubTab::General, None),
@@ -215,11 +196,8 @@ fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
     )
 }
 
-/// `sub_tab` 에 그릴 엔트리를 **SoT 순회로** 만든다.
-///
-/// 바깥 루프가 `GENERAL_BINDING_FIELDS` 라는 것이 요점이다 — 그래서 SoT 의 모든 필드가
-/// 정확히 한 번 후보가 되고, 라벨은 SoT 가 들고 있는 값을 그대로 쓴다(사본 없음).
-/// [`ENTRY_PLACEMENT`] 는 어느 탭 몇 번째인가만 답하고, 답이 없으면 General 끝이다.
+/// GENERAL_BINDING_FIELDS의 필드와 라벨을 읽고 배치표에 따라 정렬한다.
+/// 배치가 없으면 General 끝에 추가한다.
 fn entries_for(
     sub_tab: KeybindingsSubTab,
 ) -> Vec<(&'static str, &'static str, Option<&'static str>)> {
@@ -229,10 +207,7 @@ fn entries_for(
             .iter()
             .position(|(fid, _, _)| fid == field_id);
         let (order, tab, desc) = match placed {
-            // 배치된 탭이 **엔트리를 그리는 탭**일 때만 그 배치를 따른다. Scripts/Preset/
-            // Plugins 는 자기 화면을 따로 그려서 `entries_for` 를 아예 안 부르므로,
-            // 거기로 보낸 필드는 어디에도 안 나온다 — 이 커밋이 없앤 상태가 바로 그것이라
-            // 같은 형태를 타입이 아니라 이 갈래로 막는다.
+            // 자체 화면을 그리는 탭은 이 목록을 표시하지 않으므로 배치 대상으로 쓰지 않는다.
             Some(i) if draws_entries(ENTRY_PLACEMENT[i].1) => {
                 (i, ENTRY_PLACEMENT[i].1, ENTRY_PLACEMENT[i].2)
             }
@@ -509,14 +484,7 @@ use tasty_ui_widgets::vspace;
 mod placement_tests {
     use super::*;
 
-    /// 배치표의 모든 행이 SoT 안의 필드를 가리킨다.
-    ///
-    /// **커버리지(모든 SoT 필드가 그려지는가)는 여기서 안 잰다** — `entries_for` 가 SoT 를
-    /// 순회하고 미배치를 General 끝에 붙이므로 빠지는 필드가 원리적으로 없다. 그걸 단정하면
-    /// 절대 안 깨지는 줄이 된다.
-    ///
-    /// 반대 방향은 깨질 수 있다: SoT 에서 필드가 빠지면 이 표의 그 행이 아무것도 안 가리킨
-    /// 채 남는다. 아무 화면에도 안 나오고 컴파일도 통과하므로, 그때 알려 줄 것이 이것뿐이다.
+    /// 배치표에 등록된 필드가 GENERAL_BINDING_FIELDS에도 있는지 확인한다.
     #[test]
     fn every_placement_row_points_at_a_real_field() {
         let dangling: Vec<&str> = ENTRY_PLACEMENT
@@ -530,7 +498,7 @@ mod placement_tests {
             .collect();
         assert!(
             dangling.is_empty(),
-            "SoT 에 없는 필드를 배치하고 있다: {dangling:?}"
+            "GENERAL_BINDING_FIELDS에 없는 필드가 배치표에 있다: {dangling:?}"
         );
     }
 }

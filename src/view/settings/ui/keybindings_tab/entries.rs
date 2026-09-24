@@ -66,21 +66,13 @@ pub(super) fn draw_keybinding_entries(
     const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
     const ADD_BUTTON_WIDTH: LogicalPx = LogicalPx(32.0);
     const LABEL_GAP: LogicalPx = LogicalPx(12.0);
-    // 행 간격과 라벨↔`(?)` 간격은 `Theme.spacing_xs` 에서 읽는다. 종전에는 둘 다
-    // `LogicalPx(4.0)` 평상수였는데, **이웃이 이미 배율을 탄다**: 이 서브탭을 감싸는
-    // `keybindings_tab.rs` 의 세로 리듬이 `vspace(th.spacing_xs)` 이고, `(?)` 슬롯의
-    // 아이콘 폭은 바로 아래에서 `th.icon_glyph_size_sm` 로 잡는다. 평상수만 배율을
-    // 안 타면 1.2 에서 그 리듬과 슬롯이 어긋난다 — 값이 아니라 **어느 이름을 부르는가**
-    // 가 배율 동작을 정한다(`tasty-ui-widgets` 의 `STRUCT_GAP_*` 주석과 같은 규칙).
+    // 행 간격과 도움말 아이콘 간격도 Theme를 사용해 배율을 함께 반영한다.
     let row_gap = th.spacing_xs;
     let help_hint_gap = th.spacing_xs;
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
-            // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(remote_transfer.rs
-            // 의 settings_row() 와 동일 관례). left_to_right 이므로 먼저 add한
-            // 위젯이 왼쪽 끝에 배치된다 — 라벨을 먼저 add해 "라벨 (?)" 순서(= (?)
-            // 가 라벨 바로 뒤에 이어짐)를 만든다.
+            // 공통 폭의 열에 라벨과 도움말 아이콘을 왼쪽부터 배치한다.
             ui.allocate_ui_with_layout(
                 egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
                 egui::Layout::left_to_right(egui::Align::Center),

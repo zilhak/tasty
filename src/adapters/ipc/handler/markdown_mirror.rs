@@ -61,7 +61,7 @@ mod tests {
         assert_eq!(engine.pending_markdown_content_forward[0].request_id, rid);
         assert!(
             !engine.pending_markdown_content_forward[0].agent_origin,
-            "칸이 없으면 plugin 자신의 요청이다"
+            "요청 출처가 없으면 plugin 자체 요청으로 처리한다"
         );
     }
 

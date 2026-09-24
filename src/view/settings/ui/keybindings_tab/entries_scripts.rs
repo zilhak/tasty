@@ -25,9 +25,7 @@ pub(super) fn draw_script_bindings(
     captured: &KeyCapture,
 ) {
     let th = crate::theme::theme();
-    // 행 간격은 `Theme.spacing_xs` 에서 읽는다. 같은 파일의 세로 리듬이 이미
-    // `vspace(ui, th.spacing_sm)` 로 배율을 타므로, 이 간격만 평상수로 두면 1.2 에서
-    // 그 리듬과 어긋난다.
+    // 다른 행 치수와 같이 Theme 간격에 배율을 적용한다.
     let row_gap = th.spacing_xs;
 
     // 녹화된 combo 처리 — script: 슬롯만.
@@ -93,10 +91,7 @@ pub(super) fn draw_script_bindings(
             .to_string();
 
         ui.horizontal_top(|ui| {
-            // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(entries.rs 와 동일
-            // 관례). 사용자 정의 스크립트 이름은 길이 상한이 없어 다른 서브탭과
-            // 달리 고정폭을 넘을 수 있다 — 잘리는 대신 말줄임(…) 처리하고, hover
-            // 툴팁으로 전체 이름을 확인할 수 있게 한다.
+            // 긴 사용자 스크립트 이름은 말줄임하고 툴팁에 전체 이름을 표시한다.
             ui.allocate_ui_with_layout(
                 egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
                 egui::Layout::left_to_right(egui::Align::Center),

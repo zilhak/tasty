@@ -1,36 +1,14 @@
-//! `LABEL_COL_WIDTH` 회귀 가드 — en/ko/ja 전 라벨을 실제 프로덕션 egui 폰트
-//! 스택으로 실측해 고정폭 컬럼을 넘는 라벨이 없는지 확인한다.
-//!
-//! **`tasty_egui_theme::apply_theme_to_egui` 호출이 핵심이다.** 이걸 빼먹으면
-//! `TextStyle::Body`가 egui 기본값(12.5px)으로 남는데, 실제 Settings 창은 매
-//! 프레임 `apply_theme_to_egui`로 `Theme::font_size_body`(13.0px)를 박아 넣는다
-//! (`src/gfx/gpu/egui_bridge.rs`). 최초 구현 때 이 호출을 빠뜨려 12.5px 기준
-//! 237px로 측정했고, Gate4 리뷰의 독립 재현은 반대로 egui 교과서 기본값인
-//! 14.0px를 가정해 273.5px로 측정했다 — 두 값 모두 실제 런타임 스타일과
-//! 다르다. 13.0px(진짜 값)로 다시 재면 237.28 ~ 255.28px 사이(엔트리는 `(?)`
-//! 아이콘 슬롯 18px 포함)이고, 그중 최장은 ja `screenshot_to_clipboard_label`
-//! 255.28px다. `LABEL_COL_WIDTH`(`keybindings_tab.rs`)는 여기에 여유를 두고
-//! 288px로 고정했다.
-//!
-//! lang 파일은 전역 i18n `OnceLock`(`crate::i18n::init`)을 거치지 않고 직접
-//! `include_str!` + `toml` 파싱으로 읽는다 — `cargo test`는 모든 테스트를 한
-//! 프로세스에서 돌리므로 `OnceLock` 기반 전역 초기화는 테스트 실행 순서에 따라
-//! 다른 언어를 덮어써 버릴 수 있어 재현성이 없다.
+//! en/ko/ja 단축키 라벨을 실제 설정 화면의 egui 글꼴로 측정해 열 폭과 비교한다.
+//! apply_theme_to_egui를 호출해야 egui 기본값이 아닌 제품의 Body 크기로 측정한다.
+//! 언어별 TOML을 직접 읽어 전역 OnceLock 초기화에 의존하지 않는다.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 테스트에서는 반환값보다 UI 측정 결과를 확인한다. let_underscore_documented도 테스트 본문은 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::collections::HashMap;
 
-/// entries.rs 의 `(?)` 아이콘 슬롯 예약폭 — `Theme.spacing_xs`(4) + `icon_glyph_size_sm`(14).
-///
-/// **배율 1.0 에서 언 사본이다.** entries.rs 는 두 값을 모두 `Theme` 에서 읽으므로
-/// 배율이 오르면 그쪽 슬롯은 넓어지고 여기는 안 넓어진다. 이 파일이 재는 것은 라벨 컬럼
-/// 폭의 **상대 비교**(어느 라벨이 더 긴가)라 배율이 곱해져도 순서가 안 바뀌어 지금은
-/// 하중을 받지 않는다 — 그래서 사본을 두되 언 사본이라는 것을 적어 둔다.
+/// 배율 1.0에서의 도움말 아이콘 예약 폭.
+/// 실제 화면은 Theme 배율을 적용하지만 이 검사는 기본 배율만 측정한다.
 const HELP_HINT_GAP: f32 = 4.0;
 const ICON_SLOT: f32 = 14.0;
 
@@ -61,12 +39,7 @@ fn load_lang(toml_str: &str) -> HashMap<String, String> {
     map
 }
 
-/// entries 서브탭이 그리는 라벨 i18n key 전체 — **SoT 에서 읽는다.**
-///
-/// 손으로 나열하던 사본이었고, 그 사본은 `fullscreen_stage_exit_label` 을 빠뜨린 채
-/// "모든 서브탭 라벨 전체" 를 자처하고 있었다. 지금은 엔트리 자체가
-/// `GENERAL_BINDING_FIELDS` 순회로 그려지므로(`keybindings_tab.rs` 의 `entries_for`)
-/// 그릴 라벨 집합과 SoT 의 라벨 집합이 같다.
+/// GENERAL_BINDING_FIELDS에서 실제 단축키 행의 라벨 키를 읽는다.
 fn entry_labels() -> Vec<&'static str> {
     crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS
         .iter()
@@ -95,15 +68,12 @@ fn measure(ctx: &egui::Context, text: &str, font_id: egui::FontId) -> f32 {
     })
 }
 
-/// en/ko/ja 전체 라벨 중 최장 실측 폭이 `LABEL_COL_WIDTH` 를 넘지 않는지 확인한다.
-/// 새 언어가 추가되거나 번역이 길어지면 이 테스트가 실패해 알려준다.
+/// en/ko/ja 라벨의 최대 폭이 LABEL_COL_WIDTH 이내인지 확인한다.
 #[test]
 fn labels_fit_within_fixed_column() {
     let ctx = egui::Context::default();
     tasty_egui_theme::install_cjk_fallback(&ctx);
-    // 프로덕션과 동일한 TextStyle::Body 크기(Theme::font_size_body, 13.0px)를
-    // 반드시 적용해야 한다 — 없으면 egui 기본값(12.5px)으로 측정돼 실제보다
-    // 좁게 나온다(최초 구현의 버그).
+    // 실제 설정 창과 같은 Body 글꼴 크기를 적용한다.
     tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &ctx);
 
     let langs: &[(&str, &str)] = &[

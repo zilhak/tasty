@@ -1,34 +1,10 @@
-//! Keybindings › Tab/Workspace 서브탭의 **quick-switch 섹션** — modifier 드롭다운 +
-//! 슬롯(1~N) + 다음/이전 raw 키 편집 UI (quickswitch-04).
+//! 탭·워크스페이스·카테고리의 빠른 전환 키 설정.
+//! 공통 수식키 모드에서는 단일 키를 저장하고 표시·실행 시 수식키와 조합한다.
+//! 개별 지정 모드에서는 완성된 조합을 저장하며 공통 숫자 힌트를 표시하지 않는다.
+//! 일반 동작 및 다른 전환 슬롯과의 충돌을 확인한다.
 //!
-//! 일반 콤보 필드(`entries.rs`)와 달리 이 8종 필드(`tab_switch_slot_keys` 등)는
-//! **modifier 없는 raw 키 하나**를 저장하고, 표시·dispatch 시점에
-//! `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier` 와
-//! 조합된다. 따라서:
-//!
-//! - 저장값은 raw 키(`"q"`), 버튼 라벨은 표시 시점에 `"{Modifier}+{Key}"` 로 합성한다
-//!   (modifier 드롭다운을 바꾸면 저장값 변경 없이 라벨이 자동으로 따라간다).
-//! - 캡처는 [`super::capture_bare_key`](modifier 금지)로 한다.
-//! - 충돌 검사는 합성 콤보를 일반 액션(`find_conflict`) + 다른 슬롯(자체 순회)과 비교한다.
-//!
-//! ## "개별 지정" 모드 (S-9)
-//!
-//! modifier 드롭다운에서 `KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER` sentinel 을
-//! 고르면 그 축은 규칙 기반을 벗어난다 — 슬롯 필드의 "의미"가 갈린다:
-//!
-//! - 규칙 기반: 필드는 **modifier 없는 raw 키 하나**. 캡처는 [`super::capture_bare_key`].
-//! - 개별 지정: 필드는 **이미 완성된 콤보 문자열**(예: `"ctrl+alt+q"`). 캡처는 일반
-//!   콤보와 동일한 [`super::capture_winit_key_combo`](자유 조합). `bare_combo` 가
-//!   이 모드에서는 `compose()` 를 거치지 않고 저장값을 그대로 반환한다 — 스키마를
-//!   늘리지 않되 "raw 냐 완전 콤보냐"가 modifier 값에 따라 갈리는 암묵적 불변식이다.
-//! - 개별 지정 축은 `switch_target_for`(`switch_overlay.rs`) 가 그 축을 절대 반환하지
-//!   않으므로(sentinel 은 `Combo::parse_modifiers` 에서 파싱 실패) 탭바/사이드바의
-//!   switch-number 키캡 오버레이가 그 축에서 자동으로 뜨지 않는다 — 슬롯마다 콤보가
-//!   달라 통일된 숫자 힌트를 그릴 근거가 없으므로 의도된 부작용이다. 실제 디스패치는
-//!   `numeric.rs` 의 개별 지정 전용 분기(`matches_binding` 슬롯 순회)가 담당한다.
-//! - 모드 전환 시 슬롯 값은 [`apply_modifier_transition`] 이 이관/복원한다(규칙 기반→
-//!   개별 지정은 `구 modifier+raw` 로 자동 합성, 역방향은 이 축의 기본값으로 복원 —
-//!   개별 지정 콤보는 raw 로 역산 불가능하므로 버림이 유일하게 안전한 선택).
+//! 공통 모드에서 개별 지정으로 바꾸면 현재 조합을 저장한다. 반대 방향은 해당 종류의
+//! 기본 슬롯 키로 복원한다. 공통 수식키끼리 바꾸면 저장된 단일 키는 유지한다.
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
@@ -43,9 +19,7 @@ const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
 const LABEL_GAP: LogicalPx = LogicalPx(12.0);
 
-/// 이 섹션이 편집하는 quick-switch 종류 — 축 자체는 `KeybindingSettings` 의 대칭이라
-/// 그 크레이트가 소유한다(`tasty_settings::SwitchAxis`). 여기 남은 것은 축 ↔ 녹화
-/// 타겟(`BareTarget`) 매핑, 즉 설정 화면에만 있는 사실이다.
+/// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
 
 fn slot_target(kind: QuickSwitchKind, idx: usize) -> BareTarget {
@@ -246,11 +220,9 @@ pub(super) fn draw_quick_switch_section(
     // 충돌 팝업이 떠 있는 동안은 새 녹화 진입 금지.
     let can_record = pending_binding.is_none();
 
-    // 전환 감지용 — Grid 클로저가 modifier 필드를 직접 mutate 하므로, 그 전/후 값을
-    // 비교해 실제로 바뀐 경우에만 슬롯 이관/복원(apply_modifier_transition)을 수행한다.
+    // 수식키가 실제로 바뀌었을 때만 슬롯 값을 변환하거나 복원한다.
     let old_modifier = kind.modifier(keybindings).to_string();
 
-    // modifier 드롭다운 (기존 blocks 이관).
     egui::Grid::new(format!("{}_modifier_grid", kind.modifier_field_id()))
         .num_columns(2)
         .spacing([LABEL_GAP.value(), 8.0])
@@ -267,10 +239,7 @@ pub(super) fn draw_quick_switch_section(
             } else {
                 KeybindingSettings::format_display(modifier, general)
             };
-            // OS-aware 허용 조합만 열거(쓰레기 값 원천 차단, decision 1). macOS 는 option
-            // 축 포함, 그 외 제외 — modifier_hint 의 조합 열거를 단일 소스로 재사용한다.
-            // "개별 지정" sentinel 은 이 열거와 별도로 마지막에 추가한다(규칙 기반
-            // 조합이 아니므로 all_modifier_combos() 목록에 섞이지 않음).
+            // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
             egui::ComboBox::from_id_salt(kind.modifier_field_id())
                 .selected_text(selected_text)
                 .show_ui(ui, |ui| {
@@ -353,18 +322,9 @@ fn current_conflicts(kb: &KeybindingSettings, kind: QuickSwitchKind) -> Vec<Stri
     out
 }
 
-/// modifier 드롭다운 전환 시 슬롯 값을 이관/복원한다(S-9 분석검증 Q2/Q3 확정값).
-///
-/// - **규칙 기반 → 개별 지정**: 각 슬롯의 현재 합성 콤보(`구 modifier + raw`)를 그대로
-///   슬롯 필드에 저장한다 — `bare_combo` 가 이후 이 값을 compose 없이 그대로 반환하므로
-///   전환 직후 사용자 체감 동작이 100% 유지된다. `raw` 를 modifier 없이 그대로
-///   재해석(옵션 a)하면 `capture_winit_key_combo` 의 "modifier 없는 타이핑 키는 단축키
-///   등록 불가" 가드가 막으려던 상태를 우회 생성하게 되므로 채택하지 않는다.
-/// - **개별 지정 → 규칙 기반**: 개별 지정 콤보 문자열(예: `"ctrl+alt+1"`)은 어느 부분이
-///   modifier 였는지 구조적으로 유실돼 있어 raw 로 역산이 불가능하다. 이 축을
-///   기본값으로 복원하는 것이 유일하게 안전한 선택이다.
-/// - **규칙 기반 → 다른 규칙 기반**(예: ctrl→alt): 슬롯 raw 값은 그대로 두고 표시만
-///   새 modifier 로 자동 재합성된다(기존 동작, 변경 없음).
+/// 공통 모드에서 개별 지정으로 바꾸면 현재 조합을 저장한다.
+/// 반대로 바꾸면 해당 종류의 슬롯을 기본값으로 복원한다.
+/// 공통 수식키끼리 변경할 때는 슬롯의 단일 키를 유지한다.
 fn apply_modifier_transition(
     kb: &mut KeybindingSettings,
     kind: QuickSwitchKind,
@@ -457,19 +417,12 @@ fn slot_row(
             });
         }
     });
-    // 행 간격은 `Theme.spacing_xs` 에서 읽는다. 이 행들을 쌓는 섹션이 이미
-    // `vspace(ui, th.spacing_xs)` 로 배율을 타므로, 여기만 평상수면 1.2 에서
-    // 같은 4 가 5 와 4 로 갈린다.
+    // 행 간격도 Theme의 배율을 적용한다.
     ui.add_space(th.spacing_xs.value());
 }
 
-/// 녹화된 키(bare 또는 개별 지정 콤보)를 소비해 슬롯에 반영. 충돌 시 기존
-/// `PendingBinding` 팝업 흐름 재사용.
-///
-/// `bare_raw_key`/`set_bare_target`/`clear_bare_target` 는 이름이 "raw 키" 지만 실제로는
-/// "이 슬롯 필드에 그대로 저장할 최종 문자열" 을 나르는 모드 무관 통로다 — 규칙 기반은
-/// raw 한 글자, 개별 지정은 이미 완성된 콤보. 저장 시점엔 이 함수가 이미 모드별로 올바른
-/// 값(`combo`)을 만들어 넘기므로 accessor 자체는 손댈 필요가 없다.
+/// 녹화한 키를 슬롯에 반영하거나 충돌 확인을 요청한다.
+/// 공통 모드는 단일 키를, 개별 지정은 완성된 조합을 저장한다.
 fn consume_capture(
     keybindings: &mut KeybindingSettings,
     recording_field: &mut Option<RecordingSlot>,
@@ -567,7 +520,7 @@ mod tests {
     fn apply_modifier_transition_rule_to_individual_migrates_slots() {
         let mut kb = KeybindingSettings::preset_tasty(); // tab modifier = "ctrl", slot0 = "1"
         apply_modifier_transition(&mut kb, QuickSwitchKind::Tab, "ctrl", INDIVIDUAL);
-        // 슬롯 필드가 "구 modifier+raw" 로 완전 합성돼 그대로 남는다(Q2 확정).
+        // 기존 수식키와 슬롯 키를 조합해 저장한다.
         assert_eq!(kb.tab_slot_key(0), Some("ctrl+1"));
         assert_eq!(kb.tab_next_key(), "ctrl+l");
         assert_eq!(kb.tab_prev_key(), "ctrl+h");
@@ -583,7 +536,7 @@ mod tests {
         kb.set_tab_slot_key(0, "ctrl+alt+q"); // 개별 지정 완전 콤보(역산 불가능한 값).
         kb.set_tab_next_key("shift+f5");
         apply_modifier_transition(&mut kb, QuickSwitchKind::Tab, INDIVIDUAL, "alt");
-        // 역산 대신 이 축의 기본값으로 복원(Q3 확정).
+        // 해당 종류의 기본 슬롯 키로 복원한다.
         assert_eq!(
             kb.tab_switch_slot_keys,
             ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
@@ -615,9 +568,7 @@ mod tests {
         let mut kb = KeybindingSettings::preset_tasty();
         kb.tab_switch_modifier = INDIVIDUAL.to_string();
         kb.set_tab_slot_key(1, "ctrl+alt+q");
-        // 워크스페이스 축(규칙 기반, modifier=alt)의 슬롯을 우연히 같은 완전 콤보로
-        // 만들면(alt+... 가 아니라 그 자체로 "ctrl+alt+q" 처럼 저장될 일은 없지만, 여기선
-        // 교차 축 충돌 탐지 자체를 검증하기 위해 워크스페이스도 개별 지정으로 바꾼다).
+        // 워크스페이스도 개별 지정으로 바꿔 종류가 다른 슬롯 간 충돌을 확인한다.
         kb.workspace_switch_modifier = INDIVIDUAL.to_string();
         kb.set_workspace_slot_key(0, "ctrl+alt+q");
         let conflict = find_slot_conflict(&kb, BareTarget::TabSlot(1), "ctrl+alt+q");

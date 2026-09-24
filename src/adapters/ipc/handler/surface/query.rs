@@ -315,13 +315,12 @@ mod tests {
         assert_eq!(
             blacklisted["terminal_mode"],
             json!("all_motion"),
-            "격하는 터미널 레지스터를 바꾸지 않는다 — 바꾸면 두 축을 낸 뜻이 없다"
+            "호스트의 입력 제한이 터미널의 트래킹 모드를 바꾸면 안 된다"
         );
         assert_eq!(
             blacklisted["effective_click_mode"],
             json!("none"),
-            "핸들러 축이 안 갈렸다 — 이 관측면은 격하를 못 보고, 그러면 보고 0 이 \
-             제품 결함으로 거꾸로 읽힌다"
+            "호스트가 입력을 제한할 때 실제 적용 모드를 구분해 반환해야 한다"
         );
         assert_eq!(blacklisted["effective_click_tracking"], json!(false));
         assert_eq!(
@@ -335,7 +334,7 @@ mod tests {
         assert_eq!(
             occupied["degraded_by"],
             json!(["hard_occupied"]),
-            "사유가 뭉개지면 두 격하가 같은 얼굴이 된다 — 처방이 다른데"
+            "두 입력 제한 사유를 구분할 수 있어야 한다"
         );
 
         let both = mouse_tracking_report(7, M::Click, false, true, true);
@@ -365,7 +364,7 @@ mod tests {
         assert_eq!(
             distinct.len(),
             all.len(),
-            "레벨 넷이 이름 {labels:?} 로 뭉갰다 — 뭉개진 레벨은 이 관측면에서 사라진다"
+            "트래킹 모드 네 종류의 표시 이름이 모두 달라야 한다: {labels:?}"
         );
 
         assert_eq!(mouse_tracking_label(M::None), NO_MOUSE_TRACKING);

@@ -2286,7 +2286,7 @@ mod tests {
         let err = WebViewCreateError::Permanent("no display".into());
         let next = next_webview_attempts(0, &err);
         assert_eq!(next, MAX_WEBVIEW_CREATE_ATTEMPTS);
-        assert!(!should_attempt_webview(next), "포기했어야 한다");
+        assert!(!should_attempt_webview(next), "재시도를 중단해야 한다");
     }
 
     /// 일시 실패의 재시도가 정해진 상한에서 멈추는지 확인한다.

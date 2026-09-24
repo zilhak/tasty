@@ -1,26 +1,11 @@
-//! 설정 창의 **숫자 입력 한 모양** — mono `Input` + 필드 밖 정적 suffix.
-//!
-//! 디자인 `gallery/overlays-windows.jsx` 의 "Numbers in settings — one shape".
-//! 설정 안에 숫자 컨트롤이 셋(정적 suffix 를 단 mono Input · drag 숫자 · 제안된
-//! stepper) 있었고 **첫째로 통일**했다. 이 모듈이 그 한 모양이고, 설정 창과 plugin
-//! 기여 설정의 **모든** 숫자 칸이 여기를 지난다.
-//!
-//! 세 가지가 이 모양의 내용이다:
-//!
-//! - **자릿수 우측 정렬** — 설정 열을 내려가며 자리가 맞아야 두 값을 눈으로 견준다.
-//! - **commit 때만 clamp** — 치는 동안은 건드리지 않는다. 25~200 칸에 `150` 을 칠 때
-//!   `1` 다음 키에서 값이 끌려가면 그 다음 글자를 못 친다. 확정은 blur 와 `↵` 뿐이다.
-//! - **범위 밖은 말로 알린다** — danger 테두리 + 한 줄. 그 줄은 범위와 **확정될 값**을
-//!   같이 적는다. 막지 않고 무엇이 될지 미리 보여 주는 쪽이다.
-//!
-//! drag 숫자는 폐기했다 — 스크롤하는 설정 pane 안에서 제스처가 스크롤과 부딪히고,
-//! 자기 범위를 넘겨 보기 전까지 그 범위가 안 보인다. stepper 도 폐기했다 — 한 번
-//! 정하고 마는 칸에 히트 타깃을 둘 더 만든다.
+//! 설정 창의 숫자 입력과 단위 표시. 값은 오른쪽에 정렬한다.
+//! 입력 중에는 보정하지 않고 포커스를 잃거나 Enter를 눌렀을 때 범위와 눈금을 적용한다.
+//! 범위 밖 값에는 경고와 최종 반영될 값을 표시한다.
 
 use crate::i18n::t_args;
 use tasty_type_appearance::theme::Theme;
 
-/// 숫자 칸 하나의 계약. 범위·표시 자릿수·단위는 호출처가 정한다.
+/// 호출자가 지정하는 숫자 범위·자릿수·단위.
 pub(super) struct NumberSpec<'a> {
     pub min: Option<f64>,
     pub max: Option<f64>,
@@ -30,8 +15,7 @@ pub(super) struct NumberSpec<'a> {
     pub decimals: usize,
     /// 필드 **밖**에 muted 로 찍는 단위. 타이핑 대상이 아니다.
     pub suffix: Option<&'a str>,
-    /// 단위를 mono 로 찍는가. 디자인은 `%` 를 UI 글꼴로, 원격 전송의 `MiB` 를 mono 로
-    /// 적는다 — 한 모양 안에서 그 한 축만 호출처가 고른다.
+    /// 단위를 고정폭 글꼴로 표시할지 여부.
     pub suffix_mono: bool,
     pub enabled: bool,
 }
@@ -75,7 +59,7 @@ impl<'a> NumberSpec<'a> {
     }
 }
 
-/// 확정(blur / `↵`) 한 번이 내는 답. 치는 동안에는 이 판정을 부르지 않는다.
+/// 입력을 확정한 결과. 편집 중에는 사용하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Commit {
     /// 숫자로 안 읽힌다 — 마지막 확정값을 그대로 둔다.
@@ -84,7 +68,7 @@ pub(super) enum Commit {
     Value(f64),
 }
 
-/// 친 글자 하나를 확정값으로 옮긴다. 그리기와 무관한 순수 판정이라 단위 테스트가 든다.
+/// 입력 문자열을 최종 숫자 값으로 변환한다.
 pub(super) fn commit(text: &str, spec: &NumberSpec<'_>) -> Commit {
     let Ok(parsed) = text.trim().parse::<f64>() else {
         return Commit::Unparsed;
@@ -113,7 +97,7 @@ fn settle(v: f64, spec: &NumberSpec<'_>) -> f64 {
     out
 }
 
-/// 지금 친 글자가 확정되면 값이 끌려가는가. 그럴 때만 경고 줄이 나온다.
+/// 현재 입력을 확정하면 보정이 필요한지 확인한다.
 fn out_of_range(text: &str, spec: &NumberSpec<'_>) -> Option<f64> {
     match commit(text, spec) {
         Commit::Value(settled) => {
@@ -196,9 +180,7 @@ pub(super) fn number_field(
                 } else {
                     theme.text_disabled()
                 };
-                // 단위는 **12**(`font_size_term_sm`) 다 — 경고 줄의 11
-                // (`font_size_caption`)과 다른 자리다. 디자인 원본이 두 값을 한 행
-                // 안에서 갈라 적는다.
+                // 단위는 term_sm, 경고는 caption 글꼴 크기를 사용한다.
                 let mut text = egui::RichText::new(sfx)
                     .size(theme.font_size_term_sm.value())
                     .color(ink);

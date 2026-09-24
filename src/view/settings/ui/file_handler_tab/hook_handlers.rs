@@ -1,34 +1,10 @@
-//! Handler › Hook Handlers sub-tab — 공유 훅 핸들러 레지스트리 매핑 테이블.
+//! 훅 핸들러 레지스트리 설정. 웹훅 리스너의 주소·포트·비밀키는 다루지 않는다.
+//! 변경은 초안에 보관하고 Save하면 레지스트리와 사용자 TOML에 저장한다.
 //!
-//! 디자인 전사 원본: `ui_kits/terminal/overlays/settings_window.jsx` 의
-//! `HookHandlers` / `HookRow`.
-//! intro copy + "Add handler" 버튼 → 인라인 draft 카드 → Mono caps 섹션 헤드 →
-//! bordered list rows (id · origin Tag · prio · Switch · remove / Shell cmd Input).
-//!
-//! 스코프(디자이너 확정): 이 sub-tab 은 **핸들러 레지스트리만** 다룬다 — 웹훅
-//! 리스너(서버 bind/port/secret)는 CLI / 별도 지면이며 여기 노출하지 않는다.
-//!
-//! 데이터 소스는 프로세스 전역 [`crate::hook_handler::global()`] 레지스트리
-//! (host 기본 + plugin 기여 + user 매핑). 편집 사항은 [`HookHandlerEditDraft`]
-//! 에 쌓이고 Settings 의 Save 가 registry commit + `~/.tasty/hook-handlers.toml`
-//! atomic write(`save_user_config`) 로 영속화한다. Cancel 시 폐기.
-//!
-//! 레지스트리 정책에 따른 행별 허용 조작:
-//! - enabled 토글: 전 출처 (user-origin `disabled` override 로 기록).
-//! - 셸 명령 인라인 편집: `ShellCommand` action 행만 (user-origin action override).
-//!   `IpcSequence` 행은 **mono 한 줄 요약**만 둔다(스텝을 `→` 로 잇는다) — 여러 스텝을
-//!   설정 행 안에서 고칠 자리가 없다.
-//! - 제거: **user-origin 행만**. host/plugin 행에는 같은 자리에 자물쇠 글리프
-//!   (`glyph-dim` + tooltip)가 온다 — 레지스트리가 시작마다 그 기본값을 다시 심으므로
-//!   거기 지우기를 두면 시스템이 곧 되돌릴 일을 약속하는 셈이다. **disabled 버튼이
-//!   아니다**: 보류된 것이 없으므로 그런 표시는 "지금은 안 되지만 언젠가" 라는 거짓을
-//!   말한다.
-//!
-//! **`IpcSequence` 행의 `Edit` 진입점은 아직 없다.** 디자인은 시퀀스 편집기를 여는 ghost
-//! 버튼을 두지만 이 레포에는 **GUI 편집기가 없다**. 시퀀스를 고치는 경로 자체는 이제
-//! 있다 — `tasty hook-handler get` 으로 읽고 `upsert` 로 되돌려 보낸다
-//! (`docs/features/hooks/index.md` 의 "핸들러 레지스트리"). 아무 데도 안 여는 버튼을
-//! 두면 그 자체가 거짓 표시라, **열 GUI 편집기가 생긴 뒤에** 버튼을 둔다.
+//! 모든 출처의 활성 상태를 바꿀 수 있고 ShellCommand는 명령을 편집할 수 있다.
+//! 삭제는 user 항목만 허용하며 host/plugin 항목에는 자물쇠를 표시한다.
+//! IpcSequence GUI 편집기는 없으므로 요약만 표시한다. 편집은 tasty hook-handler get/upsert를 쓴다.
+//! 관련 문서: docs/features/hooks/index.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,10 +30,7 @@ const HOOK_ADD_LABEL_W: LogicalPx = LogicalPx(100.0);
 /// 신규 핸들러 priority step (jsx `commitAdd`: `maxPrio + 10`).
 const HOOK_PRIORITY_STEP: i32 = 10;
 
-/// Hook Handlers sub-tab 편집 draft. Save 시 [`Self::apply`], Cancel 시 폐기.
-///
-/// 파일 핸들러 [`super::FileHandlerEditDraft`] 와 같은 "사용자 의도" 모델 —
-/// registry 현재 상태와 비교하지 않고 명시적 user-origin override 로 commit.
+/// 훅 핸들러 변경 초안. Save에서 명시적인 user override로 반영한다.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HookHandlerEditDraft {
     /// handler id → 사용자가 원하는 enabled 상태. 없으면 변경 없음.
@@ -262,11 +235,7 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     }
 }
 
-/// jsx `headStyle` — mono 10 uppercase, letter-spacing caps, text-muted.
-/// (자간을 안 거는 이유는 egui 가 아니라 토큰 쪽이다 — `RichText::extra_letter_spacing`
-/// 은 있다. `letter-spacing-caps` 가 `0.04em` 이라 `tasty-design-tokens` 의 DTCG 생성기가
-/// em 단위 dimension 을 `LogicalPx` 로 못 담아 스킵한다(`dtcg.rs` 의 `Skip::EmUnit`).
-/// 상수가 생기기 전까지 기존 전사 관례대로 mono micro uppercase 로 전사.)
+/// 대문자 고정폭 섹션 제목. em 자간 토큰은 생성기가 지원하지 않아 적용하지 않는다.
 fn mono_caps_head(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
@@ -314,11 +283,7 @@ fn draw_hook_row(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // RTL: 먼저 추가 = 가장 우측. jsx 순서 Switch → remove(우측 끝).
-                        // **그 자리는 출처가 정한다** — user 행만 휴지통이고, host/plugin
-                        // 행에는 자물쇠 글리프가 온다. disabled 버튼이 아니다: 레지스트리가
-                        // 시작마다 기본값을 다시 심으므로 지울 수 있다는 암시 자체가 거짓이고,
-                        // disabled 버튼은 "지금은 안 되지만 언젠가" 를 뜻한다.
+                        // 오른쪽부터 배치한다. user 행은 삭제 버튼, host/plugin은 자물쇠를 쓴다.
                         if matches!(h.owner, HookHandlerOwner::User) {
                             if IconButton::new()
                                 .variant(IconButtonVariant::Ghost)
@@ -523,9 +488,7 @@ fn lock_slot(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
     resp.on_hover_text(t("settings.file_handler.hook_handlers.not_removable"));
 }
 
-/// 출처 Tag — **모든 행이 단다**. plugin 행은 "plugin" 이 아니라 **그 plugin 의 id** 를
-/// 달고(mauve `accent-agent`), 사용자 행은 "user" 가 아니라 **"you"** 다: 이 목록에서
-/// 묻는 것이 "누가 이걸 심었나" 라 1 인칭이 그 답을 그대로 읽는다.
+/// 출처 표시: host, plugin ID, 사용자(you).
 fn origin_tag(owner: &HookHandlerOwner) -> (&str, TagVariant) {
     match owner {
         HookHandlerOwner::Host => ("host", TagVariant::Default),
@@ -591,12 +554,7 @@ fn draw_add_card(
                         .color(th.accent_danger()),
                 );
             }
-            // Align::Min(상단) — 이 버튼 행은 Frame 안 마지막 요소라 부모가 세로
-            // 높이를 제약하지 않는다. `Align::Center`로 두면 egui 가 이 ui 의
-            // `min_rect`를 잔여 세로 공간 전체로 확장시켜 행이 깨진다(Frame 안
-            // 마지막 요소로 놓인 RTL(Center) 는 실측상 항상 이렇게 확장됨). 디자인
-            // jsx 도 이 버튼 행을 단순 `justifyContent: "flex-end"`로만 두고 별도
-            // 세로 중앙 정렬을 걸지 않는다.
+            // 세로 중앙 정렬은 Frame의 남은 높이를 차지하므로 상단 정렬을 사용한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 // RTL: Add handler(primary, 우측 끝) ← Cancel(ghost).

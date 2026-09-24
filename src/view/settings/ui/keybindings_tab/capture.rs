@@ -121,18 +121,8 @@ pub fn capture_winit_key_combo(
     KeyCapture::Combo(parts.join("+"))
 }
 
-/// quick-switch 슬롯 전용 캡처 — **modifier 가 하나라도 눌려 있으면 무효**다.
-///
-/// 일반 콤보 캡처([`capture_winit_key_combo`])와 정반대 규칙: 슬롯 키는 dispatch
-/// 시점에 `tab_switch_modifier`/`workspace_switch_modifier` 와 조합되므로, 사용자는
-/// modifier 없이 **키 하나만** 눌러야 한다. 실수로 `Ctrl+Q` 를 누르면 조용히 `Q` 로
-/// 해석하지 않고 무효 처리(대기 유지)해 다시 누르게 한다.
-///
-/// - `state != Pressed` → `None`
-/// - Escape → `Clear`(슬롯 비우기)
-/// - modifier-only 키(Ctrl/Shift/Alt/Super …) 단독 → `None`
-/// - modifier 가 하나라도 눌린 채의 일반 키 → `None`(무효)
-/// - modifier 없는 일반 키 → `Combo(키이름)`(콤보 접두사 없이 raw 키만)
+/// 수식키 없이 단일 키를 녹화한다. Escape는 비우기이며 release와 수식키는 무시한다.
+/// 눌린 수식키는 버리고 문자만 저장하는 대신 입력 전체를 거절한다.
 pub fn capture_bare_key(
     event: &winit::event::KeyEvent,
     modifiers: winit::keyboard::ModifiersState,
@@ -169,9 +159,7 @@ pub fn capture_bare_key(
     bare_key_decision(is_escape, is_modifier_only, modifiers, key_name)
 }
 
-/// [`capture_bare_key`] 의 순수 판정부 — `winit::event::KeyEvent` 는 외부에서 생성할 수
-/// 없어 단위 테스트가 불가능하므로, 이벤트에서 뽑아낸 값만으로 결정을 내리는 부분을
-/// 분리해 테스트 가능하게 한다.
+/// KeyEvent에서 추출한 값으로 단일 키 녹화 결과를 결정한다.
 fn bare_key_decision(
     is_escape: bool,
     is_modifier_only: bool,

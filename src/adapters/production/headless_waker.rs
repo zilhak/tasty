@@ -208,13 +208,17 @@ mod tests {
         assert_eq!(
             ipc_ready_count(&rx),
             1,
-            "사본 여럿이 부른 wake 가 하나로 접혀야 한다"
+            "복제된 waker의 wake 요청은 한 이벤트로 합쳐야 한다"
         );
 
         hw.note_ipc_drained();
         b();
         b();
-        assert_eq!(ipc_ready_count(&rx), 1, "꺼낸 뒤에는 다시 하나가 선다");
+        assert_eq!(
+            ipc_ready_count(&rx),
+            1,
+            "이벤트를 받은 뒤 다시 깨우면 새 이벤트가 와야 한다"
+        );
     }
 
     #[test]
@@ -226,7 +230,11 @@ mod tests {
         assert_eq!(ipc_ready_count(&rx), 1);
         hw.note_ipc_drained();
         hw.wake_ipc();
-        assert_eq!(ipc_ready_count(&rx), 1, "꺼낸 뒤의 재깨움은 서야 한다");
+        assert_eq!(
+            ipc_ready_count(&rx),
+            1,
+            "이벤트를 받은 뒤 다시 깨울 수 있어야 한다"
+        );
     }
 
     #[test]

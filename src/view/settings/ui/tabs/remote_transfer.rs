@@ -1,14 +1,4 @@
-//! General › Remote transfer — 원격(mirror) 파일 전송 채널의 수신측 저장 정책
-//! 편집. `RemoteTransferSettings{dir, max_mb}`(수신측 백엔드)를 두 행으로
-//! 편집한다.
-//!
-//! 디자인 구조 전사: `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame`.
-//! 콘텐츠 컬럼 =
-//! mono uppercase 섹션 헤딩("Received files") + 150px 라벨 grid 2행(Save folder /
-//! Maximum size), 각 행 아래 muted 설명 + 행 사이 separator. 갤러리 spec:
-//! `gallery/overlays-windows.jsx` "Settings · General › Remote transfer".
-//! Browse…/numeric input 페어링은 Scripts(`misc.rs`)·plugin number(`appearance.rs`)
-//! 선례를 따른다(rfd folder picker · mono text Input + 정수 파싱).
+//! 원격 파일 수신 폴더와 용량 상한을 편집한다. 저장소는 RemoteTransferSettings다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, vspace};
@@ -63,9 +53,7 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     row_desc(ui, &th, t("settings.remote_transfer.dir_desc"));
     row_separator(ui, &th);
 
-    // ── 행 2: Maximum size — 설정 창의 숫자 한 모양([`super::number`]) + mono "MiB" ──
-    // 폭은 `field_width_xs`(90)이고, 단위는 필드 밖 정적 mono 리터럴이다(i18n 예외 —
-    // 단위 기호). 아래 끝이 1 MiB 이고 위 끝은 없다 — 폴더가 담을 수 있는 만큼이다.
+    // 용량은 1MiB 이상이며 입력 상한은 두지 않는다. 단위는 입력 칸 밖에 표시한다.
     let mut max_mb = settings.remote_transfer.max_mb as f64;
     let mut committed = false;
     settings_row(ui, &th, t("settings.remote_transfer.max_capacity"), |ui| {
@@ -94,8 +82,7 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     row_desc(ui, &th, t("settings.remote_transfer.max_capacity_desc"));
 }
 
-/// settings-row 한 행: 150px 좌측 라벨 컬럼(수직 중앙) + `spacing_md`(12) gap +
-/// 컨트롤. 행 높이는 `settings_row_min_height`(32) 하한.
+/// 고정 폭 라벨과 입력 위젯을 배치하고 Theme의 행 높이·간격을 적용한다.
 fn settings_row(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,

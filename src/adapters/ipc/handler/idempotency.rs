@@ -832,7 +832,11 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        assert_eq!(scopes.len(), 3, "주체가 접혔다: {scopes:?}");
+        assert_eq!(
+            scopes.len(),
+            3,
+            "서로 다른 호출자의 범위가 같아졌다: {scopes:?}"
+        );
     }
 
     #[test]
@@ -943,7 +947,7 @@ mod tests {
                 &JsonRpcResponse::success(json!(1), json!(payload)),
             );
         }
-        assert!(s.len() < n, "바이트 예산이 아무것도 안 밀어냈다");
+        assert!(s.len() < n, "바이트 상한을 넘은 항목이 제거되지 않았다");
         assert!(s.total_bytes <= TOTAL_BUDGET_BYTES);
     }
 
@@ -1097,7 +1101,7 @@ mod tests {
         );
         assert!(
             !conflict.idempotent_replay,
-            "이 시험이 고정하는 것은 이 부재다 — 여기에 표지가 붙으면 문서의 단서가 불필요해진다"
+            "충돌 응답에는 재생 표지가 없어야 한다"
         );
     }
 
@@ -1209,7 +1213,7 @@ mod tests {
             runs.set(runs.get() + 1);
             assert!(
                 c.request.idempotency_key.is_none(),
-                "dispatch 는 키를 뗀 사본을 받아야 한다 — 안 떼면 자기에게 합류한다"
+                "dispatch에는 idempotency 키를 제거한 요청을 전달해야 한다"
             );
             send_response(
                 &c.response_tx,
@@ -1357,7 +1361,10 @@ mod tests {
             ERR_IDEMPOTENCY_KEY_CONFLICT
         );
 
-        let c = parked.borrow_mut().take().expect("통로를 들고 있어야 한다");
+        let c = parked
+            .borrow_mut()
+            .take()
+            .expect("응답 완료 핸들을 보관해야 한다");
         send_response(
             &c.response_tx,
             JsonRpcResponse::success(json!(1), json!({"window_id": 7})),
@@ -1430,7 +1437,7 @@ mod tests {
             |h| *h,
             answer_now(&runs),
         );
-        assert_eq!(runs.get(), 1, "결말이 없던 키는 다시 실행돼야 한다");
+        assert_eq!(runs.get(), 1, "완료 응답이 없던 키는 다시 실행되어야 한다");
         assert!(!rx3.recv_timeout(WAIT).expect("답").idempotent_replay);
     }
 
@@ -1448,7 +1455,7 @@ mod tests {
                 s.entries.front().map(|e| &e.outcome),
                 Some(Stored::InFlight { ticket, .. }) if *ticket == newer
             ),
-            "늦은 결말이 새 실행의 자리를 덮었다"
+            "이전 실행의 늦은 완료가 새 실행 기록을 덮어썼다"
         );
         let h = s.settle(t0, "local", "k", 1, Some(newer), &resp(2, "mine"));
         assert!(h.kept);
@@ -1557,7 +1564,7 @@ mod tests {
             |h| *h,
             |_| false,
         );
-        assert_eq!(out, Some(false), "App 층은 그 이름을 안 맡는다");
+        assert_eq!(out, Some(false), "App은 해당 메서드를 처리하지 않는다");
         let pending = begin_in(
             store,
             Instant::now(),
@@ -1582,7 +1589,7 @@ mod tests {
             &cmd,
             true,
             |h| *h,
-            |_| panic!("재생 갈래는 본문을 안 부른다"),
+            |_| panic!("캐시 응답을 반환할 때는 본문을 실행하지 않는다"),
         );
         assert_eq!(out, Some(true), "App 층이 재생으로 답한다");
         assert!(rx.try_recv().expect("재생 답").idempotent_replay);
@@ -1747,7 +1754,11 @@ mod tests {
             |_| false,
         );
         assert_eq!(out, Some(false));
-        assert_eq!(lock(store).counts().executed, 2, "안 맡은 판정은 되돌린다");
+        assert_eq!(
+            lock(store).counts().executed,
+            2,
+            "처리하지 않은 요청은 실행 집계에서 제외한다"
+        );
     }
 
     #[test]

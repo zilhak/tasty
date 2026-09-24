@@ -2,12 +2,8 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use tasty_ui_widgets::vspace;
 
-/// General › Overlay — 오버레이류(토스트 등) 표시 설정. 현재는 토스트 수명 1행.
-///
-/// 내부 저장은 ms(u64)지만 UI 는 사용자 멘탈 모델("몇 초")에 맞춰 초 단위로
-/// 노출한다(소수 1자리, `s` suffix). 숫자 칸은 설정 창의 한 모양([`super::number`])
-/// 이고, 확정(blur / `↵`) 때 0.5s 눈금으로 스냅한 뒤 ms 로 되쓴다(1.0~10.0s →
-/// 1000~10000ms).
+/// 토스트 수명을 초 단위로 편집하고 밀리초로 저장한다.
+/// 확정 시 0.5초 눈금과 1~10초 범위를 적용한다.
 pub fn draw_overlay_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);

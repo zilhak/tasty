@@ -1,16 +1,6 @@
-//! macOS 전용 — Alt/Option/Shift 단축키 표시 스타일.
-//!
-//! 저장 포맷(바인딩 문자열)은 건드리지 않고 화면 표시 문자열만 바꾼다
-//! (`docs/design/policies/key-mapping.md` 저장↔표시 분리 원칙). 백엔드는
-//! `GeneralSettings::{alt,option,shift}_display_style`.
-//!
-//! `"symbol"` 스타일(⌘/⌥/⇧)은 egui 폰트 fallback 체인에 없는 glyph 라 텍스트로
-//! 그리면 tofu box 로 깨진다 — 이 탭의 3개 드롭다운만 [`display_style_combo`] 로
-//! 벡터 아이콘 표시를 지원한다. egui `ComboBox::selected_text`는
-//! `impl Into<WidgetText>`라 텍스트 galley 만 그리는 자리라 이미지 라벨을 못 넣는다
-//! (egui 0.31 `combo_box.rs::combo_box_dyn` 확인) — 그래서 트리거를 `Button`
-//! (secondary variant, 기존 ComboBox 버튼과 동일한 룩) + `egui::popup_below_widget`
-//! 로 직접 그린다.
+//! macOS 수식키 표시 스타일. 저장된 바인딩은 바꾸지 않는다.
+//! 기호 글꼴의 누락을 피하려 symbol 스타일은 벡터 아이콘으로 그린다.
+//! 관련 정책: docs/design/policies/key-mapping.md.
 
 use crate::i18n::t;
 use crate::settings::Settings;
@@ -18,10 +8,7 @@ use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, MenuItemVariant, menu_item, vspace};
 
-/// 표시 스타일 드롭다운의 옵션 하나. `icon` 이 있으면 이 옵션이 `"symbol"` 스타일 —
-/// 닫힌 트리거는 이 옵션이 선택됐을 때 텍스트 없이 아이콘 단독으로(§6-1), 그 외
-/// 옵션은 기존처럼 텍스트로 그린다. 펼친 옵션 리스트는 옵션마다 (아이콘 있으면)
-/// 아이콘 + 텍스트 라벨 + 현재 선택 체크를 그린다(§6-1).
+/// 표시 스타일 항목. symbol을 선택하면 버튼에는 아이콘만, 목록에는 아이콘과 라벨을 표시한다.
 struct DisplayStyleOption {
     value: &'static str,
     label: &'static str,
@@ -159,11 +146,7 @@ fn display_style_combo(
             let pad_x = theme.menu_item_padding_x().value();
             let gap = theme.spacing_sm.value();
             let body = theme.font_size_body.value();
-            // `menu_item` 은 `shortcut: None` 이면 우측 여백을 전혀 예약하지 않는다
-            // (menu_item.rs) — 이 체크마크는 shortcut 이 아니라 별도로 그리므로, 팝업
-            // 폭 자체가 (아이콘+라벨+체크마크)를 담을 만큼 넓어야 겹치지 않는다.
-            // 트리거 폭(`resp.rect.width()`)만으로는 부족하다 — 트리거가 아이콘
-            // 단독("symbol" 선택 시)이면 목록의 텍스트 라벨보다 훨씬 좁기 때문.
+            // 아이콘만 있는 버튼 폭으로는 목록의 라벨·체크마크가 겹치므로 추가 폭을 확보한다.
             let content_width = options
                 .iter()
                 .map(|opt| {
