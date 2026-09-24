@@ -1,25 +1,6 @@
-//! 구조 변경 실행 — split / tab.create / tab.close / tab.move / pane.close / surface.close 의
-//! 검증 · `Core::apply` · cascade 를 한 함수씩 소유한다.
-//!
-//! 이 실행을 부르는 진입점은 둘이다 — IPC 핸들러(`adapters::ipc::handler` 의 `pane` · `tab` ·
-//! `surface::close`)와 원격 mirror 가 forward 한 구조 op 의 실행
-//! (`core::attach_runtime::execute_forwarded_structural_op`). 둘이 같은 함수를 부르므로 같은
-//! 입력에 같은 결과와 같은 실패 문구가 나온다. 예전에는 forward 실행이 IPC 핸들러를
-//! 직접 불러 JSON-RPC 응답을 만들게 한 뒤 그 에러 메시지를 되풀었다 — 도메인이 inbound
-//! 어댑터를 부르는 방향이었다.
-//!
-//! **여기 없는 것** — 진입점마다 다른 것은 진입점에 남는다.
-//!
-//! - wire 변환: 응답 JSON 조립과 실패의 JSON-RPC 코드 선택은 핸들러가 한다
-//!   ([`StructuralFailure`] 의 갈래가 코드를 정한다).
-//! - 요청 진입 게이트: 호출자 자기 surface/tab/pane 거절, 원격 하드 점유 거절, IPC 요청당
-//!   한 번의 권한·cap·rate-limit 판정(ADR-0012)은 IPC 진입점의 일이다. forward 실행은 holder
-//!   검증을 이미 지나 들어오고, 그 면제를 params 플래그가 아니라 **어느 함수를 부르느냐**로
-//!   표현한다(`handler/surface/close.rs` 의 `refuse_if_hard_occupied` 문서).
-//! - forward 전용 단계: anchor resolve, 복원 스택 캡처, 즉시-tap 억제 구간, delta 계산은
-//!   `core::attach_runtime` 에 있다.
-//!
-//! 실행 결과의 plugin 통지와 자원 회수는 `core::structural_cascade` 가 한다.
+//! IPC와 원격 forward의 구조 변경 검증·실행·후속 처리를 공유한다.
+//! 권한·요청자·점유 검사는 각 진입점이 먼저 수행해야 한다. wire 응답 조립도 진입점 몫이다.
+//! forward의 대상 해석·복원 snapshot·출력 tap 제어는 attach_runtime이 맡는다.
 
 use std::path::PathBuf;
 
@@ -35,16 +16,11 @@ use crate::core::structural_cascade::{
 use crate::core::{Core, CoreState};
 use crate::model::SplitDirection;
 
-/// 구조 변경 실행의 실패. 갈래가 IPC 응답 코드를 정하고, 문구는 두 진입점이 byte 단위로
-/// 같게 받는다.
+/// IPC 오류 코드에 대응하는 실패 종류. 두 진입점은 같은 실행 오류 문구를 받는다.
 #[derive(Debug)]
 pub(crate) enum StructuralFailure {
-    /// 요청이 가리키는 대상·파라미터가 틀렸다 — IPC 는 `invalid_params` 로 답한다.
     Rejected(String),
-    /// `Core::apply` 가 성공했는데 약속한 이벤트를 안 냈다 — IPC 는 `internal_error`.
     MissingEvent(&'static str),
-    /// `Core::apply` 가 실패했다 — IPC 는 `structural_apply_error` 로 답한다(mirror 로
-    /// forward 된 차단은 그 함수가 성공 응답으로 바꾼다).
     Apply(anyhow::Error),
 }
 
@@ -54,19 +30,14 @@ impl From<anyhow::Error> for StructuralFailure {
     }
 }
 
-/// 에이전트 경로의 origin — 포커스를 움직이지 않는다. forward 실행도 이 origin 으로 돈다:
-/// 원격 사용자의 조작이 이 기계 앞 사용자의 포커스를 움직이면 안 된다(원칙 1·3). client
-/// 쪽 포커스는 client 가 delta 적용 시점에 스스로 보정한다.
+/// 원격 조작이 이 호스트의 사용자 포커스를 옮기지 않도록 Agent origin을 사용한다.
 fn agent_origin() -> IntentOrigin {
     IntentOrigin::Agent {
         source: AgentSource::Ipc,
     }
 }
 
-/// `Core::apply` 를 에이전트 경로로 부른다. mirror 워크스페이스에서 forward 로 큐잉된 op 에는
-/// 에이전트 표시를 붙여, 원격 실패 회신이 사용자 toast 가 아니라 로그로 가게 한다 — 두 진입점
-/// (IPC 요청 · forward 된 op 의 실행) 모두 이 기계 앞 사용자의 행동이 아니다(identity 원칙 1,
-/// `docs/adr/0036-overlay-scope-and-lifetime.md`).
+/// 다른 mirror로 다시 전달한 요청도 agent 표시를 붙여 실패를 사용자 toast 대신 로그로 보낸다.
 fn apply_as_agent(
     core: &mut Core,
     engine: &mut CoreState,
@@ -78,26 +49,21 @@ fn apply_as_agent(
     })
 }
 
-/// split 의 단위.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SplitLevel {
     Pane,
     Surface,
 }
 
-/// split 요청. `level` · `direction` · 대상은 진입점이 해석해 넘긴다(IPC 는 문자열·nickname
-/// 을, forward 는 op 의 타입 값을). 나머지는 `params` 에서 읽는다.
 pub(crate) struct SplitRequest<'a> {
     pub(crate) level: SplitLevel,
     pub(crate) direction: SplitDirection,
     pub(crate) target_surface: Option<u32>,
     pub(crate) target_pane: Option<u32>,
-    /// 요청의 파라미터 묶음. `cwd` · `meta` · `type` · kind 의 필수 파라미터를 여기서 읽고,
-    /// 통째로 새 surface 의 `surface_params` 가 된다.
+    /// 새 surface에 넘길 파라미터. 종류별 필수 값도 여기에 담는다.
     pub(crate) params: &'a Value,
 }
 
-/// split 결과.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SplitOutcome {
     Pane {
@@ -109,8 +75,7 @@ pub(crate) enum SplitOutcome {
     },
 }
 
-/// split 을 검증하고 실행한다. 대상 해석 · cwd 확인 · kind 필수 파라미터 선검증 · terminal
-/// cwd 상속 · `Core::apply` · cascade · `meta` 적용 순서다.
+/// 대상을 검증하고 구조 변경·후속 처리 뒤 문자열 meta를 적용한다. meta 저장 실패는 로그로 남긴다.
 pub(crate) fn split(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -125,13 +90,11 @@ pub(crate) fn split(
         params,
     } = req;
 
-    // Validate: at least one target must be specified
     if target_surface.is_none() && target_pane.is_none() {
         return Err(StructuralFailure::Rejected(
             "Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)".to_string(),
         ));
     }
-    // Validate: can't specify both
     if target_surface.is_some() && target_pane.is_some() {
         return Err(StructuralFailure::Rejected(
             "Cannot specify both 'target_surface' and 'target_pane'. Use one.".to_string(),
@@ -143,7 +106,7 @@ pub(crate) fn split(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(PathBuf::from);
-    // 2 차 방어: 호스트가 absolute + valid 만 받는다는 contract 검증.
+    // 디렉터리 여부를 확인한다. 상대 경로 거부나 경로 정규화는 이 검사에 포함되지 않는다.
     if let Some(p) = &cwd
         && !p.is_dir()
     {
@@ -157,8 +120,6 @@ pub(crate) fn split(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    // 필수 파라미터 선검증 — registry 의 required_params(preset_fields.required)로
-    // generic 하게 검증한다(kind 하드코딩 없음).
     if let Some(def) = engine.surface_registry.get_live(kind)
         && let Some(missing) = def.first_missing_required_param(params)
     {
@@ -169,7 +130,6 @@ pub(crate) fn split(
 
     let outcome = match level {
         SplitLevel::Pane => {
-            // pane-level split: target_pane 또는 target_surface 로 pane_id 결정.
             let resolved_pane_id = if let Some(pid) = target_pane {
                 pid
             } else if let Some(sid) = target_surface {
@@ -187,7 +147,6 @@ pub(crate) fn split(
                 ));
             };
 
-            // terminal 의 cwd inherit — 호출자가 미리 결정 (Core 는 focus state 모름).
             let resolved_cwd = if kind == "terminal" {
                 cwd.or_else(|| {
                     let sid = engine
@@ -245,7 +204,6 @@ pub(crate) fn split(
                 ));
             };
 
-            // terminal cwd inherit — 호출자가 미리 결정.
             let resolved_cwd = if kind == "terminal" {
                 cwd.or_else(|| state.resolve_inherit_cwd_from_surface(engine, sid))
             } else {
@@ -292,7 +250,6 @@ pub(crate) fn split(
     Ok(outcome)
 }
 
-/// Apply metadata key-value pairs to a surface.
 fn apply_meta(
     state: &dyn CascadeWindow,
     surface_id: u32,
@@ -312,7 +269,6 @@ fn apply_meta(
     }
 }
 
-/// 새 탭 결과 — `CoreEvent::TabCreated` 가 실어 온 값 그대로다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TabCreated {
     pub(crate) pane_id: u32,
@@ -321,10 +277,7 @@ pub(crate) struct TabCreated {
     pub(crate) active_tab: usize,
 }
 
-/// `pane_id` 에 새 탭을 만든다. `params` 의 `type`(기본 terminal) · `cwd` · `name` 을 읽고,
-/// kind 의 fresh-context 기본 파라미터를 채운 사본이 새 surface 의 `surface_params` 가 된다.
-/// `activate` 는 새 탭을 활성 탭으로 세우는가다 — 에이전트 진입점은 `false` 를 준다
-/// ([ADR-0017](../../docs/adr/0017-workspace-identity-and-focus.md)).
+/// 종류별 기본 파라미터를 보충해 탭을 만든다. 에이전트 진입점은 activate=false를 넘긴다.
 pub(crate) fn create_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -345,22 +298,18 @@ pub(crate) fn create_tab(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    // 새 탭은 상속·carry cwd 컨텍스트가 없다(fresh-context). kind 가 `@home` 같은
-    // fresh-context 기본값(예: explorer path)을 선언하면 여기서 주입한다(generic —
-    // kind 하드코딩 없음). split/preset/workspace 는 이 경로를 거치지 않아 회귀 없음.
+    // 새 탭은 상속된 params가 없으므로 @home 등 종류별 기본값을 여기서 보충한다.
     let mut params = params.clone();
     if let Some(def) = engine.surface_registry.get(surface_type) {
         let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
         engine.apply_kind_default_params(&def, &mut params, home.as_deref());
     }
 
-    // cwd resolve — terminal 만. explicit > pane active surface 의 inherit.
     let cwd = if surface_type == "terminal" {
         let explicit = params
             .get("cwd")
             .and_then(|v| v.as_str())
             .map(PathBuf::from);
-        // 2 차 방어: 호스트가 absolute + valid 만 받는다는 contract 검증.
         if let Some(p) = &explicit
             && !p.is_dir()
         {
@@ -407,8 +356,6 @@ pub(crate) fn create_tab(
         ));
     };
 
-    // dispatcher 와 같은 cascade 공유 (close_tab ↔ cascade_tab_closed_full 동형) —
-    // tab.created/surface.created host event enqueue + baseline 동기화.
     cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
 
     Ok(TabCreated {
@@ -419,16 +366,13 @@ pub(crate) fn create_tab(
     })
 }
 
-/// close 결과. `closed=false` 는 실패가 아니다 — 대상을 못 찾았거나 마지막 탭·페인이라 닫을
-/// 수 없었다는 **답**이고, 두 진입점 모두 성공으로 돌려준다.
+/// closed=false도 성공 응답이다. 대상 부재나 닫기 제한 때문에 실제로 닫지 못했음을 나타낸다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Closed {
-    /// 이벤트가 실어 온 대상 id(요청의 id 와 같다).
     pub(crate) id: u32,
     pub(crate) closed: bool,
 }
 
-/// 탭을 닫는다. 에이전트 경로라 `is_user_close=false` 로 cascade 한다.
 pub(crate) fn close_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -450,15 +394,12 @@ pub(crate) fn close_tab(
     };
 
     if closed {
-        // 에이전트 origin → is_user_close=false.
-        // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
-        // tab.closed host event enqueue + baseline 갱신을 일괄 처리한다.
         cascade_tab_closed_full(state, engine, tab_id, pane_id, cleanup_targets, false);
     }
     Ok(Closed { id: tab_id, closed })
 }
 
-/// 페인을 닫는다. 없는 페인은 `Rejected` 다(탭과 달리 `Core::apply` 전에 거른다).
+/// 없는 pane은 Core 호출 전에 오류로 돌려준다. 없는 tab의 처리와 다르다.
 pub(crate) fn close_pane(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -485,9 +426,6 @@ pub(crate) fn close_pane(
     };
 
     if closed {
-        // 에이전트 origin → is_user_close=false.
-        // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
-        // pane.closed host event enqueue 를 일괄 처리한다.
         cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, false);
     }
     Ok(Closed {
@@ -496,7 +434,6 @@ pub(crate) fn close_pane(
     })
 }
 
-/// 탭을 한 페인 안에서 옮긴다. 결과는 실제로 옮겼는가다.
 pub(crate) fn move_tab(
     core: &mut Core,
     engine: &mut CoreState,
@@ -519,19 +456,10 @@ pub(crate) fn move_tab(
     ))
 }
 
-/// surface 를 닫는다. 워크스페이스가 비면 cascade 가 기본 워크스페이스를 다시 만든다.
-///
-/// `save_snapshot` 은 **진입점이 정한다.** IPC 요청은 에이전트 경로라 `false` 이고(되돌리기
-/// 스택은 사용자 행동의 것이다), forward 된 holder 의 close 는 op 의 origin 이 정한다 —
-/// `User` 면 `true`, `Agent` 면 `false`
-/// (`docs/adr/0023-attach-state-sync-and-forwarding.md`). 그 축을 params 가
-/// 아니라 인자로 받는 이유는 IPC 진입점의 `refuse_if_hard_occupied` 문서에 있다 — params 는
-/// 호출자가 만들므로 데이터로 두면 아무 에이전트나 같은 키를 실어 사용자 스택을 채운다.
-///
-/// `is_user_close` 는 **독립 축**이라 여기서 함께 뒤집지 않는다(plugin lifecycle 이벤트에
-/// 나가는 값 — `src/state/tests.rs` 의
-/// `pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close` 가 두 축이 별개임을
-/// 고정한다). forward 된 close 도 `is_user_close=false` 로 나간다.
+/// surface를 닫고 빈 workspace의 재생성을 시도한다.
+/// save_snapshot은 검증된 진입점이 정한다. IPC는 false, holder의 사용자 조작은 true를 줄 수 있다.
+/// 요청자가 만든 params에서 직접 읽으면 에이전트가 사용자 복원 목록을 채울 수 있다.
+/// lifecycle의 is_user_close는 별도이며 이 함수에서는 항상 false다.
 pub(crate) fn close_surface(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -551,8 +479,6 @@ pub(crate) fn close_surface(
         ));
     };
 
-    // `None` = closed=false — 회수할 것이 없다. is_user_close=false — 에이전트 경로.
-    // cleanup_targets 의 모든 surface 에 대한 lifecycle enqueue 는 cascade 가 처리한다.
     let Some(c) = SurfaceCloseCascade::from_surface_closed(event, false) else {
         return Ok(Closed {
             id: surface_id,
