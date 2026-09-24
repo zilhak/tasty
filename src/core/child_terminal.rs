@@ -1,22 +1,6 @@
-//! 호스트 child-terminal registry (ADR-0021).
-//!
-//! 에이전트가 spawn 한 **자식 터미널 surface** 의 부모/인덱스/상태 매핑을 호스트가
-//! 단일 SoT 로 보관한다. 지금까지 이 기계는 `tasty-plugin-codex`(`CodexState`) 와
-//! `tasty-plugin-claude`(`ClaudeState`) 에 각각 중복 구현돼 있었다 — 이 모듈이 그 범용
-//! 부분(registry + spawn 조합 + self-heal)을 호스트로 내재화한다. 영속화 경로는
-//! 호스트 데이터 디렉토리(`~/.tasty/child-terminals.json`).
-//!
-//! **다른 서브시스템과의 경계 (레지스트리 파편화 방지)**:
-//! - `adapters/ipc/handler/session.rs` 의 `SessionStore` 는 자식 agent 프로세스에
-//!   발급하는 **SessionToken**(권한 위임·검증)을 추적한다 — surface 매핑이 아니다.
-//! - `core/agent/runner_host.rs` 의 `shell_children` 은 `agent.task` DAG 러너가
-//!   spawn 한 **shell 서브프로세스(PID)** 의 종료코드를 감시한다 — PTY surface 가
-//!   아니다.
-//!   둘 다 child-**terminal**(surface) registry 와 역할이 갈리며, 본 registry 로
-//!   통합 대상이 **아니다**.
-//!
-//! host-IPC-free — 단위 테스트 가능. self-heal(reconcile)은 호스트가 라이브 surface
-//! 트리를 직접 소유하므로 이벤트 구독 없이 접근 시점마다 동기 reconcile 로 처리한다.
+//! 자식 터미널 surface의 부모·번호·보고된 상태를 보관하고 child-terminals.json에 저장한다.
+//! SessionToken의 권한 위임이나 task runner의 자식 프로세스 관리는 이 레지스트리의 역할이 아니다.
+//! 호출자가 실제 surface 목록과 대조해 없어진 항목을 정리한다.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -32,9 +16,6 @@ pub struct ChildEntry {
     pub nickname: Option<String>,
 }
 
-/// `ChildTerminalRegistry::reconcile_with_live_surfaces` 결과 요약. 부팅/접근 시
-/// reconcile 로그 및 단위 테스트 검증에 사용. parent/child 분리 카운트로 정리 폭을
-/// 한눈에 본다.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ReconcileSummary {
     pub removed_children: u32,
@@ -42,7 +23,6 @@ pub struct ReconcileSummary {
 }
 
 impl ReconcileSummary {
-    /// 실제로 제거된 항목이 있었는가 — caller 가 이때만 save 하도록 게이트.
     pub fn changed(&self) -> bool {
         self.removed_children > 0 || self.removed_parents > 0
     }
@@ -50,42 +30,22 @@ impl ReconcileSummary {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ChildTerminalRegistry {
-    /// parent_surface → 자식 목록
     children: HashMap<u32, Vec<ChildEntry>>,
-    /// child_surface → parent_surface
     parent_of: HashMap<u32, u32>,
-    /// parent_surface별 다음 child index
     next_index: HashMap<u32, u32>,
-    /// child_surface → idle 상태
     idle: HashMap<u32, bool>,
-    /// child_surface → needs_input 상태
     needs_input: HashMap<u32, bool>,
-    /// child_surface → 이 자식의 상태를 마지막으로 **보고받은** 시각 (unix epoch ms).
-    ///
-    /// `idle`/`needs_input` 두 bool 맵이 "무엇을 보고받았나" 라면 이 맵은 "언제
-    /// 보고받았나" 다 — 별개의 축이다. hook push(`set_idle`/`set_needs_input`)마다
-    /// 갱신되고, `register_child` 가 등록 시각으로 시딩한다(등록 자체가 "이 시점엔
-    /// 이 자식이 막 태어났다" 는 보고이므로, hook 이 한 번도 오지 않은 자식도
-    /// 침묵 경과시간을 잴 기준점을 갖는다).
-    ///
-    /// **이 축이 필요한 이유**: `state_of` 는 hook push 캐시를 되읽을 뿐이라,
-    /// hook 이 유실되면 마지막으로 찍힌 `active` 가 영구히 남는다. "hook 이 N 시간째
-    /// 안 온다" 는 사실은 bool 맵 두 개로는 표현할 수 없다. PTY 무출력 경과시간과
-    /// 달리 **epoch 기반이라 호스트 재시작을 건너 살아남는다**(`Instant` 는 소멸).
-    ///
-    /// 판정 자체는 여기서 하지 않는다 — `state_of` 계약은 불변이고, 이 값을 관측
-    /// 축과 합성하는 것은 `core/state/child_liveness.rs` 의 상위 계층이다.
+    /// 마지막 상태 보고 시각(Unix epoch ms). 등록 시각으로 시작하고 상태 보고마다 갱신한다.
+    /// 재시작 뒤에도 보고가 끊긴 기간을 잴 수 있다. 유효성 판정은 child_liveness에서 맡는다.
     #[serde(default)]
     last_state_report_at: HashMap<u32, u64>,
-    /// 영속화 경로 (load 시 결정, `default()` 는 None → 비영속·테스트용)
+    /// load로 정하며 default는 저장 경로가 없다.
     #[serde(skip)]
     path: Option<PathBuf>,
 }
 
 impl ChildTerminalRegistry {
-    /// 호스트 데이터 디렉토리(`~/.tasty/child-terminals.json`)에서 로드. 부팅 시
-    /// `CoreState::new_with_ids` 가 1회 호출한다. `TASTY_HOME` override 를 따르므로
-    /// 테스트/샌드박스 격리도 자동으로 반영된다.
+    /// TASTY_HOME 아래에서 읽는다. 파일 읽기·파싱 실패는 빈 상태로 처리한다.
     pub fn load() -> Self {
         let path = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json"));
         let mut s = match &path {
@@ -145,7 +105,7 @@ impl ChildTerminalRegistry {
             .find(|c| c.index == index)
     }
 
-    /// 자식 항목을 mutable하게 업데이트한다. 자식이 없으면 false 반환.
+    /// 해당 자식이 없으면 false다. 콜백이 바꾼 필드의 별도 인덱스는 여기서 다시 만들지 않는다.
     pub fn update_child<F>(&mut self, parent: u32, index: u32, f: F) -> bool
     where
         F: FnOnce(&mut ChildEntry),
@@ -160,7 +120,6 @@ impl ChildTerminalRegistry {
         true
     }
 
-    /// child surface로 parent surface를 역인덱싱한다.
     pub fn parent_of_child(&self, child_surface: u32) -> Option<u32> {
         self.parent_of.get(&child_surface).copied()
     }
@@ -176,11 +135,7 @@ impl ChildTerminalRegistry {
         Some(removed)
     }
 
-    /// surface_id로 child를 찾아 제거한다. 미존재 시 false.
-    ///
-    /// 호스트의 능동 self-heal 은 접근 시점 `reconcile_with_live_surfaces` 로 처리하므로
-    /// 현재 lib 경로에서 직접 호출되진 않지만(테스트에선 사용), 향후 surface-close 훅이
-    /// 단건 정밀 정리를 원할 때를 위해 plugin `CodexState` 와 동형으로 보존한다.
+    /// surface ID로 자식을 제거한다. 항목이 없으면 false다.
     #[allow(dead_code)]
     pub fn unregister_child_by_surface(&mut self, surface_id: u32) -> bool {
         let Some(parent) = self.parent_of.get(&surface_id).copied() else {
@@ -200,17 +155,7 @@ impl ChildTerminalRegistry {
         true
     }
 
-    /// **`idle` 이 어느 값이든 `needs_input` 은 함께 내린다** — 두 플래그는 독립
-    /// 저장이지만 독립된 상태가 아니다. `state_of` 가 `needs_input` 을 `idle` 보다
-    /// 우선하므로, 한 번 세워진 `needs_input` 은 그것을 명시적으로 내리는 경로가
-    /// 없는 한 뒤따르는 `idle` 을 **영구히 가린다**. "턴이 끝났다"(idle)와 "턴 안에서
-    /// 사람을 기다린다"(needs_input)는 동시에 참일 수 없으므로, 어느 쪽 전이든
-    /// 대기는 해소된 것으로 본다.
-    ///
-    /// 이 규칙이 없으면 codex 승인 프롬프트를 **거절**한 자식이 그 자리에 얼어붙는다:
-    /// 거절은 `Interrupt`(→ idle) 하나만 쏘고 `PostToolUse`(→ active) 는 오지 않아,
-    /// `needs_input` 을 내릴 사람이 아무도 없다(실측 — codex-cli 0.154.0).
-    /// 근거·대안은 [ADR-0041](../../docs/adr/0041-agent-state-and-completion.md).
+    /// idle 값과 무관하게 needs_input도 해제한다. 대기 플래그가 남아 이후 idle·active를 가리지 않게 한다.
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.idle.insert(child_surface, idle);
         self.needs_input.insert(child_surface, false);
@@ -222,24 +167,18 @@ impl ChildTerminalRegistry {
         self.stamp_state_report(child_surface);
     }
 
-    /// hook push 를 받은 시각을 기록한다 — `set_idle`/`set_needs_input` 공통.
     fn stamp_state_report(&mut self, child_surface: u32) {
         self.last_state_report_at
             .insert(child_surface, now_epoch_ms());
     }
 
-    /// 이 자식의 상태를 마지막으로 보고받은 시각(unix epoch ms). 등록 이력이 없거나
-    /// 업그레이드 전에 영속된 registry 에서 로드된 항목은 `None`.
+    /// 등록 또는 마지막 상태 보고 시각. 해당 필드가 없는 오래된 저장 항목은 None일 수 있다.
     pub fn last_state_report_at(&self, child_surface: u32) -> Option<u64> {
         self.last_state_report_at.get(&child_surface).copied()
     }
 
-    /// 마지막 상태 보고 이후 경과 시간 — **hook 침묵 축**. `None` 이면 잴 기준점이
-    /// 없다는 뜻이므로(판정 불가) 호출자는 임의 기본값을 만들지 않는다.
-    ///
-    /// 시계 되감김(NTP 보정·수동 변경)으로 `now_ms < 보고시각` 이 되면 `ZERO` 로
-    /// 클램프한다 — 음수 경과시간이 침묵 판정을 뒤집는 것보다 "방금 보고받았다" 쪽
-    /// 오탐이 안전하다(stale 오탐이 아니라 stale 미탐).
+    /// 마지막 보고 이후 시간. 시각 정보가 없으면 None, 시계가 뒤로 가면 0이다.
+    /// 0으로 처리하는 동안에는 실제 보고 중단 시간을 짧게 판단할 수 있다.
     pub fn hook_silence(&self, child_surface: u32, now_ms: u64) -> Option<std::time::Duration> {
         let at = self.last_state_report_at(child_surface)?;
         Some(std::time::Duration::from_millis(now_ms.saturating_sub(at)))
@@ -260,8 +199,7 @@ impl ChildTerminalRegistry {
         }
     }
 
-    /// `--surface`가 주어지지 않았을 때 사용. children 보유 parent가 정확히 한 개일 때만
-    /// 그 id를 반환. 그 외에는 None (호출자가 명시 요구).
+    /// 자식이 있는 부모가 정확히 하나일 때만 ID를 반환한다.
     pub fn single_parent(&self) -> Option<u32> {
         let parents: Vec<u32> = self
             .children
@@ -276,9 +214,8 @@ impl ChildTerminalRegistry {
         }
     }
 
-    /// 라이브 surface 집합과 registry 를 cross-check 한다. `live` 에 없는
-    /// child_surface_id 를 모두 제거하고, 자식이 0명이 된 parent 의 `next_index` 와
-    /// 빈 `children[parent]` vec 도 함께 정리한다. host-IPC-free — 단위 테스트 가능.
+    /// live에 없는 자식과 상태를 지우고, 빈 부모 목록과 다음 번호도 지운다.
+    /// 부모 자체의 생존 여부만으로 살아 있는 자식을 지우지는 않는다.
     pub fn reconcile_with_live_surfaces(&mut self, live: &HashSet<u32>) -> ReconcileSummary {
         let mut summary = ReconcileSummary::default();
 
@@ -311,8 +248,7 @@ impl ChildTerminalRegistry {
     }
 }
 
-/// 현재 시각(unix epoch ms). registry 는 호스트 재시작을 건너 영속되므로 상태 보고
-/// 시각은 프로세스 로컬한 `Instant` 가 아니라 벽시계여야 한다.
+/// 재시작 뒤에도 비교할 수 있도록 상태 보고 시각을 Unix epoch ms로 기록한다.
 pub fn now_epoch_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -423,7 +359,7 @@ mod tests {
         s.register_child(10, entry(100, idx));
         let at = s
             .last_state_report_at(100)
-            .expect("등록이 기준점을 시딩한다");
+            .expect("등록 시각이 기록돼야 한다");
         assert!(at >= before, "{at} >= {before}");
         assert_eq!(
             s.last_state_report_at(999),
@@ -435,13 +371,11 @@ mod tests {
     #[test]
     fn hook_push_refreshes_state_report() {
         let mut s = ChildTerminalRegistry::default();
-        // 등록 없이 hook 만 와도 기준점이 생긴다(adopt 이전 push 등).
         s.set_idle(50, true);
         let first = s.last_state_report_at(50).unwrap();
         s.set_needs_input(50, true);
         let second = s.last_state_report_at(50).unwrap();
         assert!(second >= first);
-        // active 로 되돌리는 push 도 축을 갱신한다 — hook 침묵 판정의 반증이다.
         s.set_idle(50, false);
         assert!(s.last_state_report_at(50).unwrap() >= second);
     }
@@ -466,7 +400,7 @@ mod tests {
         assert_eq!(
             s.hook_silence(50, at.saturating_sub(60_000)),
             Some(std::time::Duration::ZERO),
-            "시계 되감김은 stale 오탐이 아니라 미탐 쪽으로 클램프"
+            "시계가 뒤로 가면 경과 시간을 0으로 처리해야 한다"
         );
     }
 
@@ -486,7 +420,7 @@ mod tests {
 
     #[test]
     fn legacy_persisted_registry_loads_without_state_report_field() {
-        // 이 축 도입 이전에 영속된 파일에는 `last_state_report_at` 키가 없다.
+        // last_state_report_at 필드가 없는 저장 파일도 읽을 수 있어야 한다.
         let legacy = r#"{
             "children": { "10": [{ "child_surface_id": 100, "index": 0,
                                    "cwd": null, "role": null, "nickname": null }] },
@@ -501,7 +435,7 @@ mod tests {
         assert_eq!(
             s.last_state_report_at(100),
             None,
-            "기준점 부재는 판정 불가로 표현된다 — 임의값을 지어내지 않는다"
+            "보고 시각이 없으면 경과 시간도 알 수 없다"
         );
     }
 

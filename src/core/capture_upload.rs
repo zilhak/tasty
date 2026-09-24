@@ -1,17 +1,11 @@
-//! 스크린샷→원격 클립보드의 attach 서버측 — mirror client 가 스트리밍 채널로 보내는 캡처 파일 바이트
-//! 청크를 누적하는 순수 버퍼. 파싱/전송 프로토콜은 `stream_hub.rs`(`CaptureUploadMsg`),
-//! holder 검증 + 파일 저장 + 클립보드 기록은 `attach_runtime.rs`
-//! (`finalize_capture_upload`) 담당 — 이 파일은 그 사이의 상태만 보관한다.
-//!
-//! host-IPC-free — 단위 테스트 가능. 시간 의존 연산([`append`](CaptureUploadRegistry::append))은
-//! `now: Instant` 를 주입받아 테스트가 TTL 경과를 sleep 없이 재현한다(`PtyRegistry` 와 동형).
+//! 캡처 업로드를 (client_id, upload_id)별로 누적한다.
+//! 프레임 해석은 stream_hub, 권한 확인·파일 저장·클립보드는 attach_runtime이 맡는다.
+//! 시각을 인자로 받아 실제 대기 없이 만료를 검사할 수 있다.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-/// 마지막 청크 수신 이후 이 시간이 지나면 방치된 partial 업로드로 간주해 스윕 대상이
-/// 된다. 기본 5 분 — `PtyRegistry::DEFAULT_IDLE_TTL` 과 동일 근거(client 가 정상 동작
-/// 중이라면 청크/commit 이 초 단위로 오가므로, 5 분 정체는 사실상 죽은 연결).
+/// 마지막 청크 이후 이 시간 이상 지난 버퍼를 회수한다. 연결 종료를 판정하는 값은 아니다.
 pub(crate) const DEFAULT_TTL: Duration = Duration::from_secs(300);
 
 struct PartialUpload {
@@ -19,15 +13,8 @@ struct PartialUpload {
     last_activity: Instant,
 }
 
-/// `(client_id, upload_id)` → 누적된 바이트 + 마지막 활동 시각. 여러 mirror client 가
-/// 동시에 업로드해도 서로 섞이지 않는다.
-///
-/// disconnect 시 `clear_client`로 즉시 청소하고, 연결 유지 상태에서 commit이 영원히
-/// 안 오는 극단 케이스는 [`sweep_expired`](CaptureUploadRegistry::sweep_expired)가
-/// 회수한다 — `PtyRegistry::sweep_idle` 과 동형으로 **접근 시점 lazy(`append` 내부) +
-/// 주기 타이머**(`app/timers.rs` 의 `Tick::CaptureSweep`) 양쪽에서 호출된다. lazy 만
-/// 두면 "다음 청크가 와야 이전 stale 이 정리된다" 가 되어, 업로드가 멈춘 순간 정리도
-/// 함께 멈춘다.
+/// append가 만료 버퍼를 회수하고, 연결 종료 시 호출자가 clear_client를 호출한다.
+/// GUI는 주기 타이머로도 정리한다. 헤드리스에는 주기 회수가 없어 새 청크나 연결 종료를 기다린다.
 pub(crate) struct CaptureUploadRegistry {
     partials: HashMap<(u32, u64), PartialUpload>,
     ttl: Duration,
@@ -51,9 +38,7 @@ impl CaptureUploadRegistry {
         }
     }
 
-    /// 청크 하나를 추가(순서 보존 — TCP 스트림이라 도착 순서 = 전송 순서). 매 호출마다
-    /// TTL 초과 partial 을 먼저 스윕한다 — 업로드가 활발한 동안은 이 lazy 경로가 곧바로
-    /// 정리하므로 주기 타이머를 기다릴 필요가 없다.
+    /// 만료 버퍼를 먼저 지운 뒤 청크를 추가한다. 만료된 같은 ID가 다시 오면 새 버퍼가 된다.
     pub(crate) fn append(&mut self, client_id: u32, upload_id: u64, data: &[u8], now: Instant) {
         self.sweep_expired(now);
         let entry = self
@@ -67,10 +52,7 @@ impl CaptureUploadRegistry {
         entry.last_activity = now;
     }
 
-    /// TTL 을 초과해 방치된 partial 을 제거한다. 반환값 없음 — 두 호출자(`append`
-    /// 내부의 lazy 경로, `Tick::CaptureSweep` 주기 경로) 모두 결과를 쓰지 않기 때문
-    /// (commit 이 다시 와도 이미 사라진 upload_id 로 `take` 하면 `None`,
-    /// `finalize_capture_upload` 가 그 케이스를 이미 처리한다).
+    /// 마지막 활동에서 TTL 이상 지난 버퍼를 지운다.
     pub(crate) fn sweep_expired(&mut self, now: Instant) {
         let ttl = self.ttl;
         let before = self.partials.len();
@@ -79,22 +61,18 @@ impl CaptureUploadRegistry {
         let removed = before - self.partials.len();
         if removed > 0 {
             tracing::debug!(
-                "capture upload: swept {removed} stale partial upload(s) (idle TTL exceeded)"
+                "capture upload: removed {removed} incomplete upload(s) idle for at least the TTL"
             );
         }
     }
 
-    /// 업로드를 커밋(완료)하고 누적 바이트를 꺼낸다. 없으면 `None`(commit 만 오고
-    /// chunk 가 하나도 안 왔거나 이미 소비된 경우, 또는 TTL 초과로 스윕된 경우).
+    /// 버퍼를 제거하고 바이트를 반환한다. 여기서는 만료 시간을 다시 검사하지 않는다.
     pub(crate) fn take(&mut self, client_id: u32, upload_id: u64) -> Option<Vec<u8>> {
         self.partials
             .remove(&(client_id, upload_id))
             .map(|e| e.bytes)
     }
 
-    /// 한 client의 모든 진행 중 캡처 업로드를 폐기한다(연결 종료 시 partial 청소 —
-    /// `BulkTransferRegistry::clear_client`와 동형). commit 없이 끊긴 업로드가 메모리에
-    /// 영구 잔존하지 않게 한다.
     pub(crate) fn clear_client(&mut self, client_id: u32) {
         self.partials.retain(|(cid, _), _| *cid != client_id);
     }
@@ -111,7 +89,6 @@ mod tests {
         reg.append(1, 100, b"hello ", now);
         reg.append(1, 100, b"world", now);
         assert_eq!(reg.take(1, 100), Some(b"hello world".to_vec()));
-        // 소비 후에는 다시 꺼낼 수 없다.
         assert_eq!(reg.take(1, 100), None);
     }
 
@@ -127,9 +104,7 @@ mod tests {
         assert_eq!(reg.take(1, 2), Some(b"c".to_vec()));
     }
 
-    /// 주기 경로(`Tick::CaptureSweep`)는 **다음 청크 없이도** stale partial 을 회수한다.
-    /// lazy 만 있던 시절에는 업로드가 멈춘 순간 정리도 함께 멈췄다 — 그 순간이 정확히
-    /// 정리가 필요한 순간이다.
+    /// sweep을 직접 호출해 새 청크 없이 회수되는지 확인한다. 타이머 연결 자체를 검사하지는 않는다.
     #[test]
     fn periodic_sweep_reaps_a_stalled_upload_without_a_new_chunk() {
         let mut reg = CaptureUploadRegistry::new();
@@ -137,13 +112,11 @@ mod tests {
         reg.append(1, 100, b"partial", t0);
         assert_eq!(reg.partials.len(), 1);
 
-        // TTL 안에서는 남는다 — 느린 업로드를 끊어버리면 안 된다.
         reg.sweep_expired(t0 + DEFAULT_TTL - Duration::from_secs(1));
         assert_eq!(reg.partials.len(), 1, "TTL 안의 partial 은 보존");
 
-        // TTL 초과 — append 없이 sweep 만으로 회수된다.
         reg.sweep_expired(t0 + DEFAULT_TTL);
-        assert!(reg.partials.is_empty(), "TTL 초과 partial 회수");
+        assert!(reg.partials.is_empty(), "TTL에 도달한 미완료 버퍼 회수");
         assert_eq!(reg.take(1, 100), None);
     }
 
@@ -173,8 +146,6 @@ mod tests {
         let base = Instant::now();
         reg.append(1, 1, b"orphaned", base);
 
-        // TTL 초과 후 (다른 client의) 새 청크가 도착하면 lazy sweep 이 방치된
-        // 엔트리를 회수한다.
         let beyond = base + Duration::from_secs(301);
         reg.append(2, 2, b"fresh", beyond);
 
@@ -189,7 +160,6 @@ mod tests {
         let base = Instant::now();
         reg.append(1, 1, b"still ", base);
 
-        // TTL 이내에 새 청크가 도착 → last_activity 갱신, 스윕 대상 아님.
         let within = base + Duration::from_secs(299);
         reg.append(1, 1, b"going", within);
         assert_eq!(reg.take(1, 1), Some(b"still going".to_vec()));
@@ -202,11 +172,9 @@ mod tests {
         let base = Instant::now();
         reg.append(1, 1, b"a", base);
 
-        // base 로부터 250s 시점에 활동 → last_activity 갱신.
         let touched = base + Duration::from_secs(250);
         reg.append(1, 1, b"b", touched);
 
-        // base 로부터는 301s 지났지만, touched 로부터는 51s 뿐 — 살아남아야 한다.
         let now = base + Duration::from_secs(301);
         reg.append(3, 3, b"trigger-sweep", now);
         assert_eq!(reg.take(1, 1), Some(b"ab".to_vec()));

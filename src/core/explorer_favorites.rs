@@ -1,42 +1,29 @@
-//! Explorer 즐겨찾기(favorites) — 전역(글로벌) 영속 저장소.
-//!
-//! 사용자가 우클릭 "Add to favorites" 로 등록한 폴더/경로 목록. surface 와 무관한
-//! 전역 상태라 `~/.tasty/explorer-favorites.toml` 한 곳에 보관하고, 부팅 시
-//! `CoreState` 가 `load()` 로 읽어 메모리에 들고 다닌다. 추가/삭제 mutator 는
-//! 즉시 `save()` 로 디스크에 반영한다(세션 휘발 아님 — design §3.5 "Favorites are
-//! global").
-//!
-//! 사용자 직접 조작(우클릭 메뉴)으로만 변경되므로 release 경로에서 직접 갱신한다
-//! (도메인 snapshot/layout.json 비대상).
+//! surface와 무관한 즐겨찾기 목록을 explorer-favorites.toml에 저장한다.
+//! add·remove는 메모리만 바꾸며 저장은 호출자가 save로 요청한다. layout snapshot에는 포함하지 않는다.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// 즐겨찾기 한 항목 — 표시 라벨 + 대상 경로.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplorerFavorite {
-    /// 사이드바에 표시할 이름. 비면 경로의 마지막 컴포넌트로 대체.
+    /// add에서 빈 라벨은 파일명 또는 전체 경로로 대체한다.
     pub label: String,
-    /// 즐겨찾기 대상 경로(보통 디렉토리).
     pub path: PathBuf,
 }
 
-/// 즐겨찾기 전체 목록(영속 단위).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExplorerFavorites {
-    /// TOML 에서는 `[[favorite]]` 배열로 직렬화된다.
     #[serde(default, rename = "favorite")]
     pub items: Vec<ExplorerFavorite>,
 }
 
 impl ExplorerFavorites {
-    /// 저장 파일 경로: `~/.tasty/explorer-favorites.toml`.
     pub fn config_path() -> Option<PathBuf> {
         tasty_utils::path::tasty_home().map(|dir| dir.join("explorer-favorites.toml"))
     }
 
-    /// 디스크에서 읽는다. 파일이 없거나 파싱 실패 시 빈 목록.
+    /// 읽기나 파싱에 실패하면 빈 목록을 반환한다.
     pub fn load() -> Self {
         let Some(path) = Self::config_path() else {
             return Self::default();
@@ -53,7 +40,6 @@ impl ExplorerFavorites {
         }
     }
 
-    /// 디스크에 기록한다.
     pub fn save(&self) {
         let Some(path) = Self::config_path() else {
             tracing::warn!("explorer: no favorites path available; not saving");
@@ -64,7 +50,6 @@ impl ExplorerFavorites {
         }
     }
 
-    /// TOML 로 직렬화. 실패는 warn 로그 후 `None`(호출자는 쓰기를 건너뛴다).
     fn serialize(&self) -> Option<String> {
         match toml::to_string_pretty(self) {
             Ok(contents) => Some(contents),
@@ -75,7 +60,6 @@ impl ExplorerFavorites {
         }
     }
 
-    /// 부모 디렉토리를 만들고(필요 시) `contents` 를 `path` 에 기록한다.
     fn persist_to_disk(path: &Path, contents: &str) {
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -88,9 +72,7 @@ impl ExplorerFavorites {
         }
     }
 
-    /// 추가(같은 경로가 있으면 라벨만 갱신). 라벨이 비면 경로 마지막 컴포넌트로
-    /// 대체한다. 디스크 반영은 호출처가 [`save`](Self::save) 로 한다(메모리 mutator
-    /// 는 순수 — 테스트가 디스크를 건드리지 않게 분리).
+    /// 같은 경로가 있으면 라벨을 바꾼다. 비어 있는 라벨은 경로에서 만들며 저장은 호출자가 맡는다.
     pub fn add(&mut self, path: PathBuf, label: String) {
         let label = if label.trim().is_empty() {
             path.file_name()
@@ -106,7 +88,7 @@ impl ExplorerFavorites {
         }
     }
 
-    /// 경로로 삭제. 디스크 반영은 호출처가 [`save`](Self::save) 로 한다.
+    /// 해당 경로를 목록에서 지운다. 저장은 호출자가 맡는다.
     pub fn remove(&mut self, path: &Path) {
         self.items.retain(|f| f.path != path);
     }
@@ -123,7 +105,6 @@ mod tests {
             label: "old".into(),
             path: PathBuf::from("/tmp/a"),
         });
-        // 같은 경로 재추가 → 라벨만 갱신, 항목 수 유지.
         favs.add(PathBuf::from("/tmp/a"), "new".into());
         assert_eq!(favs.items.len(), 1);
         assert_eq!(favs.items[0].label, "new");
