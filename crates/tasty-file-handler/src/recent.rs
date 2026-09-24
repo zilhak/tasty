@@ -1,12 +1,5 @@
-//! 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (cap = 10).
-//!
-//! 저장: 플랫폼 공통 `~/.tasty/file-handler-recent.json` (project CLAUDE.md 의
-//! `paths::tasty_home()` 사용). 원자적 쓰기는 temp + rename — fsync 는 안 함.
-//!
-//! 호출 흐름:
-//! - 부팅 시 [`RecentPicks::load`] 로 디스크에서 1회 로드 → 인메모리 캐시.
-//! - 사용자가 picker 에서 handler 선택 시 [`RecentPicks::record`] → 즉시
-//!   [`RecentPicks::save_atomic`] 으로 디스크 반영.
+//! picker에서 사용자가 고른 핸들러의 최근 목록. 기본 10개를 보관한다.
+//! 호출자가 지정한 경로에 임시 파일 + rename으로 저장하며 fsync는 하지 않는다.
 
 use std::io;
 use std::path::Path;
@@ -46,7 +39,7 @@ impl RecentPicks {
         }
     }
 
-    /// 파일에서 로드. 파일이 없거나 parse 실패 시 빈 리스트로 시작 + warn.
+    /// 파일이 없으면 빈 목록을 반환한다. 다른 읽기 오류나 파싱 실패는 warn도 남긴다.
     pub fn load(path: &Path) -> Self {
         let text = match std::fs::read_to_string(path) {
             Ok(s) => s,
@@ -127,7 +120,6 @@ impl RecentPicks {
         match std::fs::rename(&tmp, path) {
             Ok(()) => Ok(()),
             Err(e) => {
-                // rename 실패 시 임시 파일 정리 시도 — 결과는 무시 (정리만 함).
                 let _ = std::fs::remove_file(&tmp); // best-effort 임시파일 정리 — 실패 무시
                 Err(e)
             }

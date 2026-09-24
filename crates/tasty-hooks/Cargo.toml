@@ -3,7 +3,7 @@ name = "tasty-hooks"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Event-based shell command hook system"
+description = "Event matching and hook bindings for host-side execution"
 
 [dependencies]
 regex = "1"

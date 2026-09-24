@@ -7,18 +7,9 @@ use std::time::Instant;
 
 pub type HookId = u64;
 
-/// 훅이 트리거됐을 때 무엇을 실행할지에 대한 바인딩.
-///
-/// S9 로 hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, 공유 훅 핸들러
-/// 레지스트리의 핸들러를 **id 로 참조**한다([`HookBinding::Handler`]). 기존 API
-/// (`hook.set --command`) 호환을 위해 인라인 셸 명령은 **익명 hook 핸들러**로 감싸
-/// [`HookBinding::InlineShell`] 로 보존한다 — 레지스트리를 오염시키지 않는 인라인
-/// 핸들러다(export/영속화 대상이 아님).
-///
-/// 실제 실행(레지스트리 조회 + `source` 게이트 + ShellCommand/IpcSequence 분기)은
-/// 본체 `src/hook_handler/trigger.rs` 가 담당한다 — 이 크레이트는 leaf 라 레지스트리를
-/// 볼 수 없으므로 (surface, event) → binding 매칭만 하고 바인딩을 호출자에게
-/// 되돌려준다.
+/// 이벤트에 연결한 실행 대상. 등록된 핸들러 ID 또는 호환용 인라인 셸 명령을 담는다.
+/// 인라인 명령은 레지스트리에 등록하거나 저장하지 않는다.
+/// 이 크레이트는 매칭된 바인딩만 반환하며 실제 실행과 source 검사는 호스트가 담당한다.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookBinding {
@@ -39,16 +30,9 @@ impl HookBinding {
     }
 }
 
-/// `check_and_fire` 가 반환하는 발사된 훅 1건 — hook id + 실행할 바인딩 + 매칭 이벤트.
-///
-/// 이 크레이트는 바인딩을 실행하지 않는다(leaf). 호출자(본체)가 `binding` 을
-/// `hook_handler::trigger::execute_binding` 으로 실행하고 `hook_id` 로 host event 를
-/// 큐잉한다. `event` 는 **등록된** 훅 이벤트의 사본이다(수신 이벤트가 아님 —
-/// OutputMatch 는 매칭 텍스트가 아니라 등록 패턴) — 셸 핸들러 env
-/// (`TASTY_HOOK_EVENT`) 등 트리거 컨텍스트 전파용. `received` 는 실제 관측값 —
-/// `CommandCompleted` 의 실제 exit code, `OutputMatch` 의 실제 매칭 텍스트,
-/// `IdleTimeout` 의 실제 경과초 등 — 트리거 payload(`TASTY_HOOK_*` / `${body.*}`)
-/// 조립에 쓴다.
+/// 매칭된 훅의 ID·바인딩·이벤트. 실행은 호스트의 execute_binding이 담당한다.
+/// event는 등록한 조건이고 received는 실제 관측값이다. 예를 들어 OutputMatch는
+/// event에 정규식, received에 매칭된 텍스트를 담는다. 종료 코드·경과 시간도 received로 전달한다.
 #[derive(Clone, Debug)]
 pub struct FiredHook {
     pub hook_id: HookId,
@@ -66,9 +50,7 @@ pub struct SurfaceHook {
     pub once: bool,
     /// Pre-compiled regex for OutputMatch events (cached at registration time).
     pub compiled_regex: Option<regex::Regex>,
-    /// `check_idle_timeouts`가 마지막으로 발사했을 때의 `last_output_at` epoch.
-    /// 같은 epoch 동안엔 다시 발사하지 않고(anti-spam), 새 출력이 그 epoch을
-    /// 갱신하면 재무장된다. `IdleTimeout` 외 이벤트는 항상 `None`.
+    /// 마지막 IdleTimeout 통지 때의 last_output_at. 새 출력이 생기기 전에는 다시 알리지 않는다.
     pub idle_fired_epoch: Option<Instant>,
 }
 
@@ -172,10 +154,7 @@ impl HookEvent {
 
 pub struct HookManager {
     hooks: Vec<SurfaceHook>,
-    /// id 카운터. **engine 사이에서 공유한다** — 라우팅이 hook id 를 창을 건너 풀기
-    /// 때문이다(`request_target::Kind::Hook`). 카운터가 engine 마다면 두 창이 같은 id 를
-    /// 발급하고, 창을 건너 찾는 쪽은 **먼저 찾힌 engine 이 항상 이겨서** 나머지 하나는
-    /// 어떤 요청으로도 닿지 않는다. pty · observer 가 같은 이유로 공유 카운터다.
+    /// 여러 engine이 공유하는 ID 카운터. 창을 넘는 ID 조회가 같은 번호의 다른 훅을 고르지 않게 한다.
     next_id: Arc<AtomicU64>,
 }
 
@@ -210,7 +189,6 @@ impl HookManager {
         once: bool,
     ) -> HookId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        // Pre-compile regex for OutputMatch events
         let compiled_regex = if let HookEvent::OutputMatch(ref pattern) = event {
             regex::Regex::new(pattern).ok()
         } else {
@@ -247,18 +225,8 @@ impl HookManager {
             .collect()
     }
 
-    /// Check events and return matching hooks' bindings, retiring once-hooks.
-    ///
-    /// **실행하지 않는다.** 이 크레이트는 leaf 라 공유 훅 핸들러 레지스트리를 볼 수
-    /// 없다 — (surface, event) 매칭만 하고 각 발사 훅의 [`HookBinding`] 을 돌려준다.
-    /// 실제 실행(레지스트리 조회 + `source` 게이트 + ShellCommand/IpcSequence 분기)은
-    /// 본체 `hook_handler::trigger::execute_binding` 이 담당한다. once 훅은 여기서
-    /// 발사 즉시 제거된다(옛 동작 보존).
-    ///
-    /// **once 훅은 한 호출 안에서도 한 번만 발사한다.** `events` 에 그 훅과 맞는 사건이
-    /// 여럿 있어도 첫 사건에서 멈춘다 — 제거가 훑기가 끝난 뒤에 일어나므로, 멈추지 않으면
-    /// 같은 once 훅이 사건 수만큼 돌려진다. 지속 훅은 맞는 사건마다 발사한다. 근거는
-    /// `docs/dev-guide/guard-verification.md#한-번만-일어나야-하는-효과`.
+    /// 이벤트에 맞는 바인딩을 반환하며 직접 실행하지 않는다.
+    /// once 훅은 한 호출의 첫 매칭만 반환하고 제거한다. 지속 훅은 맞는 이벤트마다 반환한다.
     pub fn check_and_fire(&mut self, surface_id: u32, events: &[HookEvent]) -> Vec<FiredHook> {
         let mut fired = Vec::new();
 
@@ -281,7 +249,6 @@ impl HookManager {
             }
         }
 
-        // Remove once-hooks that fired
         let fired_set: HashSet<HookId> = fired.iter().map(|f| f.hook_id).collect();
         self.hooks.retain(|h| !h.once || !fired_set.contains(&h.id));
 
@@ -306,12 +273,8 @@ impl HookManager {
             .any(|h| h.surface_id == surface_id && matches!(h.event, HookEvent::IdleTimeout(_)))
     }
 
-    /// 한 surface 의 idle 경과시간을 등록된 `IdleTimeout` 훅과 비교해 발사한다.
-    ///
-    /// anti-spam: `idle_fired_epoch` 에 발사 당시의 `last_output_at`(epoch)을
-    /// 기록해, 같은 epoch(=그 사이 새 출력이 없었음) 동안엔 다시 발사하지
-    /// 않는다. `last_output_at` 이 새 출력으로 갱신되면 epoch 이 달라져
-    /// 재무장된다(`GlobalHookManager::tick()` 의 `File` 조건 anti-spam 과 동형).
+    /// 경과 시간을 IdleTimeout과 비교한다. 같은 last_output_at에서는 한 번만 알리고
+    /// 새 출력으로 값이 바뀌면 다시 통지할 수 있다.
     pub fn check_idle_timeouts(
         &mut self,
         surface_id: u32,
@@ -500,8 +463,6 @@ mod tests {
         );
         let fired = manager.check_and_fire(1, &[HookEvent::CommandCompleted(Some(0))]);
         assert_eq!(fired.len(), 1);
-        // 등록은 와일드카드(None)지만, received 는 실제 관측값(exit code 0)이어야
-        // 한다 — exit code 소실 결함의 회귀 방지.
         assert_eq!(fired[0].event, HookEvent::CommandCompleted(None));
         assert_eq!(fired[0].received, HookEvent::CommandCompleted(Some(0)));
     }
@@ -562,8 +523,6 @@ mod tests {
             &[HookEvent::OutputMatch("error: something went wrong".into())],
         );
         assert_eq!(fired.len(), 1);
-        // event 는 등록 패턴, received 는 실제 매칭된 라인 — 이전엔 둘 다 등록
-        // 패턴만 전달돼 실제 매칭 텍스트가 소실됐다(회귀 방지).
         assert_eq!(fired[0].event, HookEvent::OutputMatch("error.*".into()));
         assert_eq!(
             fired[0].received,
@@ -618,14 +577,9 @@ mod tests {
         manager.add_hook(1, HookEvent::Bell, shell("echo once"), true);
         let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
         assert_eq!(fired.len(), 1);
-        // Hook should be removed after firing
         assert_eq!(manager.list_hooks(None).len(), 0);
     }
 
-    /// once 훅은 한 호출에 맞는 사건이 여럿 와도 **한 번만** 돌려진다 — 제거는 훑기가
-    /// 끝난 뒤라, 사건마다 돌려주면 같은 once 훅이 사건 수만큼 실행된다. 지속 훅은 맞는
-    /// 사건마다 돌려진다(once 의 멈춤이 지속 훅까지 번지지 않는다). 다음 호출에서는
-    /// once 훅이 이미 없다.
     #[test]
     fn a_once_hook_fires_once_even_when_several_events_match() {
         let mut manager = HookManager::new();
@@ -663,7 +617,6 @@ mod tests {
         manager.add_hook(1, HookEvent::Bell, shell("echo persistent"), false);
         let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
         assert_eq!(fired.len(), 1);
-        // Hook should still be there
         assert_eq!(manager.list_hooks(None).len(), 1);
     }
 
@@ -729,7 +682,6 @@ mod tests {
         manager.add_hook(1, HookEvent::IdleTimeout(30), shell("echo idle"), false);
         assert!(manager.has_output_match_hook(1));
         assert!(manager.has_idle_timeout_hook(1));
-        // 다른 surface 는 영향받지 않는다.
         assert!(!manager.has_output_match_hook(2));
         assert!(!manager.has_idle_timeout_hook(2));
     }
@@ -740,17 +692,13 @@ mod tests {
         manager.add_hook(1, HookEvent::IdleTimeout(30), shell("echo idle"), false);
         let epoch_a = Instant::now();
 
-        // 임계값 미만 — 발사 없음.
         assert!(manager.check_idle_timeouts(1, 10, epoch_a).is_empty());
-        // 임계값 초과 — 발사. received 는 등록 임계값(30)이 아니라 실제 경과초(31).
         let fired = manager.check_idle_timeouts(1, 31, epoch_a);
         assert_eq!(fired.len(), 1);
         assert_eq!(fired[0].event, HookEvent::IdleTimeout(30));
         assert_eq!(fired[0].received, HookEvent::IdleTimeout(31));
-        // 같은 epoch(=그 사이 새 출력 없음) 이면 다시 발사하지 않는다(anti-spam).
         assert!(manager.check_idle_timeouts(1, 32, epoch_a).is_empty());
 
-        // 새 출력으로 epoch 이 바뀌면 재무장된다.
         let epoch_b = epoch_a + std::time::Duration::from_secs(5);
         assert!(manager.check_idle_timeouts(1, 10, epoch_b).is_empty());
         assert_eq!(manager.check_idle_timeouts(1, 31, epoch_b).len(), 1);

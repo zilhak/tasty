@@ -14,7 +14,7 @@ fn default_param_key() -> String {
     "file".to_string()
 }
 
-/// Handler 정의의 actor-agnostic 표면.
+/// 출처와 관계없이 공통으로 사용하는 핸들러 선언.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HandlerDecl<A> {
     /// short-name. 전역 id 로 합쳐질 때 `<owner_prefix>/<short-name>` 이 된다.
@@ -85,7 +85,7 @@ impl From<HostHandlerActionDecl> for HandlerAction {
             },
             HostHandlerActionDecl::Ipc { method } => HandlerAction::Ipc {
                 method,
-                owner_plugin_id: String::new(), // host IPC 는 1단계 미사용. 실 호출 시 검증.
+                owner_plugin_id: String::new(), // 호스트 선언에는 플러그인 소유자를 지정하지 않는다.
             },
             HostHandlerActionDecl::System => HandlerAction::System,
         }
@@ -282,7 +282,6 @@ mod tests {
             kind = "system"
         "#;
         let err = parse_plugin(t).expect_err("plugin must reject system");
-        // serde 의 unknown variant 메시지 (정확한 문자열 의존 X — Err 인지만 확인)
         assert!(
             format!("{err}").to_lowercase().contains("system")
                 || format!("{err}").to_lowercase().contains("unknown variant")

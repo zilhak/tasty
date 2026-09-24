@@ -1,8 +1,5 @@
-//! `FileHandlerRegistry` — 등록된 핸들러들을 관리하고 detector 별로 정렬해 반환.
-//!
-//! 출처별 contribution 을 보관해 plugin uninstall 시 그 plugin 의 handler 만 제거.
-//! 같은 handler id 가 여러 출처에 등장하면 patch semantics (Host → Plugin → User
-//! 마지막 출처가 명시한 필드만 덮어씀).
+//! 핸들러를 detector별로 조회한다. 출처별 선언을 보관해 플러그인 제거 시 해당 선언만 지운다.
+//! 같은 ID는 Host → Plugin → User 순으로 명시된 필드를 덮어쓴다.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -60,15 +57,7 @@ impl FileHandlerRegistry {
         }
     }
 
-    /// Poison 을 복구해 read guard 를 잡는다.
-    ///
-    /// 이전에는 `read().ok()?` / `Err(_) => return` 으로 **조용히** 빠져나갔다. 그
-    /// 결과는 "등록한 file handler 가 반영 안 됨" 인데 관측 지점이 0 이었다 — 왜
-    /// 확장자가 안 열리는지 알 방법이 없었다.
-    ///
-    /// `Inner` 는 `BTreeMap` 둘과 `bool` 하나뿐이고 임계구역은 자료구조 조작만 한다.
-    /// 패닉이 나도 불변식은 성립하므로 복구가 맞다
-    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    /// poison을 보고하고 읽기 락을 복구한다. 임계구역은 메모리 자료구조만 변경한다.
     fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
         tasty_utils::poison::recover_read(
             self.inner.read(),
@@ -157,8 +146,6 @@ impl FileHandlerRegistry {
         sort_handlers(&mut v);
         v
     }
-
-    // ── install / uninstall ────────────────────────────────────────────
 
     pub fn install_host_defaults(&self, toml_text: &str) {
         let decls = match parse_host_handler_section(toml_text) {
@@ -356,9 +343,6 @@ impl FileHandlerRegistry {
         if !decl.id.contains('/') {
             return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));
         }
-        // poison 을 `InvalidShortName("lock poisoned")` 으로 보고하던 자리다 — 사용자에게
-        // "id 형식이 틀렸다" 고 말하면서 진짜 원인은 어디에도 안 남겼다. 이제 복구하고
-        // 실제 사유는 `lock_write` 가 로그로 남긴다.
         let mut inner = self.lock_write();
         push_contribution(
             &mut inner,
@@ -561,13 +545,8 @@ fn sort_handlers(v: &mut [FileHandler]) {
     });
 }
 
-/// finalize 가 contribution 을 병합하는 순서 — Host → Plugin → User. 같은 owner 안에서는 설치
-/// 순서를 그대로 둔다(안정 정렬).
-///
-/// 병합은 "마지막 non-None 이 이긴다" 라서 순서가 곧 우선순위다. 설치 순서로 병합하면 부팅
-/// (user 설정을 plugin 보다 먼저 읽는다)이나 plugin 이 나중에 contribute 한 경우 plugin 의 값이
-/// user patch 를 덮는다. user patch 는 host · plugin 의 값을 덮어쓰는 것이 뜻이므로
-/// ([`UserHandlerUpsertDecl`]) 늘 마지막에 둔다.
+/// Host → Plugin → User 순으로 병합하고 같은 출처 안에서는 설치 순서를 유지한다.
+/// 플러그인이 늦게 등록돼도 사용자 설정을 덮지 않도록 user를 마지막에 적용한다.
 fn merge_order(contribs: &[HandlerContribution]) -> Vec<&HandlerContribution> {
     let mut ordered: Vec<&HandlerContribution> = contribs.iter().collect();
     ordered.sort_by_key(|c| std::cmp::Reverse(owner_rank(&c.owner)));
@@ -661,12 +640,8 @@ impl UserHandlerRejectReason {
     }
 }
 
-/// user 선언을 설치하고 **적용되지 않은 항목**을 돌려준다 — 설치 전에 거절한 것과, 설치했지만
-/// finalize 가 등록하지 않을 것 둘 다.
-///
-/// finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 등록되지 않을 user 항목을
-/// 지금 같은 판정([`is_complete`])으로 골라 둔다 — 그렇지 않으면 reload 의 응답이 그것을
-/// 모른다. 사유는 [`incomplete_reason`] 이 가른다.
+/// 설치 전에 거절한 항목과 설치 후 필요한 필드가 없어 적용되지 않을 항목을 보고한다.
+/// finalize와 같은 is_complete 판정을 사용해 실제 등록 결과와 맞춘다.
 fn install_user_decls(
     inner: &mut Inner,
     decls: Vec<UserHandlerSettingsDecl>,
@@ -707,10 +682,8 @@ fn incomplete_reason(
         return None;
     }
     let patches_another_owner = !id.as_str().starts_with("user/");
-    // host · plugin 선언은 타입상 detector 와 action 을 둘 다 가진다(`HandlerDecl`). 그래서 user 가
-    // 아닌 contribution 이 하나라도 있으면 위 `is_complete` 가 이미 참이고, 지금은 이 조건이 거짓인
-    // 채로 여기 닿는 입력이 없다. 그 전제가 깨질 때 대상이 있는 patch 를 "대상 없음" 으로 부르지
-    // 않도록 남겨 둔다.
+    // host/plugin 선언은 detector와 action을 갖는다. 이후 그 전제가 바뀌어도
+    // 실제 대상이 있는 patch를 대상 부재로 오인하지 않도록 출처를 확인한다.
     let only_user = contribs
         .iter()
         .all(|c| matches!(c.owner, HandlerOwner::User));
@@ -730,11 +703,8 @@ fn install_user(
     inner: &mut Inner,
     decl: UserHandlerSettingsDecl,
 ) -> Result<HandlerId, RejectedUserHandler> {
-    // user TOML 의 id 는 전역 id 형태로 적힌다 — 예: 자작 "user/<short>", 또는 기존
-    // "host/<short>" / "<plugin>/<short>" 패치. 어느 경우든 contribution 의 owner 는
-    // 항상 `User` (= 출처가 사용자 TOML). 그래야 base contribution(원 출처) 가
-    // `push_contribution` 의 retain-by-owner 에서 보존되고, finalize 가 patch semantics
-    // 로 메타만 덮어쓴다.
+    // 전역 ID가 host/plugin을 가리켜도 사용자 설정의 출처는 User다.
+    // 원래 출처를 삭제하지 않고 명시한 필드만 덮어쓰기 위해 구분한다.
     let id_str = decl.id.clone();
     if !id_str.contains('/') {
         warn!(

@@ -64,7 +64,7 @@ impl HandlerOwner {
 /// 핸들러가 트리거됐을 때 수행할 동작 명세 (데이터). 실제 실행은 호스트 본체 layer.
 #[derive(Debug, Clone)]
 pub enum HandlerAction {
-    /// 포커스 pane 에 surface kind 탭 추가.
+    /// 지정한 surface kind로 탭을 만든다. 대상 선택과 실행은 호스트가 담당한다.
     OpenSurface {
         surface_kind: String,
         param_key: String,

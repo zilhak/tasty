@@ -1,11 +1,5 @@
-//! `~/.tasty/file-handlers.toml` 공유 파일 — `FileFormatRegistry` 와
-//! `FileHandlerRegistry` 가 모두 자기 섹션을 가지고 있다.
-//! Settings UI 에서 한쪽만 저장하면 다른 쪽 섹션이 사라지므로 두 export 를 합쳐
-//! 단일 atomic write 로 처리한다.
-//!
-//! `[[detector]]` + `[[extension_priority]]` (file_format) 와 `[[handler]]`
-//! (file_handler) 는 서로 다른 top-level key 라 단순 문자열 concatenate 로 합치면
-//! 유효한 TOML 이 된다.
+//! detector·extension_priority·handler의 사용자 설정을 합쳐 한 번에 저장한다.
+//! 한 레지스트리만 저장해 다른 설정을 지우지 않도록 서로 다른 TOML 최상위 절을 합친다.
 
 use std::io::Write;
 use std::path::Path;
@@ -91,7 +85,6 @@ rule = [{ kind = "extension", values = ["md"] }]
         assert!(text.contains("\"md\""));
         assert!(text.contains("mdx"));
 
-        // round-trip — re-parse and check order preserved.
         let fmt2 = FileFormatRegistry::new();
         fmt2.install_user_config(&path);
         let order = fmt2.extension_priority_order("md").expect("present");

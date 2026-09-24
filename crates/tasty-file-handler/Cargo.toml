@@ -8,9 +8,7 @@ description = "File handler policy and registry for Tasty — detector-to-handle
 [dependencies]
 tasty-utils = { path = "../tasty-utils" }
 tasty-file-format = { path = "../tasty-file-format" }
-# plugin 이 handler 레지스트리를 조회하는 port trait 이 wire 정의 크레이트에 산다.
-# 고아 규칙상 그 impl 은 타입을 소유한 이 크레이트에만 둘 수 있다 — `tasty-file-format`
-# 과 같은 이유이고 같은 결정이다.
+# 플러그인이 조회하는 port trait을 레지스트리 타입을 소유한 이 크레이트에서 구현한다.
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
