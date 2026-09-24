@@ -8,7 +8,7 @@
 
 ## 목적
 
-터미널이 보낸 OSC 알림 시퀀스와 시스템 이벤트를 모아 **인앱 알림 패널 + 시스템 OS 알림 + 사운드 + surface 하이라이트 + 사이드바 배지**로 노출한다.
+터미널이 보낸 OSC 알림 시퀀스와 시스템 이벤트를 모아 **인앱 알림 패널·소리·surface 하이라이트·사이드바 배지**로 노출한다.
 
 ## 내부 동작
 
@@ -16,7 +16,7 @@
 
 termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC 9(iTerm2/ConEmu), OSC 99(Kitty), OSC 777(rxvt), BEL. (OSC 7=cwd 변경, OSC 0/2=타이틀 변경은 알림이 아닌 별도 처리.)
 
-**벨(BEL) 토글**: BEL 알림(제목은 `notification.bell_title` 번역값)은 전역 `notification.enabled` 위에 벨 전용 `general.bell_notification`(기본 on)을 한 겹 더 얹어 게이트한다. off 면 토스트를 억제하되, 사용자가 등록한 `bell` 훅은 그대로 발화한다(훅=명시적 자동화 → 수동 반응인 토스트와 분리). `cascade_terminal_bell_ring` 참조.
+**벨(BEL) 토글**: BEL 알림(제목은 `notification.bell_title` 번역값)은 전역 `notification.enabled` 위에 벨 전용 `general.bell_notification`(기본 on)을 한 겹 더 얹어 게이트한다. off 면 토스트를 억제하되, 사용자가 등록한 `bell` 훅은 그대로 실행한다(훅=명시적 자동화 → 수동 반응인 토스트와 분리). `cascade_terminal_bell_ring` 참조.
 
 ### 제목은 표시 전용 — 식별은 별도 필드로
 
@@ -24,7 +24,13 @@ termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC
 
 ### NotificationStore
 
-VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 같은 source 에서 설정 간격(기본 500ms) 내 연속 알림은 기존에 합침. 개별/전체 읽음 처리. 신규 알림 발화 시 그 source surface 를 attention 발동한다 — toast 는 attention(주의 환기)의 **producer 중 하나**이며, attention 상태 자체는 NotificationStore 가 아니라 producer 중립 공유 primitive(CoreState `attention: AttentionStore`)에 있다 — 알림 레코드가 곧 attention 레코드는 아니다(별개 저장소). 사이드바 워크스페이스 배지는 워크스페이스별 unread 개수가 아니라 `attention_count`(surface 단위 attention 개수) 기준이다. 상세 [`surface-highlight`](../surface-highlight/index.md).
+`VecDeque`에 최대 100개를 보관하고 초과하면 가장 오래된 항목을 `pop_front`로 제거한다.
+같은 source의 알림이 설정 간격(기본 500ms) 안에 이어지면 기존 항목에 합친다.
+개별 또는 전체 읽음 처리를 지원한다.
+
+새 알림은 해당 surface의 `AttentionStore`에도 주의 표시를 요청한다. 알림 기록과 주의
+표시는 서로 다른 저장소이며, 사이드바 배지는 읽지 않은 알림 수가 아니라 주의 표시가 있는
+surface 수(`attention_count`)를 보여준다. 자세한 규칙은 [surface-highlight](../surface-highlight/index.md)를 따른다.
 
 ### IPC 목록의 범위·ID·순서·상한
 
@@ -41,9 +47,15 @@ ID는 인스턴스의 공유 IdGenerator에서 발급하는 u64이며 재시작 
 이는 [목록 합산 원칙](../../adr/0017-workspace-identity-and-focus.md)의
 적용이며, GUI 패널을 전역 패널로 바꾸는 결정이 아니다.
 
-### 시스템 알림 + 사운드
+<a id="시스템-알림--사운드"></a>
 
-윈도우 비활성 시 OS 네이티브 알림(notify-rust, 초당 1회 rate limit). `notification.sound` 가 true 면 신규 알림 발화 시 OS beep 1회(macOS `NSBeep` / Windows `MessageBeep` / Linux `paplay→aplay→\a` 3단 폴백, headless 는 Noop). coalesce 로 묶인 알림은 host event 미생성이라 자동 비음. 터미널 `\a`(Bell)는 OS 가 자체 beep 할 수 있어 안전 default 로 skip.
+### 알림 소리
+
+`notification.sound`가 true이면 새 알림에 소리를 한 번 재생한다. macOS는 `NSBeep`,
+Windows는 `MessageBeep`, Linux는 `paplay` → `aplay` → `\a` 순서로 시도한다.
+headless는 소리를 내지 않는다. 기존 항목에 합쳐진 알림과 터미널 Bell은 별도로 소리를
+재생하지 않는다. Bell은 OS가 이미 소리를 낼 수 있어 중복을 피하기 위한 예외다.
+현재 OS 알림 센터로 보내는 기능은 없다.
 
 ### 시각 표시
 

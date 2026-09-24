@@ -42,11 +42,8 @@
 뷰포트에서 위·아래 띠가 포개져 콘텐츠를 덮는 것을 막는다). 위·아래 각각 독립 판정이라 중간에서는 양쪽 다 보이고,
 끝까지 스크롤하면 그쪽 페이드만 사라진다. 스크롤 자체(휠·드래그·키보드)는 그대로다.
 
-egui 기본 스크롤바는 콘텐츠 위에 **오버레이**로 뜬다 — 레이아웃 폭을 미리 빼지 않으므로 행
-우측 끝 아이콘(가져오기/편집/삭제/재감지)과 같은 자리를 차지하고, 커서를 아이콘에 올리는
-순간 나타나 클릭을 먹는다. 스크롤바 폭만큼 콘텐츠를 비켜 그리는 방식은 "커서가 스크롤바 위 =
-클릭 불가" 구조를 남겨 다른 폭·해상도에서 재발하므로 채택하지 않았다. 이 선택은 tasty 전체의
-스크롤 어포던스 표준이다 — [ADR-0037](../../../adr/0037-ui-input-motion-and-elevation.md).
+기본 오버레이 스크롤바가 행 끝의 버튼과 겹쳐 클릭을 막을 수 있어 가장자리 페이드를 쓴다.
+공통 입력 규칙은 [ADR-0037](../../../adr/0037-ui-input-motion-and-elevation.md)을 따른다.
 
 ### 원격 접속 프로필 탭
 
@@ -57,9 +54,9 @@ egui 기본 스크롤바는 콘텐츠 위에 **오버레이**로 뜬다 — 레�
   - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto` 면 저장 후 워커가 감지해 채운다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
 - **검증 에러**: 이름 빈 값/중복, host 빈 값, port 형식, 저장 실패 메시지.
-- **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래 같은 스크롤**, 한 tier 아래): `border-frame` 구분선 + 섹션 헤더(대문자 `ssh config 에서` 라벨 + config 경로 mono + 우측 호스트 수) + 행들. 섹션 본문은 프로필 행보다 `space-xs` 만큼 들여쓰고, 구분선은 들여쓰지 않는다 — 들여쓰기가 "프로필 목록 아래 한 tier" 라는 관계를 말하는 자리다.
+- **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래 같은 스크롤**, 하위 영역): `border-frame` 구분선 + 섹션 헤더(대문자 `ssh config 에서` 라벨 + config 경로 mono + 우측 호스트 수) + 행들. 섹션 본문은 프로필 행보다 `space-xs` 만큼 들여쓰고, 구분선은 들여쓰지 않는다 — 프로필 목록과 구분되는 하위 영역임을 나타낸다.
   - 행은 **2줄**이다 — alias(`text-secondary`, body) 위에 `user@host:port`(mono, caption, `text-muted`). 둘 다 폭이 좁으면 말줄임한다. 우측 슬롯을 먼저 잡아 긴 alias 가 액션을 밀어내지 않는다.
-  - **아이콘 버튼이 없다.** 행 액션은 ghost `프로필 추가` 버튼 하나(leading `+`)이고, 이미 등록된 호스트는 액션 대신 `등록됨` Tag 를 보인다 — 같은 호스트를 두 번 등록하는 사고를 비활성 버튼이 아니라 **상태 표시**로 막는다.
+  - **아이콘 버튼이 없다.** 행 액션은 ghost `프로필 추가` 버튼 하나(leading `+`)이고, 이미 등록된 호스트는 액션 대신 `등록됨` Tag 를 보인다 — 같은 호스트를 두 번 등록하는 중복를 비활성 버튼이 아니라 **상태 표시**로 막는다.
   - **읽기 전용**이다 — 여기 나열되는 것은 tasty 레코드가 아니라 사용자의 `~/.ssh/config` 라, tasty 가 편집·삭제하지 않는다. 그래서 행 액션이 가져오기 하나뿐이다.
   - **프로토콜 필터의 영향을 받지 않는다.** 필터는 프로필의 `kind` 집합으로 만들어지는데 ssh config 항목엔 kind 개념이 없다 — 필터로 프로필이 전부 가려져도 이 섹션은 남는다. 프로필이 0건일 때도 마찬가지(빈 상태 문구와 **함께** 보인다).
   - 둘째 줄의 `[User@]HostName[:Port]` 는 그 Host 블록에 직접 적힌 **표시 전용 hint** 다. `Host *`/`Match` 가 실제 접속 시 덮어쓸 수 있어 정확성이 보장되지 않으며 저장에는 쓰지 않는다. 세 성분은 **적혀 있는 것만** 넣는다 — 없는 값을 ssh 기본값(`22` 등)으로 채우면 파일에 없는 것을 파일이 말한 것처럼 보인다. `HostName` 이 없으면 ssh 가 alias 를 호스트로 쓰므로 alias 를, 셋 다 없으면 `—` 를 보인다.
@@ -86,11 +83,11 @@ tasty-attach kind(같은 레지스트리, ADR-0020) 전담 탭. add-bar 는 `+ A
 
 ### Passkey 탭
 
-기존과 동일 (name/kind 세그먼트/value + Reveal).
+name, kind 선택, value 입력, Reveal로 구성된다.
 
 ### 폼 레이아웃 (디자인 `ProfileForm`/`AttachForm`/`PasskeyForm` 구조 전사)
 
-- **2컬럼 행** `[112px 1fr]`: 모든 행(Type 포함)이 고정폭 112 라벨 컬럼(우측정렬, `subtext0`, 13px) + columnGap `space-md`(12) + 입력(1fr). `egui::Grid` 의 컬럼 협상이 라벨 폭을 붕괴시켜 truncate 되던 문제 때문에 수동 `ui.horizontal` 2컬럼(`form_row`)으로 통일했다. 행 간 rowGap `space-sm`(8).
+- **2컬럼 행** `[112px 1fr]`: 모든 행(Type 포함)이 고정폭 112 라벨 컬럼(우측정렬, `subtext0`, 13px) + columnGap `space-md`(12) + 입력(1fr). 라벨 폭을 유지하도록 `ui.horizontal`의 2컬럼(`form_row`)으로 그린다. 행 간 rowGap `space-sm`(8).
 - **본문/footer 분리**: 본문은 `rtScrollPad`(flex:1) = `CentralPanel` + `ScrollArea`(가용 높이를 채움)로, footer 는 `rtFooter`(flex:none) = `TopBottomPanel::bottom` 으로 패널 하단에 고정. footer 위 separator 는 팝업 전체폭(`clip_rect`)에 그어지고 버튼만 패딩으로 들여쓴다.
 - **footer**: 우측정렬 `[취소 ghost][저장 primary]`, padding `space-md`/`space-lg`. attach·passkey 폼도 동일.
 - **패딩**: 폼 좌우 `space-lg`(16). (리스트 뷰는 14 — 폼 뷰일 때만 외곽 콘텐츠 margin 0 으로 두고 폼이 패딩을 소유한다.)

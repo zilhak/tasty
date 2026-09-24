@@ -20,7 +20,7 @@
 
 - **헤더**: 워드마크 `tasty.` + 수박 로고 + 접기 버튼.
 - **워크스페이스 영역** (남는 높이 전부): "Workspaces" heading + 워크스페이스 카드 목록 + New workspace 버튼.
-  - **카테고리 토글 on** (설정 → 일반 → "워크스페이스 카테고리", `workspace_categories_enabled`): 같은 영역이 **카테고리 섹션으로 그룹 렌더**된다 — full 은 카테고리 헤더 + 소속 카드, collapsed 레일은 카테고리 경계 `---` 버튼 + 소속 아바타 — 그리고 New workspace 버튼은 full/collapsed 양쪽에서 숨는다. 섹션·헤더·레일 팝업의 동작과 시각은 [`features/workspace-category/`](../workspace-category/index.md) 가 정의한다 (여기엔 복제하지 않음 — 연결 개념).
+  - **카테고리 토글 on** (설정 → 일반 → "워크스페이스 카테고리", `workspace_categories_enabled`): 같은 영역이 **카테고리 섹션으로 그룹 렌더**된다 — full 은 카테고리 헤더 + 소속 카드, collapsed 레일은 카테고리 경계 `---` 버튼 + 소속 아바타 — 그리고 New workspace 버튼은 full/collapsed 양쪽에서 숨는다. 섹션·헤더·레일 팝업의 동작과 시각은 [`features/workspace-category/`](../workspace-category/index.md) 가 정의한다.
 - **하단**: 도구 / 플러그인 / 설정 버튼.
 
 ### 워크스페이스 조작
@@ -41,7 +41,7 @@
 
 - **사용자**: 클릭(전환/버튼), 드래그(재정렬), 접기 토글.
 - **워크스페이스 영역의 카테고리 조작은 다른 기능으로 위임** (토글 on 시 헤더 클릭/우클릭·레일 `---` 클릭·섹션 간 드래그): → [`features/workspace-category/`](../workspace-category/index.md)
-- **하단 버튼은 다른 기능으로 위임** (연결 개념 — 사이드바는 진입점만, 내용은 각 문서):
+- **하단 버튼은 다른 기능으로 위임** (세부 동작은 각 기능 문서 참고):
   - 도구 버튼 → [`features/tools-menu/`](../tools-menu/index.md)
   - 플러그인 버튼 → [`features/plugin-system/`](../plugin-system/index.md)
   - 설정 버튼 → [`features/settings/`](../settings/index.md)
@@ -75,7 +75,7 @@
 - **상위 화면**: [MainView 전체 레이아웃](../main-view/index.md#화면) 의 좌측 영역
 - **시각 소스**: `site/vendor/ui_kits/terminal/chrome.jsx` — claude design
 
-각 영역은 자기 위치/역할만 적고, 다른 기능으로 위임되는 버튼은 그 문서를 **링크만** 한다 (연결 개념).
+아래에서는 영역의 위치와 역할을 설명한다. 버튼이 여는 기능은 각 문서에서 다룬다.
 
 ### 레이아웃 (full)
 
@@ -110,7 +110,7 @@
 │        ⋮         │  ([+ New workspace] 버튼 없음 — 헤더 메뉴·레일 팝업으로 생성)
 ```
 
-collapsed 레일은 카테고리마다 경계 `---` 버튼 + 소속 아바타로 같은 그룹을 그리고, `---` 클릭 → 우측 앵커드 팝업. 헤더/`---`/팝업의 요소 구성·색·키캡 등 시각과 동작은 [`features/workspace-category/`](../workspace-category/index.md) 가 단일 출처다 (여기 복제하지 않음).
+collapsed 레일은 카테고리마다 경계 `---` 버튼 + 소속 아바타로 같은 그룹을 그리고, `---` 클릭 → 우측 앵커드 팝업. 헤더/`---`/팝업의 요소 구성·색·키캡 등 시각과 동작은 [`features/workspace-category/`](../workspace-category/index.md) 가 단일 출처다.
 
 ### UI 요소 인벤토리
 
@@ -119,7 +119,7 @@ collapsed 레일은 카테고리마다 경계 `---` 버튼 + 소속 아바타로
   - 카드: 클릭=전환, 드래그=재정렬(토글 on 이면 다른 섹션 드롭 = 카테고리 이동), 점유 중이면 인디케이터.
   - `New workspace`(+) 버튼은 **워크스페이스 카테고리 토글 off 일 때만** 표시 (full/collapsed 공통). on 이면 카테고리 헤더 메뉴·레일 `---` 팝업의 Add workspace 로 생성 (배경 우클릭은 새 카테고리·원격 워크스페이스 추가). → [`features/workspace-category/`](../workspace-category/index.md)
   - 카테고리 헤더(full) / `---` 경계 버튼(collapsed) — 토글 on 에만 존재. 접힘 토글·컨텍스트 메뉴·앵커드 팝업의 요소와 동작은 → [`features/workspace-category/`](../workspace-category/index.md)
-- **하단 버튼** (각 버튼이 뭘 하는지 한 줄 + 상세는 해당 문서로 링크 — 연결 개념):
+- **하단 버튼**:
   - **도구** (`icons::TOOLS`) — 클릭 시 **도구 메뉴**를 연다 (리스닝 포트 등 빌트인 진단/유틸 항목 모음). → [`features/tools-menu/`](../tools-menu/index.md)
   - **플러그인** (`icons::PLUG`) — **플러그인 관리 창**을 연다 (설치/활성·비활성). → [`features/plugin-system/`](../plugin-system/index.md)
   - **설정** (`icons::SETTINGS`) — **설정 창**을 연다 (탭별 환경설정). → [`features/settings/`](../settings/index.md)

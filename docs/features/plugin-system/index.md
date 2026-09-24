@@ -10,7 +10,7 @@
 
 ## 목적
 
-플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 표면을 가진다 — tasty-특화 기능이라 [identity §2.2](../../identity.md) 에 따라 IPC/CLI 양면 제공.
+플러그인을 설치·활성/비활성·제거하는 기능. [사이드바](../sidebar/index.md) 플러그인 버튼이 여는 **관리 창**(GUI)과 **`tasty plugin` CLI** 두 가지로 제공한다 — tasty-특화 기능이라 [identity §2.2](../../identity.md) 에 따라 IPC/CLI 양면 제공.
 
 ## 내부 동작
 
@@ -45,7 +45,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 
 ### 설정(configure)
 
-플러그인별 설정은 이 창이 아니라 [설정 창](../settings/index.md) 의 Plugins 탭에서 (연결 개념).
+플러그인별 설정은 이 창이 아니라 [설정 창](../settings/index.md) 의 Plugins 탭에서 편집한다.
 
 ## 인터페이스
 

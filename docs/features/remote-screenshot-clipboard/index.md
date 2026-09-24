@@ -40,7 +40,7 @@ macOS 에서 `screencapture` 는 **화면 기록(Screen Recording) 권한**을 �
 
 preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서 권한을 바꾼 경우를 잘못 판정한다. 안내 토스트는 요청이 올라온 윈도우에 띄운다(다중 윈도우 세션에서 엉뚱한 창에 뜨지 않게).
 
-권한 프롬프트 자체는 캡처 시점이 아니라 **부팅 직후**에 미리 발화된다 — [macOS 권한](../macos-permissions/index.md) 참조. 비-macOS 는 권한 개념이 없어 preflight 가 항상 "승인됨"이며 동작이 기존과 같다.
+권한 프롬프트 자체는 캡처 시점이 아니라 **부팅 직후**에 미리 요청한다 — [macOS 권한](../macos-permissions/index.md) 참조. 비-macOS에서는 이 macOS 전용 권한 검사를 하지 않으며 preflight는 항상 "승인됨"을 반환한다.
 
 ### 로컬 케이스
 
@@ -48,7 +48,8 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 
 ### 원격(mirror) 케이스 — 기존 attach 채널 확장 (신규 프로토콜 없음)
 
-**채널**: 별도 scp/ssh-exec 를 새로 만들지 않고, attach 세션이 이미 열어둔 JSON-RPC-over-TCP 연결(`AttachClientSession` 의 writer/reader, `StreamTag::Control` 프레임)을 그대로 재사용한다. `StreamControl`(`crates/tasty-ipc/src/stream.rs`) 은 이 작업에서 **손대지 않았다** — 대신 그 enum 의 `#[serde(tag="event")]` 파싱이 인식 못 하는 이벤트 값은 조용히 무시되는 기존 전방호환 동작을 이용해, `StreamControl` 파싱이 실패하는 fallback 경로에 완전히 별도인 미니 프로토콜을 얹었다:
+**채널**: attach 세션의 기존 writer/reader와 `StreamTag::Control`을 재사용한다.
+`StreamControl` enum에 없는 이벤트를 별도로 파싱해 아래 세 메시지를 처리한다.
 
 - `capture_chunk` { `upload_id`, `seq`, `total`, `data_b64` } — 캡처 파일을 raw 700KiB 청크 단위로 base64 인코딩해 전송(base64 인플레이션 후에도 `MAX_FRAME_LEN`(1MiB) 아래 유지).
 - `capture_commit` { `upload_id`, `file_name` } — 마지막 청크 뒤 1회, 업로드 종료를 알림.
@@ -57,7 +58,7 @@ preflight 는 **캡처 직전**에 부른다 — 부팅 시점 값을 캐시해�
 client 측(`src/app/attach_client.rs::forward_capture_to_remote_clipboard`)은 로컬 워크스페이스 id 로 해당 attach 세션을 찾아 청크+커밋을 순서대로 보낸다. 서버(원격 인스턴스) 측은 `stream_hub.rs::pump_inbound` 가 `StreamControl` 파싱 실패 시 `CaptureUploadMsg` 로 재시도해 분류하고, `CaptureUploadRegistry`(`(client_id, upload_id)` 키)에 청크를 누적하다 커밋에서 `attach_runtime::finalize_capture_upload` 를 호출한다.
 
 **서버측 처리(`finalize_capture_upload`)**:
-1. 그 client 가 실제로 이 워크스페이스를 hard 점유 중인지(`OccupancyRegistry::client_holds_workspace`) 확인 — attach 연결 자체가 이미 권한 경계이므로 별도 인증 계층을 새로 만들지 않는다(구조 변경 forward 와 동일한 신뢰 모델).
+1. 그 client 가 해당 engine의 workspace를 hard 점유 중인지(`OccupancyRegistry::client_holds_workspace`) 확인 — attach 연결 자체가 이미 권한 경계이므로 별도 인증 계층을 새로 만들지 않는다(구조 변경 forward 와 동일한 신뢰 모델).
 2. `file_name` 을 **basename 만** 취해(path traversal 방지) `~/.tasty/screenshots/<name>` 에 저장.
 3. `Core::clipboard_arc().write_text(경로)` 로 **원격 인스턴스의** 클립보드에 쓴다(`clipboard.set_text` IPC 와 동일 코드 경로, 다만 attach 미니 프로토콜은 이 IPC 를 거치지 않고 직접 `ClipboardSystem` 을 호출한다 — 같은 프로세스 내부 호출이라 JSON-RPC 왕복이 불필요).
 4. 결과를 `capture_result` 프레임으로 client 에 회신.
@@ -74,7 +75,7 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 
 - **원격 스크린샷 파일 자체를 로컬로 가져오는 것** — 반대 방향(원격→로컬)이며 이 기능의 범위가 아니다.
 - **scp/ssh-exec 등 attach 와 무관한 별도 전송 채널** — 명시적으로 채택하지 않음(기존 attach 채널 재사용으로 확정).
-- **`StreamControl` enum 확장** — 이 작업은 그 enum 을 건드리지 않고, 완전히 별도인 이벤트 태그로 같은 `StreamTag::Control` 채널 위에 병행 프로토콜을 얹는다.
+- **`StreamControl` enum 확장** — 별도의 이벤트 태그를 같은 `StreamTag::Control` 채널에서 처리한다.
 - **비-mirror(일반 attach 없는) 원격 클립보드 반영** — mirror 판별은 오직 `Workspace.mirror` 로만 하며, surface 단위 attach(워크스페이스 아님)는 이 판별 대상이 아니다.
 
 ## Acceptance Criteria
@@ -86,7 +87,16 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 - Given `clipboard.set_text` IPC 호출(text 파라미터 포함) Then 로컬 클립보드가 그 텍스트로 바뀐다.
 - Given plugin 이 `ClipboardWrite` 권한 없이 `clipboard.set_text` 호출 Then permission_denied.
 
-> **검증 한계(문서화)**: mirror 원격 반영 e2e 는 이 작업 환경에서 물리적으로 분리된 두 머신을 준비할 수 없어, `--ssh 127.0.0.1:<port>` loopback 2-인스턴스 구성(같은 머신, 별도 `TASTY_HOME`)으로 attach 파이프라인·미니 프로토콜 분류·`finalize_capture_upload` 저장/clipboard 반영까지는 검증했으나, **실제 원격 OS 클립보드에 물리적으로 다른 사용자가 붙여넣기를 시도하는 최종 확인**은 코드/로직 리뷰로 대체했다(`docs/features/remote-attach/index.md` 의 기존 loopback e2e 관례와 동일한 한계). 위 로컬 케이스 4개는 `cargo build` debug 인스턴스를 실제로 띄우고(Xvfb, `DISPLAY=:10.0`) `xdotool` 로 실제 `ctrl+alt+s` 키 입력을 주입해 검증했다 — GNOME Shell 스크린샷 포털이 없는 이 sandbox 에서는 실제 `gnome-screenshot` 가 DBus 응답을 무한 대기하므로, 검증 세션에 한해 PATH 상 `gnome-screenshot` 를 논-인터랙티브 `scrot` 로 forward 하는 셸 shim 을 앞에 둬 성공 캡처(1920×1080 PNG 생성 확인)를, shim 을 즉시 `exit 1` 하도록 바꿔 취소(파일 미생성) 케이스를 각각 재현했다. 두 경우 모두 X11 `CLIPBOARD` selection(`xclip -selection clipboard -o`)으로 결과를 직접 읽어 확인. `clipboard.set_text` 는 CLI(`tasty clipboard set-text`)로 직접 호출해 같은 방식으로 확인. permission_denied 는 라이브 인스턴스 대신 실제 게이트 코드를 결정론적으로 행사하는 단위테스트로 검증(`crates/tasty-ipc/src/caller.rs` `plugin_missing_clipboard_write_denied_for_clipboard_set_text`) — 이쪽이 가짜 plugin 프로세스를 띄우는 것보다 프로덕션 코드 경로(`CallerContext::ensure_allowed`)를 더 정확히 행사한다.
+### 검증 범위
+
+같은 머신의 독립 인스턴스 두 개로 attach 전송·메시지 분류·서버 저장·클립보드 반영을
+확인한 이력이 있다. 물리적으로 다른 원격 머신에서 사용자가 붙여넣는 최종 동작은
+그 검증에 포함되지 않았다.
+
+로컬 캡처와 취소는 Xvfb 환경에서 입력을 주입하고 X11 클립보드를 읽어 확인했다.
+당시 GNOME 캡처 포털이 없어 테스트용 shim과 `scrot`으로 성공·파일 미생성을 재현했으므로,
+이 결과가 네이티브 영역 선택 UI의 검증을 뜻하지는 않는다. `clipboard.set_text`는 실제 CLI로,
+권한 거절은 `plugin_missing_clipboard_write_denied_for_clipboard_set_text` 단위 시험으로 확인했다.
 
 ## 구현
 
@@ -94,7 +104,7 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 - App 폴링/스레딩: `src/app/screenshot_capture.rs`(`poll_screenshot_captures`/`trigger_pending_screenshot_captures`/`drain_screenshot_capture_results`), `src/app.rs`(`screenshot_capture_tx/rx`), `src/app/event.rs`(`AppEvent::ScreenshotCaptureReady`).
 - 큐: `src/core/state.rs`(`CoreState.pending_screenshot_captures: Vec<Option<u32>>`).
 - 키바인딩: `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard` 필드 + `default_screenshot_to_clipboard`), `presets.rs`(4 프리셋 공통값), `crud.rs`(`GENERAL_BINDING_FIELDS`/`get_bindings(_mut)`), 매치는 `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`). Settings UI: `src/view/settings/ui/keybindings_tab.rs`(Clipboard 서브탭).
-- 원격 전송(client): `src/app/attach_client.rs` 하단 독립 블록(`forward_capture_to_remote_clipboard`, `send_capture_control_frame`, `parse_capture_result`, `MirrorEvent::CaptureResult`) — `apply_mirror_structural_delta`(별도 병행 작업)와 분리된 별도 함수/블록으로 작성.
+- 원격 전송(client): `src/app/attach_client.rs` 하단 독립 블록(`forward_capture_to_remote_clipboard`, `send_capture_control_frame`, `parse_capture_result`, `MirrorEvent::CaptureResult`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/core/capture_upload.rs`(`CaptureUploadRegistry`), `src/core/attach_runtime.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점에서 동일 서버 로직을 호출.
 - IPC/CLI: `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text` → `Permission::ClipboardWrite`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`), `crates/tasty-cli/src/commands/clipboard.rs`(`ClipboardCommands::SetText`), `crates/tasty-cli/src/request/clipboard.rs`.
 - 테스트: `crates/tasty-ipc/src/method_meta_tests.rs`(`clipboard_set_text_is_release`), `crates/tasty-ipc/src/stream_hub.rs`(`pump_inbound_classifies_capture_chunk_and_commit`), `src/core/capture_upload.rs`(누적/격리 단위 테스트), `crates/tasty-platform/src/screen_capture.rs`(경로/폴백 단위 테스트).
