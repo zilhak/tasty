@@ -1,4 +1,4 @@
-//! `tasty-telemetry` aggregation — events → buckets, summary, top.
+//! 메트릭 이벤트의 시간별·요약·상위 항목 집계.
 
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +51,7 @@ pub fn fold_events_into_bucket(
     bucket
 }
 
-/// 이벤트 목록을 (metric, agent, window_start) 그룹으로 모아 윈도우별 버킷 리스트로.
+/// 이벤트를 (metric, agent, window_start, workspace_id)별로 집계한다.
 pub fn aggregate_into_buckets(events: Vec<TelemetryEvent>, window: Window) -> Vec<MetricBucket> {
     use std::collections::HashMap;
     let mut grouped: HashMap<(String, String, u64, Option<u32>), Vec<TelemetryEvent>> =
@@ -95,7 +95,7 @@ pub struct MetricSummary {
     pub last: f64,
 }
 
-/// 모든 이벤트를 (metric, agent) 별로 집계 (윈도우 없음).
+/// 시간 구간을 나누지 않고 (metric, agent, workspace_id)별로 집계한다.
 pub fn summarize_events(events: Vec<TelemetryEvent>) -> Vec<MetricSummary> {
     use std::collections::HashMap;
     let mut grouped: HashMap<(String, String, Option<u32>), MetricSummary> = HashMap::new();
@@ -181,5 +181,3 @@ pub fn top_n(events: Vec<TelemetryEvent>, by: &str, limit: usize) -> Vec<TopEntr
     out.truncate(limit);
     out
 }
-
-// 테스트는 lib.rs 에서 lib_tests.rs 를 로드 (중복 모드 방지).

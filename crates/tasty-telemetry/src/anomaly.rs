@@ -1,9 +1,5 @@
-//! `tasty-telemetry` anomaly detection 도메인.
-//!
-//! 세 검출기 모두 **휴리스틱**이다 — 진짜 정체/성능열화/메모리누수 탐지가
-//! 아니라, 값싸게 계산 가능한 신호(호출 빈도/반복/RSS 추세)로 "확인이
-//! 필요할 수 있음"을 알리는 용도. false positive/negative 둘 다 있을 수
-//! 있다는 전제로 소비해야 한다.
+//! 호출 빈도·반복과 RSS 증가를 보고 조사할 만한 신호를 찾는다.
+//! 실제 정체·성능 저하·메모리 누수를 확정하지 않으며 오탐과 누락이 있을 수 있다.
 
 use std::sync::atomic::AtomicBool;
 
@@ -22,13 +18,9 @@ pub fn anomaly_key(ts: u64, id: &str) -> String {
 pub enum AnomalyKind {
     /// 짧은 시간 안에 동일 IPC 메서드가 비정상적으로 많이 호출됨.
     CallBurst,
-    /// 동일 (method, params) 패턴이 진전 없이 반복됨. 휴리스틱이지 진짜
-    /// 정체(진행 없음) 탐지가 아니다 — 같은 파라미터로 정당하게 폴링하는
-    /// 정상 패턴도 오탐할 수 있다.
+    /// 같은 method와 params가 반복된다. 정상 폴링도 포함되므로 진행 정체를 뜻하지는 않는다.
     SlowLoop,
-    /// RSS 가 여러 샘플에 걸쳐 단조 증가함. 단발성 스파이크는 포함하지
-    /// 않는다(추세 판정) — 그래도 GC/캐시 워밍업 등 정상 증가와 실제
-    /// 누수를 구분하지 못하는 휴리스틱이다.
+    /// 최근 RSS 샘플이 계속 증가한다. 정상 캐시 증가와 누수를 구별하지는 못한다.
     RssSurge,
 }
 
@@ -71,11 +63,7 @@ pub const ANOMALY_DEDUP_COOLDOWN_MS: u64 = 60_000;
 pub const SLOW_LOOP_WINDOW_MS: u64 = 300_000;
 pub const SLOW_LOOP_THRESHOLD: usize = 20;
 
-/// RssSurge 휴리스틱: agent 당 최근 N개 RSS 샘플을 유지하고, 그 N개가
-/// **엄격히** 단조 증가(각 샘플이 직전 샘플보다 큼)일 때만 발화한다. 엄격
-/// 부등호를 쓰는 이유 — 스파이크 한 번 후 평탄화(plateau)되는 정상 패턴은
-/// 어딘가에서 증가가 멈추므로 자연히 조건을 만족하지 못한다. 단순 "증가율
-/// threshold" 방식(스파이크 1회로도 발화)과 달리 추세를 요구한다.
+/// 최근 N개 RSS 샘플이 각각 직전보다 커야 한다. 증가 뒤 평탄해지는 패턴은 제외한다.
 pub const RSS_SURGE_MIN_SAMPLES: usize = 5;
 /// `telemetry.record`/host sampling 이 RSS 를 보고할 때 쓰는 고정 메트릭 이름.
 /// `sysinfo::Process::memory()`(0.35, 단위: bytes) 또는 agent 자가보고 값을
@@ -114,13 +102,7 @@ pub struct AnomalyDetector {
     last_emitted: std::sync::Mutex<std::collections::HashMap<(String, AnomalyKind, String), u64>>,
 }
 
-/// 탐지 창(window)별 poison 보고 플래그(각각 첫 1 회만).
-///
-/// 넷 모두 임계구역이 `HashMap<_, VecDeque<_>>` 조작뿐이라 패닉이 나도 불변식이
-/// 성립한다 — 복구가 맞다. 반대로 여기서 패닉하면 IPC 호출 경로를 타고 호스트가
-/// 죽는다: **관측 도구가 관측 대상을 죽이는 것**은 어떤 경우에도 답이 아니다.
-/// 조용히 `None` 을 돌려주던 종전 형태는 이상 탐지가 **영구히 침묵**하게 만들었다 —
-/// 침묵하는 탐지기는 "이상이 없다" 와 구분되지 않는다.
+/// 탐지용 자료구조 락은 poison을 복구해 관측을 계속하고, 각각 처음 한 번 보고한다.
 static CALL_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
 static LOOP_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
 static RSS_SAMPLES_POISONED: AtomicBool = AtomicBool::new(false);
@@ -277,10 +259,8 @@ impl AnomalyDetector {
         })
     }
 
-    /// RSS 샘플 1회 기록 + RssSurge 검출. `agent` 는 Plugin 이면 host 가
-    /// sysinfo 로 직접 sampling 한 plugin_id, Agent 타입이면 self-report 한
-    /// caller agent id — 둘 다 같은 상태 공간을 공유해도 무해하다(서로 다른
-    /// namespace 의 문자열이라 충돌 안 함).
+    /// RSS 샘플을 기록하고 증가 신호를 찾는다. 같은 agent 문자열은 같은 기록을 공유한다.
+    /// 호출자가 Plugin 샘플과 Agent 자체 보고의 식별자를 구분해야 한다.
     pub fn record_rss_sample(
         &self,
         agent: &str,
@@ -356,17 +336,13 @@ fn anomaly_id(ts_ms: u64, id_seq: u64) -> String {
 mod poison_tests {
     use super::*;
 
-    /// 탐지 창이 poison 돼도 이상 탐지가 계속 발화한다.
-    ///
-    /// 조용히 `None` 을 돌려주던 종전 형태에서는 이 상황이 "이상 없음" 과 구분되지
-    /// 않았다 — 탐지기가 영구히 침묵하는데 그 사실을 아무도 모른다.
+    /// 락 poison을 복구한 뒤에도 RSS 증가를 검출하는지 확인한다.
     #[test]
     fn a_poisoned_sample_window_still_fires() {
         let d = AnomalyDetector::new();
         let held = std::sync::Arc::new(d);
         let poisoner = std::sync::Arc::clone(&held);
-        // join 결과를 버리지 않고 Err 를 단언한다 — 이 스레드가 언젠가 패닉을 멈추면
-        // 아무것도 poison 되지 않은 채 아래 단언이 전부 공허하게 통과한다.
+        // poison이 실제로 발생했는지 확인한 뒤 복구 경로를 검사한다.
         std::thread::spawn(move || {
             let _guard = poisoner.rss_samples.lock().expect("fresh lock");
             panic!("poison the rss sample window on purpose");

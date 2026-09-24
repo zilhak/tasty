@@ -1,39 +1,14 @@
-//! 요청 압력 계측 — 큐 대기 · 큐 깊이 · handler 실행 시간 · 연결 자리.
-//!
-//! 이 모듈이 생기기 전 호스트가 IPC 경로에서 남기던 값은 `ipc_calls` 카운터 하나였고,
-//! 요청이 **얼마나 밀렸는지 · 얼마나 걸렸는지**를 재는 자리는 한 곳도 없었다. 큐에서
-//! 기다린 시간과 handler 안에서 보낸 시간이 구분되지 않으면, 느린 응답을 보고도 그것이
-//! 적체인지 handler 비용인지 고를 수 없다. 이 집계가 그 둘을 다른 값으로 만든다.
-//!
-//! **왜 영구 기록이 아닌가**: 기존 `TelemetryEvent` 경로는 호출마다 저장소에 한 행을
-//! 남긴다. 지연을 그렇게 재면 진단 자체가 호출당 기록 폭주를 다시 만든다. 그래서 여기
-//! 값들은 프로세스 안에만 있고 크기가 고정이다 — 게이지마다 원자값 몇 개씩이고 그 수가
-//! 호출 수와 무관하다.
-//!
-//! **시간 축과 자원 축이 따로 있다**: 앞의 셋은 *얼마나 걸렸나* 를 재고
-//! [`ConnectionStats`] 는 *자리가 남았나* 를 잰다. 요청이 하나도 안 느려도 연결 자리가
-//! 차면 새 client 는 못 붙으므로, 시간만 재는 게이지로는 그 포화가 안 보인다.
-//!
-//! **시간 축은 평균·최대 옆에 분포를 함께 든다**([`LatencyHistogram`]). 평균과 최대만
-//! 있으면 답하지 못하는 물음이 있다 — "전부 조금씩 느린가, 대부분 빠른데 꼬리가 몇 건
-//! 있는가". 두 상태는 같은 평균과 같은 최대를 낼 수 있고, 처방이 반대다(앞은 용량,
-//! 뒤는 그 몇 건의 원인). 버킷은 고정 경계라 관측 수와 무관하게 크기가 안 자란다 —
-//! 그것이 분위수를 정확히 주는 대신 버킷 해상도로 접는 대가다.
+//! 큐 대기·handler 실행·plugin 응답 대기·연결 수를 각각 집계한다.
+//! 고정 크기 카운터와 히스토그램을 메모리에만 유지하므로 요청마다 파일을 쓰지 않는다.
+//! 평균·최대와 별도로 분포를 제공하되, 정확한 분위수 대신 고정 구간별 개수를 보여 준다.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// 지연 버킷의 상한(마이크로초, `le` — 상한과 같은 값은 그 버킷에 든다).
-///
-/// **이 경계는 파생되지 않는다** — 고른 값이다. 고른 근거는 두 가지다. ① 실측:
-/// 당시 격리 인스턴스에서 잰 값이 큐 대기 max 25.4 ms · handler max 0.48 ms
-/// 였고, plugin 왕복은 초 단위까지 간다. ② 해상도: 반-십진(√10 ≈ 3.16 배) 간격이라
-/// 10 µs 부터 1 s 까지 열한 칸으로 덮는다. 이 간격은 "밀렸다" 와 "안 밀렸다" 를 가르기에
-/// 충분하고, 그보다 촘촘하게 하면 게이지가 갖고 있지도 않은 정밀도를 말하게 된다.
-///
-/// 상한을 넘은 관측은 [`LATENCY_BUCKET_BOUNDS_US`] 밖의 마지막 칸으로 간다. 그 칸에는
-/// 상한이 없으므로 **"1 초를 넘었다" 까지만 말하고 얼마나 넘었는지는 max 가 답한다** —
-/// histogram 과 max 를 함께 두는 이유가 그것이다.
+/// 지연 구간의 상한(마이크로초). 같은 값은 해당 구간에 포함한다.
+/// 약 3.16배 간격으로 10µs~1초를 나누고, 1초를 넘으면 마지막 구간에 넣는다.
+/// 마지막 구간에는 상한이 없으므로 실제 최댓값은 max를 함께 본다.
+/// 선택 근거: docs/architecture/ipc-server.md#연결-수와-시간-분포.
 pub const LATENCY_BUCKET_BOUNDS_US: [u64; 11] = [
     10, 32, 100, 316, 1_000, 3_162, 10_000, 31_623, 100_000, 316_228, 1_000_000,
 ];
@@ -41,7 +16,7 @@ pub const LATENCY_BUCKET_BOUNDS_US: [u64; 11] = [
 /// 버킷 수 = 유한 상한 수 + 넘침 한 칸.
 pub const LATENCY_BUCKET_COUNT: usize = LATENCY_BUCKET_BOUNDS_US.len() + 1;
 
-/// 관측이 어느 버킷에 드는지. 상한이 열한 개뿐이라 선형 탐색이 이분 탐색에 안 진다.
+/// 관측값이 속한 구간을 찾는다.
 fn bucket_of(us: u64) -> usize {
     LATENCY_BUCKET_BOUNDS_US
         .iter()
@@ -49,20 +24,15 @@ fn bucket_of(us: u64) -> usize {
         .unwrap_or(LATENCY_BUCKET_BOUNDS_US.len())
 }
 
-/// 고정 경계 지연 histogram. 관측 수와 무관하게 원자값 [`LATENCY_BUCKET_COUNT`] 개다.
-///
-/// 이 크레이트의 다른 게이지와 같은 성질을 공유한다: 프로세스 수명 누계 · 고정 크기 ·
-/// `Relaxed` · 스냅샷이 원자적이지 않음. 스냅샷이 원자적이지 않다는 것은 여기서 한 가지
-/// 형태로 드러난다 — **칸들의 합이 같은 순간의 `count` 와 안 맞을 수 있다.** 읽는 도중
-/// 다른 스레드가 올린 것이 뒤쪽 칸에만 반영되기 때문이다. 진단값이라 허용한다.
+/// 프로세스 수명 동안 누적하는 고정 크기 히스토그램.
+/// Relaxed 카운터를 따로 읽으므로 스냅샷의 구간 합과 다른 count가 잠깐 다를 수 있다.
 #[derive(Debug, Default)]
 pub struct LatencyHistogram {
     counts: [AtomicU64; LATENCY_BUCKET_COUNT],
 }
 
 impl LatencyHistogram {
-    /// 관측 하나를 접는다. 1 마이크로초 미만은 `as_micros` 가 0 으로 접으므로 첫 칸에
-    /// 든다 — 그 칸이 "10 µs 이하" 라 옳다.
+    /// 관측값을 기록한다. 1마이크로초 미만은 0으로 환산해 첫 구간에 넣는다.
     pub fn record_us(&self, us: u64) {
         self.counts[bucket_of(us)].fetch_add(1, Ordering::Relaxed);
     }
@@ -85,25 +55,19 @@ pub struct HistogramSnapshot {
 }
 
 impl HistogramSnapshot {
-    /// 칸에 붙는 상한. 값과 경계를 **같은 자리에서** 내보내려고 여기 둔다 — 소비자가
-    /// 경계를 자기 쪽에 복제하면 그 복제본이 갈린다.
+    /// 소비자가 상수를 복제하지 않도록 스냅샷과 함께 제공하는 구간 상한.
     pub fn bounds_us() -> &'static [u64; LATENCY_BUCKET_BOUNDS_US.len()] {
         &LATENCY_BUCKET_BOUNDS_US
     }
 
-    /// 접힌 관측 수의 합.
+    /// 모든 구간의 관측 수 합.
     pub fn total(&self) -> u64 {
         self.counts.iter().sum()
     }
 }
 
-/// 프로세스 수명 동안 누적되는 고정 크기 압력 집계.
-///
-/// 모든 갱신이 `Relaxed` 다 — 값들 사이에 순서 불변식이 없고 각각이 독립 카운터라,
-/// 더 강한 순서를 요구하면 비용만 늘고 얻는 것이 없다. `snapshot` 이 여러 원자를 따로
-/// 읽으므로 **한 스냅샷 안의 값들이 같은 순간의 것은 아니다**(예: `handler_calls` 를
-/// 읽은 뒤 다른 스레드가 `handler_us_sum` 을 올릴 수 있다). 진단값이라 그 정도의
-/// 어긋남은 허용하고, 대신 그 사실을 여기 적어 둔다.
+/// 프로세스 수명 동안 누적하는 고정 크기 집계.
+/// 독립 카운터를 Relaxed로 갱신한다. 스냅샷의 여러 값이 같은 순간을 나타내지는 않는다.
 #[derive(Debug, Default)]
 pub struct PressureStats {
     /// 큐를 비운 횟수(= 비어 있지 않은 drain 만).
@@ -112,9 +76,8 @@ pub struct PressureStats {
     queue_depth_max: AtomicU64,
     /// drain 으로 집어 든 명령 수의 합. **회차가 끝날 때** 오른다.
     queue_commands: AtomicU64,
-    /// 대기를 기록한 명령 수 — 아래 합·최댓값·분포와 **같은 자리**(명령을 꺼낼 때)에서 오른다.
-    /// 평균의 분모가 이것이다. `queue_commands` 를 분모로 쓰면 아직 안 끝난 회차(조회 자신의
-    /// 회차 포함)가 꺼낸 명령의 대기는 분자에 있고 분모에 없어, 평균이 최댓값을 넘는다.
+    /// 큐 대기를 기록한 명령 수이며 평균의 분모다. 회차가 끝나야 오르는 queue_commands를
+    /// 쓰면 진행 중인 회차의 대기 시간만 합계에 먼저 반영될 수 있다.
     queue_waits: AtomicU64,
     /// 큐에 들어간 뒤 꺼내질 때까지의 대기 시간 합(마이크로초).
     queue_wait_us_sum: AtomicU64,
@@ -126,26 +89,19 @@ pub struct PressureStats {
     handler_us_sum: AtomicU64,
     /// handler 실행 시간 최댓값(마이크로초).
     handler_us_max: AtomicU64,
-    /// 큐 대기 시간의 분포. sum·max 가 못 답하는 "꼬리인가 전체인가" 를 답한다.
+    /// 큐 대기 시간의 분포.
     queue_wait_hist: LatencyHistogram,
-    /// handler 실행 시간의 분포. 위와 같은 이유로 따로 든다 — 두 모수를 한 histogram
-    /// 에 접으면 게이트 앞뒤가 다시 섞인다.
+    /// 큐 대기와 별도로 집계하는 handler 실행 시간의 분포.
     handler_hist: LatencyHistogram,
 }
 
-/// 마이크로초로 접는다. 나노초를 그대로 더하면 `u64` 가 약 584 년에 넘치는데, 그보다
-/// 실질적인 이유는 이 값들이 **사람이 읽는 진단값**이라 나노초 해상도가 의미가 없다는
-/// 것이다. 1 마이크로초 미만은 0 으로 접힌다 — `count` 는 그대로 오르므로 "아주 빠른
-/// 호출이 많았다" 와 "호출이 없었다" 는 구분된다.
+/// 진단값을 마이크로초로 환산한다. 1마이크로초 미만은 0이지만 관측 횟수는 증가한다.
 fn as_micros(d: Duration) -> u64 {
     u64::try_from(d.as_micros()).unwrap_or(u64::MAX)
 }
 
 impl PressureStats {
-    /// 큐를 한 번 비웠다 — 그때 집어 든 명령 수를 깊이로 기록한다.
-    ///
-    /// 빈 drain 은 호출하지 않는다(호출부가 비면 일찍 빠진다). 그래서 `queue_drains` 는
-    /// "명령이 있었던 프레임 수" 이고, 프레임 수가 아니다.
+    /// 비어 있지 않은 drain이 꺼낸 명령 수를 기록한다. 빈 drain은 호출자가 제외한다.
     pub fn record_drain(&self, depth: usize) {
         let depth = depth as u64;
         self.queue_drains.fetch_add(1, Ordering::Relaxed);
@@ -162,8 +118,7 @@ impl PressureStats {
         self.queue_wait_hist.record_us(us);
     }
 
-    /// handler 하나가 실행에 쓴 시간. 큐 대기는 포함하지 않는다 — 그것이 이 둘을
-    /// 따로 재는 이유다.
+    /// handler 실행 시간을 기록한다. 큐 대기는 제외한다.
     pub fn record_handler(&self, elapsed: Duration) {
         let us = as_micros(elapsed);
         self.handler_calls.fetch_add(1, Ordering::Relaxed);
@@ -172,8 +127,7 @@ impl PressureStats {
         self.handler_hist.record_us(us);
     }
 
-    /// 지금까지의 누계를 한 덩어리로 읽는다. 위 struct 주석대로 **원자적 스냅샷이
-    /// 아니다.**
+    /// 카운터를 읽는다. 여러 값이 동시에 고정된 스냅샷은 아니다.
     pub fn snapshot(&self) -> PressureSnapshot {
         PressureSnapshot {
             queue_drains: self.queue_drains.load(Ordering::Relaxed),
@@ -191,8 +145,7 @@ impl PressureStats {
     }
 }
 
-/// [`PressureStats`] 의 한 시점 읽기. 평균은 파생값이라 필드로 두지 않고 메서드로 낸다 —
-/// 분모가 0 인 경우를 소비자마다 다르게 처리하지 않게 한다.
+/// 집계 스냅샷. 평균과 관측 부재 처리를 공통 메서드로 제공한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct PressureSnapshot {
     pub queue_drains: u64,
@@ -209,12 +162,8 @@ pub struct PressureSnapshot {
 }
 
 impl PressureSnapshot {
-    /// 명령 하나가 큐에서 기다린 평균(마이크로초). 관측이 없으면 `None` — 0 을 돌려주면
-    /// "기다림이 없었다" 와 "잰 적이 없다" 가 같은 값이 된다.
-    ///
-    /// 분모는 대기를 기록한 명령 수(`queue_waits`)다 — 합과 같은 자리에서 오르는 수라야
-    /// 평균이 최댓값을 넘지 않는다. `queue_commands` 는 회차가 끝날 때 오르므로 한 스냅샷
-    /// 안에서 분자보다 늦다(docs/architecture/ipc-server.md#연결-수와-시간-분포).
+    /// 명령의 평균 큐 대기 시간(마이크로초). 대기 기록 수로 나누며 관측이 없으면 None이다.
+    /// 각 카운터는 따로 읽으므로 동시에 갱신되는 값 사이의 일치는 보장하지 않는다.
     pub fn queue_wait_us_mean(&self) -> Option<u64> {
         (self.queue_waits > 0).then(|| self.queue_wait_us_sum / self.queue_waits)
     }
@@ -224,27 +173,16 @@ impl PressureSnapshot {
         (self.handler_calls > 0).then(|| self.handler_us_sum / self.handler_calls)
     }
 
-    /// drain 한 번이 집어 든 평균 명령 수. 이 값이 1 에 가까우면 적체가 없는 것이고,
-    /// 크면 한 프레임이 여러 요청을 몰아 처리하고 있다는 뜻이다.
+    /// 비어 있지 않은 drain 한 번이 꺼낸 평균 명령 수. 값이 1이어도 대기 시간이 짧다는 뜻은 아니다.
     pub fn queue_depth_mean(&self) -> Option<u64> {
         (self.queue_drains > 0).then(|| self.queue_commands / self.queue_drains)
     }
 }
 
-/// host→plugin 요청 하나가 **응답을 기다린 시간**의 누계.
-///
-/// [`PressureStats`] 와 **다른 축**이다. 그쪽 셋은 호스트가 자기 큐와 자기 handler 에서
-/// 보낸 시간이고, 이 값은 호스트가 **남의 프로세스를 기다린** 시간이다. 느린 응답의
-/// 원인을 고를 때 이 구분이 답을 가른다 — 큐도 handler 도 빠른데 응답이 느리면 그
-/// 요청은 plugin 안에 있었던 것이다.
-///
-/// 별도 타입인 이유는 재는 주체가 다르기 때문이다. `PressureStats` 는 본 바이너리의
-/// `Core` 가 들고 관측 자리 셋이 쓰는데, 이 값을 올리는 자리는 `tasty-host-plugin` 의
-/// 응답 매칭부 하나뿐이고 그 크레이트는 `Core` 를 못 본다. 한 타입에 다 넣으면 어느
-/// 인스턴스가 어느 필드를 채우는지가 타입으로 안 보인다.
-///
-/// `PressureStats` 와 같은 성질을 공유한다: 프로세스 수명 누계 · 고정 크기 · `Relaxed` ·
-/// 스냅샷이 원자적이지 않음 · 1 마이크로초 미만은 0 으로 접히되 횟수는 오름.
+/// 응답과 매칭된 host→plugin 요청의 대기 시간을 집계한다.
+/// 호스트 큐·handler 시간과 따로 기록하며 응답이 오지 않은 요청은 포함하지 않는다.
+/// tasty-host-plugin의 응답 매칭부가 갱신하므로 Core의 PressureStats와 분리한다.
+/// 프로세스 수명 누계이며 고정 크기·Relaxed 갱신·비원자적 스냅샷을 사용한다.
 #[derive(Debug, Default)]
 pub struct PluginWaitStats {
     /// 응답이 **매칭된** 요청 수. 응답이 영영 안 온 요청은 여기 안 센다.
@@ -253,8 +191,7 @@ pub struct PluginWaitStats {
     us_sum: AtomicU64,
     /// 그 최댓값(마이크로초).
     us_max: AtomicU64,
-    /// 왕복 시간의 분포. plugin 이 대체로 빠른데 몇 건만 초 단위인지, 전부 느린지를
-    /// 가른다 — 앞은 그 몇 건의 일이고 뒤는 plugin 자체의 일이다.
+    /// plugin 응답 대기 시간의 분포. 분포만으로 느린 원인을 확정하지는 않는다.
     hist: LatencyHistogram,
 }
 
@@ -294,26 +231,14 @@ impl PluginWaitSnapshot {
     }
 }
 
-/// 동시에 살아 있는 IPC 연결 수 게이지.
-///
-/// 위 셋과 **성질이 다르다.** `PressureStats` · `PluginWaitStats` 는 전부 *시간*
-/// 누계이고 "느렸다" 를 말한다. 이 값은 *자원 점유*이고 "자리가 없다" 를 말한다 —
-/// 요청이 하나도 안 느려도 연결 자리가 차면 새 client 는 아예 못 붙는다. 그 거절은
-/// 요청이 되기 전에 일어나므로 위 셋 어디에도 흔적이 안 남고, `ipc_calls` 에도 안
-/// 남는다(JSON-RPC 요청이 아니라 TCP 연결이다).
-///
-/// 재는 주체는 accept 루프 하나(`TcpIpcServer`)이고 자리 반납은 각 연결 스레드의
-/// `Drop` 이다. 그래서 `Arc` 이고 모든 갱신이 원자적이다.
-///
-/// **상한은 여기 없다.** 상한은 서버의 정책이라 [`ConnectionStats::try_open`] 이
-/// 인자로 받는다 — 게이지가 정책을 들면 그 값이 두 곳에 살게 된다.
+/// 동시에 살아 있는 IPC 연결 수. accept 루프가 자리를 배정하고 연결의 Drop에서 반납한다.
+/// 연결 단계의 거절은 요청별 시간 집계에 포함되지 않는다.
+/// 상한 정책은 서버가 try_open에 전달하며 이 타입에는 복제하지 않는다.
 #[derive(Debug, Default)]
 pub struct ConnectionStats {
-    /// 지금 살아 있는 연결 수. **이것만 내려가는 값이다** — 나머지 필드는 전부 누계나
-    /// 최댓값이고 이것은 순간값이다(스냅샷의 accept 대기 평균은 파생값이라 내려갈 수 있다).
+    /// 현재 연결 수. 연결을 닫으면 감소한다.
     live: AtomicU64,
-    /// 관측된 `live` 의 최댓값. 누계 게이지가 순간값만 주면 "지금은 비었지만 아까
-    /// 꽉 찼었다" 를 못 본다.
+    /// 관측한 최대 동시 연결 수.
     live_max: AtomicU64,
     /// 자리를 받아 간 연결 수의 누계.
     accepted: AtomicU64,
@@ -330,13 +255,8 @@ pub struct ConnectionStats {
 }
 
 impl ConnectionStats {
-    /// 자리를 하나 잡아 본다. 잡았으면 **잡은 뒤의** 살아 있는 수, 상한을 넘었으면
-    /// 되돌리고 `None`.
-    ///
-    /// 먼저 올리고 초과면 내리는 순서인 이유는 검사와 점유 사이에 틈을 안 두려는
-    /// 것이다 — `load` 로 보고 `fetch_add` 하면 두 스레드가 같은 마지막 자리를
-    /// 가져간다. 되돌림이 빠지면 계수가 영구히 상한 위로 떠서 자리가 다시는 안
-    /// 열리므로, 그 자리는 호출부의 시험이 잡는다.
+    /// 원자적으로 수를 올려 자리를 예약하고, 상한을 넘으면 되돌린 뒤 None을 반환한다.
+    /// 성공하면 예약 직후 연결 수를 반환한다. 조회 후 별도로 증가시키면 마지막 자리가 중복 배정될 수 있다.
     pub fn try_open(&self, limit: u64) -> Option<u64> {
         let prev = self.live.fetch_add(1, Ordering::Relaxed);
         if prev >= limit {
@@ -350,14 +270,8 @@ impl ConnectionStats {
         Some(now)
     }
 
-    /// accept 루프가 연결 하나를 꺼냈다 — 그 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의
-    /// **상한**을 기록한다.
-    ///
-    /// OS 가 연결을 큐에 넣은 시각은 사용자 공간에서 안 보인다. 보이는 것은 루프가 큐를 **마지막으로
-    /// 비어 있다고 본 시각**(accept 가 `WouldBlock` 을 돌려준 순간)이고, 그 뒤에 꺼낸 연결은 그
-    /// 시각 **뒤에** 도착했다. 그래서 `꺼낸 시각 − 마지막으로 비어 있던 시각` 은 그 연결의 대기를
-    /// 넘지 않는 값이 아니라 **넘을 수 없는 값**(상한)이다. 루프가 빈 큐를 보면 100 ms 자므로 이
-    /// 값은 대개 0–100 ms 이고, 잠든 동안 고르게 도착하면 실제 대기는 평균적으로 그 절반이다.
+    /// 연결을 꺼낸 시각과 마지막 WouldBlock 시각의 차이를 accept 대기의 상한으로 기록한다.
+    /// 실제 도착 시각은 알 수 없으므로 정확한 대기 시간이 아니다.
     pub fn record_accept_wait(&self, bound: Duration) {
         let us = as_micros(bound);
         self.accept_waits.fetch_add(1, Ordering::Relaxed);
@@ -367,8 +281,7 @@ impl ConnectionStats {
             .fetch_max(us, Ordering::Relaxed);
     }
 
-    /// 자리 하나를 돌려준다. [`ConnectionStats::try_open`] 이 `Some` 을 돌려준
-    /// 자리에서만 부른다 — 짝이 안 맞으면 `live` 가 0 아래로 돌아 감싼다.
+    /// try_open이 성공한 자리 하나를 반납한다. 중복 반납하면 live가 언더플로한다.
     pub fn close(&self) {
         self.live.fetch_sub(1, Ordering::Relaxed);
     }
@@ -386,8 +299,7 @@ impl ConnectionStats {
     }
 }
 
-/// [`ConnectionStats`] 의 한 시점 읽기. 상한은 서버가 아는 값이라 여기 없다 —
-/// 노출부가 자기가 아는 상한과 함께 내보낸다.
+/// 연결 집계 스냅샷. 서버가 가진 상한은 응답 구성 시 함께 제공한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct ConnectionSnapshot {
     pub live: u64,
@@ -462,8 +374,6 @@ mod tests {
         assert_eq!(s.handler_us_mean(), Some(2_000));
     }
 
-    // 1 마이크로초 미만은 0 으로 접히지만 **횟수는 오른다** — 그래야 "아주 빠른 호출이
-    // 많았다" 가 "호출이 없었다" 로 보이지 않는다.
     #[test]
     fn a_sub_microsecond_call_still_counts() {
         let p = PressureStats::default();
@@ -494,7 +404,6 @@ mod tests {
         assert_eq!(s.us_mean(), Some(10_000));
     }
 
-    // host 큐/handler 축과 **섞이지 않는다** — 둘은 서로 다른 집계다.
     #[test]
     fn a_plugin_round_trip_is_not_host_handler_time() {
         let host = PressureStats::default();
@@ -525,8 +434,6 @@ mod tests {
         assert_eq!((s.live, s.accepted), (0, 0), "기록은 자리를 잡지 않는다");
     }
 
-    // 연결 게이지의 자리 계수는 **시간이 아니라 자리**를 센다 — live 는 내려가고 누계 셋은 안
-    // 내려간다. 그 비대칭이 자리 계수의 전부다(accept 대기 상한은 위 시험이 따로 잰다).
     #[test]
     fn a_closed_connection_frees_the_seat_but_not_the_total() {
         let c = ConnectionStats::default();
@@ -540,9 +447,7 @@ mod tests {
         assert_eq!(s.refused_saturated, 0);
     }
 
-    // 거절은 **자리를 안 먹는다.** 되돌림이 빠지면 계수가 영구히 상한 위로 떠서
-    // 그 뒤로 아무도 못 붙는다 — 그때도 live 는 상한 그대로라, 이 시험이 보는 것은
-    // live 가 안 늘었다는 것과 거절이 자기 칸에 세졌다는 것 둘이다.
+    // 거절 후 연결 수가 복원되고 거절 누계만 증가해야 한다.
     #[test]
     fn a_refusal_counts_itself_without_taking_a_seat() {
         let c = ConnectionStats::default();
@@ -558,7 +463,6 @@ mod tests {
         assert_eq!(s.live_max, 2);
     }
 
-    // 자리가 반납되면 다음이 들어온다 — 상한이 영구 차단이 아니다.
     #[test]
     fn a_returned_seat_lets_the_next_connection_in() {
         let c = ConnectionStats::default();
@@ -569,8 +473,7 @@ mod tests {
         assert_eq!(c.snapshot().refused_saturated, 1);
     }
 
-    // 자원 축과 시간 축은 **섞이지 않는다.** 연결이 꽉 차도 handler 시간은 0 일 수
-    // 있고(요청이 아예 안 들어온 것이다), 그 구분이 이 게이지를 더한 이유다.
+    // 연결 포화와 요청 처리 시간은 별도로 집계한다.
     #[test]
     fn a_full_connection_table_is_not_a_slow_handler() {
         let host = PressureStats::default();
@@ -585,8 +488,6 @@ mod tests {
         assert_eq!(conn.snapshot().refused_saturated, 1, "그래도 자리는 찼다");
     }
 
-    // 버킷 경계는 `le` 다 — 상한과 **같은** 값은 그 칸에 든다. 이 경계가 배타적으로
-    // 바뀌면 같은 관측이 한 칸 뒤로 밀리므로 여기서 죽는다.
     #[test]
     fn an_observation_equal_to_a_bound_lands_in_that_bucket() {
         let h = LatencyHistogram::default();
@@ -597,7 +498,6 @@ mod tests {
         assert_eq!(c[1], 1, "11 µs 는 다음 칸이다");
     }
 
-    // 마지막 상한을 넘은 것은 **넘침 칸**으로 가고, 그 칸에는 상한이 없다.
     #[test]
     fn everything_past_the_last_bound_lands_in_the_overflow_bucket() {
         let h = LatencyHistogram::default();
@@ -613,8 +513,6 @@ mod tests {
         );
     }
 
-    // 칸은 **누적이 아니다** — 겹치지 않고 합이 관측 수다. 누적(Prometheus `le`)으로
-    // 바뀌면 합이 관측 수의 배가 되어 여기서 죽는다.
     #[test]
     fn the_buckets_do_not_overlap() {
         let h = LatencyHistogram::default();
@@ -626,8 +524,7 @@ mod tests {
         assert_eq!(s.counts.iter().filter(|&&n| n == 1).count(), 4);
     }
 
-    // 평균과 최대가 같아도 분포는 다르다 — 그것이 histogram 을 더한 이유다.
-    // 여기서 둘은 sum·max·count 가 전부 같고 칸만 다르다.
+    // 평균·최대·횟수가 같아도 분포는 다를 수 있다.
     #[test]
     fn two_runs_with_the_same_mean_have_different_shapes() {
         // 꼬리형: 한 건이 1 s, 나머지 셋이 0 — "대부분 빠른데 몇 건이 튄다".
@@ -654,8 +551,6 @@ mod tests {
         assert_eq!(p.handler_hist.counts[0], 0, "고른형은 맨 앞 칸이 비어 있다");
     }
 
-    // 큐 대기와 handler 시간의 분포가 **섞이지 않는다.** 한 histogram 을 공유하면
-    // 게이트 앞뒤가 다시 한 수로 합쳐진다.
     #[test]
     fn the_two_time_moduli_keep_separate_distributions() {
         let p = PressureStats::default();
@@ -672,7 +567,6 @@ mod tests {
         assert_ne!(s.queue_wait_hist, s.handler_hist);
     }
 
-    // plugin 왕복도 자기 분포를 든다 — 호스트 축과 별개다.
     #[test]
     fn a_plugin_round_trip_has_its_own_distribution() {
         let host = PressureStats::default();

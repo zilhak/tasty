@@ -1,7 +1,4 @@
-//! Round-trip 검증: 한쪽에서 쓴 바이트를 다른쪽에서 읽어 일치하는가.
-//!
-//! cross-process IPC 통합은 Step 02에서 검증한다. 여기서는 같은 프로세스 내에서
-//! 핸들 전달 메커니즘만 흉내내 양쪽 매핑이 같은 메모리를 본다는 사실을 검증.
+//! 한 프로세스 안에서 핸들 전달을 흉내 내고 두 매핑이 같은 메모리를 보는지 확인한다.
 
 use tasty_shm::{PeerPid, ReceivedPayload};
 
@@ -9,9 +6,7 @@ use tasty_shm::{PeerPid, ReceivedPayload};
 mod unix {
     use super::*;
 
-    /// 호출자가 fd를 transport에 실어 보낸 것을 흉내내기 위해, 같은 프로세스 내에서
-    /// raw fd 정수를 그대로 ReceivedPayload로 만들어 넘긴다. 실제 transport (sendmsg)는
-    /// Step 02에서 SDK 통합 시 검증.
+    /// fd를 복제해 수신 측이 독립적으로 소유할 핸들을 만든다. 실제 IPC 전송은 하지 않는다.
     fn send_to_self(payload: tasty_shm::TransportPayload) -> ReceivedPayload {
         // payload가 들고 있는 fd를 dup해서 별개 fd를 만들어 송신 흉내.
         // SAFETY: dup syscall. payload.raw_fd()가 유효 fd.
@@ -41,7 +36,6 @@ mod unix {
         assert_eq!(mem_a.len(), size);
         assert_eq!(mem_b.len(), size);
 
-        // mem_a 측에서 쓴다.
         // SAFETY: 단일 스레드에서 다른 매핑이 동시 접근하지 않음.
         unsafe {
             let slice = mem_a.as_mut_slice();
@@ -49,7 +43,6 @@ mod unix {
             slice[size - 1] = 0xAB;
         }
 
-        // mem_b 측에서 읽어 일치 확인.
         // SAFETY: 위 쓰기가 끝난 뒤 단일 스레드에서 읽음.
         unsafe {
             let view = mem_b.as_slice();
@@ -66,7 +59,6 @@ mod unix {
         // SAFETY: 위와 동일 — send_to_self가 dup()으로 만든 새 fd.
         let mem_b = unsafe { tasty_shm::receive(received) }.expect("receive");
 
-        // mem_b가 쓴 값이 mem_a에서 보이는가.
         // SAFETY: 단일 스레드.
         unsafe {
             mem_b.as_mut_slice()[0..3].copy_from_slice(b"hi!");
@@ -122,7 +114,7 @@ mod unix {
 
     #[test]
     fn drop_unmaps_without_leak() {
-        // 매핑/언맵을 반복해도 fd가 새지 않음을 검증 (rlimit으로 잡힐 만큼 많이).
+        // 반복 매핑·해제 중 fd 누수가 누적되면 생성이 실패할 수 있다.
         for _ in 0..256 {
             let (mem, handle) = tasty_shm::create(64).expect("create");
             let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
@@ -136,12 +128,11 @@ mod unix {
 
     #[test]
     fn into_raw_fd_then_manual_send() {
-        // PlatformPayload::into_raw_fd 경로 (호출자가 fd 소유권을 명시 회수)도 동작.
         let (_mem_a, handle) = tasty_shm::create(64).expect("create");
         let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
         let size = payload.size();
         let fd = payload.raw_fd();
-        // dup으로 별도 fd 만들어 receive 측에 쓰고 원본은 payload가 drop하며 close.
+        // payload의 fd를 복제해 수신 측에 독립된 소유권을 준다.
         // SAFETY: dup syscall. fd 유효.
         let dup = unsafe { libc::dup(fd) };
         assert!(dup >= 0);

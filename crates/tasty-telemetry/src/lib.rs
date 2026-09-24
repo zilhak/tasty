@@ -1,42 +1,12 @@
-//! Agent telemetry — 메트릭 기록·롤업·조회 + cap·anomaly.
+//! 메트릭 이벤트·비용 제한·이상 신호의 타입과 검증·집계 함수.
 //!
-//! ## 책임 범위
+//! 조회는 보존된 raw event를 집계한다. MetricBucket은 조회 결과이며 따로 저장하거나
+//! 주기적으로 갱신하지 않는다. 따라서 오래된 이벤트를 삭제하면 해당 구간은 조회할 수 없다.
+//! 보존 정책은 docs/design/systems/storage.md#관측-로그-보존 참조.
 //!
-//! - 도메인 타입 ([`TelemetryEvent`], [`MetricBucket`], [`Op`])
-//! - key 컨벤션 (`event_key`, `cap_key`, `anomaly_key`)
-//! - 식별자 검증 (metric / agent_id 형식)
-//! - pure aggregation: events → buckets, summary, top
-//!
-//! ## 조회 모델 — raw event 가 유일한 SoT 다
-//!
-//! [`MetricBucket`] 은 **조회 시점에 만들어지고 버려지는 값**이다. 영속 bucket 도,
-//! 그것을 채우는 주기 rollup task 도 없다. `summary`/`timeseries`/`top` 은 매번
-//! `tasty.telemetry.event.*` 를 prefix scan 해 [`aggregate_into_buckets`] 로 즉석
-//! 집계한다.
-//!
-//! 그래서 **raw event 보존량이 곧 조회 가능 범위**다. 호스트가 개수 상한(최근 2만
-//! 이벤트)으로 잘라내므로, 그보다 오래된 구간은 조회되지 않는다. 근거와 대안(롤업
-//! 신설)은 `docs/design/systems/storage.md#관측-로그-보존`.
-//!
-//! ## 비-책임 (호스트가 처리)
-//!
-//! - **영속 IO**: 호스트가 `Core.with_memory` 로 read/write
-//! - **보존 정책**: 호스트 `store::log_retention` 이 event/anomaly 상한 집행
-//! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
-//! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
-//!
-//! ## 기능 범위
-//!
-//! - record / record_batch (단일 이벤트 직렬화)
-//! - 조회: events → bucket aggregation, summary, top
-//! - cap 평가 도메인 로직 ([`cap`])
-//! - anomaly 검출 도메인 로직 ([`anomaly`]) — CallBurst / SlowLoop / RssSurge
+//! 파일 저장·보존 상한·호출자 식별·dispatcher 연결·cap 평가 캐시는 호스트가 맡는다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트의 반환값 무시는 허용하되 제품 코드의 반환값 무시는 계속 검사한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod agent_id;
@@ -48,10 +18,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use agent_id::AgentId;
-
-// ============================================================
-// Error
-// ============================================================
 
 #[derive(Debug, Error)]
 pub enum TelemetryError {
@@ -69,17 +35,13 @@ pub enum TelemetryError {
 
 pub type Result<T> = std::result::Result<T, TelemetryError>;
 
-// ============================================================
-// Domain types
-// ============================================================
-
 /// 누적 연산.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Op {
-    /// 값을 그대로 set. summary 의 `last` 만 갱신.
+    /// summary와 bucket의 sum·last를 이 값으로 바꾼다. count도 증가한다.
     Set,
-    /// 값을 더함. summary 의 `sum/count` 누적.
+    /// sum에 더하고 last를 갱신한다. count도 증가한다.
     Inc,
     /// 값을 뺌 (음수 inc).
     Dec,
@@ -99,7 +61,7 @@ impl std::str::FromStr for Op {
 }
 
 impl Op {
-    /// 부호 조정된 effective value (inc 양수, dec 음수, set 그대로).
+    /// Dec는 부호를 반대로 하고 Inc와 Set은 입력값을 그대로 반환한다.
     pub fn signed(self, v: f64) -> f64 {
         match self {
             Op::Inc | Op::Set => v,
@@ -173,7 +135,7 @@ pub struct MetricBucket {
     pub sum: f64,
     pub min: f64,
     pub max: f64,
-    /// 마지막 set/inc/dec 후의 effective signed 값 (Set 은 value 그대로).
+    /// 마지막 이벤트의 부호를 적용한 값. 누적 합과는 별개다.
     pub last: f64,
 }
 
@@ -226,10 +188,6 @@ impl Window {
     }
 }
 
-// ============================================================
-// Validation
-// ============================================================
-
 pub fn validate_metric(s: &str) -> Result<()> {
     if s.is_empty() || s.len() > 64 {
         return Err(TelemetryError::InvalidMetric(s.into()));
@@ -259,10 +217,6 @@ pub fn validate_agent_id(s: &str) -> Result<()> {
     Ok(())
 }
 
-// ============================================================
-// Key conventions
-// ============================================================
-
 /// `tasty.telemetry.event.{ts:013}.{seq:04}`.
 pub fn event_key(ts: u64, seq: u64) -> String {
     format!(
@@ -272,10 +226,7 @@ pub fn event_key(ts: u64, seq: u64) -> String {
     )
 }
 
-/// `tasty.telemetry.event.` — 전체 event 키 prefix.
-///
-/// **bucket 키는 없다.** 집계는 조회 시점에 raw event 를 훑어 만들고 영속하지
-/// 않는다 — 아래 모듈 문서의 "조회 모델" 참고.
+/// 모든 raw event 키의 접두사. 집계 버킷은 영속하지 않는다.
 pub const EVENT_KEY_PREFIX: &str = "tasty.telemetry.event.";
 
 /// `tasty.telemetry.cap.` — 모든 cap 키 prefix.
@@ -293,10 +244,6 @@ impl TelemetrySeq {
     }
 }
 
-// ============================================================
-// Aggregation — pure functions over event lists
-// ============================================================
-
 /// 이벤트 목록을 (metric, agent) 별 단일 버킷으로 집계.
 mod aggregate;
 mod anomaly;
@@ -309,21 +256,13 @@ pub use aggregate::*;
 pub use anomaly::*;
 pub use cap::*;
 pub use gate::{GateRefusal, GateSnapshot, GateStats};
-// 크레이트 루트로 올리는 것은 **밖에서 실제로 부르는 이름**뿐이다. 빠진 둘은 일부러다.
-//
-// - `LatencyHistogram` 은 `PressureStats`·`PluginWaitStats` 의 **비공개 필드 타입**이라
-//   밖에서 세울 일이 없다.
-// - `LATENCY_BUCKET_BOUNDS_US` 를 루트에 두면 소비자가 경계를 상수로 직접 끌어다 쓰게 되고,
-//   그 순간 "경계는 값과 같은 자리에서 나간다"(docs/architecture/ipc-server.md#연결-수와-시간-분포)가 무너진다. 경계를 얻는 길은
-//   [`HistogramSnapshot::bounds_us`] 하나여야 한다.
-//
-// 둘 다 `pressure` 모듈이 `pub` 이라 `tasty_telemetry::pressure::…` 로 여전히 닿는다 —
-// 없앤 것이 아니라 기본 경로에서 뺀 것이다.
+// 히스토그램 경계는 HistogramSnapshot::bounds_us로 값과 함께 제공한다.
+// 내부 필드 타입과 경계 상수는 pressure 모듈에서만 노출한다.
 pub use pressure::{
     ConnectionSnapshot, ConnectionStats, HistogramSnapshot, LATENCY_BUCKET_COUNT,
     PluginWaitSnapshot, PluginWaitStats, PressureSnapshot, PressureStats,
 };
-// 링의 줄 타입들은 `slow_requests::…` 로 부른다 — 루트에는 프로세스가 드는 핸들 하나만 둔다.
+// 개별 레코드 타입은 slow_requests 모듈에서 제공한다.
 pub use slow_requests::SlowRequestLog;
 
 #[cfg(test)]

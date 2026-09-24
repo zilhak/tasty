@@ -1,26 +1,15 @@
 #![forbid(unsafe_code)]
 
-//! 시스템 ssh 위임 — SSH 1회성 터널 전송 (attach/detach 단계 5).
+//! 시스템 ssh를 실행해 원격 attach용 터널·포트 발견·취소를 관리한다.
+//! CLI와 GUI 클라이언트가 사용하며 IPC 서버는 로컬 연결만 처리한다.
 //!
-//! tasty 는 자체 원격 프로토콜/암호화를 만들지 않고 **시스템 ssh 에 위임**한다.
-//! 이 크레이트는 attach **client 측**에만 존재한다 — CLI 와 본체 GUI 가 함께 쓰고,
-//! IPC 서버는 SSH 를 전혀 모르고 loopback(`127.0.0.1`) 만 안다. "원격성" 은 전부
-//! client 가 흡수한다 (`docs/dev-guide/attach-behavior.md#서버--클라이언트-계층-가장-먼저-읽을-것`).
-//!
-//! SSH *프로토콜* 을 구현하지 않는다 — 시스템 `ssh` 바이너리를 프로세스로 띄우고
-//! 그 수명·터널·포트 발견·취소를 관리하는 위임 계층이다.
-//!
-//! 흐름(단계 4 attach 를 SSH 너머로):
-//! 1. [`resolve_ssh_path`] — 시스템 ssh 경로(Windows 는 System32 OpenSSH 풀경로).
-//! 2. [`discover_remote_port`] — 원격 tasty 데몬의 IPC 포트 발견(auto fallback 체인).
-//! 3. [`SshTunnel::establish`] — `ssh -L 127.0.0.1:local:127.0.0.1:remote -N` 백그라운드.
-//! 4. client 가 `127.0.0.1:local` 로 단계 4 attach (commands::attach).
+//! `resolve_ssh_path`로 실행 파일을 찾고 `discover_remote_port`로 원격 포트를 얻는다.
+//! `SshTunnel::establish`가 로컬 포워딩을 열면 클라이언트가 해당 포트로 attach한다.
 //!
 //! # 공개 계약
 //!
-//! 크레이트 밖에서 쓰는 것은 아래가 전부다. 나머지 `pub` 이 아닌 항목은 내부
-//! 구현이고, `#[doc(hidden)]` 이 붙은 항목은 `tasty-cli` 커맨드 구현 전용이라
-//! 계약에 포함되지 않는다.
+//! `#[doc(hidden)]` 항목은 CLI 커맨드 구현 전용이다. 새 소비자를 추가하려면
+//! 먼저 해당 API의 계약을 문서화한다.
 //!
 //! | 항목 | 소비자 |
 //! |------|--------|
@@ -30,9 +19,6 @@
 //! | [`detect_and_persist`] · [`tunnel_drop_totals`] | 본체 |
 //! | [`SSH_CONNECT_TIMEOUT`] · [`PORT_DISCOVERY_STEP_TIMEOUT`] · [`PORT_DISCOVERY_TOTAL_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/dev-guide/attach-behavior.md#ssh-터널-원격-client-공통`) |
 //! | [`PortDiscoveryError`] · [`PortDiscoveryFailureKind`] | 실패 원인으로 분기하려는 소비자 |
-//!
-//! Windows 는 반드시 시스템 OpenSSH 풀경로를 쓴다 — git 번들 ssh 는 윈도우
-//! ssh-agent(named pipe `\\.\pipe\openssh-ssh-agent`) 를 못 봐 무암호 인증이 실패한다.
 
 use std::cell::RefCell;
 use std::net::TcpStream;
@@ -47,10 +33,8 @@ use tasty_remote_profiles::{Passkeys, RemoteProfile, RemoteProfiles, shell_to_po
 
 /// 시스템 ssh 바이너리 경로.
 ///
-/// Windows 는 시스템 OpenSSH 풀경로(`%WINDIR%\System32\OpenSSH\ssh.exe`)를 우선
-/// 한다 — git 번들 ssh(`C:\Program Files\Git\usr\bin\ssh.exe`)는 윈도우 ssh-agent 를
-/// 못 보기 때문. 풀경로 미발견 시 PATH 의 `ssh.exe` 로 fallback(경고 로그).
-/// mac/linux 는 PATH 의 `ssh` 가 보편적이라 그대로 사용한다.
+/// Windows는 ssh-agent 연동을 위해 시스템 OpenSSH를 우선한다. 없으면 경고하고
+/// PATH의 ssh.exe를 쓴다. 다른 OS는 PATH의 ssh를 쓴다.
 pub fn resolve_ssh_path() -> PathBuf {
     #[cfg(windows)]
     {
@@ -72,19 +56,16 @@ pub fn resolve_ssh_path() -> PathBuf {
     }
 }
 
-/// SSH 접속 대상. tasty 는 파싱하지 않고 ssh 에 그대로 위임한다
-/// (`~/.ssh/config` 의 `Host` alias / `ProxyJump` / 포트 전부 ssh 가 해석).
-///
-/// 단계 7: 저장 프로필의 `identity_file`/`extra_options` 도 함께 실어 ssh 에 전달한다
-/// (`push_common_opts` 가 `-i`/`-o` 로 emit). 1회성(`--ssh`) 경로는 이 둘이 비어
-/// 동작이 불변하다.
+/// 접속 대상과 SSH 옵션. destination 해석은 ssh에 맡긴다.
+/// 저장 프로필의 identity_file과 extra_options도 함께 전달한다.
+/// 일회성 --ssh 대상은 두 값이 비어 있다.
 #[derive(Clone, Debug, Default)]
 pub struct SshTarget {
     /// ssh 에 그대로 넘길 destination (`user@host` | `host` | config alias).
     pub destination: String,
     /// 사용자가 명시한 ssh 포트(없으면 ssh config / 22 위임).
     pub ssh_port: Option<u16>,
-    /// identity 파일 경로(`-i`). `~` 는 spawn 시 직접 확장(셸 비경유라 ssh 가 못 풂).
+    /// identity 파일 경로(-i). 전달하기 전에 홈 디렉터리 표기를 확장한다.
     pub identity_file: Option<String>,
     /// 추가 ssh `-o` 옵션. `"Key=Value"` → `-o Key=Value`.
     pub extra_options: Vec<String>,
@@ -102,11 +83,8 @@ impl SshTarget {
         }
     }
 
-    /// 저장 프로필을 ssh 연결 대상으로 변환한다(단계 7 `attach --profile` / 자동 attach).
-    /// destination = `user@host` 합성, port/extra_options 결선. `identity_file` 은
-    /// `passkey_ref` → [`Passkeys`] 에서 resolve 한 **파일 경로**(inline/path 무관).
-    ///
-    /// ssh kind 가 아니거나(`attach` 는 ssh 전용) passkey 참조가 깨졌으면 에러.
+    /// ssh 프로필의 접속 정보와 passkey 파일 경로로 연결 대상을 만든다.
+    /// 다른 kind나 존재하지 않는 passkey 참조는 거절한다.
     pub fn from_remote_profile(p: &RemoteProfile, passkeys: &Passkeys) -> Result<Self> {
         let v = p.as_ssh().ok_or_else(|| {
             anyhow::anyhow!("attach 는 ssh kind 프로필만 지원합니다 (kind='{}')", p.kind)
@@ -129,9 +107,7 @@ impl SshTarget {
         })
     }
 
-    /// **인라인 tasty-attach** 프로필을 ssh 연결 대상으로 변환한다(ssh_ref 없는 경우).
-    /// 연결 필드는 attach 프로필 자신의 fields 에서 읽는다([`AttachView`] 인라인 모드가
-    /// [`SshView`] 로직을 위임 재사용). `identity_file` 은 `passkey_ref` → [`Passkeys`].
+    /// ssh_ref가 없는 tasty-attach 프로필 자체의 접속 정보와 passkey 경로를 사용한다.
     pub fn from_attach_inline(p: &RemoteProfile, passkeys: &Passkeys) -> Result<Self> {
         let v = p.as_attach().ok_or_else(|| {
             anyhow::anyhow!(
@@ -158,17 +134,10 @@ impl SshTarget {
     }
 }
 
-/// attach 소비자용 헬퍼 — tasty-attach 프로필을
-/// `(SshTarget, remote_tasty, port_mode, port_file)` 로 resolve 한다.
-///
-/// 연결 정보(SshTarget)는 두 갈래:
-/// - `ssh_ref` 있으면 → `profiles` 에서 참조 ssh 프로필을 **매 resolve 마다 재로드**해
-///   (라이브 팔로우) `SshTarget::from_remote_profile` 로 결선. dangling ref 는 명확한
-///   에러(목록/GUI 표시는 이 에러를 잡아 소프트 배지로).
-/// - `ssh_ref` 없으면(인라인) → attach 프로필 자체 fields 로 `from_attach_inline`.
-///
-/// 비활성 게이트: 유효 ssh 소스(참조 ssh 프로필 or 인라인)의 `detect_failed`.
-/// attach 전용 remote_tasty/port_mode/port_file 은 tasty-attach 프로필이 소유한다.
+/// tasty-attach 프로필에서 `(SshTarget, remote_tasty, port_mode, port_file)`을 구한다.
+/// ssh_ref가 있으면 전달받은 profiles에서 참조를 찾고, 없으면 인라인 필드를 쓴다.
+/// 참조 누락과 유효 SSH 소스의 detect_failed는 오류다. 이 함수가 파일을 다시 읽지는 않는다.
+/// attach 전용 remote_tasty/port_mode/port_file은 tasty-attach 프로필에서 가져온다.
 pub fn resolve_attach_target(
     p: &RemoteProfile,
     profiles: &RemoteProfiles,
@@ -320,26 +289,17 @@ impl PortMode {
     }
 }
 
-/// SSH **연결 수립**(TCP 핸드셰이크 + 배너) 1회의 상한 — ssh(1) `-o ConnectTimeout`.
-///
-/// 이 값이 없으면 연결 수립은 OS 기본 SYN 재시도에 맡겨진다(리눅스 `tcp_syn_retries=6`
-/// = 약 127초). `ServerAliveInterval`/`CountMax` 는 **연결이 수립된 뒤의** keepalive 라
-/// 이 구간을 덮지 않는다. ProxyJump 처럼 홉이 여러 개면 ssh 가 홉마다 이 값을 적용한다.
+/// ssh의 기본 ConnectTimeout. 연결 뒤의 keepalive와는 별개이며
+/// 사용자가 먼저 지정한 -o ConnectTimeout이 있으면 그 값이 우선한다.
 pub const SSH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 포트 발견 **1회**(ssh 자식 프로세스 1개)의 프로세스 레벨 상한.
-///
-/// [`SSH_CONNECT_TIMEOUT`] 이 덮지 못하는 구간 — 인증 핸드셰이크, 원격 명령 실행,
-/// `BatchMode=no` 로 뜬 프롬프트 대기 — 까지 포함해 자식이 이 시간 안에 끝나지 않으면
-/// kill 한다. 연결 상한의 2 배라 2-hop ProxyJump 도 정상 경로로 들어간다.
+/// 포트 발견 자식 하나의 종료를 폴링하는 시간 제한.
+/// 만료 시 kill과 회수를 시도한다. spawn·회수·출력 수집까지 포함한 절대 기한은 아니다.
 pub const PORT_DISCOVERY_STEP_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// [`discover_remote_port`] / `detect_port_mode` **호출 1회 전체**의 상한.
-///
-/// auto 체인(3 단계)이나 명시 `port_file`(`cat`→`type` 2 회)처럼 한 호출이 ssh 를 여러 번
-/// 띄우므로, 단계 상한만으로는 총 대기가 단계 수만큼 곱해진다. 이 값이 그 곱을 끊는다 —
-/// 각 단계는 `min(`[`PORT_DISCOVERY_STEP_TIMEOUT`]`, 남은 예산)` 만 받고, 예산이 소진되면
-/// 남은 단계는 ssh 를 띄우지 않고 즉시 타임아웃으로 떨어진다.
+/// 한 포트 발견 호출의 단계들이 나눠 쓰는 시간 예산.
+/// 각 단계는 단계별 제한과 남은 예산 중 작은 값을 받는다. 소진되면 새 자식을 띄우지 않는다.
+/// 프로세스 생성·회수·출력 수집까지 이 시간 안에 끝난다는 보장은 없다.
 pub const PORT_DISCOVERY_TOTAL_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// 한 번의 포트 발견 호출에 허용된 총 예산의 만료 시각. 체인 각 단계에 남은 예산을
@@ -406,16 +366,8 @@ fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
     args.push(format!("ConnectTimeout={}", SSH_CONNECT_TIMEOUT.as_secs()));
 }
 
-/// 원격 포트 발견 실패의 원인 분류(로케일 독립 — exit code 기반).
-///
-/// [`PortDiscoveryError`] 와 함께 **공개 계약**이다. 포트 발견 결과는 `anyhow` 로
-/// 감싸 나가지만, 소비자가 문구가 아니라 원인으로 분기해야 할 때(재시도할지, 프로필을
-/// 비활성할지) downcast 해 이 `kind` 를 읽는 것이 의도된 경로다 — 그래서 지금 크레이트
-/// 밖 참조가 없어도 노출을 유지한다.
-///
-/// 원격 stderr 문자열 매칭에 의존하지 않는다 — 원격 로케일에 따라 문자열이 달라져
-/// 신뢰할 수 없다(실측: 한국어 로케일은 "그런 파일이나 디렉터리가 없습니다", 영어는
-/// "No such file or directory"). exit code 는 로케일 무관하게 안정적이다.
+/// 포트 발견 실패 분류. anyhow 오류에서 PortDiscoveryError로 downcast해 kind를 읽는다.
+/// 로케일별 stderr 문구 대신 종료 코드와 경과 시간으로 분류하므로 실제 원인을 확정하지는 못한다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PortDiscoveryFailureKind {
     /// SSH 연결/인증 자체가 실패했다(exit 255, 시그널 종료, 또는 로컬 spawn 실패).
@@ -425,22 +377,10 @@ pub enum PortDiscoveryFailureKind {
     RemoteInstanceNotRunning,
     /// 명령은 성공했으나(exit 0) stdout 에서 포트 숫자를 파싱하지 못했다.
     PortParseFailed,
-    /// 상한([`PORT_DISCOVERY_STEP_TIMEOUT`] / [`PORT_DISCOVERY_TOTAL_TIMEOUT`]) 안에
-    /// 아무 답도 오지 않았다 — 무응답 호스트(패킷 소멸), 프롬프트 대기, 예산 소진.
-    ///
-    /// [`SshConnectionFailed`](Self::SshConnectionFailed) 로 접지 않고 따로 두는 이유:
-    /// ① 사용자가 취할 조치가 다르다(도달성/회선 점검 vs 인증·호스트키 점검),
-    /// ② [`classify_by_exit_code`] 는 시그널 종료를 `SshConnectionFailed` 로 보는데
-    /// 타임아웃 kill 도 시그널 종료라, 이 자리가 없으면 우리가 죽인 것과 원격발 시그널
-    /// 종료가 같은 분류로 뭉개진다.
+    /// 폴링 예산이 소진됐거나, 연결 실패의 경과 시간이 연결 제한 이상이다.
+    /// 취소로 종료한 경우와 구분한다.
     TimedOut,
-    /// 호출자가 [`SshCancel::cancel`] 로 중단했다(자식 ssh 는 kill + reaping 됨).
-    /// 사용자 의도이므로 실패가 아니지만, 진행 중이던 발견 시도를 끊는 신호로 같은
-    /// 에러 타입에 실어 상위로 올린다.
-    ///
-    /// [`TimedOut`](Self::TimedOut) 과 겹치지 않는다: 상한은 **시간**이 끊은 것이고
-    /// 이쪽은 **사용자 의도**로 끊은 것이라, 취소 kill 이 시그널 종료로 관측되어 상한
-    /// 초과처럼 보이더라도 취소가 우선한다([`ChildOwner::finish`]).
+    /// 호출자가 SshCancel::cancel로 중단했다. 시간 초과와 겹쳐도 취소를 우선한다.
     Cancelled,
 }
 
@@ -459,12 +399,8 @@ impl PortDiscoveryFailureKind {
     }
 }
 
-/// 원격 포트 발견 실패 에러. `kind` 는 사용자 노출/분기 판정용, `detail` 은 원격 raw
-/// stderr·파싱 실패 원문을 담되 **`Display` 에 노출하지 않는다** — 로케일 의존 문자열과
-/// 내부 디스커버리 구현(포트 파일 경로·`cat`/`type` 명령)이 최종 사용자 문구로 새어나가지
-/// 않게 하기 위함(raw stderr 노출 이슈의 근본 수정 지점). 진단이 필요하면 생성 시점에
-/// `tracing::debug!` 로 한 번 남긴다 — 상위에서 `anyhow::Context` 로 감싸도(`.with_context`)
-/// 이 타입의 `Display` 자체가 안전하므로 체인 어디서 출력되어도 raw stderr 가 섞이지 않는다.
+/// kind는 사용자 안내와 분기에 쓰고 detail은 진단 원문을 보관한다.
+/// Display는 번역한 kind만 출력하며 원격 stderr나 내부 명령을 노출하지 않는다.
 #[derive(Debug)]
 pub struct PortDiscoveryError {
     pub kind: PortDiscoveryFailureKind,
@@ -492,13 +428,9 @@ impl std::fmt::Display for PortDiscoveryError {
 
 impl std::error::Error for PortDiscoveryError {}
 
-/// `ssh` 프로세스 종료코드를 원인 분류로 매핑한다(순수 함수 — 단위 테스트 대상).
-///
-/// exit 255 는 ssh(1) 자체의 연결/인증 실패 관례 코드(OpenSSH 매뉴얼). 시그널 종료
-/// (`code=None`) 도 원격 명령까지 도달했다고 볼 수 없어 같은 분류. 그 외 코드는 원격
-/// 셸이 명령을 실행하고 낸 종료코드 — "연결은 됐다"는 확정 신호라 인스턴스 미실행으로
-/// 본다. 원격 명령이 이론상 255 를 자체적으로 반환할 가능성은 남지만(문서 한계로 명시),
-/// exit code 가 원격 로케일에 무관한 유일한 신호라 그 한계를 감수한다.
+/// 종료 코드를 실패 분류로 바꾼다. 255나 시그널 종료는 연결 실패로 분류한다.
+/// 나머지는 원격 인스턴스 미실행으로 추정한다. 원격 명령도 255를 반환할 수 있고
+/// 다른 실패 코드가 실제 인스턴스 부재를 증명하지는 않는다.
 fn classify_by_exit_code(code: Option<i32>) -> PortDiscoveryFailureKind {
     match code {
         Some(255) | None => PortDiscoveryFailureKind::SshConnectionFailed,
@@ -506,14 +438,8 @@ fn classify_by_exit_code(code: Option<i32>) -> PortDiscoveryFailureKind {
     }
 }
 
-/// [`classify_by_exit_code`] 결과를 **소요 시간**으로 한 번 더 좁힌다(순수 함수).
-///
-/// `ConnectTimeout` 이 걸린 뒤로 무응답 호스트의 지배적 결말은 "ssh 가 스스로 상한을 세고
-/// exit 255" 다 — exit code 만 보면 인증 실패와 구분되지 않아 사용자가 엉뚱한 곳(키/호스트키)
-/// 을 뒤지게 된다. ssh 가 [`SSH_CONNECT_TIMEOUT`] 을 다 쓰고 연결 실패로 끝났으면 그건
-/// 시간으로 끊긴 것이므로 [`TimedOut`](PortDiscoveryFailureKind::TimedOut) 으로 본다.
-/// 판정 입력이 exit code + 경과 시간뿐이라 원격 로케일에 의존하지 않는다(이 모듈의
-/// "stderr 문자열 매칭 금지" 원칙 유지).
+/// 연결 실패의 경과 시간이 기본 연결 제한 이상이면 시간 초과로 분류한다.
+/// 종료 코드와 시간만 쓰는 추정이며, 실제 종료 원인을 확정하지는 않는다.
 fn refine_with_elapsed(
     kind: PortDiscoveryFailureKind,
     elapsed: Duration,
@@ -524,28 +450,9 @@ fn refine_with_elapsed(
     kind
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 포트 발견 자식 ssh 의 취소(kill) 핸들
-// ════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════
-// 포트 발견 자식 ssh 의 취소(kill) 핸들
-// ════════════════════════════════════════════════════════════════════════
-
-/// 진행 중인 **포트 발견** 자식 ssh 를 다른 스레드에서 중단하기 위한 핸들.
-///
-/// 포트 발견은 이미 [`PORT_DISCOVERY_STEP_TIMEOUT`] / [`PORT_DISCOVERY_TOTAL_TIMEOUT`]
-/// 으로 **시간** 상한이 걸려 있지만, 그건 상한이 다 찰 때까지는 아무도 못 끊는다는 뜻도
-/// 된다 — 사용자가 조회를 중단해도 자식 ssh 가 상한까지 살아 있다. 이 핸들이 그 상한
-/// **이전에** 끊는 **사용자 의도** 경로다. 워커 스레드가 [`SshCancel::scope`] 로 자신을
-/// 등록하면, 그 스레드에서 실행되는 모든 포트 발견 자식이 이 핸들에 붙어
-/// [`SshCancel::cancel`] 로 kill + reaping 된다([`SshTunnel`] 이 Drop 으로 자기 자식을
-/// 회수하는 것과 같은 계약을 그 앞단에도 주는 셈이다).
-///
-/// 스레드로컬 스코프를 쓰는 이유: 포트 발견은 `resolve_endpoint` →
-/// `discover_remote_port` → 단계별 프로브로 이어지는 깊은 호출 사슬이고, 취소가 필요한
-/// 것은 그중 GUI/IPC 워커 경로뿐이다. 전 경로에 취소 인자를 흘리는 대신 "이 스레드에서
-/// 도는 발견 작업" 이라는 자연스러운 경계에 붙인다.
+/// 다른 스레드에서 포트 발견 자식을 취소하는 핸들.
+/// scope를 연 워커 스레드의 발견 자식이 등록되며 cancel에서 kill과 회수를 시도한다.
+/// 터널 자체는 SshTunnel이 별도로 소유한다.
 #[derive(Clone, Default)]
 pub struct SshCancel {
     inner: Arc<CancelInner>,
@@ -634,11 +541,7 @@ fn current_cancel() -> Option<SshCancel> {
 fn cancel_requested() -> bool {
     current_cancel().is_some_and(|c| c.is_cancelled())
 }
-/// 자식 슬롯 잠금. 이 뮤텍스 안에서 하는 일은 `Option<Child>` 의 take/replace 뿐이라
-/// 패닉 지점이 없다 — poisoned 는 도달 불가지만, 도달하더라도 자식을 회수하지 못해
-/// 프로세스가 새는 쪽이 더 나쁘므로 값을 복구해 계속 진행한다.
-/// 자식 슬롯 락의 poison 복구 공용 보고 좌표(첫-1 회). 임계구역은 `Option<Child>` 의
-/// take/replace 뿐이라 복구가 안전하다 — 틀린 것은 흔적이 없다는 것이었다.
+/// 자식 회수를 계속할 수 있도록 Option<Child> 슬롯의 poison을 복구하고 처음 한 번 보고한다.
 const CHILD_SLOT_WHAT: &str = "the ssh child slot";
 static CHILD_SLOT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -786,19 +689,10 @@ fn wait_with_timeout(owner: &mut ChildOwner, budget: Duration) -> bool {
     }
 }
 
-/// 이미 조립된 ssh `Command` 를 상한 안에서 실행한다(포트 발견용 — 프로세스 레벨 감시).
-///
-/// `Command::output()` 을 쓰지 않는 이유: `output()` 은 자식이 끝날 때까지 무기한 블록하고
-/// `Child` 핸들도 주지 않아 중간에 끊을 수단이 없다. 여기서는 직접 `spawn` 해 핸들을 쥐고
-/// [`wait_with_timeout`] 으로 감시한다.
-///
-/// stdout/stderr 를 파이프로 잡으므로 원격이 파이프 버퍼(수십 KB)를 넘겨 쓰면 자식이
-/// 블록될 수 있는데, 그 경우도 상한에서 kill 되므로 hang 은 아니다(포트 발견 출력은
-/// 한 줄이라 정상 경로에서는 발생하지 않는다).
-///
-/// 상한과 별개로 **취소**(`SshCancel`)가 이 자식을 상한 만료 전에 끊을 수 있다. 두 경로는
-/// 서로를 침범하지 않는다 — 취소가 관여했으면 어느 지점에서 끊겼든
-/// [`PortDiscoveryFailureKind::Cancelled`] 로 나가고, 시간이 끊었을 때만 `TimedOut` 이다.
+/// 자식 핸들을 보유하고 종료를 폴링해 취소와 시간 제한을 적용한다.
+/// 출력이 파이프를 채워 자식이 멈춰도 폴링 제한에 걸리지만, spawn·kill 후 회수·
+/// wait_with_output에는 별도 제한이 없다. 함수 전체의 절대 실행 시간은 보장하지 않는다.
+/// 취소와 시간 초과가 겹치면 Cancelled를 반환한다.
 fn run_capture_with_budget(
     mut cmd: Command,
     budget: Duration,
@@ -953,7 +847,7 @@ fn discover_via_explicit_file(
     parse_port(&out)
 }
 
-/// OS 분기 file 모드(decisions 9 fallback): Unix `cat` / Windows `type`.
+/// Unix의 cat 또는 Windows의 type으로 관례 경로의 포트 파일을 읽는다.
 fn discover_via_file(
     ssh: &Path,
     target: &SshTarget,
@@ -972,32 +866,17 @@ fn discover_via_file(
     parse_port(&out)
 }
 
-/// `Auto` 모드의 고정 fallback 시도 순서. SSH 는 연결 수단일 뿐 원격
-/// DefaultShell(PowerShell/cmd/git bash/unix)이 무엇이든 동작해야 하므로, 단일 셸에
-/// 의존하지 않도록 3개 단일 모드를 순서대로 시도해 4개 셸 매트릭스를 전부 커버한다:
-/// - subcommand: git bash·unix 성공 (Windows GUI 바이너리 release 는 빈 출력으로 실패).
-/// - file-unix (`cat ~/...`): PowerShell(`cat` alias + `~` 확장)·git bash·unix 성공.
-/// - file-windows (`type %USERPROFILE%\...`): cmd 성공 — 위 둘이 모두 실패하는 유일 경로.
+/// Auto는 subcommand → Unix 파일 명령 → Windows 파일 명령 순으로 시도한다.
+/// 셸과 실행 파일 환경에 따라 앞선 방식이 실패할 수 있으므로 여러 방식을 둔다.
 const AUTO_FALLBACK_CHAIN: [PortMode; 3] = [
     PortMode::Subcommand,
     PortMode::FileUnix,
     PortMode::FileWindows,
 ];
 
-/// Auto 체인 실패 시 대표로 보여줄 에러 하나를 고른다. 세 단계 모두 실패하면 원인이
-/// 섞일 수 있는데(예: subcommand 는 Windows release 에서 빈 출력으로 파싱 실패, 나머지
-/// 둘은 포트 파일이 없어 인스턴스 미실행) 마지막 단계 에러만 남기면 정보량이 가장 적은
-/// 사유가 사용자에게 보인다(원래 버그). 확실성이 높은 분류를 우선한다:
-/// SSH 연결 자체 실패(다른 무엇도 알 수 없음) > 인스턴스 미실행(원격 명령까지는 도달해
-/// 얻은 확정적 신호) > 포트 파싱 실패(가장 모호함 — 연결·명령 성공, 출력만 이례적).
-/// 동일 kind 가 여럿이면 체인에서 먼저 시도된 것을 쓴다.
-///
-/// 타임아웃은 그 위에 놓는다 — 아무 답도 못 받은 단계가 하나라도 있으면, 다른 단계가
-/// 낸 "연결 실패/미실행" 은 **그 타임아웃이 전체 예산을 먹어 굶긴 결과**일 수 있어
-/// 대표로 삼으면 오도한다(체크할 곳이 인증이 아니라 도달성이다).
+/// 여러 실패 중 취소 → 시간 초과 → 연결 실패 → 인스턴스 미실행 추정 → 파싱 실패
+/// 순서로 대표 오류를 고른다. 같은 분류에서는 먼저 시도한 단계의 오류를 사용한다.
 fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryError {
-    // 취소가 타임아웃보다도 위다 — 사용자가 끊었다는 것은 확정 사실이라, 그 때문에
-    // 굶은 다른 단계의 무응답/연결 실패를 대표로 삼으면 오도한다.
     const PRIORITY: [PortDiscoveryFailureKind; 5] = [
         PortDiscoveryFailureKind::Cancelled,
         PortDiscoveryFailureKind::TimedOut,
@@ -1015,17 +894,10 @@ fn pick_most_informative(mut errors: Vec<PortDiscoveryError>) -> PortDiscoveryEr
         .expect("errors 는 AUTO_FALLBACK_CHAIN 시도 횟수만큼 채워져 비어있지 않음")
 }
 
-/// 원격 tasty 데몬의 IPC 포트를 발견한다(plan §4.4).
-///
-/// `Auto` 는 [`AUTO_FALLBACK_CHAIN`] 순서로 단일 모드를 차례로 시도하고, 한 모드라도
-/// 포트를 내면 즉시 반환한다. subcommand 는 Windows release 에서 "빈 출력 + exit 0"
-/// 으로 조용히 실패할 수 있는데, 이 경우 [`parse_port`] 가 에러를 내며 다음 단계로
-/// 넘어간다(exit code 만으로는 감지 불가). 전 단계 실패 시 [`pick_most_informative`] 로
-/// 대표 에러를 고른다.
-///
-/// **상한**: 이 호출 전체가 [`PORT_DISCOVERY_TOTAL_TIMEOUT`] 안에 끝난다(각 ssh 실행은
-/// 추가로 [`PORT_DISCOVERY_STEP_TIMEOUT`] 상한). 무응답 호스트에서 무기한 블록하지
-/// 않으므로 워커/재연결 루프가 이 함수에 갇히지 않는다.
+/// 원격 Tasty의 IPC 포트를 발견한다. Auto는 첫 성공을 반환하고 모두 실패하면
+/// pick_most_informative로 대표 오류를 고른다. 명령이 성공해도 출력에 포트가 없으면 실패다.
+/// 각 단계는 PORT_DISCOVERY_TOTAL_TIMEOUT을 나눠 쓰며 단계별 폴링 제한도 적용한다.
+/// 프로세스 생성·회수·출력 수집에는 별도 시간 제한이 없다.
 pub fn discover_remote_port(
     ssh: &Path,
     target: &SshTarget,
@@ -1090,13 +962,8 @@ fn discover_single_mode(
     }
 }
 
-/// 자동감지: 프로브 체인([`AUTO_FALLBACK_CHAIN`])을 순서대로 시도해 **첫 성공 모드**를
-/// 돌려준다(셸 종류를 묻는 단일 명령이 없으므로 프로브 성패가 곧 감지 결과 —
-/// `docs/features/remote-profiles/index.md#데이터-모델`).
-/// 전 프로브 실패 시 마지막 에러를 반환한다.
-///
-/// `try_mode` 는 단일 모드를 시도해 포트를 내는 클로저 — 실제 SSH 실행([`detect_port_mode`])
-/// 또는 테스트용 mock 을 주입할 수 있다.
+/// 주어진 프로브에서 처음 성공한 포트 발견 방식을 반환한다. 실제 셸 종류를 판별하지는 않는다.
+/// 모두 실패하면 pick_most_informative로 대표 오류를 고른다. 시험에서는 mock을 전달할 수 있다.
 fn detect_first_success<F>(mut try_mode: F) -> Result<PortMode>
 where
     F: FnMut(PortMode) -> Result<u16, PortDiscoveryError>,
@@ -1116,13 +983,8 @@ where
     }
     Err(pick_most_informative(errors).into())
 }
-
-/// 원격 셸 자동감지 — 프로브 체인을 실제 SSH 로 1회씩 돌려 첫 성공 모드를 반환한다.
-/// 네트워크 I/O(1~3 왕복)로 수 초 블록될 수 있다 — 호출자가 적절한 스레드에서 실행.
-///
-/// [`discover_remote_port`] 와 같은 상한이 걸린다(체인 전체 [`PORT_DISCOVERY_TOTAL_TIMEOUT`],
-/// ssh 1회 [`PORT_DISCOVERY_STEP_TIMEOUT`]) — 감지 경로도 같은 `run_ssh_capture` 를 타므로
-/// "감지 중" 표시가 무한정 남지 않는다.
+/// 실제 SSH 프로브의 첫 성공 방식을 반환한다. 블로킹하므로 워커에서 호출한다.
+/// discover_remote_port와 같은 전체 예산·단계별 폴링 제한을 사용한다.
 pub(crate) fn detect_port_mode(
     ssh: &Path,
     target: &SshTarget,
@@ -1136,18 +998,11 @@ pub(crate) fn detect_port_mode(
     })
 }
 
-/// ssh 프로필의 `shell` 값으로 **셸 감지 상태(`detect_failed`)** 를 갱신한다(detect-split:
-/// ssh 레이어는 셸 도달성만 판정, port_mode 도출은 attach 레이어 — `resolve_attach_target`).
-///
-/// - 명시 셸(powershell/cmd/bash/zsh) → 도달 가능한 셸로 간주, `detect_failed` 해제.
-///   네트워크 I/O 없음. 반환 `None`.
-/// - `auto` → 실제 SSH 프로브 체인 1회 실행(블록). 성공 시 `detect_failed` 해제, 실패 시
-///   `detect_failed=true`. 반환 `Some(결과 모드)`(리포트용 — 프로필엔 저장하지 않는다).
-///
-/// `auto` 분기는 네트워크 I/O 로 수 초 블록될 수 있다 — GUI/host 는 워커 스레드에서 호출.
-/// **공개 계약 아님** — `tasty-cli` 의 커맨드 구현만 쓴다. 크레이트 밖 소비자가
-/// 하나뿐이라 `pub(crate)` 로 못 내릴 뿐이며, 새 소비자가 이걸 쓰기 시작하면
-/// 그건 계약 확장이므로 `#[doc(hidden)]` 을 떼고 문서화하는 결정을 먼저 한다.
+/// CLI에서 ssh 프로필의 detect_failed를 갱신한다.
+/// 알려진 명시 셸은 프로브 없이 실패 표시를 지우고 None을 반환한다.
+/// auto와 알 수 없는 값은 실제 프로브를 실행해 성공 여부와 결과 모드를 반환한다.
+/// 결과 모드는 저장하지 않는다. 블로킹하므로 GUI에서 호출할 때는 워커를 사용한다.
+/// 새 소비자를 추가하려면 숨겨진 API를 공개하기 전에 계약을 문서화한다.
 #[doc(hidden)]
 pub fn apply_shell_to_profile(
     profile: &mut RemoteProfile,
@@ -1177,8 +1032,7 @@ pub fn apply_shell_to_profile(
 fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<PortMode> {
     let ssh = resolve_ssh_path();
     let target = SshTarget::from_remote_profile(profile, passkeys)?;
-    // ssh 프로필 셸 감지는 기본 `tasty` 바이너리로 subcommand 프로브를 시도한다.
-    // (attach 실행부의 remote_tasty 는 tasty-attach 프로필이 소유 — 셸 감지엔 불필요.)
+    // 이 ssh 프로필의 remote_tasty가 있으면 사용하고 없으면 tasty를 실행한다.
     let remote_tasty = profile
         .fields
         .get("remote_tasty")
@@ -1216,21 +1070,16 @@ pub fn detect_and_persist(name: &str) -> Result<PortMode> {
     result
 }
 
-/// `127.0.0.1:0` 바인드로 비어있는 로컬 포트를 확보하고, 그 포트를 점유하는 리스너를
-/// 함께 반환한다. 리스너를 잡고 있는 동안 그 포트는 이 프로세스 소유라 TOCTOU 가 없다 —
-/// 소비자가 리스너를 drop 하는 순간부터 레이스가 시작된다(ssh 가 rebind, ready-probe
-/// 타임아웃 → 재시도로 흡수). 예전엔 함수 안에서 drop 하고 port 만 돌려줬고, 그러면
-/// 반환값을 다시 bind 하려는 코드는 전부 그 짧은 창을 노출한 TOCTOU 였다.
+/// 빈 로컬 포트와 점유 중인 리스너를 반환한다. 리스너를 놓은 뒤 ssh가 다시 바인드할
+/// 때까지는 다른 프로세스가 포트를 차지할 수 있다.
 fn reserve_local_port() -> Result<(std::net::TcpListener, u16)> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     Ok((listener, port))
 }
 
-/// `ssh -L` 포트포워딩 터널의 자식 프로세스 핸들(plan §5).
-///
-/// Drop 시 자식 ssh 를 kill 해 고아 터널을 방지한다. 자식 ssh 를 kill 해도 원격
-/// tasty 데몬은 생존한다(server-owns-PTY persistence) = detach 의 본질.
+/// ssh -L 자식의 수명을 관리한다. Drop에서 터널 자식을 종료·회수한다.
+/// 원격 Tasty 프로세스는 터널과 별도로 실행된다.
 pub struct SshTunnel {
     child: Child,
     /// 로컬 끝점 포트 — client 가 `127.0.0.1:local_port` 로 붙는다.
@@ -1246,11 +1095,10 @@ impl SshTunnel {
         remote_port: u16,
         verify: bool,
     ) -> Result<Self> {
-        // 포트를 리스너로 점유한 뒤 즉시 놓는다 — 이 drop 부터 ssh 의 rebind 까지가
-        // 본질적 TOCTOU 이고, 아래 ready-probe 폴링이 그 창의 충돌을 흡수한다.
+        // ssh가 바인드하도록 예약을 해제한다. 그 사이 다른 프로세스가 차지할 수 있다.
         let (reservation, local_port) = reserve_local_port()?;
         drop(reservation);
-        // 로컬 끝점도 loopback 한정(`-L *:` / `-g` 금지) — 멀티유저 노출 차단.
+        // loopback에만 바인드한다. 같은 호스트의 다른 사용자 접근까지 막지는 않는다.
         let forward = format!("127.0.0.1:{local_port}:127.0.0.1:{remote_port}");
 
         let mut args: Vec<String> = Vec::new();
@@ -1278,8 +1126,8 @@ impl SshTunnel {
         Ok(tunnel)
     }
 
-    /// 로컬 끝점에 `TcpStream::connect` 가 성공할 때까지 폴링(타임아웃 ~5s).
-    /// `ExitOnForwardFailure=yes` 라 포워드 실패 시 ssh 가 죽어 try_wait 로도 감지.
+    /// 로컬 연결을 폴링하며 반복 사이에 5초 기한과 자식 종료를 확인한다.
+    /// 개별 TcpStream::connect에는 별도 timeout을 설정하지 않는다.
     fn wait_ready(&mut self) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -1310,12 +1158,8 @@ static TUNNEL_DROP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 /// `SshTunnel::drop` 누적 횟수 — [`tunnel_drop_totals`] 참조.
 static TUNNEL_DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// 지금까지 `SshTunnel::drop` 이 소비한 (총 시간, 횟수).
-///
-/// 호스트 종료 계측(`S5c ssh_tunnel_drop`)용이다. `child.wait()` 가 블로킹이라
-/// attach 세션 수만큼 직렬로 쌓이고, 그 구간은 `event_loop.exit()` 이후라 화면으로
-/// 덮을 수 없다. 호스트가 App drop **전후 델타**로 읽는다 (평시 browse/attach 해제
-/// 시의 drop 도 함께 누적되므로 절대값은 의미가 없다).
+/// 지금까지 SshTunnel::drop에서 쓴 총 시간과 횟수.
+/// 평시 터널 해제도 포함되므로 특정 종료 구간을 측정하려면 전후 차이를 사용한다.
 pub fn tunnel_drop_totals() -> (Duration, u64) {
     use std::sync::atomic::Ordering;
     (
@@ -1339,8 +1183,7 @@ impl Drop for SshTunnel {
     }
 }
 
-/// 지수 백오프(자동 재연결 — decisions 7). min 에서 시작해 factor 배씩 증가, max 상한.
-/// 성공 시 [`reset`](Self::reset) 으로 min 복귀.
+/// 재연결 대기 시간을 두 배씩 늘리고 max로 제한한다. 성공하면 reset으로 min으로 돌아간다.
 pub struct Backoff {
     cur: Duration,
     min: Duration,
@@ -1348,7 +1191,7 @@ pub struct Backoff {
 }
 
 impl Backoff {
-    /// 권장 파라미터: min=500ms, max=30s, factor=2.
+    /// 초기 500ms, 최대 30초의 대기 간격을 만든다.
     pub fn new() -> Self {
         Self {
             cur: Duration::from_millis(500),
@@ -1565,12 +1408,7 @@ mod tests {
         );
     }
 
-    /// 시작하면 상한 안에는 절대 끝나지 않는 자식 프로세스(타임아웃 경로 검증용).
-    /// 띄우면 **반드시 실패하는** 명령. "ssh 를 안 띄웠다" 를 시계가 아니라 **사건**으로
-    /// 만드는 데 쓴다 — 띄웠으면 `spawn` 이 실패해 `SshConnectionFailed` 가 나오고,
-    /// 안 띄웠으면 조기 반환의 사유(`TimedOut`/`Cancelled`)가 그대로 나온다. 두 값이
-    /// 다르므로 분류 하나로 갈린다. 경과 상한은 같은 것을 훨씬 약하게 물으면서
-    /// 굶은 러너에서 빨개지기까지 했다(docs/dev-guide/self-verification.md#시간-측정과-실패-진단).
+    /// 실행을 시도하면 실패하는 명령. TimedOut/Cancelled 조기 반환이 spawn보다 먼저인지 구분한다.
     fn unspawnable_command() -> Command {
         Command::new("/tasty-ssh-test/this-path-must-not-exist")
     }
@@ -1590,16 +1428,11 @@ mod tests {
         }
     }
 
-    /// 응답하지 않는 대상은 상한 안에 에러로 끝난다(무한 대기 회귀 고정).
-    /// `remote_browse::probe_stale_port_eof_is_error_not_hang` 과 같은 성격의 no-hang 테스트.
+    /// 긴 자식 실행을 폴링 제한으로 중단하는지 확인한다.
     #[test]
     fn port_discovery_times_out_instead_of_hanging() {
         const CEILING: Duration = Duration::from_secs(10);
-        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
-        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
-        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
+        // 프로세스 생성 대조군은 변동이 커서 판정에 쓰지 않는다. 경과 시간만 확인한다.
         let started = Instant::now();
         let r = run_capture_with_budget(
             never_returns_command(),
@@ -1608,7 +1441,7 @@ mod tests {
         );
         let err = r.expect_err("상한을 넘긴 자식은 에러여야 한다");
         assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
-        // 상한(300ms) + 폴링/프로세스 spawn 여유. 무한 대기면 여기서 잡힌다.
+        // 반환까지 걸린 시간에 폴링·프로세스 생성 여유를 허용한다.
         let elapsed = started.elapsed();
         assert!(elapsed < CEILING, "상한 안에 반환되지 않음: {elapsed:?}");
         // 타임아웃 detail 은 로그 전용 — 사용자 문구에 내부 사정이 새지 않는다.
@@ -2063,11 +1896,7 @@ mod tests {
         handle.register(child).expect("취소 전이므로 등록 성공");
 
         const CEILING: Duration = Duration::from_secs(10);
-        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
-        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
-        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
+        // 프로세스 생성 대조군은 변동이 커서 판정에 쓰지 않는다.
         let t0 = Instant::now();
         handle.cancel();
         let elapsed = t0.elapsed();
@@ -2092,9 +1921,7 @@ mod tests {
         kill_and_reap(&mut rejected);
     }
 
-    /// 취소된 스코프에서는 새 ssh 를 **spawn 하지 않는다** — 예산 소진과 같은 자리의
-    /// 조기 반환이고, 사유만 다르다(`Cancelled` vs `TimedOut`). 60초짜리 자식을 주고도
-    /// 즉시 돌아오는 것이 spawn 하지 않았다는 증거다.
+    /// 취소된 스코프는 실행 불가능한 명령의 spawn 오류보다 먼저 Cancelled를 반환한다.
     #[test]
     fn cancelled_scope_skips_spawn() {
         let handle = SshCancel::new();
@@ -2124,11 +1951,7 @@ mod tests {
             killer.cancel();
         });
         const CEILING: Duration = Duration::from_secs(5);
-        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
-        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
-        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
+        // 프로세스 생성 대조군은 변동이 커서 판정에 쓰지 않는다.
         let started = Instant::now();
         // 예산 10초, 자식은 60초 — 취소가 없으면 10초를 다 쓴다.
         let err = run_capture_with_budget(

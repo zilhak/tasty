@@ -1,22 +1,7 @@
-//! 터미널 화면 텍스트의 링크 검출 — URL·경로 스캔, 줄바꿈을 가로지르는 세그먼트,
-//! 렌더러가 색을 덮어쓰는 하이라이트 범위.
-//!
-//! 렌더러·view·파일 디스패치가 같은 타입을 쓴다. 그 타입이 UI adapter 모듈에 살면
-//! 렌더러가 adapter 를 거꾸로 보게 되므로 소속만 여기로 내렸다.
-//!
-//! **링크를 여는 일은 여기 없다.** `open_uri` 는 기본 브라우저에 넘기는 OS 부수효과라
-//! 본체의 `gui` feature 뒤에 남는다(`webbrowser` 가 그 feature 의 optional 의존이다).
-//! 이 크레이트는 검출과 그 결과 타입만 담으므로 헤드리스에서도 컴파일된다.
-
-//! 터미널 셀 내용에서 클릭 가능한 링크(URL)를 검출한다.
-//!
-//! 두 가지 경로:
-//! 1. **OSC 8 hyperlink**: termwiz `CellAttributes::hyperlink()`로 얻는다.
-//!    셀에 이미 URI가 붙어 있으므로 그대로 사용.
-//! 2. **Plain text URL**: 라인을 문자열로 이어 붙인 뒤 regex로 검출한다.
-//!
-//! 링크 좌표는 표시 컬럼(display column) 단위이며 와이드 문자는 2칸을 차지한다.
-//! scrollback 라인과 screen 라인 양쪽을 지원한다.
+//! 터미널 텍스트에서 OSC 8 링크·URL·파일 경로를 찾고 강조할 셀 범위를 제공한다.
+//! OSC 8은 셀에 붙은 URI를 사용하고 일반 텍스트는 정규식으로 찾는다.
+//! 좌표는 표시 컬럼 단위이며 scrollback과 현재 화면을 모두 처리한다.
+//! 링크를 여는 OS 동작은 호스트가 맡으므로 이 크레이트는 GUI 없이 사용할 수 있다.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -105,10 +90,7 @@ fn path_regex() -> &'static Regex {
         #[cfg(not(windows))]
         let rel_bare = r"(?P<rel_bare>[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)+)";
 
-        // 경로 문자: 영숫자, -, _, ., /, \, :, ~, (, ), 공백 제외. 한글 등 non-ASCII는 제외.
-        // 단어 경계(앞)에서 시작해 공백/괄호/따옴표까지.
-        // rel/unix/win 을 먼저 두어(leftmost-first) 절대경로·`./`·`../` 가 rel_bare 에
-        // 흡수되지 않게 한다.
+        // 접두사가 있는 상대·절대 경로를 먼저 검사한다. ASCII 경로 후보만 추출한다.
         let pattern = format!(
             r#"(?x)
             (?:
@@ -308,11 +290,8 @@ fn detect_row_links(
     }
 }
 
-/// `absolute_row` 가 소프트 wrap 됐는지(다음 행이 논리적 연속인지) — scrollback 은
-/// 캡처 시점에 기록된 `ScrollbackLine.wrapped` 플래그를 그대로 쓰고, screen(live)
-/// 행은 그 플래그가 없어 동일 휴리스틱(맨 오른쪽 컬럼이 공백 아닌 grapheme 로
-/// 채워져 있으면 wrap)을 여기서 재현한다 — `tasty_terminal::TerminalState::
-/// line_was_soft_wrapped` 와 같은 판정이지만 그 API는 크레이트 밖에 노출되지 않는다.
+/// 행의 줄바꿈 여부. scrollback은 저장된 wrapped를 쓰고 현재 화면은
+/// 오른쪽 끝의 공백 아닌 글리프로 추정한다. tasty-terminal의 캡처와 같은 기준이다.
 fn row_wrapped(
     terminal: &tasty_terminal::Terminal,
     absolute_row: usize,
@@ -431,13 +410,8 @@ fn merge_wrap_chain_up(
     }
 }
 
-/// 주어진 (col, absolute_row)에 있는 링크를 터미널에서 찾는다. scrollback과
-/// screen 양쪽을 처리하고, OSC8 하이퍼링크가 소프트 wrap 으로 여러 화면 행에
-/// 걸쳐 있으면(`ScrollbackLine.wrapped`/동등 휴리스틱 + 동일 uri) 그 체인 전체를
-/// 위/아래 양방향으로 병합해 반환한다. plain-text URL/경로(regex 검출)는 wrap
-/// continuation 행에 스킴 프리픽스가 없어 그 행 자체에서 애초에 매치가 나지
-/// 않으므로(따라서 uri 도 일치하지 않으므로) 별도 처리 없이도 병합 대상이 되지
-/// 않는다 — merge 조건(`uri` 일치)이 자연히 걸러낸다.
+/// 해당 위치의 링크를 찾는다. 인접 행의 wrap 표시와 URI가 같으면 위아래로 합친다.
+/// 일반 텍스트 URL·경로는 이어진 행에서 보통 같은 URI로 검출되지 않아 병합되지 않는다.
 pub fn link_at(
     terminal: &tasty_terminal::Terminal,
     col: usize,
@@ -446,12 +420,7 @@ pub fn link_at(
     let scrollback_len = terminal.scrollback_len();
     let cwd = terminal.get_cwd();
     let cwd_ref = cwd.as_deref();
-    // 원격(mirror) surface 판별: detached mirror 는 자식 PTY 가 없어 process_id() 가
-    // None. 화면 경로는 원격 호스트 경로라 로컬 exists() 검증을 건너뛰어야 한다.
-    // (`Terminal::new_detached` 호출처는 여럿이지만 — attach_readonly/attach CLI 등 —
-    //  그것들은 GUI terminals store 밖이다. `link_at` 에 들어오는 terminal 은
-    //  find_terminal_by_id 가 보는 GUI store 기준이고, 그 store 안에서 detached 인 것은
-    //  attach_client::start_gui_attach 의 mirror 뿐이라 process_id().is_none() ⟺ mirror.)
+    // GUI store의 detached 터미널은 원격 mirror다. 원격 경로는 로컬 exists로 검사하지 않는다.
     let mirror = terminal.process_id().is_none();
     let spans = detect_row_links(terminal, absolute_row, scrollback_len, cwd_ref, mirror)?;
     let mut found = spans.into_iter().find(|s| s.contains(col, absolute_row))?;
@@ -486,18 +455,14 @@ impl LinkHighlight {
 ///   로컬 `exists()` 검증을 건너뛰고 (원격 cwd 기준 결합한) 경로를 그대로 emit.
 fn resolve_link_target(candidate: &str, cwd: Option<&Path>, mirror: bool) -> Option<String> {
     let p = Path::new(candidate);
-    // mirror surface 의 화면 경로는 원격 호스트(유닉스) 규약을 따른다 — Windows
-    // 의 `Path::is_absolute()` 는 `/remote/...` 를 (드라이브/UNC 접두사가 없어)
-    // 비절대로 판정하므로 로컬 규약만 쓰면 원격 절대경로가 상대경로로 오판돼
-    // cwd 없이는 링크화되지 않는다. mirror 면 유닉스식 루트를 절대로 인정한다.
+    // Windows의 Path는 /remote/...를 절대경로로 보지 않으므로 mirror는 Unix 루트도 인정한다.
     let is_abs = p.is_absolute() || (mirror && candidate.starts_with('/'));
     let abs: PathBuf = if is_abs {
         p.to_path_buf()
     } else {
         cwd?.join(p)
     };
-    // 정규화 (심볼릭/`.` `..`): canonicalize는 실패 가능하고 Windows에서 UNC 접두사를
-    // 붙일 수 있어, 존재 확인만 하고 원본 abs 경로를 file:// URI로 변환.
+    // canonicalize로 심볼릭 링크나 Windows UNC 표기를 바꾸지 않고 원래 경로를 URI로 만든다.
     if !mirror && !abs.exists() {
         return None;
     }
@@ -515,7 +480,7 @@ fn path_to_file_uri(abs: &Path) -> String {
     }
 }
 
-/// 경로 regex 매치를 돌면서 존재하는 경로만 LinkSpan으로 추가.
+/// 경로 후보를 링크로 추가한다. 로컬 경로만 존재 여부를 확인한다.
 fn append_path_matches(
     text: &str,
     col_of_byte: &[usize],
@@ -561,16 +526,9 @@ fn append_path_matches(
     }
 }
 
-/// 터미널에서 드래그/더블클릭으로 확정 선택한 텍스트가 실재하는 파일/폴더 경로(또는
-/// 그 접두사)인지 판별한다. `path_regex()`로 재매칭하지 않고 선택 문자열 전체를 그대로
-/// 1차 후보로 쓴다 — regex 로 다시 걸러내면 비-ASCII 후행 문자(예: 슬래시 바로 뒤에
-/// 붙는 한글 조사)가 매치 단계에서 이미 잘려나가, 아래 "`/` 단위로 축약 재검사"가 애초에
-/// 무의미해진다.
-///
-/// 1차 후보가 존재하지 않으면 마지막 `/` 앞까지 잘라 재검사하고, 그래도 없으면 그 앞의
-/// `/`로 계속 반복해 실재하는 가장 긴 접두사를 찾는다. 선택 모드(문자/단어/줄/블록)는
-/// 구분하지 않는다 — 하나의 연결된 드래그 블록이면 `extract_selected_text`가 뽑아준
-/// 문자열을 그대로 쓴다.
+/// 선택 문자열 또는 가장 긴 접두사가 파일·폴더 경로인지 확인한다.
+/// 전체 문자열로 시작해 실패할 때마다 마지막 / 앞까지 줄인다. 정규식으로 먼저 자르면
+/// 비ASCII 부분이 사라져 의도한 접두사 검사가 달라질 수 있다.
 pub fn longest_existing_selection_path(
     raw_selected_text: &str,
     cwd: Option<&Path>,
@@ -588,10 +546,7 @@ pub fn longest_existing_selection_path(
     }
 }
 
-/// `longest_existing_selection_path` 전용 저수준 후보 해석. 절대경로 판별/cwd
-/// join/mirror 시 exists() 스킵 규칙은 `resolve_link_target`과 동일하되, 반환 타입이
-/// 다르고(file:// URI 문자열이 아니라 `PathBuf`) `resolve_link_target` 자체는 기존
-/// hover-link 회귀를 피하기 위해 건드리지 않으므로 별도로 둔다.
+/// 선택 경로를 PathBuf로 반환한다. 상대경로는 cwd에 붙이고 mirror는 exists 검사를 생략한다.
 fn resolve_selection_path_candidate(
     candidate: &str,
     cwd: Option<&Path>,
@@ -639,7 +594,6 @@ mod tests {
 
     #[test]
     fn detects_bare_relative_path() {
-        // path_regex 가 "open src/main.rs now" 에서 "src/main.rs" 를 rel_bare 로 잡아야 함.
         let re = path_regex();
         let caps = re
             .captures("open src/main.rs now")
@@ -657,7 +611,6 @@ mod tests {
 
     #[test]
     fn rejects_single_word_without_separator() {
-        // "see Makefile here" 에서 "Makefile" 은 구분자가 없어 후보가 아님.
         let re = path_regex();
         assert!(
             re.captures("see Makefile here").is_none(),
@@ -667,7 +620,6 @@ mod tests {
 
     #[test]
     fn bare_relative_does_not_steal_prefixed_or_absolute() {
-        // rel/unix/win 이 우선해 rel_bare 가 절대경로·`./`·`../` 를 흡수하지 않아야 함.
         let re = path_regex();
         let prefixed = re.captures("open ./src/main.rs now").unwrap();
         assert!(prefixed.name("rel").is_some());
@@ -680,7 +632,6 @@ mod tests {
 
     #[test]
     fn slash_non_path_rejected_by_exists() {
-        // 슬래시는 있지만 경로가 아닌 토큰은 regex 후보가 되어도 exists() 에서 배제된다.
         assert!(resolve_link_target("and/or", Some(std::path::Path::new(".")), false).is_none());
         assert!(resolve_link_target("TCP/IP", Some(std::path::Path::new(".")), false).is_none());
     }
@@ -723,16 +674,13 @@ mod tests {
     #[test]
     fn mirror_emits_path_without_exists_check() {
         let cwd = std::path::Path::new("/remote/project");
-        // 로컬에 없는 경로라도 mirror(원격 surface)면 file:// URI 를 emit한다.
         let uri = resolve_link_target("src/main.rs", Some(cwd), true);
         assert_eq!(uri.as_deref(), Some("file:///remote/project/src/main.rs"));
-        // 같은 입력이라도 비-mirror(로컬)면 exists() 실패로 None.
         assert!(resolve_link_target("src/main.rs", Some(cwd), false).is_none());
     }
 
     #[test]
     fn mirror_absolute_path_without_cwd() {
-        // 원격 절대경로는 cwd 없이도 그대로 emit.
         let uri = resolve_link_target("/remote/abs/file.rs", None, true);
         assert_eq!(uri.as_deref(), Some("file:///remote/abs/file.rs"));
     }
@@ -816,10 +764,7 @@ mod tests {
 
     #[test]
     fn selection_path_trims_back_to_last_slash_when_full_candidate_missing() {
-        // 실재하는 디렉토리 뒤에 `/` 와 실재하지 않는 비-ASCII 세그먼트(예: 한글 조사)가
-        // 붙은 경우 — 마지막 `/` 앞까지 잘라 실재 접두사를 돌려준다. 픽스처는 테스트가
-        // 임시 디렉토리에 직접 만든다: 레포 밖·gitignored 경로의 실존에 기대면 clone
-        // 직후나 CI 러너에서 결과가 달라진다(`docs/dev-guide/unit-test-isolation.md`).
+        // 저장소 배치와 무관하게, 존재하는 경로 뒤의 비ASCII 부분을 자르는지 확인한다.
         let tmp = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir(tmp.path().join("notes")).expect("fixture dir");
         let cwd = tmp.path();
@@ -829,15 +774,10 @@ mod tests {
 
     #[test]
     fn selection_path_trims_repeatedly_across_multiple_slash_boundaries() {
-        // 자매 시험과 같은 이유로 픽스처를 임시 디렉토리에 직접 만든다 — 한때 이 시험은
-        // `CARGO_MANIFEST_DIR` 아래의 실제 소스 배치를 실재 접두사로 썼고, 그래서 그
-        // 배치가 바뀌는 순간(파일이 다른 크레이트로 옮겨가는 것 포함) 트리밍 동작과
-        // 무관하게 깨졌다(`docs/dev-guide/unit-test-isolation.md`).
         let tmp = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(tmp.path().join("a/b/c")).expect("fixture dirs");
         let cwd = tmp.path();
-        // "a/b/c" 까지는 실재, 그 뒤 두 세그먼트가 가짜 — 경계를 **두 번** 거슬러야 한다.
-        // 옛 픽스처는 가짜 세그먼트가 하나여서 이름과 달리 한 번만 잘랐다.
+        // 존재하는 a/b/c에 도달하려면 끝의 두 부분을 잘라야 한다.
         let result = longest_existing_selection_path("a/b/c/bogus_one/bogus_two", Some(cwd), false);
         assert_eq!(result, Some(cwd.join("a/b/c")));
     }

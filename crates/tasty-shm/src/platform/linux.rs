@@ -16,7 +16,7 @@ use super::MAX_SIZE;
 pub(crate) struct PlatformMapping {
     ptr: *mut u8,
     len: usize,
-    // 이유: RAII 가드 — 읽히지 않지만 munmap 까지 fd 를 살려둬야 함(삭제 시 즉시 close 버그).
+    // 이유: 매핑을 해제할 때까지 fd를 소유하고 Drop에서 닫는다.
     #[allow(dead_code)]
     fd: OwnedFd,
 }
@@ -66,14 +66,12 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
     // SAFETY: memfd_create가 반환한 raw_fd는 유효한 새 fd. OwnedFd가 소유권을 가져간다.
     let fd_for_map = unsafe { OwnedFd::from_raw_fd(raw_fd as RawFd) };
 
-    // 크기 설정.
     // SAFETY: ftruncate는 fd에 길이를 설정. 우리가 막 만든 fd는 유효.
     let rc = unsafe { libc::ftruncate(fd_for_map.as_raw_fd(), size as libc::off_t) };
     if rc < 0 {
         return Err(ShmError::Os(io::Error::last_os_error()));
     }
 
-    // 현재 프로세스에 매핑.
     let ptr = mmap_shared(fd_for_map.as_raw_fd(), size)?;
 
     // 같은 fd를 두 개의 OwnedFd로 쪼개려면 dup이 필요하다 — 하나는 매핑 유지용
@@ -81,7 +79,6 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
     // SAFETY: dup syscall. fd가 유효함은 위에서 보장.
     let dup_fd = unsafe { libc::dup(fd_for_map.as_raw_fd()) };
     if dup_fd < 0 {
-        // 매핑은 정리되어야 함. ptr/len을 들고 cleanup.
         // SAFETY: 방금 mmap한 유효 영역.
         unsafe { libc::munmap(ptr as *mut libc::c_void, size) };
         return Err(ShmError::Os(io::Error::last_os_error()));
@@ -133,10 +130,8 @@ pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, S
         return Err(ShmError::TooLarge(size));
     }
 
-    // 방어 코드: fd가 현재 프로세스에서 열려 있고, memfd_create/shm_open이 만드는
-    // backing과 같은 타입(regular file)인지 형태 검증. 무작위/닫힌/타입불일치 fd를
-    // 소유권 편입 전에 걸러내 UB 대신 Err로 실패시킨다. 완전한 증명은 아니다 — 다른
-    // 목적의 regular-file fd까지는 걸러내지 못한다(상위 `receive`의 `# Safety` 참조).
+    // fd의 열림 상태와 파일 타입만 검사한다. 다른 용도의 유효한 regular-file fd는
+    // 구분하지 못하므로 호출자가 receive의 소유권 조건을 보장해야 한다.
     // SAFETY: fcntl(F_GETFD)는 fd 값 자체는 아직 소유하지 않은 채 조회만 한다.
     if unsafe { libc::fcntl(fd, libc::F_GETFD) } < 0 {
         let err = io::Error::last_os_error();
@@ -214,7 +209,7 @@ fn set_cloexec(fd: RawFd) -> Result<(), ShmError> {
 impl PlatformPayload {
     /// 호출자가 sendmsg 후 fd 소유권을 명시적으로 회수하고 싶을 때.
     /// 일반적으로는 Drop으로 자동 close되므로 사용 불요.
-    // 이유: macos.rs 의 동명 메서드와 플랫폼 대칭 API (한쪽만 삭제 시 분기). 판단필요 — conductor 검토.
+    // 이유: macOS와 같은 핸들 소유권 회수 API를 유지한다.
     #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()

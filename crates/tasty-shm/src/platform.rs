@@ -1,8 +1,4 @@
-//! Platform-specific implementations.
-//!
-//! 각 모듈은 `create / prepare_send / receive`를 노출하고 상위 lib.rs가 cfg-gated로
-//! 재수출한다. 모듈 내에선 platform-specific RAII 타입을 정의해 `SharedMemory` /
-//! `SendableHandle` / `TransportPayload`의 `inner` 필드로 들어간다.
+//! 플랫폼별 매핑과 핸들 수명 관리. create/prepare_send/receive를 공통 API에 제공한다.
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -24,5 +20,5 @@ pub(crate) use windows::{
     PlatformMapping, PlatformPayload, PlatformSendable, create, prepare_send, receive,
 };
 
-/// 모든 플랫폼이 따르는 최대 크기 상한 (8 GB).
+/// 모든 플랫폼에 적용하는 크기 상한(8 GiB).
 pub(crate) const MAX_SIZE: usize = 8 * 1024 * 1024 * 1024;

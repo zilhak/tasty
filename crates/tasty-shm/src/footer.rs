@@ -1,29 +1,14 @@
-//! SharedBuffer atomic generation footer.
-//!
-//! 두 프로세스가 공유 메모리 영역을 read/write할 때 tear(half-painted frame)를
-//! 막기 위해 영역의 시작 8바이트를 `AtomicU64 generation`으로 reserve한다.
-//!
-//! # 메모리 레이아웃
+//! 공유 영역의 변경 횟수를 나타내는 atomic generation.
 //!
 //! ```text
 //! [ AtomicU64 generation (8B) | user data (size - 8) ... ]
 //! ```
 //!
-//! footer를 영역 *끝*이 아니라 *시작*에 둔 이유: mmap된 페이지의 시작 주소는
-//! 항상 페이지 크기로 정렬되므로 (4KB align ⊃ 8B align), 시작 8바이트의 `AtomicU64`
-//! 정렬이 자명하게 보장된다. 끝에 두면 영역 전체 크기에 따라 unaligned 가능.
-//!
-//! # 동기화 규약
-//!
-//! - **Writer**(생산자): user data 모두 쓴 뒤 `fetch_add(1, Release)`.
-//! - **Reader**(소비자): `gen_before = load(Acquire)` → user data 읽기 →
-//!   `gen_after = load(Acquire)` → 두 값이 같으면 일관된 frame, 다르면 다음
-//!   frame까지 skip(이전 결과 유지).
-//!
-//! # 사용자 영역
-//!
-//! 본 모듈은 footer 8바이트를 user에게 숨기는 슬라이스 분할(`user_slice` /
-//! `user_slice_mut`)과 footer atomic 접근(`load` / `fetch_add`)을 제공한다.
+//! 페이지 정렬을 이용하기 위해 이름과 달리 영역 시작에 둔다. 쓰기를 마친 뒤
+//! `fetch_add(1, Release)`하고 읽는 쪽은 `load(Acquire)`로 변경 여부를 확인한다.
+//! 읽기 전후 값이 같아도 다음 쓰기가 이미 시작됐을 수 있으므로, 이 비교만으로
+//! 일관된 프레임이나 동시 접근의 안전성을 보장하지 않는다. 데이터 접근에는 별도
+//! 동기화가 필요하다. `user_slice`와 `user_slice_mut`은 앞의 8바이트를 제외한다.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -60,11 +45,9 @@ pub fn user_slice_mut(raw: &mut [u8]) -> &mut [u8] {
 ///
 /// # Safety
 ///
-/// 호출자는 다음을 보장해야 한다:
-/// - `raw.as_ptr()`이 8바이트 정렬되어 있다 (mmap 페이지 시작 = 항상 4KB 정렬 ⊃ 8).
-/// - `raw.len() >= SIZE`.
-/// - 영역의 시작 8바이트가 다른 용도로 사용되지 않는다 (footer 합의를 따르는 양쪽
-///   프로세스 사이에서만 호출).
+/// 시작 주소가 `AtomicU64` 정렬을 만족하고 길이가 `SIZE` 이상이어야 한다.
+/// 반환된 참조가 유효한 동안 앞의 8바이트는 generation 전용이며,
+/// 다른 접근도 같은 크기의 atomic 연산을 사용해야 한다. 비atomic 접근과 섞으면 안 된다.
 pub unsafe fn footer_atomic(raw: &[u8]) -> &AtomicU64 {
     debug_assert!(raw.len() >= SIZE, "raw too small for footer");
     debug_assert_eq!(
@@ -72,9 +55,8 @@ pub unsafe fn footer_atomic(raw: &[u8]) -> &AtomicU64 {
         0,
         "raw start must be 8-aligned"
     );
-    // SAFETY: 호출자가 정렬과 길이를 보장. AtomicU64는 8바이트 layout, raw[0..8]을
-    // 재해석한다. atomic 접근은 외부 프로세스의 동시 atomic 접근과 합쳐도 Rust
-    // 메모리 모델 위반이 아니다(byte-level race가 아닌 atomic op끼리의 race).
+    // SAFETY: 호출자가 유효한 영역·정렬·길이와 atomic 전용 접근을 보장한다.
+    // 이 변환은 payload의 동시 접근까지 안전하게 만들지는 않는다.
     unsafe { &*(raw.as_ptr() as *const AtomicU64) }
 }
 
@@ -88,7 +70,7 @@ pub unsafe fn load(raw: &[u8], ordering: Ordering) -> u64 {
     unsafe { footer_atomic(raw).load(ordering) }
 }
 
-/// footer의 generation을 1 증가시키고 이전 값을 반환.
+/// generation에 val을 더하고 이전 값을 반환한다.
 ///
 /// # Safety
 ///

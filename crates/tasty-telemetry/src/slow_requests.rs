@@ -1,75 +1,41 @@
-//! 느린 요청 링 — **이 느린 요청**의 시간이 어느 단계에 있었고, 그 plugin 대기가 **어느
-//! 요청**의 것이었는가.
+//! 느린 요청의 큐 대기·호스트 처리·plugin 응답 대기를 한 레코드로 연결한다.
+//! 호스트 요청 번호와 각 plugin 요청 ID를 남겨 관련 로그를 찾을 수 있다.
+//! 총 관측 시간이 SLOW_REQUEST_THRESHOLD 이상인 요청만 고정 용량 메모리 버퍼에 보관한다.
 //!
-//! [`crate::PressureStats`] · [`crate::PluginWaitStats`] 는 단계마다 **분포**를 준다. 분포는
-//! "꼬리가 있다" 까지는 말하지만 "그 꼬리의 한 건이 큐에 앉아 있었나, handler 안에 있었나,
-//! plugin 을 기다렸나" 는 못 말한다 — 세 분포가 서로 다른 모수로 따로 접히기 때문이다. 이
-//! 링은 느린 요청 **한 건**을 한 줄로 남긴다: 호스트가 발급한 요청 번호 · 메서드 · 큐 대기 ·
-//! 호스트 처리 시간, 그리고 plugin 으로 넘겼으면 hop 마다의 plugin · 호스트 req_id · 대기 ·
-//! 결과. 호스트 req_id 는 plugin 이 받은 JSON-RPC id 와 같은 값이라 plugin 로그를 원 요청으로
-//! 되짚는 열쇠가 된다(근거 docs/architecture/ipc-server.md#느린-요청-추적).
+//! params·세션 토큰·멱등 키·호출자의 JSON-RPC id는 저장하지 않는다.
+//! 메서드 이름은 알 수 없는 이름도 포함하므로 MAX_METHOD_BYTES로 길이를 제한한다.
+//! 호스트 요청 번호는 로그 연결에만 쓰며 메트릭 레이블로 사용하지 않는다.
 //!
-//! **전 요청을 넣지 않는다.** 넣는 것은 [`SLOW_REQUEST_THRESHOLD`] 를 넘은 요청뿐이다. 전부
-//! 넣으면 정상 요청이 링을 곧바로 밀어내 원인 요청이 안 남는다.
-//!
-//! **영구 기록이 아니다.** 메모리 안의 고정 용량이고 호출당 저장소 행이 0 이다 — 진단이
-//! 호출당 기록 폭주를 다시 만들지 않는다(docs/design/systems/storage.md#관측-로그-보존 · docs/dev-guide/plugin-permissions.md#텔레메트리-기록-정책 · docs/dev-guide/plugin-permissions.md#요청-진입-검사 과 같은 축).
-//!
-//! **싣지 않는 것**: params 원문 · session token · 멱등 키 · JSON-RPC `id` 값. 메서드는
-//! canonical 이름이지만 **유한 집합이 아니다** — alias 해석은 모르는 이름을 받은 그대로
-//! 통과시키므로(plugin namespace 메서드 · 오타 · 없는 이름) 호출자 문자열이 그대로 실린다. 그래서
-//! 싣는 길이를 [`MAX_METHOD_BYTES`] 로 자른다. plugin id 는 설치 수만큼만 있다. 요청 번호는
-//! 이 줄의 열쇠일 뿐 메트릭 레이블로 쓰지 않는다.
-//!
-//! ## 한 줄이 두 번에 나눠 채워진다
-//!
-//! 호스트 쪽 몫은 명령을 끝까지 다룬 뒤([`SlowRequestLog::finish_host`]), plugin 쪽 몫은 그
-//! 뒤 프레임에서 응답·만료·취소가 올 때([`SlowRequestLog::finish_plugin_hop`]) 채워진다. 둘을
-//! 잇기 위해 plugin 으로 넘긴 요청은 **열린 표**에 먼저 자리를 잡는다
-//! ([`SlowRequestLog::note_forwarded`]). 열린 표는 끝나지 않은 forward 만 들고, 그 합이
-//! 문턱을 넘는 순간 링으로 옮겨진다 — 그 뒤에 오는 hop 은 링 안의 줄에 붙는다.
+//! 호스트 처리는 finish_host에서, plugin 응답·만료·취소는 finish_plugin_hop에서 기록한다.
+//! note_forwarded가 미완료 요청을 먼저 등록한다. 합계가 기준에 도달하면 느린 요청 버퍼로
+//! 옮기고 후속 hop도 같은 레코드에 추가한다.
+//! 상세 범위: docs/architecture/ipc-server.md#느린-요청-추적.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
-/// 링에 넣는 문턱 — 큐 대기 · 호스트 처리 · plugin 대기의 합이 이 값 **이상**이면 넣는다.
-///
-/// **파생값이 아니다** — 고른 값이다(근거 docs/architecture/ipc-server.md#느린-요청-추적). 두 가지로 골랐다. ① 당시 격리 인스턴스에서
-/// 잰 정상 부하의 최댓값이 큐 대기 25.4 ms · handler 0.48 ms 였다 — 문턱이
-/// 그보다 네 배 위라 정상 요청은 링에 안 든다. ② 대조: 분포의 버킷 경계
-/// ([`crate::pressure::LATENCY_BUCKET_BOUNDS_US`])의 한 칸(100 ms)과 같은 값이라, 운영자가 분포에서
-/// "100 ms 를 넘은 것이 몇 건" 을 읽은 자리에서 그 건들의 줄을 여기서 찾을 수 있다.
+/// 큐 대기·호스트 처리·plugin 대기의 합이 이 값 이상이면 보관한다.
+/// 히스토그램의 100ms 경계에 맞춘 진단 기준이다. 정상 요청도 부하에 따라 포함될 수 있다.
+/// 선택 근거: docs/architecture/ipc-server.md#느린-요청-추적.
 pub const SLOW_REQUEST_THRESHOLD: Duration = Duration::from_millis(100);
 
-/// 링의 줄 수. 넘치면 가장 오래 전에 들어온 줄이 밀려난다.
-///
-/// **파생값이 아니다**(docs/architecture/ipc-server.md#느린-요청-추적). 한 번의 조회로 "최근의 느린 요청들" 을 훑기에 충분하고,
-/// 한 줄이 수백 바이트라 상한에서 수십 KB 다. 밀려난 수는 `admitted` 누계와 줄 수의 차로
-/// 읽힌다.
+/// 보관할 느린 요청 수. 가득 차면 가장 오래전에 들어온 요청을 내보낸다.
+/// admitted 누계와 현재 길이의 차이로 내보낸 수를 계산한다.
 pub const SLOW_REQUEST_CAPACITY: usize = 32;
 
-/// 열린 표(아직 끝나지 않은 forward)의 상한.
-///
-/// 동시 IPC 연결 상한(docs/architecture/ipc-server.md#dispatch-회차-예산 의 256)과 같은 값이다 — 소켓 연결 하나는 한 번에 요청 하나를
-/// 기다리므로, 동시에 plugin 을 기다리는 IPC 요청 수가 대개 이 안에 든다. 넘치면 가장 오래
-/// 열린 것이 버려진다(그때까지 문턱을 안 넘었으므로 링에 들 줄이 아니었다). 버려진 줄의 hop
-/// 이 나중에 오면 호스트 몫 없이 그 hop 만으로 판정한다.
+/// 미완료 forward 요청의 보관 상한. 연결 상한을 참고한 값이며 모든 미완료 요청을 보장하지는 않는다.
+/// 넘치면 가장 오래된 항목을 버린다. 이후 해당 hop이 도착하면 호스트 기록 없이 판정한다.
 pub const OPEN_FORWARD_CAPACITY: usize = 256;
 
 /// 한 줄이 드는 plugin hop 의 상한 — pre-hook · target · post-hook 셋.
 pub const MAX_PLUGIN_HOPS: usize = 3;
 
-/// 줄에 싣는 메서드 이름의 바이트 상한. 넘으면 이 길이 안의 마지막 char 경계에서 자른다.
-///
-/// 메서드 칸은 호출자가 보낸 문자열이다(모르는 이름은 alias 해석을 그대로 통과한다). 자르지
-/// 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. **파생값이 아니다**
-/// (docs/architecture/ipc-server.md#느린-요청-추적) — 실측 2026-09-21 에 등록 메서드 표(286 개)의 가장 긴 이름이 31 바이트, debug 표
-/// (52 개)의 가장 긴 이름이 32 바이트였고, 그 네 배라 정상 이름은 잘리지 않는다.
+/// 메서드 이름의 최대 바이트 수. 호출자가 보낸 긴 이름도 들어올 수 있으므로
+/// 이 길이 안의 마지막 문자 경계에서 자른다. 선택 근거는 느린 요청 추적 가이드 참조.
 pub const MAX_METHOD_BYTES: usize = 128;
 
-/// 요청을 보낸 쪽의 종류. 봉투(session token 유무)가 말한 종류다 — 토큰이 무효인 요청은
-/// 게이트에서 곧바로 거절돼 느린 줄이 될 일이 드물다.
+/// 요청의 세션 토큰 유무로 구분한 호출자 종류. 토큰 검증 성공을 뜻하지는 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallerKind {
     Local,
@@ -109,9 +75,7 @@ impl HopOutcome {
     }
 }
 
-/// 호스트가 호출자에게 준 답이 끝난 방식 — hop 의 [`HopOutcome`] 과 같은 표기(`ok` · `error`)에
-/// 오류면 그 JSON-RPC 코드를 함께 든다. 같은 느린 줄이라도 `-32067`(실행 전 만료) · `-32001`(거절) ·
-/// 정상 답은 처방이 다르다(docs/architecture/ipc-server.md#느린-요청-추적).
+/// 호출자에게 반환한 성공·오류 결과. 오류는 JSON-RPC 코드도 함께 보관한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOutcome {
     /// 성공으로 답했다.
@@ -140,20 +104,16 @@ impl HostOutcome {
     }
 }
 
-/// 호출자에게 답이 나간 순간 **기다리던 쪽**(소켓 연결 스레드 · 호스트 주입기)이 한 번 채우는 칸.
-///
-/// 답을 보내는 자리는 dispatch 안에 여럿이고(게이트 거절 · 조기 응답 · handler · plugin forward 의
-/// 뒤늦은 답), 기다리는 쪽이 받는 자리는 하나다 — 그래서 받는 쪽이 적는다. 호스트가 명령을 다
-/// 다룬 순간([`SlowRequestLog::finish_host`])에는 아직 안 채워졌을 수 있으므로(plugin 으로 넘긴
-/// 요청은 답이 뒤 프레임에 온다), 줄은 값이 아니라 이 칸을 들고 읽을 때 본다. 비어 있으면 아직 답이
-/// 안 나갔거나, 기다리는 쪽이 답 없이 물러난 것이다.
+/// 응답을 기다린 쪽이 결과를 한 번 기록하는 칸.
+/// plugin 응답은 호스트 처리가 끝난 뒤 올 수 있으므로 레코드는 이 칸을 공유한다.
+/// 비어 있으면 아직 응답을 받지 못했거나 응답 없이 대기를 마친 상태다.
 #[derive(Debug, Clone, Default)]
 pub struct HostOutcomeCell(Arc<OnceLock<HostOutcome>>);
 
 impl HostOutcomeCell {
     /// 처음 한 번만 채워진다 — 요청 하나에 답은 하나다.
     pub fn set(&self, outcome: HostOutcome) {
-        // 이미 채워졌으면 두 번째 답이 없다는 불변식이 이미 지켜진 것이라 버린다.
+        // 이미 기록한 결과는 덮어쓰지 않는다.
         let _already = self.0.set(outcome);
     }
 
@@ -170,24 +130,22 @@ impl PartialEq for HostOutcomeCell {
 
 impl Eq for HostOutcomeCell {}
 
-/// 호스트가 명령 하나를 다룬 몫.
+/// 호스트가 한 요청을 처리하며 기록한 값.
 #[derive(Debug, Clone)]
 pub struct HostLeg<'a> {
     pub request_seq: u64,
-    /// canonical 메서드 이름 — 모르는 이름이면 받은 그대로다. 줄에는 [`MAX_METHOD_BYTES`] 까지만
-    /// 실린다.
+    /// alias를 해석한 메서드 이름. 모르는 이름은 그대로이며 보관할 때 길이를 제한한다.
     pub method: &'a str,
     pub caller: CallerKind,
     /// 큐에 들어간 뒤 꺼내질 때까지.
     pub queue_wait: Duration,
-    /// 꺼낸 뒤 호스트가 그 명령을 다 다룰 때까지(게이트 포함). plugin 으로 넘긴 요청이면 넘기는
-    /// 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
+    /// 큐에서 꺼낸 뒤 진입 검사와 호스트 처리에 쓴 시간. plugin 응답 대기는 hop에 기록한다.
     pub host: Duration,
-    /// 그 명령의 답이 끝난 방식 — 기다리는 쪽이 채운다.
+    /// 응답을 기다린 쪽이 기록하는 최종 결과.
     pub outcome: HostOutcomeCell,
 }
 
-/// 줄에 남는 호스트 몫.
+/// 느린 요청에 보관하는 호스트 처리 기록.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPart {
     pub method: String,
@@ -209,11 +167,11 @@ pub struct PluginHop {
     pub outcome: HopOutcome,
 }
 
-/// 링의 한 줄.
+/// 느린 요청 하나의 기록.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlowRequest {
     pub request_seq: u64,
-    /// 호스트 몫. 열린 표에서 밀려난 뒤 hop 만 온 줄이면 `None` 이다.
+    /// 호스트 처리 기록. 미완료 목록에서 밀려난 뒤 hop만 도착하면 None이다.
     pub host: Option<HostPart>,
     pub plugin_hops: Vec<PluginHop>,
 }
@@ -227,8 +185,7 @@ impl SlowRequest {
         }
     }
 
-    /// 이 줄이 잰 시간의 합(마이크로초) — 큐 대기 · 호스트 처리 · hop 대기. 셋은 차례로
-    /// 일어나므로 겹치지 않는다.
+    /// 기록된 큐 대기·호스트 처리·plugin hop 대기 시간의 합(마이크로초).
     pub fn total_us(&self) -> u64 {
         let host = self
             .host
@@ -283,7 +240,7 @@ impl Inner {
         self.open.iter().position(|r| r.request_seq == seq)
     }
 
-    /// 열린 줄이 문턱을 넘었으면 링으로 옮기고, 끝났으면(`last`) 표에서 뺀다.
+    /// 기준 이상이면 느린 요청 버퍼로 옮기고, 마지막 hop이면 미완료 목록에서 제거한다.
     fn settle_open(&mut self, at: usize, last: bool) {
         if self.open[at].is_slow() {
             if let Some(row) = self.open.remove(at) {
@@ -295,8 +252,7 @@ impl Inner {
     }
 }
 
-/// 느린 요청 링과 열린 forward 표. 프로세스에 하나이고, 호스트 dispatch 루프와 plugin
-/// 매니저가 같은 인스턴스를 나눠 든다(`Arc`).
+/// 호스트 dispatch와 plugin 매니저가 공유하는 느린 요청 버퍼 및 미완료 forward 목록.
 #[derive(Debug, Default)]
 pub struct SlowRequestLog {
     inner: Mutex<Inner>,
@@ -304,12 +260,11 @@ pub struct SlowRequestLog {
 
 impl SlowRequestLog {
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        // 안의 값은 진단용 줄 몇 개라, 다른 스레드가 쥔 채 죽었어도 그대로 쓰는 편이 옳다.
+        // 진단 기록은 poison을 복구해 유지한다.
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// 요청 `seq` 를 plugin 으로 넘겼다 — 호스트 몫과 hop 을 이을 자리를 연다. 이미 자리가
-    /// 있으면(사슬의 다음 hop) 아무것도 안 한다.
+    /// plugin으로 넘긴 요청을 등록한다. 같은 요청의 후속 hop이면 기존 항목을 유지한다.
     pub fn note_forwarded(&self, seq: u64) {
         let mut inner = self.lock();
         if inner.row_mut(seq).is_some() || inner.open_index(seq).is_some() {
@@ -321,12 +276,11 @@ impl SlowRequestLog {
         }
     }
 
-    /// 호스트가 명령 하나를 다 다뤘다. plugin 으로 넘긴 요청이면 열린 자리에 몫을 채우고,
-    /// 아니면 문턱을 넘었을 때만 링에 넣는다.
+    /// 호스트 처리 결과를 기록한다. forward는 미완료 목록에 연결하고 다른 요청은 기준 이상만 보관한다.
     pub fn finish_host(&self, leg: HostLeg<'_>) {
         let outcome = &leg.outcome;
         let (queue_wait_us, host_us) = (as_micros(leg.queue_wait), as_micros(leg.host));
-        // 메서드 이름은 줄에 남길 때만 복사한다 — 이 자리는 요청마다 지난다.
+        // 보관할 때만 메서드 이름을 복사한다.
         let part = || HostPart {
             method: clip_method(leg.method).to_string(),
             caller: leg.caller,
@@ -349,8 +303,7 @@ impl SlowRequestLog {
         }
     }
 
-    /// 요청 `seq` 의 plugin hop 하나가 끝났다. `last` 는 이 hop 뒤로 사슬이 더 이어지지 않는다는
-    /// 뜻이다(이어지면 열린 자리를 그대로 둔다).
+    /// plugin hop의 종료를 기록한다. last가 true면 더 이어질 hop이 없다는 뜻이다.
     pub fn finish_plugin_hop(&self, seq: u64, hop: PluginHop, last: bool) {
         let mut inner = self.lock();
         if let Some(row) = inner.row_mut(seq) {
@@ -395,7 +348,7 @@ fn clip_method(method: &str) -> &str {
     &method[..end]
 }
 
-/// 마이크로초로 접는다 — [`crate::PressureStats`] 와 같은 해상도.
+/// PressureStats와 같은 마이크로초 단위로 환산한다.
 fn as_micros(d: Duration) -> u64 {
     u64::try_from(d.as_micros()).unwrap_or(u64::MAX)
 }

@@ -4,11 +4,8 @@
 //! `DuplicateHandle`로 peer의 핸들 테이블에 복제한다. 결과 HANDLE(u64)을 호출자가
 //! Named Pipe로 정수로 전송하면 됨.
 
-// 이유: 이 파일 전체가 Win32 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
-//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
-//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
-//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
-//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+// 이유: Win32 FFI 호출 사이에 raw 핸들·포인터를 함께 다루므로 파일 단위로 허용한다.
+// 안전한 래퍼로 분리하면 이 면제를 제거해 새 unsafe 연산도 개별 검사한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
 use std::io;
@@ -188,13 +185,9 @@ pub(crate) fn prepare_send(
 /// 상위 `tasty_shm::receive`의 계약과 동일 — `handle`은 `DuplicateHandle`로 이
 /// 프로세스의 핸들 테이블에 방금 복제되어, 아직 소유되지 않은 값이어야 한다.
 ///
-/// 아래 `GetHandleInformation` 검증은 "이 정수가 현재 프로세스 핸들 테이블에
-/// 유효하게 존재하는가"만 확인한다 — Unix 쪽(`fcntl`+`fstat`으로 open 여부와
-/// 객체 **타입**을 모두 검증)보다 약한 방어다. Win32엔 표준 문서화 API로 "이
-/// HANDLE이 file-mapping 객체인가"를 물을 방법이 마땅치 않아(비공식
-/// `NtQueryObject` 정도), 이미 유효하지만 다른 용도인 핸들(로그 파일 HANDLE 등)이
-/// 실수로 넘어오는 경우까지는 걸러내지 못한다 — `MapViewOfFile` 자체가 타입
-/// 불일치 시 실패하는 것에 의존한다.
+/// GetHandleInformation은 핸들의 유효성만 검사하며 객체 타입은 확인하지 않는다.
+/// 다른 용도의 유효한 핸들까지 구별하지 못하므로 호출자의 소유권 확인이 필요하다.
+/// 매핑 객체가 아닌 핸들은 MapViewOfFile이 거절하는 것에 의존한다.
 pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, ShmError> {
     let ReceivedPayload::Handle { handle, size } = payload;
     let raw = handle as HANDLE;
@@ -216,9 +209,7 @@ pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, S
         )));
     }
 
-    // 방어 코드: handle이 현재 프로세스 핸들 테이블에 유효하게 존재하는지 형태 검증
-    // (Unix의 fcntl(F_GETFD)에 대응). 무효/이미 닫힌 값을 소유권 편입 전에 걸러내
-    // UB 대신 Err로 실패시킨다. 위 doc 참조 — 객체 타입까지는 검증하지 못한다.
+    // 현재 프로세스에서 유효한 핸들인지 확인한다. 객체 타입 검사는 아니다.
     let mut flags: u32 = 0;
     // SAFETY: GetHandleInformation은 조회 전용, handle 소유권에 영향 없음.
     if unsafe { GetHandleInformation(raw, &mut flags) } == 0 {
@@ -280,9 +271,7 @@ fn duplicate_to_self(source: HANDLE) -> Result<HANDLE, ShmError> {
 }
 
 impl PlatformPayload {
-    /// 핸들 값을 회수. 일반적으로는 호출 불요 (Drop이 없음 — peer 소유라서).
-    /// unix 판 `into_raw_fd` 와의 대칭 API 표면 유지 — 현재 windows 송신 경로는
-    /// `serialized_handle` 만 쓴다.
+    /// 수신 측 소유의 핸들 값을 반환한다. 현재 송신 경로는 serialized_handle을 쓴다.
     #[allow(dead_code)]
     pub(crate) fn into_raw(self) -> u64 {
         let h = self.duplicated;

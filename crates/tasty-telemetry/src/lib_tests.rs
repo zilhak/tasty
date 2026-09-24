@@ -30,7 +30,6 @@ fn agent_validation() {
 fn event_key_format() {
     let k = event_key(1_700_000_000_000, 5);
     assert_eq!(k, "tasty.telemetry.event.1700000000000.0005");
-    // ts 가 13자 zero-pad 인지
     assert!(k.starts_with("tasty.telemetry.event."));
     assert_eq!(k.len(), "tasty.telemetry.event.1700000000000.0005".len());
 }
@@ -153,8 +152,7 @@ fn cap_action_parse() {
     assert!(CapAction::from_str("bogus").is_err());
 }
 
-/// `Stop` variant 제거 후에도 과거에 `action: "stop"`으로 저장된 cap 설정
-/// 파일은 `#[serde(alias = "stop")]`로 깨지지 않고 `Pause`로 로드돼야 한다.
+/// 저장된 stop은 호환용 alias로 Pause로 읽는다.
 #[test]
 fn legacy_stop_action_deserializes_as_pause() {
     let cap: CostCap = serde_json::from_str(
@@ -164,8 +162,7 @@ fn legacy_stop_action_deserializes_as_pause() {
     assert_eq!(cap.action, CapAction::Pause);
 }
 
-/// `FromStr`(신규 등록 IPC 파싱)은 `"stop"`을 더 이상 유효 입력으로 받지 않는다 —
-/// `Deserialize`(파일 로드, 위 테스트)와는 별개 경로라 다르게 처리된다.
+/// 신규 등록의 FromStr은 파일 역직렬화와 달리 stop을 거절한다.
 #[test]
 fn stop_is_no_longer_a_valid_new_action() {
     assert!(CapAction::from_str("stop").is_err());
@@ -200,9 +197,7 @@ fn anomaly_kind_token() {
     assert_eq!(AnomalyKind::RssSurge.as_token(), "rss_surge");
 }
 
-/// CallBurst 를 SlowLoop 과 격리해 테스트하기 위해 호출마다 다른 params 를
-/// 준다 — 같은 params 를 1000회 넘게 반복하면 20회째에 SlowLoop 도 같이
-/// 발화해 CallBurst 전용 assertion 이 깨진다.
+/// CallBurst 시험에서 SlowLoop가 함께 발생하지 않도록 매번 다른 params를 만든다.
 fn varying_params(i: usize) -> serde_json::Value {
     serde_json::json!({ "i": i })
 }
@@ -314,11 +309,8 @@ fn slow_loop_anomaly_fires_when_identical_params_hash_repeats() {
     assert!(a.detail["count"].as_u64().unwrap() >= SLOW_LOOP_THRESHOLD as u64);
 }
 
-/// `SlowLoop` 의 dedup 키는 subject(=method)가 아니라 `method#params_hash` 다.
-/// 그래서 같은 method 라도 **파라미터 조합마다 독립된 쿨다운**을 갖는다 — 쿨다운
-/// 안에서 두 조합이 각각 발화한다. 이 사실이 문서에서 빠져 있어 폴링 워크로드의
-/// 연속 발화를 쿨다운 버그로 오진한 적이 있어, 계약으로 고정한다.
-/// (`CallBurst`/`RssSurge` 는 dedup 키가 subject 와 같다.)
+/// SlowLoop는 method와 params_hash 조합마다 독립된 쿨다운을 갖는다.
+/// CallBurst와 RssSurge의 쿨다운 키는 subject다.
 #[test]
 fn slow_loop_cooldown_is_per_params_combination_not_per_method() {
     let d = AnomalyDetector::new();

@@ -3,7 +3,7 @@ name = "tasty-telemetry"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Agent telemetry: metric recording, rollup, summary, timeseries (Phase 4)"
+description = "Agent metric recording, aggregation, cost limits, and anomaly signals"
 
 [dependencies]
 tasty-memory = { path = "../tasty-memory" }

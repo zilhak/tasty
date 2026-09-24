@@ -1,4 +1,4 @@
-//! `tasty-telemetry` cap (cost cap) 도메인.
+//! 메트릭 누적값에 적용할 비용 제한과 초과 시 동작.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,10 +10,6 @@ pub const CAP_KEY_PREFIX: &str = "tasty.telemetry.cap.";
 pub fn cap_key(id: &str) -> String {
     format!("{CAP_KEY_PREFIX}{id}")
 }
-
-// ============================================================
-// Cost cap
-// ============================================================
 
 /// Cap 평가 기간. `Total` 은 전 기간 누적 (보존 기간이 retention 정책 안에 있을 때 유효).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,15 +54,8 @@ impl CapWindow {
     }
 }
 
-/// 임계 초과 시 호스트가 취할 동작.
-///
-/// 과거엔 `Stop`/`Pause` 두 variant가 있었으나, 트리거(`fire_cap_action`)·차단
-/// (`check_cap_block`)·해제(`handle_cap_reset`) 세 경로 어디에서도 둘을 구분하는
-/// 코드가 없어 완전히 동일하게 동작했다 — 서로 다른 강도를 암시하는 이름 두 개가
-/// 오해를 유발할 뿐이라 `Stop`을 제거하고 `Pause`로 통합했다. 과거에
-/// `action: "stop"`으로 저장된 cap 설정은 `#[serde(alias = "stop")]`로 계속 읽힌다
-/// (파일 로드는 깨지면 안 됨) — 다만 `FromStr`(신규 등록 IPC 파싱)은 `"stop"`을
-/// 더 이상 받지 않는다(신규 등록은 막아도 됨, 아래 참조).
+/// 제한 초과 시 호스트가 취할 동작. 파일의 stop은 호환용 alias로 Pause로 읽지만,
+/// 신규 등록의 FromStr은 stop을 거절한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CapAction {
@@ -137,7 +126,3 @@ impl CostCap {
         self.triggered.is_some()
     }
 }
-
-// ============================================================
-// Anomaly (이상 탐지)
-// ============================================================

@@ -17,7 +17,7 @@ pub(crate) struct PlatformMapping {
     ptr: *mut u8,
     len: usize,
     /// fd는 mmap 영역의 backing — munmap 이후 자동 close. 명시 사용처는 없다.
-    // 이유: RAII 가드 — 읽히지 않지만 munmap 까지 fd 를 살려둬야 함(삭제 시 즉시 close 버그).
+    // 이유: 매핑을 해제할 때까지 fd를 소유하고 Drop에서 닫는다.
     #[allow(dead_code)]
     fd: OwnedFd,
 }
@@ -46,9 +46,8 @@ impl PlatformPayload {
         self.fd.as_raw_fd()
     }
 
-    /// fd 소유권을 호출자로 명시 이양 — `raw_fd`(빌림)와 짝. `round_trip` 통합
-    /// 테스트가 이 경로(호출자 fd 소유권 회수)를 검증한다.
-    // 이유: linux.rs 의 동명 메서드와 플랫폼 대칭 API (한쪽만 삭제 시 분기). 판단필요 — conductor 검토.
+    /// 빌린 raw_fd와 달리 fd 소유권을 호출자에게 넘긴다.
+    // 이유: Linux와 같은 핸들 소유권 회수 API를 유지한다.
     #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()
@@ -85,7 +84,7 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
 
     let name = unique_shm_name();
 
-    // O_EXCL로 이름 충돌 시 실패하게 — 충돌은 카운터 race로 매우 드물지만 명시적.
+    // 이름 충돌은 O_EXCL로 거절한다.
     // SAFETY: shm_open syscall. name pointer가 위에서 만든 유효 CString.
     let raw_fd = unsafe {
         libc::shm_open(
@@ -108,7 +107,6 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
         return Err(ShmError::Os(io::Error::last_os_error()));
     }
 
-    // 크기 설정.
     // SAFETY: ftruncate. fd 유효.
     let rc = unsafe { libc::ftruncate(fd_for_map.as_raw_fd(), size as libc::off_t) };
     if rc < 0 {
@@ -170,10 +168,8 @@ pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, S
         return Err(ShmError::TooLarge(size));
     }
 
-    // 방어 코드: fd가 현재 프로세스에서 열려 있고, shm_open이 만드는 backing과 같은
-    // 타입(regular file)인지 형태 검증. 무작위/닫힌/타입불일치 fd를 소유권 편입 전에
-    // 걸러내 UB 대신 Err로 실패시킨다. 완전한 증명은 아니다 — 다른 목적의
-    // regular-file fd까지는 걸러내지 못한다(상위 `receive`의 `# Safety` 참조).
+    // fd의 열림 상태와 파일 타입만 검사한다. 다른 용도의 유효한 fd는 구분하지
+    // 못하므로 호출자가 receive의 소유권 조건을 보장해야 한다.
     // SAFETY: fcntl(F_GETFD)는 fd 값 자체는 아직 소유하지 않은 채 조회만 한다.
     if unsafe { libc::fcntl(fd, libc::F_GETFD) } < 0 {
         let err = io::Error::last_os_error();
@@ -190,13 +186,8 @@ pub(crate) unsafe fn receive(payload: ReceivedPayload) -> Result<SharedMemory, S
         unsafe { libc::close(fd) };
         return Err(ShmError::Os(err));
     }
-    // macOS의 shm_open fd는 **파일시스템에 없는 커널 객체**라 fstat이 파일 타입 비트를
-    // 채우지 않는다 — `st_mode & S_IFMT == 0` 으로 나온다(st_size 등 나머지 필드는 정상).
-    // Linux판(`linux.rs`)의 memfd/shm은 S_IFREG로 나오므로 거기서는 S_IFREG를 요구하지만,
-    // 그 조건을 그대로 가져오면 macOS에서는 정상 fd가 100% 거부된다.
-    //
-    // 따라서 여기서는 "타입 비트 없음(= shm 객체)" 또는 S_IFREG만 통과시킨다. 소켓·파이프·
-    // tty·디렉터리 등 다른 타입은 여전히 걸러지므로 방어 목적은 유지된다.
+    // macOS shm_open 객체는 fstat의 타입 비트가 0일 수 있으므로 0과 S_IFREG를
+    // 허용한다. 소켓·파이프·tty·디렉터리 등 다른 타입은 거절한다.
     let ifmt = st.st_mode & libc::S_IFMT;
     if ifmt != 0 && ifmt != libc::S_IFREG {
         // SAFETY: 형태 불일치로 거부하는 fd도 계약상 이미 우리 소유 — leak 방지.

@@ -1,29 +1,12 @@
-//! Agent 식별자 — 관측/비용 추적용 모델.
-//!
-//! [`AgentId`] 타입 자체는 아무 문자열이나 담을 수 있는 plain wrapper다. 위조
-//! 가능 여부는 이 값을 *누가 채워 넣는지*(신뢰 경계를 넘는 지점)에 달려 있다 —
-//! 신뢰 경계를 넘나드는 `Plugin`/`Agent` 두 caller 경로는 이미
-//! `CallerContext`(`crates/tasty-ipc/src/caller.rs`) 레이어에서 검증된 값만
-//! 흘려보낸다: `Agent` 는 `SessionToken` 검증을 통과해야만 생성되는 호스트-부여
-//! `agent_id`, `Plugin` 은 호스트 dispatch 코드가 자신의 plugin 레지스트리에서
-//! 직접 구성하는 `plugin_id` 라 외부 IPC 페이로드로 자유롭게 실어 보낼 수 없다.
-//! `Local`(CLI/네트워크 IPC 클라이언트)만 env `TASTY_AGENT_ID` 를 그대로 신뢰하는데,
-//! `Local` 은 애초에 권한 검사 없이 무제한 허용되는 경로라(로컬 기기 액세스 전제)
-//! 이 값을 무엇으로 설정하든 telemetry 라벨링 외엔 영향이 없다 — 위조해도 얻는
-//! 게 없는 의도된 설계다. 자세한 근거는 `tasty-ipc` crate 의
-//! `CallerContext::agent_id` doc 참고.
-//!
-//! 사용처:
-//! - `telemetry.record` 등 메트릭의 agent 차원
-//! - dispatcher 미들웨어가 caller 식별
-//! - approval/cap 의 owner
+//! 관측·비용 집계에 쓰는 에이전트 식별자.
+//! 타입 자체는 문자열을 검증하지 않는다. CallerContext가 Agent 세션의 에이전트 ID와
+//! 호스트 레지스트리의 Plugin ID를 가져온다. Local은 TASTY_AGENT_ID를 사용하며,
+//! 이 값은 Local의 권한을 제한하거나 추가하는 수단이 아니다.
 
 use std::fmt;
 
-/// 위조 가능한 잠정 agent 식별자.
-///
-/// 호스트 자신을 가리키는 sentinel 은 [`AgentId::HOST`] (`"_host"`) — `tasty_memory::HOST_OWNER`
-/// 와 동일한 문자열. memory 의 `owner` 컬럼과 호환된다.
+/// 호출 경로에서 신뢰 여부를 확인해야 하는 에이전트 ID.
+/// 호스트 표기 HOST는 memory의 HOST_OWNER와 같아 owner 컬럼에 사용할 수 있다.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AgentId(String);
 
@@ -122,16 +105,8 @@ mod tests {
     /// `from_env` 검증을 하나의 직렬 테스트로 묶고 mutex 로 보호한다.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    /// `TASTY_AGENT_ID` 를 테스트 동안만 바꿔두고 **원값으로 되돌리는** 가드.
-    ///
-    /// 이 키는 tasty 자식 터미널 환경에서 실제로 설정돼 있다. 테스트가 마지막에
-    /// `remove_var` 로 "정리" 하면 그 실값을 잃고, 단언이 패닉하면 정리 자체가
-    /// 건너뛰어져 — 어느 쪽이든 같은 프로세스의 뒤따르는 테스트가 오염된 env 를
-    /// 물려받는다.
-    ///
-    /// **생성자가 [`ENV_LOCK`] 을 직접 쥔다** — 호출부가 잊어도 env 격리가 깨지지
-    /// 않는다(락은 가드 수명 동안 `_lock` 필드로 유지되고, Drop 이 env 를 되돌린 뒤
-    /// 풀린다). poison 은 복구한다(락은 `()` 라 오염될 상태가 없다).
+    /// 테스트 동안 환경변수 원값과 ENV_LOCK을 보관한다. 패닉으로 끝나도 Drop에서
+    /// 원값을 복원한 뒤 락을 놓는다. 락은 ()만 보호하므로 poison을 복구한다.
     struct AgentIdEnvGuard {
         prev: Option<std::ffi::OsString>,
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -188,17 +163,14 @@ mod tests {
 
     #[test]
     fn from_plugin_id_sanitizes_dots_and_other_chars() {
-        // 점은 telemetry 검증에서 거부되므로 _ 로 치환되어야 한다.
         assert_eq!(
             AgentId::from_plugin_id("com.tasty.claude").as_str(),
             "com_tasty_claude"
         );
-        // 허용 문자 (alnum, _, -) 는 그대로.
         assert_eq!(
             AgentId::from_plugin_id("plugin-1_foo").as_str(),
             "plugin-1_foo"
         );
-        // 기타 비허용 문자도 _ 로.
         assert_eq!(AgentId::from_plugin_id("a/b@c").as_str(), "a_b_c");
         // 결과는 validate_agent_id 를 통과해야 한다.
         assert!(
@@ -221,22 +193,17 @@ mod tests {
 
     #[test]
     fn from_env_all_cases() {
-        // 가드 생성자가 ENV_LOCK 을 직접 쥐고, 스코프 종료 시(패닉 포함) 실행 환경의
-        // 원래 TASTY_AGENT_ID 를 되돌린 뒤 락을 푼다.
         let env = AgentIdEnvGuard::new();
 
-        // 1) unset → host
         env.unset();
         assert!(AgentId::from_env().is_host(), "unset should be host");
 
-        // 2) empty → host
         env.set("");
         assert!(
             AgentId::from_env().is_host(),
             "empty string should be treated as host"
         );
 
-        // 3) value → that value
         env.set("child_xyz");
         let a = AgentId::from_env();
         assert_eq!(a.as_str(), "child_xyz");

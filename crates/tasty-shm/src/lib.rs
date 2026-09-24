@@ -1,30 +1,14 @@
-//! Cross-platform shared memory + handle passing primitives.
+//! OS 공유 메모리와 핸들 전달에 필요한 기능.
 //!
-//! 이 crate는 tasty plugin 시스템의 *인프라 계층*이다. 상위 SDK가 이 위에 안전한
-//! `SharedBuffer` wrapper와 IPC transport 통합을 얹는다. 여기서는 OS-native API
-//! (memfd / shm_open / CreateFileMapping)만 추상화한다.
-//!
-//! # 모델
-//!
-//! 1. **Producer**: `create(size)`로 새 공유 영역을 만든다 → `(SharedMemory,
-//!    SendableHandle)` 쌍 반환. producer는 즉시 SharedMemory를 통해 영역에 읽기/쓰기
-//!    가능하다.
-//! 2. **전달**: producer가 `prepare_send(handle, peer)`로 핸들을 transport-ready
-//!    페이로드로 변환한다. 호출자가 자기 IPC 채널 (Unix socket ancillary data /
-//!    Named Pipe)에 실어 보낸다. 이 crate는 transport에 *touch하지 않는다*.
-//! 3. **Consumer**: 받은 페이로드를 `receive(payload)`에 넘기면 같은 OS 영역에
-//!    매핑된 `SharedMemory`가 반환된다. 이후 producer와 동일 메모리를 본다.
+//! `create`로 영역과 송신 핸들을 만들고 `prepare_send`로 전달할 값을 얻는다.
+//! 호출자가 IPC로 값을 전달하면 수신 측은 `receive`로 같은 영역을 매핑한다.
+//! 실제 전송과 동기화는 호출자가 맡는다.
 //!
 //! # 안전성
 //!
-//! 두 프로세스가 같은 영역을 동시에 변경하면 data race(UB). 동기화는 상위 계층
-//! 책임이다(generation counter, dirty rect 등 — `tasty-plugin-sdk` 의 shared buffer 와
-//! `host.shared_buffer.dirty`).
-//!
-//! mmap된 메모리는 신뢰할 수 없는 외부 프로세스가 임의로 쓸 수 있으므로 `as_slice`
-//! / `as_mut_slice`는 `unsafe`다. 호출자는 (1) 동기화가 보장된 시점에 읽고, (2)
-//! 내용을 *코드로 해석하지 않는다*(픽셀/오디오/raw 바이트 외 용도 금지)는 두 조건을
-//! 지켜야 한다.
+//! 반환된 슬라이스를 사용하는 동안 다른 스레드·프로세스의 접근도 조율해야 한다.
+//! generation이나 dirty 알림만으로 동시 접근이 안전해지는 것은 아니다.
+//! 공유 내용은 픽셀·오디오·바이트 데이터로만 사용하며 코드로 실행하지 않는다.
 #![deny(missing_docs)]
 
 mod error;
@@ -37,8 +21,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use error::ShmError;
 
-/// 송신측 PID 식별자. Windows의 `DuplicateHandle`이 peer 프로세스 핸들 테이블에
-/// HANDLE을 복제할 때 필요. Unix에서는 무시된다 (SCM_RIGHTS는 PID 불요).
+/// 수신 측 프로세스. Windows에서 핸들을 복제할 대상을 지정한다. Unix는 무시한다.
 #[derive(Debug, Clone, Copy)]
 pub enum PeerPid {
     /// 자기 자신 프로세스(테스트용).
@@ -47,23 +30,19 @@ pub enum PeerPid {
     Other(u32),
 }
 
-/// OS shared memory section을 현재 프로세스에 매핑한 상태.
-///
-/// Drop 시 매핑이 해제되고 underlying 핸들이 닫힌다.
+/// 현재 프로세스에 매핑한 공유 메모리. Drop에서 매핑과 소유 핸들을 해제한다.
 pub struct SharedMemory {
     ptr: *mut u8,
     len: usize,
-    /// platform-specific cleanup state (e.g. owned fd / HANDLE).
-    /// `_` prefix: Drop 시에만 사용되며 직접 접근하지 않는다.
+    /// Drop에서 매핑·핸들을 해제하는 플랫폼별 상태.
     _handle: platform::PlatformMapping,
 }
 
-// SAFETY: SharedMemory는 OS가 매핑한 메모리 영역의 raw pointer를 들고 있다. pointer
-// 자체는 thread-safe하고, slice 접근은 unsafe 메서드 뒤에 있어 호출자가 동기화 책임을
-// 진다. 따라서 타입 자체는 Send/Sync 가능하다.
+// SAFETY: 매핑의 이동은 메모리 접근을 만들지 않는다. 슬라이스 접근은 unsafe이며
+// 호출자가 스레드·프로세스 사이의 동기화를 보장한다.
 unsafe impl Send for SharedMemory {}
-// SAFETY: 위와 동일 이유. 데이터 race 가능성은 unsafe 슬라이스 접근 시점에 호출자가
-// 막아야 하며, 타입의 Sync는 핸들 메타데이터만 공유하므로 안전.
+// SAFETY: 매핑 메타데이터를 공유할 수 있다. 실제 메모리 접근의 동기화는
+// unsafe 슬라이스 메서드의 호출자가 보장한다.
 unsafe impl Sync for SharedMemory {}
 
 impl SharedMemory {
@@ -81,14 +60,12 @@ impl SharedMemory {
     ///
     /// # Safety
     ///
-    /// 호출자는 다음을 보장해야 한다:
-    /// - 다른 프로세스가 같은 영역에 동시에 쓰는 동안 read를 수행하지 않는다(또는
-    ///   수행 시 잘못된 값을 읽어도 무방함을 안다).
-    /// - 반환된 slice의 lifetime이 다른 매핑/Drop과 겹치지 않는다.
+    /// 반환된 참조가 유효한 동안 매핑이 유지되어야 하며, 다른 스레드·프로세스나
+    /// 별도 매핑에서 같은 영역에 쓰면 안 된다. 잘못된 값을 허용하는 것으로
+    /// 동시 접근에 필요한 조건을 대신할 수 없다.
     pub unsafe fn as_slice(&self) -> &[u8] {
-        // SAFETY: ptr/len은 create/receive 시점에 mmap 결과로 받은 유효한 영역.
-        // `&self` lifetime 동안 매핑이 살아있음이 보장된다(Drop 순서). 호출자의
-        // 동기화 책임은 docstring에 명시.
+        // SAFETY: create/receive가 만든 유효 영역이며 &self 동안 매핑을 유지한다.
+        // 다른 접근과의 동기화는 호출자가 위 조건에 따라 보장한다.
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 
@@ -96,12 +73,11 @@ impl SharedMemory {
     ///
     /// # Safety
     ///
-    /// `as_slice`의 안전 조건에 더해, 다른 프로세스가 동일 영역을 동시에 read/write
-    /// 하지 않거나, 동시 접근 결과의 비결정성을 호출자가 수용해야 한다.
+    /// 반환된 참조가 유효한 동안 매핑을 유지하고 해당 영역에 독점적으로 접근해야 한다.
+    /// 같은 프로세스의 다른 참조·매핑과 다른 프로세스 모두 동시에 읽거나 쓰면 안 된다.
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn as_mut_slice(&self) -> &mut [u8] {
-        // SAFETY: shared memory의 본질상 `&self`로도 다른 프로세스에서 mutate가 일어난다.
-        // 동일 프로세스 내 aliasing 위반은 호출자가 막아야 함(docstring 조건).
+        // SAFETY: 유효한 매핑이며 호출자가 반환된 참조의 수명 동안 독점 접근을 보장한다.
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 }
