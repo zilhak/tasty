@@ -1,5 +1,4 @@
-//! Collapsed sidebar wrapper — props 추출 + view 호출 + action → result 매핑.
-//! 시각 / 입력 로직은 [`crate::adapters::ui::sidebar::view`] 에서.
+//! 접힌 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
 use crate::i18n::t;
 use crate::state::AppState;
@@ -51,8 +50,7 @@ pub fn draw_collapsed_sidebar(
     let mut deferred_actions: Vec<SidebarCollapsedAction> = Vec::new();
     let mut resize_priority_hovered = false;
 
-    // switch-number overlay — 사용자가 workspace_switch_modifier 를 누르고 있으면 rail 의
-    // letter avatar 를 숫자 키캡으로 그린다 (full 사이드바·탭과 동일 공통 배선).
+    // 워크스페이스 전환 modifier를 누르면 문자 아이콘 대신 숫자 키캡을 표시한다.
     let workspace_switch_held = {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
@@ -60,7 +58,6 @@ pub fn draw_collapsed_sidebar(
             &engine.settings.keybindings,
         )
     };
-    // 카테고리 quick-switch(Alt+Shift) — folders 기능 on 일 때만.
     let category_switch_held = engine.settings.general.workspace_categories_enabled && {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
@@ -116,7 +113,6 @@ pub fn draw_collapsed_sidebar(
                     Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
             }
             SidebarCollapsedAction::RailCategoryClicked { cat_id, anchor } => {
-                // `---` 버튼 우측에 앵커드 팝업(디자인 left=anchor.right+6, top=anchor.top-6).
                 state.dialogs.rail_category_popup = Some(cat_id);
                 let pos = egui::pos2(anchor.right() + 6.0, anchor.top() - 6.0);
                 state.dispatch_intent(

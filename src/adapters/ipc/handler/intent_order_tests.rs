@@ -166,8 +166,7 @@ fn detailed_labels(state: &crate::state::AppState) -> Vec<String> {
         .collect()
 }
 
-// 여러 상한의 순서를 검사하므로 실제와 같은 SQLite 저장소를 쓴다.
-// 시험용 InMemoryStorage는 HashMap 순서라 실행마다 달라질 수 있다.
+// 실제 SQLite 저장소로 상한 평가 순서를 확인한다.
 fn core_with_ordered_memory() -> crate::core::Core {
     let store = tasty_memory::MemoryStore::open_in_memory().expect("in-memory sqlite");
     super::cli_entry_tests::test_core_builder()

@@ -1,28 +1,8 @@
-//! `PresetView` 의 egui UI 그리기 함수 (디자인 2026-06-25 `PresetWindow` 전사).
-//!
-//! L1 scope 탭(Workspace/Tab/Pane) 아래 **2-depth list→detail** 본문:
-//!  - 좌측 리스트(196px, bg-sidebar): 현재 scope 의 저장된 preset. row = name + mono
-//!    subtitle. 선택 row = surface-active 채움 + 2px accent 좌측 bar. 헤더 = `N presets`
-//!    + New preset(`+`). 빈 scope → `preset.popup.empty`.
-//!  - 우측 detail(bg-panel): 44px 툴바(name/subtitle · rename·duplicate·delete · Edit)
-//!    위에 선택 preset 의 **데모 레이아웃 미리보기**.
-//!
-//! Edit 버튼으로 read-only 미리보기(`DemoLayout::show`)와 편집(WYSIWYG) 모드
-//! (`DemoLayout::show_edit`)를 토글한다(Edit↔Done). rename·duplicate·delete 는
-//! 기존 store API 에 직결돼 동작한다.
-//!
-//! 편집 모드에서 leaf 의 설정 핸들·더블클릭은 detail 컬럼 전체(툴바 + 미리보기)를
-//! surface 설정 화면([`surface_settings`])으로 바꾼다. 그동안 리스트와 L1 scope 탭은
-//! 흐려지고 입력을 받지 않으며, 구조 편집 단축키도 돌지 않는다(미리보기를 그리지
-//! 않으므로). 값은 확인을 눌러야 트리에 들어가고 저장된다.
-//!
-//! 구조 편집 자동 저장과 설정 화면 확인은 캐시한 layout 으로 저장소의 레이아웃을 갈아
-//! 쓴다. 캐시가 지어진 뒤 저장소의 레이아웃이 바뀌었으면(에이전트의 `preset.save` 등) 덮지
-//! 않고 저장소 판을 다시 불러온 뒤 toast 로 알린다([`layout_base`]).
-//!
-//! 보기 모드(Edit 전)의 미리보기는 저장 시점을 기다리지 않고 저장소를 따라간다 — 저장소의
-//! 레이아웃이 바뀌면 다음 프레임에 캐시를 다시 짓는다([`demo_cache`]). 편집 모드의
-//! 캐시는 사용자가 겨냥 중인 트리라 따라가지 않는다.
+//! 프리셋 목록·미리보기·편집 화면.
+//! 구조 편집은 자동 저장하며 surface 설정은 확인할 때 저장한다. 설정 화면이 열린 동안은
+//! 목록·범위 탭과 구조 단축키를 막아 편집 대상을 바꾸지 않는다.
+//! 캐시 생성 후 저장소 레이아웃이 바뀌면 덮어쓰지 않고 저장소 값을 다시 읽어 알린다.
+//! 보기 모드는 다음 프레임에 갱신하고 편집 모드는 저장 직전에 충돌을 확인한다.
 
 #[cfg(test)]
 mod cache_slot_tests;
@@ -58,13 +38,8 @@ use demo_layout::{DemoLayout, KindCatalog, ShortcutAction, ShowOutcome};
 use layout_base::LayoutBase;
 use surface_settings::{CfgOutcome, SurfaceCfg, breadcrumb, draw_surface_settings};
 
-/// 편집 모드 프레임에서 `KeybindingSettings` 바인딩과 이번 프레임 입력을 매칭해
-/// 대응하는 [`ShortcutAction`] 을 하나 고른다. 하드코딩 키 문자열 없이 전부
-/// 설정 필드로 판정한다(§단축키). 여러 필드가 같은 키를 공유해도 이 순서로 첫
-/// 매칭이 이긴다 — surface → tab → pane 순.
-///
-/// double-tap 바인딩(`shift+shift` 등)은 `parse_binding` 이 거부하므로 여기서도
-/// 매칭되지 않는다(편집기 미지원 — docs 명시).
+/// 설정 단축키에서 surface→tab→pane 순으로 첫 일치 동작을 고른다.
+/// double-tap은 parse_binding에서 지원하지 않으므로 편집기에서도 처리하지 않는다.
 fn match_preset_shortcut(
     kb: &KeybindingSettings,
     input: &egui::InputState,
@@ -136,10 +111,8 @@ enum Persisted {
     Conflict,
 }
 
-/// 편집된 `layout` 을 store/disk 에 write-through(auto-save)하되, `base`(캐시가 지어진
-/// 저장소 판)와 저장소의 지금 레이아웃이 다르면 쓰지 않고 [`Persisted::Conflict`] 를
-/// 돌려준다 — 그 사이의 다른 쓰기를 말없이 덮지 않는다. preset 이 사라졌으면 전처럼
-/// 아무것도 쓰지 않는다(되살리지 않는다).
+/// 캐시를 만들 때의 base와 현재 저장소를 비교한 뒤 저장한다. 다르면 Conflict이며
+/// 사라진 프리셋은 되살리지 않는다.
 fn persist_layout(
     store: &mut PresetStore,
     kind: PresetKind,
@@ -155,10 +128,7 @@ fn persist_layout(
     Ok(Persisted::Saved(LayoutBase::current(store, kind, name)))
 }
 
-/// `layout` 을 store/disk 에 쓴다. 메타데이터
-/// (name/subtitle/description/explicit_name)는 기존 preset 에서 보존하고 **레이아웃
-/// 트리만** 교체한다 — 편집 모드는 구조/leaf 파라미터만 건드리므로. scope 가
-/// layout 종류와 안 맞거나 preset 이 사라졌으면 no-op(Ok).
+/// 메타데이터는 유지하고 레이아웃만 저장한다. 범위가 맞지 않거나 프리셋이 없으면 아무것도 쓰지 않는다.
 fn write_layout(
     store: &mut PresetStore,
     kind: PresetKind,
@@ -202,11 +172,7 @@ fn write_layout(
     }
 }
 
-// ── subtitle (구조 요약) ─────────────────────────────────────────────────
-//
-// Workspace 는 저장된 `subtitle` 필드가 있으면 그것을, 없으면 pane/tab 개수를. Tab/Pane
-// 은 필드가 없으므로 구조(surface/tab 개수)로 요약. 단/복수는 i18n 키로 분리해 EN 복수
-// 문법까지 맞춘다(KO/JA 는 동일 형태).
+// 워크스페이스는 저장된 부제가 있으면 사용한다. 나머지는 구조 개수를 단수·복수 문구로 표시한다.
 
 fn count_panes(node: &PresetPaneNode) -> usize {
     match node {
@@ -301,18 +267,12 @@ fn subtitle(store: &PresetStore, kind: PresetKind, name: &str) -> String {
     }
 }
 
-// ── New preset (최소 preset 생성) ────────────────────────────────────────
-//
-// PresetView 윈도우는 live layout(CoreState) 에 접근하지 않으므로 "현재 레이아웃
-// capture" 는 불가능(그건 컨텍스트 메뉴 "...프리셋으로 저장" 경로가 담당). 여기 `+`
-// 는 **terminal surface 1개짜리 최소 preset** 을 만들어 곧장 선택한다. 실제 내용 편집은
-// Edit 모드(`DemoLayout::show_edit`)에서 한다.
+// 현재 실행 레이아웃 저장은 컨텍스트 메뉴에서 처리한다. 여기서는 터미널 하나의 최소 프리셋을 만든다.
 
 fn minimal_surface() -> PresetSurfaceLayout {
     use tasty_presets::PresetSurface;
     PresetSurfaceLayout::Leaf {
         surface: PresetSurface {
-            // id 는 저장 시 PresetStore 가 정규화로 부여한다(여기선 None).
             id: None,
             kind: "terminal".into(),
             cwd: None,
@@ -412,8 +372,6 @@ pub(super) fn duplicate_preset(
     }
 }
 
-// ── 리스트 row ───────────────────────────────────────────────────────────
-
 /// 리스트 row 한 줄을 그린다. 선택 시 surface-active 채움 + 2px accent 좌측 bar.
 fn draw_list_row(
     ui: &mut egui::Ui,
@@ -450,7 +408,6 @@ fn draw_list_row(
     } else {
         theme.text_secondary().to_egui()
     };
-    // 두 줄의 좌측 기준선. 이름줄 아래로 `name_h + STRUCT_GAP_1` 만큼 내려 부제를 둔다.
     let text_x = rect.min.x + ROW_PAD_X.value();
     let name_y = rect.min.y + ROW_PAD_Y.value();
     p.text(
@@ -460,7 +417,6 @@ fn draw_list_row(
         egui::FontId::proportional(name_h.value()),
         name_color,
     );
-    // painter_at 가 full 로 clip → 긴 subtitle 도 row 밖으로 넘치지 않는다.
     p.text(
         egui::pos2(text_x, name_y + (name_h + STRUCT_GAP_1).value()),
         egui::Align2::LEFT_TOP,
@@ -474,12 +430,7 @@ fn draw_list_row(
     resp
 }
 
-// ── 미리보기 ─────────────────────────────────────────────────────────────
-
-/// `rect`(bg-app) 안에 선택 preset 의 데모 레이아웃을 그린다. demo 인스턴스는 egui
-/// temp memory 에 (key, layout) 으로 캐시해 탭 클릭 전환·편집 결과가 프레임 간
-/// 지속되게 한다. `editing` 이면 WYSIWYG 편집 모드로 그리고, 변경 발생 시 즉시
-/// store/disk 에 write-through(auto-save) + 실패 시 toast.
+/// 프리셋 미리보기를 캐시해 선택한 탭과 편집 결과를 유지한다. 편집 변경은 자동 저장하고 실패하면 알린다.
 #[allow(clippy::too_many_arguments)]
 fn draw_preview(
     ui: &mut egui::Ui,
@@ -507,13 +458,10 @@ fn draw_preview(
         return;
     };
 
-    // 편집 갈래는 저장소를 따라가지 않는다. 다만 보기 → 편집 전이 프레임(직전에 그린 것이
-    // 보기 모드)에서는 먼저 한 번 따라간다 — Edit 를 누른 프레임이 곧 저장 뒤 첫 프레임이면
-    // 보기 갈래가 새로고침할 기회가 없었고, 이 시점의 캐시에는 아직 사용자 편집이 없다.
+    // 보기에서 편집으로 들어가는 첫 프레임은 아직 사용자 변경이 없어 저장소 값을 먼저 읽는다.
     let entering_edit = editing && !drew_editing_last(ui, &cache.key);
     if !editing || entering_edit {
-        // 보기 모드만 저장소를 따라간다 — 편집 모드의 캐시는 ADR-0038 대로 저장 직전에만
-        // 대조한다(`docs/adr/0038-preset-drafts-and-store-conflicts.md`).
+        // 편집 중에는 저장 직전에만 저장소와 비교한다(ADR-0038).
         let refreshed = refresh_view_cache(store, kind, name, catalog, &mut cache);
         if refreshed {
             ui.ctx().request_repaint();
@@ -545,8 +493,7 @@ fn draw_preview(
     store_demo(ui, cache);
 }
 
-/// [`draw_preview`] 의 editing(WYSIWYG) 모드 본문: 단축키/마우스 조작을
-/// [`DemoLayout`] 에 적용하고, 변형이 있으면 write-through(auto-save) + 실패 시 toast.
+/// 단축키·마우스 편집을 적용하고 변경이 있으면 자동 저장한다.
 #[allow(clippy::too_many_arguments)]
 fn draw_preview_editing(
     ui: &mut egui::Ui,
@@ -563,9 +510,7 @@ fn draw_preview_editing(
     kb: &KeybindingSettings,
 ) {
     let layout = &mut cache.layout;
-    // 표준 단축키 → focus(선택 leaf) 기준 mutation. TextEdit(이름/subtitle/cwd/
-    // startup) 포커스 중에는 문자 키가 입력으로 가야 하므로 매칭을 차단한다
-    // (any_binding_pressed_egui 는 키를 소비하지 않아 가드가 없으면 이중 처리됨).
+    // 텍스트 입력 중에는 구조 단축키를 막는다. 바인딩 검사는 키를 소비하지 않아 중복 처리될 수 있다.
     let key_outcome = if ui.ctx().wants_keyboard_input() {
         ShowOutcome::None
     } else {
@@ -576,7 +521,6 @@ fn draw_preview_editing(
     };
     let draw_outcome = layout.show_edit(ui, theme, canvas, selected_node, catalog);
 
-    // 설정 핸들·더블클릭 → draft 를 떠서 설정 화면을 연다. 트리는 바뀌지 않았다.
     if let ShowOutcome::OpenSettings(id) = draw_outcome {
         if let Some(orig) = layout.leaf_draft(id) {
             *surface_cfg = Some(SurfaceCfg::open(preset_key(kind, name), id, orig));
@@ -584,7 +528,6 @@ fn draw_preview_editing(
         ui.ctx().request_repaint();
     }
 
-    // 단축키·마우스 어느 쪽이든 변형이면 한 번만 write-through(auto-save).
     let mutated =
         matches!(key_outcome, ShowOutcome::Mutated) || matches!(draw_outcome, ShowOutcome::Mutated);
     let repaint = mutated
@@ -612,18 +555,10 @@ fn draw_preview_editing(
     }
 }
 
-/// detail 컬럼 전체(`rect`)에 surface 설정 화면을 그리고, 확인·취소를 적용한다.
-///
-/// - 확인: 캐시 layout 의 **사본**에 draft 를 적용해 먼저 저장한다. 저장이 성공해야만
-///   그 사본을 캐시에 넣고 화면을 닫는다. 실패하면 화면과 draft 를 그대로 두고 toast 로
-///   알린다 — 미리보기로 돌아가 저장된 것처럼 보이지 않게.
-/// - 취소: draft 를 버린다. 트리도 디스크도 바뀌지 않는다.
-/// - 확인했는데 화면이 열린 사이 저장소의 레이아웃이 바뀌었으면(에이전트의 `preset.save`
-///   등) 덮지 않는다. draft 를 버리고 저장소 판을 다시 불러와 미리보기로 돌아가며 toast 로
-///   알린다 — draft 의 leaf id 가 새 트리에서 같은 leaf 라는 보장이 없다.
-///
-/// 어느 쪽이든 그 leaf 는 선택된 채 미리보기로 돌아온다. draft 가 가리키는 preset 이나
-/// leaf 가 사라졌으면(에이전트의 삭제 등) 적용하지 않고 draft 를 버린다.
+/// surface 설정을 확인하면 레이아웃 사본에 적용하고 저장한다. 성공할 때만 캐시를 바꾸고 닫는다.
+/// 저장 실패는 입력을 유지해 알리고, 취소는 사본을 버린다.
+/// 저장소 레이아웃이 바뀌었으면 입력을 버리고 저장소를 다시 읽어 알린다.
+/// 프리셋·leaf가 사라져도 적용하지 않는다. 충돌이 없으면 선택한 leaf는 유지한다.
 #[allow(clippy::too_many_arguments)] // reason: 형제 draw_preview_editing 과 같은 패널 상태 묶음을 그대로 받는다 — 구조체로 묶으면 호출부 한 곳을 위해 빌림 분할만 늘어난다
 fn draw_settings_detail(
     ui: &mut egui::Ui,
@@ -706,9 +641,7 @@ fn draw_settings_detail(
     }
 }
 
-/// `rect` 위의 입력을 모두 받아 버리는 막. 흐리게 그린 영역(설정 화면이 열린 동안의
-/// 리스트·L1 탭) 위에 **나중에** 얹어, 그 아래 위젯이 hover·click 을 못 받게 한다 —
-/// egui 는 같은 층에서 나중에 등록된 위젯을 위로 본다.
+/// 설정 화면 아래의 목록·탭 입력을 막는다. egui는 나중에 등록한 같은 층의 위젯을 위로 본다.
 fn block_input(ui: &mut egui::Ui, rect: egui::Rect, salt: &str) {
     ui.interact(
         rect,
@@ -716,8 +649,6 @@ fn block_input(ui: &mut egui::Ui, rect: egui::Rect, salt: &str) {
         egui::Sense::click_and_drag(),
     );
 }
-
-// ── 본문 ─────────────────────────────────────────────────────────────────
 
 /// [`draw_preset_panel`] 본문 2분할([리스트 196px | detail] → 툴바/미리보기)의
 /// 사각형들. 좌측 리스트/우측 detail 배경과 구분선도 이 시점에 함께 칠한다.
@@ -753,7 +684,6 @@ fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
         egui::pos2(detail_rect.min.x, toolbar_rect.max.y),
         detail_rect.max,
     );
-    // 툴바 하단 border.
     ui.painter().hline(
         toolbar_rect.x_range(),
         toolbar_rect.max.y,
@@ -767,8 +697,7 @@ fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
     }
 }
 
-/// 좌측 preset 리스트를 그리고, row 클릭/새 preset 버튼 클릭을 즉시 `selected`
-/// 에 반영한다 (draw + 그 자리 인터랙션 적용).
+/// 목록 선택과 새 프리셋 버튼을 그려 selected를 갱신한다.
 #[allow(clippy::too_many_arguments)]
 fn draw_preset_list(
     ui: &mut egui::Ui,
@@ -844,8 +773,7 @@ fn draw_preset_list(
     }
 
     if locked {
-        // 설정 화면이 열린 동안에는 선택을 바꾸지 않는다 — 바꾸면 draft 가 말없이
-        // 버려진다. 이번 프레임의 클릭도 버리고, 다음 프레임부터는 막이 받는다.
+        // 설정 초안이 사라지지 않도록 이번 프레임의 선택도 무시하고 이후 입력을 막는다.
         block_input(ui, list_rect, "list");
         return;
     }
@@ -885,7 +813,6 @@ pub fn draw_preset_panel(
     kb: &KeybindingSettings,
 ) {
     let theme = crate::theme::theme();
-    // 설정 화면은 편집 모드 안에서만 산다. 편집이 끝났으면 draft 는 버린다.
     if !*editing {
         *surface_cfg = None;
     }
@@ -897,8 +824,6 @@ pub fn draw_preset_panel(
     let edit_meta_id = egui::Id::new("preset_edit_meta");
 
     egui::CentralPanel::default().show(ctx, |ui| {
-        // ── L1 scope 탭 (유지) ──────────────────────────────────────────
-        // 설정 화면이 열린 동안에는 흐리게 그리고 입력을 막는다(리스트와 같다).
         let mut scope = *active_kind;
         let l1 = ui
             .scope(|ui| {
@@ -931,22 +856,18 @@ pub fn draw_preset_panel(
             PresetKind::Tab => selected_tab,
             PresetKind::Pane => selected_pane,
         };
-        // 선택 항목이 유효하면 그것을, 아니면 목록 첫 항목을 본다.
         let resolved = selected
             .clone()
             .filter(|n| names.contains(n))
             .or_else(|| names.first().cloned());
 
-        // row (name, subtitle) 를 미리 해석 — store 의 immutable borrow 를 여기서 끝낸다.
         let rows: Vec<(String, String)> = names
             .iter()
             .map(|n| (n.clone(), subtitle(store, kind, n)))
             .collect();
 
-        // ── 본문 2분할: [리스트 196px | detail] ──────────────────────────
         let rects = compute_panel_rects(ui, &theme);
 
-        // ── 좌측 리스트 ──────────────────────────────────────────────────
         draw_preset_list(
             ui,
             ctx,
@@ -960,7 +881,6 @@ pub fn draw_preset_panel(
             locked,
         );
 
-        // detail 에 그릴 현재 preset.
         let current = selected
             .clone()
             .or_else(|| store.list(kind).first().cloned());
@@ -969,7 +889,6 @@ pub fn draw_preset_panel(
             .map(|n| subtitle(store, kind, n))
             .unwrap_or_default();
 
-        // ── 우측 detail: 툴바 + 미리보기 ─────────────────────────────────
         let mut clicks = PresetToolbarClicks {
             edit_clicked: false,
             done_clicked: false,
@@ -977,10 +896,8 @@ pub fn draw_preset_panel(
             duplicate_clicked: false,
             delete_clicked: false,
         };
-        // 편집 모드 name/subtitle 인라인 버퍼 — 편집 시에만 로드/저장.
         let mut edit_meta: Option<EditMetaState> = None;
 
-        // ── 설정 화면: detail 컬럼 전체(툴바 + 미리보기)를 대신한다 ──────────
         if locked {
             if let Some(n) = current.as_deref() {
                 let detail = rects.toolbar_rect.union(rects.preview_rect);
@@ -999,8 +916,7 @@ pub fn draw_preset_panel(
             } else {
                 *surface_cfg = None;
             }
-            // 이번 프레임은 툴바·미리보기를 그리지 않는다 — 가려진 트리를 단축키가
-            // 바꾸지 않게. 닫혔으면 다음 프레임부터 미리보기가 돌아온다.
+            // 설정 화면 뒤의 미리보기와 구조 단축키를 실행하지 않는다.
             return;
         }
 
@@ -1045,12 +961,10 @@ pub fn draw_preset_panel(
             });
         }
 
-        // 편집 메타 버퍼를 메모리에 반영.
         if let Some(meta) = edit_meta {
             ctx.data_mut(|d| d.insert_temp(edit_meta_id, meta));
         }
 
-        // ── 툴바 액션 적용 ───────────────────────────────────────────────
         apply_toolbar_actions(
             ctx,
             store,
@@ -1063,7 +977,6 @@ pub fn draw_preset_panel(
             clicks,
         );
 
-        // ── 미리보기 (최종 선택 기준) ────────────────────────────────────
         let preview_name = selected
             .clone()
             .or_else(|| store.list(kind).first().cloned());
@@ -1099,6 +1012,5 @@ pub fn draw_preset_panel(
         }
     });
 
-    // rename 상태를 메모리에 반영 (None 으로 덮어쓰면 인라인 편집 종료).
     ctx.data_mut(|d| d.insert_temp(rename_id, rename));
 }

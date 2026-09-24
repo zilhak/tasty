@@ -95,8 +95,8 @@ pub fn handle_task_create(
     )
 }
 
-/// Fallback은 작업 자체의 실행 실패에만 적용된다. 의존성 실패로 Skipped가 되는
-/// 경우에는 적용되지 않으므로, 생성은 허용하되 이 차이를 경고한다.
+/// Fallback은 작업 자체의 실행 실패에만 적용된다. 의존성이 실패하면 자기 fallback을
+/// 실행하지 않고 Waiting에 남으므로, 생성은 허용하되 이 차이를 경고한다.
 fn fallback_with_deps_warning(task: &tasty_agent::Task) -> Option<Vec<&'static str>> {
     if matches!(task.on_failure, OnFailure::Fallback { .. }) && !task.depends_on.is_empty() {
         Some(vec![

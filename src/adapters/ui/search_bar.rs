@@ -6,13 +6,6 @@ use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
 use tasty_type_geometry::length::LogicalPx;
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
-// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
-// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
-// "스케일 밖 폰트 값".
-
 /// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
 /// 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
@@ -25,8 +18,7 @@ pub fn draw_search_bar(
 ) -> PopupAction {
     let theme = crate::theme::theme();
 
-    // 키보드 포커스가 검색창에 있어야 하는지 — 포커스 토글의 단일 진실원
-    // (`popup.focused`). egui 텍스트필드 포커스는 이 값을 따라간다.
+    // 팝업의 focused 상태에 텍스트 필드 포커스를 맞춘다.
     let want_focus = state.popups.is_focused("search_bar");
 
     let mut action = PopupAction::None;
@@ -34,14 +26,10 @@ pub fn draw_search_bar(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
 
-        // Search input field — flex: 남은 가용 폭을 채우되 최소 60px. (디자인 canonical:
-        // search_bar.jsx `flex:1; minWidth:60`.) 뒤따르는 고정폭 요소(카운터 40px +
-        // IconButton sm 5개)와 그 사이 간격을 가용 폭에서 빼서 input 폭을 산출한다.
+        // 고정 카운터·버튼·간격을 빼고 남은 폭을 입력 칸에 준다.
         let spacing = ui.spacing().item_spacing.x;
         let btn_size = theme.item_height_tab.value();
         let divider_width = theme.border_width.value();
-        // 카운터(40) + nav 2개 + 토글 3개 + close 1개 = 6개 버튼, input 뒤로 8개의
-        // 간격 + divider 폭 1개.
         let reserved = 40.0 + 6.0 * btn_size + 8.0 * spacing + divider_width;
         let input_width = (ui.available_width() - reserved).max(60.0);
 
@@ -55,14 +43,12 @@ pub fn draw_search_bar(
                 .font(egui::TextStyle::Body),
         );
 
-        // popup.focused 에 맞춰 egui 텍스트필드 포커스를 동기화한다. 열릴 때/검색창으로
-        // 토글될 때만 1회 요청 (이미 포커스면 재요청하지 않음 — 매 프레임 강제 포커스 금지).
+        // 팝업이 포커스 상태인데 필드는 아니라면 포커스를 요청한다.
         if want_focus && !response.has_focus() {
             response.request_focus();
         }
 
-        // 검색 필드가 실제로 포커스일 때만 키 입력을 해석한다. 터미널 포커스 상태
-        // (검색창은 떠 있으나 비포커스)에서는 어떤 키도 가로채지 않고 PTY 로 흘려보낸다.
+        // 실제 필드 포커스가 있을 때만 검색 키를 처리한다.
         if response.has_focus() {
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
             let find_pressed = ui.input(|i| {
@@ -79,14 +65,12 @@ pub fn draw_search_bar(
                 state.search.clear();
                 action = PopupAction::Close;
             } else {
-                // Run search when query changes
                 if response.changed() {
                     let surface_id = focused_terminal_surface_id(state, engine);
                     state.search.surface_id = surface_id;
                     run_search(state, engine);
                 }
 
-                // Enter → next match, Shift+Enter → prev match
                 let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let shift_held = ui.input(|i| i.modifiers.shift);
 
@@ -99,7 +83,6 @@ pub fn draw_search_bar(
                     scroll_to_current_match(state, engine);
                 }
 
-                // Up/Down arrow navigation
                 if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
                     state.search.prev_match();
                     scroll_to_current_match(state, engine);
@@ -111,9 +94,7 @@ pub fn draw_search_bar(
             }
         }
 
-        // Status counter — 항상 고정폭(40px)으로 렌더. 빈 쿼리 / 무매치 / 정규식
-        // 에러 모두 `0/0`. 쿼리가 있는데 결과가 0(에러 포함)이면 danger(red),
-        // 그 외(빈 쿼리 / 정상 매치)는 muted. (디자인 search_bar.jsx:44-49)
+        // 검색어가 있는데 결과가 없거나 정규식 오류이면 카운터를 오류색으로 표시한다.
         let has_query = !state.search.query.is_empty();
         let (counter_text, counter_color) = if state.search.matches.is_empty() {
             let color = if has_query {
@@ -130,8 +111,6 @@ pub fn draw_search_bar(
         };
         draw_counter(ui, &counter_text, counter_color.into());
 
-        // Prev/Next buttons — 항상 렌더, 매치가 없으면 disabled. (디자인 IconButton
-        // size="sm", chevron SVG. search_bar.jsx:71-80)
         let nav_enabled = !state.search.matches.is_empty();
         if nav_button(
             ui,
@@ -154,7 +133,6 @@ pub fn draw_search_bar(
             scroll_to_current_match(state, engine);
         }
 
-        // Option toggles: case / regex / whole-word.
         if toggle_button(
             ui,
             &theme,
@@ -186,11 +164,8 @@ pub fn draw_search_bar(
             run_search(state, engine);
         }
 
-        // Divider + close — 토글 그룹과 close 버튼을 시각적으로 구분한다.
-        // (디자인 search_bar.jsx: "· divider · ✕ close (Esc)")
         draw_divider(ui, &theme);
         if nav_button(ui, &theme, icons::CLOSE, true, t("search.close_tooltip")) {
-            // X 클릭 = Escape 와 동일 동작: 검색 상태 clear + 팝업 닫기.
             state.search.clear();
             action = PopupAction::Close;
         }
@@ -199,8 +174,7 @@ pub fn draw_search_bar(
     action
 }
 
-/// 고정폭(40px) 매치 카운터를 가운데 정렬로 그린다. 텍스트 길이와 무관하게
-/// 폭이 고정되어 옆의 ▲▼/토글이 좌우로 밀리지 않는다. (디자인 width:40, center)
+/// 카운터가 바뀌어도 옆 버튼을 밀지 않도록 고정 폭에 가운데 정렬한다.
 fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(40.0, ui.available_height()),
@@ -215,8 +189,7 @@ fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     ui.painter().galley(pos, galley, color);
 }
 
-/// 토글 그룹과 close 버튼 사이 세로 구분선. (디자인 search_bar.jsx: divider,
-/// 갤러리 specimen `catalog/components/search_bar.rs` 와 동일 규격)
+/// 토글과 닫기 버튼 사이 구분선.
 fn draw_divider(ui: &mut egui::Ui, theme: &Theme) {
     let height = theme.item_height_tab.value() * 0.6;
     let (rect, _) = ui.allocate_exact_size(
@@ -247,7 +220,6 @@ fn icon_button_frame(
     } else {
         egui::Sense::hover()
     };
-    // IconButton sm 정사각 프레임 = `--tasty-control-height-tab` (item_height_tab), 코너 = `--tasty-radius` (corner_radius).
     let btn_size = theme.item_height_tab.value();
     let radius = theme.corner_radius.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(btn_size, btn_size), sense);
@@ -318,7 +290,7 @@ fn toggle_button(
     resp.clicked()
 }
 
-/// Run search, working around borrow checker by using search fields directly.
+/// 검색 상태 필드를 빌려 검색을 실행한다.
 fn run_search(state: &mut AppState, engine: &crate::core::CoreState) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();

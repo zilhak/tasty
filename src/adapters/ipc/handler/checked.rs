@@ -1,8 +1,9 @@
-//! 권한 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
+//! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
 use crate::core::{Core, CoreState};
 
-/// 권한·사용량 제한·호출 빈도 검사를 통과하고 사용량 집계까지 마친 요청.
+/// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
+/// 멱등성 봉투만 검사하며 권한·cap·호출 빈도 검사와 집계는 생략한다.
 pub(crate) struct CheckedRequest<'a> {
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
@@ -18,7 +19,7 @@ impl<'a> CheckedRequest<'a> {
     }
 }
 
-/// 모든 진입점에서 사용한다. 거부 사유나 허용 횟수는 요청당 한 번 기록한다.
+/// engine이 있는 진입점의 권한·사용량 제한·호출 빈도를 검사하고 결과를 한 번 기록한다.
 pub(crate) fn check_request<'a>(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,

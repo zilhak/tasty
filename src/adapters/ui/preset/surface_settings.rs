@@ -1,19 +1,6 @@
-//! 프리셋 편집기의 **surface 설정 화면** (디자인 `gallery/preset_editor.jsx`
-//! `SurfaceSettings` 전사).
-//!
-//! 편집 모드에서 leaf 의 설정 핸들(톱니)·더블클릭으로 열리고, 오른쪽 detail 컬럼
-//! **전체(툴바 + 미리보기)** 를 대신한다. 세 상자로 나뉜다.
-//!  - 헤더(`preset-cfg-header-height`, 대체되는 툴바와 같은 높이): kind 아이콘(kind
-//!    accent) · kind 표시명 · mono breadcrumb, 오른쪽 끝에 draft 가 저장본과 다를 때만
-//!    unsaved 점 + 캡션.
-//!  - 본문: 유일하게 스크롤되는 상자. 한 열 폼(최대 폭 `preset-cfg-form-max-width`),
-//!    Kind 다음에 그 kind 가 선언한 필드. dir/file 필드는 입력 + Browse 한 줄.
-//!  - footer(`preset-cfg-footer-height` 고정): 오른쪽 정렬 `[취소 ghost] [확인 primary]`.
-//!    변경이 없으면 확인은 비활성이다.
-//!
-//! 값은 [`LeafDraft`] 에만 쓴다. 확인·취소의 적용(저장·복귀)은 호출자(`preset.rs`)가
-//! [`CfgOutcome`] 을 보고 한다. Esc(취소) · 한 줄 입력 안의 Enter(확인)는 다른 popup 과
-//! 같이 코드에서 직접 읽는 고정 대화상자 키다 — `KeybindingSettings` 항목이 아니다.
+//! 프리셋 surface 설정. 오른쪽 상세 영역에 헤더·필드·확인/취소 버튼을 표시한다.
+//! 값은 LeafDraft에만 기록하고 저장·복귀는 호출부에서 처리한다.
+//! 변경이 없으면 확인을 막는다. Escape 취소와 한 줄 입력의 Enter 확인은 고정 대화상자 키다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_3;
@@ -25,9 +12,7 @@ use crate::i18n::{t, t_fmt};
 
 use super::demo_layout::{KindCatalog, LeafDraft, LeafLocation, kind_accent};
 
-/// 열려 있는 설정 화면의 상태 — 대상 leaf 와 draft, 그리고 dirty 비교의 기준인
-/// 저장본. `preset_key`(`{kind}:{name}`)는 draft 가 어느 preset 의 것인지 적어 둔다 —
-/// 표시 중인 preset 이 바뀌었으면 draft 를 그 preset 에 적용하지 않고 버린다.
+/// 대상 leaf, 초안과 변경 비교 기준. 다른 프리셋으로 바뀌면 적용하지 않고 버린다.
 #[derive(Clone, Debug)]
 pub struct SurfaceCfg {
     preset_key: String,
@@ -157,7 +142,6 @@ fn draw_header(
     let muted = theme.text_muted().to_egui();
     let caption = theme.font_size_caption.value();
 
-    // 오른쪽 끝: unsaved 점 + 캡션(dirty 일 때만). RTL 이라 캡션을 먼저 놓는다.
     if dirty {
         let resp = hui
             .scope(|ui| {
@@ -179,7 +163,6 @@ fn draw_header(
         resp.on_hover_text(t("preset.settings.unsaved_tooltip"));
     }
 
-    // 왼쪽: kind 아이콘 · 표시명 · breadcrumb(남은 폭에서 말줄임).
     hui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         let kind = draft.kind();
@@ -289,8 +272,6 @@ fn draw_form(
                 PresetFieldInput::FilePath | PresetFieldInput::Dir
             );
             let (resp, picked) = if browse {
-                // 입력(flex) + Browse(오른쪽) 한 줄. RTL 로 버튼을 먼저 놓고 남은 폭을
-                // 입력이 갖는다.
                 ui.allocate_ui_with_layout(
                     egui::vec2(w, theme.input_height().value()),
                     egui::Layout::right_to_left(egui::Align::Center),
@@ -342,7 +323,6 @@ fn draw_footer(ui: &mut egui::Ui, theme: &Theme, footer: egui::Rect, dirty: bool
     );
     fui.set_clip_rect(footer);
     fui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    // RTL: 먼저 놓은 것이 오른쪽 끝 — 디자인 `[취소] [확인]`.
     let ok = Button::new(t("button.ok"))
         .variant(ButtonVariant::Primary)
         .enabled(dirty)

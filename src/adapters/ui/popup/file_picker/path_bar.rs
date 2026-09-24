@@ -1,5 +1,4 @@
-//! 파일 피커 path bar — breadcrumb 과 상위·새로고침 버튼. 넘치는 경로를 흡수하는 자리다
-//! (`docs/features/native-file-picker/index.md` "긴 경로 — 넘침은 path bar 가 흡수한다").
+//! 파일 경로와 상위 이동·새로고침 버튼. 긴 경로는 breadcrumb 안에서 줄인다.
 
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{IconButton, IconButtonVariant, MenuItemVariant, menu_item};
@@ -10,8 +9,7 @@ use super::{CRUMB_GLYPH, FilePickerAction, FilePickerProps};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
-/// path bar — 오른쪽 버튼(flex:none)이 먼저 자리 잡고, breadcrumb 이 남은 폭(flex:1;
-/// min-width:0; overflow:hidden) 안에서만 그린다.
+/// 오른쪽 버튼 폭을 먼저 확보하고 남은 폭에 breadcrumb을 그린다.
 pub(super) fn path_bar(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
@@ -59,7 +57,7 @@ pub(super) fn path_bar(
     draw_crumbs(&mut crumbs_ui, props, action);
 }
 
-/// 크럼 한 칸의 글꼴 — root 만 mono 다(경로 뿌리는 값이지 이름이 아니다).
+/// root는 고정폭 글꼴을 사용한다.
 fn crumb_font(th: &Theme, root: bool) -> egui::FontId {
     let size = th.font_size_caption.value();
     if root {
@@ -89,11 +87,8 @@ fn natural_width(ui: &egui::Ui, th: &Theme, label: &str, root: bool) -> f32 {
         .x
 }
 
-/// 칸 하나를 주어진 폭에서 말줄임한 galley.
-///
-/// 방향이 역할마다 다르다. 조상은 **꼬리**에서 자른다(앞이 상위 경로다). 현재 폴더는
-/// **앞**에서 자른다 — 형제 폴더를 가르는 것은 꼬리이고, 꼬리를 자르면 두 폴더가 같은
-/// 문자열로 보인다. 어느 쪽이든 잘렸으면 `…` 가 보인다.
+/// 조상 이름은 끝을, 현재 폴더 이름은 앞을 줄이고 …를 붙인다.
+/// 현재 폴더는 이름 끝의 차이를 구분할 수 있도록 남긴다.
 fn crumb_galley(
     ui: &egui::Ui,
     th: &Theme,
@@ -157,10 +152,7 @@ fn menu_band(th: &Theme) -> (f32, f32) {
     )
 }
 
-/// 가장 긴 라벨 폭으로 정하는 메뉴 폭. 밴드 안에서 **내용이 정한다**.
-///
-/// 라벨만으로 재면 안 된다 — 행은 폴더 글리프 + gap + 라벨 + 좌우 패딩이라, 그 몫을
-/// 빼놓으면 긴 이름이 천장에 닿기 전에 잘린다.
+/// 폴더 아이콘·간격·라벨·패딩을 합친 폭을 최소·최대 범위 안으로 제한한다.
 fn menu_width(widest_label: f32, th: &Theme) -> f32 {
     let (floor, ceiling) = menu_band(th);
     let row = widest_label
@@ -174,8 +166,6 @@ fn menu_width(widest_label: f32, th: &Theme) -> f32 {
 mod menu_width_tests {
     use super::*;
 
-    /// 짧은 경로는 바닥을, 긴 경로는 천장을 받고, 그 사이는 **행 전체**로 잰다.
-    /// 라벨만 세면 가운데 갈래가 글리프와 패딩만큼 좁아져 이름이 일찍 잘린다.
     #[test]
     fn the_menu_width_is_measured_inside_the_band_and_counts_the_whole_row() {
         let th = crate::theme::theme();
@@ -189,7 +179,6 @@ mod menu_width_tests {
             "긴 경로가 천장을 안 받았다"
         );
 
-        // 바닥과 천장 사이로 떨어지는 라벨 폭 하나.
         let chrome = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
         assert_eq!(chrome, 0.0);
         let mid_label = (floor + ceiling) * 0.5;
@@ -205,8 +194,7 @@ mod menu_width_tests {
     }
 }
 
-/// 직전 프레임의 사다리 단을 기억하는 자리. 히스테리시스가 이 값을 읽는다 — 이것이 없으면
-/// 경계 폭에서 두 단이 매 프레임 뒤바뀐다.
+/// 경계 폭에서 표시 방식이 매 프레임 바뀌지 않도록 직전 단계를 기억한다.
 fn step_memory_id(ui: &egui::Ui) -> egui::Id {
     ui.make_persistent_id("file_picker_path_bar_step")
 }
@@ -290,8 +278,6 @@ fn hidden_crumbs(
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    // 툴팁은 **클릭하면 무엇이 되는지**를 말한다("Show 3 hidden folders") — 상태 서술이
-    // 아니다(디자인 2026-09-14 §6 이 직전 판 "N folders hidden" 을 그 이유로 물렸다).
     let resp = resp.on_hover_text(if range.len() == 1 {
         props.hidden_folders_one.to_owned()
     } else {
@@ -309,8 +295,6 @@ fn hidden_crumbs(
         &resp,
         egui::PopupCloseBehavior::CloseOnClick,
         |ui| {
-            // 메뉴 폭은 **밴드 안에서 내용으로 잰다** — 짧은 경로가 넓은 메뉴를 받지
-            // 않고 긴 경로는 천장에서 말줄임한다(디자인 `FpCrumbMenu`).
             let font = egui::FontId::proportional(th.font_size_body.value());
             let widest = props.crumbs[range.clone()]
                 .iter()

@@ -1,31 +1,8 @@
-//! Preset 적용 picker popup × 3.
-//!
-//! 저장된 Workspace/Tab/Pane preset 목록을 보여주고, 사용자가 선택해 [적용] 버튼이나
-//! Enter 로 적용하면 `Intent::ApplyPreset` 을 dispatch 한다.
-//! preset 목록 자체는 `state.preset_store: Arc<Mutex<PresetStore>>` (Core 의 Arc clone)
-//! 에서 매 프레임 lock 으로 읽는다.
-//!
-//! ## Split: wrapper / view / action
-//!
-//! 순수 view (`draw_apply_preset_view`) 는 `ApplyPresetProps` (theme + 라벨 +
-//! `&[String]` names + selected index) 만 받아 `ApplyPresetAction` 을 반환한다.
-//! 세 wrapper (`draw_apply_workspace_popup` / `_tab_` / `_pane_`) 는 동일한 공통
-//! helper (`draw_apply_popup`) 를 통해 `PresetStore::list(kind)` 에서 names 를
-//! 읽고, view 를 호출한 뒤, action 을 `Intent` dispatch + `PopupAction` 으로
-//! 번역한다.
-//!
-//! 같은 view 를 mock data 로 호출하는 미러는 `tasty-gallery` 의
-//! `catalog::components::apply_preset` 에 존재.
+//! 워크스페이스·탭·pane 프리셋 선택. 공용 화면에서 항목을 고르면 ApplyPreset을 보낸다.
+//! 목록은 공유 PresetStore에서 읽으며 갤러리는 같은 화면 함수에 예제 데이터를 전달한다.
 
 use tasty_presets::PresetKind;
 use tasty_type_geometry::length::LogicalPx;
-
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
-// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
-// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
-// "스케일 밖 폰트 값".
 
 /// preset 행 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
 /// `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -42,10 +19,7 @@ pub const APPLY_WORKSPACE_POPUP_ID: &str = "apply_workspace_preset";
 pub const APPLY_TAB_POPUP_ID: &str = "apply_tab_preset";
 pub const APPLY_PANE_POPUP_ID: &str = "apply_pane_preset";
 
-/// Pure inputs to [`draw_apply_preset_view`]. AppState / CoreState 의존 0.
-///
-/// `names` 는 빈 vec 일 수 있고 (저장된 preset 이 없을 때), `selected` 는 names
-/// 안의 어떤 값을 가리키거나 `None` (아직 선택 없음).
+/// 프리셋 목록과 선택 상태. 목록이 비거나 선택이 없을 수 있다.
 pub struct ApplyPresetProps<'a> {
     pub theme: &'a Theme,
     pub empty_label: &'a str,
@@ -55,12 +29,7 @@ pub struct ApplyPresetProps<'a> {
     pub selected: Option<&'a str>,
 }
 
-/// User intent surfaced by [`draw_apply_preset_view`].
-///
-/// wrapper 가 mutation 으로 번역:
-/// - `Select(name)` → `state.dialogs.preset_picker_selected = Some(name)`
-/// - `Apply(name)` → `Intent::ApplyPreset` dispatch + selection clear + Close
-/// - `Cancel` → selection clear + Close
+/// 선택·적용·취소 요청. 실제 상태 변경은 호출부에서 처리한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplyPresetAction {
     None,
@@ -69,10 +38,7 @@ pub enum ApplyPresetAction {
     Apply(String),
 }
 
-/// PopupDef::on_close entry point (3개 팝업 공용) — 어떤 경로로 닫히든 선택/대상
-/// 카테고리를 비운다. 이전엔 Cancel 액션 경로에만 이 정리가 있어서, X 버튼/외부
-/// 클릭(`close_on_outside_click: true`)으로 닫으면 두 필드가 그대로 남아 다음에
-/// 열 때 누출되는 버그가 있었다 — 그 버그의 수정.
+/// 팝업이 닫힐 때 선택과 대상 카테고리를 비운다. 세 종류 팝업이 공유한다.
 pub fn on_close_apply_preset_popup(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -120,7 +86,6 @@ fn draw_apply_popup(
     )
     .list(kind);
 
-    // 초기 선택 seeding: 선택이 없으면 첫 항목, 선택이 names 에 없으면 첫 항목으로 reset.
     if state.dialogs.preset_picker_selected.is_none() {
         if let Some(first) = names.first() {
             state.dialogs.preset_picker_selected = Some(first.clone());
@@ -148,11 +113,7 @@ fn draw_apply_popup(
 
     match action {
         ApplyPresetAction::None => PopupAction::None,
-        ApplyPresetAction::Cancel => {
-            // 선택/대상 카테고리 정리는 `on_close_apply_preset_popup` 훅이 닫힘
-            // 경로와 무관하게 담당한다(중복 방지).
-            PopupAction::Close
-        }
+        ApplyPresetAction::Cancel => PopupAction::Close,
         ApplyPresetAction::Select(name) => {
             state.dialogs.preset_picker_selected = Some(name);
             PopupAction::None
@@ -173,8 +134,7 @@ fn draw_apply_popup(
     }
 }
 
-/// Pure view: preset 목록 + Apply/Cancel 버튼만 그린다. AppState/CoreState
-/// 접근 없음. 갤러리에서 mock props 로 직접 호출 가능.
+/// 앱 상태 없이 프리셋 목록과 적용·취소 버튼을 그린다.
 pub fn draw_apply_preset_view(
     ui: &mut egui::Ui,
     props: &ApplyPresetProps<'_>,
@@ -186,7 +146,6 @@ pub fn draw_apply_preset_view(
     let th = props.theme;
     let names = props.names;
 
-    // 화살표 이동 처리 — frame-local selected 인덱스를 만들고 update.
     let cur_index = props
         .selected
         .and_then(|s| names.iter().position(|n| n == s));

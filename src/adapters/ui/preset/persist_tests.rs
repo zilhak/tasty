@@ -1,6 +1,4 @@
-//! 편집 화면의 저장과 에이전트 `preset.save` 의 경합 — 캐시가 지어진 뒤 저장소가 바뀌었으면
-//! 캐시로 덮지 않는다(원칙 1). 설정 화면 확인과 구조 편집 자동 저장이 둘 다
-//! [`persist_layout`] 을 지나므로 여기서 한 번에 고정한다.
+//! 편집 시작 뒤 다른 작업이 저장한 레이아웃을 덮어쓰지 않는지 확인한다.
 
 use super::demo_cache::{DemoCache, build_cache, reload_after_conflict};
 use super::*;
@@ -58,7 +56,6 @@ fn an_agent_save_behind_the_cache_is_not_overwritten() {
     let mut store = PresetStore::load_from(tmp.path().into());
     let cache = opened(&mut store);
 
-    // 에이전트의 `preset.save`(overwrite) — 탭 2 개.
     store
         .save_workspace_overwrite(ws("dev", 2))
         .expect("agent save");
@@ -73,13 +70,11 @@ fn an_agent_save_behind_the_cache_is_not_overwritten() {
     .expect("persist");
     assert_eq!(out, Persisted::Conflict);
     assert_eq!(tab_count(&store, "dev"), 2, "에이전트의 쓰기가 남아야 한다");
-    // 디스크도 — 새로 읽은 저장소에서 같은 값이어야 한다.
     let reread = PresetStore::load_from(tmp.path().into());
     assert_eq!(tab_count(&reread, "dev"), 2);
 }
 
-/// 경합이 없으면 전처럼 쓰고, 새 기준 판은 저장 뒤 저장소의 값이다 — 이어지는 두 번째
-/// 저장이 자기 첫 저장을 경합으로 보지 않게.
+/// 저장에 성공하면 새 기준값으로 바꿔 다음 저장에서 자기 변경을 충돌로 보지 않는다.
 #[test]
 fn without_contention_the_save_goes_through_and_rebases() {
     let tmp = tempfile::tempdir().expect("tmp");
@@ -115,8 +110,7 @@ fn without_contention_the_save_goes_through_and_rebases() {
     assert_eq!(tab_count(&store, "dev"), 4);
 }
 
-/// 에이전트가 메타(subtitle)만 바꿨으면 저장은 레이아웃만 갈아 쓰므로 덮을 것이 없다 —
-/// 경합으로 막지 않고, 그 subtitle 도 남는다.
+/// 메타데이터만 달라졌으면 레이아웃을 저장하고 새 메타데이터는 유지한다.
 #[test]
 fn a_metadata_only_agent_write_is_not_a_conflict() {
     let tmp = tempfile::tempdir().expect("tmp");

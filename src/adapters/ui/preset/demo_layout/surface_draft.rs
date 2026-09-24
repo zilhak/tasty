@@ -1,11 +1,6 @@
-//! surface 설정 화면의 **draft** — 선택 leaf 의 파라미터(kind · cwd · startup ·
-//! params)를 떼어 내 편집하고, 확인 시 한 번에 트리에 되돌려 쓴다.
-//!
-//! 트리(`DemoLayout`)는 확인 전까지 바뀌지 않는다. 그래서 취소는 draft 를 버리는
-//! 것으로 끝나고, draft 안에서 kind 를 여러 번 바꿔도 원본 params 가 중간 kind 때문에
-//! 지워지지 않는다 — 정리 규칙([`DemoLayout::set_kind`])은 확인 시점에 **최종 kind 가
-//! 원본과 다를 때만** 한 번 돈다. kind 가 같으면 선언 필드만 덮어써 선언되지 않은
-//! params 를 보존한다(편집기의 round-trip 계약).
+//! 확인 전에는 트리를 바꾸지 않는 surface 설정 초안. 취소하면 초안만 버린다.
+//! kind를 바꾸다 원래대로 돌아와도 기존 params는 유지한다. 확인할 때 최종 kind가
+//! 달라졌으면 한 번만 정리하고, 같으면 선언 필드만 적용해 나머지 params를 보존한다.
 
 use crate::core::surface_registry::PresetFieldTarget;
 
@@ -306,7 +301,6 @@ mod tests {
         let mut d = dl.leaf_draft(id).unwrap();
         d.set_value(&PresetFieldTarget::Cwd, "/elsewhere".into());
         d.switch_kind("markdown", &cat);
-        // apply 하지 않는다 = 취소.
         drop(d);
         assert_eq!(dl, before);
         assert_eq!(only_surface(&dl).cwd.as_deref(), Some("/a"));
@@ -486,7 +480,6 @@ mod tests {
             })
         );
 
-        // Pane scope: pane 번호 없이 탭 · surface.
         let dl = DemoLayout::from_pane(&pane_preset(two.clone()), &cat);
         let id = first_leaf_id_of_split(&dl);
         assert_eq!(
@@ -498,7 +491,6 @@ mod tests {
             })
         );
 
-        // Tab scope: surface 번호만.
         let dl = DemoLayout::from_tab(
             &TabPreset {
                 name: "t".into(),

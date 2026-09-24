@@ -1,21 +1,7 @@
-//! Listening-port viewer popup.
-//!
-//! Lists TCP ports that the active surface's process tree is listening on.
-//! Clicking a row selects it (re-clicking deselects); the footer's
-//! "Copy address" button copies the selected row's address to the clipboard.
-//!
-//! The scan is driven lazily: on each draw we check the cache; if stale we
-//! re-scan the descendants of the active terminal's shell PID. Results are
-//! cached in `AppState::port_scan` (5 s TTL).
-//!
-//! ## Split: wrapper / view / action
-//!
-//! The pure visual (`draw_port_scanner_view`) takes only `PortScannerProps`
-//! (no `AppState` / `CoreState`) and returns `PortScannerAction`. The
-//! `draw_port_scanner_popup` wrapper extracts props from runtime state, calls
-//! the view, then translates the returned action back into state mutation +
-//! `PopupAction`. The gallery (`tasty-gallery`) mirrors the view with mock
-//! props to verify visual states without runtime state.
+//! TCP 포트 조회. Tasty 프로세스 트리 또는 시스템 전체를 조회하고 상태·검색어로 거른다.
+//! 처음 열기·범위 변경·새로고침 때 백그라운드 조회를 시작한다.
+//! 행을 선택하면 주소를 복사할 수 있고 즐겨찾기는 별도 시스템 조회 결과와 함께 표시한다.
+//! 화면 함수는 앱 상태 없이 입력을 받아 사용자 동작을 반환한다.
 
 use std::collections::HashSet;
 use std::net::IpAddr;
@@ -48,9 +34,7 @@ const FOOTER_PAD_Y: i8 = 9;
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
-/// Which set of listening ports a scan covers.
-/// Tasty: only ports owned by Tasty shell process trees.
-/// System: every LISTEN socket on the host, with Tasty rows tagged.
+/// 조회 범위: Tasty 프로세스 트리 또는 호스트 전체 TCP 소켓.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanScope {
     Tasty,
@@ -68,8 +52,7 @@ pub enum SourceTag {
     External,
 }
 
-/// One row in the redesigned port table — workspace/tab-named projection of a
-/// listening port (Tasty or system-wide).
+/// 소속 워크스페이스·탭 정보를 포함한 포트 행.
 #[derive(Clone, Debug)]
 pub struct PortRowView {
     pub port: u16,
@@ -85,9 +68,7 @@ pub struct PortRowView {
     pub favorited: bool,
 }
 
-/// One row of the always-visible favorites section — a pinned `(addr, port)`
-/// paired with its current system-wide observation (`None` = not currently
-/// listening/connected anywhere on the host, drawn as the `NONE` state).
+/// 즐겨찾기 주소와 현재 시스템 조회 결과. 일치 항목이 없으면 NONE으로 표시한다.
 #[derive(Clone, Debug)]
 pub struct FavoriteRowView {
     pub addr_display: String,
@@ -107,10 +88,7 @@ pub struct FavoriteMatch {
     pub state: PortState,
 }
 
-/// Async state machine for the port scanner popup. Owned by `AppState.port_scan`.
-///
-/// Transitions: `Idle` → (kick) → `Loading { rx, scope }` → (poll) → `Ready { rows, scope }`
-/// or `Failed(msg)`. Closing the popup resets to `Idle`.
+/// 비동기 조회 상태. 내부 Close 버튼은 Idle로 초기화하지만 바깥 클릭으로 닫으면 유지한다.
 pub enum PortScanState {
     Idle,
     Loading {
@@ -132,8 +110,7 @@ pub struct ScanSnapshot {
     pub show_all_system: bool,
 }
 
-/// Which column the table is sorted by. `Proto` and `State` are not sortable.
-/// PR-5 wires header clicks; PR-4 keeps the field as a stable default.
+/// 정렬 열. Proto와 State는 정렬하지 않는다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortKey {
     Port,
@@ -143,7 +120,7 @@ pub enum SortKey {
     Tab,
 }
 
-/// Ascending or descending sort order. Same PR-5 caveat as [`SortKey`].
+/// 정렬 방향.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortDir {
     Asc,
@@ -203,7 +180,6 @@ pub struct ColumnVisibility(u8);
 
 impl Default for ColumnVisibility {
     fn default() -> Self {
-        // All seven low bits set → every column visible.
         Self(0b0111_1111)
     }
 }
@@ -265,18 +241,14 @@ impl Default for FilterState {
     }
 }
 
-/// Async view payload the table renders from. `Loading`/`Failed` short-circuit
-/// the table; `Ready` carries the (search-filtered) row slice plus two
-/// search-independent scope counts so the header tag and footer counter can be
-/// drawn per design: footer `{shown} of {total} ports`, header `{listening}
-/// listening` (LISTEN-only, since the backend now scans every TCP state).
+/// 조회 상태와 표시 행. total은 상태 필터 적용 후·검색 전 개수이며
+/// listening은 상태 필터·검색과 무관한 조회 범위 전체의 LISTEN 개수다.
 #[derive(Clone, Copy)]
 pub enum PortScannerViewState<'a> {
     Loading,
     Ready {
         rows: &'a [PortRowView],
-        /// Count of all ports in the current scope, before the search filter is
-        /// applied. Feeds the footer total.
+        /// 상태 필터를 적용하고 검색은 적용하기 전의 개수.
         total: usize,
         /// Count of LISTEN-state ports in the current scope, before the search
         /// filter. Feeds the header tag (`{listening} listening`).
@@ -387,8 +359,7 @@ pub struct PortScannerProps<'a> {
     pub label_favorite_remove: &'a str,
 }
 
-/// User intent surfaced by the view. The wrapper translates these into
-/// state mutation + side effects (browser launch, scan kick-off).
+/// 화면에서 요청한 동작. 호출부가 설정·클립보드·조회에 반영한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PortScannerAction {
     None,
@@ -449,10 +420,8 @@ pub fn draw_port_scanner_popup(
     let mut filter_state = read_filter_state(&ctx);
     let target_show_all_system = filter_state.show_all_system;
 
-    // ④ 매 프레임 poll: Loading → Ready/Failed.
     poll_scan(state);
 
-    // ① 첫 open (Idle), ② scope 변경 (Ready{scope} ≠ target) → kick_off_scan.
     let need_kick = match &state.port_scan {
         PortScanState::Idle => true,
         PortScanState::Ready { scope, .. } => *scope != scope_from_flag(target_show_all_system),
@@ -462,34 +431,26 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
     }
 
-    // 즐겨찾기 판정은 항상 system-wide 라 메인 scope(Tasty/System) 와 무관한 별도 스캔이
-    // 필요하다(direction (a) — 즐겨찾기가 있을 때만 병행 실행). 메인 scope 토글에는
-    // 반응하지 않고, 즐겨찾기가 비면 재스캔하지 않는다(리소스 절약).
+    // 즐겨찾기는 메인 범위와 별개로 시스템 전체를 조회한다. 항목이 없으면 조회하지 않는다.
     let has_favorites = !engine.port_favorites.items.is_empty();
     if has_favorites && matches!(state.port_favorites_scan, PortScanState::Idle) {
         kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
     }
 
-    // 상태 필터 + 검색 + 정렬: Ready rows 에 대해서만 적용. 상태 필터를 검색보다 **먼저**
-    // 적용해 footer total 을 "상태 통과·검색 전" 기준으로 잡는다. 정렬은 wrapper 에서
-    // 적용해 view 가 보이는 순서 그대로 행을 렌더(선택 키는 port 번호라 정렬과 무관).
+    // 푸터 total은 상태 필터 적용 후·검색 전 개수다. 선택은 포트 번호로 유지한다.
     let (filtered_rows, state_total): (Vec<PortRowView>, usize) = match &state.port_scan {
         PortScanState::Ready { rows, .. } => {
-            // 1) 상태 필터(검색 전) → total 기준.
             let state_rows: Vec<&PortRowView> = rows
                 .iter()
                 .filter(|r| filter_state.visible_states.contains(&r.state))
                 .collect();
             let state_total = state_rows.len();
-            // 2) 검색 + 정렬.
             let mut v: Vec<PortRowView> = state_rows
                 .into_iter()
                 .filter(|r| matches_query(r, &filter_state.query))
                 .cloned()
                 .collect();
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
-            // 별 토글 표시 — background scan 은 CoreState 를 몰라 채우지 못한 필드를
-            // wrapper 가 여기서 채운다.
             for row in &mut v {
                 if let Ok(addr) = row.addr_display.parse::<IpAddr>() {
                     row.favorited = engine.port_favorites.contains(addr, row.port);
@@ -500,22 +461,18 @@ pub fn draw_port_scanner_popup(
         _ => (Vec::new(), 0),
     };
 
-    // 즐겨찾기 섹션 rows — engine.port_favorites 전체(메인 테이블의 scope/검색/상태
-    // 필터와 무관) 에 system-wide 스캔 결과를 매칭한다.
     let favorite_system_rows: Option<&[PortRowView]> = match &state.port_favorites_scan {
         PortScanState::Ready { rows, .. } => Some(rows.as_slice()),
         _ => None,
     };
     let favorite_rows = build_favorite_rows(&engine.port_favorites, favorite_system_rows);
 
-    // scope rows 에 존재하는 상태들(필터 전) — 드롭다운 목록 + 모두선택/적용의 교집합 대상.
     let present_states: Vec<PortState> = match &state.port_scan {
         PortScanState::Ready { rows, .. } => present_states(rows),
         _ => Vec::new(),
     };
 
-    // 빈 상태 신호: scope 에 행은 있으나 상태 필터가 전부 걸러 비었고(검색은 빈) → "포트
-    // 없음" 이 아니라 "상태 필터로 가려짐" 으로 안내한다.
+    // 검색어가 없고 상태 필터가 모든 행을 가렸으면 포트 없음과 구분해 안내한다.
     let hidden_by_state = match &state.port_scan {
         PortScanState::Ready { rows, .. } => {
             !rows.is_empty() && filtered_rows.is_empty() && filter_state.query.trim().is_empty()
@@ -599,14 +556,12 @@ pub fn draw_port_scanner_popup(
     match action {
         PortScannerAction::None => PopupAction::None,
         PortScannerAction::Close => {
-            // ⑦ close → Idle reset. 백그라운드 thread 의 rx 가 drop 되어 send 가 실패할 뿐.
+            // 수신자를 버리면 진행 중 워커의 send가 실패하고 워커는 종료한다.
             state.port_scan = PortScanState::Idle;
             state.port_favorites_scan = PortScanState::Idle;
             PopupAction::Close
         }
         PortScannerAction::Refresh => {
-            // ③ Refresh 클릭: 현재 scope 그대로 재 kick. 즐겨찾기가 있으면 system-wide
-            // 판정용 스캔도 함께 재스캔한다.
             kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
             if has_favorites {
                 kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
@@ -614,7 +569,6 @@ pub fn draw_port_scanner_popup(
             PopupAction::None
         }
         PortScannerAction::Select(port) => {
-            // Toggle: re-clicking the selected row clears the selection.
             filter_state.selected_port = if filter_state.selected_port == Some(port) {
                 None
             } else {
@@ -624,8 +578,6 @@ pub fn draw_port_scanner_popup(
             PopupAction::None
         }
         PortScannerAction::CopyAddress(addr) => {
-            // egui 의 platform-output copy 명령으로 OS clipboard 에 복사
-            // (`egui_winit` 의 `handle_platform_output` 가 기록).
             ui.ctx().copy_text(addr);
             PopupAction::None
         }
@@ -640,15 +592,12 @@ pub fn draw_port_scanner_popup(
             PopupAction::None
         }
         PortScannerAction::SetColumnVisible(col, visible) => {
-            // 컬럼 표시/숨김 토글 → 영속. 숨긴 컬럼이 활성 sort key 여도 정렬은 그대로
-            // 유지한다(데이터 정렬은 표시와 독립 — 명세 권장). selected_port 도 보존.
+            // 열을 숨겨도 정렬과 선택은 유지한다.
             filter_state.columns.set(col, visible);
             write_filter_state(&ctx, filter_state);
             PopupAction::None
         }
         PortScannerAction::SetSort(key) => {
-            // PR-5 가 emit. PR-4 에서는 wrapper 도 명시적으로 처리하지 않으나
-            // pattern exhaustive 를 위해 memory 만 갱신해 둔다.
             if filter_state.sort_key == key {
                 filter_state.sort_dir = match filter_state.sort_dir {
                     SortDir::Asc => SortDir::Desc,
@@ -662,15 +611,12 @@ pub fn draw_port_scanner_popup(
             PopupAction::None
         }
         PortScannerAction::SetVisibleStates(set) => {
-            // 상태 필터 Apply → 표시할 상태 집합 교체. 영속(temp memory)되어 재오픈에도
-            // 유지(LISTEN-only 기본은 휘발 시 복원).
+            // 필터는 egui 임시 메모리에 보관해 같은 실행 중 다시 열 때 유지한다.
             filter_state.visible_states = set;
             write_filter_state(&ctx, filter_state);
             PopupAction::None
         }
         PortScannerAction::ToggleFavorite(addr_display, port) => {
-            // 별 클릭 → 즉시 토글, 확인 절차 없음. 라벨은 표시용 `addr:port` 로 채운다
-            // (친숙한 이름을 입력받는 UI 가 없다 — 시안에 없음).
             if let Ok(addr) = addr_display.parse::<IpAddr>() {
                 if engine.port_favorites.contains(addr, port) {
                     engine.port_favorites.remove(addr, port);
@@ -752,8 +698,7 @@ fn tab_name(row: &PortRowView) -> Option<&str> {
     }
 }
 
-/// Case-insensitive substring match across every visible column. Empty query
-/// matches everything.
+/// 포트·주소·PID·프로세스·워크스페이스·탭을 대소문자 없이 검색한다. 열 표시 여부와는 무관하다.
 pub fn matches_query(row: &PortRowView, query: &str) -> bool {
     let q = query.trim();
     if q.is_empty() {
@@ -837,12 +782,8 @@ fn build_snapshot(engine: &CoreState, show_all_system: bool) -> ScanSnapshot {
     }
 }
 
-/// Move `slot` into `Loading`, spawning a background thread that computes the
-/// row set and reports back through an mpsc channel. The thread requests an
-/// egui repaint after sending so the main loop wakes up. Shared by the main
-/// `state.port_scan` (Tasty/System scope, user-driven) and
-/// `state.port_favorites_scan` (always system-wide, favorites-driven) — both
-/// are `PortScanState` slots with no other coupling.
+/// 백그라운드 조회 후 채널로 결과를 보내고 다시 그리기를 요청한다.
+/// 메인 조회와 즐겨찾기 조회는 각각 독립된 상태를 사용한다.
 pub fn kick_off_scan(
     slot: &mut PortScanState,
     engine: &CoreState,
@@ -861,9 +802,7 @@ pub fn kick_off_scan(
     });
 }
 
-/// Background worker. Builds the descendant PID → display-path map, then
-/// resolves listening ports either by Tasty PID set (Tasty mode) or by full
-/// system scan (System mode), tagging each row with its source.
+/// Tasty 하위 프로세스의 소속을 모은 뒤 선택한 범위의 TCP 소켓을 조회한다.
 fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
     let mut pid_to_source: std::collections::HashMap<u32, (String, Option<String>)> =
         std::collections::HashMap::new();
@@ -1002,9 +941,7 @@ pub fn draw_port_scanner_view(
     props: &PortScannerProps<'_>,
 ) -> PortScannerAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
-        // 상태 필터 드롭다운이 열려 있으면 Escape 는 그것만 닫고 popup 은 유지한다
-        // (remote_tool `:181-185` 가드 미러). egui popup 위젯이 같은 프레임에 닫히지
-        // 않으므로 여기서 명시적으로 닫는다.
+        // 드롭다운이 열려 있으면 Escape로 드롭다운만 닫는다.
         let popup_open = ui
             .ctx()
             .memory(|m| m.is_popup_open(egui::Id::new(STATE_FILTER_POPUP_ID)));
@@ -1017,9 +954,7 @@ pub fn draw_port_scanner_view(
 
     let mut action = PortScannerAction::None;
 
-    // design-parity: 디자인 port_scanner.jsx 컨테이너 패딩 0 + 구역별 패딩
-    // (header 12/14 / filter 8/14 / body 0 / footer 9/14). content_margin 은
-    // port_scanner 한정 0(popup.rs). 구역 밀착은 세로 간격만 0, 구역 내부는 복원.
+    // 공통 내부 여백 없이 구역마다 여백을 주고 구역 사이 간격은 없앤다.
     let full = ui.max_rect();
     let sep = egui::Stroke::new(
         props.theme.border_width.value(),
@@ -1028,7 +963,6 @@ pub fn draw_port_scanner_view(
     let saved_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    // 헤더 — 디자인 padding 12 14 + borderBottom.
     let h_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: PANEL_PAD_X,
@@ -1045,15 +979,13 @@ pub fn draw_port_scanner_view(
     }
     ui.painter()
         .hline(full.x_range(), h_ir.response.rect.bottom(), sep);
-    // 헤더 전체(전체폭 × 실측 헤더 높이)를 드래그 이동 영역으로 매니저에 보고한다.
-    // 좁은 정적 띠(panel_header_drag_strip) 대신 이 rect 가 hit-test 에 우선 사용된다.
+    // 실제 헤더 전체를 이동 영역으로 보고한다.
     super::report_header_drag_rect(
         ui.ctx(),
         PORT_SCANNER_POPUP_ID,
         egui::Rect::from_x_y_ranges(full.x_range(), full.top()..=h_ir.response.rect.bottom()),
     );
 
-    // 필터 행 — 디자인 padding 8 14 + borderBottom.
     let f_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: PANEL_PAD_X,
@@ -1071,18 +1003,12 @@ pub fn draw_port_scanner_view(
     ui.painter()
         .hline(full.x_range(), f_ir.response.rect.bottom(), sep);
 
-    // 즐겨찾기 섹션 — 필터 행과 테이블 사이, bounded(캡션 22 + 리스트 최대 112)로
-    // 삽입한다. footer 가 아래에서 TopBottomPanel::bottom 으로 먼저 하단을 예약하는
-    // 것과 대칭으로, 이 구역은 위에서 먼저 자기 높이만큼 소비하고 CentralPanel(테이블)
-    // 이 그 사이 남은 높이를 채운다.
+    // 즐겨찾기 높이는 위에서, 푸터는 아래에서 먼저 확보하고 나머지를 본문에 준다.
     if let Some(a) = draw_favorites_section(ui, props) {
         action = a;
     }
 
-    // footer — 디자인 padding 9 14 + borderTop. TopBottomPanel 로 popup 하단에 고정해
-    // 그린다(remote_tool 폼 footer 미러 `:928`). 패널이 하단 공간을 **먼저** 예약하므로
-    // CentralPanel 보다 앞서 호출해야 한다. 본문 테이블의 가로 스크롤은 자체 ScrollArea
-    // 래퍼에 갇혀 부모 ui 폭을 넓히지 않으므로, 과거의 footer 고정-rect 핵은 불필요하다.
+    // 푸터 공간을 먼저 확보하도록 CentralPanel보다 먼저 만든다.
     let mut footer_action: Option<PortScannerAction> = None;
     let footer = egui::TopBottomPanel::bottom("port_scanner.footer")
         .resizable(false)
@@ -1100,14 +1026,9 @@ pub fn draw_port_scanner_view(
     if let Some(a) = footer.inner {
         footer_action = Some(a);
     }
-    // footer 위 구분선 — popup 전체폭(full.x_range), 패널 top 좌표(패널 rect 가 아님).
     ui.painter()
         .hline(full.x_range(), footer.response.rect.top(), sep);
 
-    // 본문 (테이블/로딩/빈 상태) — 남은 높이 전체를 채운다. footer 가 TopBottomPanel 로
-    // 이미 하단을 예약했으므로 CentralPanel 의 available_height 에는 footer 가 포함되지
-    // 않는다. 행이 적으면 테이블이 auto_shrink 로 위로 붙고 빈 공간은 본문 영역 하단
-    // (footer 위)에 남는다.
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
         .show_inside(ui, |ui| match &props.view_state {
@@ -1120,8 +1041,6 @@ pub fn draw_port_scanner_view(
             }
         });
 
-    // footer 액션을 마지막에 적용해 우선순위를 유지(원 구조와 동일 — 한 프레임에 footer
-    // 와 본문 액션이 동시 발생하지 않으므로 실질 충돌은 없음).
     if let Some(a) = footer_action {
         action = a;
     }
@@ -1160,7 +1079,6 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
         ),
         PortScannerViewState::Failed { .. } => None,
     };
-    // 선택 행이 현재 표시 중일 때만 복사 대상 주소가 존재한다.
     let selected_addr = match &props.view_state {
         PortScannerViewState::Ready { rows, .. } => props
             .filter
@@ -1169,19 +1087,15 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
             .map(row_copy_address),
         _ => None,
     };
-    // footer 위 구분선은 caller(draw_port_scanner_view)가 패널 top 에 이미 그린다.
-    // 디자인 borderTop 은 1개 — 여기서 중복으로 그리지 않는다(이전 중복선 버그 제거).
     ui.horizontal(|ui| {
         if let Some(s) = &counter {
             ui.label(
                 egui::RichText::new(s)
-                    // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
                     .color(th.text_disabled())
                     .size(th.font_size_caption.value()),
             );
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 디자인 footer: Close = secondary, Copy address = ghost(미선택 시 disabled).
             if Button::new(props.label_close)
                 .variant(ButtonVariant::Secondary)
                 .show(ui, th)
@@ -1238,12 +1152,9 @@ fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
 fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
-    // 헤더 라벨(제목·카운트 태그)을 비선택으로 만들어 press 시 포인터를 가져가지
-    // 않게 한다(egui 기본 selectable_labels=true 면 글자 위 드래그가 텍스트 선택으로
-    // 가로채짐). 헤더 프레임 서브트리에만 적용 — 본문 라벨 선택성은 불변.
+    // 헤더 글자 선택이 창 드래그를 막지 않도록 헤더 안에서만 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
-        // B1: leading 포트 아이콘.
         ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
             egui::RichText::new(props.label_heading)
@@ -1251,13 +1162,10 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
                 .size(th.font_size_heading.value())
                 .strong(),
         );
-        // B2: 헤더 안 accent Tag(`{n} listening` / `scanning…`).
         if let Some(tag) = header_tag_text(props) {
             draw_header_count_tag(ui, th, &tag);
         }
-        // 우측에 close 버튼 + Refresh + search (디자인 IconButton ghost + Input).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 디자인 close: IconButton ghost(테두리 없음) — 이전 egui 기본 프레임 버그 제거.
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
@@ -1270,7 +1178,6 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             {
                 out = Some(PortScannerAction::Close);
             }
-            // B3: 헤더 우측 Refresh 아이콘 버튼 (상시 노출, 현재 scope 재스캔).
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
@@ -1283,12 +1190,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             {
                 out = Some(PortScannerAction::Refresh);
             }
-            // 컬럼 chooser 트리거: Refresh 옆 COLUMNS IconButton. 클릭 시 컬럼 목록
-            // 팝업(컬럼별 checkbox)을 토글한다. 토글은 SetColumnVisible 액션으로 emit.
             if let Some(a) = draw_column_chooser(ui, props) {
                 out = Some(a);
             }
-            // 디자인 search: Input width 200 + leading search 아이콘.
             let mut buf = props.filter.query.to_string();
             let resp = Input::new()
                 .placeholder(props.label_search_placeholder)
@@ -1369,8 +1273,7 @@ fn draw_column_chooser(
             }
         },
     );
-    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
-    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
+    // 팝업 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))
         .then(|| ui.memory(|m| m.area_rect(popup_id)))
@@ -1400,8 +1303,7 @@ fn write_state_draft(ctx: &egui::Context, draft: HashSet<PortState>) {
     });
 }
 
-/// 상태 필터 버튼(funnel + 라벨). filtered(=일부 상태만 표시) 면 accent 채움,
-/// 아니면 surface0 + border. remote_tool `filter_button:578` 전사.
+/// 일부 상태만 표시 중이면 강조하는 상태 필터 버튼.
 fn state_filter_button(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1435,7 +1337,7 @@ fn state_filter_button(
     )
 }
 
-/// 드롭다운 내부 separator (remote_tool `hsep:317` 전사 — surface1 hline).
+/// 드롭다운 내부 구분선.
 fn state_filter_hsep(ui: &mut egui::Ui, th: &Theme) {
     vspace(ui, STRUCT_GAP_2);
     let r = ui.max_rect();
@@ -1447,19 +1349,13 @@ fn state_filter_hsep(ui: &mut egui::Ui, th: &Theme) {
     vspace(ui, STRUCT_GAP_2);
 }
 
-/// 상태 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
-///
-/// Apply-on-confirm: 드롭다운 편집은 egui temp memory draft 에만 쌓이고 **적용** 눌러야
-/// `SetVisibleStates` 로 반영된다(remote_tool `draw_protocol_filter:609` 미러). 단
-/// 부호가 반대다 — port_scanner 는 **shown 집합**이라 `checked = draft.contains(s)`
-/// (remote_tool 은 hidden 집합이라 `!contains`). 초기화도 다르다 — remote_tool 은
-/// select-all 이지만 여기는 **LISTEN-only 복원**(`{Listen}`).
+/// 상태 필터. 편집은 임시 값에 반영하고 적용 버튼으로 확정한다.
+/// 체크한 상태를 표시하며 초기화는 LISTEN만 선택한다.
 fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
     let present = props.present_states;
     let popup_id = egui::Id::new(STATE_FILTER_POPUP_ID);
 
-    // filtered = present 상태 중 일부만 표시 중(전부 표시면 필터 미적용).
     let total = present.len();
     let selected = present
         .iter()
@@ -1474,7 +1370,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
 
     let btn = state_filter_button(ui, th, &label, filtered);
     if btn.clicked() {
-        // 열릴 때 draft 를 현재 적용 집합(visible_states)으로 시드.
         if !ui.memory(|m| m.is_popup_open(popup_id)) {
             write_state_draft(ui.ctx(), props.filter.visible_states.clone());
         }
@@ -1498,7 +1393,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             );
             ui.add_space(th.spacing_xs.value());
 
-            // draft 를 한 번 읽어 체크박스 렌더 + 토글 적용 후 변경 시 되쓴다.
             let mut draft = read_state_draft(ui.ctx());
             let mut draft_changed = false;
             egui::ScrollArea::vertical()
@@ -1506,7 +1400,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for st in present {
-                        // shown 집합 → checked = 포함(remote_tool 의 !contains 와 반대).
                         let mut checked = draft.contains(st);
                         if checkbox(ui, th, &mut checked, st.label(), true).changed() {
                             if checked {
@@ -1523,7 +1416,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             }
 
             state_filter_hsep(ui, th);
-            // 일괄: 모두 선택(present 전체) / 모두 해제(∅).
             ui.horizontal(|ui| {
                 if Button::new(props.label_state_filter_select_all)
                     .variant(ButtonVariant::Ghost)
@@ -1540,7 +1432,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
                     write_state_draft(ui.ctx(), HashSet::new());
                 }
             });
-            // 초기화(LISTEN-only 복원) / 적용.
             ui.horizontal(|ui| {
                 if Button::new(props.label_state_filter_reset)
                     .variant(ButtonVariant::Ghost)
@@ -1566,8 +1457,6 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             });
         },
     );
-    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
-    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))
         .then(|| ui.memory(|m| m.area_rect(popup_id)))
@@ -1600,7 +1489,6 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         {
             out = Some(PortScannerAction::SetShowAllSystem(checked));
         }
-        // 우측 정렬 상태 필터(remote_tool add-bar `:489-496` 미러).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(a) = draw_state_filter(ui, props) {
                 out = Some(a);
@@ -1662,7 +1550,6 @@ fn draw_favorites_section(
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
 
-            // 캡션 행 — 좌측 "Favorites"(+개수, 0개면 생략) / 우측 "system-wide".
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), row_h),
                 egui::Layout::left_to_right(egui::Align::Center),
@@ -1691,7 +1578,6 @@ fn draw_favorites_section(
             );
 
             if props.favorites.is_empty() {
-                // 빈 상태 — Explorer 사이드바 즐겨찾기와 동일 관례(흐린 별 + 안내 1행).
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), row_h),
                     egui::Layout::left_to_right(egui::Align::Center),
@@ -1843,9 +1729,7 @@ fn draw_favorite_row(
 fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        // 상태 메시지 top offset = space-xl×2(48) 로 통일 — loading/failed/empty 가 각자
-        // 32/40/48 로 제각각이던 것을 하나로 맞춰 상태 전환 시 메시지 위치가 튀지
-        // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
+        // 로딩·실패·빈 목록 메시지의 시작 높이를 맞춘다.
         vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
             ui.add(
@@ -1866,9 +1750,6 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
 fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &str) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        // 상태 메시지 top offset = space-xl×2(48) 로 통일 — loading/failed/empty 가 각자
-        // 32/40/48 로 제각각이던 것을 하나로 맞춰 상태 전환 시 메시지 위치가 튀지
-        // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
         vspace(ui, th.spacing_xl * 2.0);
         ui.label(
             egui::RichText::new(props.label_failed)
@@ -1904,7 +1785,6 @@ fn draw_ready_body(
             props.label_no_ports_tasty_empty
         };
         ui.vertical_centered(|ui| {
-            // space-xl×2(48) 통일 (loading/failed 와 동일 위치).
             vspace(ui, th.spacing_xl * 2.0);
             ui.label(
                 egui::RichText::new(empty_label)
@@ -1934,44 +1814,20 @@ fn draw_table(
     let th = props.theme;
     let text_h = th.font_size_body.value() + 6.0;
 
-    // Cap the inner ScrollArea so the table scrolls *within* the bounded popup
-    // content rect instead of overflowing (and being clipped) past it. Reserve
-    // the sticky header row and the inter-widget gap from the height available
-    // in this CentralPanel. The footer is no longer reserved here: the
-    // TopBottomPanel split (draw_port_scanner_view) already carves the footer
-    // out of the panel, so this CentralPanel's available_height excludes it —
-    // reserving footer_h again would double-count it.
-    // (egui_extras' default max_scroll_height is 800px, far taller than the
-    // 520px popup, so the body never scrolls without this cap.)
+    // 본문 높이에서 고정 헤더와 간격만 뺀다. 푸터는 바깥 패널이 이미 확보했다.
     let header_h = text_h + 4.0;
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - gap).max(text_h + 8.0);
 
-    // 폭 모델 (이번 작업이 뒤집은 지점): 과거엔 고정폭 + flex(remainder) 로 테이블이
-    // 항상 popup 안에 fit 되도록 강제했고, 폭이 모자라면 addr/proc 가 말줄임됐다.
-    // 이제는 컬럼별 **최소폭**을 주고, 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면
-    // Table 위젯이 본문을 가로 스크롤한다(말줄임 대신). 가로 스크롤은 본문 영역에만
-    // 갇혀 footer/header divider 는 popup 폭에 고정 유지된다(아래 회귀 검증 참조).
-    //
-    // 최소폭: Port 84 / Proto 76 / Address 140(IPv6 fe80::… 고려) / Process 200
-    // (asus_framework.exe PID 10316 고려) / Workspace 120 / Tab 80 / State 140.
-    // tasty mono(D2Coding)가 디자인 폰트보다 넓은 메트릭 세금을 min 값에 반영.
-    // 가용폭이 최소폭 합보다 넓으면 flex 컬럼(Address/Process)에 여유폭을 분배해
-    // 빈 공간 없이 채운다. Port 만 우측 정렬, 정렬 가능: Port/Address/Process/
-    // Workspace/Tab (Proto/State 는 정적 헤더).
+    // 열별 최소 폭의 합이 가용 폭을 넘으면 본문만 가로 스크롤한다.
+    // 남는 폭은 Address·Process에 나누며 Port만 오른쪽 정렬한다.
     let visible: Vec<ColumnId> = ColumnId::ALL
         .into_iter()
         .filter(|c| props.filter.columns.is_visible(*c))
         .collect();
 
-    // 본문 가용폭: 세로 스크롤바 폭 + leading fav 컬럼(`port-star-col-width`, ColumnId
-    // 밖 — chooser 로 숨길 수 없는 상시 컬럼) 만큼 빼서, 세로 스크롤이 생겨도 가짜 가로
-    // 스크롤이 뜨지 않게 하고 나머지 7컬럼 폭 계산은 기존 그대로 둔다.
-    //
-    // 이 폭 예약은 tasty 의 스크롤 어포던스 표준(스크롤바 숨김 + 가장자리 페이드)에 대한
-    // **문서화된 예외**다 — 여기서 빼는 폭은 여백이 아니라 Exact 컬럼 폭과 가로 스크롤
-    // 발생 여부를 함께 정하는 계산 입력이다. 예외 조건과 근거는
-    // `docs/adr/0037-ui-input-motion-and-elevation.md`.
+    // 세로 스크롤바와 항상 표시하는 별 열의 폭을 먼저 뺀다.
+    // 스크롤바 폭은 열 계산에 필요한 예외이며 ADR-0037에 근거를 기록한다.
     let scrollbar_reserve =
         LogicalPx(ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin);
     let fav_reserve = th.port_star_col_width() + LogicalPx(ui.spacing().item_spacing.x);
@@ -1985,7 +1841,6 @@ fn draw_table(
     );
 
     let mut columns: Vec<TableColumn<SortKey>> = Vec::with_capacity(visible.len() + 1);
-    // fav 컬럼 — 헤더 라벨 없음, 정렬 불가, 항상 표시(컬럼 chooser 대상 아님).
     columns.push(TableColumn {
         title: "",
         width: TableColumnWidth::Exact(th.port_star_col_width()),
@@ -2008,10 +1863,7 @@ fn draw_table(
     };
     let selected_port = props.filter.selected_port;
 
-    // 별 클릭은 여기서 직접 캡처해 행 선택과 분리한다: egui_extras 는 셀 콘텐츠와
-    // 별개로 행 전체에도 click sense 를 걸어 겹치는 클릭을 판정하므로(선택 가능
-    // 테이블의 구조상 특성), Table 의 `clicked_row` 결과보다 이 플래그를 우선한다 —
-    // 별을 클릭한 프레임엔 행 선택을 바꾸지 않고 즐겨찾기만 토글한다.
+    // 별 클릭과 행 클릭이 겹치므로 별을 누른 프레임에는 즐겨찾기만 바꾼다.
     let mut fav_click: Option<(String, u16)> = None;
 
     let output = Table::new(columns)
@@ -2019,8 +1871,6 @@ fn draw_table(
         .active_sort(props.filter.sort_key, sort_dir)
         .selectable(true)
         .horizontal_scroll(true)
-        // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle), sticky header 전체폭. 디자인
-        // th padding 0/12 → header_pad_x 12. 헤더/행 높이는 기존 TableBuilder 값 그대로.
         .header_fill(th.bg_sidebar().into())
         .header_pad_x(12.0)
         .header_height(header_h)
@@ -2031,9 +1881,7 @@ fn draw_table(
             th,
             rows,
             |row: &PortRowView| selected_port == Some(row.port),
-            // 컬럼이 숨겨지면 인덱스가 밀리므로, 보이는 컬럼 인덱스 → ColumnId 로
-            // 매핑해 셀을 분기한다(위치 인덱스 하드코딩 금지). index 0 은 fav 컬럼이라
-            // `visible` 매핑 전에 먼저 분기하고, 나머지는 1 만큼 당겨 조회한다.
+            // 첫 열은 별이며 나머지는 숨긴 열을 제외한 ColumnId 순서로 찾는다.
             |ui, th, row, col_index| {
                 if col_index == 0 {
                     let key = format_host_port(&row.addr_display, row.port);
@@ -2049,7 +1897,6 @@ fn draw_table(
                     return;
                 }
                 match visible[col_index - 1] {
-                    // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
                     ColumnId::Port => {
                         hspace(ui, th.spacing_md);
                         ui.label(
@@ -2094,12 +1941,9 @@ fn draw_table(
             },
         );
 
-    // 별 클릭이 이 프레임에 있었다면 행 선택보다 우선한다(위 주석 참고).
     if let Some((addr, port)) = fav_click {
         return Some(PortScannerAction::ToggleFavorite(addr, port));
     }
-    // B5: 행 클릭 → 선택 토글, 헤더 클릭 → 정렬 토글 (wrapper 에서 처리). 두 영역은
-    // 상호 배타라 한 프레임에 동시 발생하지 않는다.
     if let Some(i) = output.clicked_row {
         return Some(PortScannerAction::Select(rows[i].port));
     }
@@ -2109,17 +1953,8 @@ fn draw_table(
     None
 }
 
-/// 컬럼의 폭 모델 메타: (최소폭, flex 여부, 정렬, 정렬키). flex 컬럼은 가용폭이 남을 때
-/// 여유폭을 나눠 받는다(Address/Process). Port 만 우측 정렬.
-///
-/// Process 컬럼의 최소폭만 이름이 있다 — `component.port-process-col-min-width`(200).
-/// 나머지 여섯은 여전히 **이 표의 컬럼 폭**이고 그 치수에 이름을 준 토큰이 없다
-/// (`component.port-*` 에 있는 것은 `star-col-width` · `favorites-max-height` ·
-/// `favorites-row-height` · `process-col-min-width` 넷이다). 그중 하나(120)가
-/// `size-*` 스케일과 값이 겹쳐 `on_scale_length_literal` 에 잡히는데, 값이 같다는 것이
-/// 그 이름이 이 자리에 맞는다는 뜻은 아니다 — 여기 필요한 이름은 "Workspace 컬럼의
-/// 최소폭" 이고 그것을 만드는 것은 디자인 결정이다. 이름을 얻기 전까지는 리터럴로
-/// 남는다.
+/// 열의 최소 폭·여유 폭 분배·정렬 정보. Process만 해당 semantic 토큰이 있다.
+/// 나머지는 이 표 전용 값이며 같은 숫자의 다른 역할 토큰으로 대체하지 않는다.
 fn column_layout(col: ColumnId, th: &Theme) -> (LogicalPx, bool, TableAlign, Option<SortKey>) {
     match col {
         ColumnId::Port => (
@@ -2152,12 +1987,8 @@ fn column_layout(col: ColumnId, th: &Theme) -> (LogicalPx, bool, TableAlign, Opt
     }
 }
 
-/// 보이는 컬럼들의 픽셀 폭을 계산한다.
-///
-/// 최소폭 합 ≥ 가용폭 → 각 컬럼은 최소폭 그대로(합이 가용폭 초과 → Table 위젯이
-/// 가로 스크롤). 최소폭 합 < 가용폭 → 남는 폭(slack)을 flex 컬럼(Address/Process)에
-/// 균등 분배해 빈 공간 없이 채운다. flex 컬럼이 하나도 안 보이면 마지막 컬럼이 slack 을
-/// 흡수해 테이블이 가용폭을 채운다. (순수 함수 — 단위 테스트로 분기 검증.)
+/// 최소 폭이 가용 폭을 넘으면 유지하고, 남는 폭은 Address·Process에 균등 분배한다.
+/// 두 열이 모두 숨겨져 있으면 마지막 열에 남은 폭을 준다.
 fn compute_column_widths(
     visible: &[ColumnId],
     item_spacing_x: LogicalPx,
@@ -2202,7 +2033,6 @@ fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
                 .size(th.font_size_body.value()),
         );
         if let Some(pid) = row.pid {
-            // 디자인 process 셀의 PID 는 Tag(outlined default).
             tag(ui, th, &format!("PID {pid}"), TagVariant::Default, false);
         }
     });
@@ -2409,11 +2239,9 @@ mod tests {
             scope: ScanScope::Tasty,
         };
 
-        // No message yet — stays Loading.
         poll_state(&mut state);
         assert!(matches!(state, PortScanState::Loading { .. }));
 
-        // Worker reports success → next poll → Ready.
         tx.send(Ok(vec![dummy_row(3000)])).unwrap();
         poll_state(&mut state);
         match state {
@@ -2447,7 +2275,6 @@ mod tests {
             rx,
             scope: ScanScope::Tasty,
         };
-        // Worker dies without sending.
         drop(tx);
         poll_state(&mut state);
         assert!(matches!(state, PortScanState::Failed(_)));
@@ -2496,19 +2323,12 @@ mod tests {
     #[test]
     fn query_filter_matches_any_column_case_insensitive() {
         let row = tasty_row(3000, "frontend", Some("dev-server"));
-        // port number
         assert!(matches_query(&row, "3000"));
-        // address (case insensitive)
         assert!(matches_query(&row, "0.0.0.0"));
-        // process name (different case)
         assert!(matches_query(&row, "NODE"));
-        // workspace
         assert!(matches_query(&row, "frontend"));
-        // tab
         assert!(matches_query(&row, "dev-server"));
-        // pid
         assert!(matches_query(&row, "7"));
-        // no match
         assert!(!matches_query(&row, "xyzzy"));
     }
 
@@ -2522,9 +2342,7 @@ mod tests {
     #[test]
     fn query_filter_external_row_skips_workspace_match() {
         let row = dummy_row(80);
-        // External rows have no workspace/tab strings to match.
         assert!(!matches_query(&row, "workspace"));
-        // But port/addr still match.
         assert!(matches_query(&row, "80"));
         assert!(matches_query(&row, "127.0.0.1"));
     }
@@ -2617,7 +2435,6 @@ mod tests {
             sort_dir: SortDir::Asc,
             ..FilterState::default()
         };
-        // Same column click.
         let key = SortKey::Port;
         if fs.sort_key == key {
             fs.sort_dir = match fs.sort_dir {
@@ -2631,7 +2448,6 @@ mod tests {
         assert_eq!(fs.sort_key, SortKey::Port);
         assert_eq!(fs.sort_dir, SortDir::Desc);
 
-        // Different column click.
         let key = SortKey::Address;
         if fs.sort_key == key {
             fs.sort_dir = match fs.sort_dir {
@@ -2648,21 +2464,17 @@ mod tests {
 
     #[test]
     fn sort_puts_none_last_for_both_directions() {
-        // SortKey::Process: row with Some(process) vs row with None.
         let some = row_with(3000, None, Some("nginx"));
         let none = row_with(3000, None, None);
-        // Asc: Some before None.
         assert_eq!(
             compare_rows(SortKey::Process, SortDir::Asc, &some, &none),
             std::cmp::Ordering::Less,
         );
-        // Desc: still Some before None — None is sticky to the tail.
         assert_eq!(
             compare_rows(SortKey::Process, SortDir::Desc, &some, &none),
             std::cmp::Ordering::Less,
         );
 
-        // Reverse arguments: None first → must report Greater (= goes behind).
         assert_eq!(
             compare_rows(SortKey::Process, SortDir::Asc, &none, &some),
             std::cmp::Ordering::Greater,
@@ -2692,7 +2504,6 @@ mod tests {
             row_with(3, Some(3), Some("zulu")),
         ];
         sort_rows(&mut rows, SortKey::Process, SortDir::Desc);
-        // Desc: zulu before alpha; None always last.
         assert_eq!(rows[0].process_name.as_deref(), Some("zulu"));
         assert_eq!(rows[1].process_name.as_deref(), Some("alpha"));
         assert_eq!(rows[2].process_name, None);
@@ -2702,7 +2513,6 @@ mod tests {
     fn sort_workspace_treats_external_as_missing() {
         let tasty = tasty_row(3000, "frontend", Some("tab1"));
         let external = dummy_row(3000);
-        // workspace: Tasty has name, External is "missing" → External tail.
         assert_eq!(
             compare_rows(SortKey::Workspace, SortDir::Asc, &tasty, &external),
             std::cmp::Ordering::Less,
@@ -2749,10 +2559,8 @@ mod tests {
             false,
         );
         assert_eq!(header_tag_text(&ready).as_deref(), Some("3 listening"));
-        // Loading: scanning placeholder.
         let loading = default_props(&theme, PortScannerViewState::Loading, "", false);
         assert_eq!(header_tag_text(&loading).as_deref(), Some("scanning…"));
-        // Failed: no tag.
         let failed = default_props(
             &theme,
             PortScannerViewState::Failed { message: "boom" },
@@ -2775,7 +2583,6 @@ mod tests {
         let mut vis = ColumnVisibility::default();
         vis.set(ColumnId::Workspace, false);
         assert!(!vis.is_visible(ColumnId::Workspace));
-        // Other columns stay visible.
         assert!(vis.is_visible(ColumnId::Tab));
         assert!(vis.is_visible(ColumnId::Port));
         vis.set(ColumnId::Workspace, true);
@@ -2785,10 +2592,8 @@ mod tests {
     #[test]
     fn column_visibility_port_is_mandatory() {
         let mut vis = ColumnVisibility::default();
-        // Hiding the mandatory Port column is a no-op — it stays visible.
         vis.set(ColumnId::Port, false);
         assert!(vis.is_visible(ColumnId::Port));
-        // Persistence round-trips through FilterState default too.
         assert!(FilterState::default().columns.is_visible(ColumnId::Port));
     }
 
@@ -2820,7 +2625,6 @@ mod tests {
         let sum_min = visible
             .iter()
             .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c, &th).0);
-        // Generous width → slack distributed to the two flex columns only.
         let available = sum_min + LogicalPx(200.0);
         let widths = compute_column_widths(&visible, LogicalPx(0.0), available, &th);
         for (id, w) in visible.iter().zip(&widths) {
@@ -2831,7 +2635,6 @@ mod tests {
                 assert_eq!(*w, min, "non-flex {id:?} should stay at its min");
             }
         }
-        // Address + Process split 200 evenly → +100 each.
         let addr_i = visible
             .iter()
             .position(|c| *c == ColumnId::Address)
@@ -2860,7 +2663,6 @@ mod tests {
 
     #[test]
     fn set_column_visible_action_round_trips_filter_state() {
-        // Mirrors the wrapper's SetColumnVisible handling.
         let mut fs = FilterState::default();
         fs.columns.set(ColumnId::Tab, false);
         assert!(!fs.columns.is_visible(ColumnId::Tab));
@@ -2885,10 +2687,8 @@ mod tests {
 
         toggle(&mut fs, 3000);
         assert_eq!(fs.selected_port, Some(3000));
-        // Same port again → cleared.
         toggle(&mut fs, 3000);
         assert_eq!(fs.selected_port, None);
-        // Different port → selected.
         toggle(&mut fs, 8080);
         assert_eq!(fs.selected_port, Some(8080));
     }
@@ -2917,12 +2717,10 @@ mod tests {
         let listen = row_with_state(3000, PortState::Listen);
         let established = row_with_state(3001, PortState::Established);
 
-        // Default set: only LISTEN passes.
         let default_set = HashSet::from([PortState::Listen]);
         assert!(default_set.contains(&listen.state));
         assert!(!default_set.contains(&established.state));
 
-        // Widen the set: ESTABLISHED now passes too.
         let widened = HashSet::from([PortState::Listen, PortState::Established]);
         assert!(widened.contains(&listen.state));
         assert!(widened.contains(&established.state));
@@ -2957,7 +2755,6 @@ mod tests {
 
     #[test]
     fn set_visible_states_action_round_trips_filter_state() {
-        // Mirrors the wrapper's SetVisibleStates handling.
         let mut fs = FilterState::default();
         assert_eq!(fs.visible_states, HashSet::from([PortState::Listen]));
         let set = HashSet::from([PortState::Listen, PortState::Established]);

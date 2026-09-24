@@ -1254,7 +1254,8 @@ mod admission_tests {
             command_tx: tx.clone(),
             port: 0,
             shutdown: Arc::new(AtomicBool::new(false)),
-            // None이면 Drop이 사용자 포트 파일을 지우므로 만들어지지 않는 시험 전용 경로를 쓴다.
+            // 이유: None이면 Drop이 사용자 포트 파일을 지운다. 이 시험 전용 경로는
+            // 생성하지 않아 삭제가 NotFound로 끝나므로 프로세스당 하나여도 된다.
             custom_port_file: Some(std::env::temp_dir().join(format!(
                 "tasty-dequeue-release-test-{}.port",
                 std::process::id()

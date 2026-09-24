@@ -1,5 +1,4 @@
-//! Full (expanded) sidebar wrapper — props 추출 + view 호출 + action → state
-//! mutation 매핑. 시각 / 입력 로직은 [`crate::adapters::ui::sidebar::view`] 에서.
+//! 펼친 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
 use crate::i18n::t;
 use crate::intent::Intent;
@@ -34,10 +33,7 @@ pub(super) fn entry_view(
     }
 }
 
-/// 카테고리 토글 on 이면 섹션 그룹 데이터를, off 면 `None` 을 만든다. full/collapsed
-/// 사이드바가 공유한다. `categories()` 순서 = 표시 순서(normal 항상 맨 위). 각 섹션의
-/// entries 는 `workspaces_in_category()` 가 주는 (전역 인덱스, &ws) 를 보존해 사이드바
-/// action 의 전역 인덱스 계약을 지킨다.
+/// 카테고리 표시가 켜져 있으면 저장된 순서로 그룹을 만든다. 행은 전역 워크스페이스 인덱스를 유지한다.
 pub(super) fn build_category_sections(
     engine: &crate::core::CoreState,
     active_ws: usize,
@@ -121,10 +117,7 @@ pub fn draw_full_sidebar(
     let mut deferred_actions: Vec<SidebarFullAction> = Vec::new();
     let mut resize_priority_hovered = false;
 
-    // switch-number overlay — 현재 눌린(사용자 입력) modifier 가 workspace_switch_modifier
-    // 와 일치하면 워크스페이스 leading 을 숫자 키캡으로 그린다. P2a 탭과 동일하게 공통
-    // 모듈 `switch_overlay` 의 판정을 재사용하고, egui ctx.input 의 modifier 만 보므로
-    // 에이전트/IPC 로는 표시될 수 없다(사용자 입력 전용).
+    // 실제 modifier 입력을 switch_overlay로 판별해 숫자 키캡을 표시한다.
     let workspace_switch_held = {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
@@ -132,7 +125,6 @@ pub fn draw_full_sidebar(
             &engine.settings.keybindings,
         )
     };
-    // 카테고리 quick-switch(Alt+Shift) — folders 기능 on 일 때만. Workspace 와 상호 배타.
     let category_switch_held = engine.settings.general.workspace_categories_enabled && {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
@@ -145,12 +137,7 @@ pub fn draw_full_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show_separator_line(false)
-        // 디자인 chrome.jsx Sidebar: 패널 자체엔 좌우 패딩이 없다 — 목록 행 배경 /
-        // 구분선이 사이드바 가장자리·우측 보더까지 꽉 차고, 좌우 padding 은 각 섹션
-        // (헤더 12 / 헤딩 10 / 행 10 / 버튼 10) 이 스스로 갖는다. egui SidePanel 기본
-        // 프레임은 inner_margin symmetric(8,2) 라 모든 내용물을 8px 안쪽으로 밀어
-        // 배경/구분선이 가장자리에 닿지 못했다 → inner_margin 0 으로 덮어쓴다.
-        // fill 은 기본 panel_fill 과 동일한 mantle(bg_sidebar) 로 유지.
+        // 행 배경과 구분선을 가장자리까지 그리도록 패널 여백을 없애고 구역별 여백을 쓴다.
         .frame(egui::Frame::new().fill(th.bg_sidebar().to_egui()))
         .show(ctx, |ui| {
             let props = SidebarFullProps {
@@ -178,10 +165,7 @@ pub fn draw_full_sidebar(
         });
     state.resize_edge_widget_hovered |= resize_priority_hovered;
 
-    // 우측 경계선 (ui_kit border-right) — 사이드바 안쪽 마지막 px.
-    // panel_resp.response.rect.right() 는 exact_width 보다 크다(separator/resize handle
-    // 영역 포함, 측정상 190 vs 180). 그대로 쓰면 터미널을 ~10px 침범하므로, 터미널
-    // 영역 계산과 동일한 sidebar_width 를 기준으로 그린다.
+    // 패널 rect에는 리사이즈 영역이 포함되므로 실제 sidebar_width로 경계선을 정한다.
     let panel_rect = panel_resp.response.rect;
     ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
@@ -230,7 +214,6 @@ pub fn draw_full_sidebar(
                 {
                     let src_cat = engine.workspaces[from].category;
                     match target_category {
-                        // 다른 카테고리로 드롭 → 소속 이동(전역 인덱스·순서 보존).
                         Some(target_cat) if target_cat != src_cat => {
                             let ws_id = engine.workspaces[from].id;
                             if let Err(e) = engine.set_workspace_category(ws_id, target_cat) {
@@ -238,7 +221,6 @@ pub fn draw_full_sidebar(
                             }
                             engine.mark_layout_dirty();
                         }
-                        // 같은 카테고리(또는 평면) → 순서 변경.
                         _ => {
                             if let Some(to) = drop_target
                                 && to < ws_count
@@ -264,9 +246,7 @@ pub fn draw_full_sidebar(
                     Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
             }
             SidebarFullAction::CategoryHeaderToggle(cat_id) => {
-                // 헤더 클릭 → 접힘 토글 + 영속(mark_layout_dirty). 접힘은 layout.json
-                // 대상이고 확장↔레일이 공유하는 per-category 상태
-                // (`docs/features/workspace-category/index.md` 참고).
+                // 카테고리 접힘 상태는 레이아웃에 저장하며 펼친 화면과 레일이 공유한다.
                 engine.toggle_category_collapsed(cat_id);
                 engine.mark_layout_dirty();
             }

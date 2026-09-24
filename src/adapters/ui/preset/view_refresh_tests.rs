@@ -1,7 +1,4 @@
-//! 보기 모드 미리보기는 저장소를 따라가고, 편집 모드의 캐시는 따라가지 않는다
-//! (`docs/adr/0038-preset-drafts-and-store-conflicts.md`).
-//! 두 성질을 [`draw_preview`] 를 헤드리스 egui 프레임으로 돌려 캐시 칸에서 잰다 —
-//! 새로고침을 부르는 자리가 어느 모드 갈래에 있는지가 곧 시험 대상이다.
+//! 실제 프레임에서 보기 캐시는 저장소에 맞춰 갱신하고 편집 캐시는 보존하는지 확인한다(ADR-0038).
 
 use super::demo_cache::{DemoCache, demo_cache_id, preset_key};
 use super::*;
@@ -70,7 +67,7 @@ fn frame(
     }));
 }
 
-/// 캐시 칸에 든 미리보기의 탭 수.
+/// 캐시된 미리보기의 탭 수.
 fn cached_tabs(ctx: &egui::Context) -> usize {
     let cache: DemoCache = ctx
         .data(|d| d.get_temp(demo_cache_id(&dev_key())))
@@ -108,7 +105,6 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
         "보기 모드는 저장소의 새 판을 보여야 한다"
     );
 
-    // 새 판이 기준 판이 됐으므로 이어서 편집 모드로 들어간 첫 저장은 경합이 아니다.
     let cache: DemoCache = ctx
         .data(|d| d.get_temp(demo_cache_id(&dev_key())))
         .expect("cache");
@@ -149,7 +145,7 @@ fn view_mode_keeps_its_cache_while_the_store_is_unchanged() {
     let mut selected = None;
     frame(&ctx, &mut store, false, &mut selected);
 
-    // 캐시만 다른 트리로 바꾼다(기준 판은 그대로) — 저장소와 무관한 미리보기 쪽 상태의 대역.
+    // 저장소 기준값은 유지하고 미리보기 상태만 바꾼다.
     let mut cache: DemoCache = ctx
         .data(|d| d.get_temp(demo_cache_id(&dev_key())))
         .expect("cache");
@@ -164,9 +160,7 @@ fn view_mode_keeps_its_cache_while_the_store_is_unchanged() {
     );
 }
 
-/// 보기 → 편집 전이 프레임: 에이전트 저장 뒤 첫 프레임이 곧 Edit 를 누른 프레임(`editing`
-/// 이 이미 `true`)이어도 편집 모드는 새 판·새 기준 판으로 시작한다. 그 뒤의 편집 프레임은
-/// 다시 따라가지 않는다.
+/// 보기에서 편집으로 전환하는 프레임은 최신 저장소 값으로 시작한다. 이후 편집 중에는 갱신하지 않는다.
 #[test]
 fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_version() {
     let (_tmp, mut store) = seeded();
@@ -193,7 +187,6 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
         "기준 판이 옛것이면 첫 편집이 경합으로 버려진다"
     );
 
-    // 전이 뒤의 편집 프레임은 ADR-0038 그대로 따라가지 않는다.
     store
         .save_workspace_overwrite(ws("dev", 3))
         .expect("agent save");

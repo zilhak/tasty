@@ -1,11 +1,6 @@
-//! 축소 레일 카테고리 팝업 (`sidebar_context_menu.jsx` `RailCategoryPopup` 전사).
-//!
-//! 레일의 `---` 카테고리 버튼을 누르면 버튼 **우측**에 앵커드로 뜬다(Tools 버튼과 동일
-//! 앵커 패턴). 맨 위는 **클릭 불가한 카테고리 이름 헤더**(라벨만, count 없음), 그 아래 액션:
-//! `Add workspace`(해당 카테고리 소속 생성) · `Collapse/Expand`(접힘 토글). 비-normal
-//! 카테고리는 separator + `Rename`(→ rename 다이얼로그) / `Delete`(danger, → 삭제 confirm).
-//!
-//! `state.dialogs.rail_category_popup` 가 대상 카테고리 id 를 들고 있다. 없으면 즉시 닫힘.
+//! 접힌 사이드바의 카테고리 버튼 오른쪽에 여는 메뉴.
+//! 이름 아래에 워크스페이스 추가와 접기·펼치기를 표시한다.
+//! 기본 카테고리가 아니면 이름 변경·삭제도 제공하며 대상이 없으면 닫는다.
 
 use crate::adapters::ui::category_actions;
 use crate::adapters::ui::icons;
@@ -27,7 +22,7 @@ const HEADER_HEIGHT: LogicalPx = LogicalPx(30.0);
 struct Target {
     label: String,
     collapsed: bool,
-    /// normal(예약) 여부 — true 면 Rename/Delete 를 노출하지 않는다(additive-only).
+    /// 기본 카테고리이면 이름 변경·삭제를 표시하지 않는다.
     is_reserved: bool,
 }
 
@@ -115,7 +110,6 @@ pub fn draw_rail_category_popup(
     let cat_id = state.dialogs.rail_category_popup.expect("resolved above");
     let th = theme::theme();
 
-    // ── 비클릭 카테고리 이름 헤더 (라벨만 + 하단 보더 — count 표기 없음). ──
     let width = ui.available_width();
     let (header_rect, _) = ui.allocate_exact_size(
         egui::vec2(width, HEADER_HEIGHT.value()),
@@ -131,7 +125,6 @@ pub fn draw_rail_category_popup(
         egui::FontId::proportional(th.font_size_body.value()),
         th.text_primary().into(),
     );
-    // 하단 1px 보더 (separator).
     let border = egui::Rect::from_min_size(
         egui::pos2(
             header_rect.min.x,
@@ -143,7 +136,6 @@ pub fn draw_rail_category_popup(
         .rect_filled(border, 0.0, th.separator.to_egui_premultiplied());
     ui.add_space(th.spacing_xs.value());
 
-    // ── Add workspace — 이 카테고리 소속으로 새 워크스페이스 생성. ──
     if menu_row(
         ui,
         &th,
@@ -162,7 +154,6 @@ pub fn draw_rail_category_popup(
         return PopupAction::Close;
     }
 
-    // ── Collapse / Expand — 접힘 토글 + 영속. ──
     let (collapse_icon, collapse_label) = if target.collapsed {
         (icons::CHEVRON_RIGHT, t("workspace_category.expand"))
     } else {
@@ -174,9 +165,7 @@ pub fn draw_rail_category_popup(
         return PopupAction::Close;
     }
 
-    // ── 비-normal 카테고리: separator + Rename / Delete(danger). ──
     if !target.is_reserved {
-        // 1px separator 라인.
         let width = ui.available_width();
         ui.add_space(th.spacing_xs.value());
         let (sep_rect, _) = ui.allocate_exact_size(
@@ -225,12 +214,9 @@ pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) ->
         + th.item_height_interactive.scaled(rows as f32)
         + th.spacing_xs.scaled((rows.saturating_sub(1)) as f32);
     if !reserved {
-        // separator(border_width) + 상하 spacing_xs.
         content_h += th.border_width + th.spacing_xs.scaled(2.0);
     }
-    // `+ 1` 은 디자인 값이 아니라 반올림 안전 여유다(`popup/convert.rs` 의
-    // `safety_margin` 과 같은 것). 값이 우연히 `size-1` 과 같을 뿐이라 토큰으로
-    // 바꾸지 않는다 — 바꾸면 이름이 뜻을 속인다.
+    // 1은 반올림 오차 여유이며 디자인 치수 토큰이 아니다.
     egui::vec2(
         POPUP_WIDTH.value(),
         (popup::content_margin().scaled(2.0) + content_h + LogicalPx(1.0)).value(),

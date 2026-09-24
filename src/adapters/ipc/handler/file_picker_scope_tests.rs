@@ -159,7 +159,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
     draw(&mut state, &layout, vec![]);
     assert_visible_gates(&state);
     let popup = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap();
-    // surface 범위 팝업은 테두리에서 8pt 안쪽을 경계로 쓴다.
+    // surface 범위 팝업은 테두리에서 spacing_sm만큼 안쪽을 경계로 쓴다.
     let inset = crate::theme::theme().spacing_sm.value();
     assert_eq!(
         popup.size,

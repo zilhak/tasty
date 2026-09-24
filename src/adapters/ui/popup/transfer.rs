@@ -1,21 +1,6 @@
-//! 원격 파일 전송 피드백 팝업 2종 — 진행(progress) + 실패(error).
-//!
-//! bulk 파일 전송(ADR-0022) + mirror 터미널의 이미지 붙여넣기 업로드(`app::image_upload`)가
-//! 실제 전송을 담당하고, 이 모듈은
-//! 그 전송에 대한 사용자 피드백 UI 를 PopupDef 로 제공한다(egui::Window 직접 사용 금지).
-//! 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs` 의 본체 대응이다
-//! (gallery-first — 갤러리에서 시각 확정 후 여기 반영).
-//!
-//! 디자인 canonical: `gallery/overlays-shared.jsx` `TransferProgressFrame`(09a) /
-//! `TransferErrorFrame`(09b). scrim 중앙 headless 모달. 진행은 **시스템 최초 determinate
-//! progress bar**(recessed 4px track = bg-app + accent fill, 0ms 무애니 — 바이트 수신
-//! 시에만 fill 폭 이동).
-//!
-//! - progress(`transfer_progress`): `close_on_outside_click=false`, 모든 행 완료 시 self-close.
-//! - error(`transfer_error`): 기본 dismiss(Esc/scrim), 전송 중 실패만 Retry.
-//!
-//! 상태 공급: `AppState.dialogs.transfer_progress`(진행 행 Vec) / `transfer_error`(실패 큐).
-//! 이미지 붙여넣기 업로드 워커가 진행 이벤트로 행을 갱신하고, 완료/실패 시 App 이 팝업을 open/close/승격한다.
+//! 원격 파일 전송의 진행·실패 팝업. 실제 전송과 진행 갱신은 업로드 처리 경로에서 맡는다.
+//! 진행 팝업은 모든 행이 끝나면 닫고 바깥 클릭으로는 닫지 않는다.
+//! 실패 팝업은 전송 중 실패에만 재시도를 제공한다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
@@ -31,7 +16,6 @@ use crate::theme;
 pub const TRANSFER_PROGRESS_POPUP_ID: &str = "transfer_progress";
 pub const TRANSFER_ERROR_POPUP_ID: &str = "transfer_error";
 
-// ── 프레임 고정 치수 (디자인 raw px — 화면 전용 popup 좌표, token-policy §c) ──
 /// `--tasty-transfer-popup-width` (size-400).
 const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
@@ -89,8 +73,6 @@ pub struct TransferError {
     pub retry: Option<crate::core::PendingImageUpload>,
 }
 
-// ── PopupDef sizer (headless — title 미표시, title_fn 불필요) ──────────────
-
 /// 진행 팝업 높이 = header + body(행 N개) + footer. 행 수에 맞춰 딱 맞게(빈 하단 방지).
 pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     let n = state
@@ -131,12 +113,7 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     egui::vec2(FRAME_W.value(), (header_h + body_h + footer_h).value())
 }
 
-// ── draw_fn ────────────────────────────────────────────────────────────────
-
-/// PopupDef::on_close entry point — 진행 상태 정리(backstop; Cancel/완료 경로가
-/// 이미 비웠어도 무해). `src/app/image_upload.rs` 가 같은 정리를 직접 하는 중복이
-/// 있는데, 훅으로 옮겨도 둘 다 `None` 으로 만들 뿐이라 무해하다 — 그 중복 제거는
-/// 별건(open-time defensive reset 제거)이 담당한다.
+/// 닫을 때 진행 표시 상태를 비운다. 전송 자체를 중단하는 훅은 아니다.
 pub fn on_close_transfer_progress(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -202,11 +179,8 @@ pub fn draw_transfer_progress(
     PopupAction::None
 }
 
-/// PopupDef::on_close entry point — draw_fn 의 Dismiss/Retry 분기는 스스로
-/// `pop_front()` 한 뒤 큐가 비었을 때만 Close 를 반환하므로(그 경우 여기 도달
-/// 시점엔 이미 빈 큐), 이 훅에서 할 일이 남는 경우는 **scrim/외부 클릭처럼
-/// draw_fn 을 거치지 않고 닫힌 경우뿐**이다 — 그때는 큐가 아직 안 비어 있으므로
-/// head 를 여기서 대신 dismiss 하고, 남은 실패가 있으면 팝업을 다시 연다.
+/// 이미 결과를 처리한 경로는 큐를 비웠다. 남은 항목이 있으면 첫 실패를 닫은 것으로
+/// 처리하고 다음 실패를 표시한다.
 pub fn on_close_transfer_error(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -256,7 +230,6 @@ pub fn draw_transfer_error(
             None,
         );
         body_region(ui, |ui| {
-            // "<b>{name}</b> could not be received." — mono bold name + 산문.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(
@@ -303,9 +276,7 @@ pub fn draw_transfer_error(
     });
 
     if retry {
-        // 전송 중 실패 재시도 — 저장해둔 페이로드를 기존 업로드 트리거 큐에 재투입한다
-        // (clipboard.rs 가 쓰는 그 큐 — 새 트리거 경로가 아니라 재사용). 업로드 워커가 다시
-        // 진행 팝업을 띄운다.
+        // 저장한 페이로드를 기존 업로드 큐에 다시 넣는다.
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry
         {
@@ -327,8 +298,6 @@ pub fn draw_transfer_error(
     }
     PopupAction::None
 }
-
-// ── 그리기 헬퍼 (갤러리 specimen 과 동일 전사) ─────────────────────────────
 
 /// 헤더 띠 — glyph + 제목(+ 우측 trailing mono). 하단 separator.
 fn header_band(
@@ -405,7 +374,6 @@ fn progress_row(ui: &mut egui::Ui, th: &theme::Theme, row: &TransferRow) {
         icons::FILE
             .image(gsz, th.text_muted().into())
             .paint_at(ui, grect);
-        // glyph 뒤 남은 가용폭에 맞춰 mono 말줄임(specimen elide_mono 와 동일 거동).
         let avail = ui.available_width();
         let name = elide_mono(ui, th, &row.name, avail);
         ui.label(
@@ -550,7 +518,7 @@ fn row_pct(row: &TransferRow) -> u32 {
     ((row.sent.min(row.total) as f64 / row.total as f64) * 100.0).round() as u32
 }
 
-/// 바이트 → "12.3 MiB" 형식(1024 기반, 디자인 MiB 표기). B/KiB/MiB/GiB.
+/// 바이트를 1024 단위의 B·KiB·MiB·GiB·TiB 문자열로 바꾼다.
 fn format_mib(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
     let mut v = bytes as f64;
@@ -582,7 +550,6 @@ mod tests {
 
     #[test]
     fn row_pct_zero_total_is_complete() {
-        // 빈 파일(총 0) → 100%(0/0 나눗셈 회피).
         assert_eq!(row_pct(&row(0, 0)), 100);
     }
 
@@ -591,7 +558,6 @@ mod tests {
         assert_eq!(row_pct(&row(0, 100)), 0);
         assert_eq!(row_pct(&row(27, 100)), 27);
         assert_eq!(row_pct(&row(100, 100)), 100);
-        // sent > total 방어 → 100 클램프.
         assert_eq!(row_pct(&row(200, 100)), 100);
     }
 

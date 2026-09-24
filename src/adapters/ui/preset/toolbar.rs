@@ -1,9 +1,4 @@
-//! Preset 상세 패널의 **툴바** — 보기 상태 툴바(Edit/Rename/Duplicate/Delete)와
-//! 편집 상태 툴바(name/subtitle 인라인 입력 + Done), 그리고 그 클릭 결과를 store 변경으로
-//! 옮기는 적용 단계.
-//!
-//! `preset.rs` 에서 갈라 나왔다. 툴바는 리스트·프리뷰와 공유하는 상태가 클릭 결과
-//! 구조체뿐이라 경계가 얇고, 갈라 두면 `preset.rs` 가 셸 조립에만 집중한다.
+//! 보기·편집 모드의 프리셋 툴바와 선택한 동작 처리.
 
 use tasty_presets::{PresetKind, PresetStore};
 use tasty_type_appearance::theme::Theme;
@@ -47,7 +42,6 @@ pub(super) fn draw_toolbar_editing(
             subtitle: workspace_subtitle_field(store, kind, name),
         });
 
-    // name input — lost_focus 시 rename 커밋.
     let name_resp = ui.add(
         egui::TextEdit::singleline(&mut meta.name)
             .desired_width(RENAME_W.value())
@@ -57,7 +51,6 @@ pub(super) fn draw_toolbar_editing(
         commit_editing_name(store, kind, name, &mut meta, selected, toasts);
     }
 
-    // subtitle input — Workspace 만(실제 필드). changed 시 즉시 저장.
     if kind == PresetKind::Workspace {
         let sub_resp = ui.add(
             egui::TextEdit::singleline(&mut meta.subtitle)
@@ -136,11 +129,10 @@ fn commit_editing_subtitle(
     }
 }
 
-/// Done(primary) 버튼 + "saved automatically" affordance. 클릭 여부를 반환.
+/// 완료 버튼과 자동 저장 안내.
 fn draw_toolbar_done_button(ui: &mut egui::Ui, theme: &Theme) -> bool {
     let mut done_clicked = false;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // Done (primary) — 우측 끝.
         if Button::new(t("preset.toolbar.done"))
             .variant(ButtonVariant::Primary)
             .size(ControlSize::Sm)
@@ -149,7 +141,6 @@ fn draw_toolbar_done_button(ui: &mut egui::Ui, theme: &Theme) -> bool {
         {
             done_clicked = true;
         }
-        // "saved automatically" affordance — Save 버튼 없음을 명시.
         ui.label(
             egui::RichText::new(t("preset.toolbar.saved"))
                 .size(theme.font_size_caption.value())
@@ -197,7 +188,6 @@ pub(super) fn draw_toolbar_view(
         if esc {
             *rename = None; // 취소
         } else if resp.lost_focus() {
-            // 커밋: 이름이 바뀌었으면 rename, 아니면 그냥 닫기.
             let buf = r.buffer.trim().to_string();
             if !buf.is_empty() && buf != r.original {
                 match store.rename(kind, &r.original, &buf) {
@@ -222,7 +212,6 @@ pub(super) fn draw_toolbar_view(
     let mut delete_clicked = false;
     let mut edit_clicked = false;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // 우측 끝부터: Edit · | · delete · duplicate · rename.
         if Button::new(t("preset.toolbar.edit"))
             .variant(ButtonVariant::Secondary)
             .size(ControlSize::Sm)
@@ -232,7 +221,6 @@ pub(super) fn draw_toolbar_view(
         {
             edit_clicked = true;
         }
-        // separator.
         ui.add_space(theme.spacing_xs.value());
         let bw = theme.border_width.value();
         let (sep_rect, _) = ui.allocate_exact_size(
@@ -299,7 +287,6 @@ pub(super) fn apply_toolbar_actions(
     rename: &mut Option<RenameState>,
     clicks: PresetToolbarClicks,
 ) {
-    // Edit↔Done 토글 — 진입/이탈 시 선택 노드 초기화.
     if clicks.edit_clicked {
         *editing = true;
         *selected_node = None;

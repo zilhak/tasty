@@ -1,15 +1,5 @@
-//! 원격 접속 도구 팝업 (도구 메뉴 > Remote connections). 3탭: 원격 접속 프로필 /
-//! Attach / Passkey.
-//!
-//! `~/.tasty/remote-profiles.toml`(`RemoteProfiles`) + `~/.tasty/passkeys.toml`(`Passkeys`)
-//! 를 GUI 에서 CRUD 한다. CLI/IPC 와 같은 저장 로직을 재사용하므로 표면이 즉시 일관된다.
-//! 프로필은 비밀을 담지 않고 passkey 를 이름으로 참조만 한다. 한 탭 안에서 List/Form/
-//! ConfirmDelete 를 라우팅한다(세 탭이 동일 패턴으로 인스턴스화). headless PopupDef.
-//!
-//! Attach 탭(가운데)은 같은 레지스트리의 `tasty-attach` kind 프로필(ADR-0020)을
-//! 다룬다 — ssh 프로필 **참조(ref)** 또는 **인라인** 연결정보 + 원격 tasty 실행파일/
-//! 포트 발견 모드. tasty-attach kind 는 Profiles 탭 목록·프로토콜 필터에서 제외된다
-//! (Attach 탭이 전담).
+//! 원격 프로필·Attach·Passkey를 편집한다. CLI·IPC와 같은 저장 로직을 사용한다.
+//! tasty-attach 프로필은 Attach 탭에서만 다루며 SSH 프로필 참조 또는 직접 입력을 지원한다.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -38,7 +28,6 @@ use tasty_ui_widgets::{
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 
-/// 콤보박스 제안용 알려진 프로필 타입(열린 string — 자유 입력 허용).
 /// 헤더·본문의 좌측 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다
 /// (`spacing_md`=12 와 2px 차). `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
 const PANEL_PAD_L: i8 = 14;
@@ -54,10 +43,7 @@ const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
 
-/// 프로토콜 필터의 *적용된* hidden(=제외) 집합 저장 키. **`UI_MEMORY_ID` 와 분리** —
-/// `clear_ui` 가 popup 닫힘마다 `UI_MEMORY_ID` 만 지우므로 이 키는 보존되어 popup
-/// 재오픈에도 필터가 유지된다(디자인: session-only / NON-PERSISTENT). egui temp
-/// 메모리라 tasty 종료 시 사라져 "재시작 = 전체 선택" 비영속 정책도 자동 충족.
+/// 적용된 필터는 팝업 상태와 별도 키로 보관해 다시 열어도 유지한다. 앱을 종료하면 사라진다.
 const FILTER_MEMORY_ID: &str = "remote_tool.filter";
 
 /// 프로토콜 필터 드롭다운 egui popup id. Escape/바깥클릭 닫힘 판정에 사용.
@@ -149,21 +135,9 @@ struct UiState {
     kerr: Option<String>,
     revealed: HashSet<String>,
     detecting: Option<DetectJob>,
-    /// 필터 드롭다운이 열려 있는 동안의 편집 중 제외 집합(draft). Apply 눌러야
-    /// `FILTER_MEMORY_ID` 의 적용 집합에 반영(Apply-on-confirm). popup 닫힘 시
-    /// `clear_ui` 로 함께 사라지는 순수 편집 상태라 여기 둔다.
+    /// 적용 버튼을 누르기 전의 필터. 팝업이 닫히면 버린다.
     filter_draft: HashSet<String>,
-    /// 로컬 ssh config 열거 결과 캐시. **`None` = 아직 안 읽음**.
-    ///
-    /// egui 는 매 프레임 목록을 다시 그리므로 여기 캐시하지 않으면 프레임마다
-    /// `~/.ssh/config` + Include 를 통째로 읽는다. `UI_MEMORY_ID` 에 얹어 두면
-    /// `clear_ui`(popup 닫힘)가 무효화까지 맡아 "열 때마다 1 회" 가 성립한다 —
-    /// 필터(`FILTER_MEMORY_ID`)처럼 재오픈에도 살아남으면 안 되는 값이다.
-    ///
-    /// **재검토 조건** — 무효화 지점이 popup 닫힘 하나뿐인 것은 확정 시안의 섹션 헤더에
-    /// 새로고침 affordance 가 없기 때문이다. 디자인이 그 affordance 를 되돌리거나, popup
-    /// 을 연 채로 config 를 고치는 흐름이 실제로 불편하다는 보고가 오면 무효화 지점을 다시
-    /// 정한다(그때 후보는 파일 watch 와 명시적 새로고침 둘이다).
+    /// 팝업을 여는 동안 한 번 읽는 SSH config 캐시. 닫으면 지우며 파일 변경 감시는 하지 않는다.
     local: Option<LocalSshCache>,
 }
 
@@ -176,16 +150,8 @@ struct LocalSshCache {
     /// 파일 자체가 있는지. "설정이 없다" 와 "있는데 alias 가 0 건" 은 사용자가 할 일이
     /// 다르다.
     exists: bool,
-    /// 파일은 있는데 **열 수 없는** 경우. `exists && hosts.is_empty()` 만 보면 "정말
-    /// 빈 설정" 과 구분되지 않는데, 사용자가 할 일은 정반대다(전자는 Host 를 적는 것,
-    /// 후자는 경로·권한을 고치는 것). 부정형으로 둔 것은 `Default` 가 "못 읽음 아님" 이
-    /// 되게 하기 위해서다.
-    ///
-    /// **권한만은 아니다.** 좌변은 `exists && !readable` 이고 `readable` 은
-    /// `File::open(p).is_ok() && p.is_file()` 이다(`tasty-remote-profiles` 의
-    /// `config_availability`) — `~/.ssh/config` 가 **디렉토리**면 open 은 성공하는데
-    /// `is_file` 이 false 라 이 갈래로 온다. 권한 거부는 그중 한 원인일 뿐이라 문구도
-    /// 원인을 단정하지 않고 열지 못했다는 관측만 말한다.
+    /// 경로는 있지만 읽을 수 없는 상태. 권한 거부뿐 아니라 디렉터리인 경우도 포함하므로
+    /// 오류 원인을 권한으로 단정하지 않는다.
     unreadable: bool,
 }
 
@@ -200,18 +166,12 @@ fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
     }
 }
 
-/// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 하나다 —
-/// 확정 시안의 섹션 헤더에 새로고침 아이콘이 없어서, 파일이 바뀐 뒤 다시 읽는 길은
-/// popup 을 다시 여는 것이다.
+/// 캐시가 없을 때 SSH config를 읽는다. 다시 읽으려면 팝업을 닫고 열어야 한다.
 fn load_local_ssh() -> LocalSshCache {
     local_ssh_cache_at(user_config_path())
 }
 
-/// [`load_local_ssh`] 의 경로 주입 버전 — 실제 홈에 의존하지 않아 픽스처로 검증할 수
-/// 있다. 존재/가독 판정은 CLI·IPC 가 쓰는 것과 **같은** 코어 함수
-/// (`tasty_remote_profiles::config_availability`)를 재사용한다. GUI 가 따로
-/// 구현해두면 (그 자리에 디렉토리가 있는 경우 같은) 엣지케이스 수정이 한쪽에만
-/// 반영되고, 세 표면에서 "권한 실패" 의 정의가 조용히 갈라진다.
+/// 테스트용 경로를 받을 수 있는 캐시 로더. 존재·읽기 가능 여부는 CLI·IPC와 같은 config_availability로 판별한다.
 fn local_ssh_cache_at(path: Option<std::path::PathBuf>) -> LocalSshCache {
     if path.is_none() {
         tracing::warn!("ssh_config: cannot resolve home directory — skipping enumeration");
@@ -224,21 +184,12 @@ fn local_ssh_cache_at(path: Option<std::path::PathBuf>) -> LocalSshCache {
             .map(tasty_utils::path::tilde_abbreviate)
             .unwrap_or_else(|| "~/.ssh/config".into()),
         exists: avail.exists,
-        // 코어는 부재를 `readable: false` 로 표현한다 — 여기서 필요한 건 "있는데 못
-        // 읽음" 이므로 `exists` 와 함께 봐야 한다(부재는 별도 문구가 담당).
         unreadable: avail.exists && !avail.readable,
     }
 }
 
-/// 로컬 섹션 행 둘째 줄 — 그 Host 블록에 **직접 적힌** `[User@]HostName[:Port]`.
-///
-/// 확정 시안의 둘째 줄이 `user@host:port` 다. 같은 화면 위쪽 프로필 행의 요약과 같은
-/// 모양이라, 두 목록이 같은 축(어디로 붙는가)을 같은 형태로 말한다. 세 성분은 **적혀
-/// 있는 것만** 넣는다 — 없는 값을 ssh 기본값(`22` 등)으로 채우면 파일에 없는 것을
-/// 파일이 말한 것처럼 보이게 한다.
-///
-/// `Host *` 의 전역 설정이나 `Match` 블록이 실제 접속 시 이 값을 덮어쓸 수 있어
-/// 정확하지 않다. **표시 전용**이며 가져오기에는 alias 만 쓴다.
+/// Host 블록에 직접 적힌 값만으로 접속 요약을 만든다. 없는 user/port를 기본값으로 채우지 않는다.
+/// Host *·Match 등의 실제 접속 설정을 모두 해석한 결과는 아니며 가져오기에는 alias만 사용한다.
 fn local_target_hint(h: &SshConfigHost) -> String {
     // HostName 이 없으면 ssh 가 alias 를 호스트 이름으로 쓴다.
     let host = match (&h.hostname, &h.user, h.port) {
@@ -272,11 +223,7 @@ fn import_prefill(alias: &str) -> ProfileForm {
     }
 }
 
-/// 프로필 섹션의 빈 상태 문구 키. `None` = 프로필 행을 그린다.
-///
-/// 예전에는 두 빈 상태에서 곧바로 `return` 했다 — 로컬 ssh config 섹션이 생긴 뒤로는
-/// 그러면 안 된다. 프로필이 0 건인 사용자야말로 "가져올 호스트가 여기 있다" 를 봐야
-/// 하는 쪽이다.
+/// 프로필 목록이 비었을 때의 문구. 로컬 SSH config 목록은 이와 별개로 계속 표시한다.
 fn profile_empty_key(has_non_attach: bool, any_visible: bool) -> Option<&'static str> {
     match (has_non_attach, any_visible) {
         (false, _) => Some("remote_tool.profile_empty"),
@@ -341,10 +288,7 @@ fn is_unknown_kind(kind: &str) -> bool {
     !is_builtin_kind(kind) && !KNOWN_TYPES.contains(&kind)
 }
 
-/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 `UiState`(폼 버퍼, detect 워커,
-/// 필터 드래프트)를 drop 한다. `FILTER_MEMORY_ID`(적용된 프로토콜 필터)는 별도
-/// 키라 건드리지 않는다 — session-only 로 popup 재오픈에도 유지되는 것이 의도.
-/// remote_attach 와 동형의 구조적 결함(불변식이 우연에 의존)이었다.
+/// 닫을 때 폼·조회 슬롯·필터 초안을 버린다. 적용된 필터는 별도 키에 남긴다.
 pub fn on_close_remote_tool_popup(
     ctx: &egui::Context,
     _state: &mut AppState,
@@ -363,7 +307,6 @@ pub fn draw_remote_tool_popup(
     let ctx = ui.ctx().clone();
     let mut st = read_ui(&ctx);
 
-    // detect 워커 완료 polling.
     poll_detect(&mut st);
 
     let mut profiles = RemoteProfiles::load();
@@ -371,9 +314,7 @@ pub fn draw_remote_tool_popup(
 
     // Escape: Form/Confirm 은 뒤로, List 면 닫기.
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        // 필터 드롭다운이 열려 있으면 그것만 닫고 popup 은 유지(디자인 ProtocolFilter
-        // 의 stopImmediatePropagation 대응). popup 위젯이 같은 프레임에 닫히지 않으므로
-        // 여기서 명시적으로 닫는다.
+        // 드롭다운이 열려 있으면 Escape로 드롭다운만 닫는다.
         if ctx.memory(|m| m.is_popup_open(egui::Id::new(FILTER_POPUP_ID))) {
             ctx.memory_mut(|m| m.close_popup());
             write_ui(&ctx, st);
@@ -394,19 +335,12 @@ pub fn draw_remote_tool_popup(
     }
 
     let mut close = false;
-    // 디자인(remote_tool.jsx) 컨테이너는 패딩 0 이고 각 구역이 자체 패딩을 가진다.
-    // popup content_margin 은 remote_tool 한정 0 (popup.rs) 이라 full 은 popup 가장자리.
-    // egui 자동 간격을 죽이고(아래) 구역 divider 는 각 구역 Frame 의 실제 bottom 좌표에
-    // 그린다 (design-parity: 어림 add_space 금지).
+    // 구역마다 여백을 주고 구역 사이 세로 간격만 없앤다. 콘텐츠 내부에서는 간격을 복원한다.
     let full = ui.max_rect();
-    // 구역(헤더/탭바/콘텐츠)을 디자인처럼 딱 붙이려면 세로 자동간격만 죽인다. x 간격은
-    // 건드리지 않는다(콘텐츠 행 내부 gap 이 망가지지 않게). 콘텐츠 영역은 아래에서
-    // 원래 spacing 을 복원해 행 레이아웃을 보존한다.
     let saved_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.y = 0.0;
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
 
-    // 헤더 — 디자인 padding 위 11 · 오른쪽 12 · 아래 11 · 왼쪽 14 + borderBottom separator.
     let header_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: PANEL_PAD_L,
@@ -420,8 +354,7 @@ pub fn draw_remote_tool_popup(
     }
     ui.painter()
         .hline(full.x_range(), header_ir.response.rect.bottom(), sep);
-    // 헤더 전체(전체폭 × 실측 헤더 높이)를 드래그 이동 영역으로 매니저에 보고한다.
-    // 좁은 정적 띠(panel_header_drag_strip) 대신 이 rect 가 hit-test 에 우선 사용된다.
+    // 실제 헤더 영역을 드래그 손잡이로 보고한다.
     super::report_header_drag_rect(
         ui.ctx(),
         REMOTE_TOOL_POPUP_ID,
@@ -431,13 +364,9 @@ pub fn draw_remote_tool_popup(
         ),
     );
 
-    // 탭바 — 디자인 bg-sidebar(mantle) 전체폭, TabBtn height 35, padding L8.
-    // 자체 하단 borderBottom 까지 내부에서 그린다.
     draw_tab_bar(ui, &th, &mut st, full.x_range());
 
-    // 콘텐츠 — 리스트는 좌우 14/top 10/bottom 8. 폼(Sub::Form)은 디자인 rtScrollPad/rtFooter
-    // 가 자체 패딩(좌우 16)과 하단 고정 footer 를 소유하므로 외곽 margin 0 으로 두고
-    // 폼이 패딩·전체폭 separator 를 직접 그린다.
+    // 폼은 자체 여백과 고정 푸터를 그리므로 외곽 여백을 두지 않는다.
     let is_form = matches!(
         match st.tab {
             Tab::Profiles => &st.profile_view,
@@ -459,7 +388,6 @@ pub fn draw_remote_tool_popup(
     egui::Frame::NONE
         .inner_margin(content_margin)
         .show(ui, |ui| {
-            // 콘텐츠 행 레이아웃은 기존 spacing 으로 복원(프레임 정합과 분리).
             ui.spacing_mut().item_spacing = saved_spacing;
             match st.tab {
                 Tab::Profiles => {
@@ -479,20 +407,9 @@ pub fn draw_remote_tool_popup(
     }
 }
 
-/// 목록 스크롤 영역 — **스크롤바를 항상 숨기고** 스크롤 여지가 있는 쪽 가장자리에
-/// 배경색 페이드를 그린다.
-///
-/// egui 기본 스크롤바는 콘텐츠 위에 **오버레이**로 뜬다(레이아웃 폭을 미리 빼지 않는다).
-/// 이 팝업의 행은 우측 끝에 아이콘(가져오기·편집·삭제·재감지)을 두므로, 커서를 그 위로
-/// 가져가는 순간 스크롤바가 같은 자리에 나타나 클릭을 먹는다. 스크롤바 폭만큼 콘텐츠를
-/// 비켜 그리는 방식(`port_scanner` 의 `scrollbar_reserve`)은 "커서가 스크롤바 위 =
-/// 클릭 불가" 라는 구조 자체를 남겨 다른 폭·해상도에서 재발한다 — 스크롤바를 아예
-/// 숨기면 이 부류의 버그가 사라진다.
-///
-/// 숨긴 대신 "더 있다" 는 정보는 가장자리 페이드로 보존한다. 스크롤(휠·드래그·키보드)은
-/// 그대로 동작한다 — 숨긴 것은 표시뿐이다.
-///
-/// 이 방식이 tasty 의 스크롤 어포던스 표준이다 — `docs/adr/0037-ui-input-motion-and-elevation.md`.
+/// 오른쪽 행 버튼 위를 스크롤바가 가리지 않도록 막대를 숨긴다.
+/// 남은 스크롤 영역은 가장자리 페이드로 알리며 휠·드래그·키보드 스크롤은 유지한다.
+/// 근거: docs/adr/0037-ui-input-motion-and-elevation.md.
 fn scroll_list_with_fade<R>(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -518,8 +435,7 @@ fn scroll_list_with_fade<R>(
 
 /// `(위쪽 페이드, 아래쪽 페이드)` 판정. 위/아래로 각각 남은 스크롤 여지가 있는지만 본다.
 fn fade_edges(offset: f32, content_h: f32, view_h: f32) -> (bool, bool) {
-    // 부동소수 오차로 끝까지 스크롤한 뒤에도 페이드가 남는 것을 막는 여유값.
-    // 1px 미만 차이는 사람 눈에 "더 있다" 로 읽히지도 않는다.
+    // 끝부분의 반올림 오차로 페이드가 남지 않도록 여유를 둔다.
     const EPS: LogicalPx = LogicalPx(1.0);
     let max_offset = (LogicalPx(content_h) - LogicalPx(view_h)).max(LogicalPx(0.0));
     let offset = LogicalPx(offset);
@@ -533,21 +449,13 @@ enum FadeEdge {
     Bottom,
 }
 
-/// 페이드 띠 높이 — 기본은 `space-xl` 이되 **뷰포트 절반**을 넘지 않는다.
-///
-/// 위·아래 페이드는 독립적으로 그려지므로 각각이 뷰포트 절반 이하일 때만 서로 겹치지
-/// 않는다. 뷰포트 높이로만 클램프하면 양방향 스크롤 가능한 좁은 뷰포트(2×`space-xl`
-/// 미만)에서 두 띠가 포개져 콘텐츠가 거의 배경색에 덮인다.
+/// 위·아래 페이드가 겹치지 않도록 각각 뷰포트 높이의 절반으로 제한한다.
 fn fade_height(max: f32, view_h: f32) -> f32 {
     max.min(view_h * 0.5)
 }
 
-/// 스크롤 가장자리 페이드 — 패널 배경색에서 투명으로 이어지는 세로 그라디언트.
-///
-/// egui 에는 그라디언트 헬퍼가 없어 정점 색이 다른 사각형 메시를 직접 만든다. 여러 겹의
-/// 반투명 사각형을 쌓는 근사보다 단(band)이 지지 않고, 그리는 도형도 하나다.
-/// `Color32` 는 premultiplied 라 불투명 배경색 → `TRANSPARENT`(0,0,0,0) 보간이
-/// 그대로 올바른 페이드가 된다(중간에 검게 뜨지 않는다).
+/// 정점 색을 보간한 메시로 페이드를 그린다. Color32는 premultiplied이므로
+/// 불투명 배경색과 TRANSPARENT 사이를 보간한다.
 fn paint_edge_fade(ui: &egui::Ui, th: &Theme, rect: egui::Rect, edge: FadeEdge) {
     let height = fade_height(th.spacing_xl.value(), rect.height());
     let (solid_y, clear_y) = match edge {
@@ -568,17 +476,12 @@ fn paint_edge_fade(ui: &egui::Ui, th: &Theme, rect: egui::Rect, edge: FadeEdge) 
 
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     let mut close = false;
-    // 헤더 제목 라벨을 비선택으로 만들어 press 시 포인터를 가져가지 않게 한다
-    // (egui 기본 selectable_labels=true 면 글자 위 드래그가 텍스트 선택이 됨).
-    // 헤더 프레임 서브트리에만 적용 — 본문(탭·리스트) 라벨 선택성은 불변.
+    // 헤더 글자 선택이 창 드래그를 가로채지 않도록 헤더 안에서만 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
-        // 디자인 헤더 콘텐츠 높이 ~24 (title fontSize14 line-height). egui label/icon 은
-        // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.
-        // popup border 가 stroke Outside 라 콘텐츠가 1px 위에서 시작 → +2 보정해 26.
+        // 폰트의 실제 높이가 디자인 헤더보다 낮아 최소 높이와 보더 여유를 확보한다.
         ui.set_min_height(th.remote_tool_header_min_height().value());
         ui.spacing_mut().item_spacing.x = HEADER_GAP_X.value();
-        // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
         ui.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
             egui::RichText::new(t("remote_tool.heading"))
@@ -605,10 +508,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
 }
 
 fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::Rangef) {
-    // 시각은 공용 view(`tasty_ui_widgets::draw_tab_strip`)가 소유한다 — 갤러리가 같은
-    // 함수를 부른다. 여기 남는 것은 라벨 번역과 **탭 전환의 부수효과**다: 탭을 옮기면
-    // 세 하위 뷰를 목록으로 되돌리고 폼 에러를 지운다(뒤로 갔다 오면 낡은 에러가
-    // 남아 있는 것을 막는다).
+    // 공용 탭 위젯을 쓰며, 탭을 바꾸면 하위 화면을 목록으로 돌리고 폼 오류를 지운다.
     let labels = [
         t("remote_tool.tab_profiles"),
         t("remote_tool.tab_attach"),
@@ -643,9 +543,6 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// TAB A — 원격 접속 프로필
-// ════════════════════════════════════════════════════════════════════════
 fn draw_profiles_tab(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -684,7 +581,6 @@ fn draw_profile_list(
     let protocols = protocol_set(&profiles.profiles);
     let applied_hidden = read_filter(&ctx);
 
-    // add-bar: 좌측 Add + (프로토콜 2종 이상이면) 우측 정렬 프로토콜 필터 버튼.
     let mut add_clicked = false;
     let mut new_filter: Option<HashSet<String>> = None;
     ui.horizontal(|ui| {
@@ -698,7 +594,6 @@ fn draw_profile_list(
     if let Some(h) = &new_filter {
         write_filter(&ctx, h.clone());
     }
-    // 이 프레임에 Apply 됐으면 즉시 반영된 집합으로 목록을 그린다.
     let applied_hidden = new_filter.unwrap_or(applied_hidden);
 
     if add_clicked {
@@ -712,32 +607,23 @@ fn draw_profile_list(
         return;
     }
     ui.add_space(th.spacing_xs.value());
-    // tasty-attach kind 는 Attach 탭 전담 — 이 목록/빈 상태 판정에서 제외.
     let has_non_attach = profiles
         .profiles
         .iter()
         .any(|p| p.kind.trim() != ATTACH_KIND);
-    // 필터로 전부 가려졌으면 "프로필 없음" 과 구분되는 별도 빈 상태.
     let any_visible = profiles
         .profiles
         .iter()
         .any(|p| p.kind.trim() != ATTACH_KIND && !applied_hidden.contains(p.kind.trim()));
     let detecting = st.detecting.as_ref().map(|j| j.name.clone());
     let known: Vec<String> = passkeys.passkeys.iter().map(|k| k.name.clone()).collect();
-    // 로컬 ssh config 는 popup 을 열 때 1 회만 읽는다(캐시 주석 참조). 캐시를
-    // 복제하지 않고 빌려 쓴다 — 아래 클로저는 `st` 를 잡지 않으므로 이 대여가
-    // 클로저 밖까지 살아 있을 필요가 없다.
+    // SSH config는 캐시에서 읽고 프로필과 같은 스크롤 영역에 표시한다.
+    // 프로필 목록이 비어도 가져올 호스트를 볼 수 있도록 로컬 섹션은 남긴다.
     let local = st.local.get_or_insert_with(load_local_ssh);
     let mut action: Option<(usize, ProfileRowAction)> = None;
-    // 로컬 섹션의 액션은 "이 alias 를 프로필 폼 프리필로 연다" 하나뿐이다 — 확정 시안의
-    // 섹션 헤더에 새로고침 아이콘이 없어서, 다시 읽기는 popup 을 다시 여는 것으로 한다.
     let mut local_import: Option<String> = None;
-    // 두 섹션이 한 스크롤을 공유한다 — 로컬 섹션이 프로필 목록 **아래**에 이어지는
-    // 목업 배치라, 스크롤을 나누면 프로필이 길 때 로컬 섹션에 닿을 수 없다.
     scroll_list_with_fade(ui, th, |ui| {
         if let Some(key) = profile_empty_key(has_non_attach, any_visible) {
-            // 빈 상태에서도 return 하지 않는다 — 로컬 섹션은 계속 보여야 "아직 안 올린
-            // 호스트가 여기 있다" 를 알 수 있다(이 화면의 용건).
             let msg = t(key);
             ui.vertical_centered(|ui| {
                 ui.add_space(th.spacing_lg.value());
@@ -790,19 +676,8 @@ fn draw_profile_list(
     }
 }
 
-/// 로컬 ssh config 섹션 — tasty 프로필 목록 **아래**에 한 tier 내려 붙인다.
-///
-/// 여기 나열되는 것은 tasty 가 소유한 레코드가 아니라 사용자의 `~/.ssh/config` 다.
-/// 그래서 **읽기 전용**이고 행 액션은 가져오기 하나뿐이다 — 편집/삭제는 사용자 자산을
-/// tasty 가 고치는 일이라 범위 밖이다.
-///
-/// **프로토콜 필터를 적용받지 않는다.** 필터는 프로필의 `kind` 집합으로 만들어지는데
-/// ssh config 항목에는 kind 라는 개념 자체가 없다. 필터로 프로필이 전부 가려진
-/// 상태에서도 이 섹션은 그대로 남는다.
-///
-/// 시각은 공용 view(`tasty_ui_widgets::draw_local_ssh_section`)가 소유한다. 이 wrapper
-/// 가 갖는 것은 i18n 과, 표시 문자열을 만드는 **판정** 둘이다 — 빈 상태의 원인 3 갈래
-/// (없음/못 읽음/정말 0 건)와 alias 별 "이미 가져옴" 대조.
+/// 프로필 아래에 읽기 전용 SSH config 목록을 표시한다. 가져오기만 허용하며
+/// 프로토콜 필터는 적용하지 않는다. 공용 위젯에 번역·빈 상태·가져오기 여부를 전달한다.
 fn draw_local_ssh_section(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -835,14 +710,8 @@ fn draw_local_ssh_section(
     .and_then(|i| local.hosts.get(i).map(|h| h.alias.clone()))
 }
 
-/// 프로토콜 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
-/// Apply-on-confirm: 패널 편집은 `st.filter_draft` 에만 쌓이고 Apply 눌러야 반영.
-/// Apply 시 `draft ∩ protocols` 로 보정한 새 hidden 집합을 반환(없으면 None).
-///
-/// 버튼과 드롭다운 **본문**의 시각은 공용 view 가 소유한다
-/// (`draw_protocol_filter_button` · `draw_protocol_filter_body`). 여기 남는 것은
-/// **띄우는 일**이다 — egui popup 열림 상태, 열릴 때 draft 시드, 적용 후 닫기,
-/// 그리고 드롭다운 rect 를 popup 매니저에 보고하는 것.
+/// 필터 초안을 편집하고 적용 때 현재 프로토콜과 교집합을 취한 제외 목록을 반환한다.
+/// 공용 위젯을 사용하며 열기·초안 초기화·닫기·영역 보고는 이 함수에서 처리한다.
 fn draw_protocol_filter(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -866,7 +735,6 @@ fn draw_protocol_filter(
 
     let btn = draw_protocol_filter_button(ui, th, &label, filtered);
     if btn.clicked() {
-        // 열릴 때 draft 를 현재 적용 집합으로 시드.
         if !ui.memory(|m| m.is_popup_open(popup_id)) {
             st.filter_draft = applied_hidden.clone();
         }
@@ -908,10 +776,7 @@ fn draw_protocol_filter(
             }
         },
     );
-    // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
-    // 오판되지 않도록 실측 rect 를 매니저에 보고(닫혀 있으면 None 으로 정리).
-    // remote_tool 은 현재 close_on_outside_click=false 라 증상이 드러나지 않지만,
-    // 구조적으로 port_scanner 와 동일한 결함을 갖고 있어 함께 고쳐둔다.
+    // 부모 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))
         .then(|| ui.memory(|m| m.area_rect(popup_id)))
@@ -949,7 +814,6 @@ fn draw_profile_row(
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            // row1: name + type badge
             ui.horizontal(|ui| {
                 let title = match &p.label {
                     Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
@@ -958,7 +822,6 @@ fn draw_profile_row(
                 selectable_label(
                     ui,
                     &title,
-                    // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
                     if disabled {
                         th.text_disabled()
                     } else {
@@ -979,7 +842,6 @@ fn draw_profile_row(
                     warn_badge(ui, th, &p.kind, t("remote_tool.type_unknown_hint"));
                 }
             });
-            // row2: target summary
             selectable_label(
                 ui,
                 &profile_summary(p),
@@ -987,7 +849,6 @@ fn draw_profile_row(
                 th.font_size_caption.value(),
                 true,
             );
-            // row3: passkey + (ssh) shell/state
             ui.horizontal(|ui| {
                 match &p.passkey_ref {
                     Some(pr) if !pr.is_empty() => {
@@ -1048,8 +909,7 @@ fn draw_profile_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 아이콘 버튼 (디자인 IconButton): delete / edit / re-detect.
-            // right_to_left 이라 추가 순서 = 우→좌. 디자인 우측 끝이 trash.
+            // 오른쪽부터 배치하므로 삭제 버튼을 먼저 그린다.
             if ui
                 .add(
                     egui::ImageButton::new(icons::TRASH.image(
@@ -1154,15 +1014,12 @@ fn draw_profile_form(
     profiles: &mut RemoteProfiles,
     passkeys: &Passkeys,
 ) {
-    // 디자인 ProfileForm 구조 = rtScrollPad(flex:1 스크롤 본문) + rtFooter(flex:none, 패널
-    // 하단 고정 borderTop). 외곽 content Frame margin 은 폼일 때 0 이라(상위 draw 분기)
-    // 이 함수가 패딩(좌우 space-lg 16)과 전체폭 separator 를 직접 소유한다.
+    // 폼은 스크롤 본문과 고정 푸터를 나누고 자체 여백을 적용한다.
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
     let pad_md = th.spacing_md.value() as i8;
 
-    // ── footer (rtFooter — 하단 고정, padding space-md/space-lg, [Cancel ghost][Save primary]) ──
     let mut do_save = false;
     let mut do_cancel = false;
     let footer = egui::TopBottomPanel::bottom("remote_tool.profile_footer")
@@ -1175,7 +1032,6 @@ fn draw_profile_form(
             bottom: pad_md,
         }))
         .show_inside(ui, |ui| {
-            // right_to_left: 먼저 추가한 위젯이 우측 끝 → Save(우측), 그 왼쪽에 Cancel.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if primary_button(ui, th, t("remote_tool.save")).clicked() {
                     do_save = true;
@@ -1186,11 +1042,9 @@ fn draw_profile_form(
                 }
             });
         });
-    // borderTop — footer div 전체폭(팝업 전체폭) separator.
     ui.painter()
         .hline(full_x, footer.response.rect.top() + 0.5, sep);
 
-    // ── 스크롤 본문 (rtScrollPad — flex:1 로 가용 높이를 채워 footer 를 하단에 고정) ──
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
         .show_inside(ui, |ui| {
@@ -1226,11 +1080,9 @@ fn draw_profile_form(
                                 && !is_builtin_kind(f.kind.trim())
                                 && !KNOWN_TYPES.contains(&f.kind.trim());
 
-                            // 행 간 세로 간격 = 디자인 rowGap(space-sm 8) — 수동 2컬럼 행에 일괄.
                             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
 
-                            // Type — 디자인은 datalist 단일 입력. egui 엔 datalist 가 없어 텍스트 입력 +
-                            // 제안 콤보(▾) 2위젯이 기능 대체. 한 컨트롤처럼 붙여 그린다(내부 간격 spacing_xs).
+                            // datalist 대신 텍스트 입력과 제안 콤보를 붙여 사용한다.
                             form_row(ui, th, t("remote_tool.field_type"), |ui| {
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
@@ -1269,7 +1121,6 @@ fn draw_profile_form(
                             }
 
                             if is_ssh {
-                                // placeholder/mono 는 디자인 SSH_FIELDS 표(remote_tool.jsx).
                                 text_row(
                                     ui,
                                     th,
@@ -1353,7 +1204,6 @@ fn draw_profile_form(
                                 );
                                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
                                 ui.add_space(th.spacing_xs.value());
-                                // Fields 헤더 — 좌측 mono caption 라벨 + 우측 ghost "Add field"(space-between).
                                 ui.horizontal(|ui| {
                                     selectable_label(
                                         ui,
@@ -1384,7 +1234,6 @@ fn draw_profile_form(
                                 }
                                 let mut remove_idx = None;
                                 for (i, (k, v)) in f.fields.iter_mut().enumerate() {
-                                    // 디자인 generic 필드 행 grid `[112px 1fr control-height(28)]`, gap space-sm(8).
                                     ui.horizontal(|ui| {
                                         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                                         ui.add(
@@ -1444,7 +1293,6 @@ fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passk
         } else {
             value.clone()
         };
-        // 디자인 PasskeySelect 는 block(1fr) — 잔여폭을 채운다.
         egui::ComboBox::from_id_salt("remote_tool.passkey_ref")
             .selected_text(sel)
             .width(ui.available_width())
@@ -1481,7 +1329,6 @@ fn save_profile(
             return Err(t("remote_tool.err_port_invalid").to_string());
         }
     }
-    // 이름 중복(자기 자신 제외).
     if profiles
         .profiles
         .iter()
@@ -1525,7 +1372,6 @@ fn save_profile(
         }
     }
 
-    // rename: 원래 name 과 다르면 옛 항목 제거.
     if let Some(orig) = &st.pform.editing_original
         && orig != name
     {
@@ -1539,9 +1385,6 @@ fn save_profile(
     Ok(())
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// TAB B — Attach (tasty-attach 대상, 디자인 remote_tool.jsx TAB C 섹션)
-// ════════════════════════════════════════════════════════════════════════
 fn draw_attach_tab(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1569,7 +1412,6 @@ fn draw_attach_tab(
 }
 
 fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &RemoteProfiles) {
-    // add-bar: Add attach 만 — 프로토콜 필터 없음(디자인: Profiles 전용).
     if secondary_button(ui, th, t("remote_tool.attach_add")).clicked() {
         st.aform = AttachForm {
             mode_ref: true,
@@ -1628,8 +1470,7 @@ enum AttachRowAction {
     Delete,
 }
 
-/// 디자인 AttachRow 전사 — row1 name+(label)+mode 태그+inactive 배지 / row2 target
-/// 요약(+dangling ref 배지) / row3 tasty:·port: 캡션 / 우측 edit·delete 액션.
+/// 이름·접속 요약·원격 Tasty 설정을 표시하는 Attach 행.
 fn draw_attach_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1637,8 +1478,7 @@ fn draw_attach_row(
     profiles: &RemoteProfiles,
 ) -> Option<AttachRowAction> {
     let v = p.as_attach()?;
-    // ref 모드: 참조 ssh 프로필을 resolve — 없으면 dangling(missing), 감지실패면
-    // inactive. inline 모드: 자기 detect_failed 가 inactive. hard-error 없음.
+    // 참조가 없거나 감지에 실패한 프로필은 비활성으로 표시한다.
     let (missing, inactive) = match v.ssh_ref() {
         Some(r) => {
             let referenced = profiles.get(r).filter(|rp| rp.kind == "ssh");
@@ -1674,7 +1514,6 @@ fn draw_attach_row(
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            // row1: name + (label) + mode 태그 + inactive 배지
             ui.horizontal(|ui| {
                 let title = match &p.label {
                     Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
@@ -1707,7 +1546,6 @@ fn draw_attach_row(
                     );
                 }
             });
-            // row2: target 요약 + dangling ref 배지
             ui.horizontal(|ui| {
                 selectable_label(
                     ui,
@@ -1725,7 +1563,6 @@ fn draw_attach_row(
                     );
                 }
             });
-            // row3: remote tasty + port mode 캡션
             ui.horizontal(|ui| {
                 selectable_label(
                     ui,
@@ -1745,7 +1582,6 @@ fn draw_attach_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 아이콘 버튼 (디자인 IconButton): delete / edit. RTL 이라 우측 끝이 trash.
             if ui
                 .add(
                     egui::ImageButton::new(icons::TRASH.image(
@@ -1806,7 +1642,6 @@ fn draw_attach_form(
     profiles: &mut RemoteProfiles,
     passkeys: &Passkeys,
 ) {
-    // 디자인 AttachForm 구조 = rtScrollPad + rtFooter — 프로필 폼과 동일 골격.
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
@@ -1867,7 +1702,6 @@ fn draw_attach_form(
                             ui.add_space(th.spacing_md.value());
 
                             let f = &mut st.aform;
-                            // 행 간 세로 간격 = 디자인 rowGap(space-sm 8).
                             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
 
                             text_row(
@@ -1886,7 +1720,6 @@ fn draw_attach_form(
                                 "us-east",
                                 false,
                             );
-                            // Connection — 디자인 세그먼트 토글 (ref ↔ inline).
                             form_row(ui, th, t("remote_tool.field_connection"), |ui| {
                                 let selected = if f.mode_ref { 0 } else { 1 };
                                 if let Some(i) = tasty_ui_widgets::segmented(
@@ -1904,7 +1737,6 @@ fn draw_attach_form(
                             ui.add_space(th.spacing_xs.value());
 
                             if f.mode_ref {
-                                // ssh 프로필 참조 드롭다운 — ssh kind 만 나열.
                                 form_row(ui, th, t("remote_tool.field_ssh_ref"), |ui| {
                                     let sel = if f.ssh_ref.is_empty() {
                                         t("remote_tool.ssh_ref_none").to_string()
@@ -1935,7 +1767,6 @@ fn draw_attach_form(
                                         });
                                 });
                             } else {
-                                // 인라인 ssh 필드셋 — ssh 프로필 폼과 동일 구성.
                                 text_row(
                                     ui,
                                     th,
@@ -1977,7 +1808,6 @@ fn draw_attach_form(
                                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
                             }
 
-                            // Remote tasty 그룹 — 모드 무관 공통 (디자인 mono caps 헤더).
                             ui.add_space(th.spacing_xs.value());
                             selectable_label(
                                 ui,
@@ -2065,8 +1895,7 @@ fn save_attach(st: &mut UiState, profiles: &mut RemoteProfiles) -> Result<(), St
             return Err(t("remote_tool.err_port_invalid").to_string());
         }
     }
-    // 이름 중복 — 같은 레지스트리를 쓰므로 attach 뿐 아니라 전체 프로필과 겹치면 안 된다
-    // (`RemoteProfiles::upsert` 가 name 전역 교체 시맨틱).
+    // Attach와 다른 프로필이 같은 저장소를 쓰므로 모든 프로필에서 이름 중복을 확인한다.
     if profiles
         .profiles
         .iter()
@@ -2113,7 +1942,6 @@ fn save_attach(st: &mut UiState, profiles: &mut RemoteProfiles) -> Result<(), St
         p.set_field("port_file", f.port_file.trim().to_string());
     }
 
-    // rename: 원래 name 과 다르면 옛 항목 제거.
     if let Some(orig) = &f.editing_original
         && orig != name
     {
@@ -2124,9 +1952,6 @@ fn save_attach(st: &mut UiState, profiles: &mut RemoteProfiles) -> Result<(), St
     Ok(())
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// TAB C — Passkey
-// ════════════════════════════════════════════════════════════════════════
 fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     match st.passkey_view.clone() {
         Sub::List => draw_passkey_list(ui, th, st, passkeys),
@@ -2266,7 +2091,6 @@ fn draw_passkey_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 아이콘 버튼 (디자인 IconButton): delete / edit / reveal(eye 토글).
             if ui
                 .add(
                     egui::ImageButton::new(icons::TRASH.image(
@@ -2293,7 +2117,6 @@ fn draw_passkey_row(
             {
                 out = Some(PasskeyRowAction::Edit);
             }
-            // revealed 면 eye-off + active(밝은) tint, 아니면 eye + muted.
             let (reveal_icon, reveal_tint) = if revealed {
                 (icons::EYE_OFF, th.text_primary())
             } else {
@@ -2328,8 +2151,6 @@ fn reveal_value(k: &Passkey) -> String {
 }
 
 fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
-    // 프로필 폼과 동일한 디자인 rtScrollPad + rtFooter 구조(하단 고정 footer, 전체폭
-    // borderTop, 좌우 space-lg 패딩). 외곽 content Frame margin 은 폼일 때 0(상위 draw 분기).
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
@@ -2390,7 +2211,6 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
                             ui.add_space(th.spacing_md.value());
 
                             let f = &mut st.kform;
-                            // 행 간 세로 간격 = 디자인 rowGap(space-sm 8).
                             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
                             text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
                             form_row(ui, th, t("remote_tool.field_kind"), |ui| {
@@ -2469,7 +2289,6 @@ fn save_passkey(st: &mut UiState) -> Result<(), String> {
     {
         return Err(t("remote_tool.err_name_dup").to_string());
     }
-    // rename: 옛 이름(+관리 파일) 제거.
     if let Some(orig) = &f.editing_original
         && orig != name
     {
@@ -2485,7 +2304,6 @@ fn save_passkey(st: &mut UiState) -> Result<(), String> {
     Ok(())
 }
 
-// ── 공통 ─────────────────────────────────────────────────────────────────
 fn draw_confirm_delete(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -2520,11 +2338,7 @@ fn draw_confirm_delete(
     out
 }
 
-/// 폼 한 행 — 디자인 ProfileForm grid `[112px 1fr]` 의 수동 2컬럼 전사.
-/// `egui::Grid` 는 2열 입력의 무한폭(`desired_width(INFINITY)`)이 1열(라벨) 폭 협상을
-/// 붕괴시켜 112px 를 확보하지 못하고 라벨이 `.truncate()` 로 잘렸다. Type 행이 이미 쓰던
-/// 수동 `ui.horizontal` 2컬럼(고정 112 라벨 + columnGap + 입력)으로 전 행을 통일한다.
-/// columnGap = space-md(12). 세로 rowGap(8) 은 호출부의 `item_spacing.y = spacing_sm` 로 일괄.
+/// 입력의 무한 폭이 라벨을 밀어내지 않도록 라벨 고정 폭과 남은 입력 폭을 직접 나눈다.
 fn form_row(ui: &mut egui::Ui, th: &Theme, label: &str, add_input: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_md.value();
@@ -2533,9 +2347,7 @@ fn form_row(ui: &mut egui::Ui, th: &Theme, label: &str, add_input: impl FnOnce(&
     });
 }
 
-/// 폼 텍스트 입력 행. `placeholder` 는 빈 입력 시 보일 예시값(기술 예시라 번역 비대상
-/// — i18n 하드코딩 예외), `mono` 면 입력을 monospace 폰트로 그린다(host/port/remote-tasty
-/// 처럼 식별자/경로 성격 필드). 입력은 `INFINITY` 로 1fr(잔여폭) 을 채운다.
+/// 입력 행. placeholder는 host·port·경로 등의 기술 예시이며 번역하지 않는다.
 fn text_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -2562,25 +2374,11 @@ const LABEL_COL_WIDTH: LogicalPx = LogicalPx(112.0);
 /// 디자인 `marginLeft: 124px`.
 const HINT_INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
 
-// ── selectable 텍스트 ──────────────────────────────────────────────────
-// egui `Label` 의 드래그 선택은 내장 `LabelSelectionState::cursor_for()` 가 처리하는데,
-// 드래그 중 포인터가 위젯 rect 밖으로 세로(y)로 나가는 경우만 처리하고 가로(x) 이탈은
-// 그 프레임에 selection cursor 갱신이 안 돼 선택이 멈춘다(egui 이슈 #3816 — "top-down
-// 레이아웃부터 지원, 좌우는 나중"이라는 의도적으로 축소된 설계 범위, upstream 이 자체
-// 수정할 근거 없음이 egui 0.35.0 dev 최신 커밋까지 확인됨). 반면 `TextEdit` 의 커서
-// 갱신은 `Galley::cursor_from_pos` 가 가로/세로 모두 위젯 범위 밖 좌표를 자동 clamp
-// 해서 이 버그가 없는 별개 코드 경로다 — 그래서 selectable 텍스트를 `TextEdit`
-// (read-only 취급) 기반으로 렌더링해 우회한다.
-//
-// `egui::RichText` 는 필드가 전부 private 라 이미 만들어진 값에서 색/크기 등을
-// introspect 하는 API가 없어, 스타일을 개별 파라미터로 받는다.
-//
-// `TextEdit::interactive(false)` 는 편집뿐 아니라 선택 자체도 막아버려 쓸 수 없다 —
-// 대신 매 프레임 지역 변수로 clone 한 버퍼를 넘겨, 사용자가 타이핑해도 다음 프레임에
-// 원래 텍스트로 되돌아가는 방식(편집 결과를 버림)으로 read-only 를 흉내낸다.
+// Label의 가로 드래그 선택을 보완하기 위해 TextEdit을 사용한다.
+// interactive(false)는 선택도 막으므로 편집 결과를 버리는 임시 버퍼를 매 프레임 전달한다.
+// RichText에서 스타일을 다시 꺼낼 수 없어 스타일 값을 별도 인자로 받는다.
 
-/// 폼 라벨 — 112px 고정폭 컬럼 + 우측 정렬(디자인 `rtLabel`). Grid 첫 컬럼과
-/// Type 행/passkey 행이 모두 같은 컬럼 폭으로 정렬되도록 폭을 강제한다.
+/// 공통 고정 폭으로 오른쪽 정렬하는 폼 라벨.
 fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
     ui.allocate_ui_with_layout(
         egui::vec2(LABEL_COL_WIDTH.value(), ui.spacing().interact_size.y),
@@ -2599,8 +2397,7 @@ fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
     );
 }
 
-/// hint/error 문구를 입력 컬럼(124px)에 맞춰 들여써서 출력. 디자인의
-/// `marginLeft: 124px` 정합 — 라벨 컬럼 아래가 아니라 입력 칸에 맞춘다.
+/// 안내·오류를 입력 칸의 시작 위치에 맞춰 표시한다.
 fn indented_hint(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -2622,16 +2419,8 @@ fn indented_hint(
     });
 }
 
-// ── detect 워커 ───────────────────────────────────
-
-/// detect 슬롯 poison 을 보고했는가(첫 1 회만 — 폴링이 프레임마다 돈다).
-///
-/// 임계구역은 `Option<Result<_, _>>` 한 칸이라 패닉이 나도 불변식이 성립하고, 폴링은
-/// **메인(렌더) 스레드**라 패닉하면 모든 창이 죽는다 — 복구가 맞다. 조용히 버리던
-/// 종전 형태는 두 방향 모두 사용자에게 원인을 남기지 않았다: 워커 쓰기를 버리면 완료
-/// 신호가 영영 안 와 **"Detecting…" 이 영구 표시**되고(이 워커에는 상한이 없다),
-/// 폴링의 `unwrap_or(true)` 는 끝나지 않은 detect 를 끝난 것으로 처리한다.
-/// 근거 `docs/dev-guide/error-handling.md` "락 poison".
+/// detect 슬롯의 첫 poison을 기록한다. Option 슬롯은 복구해 읽으며
+/// 비어 있는 슬롯을 완료로 처리하지 않는다. 근거: docs/dev-guide/error-handling.md.
 static DETECT_SLOT_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 const DETECT_SLOT_WHAT: &str = "remote tool detect slot";
@@ -2666,24 +2455,13 @@ fn poll_detect(st: &mut UiState) -> bool {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트는 의도적으로 무시하는 결과가 많아 let _ 사유 검사에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 
-    /// detect 슬롯이 poison 돼도 "아직 안 끝났다" 를 그대로 답한다.
-    ///
-    /// 조용히 버리는 구현(`unwrap_or(true)`)이면 여기서 완료로 판정해 진행 중인
-    /// detect 를 끝난 것처럼 지운다 — 이 워커에는 상한이 없어 되돌릴 지점도 없다.
-    ///
-    /// **자동 실행 채널이 하나뿐이다.** 이 테스트는 `src/adapters/mod.rs` 의
-    /// `#[cfg(feature = "gui")] pub mod ui;` 안에 있어 `--no-default-features` 조합에서는
-    /// 컴파일 단계에 통째로 사라진다 — 헤드리스 잡의 초록은 이 테스트가 돌았다는 뜻이
-    /// 아니다(없는 테스트는 실패하지 못한다). 실측: 두 자동 잡의 명령을 워크플로에서
-    /// 그대로 읽어 `-- --list` 이름을 대조하면 기본 조합에만 뜬다. 팝업 상태를 직접
-    /// 쥐고 도는 테스트라 gui 밖으로 옮길 대상이 없어 고칠 수 있는 결함이 아니고,
-    /// 사실을 적어 두는 것이 맞는 처리다.
+    /// poison 이후에도 빈 슬롯은 미완료, 결과가 있는 슬롯은 완료로 처리한다.
+    /// UI 모듈이므로 gui 기능이 있는 조합에서만 컴파일된다.
     #[test]
     fn a_poisoned_detect_slot_does_not_look_finished() {
         let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
@@ -2715,9 +2493,6 @@ mod tests {
         RemoteProfile::new(name, kind)
     }
 
-    /// `UiState`(폼 버퍼·detect 워커)는 훅 한 번으로 drop 되지만, `FILTER_MEMORY_ID`
-    /// (적용된 프로토콜 필터)는 session-only 로 popup 재오픈에도 유지돼야 하므로
-    /// 건드리지 않는다.
     #[test]
     fn on_close_clears_ui_state_but_preserves_filter() {
         let ctx = egui::Context::default();
@@ -2750,7 +2525,6 @@ mod tests {
             prof("e", "ssh"), // 중복
             prof("f", "alpha"),
         ];
-        // KNOWN_TYPES = [ssh, smb, http] 순서 우선, 나머지(alpha, zeta)는 알파벳.
         assert_eq!(
             protocol_set(&ps),
             vec!["ssh", "smb", "http", "alpha", "zeta"]
@@ -2759,7 +2533,6 @@ mod tests {
 
     #[test]
     fn protocol_set_excludes_attach_kind() {
-        // tasty-attach 는 Attach 탭 전담 — Profiles 탭 프로토콜 집합에 안 낀다.
         let ps = vec![prof("a", "ssh"), prof("b", "tasty-attach")];
         assert_eq!(protocol_set(&ps), vec!["ssh"]);
     }
@@ -2773,7 +2546,6 @@ mod tests {
     #[test]
     fn filter_excludes_hidden_kinds() {
         let ps = [prof("a", "ssh"), prof("b", "smb"), prof("c", "http")];
-        // excluded = {} → 전체.
         let none: HashSet<String> = HashSet::new();
         let all: Vec<&str> = ps
             .iter()
@@ -2781,7 +2553,6 @@ mod tests {
             .map(|p| p.name.as_str())
             .collect();
         assert_eq!(all, vec!["a", "b", "c"]);
-        // excluded = {ssh} → ssh 제외.
         let hidden: HashSet<String> = ["ssh".to_string()].into_iter().collect();
         let vis: Vec<&str> = ps
             .iter()
@@ -2793,13 +2564,10 @@ mod tests {
 
     #[test]
     fn new_kind_visible_by_default() {
-        // exclude-set 에 없는 새 kind(ftp)는 기본 표시(가정 4 자동 충족).
         let p = prof("x", "ftp");
         let hidden: HashSet<String> = ["ssh".to_string()].into_iter().collect();
         assert!(!hidden.contains(p.kind.trim()));
     }
-
-    // ── 로컬 ssh config 섹션 ─────────────────────────────────────────
 
     fn host(alias: &str, hostname: Option<&str>, port: Option<u16>) -> SshConfigHost {
         SshConfigHost {
@@ -2820,8 +2588,7 @@ mod tests {
         }
     }
 
-    /// 한 프레임을 헤드리스로 돌리고 그려진 텍스트를 모은다. "그 섹션이 실제로
-    /// 렌더됐는가" 를 판정하는 유일하게 정직한 관찰점이다.
+    /// 실제 그린 텍스트를 모아 로컬 섹션 표시를 검사한다.
     fn painted_text(profiles: &RemoteProfiles, st: &mut UiState, hidden: &[&str]) -> Vec<String> {
         let ctx = egui::Context::default();
         write_filter(
@@ -2920,24 +2687,19 @@ mod tests {
 
     #[test]
     fn fade_edges_keeps_both_just_inside_the_epsilon_band() {
-        // 엡실론 **상한** 고정: 끝에서 1.5px 떨어진 지점은 아직 "더 있다" 다.
-        // (위쪽도 같은 이유로 1.5px 만 스크롤된 상태를 함께 잠근다.)
         assert_eq!(fade_edges(698.5, 900.0, 200.0), (true, true));
         assert_eq!(fade_edges(1.5, 900.0, 200.0), (true, true));
     }
 
     #[test]
     fn fade_height_is_capped_at_half_the_viewport() {
-        // 넉넉한 뷰포트 — 토큰 값 그대로.
         assert_eq!(fade_height(24.0, 400.0), 24.0);
-        // 2×토큰보다 낮은 뷰포트 — 위/아래가 만나되 겹치지는 않는다.
         assert_eq!(fade_height(24.0, 40.0), 20.0);
         assert_eq!(fade_height(24.0, 0.0), 0.0);
     }
 
     #[test]
     fn fade_edges_tolerates_subpixel_overshoot() {
-        // 끝까지 스크롤했는데 0.4px 가 남는 경우 — 아래쪽 페이드를 남기지 않는다.
         assert_eq!(fade_edges(699.6, 900.0, 200.0), (true, false));
     }
 
@@ -2948,7 +2710,6 @@ mod tests {
 
     #[test]
     fn overflowing_list_paints_bottom_fade() {
-        // 맨 위에서 시작하므로 아래쪽 하나만.
         assert_eq!(painted_fades(120.0, 40), 1);
     }
 
@@ -2959,7 +2720,6 @@ mod tests {
         assert_eq!(f.name, "gx10"); // 기본값 = alias (폼에서 바꿀 수 있다)
         assert_eq!(f.host, "gx10"); // alias 그대로 — 값 펼치기 없음
         assert_eq!(f.shell, "auto");
-        // user/port 를 채우면 ssh config 위임이 깨진다.
         assert!(f.user.is_empty());
         assert!(f.port.is_empty());
         assert!(f.label.is_empty());
@@ -2973,13 +2733,11 @@ mod tests {
         profiles.upsert(RemoteProfile::new("my-gpu", "ssh").with_field("host", "gx10"));
         profiles.upsert(RemoteProfile::new("other", "smb").with_field("host", "bastion"));
         assert_eq!(imported_as(&profiles, "gx10"), Some("my-gpu"));
-        // ssh kind 가 아니면 "가져옴" 이 아니다 — 가져오기는 ssh 프로필만 만든다.
         assert_eq!(imported_as(&profiles, "bastion"), None);
     }
 
     #[test]
     fn local_target_hint_falls_back_to_alias_and_dash() {
-        // 세 성분은 적혀 있는 것만 들어간다 — 없는 값을 ssh 기본값으로 채우지 않는다.
         let hint = |hostname: Option<&str>, user: Option<&str>, port: Option<u16>| {
             local_target_hint(&SshConfigHost {
                 alias: "gx10".into(),
@@ -2996,11 +2754,9 @@ mod tests {
         assert_eq!(hint(Some("10.0.0.5"), None, Some(2200)), "10.0.0.5:2200");
         assert_eq!(hint(Some("10.0.0.5"), Some("maya"), None), "maya@10.0.0.5");
         assert_eq!(hint(Some("10.0.0.5"), None, None), "10.0.0.5");
-        // HostName 이 없으면 ssh 가 alias 를 호스트로 쓴다.
         assert_eq!(hint(None, Some("maya"), Some(22)), "maya@gx10:22");
         assert_eq!(hint(None, None, Some(22)), "gx10:22");
         assert_eq!(hint(None, Some("maya"), None), "maya@gx10");
-        // 셋 다 없으면 보여줄 것이 없다 — alias 는 이미 윗줄에 있다.
         assert_eq!(hint(None, None, None), "—");
     }
 
@@ -3025,7 +2781,6 @@ mod tests {
             local: Some(cache(vec![host("gx10", Some("10.0.0.5"), Some(2200))])),
             ..Default::default()
         };
-        // ssh 를 필터로 가려 프로필 목록이 통째로 빈 상태가 되게 한다.
         let texts = painted_text(&profiles, &mut st, &["ssh"]);
         assert!(
             texts.iter().any(|s| s.contains("gx10")),
@@ -3051,8 +2806,6 @@ mod tests {
             texts.iter().any(|s| s.contains("gx10")),
             "프로필 0 건에서 early return 해 로컬 섹션이 사라졌다: {texts:?}"
         );
-        // 헤더는 대문자로 그려진다(canonical `textTransform: uppercase`) — 번역 값
-        // 자체를 대문자로 두지 않는 것은 ko/ja 가 대소문자가 없는 문자를 섞기 때문이다.
         assert!(
             texts
                 .iter()
@@ -3074,7 +2827,6 @@ mod tests {
             ..Default::default()
         };
         let texts = painted_text(&profiles, &mut st, &[]);
-        // 파일이 없을 때와 있는데 0 건일 때의 문구가 다르다.
         assert!(
             texts
                 .iter()
@@ -3090,7 +2842,6 @@ mod tests {
             local: Some(LocalSshCache {
                 hosts: Vec::new(),
                 path: "~/.ssh/config".into(),
-                // 파일은 있는데 못 읽었다 — "빈 설정" 과 다른 문구가 나와야 한다.
                 exists: true,
                 unreadable: true,
             }),
@@ -3164,29 +2915,22 @@ mod tests {
         assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_empty");
     }
 
-    /// 파일 없음 / 경로 미확정은 "권한 문제" 가 아니다 — 별도 문구가 담당하므로
-    /// 캐시의 `unreadable` 이 서면 안 된다.
+    /// 경로 부재는 읽기 실패와 구분한다.
     #[test]
     fn cache_marks_absent_config_missing_not_unreadable() {
-        // 부재는 "권한 문제" 가 아니다 — 코어가 부재를 readable:false 로 표현하므로
-        // 이 구분이 실제로 유지되는지 고정한다.
         let dir = tempfile::tempdir().expect("temp dir");
         let cache = local_ssh_cache_at(Some(dir.path().join("nope")));
         assert!(!cache.exists);
         assert!(!cache.unreadable);
         assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_missing");
 
-        // 홈 자체를 못 구한 경우도 같은 갈래다.
         let cache = local_ssh_cache_at(None);
         assert!(!cache.exists);
         assert!(!cache.unreadable);
         assert_eq!(local_ssh_empty_key(&cache), "remote_tool.local_ssh_missing");
     }
 
-    /// `~/.ssh/config` 자리에 디렉토리가 있는 경우. linux 는 디렉토리에도
-    /// `File::open` 을 허용하므로 코어가 `is_file()` 을 겹쳐 막는데, 그 수정이
-    /// **GUI 문구까지** 닿는지는 여기서만 확인된다 — 경로 주입 seam 이 없으면
-    /// 쓸 수 없는 테스트다.
+    /// config 경로가 디렉터리이면 읽을 수 있는 빈 설정으로 표시하지 않는다.
     #[test]
     fn cache_marks_directory_config_unreadable() {
         let dir = tempfile::tempdir().expect("temp dir");

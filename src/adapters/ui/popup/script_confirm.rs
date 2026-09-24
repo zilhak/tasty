@@ -1,9 +1,5 @@
-//! Lua 스크립트 TOFU 변경 확인 팝업 (`script_changed_confirm`) — ADR-0027.
-//!
-//! 단축키 발화 시 등록 해시(`ScriptRegistry`)와 현재 파일 해시가 다르면 게이트가 실행을 보류하고
-//! 이 팝업을 띄운다. [실행] 확정 시에만 `App::dispatch_pending_script_confirm` 이 해시를
-//! 갱신·영속하고 워커에서 실행한다. 구조는 `size_confirm.rs` 와 동일하게 순수 view +
-//! 본체 wrapper 로 분리한다.
+//! 등록된 Lua 스크립트와 현재 해시가 다르면 실행 전 확인한다(ADR-0027).
+//! 사용자가 실행을 확정해야 dispatch_pending_script_confirm이 해시를 저장하고 워커를 시작한다.
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
@@ -46,7 +42,6 @@ pub fn draw_script_confirm_view(
 
     ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
 
-    // 제목.
     ui.label(
         egui::RichText::new(t("script.confirm.title"))
             .size(th.font_size_body.value())
@@ -54,7 +49,6 @@ pub fn draw_script_confirm_view(
             .color(th.text_primary().to_egui()),
     );
 
-    // 스크립트 이름 (mono, muted).
     ui.add(
         egui::Label::new(
             egui::RichText::new(props.name)
@@ -65,7 +59,6 @@ pub fn draw_script_confirm_view(
         .truncate(),
     );
 
-    // 경고 태그 + 안내문.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         tag(
@@ -84,7 +77,6 @@ pub fn draw_script_confirm_view(
 
     ui.add_space(th.spacing_xs.value());
 
-    // 푸터: Cancel(ghost) / Run(primary), 우측 정렬.
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if Button::new(&t("script.confirm.run"))
@@ -107,12 +99,7 @@ pub fn draw_script_confirm_view(
     action
 }
 
-/// PopupDef::on_close 진입점 — X 버튼(draw_fn 을 우회하는 닫힘 경로)에서만
-/// 실질적으로 정리할 게 있다. Cancel/Close(Escape) 는 draw_fn 이 이미 `None` 으로
-/// 비워서 여기선 no-op. Run 은 `result = Some(true)` 를 남긴 채 닫히는데, 다음
-/// 프레임의 `App::dispatch_pending_script_confirm` 이 그 값을 읽고 해시 갱신·실행을
-/// 하므로 **여기서 지우면 안 된다** — `result.is_none()` 일 때만(=아직 아무 결정도
-/// 없이 강제로 닫힌 경우) 정리한다.
+/// 결정 없이 닫혔으면 보류 요청을 정리한다. 실행 결정은 다음 프레임에서 읽으므로 지우지 않는다.
 pub fn on_close_script_confirm_popup(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -148,7 +135,6 @@ pub fn draw_script_confirm_popup(
     match action {
         ScriptConfirmAction::None => PopupAction::None,
         ScriptConfirmAction::Close | ScriptConfirmAction::Cancel => {
-            // 취소 — 보류 폐기, 실행 안 함.
             state.dialogs.pending_script_confirm = None;
             PopupAction::Close
         }

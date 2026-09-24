@@ -1,7 +1,4 @@
-//! 미리보기 캐시 칸은 preset 마다 따로다. 한 프레임에 다른 preset 을 그리는 호출이 먼저
-//! 와도 편집 중인 preset 의 캐시(사용자가 고치고 있는 트리)는 남아야 하고, 칸은 둘러본
-//! preset 수만큼 쌓이지 않아야 한다. [`draw_preview`] 를 헤드리스 egui 프레임으로 돌려
-//! 칸에서 잰다.
+//! 다른 프리셋을 그려도 편집 캐시를 보존하며 사용하지 않는 캐시는 정리하는지 확인한다.
 
 use super::demo_cache::{DemoCache, demo_cache_id, drew_editing_id, preset_key};
 use super::*;
@@ -76,15 +73,14 @@ fn cached(ctx: &egui::Context, name: &str) -> Option<DemoCache> {
     ctx.data(|d| d.get_temp(demo_cache_id(&key(name))))
 }
 
-/// 칸에 든 preset `name` 의 미리보기 탭 수.
+/// 캐시에 있는 프리셋의 미리보기 탭 수.
 fn cached_tabs(ctx: &egui::Context, name: &str) -> usize {
     let cache = cached(ctx, name).expect("미리보기 캐시");
     assert_eq!(cache.key, key(name), "칸에 다른 preset 이 들었다");
     count_ws_tabs(&cache.layout.rebuild_pane_node().expect("workspace layout"))
 }
 
-/// 저장소에 dev(탭 1)·ops(탭 2) 를 두고, dev 를 편집 모드로 한 프레임 그린 뒤 그 칸에
-/// 사용자 편집의 대역(탭 3, 기준 판은 그대로)을 넣는다.
+/// 저장소와 다른 편집본을 캐시에 넣되 저장소 비교 기준은 유지한다.
 fn editing_dev() -> (tempfile::TempDir, PresetStore, egui::Context) {
     let tmp = tempfile::tempdir().expect("tmp");
     let mut store = PresetStore::load_from(tmp.path().into());
@@ -120,8 +116,7 @@ fn another_preset_drawn_first_in_the_frame_keeps_the_edit_cache() {
     }
 }
 
-/// 칸은 직전에 그린 프레임과 이번 프레임의 preset 것만 남는다 — preset 을 하나씩 둘러봐도
-/// 쌓이지 않고, 다른 preset 으로 옮겼다 돌아오면 저장소에서 새로 짓는다.
+/// 현재·직전 프레임에 사용한 캐시만 남고, 다시 방문하면 저장소에서 읽는다.
 #[test]
 fn slots_do_not_pile_up_while_browsing() {
     let (_tmp, mut store, ctx) = editing_dev();

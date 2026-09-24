@@ -1,19 +1,7 @@
-//! 원격 워크스페이스 추가 팝업 (사이드바 우클릭 > 원격 워크스페이스 추가).
-//!
-//! 좌 240px attach 프로필 리스트(single select) → 우 flex pane. 프로필을 고르면
-//! 워커 스레드가 공유 코어(`tasty_remote::browse`)로 원격 tasty 에 붙어
-//! `workspace.list`+`attach.list` 를 병합 조회하고, 우측을 4상태(initial / connecting /
-//! error / loaded[+empty])로 표시한다. 원격 ws 를 골라 **Connect** 하면 조회에 쓴 터널을
-//! 재사용해 로컬 mirror workspace 로 attach 한다.
-//!
-//! 구조 전사: 디자인 `RemoteAttach`(680×460 headless 2-pane) 1:1. remote_tool 과 같은
-//! shell 언어(headless 헤더 · bg-panel 프레임 · ghost/primary footer). 갤러리 specimen
-//! (`tasty-gallery` `remote_attach`)의 정적 미러를 실 IPC 위에 얹은 것.
-//!
-//! 원칙 1: 이 팝업의 조회/attach 는 **사용자 입력 경로**다. Connect 확정 시 focus 가 새
-//! mirror ws 로 이동하는데(사용자 동작), 그 focus 이동은 `pending_gui_attach_user` 큐를
-//! 통해 이 경로에서만 일어난다(release IPC/에이전트 경로엔 없음). self(loopback) attach 는
-//! release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다(원칙 1②).
+//! 원격 워크스페이스 조회·연결. 프로필을 고르면 워커에서 workspace.list와 attach.list를 조회한다.
+//! 사용자가 Connect를 누르면 조회 터널을 재사용해 mirror 워크스페이스를 만든다.
+//! 사용자 입력 경로이므로 pending_gui_attach_user에서 새 mirror로 포커스를 옮긴다.
+//! release에서는 dispatch_pending_gui_attach가 자기 인스턴스로의 연결을 거절한다.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -41,7 +29,6 @@ const UI_MEMORY_ID: &str = "remote_attach.ui";
 /// 이 팝업은 **소비만** 한다.
 const ATTACH_KIND: &str = "tasty-attach";
 
-// ── 레이아웃 고정 치수 (디자인 raw px — 화면 전용) ──
 const LEFT_W: LogicalPx = LogicalPx(240.0);
 const HEADER_H: LogicalPx = LogicalPx(47.0);
 const FOOTER_H: LogicalPx = LogicalPx(49.0);
@@ -54,29 +41,15 @@ const WS_ROW_H: LogicalPx = LogicalPx(34.0);
 const BADGE_H: LogicalPx = LogicalPx(16.0);
 const HEADER_PAD_L: LogicalPx = LogicalPx(14.0);
 
-/// 생성 왕복 중 아래 ws 목록의 불투명도 — 목록을 지우지 않고 물러나게만 한다.
+/// 생성 중에도 목록을 남겨 두되 흐리게 표시한다.
 const LIST_DIM_WHILE_CREATING: f32 = 0.5;
 
-/// 워커가 결과를 채우지 않아도 UI 가 Connecting 을 벗어나는 상한(soft timeout).
-///
-/// 워커 자체에도 상한이 있다(포트 발견 전체 `PORT_DISCOVERY_TOTAL_TIMEOUT` 45초 +
-/// 터널 ready 5초 + IPC 프로브 5초, ADR-0020) — 하지만 그건 최악 ~55초라, 그동안 UI 가
-/// 워커의 완료만 기다리면 사용자는 팝업을 닫는 것 외에 할 수 있는 게 없다. 그래서 **UI 가
-/// 먼저 포기**하고 워커를 취소한다(취소 = 자식 ssh kill, `SshCancel`). 두 상한의 관계는
-/// 의도적으로 **UI 가 먼저**다 — 워커 상한이 먼저 만료되면 UI 는 워커가 만든 정상 에러
-/// 문구를 그대로 받고, UI 가 먼저면 워커를 끊고 이 파일의 타임아웃 문구를 쓴다. 어느
-/// 쪽이든 UI 는 이 시간 안에 조작 가능한 상태로 돌아온다.
-/// 원격 file picker 의 soft timeout(ADR-0022, 8초)과 같은 매 프레임 판정 방식이되,
-/// SSH 연결 수립이 포함되므로 값은 더 길게 잡는다.
+/// 조회 결과가 없으면 다음 UI 폴링에서 이 경과 시간을 기준으로 취소한다.
+/// SSH 발견·연결·IPC 읽기의 개별 제한과 별개이며 워커 전체 종료 시간을 보장하지 않는다.
 const BROWSE_DEADLINE: Duration = Duration::from_secs(20);
 
-/// 원격 `workspace.create` 왕복이 UI 를 붙잡는 상한.
-///
-/// [`BROWSE_DEADLINE`] 과 같은 이유(UI 가 먼저 포기)로 두지만 값이 훨씬 짧다 — 이
-/// 단계는 SSH 수립이 이미 끝난 뒤라 살아 있는 터널 localport 로 JSON-RPC 를 한 번
-/// 보내는 것뿐이고, 그 소켓 자체가 `remote_browse::PROBE_TIMEOUT`(5초) read/write
-/// 타임아웃을 건다. 상한을 그 두 배로 잡아 워커가 자기 타임아웃으로 정상 에러를 만들
-/// 여지를 먼저 준다.
+/// 생성 결과가 없을 때 UI 대기를 끝낼 기준. 이미 수립한 터널을 사용하므로 조회보다 짧다.
+/// 소켓의 개별 읽기·쓰기 제한과 달리 시작 후 경과 시간을 폴링에서 확인한다.
 const CREATE_DEADLINE: Duration = Duration::from_secs(10);
 
 /// 워커가 채우는 browse 결과. 성공 시 터널을 살려 Connect 로 넘긴다.
@@ -103,22 +76,15 @@ struct BrowseJob {
     cancel: SshCancel,
 }
 
-/// 조회를 중단한다 — 자식 ssh 를 kill 하고 결과 슬롯을 포기한다.
-///
-/// 슬롯을 포기해도 워커는 자기 몫의 `Arc` 를 쥐고 있어 결과를 쓸 수는 있지만, 그 결과는
-/// 아무도 읽지 않고 워커 종료와 함께 drop 된다 — 그때 `BrowseOk.tunnel` 의 `SshTunnel`
-/// 도 함께 drop 되어 kill 되므로 터널이 새지 않는다(반대 방향 누수 방지).
+/// 조회 자식 SSH에 취소를 보내고 결과 슬롯을 놓는다. 늦게 온 결과는 읽지 않으며
+/// 워커가 마지막 Arc를 놓으면 결과에 든 터널도 함께 정리된다.
 fn cancel_job(job: Option<BrowseJob>) {
     if let Some(job) = job {
         job.cancel.cancel();
     }
 }
 
-/// 우측 pane 상태 머신.
-///
-/// `Loaded` 는 원격 ws 개수와 무관하게 **목록 경로 하나**다 — 0 개여도 caps 헤더와
-/// "+ 새 워크스페이스" 행은 그대로 나오고 그 아래 muted 한 줄만 붙는다. 그래서 빈
-/// 원격이 막다른 길이 되지 않는다.
+/// 조회 화면 상태. 목록이 비어도 새 워크스페이스를 만드는 행은 표시한다.
 #[derive(Clone, Default)]
 enum Conn {
     #[default]
@@ -128,23 +94,14 @@ enum Conn {
     Loaded(Vec<RemoteWorkspace>),
 }
 
-/// 우측 목록의 선택. "+ 새 워크스페이스" 행은 원격 ws id 가 없지만 **목록 안의 행**
-/// 이므로, 두 번째 boolean 을 만들지 않고 같은 단일 선택 필드에 sentinel 로 함께
-/// 담는다(갤러리 specimen 의 `NewRow`/`sel_ws` 와 같은 구조).
-///
-/// **갤러리와 하나로 묶지 않는다.** 갤러리는 본체를 비추는 specimen 이라 두 벌인 것이
-/// 정책이다(`docs/dev-guide/gallery-first.md`) — 여기서 갤러리 타입을 가져다 쓰면
-/// 대조할 것이 없어진다. 같아야 하는 것은 타입이 아니라 **구조**다.
+/// 기존 워크스페이스와 새로 만들기 행을 하나의 선택값으로 다룬다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum WsSel {
     New,
     Existing(u32),
 }
 
-/// "+ 새 워크스페이스" 행의 진행 상태. 생성 왕복은 pane 을 통째로 바꾸지 않고 **행
-/// 안에서** 표현한다 — 왕복이 1~3초이고, 그동안 사용자가 읽던 목록을 버리지 않기
-/// 위해서다. 실패도 같은 이유로 행 하단 인라인이다(connect-error center-state 는
-/// "목록 자체를 못 받은" 경우의 어휘).
+/// 생성 진행·실패는 행 안에서 표시해 기존 목록을 계속 볼 수 있게 한다.
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 enum NewWsPhase {
     #[default]
@@ -153,9 +110,8 @@ enum NewWsPhase {
     Failed(String),
 }
 
-/// 진행 중 생성 워커. 조회 워커와 달리 취소 핸들이 없다 — 자식 ssh 를 새로 띄우지
-/// 않고 **이미 살아 있는 터널 localport** 로 TCP 왕복 1회를 할 뿐이라, 소켓 자신의
-/// 타임아웃으로 반드시 끝난다. 팝업이 먼저 닫히면 터널이 drop 되며 그 왕복도 끊긴다.
+/// 기존 터널로 생성 요청을 보내는 워커. 별도 SSH 취소 핸들은 없으며 UI는 결과 대기를
+/// 중단할 수 있다. 소켓 읽기·쓰기 제한이 워커 전체 실행 시간을 보장하지는 않는다.
 #[derive(Clone)]
 struct CreateJob {
     slot: Arc<Mutex<Option<Result<u32, String>>>>,
@@ -185,10 +141,7 @@ impl UiState {
         self.phase == NewWsPhase::Creating
     }
 
-    /// footer primary 활성 조건 = 목록이 떠 있고 · 행이 선택됐고 · 생성 왕복 중이 아님.
-    ///
-    /// 목록이 비었는지는 조건이 **아니다** — 빈 원격에서도 "+ 새 워크스페이스" 를 고를
-    /// 수 있고, 그때 이 버튼이 그 확정 수단이다.
+    /// 목록이 있고 행을 골랐으며 생성 중이 아닐 때 확정할 수 있다. 빈 목록의 새로 만들기도 포함한다.
     fn can_connect(&self) -> bool {
         matches!(&self.conn, Conn::Loaded(_)) && self.ws_sel.is_some() && !self.creating()
     }
@@ -213,8 +166,7 @@ fn clear_ui(ctx: &egui::Context) {
     ctx.memory_mut(|m| m.data.remove::<UiState>(egui::Id::new(UI_MEMORY_ID)));
 }
 
-/// attach 프로필 1개의 표시용 요약(디자인 좌측 row) — remote_tool `draw_attach_row` 의
-/// target/inactive 도출 로직 재사용.
+/// attach 프로필의 표시 요약.
 struct ProfileSummary {
     name: String,
     label: String,
@@ -266,8 +218,7 @@ fn attach_summaries(profiles: &RemoteProfiles) -> Vec<ProfileSummary> {
         .collect()
 }
 
-/// 프로필명 → 원격 ws 목록/에러(+ 재사용 터널)를 워커 스레드로 조회한다. UI 스레드에서
-/// SSH/IPC 를 직접 블록하지 않는다(원칙 2 headless — 코어는 CLI/IPC 와 공유).
+/// SSH·IPC 조회는 UI를 막지 않도록 워커에서 실행한다.
 fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
     let slot: Arc<Mutex<Option<Result<BrowseOk, String>>>> = Arc::new(Mutex::new(None));
     let slot_w = Arc::clone(&slot);
@@ -276,8 +227,7 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
     let cancel_w = cancel.clone();
     let name = profile;
     std::thread::spawn(move || {
-        // 이 스레드의 포트 발견 자식 ssh 를 취소 대상으로 등록한다 — 이게 없으면
-        // `Command` 안에 갇힌 자식을 밖에서 kill 할 방법이 없다.
+        // 포트 발견에 사용한 자식 SSH를 취소할 수 있도록 등록한다.
         let _scope = cancel_w.scope();
         let res = (|| -> Result<BrowseOk, String> {
             let (target, remote_tasty, port_mode, port_file) =
@@ -290,8 +240,7 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
                 port_file.as_deref(),
             )
             .map_err(|e| e.to_string())?;
-            // 터널 수립 뒤에 취소가 들어왔으면 여기서 접는다 — `tunnel` 이 이 지점에서
-            // drop 되어 자식 ssh 가 즉시 kill 된다(다음 단계까지 끌고 가지 않는다).
+            // 연결 뒤 취소가 들어왔으면 터널을 놓고 다음 조회를 하지 않는다.
             if cancel_w.is_cancelled() {
                 return Err(t("remote_attach.error_generic").to_string());
             }
@@ -316,10 +265,7 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
     }
 }
 
-/// 폴링 판정(순수 함수 — 시간 축 주입 가능).
-///
-/// 워커의 정상 완료(`slot_filled`)에만 의존하지 않는다는 점이 핵심이다. 워커가 늦거나,
-/// 패닉해서 슬롯을 영영 못 채우더라도 경과 시간만으로 Connecting 을 벗어난다.
+/// 결과 도착과 경과 시간을 함께 보는 폴링 판정. 워커가 결과를 못 채워도 UI 대기는 끝낼 수 있다.
 #[derive(Debug, PartialEq, Eq)]
 enum PollDecision {
     /// 아직 대기(상한 이내 + 결과 없음).
@@ -340,12 +286,8 @@ fn poll_decision(slot_filled: bool, elapsed: Duration, deadline: Duration) -> Po
     }
 }
 
-/// 조회 슬롯 · 생성 슬롯 · 터널 슬롯의 poison 을 각각 첫 1 회만 보고한다.
-///
-/// 세 락 모두 임계구역이 `Option<_>` 한 칸이라 패닉이 나도 불변식이 성립한다 — 복구가
-/// 맞다. 반대로 여기서 패닉하면 폴링이 **메인(렌더) 스레드**라 모든 창이 죽는다.
-/// 조용히 버리면 사용자에게는 "왜인지 모르게 시간 초과" 나 "Connect 를 눌렀는데
-/// 아무 일도 안 일어남" 으로만 보인다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
+/// Option 슬롯은 poison 후에도 복구해 읽을 수 있다. 각 락의 첫 오류를 기록한다.
+/// 근거: docs/dev-guide/error-handling.md의 락 poison 규칙.
 static BROWSE_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static CREATE_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static READY_CONN_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -354,10 +296,7 @@ const BROWSE_SLOT_WHAT: &str = "remote attach browse slot";
 const CREATE_SLOT_WHAT: &str = "remote attach create slot";
 const READY_CONN_WHAT: &str = "remote attach ready connection";
 
-/// 워커 완료/상한 폴링 — 완료 시 job → conn(+ready) 전이. 재렌더당 1회.
-///
-/// Connecting 상태에서는 Spinner 가 매 프레임 repaint 를 요청하므로 경과 시간 판정이
-/// 매 프레임 돈다.
+/// 렌더링 때 결과·경과 시간을 확인한다. 연결 중에는 Spinner가 다시 그리기를 요청한다.
 fn poll_browse(st: &mut UiState, deadline: Duration) {
     let Some(job) = st.job.as_ref() else { return };
     let filled = crate::poison::recover_mutex(
@@ -387,9 +326,7 @@ fn poll_browse(st: &mut UiState, deadline: Duration) {
     .take();
     match outcome {
         Some(Ok(ok)) => {
-            // 원격에 ws 가 없으면 "+ 새 워크스페이스" 행을 **미리 선택**해 둔다 — pane
-            // 이 뜬 순간부터 Connect 가 살아 있어, 컨트롤을 늘리지 않고 막다른 길이
-            // 사라진다. ws 가 있으면 종전대로 선택 없이 시작한다.
+            // 빈 원격 목록에서는 새로 만들기를 미리 선택한다.
             st.ws_sel = ok.workspaces.is_empty().then_some(WsSel::New);
             st.conn = Conn::Loaded(ok.workspaces.clone());
             st.phase = NewWsPhase::Rest;
@@ -403,21 +340,13 @@ fn poll_browse(st: &mut UiState, deadline: Duration) {
             st.ready = None;
         }
         None => {
-            // 슬롯이 비었는데 done — 이론상 도달 안 함. 안전하게 에러로.
             st.conn = Conn::Error(t("remote_attach.error_generic").to_string());
         }
     }
 }
 
-/// 살아 있는 터널 localport 로 원격 `workspace.create` 를 1회 보내 새 ws id 를
-/// 받아오는 워커.
-///
-/// 터널 핸들(`SshTunnel`)은 넘기지 않는다 — `UiState` 가 계속 쥐고 있어야 Drop 되지
-/// 않으므로 워커에는 **`port` 복사본만** 준다(왕복 동안 터널은 살아 있다).
-///
-/// params 는 **빈 객체**다: `type` 미지정 → `terminal`(surface 1개를 가진 ws 가 되어
-/// 곧바로 attach 대상이 된다), `name`/`cwd` 미지정 → 원격의 기본값. 클라이언트는 원격
-/// 파일시스템 경로를 모르므로 cwd 를 지어내지 않는다.
+/// 기존 터널 포트로 workspace.create를 보낸다. 터널 소유권은 UI에 남긴다.
+/// 빈 params로 원격 기본 이름·cwd와 terminal 타입을 사용한다.
 fn spawn_create(ctx: &egui::Context, port: u16) -> CreateJob {
     let slot: Arc<Mutex<Option<Result<u32, String>>>> = Arc::new(Mutex::new(None));
     let slot_w = Arc::clone(&slot);
@@ -444,11 +373,7 @@ fn spawn_create(ctx: &egui::Context, port: u16) -> CreateJob {
     }
 }
 
-/// "+ 새 워크스페이스" 확정 — 생성 워커를 띄운다.
-///
-/// 이미 진행 중이면 아무것도 하지 않는다: Connect 는 `can_connect` 가 이미 막지만,
-/// 중복 요청이 원격에 워크스페이스를 두 개 만드는 사고는 버튼 비활성 하나에만
-/// 기대기엔 대가가 크다(생성은 되돌릴 수단이 없다 — `workspace.close` IPC 가 없다).
+/// 이미 생성 중이면 새 워커를 시작하지 않는다. 버튼 비활성화와 별개로 중복 생성을 막는다.
 fn start_create(ctx: &egui::Context, st: &mut UiState) {
     if st.create.is_some() {
         return;
@@ -465,12 +390,8 @@ fn start_create(ctx: &egui::Context, st: &mut UiState) {
     st.create = Some(spawn_create(ctx, port));
 }
 
-/// 생성 워커 완료/상한 폴링. 성공 시 새 원격 ws id 를 돌려주고(호출자가 attach 로
-/// 이어간다), 실패/상한이면 `phase` 를 `Failed` 로 두고 팝업은 열어 둔다 — 목록을
-/// 가리지 않아야 사용자가 곧바로 기존 워크스페이스를 고를 수 있다.
-///
-/// [`poll_browse`] 와 같은 판정([`poll_decision`])을 쓴다: 워커가 늦거나 패닉해도
-/// 경과 시간만으로 Creating 을 벗어난다.
+/// 생성 성공이면 워크스페이스 ID를 반환한다. 실패·대기 만료 시 목록과 팝업을 남겨
+/// 기존 워크스페이스 선택이나 재시도가 가능하게 한다.
 fn poll_create(st: &mut UiState, deadline: Duration) -> Option<u32> {
     let job = st.create.as_ref()?;
     let filled = crate::poison::recover_mutex(
@@ -505,18 +426,13 @@ fn poll_create(st: &mut UiState, deadline: Duration) -> Option<u32> {
             None
         }
         None => {
-            // 슬롯이 비었는데 done — 이론상 도달 안 함. 안전하게 실패로.
             st.phase = NewWsPhase::Failed(t("remote_attach.error_generic").to_string());
             None
         }
     }
 }
 
-/// 확정된 원격 ws 를 재사용 터널과 함께 **사용자-경로 큐**에 넣는다(메인 루프 drain).
-///
-/// focus 이동은 이 큐의 drain(`dispatch_pending_gui_attach`)이 담당한다 — 새 경로를
-/// 만들지 않는다(원칙 1). 기존 ws Connect 와 새 ws 생성 후 attach 가 **같은 한 지점**
-/// 을 지나므로, 두 경로가 갈라져 서로 다른 attach 를 하는 일이 생기지 않는다.
+/// 기존·새 워크스페이스 모두 같은 사용자 연결 큐에 넣는다. 포커스 이동도 그 처리 경로에서 맡는다.
 fn push_attach(engine: &mut CoreState, st: &mut UiState, workspace: u32) {
     let Some(ready_arc) = st.ready.take() else {
         return;
@@ -543,8 +459,6 @@ fn connect(ctx: &egui::Context, st: &mut UiState, name: String) {
     cancel_job(st.job.take()); // 재선택 = 이전 조회 중단(자식 ssh 회수).
     st.attach_sel = Some(name.clone());
     st.ws_sel = None;
-    // 프로필을 바꾸면 선택과 새 행 상태가 rest 로 초기화된다 — 이전 원격의 생성 실패
-    // 문구를 다른 원격의 목록 위에 남겨두지 않는다.
     st.phase = NewWsPhase::Rest;
     st.create = None;
     st.ready = None; // 이전 터널 정리(재선택 = 새 연결).
@@ -563,21 +477,14 @@ fn cancel_browse(st: &mut UiState) {
     st.ready = None;
 }
 
-/// 팝업 정리 — 진행 중 조회 워커의 자식 ssh 를 kill 하고 `UiState` 를 drop 한다.
-///
-/// `clear_ui` 만으로는 부족하다: `UiState` drop 은 슬롯 `Arc` 와 `SshTunnel` 핸들만
-/// 회수하고, 포트 발견 단계의 자식 ssh 는 워커가 `Command` 안에 쥐고 있어 취소 신호를
-/// 보내야만 죽는다. 여러 번 불려도 안전하다(취소는 멱등, 정리된 뒤엔 job 이 없다).
+/// 진행 중 조회를 취소하고 UI 상태를 비운다. 상태를 놓는 것만으로는 워커가 소유한
+/// 포트 발견 자식 SSH가 종료되지 않으므로 취소 신호도 보낸다.
 fn cleanup(ctx: &egui::Context) {
     cancel_job(read_ui(ctx).job);
     clear_ui(ctx);
 }
 
-/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 진행 중 조회 워커(자식 ssh 포함)와
-/// 재사용 터널을 정리한다. draw_fn 자신의 Escape/Cancel/Connect 경로도 같은
-/// [`cleanup`] 을 부르지만, headless(X 버튼) + `UiIntent::ClosePopup`(디버그 IPC 포함)
-/// 처럼 draw_fn 을 거치지 않는 닫힘 경로가 있으므로 이 훅이 단일 choke point 다
-/// (ADR-0036).
+/// 직접 닫기 외의 경로에서도 진행 중 조회와 UI가 보관한 터널을 정리한다.
 pub fn on_close_remote_attach_popup(
     ctx: &egui::Context,
     _state: &mut AppState,
@@ -596,22 +503,17 @@ pub fn draw_remote_attach_popup(
     let ctx = ui.ctx().clone();
     let mut st = read_ui(&ctx);
 
-    // 리스트 항목은 텍스트가 아니라 목록으로 다뤄야 한다 — 라벨을 비선택으로 만들어
-    // 글자 위 I-beam/드래그 선택을 막는다(egui 기본 selectable_labels=true). 이 팝업의
-    // 모든 child ui 는 이 root ui 에서 파생되어 스타일을 상속한다.
+    // 목록 글자 선택이 행 조작을 가로채지 않도록 이 팝업에서 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
 
     poll_browse(&mut st, BROWSE_DEADLINE);
 
     let mut close = false;
-    // 원격 생성이 끝났으면 기존 ws Connect 와 **같은 지점**으로 합류한다 — 새 ws id
-    // 로 attach 를 큐에 넣고 닫는다("만들어졌다" 중간 단계 없음).
     if let Some(new_ws) = poll_create(&mut st, CREATE_DEADLINE) {
         push_attach(engine, &mut st, new_ws);
         close = true;
     }
 
-    // Escape: 닫기(진행 중 조회 워커의 자식 ssh + 터널은 cleanup 이 회수).
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         cleanup(&ctx);
         return PopupAction::Close;
@@ -625,20 +527,17 @@ pub fn draw_remote_attach_popup(
 
     let mut do_connect = false;
 
-    // ── 헤더 ──
     let header_rect =
         egui::Rect::from_min_size(full.min, egui::vec2(full.width(), HEADER_H.value()));
     if draw_header(ui, &th, header_rect) {
         close = true;
     }
 
-    // ── footer ──
     let footer_rect = egui::Rect::from_min_size(
         egui::pos2(full.left(), full.bottom() - FOOTER_H.value()),
         egui::vec2(full.width(), FOOTER_H.value()),
     );
 
-    // ── body(2-pane) ──
     let body_rect = egui::Rect::from_min_max(
         egui::pos2(full.left(), header_rect.bottom()),
         egui::pos2(full.right(), footer_rect.top()),
@@ -651,7 +550,6 @@ pub fn draw_remote_attach_popup(
         egui::pos2(body_rect.left() + LEFT_W.value(), body_rect.top()),
         body_rect.max,
     );
-    // 좌 pane 배경(bg-sidebar) + borderRight separator.
     ui.painter().rect_filled(left_rect, 0.0, th.bg_sidebar());
     ui.painter().vline(
         left_rect.right(),
@@ -659,19 +557,15 @@ pub fn draw_remote_attach_popup(
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
 
-    // 좌: attach 프로필 리스트.
     if let Some(name) = draw_left_pane(ui, &th, left_rect, &summaries, st.attach_sel.as_deref()) {
         connect(&ctx, &mut st, name);
     }
-    // 우: 4상태.
     match draw_right_pane(ui, &th, right_rect, &mut st) {
-        // error 상태의 Retry — 선택 프로필로 재조회.
         RightAction::RetryBrowse => {
             if let Some(name) = st.attach_sel.clone() {
                 connect(&ctx, &mut st, name);
             }
         }
-        // 실패한 새 행의 "다시 시도" — 같은 터널로 생성만 다시 건다(조회는 유효하다).
         RightAction::RetryCreate => start_create(&ctx, &mut st),
         RightAction::None => {}
     }
@@ -686,17 +580,13 @@ pub fn draw_remote_attach_popup(
         connecting,
         st.create_mode(),
     ) {
-        // 조회 중에는 같은 ghost 버튼이 "중단" 이다 — 팝업을 닫지 않고 조회만 끊어
-        // Initial 로 돌아간다(닫기는 헤더 X / Escape).
         FooterAction::Cancel if connecting => cancel_browse(&mut st),
         FooterAction::Cancel => close = true,
         FooterAction::Connect => do_connect = true,
         FooterAction::None => {}
     }
 
-    // Connect 실행. 기존 ws 면 곧바로 attach 큐에 넣고 닫는다. "+ 새 워크스페이스"
-    // 면 그 사이에 원격 `workspace.create` 왕복 하나가 끼므로 여기서 닫지 않고 워커를
-    // 띄운다 — 결과는 다음 프레임의 `poll_create` 가 받아 같은 attach 지점으로 합류한다.
+    // 새로 만들기는 생성 완료 뒤 연결하므로 지금 닫지 않는다.
     if do_connect && can_connect {
         match st.ws_sel {
             Some(WsSel::New) => start_create(&ctx, &mut st),
@@ -717,9 +607,6 @@ pub fn draw_remote_attach_popup(
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 헤더
-// ════════════════════════════════════════════════════════════════════════
 fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     ui.painter().hline(
         rect.x_range(),
@@ -761,9 +648,6 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     close
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 좌: attach 프로필 리스트
-// ════════════════════════════════════════════════════════════════════════
 fn draw_left_pane(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -779,7 +663,6 @@ fn draw_left_pane(
     );
     col.set_clip_rect(rect);
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    // caps 헤더.
     caps_header(&mut col, th, t("remote_attach.attach_profiles"), None);
     let list_rect = egui::Rect::from_min_max(
         egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
@@ -856,9 +739,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
             .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    // 클립은 가로만(truncate 오버플로 가드) — 세로는 행 전체 높이로 둔다. inner 는
-    // 상하 spacing_sm 를 깎아 두 줄(name+target)을 담기엔 낮아, inner 로 세로까지
-    // 클립하면 둘째 줄(target) 하단 descender 가 잘린다.
+    // 두 번째 줄의 아래가 잘리지 않도록 세로는 행 전체로, 가로만 내부 영역으로 자른다.
     child.shrink_clip_rect(egui::Rect::from_min_max(
         egui::pos2(inner.left(), rect.top()),
         egui::pos2(inner.right(), rect.bottom()),
@@ -911,11 +792,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
     resp.clicked()
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 우: 4상태
-// ════════════════════════════════════════════════════════════════════════
-/// 우측 pane 이 caller 에게 올리는 요청 — 둘 다 워커를 새로 띄우는 동작이라
-/// draw 안에서 처리하지 않고 밖으로 올린다.
+/// 워커 시작을 호출부에 요청하는 동작.
 enum RightAction {
     None,
     /// error center-state 의 Retry — 선택 프로필로 **재조회**.
@@ -979,15 +856,11 @@ fn draw_right_pane(
             }
         }
         Conn::Loaded(ws) => {
-            // 렌더 분기는 **하나**다 — ws 가 0 개여도 caps 헤더 + "+ 새 워크스페이스"
-            // 행은 그대로 나오고 그 아래 muted 한 줄만 붙는다. empty 는 다른 화면이
-            // 아니라 "행이 정확히 하나인 목록"이다.
             let ws = ws.clone();
             let phase = st.phase.clone();
             match draw_ws_list(ui, th, rect, &ws, &sel_name, st.ws_sel, &phase) {
                 Some(ListAction::Select(sel)) => {
                     st.ws_sel = Some(sel);
-                    // 실패 상태에서 행을 다시 고르면 rest 로 되돌린다(재시도 가능).
                     if sel == WsSel::New && matches!(st.phase, NewWsPhase::Failed(_)) {
                         st.phase = NewWsPhase::Rest;
                     }
@@ -1028,8 +901,6 @@ fn draw_ws_list(
     );
     col.set_clip_rect(rect);
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    // caps 헤더 문구는 그대로다 — 그룹을 설명하는 문구이고, 생성이라는 사실은 행
-    // 라벨이 말한다.
     caps_header(
         &mut col,
         th,
@@ -1051,7 +922,6 @@ fn draw_ws_list(
         .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // "+ 새 워크스페이스" — 항상 첫 행.
             if let Some(a) = new_ws_row(ui, th, phase, ws_sel == Some(WsSel::New)) {
                 action = Some(a);
             }
@@ -1059,8 +929,7 @@ fn draw_ws_list(
                 empty_line(ui, th, profile_name);
                 return;
             }
-            // 생성 왕복 중에는 아래 목록이 dim + inert 된다 — 사용자가 읽던 목록을
-            // 버리지 않으면서, 그 사이 다른 행을 고르지는 못하게 한다.
+            // 생성 중에는 목록을 흐리게 남기고 다른 행 선택을 막는다.
             let creating = *phase == NewWsPhase::Creating;
             ui.scope(|ui| {
                 if creating {
@@ -1094,13 +963,8 @@ fn empty_line(ui: &mut egui::Ui, th: &Theme, profile_name: &str) {
     );
 }
 
-/// "+ 새 워크스페이스" — 목록의 첫 행. ws 행과 **같은 34px 박스**이고, 실제 원격
-/// 워크스페이스와는 세 채널 동시로 구분된다(`plus` 글리프 · accent 라벨 · 행 아래 1px
-/// 구분선). 색 하나로만 구분하지 않는다.
-///
-/// 버튼이 아니라 목록 행이라 이웃 행과 같은 select-then-confirm 을 따른다 — 목록 안의
-/// 행인데 혼자만 클릭 즉시 실행되면 그 자체가 불일치이고, 원격을 **변경하는** 동작
-/// 직전의 되돌릴 수 있는 순간도 사라진다.
+/// 새로 만들기도 다른 행처럼 선택 후 Connect로 확정한다.
+/// 기존 워크스페이스와는 아이콘·라벨 색·구분선으로 구별한다.
 fn new_ws_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1146,9 +1010,7 @@ fn new_ws_row(
         th.accent_primary().into()
     };
     dot_slot_glyph(&mut child, th, creating, failed, glyph_c);
-    // selected 에서만 accent 를 놓는다 — accent 를 surface-active 위에 남기면 대비가
-    // 3.17:1 로 떨어져 고른 순간 가장 안 읽힌다. 구분은 글리프·구분선·accent 바가
-    // 계속 진다.
+    // 선택 배경에서 대비를 확보하도록 라벨 색을 바꾼다. 아이콘·구분선도 행 구분에 사용한다.
     let label_c = if creating {
         th.text_muted()
     } else if selected {
@@ -1169,7 +1031,6 @@ fn new_ws_row(
         )
         .truncate(),
     );
-    // 우측 슬롯 — status dot·pane 수·배지는 의미상 없는 행이라 캡션 하나뿐.
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if !creating && !failed {
             ui.label(
@@ -1179,8 +1040,6 @@ fn new_ws_row(
             );
         }
     });
-    // 이름을 묻지 않는 것이 이 행에서 가장 놀라운 부분이므로, 클릭이 일어나는 자리에서
-    // 말한다.
     let resp = resp.on_hover_text(t("remote_attach.new_workspace_hint"));
 
     let mut action = resp.clicked().then_some(ListAction::Select(WsSel::New));
@@ -1189,14 +1048,11 @@ fn new_ws_row(
     {
         action = Some(ListAction::RetryCreate);
     }
-    // 행 아래 1px 구분선 — 새 행 그룹을 닫는다.
     row_separator(ui, th);
     action
 }
 
-/// 이름 열 앞의 status-dot 슬롯을 할당한다. 목록의 **모든** 행이 이 한 함수로 슬롯을
-/// 잡으므로 이름 열의 좌측 정렬선이 픽셀 동일해진다 — 새 행의 글리프는 슬롯보다
-/// 넓지만 좌우로 대칭 overflow 하므로 정렬선을 밀지 않는다.
+/// 기존·새 행의 아이콘 공간을 같게 잡아 이름 시작 위치를 맞춘다.
 fn dot_slot(ui: &mut egui::Ui, th: &Theme) -> egui::Rect {
     let (slot, _) = ui.allocate_exact_size(
         egui::vec2(th.status_dot_size().value(), th.icon_glyph_size_sm.value()),
@@ -1235,10 +1091,7 @@ fn dot_slot_glyph(
     }
 }
 
-/// ws 행의 실행 dot — `dot_slot` 안에 그린다. 슬롯을 거치는 이유는 **열 정렬**이다:
-/// 같은 슬롯을 `dot_slot_glyph` 도 쓰므로 실행 dot 행과 새 행의 이름 열이 같은 x 에서
-/// 시작한다. (`status_dot` 자신은 라벨이 비면 dot 폭만 할당하므로 여기서 되뺄 여백은
-/// 없다 — `crates/tasty-ui-widgets/tests/status_dot_width.rs` 가 그 계약을 못박는다.)
+/// 공용 아이콘 공간 안에 상태 점을 그린다. 빈 라벨의 status_dot은 점 폭만 사용한다.
 fn dot_slot_status(ui: &mut egui::Ui, th: &Theme, kind: StatusKind, pulse: bool) {
     let slot = dot_slot(ui, th);
     let mut c = ui.new_child(
@@ -1249,12 +1102,7 @@ fn dot_slot_status(ui: &mut egui::Ui, th: &Theme, kind: StatusKind, pulse: bool)
     status_dot(&mut c, th, kind, "", pulse, false);
 }
 
-/// 생성 실패 — 행 하단 인라인. 반환값 = "다시 시도" 클릭.
-///
-/// connect-error center-state 를 쓰지 않는 이유: 그건 "목록 자체를 못 받은" 경우의
-/// 어휘다. 여기서는 목록을 이미 쥐고 있고, 실패 후 사용자의 다음 수는 보통 기존
-/// 워크스페이스를 고르는 것이므로 목록을 가리면 안 된다. 원격 메시지는 길 수 있어
-/// 폭에 맞춰 줄바꿈하고 전문은 hover 툴팁으로 준다.
+/// 생성 실패는 목록을 가리지 않고 행 아래 표시한다. 긴 오류는 줄바꿈하며 툴팁으로 전문을 제공한다.
 fn new_ws_error(ui: &mut egui::Ui, th: &Theme, msg: &str) -> bool {
     let lead = th.spacing_md.value() + th.status_dot_size().value() + th.spacing_sm.value();
     let width = ui.available_width();
@@ -1377,8 +1225,6 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
                 th,
                 t("remote_attach.in_use"),
                 th.border_attached().into(),
-                // tinted 채움/테두리 짝 — `file_picker` 의 info 배지와 같은 관용구라
-                // 같은 토큰(`tint-fill-alpha` / `tint-border-alpha`)에서 읽는다.
                 th.tint_fill_alpha(),
                 th.tint_border_alpha(),
                 false,
@@ -1394,9 +1240,6 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     resp.clicked()
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// center-state (initial / connecting / error / empty 공용)
-// ════════════════════════════════════════════════════════════════════════
 enum CenterKind {
     Glyph(icons::Icon, egui::Color32),
     Spinner,
@@ -1444,7 +1287,6 @@ fn center_state(
     );
     if retry {
         col.add_space(th.spacing_xs.value());
-        // Retry — 선택된 프로필로 재조회한다(caller 가 bool 을 받아 connect 재실행).
         return Button::new(t("remote_attach.retry"))
             .variant(ButtonVariant::Secondary)
             .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
@@ -1454,17 +1296,13 @@ fn center_state(
     false
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// footer
-// ════════════════════════════════════════════════════════════════════════
 enum FooterAction {
     None,
     Cancel,
     Connect,
 }
 
-/// `connecting` 이면 ghost 버튼이 "닫기용 취소" 가 아니라 **조회 중단**이 된다
-/// (디자인 원본의 요소를 그대로 쓰되 문구만 상태에 맞춘다).
+/// 조회 중에는 취소 버튼으로 창을 닫지 않고 조회만 중단한다.
 fn draw_footer(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1489,8 +1327,6 @@ fn draw_footer(
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
-    // 새 행을 고른 상태에서는 primary 가 "만들고 연결" 이다 — 확정을 footer 가 맡기로
-    // 한 이상 버튼이 둘 중 무엇을 할지 말해야 한다.
     let connect_label = if create_mode {
         t("remote_attach.connect_create")
     } else {
@@ -1519,9 +1355,6 @@ fn draw_footer(
     action
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 공용 헬퍼
-// ════════════════════════════════════════════════════════════════════════
 /// caps 헤더 — mono micro uppercase muted. `suffix` 있으면 "· {suffix}" 를 붙인다.
 fn caps_header(ui: &mut egui::Ui, th: &Theme, label: &str, suffix: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(
@@ -1596,8 +1429,7 @@ fn badge(
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트는 의도적으로 무시하는 결과가 많아 let _ 사유 검사에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -1611,19 +1443,7 @@ mod tests {
         }
     }
 
-    /// 슬롯이 poison 돼도 조회 결과가 화면까지 온다.
-    ///
-    /// 조용히 버리는 구현이면 `filled` 판정이 "채워졌다" 로 fallback 한 뒤 take 가
-    /// `None` 을 돌려줘, 결과가 있는데도 일반 오류로 떨어진다 — 사용자에게는 원인
-    /// 없는 실패로 보인다.
-    ///
-    /// **자동 실행 채널이 하나뿐이다.** 이 테스트는 `src/adapters/mod.rs` 의
-    /// `#[cfg(feature = "gui")] pub mod ui;` 안에 있어 `--no-default-features` 조합에서는
-    /// 컴파일 단계에 통째로 사라진다 — 헤드리스 잡의 초록은 이 테스트가 돌았다는 뜻이
-    /// 아니다(없는 테스트는 실패하지 못한다). 실측: 두 자동 잡의 명령을 워크플로에서
-    /// 그대로 읽어 `-- --list` 이름을 대조하면 기본 조합에만 뜬다. 팝업 상태를 직접
-    /// 쥐고 도는 테스트라 gui 밖으로 옮길 대상이 없어 고칠 수 있는 결함이 아니고,
-    /// 사실을 적어 두는 것이 맞는 처리다.
+    /// poison 이후에도 조회 결과를 복구한다. UI 모듈이므로 gui 기능이 있는 조합에서만 컴파일된다.
     #[test]
     fn a_poisoned_browse_slot_still_delivers_the_workspace_list() {
         let mut st = UiState {
@@ -1658,16 +1478,12 @@ mod tests {
         );
     }
 
-    /// 워커가 결과를 채우지 않아도 상한 경과 후 Connecting 을 벗어난다(무한 로딩 회귀
-    /// 고정). 판정은 슬롯이 아니라 경과 시간이 만든다.
     #[test]
     fn connecting_transitions_out_after_deadline() {
-        // 상한 이내 + 빈 슬롯 → 계속 대기.
         assert_eq!(
             poll_decision(false, BROWSE_DEADLINE / 2, BROWSE_DEADLINE),
             PollDecision::Wait
         );
-        // 상한 경과 + 빈 슬롯 → 타임아웃.
         assert_eq!(
             poll_decision(false, BROWSE_DEADLINE, BROWSE_DEADLINE),
             PollDecision::TimedOut
@@ -1678,8 +1494,6 @@ mod tests {
             PollDecision::Take
         );
 
-        // 상태 머신 수준: 빈 슬롯 그대로 상한을 넘기면(상한 주입) Error 로 전이하고
-        // job(및 그 자식 ssh)이 취소된다.
         let job = test_job(Instant::now());
         let cancel = job.cancel.clone();
         let mut st = UiState {
@@ -1688,11 +1502,9 @@ mod tests {
             job: Some(job),
             ..Default::default()
         };
-        // 상한 이내에는 Connecting 유지.
         poll_browse(&mut st, BROWSE_DEADLINE);
         assert!(matches!(st.conn, Conn::Connecting));
         assert!(st.job.is_some());
-        // 상한 경과(=0 상한 주입) → 워커가 아무것도 안 채웠어도 벗어난다.
         poll_browse(&mut st, Duration::ZERO);
         assert!(matches!(st.conn, Conn::Error(_)), "상한 초과 → Error 전이");
         assert!(st.job.is_none(), "타임아웃 시 job 은 회수된다");
@@ -1722,9 +1534,7 @@ mod tests {
         assert!(cancel.is_cancelled(), "워커의 자식 ssh 도 함께 취소된다");
     }
 
-    /// 취소된 job 의 결과가 뒤늦게 도착해도 아무도 읽지 않고, 워커 종료와 함께 drop
-    /// 된다 — 그때 `BrowseOk.tunnel` 의 `SshTunnel::drop` 이 자식 ssh 를 kill 하므로
-    /// 터널이 새지 않는다(취소가 반대 방향 누수로 바뀌지 않게 하는 계약).
+    /// 취소 뒤 늦게 온 결과도 마지막 Arc와 함께 정리된다.
     #[test]
     fn cancelled_job_result_is_discarded_and_tunnel_dropped() {
         let job = test_job(Instant::now());
@@ -1732,15 +1542,12 @@ mod tests {
 
         cancel_job(Some(job));
 
-        // UI 쪽 핸들이 사라져 이제 슬롯을 보는 것은 워커뿐이다.
         assert_eq!(Arc::strong_count(&worker_slot), 1);
-        // 뒤늦게 도착한 결과 — 읽는 쪽이 없다.
         *worker_slot.lock().unwrap() = Some(Ok(BrowseOk {
             port: 1234,
             tunnel: None,
             workspaces: Vec::new(),
         }));
-        // 워커 종료 = 마지막 Arc drop → 결과(그리고 그 안의 터널)도 함께 drop.
         drop(worker_slot);
     }
 
@@ -1765,10 +1572,7 @@ mod tests {
         }
     }
 
-    /// 원격에 ws 가 하나도 없어도 "+ 새 워크스페이스" 에 도달하고 확정할 수 있다.
-    ///
-    /// 이전에는 `Loaded` + empty 가 center-state 로 빠져 목록 렌더 경로 자체가 없었고,
-    /// Connect 활성 조건도 `!ws.is_empty()` 를 요구해 빈 원격이 막다른 길이었다.
+    /// 빈 원격 목록에서도 새 워크스페이스를 만들 수 있다.
     #[test]
     fn empty_remote_preselects_new_row_and_enables_connect() {
         let mut st = UiState {
@@ -1777,7 +1581,6 @@ mod tests {
             job: Some(test_job(Instant::now())),
             ..Default::default()
         };
-        // 워커가 "연결은 됐는데 ws 가 0개" 를 돌려준 상황.
         *st.job.as_ref().unwrap().slot.lock().unwrap() = Some(Ok(BrowseOk {
             port: 4321,
             tunnel: None,
@@ -1823,9 +1626,6 @@ mod tests {
         assert!(!st.can_connect(), "고른 행이 없으면 Connect 는 비활성");
     }
 
-    /// 생성 왕복 중에는 Connect 가 비활성이고, 그래도 다시 불린 `start_create` 는
-    /// 워커를 새로 띄우지 않는다 — 중복 생성은 되돌릴 수단이 없어(원격
-    /// `workspace.close` IPC 부재) 버튼 비활성 하나에만 기대지 않는다.
     #[test]
     fn create_in_flight_does_not_start_a_second_worker() {
         let ctx = egui::Context::default();
@@ -1837,7 +1637,6 @@ mod tests {
         assert!(!st.can_connect(), "생성 중에는 Connect 재클릭이 막힌다");
         let first = Arc::as_ptr(&st.create.as_ref().unwrap().slot);
 
-        // 그럼에도 한 번 더 들어온 확정(연타/다른 경로) — 같은 워커를 유지한다.
         start_create(&ctx, &mut st);
         let second = Arc::as_ptr(&st.create.as_ref().unwrap().slot);
         assert_eq!(first, second, "진행 중 워커가 교체되지 않는다");
@@ -1887,11 +1686,7 @@ mod tests {
         assert!(st.create.is_none());
     }
 
-    /// 생성 성공 → attach 요청이 **정확히 한 건**만 큐에 들어간다.
-    ///
-    /// 한 건인 근거는 `push_attach` 가 `ready` 를 take 한다는 것이다 — 같은 프레임이
-    /// 두 번 돌거나 다음 프레임이 또 들어와도 재사용 터널이 이미 없으므로 두 번째
-    /// push 가 성립하지 않는다.
+    /// 연결 큐에 넣을 때 ready를 가져가므로 같은 결과를 두 번 넣지 않는다.
     #[test]
     fn create_success_pushes_exactly_one_attach() {
         let (_state, mut engine) = crate::state::tests::test_state();
@@ -1909,13 +1704,11 @@ mod tests {
         assert_eq!(req.port, 4321, "조회에 쓴 터널 포트를 그대로 재사용한다");
         assert_eq!(req.workspace, 99);
 
-        // 중복 방어: 다시 불려도 늘지 않는다.
         push_attach(&mut engine, &mut st, new_ws);
         assert_eq!(engine.pending_gui_attach_user.len(), 1);
     }
 
-    /// 팝업이 닫히면 진행 중 생성 워커와 재사용 터널이 함께 정리된다 — draw_fn 을
-    /// 거치지 않는 닫힘 경로(바깥 클릭/`UiIntent::ClosePopup`)도 이 훅 하나를 지난다.
+    /// 닫기 훅이 UI의 생성 슬롯과 터널 핸들을 정리한다.
     #[test]
     fn on_close_clears_in_flight_create_and_tunnel() {
         let ctx = egui::Context::default();
@@ -1949,9 +1742,6 @@ mod tests {
         );
     }
 
-    /// `UiState`(진행 중 조회 워커 + 재사용 터널을 쥐고 있는 egui temp memory)가
-    /// 훅 호출 한 번으로 drop 되는지 확인 — draw_fn 을 거치지 않는 닫힘 경로(바깥
-    /// 클릭/`UiIntent::ClosePopup`/디버그 IPC)에서도 이 훅이 정리를 담당한다.
     #[test]
     fn on_close_clears_ui_state() {
         let ctx = egui::Context::default();
@@ -1978,8 +1768,6 @@ mod tests {
             ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))
                 .is_none()
         );
-        // UiState drop 만으로는 포트 발견 자식 ssh 가 회수되지 않는다 — 훅이 취소까지
-        // 책임진다(ADR-0036 단일 choke point).
         assert!(cancel.is_cancelled(), "닫힘 훅이 진행 중 조회를 취소한다");
     }
 }
