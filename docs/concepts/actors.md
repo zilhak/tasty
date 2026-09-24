@@ -1,31 +1,28 @@
 # 주체 (Actors)
 
-tasty 는 같은 인스턴스를 여러 주체가 **동시에** 사용하는 것을 전제로 설계된다 (→ [identity.md](../identity.md) 동시성). 세 주체는 *무엇을 통해 동작하는가* 와 *어떤 계약을 따르는가* 가 각각 다르다.
+Tasty는 한 인스턴스를 여러 주체가 동시에 사용하도록 설계한다. 주체마다 조작 방법과 권한이 다르다([기본 원칙](../identity.md)).
 
 ## 로컬 사용자 (Local user)
 
-이 머신에서 tasty GUI 를 직접 쓰는 사람. 입력 표면 = 키보드 단축키·마우스·OS 네이티브 입력. **포커스의 주인**. 일반(비점유) surface/workspace 를 자유롭게 다룬다. 한 인스턴스에 보통 1명. **점유를 끊을 수 있는 유일한 주체** (아래 점유 모델).
+로컬 사용자는 이 머신에서 키보드·마우스·OS 입력으로 Tasty GUI를 직접 쓰는 사람이다. 포커스를 정하고 점유되지 않은 surface·workspace를 자유롭게 조작한다. 한 인스턴스에 보통 한 명이며, 다른 주체의 점유를 강제로 해제할 수 있다.
 
 ## AI Agent (에이전트)
 
-자기 작업을 수행하기 위해 tasty 를 조작하는 AI. 입력 표면 = IPC 메서드 / CLI 서브커맨드, 대상은 ID 로 지정. 여럿이 동시에 동작하며 **격리 계약** 을 따른다 — 자기 행동의 부수효과가 사용자 상태(포커스/닫은 항목 히스토리/선택)에 닿지 않는다. **기본은 점유 없이** ID 로 임의 대상을 조작하지만(fire-and-forget `surface.send`/`surface.read`), 필요하면 **점유(soft/hard)를 걸 수 있다** — 예: `terminal` 명령이 spawn 한 child-terminal 을 soft 점유로 표시한다(아래 점유 모델, [ADR-0021](../adr/0021-occupancy-and-attach-admission.md)).
+에이전트는 IPC·CLI로 대상을 ID로 지정해 자기 작업을 수행한다. 여러 에이전트가 동시에 동작하더라도 사용자의 포커스·닫은 항목 히스토리·선택을 바꾸지 않는다. `surface.send`·`surface.read`처럼 점유 없이 요청할 수 있으며 필요하면 soft 또는 hard 점유를 사용한다. `terminal` 명령이 만든 child-terminal의 soft 점유가 한 예다([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)).
 
 ## 원격 접속 사용자 (Remote user)
 
-SSH 너머에서 attach 로 접속하는 사람. **행동 분류는 로컬 사용자보다 AI Agent 에 가깝다** — 직접 GUI 입력이 아니라 *연결(attach 스트림)* 을 통해 동작하고, 로컬 포커스의 주인이 아니다. AI Agent 와의 결정적 차이는 **점유가 필수인가** 다:
-
-- 원격 사용자는 무언가를 하기 전에 **반드시 surface 또는 workspace 를 강한 점유(hard, 배타 claim) 선언** 해야 하고, **점유한 대상 안에서만** 동작할 수 있다. 원격 사용자가 건드릴 수 있는 것은 *점유된 터미널/workspace* 뿐이다.
-- AI Agent 는 점유 없이 ID 로 임의 대상을 조작할 수 있고 점유는 **선택**이지만, 원격 사용자는 **점유라는 관문을 반드시 통과** 한다.
+원격 사용자는 SSH를 통해 attach로 접속하는 사람이다. 로컬 GUI 입력 대신 attach 스트림을 사용하고 로컬 포커스를 바꿀 수 없다. 에이전트와 비슷한 제한을 받지만, 원격 사용자는 작업 전에 surface나 workspace를 반드시 hard 점유해야 하며 점유한 대상만 조작할 수 있다.
 
 tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach 동작은 [`../features/remote-attach/`](../features/remote-attach/index.md), 메커니즘은 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
 
 ## 점유 (Occupation) 모델
 
-점유는 **주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속적·가시적 관계** 다. `surface.send`/`surface.read` 같은 fire-and-forget 조작과 달리, "이 대상은 지금 어떤 주체가 조종 중" 이라는 사실을 로컬 사용자에게 명시한다. 두 계층이 있고 **시각적으로 구분** 된다(터미널 테두리 색: soft=green, hard=peach). 결정 근거·시각 규약은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
+점유는 원격 사용자나 에이전트가 surface·workspace를 사용 중임을 계속 표시하는 관계다. 일회성 `surface.send`·`surface.read` 요청과 구분한다. soft는 green, hard는 peach 테두리로 표시한다. 선택 이유와 표시 규칙은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md)에 있다.
 
 ### 약한 점유 (soft)
 
-- **표시만 하는 advisory 마커.** "이 대상은 어떤 주체에게 조종당하는 중이며 언제든 닫히거나 상태가 바뀔 수 있다" 를 고지한다. **write 제한 없음** — 로컬 사용자는 평소처럼 자유롭게 입력·조작한다. 협조 신호이지 강제가 아니다.
+- soft 점유는 사용 중임을 알리는 표시다. 대상이 닫히거나 상태가 바뀔 수 있음을 알리지만 입력을 제한하지 않는다. 로컬 사용자는 평소처럼 조작할 수 있다.
 - 현 소비자: `terminal` 명령이 spawn 한 **child-terminal**(주체 = 그 child 를 spawn 한 parent surface) → [`../features/child-terminal/`](../features/child-terminal/index.md).
 
 ### 강한 점유 (hard)
@@ -51,4 +48,4 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 | 타 점유 강제해제(force-detach) | **있음** | 없음 (자기 점유 self-release 만) | 없음 (자기 점유 self-release 만) |
 | 동시 수 | 보통 1 | 0..N | 0..N |
 
-"사용자 행동(로컬 직접 입력) ↔ 에이전트 행동(연결 기반)" 분리가 tasty 의 soul 이며, 모든 API 설계가 그 위에 얹힌다 (→ [identity.md](../identity.md) §2.1).
+API를 설계할 때는 로컬 직접 입력과 에이전트·원격 요청을 구분한다. [사용자와 에이전트 행동의 분리](../identity.md#21-사용자-행동--에이전트-행동-분리-soul)를 따른다.

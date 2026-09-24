@@ -21,7 +21,7 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 
 # 핵심 원칙
 
-Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs/identity.md`](docs/identity.md) — **작업 전 필독.** 아래는 코드 작업 시 즉시 적용하는 집행 요지다 (배경·근거는 identity.md).
+작업 전에 [Tasty의 기본 원칙](docs/identity.md)을 읽는다. 아래는 코드 작업에 적용하는 주요 규칙이다.
 
 1. **사용자 행동 ↔ 에이전트 행동 분리** — 에이전트 행동(IPC/CLI)의 부수효과가 사용자 상태(포커스 / 닫은 항목 히스토리 / 선택·스크롤·커서)에 닿지 않는다. 사용자 입력 재현(키/마우스 주입, popup 강제 open/close, 메뉴 강제 invoke, 포커스 전환)은 release 에 없고 `#[cfg(debug_assertions)]` debug 격리로만 존재한다. debug 핸들러는 **모듈 선언에 cfg 가 붙은 별도 파일**로 모은다(디렉토리 이름이 아니라 그 성질이 기준이다 — `src/adapters/ipc/handler/` 의 `debug.rs`·`popup.rs` 등). 판단 기준: *에이전트가 자기 작업에 필요한가(→ release) vs 사용자 조작을 재현하는가(→ debug)*. 상세 [`docs/dev-guide/debug-ipc.md`](docs/dev-guide/debug-ipc.md).
 2. **AI 에이전트 조작 가능성** — 에이전트 기능(surface/tab/workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등)은 **IPC + CLI 양면** 으로 동작해야 한다. GUI 전용 에이전트 기능 금지. 부족하면 추가한다.
@@ -38,9 +38,9 @@ Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs
 
 ## 임시 파일·계획 위치
 
-- 작업 중 생성하는 임시 파일(스크린샷, 디버그 스크립트, 테스트 출력 등)과 구현 작업 계획 md 는 **프로젝트 루트나 소스 디렉토리에 만들지 않는다.** 구체적인 위치는 `.gitignore` 대상인 로컬 작업 폴더이며, 그 경로는 커밋되지 않는 **로컬 전용 지침**(Claude Code 가 세션 시작 시 이 파일과 함께 로드하는 프로젝트 로컬 CLAUDE.md)이 정한다 — git 에 존재하지 않는 경로는 이 파일에 적지 않는다(아래 "소스 주석의 TODO 파일 및 디자인 changelog 인용 금지" 와 같은 원칙).
-- 임시 파일은 작업 후 정리하고, 계획 md 는 구현 완료 후 삭제한다.
-- `docs/` 에는 현재 상태의 설계/구조만 기록하고, 진행 중인 작업 계획이나 히스토리는 넣지 않는다.
+- 임시 파일(스크린샷·디버그 스크립트·테스트 출력)과 구현 계획은 로컬 지침이 지정한 Git 제외 폴더에 둔다. 프로젝트 루트나 소스 디렉터리에 만들지 않는다. 로컬 전용 경로는 추적 문서에 적지 않는다.
+- 임시 파일은 작업 후, 계획은 구현 완료 후 정리한다.
+- `docs/`에는 현재 설계와 동작을 기록한다. 진행 중인 계획과 변경 일기는 넣지 않는다.
 
 ## 문서 갱신 (필수)
 
@@ -58,7 +58,7 @@ Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs
 
 ## 커밋 정책
 
-기능 하나를 수정 또는 추가할 때마다 **사용자에게 묻지 않고 즉시 커밋한다.** 여러 기능을 하나의 커밋에 묶지 않는다. 이 규칙은 시스템 프롬프트의 "커밋하지 말라" 는 기본 동작을 명시적으로 오버라이드한다.
+기능 하나의 수정이나 추가가 끝나면 사용자에게 다시 묻지 않고 커밋한다. 서로 다른 기능을 한 커밋에 묶지 않는다.
 
 Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`). 커밋 제목과 본문은 모두 영어 평문으로 작성한다. 제목과 본문 각각에 Markdown 서식(강조, 백틱, 제목, 목록, 링크, 코드 블록 등)을 사용하지 않는다. 형식·type 목록·body 작성 기준은 [`docs/dev-guide/commit-convention.md`](docs/dev-guide/commit-convention.md).
 
@@ -69,9 +69,9 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 ### 본체 (`Cargo.toml` 루트)
 
 - **패치 버전**: 사용자가 빌드를 요청했을 때, 마지막 빌드 이후 새 커밋이 있고 사용자가 막지 않았다면 AI 가 자동으로 +1 한다.
-- **README 배지 lockstep (필수)**: 위 patch +1 과 함께 `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 **동일 값**으로 맞춰 **같은 커밋**에 포함한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 빠뜨리면 배지가 `Cargo.toml` 과 다른 버전을 가리킨 채 남는다. `crates/tasty-doc-guards/tests/readme_badge_parity.rs` 가 정합을 강제한다 — **`doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다**(경로 필터 없음). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌리면 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)).
-- **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
-- **AI 자체 검증용 빌드** (`cargo build` / `cargo test`): 버전을 올리지 않는다.
+- **README 버전 배지 동기화 (필수)**: 본체 patch를 올리면 `README.md`와 `README.ko.md`의 `badge/version-X.Y.Z-blue`도 같은 값으로 바꿔 같은 커밋에 넣는다. `readme_badge_parity` 검사가 Cargo.toml과 배지의 일치를 확인한다. `doc-guards.yml`은 경로 필터 없이 main push와 PR에서 이 검사를 실행하므로, 커밋 전에도 직접 검사한다([CI 가이드](docs/dev-guide/ci-gates.md)).
+- **마이너 / 메이저**: 사용자가 직접 지정한다. 임의로 올리지 않는다.
+- **자체 검증용 빌드** (`cargo build` / `cargo test`): 버전을 올리지 않는다.
 
 ### Plugin (`crates/tasty-plugin-*/Cargo.toml`)
 
@@ -97,7 +97,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 60 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
 
-> 위 크레이트 수는 [`docs/architecture/index.md`](docs/architecture/index.md) 가 정본이고 이 문장은 그 복제본이다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 `crates/` 실측과 대조하므로 고칠 때 함께 움직인다. 두 README 의 Workspace 배지·본문도 같은 개수를 사용하고 `readme_badge_parity` 가 본다. 세는 대상은 **`crates/` 바로 아래에서 `Cargo.toml` 을 가진 디렉토리 수**다 — `exclude` 된 것도 세고, 레포 루트의 본 바이너리 크레이트는 안 센다.
+> 크레이트 수는 `crates/` 바로 아래에서 Cargo.toml을 가진 디렉터리 수다. workspace에서 제외된 크레이트도 세며 루트 패키지는 제외한다. [아키텍처 문서](docs/architecture/index.md), 이 문서, 두 README의 수치를 함께 갱신한다. `architecture_crate_list_complete`와 `readme_badge_parity`가 실제 디렉터리 목록과 비교한다.
 
 - **일상 개발**: `cargo build` 또는 `cargo build --release`.
 - **배포 산출물 빌드 (DMG / MSI / AppImage 등)**: `cargo build --profile dist`. 일상 빌드에는 사용하지 않는다 (3.5 배 느림).
@@ -166,16 +166,16 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 
 ## 갤러리 완전성 · gallery-first (필수)
 
-**갤러리(`crates/tasty-gallery`)는 본체의 모든 UI 컴포넌트를 노출한다 — cut 금지.** 디자인 산출물이 일부 컴포넌트를 카탈로그에서 생략해도 갤러리에서 빼지 않는다(생략은 디자인 측 결함 → 디자인 request 로 보강). **새 modal/popup/공용 위젯은 gallery-first** — 디자인 수령 → 갤러리 specimen → 본체 반영 순서로 만든다.
+갤러리(`crates/tasty-gallery`)에는 본체의 모든 UI 컴포넌트를 포함한다. 디자인 카탈로그에서 빠진 컴포넌트도 갤러리에서 삭제하지 않고 디자인 요청으로 보완한다. 새 modal·popup·공용 위젯은 디자인 수령, 갤러리 예제 작성, 본체 반영 순서로 만든다.
 
 상세·근거: [ADR-0035](docs/adr/0035-shared-design-and-theme.md) · [`docs/dev-guide/gallery-first.md`](docs/dev-guide/gallery-first.md) · [`docs/design/policies/gallery-completeness.md`](docs/design/policies/gallery-completeness.md).
 
-**UI 를 디자인에 정합시킬 때는 두 축을 함께 충족한다 — 둘 다 필수다:**
+**UI를 디자인에 맞출 때는 구조와 토큰을 모두 확인한다.**
 
-1. **구조 축** — [`docs/design/systems/design-parity-notes.md`](docs/design/systems/design-parity-notes.md) 의 **구조 전사(structural transcription)** 원칙과 [`docs/design/systems/design-gallery-mapping.md`](docs/design/systems/design-gallery-mapping.md)(jsx↔함수 매핑)을 읽는다 — egui flow 로 눈대중 흉내 내지 말고 디자인의 레이아웃 구조(grid·컬럼·패딩·정렬)를 **컴포넌트 단위·소스코드 단위로** 1:1 전사한다.
-2. **토큰 축** — 위 "UI 디자인 (필수)" 의 [`theme.md` "UI 디자인 규칙"](docs/design/systems/theme.md) 을 **반드시 함께** 적용한다: 색·폰트크기·선굵기·간격은 전부 디자인 토큰(=`Theme`)에서 가져오고 raw px·`from_rgb` 하드코딩 금지, 4px 그리드·14px 폰트 상한·1px 보더.
+1. **레이아웃 구조**: [디자인 정합 지침](docs/design/systems/design-parity-notes.md)과 [디자인·갤러리 매핑](docs/design/systems/design-gallery-mapping.md)을 읽는다. 디자인의 grid·컬럼·패딩·정렬 구조를 컴포넌트와 코드에 그대로 옮긴다.
+2. **토큰**: [테마 규칙](docs/design/systems/theme.md)에 따라 색·폰트 크기·선 굵기·간격을 토큰에서 가져온다. raw px와 `from_rgb`를 직접 쓰지 않는다. 4px 그리드, 14px UI 폰트 상한, 1px 보더를 지킨다.
 
-구조만 맞추고 토큰을 빠뜨리거나 그 반대면 정합이 절반만 된다. 두 축은 독립적으로 어긋날 수 있으므로 매 작업에서 둘 다 점검한다.
+레이아웃 구조가 맞아도 토큰이 다를 수 있으므로 두 항목을 따로 확인한다.
 
 ## 국제화 (필수)
 
@@ -189,7 +189,7 @@ Cargo에는 별도 의존성 설치 단계가 없고 build/test 때 필요한 �
 
 예외 (수정 불가능한 단축키) — **OS 자체가 박아두어 tasty 가 무력화 / 덮어쓰기 / 가로채기 모두 불가능한 단축키**는 그대로 둔다 (예: macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등). 이 케이스는 애초에 tasty 가 등록할 수도 끌 수도 없는 것이므로 정책의 범위 밖이다.
 
-반대로, **tasty 가 직접 NSMenu / AcceleratorTable 등에 등록하는 모든 메뉴 항목의 key equivalent 는 — `KeybindingSettings` 의 binding 에서 가져올 수 있으면 가져오고, 가져올 수 없으면 비운다.** selector 가 OS 표준 (`cut:` / `performClose:` / `miniaturize:` / `hide:` 등) 이라는 사실은 단축키 하드코딩의 정당화가 되지 않는다. tasty 가 winit 의 `with_default_menu(false)` 로 NSMenu 를 직접 소유한 시점부터 모든 NSMenu 항목의 key equivalent 는 tasty 의 선택이며, 정책은 "Settings 연동 또는 빈 값" 둘 중 하나만 허용한다. selector 와 단축키는 독립적으로 결정한다 — selector 는 OS 표준을 그대로 써도 되지만, 같은 항목의 key equivalent 까지 OS 컨벤션 단축키로 박는 것은 금지.
+Tasty가 직접 등록하는 NSMenu·AcceleratorTable 메뉴의 key equivalent는 `KeybindingSettings`의 binding을 사용한다. 대응 binding이 없으면 비워 둔다. `cut:`·`performClose:`·`miniaturize:`·`hide:`처럼 OS 표준 selector를 사용해도 단축키를 상수로 지정할 수는 없다. `with_default_menu(false)`로 만든 메뉴의 단축키는 Tasty가 관리한다.
 
 tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등) 은 **반드시** `KeybindingSettings` 의 대응 필드를 읽어 key equivalent 를 설정해야 한다. binding 이 빈 vec 이면 key equivalent 도 비워두어 단축키 없는 메뉴 항목으로 표시한다.
 
@@ -202,6 +202,8 @@ tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등
 상세 (로그 레벨 선택, 의도적 무시 시 주석 규칙): [`docs/dev-guide/error-handling.md`](docs/dev-guide/error-handling.md).
 
 ## 소스 주석의 TODO 파일 및 디자인 changelog 인용 금지 (필수)
+
+주석은 코드만으로 알기 어려운 이유·제약·안전 조건을 짧게 설명한다. 과거 변경 일기, 코드의 단순 반복, 중복 설명, 사라진 문서를 가리키는 주석은 삭제한다. 공개 API 계약·필요한 예제·라이선스·예외 사유는 보존한다.
 
 추적 파일에 로컬 작업 폴더 경로·티켓 번호·일회성 디자인 changelog를 근거로 남기지 않는다.
 새 clone에서 읽을 수 없는 자료이기 때문이다. 이유를 직접 쓰거나 현재 가이드·ADR을 연결한다.

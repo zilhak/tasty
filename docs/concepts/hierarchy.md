@@ -7,9 +7,7 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 - **`winit::window::Window`** — OS 가 주는 창 자원 (창틀 / 이벤트 소스 / 렌더 표면). winit `WindowId` 로 식별.
 - **`View`** — tasty 쪽 윈도우 표현. 그 창의 *종류 + 콘텐츠 + 행동*(render / 이벤트 / modality)을 묶은 객체로, winit Window 를 `Arc` 로 소유한다. **1 View : 1 Window.**
 
-> 옛 tasty `Window` trait 이 winit 의 `Window` 와 헷갈려서 **`View` 로 rename** 됐다 (`WindowBase`→`ViewBase`, `*Window`→`*View`). **tasty 쪽 `Window` trait 은 없다** — 지금 `Window` 는 winit OS 창만 가리킨다. 즉 *View = 윈도우의 tasty 쪽 용어*. 같은 맥락에서 옛 gloss **"터미널 윈도우" 도 쓰지 않는다** — 정식 명칭은 `MainView`.
->
-> **AI Agent 지침**: 유비쿼터스 언어상 "window(윈도우)" 는 모호하다 — 사용자가 *View*(tasty 쪽 윈도우, 예: `MainView`)를 의도했을 수도, *진짜 winit OS 창*을 의도했을 수도 있다. 대화/요청에서 이 용어가 나오면 둘 중 무엇인지 단정하지 말고 **한 번 되물어 확인하는 것을 권장한다.**
+`Window`는 winit의 OS 창을, `View`는 Tasty가 그 창에 표시하는 내용과 동작을 뜻한다. Tasty에는 `Window` trait이 없다. 터미널을 표시하는 주 윈도우의 타입은 `MainView`다. 요청에서 “윈도우”의 의미가 모호하면 문맥을 확인하고, 구현 대상이 달라질 때만 사용자에게 확인한다.
 
 ## View 의 종류 (= 윈도우 종류)
 
@@ -25,7 +23,7 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 
 ## 구조 계층 = CoreState 도메인 (GUI 없이도 구성)
 
-containment 계층 — 이게 "구조 계층" 의 본체다. 이것은 **`CoreState` 의 도메인 트리**이며 **GUI(View) 없이도 구성·동작한다.** headless 에선 부팅이 `CoreState` 를 직접 만들어 Workspace/Pane/Tab/Surface 와 PTY 가 살아있고, **`MainView` 는 GUI 가 있을 때 이 `CoreState` 를 호스팅·투영하는 셸**일 뿐이다 (→ [identity](../identity.md) headless 동작-우선; 도메인 동작은 [`features/work-area/`](../features/work-area/index.md)).
+구조 계층은 `CoreState`가 관리하는 Workspace·Pane·Tab·Surface 트리다. GUI 없이도 만들고 사용할 수 있다. headless 부팅은 `CoreState`와 PTY를 직접 만들고, GUI의 `MainView`는 이를 화면에 표시한다. 동작은 [작업 영역 문서](../features/work-area/index.md)를 따른다.
 
 ```
 CoreState   도메인 트리 — headless 에서도 구성·동작
@@ -63,7 +61,7 @@ GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 
 | `dag_graph` | **host 내장** | agent task DAG 뷰 | egui |
 | `html` | `com.tasty.html` plugin (`rendering=webview`) | HTML/웹 뷰어 | 네이티브 WebView overlay (`RemoteSurface`) |
 
-출처 3종: **host 내장**(`register_builtin_kinds`) / **egui-mesh plugin**(plugin 이 `rendering=egui-mesh` 선언 + host 화이트리스트, plugin 프로세스가 자가 렌더한 mesh 를 host 가 합성) / **webview plugin**(`rendering=webview`, RemoteSurface stand-in + native WebView overlay). 종류별 상세·동작은 [`features/work-area/`](../features/work-area/index.md#surface-종류).
+Surface는 호스트 내장, egui-mesh 플러그인, webview 플러그인으로 나뉜다. 호스트 내장은 `register_builtin_kinds`로 등록한다. egui-mesh는 허용된 플러그인이 자기 프로세스에서 만든 mesh를 호스트가 합성한다. webview는 호스트의 `RemoteSurface`와 네이티브 WebView를 사용한다. 자세한 동작은 [Surface 종류](../features/work-area/index.md#surface-종류)를 참고한다.
 
 ## 관련
 

@@ -4,14 +4,14 @@
 
 한국어: [README.ko.md](README.ko.md)
 
-> **Tasty** is a cross-platform, GPU-accelerated terminal emulator purpose-built for AI coding agents. It provides multi-agent orchestration, headless operation, and a focus-independent IPC/CLI surface across Windows, macOS, and Linux. (Detailed docs are in Korean — start at [`docs/index.md`](docs/index.md).)
+> **Tasty** is a cross-platform, GPU-accelerated terminal emulator designed for AI coding agents. It coordinates multiple agents, runs without a GUI, and lets agents use IPC/CLI commands with explicit target IDs across Windows, macOS, and Linux. (Detailed docs are in Korean — start at [`docs/index.md`](docs/index.md).)
 
 [![Version](https://img.shields.io/badge/version-0.10.4-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
 [![Workspace](https://img.shields.io/badge/workspace-60%20crates-orange)](crates/)
 
-Where GPU-accelerated terminals like WezTerm and Alacritty focus on the human typing experience, Tasty adds another coordinate on top: a terminal an AI agent can operate directly — every surface is equally open to keyboard/mouse *and* IPC/CLI.
+People can work with the keyboard and mouse while agents perform their own tasks through IPC/CLI. Agent commands do not depend on which terminal the user has focused.
 
 ## Identity — Separation of User Actions and Agent Actions
 
@@ -22,7 +22,7 @@ Every Tasty API strictly separates **user actions** (keyboard/mouse/native OS in
 - **Cross-platform** — Windows / macOS / Linux, all native (winit + wgpu).
 - **GPU-accelerated rendering** — cell-based shaders, stable prepare/draw even with 10+ surfaces.
 - **Hexagonal architecture** — model + ports + adapters + view + host_api separation, 60-crate workspace.
-- **AI agents as first-class citizens** — every IPC/CLI surface is focus-independent and ID-based. User actions and agent actions are fully separated (debug isolation).
+- **Agent control** — IPC/CLI commands use target IDs and preserve the user’s focus. Input simulation is available only in debug builds.
 
 ## Main Systems
 
@@ -36,7 +36,7 @@ Agents hand work to other agents, and Tasty runs it in order.
 - When a task fails, its downstream tasks can be skipped, allowed to continue, or replaced by a fallback task.
 - A finished task's output can be passed into a later task as input. A reduce task merges several results into one: first success, all, JSON merge, text concatenation, or a custom command.
 - Semaphores limit how many agents run at once, leases mark a resource as taken, barriers wait until several agents have arrived, and rate limits throttle calls.
-- A spawned Claude or Codex child can be a node in the graph. The node completes when the child goes idle or asks for input, and counts as failed if the child exits, so the failure policy above applies to it.
+- A Claude or Codex child can be a node in the graph. The default completion states are idle or needs_input for Claude, and idle for Codex. Codex approval waits do not complete the node. A child exit invokes the failure policy.
 - Progress shows as a live graph in a tab (`tasty new tab --type dag_graph`) and as JSON or Graphviz dot from the CLI.
 
 Details: [`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md)
@@ -44,7 +44,7 @@ Details: [`docs/features/agent-collaboration/index.md`](docs/features/agent-coll
 ### Plugins in their own processes
 
 - Every plugin runs as a separate OS process and talks to the host over local TCP with JSON messages. The host checks that each plugin still responds, and one that stops responding is listed under "needs attention" in the plugin window.
-- Plugin processes are tied to the host's lifetime at the OS level (a Job Object on Windows, a parent-death signal on Linux, a watchdog in the SDK on macOS). No plugin process is left running after Tasty exits, even after a crash.
+- Plugins are set up to exit when the host exits, using a Job Object on Windows, a parent-death signal on Linux, and an SDK watchdog on macOS.
 - A plugin can add CLI subcommands, IPC namespaces, its own surface types (rendered by the plugin itself or shown in a web view), popups and tool menu entries, file handlers, settings pages, hook events, and completion rules for DAG tasks.
 - Permissions such as file read and write, process spawn, network, clipboard, and terminal read and write are declared in the manifest and granted at install time. Manifests are signed with ed25519, and a plugin with an unknown key or changed permissions has to be trusted again.
 - The Markdown, Image, HTML, Git, and Clipboard viewers and the Claude Code and Codex integrations that ship with Tasty are plugins built on the same SDK as third-party ones.
@@ -84,7 +84,7 @@ cargo build --release
 - **Extend it yourself with plugins** — an SDK with a manifest schema and a permission system ([`docs/features/plugin-system/index.md`](docs/features/plugin-system/index.md))
 - **Share context between agents** — Blackboard / Plan / Cache let multiple agents exchange the same working context ([`docs/design/systems/memory.md`](docs/design/systems/memory.md))
 - **Pinpoint output per shell command** — recognizes shell prompt boundaries to capture exactly "this command's output" ([`docs/features/terminal-output/index.md`](docs/features/terminal-output/index.md))
-- **Watch terminal output live and trigger follow-up work** — parses PTY output lines and fans them out to memory/file sinks automatically ([`docs/features/terminal-output/index.md`](docs/features/terminal-output/index.md))
+- **Watch terminal output live and trigger follow-up work** — parses PTY output lines and writes the results to memory or files ([`docs/features/terminal-output/index.md`](docs/features/terminal-output/index.md))
 - **Cap agent token spend automatically** — tracks and aggregates usage, auto-blocking once a cost cap is exceeded ([`docs/features/telemetry/index.md`](docs/features/telemetry/index.md))
 - **Theme it your way** — a user-customizable theme system built on a 4px grid and a 14px font-size ceiling ([`docs/features/themes/index.md`](docs/features/themes/index.md))
 - **Run several child Claude instances and get notified as each finishes** — spawn/tell return immediately, and a completion notification arrives automatically whenever a child goes idle, needs input, or exits ([`docs/plugins/claude/index.md`](docs/plugins/claude/index.md))
