@@ -1,6 +1,4 @@
-//! 레이아웃 성질을 **칠해진 결과**로 고정한다 — 버튼이 보이는가는 view 가 돌려주는 값이
-//! 아니라 화면에 칠해진 텍스트가 popup 콘텐츠 영역 안에 온전히 들어갔는가로만 정직하게 잴 수
-//! 있다(`remote_tool` 의 `painted_text` 와 같은 관찰점).
+//! 실제 그린 텍스트와 clip 영역을 비교해 버튼·라벨이 보이는지 확인한다.
 use super::*;
 
 const CONFIRM: &str = "CONFIRM-LABEL";
@@ -215,10 +213,7 @@ fn short_breadcrumb_is_not_elided() {
     assert!(!shapes.iter().any(|(t, _, _)| t == "…"));
 }
 
-/// 접힌 조상은 빠짐없이 `…` 뒤에 있다 — 클릭할 수 있어야 하므로 사라지면 안 된다.
-///
-/// 그 명제는 배분 자체가 아니라 **칠해진 결과**로 잰다: 보이는 라벨과 메뉴가 여는 라벨의
-/// 합집합이 전체 경로다. 배분의 사다리는 `path_bar::alloc` 의 단위 테스트가 잰다.
+/// 보이는 경로와 생략 메뉴의 경로를 합치면 전체 조상이 빠짐없이 남아야 한다.
 #[test]
 fn every_ancestor_is_either_painted_or_behind_the_ellipsis() {
     let crumbs = deep_crumbs(30, "segment");
@@ -289,8 +284,7 @@ fn filenames_stay_inside_the_name_column_at_narrow_width() {
     assert_filenames_stay_inside_the_name_column(egui::vec2(400.0, 360.0));
 }
 
-/// 고른 것이 폴더면 footer 에 안내 줄이 선다 — 두 모드가 서로 다른 것을 말하고, 열기 쪽은
-/// **확정 버튼 이름**을 부른다(문구와 버튼이 갈리지 않게). 어느 쪽이든 버튼은 안 잘린다.
+/// 폴더 안내와 확정 버튼 이름이 일치하고 두 모드 모두 버튼이 잘리지 않는지 확인한다.
 #[test]
 fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out() {
     let entries = entries();
@@ -330,8 +324,7 @@ fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out
     assert_fully_visible(content, &shapes, &line, "open + folder");
     assert_fully_visible(content, &shapes, CONFIRM, "open + folder");
 
-    // 파일을 고르면 그 줄이 없다 — 있는 것만이 아니라 **없는 것**도 재야 항상 뜨는 줄을
-    // 통과시키지 않는다.
+    // 파일 선택 시에는 폴더 안내가 없어야 한다.
     let file = entries
         .iter()
         .find(|e| !e.is_dir)
@@ -353,8 +346,7 @@ fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out
     );
 }
 
-/// 좁은 폭에서 현재 폴더는 **앞에서** 말줄임한다 — 꼬리가 형제 폴더를 가르므로 꼬리를
-/// 자르면 두 폴더가 같은 문자열이 된다. 그리고 보이는 `…` 없이 잘리지 않는다.
+/// 현재 폴더는 구분에 필요한 끝부분을 남기고 앞에 생략 표시를 붙인다.
 #[test]
 fn the_current_folder_elides_at_the_front_and_never_clips_without_an_ellipsis() {
     let long = "a".repeat(53);
@@ -391,7 +383,6 @@ fn the_current_folder_elides_at_the_front_and_never_clips_without_an_ellipsis() 
         current.starts_with('…'),
         "현재 폴더가 앞 말줄임 표지 없이 잘렸다: {current:?}"
     );
-    // 버튼은 여전히 온전하다 — path bar 는 footer 에서 폭을 사지 않는다.
     assert_fully_visible(content, &shapes, CONFIRM, "narrow");
     assert_fully_visible(content, &shapes, CANCEL, "narrow");
 }

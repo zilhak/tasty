@@ -1,17 +1,11 @@
-//! 모든 popup의 `PopupDef` 목록. 새 popup을 추가하려면 이 파일에 한 항목만 추가.
+//! 팝업 정의 목록.
 
 use std::sync::OnceLock;
 
 use super::{DragHandle, PopupDef, PopupScope, PopupState};
 
-/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 헤더 드래그 띠 — **폴백**.
-///
-/// 평상시 이 두 팝업은 뷰가 `report_header_drag_rect` 로 보고한 **실측 헤더 전체**
-/// rect 를 hit-test 에 쓴다(`PopupState::effective_drag_handle_rect`). 이 좁은 띠는
-/// **open 첫 프레임**(아직 보고 전)에만 잠깐 쓰이는 폴백이다. 헤더 좌측 절반 ×
-/// 타이틀바 높이만 덮으므로 그 프레임 한정 좌측 상단만 드래그 가능하나, 다음
-/// 프레임부터 보고 rect 로 대체돼 헤더 전체가 이동 영역이 된다. 위젯 우선 중재
-/// (`is_using_pointer()`)로 겹친 입력 클릭은 항상 우선된다.
+/// 실제 헤더 영역을 아직 보고하지 않은 첫 프레임의 드래그 영역.
+/// 다음 프레임부터 뷰가 보고한 영역을 사용하며 겹치는 위젯 입력이 우선한다.
 fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
     egui::Rect::from_min_size(
         s.pos,
@@ -27,9 +21,6 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "notifications",
                 title_key: "notification_panel.window_title",
-                // 전체화면 무대의 첫 소비자 — 타이틀바에 전체화면 버튼이 붙는다.
-                // 무대에 올라가는 것은 이 popup 이 아니라 같은 형상의 별개 콘텐츠다
-                // (`src/adapters/ui/fullscreen/notifications.rs` 모듈 문서).
                 fullscreen_stage: Some(
                     crate::adapters::ui::fullscreen::notifications::NOTIFICATIONS_STAGE_ID,
                 ),
@@ -44,8 +35,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
-                // 상태 미보유 — `engine.notifications` 를 읽기만 하고 자신의 상태를
-                // 갖지 않는다. 닫힘 시 정리할 것이 없다.
                 on_close: None,
             },
             PopupDef {
@@ -114,10 +103,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
-                // 상태 미보유 — `state.search` 는 Escape/X 클릭 경로가 draw_fn 안에서
-                // 이미 `clear()` 한다. headless(X 버튼 없음) + close_on_outside_click
-                // =false 라 그 경로들 밖에서 닫히는 길이 없다(호출부 조사 완료: 다른
-                // 트리거는 전부 `OpenPopup` 만 발화하고 close 는 발화하지 않는다).
+                // 검색 상태의 정리는 검색창의 닫기 처리에서 맡는다.
                 on_close: None,
             },
             PopupDef {
@@ -158,9 +144,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: super::file_handler_picker::PICKER_POPUP_ID,
                 title_key: "file_handler.picker.title",
                 fullscreen_stage: None,
-                // headless — 프레임이 자기 헤더를 그린다. 공통 타이틀바와 짝지으면 같은
-                // 경로가 서로 다른 두 말줄임으로 한 다이얼로그 안에 두 번 나온다
-                // (디자인 §filehandler "One header, not two").
+                // 자체 헤더가 있으므로 공통 타이틀바를 추가하지 않는다.
                 title_fn: None,
                 default_size: super::file_handler_picker::picker_default_size(),
                 sizer: Some(super::file_handler_picker::picker_sizer),
@@ -169,7 +153,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: true,
                 sticky_focus: false,
-                // 타이틀바가 없으므로 헤더 좌측 띠를 드래그 핸들로 선언한다.
                 drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: false,
                 min_size: None,
@@ -204,15 +187,11 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 타이틀바 없는 패널 — 헤더 좌측 전용 띠를 드래그 핸들로 선언.
                 drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: true,
                 min_size: Some(egui::vec2(480.0, 320.0)),
                 draw_fn: super::port_scanner::draw_port_scanner_popup,
-                // 바깥 클릭(headless + close_on_outside_click=true)으로 닫으면
-                // `PortScanState::Loading{rx}`/`Ready{rows}` 가 그대로 남는다 — 의도적
-                // 결정: 재오픈 시 이전 스캔 결과를 그대로 보여준다(초기화하지 않음).
-                // Close 버튼(draw_fn 내부)만 명시적으로 `Idle` 로 되돌린다.
+                // 바깥 클릭으로 닫으면 스캔 상태를 유지한다. 내부 Close 버튼만 Idle로 되돌린다.
                 on_close: None,
             },
             PopupDef {
@@ -220,33 +199,26 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "command_palette.heading",
                 fullscreen_stage: None,
                 title_fn: None,
-                // sizer 가 매 프레임 매칭 수로 높이를 다시 정한다 — 이 값은 sizer 가
-                // 불리기 전 한 프레임의 폴백일 뿐이라 시안 원치수를 그대로 둔다
-                // (search 49 + list maxH320 + pad12 + footer 31 = 412).
+                // 실제 높이는 sizer에서 매 프레임 검색 결과에 맞춰 계산한다.
                 default_size: egui::vec2(540.0, 412.0),
                 sizer: Some(super::command_palette::command_palette_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: true,
-                // 중앙 정렬 팔레트 — 이동/리사이즈 비활성.
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
                 draw_fn: super::command_palette::draw_command_palette_popup,
                 on_close: Some(super::command_palette::on_close_command_palette_popup),
             },
-            // DAG 목록 — tasty 에서 `PopupScope::Workspace` 를 쓰는 첫 popup.
-            // `default_scope` 를 Window 로 두는 이유: 실제 스코프는 **여는 시점**의
-            // 활성 workspace 로 결정되므로 정의 시점에는 알 수 없다. 열기 경로가
-            // `OpenPopupMode::WithScope` 로 매번 주입한다.
+            // 소속 워크스페이스는 여는 시점의 WithScope에서 지정한다.
             PopupDef {
                 id: super::dag_list::DAG_LIST_POPUP_ID,
                 title_key: "dag_list.title",
                 fullscreen_stage: None,
                 title_fn: None,
-                // sizer 가 매 open 마다 토큰(zoom 반영)에서 다시 읽는다 — 이 값은
-                // sizer 가 없을 때의 폴백일 뿐이라 시안 원치수를 그대로 둔다.
+                // sizer가 배율을 적용한 토큰으로 크기를 계산한다.
                 default_size: egui::vec2(560.0, 460.0),
                 sizer: Some(super::dag_list::dag_list_sizer),
                 default_scope: PopupScope::Window,
@@ -256,7 +228,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 headless: false,
                 sticky_focus: false,
                 drag_handle: DragHandle::TitleBar,
-                // 그래프는 넓을수록 읽기 좋다 — 사용자가 키울 수 있게 둔다.
                 resizable: true,
                 min_size: Some(egui::vec2(360.0, 280.0)),
                 draw_fn: super::dag_list::draw_dag_list_popup,
@@ -273,7 +244,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: true,
                 sticky_focus: false,
-                // 타이틀바 없는 패널 — 헤더 좌측 전용 띠를 드래그 핸들로 선언.
                 drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: true,
                 min_size: Some(egui::vec2(420.0, 320.0)),
@@ -291,7 +261,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: true,
                 sticky_focus: false,
-                // 모달 성격 — 중앙 정렬, 이동/리사이즈 없음(디자인 Scrim 위 고정 프레임).
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
@@ -398,13 +367,11 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 컨텍스트 메뉴 스타일 — 이동/리사이즈 비활성.
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
-                // 상태 미보유 — `dialogs.pending_open_preset_window` 는 App 이 drain
-                // 하는 1회성 요청 신호지 팝업 수명에 종속된 상태가 아니다.
+                // pending_open_preset_window는 App이 처리하는 요청이며 팝업이 닫힐 때 지우지 않는다.
                 on_close: None,
             },
             PopupDef {
@@ -418,16 +385,11 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 마우스 캡처 배너 "더보기" 컨텍스트 메뉴 — tools_menu 와 동일하게
-                // 이동/리사이즈 비활성.
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::mouse_capture_menu::draw_menu,
-                // 판단: `dialogs.mouse_capture_banner_menu_target` 는 닫힘 시 지워지지
-                // 않지만 `open()` 이 다음 오픈마다 무조건 덮어쓰므로(방어적 리셋이 아닌
-                // 항상-쓰기) 닫힌 채로 남는 값은 아무도 읽지 않는다 — 훅을 추가하지
-                // 않는다(이 popup 은 원본 전수조사 이후 추가돼 표에는 없었다).
+                // 다음 open에서 대상을 덮어쓰며 닫힌 상태의 대상은 읽지 않는다.
                 on_close: None,
             },
             PopupDef {
@@ -441,7 +403,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 소형 모달 — 이동/리사이즈 비활성, 중앙 정렬로 연다.
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
@@ -460,13 +421,11 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: Some(
                     super::confirm_force_detach_workspace::confirm_force_detach_workspace_sizer,
                 ),
-                // 대상 워크스페이스가 **비활성일 수 있는 것이 이 기능의 전제**다 —
-                // Workspace scope 로 두면 전환하기 전엔 안 보여 목적이 무너진다.
+                // 비활성 워크스페이스를 해제할 때도 표시해야 하므로 Window 범위를 쓴다.
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 소형 모달 — 이동/리사이즈 비활성, 중앙 정렬로 연다.
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
@@ -487,7 +446,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 중앙 정렬 모달 — 이동/리사이즈 비활성(디자인 CenteredFocused).
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,
@@ -505,7 +463,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
-                // 컨텍스트 메뉴 스타일 — 이동/리사이즈 비활성 (레일 버튼 우측 앵커).
                 drag_handle: DragHandle::None,
                 resizable: false,
                 min_size: None,

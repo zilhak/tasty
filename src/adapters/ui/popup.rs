@@ -15,8 +15,7 @@ pub(crate) mod preset_apply;
 pub(crate) mod rail_category;
 pub(crate) mod remote_attach;
 pub(crate) mod remote_tool;
-/// scrim 이 어느 rect 에 칠해지는지를 프레임을 돌려 재는 시험 — `draw` 의 순수 판정기
-/// 시험이 못 보는 "판정이 painter 까지 이어졌는가" 를 든다.
+/// 프레임을 그려 scrim의 실제 영역을 검사한다.
 #[cfg(test)]
 #[path = "popup/scrim_scope_tests.rs"]
 mod scrim_scope_tests;
@@ -26,8 +25,7 @@ pub(crate) mod transfer;
 use crate::state::AppState;
 use tasty_type_geometry::length::LogicalPx;
 
-// 참고: 기존 `PopupContent` trait는 PopupDef(데이터 지향)로 대체되었다. 새 popup을
-// 추가하려면 `popup::defs` 의 `all_defs()`에 항목을 추가하라.
+// 새 팝업은 popup::defs의 all_defs()에 등록한다.
 
 pub use crate::model::popup_kind::{PopupId, PopupScope};
 
@@ -39,20 +37,13 @@ pub enum PopupAction {
     Close,
 }
 
-/// 팝업이 자기 드래그(이동) 영역을 선언하는 방식. 타이틀바가 없어도 팝업이
-/// `PopupState`(pos/size)로부터 전용 핸들 띠를 직접 계산할 수 있게 한다.
-///
-/// 핸들 영역이 클릭/드래그 위젯과 겹쳐도 안전하다 — `PopupManager::draw` 가
-/// 콘텐츠 렌더 뒤 `is_using_pointer()` 로 **위젯 우선 중재**를 하므로, 어떤
-/// 위젯이 프레스를 가져가면 그 프레임 이동/리사이즈는 발동하지 않는다. 따라서
-/// `Region` 작성자는 헤더 띠 전체처럼 넓은 영역을 핸들로 선언해도 된다(띠 안의
-/// 검색 입력·버튼 클릭은 중재로 보호됨).
+/// 팝업 이동 영역. 콘텐츠 위젯이 포인터를 사용 중이면 이동·리사이즈를 시작하지 않으므로
+/// 검색창이나 버튼을 포함한 헤더 전체를 이동 영역으로 지정할 수 있다.
 #[derive(Clone, Copy)]
 pub enum DragHandle {
     /// 이동 불가.
     None,
-    /// 기존 동작 — 타이틀바(`title_rect`)가 핸들. headless 팝업에서는 타이틀바가
-    /// 없으므로 핸들도 없음(None 과 동일).
+    /// 타이틀바를 이동 영역으로 사용한다. headless에는 타이틀바가 없어 이동할 수 없다.
     TitleBar,
     /// 팝업이 pos/size 로부터 전용 핸들 띠를 계산. headless 팝업도 이동 가능.
     Region(fn(&PopupState) -> egui::Rect),
@@ -83,25 +74,16 @@ pub struct PopupDrawResult {
     pub closed: Vec<PopupId>,
     /// Whether the mouse is currently over any open popup.
     pub hovered: bool,
-    /// 이번 프레임에 그린 각 popup 의 `LayerId`. 중앙 집중식 z-order 강제
-    /// (`enforce_foreground_z_order`, `src/gfx/gpu/egui_bridge.rs`)가 modifier-hint
-    /// 레이어를 부모로 이들을 `Context::set_sublayer` 자식으로 묶어, popup 이 항상
-    /// modifier-hint 바로 위에 오도록 고정할 때 쓴다.
+    /// 그린 팝업 레이어. egui_bridge에서 modifier-hint 바로 위에 배치한다.
     pub layers: Vec<egui::LayerId>,
-    /// 이번 프레임에 타이틀바 전체화면 버튼이 눌린 popup 이 올리려는 무대 id.
-    /// 무대 진입은 `AppState` 소유라 매니저가 직접 열지 않고 호출부
-    /// (`popup::frame::draw_popup_layer`)에 되돌려준다 — close 와 같은 관례.
+    /// 전체화면 버튼으로 요청한 무대 ID. 실제 진입은 AppState를 가진 호출부에서 처리한다.
     pub fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId>,
-    /// 이번 프레임에 **실제로 그려진**(open + scope 가시) popup 들의 히트테스트 rect 와
-    /// z_seq. plugin popup 쪽 판정(`plugin_bridge::popup_render`)이 "내 위에 host popup
-    /// 이 이 좌표를 덮는가" 를 보려면 host 가 그 프레임에 확정한 rect 가 필요하다 —
-    /// scope 로 숨겨진 popup 은 그려지지도 않으므로 여기 담기지 않는다(숨은 popup 이
-    /// 남의 클릭을 가로채는 일이 없다).
+    /// 실제 그린 팝업의 영역과 z_seq. plugin 팝업이 위에 덮인 host 팝업을 판별할 때 쓴다.
+    /// 숨겨진 팝업은 마우스 입력을 가로채지 않도록 제외한다.
     pub hit_rects: Vec<occlusion::Occluder>,
 }
 
-/// Static, data-oriented popup definition. 등록 시점에 불변으로 고정되는 속성과
-/// 매 프레임 호출되는 draw 함수. 기존 trait 기반 `PopupContent`를 대체한다.
+/// 등록 속성과 매 프레임 그리기 함수를 담은 팝업 정의.
 pub struct PopupDef {
     pub id: PopupId,
     /// i18n 키. `t()`로 런타임 번역하여 popup title로 사용.
@@ -111,12 +93,7 @@ pub struct PopupDef {
     pub title_fn: Option<fn(&AppState, &crate::core::CoreState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
-    /// 선택적 동적 크기 계산. **매 프레임** 호출되어 `PopupState.size` 에 반영된다
-    /// (`popup::frame::draw_popup_layer` 첫 루프) — 사용자가 직접 리사이즈한 popup
-    /// (`size_user_overridden`)만 예외다. 한동안 이 줄이 "open 시점 1회" 라고 적고
-    /// 있었고, 그 서술 때문에 "검색 중 변하는 높이에는 못 쓴다" 는 판단이 한 번 내려진
-    /// 적이 있다 — `tools_menu`·`rail_category`·`command_palette` 가 매 프레임 재계산에
-    /// 이 필드를 쓰고 있었다.
+    /// 매 프레임 크기를 계산한다. 사용자가 직접 리사이즈한 동안에는 적용하지 않는다.
     pub sizer: Option<fn(&AppState, &crate::core::CoreState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
@@ -134,24 +111,11 @@ pub struct PopupDef {
     pub min_size: Option<egui::Vec2>,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
-    /// 이 popup 의 타이틀바에 **전체화면 버튼**을 노출할지 + 눌렀을 때 올릴 무대 id.
-    /// `None`(대부분의 popup)이면 버튼 자체가 없다 — 노출 여부와 대상이 한 필드라
-    /// "버튼은 있는데 갈 곳이 없다" 는 상태를 만들 수 없다.
-    ///
-    /// 무대에 올라가는 것은 이 popup 인스턴스가 **아니라** 같은 형상으로 구성된
-    /// 별개 콘텐츠다(`docs/design/systems/fullscreen-stage.md` §모델). 버튼을 눌러도
-    /// 원본 popup 은 열린 채 남는다 — 무대가 덮으므로 보이지 않을 뿐이다.
-    ///
-    /// headless popup(타이틀바가 없다)은 이 값과 무관하게 버튼이 그려지지 않는다.
+    /// 전체화면 버튼으로 열 무대 ID. None이거나 headless면 버튼이 없다.
+    /// 무대는 별도 콘텐츠이며 원본 팝업은 열린 채 그 아래 남는다.
     pub fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
-    /// 닫힘 뒷정리 훅. `PopupManager::close()`(닫는 경로 전부가 거치는 유일한
-    /// 지점)를 통해 어떤 경로로 닫히든 정확히 1회 발화한다(`closed_queue` +
-    /// `popup::frame` 의 `drain_on_close_hooks` 참고) — draw_fn 이 `Close` 를 반환하는
-    /// 경로나 X 버튼/외부 클릭에만 붙던 기존 뒷정리(`draw_popups`)와 달리
-    /// `UiIntent::ClosePopup`/`TogglePopup`/App 직접 호출/debug IPC 경로도 모두
-    /// 잡는다. 그리는 게 없으므로 `&mut Ui` 가 아니라 `&egui::Context` 를 받는다
-    /// (`remote_attach`/`remote_tool` 의 `clear_ui(ctx)` 처럼 egui temp memory
-    /// 정리가 필요한 훅이 있어서 — `Ui` 로는 접근 불가).
+    /// 열린 팝업이 close()를 통해 닫히면 closed_queue에 기록하고 frame에서 훅을 호출한다.
+    /// egui 임시 상태를 지울 수 있도록 Context를 받는다.
     pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
 }
 
@@ -198,12 +162,8 @@ pub struct PopupState {
     min_size: egui::Vec2,
     /// 리사이즈 진행 중이면 잡은 엣지 조합. `None`이면 리사이즈 중 아님.
     resizing: Option<ResizeEdges>,
-    /// host↔plugin popup 통합 z-order 순번(`tasty_host_plugin::next_popup_z_seq`).
-    /// open/bring-to-front 시마다 갱신되며, plugin popup(`PopupInstance.z_seq`)과 같은
-    /// 전역 카운터를 공유해 서로 다른 매니저의 popup 을 하나의 순서로 비교할 수 있게
-    /// 한다(`docs/design/systems/popup.md` 규칙 7). `popups: Vec` 안 위치 자체도
-    /// z-order 지만(호스트 popup 끼리는 그것으로 충분) 이 필드는 plugin popup 과의
-    /// cross-manager 비교에만 쓰인다.
+    /// host와 plugin 팝업이 공유하는 전역 순번. 열거나 맨 앞으로 올릴 때 갱신한다.
+    /// host 팝업끼리는 Vec 순서로 비교하고, 서로 다른 매니저 사이는 이 값으로 비교한다.
     z_seq: u64,
     /// 리사이즈 시작 시점의 팝업 rect (드래그 누적 계산 기준).
     resize_start_rect: egui::Rect,
@@ -215,13 +175,7 @@ pub struct PopupState {
     fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
 }
 
-/// Popup 타이틀바 높이 — `Theme.item_height_interactive` (디자인 28px) 의 round_ui.
-/// `with_colors_and_zoom` 가 토큰 자체에 host UI zoom 을 박으므로 본 함수도
-/// 매 호출마다 현재 zoom 이 반영된 높이를 반환한다.
-///
-/// 논리 px 라 `LogicalPx` 를 반환한다. `round_ui` 는 egui 트레이트라 `f32` 위에서만
-/// 도므로 그 한 줄에서만 벗기고 곧바로 다시 싼다 — 호출처가 벗기지 않게 하는 것이
-/// 이 시그니처의 목적이다.
+/// UI 배율을 적용한 Theme.item_height_interactive를 반올림한 타이틀바 높이.
 pub fn title_bar_height() -> LogicalPx {
     use egui::emath::GuiRounding as _;
     LogicalPx(
@@ -232,11 +186,7 @@ pub fn title_bar_height() -> LogicalPx {
     )
 }
 
-/// Popup 콘텐츠 영역 inner margin — `Theme.spacing_xs` (디자인 4px) 의 round_ui.
-///
-/// 논리 px 라 `LogicalPx` 를 반환한다. 사유는 [`title_bar_height`] 와 같다 — 둘은
-/// popup 높이를 만드는 한 식에서 더해지므로 시그니처도 함께 넓혀야 그 식이 타입을
-/// 유지한다.
+/// Theme.spacing_xs를 반올림한 팝업 내부 여백.
 pub fn content_margin() -> LogicalPx {
     use egui::emath::GuiRounding as _;
     LogicalPx(crate::theme::theme().spacing_xs.value().round_ui())
@@ -253,13 +203,8 @@ fn header_drag_rect_id(popup_id: PopupId) -> egui::Id {
     egui::Id::new("popup.header_drag_rect").with(popup_id)
 }
 
-/// 뷰가 자신의 실측 헤더 rect(전체폭 × 실제 헤더 높이)를 egui temp memory 에 보고한다.
-///
-/// headless 패널 팝업(port_scanner / remote_tool)은 헤더 높이가 서로 다르고 host UI
-/// zoom 에도 좌우된다. 정적 리터럴로 추정하는 대신 각 뷰가 렌더 시점의 실제 rect 를
-/// 여기로 보고하면, `PopupManager::draw` 의 hit-test 가 이 rect 를 드래그 핸들로
-/// 우선 사용해 헤더 전체를 이동 영역으로 만든다. 매 프레임 재보고되므로 stale 위험이
-/// 낮고, popup id 로 네임스페이스해 팝업 간 rect 가 섞이지 않는다.
+/// 뷰가 그린 헤더 영역을 팝업 ID별로 보고한다. 크기·배율에 따라 달라지는 영역을
+/// hit-test에서 이동 손잡이로 사용하므로 매 프레임 보고해야 한다.
 pub fn report_header_drag_rect(ctx: &egui::Context, popup_id: PopupId, rect: egui::Rect) {
     ctx.memory_mut(|m| m.data.insert_temp(header_drag_rect_id(popup_id), rect));
 }
@@ -269,24 +214,15 @@ fn reported_header_drag_rect(ctx: &egui::Context, popup_id: PopupId) -> Option<e
     ctx.memory(|m| m.data.get_temp(header_drag_rect_id(popup_id)))
 }
 
-/// `draw_fn` 내부에서 egui 네이티브 API(`popup_below_widget` 등)로 그려지는 자식
-/// 오버레이(드롭다운) rect 레지스트리를 담는 egui temp memory Id. 전역 단일 슬롯 —
-/// 개별 오버레이는 `overlay_key` 로 서로 구분되어 report 호출 순서와 무관하게
-/// 클로버링되지 않는다(예: port_scanner 는 state_filter/column_chooser 두 드롭다운을
-/// 매 프레임 함께 report 한다).
+/// 팝업 안의 드롭다운 영역을 저장할 공용 슬롯. overlay_key로 각각 구분한다.
 fn child_overlay_registry_id() -> egui::Id {
     egui::Id::new("popup.child_overlay_registry")
 }
 
 type ChildOverlayMap = std::collections::HashMap<&'static str, (PopupId, egui::Rect)>;
 
-/// 자식 오버레이(드롭다운 등)의 실측 rect 를 보고한다. `PopupManager::draw` 의
-/// outside-click/hover 판정이 부모 `popup_rect` 뿐 아니라 이 rect 도 히트테스트에
-/// 포함해, 드롭다운이 팝업 경계를 넘어가도 그 위 클릭이 "바깥 클릭"으로 오판되지
-/// 않는다. `overlay_key` 는 오버레이별 고유 문자열(예: 드롭다운의 egui popup id
-/// 문자열) — 같은 `popup_id` 에 오버레이가 여러 개(port_scanner 의 state_filter +
-/// column_chooser)여도 서로 덮어쓰지 않는다. 오버레이가 닫히면 반드시 `None` 으로
-/// 보고해 stale rect 가 남지 않게 한다.
+/// 드롭다운이 부모 밖으로 나와도 바깥 클릭으로 처리하지 않도록 실제 영역을 보고한다.
+/// 같은 팝업의 여러 드롭다운은 고유 overlay_key로 구분한다. 닫히면 None을 보고해 지운다.
 pub fn report_child_overlay_rect(
     ctx: &egui::Context,
     popup_id: PopupId,
@@ -308,13 +244,8 @@ pub fn report_child_overlay_rect(
     });
 }
 
-/// `popup_id` 소유의 자식 오버레이(`overlay_key`)가 지금 열려 있는가.
-///
-/// Esc 우선순위 판정용이다 — 드롭다운이 열려 있으면 Esc 는 그것만 닫고 부모 popup 은
-/// 유지해야 하는데, 부모의 Esc 가드는 프레임 앞머리(본문을 그리기 전)에서 키를 읽으므로
-/// 드롭다운이 자기 Esc 를 소비할 기회를 얻기 전에 창을 닫아버린다. 레지스트리 등록
-/// 자체가 "지금 열려 있음" 이라 별도 플래그 없이 여기서 양보 여부를 판정할 수 있다
-/// (rect 는 매 프레임 report 되고, 닫히면 `None` 으로 지워진다).
+/// 자식 드롭다운이 열려 있는지 확인한다. 부모의 Escape 처리가 본문보다 먼저 실행되므로
+/// 이 값이 true면 부모를 닫지 않고 드롭다운에 Escape 처리를 맡긴다.
 pub fn child_overlay_open(
     ctx: &egui::Context,
     popup_id: PopupId,
@@ -356,8 +287,7 @@ impl PopupState {
             sticky_focus: false,
             request_center: false,
             request_top: false,
-            // 기본값 TitleBar — `register_def` 미경유로 직접 생성되는 팝업
-            // (settings keybinding_conflict 등 타이틀바 팝업)의 기존 드래그 동작 보존.
+            // 직접 생성한 타이틀바 팝업도 이동할 수 있게 한다.
             drag_handle: DragHandle::TitleBar,
             resizable: false,
             min_size: default_size,
@@ -365,8 +295,6 @@ impl PopupState {
             z_seq: 0,
             resize_start_rect: egui::Rect::ZERO,
             size_user_overridden: false,
-            // 기본값 None — `register_def` 미경유로 직접 생성되는 팝업에는 버튼이
-            // 붙지 않는다(기존 타이틀바 렌더 무변경).
             fullscreen_stage: None,
         }
     }
@@ -450,20 +378,15 @@ impl PopupState {
         }
     }
 
-    /// hit-test 가 실제로 쓰는 이동 핸들 rect. 뷰가 `report_header_drag_rect` 로
-    /// 보고한 실측 헤더 rect 가 있으면 그것을(헤더 전체), 없으면 정적 선언
-    /// (`drag_handle_rect`)으로 폴백한다. 보고는 hit-test 보다 뒤(콘텐츠 렌더 시점)라
-    /// 이번 프레임엔 직전 프레임 값을 쓴다(1프레임 지연, 사실상 인지 불가). open
-    /// 첫 프레임엔 보고가 없어 기존 핸들 띠로 폴백한다.
+    /// 뷰가 보고한 실제 헤더 영역을 우선 사용한다. 보고는 콘텐츠를 그린 뒤이므로
+    /// 직전 프레임 값을 읽으며, 첫 프레임에는 drag_handle_rect로 계산한다.
     fn effective_drag_handle_rect(&self, ctx: &egui::Context) -> Option<egui::Rect> {
         reported_header_drag_rect(ctx, self.id).or_else(|| self.drag_handle_rect())
     }
 
     fn content_rect(&self) -> egui::Rect {
         let popup = self.popup_rect();
-        // 디자인상 컨테이너 패딩이 0 이고 각 구역이 자체 패딩을 가지는 popup 은
-        // content_margin 을 0 으로 둬 draw_fn 이 popup 가장자리부터 구역별 패딩을
-        // 직접 준다 (design-parity: 통짜 패딩으로 뭉개지 않기 위함).
+        // 구역별로 여백을 주는 팝업은 공통 내부 여백을 적용하지 않는다.
         let margin = if matches!(
             self.id,
             "remote_tool"
@@ -493,9 +416,6 @@ impl PopupState {
 
     fn close_btn_rect(&self) -> egui::Rect {
         let title = self.title_rect();
-        // 버튼 한 변과 우측 끝 여백. 종전에는 둘 다 이 함수 안의 리터럴(20.0 · 4.0)
-        // 이었다 — 갤러리에는 이미 이름이 있었는데 본체가 그것을 모르고 있었다.
-        // 배율을 먹이는 이유는 `POPUP_TITLE_BTN_SIZE` 의 doc 에 있다(그릇과 내용).
         let th = crate::theme::theme();
         let size = super::zoomed_px(&th, tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE).value();
         let edge_pad = th.spacing_xs.value();
@@ -503,12 +423,8 @@ impl PopupState {
         egui::Rect::from_center_size(center, egui::vec2(size, size))
     }
 
-    /// 타이틀바 전체화면 버튼 rect. 버튼이 없으면 `None` — **두 조건 중 하나라도**
-    /// 걸리면 그려지지 않는다: headless(타이틀바 자체가 없다) / 무대 미지정.
-    ///
-    /// close 버튼과 같은 크기로 그 **왼쪽**에 [`title_btn_gap`] 만큼 띄워 놓는다
-    /// (close 는 타이틀바 우측 끝 고정이라 이 rect 가 생겨도 움직이지 않는다 —
-    /// 버튼을 달지 않은 popup 의 타이틀바가 변하지 않는 이유).
+    /// 타이틀바가 있고 무대를 지정했을 때 전체화면 버튼 영역을 반환한다.
+    /// 닫기 버튼 왼쪽에 배치하며 닫기 버튼 위치는 바꾸지 않는다.
     fn fullscreen_btn_rect(&self) -> Option<egui::Rect> {
         if self.headless || self.fullscreen_stage.is_none() {
             return None;
@@ -523,9 +439,7 @@ impl PopupState {
         ))
     }
 
-    /// 제목 텍스트가 침범하면 안 되는 **우측 버튼군의 왼쪽 경계**. 버튼이 하나면
-    /// close 버튼의 좌변, 둘이면 전체화면 버튼의 좌변이다 — 제목 elide 가용 폭이
-    /// 이 값을 기준으로 잡히므로 버튼이 늘면 제목이 그만큼 일찍 줄어든다.
+    /// 제목을 줄일 기준인 오른쪽 버튼 영역의 왼쪽 경계.
     fn title_buttons_left_x(&self) -> f32 {
         self.fullscreen_btn_rect()
             .unwrap_or_else(|| self.close_btn_rect())
@@ -565,12 +479,8 @@ impl PopupManager {
         }
     }
 
-    /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
-    /// 이후 locale이 바뀌면 draw 루프에서 재번역된다(draw_popups 참고).
-    ///
-    /// `ui_zoom` 은 host UI zoom 배율 (medium=1.0). sizer 가 없는 popup 의 초기
-    /// default_size 에만 곱해진다 — sizer 가 있는 popup 은 sizer 가 매 프레임
-    /// 직접 zoomed token 으로 재계산하므로 추가 곱셈하면 이중 곱셈이 된다.
+    /// 정의를 등록하고 제목을 번역한다. 언어 변경 시 draw에서 다시 번역한다.
+    /// sizer가 없을 때만 default_size에 ui_zoom을 곱한다. sizer는 배율을 직접 적용한다.
     pub fn register_def(&mut self, def: &PopupDef, ui_zoom: f32) {
         if self.popups.iter().any(|p| p.id == def.id) {
             return;
@@ -580,7 +490,6 @@ impl PopupManager {
         } else {
             def.default_size * ui_zoom
         };
-        // min_size 도 sizer 없는 팝업은 default 와 동일하게 ui_zoom 을 곱해 baseline 정합.
         let resolved_min = def.min_size.unwrap_or(def.default_size);
         let resolved_min = if def.sizer.is_some() {
             resolved_min
@@ -682,13 +591,7 @@ impl PopupManager {
         }
     }
 
-    /// Close a popup by id.
-    ///
-    /// **모든 close 경로가 거치는 유일한 지점**(`grep "open = false"` 1건) —
-    /// `on_close` 훅 발화 지점이기도 하다. 이미 닫혀 있던 popup 에 다시 호출되면
-    /// (예: 같은 프레임에 여러 경로가 겹치는 경우) 중복 발화를 막기 위해
-    /// `closed_queue` 에 push 하지 않는다 — `p.open` 이 이 호출 **직전** 이미
-    /// `false` 였다면 이번 호출은 실질적인 전이가 아니다.
+    /// 열린 팝업을 닫고 closed_queue에 기록한다. 이미 닫혔으면 중복 기록하지 않는다.
     pub fn close(&mut self, id: PopupId) {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             let was_open = p.open;
@@ -704,13 +607,8 @@ impl PopupManager {
         }
     }
 
-    /// 진행 중인 포인터 제스처(이동 드래그 · 테두리 리사이즈)를 **확정하지 않고**
-    /// 폐기한다. popup 을 닫지 않고 상태도 되돌리지 않는다 — 지금까지 따라온 위치/
-    /// 크기는 그대로 두고 "잡고 있음" 만 푼다.
-    ///
-    /// 전체화면 무대처럼 popup 이 그려지지 않는 프레임으로 전환될 때 필요하다.
-    /// 드래그/리사이즈 해제는 `draw()` 안에서 release 를 보고 일어나는데, 그리지
-    /// 않는 동안에는 그 코드가 돌지 않아 popup 이 커서에 붙어 다니는 상태로 남는다.
+    /// 위치·크기는 유지하고 이동·리사이즈만 끝낸다. 전체화면 무대 등으로 팝업을
+    /// 그리지 않는 동안에는 draw가 포인터 해제를 처리하지 못하므로 전환 전에 호출한다.
     pub fn cancel_pointer_interactions(&mut self) {
         for p in &mut self.popups {
             p.dragging = false;
@@ -718,10 +616,7 @@ impl PopupManager {
         }
     }
 
-    /// `closed_queue` 를 비우고 반환한다. `on_close` 훅 drain(`popup::frame`)이
-    /// 프레임당 1회 호출 — 재진입(훅이 다른 popup 을 닫음)을 지원하려면 호출자가
-    /// 반환값을 순회하는 동안 `state.popups` 를 다시 만질 수 있어야 하므로, 이 fn
-    /// 자체는 순회를 하지 않고 `mem::take` 만 한다.
+    /// 닫힌 팝업 목록을 꺼내 비운다. 호출부가 훅을 실행하며 다른 팝업도 닫을 수 있다.
     pub fn take_closed_queue(&mut self) -> Vec<PopupId> {
         std::mem::take(&mut self.closed_queue)
     }
@@ -745,12 +640,8 @@ impl PopupManager {
             .any(|p| p.id == id && p.open && p.scope_visible && p.focused)
     }
 
-    /// 지금 키보드 포커스를 가진 popup — 그 id 와 "바깥 클릭에 닫히는가" 를 함께 낸다.
-    ///
-    /// 키보드 탈출구(Escape)가 쓰는 조회다. **포커스된 것 하나만** 본다: 바깥 클릭은
-    /// 좌표를 가지므로 "그 점을 안 담은 popup 전부" 를 가리킬 수 있지만, Escape 에는
-    /// 좌표가 없다. 좌표 없는 키를 좌표 있는 제스처와 같은 범위로 쓰면 사용자가 가리킨
-    /// 적 없는 popup 까지 닫힌다.
+    /// Escape 대상인 포커스된 팝업 하나와 바깥 클릭 시 닫기 여부를 반환한다.
+    /// Escape에는 좌표가 없으므로 바깥 클릭처럼 여러 팝업을 한꺼번에 닫지 않는다.
     pub fn focused_dismissal_target(&self) -> Option<(PopupId, bool)> {
         self.popups
             .iter()
@@ -771,8 +662,7 @@ impl PopupManager {
         self.popups.iter().any(|p| p.open && p.scope_visible)
     }
 
-    /// Bring a popup to the front (topmost z-order). 클릭에 의한 승격도 open() 계열과
-    /// 같은 전역 순번을 받아야 plugin popup 과의 비교가 정확해진다(규칙 7 "클릭된 것이 앞").
+    /// 맨 앞으로 올리고 host·plugin 공용 순번도 갱신한다.
     fn bring_to_front(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             let mut popup = self.popups.remove(i);
@@ -781,18 +671,12 @@ impl PopupManager {
         }
     }
 
-    /// 현재 열려 있는 host popup 중 가장 큰 z_seq(=가장 최근에 열리거나 클릭된 것).
-    /// plugin popup 쪽 z_seq 최댓값과 비교해 셸/콘텐츠 렌더 순서를 정하는 데 쓰인다
-    /// (`docs/design/systems/popup.md` 규칙 7, `gfx/gpu/egui_bridge.rs`).
+    /// 열린 host 팝업의 가장 큰 z_seq. plugin 팝업과 표시 순서를 비교할 때 쓴다.
     pub fn max_open_z_seq(&self) -> Option<u64> {
         self.popups.iter().filter(|p| p.open).map(|p| p.z_seq).max()
     }
 
-    /// 열려 있는 popup 의 `(z_seq, 화면 rect)`. 닫혀 있거나 없으면 `None`.
-    ///
-    /// `PopupState` 내부(z_seq / `popup_rect`)를 밖으로 넓히지 않고 debug 관찰면
-    /// (`debug.host_popup.list`)와 설정 창 popup 끼리의 Esc 소유 판정에 필요한 만큼만
-    /// 내주는 좁은 접근자다.
+    /// 열린 팝업의 순번과 화면 영역. 없거나 닫혔으면 None이다.
     pub fn open_geometry(&self, id: PopupId) -> Option<(u64, egui::Rect)> {
         self.popups
             .iter()
@@ -862,11 +746,7 @@ mod tests {
         assert_eq!(m.focused_dismissal_target(), Some(("a", false)));
     }
 
-    /// ⓪ **Escape 로 안 풀려야 하는 칸.** 열려 있지만 포커스가 없는 popup 은 대상이 아니다.
-    ///
-    /// 이 칸이 없으면 "다 풀린다" 와 "전부 닫아버린다" 가 같은 모양이 된다. 그리고 이것이
-    /// Escape 를 바깥 클릭과 다르게 만드는 유일한 지점이다 — 바깥 클릭은 좌표를 가지므로
-    /// 그 점을 안 담은 popup 전부를 가리킬 수 있지만, Escape 에는 좌표가 없다.
+    /// 포커스 없는 팝업은 Escape로 닫을 대상이 아니다.
     #[test]
     fn an_open_but_unfocused_popup_is_not_a_dismissal_target() {
         let m = managed(vec![entry("a", true, false, true)]);
@@ -882,16 +762,8 @@ mod tests {
         assert!(!m.has_focused());
     }
 
-    /// Escape 와 바깥 클릭이 **갈라지지 않는다**는 전제를 고정한다.
-    ///
-    /// 둘의 의미를 같다고 적어 두었지만, 실제로 한 곳에서 갈릴 수 있다: `sticky_focus` 인
-    /// popup 은 바깥 클릭에 포커스를 **안 놓는다**. 그런 popup 이 `close_on_outside_click`
-    /// 까지 거짓이면 바깥 클릭은 아무것도 안 하는데 Escape 는 포커스를 놓아, 같다고 적은
-    /// 두 제스처가 다른 일을 한다.
-    ///
-    /// 지금 그 조합은 **없다**(sticky 인 것은 하나뿐이고 그것은 바깥 클릭에 닫힌다). 없다는
-    /// 사실이 문서와 주석의 근거이므로, 누가 그 조합을 새로 만들면 **여기서 걸린다.**
-    /// 값이 없으면 전제는 조용히 낡는다.
+    /// sticky_focus와 close_on_outside_click=false를 함께 쓰면 바깥 클릭과 Escape의
+    /// 포커스 해제 동작이 달라진다. 현재 등록에는 이 조합이 없는지 검사한다.
     #[test]
     fn no_popup_is_both_sticky_focused_and_immune_to_an_outside_click() {
         let offenders: Vec<&str> = defs::all_defs()
@@ -918,8 +790,6 @@ mod tests {
         assert_eq!(m.focused_dismissal_target(), Some(("focused", false)));
     }
 
-    /// 버튼이 늘어도 **close 버튼은 움직이지 않는다** — 버튼을 달지 않은 popup 의
-    /// 타이틀바가 이전과 같아야 한다는 요구를 rect 수준에서 고정한다.
     #[test]
     fn close_button_rect_is_untouched_by_the_fullscreen_button() {
         assert_eq!(
@@ -944,7 +814,6 @@ mod tests {
             with.title_buttons_left_x(),
             close.min.x - close.width() - title_btn_gap()
         );
-        // 두 버튼은 겹치지 않는다.
         assert!(with.fullscreen_btn_rect().unwrap().max.x <= close.min.x);
     }
 
@@ -954,7 +823,6 @@ mod tests {
         let mut mgr = PopupManager::new();
         mgr.register(dummy(false));
 
-        // 아직 열지 않은 상태에서 close() — 중복 발화 방지 가드가 push 를 막아야 한다.
         mgr.close(DUMMY_ID);
         assert!(mgr.take_closed_queue().is_empty());
 
@@ -963,8 +831,6 @@ mod tests {
         assert_eq!(mgr.take_closed_queue(), vec![DUMMY_ID]);
     }
 
-    /// 이미 닫힌 popup 에 close() 를 다시 호출해도 큐가 다시 채워지지 않는다
-    /// (같은 프레임에 여러 경로가 겹쳐 호출돼도 훅이 중복 발화하지 않아야 함).
     #[test]
     fn close_on_already_closed_popup_does_not_repush() {
         let mut mgr = PopupManager::new();
@@ -977,8 +843,6 @@ mod tests {
         assert!(mgr.take_closed_queue().is_empty());
     }
 
-    /// `take_closed_queue()` 는 호출 시점의 큐 내용을 비워서 반환한다 — 연속
-    /// 호출 시 두 번째는 항상 빈 벡터.
     #[test]
     fn take_closed_queue_drains() {
         let mut mgr = PopupManager::new();
@@ -990,10 +854,7 @@ mod tests {
         assert!(mgr.take_closed_queue().is_empty());
     }
 
-    /// close 경로 2(외부 클릭) — `PopupManager::draw()` 자체의 포인터 처리가
-    /// `self.close(id)` 를 거쳐 `closed_queue` 를 채우는지 확인
-    /// (`popup/draw.rs` 의 "Apply close" 블록). 이 경로는 `defs::all_defs()` 나
-    /// draw_fn 과 무관하게 매니저 내부에서만 일어나므로 더미 popup 으로 충분하다.
+    /// 바깥 클릭으로 닫혀도 closed_queue에 기록되는지 실제 draw로 확인한다.
     #[test]
     fn outside_click_close_path_pushes_to_queue() {
         let mut mgr = PopupManager::new();

@@ -15,7 +15,6 @@ pub(crate) fn draw_notification_content_inner(
 ) {
     let th = theme::theme();
 
-    // Header with mark-all-read button
     ui.horizontal(|ui| {
         let unread = engine.notifications.unread_count();
         ui.label(
@@ -37,7 +36,6 @@ pub(crate) fn draw_notification_content_inner(
     });
     ui.separator();
 
-    // Scrollable notification list (newest first)
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .drag_to_scroll(false)
@@ -94,8 +92,7 @@ pub(crate) fn draw_notification_content_inner(
                 let bg = if *read {
                     egui::Color32::TRANSPARENT
                 } else {
-                    // unread 알림 항목 배경: theme blue 의 살짝 깔린 톤.
-                    // 대응 토큰 없음 — 값에 이름만 둔다.
+                    // 대응 토큰이 없는 읽지 않은 알림 배경색.
                     const UNREAD_ROW_BG_ALPHA: u8 = 20;
                     crate::theme::theme()
                         .blue

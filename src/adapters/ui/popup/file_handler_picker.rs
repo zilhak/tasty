@@ -1,22 +1,7 @@
-//! 파일 핸들러 선택 popup — "Open file with…".
-//!
-//! 디자인 canonical: `gallery/overlays-dialogs.jsx` §filehandler 10 Spec +
-//! `gallery/overlays-shared.jsx` 의 `FileHandlerFrame`. 갤러리 specimen 은
-//! `crates/tasty-gallery/src/catalog/components/file_handler_picker.rs`(gallery-first —
-//! 거기서 시각 확정 후 여기 전사). 두 자리가 공유하는 것은 `tasty_ui_widgets::tokens` 의
-//! `FH_*` 치수뿐이고 코드는 공유하지 않는다.
-//!
-//! 형상: 420px **headless** 모달. 프레임이 자기 헤더를 그려 경로가 **한 번만** 나온다
-//! (공통 타이틀바와 짝지으면 같은 경로가 서로 다른 두 말줄임으로 두 번 잘린다). 본문은
-//! `Suggested` / `All handlers` 와 `Recent` 두 그룹이 **한 목록** 안에 있고, 선택은 두
-//! 그룹을 가로질러 하나다. footer 는 Cancel / Open 뿐 — picker 는 **순수 dispatcher** 라
-//! 1회 열고 아무것도 저장하지 않는다.
-//!
-//! 행의 글리프와 이름은 handler 모델에 **없다**(`FileHandler { id, detector, priority,
-//! owner, action, disabled }`). 둘 다 도출한다 — 글리프는 action 이 여는 surface kind 에서
-//! ([`kind_glyph`]), 이름은 선언된 표시명이거나 id 의 마지막 `/` 뒤 조각에서
-//! ([`id_local_segment`]).
-//! 둘째 줄이 출처 낱말 + 전체 id(앞자름)를 들어, id 는 행마다 정확히 한 번 나온다.
+//! 파일을 열 핸들러 선택. 후보와 최근 항목은 같은 목록에서 하나만 선택한다.
+//! 이번 열기에만 적용하며 핸들러를 등록하거나 기본값을 저장하지 않는다.
+//! 자체 헤더로 경로를 한 번만 표시한다. 아이콘은 surface kind에서, 이름은 선언된 표시명이나 ID에서 가져온다.
+//! 갤러리 specimen과 FH_* 치수는 공유하지만 렌더 코드는 별개다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::file_handler as fh_model;
@@ -35,19 +20,8 @@ use crate::theme::{self, Theme};
 
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
-// ── 프레임 고정 치수 ────────────────────────────────────────────────────────
-//
-// 폭·패딩·상한은 전부 `tasty_ui_widgets::tokens` 의 `FH_*`(갤러리 specimen 과 단일 출처).
-//
-// 아래 넷은 **줄높이 추정치**다 — 레이아웃을 정하는 시점엔 galley 가 아직 없어 폰트
-// metrics 를 못 읽는다(sizer 는 `egui::Ui` 없이 불린다). 그래서 디자인 값이 아니고
-// 공용 `tokens.rs` 에 올리지 않는다.
-//
-// **다만 "sizer 전용" 은 아니다 — 넷 다 화면에 나오는 치수를 정한다.** 헤더·footer 는
-// 이 값들로 밴드 rect 를 할당하고(`header_h` · `footer_h` → `allocate_exact_size`),
-// 제목은 `FH_HEADER_PAD_TOP + TITLE_LINE_H` 를 그리기 좌표로 직접 쓰며, 목록 높이는
-// `picker_size_for` 를 거쳐 팝업 창 자체의 크기가 된다. 추정이 모자란 만큼은 목록이
-// 스크롤로 흡수한다(`FH_LIST_MAX_HEIGHT`).
+// FH_* 치수는 공용 토큰을 사용한다. 아래 값은 Ui 없이 계산하는 줄 높이 추정치다.
+// 팝업 크기와 실제 헤더·푸터 영역에도 사용하며 목록의 초과분은 스크롤로 처리한다.
 
 /// 제목 행의 공칭 높이(제목 14 line ≈ 20, Tag 16 보다 크다).
 const TITLE_LINE_H: LogicalPx = LogicalPx(20.0);
@@ -58,9 +32,7 @@ const BODY_LINE_H: LogicalPx = LogicalPx(16.0);
 /// empty 블록 글리프의 공칭 높이 = `icon_glyph_size_md`.
 const EMPTY_GLYPH_H: LogicalPx = LogicalPx(16.0);
 
-// ── props / action ─────────────────────────────────────────────────────────
-
-/// 목록 한 행의 화면 데이터. 도출(F2/F3)은 wrapper 가 끝내고 view 는 그리기만 한다.
+/// 호출부에서 준비한 핸들러 한 행의 표시 정보.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileHandlerPickerEntryView {
     /// handler id 원문. 둘째 줄에 앞자름으로 들어간다.
@@ -125,9 +97,7 @@ pub enum FileHandlerPickerAction {
     OpenSettings,
 }
 
-// ── 도출 규칙 (F2 / F3) — 갤러리 specimen 과 같은 판정 ────────────────────────
-
-/// F2 — surface kind → 행 글리프. 모르는 kind 는 `file`.
+/// surface kind에 맞는 아이콘. 모르면 file 아이콘을 사용한다.
 pub fn kind_glyph(kind: Option<&str>) -> icons::Icon {
     match kind {
         Some("markdown") => icons::MARKDOWN,
@@ -143,7 +113,7 @@ pub fn kind_glyph(kind: Option<&str>) -> icons::Icon {
     }
 }
 
-/// F3 — 선언된 이름이 없을 때 쓰는 이름: id 의 마지막 `/` 뒤 조각(없으면 id 통째).
+/// 선언된 이름이 없으면 ID의 마지막 / 뒤 부분을 사용한다.
 pub fn id_local_segment(id: &str) -> &str {
     match id.rfind('/') {
         Some(i) => &id[i + 1..],
@@ -151,15 +121,8 @@ pub fn id_local_segment(id: &str) -> &str {
     }
 }
 
-/// 헤더 경로가 이번 프레임에 쓸 수 있는 **문자 예산** — mono 한 칸이 실제로 깔리는 폭을
-/// 재서 구한다. 디자인이 정한 것은 개수가 아니라 측정이고, 못 잴 때만 파생 상한으로
-/// 떨어진다 (`tasty_ui_widgets::file_handler::target_budget_chars`).
-///
-/// 재는 것은 **글자 하나의 폭이 아니라 한 글자 늘 때의 증분**이다. egui 는 레이아웃에서
-/// 글리프 advance 를 정수 픽셀로 반올림하므로 둘이 다르다 — D2Coding 11px 에서 `"0"`
-/// 한 글자는 5.5625px 인데 `"00"` 은 11.5625px 다(증분 6.0). 앞의 값으로 나누면 예산이
-/// 70 자로 나오고, 그 70 자는 깔리면 419.56px 라 390px 라인 박스를 넘겨 painter 가
-/// 잘라낸다. 모델이 "들어간다" 고 판정한 경로가 화면에서는 잘리는 상태라 눈에 안 띈다.
+/// 경로에 들어갈 문자 수를 폰트 폭으로 계산한다. 단일 글리프 폭이 아니라
+/// "00"과 "0"의 폭 차이를 사용해 egui의 정수 픽셀 advance 반올림을 반영한다.
 fn target_budget(ui: &egui::Ui, th: &Theme) -> usize {
     let font = egui::FontId::monospace(th.font_size_caption.value());
     let one = text_w(ui, "0", &font, egui::Color32::PLACEHOLDER);
@@ -167,7 +130,7 @@ fn target_budget(ui: &egui::Ui, th: &Theme) -> usize {
     fh_model::target_budget_chars(LogicalPx(two - one))
 }
 
-/// Recent 행 "언제" 조각의 구간 — 확정 디자인의 어휘 6 단계.
+/// 최근 사용 시각의 표시 구간.
 ///
 /// | 경과 | 표시 |
 /// |---|---|
@@ -178,8 +141,7 @@ fn target_budget(ui: &egui::Ui, th: &Theme) -> usize {
 /// | 2–7 d | `{n}d ago` (7 일에서 천장) |
 /// | ≥ 7 d | `YYYY-MM-DD` |
 ///
-/// `n` 은 정수 내림이다. **`{n}w ago` · `{n}mo ago` 는 만들지 않는다** — 일주일이 넘으면
-/// 수가 핸들러를 고르는 데 도움이 안 되고, 절대 날짜는 10 자로 유계이며 번역이 필요 없다.
+/// n은 내림한다. 일주일 이상은 길이가 일정한 날짜로 표시한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhenBucket {
     JustNow,
@@ -226,16 +188,8 @@ pub fn relative_when(now_secs: i64, used_at: i64) -> String {
     }
 }
 
-/// `≥ 7 d` 의 절대 날짜 — **번역 키가 없다.**
-///
-/// i18n 규칙("모든 UI 문자열은 `t()` 키")의 의식적인 예외다. 사유는 값의 성질이다:
-/// `YYYY-MM-DD` 는 숫자와 하이픈뿐이라 **로케일 중립**이고, ko/ja 에 옮길 자연어가
-/// 없으며, 복수형 규칙도 없다. 키를 만들면 세 파일이 같은 포맷 문자열을 세 번 들고
-/// 그중 하나가 갈릴 자리만 생긴다. 열 폭을 이 어휘로 예약한 것도 같은 이유다 —
-/// 10 자로 유계인 것이 이 갈래를 고른 근거의 절반이다.
-///
-/// 변환이 실패하면(표현 못 할 timestamp) 빈 칸이다. 열이 예약돼 있어 레이아웃은 안
-/// 움직이고, 틀린 날짜를 보여주는 것보다 아무것도 안 보여주는 쪽이 낫다.
+/// 일주일 이상 지난 기록은 숫자로 된 YYYY-MM-DD를 사용하므로 번역 키가 없다.
+/// 변환할 수 없는 시각은 빈 칸으로 두며 열 폭은 유지한다.
 fn local_date(unix_secs: i64) -> String {
     chrono::DateTime::from_timestamp(unix_secs, 0).map_or_else(String::new, |t| {
         t.with_timezone(&chrono::Local)
@@ -243,8 +197,6 @@ fn local_date(unix_secs: i64) -> String {
             .to_string()
     })
 }
-
-// ── PopupDef sizer ─────────────────────────────────────────────────────────
 
 /// 그룹 헤딩 한 개의 공칭 높이(caption 유무로 갈린다).
 fn group_head_h(th: &Theme, caption: bool) -> LogicalPx {
@@ -303,8 +255,7 @@ fn picker_size_for(th: &Theme, cand_n: usize, recent_n: usize, fallback: bool) -
     let body = if cand_n == 0 && recent_n == 0 {
         empty_block_h(th)
     } else {
-        // fallback 안내 띠 — 위아래 8 + 두 줄(11px, line-height 1.5) + 1px. fallback 이
-        // 아니면 띠가 없으므로 0 배로 접는다(없는 띠에 `LogicalPx(0.0)` 리터럴을 두지 않는다).
+        // fallback일 때만 안내 영역 높이를 더한다.
         let strip = (th.spacing_sm.scaled(2.0) + CAPTION_LINE_H.scaled(2.0) + th.border_width)
             .scaled(if fallback { 1.0 } else { 0.0 });
         strip + list_h(th, cand_n, recent_n, fallback)
@@ -335,8 +286,6 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
         .unwrap_or((0, 0, false));
     picker_size_for(&th, c, r, fallback)
 }
-
-// ── view ───────────────────────────────────────────────────────────────────
 
 /// 한 줄 말줄임 — 가용 폭을 넘으면 `…` 로 끝낸다. 그린 폭을 돌려준다.
 fn paint_truncated(
@@ -418,8 +367,7 @@ fn header_band(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) {
         child.available_width(),
     );
 
-    // 경로는 렌더 전에 앞에서 잘렸다(`fh_model::elide_target_front`) — `direction: rtl` 은 런을
-    // 재배열해 정보가 있는 꼬리를 자른다.
+    // 경로는 이미 앞에서 줄였으므로 RTL로 다시 배열하지 않는다.
     paint_truncated(
         ui,
         egui::pos2(title_rect.left(), title_rect.bottom() + FH_GAP_SM.value()),
@@ -467,14 +415,7 @@ fn fallback_strip(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) {
     hline(ui, th, rect, rect.center().y);
 }
 
-/// 그룹 헤딩 — 라벨(uppercase) + mono 개수 + 한 줄 caption.
-///
-/// 자간은 전사하지 않는다 — **채널이 없어서가 아니라 값이 없어서**다. egui 에는
-/// `RichText::extra_letter_spacing` 과 `TextFormat::extra_letter_spacing` 이 있고,
-/// `tasty_ui_widgets::remote_tool::selectable_label_tracked` 가 그 축을 이미 쓴다(비율을
-/// 들고 그릴 때 폰트 크기를 곱한다). 그런데 이 화면의 canonical 인 `FileHandlerFrame` 은
-/// 평평한 핸들러 목록이라 **그룹 헤딩 자체가 없고** `letterSpacing` 선언도 한 줄도 없다 —
-/// 그룹은 본체가 더한 것이다. 값은 디자인이 정한다. 지금은 대문자 · 11px · 색만 전사한다.
+/// 그룹 제목·개수·설명. 디자인 원본에 그룹 제목의 자간 값이 없어 별도 자간은 적용하지 않는다.
 fn group_head(ui: &mut egui::Ui, th: &Theme, head: &GroupHead<'_>) {
     egui::Frame::new()
         .inner_margin(egui::Margin {
@@ -542,9 +483,7 @@ fn handler_row(
     if sel {
         ui.painter()
             .rect_filled(rect, th.corner_radius_sm.value(), th.surface_active());
-        // 목록 행의 선택 막대다 — 탭 인디케이터가 아니라 `listctrl` 계열 역할을
-        // 부른다. 두 토큰은 값이 같지만(2) 가리키는 것이 다르고, 같은 역할의 자리
-        // (`tasty_ui_widgets::listctrl`)가 이미 이쪽을 쓴다.
+        // 목록 선택 막대이므로 값이 같은 탭 토큰 대신 listctrl 토큰을 사용한다.
         let bar = egui::Rect::from_min_size(
             rect.min,
             egui::vec2(th.listctrl_selected_bar_width().value(), rect.height()),
@@ -621,10 +560,8 @@ fn handler_row(
     ) + FH_ID_LINE_GAP.value();
     x += paint_truncated(ui, egui::pos2(x, y), "·", meta_font.clone(), sep, avail)
         + FH_ID_LINE_GAP.value();
-    // 언제 열은 **최대 어휘로 예약한다** — 실제 문자열 폭으로 재면 한 행이 버킷 경계를
-    // 넘을 때마다 옆의 id 가 reflow 된다. 예약해 두면 `just now` ↔ `2026-09-13` 이
-    // 오가도 id 폭이 안 움직인다. 좁힐 때 양보하는 쪽도 id 다(이미 앞에서 34 자로
-    // 말줄임한다) — 부분적으로 잘린 시각은 **다른 시각으로 읽히기** 때문이다.
+    // 시각은 고정 폭을 예약한다. 표시 구간이 바뀌어도 ID 폭이 흔들리지 않게 하고
+    // 공간이 부족하면 날짜를 자르는 대신 ID를 줄인다.
     let when_w = if e.when.is_some() {
         text_w(ui, "·", &meta_font, sep) + th.fh_when_width().value() + FH_ID_LINE_GAP.value() * 2.0
     } else {
@@ -671,8 +608,7 @@ fn handler_row(
     }
 }
 
-/// empty 블록 — 고를 것이 시스템 전체에 없다. 프레임이 다른 곳으로 나가는 길을 내주는
-/// 유일한 상태다.
+/// 등록된 핸들러가 없을 때 설정으로 이동하는 안내.
 fn empty_block(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) -> bool {
     let th = props.theme;
     let mut open_settings = false;
@@ -861,7 +797,7 @@ fn footer_band(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) -> (bool, 
     (open, cancel)
 }
 
-/// 순수 view — props 를 읽고 사용자 의도만 돌려준다(상태 변경 없음).
+/// 화면 입력을 받아 사용자 동작을 반환한다.
 pub fn draw_file_handler_picker_view(
     ui: &mut egui::Ui,
     props: &FileHandlerPickerProps<'_>,
@@ -904,11 +840,7 @@ pub fn draw_file_handler_picker_view(
     action
 }
 
-// ── PopupDef wiring ────────────────────────────────────────────────────────
-
-/// PopupDef::on_close entry point — X 버튼/Esc 등 draw_fn 을 거치지 않는 경로로 닫히면
-/// `result` 가 아직 `None` 일 수 있다(dispatch 로 이미 채워졌으면 손대지 않는다).
-/// 미확정이면 Cancelled 로 명시해 호스트 본체의 result-drain 이 대기 상태로 남지 않게 한다.
+/// 결과 없이 닫혔으면 Cancelled를 기록해 호출부가 계속 기다리지 않게 한다.
 pub fn on_close_file_handler_picker(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -944,13 +876,12 @@ fn to_entry(s: &crate::state::PickerHandlerSummary, now: i64) -> FileHandlerPick
     }
 }
 
-/// PopupDef.draw_fn — runtime wrapper. props 추출 + view 호출 + action → mutation.
+/// 실행 상태에서 화면 입력을 만들고 사용자가 고른 동작을 반영한다.
 pub fn draw_file_handler_picker(
     ui: &mut egui::Ui,
     state: &mut AppState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
-    // popup 이 데이터 없이 열려 있으면 즉시 닫기 (이상 상태 회복).
     let Some(picker) = state.dialogs.file_handler_picker.as_ref() else {
         return PopupAction::Close;
     };
@@ -974,8 +905,7 @@ pub fn draw_file_handler_picker(
         .map(|s| s.as_str().to_string());
     let fallback = picker.candidates_are_fallback;
 
-    // fallback 은 detector 매칭이 아니라 전체 핸들러다 — 라벨 · 톤 · caption · 안내 띠
-    // 넷이 그 약속의 차이를 나른다(`docs/features/file-handler/index.md`).
+    // 매칭 후보가 없어 전체 핸들러를 보여줄 때는 별도 제목과 안내를 사용한다.
     let candidates_heading = if fallback {
         t("file_handler.picker.fallback_heading")
     } else {
@@ -1049,21 +979,13 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    /// 헤더 경로 예산이 **본체가 실제로 설치하는 폰트 스택**에서 65 인지.
-    ///
-    /// 앱이 부팅에서 부르는 그 설치 함수(`GpuState::setup_egui_fonts`)를 그대로 얹는다 —
-    /// 시험이 자기 사본을 만들면 둘이 갈리는 순간 이 시험은 화면과 무관한 것을 잰다.
-    ///
-    /// 이 자리가 답하는 것은 **어느 측정을 골랐는가**다. 같은 스택에서 글리프 하나의
-    /// 폭으로 나누면 70 이 나오고 그 70 자는 라인 박스를 넘는다(그 넘침 자체는
-    /// `crates/tasty-gallery/tests/mono_metrics.rs` 가 px 로 잰다).
+    /// 실제 앱 폰트로 경로 길이를 계산한다. 단일 글리프 폭과 글자 추가 시 증분의 차이도 확인한다.
     #[test]
     fn the_budget_is_sixty_five_on_the_font_stack_the_app_installs() {
         let th = test_theme();
         let ctx = egui::Context::default();
         crate::gfx::gpu::GpuState::setup_egui_fonts(&ctx);
-        // 반환하는 `FullOutput` 은 그리지 않는 pass 의 산출물이라 볼 것이 없다 —
-        // 필요한 것은 클로저 안에서 도는 단언뿐이다.
+        // 출력은 그리지 않으며 클로저 안의 단언만 사용한다.
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let font = egui::FontId::monospace(th.font_size_caption.value());
@@ -1172,9 +1094,7 @@ mod tests {
             self.run(ctx, pointer(pos, false))
         }
 
-        /// 프레임을 세로로 훑어 조건에 맞는 첫 action 을 돌려준다. 행·버튼 좌표를 손으로
-        /// 계산하면 폰트 metrics 가 바뀔 때마다 시험이 거짓으로 빨개진다 — 좌표가 아니라
-        /// **그 자리를 누르면 무엇이 나오는가**를 묻는다.
+        /// 고정 좌표 대신 프레임을 세로로 훑어 첫 동작을 찾는다.
         fn probe_for(
             &self,
             x: f32,
@@ -1226,8 +1146,6 @@ mod tests {
         raw
     }
 
-    // ── 도출 규칙 ──────────────────────────────────────────────────────────
-
     #[test]
     fn the_name_falls_back_to_the_id_segment_after_the_last_slash() {
         assert_eq!(id_local_segment("com.tasty.image/viewer"), "viewer");
@@ -1252,14 +1170,12 @@ mod tests {
     #[test]
     fn the_relative_time_buckets_split_where_the_design_named_them() {
         assert_eq!(at(0), WhenBucket::JustNow);
-        // 시계가 뒤로 간 기록도 미래로 읽지 않는다.
         assert_eq!(when_bucket(NOW, NOW + 500), WhenBucket::JustNow);
-        // 디자인이 값으로 준 두 자리.
         assert_eq!(at(2 * HOUR), WhenBucket::Hours(2));
         assert_eq!(at(DAY + HOUR), WhenBucket::Yesterday);
     }
 
-    /// 여섯 경계를 **양쪽에서** 집는다. 한쪽만 재면 구간을 넓히는 변이가 살아남는다.
+    /// 각 시간 구간의 양쪽 경계를 검사한다.
     #[test]
     fn every_boundary_is_pinned_from_both_sides() {
         assert_eq!(at(59), WhenBucket::JustNow);
@@ -1287,8 +1203,6 @@ mod tests {
         assert_eq!(at(2 * DAY + 23 * HOUR), WhenBucket::Days(2));
     }
 
-    /// `{n}w ago` 를 만들지 않는다는 결정이 코드에 남아 있는지 — 7 일 이상은 **전부**
-    /// 날짜 한 갈래다. 한 달이든 삼 년이든 어휘가 안 늘어난다.
     #[test]
     fn nothing_beyond_a_week_grows_a_new_word() {
         for elapsed in [WEEK, 30 * DAY, 365 * DAY, 3 * 365 * DAY] {
@@ -1296,11 +1210,7 @@ mod tests {
         }
     }
 
-    /// `≥ 7 d` 의 표시는 lang 키를 안 거치고 `YYYY-MM-DD` 열 자다.
-    ///
-    /// 로컬 시간대에 의존하므로 문자열을 통째로 못 박지 않는다(테스트가 도는 기계마다
-    /// 다르다). 대신 **형태**와 **UTC 날짜와의 거리**로 집는다 — 어느 시간대든 UTC
-    /// 날짜에서 하루 이상 벌어질 수 없으므로, 필드 순서를 바꾸는 변이는 이 창을 벗어난다.
+    /// 로컬 시간대가 달라도 YYYY-MM-DD 형식이고 UTC 날짜의 하루 전후에 있어야 한다.
     #[test]
     fn the_week_old_row_shows_a_bare_ten_character_date() {
         let used_at = NOW - 30 * DAY;
@@ -1325,8 +1235,6 @@ mod tests {
             .collect();
         assert!(near.contains(&out), "{out} not near {near:?}");
     }
-
-    // ── sizer ──────────────────────────────────────────────────────────────
 
     #[test]
     fn the_frame_is_always_the_canonical_width() {
@@ -1358,8 +1266,6 @@ mod tests {
         let empty = picker_size_for(&th, 0, 0, false).y;
         assert!((empty - (header_h(&th) + empty_block_h(&th) + footer_h(&th)).value()).abs() < 0.5);
     }
-
-    // ── view ───────────────────────────────────────────────────────────────
 
     #[test]
     fn escape_cancels() {
@@ -1460,8 +1366,7 @@ mod tests {
     fn open_dispatches_only_with_a_selection() {
         let mut c = Case::new();
         c.selected = Some("com.tasty.markdown/preview".into());
-        // footer 는 프레임 맨 아래 띠다 — 오른쪽 끝에서 안쪽으로 조금 들어온 x. 세로
-        // 좌표는 nominal sizer 가 아니라 훑어서 찾는다(실 레이아웃이 그보다 크다).
+        // 실제 렌더링된 푸터의 세로 위치를 찾아 클릭한다.
         let x = FH_FRAME_WIDTH.value() - FH_EDGE_PAD_X.value() - 20.0;
         let span = picker_size_for(&c.theme, c.candidates.len(), 0, false).y * 2.0;
         let got = c.probe_for(x, 0.0, span, |a| {

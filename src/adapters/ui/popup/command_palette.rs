@@ -1,13 +1,6 @@
-//! Command palette popup — VS Code 스타일 명령 검색기.
-//!
-//! 사용자가 입력한 쿼리에 대해 `command_palette::search`로 후보를 매칭하고, 위/아래로
-//! 선택하고 Enter로 실행한다. 실행 시 `state.command_palette.pending_run`에 action_id를
-//! 적재하고 popup을 닫는다. 실제 dispatch는 `MainView`가 다음 프레임 시작에 수행한다.
-//!
-//! Tier 3 분리: AppState/CoreState 비의존인 [`draw_command_palette_view`] +
-//! [`CommandPaletteProps`] + [`CommandPaletteAction`] 과, 큐/state mutation 을
-//! 담당하는 wrapper [`draw_command_palette_popup`] 로 나누어 gallery 에서 단독
-//! 시각 검증 가능.
+//! 명령을 검색해 위·아래 키로 선택하고 Enter로 실행한다.
+//! 선택한 명령은 pending_run에 넣고 팝업을 닫으며 실제 실행은 MainView에서 처리한다.
+//! 표시 함수는 갤러리에서도 앱 상태 없이 사용할 수 있다.
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
@@ -20,62 +13,34 @@ use tasty_settings::KeybindingSettings;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{KbdKey, margin_all, margin_sym};
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
-// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
-// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
-// "스케일 밖 폰트 값".
-
 /// footer 힌트 사이 가로 간격. 디자인 전사값 14 로 4px 그리드 밖이다
 /// (`spacing_md`=12 와 2px 차).
 const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
-// ── 카드 치수 ───────────────────────────────────────────────────────────────
-//
-// 아래 셋은 **[`zoomed`] 를 거쳐서만 쓴다.** `Theme` 필드는 생성 시점에 배율을 한 번
-// 타지만 파일 안 const 는 그 경로 밖이라, 한 식에 섞으면 그릇만 고정되고 안의 글자가
-// 커진다(`adapters/ui.rs` 의 `zoomed_px` 주석, ADR-0035). 카드 높이는 이제 sizer 가
-// 매 프레임 이 식으로 다시 정하므로, 그 섞임이 곧 배율별 잘림이 된다.
-//
-// 행 높이는 여기 없다 — `Theme.item_height_interactive`(= `size-28`,
-// `semantic.control-height`) 가 그 치수의 이름이라 [`palette_row_height`] 가 그것을
-// 읽는다.
+// 파일 상수에는 Theme의 배율이 자동 적용되지 않으므로 zoomed()를 거쳐 사용한다.
 
 /// 카드 폭 — 디자인 palette 프레임. 높이와 달리 콘텐츠에 안 따른다.
 const PALETTE_WIDTH: LogicalPx = LogicalPx(540.0);
-/// 목록 최대 높이 — 디자인 list `maxHeight`. 이보다 많으면 스크롤이다.
-///
-/// `size-320` 위의 값이라 `on_scale_length_literal` 바늘에 걸리는데 **옮길 이름이
-/// 없다** — 그 primitive 를 쓰는 토큰 넷은 전부 *폭*이고(`fp-crumb-menu-max-width` ·
-/// `fp-popup-min-width` · `multiselect-menu-max-width` · `toast-max-width`), 목록의
-/// 세로 상한을 말하는 토큰은 없다. 행 높이와 **같이** 배율을 타야 한 화면에 보이는 행
-/// 수가 배율마다 안 달라지므로, 토큰이 생기기 전까지 이름만 붙여 둔다.
+/// 목록의 최대 높이. 이 치수에 맞는 semantic 토큰이 없으며 행 높이와 함께 배율을 적용한다.
 const PALETTE_LIST_MAX_H: LogicalPx = LogicalPx(320.0);
-/// 목록과 footer 사이 여백. 목록 Frame 의 아래쪽 inner margin 자리를 대신한다.
-///
-/// `size-6` 위지만 spacing semantic 에 6 이 없다(`spacing_xs`=4 · `spacing_sm`=8).
-/// 그 primitive 를 쓰는 유일한 토큰은 status-dot 의 compact 지름이라 이 간격의
-/// 이름이 아니다.
+/// 목록과 푸터 사이 여백. spacing 토큰에 대응 값이 없어 별도 상수를 쓴다.
 const PALETTE_LIST_GAP_BOTTOM: LogicalPx = LogicalPx(6.0);
 /// footer 한 줄 높이에 더해지는 상하 패딩 + 보더 몫(디자인 padding 8 12 + borderTop).
 const PALETTE_FOOTER_CHROME: LogicalPx = LogicalPx(20.0);
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
-/// 파일 안 const 를 현재 UI 배율로 올린다 — `Theme` 필드와 **같은 편**에 놓는다.
+/// 파일 상수에 현재 UI 배율을 적용한다.
 fn zoomed(theme: &Theme, px: LogicalPx) -> f32 {
     crate::adapters::ui::zoomed_px(theme, px).value()
 }
 
-/// 명령 한 행의 높이. 디자인 MenuItem control-height 이고 그 치수에는 이름이 있다
-/// (`semantic.control-height` → `Theme.item_height_interactive`).
+/// Theme의 공용 control-height를 사용하는 명령 행 높이.
 fn palette_row_height(theme: &Theme) -> f32 {
     theme.item_height_interactive.value()
 }
 
-/// footer 구역이 차지하는 높이. draw 가 footer 를 바닥에 고정할 때와 sizer 가 카드
-/// 높이를 셀 때가 **같은 값**을 봐야 목록이 footer 밑으로 밀리지 않는다.
+/// 카드 크기 계산과 렌더링에서 공유하는 푸터 높이.
 fn palette_footer_height(theme: &Theme) -> f32 {
     theme.font_size_caption.value() + zoomed(theme, PALETTE_FOOTER_CHROME)
 }
@@ -119,10 +84,7 @@ pub struct CommandItemView {
     pub icon: Option<icons::Icon>,
 }
 
-/// View 입력 — palette 한 화면 분의 모든 데이터. AppState/CoreState 비의존.
-///
-/// `query_buffer` 는 `&mut String` 으로 외부 상태를 그대로 빌려 받는다 — gallery
-/// 에서는 로컬 `String` 의 `&mut` 를 주면 된다.
+/// 명령 팔레트 입력. 검색 버퍼는 호출부에서 빌려 쓴다.
 pub struct CommandPaletteProps<'a> {
     /// TextEdit 의 placeholder.
     pub placeholder: String,
@@ -158,10 +120,7 @@ pub enum CommandPaletteAction {
     Close,
 }
 
-/// Pure 시각 view. AppState/CoreState 비의존.
-///
-/// 키 입력 (Escape / ↑ / ↓ / Enter) 는 view 가 직접 처리해 의도를 action 으로 변환.
-/// TextEdit 의 change 도 동일하게 `QueryChanged` 로 일원화한다.
+/// 키 입력과 검색 변경을 화면 동작으로 반환한다.
 pub fn draw_command_palette_view(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -200,16 +159,11 @@ pub fn draw_command_palette_view(
         }
     }
 
-    // design-parity: 디자인 command_palette.jsx 는 컨테이너 패딩 0 + 구역별 패딩
-    // (search 10 / list 6 / footer 8,12). search·list 는 off-grid 라 4px 그리드의
-    // 가장 가까운 값으로 snap(10→space-sm(8), 6→space-sm/space-xs(8/4)). content_margin
-    // 은 command_palette 한정 0(popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는
-    // Frame 실제 좌표에 그린다.
+    // 공통 content_margin 없이 검색·목록·푸터에 각각 여백을 준다.
     let full = ui.max_rect();
     let sep = egui::Stroke::new(theme.border_width.value(), theme.border_strong());
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    // ── 검색 구역 (디자인 padding 10 → space-sm(8) snap, Input control-height 28, borderBottom) ──
     let mut query_changed = false;
     let search_ir = egui::Frame::NONE
         .inner_margin(margin_all(theme.spacing_sm))
@@ -245,16 +199,11 @@ pub fn draw_command_palette_view(
     ui.painter()
         .hline(full.x_range(), search_ir.response.rect.bottom(), sep);
 
-    // footer 높이 예약 (디자인 footer ≈ hint row + pad8*2 + border1 = 31).
-    // sizer 가 카드 높이를 셀 때와 같은 함수를 본다 — 두 식이 갈리면 목록 마지막 행이
-    // footer 밑으로 밀린다.
+    // 카드 높이 계산과 같은 푸터 높이를 예약한다.
     let footer_h = palette_footer_height(theme);
     let footer_top = full.bottom() - footer_h;
 
-    // ── 리스트 구역 (디자인 padding 6 → space-sm/space-xs(8,4) snap, MenuItem height 28) ──
-    // 같은 6 이 축마다 다른 값으로 snap: x 는 8(spacing_sm) 로 검색 구역 좌우 inset 과
-    // 맞춰 두 구역의 좌측 정렬선을 통일하고, y 는 더 타이트한 4(spacing_xs) 로 둬
-    // 스크롤 리스트 높이가 행 수만큼 불필요하게 늘어나지 않게 한다.
+    // 가로 여백은 검색 영역과 맞추고 세로 여백은 더 좁게 둔다.
     egui::Frame::NONE
         .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
         .show(ui, |ui| {
@@ -300,7 +249,6 @@ pub fn draw_command_palette_view(
                             theme.text_muted().into()
                         };
 
-                        // 디자인 MenuItem: padding 0 12, icon 15, gap 8.
                         let pad_x = 12.0;
                         let icon_size = 15.0;
                         let icon_gap = 8.0;
@@ -333,7 +281,6 @@ pub fn draw_command_palette_view(
                 });
         });
 
-    // ── footer (디자인 padding 8 12, gap 14, mono caption, borderTop) — 바닥 고정 ──
     let cur = ui.cursor().top();
     if cur < footer_top {
         ui.add_space(footer_top - cur);
@@ -348,7 +295,6 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            // footer 키 힌트는 caption 토큰을 그대로 읽는다(ADR-0035).
             let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X.value();
@@ -381,18 +327,7 @@ fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
     !query_empty && row == selected
 }
 
-/// Kbd 키캡 그룹을 우측 정렬로 그린다 (디자인 `components/core/Kbd.jsx`).
-///
-/// 그리는 일 자체는 공용 위젯이 한다 — `tasty_ui_widgets::kbd_parts_at` 이 상태바
-/// 키캡과 **같은 토큰·같은 폭 식**으로 그린다. 여기 남는 것은 키 문자열을 `KbdKey`
-/// 로 감싸는 것뿐이다.
-///
-/// **한동안 이 자리에 자체 치수가 있었다** — 한 변 18 · h-padding 5 · 키 사이 4 ·
-/// 글자 caption(11) 로, `kbd-size`(16) · `kbd-padding-x`(4) · `kbd-gap`(3) ·
-/// `kbd-font-size`(10) 보다 넷 다 컸다. 같은 컴포넌트의 두 크기인지 드리프트인지는
-/// 디자인이 답할 물음이었고, 2026-09-17 회신이 **드리프트**로 판정하며 `Kbd` 로
-/// 수렴시켰다(신규 토큰 없음, 28px 행에서 높이·정렬 불변). 그래서 값을 맞춘 것이
-/// 아니라 값을 **들고 있기를 그만뒀다**.
+/// 공용 kbd_parts_at 위젯으로 키캡을 오른쪽 정렬한다.
 fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
     if keys.is_empty() {
         return;
@@ -401,13 +336,7 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
     tasty_ui_widgets::kbd_parts_at(ui, theme, &parts, right_x, center_y);
 }
 
-/// 매칭 결과를 `(items, commands)` 쌍으로 변환.
-///
-/// `commands[i]` 는 `items[i]` 의 원 `PaletteCommand`(clone). wrapper 가 view 의
-/// `Execute { index }` 를 받아 `pending_run` 에 저장하기 위해 같은 순서가 보존된
-/// 별도 vec 이 필요하다.
-///
-/// 별도 함수로 분리해 view 와 무관하게 단위 테스트 가능.
+/// 화면 항목과 실행할 명령을 같은 순서로 반환한다.
 fn items_from_state(
     commands: &[PaletteCommand],
     labels: &[String],
@@ -418,9 +347,7 @@ fn items_from_state(
     let mut items = Vec::with_capacity(matches.len());
     let mut ids = Vec::with_capacity(matches.len());
     for (_score, cmd) in matches {
-        // `cmd` 는 `commands` 슬라이스 원소의 참조이므로 포인터 동일성으로 같은
-        // 라벨을 되찾는다 (동적 `PaletteCommand::Plugin` 은 `==` 비교 대신도 되지만
-        // 포인터 비교가 더 저렴하고 검색 로직과 완전히 무관하다).
+        // 검색 결과는 commands 원소의 참조이므로 같은 원소의 라벨을 찾는다.
         let raw_label = commands
             .iter()
             .position(|c| std::ptr::eq(c, cmd))
@@ -437,12 +364,7 @@ fn items_from_state(
     (items, ids)
 }
 
-/// PopupDef::on_close 진입점 — 어떤 경로로 닫히든 쿼리·선택 인덱스를 리셋한다.
-/// `Close`/`Execute` 경로는 draw_fn 안에서 이미 `reset()`을 부르지만
-/// `command_palette::reset()`은 멱등이라 여기서 다시 불러도 안전하다. 이 훅이
-/// 실제로 의미를 갖는 건 draw_fn 을 거치지 않는 바깥 클릭/`UiIntent::ClosePopup`
-/// 경로 — 지금은 다음 open 시점의 방어적 리셋(`keybinding.rs`/`status_bar.rs`)이
-/// 그 틈을 가려주고 있을 뿐이다(그 마스킹 제거는 별도 후속 작업 담당).
+/// 바깥 클릭 등 그리기를 거치지 않는 닫기에서도 검색어·선택을 초기화한다.
 pub fn on_close_command_palette_popup(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -451,22 +373,8 @@ pub fn on_close_command_palette_popup(
     state.command_palette.reset();
 }
 
-/// PopupDef.sizer — 매 프레임 현재 쿼리의 매칭 수로 카드 높이를 다시 정한다.
-///
-/// 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 목록 바로 아래 붙는다. 그
-/// 동안 이 popup 은 "꽉 찬" 높이로 고정돼 있었고, 근거는 `sizer` 가 **open 시점 1 회만**
-/// 불린다는 것이었다 — 그 전제가 틀렸다. `popup::frame::draw_popup_layer` 는 매 프레임
-/// 모든 def 의 `sizer` 를 부르고 `size_user_overridden` 이 아닌 popup 의 `size` 에
-/// 그대로 넣는다(`tools_menu`·`rail_category` 가 이미 그렇게 쓴다). 그래서 필요한 것은
-/// 새 경로가 아니라 이 함수 하나였다.
-///
-/// 세는 것은 **개수뿐**이다 — 라벨·아이콘·키캡까지 만드는 `items_from_state` 를 다시
-/// 부르지 않는다. 같은 프레임의 draw 가 같은 쿼리로 같은 검색을 하므로 두 수는 어긋날
-/// 수 없다.
-///
-/// 폭은 콘텐츠를 안 따른다. `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom
-/// 이 곱해지지 않으므로(`PopupManager::register`) 여기서 직접 곱한다 — 안 그러면 배율을
-/// 올릴 때 카드만 안 커진다.
+/// 현재 검색 결과 수에 맞춰 카드 높이를 계산한다. 사용자 리사이즈 전까지 매 프레임 적용된다.
+/// 라벨·아이콘은 만들지 않고 개수만 센다. 폭은 고정이며 여기서 UI 배율을 적용한다.
 pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
@@ -475,8 +383,7 @@ pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState)
     egui::vec2(zoomed(&th, PALETTE_WIDTH), palette_height(&th, matched))
 }
 
-/// PopupDef.draw_fn — `state.command_palette` 와 `engine.settings` 를 어댑팅하고
-/// view 를 호출한다. props 추출 → view 호출 → action 처리.
+/// 앱 상태를 화면 입력으로 바꾸고 반환된 동작을 처리한다.
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -486,14 +393,11 @@ pub fn draw_command_palette_popup(
     let labels: Vec<String> = commands.iter().map(label_for).collect();
     let (items, matched_commands) =
         items_from_state(&commands, &labels, &state.command_palette.query, |cmd| {
-            // Plugin 명령은 shortcut override 해석에 PluginManager 접근이 필요해
-            // (팔레트 draw 함수는 `PopupDef` 고정 시그니처상 접근 불가) 키캡을 표시하지
-            // 않는다 — 잘못된(override 반영 안 된) 키를 보여주는 것보다 안전.
+            // 여기서는 PluginManager의 사용자 단축키 설정을 읽을 수 없어 플러그인 키캡을 생략한다.
             let PaletteCommand::Host { id, .. } = cmd else {
                 return Vec::new();
             };
-            // 첫 바인딩(원문 `alt+n`)을 키캡 토큰(`["Alt","N"]`)으로 변환. `+`키
-            // 모호성 회피를 위해 display 문자열 split 대신 format_display_parts 사용.
+            // + 키가 구분자와 섞이지 않도록 표시 문자열을 split하지 않고 토큰으로 받는다.
             engine
                 .settings
                 .keybindings
@@ -503,8 +407,6 @@ pub fn draw_command_palette_popup(
                 .unwrap_or_default()
         });
 
-    // Clamp selection within result range — view 가 받는 selected_index 가 항상
-    // 유효 범위 안에 있도록 보장.
     if items.is_empty() {
         state.command_palette.selected = 0;
     } else if state.command_palette.selected >= items.len() {
@@ -564,15 +466,7 @@ fn icon_for(cmd: &PaletteCommand) -> Option<icons::Icon> {
     })
 }
 
-/// i18n 라벨을 얻되, 끝의 `:`는 떼어낸다 (Settings UI 라벨 재활용).
-///
-/// Plugin 명령의 `title_i18n_key`는 그 plugin 자신의 lang 네임스페이스에 등록되어
-/// 있다 — 호스트 `t()`는 plugin discovery 시점에 각 plugin의 lang catalog를 같은
-/// 전역 resolver에 namespace로 등록해 두므로(`i18n.rs`의 `PluginLangPort::register`,
-/// tools_menu의 `label_i18n_key` 해석과 동일 메커니즘) 별도 라우팅 없이 그대로
-/// `t()`를 호출하면 된다. 다만 plugin 작성자가 카탈로그에 키를 등록하지 않았을 수
-/// 있으므로, `t()`가 키를 그대로 반환하는 경우(미해석) raw 키를 그대로 보여준다 —
-/// 그 판정은 도구 메뉴와 **같은 함수**(`crate::adapters::ui::label_or_raw_key`)가 한다.
+/// 플러그인을 포함한 공용 번역에서 라벨을 읽고 끝의 :를 제거한다. 키가 없으면 원문을 쓴다.
 fn label_for(cmd: &PaletteCommand) -> String {
     let raw = match cmd {
         PaletteCommand::Host { label_key, .. } => t(label_key).to_string(),
@@ -707,11 +601,7 @@ mod view_tests {
         action
     }
 
-    /// 카드 높이를 지정해 view 를 1 프레임 돌리고 **그려진 것**을 돌려준다 —
-    /// `(텍스트, 중심 y)` 목록과 **가장 아래 구분선**의 y.
-    ///
-    /// 아래 구분선은 footer 의 borderTop 이다. 목록이 어디서 끝나고 footer 가 어디서
-    /// 시작하는지를 좌표로 묻는 관측점이라, 높이 식을 그대로 되읊는 대신 이것을 본다.
+    /// 한 프레임을 그려 텍스트 중심과 푸터 위 구분선의 y좌표를 반환한다.
     fn painted(items: Vec<CommandItemView>, card_h: f32) -> (Vec<(String, f32)>, f32) {
         fn walk(shape: &egui::epaint::Shape, texts: &mut Vec<(String, f32)>, last_line: &mut f32) {
             match shape {
@@ -780,8 +670,7 @@ mod view_tests {
 
     #[test]
     fn the_old_fixed_height_left_the_gap_this_sizing_removes() {
-        // 음성 대조 — 같은 항목 하나를 종전 고정 높이(412)로 그리면 목록 아래가 비었다.
-        // 그 빈 자리가 이 작업이 없앤 것이고, 위 테스트의 좁은 gap 이 그것과 대비된다.
+        // 높이를 크게 고정한 대조군에서는 목록 아래 여백이 남아야 한다.
         let (texts, footer_line) = painted(make_items(1), 412.0);
         let gap = footer_line - label_y(&texts, "Item 0");
         assert!(
@@ -809,7 +698,6 @@ mod view_tests {
         let th = mocha_fallback();
         let row = palette_row_height(&th);
         assert_eq!(palette_height(&th, 2) - palette_height(&th, 1), row);
-        // 320 / 28 = 11.4 → 11 행까지 자라고 12 행부터는 상한에서 멈춘다.
         assert_eq!(palette_height(&th, 12), palette_height(&th, 1000));
         assert!(palette_height(&th, 11) < palette_height(&th, 12));
     }
@@ -859,7 +747,6 @@ mod view_tests {
     #[test]
     fn arrow_down_at_bottom_is_clamped() {
         let action = run_view(make_items(3), 2, Some(egui::Key::ArrowDown));
-        // 이미 마지막 인덱스이므로 변화 없음.
         assert_eq!(action, CommandPaletteAction::None);
     }
 
@@ -871,14 +758,12 @@ mod view_tests {
 
     #[test]
     fn empty_query_never_highlights() {
-        // 빈 쿼리: 선택 인덱스와 일치해도 강조하지 않는다.
         assert!(!row_highlighted(true, 0, 0));
         assert!(!row_highlighted(true, 2, 2));
     }
 
     #[test]
     fn non_empty_query_highlights_selected_row_only() {
-        // 비어있지 않은 쿼리: 선택 인덱스 행만 강조.
         assert!(row_highlighted(false, 0, 0));
         assert!(row_highlighted(false, 3, 3));
         assert!(!row_highlighted(false, 1, 0));
@@ -920,8 +805,7 @@ mod sizer_wiring_tests {
             .y
     }
 
-    /// `defs.rs` 에 함수를 꽂아 두는 것은 배선이 아니다 — 한 프레임 돌려 보고 그 결과가
-    /// **이 popup 의 size** 에 들어갔는지 묻는다.
+    /// 실제 프레임 처리 후 sizer 결과가 팝업 크기에 적용됐는지 확인한다.
     #[test]
     fn a_frame_sizes_the_card_from_the_match_count() {
         let th = theme::theme();

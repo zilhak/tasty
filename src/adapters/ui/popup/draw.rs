@@ -1,4 +1,4 @@
-//! `PopupManager::draw` 거대 fn + scope helper 들 분리.
+//! 팝업 렌더링과 입력·표시 범위 계산.
 
 use crate::adapters::ui::LayoutContext;
 use crate::theme;
@@ -10,20 +10,8 @@ use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 /// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
 const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 
-/// **anchored + scrim-less** popup — 살아 있는 콘텐츠 위에 뜨고 뷰포트를 점유하지
-/// 않는다. 그림자 적용 기준(ADR-0037) 상 `shadow_popover()`.
-///
-/// 앵커의 형태는 둘로 갈린다 — **셋은 트리거 rect 로 좌표를 계산해**
-/// `OpenPopupMode::AtFocused` 로 열고(`tools_menu` ← `sidebar/tools.rs`,
-/// `rail_category` ← `sidebar/collapsed.rs`, 배너 더보기 메뉴 ← `mouse_capture_menu.rs`),
-/// **`search_bar` 만 트리거 rect 를 안 쓴다** — `OpenPopupMode::AtTopOfScope` 로 열려
-/// scope 상단에 가로 중앙 정렬된다(`super::open_at_top_of_scope`). 여는 자리가 셋이다:
-/// `tab_bar/apply.rs` · `input/shortcuts/keybinding.rs` · `input/shortcuts/dispatch.rs`.
-/// 그래도 anchored 갈래인 이유는 좌표의 출처가 아니라 형태다 — scrim 없이 살아 있는
-/// surface 위에 얹힌다.
-///
-/// 명부로 적는 이유: `PopupDef` 에는 anchored/centered 를 담는 필드가 없다 — 위치는
-/// 정의가 아니라 **여는 시점**의 `OpenPopupMode` 가 정하므로 정적으로 읽을 값이 없다.
+/// scrim 없이 콘텐츠 위에 붙는 팝업 목록. 트리거 옆 또는 범위 상단에 표시한다.
+/// 위치는 열 때 지정되므로 PopupDef에서 읽을 수 없어 별도 목록으로 관리한다.
 const ANCHORED_POPUPS: &[PopupId] = &[
     "tools_menu",
     "search_bar",
@@ -31,19 +19,11 @@ const ANCHORED_POPUPS: &[PopupId] = &[
     crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
 ];
 
-/// 앵커형과 중앙 모달 어느 쪽에도 속하지 않는 표면에는 그림자를 그리지 않는다(ADR-0037). 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작한다:
-/// 트리거에 붙지도(anchored) 뷰포트를 점유하지도(centered) 않아 둘 중 하나를 고를
-/// 근거가 없다.
+/// 알림 패널은 앵커형도 중앙 모달도 아니므로 그림자를 사용하지 않는다.
 const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
 
-/// 이 popup 이 그릴 lift 그림자. 그림자 적용 기준(ADR-0037)의 세 갈래를 popup id 로 판정한다.
-///
-/// 술어는 **명부 두 개의 여집합**이다 — shadowless 도 anchored 도 아니면 modal. 즉
-/// modal 갈래의 판정 기준은 "뷰포트를 점유한다(centered)" 이고, **scrim 유무가 아니다**:
-/// `PopupManager` 가 실제로 scrim 을 까는 것은 이 파일 아래쪽의 id 세트뿐이라 modal
-/// 그림자를 받는 표면 중 다수는 scrim 이 없다. scrim 은 값을 popover 보다 **크게 잡은
-/// 근거**(scrim 이 지운 대비를 그림자가 되돌린다)이지 갈래를 가르는 술어가 아니다 —
-/// ADR-0037 Decision.
+/// 그림자 없음·popover 목록에 없는 팝업은 modal 그림자를 사용한다.
+/// scrim 여부와는 별개인 분류다(ADR-0037).
 fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
     let th = theme::theme();
     if SHADOWLESS_POPUPS.contains(&popup_id) {
@@ -55,15 +35,8 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
     }
 }
 
-/// Popup 셸의 배경. 디자인 semantic 토큰 매핑: 대부분 popup 은 surface-raised
-/// (= surface0). 단 헤더 + 리스트형 "패널" popup 은 bg-panel(= base, 한 단계 더
-/// 어두움) — remote_tool / port_scanner 가 그 갈래다.
-///
-/// `file_handler_picker` 도 같은 갈래이고, 그 이유는 형태가 닮아서만이 아니다.
-/// 그 헤더의 format Tag 는 형식을 못 알아봤을 때 default 변형이고 그 채움이
-/// `tag-bg`(= surface-raised) 다. 셸을 surface-raised 로 두면 그 칩이 배경과 같은
-/// 색이 되어 **형식을 모른다는 사실이 화면에서 사라진다**(실측: 두 색이 픽셀 단위로
-/// 같았다). `popup_shell_fill_keeps_the_default_tag_visible` 가 그것을 값으로 고정한다.
+/// 팝업 종류별 배경. file_handler_picker의 배경은 default Tag 채움색과 구분해야 한다.
+/// popup_shell_fill_keeps_the_default_tag_visible에서 두 색을 비교한다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
         "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
@@ -76,10 +49,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
     }
 }
 
-/// 포인터가 rect 의 어느 테두리 밴드에 있는지 판정. 어느 엣지에도 안 닿으면 None.
-///
-/// `band` 가 `LogicalPx` 가 아닌 이유: 본문이 전부 egui `Rect`/`Pos2` 산술이라, 타입을
-/// 받으면 호출 한 자리에서 벗기던 것을 본문 네 자리에서 벗기게 된다.
+/// 포인터가 있는 테두리를 반환한다. 계산은 egui 좌표를 사용한다.
 fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<ResizeEdges> {
     let left = pos.x <= rect.min.x + band;
     let right = pos.x >= rect.max.x - band;
@@ -97,9 +67,7 @@ fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<Resiz
     }
 }
 
-/// 텍스트가 `max_width` 를 넘으면 뒤를 `…` 로 잘라 폭 안에 맞춘다(넘지 않으면 원본 그대로).
-/// popup 타이틀처럼 가용 폭이 좁을 수 있는 렌더링 경로 공통으로 쓴다 — 개별 popup 이
-/// 각자 타이틀 문자열을 축약할 필요 없이 이 함수가 겹침 방지를 전담한다.
+/// 텍스트가 폭을 넘으면 끝을 …로 줄인다.
 fn elide_for_width(ctx: &egui::Context, text: &str, font: egui::FontId, max_width: f32) -> String {
     if max_width <= 0.0 {
         return String::new();
@@ -139,17 +107,9 @@ fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
     }
 }
 
-/// 전체화면 버튼 글리프 — 디자인 아이콘 `fit`([`tasty_icons::FIT`], 네 모서리
-/// 브래킷)의 형상을 painter 직선으로 그린다.
-///
-/// SVG 아이콘(`Icon::image`)을 쓰지 않는 이유: 타이틀바는 `Ui` 가 아니라
-/// `ctx.layer_painter` 로만 그려지는 구간이고(콘텐츠 `Area` 는 타이틀바 아래에
-/// 따로 열린다), `Image::paint_at` 은 `Ui` 를 요구한다. 바로 옆 close X 도 같은
-/// 이유로 painter 직선이라 두 버튼의 렌더 방식이 일치한다.
+/// 타이틀바는 Ui 없이 painter로 그리므로 전체화면 아이콘도 선으로 그린다.
+/// 버튼의 60% 크기 안에서 디자인의 팔 비율 5/18을 유지한다.
 fn paint_fullscreen_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
-    // 디자인 `fit` 은 24 viewBox 안에서 브래킷 사각형이 3~21(=18), 팔 길이 ≈ 5 다.
-    // 글리프 자체를 아이콘 크기(버튼의 60%, 옆 close X 와 같은 눈크기)로 잡고 그
-    // 안에서 디자인 비례(5/18)를 유지한다 — 버튼 크기가 바뀌어도 형상이 따라간다.
     let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
     let arm = g.width() * (5.0 / 18.0);
     let stroke = egui::Stroke::new(theme::theme().icon_stroke_width.value(), color);
@@ -183,7 +143,6 @@ impl PopupManager {
         let mut fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId> = None;
         let mut layers: Vec<egui::LayerId> = Vec::new();
 
-        // Read pointer state once
         let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
         let primary_pressed = ctx.input(|i| i.pointer.primary_pressed());
         let primary_down = ctx.input(|i| i.pointer.primary_down());
@@ -199,7 +158,6 @@ impl PopupManager {
             }
         }
 
-        // Collect open popup indices, filtered by scope visibility
         let open_indices: Vec<usize> = self
             .popups
             .iter()
@@ -208,12 +166,8 @@ impl PopupManager {
             .map(|(i, _)| i)
             .collect();
 
-        // 이번 프레임에 실제로 그려지는 popup 들의 히트테스트 rect — plugin popup 쪽
-        // 판정이 같은 프레임에 읽는다. stale 이 아닌 것은 `draw_popups` 가
-        // `draw_plugin_popups` 보다 먼저 돌기 때문인데, **그 순서 계약의 자리는 여기가
-        // 아니라 두 호출이 나란히 있는 `gfx/gpu/egui_bridge.rs::run_egui_frame`** 이다
-        // (순서를 정하는 것이 이 파일이 아니라 그 호출 배치라서). 계약 본문과 그것을 무는
-        // 가드(`source_guards::frame_draw_order`)는 거기 적혀 있다.
+        // 이번 프레임의 영역을 뒤에 그릴 plugin 팝업에 전달한다.
+        // 호출 순서는 egui_bridge::run_egui_frame과 source_guards::frame_draw_order에서 확인한다.
         let hit_rects: Vec<Occluder> = open_indices
             .iter()
             .map(|&i| Occluder {
@@ -222,11 +176,7 @@ impl PopupManager {
             })
             .collect();
 
-        // Determine which popup (topmost) the pointer is over.
-        // 우선순위: close/전체화면 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠.
-        // 전체화면 버튼은 close 와 **같은 층**이다 — 둘 다 매니저가 직접 페인팅한
-        // 영역이고 둘 다 타이틀바(드래그 핸들) 위에 겹쳐 있으므로, 같은 우선순위로
-        // 핸들보다 먼저 판정해야 버튼을 눌러 끌어도 popup 이 따라오지 않는다.
+        // 입력 우선순위: 닫기·전체화면 버튼 > 리사이즈 테두리 > 이동 손잡이 > 콘텐츠.
         let mut hovered_popup: Option<PopupId> = None;
         let mut hovered_handle: Option<PopupId> = None;
         let mut hovered_close: Option<PopupId> = None;
@@ -234,14 +184,10 @@ impl PopupManager {
             None;
         let mut hovered_resize: Option<(PopupId, ResizeEdges)> = None;
         if let Some(pos) = pointer_pos {
-            // Check in reverse z-order (topmost first) for correct hit-testing
             for &idx in open_indices.iter().rev() {
                 let popup = &self.popups[idx];
                 let rect = popup.popup_rect();
-                // 규칙 7 — 나보다 위의 plugin popup 이 이 좌표를 덮으면 이 popup 은
-                // 포인터를 받지 않는다(hover / click-to-front / close 버튼 전부).
-                // 아래(더 낮은 z) host popup 이 대신 hover 를 가져갈 수 있으므로
-                // `break` 가 아니라 `continue` 다.
+                // 위의 plugin 팝업이 덮으면 건너뛴다. 아래 host 팝업의 다른 영역도 검사해야 하므로 continue한다.
                 if matches!(
                     point_ownership(rect, popup.z_seq, plugin_occluders, pos),
                     PointOwnership::OccludedByHigher
@@ -268,46 +214,32 @@ impl PopupManager {
                     }
                     break; // topmost popup wins
                 } else if super::child_overlay_hit(ctx, popup.id, pos) {
-                    // draw_fn 이 egui 네이티브 API로 그린 자식 오버레이(드롭다운 등)가
-                    // popup_rect 밖으로 삐져나간 경우 — 그 위 클릭은 이 popup 에 대한
-                    // "안쪽 클릭"으로 취급한다(close_btn/resize/handle 판정은 popup_rect
-                    // 자체에만 유효하므로 여기선 생략).
+                    // 부모 밖으로 나온 자식 드롭다운도 안쪽 클릭으로 취급한다.
                     hovered_popup = Some(popup.id);
                     break;
                 }
             }
         }
 
-        // Handle press (pre-content): close > focus/bring-front > outside-click.
-        // 이동/리사이즈 START 결정은 콘텐츠 렌더 *뒤* 로 미룬다(아래 post-content
-        // 블록) — 위젯 우선 중재(`is_using_pointer`)를 적용하기 위함이다. close 는
-        // 매니저가 직접 페인팅한 영역이라 egui 위젯이 아니므로 여기서 처리한다.
-        // focus/bring_front 는 START 여부와 무관(같은 팝업)하므로 여기서 끝낸다.
+        // 닫기·포커스·맨 앞으로 올리기를 먼저 처리한다. 이동·리사이즈 시작은
+        // 콘텐츠를 그린 뒤 위젯이 포인터를 사용했는지 확인하고 결정한다.
         if primary_pressed {
             if let Some(id) = hovered_close {
                 closed.push(id);
             } else if let Some((_, stage)) = hovered_fullscreen {
-                // 원본 popup 은 **닫지 않는다** — 무대에 올라가는 것은 이 popup 이
-                // 아니라 같은 형상의 별개 콘텐츠이므로, 무대를 나오면 popup 이
-                // 그대로 있어야 한다(fullscreen-stage.md §모델 1·2).
+                // 무대는 별도 콘텐츠이므로 원본 팝업은 닫지 않는다.
                 fullscreen_requested = Some(stage);
             } else if let Some(id) = hovered_popup {
                 bring_front = Some(id);
-                // Focus this popup, unfocus all others
                 for popup in &mut self.popups {
                     if popup.scope_visible {
                         popup.focused = popup.id == id;
                     }
                 }
             } else {
-                // Clicked outside all *host* popups. 그 좌표를 나보다 위에 있는 plugin
-                // egui-mesh popup 이 덮고 있으면 이건 "바깥 클릭" 이 아니라 그 popup 의
-                // 클릭이다(규칙 7) — dismiss 도 unfocus 도 하지 않는다.
-                //
-                // **1 프레임 stale**: host draw 는 `draw_plugin_popups` 보다 먼저 돌아
-                // 직전 프레임의 plugin rect 를 본다(반대 방향은 같은 프레임 값이라 정확).
-                // 방금 닫힌 plugin popup 이 outside-click 한 번을 더 삼킬 수 있지만,
-                // 반대(가려진 popup 이 잘못 닫히는 것)보다 회복이 쉬운 쪽을 택했다.
+                // 위의 plugin 팝업이 덮은 곳은 바깥 클릭으로 처리하지 않는다.
+                // host를 먼저 그리므로 plugin 영역은 직전 프레임 값이다. 방금 닫힌
+                // plugin 팝업이 클릭을 한 번 막을 수 있지만 가려진 팝업을 잘못 닫는 것을 피한다.
                 for popup in &mut self.popups {
                     if !popup.scope_visible {
                         continue;
@@ -332,7 +264,6 @@ impl PopupManager {
             }
         }
 
-        // Handle drag move / release
         for popup in &mut self.popups {
             if !popup.dragging {
                 continue;
@@ -355,9 +286,7 @@ impl PopupManager {
             }
         }
 
-        // Handle resize move / release. 잡은 엣지만 이동(반대편 고정), min_size 클램프 후
-        // scope 경계로 클램프. 사용자 리사이즈가 발생하면 size_user_overridden=true 로
-        // 표시 → sizer 가 크기를 되돌리지 못하게 한다(`popup::frame::draw_popup_layer` 가드).
+        // 잡은 테두리만 이동하고 최소 크기·범위 안으로 제한한다. 사용자가 바꾼 크기는 sizer로 덮지 않는다.
         for popup in &mut self.popups {
             let Some(edges) = popup.resizing else {
                 continue;
@@ -382,7 +311,6 @@ impl PopupManager {
                 if edges.bottom {
                     max.y = pos.y;
                 }
-                // min_size 클램프 — 잡은 엣지를 반대편 고정 엣지 기준으로 제한.
                 let mw = popup.min_size.x;
                 let mh = popup.min_size.y;
                 if edges.left {
@@ -405,7 +333,6 @@ impl PopupManager {
             }
         }
 
-        // Handle request_center (use scope rect if available, else screen rect)
         for popup in &mut self.popups {
             if popup.request_center && popup.open {
                 let center_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
@@ -417,7 +344,6 @@ impl PopupManager {
             }
         }
 
-        // Handle request_top — scope rect 상단 가로 중앙 정렬 (margin = spacing-sm).
         for popup in &mut self.popups {
             if popup.request_top && popup.open {
                 let anchor_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
@@ -445,17 +371,13 @@ impl PopupManager {
         } else if hovered_handle.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::Grab);
         } else if hovered_close.is_some() || hovered_fullscreen.is_some() {
-            // close / 전체화면 버튼 hover: pointer(손가락) 커서 (디자인 커서 매트릭스).
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         } else if hovered_popup.is_some() {
             // Content area: set default cursor (arrow) to override terminal cursor
             ctx.set_cursor_icon(egui::CursorIcon::Default);
         }
 
-        // --- Render all open popups ---
-        // scrim 자리는 z 순회 **전에** 정한다. 어느 자리가 이기는지는 자기보다 위에
-        // 뜬 popup 까지 봐야 알 수 있어(창 scrim 이 surface scrim 을 걷어낸다) 훑으면서
-        // 즉석에서 정할 수 없다.
+        // 상위 팝업의 넓은 scrim이 하위 scrim을 덮을 수 있어 렌더링 전에 범위를 고른다.
         let scrim_candidates: Vec<(usize, egui::Rect)> = open_indices
             .iter()
             .filter(|&&i| !closed.contains(&self.popups[i].id))
@@ -496,27 +418,16 @@ impl PopupManager {
             );
             layers.push(layer_id);
 
-            // 이 popup 의 layer 는 자기 범위로 클립된다. 셸은 inset 덕에 이미 안쪽에
-            // 있지만 그림자는 셸 밖으로 번진다 — 칸 경계에 붙은 popup 의 modal 그림자가
-            // 이웃 칸 위로 10 여 픽셀 흘러, 어둡게 한 자리가 그 칸뿐이라는 말이 깨진다
-            // (실측: 인접 칸 좌측 12px 띠가 약 10% 어두워졌다). 그림자 값은 그대로다
-            // (ADR-0037) — 닿는 자리만 범위 안으로 막는다.
+            // 그림자가 이웃 영역까지 어둡게 하지 않도록 팝업 소속 범위로 자른다.
             let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_clip);
 
-            // Scrim — [`Self::popup_has_scrim`] 이 고른 popup 뒤를 반투명 검정으로 딤
-            // 처리한다(디자인 <Scrim>). 덮는 자리는 **그 popup 이 묶인 scope 의 rect** 다:
-            // 창 범위면 화면 전체, surface 범위면 그 surface 한 칸(보더 포함, 인접 칸·
-            // 사이드바·탭바·상태바 제외). 어느 자리에 깔지는 위 `scrims` 가 이미 골랐다.
-            // 그 popup 자신의 layer 에 배경보다 먼저 그리므로 별도 layer 없이 그 popup
-            // 아래에 깔린다. radius 0 은 오늘의 셸에서 surface 와 창이 함께 쓰는 값이다.
+            // scrim은 해당 팝업의 소속 범위에만, 셸보다 먼저 그린다.
             if let Some((_, scrim_rect)) = scrims.iter().find(|(i, _)| *i == popup_idx) {
                 painter.rect_filled(*scrim_rect, 0.0, th.scrim().to_egui());
             }
 
             let bg_fill: egui::Color32 = popup_bg_fill(popup_id, &th);
-            // 배경보다 먼저 — 그림자는 셸 **아래**에 깔린다. scrim 이 이미 그려졌다면
-            // 그 위에 온다: scrim 은 바닥을 균일하게 어둡게 할 뿐 엣지를 안 그려서,
-            // 어두운 테마에서 모달 실루엣을 세우는 것은 이 단차다(ADR-0037).
+            // 그림자는 scrim 위, 셸 아래에 그린다.
             if let Some(shadow) = popup_shadow(popup_id) {
                 painter.add(
                     shadow
@@ -525,8 +436,6 @@ impl PopupManager {
                 );
             }
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
-            // popup 프레임 보더 — 전용 border role `border-frame`(neutral-500). 갤러리
-            // specimen(`catalog/popup_frame.rs`)이 읽는 것과 같은 접근자다.
             painter.rect_stroke(
                 popup_rect,
                 th.corner_radius.value(),
@@ -540,7 +449,6 @@ impl PopupManager {
                 let fullscreen_btn_rect = popup.fullscreen_btn_rect();
                 let buttons_left_x = popup.title_buttons_left_x();
 
-                // Title bar
                 let cr = th.corner_radius.value() as u8;
                 painter.rect_filled(
                     title_rect,
@@ -552,8 +460,6 @@ impl PopupManager {
                     },
                     th.bg_sidebar(),
                 );
-                // 타이틀바 하단선은 프레임 보더와 같은 chrome 이다 — 한 popup 안에서
-                // 두 색으로 갈리지 않도록 같은 role 을 읽는다.
                 painter.line_segment(
                     [
                         egui::pos2(title_rect.min.x, title_rect.max.y),
@@ -562,10 +468,7 @@ impl PopupManager {
                     egui::Stroke::new(th.border_width.value(), th.border_frame()),
                 );
 
-                // Title text — 우측 버튼군을 침범하지 않는 가용 폭 기준으로 elide.
-                // 기준선은 `title_buttons_left_x()` — 버튼이 close 하나면 그 좌변,
-                // 전체화면 버튼이 붙으면 그쪽 좌변이라 가용 폭이 버튼 폭 + 간격만큼
-                // 줄어든다. (양쪽에 같은 패딩을 둬 버튼과의 간격 + 시각적 대칭 확보.)
+                // 제목이 오른쪽 버튼 영역을 침범하지 않도록 줄인다.
                 let title_font = egui::FontId::proportional(th.font_size_body.value());
                 let title_pad = th.spacing_sm.value();
                 let title_avail_rect = egui::Rect::from_min_max(
@@ -589,9 +492,6 @@ impl PopupManager {
                     th.text_primary().into(),
                 );
 
-                // Fullscreen button — close 왼쪽. `fullscreen_btn_rect()` 가 None 인
-                // popup(대부분)에서는 이 블록이 통째로 돌지 않으므로 타이틀바 렌더가
-                // 이전과 바이트 단위로 같다.
                 if let Some(rect) = fullscreen_btn_rect {
                     let hovered = matches!(hovered_fullscreen, Some((id, _)) if id == popup_id);
                     if hovered {
@@ -611,9 +511,7 @@ impl PopupManager {
                         },
                     );
                     if hovered {
-                        // 아이콘만으로는 뜻이 모호하다. close 와 달리 tooltip 을 다는데,
-                        // 매니저가 painter 로 그린 영역이라 `Response::on_hover_text` 가
-                        // 없어 egui 의 명시 tooltip API 를 직접 쓴다.
+                        // painter로 그린 버튼에는 Response가 없어 툴팁을 직접 표시한다.
                         egui::show_tooltip_at(
                             ctx,
                             layer_id,
@@ -624,7 +522,6 @@ impl PopupManager {
                     }
                 }
 
-                // Close button
                 let is_close_hovered = hovered_close == Some(popup_id);
                 if is_close_hovered {
                     painter.rect_filled(
@@ -656,13 +553,8 @@ impl PopupManager {
                 );
             }
 
-            // Content — egui::Area 로 등록해야 egui 의 layer_id_at(스크롤/호버 라우팅)이
-            // 팝업을 인식한다. 이전엔 bare `Ui::new(layer_id)` 라 Area 미등록 → layer_id_at
-            // 이 팝업 레이어를 못 찾음 → ScrollArea 의 ui_contains_pointer()=false →
-            // 휠/드래그 스크롤 입력이 무시됐다. Area id 를 bg painter 와 동일한 layer_id 의
-            // Id 로 맞춰 같은 레이어를 공유(bg→content z-order 자동 정합).
-            // movable(false): tasty 가 수동 드래그. sense(hover): layer_id_at 등록만,
-            // 클릭/드래그는 내부 위젯이 처리하게 둠.
+            // egui가 스크롤·호버 영역으로 인식하도록 같은 layer ID의 Area에 콘텐츠를 그린다.
+            // 이동은 이 매니저가 처리하고 내부 위젯에는 클릭·드래그를 남긴다.
             {
                 let area_id = egui::Id::new("popup").with(popup_id).with(z_idx);
                 egui::Area::new(area_id)
@@ -673,31 +565,18 @@ impl PopupManager {
                     .sense(egui::Sense::hover())
                     .constrain(false)
                     .show(ctx, |ui| {
-                        // Area 의 hit-rect 를 content_rect 전체로 강제한다. set_min_size 가
-                        // 없으면 Area 가 콘텐츠(헤더+필터 등)에 맞춰 auto-shrink → footer
-                        // (allocate_new_ui 로 별도 배치)와 빈 공간이 빠져 hit-rect 가 줄고
-                        // layer_id_at 이 팝업 하단을 인식 못 한다.
+                        // 푸터와 빈 공간도 포인터 영역에 포함한다.
                         ui.set_min_size(content_rect.size());
                         ui.set_max_size(content_rect.size());
-                        // 이전 `Ui::new(max_rect(content_rect))` 는 clip_rect=content_rect
-                        // 라 콘텐츠 넘침(State 컬럼의 긴 라벨, 선택 하이라이트, 스크롤바)이
-                        // 팝업 경계에서 잘렸다. Area 는 기본 clip 이 더 넓어 넘침이 팝업
-                        // 밖으로 샌다 → content_rect 로 clip 복원.
+                        // 콘텐츠가 팝업 밖으로 넘치지 않게 자른다.
                         ui.set_clip_rect(content_rect);
                         content_fn(popup_id, ui);
                     });
             }
         }
 
-        // Handle drag/resize START (post-content): 위젯 우선 중재.
-        // `ctx.is_using_pointer()` 는 이번 프레임에 어떤 egui 위젯이 이 프레스를
-        // 가져갔는지(potential_click/drag_id) 반영하며, 콘텐츠 렌더 *후* 에야
-        // 확정된다. 어떤 위젯도 프레스를 가져가지 않았을 때만 이동/리사이즈를
-        // 시작한다 → 헤더 드래그 띠가 검색 입력 등 위젯과 겹쳐도 위젯이 항상
-        // 우선(명세 입력 우선순위: 위젯 > 리사이즈 > 이동). 우리 수동 드래그는
-        // egui 위젯이 아니라 이 신호를 self-trigger 하지 않는다. focus/bring_front
-        // 는 위 pre-content 블록에서 이미 처리됨. (close 는 매니저 페인팅이라
-        // is_using_pointer 에 안 잡히므로 pre-content 에서 따로 처리해 우선됨.)
+        // 콘텐츠 위젯이 포인터를 사용하지 않았을 때만 리사이즈·이동을 시작한다.
+        // 수동 드래그는 egui 위젯이 아니므로 is_using_pointer를 스스로 설정하지 않는다.
         if primary_pressed && !ctx.is_using_pointer() {
             if let Some((id, edges)) = hovered_resize {
                 if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
@@ -714,12 +593,10 @@ impl PopupManager {
             }
         }
 
-        // Apply close
         for id in &closed {
             self.close(id);
         }
 
-        // Bring clicked popup to front
         if let Some(id) = bring_front {
             self.bring_to_front(id);
         }
@@ -733,9 +610,7 @@ impl PopupManager {
         }
     }
 
-    /// Check if a popup's scope is currently visible.
-    /// 이번 프레임에 실제로 그려질(open + scope 가시) popup 중 z 가 가장 높은 것.
-    /// Esc 소유권 판정용(ADR-0036) — `draw` 안의 `open_indices` 와 같은 필터다.
+    /// 현재 그릴 팝업 중 z가 가장 높은 것을 찾는다. Escape 처리 대상을 정할 때 쓴다.
     pub fn topmost_visible_open(&self, draw_ctx: Option<&LayoutContext>) -> Option<(PopupId, u64)> {
         self.popups
             .iter()
@@ -787,22 +662,15 @@ impl PopupManager {
         }
     }
 
-    /// popup 이 들어갈 자리 — [`Self::scope_rect`] 에서 **surface 범위만** `inset` 만큼
-    /// 안쪽으로 들인다. surface 에 묶인 popup 이 제 surface 의 보더에 딱 붙으면 셸의
-    /// 일부처럼 보여 어느 칸에 묶였는지가 안 읽힌다.
-    ///
-    /// 창·워크스페이스 범위는 경계가 화면이라 들일 여백이 없고(그 둘은 `scope_rect` 가
-    /// `None` 을 준다), pane·tab 범위는 이 규칙이 다루는 자리가 아니라 그대로 둔다.
-    /// 칸이 inset 두 배보다 좁으면 들이는 폭을 절반으로 깎는다 — 뒤집힌 경계를 만들지
-    /// 않으려는 것이다.
+    /// surface 팝업만 보더에서 inset만큼 안쪽에 둔다. 좁은 영역은 여백을 줄여 경계 역전을 막는다.
+    /// 창·워크스페이스·pane·tab 범위에는 이 여백을 적용하지 않는다.
     pub(crate) fn scope_bounds(
         scope: &PopupScope,
         ctx: Option<&LayoutContext>,
         screen_rect: egui::Rect,
         inset: f32,
     ) -> egui::Rect {
-        // 바인딩이 없으면(레이아웃 컨텍스트가 없거나 그 칸이 이 프레임에 없음) 화면이
-        // 경계다 — 들일 자리가 없으므로 inset 도 없다.
+        // 소속 영역이 없으면 화면을 경계로 쓰며 inset은 적용하지 않는다.
         let Some(rect) = Self::scope_rect(scope, ctx) else {
             return screen_rect;
         };
@@ -816,16 +684,8 @@ impl PopupManager {
         rect.shrink(inset)
     }
 
-    /// scrim 을 어느 자리에 깔지 고른다. 입력은 **z 오름차순**으로 늘어선, scrim 을
-    /// 요구하는 popup 들의 scope rect. 출력은 같은 길이의 "여기서 깐다" 표시다.
-    ///
-    /// 규칙이 둘이고 둘 다 같은 이유에서 나온다 — scrim 은 알파 한 벌이라 **두 번 깔면
-    /// 그 자리만 두 배로 어두워진다.**
-    /// - **scope 당 한 번**: 같은 scope 에 popup 이 여럿 떠도(부모 popup 과 그것이 연
-    ///   자식 picker) scrim 은 한 번만 깔린다.
-    /// - **넓은 쪽이 이긴다**: 창 전체 scrim 이 있으면 그 안에 surface scrim 을 또 깔지
-    ///   않는다. 순서에 무관하게 같은 답이 나오도록, 뒤에 온 넓은 rect 는 자기가 덮는
-    ///   좁은 선택을 걷어낸다.
+    /// z 오름차순의 팝업 영역을 받아 scrim을 그릴 위치를 고른다.
+    /// 같은 범위에는 한 번만 그리며 넓은 영역이 포함하는 좁은 영역은 제외해 중복으로 어두워지지 않게 한다.
     pub(crate) fn pick_scrim_layers(rects: &[egui::Rect]) -> Vec<bool> {
         let mut paints = vec![false; rects.len()];
         let mut chosen: Vec<usize> = Vec::new();
@@ -846,12 +706,7 @@ impl PopupManager {
         paints
     }
 
-    /// 이 popup 이 뒤에 scrim 을 까는가.
-    ///
-    /// **범위가 아니라 id 로 정한다.** surface 범위를 쓰면서도 scrim 을 안 까는 표면이
-    /// 있다 — `search_bar` 는 트리거 옆에 붙는 anchored + scrim-less 갈래이고, 그 구분은
-    /// `docs/adr/0037-ui-input-motion-and-elevation.md` 가 정한다. 범위로 판정하면
-    /// 그 한 줄이 조용히 뒤집힌다.
+    /// scrim은 범위가 아니라 팝업 ID로 정한다. surface 소속인 search_bar도 scrim은 사용하지 않는다.
     pub(crate) fn popup_has_scrim(id: PopupId) -> bool {
         matches!(
             id,
@@ -914,9 +769,7 @@ mod tests {
         });
     }
 
-    /// 핸들러 선택기의 셸은 그 헤더가 이고 다니는 칩과 **같은 색이면 안 된다**.
-    /// format Tag 의 default 변형은 `tag-bg`(= surface-raised) 로 채워지므로,
-    /// 셸이 surface-raised 이면 "형식을 모른다" 는 칩이 배경에 녹는다.
+    /// 형식 Tag가 배경에 묻히지 않도록 셸과 다른 색을 사용한다.
     #[test]
     fn popup_shell_fill_keeps_the_default_tag_visible() {
         let th = theme::theme();
@@ -930,9 +783,7 @@ mod tests {
         assert_eq!(shell, egui::Color32::from(th.bg_panel()));
     }
 
-    // ── scrim scope ──────────────────────────────────────────────────────
-    // 한 셸에 surface 둘이 좌우로 붙어 있고, 왼쪽이 popup 의 소속 칸이다. 두 rect 는
-    // 경계선을 나눠 갖지 않는다 — 왼쪽의 오른쪽 변이 오른쪽의 왼쪽 변이다.
+    // 이웃 surface는 경계만 공유하고 내부 영역은 겹치지 않는다.
     const SURFACE_A: u32 = 11;
     const SURFACE_B: u32 = 22;
 
@@ -976,8 +827,6 @@ mod tests {
         assert!(!rect.contains(egui::pos2(300.0, 790.0)));
     }
 
-    /// 창 범위는 종전대로 화면 전체다 — `scope_rect` 가 `None` 을 주고 호출부가 화면으로
-    /// 되돌린다.
     #[test]
     fn window_scope_still_falls_back_to_the_whole_screen() {
         let layout = two_surface_layout();
@@ -1083,12 +932,7 @@ mod tests {
         );
     }
 
-    /// ADR-0037이 **anchored + scrim-less** 라고 부르는 갈래는 이름 그대로여야 한다.
-    ///
-    /// 그 ADR 은 그림자 명부만 들고 scrim 명부는 안 든다("scrim 유무는 갈래를 가르는
-    /// 술어가 아니다"). 그래서 두 명부가 어긋나도 그 문장 자체는 안 깨지고, 깨지는 것은
-    /// 그 갈래의 **이름**이다 — popover 그림자를 받는 표면이 scrim 을 깔면 그것은 더
-    /// 이상 scrim-less 가 아니다. 여기서 두 명부를 맞물려 그 어긋남에 채널을 준다.
+    /// popover 그림자를 사용하는 팝업에는 scrim이 없는지 두 목록을 대조한다.
     #[test]
     fn no_anchored_popup_takes_a_scrim() {
         for id in ANCHORED_POPUPS {

@@ -5,8 +5,7 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::view::main::MainView;
 use tasty_key_match::matches_any_binding;
 
-/// 줌 세 동작. **판별과 실행을 가르는 것이 이 타입의 존재 이유다** — 단발 키 경로는
-/// 키로 이것을 정하고, 명령 팔레트는 `action_id` 로 정한다. 실행부는 하나다.
+/// 키 입력과 명령 팔레트가 공유하는 줌 동작.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ZoomAction {
     In,
@@ -41,18 +40,12 @@ impl MainView {
         action: ZoomAction,
     ) -> bool {
         use crate::state::FocusedSurfaceType;
-        // Pick which surface override the shortcut targets based on focus.
         let focus = state.focused_surface_type(engine);
-        // 어느 kind 가 줌 가능한지는 registry 의 zoomable capability 로 판정(kind
-        // 하드코딩 없음). appearance 가변 대여 전에 미리 계산한다(registry 는 engine 의
-        // 다른 필드라 동시 대여 회피).
+        // appearance를 가변 대여하기 전에 registry의 zoomable 값을 읽는다.
         let kind_zoomable = focus.kind_capability(engine, |d| d.zoomable);
 
-        // webview(rendering="webview") kind 는 font_size override 가 아니라
-        // `PlatformWebView::set_zoom` 경로(host_api/webview.rs)를 탄다 — HtmlWebViewSettings
-        // 가 이미 매 프레임 plugin_settings 를 polling 해 backend 에 적용하므로(sync_webviews),
-        // 여기서는 그 설정 슬롯만 갱신하면 된다(신규 host API 불필요). egui-mesh kind 는
-        // 아래 기존 font_size 분기로 그대로 진행(unregressed).
+        // webview는 plugin_settings의 zoom을 sync_webviews에서 backend에 적용한다.
+        // egui로 그리는 surface는 아래에서 font_size를 조정한다.
         if let FocusedSurfaceType::Kind(k) = &focus
             && kind_zoomable
             && crate::core::surface_registry::webview_kind::is_webview_kind(k)
@@ -91,7 +84,6 @@ impl MainView {
                     .or_default();
                 (ov, size)
             }
-            // Other surfaces don't expose a font_size shortcut.
             _ => return false,
         };
 

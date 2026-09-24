@@ -12,15 +12,9 @@ use tasty_type_geometry::length::LogicalPx;
 const ITEM_HEIGHT: LogicalPx = LogicalPx(24.0);
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
 const HIDDEN_KINDS: &[&str] = &["empty"];
-/// 변환 메뉴 상단 우선 표시 순서(bundled UX 정책). 이 목록에 없는 kind 는 알파벳순으로
-/// 뒤따른다. 이건 "host 가 kind 의 *동작*을 안다"(=제거 대상 하드코딩)가 아니라 bundled
-/// kind 의 *정렬 선호*라는 별도 층위의 host UX 정책이므로 registry 로 데이터화하지 않고
-/// 본체에 정책으로 남긴다(generic-kind 마이그레이션 결정). plugin kind 는 여기 없으면
-/// 알파벳순으로 자연 편입된다.
+/// 메뉴의 우선 표시 순서. 나머지는 이름순으로 배치한다. kind의 실행 동작과는 별개다.
 const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
-/// `default_size` 산정 시 가정하는 항목 수. registry 가 비어 있을 수 있는 등록
-/// 시점에만 쓰이고, sizer 가 매 프레임 실제 등록된 kind 수로 재계산한다.
-/// 현재 빌트인 1 종 (terminal) + plugin 4 종 (markdown, image, explorer, html) = 5.
+/// registry가 비어 있을 수 있는 등록 시점의 임시 항목 수. 실제 크기는 sizer에서 다시 계산한다.
 const DEFAULT_KIND_COUNT: usize = 5;
 
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
@@ -38,12 +32,7 @@ pub fn convert_popup_default_size() -> egui::Vec2 {
     convert_popup_size_for(DEFAULT_KIND_COUNT, theme::theme().spacing_xs.value())
 }
 
-/// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
-/// 계산한다. egui draw 시 `allocate_exact_size` 사이의 vertical gap 이 정확히 이
-/// 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
-///
-/// Theme 토큰 자체가 host UI zoom 곱셈을 이미 반영하므로 (Z-1/Z-2) 여기서
-/// 별도 `ui_scale_factor()` 곱셈 없이 그대로 사용한다.
+/// 실제 egui 항목 간격과 같은 값으로 크기를 계산한다. Theme에 이미 UI 배율이 적용돼 있다.
 fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
     theme::theme().spacing_xs.value().round_ui()
 }
@@ -52,9 +41,7 @@ fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let count = count.max(1);
     let content_h = ITEM_HEIGHT.scaled(count as f32)
         + LogicalPx((count.saturating_sub(1)) as f32 * item_spacing);
-    // round_ui 누적 오차 / egui Ui::new 초기 cursor 미세 padding 흡수용 1 px 마진.
-    // 마지막 항목 baseline 이 content_rect 경계와 정확히 일치할 때 anti-alias 한 줄이
-    // 잘려 보이는 case 예방.
+    // 누적 반올림 오차와 anti-alias 경계 잘림을 줄이기 위한 1px 여유.
     let safety_margin = 1.0;
     egui::vec2(
         200.0,
@@ -87,31 +74,26 @@ mod size_tests {
 
     #[test]
     fn fits_five_items_medium_scale() {
-        // ui_scale=1.0 → spacing_xs(4.0) × 1.0 = 4.0. 옛 하드코딩 3.0 으로는 4 px 부족.
         assert_fits(5, 4.0);
     }
 
     #[test]
     fn fits_five_items_large_scale() {
-        // ui_scale=1.2 → spacing_xs(4.0) × 1.2 = 4.8 → round_ui ≈ 4.78125.
         assert_fits(5, 4.78125);
     }
 
     #[test]
     fn fits_five_items_small_scale() {
-        // ui_scale=0.85 → 3.4 → round_ui ≈ 3.40625.
         assert_fits(5, 3.40625);
     }
 
     #[test]
     fn fits_single_item() {
-        // count=1 이면 gap 0개라 spacing 영향 없음.
         assert_fits(1, 4.0);
     }
 
     #[test]
     fn fits_many_items_large_scale() {
-        // plugin 등록 폭주 가정 (예: 10종). 같은 식이라 안전해야 한다.
         assert_fits(10, 4.78125);
     }
 }
@@ -151,7 +133,7 @@ struct ConvertItem {
 
 /// SurfaceKindRegistry로부터 변환 가능한 kind 목록을 생성.
 /// - `empty` 같은 시스템 kind는 제외.
-/// - 빌트인은 PREFERRED_ORDER, 그 외 plugin kind는 알파벳순.
+/// - PREFERRED_ORDER를 먼저, 나머지는 이름순으로 표시한다.
 /// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
 /// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
@@ -230,10 +212,7 @@ pub enum ConvertResult {
     Close,
 }
 
-/// Pure visual props for [`draw_convert_view`].
-///
-/// AppState/CoreState 의존을 *완전히* 제거한 데이터. `String` 으로 owned 화한
-/// 것은 gallery mock 에서 임의 mock data 를 만들 수 있게 하기 위함.
+/// 앱 상태 없이 그릴 수 있는 메뉴 항목.
 #[derive(Debug, Clone)]
 pub struct ConvertItemView {
     pub kind: String,
@@ -274,10 +253,7 @@ pub enum ConvertViewAction {
     },
 }
 
-/// Pure 시각 view. AppState/CoreState 비의존.
-///
-/// 키보드 처리(Escape/Arrow/Enter/letter shortcut) 는 wrapper 책임 —
-/// view 는 마우스 클릭과 시각 강조만 다룬다.
+/// 클릭과 강조 표시를 처리한다. Escape·방향키·Enter·문자 단축키는 호출부에서 처리한다.
 pub fn draw_convert_view(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -291,12 +267,9 @@ pub fn draw_convert_view(
         let is_selected = props.selected_index == Some(idx);
 
         let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
-        // 현재 kind 마커였던 raw `✓`(U+2713)는 UI 폰트에 글리프가 없어 tofu 로
-        // 렌더되므로 제거하고, 아래에서 icons::CHECK(SVG)를 좌측 인덴트에 별도로
-        // 그린다. 두 분기가 동일한 4-space 인덴트를 써서 라벨 텍스트 x정렬을 맞춘다.
+        // 체크 기호는 글꼴 누락을 피하려 SVG로 그리며, 라벨은 같은 들여쓰기로 정렬한다.
         let label = format!("    {}    {}", item.label, shortcut_str);
         let text_color = if is_current {
-            // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
             theme.text_disabled()
         } else {
             theme.text_primary()
@@ -332,8 +305,6 @@ pub fn draw_convert_view(
             text_color.into(),
         );
 
-        // 현재 kind 체크마크 — 라벨 좌측 인덴트(4-space) 자리에 SVG 아이콘으로 배치.
-        // 세로는 행 중앙, tint 는 라벨색(text_placeholder)을 그대로 전달해 색을 맞춘다.
         if is_current {
             let icon_sz = theme.font_size_body.value();
             let icon_rect = egui::Rect::from_min_size(
@@ -356,8 +327,7 @@ pub fn draw_convert_view(
     action
 }
 
-/// 본체 wrapper: AppState/CoreState 로부터 props 추출 + 키보드 처리 + view 호출
-/// + action 적용을 담당.
+/// 앱 상태에서 메뉴 입력을 만들고 키보드·선택 결과를 처리한다.
 pub fn draw_convert_content(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -442,7 +412,6 @@ pub fn draw_convert_content(
         }
     });
 
-    // 키보드 선택을 view 가 강조할 수 있도록 props 갱신 (Arrow 처리 이후 값).
     let view_props = ConvertProps {
         items: props.items,
         selected_index: state.dialogs.convert_popup_selected,
@@ -455,8 +424,7 @@ pub fn draw_convert_content(
     action.map(ConvertResult::Action)
 }
 
-/// 내부 `ConvertItem` 목록 + 현재 kind 로부터 view 용 props 를 만든다.
-/// AppState/CoreState 비의존 — 테스트하기 쉬운 형태.
+/// 항목 목록과 현재 kind로 화면 입력을 만든다.
 fn props_from_items(
     items: &[ConvertItem],
     current_kind: Option<&'static str>,
@@ -498,9 +466,7 @@ pub fn apply_convert_action(
             );
         }
         ConvertAction::RequiresInput(kind) => {
-            // 이 kind 는 convert 전 파일 입력이 필요하다(capability `convert_requires_input`).
-            // host 는 kind 이름을 모르고 registry 데이터로 그 kind plugin 의 file-open
-            // 팝업을 연다 — surface_id 를 실어 plugin 이 제자리 변환하게 한다.
+            // 파일 입력이 필요한 kind는 surface_id를 전달해 플러그인의 열기 팝업을 사용한다.
             state.enqueue_convert_input_popup(engine, &kind, Some(surface_id));
         }
         ConvertAction::Kind(kind) => {
@@ -521,22 +487,15 @@ pub fn apply_convert_action(
 
 #[derive(Clone)]
 pub enum ConvertAction {
-    /// terminal 은 PTY spawn 이라 전용 `ConvertTarget::Terminal` 경로를 탄다(generic
-    /// Kind 로 수렴 불가 — host 책임의 PTY 생성).
+    /// host가 PTY를 생성해야 하는 터미널 전환.
     Terminal,
-    /// `convert_requires_input` capability 를 선언한 kind. 변환 전 그 kind plugin 의
-    /// file-open 팝업을 먼저 띄운다(파일 필수) — 빈 params 로 바로 변환하는 generic
-    /// Kind 와 동작이 다르다. host 는 kind 이름을 모르고 capability 로만 판정한다.
+    /// convert_requires_input이 지정돼 파일 선택을 먼저 거치는 전환.
     RequiresInput(String),
-    /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind. image 를 포함해
-    /// 파일 없이 빈 params 로 즉시 변환 가능한 모든 kind 가 이 경로로 수렴한다.
+    /// 추가 입력 없이 빈 params로 바로 전환할 kind.
     Kind(String),
 }
 
 fn action_for_kind(engine: &crate::core::CoreState, kind: &str) -> ConvertAction {
-    // terminal 만 전용 PTY 경로(위 variant 주석). 나머지는 registry capability 로 판정:
-    // `convert_requires_input` 이면 파일 입력 팝업 경유, 아니면 빈 params 즉시 변환.
-    // kind 이름 하드코딩 없이 데이터로만 라우팅한다.
     if kind == "terminal" {
         return ConvertAction::Terminal;
     }

@@ -1,12 +1,5 @@
-//! 휴먼 핸드오프 — approval popup.
-//!
-//! `state.dialogs.pending_approval_ids` 큐의 head 를 보여주고, 선택지 버튼/단축키
-//! 로 응답한다. 응답은 `ApprovalStore::respond(Responder::User)` 로 들어가며
-//! 영속 + waiter 깨우기는 store 가 알아서 한다. 큐가 비면 popup 이 닫힌다.
-//!
-//! Tier 3 분리: AppState/CoreState 비의존인 [`draw_approval_view`] + [`ApprovalProps`]
-//! 와, 큐/store mutation 을 담당하는 wrapper [`draw_approval_popup`] 로 나누어
-//! gallery 에서 단독 시각 검증 가능.
+//! 승인 요청을 순서대로 표시한다. 사용자 선택은 ApprovalStore에 반영한 뒤 UI에서 저장한다.
+//! 큐가 비면 닫으며, 표시 함수는 갤러리에서도 상태 저장소 없이 사용할 수 있다.
 
 use tasty_approval::{ApprovalRecord, Responder, Severity};
 use tasty_type_geometry::length::LogicalPx;
@@ -76,10 +69,7 @@ pub struct ApprovalChoiceView {
     pub destructive: bool,
 }
 
-/// View 입력 — popup 한 화면 분의 모든 데이터. AppState/CoreState 비의존.
-///
-/// `comment_buffer` 는 `&mut String` 으로 외부 상태를 그대로 빌려 받는다 — gallery
-/// 에서는 로컬 `String` 의 `&mut` 를 주면 된다.
+/// 승인 화면의 입력. 코멘트 버퍼는 호출부에서 빌려 쓴다.
 pub struct ApprovalProps<'a> {
     /// 요청 id 를 헤더에 함께 표시.
     pub id: String,
@@ -108,10 +98,7 @@ pub enum ApprovalViewAction {
     },
 }
 
-/// Pure 시각 view. AppState/CoreState 비의존.
-///
-/// Escape 는 의도적으로 받지 않는다 — 응답 우회로 워크플로우가 끊기지 않도록.
-/// 단축키 1..=9 는 view 내부에서 처리해 mouse 와 동일한 의도로 변환.
+/// 클릭과 1..=9 키 입력을 선택 결과로 반환한다. Escape는 응답으로 처리하지 않는다.
 pub fn draw_approval_view(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -134,7 +121,6 @@ pub fn draw_approval_view(
                 .color(theme.text_muted().to_egui()),
         );
     });
-    // 6→8 스냅 (그리드 정합 — 헤더 블록/본문 섹션 간격).
     vspace(ui, theme.spacing_sm);
 
     if let Some(body) = &props.body {
@@ -180,7 +166,6 @@ pub fn draw_approval_view(
         }
     });
 
-    // 숫자 키 1..=9 단축키. 단축키 → 선택지 index 매핑은 버튼 라벨과 동일.
     let pressed_num = ui.ctx().input(|i| {
         for n in 1..=9u8 {
             let key = match n {
@@ -212,9 +197,7 @@ pub fn draw_approval_view(
     action
 }
 
-/// `ApprovalRecord` → `ApprovalProps` 변환 (i18n 까지 미리 해결).
-///
-/// 별도 함수로 분리해 view 와 무관하게 단위 테스트 가능.
+/// 승인 레코드를 번역한 화면 입력으로 바꾼다.
 fn props_from_record<'a>(
     record: &ApprovalRecord,
     comment_buffer: &'a mut String,
@@ -245,10 +228,8 @@ fn props_from_record<'a>(
     }
 }
 
-/// PopupDef::on_close entry point — 외부 닫기/X 발생 시 큐 head 만 비운다(정책상
-/// X 는 본문에서 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음
-/// head 를 위해 popup 을 재발화한다. `state.dispatch_intent` 는 즉시 반영이 아니라
-/// 큐잉이므로(dedup: 이미 열려 있으면 무시) 다음 intent 드레인 때 실제로 열린다.
+/// 팝업이 닫히면 코멘트 버퍼를 비운다. 승인 큐는 유지하며, 요청이 남아 있으면
+/// OpenPopup을 보낸다. 실제로 다시 여는 시점은 다음 intent 처리 때다.
 pub fn on_close_approval_popup(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -268,9 +249,7 @@ pub fn on_close_approval_popup(
     }
 }
 
-/// PopupDef.draw_fn — 큐 head 의 record 를 렌더링하고 선택지 클릭/숫자 키로 응답.
-///
-/// AppState/CoreState 어댑터 wrapper: props 추출 → view 호출 → action 처리.
+/// 큐의 첫 요청을 그리고 사용자 응답을 저장한다.
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -281,7 +260,6 @@ pub fn draw_approval_popup(
     };
 
     let Some(record) = engine.approval_store.get(&current_id) else {
-        // record 가 사라졌으면 큐에서도 제거하고 다음.
         state.dialogs.pending_approval_ids.pop_front();
         state.dialogs.approval_comment_buffer.clear();
         if state.dialogs.pending_approval_ids.is_empty() {
@@ -290,7 +268,6 @@ pub fn draw_approval_popup(
         return PopupAction::None;
     };
 
-    // 이미 종료된 record 면 자동 정리.
     if record.state.is_terminal() {
         state.dialogs.pending_approval_ids.pop_front();
         state.dialogs.approval_comment_buffer.clear();
@@ -334,10 +311,7 @@ pub fn draw_approval_popup(
     PopupAction::None
 }
 
-/// 응답이 store 에 반영된 직후, IPC 핸들러와 같은 영속 경로를 호출한다.
-/// (도메인 layer 는 영속을 호스트에게 위임하므로 직접 호출해야 한다.)
-/// `state.memory` 의 Arc clone (Core 와 같은 allocation) 으로 영속한다 — UI
-/// thread 가 dispatcher cascade 없이 단발 호출.
+/// 도메인 저장소는 영속화를 맡지 않으므로 응답 후 UI에서 메모리에 저장한다.
 fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
     use tasty_memory::{MemoryValue, PutOpts, Scope};
     let scope = match record.request.workspace_id {
@@ -363,15 +337,12 @@ fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
     }
 }
 
-/// 새 approval 이 생성되면 호출. 큐에 push 하고 popup 이 닫혀 있으면 연다.
-/// danger severity 는 priority 가 높지만 현재 PopupManager 는 priority API 가
-/// 없으므로 동일 popup_id 로 처리 — 추후 popup-implementation 확장 시 분기.
+/// 중복되지 않은 승인 요청을 큐에 넣고 팝업 열기와 알림을 요청한다.
 pub fn enqueue_approval(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     record: &ApprovalRecord,
 ) {
-    // 같은 id 가 이미 큐에 있으면 중복 push 회피.
     if state
         .dialogs
         .pending_approval_ids
@@ -384,8 +355,7 @@ pub fn enqueue_approval(
         .dialogs
         .pending_approval_ids
         .push_back(record.request.id.clone());
-    // 첫 항목이면 popup 을 즉시 연다. 이미 열려 있으면 Intent dedup 으로 무시.
-    // approval 큐는 agent/plugin 발화이므로 origin 은 agent_ipc 로 통일.
+    // 에이전트·플러그인 요청이므로 사용자 조작으로 처리하지 않는다.
     state.dispatch_intent(
         crate::intent::UiIntent::OpenPopup {
             id: APPROVAL_POPUP_ID,
@@ -396,7 +366,6 @@ pub fn enqueue_approval(
         .from_agent_ipc(),
     );
 
-    // 알림 채널 동시 발화.
     let severity_prefix = match record.request.severity {
         Severity::Info => "",
         Severity::Warn => "[WARN] ",

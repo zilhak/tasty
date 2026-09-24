@@ -2,26 +2,10 @@
 //! 동작은 `docs/features/native-file-picker/index.md`, 원격 조회 권한은 ADR-0022를 따른다.
 //! OS의 로컬 파일 선택 대화상자는 원격 경로를 탐색할 수 없어 이 화면을 따로 둔다.
 //!
-//! gallery specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`
-//! (mock 데이터로 독립 렌더 — 본체와 코드 공유는 하지 않는다, `file_handler_picker`
-//! 갤러리 specimen과 동일 관례).
-//!
-//! ## Split: wrapper / view / action
-//!
-//! 순수 시각 [`draw_file_picker_view`] 는 [`FilePickerProps`] 만 받고
-//! [`FilePickerAction`] 만 반환한다(AppState/CoreState 비의존). [`draw_file_picker`]
-//! wrapper 가 runtime 상태에서 props 를 추출하고, mirror 판별(`Workspace.mirror`) +
-//! 원격 조회 큐잉(`CoreState::pending_list_dir_forward`) + action → mutation 을 담당.
-//!
-//! ## 로컬/원격 데이터 흐름
-//!
-//! - **로컬**: `crate::core::fs_list::read_dir_entries` 를 wrapper 가 직접 동기 호출.
-//! - **원격**: wrapper 가 `CoreState::pending_list_dir_forward` 에 요청을 push(popup
-//!   상태를 `FpLoadState::Loading{request_id, sent_at}` 로 전이) → App 이
-//!   `about_to_wait` 에서 attach 채널로 전송 → 원격이 같은 `read_dir_entries` 로
-//!   처리 → `list_dir_result` 커스텀 이벤트로 회신 → reader thread 가
-//!   `MirrorEvent::ListDirResult` 로 이 popup 상태에 직접 반영(`attach_client.rs`).
-//!   soft timeout(응답 없음) 은 wrapper 가 매 프레임 `sent_at.elapsed()` 로 자체 판정.
+//! 표시 함수는 FilePickerProps를 받아 동작을 반환하며 갤러리에서 따로 그릴 수 있다.
+//! 로컬 목록은 호출부에서 동기 read_dir_entries로 읽는다.
+//! 원격 목록은 pending_list_dir_forward에 넣고 attach 응답으로 갱신한다.
+//! 응답 제한은 매 프레임 sent_at의 경과 시간으로 확인하며 로컬 읽기에는 적용하지 않는다.
 
 mod footer;
 #[cfg(test)]
@@ -34,9 +18,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 
-/// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
-/// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0035와 같은
-/// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
+/// breadcrumb 구분자 크기. 대응 토큰이 없어 갤러리와 같은 별도 값을 사용한다.
 pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
@@ -54,8 +36,7 @@ const ROW_H: LogicalPx = LogicalPx(28.0);
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 
-// 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
-// `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
+// 원격 연결 화면과 같은 공용 중앙 안내 영역 치수.
 use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
@@ -66,9 +47,7 @@ pub fn picker_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui
     egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
-/// 목록 한 행의 시각 입력. `DirEntryInfo` 를 그대로 쓰지 않는 이유는
-/// `file_handler_picker` 관례와 동일 — 순수 view 가 표시용 pre-formatted 문자열만
-/// 받게 해 gallery mock 에서도 안전하게 만들 수 있다.
+/// 갤러리에서도 사용할 수 있도록 표시 문자열로 준비한 목록 행.
 #[derive(Clone)]
 pub struct FilePickerEntryView {
     pub name: String,
@@ -136,16 +115,12 @@ pub struct FilePickerProps<'a> {
     pub confirm_label: &'a str,
     /// 덮어쓰기 경고 줄. `{name}` 자리에 이름이 mono 로 들어간다.
     pub overwrite_warning: &'a str,
-    /// 저장 모드에서 폴더 행을 고른 상태의 안내 줄. `{name}` 자리에 폴더 이름이 mono 로
-    /// 들어간다. 경고가 아니라 사실이라 톤이 없다 — 확정 버튼은 이름 칸만 읽으므로 고른
-    /// 폴더가 쓰이는 대상을 바꾸지 못한다는 것을, **읽는 자리에서** 말한다.
+    /// 저장 모드에서 선택한 폴더가 저장 대상은 아니라는 안내. {name}은 고정폭 글꼴로 표시한다.
     pub folder_not_save_target: &'a str,
     /// 열기 모드에서 폴더 행을 고른 상태의 안내 줄. `{name}` 은 폴더 이름(mono),
     /// `{confirm}` 은 확정 버튼 이름이다 — 그 버튼이 곧 키보드로 들어가는 길이다.
     pub folder_open_enters: &'a str,
-    /// `…` 크럼의 hover 설명. `{}` 자리에 숨긴 폴더 수.
-    /// `…` 툴팁 — 숨긴 조상이 **하나일 때**. 영어만 단수형이 갈리고 ko·ja 는 굴절이
-    /// 없어 같은 문장의 1 판이다(디자인 2026-09-14 "counts of one get singular forms").
+    /// 숨긴 조상이 하나일 때의 툴팁. 단수형 문구를 별도로 받는다.
     pub hidden_folders_one: &'a str,
     /// `…` 툴팁 — 숨긴 조상이 둘 이상일 때. `{}` 가 수로 치환된다.
     pub hidden_folders_many: &'a str,
@@ -159,11 +134,7 @@ pub struct FilePickerProps<'a> {
     pub error_conn_reconnect: &'a str,
 }
 
-/// 고른 것이 **폴더 하나**인가 — 그렇다면 그 이름.
-///
-/// 두 모드에서 뜻이 갈리지만(저장은 "대상이 아니다", 열기는 "들어간다") 판정은 하나다.
-/// 그래서 footer 안내 줄과 확정 버튼의 활성 판정이 같은 함수를 읽는다 — 둘이 갈리면 안내
-/// 줄이 뜬 채 버튼이 아무것도 안 하는 상태가 생긴다.
+/// 선택한 폴더 하나의 이름. 푸터 안내와 확정 버튼이 같은 판정을 쓴다.
 pub(super) fn selected_folder<'a>(props: &'a FilePickerProps<'a>) -> Option<&'a str> {
     let [name] = props.selected else {
         return None;
@@ -200,12 +171,8 @@ pub enum FilePickerAction {
     EditName(String),
 }
 
-/// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
-///
-/// 레이아웃 순서가 넘침을 흡수하는 자리를 정한다(디자인 "long-path shrink rule"):
-/// 헤더와 path bar 를 위에서, **footer 를 아래에서 먼저** 자리 잡고 남은 높이를 본문에
-/// 준다. path bar 는 버튼이 오른쪽을 먼저 차지하고 breadcrumb 이 남은 폭 안에서 잘리거나
-/// 접히므로, 경로가 아무리 길어도 footer 의 취소·확정 버튼은 popup 안에 남는다.
+/// 헤더·경로·푸터 영역을 먼저 정하고 목록에는 남은 높이를 준다.
+/// 긴 경로는 breadcrumb 안에서 줄여 푸터 버튼 영역을 보존한다.
 pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> FilePickerAction {
     let ctx = ui.ctx().clone();
     if props.owns_escape && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -215,7 +182,6 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     let th = props.theme;
     let mut action = FilePickerAction::None;
 
-    // ── Header ────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         ui.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
@@ -243,12 +209,10 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     ui.add_space(th.spacing_xs.value());
     hline(ui, th);
 
-    // ── Path bar (breadcrumbs + up + refresh) ────────────────────────────
     path_bar::path_bar(ui, props, &mut action);
     ui.add_space(th.spacing_xs.value());
     hline(ui, th);
 
-    // ── Footer 를 아래에서 먼저 자리 잡고, 남은 높이가 본문이다 ─────────────
     let rest = ui.available_rect_before_wrap();
     let footer_h =
         footer::footer_height(ui, props).min(LogicalPx(rest.height()).max(LogicalPx(0.0)));
@@ -258,7 +222,6 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     );
     let body_rect = egui::Rect::from_min_max(rest.min, egui::pos2(rest.right(), footer_rect.top()));
 
-    // ── Body ─────────────────────────────────────────────────────────
     let mut body_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("file_picker_body")
@@ -273,7 +236,6 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
         &mut action,
     );
 
-    // ── Footer ───────────────────────────────────────────────────────
     let mut footer_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("file_picker_footer")
@@ -523,7 +485,7 @@ fn center_state(
     clicked
 }
 
-/// 원격 host 배지(§6.1 A안, gallery specimen 채택) — mono `user@host` 칩.
+/// 원격 호스트를 user@host 형태로 표시하는 배지.
 fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
     hspace(ui, th.spacing_sm);
     let info = th.accent_info();
@@ -575,9 +537,7 @@ fn hline(ui: &mut egui::Ui, th: &Theme) {
     );
 }
 
-/// PopupDef::on_close entry point — file_handler_picker 와 동일 관례: X 버튼/외부
-/// 닫기처럼 dispatch 없이 닫히면 `result` 가 아직 `None` 일 수 있다. 미확정이면
-/// Cancelled 로 명시해 호스트 본체의 result-drain 이 대기 상태로 남지 않게 한다.
+/// 결과 없이 닫혔으면 Cancelled를 기록해 호출부가 계속 기다리지 않게 한다.
 pub fn on_close_file_picker(
     _ctx: &egui::Context,
     state: &mut AppState,
@@ -590,7 +550,7 @@ pub fn on_close_file_picker(
     }
 }
 
-/// PopupDef.draw_fn — runtime wrapper. props 추출 + view 호출 + action → mutation.
+/// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -600,10 +560,8 @@ pub fn draw_file_picker(
         return PopupAction::Close;
     };
 
-    // 원격 mirror 워크스페이스가 사라졌으면(disconnected 정리 — attach_client.rs
-    // cleanup_mirror_workspace) 응답을 영영 못 받으므로 ErrorConn 으로 전이한다.
-    // 세션의 raw `disconnected` 플래그는 App 소유(popup wrapper 도달 불가)라, 이
-    // "mirror workspace 자체가 사라졌다"는 더 상위의 관측 가능한 결과로 판별한다.
+    // 원격 mirror 워크스페이스가 사라지면 연결 오류로 표시한다.
+    // 세션의 disconnected 플래그는 이 호출부에서 직접 읽을 수 없다.
     if let Some(mirror_ws_id) = data.mirror_ws_id
         && engine.find_workspace_index_for_id(mirror_ws_id).is_none()
         && !matches!(data.load, FpLoadState::ErrorConn(_))
@@ -612,7 +570,6 @@ pub fn draw_file_picker(
         data.load = FpLoadState::ErrorConn(t("filepicker.error_conn.session_lost").to_string());
     }
 
-    // soft timeout: Loading 상태에서 일정 시간 응답이 없으면 ErrorConn 전이.
     if let Some(FpLoadState::Loading { sent_at, .. }) =
         state.dialogs.file_picker.as_ref().map(|d| d.load.clone())
         && sent_at.elapsed() > LIST_DIR_SOFT_TIMEOUT
@@ -622,8 +579,6 @@ pub fn draw_file_picker(
     }
 
     let th = theme::theme();
-    // Esc 소유권은 popup 매니저가 프레임 초입에 정한다(ADR-0036) — 여기서 다시
-    // 계산하지 않고 그 판정을 읽기만 한다.
     let owns_escape = state.popup_escape_owner == Some(FILE_PICKER_POPUP_ID);
     let data = state.dialogs.file_picker.as_ref().unwrap();
 
@@ -656,8 +611,7 @@ pub fn draw_file_picker(
         FpLoadState::ErrorConn(r) => FpViewState::ErrorConn(r.clone()),
     };
 
-    // 고른 것이 폴더면 이름 칸은 비어 있다 — 확정 버튼이 읽는 값은 파일 이름이고, 폴더는
-    // 그 값이 될 수 없다(폴더를 고른 상태에서 확정은 "들어간다" 로 간다).
+    // 폴더를 고르면 이름 칸은 비우고 확정 버튼은 해당 폴더로 이동한다.
     let selection_text = data
         .selected
         .iter()
@@ -770,8 +724,6 @@ fn apply_action(
             PopupAction::None
         }
         FilePickerAction::Confirm => {
-            // 폴더 하나를 골랐으면 확정은 **그 폴더로 들어간다** — 더블클릭 말고 키보드로
-            // 내려가는 길이 이것이다(디자인 제스처 표).
             let folder = state.dialogs.file_picker.as_ref().and_then(|d| {
                 let [name] = d.selected.as_slice() else {
                     return None;
@@ -790,8 +742,7 @@ fn apply_action(
             }
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 let is_remote = d.mirror_ws_id.is_some();
-                // 방어적 재확인 — view 의 `can_open` 게이트를 우회해도(예: 향후 다른
-                // 호출 경로) 디렉토리를 파일로 확정하지 않는다.
+                // 화면의 활성화 검사와 별개로 디렉터리를 파일로 확정하지 않게 재확인한다.
                 let all_files = d.selected.iter().all(|name| {
                     d.entries
                         .iter()
@@ -825,17 +776,12 @@ fn apply_action(
     }
 }
 
-/// 파일 피커가 어디서 출발하는가 — 시작 디렉토리와 그것을 띄운 surface.
-///
-/// 피커는 "지금 보고 있는 surface" 의 폴더에서 연다. 이 값은 `inherit_cwd` 설정과 무관하다
-/// — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고, 피커는 새 surface 를 만들지 않는다
-/// (ADR-0022).
+/// 출발 surface의 디렉터리. 새 surface의 상속을 정하는 inherit_cwd와는 무관하다.
 #[derive(Debug, Clone, Default)]
 pub struct FilePickerStart {
     /// 시작 디렉토리. 로컬 출발이면 로컬 절대경로, 원격(mirror) 출발이면 원격 경로 문자열.
     pub dir: Option<String>,
-    /// 피커를 띄운 surface. 로컬/원격 판정을 **활성 workspace 가 아니라** 이 surface 의
-    /// workspace 로 한다 — 에이전트 트리거는 활성 workspace 와 무관할 수 있다.
+    /// 활성 워크스페이스가 아니라 이 surface의 소속으로 로컬·원격을 구분한다.
     pub origin_surface_id: Option<u32>,
 }
 
@@ -856,10 +802,8 @@ impl FilePickerStart {
     }
 }
 
-/// 시작 디렉토리를 정한다. 원격이면 주어진 문자열을 그대로 쓴다 — 로컬에서 stat 할 수 없으니
-/// 서버의 에러 회신에 맡기고, 없으면 빈 문자열(서버가 원격 홈으로 해석)이다. 로컬이면 절대경로인
-/// 디렉토리일 때만 채택하고, 아니면 홈으로 폴백한다(존재하지 않는 경로로 열면 빈 에러 화면이
-/// 뜬다).
+/// 원격은 로컬에서 검사하지 않고 주어진 경로를 사용한다. 없으면 서버가 홈으로 해석할 빈 문자열이다.
+/// 로컬은 실제 절대 디렉터리만 채택하며 아니면 홈을 사용한다.
 fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
     if is_remote {
         return requested.unwrap_or_default();
@@ -876,18 +820,10 @@ fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
         .to_string()
 }
 
-/// Tools 메뉴 항목 클릭 · 단축키 · `file_picker.trigger` IPC(ADR-0036) 진입점 —
-/// 출발 surface(없으면 활성 workspace)가 mirror 인지로 로컬/원격을 판별해
-/// [`crate::state::FilePickerData`] 를 채우고 popup 을 연다. 원격이면 `navigate` 가
-/// `pending_list_dir_forward` 를 큐잉하고, 로컬이면 즉시 동기 로드한다.
-///
-/// `start`: 시작 디렉토리와 출발 surface. `path_input` 등 사용자가 이미 적어 둔 경로를
-/// 시작점으로 삼는 것은 다루지 않는다 — 그 입력은 호출자(plugin 팝업)의 상태라 host 가 모른다.
-///
-/// `requester`: `Some` 이면 `file_picker.trigger` 로 이 popup 을 연 plugin — 확정/취소
-/// 시 `app::dispatch::file_picker` 가 `"file_picker.result"` 이벤트를 이 plugin 에만
-/// push 한다(ADR-0036). Tools 메뉴는 `None`.
-/// `filters`: 확장자 필터(점 없이) — 비면 필터 없음.
+/// 출발 surface의 소속(없으면 활성 워크스페이스)으로 로컬·원격을 구분해 피커를 연다.
+/// 로컬은 동기로 읽고 원격은 navigate에서 요청을 큐에 넣는다.
+/// start는 출발 디렉터리와 surface이며 플러그인 입력 칸의 값은 포함하지 않는다.
+/// requester가 있으면 결과를 해당 플러그인에만 보낸다. filters가 비면 확장자를 제한하지 않는다.
 pub fn open(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -1007,9 +943,8 @@ fn navigate(
     }
 }
 
-/// 원격 경로가 Windows 스타일(`C:\Users\alice`)인지 — 원격 host OS 는 client 가
-/// 미리 알 수 없으므로, 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 판별한다.
-/// POSIX 경로는 `\` 를 파일명에 거의 쓰지 않으므로 이 휴리스틱으로 충분하다.
+/// 원격 OS를 알 수 없어 경로에 역슬래시가 있으면 Windows 형식으로 추정한다.
+/// 역슬래시를 이름에 포함한 POSIX 경로는 이 방식으로 구별하지 못한다.
 fn is_windows_style_remote_path(p: &str) -> bool {
     p.contains('\\')
 }

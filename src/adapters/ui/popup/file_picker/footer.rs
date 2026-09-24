@@ -1,5 +1,4 @@
-//! 파일 피커 footer — 이름 행 · 덮어쓰기 경고 줄 · 버튼 행. view 가 이 높이를 아래에서 먼저
-//! 자리 잡으므로 버튼은 어떤 경로 길이에서도 popup 안에 남는다.
+//! 이름·안내·확정 버튼을 표시하는 푸터. 목록보다 먼저 높이를 확보한다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, Input};
@@ -20,11 +19,8 @@ fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
     LogicalPx(row).max(CRUMB_GLYPH)
 }
 
-/// footer 높이 — 위 구분선 아래 간격 · 이름 행 · (폴더 안내 줄) · (경고 줄) · 버튼 행.
-///
-/// 두 줄은 배타적이지 않다. 저장 모드에서 이름 칸이 기존 파일을 가리키는 채로 폴더 행을
-/// 고르면 둘이 함께 선다 — 둘이 말하는 것이 다르기 때문이다(무엇을 덮어쓰는가 · 고른 것이
-/// 대상이 아니다).
+/// 푸터 높이. 저장 모드에서 기존 파일명을 둔 채 폴더를 고르면
+/// 폴더 안내와 덮어쓰기 경고가 함께 필요하므로 두 줄을 모두 포함한다.
 pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> LogicalPx {
     let th = props.theme;
     let mut h = th.spacing_sm + th.input_height() + th.spacing_sm + th.button_height();
@@ -55,7 +51,6 @@ pub(super) fn draw_footer(
     ui.spacing_mut().item_spacing = egui::vec2(th.spacing_sm.value(), 0.0);
     ui.add_space(th.spacing_sm.value());
 
-    // 이름 행.
     let (name_row, _) = ui.allocate_exact_size(
         egui::vec2(w, th.input_height().value()),
         egui::Sense::hover(),
@@ -107,7 +102,6 @@ pub(super) fn draw_footer(
         }
     }
 
-    // 폴더 안내 줄 — 고른 것이 폴더 하나일 때.
     if let Some(folder) = selected_folder(props) {
         ui.add_space(th.spacing_sm.value());
         let (line, _) = ui.allocate_exact_size(
@@ -117,7 +111,6 @@ pub(super) fn draw_footer(
         folder_line(ui, th, line, props, folder);
     }
 
-    // 덮어쓰기 경고 줄.
     if let FilePickerMode::Save {
         name,
         overwrite: true,
@@ -132,7 +125,6 @@ pub(super) fn draw_footer(
         overwrite_line(ui, th, line, props.overwrite_warning, name);
     }
 
-    // 버튼 행.
     ui.add_space(th.spacing_sm.value());
     let (buttons_row, _) = ui.allocate_exact_size(
         egui::vec2(w, th.button_height().value()),
@@ -146,9 +138,7 @@ pub(super) fn draw_footer(
     );
     buttons.spacing_mut().item_spacing.x = th.spacing_sm.value();
     let can_confirm = match props.mode {
-        // 폴더 하나를 골랐으면 [열기] 는 **그 폴더로 들어간다** — 그것이 키보드로 내려가는
-        // 길이다(디자인 제스처 표). 그 밖에는 selected 전원이 파일이어야 활성화한다
-        // (단일 선택만이 아니라 멀티 선택 확장 대비).
+        // 폴더 하나면 그 안으로 이동하고, 그 외에는 선택한 항목이 모두 파일이어야 한다.
         FilePickerMode::Open { .. } => {
             matches!(props.state, FpViewState::Loaded)
                 && !props.selected.is_empty()
@@ -213,11 +203,8 @@ fn read_only_field(ui: &mut egui::Ui, th: &Theme, width: f32, text: &str, placeh
         );
 }
 
-/// 폴더를 고른 상태의 안내 줄 — `folder` 글리프 + 문구. caption · `text-muted`.
-///
-/// 톤이 없는 이유: 잘못된 것이 없다. 저장 모드에서는 고른 폴더가 쓰이는 대상이 못 된다는
-/// 사실을, 열기 모드에서는 확정하면 들어간다는 사실을 말한다. 열기 문구가 부르는 버튼
-/// 이름은 `confirm_label` 에서 온다 — 문구와 버튼이 갈리지 않게.
+/// 선택한 폴더의 안내. 저장 대상이 아니라는 설명 또는 열기 버튼으로 들어간다는 설명이다.
+/// 버튼 이름은 실제 confirm_label을 사용한다.
 fn folder_line(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -279,8 +266,7 @@ enum Slot {
     Confirm,
 }
 
-/// 문구를 `{name}` · `{confirm}` 자리에서 가른다. 두 자리가 어느 순서로 와도 되도록 앞에서
-/// 훑는다 — 세 언어의 어순이 같지 않다.
+/// 언어마다 순서가 다를 수 있어 {name}과 {confirm}을 나타나는 순서대로 나눈다.
 fn split_named(template: &str) -> Vec<(&str, Slot)> {
     let mut out = Vec::new();
     let mut rest = template;

@@ -1,26 +1,10 @@
-//! Modifier-hint 오버레이 **본체** — 홀드→표시 수명주기 + 드래그/리사이즈/영속 + 커스텀 draw.
+//! modifier를 누르고 있을 때 표시하는 단축키 도움말. 키보드 포커스는 받지 않으며
+//! 마우스로 이동·크기 조절·닫기를 할 수 있다. Shift 단독은 1200ms, 나머지는 500ms 뒤
+//! 표시하고 200ms 동안 alpha 0.2→1.0으로 바꾼다. 키를 모두 떼면 닫는다.
 //!
-//! 4분류(Popup/Toast/Banner/Modal) 어디에도 안 맞는 **신규 오버레이 요소**다:
-//! **키보드 포커스 없음 + 마우스 인터랙티브(드래그 이동·테두리/코너 리사이즈·X) + 홀드 수명**.
-//! modifier 를 500ms 이상 홀드하면 200ms 페이드(opacity 0.2→1.0)로 등장하고, 키를 떼면
-//! 즉시 소멸한다. 콘텐츠 모델은 [`super::input::shortcuts::modifier_hint`](modifier-hint-02),
-//! 시각 토큰은 `Theme::modhint_*()`(modifier-hint-01 슬롯 + design-token-mapping).
-//!
-//! ## 불가침 원칙
-//! - **원칙1(사용자↔에이전트 분리)**: 홀드 상태는 winit `ModifiersChanged`(실제 사용자
-//!   입력)만 반영한다. IPC/CLI 로 강제 표시할 수 없다. X dismiss·드래그·리사이즈는 사용자
-//!   마우스만.
-//! - **원칙3(포커스 독립성)**: 키보드 포커스를 **절대** 취득하지 않는다. 마우스만 소비하며,
-//!   `AppState::modifier_hint_hovered` 가드가 `mouse.rs` 4지점에서 하위 surface 로의 전파
-//!   (click-to-activate/휠/드래그)를 막고, `gfx/gpu.rs` 커서 결정부에서도 같은 플래그로
-//!   패널 아래 surface 의 커서(I-beam 등)가 덮어써지지 않게 막는다(입력 소비가 아니라
-//!   프레임 후처리 시각 갱신이라 mouse.rs 4지점과는 별도 카테고리).
-//!
-//! ## Model / Runtime / View 분리
-//! - [`hold_reveal_alpha`] / [`default_rect`] / [`clamp_rect`] / [`resize_to`] — 순수 함수,
-//!   테스트로 고정.
-//! - [`ModifierHintRuntime`] — `AppState` 에 사는 홀드 상태 + 진행 중 드래그 working rect.
-//! - [`draw_modifier_hint`] — 매 프레임 draw. `overlay::draw_overlays` 가 toast/banner 인접에서 호출한다.
+//! 홀드 상태는 실제 ModifiersChanged 입력으로 갱신한다. 강제 조작 IPC는 debug 전용이다.
+//! modifier_hint_hovered는 아래 surface의 마우스 입력과 커서 덮어쓰기를 막는다.
+//! 위치·크기는 드래그를 놓을 때 저장한다.
 
 use std::time::Instant;
 
@@ -40,11 +24,7 @@ enum DragMode {
     Resize,
 }
 
-/// modifier-hint 오버레이의 런타임 상태. `AppState` 필드(gui 전용).
-///
-/// 홀드 상태(시작 시각·눌린 조합·세션 dismiss)와 진행 중 드래그 working rect 를 담는다.
-/// 지오메트리 영속값은 `Settings::modifier_hint`(pos/size)에 있고, working 은 드래그 중의
-/// 임시 실시간 rect 다(놓는 시점에 Settings 로 커밋).
+/// 홀드 상태와 드래그 중의 임시 영역. 저장된 위치·크기는 Settings::modifier_hint에 있다.
 #[derive(Debug, Clone, Default)]
 pub struct ModifierHintRuntime {
     /// 홀드 시작 시각. `None` = 홀드 아님. **최초 press 에만 시작**하고 조합이 바뀌어도 유지.
@@ -58,14 +38,8 @@ pub struct ModifierHintRuntime {
 }
 
 impl ModifierHintRuntime {
-    /// 홀드 상태를 갱신한다. `ModifiersChanged` 훅이 플랫폼 정규화된 축 bool 로 호출한다.
-    ///
-    /// - 하나도 안 눌림 → 전부 clear(+ dismissed 리셋). 반환 `true`(표시 갱신 필요).
-    /// - 하나 이상 눌림 → 현재 눌린 4축을 그대로 `held` 조합으로 저장. **조합이 바뀌면 항상
-    ///   dirty(=`true`)** 를 반환해 즉시 콘텐츠를 좁힌다(예: Ctrl→Ctrl+Shift). 타이머
-    ///   (`hold_since`)는 최초 press 에만 시작하고 조합이 바뀌어도 **리셋하지 않는다**.
-    ///
-    /// 반환 = 상태가 바뀌어 redraw 가 필요한지.
+    /// modifier 조합을 갱신하고 화면을 다시 그려야 하면 true를 반환한다.
+    /// 조합이 바뀌어도 최초 홀드 시각은 유지한다. 모두 떼면 닫기 상태까지 초기화한다.
     pub fn update_hold(&mut self, ctrl: bool, alt: bool, option: bool, shift: bool) -> bool {
         let any = ctrl || alt || option || shift;
         if !any {
@@ -98,15 +72,9 @@ impl ModifierHintRuntime {
         self.working = None;
     }
 
-    /// 등록된 단축키가 실제로 소비된 시점에 호출한다. 아직 표시 지연 게이트를 통과하지
-    /// 않은 홀드라면(=패널이 아직 안 뜬 상태) 타이머를 지금부터 다시 잰다 — 단축키를
-    /// 계속 쓰는 동안에는 패널이 뜨지 않게 하기 위함(오버레이의 목적은 발견성이고, 등록
-    /// 단축키를 실제로 실행한 사용자에겐 그 시점에 도움말이 불필요하다).
-    ///
-    /// 이미 게이트를 통과한(=표시 중인) 홀드는 건드리지 않는다 — 뜬 패널을 숨겼다 다시
-    /// 띄우지 않는다. 홀드 중이 아니면(`held`/`hold_since` 가 `None`) no-op — modifier
-    /// 없이 실행된 단축키가 새 홀드를 만들면 안 된다. `dismissed`/`working`/`held` 는
-    /// 건드리지 않는다(전부 리셋 대상 아님).
+    /// 단축키를 실행했을 때 아직 표시 전이면 대기 시간을 다시 잰다.
+    /// 이미 표시 중이거나 홀드 중이 아니면 아무것도 바꾸지 않는다.
+    /// 닫기·드래그·조합 상태는 유지한다.
     pub fn reset_reveal_timer_if_not_shown(&mut self, theme: &Theme) {
         let (Some(held), Some(since)) = (self.held, self.hold_since) else {
             return;
@@ -118,13 +86,7 @@ impl ModifierHintRuntime {
     }
 }
 
-/// Debug 전용 홀드 상태 조작·관찰 — `debug.modifier_hint.*` IPC 표면이 쓴다.
-///
-/// 원칙1상 오버레이는 실 modifier 홀드(`ModifiersChanged`)로만 뜨고 IPC 로 강제 표시할 수
-/// 없다. 이 접근자들은 `host_popup.open`(사용자 클릭 우회 force-open)과 동일 성격의 debug
-/// 격리 표면으로, 오버레이 내부 홀드 상태만 세팅/덤프한다(PTY raw 주입 아님). release
-/// 미노출. 테스트도 같은 손잡이로 홀드 시각을 당기므로 `test` 에도 산다 — 테스트는 release
-/// 산출물이 아니다.
+/// debug IPC와 테스트에서만 홀드 상태를 조작·조회한다. release에는 노출하지 않는다.
 #[cfg(any(debug_assertions, test))]
 impl ModifierHintRuntime {
     /// 현재 홀드 상태 스냅샷 — `(눌린 조합, 경과시간, dismissed)`.
@@ -136,8 +98,7 @@ impl ModifierHintRuntime {
         )
     }
 
-    /// `hold_since` 를 `elapsed` 만큼 과거로 백데이트 → 표시 지연 게이트를 즉시 통과시킨다
-    /// (스크린샷·상태 검증용). `Instant::checked_sub` 로 플랫폼별 하한을 안전 처리한다.
+    /// 캡처·테스트를 위해 홀드 시작을 앞당긴다. Instant 하한은 checked_sub로 처리한다.
     pub fn debug_backdate(&mut self, elapsed: std::time::Duration) {
         if let Some(s) = self.hold_since {
             self.hold_since = Some(s.checked_sub(elapsed).unwrap_or(s));
@@ -145,12 +106,8 @@ impl ModifierHintRuntime {
     }
 }
 
-/// Debug 전용 — 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 JSON 덤프.
-///
-/// `debug.modifier_hint.state` 가 쓴다. `reveal_delay_ms`(Shift 단독 판정) · `hold_reveal_alpha`
-/// · `build_hint_sections`(좁힘) · `combo_keycaps` 를 그대로 재사용하므로, 스크린샷 없이도
-/// "무엇이 어떻게 표시되는가" 를 자동 단정할 수 있다. release 미노출(테스트는 위와 같은 이유로
-/// 부른다).
+/// debug.modifier_hint.state용 상태 덤프. 표시 지연·투명도·섹션 계산은 렌더링과 공유한다.
+/// 픽셀을 검사하는 함수는 아니며 release에는 노출하지 않는다.
 #[cfg(any(debug_assertions, test))]
 pub fn debug_state_json(
     rt: &ModifierHintRuntime,
@@ -190,15 +147,12 @@ pub fn debug_state_json(
                 "combo": combo_keycaps(s.combo, &settings.general),
                 "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
-                // ADR-0019: 빈 조합 섹션은 draw 가 "바인딩 없음" 플레이스홀더로 렌더한다.
-                // 렌더 픽셀 없이 빈-플레이스홀더 표시를 자동 단정할 수 있게 플래그를 노출.
+                // 빈 섹션도 화면에는 "바인딩 없음"으로 표시한다.
                 "empty": s.is_empty(),
             })
         })
         .collect();
-    // draw 의 방어 가드(`if sections.is_empty() { return }`)와 정확히 동일한 조건.
-    // ADR-0019 이후 빈 조합 홀드도 빈 섹션(플레이스홀더)이 남아 sections 가 비지 않으므로,
-    // 이전과 달리 미할당 조합에서도 visible:true 로 뜬다.
+    // draw와 같은 표시 조건. 빈 조합도 플레이스홀더 섹션은 남는다.
     let visible =
         settings.modifier_hint.enabled && !dismissed && alpha.is_some() && !sections.is_empty();
     json!({
@@ -213,14 +167,8 @@ pub fn debug_state_json(
     })
 }
 
-/// 홀드 경과시간(ms) → 오버레이 alpha. `None` = 아직 표시 안 함(지연 전).
-///
-/// - `held_ms < delay_ms` → `None`(홀드 지연 게이트 통과 전 — 실수 스침 억제).
-/// - `reduced_motion` → 게이트 통과 즉시 `Some(1.0)`(페이드 생략, **지연은 유지**).
-/// - 그 외 → `[delay, delay+fade]` 구간에서 opacity **0.2→1.0** 선형 페이드.
-///
-/// 디자인 확정: 등장은 투명도 80%→0%(alpha 0.2→1.0). `delay_ms`/`fade_ms` 는 Theme 토큰
-/// (`modhint_hold_delay` · `motion_hold_reveal_shift` / `modhint_fade`)에서 주입 — 순수 함수라 테스트로 고정한다.
+/// 표시 지연 전에는 None, 이후에는 alpha 0.2→1.0을 반환한다.
+/// reduced_motion이면 지연은 유지하고 페이드만 생략한다. 시간은 Theme 토큰에서 받는다.
 pub fn hold_reveal_alpha(
     held_ms: f32,
     delay_ms: f32,
@@ -237,22 +185,13 @@ pub fn hold_reveal_alpha(
     if t >= fade_ms {
         Some(1.0)
     } else {
-        // 0.2 → 1.0 선형.
         Some((0.2 + 0.8 * (t / fade_ms)).clamp(0.2, 1.0))
     }
 }
 
-/// 홀드 조합별 표시 지연(ms). **Shift 단독**(shift 만 눌리고 ctrl/alt/option 모두 미눌림)이면
-/// 1200ms, 그 외 조합은 500ms.
-///
-/// 타이핑 중 Shift 로 팝업이 튀는 문제를 완화한다(Shift 는 대문자·기호 입력에 상시 쓰여
-/// 스침이 잦음). Shift 를 포함하되 다른 modifier 도 눌린 조합(Ctrl+Shift 등)은 의도적
-/// 단축키 조합이라 기본 지연을 유지한다. 매 프레임 현재 조합으로 재평가되므로, Shift 단독
-/// 1.5초 뒤 Ctrl 을 추가하면 지연이 500ms 로 떨어지고 경과(1.5s) > 500ms 라 즉시 표시된다.
-/// `delay_ms` 는 Theme 토큰(`modhint_hold_delay`/`motion_hold_reveal_shift`)에서 온다.
+/// Shift 단독은 타이핑 중 오표시를 줄이기 위해 1200ms, 나머지는 500ms를 기다린다.
+/// 현재 조합으로 매번 다시 계산하며 Theme의 시간 값을 ms로 변환한다.
 fn reveal_delay_ms(held: Combo, theme: &Theme) -> f32 {
-    // `hold_reveal_alpha` 가 단위 없는 ms 산술을 하는 순수 함수라 여기서 벗겨 넘긴다 —
-    // `Millis` 의 범위는 `Theme` 경계까지이고, 그 바깥의 순수 함수는 f32 ms 로 둔다.
     if held.shift && !held.ctrl && !held.alt && !held.option {
         theme.motion_hold_reveal_shift().to_millis_f32()
     } else {
@@ -260,8 +199,7 @@ fn reveal_delay_ms(held: Combo, theme: &Theme) -> f32 {
     }
 }
 
-/// 저장된 위치/크기가 없을 때의 기본 지오메트리 — **사이드바 하단 anchor**(접힘/펼침 무관
-/// 동일). 화면 좌하단에 margin 을 두고 180×400(min 아님, 기본값)으로 배치한다.
+/// 저장값이 없으면 Theme의 기본 크기로 화면 좌하단에 배치한다.
 pub fn default_rect(screen: egui::Rect, theme: &Theme) -> egui::Rect {
     let w = theme.modhint_width().value();
     let h = theme.modhint_height().value();
@@ -292,8 +230,6 @@ pub fn resize_to(rect: egui::Rect, delta: egui::Vec2, min_w: f32, min_h: f32) ->
     egui::Rect::from_min_size(rect.min, egui::vec2(w, h))
 }
 
-// ── View (draw) ──────────────────────────────────────────────────────────────
-
 use std::time::Duration;
 
 use crate::i18n::t;
@@ -302,7 +238,7 @@ use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd, kbd_part
 
 use crate::adapters::ui::icons;
 
-/// `draw_modifier_hint` 결과 — 입력 레이어 배선 + 지오메트리 영속.
+/// 마우스 입력 차단, 위치·크기 저장, 레이어 정렬에 필요한 렌더링 결과.
 #[derive(Default, Clone, Copy)]
 pub struct HintDrawResult {
     /// 마우스가 패널 위 → 하위 surface 전파 차단(`AppState::modifier_hint_hovered`).
@@ -310,17 +246,12 @@ pub struct HintDrawResult {
     /// 드래그/리사이즈를 놓은 시점의 (pos, size). `Some` 이면 호출자가 `UpdateSettings` 로
     /// 영속한다(사용자 행동 → `from_user_menu`). `None` = 이번 프레임 변경 없음.
     pub persist: Option<((LogicalPx, LogicalPx), (LogicalPx, LogicalPx))>,
-    /// 이번 프레임에 `modhint_layer` Area 를 실제로 그렸으면 그 `LayerId`(안 그렸으면
-    /// `None` — 표시 조건 미충족으로 조기 반환한 프레임). 중앙 집중식 z-order
-    /// 강제(`enforce_foreground_z_order`, `src/gfx/gpu/egui_bridge.rs`)가 쓴다.
+    /// 실제 그린 Area의 LayerId. enforce_foreground_z_order에서 팝업과의 순서를 정한다.
     pub layer: Option<egui::LayerId>,
 }
 
-/// modifier-hint 오버레이를 매 프레임 그린다. `overlay::draw_overlays` 가 toast/banner 인접에서 호출.
-///
-/// 표시 조건: `enabled` && 홀드 중 && 홀드 500ms 경과 && !dismissed && 섹션 비어있지 않음.
-/// 표시 안 하는 프레임엔 필요한 만큼만 `request_repaint(_after)` 를 예약해 유휴 CPU 낭비를
-/// 막는다(지연 도달 시점 1회 예약 · 페이드 중에만 매 프레임).
+/// 설정이 켜져 있고 홀드 지연이 지났으며 닫지 않은 경우 도움말을 그린다.
+/// 지연이 끝날 때 다시 그리기를 예약하고, 페이드 중에는 매 프레임 갱신한다.
 pub fn draw_modifier_hint(
     ctx: &egui::Context,
     rt: &mut ModifierHintRuntime,
@@ -345,7 +276,7 @@ pub fn draw_modifier_hint(
     let delay = reveal_delay_ms(held, theme);
     let fade = theme.modhint_fade().to_millis_f32();
     let Some(alpha) = hold_reveal_alpha(held_ms, delay, fade, reduced_motion) else {
-        // 아직 지연 게이트 전 — 500ms 도달 시점에 깨어나도록 정확히 예약(busy-loop 아님).
+        // 해당 조합의 표시 지연이 끝날 때 다시 그린다.
         let remain = (delay - held_ms).max(1.0);
         ctx.request_repaint_after(Duration::from_millis(remain as u64));
         return result;
@@ -358,9 +289,7 @@ pub fn draw_modifier_hint(
         settings.general.workspace_categories_enabled,
         &[], // plugin_bindings: PluginManager 는 App 소유라 draw 경로 미도달 → 후속 배선(open).
     );
-    // 방어적 가드 — ADR-0019 이후 홀드 가능한 실경로에선 항상 최소 홀드 조합 자신의
-    // 섹션이 남아 비지 않는다(빈 섹션도 유지되고 플레이스홀더로 렌더). 만일의 빈 목록엔
-    // 빈 셸을 그리지 않고 조용히 빠진다.
+    // 바인딩이 없는 조합도 섹션은 남는다. 목록 자체가 없으면 그리지 않는다.
     if sections.is_empty() {
         return result;
     }
@@ -372,17 +301,9 @@ pub fn draw_modifier_hint(
         .unwrap_or_else(|| rect_from_settings(settings, screen, theme));
     let render_rect = clamp_rect(base, screen);
 
-    // 오버레이를 `egui::Area` 로 등록해 `Memory::Areas::order`(z-stack)에 편입시킨다
-    // — bare layer(`ctx.layer_painter`/미등록 `Ui::new`)는 같은 `Order::Foreground`
-    // 타이어 안에서도 Area 등록 레이어보다 항상 나중(=위)에 그려진다
-    // (`egui::layers::GraphicLayers::drain`) — banner 가 같은 이유로 Area 등록으로
-    // 바뀐 것(`banner.rs`)과 동일 근거. 등록 안 하면 Popup(Area 등록됨)이 먼저 열려
-    // 있어도 이 오버레이가 항상 그 위에 그려져 [입력 계층 정책](../../../docs/architecture/input-layer.md)
-    // (Popup=2 > Modifier-hint=2b) 을 위반한다. 프레임 종료 시점의 중앙 집중식
-    // `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`) 가 이 레이어를 부모로,
-    // 열린 popup 레이어들을 자식으로 `Context::set_sublayer` 로 묶어 Popup 이 항상 이
-    // 레이어 바로 위에 오도록 고정한다(`move_to_top` 반복 호출로는 두 레이어의 상대
-    // 순서를 못 만든다는 이유는 `enforce_foreground_z_order` 자신의 doc 참고).
+    // Area에 등록해야 egui 레이어 정렬에 참여한다.
+    // enforce_foreground_z_order에서 열린 팝업을 이 레이어 바로 위에 둔다.
+    // 입력 순서: ../../../docs/architecture/input-layer.md.
     let layer_id = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("modhint_layer"));
     result.layer = Some(layer_id);
     egui::Area::new(layer_id.id)
@@ -395,12 +316,8 @@ pub fn draw_modifier_hint(
         .show(ctx, |area_ui| {
             let mut ui = ui_at(area_ui, render_rect);
 
-            // ★ **이 순서가 계약이다.** 테두리를 셸에서 떼어 **맨 뒤에** 다시 그린다 —
-            // `draw_content` 의 첫 동작이 드래그 스트립 배경을 `radius 0.0` 불투명으로
-            // 채우는 것이라, 테두리가 먼저 그려져 있으면 그 구간이 지워진다(CSS 박스
-            // 모델의 border-on-top 재현). 앞으로 당기면 오버레이 위쪽 몇 px 의 테두리만
-            // 사라지고 컴파일도 시험도 멀쩡하다.
-            // 지키는 것은 `source_guards::modifier_hint_paint_order` 다.
+            // 내용의 불투명 배경이 테두리를 덮지 않도록 테두리를 마지막에 그린다.
+            // source_guards::modifier_hint_paint_order가 호출 순서를 검사한다.
             draw_shell(&ui, theme, render_rect, alpha);
             draw_content(
                 &mut ui,
@@ -413,7 +330,6 @@ pub fn draw_modifier_hint(
             );
             draw_shell_border(&ui, theme, render_rect, alpha);
 
-            // ── 인터랙션: 드래그 스트립(이동) · 코너 그립(리사이즈) · X(dismiss) ──
             let strip_h = theme.modhint_strip_height().value();
             let x_zone = strip_h; // 우측 X 버튼 폭 만큼 드래그에서 제외.
             let strip_drag = egui::Rect::from_min_max(
@@ -473,7 +389,6 @@ pub fn draw_modifier_hint(
                 ));
             }
 
-            // X 버튼 — 우상단 strip 안. 클릭 시 이번 홀드 세션 dismiss.
             let x_rect = egui::Rect::from_min_size(
                 egui::pos2(render_rect.right() - x_zone, render_rect.top()),
                 egui::vec2(x_zone, strip_h),
@@ -495,12 +410,11 @@ pub fn draw_modifier_hint(
             }
         });
 
-    // hover 판정(입력 레이어). 렌더 rect 전체를 소비 zone 으로.
     result.hovered = ctx
         .pointer_hover_pos()
         .is_some_and(|p| render_rect.contains(p));
 
-    // 페이드 중에만 매 프레임 재그리기(완전 표시 후엔 입력 구동 repaint 에 맡겨 유휴 CPU 절약).
+    // 페이드가 끝나면 입력에 따른 다시 그리기만 사용한다.
     if alpha < 1.0 {
         ctx.request_repaint();
     }
@@ -524,12 +438,7 @@ fn rect_from_settings(settings: &Settings, screen: egui::Rect, theme: &Theme) ->
     egui::Rect::from_min_size(min, size)
 }
 
-/// 셸(그림자 + 불투명 fill)을 painter 로 그린다 — 고정 크기라 Frame(콘텐츠 맞춤)
-/// 대신 painter 직접 사용. 색은 `alpha` 곱(페이드).
-///
-/// 테두리는 여기서 안 그린다 — [`draw_shell_border`] 가 따로 그리고, **그 순서 계약의
-/// 자리는 셋을 잇달아 부르는 [`draw_modifier_hint`] 안**이다. 계약 본문과 무엇이 그것을
-/// 지키는지는 거기 적혀 있다.
+/// 고정 크기 패널의 그림자와 배경. 테두리는 내용 뒤에 draw_shell_border로 그린다.
 fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let radius = theme.corner_radius.value();
     let painter = ui.painter();
@@ -543,11 +452,7 @@ fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     );
 }
 
-/// 패널 테두리만 그린다 — 셸에서 테두리만 떼어낸 짝이라 `radius` 를 그대로 재사용해
-/// 둥근 모서리가 별도 처리 없이 복원된다.
-///
-/// **`draw_content` 이후에 불러야 한다.** 왜 그런지와 무엇이 그것을 지키는지는 순서를
-/// 실제로 정하는 자리 — [`draw_modifier_hint`] 의 세 호출 위 — 에 적혀 있다.
+/// 내용이 테두리를 가리지 않도록 draw_content 뒤에 호출한다.
 fn draw_shell_border(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
@@ -573,7 +478,6 @@ fn draw_content(
     let strip_h = theme.modhint_strip_height().value();
     let bw = theme.border_width.value();
 
-    // 드래그 스트립 배경 + 하단 separator.
     let strip_rect = egui::Rect::from_min_size(rect.min, egui::vec2(w, strip_h));
     ui.painter().rect_filled(
         strip_rect,
@@ -589,7 +493,6 @@ fn draw_content(
         ),
     );
 
-    // 스트립 내용: held 조합 Kbd + "held" 라벨 (좌). X 는 호출측.
     let pad_l = theme.modhint_pad().value();
     let strip_inner = egui::Rect::from_min_max(
         egui::pos2(strip_rect.left() + pad_l, strip_rect.top()),
@@ -607,7 +510,6 @@ fn draw_content(
         );
     });
 
-    // 스크롤 리스트.
     let list_rect = egui::Rect::from_min_max(
         egui::pos2(rect.left(), strip_rect.bottom()),
         egui::pos2(rect.right(), rect.bottom()),
@@ -619,11 +521,8 @@ fn draw_content(
     );
     list_ui.set_opacity(alpha);
 
-    // 이 오버레이는 **modifier 를 홀드한 채** 떠 있는 특수 팝업이다. egui 는 Ctrl+휠을 zoom,
-    // Shift+휠을 가로 스크롤로 재해석하므로, 홀드 상태에서 세로 `ScrollArea` 가 안 움직인다.
-    // 따라서 포인터가 패널 위일 때는 modifier 를 무시한 **순수 세로 휠량**을 직접 계산해
-    // ScrollArea 에 주입한다. alt/option 단독은 egui 가 이미 세로로 처리하므로 이중 스크롤을
-    // 피해 zoom/가로로 전용되는 modifier(Ctrl/Cmd/Shift) 홀드 시에만 주입한다.
+    // Ctrl/Cmd/Shift가 있으면 egui가 휠을 줌·가로 스크롤로 처리하므로 세로 양을 직접 전달한다.
+    // Alt/Option만 있으면 egui가 처리하므로 중복 적용하지 않는다.
     let wheel_y = modifier_free_wheel_y(ui.ctx(), rect);
     let pad = theme.modhint_pad().value();
     egui::ScrollArea::vertical()
@@ -634,8 +533,6 @@ fn draw_content(
                 ui.scroll_with_delta(egui::vec2(0.0, wheel_y));
                 ui.ctx().request_repaint();
             }
-            // 좌우/상하 패딩은 Frame inner_margin 으로(ScrollArea 뷰포트 내부 → 절대 rect
-            // 수동 배치 대신 idiomatic flow). 세로 섹션 간격은 spacing.
             egui::Frame::new()
                 .inner_margin(egui::Margin::same(pad as i8))
                 .show(ui, |ui| {
@@ -651,17 +548,9 @@ fn draw_content(
         });
 }
 
-/// 포인터가 `rect`(패널) 위일 때, **modifier 를 무시한** 이번 프레임의 순수 세로 휠량(포인트)을
-/// 돌려준다. 그 외(포인터가 밖이거나 전용 modifier 없음)엔 `0.0`.
-///
-/// egui 는 `Ctrl/Cmd+휠`을 zoom, `Shift+휠`을 가로 스크롤로 바꾸므로([`InputState::begin_pass`]
-/// 의 MouseWheel 처리) 홀드 상태의 세로 `ScrollArea` 가 갱신되지 않는다. 여기서는 raw
-/// `Event::MouseWheel` 을 modifier 무관하게 다시 읽어 egui 와 **동일한 단위 스케일**(Point 그대로 /
-/// Line×`line_scroll_speed` / Page×화면높이)로 세로 성분만 합산한다. 부호는 egui 의 `smooth_scroll_delta`
-/// 와 같은 규약이라 [`egui::Ui::scroll_with_delta`] 에 그대로 넣으면 무-modifier 휠과 동일하게 스크롤된다.
-///
-/// alt/option 단독은 egui 가 이미 세로로 처리하므로, 이중 스크롤을 피하려 zoom/가로로 전용되는
-/// modifier(Ctrl·Cmd·Shift) 가 있을 때만 값을 낸다.
+/// 포인터가 패널 위에 있고 Ctrl/Cmd/Shift가 눌렸을 때 세로 휠 양을 반환한다.
+/// egui가 줌·가로 스크롤로 바꾸기 전 이벤트를 읽는다. 단위 변환과 부호는 egui와 같다
+/// (Point 그대로, Line×line_scroll_speed, Page×화면 높이). 나머지는 0으로 중복 처리를 피한다.
 pub(crate) fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f32 {
     let pointer_over = ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
     if !pointer_over {
@@ -671,7 +560,6 @@ pub(crate) fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f3
     let page = ctx.screen_rect().height();
     ctx.input(|i| {
         let m = i.modifiers;
-        // egui 가 세로 휠을 전용해 버리는 modifier 만 대상(그 외는 egui 세로 스크롤이 정상 동작).
         if !(m.ctrl || m.mac_cmd || m.command || m.shift) {
             return 0.0;
         }
@@ -696,7 +584,6 @@ fn draw_section(
     sec: &HintSection,
     general: &tasty_settings::GeneralSettings,
 ) {
-    // ChordHead.
     kbd_parts(ui, theme, &combo_key_parts(sec, general));
     ui.add_space(theme.modhint_row_gap().value());
     let w = ui.available_width();
@@ -712,8 +599,7 @@ fn draw_section(
             theme.modhint_separator().to_egui(),
         ),
     );
-    // 빈 조합 섹션은 내부 간격을 좁게(3px vs 6px) 잡아, 항상 표시되는 빈 섹션이
-    // 리스트를 과하게 늘어뜨리지 않게 한다(ADR-0019, 디자인 §6-5). 섹션 간 간격은 불변.
+    // 빈 섹션의 내부 간격만 좁혀 불필요한 높이를 줄인다.
     let content_gap = if sec.is_empty() {
         theme.modhint_empty_row_gap().value()
     } else {
@@ -723,7 +609,6 @@ fn draw_section(
 
     ui.spacing_mut().item_spacing.y = content_gap;
     if sec.is_empty() {
-        // 바인딩·역할이 모두 없는 조합 → "바인딩 없음" 플레이스홀더 한 줄(ADR-0019).
         draw_empty_row(ui, theme);
     } else {
         for row in &sec.rows {
@@ -735,12 +620,9 @@ fn draw_section(
     }
 }
 
-/// 빈 조합 플레이스홀더 행 — muted 텍스트("바인딩 없음") 한 줄. 부재 신호라 리스트에서
-/// 가장 조용하다: 키캡 없음 · wash 없음 · leading 글리프 없음 · 호버/포커스 없음(정적).
-/// 디자인 `explorations/modifier-hint-empty-section.html` `.mh-empty` 전사.
+/// 빈 조합에는 키캡·배경·상호작용 없이 "바인딩 없음"만 표시한다.
 fn draw_empty_row(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal(|ui| {
-        // 키캡 행(24px)보다 타이트한 20px 최소 높이(디자인 §6-5).
         ui.set_min_height(theme.modhint_empty_row_min_height().value());
         ui.add(
             egui::Label::new(
@@ -804,11 +686,9 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
                     HintRole::MouseCaptureBypass => {
                         icons::MOUSE.image(gsz, col).paint_at(ui, r);
                     }
-                    // 카테고리 전환 → folder 글리프(디자인 E, mhIc.folder).
                     HintRole::CategorySwitch => {
                         icons::FOLDER.image(gsz, col).paint_at(ui, r);
                     }
-                    // tab/workspace/link 역할 → 숫자 오버레이 의미의 "#" 글리프.
                     HintRole::TabSwitch | HintRole::WorkspaceSwitch | HintRole::LinkClick => {
                         ui.painter().text(
                             r.center(),
@@ -831,17 +711,8 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
         });
 }
 
-/// 조합 → `"Ctrl+Shift"` 형태 키캡 문자열(우선순위 순서). Alt/Option/Shift 토큰 텍스트는
-/// `general`(`GeneralSettings::{alt,option,shift}_display_style`,
-/// `docs/design/policies/key-mapping.md` 참고)을 따른다 —
-/// `KeybindingSettings::format_display_parts` 와 동일한 스타일 규약(alt: Alt/Cmd/⌘,
-/// option: Option/⌥, shift: Shift/⇧)이며, 여기 하드코딩됐던 `cfg!(target_os = "macos")`
-/// alt→"Cmd" 치환은 이 설정으로 대체됐다(기본값 "alt" — 표시 스타일을 만지지 않은
-/// 사용자는 업그레이드 후 Alt/Cmd 표기가 바뀔 수 있음, 설정 > 일반 > 표시에서 다시
-/// 선택 가능). **JSON 직렬화 경로 전용**(`debug_state_json`) — 화면 렌더링(스트립
-/// 헤더·섹션 헤더)은 tofu box 위험이 있는 심볼 스타일을 텍스트가 아니라 아이콘으로
-/// 그려야 해서 [`combo_keycap_parts`] 로 분리됐다. 호출처가 `debug_state_json` 하나뿐이라
-/// release 빌드에는 포함하지 않는다(그 함수와 같은 cfg).
+/// debug JSON용 키 조합 문자열. Alt/Option/Shift 표기는 GeneralSettings를 따른다.
+/// 화면에서는 글꼴의 기호 누락을 피하기 위해 combo_keycap_parts의 벡터 아이콘을 쓴다.
 #[cfg(any(debug_assertions, test))]
 fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String {
     let mut parts: Vec<&str> = Vec::new();
@@ -870,10 +741,7 @@ fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String 
     parts.join("+")
 }
 
-/// [`combo_keycaps`] 의 화면 렌더링 경로 버전 — `"symbol"` 스타일(⌘/⌥/⇧)은 텍스트가
-/// 아니라 [`icons::CMD_KEY`]/[`OPTION_KEY`]/[`SHIFT_KEY`] 벡터 아이콘으로 대체한다.
-/// [`combo_keycaps`](JSON 직렬화 경로, `debug_state_json`)는 그대로 텍스트를 유지 —
-/// 두 경로가 갈리는 이유는 픽셀을 그리지 않는 JSON 덤프엔 tofu box 위험이 없어서다.
+/// 화면용 키캡. symbol 스타일은 글꼴에 없는 기호가 생기지 않도록 벡터 아이콘으로 그린다.
 fn combo_keycap_parts(
     c: Combo,
     general: &tasty_settings::GeneralSettings,
@@ -913,12 +781,8 @@ fn combo_key_parts(
     combo_keycap_parts(sec.combo, general)
 }
 
-/// 바인딩 문자열(`"ctrl+shift+t"`) → 키캡 표기(`"Ctrl+Shift+T"`). 세그먼트별 첫 글자 대문자.
-///
-/// 표시 스타일 파라미터가 없다 — 두 호출부(`debug_state_json`/`draw_row`) 모두
-/// `binding_leaf(&row.binding)` 로 modifier 를 이미 전부 벗겨낸 leaf 키만 넘긴다
-/// (`binding_leaf` 테스트 참고). modifier 토큰을 볼 일이 없어 alt/option/shift 표시
-/// 스타일과 무관하다.
+/// 키 이름의 첫 글자를 대문자로 바꾼다. 호출부가 binding_leaf로 modifier를 제거하므로
+/// Alt/Option/Shift 표시 설정은 여기서 적용하지 않는다.
 fn prettify_binding(binding: &str) -> String {
     binding
         .split('+')
@@ -937,7 +801,7 @@ fn prettify_binding(binding: &str) -> String {
 fn row_label(source: &HintRowSource) -> (String, bool) {
     match source {
         HintRowSource::Host { label_key } => (t(label_key).to_string(), false),
-        // ScriptRegistry 이름 해석은 draw 경로에 미도달 → script_id 표기(후속 배선 대상).
+        // 여기서는 ScriptRegistry를 조회하지 않으므로 script_id를 표시한다.
         HintRowSource::Script { script_id } => (script_id.clone(), false),
         HintRowSource::Plugin {
             plugin_id,
@@ -946,9 +810,7 @@ fn row_label(source: &HintRowSource) -> (String, bool) {
     }
 }
 
-/// `modhint_layer` Area 안에 주어진 rect 로 자식 Ui 를 만든다 — `banner.rs::ui_at`
-/// 와 동일 패턴(부모 Area 의 `Memory::Areas::order` 편입을 그대로 물려받는다).
-/// clip_rect 를 rect 로 좁혀 Area 기본 clip(화면 전체) 밖으로 넘치지 않게 한다.
+/// Area의 레이어를 사용하는 자식 Ui를 만들고 clip_rect를 지정 영역으로 좁힌다.
 fn ui_at(parent: &mut egui::Ui, rect: egui::Rect) -> egui::Ui {
     let mut child = parent.new_child(
         egui::UiBuilder::new()
@@ -974,7 +836,6 @@ mod tests {
 
     #[test]
     fn alpha_starts_at_0_2_and_reaches_1_0() {
-        // t=500 → 0.2, t=600 → 0.6, t=700 → 1.0, 이후 1.0 고정.
         assert_eq!(hold_reveal_alpha(500.0, DELAY, FADE, false), Some(0.2));
         let mid = hold_reveal_alpha(600.0, DELAY, FADE, false).unwrap();
         assert!((mid - 0.6).abs() < 1e-4, "t=600 alpha={mid}");
@@ -984,7 +845,6 @@ mod tests {
 
     #[test]
     fn alpha_reduced_motion_snaps_at_delay_boundary() {
-        // 지연은 유지(499 → None), 게이트 통과 즉시 1.0(페이드 생략).
         assert_eq!(hold_reveal_alpha(499.0, DELAY, FADE, true), None);
         assert_eq!(hold_reveal_alpha(500.0, DELAY, FADE, true), Some(1.0));
         assert_eq!(hold_reveal_alpha(600.0, DELAY, FADE, true), Some(1.0));
@@ -993,7 +853,6 @@ mod tests {
     #[test]
     fn update_hold_stores_combo_and_dirties_on_change_keeping_timer() {
         let mut rt = ModifierHintRuntime::default();
-        // Ctrl 누름 → held={ctrl}, 타이머 시작, dirty.
         assert!(rt.update_hold(true, false, false, false));
         assert_eq!(
             rt.held,
@@ -1004,7 +863,6 @@ mod tests {
         );
         let t0 = rt.hold_since;
         assert!(t0.is_some());
-        // Ctrl 유지하며 Shift 추가 → 조합이 바뀌므로 dirty=true(즉시 좁힘), 타이머 리셋 안 함.
         assert!(
             rt.update_hold(true, false, false, true),
             "조합 변경 시 dirty"
@@ -1018,7 +876,6 @@ mod tests {
             })
         );
         assert_eq!(rt.hold_since, t0, "조합 변경 시 타이머 리셋 금지");
-        // 같은 조합 재입력 → dirty=false(불필요 redraw 억제).
         assert!(!rt.update_hold(true, false, false, true));
     }
 
@@ -1027,7 +884,6 @@ mod tests {
         let mut rt = ModifierHintRuntime::default();
         rt.update_hold(true, false, false, true); // Ctrl+Shift
         let t0 = rt.hold_since;
-        // Ctrl 뗌, Shift 유지 → held={shift} 로 즉시 따라감(anchor 개념 없음), 타이머 유지.
         assert!(rt.update_hold(false, false, false, true));
         assert_eq!(
             rt.held,
@@ -1046,16 +902,13 @@ mod tests {
             shift: true,
             ..Default::default()
         };
-        // Shift 단독 → 1200ms.
         assert_eq!(reveal_delay_ms(shift, &theme), 1200.0);
-        // Shift + 다른 축 → 기본 500ms.
         let ctrl_shift = Combo {
             ctrl: true,
             shift: true,
             ..Default::default()
         };
         assert_eq!(reveal_delay_ms(ctrl_shift, &theme), 500.0);
-        // Shift 없는 조합 → 500ms.
         let ctrl = Combo {
             ctrl: true,
             ..Default::default()
@@ -1065,7 +918,6 @@ mod tests {
 
     #[test]
     fn shift_only_1200ms_gate_hides_before_and_shows_after() {
-        // 순수함수 hold_reveal_alpha 를 1200ms 지연으로 평가: 500ms→None, 1300ms→Some.
         assert_eq!(hold_reveal_alpha(500.0, 1200.0, FADE, false), None);
         assert!(hold_reveal_alpha(1300.0, 1200.0, FADE, false).is_some());
     }
@@ -1075,7 +927,6 @@ mod tests {
         let mut rt = ModifierHintRuntime::default();
         rt.update_hold(true, false, false, false);
         rt.dismissed = true;
-        // 전부 뗌 → clear + dismissed 리셋.
         assert!(rt.update_hold(false, false, false, false));
         assert!(rt.held.is_none());
         assert!(rt.hold_since.is_none());
@@ -1178,7 +1029,6 @@ mod tests {
     #[test]
     fn clamp_keeps_rect_inside_screen() {
         let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-        // 우하단 밖으로 나간 rect → 안쪽으로 이동, 크기 유지.
         let r = egui::Rect::from_min_size(egui::pos2(700.0, 500.0), egui::vec2(220.0, 400.0));
         let c = clamp_rect(r, screen);
         assert!(c.max.x <= screen.right() + 0.01);
@@ -1197,17 +1047,13 @@ mod tests {
     #[test]
     fn resize_clamps_to_min() {
         let r = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(220.0, 400.0));
-        // 크게 줄이는 delta → min 200×240 로 클램프.
         let shrunk = resize_to(r, egui::vec2(-500.0, -500.0), 200.0, 240.0);
         assert_eq!(shrunk.size(), egui::vec2(200.0, 240.0));
         assert_eq!(shrunk.min, r.min, "좌상단 고정");
-        // 늘리는 delta → 그대로 반영.
         let grown = resize_to(r, egui::vec2(30.0, 20.0), 200.0, 240.0);
         assert_eq!(grown.size(), egui::vec2(250.0, 420.0));
     }
 
-    // 빈 섹션 억제·정렬은 `build_hint_sections` 쪽 테스트(modifier_hint.rs)가 이미 본다. 여기서는
-    // 오버레이가 그 결과를 그대로 소비함만 확인(계약 회귀 방지).
     #[test]
     fn consumes_build_hint_sections() {
         use tasty_settings::KeybindingSettings;
@@ -1220,8 +1066,7 @@ mod tests {
         assert!(!sections.is_empty());
     }
 
-    /// ADR-0019: 바인딩·역할이 전무한 조합을 홀드해도 오버레이는 visible 이고, debug 덤프의
-    /// 해당 섹션은 `empty:true` 로 표시된다(draw 가 "바인딩 없음" 플레이스홀더로 렌더).
+    /// 바인딩이 없어도 조합 섹션은 표시하며 debug 덤프에는 empty:true가 남는다.
     #[test]
     fn debug_state_marks_empty_combo_and_stays_visible() {
         use tasty_settings::{KeybindingSettings, Settings};
@@ -1244,12 +1089,9 @@ mod tests {
         let theme = tasty_themes::mocha_fallback();
         let v = debug_state_json(&rt, &settings, &theme, false);
 
-        // 미할당 조합이라도 패널은 뜬다(이전엔 visible:false 였음).
         assert_eq!(v["visible"], serde_json::json!(true), "dump={v}");
         let sections = v["sections"].as_array().expect("sections 배열");
-        // 홀드 조합(Ctrl+Alt) 섹션이 존재하고 empty:true. alt 축 라벨은 타깃 OS 가
-        // 아니라 `general.alt_display_style`(기본 "alt") 이 정하므로, 기본 설정인
-        // 여기서는 모든 플랫폼에서 "Alt" 다.
+        // Alt 표기는 OS가 아니라 general.alt_display_style의 기본값을 따른다.
         let held_combo = "Ctrl+Alt";
         let ctrl_alt = sections
             .iter()
@@ -1258,7 +1100,6 @@ mod tests {
         assert_eq!(ctrl_alt["empty"], serde_json::json!(true));
         assert!(ctrl_alt["rows"].as_array().unwrap().is_empty());
         assert!(ctrl_alt["roles"].as_array().unwrap().is_empty());
-        // 모든 섹션이 빈 섹션이어야 한다(전부 미할당).
         assert!(
             sections
                 .iter()

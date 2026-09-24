@@ -1,30 +1,7 @@
-//! DAG 목록 popup — workspace 스코프 + 목록↔단일 DAG drilldown.
-//!
-//! 탭 하나를 점유하는 [surface](crate::adapters::ui::surface::dag_graph) 와 달리
-//! "잠깐 확인하고 닫는" 관측 창이다. 목록에서 DAG 하나를 고르면 **같은 영역**이
-//! 그 그래프로 교체되고(`DrillDown`), back bar 로 목록에 돌아온다.
-//!
-//! # 왜 workspace 스코프인가
-//!
-//! DAG 는 workspace 단위 자원이다(task 영속 scope 가 workspace). 그 관측 창이
-//! workspace 를 따라 붙는 것이 모델과 일치한다 — 다른 workspace 로 넘어가면 이
-//! 창은 숨고, 돌아오면 보던 상태 그대로 다시 뜬다. tasty 의 popup 중
-//! `PopupScope::Workspace` 를 실제로 쓰는 첫 사례다.
-//!
-//! # 왜 목록 자체는 전 workspace 인가
-//!
-//! 창이 workspace 에 붙는 것과 **목록의 범위**는 별개다. `agent.dag_list` 는
-//! workspace 를 생략하면 전 workspace 를 훑도록 설계돼 있고(원칙 3 — 포커스
-//! 독립성), 사람이 DAG 를 찾을 때도 "어느 워크스페이스에 뒀더라" 가 흔한
-//! 질문이다. 그래서 기본은 전 workspace 나열 + 행마다 소속 workspace 표시이고,
-//! "이 워크스페이스만" 은 토글로 둔다.
-//!
-//! # 에이전트 경로가 없는 이유
-//!
-//! 이 popup 을 여는 IPC 는 release 에 두지 않는다 — popup 강제 open 은 사용자
-//! 조작의 재현이라 debug 격리 대상이다(`docs/dev-guide/debug-ipc.md`). 에이전트가
-//! 필요한 것은 화면이 아니라 데이터이고, 그 수요는 `agent.dag_list` /
-//! `agent.dag_get` 이 이미 충족한다.
+//! DAG 목록과 선택한 그래프를 같은 팝업에서 보여 준다.
+//! 팝업은 열 당시 워크스페이스에 속해 전환 시 숨고, 돌아오면 보던 상태로 표시된다.
+//! 목록은 기본적으로 모든 워크스페이스를 포함하며 현재 워크스페이스만 고를 수도 있다.
+//! release IPC로 팝업을 강제로 열지는 않는다. 에이전트는 agent.dag_list/get으로 데이터를 읽는다.
 
 use std::time::Instant;
 
@@ -56,20 +33,13 @@ pub const DAG_LIST_POPUP_ID: &str = "dag_list";
 const STATUS_SELECT_SALT: &str = "dag_list_status";
 const STATUS_SELECT_OVERLAY_KEY: &str = "dag_list_status";
 
-/// 창 크기 — 시안 확정 560 × 460 (`dag-popup-width` / `dag-popup-height`).
-///
-/// 상수 `default_size` 가 아니라 sizer 인 이유는 host UI zoom 이다. 토큰은 zoom 이
-/// 이미 곱해진 값을 돌려주므로 여기서 읽으면 확대 배율에서도 내용이 잘리지 않는다.
+/// 배율이 적용된 Theme 토큰으로 팝업 크기를 계산한다.
 pub fn dag_list_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let th = crate::theme::theme();
     egui::vec2(th.dag_popup_width().value(), th.dag_popup_height().value())
 }
 
-/// 목록 한 행이 그릴 값 — 폴링 시점의 스냅샷.
-///
-/// `DagSummary` 를 그대로 들고 있지 않는 이유는 workspace **이름** 때문이다.
-/// 요약은 id 만 알고 이름은 `CoreState` 에만 있는데, 그리는 시점에는 이미 engine
-/// 을 놓았으므로 폴링에서 함께 접어 둔다.
+/// 조회한 DAG 정보와 워크스페이스 이름을 함께 보관한 화면용 행.
 pub struct DagRow {
     workspace_id: u32,
     workspace_name: String,
@@ -84,26 +54,9 @@ pub struct DagRow {
     updated_at: u64,
 }
 
-/// 목록 표시 순서 — **가장 최근에 움직인 DAG 가 위**.
-///
-/// 응답이 오는 순서를 그대로 쓰면 오래된 것이 위로 온다. 목록 응답은 (workspace
-/// 순회 순서, DAG id 오름차순)인데 derived id 가 `c:<root_task_id>` 이고 task id 가
-/// `t-{now_ms}-{seq}` 라, **id 오름차순 = 생성 시각 오름차순**이다. 방금 만든 DAG 가
-/// 스크롤 바닥에 묻히고, workspace 경계가 1차 키라 전역 시간순으로 보이지도 않는다.
-/// 덤으로 `'c' < 'd'` 라 derived 가 전부 explicit 앞에 몰린다.
-///
-/// **응답 순서 자체는 건드리지 않는다.** 그 결정론은 화면이 선택 상태를 id 로 들고
-/// 폴링마다 재계산하기 위한 계약이고 CLI/IPC 소비자도 함께 본다. 표시 순서는 화면의
-/// 관심사이므로 여기서만 다시 세운다.
-///
-/// 정렬 키는 `created_at` 이 아니라 `updated_at` 이다 — 소속 task 의 (`finished_at`
-/// ∪ `started_at` ∪ `created_at`) 최대값이라 "방금 만든 것" 과 "방금 움직인 것" 을
-/// 둘 다 위로 올린다. 목록을 여는 용건이 대개 후자다.
-///
-/// 동률은 `id` 내림차순, 그래도 같으면 `workspace_id` 오름차순으로 끊는다. explicit
-/// id 는 사용자가 정한 키라 workspace 가 다르면 같은 값이 나올 수 있어 `id` 만으로는
-/// 전순서가 아니다 — 세 키를 모두 쓰면 상류 순서에 기대지 않고 순서가 확정되고,
-/// 아무것도 안 움직이는 동안 폴링이 여러 번 돌아도 행이 자리를 바꾸지 않는다.
+/// updated_at 내림차순으로 표시해 최근 생성·진행한 DAG를 위에 둔다.
+/// 동률은 ID 내림차순, 워크스페이스 ID 오름차순으로 정한다. explicit ID는
+/// 워크스페이스마다 같을 수 있으므로 둘 다 비교한다. IPC 응답 순서는 바꾸지 않는다.
 fn sort_recent_first(rows: &mut [DagRow]) {
     rows.sort_by(|a, b| {
         b.updated_at
@@ -117,10 +70,7 @@ fn sort_recent_first(rows: &mut [DagRow]) {
 #[derive(Default)]
 pub struct DagListState {
     view: DrillDownView,
-    /// 디테일이 보고 있는 DAG. 완전한 신원은 두 값의 **쌍**이다 — explicit id 는
-    /// 사용자가 정한 키라 workspace 마다 같은 값이 나올 수 있다. 그래프 헤더의
-    /// DAG 선택기는 같은 workspace 안에서 `dag_id` 만 갈아끼우므로 두 필드를
-    /// 따로 둔다.
+    /// 선택한 DAG는 워크스페이스와 ID의 쌍으로 식별한다. 그래프 선택기는 같은 워크스페이스 안에서만 바꾼다.
     open_workspace: Option<u32>,
     open_dag: Option<String>,
     query: String,
@@ -135,13 +85,8 @@ pub struct DagListState {
 }
 
 impl DagListState {
-    /// 열려 있는 동안의 다음 폴링 시각. 호스트가 `Tick::DagListPopup` 데드라인으로
-    /// 쓴다(`docs/dev-guide/timer-hub.md`) — surface 뷰와 달리 popup 은 surface 에
-    /// 매이지 않아 키가 따로다. 아직 한 번도 안 읽었으면 `now`(= 다음 프레임에 즉시).
-    ///
-    /// 디테일이 닫혀 있으면 그래프는 아예 폴링 대상이 아니므로 목록 주기만 본다 —
-    /// 여기서 그래프를 함께 세면 `last_poll` 이 영원히 `None` 이라 매 프레임 즉시
-    /// 데드라인이 되어 spin 한다.
+    /// Tick::DagListPopup의 다음 조회 시각. 상세 화면이 닫혀 있으면 그래프 시각은 제외한다.
+    /// 조회하지 않는 그래프의 None을 포함하면 매 프레임 즉시 조회를 예약하게 된다.
     pub(crate) fn next_poll_at(&self, now: Instant) -> Instant {
         let list = self.last_list_poll.map_or(now, |t| t + POLL_INTERVAL);
         if self.open_workspace.is_some() && self.open_dag.is_some() {
@@ -175,9 +120,7 @@ impl DagListState {
                                 .iter()
                                 .find(|w| w.id == s.workspace_id)
                                 .map(|w| w.name.clone())
-                                // 목록을 만드는 사이 workspace 가 사라지는 레이스 —
-                                // 이름 대신 id 를 보여준다(행을 감추면 사라진
-                                // 이유를 알 수 없다).
+                                // 조회 중 워크스페이스가 사라졌으면 이름 대신 ID를 표시한다.
                                 .unwrap_or_else(|| s.workspace_id.to_string()),
                             workspace_id: s.workspace_id,
                             id: s.id,
@@ -193,8 +136,7 @@ impl DagListState {
                 sort_recent_first(&mut self.rows);
             }
             Err(e) => {
-                // 마지막으로 성공한 목록을 그대로 둔다 — 일시적 실패로 목록이
-                // 비었다 돌아오면 읽는 사람이 더 혼란스럽다(그래프 폴링과 같은 계약).
+                // 일시적인 실패에는 마지막으로 읽은 목록을 유지한다.
                 tracing::warn!(target: "tasty::dag", "dag list poll failed: {e}");
             }
         }
@@ -222,11 +164,7 @@ impl DagListState {
     }
 }
 
-/// 상태 필터 매칭 — `selected` 는 `DagStatus::ROLLUP_ALL` 과 같은 순서의 on/off 배열.
-///
-/// 켜진 게 하나도 없으면 **전체 통과**다(필터 없음 = 기본 상태). 하나 이상 켜져 있으면
-/// 그 중 하나와만 같아도 통과하는 OR 매칭이라, "대기+준비+실행중" 처럼 아직 안 끝난
-/// DAG 를 한 번에 묶을 수 있다.
+/// ROLLUP_ALL 순서의 선택 배열. 모두 꺼져 있으면 전체, 하나라도 켜져 있으면 선택한 상태 중 하나와 일치해야 한다.
 fn status_matches(selected: &[bool], rollup: DagStatus) -> bool {
     if !selected.iter().any(|on| *on) {
         return true;
@@ -246,16 +184,11 @@ pub fn draw_dag_list_popup(
     let active_workspace_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
     let dag = &mut state.dialogs.dag_list;
 
-    // 상태 필터 드롭다운이 열려 있으면 Esc 는 그것만 닫고 창은 유지한다. 닫는 일 자체는
-    // 드롭다운이 **본문을 그리면서** 스스로 하므로(키를 소비하는 쪽도 거기다) 여기서
-    // early-return 으로 본문을 건너뛰면 안 된다 — 건너뛰면 그 프레임에 Esc 를 받을
-    // 주인이 사라져 드롭다운이 영영 안 닫힌다. 이 가드는 창을 닫는 갈래만 양보한다.
+    // 드롭다운이 열려 있으면 부모 닫기만 건너뛴다. 본문은 그려야 드롭다운이 Escape를 처리한다.
     let esc = ui.ctx().input(|i| i.key_pressed(egui::Key::Escape));
     let esc_owned_by_dropdown =
         esc && super::child_overlay_open(ui.ctx(), DAG_LIST_POPUP_ID, STATUS_SELECT_OVERLAY_KEY);
     if esc && !esc_owned_by_dropdown {
-        // 디테일에서는 Esc 가 먼저 목록으로 돌아간다 — 한 번에 창까지 닫으면
-        // "뒤로" 한 걸음을 통째로 잃는다.
         if dag.view.is_detail() {
             back_to_list(dag);
             return PopupAction::None;
@@ -268,10 +201,7 @@ pub fn draw_dag_list_popup(
         dag.graph.poll_if_stale(engine, ws, Some(id.as_str()));
     }
 
-    // 러너는 별도 thread 라 그 진행이 egui 를 깨우지 않는다 — 다음 폴링 시점의
-    // wakeup 은 중앙 타이머 허브가 예약한다(`Tick::DagListPopup`, popup 이 열려
-    // 있는 동안만). egui `request_repaint_after` 는 delay > 0 이면 repaint 콜백
-    // 단계에서 drop 되므로(`gfx/gpu.rs`) 여기서 걸어도 깨어나지 않는다.
+    // 양수 request_repaint_after는 GPU 콜백에서 무시하므로 타이머 허브로 다음 조회를 예약한다.
 
     let th = crate::theme::theme();
     let theme = &th;
@@ -288,16 +218,11 @@ pub fn draw_dag_list_popup(
 
     let mut close = false;
     let view = dag.view;
-    // back bar 는 본문보다 **먼저** 그려진다 — 디테일 크롬에서 눌린 조작은 본문이
-    // 그려지는 시점에 이미 답이 나와 있고, 그 답을 그래프에 넘기려면 한 칸이 필요하다.
-    // `DrillDownActions` 는 `Fn` 이라 이 칸은 내부 가변이어야 한다.
+    // back bar에서 받은 동작을 본문에 전달한다.
     let backbar_action: std::cell::RefCell<Option<ChromeAction>> = std::cell::RefCell::new(None);
-    // `DrillDown::show` 는 목록/디테일 클로저를 **둘 다** 받고 실제로는 하나만
-    // 부른다. 둘 다 상태를 써야 하므로 컴파일 타임에는 겹치는 &mut 두 개가 되고,
-    // 런타임에는 절대 겹치지 않는다 — 그 간극을 `RefCell` 로 메운다.
+    // back bar에서 받은 동작을 본문에 전달한다.
+    // DrillDown은 두 Fn 클로저 중 하나만 실행하므로 공유 상태를 RefCell로 빌린다.
     let cell = std::cell::RefCell::new(dag);
-    // back bar 우측 actions 슬롯 — **compact 줌 클러스터 + 러너 배지**. 디테일에는
-    // 두 번째 헤더를 두지 않으므로(그래프 헤더를 안 그린다) 이 둘의 정위치가 여기다.
     let actions = |ui: &mut egui::Ui, theme: &Theme| {
         let dag = cell.borrow();
         let Some(data) = dag.graph.data.clone() else {
@@ -359,7 +284,6 @@ fn draw_list(
     let full = ui.available_rect_before_wrap();
     let x_range = full.x_range();
 
-    // ── 검색 + 상태 필터 ──
     let search_ir = egui::Frame::NONE
         .inner_margin(margin_sym(theme.spacing_md, theme.spacing_sm))
         .show(ui, |ui| {
@@ -375,10 +299,8 @@ fn draw_list(
                     .width(search_w)
                     .show(ui, theme, &mut dag.query);
                 hspace(ui, theme.spacing_sm);
-                // 나열 어휘는 rollup 6 종. 개별 task 의 8 종(`DagStatus::ALL`)을 쓰면
-                // rollup 이 절대 내지 않는 cancelled/unknown 이 죽은 선택지로 남는다.
+                // DAG 집계 상태만 표시한다. 개별 task 전용 cancelled/unknown은 제외한다.
                 let labels: Vec<&str> = DagStatus::ROLLUP_ALL.iter().map(|s| s.label()).collect();
-                // 위젯 crate 는 i18n 을 못 쓰므로 요약 문구 3 갈래를 여기서 주입한다.
                 let summary = MultiSelectLabels {
                     none: t("dag_list.status_any"),
                     some: t("dag_list.status_some"),
@@ -390,18 +312,13 @@ fn draw_list(
                     STATUS_SELECT_SALT,
                     &mut dag.status_filter,
                     &labels,
-                    // rollup 6 종은 항상 전부 고를 수 있다 — 행 단위 비활성 없음.
                     None,
                     &summary,
-                    // 일괄 토글 행 없음 — 상태 필터는 6 종뿐이라 "전부 선택" 이 절약해
-                    // 주는 클릭이 거의 없고, 디자인 판정도 이 소비처는 off 다.
                     None,
                     filter_w,
                     true,
                 );
-                // 드롭다운은 egui 자체 오버레이라 popup rect 밖으로 나갈 수 있다 —
-                // 그 위의 클릭·호버가 "팝업 바깥" 으로 오판되지 않도록 실측 rect 를
-                // 매니저에 보고한다(닫혀 있으면 None 으로 정리).
+                // 팝업 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
                 let overlay_id = multi_select_popup_id(ui, STATUS_SELECT_SALT);
                 let overlay_rect = ui
                     .memory(|m| m.is_popup_open(overlay_id))
@@ -418,7 +335,6 @@ fn draw_list(
     ui.painter()
         .hline(x_range, search_ir.response.rect.bottom(), sep);
 
-    // ── "이 워크스페이스만" 토글 ──
     let toggle_ir = egui::Frame::NONE
         .inner_margin(margin_sym(theme.spacing_md, theme.spacing_xs))
         .show(ui, |ui| {
@@ -433,7 +349,6 @@ fn draw_list(
     ui.painter()
         .hline(x_range, toggle_ir.response.rect.bottom(), sep);
 
-    // ── 푸터 자리를 먼저 떼어 두고 남는 높이를 목록에 준다 ──
     let footer_h = ControlSize::Md.height(theme) + theme.spacing_sm.value() * 2.0;
     let list_h = (full.bottom() - ui.cursor().top() - footer_h).max(0.0);
 
@@ -448,8 +363,7 @@ fn draw_list(
                     draw_empty(ui, theme, total);
                     return;
                 }
-                // `ListCtrlItem` 은 라벨·클로저를 **빌리기만** 한다. 파생 문자열과
-                // 행별 trailing 클로저를 먼저 지어 두어야 items 보다 오래 산다.
+                // ListCtrlItem이 빌리는 문자열·클로저를 항목보다 먼저 만든다.
                 let prepared: Vec<(String, &DagRow)> = visible
                     .iter()
                     .map(|&i| {
@@ -494,13 +408,11 @@ fn draw_list(
         let r = &dag.rows[i];
         dag.open_workspace = Some(r.workspace_id);
         dag.open_dag = Some(r.id.clone());
-        // 이전 DAG 의 줌/선택/레이아웃이 새 그래프로 새어 들어가지 않게 통째로
-        // 새로 시작한다 — 폴링 시각도 비어 첫 프레임에 곧바로 읽는다.
+        // 이전 DAG의 선택·배율·레이아웃·조회 시각을 새 그래프에 넘기지 않는다.
         dag.graph = DagGraphView::default();
         dag.view = DrillDownView::Detail;
     }
 
-    // ── 푸터 — 보이는 개수 + 닫기 ──
     let mut close = false;
     ui.painter().hline(x_range, ui.cursor().top(), sep);
     ui.allocate_ui(egui::vec2(full.width(), footer_h), |ui| {
@@ -530,14 +442,9 @@ fn draw_list(
     close
 }
 
-/// 행 끝 클러스터 — 출처 태그 · rollup 상태 · mono `7/12`.
-///
-/// 진행을 막대가 아니라 **글자**로 둔다: 12 개짜리 그래프에서 막대 한 칸은 8% 라
-/// 눈으로 셋과 넷을 구분할 수 없고, 정확한 수가 이 화면의 용건이다.
+/// 출처·상태와 정확한 완료/전체 개수를 표시한다.
 fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
-    // `ListCtrl` 은 trailing 슬롯을 **오른쪽에서 왼쪽으로** 채운다(행 오른쪽 끝에
-    // 붙여야 하므로). 그래서 먼저 낸 것이 가장 오른쪽에 놓인다 — 시안의 왼→오른
-    // 순서(태그 · 상태 · 카운터)를 얻으려면 여기서는 거꾸로 낸다.
+    // trailing 영역은 오른쪽부터 채우므로 화면 순서의 역순으로 그린다.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.dag_row_summary_gap().value();
         ui.label(
@@ -546,8 +453,7 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
                 .size(theme.dag_row_count_font_size().value())
                 .color(theme.dag_row_count_fg().to_egui()),
         );
-        // 라벨 색은 상태 색이 아니라 `-label` role 에서 읽는다 — 상태 색을 작은
-        // 캡션 라벨에 그대로 쓰면 4.5:1 을 밑돈다(노드 카드와 같은 규칙).
+        // 작은 글자의 대비를 확보하는 상태별 label 색을 사용한다.
         let (_, _, label_fg) = status_colors(theme, row.rollup);
         ui.label(
             egui::RichText::new(format!("{} {}", row.rollup.glyph(), row.rollup.label()))
@@ -561,10 +467,7 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
     });
 }
 
-/// 빈 목록 2 종 — DAG 가 아예 없는 경우와 필터가 다 걸러낸 경우.
-///
-/// 둘을 나누는 이유는 다음 행동이 다르기 때문이다: 앞은 "DAG 를 만들어야 한다",
-/// 뒤는 "필터를 풀어야 한다".
+/// DAG가 없는 경우와 필터 결과가 없는 경우를 구분해 안내한다.
 fn draw_empty(ui: &mut egui::Ui, theme: &Theme, total: usize) {
     let (title, hint) = if total == 0 {
         ("dag_list.empty_none", "dag_list.empty_none_hint")
@@ -587,10 +490,7 @@ fn draw_empty(ui: &mut egui::Ui, theme: &Theme, total: usize) {
     });
 }
 
-/// 디테일 뷰 — surface 와 **같은** 그래프 렌더를 그대로 부른다.
-///
-/// popup 폭(560)이 상세 도킹 임계값(640) 아래라 노드 상세는 자동으로 하단 시트가
-/// 된다 — 시안이 "popup 은 항상 하단 도킹" 으로 확정한 배치와 같은 결과다.
+/// surface와 같은 그래프를 그린다. 노드 상세의 배치는 가용 폭에 따라 정해진다.
 fn draw_detail_graph(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -598,7 +498,6 @@ fn draw_detail_graph(
     pending: Option<ChromeAction>,
 ) {
     if dag.open_dag.is_none() {
-        // back 직후 한 프레임 — 캔버스 바닥색만 칠하고 넘어간다.
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, theme.dag_canvas_bg().to_egui());
         return;
@@ -624,8 +523,6 @@ pub fn on_close_dag_list_popup(
 mod tests {
     use super::*;
 
-    /// 정렬이 보는 세 필드만 실제 값으로 채운 행. 나머지는 표시용이라 정렬에
-    /// 영향이 없다.
     fn row(id: &str, updated_at: u64, workspace_id: u32) -> DagRow {
         DagRow {
             workspace_id,
@@ -658,8 +555,6 @@ mod tests {
         );
     }
 
-    /// 동률은 `id` 내림차순으로 끊는다 — 같은 ms 에 만들어진 DAG 가 폴링마다
-    /// 자리를 바꾸면 클릭하려던 행이 발밑에서 움직인다.
     #[test]
     fn 갱신시각_동률은_id_내림차순으로_끊는다() {
         let mut rows = vec![
@@ -671,8 +566,6 @@ mod tests {
         assert_eq!(ids(&rows), ["d:beta", "c:t-2", "c:t-1"]);
     }
 
-    /// explicit id 는 사용자가 정한 키라 workspace 가 다르면 같은 값이 나올 수
-    /// 있다 — 그때도 순서가 확정돼야 한다.
     #[test]
     fn 갱신시각과_id_가_모두_같으면_workspace_로_끊는다() {
         let mut rows = vec![row("d:same", 500, 7), row("d:same", 500, 2)];
@@ -683,8 +576,6 @@ mod tests {
         );
     }
 
-    /// 같은 입력을 두 번 정렬해도 같은 결과 — 아무것도 안 움직이는 동안 폴링이
-    /// 여러 번 돌아도 목록이 요동하지 않는다.
     #[test]
     fn 반복_정렬은_같은_결과를_낸다() {
         let build = || {
@@ -704,9 +595,7 @@ mod tests {
         assert_eq!(ids(&twice), ids(&from_scratch));
     }
 
-    /// 정렬 키가 `created_at` 이 아님을 증명한다 — 가장 먼저 만들어졌지만 방금
-    /// 상태가 바뀐 DAG 가 맨 위로 온다. id 가 생성 시각 오름차순이므로 "가장 작은
-    /// id" 가 "가장 먼저 만들어진 것" 이다.
+    /// 생성 순서와 무관하게 최근 갱신한 DAG가 먼저 나온다.
     #[test]
     fn 오래_전에_만들어졌어도_방금_움직였으면_맨_위() {
         let mut rows = vec![
@@ -725,8 +614,6 @@ mod tests {
         );
     }
 
-    /// `'c' < 'd'` 사전순 편향이 제거됐는지 — 더 최근에 움직인 derived 가 explicit
-    /// 보다 위로 온다(그 반대도 성립한다).
     #[test]
     fn derived_와_explicit_이_출처와_무관하게_섞인다() {
         let mut rows = vec![
@@ -747,7 +634,6 @@ mod tests {
         );
     }
 
-    /// workspace 경계를 넘어 **전역**으로 정렬된다 — workspace 별로 뭉치면 안 된다.
     #[test]
     fn workspace_경계를_넘어_전역으로_정렬된다() {
         let mut rows = vec![
@@ -774,7 +660,6 @@ mod tests {
         f
     }
 
-    /// 켜진 게 하나도 없으면 전체 통과 — 기본 상태가 "모든 상태" 와 같아야 한다.
     #[test]
     fn 아무것도_안_켜면_전체_통과() {
         let none = filter(&[]);
@@ -783,7 +668,6 @@ mod tests {
         }
     }
 
-    /// 하나만 켜면 그 상태만 통과.
     #[test]
     fn 하나만_켜면_그것만_통과() {
         let only_running = filter(&[DagStatus::Running]);
@@ -795,7 +679,6 @@ mod tests {
         }
     }
 
-    /// 여러 개를 켜면 OR — "아직 안 끝난 DAG" 를 한 번에 묶는 것이 이 변경의 목적이다.
     #[test]
     fn 여러_개를_켜면_or_로_통과() {
         let unfinished = filter(&[DagStatus::Waiting, DagStatus::Ready, DagStatus::Running]);
@@ -827,9 +710,7 @@ mod tests {
         out
     }
 
-    /// 어휘 정합 ①: `rollup()` 이 낼 수 있는 값은 전부 `ROLLUP_ALL` 에 있어야 한다.
-    /// 나중에 `rollup()` 에 분기가 늘면(예: `"cancelled"` 신설) 여기서 먼저 깨져,
-    /// 필터가 그 상태의 DAG 를 조용히 감추는 일이 없다.
+    /// rollup이 반환하는 상태는 모두 필터에 있어야 한다.
     #[test]
     fn rollup_이_내는_값은_전부_필터_목록에_있다() {
         for name in all_rollup_outputs() {
@@ -841,8 +722,7 @@ mod tests {
         }
     }
 
-    /// 어휘 정합 ②: 반대 방향 — `ROLLUP_ALL` 의 각 항목은 `rollup()` 이 실제로 낼 수
-    /// 있는 값이어야 한다. 죽은 선택지(어떤 DAG 와도 일치하지 않는 항목)를 막는다.
+    /// 필터의 모든 상태는 실제 rollup 결과로 나올 수 있어야 한다.
     #[test]
     fn 필터_목록의_각_항목은_rollup_이_실제로_낸다() {
         let produced: Vec<DagStatus> = all_rollup_outputs()

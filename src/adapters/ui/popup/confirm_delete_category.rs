@@ -1,11 +1,5 @@
-//! 카테고리 삭제 destructive 확인 다이얼로그 (`overlays-shared.jsx` `CategoryDeleteFrame`
-//! 전사). 즉시 삭제하지 않고 취소/삭제 2버튼 confirm 을 한 번 거친다. 삭제 버튼은
-//! danger(`accent_danger` + `text_on_accent`), 헤더에 trash danger 글리프. 본문은 안전한
-//! 결과(워크스페이스는 삭제되지 않고 normal 로 이동)를 안내한다.
-//!
-//! `state.dialogs.pending_category_delete` 가 대상 카테고리 id 를 들고 있다. 없거나
-//! normal(방어) 이면 즉시 닫힘. 확인 시 `delete_category`(워크스페이스를 순서 보존하며
-//! normal 로 귀속) + `mark_layout_dirty`.
+//! 카테고리 삭제 확인. 워크스페이스는 순서를 유지한 채 기본 카테고리로 옮긴다.
+//! 대상이 없거나 기본 카테고리이면 닫는다.
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
@@ -49,14 +43,10 @@ pub fn confirm_delete_category_title(
 /// 대상 이름을 뺀 안내문 자체의 길이. 대상이 아직 안 잡힌 상태의 기준이기도 하다.
 const BASE_BODY_LEN: usize = 60;
 
-/// 본문 길이 → 팝업 크기. **sizer 와 등록 placeholder 가 같은 식을 쓴다.**
-///
-/// 등록 값을 손으로 적으면 sizer 와 어긋날 자리가 생기고, 그 어긋남은 첫 프레임의
-/// 깜빡임으로만 드러난다. 형제 `file_handler_picker` 가 같은 이유로 같은 형태다.
+/// 첫 프레임의 크기가 어긋나지 않도록 등록 크기와 sizer가 같은 계산을 쓴다.
 fn size_for(body_len: usize) -> egui::Vec2 {
     let approx_lines = (body_len as f32 / 42.0).ceil().max(2.0);
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
-    // 헤더(글리프+제목) + 본문 + 버튼 행 + 여백.
     let content_h = 24.0 + body_h + 40.0;
     egui::vec2(
         WIDTH.value(),
@@ -116,7 +106,6 @@ pub fn draw_confirm_delete_category(
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
-    // ── 헤더: trash danger 글리프 + "카테고리를 삭제할까요?" (semibold). ──
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let icon_size = th.icon_glyph_size_md.value();
@@ -135,7 +124,6 @@ pub fn draw_confirm_delete_category(
 
     ui.add_space(th.spacing_sm.value());
 
-    // ── 본문: 안전한 결과 안내(이름 + 워크스페이스 수 보간). ──
     ui.label(
         egui::RichText::new(t_fmt2(
             "workspace_category.delete_confirm_body",
@@ -146,14 +134,12 @@ pub fn draw_confirm_delete_category(
         .size(th.font_size_body.value()),
     );
 
-    // ── 푸터: 우측 정렬 Cancel(ghost) + Delete category(danger). ──
     let mut confirm = false;
     let mut cancel = false;
     ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
         ui.add_space(th.spacing_sm.value());
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Delete category — danger 채움 버튼.
                 let del = egui::Button::new(
                     egui::RichText::new(t("workspace_category.delete_category"))
                         .color(th.text_on_accent()),
