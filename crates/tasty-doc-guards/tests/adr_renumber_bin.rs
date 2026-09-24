@@ -1,10 +1,5 @@
-//! `adr-renumber` bin 을 합성 레포(git 저장소)에 돌려, 옮기고 고친 결과를 파일로 확인한다.
-//!
-//! 판정 규칙의 단위 시험은 `src/adr_renumber.rs` 에 있다. 여기는 그 규칙이 **파일 · git ·
-//! 인덱스 재생성** 과 이어졌을 때를 본다 — 교환이 연쇄로 되돌아가지 않는가, 역매핑이 원본을
-//! 바이트 단위로 되살리는가, 삭제되는 ADR 을 부르는 자리가 남으면 아무것도 안 쓰는가.
-//!
-//! 이 파일은 가짜 ADR 을 담은 픽스처라 bin 의 `FIXTURES` 에 올라 있다.
+//! 합성 Git 저장소에서 ADR 재번호화의 참조 변경·번호 교환·거부 조건을 확인한다.
+//! 검사 코드의 합성 입력은 재번호화 도구가 수정하지 않는다.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -133,7 +128,6 @@ fn identity_mapping_changes_nothing() {
     let (rc, report, err) = run(root, "0001 0001\n0002 0002\n0003 0003\n", true);
     assert_eq!(rc, Some(0), "{err}");
     assert!(err.contains("고칠 자리 0"), "{err}");
-    // 모수가 0 이 아니었다는 것 — 형태 표가 본 자리를 센다.
     assert!(
         report.contains("| 파일명 NNNN-<slug> | 6 | 0 |"),
         "{report}"
@@ -219,6 +213,6 @@ fn write_refuses_a_dirty_tree_and_an_incomplete_mapping() {
     assert_eq!(rc, Some(2), "{err}");
     assert!(
         !root.join("docs/adr/0002-alpha.md").exists(),
-        "더러운 트리에서 옮겼다"
+        "미커밋 변경이 있는 작업 트리에서 파일을 옮겼다"
     );
 }

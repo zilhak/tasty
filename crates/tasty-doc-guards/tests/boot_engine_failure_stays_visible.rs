@@ -1,28 +1,16 @@
-//! 부팅 엔진 생성 실패가 "창이 깜빡이고 사라지는 것" 으로 되돌아가지 않게 막는 가드.
-//!
-//! 배경: 부팅 중 엔진 생성 실패는 `tracing::error!` + `exit(1)` 이었다. 터미널에서
-//! 실행한 사용자는 stderr 로 진단을 보지만, dock/시작 메뉴/런처로 실행한 사용자에게는
-//! 창이 잠깐 떴다 사라지는 것이 전부였다. 이 단계는 부팅 GPU init 이후라 **GPU·창이
-//! 살아있으므로**, `enter_shell_setup_mode` 선례대로 진단을 창에 그려 유지하도록 고쳤다
-//! (`docs/adr/0016-window-platform-and-shutdown.md` 재검토 트리거 갱신).
-//!
-//! 이 경로는 winit `ActiveEventLoop` 와 GPU 가 있어야 돌아가 행동 테스트로 감쌀 수 없다
-//! (ADR-0016 의 창 생성 경로와 같은 제약). 그래서 진단 소스는 단위 테스트
-//! (`boot_machine.rs` 의 `boot_engine_error_info` — 세 키가 distinct)로, 실패가 **보이는
-//! 채로 유지되는지** 는 이 소스 형태 가드로 고정한다. 선례:
-//! `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs`, `crates/tasty-doc-guards/tests/ipc_window_create_returns_outcome.rs`.
+//! 엔진 생성에 실패해도 부팅 오류 화면이 유지되도록 소스의 호출·분기 형태를 검사한다.
+//! 런처로 실행하면 stderr를 볼 수 없으므로 프로세스를 바로 종료하면 안 된다(ADR-0016).
+//! GPU·ActiveEventLoop를 실행하지 않는 정적 검사이며, 화면 표시 자체를 검증하지는 않는다.
+//! 오류별 진단 내용은 boot_machine.rs의 단위 테스트에서 확인한다.
 
 use std::path::PathBuf;
 
 fn read(rel: &str) -> String {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     let p: PathBuf = tasty_doc_guards::repo_root().join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
 }
 
-/// `fn <name>(` 부터 함수 본문 끝(같은 열의 닫는 중괄호)까지 대략 잘라낸다 —
-/// 중괄호 깊이를 세어 0 으로 돌아오는 지점까지.
+/// 함수 헤더 이후 첫 여는 중괄호부터 깊이가 0으로 돌아올 때까지 읽는다.
 fn fn_body(src: &str, header: &str) -> String {
     let start = src
         .find(header)
@@ -45,7 +33,7 @@ fn fn_body(src: &str, header: &str) -> String {
     panic!("{header} body has no matching close brace");
 }
 
-/// 줄 주석(`//`)을 제거해 설명 문구가 오탐되지 않게 한다.
+/// 각 줄의 첫 // 뒤를 제거한다. 문자열 내부 //도 구별하지 않는 간단한 판독이다.
 fn code_only(s: &str) -> String {
     s.lines()
         .map(|l| match l.find("//") {
@@ -61,7 +49,7 @@ fn boot_error_screen_renderer_exists() {
     let src = read("src/gfx/gpu/boot_error.rs");
     assert!(
         src.contains("fn render_boot_error"),
-        "부팅 실패 화면 렌더러 render_boot_error 가 없다 (ADR-0016 재검토 트리거)."
+        "부팅 실패 화면 렌더러 render_boot_error가 없다(ADR-0016)."
     );
 }
 
@@ -75,12 +63,10 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
         .count();
     assert!(
         routed >= 2,
-        "엔진 실패 두 갈래가 모두 boot_error_info 로 라우팅돼야 한다(현재 {routed}건) — \
-         한쪽이라도 blind exit 로 되돌아가면 런처 사용자에게 안 보인다 (ADR-0016)."
+        "엔진 실패 두 경로가 모두 boot_error_info를 설정해야 한다(현재 {routed}건). 바로 종료하면 런처 사용자에게 오류가 보이지 않는다(ADR-0016)."
     );
 
-    // 진단 빌더 자체는 종료하지 않는다 — 화면을 그릴 수 있게 info 를 돌려줘야 한다.
-    // exit 를 여기 넣으면 화면을 보이기 전에 프로세스가 죽어 결함이 재발한다.
+    // 화면을 그리기 전에 종료하지 않도록 진단 빌더는 정보만 반환해야 한다.
     let builder = code_only(&fn_body(&src, "fn boot_engine_error_info("));
     assert!(
         !builder.contains("exit("),

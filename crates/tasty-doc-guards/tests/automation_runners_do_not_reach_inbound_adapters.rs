@@ -1,55 +1,23 @@
-//! 자동화 실행부 경계 가드 — webhook(`src/webhook/`)과 hook handler(`src/hook_handler/`)의
-//! **출하되는** 코드가 inbound adapter(IPC 요청 핸들러 · IPC 서버 · CLI 진입)나 메인 루프를
-//! 이름으로 부르면 fail 한다.
-//!
-//! # 왜 이 가드인가
-//!
-//! 두 실행부는 외부 사건(HTTP 요청 · 훅 발화)을 받아 **호스트 내부 IPC 호출**을 만든다. 그
-//! 호출은 공용 통신 계약(`tasty_ipc::host_call::HostIpcInjector`)으로 메인 루프에 주입된다 —
-//! 요청을 받아 처리하는 쪽(`adapters::ipc` 핸들러 트리, `tcp_ipc_server`)의 파일 배치를 알면
-//! 안 된다. 그 방향이 리팩토링 마스터플랜의 공용 경계 단위가 없앤 역참조다. 같은 크레이트 안이라
-//! 컴파일러는 이 방향을 못 막는다(도메인 가드와 같은 사정 — ADR-0002).
-//!
-//! 도메인 가드(`domain_does_not_reach_up`)의 좌변은 `src/core` · `src/ports` 뿐이라 이 두
-//! 디렉토리를 안 본다. 변이 검증이 그 빈자리를 쟀다 — `src/webhook/mod.rs` 에
-//! `use crate::adapters::production::tcp_ipc_server` 를 더해도 아무것도 안 빨개졌다
-//! ([ADR-0002](../../../docs/adr/0002-domain-execution-and-ports.md)).
-//!
-//! # 좌변과 판정기
-//!
-//! 두 디렉토리 아래 `.rs` 중 출하되는 것 — 파일 단위 test-only 를 빼고, 인라인 `#[cfg(test)]`
-//! 줄을 뺀다. 테스트가 픽스처를 부르는 것은 정상이다. 경로 읽기(마스킹 · 중괄호 import ·
-//! 줄을 넘는 경로 · `super::` 사슬)와 앞마디 일치는 도메인 가드와 **같은 판정기**
-//! (`tasty_doc_guards::crate_paths`)다.
-//!
-//! 기대값은 0 이고 명부가 없다. 세운 날(2026-09-22) 출하 코드의 적중이 0 이었다.
-//!
-//! # 이 가드가 안 보는 것
-//!
-//! - **전이 의존.** 실행부가 부르는 형제 모듈이 다시 핸들러를 부르는 경로는 안 센다.
-//! - **outbound adapter**(`adapters::production` 의 fs · clock · process 구현 등). 이 가드의
-//!   물음은 "요청을 받는 쪽을 아는가" 이고, 실행부가 포트 대신 구현을 직접 쓰는 것은 다른
-//!   물음이다. 오늘 적중은 0 이다.
+//! webhook과 hook handler의 출하 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
+//! 내부 IPC 호출은 tasty_ipc::host_call::HostIpcInjector로 주입해야 한다(ADR-0002).
+//! 같은 크레이트 안의 경계이므로 컴파일러가 의존 방향을 제한하지 않는다.
+//! 공유 crate_paths 파서로 경로를 읽고 파일·인라인 test 전용 코드를 제외한다.
+//! 전이 의존과 outbound adapter 사용은 검사하지 않는다. 허용 목록은 두지 않는다.
 
 use tasty_doc_guards::crate_paths::{path_is_under, shipped_references};
 use tasty_doc_guards::repo_root;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::rust_sources;
 
-/// 자동화 실행부 뿌리.
 const RUNNER_ROOTS: &[&str] = &["src/webhook", "src/hook_handler"];
 
-/// 순회가 두 뿌리에 닿았음을 고정하는 앵커 — 각 모듈의 루트 파일.
+/// 두 실행부를 모두 수집했는지 확인할 파일.
 const RUNNER_ANCHORS: &[&str] = &["src/webhook/mod.rs", "src/hook_handler/mod.rs"];
 
-/// 두 뿌리 아래 `.rs` 수의 하한. 실측 2026-09-22: 18 개(`src/webhook` 10 · `src/hook_handler` 8).
-/// 수집이 죽으면 판정이 빈 집합을 훑고 초록이 된다.
+/// 수집 누락을 찾는 하한. 2026-09-22 실측18개(webhook10·hook_handler8).
 const MIN_RUNNER_FILES: usize = 14;
 
-/// 실행부가 이름으로 부르면 안 되는 크레이트 루트 항목 — `(이름, 무엇이라 안 되는가)`.
-///
-/// 모듈과 함께 lib 루트의 별칭(`src/lib.rs` 의 `pub(crate) use …`)도 적는다 — 별칭만 남기면
-/// 별칭으로 우회된다.
+/// 금지할 루트 이름과 사유. src/lib.rs의 재노출 별칭도 포함한다.
 const INBOUND: &[(&str, &str)] = &[
     (
         "adapters::ipc",
@@ -89,10 +57,7 @@ fn automation_runners_do_not_name_an_inbound_adapter() {
         .collect();
     assert!(
         sources.len() >= MIN_RUNNER_FILES,
-        "자동화 실행부 뿌리({}) 아래 `.rs` 를 {} 개만 모았다(하한 {MIN_RUNNER_FILES}) — 수집이 \
-         죽었거나 뿌리가 옮겨졌다.\n\
-         ★ 하한을 내려서 통과시키지 마라. 실행부가 정말 옮겨졌으면 `RUNNER_ROOTS` 를 새 자리로 \
-         바꿔라.",
+        "자동화 실행부({})에서 .rs 파일을 {}개만 수집했다(하한 {MIN_RUNNER_FILES}). 수집 범위를 확인하고, 실행부가 이동했다면 RUNNER_ROOTS를 갱신한다.",
         RUNNER_ROOTS.join(" · "),
         sources.len()
     );
@@ -125,18 +90,12 @@ fn automation_runners_do_not_name_an_inbound_adapter() {
     );
     assert!(
         offenders.is_empty(),
-        "자동화 실행부(`src/webhook` · `src/hook_handler`) 출하 코드가 inbound adapter 나 메인 \
-         루프를 이름으로 부른다:\n{}\n\
-         실행부는 공용 통신 계약(`tasty_ipc::host_call`)으로 호출을 주입한다 — 요청을 받는 쪽의 \
-         파일 배치를 모른다(ADR-0002). 필요한 타입이 핸들러 쪽에 정의돼 있으면 공용 계약 쪽으로 \
-         옮기고 핸들러가 그것을 쓴다.\n\
-         ★ 이 가드에 면제 명부를 만들어 통과시키지 마라 — 명부가 비어 있는 것이 이 경계의 \
-         현재 상태다.",
+        "자동화 실행부가 inbound adapter나 메인 루프를 직접 참조한다:\n{}\n내부 호출은 tasty_ipc::host_call로 주입한다(ADR-0002). 필요한 타입은 공용 계약으로 옮기고 핸들러가 사용하게 한다. 허용 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }
 
-/// 표의 합성 양성·음성 대조 — 생산 트리는 0 자리라 보고 갈래에 오늘 입력이 없다.
+/// 금지 참조와 허용 참조, 주석·테스트 제외를 합성 입력으로 확인한다.
 #[test]
 fn the_inbound_table_catches_what_it_claims() {
     let src = "\
@@ -168,9 +127,6 @@ mod tests {
             (7, "hub"),
             (8, "debug_info"),
         ],
-        "잡혀야 하는 것: IPC 서버(1) · 핸들러 별칭(3) · 중괄호 항목(5) · 메인 루프 별칭(6) · \
-         `super::` 사슬로 루트에 올라간 서버 조립(7 — 깊이 2 파일) · debug 별칭(8). 2 행(outbound \
-         adapter) · 4 행(공용 계약)이 잡히면 표가 넓어진 것이고, 9 행이면 마스킹이, 12 행이면 \
-         test 필터가 죽은 것이다."
+        "금지 참조는 1·3·5·6·7·8행이다. outbound adapter(2)와 공용 계약(4), 주석(9), 테스트(12)는 제외돼야 한다."
     );
 }

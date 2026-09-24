@@ -1,18 +1,9 @@
-//! ADR 헤더와 생성 인덱스의 번호·내용·배치를 대조한다.
-//!
-//! 모든 ADR은 정확히 한 그룹에 속하고 생성 행도 한 번만 나와야 한다.
-//! 머리말의 번호와 충돌 표지도 검사한다. 생성기는 마커 안만 바꾸므로
-//! 마커 밖의 표 행과 머리말 오류는 별도로 확인해야 한다.
-//!
-//! 현재 문서는 기존 기록을 통합해 새로 썼으므로 대체·개정 사슬이 없을 수 있다.
-//! 관계가 있으면 양방향 기록과 대상 존재를 검사하고, 관계 해석의 검출력은
-//! 아래 합성 정상·오류 입력으로 확인한다. 과거 사슬 개수를 현재 문서에 요구하지 않는다.
-//! Tags의 주제 관계나 편집 판단은 문자열만으로 검증하지 않는다.
-//! 작성 규칙: docs/adr/0050-architecture-decision-records.md.
+//! ADR 헤더와 인덱스의 번호·내용·그룹 배치를 대조한다.
+//! 생성기가 수정하지 않는 머리말의 번호·표·충돌 표지도 검사한다.
+//! 대체·개정 관계가 있으면 양방향 기록을 확인하고, 없는 경우도 합성 입력으로 판독을 검증한다.
+//! Tags의 의미와 편집 판단은 검사하지 않는다. 작성 규칙은 docs/adr/0050-architecture-decision-records.md를 따른다.
 
-// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
-//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
-//       `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+// 이유: 테스트 본문의 반환값 무시는 제품 코드의 lint 예외 목록에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};
@@ -24,13 +15,11 @@ use tasty_doc_guards::adr_index::{
 };
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 통합 트리 e87dcea71에서 ADR 51편을 확인했다. 하한 50은 빈 수집과
-/// 대규모 누락을 발견하기 위한 보조 검사다. 개별 누락·중복은 헤더와 생성 행을 대조한다.
-/// 문서를 의도적으로 통폐합해 이보다 줄이면 실제 파일 목록을 다시 확인해 갱신한다.
+/// 9d1b15669에서 ADR51편을 확인했다. 하한50은 수집 누락을 찾는 보조 검사다.
+/// 개별 누락·중복은 헤더와 생성 행을 대조한다. 의도적으로 파일 수를 줄일 때만 다시 측정해 갱신한다.
 const MIN_ADRS: usize = 50;
 
-/// 여섯 주제 머리말에 대표 ADR을 하나씩 연결한다. 없는 번호의 검출은
-/// 합성 입력으로도 확인하므로 과거 머리말의 긴 번호 목록을 유지할 필요는 없다.
+/// 여섯 주제 머리말에서 대표 ADR을 확인한다. 없는 번호는 합성 입력에서도 검사한다.
 const MIN_PREAMBLE_NUMBERS: usize = 6;
 
 fn repo_root() -> PathBuf {
@@ -47,30 +36,23 @@ fn index_text(root: &Path) -> String {
         .replace("\r\n", "\n")
 }
 
-/// 한 번호는 한 ADR 만 가리킨다.
 #[test]
 fn an_adr_number_names_exactly_one_document() {
     let all = adrs(&repo_root());
     println!("[ADR 인덱스] ADR 파일 {} · 하한 {MIN_ADRS}", all.len());
     assert!(
         all.len() >= MIN_ADRS,
-        "ADR 파일을 {} 개밖에 못 셌다(하한 {MIN_ADRS}) — 수집이 죽었다",
+        "ADR 파일을 {}개만 수집했다(하한 {MIN_ADRS}). 저장소 경로와 파일 목록을 확인한다.",
         all.len()
     );
     let dupes = duplicate_numbers(&all);
     assert!(
         dupes.is_empty(),
-        "같은 ADR 번호가 서로 다른 문서를 가리킨다. 번호는 소스 주석·다른 ADR·커밋 \
-         메시지가 인용하는 식별자라, 겹치면 그 인용이 전부 모호해진다. 나중에 얹은 쪽이 \
-         현재 최대 번호 + 1 로 옮긴다(파일명·본문 제목·참조 링크 셋 다, 그리고 인덱스를 \
-         다시 생성한다). 빈 번호는 재사용하지 않는다\
-         (docs/adr/0050-architecture-decision-records.md).\n  {}",
+        "ADR 번호가 중복됐다. 새 문서를 현재 최대 번호 다음으로 옮기고 파일명·제목·참조를 함께 고친 뒤 인덱스를 재생성한다. 빈 번호는 재사용하지 않는다(docs/adr/0050-architecture-decision-records.md).\n  {}",
         dupes.join("\n  ")
     );
 }
 
-/// 문서 안의 `# ADR-NNNN` 제목이 자기 파일명 번호와 같다. 번호를 옮길 때 파일명만 바꾸고
-/// 본문을 안 고치면 문서를 **열어서** 번호를 읽은 사람만 틀린 값을 갖는다.
 #[test]
 fn the_heading_number_matches_the_file_name() {
     let mut wrong = Vec::new();
@@ -90,8 +72,6 @@ fn the_heading_number_matches_the_file_name() {
     );
 }
 
-/// 행을 만드는 네 헤더 값이 다 있다. 없으면 생성된 행에 빈 칸이 생기고, 빈 칸은 읽는
-/// 사람에게 "상태 없음" 이라 통과시킬 값이 아니다.
 #[test]
 fn every_adr_header_carries_the_row_fields() {
     let all = adrs(&repo_root());
@@ -110,7 +90,7 @@ fn every_adr_header_carries_the_row_fields() {
     }
     assert!(
         all.len() >= MIN_ADRS,
-        "ADR {} 개 — 수집이 죽었다",
+        "ADR 수집 결과가 {}개로 하한보다 적다.",
         all.len()
     );
     assert!(
@@ -120,7 +100,7 @@ fn every_adr_header_carries_the_row_fields() {
     );
 }
 
-/// 앞 줄과 뒤 줄이 처음 갈리는 자리를 몇 줄 보여 준다 — 전문을 찍으면 실패문이 묻힌다.
+/// 처음 다른 줄의 주변만 보여 준다.
 fn first_difference(want: &str, got: &str) -> String {
     let (w, g): (Vec<&str>, Vec<&str>) = (want.lines().collect(), got.lines().collect());
     let at = w
@@ -136,8 +116,6 @@ fn first_difference(want: &str, got: &str) -> String {
     )
 }
 
-/// **생성 구역이 생성 결과와 같은가** — 행을 손으로 고쳤거나, ADR 헤더를 고치고 다시
-/// 안 만들었거나, ADR 을 더하고 안 만들었으면 여기서 빨개진다.
 #[test]
 fn the_index_rows_are_what_the_generator_renders() {
     let root = repo_root();
@@ -145,7 +123,6 @@ fn the_index_rows_are_what_the_generator_renders() {
     let current = index_text(&root);
     let rendered = render_index(&current, &all)
         .unwrap_or_else(|e| panic!("인덱스의 마커 구조가 깨졌다:\n  {}", e.join("\n  ")));
-    // 파일 전체가 아니라 **마커 안**만 센다 — 마커 밖에 적힌 행은 생성물이 아니다.
     let rows = region_row_count(&current);
     println!(
         "[adr-index-parity] ADR {} · 그룹 {} · 생성 구역 행 {rows}",
@@ -158,22 +135,17 @@ fn the_index_rows_are_what_the_generator_renders() {
     );
     assert!(
         rendered == current,
-        "{INDEX} 의 생성 구역(`adr-rows:begin` ~ `adr-rows:end`)이 ADR 헤더에서 만든 결과와 \
-         다르다. ★ 생성 구역을 손으로 고치지 마라 — ADR 헤더(제목 · Status · Date · Tags · \
-         Group)가 정본이다. 헤더를 고친 뒤 \
-         `cargo run -p tasty-doc-guards --bin adr-index -- --write` 로 다시 만든다.\n{}",
+        "{INDEX}의 생성 구역이 ADR 헤더와 다르다. 생성 행을 직접 수정하지 말고 ADR 헤더의 제목·Status·Date·Tags·Group을 고친 뒤 cargo run -p tasty-doc-guards --bin adr-index -- --write로 갱신한다.\n{}",
         first_difference(&rendered, &current)
     );
     assert_eq!(
         rows,
         all.len(),
-        "생성 구역 행 수가 ADR 수와 다르다 — 생성 결과와 같은데 이렇다면 생성기가 ADR 을 \
-         빠뜨리거나 두 번 싣는다"
+        "생성 행 수가 ADR 수와 다르다. 생성기에서 누락하거나 중복한 ADR이 있는지 확인한다."
     );
 }
 
-/// **행이 생성 구역에만 있는가** — 마커 밖의 표 줄은 생성 결과와의 대조에 안 걸린다
-/// (생성기가 마커 밖을 안 건드리므로 파일은 생성 결과와 같다). 그래서 따로 센다.
+/// 생성기가 수정하지 않는 마커 밖의 표 줄도 확인한다.
 #[test]
 fn no_table_line_sits_outside_the_generated_regions() {
     let current = index_text(&repo_root());
@@ -185,21 +157,16 @@ fn no_table_line_sits_outside_the_generated_regions() {
     );
     assert!(
         !group_slugs(&current).is_empty(),
-        "생성 구역을 하나도 못 읽었다 — 구역 밖이 파일 전체라 이 판정은 미측정이다"
+        "생성 구역을 하나도 읽지 못했다. 인덱스 마커를 확인한다."
     );
     assert!(
         stray.is_empty(),
-        "{INDEX} 의 생성 구역(`adr-rows:begin` ~ `adr-rows:end`) 밖에 표 줄이 있다 {} 건. \
-         생성기는 마커 밖을 안 건드리므로 이 줄은 `--write` 로 안 없어지고 생성 결과와의 대조에도 \
-         안 걸린다. 머리말에 행을 끼웠거나 `adr-rows:end` 아래에 행을 덧붙인 것이다 — 그 줄을 \
-         지우고, 그 ADR 이 빠진 그룹에 들어가야 한다면 ADR 헤더의 `- **Group**:` 을 고친 뒤 \
-         생성기를 돌린다. 머리말에서 ADR 을 부를 때는 표가 아니라 산문 속 번호로 쓴다:\n  {}",
+        "{INDEX}의 생성 구역 밖에 표 줄이 {}건 있다. 해당 줄을 지우고 필요한 Group 헤더를 고친 뒤 인덱스를 재생성한다. 머리말에서는 표 대신 산문으로 ADR을 연결한다.\n  {}",
         stray.len(),
         stray.join("\n  ")
     );
 }
 
-/// **그룹 배치** — 모든 ADR 이 정확히 한 그룹에 있고, 그 그룹이 인덱스에 실재한다.
 #[test]
 fn every_adr_sits_in_exactly_one_known_group() {
     let root = repo_root();
@@ -225,7 +192,6 @@ fn every_adr_sits_in_exactly_one_known_group() {
     );
 }
 
-/// **결정 사슬이 양 끝에 적혔는가.**
 #[test]
 fn decision_chains_are_written_on_both_ends() {
     let all = adrs(&repo_root());
@@ -248,7 +214,6 @@ fn decision_chains_are_written_on_both_ends() {
     );
 }
 
-/// **머리말이 부르는 번호가 실재하는가.**
 #[test]
 fn group_preambles_cite_only_existing_adrs() {
     let root = repo_root();
@@ -256,7 +221,7 @@ fn group_preambles_cite_only_existing_adrs() {
     println!("[adr-preamble] 번호 토큰 {seen} · 위반 {}", v.len());
     assert!(
         seen >= MIN_PREAMBLE_NUMBERS,
-        "머리말에서 번호를 {seen} 개밖에 못 읽었다(하한 {MIN_PREAMBLE_NUMBERS}) — 판독이 죽었다"
+        "머리말에서 번호를 {seen}개만 읽었다(하한 {MIN_PREAMBLE_NUMBERS}). 머리말과 번호 판독을 확인한다."
     );
     assert!(
         v.is_empty(),
@@ -265,7 +230,6 @@ fn group_preambles_cite_only_existing_adrs() {
     );
 }
 
-/// 생성기 bin 이 라이브러리와 같은 답을 낸다 — 레포에서 `--check` 가 0 으로 끝난다.
 #[test]
 fn the_generator_bin_agrees_with_the_repo() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_adr-index"))
@@ -285,7 +249,7 @@ fn the_generator_bin_agrees_with_the_repo() {
     );
 }
 
-// ── 합성 코퍼스 — 레포 자신만 읽으면 위 판정이 빨개지는 상태가 한 번도 안 만들어진다 ──
+// 오류가 있는 합성 인덱스로 각 판정을 확인한다.
 
 fn adr(num: &str, status: &str, group: &str, refs: &str) -> Adr {
     let group_line = if group.is_empty() {
@@ -317,9 +281,8 @@ fn rendering_touches_only_the_inside_of_the_markers() {
         once.starts_with("머리\n\n## A\n\n0001 을 부른다.\n"),
         "마커 밖을 바꿨다"
     );
-    // 다시 돌려도 같다 — 생성 결과가 고정점이 아니면 가드가 영영 초록이 안 된다.
+    // 재생성 결과는 같아야 한다.
     assert_eq!(render_index(&once, &all).expect("구조가 맞다"), once);
-    // 생성 구역 행을 손으로 고치면 결과와 달라진다.
     let hand = once.replace("| Accepted — 사유 |", "| Accepted |").replace(
         "| 0002 | [제목 0002](0002-x.md) | Accepted |",
         "| 0002 | [손으로 고친 제목](0002-x.md) | Accepted |",
@@ -327,8 +290,7 @@ fn rendering_touches_only_the_inside_of_the_markers() {
     assert_ne!(render_index(&hand, &all).expect("구조가 맞다"), hand);
 }
 
-/// **머리말에 git 충돌 표지가 안 남았는가** — `--write` 는 머리말을 안 건드리므로, 병합
-/// 충돌을 생성기로 풀고 머리말의 충돌을 잊으면 표지가 그대로 커밋된다.
+/// 생성기로 갱신한 뒤에도 남을 수 있는 머리말의 Git 충돌 표지를 확인한다.
 #[test]
 fn no_conflict_marker_is_left_in_the_preambles() {
     let current = index_text(&repo_root());
@@ -336,16 +298,13 @@ fn no_conflict_marker_is_left_in_the_preambles() {
     println!("[adr-conflict] 구역 밖 충돌 표지 {}", found.len());
     assert!(
         found.is_empty(),
-        "{INDEX} 의 머리말(생성 구역 밖)에 git 충돌 표지가 남았다 {} 건. 생성기는 머리말을 안 \
-         건드린다 — 양쪽 산문을 사람이 합친 뒤 표지를 지운다(docs/dev-guide/adr-index.md \
-         \"언제 돌리나\"):\n  {}",
+        "{INDEX}의 머리말에 Git 충돌 표지가 {}건 남았다. 생성기는 이 영역을 수정하지 않으므로 머리말을 직접 합친 뒤 표지를 지운다.\n  {}",
         found.len(),
         found.join("\n  ")
     );
 }
 
-/// 충돌 표지 판정의 **양성 대조** — 머리말 충돌은 `render_index` 가 그대로 두고(그래서 이
-/// 판정이 따로 필요하다), 생성 구역 안의 충돌은 생성기가 덮는다.
+/// 머리말 충돌은 생성기가 보존하고 생성 구역의 충돌은 새 행으로 덮는지 확인한다.
 #[test]
 fn a_conflict_left_in_a_preamble_is_caught() {
     let all = vec![
@@ -379,9 +338,7 @@ fn a_conflict_left_in_a_preamble_is_caught() {
     );
 }
 
-/// 생성 결과의 **완전성** — `Group` 이 없거나 인덱스에 없는 slug 를 가리키는 ADR 은 행 없이
-/// 빠지는데, 그래도 파일은 생성 결과와 같다(생성 대조가 못 잡는 것을 먼저 보인다). 그 빈칸을
-/// 생성기 bin 이 rc 1 로 내는 근거가 이 판정이다.
+/// Group 누락·미등록 그룹은 재생성 결과와 같더라도 행이 없으므로 별도로 검출해야 한다.
 #[test]
 fn an_adr_left_out_of_the_rendered_rows_is_caught() {
     let all = vec![
@@ -419,9 +376,7 @@ fn an_adr_left_out_of_the_rendered_rows_is_caught() {
     );
 }
 
-/// 마커 밖 행의 **양성 대조** — 머리말에 끼운 표(B2)와 `adr-rows:end` 바로 아래 덧붙인
-/// 행(B2c) 둘 다 생성 결과와의 대조를 통과하는 것을 먼저 보이고(그래서 이 판정이 따로
-/// 필요하다), 그 둘을 이 판정이 잡는지 묻는다.
+/// 머리말과 마커 바로 뒤의 표는 재생성 대조만으로 잡히지 않아 별도로 검사한다.
 #[test]
 fn a_row_outside_the_markers_is_caught() {
     let all = vec![
@@ -463,11 +418,8 @@ fn a_row_outside_the_markers_is_caught() {
     }
 }
 
-/// 생성기 bin 의 **rc 배선** — 위 합성 시험들은 판정 함수를 부르고,
-/// `the_generator_bin_agrees_with_the_repo` 는 완전한 레포에서 rc 0 만 본다. 그래서 판정이
-/// 옳아도 그 결과를 rc 로 바꾸는 줄이 빠지면 아무 시험도 안 빨개진다. 여기서는 합성
-/// 코퍼스를 디스크에 쓰고 `--check` 를 돌려, 생성 결과와 **같은** 파일에서도 rc 1 이 나는
-/// 세 갈래(불완전 · 구역 밖 표 줄 · 머리말 충돌)와, 파일이 **다른** 갈래를 함께 묻는다.
+/// 합성 파일에서 생성기 종료코드를 확인한다.
+/// 헤더 누락·구역 밖 표·머리말 충돌은 재생성으로 해결되지 않고, 단순 행 차이는 --write로 해결된다.
 #[test]
 fn the_generator_bin_fails_on_a_synthetic_corpus() {
     fn adr_file(num: &str, group: &str) -> (String, String) {
@@ -514,9 +466,9 @@ fn the_generator_bin_fails_on_a_synthetic_corpus() {
     let parsed: Vec<Adr> = two.iter().map(|(n, b)| parse_adr(n, b.clone())).collect();
     let clean = render_index(TWO_GROUPS, &parsed).expect("구조가 맞다");
 
-    // 음성 대조 — 이 픽스처가 그 자체로 초록이 아니면 아래 rc 1 은 아무것도 안 잰다.
+    // 정상 입력이 먼저 통과해야 오류 입력의 실패와 비교할 수 있다.
     let (rc, err, _) = run("adrbin-clean", "--check", &two, &clean);
-    assert_eq!(rc, Some(0), "완전한 합성 코퍼스가 초록이 아니다:\n{err}");
+    assert_eq!(rc, Some(0), "정상 합성 인덱스에서 검사가 실패했다:\n{err}");
     assert!(
         err.contains("생성 구역 행 현재 2 / 생성 결과 2"),
         "모수 줄:\n{err}"
@@ -526,8 +478,7 @@ fn the_generator_bin_fails_on_a_synthetic_corpus() {
     let row = "| 0002 | [제목 0002](0002-x.md) | Accepted | 2026-09-23 | t |\n";
     let hand_deleted = clean.replace(row, "");
     assert_ne!(hand_deleted, clean, "지울 행을 못 찾았다");
-    // 넷째 칸: `--write` 가 파일을 생성 결과로 맞춘 뒤의 rc. 앞의 셋은 파일이 이미 생성 결과와
-    // 같은데도 빨간 갈래라 `--write` 로도 안 풀린다 — 종료코드 문서의 "두 모드 모두" 가 그것이다.
+    // 재생성으로 해결할 수 없는 오류는 --write에서도 실패해야 한다.
     for (what, files, index, want, write_rc) in [
         (
             "adrbin-incomplete",
@@ -713,14 +664,12 @@ fn a_preamble_number_without_an_adr_is_caught() {
     assert_eq!((v.len(), seen), (1, 2), "없는 번호를 못 잡았다");
 }
 
-/// `MIN_ADRS` 의 **양성 대조** — 모수가 하한 아래로 떨어지는 코퍼스를 만들고 수집기가
-/// 그것을 말하는지 묻는다. 위 시험들은 레포 자신을 읽으므로 수집이 죽는 상황이 한 번도
-/// 안 만들어진다.
+/// 작은 합성 디렉터리로 수집 범위와 하한 미달을 확인한다.
 #[test]
 fn the_adr_floor_sees_a_collapsed_collection() {
     let root =
         std::env::temp_dir().join(format!("tasty-adrfloor-{}-{}", std::process::id(), line!()));
-    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    // 앞선 실행의 임시 경로를 정리한다. 없으면 무시한다.
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join(ADR_DIR);
     std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
