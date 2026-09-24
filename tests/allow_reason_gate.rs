@@ -1,25 +1,11 @@
-//! 근거 없는 억제 래칫(`scripts/check-allow-reason.sh`)의 **좌변**을 합성 트리로
-//! 고정한다. 자매 픽스처 `tests/shared_walk_gate.rs` 와 같은 판정 방식이고, 다른 것은
-//! 소비처 수(다섯)와 그중 둘이 **마스킹 사본 둘**이라는 점이다.
+//! 근거 없는 lint 억제를 세는 게이트를 합성 Git 저장소에서 실행한다.
+//! SCAN_SPECS를 넓혔을 때 rg·Git·미추적 파일 검사·두 마스킹 결과가 같은 범위를 쓰는지 확인한다.
+//! 억제 수뿐 아니라 출력한 수집 파일 수도 비교한다.
 //!
-//! 왜 좌변인가. 이 게이트는 같은 트리를 **다섯 번** 지목했다 — rg 분기 · git 분기 ·
-//! 미추적 검사 · 마스킹 det · 마스킹 txt. 표기까지 갈렸다(git 은 pathspec, rg 와
-//! 마스커는 디렉토리). 하나를 손대면 나머지가 안 따라가고 그 어긋남은 조용했다.
-//!
-//! **판정 방법: 좌변 값을 늘려 놓고 소비처가 따라오는지 종료 코드로 묻는다.**
-//! 문자열 확인("게이트에 `SCAN_SPECS` 가 나온다")은 철자를 보는 것이지 다섯이 같은
-//! 값을 낸다는 것을 보는 게 아니다 — 변수를 선언해 놓고 소비처 하나가 옛 문자열을
-//! 그대로 쓰는 상태(= 고치기 전의 모양)를 통과시킨다.
-//!
-//! 래칫이라 좌변이 줄면 미달로, 늘면 초과로 **양쪽 다 rc=1** 이다. 그래서 상한을
-//! 프로브에 맞춰 놓고 **초록을 기대한다** — 다섯이 다 따라오면 값이 상한과 맞는다.
-//!
-//! ★ **마스킹 둘은 값이 아니라 갈림으로만 관측된다.** 게이트는 사본에 없는 파일을
-//! 건너뛰지 않고 **그 파일만 원문에서 센다**(모수가 조용히 줄지 않게 하려는 것이다).
-//! 그래서 마스킹 뿌리가 안 따라와도 그냥 값이 같아진다 — 프로브가 원문과 사본에서
-//! 다르게 세어지는 형태여야만 그 소비처가 보인다. 그 형태를 게이트 본문이 이미 두
-//! 자리로 적어 두었다: 문자열 안의 억제(det 이 덮는다)와 문자열 안의 근거 마커(txt 가
-//! 덮는다). 프로브는 그 둘을 그대로 쓴다.
+//! 마스킹 결과가 없는 파일은 원문으로 세므로 단순한 숫자 비교로 누락을 찾지 못할 수 있다.
+//! 문자열 안의 억제와 근거 표지를 입력에 넣어 원문·마스킹 결과가 달라지게 한다.
+//! 수집 범위 검사와 별도로, 억제 수가 기록보다 크거나 작을 때 실패하고 같을 때 통과하는지도 검증한다.
+//! Git 분기 시험은 PATH에 rg가 없다는 전제가 있다. rg 분기는 별도 스텁으로 실행한다.
 
 #![cfg(unix)]
 
@@ -34,10 +20,7 @@ fn gate_src() -> String {
     )
 }
 
-/// 좌변이 안 빈 합성 git 레포.
-///
-/// `git init` 이 필수다 — git 분기의 좌변이 `git ls-files` 라, 레포가 아니면 빈 좌변으로
-/// 떨어져 이 파일의 모든 시험이 **재려던 것과 다른 갈래**(판정 불가)를 재게 된다.
+/// Git 목록을 쓰는 분기를 실제로 실행할 수 있도록 빈 저장소를 초기화한다.
 fn synth_root() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("임시 디렉토리");
     let root = dir.path();
@@ -49,7 +32,6 @@ fn synth_root() -> tempfile::TempDir {
         root.join("scripts/lib/judge-bin.sh"),
     )
     .expect("판정기 찾기 공용 복사");
-    // 좌변이 보는 두 뿌리를 하나씩 실재시킨다. 억제는 없다 — 프로브가 넣는다.
     write_file(root, "src/zz_quiet.rs", "fn f() {}\n");
     write_file(root, "crates/zz/src/zz_quiet.rs", "fn g() {}\n");
     git(root, &["init", "-q"]);
@@ -76,12 +58,7 @@ fn write_file(root: &Path, rel: &str, body: &str) {
     fs::write(&f, body).expect("파일 쓰기");
 }
 
-/// 줄 수를 보존한 채 문자열을(그리고 `--keep-comments` 가 아니면 주석도) 덮는 스텁.
-///
-/// 진짜 `mask-source` 를 안 쓰는 이유는 자매 픽스처와 같다 — cargo 산출물이라 여기서
-/// 지으면 바깥 `cargo test` 와 빌드 디렉토리 잠금을 두고 서로를 기다린다.
-///
-/// **베끼기만 하면 안 된다.** 이 파일의 프로브 둘이 원문과 사본을 일부러 가른다.
+/// 시험 안에서 Cargo를 다시 빌드하면 바깥 빌드와 잠금을 기다릴 수 있어 마스킹 스텁을 쓴다. 원문을 그대로 복사하지 않고 입력에 필요한 문자열·주석을 가린다.
 fn install_stub_masker(root: &Path) -> std::path::PathBuf {
     let bin = root.join("stub-mask-source");
     fs::write(
@@ -109,13 +86,7 @@ fn install_stub_masker(root: &Path) -> std::path::PathBuf {
     bin
 }
 
-/// 합성 루트에 **스텁 `rg`** 를 깔고 그 디렉토리를 반환한다.
-///
-/// 이 게이트의 좌변은 분기가 둘이고 어느 쪽을 타는지는 `command -v rg` 가 정한다.
-/// 실측(2026-09-08, 이 호스트): bash 의 `PATH` 에 `rg` 바이너리가 없어 **항상 git
-/// 분기**를 탄다. 그 말은 rg 분기의 좌변이 여기서 한 번도 안 돈다는 뜻이라, 그것을
-/// 재려면 스텁을 깔아 분기를 강제해야 한다. 반대 방향(git 분기 강제)은 `PATH` 를
-/// 좁히는 것으로 안 된다 — `git` 자신이 필요하다. 그래서 rg 만 얹는다.
+/// 호스트의 rg 설치 여부와 무관하게 rg 분기를 실행하도록 스텁을 앞 PATH에 둔다.
 fn install_stub_rg(root: &Path) -> std::path::PathBuf {
     let dir = root.join("stubbin");
     fs::create_dir_all(&dir).expect("스텁 디렉토리");
@@ -160,30 +131,24 @@ fn run(root: &Path) -> (i32, String) {
     run_inner(root, false)
 }
 
-/// 게이트 사본의 좌변을 `extra/*.rs` 만큼 늘리고 상한을 프로브에 맞춘다.
-///
-/// 치환 실패는 그 자리에서 죽는다 — 좌변이 다시 여럿으로 흩어졌다는 뜻이라 그것도
-/// 잡아야 할 회귀다.
+/// 합성 저장소의 수집 범위에 extra를 더하고 기록값을 입력의 억제 수에 맞춘다.
 fn widen_and_cap(root: &Path, cap: usize) {
     set_cap(root, cap);
     widen_only(root);
 }
 
-/// 상한만 프로브에 맞춘다. 좌변은 안 건드린다 — 늘리기 **전후**를 견주는 시험이
-/// 앞쪽에서도 초록이어야 하기 때문이다.
+/// 수집 범위 확장 전후를 비교할 수 있도록 기록값만 먼저 맞춘다.
 fn set_cap(root: &Path, cap: usize) {
     let p = root.join("scripts/check-allow-reason.sh");
     let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
     let capped = text.replace("CAP=173", &format!("CAP={cap}"));
     assert_ne!(
         capped, text,
-        "게이트에 `CAP=173` 한 줄이 없다 — 상한 표기가 바뀌었다. 이 시험은 상한을 \
-         프로브에 맞춰 놓고 초록을 기대하므로 여기서 멈춘다."
+        "게이트에서 CAP=173을 찾지 못했다. 합성 입력에 맞춰 기록값을 바꾸려면 현재 상수 형식을 확인해야 한다."
     );
     fs::write(&p, capped).expect("게이트 사본 쓰기");
 }
 
-/// 좌변만 `extra/*.rs` 만큼 늘린다.
 fn widen_only(root: &Path) {
     let p = root.join("scripts/check-allow-reason.sh");
     let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
@@ -193,19 +158,13 @@ fn widen_only(root: &Path) {
     );
     assert_ne!(
         widened, text,
-        "게이트에 `SCAN_SPECS=(…)` 한 줄이 없다 — 좌변이 다시 여럿으로 흩어졌거나 \
-         이름이 바뀌었다. 이 시험은 그 한 값을 늘려 소비처를 재므로 여기서 멈춘다."
+        "SCAN_SPECS 선언을 찾지 못했다. 수집 범위 확장을 시험할 수 있도록 현재 변수와 형식을 확인한다."
     );
     fs::write(&p, widened).expect("게이트 사본 쓰기");
 }
 
-/// 근거 없는 억제 하나. 좌변이 이 파일을 보면 값이 1 이 된다.
 const BARE: &str = "#[allow(dead_code)]\nfn probe() {}\n";
 
-/// 좌변을 늘리면 **git 분기**가 따라온다.
-///
-/// 죽이는 변이: git pathspec 을 옛 문자열로 되돌리는 것. 그러면 `extra/` 를 안 봐 값이
-/// 상한보다 작고, 래칫의 미달 분기로 빨개진다.
 #[test]
 fn widening_the_left_side_moves_the_git_branch() {
     let d = synth_root();
@@ -215,7 +174,7 @@ fn widening_the_left_side_moves_the_git_branch() {
     let (code, text) = run(d.path());
     assert_eq!(
         code, 0,
-        "좌변을 늘렸는데 git 분기가 안 따라왔다 — 새 영토의 억제가 안 세어진다:\n{text}"
+        "범위를 넓혔는데 Git 분기가 추가 디렉터리의 억제를 세지 못했다:\n{text}"
     );
     assert!(
         text.contains("좌변=git-ls-files"),
@@ -223,11 +182,6 @@ fn widening_the_left_side_moves_the_git_branch() {
     );
 }
 
-/// 좌변을 늘리면 **rg 분기**도 따라온다.
-///
-/// 이 분기는 이 호스트에서 한 번도 안 돈다(bash 의 `PATH` 에 `rg` 가 없다). 그래서
-/// 스텁으로 강제하지 않으면 그 좌변은 **미측정**이고, 미측정인 채로 갈려 있으면 rg 가
-/// 있는 러너에서만 조용히 다른 것을 센다.
 #[test]
 fn widening_the_left_side_moves_the_rg_branch() {
     let d = synth_root();
@@ -241,17 +195,11 @@ fn widening_the_left_side_moves_the_rg_branch() {
     );
     assert_eq!(
         code, 0,
-        "좌변을 늘렸는데 rg 분기가 안 따라왔다 — 새 영토의 억제가 안 세어진다:\n{text}"
+        "범위를 넓혔는데 rg 분기가 추가 디렉터리의 억제를 세지 못했다:\n{text}"
     );
 }
 
-/// 좌변을 늘리면 **억제를 찾는 사본**(det)도 따라온다.
-///
-/// 억제 형태를 **문자열 안**에 둔다. det 사본을 뜨면 덮여서 0 이고, 안 뜨면 게이트가
-/// 그 파일만 원문에서 세어 1 이 된다. 상한 0 이면 그 갈림이 그대로 rc 가 된다.
-///
-/// 이 형태는 픽스처가 아니라 실물이다 — 게이트 본문이 184 → 183 을 "문자열 안의
-/// 억제(생성 코드를 조립하는 자리)" 로 적어 둔다.
+/// 문자열 안 억제는 마스킹하면 0개, 원문으로 세면 1개다. 추가한 디렉터리도 탐지용 사본에 들어가는지 확인한다.
 #[test]
 fn widening_the_left_side_moves_the_detection_copy() {
     let d = synth_root();
@@ -265,19 +213,11 @@ fn widening_the_left_side_moves_the_detection_copy() {
     let (code, text) = run(d.path());
     assert_eq!(
         code, 0,
-        "좌변을 늘렸는데 억제 탐지 사본이 안 따라왔다 — 새 영토를 원문으로 세어 \
-         문자열 안의 억제 형태가 실물로 잡힌다:\n{text}"
+        "탐지용 사본이 추가 디렉터리를 포함하지 않아 문자열 안의 억제를 원문에서 센다:\n{text}"
     );
 }
 
-/// 좌변을 늘리면 **근거를 찾는 사본**(txt)도 따라온다.
-///
-/// 근거 마커를 **문자열 안**에 둔다(조건부 억제의 feature 이름). txt 사본은 주석은
-/// 남기고 문자열만 덮으므로 마커가 사라져 근거 없음 = 1 이고, 사본을 안 뜨면 원문에
-/// 마커가 살아 있어 근거 있음 = 0 이다. 상한 1 이면 그 갈림이 그대로 rc 가 된다.
-///
-/// det 쪽은 이 프로브에서 갈리지 않는다 — 문자열을 덮어도 `cfg_attr(` 과 `allow(` 는
-/// 남아 억제로 탐지된다. 그래서 이 시험은 txt 만 잰다.
+/// 문자열 안 근거 표지는 근거용 사본에서 제거돼야 한다. 억제 구문은 남기므로 이 입력은 근거용 마스킹의 적용 여부를 구별한다.
 #[test]
 fn widening_the_left_side_moves_the_reason_copy() {
     let d = synth_root();
@@ -291,27 +231,20 @@ fn widening_the_left_side_moves_the_reason_copy() {
     let (code, text) = run(d.path());
     assert_eq!(
         code, 0,
-        "좌변을 늘렸는데 근거 탐색 사본이 안 따라왔다 — 새 영토를 원문으로 읽어 \
-         문자열 안의 마커가 근거로 인정된다:\n{text}"
+        "근거용 사본이 추가 디렉터리를 포함하지 않아 문자열 안의 표지를 근거로 인정했다:\n{text}"
     );
 }
 
-/// 좌변을 늘리면 **미추적 검사**도 따라온다.
-///
-/// 죽이는 변이: 미추적 pathspec 을 옛 문자열로 되돌리는 것. 그러면 `extra/` 의 미추적
-/// 파일이 안 보여 판정 불가(2)가 아니라 값을 낸다 — 그 값은 그 파일의 억제가 빠진
-/// 수이고, 상한보다 작으면 "줄었다" 로 읽혀 상한이 내려간다.
+/// 추가한 디렉터리의 미추적 파일도 판정 불가(rc 2)로 처리해야 한다.
 #[test]
 fn widening_the_left_side_moves_the_untracked_check() {
     let d = synth_root();
-    // 일부러 `git add` 하지 않는다 — 이것이 재려는 창이다.
     write_file(d.path(), "extra/zz_probe.rs", BARE);
     widen_and_cap(d.path(), 0);
     let (code, text) = run(d.path());
     assert_eq!(
         code, 2,
-        "좌변을 늘렸는데 미추적 검사가 안 따라왔다 — 인덱스에 없는 파일이 있는데 값을 \
-         낸다:\n{text}"
+        "추가 디렉터리의 미추적 파일이 있는데도 판정값을 냈다:\n{text}"
     );
     assert!(
         text.contains("extra/zz_probe.rs"),
@@ -319,25 +252,14 @@ fn widening_the_left_side_moves_the_untracked_check() {
     );
 }
 
-/// ★ 출력에만 실리는 값 축 — **훑은 수는 rc 에 안 들어간다.**
-///
-/// 위 다섯은 전부 `count`(근거 없는 억제)로 rc 를 가른다. 그런데 좌변이 갈리는 흔한
-/// 모양은 그게 아니다: 새 영토에 억제가 아예 없으면 `count` 는 그대로고 rc 도 그대로다.
-/// 바뀌는 것은 `훑은 .rs N개` 한 수뿐인데 그 수는 판정에 안 들어간다 — 좌변이
-/// **완전히** 비어야 판정 불가로 갈리고, 반쯤 줄어든 좌변은 여기로 온다.
-///
-/// 실측(2026-09-08): 그 수를 상수 `0` 으로 바꾸는 변이에서 위 다섯이 전부 통과했다.
-/// 게이트 본문은 그 수를 "좌변이 반쯤 줄어도 이 수 없이는 화면에 아무 신호가 없다" 는
-/// 이유로 찍는데, 정작 그 수가 좌변을 따라가는지는 아무도 안 봤다.
-///
-/// 절대값을 외우지 않는다 — 늘리기 전후의 **차**를 본다. 늘린 것이 파일 하나라 1 이다.
+/// 억제가 없는 파일은 억제 수와 종료 코드를 바꾸지 않는다. 수집 수 출력이 1만큼 늘어나는지 별도로 확인한다.
 #[test]
 fn widening_the_left_side_moves_the_scanned_count() {
     fn scanned(text: &str) -> usize {
         let tail = text
             .split("훑은 .rs ")
             .nth(1)
-            .unwrap_or_else(|| panic!("초록 문구에서 훑은 수를 못 읽었다:\n{text}"));
+            .unwrap_or_else(|| panic!("통과 출력에서 수집 파일 수를 읽지 못했다:\n{text}"));
         tail.split('개')
             .next()
             .and_then(|n| n.trim().parse().ok())
@@ -345,41 +267,27 @@ fn widening_the_left_side_moves_the_scanned_count() {
     }
 
     let d = synth_root();
-    // 억제가 없는 파일이다 — `count` 를 안 움직이는 것이 이 시험의 요점이다.
+    // 억제 수는 바꾸지 않고 파일 수만 늘리는 입력이다.
     write_file(d.path(), "extra/zz_quiet.rs", "fn probe() {}\n");
     git(d.path(), &["add", "-A"]);
 
     set_cap(d.path(), 0);
     let (code, before) = run(d.path());
-    assert_eq!(code, 0, "늘리기 전인데 초록이 아니다:\n{before}");
+    assert_eq!(code, 0, "범위 확장 전 입력이 통과하지 못했다:\n{before}");
 
     widen_only(d.path());
     let (code, after) = run(d.path());
-    assert_eq!(code, 0, "좌변을 늘렸더니 초록이 아니다:\n{after}");
+    assert_eq!(code, 0, "범위 확장 후 입력이 통과하지 못했다:\n{after}");
 
     assert_eq!(
         scanned(&after),
         scanned(&before) + 1,
-        "좌변을 늘렸는데 훑은 수가 안 늘었다 — 새 영토에 억제가 없는 동안 이 수가 그 \
-         좌변을 관측하는 유일한 자리다.\n늘리기 전:\n{before}\n늘린 뒤:\n{after}"
+        "억제 없는 파일을 추가했는데 수집 수 출력이 늘지 않았다.\n확장 전:\n{before}\n확장 후:\n{after}"
     );
 }
 
-// ── 판정 자체 — 래칫이 **양쪽으로 서는가** ──────────────────────────────
-//
-// 위 여섯은 전부 **좌변**을 잰다: 상한을 프로브에 맞춰 놓고 초록을 기대하는 형태라,
-// 판정 갈래가 통째로 무너져도(두 `exit 1` 이 `exit 0` 이 되어도) 여섯 다 초록이다.
-//
-// 실측 2026-09-08: 이 게이트의 거절 다섯 자리에 완화 변이를 하나씩 넣으니 **둘만
-// 죽었다**(미추적 검사·판정기 부재). 살아남은 셋이 좌변이 통째로 빈 갈래와 **래칫의
-// 판정 둘**이다 — 이 게이트가 존재하는 이유인 그 판정에 아무 시험도 없었다. 형제
-// `check-shared-walk-ratchet.sh` 도 같은 모양이었다(5 중 2).
-//
-// **상한 값을 재는 것이 아니다.** 픽스처가 게이트의 상수로 트리를 지으면 그 상수에
-// 대해서는 항등식이 된다. 여기서 재는 것은 판정 **기제**(넘으면 1 · 모자라면 1 ·
-// 같으면 0)이고, 실제 상한이 옳은지는 게이트가 세는 실물이 답한다.
+// 기록값과 수집값의 관계별 종료 코드를 검사한다. 수집 범위 검사만으로는 성공·실패 판정의 변경을 찾을 수 없다.
 
-/// 근거 없는 억제를 `n` 개 담은 프로브.
 fn bare_probe(root: &Path, n: usize) {
     let body: String = (0..n)
         .map(|i| format!("#[allow(dead_code)]\nfn probe{i}() {{}}\n"))
@@ -388,27 +296,15 @@ fn bare_probe(root: &Path, n: usize) {
     git(root, &["add", "-A"]);
 }
 
-/// 값이 상한과 같으면 통과(0)다. **대조군.**
-///
-/// 양성 대조(2026-09-08, 내 트리): 게이트의 상한 비교를 `-gt` → `-ge` 로 바꾸면(같아도
-/// 위반) 이 시험이 rc=101 로 죽는다. **다만 배타적이지 않다** — 같은 변이가
-/// `widening_the_left_side_moves_*` 다섯도 함께 죽인다(이 타깃 6 failed). 그 다섯은
-/// 좌변을 넓히기 **전** 팔에서 상한을 프로브에 맞춰 놓고 rc=0 을 기대하므로, 같음 갈래를
-/// 각자 한 번씩 더 밟는다.
-///
-/// 그래서 이 대조군이 더하는 것은 **검출이 아니라 이름**이다. 그 갈래가 깨졌을 때
-/// 다섯 개의 "좌변이 안 움직인다" 대신 "값이 상한과 같은데 초록이 아니다" 가 함께 뜬다 —
-/// 무엇이 깨졌는지를 가리키는 것은 뒤쪽뿐이다. 숨기지 않고 적어 둔다.
 #[test]
 fn a_count_at_the_cap_passes() {
     let d = synth_root();
     bare_probe(d.path(), 2);
     set_cap(d.path(), 2);
     let (code, text) = run(d.path());
-    assert_eq!(code, 0, "값이 상한과 같은데 초록이 아니다:\n{text}");
+    assert_eq!(code, 0, "억제 수가 기록과 같은데 통과하지 못했다:\n{text}");
 }
 
-/// 상한을 넘으면 위반(1)이고, 실패문이 **상한을 올리지 말라**고 말한다.
 #[test]
 fn a_count_over_the_cap_is_a_violation() {
     let d = synth_root();
@@ -418,12 +314,10 @@ fn a_count_over_the_cap_is_a_violation() {
     assert_eq!(code, 1, "상한을 넘었는데 위반이 아니다:\n{text}");
     assert!(
         text.contains("상한을 올려서 통과시키지 마라"),
-        "상한을 올리지 말라는 처방이 없다 — 이 자리의 눈에 보이는 레버가 상한과 \
-         면제 주석 둘이라, 처방을 안 적으면 둘 중 하나가 만져진다:\n{text}"
+        "상한을 올려 통과시키지 말라는 안내가 없다:\n{text}"
     );
 }
 
-/// 상한 아래로 내려가도 위반(1)이다.
 #[test]
 fn a_count_under_the_cap_is_also_a_violation() {
     let d = synth_root();
@@ -432,7 +326,7 @@ fn a_count_under_the_cap_is_also_a_violation() {
     let (code, text) = run(d.path());
     assert_eq!(
         code, 1,
-        "값이 상한 아래인데 초록이다 — 남는 여유가 곧 안 보는 구간이다:\n{text}"
+        "억제 수가 줄었는데 남은 상한을 낮추도록 실패하지 않았다:\n{text}"
     );
     assert!(
         text.contains("CAP 을"),
@@ -440,7 +334,6 @@ fn a_count_under_the_cap_is_also_a_violation() {
     );
 }
 
-/// 근거 주석이 붙은 억제를 `n` 개 담은 프로브. `head` 가 억제 바로 위 주석 줄이다.
 fn reasoned_probe(root: &Path, head: &str, n: usize) {
     let body: String = (0..n)
         .map(|i| format!("{head}\n#[allow(dead_code)]\nfn probe{i}() {{}}\n"))
@@ -449,12 +342,7 @@ fn reasoned_probe(root: &Path, head: &str, n: usize) {
     git(root, &["add", "-A"]);
 }
 
-/// **마커만 있고 뒤가 비면 근거가 아니다.**
-///
-/// 이것이 이 게이트의 오래된 구멍이었다 — 판정이 `줄 ~ 마커정규식` 이라 `// 이유:` 한
-/// 줄이면 그 억제는 영영 안 보였다. 옳은 수선의 **형태만** 흉내 내면 통과하는 자리다.
-/// 프로브 둘을 상한 둘에 맞춰 두었으므로, 근거로 인정되면 값이 0 이 되어 **상한 미달**
-/// 로도 죽는다 — 그래서 이 시험은 rc 만이 아니라 값을 문장에서 읽는다.
+/// 빈 근거 표지는 억제를 정당화하지 못한다. 종료 코드뿐 아니라 실제 억제 수도 확인한다.
 #[test]
 fn a_bare_marker_with_nothing_after_it_is_not_a_reason() {
     let d = synth_root();
@@ -471,9 +359,7 @@ fn a_bare_marker_with_nothing_after_it_is_not_a_reason() {
     );
 }
 
-/// **음성 대조 — 마커 뒤에 내용이 있으면 근거다.** 위 시험에서 한 구절만 더한다.
-///
-/// 이 짝이 없으면 위 시험은 "마커를 아예 안 읽는다" 여도 초록이다.
+/// 내용 있는 근거는 허용해야 빈 표지 검사와 함께 판정 방향을 확인할 수 있다.
 #[test]
 fn a_marker_followed_by_text_is_a_reason() {
     let d = synth_root();
@@ -484,27 +370,17 @@ fn a_marker_followed_by_text_is_a_reason() {
     assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
 }
 
-/// **근거가 다음 줄부터 이어져도 근거다.** 마커 줄에서만 뒤를 보면 이 형태가 오탐이 된다.
 #[test]
 fn a_marker_whose_text_starts_on_the_next_line_is_a_reason() {
     let d = synth_root();
     reasoned_probe(d.path(), "// 이유:\n//   생성 코드라 이름이 안 쓰인다.", 2);
     set_cap(d.path(), 0);
     let (code, text) = run(d.path());
-    assert_eq!(
-        code, 0,
-        "마커 다음 줄에 있는 근거를 못 읽는다 — 이 형태를 오탐으로 만들면 그 자리에 \
-         쓸데없는 한 줄이 강요된다:\n{text}"
-    );
+    assert_eq!(code, 0, "표지 다음 줄의 근거를 읽지 못했다:\n{text}");
     assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
 }
 
-/// **`SAFETY` 는 콜론을 요구한다.**
-///
-/// 콜론이 없으면 그것은 키가 아니라 **관례어**라, 그 단어를 언급한 줄과 못 갈린다 —
-/// 이 게이트가 무엇을 세는지 설명하는 주석에도 그 단어가 있다. 실측(`12bc0f4b2`):
-/// 레포의 콜론 없는 `SAFETY` 셋은 전부 그 블록에 `SAFETY:` 나 `이유:` 를 이미 갖고
-/// 있어 이 강화로 **새로 걸리는 자리가 0** 이었다.
+/// SAFETY는 콜론이 붙은 표지로 인식한다. 일반 설명의 단어 언급을 근거로 세지 않는다.
 #[test]
 fn a_safety_without_a_colon_is_not_a_reason() {
     let d = synth_root();
@@ -519,7 +395,6 @@ fn a_safety_without_a_colon_is_not_a_reason() {
     assert!(text.contains(": 2건"), "값이 2 가 아니다:\n{text}");
 }
 
-/// **음성 대조 — 콜론이 붙으면 근거다.** 위 시험에서 콜론 하나만 더한다.
 #[test]
 fn a_safety_with_a_colon_is_a_reason() {
     let d = synth_root();
@@ -534,7 +409,6 @@ fn a_safety_with_a_colon_is_a_reason() {
     assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
 }
 
-/// 좌변이 통째로 비면 **판정 불가(2)** 다. 위반 0 이 아니다.
 #[test]
 fn an_empty_left_side_is_undecidable() {
     let d = synth_root();
@@ -543,9 +417,9 @@ fn an_empty_left_side_is_undecidable() {
     }
     git(d.path(), &["add", "-A"]);
     let (code, text) = run(d.path());
-    assert_eq!(code, 2, "좌변이 비었는데 값을 냈다:\n{text}");
+    assert_eq!(code, 2, "수집 범위가 비었는데 판정값을 냈다:\n{text}");
     assert!(
         text.contains("아무것도 안 봤다"),
-        "빈 좌변을 '근거 없는 억제가 없다' 로 읽고 있다:\n{text}"
+        "빈 수집과 근거 없는 억제가 0개인 경우를 구별하지 못했다:\n{text}"
     );
 }

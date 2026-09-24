@@ -7,7 +7,6 @@
 //! 문자열은 줄별로 읽고 //로 시작하는 주석을 제외한다. 여러 줄 raw 문자열·블록 주석을 완전히 해석하지 않는다.
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
-/// cfg의 test 전용 줄 범위는 공용 판독기를 사용한다.
 use tasty_doc_guards::source_text::is_locale_specific;
 
 use std::collections::BTreeSet;

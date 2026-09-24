@@ -1,9 +1,6 @@
-//! 0.7.0 시점 METHOD_TABLE snapshot. 0.7.x 동안 *추가만 가능, 제거 금지*.
-//! 메서드 제거/이름 변경은 SemVer 위반 — major bump (2.0.0) 가 필요.
-//!
-//! baseline fixture: `crates/tasty-ipc/fixtures/method_baseline_0_7.txt` —
-//! 표를 든 크레이트가 그 표의 동결 스냅샷도 함께 소유한다.
-//! 정책: `docs/dev-guide/release.md` §"0.7.x 패치 release 가드"
+//! 0.7.0의 METHOD_TABLE 기준 목록에서 메서드가 사라지지 않았는지 확인한다.
+//! 호환성 정책은 docs/dev-guide/api-conventions.md를 따른다.
+//! 기준 파일은 메서드 표를 소유하는 tasty-ipc 크레이트에 둔다.
 
 use std::collections::HashSet;
 
@@ -11,23 +8,10 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 
 const BASELINE_0_7: &str = include_str!("../crates/tasty-ipc/fixtures/method_baseline_0_7.txt");
 
-/// baseline 이 담은 메서드 수. **하한이 아니라 고정값이다.**
-///
-/// 이 fixture 는 0.7.0 시점에 박제됐고 0.7.x 동안 바뀌지 않는다 — 바뀌는 것은
-/// `METHOD_TABLE` 쪽이고, 이 파일이 바뀌어야 하는 유일한 경우는 major bump 다. 모수가
-/// 그렇게 **동결**돼 있으므로 하한으로 물러설 이유가 없다: 하한은 "이만큼은 봤다" 까지만
-/// 말하고 그 위의 사각을 남기는데, 여기서는 정확한 수를 알고 그 수가 변하면 안 된다.
-///
-/// 값의 근거: 2026-09-05 실측 191(주석·빈 줄을 걷어낸 뒤). 이 수가 안 맞으면 fixture 가
-/// 편집됐다는 뜻이고, 그것은 SemVer 판정 자체가 바뀌었다는 뜻이라 조용히 넘어갈 일이 아니다.
+/// 0.7.0 기준 목록은 고정돼 있으므로 하한 대신 정확한 수를 확인한다. 2026-09-05 주석·빈 줄 제외 191개를 측정했다.
 const BASELINE_METHOD_COUNT: usize = 191;
 
-/// fixture 에서 메서드 이름을 뽑는다.
-///
-/// **모수 단언이 여기 있는 이유**: 아래 두 테스트 모두 이 목록을 모수로 쓰는데, 목록이
-/// 비면 둘 다 검사할 것이 없어져 **조용히 통과한다.** 실측으로 확인했다 — fixture 를 0 줄로
-/// 만들면 두 테스트가 전부 초록이었다. 모수를 만드는 자리에서 한 번 단언하면 소비자가
-/// 늘어도 그 구멍이 다시 생기지 않는다.
+/// 빈 목록이면 아래 비교가 통과할 수 있어 추출 시점에 고정 개수를 확인한다.
 fn baseline_methods() -> Vec<&'static str> {
     let methods: Vec<&'static str> = BASELINE_0_7
         .lines()
@@ -37,10 +21,7 @@ fn baseline_methods() -> Vec<&'static str> {
     assert_eq!(
         methods.len(),
         BASELINE_METHOD_COUNT,
-        "baseline fixture 가 메서드 {} 개를 냈다 — 0.7.0 박제 시점의 {BASELINE_METHOD_COUNT} 개와 다르다. \
-         fixture 는 0.7.x 동안 동결이므로 이 수가 변하는 것은 major bump 때뿐이다. \
-         (0 이면 파일이 비었거나 파싱이 깨진 것이고, 그 상태로는 아래 검사들이 \
-         검사할 것 없이 통과한다)",
+        "기준 파일의 메서드 수가 {}개로 0.7.0의 {BASELINE_METHOD_COUNT}개와 다르다. 파일·파싱 오류를 확인하고 호환성 정책 변경 없이 기준 목록을 고치지 않는다.",
         methods.len()
     );
     methods
@@ -55,9 +36,7 @@ fn all_baseline_methods_still_registered() {
         .collect();
     assert!(
         missing.is_empty(),
-        "v0.7.0 baseline 의 다음 메서드가 METHOD_TABLE 에서 사라짐 — \
-         minor/patch 에서 메서드 제거는 SemVer 위반. major bump (2.0.0) 가 필요. \
-         major bump 이라면 crates/tasty-ipc/fixtures/method_baseline_0_7.txt 를 갱신할 것: {missing:?}"
+        "0.7.0 기준 메서드가 METHOD_TABLE에서 사라졌다: {missing:?}. 제거는 프로젝트의 호환성·버전 정책에 따라야 한다. 의도한 major 변경이면 tasty-ipc의 기준 파일도 함께 검토한다."
     );
 }
 

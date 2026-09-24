@@ -1,26 +1,10 @@
-//! attach 스트림 프로토콜의 frame/handshake 헬퍼 — `attach_*` test binary 들이 공유한다.
-//!
-//! attach client 는 실제 `tasty` GUI 앱이 아니라 raw `TcpStream` 으로 직접
-//! 핸드셰이크한다. 서버는 transport 를 모르고 항상 loopback 으로만 받으므로
-//! (`docs/dev-guide/attach-behavior.md`), 실제 client(`AttachClientSession`,
-//! `src/app/attach_client.rs`)와 동일한 프로토콜 바이트만 흉내내면 충분하다.
-//!
-//! `tests/common/mod.rs`(인스턴스 하네스)·`tests/webhook_common/mod.rs`(웹훅 하네스)와
-//! 같은 층위의 세 번째 공유 test 모듈이다. 개별 `#[test]` 파일끼리는 서로 `mod` 할 수
-//! 없지만, 디렉토리 모듈은 여러 test binary 가 각자 `mod attach_common;` 으로 가져갈 수
-//! 있다 — 파일마다 헬퍼를 복제할 이유가 없다.
-//!
-//! **여기에 "첫 workspace 를 집는" 헬퍼는 두지 않는다.** 공유 인스턴스
-//! (`common::shared()`) 위에서는 테스트마다 `create_workspace()` 로 자기 workspace 를
-//! 만들어 점유해야 한다 — attach 점유는 workspace/surface 단위 lock 이라
-//! (`src/core/attach.rs` 의 `OccupancyRegistry`) 서로 다른 workspace 를 잡는 테스트끼리는
-//! 한 인스턴스 위에서 병렬 공존한다. 전부 `workspace.list[0]` 을 집으면 그 성질이 깨진다.
+//! attach 시험들이 공유하는 프레임·handshake 헬퍼다.
+//! 클라이언트 GUI 대신 loopback TcpStream으로 프로토콜을 교환한다.
+//! 공유 서버에서는 각 시험이 만든 workspace를 점유해야 서로의 점유 상태에 간섭하지 않는다.
 
-// 이 파일 전체가 테스트 하네스다 — 위 lint 의 프로덕션 명부에 섞이면
-// 새 프로덕션 자리가 묻힌다 (docs/dev-guide/error-handling.md).
+// 이유: 시험 하네스의 정리 실패는 제품 코드의 오류 처리 명부와 구분한다.
 #![allow(clippy::let_underscore_must_use)]
-// test binary 마다 쓰는 부분집합이 달라 개별 binary 기준 dead_code 판정이 무의미하다
-// (의도된 superset API) — `tests/common/mod.rs` 와 같은 이유.
+// 이유: 바이너리마다 사용하는 헬퍼가 달라 공유 API 일부가 사용되지 않을 수 있다.
 #![allow(dead_code)]
 
 use std::io::{Read, Write};
@@ -31,37 +15,17 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-/// mux `Data` 프레임 태그 (surface 출력 바이트).
 pub const TAG_DATA: u8 = 0;
-/// control 프레임 태그 (JSON 이벤트).
 pub const TAG_CONTROL: u8 = 1;
-/// heartbeat 프레임 태그 (빈 payload) — `tasty_ipc::stream::StreamTag::Ping`.
 pub const TAG_PING: u8 = 2;
 
-/// **client 도 살아 있다고 말해야 한다.** 서버는 attach 소켓에 자기 read timeout
-/// (`tasty_ipc::stream::HEARTBEAT_TIMEOUT` = 20 s)을 걸고, 그 동안 client 가
-/// **아무것도 안 보내면 죽은 peer 로 보고 연결을 닫는다**. 서버가 5 초마다 Ping 을
-/// 흘려주는 것은 *client* 의 read timeout 을 갱신할 뿐, 그 반대 방향은 갱신하지 않는다.
-///
-/// 실제 client 는 양쪽을 다 한다(`src/app/attach_client.rs`·`crates/tasty-cli` 의
-/// `StreamTag::Ping` 송신). 이 raw 하네스는 읽는 절반만 흉내내고 있었고, 그래서
-/// **한 번의 attach 교환이 20 초를 넘기는 순간** 서버가 닫아 `UnexpectedEof` 가 났다.
-/// 실측(4-way 동시 실행, 8/8): 첫 read 이후 20.196 ~ 20.708 s.
-///
-/// 부하는 교환이 20 초를 넘느냐만 바꾼다 — **기전은 부하 없이도 성립한다.**
+/// 서버의 Ping만 읽어서는 서버 쪽 읽기 타임아웃이 갱신되지 않는다. 클라이언트도 주기적으로 Ping을 보내야 연결을 유지한다.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
-/// 프레임 쓰기를 직렬화한다. 헤더와 payload 가 `write_all` **두 번**이라, 그 사이에
-/// heartbeat 가 끼어들면 프레임 경계가 깨진다 — 서버는 그걸 unknown tag 로 읽고 끊는다.
+/// 헤더와 payload를 따로 쓰므로 heartbeat가 사이에 끼지 않도록 한 프레임 전체를 잠근다.
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
-/// heartbeat 를 가진 attach 연결.
-///
-/// **왜 wrapper 가 필요한가.** heartbeat 스레드는 `try_clone` 한 **fd 사본**을 들고
-/// 있어서, 호출자가 `TcpStream` 하나를 떨어뜨려도 소켓이 안 닫힌다 — 그러면 서버는
-/// 그 client 를 계속 살아 있다고 보고 **점유를 영영 안 놓는다**(실측: drop 후 8 초
-/// 동안 해제 0). 그래서 drop 시점에 fd 가 아니라 **소켓 자체를 shutdown** 해 FIN 을
-/// 즉시 보낸다. 사본이 몇 개든 상관없고, heartbeat 스레드는 다음 write 실패로 끝난다.
+/// heartbeat 스레드가 소켓 복제본을 보유하므로 원본 drop만으로 닫히지 않는다. wrapper의 Drop에서 소켓 전체를 shutdown한다.
 pub struct AttachStream {
     inner: TcpStream,
 }
@@ -81,18 +45,14 @@ impl DerefMut for AttachStream {
 
 impl Drop for AttachStream {
     fn drop(&mut self) {
-        // 이미 닫힌 소켓이면 실패하는데, 그건 원하던 상태라 볼 것이 없다.
+        // 이미 닫혔을 수 있어 종료 요청 실패는 무시한다.
         let _ = self.inner.shutdown(Shutdown::Both);
     }
 }
 
-/// 이 연결이 살아 있는 동안 `HEARTBEAT_INTERVAL` 마다 빈 Ping 을 보낸다.
-///
-/// 소켓이 닫히면(테스트 종료로 `TcpStream` 이 drop 되면) 쓰기가 실패하고 스레드가
-/// 끝난다 — 별도 종료 신호를 두지 않는 이유다.
+/// 주기적으로 Ping을 보내고 쓰기가 실패하면 끝낸다. 소켓 종료는 AttachStream의 Drop이 담당한다.
 fn spawn_heartbeat(stream: &TcpStream) {
     let Ok(mut w) = stream.try_clone() else {
-        // 복제 실패는 heartbeat 없이 진행한다는 뜻이라 조용히 넘기지 않는다.
         panic!("attach heartbeat 용 소켓 복제 실패");
     };
     std::thread::spawn(move || {
@@ -107,16 +67,10 @@ fn spawn_heartbeat(stream: &TcpStream) {
     });
 }
 
-/// handshake 이후 프레임을 기다리는 상한. 서버가 조용해도 테스트가 영원히 매달리지
-/// 않도록 `read_exact` 에 걸어 둔다.
+/// 조용한 서버에 무한히 기다리지 않도록 프레임 읽기에 적용하는 제한 시간.
 const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// control 프레임이 올 때까지 읽으며 **서버의 idle Ping 을 건너뛴다.**
-///
-/// 서버는 sink 가 5 초 조용하면 빈 Ping 을 흘린다. ack 가 그보다 늦게 오는 회차
-/// (부하가 높은 러너)에서는 첫 프레임이 Ping 이라, 태그를 바로 단정하는 자리가
-/// `left: 2` 로 깨진다. 실제 client 는 전부 Ping 을 무시한다
-/// (`src/app/attach_client.rs` 의 `StreamTag::Ping => {}`) — 여기서도 같게 한다.
+/// control 프레임을 기다리는 동안 서버의 idle Ping은 건너뛴다.
 pub fn read_control_frame(stream: &mut TcpStream) -> Vec<u8> {
     loop {
         let (tag, payload) = read_frame(stream);
@@ -128,45 +82,28 @@ pub fn read_control_frame(stream: &mut TcpStream) -> Vec<u8> {
     }
 }
 
-/// 프레임 하나를 읽어 `(tag, payload)` 로 돌려준다. 헤더는 `tag(1) + len(4, BE)`.
-///
-/// 실패는 [`frame_io_failure`] 가 **사건 이름으로** 적는다 — `expect` 의 기본 문구
-/// (`read frame: failed to fill whole buffer`)는 서버가 끊은 것을 시간 초과처럼 읽힌다.
+/// 헤더 tag 1바이트·길이 4바이트(BE)와 payload를 읽는다.
 pub fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
     read_frame_result(stream).unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 읽기", &e)))
 }
 
-/// 프레임 I/O 실패를 **두 사건으로 갈라 적는다.**
-///
-/// 이 하네스의 실패 문구는 오래 `read frame: failed to fill whole buffer` 였다. 그것은
-/// `UnexpectedEof` 의 `Display` 인데 "덜 왔다" 로 읽혀, **서버가 이 소켓을 닫은 것**과
-/// **상한 안에 안 온 것**이 같은 문장을 냈다. 둘은 처방이 반대다 — 앞은 이 client 가
-/// 프로토콜의 절반만 구현한 것이고(20 초 침묵 → 서버가 죽은 peer 로 판정), 뒤는 그냥
-/// 느린 것이다. 같은 문구를 받은 사람은 앞을 부하 flake 로 분류하고 상한을 올린다.
-///
-/// `read_frame_result` 가 오류를 그대로 돌려주는 것도 같은 이유인데(그 doc 참조),
-/// 갈라 읽을 자리를 만들어 두고 정작 **panic 하는 쪽에서 다시 뭉쳤다.**
+/// 연결 종료 계열 오류와 읽기 타임아웃을 구분한다. 타임아웃만으로 연결 생존을 단정하지 않는다.
 fn frame_io_failure(op: &str, e: &std::io::Error) -> String {
     use std::io::ErrorKind::*;
     match e.kind() {
         UnexpectedEof | BrokenPipe | ConnectionReset | ConnectionAborted => format!(
-            "{op} 실패 — **서버가 이 소켓을 닫았다**(시간 초과가 아니다): {e:?}\n\
-             이 헬퍼가 heartbeat 를 안 걸면 client 침묵 {}s 에 서버가 죽은 peer 로 보고 \
-             끊는다. 침묵이 계약인 헬퍼가 아니라면 `heartbeating(..)` 을 거쳐라 — \
-             `HEARTBEAT_INTERVAL` 주석 참조.",
+            "{op} 중 연결 종료 오류가 발생했다: {e:?}\n클라이언트가 {}초 동안 아무것도 보내지 않으면 서버가 연결을 닫을 수 있다. 침묵을 검증하는 시험이 아니라면 heartbeat 적용을 확인한다.",
             tasty_ipc::stream::HEARTBEAT_TIMEOUT.as_secs()
         ),
         WouldBlock | TimedOut => format!(
-            "{op} 실패 — **상한 {:?} 안에 프레임이 안 왔다**(연결은 살아 있다): {e:?}",
+            "{op} 중 제한 시간 {:?} 안에 프레임을 받지 못했다: {e:?}",
             FRAME_READ_TIMEOUT
         ),
         _ => format!("{op} 실패: {e:?}"),
     }
 }
 
-/// panic 하지 않는 판 — **연결이 살아 있는지 자체를 단정하는 자리**가 쓴다.
-/// `UnexpectedEof`(서버가 닫음)와 `WouldBlock`(상한 초과)은 서로 다른 사건이라,
-/// 그 구분이 필요한 단정은 오류를 그대로 받아야 한다.
+/// 호출자가 종료·타임아웃을 구별할 수 있도록 I/O 오류를 그대로 반환한다.
 pub fn read_frame_result(stream: &mut TcpStream) -> std::io::Result<(u8, Vec<u8>)> {
     let mut hdr = [0u8; 5];
     stream.read_exact(&mut hdr)?;
@@ -179,9 +116,7 @@ pub fn read_frame_result(stream: &mut TcpStream) -> std::io::Result<(u8, Vec<u8>
     Ok((tag, payload))
 }
 
-/// workspace attach holder 의 입력 프레임 하나를 보낸다 — `Data` 태그 + surface-prefixed
-/// payload(`tasty_ipc::stream::encode_mux`). 점유 중에는 서버 로컬 입력(`surface.send`)이
-/// 막히므로, 점유한 surface 의 셸을 움직이려면 이 경로를 쓴다.
+/// 점유한 surface의 셸 입력은 서버 로컬 IPC 대신 surface ID를 붙인 Data 프레임으로 보낸다.
 pub fn write_workspace_input(stream: &mut TcpStream, surface_id: u32, bytes: &[u8]) {
     let payload = tasty_ipc::stream::encode_mux(surface_id, bytes);
     let mut hdr = [0u8; 5];
@@ -196,13 +131,11 @@ pub fn write_workspace_input(stream: &mut TcpStream, surface_id: u32, bytes: &[u
         .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 payload 쓰기", &e)));
 }
 
-/// control 프레임 하나를 보낸다.
 pub fn write_control_frame(stream: &mut TcpStream, payload: &Value) {
     let bytes = serde_json::to_vec(payload).unwrap();
     let mut hdr = [0u8; 5];
     hdr[0] = TAG_CONTROL;
     hdr[1..5].copy_from_slice(&(bytes.len() as u32).to_be_bytes());
-    // heartbeat 스레드와 프레임이 섞이지 않게 한 프레임을 통째로 잠그고 쓴다.
     let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     stream
         .write_all(&hdr)
@@ -212,8 +145,7 @@ pub fn write_control_frame(stream: &mut TcpStream, payload: &Value) {
         .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 payload 쓰기", &e)));
 }
 
-/// `stream.open` 핸드셰이크 요청까지 보낸 연결을 만든다. 응답(ack/attach 이벤트)은
-/// 호출자가 목적에 맞게 읽는다.
+/// stream.open 요청까지만 보내고 ack·attach 결과는 호출자가 읽는다.
 fn open_stream(port: u16, params: Value) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to server");
     stream
@@ -232,28 +164,18 @@ fn open_stream(port: u16, params: Value) -> TcpStream {
     stream
 }
 
-/// `stream.open{target_workspace}` 핸드셰이크. attach 성공을 나타내는
-/// `{"event":"attached_workspace",...}` control 프레임까지 읽고 연결을 반환한다
-/// (ack·터미널 초기 스냅샷 등 무관한 프레임은 건너뛴다).
+/// workspace attach의 성공 이벤트를 기다려 연결을 반환한다. ack·초기 스냅샷은 건너뛴다.
 pub fn open_workspace_attach(port: u16, workspace_id: u64) -> AttachStream {
     open_workspace_attach_with_descriptor(port, workspace_id).0
 }
 
-/// [`open_workspace_attach`] 와 같지만 `attached_workspace` 디스크립터(트리 +
-/// per-surface role)를 함께 돌려준다 — role 직렬화 자체를 검증하는 테스트용.
+/// 성공 이벤트의 트리·surface 역할도 반환한다.
 pub fn open_workspace_attach_with_descriptor(
     port: u16,
     workspace_id: u64,
 ) -> (AttachStream, Value) {
     let mut stream = open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}));
-    // heartbeat 는 점유를 유지시킨다 — 서버는 침묵을 죽음으로 보고 점유를 회수하므로,
-    // **침묵이 계약인 헬퍼에는 절대 걸지 않는다**: `open_surface_attach`(TTL 회수를
-    // 관측하는 테스트가 그 침묵을 쓴다)와 `raw_open_workspace_no_read` ·
-    // `raw_open_workspace_proto`(핸드셰이크 뒤 아무것도 안 읽는 것이 재현 대상이다).
-    // 걸면 그 테스트들이 검증하려는 TTL 회수가 영영 안 일어난다.
-    //
-    // 나머지 헬퍼는 전부 **교환**이 계약이라 살아 있다고 말한다
-    // (`open_stream_without_attach` · `try_open_workspace_attach{,_with_token}`).
+    // 침묵에 따른 TTL 회수를 검증하는 surface/raw 헬퍼에는 heartbeat를 추가하지 않는다. 프레임 교환이 목적인 연결에만 사용한다.
     spawn_heartbeat(&stream);
 
     loop {
@@ -274,10 +196,7 @@ pub fn open_workspace_attach_with_descriptor(
     }
 }
 
-/// [`open_workspace_attach_with_descriptor`] 의 **거절해도 panic 하지 않는** 판.
-/// 이미 점유된 workspace 면 `None` 을 돌려준다 — 연결을 끊었다 다시 붙으며 상태가
-/// 무르익기를 기다리는(재시도) 테스트용. 실패한 연결은 여기서 drop 되고, 서버는 그
-/// EOF 로 점유를 회수한다.
+/// attach_error이면 None을 반환한다. handshake·I/O 실패는 다른 헬퍼처럼 panic한다.
 pub fn try_open_workspace_attach_stream(
     port: u16,
     workspace_id: u64,
@@ -302,12 +221,7 @@ pub fn try_open_workspace_attach_stream(
     }
 }
 
-/// `stream.open{target}` — **surface 단위** attach. ack 를 확인한 뒤 뒤따르는 attach
-/// 결과 control 프레임을 그대로 돌려준다(`attached` / `attach_error` 양쪽을 관측해야
-/// 하는 테스트가 있으므로 여기서 성공을 단정하지 않는다).
-///
-/// 연결은 살려서 반환한다 — drop 하면 FIN 이 나가 silent disconnect 가 아니라 EOF
-/// 케이스가 돼버린다.
+/// surface attach의 ack 뒤 결과를 그대로 반환한다. TTL 회수를 관측할 수 있도록 heartbeat 없이 연결을 유지한다.
 pub fn open_surface_attach(port: u16, surface_id: u64) -> (TcpStream, Value) {
     let mut stream = open_stream(port, json!({"proto": 1, "target": surface_id}));
 
@@ -320,17 +234,7 @@ pub fn open_surface_attach(port: u16, surface_id: u64) -> (TcpStream, Value) {
     (stream, ctrl)
 }
 
-/// `stream.open` 을 target/target_workspace 없이 열어(단순 upgrade — client_id 는
-/// 할당되지만 어떤 workspace 도 점유하지 않은 채) ack 프레임까지만 읽고 반환한다.
-/// "attach 점유 없는 client" 를 재현하는 용도(하이브리드 신뢰 모델, ADR-0022).
-///
-/// **점유가 없어도 침묵은 끊긴다.** 서버는 attach dispatch 앞에서 소켓에 read timeout
-/// 을 건다(`tcp_ipc_server.rs::arm_stream_read_timeout` — `validate_stream_proto` 보다
-/// 먼저다). 그래서 이 헬퍼가 만드는 연결도 20 초 침묵하면 닫힌다. 이 헬퍼의 계약은
-/// **교환**이지 침묵이 아니고(두 호출처 모두 control 프레임을 쓰고 답을 기다린다),
-/// 회수를 관측하는 테스트는 하나도 없다 — 점유가 없어 회수할 것이 없기 때문이다.
-/// 그래서 여기서는 살아 있다고 말한다. 실측(2026-09-08, 부하 없이 23 초 침묵을 끼워
-/// 재현): heartbeat 없으면 `write frame payload: BrokenPipe`, 있으면 통과.
+/// 대상 없이 stream만 열고 ack를 읽는다. 점유가 없어도 읽기 타임아웃은 적용되므로 프레임 교환 동안 heartbeat를 보낸다.
 pub fn open_stream_without_attach(port: u16) -> AttachStream {
     let mut stream = heartbeating(open_stream(port, json!({"proto": 1})));
 
@@ -340,8 +244,7 @@ pub fn open_stream_without_attach(port: u16) -> AttachStream {
     stream
 }
 
-/// 주어진 `event` 이름의 control 프레임이 올 때까지 읽는다. 터미널 스냅샷·구조 델타 등
-/// 무관한 프레임은 건너뛴다.
+/// 지정한 control event를 기다리며 무관한 프레임은 건너뛴다.
 pub fn wait_for_control_event(stream: &mut TcpStream, event: &str) -> Value {
     loop {
         let (tag, payload) = read_frame(stream);
@@ -355,13 +258,12 @@ pub fn wait_for_control_event(stream: &mut TcpStream, event: &str) -> Value {
     }
 }
 
-/// `stream.open{target_workspace}` 요청만 보내고 **아무 프레임도 읽지 않은** 연결.
-/// 핸드셰이크 실패(프로토콜 불일치·즉시 끊김) 재현용.
+/// workspace handshake 요청만 보내고 응답을 읽지 않는다. 즉시 종료·프로토콜 실패를 재현할 때 쓴다.
 pub fn raw_open_workspace_no_read(port: u16, workspace_id: u64) -> TcpStream {
     open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}))
 }
 
-/// 임의 `proto` 값으로 workspace attach 핸드셰이크만 보낸 연결(읽지 않음).
+/// 지정한 proto로 workspace handshake만 보내고 응답은 읽지 않는다.
 pub fn raw_open_workspace_proto(port: u16, workspace_id: u64, proto: u32) -> TcpStream {
     open_stream(
         port,
@@ -369,21 +271,15 @@ pub fn raw_open_workspace_proto(port: u16, workspace_id: u64, proto: u32) -> Tcp
     )
 }
 
-/// workspace attach 를 시도하고 결과 이벤트 이름을 돌려준다(panic 하지 않는다).
-/// 성공은 `"attached_workspace"`, 거절은 `"attach_error:<reason>"`.
-///
-/// **연결을 반환하지 않는다** — 호출 직후 소켓이 drop 되므로, 성공했다면 그 점유는
-/// 곧 EOF 로 회수된다. "이 시점에 attach 가 되는가" 만 묻는 프로브용이다.
+/// attach 결과 이름을 반환하고 연결은 닫는다. attach_error는 문자열로 반환하지만 I/O 실패는 panic한다.
 pub fn try_open_workspace_attach(port: u16, workspace_id: u64) -> String {
-    // 위 `_with_token` 판과 같은 이유로 살아 있다고 말한다.
     try_open_workspace_attach_inner(heartbeating(open_stream(
         port,
         json!({"proto": 1, "target_workspace": workspace_id}),
     )))
 }
 
-/// `try_open_workspace_attach` 에 `session_token` 을 실은 판. 스트림 채널이 토큰을
-/// 보지 않는다는 사실(인증 부재 = 토큰 기반 거절 경로 없음)을 고정하는 데 쓴다.
+/// session_token을 실어 스트림의 토큰 기반 거절 여부를 확인한다.
 pub fn try_open_workspace_attach_with_token(port: u16, workspace_id: u64, token: &str) -> String {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to server");
     stream
@@ -399,13 +295,11 @@ pub fn try_open_workspace_attach_with_token(port: u16, workspace_id: u64, token:
     let mut msg = serde_json::to_string(&req).unwrap();
     msg.push('\n');
     stream.write_all(msg.as_bytes()).expect("send handshake");
-    // 이 헬퍼의 계약은 "attach 결과를 보고 끊는다" 지 침묵이 아니다 — 침묵이 계약인
-    // 것은 `raw_open_workspace_no_read` 하나다. 부하가 붙어 결과가 20 초를 넘겨 오면
-    // 서버가 죽은 peer 로 보고 끊어 `UnexpectedEof` 가 난다(train68 실측).
+    // 응답 대기 중에는 연결을 유지해야 하므로 heartbeat를 시작한다.
     try_open_workspace_attach_inner(heartbeating(stream))
 }
 
-/// 연결에 heartbeat 를 걸고 [`AttachStream`] 으로 감싼다 — drop 이 소켓을 닫아야 한다.
+/// heartbeat와 Drop 시 소켓 종료를 함께 적용한다.
 fn heartbeating(stream: TcpStream) -> AttachStream {
     spawn_heartbeat(&stream);
     AttachStream { inner: stream }

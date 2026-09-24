@@ -1,24 +1,8 @@
-//! git-viewer 원격(attach mirror) 조회(ADR-0022) — attach 채널의 `git_query_request`/
-//! `git_query_result` 왕복을 loopback `TcpStream` 으로 실제 실행 중인 서버 인스턴스에
-//! 대해 검증한다.
-//!
-//! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다. 서버 인스턴스는
-//! `common::shared()` 하나를 이 test binary 전체가 함께 쓰고, 테스트마다
-//! `create_workspace()` 로 자기 workspace 를 만들어 점유한다 — attach 점유가
-//! workspace 단위 lock 이라 그것만으로 서로 격리된다.
-//!
-//! **GUI 두 인스턴스를 실제로 attach 하는 e2e**(`tasty tool attach --ssh
-//! 127.0.0.1:<port>` 로 mirror workspace 를 만들고 git-viewer popup 을 열어 눈으로
-//! 확인하는 것)는 이 headless 작업 환경(GPU 디스플레이 없음)에서 실행할 수 없다 — 이
-//! test 는 그 대체로, 서버가 실제로 만든 git 저장소에 대해 (1) attach 점유 획득 →
-//! (2) `git_query_request` 전송 → (3) 서버측 `handle_git_query_request` 가 실제
-//! 디스크의 임시 git 저장소를 `tasty-git-core` 로 조회 → (4) `git_query_result` 로
-//! 정확히 회신하는 전체 왕복을 프로토콜 레벨에서 실행한다.
+//! 실행한 서버에 loopback attach를 연결해 git_query_request/result 왕복을 확인한다.
+//! 각 시험이 workspace와 임시 Git 저장소를 만들고 커밋·상태·diff 결과를 비교한다.
+//! 실제 두 GUI의 attach 화면을 확인하는 시험은 아니다.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
 #![allow(clippy::let_underscore_must_use)]
 
 mod attach_common;
@@ -44,13 +28,11 @@ fn wait_for_git_query_result(stream: &mut TcpStream, request_id: u64) -> Value {
         {
             return v;
         }
-        // 터미널 스냅샷/구조 델타 등 무관한 control 프레임 — 계속 대기.
     }
 }
 
 fn git(dir: &std::path::Path, args: &[&str]) {
-    // `.output()` 인 이유: `.status()` 는 git 의 stderr 를 시험 포착 밖으로 흘려보내 실패
-    // 문구에 원인이 안 남는다(병렬 회차에서는 남의 줄과 섞인다).
+    // Git stderr를 다른 병렬 시험 출력과 섞지 않고 실패 진단에 담는다.
     let out = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -67,7 +49,6 @@ fn git(dir: &std::path::Path, args: &[&str]) {
     );
 }
 
-/// 실제 디스크에 커밋 1개 + 추적되지 않은 파일 1개가 있는 git 저장소를 만든다.
 fn make_test_repo(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "tasty_git_query_loopback_{tag}_{}",
@@ -115,12 +96,10 @@ fn git_query_snapshot_matches_real_repo_over_attach_channel() {
     assert_eq!(worktrees[0]["is_current"], true);
     assert_eq!(worktrees[0]["branch"], "main");
 
-    // git log 와 대조 — COMMITS 목록이 실제 `git log` 와 일치해야 한다.
     let log_entries = result["log_entries"].as_array().expect("log_entries array");
     assert_eq!(log_entries.len(), 1, "expected 1 commit: {log_entries:?}");
     assert_eq!(log_entries[0]["summary"], "initial commit");
 
-    // status — untracked 파일이 status_entries 에 반영돼야 한다.
     let status_entries = result["status_entries"]
         .as_array()
         .expect("status_entries array");
@@ -137,9 +116,6 @@ fn git_query_snapshot_matches_real_repo_over_attach_channel() {
 
 #[test]
 fn git_query_snapshot_reflects_new_commit_after_refresh() {
-    // 새 커밋이 추가된 뒤 다시 로드하면 반영되는가 를 재현 — 첫 조회 이후 서버
-    // 디스크에 커밋을 하나 더 만들고 재조회(refresh 와 동형의 두 번째 요청)하면
-    // COMMITS 목록에 반영돼야 한다.
     let server = common::shared();
     let ws = server.create_workspace("git-query-refresh");
     let repo = make_test_repo("refresh");
@@ -257,10 +233,7 @@ fn git_query_reports_error_for_non_repo_path() {
 
 #[test]
 fn git_query_rejected_without_workspace_occupancy() {
-    // 하이브리드 신뢰 모델(ADR-0022): attach 점유가
-    // 유일한 인가 조건이다. 이 client 는 stream 을 upgrade 했을 뿐 어떤 workspace 도
-    // 점유하지 않았으므로 서버는 실제 git 조회를 하지 않은 채 즉시 거부해야 한다.
-    // 점유가 없다는 것 자체가 조건이므로 workspace 를 만들지 않는다.
+    // 점유 없는 클라이언트의 거절을 확인하므로 workspace를 만들거나 attach하지 않는다(ADR-0022).
     let server = common::shared();
     let mut stream = open_stream_without_attach(server.port());
 

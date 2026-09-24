@@ -1,22 +1,7 @@
-//! markdown mirror(ADR-0022) — 원격 attach 채널의 `markdown` role 직렬화와
-//! `markdown_content_request`/`markdown_content_result` 왕복을 loopback `TcpStream` 으로
-//! 실제 실행 중인 서버 인스턴스에 대해 검증한다.
-//!
-//! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다 — attach client 는
-//! 실제 `tasty` GUI 앱이 아니라 raw `TcpStream` 으로 직접 핸드셰이크한다.
-//!
-//! **GUI 두 인스턴스를 실제로 attach 해 mirror 문서를 눈으로 확인하는 e2e** 는 이
-//! 헤드리스 환경(GPU 디스플레이 없음)에서 실행할 수 없다 — 이 test 는 그 대체로 서버가
-//! 실제로 띄운 markdown surface 에 대해 (1) attach 점유 획득 → (2) 핸드셰이크
-//! 디스크립터에 `role:"markdown"` 이 실리는지 → (3) `markdown_content_request` 전송 →
-//! (4) 서버가 실제 디스크의 파일을 읽어 `markdown_content_result` 로 회신하는지를
-//! 프로토콜 레벨에서 전부 실행한다. 과거 `attach_markdown_mesh_mirror_loopback.rs` 가
-//! 같은 자리를 mesh 채널로 검증했고, markdown 이 그 채널을 벗어나며(ADR-0029) 삭제됐다.
+//! 실행한 서버에 loopback attach를 연결해 markdown 역할·파일 경로와 원문 조회 응답을 확인한다.
+//! 서버의 실제 파일을 사용하지만 클라이언트 GUI의 문서 렌더링은 검사하지 않는다(ADR-0022).
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
 #![allow(clippy::let_underscore_must_use)]
 
 mod attach_common;
@@ -34,15 +19,11 @@ use serde_json::{Value, json};
 
 const DOC_BODY: &str = "# remote doc\n\n원격에서만 존재하는 문서다.\n";
 
-/// 테스트용 markdown 파일을 만들고 그 경로를 돌려준다. 호출자가 지운다.
-///
-/// 키에 **단조 카운터**를 넣는다 — `std::process::id()` 는 프로세스 *간*만 가르므로,
-/// 같은 자리를 두 번 부르면 뒤 호출이 앞 호출의 트리를 조용히 지운다.
+/// 같은 프로세스의 반복 호출도 구분하도록 임시 경로에 단조 카운터를 넣는다. 호출자가 정리한다.
 fn write_doc(tag: &str) -> std::path::PathBuf {
     write_doc_with_body(tag, DOC_BODY)
 }
 
-/// [`write_doc`] 과 같되 본문을 호출자가 정한다(예산 초과 문서용).
 fn write_doc_with_body(tag: &str, body: &str) -> std::path::PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -50,7 +31,7 @@ fn write_doc_with_body(tag: &str, body: &str) -> std::path::PathBuf {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    // 이유: 이전 회차의 잔재를 지우는 best-effort — 없으면 실패하는데 그게 원하던 상태다.
+    // 이유: 이전 임시 디렉터리가 있으면 정리를 시도한다.
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("README.md");
@@ -58,7 +39,6 @@ fn write_doc_with_body(tag: &str, body: &str) -> std::path::PathBuf {
     file
 }
 
-/// workspace 에 markdown surface 를 하나 만들고 그 surface_id 를 돌려준다.
 fn open_markdown_surface(server: &TastyInstance, workspace_id: u64, file: &std::path::Path) -> u64 {
     let pane_id = server.first_pane_id_in_workspace(workspace_id);
     let r = server.call(
@@ -70,7 +50,6 @@ fn open_markdown_surface(server: &TastyInstance, workspace_id: u64, file: &std::
         .expect("tab.create returned surface_id")
 }
 
-/// 핸드셰이크 디스크립터에서 그 surface 의 항목을 꺼낸다.
 fn surface_descriptor(descriptor: &Value, surface_id: u64) -> Option<Value> {
     descriptor["surfaces"]
         .as_array()?
@@ -79,12 +58,7 @@ fn surface_descriptor(descriptor: &Value, surface_id: u64) -> Option<Value> {
         .cloned()
 }
 
-/// `role:"markdown"` 디스크립터에 **경로까지** 실릴 때까지 붙었다 떼며 기다린다.
-///
-/// plugin 이 `surface.create` 응답으로 올리는 snapshot(`{"file": ...}`)은 `tab.create`
-/// IPC 가 돌아온 뒤 비동기로 도착한다 — 그 전에 붙으면 role 은 맞지만 `file` 이 비어
-/// 있다. 디스크립터는 핸드셰이크에 **한 번만** 실리므로, 기다리는 방법은 실제 client 가
-/// 재접속할 때와 똑같이 붙었다 떼는 것뿐이다(끊으면 서버가 EOF 로 점유를 회수한다).
+/// 파일 snapshot은 tab.create 응답 뒤에 비동기로 도착할 수 있다. handshake에 경로가 실릴 때까지 연결을 닫고 다시 시도한다.
 fn attach_when_descriptor_has_file(
     server: &TastyInstance,
     workspace_id: u64,
@@ -133,7 +107,7 @@ fn markdown_surface_is_sent_as_its_own_role_with_the_remote_path() {
         "탭 제목용 display_name 이 함께 실려야 한다: {entry:?}"
     );
 
-    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
@@ -166,11 +140,10 @@ fn markdown_content_request_round_trips_over_attach_channel() {
     assert_eq!(result["file"], file.to_string_lossy().as_ref());
     assert_eq!(result["truncated"], false);
 
-    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 파일이 사라진 뒤의 요청은 **연결이 끊기거나 무응답이 아니라** `ok:false` + 사유다.
 #[test]
 fn markdown_content_request_reports_a_reason_for_a_missing_file() {
     let server = common::shared();
@@ -179,7 +152,7 @@ fn markdown_content_request_reports_a_reason_for_a_missing_file() {
     let surface_id = open_markdown_surface(server, ws.id, &file);
 
     let (mut stream, _entry) = attach_when_descriptor_has_file(server, ws.id, surface_id);
-    // 디스크립터가 경로를 실은 **뒤에** 지운다 — 그래야 "경로는 아는데 읽을 수 없다" 를 잰다.
+    // 경로를 받은 뒤 파일을 지워 경로 발견 실패와 파일 읽기 실패를 구별한다.
     std::fs::remove_file(&file).unwrap();
 
     write_control_frame(
@@ -200,12 +173,11 @@ fn markdown_content_request_reports_a_reason_for_a_missing_file() {
         "실패 회신에 원문이 실리면 안 된다"
     );
 
-    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 하이브리드 신뢰 모델(ADR-0022): attach 점유가 유일한 인가
-/// 조건이다. 점유 없는 client 는 파일을 한 바이트도 읽히지 못한 채 거절돼야 한다.
+/// 점유 없는 클라이언트의 원문 조회가 거절되는지 확인한다(ADR-0022).
 #[test]
 fn markdown_content_request_rejected_without_workspace_occupancy() {
     let server = common::shared();
@@ -229,14 +201,7 @@ fn markdown_content_request_rejected_without_workspace_occupancy() {
     assert!(result["source"].is_null(), "no source on rejection");
 }
 
-/// 예산(`MARKDOWN_CONTENT_BYTE_BUDGET`, 700 KiB)을 넘는 문서는 **연결이 끊기지 않고**
-/// 잘린 채 `truncated: true` 와 함께 도착한다.
-///
-/// 본문을 따옴표로만 채운 것이 이 test 의 핵심이다 — 원문 400 KiB 는 예산 안이지만
-/// JSON 이스케이프(`\"`)로 2 배가 돼 800 KiB 가 된다. 예산을 **원문 바이트**로 재면
-/// 이 문서는 그대로 통과한 뒤 프레임 하드 상한(`MAX_FRAME_LEN`, 1 MiB)에 걸려 세션의
-/// write thread 가 죽는다 — 예산이 막으려던 바로 그 연결 끊김이다. 그래서 여기서
-/// 재는 것은 "잘렸다" 뿐 아니라 **무엇을 세어 잘랐는가** 다.
+/// 따옴표로 채운 원문은 400KiB지만 JSON 이스케이프 뒤에는 약 800KiB다. 700KiB 예산을 원문이 아니라 직렬화 크기에 적용하는지 확인한다.
 #[test]
 fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session() {
     const BUDGET: usize = 700 * 1024;
@@ -277,7 +242,6 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
         source.chars().all(|c| c == '"'),
         "실린 부분은 원문의 접두사 그대로여야 한다"
     );
-    // ★ 직렬화된 길이가 예산 안이다 — 원문 바이트로 쟀다면 여기서 800 KiB 가 나온다.
     let serialized = serde_json::to_vec(&Value::String(source.to_string()))
         .expect("string always serializes")
         .len();
@@ -290,7 +254,7 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
         "따옴표만 있는 문서는 예산에 정확히 차야 한다(2 + n*2)"
     );
 
-    // 세션이 살아 있다 — 같은 연결로 한 번 더 왕복한다(write thread 가 죽었다면 여기서 멈춘다).
+    // 같은 연결로 다시 요청해 큰 응답 뒤에도 세션을 사용할 수 있는지 확인한다.
     write_control_frame(
         &mut stream,
         &json!({
@@ -306,21 +270,11 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
         "예산 초과 회신 뒤에도 세션이 살아 있어야 한다"
     );
 
-    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 인가 집합은 **engine 전체**다 — 그 surface 를 담은 워크스페이스의 holder 로 좁혀 있지
-/// 않다(ADR-0022).
-///
-/// 술어는 `client_holds_workspace`("이 engine 의 워크스페이스를 **하나라도** 점유했는가")
-/// 이고, 대상 조회는 `find_surface_by_id`(전 워크스페이스 순회)다. 그래서 W2 만 점유한
-/// client 도 W1 의 markdown 원문을 받는다 — list_dir(`dir` 문자열만 실어 워크스페이스
-/// 바인딩 필드가 없다)·git_query(engine 전역 `TerminalStore` 조회)와 같은 갈래이며,
-/// `markdown_changed` 의 수신자도 이 집합이어야 한다(요청할 수 있는 client 와 신호를 받는
-/// client 가 갈리면 안 된다).
-///
-/// 인가를 "그 surface 의 워크스페이스 holder" 로 좁히면 이 test 가 빨개진다.
+/// 같은 engine의 다른 workspace만 점유한 클라이언트도 문서 원문을 조회할 수 있어야 한다. 대상 workspace holder로 제한된 인가가 아니다(ADR-0022).
 #[test]
 fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
     let server = common::shared();
@@ -329,8 +283,7 @@ fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
     let file = write_doc("engine-wide");
     let surface_id = open_markdown_surface(server, doc_ws.id, &file);
 
-    // 문서 워크스페이스에 잠깐 붙는 것은 snapshot(`file`) 도착을 기다리기 위해서다.
-    // 요청은 그 점유를 **놓은 뒤** 다른 워크스페이스 점유로만 보낸다.
+    // 문서 경로가 담긴 snapshot을 받은 뒤 그 workspace의 점유를 놓고 다른 workspace만 점유한다.
     let (probe, _entry) = attach_when_descriptor_has_file(server, doc_ws.id, surface_id);
     drop(probe);
 
@@ -366,6 +319,6 @@ fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
         "원문이 그대로 실려야 한다: {result:?}"
     );
 
-    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }

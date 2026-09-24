@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-/// 약 1100개를 수집하던 시점에 일부 정상 감소를 허용해 하한 900을 정했다. 전체 누락을 보장하는 값은 아니다.
+/// 약 1100개를 수집하던 시점에 일부 정상 감소를 허용해 하한 900을 정했다. 일부 파일 누락을 놓칠 수 있다.
 const MIN_SCANNED_FILES: usize = 900;
 
 /// 본체와 크레이트 소스를 수집한다. 내부 시험 코드도 포함되며 출하 여부는 소비자가 별도로 분류한다. 루트 tests·site·build.rs는 범위 밖이다.

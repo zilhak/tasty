@@ -1,22 +1,6 @@
-//! attach 중인 workspace 에서 **로컬** IPC 로 새 tab 을
-//! 만들 때 그 새 터미널 surface 가 스트림 tap 대상에서 누락되는 회귀를 막는다.
-//!
-//! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다 — attach client 는
-//! 실제 GUI 앱이 아니라 raw `TcpStream` 으로 `stream.open{target_workspace}` 핸드셰이크만
-//! 흉내낸다. 서버는 이 연결이 실제 mirror client 인지 신경 쓰지 않으므로, `tasty claude
-//! spawn` 등이 타는 것과 동일한 IPC 채널로 구조 변경을 일으켜도 재현에 충분하다.
-//!
-//! **`pty.spawn` + `pty.attach_surface` 를 쓴다 — `tab.create` 가 아니다.** IPC 라우터의
-//! `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`)는 `tab.create`/
-//! `split`/`tab.close`/`tab.move`/`pane.close`/`surface.close` 를 hard-occupied
-//! workspace 에서 거부하지만, `pty.attach_surface`(headless PTY → Surface 승격,
-//! `AdoptTerminal` intent — `tasty claude spawn` 이 실제로 타는 경로)는 그 가드
-//! 목록에 없어 통과한다. 즉 이 테스트가 재현하는 것이 실제 프로덕션 repro 경로다.
-//!
-//! 검증 대상(완료 확인 방법의 "실측 재현" 절차를 자동화):
-//! 1. `surface.list` 의 새 surface `attached` 필드가 `true` 여야 한다(occupancy 편입).
-//! 2. 그 새 surface 의 초기 스냅샷(mux `Data` 프레임)이 attach 소켓으로 실제 push
-//!    돼야 한다(스트림 tap 이 실제로 시작됐다는 증거 — 검정 화면 회귀의 핵심 판정).
+//! attach된 workspace에 로컬 IPC로 추가한 터미널이 점유 목록과 출력 스트림에 포함되는지 확인한다.
+//! 점유 중 tab.create는 거절되므로 실제 에이전트 경로인 pty.spawn → pty.attach_surface를 사용한다.
+//! 새 surface의 attached 값과 해당 ID의 Data 프레임을 확인하며 GUI 렌더링 자체는 검사하지 않는다.
 
 mod attach_common;
 mod common;
@@ -40,8 +24,6 @@ fn surface_attached(instance: &TastyInstance, surface_id: u64) -> bool {
         .unwrap()
 }
 
-/// mirror client 가 attach 소켓에서 특정 surface_id 의 mux `Data` 프레임(초기 스냅샷
-/// 또는 이후 출력)을 수신하는지 확인 — 못 받으면 "검정 화면" 회귀 그 자체다.
 fn expect_data_frame_for_surface(stream: &mut TcpStream, surface_id: u32) {
     for _ in 0..64 {
         let (tag, payload) = read_frame(stream);
@@ -54,7 +36,7 @@ fn expect_data_frame_for_surface(stream: &mut TcpStream, surface_id: u32) {
             return;
         }
     }
-    panic!("attach 소켓에서 새 surface {surface_id}의 Data 프레임을 받지 못함 — 검정 화면 회귀");
+    panic!("attach 소켓에서 새 surface {surface_id}의 Data 프레임을 받지 못했다");
 }
 
 #[test]
@@ -63,11 +45,8 @@ fn local_pty_adopt_in_occupied_workspace_is_tapped() {
     let ws = server.create_workspace("local-creation-tap");
     let pane_id = server.first_pane_id_in_workspace(ws.id);
 
-    // attach client 가 이 workspace 를 점유 — `tasty claude spawn` 이후에도 attach
-    // client 화면에 새 tab 이 검정으로만 보이던 실측 재현 조건과 동일.
     let mut attach_stream = open_workspace_attach(server.port(), ws.id);
 
-    // `tasty claude spawn` 과 동일한 실제 경로: headless PTY spawn → 그 pane 에 승격.
     let spawned = server.call(
         "pty.spawn",
         json!({
