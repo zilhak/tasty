@@ -1,12 +1,9 @@
-//! Event Bus envelope — 호스트와 plugin 사이를 흐르는 사건의 공통 wrapper.
+//! 호스트와 플러그인이 주고받는 이벤트의 공통 구조.
 
 use serde::{Deserialize, Serialize};
 
-/// 한 사건의 chain이 거칠 수 있는 최대 hop 단계.
-///
-/// 호스트 발화 시 hop=0. plugin이 콜백 안에서 다시 publish하면 hop+1로 발화된다.
-/// `hop > MAX_HOP`이면 dispatcher가 차단하고 warn 로그를 남긴다. 의도된 사용
-/// 패턴에서 hop이 2~3을 넘기기 어렵다 — 이 상수는 무한 루프 방지 장치다.
+/// 이벤트 재발행의 최대 단계. 호스트에서 시작할 때 hop은 0이며,
+/// 플러그인이 받은 이벤트를 다시 발행하면 증가한다. 한도를 넘으면 호스트가 거절한다.
 pub const MAX_HOP: u8 = 16;
 
 /// 한 줄에 담기는 이벤트 메시지의 최상위 구조.
@@ -23,11 +20,8 @@ pub struct EventEnvelope {
     pub meta: EventMeta,
 }
 
-/// 이벤트 envelope의 메타데이터. payload와 무관하게 모든 이벤트가 공유하는 정보.
-///
-/// `trace_id`는 한 사건이 만들어낸 후속 chain 전체에 공유되는 opaque 식별자다.
-/// 호스트 발화 시점에 생성되고 plugin이 그 이벤트를 받아 재발화하면 동일한
-/// `trace_id`가 그대로 전파된다. 디버깅·로그 상관관계 분석용.
+/// 모든 이벤트가 공유하는 메타데이터. trace_id는 한 이벤트에서 이어진
+/// 재발행을 같은 흐름으로 찾아볼 수 있도록 유지한다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EventMeta {
     pub trace_id: String,
@@ -36,21 +30,18 @@ pub struct EventMeta {
     pub scope: EventScope,
 }
 
-/// 누가 이 이벤트를 발화했는가.
+/// 이벤트를 발행한 주체.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EventOrigin {
-    /// 호스트 엔진이 직접 발화. hop=0.
+    /// 호스트가 직접 발행했다. hop은 0이다.
     Host,
-    /// 어떤 plugin이 publish API로 발화.
+    /// 플러그인이 publish API로 발행했다.
     Plugin { plugin_id: String },
 }
 
-/// 이벤트가 surface에 매여 있는지 여부.
-///
-/// 더 세분화된 scope(tab, pane, workspace 등)는 1.0에서 도입하지 않는다 —
-/// plugin 입장에서 "surface와 관련 있는가"만 분기하면 charter 처리·필터·로그가
-/// 단순해진다. 구체적인 ID(예: `surface_id`, `tab_id`)는 payload 필드로 전달한다.
+/// 이벤트가 특정 surface에 속하는지 구분한다.
+/// Tab, Pane, Workspace 등의 구체적인 ID는 payload에 넣는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventScope {
@@ -62,13 +53,8 @@ pub enum EventScope {
     Surface,
 }
 
-/// 종료 계열 이벤트(`*.closed`, `plugin.unloaded` 등)의 공통 `reason` 값.
-///
-/// `parent_closed` 같은 cascade 분류는 별도 두지 않는다 — 부모를 닫은 주체가
-/// 그대로 자식의 reason이 된다. (사용자가 윈도우를 닫으면 그 안의 모든 surface는
-/// `User`, agent가 IPC로 workspace를 닫으면 그 안의 모든 surface는 `Ipc`.)
-///
-/// 더 세분화된 정보가 필요하면 1.x에서 옵션 필드 `reason_detail`을 추가한다.
+/// 닫힘 이벤트의 사유. 부모를 닫아 자식이 함께 닫히면 같은 사유를 사용한다.
+/// 예를 들어 사용자가 창을 닫으면 그 안의 surface도 User로 기록한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleReason {

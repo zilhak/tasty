@@ -1,5 +1,4 @@
-//! 본 plugin 의 매니페스트가 `tasty-plugin-manifest` 의 schema 검증을 통과하고,
-//! egui-mesh rendering 선언이 보존되는지 self-contained 검증.
+//! 매니페스트 검증과 egui-mesh 선언을 확인한다.
 
 use std::path::PathBuf;
 use tasty_plugin_manifest::{Manifest, SurfaceKindRendering};

@@ -7,10 +7,7 @@
 //!
 //! 로컬 이미지는 inline_local_images에서 읽어 data URI로 바꾼다. <base href>는
 //! 넣지 않는다. file URL의 base를 넣으면 #slug도 다른 문서로 해석되기 때문이다.
-//! 2026-09-19 Linux/WebKitGTK 2.50에서는 base가 있을 때 목차 클릭 후 scrollY가 0,
-//! 없을 때는 제목 위치로 이동했다. Raw HTML의 상대 링크는 정리 후에도 남을 수 있다.
-//! 같은 날 opaque base에서 a.href가 상대 문자열로 남는 것은 확인했지만,
-//! 이를 클릭했을 때의 동작은 세 WebView 백엔드 모두에서 확인한 것이 아니다.
+//! Raw HTML의 상대 링크는 본문을 정리한 뒤에도 남을 수 있다.
 //!
 //! 상세: docs/plugins/markdown/index.md#내부-동작.
 
@@ -159,21 +156,18 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         toc_nav_html(tr, &headings)
     };
 
-    // Mermaid 코드 블록이 있을 때만 번들을 넣는다.
     let mermaid = if body_html.contains("language-mermaid") {
         mermaid_script(theme.is_light)
     } else {
         String::new()
     };
 
-    // 코드 블록이 있을 때만 구문 강조 스크립트를 넣는다.
     let highlight = if body_html.contains("class=\"language-") {
         highlight_script()
     } else {
         String::new()
     };
 
-    // 코드 블록의 복사 버튼을 설치한다. Mermaid 블록은 스크립트에서 제외한다.
     let copy_buttons = if body_html.contains("<pre><code") {
         copy_button_script(tr)
     } else {
@@ -543,7 +537,6 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
         return wrap_as_paragraph(buf); // no alt text — nothing to caption, leave it as-is.
     }
 
-    /// 이미지의 alt 텍스트를 모아 캡션으로 사용한다.
     let mut buf = buf;
     let image_events: Vec<Event<'_>> = buf.drain(start_idx..=end_idx).collect();
     let mut out = Vec::with_capacity(image_events.len() + 4);
@@ -1063,7 +1056,7 @@ const CALLOUT_ALIASES: &[(&str, &str)] = &[
     ("cite", "quote"),
 ];
 
-/// 대소문자를 무시하고 정규 이름 또는 별칭으로 콜아웃을 찾는다.
+/// 소문자로 정규화된 이름을 정규 이름 및 별칭과 비교한다.
 fn find_callout_kind(type_key: &str) -> Option<&'static CalloutKind> {
     if let Some(found) = CALLOUT_KINDS.iter().find(|k| k.type_key == type_key) {
         return Some(found);
@@ -1178,7 +1171,7 @@ fn rewrite_callout_buffer<'a>(
         return wrap_static_callout(callout.class, tr.t(callout.label_key), buf);
     }
 
-    /// 첫 문단의 이어지는 텍스트에서 콜아웃 태그를 읽는다.
+    // 첫 문단의 이어지는 텍스트에서 콜아웃 태그를 읽는다.
     let Some(Event::Start(Tag::Paragraph)) = buf.first() else {
         return wrap_plain_blockquote(None, buf);
     };
@@ -1450,17 +1443,10 @@ fn sanitize_html(unsafe_html: &str) -> String {
     );
     tag_attributes.insert("th", ["align"].into_iter().collect());
     tag_attributes.insert("td", ["align"].into_iter().collect());
-    // 펜스드 코드블록 언어(`<code class="language-rust">`) — 값은 이미 event 단계에서
-    // `[A-Za-z0-9_+-]` 로 정규화됨(sanitize_fence_lang).
     tag_attributes.insert("code", ["class"].into_iter().collect());
-    // footnote 마크업의 고정 리터럴 class(라이브러리 자체가 씀, 사용자 입력 아님).
     tag_attributes.insert("sup", ["class"].into_iter().collect());
     tag_attributes.insert("div", ["class"].into_iter().collect());
-    // callout blockquote — 고정 literal class(markdown-alert-<type>) + rewrite_callout_events 가
-    // 진짜 AST 이벤트/파싱된 태그 라인에서만 심는 localized data-label(attr_escape 済み).
     tag_attributes.insert("blockquote", ["class", "data-label"].into_iter().collect());
-    // 접기 콜아웃(details) — 고정 literal class + fold 상태(open, 마커 유무로만 결정되는
-    // 불리언, 사용자 입력 그대로 반영되지 않음).
     tag_attributes.insert("details", ["class", "open"].into_iter().collect());
     // 수식 span의 class를 남겨 KaTeX 스크립트가 찾을 수 있게 한다.
     tag_attributes.insert("span", ["class"].into_iter().collect());
@@ -1605,16 +1591,6 @@ fn html_unescape(s: &str) -> String {
 /// html의 height:100%와 body의 min-height:100%는 서로 역할이 다르다.
 /// body가 문서만큼 늘어나야 sticky 주소창이 끝까지 남고, html 높이가 정해져야
 /// 짧은 문서에서도 body의 백분율 최소 높이가 viewport를 채운다.
-/// WebKitGTK 4.1, viewport 1000×800, 긴 문서 높이 10070에서의 측정:
-///
-/// | html / body | 끝까지 스크롤한 주소창 rect.top | 짧은 문서 body 높이 |
-/// |---|---|---|
-/// | height / min-height (현재) | 0 | 800 |
-/// | min-height / min-height | 0 | 232 |
-/// | height / height | -8510 | 800 |
-///
-/// 배경 채우기는 body 높이와 별개다. html에 배경이 없으면 body 배경이 canvas에
-/// 전파된다. 이 측정에서 짧은 문서의 세 조합은 800000픽셀 중 다른 픽셀이 0개였다.
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -1777,7 +1753,7 @@ fn alert_css(theme: &Theme) -> String {
     rules
 }
 
-/// 아이콘 SVG를 CSS 마스크로 사용해 테마 강조색으로 그린다.
+/// 지정한 색의 SVG를 data URI로 만든다.
 fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str) -> String {
     let (fill, stroke) = if filled {
         (color_hex, color_hex)
@@ -2131,7 +2107,7 @@ fn mermaid_js_source() -> &'static str {
     ESCAPED.get_or_init(|| escape_script_close(MERMAID_JS_RAW))
 }
 
-/// Mermaid 번들과 실행 스크립트. 코드 블록이 있을 때만 넣으며 Theme.is_light에
+/// Mermaid 번들과 실행 스크립트. Theme.is_light에
 /// 따라 default 또는 dark 테마를 사용한다. suppressErrors를 지정하고
 /// 초기화 예외와 run의 실패를 콘솔에 기록한다.
 fn mermaid_script(is_light: bool) -> String {
@@ -3513,7 +3489,6 @@ mod tests {
 
     #[test]
     fn mermaid_script_js_source_has_no_premature_script_close() {
-        // 문서에 번들과 초기화 코드가 포함되는지 확인한다.
         let js = mermaid_js_source();
         // 번들이 비어 있으면 아래 부정은 무조건 통과한다 — 그 갈래를 먼저 닫는다.
         assert!(js.contains("mermaid"));
@@ -3605,7 +3580,6 @@ mod tests {
 
     #[test]
     fn highlight_script_skips_unsupported_languages_without_erroring() {
-        // 지원 언어의 구문 강조 코드가 포함되는지 확인한다.
         let script = highlight_script();
         assert!(script.contains("if(!hljs.getLanguage(m[1]))return;"));
     }
@@ -4111,7 +4085,6 @@ mod tests {
 
     #[test]
     fn gfm_tag_with_trailing_text_becomes_an_obsidian_custom_title_callout() {
-        // 콜아웃의 기본 제목과 사용자 제목을 확인한다.
         let out = unsafe_content_html(
             "> [!NOTE] with trailing text\n> more\n",
             &Translator::default(),
@@ -4685,7 +4658,6 @@ Outro\n";
     #[test]
     fn find_script_restores_dom_before_every_search_not_only_on_close() {
         let script = find_in_page_script(&Translator::default());
-        // 검색 스크립트 문자열의 IME 처리 분기를 확인한다.
         assert!(
             script.contains("function clearHighlights()"),
             "got: {script}"
@@ -4969,7 +4941,6 @@ Outro\n";
 
     // ── sanitize 단계의 스킴 판정 (허용목록을 값으로 못박는다) ──────────────────
 
-    // HTTP(S) 이미지는 그대로 두고 로컬 이미지만 인라인한다.
     #[test]
     fn sanitize_keeps_only_http_https_mailto_schemes() {
         for (src, kept) in [

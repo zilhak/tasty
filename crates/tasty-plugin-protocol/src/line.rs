@@ -4,12 +4,10 @@
 
 use std::io::{self, Write};
 
-/// `line` 과 개행을 **한 번의 `write_all`** 로 쓰고 flush 한다.
-///
-/// `writeln!` 은 버퍼링 없는 `TcpStream` 에서 본문과 개행을 두 번의 write 로 내보내
-/// 메시지마다 세그먼트가 둘이 된다. Nagle 이 켜진 소켓이면 뒤 조각이 앞 조각의 ACK 를
-/// 기다려 hop 마다 수십 ms 가 붙는다 — 양 끝의 `TCP_NODELAY` 와 함께 이중 방어다
-/// (`docs/dev-guide/attach-behavior.md` "프레임 전송 지연").
+/// 본문과 개행을 한 버퍼로 묶어 write_all한 뒤 flush한다.
+/// 작은 쓰기를 나누어 보낼 때 생기는 지연을 줄이기 위한 처리이며,
+/// write_all 내부의 실제 write 횟수나 TCP 세그먼트 수를 보장하지는 않는다.
+/// docs/dev-guide/attach-behavior.md의 프레임 전송 지연 절 참조.
 pub fn write_line<W: Write + ?Sized>(w: &mut W, line: &str) -> io::Result<()> {
     let mut buf = Vec::with_capacity(line.len() + 1);
     buf.extend_from_slice(line.as_bytes());
@@ -22,7 +20,7 @@ pub fn write_line<W: Write + ?Sized>(w: &mut W, line: &str) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    /// 메시지 하나는 1 회의 `write` 로 나가야 한다 — 쪼개지면 위 문서의 지연이 돌아온다.
+    /// 전체 버퍼를 한 번에 받는 writer에는 write를 한 번만 호출하는지 확인한다.
     #[test]
     fn write_line_emits_one_write_call() {
         struct CountingWriter {

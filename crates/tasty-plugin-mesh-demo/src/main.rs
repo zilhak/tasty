@@ -1,18 +1,9 @@
 #![forbid(unsafe_code)]
 
-//! Tasty egui-mesh PoC plugin (A1).
-//!
-//! egui-mesh 채널(docs/dev-guide/egui-mesh-channel.md#데이터-흐름)이 동작함을 증명하는 최소 소비자다. plugin 이 자기
-//! 프로세스에서 egui 를 구동·tessellate 해 mesh 를 host 에 commit 하면, host 가
-//! 전용 `egui_wgpu::Renderer` 로 surface 영역에 벡터 합성한다.
-//!
-//! 코덱/SDK 는 재구현하지 않는다 — [`EguiMeshSurface`] 헬퍼만 호출한다.
-//! `surface.set_context`(host→plugin) → `run_frame`/`tessellate`/`encode` →
-//! `paint`(shared buffer commit + `PaintFrame` 알림) 전 과정을 SDK 가 은닉한다.
-//!
-//! 데모는 label 1개에 더해 입력 forward 를 눈으로 확인할 수 있도록 클릭 카운터
-//! 버튼과 스크롤 영역을 둔다 — host 가 forward 한 실제 사용자 입력이 plugin 의
-//! mesh 를 바꾸는지 검증한다.
+//! egui-mesh 채널을 확인하는 데모 플러그인.
+//! 클릭 횟수와 스크롤 영역으로 사용자 입력 전달 및 호스트 합성 결과를 확인한다.
+//! Mesh 인코딩과 공유 버퍼 전송은 SDK의 EguiMeshSurface를 사용한다.
+//! docs/dev-guide/egui-mesh-channel.md#데이터-흐름.
 
 use std::collections::HashMap;
 
@@ -31,11 +22,11 @@ struct MeshDemoPlugin {
     surfaces: HashMap<u32, EguiMeshSurface>,
     /// surface_id → 클릭 횟수. 입력 forward 가 mesh 를 바꾸는 것을 보이는 데모 상태.
     clicks: HashMap<u32, u32>,
-    /// popup instance_id → egui-mesh popup 렌더 상태(A2). open 시 생성, closed 시 해제.
+    /// Popup 인스턴스별 렌더 상태. 열 때 만들고 닫을 때 해제한다.
     popups: HashMap<u64, EguiMeshPopup>,
     /// popup instance_id → 클릭 횟수. 입력 forward 가 popup mesh 를 바꾸는 데모 상태.
     popup_clicks: HashMap<u64, u32>,
-    /// banner instance_id → egui-mesh banner 렌더 상태(A3). open 시 생성, closed 시 해제.
+    /// Banner 인스턴스별 렌더 상태. 열 때 만들고 닫을 때 해제한다.
     banners: HashMap<u64, EguiMeshBanner>,
     /// banner instance_id → 클릭 횟수. 입력 forward 가 banner mesh 를 바꾸는 데모 상태.
     banner_clicks: HashMap<u64, u32>,
@@ -125,12 +116,11 @@ impl MeshDemoPlugin {
         }
     }
 
-    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
-    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
+    /// 이 데모의 렌더 경로는 Unix에서만 활성화된다.
     #[cfg(not(unix))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
 
-    /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다(A2).
+    /// Popup의 입력과 크기를 받아 한 프레임을 그린다.
     #[cfg(unix)]
     fn paint_popup_impl(&mut self, ctx: PopupSetContextCtx) {
         let iid = ctx.params.instance_id;
@@ -153,7 +143,7 @@ impl MeshDemoPlugin {
     #[cfg(not(unix))]
     fn paint_popup_impl(&mut self, _ctx: PopupSetContextCtx) {}
 
-    /// `banner.set_context` 한 frame 을 그려 host 에 banner mesh 를 회신한다(A3).
+    /// Banner의 입력과 크기를 받아 한 프레임을 그린다.
     #[cfg(unix)]
     fn paint_banner_impl(&mut self, ctx: BannerSetContextCtx) {
         let iid = ctx.params.instance_id;
@@ -177,8 +167,7 @@ impl MeshDemoPlugin {
     fn paint_banner_impl(&mut self, _ctx: BannerSetContextCtx) {}
 }
 
-/// 데모 UI: label + 클릭 카운터 버튼 + 스크롤 영역. 색/폰트는 egui 기본값을 쓴다
-/// (PoC — Theme 토큰 연동은 B1 markdown 전환에서 다룬다).
+/// 기본 egui 색과 폰트를 사용하는 클릭·스크롤 데모.
 #[cfg(unix)]
 fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -191,14 +180,7 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
             *clicks += 1;
         }
         ui.separator();
-        // 스크롤 효과를 보이는 영역 — 줄 번호가 스크롤 시 위로 사라진다.
-        //
-        // `auto_shrink` 를 끄는 것이 이 표면의 스크롤 가능 여부를 가른다. 기본값(둘 다
-        // `true`)이면 egui 가 스크롤하지 않는 축(여기서는 가로)의 크기를 **콘텐츠 폭**으로
-        // 줄이고, 휠 hover 판정도 그 좁아진 사각형으로 한다. 라벨이 짧아 그 폭은 100pt
-        // 남짓이라, 표면 대부분(오른쪽 빈 영역)에서 굴린 휠은 아무 데도 닿지 않는다 —
-        // 화면에는 목록이 전폭으로 보이는데 거기서는 스크롤이 안 되는 상태가 된다.
-        // 끄면 판정 사각형이 보이는 영역과 같아진다.
+        // 가로 자동 축소를 끄면 짧은 라벨의 오른쪽 빈 영역에서도 휠 입력을 받는다.
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             // 데모의 목적은 휠 스크롤이 도는지 보이는 것이라 드래그 패닝은 그 목적 밖이다.
@@ -260,22 +242,12 @@ mod tests {
     fn plugin_identity() {
         let p = MeshDemoPlugin::default();
         assert_eq!(p.id(), "com.tasty.mesh-demo");
-        // Cargo.toml 이 SoT — 하드코딩 기대값은 버전 bump 마다 드리프트한다
-        // (0.1.2 vs 0.1.6 실재, Windows 단위테스트 CI 부재로 잠복했던 것).
+        // 버전은 Cargo.toml에서 읽는다.
         assert_eq!(p.version(), env!("CARGO_PKG_VERSION"));
     }
 
-    /// 데모 표면의 **오른쪽 빈 영역**에서 굴린 휠이 목록을 움직이는가.
-    ///
-    /// host 는 휠 이벤트에 좌표를 싣지 않고 커서 이동 때 `PointerMoved` 로 hover 를
-    /// 세운다. 그래서 스크롤 여부는 전적으로 "그 좌표가 `ScrollArea` 의 판정 사각형
-    /// 안인가" 로 갈린다. `auto_shrink` 가 켜져 있으면 그 사각형이 콘텐츠 폭(라벨 몇
-    /// 십 pt)으로 줄어, 목록이 전폭으로 보이는데도 오른쪽에서는 휠이 먹지 않는다.
-    /// 표면 오른쪽 끝 근처를 고른 이유가 그것이다 — 가운데였다면 좁은 사각형 안에
-    /// 들어가 버려 회귀를 놓친다.
-    ///
-    /// 단정 대상은 내부 상태가 아니라 **그려진 결과**다. 이 버그의 증상이 "델타는
-    /// 도착하는데 화면이 안 바뀐다" 이므로, 첫 줄이 실제로 위로 올라갔는지를 본다.
+    /// 라벨 너비 밖인 오른쪽 빈 영역에서 휠을 굴려도 목록이 이동하는지 확인한다.
+    /// auto_shrink가 켜지면 이 영역이 스크롤 입력 범위에서 빠질 수 있다.
     #[cfg(unix)]
     #[test]
     fn the_wheel_scrolls_the_list_from_anywhere_on_the_surface() {
@@ -357,8 +329,7 @@ mod tests {
         found
     }
 
-    /// surface **둘**을 넣는다. 하나만 넣으면 `destroy_surface` 가 맵을 통째로 비워도
-    /// 이 시험은 초록이라, "7 을 지웠다" 와 "전부 지웠다" 가 안 갈린다.
+    /// 다른 surface를 함께 넣어 지정한 항목만 삭제하는지 확인한다.
     #[test]
     fn destroy_clears_state() {
         let mut p = MeshDemoPlugin::default();

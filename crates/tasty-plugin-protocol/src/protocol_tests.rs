@@ -338,8 +338,7 @@ fn set_context_params_round_trip() {
 #[test]
 fn set_context_theme_snapshot_round_trips() {
     use tasty_type_appearance::theme::ThemeColors;
-    // raw JSON 문자열로 ThemeColors 를 만든다(`json!` 매크로는 44필드에서 재귀한계).
-    // 값 자체는 무관 — round-trip 동일성만 본다.
+    // 직렬화 왕복을 확인할 테마 색 집합. JSON 매크로의 재귀 확장을 피한다.
     const COLORS_JSON: &str = r##"{
         "crust":"#11111b","mantle":"#181825","base":"#1e1e2e","surface0":"#313244",
         "surface1":"#45475a","surface2":"#585b70","overlay0":"#6c7086","overlay1":"#7f849c",
@@ -452,9 +451,7 @@ fn paint_frame_event_round_trip() {
     }
 }
 
-/// `ime_cursor` 는 `#[serde(default)]` 라 **그 칸이 없는 구버전 plugin 의 알림도** 그대로
-/// 파싱된다 — 새 필드가 옛 plugin 을 깨지 않는다는 것이 이 확장을 고른 근거의 일부다
-/// (ADR: plugin 이 그린 IME 커서 영역은 mesh frame 알림에 실려 host 로 돌아온다).
+/// ime_cursor 필드가 없는 요청도 None으로 읽는지 확인한다.
 #[test]
 fn paint_frame_without_ime_cursor_still_parses() {
     let s = r#"{"kind":"paint_frame","surface_id":1,"buffer_id":2,"generation":3,"frame_seq":4,"full_textures":false,"byte_len":5}"#;
@@ -465,8 +462,7 @@ fn paint_frame_without_ime_cursor_still_parses() {
     }
 }
 
-/// IME 커서 영역이 두 rect 를 온전히 round-trip 한다 — host 가 창 좌표 변환에 쓰는 값이라
-/// 한 칸만 새도 후보창이 엉뚱한 곳에 뜬다.
+/// IME 위젯과 캐럿 사각형이 직렬화 후에도 유지되는지 확인한다.
 #[test]
 fn paint_frame_ime_cursor_round_trips() {
     let ime = ImeCursorWire {
@@ -524,11 +520,7 @@ fn texture_chain_fields_default_for_legacy_json() {
     assert!(!parsed.need_full_textures);
 }
 
-/// `ipc.result` 의 새 `error_code` 는 **구버전과 양방향 호환**이다.
-///
-/// 이 필드는 host → plugin 와이어에 나중에 붙었다. 구버전 SDK 로 빌드된 plugin 은 이
-/// 필드를 모른 채 읽고, 구버전 호스트는 이 필드를 안 보낸다 — 두 방향 다 깨지지 않아야
-/// 한다. `#[serde(default)]` 와 `skip_serializing_if` 가 그것을 진다.
+/// error_code가 없을 때의 기본값, None일 때 필드 생략, 값이 있을 때 왕복을 검사한다.
 #[test]
 fn ipc_call_result_error_code_is_optional_in_both_directions() {
     use crate::protocol::IpcCallResult;
@@ -562,11 +554,8 @@ fn ipc_call_result_error_code_is_optional_in_both_directions() {
     assert_eq!(back.error_code, Some(-32602));
 }
 
-/// `PluginRequest` 의 새 `dropped_requests` 는 **구버전과 양방향 호환**이다.
-///
-/// 같은 바이너리에서 "구 plugin 이 이 필드를 몰라도 돈다" 를 재는 방법은 직렬화
-/// 수준밖에 없다 — 번들 plugin 은 항상 호스트와 같은 커밋에서 빌드되므로 트리에
-/// 구 SDK 가 존재하지 않는다. `error_code` 선례와 같은 모양으로 재는 이유다.
+/// dropped_requests의 생략과 기본값을 검사한다.
+/// 이 시험은 구버전 바이너리를 실행하는 호환성 시험은 아니다.
 #[test]
 fn plugin_request_dropped_requests_is_optional_in_both_directions() {
     // 구버전 호스트가 보낸 줄 — 키가 아예 없다.

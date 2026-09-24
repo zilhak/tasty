@@ -4,8 +4,7 @@
 //! [`super::EventEnvelope`]의 `payload`에 싣는다. Plugin은 envelope에서
 //! payload를 꺼내 자기가 관심 있는 타입으로 `from_value`해 사용한다.
 //!
-//! 각 타입의 이벤트 키·발화 시점·scope·안정성 등급은
-//! `docs/reference/event-catalog.md`가 SoT다.
+//! 이벤트 키, 발생 시점, 범위와 안정성 등급은 docs/reference/event-catalog.md에 있다.
 
 use serde::{Deserialize, Serialize};
 
@@ -296,7 +295,7 @@ pub enum ToolSource {
     Plugin { plugin_id: String },
 }
 
-// ── Command (Option D) ───────────────────────────────────────────────────────
+// Command
 
 /// `command.invoked` 페이로드 — owner plugin에 unicast로 전달.
 /// trigger=shortcut & scope=Surface인 경우 envelope scope=Surface, 그 외 System.
@@ -425,9 +424,8 @@ pub struct ProcessExited {
 
 /// `memory.changed` 페이로드. scope=System.
 ///
-/// `tasty-memory` 의 regular 영역에서 put/delete/expire/scope cleanup 이
-/// 일어날 때 호스트가 발화. **secret 영역 변경은 발화하지 않는다** — 다른
-/// plugin 에 owner/key 정보를 누설하지 않기 위함.
+/// regular 메모리의 put/delete/expire/scope cleanup 변경을 알린다.
+/// secret 변경은 다른 플러그인에 소유자와 키를 노출하지 않도록 알리지 않는다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MemoryChanged {
     /// `surface:42`, `workspace:1`, `global` 등 scope token.
@@ -451,32 +449,20 @@ pub enum MemoryChangeKind {
 
 // ── Agent ────────────────────────────────────────────────────────────────────
 
-/// `agent.task_finished` 페이로드. scope=System.
-///
-/// **종결 전이만 싣는다.** `waiting`/`ready`/`running` 으로 들어가는 전이는 발화
-/// 대상이 아니다 — 종결에는 모든 진입 경로가 지나는 단일 깔때기가 이미 있고
-/// (`agent.task_await` 가 그것으로 깨어난다) 비종결에는 그런 자리가 없다. 둘을 같은
-/// 키에 담으면 비종결 쪽이 조용히 빠진 피드가 되고, 소비자는 그 사실을 알 수 없다.
-///
-/// **실패 사유와 결과를 안 싣는다.** 그 문자열은 task 가 돌린 명령의 출력을 그대로
-/// 담을 수 있고, 피드는 구독 권한만 있으면 누구나 받는다. 필요한 소비자는 `task_id`
-/// 로 `agent.task_get` 을 부른다 — 그쪽에는 호출자 권한이 걸린다. 나중에 실어야
-/// 하면 **옵션 필드 추가**라 기존 소비자를 안 깨뜨린다(반대 방향은 major 다).
+/// agent.task_finished 페이로드. 종료 상태로 바뀔 때만 보내며 scope는 System이다.
+/// 실패 사유와 결과에는 명령 출력이 포함될 수 있어 이 이벤트에 넣지 않는다.
+/// 필요한 호출자는 권한 검사를 거치는 agent.task_get으로 조회한다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentTaskFinished {
-    /// 그 task 가 사는 workspace. **`meta.scope` 는 `system` 이다** — envelope 의
-    /// scope 축은 `system`/`surface` 둘뿐이고, workspace 를 가리키는 기존 사건
-    /// (`workspace.created` 등)이 모두 이 방식으로 낸다.
+    /// 작업이 속한 workspace. 이벤트 scope는 system이다.
     pub workspace_id: u32,
     pub task_id: String,
     /// `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나.
     pub state: String,
 }
 
-/// `agent.barrier_closed` 페이로드. scope=System.
-///
-/// barrier 가 요구 수를 채워 닫힌 순간. **시간 초과(`timed_out`)는 여기 안 실린다** —
-/// 그쪽은 전이가 일어나는 순간이 없고 읽는 쪽이 시계를 견줄 때 도장이 찍힌다.
+/// 요구한 신호 수를 채워 barrier가 닫혔을 때 보내는 이벤트.
+/// 시간 초과는 조회 시점에 판단하므로 이 이벤트에 포함하지 않는다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentBarrierClosed {
     pub workspace_id: u32,
@@ -559,9 +545,7 @@ mod tests {
         assert!(!s.contains("exit_code"));
     }
 
-    /// 이 페이로드가 **안 싣기로 한 것**을 고정한다. 실패 사유·결과를 나중에 누가
-    /// 편하다고 끼워 넣으면 피드가 명령 출력을 나르게 되고, 그것은 되돌릴 때
-    /// major 가 된다(뺀 필드는 기존 소비자를 깨뜨린다).
+    /// 구독 이벤트에 실패 사유나 명령 출력이 포함되지 않는지 확인한다.
     #[test]
     fn a_finished_task_carries_its_verdict_but_not_what_it_printed() {
         let p = AgentTaskFinished {

@@ -1,23 +1,9 @@
-//! egui-mesh POD 와이어 코덱 (A1-S2).
+//! egui paint 출력을 바이트로 인코딩하고 복원한다.
+//! 정점과 색 배열은 bytemuck의 POD 변환으로 복사하며 나머지 메타데이터는
+//! 이 모듈의 형식으로 기록한다. Callback primitive는 경고 후 제외한다.
 //!
-//! epaint 0.31 은 `serde` feature 가 꺼져 있어 (`Cargo.lock` deps 에 serde 없음,
-//! bytemuck 만) `ClippedPrimitive` / `Mesh` / `TexturesDelta` / `ImageData` 를
-//! `serde_json` 으로 직렬화할 수 없다. 따라서 paint 출력
-//! `(Vec<ClippedPrimitive>, TexturesDelta, pixels_per_point)` 을 손으로 미러한
-//! POD 바이트 레이아웃으로 인코드/디코드한다.
-//!
-//! 핵심 사실 — `Vertex` / `Color32` / `Pos2` / `Rect` 는 `#[repr(C)]` + `bytemuck::Pod`
-//! (egui `bytemuck` feature on) 라 정점/인덱스/픽셀은 `bytemuck::cast_slice` 로 직카피된다
-//! (직렬화 비용 0). 나머지(`TexturesDelta`/`ImageDelta`/`TextureOptions`/enum 태그)만 수작업.
-//!
-//! ## 미지원
-//! - `Primitive::Callback` — plugin 프로세스엔 wgpu paint callback 이 없다. 인코드 시
-//!   skip + `tracing::warn!`. 디코드 결과는 항상 `Primitive::Mesh` 만 담긴다.
-//!
-//! ## 버전 방어
-//! 헤더에 magic / wire_version / `size_of::<Vertex>()` 를 박는다. epaint major 업글로
-//! `Vertex` 레이아웃이 바뀌면 디코드가 [`MeshWireError::VertexStrideMismatch`] 로 실패하며,
-//! round-trip 테스트가 와이어 파손을 컴파일/테스트 단계에서 잡는다.
+//! 헤더의 magic, wire_version과 Vertex 크기를 검사한다. Vertex 크기가 다르면
+//! 거절하지만, 크기를 유지한 모든 레이아웃 변경까지 검출하는 것은 아니다.
 
 use egui::Color32;
 use egui::emath::{Pos2, Rect};
@@ -57,7 +43,7 @@ pub enum MeshWireError {
     BadMagic([u8; 4]),
     /// 와이어 버전 불일치.
     VersionMismatch { expected: u16, found: u16 },
-    /// `size_of::<Vertex>()` 불일치 — epaint 레이아웃이 바뀌었다.
+    /// 헤더에 기록된 Vertex 크기가 현재 타입 크기와 다르다.
     VertexStrideMismatch { expected: u16, found: u16 },
     /// 알 수 없는 enum 태그 (TextureId / ImageData / TextureFilter / WrapMode 등).
     BadTag { what: &'static str, value: u8 },

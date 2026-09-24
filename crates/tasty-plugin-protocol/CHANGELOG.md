@@ -14,7 +14,7 @@
 ## [Unreleased]
 
 ### Added
-- `PluginRequest` 에 `dropped_requests: u64` (optional + default 0 — additive, api_version 유지) — 호스트 → plugin 요청 큐가 가득 차면 호스트는 그 요청을 **기다리지 않고 버린다**([ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md)). 버려진 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 몰랐다. 이제 그 뒤로 **실제 큐에 들어가는 다음 요청**에 그 사이 버린 수가 실린다. 0 이면 직렬화에서 빠지므로 구버전 plugin 이 보는 바이트는 종전과 같고, 낯선 키는 `#[serde(default)]` 로 무시된다. SDK 노출은 `Plugin::on_host_dropped_requests`(기본 no-op) · `HostHandle::dropped_by_host()` · 자동 `warn` 로그. 근거는 [ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md).
+- `PluginRequest` 에 `dropped_requests: u64` (optional + default 0 — additive, api_version 유지) — 호스트 → plugin 요청 큐가 가득 차면 호스트는 그 요청을 **기다리지 않고 버린다**([ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md)). 버려진 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 몰랐다. 이제 그 뒤로 **실제 큐에 들어가는 다음 요청**에 그 사이 버린 수가 실린다. 0 이면 직렬화에서 빠지므로 구버전 plugin 이 보는 바이트는 종전과 같고, 알 수 없는 필드는 기본 Serde 동작으로 무시된다. SDK 노출은 `Plugin::on_host_dropped_requests`(기본 no-op) · `HostHandle::dropped_by_host()` · 자동 `warn` 로그. 근거는 [ADR-0006](../../docs/adr/0006-bounded-ipc-transport.md).
 - `IpcCallResult` 에 `error_code: Option<i32>` (optional + default — additive, api_version 유지) — 호스트가 plugin caller 에게 돌려주는 `ipc.result` 가 JSON-RPC 코드를 함께 싣는다. 종전에는 메시지만 가서, 다른 plugin 을 부른 plugin 은 실패 사유를 문자열로 뒤져야 했다. 구버전 호스트가 보낸 모양은 `None` 으로 읽힌다. 근거는 [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
 - `PluginEvent::BannerInvalidated { instance_id }` — 위 `PopupInvalidated` 의 egui-mesh banner 대응. banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가 `viewport_output` 으로 다음 pass 를 요청할 수 있는데(hover fade·스크롤 스무딩·스피너) 그 요청을 host 로 올리는 자리가 없었다 — SDK 가 값을 계산해 놓고 버렸다. `#[serde(other)]` fallback(`PluginEvent::Unknown`) 대상이라 구버전 host 는 안전하게 무시한다. (additive, api_version 유지)
 
@@ -30,7 +30,6 @@
   - 구버전 plugin(필드 미송신)은 `frame_seq = 0` 으로 파싱돼 host 가 항상 체인 단절로 취급한다 — in-tree egui-mesh whitelist plugin 은 본체와 함께 재빌드되므로 실사용 영향 없음.
 - IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
 - `AuthAck { ok, reason }` + `AuthAckEnvelope { auth_ack }` — plugin이 `AuthMessage` 송신 후 호스트로부터 받는 단일 노티. ok=true면 메인 루프 진입, ok=false면 즉시 거부. 메인 루프의 `PluginRequest`와 다른 envelope(`auth_ack` 키)로 파서가 분리된다. SDK 측에서 `PluginError::HandshakeRejected`/`HandshakeTimeout`으로 매핑됨. (additive, api_version 유지)
-- (PR 4에서 제거됨)
 - `PluginEvent::PaintFrame` 에 `byte_len: u32`(optional + default 0, additive) 추가 — SharedBuffer 는 `size.next_power_of_two()` 로 할당돼 뒤쪽에 이전 frame 의 잔여 capacity 바이트가 남을 수 있다. 로컬(같은 프로세스) GPU 디코드는 self-terminating 파싱이라 이를 무시했지만, attach mesh mirror(host가 원본 mesh 바이트를 네트워크로 그대로 재중계하는 경로, [`docs/dev-guide/egui-mesh-channel.md` "attach mesh mirror 소비 경로"](../../docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로))는 정확한 payload 경계가 필요해 추가됐다. 구버전 plugin(필드 미송신)은 `0`으로 파싱되고, attach 쪽은 그 경우 버퍼 전체 capacity 를 fallback 으로 쓴다.
 
 ### Changed

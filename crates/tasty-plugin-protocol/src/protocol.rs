@@ -36,13 +36,9 @@ pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,
 /// 변경 결과는 `SurfaceResult` 형태로 응답한다 (display_name/snapshot 갱신).
 pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
-/// host → plugin: webview(`rendering = "webview"`) surface 가 네비게이션을 시도했다
-/// (링크 클릭 등). `webview.set_url`(plugin→host)의 반대 방향 — "원격 http(s) 차단"
-/// 판정과는 독립적으로, 차단 여부와 무관하게 모든 navigation 시도(로컬 파일 링크
-/// 포함)마다 발사되는 fire-and-forget 통지다. 정책 판단(차단 여부)은 host 가 하고,
-/// 그 결과로 열지 말지는 plugin 이 이 URL 을 보고 스스로 라우팅한다(예: 로컬 파일
-/// 링크는 `file_handler.dispatch`로, 외부 URL 은 OS open 으로). params 에
-/// [`WebviewNavigationAttemptParams`]. plugin 은 응답하지 않는다(host 가 무시).
+/// 호스트가 WebView의 이동 시도 URL을 플러그인에 알린다.
+/// 원격 콘텐츠 차단 정책과는 별개이며 플러그인은 URL을 보고 파일 열기나
+/// 외부 앱 열기를 요청할 수 있다. Params는 WebviewNavigationAttemptParams다.
 pub const METHOD_WEBVIEW_NAVIGATION_ATTEMPT: &str = "webview.navigation_attempt";
 /// host → extension plugin: extension의 pre/post hook 호출.
 /// params에 [`ExtensionHookInvokeParams`]. plugin은 mode에 따라 transform/filter/observe
@@ -90,16 +86,8 @@ pub struct SurfaceResult {
     pub snapshot: Option<serde_json::Value>,
 }
 
-// ── egui-mesh surface: set_context (host → plugin) wire types ──
-//
-// epaint 의 `serde` feature 가 꺼져 있어 egui `RawInput` 을 그대로 직렬화할 수 없다.
-// 따라서 plugin 프로세스가 egui 입력을 재구성하는 데 필요한 필드만 추린 POD-friendly
-// 미러 타입을 둔다. plugin SDK(A1-S4)가 [`RawInputWire`] 를 `egui::RawInput` 으로 매핑한다.
-// 이 타입들은 egui 의존이 없어 default(=egui-mesh feature off) 빌드에도 포함된다.
-//
-// identity 경계(원칙 1·3): set_context 는 host 가 받은 *실제* 사용자 입력을 surface
-// 영역으로 forward 하는 경로만 담는다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는
-// 진입로는 만들지 않는다 (release 에 없음; debug 주입이 필요하면 debug 격리).
+// egui 입력을 프로세스 사이에 전달하기 위한 타입. 기본 빌드에서도 사용할 수 있다.
+// 호스트가 받은 사용자 입력을 전달하며, release API로 입력을 합성하지 않는다.
 
 /// `surface.set_context` params — egui-mesh surface 의 렌더 컨텍스트.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -114,27 +102,18 @@ pub struct SurfaceSetContextParams {
     /// 이번 frame 의 사용자 입력.
     #[serde(default)]
     pub raw_input: RawInputWire,
-    /// host 가 resolve 한 현재 Theme 스냅샷 (egui-mesh plugin 의 Theme parity).
-    /// `None` 이면 plugin 은 직전 값을 유지하거나 자체 기본값으로 그린다. host 는
-    /// 크기/ppp/입력 변경뿐 아니라 **테마 변경 시에도** 이 값을 갱신해 재forward 한다.
-    /// generic 필드 — 모든 egui-mesh surface(markdown/git-viewer 등)가 공유한다.
+    /// 호스트의 현재 테마. None이면 플러그인은 이전 테마나 자체 기본값을 사용한다.
     #[serde(default)]
     pub theme: Option<ThemeWire>,
-    /// host 의 텍스처 상태 복구 요청. true 면 plugin SDK 는 출력 dedup 을 우회하고,
-    /// 보유한 **전체 텍스처 상태**(font atlas 포함 임의 Managed 텍스처 전부)를 full
-    /// image delta 로 재구성해 동봉한 frame 을 강제 송신한다(`full_textures = true` 로
-    /// 마킹). host 는 자기 텍스처 상태가 불완전할 때(신규 Renderer / frame_seq 체인
-    /// 단절)만 이 플래그를 세운다.
+    /// 텍스처 복구 요청. SDK는 출력 중복 생략을 건너뛰고 보관 중인 전체
+    /// 텍스처를 full_textures 프레임에 넣어 보낸다.
     #[serde(default)]
     pub need_full_textures: bool,
 }
 
-/// host 가 resolve 한 Theme 을 프로세스 경계 너머로 운반하는 POD 스냅샷.
-///
-/// egui 의존 없이 직렬화 가능한 색 집합([`ThemeColors`](tasty_type_appearance::theme::ThemeColors))
-/// + `is_light` + host UI zoom 만 담는다. plugin 은 이를
-/// [`Theme::with_colors_and_zoom`](tasty_type_appearance::theme::Theme::with_colors_and_zoom)
-/// 로 풀어 host 와 동일한 Theme 인스턴스를 재구성한다 (sizing 은 zoom 으로 재도출).
+/// 프로세스 사이에 전달하는 테마 스냅샷. 색 집합, is_light와 zoom을 담는다.
+/// 플러그인은 Theme::with_colors_and_zoom으로 길이 값을 다시 계산한다.
+/// reduced_motion 같은 다른 설정은 이 구조에 포함되지 않는다.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct ThemeWire {
     /// resolved (사용자 override 반영) 색 집합. zoom 독립적.
@@ -145,8 +124,7 @@ pub struct ThemeWire {
     pub ui_zoom: f32,
 }
 
-/// egui `RawInput` 의 직렬화 가능한 최소 미러. markdown 검증엔 pointer+scroll+key 로 충분
-/// (research-a1 §2-3). IME/터치 등 부족분은 후속 단계에서 확장.
+/// 플러그인에 전달할 egui 입력. IME 조합 이벤트도 events에 포함된다.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct RawInputWire {
     /// frame 시각(초). egui 애니메이션/더블클릭 타이밍용. `None` 이면 plugin 이 자체 시계 사용.
@@ -221,12 +199,8 @@ pub enum RawInputEventWire {
     /// 끝난 최종 문자열만 나르지만, `Ime` 는 조합 중 preedit 문자열을 라이브로 전달해
     /// plugin 의 `TextEdit` 이 조합 중간 상태를 인라인 표시하게 한다.
     Ime { event: ImeWire },
-    /// 복사 단축키(host keybinding `copy` 매칭). 물리 키가 아니라 host 가 그 키를
-    /// 의미론적으로 해석한 결과 — egui-winit 이 플랫폼 Ctrl+C 를 `Event::Copy` 로
-    /// 변환해 넘기는 것과 동일한 host/platform-integration 역할이다. plugin SDK 가
-    /// `egui::Event::Copy` 로 매핑하면, plugin 자신의 텍스트 선택(selectable label /
-    /// `TextEdit`)이 있을 때 egui 가 `platform_output.commands` 에 `OutputCommand::CopyText`
-    /// 를 채운다(옛 `PlatformOutput::copied_text` 필드는 deprecated).
+    /// 호스트 단축키 설정에서 해석한 복사 요청. SDK는 egui::Event::Copy로
+    /// 변환하고 egui가 선택 내용에 따라 CopyText 출력을 만든다.
     Copy,
 }
 
@@ -246,16 +220,9 @@ pub enum ImeWire {
     Disabled,
 }
 
-/// egui [`IMEOutput`] 미러 — plugin 프로세스의 egui 가 매 pass 계산하는 "IME 를 원하는
-/// 위젯이 지금 어디에 있는가". [`PluginEvent::PaintFrame`] · [`PluginEvent::PopupPaintFrame`]
-/// 에 실려 **plugin → host** 방향으로 돌아온다(입력 와이어의 역방향).
-///
-/// 좌표는 그 mesh 콘텐츠 영역 로컬 논리 포인트(좌상단 0,0) — 입력 와이어의 포인터 좌표와
-/// 같은 계다. host 가 콘텐츠 영역 origin 을 더해 창 좌표로 바꾼 뒤 winit
-/// `set_ime_cursor_area` 로 OS 에 알린다. OS IME 후보창은 plugin 프로세스가 그리는 mesh
-/// 밖(OS 소유 창)이라 plugin 이 직접 위치를 정할 수 없고, host 만 winit 창을 쥐고 있다.
-///
-/// [`IMEOutput`]: https://docs.rs/egui/0.31/egui/output/struct.IMEOutput.html
+/// 플러그인의 egui가 계산한 IME 입력 위젯과 캐럿 위치.
+/// 좌표는 mesh 콘텐츠 영역 안의 논리 포인트다. 호스트가 창 좌표로 바꿔
+/// OS의 IME 후보창 위치를 지정한다.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 pub struct ImeCursorWire {
     /// 편집 위젯(`TextEdit`) 전체가 차지하는 사각형.
@@ -346,21 +313,15 @@ pub struct ExtensionHookResult {
 
 // ── Shared buffer 메서드 (plugin → host via PluginEvent::IpcCall) ──
 //
-// plugin이 OS 공유 메모리 영역을 만들고 dirty rect를 알릴 때 사용한다. 실제 핸들
-// (fd/HANDLE) 전송은 *보조 채널*을 통해 이루어지고, 이 메인 채널 메서드는 id/size/
-// rect 같은 메타데이터만 운반한다. 보조 채널 wire 포맷은 아래 [`HandleChannelMessage`]
-// 절이 정의한다.
-//
-// 권한: manifest의 `[memory]` 섹션에 `max_shared_buffer_bytes`가 선언된 plugin만
-// 호출 가능. 미선언 plugin이 호출하면 호스트가 -32001 PermissionDenied 응답.
+// 공유 메모리 생성은 호스트에 요청하며 핸들은 보조 채널로 받는다.
+// 생성 크기는 현재 호스트의 create_shared_buffer_for에서 제한한다.
 
 /// plugin → host: 새 공유 메모리 영역 생성 요청.
 pub const METHOD_HOST_SHARED_BUFFER_CREATE: &str = "host.shared_buffer.create";
 /// plugin → host: 변경된 영역(dirty rect) 통지.
 pub const METHOD_HOST_SHARED_BUFFER_DIRTY: &str = "host.shared_buffer.dirty";
 
-/// 호스트가 발급한 shared buffer 식별자. plugin 인스턴스마다 단조 증가.
-/// u64를 옵셔널 직렬화 호환을 위해 직접 직렬화.
+/// 호스트 관리자가 발급하는 공유 버퍼 ID. JSON에는 u64로 직렬화한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct SharedBufferId(pub u64);
@@ -380,7 +341,7 @@ pub struct PixelRect {
 /// `host.shared_buffer.create` params.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SharedBufferCreateParams {
-    /// 요청 영역 크기 (바이트). manifest의 max_shared_buffer_bytes를 초과하면 거부.
+    /// 요청 영역 크기(바이트). 호스트의 크기 제한을 적용한다.
     pub size: u64,
 }
 
@@ -410,21 +371,10 @@ pub struct PluginRequest {
     pub method: String,
     pub params: serde_json::Value,
     pub id: u64,
-    /// 이 요청 **직전까지** 호스트가 같은 plugin 에게 보내려다 큐 포화로 **버린**
-    /// 요청 수. 0 이면 버린 것이 없고, 그때는 와이어에 키 자체가 안 실린다.
-    ///
-    /// 호스트 → plugin 큐는 유한하고 포화 시 대기가 아니라 거절이다(그 방향에서
-    /// 기다리면 호스트 프레임이 선다 — docs/architecture/ipc-server.md#플러그인-채널의-상한). 그래서 plugin 은 자기에게 오던
-    /// 요청이 소리 없이 사라지는 것을 원리적으로 알 수 없었다. 이 필드가 그것을
-    /// 알린다.
-    ///
-    /// **별도 통지 메시지가 아닌 이유**: 포화를 알리는 메시지도 같은 큐를 써야 하고,
-    /// 그 큐가 찼기 때문에 통지가 생긴 것이라 자기모순이다. 대신 **다음으로 실제
-    /// 큐에 들어가는 요청**에 얹는다 — 큐에 자리가 났다는 것은 plugin 이 하나라도
-    /// 소비했다는 뜻이므로, 살아서 밀리는 plugin 은 반드시 이 값을 본다. 전혀
-    /// 소비하지 않는 plugin 은 ping 도 못 받아 healthcheck 가 거둔다.
-    ///
-    /// 구버전 호스트가 보낸 줄에는 이 키가 없고 `0` 으로 읽힌다.
+    /// 이 요청이 큐에 들어가기 전까지 포화로 버린 요청 수. 0이면 필드를 생략한다.
+    /// 포화된 큐에 별도 알림을 넣는 대신 다음으로 큐에 들어가는 요청에 싣는다.
+    /// 이후 요청 전달도 실패하면 플러그인이 이 값을 받는다고 보장할 수는 없다.
+    /// 필드가 없는 구버전 요청은 0으로 읽는다.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub dropped_requests: u64,
 }
@@ -435,12 +385,7 @@ fn is_zero_u64(v: &u64) -> bool {
 }
 
 impl PluginRequest {
-    /// 호스트 본문이 요청을 만드는 유일한 입구.
-    ///
-    /// [`PluginRequest::dropped_requests`] 는 **송신 지점**이 채운다(호스트의
-    /// `PluginProcess::try_send_request`). 본문이 그 값을 알 방법이 없고 알 필요도
-    /// 없으므로, 리터럴로 짓는 대신 이 생성자로 짓는다 — 필드가 하나 더 늘어도
-    /// 호출부가 안 움직이고, 새 호출부가 그 필드의 존재를 몰라도 틀리지 않는다.
+    /// 요청을 만든다. dropped_requests는 0으로 두고 송신 시점에 채운다.
     pub fn new(method: impl Into<String>, params: serde_json::Value, id: u64) -> Self {
         Self {
             method: method.into(),
@@ -471,30 +416,18 @@ pub struct PluginResponse {
 pub enum PluginEvent {
     /// 매니페스트 검증 후 호스트가 받는 첫 메시지.
     Hello { plugin_id: String, version: String },
-    /// surface invalidated — 호스트가 다음 프레임에 redraw (단계 06).
+    /// 호스트에 surface의 다시 그리기를 요청한다.
     SurfaceInvalidated { surface_id: u32 },
-    /// egui-mesh popup invalidated — [`PluginEvent::SurfaceInvalidated`] 의 popup
-    /// 대응. plugin 이 out-of-band 로(예: egui `viewport_output` 의 self-repaint
-    /// 요청) 재-forward 를 요청할 때 쓴다. host 는 다음 tick 에 해당
-    /// instance 의 `popup.set_context` 를 무입력으로 1회 재forward 한다.
+    /// 호스트에 popup의 입력 없는 렌더링 갱신을 요청한다.
     PopupInvalidated { instance_id: u64 },
-    /// egui-mesh banner invalidated — [`PluginEvent::PopupInvalidated`] 의 banner
-    /// 대응. 같은 이유로 존재한다: banner 도 `EguiMeshCore` 를 공유하므로 egui 가
-    /// `viewport_output` 으로 다음 pass 를 요청할 수 있고(hover fade·스크롤 스무딩·
-    /// 스피너), 그 요청을 여기로 올리지 않으면 다음 geom/입력/theme 변경까지 화면이
-    /// 멈춘다. host 는 다음 tick 에 해당 instance 의 `banner.set_context` 를 무입력으로
-    /// 1회 재forward 한다.
+    /// 호스트에 banner의 입력 없는 렌더링 갱신을 요청한다.
     BannerInvalidated { instance_id: u64 },
-    /// egui-mesh surface: plugin 이 자기 프로세스에서 tessellate→POD 인코드(A1-S2,
-    /// [`crate::mesh_wire`])한 mesh 바이트를 shared buffer 에 commit 했음을 알린다.
-    /// mesh 본체는 buffer 안에 있고(`decode_paint` 로 복원), 이 알림은 어떤 buffer 의
-    /// 어떤 generation 인지 메타만 운반한다 — Canvas dirty 알림과 동급의 경량 알림이다.
-    /// 정적 화면은 invalidate 시에만 보내므로, host 는 generation 비교로 재합성을 건너뛴다.
+    /// 공유 버퍼에 쓴 surface mesh의 버퍼 ID와 세대 등을 알린다.
     PaintFrame {
         surface_id: u32,
         buffer_id: SharedBufferId,
-        /// plugin 이 commit 한 shared buffer footer generation. host 는 footer 를
-        /// Acquire-load 해 일치/최신 여부를 검증한다 (tear 방지).
+        /// 공유 버퍼 footer의 세대. 알림과 버퍼의 세대를 비교하는 값이며,
+        /// 일치만으로 payload 읽기 중 다음 쓰기까지 배제하지는 못한다.
         generation: u64,
         /// 이 surface 렌더 코어가 지금까지 **송신한** frame 의 단조 증가 시퀀스(1부터).
         /// footer generation 과 달리 shared buffer 재생성(성장)과 무관하게 이어진다.
@@ -508,13 +441,8 @@ pub enum PluginEvent {
         /// true 면 host 는 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
         #[serde(default)]
         full_textures: bool,
-        /// `mesh_wire::encode_paint` 가 실제로 만든 바이트 길이. shared buffer 는
-        /// `size.next_power_of_two()` 로 할당돼 뒤쪽에 이전 frame 의 잔여(trailing
-        /// capacity) 바이트가 남을 수 있다 — 로컬(같은 프로세스) GPU 디코드는
-        /// self-terminating 파싱이라 이를 무시하지만, attach mesh mirror 가 buffer
-        /// 를 네트워크로 그대로 내보낼 때는 정확한 payload 경계가 필요하다(attach
-        /// mesh mirror가 소비). 0 이면 구버전 plugin — attach 쪽은 버퍼 전체
-        /// capacity 를 fallback 으로 쓴다.
+        /// 인코딩한 mesh 바이트 길이. 버퍼 할당 크기와 구분한다.
+        /// Attach 전송은 이 길이를 사용하며 0이면 버퍼 전체 크기를 사용한다.
         #[serde(default)]
         byte_len: u32,
         /// 이 frame 을 그린 pass 의 egui `PlatformOutput::ime` — IME 를 원하는 위젯이
@@ -530,7 +458,7 @@ pub enum PluginEvent {
     PopupPaintFrame {
         instance_id: u64,
         buffer_id: SharedBufferId,
-        /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
+        /// 공유 버퍼 footer에 기록한 세대.
         generation: u64,
         /// 송신 frame 단조 시퀀스 — [`PluginEvent::PaintFrame::frame_seq`] 와 동일 의미.
         #[serde(default)]
@@ -549,7 +477,7 @@ pub enum PluginEvent {
     BannerPaintFrame {
         instance_id: u64,
         buffer_id: SharedBufferId,
-        /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
+        /// 공유 버퍼 footer에 기록한 세대.
         generation: u64,
         /// 송신 frame 단조 시퀀스 — [`PluginEvent::PaintFrame::frame_seq`] 와 동일 의미.
         #[serde(default)]
@@ -558,7 +486,7 @@ pub enum PluginEvent {
         #[serde(default)]
         full_textures: bool,
     },
-    /// host action 트리거 (단계 06).
+    /// 호스트 동작을 요청한다.
     NotifyHost {
         surface_id: u32,
         event: String,
@@ -614,11 +542,7 @@ pub struct IpcCallResult {
     pub result: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<String>,
-    /// 호스트가 준 JSON-RPC 오류 코드. 없으면 SDK 가 server error(-32000)로 본다.
-    ///
-    /// **반대 방향([`PluginResponse::error_code`])에는 처음부터 있었다.** 이쪽만 없어서
-    /// 호스트가 "인자를 고쳐라"(`-32602`)로 거절한 것이 plugin 을 거쳐 나오면
-    /// "서버 사정"(`-32000`)이 됐다 — 호출자가 다음에 할 일이 반대로 바뀐다.
+    /// 호스트가 반환한 JSON-RPC 오류 코드. 없으면 SDK는 -32000으로 처리한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_code: Option<i32>,
 }
@@ -630,15 +554,9 @@ pub struct AuthMessage {
     pub token: String,
 }
 
-/// 호스트 → plugin 인증 단계 전용 ack. plugin이 [`AuthMessage`]를 보낸 뒤
-/// 메인 메시지 루프에 진입하기 전, **단 한 번** 같은 NDJSON 채널로 수신한다.
-///
-/// `ok=false`이면 plugin SDK가 [`crate::PluginError::HandshakeRejected`](
-/// 같은 이름의 SDK variant)로 즉시 실패한다. 호스트 측은
-/// `crates/tasty-host-plugin/src/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
-///
-/// envelope: `{"auth_ack": { "ok": true }}` 또는 `{"auth_ack": { "ok": false, "reason": "..." }}`.
-/// 메인 루프의 `PluginRequest`와 다른 envelope를 사용해 파서 분리.
+/// 인증 메시지에 대한 호스트 응답. 메인 요청 루프 전에 같은 NDJSON 채널로 받는다.
+/// ok가 false이면 SDK는 HandshakeRejected 오류를 반환한다.
+/// 일반 요청과 구분하기 위해 auth_ack 키로 감싼다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthAck {
     pub ok: bool,
@@ -654,22 +572,12 @@ pub struct AuthAckEnvelope {
 
 // ── 보조 핸들 채널 ──
 //
-// 메인 TCP 채널은 fd/HANDLE을 운반할 수 없으므로 보조 채널을 별도로 둔다. Unix는
-// AF_UNIX (SCM_RIGHTS 가능), Windows는 Named Pipe (DuplicateHandle 가능). 이 채널의
-// wire 포맷은 NDJSON이며, NDJSON 한 줄 직후 OS-네이티브 ancillary data로
-// 핸들을 함께 전송한다.
-//
-// 인증 단계는 메인 채널의 [`AuthMessage`] / [`AuthAckEnvelope`]를 그대로 재사용한다 —
-// endpoint가 다르므로 채널 라우팅 혼선 위험이 없고, 토큰은 동일한 plugin spawn 토큰이다.
+// 메인 TCP 채널과 별도로 공유 메모리 핸들을 전달한다. Unix는 AF_UNIX와
+// SCM_RIGHTS, Windows는 Named Pipe와 DuplicateHandle을 사용한다.
+// 인증 형식과 토큰은 메인 채널과 같다.
 
-/// 보조 채널 위에서 양쪽이 주고받는 NDJSON 메시지.
-///
-/// 02b에서는 ping/pong만 정의됐고, 02c에서 `HandleAttach`(host → plugin: 새 buffer
-/// 핸들의 메타)와 `Dirty`(plugin → host: dirty rect 알림)가 추가됐다.
-///
-/// `HandleAttach`는 NDJSON 한 줄 *직후* OS-네이티브 ancillary data(SCM_RIGHTS / 직렬화된
-/// HANDLE)를 함께 전송한다 — 같은 sendmsg/write 호출 안에 묶여 전달되어야 plugin이 핸들과
-/// 메타를 일관되게 짝지을 수 있다.
+/// 보조 채널의 NDJSON 메시지. Unix에서는 HandleAttach 메시지와 fd를
+/// 같은 sendmsg로 보내고, Windows에서는 복제된 HANDLE 값을 메시지에 넣는다.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HandleChannelMessage {
@@ -709,11 +617,7 @@ pub enum HandleChannelMessage {
 
 // ── Popup wire types ──
 
-/// `popup.open` params — 호스트가 plugin에게 popup 인스턴스를 열도록 요청.
-///
-/// `instance_id`는 호스트가 발급한 인스턴스 식별자로, 같은 popup_id의 여러
-/// 인스턴스를 구분하기 위한 키. plugin은 응답으로 초기 트리를 [`PopupOpenResult`]에
-/// 담아 돌려준다.
+/// 팝업 열기 요청. 호스트가 발급한 instance_id로 같은 팝업의 여러 인스턴스를 구분한다.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PopupOpenParams {
     pub popup_id: String,
@@ -724,8 +628,7 @@ pub struct PopupOpenParams {
     pub context: serde_json::Value,
 }
 
-/// `popup.open` 응답. egui-mesh popup 은 콘텐츠를 mesh 채널로 그리므로 별도
-/// 콘텐츠 필드가 없다 (빈 결과 — 향후 확장 여지용 struct 존치).
+/// 팝업 열기 응답. 콘텐츠는 mesh로 전달하므로 이 결과에는 담지 않는다.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct PopupOpenResult {}
 
@@ -799,11 +702,7 @@ pub struct BannerOpenParams {
     pub context: serde_json::Value,
 }
 
-/// `banner.open` 응답.
-///
-/// egui-mesh banner 는 tree 가 아니라 mesh 채널([`METHOD_BANNER_SET_CONTEXT`])로
-/// 콘텐츠를 그리므로 초기 tree 를 담지 않는다 (빈 결과). popup 의 [`PopupOpenResult`] 와
-/// 평행하되, banner 는 UiTree 렌더링을 (아직) 지원하지 않아 필드가 없다.
+/// 배너 열기 응답. 콘텐츠는 mesh로 전달하므로 이 결과에는 담지 않는다.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct BannerOpenResult {}
 
@@ -850,7 +749,7 @@ pub struct BannerSetContextParams {
     pub need_full_textures: bool,
 }
 
-/// banner 인스턴스가 닫힌 이유. popup 과 달리 outside-click/Esc 가 없다(non-modal, D3).
+/// 배너를 닫은 사유. 배너는 바깥 클릭이나 Esc로 닫지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BannerCloseReason {
