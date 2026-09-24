@@ -1,31 +1,9 @@
-//! `plugin_only` 표식과 **plugin host-call 진입부의 인터셉트**가 같은 집합인가.
+//! plugin_only 표식과 플러그인 host-call 처리에서 비교하는 메서드 이름을 대조한다.
+//! 외부 호출을 허용하지 않는 메서드를 명시해 존재하지 않는 이름과 구별하기 위한 검사다(ADR-0004).
 //!
-//! 표(`METHOD_TABLE`)는 원래 caller 게이트만 담았다 — `plugin(&[…])` 은 "plugin 이
-//! 부를 수 있다", `local_only()` 는 "plugin 은 못 부른다". 그래서 **plugin 만** 부를 수
-//! 있는 메서드를 적을 자리가 없었고, 그런 메서드도 `plugin(&[…])` 으로 적혀 외부
-//! 호출자에게는 `-32601`("그런 메서드 없다")로 답했다. 이름은 맞고 표에도 있는데
-//! 없다고 답한 것이라, 플랫폼 축에서 같은 거짓을 고친
-//! [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md)
-//! 와 같은 형태다.
-//!
-//! 실측(2026-09-05, gui debug 인스턴스에 plugin 설치된 세계에서 외부 프로브):
-//! `plugin_callable = true` 인 **231** 개 중 외부 호출이 `-32601` 로 끝나는 것은 **4** 개
-//! (`banner.open` · `banner.close` · `popup.close` · `host.shared_buffer.create`).
-//! 나머지는 `-32602`(188) · 실행 성공(37) · `-32000`(2, plugin 으로 forward 된 뒤의 답)
-//! 이었다. 즉 작은 축이고, 표 설계 문제가 아니라 **말할 수단이 없던 한 칸**이다.
-//!
-//! ## 왜 텍스트로 세지 않고 이 형태인가
-//!
-//! 같은 집합을 "외부 라우터 소스에 이름이 안 보이는 것" 으로 세면 **실제보다 넓게
-//! 잡힌다** — `window.*` · `view.*` · `ui.screenshot` 처럼 match 팔이 아니라 명부로
-//! 라우팅되는 것들이 섞여 들어오기 때문이다(2026-09-05 실측으로 확인한 성질이다).
-//! 몇 배인지는 적지 않는다 — 두 항이 다 커밋마다 바뀌는 값이라 그 비도 함께 낡는다. 그래서 이 가드는
-//! "외부에 없다" 를 텍스트로 재지 않는다. 대신 **plugin 진입부가 실제로 인터셉트하는
-//! 이름**을 뽑아 표식과 양방향 대조한다 — 그쪽은 `call.method == …` 비교라 형태가 좁다.
-//!
-//! 인터셉트 하나는 리터럴이 아니라 상수(`METHOD_HOST_SHARED_BUFFER_CREATE`)로 적혀
-//! 있어서, 리터럴만 긁는 추출기는 그것을 **누락으로 오인**한다. 상수를 값으로 풀고,
-//! 그 해석이 살아 있는지를 [`the_constant_resolution_is_alive`] 가 못 박는다.
+//! GUI·헤드리스 파일에서 call.method == 형태의 이름을 합쳐 비교한다. 두 조합에 각각 존재하는지나
+//! 실제 응답은 검증하지 않는다. 표에 없는 비교 이름도 이 대조에서는 제외한다.
+//! 프로토콜 상수로 비교한 이름은 정의에서 값을 읽고, 상수 해석을 별도 시험한다.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -34,20 +12,17 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 
 use super::{mask_non_code, repo_root};
 
-/// plugin host-call 진입부 — 두 조합 각각의 자리.
 const DISPATCH_SOURCES: &[&str] = &[
     "src/app/dispatch/plugin_ipc.rs",
     "src/boot/headless_plugins.rs",
 ];
 
-/// 인터셉트가 상수로 적힌 자리를 풀기 위해 읽는 상수 정의 소스.
 const PROTOCOL_CONSTS: &str = "crates/tasty-plugin-protocol/src/protocol.rs";
 
-/// 호스트 메서드 수의 하한 — **연기 검사**다. 표가 비면 아래 대조는 빈 집합끼리라
-/// 그냥 통과한다. 값의 근거: 2026-09-05 실측 276 건.
+/// 2026-09-05 호스트 메서드 276개를 측정한 뒤 빈 표를 찾도록 둔 하한이다.
 const MIN_HOST_METHODS: usize = 200;
 
-/// `plugin_only` 표식 수의 하한. 값의 근거: 2026-09-05 실행 census 4 건.
+/// 2026-09-05 플러그인 전용 메서드 4개를 실행 확인한 뒤 둔 하한이다.
 const MIN_PLUGIN_ONLY: usize = 4;
 
 fn read(rel: &str) -> String {
@@ -57,7 +32,6 @@ fn read(rel: &str) -> String {
         .replace("\r\n", "\n")
 }
 
-/// `pub const NAME: &str = "value";` 를 (NAME → value) 로 모은다.
 fn string_consts(src: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for line in src.lines() {
@@ -80,10 +54,7 @@ fn string_consts(src: &str) -> Vec<(String, String)> {
     out
 }
 
-/// `call.method == <리터럴 | 상수경로>` 에서 비교 대상 메서드 이름을 뽑는다.
-///
-/// 원문에서 리터럴을 읽어야 하므로 마스킹본은 **비교의 존재 판정에만** 쓴다 —
-/// 주석 안의 같은 문장에 속지 않기 위해서다.
+/// 코드에서 call.method ==를 찾고 원문의 리터럴·상수 값을 읽는다. 한 줄 비교만 지원한다.
 fn intercepted(src: &str, consts: &[(String, String)]) -> BTreeSet<String> {
     let masked = mask_non_code(src);
     let mut out = BTreeSet::new();
@@ -99,7 +70,6 @@ fn intercepted(src: &str, consts: &[(String, String)]) -> BTreeSet<String> {
             out.insert(lit.to_string());
             continue;
         }
-        // 상수 경로 — 마지막 세그먼트로 해석한다.
         let ident: String = rhs
             .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':'))
             .next()
@@ -132,20 +102,17 @@ fn marked_plugin_only() -> BTreeSet<String> {
         .collect()
 }
 
-/// 표식과 인터셉트가 **양방향으로** 같은 집합이다.
 #[test]
 fn the_plugin_only_mark_and_the_intercepts_are_the_same_set() {
     assert!(
         METHOD_TABLE.len() >= MIN_HOST_METHODS,
-        "호스트 메서드가 {} 건뿐이다(하한 {MIN_HOST_METHODS}). 표가 비면 아래 대조는 \
-         빈 집합끼리라 그냥 통과한다",
+        "호스트 메서드가 {}개로 하한 {MIN_HOST_METHODS} 미만이다. 표 수집을 확인한다.",
         METHOD_TABLE.len()
     );
     let marked = marked_plugin_only();
     assert!(
         marked.len() >= MIN_PLUGIN_ONLY,
-        "`plugin_only` 표식이 {} 개뿐이다(하한 {MIN_PLUGIN_ONLY}, 2026-09-05 실행 census 4). \
-         표식을 지웠다면 그 메서드의 외부 응답이 다시 `-32601` 로 돌아간 것이다",
+        "plugin_only 메서드가 {}개로 하한 {MIN_PLUGIN_ONLY} 미만이다(2026-09-05 측정 4개). 실제 제공 범위와 표식을 확인한다.",
         marked.len()
     );
     let dispatched = dispatched_names();
@@ -157,22 +124,16 @@ fn the_plugin_only_mark_and_the_intercepts_are_the_same_set() {
         .collect();
     assert!(
         unmarked.is_empty(),
-        "plugin 진입부가 인터셉트하는데 표에 `plugin_only` 가 아니다 — 외부 호출자가 \
-         `-32601`(그런 메서드 없다)을 받는다. 표식을 붙여라: {unmarked:?}"
+        "플러그인 처리에 있고 메서드 표에도 있으나 plugin_only 표식이 없다. 외부 호출 허용 여부를 확인하고 표식을 맞춘다: {unmarked:?}"
     );
 
     let undispatched: Vec<&String> = marked.iter().filter(|n| !dispatched.contains(*n)).collect();
     assert!(
         undispatched.is_empty(),
-        "표는 `plugin_only` 라는데 plugin 진입부에 인터셉트가 없다 — plugin 도 못 부르면 \
-         그 메서드는 아무도 못 부른다: {undispatched:?}"
+        "plugin_only 메서드의 처리 이름을 두 플러그인 진입 파일에서 찾지 못했다. 실제 처리 경로와 추출 형식을 확인한다: {undispatched:?}"
     );
 }
 
-/// 상수로 적힌 인터셉트를 값으로 풀고 있다.
-///
-/// 이 해석이 죽으면 위 대조는 `host.shared_buffer.create` 를 "표식만 있고 인터셉트
-/// 없음" 으로 잘못 신고한다 — 그 형태가 **가드를 못 믿게 만드는 오탐**이다.
 #[test]
 fn the_constant_resolution_is_alive() {
     let consts = string_consts(&read(PROTOCOL_CONSTS));
@@ -189,7 +150,6 @@ fn the_constant_resolution_is_alive() {
     );
 }
 
-/// 추출기가 리터럴 비교도 읽고, 주석 안의 같은 문장에는 안 속는다.
 #[test]
 fn the_extractor_reads_literals_and_skips_comments() {
     let src = "\

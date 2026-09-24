@@ -1,46 +1,20 @@
-//! `target_os` 로 게이트된 dispatch arm 에는 **상보 arm 이 있다.**
+//! 플랫폼 조건이 있는 IPC 분기에는 반대 조건의 분기도 있어야 한다.
+//! CLI·메서드 표에 있는 기능을 지원하지 않는 플랫폼에서는 메서드 없음 대신 미지원 이유를 응답한다(ADR-0004).
 //!
-//! IPC 메서드는 세 층에 걸쳐 있다 — 등재(`METHOD_TABLE`/`DEBUG_METHODS`), CLI
-//! 서브커맨드, 그리고 dispatch arm. 이 저장소에서 앞의 두 층은 **플랫폼 균일하다**
-//! (2026-09-05 실측: `crates/tasty-cli/src/` 와 `crates/tasty-ipc/src/method_meta.rs`
-//! 에 `target_os` 게이트 0 건). 그래서 플랫폼 차이는 오직 dispatch 층에만 있다.
-//!
-//! 그 층에서 arm 을 `#[cfg(all(target_os = "…", …))]` 하나로만 두면, 다른 플랫폼에서는
-//! arm 자체가 사라져 `match` 의 `_` 로 떨어진다. 그 답이 `-32601`("그런 메서드 없음")
-//! 이다 — **거짓이다.** 메서드는 있다. 표에 있고 CLI 도 내놓는다(`tasty debug raw-key`
-//! 가 도움말에 뜬다). 이 플랫폼이 못 할 뿐이다. 호출자 입장에서 "오타" 와 "여기선
-//! 안 됨" 은 고칠 방법이 다르므로, 그 둘을 같은 코드로 답하면 안 된다.
-//!
-//! 실측(2026-09-05, Linux debug 빌드 실행 census):
-//!
-//! | 상보 arm | `surface.raw_key` 응답 |
-//! |----------|------------------------|
-//! | 없음 | `-32601 Method not found: surface.raw_key` |
-//! | 있음 | `-32015 input reproduction over the OS event stream is macOS-only …` |
-//!
-//! 근거와 대안은 [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
-//!
-//! ## 왜 컴파일러가 아니라 이 가드인가
-//!
-//! 빠진 상보 arm 은 **어느 플랫폼에서도 컴파일 오류가 아니다.** macOS 에서는 arm 이
-//! 있으니 정상이고, Linux/Windows 에서는 없는 채로 `_` 가 받으니 역시 정상이다.
-//! 게다가 이 저장소에서 macOS 조합은 로컬에서 빌드조차 되지 않는다(실측: 크로스 체크가
-//! `libsqlite3-sys` 에서 멈춘다). 짝이 맞는지를 보는 곳은 소스 텍스트뿐이다.
+//! 소스의 조건 문자열에서 공백을 제거한 뒤 cond와 not(cond)를 비교한다.
+//! 동등한 다른 논리식을 모두 인정하거나 응답의 오류 코드·실제 도달 여부를 검증하는 것은 아니다.
+//! 플랫폼 조건이 없는 다른 분기가 있어도 정확한 반대 조건의 짝을 요구한다.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::repo_root;
 
-/// dispatch arm 이 사는 파일. 플랫폼 게이트가 새 파일로 번지면 여기 더한다.
 const DISPATCH_SOURCES: &[&str] = &["src/adapters/ipc/handler.rs"];
 
-/// `target_os` 가 걸린 arm 수의 하한 — **연기 검사**다. 0 이면 아래 짝 판정은 빈
-/// 집합이라 그냥 통과한다. 값의 근거: 2026-09-05 실측 2 건
-/// (`surface.switch_input_source` · `surface.raw_key`).
+/// 2026-09-05 플랫폼 조건의 메서드 2개를 측정했다. 빈 수집을 찾기 위한 하한이다.
 const MIN_PLATFORM_ARMS: usize = 2;
 
-/// arm 패턴 자리로 볼 수 있는 최대 길이. `#[cfg(...)]` 뒤가 arm 이 아니라 `const`·`use`
-/// 같은 항목이면 다음 `=>` 까지가 멀거나 `;`·`{` 를 품는다 — 그것으로 가른다.
+/// cfg 뒤의 패턴 길이와 ;·{를 검사해 const·use 선언을 dispatch 분기로 오인하지 않도록 한다.
 const MAX_ARM_PATTERN: usize = 200;
 
 fn read(rel: &str) -> String {
@@ -49,12 +23,10 @@ fn read(rel: &str) -> String {
         .replace("\r\n", "\n")
 }
 
-/// 공백을 전부 지운 cfg 조건 — `not(all(a, b))` 와 `not(all(a,b))` 를 같게 본다.
 fn normalize(cond: &str) -> String {
     cond.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// `#[cfg(` 뒤의 괄호 균형을 세어 조건 문자열을 잘라낸다.
 fn cfg_condition(src: &str, open_paren: usize) -> Option<(String, usize)> {
     let bytes = src.as_bytes();
     let mut depth = 0usize;
@@ -76,7 +48,6 @@ fn cfg_condition(src: &str, open_paren: usize) -> Option<(String, usize)> {
     None
 }
 
-/// 문자열 리터럴만 뽑는다 — arm 패턴의 메서드 이름이다.
 fn literals(seg: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = seg;
@@ -89,20 +60,12 @@ fn literals(seg: &str) -> BTreeSet<String> {
     out
 }
 
-/// 한 파일에서 읽어낸 arm 지도.
 pub(super) struct Arms {
-    /// 메서드 이름 → 그 이름을 받는 arm 들의 cfg 조건(공백 제거형).
     by_method: BTreeMap<String, BTreeSet<String>>,
-    /// `target_os` 를 품은 arm 들 — (메서드, 조건).
     platform: Vec<(String, String)>,
 }
 
-/// dispatch arm 을 훑어 위 지도를 만든다.
-///
-/// 구조(`#[cfg(` · 괄호 짝 · `=>` · `;` · `{`)는 공용 렉서가 주석·문자열·문자 리터럴을 바이트째
-/// 덮은 사본(`code`)에서 찾고, 조건과 메서드 이름은 같은 구간의 원본에서 읽는다 — guard
-/// 문자열 안의 `{` · `;` 가 그 arm 을 "arm 이 아님" 으로 떨궈 짝 검사를 조용히 건너뛰었고,
-/// 주석 속 `#[cfg(` 인용이 arm 으로 읽힐 수 있었다.
+/// 구조 구분자는 마스킹한 소스에서 찾고 조건·메서드 이름은 같은 바이트 구간의 원문에서 읽는다.
 pub(super) fn scan(src: &str) -> Arms {
     let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
     let mut by_method: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -116,7 +79,6 @@ pub(super) fn scan(src: &str) -> Arms {
         };
         let cond = src[open + 1..close].to_string();
         from = close + 1;
-        // `]` 다음부터 첫 `=>` 까지가 arm 패턴 자리다.
         let Some(arrow) = code[from..].find("=>") else {
             continue;
         };
@@ -146,7 +108,6 @@ pub(super) fn scan(src: &str) -> Arms {
     }
 }
 
-/// 조건이 `cond` 인 arm 의 짝은 조건이 `not(cond)` 인 arm 이다.
 fn complement_of(cond: &str) -> String {
     if let Some(inner) = cond.strip_prefix("not(").and_then(|s| s.strip_suffix(')')) {
         inner.to_string()
@@ -155,7 +116,6 @@ fn complement_of(cond: &str) -> String {
     }
 }
 
-/// 플랫폼 게이트가 걸린 메서드는 **다른 플랫폼에서도 답한다.**
 #[test]
 fn a_platform_gated_method_still_answers_elsewhere() {
     let mut arms = 0usize;
@@ -178,16 +138,11 @@ fn a_platform_gated_method_still_answers_elsewhere() {
     }
     assert!(
         arms >= MIN_PLATFORM_ARMS,
-        "`target_os` 가 걸린 dispatch arm 을 {arms} 개밖에 못 찾았다(하한 \
-         {MIN_PLATFORM_ARMS}, 2026-09-05 실측 2). 대조군이 죽었다 — 추출기나 \
-         `DISPATCH_SOURCES` 를 확인해라"
+        "플랫폼 조건의 메서드를 {arms}개만 찾았다(하한 {MIN_PLATFORM_ARMS}, 2026-09-05 측정 2개). 추출기와 DISPATCH_SOURCES를 확인한다."
     );
     assert!(
         orphan.is_empty(),
-        "플랫폼 게이트가 걸린 dispatch arm 에 상보 arm 이 없다. 그 플랫폼에서는 arm 이 \
-         사라져 `_` 가 받고, 답이 `-32601`(그런 메서드 없음)이 된다 — 메서드는 등재돼 \
-         있고 CLI 도 내놓으므로 그 답은 거짓이다. 왜 못 하는지를 말하는 arm 을 짝으로 \
-         두거나(예: `-32015`), 등재·CLI 에서도 함께 빼라.\n  {}",
+        "플랫폼 조건의 dispatch 분기에 반대 조건의 짝이 없다. 다른 플랫폼에서도 미지원 이유를 응답하거나 CLI·메서드 표의 제공 범위를 함께 검토한다:\n  {}",
         orphan.join("\n  ")
     );
 }
@@ -196,7 +151,6 @@ fn a_platform_gated_method_still_answers_elsewhere() {
 mod exemption_mutations {
     use super::*;
 
-    /// 짝이 없으면 잡는다 — 이 가드가 겨냥한 바로 그 형태.
     #[test]
     fn a_lone_platform_arm_is_caught() {
         let src = "\
@@ -215,7 +169,6 @@ match m {
         );
     }
 
-    /// 짝이 있으면 통과한다 — 그리고 그 짝은 `not(...)` 하나만 인정한다.
     #[test]
     fn the_complement_closes_it() {
         let src = "\
@@ -231,7 +184,6 @@ match m {
         let (m, cond) = &found.platform[0];
         assert!(found.by_method[m].contains(&complement_of(cond)));
 
-        // 다른 조건의 arm 은 짝이 아니다.
         let wrong = "\
 match m {
     #[cfg(all(target_os = \"macos\", feature = \"gui\"))]
@@ -244,12 +196,10 @@ match m {
         let (m, cond) = &found.platform[0];
         assert!(
             !found.by_method[m].contains(&complement_of(cond)),
-            "조건이 다른 arm 을 짝으로 셌다 — 그러면 macOS 에서만 도는 arm 이 헤드리스 \
-             게이트로 가려진다"
+            "다른 조건을 정확한 반대 조건의 짝으로 인정했다"
         );
     }
 
-    /// `#[cfg(...)]` 가 arm 이 아닌 항목(`const`·`use`)에 붙은 자리는 세지 않는다.
     #[test]
     fn a_gated_item_is_not_mistaken_for_an_arm() {
         let src = "\
@@ -265,7 +215,6 @@ fn f() { let x = a => b; }
         );
     }
 
-    /// 여러 이름을 `|` 로 묶은 arm 은 이름마다 따로 센다.
     #[test]
     fn an_or_pattern_counts_each_name() {
         let src = "\
@@ -280,24 +229,14 @@ match m {
     }
 }
 
-/// ADR-0004의 **전제**를 못 박는다 — 등재와 CLI 는 플랫폼 균일하다.
-///
-/// 이 결정은 "dispatch 층에서만 플랫폼을 본다" 인데, 그 근거가 취향이 아니라 실측이었다:
-/// 2026-09-05 기준 CLI 서브커맨드 정의와 메서드 등재표에 `target_os` 게이트가 **0 건**이다.
-/// 그래서 위 상보 arm 규칙이 "차이를 한 곳에 모은다" 는 뜻을 가진다.
-///
-/// 어느 한쪽에 플랫폼 조건이 처음 들어오면 그 뜻이 깨진다 — 그때는 이 가드를 지우는 것이
-/// 아니라 ADR 을 다시 여는 것이 맞다(ADR-0004의 재검토 트리거가 이것이다). 그래서
-/// 실패 메시지가 "하지 마라" 가 아니라 "결정을 다시 열어라" 라고 말한다.
+/// CLI·메서드 표에 target_os가 없어 플랫폼 차이를 dispatch에서 처리한다는 전제를 확인한다. 바뀌면 ADR-0004의 선택을 다시 검토한다.
 mod platform_uniform_layers {
     use super::*;
 
-    /// 검사 대상. 앞은 CLI 서브커맨드 정의 트리, 뒤는 메서드 등재표.
     const UNIFORM_TREES: &[&str] = &["crates/tasty-cli/src"];
     const UNIFORM_FILES: &[&str] = &["crates/tasty-ipc/src/method_meta.rs"];
 
-    /// 스캔한 `.rs` 파일 수의 하한 — **연기 검사**다. 워커가 죽어 0 개를 읽으면
-    /// "게이트 0 건" 이 언제나 참이 된다. 값의 근거: 2026-09-05 실측 84 개.
+    /// 2026-09-05 Rust 파일 84개를 측정한 뒤 수집 누락을 찾도록 둔 하한이다.
     const MIN_SCANNED: usize = 40;
 
     fn rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -327,8 +266,7 @@ mod platform_uniform_layers {
         files.sort();
         assert!(
             files.len() >= MIN_SCANNED,
-            "`.rs` 를 {} 개밖에 못 읽었다(하한 {MIN_SCANNED}, 2026-09-05 실측 84). \
-             파일을 못 읽으면 아래 판정은 언제나 통과한다 — 대조군이 죽었다",
+            "Rust 파일을 {}개만 읽었다(하한 {MIN_SCANNED}, 2026-09-05 측정 84개). 수집 범위를 확인한다.",
             files.len()
         );
 
@@ -337,8 +275,6 @@ mod platform_uniform_layers {
             let Ok(raw) = std::fs::read_to_string(f) else {
                 continue;
             };
-            // 주석·문자열은 지운 사본에서만 본다 — 이 규칙을 **설명하는** 문장이
-            // 스스로를 위반으로 잡지 않게 한다.
             let masked = crate::source_guards::mask_non_code(&raw);
             for (i, line) in masked.lines().enumerate() {
                 if line.contains("target_os") {
@@ -352,16 +288,11 @@ mod platform_uniform_layers {
         }
         assert!(
             hits.is_empty(),
-            "메서드 등재표나 CLI 서브커맨드가 플랫폼으로 갈린다. \
-             [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md) \
-             는 **그 두 층이 플랫폼 균일하다는 실측** 위에서 \"차이는 dispatch 층에만 \
-             둔다\" 를 골랐다. 여기에 조건이 생기면 그 전제가 깨지므로, 이 가드를 지우는 \
-             것이 아니라 ADR 을 다시 여는 것이 맞다(그 ADR 의 재검토 트리거다):\n  {}",
+            "CLI 또는 메서드 표에서 target_os를 찾았다. 플랫폼 차이는 dispatch에서 처리한다는 ADR-0004의 전제가 바뀌었는지 검토한다:\n  {}",
             hits.join("\n  ")
         );
     }
 
-    /// 판정기가 살아 있는가 — 합성 입력에 위반을 심으면 본다.
     #[test]
     fn the_scan_would_see_a_platform_branch() {
         let masked = crate::source_guards::mask_non_code(
@@ -369,12 +300,12 @@ mod platform_uniform_layers {
         );
         assert!(
             masked.contains("target_os"),
-            "마스킹이 cfg 속성까지 지운다 — 그러면 이 가드는 아무것도 못 본다"
+            "마스킹 과정에서 cfg 속성이 사라졌다"
         );
         let commented = crate::source_guards::mask_non_code("// target_os 는 여기서 안 쓴다\n");
         assert!(
             !commented.contains("target_os"),
-            "주석 안의 이름을 위반으로 집는다 — 규칙을 설명하는 문장마다 빨개진다"
+            "주석의 target_os 언급을 코드로 수집했다"
         );
     }
 }
