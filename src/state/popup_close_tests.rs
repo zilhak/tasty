@@ -1,46 +1,6 @@
-//! popup 닫힘 뒷정리(현재는 `draw_popups` → `popup::frame::draw_popup_layer`,
-//! `src/adapters/ui/popup/frame.rs`)의
-//! 현재 동작을 고정하는 회귀 테스트 — **프로덕션 코드는 한 줄도 바꾸지 않는다.**
-//!
-//! 이후 이 뒷정리를 `on_close` 훅으로 이관하는 작업(popup close 리팩터 체인)이
-//! 이 테스트를 안전망으로 쓴다. 커버 대상은 9개 팝업 각각의 "draw_fn → Close"
-//! 경로(`dispatch_closed`)와 "X 버튼/외부 클릭" 경로(`draw_result.closed`) —
-//! 두 경로가 서로 다른 코드(`content_fn` 콜백 vs `PopupManager::draw` 자체의
-//! 포인터 처리)로 채워지므로 각각 별도로 exercise 해야 wiring 자체가 검증된다.
-//!
-//! ## 테스트 하네스
-//!
-//! `egui::Context::default()` + `ctx.run(raw_input, |ctx| { draw_popups(...) })`
-//! 로 실제 GUI/디스플레이 없이 popup 시스템을 구동한다 — 이 패턴은 이미
-//! `src/adapters/ui/dialog.rs` 의 `mod tests`(`run_with_input`)가 쓰고 있는 기존
-//! 선례를 그대로 따른다. Close 트리거는 두 갈래:
-//!
-//! - **path 1 (draw_fn Close)**: 대부분의 draw_fn 은 `Key::Escape` 를 직접 체크해
-//!   `PopupAction::Close` 를 반환한다(`convert`/`rename`/`rail_category`/
-//!   `confirm_delete_category`/`file_handler_picker`/`file_picker`). `approval`
-//!   은 의도적으로 Escape 를 받지 않으므로(주석 참고) 대신 "큐가 빈" 상태를 직접
-//!   구성해 같은 반환을 유도한다. `transfer_progress` 는 Escape 를 아예 받지
-//!   않고(진행 중 실수 dismiss 방지) rows 가 비면 self-close 하므로 그 상태로
-//!   유도한다.
-//! - **path 2 (X 버튼/외부 클릭)**: `close_on_outside_click=true` 인 팝업
-//!   (`convert_surface`/`rail_category`/`transfer_error`/`confirm_delete_category`)
-//!   은 팝업 바깥 좌표에 pointer press 이벤트를 주입한다. 나머지 non-headless +
-//!   `close_on_outside_click=false` 팝업(`rename`/`approval`/`file_picker`)은
-//!   X 버튼(타이틀바 우측 닫기 아이콘)의 정확한 좌표에 press
-//!   이벤트를 주입한다 — 좌표 계산은 `PopupState`의 **공개** 필드(`pos`/`size`)와
-//!   **공개** 함수(`title_bar_height()`)만으로 유도한다(popup.rs 의 private
-//!   `close_btn_rect()` 공식을 그대로 복제 — popup.rs 를 건드리지 않고 접근할 수
-//!   있는 유일한 방법). `transfer_progress` 와 `file_handler_picker` 는 headless
-//!   (타이틀바 없음) 이면서 `close_on_outside_click=false` 라 draw() 내장 포인터
-//!   경로로는 **원천적으로 도달 불가능** — path 2 테스트가 없다(아래 각주 참고).
-//!
-//! `open_at_focused(id, pos)` 로 팝업을 **고정 좌표**에 연다 — `open_centered_focused`
-//! 를 쓰면 `request_center` 가 `draw()` 내부에서 그 프레임에 소비되어(포인터
-//! hit-test 는 그보다 앞서 일어남) 첫 프레임의 위치가 불확실해진다. 고정 좌표를
-//! 쓰면 등록 직후(draw_popups 호출 전)부터 `pos`/`size` 가 확정적이다. 단
-//! `sizer: Some(..)` 가 있는 팝업(approval/file_picker 등)은 `size` 가 `draw_popups`
-//! 최초 호출 시 sizer 로 재계산되므로, X 버튼 좌표 계산 전에 입력 없는 "priming"
-//! 프레임을 한 번 돌려 `size` 를 확정한 뒤 읽는다.
+//! 팝업을 내용의 Close 반환, 바깥 클릭·닫기 버튼, Intent로 닫은 뒤 상태를 검사한다.
+//! egui 프레임을 실행하며 OS 창은 만들지 않는다.
+//! 고정 위치에 열고 크기 계산이 필요한 팝업은 입력 없는 프레임 뒤에 버튼 좌표를 구한다.
 
 use super::tests::test_state;
 use crate::adapters::ui::draw_popups;
@@ -72,7 +32,6 @@ const CONVERT_SURFACE_POPUP_ID: PopupId = "convert_surface";
 const RENAME_POPUP_ID: PopupId = "rename";
 const SCRIPT_CHANGED_CONFIRM_POPUP_ID: PopupId = "script_changed_confirm";
 
-/// popup 클램프에 넉넉한 여유를 주는 가상 화면 rect (1920x1080).
 fn term_rect() -> PhysicalRect {
     PhysicalRect {
         x: PhysicalPx(0.0),
@@ -116,8 +75,6 @@ fn press_input(pos: egui::Pos2) -> egui::RawInput {
     raw
 }
 
-/// popup 바깥, 화면 안의 한 점. `pos`(좌상단)보다 왼쪽 위로 충분히 떨어뜨려
-/// popup_rect(=[pos, pos+size]) 바깥임을 보장한다.
 fn outside_point(popup_pos: egui::Pos2) -> egui::Pos2 {
     egui::pos2(
         (popup_pos.x - 200.0).max(0.0),
@@ -125,8 +82,7 @@ fn outside_point(popup_pos: egui::Pos2) -> egui::Pos2 {
     )
 }
 
-/// popup.rs 의 private `close_btn_rect()` 공식 복제(X 버튼 중심) — 공개 필드
-/// (`pos`/`size`)와 공개 함수(`title_bar_height()`)만 사용. 상단 doc 참고.
+/// 공개 위치·크기로 닫기 버튼의 중앙을 구한다.
 fn close_button_point(popup_pos: egui::Pos2, popup_size: egui::Vec2) -> egui::Pos2 {
     egui::pos2(
         popup_pos.x + popup_size.x - 14.0,
@@ -145,7 +101,6 @@ fn run_frame(
     }));
 }
 
-/// X 버튼 테스트 전용 — priming 프레임으로 sizer 반영 후의 실제 pos/size 를 읽는다.
 fn primed_popup_geometry(
     id: PopupId,
     state: &mut crate::state::AppState,
@@ -157,8 +112,6 @@ fn primed_popup_geometry(
 }
 
 const FIXED_POS: egui::Pos2 = egui::pos2(500.0, 500.0);
-
-// ───────────────────────── convert_surface ─────────────────────────
 
 #[test]
 fn convert_surface_escape_close_clears_dialog_state() {
@@ -198,10 +151,7 @@ fn convert_surface_outside_click_clears_dialog_state() {
     assert!(state.dialogs.convert_popup_selected.is_none());
 }
 
-/// `on_close` 훅 이관 후 — 이전엔 못 잡던 `UiIntent::ClosePopup` 경로도 이제
-/// 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 이 고정한
-/// rename 의 동일 패턴과 대조). 인텐트 핸들러 자체는 drain 을 안 하므로, 실제
-/// 프레임과 동일하게 그 뒤에 `run_frame` 을 한 번 더 돌려야 훅이 발화한다.
+// Intent는 닫기를 큐에 넣으므로 다음 렌더 프레임까지 실행해 후속 정리를 검사한다.
 #[test]
 fn convert_surface_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
@@ -220,7 +170,6 @@ fn convert_surface_close_intent_now_clears_dialog_state() {
         .from_user_menu("test"),
     );
     assert!(!state.popups.is_open(CONVERT_SURFACE_POPUP_ID));
-    // 인텐트 핸들러 직후엔 아직 drain 전 — 큐에만 쌓여 있다.
     assert!(state.dialogs.convert_popup.is_some());
 
     run_frame(empty_input(), &mut state, &mut engine);
@@ -228,8 +177,6 @@ fn convert_surface_close_intent_now_clears_dialog_state() {
     assert!(state.dialogs.convert_popup.is_none());
     assert!(state.dialogs.convert_popup_selected.is_none());
 }
-
-// ───────────────────────────── rename ─────────────────────────────
 
 #[test]
 fn rename_escape_close_clears_dialog_state() {
@@ -248,8 +195,6 @@ fn rename_x_button_close_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
     state.dialogs.rename = Some((RenameTarget::NewCategory, "abc".to_string()));
     state.popups.open_at_focused(RENAME_POPUP_ID, FIXED_POS);
-    // rename 은 sizer 가 없어(defs.rs) priming 없이도 size 가 이미 확정이지만,
-    // 다른 팝업과 동일 절차를 쓰기 위해 그대로 priming 헬퍼를 재사용한다.
     let (pos, size) = primed_popup_geometry(RENAME_POPUP_ID, &mut state, &mut engine);
 
     run_frame(
@@ -261,8 +206,6 @@ fn rename_x_button_close_clears_dialog_state() {
     assert!(!state.popups.is_open(RENAME_POPUP_ID));
     assert!(state.dialogs.rename.is_none());
 }
-
-// ─────────────────────────── rail_category ───────────────────────────
 
 #[test]
 fn rail_category_escape_close_clears_dialog_state() {
@@ -279,8 +222,6 @@ fn rail_category_escape_close_clears_dialog_state() {
     assert!(state.dialogs.rail_category_popup.is_none());
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
-/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
 #[test]
 fn rail_category_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
@@ -324,10 +265,7 @@ fn rail_category_outside_click_clears_dialog_state() {
     assert!(state.dialogs.rail_category_popup.is_none());
 }
 
-// ──────────────────────────── transfer_progress ────────────────────────────
-// headless(타이틀바 없음) + close_on_outside_click=false 라 draw() 내장 포인터
-// 경로(X 버튼/외부 클릭)로는 원천적으로 도달 불가능 — path 2 테스트는 없다
-// (파일 상단 doc 참고). path 1(rows 가 비면 self-close)만 검증한다.
+// 타이틀바와 바깥 클릭 닫기가 없는 진행 팝업은 빈 rows로 내용의 Close를 유도한다.
 
 #[test]
 fn transfer_progress_empty_rows_close_clears_dialog_state() {
@@ -343,8 +281,6 @@ fn transfer_progress_empty_rows_close_clears_dialog_state() {
     assert!(state.dialogs.transfer_progress.is_none());
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
-/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
 #[test]
 fn transfer_progress_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
@@ -368,8 +304,6 @@ fn transfer_progress_close_intent_now_clears_dialog_state() {
     assert!(state.dialogs.transfer_progress.is_none());
 }
 
-// ──────────────────────────── transfer_error ────────────────────────────
-
 fn xfer_err(name: &str) -> TransferError {
     TransferError {
         name: name.to_string(),
@@ -388,7 +322,6 @@ fn transfer_error_escape_close_pops_single_entry() {
 
     run_frame(key_input(egui::Key::Escape), &mut state, &mut engine);
 
-    // draw_fn(Escape) 자체가 head 를 pop 한다 — 큐가 마저 비므로 self-close.
     assert!(!state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
     assert!(state.dialogs.transfer_error.is_empty());
 }
@@ -411,8 +344,6 @@ fn transfer_error_outside_click_with_single_entry_closes_without_reopen() {
     assert!(state.dialogs.transfer_error.is_empty());
 }
 
-/// 큐에 2건 있을 때 외부 클릭으로 닫으면(= draw_fn 을 거치지 않는 경로) head 만
-/// pop 되고, 남은 실패가 있으므로 팝업이 다시 열린다.
 #[test]
 fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
     let (mut state, mut engine) = test_state();
@@ -430,14 +361,9 @@ fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
 
     assert_eq!(state.dialogs.transfer_error.len(), 1);
     assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
-    // 재오픈은 `open_centered_focused` 직접 호출(Intent 경유 아님) — 동기 반영.
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로로 닫아도(scrim/외부 클릭과
-/// 동일하게 draw_fn 을 거치지 않으므로) 다음 프레임의 drain 이 head 를 dismiss 하고
-/// 재오픈까지 수행한다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일
-/// 패턴 + 재진입 재오픈 확인).
 #[test]
 fn transfer_error_close_intent_now_pops_head_and_reopens() {
     let (mut state, mut engine) = test_state();
@@ -455,7 +381,6 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
         .from_user_menu("test"),
     );
     assert!(!state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
-    // handle() 직후 — 아직 drain 전, 큐엔 여전히 2건.
     assert_eq!(state.dialogs.transfer_error.len(), 2);
 
     run_frame(empty_input(), &mut state, &mut engine);
@@ -464,8 +389,6 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
     assert_eq!(state.dialogs.transfer_error.front().unwrap().name, "b.txt");
     assert!(state.popups.is_open(TRANSFER_ERROR_POPUP_ID));
 }
-
-// ────────────────────────── script_changed_confirm ──────────────────────────
 
 fn pending_script_confirm(result: Option<bool>) -> PendingScriptConfirm {
     PendingScriptConfirm {
@@ -477,10 +400,6 @@ fn pending_script_confirm(result: Option<bool>) -> PendingScriptConfirm {
     }
 }
 
-/// X 버튼(draw_fn 을 우회하는 경로, `UiIntent::ClosePopup` 로 대신 유도)으로 닫으면
-/// — Run/Cancel 어느 쪽도 거치지 않아 아직 결정이 없는 상태(`result: None`)이므로
-/// — `pending_script_confirm` 이 정리된다. 정리 전엔 이 값이 남아 다음 실행에서
-/// 엉뚱한 보류 팝업이 재등장할 수 있었다.
 #[test]
 fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
     let (mut state, mut engine) = test_state();
@@ -497,7 +416,6 @@ fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
         .from_user_menu("test"),
     );
     assert!(!state.popups.is_open(SCRIPT_CHANGED_CONFIRM_POPUP_ID));
-    // handle() 직후 — 아직 drain 전, 훅이 아직 정리하지 않았다.
     assert!(state.dialogs.pending_script_confirm.is_some());
 
     run_frame(empty_input(), &mut state, &mut engine);
@@ -505,10 +423,7 @@ fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
     assert!(state.dialogs.pending_script_confirm.is_none());
 }
 
-/// Run 버튼은 `result = Some(true)` 를 남기고 닫는다 — 다음 프레임의
-/// `App::dispatch_pending_script_confirm` 이 그 값을 읽고 해시 갱신·워커 실행을
-/// 하므로, 훅은 이미 결정된 `pending_script_confirm` 을 지우면 안 된다. 지웠다면
-/// 이 테스트가 실패해 그 회귀를 잡는다.
+// Run 결과는 다음 App 처리에서 실행하므로 닫기 훅이 지우면 안 된다.
 #[test]
 fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
     let (mut state, mut engine) = test_state();
@@ -530,15 +445,10 @@ fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
         .dialogs
         .pending_script_confirm
         .as_ref()
-        .expect("Run 의 result 는 dispatch 가 소비할 때까지 살아 있어야 한다");
+        .expect("Run 결과는 실행 요청 처리까지 남아 있어야 한다");
     assert_eq!(pending.result, Some(true));
 }
 
-// ─────────────────────────── command_palette ───────────────────────────
-
-/// 바깥 클릭(`close_on_outside_click: true`, draw_fn 을 거치지 않는 경로)으로
-/// 닫으면 훅이 쿼리·선택 인덱스를 리셋한다 — 이전엔 다음 open 시점 방어적 리셋만
-/// 이 상태를 가려주고 있었다(닫힘 자체는 정리하지 않았다).
 #[test]
 fn command_palette_outside_click_close_resets_query_and_selection() {
     let (mut state, mut engine) = test_state();
@@ -559,13 +469,7 @@ fn command_palette_outside_click_close_resets_query_and_selection() {
     assert_eq!(state.command_palette.selected, 0);
 }
 
-// ──────────────────────────── port_scanner ────────────────────────────
-
-/// 결정 고정: 바깥 클릭(draw_fn 을 거치지 않는 경로)으로 닫아도 스캔 결과를
-/// 초기화하지 않는다 — `on_close: None`(defs.rs 근거 주석). 재오픈 시 이전 결과를
-/// 그대로 보여주는 것이 의도된 동작이다(Close 버튼 경로만 draw_fn 내부에서 명시적
-/// `Idle` 리셋 — 이 팝업은 close_on_outside_click=true 라 outside-click 경로가
-/// 실제로 도달 가능하다).
+// 바깥 클릭은 결과를 유지하며, 팝업의 Close 버튼 경로만 Idle로 초기화한다.
 #[test]
 fn port_scanner_outside_click_close_preserves_scan_results() {
     let (mut state, mut engine) = test_state();
@@ -598,8 +502,6 @@ fn port_scanner_outside_click_close_preserves_scan_results() {
     }
 }
 
-// ──────────────────────────── info_modal ────────────────────────────
-
 fn info_modal_entry(body: &str) -> InfoModal {
     InfoModal {
         title: "Boot".to_string(),
@@ -609,9 +511,6 @@ fn info_modal_entry(body: &str) -> InfoModal {
     }
 }
 
-/// `on_close` 훅 — X 버튼(draw_fn 을 거치지 않는 경로)으로 닫으면 head 가 pop 되고,
-/// 남은 안내가 있으므로 팝업이 다시 열린다(transfer_error 의 재진입 패턴과 동형).
-/// 훅 도입 전엔 head 가 pop 되지 않아 남은 큐가 영영 뜨지 않았다 — 그 버그의 회귀 방지.
 #[test]
 fn info_modal_close_intent_now_pops_head_and_reopens() {
     let (mut state, mut engine) = test_state();
@@ -630,7 +529,6 @@ fn info_modal_close_intent_now_pops_head_and_reopens() {
         &UiIntent::ClosePopup { id: INFO_MODAL_ID }.from_user_menu("test"),
     );
     assert!(!state.popups.is_open(INFO_MODAL_ID));
-    // handle() 직후 — 아직 drain 전, 큐엔 여전히 2건.
     assert_eq!(state.dialogs.info_modal_queue.len(), 2);
 
     run_frame(empty_input(), &mut state, &mut engine);
@@ -640,7 +538,6 @@ fn info_modal_close_intent_now_pops_head_and_reopens() {
     assert!(state.popups.is_open(INFO_MODAL_ID));
 }
 
-/// 큐에 1건뿐이면 pop 후 비므로 재오픈하지 않는다.
 #[test]
 fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
     let (mut state, mut engine) = test_state();
@@ -659,8 +556,6 @@ fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
     assert!(state.dialogs.info_modal_queue.is_empty());
     assert!(!state.popups.is_open(INFO_MODAL_ID));
 }
-
-// ────────────────────────── confirm_delete_category ──────────────────────────
 
 #[test]
 fn confirm_delete_category_escape_close_clears_dialog_state() {
@@ -696,8 +591,6 @@ fn confirm_delete_category_outside_click_clears_dialog_state() {
     assert!(state.dialogs.pending_category_delete.is_none());
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
-/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
 #[test]
 fn confirm_delete_category_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine) = test_state();
@@ -722,10 +615,7 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
     assert!(state.dialogs.pending_category_delete.is_none());
 }
 
-// ─────────────────── confirm_force_detach_workspace ───────────────────
-
-/// 워크스페이스를 client 7 이 hard 점유한 상태 + 그 팝업이 열린 상태를 만든다.
-/// 반환은 대상 워크스페이스 id 와 그 멤버 surface 들.
+/// client 7이 워크스페이스를 hard 점유하고 확인 팝업이 열린 상태를 만든다.
 fn occupied_workspace_with_popup(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
@@ -743,10 +633,6 @@ fn occupied_workspace_with_popup(
     (ws_id, members)
 }
 
-/// Escape 는 팝업을 닫고 보류를 비우되 **점유는 그대로 둔다.**
-///
-/// 뒤쪽 단정이 이 시험의 요점이다. 앞의 둘만 보면 "확인 없이 끊겼다" 와 "취소했다" 가
-/// 같은 초록을 낸다 — 이 팝업이 존재하는 이유가 바로 그 둘을 가르는 것이다.
 #[test]
 fn confirm_force_detach_escape_clears_state_and_keeps_the_occupancy() {
     let (mut state, mut engine) = test_state();
@@ -789,8 +675,6 @@ fn confirm_force_detach_outside_click_clears_state_and_keeps_the_occupancy() {
     assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
 }
 
-/// `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을 거쳐 뒷정리가 돈다
-/// (`confirm_delete_category_close_intent_now_clears_dialog_state` 와 같은 패턴).
 #[test]
 fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
     let (mut state, mut engine) = test_state();
@@ -816,16 +700,11 @@ fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
     assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
 }
 
-/// 메뉴를 연 뒤 원격이 스스로 release 했으면 팝업은 **즉시 닫힌다.**
-///
-/// 이 갈래가 없으면 확인 버튼이 아무 대상도 없는 행동이 되고, 사용자는 방금 자기가
-/// 무엇을 끊었는지 모르는 채 초록을 본다. 대상 워크스페이스가 사라진 경우도 같다.
 #[test]
 fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
     let (mut state, mut engine) = test_state();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
 
-    // 원격이 스스로 끊었다 — 팝업은 아직 열려 있다.
     assert_eq!(engine.attach.force_detach_workspace(ws_id), Some(7));
     assert!(
         state
@@ -843,7 +722,6 @@ fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
 }
 
-/// 보류 id 가 실재하지 않는 워크스페이스를 가리켜도 패닉하지 않고 닫힌다.
 #[test]
 fn confirm_force_detach_closes_when_the_workspace_is_gone() {
     let (mut state, mut engine) = test_state();
@@ -862,12 +740,7 @@ fn confirm_force_detach_closes_when_the_workspace_is_gone() {
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
 }
 
-/// 확인은 워크스페이스와 **멤버 surface 를 함께** 푼다.
-///
-/// 이 자리를 함수로 재는 이유는 그리기 안의 버튼 클릭이 이 하네스에서 재현되지 않기
-/// 때문이다(`run_frame` 이 프레임마다 `egui::Context` 를 새로 만든다 — egui 의 클릭
-/// 판정이 기대는 이전 프레임 기억이 없다). 클릭이 이 함수를 부른다는 사실 자체는
-/// 그리기 코드 한 줄이고, 그 함수가 무엇을 하는지는 여기서 값으로 남는다.
+// 이 하네스는 프레임마다 Context를 새로 만들어 버튼 클릭 대신 실행 함수를 직접 검사한다.
 #[test]
 fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
     let (mut state, mut engine) = test_state();
@@ -890,7 +763,6 @@ fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
 }
 
-/// 보류가 비어 있으면 아무것도 안 끊는다 — 남의 점유를 집지 않는다.
 #[test]
 fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
     let (mut state, mut engine) = test_state();
@@ -906,11 +778,7 @@ fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
     assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
 }
 
-// ────────────────────────── file_handler_picker ──────────────────────────
-// canonical 전사로 headless(타이틀바 없음)가 됐다 — 프레임이 자기 헤더를 그려 경로가
-// 한 번만 나온다. `transfer_progress` 와 같은 갈래라 X 버튼 좌표가 없고
-// `close_on_outside_click=false` 라 외부 클릭도 안 닫으므로, path 2 테스트는 없다
-// (파일 상단 doc 참고). 닫힘은 Esc · Cancel · ClosePopup intent 셋이다.
+// 파일 핸들러 피커는 타이틀바와 바깥 클릭 닫기가 없어 해당 포인터 경로 시험은 없다.
 
 fn mk_picker_data() -> FileHandlerPickerData {
     FileHandlerPickerData {
@@ -944,8 +812,6 @@ fn file_handler_picker_escape_close_marks_cancelled() {
     ));
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
-/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
 #[test]
 fn file_handler_picker_close_intent_now_marks_cancelled() {
     let (mut state, mut engine) = test_state();
@@ -977,8 +843,6 @@ fn file_handler_picker_close_intent_now_marks_cancelled() {
         Some(FileHandlerPickerResult::Cancelled)
     ));
 }
-
-// ────────────────────────────── file_picker ──────────────────────────────
 
 fn mk_file_picker_data() -> FilePickerData {
     FilePickerData {
@@ -1033,8 +897,6 @@ fn file_picker_x_button_close_marks_cancelled() {
     ));
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을
-/// 거쳐 뒷정리가 돈다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴).
 #[test]
 fn file_picker_close_intent_now_marks_cancelled() {
     let (mut state, mut engine) = test_state();
@@ -1060,8 +922,6 @@ fn file_picker_close_intent_now_marks_cancelled() {
         Some(FilePickerResult::Cancelled)
     ));
 }
-
-// ──────────────────────────────── approval ────────────────────────────────
 
 fn push_approval(
     engine: &mut crate::core::CoreState,
@@ -1098,7 +958,6 @@ fn approval_empty_queue_close_clears_comment_buffer() {
     let (mut state, mut engine) = test_state();
     state.dialogs.approval_comment_buffer = "draft comment".to_string();
     state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
-    // pending_approval_ids 를 비워둔 채로 열림 — draw_fn 이 즉시 Close 반환(path 1).
 
     run_frame(empty_input(), &mut state, &mut engine);
 
@@ -1132,8 +991,6 @@ fn approval_x_button_close_with_empty_queue_does_not_refire() {
     );
 }
 
-/// X 버튼으로 닫혔는데 큐에 응답 대기 항목이 남아 있으면 다음 head 를 위해
-/// OpenPopup intent 가 재발화한다.
 #[test]
 fn approval_x_button_close_with_pending_queue_refires_open_popup() {
     let (mut state, mut engine) = test_state();
@@ -1148,7 +1005,7 @@ fn approval_x_button_close_with_pending_queue_refires_open_popup() {
         &mut engine,
     );
 
-    // X 버튼 경로는 draw_fn(큐 head pop 로직)을 거치지 않으므로 큐 자체는 그대로.
+    // X 버튼은 내용을 거치지 않으므로 응답 대기 큐는 유지한다.
     assert_eq!(state.dialogs.pending_approval_ids.len(), 2);
     let pending = state.take_pending_intents();
     assert!(
@@ -1159,10 +1016,6 @@ fn approval_x_button_close_with_pending_queue_refires_open_popup() {
     );
 }
 
-/// `on_close` 훅 이관 후 — `UiIntent::ClosePopup` 경로로 닫아도(X 버튼과 동일하게
-/// draw_fn 을 거치지 않으므로) 다음 프레임의 drain 이 재발화 intent 를 dispatch
-/// 한다(`close_intent_now_clears_cleanup_after_next_frame` 과 동일 패턴 + 재진입
-/// 재발화 확인).
 #[test]
 fn approval_close_intent_now_refires_open_popup() {
     let (mut state, mut engine) = test_state();
@@ -1178,7 +1031,6 @@ fn approval_close_intent_now_refires_open_popup() {
         .from_user_menu("test"),
     );
     assert!(!state.popups.is_open(APPROVAL_POPUP_ID));
-    // handle() 직후 — 아직 drain 전, 재발화 intent 도 아직 없다.
     assert!(state.take_pending_intents().is_empty());
 
     run_frame(empty_input(), &mut state, &mut engine);
@@ -1193,11 +1045,6 @@ fn approval_close_intent_now_refires_open_popup() {
     );
 }
 
-// ────────────────────── path 3 (`UiIntent::ClosePopup`) ──────────────────────
-// `rename` 은 on_close 훅으로 이관됐다 — `state.popups.close()` 가 큐에 쌓고,
-// 다음 프레임의 drain(`draw_popups` → `drain_on_close_hooks`)이 훅을 발화한다.
-// 인텐트 핸들러 자체는 drain 하지 않으므로 handle() 직후엔 아직 안 비워진다
-// (큐잉과 drain 이 분리된 설계의 자연스러운 결과 — 버그 아님).
 #[test]
 fn close_intent_now_clears_cleanup_after_next_frame() {
     let (mut state, mut engine) = test_state();
@@ -1211,20 +1058,14 @@ fn close_intent_now_clears_cleanup_after_next_frame() {
     crate::intent::popup::handle(&mut state, &dispatched);
 
     assert!(!state.popups.is_open(RENAME_POPUP_ID));
-    // handle() 직후 — 아직 drain 전, 큐에만 쌓여 있다.
     assert!(state.dialogs.rename.is_some());
 
     run_frame(empty_input(), &mut state, &mut engine);
 
-    // 다음 프레임의 drain 이 훅을 발화 — 뒷정리 완료.
     assert!(state.dialogs.rename.is_none());
 }
 
-// ─────────────────────────── preset_apply (버그 재현) ───────────────────────────
-// X 버튼/외부 클릭(둘 다 draw_fn 의 Cancel 액션을 거치지 않음)으로 닫으면
-// `preset_apply_target_category`/`preset_picker_selected` 가 남는 버그의 재현.
-// 3개 팝업(workspace/tab/pane) 모두 같은 on_close 훅을 쓰므로 대표로
-// APPLY_WORKSPACE_POPUP_ID 하나만 검증한다.
+// 프리셋 팝업 셋이 같은 닫기 훅을 사용해 workspace 팝업으로 공통 상태 정리를 검사한다.
 
 #[test]
 fn preset_apply_x_button_close_clears_selection_and_target_category() {
@@ -1269,7 +1110,6 @@ fn preset_apply_outside_click_close_clears_selection_and_target_category() {
     assert!(state.dialogs.preset_picker_selected.is_none());
 }
 
-/// Cancel 액션 경로 — 훅 이관 전에도 이미 동작하던 경로라 회귀가 없는지 확인.
 #[test]
 fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
     let (mut state, mut engine) = test_state();

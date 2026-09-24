@@ -11,11 +11,9 @@ use super::AppState;
 use crate::core::CoreState;
 
 impl AppState {
-    /// Add a new tab in the focused pane.
     #[cfg(any(feature = "gui", test))]
     pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
-        // mirror 워크스페이스면 로컬 PTY spawn 대신 NewTab 을 원격으로 forward 한다
-        // (로컬 spawn 은 "workspace 전체가 remote" 불변식을 깬다). no-op(Ok) 로 반환.
+        // mirror에서는 원격 요청만 큐에 넣으며 로컬 탭을 만들지 않는다.
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::NewTab {
@@ -58,8 +56,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Generic kind+params 기반 탭 추가. SurfaceKindRegistry를 통해 surface를 만들고
-    /// 포커스된 pane에 부착한다. Returns (tab_id, surface_id) on success.
+    /// kind로 만든 surface를 포커스된 pane에 붙이고 (tab_id, surface_id)를 반환한다.
     #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab(
         &mut self,
@@ -67,8 +64,7 @@ impl AppState {
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
-        // mirror 워크스페이스면 로컬 surface 생성 대신 NewTab 을 원격으로 forward 한다
-        // (로컬 생성은 "workspace 전체가 remote" 불변식을 깬다). Err 로 반환한다.
+        // 원격 요청을 큐에 넣은 mirror 경로도 여기서는 오류로 반환한다.
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::NewTab {
@@ -98,10 +94,8 @@ impl AppState {
         }
     }
 
-    /// `add_kind_tab` 의 surface-owner 타겟 변형: focused pane 대신 `owner_surface_id`
-    /// 가 속한 pane 에 탭을 추가한다. 우클릭한 explorer 가 focused pane 이 아니어도
-    /// (background pane) 그 explorer 가 있는 pane 에 새 탭이 열리도록 해 focused-pane
-    /// 의존을 제거한다. Returns (tab_id, surface_id) on success.
+    /// 활성 워크스페이스에서 owner_surface_id가 속한 pane에 탭을 추가한다.
+    /// 우클릭한 pane이 포커스와 달라도 그 대상을 사용한다.
     #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab_by_owner(
         &mut self,
@@ -110,7 +104,6 @@ impl AppState {
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
-        // owner 가 속한 pane_id 를 활성 워크스페이스에서 찾는다.
         let ws = self.active_workspace(engine);
         let mut target_pane = None;
         for pid in ws.pane_layout().all_pane_ids() {
@@ -147,9 +140,7 @@ impl AppState {
         }
     }
 
-    /// 대상 explorer surface(`sid`)의 활성 탭 cwd 를 `folder` 로 설정하고(좌측 트리
-    /// 루트 이동 + current=folder + 히스토리 초기화) 뷰를 리로드한다. 컨텍스트 메뉴
-    /// "이 폴더로 루트 설정" 이 사용. surface_id→패널 탐색은 focus 독립(전 pane 순회).
+    /// 지정 explorer의 root와 현재 폴더를 바꾸고 히스토리·뷰 캐시를 초기화한다.
     #[cfg(any(feature = "gui", test))]
     pub fn set_explorer_cwd(
         &mut self,
@@ -181,21 +172,18 @@ impl AppState {
                 break;
             }
         }
-        // 뷰 리로드 (엔트리 캐시는 explorer_views 에 있어 ws 借用 종료 후 접근).
-        // explorer_views 는 gui 전용 뷰 스토어 — headless 엔 뷰가 없어 리로드 불필요.
+        // engine 차용이 끝난 뒤 GUI 뷰 캐시를 다시 읽도록 한다.
         #[cfg(feature = "gui")]
         if done && let Some(v) = self.explorer_views.get_mut(sid) {
             v.request_reload();
         }
     }
 
-    /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     #[cfg(feature = "gui")]
     pub fn add_empty_tab(&mut self, engine: &mut CoreState) -> Option<(u32, u32)> {
         self.add_kind_tab(engine, "empty", &Value::Null).ok()
     }
 
-    /// Next tab in the focused pane.
     #[cfg(any(feature = "gui", test))]
     pub fn next_tab_in_pane(&mut self, engine: &mut CoreState) {
         #[cfg(feature = "gui")]
@@ -207,7 +195,6 @@ impl AppState {
         self.observe_tutorial_tab_switch(engine, before);
     }
 
-    /// Previous tab in the focused pane.
     #[cfg(feature = "gui")]
     pub fn prev_tab_in_pane(&mut self, engine: &mut CoreState) {
         #[cfg(feature = "gui")]
@@ -219,11 +206,7 @@ impl AppState {
         self.observe_tutorial_tab_switch(engine, before);
     }
 
-    /// Go to tab by index (0-based) in the focused pane.
-    ///
-    /// pane 을 못 찾은 것은 인덱스가 틀린 것과 다른 일이라 갈래를 따로 낸다
-    /// ([`TabSwitch::NoPane`]).
-    // 부르는 자리가 gui 단축키와 debug `debug.switch_tab` 뿐이다.
+    /// 포커스된 pane에서 0-based 인덱스로 탭을 바꾼다. pane 부재와 범위 오류를 구분한다.
     #[cfg(any(feature = "gui", debug_assertions))]
     pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> TabSwitch {
         #[cfg(feature = "gui")]
@@ -238,13 +221,9 @@ impl AppState {
         result
     }
 
-    /// Close a specific tab in a specific pane (context menu 등 임의 (pane_id, tab_index)
-    /// 지정 close). focused pane / active tab 와 무관하게 동작한다.
-    /// 내부 모든 surface cleanup + closed_item snapshot + layout dirty 마킹을 수행.
+    /// 지정한 pane의 탭을 닫는다. 포커스와 무관하게 사본 저장·정리·dirty 갱신을 수행한다.
     #[cfg(feature = "gui")]
     pub fn close_tab(&mut self, engine: &mut CoreState, pane_id: u32, tab_index: usize) -> bool {
-        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
-        // forward 한다(로컬 close 는 원격 트리와 어긋남).
         let mirror_op = self
             .active_workspace(engine)
             .pane_layout()
@@ -263,7 +242,6 @@ impl AppState {
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
-        // 이 탭이 품은 surface 중 하나라도 원격이 하드 점유 중이면 거절한다.
         let in_tab: Vec<u32> = {
             let mut t: Vec<(u32, Option<String>)> = Vec::new();
             if let Some(pane) = self
@@ -311,11 +289,9 @@ impl AppState {
         closed
     }
 
-    /// Close the active tab in the focused pane. Returns true if a tab was closed.
+    /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
     pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
-        // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
-        // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
@@ -328,7 +304,6 @@ impl AppState {
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
-        // 이 탭이 품은 surface 중 하나라도 원격이 하드 점유 중이면 거절한다.
         let in_tab: Vec<u32> = {
             let mut t: Vec<(u32, Option<String>)> = Vec::new();
             if let Some(pane) = self.focused_pane(engine)
@@ -341,7 +316,6 @@ impl AppState {
         if self.refuse_if_hard_occupied(engine, in_tab) {
             return false;
         }
-        // Capture tab snapshot + collect persist_ids (immutable borrow).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let active_slot = self.focused_pane(engine).map(|p| (p.id, p.active_tab));
         if let Some((pane_id, active)) = active_slot
@@ -359,8 +333,6 @@ impl AppState {
             false
         };
         if closed {
-            // cleanup_surface 직후엔 layout 에서 surface 가 사라져 kind 조회 불가 →
-            // 미리 캡쳐. plugin lifecycle 큐에 cleanup_targets 모두 enqueue (R1 분석).
             for (sid, pid) in targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
@@ -372,13 +344,9 @@ impl AppState {
     }
 }
 
-// 이 두 테스트 헬퍼를 부르는 시험은 전부 gui 조합에서만 돈다.
 #[cfg(all(test, feature = "gui"))]
 impl AppState {
-    /// Test-only helper: add a Markdown viewer tab in the focused pane.
-    ///
-    /// Production code dispatches `DomainIntent::NewTab { kind: "markdown" }`
-    /// through `Core`. 본 헬퍼는 테스트 setup 편의 용도.
+    /// 시험 준비용 Markdown 탭 생성. 제품 경로는 Intent/Core를 사용한다.
     pub(crate) fn test_add_markdown_tab(
         &mut self,
         engine: &mut CoreState,
@@ -388,10 +356,7 @@ impl AppState {
             .map(|_| ())
     }
 
-    /// Test-only helper: replace the surface for `surface_id` with a freshly
-    /// created surface of `kind` (cleared explicit_name).
-    ///
-    /// Production path is `DomainIntent::ConvertSurface` via `Core::apply_convert_surface`.
+    /// 시험 준비용 surface 교체. 제품 경로는 Core의 ConvertSurface를 사용한다.
     pub(crate) fn test_convert_surface_to_kind(
         &mut self,
         engine: &mut CoreState,
@@ -407,7 +372,6 @@ impl AppState {
             }
         };
 
-        // Locate the tab containing this surface.
         let mut location: Option<(usize, u32, usize)> = None;
         'outer: for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
             for &pid in &workspace.pane_layout().all_pane_ids() {

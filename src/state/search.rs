@@ -1,14 +1,10 @@
 use tasty_terminal::search::{SearchError, SearchMatch, SearchOptions};
 
-/// UI-level search state, stored in AppState.
 pub struct SearchState {
-    /// Current search query.
     pub query: String,
     /// All matches in the terminal buffer (sorted oldest→newest).
     pub matches: Vec<SearchMatch>,
-    /// Index of the currently selected match (for navigation).
     pub current_index: usize,
-    /// Surface ID being searched.
     pub surface_id: u32,
     /// Whether to ignore case (default: true).
     pub case_insensitive: bool,
@@ -42,7 +38,6 @@ impl SearchState {
         }
     }
 
-    /// Run search on the given terminal and update matches.
     pub fn execute(&mut self, terminal: &tasty_terminal::Terminal) {
         let options = self.options();
         match terminal.search(&self.query, &options) {
@@ -80,7 +75,6 @@ impl SearchState {
         }
     }
 
-    /// Clear search state.
     pub fn clear(&mut self) {
         self.query.clear();
         self.matches.clear();
@@ -88,24 +82,15 @@ impl SearchState {
         self.last_error = None;
     }
 
-    /// Get the scroll offset needed to show the current match.
-    /// Returns None if no matches or current match is on-screen.
+    /// 현재 결과를 화면 중앙에 놓을 스크롤 오프셋을 계산한다. 현재 결과가 없으면 None이다.
     pub fn scroll_to_current(&self, scrollback_len: usize, screen_rows: usize) -> Option<usize> {
         let m = self.matches.get(self.current_index)?;
         let total_rows = scrollback_len + screen_rows;
-        // scroll_offset = 0 means showing the bottom (last screen_rows).
-        // Visible range: [total_rows - screen_rows - scroll_offset .. total_rows - scroll_offset)
-        // To show row `m.row`, we need: total_rows - screen_rows - offset <= m.row
-        //   → offset <= total_rows - screen_rows - m.row
-        // And: m.row < total_rows - offset
-        //   → offset < total_rows - m.row
-        // Target: center the match vertically.
+        // 화면 경계에서는 맨 위·아래로 제한하고 나머지는 결과 행을 중앙에 둔다.
         let half = screen_rows / 2;
         if m.row + half >= total_rows {
-            // Match is near the bottom — scroll to bottom.
             Some(0)
         } else if m.row < half {
-            // Match is near the top — scroll to max.
             Some(scrollback_len)
         } else {
             Some(total_rows - m.row - half)
