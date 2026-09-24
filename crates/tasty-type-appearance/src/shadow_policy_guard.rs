@@ -1,62 +1,19 @@
-//! 그림자 정책의 명시적 생성·기하 재대입·접근자 명부를 검사하는 소스 가드.
+//! 그림자 리터럴의 위치·기하 재대입·접근자 목록을 검사한다.
+//! 줄 단위 검사이므로 별칭과 다른 생성·대입 형태까지 추적하지 않는다. 색 재대입은 허용한다.
+//! 토큰 값은 shadow_parity가 검사하며 egui 기본 그림자 대입과 표면별 그림자 선택은 이 검사 범위 밖이다.
+//! 선택 기준은 docs/design/systems/theme.md#떠-있는-표면의-그림자를 따른다.
 //!
-//! 떠 있는 표면의 정본 토큰은 `SHADOW_POPOVER` 와 `SHADOW_MODAL` 둘이다.
-//! `Theme::shadow_popover()` / `shadow_modal()` 이 값을 내고 `ShadowToken::to_egui()` 가
-//! egui 그림자로 변환한다. 어느 표면이 어느 쪽을 쓰는지는
-//! `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙 이 정한다.
-//!
-//! # 왜 lib 유닛 테스트인가 (관례 예외 — `tests/` 로 되돌리지 마라)
-//! 소스를 런타임에 스캔하므로 컴파일만으로는 판정하지 않는다. lib 유닛 테스트는
-//! `cargo test --lib --bins` 에 포함되지만 `tests/*.rs` 통합 타깃은 포함되지 않는다.
-//! 따라서 통합 타깃으로 옮기면 그 실행 경로를 잃는다. 실행 채널과 빌드 조합의 정본은
-//! `docs/dev-guide/ci-gates.md` 다. 이 가드는 egui 를 부르지 않는 순수 텍스트 스캔이라
-//! `--no-default-features`(egui-compat off)에서도 검사할 수 있다.
-//!
-//! # 스캔 루트와 하한
-//! 레포 루트는 `CARGO_MANIFEST_DIR/../..` 로 올라가 찾는다(이 크레이트는
-//! `crates/tasty-type-appearance`). 그 경로가 틀리면 스캔 대상이 0 개가 되고 가드는
-//! **초록**이 된다 — [`SCAN_FILE_FLOOR`] 하한이 그 거짓 초록을 잡는 유일한 장치다.
-//! Windows 잡에서도 도므로 경로는 `std::path` 로만 다루고(구분자 하드코딩 금지) 줄은
-//! `trim_end`(CRLF) 를 거친다.
-//!
-//! # 검사 범위와 한계
-//! 검사는 셋이다: 인식하는 `Shadow {}` 리터럴이 변환기 밖에 있는가,
-//! 같은 줄의 `let mut` 와 그림자 접근자 이름으로 찾은 변수의 `offset`/`blur`/`spread` 에
-//! 재대입하는가, 그리고 [`SHADOW_ACCESSORS`] 가 실제 `Theme` 접근자 명부와 같은가.
-//! `color` 재대입은 페이드를 위해 허용한다. 줄 단위 텍스트 검사이며 별칭이나 다른
-//! 생성·대입 형태까지 타입/데이터 흐름으로 추적하는 검사는 아니다.
-//!
-//! egui 기본 그림자는 이미 `crates/tasty-egui-theme/src/lib.rs` 에서 매핑한다:
-//! `visuals.popup_shadow` 는 popover, `visuals.window_shadow` 는 modal 이다.
-//! **매핑 구현과 그 매핑을 검사하는 것은 별개다.** 이 가드는 두 필드의 대입을
-//! 검증하지 않으므로, 매핑이 빠져도 위 세 검사로는 알 수 없다. 토큰 상수와 디자인
-//! 정본의 값 대조는 별도 `crates/tasty-design-tokens/tests/shadow_parity.rs` 가 맡는다.
-//!
-//! **어느 표면이 어느 토큰을 쓰는가**도 이 가드의 검사 밖이다. SCOPE RULE 의
-//! 갈래는 표면의 형태(트리거에 앵커되는가 · 뷰포트를 점유하는가)로 정해지는데 —
-//! **scrim 유무는 갈래를 가르는 술어가 아니다**(docs/design/systems/theme.md#떠-있는-표면의-그림자: modal 을 받는 표면
-//! 중 실제로 scrim 이 깔리는 것은 일부다) — 그 형태를 소스에서 읽을 방법이 없어(위치는
-//! 여는 시점의 `OpenPopupMode` 가 정한다) 이 텍스트 검사는 갈래를 판정하지 않는다.
-//! 그 축은 리뷰가 지킨다.
-//!
-//! # 검출은 순수 함수 — 면제 변이를 합성 입력으로 찌른다
-//! 판정([`is_shadow_literal`]·[`shadow_literal_violations`]·[`geom_reassign_violations`])은
-//! 파일 순회·경로 처리와 분리된 순수 함수다. 그래서 각 면제(반환타입 화살표 · `==`
-//! 비교 · 자기 제외)를 겨냥한 변이를 레포에 진짜 위반을 심지 않고 **합성 문자열**로
-//! 유닛 테스트에 붙박는다(아래 `mutation_*`). 못 잡는 것이 **의도**인 입력(scrim
-//! 오버레이)도 `intended_miss_*` 로 고정해, 나중에 판정기를 넓혀 그걸 잡기 시작하면
-//! 그 결정이 테스트 실패로 드러나게 한다 — 의도된 한계와 버그를 구분한다.
+//! CI의 --lib --bins에도 실행되도록 lib 검사로 둔다. egui 없이 소스만 읽는다.
+//! 컴파일 때의 CARGO_MANIFEST_DIR를 기준으로 읽으며 파일 수 하한으로 빈 수집을 거부한다.
+//! 합성 입력으로 허용·거부 조건을 확인하고, 검사 파일 자체는 합성 코드 때문에 제외한다.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 스캔 대상 최소 파일 수. 실측 1081(2026-09-04, `src/` + `crates/*/src/`). 경로
-/// 상향(`../..`)이 틀려 스캔이 비면 가드가 거짓 초록이 되는 것을 막는 하한 — 실측보다
-/// 넉넉히 낮게(파일 재구성 여유) 두되 0/소수로 붕괴하는 것은 잡는다.
+/// 경로 오류나 불완전한 수집을 잡는 최소 파일 수. 파일 재구성에 여유를 둔 하한이다.
 const SCAN_FILE_FLOOR: usize = 800;
 
-/// 판정2 가 추적하는 그림자 접근자 이름. `Theme` 가 노출하는 `shadow_*()` 전부여야
-/// 한다 — 빠뜨리면 그 토큰의 기하 재대입이 조용히 통과한다.
+/// 기하 재대입을 추적할 접근자 목록. 실제 Theme 접근자와도 대조한다.
 const SHADOW_ACCESSORS: &[&str] = &["shadow_popover", "shadow_modal"];
 
 fn repo_root() -> PathBuf {
@@ -93,39 +50,23 @@ fn scan_files() -> Vec<PathBuf> {
             }
         }
     }
-    // 이 가드 파일 자신은 판정 needle 과 뮤테이션 합성 입력을 담는 것이 본질이라
-    // (판정기를 합성 문자열로 찌르는 변이가 붙박여 있다) 연속 needle 이 불가피하게
-    // 등장한다. 자기 제외를 없애려면 그 needle 이 파일에 연속으로 없어야 하는데 —
-    // doc 시연과 변이 입력이 그걸 요구하므로 불가능하다(needle 조각 결합은 doc 주석엔
-    // 못 쓰고, 변이마다 강제할 장치도 없다). 그래서 파일 통째 면제한다.
-    // 한계(강제되지 않음): 이 파일 안 판정기 밖에 실제 위반을 새로 들이면 못 잡는다.
-    // 그 면제가 **실효 있음**(제외 없으면 오탐)은
-    // `mutation_self_file_is_excluded_but_would_otherwise_flag` 가 고정하고, 판정기 밖에
-    // 새 그림자 코드를 두지 않는다는 규율은 리뷰가 지킨다.
+    // 이 파일의 합성 위반 코드가 실제 위반으로 잡히므로 제외한다.
+    // 제외가 필요한지는 합성 검사로 확인하며 이 파일에 제품 렌더 코드를 추가하지 않는다.
     let self_file = repo_root().join("crates/tasty-type-appearance/src/shadow_policy_guard.rs");
     files.retain(|f| f != &self_file);
     files
 }
 
-/// `Shadow {` 구조체 리터럴을 여는 줄인가. 함수 반환타입 선언
-/// (`-> egui::epaint::Shadow {`)은 리터럴 생성이 아니라 제외한다. scrim 등
-/// `from_black_alpha` 로 그리는 배경 오버레이는 `Shadow` 타입이 아니라 대상 밖이다
-/// — **구조체 리터럴만** 본다. 이 판단을 넓히면 scrim 오탐이 시작된다.
-///
-/// 반환타입 제외는 **줄이 아니라 위치**로 판정한다. 줄 어딘가에 `->` 한 토큰이 있다는
-/// 이유만으로 통째 면제하면(면제 창 = 줄) 같은 줄의 진짜 생성을 화살표가 가린다 —
-/// 예: `|| -> u32 { let s = egui::Shadow { .. } }`. 그래서 화살표가 리터럴 **직전
-/// 타입 위치**(리터럴 앞에 있고 그 사이에 대입 `=` 이 없음)일 때만 반환타입으로 본다.
+/// Shadow 구조체 생성 줄을 찾는다. 배경 scrim이나 다른 생성 함수는 검사하지 않는다.
+/// 반환 타입 앞의 화살표만 제외해야 같은 줄의 실제 생성을 놓치지 않는다.
 fn is_shadow_literal(line: &str) -> bool {
     let t = line.trim_end();
-    // `= Shadow {` 는 명백한 대입 생성 — 줄의 `->` 유무와 무관하게 위반 후보.
     if t.contains("= Shadow {") {
         return true;
     }
     for pat in ["egui::Shadow {", "epaint::Shadow {"] {
         if let Some(pos) = t.find(pat) {
             let before = &t[..pos];
-            // 화살표가 리터럴 앞에 있고 그 뒤로 대입이 없으면 반환타입 선언(생성 아님).
             let is_return_type = before
                 .rfind("->")
                 .is_some_and(|a| !before[a..].contains('='));
@@ -137,15 +78,13 @@ fn is_shadow_literal(line: &str) -> bool {
     false
 }
 
-/// `theme.rs` 에서 `to_egui` 함수의 줄 범위 `[start, end]` 를 중괄호 깊이로 구한다.
-/// 이름이 아니라 **구조**(함수 body 중괄호 밸런스)로 허용 범위를 정한다 — 그래야
-/// `to_egui` 를 그 위치 밖으로 옮기는 뮤테이션이 잡힌다(리터럴이 범위 밖이 된다).
+/// to_egui 함수의 시작과 끝을 중괄호 깊이로 찾아 허용 범위를 정한다.
 fn to_egui_range(theme_src: &str) -> (usize, usize) {
     let lines: Vec<&str> = theme_src.lines().collect();
     let start = lines
         .iter()
         .position(|l| l.contains("fn to_egui"))
-        .expect("to_egui 정의를 찾지 못함 — 정본이 사라졌다");
+        .expect("to_egui 함수 정의를 찾지 못했다");
     let mut depth: i32 = 0;
     let mut opened = false;
     for (i, l) in lines.iter().enumerate().skip(start) {
@@ -182,15 +121,8 @@ fn shadow_literal_violations(
     (v, allowed)
 }
 
-/// 판정2: 그림자 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 결과를
-/// `let mut` 로 받은 변수의 기하 필드(`offset`/`blur`/`spread`) 재대입은 위반.
-/// `color` 재대입은 허용(페이드 애니메이션 — banner/modifier_hint 가 opacity 를
-/// 곱한다). 이름(`gamma_multiply`)이 아니라 **어느 필드를 재대입하는가**로 가른다:
-/// 허용 함수를 통과했다는 것이 허용 값이 나온다는 뜻은 아니다.
-///
-/// 접근자 목록([`SHADOW_ACCESSORS`])이 실제 `Theme` 접근자와 어긋나면 새 토큰의
-/// 재대입이 조용히 안 잡힌다 — 그 정합은
-/// `shadow_accessor_list_matches_theme_accessors` 가 theme.rs 를 읽어 고정한다.
+/// 같은 줄의 let mut와 접근자 이름으로 변수를 찾고 offset·blur·spread 재대입을 검사한다.
+/// color 변경은 페이드에 필요하므로 허용한다.
 fn geom_reassign_violations(rel: &str, text: &str) -> Vec<String> {
     let mut vars: Vec<String> = Vec::new();
     for line in text.lines() {
@@ -228,16 +160,14 @@ fn rel_of(root: &Path, f: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 정책: `Shadow {}` 생성은 두 토큰의 공용 변환기 `ShadowToken::to_egui` 안에서만.
-/// 그 밖에서는 표면에 맞는 `shadow_popover()` / `shadow_modal()` 을 거쳐 변환한다.
-/// 이 검사는 그 정책 중 [`is_shadow_literal`] 이 인식하는 리터럴의 위치를 본다.
+/// 인식 가능한 Shadow 생성이 공용 변환기 밖에 있는지 확인한다.
 #[test]
 fn shadow_creation_is_confined_to_the_token_converter() {
     let root = repo_root();
     let files = scan_files();
     assert!(
         files.len() >= SCAN_FILE_FLOOR,
-        "스캔 파일 {} < 하한 {} — 경로(../..)가 틀렸을 수 있다(거짓 초록 방지)",
+        "스캔 파일 {}개가 하한 {}개보다 적다. 저장소 경로와 수집 결과를 확인한다.",
         files.len(),
         SCAN_FILE_FLOOR
     );
@@ -259,17 +189,16 @@ fn shadow_creation_is_confined_to_the_token_converter() {
 
     assert!(
         violations.is_empty(),
-        "허용 위치(theme.rs::to_egui) 밖 Shadow 생성 — theme.shadow_popover()/shadow_modal() \
-         로 라우팅해라:\n{}",
+        "공용 변환기 밖에서 Shadow를 생성했다. theme.shadow_popover()/shadow_modal()을 통해 변환해야 한다:\n{}",
         violations.join("\n")
     );
     assert_eq!(
         allowed_total, 1,
-        "정본 Shadow 생성(to_egui)이 정확히 1 개가 아니다 — 정본이 사라졌거나 중복됐다"
+        "to_egui 안의 Shadow 생성이 정확히 1개여야 한다"
     );
 }
 
-/// 역방향: 허용 함수를 통과해도 그 결과의 기하를 덮어쓰면 정책 우회다.
+/// 변환 결과의 offset·blur·spread를 다시 바꾸는 경우도 거부한다.
 #[test]
 fn shadow_accessor_result_is_not_geometrically_overridden() {
     let root = repo_root();
@@ -285,8 +214,6 @@ fn shadow_accessor_result_is_not_geometrically_overridden() {
         violations.join("\n")
     );
 }
-
-// ── 뮤테이션: 가드가 무엇을 잡고 무엇을 통과시키는지 자기증명 ──────────────────
 
 #[test]
 fn mutation_catches_shadow_literal_outside_converter() {
@@ -309,9 +236,7 @@ fn mutation_discriminates_when_converter_moves_out_of_range() {
     assert_eq!(v.len(), 1, "to_egui 밖 Shadow 리터럴은 위반");
 }
 
-/// [`SHADOW_ACCESSORS`] 가 `Theme` 의 실제 `shadow_*()` 접근자 전부인가. 새 그림자
-/// 토큰에 접근자를 붙이고 이 목록을 안 늘리면 판정2 가 그 토큰만 안 본다 — 가드가
-/// 조용히 절반만 도는 형태라, 목록을 정본(theme.rs)에서 다시 읽어 대조한다.
+/// 실제 Theme 접근자와 검사 목록을 대조해 빠진 접근자를 찾는다.
 #[test]
 fn shadow_accessor_list_matches_theme_accessors() {
     let theme_src =
@@ -337,8 +262,7 @@ fn shadow_accessor_list_matches_theme_accessors() {
     listed.sort();
     assert_eq!(
         found, listed,
-        "theme.rs 의 shadow_*() 접근자와 SHADOW_ACCESSORS 가 어긋났다 — 빠진 쪽의 기하 \
-         재대입이 조용히 통과한다"
+        "theme.rs의 shadow_*() 접근자와 SHADOW_ACCESSORS가 다르다. 빠진 접근자는 재대입을 검사하지 못한다."
     );
 }
 
@@ -354,37 +278,31 @@ fn mutation_catches_geometry_reassignment() {
 
 #[test]
 fn mutation_allows_color_fade_on_popover_shadow() {
-    // 실제 정당 케이스 형태(banner/modifier_hint) — color 만 곱한다. 반드시 PASS.
     let text = "let mut shadow = theme.shadow_popover().to_egui();\n\
                 shadow.color = shadow.color.gamma_multiply(opacity);\n";
     assert!(
         geom_reassign_violations("x.rs", text).is_empty(),
-        "color 페이드는 허용 — 정당한 사용을 죽이면 안 된다"
+        "color 페이드는 허용해야 한다"
     );
 }
 
-// ── 면제 겨냥 변이: 각 면제 창 안쪽에 진짜 위반/정당을 심어 판정기를 찌른다 ────────
-
 #[test]
 fn mutation_arrow_on_line_does_not_hide_a_real_creation() {
-    // 반환타입 화살표 면제가 **줄 단위**면 같은 줄의 실제 생성을 가린다(면제 창 과다).
-    // 화살표가 리터럴 앞 타입 위치일 때만 반환타입으로 봐야 이 위반이 잡힌다.
+    // 반환 화살표가 같은 줄에 있어도 그 뒤의 구조체 생성은 검출해야 한다.
     let hidden = "    let f = || -> u32 { let s = egui::Shadow { blur: 4 }; 0 };";
     assert!(
         is_shadow_literal(hidden),
         "줄에 `->` 가 있어도 대입(=) 뒤 실제 생성은 위반이다"
     );
-    // 정당 면제 대상 — 화살표가 리터럴 직전 타입 위치(반환타입 선언)면 생성이 아니다.
     let return_type = "    pub fn to_egui(self) -> egui::epaint::Shadow {";
     assert!(
         !is_shadow_literal(return_type),
-        "반환타입 선언은 생성이 아니다 — 정당 면제를 죽이면 안 된다"
+        "반환 타입 선언은 구조체 생성으로 세지 않아야 한다"
     );
 }
 
 #[test]
 fn mutation_catches_geometry_reassignment_on_modal_shadow() {
-    // popover 만 보던 판정2 가 새 토큰도 보는가 — 목록을 좁히는 변이를 잡는다.
     let text = "let mut shadow = theme.shadow_modal().to_egui();\nshadow.blur = 4;\n";
     assert_eq!(
         geom_reassign_violations("x.rs", text).len(),
@@ -395,21 +313,18 @@ fn mutation_catches_geometry_reassignment_on_modal_shadow() {
 
 #[test]
 fn mutation_geometry_comparison_is_not_a_reassignment() {
-    // `offset ==` 비교 면제(`!contains("== ")`)가 진짜 대입(`=`)을 가리지 않는지 —
-    // 비교는 통과하고 대입은 `mutation_catches_geometry_reassignment` 가 잡는다.
+    // 동등 비교를 재대입으로 오인하지 않는지 확인한다.
     let text = "let mut shadow = theme.shadow_popover().to_egui();\n\
                 if shadow.offset == [0, 8] { paint(shadow); }\n";
     assert!(
         geom_reassign_violations("x.rs", text).is_empty(),
-        "== 비교는 재대입이 아니다 — 정당 비교를 죽이면 안 된다"
+        "== 비교는 재대입으로 세지 않아야 한다"
     );
 }
 
 #[test]
 fn mutation_self_file_is_excluded_but_would_otherwise_flag() {
-    // 자기 제외가 **실효 있음**을 증명 — 이 파일을 그냥 판정기에 먹이면 판정 needle 과
-    // 변이 합성 입력이 위반으로 잡힌다. 그래서 scan_files() 가 이 파일을 제외한다.
-    // (제외 없으면 오탐 → 제외는 진짜 무언가를 가리는 면제다.)
+    // 합성 위반을 포함한 이 파일은 그대로 검사하면 오탐하므로 제외한다.
     let self_src = fs::read_to_string(
         repo_root().join("crates/tasty-type-appearance/src/shadow_policy_guard.rs"),
     )
@@ -417,7 +332,7 @@ fn mutation_self_file_is_excluded_but_would_otherwise_flag() {
     let (v, _) = shadow_literal_violations("self.rs", &self_src, None);
     assert!(
         !v.is_empty(),
-        "이 파일엔 판정 needle 이 있어 제외 없으면 오탐된다(면제가 실효 있음)"
+        "이 검사 파일의 합성 코드는 제외하지 않으면 위반으로 잡혀야 한다"
     );
     assert!(
         !scan_files()
@@ -429,9 +344,7 @@ fn mutation_self_file_is_excluded_but_would_otherwise_flag() {
 
 #[test]
 fn intended_miss_scrim_overlay_is_not_a_shadow_literal() {
-    // 의도된 false negative: scrim 은 `from_black_alpha` 배경 오버레이라 Shadow 타입이
-    // 아니다 — 이 가드가 일부러 안 잡는다. 판정기를 넓혀 이걸 잡기 시작하면(scrim
-    // 오탐) 이 테스트가 실패해 그 결정이 드러난다. 한계가 의도임을 붙박는다.
+    // scrim은 Shadow 구조체가 아니므로 이 검사의 대상이 아니다.
     assert!(!is_shadow_literal(
         "        p.rect_filled(rect, r, theme.scrim().to_egui());"
     ));

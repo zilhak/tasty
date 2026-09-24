@@ -1,19 +1,6 @@
-//! Theme schema — UI 시각 표현의 데이터 모델.
-//!
-//! ```text
-//! tasty-themes ──▶ resolve(settings)/mutate ──▶ Theme 인스턴스
-//!                                                 │
-//!                                                 ▼
-//!                                          UI: theme().X
-//! ```
-//!
-//! 이 모듈은 **데이터 구조** 만 정의한다. partial 누적·TOML 로딩·전역 RwLock·
-//! 빌트인 mocha fallback 같은 mutation/IO 로직은 `tasty-themes` 가 담당하고,
-//! 그 결과를 `Theme` 인스턴스로 빌드하여 themes 의 전역 슬롯에 박아 넣는다.
-//!
-//! `Theme` 은 평평한 단일 구조체로, UI 코드가 `theme().crust` /
-//! `theme().spacing_sm` / `theme().is_light` 처럼 한 단계로 접근한다.
-//! 색상 직렬화·partial 표현은 `ThemeColors` / `PartialColors` 에서 분리.
+//! UI 색상·치수·그림자의 타입과 계산을 정의한다.
+//! 파일 읽기·전역 상태·테마 선택은 tasty-themes가 담당한다.
+//! ThemeColors/PartialColors는 저장·병합용이고 Theme는 그리기에 사용할 값을 담는다.
 
 use crate::color::{GpuRgb, HexColor};
 use crate::motion::Millis;
@@ -25,12 +12,8 @@ use tasty_type_geometry::length::LogicalPx;
 //  SurfaceTheme — surface kind 별 focused/unfocused 색 묶음
 // ============================================================================
 
-/// 한 surface 종류의 색 묶음. `Theme.surface_themes` 안에 `id -> SurfaceTheme` 으로 보관.
-///
-/// terminal 특유의 selection / search_match 색은 여기 들지 않는다 — Theme 의 top-level
-/// 필드에 남아있고, 다른 surface 가 그 기능을 가질 때 sub-struct 로 흡수한다.
-///
-/// plugin 이 자기 surface kind 를 등록하면 그 id 로 SurfaceTheme 을 추가할 수 있다.
+/// 서피스 종류별 포커스·비포커스 색상. 종류 ID를 키로 저장하며 플러그인도 추가할 수 있다.
+/// 터미널의 선택·검색 색상은 Theme의 별도 필드다.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SurfaceTheme {
     pub focused_bg: HexColor,
@@ -87,9 +70,7 @@ impl SurfaceTheme {
     }
 }
 
-/// surface_themes 에 해당 id 가 없을 때 호출자가 쓸 수 있는 안전한 fallback.
-/// 모든 surface 가 검은 배경 + 흰 글자로 동작한다. theme 이 정상 적용된 상태에서는
-/// 절대 도달하지 않으며, 부팅 직후 / 잘못된 plugin 등록 케이스의 마지막 보루.
+/// 등록되지 않은 서피스 종류를 조회했을 때 사용할 기본 색상.
 #[allow(clippy::disallowed_methods)] // reason: 부팅/오류 최후 보루용 고정 색 리터럴 정의
 pub const FALLBACK_SURFACE: SurfaceTheme = SurfaceTheme {
     focused_bg: HexColor::from_rgb(0, 0, 0),
@@ -112,15 +93,11 @@ pub const ACCENT_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xc4, 0x2b, 0x1c);
 #[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
-/// light 테마(Latte)에서 accent 위 텍스트색 — DTCG `text-on-accent` 의 Latte remap
-/// 은 절대색 white(`--tasty-color-white`). vivid accent(blue 등) 위 white 대비
-/// ≈4.9:1 로 4.5:1 충족. Mocha 는 `crust` 를 쓰므로 이 리터럴은 light 전용.
+/// 밝은 테마에서 강조색 위에 쓰는 흰색 텍스트. 어두운 테마는 crust를 사용한다.
 #[allow(clippy::disallowed_methods)] // reason: DTCG 고정 리터럴 색 — 테마 무관
 pub const TEXT_ON_ACCENT_LIGHT: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
-/// macOS 신호등(traffic light) 색. OS 가 인식하는 affordance 라 사용자가 정확한
-/// 시스템 red/amber/green 을 기대한다 — Catppuccin accent 가 아니다. Windows close
-/// 처럼 테마 불변 OS-system 리터럴 (`--tasty-color-os-macos-*`). mocha/latte 동일값.
+/// macOS 창 버튼에 대응하는 고정색. Catppuccin 팔레트와 구분한다.
 #[allow(clippy::disallowed_methods)] // reason: OS 고정 리터럴 색 — 테마 무관
 pub const OS_MACOS_CLOSE: HexColor = HexColor::from_rgb(0xec, 0x6a, 0x5e);
 /// macOS 신호등 — minimize (amber).
@@ -144,30 +121,15 @@ pub const OPACITY_DISABLED: f32 = 0.5;
 /// 와 같은 이유로 순수 비율 f32 상수.
 pub const OPACITY_RECESSED: f32 = 0.4;
 
-/// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). Shift 는 대문자·기호 입력에 상시
-/// 쓰여 스침이 잦으므로, Shift 만 눌린 경우에 한해 기본 500ms(`component.modhint-hold-delay`)
-/// 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을 억제한다(Ctrl+Shift 등 다른 modifier 를
-/// 동반한 조합은 의도적 단축키라 기본값 유지). **지연이며 모션이 아니라** reduced_motion 무관.
-///
-/// **이 값에는 대응 디자인 토큰이 없다** — `primitive.duration-1200` 자체가 없어서
-/// 생성 경로를 탈 수 없고, 코드가 값을 발명한 자리다. 나머지 모션 값은 전부
-/// `generated_component.rs` 의 생성 접근자로 옮겼고 여기만 손으로 남았다.
+/// Shift만 누를 때 보조 키 안내를 표시하기까지의 지연. 타이핑 중 불필요한 표시를 줄인다.
+/// 다른 보조 키 조합은 기본 지연을 사용한다. 애니메이션 시간이 아니므로 모션 감소 설정과 무관하다.
+/// 대응하는 디자인 토큰이 없어 수동으로 정의한다.
 pub const MOTION_HOLD_REVEAL_SHIFT_MS: Millis = Millis(1200.0);
 
-/// 떠 있는 표면의 lift 그림자 토큰. egui 비의존 순수 표현 — egui 변환은
-/// `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
-///
-/// 값은 둘이다([`SHADOW_POPOVER`] / [`SHADOW_MODAL`]) — 어느 표면이 어느 쪽을 쓰는지는
-/// `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙 이 정한다.
-/// `alpha` 는 0~255 straight 검정 알파.
-///
-/// # `spread` 는 음수를 담는다 (CSS `box-shadow` 네 번째 길이와 같은 의미)
-/// 디자인 `--tasty-titlebar-csd-shadow`(`0 18px 50px -8px`)가 음수 spread 를 쓴다 —
-/// 그 `-8px` 는 장식이 아니라 falloff 를 8px 리사이즈 엣지 밴드 안으로 묶는 기능이다.
-/// 그래서 이 타입은 음수를 **표현**한다. 다만 egui 0.31 의 `epaint::Shadow::spread` 는
-/// `u8` 이라 음수를 담지 못하고, [`to_egui`](ShadowToken::to_egui) 는 그 사실을 숨기지
-/// 않는다(그 함수 문서 참고). 근사값을 임의로 만들지 않는 것이 디자인 지시라, 음수
-/// spread 를 쓰는 토큰은 **아직 만들지 않는다**(CSD 그림자 미구현).
+/// egui에 의존하지 않는 그림자 표현. alpha는 검정색의 0..=255 불투명도다.
+/// 표면별 선택은 docs/design/systems/theme.md#떠-있는-표면의-그림자를 따른다.
+/// 음수 spread를 표현할 수 있지만 egui 변환은 지원하지 않는다.
+/// 음수 spread가 필요한 CSD 그림자는 임의의 근사값을 쓰지 않고 미구현으로 둔다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowToken {
     pub offset_x: f32,
@@ -180,16 +142,9 @@ pub struct ShadowToken {
 
 #[cfg(feature = "egui-compat")]
 impl ShadowToken {
-    /// egui epaint Shadow 로 변환. offset/blur/spread 는 px 정수로 반올림.
-    ///
-    /// # 음수 `spread` 는 이 경로로 갈 수 없다
-    /// egui 0.31 의 `epaint::Shadow::spread` 는 `u8` 이다. `as u8` 캐스트는 음수를
-    /// **조용히 0 으로 saturate** 해 디자인이 지정한 것과 다른 그림자를 그린다 —
-    /// falloff 를 좁히라고 쓴 `-8px` 가 "확장 없음" 이 되어버린다. 그 조용한 왜곡을
-    /// 막기 위해 음수를 캐스트에 맡기지 않고 여기서 `max(0)` 로 **명시적으로** 잘라내고
-    /// debug 빌드에서는 단언으로 터뜨린다. 음수 spread 가 필요한 표면(CSD 타이틀바)은
-    /// 근사값을 만드는 대신 **미구현으로 둔다** — 지원하려면 egui 의 `Shadow` 가 아니라
-    /// 자체 렌더 경로가 필요하고, 그것은 이 타입의 몫이 아니다.
+    /// 길이를 정수 픽셀로 반올림해 egui 그림자로 변환한다.
+    /// 음수 spread는 debug에서 실패하며 release에서는 0으로 제한한다.
+    /// 이는 음수 spread 지원이 아니므로 해당 그림자는 별도 렌더 경로가 필요하다.
     pub fn to_egui(self) -> egui::epaint::Shadow {
         debug_assert!(
             self.spread >= 0.0,
@@ -205,13 +160,8 @@ impl ShadowToken {
     }
 }
 
-/// `--tasty-shadow-popover` 값(`0 6px 18px rgba(0,0,0,0.4)`). 트리거 옆에 붙어 살아
-/// 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)의 단차 — 배너·tooltip·드롭다운·
-/// anchored popup 이 쓴다. 어느 표면이 어느 쪽을 쓰는지는
-/// `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙.
-///
-/// `alpha` 는 디자인 `rgba(0,0,0,0.4)` 의 0.4 를 0~255 로 옮긴 값이다:
-/// 0.4 × 255 = 102.0 → **102**. ([`SHADOW_MODAL`] 의 140 이 같은 규칙의 결과다.)
+/// 트리거 옆에 뜨는 팝오버·배너·툴팁의 그림자.
+/// 디자인 알파 0.4에 255를 곱한 값은 102다.
 pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     offset_x: 0.0,
     offset_y: 6.0,
@@ -220,16 +170,10 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     alpha: 102,
 };
 
-/// `--tasty-shadow-modal` 값. **뷰포트를 점유하는** centered 표면의 단차 — popover 보다
-/// **크다**. `scrim` 유무는 갈래를 가르는 술어가 아니다(이 값을 받는 표면 중 실제로
-/// scrim 이 깔리는 것은 일부다). scrim 은 값을 더 크게 잡은 **근거**로만 등장한다 —
-/// 바닥을 어둡게 하지만 엣지를 그리지 않아, 어두운 테마에서 어두운 모달이 어두워진
-/// 바닥 위에 놓이면 1px 보더만으로는 실루엣이 사라진다.
-/// 근거·대안·재검토 조건은 `docs/design/systems/theme.md#떠-있는-표면의-그림자`.
-///
-/// `alpha` 는 디자인 `rgba(0,0,0,0.55)` 의 0.55 를 0~255 로 옮긴 값이다:
-/// 0.55 × 255 = 140.25 → 최근접 정수 **140**. ([`SHADOW_POPOVER`] 의 102 가 같은 규칙의
-/// 결과다.)
+/// 창 중앙을 차지하는 모달의 그림자. scrim 유무만으로 선택하지 않는다.
+/// 어두운 배경에서도 모달 외곽을 구분하도록 팝오버보다 크게 설정한다.
+/// 디자인 알파 0.55에 255를 곱해 반올림한 값은 140이다.
+/// 선택 기준은 docs/design/systems/theme.md#떠-있는-표면의-그림자를 따른다.
 pub const SHADOW_MODAL: ShadowToken = ShadowToken {
     offset_x: 0.0,
     offset_y: 20.0,
@@ -260,22 +204,14 @@ pub const DAG_MIX_45_ALPHA: u8 = 115;
 /// ([`DAG_MIX_45_ALPHA`] 와 같은 형태).
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
-/// design `--tasty-tint-fill-alpha` → `--tasty-opacity-tint-fill`. "accent 로 옅게
-/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. docs/design/systems/theme.md#ui-코드의-색상-접근 이
-/// 흩어져 있던 네 짝(0.14/0.45 · 0.12/0.35 · 0.11/0.36 · 0.12/—)을 이 한 짝으로
-/// 모았다. 알파가 아니라 계수라 `u8` 이 아닌 `f32` 다 — 소비처가
-/// `gamma_multiply()` / `mix_srgb()` 의 비율 자리에 그대로 넣는다.
+/// 강조색으로 옅게 채우는 공통 비율. 알파 바이트가 아닌 계산용 f32 계수다.
 pub const TINT_FILL_ALPHA: f32 = 0.12;
 
-/// design `--tasty-tint-border-alpha` → `--tasty-opacity-tint-border`. 위 짝의
-/// **테두리** 계수([`TINT_FILL_ALPHA`]).
+/// 같은 강조색을 사용하는 테두리의 공통 비율.
 pub const TINT_BORDER_ALPHA: f32 = 0.36;
 
-/// `color-mix(in srgb, <a> <ratio>, <b>)` 의 srgb 채널 보간.
-///
-/// CSS 의 `color-mix` 는 두 색이 모두 불투명할 때 채널을 선형 보간한다. 디자인 토큰이
-/// 쓰는 형태가 정확히 그 케이스(두 항 모두 테마 색)라 같은 계산을 옮긴다. 결과 알파는
-/// 배경(`b`)의 알파를 따른다 — wash 는 그 위에 무엇도 비치지 않는 채움색이다.
+/// 불투명한 두 색의 CSS color-mix(in srgb)에 맞춰 RGB 채널을 보간한다.
+/// 반환값의 alpha는 b를 그대로 사용한다.
 #[allow(clippy::disallowed_methods)] // reason: 디자인 토큰 color-mix 식의 유일한 구현부
 fn mix_srgb(a: HexColor, ratio: f32, b: HexColor) -> HexColor {
     let t = ratio.clamp(0.0, 1.0);
@@ -296,17 +232,11 @@ pub struct ThemeSizing {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
-    /// 브랜딩 전용 디스플레이 크기 (30px, design `--tasty-font-size-brand-display`).
-    /// UI 14px 상한의 **두 번째이자 마지막 예외** — 첫 실행 셸 설정 카드의 "Tasty"
-    /// 브랜드 타이틀 하나만 쓴다(wordmark 17 이 첫 예외).
+    /// 첫 실행 화면의 브랜드 제목 크기. 일반 UI 글꼴 상한과 별도로 정한다.
     pub font_size_brand_display: LogicalPx,
-    /// markdown surface heading 앵커 — egui_commonmark 이 `Heading`↔`Body` 사이를 보간하는
-    /// 헤딩 사다리의 최상단(H1). 렌더 CONTENT 라 UI 14px 상한 예외 (20px). per-H2 픽셀 토큰
-    /// (`prose-h2`)·본문 leading 배수(`line-height-prose`)는 라이브러리가 소유해 은퇴됨.
+    /// Markdown H1의 기본 크기. 본문 렌더러가 하위 제목 크기를 계산한다.
     pub font_size_prose_h1: LogicalPx,
-    /// UI 텍스트(툴팁 등 여러 줄 chrome 문단) 줄간격 배수 (1.4, design
-    /// `--tasty-line-height-ui`). prose(1.6)보다 촘촘한 UI 전용 배수 — 무차원 비율이라
-    /// `f32`. 폰트 크기에 곱해 줄 높이를 만든다.
+    /// UI 문단의 줄간격 비율. 글꼴 크기에 곱해 줄 높이를 구한다.
     pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
     pub font_size_term_sm: LogicalPx,
@@ -315,26 +245,15 @@ pub struct ThemeSizing {
     /// terminal cell 스케일 — large (16px).
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
-    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
-    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
-    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
-    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
-    ///
-    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
-    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
+    /// 대상을 둘러싸는 포커스·선택 링의 굵기. 색상은 용도별로 고른다.
+    /// 한쪽 변에만 붙는 표시에는 tab_indicator_width를 사용한다.
     pub focus_ring_width: LogicalPx,
-    /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
-    /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
-    /// 스케일해 주지만, `Ui` 가 없어 `Painter::line_segment` 로 같은 형상을 그려야
-    /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
-    /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
-    /// (`icon_glyph_size_row_action` 과 같은 부류).
+    /// painter로 직접 그리는 창 버튼 글리프의 선 굵기. 대응하는 DTCG 치수 토큰은 없다.
     pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
     pub corner_radius_sm: LogicalPx,
-    /// 떠 있는 패널(배너)용 큰 코너 반경 (8px, design `--tasty-radius-8`). 시스템
-    /// 기본 4px 의 의도적 2배 — CSD 윈도우 코너 / floating 패널 느낌. 배너 셸이 사용.
+    /// 배너처럼 떠 있는 패널의 모서리 반경.
     pub corner_radius_lg: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
@@ -352,11 +271,8 @@ pub struct ThemeSizing {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
-    /// 목록 행 우측 액션 아이콘(가져오기 / 편집 / 삭제 / 재감지 / reveal) 글리프 크기.
-    /// `sm`(14) 과 `md`(16) 사이라 DTCG dim 토큰에 대응이 없다 — `corner_radius_lg` /
-    /// `line_height_ui` 처럼 토큰 없이 `Theme` 에만 사는 치수다. 평범한 `const` 가
-    /// 아니라 여기 두는 이유는 zoom 이다: `const` 는 `with_colors_and_zoom` 의 배율을
-    /// 타지 못해 같은 팝업 안에서 헤더 아이콘만 커지고 행 아이콘은 고정된다.
+    /// 목록 행 액션 아이콘의 크기. 다른 아이콘과 함께 UI 배율을 적용한다.
+    /// 대응하는 DTCG 치수 토큰은 없다.
     pub icon_glyph_size_row_action: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     /// Full sidebar 헤더의 수박 로고 크기.
@@ -376,8 +292,7 @@ pub struct ThemeSizing {
     /// Collapsed sidebar workspace 슬롯 높이.
     pub sidebar_collapsed_workspace_height: LogicalPx,
     // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
-    // 사용자 제약 — 탭바는 host UI zoom 제외. with_colors_and_zoom 에서 SIZING 그대로
-    // 복사 (border_width / tab_width 와 동일 처리).
+    // 탭바 치수는 UI 배율을 적용하지 않는다.
     /// 탭바 자체 높이.
     pub tab_bar_height: LogicalPx,
     /// "+" 새 탭 버튼 폰트 크기.
@@ -389,8 +304,7 @@ pub struct ThemeSizing {
     /// 작업영역 하단 StatusBar 높이.
     pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
-    // 디자인 jsx 가 px 고정이고, OS 데코 관습상 고정 px 가 맞다. tab_bar 와 동일하게
-    // with_colors_and_zoom 에서 SIZING 그대로 복사 (zoom 미적용).
+    // 창 장식의 치수는 UI 배율과 독립적으로 유지한다.
     /// CSD 타이틀바 높이.
     pub titlebar_height: LogicalPx,
     /// macOS 신호등(traffic light) 점 지름.
@@ -429,9 +343,7 @@ pub struct ThemeSizing {
     pub spinner_size: LogicalPx,
     /// 토스트 좌측 accent 바 두께 (3px).
     pub toast_accent_width: LogicalPx,
-    /// 탭 active indicator 두께 (2px). 대상을 감싸지 않고 **한쪽 변에 붙는 띠**
-    /// 전반 — 탭 밑줄, 활성 행의 좌측 accent 바. 감싸는 링은
-    /// `focus_ring_width`(같은 2 지만 그쪽만 `zoomed()` 를 탄다).
+    /// 한쪽 변의 활성 표시 두께. 대상을 둘러싸는 링은 focus_ring_width를 사용한다.
     pub tab_indicator_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
@@ -472,8 +384,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     sidebar_logo_collapsed_size: LogicalPx(24.0),
     sidebar_wordmark_font_size: LogicalPx(17.0),
     sidebar_section_heading_font_size: LogicalPx(10.0),
-    // 디자인 판정 (2026-07-02 token-coverage): UI 타입 스케일은 10/11/13/14 고정,
-    // 12 는 터미널 전용 — `font-size-caption`(11) 으로 스냅.
+    // 사이드바 섹션 제목은 caption 글꼴을 사용한다.
     sidebar_button_label_font_size: LogicalPx(11.0),
     sidebar_collapsed_slot_width: LogicalPx(32.0),
     sidebar_collapsed_icon_height: LogicalPx(22.0),
@@ -507,15 +418,8 @@ pub const SIZING: ThemeSizing = ThemeSizing {
 //  ThemeColors / PartialColors — 직렬화 표현
 // ============================================================================
 
-/// 테마 색상 풀 세트. 직렬화 가능 — `AppearanceSettings.theme_base` 가 이걸 저장.
-///
-/// `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색은 여기 없다.
-/// 그건 `is_light` 에서 자동 도출되므로 `Theme` 인스턴스에서만 보유한다.
-///
-/// 모든 색 필드가 `HexColor`. ansi 는 hex 로 통일했고, GPU 셰이더에 넘길 때만
-/// `.to_float()` 한다. surface 종류별(focused/unfocused × bg/fg) 색은
-/// `surface_themes` map 안에 `SurfaceTheme` 으로 담는다 — plugin 이 자기 id 로
-/// 추가 가능.
+/// 저장 가능한 전체 색상 집합. 파생 오버레이 색은 Theme에 따로 둔다.
+/// GPU 변환에는 to_gpu_rgba/to_gpu_rgb를 사용하고 종류별 색상은 surface_themes에 담는다.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ThemeColors {
     // ── Surfaces (low → high elevation) ──
@@ -585,12 +489,7 @@ pub struct ThemeColors {
     pub surface_themes: BTreeMap<String, SurfaceTheme>,
 }
 
-/// `ThemeColors` 의 모든 필드를 `Option<HexColor>` 로 감싼 표현.
-///
-/// - 사용자가 settings UI 픽커로 손댄 흔적(`AppearanceSettings.theme_overrides`)
-/// - 외부 TOML 의 partial 테마 정의 (`ThemeFile` 에서 변환)
-///
-/// `ThemeColors::apply_partial()` 로 `Some` 필드만 base 에 덮어쓴다.
+/// 사용자 변경분이나 부분 TOML 테마. Some인 색상과 서피스 종류별 변경분만 기본 색에 덮어쓴다.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialColors {
@@ -693,12 +592,12 @@ pub struct PartialColors {
 }
 
 impl PartialColors {
-    /// 모든 필드를 None 으로 리셋.
+    /// 색상 변경분과 서피스별 변경분을 모두 비운다.
     pub fn clear(&mut self) {
         *self = Self::default();
     }
 
-    /// 단일 None 인지 (= 사용자 흔적 없음).
+    /// 색상과 서피스에 적용할 변경분이 없는지 확인한다.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
     }
@@ -860,11 +759,7 @@ impl ThemeColors {
 //  Theme — 실제 적용된 인스턴스 (평평한 구조)
 // ============================================================================
 
-/// 현재 적용된 테마 인스턴스. **UI 코드는 `theme()` 으로 받아 평평하게 접근**한다
-/// (예: `theme().crust`, `theme().spacing_sm`, `theme().is_light`).
-///
-/// `ThemeColors` 의 모든 필드를 펼쳐 담고, sizing/플래그/도출 색상을 함께 보유.
-/// surface kind 별 색은 `surface_themes` map — `surface(id)` 헬퍼로 접근 권장.
+/// 그리기에 필요한 색·치수·배율·모션 설정. 종류별 색은 surface로 조회한다.
 #[derive(Debug, Clone)]
 pub struct Theme {
     // ── ThemeColors 와 동일 필드 (펼친 형태) ──
@@ -930,43 +825,27 @@ pub struct Theme {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
-    /// 브랜딩 전용 디스플레이 크기 (30px, design `--tasty-font-size-brand-display`).
-    /// UI 14px 상한의 **두 번째이자 마지막 예외** — 첫 실행 셸 설정 카드의 "Tasty"
-    /// 브랜드 타이틀 하나만 쓴다(wordmark 17 이 첫 예외).
+    /// 첫 실행 화면의 브랜드 제목 크기. 일반 UI 글꼴 상한과 별도로 정한다.
     pub font_size_brand_display: LogicalPx,
-    /// markdown surface heading 앵커 — egui_commonmark 헤딩 사다리 최상단(H1). 렌더 CONTENT 라
-    /// UI 14px 상한 예외 (20px). per-H2·본문 leading 은 라이브러리 소유로 은퇴됨.
-    /// **zoom 제외 — 렌더 콘텐츠라 UI 배율 축 밖이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// Markdown H1 크기. 콘텐츠 글꼴이므로 UI zoom 제외.
     pub font_size_prose_h1: LogicalPx,
     /// UI 텍스트(툴팁 등) 줄간격 배수 (1.4, design `--tasty-line-height-ui`). 무차원 비율.
     pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
-    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 콘텐츠 글꼴이므로 UI zoom 제외. 터미널 배율은 별도로 적용한다.
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
-    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 콘텐츠 글꼴이므로 UI zoom 제외. 터미널 배율은 별도로 적용한다.
     pub font_size_term: LogicalPx,
     /// terminal cell 스케일 — large (16px).
-    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 콘텐츠 글꼴이므로 UI zoom 제외. 터미널 배율은 별도로 적용한다.
     pub font_size_term_lg: LogicalPx,
     /// 기본 보더 굵기 (1px).
-    /// **zoom 제외 — 1px 보더 정책. 배율을 태우면 hairline 이 아니게 된다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// hairline 보더는 UI zoom 제외.
     pub border_width: LogicalPx,
-    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
-    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
-    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
-    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
-    ///
-    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
-    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
+    /// 대상을 둘러싸는 포커스·선택 링의 굵기. 한쪽 변의 표시는 tab_indicator_width를 사용한다.
     pub focus_ring_width: LogicalPx,
-    /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
-    /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
-    /// 스케일해 주지만, `Ui` 가 없어 `Painter::line_segment` 로 같은 형상을 그려야
-    /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
-    /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
-    /// (`icon_glyph_size_row_action` 과 같은 부류).
-    /// **zoom 제외 — hairline. 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 창 버튼 글리프의 hairline 굵기. 버튼의 고정 치수에 맞춰 UI zoom 제외.
     pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
@@ -976,8 +855,8 @@ pub struct Theme {
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
-    /// 탭 하나의 기본 폭. 본체 탭바는 `AppearanceSettings.tab_width` 를 읽고, 이 필드의 소비자는 갤러리와 sub-menu 패널 폭이다.
-    /// **zoom 제외 — 탭바 크롬. 컨테이너와 그 안의 폰트가 함께 고정이라 클리핑이 안 난다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 갤러리·하위 메뉴에서 쓰는 기본 탭 폭. 본체 탭 폭은 설정에서 읽는다.
+    /// 탭바 크롬은 UI zoom 제외.
     pub tab_width: LogicalPx,
     pub spacing_xs: LogicalPx,
     pub spacing_sm: LogicalPx,
@@ -991,11 +870,7 @@ pub struct Theme {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
-    /// 목록 행 우측 액션 아이콘(가져오기 / 편집 / 삭제 / 재감지 / reveal) 글리프 크기.
-    /// `sm`(14) 과 `md`(16) 사이라 DTCG dim 토큰에 대응이 없다 — `corner_radius_lg` /
-    /// `line_height_ui` 처럼 토큰 없이 `Theme` 에만 사는 치수다. 평범한 `const` 가
-    /// 아니라 여기 두는 이유는 zoom 이다: `const` 는 `with_colors_and_zoom` 의 배율을
-    /// 타지 못해 같은 팝업 안에서 헤더 아이콘만 커지고 행 아이콘은 고정된다.
+    /// 목록 행 액션 아이콘 크기. 대응 DTCG 토큰은 없지만 다른 아이콘처럼 배율을 적용한다.
     pub icon_glyph_size_row_action: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     pub sidebar_logo_size: LogicalPx,
@@ -1008,30 +883,30 @@ pub struct Theme {
     pub sidebar_collapsed_workspace_height: LogicalPx,
     // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
     /// 탭바 자체 높이.
-    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 탭바 크롬은 UI zoom 제외.
     pub tab_bar_height: LogicalPx,
     /// 탭 라벨 폰트 크기.
-    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 탭바 크롬은 UI zoom 제외.
     pub tab_bar_label_font_size: LogicalPx,
     /// 좌/우 스크롤 화살표 폰트 크기.
-    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 탭바 크롬은 UI zoom 제외.
     pub tab_bar_arrow_font_size: LogicalPx,
     // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
     /// 작업영역 하단 StatusBar 높이.
-    /// **zoom 제외 — 상태바 크롬. 컨테이너와 내용이 함께 고정이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 상태바 크롬은 UI zoom 제외.
     pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
     /// CSD 타이틀바 높이.
-    /// **zoom 제외 — CSD 타이틀바 크롬. OS 창 장식 기하라 배율과 독립이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// CSD 타이틀바 크롬은 UI zoom 제외.
     pub titlebar_height: LogicalPx,
     /// macOS 신호등(traffic light) 점 지름.
-    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// CSD 타이틀바 크롬은 UI zoom 제외.
     pub traffic_size: LogicalPx,
     /// Windows 캡션 버튼(min·max·close) 폭.
-    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// CSD 타이틀바 크롬은 UI zoom 제외.
     pub caption_width: LogicalPx,
     /// Linux DE 버튼(min·max·close) 원형 지름.
-    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// CSD 타이틀바 크롬은 UI zoom 제외.
     pub window_button_size: LogicalPx,
     // ── 가독 폭 (Note / content / 모달 컬럼용) ──
     pub measure_sm: LogicalPx,
@@ -1050,27 +925,15 @@ pub struct Theme {
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
-    /// 한쪽 변에 붙는 띠(탭 밑줄·활성 행 좌측 accent 바). 감싸는 링은
-    /// `focus_ring_width` — 값은 같은 2 지만 그쪽만 zoom 을 탄다.
-    /// **zoom 제외 — hairline 띠.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
+    /// 한쪽 변의 활성 표시. hairline 띠이므로 UI zoom 제외.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 
-    /// host UI zoom 배율 (`with_colors_and_zoom` 에 전달된 값 그대로, 기본 1.0).
-    /// component 접근자가 primitive 직접 alias 치수에 곱하는 용도 — 이미 `zoomed()`
-    /// 로 resolve 된 필드에는 재적용하지 않는다.
+    /// 컴포넌트 접근자가 직접 보관한 치수에 적용할 UI 배율.
+    /// 생성자에서 이미 확대한 필드에는 다시 곱하지 않는다.
     pub ui_zoom: f32,
 
-    /// 접근성 "모션 감소" 설정(`accessibility.reduced_motion`)이 켜져 있는가.
-    ///
-    /// **색·치수가 아닌데 `Theme` 이 드는 이유는 위젯이 잊을 수 없게 하기 위해서다.**
-    /// 종전에는 위젯이 이 값을 호출부 인자로 받았고, 그 인자를 실제로 넘기는 자리가
-    /// 레포 전체에 0 이었다 — 설정을 켜도 스피너가 계속 돌았다. 그리는 코드는 `Theme`
-    /// 없이는 그릴 수 없으므로, 여기 실으면 새 자리가 생겨도 빠뜨릴 수 없다.
-    /// 결정과 대안은 docs/design/systems/theme.md#모션-설정과-시간-단위.
-    ///
-    /// 기본은 `false` — `with_colors*` 로 직접 만든 `Theme`(테스트·갤러리·plugin 프로세스)
-    /// 은 이 설정을 모른다. host 는 전역 설치 경로가 값을 실어 나른다.
+    /// 모션 감소 설정을 위젯에 전달한다. 생성자의 기본값은 false이며 호스트가 설정값을 반영한다.
     pub reduced_motion: bool,
 
     // ── 라이트/다크 플래그 ──
@@ -1102,18 +965,13 @@ const fn derive_overlays(is_light: bool) -> (HexColor, HexColor, HexColor) {
 }
 
 impl Theme {
-    /// `ThemeColors` + `is_light` 로 풀 인스턴스 빌드. SIZING 은 const 에서 복사.
-    /// `surface_themes` 가 `BTreeMap` 이라 더 이상 `const fn` 일 수 없다.
+    /// 색상과 밝기 모드로 Theme를 만든다. 배율은 1, 모션 감소는 false다.
     pub fn with_colors(c: ThemeColors, is_light: bool) -> Self {
         Self::with_colors_and_zoom(c, is_light, 1.0)
     }
 
-    /// `with_colors` 의 일반화 — host UI zoom 배율을 sizing token 자체에 곱해서
-    /// 박는다. `ui_zoom == 1.0` 이면 `with_colors` 와 결과 동일.
-    ///
-    /// 미적용 토큰 (디자인 정책상 zoom 영향 받지 않음):
-    /// - `border_width` (1px 보더는 zoom 무관)
-    /// - `tab_width` (탭바는 host UI zoom 제외)
+    /// 색상과 밝기 모드에 UI 배율을 적용한다. 배율 적용 치수는 반올림한다.
+    /// 제외 필드는 각 필드 설명과 zoom_exempt_fields_guard의 EXEMPT 목록을 따른다.
     pub fn with_colors_and_zoom(c: ThemeColors, is_light: bool, ui_zoom: f32) -> Self {
         let (hover_overlay, active_overlay, separator) = derive_overlays(is_light);
         let zoomed = |px: LogicalPx| LogicalPx((px.value() * ui_zoom).round());
@@ -1183,8 +1041,7 @@ impl Theme {
             font_size_term_lg: SIZING.font_size_term_lg,
             border_width: SIZING.border_width,
             focus_ring_width: zoomed(SIZING.focus_ring_width),
-            // `border_width` 와 같이 zoom 을 타지 않는다 — 이 굵기를 쓰는 타이틀바
-            // 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다.
+            // 창 버튼의 고정 기하와 선 굵기를 함께 유지한다.
             icon_stroke_width: SIZING.icon_stroke_width,
             corner_radius: zoomed(SIZING.corner_radius),
             corner_radius_sm: zoomed(SIZING.corner_radius_sm),
@@ -1244,9 +1101,7 @@ impl Theme {
         }
     }
 
-    /// surface kind id 로 SurfaceTheme 조회. 없으면 [`FALLBACK_SURFACE`] 를 가리킨다.
-    /// theme 이 정상 적용된 상태에서는 항상 빌트인 entry (`"terminal"`, `"markdown"`) 가
-    /// 존재한다.
+    /// 서피스 종류의 색을 조회한다. 등록되지 않은 ID는 FALLBACK_SURFACE를 사용한다.
     pub fn surface(&self, id: &str) -> &SurfaceTheme {
         self.surface_themes.get(id).unwrap_or(&FALLBACK_SURFACE)
     }
@@ -1304,11 +1159,10 @@ impl Theme {
         }
     }
 
-    /// `ThemeColors` 의 색상 필드만 자신에게 덮어쓴다 (sizing / is_light / 도출 색상은 보존).
-    /// is_light 변경이 필요하면 `set_is_light()` 도 호출할 것.
+    /// 밝기 모드를 유지한 채 새 색상으로 Theme 전체를 다시 만든다.
+    /// 배율은 1, 모션 감소는 false로 초기화된다. 밝기 변경은 set_is_light로 따로 처리한다.
     pub fn apply_colors(&mut self, c: &ThemeColors) {
         let next = Self::with_colors(c.clone(), self.is_light);
-        // 색상 + 도출 overlay 만 갱신 (is_light/sizing 은 보존되지만 next 와 동일).
         *self = next;
     }
 
@@ -1321,10 +1175,7 @@ impl Theme {
         self.separator = s;
     }
 
-    /// 평면 색 필드를 다시 [`ThemeColors`] 로 모은다 (`apply_colors`/`with_colors`
-    /// 의 역방향). resolved Theme 을 (zoom 독립적인) 색 집합으로 직렬화해 프로세스
-    /// 경계 너머로 보내고 [`Theme::with_colors_and_zoom`] 으로 재구성할 때 쓴다
-    /// (egui-mesh plugin 의 Theme parity — docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+    /// 색상만 ThemeColors로 모은다. 프로세스 간 전달 후 배율과 설정을 별도로 적용할 수 있다.
     pub fn to_colors(&self) -> ThemeColors {
         ThemeColors {
             crust: self.crust,
@@ -1403,24 +1254,10 @@ impl Theme {
     }
 }
 
-// ============================================================================
-//  Semantic 접근자 — A1 token-crosswalk 의 의미 라벨 기준
-// ============================================================================
-//
-// `Theme` 은 평면 primitive 필드를 노출하고, 의미(accent-primary 등) 매핑을 semantic
-// 접근자로 끌어올린다. bg-*/surface-*/text-*(placeholder 까지)/accent-*/border-* 의
-// **단순 primitive 필드 alias** 접근자는 `semantic_color_generated.rs` 로 이관됐다
-// (DTCG semantic 색 토큰에서 생성 — SSoT 는 디자인 파일). 아래 `impl Theme` 에는
-// codegen 불가라 수기로 남는 접근자만 둔다: is_light 분기(text-on-accent), derive_overlays
-// 도출(overlay-*), 합성색(scrim), OS/brand 리터럴, component tier 조합(titlebar/banner) 등.
-//
-// 매핑 근거: `docs/design/systems/design-token-mapping.md#rust-필드--호출처-토큰-크로스워크` (semantic ↔ primitive ↔ 필드).
-// 같은 primitive 가 여러 role 로 갈리는 다의성(crosswalk §4)은 호출처가 어느 접근자를
-// 쓰는지로 표현된다 (예: blue → `accent_primary` / `border_focus` / ansi-blue).
+// 단순 색상 별칭은 semantic_color_generated.rs에서 생성한다.
+// 아래에는 밝기 모드 분기·오버레이·합성색·OS/브랜드 고정색처럼 별도 계산이 필요한 접근자를 둔다.
 impl Theme {
-    /// accent 위 텍스트색 (DTCG `text-on-accent`). 테마별 role-remap: Mocha(dark)
-    /// 는 neutral-0(=`crust`), Latte(light)는 절대색 white. vivid accent 위 대비
-    /// (4.5:1) 를 양 테마에서 충족시키기 위한 분기 — `is_light` 로 식별.
+    /// 강조색 위 텍스트. 어두운 테마는 crust, 밝은 테마는 흰색을 사용한다.
     #[inline]
     pub fn text_on_accent(&self) -> HexColor {
         if self.is_light {
@@ -1462,10 +1299,7 @@ impl Theme {
         HexColor::from_rgba(0, 0, 0, SCRIM_ALPHA)
     }
 
-    /// 프리셋 편집기 경계 hover-split 존의 밴드 채움색. design
-    /// `--tasty-preset-split-zone-bg` = accent-primary 22% — accent 색(테마 가변)은
-    /// 유지하고 알파만 파생한다([`PRESET_SPLIT_ZONE_BG_ALPHA`]). split-zone overlay 는
-    /// 향후 drag-drop drop-zone 과 토큰을 공유할 의도로 명명(계획 §rationale).
+    /// 프리셋 경계의 분할 영역을 accent-primary 22%로 채운다.
     #[inline]
     pub fn preset_split_zone_bg(&self) -> HexColor {
         self.accent_primary().with_alpha(PRESET_SPLIT_ZONE_BG_ALPHA)
@@ -1480,16 +1314,8 @@ impl Theme {
             .with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
     }
 
-    // ── DAG surface — color-mix 합성색 9종 ────────────────────────────────────
-    //
-    // `component.dag-*` 토큰 89 종은 생성기가 `Theme` 접근자로 뽑아 두었지만
-    // (`generated_component.rs`), 값이 `color-mix(in srgb, …)` 인 9 종은 참조가
-    // 아니라 *식* 이라 생성기가 건너뛴다. 여기서 같은 식을 [`mix_srgb`] 로 그대로
-    // 옮긴다 — 원본 식은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 의
-    // 대응 `component.dag-*` 항목이다(vendor 재동기화 시 이 9 개도 함께 확인).
-    //
-    // `…-border` 3 종은 두 번째 항이 `transparent` 다. srgb 합성에서 그건 "그 비율
-    // 만큼의 알파" 와 같으므로 알파만 파생한다(색 자체는 accent 유지 — 테마 가변).
+    // color-mix 식을 쓰는 DAG 토큰은 생성하지 않으므로 여기서 계산한다.
+    // 디자인 JSON의 해당 식이 바뀌면 함께 갱신해야 한다. transparent와 섞는 테두리는 알파만 낮춘다.
 
     /// `component.dag-status-running-bg` = accent-primary 16% + surface-raised.
     #[inline]
@@ -1545,13 +1371,7 @@ impl Theme {
         self.accent_warning().with_alpha(DAG_MIX_45_ALPHA)
     }
 
-    // ── PluginAvatar — 디자인의 카테고리색 합성 2 종 ──────────────────────────
-    //
-    // 디자인(`plugins_window.jsx`)은 두 항을 `CAT_COLOR[plugin.cat]` 로 섞고, 그 표에
-    // 없으면 `var(--tasty-accent-primary)` 로 떨어진다. **tasty 매니페스트에는 카테고리
-    // 필드가 없다**(`crates/tasty-plugin-manifest/src/types.rs` 의 `Manifest`) — 그래서
-    // 도달 가능한 갈래가 그 fallback 하나뿐이고, 여기서는 `accent_primary` 를 고정으로
-    // 적는다. 카테고리가 생기면 두 함수에 색 인자를 받게 하는 것이 바뀌는 전부다.
+    // 매니페스트에 카테고리가 없으므로 디자인의 기본 카테고리색인 accent_primary를 사용한다.
 
     /// design `PluginAvatar` 배경 = 카테고리색 18% + surface-raised.
     #[inline]
@@ -1661,10 +1481,7 @@ impl Theme {
         OPACITY_RECESSED
     }
 
-    /// cut-pending(잘라내기 대기) explorer 셀 전경(아이콘+라벨) 디밍 opacity (0.5).
-    /// 디자인 explorer cell-state matrix "cut (50% opacity) until paste". 디자인 토큰에
-    /// cut 전용 primitive 가 없고 값이 disabled 와 동일한 0.5 이므로 같은 primitive 를
-    /// semantic 으로 재사용한다(새 primitive 값 미도입 — 디자인 토큰과 drift 없음).
+    /// 잘라내기 대기 중인 파일의 아이콘·라벨을 50%로 흐리게 한다. disabled와 같은 계수를 공유한다.
     #[inline]
     pub fn opacity_cut(&self) -> f32 {
         OPACITY_DISABLED
@@ -1702,42 +1519,29 @@ impl Theme {
     pub fn shadow_popover(&self) -> ShadowToken {
         SHADOW_POPOVER
     }
-    /// **뷰포트를 점유하는** centered 표면(모달) 그림자. `--tasty-shadow-modal`.
-    /// scrim 유무는 갈래를 가르는 술어가 아니다 — 이 값을 받는 표면 중 scrim 이
-    /// 깔리는 것은 일부다.
-    /// 어느 표면이 이 값을 쓰는지는 `docs/design/systems/theme.md#떠-있는-표면의-그림자`.
+    /// 창 중앙을 차지하는 모달의 그림자. scrim 유무만으로 선택하지 않는다.
+    /// 표면별 기준은 docs/design/systems/theme.md#떠-있는-표면의-그림자를 따른다.
     #[inline]
     pub fn shadow_modal(&self) -> ShadowToken {
         SHADOW_MODAL
     }
 
     // ── 모션 (modifier-hint) ──
-    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). 타이핑 중 Shift 스침으로
-    /// 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라** reduced_motion 무관.
-    ///
-    /// 대응 토큰이 없어 손으로 남은 유일한 모션 값이다([`MOTION_HOLD_REVEAL_SHIFT_MS`]).
+    /// Shift 단독 입력의 안내 표시 지연. 모션 감소 설정과 무관하다.
     #[inline]
     pub fn motion_hold_reveal_shift(&self) -> Millis {
         MOTION_HOLD_REVEAL_SHIFT_MS
     }
 
-    /// 설정 창 콘텐츠 컬럼의 상한 (620px). `--tasty-settings-content-max-width`.
-    ///
-    /// 스크롤하는 콘텐츠 컬럼 **한 곳**에 건다 — 그러면 full-bleed 가 아닌 L2 서브탭이
-    /// 전부 이것을 물려받고 블록이 저마다 폭을 들 필요가 없다. full-bleed 서브탭은
-    /// 컬럼 자체를 자기 레이아웃으로 대체하므로 예외다. 본문 산문은 이것과 **다른 축**인
-    /// `measure_md`(읽는 줄 길이, 이것보다 좁다)를 그대로 쓴다.
-    ///
-    /// 디자인 export 에 이 이름이 아직 없어 docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 접근자로 든다.
+    /// 설정 콘텐츠 컬럼의 최대 폭. 개별 블록이 아닌 스크롤 컬럼에 적용한다.
+    /// 전체 폭을 쓰는 하위 탭은 자체 레이아웃을 사용하며 설명문 폭은 measure_md로 따로 제한한다.
+    /// 대응 디자인 토큰이 없어 접근자로 관리한다.
     #[inline]
     pub fn settings_content_max_width(&self) -> LogicalPx {
         LogicalPx((620.0 * self.ui_zoom).round())
     }
 
-    // ── 컴포넌트 토큰 (modifier-hint 오버레이) — `--tasty-modhint-*` ──
-    // 4분류(Popup/Toast/Banner/Modal) 밖의 신규 요소: 키보드 포커스 없음 + 마우스
-    // 인터랙티브 + 홀드 수명. 치수는 LogicalPx(DPI 자연대응), 색은 semantic 재사용.
-    // raw px 하드코딩 금지 — 본체 draw 는 전부 이 접근자를 경유한다.
+    // 보조 키 안내 패널의 치수와 색상.
     /// 기본 너비 (180px). `--tasty-modhint-width` → `--tasty-size-180`.
     /// 열린 사이드바 폭(`AppearanceSettings.sidebar_width` 기본 180)과 정렬.
     #[inline]
@@ -1780,15 +1584,12 @@ impl Theme {
     pub fn modhint_row_gap(&self) -> LogicalPx {
         LogicalPx((6.0 * self.ui_zoom).round())
     }
-    /// 빈 조합 섹션의 내부 간격 (3px) — 채워진 섹션(6px)보다 좁게 잡아, 항상 표시되는
-    /// 빈 섹션이 리스트를 과하게 늘어뜨리지 않게 한다. `--tasty-modhint-empty-row-gap`
-    /// (디자인 `explorations/modifier-hint-empty-section.html` §6-5, `.mh-section--empty { gap: 3px }`).
+    /// 빈 조합 섹션은 채워진 섹션보다 간격을 좁게 해 불필요한 높이를 줄인다.
     #[inline]
     pub fn modhint_empty_row_gap(&self) -> LogicalPx {
         LogicalPx((3.0 * self.ui_zoom).round())
     }
-    /// 빈 조합 플레이스홀더 행의 최소 높이 (20px) — 키캡 행(24px)보다 타이트.
-    /// `--tasty-modhint-empty-row-min-height` (디자인 시안 §6-5, `.mh-empty { min-height: 20px }`).
+    /// 빈 조합 안내 행의 최소 높이.
     #[inline]
     pub fn modhint_empty_row_min_height(&self) -> LogicalPx {
         LogicalPx((20.0 * self.ui_zoom).round())
@@ -1838,9 +1639,7 @@ impl Theme {
     pub fn modhint_row_fg(&self) -> HexColor {
         self.text_secondary()
     }
-    /// 빈 조합 플레이스홀더("바인딩 없음") 텍스트 색. `--tasty-modhint-empty-fg` → `text-muted`.
-    /// 키캡 행의 `text-secondary` 보다 한 단계 절제된 톤 — 실제 항목이 아니라 부재 신호라
-    /// 리스트에서 가장 조용하다(wash·글리프·키캡 없음).
+    /// 바인딩이 없는 행은 아이콘·키캡 없이 text-muted로 표시한다.
     #[inline]
     pub fn modhint_empty_fg(&self) -> HexColor {
         self.text_muted()
@@ -1851,15 +1650,7 @@ impl Theme {
         self.accent_agent()
     }
 
-    // ── 컴포넌트 치수 (디자인 export 에 아직 토큰이 없는 자리) ──
-    // 아래 열셋은 대응 디자인 토큰이 **없다.** 그래도 리터럴로 두면 안 되는 이유는
-    // 토큰 부재가 아니라 **배율**이다: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
-    // (`gfx/gpu.rs` `update_scale_factor`) UI 배율을 `with_colors_and_zoom` 의
-    // `zoomed()` 로만 적용하므로, 호출부 리터럴은 `ui_scale` 을 따라가지 않는다.
-    // 상자만 고정이고 안의 폰트·간격·글리프는 커지므로 0.85 에서 여백이 뜨고 1.2 에서
-    // 내용이 잘린다 — 이 축의 값은 16~340 이라 폰트 축(13~17)보다 대가가 크다.
-    // 값은 이식 전 리터럴 그대로다(zoom 1 픽셀 불변, `component_accessors_invariant_at_zoom_one`).
-    // `modhint_*` 와 같은 사정 — export 가 갱신되면 생성물로 넘어간다.
+    // 대응 디자인 토큰이 없는 치수도 UI 배율을 함께 적용하도록 접근자로 관리한다.
     /// 포트 스캐너 컬럼 메뉴 최소 폭 (180px).
     #[inline]
     pub fn port_columns_menu_min_width(&self) -> LogicalPx {
@@ -1909,47 +1700,28 @@ impl Theme {
     pub fn file_picker_note_max_width(&self) -> LogicalPx {
         LogicalPx((340.0 * self.ui_zoom).round())
     }
-    // 부팅·종료 로딩 화면의 브랜드 락업 스택(`src/gfx/gpu/loading.rs` + 갤러리
-    // `chrome_loading` specimen). 값은 브랜드 락업 확정값(`guidelines/brand-logo.html`)
-    // 이라 **바꾸지 않는다** — 바뀌는 것은 배율 추종뿐이다. 같은 스택의 간격
-    // (`spacing_xl`·`spacing_lg`)과 phase 문구(`font_size_body`)는 이미 배율을 타므로,
-    // 이 넷만 리터럴로 두면 배율에서 스택이 어긋난다. 특히 phase 슬롯은 높이가 고정인데
-    // 안의 글자만 커져 **문구가 슬롯을 넘는다** — 그 슬롯의 존재 이유가 레이아웃 고정이다.
-    /// 로딩 화면 워드마크 마크(수박 아이콘) 크기 (64px). 14px UI 폰트 상한의
-    /// sanctioned 예외(브랜드 락업 — `docs/design/systems/theme.md` "명명 구조 상수").
+    /// 로딩 화면 브랜드 아이콘 크기. 같은 스택의 글꼴·간격과 함께 배율을 적용한다.
     #[inline]
     pub fn loading_screen_wordmark_icon_size(&self) -> LogicalPx {
         LogicalPx((64.0 * self.ui_zoom).round())
     }
-    /// 로딩 화면 워드마크 `tasty.` 폰트 크기 (38px). 위와 동일 근거의 브랜드 락업 값.
-    /// 사이드바 헤더의 워드마크는 다른 값(`sidebar_wordmark_font_size`)이다 — 같은
-    /// 락업의 두 크기이므로 하나로 합치지 않는다.
+    /// 로딩 화면의 브랜드 글꼴 크기. 사이드바 워드마크와 용도가 달라 값을 공유하지 않는다.
     #[inline]
     pub fn loading_screen_wordmark_font_size(&self) -> LogicalPx {
         LogicalPx((38.0 * self.ui_zoom).round())
     }
-    /// 로딩 화면 스피너 크기 (32px). 디자인 확정: 기본 16 → boot hero 32.
+    /// 로딩 화면 스피너 크기.
     #[inline]
     pub fn loading_screen_spinner_size(&self) -> LogicalPx {
         LogicalPx((32.0 * self.ui_zoom).round())
     }
-    /// 로딩 화면 phase 문구의 고정 높이 슬롯 (16px). 문구 유무와 무관하게 레이아웃이
-    /// 흔들리지 않도록 항상 이 높이를 예약한다 — 그래서 안의 글자와 **같은 배율**을
-    /// 타야 한다.
+    /// 진행 문구가 없어도 같은 높이를 확보한다. 안쪽 글자와 함께 배율을 적용한다.
     #[inline]
     pub fn loading_screen_phase_slot_height(&self) -> LogicalPx {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
-    // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
-    // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
-    // 접근자는 전부 `generated_component.rs` 에서 생성된다. 디자인 export 에 해당
-    // component 토큰이 들어오기 전까지 여기 수기로 두었던 것들인데, 생성물과 본문이
-    // 완전히 같아 중복 정의가 되므로 제거했다. 값을 고치려면 디자인 CSS → vendor json.
-    //
-    // 토큰은 있으나 접근자가 없는 두 건은 egui 폰트 한계 때문이다:
-    // `--tasty-sidebar-category-header-weight`(bold) · `--tasty-drilldown-title-font-weight`
-    // (semibold) — 합성 bold 가 egui font_registry 에 등록돼 있지 않다(D2Coding Bold 는
-    // 터미널 GPU 글리프 전용). 굵기 대신 색 승격으로 위계를 준다(`button.rs` 참조).
+    // sidebar-category-header·autocomplete·md-table·drilldown·listctrl 접근자는 생성 파일에 있다.
+    // 글꼴 굵기 토큰은 생성하지 않는다. egui 글꼴 등록에 합성 굵기가 없어 색으로 강조를 구분한다.
 }
 
 // ============================================================================
@@ -1958,15 +1730,12 @@ impl Theme {
 
 #[cfg(test)]
 mod tests {
-    // 테스트는 Theme/ThemeColors 병합·도출 로직을 검증하려고 원시 색상값을 직접
-    // 만든다 (UI 색 "디자인" 이 아니라 스키마 동작 자체의 테스트). clippy 의 정상 예외 경로.
+    // 색상 병합·변환 자체를 검사하므로 합성 색상 사용을 허용한다.
     #![allow(clippy::disallowed_methods)]
 
     use super::*;
 
-    /// 모든 필드가 같은 색인 schema-level dummy. 빌트인 테마 색 의존 없이
-    /// apply_partial / with_colors / extract_colors 동작만 검증.
-    /// `surface_themes` 가 BTreeMap 이라 `const fn` 일 수 없다.
+    /// 모든 필드에 같은 색을 넣어 팔레트와 독립적으로 병합·변환을 검사한다.
     fn dummy_colors() -> ThemeColors {
         let c = HexColor::from_rgb(0x12, 0x34, 0x56);
         ThemeColors {
@@ -2020,8 +1789,7 @@ mod tests {
         }
     }
 
-    /// dummy 와 달리 semantic 접근자 매핑 검증용 — 비교 대상 필드마다 **고유 색**을
-    /// 줘서 `accent_primary()==blue` 가 `==green` 으로 잘못 매핑돼도 잡히게 한다.
+    /// 서로 다른 색을 넣어 접근자가 잘못된 필드에 연결된 경우를 검출한다.
     fn distinct_colors() -> ThemeColors {
         let mut c = dummy_colors();
         c.crust = HexColor::from_rgb(1, 0, 0);
@@ -2044,7 +1812,7 @@ mod tests {
         c
     }
 
-    /// A2: semantic 접근자가 A1 크로스워크대로 primitive 필드에 매핑되는지 고정.
+    /// 의미별 색상 접근자가 지정한 필드에 연결되는지 확인한다.
     #[test]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn semantic_accessors_map_to_primitives() {
@@ -2146,59 +1914,12 @@ mod tests {
         assert!(!t.is_light);
     }
 
-    /// 명명 const 로 값을 빼는 **대가가 축마다 다르다**는 것을 배율 ≠ 1 에서 고정한다.
-    ///
-    /// [`zoom_one_preserves_sizing`] 은 배율 1.0 에서만 재므로 `zoomed()` 를 타는 필드와
-    /// 안 타는 필드를 **원리적으로 가르지 못한다**. 이 테스트는 그것이 못 보는 조건에서 잰다.
-    ///
-    /// **처음에 "반경은 zoom 을 타고 굵기는 안 탄다" 로 적었다가 변이로 고쳤다.**
-    /// `border_width` 를 `zoomed()` 에 태우는 변이가 **살아남았고, 살아남는 것이 옳았다**:
-    /// `zoomed()` 는 `(px * z).round()` 이고 지원 배율은 0.85 · 1.0 · 1.2 뿐이라
-    /// (`AppearanceSettings::ui_scale_factor_for`), **1.0 과 2.0 은 셋 다 자기 자신으로
-    /// 되돌아온다.** 즉 그 값들에 대해서는 `zoomed()` 경유 여부가 **값에서 관측되지 않는다.**
-    ///
-    /// ```text
-    /// border_width      1.0 → 1 / 1 / 1     반올림 아래 배율 불변  → 경유 여부 관측 불가
-    /// focus_ring_width  2.0 → 2 / 2 / 2     (경유하는데도 값은 그대로)
-    /// corner_radius_sm  2.0 → 2 / 2 / 2
-    /// icon_stroke_width 1.5 → 1 / 2 / 2     경유하면 값이 변한다   → 관측 가능
-    /// corner_radius     4.0 → 3 / 4 / 5     경유하므로 값이 변한다
-    /// corner_radius_lg  8.0 → 7 / 8 / 10
-    /// ```
-    ///
-    /// 그래서 `docs/design/systems/theme.md#토큰에-없는-값과-배율` 의
-    /// "축 확장" 절이 드는 근거는 **경유 여부가 아니라 값의 배율 가변성**이다 — 명명
-    /// const 로 빼는 대가는 값이 배율에 따라 변하는 자리에서만 실재한다. 반경 기본·lg 는
-    /// 변하고, 1px 보더는 어차피 안 변한다.
-    ///
-    /// 이 테스트가 잡는 것은 셋이다.
-    /// 1. 반경 기본·lg 가 배율 가변성을 잃는다(스케일 값이 바뀌거나 반올림이 바뀐다).
-    /// 2. `icon_stroke_width` 가 `zoomed()` 를 타게 된다 — 이건 값이 변하므로 관측된다.
-    /// 3. **불변 셋의 전제 위에서 값이 어긋난다** — 아래 세 배율에서 `border_width` ·
-    ///    `focus_ring_width` · `corner_radius_sm` 이 반올림 불변성을 잃는 경우(예:
-    ///    `border_width` 가 1.0 → 1.5 로 바뀌면 1.2 배에서 2 가 된다).
-    ///
-    /// **3번이 잡지 *못하는* 것을 분명히 적는다 — 여기서 한 번 틀렸다.**
-    /// 지원 배율 **집합 자체**가 바뀌는 것(예: 1.5 가 추가되는 것)은 이 테스트가
-    /// 감지하지 못한다. 아래 `SUPPORTED_ZOOMS` 는 **하드코딩 사본**이라 원본
-    /// (`AppearanceSettings::ui_scale_factor_for`)에 배율이 늘어도 그대로 있고,
-    /// 이 테스트는 초록으로 남는다. 의존 방향이 반대라(그 크레이트가 이 크레이트에
-    /// 의존한다) 여기서 원본을 읽을 방법이 없다.
-    ///
-    /// 그래서 **집합의 핀은 원본 쪽에 있다**:
-    /// `tasty-settings` 의 `the_supported_ui_scale_set_is_pinned`. 배율이 늘면
-    /// 그 핀이 울고, 그 메시지가 이 사본을 좌표로 지목한다.
-    ///
-    /// (원래 이 자리에는 "값이 어긋나면 3번이 운다" 고 적혀 있었는데, **토큰 '값'과
-    /// 배율 '집합' 이 한 문장에서 섞여** 집합 변화까지 잡는 것처럼 읽혔다. 값 쪽은
-    /// 참이고 집합 쪽은 거짓이었다.)
+    /// 지원 배율에서 반경은 변하고 고정 선 굵기는 유지되는지 확인한다.
+    /// 1px와 2px는 반올림 결과가 같아 값만으로 zoomed 호출 여부를 구분할 수 없다.
+    /// 여기 배율 목록은 사본이며 지원 집합 변경은 tasty-settings의 별도 검사가 알린다.
     #[test]
     fn zoom_cost_differs_by_axis() {
-        /// `AppearanceSettings::ui_scale_factor_for` 의 값. 의존 방향이 반대라 복사한다.
-        ///
-        /// **사본이라 원본을 따라가지 않는다.** 원본에 배율이 추가돼도 여기는 그대로다 —
-        /// 그 어긋남을 잡는 것은 이 파일이 아니라 원본 크레이트의
-        /// `the_supported_ui_scale_set_is_pinned` 다.
+        /// 의존 방향 때문에 복사한 배율 목록. tasty-settings의 the_supported_ui_scale_set_is_pinned와 맞춘다.
         const SUPPORTED_ZOOMS: [f32; 3] = [0.85, 1.0, 1.2];
 
         let base = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
@@ -2206,7 +1927,6 @@ mod tests {
         for z in SUPPORTED_ZOOMS {
             let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
 
-            // ① 대가가 실재하는 축 — 배율에서 값이 `zoomed()` 결과와 같아야 한다.
             for (name, b, v) in [
                 ("corner_radius", base.corner_radius, t.corner_radius),
                 (
@@ -2219,17 +1939,13 @@ mod tests {
                 assert_eq!(v, want, "{name} 이 배율 {z} 에서 `zoomed()` 결과와 다르다");
             }
 
-            // ② 굵기 hairline 은 `zoomed()` 밖이다. 1.5 라 경유하면 값이 변하므로
-            //    이 등식이 실제로 판별력을 갖는다(변이로 확인했다).
+            // 1.5px 선은 확대하면 값이 달라지므로 고정 여부를 확인할 수 있다.
             assert_eq!(
                 t.icon_stroke_width, base.icon_stroke_width,
-                "icon_stroke_width 가 배율 {z} 에서 변했다 — `zoomed()` 를 타게 됐다"
+                "icon_stroke_width는 배율 {z}에서도 고정되어야 한다"
             );
 
-            // ③ 불변 셋의 전제 — 이 값들은 경유하든 안 하든 배율에서 그대로다.
-            //    **토큰 값이 바뀌면** 여기가 운다(예: border_width 1.0 → 1.5).
-            //    지원 배율 집합이 바뀌는 것은 여기가 아니라 `tasty-settings` 의
-            //    `the_supported_ui_scale_set_is_pinned` 가 잡는다 — 위 사본 참조.
+            // 지원 배율에서 반올림 결과가 변하지 않는 작은 값을 확인한다.
             for (name, v) in [
                 ("border_width", base.border_width),
                 ("focus_ring_width", base.focus_ring_width),
@@ -2238,13 +1954,11 @@ mod tests {
                 assert_eq!(
                     LogicalPx((v.value() * z).round()),
                     v,
-                    "{name}({v:?}) 이 배율 {z} 에서 더 이상 반올림 불변이 아니다 — \
-                     굵기 축에 zoom 대가가 없다는 전제가 깨졌다"
+                    "{name}({v:?})의 반올림 결과가 배율 {z}에서 달라졌다"
                 );
             }
         }
 
-        // ①의 실물: 기본 반경은 지원 배율 양끝에서 실제로 다른 값이 된다.
         let small = Theme::with_colors_and_zoom(dummy_colors(), false, 0.85);
         let large = Theme::with_colors_and_zoom(dummy_colors(), false, 1.2);
         assert_ne!(small.corner_radius, base.corner_radius);
@@ -2378,7 +2092,7 @@ mod tests {
         assert_eq!(t_large.window_button_size, SIZING.window_button_size);
     }
 
-    /// P1/P6: CSD 타이틀바 길이 토큰 값 고정 (디자인 jsx px).
+    /// CSD 타이틀바의 고정 치수를 확인한다.
     #[test]
     fn titlebar_sizing_tokens_fixed() {
         let t = Theme::with_colors(dummy_colors(), false);
@@ -2388,9 +2102,7 @@ mod tests {
         assert_eq!(t.window_button_size.value(), 24.0);
     }
 
-    /// P1: titlebar 컴포넌트 색 접근자가 각각의 semantic 접근자(bg_app/bg_sidebar/separator/
-    /// text_secondary/text_muted)에 그대로 위임하는지 고정 — 신규 토큰 없이 조합만으로
-    /// 구성됨을 회귀 방지.
+    /// 타이틀바 색상 접근자가 지정된 의미별 색상에 연결되는지 확인한다.
     #[test]
     fn titlebar_color_accessors_map_to_semantics() {
         let th = Theme::with_colors(distinct_colors(), false);
@@ -2401,7 +2113,7 @@ mod tests {
         assert_eq!(th.titlebar_fg_inactive(), th.text_muted());
     }
 
-    /// P1: OS 리터럴(테마 불변) close red / white 글리프 값 고정.
+    /// 창 닫기 버튼의 고정 색을 확인한다.
     #[test]
     fn window_close_literals_are_theme_invariant() {
         let dark = Theme::with_colors(distinct_colors(), false);
@@ -2418,7 +2130,6 @@ mod tests {
         assert_eq!(dark.text_on_window_close(), light.text_on_window_close());
     }
 
-    /// token-policy 신설 토큰 값 고정 (semantic.css 의 role 값).
     #[test]
     fn token_policy_new_sizing_values() {
         let t = Theme::with_colors(dummy_colors(), false);
@@ -2436,13 +2147,7 @@ mod tests {
         assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
     }
 
-    /// 상태바 인라인 글리프의 **크기 role**(2026-09-20 결정 G1). 배율은 바의 다른 글자와
-    /// 같이 타고 — `round(12 × s)` = 10 / 12 / 14 — **바 높이 24 는 배율 밖**이라 이
-    /// 결정으로 안 바뀐다.
-    ///
-    /// 두 테마를 나란히 잰다. *치수가 어느 테마가 켜졌는지에 의존하면 안 된다* 는 것이
-    /// 결정의 명시 제약이라, `is_light` 분기를 실수로 들이면 여기서 죽는다 — 값 하나만
-    /// 보는 시험은 그 실수를 못 본다.
+    /// 두 테마에서 상태바 아이콘은 같은 배율을 적용하고 바 높이는 고정되는지 확인한다.
     #[test]
     fn statusbar_glyph_size_scales_with_the_bar_and_never_with_the_theme() {
         for (zoom, want) in [(0.85_f32, 10.0_f32), (1.0, 12.0), (1.2, 14.0)] {
@@ -2474,15 +2179,10 @@ mod tests {
         }
     }
 
-    /// 이 lane 이 리터럴에서 옮겨 온 컴포넌트 치수 아홉이 **`ui_scale` 을 탄다**는 것을
-    /// 고정한다. 위 `component_accessors_invariant_at_zoom_one` 은 zoom 1 값만 보므로,
-    /// 접근자를 다시 상수로 되돌리는 변경을 못 잡는다 — 그게 이 축의 원래 결함이었다.
-    /// 본체는 egui `zoom_factor` 를 1.0 으로 고정하고 배율을 `zoomed()` 로만 넣으므로,
-    /// 이 값들이 배율을 놓치면 상자만 고정되고 내용은 커져 1.2 에서 잘린다.
+    /// 컴포넌트 치수가 배율 1 외에서도 확대되는지 확인한다. 고정값으로 바뀌는 오류를 검출한다.
     #[test]
     fn component_dimensions_without_design_tokens_follow_ui_zoom() {
         let at = |z: f32| Theme::with_colors_and_zoom(dummy_colors(), false, z);
-        // (접근자, zoom 1 값) — 값은 이식 전 호출부 리터럴이다.
         /// (접근자, zoom 1 값, 이름). clippy `type_complexity` 회피용 별칭.
         type ZoomProbe = (fn(&Theme) -> LogicalPx, f32, &'static str);
         let probes: &[ZoomProbe] = &[
@@ -2561,9 +2261,7 @@ mod tests {
                 (expect_at_one * 1.2f32).round(),
                 "{name} zoom 1.2"
             );
-            // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 16 이상이라 반올림이
-            // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, docs/design/systems/theme.md#토큰에-없는-값과-배율).
-            // 하한이 16 인 것은 로딩 화면 phase 슬롯이다: 0.85→14 · 1.0→16 · 1.2→19.
+            // 이 목록의 값은 지원 배율을 달리하면 반올림 결과도 달라져야 한다.
             assert!(
                 f(&large).value() > f(&base).value() && f(&base).value() > f(&small).value(),
                 "{name} 이 배율을 안 탄다"
@@ -2571,9 +2269,7 @@ mod tests {
         }
     }
 
-    /// 행 액션 글리프가 zoom 경로에 실제로 들어가 있는지. 평범한 `const` 로 두면
-    /// 같은 팝업의 헤더 아이콘만 커지고 이 아이콘만 고정되므로, 배율이 적용되는지
-    /// 자체를 고정한다(`zoomed` 는 반올림한다).
+    /// 행 액션 아이콘의 크기도 UI 배율을 적용해 반올림하는지 확인한다.
     #[test]
     fn row_action_glyph_follows_ui_zoom() {
         let at = |z: f32| {
@@ -2721,15 +2417,11 @@ mod tests {
         assert_eq!(FALLBACK_SURFACE.focused_bg.b, 0);
     }
 
-    // ── design-tokens 04 (F2b): component tier 접근자 zoom 회귀 + 값 불변 ──
-
-    /// zoom 1.0 에서 component 접근자가 tasty-ui-widgets 이식 전 위젯이 쓰던 값과
-    /// 정확히 일치함을 대표 속성으로 실측 대조 (갤러리 픽셀 diff 0 의 근거).
+    /// 배율 1에서 대표 컴포넌트 치수와 색상 연결을 확인한다. 픽셀 비교를 대신하지는 않는다.
     #[test]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn component_accessors_invariant_at_zoom_one() {
         let t = Theme::with_colors(dummy_colors(), false);
-        // primitive-직접 종착 — 구 매직넘버/파일 const 값이 zoom 1.0 에서 고정.
         assert_eq!(t.button_height_lg().value(), 32.0); // control.rs CONTROL_HEIGHT_LG
         assert_eq!(t.checkbox_size().value(), 16.0); // toggle.rs BOX
         assert_eq!(t.switch_track_width().value(), 28.0); // toggle.rs SWITCH_W
@@ -2741,7 +2433,6 @@ mod tests {
         assert_eq!(t.kbd_gap().value(), 3.0); // chip.rs KBD_GAP
         assert_eq!(t.kbd_shadow_depth().value(), 2.0); // chip.rs KBD_BOTTOM_BORDER
         assert_eq!(t.select_chevron_room().value(), 28.0); // select.rs CHEVRON_PAD
-        // 디자인 export 에 토큰이 없는 컴포넌트 치수 — 이식 전 호출부 리터럴과 동일.
         assert_eq!(t.port_columns_menu_min_width().value(), 180.0);
         assert_eq!(t.port_state_menu_min_width().value(), 216.0);
         assert_eq!(t.port_state_menu_max_height().value(), 168.0);
@@ -2751,7 +2442,6 @@ mod tests {
         assert_eq!(t.plugins_side_panel_width().value(), 240.0);
         assert_eq!(t.font_family_menu_max_height().value(), 250.0);
         assert_eq!(t.file_picker_note_max_width().value(), 340.0);
-        // semantic-종착 — 이식 전 위젯이 읽던 바로 그 zoomed 필드와 동일 값.
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // button gap
         assert_eq!(t.button_radius().value(), t.corner_radius.value());
         assert_eq!(t.input_height().value(), t.item_height_interactive.value());
@@ -2761,7 +2451,6 @@ mod tests {
             t.item_height_interactive.value()
         );
         assert_eq!(t.status_dot_size().value(), 8.0);
-        // 색: component 접근자 == 이식 전 semantic 접근자.
         assert_eq!(t.button_primary_bg(), t.accent_primary());
         assert_eq!(t.input_border_focus(), t.border_focus());
         assert_eq!(t.status_dot_success(), t.accent_success());
@@ -2769,32 +2458,23 @@ mod tests {
         assert_eq!(t.table_header_fg(), t.text_muted());
     }
 
-    /// zoom≠1.0 에서 이식으로 스케일이 생긴 치수 접근자가 with_colors_and_zoom
-    /// resolve(= value*zoom 반올림)를 따라감을 검증 (완료조건 3).
+    /// 배율 1.5에서 직접 치수와 위임한 필드가 올바르게 확대되는지 확인한다.
     #[test]
     fn component_dim_accessors_scale_with_zoom() {
         let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
-        // primitive-직접: 구 고정 매직넘버가 이제 zoom 스케일한다.
         assert_eq!(t.button_height_lg().value(), 48.0); // 32 * 1.5
         assert_eq!(t.checkbox_size().value(), 24.0); // 16 * 1.5
         assert_eq!(t.switch_track_width().value(), 42.0); // 28 * 1.5
         assert_eq!(t.tag_size().value(), 24.0); // 16 * 1.5
         assert_eq!(t.kbd_gap().value(), 5.0); // 3 * 1.5 = 4.5 → round 5
         assert_eq!(t.select_chevron_room().value(), 42.0); // 28 * 1.5
-        // semantic-종착: 대응 zoomed 필드를 그대로 반영한다.
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // 12
         assert_eq!(t.tree_row_height().value(), t.item_height_tree.value()); // 33
         assert_eq!(t.input_height().value(), 42.0); // control-height 28 * 1.5
     }
 
-    /// UI 폰트 토큰은 **어떤 zoom 에서도 정수**다 — `zoomed()` 가 `.round()` 하기
-    /// 때문이다. 이건 편의 성질이 아니라 `docs/design/systems/theme.md` "스케일 밖
-    /// 폰트 값" 규칙("`.5` 로 끝나는 값은 토큰이 될 수 없다")이 서 있는 전제다.
-    /// 그 전제가 깨지는 길은 둘이다 — `zoomed()` 가 반올림을 그만두거나, 새 UI 폰트
-    /// 필드가 `zoomed()` 를 우회해 `SIZING` 값을 그대로 받거나. 어느 쪽이든 규칙
-    /// 문장이 먼저 거짓이 되므로 여기서 잡는다. (`SIZING` 리터럴 자체가 `.5` 가
-    /// 되는 것은 여기 걸리지 않는다 — 그래도 `zoomed()` 가 정수로 만들기 때문이고,
-    /// 규칙이 말하는 "토큰 값" 은 zoom 을 거친 뒤의 값이다.)
+    /// 아래 글꼴 필드가 검사한 배율에서 정수 픽셀로 반올림되는지 확인한다.
+    /// 다른 글꼴 필드나 검사하지 않은 배율까지 보장하지 않는다.
     #[test]
     fn ui_font_size_tokens_are_integers_at_every_zoom() {
         for zoom in [0.5, 0.85, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 3.0] {
@@ -2810,31 +2490,20 @@ mod tests {
                 assert_eq!(
                     v,
                     v.round(),
-                    "{name} 이 zoom {zoom} 에서 정수가 아니다({v}) — theme.md 의 \
-                     \"`.5` 값은 토큰이 될 수 없다\" 규칙이 이 성질 위에 서 있다"
+                    "{name}의 배율 {zoom} 적용 결과가 정수가 아니다: {v}"
                 );
             }
         }
     }
 
-    /// 출하되는 그림자 토큰 명부 + 각자의 디자인 소수 알파. 아래 두 시험(알파 산술 ·
-    /// 음수 spread 금지)이 **이 하나**를 공유한다 — 명부를 시험마다 손으로 적으면 새
-    /// 토큰이 한쪽에만 들어가 다른 쪽이 조용히 그것을 안 본다.
-    ///
-    /// 이 명부가 `theme.rs` 의 실제 `pub const …: ShadowToken` 전부인지는
-    /// [`shipped_shadow_token_roster_is_complete`] 가 소스에서 다시 읽어 대조한다.
+    /// 알파와 음수 spread 검사가 공유하는 그림자 토큰 목록.
+    /// 실제 ShadowToken 상수와 같은 목록인지 별도 소스 검사로 확인한다.
     const SHIPPED_SHADOW_TOKENS: &[(&str, ShadowToken, f32)] = &[
         ("SHADOW_POPOVER", SHADOW_POPOVER, 0.4),
         ("SHADOW_MODAL", SHADOW_MODAL, 0.55),
     ];
 
-    /// [`SHIPPED_SHADOW_TOKENS`] 가 `theme.rs` 가 출하하는 `ShadowToken` 상수 전부인가.
-    /// 명부를 안 늘린 채 세 번째 토큰이 들어오면 알파 산술도 음수 spread 잠금도 그
-    /// 토큰을 **안 보고** 초록이 된다 — 그 조용한 절반 실행을 막으려고 명부를
-    /// 정본(이 파일의 소스)에서 다시 읽는다.
-    ///
-    /// docs/design/systems/theme.md#떠-있는-표면의-그림자 의 "출하되는 그림자 토큰 중 하나가 음수 `spread` 를 갖게 된다" 재검토
-    /// 트리거가 채널로 성립하는 근거가 이 대조다.
+    /// ShadowToken 상수와 검사 목록을 이름으로 대조해 빠진 토큰을 찾는다.
     #[test]
     fn shipped_shadow_token_roster_is_complete() {
         let src = std::fs::read_to_string(
@@ -2858,8 +2527,7 @@ mod tests {
         found.sort();
         assert!(
             !found.is_empty(),
-            "theme.rs 에서 ShadowToken 상수를 하나도 못 찾았다 — 스캔이 비면 이 대조는 \
-             거짓 초록이 된다(경로/선언 형태를 먼저 확인해라)"
+            "theme.rs에서 ShadowToken 상수를 찾지 못했다. 파일 경로와 선언 형태를 확인한다."
         );
         let mut listed: Vec<String> = SHIPPED_SHADOW_TOKENS
             .iter()
@@ -2868,13 +2536,11 @@ mod tests {
         listed.sort();
         assert_eq!(
             found, listed,
-            "theme.rs 의 ShadowToken 상수와 SHIPPED_SHADOW_TOKENS 가 어긋났다 — 빠진 \
-             토큰은 알파 산술도 음수 spread 잠금도 통과하지 않고 **안 보인다**"
+            "theme.rs의 ShadowToken 상수와 SHIPPED_SHADOW_TOKENS가 다르다. 빠진 토큰은 알파·spread 검사 대상에 포함되지 않는다."
         );
     }
 
-    /// 그림자 토큰의 알파는 디자인 rgba 의 소수 알파를 0~255 로 옮긴 값이다 —
-    /// 그 산술을 상수 옆 주석이 아니라 여기서 고정한다(주석은 값을 안 지킨다).
+    /// 디자인 알파에 255를 곱해 반올림한 값과 비교한다.
     #[test]
     fn shadow_token_alphas_match_their_design_fractions() {
         for (name, token, fraction) in SHIPPED_SHADOW_TOKENS {
@@ -2886,11 +2552,7 @@ mod tests {
         }
     }
 
-    /// `ShadowToken.spread` 는 음수를 **표현**하지만(CSD 의 `-8px`), 그 값을 쓰는 토큰은
-    /// 아직 없다. egui 변환이 음수를 담지 못해 조용히 0 이 되므로, 음수 spread 토큰을
-    /// 새로 들이는 순간 그 사실이 여기서 드러나야 한다 — 근사값을 만들지 않기 위한
-    /// 잠금이다(`ShadowToken::to_egui` 문서). 명부의 완전성은
-    /// [`shipped_shadow_token_roster_is_complete`] 가 따로 잰다.
+    /// egui 변환이 음수 spread를 지원하지 않으므로 현재 토큰에서 사용하지 않는지 확인한다.
     #[test]
     fn no_shipped_shadow_token_uses_negative_spread() {
         for (name, token, _) in SHIPPED_SHADOW_TOKENS {
@@ -2903,10 +2565,7 @@ mod tests {
         }
     }
 
-    /// 음수 spread 는 `as u8` 캐스트에 맡기면 **조용히** 0 으로 saturate 된다. 그
-    /// 왜곡이 조용하지 않다는 것을 고정한다 — debug 빌드에서 `to_egui` 가 단언으로
-    /// 터진다. 이 성질이 깨지면 위 `no_shipped_shadow_token_uses_negative_spread`
-    /// 잠금이 남아도 실수로 들어온 음수가 그림자를 말없이 바꾼다.
+    /// debug 빌드에서 음수 spread의 egui 변환이 패닉하는지 확인한다.
     #[cfg(all(feature = "egui-compat", debug_assertions))]
     #[test]
     #[should_panic(expected = "음수 spread")]
@@ -2919,7 +2578,7 @@ mod tests {
             spread: -8.0,
             alpha: 140,
         };
-        // 반환값은 볼 것이 없다 — 이 호출이 `debug_assert!` 로 터지는 것 자체가 단언이다.
+        // 반환값이 아니라 debug_assert의 패닉을 확인한다.
         let _ = t.to_egui();
     }
 }
