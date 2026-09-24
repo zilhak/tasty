@@ -16,7 +16,7 @@
 
 ## Decision
 
-origin surface는 routing 대상이고 FileDispatchOrigin은 사용자 조작 여부다. 두 값을 식별 worker와 picker 완료까지 전달한다.
+origin surface는 요청 대상이며 FileDispatchOrigin은 사용자 조작 여부를 나타낸다. 두 값을 식별 worker와 picker 완료까지 전달한다.
 명시한 surface의 소유 engine과 pane에서만 실행하고 대상이 사라지면 취소한다.
 사용자 파일 열기는 결과 탭을 선택하며 Agent 요청은 기존 선택을 유지한다.
 접수 응답은 완료를 뜻하지 않고 이후 실패는 기존 비동기 보고로 알린다.
@@ -45,7 +45,7 @@ headless file dispatch는 실행할 수 없으므로 빌드 미지원 오류로 
 
 popup 입력 근거는 열린 수명 동안 재사용할 수 있다. webview는 최신 한 건만 보존해 정당한 클릭도 재로드와 겹치면 Agent로 처리될 수 있다.
 macOS의 webview 클릭은 같은 native gesture 판정이 없어 Agent로 남는다.
-페이지 작성자 전이보다 늦게 도착한 navigation까지 완전히 구별하는 것은 아직 보장하지 않는다.
+페이지 작성자가 바뀐 뒤 늦게 도착한 navigation까지 완전히 구별하는 것은 아직 보장하지 않는다.
 
 reload의 항목별 보고는 파일 읽기·파싱 전체 실패를 충분히 설명하지 못한다.
 URL handler의 url 파라미터 이름은 현재의 제한된 선언 규약이다.
