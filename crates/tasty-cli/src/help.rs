@@ -113,16 +113,9 @@ fn resolve_command_path() -> (clap::Command, String) {
     (current, path)
 }
 
-// ── Public entry points ──
-
-/// Print all commands in a tree structure (2 levels deep) with usage details.
-/// `print_augmented_help` 와 동일하게 plugin contributes.cli 를 합친 트리를 출력 —
-/// `-a/--all` 의 "all" 의미를 정적 호스트 명령 + plugin 명령 양쪽으로 일관화한다.
-/// `version` 은 호출자(루트 바이너리)가 주입한다 — tasty-cli 는 라이브러리 crate 라
-/// 자체 CARGO_PKG_VERSION 이 루트 바이너리 버전과 어긋나기 때문 (cli_routing 의
-/// `--version` override 와 같은 이유).
-///
-/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(docs/dev-guide/cli-structure.md#stdout-출력-outrs).
+/// Print the host and plugin command tree with usage details.
+/// The caller supplies the application version; this library has its own version.
+/// A closed stdout pipe is treated as normal completion.
 pub fn print_command_tree(version: &str) -> Result<()> {
     crate::out::quiet_if_stdout_closed(print_command_tree_inner(version))
 }
@@ -144,8 +137,6 @@ fn print_command_tree_inner(version: &str) -> Result<()> {
     )?;
     outln!()?;
 
-    // `_connector`는 leaf print_node에서는 쓰지 않지만, 시그니처를 재귀 호출 측과
-    // 동일하게 유지하기 위해 받기만 한다 (caller가 자식 노드 prefix 조립에 사용).
     fn print_node(cmd: &clap::Command, prefix: &str, _connector: &str) -> Result<()> {
         let about = cmd.get_about().map(|s| s.to_string()).unwrap_or_default();
         let args = format_args(cmd);
@@ -246,12 +237,8 @@ pub fn format_parse_error(err: clap::Error) {
     std::process::exit(2);
 }
 
-/// plugin contributes.cli가 합쳐진 도움말 출력. plugin 디스커버리에 실패해도
-/// 정적 CLI 도움말은 항상 보장한다.
-///
-/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(docs/dev-guide/cli-structure.md#stdout-출력-outrs).
-/// clap `print_help` 는 `io::Result` 를 돌려주므로 [`crate::out::from_io`] 로 같은
-/// 규칙에 태운다.
+/// 플러그인을 포함한 도움말을 출력한다. discovery 실패 시 정적 도움말은 유지한다.
+/// stdout의 BrokenPipe는 정상 종료로 처리한다.
 pub fn print_augmented_help() -> Result<()> {
     crate::out::quiet_if_stdout_closed(print_augmented_help_inner())
 }

@@ -22,12 +22,11 @@ impl TaskRunAction {
 
 #[derive(Subcommand)]
 pub enum AgentCommands {
-    /// Create a new task within a workspace.
+    /// Create a task in a workspace without starting it.
     ///
-    /// Creating does not run it. Nothing dispatches until the workspace's runner
-    /// is started with `task-run --action start`, and it is never started for
-    /// you — not at boot either. Without it a task sits in `Ready` and
-    /// `task-await` just burns its timeout.
+    /// Start the workspace runner explicitly with `task-run --action start`;
+    /// host startup does not start it for you.
+    /// Without a runner, ready tasks remain queued and task-await can time out.
     TaskCreate {
         /// Workspace id (focus-independent — required).
         #[arg(long)]
@@ -60,14 +59,10 @@ pub enum AgentCommands {
         /// are given; conflicts if `--metadata` already sets `semaphore`.
         #[arg(long)]
         concurrency_limit: Option<String>,
-        /// Reserve this task as a not-yet-referenced fallback candidate: it
-        /// stays `waiting` (never `ready`, so the runner cannot dispatch it)
-        /// until a later `task-create --on-failure fallback:<this-id>` call
-        /// links a main task to it, however long that takes. Without this
-        /// flag, a bare no-deps task becomes `ready` immediately, and if the
-        /// runner ticks before the linking main is created, it can dispatch
-        /// and run to completion regardless of that main's outcome — closes
-        /// the creation-order race between the two `task-create` calls.
+        /// Keep this fallback candidate waiting until a later task-create links
+        /// it with --on-failure fallback:<this-id>. This prevents the runner from
+        /// executing it between the two calls. It remains waiting if no main task
+        /// ever references it.
         #[arg(long, default_value_t = false)]
         reserved_for_fallback: bool,
     },
@@ -161,19 +156,12 @@ pub enum AgentCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
-    /// Start/stop/inspect the agent task runner for a workspace.
-    /// The runner is a host-side thread that dispatches Ready tasks and detects
-    /// completion of Running tasks. Calling start twice on the same workspace
-    /// is idempotent.
+    /// Start, stop, or inspect a workspace runner. Starting it twice is idempotent.
+    /// The host restores saved state at startup but leaves runners stopped.
     ///
-    /// It is never started for you. Booting the host restores state for live
-    /// workspaces but leaves every runner stopped, so a workspace whose runner
-    /// was never started dispatches nothing at all.
-    ///
-    /// `stop` ends the detection, not the work: already-dispatched processes
-    /// keep going and their tasks stay `Running` with nothing left to notice
-    /// them finishing. Starting again picks those handles back up and settles
-    /// each one — alive, dead, or with the exit code its watcher had persisted.
+    /// Stopping a runner stops completion checks, not its dispatched processes.
+    /// Their tasks remain Running. Starting again restores handles and checks
+    /// whether processes are alive or have a saved exit result.
     TaskRun {
         /// Workspace id whose runner is being controlled (focus-independent — required).
         #[arg(long)]
@@ -242,13 +230,11 @@ pub enum AgentCommands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
-    /// Create a barrier (waits until N signals have arrived).
+    /// Create a barrier that closes after N signals.
     ///
-    /// Nothing runs on a timer. `--timeout-ms` is stamped lazily: the barrier
-    /// turns `TimedOut` inside the next `barrier-signal`, `barrier-state` or
-    /// `barrier-list`, so a barrier nobody asks about sits in whatever state it
-    /// was left in. Once stamped, `barrier-signal` fails, and the record stays
-    /// until `barrier-delete` removes it.
+    /// Expiry is checked on the next barrier-signal, barrier-state, or
+    /// barrier-list call, not by a timer.
+    /// A timed-out barrier rejects signals and remains until barrier-delete.
     BarrierCreate {
         /// Workspace id (focus-independent — required).
         #[arg(long)]
@@ -333,9 +319,9 @@ pub enum AgentCommands {
         /// Holder id (must be non-empty).
         #[arg(long)]
         holder: String,
-        /// Reclaim this permit automatically if the holder goes silent for
-        /// this many ms. Re-acquiring with the same holder renews it. Omit for
-        /// a permit that never expires (the default).
+        /// Expire this permit after this many milliseconds. Re-acquiring with
+        /// the same holder renews it; acquire/list calls reclaim expired permits.
+        /// Omit for no expiry.
         #[arg(long)]
         ttl_ms: Option<u64>,
     },

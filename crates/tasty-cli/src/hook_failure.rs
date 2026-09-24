@@ -1,24 +1,7 @@
-//! agent hook 전달 실패의 IPC-독립 기록.
-//!
-//! Claude Code / Codex CLI 는 턴 경계마다 `tasty claude hook <event>` /
-//! `tasty codex hook <event>` 를 동기 실행해 상태 전환을 tasty 로 **1 회성 push**
-//! 한다. 재전송이 없으므로 **유실 = 영구 손실**인데, 셸 래퍼가 exit code 를 버려
-//! (`|| true`) 유실됐다는 사실 자체가 어디에도 남지 않았다 — 자식이 영구히
-//! `active` 로 남은 사고에서 원인을 특정하지 못한 이유가 이것이다.
-//!
-//! **왜 IPC 가 아니라 파일인가**: 실패의 주된 원인이 "tasty 에 닿지 못함" 이므로,
-//! `telemetry.record` 같은 IPC 채널로는 그 실패를 보고할 수 없다(chicken-and-egg).
-//! 그래서 프로세스 로컬 append-only 파일에 남긴다.
-//!
-//! **어느 홈에 남기는가**: `tasty_home()`(=`TASTY_HOME` 또는 `~/.tasty{-debug}`)
-//! 아래다. CLI 가 접속을 시도하는 대상은 `port_file` 이 가리키는 인스턴스이고 그
-//! 포트 파일 위치가 `tasty_home()` 이므로, 기록은 **닿으려 했던 그 인스턴스의 홈**에
-//! 남아야 사후 대조가 된다. `TASTY_PARENT_HOME`(부모가 자식 셸에 브로드캐스트하는
-//! 데이터 루트)은 여기서 쓰지 않는다 — 접속 대상 결정에 관여하지 않는 값이라 섞으면
-//! 기록과 대상 인스턴스가 어긋난다.
-//!
-//! **best-effort**: 기록 자체가 실패해도(권한/디스크/홈 미확정) 무시한다. 진단
-//! 로그를 남기려다 hook 을 깨뜨리면 본말전도다.
+//! IPC로 전달하지 못한 에이전트 훅 오류를 로컬 파일에 기록한다.
+//! 연결 실패를 같은 IPC로 보고할 수 없어 tasty_home 아래에 남긴다.
+//! TASTY_PARENT_HOME은 사용하지 않으며 별도 port-file override와 기록 홈은 다를 수 있다.
+//! 기록 실패는 훅의 결과에 영향을 주지 않는다.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -26,20 +9,10 @@ use std::path::PathBuf;
 /// 기록 파일명. 기존 `notify/<surface>.log` 와 같은 성격(저비용 append-only)이다.
 const LOG_FILE: &str = "hook-failures.log";
 
-/// 로테이션 임계치. 넘으면 `<name>.1` 로 밀어내고 새 파일을 시작한다 — 보존 상한은
-/// 이 값의 2 배(현재 파일 + `.1`). hook 실패는 정상 환경에서 0 건이고, 고장 상황에서도
-/// 턴당 한 줄(수십 바이트)이라 이 정도면 사고 한 건의 전체 이력을 담고도 남는다.
+/// 다음 기록 전에 회전할 크기 기준. 한 기록의 크기나 동시 쓰기를 제한하는 상한은 아니다.
 const MAX_BYTES: u64 = 256 * 1024;
 
-/// 이 method 가 **agent hook 전달**인가.
-///
-/// 기록 대상을 hook 으로 좁히는 이유: 대화형 CLI 실패는 사용자가 stderr 로 즉시
-/// 보므로 무흔적 문제가 없다. 반면 hook 은 아무도 안 보는 곳에서 발화하고 재시도가
-/// 없다 — 이 파일이 유일한 흔적이 된다.
-///
-/// 판정은 method 의 마지막 dot 세그먼트가 `hook` 이거나 `_hook` 으로 끝나는지로 한다:
-/// `claude.hook` / `codex.hook` / `claude.checklist_hook` 이 대상이다. plugin 이
-/// 새 hook 명령을 추가해도 이 명명 관례만 지키면 자동으로 포함된다.
+/// 마지막 메서드 구성요소가 hook 또는 *_hook인 호출만 기록한다.
 pub fn is_hook_method(method: &str) -> bool {
     let tail = method.rsplit('.').next().unwrap_or(method);
     tail == "hook" || tail.ends_with("_hook")
@@ -77,16 +50,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// hook 이벤트 이름을 params 에서 꺼낸다. 없으면 `-`.
-///
-/// `method` 는 `claude.hook` 하나로 고정이라 **어느 이벤트가 실패했는지**는 거기
-/// 안 들어 있다 — 실제 이벤트(`stop`/`session-end`/…)는 `params.event` 에 실린다.
-/// 로그를 읽는 사람이 가장 먼저 묻는 질문이 그것이므로 여기서 꺼내 함께 싣는다.
-/// 이벤트 이름을 갖지 않는 hook(`claude.checklist_hook`)은 `-` 가 된다.
-///
-/// 공백은 `_` 로 접는다: `event` 는 줄 중간 필드라 공백이 들어가면 `key=value`
-/// 나열이 깨져 `awk '{print $3}'` 같은 읽기가 어긋난다(마지막 필드인 `reason` 과
-/// 다른 제약이다).
+/// params.event를 로그 필드로 만든다. 부재는 -, 공백은 _로 표시한다.
 fn event_token(params: &serde_json::Value) -> String {
     let raw = params.get("event").and_then(|v| v.as_str()).unwrap_or("");
     let folded: String = raw
@@ -100,32 +64,14 @@ fn event_token(params: &serde_json::Value) -> String {
     }
 }
 
-/// `reason` 에 실을 수 있는 값 — **CLI 가 만든, 로케일과 무관한 영어 진단 문장**.
-///
-/// 이 파일을 읽는 주체는 사람일 수도 에이전트일 수도 있다. 알려진 실패 패턴과 대조하고
-/// `grep` 으로 찾으려면 흔들리지 않는 조각이 있어야 한다. 반면 stderr 는 사용자 표면이라
-/// 번역문이 맞다 — **같은 실패의 두 산출물이 언어를 달리한다.**
-///
-/// **이 타입이 덮는 것은 CLI 가 문구를 만드는 갈래뿐이다.** 요청이 호스트에 닿았는데
-/// 오류 응답이 온 갈래는 문구를 답한 쪽이 만들고, plugin 이 답하면 그 문구는 앱 언어를
-/// 탄다 — CLI 에 영어 원본이 없으므로 갈라 놓을 것도 없다. 그 갈래의 로케일 무관성은
-/// 산문이 아니라 `code=` 필드가 진다([`format_line`]).
-///
-/// 그 분리를 주석이 아니라 **타입**으로 세운 이유: [`record`] 가 `&str` 을 받으면 다음에
-/// 손대는 사람이 `t(...)` 결과를 그대로 넘기는 것을 막을 방법이 없고, 실제로 두 lane 이
-/// 각각 독립적으로 그렇게 만들었다. 지금은 번역문을 실으려면 [`Self::new_unchecked`] 를
-/// 명시적으로 불러야 하므로, 그 한 줄이 리뷰에서 보인다.
+/// CLI가 만든 진단은 로케일과 무관한 영어로 기록한다.
+/// 호스트·플러그인이 보낸 오류 문구는 번역될 수 있으므로 code 필드로 분류한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticEnglish(String);
 
 impl DiagnosticEnglish {
-    /// 로케일 무관 영어임을 **호출자가 보증**하고 만든다.
-    ///
-    /// 쓸 수 있는 값: 크레이트가 `Display` 로 내는 영어 기본 렌더링(`PortFileError` 등),
-    /// 코드에 리터럴로 박은 영어 포맷, 그리고 **답한 쪽이 만들어 보낸 오류 문구**.
-    /// 마지막 것은 CLI 가 언어를 고를 수 없는 값이라 보증의 대상이 아니다 — 그 갈래에서
-    /// 흔들리지 않는 것은 함께 기록하는 `code` 다.
-    /// **쓰면 안 되는 값**: CLI 자신이 `t()` / `t_fmt()` 로 만든 문구.
+    /// CLI의 t/t_fmt 결과를 넘기지 않는다. 영문 진단 또는 외부 오류 응답에만 사용한다.
+    /// 외부 응답의 언어는 통제하지 못하므로 오류 코드도 함께 기록한다.
     pub fn new_unchecked(text: impl Into<String>) -> Self {
         Self(text.into())
     }
@@ -141,19 +87,8 @@ impl std::fmt::Display for DiagnosticEnglish {
     }
 }
 
-/// 한 줄 기록. 공백을 구분자로 쓰는 `key=value` 나열이라 `grep`/`awk` 로 바로 읽힌다.
-/// `reason` 은 CLI 가 이미 만들어 둔 실패 메시지를 그대로 싣는다 — 없는 정보를 새로
-/// 만드는 게 아니라, 버려지던 정보를 붙잡아 두는 것이 이 모듈의 전부다. `event` 도
-/// 같은 성격이다: 요청에 이미 있던 값을 흘려보내지 않고 붙잡아 둘 뿐이다.
-///
-/// `code` 는 JSON-RPC 오류 코드다. **좌표는 필드로, 산문은 `reason` 으로** 가른다 —
-/// 코드는 프로토콜 값이라 로케일을 안 타는 반면 `reason` 은 답한 쪽이 만든 문장이라
-/// 탈 수 있다. 그 값이 `reason` 앞머리에 묻혀 있으면 읽는 쪽이 산문을 파싱해야 하고,
-/// 그건 이 파일이 피하려던 바로 그 형태다. 코드가 없는 실패(호스트에 닿지도 못한
-/// 경우)는 `-` 다 — `event` 와 같은 부재 표기다.
-///
-/// **`reason` 은 계속 마지막이다.** 한 줄에서 공백을 담을 수 있는 값이 그것뿐이라,
-/// 읽는 쪽이 `reason=` 뒤를 줄 끝까지로 자를 수 있다는 성질을 깨지 않는다.
+/// key=value 한 줄 기록. 부재한 event/code는 -, reason의 개행은 공백으로 바꾼다.
+/// reason만 공백을 포함할 수 있으므로 반드시 마지막 필드로 유지한다.
 fn format_line(
     method: &str,
     params: &serde_json::Value,
@@ -171,12 +106,8 @@ fn format_line(
     )
 }
 
-/// hook 전달 실패를 기록한다. hook 이 아닌 method 는 무시한다.
-///
-/// `reason` 이 [`DiagnosticEnglish`] 인 것은 규약이다 — 이 파일의 문구는 사용자 로케일을
-/// 따라가지 않는다. 사용자에게 보여줄 번역문은 호출자가 stderr 로 따로 낸다.
-///
-/// 실패해도 조용히 넘어간다(best-effort) — 호출자는 반환값을 볼 필요가 없다.
+/// 훅 메서드의 실패를 기록한다. CLI 진단은 영어, 사용자 stderr는 별도로 번역한다.
+/// 기록 실패는 무시한다.
 pub fn record(
     method: &str,
     params: &serde_json::Value,
@@ -237,8 +168,6 @@ mod tests {
         assert!(is_hook_method("claude.checklist_hook"));
     }
 
-    /// 대화형/조회 명령은 기록 대상이 아니다 — 실패가 stderr 로 사용자에게 바로
-    /// 보이므로 무흔적 문제가 없고, 파일만 시끄러워진다.
     #[test]
     fn non_hook_methods_are_ignored() {
         assert!(!is_hook_method("claude.children"));
@@ -263,9 +192,6 @@ mod tests {
         assert!(line.contains("reason=boom second line"));
     }
 
-    /// 로그를 읽는 사람의 첫 질문("어떤 이벤트가 실패했나")에 답하는 필드다.
-    /// `method` 는 `claude.hook` 하나로 고정이라 이게 없으면 `stop` 실패와
-    /// `session-end` 실패를 구분할 수 없다.
     #[test]
     fn event_token_is_carried_from_params() {
         for event in ["stop", "notification", "session-end", "subagent-stop"] {
@@ -279,15 +205,12 @@ mod tests {
         }
     }
 
-    /// 이벤트 이름을 갖지 않는 hook(`claude.checklist_hook`)이나 params 가 비었을
-    /// 때도 필드 자리는 유지한다 — 필드가 통째로 빠지면 열 기준으로 읽던 쪽이 어긋난다.
     #[test]
     fn missing_event_becomes_dash() {
         for params in [
             serde_json::json!({}),
             serde_json::json!({ "session_id": "abc" }),
             serde_json::json!({ "event": "" }),
-            // 문자열이 아닌 값도 `-` 로 떨어뜨린다(있는 척하지 않는다).
             serde_json::json!({ "event": 3 }),
             serde_json::Value::Null,
         ] {
@@ -307,7 +230,6 @@ mod tests {
         );
         assert_eq!(line.matches('\n').count(), 1, "한 실패 = 한 줄");
         assert!(line.contains("event=we_ird_name"), "{line}");
-        // 필드 개수가 늘지 않았는지 = 공백 구분 파싱이 그대로 먹히는지.
         let fields: Vec<&str> = line.trim_end().split(' ').collect();
         assert_eq!(fields[1], "method=claude.hook");
         assert_eq!(fields[2], "event=we_ird_name");
@@ -337,7 +259,6 @@ mod tests {
         assert!(body.contains("method=claude.hook"));
         assert!(body.contains("event=stop"), "{body}");
 
-        // 임계치를 넘긴 파일은 다음 기록 전에 `.1` 로 밀린다.
         std::fs::write(&path, vec![b'x'; MAX_BYTES as usize]).expect("grow");
         record_at(
             &path,
@@ -351,10 +272,6 @@ mod tests {
         assert_eq!(body.lines().count(), 1, "새 파일은 새 줄만");
     }
 
-    /// **좌표는 필드로, 산문은 `reason` 으로.**
-    ///
-    /// 이 줄에서 로케일을 안 타는 것이 무엇인지가 이 파일의 계약이다. 산문은 답한 쪽이
-    /// 만들어 보내므로 plugin 이 답하면 앱 언어를 탄다 — 그때도 `code` 는 안 흔들린다.
     #[test]
     fn the_code_is_a_field_not_something_to_parse_out_of_the_prose() {
         let line = format_line(
@@ -365,14 +282,11 @@ mod tests {
         );
         assert!(line.contains(" code=-32602 "), "{line}");
 
-        // 산문이 어느 언어든 좌표 넷은 공백 구분으로 그대로 읽힌다.
         let fields: Vec<&str> = line.trim_end().split(' ').take(5).collect();
         assert_eq!(fields[1], "method=codex.hook");
         assert_eq!(fields[2], "event=stop");
         assert_eq!(fields[4], "code=-32602");
 
-        // `reason` 은 마지막이다 — 공백을 담을 수 있는 값이 그것뿐이므로, 읽는 쪽이
-        // `reason=` 뒤를 줄 끝까지로 자를 수 있다. 필드를 그 뒤에 더하면 깨진다.
         let at = line.find("reason=").expect("reason 필드");
         assert!(
             !line[at..].trim_end().contains(' ') || line[at..].starts_with("reason="),
@@ -384,7 +298,6 @@ mod tests {
         );
     }
 
-    /// 코드가 없는 실패(호스트에 닿지도 못했다)는 `-` 다 — 있는 척하지 않는다.
     #[test]
     fn a_failure_without_a_code_keeps_the_column() {
         let line = format_line(
@@ -396,7 +309,6 @@ mod tests {
         assert!(line.contains(" code=- "), "{line}");
     }
 
-    /// 홈 아래 디렉터리가 없어도 만들어 기록한다(첫 실행 환경).
     #[test]
     fn record_creates_missing_parent_dir() {
         let dir = tempfile::tempdir().expect("tempdir");

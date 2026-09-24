@@ -8,17 +8,12 @@ pub fn format_output(command: &Commands, result: &serde_json::Value) -> Result<(
         Commands::List { command } => format_list_output(command, result),
         Commands::Agent { command } => format_agent_output(command, result),
         _ => {
-            // Pretty print JSON
             outln!("{}", serde_json::to_string_pretty(result).unwrap())
         }
     }
 }
 
-/// `tasty agent task-{list,get,run}` 만 사람이 터미널에서 바로 읽는 텍스트로
-/// 렌더한다 — 결정 5(CLI 관측 표면): "runner 가 꺼져 있다"/"이 task 는 외부
-/// 신호를 기다린다" 를 raw JSON 을 눈으로 파싱하지 않고 바로 알아볼 수 있어야
-/// 한다. 그 외 커맨드(barrier/semaphore/lease/rate_limit/task-graph 등)는 구조적
-/// 데이터라 pretty JSON 그대로가 적절 — GUI 는 만들지 않는다(결정 5).
+/// 작업 목록·상세·runner 상태는 텍스트로 표시하고 나머지는 JSON으로 출력한다.
 fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> Result<()> {
     match command {
         AgentCommands::TaskList { .. } => format_task_list(result),
@@ -108,8 +103,7 @@ fn format_task_list(result: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
-/// `command`(internally-tagged, `{"kind": "...", ...}`) 한 줄 요약. audit 시나리오
-/// (예: "이 task 가 정말 이 dispatch 를 실행하나")를 raw JSON 파싱 없이 확인하기 위함.
+/// 작업 명령의 한 줄 요약.
 fn format_command_summary(command: &serde_json::Value) -> String {
     let kind = command.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
     match kind {
@@ -159,8 +153,7 @@ fn format_command_summary(command: &serde_json::Value) -> String {
     }
 }
 
-/// `on_failure`(internally-tagged) 한 줄 요약 — audit 시나리오(예: "이 task 가 정말
-/// 저 fallback task 에 게이트돼 있나")를 `tasty memory get` 우회 없이 확인하기 위함.
+/// 실패 정책의 한 줄 요약.
 fn format_on_failure_summary(on_failure: &serde_json::Value) -> String {
     let kind = on_failure
         .get("kind")
@@ -193,8 +186,6 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
     } else {
         outln!("state: {state}")?;
     }
-    // 결정 5: AwaitExternal 로 외부 신호를 기다리는 task 는 "그냥 running" 과
-    // 텍스트로도 구분되게 wait_key/deadline 을 함께 보여준다.
     if let Some(wait) = result.get("awaiting_external") {
         let wait_key = wait.get("wait_key").and_then(|v| v.as_str()).unwrap_or("?");
         let deadline_ms = wait
@@ -253,12 +244,7 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) -> Res
     }
 }
 
-/// Render the full `list tree` output: workspace → pane → tab → surface.
-///
-/// Decomposed into per-level renderers ([`format_pane`], [`format_tab`],
-/// [`format_tab_ids`]) so each level stays within the cognitive-complexity
-/// gate. The emitted text is byte-for-byte identical to the previous
-/// monolithic form.
+/// Render workspaces, panes, tabs, and surfaces as a tree.
 fn format_tree(result: &serde_json::Value) -> Result<()> {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
@@ -303,7 +289,6 @@ fn format_tab(tab: &serde_json::Value) -> Result<()> {
     let tactive = tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
     let tpfx = if tactive { "*" } else { " " };
 
-    // Extract surface info from the tab's surface field
     let surface = tab.get("surface");
     let stype = surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
     let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
@@ -311,8 +296,6 @@ fn format_tab(tab: &serde_json::Value) -> Result<()> {
         .and_then(|s| s.get("surfaces"))
         .and_then(|v| v.as_array());
 
-    // Split tab with full nested layout → render the
-    // SurfaceGroup split tree under the tab line.
     if stype == Some("SplitLayout")
         && let Some(layout) = surface.and_then(|s| s.get("layout"))
         && !layout.is_null()
@@ -359,7 +342,6 @@ fn format_tab_ids(
         }
         ids.push_str(&format!("surface:{}", s));
     } else if let Some(arr) = surfaces_arr {
-        // SplitLayout: list all surface IDs
         for s in arr {
             if let Some(sv) = s.as_u64() {
                 if !ids.is_empty() {
@@ -424,7 +406,6 @@ fn render_layout(
             }
         }
         _ => {
-            // Leaf surface.
             let kind = node.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
             let id = node.get("id").and_then(|v| v.as_u64());
             let focus_mark = if id.is_some() && id == focused {
@@ -443,16 +424,8 @@ fn render_layout(
     }
 }
 
-/// `list workspaces` 한 행. id 를 함께 찍는 것이 핵심이다 — `terminal.spawn` 의
-/// workspace-not-found 오류가 이 명령을 가리키므로, 여기서 `--workspace` 에 넣을
-/// 값을 바로 얻을 수 있어야 한다. 표기는 `format_tree` 의 `(id:N)` 과 맞춘다.
-///
-/// `[mirror]` 는 이 워크스페이스가 원격을 attach 한 client mirror 라는 뜻이다
-/// (구조 변경이 원격으로 forward 되므로 로컬과 동작이 다르다 —
-/// `docs/features/remote-attach/index.md`). 번역하지 않고 고정 토큰으로 두는 것은
-/// 이 파일의 `list` 계열 구조 출력이 전부 하드코딩 영어라는 컨벤션을 따른 것이다
-/// (`(N panes)` · `Pane {id}` · `[ws:N name]`). 한 행에서 이것만 번역되면 오히려
-/// 어긋나고, 에이전트가 파싱하는 식별 토큰이 로케일에 따라 흔들린다.
+/// workspace ID와 mirror 여부를 표시한다.
+/// (id:N), [mirror] 같은 구조 토큰은 출력 파서가 사용하므로 번역하지 않는다.
 fn format_workspace_row(ws: &serde_json::Value) -> String {
     let id = ws.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
     let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
@@ -504,11 +477,8 @@ fn format_pane_list(result: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
-/// `timer.list` 응답을 표로 렌더한다.
-///
-/// 마지막 줄의 hard deadline 요약이 이 출력의 요점이다 — "지금 무엇이 이 인스턴스를
-/// 깨우고 있는가" 에 직접 답한다. Lax 타이머는 slack 을 넘기기 전까지 이 줄에
-/// 오르지 않으므로, Lax 가 여기 지목되면 그 자체가 회귀 신호다.
+/// timer.list의 타이머와 다음 hard deadline을 표시한다.
+/// Lax 타이머는 slack 기한이 지난 경우 hard deadline에 포함될 수 있다.
 fn format_timer_list(result: &serde_json::Value) -> Result<()> {
     const HEADER: [&str; 5] = ["key", "interval", "next_due", "precision", "last_fired"];
     let empty = Vec::new();
@@ -599,7 +569,6 @@ fn timer_hard_deadline_line(result: &serde_json::Value) -> String {
             let in_ms = h.get("in_ms").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("\u{2500} hard deadline: {} ({key})", fmt_offset_ms(in_ms))
         }
-        // 등록된 타이머가 없다 = 무기한 자도 된다. 빈 표만 남기면 그 사실이 안 보인다.
         None => {
             "\u{2500} hard deadline: none (nothing is scheduled to wake this instance)".to_string()
         }

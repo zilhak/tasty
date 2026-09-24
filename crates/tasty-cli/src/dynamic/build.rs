@@ -1,7 +1,4 @@
-//! 매니페스트 `contributes.cli` 를 clap 서브커맨드로 **구성**한다.
-//!
-//! 이 방향은 한쪽이다 — 매니페스트를 읽어 `clap::Command` 를 만들 뿐,
-//! 매칭 결과를 해석하지 않는다(그쪽은 [`super::request`]).
+//! 매니페스트로 clap 명령 트리를 만든다. 요청 조립은 super::request가 담당한다.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -73,10 +70,7 @@ pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
     cmd
 }
 
-/// 정적 `Cli` 가 이미 쓰고 있는 top-level 이름 — 명령 이름과 그 모든 alias.
-///
-/// 손으로 적은 목록을 참조하지 않고 clap 명령 트리에서 그때그때 도출한다. 호스트
-/// 명령이 늘거나 이름이 바뀌어도 따라 고칠 두 번째 자리가 생기지 않는다.
+/// 정적 명령과 alias를 clap 트리에서 읽는다.
 pub(super) fn host_command_names(cmd: &Command) -> HashSet<String> {
     let mut names = HashSet::new();
     for sub in cmd.get_subcommands() {
@@ -88,10 +82,8 @@ pub(super) fn host_command_names(cmd: &Command) -> HashSet<String> {
     names
 }
 
-/// clap 4의 빌더 API는 `&'static str`을 기대하는 곳이 있어, 매니페스트에서 읽은
-/// 동적 문자열은 leak해서 정적화한다. CLI 진입은 프로세스당 한 번이며 plugin
-/// 메니페스트 규모는 제한적이므로 누수 양이 무시 가능.
-/// 같은 패턴이 `plugin::remote_kind`에도 있다.
+/// clap의 static 문자열 요구에 맞춰 프로세스 종료까지 보관한다.
+/// 반복 호출하면 계속 누적되므로 CLI의 일회성 구성에만 사용한다.
 fn leak_static(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
 }
@@ -138,10 +130,7 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
     a = a.required(arg.required);
     a = match arg.ty {
         CliArgType::Bool => a.action(ArgAction::SetTrue),
-        // `reject_repeat`: Set은 반복 지정 시 마지막 값만 조용히 남기고 앞선
-        // 값을 버린다 — occurrence 자체가 유실되어 이후 판별이 불가능하다.
-        // Append로 모든 occurrence를 보존해 두면 extract_value가 개수를 세어
-        // 2개 이상이면 에러로 거부할 수 있다.
+        // 반복 횟수를 잃지 않도록 Append로 받고 extract_value에서 중복을 거절한다.
         _ if arg.reject_repeat => a.action(ArgAction::Append),
         _ => a.action(ArgAction::Set),
     };

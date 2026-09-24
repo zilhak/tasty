@@ -104,22 +104,18 @@ pub enum DebugCommands {
         #[arg(long, default_value = "focused")]
         bg_mode: String,
     },
-    /// Switch macOS input source (e.g. Korean IME) — macOS GUI builds only
+    /// Switch the input source (for example, the Korean IME). macOS GUI builds only.
     ///
-    /// The subcommand is offered on every platform on purpose: the method is
-    /// registered everywhere, so hiding it here would answer "no such command"
-    /// and send you looking for a typo. Elsewhere it fails fast with -32015 and
-    /// says why (TISSelectInputSource has no equivalent).
+    /// The command is listed everywhere; platforms without TISSelectInputSource
+    /// return -32015 instead of an unknown-command error.
     SwitchInputSource {
         /// Input source ID (e.g. "com.apple.inputmethod.Korean.2SetKorean")
         #[arg()]
         source_id: String,
     },
-    /// Send a raw physical key code via CGEvent — macOS GUI builds only
+    /// Send a physical key code through CGEvent and the OS IME. macOS GUI builds only.
     ///
-    /// Goes through the OS IME pipeline. Offered on every platform for the same
-    /// reason as switch-input-source; elsewhere it fails fast with -32015 and
-    /// says why (CGEventPost has no equivalent).
+    /// Platforms without CGEventPost return -32015.
     RawKey {
         /// macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)
         #[arg()]
@@ -251,7 +247,7 @@ pub enum ToolDebugCommands {
     List,
     /// Invoke a tool menu item by key
     Invoke {
-        /// Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-history/open-viewer`)
+        /// Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-viewer/open-viewer`)
         #[arg(long)]
         key: String,
     },
@@ -612,10 +608,8 @@ pub enum InjectDebugCommands {
         #[arg(long, default_value_t = true)]
         pressed: bool,
     },
-    /// Inject typed characters into the egui layer, so a focused text field
-    /// (command palette query, settings filter) can be filled headlessly.
-    /// Key injection cannot do this: egui receives characters through a
-    /// separate text event. Enter, Tab and Backspace stay on `egui-key`.
+    /// Type characters into a focused egui text field in a GUI build without
+    /// physical keyboard input. Enter, Tab, and Backspace use egui-key instead.
     EguiText {
         /// Characters to type. Control characters are refused, since the real
         /// input path never carries them and the text field drops them.

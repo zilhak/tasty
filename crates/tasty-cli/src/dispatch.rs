@@ -1,28 +1,13 @@
-//! 명령이 어디로 가는지를 타입으로 결정한다.
-//!
-//! 이 크레이트에는 원래 **선언/전송 2갈래 대칭**이 있다 — `commands/`(clap 선언)
-//! ↔ `request/`(JSON-RPC 변환). 그런데 단발 RPC 로 끝나지 않는 명령들은 그 대칭에서
-//! 빠져 진입점의 조건 분기와 선언 계층 내부 실행 함수로 흩어져 있었다. 여기서
-//! [`Dispatch`] 로 갈래를 명시해 **세 번째 갈래**(`local/` — 클라이언트 주도 실행)를
-//! 대칭에 복귀시킨다.
-//!
-//! 분류 축은 하나다: **`request/` 가 만든 단발 JSON-RPC 하나로 끝나는가.**
-//! 아니면(로컬 파일·프로세스 조작 · raw 스트림 · 폴링 루프 · SSH 터널 경유 조회)
-//! 전부 "클라이언트가 주도해 여러 번 통신한다" 는 같은 성격이라 한 갈래로 묶인다.
-//!
-//! 새 클라이언트 주도 명령을 추가할 때 고칠 곳은 [`classify`] 하나다 — 진입점
-//! (`run.rs`)은 열 필요가 없다.
+//! 단발 JSON-RPC와 클라이언트가 직접 처리하는 명령을 구분한다.
+//! 로컬 파일·프로세스, 스트림·폴링·SSH 명령은 ClientDriven으로 실행한다.
+//! 새 실행 경로는 classify에 등록한다.
 
 use anyhow::Result;
 
 use crate::Commands;
 use crate::commands::{EventsCommands, PluginCommands, RemoteCommands, ToolCommands};
 
-/// 클라이언트 주도 실행이 진입점에서 받는 문맥.
-///
-/// 지금은 `--port-file` 오버라이드 하나다. 실측 근거: 기존 진입점 시그니처가
-/// `run_client(command, port_file)` 이고, 분기 16개 중 포트 파일 밖의 값을 진입점
-/// 에서 받아 쓰는 것이 없다(나머지는 각자 clap 인자에서 온다).
+/// 클라이언트 실행에 전달할 공통 옵션.
 pub struct ClientCtx<'a> {
     pub port_file: Option<&'a str>,
 }
@@ -35,11 +20,7 @@ pub trait ClientCommand {
     fn run(self: Box<Self>, ctx: &ClientCtx<'_>) -> Result<()>;
 }
 
-/// 모든 CLI 명령은 둘 중 하나다.
-///
-/// 명령을 빌려온다 — 클라이언트 주도 실행 단위가 clap 이 이미 파싱해 둔 값을
-/// 그대로 참조하면 복제도, clap enum 에 `Clone` 을 새로 다는 일도 없다. 단발 RPC
-/// 갈래가 아무것도 담지 않는 것도 같은 이유다(진입점이 원 명령을 계속 들고 있다).
+/// clap이 파싱한 명령을 빌려 실행하므로 값을 복제하지 않는다.
 pub enum Dispatch<'a> {
     /// `request/` 가 만든 단발 JSON-RPC — 보내고 응답을 출력하면 끝.
     Rpc,
@@ -124,11 +105,7 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
                 tasty_i18n::t("cli.dispatch.ssh_force_detach_exclusive")
             );
         }
-        // `tasty remote attach` (non-force, non-into_gui) — SSH 터널(포트발견 + ssh -L) +
-        // 단계 4 raw 스트림 attach, 백오프 재연결. `--into-gui` 는 JSON-RPC(attach.into_gui)
-        // 로 fall-through(로컬 GUI 가 client 가 되어 원격 워크스페이스 mirror 재구성),
-        // `--force-detach` 는 JSON-RPC(attach.force_detach)로 fall-through.
-        // 로컬 loopback attach 는 release 표면에 없다 — `tasty debug attach`(debug 빌드).
+        // into-gui와 force-detach는 단발 RPC로 처리하고 일반 attach만 스트림을 연다.
         Commands::Remote {
             command:
                 RemoteCommands::Attach {
@@ -236,8 +213,6 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
             batch: *batch,
             interval_ms: *interval_ms,
         }),
-        // `fetch` 는 한 번의 호출이라 평범한 요청 경로로 간다. `follow` 만 루프라
-        // 여기 있다 — 같은 IPC 메서드를 위치를 이어 가며 되부른다.
         Commands::Events {
             command:
                 EventsCommands::Follow {
@@ -269,9 +244,7 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
         Commands::Debug {
             command: crate::commands::DebugCommands::Sim { cmd },
         } => Box::new(crate::local::DebugSim { cmd }),
-        // `tasty debug attach <id>` (non-force, 로컬 loopback) — 단계 4 raw 스트림. 로컬
-        // self-attach 는 사용자 입력 재현 성격이라 debug 빌드 전용으로 격리한다(원칙 1 ②).
-        // `--force-detach` 는 일반 JSON-RPC(attach.force_detach)라 fall-through.
+        // force-detach는 단발 RPC로 처리한다.
         #[cfg(debug_assertions)]
         Commands::Debug {
             command:

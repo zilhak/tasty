@@ -1,6 +1,4 @@
-//! `dynamic` 파이프라인 전체의 회귀. 픽스처(`sample_entry` 등)를 세 모듈이
-//! 공유하므로 테스트는 모듈별로 쪼개지 않고 여기 모아 둔다 — 쪼개면 같은
-//! 픽스처가 세 벌이 된다.
+//! 공통 매니페스트 픽스처로 동적 명령 구성과 요청 변환을 검사한다.
 
 use super::build::*;
 use super::request::*;
@@ -123,9 +121,6 @@ fn parse(args: &[&str]) -> ArgMatches {
 
 #[test]
 fn merge_stdin_uses_stdin_field_alias() {
-    // stdin JSON 의 키 이름이 CLI arg name 과 다른 경우 (`session_id` →
-    // `session`) stdin_field 매핑이 적용되는지 확인. Claude Code hook payload
-    // 의 session_id 가 `--session` 인자로 들어오는 동작이 이걸로 보장된다.
     let group = CliArgGroup {
         positional: vec![],
         flags: vec![
@@ -228,13 +223,7 @@ fn flag_with_value_maps_to_params() {
     assert_eq!(p["prompt"], Value::String("hello".into()));
 }
 
-/// 숫자 플래그에 비수치가 오면 **거부**한다.
-///
-/// 예전에는 `parse().ok()` 로 `None` 이 되어 하류에서 "플래그 없음" 과 같아졌고,
-/// 그 자리에 없을 때 도는 기본값이 들어갔다. `--surface` 의 기본값은 호출자 자신이라
-/// 명령이 **자기에게 배달**됐다 — 종료코드 0, 오류 없음. 실제로 그렇게 잃은 적이 있다.
-/// stdin JSON 경로는 `extract_value` 를 지나지 않는다. 강제를 한쪽 문에만 두면
-/// 같은 `CliArg` 선언이 들어온 문에 따라 다른 뜻이 된다 — 그 비대칭을 고정한다.
+/// 플래그와 stdin 모두 비수치 입력을 거절해야 한다.
 fn spawn_group(entry: &PluginCliEntry) -> &CliArgGroup {
     entry
         .cli
@@ -254,8 +243,6 @@ fn stdin_json_number_flag_takes_a_number_and_a_numeric_string() {
     merge_stdin_params(&mut params, g, &stdin).expect("숫자는 통과해야 한다");
     assert_eq!(params.get("surface"), Some(&Value::from(42u32)));
 
-    // 문자열이라도 숫자로 읽히면 `--surface 42` 와 같게 다룬다 — 두 문의 규칙이
-    // 달라지면 그 자체가 다음 오보의 자리가 된다.
     let mut params = Map::new();
     let stdin = serde_json::json!({ "surface": "42" });
     merge_stdin_params(&mut params, g, &stdin).expect("숫자 문자열도 통과해야 한다");
@@ -292,9 +279,7 @@ fn stdin_json_does_not_override_a_value_the_cli_already_gave() {
     let entry = sample_entry();
     let g = spawn_group(&entry);
 
-    // CLI 가 이미 채운 키는 stdin 이 무엇을 싣고 오든 건드리지 않는다. 그래서
-    // 그 값이 비수치여도 여기서는 오류가 나지 않는다 — `--flag` 경로가 이미
-    // 검사한 뒤이기 때문이다(같은 값을 두 번 판정하지 않는다).
+    // 명시한 CLI 값은 이미 검사됐으며 stdin보다 우선한다.
     let mut params = Map::new();
     params.insert("surface".into(), Value::from(7u32));
     params.insert("prompt".into(), Value::String("hi".into()));
@@ -319,10 +304,7 @@ fn stdin_json_string_and_bool_args_pass_through_unchanged() {
 
 #[test]
 fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
-    // `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이고, 이 바이너리의 다른
-    // 테스트(`run.rs`)도 "en" 으로 초기화한다. 여기서 먼저 부르는 것은 값을 바꾸는
-    // 것이 아니라 **순서 경합을 없애는 것**이다 — 부르지 않으면 언어팩 로드 여부가
-    // 스레드 순서에 달려 메시지가 키(미로드)와 영문(로드) 사이에서 흔들린다.
+    // 이유: 다른 시험과 같은 OnceLock 초기값을 사용해 번역 로드 순서에 의존하지 않는다.
     tasty_i18n::init("en");
     let entries = vec![sample_entry()];
     let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
@@ -339,11 +321,6 @@ fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
     assert!(msg.contains("conductor"), "받은 값을 담아야 한다: {msg}");
 }
 
-/// **숫자인데 범위 밖**인 것은 "숫자가 아니다" 와 다른 문구여야 한다.
-///
-/// 한 문구로 답하면 `4294967297` 을 준 사용자가 자기 오타를 찾으러 간다 — 실제로는
-/// 값이 크기만 한 것이고 고칠 방법이 다르다. 실측으로 이 자리에서 두 경우가 같은
-/// 문구를 받고 있었다.
 #[test]
 fn an_out_of_range_number_is_not_reported_as_a_non_number() {
     tasty_i18n::init("en");
@@ -369,8 +346,6 @@ fn an_out_of_range_number_is_not_reported_as_a_non_number() {
     assert!(msg.contains("not a number"), "{msg}");
 }
 
-/// 위 테스트의 대우 — 플래그가 **아예 없는** 것은 여전히 오류가 아니다.
-/// 둘을 가르지 못하는 것이 원래 결함이었으므로 양쪽을 함께 박는다.
 #[test]
 fn an_absent_number_flag_is_still_not_an_error() {
     let entries = vec![sample_entry()];
@@ -392,10 +367,7 @@ fn bool_flag_present_serializes_true() {
     assert_eq!(p["force"], Value::Bool(true));
 }
 
-/// 정적 명령 이름을 하나씩 다 흉내 내 본다 — 손목록에 우연히 들어 있는 이름
-/// 몇 개가 아니라 **실제 명령 집합 전체**가 대상이다. 어느 하나라도 등록을
-/// 통과하면 release 에서는 도달 불가능한 중복이 얹히고 debug 에서는 clap 의
-/// `assert_app` 이 CLI 전체를 패닉시킨다.
+/// 호스트 명령 전체에 대해 중복 플러그인 등록을 거절하는지 확인한다.
 #[test]
 fn no_host_command_name_can_be_shadowed_by_a_plugin() {
     let host = host_command_names(&<crate::Cli as CommandFactory>::command());
@@ -413,13 +385,10 @@ fn no_host_command_name_can_be_shadowed_by_a_plugin() {
             .filter(|c| c.get_name() == name)
             .count();
         assert_eq!(hits, 1, "'{name}' 이 중복 등록됐다");
-        // clap 이 debug 빌드에서 실제로 패닉하던 그 경로를 직접 밟는다.
         augmented.debug_assert();
     }
 }
 
-/// 겹치지 않는 이름은 그대로 등록된다 — 위 필터가 전부를 막아 버리는
-/// 형태였다면 이쪽이 빨개진다.
 #[test]
 fn a_plugin_name_that_does_not_collide_is_still_registered() {
     let entry = sample_entry();
@@ -663,10 +632,7 @@ subcommands = [
     assert_eq!(names, vec!["a"]);
 }
 
-/// 실제 claude 매니페스트의 `hook_args` 로 StopFailure payload 를 병합한다. 픽스처를
-/// 손으로 짓지 않는 이유: 물음이 "`stdin_field` 가 동작하나" 가 아니라 "**그 매니페스트가**
-/// `error` 를 받을 자리를 선언했나" 이기 때문이다 — 선언이 빠지면 stdin 의 `error` 는
-/// params 에 실리지 않고, plugin 은 에러 종류를 모른 채 `unknown` 을 기록한다.
+/// 실제 매니페스트가 실패 종류를 받을 stdin_field를 선언했는지 확인한다.
 #[test]
 fn claude_hook_args_carry_the_stop_failure_error_from_stdin() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tasty-plugin-claude");

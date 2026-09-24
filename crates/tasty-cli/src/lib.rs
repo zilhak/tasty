@@ -1,15 +1,6 @@
-//! Tasty CLI — clap subcommand surface + request/run dispatch.
-//!
-//! 클라이언트 IPC 연결(`IpcConnection` / `StreamConnection`)은 서버·프레이밍과
-//! 같은 곳에 있다 — `tasty_ipc::client`.
-//!
-//! 본 바이너리 src/adapters/cli/ 의 전 내용을 흡수했다.
+//! Tasty의 명령 선언·요청 변환·클라이언트 실행. IPC 연결은 tasty_ipc::client를 사용한다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트는 let _ = 사유 주석 정책의 대상이 아니며 제품 lint는 유지한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod commands;
@@ -34,21 +25,14 @@ pub mod run;
 
 use clap::{Parser, Subcommand};
 
-// 원격 인스턴스 조회/생성 코어는 `tasty-remote` 크레이트로 분리됐다. 내부
-// `crate::remote_browse::` / `crate::remote_create::` 경로를 유지하기 위한 재수출.
 pub use tasty_remote::browse as remote_browse;
 pub use tasty_remote::create as remote_create;
 
-// SSH 위임 계층은 `tasty-ssh` 크레이트로 분리됐다. 내부 `crate::ssh::` 경로를
-// 유지하기 위한 재수출 (`docs/dev-guide/build.md` §크레이트 분리 가이드).
 pub use tasty_ssh as ssh;
 
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};
-// 번역이 적용된 clap 트리. 프로덕션은 `Cli::command()` 대신 이것을 쓴다 — 근거는
-// `help_i18n::command`. 배경 설명이 한국어라 `///` 가 아니라 `//` 다: 이 파일은
-// `no_hardcoded_ui_strings` 의 clap 도움말 스캔 뿌리라, 게이트 밖 `///` 의 CJK 는
-// 부착 대상과 무관하게 걸린다.
+// 실제 파싱에는 번역된 명령 트리를 사용한다.
 pub use contract::Envelope;
 pub use help_i18n::command as localized_command;
 pub use run::{run_client, run_client_with, try_run_plugin_cli};
@@ -204,8 +188,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
-    /// Manage child terminals (spawn/tell/children/kill/…) — host-internalized
-    /// agent child-terminal management.
+    /// Manage child terminals (spawn, tell, children, kill).
     Terminal {
         #[command(subcommand)]
         command: TerminalCommands,
@@ -298,7 +281,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: TelemetryCommands,
     },
-    /// Agent collaboration primitives (task DAG; barrier/semaphore/lease/reducer/rate-limit follow)
+    /// Agent tasks, barriers, semaphores, leases, reducers, and rate limits.
     Agent {
         #[command(subcommand)]
         command: AgentCommands,
@@ -319,7 +302,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: HookHandlerCommands,
     },
-    /// Completion strategy — task Custom-dispatch completion judge registry (list).
+    /// List registered task completion strategies.
     CompletionStrategy {
         #[command(subcommand)]
         command: CompletionStrategyCommands,
@@ -373,7 +356,6 @@ mod attach_surface_tests {
     use super::*;
     use clap::Parser;
 
-    // 원격 attach 는 `tasty remote attach` 네임스페이스로 파싱된다.
     #[test]
     fn remote_attach_parses() {
         let cli =
@@ -388,7 +370,6 @@ mod attach_surface_tests {
         assert_eq!(ssh.as_deref(), Some("user@host"));
     }
 
-    // `--profile` / `--into-gui` 등 원격 부분집합 플래그가 remote 네임스페이스에 있다.
     #[test]
     fn remote_attach_into_gui_parses() {
         let cli = Cli::try_parse_from([
@@ -423,8 +404,6 @@ mod attach_surface_tests {
         assert_eq!(target_port, Some(45123));
     }
 
-    // `remote new-workspace` — 원격 mutate 1건(생성). 출력 id 를 `remote attach
-    // --workspace <id>` 로 넘기는 CLI 복합 경로의 앞단.
     #[test]
     fn remote_new_workspace_parses() {
         let cli = Cli::try_parse_from([
@@ -460,12 +439,10 @@ mod attach_surface_tests {
         assert_eq!(name.as_deref(), Some("build"));
         assert_eq!(cwd.as_deref(), Some("/srv/app"));
         assert!(json);
-        // 기본값은 `remote workspaces` 와 동일해야 한다(같은 포트 발견 체인).
         assert_eq!(remote_tasty, "tasty");
         assert_eq!(remote_port_mode, "auto");
     }
 
-    // loopback e2e 형태(`--ssh 127.0.0.1:<port>`)와 생성 옵션 전부 생략도 파싱된다.
     #[test]
     fn remote_new_workspace_loopback_minimal_parses() {
         let cli = Cli::try_parse_from([
@@ -497,13 +474,11 @@ mod attach_surface_tests {
         assert!(!json);
     }
 
-    // top-level `tasty attach` 는 release 표면에서 완전히 제거되었다.
     #[test]
     fn top_level_attach_removed() {
         assert!(Cli::try_parse_from(["tasty", "attach", "5"]).is_err());
     }
 
-    // remote attach 는 `--force-detach`(원격 클라이언트 attach 락 강제해제)를 갖는다.
     #[test]
     fn remote_attach_force_detach_parses() {
         let cli =
@@ -517,7 +492,6 @@ mod attach_surface_tests {
         assert!(force_detach);
     }
 
-    // remote attach 의 런타임 가드: `--ssh` 와 `--force-detach` 는 상호배타.
     #[test]
     fn remote_attach_ssh_force_detach_rejected() {
         let cli = Cli::try_parse_from([
@@ -538,7 +512,6 @@ mod attach_surface_tests {
         );
     }
 
-    // `tasty remote check --ssh user@host` 가 Check 변형으로 파싱된다(기본값 포함).
     #[test]
     fn remote_check_parses() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "user@host"]).unwrap();
@@ -556,12 +529,10 @@ mod attach_surface_tests {
         };
         assert_eq!(ssh.as_deref(), Some("user@host"));
         assert_eq!(profile, None);
-        // attach 와 동일한 기본값.
         assert_eq!(remote_tasty, "tasty");
         assert_eq!(remote_port_mode, "auto");
     }
 
-    // `remote check --profile <name>` + 발견 모드 오버라이드가 파싱된다.
     #[test]
     fn remote_check_profile_parses() {
         let cli = Cli::try_parse_from([
@@ -589,7 +560,6 @@ mod attach_surface_tests {
         assert_eq!(remote_port_mode, "file-unix");
     }
 
-    // 런타임 가드: `remote check` 의 `--ssh` 와 `--profile` 는 상호배타.
     #[test]
     fn remote_check_ssh_profile_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "h", "--profile", "p"])
@@ -602,7 +572,6 @@ mod attach_surface_tests {
         );
     }
 
-    // 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote check` → 명확한 거부.
     #[test]
     fn remote_check_no_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check"]).unwrap();
@@ -614,7 +583,6 @@ mod attach_surface_tests {
         );
     }
 
-    // `tasty remote workspaces --ssh user@host` 가 Workspaces 변형으로 파싱된다.
     #[test]
     fn remote_workspaces_parses() {
         let cli = Cli::try_parse_from([
@@ -646,7 +614,6 @@ mod attach_surface_tests {
         assert!(json);
     }
 
-    // 런타임 가드: `remote workspaces` 의 `--ssh` 와 `--profile` 는 상호배타.
     #[test]
     fn remote_workspaces_ssh_profile_rejected() {
         let cli = Cli::try_parse_from([
@@ -667,7 +634,6 @@ mod attach_surface_tests {
         );
     }
 
-    // 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote workspaces` → 명확한 거부.
     #[test]
     fn remote_workspaces_no_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "workspaces"]).unwrap();
@@ -678,12 +644,6 @@ mod attach_surface_tests {
         );
     }
 
-    // 존재하지 않는 프로필 `remote check --profile nope` → 프로필 미발견 거부.
-    //
-    // 이 메시지는 i18n 키를 거치므로 원문 리터럴로 매칭할 수 없다. 렌더 결과를
-    // **같은 키로 만들어** 비교한다 — 이러면 i18n 초기화 여부와 무관하게(미초기화
-    // 프로세스에서는 `t_fmt` 가 키를 그대로 돌려준다) 성립하고, 다른 키를 쓰도록
-    // 바뀌면 실패한다.
     #[test]
     fn remote_check_unknown_profile_rejected() {
         let cli =
@@ -696,7 +656,6 @@ mod attach_surface_tests {
         );
     }
 
-    // 로컬 loopback attach 는 debug 빌드 `tasty debug attach` 로만 파싱된다.
     #[cfg(debug_assertions)]
     #[test]
     fn debug_attach_parses() {
@@ -711,15 +670,12 @@ mod attach_surface_tests {
         assert!(raw);
     }
 
-    // debug 로컬 attach 에는 ssh/profile 같은 원격 플래그가 없다.
     #[cfg(debug_assertions)]
     #[test]
     fn debug_attach_has_no_ssh() {
         assert!(Cli::try_parse_from(["tasty", "debug", "attach", "5", "--ssh", "h"]).is_err());
     }
 
-    // remote attach 의 런타임 가드: 원격 대상(--ssh/--profile) 없이는 거부된다
-    // (로컬 attach 로 폴백하지 않는다 — 로컬은 debug 빌드 전용).
     #[test]
     fn remote_attach_without_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "attach", "5"]).unwrap();
@@ -731,7 +687,6 @@ mod attach_surface_tests {
         );
     }
 
-    // remote attach 의 런타임 가드: surface 와 --workspace 는 상호배타.
     #[test]
     fn remote_attach_surface_workspace_exclusive() {
         let cli = Cli::try_parse_from([
@@ -753,7 +708,6 @@ mod attach_surface_tests {
         );
     }
 
-    // remote attach 의 런타임 가드: --ssh 와 --profile 은 상호배타.
     #[test]
     fn remote_attach_ssh_profile_exclusive() {
         let cli = Cli::try_parse_from([
@@ -837,7 +791,6 @@ mod workspace_category_tests {
         );
     }
 
-    /// `--id` 는 주인 창을 짚는다 — `--from` 과 달리 포커스에 안 걸린다.
     #[test]
     fn move_by_id_sends_id_and_omits_the_index() {
         let r = req(&[
@@ -918,8 +871,6 @@ mod workspace_category_tests {
         let r = req(&["tasty", "surface", "attention", "clear", "--surface", "42"]);
         assert_eq!(r.method, "surface.attention.clear");
         assert_eq!(r.params["surface_id"], 42);
-        // kind 미지정 = kind 무관 해제. 호스트가 "필터 없음" 으로 읽어야 하므로
-        // 문자열 기본값을 실어 보내지 않는다.
         assert!(r.params["kind"].is_null());
     }
 
@@ -1041,12 +992,9 @@ mod workspace_category_tests {
         ]);
         assert_eq!(r.method, "webhook.register");
         assert_eq!(r.params["methods"][0], "POST");
-        // --sequence 는 JSON 문자열 → 배열 Value 로 파싱돼 전달.
         assert_eq!(r.params["sequence"][0]["method"], "notification.create");
     }
 
-    /// `--method` 생략은 빈 배열이 아니라 null 이다 — 빈 배열은 서버가 거절하고, null 이면
-    /// 서버 기본값(POST)이 선다(도움말 "Defaults to POST").
     #[test]
     fn webhook_register_without_method_leaves_the_default_to_the_server() {
         let r = req(&["tasty", "webhook", "register", "--handler", "host/notify"]);
@@ -1085,7 +1033,6 @@ mod workspace_category_tests {
     #[test]
     fn webhook_register_without_auth_flags_omits_auth() {
         let r = req(&["tasty", "webhook", "register", "--handler", "host/notify"]);
-        // auth 미지정 → null (서버가 무인증으로 취급).
         assert!(r.params["auth"].is_null());
     }
 
@@ -1132,7 +1079,6 @@ mod workspace_category_tests {
         ]);
         assert_eq!(r.method, "hook_handler.dispatch");
         assert_eq!(r.params["id"], "host/notify");
-        // --body 는 JSON 문자열 → Value 로 파싱돼 치환 컨텍스트로 전달.
         assert_eq!(r.params["body"]["message"], "hi");
     }
 
@@ -1161,7 +1107,6 @@ mod workspace_category_tests {
         assert_eq!(r.method, "hook_handler.upsert");
         assert_eq!(r.params["action"]["kind"], "ipc_sequence");
         assert_eq!(r.params["action"]["calls"][0]["method"], "window.focus");
-        // 안 준 필드는 null — 서버가 "패치 안 함" 으로 읽는다.
         assert!(r.params["source"].is_null());
         assert!(r.params["priority"].is_null());
     }
@@ -1188,8 +1133,6 @@ mod workspace_category_tests {
 
     #[test]
     fn hook_handler_upsert_keeps_malformed_json_instead_of_dropping_it() {
-        // `.ok()` 로 떨어뜨리면 오타 하나가 "아무것도 안 고침" 이 되고 성공으로 나간다.
-        // 원문을 그대로 실어 보내면 서버 스키마가 그 자리에서 거부한다.
         let r = req(&[
             "tasty",
             "hook-handler",
@@ -1206,7 +1149,6 @@ mod workspace_category_tests {
     fn hook_handler_dispatch_without_context_omits_it() {
         let r = req(&["tasty", "hook-handler", "dispatch", "--id", "user/x"]);
         assert_eq!(r.method, "hook_handler.dispatch");
-        // body/headers/query 미지정 → null (서버가 부재로 취급).
         assert!(r.params["body"].is_null());
         assert!(r.params["headers"].is_null());
         assert!(r.params["query"].is_null());

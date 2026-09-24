@@ -5,17 +5,8 @@
 
 use clap::{Args, Subcommand};
 
-// scope 선택자 — `--scope` 토큰 하나이거나 alias 여섯 중 하나다.
-//
-// `memory` 9 자리와 `memory secret` 7 자리가 **이 한 벌을 flatten 해서** 쓴다.
-// 자리마다 여섯 필드를 따로 적으면 여섯 개의 `conflicts_with_all` 목록이 자리 수만큼
-// 생기고, 한 자리만 고친 채 나머지가 남는 어긋남이 조용히 쌓인다 — 실제로 그랬다:
-// 합치기 전에는 이 여섯 플래그의 `--help` 설명이 16 자리 중 한 자리에만 있었다.
-//
-// **이 주석은 `///` 이면 안 된다.** clap 은 flatten 된 `Args` 의 doc 을 그 자리
-// 서브커맨드의 about 으로 폴백해서 쓴다 — 즉 유지보수용 산문이 `--help` 맨 위에
-// 사용자 설명으로 찍힌다. 자리마다 자기 about 이 있으면 안 보이지만, about 없는
-// 자리를 하나 새로 만드는 순간 다시 샌다.
+// ScopeArgs를 flatten해 선택자와 상호 배타 조건을 공유한다.
+// ///로 바꾸면 clap이 이 유지보수 설명을 사용자 도움말로 사용할 수 있다.
 #[derive(Args)]
 pub struct ScopeArgs {
     /// Scope token (`global`, `surface:3`, `workspace:7`, ...).
@@ -62,7 +53,7 @@ pub enum MemoryCommands {
         /// application/octet-stream (with --value-b64).
         #[arg(long)]
         content_type: Option<String>,
-        /// Relative TTL in seconds (entry expires `now + ttl` ms). Conflicts with --expires-at.
+        /// Relative TTL in seconds. Conflicts with --expires-at.
         #[arg(long, conflicts_with = "expires_at")]
         ttl: Option<u64>,
         /// Absolute expiry timestamp (unix ms). No-op if omitted.
@@ -231,12 +222,7 @@ pub use goal::MemoryGoalCommands;
 pub use plan::MemoryPlanCommands;
 pub use secret::MemorySecretCommands;
 
-/// scope 선택자가 다시 갈리는 것을 막는 핀.
-///
-/// 합치는 것만으로는 부족하다 — 새 `memory` 서브커맨드를 하나 추가하면서 flatten 대신
-/// 여섯 필드를 손으로 다시 적을 수 있고, 그러면 갈림이 조용히 돌아온다. 그래서 술어를
-/// **소스 텍스트가 아니라 clap 이 실제로 만든 명령 트리의 성질**로 잡는다: 같은 문자가
-/// 아니라 같은 동작을 본다.
+/// 생성된 clap 명령 트리에서 모든 scope 선택자의 설명과 충돌 규칙을 확인한다.
 #[cfg(test)]
 mod scope_selector_pin {
 
@@ -280,15 +266,13 @@ mod scope_selector_pin {
             .collect()
     }
 
-    /// 모수 확인 — 아래 세 술어는 자리가 0 이면 전부 공짜로 초록이다.
-    /// 하한이다. 자리는 늘 수 있고, 줄면 그때 이 줄이 먼저 말한다.
+    /// 순회가 비어도 나머지 검사가 통과하지 않도록 대상 수를 확인한다.
     #[test]
     fn the_population_of_scope_bearing_sites_is_not_empty() {
         let n = scope_bearing_sites().len();
         assert!(
             n >= 16,
-            "scope 선택자를 가진 자리가 {n} 개다. 16 미만이면 아래 술어들이 볼 것이 없다 \
-             — 순회가 깨졌거나 자리가 실제로 사라졌다."
+            "scope 선택자 명령이 {n}개로 하한 16개보다 적다. 순회와 실제 명령 목록을 확인한다."
         );
     }
 
@@ -327,8 +311,7 @@ mod scope_selector_pin {
         }
         assert!(
             bad.is_empty(),
-            "`--help` 에 설명 없는 scope 플래그가 있다. 합치기 전에는 16 자리 중 한 자리만 \
-             설명이 있었다 — 그 비대칭이 돌아온 것이다:\n  {}",
+            "scope 플래그의 도움말 설명이 없다:\n  {}",
             bad.join("\n  ")
         );
     }

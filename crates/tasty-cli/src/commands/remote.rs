@@ -1,11 +1,5 @@
-//! `tasty remote ...` subcommand — 원격(SSH) attach 1급 표면.
-//!
-//! 원칙 1 ②: 원격 attach 는 에이전트의 정당한 행동(다른 호스트의 surface/workspace
-//! 를 mirror)이라 release 표면에 노출한다. 로컬 self(loopback) attach 는 사용자 입력
-//! 재현 성격이라 `tasty debug attach`(debug 빌드)로 격리한다(`crates/tasty-cli/src/local/debug/attach.rs`).
-//!
-//! 실제 SSH 터널 + attach 세션 머신은 `crates/tasty-cli/src/local/attach.rs` 의 `run_attach_ssh` /
-//! `run_attach_workspace_ssh` 에 공유 보존된다 — 이 네임스페이스는 디스패치만 한다.
+//! 원격 SSH attach 명령. 터널·스트림·재연결은 local::attach에서 처리한다.
+//! 로컬 검증용 attach는 debug 빌드의 debug attach 명령으로 분리한다.
 
 use clap::Subcommand;
 
@@ -144,9 +138,6 @@ pub enum RemoteCommands {
         #[arg(long)]
         json: bool,
     },
-    // 생성을 독립 서브커맨드로 둔 이유: attach 세션의 3갈래 분기(raw / into-gui /
-    // force-detach)를 건드리지 않기 위해서다. 로컬 IPC `remote.attach` 의
-    // `new_workspace` 옵션과 같은 `remote_create` 코어를 공유한다.
     /// Create a new workspace on a remote tasty instance over SSH.
     ///
     /// The write-side counterpart of `remote workspaces`. Pass the printed id

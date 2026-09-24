@@ -1,14 +1,5 @@
-//! 요청이 상대에게 **요구하는 계약**을 보내기 전에 확인한다.
-//!
-//! 봉투의 새 필드와 메서드의 새 인자는 그것을 모르는 서버에서 **조용히 버려진다** — 봉투에도
-//! 인자 객체에도 모르는 키 거절이 없다. 버려진 요청은 성공으로 돌아오므로 호출자는 계약이
-//! 걸린 줄 안다. 그래서 그런 필드·인자를 실은 요청은 `system.info` 의 capability 목록에서
-//! 그 이름을 먼저 묻고, 없으면 **요청을 내보내지 않는다.**
-//!
-//! 무엇을 요구하는지는 명령이 아니라 **요청 자체**에서 판정한다. 같은 판정을 정적 CLI 와
-//! plugin CLI 가 함께 쓰려면 둘이 공유하는 것이 요청뿐이다.
-//!
-//! 근거: `docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`.
+//! 구 서버가 새 요청 필드를 무시하지 않도록 필요한 capability를 전송 전에 확인한다.
+//! 정적 CLI와 플러그인 CLI가 같은 요청 기반 판정을 사용한다.
 
 use std::time::{Duration, Instant};
 
@@ -20,14 +11,7 @@ use tasty_ipc::client::{
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcRequest;
 
-/// 단발 요청 봉투에 CLI 가 싣는 값. 루트 플래그에서 온다.
-///
-/// 봉투 상한은 **요청 하나의 응답 대기**를 자른다. 그래서 요청 하나로 끝나는 명령(정적
-/// CLI 의 단발 RPC · plugin CLI 의 단발 요청)만 이것을 싣는다. 루프를 도는 명령(사건
-/// 따라가기 · 감사 따라가기 · plugin 의 폴링과 자동 대기)과 스트림·SSH 경유 명령은 싣지
-/// 않고, 플래그를 받으면 **거절한다** — 조용히 무시하면 이 모듈이 막으려는 결함을 CLI 가
-/// 스스로 만든다. 근거:
-/// `docs/dev-guide/api-conventions.md#cli-응답-대기-옵션`.
+/// 단발 요청의 응답 대기 옵션. 루프·스트림·SSH 명령에서는 거절한다.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Envelope {
     /// `--response-timeout-ms`. `Some(0)` 은 봉투 규약상 "상한 없음" 이라 없는 것과 같다.
@@ -45,11 +29,7 @@ impl Envelope {
         self.response_timeout_ms.is_some_and(|ms| ms > 0)
     }
 
-    /// 봉투를 못 싣는 명령에 플래그가 왔으면 사용 오류로 끝낸다(종료 코드 2 — clap 의
-    /// 인자 오류와 같은 값이다). 통신은 시작 전이다.
-    ///
-    /// 서브커맨드가 없는 호출(GUI 기동 · augmented help)도 실을 요청이 없으므로 진입점
-    /// 라우팅이 같은 자리에서 이것을 부른다 — 그래서 `pub` 이다.
+    /// 적용할 수 없는 명령이면 통신 전에 사용 오류(exit 2)로 종료한다.
     pub fn refuse_if_set(&self) {
         if self.is_set() {
             crate::out::errln!("{}", tasty_i18n::t("cli.contract.bound_not_applicable"));
@@ -58,10 +38,7 @@ impl Envelope {
     }
 }
 
-/// 이 요청이 상대에게 요구하는 계약 — `(이름, 최소 판)`.
-///
-/// 비어 있으면 묻지 않는다. 새 계약을 하나도 안 쓰는 요청은 구 서버에서도 뜻이 같으므로,
-/// 물으면 기존 호출에 왕복 하나를 얹을 뿐이다.
+/// 요청에 필요한 capability 이름과 최소 버전. 없으면 사전 조회도 생략한다.
 pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
     let mut out = Vec::new();
     // `Some(0)` 은 봉투 규약상 "상한 없음" 이라 계약을 안 쓴다.
@@ -74,20 +51,12 @@ pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
     out
 }
 
-/// 요구하는 계약을 상대가 선언했는지 확인한다. 하나라도 없으면 [`UnsupportedCapability`]
-/// 를 담은 오류로 끝나고, 그때 **요청은 아직 안 나갔다.**
+/// 필요한 capability가 없으면 원래 요청을 보내지 않고 UnsupportedCapability를 반환한다.
+/// system.info 조회 실패는 그대로 전달한다.
 ///
-/// 확인 자체(`system.info`)가 실패하면 그 오류가 그대로 온다 — 그것은 거절이 아니라 연결의
-/// 실패다.
-///
-/// **요청이 응답 대기 상한을 실었으면 확인도 그 상한 안에 들어간다** — 두 요청이 상한 하나를
-/// 나눠 쓴다. 확인 요청은 확인을 시작하는 순간 남은 상한을 기한으로 받고
-/// (`IpcConnection::capabilities_within` — 소켓 기한은 그 시간 그대로, 봉투는 밀리초 올림이다),
-/// 끝나면 요청의 봉투를 **남은 시간**으로 줄여 싣는다. 그래서 굳은 호스트에서도 CLI 는 상한
-/// 뒤에 돌아온다(docs/dev-guide/api-conventions.md#cli-응답-대기-옵션 이 약속한 것). 확인이 상한 안에 안 끝났거나 남은 시간이 1 ms 도
-/// 안 되면 요청은 안 나가고, 그 답은 요청이 큐에서 만료됐을 때와 같은 `-32067`(실행 안 됨)
-/// 이다 — 문구도 같다. 근거:
-/// `docs/dev-guide/api-conventions.md#cli-응답-대기-옵션`.
+/// 응답 기한은 확인 요청과 원래 요청이 공유한다. 확인 봉투의 밀리초는 올림하고,
+/// 원래 요청에는 남은 시간을 내림해 싣는다. 확인이 만료되거나 1ms 미만이 남으면
+/// 원래 요청은 보내지 않고 -32067(실행 안 됨)로 응답한다.
 pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> Result<()> {
     let needed = required(request);
     if needed.is_empty() {
@@ -122,20 +91,15 @@ pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> 
     Ok(())
 }
 
-/// [`ensure`] 실패를 기록할 때 **이 요청의** JSON-RPC 코드 칸에 실을 값.
-///
-/// 확인이 상한 안에 안 끝난 갈래([`not_run`])는 이 요청에 대한 답이다 — 서버가 이 요청을 큐에서
-/// 만료시켰을 때와 같은 `-32067` 이므로 같은 코드를 싣는다(같은 사실에는 같은 답, docs/dev-guide/api-conventions.md#cli-응답-대기-옵션). 그
-/// 밖의 실패는 싣지 않는다: 선언 없음 · 전송 실패에는 코드가 없고, 확인 요청 자체가 받은 다른
-/// JSON-RPC 오류는 이 요청이 아니라 **확인 요청의** 코드다.
+/// 확인 만료의 -32067만 원래 요청의 오류 코드로 기록한다.
+/// 확인 요청 자체의 다른 오류나 capability 부재는 원래 요청의 JSON-RPC 코드가 아니다.
 pub(crate) fn failure_code(e: &anyhow::Error) -> Option<i32> {
     e.downcast_ref::<JsonRpcCallError>()
         .map(|rpc| rpc.code)
         .filter(|&code| code == tasty_ipc::protocol::ERR_EXPIRED_BEFORE_RUN)
 }
 
-/// 상한 안에 요청을 못 내보냈다 — 그 요청이 큐에서 만료됐을 때의 답과 **같은 코드·문구**다.
-/// 요청은 안 나갔으므로 "실행 안 됨 — 그대로 다시 보내도 된다" 가 참이다.
+/// 전송 전 만료를 서버의 큐 만료와 같은 코드·문구로 반환한다.
 fn not_run(bound: Duration) -> anyhow::Error {
     let answer = tasty_ipc::server::expired_before_run_response(serde_json::Value::Null, bound);
     let err = answer
@@ -149,9 +113,7 @@ fn not_run(bound: Duration) -> anyhow::Error {
     .into()
 }
 
-/// 거절을 stderr 에 낼 **한 줄 JSON**. 사람이 읽는 문장은 `message` 에 싣고, 호출자가
-/// 분기할 값(`kind` · `capability` · `required` · `found` · `sent`)은 따로 싣는다 — 문장을
-/// 파싱하게 두면 그 판정이 로케일에 묶인다.
+/// 로케일에 의존하는 message와 판별용 필드를 나눈 한 줄 JSON을 만든다.
 pub(crate) fn refusal_line(refusal: &UnsupportedCapability) -> String {
     let message = match refusal.found {
         Some(found) => tasty_i18n::t_args(
@@ -375,8 +337,7 @@ mod tests {
         .to_string()
     }
 
-    /// `ensure` 를 다른 스레드에서 돌리고 5 s 까지만 기다린다 — 결함이 되살아나면 시험이 매달리지
-    /// 않고 빨개진다.
+    /// 결함이 있어도 시험이 멈추지 않도록 ensure를 5초까지만 기다린다.
     fn ensure_with_deadline(
         addr: std::net::SocketAddr,
         mut request: JsonRpcRequest,
@@ -411,8 +372,7 @@ mod tests {
         assert_eq!(rpc.message, same.error.expect("error").message);
     }
 
-    /// 굳은 호스트(또는 봉투 상한을 모르는 구 서버)가 확인 요청에 답하지 않아도 CLI 는 상한 뒤에
-    /// 돌아온다. 확인 요청을 상한 없이 기다려 무한정 매달리던 결함의 회귀 시험이다.
+    /// capability 조회가 응답하지 않아도 전체 대기 기한을 적용한다.
     #[test]
     fn a_bound_covers_the_capability_check_when_the_host_does_not_answer() {
         let (addr, seen, h) = fake_host(vec![None]);
@@ -525,8 +485,6 @@ mod tests {
         h.join().unwrap();
     }
 
-    /// 기록의 코드 칸 — 확인 만료는 이 요청의 `-32067` 이고, 확인 요청 자신의 다른 오류 코드와 선언
-    /// 없음은 싣지 않는다.
     #[test]
     fn only_the_not_run_answer_fills_the_recorded_code() {
         assert_eq!(
@@ -549,8 +507,6 @@ mod tests {
         assert_eq!(failure_code(&refusal), None);
     }
 
-    /// 거절 줄은 **한 줄 JSON** 이고, 호출자가 분기할 값을 문장과 따로 싣는다. 특히
-    /// `sent:false` — 호스트가 답한 실패와 이 거절을 가르는 것이 그 값이다.
     #[test]
     fn the_refusal_is_one_json_line_that_says_nothing_was_sent() {
         let missing = UnsupportedCapability {

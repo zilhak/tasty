@@ -1,8 +1,4 @@
-//! 매칭된 `ArgMatches` 를 JSON-RPC 요청으로 **조립**한다.
-//!
-//! [`super::build`] 가 만든 명령 트리의 매칭 결과를 받아 메서드 이름과 params 를
-//! 정한다. 값 하나를 꺼내고 강제하는 일은 [`super::stdin`] 이 맡는다 — 이 모듈은
-//! 그쪽을 부르고, 그쪽은 이 모듈을 부르지 않는다.
+//! clap 매칭 결과를 JSON-RPC 메서드와 인자로 변환한다.
 
 use std::collections::HashMap;
 
@@ -131,10 +127,7 @@ pub fn matches_to_request(
         if let Some(v) = params.get("surface").cloned() {
             params.entry(String::from("surface_id")).or_insert(v);
         }
-        // `tell` 등 target(`surface`)과 caller 를 구분해야 하는 명령을 위한 자동
-        // 채움. 필드명 `caller_surface` 로 고정(claude/codex 공용) — `surface`용
-        // 자동 채움과 동일한 패턴이지만 별도 필드명이므로 독립 블록. plugin-private
-        // 키라 `surface_id` 류 dual-write 는 하지 않는다(호스트 IPC 표준 키가 아님).
+        // 호출자 surface는 대상 surface와 구분하며 호스트 키로 복제하지 않는다.
         let defines_caller_surface = g
             .flags
             .iter()
@@ -150,11 +143,8 @@ pub fn matches_to_request(
         }
     }
 
-    // Track B(completion strategy registry)가 아직 병합되지 않아 이 매니페스트가
-    // 실제로 이름으로 등록한 strategy 를 조회할 곳이 없다 — registry 가 들어오면
-    // `entry`(혹은 그 소속 Manifest)에서 모은 실 데이터를 여기 채운다. 그때까지
-    // `AutoWaitDecl.strategy` 는 항상 "unknown strategy" 로 reject 된다(인라인
-    // `polling` 경로는 이 맵과 무관하게 그대로 동작).
+    // CLI의 이름 기반 전략 조회는 아직 연결되지 않았다. 빈 목록으로 넘겨
+    // 이름 참조는 unknown strategy로 거절하고 인라인 polling만 처리한다.
     let available_strategies: HashMap<String, CompletionStrategyDecl> = HashMap::new();
     let auto_wait_plan = sub_decl
         .auto_wait
@@ -179,12 +169,8 @@ pub fn matches_to_request(
     ))
 }
 
-/// `AutoWaitDecl.polling`(인라인) 또는 `.strategy`(이름 참조)를 실행 가능한
-/// `PollingDecl` 로 해석한다. manifest validator 가 이미 정확히 하나만
-/// 선언되도록 강제하므로(§ `validate_auto_wait_strategy`) 여기서는 그 불변식을
-/// 신뢰해 매칭한다 — validator 를 통과했는데도 실패할 수 있는 경우는 오직
-/// `available_strategies` 에 그 이름이 아직 없을 때뿐이다(같은 매니페스트 안의
-/// registry 조회 실패).
+/// 인라인 polling 또는 등록된 이름을 PollingDecl로 해석한다.
+/// 매니페스트 검증은 둘 중 하나만 허용하며, 이름이 목록에 없으면 오류를 반환한다.
 pub(super) fn resolve_auto_wait_polling(
     aw: &AutoWaitDecl,
     available_strategies: &HashMap<String, CompletionStrategyDecl>,

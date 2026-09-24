@@ -2061,8 +2061,8 @@ about = "워크스페이스·페인·탭을 트리로 보기"
 about = "모든 워크스페이스의 서피스(터미널) 목록"
 
 [cli.help._root.list.surface-kinds]
-about = "이 인스턴스에 실제 등록된 서피스 종류 나열"
-long = "이 인스턴스에 실제 등록된 서피스 종류를 나열합니다. 매니페스트 선언이 아닌 실행 중 등록 상태입니다. host에 등록된 종류만 표시되며, 나열된 종류에 정확히 `--type <kind>`를 사용할 수 있습니다. host 내장 및 plugin 제공 종류가 모두 포함됩니다."
+about = "현재 호스트에 등록된 surface 종류를 나열합니다"
+long = "현재 호스트에 등록된 surface 종류를 나열합니다.\n\n내장 종류와 시작된 플러그인의 종류를 포함합니다. 매니페스트에 선언만 된 종류는 등록된 상태와 다릅니다."
 
 [cli.help._root.list.panes]
 about = "모든 워크스페이스의 페인 목록"
@@ -2080,8 +2080,8 @@ about = "시스템 정보 보기"
 about = "GPU 자원 수 보기 (wgpu 보고서 + 윈도우별 렌더러 통계)"
 
 [cli.help._root.list.pressure]
-about = "이 인스턴스가 뜬 뒤의 요청 압력을 보여준다 — 요청에 답하는 동안 시간이 어디로 갔는가"
-long = "이 인스턴스가 뜬 뒤의 요청 압력을 보여준다 — 요청에 답하는 동안 시간이 어디로 갔는가.\n\n답은 모수마다 한 블록이고, 모수는 **일부러** 서로 다르다. `queue_before_gate` 는 권한 게이트 **앞**에서 재므로 나중에 거절된 요청도 센다. `handler_after_gate` 는 게이트 **뒤**에서 재므로 실제로 돈 요청만 센다. `plugin_round_trip` 은 이 인스턴스가 plugin 의 답을 기다린 시간이고, 답이 온 요청만 센다. `db` 는 쓰기가 디스크에 안착하기까지의 시간이고, 성공한 커밋만 센다. 한 블록에서 다른 블록을 빼지 마라 — 게이트를 지나고도 핸들러 블록이 보기 전에 답이 나가는 요청이 있다.\n\n`connections` 는 다섯째 블록이고 시간이 아니라 **자리**다: 이 포트에 붙은 모든 TCP 연결이며, 요청을 한 번도 안 보내는 attach·mesh 스트림도 포함한다. 여기서 누계·순간값 중 내려가는 것은 `live` 뿐이고(아래 accept 대기 평균은 파생값이라 내려갈 수 있다), `limit` 은 서버가 강제하는 천장이라 값과 함께 다녀 둘을 같이 읽을 수 있으며, `refused_saturated` 는 그 천장에서 돌려보낸 연결 수다 — 요청이 되기 전이라 위 네 블록 어디에도 안 나온다.\n\n`connections` 에는 시간이 하나 있는데, 잰 값이 아니라 **상한**이다: accept 루프가 꺼낸 연결마다(`accept_waits` — `accepted` 와 `refused_saturated` 의 합과 같다) accept 큐를 마지막으로 비어 있다고 본 뒤 지난 시간이고, 그 연결이 OS 큐에서 기다린 시간은 이 값을 넘을 수 없다(`accept_wait_bound_us_sum` · `accept_wait_bound_us_max` · `accept_wait_bound_us_mean`). 루프는 큐가 비면 100 ms 자므로, 호출마다 새 연결을 여는 client 는 요청이 읽히기 전에 그만큼까지 잃을 수 있고, 그 시간이 보이는 블록은 여기뿐이다.\n\n그 넷 중 셋(`queue_before_gate` · `handler_after_gate` · `plugin_round_trip`)은 같은 관측의 분포를 담은 `*_hist` 도 함께 들고 온다. 평균과 최대만으로는 \"전부 조금씩 느리다\" 와 \"대부분 빠르고 몇 개가 아니다\" 를 못 가르기 때문이다. `bounds_us` 와 `counts` 는 짝으로 다니고, `counts` 는 한 칸 더 길며 누적이 아니다 — 항목의 합이 관측 수이고, 마지막 항목은 맨 위 경계를 넘었다는 뜻일 뿐이다. 분위수는 여기서 계산하지 않는다. `db` 도 시간이지만 분포가 없고, `connections` 는 자리는 시간이 아니고 하나 있는 시간도 상한일 뿐이라 분포가 없다.\n\n`db_pragmas` 는 여섯째 블록이고 애초에 누계가 아니다 — SQLite DB(`memory_db` · `state_db`)마다 열 때 요청한 연결 설정과 거기서 되읽은 값을 나란히 보여준다. journal_mode=WAL 같은 요청은 조용히 거절될 수 있기 때문이다. `degraded` 는 설정이 하나라도 안 걸렸을 때 true 이고, `memory_db` 는 파일을 못 열어 in-memory 대체로 떴을 때도 true 이며 그때 `init_failure` 가 원인을 말한다(아니면 null). 그래도 DB 는 계속 쓰인다. `state_db` 는 그 DB 가 이 프로세스에 열려 있지 않을 때 null 이고, 헤드리스 인스턴스는 늘 그렇다.\n\n`stream_push` 는 일곱째 블록이고 이 인스턴스가 답한 요청이 아니라 **밀어낸** 프레임을 센다 — attach·mesh 스트림 연결로 보낸 프레임이다. `frames_dropped` 는 연결이 살아 있는데 그 연결의 큐가 차서 버린 프레임 수이고, `clients_lagged_out` 는 너무 뒤처져 끊은 연결 수다. 둘 다 올라가기만 한다. `backlog` 은 지금 쌓여 있고 아직 안 쓰인 프레임 수를 살아 있는 연결에 걸쳐 더한 값이고, `sink_capacity` 는 그것과 견줄 연결 하나의 큐 상한이다.\n\n`queue_admission` 과 `queue_dispatch` 는 명령 큐의 양 끝이다. `queue_admission` 은 지금 큐에 든 것(바이트 · 명령 수 · 그중 이 인스턴스가 스스로 주입한 명령 수)과 최고 바이트, 바이트 상한(`refused_bytes`)이나 주입 깊이 상한(`refused_depth`)에서 돌려보낸 요청 수, 그리고 그것과 견줄 두 상한(`limit_bytes` · `limit_injected_depth`)이다. 돌려보낸 요청은 큐에 한 번도 안 들어갔으므로 다른 어느 블록에도 안 남는다. 이 프로세스에 IPC 서버가 없으면 null 이다. `queue_dispatch` 는 꺼낸 쪽이다 — 회차와 그중 명령 수 · 시간 예산에서 멈춘 수, 기다리는 동안 기한이 지난 명령(`expired_before_run`), 시작한 명령, 그리고 `in_flight` — 지금 실행 중이고 호출자가 아직 기다리는 요청 — 와 그 최댓값이다.\n\n`keyed_requests` 는 멱등 키를 실은 요청만 센다. 판정마다 한 칸이다: `executed`(처음 보는 키, 실행했다) · `replayed`(같은 요청이 다시 와서 보관된 답을 냈다) · `conflicted`(같은 키에 다른 요청, 아무것도 실행하지 않았다) · `discarded`(실행은 됐고 답은 버려졌다) · `in_flight`(같은 요청이 아직 실행 중이라 거기에 합류했다). 요청 하나는 한 번만 세진다. 이 `in_flight` 는 `queue_dispatch` 의 것과 다르다.\n\n`slow_requests` 는 열한째 블록이고 누계가 아니라 느린 요청을 한 건씩 보여준다: 큐 대기 · 호스트 처리 · 플러그인 대기의 합이 `threshold_us`(100 ms) 이상인 요청마다 한 줄이고, 오래된 것부터 `capacity` 줄까지다. 한 줄에는 `request_seq`(이 인스턴스가 요청마다 매기는 번호 — JSON-RPC id 도 이벤트 trace id 도 아니다) · `method` · `caller` · `queue_wait_us` · `host_us` 가, 플러그인으로 넘긴 요청이면 `plugin_hops`(플러그인 · 그 플러그인이 요청 id 로 받은 `host_request_id` · 대기 · 결과)가 실린다. `admitted` 는 지금까지 남긴 줄의 누계라 밀려난 줄 수는 `admitted` 에서 보이는 줄 수를 뺀 것이다. 이 답을 묻는 조회 자신은 남기지 않는다.\n\n느린 줄의 `host` 에는 호출자가 실제로 받은 답도 실린다: `outcome` 은 플러그인 hop 과 같은 낱말로 `ok` 또는 `error` 이고, 오류면 `error_code` 가 그 JSON-RPC 오류 코드다. 그래서 큐에서 실행 전에 만료된 요청(-32067) · 거절된 요청(-32001) · 정상 답을 링만으로 가를 수 있다. 아직 답이 안 나갔으면(플러그인으로 넘긴 요청이 답을 기다리는 동안 등) 둘 다 null 이다.\n\n`queue_before_gate.waits` 는 큐 대기를 기록한 명령 수이고, 명령을 꺼내는 순간 오른다. `wait_us_mean` 의 분모이며 `wait_us_hist.counts` 의 합과 같다. `commands` 는 명령을 꺼내는 한 회차가 끝나야 오르므로, 한 답 안에서 아직 도는 회차(조회 자신이 든 회차)만큼 `waits` 보다 작을 수 있다.\n\n`gate_refusals` 는 열둘째 블록이고 진입 게이트가 **돌려보낸** 요청을 센다: `judged` 는 게이트에 든 요청 전부(이 CLI 의 요청도, 플러그인이 이 인스턴스를 부른 호출도 센다)이고, 거절은 게이트마다 한 칸이다 — `permission_denied`(권한, -32001) · `cap_blocked`(텔레메트리 cap, -32007) · `throttled`(rate limit, -32010). 게이트는 이 차례로 보고 앞에서 돌려보낸 요청은 뒤를 안 지나므로 한 요청은 많아야 한 칸에 세진다. 셋의 처방이 다르다 — 권한을 청하거나, cap 을 풀거나, 기다린다. `permission_denied` 는 권한 게이트가 돌려보낸 -32001 만 센다 — 그 게이트의 거절은 모두 -32001 이지만 -32001 이 모두 그 거절은 아니다. 그 게이트는 권한이 모자란 것 말고도 플러그인 · 에이전트가 없는 메서드를 부른 것과 자기에게 열리지 않은 메서드를 부른 것도 돌려보낸다. 그 둘은 권한을 청해도 안 풀리고 다른 메서드를 불러야 한다. 세션 토큰 없이 부른 이 CLI 의 호출은 이 게이트에서 돌려보내지지 않으므로, 없는 메서드여도 여기 안 든다. 이 칸에 안 드는 -32001 도 두 가지다: 세션 토큰 거절(형식이 틀리거나 모르는 · 만료된 · 폐기된 토큰 — 낡은 TASTY_SESSION_TOKEN 이 그렇다)은 게이트 앞에서 답하므로 `judged` 에도 안 들고, 게이트를 지난 뒤 돌아온 -32001(격상 발급 거절 등)은 통과 쪽에 든다. 이 인스턴스가 뜬 뒤의 누계이고 재시작하면 0 이다. `tasty agent rate-limit-status` 의 `throttled_count` 는 버킷 하나의, 재시작을 넘는 누계라 이 값과 다르다. 멱등 키 길이가 틀려 돌려보낸 요청은 여기 안 센다.\n\n뒤에 아무 관측도 없는 평균은 0 이 아니라 null 로 온다."
+about = "인스턴스 시작 이후의 IPC 부하와 진단 통계를 보여 줍니다"
+long = "인스턴스 시작 이후의 IPC 부하와 진단 통계를 보여 줍니다.\n\n각 블록은 다른 요청을 측정하므로 서로 빼서 비교하지 않습니다. queue_before_gate는 권한 검사에서 나중에 거절된 요청도 포함하고, handler_after_gate는 처리된 요청을, plugin_round_trip은 응답이 온 플러그인 호출을, db는 성공한 DB 커밋을 측정합니다. 권한 검사를 통과했지만 핸들러 측정 전에 응답하는 요청도 있습니다.\n\nconnections는 attach·mesh 스트림을 포함한 TCP 연결을 셉니다. live는 현재 사용량, limit는 한도, refused_saturated는 요청을 보내기 전에 한도에서 거절된 연결 수입니다. 누계는 감소하지 않지만 live와 파생 평균은 줄 수 있습니다. accept_waits는 accepted + refused_saturated입니다. accept_wait_bound_us_sum/max/mean은 accept 큐가 마지막으로 비었다고 관측한 뒤의 경과 시간으로 OS 큐 대기 시간의 상한을 나타냅니다. 실제 대기 시간을 측정한 값은 아닙니다. 큐가 비면 100 ms 쉽니다.\n\nqueue_before_gate·handler_after_gate·plugin_round_trip에는 히스토그램도 있습니다. bounds_us는 구간 경계이며 counts는 경계를 넘는 마지막 구간을 포함해 한 칸 더 깁니다. counts는 누적값이 아니며 합은 관측 수입니다. 분위수는 계산하지 않고 db와 connections에는 히스토그램이 없습니다. queue_before_gate.waits는 wait_us_mean의 분모이자 wait_us_hist.counts의 합입니다. commands는 처리 회차 끝에 갱신되므로 현재 조회가 포함된 회차 중에는 waits보다 작을 수 있습니다.\n\ndb_pragmas는 memory_db와 state_db의 요청한 설정과 실제 설정을 비교합니다. degraded는 설정 불일치 또는 memory_db 파일 열기 실패 뒤 메모리 DB 대체를 뜻합니다. init_failure는 해당 실패 사유이며 없으면 null입니다. 대체 DB도 계속 사용합니다. state_db가 열리지 않았다면 null이며 헤드리스도 이에 해당합니다.\n\nstream_push는 attach·mesh 프레임을 셉니다. frames_dropped는 유지 중인 연결의 큐가 가득 차 버린 프레임 수, clients_lagged_out는 지연으로 끊은 연결 수입니다. backlog는 현재 모든 연결에 쌓인 프레임 수이며 sink_capacity는 연결 하나의 큐 한도입니다.\n\nqueue_admission은 현재 바이트·명령·주입 명령 수, 최대 바이트 수, limit_bytes·limit_injected_depth를 보여 줍니다. refused_bytes와 refused_depth는 큐에 들어오기 전에 거절된 요청이며 다른 블록에는 포함되지 않습니다. IPC 서버가 없으면 이 블록은 null입니다. queue_dispatch는 처리 회차, 명령/시간 예산으로 중단한 회차, expired_before_run, 시작한 명령 수, 현재/최대 in_flight를 기록합니다. 시작한 요청은 명령과 응답 대기자 모두 공유 상태를 놓을 때까지 in_flight에 포함됩니다.\n\nkeyed_requests는 멱등 키가 있는 요청을 한 번씩 셉니다. executed는 실행, replayed는 저장된 응답 재사용, conflicted는 충돌로 미실행, discarded는 응답 미보존, in_flight는 실행 중 요청에 합류한 경우입니다. 이 in_flight는 누적 판정 수로, queue_dispatch의 현재 실행 수와 다릅니다.\n\nslow_requests는 큐 대기 + 호스트 처리 + 플러그인 대기가 threshold_us(100 ms) 이상인 요청을 오래된 순서로 capacity개까지 보관합니다. request_seq는 JSON-RPC ID나 trace ID가 아닌 자체 요청 번호입니다. 행에는 method·caller·queue_wait_us·host_us와 plugin_hops가 있으며 각 hop에는 플러그인·host_request_id·대기·결과가 담깁니다. admitted는 지금까지 보관한 행 수이고, 현재 행 수를 빼면 밀려난 수입니다. 이 조회 자신은 보관하지 않습니다. host의 outcome은 ok/error, error_code는 JSON-RPC 오류 코드로 만료(-32067)·거절(-32001)·성공을 구분합니다. 아직 응답하지 않았으면 둘 다 null입니다.\n\ngate_refusals.judged는 Local과 플러그인 호출을 포함해 권한 검사에 도달한 요청 수입니다. permission_denied(-32001), cap_blocked(-32007), throttled(-32010) 순서로 검사하며 요청 하나를 최대 한 거절 항목에 셉니다. 권한 부족, 없는 메서드, 호출자에게 금지된 메서드는 모두 권한 거절이 될 수 있으며 권한 추가는 첫 경우만 해결합니다. 토큰 없는 Local 호출자는 이 검사를 통과합니다. 잘못됐거나 만료·폐기된 토큰은 judged 이전에 거절하고, 검사 통과 뒤의 -32001은 통과 쪽에 셉니다. 잘못된 멱등 키는 여기에 포함하지 않습니다. 이 누계는 재시작 때 초기화되며, 버킷별로 영속되는 agent rate-limit-status의 throttled_count와 다릅니다.\n\n관측이 없는 평균은 0이 아니라 null입니다."
 
 [cli.help._root.list.notifications]
 about = "알림 목록"
@@ -2658,7 +2658,7 @@ help = "폐기할 토큰 문자열(필수)"
 about = "이 인스턴스가 현재 보유한 세션 토큰 나열"
 
 [cli.help._root.terminal]
-about = "자식 터미널 관리 (spawn/tell/children/kill 등) — 호스트에 내재화된 에이전트 자식 터미널 관리"
+about = "자식 터미널을 관리합니다(spawn·tell·children·kill)"
 
 [cli.help._root.terminal.spawn]
 about = "워크스페이스에 자식 터미널을 생성하고 명령 실행"
@@ -2960,15 +2960,15 @@ help = "서피스 ID (기본: 포커스된 것)"
 help = "배경 모드: \"focused\" 또는 \"unfocused\"(기본값: focused)"
 
 [cli.help._root.debug.switch-input-source]
-about = "macOS 입력 소스 전환(예: 한국어 IME). macOS GUI 빌드 전용"
-long = "macOS 입력 소스를 전환합니다(예: 한국어 IME). macOS GUI 빌드 전용입니다. 메서드가 모든 플랫폼에 등록되므로 명령도 모든 플랫폼에 표시합니다. 숨기면 없는 명령으로 오인할 수 있습니다. 다른 플랫폼에서는 -32015로 즉시 실패하며 TISSelectInputSource에 대응하는 기능이 없음을 설명합니다."
+about = "입력 소스를 전환합니다(예: 한국어 IME). macOS GUI 빌드 전용입니다"
+long = "입력 소스를 전환합니다(예: 한국어 IME). macOS GUI 빌드 전용입니다.\n\n명령은 모든 플랫폼에 표시합니다. TISSelectInputSource를 지원하지 않으면 없는 명령 오류 대신 -32015를 반환합니다."
 
 [cli.help._root.debug.switch-input-source.arg.source_id]
 help = "입력 소스 ID(예: \"com.apple.inputmethod.Korean.2SetKorean\")"
 
 [cli.help._root.debug.raw-key]
-about = "CGEvent로 원시 물리 키 코드 전송. macOS GUI 빌드 전용"
-long = "CGEvent로 원시 물리 키 코드를 전송합니다. macOS GUI 빌드 전용이며 OS IME 파이프라인을 통과합니다. switch-input-source와 같은 이유로 모든 플랫폼에서 명령을 제공합니다. 다른 플랫폼에서는 -32015로 즉시 실패하며 CGEventPost에 대응하는 기능이 없음을 설명합니다."
+about = "CGEvent와 OS IME를 통해 물리 키 코드를 보냅니다. macOS GUI 빌드 전용입니다"
+long = "CGEvent와 OS IME를 통해 물리 키 코드를 보냅니다. macOS GUI 빌드 전용입니다.\n\nCGEventPost를 지원하지 않는 플랫폼은 -32015를 반환합니다."
 
 [cli.help._root.debug.raw-key.arg.keycode]
 help = "macOS 가상 키 코드(예: 7=KeyX, 35=KeyP, 49=Space)"
@@ -3034,7 +3034,7 @@ about = "표시 순서대로 모든 도구 메뉴 항목 나열"
 about = "키로 도구 메뉴 항목 실행"
 
 [cli.help._root.debug.tool.invoke.arg.key]
-help = "도구 항목 키(`<plugin_id>/<tool_id>`, 예: `com.tasty.clipboard-history/open-viewer`)"
+help = "도구 항목 키입니다(`<plugin_id>/<tool_id>`, 예: `com.tasty.clipboard-viewer/open-viewer`)"
 
 [cli.help._root.debug.popup]
 about = "plugin 팝업 조회 및 열기/닫기(debug 빌드 전용)"
@@ -3175,7 +3175,7 @@ about = "설정 모달 강제로 열기. 탭/하위 탭 지정 가능"
 help = "초기 1단계 탭: general | terminal | appearance | keybindings | file_handler | misc | plugins(기본값: general)"
 
 [cli.help._root.debug.settings.open.arg.subtab]
-help = "선택 탭의 초기 2단계 구역(--tab에 따라 다름). 예: appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. 알 수 없는 키는 탭 기본값 유지"
+help = "선택한 탭의 초기 하위 구역입니다(--tab에 따라 다름). 예: appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|input|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. 알 수 없는 키는 탭 기본값을 유지합니다"
 
 [cli.help._root.debug.settings.apply]
 about = "실행 중 설정에 부분 패치 적용: JSON 객체를 현재 설정에 깊은 병합한 뒤 UpdateSettings로 전달(설정 모달 저장과 같은 경로로 config.toml에 영속화)"
@@ -3415,7 +3415,7 @@ help = "egui 키 이름(예: `Enter`, `Escape`, `ArrowDown`)"
 help = "누르기(기본값) 또는 `--pressed false`로 떼기"
 
 [cli.help._root.debug.inject.egui-text]
-about = "egui 레이어에 문자를 주입한다 — 포커스된 텍스트 필드(명령 팔레트 질의, 설정 필터)를 헤드리스로 채울 수 있다. 키 주입으로는 안 된다: egui 는 문자를 별도의 텍스트 이벤트로 받는다. Enter·Tab·Backspace 는 `egui-key` 에 남는다"
+about = "GUI 빌드의 포커스된 egui 텍스트 필드에 물리 키 입력 없이 문자를 넣습니다. Enter·Tab·Backspace는 egui-key를 사용합니다"
 
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "입력할 문자. 제어문자는 거절한다 — 진짜 입력 경로가 그것을 실어 나르지 않고 텍스트 필드도 버린다"
@@ -3933,7 +3933,7 @@ help = "base64 로 인코딩한 이진 값. --value 보다 우선한다"
 help = "content type 을 강제로 정한다. 기본값: text/plain (문자열), application/json (JSON 리터럴), application/octet-stream (--value-b64 를 준 경우)"
 
 [cli.help._root.memory.put.arg.ttl]
-help = "상대 TTL (초). 항목은 `now + ttl` 밀리초에 만료된다. --expires-at 과 함께 쓸 수 없다"
+help = "상대 TTL(초)입니다. --expires-at과 함께 사용할 수 없습니다"
 
 [cli.help._root.memory.put.arg.expires_at]
 help = "절대 만료 시각 (unix ms). 생략하면 아무 일도 하지 않는다"
@@ -4207,7 +4207,7 @@ help = "그 스코프 안의 secret 키"
 help = "값. JSON 으로 파싱되면 JSON 으로, 아니면 평문으로 다룬다. `@path` 는 파일에서 읽는다"
 
 [cli.help._root.memory.secret.put.arg.value_b64]
-help = "content type 을 강제로 정한다"
+help = "Base64로 인코딩한 바이너리 값입니다. --value보다 우선합니다"
 
 [cli.help._root.memory.secret.put.arg.content_type]
 help = "content type 을 강제로 정한다"
@@ -4726,7 +4726,7 @@ about = "그 surface 의 goal 을 지운다 (idempotent)"
 help = "대상 surface ID (기본값: 호출자의 TASTY_SURFACE_ID)"
 
 [cli.help._root.settings]
-about = "전역 설정 — 원격 전송 저장 폴더와 용량 상한을 조회·설정"
+about = "전역 설정: 터미널 입력 규칙과 원격 전송 저장소"
 
 [cli.help._root.settings.get-remote-transfer]
 about = "원격 전송(대량 파일 채널)의 수신 저장 폴더 및 용량 상한 표시"
@@ -4787,8 +4787,8 @@ about = "사람 인계 승인 게이트 (request/respond/await/cancel/list/get)"
 long = "사람 인계 승인 게이트 (request/respond/await/cancel/list/get)\n\n살아 있는 게이트는 호스트를 넘기지 못한다. `request`·`respond`·`await`·`cancel`·`list`·`get` 은 전부 메모리 안의 저장소 하나를 읽고, 그 저장소는 부팅마다 비어서 시작한다. 그래서 호스트가 멈출 때 `pending` 이던 요청은 그 뒤에 없다 — `list` 에 안 나오고 그 id 로 `await` 하면 \"not found\" 가 온다. 남는 것은 적힌 기록이고, 그것을 memory store 에서 읽는 것이 `history` 다. `history` 는 로그, `list` 는 지금 답할 수 있는 것으로 읽어라."
 
 [cli.help._root.approval.request]
-about = "새 승인을 요청한다. 성공하면 새 id 를 찍는다"
-long = "새 승인을 요청한다. 성공하면 새 id 를 찍는다.\n\n저절로 만료되는 것은 없다. `--timeout-ms` 를 재는 자리는 `approval await` 안이고, 요청을 제시간에 `pending` 밖으로 옮기는 것은 그 호출뿐이다 — 기다리는 쪽이 없으면 요청은 timeout 값이 얼마였든 `pending` 으로 남고 `approval list --state pending` 에 계속 나온다."
+about = "승인을 요청하고 생성된 ID를 출력합니다"
+long = "승인을 요청하고 생성된 ID를 출력합니다.\n\n시간 초과는 approval await에서 처리합니다. 응답을 기다리는 호출이 없으면 pending 요청이 저절로 만료되지는 않습니다."
 
 [cli.help._root.approval.request.arg.title]
 help = "팝업·알림에 보일 제목"
@@ -4907,7 +4907,7 @@ long = "호스트 사건 피드를 위치로 읽는다 (fetch, follow)\n\n피드
 
 [cli.help._root.events.fetch]
 about = "어떤 위치부터 사건을 읽는다. 답을 JSON 객체 하나로 찍는다"
-long = "어떤 위치부터 사건을 읽는다. 답을 JSON 객체 하나로 찍는다.\n\n사건은 그 객체의 `events` 배열에 있고, 옆에 `next_offset` · `epoch` 등 답의 다른 필드가 함께 있다. 한 줄에 사건 하나씩 받으려면 `follow` 를 쓴다.\n\n커서는 호스트가 아니라 **네 것**이다: 앞 답의 `next_offset` 을 넘겨 이어 읽어라. 같은 인자로 두 번 물으면 같은 답이 오고, 느린 소비자가 호스트 쪽에 쌓는 것은 없다.\n\n사건은 메모리에만 산다. 재시작하면 비워지고 위치도 처음부터 시작하므로 모든 답이 `epoch` 을 들고 온다 — 네 offset 이 온 세대와 다르면 그 offset 은 앞 세대의 것이다."
+long = "지정한 위치부터 이벤트를 읽고 JSON 객체 하나로 출력합니다.\n\n이벤트는 events 배열에, 다음 읽기 위치와 세대는 next_offset·epoch에 담깁니다. 이벤트를 한 줄씩 출력하려면 follow를 사용합니다.\n\n이전 응답의 next_offset을 넘겨 이어 읽습니다. 조회가 호스트의 소비자별 커서를 옮기거나 느린 소비자용 큐를 만들지는 않습니다. 피드가 갱신되거나 보존 범위가 바뀌면 같은 요청의 결과도 달라질 수 있습니다.\n\n이벤트는 메모리에만 저장됩니다. 재시작하면 비워지고 위치도 처음부터 시작합니다. 응답의 epoch가 기존 위치의 세대와 다르면 그 위치를 새 세대에 그대로 적용하지 않습니다."
 
 [cli.help._root.events.fetch.arg.offset]
 help = "읽기 시작할 위치. 기본 0, 아직 남아 있는 것 중 가장 오래된 자리"
@@ -5122,11 +5122,11 @@ help = "출력 형식: markdown | json (기본값: markdown)"
 help = "ipc_calls 의 상위 항목 개수 (기본값: 10)"
 
 [cli.help._root.agent]
-about = "에이전트 협업 primitive (task DAG; barrier/semaphore/lease/reducer/rate-limit 이 뒤따른다)"
+about = "에이전트 작업·barrier·semaphore·lease·reducer·호출 비율 제한을 관리합니다"
 
 [cli.help._root.agent.task-create]
-about = "워크스페이스 안에 새 task 를 만든다"
-long = "워크스페이스 안에 새 task 를 만든다.\n\n만드는 것이 돌리는 것은 아니다. 그 워크스페이스의 러너를 `task-run --action start` 로 켜기 전에는 아무것도 dispatch 되지 않고, 아무도 대신 켜 주지 않는다 — 부팅도 켜지 않는다. 켜지 않으면 task 는 `Ready` 에 앉아 있고 `task-await` 는 timeout 을 그냥 태운다."
+about = "워크스페이스에 작업을 만들되 바로 실행하지는 않습니다"
+long = "워크스페이스에 작업을 만들되 바로 실행하지는 않습니다.\n\n`task-run --action start`로 워크스페이스의 러너를 직접 시작해야 합니다. 호스트 부팅만으로 러너가 시작되지는 않습니다. 러너가 없으면 Ready 작업이 대기 상태에 남고 task-await는 시간 초과될 수 있습니다."
 
 [cli.help._root.agent.task-create.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"
@@ -5150,7 +5150,7 @@ help = "메타데이터 JSON (자유 형식, task 에 붙는다)"
 help = "`metadata.semaphore.name` 의 축약형 — 같은 세마포어 이름이 붙은 task 가 동시에 몇 개까지 도는지 제한한다 (나머지는 permit 이 날 때까지 `ready` 로 기다린다). `--metadata` 와 함께 주면 병합되고, `--metadata` 가 이미 `semaphore` 를 정했으면 충돌이다"
 
 [cli.help._root.agent.task-create.arg.reserved_for_fallback]
-help = "이 task 를 아직 참조되지 않은 fallback 후보로 예약한다: 나중에 `task-create --on-failure fallback:<이 id>` 가 본 task 를 연결해 줄 때까지, 얼마가 걸리든 `waiting` 에 머문다 (`ready` 가 되지 않으므로 러너가 dispatch 할 수 없다). 이 플래그가 없으면 의존 없는 task 는 곧바로 `ready` 가 되고, 연결할 본 task 가 만들어지기 전에 러너가 한 번 돌면 그 본 task 의 결과와 무관하게 dispatch 되어 끝까지 돌 수 있다 — 두 `task-create` 호출 사이의 생성 순서 경쟁을 닫는다"
+help = "나중에 task-create --on-failure fallback:<this-id>로 본 작업과 연결할 때까지 fallback 후보를 waiting으로 둡니다. 두 호출 사이에 러너가 후보를 실행하는 일을 막습니다. 본 작업이 끝내 연결되지 않으면 계속 대기합니다"
 
 [cli.help._root.agent.task-list]
 about = "워크스페이스의 task 를 나열한다"
@@ -5234,8 +5234,8 @@ help = "찾는 범위를 한 워크스페이스로 좁힌다. 명시 id 는 사�
 help = "형식: json | dot. 기본값: json"
 
 [cli.help._root.agent.task-run]
-about = "워크스페이스의 agent task 러너를 켜거나 끄거나 들여다본다. 러너는 Ready task 를 dispatch 하고 Running task 의 완료를 감지하는 호스트 쪽 스레드다. 같은 워크스페이스에 start 를 두 번 해도 idempotent 하다"
-long = "워크스페이스의 agent task 러너를 켜거나 끄거나 들여다본다. 러너는 Ready task 를 dispatch 하고 Running task 의 완료를 감지하는 호스트 쪽 스레드다. 같은 워크스페이스에 start 를 두 번 해도 idempotent 하다.\n\n아무도 대신 켜 주지 않는다. 호스트를 켜면 살아 있는 워크스페이스의 상태는 복구하지만 러너는 전부 꺼진 채로 둔다 — 그래서 한 번도 켠 적 없는 워크스페이스는 아무것도 dispatch 하지 않는다.\n\n`stop` 이 멈추는 것은 일이 아니라 감지다: 이미 dispatch 된 프로세스는 계속 돌고, 그 task 는 끝난 것을 알아챌 주체가 없는 채 `Running` 으로 남는다. 다시 start 하면 그 handle 들을 되집어 하나씩 마감한다 — 살아 있는지, 죽었는지, 아니면 그 watcher 가 남겨 둔 종료 코드로."
+about = "워크스페이스 러너를 시작·중지하거나 상태를 조회합니다. start를 반복해도 중복 실행하지 않습니다. 호스트는 부팅 시 저장 상태를 복구하지만 러너는 중지 상태로 둡니다"
+long = "워크스페이스 러너를 시작·중지하거나 상태를 조회합니다. start를 반복해도 중복 실행하지 않습니다. 호스트는 부팅 시 저장 상태를 복구하지만 러너는 중지 상태로 둡니다.\n\nrunner를 멈춰도 이미 시작한 프로세스는 계속 실행되며 작업은 Running으로 남습니다. 다시 시작하면 핸들을 복원하고 프로세스 생존 여부와 저장된 종료 결과를 확인합니다."
 
 [cli.help._root.agent.task-run.arg.workspace_id]
 help = "러너를 조작할 워크스페이스 id (포커스 무관 — 필수)"
@@ -5295,8 +5295,8 @@ help = "나이(created_at, 종료된 task 는 finished_at)가 이 밀리초를 �
 help = "아무것도 지우지 않고 계획만 계산해서 찍는다"
 
 [cli.help._root.agent.barrier-create]
-about = "barrier 를 만든다 (신호 N 개가 모일 때까지 기다린다)"
-long = "barrier 를 만든다 (신호 N 개가 모일 때까지 기다린다).\n\n타이머는 돌지 않는다. `--timeout-ms` 는 게으르게 도장 찍힌다: barrier 가 `TimedOut` 이 되는 것은 다음 `barrier-signal`·`barrier-state`·`barrier-list` 안에서이고, 그래서 아무도 묻지 않는 barrier 는 남겨진 상태 그대로 앉아 있는다. 도장이 찍힌 뒤에는 `barrier-signal` 이 실패하고, 기록 자체는 `barrier-delete` 로 지울 때까지 남는다."
+about = "신호 N개를 받으면 완료되는 barrier를 만듭니다"
+long = "신호 N개를 받으면 완료되는 barrier를 만듭니다.\n\n만료는 타이머가 아니라 다음 barrier-signal·barrier-state·barrier-list 호출에서 확인합니다. 만료된 barrier는 신호를 거절하며 barrier-delete로 지울 때까지 남습니다."
 
 [cli.help._root.agent.barrier-create.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"
@@ -5375,7 +5375,7 @@ help = "permit 을 가져올 세마포어 이름"
 help = "holder id (비어 있으면 안 된다)"
 
 [cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
-help = "holder 가 이 밀리초 동안 조용하면 permit 을 자동으로 회수한다. 같은 holder 로 다시 잡으면 갱신된다. 생략하면 만료가 없다 (기본값)"
+help = "permit의 유효 기간(밀리초)입니다. 같은 holder로 다시 획득하면 갱신하며, 만료된 permit은 acquire/list 호출에서 회수합니다. 생략하면 만료되지 않습니다"
 
 [cli.help._root.agent.semaphore-release]
 about = "permit 을 반납한다. 그 holder 가 쥐고 있지 않으면 no-op"
@@ -5577,7 +5577,7 @@ help = "핸들러를 끄거나(`true`) 켠다(`false`)"
 help = "action 전체를 JSON 으로 — `get` 이 찍는 모양 그대로: `{\"kind\":\"ipc_sequence\",\"calls\":[...]}` 또는 `{\"kind\":\"shell_command\",\"command\":\"...\",\"args\":[...]}`"
 
 [cli.help._root.hook-handler.upsert.arg.calls]
-help = "IpcSequence action 의 줄임꼴 — calls 배열만: `[{\"method\":\"window.focus\",\"params\":{}}]`. `webhook register --sequence` 가 받는 것과 같은 모양이다"
+help = "IpcSequence의 호출 배열입니다. 예: [{\"method\":\"system.info\",\"params\":{}}]. webhook register --sequence와 같은 형식입니다"
 
 [cli.help._root.hook-handler.remove]
 about = "핸들러의 사용자 출처 부분만 지운다. host·plugin 기본값은 남는다"
@@ -5606,7 +5606,7 @@ help = "헤더 치환값 JSON 객체 `{\"X-Sig\":\"abc\"}`. 선택 사항"
 help = "쿼리 치환값 JSON 객체 `{\"token\":\"t\"}`. 선택 사항"
 
 [cli.help._root.completion-strategy]
-about = "완료 판정 전략 — task Custom 디스패치의 완료 판정기 레지스트리 (list)"
+about = "등록된 작업 완료 판정 전략을 나열합니다"
 
 [cli.help._root.completion-strategy.list]
 about = "등록된 모든 완료 전략 나열(host/plugin/user, 비활성 포함)"
@@ -5850,3 +5850,30 @@ actual = "입력 개수: {}"
 expected = "필요 개수: {}"
 minimum = "최소 개수: {}"
 suggestion = "추천: {}"
+
+[cli.help._root.settings.get-input-rules]
+about = "앱별 Shift+Enter 규칙을 나열합니다"
+
+[cli.help._root.settings.initialize-input-rule]
+about = "없는 입력 규칙을 한 번만 추가하며 이후 사용자 수정·삭제를 유지합니다"
+
+[cli.help._root.settings.remove-input-rule]
+about = "앱의 입력 규칙을 삭제합니다"
+
+[cli.help._root.settings.set-input-rule]
+about = "앱의 Shift+Enter 인코딩을 설정합니다(true: LF, false: 플랫폼 기본값)"
+
+[cli.help._root.settings.initialize-input-rule.arg.app]
+help = "규칙에 적용할 앱 이름입니다"
+
+[cli.help._root.settings.initialize-input-rule.arg.shift_enter_newline]
+help = "Shift+Enter를 LF로 인코딩하거나(true) 플랫폼 기본값을 사용합니다(false)"
+
+[cli.help._root.settings.remove-input-rule.arg.app]
+help = "규칙에 적용할 앱 이름입니다"
+
+[cli.help._root.settings.set-input-rule.arg.app]
+help = "규칙에 적용할 앱 이름입니다"
+
+[cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
+help = "Shift+Enter를 LF로 인코딩하거나(true) 플랫폼 기본값을 사용합니다(false)"

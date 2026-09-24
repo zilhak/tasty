@@ -2093,8 +2093,8 @@ about = "Show tree view of workspaces, panes, and tabs"
 about = "List surfaces (terminals) across all workspaces"
 
 [cli.help._root.list.surface-kinds]
-about = "List the surface kinds this instance has actually registered"
-long = "List the surface kinds this instance has actually registered.\n\nThis is the runtime fact, not a manifest declaration: a kind shows up here only if the host registered it, so `--type <kind>` works for exactly the kinds listed. Host builtins and plugin-provided kinds both appear."
+about = "List surface kinds currently registered by the host"
+long = "List surface kinds currently registered by the host.\n\nIncludes builtins and started plugins. Manifest declarations alone are not registration."
 
 [cli.help._root.list.panes]
 about = "List panes across all workspaces"
@@ -2112,8 +2112,8 @@ about = "Show system info"
 about = "Show GPU resource counts (wgpu report + per-window renderer stats)"
 
 [cli.help._root.list.pressure]
-about = "Show request pressure since this instance started: where the time went while answering requests"
-long = "Show request pressure since this instance started: where the time went while answering requests.\n\nThe answer is one block per population, and the populations differ on purpose. `queue_before_gate` is measured before the permission gate, so it also counts requests that were later rejected. `handler_after_gate` is measured after it, so it counts only requests that ran. `plugin_round_trip` is how long this instance waited for a plugin to answer, counting only the requests that were answered at all. `db` is how long writes took to settle on disk, counting only commits that succeeded. Do not subtract one block from another: a request can pass the gate and still be answered before the handler block sees it.\n\n`connections` is the fifth block and it is not time, it is seats: every TCP connection attached to this port, including attach and mesh streams that never send a request. Of the counts and current values here only `live` goes down (the accept wait mean below is derived, so it can fall too), `limit` is the ceiling the server enforces and travels with the values so the two can be read together, and `refused_saturated` counts connections turned away at that ceiling — before they became requests, so they appear in none of the four blocks above.\n\n`connections` also carries one duration, and it is a bound rather than a measurement: for every connection the accept loop took (`accept_waits`, which equals `accepted` plus `refused_saturated`), the time since the accept queue was last seen empty, which the connection's wait in the operating system's queue can never exceed (`accept_wait_bound_us_sum`, `accept_wait_bound_us_max`, `accept_wait_bound_us_mean`). The loop sleeps 100 ms when the queue is empty, so a client that opens a new connection for every call can lose up to that much before its request is read, and this is the only block where that time shows.\n\nThree of those four — `queue_before_gate`, `handler_after_gate` and `plugin_round_trip` — also carry a `*_hist` with the distribution of the same observations, because an average and a maximum cannot tell \"everything is slightly slow\" from \"most are fast and a few are not\". `bounds_us` and `counts` travel together; `counts` is one entry longer and is not cumulative, so the entries sum to the observation count and the last one means only that the top bound was passed. Quantiles are not computed here. `db` is a duration too but has no distribution, and `connections` has none because its seats are not durations and its one duration is only a bound.\n\n`db_pragmas` is the sixth block and it is not a running total at all: for each SQLite database (`memory_db`, `state_db`) it shows the connection settings that were requested when the database was opened next to the values read back from it, because a request such as journal_mode=WAL can be silently refused. `degraded` is true when any setting did not take, and for `memory_db` also when the file could not be opened and the instance runs on an in-memory fallback, in which case `init_failure` names the cause (it is null otherwise); the database is still in use. `state_db` is null when that database is not open in this process, which is always the case for a headless instance.\n\n`stream_push` is the seventh block and it counts frames this instance pushed rather than requests it answered: frames sent to attach and mesh stream connections. `frames_dropped` counts frames thrown away because a connection's queue was full while the connection stayed up, and `clients_lagged_out` counts connections cut for falling too far behind; both only go up. `backlog` is how many frames are queued right now and not yet written, summed over the live connections, and `sink_capacity` is the queue ceiling of one connection to read it against.\n\n`queue_admission` and `queue_dispatch` are the two ends of the command queue. `queue_admission` is what is in the queue right now (bytes, commands, and how many of those this instance injected itself) with the peak byte count, the requests turned away at the byte ceiling (`refused_bytes`) or the injected depth ceiling (`refused_depth`), and the two ceilings (`limit_bytes`, `limit_injected_depth`) to read them against; a turned-away request never entered the queue, so it appears in no other block. It is null when this process has no IPC server. `queue_dispatch` is what was taken out: rounds and how many stopped at the command or time budget, commands whose deadline passed while they waited (`expired_before_run`), commands started, and `in_flight`, the requests running now whose caller is still waiting, with its peak.\n\n`keyed_requests` counts only requests that carried an idempotency key, one slot per decision: `executed` (a new key, it ran), `replayed` (the same request again, the kept answer was returned), `conflicted` (a different request under the same key, nothing ran), `discarded` (it ran but its answer was thrown away) and `in_flight` (the same request was still running and this one joined it). Each request is counted once. This `in_flight` is not the one in `queue_dispatch`.\n\n`slow_requests` is the eleventh block and it lists single slow requests instead of totals: each request whose queue wait, host time and plugin waits add up to `threshold_us` (100 ms) or more gets one row, oldest first, up to `capacity` rows. A row carries `request_seq`, a number this instance gives every request (not the JSON-RPC id and not an event trace id), the `method`, the `caller`, `queue_wait_us`, `host_us` and, when the request was forwarded to a plugin, `plugin_hops` with the plugin, the `host_request_id` that plugin received as its request id, the wait and the outcome. `admitted` counts every row ever kept, so the rows pushed out are `admitted` minus the rows shown. A query for this answer is never kept itself.\n\nThe `host` part of a slow row also carries the answer the caller actually got: `outcome` is `ok` or `error`, the same words a plugin hop uses, and `error_code` is the JSON-RPC error code when it is an error, so a request that expired in the queue before it ran (-32067), a refused one (-32001) and a normal answer can be told apart from the ring alone. Both are null while no answer has gone out yet, for example while a forwarded request is still waiting for its plugin.\n\n`queue_before_gate.waits` counts the commands whose queue wait was recorded, at the moment each was taken out; it is the denominator of `wait_us_mean` and equals the sum of `wait_us_hist.counts`. `commands` rises only when a round of taking commands out ends, so within one answer it can trail `waits` by the round still running, which includes the query itself.\n\n`gate_refusals` is the twelfth block and counts requests the admission gate **turned away**: `judged` is every request that reached the gate (requests from this CLI and calls plugins make into this instance included), and each gate has its own slot — `permission_denied` (permission, -32001), `cap_blocked` (telemetry cap, -32007) and `throttled` (rate limit, -32010). The gates run in that order and a request turned away by one never reaches the next, so a request is counted in at most one slot. The three call for different fixes: ask for the permission, lift the cap, or wait. `permission_denied` counts only the -32001 answers the permission gate gives: every refusal there is -32001, but not every -32001 is one. Besides a missing permission, that gate also turns away calls a plugin or agent makes to a method that does not exist or to a method it is not allowed to call. Asking for a permission does not fix those two; calling a different method does. Calls from this CLI without a session token are never turned away at this gate, so they do not land here even when the method does not exist. Two kinds of -32001 never land here either: a rejected session token (malformed, unknown, expired or revoked, such as a stale TASTY_SESSION_TOKEN), which is answered before the gate so `judged` does not count it, and a -32001 returned after the request passed the gate (such as a refused grant), which counts as passed. The numbers are totals since this instance started and go back to 0 on restart. The `throttled_count` reported by `tasty agent rate-limit-status` is a per-bucket total that survives restarts, so it is not the same number. A request turned away for a malformed idempotency key is not counted here.\n\nAn average with nothing behind it comes back as null, not zero."
+about = "Show IPC pressure and diagnostic statistics since this instance started"
+long = "Show IPC pressure and diagnostic statistics since this instance started.\n\nThe blocks measure different requests and must not be subtracted: queue_before_gate includes requests later rejected by permissions; handler_after_gate covers handled requests; plugin_round_trip covers answered plugin calls; db covers successful database commits. A request may pass the gate and receive an answer before handler timing.\n\nconnections counts TCP connections, including attach and mesh streams. live is current usage, limit is the enforced ceiling, and refused_saturated counts connections rejected before they made requests. Cumulative counts do not decrease; live and derived means can decrease. accept_waits equals accepted + refused_saturated. The accept_wait_bound_us_sum/max/mean fields bound time in the OS accept queue using elapsed time since that queue was last observed empty. They are bounds, not measured waits. The empty-queue sleep is 100 ms.\n\nqueue_before_gate, handler_after_gate, and plugin_round_trip also have histograms. bounds_us contains the limits; counts has one extra overflow bucket and is not cumulative. Counts sum to the observation count. Quantiles are not calculated. db and connections have no histogram. queue_before_gate.waits is the denominator of wait_us_mean and the sum of wait_us_hist.counts. commands updates at the end of a dispatch round, so it can lag waits during the current round, including this query.\n\ndb_pragmas compares requested and actual settings for memory_db and state_db. degraded reports a setting mismatch or, for memory_db, an in-memory fallback after file-open failure. init_failure records that failure or is null. The fallback database remains usable. state_db is null when unopened, including in headless instances.\n\nstream_push counts attach/mesh frames: frames_dropped records full-queue drops on live connections; clients_lagged_out records disconnected slow clients. backlog is current queued frames across live connections, and sink_capacity is the limit for one connection.\n\nqueue_admission reports current bytes, commands, injected commands, peak bytes, and the limit_bytes/limit_injected_depth ceilings. refused_bytes and refused_depth count requests rejected before entering the queue; they appear in no other block. The block is null without an IPC server. queue_dispatch records rounds, command/time budget stops, expired_before_run, commands started, and current/peak in_flight requests. A started request remains in_flight until both the command and its response waiter release the shared lifecycle state.\n\nkeyed_requests counts each keyed request once: executed, replayed, conflicted (nothing ran), discarded (answer was not retained), or in_flight (joined an existing request). This in_flight is a cumulative decision count, unlike the current count in queue_dispatch.\n\nslow_requests retains requests whose queue wait + host time + plugin waits meet threshold_us (100 ms), oldest first, up to capacity. Rows contain request_seq (neither JSON-RPC id nor trace id), method, caller, queue_wait_us, host_us, and plugin_hops. Each hop includes its plugin, host_request_id, wait, and outcome. admitted counts all retained rows; admitted minus rows shown counts evictions. The query excludes itself. A row's host outcome is ok/error and error_code is its JSON-RPC error, distinguishing expiry (-32067), refusal (-32001), and success. Both are null before an answer, for example while waiting for a plugin.\n\ngate_refusals.judged counts requests reaching permission checks, including Local and plugin callers. Gates run in order: permission_denied (-32001), cap_blocked (-32007), then throttled (-32010). A request is counted in at most one refusal slot. Permission refusal can mean missing permission, an unknown method, or a method forbidden to that caller; a grant only addresses the first case. Local callers without a token pass this gate. Invalid/expired/revoked session tokens are rejected before judged, while -32001 errors after the gate count as passed. Malformed idempotency keys are not counted here. These totals reset at restart; the per-bucket throttled_count in agent rate-limit-status persists and is a different count.\n\nAn average with no observations is null, not zero."
 
 [cli.help._root.list.notifications]
 about = "List notifications"
@@ -2690,7 +2690,7 @@ help = "The token string to revoke (required)"
 about = "List the session tokens this instance currently holds"
 
 [cli.help._root.terminal]
-about = "Manage child terminals (spawn/tell/children/kill/…) — host-internalized agent child-terminal management"
+about = "Manage child terminals (spawn, tell, children, kill)"
 
 [cli.help._root.terminal.spawn]
 about = "Spawn a child terminal in a workspace and run a command in it"
@@ -2992,15 +2992,15 @@ help = "Surface ID (default: focused)"
 help = "Background mode: \"focused\" or \"unfocused\" (default: focused)"
 
 [cli.help._root.debug.switch-input-source]
-about = "Switch macOS input source (e.g. Korean IME) — macOS GUI builds only"
-long = "Switch macOS input source (e.g. Korean IME) — macOS GUI builds only\n\nThe subcommand is offered on every platform on purpose: the method is registered everywhere, so hiding it here would answer \"no such command\" and send you looking for a typo. Elsewhere it fails fast with -32015 and says why (TISSelectInputSource has no equivalent)."
+about = "Switch the input source (for example, the Korean IME). macOS GUI builds only"
+long = "Switch the input source (for example, the Korean IME). macOS GUI builds only.\n\nThe command is listed everywhere; platforms without TISSelectInputSource return -32015 instead of an unknown-command error."
 
 [cli.help._root.debug.switch-input-source.arg.source_id]
 help = "Input source ID (e.g. \"com.apple.inputmethod.Korean.2SetKorean\")"
 
 [cli.help._root.debug.raw-key]
-about = "Send a raw physical key code via CGEvent — macOS GUI builds only"
-long = "Send a raw physical key code via CGEvent — macOS GUI builds only\n\nGoes through the OS IME pipeline. Offered on every platform for the same reason as switch-input-source; elsewhere it fails fast with -32015 and says why (CGEventPost has no equivalent)."
+about = "Send a physical key code through CGEvent and the OS IME. macOS GUI builds only"
+long = "Send a physical key code through CGEvent and the OS IME. macOS GUI builds only.\n\nPlatforms without CGEventPost return -32015."
 
 [cli.help._root.debug.raw-key.arg.keycode]
 help = "macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)"
@@ -3066,7 +3066,7 @@ about = "List all tool menu items in display order"
 about = "Invoke a tool menu item by key"
 
 [cli.help._root.debug.tool.invoke.arg.key]
-help = "Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-history/open-viewer`)"
+help = "Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-viewer/open-viewer`)"
 
 [cli.help._root.debug.popup]
 about = "Plugin popup inspection and open/close (debug builds only)"
@@ -3207,7 +3207,7 @@ about = "Force-open the settings modal, optionally on a specific tab/subtab"
 help = "Initial L1 tab: general | terminal | appearance | keybindings | file_handler | misc | plugins (default: general)"
 
 [cli.help._root.debug.settings.open.arg.subtab]
-help = "Initial L2 section within the chosen tab (depends on --tab). e.g. appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. Unknown keys keep the tab default"
+help = "Initial L2 section within the chosen tab (depends on --tab). e.g. appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|input|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. Unknown keys keep the tab default"
 
 [cli.help._root.debug.settings.apply]
 about = "Apply a (partial) settings patch at runtime: the JSON object is deep-merged onto the live settings, then dispatched as UpdateSettings (same path as saving the settings modal — persists to config.toml)"
@@ -3447,7 +3447,7 @@ help = "egui key name (e.g. `Enter`, `Escape`, `ArrowDown`)"
 help = "Press (default) or release with `--pressed false`"
 
 [cli.help._root.debug.inject.egui-text]
-about = "Inject typed characters into the egui layer, so a focused text field (command palette query, settings filter) can be filled headlessly. Key injection cannot do this: egui receives characters through a separate text event. Enter, Tab and Backspace stay on `egui-key`"
+about = "Type characters into a focused egui text field in a GUI build without physical keyboard input. Enter, Tab, and Backspace use egui-key instead"
 
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "Characters to type. Control characters are refused, since the real input path never carries them and the text field drops them"
@@ -3965,7 +3965,7 @@ help = "Base64-encoded binary payload. Overrides --value"
 help = "Force content type. Defaults: text/plain (string), application/json (JSON literal), application/octet-stream (with --value-b64)"
 
 [cli.help._root.memory.put.arg.ttl]
-help = "Relative TTL in seconds (entry expires `now + ttl` ms). Conflicts with --expires-at"
+help = "Relative TTL in seconds. Conflicts with --expires-at"
 
 [cli.help._root.memory.put.arg.expires_at]
 help = "Absolute expiry timestamp (unix ms). No-op if omitted"
@@ -4239,7 +4239,7 @@ help = "Secret key within the scope"
 help = "Value. Treated as JSON if it parses, otherwise plain text. `@path` reads from file"
 
 [cli.help._root.memory.secret.put.arg.value_b64]
-help = "Force content type"
+help = "Base64-encoded binary value. Overrides --value"
 
 [cli.help._root.memory.secret.put.arg.content_type]
 help = "Force content type"
@@ -4758,7 +4758,7 @@ about = "Remove the surface's goal (idempotent)"
 help = "Target surface ID (defaults to caller's TASTY_SURFACE_ID)"
 
 [cli.help._root.settings]
-about = "Global settings — get/set the remote-transfer storage folder and size cap"
+about = "Global settings — terminal input rules and remote-transfer storage"
 
 [cli.help._root.settings.get-remote-transfer]
 about = "Show the receive-side storage folder and size cap for remote transfers (bulk file channel)"
@@ -4819,8 +4819,8 @@ about = "Human-handoff approval gates (request/respond/await/cancel/list/get)"
 long = "Human-handoff approval gates (request/respond/await/cancel/list/get)\n\nThe live gate does not outlive the host. `request`, `respond`, `await`, `cancel`, `list` and `get` all read one in-memory store that starts empty on every boot, so a request that was pending when the host stopped is not there afterwards — `list` will not show it and `await` on its id answers \"not found\". What survives is the written record, which `history` reads from the memory store. Treat `history` as the log and `list` as what is answerable right now."
 
 [cli.help._root.approval.request]
-about = "Request a new approval. Prints the new id on success"
-long = "Request a new approval. Prints the new id on success.\n\nNothing expires on its own. `--timeout-ms` is counted inside `approval await`, and that call is the only thing that moves a request out of `pending` on time — with no waiter the request stays pending however long the timeout was, and `approval list --state pending` keeps showing it."
+about = "Request approval and print its id"
+long = "Request approval and print its id.\n\nTimeout is applied by approval await; without a waiter, a pending request does not expire on its own."
 
 [cli.help._root.approval.request.arg.title]
 help = "Title shown in the popup / notification"
@@ -4939,7 +4939,7 @@ long = "Read the host event feed by position (fetch, follow)\n\nThe feed lives i
 
 [cli.help._root.events.fetch]
 about = "Read events from a position. Prints the answer as one JSON object"
-long = "Read events from a position. Prints the answer as one JSON object.\n\nThe events are in its `events` array, next to `next_offset`, `epoch` and the other fields of the answer. For one event per line, use `follow`.\n\nThe cursor is yours, not the host's: pass the `next_offset` from the previous answer to continue. Asking twice with the same arguments gives the same answer, and a slow reader queues nothing on the host side.\n\nEvents live in memory only. A restart clears them and starts positions over, which is why every answer carries an `epoch` — if it differs from the one your offset came from, that offset is from a previous generation."
+long = "Read events from a position. Prints the answer as one JSON object.\n\nThe events are in its `events` array, next to `next_offset`, `epoch` and the other fields of the answer. For one event per line, use `follow`.\n\nPass next_offset from the previous response to continue. Reads do not advance a host-side cursor or queue events for slow readers. Repeating a read may return different data as the retained feed changes.\n\nEvents live in memory only. A restart clears them and starts positions over, which is why every answer carries an `epoch` — if it differs from the one your offset came from, that offset is from a previous generation."
 
 [cli.help._root.events.fetch.arg.offset]
 help = "Position to read from. Default 0, the oldest still retained"
@@ -5154,11 +5154,11 @@ help = "Output format: markdown | json (default: markdown)"
 help = "Number of top entries for ipc_calls (default: 10)"
 
 [cli.help._root.agent]
-about = "Agent collaboration primitives (task DAG; barrier/semaphore/lease/reducer/rate-limit follow)"
+about = "Agent tasks, barriers, semaphores, leases, reducers, and rate limits"
 
 [cli.help._root.agent.task-create]
-about = "Create a new task within a workspace"
-long = "Create a new task within a workspace.\n\nCreating does not run it. Nothing dispatches until the workspace's runner is started with `task-run --action start`, and it is never started for you — not at boot either. Without it a task sits in `Ready` and `task-await` just burns its timeout."
+about = "Create a task in a workspace without starting it"
+long = "Create a task in a workspace without starting it.\n\nStart the workspace runner explicitly with `task-run --action start`; host startup does not start it for you. Without a runner, ready tasks remain queued and task-await can time out."
 
 [cli.help._root.agent.task-create.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
@@ -5182,7 +5182,7 @@ help = "Metadata JSON (free-form, attached to the task)"
 help = "Shorthand for `metadata.semaphore.name` — caps how many tasks tagged with the same semaphore name run concurrently (the rest wait as `ready` until a permit frees up). Merges into `--metadata` if both are given; conflicts if `--metadata` already sets `semaphore`"
 
 [cli.help._root.agent.task-create.arg.reserved_for_fallback]
-help = "Reserve this task as a not-yet-referenced fallback candidate: it stays `waiting` (never `ready`, so the runner cannot dispatch it) until a later `task-create --on-failure fallback:<this-id>` call links a main task to it, however long that takes. Without this flag, a bare no-deps task becomes `ready` immediately, and if the runner ticks before the linking main is created, it can dispatch and run to completion regardless of that main's outcome — closes the creation-order race between the two `task-create` calls"
+help = "Keep this fallback candidate waiting until a later task-create links it with --on-failure fallback:<this-id>. This prevents the runner from executing it between the two calls. It remains waiting if no main task ever references it"
 
 [cli.help._root.agent.task-list]
 about = "List tasks in a workspace"
@@ -5266,8 +5266,8 @@ help = "Restrict the lookup to one workspace. Explicit ids are user-chosen, so t
 help = "Format: json | dot. Default: json"
 
 [cli.help._root.agent.task-run]
-about = "Start/stop/inspect the agent task runner for a workspace. The runner is a host-side thread that dispatches Ready tasks and detects completion of Running tasks. Calling start twice on the same workspace is idempotent"
-long = "Start/stop/inspect the agent task runner for a workspace. The runner is a host-side thread that dispatches Ready tasks and detects completion of Running tasks. Calling start twice on the same workspace is idempotent.\n\nIt is never started for you. Booting the host restores state for live workspaces but leaves every runner stopped, so a workspace whose runner was never started dispatches nothing at all.\n\n`stop` ends the detection, not the work: already-dispatched processes keep going and their tasks stay `Running` with nothing left to notice them finishing. Starting again picks those handles back up and settles each one — alive, dead, or with the exit code its watcher had persisted."
+about = "Start, stop, or inspect a workspace runner. Starting it twice is idempotent. The host restores saved state at startup but leaves runners stopped"
+long = "Start, stop, or inspect a workspace runner. Starting it twice is idempotent. The host restores saved state at startup but leaves runners stopped.\n\nStopping a runner stops completion checks, not its dispatched processes. Their tasks remain Running. Starting again restores handles and checks whether processes are alive or have a saved exit result."
 
 [cli.help._root.agent.task-run.arg.workspace_id]
 help = "Workspace id whose runner is being controlled (focus-independent — required)"
@@ -5327,8 +5327,8 @@ help = "Only tasks whose age (created_at, or finished_at for terminal tasks) exc
 help = "Compute and print the plan without deleting anything"
 
 [cli.help._root.agent.barrier-create]
-about = "Create a barrier (waits until N signals have arrived)"
-long = "Create a barrier (waits until N signals have arrived).\n\nNothing runs on a timer. `--timeout-ms` is stamped lazily: the barrier turns `TimedOut` inside the next `barrier-signal`, `barrier-state` or `barrier-list`, so a barrier nobody asks about sits in whatever state it was left in. Once stamped, `barrier-signal` fails, and the record stays until `barrier-delete` removes it."
+about = "Create a barrier that closes after N signals"
+long = "Create a barrier that closes after N signals.\n\nExpiry is checked on the next barrier-signal, barrier-state, or barrier-list call, not by a timer. A timed-out barrier rejects signals and remains until barrier-delete."
 
 [cli.help._root.agent.barrier-create.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
@@ -5407,7 +5407,7 @@ help = "Semaphore name to acquire a permit from"
 help = "Holder id (must be non-empty)"
 
 [cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
-help = "Reclaim this permit automatically if the holder goes silent for this many ms. Re-acquiring with the same holder renews it. Omit for a permit that never expires (the default)"
+help = "Expire this permit after this many milliseconds. Re-acquiring with the same holder renews it; acquire/list calls reclaim expired permits. Omit for no expiry"
 
 [cli.help._root.agent.semaphore-release]
 about = "Release a permit. No-op if holder isn't currently holding"
@@ -5609,7 +5609,7 @@ help = "Disable (`true`) or enable (`false`) the handler"
 help = "Whole action as JSON, in the shape `get` prints: `{\"kind\":\"ipc_sequence\",\"calls\":[...]}` or `{\"kind\":\"shell_command\",\"command\":\"...\",\"args\":[...]}`"
 
 [cli.help._root.hook-handler.upsert.arg.calls]
-help = "Shorthand for an IpcSequence action — just the calls array: `[{\"method\":\"window.focus\",\"params\":{}}]`. Same shape that `webhook register --sequence` takes"
+help = "Calls for an IpcSequence, e.g. [{\"method\":\"system.info\",\"params\":{}}]. Uses the same shape as webhook register --sequence"
 
 [cli.help._root.hook-handler.remove]
 about = "Remove the user-origin part of a handler. Host/plugin defaults stay"
@@ -5638,7 +5638,7 @@ help = "Header substitution values as a JSON object `{\"X-Sig\":\"abc\"}`. Optio
 help = "Query substitution values as a JSON object `{\"token\":\"t\"}`. Optional"
 
 [cli.help._root.completion-strategy]
-about = "Completion strategy — task Custom-dispatch completion judge registry (list)"
+about = "List registered task completion strategies"
 
 [cli.help._root.completion-strategy.list]
 about = "List every registered completion strategy (host/plugin/user, incl. disabled)"
@@ -5882,3 +5882,30 @@ actual = "Actual count: {}"
 expected = "Expected count: {}"
 minimum = "Minimum count: {}"
 suggestion = "Suggestion: {}"
+
+[cli.help._root.settings.get-input-rules]
+about = "List application-specific Shift+Enter rules"
+
+[cli.help._root.settings.initialize-input-rule]
+about = "Seed an absent rule once, preserving later user edits and deletion"
+
+[cli.help._root.settings.remove-input-rule]
+about = "Remove an application's input rule"
+
+[cli.help._root.settings.set-input-rule]
+about = "Set an application's Shift+Enter encoding (true = LF, false = platform default)"
+
+[cli.help._root.settings.initialize-input-rule.arg.app]
+help = "Application name matched by the rule"
+
+[cli.help._root.settings.initialize-input-rule.arg.shift_enter_newline]
+help = "Encode Shift+Enter as LF (true) or use the platform default (false)"
+
+[cli.help._root.settings.remove-input-rule.arg.app]
+help = "Application name matched by the rule"
+
+[cli.help._root.settings.set-input-rule.arg.app]
+help = "Application name matched by the rule"
+
+[cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
+help = "Encode Shift+Enter as LF (true) or use the platform default (false)"

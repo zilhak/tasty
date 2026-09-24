@@ -10,9 +10,9 @@ pub enum EventsCommands {
     /// and the other fields of the answer. For one event per line, use
     /// `follow`.
     ///
-    /// The cursor is yours, not the host's: pass the `next_offset` from the
-    /// previous answer to continue. Asking twice with the same arguments gives
-    /// the same answer, and a slow reader queues nothing on the host side.
+    /// Pass next_offset from the previous response to continue. Reads do not
+    /// advance a host-side cursor or queue events for slow readers. Repeating a
+    /// read may return different data as the retained feed changes.
     ///
     /// Events live in memory only. A restart clears them and starts positions
     /// over, which is why every answer carries an `epoch` — if it differs from

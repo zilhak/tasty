@@ -1,17 +1,6 @@
-//! `tasty events follow` — 위치를 들고 long-poll 을 반복한다.
-//!
-//! **커서는 이쪽이 든다.** 매 요청이 직전 답의 `next_offset` 을 싣고, 호스트는
-//! 소비자별 상태를 두지 않는다. 그래서 끊겼다 붙어도 같은 자리에서 이어진다.
-//!
-//! 모양의 선례는 `plugin audit-follow` 다. 다른 점 하나 — 그쪽은 간격을 두고 다시
-//! 묻고, 이쪽은 **호스트가 기다려 준다**(`wait_ms`). 그래서 새 사건이 없는 동안
-//! 왕복이 안 생기고, 생겼을 때의 지연이 폴링 간격에 안 묶인다.
-//!
-//! **세대는 연결을 넘어 이어진다.** 재시작하면 위치가 0 부터 다시 매겨지는데, 재시작은
-//! 연결도 끊는다. 그래서 세대를 한 연결 안에서만 견주면 그 비교가 실제 재시작에서는
-//! 한 번도 참이 되지 않는다. 옛 세대는 재부착 인자(`--epoch`)나 `--reconnect` 가
-//! 넘겨 주고, 그것도 없으면 호스트가 다는 앞섬 표지(`ahead_of_stream`)로 안다
-//! (docs/reference/event-catalog.md#지나간-사건--위치로-읽는다 · docs/reference/event-catalog.md#cli-follow와-재연결).
+//! 소비자가 offset과 epoch를 보관하며 events.fetch를 반복 호출한다.
+//! 호스트는 wait_ms 동안 새 이벤트를 기다리고 소비자별 큐를 두지 않는다.
+//! 재연결 시 epoch를 이어받아 재시작을 확인하며, 보존 범위 밖의 누락은 별도로 알린다.
 
 use std::net::TcpStream;
 use std::time::Duration;
@@ -23,9 +12,7 @@ use tasty_ipc::client::IpcConnection;
 
 use crate::out::outln;
 
-/// `--reconnect` 가 다시 붙기를 시도하는 간격. 재시작은 사람이나 감독 프로세스가 하는
-/// 일이라 초 단위로 충분하고, 그보다 짧으면 호스트가 없는 동안 연결 시도가 루프를
-/// 태운다.
+/// 호스트가 없는 동안 연결을 빠르게 반복하지 않도록 초 단위로 재시도한다.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// `tasty events follow` 의 인자.
@@ -85,8 +72,7 @@ impl Cursor {
             return (vec![Notice::Ahead { asked, end }], Vec::new());
         }
         let mut notices = Vec::new();
-        // **조용히 넘어가지 않는다.** 건너뛴 수를 stderr 로 알린다 — stdout 은
-        // `while read` 가 먹는 자리라 사건 줄만 간다.
+        // 누락 알림은 stderr, 이벤트 JSON은 stdout으로 구분한다.
         if resp
             .get("truncated")
             .and_then(|v| v.as_bool())
@@ -182,8 +168,7 @@ pub fn run_follow(args: FollowArgs<'_>, port_file: Option<&str>) -> Result<()> {
         next_id += 1;
         let resp = match conn.send(&req) {
             Ok(resp) => resp,
-            // 호스트가 답한 오류는 연결 문제가 아니다 — 다시 붙어도 같은 답이 온다.
-            // 그 오류는 `main` 까지 올라가 std 가 찍는다 — `data` 는 둘째 줄로 싣는다(docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs).
+            // 호스트 오류는 재연결로 해결하지 않고 호출자에게 전달한다.
             Err(e) if e.is::<tasty_ipc::client::JsonRpcCallError>() => {
                 return Err(crate::rpc_error::with_data_line(e));
             }

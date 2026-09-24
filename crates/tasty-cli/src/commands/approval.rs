@@ -4,12 +4,10 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum ApprovalCommands {
-    /// Request a new approval. Prints the new id on success.
+    /// Request approval and print its id.
     ///
-    /// Nothing expires on its own. `--timeout-ms` is counted inside
-    /// `approval await`, and that call is the only thing that moves a request out
-    /// of `pending` on time — with no waiter the request stays pending however
-    /// long the timeout was, and `approval list --state pending` keeps showing it.
+    /// Timeout is applied by approval await;
+    /// without a waiter, a pending request does not expire on its own.
     Request {
         /// Title shown in the popup / notification.
         #[arg(long)]

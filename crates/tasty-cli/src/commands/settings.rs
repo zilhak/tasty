@@ -9,20 +9,25 @@ pub enum SettingsCommands {
     GetInputRules,
     /// Set an application's Shift+Enter encoding (true = LF, false = platform default).
     SetInputRule {
+        /// Application name matched by the rule.
         #[arg(long)]
         app: String,
+        /// Encode Shift+Enter as LF (true) or use the platform default (false).
         #[arg(long, action = clap::ArgAction::Set)]
         shift_enter_newline: bool,
     },
     /// Remove an application's input rule.
     RemoveInputRule {
+        /// Application name matched by the rule.
         #[arg(long)]
         app: String,
     },
     /// Seed an absent rule once, preserving later user edits and deletion.
     InitializeInputRule {
+        /// Application name matched by the rule.
         #[arg(long)]
         app: String,
+        /// Encode Shift+Enter as LF (true) or use the platform default (false).
         #[arg(long, action = clap::ArgAction::Set)]
         shift_enter_newline: bool,
     },

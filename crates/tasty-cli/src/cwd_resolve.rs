@@ -99,24 +99,11 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// process cwd 는 프로세스 전역이라, `set_current_dir` 로 그것을 바꾸는 테스트가
-    /// cargo 기본 병렬 실행에서 서로를 덮어써 순서 의존 flake 가 난다(형태 A — cwd 는
-    /// 인스턴스가 하나뿐이라 자원을 테스트-로컬로 만들 수 없고, 직렬화가 유일한 처방이다).
-    /// cwd 를 바꾸는 이 크레이트 lib 테스트는 전부 [`CwdGuard`] 를 거치고, 그 가드가
-    /// 이 락을 자기 수명 동안 쥔다 — 새로 cwd 를 만지는 lib 테스트도 그 가드를 쓸 것.
+    /// cwd를 바꾸는 이 테스트 바이너리의 모든 시험은 CwdGuard로 직렬화한다.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
-    /// process cwd 를 테스트 동안만 옮기는 RAII 가드.
-    ///
-    /// **생성자가 [`CWD_LOCK`] 을 직접 쥔다** — 호출부가 잊어도 직렬화가 깨지지 않는다.
-    /// 같은 형태가 `tasty-telemetry` 의 `AgentIdEnvGuard` 와 `tasty-settings` 의
-    /// `RelativeHomeGuard` 에 있다(unit-test-isolation.md §2).
-    ///
-    /// 손으로 `set_current_dir(prev)` 를 마지막 줄에 두던 형태를 대신한다. 그 형태는
-    /// **그 줄 앞의 단언·`expect` 가 패닉하면 도달하지 않는다.** 그러면 프로세스 cwd 가
-    /// 임시 디렉토리에 남은 채로 `TempDir` 이 Drop 되며 그 디렉토리가 지워지고, 이
-    /// 바이너리의 **뒤 테스트 전부가 존재하지 않는 cwd 에서** 돈다 — 실패 하나가 나머지를
-    /// 만든다. 락만으로는 이것을 못 막는다(락은 동시성을 막지 복원을 하지 않는다).
+    /// 이전 cwd를 저장하고 패닉 시에도 복원한다. 락만으로는 복원을 보장하지 않는다.
+    /// Drop 본문이 필드보다 먼저 실행되므로 복원은 CWD_LOCK을 잡은 상태에서 이루어진다.
     struct CwdGuard {
         prev: std::path::PathBuf,
         /// 가드 수명 동안 `CWD_LOCK` 을 쥔다. **복원이 락 안에서 나는 근거는 필드
@@ -137,18 +124,8 @@ mod tests {
 
     impl Drop for CwdGuard {
         fn drop(&mut self) {
-            // 복원 실패는 조용히 넘기면 안 된다 — 뒤 테스트 전부가 그 cwd 에서 돈다.
-            // 다만 되감기 중에 패닉하면 프로세스가 abort 되어 **원래 실패의 메시지까지
-            // 사라지므로**, 이미 패닉 중이면 소리내지 않는다.
-            //
-            // 이유: 이 복원은 `CWD_LOCK` 을 **쥔 채** 난다. `Drop::drop` 이 필드보다
-            // 먼저 돌아 `_lock` 이 이 본문 뒤에 풀리기 때문이다 — 실측으로 확인했다:
-            // 이 자리에서 `CWD_LOCK.try_lock()` 이 `Err`(같은 스레드가 이미 쥠)이고,
-            // `_lock` 을 첫 필드로 옮겨도 같다. 뒤집은 탐침(`is_ok()`)은 죽는다 —
-            // 그래서 초록이 "안 돌았다" 가 아니라는 것도 함께 쟀다.
-            //
-            // 이 조건을 주석으로 밝히는 이유: 스캔(`no_unserialized_env_mutation`)은
-            // 함수 범위에서 락 호출을 찾는데 `fn drop` 안에는 `lock()` 이 없다.
+            // 이유: CWD_LOCK은 Drop 본문 뒤에 해제된다.
+            // 복원 실패를 알리되 이미 unwind 중이면 두 번째 패닉으로 abort하지 않는다.
             if std::env::set_current_dir(&self.prev).is_err() && !std::thread::panicking() {
                 panic!("cwd 를 {} 로 되돌리지 못했다", self.prev.display());
             }
@@ -167,10 +144,8 @@ mod tests {
     #[test]
     fn relative_path_resolves_against_process_cwd() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        // tempdir 안에 하위 디렉토리.
         let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
-        // process cwd 를 tempdir 로 옮기고 상대 경로 "sub" 가 sub 로 풀리는지.
         let _cwd = CwdGuard::enter(tmp.path());
         let out = normalize_cwd_arg("sub").expect("ok");
         assert!(out.ends_with("sub"), "got {out}");
@@ -246,23 +221,7 @@ mod tests {
         assert!(Path::new(&out).is_dir());
     }
 
-    // ── 재진입 가드: set_current_dir 는 직렬화된 테스트에만 ──────────────────
-    //
-    // set_current_dir 는 프로세스 전역 cwd 를 바꾼다. 직렬화 없이 부르는 테스트가 새로
-    // 생기면 cwd 를 읽는 다른 테스트와 병렬 경합해 flake 가 난다(unit-test-isolation.md
-    // §7 형태 A). 이 레포에서 그것을 만지는 소스는 아래 EXPECTED 집합뿐이어야 하고, 그
-    // 파일은 CWD_LOCK 으로 직렬화돼 있다.
-
-    /// **코드**에서 `set_current_dir(` **호출**이 있는 줄 수.
-    ///
-    /// 판정을 손으로 하지 않고 `tasty_doc_guards::source_text::mask_non_code` 에 맡긴다. 이전에는
-    /// `split("//")` 로 주석만 뗐는데, 그것은 **다른 물음의 도구**다 — "이 줄이 산문인가"
-    /// 는 주석 줄만 보면 되지만 "코드에 X 가 있나" 는 **문자열 리터럴도 코드가 아니다.**
-    /// 리터럴을 안 가리면 이 바늘을 문자열로 들고 있는 다른 가드가 호출로 세어진다.
-    ///
-    /// 그때 여기 적혀 있던 회피책("여는 괄호가 없으면 안 센다")은 기전이 아니라
-    /// **작명 금기**였다 — 그 토큰을 괄호까지 붙여 정당하게 필요로 하는 두 번째 가드가
-    /// 나타나는 순간 깨진다. 마스킹은 그 사람이 무엇을 쓰든 성립한다.
+    /// 주석·문자열을 제외한 코드에서 set_current_dir 호출 줄을 센다.
     fn cwd_mutation_call_lines(text: &str) -> usize {
         tasty_doc_guards::source_text::mask_non_code(text)
             .lines()
@@ -281,16 +240,7 @@ mod tests {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                // 빌드 산출물은 소스가 아니다. 점으로 시작하는 디렉토리도 아니다 —
-                // 추적되는 `.rs` 중 그 아래 있는 것은 0 개이므로(2026-09-08 실측:
-                // `git ls-files '*.rs' | grep -c '/\.\|^\.'`) 배제해도 판정이
-                // 안 줄고, `.git` 도 이 규칙에 흡수된다.
-                //
-                // ★ 이름이 아니라 형태로 거르는 이유: 커밋되지 않는 작업 폴더는
-                // clone·CI 에 없지만 **개발자의 작업 트리에는 있다.** 거기 소스 사본을
-                // 두면(마스킹 사본 등) 이 시험이 그것을 실물로 세어 빨개진다 — 실제로
-                // 그렇게 밟았다. 그 폴더 이름을 여기 적는 것은 다른 규율에 걸리므로,
-                // 이름을 안 적고도 서는 술어를 쓴다.
+                // 빌드 산출물과 점 디렉터리의 로컬 사본은 검사하지 않는다.
                 let skip = path.file_name().is_some_and(|n| {
                     let n = n.to_string_lossy();
                     n == "target" || n.starts_with('.')
@@ -322,10 +272,7 @@ mod tests {
             .to_path_buf()
     }
 
-    /// 재진입 가드 — 스캔 모집단을 **집합 동등**으로 못박아, 새 미직렬화 호출(추가)과
-    /// 고쳐서 사라진 항목의 잔존(삭제)을 양방향으로 잡는다(하한/건수는 부분 누락을
-    /// 놓친다). 새 항목이 뜨면 직렬화 처방(unit-test-isolation.md §7)을 적용한 뒤 이
-    /// 집합에 등재하라.
+    /// cwd 변경 파일의 추가와 삭제를 모두 확인한다. 새 호출은 직렬화한 뒤 등록한다.
     #[test]
     fn set_current_dir_is_confined_to_serialized_tests() {
         let root = repo_root();
@@ -353,13 +300,10 @@ mod tests {
             cwd_mutation_call_lines("let s = \"set_current_dir call\";"),
             0
         );
-        // ★ 이 줄이 이 고침의 경계다. 옛 판정(주석만 뗀다)은 여기서 1 을 냈다 —
-        // 같은 바늘을 검색어로 들고 있는 다른 가드가 그것을 호출로 세게 만든 형태다.
         assert_eq!(
             cwd_mutation_call_lines("const NEEDLE: &str = \"set_current_dir(\";"),
             0
         );
-        // 여러 줄 문자열 안에서도 같다.
         assert_eq!(
             cwd_mutation_call_lines("let s = r#\"call set_current_dir(p) here\"#;"),
             0
@@ -368,7 +312,6 @@ mod tests {
             cwd_mutation_call_lines("let x = 1; // set_current_dir(p)"),
             0
         );
-        // 변이 — 실제 호출은 센다.
         assert_eq!(
             cwd_mutation_call_lines("    std::env::set_current_dir(p).unwrap();"),
             1

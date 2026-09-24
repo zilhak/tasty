@@ -2063,8 +2063,8 @@ about = "ワークスペース・ペイン・タブをツリー表示する"
 about = "全ワークスペースのサーフェス（ターミナル）一覧"
 
 [cli.help._root.list.surface-kinds]
-about = "このインスタンスに実際に登録されたサーフェス種別を一覧表示"
-long = "このインスタンスに実際に登録されたサーフェス種別を一覧表示します。マニフェスト宣言ではなく実行中の登録状態です。hostが登録した種別のみ表示され、列挙された種別に対して `--type <kind>` を使用できます。host組み込みとplugin提供の種別を両方含みます。"
+about = "現在ホストに登録されているsurfaceの種類を一覧表示します"
+long = "現在ホストに登録されているsurfaceの種類を一覧表示します。\n\n組み込みの種類と起動済みプラグインの種類を含みます。マニフェストへの宣言だけでは登録済みとはみなしません。"
 
 [cli.help._root.list.panes]
 about = "全ワークスペースのペイン一覧"
@@ -2082,8 +2082,8 @@ about = "システム情報を表示する"
 about = "GPU リソース数を表示する（wgpu レポート + ウィンドウ別レンダラー統計）"
 
 [cli.help._root.list.pressure]
-about = "このインスタンスの起動以降のリクエスト圧力を表示する — リクエストに答える間、時間がどこへ行ったか"
-long = "このインスタンスの起動以降のリクエスト圧力を表示する — リクエストに答える間、時間がどこへ行ったか。\n\n答えは母集団ごとに一つのブロックで、母集団は**意図的に**異なる。`queue_before_gate` は権限ゲートの**手前**で計測するため、後で拒否されたリクエストも数える。`handler_after_gate` はゲートの**後ろ**で計測するため、実際に実行されたものだけを数える。`plugin_round_trip` はこのインスタンスが plugin の応答を待った時間で、応答が返ったリクエストだけを数える。`db` は書き込みがディスクに落ち着くまでの時間で、成功したコミットだけを数える。あるブロックから別のブロックを引いてはいけない — ゲートを通過しても、ハンドラのブロックが見る前に応答が出るリクエストがある。\n\n`connections` は五つ目のブロックで、時間ではなく**席**だ: このポートに接続しているすべての TCP 接続で、リクエストを一度も送らない attach・mesh ストリームも含む。ここで累計・瞬間値のうち減るのは `live` だけ（下の accept 待ちの平均は派生値なので減ることがある）、`limit` はサーバが強制する上限で値と一緒に運ばれるので二つを並べて読める。`refused_saturated` はその上限で追い返した接続数で、リクエストになる前なので上の四ブロックのどれにも現れない。\n\n`connections` には時間が一つあるが、測った値ではなく**上限**だ: accept ループが取り出した接続ごとに（`accept_waits` — `accepted` と `refused_saturated` の和に等しい）、accept キューが最後に空だと見えてから経った時間で、その接続が OS のキューで待った時間はこれを超えられない（`accept_wait_bound_us_sum`・`accept_wait_bound_us_max`・`accept_wait_bound_us_mean`）。ループはキューが空だと 100 ms 眠るので、呼び出しごとに新しい接続を開くクライアントはリクエストが読まれる前にその分まで失うことがあり、その時間が見えるブロックはここだけだ。\n\nその四つのうち三つ（`queue_before_gate`・`handler_after_gate`・`plugin_round_trip`）は、同じ観測の分布を持つ `*_hist` も併せて返す。平均と最大だけでは「全体が少しずつ遅い」と「大半は速く一部だけ遅い」を区別できないからだ。`bounds_us` と `counts` は対で動き、`counts` は一つ長く累積ではない — 各項の合計が観測数で、最後の項は最上限を超えたという意味でしかない。分位数はここでは計算しない。`db` も時間だが分布はなく、`connections` は席が時間ではなく、一つある時間も上限にすぎないので分布がない。\n\n`db_pragmas` は六つ目のブロックで、そもそも累計ではない — SQLite DB（`memory_db`・`state_db`）ごとに、開いたときに要求した接続設定とそこから読み戻した値を並べて示す。journal_mode=WAL のような要求は黙って拒否されることがあるからだ。`degraded` は設定が一つでも効かなかったとき true で、`memory_db` はファイルを開けず in-memory の代替で起動したときも true になり、そのとき `init_failure` が原因を示す(そうでなければ null)。それでも DB は使われ続ける。`state_db` はその DB がこのプロセスで開かれていないとき null で、ヘッドレスインスタンスでは常にそうなる。\n\n`stream_push` は七つ目のブロックで、このインスタンスが答えたリクエストではなく**押し出した**フレームを数える — attach・mesh ストリーム接続へ送ったフレームだ。`frames_dropped` は接続が生きているのにその接続のキューが満杯で捨てたフレーム数、`clients_lagged_out` は遅れすぎて切った接続数で、どちらも増えるだけだ。`backlog` は今キューに溜まっていてまだ書き出されていないフレーム数を生きている接続にわたって合計した値で、`sink_capacity` はそれと比べる接続一つのキュー上限だ。\n\n`queue_admission` と `queue_dispatch` はコマンドキューの両端だ。`queue_admission` は今キューに入っているもの（バイト・コマンド数・そのうちこのインスタンスが自ら注入したコマンド数）と最大バイト、バイト上限（`refused_bytes`）または注入深さ上限（`refused_depth`）で断ったリクエスト数、そしてそれと比べる二つの上限（`limit_bytes`・`limit_injected_depth`）だ。断ったリクエストは一度もキューに入っていないので、他のどのブロックにも残らない。このプロセスに IPC サーバーがなければ null だ。`queue_dispatch` は取り出した側だ — 回数とそのうちコマンド数・時間の予算で止まった数、待っている間に期限が過ぎたコマンド（`expired_before_run`）、開始したコマンド、そして `in_flight` — 今実行中で呼び出し側がまだ待っているリクエスト — とその最大値だ。\n\n`keyed_requests` は冪等キーを載せたリクエストだけを数える。判定ごとに一つの枠だ：`executed`（初めて見るキー、実行した）・`replayed`（同じリクエストが再び来て保管された応答を返した）・`conflicted`（同じキーで別のリクエスト、何も実行しなかった）・`discarded`（実行はされたが応答は捨てられた）・`in_flight`（同じリクエストがまだ実行中でそこに合流した）。リクエスト一つは一度だけ数えられる。この `in_flight` は `queue_dispatch` のものとは別だ。\n\n`slow_requests` は十一番目のブロックで、累計ではなく遅いリクエストを一件ずつ示す：キュー待ち・ホスト処理・プラグイン待ちの合計が `threshold_us`（100 ms）以上のリクエストごとに一行、古いものから `capacity` 行までだ。一行には `request_seq`（このインスタンスがリクエストごとに振る番号 — JSON-RPC id でもイベントの trace id でもない）・`method`・`caller`・`queue_wait_us`・`host_us` が、プラグインへ転送したリクエストなら `plugin_hops`（プラグイン・そのプラグインがリクエスト id として受け取った `host_request_id`・待ち時間・結果）が載る。`admitted` はこれまで残した行の累計なので、押し出された行数は `admitted` から見えている行数を引いたものだ。この応答を問う照会そのものは残さない。\n\n遅い行の `host` には呼び出し側が実際に受け取った応答も載る：`outcome` はプラグイン hop と同じ語で `ok` か `error`、エラーなら `error_code` がその JSON-RPC エラーコードだ。そのため、キューで実行前に期限切れになったリクエスト（-32067）・拒否されたリクエスト（-32001）・正常な応答をリングだけで見分けられる。まだ応答が出ていなければ（プラグインへ渡したリクエストが応答を待っている間など）どちらも null だ。\n\n`queue_before_gate.waits` はキュー待ちを記録したコマンド数で、コマンドを取り出した瞬間に増える。`wait_us_mean` の分母であり、`wait_us_hist.counts` の合計と等しい。`commands` はコマンドを取り出す一回分のラウンドが終わってから増えるので、一つの応答の中ではまだ回っているラウンド（照会そのものが入ったラウンド）の分だけ `waits` より小さいことがある。\n\n`gate_refusals` は十二番目のブロックで、入口のゲートが**突き返した**リクエストを数える：`judged` はゲートに入ったリクエストすべて（この CLI のリクエストも、プラグインがこのインスタンスを呼んだ呼び出しも数える）で、拒否はゲートごとに一枠だ — `permission_denied`（権限、-32001）・`cap_blocked`（テレメトリ cap、-32007）・`throttled`（rate limit、-32010）。ゲートはこの順に見て、前のゲートが突き返したリクエストは後ろを通らないので、一つのリクエストは多くても一枠にしか数えられない。三つは対処が違う — 権限を求めるか、cap を解くか、待つかだ。`permission_denied` は権限ゲートが突き返した -32001 だけを数える — そのゲートの拒否はすべて -32001 だが、-32001 がすべてその拒否というわけではない。そのゲートは権限が足りないものだけでなく、プラグイン・エージェントによる存在しないメソッドの呼び出しや、自分に開かれていないメソッドの呼び出しも突き返す。この二つは権限を求めても解けず、別のメソッドを呼ぶ必要がある。セッショントークンなしで呼んだこの CLI の呼び出しはこのゲートで突き返されないので、存在しないメソッドでもここには入らない。この枠に入らない -32001 も二種類ある：セッショントークンの拒否（形式が不正、または不明・期限切れ・失効したトークン — 古い TASTY_SESSION_TOKEN がそうだ）はゲートの手前で答えるので `judged` にも入らず、ゲートを通過した後に返ってきた -32001（昇格発行の拒否など）は通過側に入る。このインスタンスが起動してからの累計で、再起動すると 0 に戻る。`tasty agent rate-limit-status` の `throttled_count` はバケット一つの、再起動をまたぐ累計なのでこの値とは違う。冪等キーの長さが不正で突き返したリクエストはここでは数えない。\n\n裏に観測が一つもない平均は 0 ではなく null で返る。"
+about = "インスタンス起動後のIPC負荷と診断統計を表示します"
+long = "インスタンス起動後のIPC負荷と診断統計を表示します。\n\n各ブロックの測定対象は異なるため、互いに差し引いて比較しないでください。queue_before_gateは後で権限検査に拒否された要求も含み、handler_after_gateは処理された要求、plugin_round_tripは応答のあったプラグイン呼び出し、dbは成功したDBコミットを測定します。権限検査を通過しても、ハンドラの測定前に応答する要求があります。\n\nconnectionsはattach・meshストリームを含むTCP接続を数えます。liveは現在数、limitは上限、refused_saturatedは要求を送る前に接続上限で拒否された数です。累計は減りませんが、liveと派生平均は減ることがあります。accept_waitsはaccepted + refused_saturatedです。accept_wait_bound_us_sum/max/meanは、acceptキューが最後に空と観測されてからの経過時間を使った、OSキュー待ち時間の上限です。実測した待ち時間ではありません。キューが空のときは100 ms待機します。\n\nqueue_before_gate、handler_after_gate、plugin_round_tripにはヒストグラムもあります。bounds_usは区間境界で、countsは最上限を超えた区間を含むため1要素多くなります。countsは累積値ではなく、合計が観測数です。分位数は計算せず、dbとconnectionsにはヒストグラムがありません。queue_before_gate.waitsはwait_us_meanの分母であり、wait_us_hist.countsの合計です。commandsは処理ラウンドの最後に更新するため、この照会を含むラウンドの途中ではwaitsより小さくなることがあります。\n\ndb_pragmasはmemory_dbとstate_dbの要求設定と実際の設定を比較します。degradedは設定の不一致、またはmemory_dbを開けずメモリDBに切り替えた状態です。init_failureはその失敗理由で、なければnullです。代替DBは引き続き使用されます。state_dbが開かれていなければnullで、ヘッドレスも該当します。\n\nstream_pushはattach・meshフレームを数えます。frames_droppedは接続を維持したまま満杯のキューで捨てたフレーム数、clients_lagged_outは遅延により切断した接続数です。backlogは現在全接続のキューにあるフレーム数、sink_capacityは1接続のキュー上限です。\n\nqueue_admissionは現在のバイト数・コマンド数・注入コマンド数、最大バイト数、limit_bytesとlimit_injected_depthを示します。refused_bytesとrefused_depthはキューに入る前に拒否した要求数で、他のブロックには含まれません。IPCサーバーがなければこのブロックはnullです。queue_dispatchは処理ラウンド、コマンド数/時間予算による中断、expired_before_run、開始したコマンド数、現在/最大のin_flightを記録します。開始済みの要求は、コマンドと応答待機側の両方が共有状態を手放すまでin_flightに含まれます。\n\nkeyed_requestsは冪等キー付き要求を1回ずつ数えます。executedは実行、replayedは保存済み応答の再利用、conflictedは競合による未実行、discardedは応答を保持しなかった場合、in_flightは実行中の要求に合流した場合です。このin_flightは累積判定数で、queue_dispatchの現在数とは異なります。\n\nslow_requestsはキュー待ち + ホスト処理 + プラグイン待ちがthreshold_us（100 ms）以上の要求を、古い順にcapacity件まで保持します。request_seqはJSON-RPC IDやtrace IDではなく独自の要求番号です。行にはmethod、caller、queue_wait_us、host_us、plugin_hopsがあり、各hopにはプラグイン、host_request_id、待ち時間、結果が入ります。admittedはこれまで保持した行数で、現在の行数を引くと押し出された数になります。この照会自身は保持しません。hostのoutcomeはok/error、error_codeはJSON-RPCエラーコードで、期限切れ（-32067）、拒否（-32001）、成功を区別します。まだ応答していなければ両方nullです。\n\ngate_refusals.judgedはLocalとプラグイン呼び出しを含め、権限検査に達した要求数です。permission_denied（-32001）、cap_blocked（-32007）、throttled（-32010）の順で検査し、1要求を最大1つの拒否項目に数えます。権限不足、存在しないメソッド、呼び出し側に禁止されたメソッドはいずれも権限拒否になりえますが、権限追加で解決するのは最初の場合だけです。トークンなしのLocal呼び出しはこの検査を通過します。不正・期限切れ・失効済みトークンはjudgedより前に拒否され、検査通過後の-32001は通過側に数えます。不正な冪等キーは含みません。この累計は再起動で初期化され、バケット別に永続化されるagent rate-limit-statusのthrottled_countとは異なります。\n\n観測のない平均は0ではなくnullです。"
 
 [cli.help._root.list.notifications]
 about = "通知一覧"
@@ -2660,7 +2660,7 @@ help = "失効させるトークン文字列（必須）"
 about = "このインスタンスが現在保持するセッショントークンを一覧表示"
 
 [cli.help._root.terminal]
-about = "子ターミナルを管理する（spawn/tell/children/kill など） — ホストに内在化されたエージェント子ターミナル管理"
+about = "子ターミナルを管理します（spawn、tell、children、kill）"
 
 [cli.help._root.terminal.spawn]
 about = "ワークスペースに子ターミナルを作成してコマンドを実行"
@@ -2962,15 +2962,15 @@ help = "サーフェス ID（既定: フォーカス中）"
 help = "背景モード：\"focused\" または \"unfocused\"（既定値：focused）"
 
 [cli.help._root.debug.switch-input-source]
-about = "macOS入力ソースを切り替え（例：韓国語IME）。macOS GUIビルド専用"
-long = "macOS入力ソースを切り替えます（例：韓国語IME）。macOS GUIビルド専用です。メソッドは全プラットフォームで登録されるためコマンドも全てに表示し、存在しないコマンドとの誤認を防ぎます。他のプラットフォームでは -32015 で即時に失敗し、TISSelectInputSourceに相当する機能がないと説明します。"
+about = "入力ソースを切り替えます（例：韓国語IME）。macOSのGUIビルド専用です"
+long = "入力ソースを切り替えます（例：韓国語IME）。macOSのGUIビルド専用です。\n\nコマンドは全プラットフォームに表示されます。TISSelectInputSourceを利用できない場合は、不明なコマンドのエラーではなく-32015を返します。"
 
 [cli.help._root.debug.switch-input-source.arg.source_id]
 help = "入力ソースID（例：\"com.apple.inputmethod.Korean.2SetKorean\"）"
 
 [cli.help._root.debug.raw-key]
-about = "CGEventで生の物理キーコードを送信。macOS GUIビルド専用"
-long = "CGEventで生の物理キーコードを送信します。macOS GUIビルド専用で、OSのIMEパイプラインを通ります。switch-input-sourceと同じ理由で全プラットフォームにコマンドを表示します。他では -32015 で即時に失敗し、CGEventPostに相当する機能がないと説明します。"
+about = "CGEventとOSのIMEを通じて物理キーコードを送信します。macOSのGUIビルド専用です"
+long = "CGEventとOSのIMEを通じて物理キーコードを送信します。macOSのGUIビルド専用です。\n\nCGEventPostを利用できないプラットフォームでは-32015を返します。"
 
 [cli.help._root.debug.raw-key.arg.keycode]
 help = "macOS仮想キーコード（例：7=KeyX、35=KeyP、49=Space）"
@@ -3036,7 +3036,7 @@ about = "表示順に全ツールメニュー項目を一覧表示"
 about = "キーでツールメニュー項目を実行"
 
 [cli.help._root.debug.tool.invoke.arg.key]
-help = "ツール項目キー（`<plugin_id>/<tool_id>`、例：`com.tasty.clipboard-history/open-viewer`）"
+help = "ツール項目のキーです（`<plugin_id>/<tool_id>`、例：`com.tasty.clipboard-viewer/open-viewer`）"
 
 [cli.help._root.debug.popup]
 about = "pluginポップアップの照会と開閉（debugビルド専用）"
@@ -3177,7 +3177,7 @@ about = "設定モーダルを強制的に開く。タブ/サブタブを指定�
 help = "初期第1階層タブ：general | terminal | appearance | keybindings | file_handler | misc | plugins（既定値：general）"
 
 [cli.help._root.debug.settings.open.arg.subtab]
-help = "選択タブの初期第2階層区分（--tabによる）。例：appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc。不明なキーはタブの既定値を維持"
+help = "選択したタブの初期サブセクションです（--tabによって異なります）。例：appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|input|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc。不明なキーの場合はタブの既定値を維持します"
 
 [cli.help._root.debug.settings.apply]
 about = "実行中の設定に部分パッチを適用：JSONオブジェクトを現在の設定へ深くマージしUpdateSettingsとして送信（設定モーダルの保存と同じ経路でconfig.tomlに永続化）"
@@ -3417,7 +3417,7 @@ help = "eguiキー名（例：`Enter`、`Escape`、`ArrowDown`）"
 help = "押下（既定値）、または `--pressed false` で解放"
 
 [cli.help._root.debug.inject.egui-text]
-about = "egui レイヤーに文字を注入する — フォーカス中のテキストフィールド（コマンドパレットのクエリ、設定のフィルタ）をヘッドレスで埋められる。キー注入ではできない: egui は文字を別のテキストイベントで受け取る。Enter・Tab・Backspace は `egui-key` のままだ"
+about = "GUIビルドでフォーカス中のeguiテキストフィールドに、物理キー入力なしで文字を入力します。Enter、Tab、Backspaceにはegui-keyを使います"
 
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "入力する文字。制御文字は拒否する — 実際の入力経路はそれを運ばず、テキストフィールドも捨てる"
@@ -3935,7 +3935,7 @@ help = "base64 でエンコードしたバイナリ値。--value より優先す
 help = "content type を強制的に決める。デフォルト: text/plain（文字列）、application/json（JSON リテラル）、application/octet-stream（--value-b64 を与えた場合）"
 
 [cli.help._root.memory.put.arg.ttl]
-help = "相対的な TTL（秒）。項目は `now + ttl` ミリ秒で期限切れになる。--expires-at とは併用できない"
+help = "相対TTL（秒）です。--expires-atとは併用できません"
 
 [cli.help._root.memory.put.arg.expires_at]
 help = "絶対的な期限切れ時刻（unix ms）。省略すると何もしない"
@@ -4209,7 +4209,7 @@ help = "その scope の中の secret キー"
 help = "値。JSON としてパースできれば JSON、そうでなければ平文として扱う。`@path` はファイルから読む"
 
 [cli.help._root.memory.secret.put.arg.value_b64]
-help = "content type を強制的に決める"
+help = "Base64でエンコードしたバイナリ値です。--valueより優先されます"
 
 [cli.help._root.memory.secret.put.arg.content_type]
 help = "content type を強制的に決める"
@@ -4728,7 +4728,7 @@ about = "その surface の goal を削除する（idempotent）"
 help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
 
 [cli.help._root.settings]
-about = "グローバル設定 — リモート転送の保存フォルダと容量上限を取得・設定する"
+about = "グローバル設定：ターミナル入力規則とリモート転送の保存先"
 
 [cli.help._root.settings.get-remote-transfer]
 about = "リモート転送（大容量ファイルチャネル）の受信保存フォルダーと容量上限を表示"
@@ -4789,8 +4789,8 @@ about = "人間への引き継ぎ承認ゲート（request/respond/await/cancel/
 long = "人間への引き継ぎ承認ゲート（request/respond/await/cancel/list/get）\n\n生きているゲートはホストより長くは残らない。`request`・`respond`・`await`・`cancel`・`list`・`get` は全てメモリ上のストア 1 つを読み、そのストアは起動のたびに空から始まる。だからホストが止まったとき `pending` だった要求はその後には無い — `list` に出ず、その id で `await` すると「not found」が返る。残るのは書かれた記録で、それを memory store から読むのが `history` だ。`history` はログ、`list` は今答えられるものとして読むこと。"
 
 [cli.help._root.approval.request]
-about = "新しい承認を要求する。成功したら新しい id を表示する"
-long = "新しい承認を要求する。成功したら新しい id を表示する。\n\n勝手に期限切れになるものは無い。`--timeout-ms` を測る場所は `approval await` の中で、要求を時間どおりに `pending` の外へ動かすのはその呼び出しだけだ — 待つ側が居なければ要求は timeout の値がいくつであっても `pending` のまま残り、`approval list --state pending` に出続ける。"
+about = "承認を要求し、作成されたIDを出力します"
+long = "承認を要求し、作成されたIDを出力します。\n\nタイムアウトはapproval awaitで処理します。応答を待つ呼び出しがなければ、pendingの要求は自動では期限切れになりません。"
 
 [cli.help._root.approval.request.arg.title]
 help = "ポップアップや通知に出す題名"
@@ -4909,7 +4909,7 @@ long = "ホストのイベントフィードを位置で読む（fetch, follow�
 
 [cli.help._root.events.fetch]
 about = "ある位置からイベントを読む。応答を 1 つの JSON オブジェクトとして出力する"
-long = "ある位置からイベントを読む。応答を 1 つの JSON オブジェクトとして出力する。\n\nイベントはその `events` 配列にあり、隣に `next_offset` · `epoch` など応答の他のフィールドが並ぶ。1 行に 1 イベントずつ受け取るには `follow` を使う。\n\nカーソルはホストではなく**あなたのもの**だ: 前回の応答の `next_offset` を渡して続きを読む。同じ引数で二度尋ねれば同じ答えが返り、遅い消費者がホスト側に溜めるものはない。\n\nイベントはメモリ上にのみ存在する。再起動すると消え、位置も最初から始まるため、すべての応答が `epoch` を持つ — あなたの offset の出所と異なれば、その offset は前の世代のものだ。"
+long = "指定した位置からイベントを読み、1つのJSONオブジェクトで出力します。\n\nイベントはevents配列に、次の読み取り位置と世代はnext_offsetとepochに入ります。イベントを1行ずつ出力するにはfollowを使います。\n\n前の応答のnext_offsetを渡して読み進めます。読み取りによってホスト側の消費者別カーソルが動いたり、遅い消費者用のキューが作られたりはしません。フィードの更新や保持範囲の変更により、同じ要求の結果が変わることがあります。\n\nイベントはメモリにのみ保存されます。再起動で消去され、位置も最初から始まります。応答のepochが元の位置の世代と異なる場合、その位置を新しい世代にそのまま適用しないでください。"
 
 [cli.help._root.events.fetch.arg.offset]
 help = "読み始める位置。既定は 0、まだ残っているうち最も古い位置"
@@ -5124,11 +5124,11 @@ help = "出力形式: markdown | json (既定: markdown)"
 help = "ipc_calls の上位項目の件数 (既定: 10)"
 
 [cli.help._root.agent]
-about = "エージェント協調 primitive（task DAG。barrier/semaphore/lease/reducer/rate-limit が続く）"
+about = "エージェントのタスク、barrier、semaphore、lease、reducer、呼び出しレート制限を管理します"
 
 [cli.help._root.agent.task-create]
-about = "ワークスペースの中に新しい task を作る"
-long = "ワークスペースの中に新しい task を作る。\n\n作ることは走らせることではない。そのワークスペースの runner を `task-run --action start` で起こすまで何も dispatch されず、誰も代わりに起こしてくれない — 起動時にも起こさない。起こさなければ task は `Ready` に座ったままで、`task-await` は timeout をただ燃やす。"
+about = "ワークスペースにタスクを作成します。まだ実行はしません"
+long = "ワークスペースにタスクを作成します。まだ実行はしません。\n\n`task-run --action start`でワークスペースのrunnerを明示的に起動してください。ホストの起動だけではrunnerは開始されません。runnerがないとReadyのタスクは待機したままとなり、task-awaitがタイムアウトすることがあります。"
 
 [cli.help._root.agent.task-create.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"
@@ -5152,7 +5152,7 @@ help = "メタデータ JSON（自由形式、task に付く）"
 help = "`metadata.semaphore.name` の短縮形 — 同じ semaphore 名が付いた task が同時に何個まで走るかを制限する（残りは permit が空くまで `ready` で待つ）。`--metadata` と一緒に与えると統合され、`--metadata` が既に `semaphore` を決めていれば衝突だ"
 
 [cli.help._root.agent.task-create.arg.reserved_for_fallback]
-help = "この task をまだ参照されていない fallback 候補として予約する: 後から `task-create --on-failure fallback:<この id>` が本体の task を結び付けるまで、どれだけ時間がかかっても `waiting` に留まる（`ready` にならないので runner は dispatch できない）。このフラグが無ければ依存の無い task はすぐ `ready` になり、結び付ける本体が作られる前に runner が一度回れば、その本体の結果と無関係に dispatch されて最後まで走りうる — 2 つの `task-create` 呼び出しのあいだの生成順序の競合を閉じる"
+help = "後のtask-create --on-failure fallback:<this-id>で主タスクに関連付けるまで、fallback候補をwaitingに保ちます。2つの呼び出しの間にrunnerが候補を実行するのを防ぎます。主タスクが関連付けられなければ待機し続けます"
 
 [cli.help._root.agent.task-list]
 about = "ワークスペースの task を並べる"
@@ -5236,8 +5236,8 @@ help = "探す範囲を 1 つのワークスペースに絞る。明示 id は�
 help = "形式: json | dot。デフォルト: json"
 
 [cli.help._root.agent.task-run]
-about = "ワークスペースの agent task runner を起動・停止・確認する。runner は Ready の task を dispatch し、Running の task の完了を検知するホスト側のスレッドだ。同じワークスペースに start を 2 回しても idempotent だ"
-long = "ワークスペースの agent task runner を起動・停止・確認する。runner は Ready の task を dispatch し、Running の task の完了を検知するホスト側のスレッドだ。同じワークスペースに start を 2 回しても idempotent だ。\n\n誰も代わりに起こしてくれない。ホストを起動すると生きているワークスペースの状態は復元するが runner は全て止まったままにする — だから一度も起こしたことの無いワークスペースは何も dispatch しない。\n\n`stop` が止めるのは仕事ではなく検知だ: 既に dispatch されたプロセスは走り続け、その task は終わったことに気付く主体が無いまま `Running` で残る。もう一度 start すればその handle を拾い直して 1 つずつ決着させる — 生きているか、死んでいるか、あるいはその watcher が残しておいた終了コードで。"
+about = "ワークスペースのrunnerを起動・停止し、状態を確認します。startを繰り返しても重複起動しません。ホスト起動時に保存済みの状態は復元されますが、runnerは停止したままです"
+long = "ワークスペースのrunnerを起動・停止し、状態を確認します。startを繰り返しても重複起動しません。ホスト起動時に保存済みの状態は復元されますが、runnerは停止したままです。\n\nrunnerを停止しても、開始済みのプロセスは実行を続け、タスクはRunningのまま残ります。再起動するとハンドルを復元し、プロセスが動いているか、終了結果が保存されているかを確認します。"
 
 [cli.help._root.agent.task-run.arg.workspace_id]
 help = "runner を操作するワークスペース id（フォーカス非依存 — 必須）"
@@ -5297,8 +5297,8 @@ help = "経過時間（created_at、終端の task は finished_at）がこの�
 help = "何も削除せず計画だけ計算して表示する"
 
 [cli.help._root.agent.barrier-create]
-about = "barrier を作る（N 個の signal が集まるまで待つ）"
-long = "barrier を作る（N 個の signal が集まるまで待つ）。\n\nタイマーは動かない。`--timeout-ms` は遅延して押される: barrier が `TimedOut` になるのは次の `barrier-signal`・`barrier-state`・`barrier-list` の中であり、だから誰も尋ねない barrier は置かれたままの状態で座り続ける。押された後は `barrier-signal` が失敗し、記録そのものは `barrier-delete` で消すまで残る。"
+about = "N個の信号を受け取ると完了するbarrierを作成します"
+long = "N個の信号を受け取ると完了するbarrierを作成します。\n\n期限はタイマーではなく、次のbarrier-signal、barrier-state、barrier-listの呼び出しで確認します。期限切れのbarrierは信号を拒否し、barrier-deleteで削除するまで残ります。"
 
 [cli.help._root.agent.barrier-create.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"
@@ -5377,7 +5377,7 @@ help = "permit を取る semaphore 名"
 help = "holder id（空であってはならない）"
 
 [cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
-help = "holder がこのミリ秒のあいだ黙っていたら permit を自動で回収する。同じ holder で取り直せば更新される。省略すると期限切れが無い（デフォルト）"
+help = "permitの有効期間（ミリ秒）です。同じholderで再取得すると更新され、期限切れのpermitはacquire/listの呼び出しで回収されます。省略すると期限はありません"
 
 [cli.help._root.agent.semaphore-release]
 about = "permit を返す。その holder が握っていなければ no-op"
@@ -5579,7 +5579,7 @@ help = "ハンドラを無効化（`true`）または有効化（`false`）す�
 help = "action 全体を JSON で — `get` が出力する形のまま: `{\"kind\":\"ipc_sequence\",\"calls\":[...]}` または `{\"kind\":\"shell_command\",\"command\":\"...\",\"args\":[...]}`"
 
 [cli.help._root.hook-handler.upsert.arg.calls]
-help = "IpcSequence action の短縮形 — calls 配列だけ: `[{\"method\":\"window.focus\",\"params\":{}}]`。`webhook register --sequence` が受け取るのと同じ形だ"
+help = "IpcSequenceの呼び出し配列です。例：[{\"method\":\"system.info\",\"params\":{}}]。webhook register --sequenceと同じ形式です"
 
 [cli.help._root.hook-handler.remove]
 about = "ハンドラのユーザー由来の部分だけを削除する。host・plugin の既定は残る"
@@ -5608,7 +5608,7 @@ help = "ヘッダー置換値のJSONオブジェクト `{\"X-Sig\":\"abc\"}`。�
 help = "クエリ置換値のJSONオブジェクト `{\"token\":\"t\"}`。任意"
 
 [cli.help._root.completion-strategy]
-about = "完了判定ストラテジ — task Custom ディスパッチの完了判定レジストリ（list）"
+about = "登録済みのタスク完了判定方法を一覧表示します"
 
 [cli.help._root.completion-strategy.list]
 about = "登録された全完了戦略を一覧表示（host/plugin/user、無効なものも含む）"
@@ -5852,3 +5852,30 @@ actual = "入力数: {}"
 expected = "必要な数: {}"
 minimum = "最小数: {}"
 suggestion = "候補: {}"
+
+[cli.help._root.settings.get-input-rules]
+about = "アプリごとのShift+Enter規則を一覧表示します"
+
+[cli.help._root.settings.initialize-input-rule]
+about = "存在しない入力規則を一度だけ追加し、その後のユーザーによる変更や削除を保持します"
+
+[cli.help._root.settings.remove-input-rule]
+about = "アプリの入力規則を削除します"
+
+[cli.help._root.settings.set-input-rule]
+about = "アプリのShift+Enterエンコーディングを設定します（true：LF、false：プラットフォームの既定値）"
+
+[cli.help._root.settings.initialize-input-rule.arg.app]
+help = "規則を適用するアプリ名です"
+
+[cli.help._root.settings.initialize-input-rule.arg.shift_enter_newline]
+help = "Shift+EnterをLFでエンコードするか（true）、プラットフォームの既定値を使います（false）"
+
+[cli.help._root.settings.remove-input-rule.arg.app]
+help = "規則を適用するアプリ名です"
+
+[cli.help._root.settings.set-input-rule.arg.app]
+help = "規則を適用するアプリ名です"
+
+[cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
+help = "Shift+EnterをLFでエンコードするか（true）、プラットフォームの既定値を使います（false）"

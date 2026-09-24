@@ -4,15 +4,8 @@
 //! 호스트 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패할 때 진입한다 — 정적 우선,
 //! 정적이 모르는 이름만 plugin CLI에서 찾는다.
 //!
-//! 그 "정적 우선"은 **파싱 순서**의 성질이지 등록의 성질이 아니었다. 호스트와 같은
-//! 이름을 선언한 plugin 도 clap 트리에는 그대로 들어갔고, 그러면 release 에서는
-//! 도달 불가능한 중복 서브커맨드가 조용히 얹혔고 debug 에서는 clap 의 `assert_app`
-//! 이 `command name '<이름>' is duplicated` 로 **CLI 전체를 패닉시켰다** —
-//! `--help` 와 다른 모든 plugin 명령까지 함께 죽었다. 그래서 지금은
-//! [`build_augmented_cli`] 가 등록 시점에 정적 명령 집합과 대조해 겹치는 이름을
-//! 등록하지 않고 경고한다. 막히는 것은 release 에서 이미 도달 불가였던 이름뿐이라
-//! 서드파티가 잃는 기능은 없다. 근거와 대안은
-//! `docs/dev-guide/plugin-development.md#cli--ipc-namespace`.
+//! 호스트 명령과 이름이 겹치는 플러그인 명령은 경고하고 등록하지 않는다.
+//! 중복 등록은 clap의 debug 검증에서 전체 명령 트리를 실패시킬 수 있다.
 
 mod build;
 mod request;

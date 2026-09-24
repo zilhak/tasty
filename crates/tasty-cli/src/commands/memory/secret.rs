@@ -14,7 +14,7 @@ pub enum MemorySecretCommands {
         /// Value. Treated as JSON if it parses, otherwise plain text. `@path` reads from file.
         #[arg(long)]
         value: Option<String>,
-        /// Force content type.
+        /// Base64-encoded binary value. Overrides --value.
         #[arg(long)]
         value_b64: Option<String>,
         /// Force content type.
