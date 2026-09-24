@@ -1,24 +1,5 @@
-//! `resolve_judge` 를 부르는 **모든** 스크립트가 판정기 부재에서 종료 코드를 정해
-//! 두었는가를 묻는다.
-//!
-//! 왜 필요한가: 격하 갈래는 **어디서도 안 돈다.** `script-gates.yml` 은 게이트를
-//! 부르기 전에 판정기를 짓고(`cargo build -p tasty-doc-guards --bin mask-source`),
-//! 훅도 자기 트리의 산출물을 쓴다. 그래서 그 갈래를 바꿔도 초록이 안 변한다 —
-//! 실측: 한 게이트의 `exit 2` 를 `exit 0` 으로 바꿨더니 눈먼 실행이 조용히 통과했고
-//! 어떤 타깃도 빨개지지 않았다. 판정기가 없을 때 **판정 불가(2)** 로 나가지 않으면,
-//! 원문에서 나온 수가 위반으로 보고되고 그 실패문의 처방(면제 주석·상한 올리기)이
-//! 실재하지 않는 결함을 **영구히** 봐주는 자국을 남긴다.
-//!
-//! **목록을 박지 않는다.** `scripts/` 에서 소비자를 세므로, 소비자를 하나 더 만드는
-//! 사람이 이 파일을 안 고쳐도 그 스크립트가 이 물음을 받는다. 상수로 복사해 두면
-//! 새로 들어오는 것이 안 세어진다.
-//!
-//! **예외는 주석이 아니라 여기 목록에 산다.** 스크립트 주석에 적으면 늘리는 비용이
-//! 한 줄이고 리뷰에 안 뜬다 — 사유가 그럴듯하면 진짜 예외와 글자로 구분이 안 된다.
-//! 목록에 두면 늘릴 때 이 파일이 바뀌고, 그 수가 세어진다. **지금 예외는 하나다.**
-//!
-//! `#![cfg(unix)]` 인 이유는 형제 셋과 같다 — `bash` 가 없는 플랫폼에서는 게이트가
-//! 아니라 셸의 부재가 결과를 정한다.
+//! scripts의 resolve_judge 호출을 수집해 판정기 부재 시 측정 실패로 종료하는지 확인한다.
+//! 예외는 EXCEPTIONS에 사유와 함께 등록한다. Bash를 사용하는 Unix 전용 시험이다.
 
 #![cfg(unix)]
 
@@ -28,49 +9,30 @@ use std::process::Command;
 
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 
-/// `scripts/` 의 `.sh` 순회 하한.
-///
-/// 이 가드의 물음은 "소비자 전부가 종료 코드를 정해 뒀는가" 라서, 순회가 죽어 소비자를
-/// 하나도 못 모으면 **위반 0 으로 초록**이 된다 — 지키려던 것이 깨진 그 순간에도.
+/// 스크립트 수집 누락 때문에 소비자가 0개인 채 통과하지 않도록 하한을 둔다.
 const SCRIPT_FLOOR: Floor = Floor {
     min: 16,
     measured: 27,
     measured_on: "2026-09-20",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
-        "eea00637f + 이 커밋 — `scripts/` 아래 `.sh` 를 재귀로 세면 그 트리에서 26 이고 \
-         이 커밋이 하나를 더해 27 이다. 앞선 24 는 **안 잰 값**이었다(`NEVER_COUNTED`): \
-         그 값이 언제 어느 트리의 수였는지가 선언에도 커밋문에도 안 남아 있었고, 그 사이 \
-         좌변이 최소 둘 자라는 동안 여유가 커서 아무것도 안 울었다.",
+        "e3a747ea4 — scripts 아래 .sh를 재귀로 세면 27 개다. 측정 선언과 새 스크립트를 추가한 커밋이며 현재 이력에서 다시 확인할 수 있다.",
     ),
-    why_this_gap: "게이트·러너 스크립트는 회차마다 하나씩 늘고 가끔 하나가 접힌다 — 한 번에 \
-                   크게 움직이는 모수가 아니다. 여유 11 은 그 폭을 견디되, 순회가 `scripts/lib` \
-                   만 보거나 아예 안 내려간 상태는 잡는다. 이 여유는 아무도 고른 적이 없다 — \
-                   하한을 정할 때는 8 이었고 좌변이 자란 만큼 벌어졌다. 폭을 다시 고르는 것은 \
-                   판단이라 여기서 안 한다",
+    why_this_gap: "측정 27 개와 하한 16 사이 여유는 작은 추가·삭제를 허용하고 scripts/lib만 수집하거나 순회를 생략하는 오류를 찾는다. 전체 파일의 수집을 보장하지는 않는다.",
 };
 
-/// 소비자로 세지 않는 파일: `resolve_judge` **정의**가 사는 곳.
+/// resolve_judge 정의 파일은 소비자에서 제외한다.
 const HELPER: &str = "lib/judge-bin.sh";
 
-/// 판정기 부재에서 2 로 안 나가는 것이 **옳은** 소비자. 이름과 **사유**를 함께 둔다.
-/// 사유 없는 항목은 아래 테스트가 막는다.
 const EXCEPTIONS: &[(&str, &str)] = &[(
     "check-plugin-version-bump.sh",
-    "일부러 넓게 본다. 여섯 게이트 중 pre-commit 이 부르는 유일한 것이라 갓 클론한 \
-     트리에서 판정기가 없는 것이 정상 상황이고, 거기서 2 로 죽으면 커밋이 막힌다. \
-     넓게 본 결과는 조용한 통과가 아니라 오탐(테스트 전용 변경이 bump 를 요구)이며, \
-     그 처방인 patch +1 은 아무것도 헐겁게 만들지 않는다. 그 선택 자체는 \
-     tests/plugin_version_bump_channel.rs 가 값으로 박는다.",
+    "pre-commit은 갓 복제한 저장소처럼 판정기가 없는 환경에서도 실행된다. 이때 원문을 넓게 검사해 test 전용 변경에도 버전 증가를 요구할 수 있지만 제품 변경을 누락하지 않는 쪽을 택한다. 해당 동작은 tests/plugin_version_bump_channel.rs에서 검사한다.",
 )];
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// `(스크립트 파일명, 판정기 환경변수)` 를 `scripts/` 에서 센다.
-///
-/// 호출 줄만 본다 — 주석 안의 사용례(`#   resolve_judge …`)와 산문을 찍는 `echo` 는
-/// 줄 앞에 다른 것이 오므로 걸리지 않는다.
+/// 공백을 뺀 줄이 resolve_judge 호출로 시작하는 경우만 수집한다. 주석·echo 내부 예시는 제외된다.
 fn consumers() -> Vec<(String, String)> {
     let dir = root().join("scripts");
     let scripts = walk_with_floor(
@@ -84,10 +46,6 @@ fn consumers() -> Vec<(String, String)> {
 
     let mut found: Vec<(String, String)> = Vec::new();
     for w in scripts {
-        // 구분자는 공용 순회가 이미 `/` 로 폈다. 여기서 다시 펴면 안 된다 — 그 자리를
-        // `floored_walk_consumers_do_not_renormalize` 가 짚는다. 안 폈다면 Windows 에서
-        // `lib\\judge-bin.sh` 가 남아 아래 비교가 조용히 빗나가고, **정의가 사는 파일이
-        // 소비자로 세어진다** — 예외도 실패도 아닌 오답이다.
         if w.rel == HELPER {
             continue;
         }
@@ -110,12 +68,7 @@ fn consumers() -> Vec<(String, String)> {
     found
 }
 
-/// `cargo` 를 가로채는 디렉토리를 만든다.
-///
-/// 소비자 중 하나(`masked-tree.sh`)는 판정기가 없으면 **짓는다.** 그 줄을 그대로 돌리면
-/// `cargo test` 안에서 중첩 cargo 가 빌드 디렉토리 잠금을 두고 서로를 기다린다. 스텁을
-/// 물리면 그 갈래가 "지어도 여전히 없다" 로 흘러 자기 종료 코드에 닿는다. **이름으로
-/// 가르지 않고 모든 소비자에 똑같이 물린다** — 이름 목록은 또 하나의 안 세어지는 표다.
+/// 없는 도구를 빌드하려는 소비자가 바깥 Cargo 잠금을 기다리지 않도록 성공하는 Cargo 스텁을 주입한다.
 fn stub_cargo() -> tempfile::TempDir {
     let d = tempfile::tempdir().expect("임시 디렉토리");
     let p = d.path().join("cargo");
@@ -148,10 +101,9 @@ fn run_blind(script: &str, env_var: &str, stub: &Path) -> (i32, String) {
 fn every_judge_consumer_pins_its_absence_branch() {
     let stub = stub_cargo();
     let all = consumers();
-    // 셈이 깨지면 이 테스트는 아무것도 안 물은 채 초록이 된다.
     assert!(
         !all.is_empty(),
-        "scripts/ 에서 resolve_judge 소비자를 하나도 못 셌다 — 세는 줄이 깨졌다"
+        "scripts에서 resolve_judge 호출을 찾지 못했다. 경로와 호출 형식을 확인한다."
     );
     let mut bad = Vec::new();
     for (script, env_var) in &all {
@@ -165,10 +117,7 @@ fn every_judge_consumer_pins_its_absence_branch() {
     }
     assert!(
         bad.is_empty(),
-        "판정기가 없는데 판정 불가(2)로 안 나간다. 2 가 아닌 rc 는 그 값을 **판정**으로 \
-         쓰겠다는 뜻이고, 그 실패문의 처방이 실재하지 않는 결함을 영구히 봐준다. \
-         일부러 그런 소비자라면 이 파일의 EXCEPTIONS 에 사유와 함께 적어라 — \
-         스크립트 주석에 적지 마라:\n{}",
+        "판정기가 없는데 측정 실패(2)로 종료하지 않았다. 원문으로 대신 판정해야 하는 소비자는 EXCEPTIONS에 구체적인 사유를 등록한다:\n{}",
         bad.join("\n---\n")
     );
 }
@@ -179,8 +128,7 @@ fn the_exception_list_names_only_real_consumers() {
     for (name, _) in EXCEPTIONS {
         assert!(
             all.iter().any(|(script, _)| script == name),
-            "EXCEPTIONS 의 '{name}' 은 더 이상 resolve_judge 를 안 부른다 — 지워라. \
-             안 지우면 예외의 수가 실제보다 커 보인다"
+            "예외 {name}이 더 이상 resolve_judge를 호출하지 않는다. 오래된 항목을 제거한다."
         );
     }
 }
@@ -195,30 +143,14 @@ fn every_exception_carries_a_reason() {
     }
 }
 
-/// ★ 종료 코드만으로는 이 가드가 지키려는 것을 안 잰다 — **처방까지 요구한다.**
-///
-/// 위 시험은 rc=2 만 본다. 그런데 이 파일의 머리말이 위험을 두는 자리는 종료 코드가
-/// 아니라 **실패문의 처방**이다("그 실패문의 처방(면제 주석·상한 올리기)이 실재하지
-/// 않는 결함을 영구히 봐주는 자국을 남긴다"). 지키려는 것이 처방인데 재는 것이 rc 뿐이면,
-/// **처방이 통째로 없는 상태가 그 사이로 지나간다.**
-///
-/// 실측(2026-09-08): 판정기를 안 보이게 하고 여섯 셸 게이트를 돌렸더니 다섯은 재빌드
-/// 명령을 찍고 `check-file-size.sh` 만 안 찍었다 — rc 는 다섯과 같은 2 라 위 시험은
-/// 초록이었다. 그 자리에 처음 선 사람은 무엇이 없는지도 모른 채 값을 읽게 된다.
-///
-/// **무엇을 요구하는가.** 판정기 이름이 든 `cargo build -p tasty-doc-guards --bin <이름>`
-/// 한 줄이다. 그 이름은 게이트가 `resolve_judge` 에 넘긴 것과 같아야 한다 — 다른 판정기를
-/// 지으라고 하면 명령이 있는 것이 없는 것보다 나쁘다(따라도 안 고쳐지고, 안 고쳐진 이유가
-/// 안 보인다). 그래서 **소비자 목록에서 읽은 이름**으로 맞춘다. 문구 전체를 걸지 않는
-/// 이유는 그것이 게이트마다 다르고 달라도 되기 때문이다 — 만지지 말라고 할 레버가
-/// 게이트마다 다르다(면제 주석 · 상한 · allowlist).
+/// 종료 코드만으로는 복구 방법을 알 수 없어 해당 판정기를 빌드하는 명령도 요구한다.
 #[test]
 fn every_judge_consumer_says_what_to_build() {
     let stub = stub_cargo();
     let all = consumers();
     assert!(
         !all.is_empty(),
-        "scripts/ 에서 resolve_judge 소비자를 하나도 못 셌다 — 세는 줄이 깨졌다"
+        "scripts에서 resolve_judge 호출을 찾지 못했다. 경로와 호출 형식을 확인한다."
     );
     let mut bad = Vec::new();
     for (script, env_var) in &all {
@@ -234,17 +166,11 @@ fn every_judge_consumer_says_what_to_build() {
     }
     assert!(
         bad.is_empty(),
-        "판정기가 없을 때 **무엇을 지으라는 말이 없다.** rc=2 는 값을 쓰지 말라는 \
-         뜻일 뿐이고, 그 자리에 선 사람이 다음에 할 일을 안 알려주면 대신 눈에 보이는 \
-         레버(면제 주석 · 상한 · allowlist)를 만지게 된다 — 그것이 이 가드가 막으려는 \
-         자국이다. 그 판정기 이름이 든 `cargo build -p tasty-doc-guards --bin <이름>` \
-         한 줄을 실패문에 넣어라:\n{}",
+        "판정기가 없을 때 해당 도구의 빌드 명령을 안내해야 한다. cargo build -p tasty-doc-guards --bin <이름>을 실패 진단에 포함한다:\n{}",
         bad.join("\n---\n")
     );
 }
 
-/// 그 스크립트가 `resolve_judge` 에 넘긴 판정기 이름. 외우지 않고 소스에서 읽는다 —
-/// 외우면 판정기가 하나 늘거나 이름이 바뀌는 날 이 시험이 조용히 다른 것을 재게 된다.
 fn judge_name(script: &str) -> String {
     let text = fs::read_to_string(root().join("scripts").join(script))
         .unwrap_or_else(|e| panic!("{script} 를 못 읽는다: {e}"));
