@@ -27,7 +27,7 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 
 #### debug ↔ release 격리 (현재 구현)
 
-> 이 표가 격리 경로의 **기준 설명** 다. 다른 문서는 이 표를 풀-복제하지 말고 "debug 는 별도 루트(`~/.tasty-debug/`)로 격리됨" + 이 문서 링크로 참조한다.
+> 이 표가 격리 경로의 **기준 설명**이다. 다른 문서는 이 표를 풀-복제하지 말고 "debug 는 별도 루트(`~/.tasty-debug/`)로 격리됨" + 이 문서 링크로 참조한다.
 
 **데이터 루트 자체가 갈린다** — debug 빌드는 `~/.tasty-debug/`, release 는 `~/.tasty/` 를 쓴다. 같은 디렉토리 안의 파일명 접미사가 아니라 **루트 디렉토리 분리**라, 포트·layout·scrollback·state.db·memory.db·plugins 가 통째로 별도다:
 

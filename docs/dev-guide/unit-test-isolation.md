@@ -339,9 +339,8 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 - 자식 셸 프로세스 하나와 그 PTY(master `/dev/ptmx` + slave `/dev/pts/N`).
 - PTY 마다 exit-watcher OS 스레드 하나(`src/core/pty_registry.rs`).
 - `std::process::Command::spawn` 이 exec 결과를 부모에게 알리려고 내부에서 만드는
-  AF_UNIX SEQPACKET socketpair 한 쌍. **이것은 우리 코드의 채널이 아니다** — 그래서
-  "socketpair 한 번 = 자식 프로세스 spawn 한 번" 이라는 등식이 성립하고, 아래 명령이
-  spawn 횟수를 그대로 센다.
+  AF_UNIX SEQPACKET socketpair 한 쌍. 이 spawn 경로에서 관측할 수 있는 보조 지표다.
+  아래 명령으로 소켓 생성 횟수를 세되, 실제 spawn 호출과 대조해 해석한다.
 
 <a id="몇-번-띄우는지는-이렇게-센다"></a>
 <a id="안-쟀다--그-총수의-귀속-그리고-재려면-무엇이-필요한가"></a>

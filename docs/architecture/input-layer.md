@@ -92,7 +92,7 @@ egui 패스(`src/adapters/ui/draw.rs`)가 프레임 N에서 이 열기 요청을
 
 ### (a) `Order` — 5단 고정 tier
 
-egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` / `Debug`, egui 0.31.1 `layers.rs`)으로 그리기 순서를 5단으로 고정한다 — **enum 선언 순서 그대로**, 매 프레임 무조건 그 순서로 그린다. tasty 의 Popup/Modifier-hint/Banner/egui 위젯(사이드바·탭바·상태바)은 중 Popup·Modifier-hint·Banner·탭바·상태바는 `Order::Foreground` 안에 있다. 이들의 상대 순서는 `Order`만으로 정할 수 없다. 사이드바의 SidePanel은 Background에 속한다. Divider/Terminal(6/7)은 다른 tier(`Middle` 이하)라 애초에 범위 밖이다.
+egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` / `Debug`, egui 0.31.1 `layers.rs`)으로 그리기 순서를 5단으로 고정한다 — **enum 선언 순서 그대로**, 매 프레임 무조건 그 순서로 그린다. tasty의 Popup·Modifier-hint·Banner·탭바·상태바는 `Order::Foreground` 안에 있다. 이들의 상대 순서는 `Order`만으로 정할 수 없다. 사이드바의 SidePanel은 Background에 속한다. Divider/Terminal(6/7)은 다른 tier(`Middle` 이하)라 애초에 범위 밖이다.
 
 ### (b) 같은 tier 안의 순서 — `Areas::order` + `move_to_top`
 
@@ -176,7 +176,7 @@ host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Area
 
 왜 조합이 다른가:
 
-- **키보드/IME 경로** 는 "이 키 이벤트를 egui 로 줄지, 중앙 디스패처(터미널/단축키)로 줄지" 를 결정하는 전달 경로를 결정한다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가" 라는 넓은 정의가 필요하다.
+- **키보드/IME 판정**은 키 이벤트를 egui와 중앙 디스패처(터미널/단축키) 중 어디로 보낼지 정한다. 이 앱은 키를 기본적으로 egui 에 주지 않으므로, "지금 텍스트 입력을 받는 오버레이가 있는가" 라는 넓은 정의가 필요하다.
 - **마우스** 는 `src/view/main.rs` 의 이벤트 분기에서 **항상 무조건** egui 로 먼저 전달되고 `egui_consumed` 로 결과를 받는다 — 라우팅 전제 자체가 없다. Popup 위 클릭은 이미 `egui_consumed`/`popup_hovered`(위치 기반)로 정확히 처리되므로, 여기 남은 항은 **모달(별도 OS 창) 전용** 보강 게이트일 뿐이다. `has_input_dialog_open()`(rename, popup 시스템으로 구현됨)과 `popups.has_focused()` 는 정책상 Popup 이 비모달이라 위치 밖 클릭까지 막을 이유가 없어 안 들어간다.
 - **WebView** 는 입력이 아니라 **표시** 질문이다. WebView 는 OS 네이티브 자식 뷰라 wgpu 표면 **위**에 있어 "안 그리는 것" 만으로는 사라지지 않는다 — `set_visible(false)` 가 필요하고 그 게이트가 이 함수다. 그래서 popup 을 `has_focused()` 가 아니라 `has_visible_open()` 으로 넓게 본다.
 

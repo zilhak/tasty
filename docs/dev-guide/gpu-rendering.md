@@ -134,7 +134,7 @@ per-surface 위치 정보가 인스턴스에 들어가 있으므로 uniform 은 
 | egui 내부 delay 0 즉시 repaint | `EguiAnimation` | 주사율까지 coalesce | `AppEvent::EguiRepaint` 핸들러 |
 | attach mirror 갱신 | `AttachMirror` | 주사율까지 coalesce | `src/app/attach_poll.rs`, `src/app/attach_client.rs` |
 
-사용자 조작으로 발생한 요청을을 즉시 처리하는 이유는 반응성이다 — 여기에 상한을 걸면 타이핑·클릭 지연이 그대로 늘어난다. 나머지는 주사율 안에서 합쳐 불필요한 프레임 요청을 줄인다.
+사용자 조작으로 발생한 요청을 즉시 처리하는 이유는 반응성이다 — 여기에 상한을 걸면 타이핑·클릭 지연이 그대로 늘어난다. 나머지는 주사율 안에서 합쳐 불필요한 프레임 요청을 줄인다.
 
 ### 상한값
 

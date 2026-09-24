@@ -243,11 +243,11 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 - owner를 찾거나 권한을 검사할 때는 기동하지 않는다. 이미 running인 owner/extension은 다시 시작하지 않는다. 매칭 hook이 없거나 self-loop/backoff로 우회되면 그 extension을 기동할 이유도 없다.
 - 설치·enable·grant·사용자 설정 저장은 namespace 준비 경로에 없다. 다른 namespace를 호출해 agent-stream의 저장된 SSE가 우연히 재개되는 동작에 의존하지 않는다. 재개하려는 plugin을 명시적으로 사용하거나 Local enable 경로로 시작한다.
 - GUI의 첫 창에서 활성 plugin을 시작하는 기존 부팅 정책과 attach mesh mirror의 별도 기동 트리거는 유지한다. **호출로 인한 추가 기동**은 GUI/headless 공통 manager가 같은 범위로 처리한다.
-- 권한 해소 순서는 기존 `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → 등록 plugin prefix다. 표에 있는 `image.list` 같은 이름의 권한을 `ipc.invoke`로 대체하지 않는다. 거부·cap·rate·허용된 요청의 사용량 집계은 [ADR-0012](../adr/0012-request-admission-and-isolation.md)의 공통 진입 검사를 유지한다.
+- 권한 해소 순서는 기존 `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → 등록 plugin prefix다. 표에 있는 `image.list` 같은 이름의 권한을 `ipc.invoke`로 대체하지 않는다. 거부·cap·rate·허용된 요청의 사용량 집계는 [ADR-0012](../adr/0012-request-admission-and-isolation.md)의 공통 진입 검사를 유지한다.
 
 ## Audit log
 
-입장 검사에서 허용된 요청의 사용량 집계과 거절 기록을 한 번씩 수행한다. 디스크에는 Deny만 보존한다. 보존 기간과 한도는 [저장소의 관측 로그 보존](../design/systems/storage.md#관측-로그-보존)을 따른다. 공통 게이트 뒤의 namespace 검증 거절까지 같은 감사 경로에 들어가는지는 별도 확인 대상이다.
+입장 검사에서 허용된 요청의 사용량 집계와 거절 기록을 한 번씩 수행한다. 디스크에는 Deny만 보존한다. 보존 기간과 한도는 [저장소의 관측 로그 보존](../design/systems/storage.md#관측-로그-보존)을 따른다. 공통 게이트 뒤의 namespace 검증 거절까지 같은 감사 경로에 들어가는지는 별도 확인 대상이다.
 
 ### 텔레메트리 기록 정책
 

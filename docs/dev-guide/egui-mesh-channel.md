@@ -738,7 +738,7 @@ banner chrome(컨테이너/border/close X/카운트다운/그림자)과 **스택
 content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 identity 경계).
 plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지점**을 그대로 타고,
 `BannerState.content` 만 `BannerContentSource::{Host, PluginMesh{..}}` 로 분기한다 — 별도
-큐 을 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`
+큐를 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`
 (`Host(&'static str)` / `Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다.
 
 ### popup 대비 차이

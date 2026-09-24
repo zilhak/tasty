@@ -26,7 +26,7 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 셸 자산 정적 검사 | `bash scripts/check-shell-assets.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. install-shellcheck.sh로 도구를 준비한다. 추적 셸 자산을 검사하며 staged 훅은 새 파일도 확인한다. warning 이상은 실패, 도구 부재는 rc 2다. | 등급 미정 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR · 수동. 문서는 제외하되 `src/`·`lang/`·`assets/` 아래 `.md`를 포함한다. path 의존성 변경도 검사하며 패턴 순서가 중요하다. 잡이 strip-cfg-test를 먼저 빌드한다. staged 검사와 push 범위 검사는 구분한다([릴리스](release.md#플러그인-버전-비교)). | [실측] |
-| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push·PR(`Cargo.lock`·`deny.toml` 변경), 매주 월 09:00 UTC, 수동. 의존성 변경은 push에서, 새 외부 권고는 주기 실행에서 확인한다. | [실측] |
+| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push는 `Cargo.lock`·`deny.toml` 변경 시, main 대상 PR은 경로 필터 없이 실행한다. 매주 월 09:00 UTC와 수동 실행도 지원한다. 의존성 변경은 push에서, 새 외부 권고는 주기 실행에서 확인한다. | [실측] |
 | 사이트 빌드 | `npm ci && npm run build && npm run check-links` (`site/`) | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
 ### 로컬에서 이 게이트들을 돌리기 전에 — **판정기부터**

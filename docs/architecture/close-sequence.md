@@ -59,7 +59,7 @@ GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. �
 | 워크스페이스가 비면 재생성 | 한다 | 한다 |
 | C5 계측 · `close_total` 기록 | `cascade_surface_closed` 만 | 안 한다 |
 | `surface.created` / `pane.split` / `pane.created` / `tab.created` host event (split · 탭 생성) | 한다 | **안 한다** |
-| 사용자 origin 의 split 포커스 이동 | 한다 | 한다 — headless 에는 `User` origin을 만드는 호출자이 없어 닿지 않는다 |
+| 사용자 origin 의 split 포커스 이동 | 한다 | 한다 — headless 에는 `User` origin을 만드는 호출자가 없어 닿지 않는다 |
 | 튜토리얼 관찰 (split) | 한다 | 안 한다 (튜토리얼이 gui 전용) |
 
 **차이를 가르는 것은 "그 통지에 소비자가 있는가" 하나다.** headless 에는 두 큐를 plugin
