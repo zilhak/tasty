@@ -1,5 +1,4 @@
-//! Barrier store wrapper. handler 의 `core.with_memory + BarrierStore::new`
-//! 조립을 본 모듈로 흡수.
+//! Core의 메모리 저장소로 barrier를 생성·조회·갱신한다.
 
 use tasty_agent::{AgentError, Barrier, BarrierState, BarrierStore};
 use tasty_memory::HOST_OWNER;
@@ -8,7 +7,6 @@ use crate::core::Core;
 use crate::core::CoreState;
 
 impl Core {
-    /// Barrier 생성.
     pub(crate) fn barrier_create(
         &self,
         workspace_id: u32,
@@ -23,12 +21,7 @@ impl Core {
         })
     }
 
-    /// Barrier 신호 1회 누적.
-    ///
-    /// 이 호출이 요구 수를 채우면 barrier 가 닫히고, 그 사실이 사건 피드에 적힌다.
-    /// **닫힘은 여기서만 일어난다** — `BarrierStore::signal` 이 `Closed` 를 쓰는
-    /// 유일한 자리이고 그 함수의 호출자도 이것 하나다. 시간 초과는 전이가 일어나는
-    /// 순간이 없어(읽는 쪽이 시계를 견줄 때 도장이 찍힌다) 사건이 안 된다.
+    /// 신호가 요구 수를 채우면 Closed 이벤트를 큐에 넣는다. timeout 갱신은 이벤트를 만들지 않는다.
     pub(crate) fn barrier_signal(
         &self,
         engine: &CoreState,
@@ -54,7 +47,7 @@ impl Core {
         result
     }
 
-    /// Barrier 현 상태 조회 (timeout 도장 적용 포함이므로 mut store).
+    /// 조회하면서 만료 상태도 저장할 수 있다.
     pub(crate) fn barrier_state(
         &self,
         workspace_id: u32,
@@ -67,7 +60,7 @@ impl Core {
         })
     }
 
-    /// Workspace 내 모든 Barrier 나열. `now_ms` 가 `Some` 이면 timeout 도장 적용.
+    /// now_ms가 있으면 만료 상태를 반영한 목록을 반환한다.
     pub(crate) fn barrier_list(
         &self,
         workspace_id: u32,
@@ -79,7 +72,6 @@ impl Core {
         })
     }
 
-    /// Barrier 삭제. 존재하지 않으면 no-op.
     pub(crate) fn barrier_delete(&self, workspace_id: u32, name: &str) -> Result<(), AgentError> {
         self.with_memory(|mem| {
             let mut store = BarrierStore::new(mem, HOST_OWNER);

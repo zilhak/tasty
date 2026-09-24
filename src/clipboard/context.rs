@@ -1,6 +1,5 @@
-//! 시스템 클립보드 wrapper — 터미널 선택 복사 / vi-copy / OSC52 / 붙여넣기에 사용.
+//! 터미널 복사·붙여넣기에 사용하는 시스템 클립보드.
 
-/// Wrapper for the system clipboard (arboard).
 pub(crate) struct ClipboardContext {
     inner: arboard::Clipboard,
 }
@@ -24,9 +23,7 @@ impl ClipboardContext {
         }
     }
 
-    /// Linux primary selection (vim `*` register). Other OSes fall back to
-    /// the regular system clipboard since they have no primary-selection
-    /// concept.
+    /// Linux primary selection에 복사한다. 다른 OS에서는 일반 클립보드를 사용한다.
     pub(crate) fn set_text_primary(&mut self, text: &str) {
         #[cfg(target_os = "linux")]
         {

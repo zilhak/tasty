@@ -340,7 +340,7 @@ fn intercept_debug_app_layer(
     None
 }
 
-/// 메타데이터에서 namespace 소유자를 찾은 뒤 활성 owner와 일치하는 IPC hook extension만 준비한다.
+/// 메타데이터에서 namespace 소유자를 찾은 뒤 활성 owner와 요청에 맞는 IPC hook extension을 준비한다.
 /// 미등록 prefix는 시작하지 않는다. 등록된 prefix 안의 메서드 유효성은 owner가 판단한다.
 /// 표에 등록된 Mutate만 멱등 키를 처리하며 플러그인 고유 메서드는 개입하지 않는다.
 #[cfg(not(feature = "gui"))]

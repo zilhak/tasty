@@ -1,15 +1,5 @@
-//! Completion strategy TOML/manifest schema (파일 핸들러/훅 핸들러 `config.rs`
-//! 미러 — 상세: `docs/dev-guide/agent-runner.md` "완료 판정 전략 레지스트리").
-//!
-//! 훅 핸들러와 달리 actor(host/plugin/user)별 spec 종류 차이가 없다 — poll/push
-//! 둘 다 세 출처 모두 선언 가능하다(셸 action 처럼 특정 actor 만 배제하는 불변식이
-//! 없음). 그래서 `HookHandlerDecl<A>` 같은 actor-generic 래퍼 대신 concrete
-//! `CompletionStrategyDecl` 하나만 둔다 — 필요 없는 제네릭은 만들지 않는다.
-//!
-//! push 형의 `notify_via` owner 제한(자기 자신 또는 `host`)과 poll 형의
-//! `poll_method`/`default_for_methods` namespace 제한(결정 2·6)은 스키마
-//! 차원이 아니라 owner 컨텍스트가 있어야 판정 가능하므로 `registry.rs` finalize
-//! 단계에서 강제한다.
+//! host·plugin·user가 선언하는 완료 판정 전략. 모두 poll과 push를 사용할 수 있다.
+//! owner가 필요한 namespace·notify_via 검증은 레지스트리 병합 뒤에 한다.
 
 use std::fmt;
 
@@ -21,45 +11,34 @@ use super::types::{
 };
 use crate::core::agent::completion_strategy::completion_strategy_to_poll_spec;
 use crate::hook_handler::HookHandlerId;
-/// 트랙 A(`tasty-plugin-manifest`)가 CLI `AutoWaitDecl.strategy` 경로용으로 이미
-/// 정의한 poll decl 타입 — 필드 대응 단일 지점(§A-3)을 그대로 재사용한다. 본
-/// 파일의 `CompletionStrategyDecl`(plugin contribution 최상위 decl)과 이름이
-/// 겹치므로 별칭을 둔다.
+/// CLI 자동 대기와 같은 poll 선언을 사용한다. 최상위 전략 선언과 이름이 겹쳐 별칭을 둔다.
 use tasty_plugin_manifest::CompletionStrategyDecl as PollStrategyDecl;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CompletionStrategyDecl {
-    /// short-name. 전역 id 로 합쳐질 때 `<owner_prefix>/<short-name>` 이 된다.
+    /// 전역 ID는 owner prefix와 이 짧은 이름을 /로 연결한다.
     pub id: String,
     pub priority: i32,
     #[serde(default)]
     pub display_name_i18n_key: Option<String>,
     #[serde(default)]
     pub disabled: bool,
-    /// 이 전략이 기본 판정이 되는 IPC 메서드 목록(결정 6). 비어 있으면 이름으로만
-    /// 참조 가능.
+    /// 기본 전략으로 연결할 IPC 메서드. 비어 있으면 이름을 지정해야 한다.
     #[serde(default)]
     pub default_for_methods: Vec<String>,
     pub spec: CompletionStrategySpecDecl,
 }
 
-/// poll/push 둘 중 하나 — `[contributes.completion_strategy.spec] kind = "poll" | "push"`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CompletionStrategySpecDecl {
-    /// 자체 폴링. 필드 의미·기본값은 트랙 A 의 [`PollStrategyDecl`]
-    /// (`tasty_plugin_manifest::CompletionStrategyDecl`)을 그대로 재사용한다 —
-    /// 여기서 필드를 다시 나열하면 두 크레이트가 같은 개념을 독립적으로 정의하는
-    /// 중복이 재발한다(Gate4 리뷰 지적).
+    /// CLI 자동 대기와 필드·기본값을 공유한다.
     Poll(PollStrategyDecl),
-    /// 외부 보고. `notify_via` 는 훅 핸들러 id(`<owner>/<short>`) 문자열.
+    /// 외부 완료 보고. notify_via는 보고를 받을 훅 핸들러 ID다.
     Push { notify_via: String, timeout_ms: u64 },
 }
 
-/// decl → 런타임 `CompletionStrategyKind` 변환. **단일 지점** — poll 형은 트랙 A
-/// 가 만든 [`completion_strategy_to_poll_spec`]으로 위임한다(필드 대응은 그
-/// 함수의 단위테스트가 고정). 필드 대응이 어긋나면 그 테스트가
-/// 깨진다.
+/// poll 선언 변환은 completion_strategy_to_poll_spec을 공유한다.
 impl From<CompletionStrategySpecDecl> for CompletionStrategyKind {
     fn from(d: CompletionStrategySpecDecl) -> Self {
         match d {
@@ -77,7 +56,6 @@ impl From<CompletionStrategySpecDecl> for CompletionStrategyKind {
     }
 }
 
-/// Completion strategy decl schema 검증 실패 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionStrategyDeclError {
     InvalidShortName(String),
@@ -107,7 +85,6 @@ pub fn validate_completion_strategy_decl(
     Ok(())
 }
 
-/// owner prefix 를 씌워 전역 id 를 만든다 (`install_host`/`install_plugin` 공용).
 pub fn global_id(owner: &CompletionStrategyOwner, short: &str) -> CompletionStrategyId {
     CompletionStrategyId(format!("{}/{}", owner.prefix(), short))
 }
@@ -160,7 +137,7 @@ mod tests {
             kind = "push"
             notify_via = "host/webhook-notify"
         "#;
-        // timeout_ms 없음 — push 는 timeout 필수(타입 레벨, Option 아님)이므로 파싱 실패.
+        // push는 timeout_ms를 생략할 수 없다.
         assert!(parse(t).is_err());
     }
 
@@ -188,8 +165,7 @@ mod tests {
         }
     }
 
-    /// bundled plugin 매니페스트에서 `[[contributes.completion_strategy]]` 만
-    /// 뽑아내는 최소 wrapper. 다른 `contributes.*` 필드는 무시한다.
+    /// 실제 매니페스트에서 완료 전략만 읽는다. 다른 contributes 항목은 무시한다.
     #[derive(Deserialize)]
     struct BundledManifestProbe {
         contributes: BundledContributesProbe,
@@ -201,11 +177,6 @@ mod tests {
         completion_strategy: Vec<CompletionStrategyDecl>,
     }
 
-    /// `crates/<plugin_crate>/tasty-plugin.toml` 을 실제로 읽어 파싱한다.
-    /// 이 회귀 테스트가 지키려는 것은 "코드가 올바르다"가 아니라 "매니페스트
-    /// 선언 자체가 올바르다" — `claude/spawn-wait`·`codex/spawn-wait` 의
-    /// `map_from_response` 가 다시 빠지면(예: 무심코 되돌리는 편집) 여기서
-    /// 잡는다.
     fn load_bundled_completion_strategies(plugin_crate: &str) -> Vec<CompletionStrategyDecl> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("crates")
@@ -229,10 +200,7 @@ mod tests {
         }
     }
 
-    /// 회귀 테스트: `claude.spawn` 응답의 `child_surface_id` 가 `claude.state`
-    /// 폴링 호출의 `surface_id` 파라미터로 매핑되어 있어야 한다. 매핑이 없으면
-    /// poll params 가 비어 `claude.state` 가 "Missing required 'surface_id'
-    /// parameter" 로 매 tick 실패한다.
+    /// spawn 응답의 child_surface_id를 claude.state의 surface_id로 넘겨야 한다.
     #[test]
     fn claude_spawn_wait_manifest_maps_child_surface_id_to_surface_id() {
         let strategies = load_bundled_completion_strategies("tasty-plugin-claude");
@@ -245,9 +213,7 @@ mod tests {
         );
     }
 
-    /// 회귀 테스트: `codex.spawn` 응답의 `child_surface_id` 가 `codex.state`
-    /// 폴링 호출의 `surface` 파라미터로 매핑되어 있어야 한다 (claude 와 키
-    /// 이름이 다르다).
+    /// codex.state는 claude와 달리 대상 인자 이름이 surface다.
     #[test]
     fn codex_spawn_wait_manifest_maps_child_surface_id_to_surface() {
         let strategies = load_bundled_completion_strategies("tasty-plugin-codex");

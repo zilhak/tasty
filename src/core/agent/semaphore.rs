@@ -1,5 +1,4 @@
-//! Semaphore store wrapper. handler 의 `core.with_memory + SemaphoreStore::new`
-//! 조립을 본 모듈로 흡수.
+//! Core의 메모리 저장소에서 동시 점유 수를 제한한다.
 
 use tasty_agent::{AcquireOutcome, AgentError, ReleaseOutcome, Semaphore, SemaphoreStore};
 use tasty_memory::HOST_OWNER;
@@ -7,7 +6,6 @@ use tasty_memory::HOST_OWNER;
 use crate::core::Core;
 
 impl Core {
-    /// Semaphore 생성.
     pub(crate) fn semaphore_create(
         &self,
         workspace_id: u32,
@@ -21,7 +19,7 @@ impl Core {
         })
     }
 
-    /// 한도 조정. 축소는 drain — 기존 홀더를 강제 회수하지 않는다.
+    /// 한도를 줄여도 기존 점유자를 강제로 내보내지 않는다.
     pub(crate) fn semaphore_set_permits(
         &self,
         workspace_id: u32,
@@ -35,7 +33,7 @@ impl Core {
         })
     }
 
-    /// Semaphore permit 점유 시도. `ttl_ms` 를 주면 그 홀더는 만료 후 회수된다.
+    /// ttl_ms가 있으면 만료 시각을 저장하고 이후 acquire·list 등에서 회수한다.
     pub(crate) fn semaphore_acquire(
         &self,
         workspace_id: u32,
@@ -50,7 +48,6 @@ impl Core {
         })
     }
 
-    /// Semaphore permit 반환.
     pub(crate) fn semaphore_release(
         &self,
         workspace_id: u32,
@@ -63,7 +60,7 @@ impl Core {
         })
     }
 
-    /// Workspace 내 모든 Semaphore 나열. 조회 시점에 만료된 홀더를 회수한다.
+    /// 목록을 읽으면서 만료된 점유자를 제거한다.
     pub(crate) fn semaphore_list(
         &self,
         workspace_id: u32,
@@ -75,7 +72,6 @@ impl Core {
         })
     }
 
-    /// Semaphore 삭제. 존재하지 않으면 no-op.
     pub(crate) fn semaphore_delete(&self, workspace_id: u32, name: &str) -> Result<(), AgentError> {
         self.with_memory(|mem| {
             let mut store = SemaphoreStore::new(mem, HOST_OWNER);

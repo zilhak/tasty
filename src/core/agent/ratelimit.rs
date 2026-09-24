@@ -1,5 +1,4 @@
-//! Rate limit store wrapper. handler 의 `core.with_memory + RateLimitStore::new`
-//! 조립을 본 모듈로 흡수.
+//! Core의 메모리 저장소에서 에이전트별 사용 한도를 관리한다.
 
 use tasty_agent::{AgentError, ConsumeOutcome, RateLimit, RateLimitStore};
 use tasty_memory::HOST_OWNER;
@@ -7,7 +6,6 @@ use tasty_memory::HOST_OWNER;
 use crate::core::Core;
 
 impl Core {
-    /// (agent, metric) 키로 rate limit upsert.
     pub(crate) fn rate_limit_set(
         &self,
         agent: String,
@@ -23,7 +21,6 @@ impl Core {
         })
     }
 
-    /// Rate limit 삭제.
     pub(crate) fn rate_limit_remove(&self, id: &str) -> Result<(), AgentError> {
         self.with_memory(|mem| {
             let mut store = RateLimitStore::new(mem, HOST_OWNER);
@@ -31,7 +28,7 @@ impl Core {
         })
     }
 
-    /// 모든 rate_limit refill 후 반환. handler 가 agent/metric 필터를 적용.
+    /// 토큰을 보충한 전체 목록을 반환하며 agent·metric 필터는 핸들러가 적용한다.
     pub(crate) fn rate_limit_status(&self, now_ms: u64) -> Result<Vec<RateLimit>, AgentError> {
         self.with_memory(|mem| {
             let mut store = RateLimitStore::new(mem, HOST_OWNER);
@@ -39,7 +36,7 @@ impl Core {
         })
     }
 
-    /// 토큰 소비 시도. 미등록 (agent, metric) 은 항상 허용 (infinity tokens).
+    /// 등록되지 않은 agent·metric 조합은 제한 없이 허용한다.
     pub(crate) fn rate_limit_try_consume(
         &self,
         agent: &str,

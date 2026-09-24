@@ -1,26 +1,11 @@
-# 호스트 default 완료 판정 전략 정의 — 훅 핸들러 `default-hook-handlers.toml` 과
-# 나란한 별도 파일이며 섞지 않는다. 레지스트리 동작은
-# `docs/dev-guide/agent-runner.md` "완료 판정 전략 레지스트리" 참조.
+# 완료 판정 전략. poll은 상태를 조회하고 push는 훅 핸들러의 보고를 기다린다.
+# push의 timeout_ms는 필수다. priority가 작을수록 우선하며 default_for_methods는 기본 전략을 지정한다.
+# 레지스트리 규칙: docs/dev-guide/agent-runner.md.
 #
-# 각 전략은 `spec.kind` 로 poll/push 를 구분한다.
-#   - poll : 자체 폴링(`poll_method`/`state_field`/`terminal_states`/`interval_ms`).
-#   - push : 외부(훅 핸들러) 보고. `notify_via` 는 그 보고를 받을 훅 핸들러 id,
-#            `timeout_ms` 는 **필수**(보고 유실 시 영구 대기 방지, §B-3/§C-3).
-#
-# priority 는 낮을수록 우선(훅 핸들러 규약과 동일). `default_for_methods` 는
-# 결정 6 — 이 전략이 그 IPC 메서드들의 기본 완료 판정이 된다(poll 생략 시 적용).
-
-# 결정 7 — `command-completed` 셸 훅 기반 내장 push 전략. OSC 133 셸 통합이 로드된
-# surface 에서만 발화한다(전제, `src/core/state/shell_integration_hint.rs` 참고,
-# 미로드 surface 대상 사용은 거부가 아니라 `hook.set` 경고로만 가시화된다).
-#
-# 참조하는 `notify_via = "host/command-completed"` 훅 핸들러는
-# `../../hook_handler/defaults/default-hook-handlers.toml` 에 등록돼 있다. 이
-# 전략을 참조하는 `Custom` task 의 dispatch params 는 `surface_id` 를 포함해야
-# 한다(`HostExecutor::dispatch_push_strategy` 가 그 surface 에 1회성 훅을 건다) —
-# 예: `surface.send`/`terminal.tell` 처럼 대상 surface 를 특정하는 IPC 메서드.
-# 완료는 exit code 로 성공/실패를 가른다: 0(또는 코드 없음) → succeeded, 비-0 →
-# failed(`Core::resolve_hook_task_wait`).
+# command-completed는 OSC 133 셸 통합이 필요하다. 없으면 hook.set이 경고하지만 거절하지는 않는다.
+# Custom 작업의 params에는 surface_id가 있어야 해당 surface에 일회성 완료 훅을 건다.
+# host/command-completed 핸들러는 ../../hook_handler/defaults/default-hook-handlers.toml에 있다.
+# exit code가 0이거나 없으면 성공, 그 외에는 실패로 처리한다.
 [[strategy]]
 id = "command-completed"
 priority = 100

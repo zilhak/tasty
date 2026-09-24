@@ -1,26 +1,7 @@
-//! 완료 판정 전략 레지스트리 — **훅 핸들러 풀미러**(상세: `docs/dev-guide/
-//! agent-runner.md` "완료 판정 전략 레지스트리").
-//!
-//! `src/hook_handler/registry.rs` 를 정본 템플릿으로 3출처 병합을 갖춘다: host
-//! embedded TOML + plugin manifest + user config(`~/.tasty/completion-strategies.toml`).
-//! 같은 strategy id 가 여러 출처에 등장하면 **patch semantics**(Host → Plugin → User
-//! 순서로 `Some` 필드만 덮어씀), 정렬은 priority↑ → owner tie-break(user>plugin>host)
-//! → id.
-//!
-//! 훅 핸들러와의 차이:
-//! - `source`(트리거 출처 게이트) 없음 — 대신 `kind`(poll/push)와 `default_for_methods`.
-//! - actor 별 action 배제 불변식 없음(§config.rs 참고) — 셸 배제 같은 구조가 없다.
-//! - **결정 2(namespace 제한)**: poll 형의 `poll_method`, `default_for_methods` 의
-//!   모든 항목은 plugin 소유면 자기 namespace 만, host/user 소유면 어떤 plugin
-//!   namespace 도 아니어야 한다(`_host` 권한 우회 방지) — finalize 에서 구조적으로 강제.
-//! - **push 참조 무결성**: `notify_via` 가 가리키는 훅 핸들러가 존재하고 owner 가
-//!   자기 자신 또는 `host` 인지 finalize 에서 검증(§B-3).
-//! - 인스턴스가 아니라 **프로세스 전역 싱글턴**(`global()`) — 런너 스레드와 IPC 핸들러가
-//!   같은 레지스트리를 봐야 하므로(훅 핸들러와 동일 이유).
-//!
-//! **재사용은 형태뿐** — 이 파일은 `hook_handler` 의 어떤 타입도 import 하지 않는다,
-//! 단 하나의 예외는 push 형이 참조하는 [`crate::hook_handler::HookHandlerId`] 그
-//! 자체다(§B-3: "notify_via 만 실제 참조다").
+//! host 기본값·플러그인 선언·사용자 설정의 완료 전략을 병합한다.
+//! 같은 ID는 실제 등록 순서대로 Some 필드를 덮어쓰며 owner도 마지막 기여자로 바뀐다.
+//! 병합 뒤 namespace·push 참조를 검사하고 활성 전략의 기본 메서드 충돌은 priority·owner·ID로 정한다.
+//! 런너와 IPC가 같은 프로세스 전역 레지스트리를 공유한다.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,33 +31,21 @@ struct Contribution {
 }
 
 struct Inner {
-    /// strategy id → 출처별 contribution. install 순서 보존 (host → plugin → user).
+    /// 실제 등록 순서. 같은 owner의 재등록은 이전 기여를 지우고 끝에 추가한다.
     contributions: BTreeMap<CompletionStrategyId, Vec<Contribution>>,
     finalized: BTreeMap<CompletionStrategyId, CompletionStrategy>,
-    /// 결정 6 충돌 해소 결과 — IPC 메서드 → 그 메서드의 기본 전략 id. finalize 가
-    /// 함께 재계산한다(활성 전략만 참여, 정렬 승자 채택).
+    /// 활성 전략 중 정렬로 선택한 기본 메서드별 전략. finalize에서 다시 계산한다.
     default_for_method_index: BTreeMap<String, CompletionStrategyId>,
     dirty: bool,
 }
 
-/// 완료 판정 전략 레지스트리 (3출처 병합 + patch semantics + lazy finalize).
 pub struct CompletionStrategyRegistry {
     inner: RwLock<Inner>,
-    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
     poison_reported: std::sync::atomic::AtomicBool,
 }
 
 impl CompletionStrategyRegistry {
-    /// Poison 을 복구해 read guard 를 잡는다.
-    ///
-    /// 이전에는 `read().ok()?` / `Err(_) => return` 으로 **조용히** 빠져나갔다. 그
-    /// 결과는 "등록한 완료 전략이 반영 안 됨" 인데 관측 지점이 0 이라, 왜 전략이 안
-    /// 먹는지 알 방법이 없었다 — 이 저장소의 다른 registry 들이 같은 상황에
-    /// `tracing::error!` 를 남기는 것과도 갈렸다.
-    ///
-    /// `Inner` 는 `BTreeMap` 셋과 `bool` 하나뿐이고 임계구역은 자료구조 조작만 한다.
-    /// 패닉이 나도 불변식은 성립하므로 복구가 맞다
-    /// ([`error-handling.md`](../../docs/dev-guide/error-handling.md) "락 poison").
+    /// poison을 로그로 알리고 남은 값을 사용한다. 패닉 직전 여러 표의 갱신까지 완료됐다는 보장은 아니다.
     fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
         crate::poison::recover_read(
             self.inner.read(),
@@ -85,7 +54,6 @@ impl CompletionStrategyRegistry {
         )
     }
 
-    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
     fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
         crate::poison::recover_write(
             self.inner.write(),
@@ -106,18 +74,13 @@ impl CompletionStrategyRegistry {
         }
     }
 
-    // ── 조회 ────────────────────────────────────────────────────────────
-
-    /// id 로 단건 lookup (owned, 비활성 포함). 없으면 `None`.
     pub fn get(&self, id: &CompletionStrategyId) -> Option<CompletionStrategy> {
         self.ensure_finalized();
         let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
-    /// 이름 참조가 `poll` 자리에서 쓰일 때의 해석 — 존재/활성/kind 를 한 번에 검증
-    /// 하고 `PollSpec` 을 돌려준다. `task_create` 검증과 `Custom` dispatch 이름
-    /// 해석(runner_host.rs) 양쪽이 공유한다.
+    /// poll 전용 참조는 존재·활성 여부와 종류를 확인한다.
     pub fn resolve_poll_spec(
         &self,
         id: &CompletionStrategyId,
@@ -135,14 +98,7 @@ impl CompletionStrategyRegistry {
         }
     }
 
-    /// kind-agnostic 조회 — 존재/활성만 검증하고 poll/push 를 가리지 않고
-    /// `CompletionStrategy` 전체(kind 포함)를 반환한다. `resolve_poll_spec` 은
-    /// poll 전용 소비자(예: 다른 곳에서도 poll spec 만 필요로 하는 호출부가
-    /// 있을 수 있다)를 위해 그대로 유지 — 이 메서드는 `Custom` dispatch
-    /// (`runner_host.rs`)처럼 poll/push 를 모두 다뤄야 하는 호출부가 쓴다.
-    /// push-kind 의 timeout 필수는 `CompletionStrategyKind::
-    /// Push.timeout_ms` 가 `Option` 이 아닌 값 타입이라 타입 레벨에서 이미
-    /// 강제된다 — 이 메서드에서 별도 검증이 필요 없다.
+    /// poll과 push를 모두 허용하되 존재·활성 여부는 확인한다.
     pub fn resolve_strategy(
         &self,
         id: &CompletionStrategyId,
@@ -157,8 +113,6 @@ impl CompletionStrategyRegistry {
         Ok(s)
     }
 
-    /// 결정 6 — 주어진 IPC 메서드의 기본 완료 전략(활성 + 충돌 승자만). 없으면
-    /// `None`(기존 즉시-성공 동작 유지, 하위호환).
     pub fn resolve_default_for_method(&self, method: &str) -> Option<CompletionStrategy> {
         self.ensure_finalized();
         let inner = self.lock_read();
@@ -166,8 +120,7 @@ impl CompletionStrategyRegistry {
         inner.finalized.get(id).cloned()
     }
 
-    /// **비활성 포함** 전체 전략 (priority↑ → owner tie-break → id). 진단/테스트용 +
-    /// `completion_strategy.list` IPC 조회가 사용.
+    /// 비활성 항목도 포함해 priority·owner·ID 순서로 반환한다.
     pub fn all_strategies_including_disabled(&self) -> Vec<CompletionStrategy> {
         self.ensure_finalized();
         let inner = self.lock_read();
@@ -181,8 +134,6 @@ impl CompletionStrategyRegistry {
         });
         v
     }
-
-    // ── install (3출처) ─────────────────────────────────────────────────
 
     pub fn install_host_defaults(&self, toml_text: &str) {
         let decls = match parse_strategy_section(toml_text) {
@@ -238,8 +189,6 @@ impl CompletionStrategyRegistry {
         inner.dirty = true;
     }
 
-    /// plugin uninstall/disable 시 그 plugin 이 기여한 전략을 집합에서 제거
-    /// (훅 핸들러 `uninstall_plugin` 미러).
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
@@ -280,10 +229,8 @@ impl CompletionStrategyRegistry {
     }
 }
 
-/// 한 strategy id 의 출처별 contribution 을 patch semantics 로 병합하고, 결정 2·
-/// push 참조 무결성·결정 6 namespace 제한을 검증한다. 위반 시 `None`(그 id 전체를
-/// finalize 결과에서 제외) — `ensure_finalized` 의 루프 본체를 분리한 것뿐, 단일
-/// 호출자 전용.
+/// 등록 순서로 Some 필드를 덮어쓴 뒤 검증한다. spec·kind가 잘못되면 전략을 제외하고,
+/// 잘못된 default_for_methods는 해당 메서드만 제외한다.
 fn merge_contribution(
     id: &CompletionStrategyId,
     contribs: &[Contribution],
@@ -327,9 +274,7 @@ fn merge_contribution(
         return None;
     }
 
-    // 결정 6 — default_for_methods 전원 owner namespace 여야 함. 개별 위반 항목만
-    // 걸러낸다(manifest 단계는 전체 reject 이지만, host/user 는 graceful degrade —
-    // 훅 핸들러가 개별 contribution 을 drop 하는 것과 같은 관용).
+    // 기본 메서드의 namespace 위반은 전략 전체가 아니라 해당 항목만 제외한다.
     let default_for_methods: Vec<String> = default_for_methods
         .unwrap_or_default()
         .into_iter()
@@ -339,7 +284,7 @@ fn merge_contribution(
                 warn!(
                     strategy_id = id.as_str(),
                     method = m.as_str(),
-                    "completion_strategy: default_for_methods entry outside owner namespace — dropped (decision 6)"
+                    "completion_strategy: default_for_methods entry outside owner namespace — dropped"
                 );
             }
             ok
@@ -357,8 +302,6 @@ fn merge_contribution(
     })
 }
 
-/// 결정 2(poll_method namespace 제한) + push 참조 무결성(notify_via 존재·owner
-/// 자기 자신 또는 host) 검증. 위반 시 warn 후 `false`.
 fn kind_allowed(
     id: &CompletionStrategyId,
     owner: &CompletionStrategyOwner,
@@ -372,7 +315,6 @@ fn kind_allowed(
     }
 }
 
-/// 결정 2 — poll_method 는 owner namespace 로 제한.
 fn poll_method_allowed(
     id: &CompletionStrategyId,
     owner: &CompletionStrategyOwner,
@@ -382,15 +324,13 @@ fn poll_method_allowed(
     if !ok {
         warn!(
             strategy_id = id.as_str(),
-            poll_method,
-            "completion_strategy: poll_method outside owner namespace — dropped (decision 2)"
+            poll_method, "completion_strategy: poll_method outside owner namespace — dropped"
         );
     }
     ok
 }
 
-/// push 참조 무결성 — notify_via 가 가리키는 훅 핸들러가 존재하고 owner 가
-/// 자기 자신 또는 host 인지 검증.
+/// notify_via가 존재하고 ID prefix가 전략 owner 또는 host인지 확인한다.
 fn push_notify_via_valid(
     id: &CompletionStrategyId,
     owner: &CompletionStrategyOwner,
@@ -416,8 +356,7 @@ fn push_notify_via_valid(
     true
 }
 
-/// 결정 6 충돌 해소 — 같은 메서드를 여러 활성 전략이 default 로 올리면 정렬
-/// 승자(priority↑ → owner tie-break → id)를 채택하고 패자는 warn.
+/// 같은 메서드의 활성 전략 중 priority가 작은 항목, owner 순위, ID 순으로 선택한다.
 fn resolve_default_for_method_conflicts(
     finalized: &BTreeMap<CompletionStrategyId, CompletionStrategy>,
 ) -> BTreeMap<String, CompletionStrategyId> {
@@ -457,10 +396,7 @@ impl Default for CompletionStrategyRegistry {
     }
 }
 
-/// 결정 2 — `owner` 가 `method` 를 poll_method/default_for_methods 로 쓸 수 있는가.
-/// - `Plugin(id)`: prefix 가 정확히 자기 `id` 여야 함.
-/// - `Host`/`User`: prefix 가 어떤 plugin 의 등록된 namespace 도 아니어야 함
-///   (`_host` 권한으로 남의 plugin namespace 를 호출하는 우회 차단).
+/// plugin은 owner prefix와 같은 메서드만 허용한다. host·user는 등록된 plugin prefix를 사용할 수 없다.
 fn method_allowed_for_owner(owner: &CompletionStrategyOwner, method: &str) -> bool {
     let prefix = method.split('.').next().unwrap_or("");
     match owner {
@@ -534,8 +470,7 @@ fn same_owner(a: &CompletionStrategyOwner, b: &CompletionStrategyOwner) -> bool 
     }
 }
 
-/// User TOML schema. 모든 필드 optional 로 patch 가능(훅 핸들러
-/// `UserHookHandlerSettingsDecl` 미러).
+/// ID를 지정하고 제공한 설정 필드만 덮어쓰는 사용자 TOML.
 #[derive(Debug, Clone, Deserialize)]
 struct UserCompletionStrategyDecl {
     id: String,
@@ -573,24 +508,19 @@ fn parse_user_strategy_section(
     Ok(w.strategies)
 }
 
-// ── 프로세스 전역 싱글턴 ────────────────────────────────────────────────
-
 static REGISTRY: OnceLock<CompletionStrategyRegistry> = OnceLock::new();
 
-/// 전역 완료 판정 전략 레지스트리. 런너 스레드와 IPC 핸들러 스레드가 공유한다
-/// (`&'static` — 내부 `RwLock` 로 동기화).
+/// 런너와 IPC가 공유하며 내부 RwLock으로 접근을 조율한다.
 pub fn global() -> &'static CompletionStrategyRegistry {
     REGISTRY.get_or_init(CompletionStrategyRegistry::new)
 }
 
-/// `~/.tasty/completion-strategies.toml` — 사용자 완료 판정 전략 설정. 홈 결정
-/// 실패 시 `None`(훅 핸들러 `user_config_path` 미러).
+/// 사용자 설정 경로. 홈을 찾지 못하면 None이다.
 pub fn user_config_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("completion-strategies.toml"))
 }
 
-/// Plugin manager 가 `CompletionStrategyRegistryPort` 로 전략 contribute 를
-/// 등록/해제할 때 쓰는 호스트 어댑터(훅 핸들러 `HostHookHandlerPort` 미러).
+/// PluginManager의 전략 등록·해제를 호스트 레지스트리에 연결한다.
 pub struct HostCompletionStrategyPort;
 
 impl tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort
@@ -620,8 +550,7 @@ impl tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort
     }
 }
 
-/// 부팅 공용 헬퍼 — host embedded 기본값 + user config 를 전역 레지스트리에 install.
-/// `hook_handler::install_default_sources` 와 대칭 — GUI/headless 부팅에서 호출.
+/// 부팅 때 host 기본값을 넣고 사용자 설정을 적용한다.
 pub fn install_default_sources() {
     let reg = global();
     reg.install_host_defaults(include_str!("defaults/default-completion-strategies.toml"));
