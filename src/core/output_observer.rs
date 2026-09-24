@@ -1,12 +1,5 @@
-//! 옵저버: PTY 라인 → 파서 → sink fan-out.
-//!
-//! 메인 thread 에 `ObserverRouter` 가 살고, 각 옵저버의 sink 는 자기 worker
-//! thread 한 개와 bounded channel (`std::sync::mpsc::sync_channel`) 로 연결돼
-//! 있다. `dispatch_text` 가 호출되면 라인 단위로 쪼개 매칭 옵저버에
-//! `try_send` — 가득 차면 drop + counter 증가.
-//!
-//! 첫 PR scope: memory + file sink 2 종, 휘발성 spec. socket/fifo 와 spec
-//! persistence 는 후속 phase.
+//! PTY 출력을 줄 단위로 파싱해 observer별 memory·파일 worker에 보낸다.
+//! 유한 채널이 가득 차면 해당 항목을 버린다. 등록 정보는 저장하지 않는다.
 
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -20,16 +13,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tasty_output::{DEFAULT_PARSER_IDS, ParsedItem, Parser, lookup};
 
-/// 옵저버 고유 id (호스트 자동 할당, 1 부터 증가).
 pub type ObserverId = u64;
 
-/// 옵저버 등록 spec. `surface_id = None` 이면 모든 surface 를 본다.
+/// surface_id가 None이면 모든 surface를 구독한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObserverSpec {
     pub surface_id: Option<u32>,
-    /// 활성 파서 id 리스트. 비어있으면 [`DEFAULT_PARSER_IDS`] 사용.
+    /// 비어 있으면 기본 파서 목록을 사용한다.
     pub parsers: Vec<String>,
-    /// kind 필터 (예: `["path","url"]`). `None` 이면 통과.
+    /// None이면 종류로 거르지 않는다.
     pub kinds: Option<Vec<String>>,
     pub sink: SinkSpec,
 }
@@ -37,32 +29,29 @@ pub struct ObserverSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SinkSpec {
-    /// `tasty-memory` 의 `scope=Host` 위 `tasty.observer.<id>.<unix-ms>.<seq>` key 로
-    /// JSON 저장. `max_records=0` 이면 무한, 그 외는 ring buffer (오래된 키
-    /// 부터 삭제).
+    /// Global scope에 JSON을 저장한다. max_records가 0이면 이 worker의 개수 제한은 없다.
+    /// 양수면 오래된 키부터 삭제를 시도하지만 삭제 실패를 재시도하지 않아 저장소에 더 남을 수 있다.
     Memory { max_records: usize },
-    /// `path` 가 `None` 이면 `~/.tasty/observers/<id>.jsonl` 에 자동 append.
+    /// path가 없으면 Tasty 홈의 observers 디렉터리에 ID별 JSONL을 덧붙인다.
     File { path: Option<PathBuf> },
 }
 
-/// `output.observe_info` / `output.observe_list` 응답.
 #[derive(Debug, Clone, Serialize)]
 pub struct ObserverInfo {
     pub id: ObserverId,
     #[serde(flatten)]
     pub spec_view: SpecView,
-    /// dispatch 시도된 ParsedItem 수 (필터 적용 후).
+    /// 파싱·종류 필터 뒤 채널 전송을 시도한 항목 수.
     pub total_in: u64,
-    /// sink channel 에 성공적으로 들어간 수.
+    /// 채널에 들어간 수이며 저장소에 기록된 수는 아니다.
     pub total_out: u64,
-    /// backpressure 로 drop 된 수.
+    /// 채널 Full로 버린 수. 끊긴 채널이나 저장 오류로 잃은 항목은 세지 않는다.
     pub dropped: u64,
-    /// 마지막 try_send 성공 시각 (unix-ms).
+    /// 마지막 try_send 성공 시각(Unix ms).
     pub last_event_ms: Option<i64>,
 }
 
-/// `ObserverSpec` 의 응답용 평면화. `sink` 안의 path 가 default 였으면
-/// 실제 resolved path 도 같이 노출.
+/// 응답에는 기본 파일 경로도 실제 선택한 경로로 보여 준다.
 #[derive(Debug, Clone, Serialize)]
 pub struct SpecView {
     pub surface_id: Option<u32>,
@@ -85,23 +74,17 @@ fn unix_ms_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// 메인 스레드 상태. 각 옵저버는 자기 worker thread 와 bounded sender 를 갖는다.
 pub struct ObserverRouter {
-    /// **engine 들이 이 Arc 를 공유한다** — router 마다 따로 세면 두 창이 같은 observer
-    /// id 를 발급하고, `Kind::Observer` 라우팅이 먼저 찾힌 engine 을 고르므로 나중 것은
-    /// 어떤 요청으로도 못 닿는다(`IdGenerator` doc 의 "글로벌 유니크").
+    /// engine이 같은 발급기를 사용해 창 사이 observer ID가 중복되지 않게 한다.
     next_id: std::sync::Arc<std::sync::atomic::AtomicU64>,
     observers: HashMap<ObserverId, ObserverEntry>,
-    /// surface 별 partial-line 버퍼. `'\n'` 이 들어올 때까지 누적.
+    /// 줄바꿈 전의 불완전한 줄. 길이 제한은 없다.
     line_buffers: HashMap<u32, LineBuffer>,
-    /// surface close 로 자동 해제된 sink 워커의 join 핸들 — [`ObserverRouter::retire`]
-    /// 참조. 렌더 스레드에서 join 하지 않고 여기 모아뒀다가, 이미 끝난 것만
-    /// 논블로킹으로 걷어내고(`reap_finished`) 남은 것은 앱 종료 시
-    /// [`ObserverRouter::join_retired`] 가 한 번에 회수한다.
+    /// surface를 닫는 동안 worker를 기다리지 않도록 join을 미룬다.
+    /// 끝난 worker를 회수하고 나머지는 join_retired 또는 Drop에서 기다린다.
     retired: Vec<RetiredSink>,
 }
 
-/// 해제됐지만 아직 join 하지 않은 sink 워커.
 struct RetiredSink {
     id: ObserverId,
     join: JoinHandle<()>,
@@ -122,22 +105,17 @@ struct ObserverEntry {
 
 #[derive(Default)]
 struct LineBuffer {
-    /// 다음 emit 할 라인의 0-based index.
     next_idx: u32,
-    /// 미완성 partial 라인 (마지막 `\n` 이후).
     partial: String,
 }
 
-/// 옵저버 등록 / dispatch 시 발생할 수 있는 에러.
 #[derive(Debug)]
 pub enum ObserverError {
     UnknownParser(String),
     InvalidPath(String),
     FileOpen(String),
     NotFound(ObserverId),
-    /// sink 워커 스레드 spawn 실패(스레드 한계·EAGAIN 등). `observe.start` 마다
-    /// 스레드를 하나 만들므로, 패닉으로 승격하면 호스트 전체가 죽는다 — 파일 열기
-    /// 실패와 같은 비대칭을 없애고 에러로 반환한다.
+    /// worker 생성 실패도 파일 열기 실패처럼 오류로 반환한다.
     ThreadSpawn(String),
 }
 
@@ -162,7 +140,7 @@ impl ObserverRouter {
         Self::with_counter(std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)))
     }
 
-    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    /// 여러 engine이 공유하는 ID 발급기로 router를 만든다.
     pub fn with_counter(next_id: std::sync::Arc<std::sync::atomic::AtomicU64>) -> Self {
         Self {
             next_id,
@@ -172,15 +150,11 @@ impl ObserverRouter {
         }
     }
 
-    /// 옵저버 등록. id 반환.
-    ///
-    /// `memory` 는 Memory sink 용 — Core memory port 의 Arc clone.
     pub fn register(
         &mut self,
         spec: ObserverSpec,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Result<ObserverId, ObserverError> {
-        // 파서 lookup
         let parser_ids: Vec<String> = if spec.parsers.is_empty() {
             DEFAULT_PARSER_IDS.iter().map(|s| s.to_string()).collect()
         } else {
@@ -198,7 +172,6 @@ impl ObserverRouter {
             .next_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // Sink resolved view (외부 응답용)
         let resolved_sink = match &spec.sink {
             SinkSpec::Memory { max_records } => SinkView::Memory {
                 max_records: *max_records,
@@ -212,7 +185,6 @@ impl ObserverRouter {
             }
         };
 
-        // Sink worker spawn
         let (tx, rx) = sync_channel::<ParsedItem>(SINK_CHANNEL_CAP);
         let join = match &resolved_sink {
             SinkView::Memory { max_records } => {
@@ -265,17 +237,13 @@ impl ObserverRouter {
         Ok(id)
     }
 
-    /// 명시적 해제(`output.observe_stop`). 호출이 돌아온 시점에 sink 가 닫혀
-    /// 있기를 기대하는 API 라 **여기서는 join 을 유지한다** — 이 경로는 surface
-    /// 수만큼 반복되지 않으므로 per-surface 블로킹 문제와 무관하다. surface close
-    /// 로 인한 자동 해제는 [`ObserverRouter::drop_surface`] → [`Self::retire`] 를
-    /// 탄다.
+    /// 명시적 해제는 worker 종료를 기다린다. 대기 시간에 상한은 없다.
+    /// 저장 오류는 worker가 로그로 남기므로 Ok가 모든 항목의 저장 성공을 뜻하지는 않는다.
     pub fn unregister(&mut self, id: ObserverId) -> Result<(), ObserverError> {
         let entry = self
             .observers
             .remove(&id)
             .ok_or(ObserverError::NotFound(id))?;
-        // tx drop → worker recv loop exits → join
         drop(entry.tx);
         if let Some(j) = entry.join
             && let Err(e) = j.join()
@@ -285,25 +253,16 @@ impl ObserverRouter {
         Ok(())
     }
 
-    /// surface close 경로의 해제 — sender 만 떨어뜨리고 join 은 뒤로 미룬다.
-    ///
-    /// **데이터 유실이 없는 이유**: `try_send` 로 채널에 들어간 항목은 sender 가
-    /// 전부 drop 된 뒤에도 `Receiver::recv` 가 버퍼를 끝까지 비운 다음에야
-    /// `Err` 를 돌려준다(std mpsc 계약). 즉 워커는 여기서 join 하지 않아도 남은
-    /// 항목을 모두 sink 에 쓰고 스스로 끝난다. 파일 sink 는 `File` 에 직접
-    /// `writeln!` 하므로(`BufWriter` 없음) 유저스페이스에 붙들린 버퍼도 없다.
-    /// 유일한 유실 경로는 "워커가 다 쓰기 전에 프로세스가 죽는 것" 이라,
-    /// 앱 종료 시 [`Self::join_retired`] 로 반드시 회수한다.
+    /// sender를 닫고 join을 미룬다. worker는 채널 잔여 항목을 받을 수 있지만
+    /// 저장 오류·worker panic·프로세스 종료에 따른 손실까지 막지는 못한다.
     fn retire(&mut self, id: ObserverId, entry: ObserverEntry) {
-        // tx drop → worker recv loop 가 남은 버퍼를 비우고 종료한다.
         drop(entry.tx);
         if let Some(join) = entry.join {
             self.retired.push(RetiredSink { id, join });
         }
     }
 
-    /// 이미 끝난 retired 워커만 논블로킹으로 걷어낸다. 아직 도는 워커는 그대로
-    /// 남겨두므로 이 호출은 절대 블로킹하지 않는다.
+    /// 완료로 표시된 worker만 join하고 나머지는 다음 회수로 미룬다.
     fn reap_finished(&mut self) {
         let mut still_running = Vec::with_capacity(self.retired.len());
         for r in self.retired.drain(..) {
@@ -318,10 +277,7 @@ impl ObserverRouter {
         self.retired = still_running;
     }
 
-    /// 남은 retired 워커를 전부 join 한다 — **앱 종료 경로 전용**. surface close 는
-    /// join 을 미루므로, 프로세스가 끝나기 전에 여기서 한 번 회수해야 마지막
-    /// 항목까지 sink 에 남는다. surface 마다 직렬로 기다리던 것과 달리 워커들이
-    /// 그동안 병렬로 이미 배수를 끝냈으므로 여기서의 실제 대기는 거의 0 이다.
+    /// 남은 worker를 모두 기다린다. 저장 I/O가 지연되면 이 호출도 기다린다.
     pub fn join_retired(&mut self) {
         for r in self.retired.drain(..) {
             if let Err(e) = r.join.join() {
@@ -330,7 +286,6 @@ impl ObserverRouter {
         }
     }
 
-    /// 아직 join 되지 않은 retired 워커 수 — 테스트/진단용.
     #[cfg(test)]
     pub(crate) fn retired_len(&self) -> usize {
         self.retired.len()
@@ -347,8 +302,7 @@ impl ObserverRouter {
         self.observers.get(&id).map(|e| entry_to_info(id, e))
     }
 
-    /// 이 surface 의 출력을 보고 싶은 옵저버가 있는가 — terminal emit 게이트 판정.
-    /// `dispatch_line` 의 매칭 규칙과 동일해야 한다.
+    /// 출력 이벤트를 켤지 판단한다. dispatch_line과 같은 surface·전체 구독 규칙을 써야 한다.
     pub fn wants(&self, surface_id: u32) -> bool {
         self.observers.values().any(|e| match e.spec.surface_id {
             None => true,
@@ -356,20 +310,16 @@ impl ObserverRouter {
         })
     }
 
-    /// PTY 가 emit 한 텍스트를 라인 단위로 쪼개 매칭 옵저버에 dispatch하고,
-    /// 이번 호출로 완성된 라인들을 반환한다 — hook `OutputMatch` 가 이
-    /// 라인 버퍼를 공유해서 쓴다, `HookManager::has_output_match_hook` 가 켠
-    /// surface 는 옵저버가 하나도 없어도 라인 분리는 계속된다.
+    /// 완성된 줄을 observer에 보내고 반환한다. observer가 없어도 OutputMatch hook이 이 줄을 사용할 수 있다.
     pub fn dispatch_text(&mut self, surface_id: u32, text: &str) -> Vec<String> {
         let buf = self.line_buffers.entry(surface_id).or_default();
         buf.partial.push_str(text);
 
-        // `'\n'` 으로 라인 분리. 마지막 `\n` 이후는 partial 로 남김.
         let mut completed_lines: Vec<(u32, String)> = Vec::new();
         while let Some(nl) = buf.partial.find('\n') {
             let rest = buf.partial.split_off(nl + 1);
             let mut line = std::mem::replace(&mut buf.partial, rest);
-            line.pop(); // remove '\n'
+            line.pop();
             if line.ends_with('\r') {
                 line.pop();
             }
@@ -411,7 +361,6 @@ impl ObserverRouter {
         }
     }
 
-    /// `surface_id` 를 구독하는(wildcard 포함) 옵저버 id 목록 (borrow 분리).
     fn matching_observer_ids(&self, surface_id: u32) -> Vec<ObserverId> {
         self.observers
             .iter()
@@ -423,13 +372,8 @@ impl ObserverRouter {
             .collect()
     }
 
-    /// Surface 가 닫혔을 때 호출. 그 surface 에 매인 옵저버 (wildcard 가
-    /// 아닌) 는 자동 종료, line buffer 도 정리.
-    ///
-    /// 워크스페이스 close 는 이 함수를 leaf surface 수만큼 렌더 스레드에서 직렬
-    /// 반복하므로 **여기서 워커를 join 하지 않는다** — sender 만 떨어뜨리고
-    /// ([`Self::retire`]) 회수는 뒤로 미룬다. 유실이 없는 근거와 종료 시 회수는
-    /// `retire` / [`Self::join_retired`] 문서 참조.
+    /// 해당 surface에만 연결된 observer와 부분 줄을 지운다. 전체 구독은 유지한다.
+    /// 여러 surface를 닫는 동안 각 worker를 기다리지 않도록 retire한다.
     pub fn drop_surface(&mut self, surface_id: u32) {
         self.line_buffers.remove(&surface_id);
         let tied: Vec<ObserverId> = self
@@ -444,7 +388,6 @@ impl ObserverRouter {
             };
             self.retire(id, entry);
         }
-        // 이전 close 에서 미뤄둔 워커 중 이미 끝난 것을 여기서 걷는다(논블로킹).
         self.reap_finished();
     }
 }
@@ -459,18 +402,13 @@ impl Drop for ObserverRouter {
     fn drop(&mut self) {
         let ids: Vec<ObserverId> = self.observers.keys().copied().collect();
         for id in ids {
-            let _ = self.unregister(id); // best-effort on shutdown
+            let _ = self.unregister(id); // 종료 중 NotFound는 추가 처리하지 않는다.
         }
-        // surface close 가 뒤로 미뤄둔 워커도 여기서 확정 회수한다. 종료 시퀀스의
-        // S3b(`shutdown_join_observer_sinks`)가 이미 같은 일을 하지만, 그 호출이
-        // 빠지거나 그 단계를 타지 않는 경로로 라우터가 드롭돼도 sink 파일이 잘리지
-        // 않도록 하는 마지막 방어선이다 — 덕분에 S3b 는 정확성 요건이 아니라
-        // "종료가 늦어지지 않게 미리 걷는" 최적화로 남는다.
+        // 명시적 종료 절차를 거치지 않은 Drop도 남은 worker 종료를 기다린다.
         self.join_retired();
     }
 }
 
-/// 한 줄을 옵저버의 파서 체인에 통과시키고 kinds_filter 를 적용한다.
 fn parse_and_filter_items(entry: &ObserverEntry, line: &str, line_idx: u32) -> Vec<ParsedItem> {
     let mut items: Vec<ParsedItem> = Vec::new();
     for p in &entry.parser_handles {
@@ -485,7 +423,6 @@ fn parse_and_filter_items(entry: &ObserverEntry, line: &str, line_idx: u32) -> V
     items
 }
 
-/// 아이템 하나를 옵저버의 sink 채널로 try_send 하고 통계/drop 로깅을 갱신한다.
 fn send_item_to_sink(oid: ObserverId, entry: &mut ObserverEntry, item: ParsedItem) {
     entry.total_in += 1;
     match entry.tx.try_send(item) {
@@ -533,8 +470,6 @@ fn default_file_path(id: ObserverId) -> Result<PathBuf, ObserverError> {
     Ok(dir.join(format!("{id}.jsonl")))
 }
 
-// ── workers ──────────────────────────────────────────────────────────────
-
 fn run_memory_sink(
     observer_id: ObserverId,
     max_records: usize,
@@ -544,10 +479,7 @@ fn run_memory_sink(
     use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope};
     let mut written_keys: std::collections::VecDeque<String> =
         std::collections::VecDeque::with_capacity(max_records.min(1024));
-    // 키마다 붙는 이 sink 의 순번. 밀리초만으로는 같은 ms 에 온 항목이 한 키로 겹쳐
-    // 덮어쓰이고, 그 키가 `written_keys` 에 여러 번 들어가 넘칠 때 오래된 칸의 삭제가
-    // 같은 이름의 **살아 있는** 레코드를 지운다. 순번이 키를 유일하게 만들어 둘 다 없앤다.
-    // 6 자리로 채워 같은 ms 안에서도 키 오름차순이 도착 순서가 된다.
+    // 같은 밀리초의 여러 항목이 같은 키를 덮어쓰지 않도록 worker 순번을 덧붙인다.
     let mut seq: u64 = 0;
     while let Ok(item) = rx.recv() {
         let now = unix_ms_now();
@@ -561,9 +493,7 @@ fn run_memory_sink(
             "data": item.data,
             "at_ms": now,
         });
-        // poison 보고 좌표는 store 의 port 가 준다 — 이 sink 는 port 만 알면 되고
-        // 도메인(`crate::core`)을 알 이유가 없다. 좌표가 하나라 `core` 를 거치는 다른
-        // 소비자와 첫-1 회 플래그를 나눈다.
+        // 같은 memory 락을 쓰는 다른 모듈과 최초 poison 보고 플래그를 공유한다.
         let mut guard = crate::poison::recover_mutex(
             memory.lock(),
             tasty_memory::STORE_LOCK_WHAT,
@@ -584,7 +514,7 @@ fn run_memory_sink(
                         let Some(old) = written_keys.pop_front() else {
                             break;
                         };
-                        let _ = guard.delete(HOST_OWNER, &Scope::Global, &old, None); // best-effort evict — 실패해도 다음 put 의 누적 효과로 보정.
+                        let _ = guard.delete(HOST_OWNER, &Scope::Global, &old, None); // 삭제 실패는 무시하며 이 키를 다시 삭제하지 않는다.
                     }
                 }
             }
@@ -631,24 +561,16 @@ mod tests {
     #[test]
     fn line_split_basic() {
         let mut r = ObserverRouter::new();
-        // No observers — nothing happens, but buffer machinery shouldn't crash.
         r.dispatch_text(1, "hello\nworld\n");
         r.dispatch_text(1, "partial");
         r.dispatch_text(1, " line\n");
-        // ObserverRouter::dispatch_text is the public surface; with no observers
-        // there are no externally observable effects. The test just ensures
-        // the buffer-and-split path doesn't panic on partial chunks.
+        // 이 검사는 부분 줄 처리에서 panic하지 않는지만 확인한다.
     }
 
-    // dispatch_text 의 반환값(완성된 라인)은 OutputMatch 훅이 공유하는
-    // 라인 버퍼다 — 옵저버가 하나도 없어도(has_output_match_hook 만으로 게이트가
-    // 열린 surface) 정확히 동작해야 한다.
     #[test]
     fn dispatch_text_returns_completed_lines_split_across_chunks() {
         let mut r = ObserverRouter::new();
-        // 패턴이 두 청크에 걸쳐 있으면(줄바꿈 전) 완성된 라인이 아직 없다.
         assert_eq!(r.dispatch_text(1, "partial ERR"), Vec::<String>::new());
-        // 줄바꿈이 도착해 라인이 완성되면 그제서야 반환된다.
         assert_eq!(
             r.dispatch_text(1, "OR\n"),
             vec!["partial ERROR".to_string()]
@@ -672,7 +594,6 @@ mod tests {
             r.dispatch_text(1, "surface-one partial"),
             Vec::<String>::new()
         );
-        // 다른 surface 의 partial 이 섞여 들어가지 않는다.
         assert_eq!(
             r.dispatch_text(2, "surface-two\n"),
             vec!["surface-two".to_string()]
@@ -725,8 +646,6 @@ mod tests {
         assert!(!r.wants(1), "all observers removed — gate off");
     }
 
-    // ── surface close 경로의 지연 join (per-surface 블로킹 제거) ──
-
     fn mem_store() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
         std::sync::Arc::new(std::sync::Mutex::new(
             tasty_memory::MemoryStore::open_in_memory().unwrap(),
@@ -762,8 +681,6 @@ mod tests {
         r.drop_surface(1);
 
         assert!(!r.wants(1), "옵저버는 즉시 등록 해제된다");
-        // 워커가 아직 안 끝났으면 retired 에 남고, 이미 끝났으면 reap_finished 가
-        // 걷어간다 — 어느 쪽이든 drop_surface 는 블로킹하지 않는다.
         assert!(r.retired_len() <= 1);
         r.join_retired();
         assert_eq!(r.retired_len(), 0, "join_retired 가 전부 회수한다");
@@ -771,14 +688,12 @@ mod tests {
 
     #[test]
     fn retired_workers_flush_everything_accepted_into_the_channel() {
-        // 지연 join 의 안전성 근거: `try_send` 로 채널에 들어간 항목은 sender 가
-        // 떨어진 뒤에도 워커가 전부 sink 에 쓰고 끝난다(std mpsc 계약).
         let dir = tempfile::tempdir().unwrap();
         let sink = dir.path().join("flush.jsonl");
         let mut r = ObserverRouter::new();
         register_file_observer(&mut r, 7, &sink);
 
-        // 채널 용량(256)보다 적게 보내 backpressure drop 이 끼지 않게 한다.
+        // 채널이 가득 차서 버리는 경우와 구별하도록 용량보다 적게 보낸다.
         let mut expected = 0usize;
         for i in 0..64 {
             r.dispatch_text(7, &format!("/tmp/retire-probe-{i}\n"));
@@ -793,7 +708,7 @@ mod tests {
         assert_eq!(
             lines.len(),
             expected,
-            "채널에 수락된 항목은 join 을 미뤄도 하나도 유실되지 않는다"
+            "이 파일 저장 시나리오에서 채널에 넣은 항목이 모두 기록돼야 한다"
         );
         assert!(
             lines.last().unwrap().contains("/tmp/retire-probe-63"),
@@ -804,8 +719,6 @@ mod tests {
 
     #[test]
     fn dropping_the_router_reaps_retired_workers_even_without_s3b() {
-        // S3b(`join_retired`)를 부르지 않고 라우터를 드롭해도 sink 가 잘리지 않는다
-        // — `ObserverRouter::drop` 이 마지막 방어선이라 S3b 는 최적화로 남는다.
         let dir = tempfile::tempdir().unwrap();
         let sink = dir.path().join("dropped.jsonl");
         let mut r = ObserverRouter::new();
@@ -836,8 +749,6 @@ mod tests {
 
     #[test]
     fn many_surfaces_retire_and_join_once() {
-        // 워크스페이스 close 재현 — surface 마다 join 하지 않고 모아뒀다가 한 번에
-        // 회수한다. 각 sink 의 마지막 항목이 살아 있어야 한다.
         let dir = tempfile::tempdir().unwrap();
         let mut r = ObserverRouter::new();
         let sids: Vec<u32> = (1..=8).collect();
@@ -870,8 +781,6 @@ mod tests {
 
     #[test]
     fn explicit_unregister_still_joins_synchronously() {
-        // `output.observe_stop` 은 호출이 돌아온 시점에 sink 가 닫혀 있기를 기대하는
-        // API 라 join 을 유지한다 — surface 수만큼 반복되는 경로가 아니다.
         let dir = tempfile::tempdir().unwrap();
         let sink = dir.path().join("explicit.jsonl");
         let mut r = ObserverRouter::new();
@@ -929,8 +838,6 @@ mod tests {
         assert!(matches!(err, ObserverError::UnknownParser(_)));
     }
 
-    // ── memory sink 의 저장 계약 ──
-
     fn item(data: serde_json::Value) -> ParsedItem {
         ParsedItem {
             kind: "path",
@@ -941,7 +848,7 @@ mod tests {
         }
     }
 
-    /// 그 observer 가 남긴 레코드의 `data`, 키 오름차순(= 도착 순서).
+    /// 해당 observer의 data를 저장 키 순으로 읽는다. 시계 변화나 순번 자릿수 경계를 검사하는 것은 아니다.
     fn observer_records(
         memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         id: ObserverId,
@@ -966,10 +873,6 @@ mod tests {
             .collect()
     }
 
-    /// sink 의 poison 보고 좌표는 `core` 를 거치는 소비자와 **같은 한 벌**이다.
-    ///
-    /// 좌표를 port 로 옮기면서 두 벌이 되면 같은 poison 이 두 번 보고되고 어느 쪽도
-    /// "첫 1 회" 가 아니게 된다 — 이름을 잇는 재수출이 끊기면 여기가 죽는다.
     #[test]
     fn the_memory_sink_shares_one_poison_coordinate_with_the_core() {
         assert!(std::ptr::eq(
@@ -979,11 +882,7 @@ mod tests {
         assert_eq!(tasty_memory::STORE_LOCK_WHAT, crate::core::MEMORY_WHAT);
     }
 
-    /// put 이 실패한 레코드는 버려지고 **sink 는 멈추지 않는다** — 다음 레코드는 쓰인다.
-    ///
-    /// 소비자에게 gap 신호는 가지 않는다(경고 로그뿐) — 그것이 이 sink 의 계약이고
-    /// `docs/design/systems/storage.md` 의 observer sink 절이 적는다. sink 가 첫 실패에서
-    /// 끝나면 뒤 레코드가 전부 사라지고, 그것은 조용한 손실이 한 건이 아니라 무한이다.
+    /// put 실패는 로그만 남기고 다음 항목을 처리한다. 구독자에게 별도 gap 통지를 보내지 않는다.
     #[test]
     fn a_failed_put_drops_that_record_and_the_sink_keeps_going() {
         let config = tasty_memory::MemoryConfig {
@@ -1009,11 +908,7 @@ mod tests {
         );
     }
 
-    /// 상한을 넘기면 **가장 최근 N 건**이 남는다 — 같은 밀리초에 몰려 온 항목도 한 건씩 센다.
-    ///
-    /// 키가 밀리초만이던 때는 같은 ms 의 항목이 한 키로 겹쳐, 넘친 옛 칸의 삭제가 같은 이름의
-    /// 살아 있는 레코드를 지웠다(`max_records=2` 에 여섯 건 → 남은 레코드 0). 여섯 건을 채널에
-    /// 먼저 다 넣고 sink 를 돌려 대부분이 같은 ms 에 쓰이게 한다.
+    /// 삭제가 성공하는 저장소에서 최근 N건을 남기는지 본다. 같은 밀리초의 키 충돌도 검출한다.
     #[test]
     fn the_sink_keeps_the_latest_records_even_within_one_millisecond() {
         let memory = mem_store();
@@ -1028,7 +923,6 @@ mod tests {
             vec![json!({ "n": 4 }), json!({ "n": 5 })],
         );
 
-        // 상한이 없으면 같은 ms 의 항목도 하나도 덮어쓰이지 않는다.
         let (tx, rx) = sync_channel::<ParsedItem>(6);
         for n in 0..6 {
             tx.send(item(json!({ "n": n }))).unwrap();
@@ -1041,7 +935,6 @@ mod tests {
         );
     }
 
-    /// 락이 poison 돼도 sink 는 복구해서 쓴다 — 보고는 port 의 좌표로 간다.
     #[test]
     fn a_poisoned_store_lock_is_recovered_by_the_sink() {
         let memory = mem_store();
@@ -1062,7 +955,7 @@ mod tests {
         assert_eq!(observer_records(&memory, 42), vec![json!({ "n": 1 })]);
         assert!(
             tasty_memory::STORE_LOCK_POISONED.load(std::sync::atomic::Ordering::Relaxed),
-            "복구가 port 의 좌표로 보고되지 않았다"
+            "복구가 공용 store poison 플래그에 기록되지 않았다"
         );
     }
 }

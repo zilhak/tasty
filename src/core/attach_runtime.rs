@@ -3187,10 +3187,7 @@ mod forward_exec_tests {
             ),
             FailureCase(
                 "pane split whose bag carries a malformed pane id",
-                "'target_pane' was given as \"not-a-number\" — it must be a whole number that fits in 32 \
-                 bits and is not negative. Refusing rather than coercing it: a truncated id names a \
-                 different, possibly real, target, and a dropped value is indistinguishable from the \
-                 parameter being absent",
+                "'target_pane' was given as \"not-a-number\" — it must be a whole number that fits in 32 bits and is not negative",
                 Box::new(|a| StructuralOp::SplitPane {
                     anchor_surface_id: a,
                     direction: SplitAxis::Horizontal,
