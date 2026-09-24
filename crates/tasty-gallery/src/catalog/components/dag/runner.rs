@@ -1,13 +1,5 @@
-//! 러너 배지 — 디자인 `RunnerBadge` 의 구조 전사.
-//!
-//! 값 네 개(on/off · crashed · ready · running)를 알약 하나에 담는다. **알아채야
-//! 하는 경우는 "러너가 멈췄는데 실행 가능한 일이 남았다"** 한 가지다 — 그때만
-//! 경고 톤을 쓰고 재개 힌트를 옆에 붙인다. 끝난 그래프의 "stopped · no work" 는
-//! 경고가 아니라 휴식 상태라 muted 로 남는다.
-//!
-//! 점은 `tasty_ui_widgets::status_dot` 을 쓰지 않고 직접 그린다 — 그 위젯은
-//! 라벨을 비례 폰트로 그리는데 이 알약의 글자는 mono 11 이고 점-글자 간격도
-//! `--tasty-dag-runner-gap`(8) 로 따로 잡혀 있다.
+//! 러너의 실행·오류·대기 작업 상태를 보여주는 배지.
+//! 고정폭 글꼴과 전용 간격을 쓰므로 공용 StatusDot 대신 직접 그린다.
 
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
@@ -15,14 +7,13 @@ use tasty_type_appearance::theme::Theme;
 use super::Runner;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 재개 방법 — 시안 문구(`tasty dag runner start`)는 실제 CLI 에 없어서
-/// 본체가 쓰는 실제 명령으로 바꾼다. 갤러리가 없는 명령을 전시하면 안 된다.
+/// 본체 CLI의 러너 시작 명령.
 const RESUME_CMD: &str = "tasty agent task-run --workspace-id <N> --action start";
 
 /// 헤더 한 줄에 들어가는 힌트 문구 — 알약 옆에 이어 붙인다.
 pub const RESUME_HINT: &str = "resume with tasty agent task-run --workspace-id <N> --action start";
 
-/// 배지 톤 — 경고를 받을 자격이 있는 두 경우만 색이 바뀐다.
+/// 배지 톤 — 오류나 실행 가능한 작업을 남긴 정지 상태를 강조한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Crashed,
@@ -197,7 +188,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("pill", "22px · radius 2 · 1px border"),
-            ("dot", "StatusDot, pulses only while work runs"),
+            ("dot", "static status dot in this gallery"),
             ("counts", "mono 11"),
             ("hint", "hidden on a narrow header"),
         ],

@@ -1,14 +1,4 @@
-//! `explorer_toolbar` specimen — 디자인 T11 explorer 툴바의 편집형 주소표시줄(`PathField`) +
-//! view-mode 아이콘 토글 (design `ExpToolbar` / `PathField` / `SegToggle`).
-//!
-//! - **주소표시줄**(design `PathField`): 공용 편집형 경로 필드 — folderOpen leading + mono 경로
-//!   (idle=secondary / editing=primary) + Go(arrow-right). 클릭→편집, 경로 타이핑 후 `↵`/Go 로
-//!   디렉토리 이동. 후보(최근 디렉토리) 드롭다운 = AutoComplete. breadcrumb 는 폐기.
-//! - **SegToggle**: 컨테이너 surface-raised + border-default + radius, grid/list/detail
-//!   아이콘 세그먼트. active = surface-active bg + text-primary, inactive = text-muted.
-//!
-//! 색·치수·폰트는 전부 `Theme` 토큰. 본체 `explorer.rs` 의 `address_bar`(PathField)/`seg_toggle`
-//! 와 동일 형상(구조 전사).
+//! 편집 가능한 경로 필드와 탐색기 보기 전환 예제. 공용 PathField를 사용한다.
 
 use std::cell::RefCell;
 
@@ -51,7 +41,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             .paint_at(ui, rect);
     };
 
-    // ── 편집형 주소표시줄 (PathField) ──
     stage(ui, theme, StageVariant::Tight, |ui| {
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_panel()))
@@ -84,7 +73,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
     });
 
-    // ── view-mode 아이콘 토글 ──
     cluster(ui, theme, "view-mode toggle (grid / list / detail)", |ui| {
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_panel()))
@@ -137,11 +125,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "The address bar is now the shared editable PathField (folderOpen + mono path + Go), \
-         replacing the old breadcrumb — click to edit, type a directory and press Enter / Go \
-         to move cwd; recent directories surface in the AutoComplete dropdown. Mirrors the main \
-         app's address_bar (PathField) / seg_toggle. The toggle uses grid / list / detail icons \
-         — active segment fills surface-active with text-primary, inactive stays text-muted.",
+        "Click the shared PathField to edit the path. Enter or Go commits the path; recent directories appear in AutoComplete. The gallery updates its local path value without opening a directory. The grid, list and detail toggle shows the selected mode.",
     );
 }
 

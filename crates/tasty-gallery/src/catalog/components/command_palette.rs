@@ -1,7 +1,4 @@
-//! Command palette ⌘K — 디자인(4) Overlays `palette` Spec.
-//!
-//! 480px surface-raised 프레임, top-anchor. Input 헤더 + MenuItem 리스트(첫 active)
-//! + mono 힌트 footer. 색·치수는 Theme 토큰, 프레임/필드는 공유 kit.
+//! 명령 팔레트의 검색 필드, 명령 행, 키보드 안내 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -16,13 +13,11 @@ const WIDTH: LogicalPx = LogicalPx(480.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            // 헤더 — 검색 Input (padding 10).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 kit::field(ui, theme, None, "Type to search commands…", true, false);
             });
             kit::hsep(ui, theme);
 
-            // 리스트 — MenuItem 행 (첫 active). padding 6.
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 row(
                     ui,
@@ -40,7 +35,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &["Ctrl", "D"],
                     false,
                 );
-                // 단축키가 없는 명령 — 키캡 자리가 비는 행도 한 장에 함께 보인다.
                 row(
                     ui,
                     theme,
@@ -60,7 +54,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             kit::hsep(ui, theme);
 
-            // footer — mono 힌트 (padding 8x12).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
@@ -102,11 +95,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 팔레트 명령 행 — MenuItem 에 **키별 키캡**을 단다.
-///
-/// 단일 문자열(`"Ctrl+T"`)이 아니라 나뉜 토큰을 넘긴다. 한동안 이 미러는 문자열을
-/// menu_item 의 텍스트 단축키 자리에 넣어, 본체가 키캡으로 그리는 것을 한 덩이 mono
-/// 텍스트로 보이고 있었다 — specimen 이 보여야 할 컴포넌트가 화면에 없었다는 뜻이다.
+/// 각 키를 별도 키캡으로 그리도록 단축키를 나누어 전달한다.
 fn row(
     ui: &mut egui::Ui,
     theme: &Theme,

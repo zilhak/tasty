@@ -1,12 +1,4 @@
-//! `explorer_tab_bar` specimen — 디자인 T11 explorer 내부 탭바 (design §3.6,
-//! 탭 strip).
-//!
-//! **상위 Tab 위젯(`tab_bar` specimen)과 별개** — surface-local 내부 탭. 시각 분리:
-//! 높이 24(item-height-tab, 상위보다 작게), 활성 탭은 **상단 2px accent 인디케이터**
-//! (design `ExpTab` `boxShadow: inset 0 2px 0 accent-primary`). 각 탭은 라벨 앞에
-//! **folder 아이콘**(text-muted)을 둔다. 가변폭(라벨 fit), 끝에 `＋` 새 탭.
-//!
-//! Theme 토큰만 사용. i18n 키 후보(본체): `explorer.tab.new` / `explorer.tab.close`(툴팁).
+//! 탐색기 내부 탭바 예제. 라벨 길이에 맞춘 탭 폭과 상단 활성 표시를 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -28,7 +20,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
     let p = ui.painter_at(rect);
 
-    // strip bg-sidebar + 하단 border-strong.
     p.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
     p.hline(
         rect.x_range(),
@@ -41,7 +32,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
 
     let mut x = rect.min.x;
     for (i, (label, active)) in TABS.iter().enumerate() {
-        // 탭 폭 = pad + folder + gap + label + gap + close + pad.
         let galley = ui
             .fonts(|f| f.layout_no_wrap((*label).to_string(), font.clone(), egui::Color32::WHITE));
         let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
@@ -53,7 +43,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
             egui::Sense::click(),
         );
 
-        // 탭 간 separator (i>0, 비활성 경계).
         if i > 0 && !active {
             ui.painter().vline(
                 x,
@@ -65,11 +54,9 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
             );
         }
 
-        // 배경: active → bg-panel(content 연결감), hover → overlay-hover.
         if *active {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, egui::Color32::from(theme.bg_panel()));
-            // 상단 2px accent 인디케이터 (design boxShadow inset 0 2px 0).
             let indicator = egui::Rect::from_min_size(
                 tab_rect.min,
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
@@ -88,7 +75,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         };
         let mut cx = tab_rect.min.x + pad_x;
 
-        // folder 아이콘 (라벨 앞, 항상 text-muted — design ExpTab).
         let fr = egui::Rect::from_min_size(
             egui::pos2(cx, tab_rect.center().y - icon_xs / 2.0),
             egui::vec2(icon_xs, icon_xs),
@@ -102,7 +88,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         );
         cx += icon_xs + gap;
 
-        // label.
         ui.painter().text(
             egui::pos2(cx, tab_rect.center().y),
             egui::Align2::LEFT_CENTER,
@@ -132,7 +117,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         x += tab_w;
     }
 
-    // 끝 `＋` 새 탭.
     let plus_rect = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(bar_h, bar_h));
     let plus_resp = ui.interact(
         plus_rect,
@@ -193,9 +177,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Surface-local tabs — shorter (24) than the pane Tab strip and marked by a top 2px \
-         accent indicator (design ExpTab boxShadow inset 0 2px 0). Each tab carries a folder \
-         icon (text-muted) before its label. Internal tab list is restored with the surface \
-         (snapshot/restore, body stage).",
+        "Surface-local tabs use a top accent indicator and a folder icon before each label. \
+         The host saves and restores the internal tab list with the surface.",
     );
 }

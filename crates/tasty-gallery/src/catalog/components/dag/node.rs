@@ -1,9 +1,5 @@
-//! 노드 카드 — 디자인 `DagNode` 의 구조 전사 + `node` 섹션 3 개 Spec.
-//!
-//! 카드 한 장은 flex row 두 칸이다: 좌측 3px 상태 바 + 본문 컬럼.
-//! 본문 컬럼은 이름 행(종류 글리프 + 이름)과 메타 행(상태 글리프 + 철자 라벨 +
-//! duration)을 `row gap 4`, `padding 4/8` 로 세로 중앙 정렬한다. LOD 는 **박스**
-//! 가 아니라 **내용물**만 바꾼다.
+//! 상태 바, 작업 이름, 상태 라벨, 소요 시간을 표시하는 DAG 노드 예제.
+//! 표시 상세도는 카드의 내용만 바꾸며 카드 크기는 유지한다.
 
 use tasty_design_tokens::generated::component::dag::NODE_DIM_OPACITY;
 use tasty_design_tokens::generated::semantic::ICON_SIZE_SM;
@@ -104,7 +100,6 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         egui::StrokeKind::Inside,
     );
 
-    // 좌측 3px 상태 바 — 위치 기반 세 번째 채널.
     let bar_w = (theme.dag_node_bar_width().value() * zoom).max(1.0);
     let bar = egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + bar_w, rect.max.y));
     ui.painter().rect_filled(
@@ -113,7 +108,6 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         tone(accent, dim),
     );
 
-    // 본문 컬럼 — 바 오른쪽, padding 4/8.
     let pad_x = theme.dag_node_padding_x().value() * zoom;
     let pad_y = theme.dag_node_padding_y().value() * zoom;
     let body = egui::Rect::from_min_max(
@@ -121,11 +115,9 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         egui::pos2(rect.max.x, rect.max.y),
     );
     if vis.hovered {
-        // `dag-node-hover-bg` 는 `overlay-hover`(≈8% 알파) 라 알파가 이미 곱해진
-        // 색이다 — `to_egui()` 로 읽으면 한 번 더 곱해져 wash 가 거의 안 보인다.
+        // 이미 premultiply된 색이므로 알파를 다시 곱하지 않는다.
         let wash = theme.dag_node_hover_bg().to_egui_premultiplied();
-        // 오른쪽 두 모서리만 카드와 같은 곡률로 깎는다. 사각으로 칠하면 wash 가
-        // 카드의 둥근 모서리 **밖으로** 삐져나온다. 왼쪽은 바가 덮고 있다.
+        // 둥근 카드 밖으로 배경색이 나가지 않도록 오른쪽 모서리를 맞춘다.
         let r = radius.clamp(0.0, u8::MAX as f32) as u8;
         ui.painter().rect_filled(
             body,
@@ -165,7 +157,6 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
     };
     let top = inner.center().y - total / 2.0;
 
-    // 이름 행 — 종류 글리프 + 이름.
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(inner.min.x, top + (name_h - icon_side) / 2.0),
         egui::vec2(icon_side, icon_side),
@@ -190,7 +181,6 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         return;
     }
 
-    // 메타 행 — 상태 글리프 + 대문자 라벨 + duration(우측 정렬).
     let meta_y = top + name_h + row_gap + meta_h / 2.0;
     let label_fg = node.status.label_fg(theme);
     let glyph = node.status.glyph();
@@ -203,8 +193,7 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         tone(label_fg, dim),
     );
 
-    // duration 이 먼저 자리를 잡고 상태 라벨이 먼저 줄어든다 — 라벨은 바·글리프와
-    // 중복되는 채널이지만 duration 은 다른 어디에도 없는 정보다.
+    // 소요 시간은 다른 곳에 없으므로 상태 라벨을 먼저 줄인다.
     let mut right = inner.max.x;
     if let Some(d) = &node.dur {
         let dw = text_width(ui, d, &meta_font);
@@ -282,11 +271,7 @@ pub(super) fn ellipsize(ui: &egui::Ui, text: &str, font: &egui::FontId, max_w: f
     chars[..keep].iter().collect::<String>() + "…"
 }
 
-/// 디자인 `NodeBox` — 카드 168×48 + 하단 mono 10 캡션.
-///
-/// 중첩 `ui.vertical` 이 아니라 **한 번의 `allocate_exact_size`** 로 자리를 잡는다.
-/// egui 의 `horizontal_wrapped` 는 위젯 하나의 크기를 미리 알아야 줄바꿈을
-/// 판단하는데, 중첩 Ui 는 "남은 폭 전부" 를 요구해 줄이 절대 넘어가지 않는다.
+/// 줄바꿈 배치가 크기를 알 수 있도록 중첩 Ui 대신 한 번에 카드 영역을 예약한다.
 fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeVis, caption: &str) {
     let w = theme.dag_node_width().value();
     let h = theme.dag_node_height().value();
@@ -506,7 +491,6 @@ pub fn draw_lod(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-dag-node-hover-bg",
                 "hover wash",
-                // 칩도 실제로 칠해지는 색을 보여야 한다 — 위 카드와 같은 경로.
                 theme.dag_node_hover_bg().to_egui_premultiplied(),
             ),
             TokenChip::new(

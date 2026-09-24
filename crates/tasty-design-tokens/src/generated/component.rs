@@ -1,11 +1,9 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 3 — component 치수 (테마 불변), 컴포넌트별 하위 모듈. semantic (일부는
-//! primitive 직접 — 디자인 실물의 tier-skip alias) 참조로 정의된다.
+//! 컴포넌트별 상수. 원본 토큰에 따라 semantic 또는 primitive를 참조한다.
+//! 위젯의 치수는 Theme 필드나 접근자로 읽어 UI 배율 정책을 따른다.
 //! 색 접근자는 tasty-type-appearance에 생성한다.
-//!
-//! **zoom 주의**: 런타임 소비는 반드시 `&Theme` 경유 — `semantic.rs` 참조.
 
 pub mod autocomplete {
     use tasty_type_geometry::length::LogicalPx;

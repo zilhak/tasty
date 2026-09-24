@@ -1,12 +1,9 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 2 — semantic 치수/타이포/모션 (테마 불변). primitive 참조로 정의된다.
-//! 색 상수는 생성하지 않는다. 색은 런타임 Theme 접근자로 읽는다.
-//!
-//! **zoom 주의**: 이 const 들은 `SIZING` 초기값·정합 테스트용이다. 런타임
-//! 소비는 반드시 `&Theme` 필드/접근자 경유 (`with_colors_and_zoom` 의 zoom
-//! resolve 를 우회하지 말 것).
+//! 테마에 따라 바뀌지 않는 semantic 치수·글꼴·시간 상수.
+//! 치수 상수는 SIZING 초깃값과 대조 시험에 쓴다. 위젯은 Theme 필드나 접근자로
+//! 치수를 읽어 UI 배율과 반올림 정책을 따른다. 색은 런타임 Theme에서 읽는다.
 
 use tasty_type_geometry::length::LogicalPx;
 

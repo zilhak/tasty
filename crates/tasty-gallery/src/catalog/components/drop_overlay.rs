@@ -1,17 +1,5 @@
-//! `drop-overlay` specimen — 외부 drag&drop hover 피드백 (Overlays).
-//!
-//! 본체 `src/adapters/ui/drop_overlay.rs::draw_drop_overlay` 의 구조 전사.
-//! 그 함수는 `AppState.drop_hover` 가 활성인 동안 terminal rect 위 `Order::Tooltip`
-//! 레이어에 다음 3층을 painter 로 그린다 — specimen 도 같은 순서·같은 토큰이다.
-//!
-//! 1. **fill**: `accent-primary` alpha 31(12%) + `corner_radius`.
-//! 2. **보더**: rect 를 `spacing_sm` 만큼 shrink 한 자리에 `border_width` 1px,
-//!    `accent-primary` alpha 153(60%), `StrokeKind::Inside`.
-//! 3. **중앙 라벨**: `font_size_heading` + `text_primary`, `CENTER_CENTER`.
-//!    파일이 2개 이상이면 `"{hover_label}  ({n} files)"` 형태로 개수를 덧붙인다.
-//!
-//! 갤러리는 `LayerId`/`Order` 를 넘겨받지 않는다(부유 배치는 본체 정책) — 넘겨받은
-//! `Ui` 안에 무대 rect 를 할당하고 그 rect 기준으로만 그린다.
+//! 터미널 위 파일 드롭 안내의 정적 예제. 본체의 채움·테두리·라벨 순서를 따른다.
+//! 갤러리는 주어진 Ui 안에 그리며 실제 오버레이 순서는 재현하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -31,17 +19,14 @@ fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     let (rect, _) = ui.allocate_exact_size(stage_size(theme), egui::Sense::hover());
     let p = ui.painter_at(rect);
 
-    // 무대 배경 — 본체에서는 터미널 콘텐츠가 있는 자리.
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
 
-    // ① 반투명 fill (accent-primary 12%).
     p.rect_filled(
         rect,
         theme.corner_radius.value(),
         theme.accent_primary().with_alpha(FILL_ALPHA).to_egui(),
     );
 
-    // ② 1px 보더 — spacing_sm 만큼 안쪽.
     p.rect_stroke(
         rect.shrink(theme.spacing_sm.value()),
         theme.corner_radius.value(),
@@ -52,7 +37,6 @@ fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         egui::StrokeKind::Inside,
     );
 
-    // ③ 중앙 라벨.
     p.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,

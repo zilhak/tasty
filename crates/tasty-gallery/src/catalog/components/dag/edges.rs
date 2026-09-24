@@ -1,8 +1,4 @@
-//! 의존 엣지 — 디자인 `elbow()` + 캔버스 엣지 렌더의 구조 전사.
-//!
-//! 관계는 **색과 파선 패턴을 함께** 써서 구분한다(색만으로는 색각 이상에서
-//! 사라진다). 화살촉은 언제나 **의존하는 쪽**(레이어가 큰 쪽)에 붙어 "…를
-//! 기다린다" 로 읽힌다.
+//! 의존 관계를 색과 파선 패턴으로 함께 구분한다. 화살촉은 의존하는 작업을 가리킨다.
 
 use tasty_design_tokens::generated::component::dag::EDGE_DIM_OPACITY;
 use tasty_type_appearance::theme::Theme;
@@ -13,10 +9,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 코너 하나를 이차 베지어로 몇 조각 내어 근사할지. egui 에는 SVG `Q` 가 없다.
 const CORNER_STEPS: usize = 6;
 
-/// 직교가 아닌 세그먼트를 "흐름축 → 가로축 → 흐름축" 으로 편다.
-///
-/// 레이아웃 엔진은 꺾임점 좌표까지만 책임지므로 대각선 구간이 남을 수 있다.
-/// 디자인 `elbow()` 가 하는 일을 임의 길이 폴리라인으로 일반화한 것이다.
+/// 엔진이 남긴 대각선 구간을 흐름 방향에 맞춘 직교 경로로 바꾼다.
 pub fn orthogonalize(points: &[egui::Pos2], top_down: bool) -> Vec<egui::Pos2> {
     let mut out: Vec<egui::Pos2> = Vec::with_capacity(points.len() * 2);
     for w in points.windows(2) {
@@ -24,7 +17,6 @@ pub fn orthogonalize(points: &[egui::Pos2], top_down: bool) -> Vec<egui::Pos2> {
         if out.last() != Some(&a) {
             out.push(a);
         }
-        // 이미 축에 정렬된 구간은 그대로 두고, 대각선만 흐름축 기준으로 편다.
         let aligned = (a.x - b.x).abs() < 1.0 || (a.y - b.y).abs() < 1.0;
         if !aligned {
             if top_down {

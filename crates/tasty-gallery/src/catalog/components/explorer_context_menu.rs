@@ -1,13 +1,5 @@
-//! `explorer_context_menu` specimen — 디자인 T11 우클릭 컨텍스트 메뉴 4 variant
-//! (design §3.3).
-//!
-//! 기존 `menu_item()` / `menu_separator()` 재사용 — 메뉴 컨테이너만 조립한다.
-//! 타겟별 항목 구성 4종(빈 영역 / 파일 / 폴더 / 다중선택)을 2×2 로 전시.
-//! 컨테이너 = surface-raised + 1px border-strong + radius. Delete 는 Danger variant.
-//!
-//! i18n 키 후보(본체): `explorer.menu.copy_path` / `copy_path_multi` /
-//! `add_to_favorites` / `copy` / `cut` / `paste` / `paste_into` / `delete` /
-//! `rename` / `open_in_system`.
+//! 공용 메뉴 항목을 조합한 탐색기 우클릭 메뉴 예제.
+//! 빈 영역·파일·폴더·다중 선택에 따른 네 가지 구성을 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};

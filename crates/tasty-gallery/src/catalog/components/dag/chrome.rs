@@ -1,9 +1,4 @@
-//! 캔버스 크롬 — 디자인 `ZoomCluster` · `Minimap` · `CycleBanner` · `DagEmpty` +
-//! LOD 힌트 칩의 구조 전사.
-//!
-//! 크롬은 캔버스 **위에** 뜨는 오버레이지 헤더가 아니다: 우하단 8px 안쪽에
-//! 미니맵(위) + 줌 클러스터(아래)가 세로로 쌓이고, 좌하단에 LOD 칩이,
-//! 상단 전폭에 사이클 배너가 붙는다.
+//! DAG 캔버스의 줌 버튼, 미니맵, 순환 경고, 표시 상세도 안내.
 
 use tasty_dag_layout::{GraphLayout, Orientation};
 use tasty_icons as icons;
@@ -17,7 +12,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 줌 퍼센트 판독창 최소 폭 — 디자인 `--tasty-size-46`.
 const ZOOM_READOUT_WIDTH: LogicalPx = LogicalPx(46.0);
-/// 이 폭 아래에서 판독창을 접고 28px 타깃 다섯 개만 남긴다 — 디자인 "compact cutoff".
+/// 이 폭 아래에서 판독창을 접고 28px 버튼 네 개만 남긴다 — 디자인 "compact cutoff".
 const COMPACT_CUTOFF: LogicalPx = LogicalPx(400.0);
 /// 빈 상태 글리프 크기 — 디자인 `--tasty-size-24`.
 const EMPTY_ICON_SIZE: LogicalPx = LogicalPx(24.0);
@@ -32,10 +27,7 @@ pub fn zoom_cluster_size(theme: &Theme, compact: bool) -> egui::Vec2 {
     egui::vec2(w, h)
 }
 
-/// `− · % · + | fit · dir` — 28px 한 줄, 1px 보더로 둘러싼 한 덩어리.
-///
-/// 방향 토글 글리프는 현재 방향에 따라 바뀌지 않는다(시안과 동일) — 지금 어느
-/// 방향인지는 그래프 자체가 보여주고, 버튼은 "뒤집는다" 는 동작만 뜻한다.
+/// 그래프 방향 버튼은 현재 방향과 무관하게 같은 아이콘을 쓴다.
 pub fn paint_zoom_cluster(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -105,7 +97,7 @@ pub fn paint_zoom_cluster(
     }
 }
 
-/// 미니맵 — 노드를 **상태색**으로 칠해 건강 스트립을 겸한다.
+/// 미니맵에 노드의 상태색을 표시한다.
 pub fn paint_minimap(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -154,7 +146,7 @@ pub fn paint_minimap(
         );
     }
 
-    // 현재 보이는 창 — 그래프 좌표로 환산한 뒤 같은 배율로 접는다.
+    // 현재 보이는 영역을 그래프 좌표로 환산한 뒤 미니맵 배율로 줄인다.
     let vp = egui::Rect::from_min_size(
         egui::pos2(
             dx + (-t.origin.x / t.zoom) * k,
@@ -210,8 +202,7 @@ pub fn paint_cycle_banner(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Rect, 
         font,
         fg,
     );
-    // 경로는 mono + text-secondary 로 갈라 읽는다. 마지막에 첫 id 를 다시 붙여
-    // "닫힌 고리" 임을 눈으로 보여준다.
+    // 첫 ID를 마지막에 반복해 순환 경로를 표시한다.
     let path = format!("{} \u{2192} {}", ids.join(" \u{2192} "), ids[0]);
     ui.painter().text(
         egui::pos2(x + lead_w, rect.center().y),
@@ -269,8 +260,7 @@ pub fn paint_canvas_chrome(
     layout: &GraphLayout,
     t: Transform,
     minimap: bool,
-    // 줌 클러스터를 이 캔버스 위에 띄우는가. popup 디테일은 back bar 가 그것을 들어서
-    // `false` 이고, 그러면 미니맵이 캔버스 바닥까지 내려온다.
+    // 팝업 상세는 뒤로 가기 바에 조작 도구가 있어 여기에 중복 표시하지 않는다.
     zoom_cluster: bool,
     lod: Lod,
 ) {
@@ -294,7 +284,6 @@ pub fn paint_canvas_chrome(
             theme.dag_minimap_width().value(),
             theme.dag_minimap_height().value(),
         );
-        // 클러스터가 없으면 그 자리는 비어 있으므로 미니맵이 그만큼 내려온다.
         let stack_bottom = if zoom_cluster {
             cluster_rect.min.y
         } else {
@@ -342,7 +331,6 @@ pub fn paint_empty(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, query: Op
         measure,
     );
 
-    // 아이콘 → 제목 → 본문을 한 덩어리로 묶어 무대 정중앙에 놓는다.
     let total = side + gap + title_h + gap + body_galley.size().y;
     let mut y = rect.center().y - total / 2.0;
     icon.image(side, theme.text_disabled().to_egui()).paint_at(

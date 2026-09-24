@@ -1,20 +1,5 @@
-//! `explorer_sidebar` specimen — 디자인 T11 explorer 좌측 사이드바 (design `ExpSidebar`
-//! / `SideHead` / `TreeNode` / `FavoritesEmpty`), 즐겨찾기 하단 고정(pin) 레이아웃 포함.
-//!
-//! - **Files 섹션(상단)**: flex(남는 공간 전부) + 자체 스크롤(`tree_row` 재사용). active
-//!   노드 = surface-active + text-primary, 폴더 아이콘 text-muted.
-//! - **경계**: 고정 좌표의 1px separator — 트리 길이와 무관, 하단 Favorites 영역의
-//!   상단에 항상 고정된다(트리가 짧아도 보더가 콘텐츠를 따라 올라가지 않는다).
-//! - **Favorites 섹션(하단)**: 계산된 고정 높이 + 자체 스크롤. 캡션은 항상 표시.
-//!   populated = 채운 별(accent-warning) 행, empty = 흐린 별 + "No favorites yet" + 힌트.
-//!
-//! 고정 높이 계산은 design `favPinHeight` 를 그대로 전사한다: 사이드바 본문 높이가
-//! 600px 이상이면 240 고정, 미만이면 (본문×0.4)를 4px 그리드로 스냅한 값과 120 중
-//! 큰 값. 본체 구현은 `src/adapters/ui/surface/explorer.rs::favorites_pin_height` —
-//! gallery crate 는 본체를 참조할 수 없어 동일 공식을 specimen 전용으로 복제한다.
-//!
-//! 색·치수·폰트는 전부 `Theme` 토큰. 본체 `explorer.rs` 의 `sidebar`/`tree_node`/
-//! `favorite_row`/`favorites_empty` 와 동일 형상.
+//! 탐색기의 파일 트리와 하단 즐겨찾기 예제. 두 영역은 따로 스크롤한다.
+//! 즐겨찾기 높이 계산은 본체 explorer.rs::favorites_pin_height와 같은 식을 사용한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -72,12 +57,10 @@ const FAVS_MANY: &[(&str, bool)] = &[
 
 /// design ExpSidebar width 196.
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
-/// 데모 컨테이너의 사이드바 본문 높이 — 600 미만이라 비율(40%) 분기를 재현하고,
-/// 긴 트리/많은 즐겨찾기 각각의 스크롤도 자연히 유발한다(§ 아래 4케이스 참고).
+/// 높이 600 미만의 비율 계산과 두 영역의 개별 스크롤을 보여주는 예제 크기.
 const DEMO_BODY_H: LogicalPx = LogicalPx(340.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // ── (a) Files 길어서 스크롤, Favorites 는 하단에 고정 유지 ──
     cluster(
         ui,
         theme,
@@ -91,7 +74,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         },
     );
 
-    // ── (b) Files 짧아서 상단에 빈 공간만 남는다(패딩/센터링 없음) ──
     cluster(
         ui,
         theme,
@@ -105,7 +87,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         },
     );
 
-    // ── (c) Favorites empty state ──
     cluster(ui, theme, "favorites — empty state", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
             panel(ui, theme, |ui| {
@@ -114,7 +95,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
-    // ── (d) Favorites 자체 스크롤(10개) — Files 스크롤과 완전 독립 ──
     cluster(
         ui,
         theme,
@@ -211,8 +191,7 @@ fn two_region(
     tree: &[(&str, u16, bool)],
     favs: &[(&str, bool)],
 ) {
-    // 4 개 variant(a/b/c/d)가 같은 라벨(TREE_SHORT/TREE_LONG/FAVS_*)을 재사용하므로,
-    // variant 전체를 고유 id 스코프로 감싸 auto-id 충돌을 막는다.
+    // 예제마다 같은 라벨을 쓰므로 위젯 ID의 범위를 나눈다.
     ui.push_id(id_salt, |ui| two_region_inner(ui, theme, tree, favs));
 }
 
@@ -296,7 +275,6 @@ fn favorites_pin_height(body_h: LogicalPx) -> LogicalPx {
     if body_h <= LogicalPx(0.0) || body_h >= THRESHOLD {
         return BASE;
     }
-    // `LogicalPx` 에는 `round` 가 없다 — 4px 그리드로 맞추는 이 한 자리에서만 벗긴다.
     (LogicalPx((body_h * RATIO / 4.0).value().round()) * 4.0).max(MIN)
 }
 

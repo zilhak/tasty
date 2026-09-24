@@ -1,9 +1,8 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 1 — primitive 치수 스케일. **`pub(crate)`**: "UI 는 primitive 를 직접
-//! 읽지 않는다"는 규칙을 모듈 공개 범위로 지킨다.
-//! 외부 crate 는 `semantic` / `component` 를 경유할 것.
+//! Primitive 상수는 크레이트 내부에만 공개한다.
+//! 외부 크레이트에서는 semantic 또는 component를 사용한다.
 #![allow(dead_code)] // 스케일 전체를 보존한다 — 미참조 엔트리 포함.
 
 use tasty_type_geometry::length::LogicalPx;

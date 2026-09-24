@@ -1,8 +1,5 @@
-//! 풀탭 서피스 — 디자인 `DagSurface` 의 구조 전사.
-//!
-//! 헤더(8/12 패딩) + 캔버스(남는 공간 전부) + 상세. **640px 아래**에서 헤더는
-//! 두 줄로 접히고(정체성 위 · 컨트롤 아래), 러너 힌트가 사라지고, 미니맵이 빠지고,
-//! 상세가 하단 시트로 내려간다. 좁은 쪽 바닥은 320px 이고 그때도 잘리는 것이 없다.
+//! 탭 전체를 쓰는 DAG 예제. 좁은 화면에서는 헤더를 여러 줄로 나누고
+//! 러너 힌트·미니맵을 숨기며 상세를 아래쪽으로 옮긴다.
 
 use tasty_dag_layout::Orientation;
 use tasty_icons as icons;
@@ -66,8 +63,7 @@ fn header(
     ui.painter().hline(
         rect.x_range(),
         rect.max.y,
-        // `separator` 는 알파가 이미 곱해진 색이다 — `to_egui()` 로 읽으면 알파가
-        // 한 번 더 곱해져 헤어라인이 옆 specimen 보다 옅게 나온다.
+        // 이미 premultiply된 구분선 색에 알파를 다시 곱하지 않는다.
         egui::Stroke::new(
             theme.border_width.value(),
             theme.separator.to_egui_premultiplied(),
@@ -89,7 +85,6 @@ fn header(
         egui::Rect::from_min_size(egui::pos2(inner.min.x, y), egui::vec2(inner.width(), row_h))
     };
 
-    // ── 1행: 정체성 ──
     let ident = line(0);
     let icon = theme.dag_canvas_dot_gap().value();
     icons::GIT_TREE
@@ -128,11 +123,7 @@ fn header(
         theme.text_muted().to_egui(),
     );
 
-    // ── 컨트롤 ──
-    //
-    // 시안은 flex(`Select` 가 `1 1 auto`)로 남는 폭을 나눠 가진다. egui 에는 그
-    // 협상이 없으니 고정 폭(배지 · 새로고침 · 간격)을 먼저 빼고 남은 만큼을
-    // Select 에 준다 — 320px 에서도 서로 겹치지 않는 유일한 순서다.
+    // 고정 폭 요소를 먼저 뺀 뒤 남은 폭을 Select에 준다.
     let runner_state = &graphs[*picked].runner;
     let badge_w = runner::badge_width(ui, theme, runner_state);
     let refresh_w = row_h;
@@ -197,7 +188,6 @@ fn header(
         ),
     );
     runner::paint_badge(ui, theme, badge_rect, runner_state);
-    // 재개 힌트는 넓은 헤더에서만 — 좁으면 알약만 남는다.
     if !narrow && runner::wants_hint(runner_state) {
         let font = egui::FontId::proportional(theme.font_size_caption.value());
         let avail = trailing.max.x - refresh_w - gap - (badge_rect.max.x + gap);
@@ -290,7 +280,6 @@ pub fn paint(
         Orientation::TopDown,
         &mut sel,
         !narrow,
-        // 탭 surface 는 줌 클러스터를 캔버스 위에 띄운다 — back bar 가 없다.
         true,
     );
 
@@ -346,8 +335,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
                 child.set_clip_rect(rect);
-                // 두 서피스가 같은 Spec 안에 있어 위젯 id 가 겹친다 — 서피스마다
-                // id scope 를 따로 판다(Select · IconButton · ScrollArea 전부 포함).
+                // 예제끼리 위젯 ID가 겹치지 않도록 별도 범위를 사용한다.
                 child.push_id(salt, |ui| {
                     paint(
                         ui,
@@ -380,7 +368,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-separator",
                 "header hairline",
-                // 칩도 실제로 칠해지는 색을 보여야 한다.
                 theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(

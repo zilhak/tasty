@@ -1,4 +1,5 @@
-//! Theme의 배율 정책을 적용하는 component 치수·시간 접근자와 색 접근자를 생성한다.
+//! Theme를 통해 component 치수·색·시간을 읽는 접근자를 생성한다.
+//! 치수에는 UI 배율을 적용하고 시간에는 적용하지 않는다.
 //! 배율을 적용하지 않은 상수는 `super`에서 생성한다.
 
 use super::{
@@ -519,10 +520,9 @@ pub(super) fn generate_semantic_color_accessors(set: &TokenSet) -> (String, Vec<
     let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
                   //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
                   //!\n\
-                  //! Tier 2 (semantic) 색 접근자. 각 메서드는 DTCG semantic 색 토큰의\n\
-                  //! 대응 `Theme` 필드를 반환한다.\n\
-                  //! is_light 분기(text-on-accent)·도출 overlay·합성색(scrim)·OS/brand\n\
-                  //! 리터럴 등 비단순 접근자는 theme.rs 에 수기로 남는다.\n\n\
+                  //! Semantic 색 접근자는 대응하는 Theme 필드를 반환한다.\n\
+                  //! 테마 밝기에 따른 분기, 합성색, OS·브랜드 고정 색처럼 단순 필드 반환이\n\
+                  //! 아닌 접근자는 theme.rs에 직접 구현한다.\n\n\
                   use crate::color::HexColor;\n\n\
                   impl crate::theme::Theme {";
     let mut file = header.to_string();

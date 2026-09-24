@@ -1,9 +1,5 @@
-//! 워크스페이스 popup — 디자인 `DagWindow` 의 구조 전사.
-//!
-//! 560 × 460 한 장 안에서 `DrillDown` 이 목록과 단일 DAG 를 **전면 교체**한다.
-//! 목록 쪽은 네 밴드(검색+상태 · 워크스페이스 토글 · 스크롤 목록 · 푸터)로
-//! 나뉘고 밴드마다 헤어라인이 있다. 디테일 쪽은 캔버스 + 하단 시트 — popup 은
-//! 폭이 상세 도킹 임계값(640) 아래라 **항상** 시트다.
+//! DAG 목록과 상세를 번갈아 보여주는 팝업 예제.
+//! 팝업 폭이 상세 패널을 나란히 둘 기준보다 좁아 상세는 항상 아래에 표시한다.
 
 use tasty_dag_layout::Orientation;
 use tasty_icons as icons;
@@ -35,11 +31,7 @@ fn backbar_height(theme: &Theme) -> f32 {
 /// 창 껍데기 — 보더 + 타이틀바. 내용 rect 를 돌려준다.
 fn chrome(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, title: &str) -> egui::Rect {
     let radius = theme.corner_radius.value();
-    // 배경보다 **먼저** — lift 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은
-    // 순서). 본체 `dag_list` 는 anchored 명부에도 shadowless 명부에도 없어 뷰포트를
-    // 점유하는 centered 표면으로 판정된다 = 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 modal 갈래
-    // (`popup/draw.rs::popup_shadow`). 이 specimen 은 공유 셸 키트를 안 쓰고 창 껍데기를
-    // 직접 그리므로 갈래도 여기서 직접 얹는다.
+    // 본체와 같은 중앙 팝업이므로 modal 그림자를 배경보다 먼저 그린다.
     ui.painter()
         .add(theme.shadow_modal().to_egui().as_shape(rect, radius));
     ui.painter()
@@ -101,8 +93,7 @@ fn chrome(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, title: &str) -> eg
 
 /// 목록 뷰 — 검색+상태 · 토글 · 목록 · 푸터.
 fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entry], salt: &str) {
-    // `separator` 는 premultiplied 반투명 색 — `to_egui()` 로 읽으면 알파가 한 번 더
-    // 곱해져 배경보다 어두워진다(=선이 사라진다).
+    // 이미 premultiply된 구분선 색에 알파를 다시 곱하지 않는다.
     let sep = egui::Stroke::new(
         theme.border_width.value(),
         theme.separator.to_egui_premultiplied(),
@@ -112,7 +103,6 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
     let toggle_h = theme.checkbox_size().value() + theme.spacing_xs.value() * 2.0;
     let footer_h = theme.item_height_interactive.value() + theme.spacing_sm.value() * 2.0;
 
-    // ── 검색 + 상태 필터 ──
     let filter = egui::Rect::from_min_size(body.min, egui::vec2(body.width(), filter_h));
     let mut fu = ui.new_child(
         egui::UiBuilder::new()
@@ -161,7 +151,6 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
         });
     ui.painter().hline(body.x_range(), filter.max.y, sep);
 
-    // ── "이 워크스페이스만" ──
     let toggle = egui::Rect::from_min_size(
         egui::pos2(body.min.x, filter.max.y),
         egui::vec2(body.width(), toggle_h),
@@ -179,7 +168,6 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
         });
     ui.painter().hline(body.x_range(), toggle.max.y, sep);
 
-    // ── 목록 ──
     let list = egui::Rect::from_min_max(
         egui::pos2(body.min.x, toggle.max.y),
         egui::pos2(body.max.x, body.max.y - footer_h),
@@ -192,7 +180,6 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
     lu.set_clip_rect(list);
     rows::list(&mut lu, theme, entries, list.width(), salt);
 
-    // ── 푸터 ──
     ui.painter().hline(body.x_range(), list.max.y, sep);
     let footer = egui::Rect::from_min_max(egui::pos2(body.min.x, list.max.y), body.max);
     let pad = theme.spacing_md.value();
@@ -217,13 +204,8 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
         .show(&mut bu, theme);
 }
 
-/// 디테일 뷰 — back bar(+ actions) + 캔버스 + 하단 시트.
-///
-/// **두 번째 헤더는 없다.** back bar 가 이 화면의 크롬이고, 그 우측 actions 슬롯이
-/// compact 줌 클러스터와 러너 배지를 든다 — 줌은 그것이 배율을 바꾸는 그래프 옆에,
-/// 러너 배지는 지금 보는 노드가 속한 실행을 설명한다. **DAG selector 는 없다**:
-/// back bar 제목이 이미 그 DAG 를 부르고, 노드 디테일이 열린 채 DAG 를 바꾸는 것은
-/// 뜻이 없다.
+/// 뒤로 가기 바에 줌 도구와 러너 배지를 두고 그 아래에 캔버스·상세를 그린다.
+/// 목록에서 이미 DAG를 선택했으므로 별도 DAG 선택기는 두지 않는다.
 fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry, salt: &str) {
     let bar_h = backbar_height(theme);
     let bar = egui::Rect::from_min_size(body.min, egui::vec2(body.width(), bar_h));
@@ -266,8 +248,7 @@ fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry
     let sheet_rect =
         egui::Rect::from_min_max(egui::pos2(rest.min.x, rest.max.y - sheet_h), rest.max);
 
-    // back bar 우측 actions 슬롯 — compact 줌 클러스터 + 러너 배지. 줌 값은 캔버스가
-    // 쓰는 것과 **같은 fit** 에서 읽는다(두 곳에서 따로 계산하면 조용히 갈린다).
+    // 배율 표시는 캔버스와 같은 fit 계산 결과를 쓴다.
     let layout = super::layout(&entry.graph, theme, Orientation::TopDown);
     let zoom = canvas::fit(canvas_rect, &layout, theme).zoom;
     let cluster = chrome::zoom_cluster_size(theme, true);
@@ -289,8 +270,7 @@ fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry
     runner::paint_badge(ui, theme, badge_rect, &entry.graph.runner);
 
     let mut sel = Some("unit".to_owned());
-    // 미니맵은 popup 에서 빠진다 — 560 은 `dag-minimap-min-surface` 아래다.
-    // 줌 클러스터도 캔버스 위에 안 띄운다 — 바로 위 back bar 가 들고 있다.
+    // 팝업은 미니맵을 숨기며 줌 도구는 위쪽 뒤로 가기 바에 둔다.
     canvas::paint(
         ui,
         theme,
@@ -366,8 +346,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "--tasty-separator",
                 "band hairlines",
-                // 칩도 실제로 칠해지는 색을 보여야 한다 — premultiplied 색을
-                // `to_egui()` 로 읽으면 알파가 두 번 곱해져 옆 칩과 다른 톤이 된다.
                 theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(

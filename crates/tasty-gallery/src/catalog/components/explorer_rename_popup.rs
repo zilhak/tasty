@@ -1,17 +1,5 @@
-//! `explorer_rename_popup` specimen — 디자인 T11 explorer "Rename" 팝업
-//! (design §3.5).
-//!
-//! 본체는 `rename` popup 의 한 target(`RenameTarget::ExplorerEntry`)으로 연다 —
-//! `OpenPopupMode::WithScope`(스코프 중앙)라 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 modal 그림자다.
-//!
-//! Add-favorite 팝업과 동일 골격(title / path caption / input / Cancel·primary
-//! footer) — 타이틀·초기값(현재 파일명)·primary 라벨만 다르다. 완전성을 위해
-//! 별도 specimen 으로 등재(design §3.5). 공유 frame 키트(`widgets::dialog`) 재사용.
-//!
-//! 기존 Overlays `rename` specimen(workspace/tab rename)과는 별개 — 이쪽은
-//! explorer 파일/폴더 이름 변경용으로, path caption 을 동반한다.
-//!
-//! i18n 키 후보(본체): `explorer.popup.rename.title/path/rename`, `common.cancel`.
+//! 탐색기 파일·폴더 이름 변경 팝업 예제. 본체는 rename 팝업을 해당 서피스 중앙에 연다.
+//! 즐겨찾기 추가와 프레임을 공유하고 제목·경로·초기 파일명·확인 버튼만 다르다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant};
@@ -27,7 +15,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 kit::title(ui, theme, "Rename");
                 kit::caption(ui, theme, "Path: ~/Downloads/photo.png", false);
-                // 초기값 = 현재 파일명(확장자 포함). gallery 는 정적 표시.
                 kit::field(ui, theme, None, "photo.png", false, false);
                 ui.add_space(theme.spacing_xs.value());
                 ui.horizontal(|ui| {
@@ -69,7 +56,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Shares the Add-to-favorites skeleton — title, seeded value (current file name, \
-         extension included), and primary label differ. Anchored to the target row.",
+        "The host opens this popup in the selected surface scope. It shares the Add-to-favorites \
+         frame, with a different title, current file name including its extension, and button label.",
     );
 }

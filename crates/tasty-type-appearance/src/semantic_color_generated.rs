@@ -1,10 +1,9 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 2 (semantic) 색 접근자. 각 메서드는 DTCG semantic 색 토큰의
-//! 대응 `Theme` 필드를 반환한다.
-//! is_light 분기(text-on-accent)·도출 overlay·합성색(scrim)·OS/brand
-//! 리터럴 등 비단순 접근자는 theme.rs 에 수기로 남는다.
+//! Semantic 색 접근자는 대응하는 Theme 필드를 반환한다.
+//! 테마 밝기에 따른 분기, 합성색, OS·브랜드 고정 색처럼 단순 필드 반환이
+//! 아닌 접근자는 theme.rs에 직접 구현한다.
 
 use crate::color::HexColor;
 

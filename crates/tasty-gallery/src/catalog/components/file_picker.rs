@@ -1,30 +1,5 @@
-//! `file_picker` specimen — Native file picker (local & remote), gallery-first 1단계.
-//!
-//! 권위 원본: `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/
-//! `FpHostBadge`, `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개).
-//! 매핑: `design-gallery-mapping.md` "file_picker".
-//!
-//! 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator와
-//! 브레드크럼 root뿐, 레이아웃은 불변. 원격 표시는 디자인의 열린 결정(A 배지 / B 글리프 /
-//! C 프레임보더) 중 **A 배지가 사용자 확정**되어 이 specimen 은 A만 반영한다 —
-//! B/C 는 미채택 대안이라 코드화하지 않는다.
-//!
-//! **본체 구현**: `src/adapters/ui/popup/file_picker.rs`(`PopupDef` id
-//! `"file_picker"`, Tools 메뉴 트리거). 이 specimen 은 mock 데이터로 독립 렌더 —
-//! 본체와 코드 공유는 하지 않는다(`file_handler_picker` 갤러리 specimen과 동일
-//! 관례). 원격 채널 설계는 `docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그`.
-//!
-//! `draw` = 개요(로컬/원격 loaded 나란히). `draw_states` = loading·empty·
-//! permission-denied·connection-lost·multi-select 5상태. 키보드 focus-ring 은
-//! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
-//! `draw_gesture_table` = 폴더를 고른 두 모드(저장: 대상이 아니다 · 열기: 들어간다).
-//! `draw_save_mode` = 저장 모드 4상태(새 이름 · 기존 파일 선택 → 덮어쓰기 · 선택 후 이름 수정 ·
-//! 깊은 경로의 가운데 생략). 저장 모드의 확정 수단은 footer 의 primary 버튼 **하나**이고,
-//! 목록 행 선택은 확정이 아니라 이름 칸을 채운다.
-//!
-//! **긴 경로 축소 규칙**(열기 모드에도 적용): 넘침은 path bar 가 흡수한다 — breadcrumb 이
-//! 유일한 가변 자식(`flex:1; min-width:0; overflow:hidden`)이고 깊으면 가운데를 접는다
-//! (root + `…` + 마지막 두 성분). footer 의 라벨·버튼은 줄지 않고 이름 칸만 준다.
+//! 로컬·원격 파일 선택과 저장 화면의 정적 예제. 본체의 디렉터리 조회를 실행하지 않는다.
+//! 원격 대상은 호스트 배지로 구분한다. 선택·저장 상태와 긴 경로 표시를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -40,7 +15,7 @@ use crate::catalog::widgets::dialog as kit;
 mod footer;
 mod path_bar;
 
-// ── 프레임 고정 치수 (디자인 raw px 근사 — 화면 전용 고정값, token-policy §c) ──
+// 화면 전용 고정 치수. 대응 토큰이 없는 값은 디자인 값을 유지한다.
 const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: LogicalPx = LogicalPx(480.0);
 const HEADER_H: LogicalPx = LogicalPx(44.0); // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
@@ -63,9 +38,7 @@ const FOLDER_SEL: &str = "configs";
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
 const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 
-/// 브레드크럼 구분자·타입필터 칩 화살표의 글리프 한 변. **아이콘 스케일 밖이다** —
-/// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
-///쓴다. 조용히 12/14 로 반올림하지 않고 값을 보존한 채 이름만 붙였다.
+/// 디자인에서 정한 13px 아이콘. 대응 Theme 크기 토큰이 없어 그대로 사용한다.
 const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 
 /// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
@@ -162,7 +135,6 @@ enum SaveState {
 }
 
 impl SaveState {
-    // 디자인 seed 1:1 (overlays-shared.jsx `saveName`).
     fn name(self) -> &'static str {
         match self {
             SaveState::Picked => "pipeline.yaml",
@@ -277,12 +249,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Tasty's own \"Open file\" dialog — replaces the OS-native picker so it can browse a \
-         remote attach host over the same SSH mechanism as attach (the OS picker only ever \
-         sees the local disk). Local and remote are the same component; they differ only in \
-         the header host indicator and the breadcrumb root, never the layout. Not the Explorer \
-         surface (free-roam tab) — this is a select-and-confirm dialog. Not yet wired to the \
-         host app: the remote directory-listing channel architecture is still undecided.",
+        "Local and remote file pickers share the layout and use a host badge to distinguish the target. The host has an attach-based remote directory-listing path. This gallery renders fixed example data and does not query either filesystem.",
     );
 }
 
@@ -333,11 +300,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Row focus ring (keyboard nav) is shown on pipeline.yaml in the loaded frames above — \
-         a 1px accent-primary outline, distinct from the filled selection background so focus \
-         and selection never merge visually. Multi-select is spec'd for the future \
-         (checkbox column, comma-joined name field, \"N selected\" count); single-select ships \
-         by default. Favorites/recent locations are deferred, not designed this pass.",
+        "The loaded example marks pipeline.yaml with a keyboard focus ring, separate from the selected row background. The multi-select example shows checkboxes, joined names and a selected count; it does not perform file operations.",
     );
 }
 
@@ -401,12 +364,7 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Long-path shrink rule (fixes a defect in open mode too). Overflow is absorbed in the \
-         path bar, never by the footer: the breadcrumb is the only flexible child \
-         (flex:1; min-width:0) and elides in the middle — root + … + the last two segments, \
-         since the current folder and its parent are what orient you; the … lists the hidden \
-         ancestors on click. Footer label, filter chip and both buttons are flex:none; only the \
-         name input shrinks. No horizontal scroll, and Cancel / Open / Save can never be clipped.",
+        "Long paths are shortened in the middle, keeping the root and final two segments. The path field takes the remaining width after the refresh button. In the footer, the name field shrinks while the labels, filter and action buttons retain their width.",
     );
 }
 
@@ -481,11 +439,7 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Save and open are the same view, so every branch of the gesture table had to hold in \
-         both. Single click selects and double click descends, for both kinds in both modes. A \
-         folder is never a save target: the footer button still reads the name field only, so a \
-         selected folder cannot change what gets written — and the muted line says so where the \
-         reading happens, rather than disabling something and leaving the cause off-screen.",
+        "Single click selects a file or folder. Double click enters a folder in either mode. A selected folder is not a save target: Save uses the name field, while Open enters the selected folder. The footer explains this difference.",
     );
 
     spec::dont(
@@ -497,7 +451,6 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-// ════════════════════════════════════════════════════════════════════════
 /// 640×480 카드 한 장.
 fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     egui::Frame::new()
@@ -551,7 +504,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    // A 배지 채택: 헤더 글리프는 원격/로컬 공통 FILE (glyph 후보 B 의 remote 스왑은 미반영).
     kit::icon(
         &mut child,
         icons::FILE,
@@ -578,7 +530,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     });
 }
 
-/// 원격 host 배지(§6.1 A안, 채택) — mono `user@host` 칩, `accent-info` 축.
+/// 원격 user@host를 표시하는 배지.
 fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let info = theme.accent_info().to_egui();
     let font = egui::FontId::monospace(theme.font_size_caption.value());
@@ -592,7 +544,6 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
-    // info 배지의 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
     ui.painter()
         .rect_filled(rect, radius, info.gamma_multiply(theme.tint_fill_alpha()));
     ui.painter().rect_stroke(

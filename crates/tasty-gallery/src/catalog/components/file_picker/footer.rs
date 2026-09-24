@@ -1,5 +1,4 @@
-//! `file_picker` specimen 의 footer — 이름 행 · 덮어쓰기 경고 줄 · Cancel / primary.
-//! 권위 원본: `gallery/overlays-shared.jsx` `FilePickerFrame` footer(`mode`/`save`).
+//! 파일 선택 예제의 이름 입력, 안내, 확인·취소 버튼.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
@@ -134,9 +133,7 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
     });
 }
 
-/// 폴더를 고른 상태의 안내 줄 — `folder` 글리프 + muted caption. 경고가 아니라 **읽는
-/// 자리에 붙는 사실**이라 톤이 없다: 저장은 그것이 대상이 될 수 없다고 말하고, 열기는
-/// 확정하면 들어간다고 말한다. 강조는 굵기가 아니라 색으로 준다(egui 관례).
+/// 폴더를 고르면 저장 대상으로 쓸 수 없거나 Open으로 들어갈 수 있다고 안내한다.
 fn folder_line(ui: &mut egui::Ui, theme: &Theme, mode: Mode) {
     let muted = theme.text_muted().to_egui();
     let size = theme.font_size_caption.value();

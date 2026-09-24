@@ -1,5 +1,4 @@
-//! `file_picker` specimen 의 path bar — breadcrumb(깊으면 가운데 생략) + refresh.
-//! 권위 원본: `gallery/overlays-shared.jsx` `FpCrumbs`(`elide`) · `FilePickerFrame` path bar.
+//! 파일 선택 예제의 경로와 새로고침 버튼.
 
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{IconButton, IconButtonVariant};
@@ -25,8 +24,7 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
         egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
         egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom()),
     );
-    // refresh(flex:none) 가 오른쪽 끝을 먼저 차지하고, breadcrumb 은 남은 폭(flex:1;
-    // min-width:0; overflow:hidden) 안에서만 그린다 — 경로가 길어도 버튼을 밀지 않는다.
+    // 새로고침 버튼의 공간을 먼저 확보한 뒤 남은 폭에 경로를 그린다.
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(inner)
@@ -96,7 +94,6 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             current: true,
         },
     ];
-    // 디자인 seed 1:1 (overlays-shared.jsx `deepTail`).
     const DEEP_CRUMBS: &[Crumb] = &[
         Crumb {
             label: "/",

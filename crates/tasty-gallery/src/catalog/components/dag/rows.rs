@@ -1,9 +1,4 @@
-//! DAG 목록 행 — 디자인 `dagRowItems` 의 구조 전사.
-//!
-//! `ListCtrl` 행 하나에 얹히는 **trailing 클러스터**가 이 파트의 전부다:
-//! 출처 태그(`derived`) · rollup 상태(글리프 + 철자, 8 종 동일 어휘) · mono
-//! `done/total`. 진행 막대도 스택바도 없다 — 12 개짜리 그래프에서 막대 한 칸은
-//! 8% 라 셋과 넷을 눈으로 못 가르고, 이 화면의 용건은 정확한 수다.
+//! DAG 목록 행의 출처 태그, 요약 상태, 완료 작업 수 예제.
 
 use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
@@ -20,8 +15,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 그래프 전체를 대표하는 한 상태. 본체 `DagStateCounts::rollup` 과 같은
-    /// 우선순위 — 실행 중 > 실패 > 전부 종료 > 준비됨 > 대기.
+    /// 갤러리용 요약. 실행 중·실패가 없고 전부 종료됐으면 취소·건너뜀도 Succeeded로 묶는다.
     pub fn rollup(&self) -> Status {
         let has = |s: Status| self.graph.nodes.iter().any(|n| n.status == s);
         if has(Status::Running) {
@@ -37,8 +31,7 @@ impl Entry {
         }
     }
 
-    /// 더 이상 움직이지 않기로 확정된 task 수 — 성공만이 아니라 실패·취소·건너뜀도
-    /// 포함한다. "3/12 남았다" 가 아니라 "9/12 가 끝났다" 를 읽는 숫자다.
+    /// 성공·실패·취소·건너뜀을 포함한 종료 작업 수.
     pub fn done(&self) -> usize {
         self.graph
             .nodes
@@ -96,8 +89,7 @@ pub fn trailing(ui: &mut egui::Ui, theme: &Theme, entry: &Entry) {
             egui::RichText::new(format!("{} {}", status.glyph(), status.label()))
                 .monospace()
                 .size(theme.font_size_caption.value())
-                // 상태 accent 가 아니라 `-label` role — 캡션 크기에서 4.5:1 을
-                // 지키는 쪽은 이 톤이다(노드 카드와 같은 규칙).
+                // 작은 라벨에 맞는 상태별 텍스트 색을 쓴다.
                 .color(status.label_fg(theme).to_egui()),
         );
         if entry.derived {
@@ -184,9 +176,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The rollup draws from the node vocabulary but reaches only six of it: running > failed > \
-         all-terminal > ready > waiting — one failure is louder than nine successes. Cancelled \
-         folds into skipped and unknown into waiting, so a DAG never rolls up as either; the \
-         status filter lists those six and nothing else.",
+        "The host uses six summary states. This gallery calculates a simplified summary: \
+         running, failed, all finished, ready, then waiting. With no running or failed tasks, \
+         an all-finished group maps to Succeeded even if some tasks were cancelled or skipped. \
+         The host reports Skipped for those groups.",
     );
 }

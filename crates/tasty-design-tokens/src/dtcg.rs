@@ -529,9 +529,8 @@ pub fn generate(set: &TokenSet) -> Generated {
     };
 
     let mut primitive = header(
-        "//! Tier 1 — primitive 치수 스케일. **`pub(crate)`**: \"UI 는 primitive 를 직접\n\
-         //! 읽지 않는다\"는 규칙을 모듈 공개 범위로 지킨다.\n\
-         //! 외부 crate 는 `semantic` / `component` 를 경유할 것.",
+        "//! Primitive 상수는 크레이트 내부에만 공개한다.\n\
+         //! 외부 크레이트에서는 semantic 또는 component를 사용한다.",
     );
     primitive.push_str("#![allow(dead_code)] // 스케일 전체를 보존한다 — 미참조 엔트리 포함.\n\n");
     primitive.push_str("use tasty_type_geometry::length::LogicalPx;\n");
@@ -551,12 +550,9 @@ pub fn generate(set: &TokenSet) -> Generated {
     }
 
     let mut semantic = header(
-        "//! Tier 2 — semantic 치수/타이포/모션 (테마 불변). primitive 참조로 정의된다.\n\
-         //! 색 상수는 생성하지 않는다. 색은 런타임 Theme 접근자로 읽는다.\n\
-         //!\n\
-         //! **zoom 주의**: 이 const 들은 `SIZING` 초기값·정합 테스트용이다. 런타임\n\
-         //! 소비는 반드시 `&Theme` 필드/접근자 경유 (`with_colors_and_zoom` 의 zoom\n\
-         //! resolve 를 우회하지 말 것).",
+        "//! 테마에 따라 바뀌지 않는 semantic 치수·글꼴·시간 상수.\n\
+         //! 치수 상수는 SIZING 초깃값과 대조 시험에 쓴다. 위젯은 Theme 필드나 접근자로\n\
+         //! 치수를 읽어 UI 배율과 반올림 정책을 따른다. 색은 런타임 Theme에서 읽는다.",
     );
     semantic.push('\n');
     semantic.push_str("use tasty_type_geometry::length::LogicalPx;\n");
@@ -586,11 +582,9 @@ pub fn generate(set: &TokenSet) -> Generated {
         }
     }
     let mut component = header(
-        "//! Tier 3 — component 치수 (테마 불변), 컴포넌트별 하위 모듈. semantic (일부는\n\
-         //! primitive 직접 — 디자인 실물의 tier-skip alias) 참조로 정의된다.\n\
-         //! 색 접근자는 tasty-type-appearance에 생성한다.\n\
-         //!\n\
-         //! **zoom 주의**: 런타임 소비는 반드시 `&Theme` 경유 — `semantic.rs` 참조.",
+        "//! 컴포넌트별 상수. 원본 토큰에 따라 semantic 또는 primitive를 참조한다.\n\
+         //! 위젯의 치수는 Theme 필드나 접근자로 읽어 UI 배율 정책을 따른다.\n\
+         //! 색 접근자는 tasty-type-appearance에 생성한다.",
     );
     for (module, entries) in &by_module {
         component.push('\n');

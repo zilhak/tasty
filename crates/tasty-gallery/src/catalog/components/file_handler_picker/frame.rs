@@ -1,6 +1,4 @@
-//! canonical 프레임의 조각들 — 행 모델(F2/F3 도출) · 행 · 그룹 헤딩 · 헤더 ·
-//! fallback 띠 · empty 블록 · footer · 기각된 타이틀바, 그리고 그것을 한 상태로 조립하는
-//! [`frame`]. 어느 Spec 을 그릴지는 상위 모듈이 정한다.
+//! 핸들러 선택 예제의 행 데이터와 프레임 구성 요소.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::file_handler as fh_model;
@@ -13,8 +11,6 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::widgets::dialog as kit;
-
-// ── 행 모델 — 디자인 `FH_ROWS` 주석의 `{ id, owner, kind, name?, icon?, when? }` ──
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Owner {
@@ -38,11 +34,11 @@ impl Owner {
 struct Row {
     id: &'static str,
     owner: Owner,
-    /// handler action 이 여는 surface kind — 행 글리프의 출처(F2).
+    /// handler action 이 여는 surface kind. 행 아이콘을 정할 때 쓴다.
     kind: &'static str,
-    /// 선언된 표시 이름. `None` 이면 id 의 마지막 `/` 뒤 조각을 mono 로 쓴다(F3).
+    /// 선언된 표시 이름. `None` 이면 id 의 마지막 `/` 뒤 조각을 고정폭 글꼴로 쓴다.
     name: Option<&'static str>,
-    /// plugin 이 매니페스트로 선언한 글리프 이름. `icons.json` 에 있는 이름일 때만 이긴다.
+    /// plugin 이 매니페스트로 선언한 글리프 이름. `icons.json` 에 있는 이름일 때만 우선한다.
     icon: Option<&'static str>,
     /// Recent 행의 마지막 사용 시각(상대 표기).
     when: Option<&'static str>,
@@ -69,7 +65,7 @@ const fn named(id: &'static str, owner: Owner, kind: &'static str, name: &'stati
     }
 }
 
-/// F2 — surface kind → `icons.json` 글리프. 디자인 `FH_KIND_ICON`.
+/// 서피스 종류에 대응하는 기본 아이콘.
 fn kind_icon(kind: &str) -> Option<MockGlyph> {
     Some(match kind {
         "markdown" => icons::MARKDOWN,
@@ -102,7 +98,7 @@ fn declared_icon(name: &str) -> Option<MockGlyph> {
     }
 }
 
-/// F2 도출 — 선언 글리프가 이기고, 없으면 kind 에서, 그것도 없으면 `file`.
+/// 선언한 아이콘, 서피스 종류의 기본 아이콘, file 순서로 선택한다.
 fn row_icon(r: &Row) -> MockGlyph {
     r.icon
         .and_then(declared_icon)
@@ -110,7 +106,7 @@ fn row_icon(r: &Row) -> MockGlyph {
         .unwrap_or(icons::FILE)
 }
 
-/// F3 도출 — 선언된 이름이 이기고, 없으면 id 의 마지막 `/` 뒤 조각(없으면 id 통째).
+/// 선언한 이름이 없으면 ID의 마지막 경로 부분을 사용한다.
 fn row_name(r: &Row) -> &'static str {
     match r.name {
         Some(n) => n,
@@ -120,8 +116,6 @@ fn row_name(r: &Row) -> &'static str {
         },
     }
 }
-
-// ── 상태별 행 목록 — 디자인 `FH_ROWS` / `FH_LONG` ────────────────────────────
 
 const SUGGESTED: &[Row] = &[
     Row {
@@ -148,13 +142,7 @@ const SUGGESTED: &[Row] = &[
     row("dev.git-helper.diff/viewer", Owner::Plugin, "markdown"),
 ];
 
-/// 어휘 6 단계가 한 화면에 보이도록 **버킷당 한 행**을 둔다 — 이 목록의 일은 핸들러
-/// 구성을 보이는 것이 아니라 "언제" 열이 가질 수 있는 모든 모양을 한눈에 세우는 것이다.
-/// 가장 넓은 어휘(절대 날짜 10 자)가 맨 아래에 있어 열 예약폭이 눈으로 확인된다.
-///
-/// 핸들러는 전부 이 specimen 의 다른 목록에 이미 있는 것들이다 — 디자인이 값으로 준
-/// 두 쌍(`2h ago` ↔ Text editor · `yesterday` ↔ hex viewer)은 그대로 두고 나머지
-/// 넷만 기존 재고에서 붙였다.
+/// 상대 시각 다섯 가지와 날짜를 한 행씩 표시해 열 너비를 비교한다.
 const RECENT: &[Row] = &[
     Row {
         when: Some("just now"),
@@ -220,8 +208,7 @@ const ALL: &[Row] = &[
     row("io.binview.hex/viewer", Owner::Plugin, "binary"),
 ];
 
-/// F2/F3 의 세 경우를 한 목록에 섞은 것: 이름+아이콘 선언(plugin) · 아무 선언도 없는 것
-/// (host) · 앞에서 잘라야 할 만큼 긴 id.
+/// 표시 이름·아이콘의 유무와 긴 ID를 섞은 예제.
 const MIXED: &[Row] = &[
     row("com.tasty.image/viewer", Owner::Host, "image"),
     Row {
@@ -271,8 +258,6 @@ const LONG_EXTRA: &[Row] = &[
     ),
 ];
 
-// ── 프레임 상태 ─────────────────────────────────────────────────────────────
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum FrameState {
     Default,
@@ -292,8 +277,6 @@ impl FrameState {
         }
     }
 }
-
-// ── 조각 렌더 ───────────────────────────────────────────────────────────────
 
 /// 한 줄 말줄임 — 가용 폭을 넘으면 `…` 로 끝낸다.
 fn paint_truncated(
@@ -335,7 +318,6 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
             theme.corner_radius_sm.value(),
             theme.surface_active().to_egui(),
         );
-        // 본체와 같은 역할 토큰 — 목록 행 선택 막대는 `listctrl` 계열이다.
         let bar = egui::Rect::from_min_size(
             rect.min,
             egui::vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
@@ -344,7 +326,6 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
             .rect_filled(bar, 0.0, theme.listctrl_selected_bar().to_egui());
     }
 
-    // 글리프 — plugin 은 mauve, Recent 의 비-plugin 행만 흐린다.
     let glyph_color = if plugin {
         theme.accent_agent().to_egui()
     } else {
@@ -409,9 +390,7 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
         sep_color,
         text_w,
     ) + FH_ID_LINE_GAP.value();
-    // 언제 열은 **최대 어휘로 예약한다**(`component.fh-when-width`) — 실제 문자열 폭으로
-    // 재면 버킷이 바뀔 때마다 옆의 id 가 reflow 된다. 위 여섯 행이 서로 다른 어휘를
-    // 들고도 id 끝이 한 줄에 서는 것이 그 예약의 눈으로 보는 증거다.
+    // 시각 문자열이 바뀌어도 ID 영역의 폭이 흔들리지 않도록 열 너비를 고정한다.
     let when_w = if r.when.is_some() {
         let dot = ui.fonts(|f| f.layout_no_wrap("·".into(), meta_font.clone(), sep_color));
         dot.rect.width() + theme.fh_when_width().value() + FH_ID_LINE_GAP.value() * 2.0
@@ -460,12 +439,7 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
     }
 }
 
-/// 그룹 헤딩 — 라벨(uppercase) + mono count + 한 줄 caption.
-///
-/// 자간은 전사하지 않는다 — 채널이 없어서가 아니라 값이 없어서다(egui 에는
-/// `RichText::extra_letter_spacing` 이 있다). canonical `FileHandlerFrame` 은 평평한
-/// 목록이라 그룹 헤딩도 `letterSpacing` 도 없다. 본체 `group_head` 와 같은 판정이다.
-/// 대문자 · 11px · 색만 전사한다.
+/// 그룹 제목과 개수, 설명. 디자인에 별도 자간 값이 없어 기본 자간을 사용한다.
 fn fh_group(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -537,10 +511,7 @@ fn fh_header(ui: &mut egui::Ui, theme: &Theme, state: FrameState, path: &str) {
                     }
                 });
             });
-            // 긴 경로는 렌더 전에 **앞에서** 잘린다(파일명이 꼬리이고 그것이 식별한다).
-            // 모델에서 잘라 LTR 로 그린다 — `direction: rtl` 은 런을 재배열해 반대쪽을 자른다.
-            // 본체와 같이 한 줄 말줄임으로 그린다(`ui.label` 이 아니다) — 줄바꿈하면
-            // 잘못 계산된 문자 예산이 두 줄로 조용히 숨어 정합이 안 보인다.
+            // 파일명이 남도록 앞부분을 생략한 뒤 LTR 한 줄로 그린다.
             let path_font = egui::FontId::monospace(theme.font_size_caption.value());
             let path_h = ui.fonts(|f| f.row_height(&path_font));
             let path_w = ui.available_width();
@@ -595,8 +566,7 @@ fn fh_fallback_strip(ui: &mut egui::Ui, theme: &Theme) {
     kit::hsep(ui, theme);
 }
 
-/// empty 블록 — 고를 것이 시스템 전체에 없다. 프레임이 다른 곳으로 나가는 길을 내주는
-/// 유일한 상태다.
+/// 등록된 핸들러가 없을 때 설정 화면으로 안내한다.
 fn fh_empty(ui: &mut egui::Ui, theme: &Theme) {
     kit::region(
         ui,
@@ -712,10 +682,7 @@ pub(super) fn frame(ui: &mut egui::Ui, theme: &Theme, state: FrameState, headles
     frame_with_path(ui, theme, state, headless, state.path());
 }
 
-/// 헤더 경로를 밖에서 정하는 갈래 — 디자인 `FileHandlerFrame` 의 `path` prop.
-///
-/// 경로 컷 규칙을 보이는 Spec 은 같은 프레임에 **다른 경로**를 넣어야 하므로, 상태가
-/// 경로를 정하는 기본값([`FrameState::path`])과 분리한다.
+/// 상태별 기본 경로 대신 지정한 경로로 프레임을 그린다.
 pub(super) fn frame_with_path(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -740,9 +707,7 @@ pub(super) fn frame_with_path(
     });
 }
 
-/// 헤더만 있는 specimen — 디자인 `FhHeader` 하나를 프레임 폭 그대로 세운다.
-///
-/// 경로 컷은 헤더 한 줄의 규칙이라, 목록·footer 까지 딸려 오면 비교할 것이 가려진다.
+/// 경로 생략 결과를 비교할 수 있도록 헤더만 그린다.
 pub(super) fn header_card(ui: &mut egui::Ui, theme: &Theme, path: &str) {
     kit::frame_card(ui, theme, FH_FRAME_WIDTH, kit::panel_fill(theme), |ui| {
         fh_header(ui, theme, FrameState::Default, path);
@@ -798,10 +763,7 @@ fn fh_list(ui: &mut egui::Ui, theme: &Theme, state: FrameState) {
         draw(ui);
         return;
     }
-    // long — 목록만 스크롤하고(헤더·footer 는 고정) 하단에 20px 페이드를 얹어 잘림을 보인다.
-    // 높이를 먼저 **할당**하고 그 안에서 스크롤한다. `max_height` 만으로는 상한만 정해지고
-    // 실제 높이는 부모가 남긴 공간과의 min 이라(egui `ScrollArea::begin`), 표본 stage 가
-    // 높이를 바투 주면 목록이 한 행 높이로 접혀 264 의 잘림을 보여 주지 못한다.
+    // 목록 높이를 먼저 확보해야 부모의 남은 높이에 눌려 한 행으로 줄어들지 않는다.
     let h = FH_LIST_MAX_HEIGHT.value();
     let top = ui.cursor().top();
     ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| {
@@ -856,9 +818,7 @@ mod tests {
         );
     }
 
-    /// specimen 이 **본체와 같은 함수**를 부르는지. 값을 다시 재는 것이 아니라
-    /// (그쪽은 `tasty_ui_widgets::file_handler` 의 시험이 본다) 이 파일이 자기 사본을
-    /// 다시 만들지 않았는지를 본다 — 예전에는 여기 복제본이 있었다.
+    /// 공용 ID 생략 함수가 앞부분을 줄이고 끝부분과 최대 문자 수를 지키는지 확인한다.
     #[test]
     fn the_id_is_elided_at_the_front_past_the_limit() {
         let short = "com.tasty.text/editor";

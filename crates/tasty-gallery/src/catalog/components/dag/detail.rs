@@ -1,11 +1,5 @@
-//! 노드 상세 — 디자인 `DagDetail` 의 구조 전사.
-//!
-//! 넓은 서피스에서는 288px 우측 패널, 좁으면(<640) 220px 하단 시트다. 실패 출력은
-//! 수십 줄이 될 수 있으므로 **경계가 정해진 스크롤 블록**으로 가둔다 — 그래프를
-//! 화면 밖으로 밀어내는 무한 확장은 없다.
-//!
-//! 세로 순서: 이름+닫기 → 상태+종류 → 정의 목록(시작/소요/종료코드/task id) →
-//! 명령 → 의존 목록 → 에러 tail → 출력 tail.
+//! 넓은 화면은 오른쪽 패널, 좁은 화면은 하단 영역에 노드 상세를 표시한다.
+//! 긴 오류·출력 로그는 높이를 제한한 영역 안에서 스크롤한다.
 
 use tasty_design_tokens::generated::semantic::CONTROL_HEIGHT_TREE;
 use tasty_icons as icons;
@@ -18,7 +12,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 상세가 붙는 자리.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dock {
-    /// 우측 288px 패널 — 좌변에 세로 구분선.
+    /// 우측 288px 패널 — 왼쪽에 세로 구분선.
     Side,
     /// 하단 220px 시트 — 윗변에 가로 구분선.
     Sheet,
@@ -28,7 +22,6 @@ fn caption(theme: &Theme) -> f32 {
     theme.font_size_caption.value()
 }
 
-/// 소제목 — micro uppercase muted.
 fn block_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
@@ -37,7 +30,6 @@ fn block_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// mono 코드 블록 — 명령 / 로그 tail 공용 베드.
 fn code_block(ui: &mut egui::Ui, theme: &Theme, id: (&str, &str), text: &str, max_h: Option<f32>) {
     egui::Frame::new()
         .fill(theme.dag_detail_log_bg().to_egui())
@@ -149,8 +141,7 @@ fn dependency_row(
 pub fn draw_body(ui: &mut egui::Ui, theme: &Theme, graph: &Graph, id: &str) -> Option<String> {
     let node = graph.node(id)?;
     let mut jump = None;
-    // 이 패널 안에서는 pixel painting 이 아니라 문서 흐름을 쓴다 — 무대에서
-    // 물려받은 item_spacing 을 명시적으로 되돌린다(0 이면 라벨이 붙어버린다).
+    // 상위 예제의 0 간격을 그대로 쓰면 라벨이 붙으므로 본문 간격을 다시 지정한다.
     ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_sm.value(), theme.spacing_md.value());
 
     ui.horizontal_top(|ui| {

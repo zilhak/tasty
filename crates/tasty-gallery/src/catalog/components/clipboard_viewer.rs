@@ -1,33 +1,5 @@
-//! `clipboard_viewer` specimen — clipboard-viewer plugin 의 header/type-bar/body/
-//! footer popup (egui-mesh popup 전사, Overlays).
-//!
-//! 본체 렌더 경로: plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs` 가
-//! **egui-mesh popup**(docs/dev-guide/egui-mesh-channel.md#데이터-흐름)으로 popup 콘텐츠를 자기 프로세스에서 egui 로
-//! 그린다 — rail(세로 타입 목록)은 폐기됐다. header(아이콘+타이틀+snapshot 뱃지+
-//! close) → type-bar(1개면 아이콘+뱃지, 2개 이상이면 가로 세그먼트 스위치) →
-//! body(well: border+radius+bg-app 스크롤) → footer(mime+Close) 4단 수직 스택.
-//! host 는 셸(scrim/border)만 그리고 plugin mesh 를 content 영역에 합성한다. 갤러리는
-//! plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock 으로
-//! 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
-//!
-//! 10 상태를 나란히 노출:
-//! - **data (text only)** — 정상 4단, type-bar 는 배지로 표시(타입 1개).
-//! - **data (files, segmented)** — type-bar 가 Text/Files 2개 세그먼트로 표시되고
-//!   body 는 아이콘+경로 한 줄씩.
-//! - **compact (5 types)** — `SEG_COMPACT_AT`(5) 이상이라 비활성 세그먼트가 아이콘
-//!   전용으로 줄고 active 하나만 라벨을 남긴다.
-//! - **image** — Image 타입 body(아이콘 + 치수·크기 메타 + "인라인 미리보기 없음"
-//!   안내, 실제 픽셀 렌더링 없음 — design 결정).
-//! - **html — raw source** — HTML 타입, Pretty print 체크박스 미체크(원본 그대로).
-//! - **html — pretty print** — 같은 데이터, 체크박스 체크(인덴트 적용).
-//! - **other** — text/files/image/html 가 아닌 raw 포맷을 이름+크기+미리보기 블록으로
-//!   나열, 블록 사이 separator, 긴 미리보기는 `+N more lines`로 절삭.
-//! - **empty** — 가용 타입 0개(아이콘 + 굵은 타이틀 + 옅은 부제 2줄).
-//! - **read failed** — 클립보드 핸들 실패(danger 톤).
-//! - **already open** — 단일 인스턴스 가드.
-//!
-//! 압축 세그먼트는 **다섯이 전부이기 때문에** 재현된다 — 문턱이 5 이고 타입도 다섯
-//! (Text/Files/Image/Html/Other)이라 다섯이 동시에 살아 있으면 곧 compact 다.
+//! 클립보드 플러그인 화면의 정적 예제. 헤더 → 타입 선택 → 본문 → 푸터를 재현한다.
+//! 플러그인 프로세스를 실행하지 않으므로 실제 데이터·픽셀 일치는 검증하지 않는다.
 
 use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
@@ -44,7 +16,6 @@ use crate::catalog::widgets::dialog as kit;
 const POPUP_W: LogicalPx = LogicalPx(480.0);
 const POPUP_H: LogicalPx = LogicalPx(360.0);
 
-// CenterState 아이콘 크기는 plugin 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
 use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
 
 /// compact type-bar 의 다섯 세그먼트 — (아이콘, 라벨, active). `ClipboardType` 의 다섯
@@ -71,24 +42,17 @@ const FILE_PREVIEW: &[&str] = &[
     "/home/user/workspace/tasty/Cargo.toml",
 ];
 
-/// HTML specimen 원본 소스(raw). `HTML_PRETTY` 는 같은 내용을 plugin
-/// `html_format::prettify()` 와 동형 규칙(태그 깊이 인덴트)으로 손으로 정리해둔
-/// 짝(design 의 `html`/`htmlPretty` specimen 과 동형) — 갤러리는 plugin crate 를
-/// 의존할 수 없어 알고리즘을 다시 부르는 대신 결과물을 그대로 박아둔다.
+/// HTML 원본과 태그 깊이에 맞춰 들여쓴 예제. 플러그인 포매터를 호출하지 않는다.
 const HTML_RAW: &str = "<div class=\"card\"><p>Hello <b>world</b></p></div>";
 const HTML_PRETTY: &str =
     "<div class=\"card\">\n  <p>\n    Hello\n    <b>\n      world\n    </b>\n  </p>\n</div>";
 
-/// "기타" specimen 한 포맷 블록 — 실 데이터는 plugin
-/// `clipboard::OtherFormatEntry`(이름/바이트 길이/미리보기)지만 갤러리는 plugin
-/// crate 를 의존할 수 없어 (이름, 크기 문자열, 미리보기, 절삭 줄 수) 를 직접 박아
-/// 둔다.
+/// 기타 포맷의 이름·크기·미리보기·생략 줄 수를 담는 예제 데이터.
 struct OtherSample {
     name: &'static str,
     size: &'static str,
     preview: &'static str,
-    /// `Some(n)` 이면 그 블록에 `+n more lines` 절삭 문구를 함께 그린다(design
-    /// 확정 결과 — 내용이 길면 이탤릭 텍스트로 절삭 표시).
+    /// 생략된 줄 수. `Some(n)`이면 `+n more lines`를 표시한다.
     more_lines: Option<usize>,
 }
 
@@ -115,12 +79,7 @@ thread_local! {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 세로 적층이다. `Wrap` 은 `spec::cluster` 를 줄바꿈하지 못한다 — cluster 가 `ui.vertical`
-    // 이라 남은 폭을 자기 최대폭으로 받아 **넘치는 일이 없고**, 그래서 `horizontal_wrapped`
-    // 가 줄을 안 바꾼다. 안의 카드는 480 고정폭이라 그대로 흘러 나가고, 본문 스크롤은 세로
-    // 전용이라 넘친 만큼은 도달할 수 없다. 이 절은 480 팝업이 열이라 그 형태가 그대로 나서
-    // 앞의 둘 말고는 안 보였다(실측). 같은 모양의 다른 절들(git-viewer · image · markdown)이
-    // 이미 `Column` 을 쓴다.
+    // 고정 폭 카드가 가로 스크롤 밖으로 잘리지 않도록 세로로 나열한다.
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         spec::cluster(
             ui,
@@ -245,43 +204,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "구조 전사 — 좌측 rail(세로 타입 목록)을 폐기하고 header/type-bar/\
-         body/footer 4단 수직 스택으로 교체했다. 타입이 1개(Text)면 type-bar 를 배지 \
-         하나로만, 2개 이상(Text/Files)이면 가로 세그먼트로 보여준다 — \
-         타입이 `SEG_COMPACT_AT`(5) 이상이면 비활성 세그먼트가 아이콘 전용으로 \
-         줄고 active 하나만 라벨을 남긴다 — `ClipboardType` 이 다섯이라 다섯이 동시에 \
-         살아 있으면 나는 상태이고 `compact` specimen 이 그것이다. files body 는 아이콘+mono 경로 \
-         한 줄씩, 긴 경로는 말줄임 처리한다(design ellipsis 전사). image body 는 실제 \
-         픽셀을 렌더링하지 않고 아이콘+치수·크기 메타+안내 문구만 중앙 정렬로 보여준다\
-         (design 결정). HTML 타입은 렌더링하지 않고 원본 소스를 text \
-         타입과 동일한 mono well 로 보여준다. type-bar 우측의 메타 슬롯이 HTML 타입일 \
-         때만 Pretty print 체크박스로 스왑되고, 밀려난 메타(문자수·줄수)는 푸터로 \
-         이동해 mime 과 `·` 로 결합 표시된다(`text/html · N chars · N line(s)`). \
-         체크박스 on 상태의 인덴트 결과는 plugin `html_format::prettify()`(새 의존성 \
-         없는 태그 깊이 인덴터, script/style/pre 는 verbatim 보존)와 동일 규칙으로 \
-         수기 정리한 샘플이다 — 갤러리는 plugin crate 를 의존할 수 없어 결과 문자열을 \
-         직접 박아둔다. 헤더/푸터의 Close 버튼은 host 의 outside-click/Esc 와 기능 \
-         중복이지만 디자인이 명시적으로 요구해 그대로 반영했다. text/files/\
-         image/html 어디에도 속하지 않는 raw 포맷은 \"Other\" 타입 하나로 묶여 \
-         type-bar 에 나타난다. body 는 발견된 포맷마다 이름(mono, text-secondary, \
-         굵게)+크기(mono, text-muted)를 같은 줄에, 그 아래 텍스트화된 미리보기를 \
-         보여주는 블록을 세로로 나열하고 블록 사이는 1px separator 로 구분한다 — \
-         목록 자체(포맷 개수)는 절대 접지 않는다(design §6.5 확정). 미리보기가 길면 \
-         `+N more lines`로 절삭 표시한다. footer 는 mime 자리에 \"{n} unrecognized \
-         formats\" 문구가 대신 들어간다(여러 이종 포맷을 묶은 버킷이라 단일 mime 이 \
-         없음). 실제 raw 열거는 plugin `raw_formats`(Windows `clipboard-win`/macOS \
-         `objc2-app-kit`/Linux `x11rb` TARGETS)가 text/files/image/html 로 이미 소비된 \
-         변형을 플랫폼별 매핑 테이블로 제외한 나머지를 읽는다 — 갤러리는 그 결과 \
-         문자열만 손으로 정리해 박아둔다.",
+        "타입이 하나면 배지, 둘 이상이면 가로 선택 목록으로 표시한다. 다섯 타입이 모두 있으면 \
+         선택되지 않은 타입은 아이콘만 남긴다. 파일 경로는 한 줄로 줄여 표시하고, 이미지는 \
+         실제 미리보기 없이 아이콘과 치수·크기만 보여준다.\n\n\
+         HTML은 렌더링하지 않고 소스를 표시한다. Pretty print는 미리 준비한 들여쓰기 예제를 \
+         선택하며 플러그인 포매터를 실행하지 않는다. HTML의 문자·줄 수는 푸터에 \
+         text/html · N chars · N line(s)로 표시한다.\n\n\
+         Other는 앞의 네 타입에 속하지 않는 포맷이다. 이름·크기·미리보기를 포맷별로 나열하며 \
+         포맷 목록은 접지 않는다. 긴 미리보기는 +N more lines로 생략량을 표시하고 푸터에는 \
+         {n} unrecognized formats를 표시한다. 플랫폼별 클립보드 열거는 이 예제에서 실행하지 않는다.",
     );
 }
 
-/// image body 메타 샘플 — design mock(`clipboard_viewer.html` `multi.types` image 항목)
-/// 과 동일한 예시 수치. 실제 값은 arboard `ImageData::width/height` + `bytes.len()`
-/// 근사(`crates/tasty-plugin-clipboard-viewer/src/clipboard.rs::format_bytes`).
+/// 디자인 예제의 이미지 치수·바이트 크기.
 const IMAGE_META: &str = "1920×1080 · 7.9 MB";
 
-/// 정상 데이터 상태 — header + type-bar(배지) + body(well) + footer 4행.
 fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -291,7 +228,6 @@ fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// files 상태 — header + type-bar(Text/Files 세그먼트) + body(경로 행) + footer 4행.
 fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -301,8 +237,6 @@ fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// compact 상태 — 다섯 타입이 동시에 살아 있을 때. header + type-bar(압축 세그먼트) +
-/// body(경로 행) + footer 4행.
 fn compact_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -312,8 +246,6 @@ fn compact_popup(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// image 타입 상태 — header + type-bar(Image 뱃지+meta) + body(아이콘+메타+안내) +
-/// footer 4행(실제 렌더링 없음).
 fn image_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -362,7 +294,6 @@ fn type_bar_segmented_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
-/// type-bar — Image 뱃지(좌) + meta 텍스트(우, design `t.meta` 슬롯).
 fn image_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
@@ -406,13 +337,7 @@ fn image_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
-/// 세그먼트 한 칸 — active 면 accent 채움 + on-accent 텍스트.
-/// 세그먼트 한 칸. `show_label` 이 거짓이면 라벨과 그 앞 gap 이 통째로 빠져 **아이콘
-/// 전용**으로 좁아진다 — plugin `view.rs` 의 `seg_shows_label(compact, active)` 가 정하는
-/// 그 갈래다. `first` 가 거짓이면 왼쪽 경계에 1px 구분선을 긋는다(plugin 과 같다).
-/// type-bar — 타입이 `SEG_COMPACT_AT`(5) 이상일 때. **비활성 세그먼트가 아이콘 전용으로
-/// 줄고 active 하나만 라벨을 남긴다.** 다섯은 `ClipboardType` 의 전부(Text/Files/Image/
-/// Html/Other)라, 클립보드가 그 다섯을 동시에 들고 있으면 나는 상태다.
+/// 다섯 타입을 함께 표시한다. 선택되지 않은 타입은 아이콘만 남긴다.
 fn type_bar_compact_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
@@ -510,7 +435,6 @@ fn seg(
     }
 }
 
-/// body(files) — well 안에 아이콘 + mono 경로 한 줄씩(design ellipsis 전사).
 fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
@@ -554,8 +478,6 @@ fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
-/// body — well 안에 아이콘(30px 고정) + 메타 + "인라인 미리보기 없음" 안내를 상하좌우
-/// 중앙 정렬(design jsx image 분기의 `cbWell` + `alignItems/justifyContent: center`).
 fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
@@ -575,8 +497,7 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::StrokeKind::Inside,
     );
 
-    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(docs/design/systems/theme.md#ui-코드의-색상-접근 · 인벤토리는
-    // docs/plugins/clipboard-viewer/screens/clipboard-viewer.md).
+    // 빈 상태와 같은 아이콘 크기를 쓴다.
     let gap = theme.spacing_sm.value();
     let icon_h = CENTER_ICON_SIZE;
     let meta_h = theme.font_size_caption.value();
@@ -611,8 +532,6 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// "기타" 버킷 상태 — header + type-bar(Other 뱃지) + body(포맷 블록 나열) + footer
-/// 4행(design 확정 결과).
 fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
@@ -626,8 +545,6 @@ fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// type-bar — 타입이 Other 하나뿐인 상태 — 아이콘(layers)+accent 뱃지(design 확정
-/// 결과). 다른 단일 타입 뱃지([`type_bar_row`])와 동일 구조, 라벨만 다르다.
 fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
@@ -659,9 +576,7 @@ fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
-/// body(기타) — well 안에 [`OTHER_SAMPLES`] 포맷 블록을 세로로 나열, 블록 사이 1px
-/// separator(design `TypeBody` `other` 분기 1:1 전사). 목록 자체는 접지
-/// 않는다(design §6.5 확정) — well 이 이미 스크롤 컨테이너다.
+/// 포맷별 미리보기를 나열한다. 본문이 스크롤되므로 포맷 목록은 접지 않는다.
 fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
@@ -747,8 +662,6 @@ fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
-/// 정상 데이터 상태(HTML) — header + type-bar(배지 + 우측 Pretty print 체크박스) +
-/// body(well, 원본/포맷 텍스트) + footer(mime · meta + Close) 4행.
 fn data_popup_html(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -763,7 +676,6 @@ fn data_popup_html(
     });
 }
 
-/// header — 클립보드 아이콘 + "Clipboard" + snapshot 뱃지 + 우측 close.
 fn header_row(ui: &mut egui::Ui, theme: &Theme) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_md.value();
@@ -847,11 +759,7 @@ fn type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     hline(ui, theme, rect.bottom());
 }
 
-/// type-bar(HTML) — 좌측 아이콘+accent 뱃지는 동일, 우측 슬롯이 Pretty print
-/// 체크박스로 스왑된다(design 확정 결과). 다른 타입의 빈 우측 슬롯과 달리
-/// 여기만 실제 상호작용 위젯을 그린다 — 갤러리 specimen 이라 클릭 시 로컬
-/// `thread_local` 상태가 토글된다(다른 특수 checkbox specimen, `settings.rs` 의
-/// Colors override 행과 동일 패턴).
+/// HTML의 Pretty print 선택은 갤러리 내부 상태만 바꾼다.
 fn type_bar_row_html(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -896,7 +804,6 @@ fn type_bar_row_html(
     hline(ui, theme, rect.bottom());
 }
 
-/// body — well(border+radius+bg-app) 안에 mono 미리보기.
 fn body_row(ui: &mut egui::Ui, theme: &Theme) {
     let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
@@ -931,8 +838,6 @@ fn body_row(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
-/// body(HTML) — [`body_row`]와 동일 well, 임의 문자열(원본 또는 prettify 결과)을
-/// 줄 단위로 그린다. text 타입과 완전히 동일한 스타일(design 확정 결과).
 fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
     let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
@@ -967,8 +872,7 @@ fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
     }
 }
 
-/// footer(HTML) — mime 뒤에 `· {n} chars · {n} line(s)` 메타를 결합해
-/// [`footer_row`] 에 넘긴다(design 확정 결과 예시 `text/html · 312 chars · 1 line`).
+/// HTML MIME 뒤에 문자 수와 줄 수를 붙인다.
 fn footer_row_html(ui: &mut egui::Ui, theme: &Theme, content: &str) {
     let chars = content.chars().count();
     let lines = content.lines().count().max(1);
@@ -980,11 +884,7 @@ fn footer_row_html(ui: &mut egui::Ui, theme: &Theme, content: &str) {
     );
 }
 
-/// footer — mime(mono caption) + 우측 Close(secondary).
-///
-/// 다섯 상태(text/plain · files · image · other · html)가 이 레이아웃을 그대로 쓰고
-/// **왼쪽 mime 라벨만 다르다.** 그래서 라벨을 인자로 받는다 — 상태마다 함수를 두면
-/// 레이아웃이 다섯 벌이 되고, 한 벌만 고친 채 나머지가 남는 어긋남이 조용히 생긴다.
+/// 상태별 MIME·요약 라벨과 Close 버튼에 공통 레이아웃을 쓴다.
 fn footer_row(ui: &mut egui::Ui, theme: &Theme, mime: impl ToString) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();

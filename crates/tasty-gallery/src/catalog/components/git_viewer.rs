@@ -1,17 +1,5 @@
-//! `git_viewer` specimen — git-viewer plugin 의 worktree 종합 popup (Overlays).
-//!
-//! 본체 렌더 경로: plugin `crates/tasty-plugin-git-viewer/src/render.rs` 가 egui-mesh 로
-//! 새 디자인(`ui_kits/terminal/overlays/git_viewer.jsx`)을 자가 렌더한다. 갤러리는
-//! plugin crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 mock 으로 전사한다 — 픽셀
-//! 동일성 비목표, 토큰·구조 정합 목표.
-//!
-//! 두 cluster 로 idiom 전수 노출:
-//! - **normal** — 2행 header(+context strip) · 섹션 strip · rail(2줄 행) | Changes / Commits.
-//! - **diff** — 파일 선택 시 하단 pane 이 diff well(거터+부호+± tint)로 교체.
-//!
-//! 색 매핑: oid·refs·main·hunk = `accent_info`(sky),
-//! current·added·`+` = `accent_success`, locked·modified = `accent_warning`,
-//! invalid·deleted·unmerged·`-` = `accent_danger`, linked·`?` = neutral.
+//! Git 플러그인의 워크트리·변경 파일·커밋·차이 보기 예제.
+//! 실제 플러그인을 실행하지 않으며 Theme 토큰으로 화면 구조를 재현한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -163,7 +151,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         egui::FontId::proportional(theme.font_size_max.value()),
         theme.text_primary().to_egui(),
     );
-    // Refresh (secondary) 버튼 mock.
     let bw = theme.field_width_xs.value() * 0.7;
     let bh = theme.item_height_tab.value();
     let btn = egui::Rect::from_min_size(
@@ -282,7 +269,7 @@ fn rail_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
 }
 
 /// 2줄 worktree 행 mock. 다음 y 반환.
-#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
+#[allow(clippy::too_many_arguments)] // reason: 갤러리의 행을 그리는 내부 함수로 UI 문맥과 각 열의 표시값을 함께 받는다.
 fn wt_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -324,7 +311,6 @@ fn wt_row(
     } else {
         theme.text_secondary()
     };
-    // line 1: name + type pill(right).
     let l1 = egui::Rect::from_min_size(
         egui::pos2(
             (LogicalPx(rect.left()) + pad_x).value(),
@@ -353,7 +339,6 @@ fn wt_row(
         egui::FontId::monospace(theme.font_size_term_sm.value()),
         name_color.to_egui(),
     );
-    // line 2: oid(info) + state pill(right).
     let l2 = egui::Rect::from_min_size(
         egui::pos2(
             (LogicalPx(rect.left()) + pad_x).value(),
@@ -427,7 +412,7 @@ fn changes_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     );
 }
 
-#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
+#[allow(clippy::too_many_arguments)] // reason: 갤러리의 행을 그리는 내부 함수로 UI 문맥과 각 열의 표시값을 함께 받는다.
 fn ch_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -515,7 +500,7 @@ fn commits_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     );
 }
 
-#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트, context struct 로 묶어도 호출부에서 다시 풀어써야 해 의미 없음 (정책 #2 데모 코드 허용)
+#[allow(clippy::too_many_arguments)] // reason: 갤러리의 행을 그리는 내부 함수로 UI 문맥과 각 열의 표시값을 함께 받는다.
 fn cm_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -584,7 +569,6 @@ fn cm_row(
 }
 
 fn diff_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
-    // toolbar: Back(ghost) + 파일 path.
     let toolbar = egui::Rect::from_min_size(
         area.min,
         egui::vec2(area.width(), theme.git_toolbar_height().value()),
@@ -617,7 +601,6 @@ fn diff_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
         egui::FontId::monospace(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );
-    // well: bg-app + 라인들.
     let well = egui::Rect::from_min_max(egui::pos2(area.left(), toolbar.bottom()), area.max);
     ui.painter()
         .rect_filled(well, 0.0, theme.bg_app().to_egui());
@@ -681,9 +664,7 @@ enum DiffKind {
     Del,
 }
 
-// 갤러리 데모 diff 행 draw 헬퍼 — 인자는 즉시모드 draw 컨텍스트(ui/theme/rect/커서 등)라
-// context struct 로 묶어봤자 draw 호출부에서 다시 풀어써야 해 의미가 없다.
-#[allow(clippy::too_many_arguments)] // reason: 갤러리 데모 draw 헬퍼 — 정책 #2(데모 코드) 허용
+#[allow(clippy::too_many_arguments)] // reason: 갤러리 차이 보기의 행을 그리며 UI 문맥·좌표·표시값을 함께 받는다.
 fn diff_line(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -768,8 +749,6 @@ fn diff_line(
     );
     *ly += h;
 }
-
-// ── 공용 헬퍼 ──
 
 fn section_head(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect, text: &str) {
     let rect = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), SECTION_H.value()));

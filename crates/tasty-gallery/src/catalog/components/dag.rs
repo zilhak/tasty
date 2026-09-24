@@ -1,29 +1,6 @@
-//! Task DAG specimen — 디자인 `gallery/dag.jsx` 의 구조 전사.
-//!
-//! 부품 원본은 디자인 프로젝트의 `ui_kits/terminal/overlays/dag_view.jsx`
-//! (상태 어휘 · 노드 카드 · 러너 배지 · 크롬 · 빈 상태) 와 `dag_surfaces.jsx`
-//! (캔버스 · 노드 상세 · 풀탭 서피스) 다. 이 모듈은 그 jsx 의 레이아웃 구조를
-//! egui 로 1:1 옮긴 것이고, 본체(`tasty` bin)의 `surface/dag_graph/` 를 호출하지
-//! 않는다 — 갤러리는 본체 바이너리에 의존할 수 없어 **전사 미러**로 만든다
-//! (`remote_tool` / `switch_overlay` 와 같은 선례, `docs/design/systems/
-//! design-gallery-mapping.md`).
-//!
-//! # 좌표는 실제 엔진에서 온다
-//!
-//! 노드 배치만은 미러가 아니라 **본체와 같은 코드**다 — `tasty-dag-layout` 은
-//! egui/Theme 를 모르는 순수 계산 crate 라 갤러리가 그대로 의존할 수 있다.
-//! 디자인 jsx 의 `dagLayout()` 은 시안용 최단 구현(longest-path + 중앙정렬)이라
-//! 좌표가 sugiyama 결과와 다르다. 갤러리는 **본체가 실제로 그리는 좌표**를 보여야
-//! 하므로 엔진 쪽을 따른다.
-//!
-//! # 글리프 치환 (디자인 대비 의도적 차이)
-//!
-//! 디자인의 상태 글리프 중 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 는 유니코드
-//! Dingbats 블록이라 UI 비례 폰트에서 tofu 로 떨어진다. 본체는 같은 이유로
-//! 기하 도형(`▷ ● ×` 등)으로 치환했고 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 의
-//! `no_raw_pictographic_glyph` 게이트가 그 블록을 host UI 소스에서 금지한다.
-//! 갤러리도 **본체와 같은 치환 세트**를 쓴다 — 렌더되지 않는 글자를 전시하면
-//! 정합 판정 자체가 무의미해지기 때문이다.
+//! DAG 화면 예제. 본체 바이너리의 뷰를 호출하지 않고 레이아웃을 재현한다.
+//! 노드 좌표는 본체와 같은 tasty-dag-layout 엔진으로 계산한다.
+//! 비례 글꼴에 없는 Dingbats 문자 대신 본체와 같은 기하 문자로 상태를 표시한다.
 
 pub mod canvas;
 pub mod chrome;
@@ -66,14 +43,8 @@ pub const STATUS_ORDER: [Status; 8] = [
     Status::Unknown,
 ];
 
-/// DAG **rollup** 어휘 6 종 — [`STATUS_ORDER`] 에서 `Cancelled` 와 `Unknown` 만 빠진 것.
-///
-/// 개별 노드는 8 종 전부가 될 수 있지만, DAG 하나의 대표 상태를 뽑는 호스트의 rollup
-/// 은 waiting / ready / running / succeeded / failed / skipped 여섯만 낸다 —
-/// cancelled 가 섞인 DAG 는 skipped 로, unknown 이 남은 DAG 는 waiting 으로 접힌다.
-/// 그래서 rollup 값을 비교하는 목록 상태 필터는 이 6 종만 나열한다(8 종을 나열하면
-/// 어떤 DAG 와도 일치하지 않는 죽은 선택지가 둘 생긴다). 노드 범례처럼 어휘 전체가
-/// 필요한 곳은 계속 [`STATUS_ORDER`] 를 쓴다.
+/// 호스트의 DAG 요약 상태 여섯 가지. 노드 전체 상태는 STATUS_ORDER를 사용한다.
+/// 갤러리의 목록 요약 계산은 단순화되어 이 여섯 상태를 모두 만들지는 않는다.
 pub const ROLLUP_ORDER: [Status; 6] = [
     Status::Waiting,
     Status::Ready,
@@ -111,7 +82,7 @@ impl Status {
         }
     }
 
-    /// 색이 아닌 두 번째 채널. 모듈 문서의 "글리프 치환" 참고.
+    /// 색과 함께 상태를 구분하는 기하 문자.
     pub fn glyph(self) -> &'static str {
         match self {
             Status::Waiting => "\u{25E6}",   // ◦
@@ -318,7 +289,7 @@ impl Node {
     }
 }
 
-/// 호스트 러너의 생사 + 대기/실행 카운트.
+/// 호스트 러너의 실행 여부와 대기·실행 작업 수.
 #[derive(Debug, Clone, Copy)]
 pub struct Runner {
     pub running: bool,
@@ -370,7 +341,7 @@ impl Graph {
     }
 }
 
-/// 레이아웃 설정을 토큰에서 만든다 — 본체와 같은 치수를 같은 엔진에 먹인다.
+/// 레이아웃 설정을 토큰에서 만든다 — 본체와 같은 엔진에 사용할 치수를 전달한다.
 pub fn layout_config(theme: &Theme, dir: Orientation) -> LayoutConfig {
     LayoutConfig {
         orientation: dir,

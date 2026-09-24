@@ -1,22 +1,6 @@
-//! File handler picker — 디자인 `gallery/overlays-dialogs.jsx` §filehandler 의 10 Spec 미러.
-//!
-//! canonical 프레임은 `gallery/overlays-shared.jsx` 의 `FileHandlerFrame` 이다: 420px,
-//! **headless**(프레임이 자기 헤더를 그린다), 헤더에 제목 + 형식 Tag + mono 경로,
-//! 본문은 `Suggested` → `Recent` 두 그룹이 **한 목록** 안에 있고, 선택 행은
-//! surface-active + 2px accent 좌측 인셋 바, plugin 은 출처 낱말과 글리프만 mauve,
-//! footer 는 Cancel / Open.
-//!
-//! 상태 다섯: `Default`(감지됨) · `Recent`(두 그룹) · `Fallback`(전체 핸들러 + 1회성 안내)
-//! · `Empty`(등록된 핸들러 0) · `Long`(목록 높이 상한 + 하단 페이드). `Mixed` 는 F2/F3
-//! 도출 규칙(선언된 이름·아이콘 / 아무것도 없는 것 / 긴 id)을 한 목록에 섞어 보이는 변형.
-//!
-//! **F1 은 제거로 확정됐다** — 디자인 §filehandler "Footer — settled" 가 (b) 를 골랐고,
-//! picker 는 순수 dispatcher 다(1회 열기, 아무것도 저장 안 함). 디자인 Spec 은 기각된 두
-//! 읽기(체크박스 / 비활성 체크박스)를 결정 표본으로 남겨 두지만, 이 specimen 은 확정된
-//! footer 하나만 싣는다 — 기각된 읽기를 렌더하면 "Always open" 문자열이 레포에 남는다.
-//!
-//! 본체(`src/adapters/ui/popup/file_handler_picker.rs`)와 코드를 공유하지 않는다(갤러리
-//! 표본은 정적 렌더). 공유하는 것은 `tasty_ui_widgets::tokens` 의 `FH_*` 치수뿐이다.
+//! 파일 핸들러 선택 화면의 정적 예제. 추천·최근 목록, 전체 목록, 빈 상태를 보여준다.
+//! 본체 뷰와 코드를 공유하지 않으며 FH_* 치수와 경로 생략 함수는 공용 크레이트에서 쓴다.
+//! 선택은 한 번 열기에만 적용하고 기본 연결을 저장하지 않는다.
 
 mod frame;
 
@@ -28,8 +12,6 @@ use frame::{FrameState, fh_footer, frame, header_card};
 use tasty_ui_widgets::file_handler as fh_model;
 use tasty_ui_widgets::tokens::FH_FRAME_WIDTH;
 
-// ── Spec 본문 (catalog.rs 가 Spec 하나당 하나씩 부른다) ────────────────────────
-/// Spec 1 — "Open with… — pick a handler".
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Default, true);
@@ -71,7 +53,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 2 — "Detected format — one Tag in the header".
 pub fn draw_format(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "detected", |ui| {
@@ -112,7 +93,6 @@ pub fn draw_format(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 3 — "Recent — a second group in the same list".
 pub fn draw_recent(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Recent, true);
@@ -146,7 +126,6 @@ pub fn draw_recent(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 3b — "Relative time — six words and then a date".
 pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Recent, true);
@@ -188,7 +167,6 @@ pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 3c — "Header path — cut whole segments, measured not counted".
 pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for (label, raw) in [
@@ -228,18 +206,12 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Sample A is drawn cut. It is 70 characters and the budget is 65, so it overflows by 5 \
-         characters — 30px at 6px a cell — and no longer shows the untouched case. The sample \
-         string is a design value and is left as it stands; a replacement of 65 characters or \
-         fewer is the design's to choose.",
+        "Sample A has 70 characters, exceeding this example’s 65-character limit by five. It therefore shows a shortened path. The example data is kept unchanged.",
     );
     spec::do_(
         ui,
         theme,
-        "Do measure the line box against the font as it is laid out, not as the font file \
-         declares it. D2Coding at 11px advances 5.5556px per glyph, but each advance is rounded \
-         to a whole pixel when the line is built, so a character costs 6px. 390 ÷ 6 = 65 is the \
-         derived cap a screen that cannot measure falls back to, so the two never disagree.",
+        "The host measures the available width with the actual font layout. A 65-character fallback corresponds to a 390px line and 6px cells with D2Coding at 11px. Other font metrics can produce a different measured limit.",
     );
     spec::dont(
         ui,
@@ -249,24 +221,16 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 경로 컷 Spec 의 세 표본 — **자르기 전** 값이다.
-///
-/// specimen 은 잘린 결과를 적어 두지 않고 본체와 **같은 함수**에 넣어 그 자리에서
-/// 자른다. 결과를 적어 두면 규칙이 바뀌어도 그림은 안 바뀌어서, 이 Spec 이 규칙을
-/// 보여주는 것이 아니라 규칙이 한때 그랬다는 기록이 된다.
+/// 경로를 미리 잘라 저장하지 않고 공용 생략 함수에 넣어 비교한다.
 const PATH_SAMPLES: [&str; 3] = [
     "work/tasty/crates/tasty-gallery/src/catalog/components/file_handler.rs",
     "/home/maya/src/tasty-main/crates/tasty-gallery/src/catalog/components/file_handler_picker.rs",
     "quarterly-revenue-reconciliation-draft-final-v3-reviewed-by-finance.xlsx",
 ];
 
-/// specimen 의 예산 — 갤러리는 실제 헤더 폰트를 재지 않고 **파생 상한**을 쓴다.
-///
-/// Spec 이 보이려는 것은 "못 잴 때 어디로 떨어지는가" 를 포함한 규칙 전체이고, 그
-/// 갈래의 값이 이것이다. 측정 갈래는 본체가 매 프레임 돈다.
+/// 이 예제는 글꼴을 실측하지 않고 측정할 수 없을 때의 문자 수 상한을 사용한다.
 const PATH_BUDGET: usize = tasty_ui_widgets::tokens::FH_TARGET_ELIDE_FALLBACK;
 
-/// Spec 4 — "No suggestions — the whole catalog, one time only".
 pub fn draw_fallback(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Fallback, true);
@@ -300,7 +264,6 @@ pub fn draw_fallback(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 5 — "Empty — nothing to pick from".
 pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Empty, true);
@@ -331,7 +294,6 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 6 — "Long list — cap the height, show the cut".
 pub fn draw_long(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Long, true);
@@ -361,7 +323,6 @@ pub fn draw_long(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 7 — "One header, not two".
 pub fn draw_headless(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "headless — one header", |ui| {
@@ -397,7 +358,6 @@ pub fn draw_headless(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 8 — "Footer — settled: Cancel / Open, nothing else".
 pub fn draw_footer(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, FH_FRAME_WIDTH, kit::panel_fill(theme), |ui| {
@@ -427,7 +387,6 @@ pub fn draw_footer(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 9 — "Rows — the icon and the name are derived, not stored".
 pub fn draw_rows(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         frame(ui, theme, FrameState::Mixed, true);
@@ -461,7 +420,6 @@ pub fn draw_rows(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 10 — "Default Tag, and what the picker means now".
 pub fn draw_default_tag(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(
@@ -512,17 +470,11 @@ pub fn draw_default_tag(ui: &mut egui::Ui, theme: &Theme) {
 mod tests {
     use super::*;
 
-    /// 경로 컷 Spec 의 cluster 라벨이 **참인지** 본다.
-    ///
-    /// 라벨은 "sample A — 70 chars, 5 over the budget" · "92 → 61" ·
-    /// "one 72-char segment → 65" 라고 말한다. 그림은 그 말과 별개로 그려지므로, 말이
-    /// 낡아도 아무것도 안 빨개진다 — 여기서 표본의 길이와 함수의 출력 길이를 라벨과
-    /// 맞물려 고정한다.
+    /// 예제 라벨에 적힌 원본·생략 결과의 문자 수를 실제 함수 결과와 비교한다.
     #[test]
     fn the_path_cut_labels_describe_what_the_specimen_draws() {
         let [over, segment, one_piece] = PATH_SAMPLES;
 
-        // 표본 A 는 예산을 넘는다 — 라벨이 말하는 5 자가 그 차다.
         assert_eq!(over.chars().count(), 70);
         assert_eq!(over.chars().count() - PATH_BUDGET, 5);
         assert_ne!(fh_model::elide_target_front(over, PATH_BUDGET), over);

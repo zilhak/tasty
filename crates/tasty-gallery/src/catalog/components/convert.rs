@@ -1,7 +1,4 @@
-//! Convert surface — 디자인(4) Overlays `convert` Spec.
-//!
-//! 400px 모달. title + From(readonly Tag) → swap icon → To(Select) + hint +
-//! Cancel/Convert. surface 타입을 그 자리에서 바꾼다.
+//! 서피스 타입 전환 팝업의 정적 예제.
 
 use std::cell::RefCell;
 
@@ -27,7 +24,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
                 kit::title(ui, theme, "Convert surface");
-                // From → To 행.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
                     ui.vertical(|ui| {
@@ -64,7 +60,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "The running process keeps its scrollback; only the surface renderer changes.",
                     false,
                 );
-                // footer 버튼.
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         Button::new("Convert")

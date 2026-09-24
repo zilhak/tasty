@@ -1,15 +1,5 @@
-//! `explorer_favorite_popup` specimen — 디자인 T11 "Add to favorites" 팝업
-//! (design §3.5).
-//!
-//! 결정: Popup (`PopupDef`, Modal View 아님 — 경량 입력). 본체는 이것을 별도 def 로
-//! 두지 않고 `rename` popup 의 한 target(`RenameTarget::ExplorerAddFavorite`)으로
-//! 연다(`src/adapters/ui/dialog.rs`). 여는 방식은 `OpenPopupMode::WithScope` —
-//! **스코프 중앙**이라 앵커드가 아니고, 그래서 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 modal 그림자다
-//! (`popup_shadow` 가 `rename` 을 anchored 명부에 안 넣는다). rename 팝업과 동일 골격
-//! (title / path caption / input / Cancel·primary footer) — 타이틀·초기값·primary
-//! 라벨만 다르다. 공유 frame 키트(`widgets::dialog`) 재사용.
-//!
-//! i18n 키 후보(본체): `explorer.popup.add_favorite.title/path/add`, `common.cancel`.
+//! 즐겨찾기 추가 팝업 예제. 본체는 rename 팝업의 ExplorerAddFavorite 대상으로 열며
+//! 윈도우 중앙에 표시한다. 공용 프레임을 사용하고 입력은 정적으로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant};
@@ -25,7 +15,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 kit::title(ui, theme, "Add to favorites");
                 kit::caption(ui, theme, "Path: ~/Downloads", false);
-                // 초기값 = 폴더명. gallery 는 정적 표시(focus 경합 회피).
                 kit::field(ui, theme, None, "Downloads", false, false);
                 ui.add_space(theme.spacing_xs.value());
                 ui.horizontal(|ui| {
@@ -67,8 +56,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Same skeleton as the Rename popup — only the title, seeded value, and primary \
-         label differ. Anchored near the trigger (context menu / sidebar action); a \
-         lightweight popup, not a scrim-blocking modal. Favorites are global.",
+        "The host opens the shared Rename popup in window scope. Title, initial value and \
+         primary button label differ. Favorites are global.",
     );
 }

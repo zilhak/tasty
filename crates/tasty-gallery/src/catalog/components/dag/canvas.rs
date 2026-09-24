@@ -1,12 +1,5 @@
-//! 그래프 캔버스 — 디자인 `DagCanvas` 의 구조 전사.
-//!
-//! 레이어는 세 겹이다: 점 격자 바탕 → `translate(o) scale(z)` 된 그래프 층
-//! (엣지 svg + 절대배치 카드) → 그 위에 고정되는 크롬(사이클 배너 · 미니맵 +
-//! 줌 클러스터 · LOD 칩).
-//!
-//! 갤러리 무대는 열릴 때 한 번 auto-fit 한 상태를 보여준다 — 시안의 "fit auto on
-//! open, capped at 100%" 와 같은 계산이다. 팬/줌 제스처는 본체 서피스의 몫이고,
-//! 여기서는 **선택**만 살아 있다(선택이 엣지 하이라이트와 상세 패널을 켠다).
+//! 격자 바탕, 그래프, 조작 도구를 겹쳐 그리는 DAG 예제.
+//! 열릴 때 그래프를 화면에 맞추며 선택만 지원한다. 팬·줌 제스처는 본체에서 처리한다.
 
 use tasty_dag_layout::{GraphLayout, Orientation};
 use tasty_type_appearance::theme::Theme;
@@ -33,11 +26,8 @@ impl Transform {
     }
 }
 
-/// 그래프의 실제 경계 상자 — 노드 사각형과 엣지 꺾임점을 모두 감싼다.
-///
-/// [`GraphLayout::width`]/`height` 를 그대로 쓰지 않는 이유: 그 값은 크기만 알려주고
-/// **원점이 어디인지**는 알려주지 않는다. 엔진이 조각을 붙이면서 좌표가 0 에서
-/// 시작하지 않을 수 있어, 폭만 보고 가운데 정렬하면 그래프가 한쪽으로 밀린다.
+/// 노드와 엣지 꺾임점을 모두 감싸는 경계. 원점이 0이 아닐 수 있어
+/// GraphLayout의 폭·높이만으로는 중앙 위치를 구할 수 없다.
 pub fn graph_bounds(layout: &GraphLayout, theme: &Theme) -> egui::Rect {
     let (nw, nh) = (
         theme.dag_node_width().value(),
@@ -122,8 +112,7 @@ fn node_rect(
 }
 
 /// 캔버스 한 장. `selected` 는 호출자가 소유한 선택 상태다.
-// 이유: 본체 `canvas::draw_canvas` 의 전사 미러다. 인자를 묶으면 두 쪽의 서명이 갈라져
-// 1:1 대조가 끊긴다.
+// 이유: 본체 canvas::draw_canvas와 같은 인자 구성을 유지해 비교하기 쉽게 한다.
 #[allow(clippy::too_many_arguments)]
 pub fn paint(
     ui: &mut egui::Ui,
@@ -133,8 +122,7 @@ pub fn paint(
     dir: Orientation,
     selected: &mut Option<String>,
     minimap: bool,
-    // 캔버스 위에 줌 클러스터를 띄우는가. popup 디테일은 back bar 가 그것을 들어서
-    // `false` 다 — 한 화면에 클러스터를 둘 두지 않는다.
+    // 팝업 상세에서는 뒤로 가기 바에 조작 도구가 있으므로 false로 둔다.
     zoom_cluster: bool,
 ) {
     let layout = super::layout(graph, theme, dir);
@@ -153,7 +141,6 @@ pub fn paint(
     );
     let pointer = resp.hover_pos();
 
-    // 그래프 층은 캔버스 밖으로 새지 않는다.
     let mut layer = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -161,7 +148,6 @@ pub fn paint(
     );
     layer.set_clip_rect(rect);
 
-    // ── 엣지 ──
     let rels: Vec<(usize, usize, Rel)> = graph.edges();
     let edge_w = theme.dag_edge_width().value();
     let arrow = theme.dag_edge_arrow_size().value();
@@ -204,7 +190,6 @@ pub fn paint(
         }
     }
 
-    // ── 노드 ──
     let mut hit: Option<String> = None;
     for (i, pos) in layout.nodes.iter().enumerate() {
         let r = node_rect(&t, rect, pos, theme);
@@ -231,7 +216,6 @@ pub fn paint(
         *selected = hit;
     }
 
-    // ── 크롬 ──
     if let Some(cycle) = &graph.cycle {
         chrome::paint_cycle_banner(&mut layer, theme, rect, cycle);
     }
@@ -248,7 +232,7 @@ pub fn paint(
     );
 }
 
-/// 캔버스 하나를 `Tight` 무대 안에 높이 `height` 로 앉힌다.
+/// Tight 예제 영역에 지정한 높이로 캔버스를 그린다.
 pub fn stage(
     ui: &mut egui::Ui,
     theme: &Theme,

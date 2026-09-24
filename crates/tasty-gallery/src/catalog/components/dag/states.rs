@@ -1,7 +1,4 @@
-//! 비-정상 상태 — 디자인 `DagEmpty` 두 변형 + `CycleBanner`.
-//!
-//! 사이클은 **숨기지 않는다**: 배너를 캔버스 상단에 고정하고 그래프는 뒤에서
-//! 그대로 그린다. 이 서피스는 관찰용이라 상태를 가리는 쪽이 더 나쁘다.
+//! 빈 DAG, 검색 결과 없음, 순환 경고 예제. 순환이 있어도 그래프는 계속 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -74,8 +71,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The cyclic graph keeps rendering behind the banner — this surface observes, it never \
-         hides state. Layering is longest-path and capped by node count, so a cyclic graph still \
-         terminates and still draws.",
+        "The cycle warning stays above the graph. The gallery uses tasty-dag-layout to place \
+         the nodes and keeps the cyclic graph visible.",
     );
 }
