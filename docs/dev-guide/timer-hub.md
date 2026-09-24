@@ -54,12 +54,13 @@ hub.snapshot();                                 // 관측용
 
 | | `next_deadline()` 기여 | 쓰는 곳 |
 |---|---|---|
-| `Strict` | `next_due` — 그 시각에 반드시 깨운다 | 사용자가 지연을 체감하는 작업 |
-| `Lax { slack }` | `next_due + slack` — slack 전까지 기여하지 않는다 | 늦어도 되는 정리/유지보수 |
+| `Strict` | `next_due`를 깨울 시각으로 예약한다 | 사용자가 지연을 체감하는 작업 |
+| `Lax { slack }` | 처음부터 `next_due + slack`을 후보에 포함한다 | 늦어도 되는 정리/유지보수 |
 
-`Lax` 는 due 해도 그 자체로 wakeup 을 만들지 않고, **다른 이유로 깨어난 프레임에
-함께 실행**된다(coalescing). `deadline + slack` 을 넘기면 hard deadline 으로 승격돼
-반드시 깨운다 — 완전 idle 상태에서 영원히 안 도는 starvation 을 막는다.
+`Lax`는 `next_due`부터 실행할 수 있다. 다른 이유로 그때 이후에 깨어나면 함께
+실행하고, 계속 유휴 상태라면 예약된 `next_due + slack`에 깨운다. `next_deadline()`은
+현재 시각과 관계없이 모든 타이머의 hard deadline 중 최솟값을 반환한다.
+slack이 지난 뒤에야 후보로 추가되거나 Strict로 바뀌는 것은 아니다.
 
 판단 기준: *못 돌면 사용자가 즉시 알아채는가*. busy indicator(1s)·attach mirror(3s)·
 메뉴 트래킹(8ms)은 `Strict`. "언젠가 치우면 되는" 캐시 정리류는 `Lax`.
@@ -243,9 +244,9 @@ wakeup 이 늘지 않는다. 그 결과 **비응답 검출 상한은 `60s + 15s 
 재등록해도 위상이 밀리지 않는다 — `once_after`(상대 지연) 대신 `once_at`(절대 시각)을
 쓰는 이유다. 연속 변경 중에도 **첫 변경 시각을 기준으로** 저장을 예약한다.
 
-`Lax` 인 이유: 저장은 사용자가 즉시 체감하는 작업이 아니라 자기 힘으로 호스트를 깨울
-이유가 없다. slack 을 넘기면 hard deadline 이 되어 변경이 영영 디스크에 못 닿는 일은
-없도록 예약한다. 종료·창 은퇴 경로는 이 타이머와 무관하게 `force=true` 로 즉시 저장한다.
+`Lax`로 두면 저장 예정 시각부터 다른 작업과 함께 저장할 수 있고, 별도 깨움은
+`next_due + slack`에 예약한다. 종료·창 은퇴 경로는 이 타이머와 무관하게
+`force=true`로 즉시 저장한다.
 
 ## 파라미터화된 키는 수명을 반드시 동기화한다
 
@@ -410,18 +411,18 @@ PluginPing    15s       +7s       strict          8s ago       [plugin hub]
 ─ hard deadline: +200ms (DagGraph(41))
 ```
 
-**마지막 줄이 요점이다** — 지금 무엇이 이 인스턴스를 깨우고 있는지에 직접 답한다.
-`next_deadline()` 이 min 을 취하는 것과 같은 정의(Strict = `next_due`,
-Lax = `next_due + slack`)를 쓰므로, 여기 지목된 항목이 곧 실제 wakeup 원인이다.
-등록된 타이머가 없으면 `none` 이고, 그건 "무기한 자도 된다" 를 뜻한다.
+마지막 줄은 등록된 타이머 중 가장 이른 hard deadline을 보여 준다.
+Strict는 `next_due`, Lax는 `next_due + slack`으로 계산하며 미래 시각도 포함한다.
+이벤트 등 타이머 이외의 깨움 원인을 보여 주는 값은 아니다. 등록된 타이머가 없으면
+`none`이며, 타이머 때문에 별도 깨움을 예약할 필요가 없다는 뜻이다.
 
 읽는 법:
 
 | 관측 | 의미 |
 |---|---|
-| `next_due` 가 음수 | 데드라인이 이미 지났다. 매 프레임 재등록되는 파생 데드라인이면 스핀이다(위 "파생 데드라인은 반드시 최소 지연을 보정한다") |
+| `next_due`가 음수 | 실행 가능한 시각이 지났다. Lax는 slack 안일 수 있으므로 hard deadline도 함께 본다. 매 프레임 지난 hard deadline을 재등록하면 스핀할 수 있다(위 "파생 데드라인은 반드시 최소 지연을 보정한다") |
 | 닫은 뷰의 `DagGraph(<sid>)` 가 남아 있음 | 파라미터화된 키 누수(위 "파라미터화된 키는 수명을 반드시 동기화한다") |
-| 요약 라인이 `lax` 항목을 지목 | slack 까지 넘겨 hard deadline 으로 승격됐다는 뜻 — 기아 상태이거나 slack 설정이 틀렸다 |
+| 요약 라인이 `lax` 항목을 지목 | 그 항목의 `next_due + slack`이 전체 hard deadline 중 가장 이르다는 뜻이다. 이 사실만으로 실행 지연이나 설정 오류를 판단하지 않는다 |
 | 껐는데도 남아 있는 항목 | flag off 경로가 `cancel` 을 빠뜨렸다(`set_auto_reload_enabled` 가 반례) |
 
 ### 조회 전용이다
