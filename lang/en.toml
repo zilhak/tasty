@@ -955,12 +955,12 @@ pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix 
 font_unresolved = "Could not load the language pack font: {}. Some characters may appear as □."
 
 [persistence.warn]
-settings_unparsable = "Tasty could not read {} and started with default settings. The original is preserved beside it as a .bak file."
+settings_unparsable = "Tasty could not read {} and started with defaults. Before the first save, the original is moved to a .bak file in the same folder."
 settings_locked = "Your settings file could not be read. Saving settings is disabled so the file is not overwritten — fix or move it, then restart."
-layout_unparsable = "Tasty could not read your saved window layout and started with a fresh one. The saved file is preserved beside it as a .bak file."
+layout_unparsable = "Tasty could not read the saved window layout and started with a fresh one. Before the first save, the original is moved to a .bak file in the same folder."
 layout_locked = "Your saved window layout could not be read, so Tasty started with a fresh one. The saved layout will not be overwritten."
-settings_unparsable_blocked = "Settings will not be saved until you move or delete the .bak files next to {}, then restart. Tasty could not read that file, could not move it aside either, and started with defaults."
-layout_unparsable_blocked = "This window layout will not be saved until you move or delete the .bak files in the layouts folder, then restart. Tasty could not read the saved layout or move it aside."
+settings_unparsable_blocked = "Tasty could not read {} or back it up, so saving is blocked. Move or delete the .bak files in the same folder, then restart."
+layout_unparsable_blocked = "Tasty could not read or back up the saved layout, so saving is blocked. Move or delete the .bak files in the layouts folder, then restart."
 
 [banner.mouse_capture]
 title = "Mouse input captured"
@@ -1566,7 +1566,7 @@ inputs_empty = "Error: --inputs must contain at least one task id"
 command_workspace_id_overridden = "--command JSON's workspace_id({}) differs from the --workspace-id flag ({}); overridden with {}"
 flag_file_read_failed = "Error: reading {} for {}: {}"
 flag_not_json = "Error: parsing {} as JSON: {}"
-purge_filter_required = "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
+purge_filter_required = "Error: specify --states or --older-than-ms. Deleting every task in the workspace without a condition is not allowed."
 metadata_not_object = "Error: --metadata must be a JSON object to combine with --concurrency-limit"
 metadata_semaphore_conflict = "Error: --metadata already sets 'semaphore' — remove it or drop --concurrency-limit"
 
@@ -1661,7 +1661,7 @@ attached_workspace = "attached workspace {} (client_id={}, {} terminals, {} plac
 port_discovery_failed_retry = "remote port discovery failed: {} — retrying with backoff"
 tunnel_failed_retry = "ssh tunnel setup failed: {} — retrying with backoff"
 tunnel_established = "ssh tunnel established: 127.0.0.1:{} -> {}:{}"
-disconnected_reconnect = "disconnected — reconnecting with backoff (the session stays on the server)"
+disconnected_reconnect = "Disconnected. Waiting before trying to reconnect."
 send_requires_send_to = "--send in workspace mode requires --send-to <surface_id> (ignored)."
 force_detached = "force-detached by server"
 resyncing = "the server dropped {} frames of this attach — re-attaching to fetch the screen again"
@@ -2344,7 +2344,7 @@ help = "Loopback port of the remote tasty server for `--into-gui` (the port the 
 
 [cli.help._root.remote.check]
 about = "Check whether a remote tasty instance is alive over SSH"
-long = "Check whether a remote tasty instance is alive over SSH.\n\nPort discovery alone (`tasty port` / the port file) can mistake a stale port file left by a dead instance for a live one, so after discovering the port this opens an `ssh -L` tunnel and sends one lightweight IPC request (`system.info`). The instance counts as alive only if it responds; a refused connection or a timeout means dead (stale port). Argument names match `remote attach`."
+long = "Check whether a remote tasty instance is alive over SSH.\n\nFind the remote port using `tasty port` or the port file, open an `ssh -L` tunnel, and send a `system.info` request. A successful response confirms that the instance is reachable. A connection failure, timeout, invalid response, or error response means the check failed; it does not by itself show that the server stopped. Argument names match `remote attach`."
 
 [cli.help._root.remote.check.arg.ssh]
 help = "Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually exclusive with `--profile`"

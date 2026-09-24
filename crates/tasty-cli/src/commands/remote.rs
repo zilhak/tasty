@@ -76,12 +76,11 @@ pub enum RemoteCommands {
     },
     /// Check whether a remote tasty instance is alive over SSH.
     ///
-    /// Port discovery alone (`tasty port` / the port file) can mistake a stale
-    /// port file left by a dead instance for a live one, so after discovering
-    /// the port this opens an `ssh -L` tunnel and sends one lightweight IPC
-    /// request (`system.info`). The instance counts as alive only if it
-    /// responds; a refused connection or a timeout means dead (stale port).
-    /// Argument names match `remote attach`.
+    /// Find the remote port using `tasty port` or the port file, open an `ssh -L`
+    /// tunnel, and send a `system.info` request. A successful response confirms that
+    /// the instance is reachable. A connection failure, timeout, invalid response,
+    /// or error response means the check failed; it does not by itself show that
+    /// the server stopped. Argument names match `remote attach`.
     Check {
         /// Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually
         /// exclusive with `--profile`.

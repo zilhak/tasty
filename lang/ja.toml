@@ -942,12 +942,12 @@ pack_invalid = "言語パック '{}' を読み込めないため英語で表示�
 font_unresolved = "言語パックのフォントを読み込めませんでした: {}。一部の文字が □ で表示される場合があります。"
 
 [persistence.warn]
-settings_unparsable = "{} を読み込めなかったため、既定の設定で起動しました。元のファイルは同じフォルダーに .bak ファイルとして保管しています。"
+settings_unparsable = "{} を読み込めず、既定の設定で起動しました。初回の保存前に元のファイルを同じフォルダーの .bak ファイルへ移動します。"
 settings_locked = "設定ファイルを読み込めませんでした。ファイルを上書きしないよう設定の保存を停止しています。修正するか移動してから再起動してください。"
-layout_unparsable = "保存されたウィンドウ配置を読み込めなかったため、新しい配置で起動しました。元のファイルは同じフォルダーに .bak ファイルとして保管しています。"
+layout_unparsable = "保存済みのウィンドウ配置を読み込めず、新しい配置で起動しました。初回の保存前に元のファイルを同じフォルダーの .bak ファイルへ移動します。"
 layout_locked = "保存されたウィンドウ配置を読み込めなかったため、既定の配置で起動しました。保存された配置は上書きしません。"
-settings_unparsable_blocked = "{} の読み込みもバックアップへの移動もできず、既定の設定で起動しました。同じフォルダーの .bak ファイルを移動または削除して再起動すると、設定を保存できます。"
-layout_unparsable_blocked = "保存されたウィンドウ配置の読み込みもバックアップへの移動もできません。layouts フォルダーの .bak ファイルを移動または削除して再起動すると、ウィンドウ配置を保存できます。"
+settings_unparsable_blocked = "{} の読み込みもバックアップもできないため、保存を停止しています。同じフォルダーの .bak ファイルを移動または削除して再起動してください。"
+layout_unparsable_blocked = "保存済みのウィンドウ配置の読み込みもバックアップもできないため、保存を停止しています。layouts フォルダーの .bak ファイルを移動または削除して再起動してください。"
 
 [banner.mouse_capture]
 title = "マウス入力をキャプチャ中"
@@ -1540,7 +1540,7 @@ inputs_empty = "エラー: --inputs にタスク ID を 1 つ以上指定して�
 command_workspace_id_overridden = "--command JSON の workspace_id({}) が --workspace-id フラグの値({}) と異なるため {} で上書きしました"
 flag_file_read_failed = "エラー: {} を読み込めませんでした ({} 用): {}"
 flag_not_json = "エラー: {} を JSON として解析できませんでした: {}"
-purge_filter_required = "エラー: --states または --older-than-ms を指定してください。条件なしでワークスペース全体を削除することはできません"
+purge_filter_required = "エラー: --states または --older-than-ms を指定してください。条件なしでワークスペース内の全タスクを削除することはできません。"
 metadata_not_object = "エラー: --concurrency-limit と併用するには --metadata は JSON オブジェクトである必要があります"
 metadata_semaphore_conflict = "エラー: --metadata に既に 'semaphore' が設定されています — 削除するか --concurrency-limit を外してください"
 
@@ -1634,7 +1634,7 @@ attached_workspace = "ワークスペース {} に接続しました (client_id=
 port_discovery_failed_retry = "リモートポートの検出に失敗しました: {} — 少し待って再試行します"
 tunnel_failed_retry = "SSH トンネルの接続に失敗しました: {} — 少し待って再試行します"
 tunnel_established = "ssh トンネルを確立しました: 127.0.0.1:{} -> {}:{}"
-disconnected_reconnect = "接続が切断されました。少し待って再接続します。セッションはサーバーに残っています。"
+disconnected_reconnect = "接続が切断されました。少し待ってから再接続を試みます。"
 send_requires_send_to = "ワークスペースモードで --send を使うには --send-to <surface_id> が必要です。今回の --send は無視します。"
 force_detached = "サーバーが強制的に接続を切断しました"
 resyncing = "サーバーがこの接続のフレームを {} 個破棄しました。画面を再取得するため再接続します。"
@@ -2314,7 +2314,7 @@ help = "`--into-gui` 用のリモートtastyサーバーのループバックポ
 
 [cli.help._root.remote.check]
 about = "SSH経由でリモートtastyインスタンスの稼働を確認"
-long = "SSH経由でリモートtastyインスタンスの稼働を確認します。ポート探索（`tasty port` またはポートファイル）だけでは終了したインスタンスの古いファイルを誤認するため、発見後に `ssh -L` トンネルを開き、軽量なIPCリクエスト（`system.info`）を一度送ります。応答がある場合のみ稼働中と判定し、接続拒否やタイムアウトは停止状態（古いポート）と判定します。引数名は `remote attach` と同じです。"
+long = "SSH 経由でリモートの tasty インスタンスに接続できるか確認します。\n\n`tasty port` またはポートファイルでリモートポートを探し、`ssh -L` トンネルを開いて `system.info` を要求します。成功応答を受け取ると接続可能と判断します。接続失敗、タイムアウト、不正な応答、エラー応答は確認に失敗したことを示しますが、それだけでサーバーの終了を意味するわけではありません。引数名は `remote attach` と同じです。"
 
 [cli.help._root.remote.check.arg.ssh]
 help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"
