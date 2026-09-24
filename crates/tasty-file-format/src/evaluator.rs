@@ -1,14 +1,6 @@
-//! detector rule 평가자.
-//!
-//! - **Cheap path**: 확장자/glob/is-directory. file IO 없음. hover/typing 등 hot path 용.
-//! - **Deep path**: magic bytes / MIME / Lua / structure-check.
-//!   magic/MIME 은 8KB head read 1회 + `DeepCtx` 에 캐시. structure-check 는
-//!   `structure_eval.rs` 가 5MB cap 으로 전체 파일을 따로 읽는다 (head 8KB 로는
-//!   구조 검증에 부족).
-//!
-//! `evaluate_cheap` 은 단독 호출 가능. `evaluate_deep` 은 `DeepCtx` 가 필요한데,
-//! 한 `identify` 호출 안에서 detector 여러 개가 같은 파일의 magic/MIME 을 평가해도
-//! head 는 1회만 read.
+//! Cheap 평가는 확장자·glob·디렉터리 여부를 확인한다.
+//! Deep 평가는 magic·MIME·Lua·JSON Schema를 추가한다. 한 identify 호출의 head/MIME은
+//! DeepCtx로 재사용한다. head는 8KB까지 읽으며 구조 검증은 별도로 파일을 읽는다.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -119,12 +111,8 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
             .unwrap_or(false),
 
         DetectorRuleKind::PathGlob { pattern } => {
-            // 파일명(마지막 컴포넌트)만 비교 — globset 표준 문법(`*`/`?`/`[...]`/`**`)
-            // 지원. `pattern` 은 `registry/helpers.rs::decl_rule_to_kind` 가
-            // 등록 시점에 이미 `to_slash` 로 정규화해뒀다는 전제. 이 경로는 registry
-            // 의 hot path(`registry/query.rs::identify`)가 아니다 — 그쪽은 파일마다
-            // 재컴파일하지 않도록 `registry/path_glob.rs::PathGlobCache` 를 쓰고,
-            // 여기(`evaluate_cheap` 단독 호출/테스트)만 매 호출마다 컴파일한다.
+            // 이 단독 평가 함수는 파일명만 비교하고 매번 컴파일한다. registry의 identify는
+            // PathGlobCache를 재사용한다. 패턴은 등록할 때 /로 정규화한다.
             let name = match path.file_name().and_then(|s| s.to_str()) {
                 Some(n) => n,
                 None => return false,
@@ -136,7 +124,6 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
 
         DetectorRuleKind::IsDirectory => target.is_directory(),
 
-        // 다음 항목들은 Phase A cheap path 에서 false (deep 단계에서 평가).
         DetectorRuleKind::Mime { .. }
         | DetectorRuleKind::Magic { .. }
         | DetectorRuleKind::Lua { .. }
@@ -145,9 +132,7 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
     }
 }
 
-/// Deep 평가. cheap kind 는 `evaluate_cheap` 으로 위임, magic/MIME 만 새로 처리.
-///
-/// `ctx` 는 같은 `identify` 호출 안에서 재사용. head/metadata 가 캐시된다.
+/// Cheap 규칙 또는 magic·MIME·Lua·구조 검증을 실행한다. 한 identify 호출에서 ctx를 재사용한다.
 pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut DeepCtx) -> bool {
     // URL 에 파일 IO(metadata / open / Lua / structure-check)를 시도하지 않는다.
     if target.is_url_shaped() {
@@ -190,7 +175,6 @@ pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut Dee
             super::structure_eval::evaluate_structure(spec_path, target)
         }
 
-        // cheap kind 는 IO 없이 그대로 평가.
         DetectorRuleKind::Extension { .. }
         | DetectorRuleKind::PathGlob { .. }
         | DetectorRuleKind::IsDirectory => evaluate_cheap(rule, target),
@@ -199,11 +183,8 @@ pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut Dee
     }
 }
 
-/// (구) 단순 glob 매처 — `PathGlob` 평가는 `globset` 기반으로 교체 완료됐고,
-/// 이 함수는 더 이상 production 경로에서 쓰이지 않는다. 옛 매처와 새
-/// `globset` 매처의 동작 차이를 확인하는 호환성 회귀 테스트 전용으로만 남겨둔다
-/// (아래 `tests` 의 `glob_migration_*` 시험). `*` 는 여러 개 지원(prefix/middle/suffix
-/// 매칭) — `?`/`[...]`/`**` 같은 문법은 지원하지 않는다.
+/// globset과 호환 범위를 대조하는 시험용 매처. 제품에서는 사용하지 않는다.
+/// 여러 *는 지원하지만 ?/[...]/** 문법은 해석하지 않는다.
 #[cfg(test)]
 fn simple_glob_match(pattern: &str, name: &str) -> bool {
     if !pattern.contains('*') {
@@ -272,8 +253,6 @@ mod tests {
 
     #[test]
     fn path_glob_supports_standard_glob_syntax() {
-        // 옛 simple_glob_match 는 `*` 외 문법을 지원하지 않아 아래는 이전에는
-        // 전부 실패했다.
         let question = DetectorRuleKind::PathGlob {
             pattern: "file?.txt".into(),
         };
@@ -289,28 +268,18 @@ mod tests {
         let double_star = DetectorRuleKind::PathGlob {
             pattern: "**/*.rs".into(),
         };
-        // PathGlob 은 file_name() 만(디렉토리 세그먼트 없이) 비교하므로 `**` 자체가
-        // 여러 세그먼트를 가로지르는 효과를 낼 대상이 없다 — 그래도 문법 파싱/매칭
-        // 자체는 에러 없이 동작해야 한다는 것만 확인.
+        // 파일명만 비교하므로 디렉터리를 건너뛰는 효과 없이 ** 문법의 파싱·매칭을 확인한다.
         assert!(evaluate_cheap(&double_star, &target("nested/main.rs")));
     }
 
-    // ── simple_glob_match(구) ↔ globset(신) 호환성 회귀 ──────────────────
-    //
-    // simple_glob_match 는 여러 개의 `*` 도 이미 지원했다(prefix/middle/suffix
-    // 매칭) — "단일 `*` 만 지원" 이라는 초기 추정과 달리 실제로는 그렇지
-    // 않았다. 아래는 그 실제 지원 범위를 기준으로 신구 매처가 일치하는지 확인한다.
     #[test]
     fn glob_migration_compat_agrees_on_previously_supported_patterns() {
         let cases: &[(&str, &str, bool)] = &[
-            // 정확 일치 (와일드카드 없음)
             ("Dockerfile", "Dockerfile", true),
             ("Dockerfile", "dockerfile", false),
-            // 단일 `*`
             ("*.config.json", "bar.config.json", true),
             ("*.config.json", "bar.json", false),
             ("test.*", "test.rs", true),
-            // 여러 `*` (prefix/middle/suffix) — 예전에도 이미 지원되던 범위.
             ("a*b*c", "aXbYc", true),
             ("a*b*c", "abc", true),
             ("a*b*c", "ac", false),
@@ -371,8 +340,6 @@ mod tests {
         assert!(!evaluate_cheap(&magic, &target("x.pdf")));
     }
 
-    // ── deep path tests ─────────────────────────────────────────────
-
     fn write_tmp(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> PathBuf {
         let p = dir.path().join(name);
         std::fs::write(&p, bytes).expect("write tmp");
@@ -382,7 +349,6 @@ mod tests {
     #[test]
     fn deep_magic_matches_pdf_header() {
         let dir = tempfile::tempdir().unwrap();
-        // %PDF-1.4 헤더
         let p = write_tmp(&dir, "doc.pdf", b"%PDF-1.4\n... rest ...");
         let rule = DetectorRuleKind::Magic {
             offset: 0,
@@ -402,7 +368,6 @@ mod tests {
         };
         let mut ctx = DeepCtx::new();
         assert!(!evaluate_deep(&rule, &FileTarget::new(p.clone()), &mut ctx));
-        // offset=2 면 매칭.
         let rule_off = DetectorRuleKind::Magic {
             offset: 2,
             bytes: b"%PDF".to_vec(),
@@ -425,7 +390,6 @@ mod tests {
     #[test]
     fn deep_magic_offset_beyond_head_cap_is_false() {
         let dir = tempfile::tempdir().unwrap();
-        // 작은 파일에 head cap 보다 큰 offset 요구 → 매칭 실패 (panic 없음)
         let p = write_tmp(&dir, "small.bin", b"hello");
         let rule = DetectorRuleKind::Magic {
             offset: 100,
@@ -471,14 +435,12 @@ mod tests {
         let p = write_tmp(&dir, "doc.pdf", b"%PDF-1.4 contents");
         let target = FileTarget::new(p);
         let mut ctx = DeepCtx::new();
-        // 첫 호출 → 캐시 채움
         let r1 = DetectorRuleKind::Magic {
             offset: 0,
             bytes: b"%PDF".to_vec(),
         };
         assert!(evaluate_deep(&r1, &target, &mut ctx));
         assert_eq!(ctx.cache.len(), 1);
-        // 다른 rule 도 같은 파일 → 캐시 재사용 (entry 수 동일)
         let r2 = DetectorRuleKind::Magic {
             offset: 0,
             bytes: b"%PDF-1.4".to_vec(),

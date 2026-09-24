@@ -1,5 +1,4 @@
-//! `FileFormatRegistry` 내부 helpers — install_one + extension priority + rule kind
-//! 변환 + parser 등.
+//! 등록·우선순위·규칙 변환의 공용 함수.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,7 +18,6 @@ pub(super) fn install_one(
     origin: RuleOrigin,
     from_plugin: bool,
 ) {
-    // schema 검증
     let validation = validate_detector_decl(&decl, from_plugin);
     let warnings = match validation {
         Ok(w) => w,
@@ -45,10 +43,8 @@ pub(super) fn install_one(
         .into_iter()
         .filter_map(decl_rule_to_kind)
         .collect();
-    // patch semantics: host · plugin 의 `disabled = false` 는 "끄지 않는다" 일 뿐 다른 출처가
-    // 끈 것을 켜지 않는다(종전 그대로). user 의 명시적 `false` 는 켠다는 뜻이다 — Settings 의
-    // 켜기(`set_user_detector_disabled(.., false)`)가 저장 파일에 `disabled = false` 로 남고,
-    // 다음 부팅에 그 값이 살아야 한다.
+    // host/plugin의 false는 다른 출처의 비활성화를 취소하지 않는다.
+    // user가 명시한 false만 다시 활성화한다.
     let disabled_override = match (decl.disabled, &origin) {
         (Some(true), _) => Some(true),
         (Some(false), RuleOrigin::User) => Some(false),
@@ -73,11 +69,9 @@ pub(super) fn path_extension_lowercase(path: &Path) -> Option<String> {
     Some(ext.to_ascii_lowercase())
 }
 
-/// 확장자 fast path. 광고 confirmed detector 들 중에서:
-/// 1. `extension_priority` 표가 있으면 그 순서대로 첫 enabled + IsDirectory 아닌 detector,
-/// 2. 표에 없거나 표의 detector 들이 모두 부적격이면 install_order 오름차순으로 첫 detector.
+/// 활성 파일 detector의 Extension 선언에서 우선순위 표를 먼저 적용한다.
+/// 적합한 항목이 없으면 설치 순서가 빠른 후보를 고른다.
 pub(super) fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option<DetectorId> {
-    // 광고 매칭 + enabled + IsDirectory 아님.
     let mut advertised: Vec<(u64, DetectorId)> = inner
         .finalized
         .iter()
@@ -103,7 +97,6 @@ pub(super) fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option
     advertised
         .sort_by(|(a_ord, a_id), (b_ord, b_id)| a_ord.cmp(b_ord).then_with(|| a_id.cmp(b_id)));
 
-    // extension_priority 표 적용 — 표에 적힌 detector 가 advertised 안에 있으면 그것이 먼저.
     if let Some(entry) = inner.extension_priority.get(ext) {
         for prio_id in &entry.order {
             if advertised.iter().any(|(_, id)| id == prio_id) {
@@ -111,7 +104,6 @@ pub(super) fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option
             }
         }
     }
-    // fallback: install_order 정렬의 첫 번째.
     advertised.into_iter().next().map(|(_, id)| id)
 }
 
@@ -177,8 +169,7 @@ pub(super) fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKi
     })
 }
 
-/// `DetectorRuleKind` 을 TOML table 로 역직렬화. `parse_detector_section` 의 입력 형식과
-/// 1:1 round-trip. `Unknown` 의 raw payload 는 그대로 보존.
+/// 규칙을 TOML 테이블로 직렬화한다. Unknown의 원문 필드도 보존해 다시 읽을 수 있게 한다.
 pub(super) fn rule_kind_to_toml(kind: &DetectorRuleKind) -> toml::value::Table {
     let mut t = toml::value::Table::new();
     match kind {
@@ -222,8 +213,6 @@ pub(super) fn rule_kind_to_toml(kind: &DetectorRuleKind) -> toml::value::Table {
         }
         DetectorRuleKind::Unknown { kind_name, raw } => {
             t.insert("kind".into(), toml::Value::String(kind_name.clone()));
-            // raw 는 원래 table 통째였으나 manual parser 에서 모든 키를 보관했으므로
-            // 그대로 평면 복사.
             if let toml::Value::Table(raw_t) = raw {
                 for (k, v) in raw_t {
                     if k == "kind" {
@@ -248,7 +237,6 @@ pub(super) fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
 }
 
 pub(super) fn rule_kind_eq(a: &DetectorRuleKind, b: &DetectorRuleKind) -> bool {
-    // Unknown 의 raw 비교는 toml::Value PartialEq 가 있어 가능.
     a == b
 }
 
@@ -265,7 +253,7 @@ pub(super) fn parse_detector_section(
     Ok(w.detectors)
 }
 
-/// host default / user config: `[[extension_priority]]` 섹션. Phase E.
+/// 호스트 기본값·사용자 설정의 extension_priority 절을 읽는다.
 pub(super) fn parse_extension_priority_section(
     toml_text: &str,
 ) -> Result<Vec<ExtensionPriorityDecl>, toml::de::Error> {

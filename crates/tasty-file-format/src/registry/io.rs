@@ -7,15 +7,8 @@ use super::helpers::rule_kind_to_toml;
 use crate::types::RuleOrigin;
 
 impl FileFormatRegistry {
-    /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 가 변경 사항을
-    /// `~/.tasty/file-formats.toml` 에 저장할 때 사용.
-    ///
-    /// host default / plugin contribution 은 포함하지 않는다 (그것들은 자기 출처가 다시
-    /// install 한다). Round-trip 보장 — `parse_detector_section(&export)` 로 원래 user
-    /// contribution 을 그대로 재현 가능. `Unknown` rule 의 raw payload 도 보존.
-    ///
-    /// 주의: TOML 주석/공백/key 순서는 보존하지 않는다 (재발급). 사용자 손편집 친화적
-    /// round-trip 이 필요해지면 `toml_edit` 도입.
+    /// user 선언만 TOML로 내보낸다. host/plugin 선언은 각각의 출처에서 다시 설치한다.
+    /// Unknown 원문 필드를 포함한 값은 보존하지만 주석·공백·키 순서는 보존하지 않는다.
     pub fn export_user_config(&self) -> String {
         let inner = self.lock_read();
         let mut doc = toml::value::Table::new();
@@ -59,7 +52,6 @@ impl FileFormatRegistry {
             }
             detectors.push(toml::Value::Table(det));
         }
-        // user origin extension_priority emit.
         let mut priorities = Vec::<toml::Value>::new();
         for (ext, entry) in inner.extension_priority.iter() {
             if !matches!(entry.origin, RuleOrigin::User) {

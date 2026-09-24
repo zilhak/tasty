@@ -7,8 +7,7 @@ description = "File format identification for Tasty — detector registry, rule 
 
 [dependencies]
 tasty-utils = { path = "../tasty-utils" }
-# plugin 이 형식 레지스트리를 조회하는 port trait 이 wire 정의 크레이트에 산다.
-# 고아 규칙상 그 impl 은 타입을 소유한 이 크레이트에만 둘 수 있다.
+# 플러그인이 조회하는 port trait을 레지스트리 타입을 소유한 이 크레이트에서 구현한다.
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 globset = "0.4"
 tempfile = "3"

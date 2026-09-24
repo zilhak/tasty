@@ -1,7 +1,5 @@
-//! `FileFormatRegistry` — 등록된 detector 들을 관리하고 file 을 identify 한다.
-//!
-//! 출처별 contribution 을 따로 보관해 plugin uninstall 시 원본 복원 가능.
-//! finalize 는 incremental — install/uninstall 호출 후 dirty 표시 + identify 시 1회.
+//! 출처별 detector 선언을 보관하고 파일 형식을 판정한다.
+//! 변경 시 dirty로 표시하고 다음 조회 전에 병합한다. 플러그인을 지우면 다른 출처의 선언은 남는다.
 
 mod cleanup;
 mod helpers;
@@ -52,8 +50,7 @@ pub(super) struct Inner {
     /// detector id → 최초 install 시점의 monotonic counter 값. 후속 patch 에 의해 변하지
     /// 않는다 (`install_one` 이 entry 가 비었을 때만 부여).
     pub(super) install_order: BTreeMap<DetectorId, u64>,
-    /// 확장자별 우선순위 표 (Phase E). 같은 확장자에 둘 이상의 출처가 적으면
-    /// last-writer-wins (install 순서 host → user). user export 시에는 user origin 만 emit.
+    /// 같은 확장자는 마지막 설치값을 쓴다(host → user). 저장할 때는 user 항목만 내보낸다.
     pub(super) extension_priority: BTreeMap<String, ExtensionPriorityEntry>,
     /// finalize 결과 cache. dirty 시 lazy 재계산.
     pub(super) finalized: BTreeMap<DetectorId, FileFormatDetector>,
@@ -88,13 +85,8 @@ impl FileFormatRegistry {
         }
     }
 
-    /// Poison 을 복구해 read guard 를 잡는다.
-    ///
-    /// 이전에는 락 획득 24 곳이 전부 `read().ok()?` / `Err(_) => return` 으로 **조용히**
-    /// 빠져나갔다. 그 결과는 "그 확장자를 아무 detector 도 못 알아본다" 인데 관측
-    /// 지점이 0 이었다. `Inner` 는 `BTreeMap` 들과 glob 캐시·`bool` 이고 임계구역은
-    /// 자료구조 조작만 하므로 패닉이 나도 불변식은 성립한다 — 복구가 맞다
-    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    /// poison을 보고하고 읽기 락을 복구한다. 임계구역이 메모리 자료구조만 바꾸므로
+    /// 파일/소켓의 부분 쓰기처럼 스트림을 손상시키는 상황은 없다.
     pub(super) fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
         tasty_utils::poison::recover_read(
             self.inner.read(),
@@ -172,18 +164,9 @@ impl FileFormatRegistry {
     }
 }
 
-/// 병합 순서 — 출처 순(Host → Plugin → User)으로 안정 정렬한다. 같은 출처 안에서는 설치
-/// 순서를 그대로 둔다.
-///
-/// 병합은 "마지막 non-None 이 이긴다" 라서 순서가 곧 우선순위다. 설치 순서로 병합하면 부팅
-/// (user 설정을 plugin 보다 먼저 읽는다)이나 plugin 재기동(끈 plugin 의 contribution 이 빠졌다가
-/// 다시 뒤에 붙는다) 뒤에 plugin 의 값이 user patch 를 덮는다. user patch 는 host · plugin 의
-/// 값을 덮어쓰는 것이 뜻이므로 늘 마지막에 둔다.
-///
-/// detector id 에는 출처 이름공간이 없어 host 와 plugin 이 같은 id(`markdown` 등)를 함께
-/// contribute 할 수 있다. 그 둘 사이는 Host → Plugin — plugin 은 늘 host 기본값 뒤에 설치돼
-/// 왔으므로 지금까지의 결과(plugin 이 host 를 덮는다)를 그대로 둔다. 서로 다른 plugin 끼리는
-/// 설치 순서다. 근거는 `docs/features/file-handler/index.md#contribution-머지--부팅-자동-등록`.
+/// Host → Plugin → User 순으로 병합하고 같은 출처 안에서는 설치 순서를 유지한다.
+/// 플러그인이 사용자 설정 뒤에 시작되거나 재시작해도 사용자 값이 마지막에 적용돼야 한다.
+/// 같은 ID에 여러 출처가 규칙을 추가할 수 있다.
 fn merge_order(contribs: &[DetectorContribution]) -> Vec<&DetectorContribution> {
     let mut ordered: Vec<&DetectorContribution> = contribs.iter().collect();
     ordered.sort_by_key(|c| match c.origin {

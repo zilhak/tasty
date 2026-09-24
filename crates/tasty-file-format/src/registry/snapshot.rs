@@ -1,15 +1,7 @@
-//! `FileFormatRegistry` — 조회용 스냅샷 도메인.
-//!
-//! finalize 된 detector 하나와 그것을 만든 출처별 contribution 을 함께 돌려준다. 병합
-//! 결과만 주면 "왜 이 값이 이겼는가" 를 밖에서 재현할 수 없다.
-//!
-//! 락은 한 구간이 아니다. `detector_snapshots` 는 먼저 `ensure_finalized` 를 부르고 —
-//! 그것이 read 락으로 `dirty` 를 보고, 필요하면 놓은 뒤 write 락을 잡아 finalize 한다 —
-//! 그 락을 놓은 **다음에** read 락을 새로 잡아 `finalized` 와 `contributions` 를 읽는다.
-//! 두 칸은 마지막 read 락 하나 안에서 읽히지만, finalize 와 그 read 락 사이에 `dirty` 를
-//! 세우는 쓰기(reload · plugin enable/disable · Settings 파일 탭 편집 등)가 끼면 `dirty`
-//! 가 선 채로 새 `contributions` 와 **그 전 시점의** `finalized` 가 한 응답에 실린다. 그 경합이 없을 때만 두 칸이 같은
-//! 시점이다. 기존 `detector()` · `list_detectors()` 도 같은 두 단계다.
+//! 병합된 detector와 출처별 원본을 함께 조회한다.
+//! ensure_finalized의 락을 놓은 뒤 다시 읽기 락을 잡으므로 그 사이 변경이 들어올 수 있다.
+//! 두 필드는 마지막 읽기 락 안에서 읽지만 새 contribution과 이전 병합 결과가 함께 반환될 수 있다.
+//! 동시 변경이 없을 때만 같은 시점의 값이다. detector/list_detectors도 같은 두 단계로 읽는다.
 
 use super::FileFormatRegistry;
 use super::helpers::rule_kind_to_toml;

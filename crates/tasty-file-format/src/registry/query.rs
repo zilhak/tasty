@@ -21,12 +21,8 @@ impl FileFormatRegistry {
         inner.finalized.keys().cloned().collect()
     }
 
-    /// 이 detector 에 user 출처 contribution 이 있는가 — rule · 메타 · `disabled` 중 무엇이든.
-    ///
-    /// Settings 의 "user 항목 삭제"(`remove_user_detector`)가 지울 것이 있는지를 이것으로 정한다.
-    /// finalize 된 rule 의 origin 으로 추론하면 안 된다: 같은 rule 을 여러 출처가 적으면 dedupe 가
-    /// 병합 순서상 앞선 출처(host · plugin)만 남겨 user 가 안 보이고, rule 없는 patch 는 애초에
-    /// rule 이 없다(docs/features/file-handler/index.md#contribution-머지--부팅-자동-등록).
+    /// user가 규칙·메타데이터·disabled 중 하나라도 선언했는지 확인한다.
+    /// 병합된 규칙은 중복 제거로 출처를 잃을 수 있어 원래 contribution을 확인한다.
     pub fn has_user_contribution(&self, id: &DetectorId) -> bool {
         let inner = self.lock_read();
         inner
@@ -52,19 +48,11 @@ impl FileFormatRegistry {
         origins
     }
 
-    /// `target` 에 매칭되는 detector id 결정. 매칭 실패 시 `None` (= unknown).
-    ///
-    /// - `DetectDepth::Cheap`: file IO 없음. 확장자/glob/is-directory 만.
-    /// - `DetectDepth::Deep`: 같은 cheap rule 들 + magic/MIME 까지 평가. 한 호출 동안
-    ///   `DeepCtx` 로 head/MIME 캐시 → detector 가 여러 magic rule 을 가져도 head 는 1회만 read.
-    ///
-    /// Phase E 의 확장자 fast path: 파일이고 확장자가 있으면 광고 confirmed detector 중
-    /// `extension_priority` 표 + `install_order` 순서로 결정적 1순위 선택. 표 적용 결과가
-    /// 비면 기존 BTreeMap 순회 (PathGlob / IsDirectory / Magic / MIME 등) 로 fallback.
+    /// 매칭 detector를 반환하며 없으면 None이다. Cheap은 파일 내용 없이 판정하고,
+    /// Deep은 magic·MIME·Lua·구조 검증도 수행하며 DeepCtx로 head/MIME을 재사용한다.
+    /// 파일 확장자의 후보는 우선순위 표와 설치 순서로 고른다. 후보가 없으면 나머지 규칙을 순회한다.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
-        // URL 이 경로 자리에 담겨 들어오면 식별하지 않는다 — 확장자 fast path 와 PathGlob
-        // 이 `https://example.com/a.md` 의 `a.md` 를 로컬 파일로 알고 매칭한다. URL 은
-        // 핸들러 dispatch 계층의 `DispatchTarget::Url` 이 detector 없이 다룬다.
+        // URL은 DispatchTarget::Url에서 처리한다. 마지막 경로의 확장자를 로컬 파일로 오인하지 않는다.
         if target.is_url_shaped() {
             return None;
         }
@@ -85,9 +73,7 @@ impl FileFormatRegistry {
             DetectDepth::Cheap => None,
         };
 
-        // PathGlob 매칭: 미리 컴파일된 GlobSet 을 파일 하나당 1회만 조회해
-        // 매칭 인덱스 집합을 구한다 — 아래 rule 루프에서 PathGlob rule 을 몇 번을
-        // 만나든 재컴파일/재매칭하지 않고 이 집합의 membership 조회로 끝낸다.
+        // 파일마다 매칭 인덱스를 한 번 구하고 아래 규칙들이 공유한다.
         let matched_globs = target
             .as_path()
             .file_name()
@@ -108,7 +94,6 @@ impl FileFormatRegistry {
             if is_dir != has_is_dir {
                 continue;
             }
-            // 매칭: OR — 하나라도 match 면 detector 매칭.
             for rule in &det.rules {
                 let matched = match &rule.kind {
                     DetectorRuleKind::PathGlob { pattern } => {
@@ -126,6 +111,4 @@ impl FileFormatRegistry {
         }
         None
     }
-
-    // ── install / uninstall ────────────────────────────────────────────
 }

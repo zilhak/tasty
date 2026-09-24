@@ -1,43 +1,23 @@
-//! `DetectorRuleKind::Lua` 평가자.
-//!
-//! 신뢰 모델: Lua detector rule 은 host default TOML 과 user TOML 에만 등장한다.
-//! 사용자가 자기 머신에서 자기 권한으로 적은 스크립트이므로 plugin escape 우려는
-//! 없고 sandbox 의 목적은 **DoS 보호 + 호스트 무결성** 두 가지:
-//!
-//! - **메모리 cap** (`mlua` 의 `set_memory_limit`) — 큰 string/table 폭발 차단.
-//! - **명령어 cap** (`mlua` 의 `set_hook`) — `while true do end` 같은 무한 루프
-//!   를 [`INSTRUCTION_BUDGET`] 명령어 안에 abort.
-//! - **위험 글로벌 제거** — `debug`, `package.loadlib`, `dofile`, `loadfile`,
-//!   `load`, `loadstring` 제거. `io`/`os.execute` 도 제거 (detector 의 의도는
-//!   "바이트 평가" 이지 부수효과가 아님).
-//! - **bytecode 차단** — `set_mode(ChunkMode::Text)` 로 binary 청크 거부.
-//!
-//! 평가 호출: 매 detector 별로 새 `mlua::Lua` 를 만든다 (lifetime 짧고 state 격리
-//! 단순). 캐시 미적용 — 한 `identify` 호출 안에서 같은 rule 이 두 번 평가되는
-//! 일은 없고, 동일 detector 가 여러 파일에 적용될 때 reuse 가치는 작다. 비용
-//! 측정 후 필요해지면 `lua_pool` 로 확장.
+//! host/user의 Lua detector를 새 VM에서 평가한다. 플러그인 Lua는 등록 단계에서 제거한다.
+//! 메모리·명령어 수를 제한하고 파일·OS 실행·동적 로더·debug 접근을 제거한다.
+//! ChunkMode::Text로 bytecode도 거절한다. VM은 호출마다 만들며 캐시하지 않는다.
 
 use mlua::{ChunkMode, Lua, Table, Value};
 
 use super::evaluator::DeepCtx;
 use super::types::FileTarget;
 
-/// 단일 detector rule eval 의 명령어 cap. 평가에 필요한 비용은 보통 수십~수백
-/// 명령어. 이 cap 을 넘기는 스크립트는 무한 루프로 간주.
+/// 한 평가의 명령어 상한. 초과하면 무한 루프 여부와 무관하게 평가를 중단한다.
 pub const INSTRUCTION_BUDGET: u32 = 1_000_000;
 
 /// 메모리 cap (bytes). string.rep 폭발 등 메모리 폭주 차단.
 pub const MEMORY_BUDGET: usize = 8 * 1024 * 1024;
 
-/// 단일 Lua detector rule 평가. 매치되면 `true`. 모든 실패(파싱·런타임·cap)는
-/// `tracing::warn!` 로 기록되고 `false` 반환 — observe 안전 (detector 매칭은
-/// 추가/탈락 둘 다 안전 fail open 이 아님, 매치 안함이 안전한 fallback).
+/// true일 때만 매칭한다. 파싱·실행·한도 오류와 bool이 아닌 결과는 warn을 남기고 false로 처리한다.
 pub fn evaluate_lua(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> bool {
     match try_evaluate(script, target, ctx) {
         Ok(Value::Boolean(b)) => b,
         Ok(other) => {
-            // 가독성: 다른 타입 (nil, number, table 등) 은 모두 false. 사용자가 자기
-            // 스크립트가 bool 안 돌려준다는 걸 알게끔 한 줄 warn.
             tracing::warn!(
                 "file_format lua: script returned non-bool ({}), treating as false",
                 other.type_name(),
@@ -51,10 +31,7 @@ pub fn evaluate_lua(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> boo
     }
 }
 
-/// 샌드박스 초기화 → target 테이블 구성 → global 등록 → 평가의 4단계를 `?` 로
-/// 체이닝. 각 단계 실패는 다음 단계로 전파되기 전 원래 로그 문구를 그대로
-/// 보존하도록 에러 메시지에 단계 prefix 를 남긴다 — 최종 로그(호출자)는
-/// `evaluate_lua`가 그대로 출력한다.
+/// 초기화·target 생성·실행 중 실패한 단계를 오류에 담는다. evaluate_lua가 한 번 기록한다.
 fn try_evaluate(script: &str, target: &FileTarget, ctx: &mut DeepCtx) -> mlua::Result<Value> {
     let entry = ctx.entry(target).clone();
     let lua = build_sandboxed_lua()
@@ -77,9 +54,7 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
     let lua = Lua::new();
     lua.set_memory_limit(MEMORY_BUDGET)?;
 
-    // 위험 글로벌 제거. mlua 의 표준 lib 는 이미 로드된 상태로 시작하므로 부분
-    // 제거. 화이트리스트 방식이 더 안전하나 detector 스크립트가 string/math/table
-    // 을 자유롭게 쓰는 게 일반적 use case 이라 현재는 블랙리스트만.
+    // 표준 라이브러리에서 위험한 전역을 제거하고 string/math/table 등 계산 기능은 남긴다.
     let g = lua.globals();
     for name in &[
         "dofile",
@@ -89,16 +64,11 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
         "debug",
         "require",
         "io",
-        // os 의 위험 메서드만 nil 처리하기 어렵고 detector 에 os.* 가 필요한 use
-        // case 도 거의 없으므로 통째로 제거.
         "os",
     ] {
         g.set(*name, Value::Nil)?;
     }
-    // 이 세 set 만 결과를 버린다. 근거는 바로 아래 `g.set("package", Value::Nil)?` 다 —
-    // 테이블 자체가 전역에서 사라지고 `require` 도 위에서 nil 이라, set 이 실패해 로더가
-    // 남아도 스크립트가 닿을 경로가 없다. 백스톱이 없는 곳에서는 버리면 안 된다
-    // (`crates/tasty-lua/src/sandbox.rs` 는 `require` 를 살리려 `package` 를 남겨 전파한다).
+    // require는 이미 제거했고 바로 뒤에서 package도 제거하므로 개별 set 실패가 로더 접근을 남기지 않는다.
     if let Ok(pkg) = g.get::<Table>("package") {
         let _ = pkg.set("loadlib", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
         let _ = pkg.set("searchers", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
@@ -106,7 +76,6 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
     }
     g.set("package", Value::Nil)?;
 
-    // 명령어 cap. 매 N 명령어마다 콜백 호출 → 콜백이 에러 리턴하면 평가 중단.
     let trigger = mlua::HookTriggers::new().every_nth_instruction(INSTRUCTION_BUDGET);
     lua.set_hook(trigger, |_lua, _debug| {
         Err::<mlua::VmState, _>(mlua::Error::external(
@@ -137,8 +106,6 @@ fn build_target_table(
         None => t.set("mime", Value::Nil)?,
     }
 
-    // helper: head 가 특정 prefix 로 시작하는지. Lua string lib 으로도 가능하지만
-    // detector 작성자가 자주 쓰는 패턴이라 단축 제공.
     let head_clone = entry.head.clone();
     let has_prefix = lua.create_function(move |_, prefix: mlua::String| {
         let bytes = prefix.as_bytes();
@@ -260,7 +227,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write_tmp(&dir, "x.txt", b"hello");
         let mut ctx = DeepCtx::new();
-        // 무한 루프 — cap 가 잡아내야 함. 못 잡으면 이 테스트는 timeout 으로 죽음.
         assert!(!evaluate_lua(
             "while true do end",
             &FileTarget::new(p),
@@ -273,7 +239,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write_tmp(&dir, "x.txt", b"hello");
         let mut ctx = DeepCtx::new();
-        // 64MB 문자열 시도 — memory cap 8MB 이므로 차단되어야.
         assert!(!evaluate_lua(
             "local s = string.rep('a', 64 * 1024 * 1024); return true",
             &FileTarget::new(p),
@@ -286,8 +251,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write_tmp(&dir, "x.txt", b"hello");
         let mut ctx = DeepCtx::new();
-        // io 가 nil 이면 io.open 호출 시 attempt to index a nil value → runtime
-        // error → false.
         assert!(!evaluate_lua(
             "return io.open('/etc/passwd') ~= nil",
             &FileTarget::new(p),
@@ -324,7 +287,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write_tmp(&dir, "x.txt", b"hello");
         let mut ctx = DeepCtx::new();
-        // load/loadstring 둘 다 제거되어 nil → runtime error → false.
         assert!(!evaluate_lua(
             "return load('return true')() == true",
             &FileTarget::new(p),

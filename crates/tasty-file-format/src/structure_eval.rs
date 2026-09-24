@@ -1,23 +1,13 @@
-//! `DetectorRuleKind::StructureCheck` 평가자.
-//!
-//! JSON Schema 로 target 파일의 구조를 검증. 현재 입력 포맷은 **JSON 만 지원** —
-//! YAML/TOML 입력은 별도 deps (serde_yml 등) 도입 후 확장. JSON 이외의 입력은
-//! `false` 반환.
-//!
-//! ## 제한
-//! - 파일 크기 > 5MB 면 즉시 `false` (큰 binary/log 파일을 스키마 검증하지 않도록).
-//! - schema 컴파일은 매 호출마다 수행 — 글로벌 schema cache 는 후속 작업. 평균 schema
-//!   가 작아 cold cost 무시 가능.
-//! - spec_path 는 절대 경로일 때만 신뢰. 상대 경로는 현재 호스트의 CWD 에 의존하므로
-//!   plugin 매니페스트 dir 기준 해석은 install 단계에서 수행해야 함 (별도 작업).
+//! JSON 파일을 JSON Schema로 검사한다. 다른 확장자는 매칭하지 않는다.
+//! metadata의 파일 크기가 5MB를 넘으면 읽지 않는다. 검사 중 커지는 파일의 읽기 상한은 아니다.
+//! schema는 매 호출마다 컴파일한다. 상대 spec 경로는 현재 작업 디렉터리를 기준으로 읽는다.
 
 use std::fs;
 use std::path::Path;
 
 use super::types::FileTarget;
 
-/// 입력 파일을 메모리에 통째 읽는 cap. 이보다 큰 파일은 schema 검증 후보가 아니라고
-/// 보고 즉시 `false`.
+/// metadata에서 확인하는 입력 파일 크기 상한.
 pub const STRUCTURE_FILE_CAP: u64 = 5 * 1024 * 1024;
 
 pub fn evaluate_structure(spec_path: &Path, target: &FileTarget) -> bool {

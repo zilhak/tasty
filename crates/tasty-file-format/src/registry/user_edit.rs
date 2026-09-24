@@ -104,8 +104,6 @@ impl FileFormatRegistry {
         for w in warnings {
             warn!(warning = %w, "file_format: user detector decl warning");
         }
-        // poison 을 `InvalidId("lock poisoned")` 으로 보고하던 자리다 — 사용자에게
-        // detector id 가 틀렸다고 말하면서 진짜 원인은 남기지 않았다.
         let mut inner = self.lock_write();
         install_one(
             &mut inner,
@@ -128,7 +126,6 @@ impl FileFormatRegistry {
         };
         let mut inner = self.lock_write();
         Self::purge_user_contributions(&mut inner);
-        // 새 user contribution install.
         for decl in decls {
             install_one(
                 &mut inner,

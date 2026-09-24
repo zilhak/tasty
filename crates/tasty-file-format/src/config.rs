@@ -7,10 +7,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt;
 
-/// 확장자별 detector 우선순위 표 (Phase E).
-///
-/// host default / user TOML 의 top-level `[[extension_priority]]` 섹션. plugin manifest
-/// 에는 이 variant 자체가 없다.
+/// 호스트 기본값·사용자 TOML의 확장자별 우선순위. 플러그인 매니페스트에는 이 항목이 없다.
 ///
 /// ```toml
 /// [[extension_priority]]
@@ -27,10 +24,7 @@ pub struct ExtensionPriorityDecl {
     pub order: Vec<String>,
 }
 
-/// detector 정의 TOML entry.
-///
-/// 같은 id 를 여러 출처(host/plugin/user)가 정의하면 registry merge 시 rule union +
-/// 메타 patch semantics 적용 (자세히는 `FileFormatRegistry::ensure_finalized`).
+/// 같은 ID의 선언은 규칙을 합치고 명시한 메타데이터를 덮어쓴다. ensure_finalized에서 병합한다.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DetectorDecl {
     pub id: String,
@@ -46,12 +40,8 @@ pub struct DetectorDecl {
     pub rule: Vec<DetectorRuleDecl>,
 }
 
-/// detector rule 정의.
-///
-/// **manual `Deserialize`** — 알려지지 않은 `kind` 는 `Unknown { kind_name, raw }`
-/// 로 보존하여 forward-compat. 호스트 본문(`HostDetectorRuleDecl::Lua`) 외에
-/// plugin 표면에서는 Lua 가 노출되지 않으므로 plugin TOML 의 `kind = "lua"` 는
-/// 같은 Unknown 경로로 떨어진다 — 추가 reject 로직 없음.
+/// 알려진 kind를 파싱하고 미지의 kind는 원문과 함께 Unknown으로 보존한다.
+/// Lua도 여기서는 파싱한다. 플러그인 Lua 규칙의 제거는 install_plugin_detectors가 담당한다.
 #[derive(Debug, Clone)]
 pub enum DetectorRuleDecl {
     Extension { values: Vec<String> },
@@ -86,8 +76,6 @@ impl<'de> Visitor<'de> for DetectorRuleDeclVisitor {
     where
         A: MapAccess<'de>,
     {
-        // 모든 key/value 를 toml::Value 로 미리 모은다 — manual Deserialize 의
-        // 단점: 두 번 순회. 그러나 schema 가 작아 비용 무시 가능.
         let mut table = toml::value::Table::new();
         while let Some(key) = map.next_key::<String>()? {
             let value: toml::Value = map.next_value()?;
@@ -228,7 +216,7 @@ impl fmt::Display for DetectorDeclError {
 
 impl std::error::Error for DetectorDeclError {}
 
-/// `from_plugin = true` 면 `$`-prefix id 거부, `kind = "lua"` Unknown 도 warn 후보.
+/// 플러그인의 $ 예약 ID를 거절한다. 미지의 kind는 경고로 반환한다.
 pub fn validate_detector_decl(
     decl: &DetectorDecl,
     from_plugin: bool,
@@ -258,10 +246,7 @@ pub fn validate_detector_decl(
                         detector: decl.id.clone(),
                     });
                 }
-                // 등록 시점에 컴파일까지 시도해 잘못된 glob 문법을 바로 거부한다 —
-                // evaluator 까지 흘려보내 매 파일마다 실패하는 대신 여기서 1회 확인.
-                // 실제 evaluator/registry 도 동일하게 `to_slash` 정규화된 패턴을 쓰므로
-                // (PathGlob 은 항상 `/` 로 저장·비교) 검증도 같은 형태로 한다.
+                // 평가 때 쓰는 / 정규화와 같은 방식으로 glob을 미리 컴파일해 잘못된 문법을 거절한다.
                 let normalized = tasty_utils::path::to_slash(pattern);
                 if let Err(e) = globset::Glob::new(&normalized) {
                     return Err(DetectorDeclError::InvalidPathGlob {
@@ -449,14 +434,11 @@ mod tests {
             icon: None,
             disabled: None,
             rule: vec![DetectorRuleDecl::PathGlob {
-                // globset 이 거부하는 불균형 bracket — evaluator 까지 흘려보내지
-                // 않고 등록 시점에 바로 reject 되어야 한다.
                 pattern: "[abc".into(),
             }],
         };
         let err = validate_detector_decl(&decl, false).expect_err("must reject");
         assert!(matches!(err, DetectorDeclError::InvalidPathGlob { .. }));
-        // 에러 메시지에 어떤 패턴이 왜 잘못됐는지 담겨 있어야 한다.
         let msg = err.to_string();
         assert!(
             msg.contains("[abc"),
