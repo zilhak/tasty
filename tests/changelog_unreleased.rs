@@ -1,7 +1,4 @@
-//! 본체와 plugin-protocol CHANGELOG에 `[Unreleased]` 절이 존재하는지 검증한다.
-//!
-//! 릴리스 도구가 `[Unreleased]`를 버전 헤더로 옮긴 뒤 새 `[Unreleased]`를
-//! 비어 있는 상태로 재추가하는 것을 강제한다. (절차는 `docs/dev-guide/release.md`)
+//! 본체와 plugin-protocol CHANGELOG에 Unreleased 헤더 문자열이 있는지 확인한다. 절의 내용이 비었는지는 검사하지 않는다.
 
 const ROOT_CHANGELOG: &str = "CHANGELOG.md";
 const PLUGIN_PROTOCOL_CHANGELOG: &str = "crates/tasty-plugin-protocol/CHANGELOG.md";

@@ -1,34 +1,9 @@
-//! CLI 가 IPC 로 **보내는** 메서드 이름이 전부 권한 표에 실재하는지 검증한다.
+//! CLI 요청의 메서드 이름을 METHOD_TABLE·DEBUG_METHODS·PREFIX_RULES와 대조한다.
+//! request 디렉터리의 값 위치 리터럴과 CLI 전체의 method 필드, 플러그인 CLI 매니페스트를 수집한다.
+//! 메서드별 params 키·실제 핸들러 동작은 이 검사 범위 밖이다.
 //!
-//! `crates/tasty-cli` 는 커맨드를 `JsonRpcRequest` 로 조립하면서 메서드 이름을 소스의
-//! 문자열 리터럴로 박는다. 그 문자열이 `METHOD_TABLE` / `DEBUG_METHODS` / `PREFIX_RULES`
-//! 어디에도 없으면 호스트는 `UnknownMethod` 로 거부한다 — 그리고 그것은 **런타임에만**
-//! 드러난다. 오타 한 글자가 컴파일도 테스트도 통과해 사용자에게 도달한다.
-//!
-//! **같은 축의 다른 가드가 이 방향을 안 본다** (겹치지 않는다):
-//!
-//! | 가드 | 보는 방향 | 이 오타를 잡나 |
-//! |---|---|---|
-//! | `cli_naming_count_drift` | 표의 네임스페이스별 **개수** | 못 잡는다 — CLI 는 입력이 아니고, 이름이 틀려도 개수는 안 변한다 |
-//! | `ipc_router_table_parity` | **라우터 팔** → 표 | 못 잡는다 — CLI 는 라우터의 앞단이라 스캔 대상 밖이다 |
-//! | `permission_free_methods_docs_parity` | 표 → **문서** | 못 잡는다 — 표에 없는 이름은 문서에도 없으니 대조에 안 걸린다 |
-//! | **이 가드** | **CLI 문자열** → 표 | 잡는다 |
-//!
-//! 파라미터 **키** 축은 여기서 안 본다 — 이름이 맞아도 키가 틀리면 핸들러가
-//! `Missing required '...' parameter` 로 거절한다. 그 축은
-//! `src/adapters/ipc/handler/cli_entry_tests.rs` 가 CLI 가 조립한 params 를 프로덕션
-//! 핸들러에 그대로 먹여 닫는다.
-//!
-//! **[`CLI_REQUEST_SOURCES`] / [`CLI_REQUEST_DIRS`] 에서 빠진 위치는 그대로 사각지대다** —
-//! `ipc_router_table_parity.rs` 의 `ROUTER_SOURCES` 가 처음 목록에서 파일을 빠뜨려
-//! 메서드 하나를 통과시킨 선례가 있다. 그래서 `request/` 는 **디렉토리째 재귀**로 걷고,
-//! 그 밖에서 요청을 직접 만드는 곳은 `method: "…"` 필드 형태를 크레이트 전체에서 훑는다.
-//!
-//! release 빌드에서는 `DEBUG_METHODS` 가 설계상 비어 있어(`debug.*` 가 release IPC 표면에서
-//! 사라진다) CLI 의 debug 커맨드 이름과 대조가 성립하지 않는다. 따라서 아래
-//! `#![cfg(debug_assertions)]` 로 debug 빌드에서만 돈다 — `cargo test` 의 기본 프로필이
-//! debug 라 그냥 돌리면 포함되고, 테스트를 `--release` 로 돌리면 이 파일은 통째로
-//! 컴파일에서 빠져 아무것도 검증하지 않는다.
+//! debug 표가 비는 release에서는 이 타깃 전체를 제외한다. 동적 생성 이름과 지원하지 않는 소스 형식도
+//! 놓칠 수 있으므로 이름을 실제로 전송하거나 모든 경로를 실행하는 검사로 해석해서는 안 된다.
 #![cfg(debug_assertions)]
 
 use std::collections::BTreeSet;
@@ -36,26 +11,15 @@ use std::path::{Path, PathBuf};
 
 use tasty_ipc::method_meta::{METHOD_TABLE, method_meta};
 
-/// 값 위치(튜플 원소) 메서드 리터럴을 훑을 고정 소스.
 const CLI_REQUEST_SOURCES: &[&str] = &["crates/tasty-cli/src/request.rs"];
 
-/// 같은 목적으로 **재귀로 걷는** 디렉토리. 커맨드 그룹이 늘 때마다 사람이 위 목록에
-/// 손으로 추가하는 걸 잊으면 사각지대가 생기므로 통째로 건다.
+/// 요청 모듈이 늘어도 누락되지 않도록 디렉터리를 재귀로 수집한다.
 const CLI_REQUEST_DIRS: &[&str] = &["crates/tasty-cli/src/request"];
 
-/// `method: "…"` 필드 형태를 훑을 루트. `request/` 밖에서 요청을 직접 조립하는 곳이
-/// 실제로 있다(`local/remote_check.rs` 의 `system.info`, `plugin.rs` 의
-/// `plugin.audit_follow`) — 그쪽도 오타가 나면 똑같이 런타임에만 드러난다.
+/// request 밖에서 직접 조립하는 요청의 method 필드도 찾는다.
 const CLI_CRATE_ROOT: &str = "crates/tasty-cli/src";
 
-/// **보내지 않는** 센티널 — `(이름, 사유)`.
-///
-/// `command_to_request` 의 일부 갈래는 IPC 앞단에서 이미 로컬 처리돼 이 함수에 도달하지
-/// 않는다. 그래도 팔을 남기는 이유는 각 지점의 주석에 적혀 있다(컴파일러가 보장하는
-/// 미도달을 런타임 panic 으로 바꾸지 않기 위해서다). 그 자리에 두는 이름은 표에 없는
-/// 것이 **정상**이므로 여기 사유와 함께 등재한다.
-///
-/// 목록은 실제보다 넓으면 안 된다 — 등재했는데 소스에 없으면 실패한다(아래 stale 검사).
+/// IPC 전에 로컬에서 처리해 전송하지 않는 이름과 사유. 실제 소스에서 없어진 항목은 제거한다.
 const NOT_SENT_SENTINELS: &[(&str, &str)] = &[
     (
         "port.noop",
@@ -91,8 +55,7 @@ const NOT_SENT_SENTINELS: &[(&str, &str)] = &[
     ),
 ];
 
-/// `ns.method` 형태(소문자·`_`·`.`, 점 하나 이상)인지. `ipc_router_table_parity` 와 같은
-/// 판정이라 `"2.0"`(jsonrpc 버전) 같은 리터럴이 구조적으로 배제된다.
+/// 소문자로 시작하고 점을 포함한 이름. JSON-RPC 버전 2.0은 제외한다.
 fn is_method_name(name: &str) -> bool {
     name.contains('.')
         && name
@@ -101,15 +64,7 @@ fn is_method_name(name: &str) -> bool {
         && name.starts_with(|c: char| c.is_ascii_lowercase())
 }
 
-/// 리터럴이 **함수 호출 인자**인가.
-///
-/// 이 크레이트에서 메서드 이름과 같은 모양의 리터럴을 쓰는 다른 용도는 i18n 키
-/// (`tasty_i18n::t_args("cli.agent.…", …)`)뿐이고, 그것들은 전부 호출 인자다. 반면 메서드
-/// 이름은 `("ns.verb", params)` 튜플의 첫 원소라 호출 인자가 아니다 — 이 구조 차이로
-/// 가르면 `cli.` 같은 **접두사 allowlist 가 필요 없다**(접두사로 거르면 새 접두사가
-/// 생길 때마다 목록이 늘고, 접미사 오타를 통과시키는 느슨한 매칭이 된다).
-///
-/// 여는 괄호가 앞 줄 끝에 있는 여러 줄 호출도 본다 — 실제로 i18n 키 넷이 그 형태다.
+/// 바로 앞의 괄호·식별자로 호출 인자를 추정해 i18n 키 등을 제외한다. 전체 Rust 표현식을 해석하지는 않는다.
 fn is_call_argument(before: &str, prev_lines: &[&str]) -> bool {
     let mut head = before.trim_end();
     if head.is_empty() {
@@ -121,15 +76,13 @@ fn is_call_argument(before: &str, prev_lines: &[&str]) -> bool {
     let Some(open) = head.strip_suffix('(') else {
         return false;
     };
-    // `t(` / `t_args(` / `json!(` 처럼 여는 괄호 바로 앞이 식별자면 호출이다.
-    // `(` 만 있거나 `=> (` 면 튜플이다.
+    // 괄호 앞 식별자·!는 호출로 보고 단독 괄호와 => 뒤 괄호는 튜플로 본다.
     open.trim_end()
         .chars()
         .next_back()
         .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '!')
 }
 
-/// 한 줄에서 **값 위치**(호출 인자가 아닌) 리터럴을 전부 뽑는다. 이름 모양은 안 본다.
 fn value_position_literals<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str> {
     let mut out = Vec::new();
     let mut idx = 0usize;
@@ -147,13 +100,7 @@ fn value_position_literals<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a st
     out
 }
 
-/// 값 위치 리터럴 중 `ns.verb` 모양인 것만.
-///
-/// 점을 요구하는 이유는 **오타 탐지 방향**(이 이름이 표에 있나)에서는 모양 제한이 없으면
-/// `"terminal"`·`"idle"` 같은 평범한 리터럴이 전부 후보가 되어 가드가 노이즈에 묻히기
-/// 때문이다. 반대 방향(표의 이름이 CLI 에 있나)에서는 표와 교집합을 잡으므로 노이즈가
-/// 무해해 [`value_position_literals`] 를 그대로 쓴다 — 무점 root 메서드(`split`·`tree`)가
-/// 그 차이로 살아난다.
+/// 미등록 후보는 ns.method 형태로 제한한다. 점 없는 등록 메서드는 반대 방향의 비교로 확인한다.
 fn value_position_methods<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str> {
     value_position_literals(line, prev_lines)
         .into_iter()
@@ -161,8 +108,6 @@ fn value_position_methods<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str
         .collect()
 }
 
-/// `method: "ns.verb"` 필드 초기화에서 이름을 뽑는다. `jsonrpc: "2.0"` 같은 다른 필드는
-/// 필드명으로 배제된다.
 fn field_method(line: &str) -> Option<&str> {
     let pos = line.find("method:")?;
     let after = line[pos + "method:".len()..].trim_start();
@@ -171,14 +116,8 @@ fn field_method(line: &str) -> Option<&str> {
     is_method_name(name).then_some(name)
 }
 
-/// `#[cfg(test)] mod …` 블록에 속하는 줄 번호를 표시한다.
-///
-/// 테스트 픽스처는 **보내지 않는** 이름을 자유롭게 쓴다 — 실제로 plugin 이 런타임에
-/// 등록하는 이름(`claude.wait_by_surface`)과 합성 이름(`x.wait`)이 픽스처에 있다.
-/// 이 가드의 대상은 "프로덕션 CLI 가 실제로 보내는 이름" 이므로 그 블록을 구조적으로
-/// 뺀다 — 이름을 allowlist 에 적어 빼면 같은 이름이 프로덕션 자리에 와도 통과한다.
-///
-/// 중괄호 깊이로 블록 끝을 찾으므로 파일 중간의 테스트 모듈도 정확히 잡힌다.
+/// 바로 앞 비어 있지 않은 줄이 #[cfg(test)]인 인라인 mod를 제외한다.
+/// 중괄호를 원문에서 세므로 리터럴·주석 속 괄호나 복합 cfg를 완전히 처리하지는 못한다.
 fn test_module_lines(lines: &[&str]) -> Vec<bool> {
     let mut skip = vec![false; lines.len()];
     let mut i = 0usize;
@@ -226,22 +165,7 @@ fn gather_rs(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 선언상 **출하되지 않는** 파일들 — 판정은 `tasty_doc_guards::shipping_scope` 하나가
-/// 한다. 여기서 넘기는 것은 **모수**(이 크레이트의 파일 목록)뿐이다.
-///
-/// [`test_module_lines`] 는 같은 파일 안의 인라인 `#[cfg(test)] mod … {` 블록만 뺀다.
-/// 테스트가 별도 파일로 나가면 그 선언은 `{` 가 아니라 `;` 로 끝나고, 스캐너는 선언이
-/// 아니라 파일을 읽으므로 **그 파일 전체가 프로덕션 CLI 소스로 세진다** — 픽스처가
-/// 자유롭게 쓰는 이름(`claude.wait_by_surface` 같은 런타임 등록 이름)이 미등재 메서드로
-/// 잡힌다. 실제로 `dynamic.rs` 를 모듈 디렉토리로 자르자 그 형태가 나왔다.
-///
-/// 이름을 센티널 목록에 적어 빼는 길은 택하지 않는다. 그 목록의 뜻은 "IPC 로 보내지 않는
-/// 이름" 이고, 픽스처를 거기 섞으면 목록이 두 의미를 갖는다 — 그 뒤엔 진짜 미등재 메서드가
-/// 테스트에 들어와도 조용해진다. 구조로 빼는 것이 [`test_module_lines`] 와 같은 방침이다.
-///
-/// 여기에 자체 파서가 있었다. 그 사본은 `#[cfg(all(test, …))]` 도 `#[path = "…"]` 도
-/// 전이 폐쇄도 못 읽어서 **판정이 정본과 갈렸다** — 갈린 방향은 "출하로 세는" 쪽이라
-/// 시끄럽게 틀리지만, 같은 물음에 답하는 자리를 둘 두는 것 자체가 원인의 복제다.
+/// 별도 시험 파일은 공용 shipping_scope로 제외한다. 합성 메서드 이름을 센티널 예외로 등록해 숨기지 않는다.
 fn declared_test_only(root: &Path, files: &[PathBuf]) -> BTreeSet<PathBuf> {
     let sources: Vec<(PathBuf, String)> = files
         .iter()
@@ -268,7 +192,6 @@ fn rel_of(file: &Path, root: &Path) -> String {
 fn every_cli_method_string_is_registered_in_method_table() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    // 값 위치 스캔 대상: 고정 소스 + `request/` 재귀.
     let mut request_files: Vec<PathBuf> =
         CLI_REQUEST_SOURCES.iter().map(|s| root.join(s)).collect();
     for dir in CLI_REQUEST_DIRS {
@@ -294,7 +217,6 @@ fn every_cli_method_string_is_registered_in_method_table() {
         }
     }
 
-    // `method: "…"` 필드 스캔 대상: 크레이트 전체.
     let mut all_files = Vec::new();
     gather_rs(&root.join(CLI_CRATE_ROOT), &mut all_files);
     all_files.sort();
@@ -321,8 +243,7 @@ fn every_cli_method_string_is_registered_in_method_table() {
 
     assert!(
         found.len() > 200,
-        "CLI 메서드 리터럴을 {} 개밖에 못 찾았다(하한 200) — 스캔 패턴이나 소스 목록이 \
-         깨졌을 가능성이 크다. 조용한 미스캔은 위양성보다 나쁘므로 여기서 실패시킨다",
+        "CLI 메서드 리터럴을 {}개만 수집했다(하한 200). 소스 목록과 추출 형식을 확인한다.",
         found.len()
     );
 
@@ -341,15 +262,11 @@ fn every_cli_method_string_is_registered_in_method_table() {
     unknown.dedup();
     assert!(
         unknown.is_empty(),
-        "CLI 가 보내는 메서드 이름이 METHOD_TABLE/DEBUG_METHODS/PREFIX_RULES 어디에도 없다 \
-         — 호스트가 UnknownMethod 로 거부하고, 그건 런타임에만 드러난다. 오타면 고치고, \
-         새 메서드면 표에 등재하라. IPC 로 보내지 않는 센티널이면 NOT_SENT_SENTINELS 에 \
-         사유와 함께 등재하라:\n{}",
+        "CLI의 메서드 후보가 호스트 표에 없다. 오타면 수정하고 새 메서드는 표에 등록한다. IPC로 전송하지 않는 이름이면 NOT_SENT_SENTINELS에 근거를 적는다:\n{}",
         unknown.join("\n")
     );
 
-    // 역방향 — 센티널 목록이 실제보다 넓으면 그 이름이 나중에 진짜 메서드 자리에 와도
-    // 조용히 통과한다.
+    // 센티널이 사라진 뒤에도 예외로 남아 실제 전송 이름을 숨기지 않도록 대조한다.
     let stale: Vec<&str> = NOT_SENT_SENTINELS
         .iter()
         .map(|(s, _)| *s)
@@ -362,20 +279,7 @@ fn every_cli_method_string_is_registered_in_method_table() {
     );
 }
 
-/// 무점(root) 메서드는 위 스캔의 사각지대라, 반대 방향으로 막는다.
-///
-/// [`is_method_name`] 이 점을 요구하므로 `"split"` · `"tree"` 같은 root 메서드는 값 위치
-/// 스캔에 안 잡힌다. 점을 빼면 `"terminal"` · `"idle"` 같은 평범한 리터럴이 전부 후보가
-/// 되어 가드가 노이즈에 묻힌다.
-///
-/// 대신 **표 → CLI** 방향으로 본다: 표의 무점 메서드는 그 리터럴이 CLI request 소스에
-/// 정확히 있어야 한다. `"tree"` 를 `"tre"` 로 오타내면 `"tree"` 가 사라져 여기서 떨어진다.
-///
-/// 이 방향이 성립하는 근거는 명명 규칙이다 — `docs/dev-guide/api-conventions.md` 가
-/// root 등록을 `split` · `tree` **둘로 닫아** 두고 "새 메서드는 이 예외에 동참 금지" 라고
-/// 못박았다. 그래서 무점 메서드는 곧 "자주 쓰는 짧은 CLI 명령" 이고, CLI 진입점이 없는
-/// 무점 메서드는 존재하지 않는다. 규칙을 깨는 무점 메서드가 새로 생기면 여기서 실패하는데,
-/// 그건 오탐이 아니라 **그 규칙을 다시 논의하라는 신호**다.
+/// 미등록 후보 검색에서 빠지는 점 없는 메서드는 등록 표의 이름이 CLI 소스에 있는지 역방향으로 확인한다. 새 root 메서드는 명명 정책도 검토해야 한다.
 #[test]
 fn root_level_methods_are_reachable_from_the_cli() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -412,26 +316,13 @@ fn root_level_methods_are_reachable_from_the_cli() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 표 → CLI 방향: "release 표에 있는데 CLI 가 없는" 집합이 문서와 1:1 인가.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const CLI_GAP_DOC: &str = "docs/dev-guide/api-conventions.md";
 
-/// 문서에서 표를 특정하는 헤더 행.
 const CLI_GAP_TABLE_HEADER: &str = "| 이유 | 메서드 | 왜 CLI 가 없나 |";
 
-/// debug 절반의 표를 특정하는 헤더 행. release 표와 **다른 표**다 — `debug.*` 는
-/// release 빌드에 아예 없으므로 "release IPC 에 있는데 CLI 가 없다" 와 같은 문장으로
-/// 묶이지 않는다.
 const CLI_GAP_DEBUG_TABLE_HEADER: &str = "| 이유 | debug 메서드 | 왜 CLI 가 없나 |";
 
-/// 셀 안의 **모든 백틱 코드 스팬**. 한 셀에 메서드를 `·` 로 여럿 늘어놓는다.
-///
-/// 코드 스팬만 뽑으므로 백틱 밖의 사람이 읽는 단서는 자연히 잘린다 — 그래서 대조를
-/// `starts_with` 로 느슨하게 할 이유가 없고 **정확 일치**로 본다. 느슨하면 문서 쪽
-/// 접미사 오타(`attach.list_TYPO`)가 그대로 통과해 이 가드의 존재 이유가 반쪽이 된다.
-/// (`permission_free_methods_docs_parity.rs` 와 같은 규약.)
+/// 설명 문구를 제외한 백틱 코드 스팬의 이름을 정확히 비교한다. 접두사 일치로는 메서드 오타를 놓칠 수 있다.
 fn code_spans(cell: &str) -> Vec<String> {
     cell.split('`')
         .skip(1)
@@ -441,10 +332,7 @@ fn code_spans(cell: &str) -> Vec<String> {
         .collect()
 }
 
-/// CLI 에서 도달 가능한 메서드 이름 전부.
-///
-/// 세 경로를 합친다 — request 소스의 값 위치 리터럴, 크레이트 전역의 `method: "…"` 필드,
-/// 번들 plugin 매니페스트의 `ipc_method`(동적 plugin CLI 가 그 이름으로 부른다).
+/// request 값 위치·CLI method 필드·번들 매니페스트의 ipc_method에서 읽은 이름을 합친다.
 fn cli_reachable_methods(root: &Path) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
 
@@ -486,15 +374,12 @@ fn cli_reachable_methods(root: &Path) -> std::collections::BTreeSet<String> {
         }
     }
 
-    // 번들 plugin 매니페스트의 `ipc_method = "…"`.
     let mut manifests = Vec::new();
     collect_manifests(&root.join("crates"), &mut manifests);
     for path in &manifests {
         let Ok(src) = std::fs::read_to_string(path) else {
             continue;
         };
-        // `ipc_method = "…"` 는 줄 맨 앞에도, 인라인 테이블
-        // (`{ name = "open", ipc_method = "image.open", … }`) 안에도 온다.
         for line in src.lines() {
             let mut rest = line;
             while let Some(pos) = rest.find("ipc_method") {
@@ -530,10 +415,6 @@ fn collect_manifests(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 문서에서 `header` 로 시작하는 표의 메서드 이름을 전부 뽑는다.
-///
-/// 두 표(release · debug)가 같은 파서를 쓴다 — 두 벌로 두면 한쪽만 고쳐지는 순간
-/// 대조 규약이 갈린다.
 fn table_rows(text: &str, header: &str) -> Vec<Vec<String>> {
     let after_header = text
         .split_once(header)
@@ -556,7 +437,6 @@ fn table_rows(text: &str, header: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// 표의 메서드 열에 적힌 이름 전부.
 fn listed_methods(text: &str, header: &str) -> Vec<String> {
     table_rows(text, header)
         .into_iter()
@@ -571,7 +451,6 @@ fn listed_methods(text: &str, header: &str) -> Vec<String> {
         .collect()
 }
 
-/// 계산된 집합과 문서 표를 **양방향으로** 대조한다.
 fn assert_documented(
     actual: &std::collections::BTreeSet<String>,
     text: &str,
@@ -590,9 +469,7 @@ fn assert_documented(
     let undocumented: Vec<&String> = actual.difference(&listed_set).collect();
     assert!(
         undocumented.is_empty(),
-        "{what} 있는데 CLI 진입점이 없고, {CLI_GAP_DOC} 에도 이유가 없다. \
-         에이전트 기능이면 CLI 를 만들고(원칙 2), 원칙 밖이면 그 이유를 표에 적어라 \
-         — 이유 없이 두면 누락과 구분되지 않는다:\n  {}",
+        "{what} 있으나 CLI 이름과 문서 사유를 찾지 못했다. 에이전트 기능이면 CLI를 제공하고 적용 대상이 아니라면 {CLI_GAP_DOC}에 이유를 적는다:\n  {}",
         undocumented
             .iter()
             .map(|s| s.as_str())
@@ -603,8 +480,7 @@ fn assert_documented(
     let stale: Vec<&String> = listed_set.difference(actual).collect();
     assert!(
         stale.is_empty(),
-        "{CLI_GAP_DOC} 표에 있으나 실제로는 CLI 진입점이 생겼거나 메서드가 사라졌다 — \
-         행을 지워야 표가 참이 된다:\n  {}",
+        "{CLI_GAP_DOC}의 사유 표와 현재 목록이 다르다. CLI 추가·메서드 삭제 여부를 확인해 오래된 행을 제거한다:\n  {}",
         stale
             .iter()
             .map(|s| s.as_str())
@@ -619,16 +495,7 @@ fn assert_documented(
     );
 }
 
-/// release 표에 있는데 CLI 진입점이 없는 메서드가 문서 표와 **양방향으로** 맞는지.
-///
-/// 원칙 2("에이전트 기능은 IPC + CLI 양면")는 release IPC 표면 **전체**가 아니라
-/// 에이전트 기능에 걸린다 — plugin 이 host 에게 자기 자원을 요청하는 서비스 메서드는
-/// CLI 호출자가 애초에 없다. 그래서 이 집합이 비어 있어야 하는 것이 아니라, **각 항목이
-/// 왜 밖인지가 문서에 남아 있어야** 한다. 이유 없이 남아 있으면 누락과 구분되지 않고,
-/// 실제로 같은 감사 티켓이 두 번 올라왔다.
-///
-/// 이 가드는 **이유의 내용**은 보지 않는다(기계가 판정할 값이 아니다) — 목록이 문서와
-/// 어긋나는 것만 본다.
+/// CLI 이름이 없는 release 메서드는 문서에 사유가 있어야 한다. 사유의 타당성은 자동으로 판단하지 않는다.
 #[test]
 fn methods_without_a_cli_entry_point_are_documented() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -652,16 +519,7 @@ fn methods_without_a_cli_entry_point_are_documented() {
     );
 }
 
-/// debug 절반도 같은 대조를 받는다.
-///
-/// `debug.*` 는 release IPC 표면에 없지만 **debug 빌드의 에이전트 표면**이고, 원칙 2 는
-/// 거기서도 성립한다 — 실제로 이 축을 실행으로 재 보니 debug 메서드 14 개가 CLI 로
-/// 부를 수 없었고, 그중 어느 것도 "왜 없는지" 가 어디에도 없었다. release 절반만 보는
-/// 가드는 그 14 개를 한 번도 못 봤다.
-///
-/// 표를 둘로 나눈 이유: 두 집합의 문장이 다르다. release 쪽은 "release IPC 에 있는데
-/// CLI 가 없다" 이고 debug 쪽은 "debug 빌드에만 있는데 그 빌드의 CLI 에도 없다" 다.
-/// 한 표에 섞으면 어느 빌드 이야기인지가 행마다 달라진다.
+/// debug 전용 메서드의 CLI 부재도 별도 문서 표와 대조한다. release 표와 제공 빌드가 다르다.
 #[test]
 fn debug_methods_without_a_cli_entry_point_are_documented() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -685,12 +543,6 @@ fn debug_methods_without_a_cli_entry_point_are_documented() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 사유 열 방향: 표가 "대신 이걸 쓰라" 고 가리키는 명령이 실재하는가.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// 최상위 서브커맨드 이름 — `pub enum Commands` 의 variant 를 clap 기본 규칙(kebab-case)
-/// 으로 변환한다. `#[command(name = "…")]` 이 있으면 그것이 이긴다.
 fn top_level_commands(root: &Path) -> std::collections::BTreeSet<String> {
     let src = std::fs::read_to_string(root.join("crates/tasty-cli/src/lib.rs"))
         .expect("crates/tasty-cli/src/lib.rs 를 읽지 못했다");
@@ -703,7 +555,6 @@ fn top_level_commands(root: &Path) -> std::collections::BTreeSet<String> {
     let mut override_name: Option<String> = None;
     for line in body.lines() {
         let t = line.trim();
-        // enum 본문 depth 1 의 줄만 variant 로 센다.
         if depth == 1 {
             if let Some(rest) = t.strip_prefix("#[command(name = \"") {
                 if let Some((name, _)) = rest.split_once('"') {
@@ -724,7 +575,6 @@ fn top_level_commands(root: &Path) -> std::collections::BTreeSet<String> {
             break;
         }
     }
-    // Bundled plugin CLI contributions are real top-level commands too.
     let mut manifests = Vec::new();
     collect_manifests(&root.join("crates"), &mut manifests);
     for path in manifests {
@@ -763,29 +613,20 @@ fn kebab(ident: &str) -> String {
     out
 }
 
-/// 문서가 "대신 이걸 쓰라" 고 든 명령이 실재해야 한다.
-///
-/// 이 표의 행은 부재의 **근거**다. 근거가 존재하지 않는 명령을 가리키면 그 행은 읽는
-/// 사람을 없는 곳으로 보내면서 동시에 "그러니 CLI 가 없어도 된다" 는 결론을 지탱한다 —
-/// 실제로 그런 행이 둘 있었다(`tasty settings get` · `tasty open`, 둘 다 없는 명령).
-/// 멤버십만 보는 위 가드들은 이 형태를 통과시킨다.
-///
-/// 최상위 이름만 본다. 하위 경로까지 보려면 서브커맨드 enum 을 전부 따라가야 하는데,
-/// 그 비용에 비해 잡히는 형태가 좁다 — 오늘의 두 결함은 모두 **최상위/1단**에서 갈렸다.
+/// 문서가 대안으로 안내한 최상위 명령의 존재를 확인한다. 하위 명령·옵션은 검사하지 않는다.
 #[test]
 fn commands_cited_as_alternatives_exist() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let known = top_level_commands(root);
     assert!(
         known.len() > 20,
-        "최상위 명령을 {} 개밖에 못 뽑았다 — 추출기가 죽었다(대조군)",
+        "최상위 명령을 {}개만 추출했다. 선언 형식과 수집 범위를 확인한다.",
         known.len()
     );
     let text = std::fs::read_to_string(root.join(CLI_GAP_DOC))
         .unwrap_or_else(|e| panic!("read {CLI_GAP_DOC}: {e}"));
 
-    // **사유 열만** 본다. 산문에는 "`tasty attach` 로 노출되지 **않는다**" 처럼 없는
-    // 명령을 일부러 이름 대는 부정문이 있어서, 문서 전체를 훑으면 그것을 오답으로 센다.
+    // 없는 명령을 예로 설명한 일반 산문을 오인하지 않도록 사유 열만 읽는다.
     let reasons: Vec<String> = [CLI_GAP_TABLE_HEADER, CLI_GAP_DEBUG_TABLE_HEADER]
         .iter()
         .flat_map(|h| table_rows(&text, h))
@@ -804,7 +645,6 @@ fn commands_cited_as_alternatives_exist() {
             continue;
         };
         let first = rest.split_whitespace().next().unwrap_or_default();
-        // `tasty <plugin> …` 처럼 자리표시자인 것은 이름이 아니다.
         if first.is_empty() || first.starts_with('<') || first.starts_with('-') {
             continue;
         }
@@ -818,8 +658,7 @@ fn commands_cited_as_alternatives_exist() {
     bad.dedup();
     assert!(
         bad.is_empty(),
-        "{CLI_GAP_DOC} 가 실재하지 않는 명령을 대안으로 가리킨다. 부재의 근거가 없는 곳을 \
-         가리키면 그 행은 근거가 아니라 오답이다:\n  {}",
+        "{CLI_GAP_DOC}가 없는 최상위 명령을 대안으로 안내한다:\n  {}",
         bad.join("\n  ")
     );
 }

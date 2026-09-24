@@ -107,7 +107,7 @@ fn markdown_surface_is_sent_as_its_own_role_with_the_remote_path() {
         "탭 제목용 display_name 이 함께 실려야 한다: {entry:?}"
     );
 
-    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
+    // 이유: 결과 확인 뒤 임시 디렉터리 삭제 실패는 무시한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
@@ -140,7 +140,7 @@ fn markdown_content_request_round_trips_over_attach_channel() {
     assert_eq!(result["file"], file.to_string_lossy().as_ref());
     assert_eq!(result["truncated"], false);
 
-    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
+    // 이유: 결과 확인 뒤 임시 디렉터리 삭제 실패는 무시한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
@@ -173,7 +173,7 @@ fn markdown_content_request_reports_a_reason_for_a_missing_file() {
         "실패 회신에 원문이 실리면 안 된다"
     );
 
-    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
+    // 이유: 결과 확인 뒤 임시 디렉터리 삭제 실패는 무시한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
@@ -270,7 +270,7 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
         "예산 초과 회신 뒤에도 세션이 살아 있어야 한다"
     );
 
-    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
+    // 이유: 결과 확인 뒤 임시 디렉터리 삭제 실패는 무시한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
@@ -319,6 +319,6 @@ fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
         "원문이 그대로 실려야 한다: {result:?}"
     );
 
-    // 이유: 결과 확인을 마친 임시 디렉터리 정리는 최선 노력으로 한다.
+    // 이유: 결과 확인 뒤 임시 디렉터리 삭제 실패는 무시한다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }

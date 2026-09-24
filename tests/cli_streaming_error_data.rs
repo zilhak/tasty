@@ -1,13 +1,5 @@
-//! 스트리밍 CLI 명령(`events follow` · `plugin audit-follow`)이 호스트 오류를 낼 때의 stderr 모양.
-//!
-//! 두 명령은 호스트 오류를 `main` 까지 올려 std 가 찍는다. 그래서 첫 줄은
-//! `Error: Error (<code>): <message>` 이고 — 그 모양을 파싱하는 쪽이 있어 바꾸지 않는다 —
-//! 응답에 `error.data` 가 있으면 둘째 줄 `data: <한 줄 JSON>` 이 붙는다. `data` 가 없으면
-//! 한 줄 그대로다. 근거 `docs/adr/0043-cli-errors-and-diagnostic-logs.md`.
-//!
-//! 실제 바이너리를 가짜 호스트(첫 요청에 JSON-RPC 오류로 답하는 loopback 리스너)에 붙여 잰다 —
-//! std 가 `Err` 를 찍는 모양까지 이 경로에만 있다. `TASTY_HOME` 을 tempdir 로 격리하고 그 안에
-//! 포트 파일을 쓴다.
+//! 스트리밍 CLI의 호스트 오류가 기존 첫 줄 형식을 유지하고 error.data만 둘째 줄 JSON으로 추가하는지 확인한다.
+//! 실제 CLI를 loopback 모의 호스트에 연결하며 TASTY_HOME과 포트 파일은 임시 디렉터리에 둔다(ADR-0043).
 
 #[path = "spawn_diag/mod.rs"]
 mod spawn_diag;
@@ -18,15 +10,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// 가짜 호스트가 연결과 요청을 기다리는 상한. CLI 는 붙자마자 요청을 보내므로 정상 경로는
-/// 밀리초 단위로 끝난다 — 이 값은 회귀(연결을 안 하거나, 붙고도 요청을 안 보내는 것)를
-/// 무한 대기가 아니라 실패로 바꾸려고 있다.
+/// 연결·요청이 오지 않아 시험이 무한히 기다리지 않도록 제한한다.
 const HOST_DEADLINE: Duration = Duration::from_secs(10);
 
-/// 첫 요청 한 줄을 읽고 `error` 로 답한 뒤 연결을 닫는 가짜 호스트. 받은 요청의 method 를 돌려준다.
-///
-/// 기한 안에 연결이 안 오거나 요청 한 줄이 안 오면 `Err` 로 끝난다 — 무엇을 기다리다
-/// 멈췄는지와 `label`(어느 명령인지)을 문구에 담는다.
+/// 첫 JSON-RPC 요청에 오류로 답한다. 실패하면 연결·요청 중 어디에서 멈췄는지 명령 라벨과 함께 반환한다.
 fn fake_host(
     home: &Path,
     label: String,
@@ -55,7 +42,7 @@ fn fake_host(
                 Err(e) => return Err(format!("{label}: accept 실패: {e}")),
             }
         };
-        // 받아 낸 소켓이 리스너의 non-blocking 을 물려받는 플랫폼이 있다 — 읽기는 기한으로 건다.
+        // 플랫폼에 따라 리스너의 nonblocking이 상속될 수 있어 소켓을 명시적으로 blocking으로 바꾼다.
         stream.set_nonblocking(false).expect("blocking stream");
         let remaining = deadline.saturating_duration_since(Instant::now());
         stream
@@ -82,21 +69,19 @@ fn fake_host(
     })
 }
 
-/// 가짜 호스트 스레드를 거둬 받은 method 를 얻는다. 기한 초과면 그 문구와 CLI 의 stderr 로 실패한다.
 fn host_method(host: std::thread::JoinHandle<Result<String, String>>, stderr: &str) -> String {
     host.join()
         .expect("fake host thread panicked")
         .unwrap_or_else(|e| panic!("{e}\nCLI stderr:\n{stderr}"))
 }
 
-/// 격리 홈에서 CLI 를 돌려 (종료 코드, stderr) 를 얻는다.
 fn run(home: &Path, args: &[&str]) -> (Option<i32>, String) {
     let out = Command::new(spawn_diag::instance_bin())
         .args(args)
         .env("TASTY_HOME", home)
         .env_remove("TASTY_SURFACE_ID")
         .env_remove("TASTY_SESSION_TOKEN")
-        // anyhow 가 backtrace 블록을 붙이면 줄 수가 달라진다 — 이 시험은 출력 모양을 잰다.
+        // backtrace가 출력 줄 수를 바꾸지 않도록 제거한다.
         .env_remove("RUST_BACKTRACE")
         .env_remove("RUST_LIB_BACKTRACE")
         .stdin(Stdio::null())
@@ -117,7 +102,6 @@ const STREAMING: [(&str, &[&str]); 2] = [
     ),
 ];
 
-/// `data` 가 있으면 첫 줄은 종전 그대로, 둘째 줄이 `data: ` + 원형 JSON 이다.
 #[test]
 fn streaming_commands_add_the_data_line_under_an_unchanged_first_line() {
     for (method, args) in STREAMING {
@@ -154,7 +138,6 @@ fn streaming_commands_add_the_data_line_under_an_unchanged_first_line() {
     }
 }
 
-/// `data` 가 없으면(또는 `null` 이면) 출력은 종전의 한 줄 그대로다.
 #[test]
 fn streaming_commands_without_data_print_the_single_line_as_before() {
     for data in [None, Some(serde_json::Value::Null)] {

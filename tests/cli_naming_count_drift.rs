@@ -1,19 +1,12 @@
-//! METHOD_TABLE 의 host namespace 별 메서드 수가 기대 스냅샷과 일치하는지 검증한다.
-//! drift 발생 시 fail.
-//!
-//! 0.7.x SemVer 가드의 테스트 측면 — 메서드가 추가되거나 (0.7.x 내 허용) 의도치 않게
-//! 제거되었을 때 변화를 강제 가시화한다. 명명 규칙·버전 정책 본문은
-//! [`docs/dev-guide/api-conventions.md`]. 그 문서가 명시하듯 **카운트 snapshot 은 본 테스트가
-//! 단일 진실 원천(SoT)** 이라 문서에 박지 않고 아래 `EXPECTED` 표에 둔다.
+//! METHOD_TABLE의 namespace별 메서드 수를 기록과 비교한다. 이름 추가·제거는 api-conventions의 호환성 정책을 따르고 이 기록도 갱신한다.
 
 use std::collections::BTreeMap;
 
 use tasty_ipc::method_meta::METHOD_TABLE;
 
-/// host namespace 별 기대 메서드 수 스냅샷. `METHOD_TABLE` 이 SoT 이고 본 표는 그 카운트
-/// 미러다. 메서드 추가/제거 시 동기화한다 (추가 = 같은 minor 내 OK, 제거 = SemVer major).
+/// 메서드 표 변경 시 검토할 namespace별 개수.
 const EXPECTED: &[(&str, usize)] = &[
-    ("agent", 33), // + agent.semaphore_set_permits
+    ("agent", 33),
     ("approval", 9),
     ("attach", 6),
     ("banner", 2),
@@ -25,8 +18,8 @@ const EXPECTED: &[(&str, usize)] = &[
     ("git_viewer", 1),
     ("global_hook", 3),
     ("hook", 3),
-    ("hook_handler", 6), // + hook_handler.{get,upsert,remove}
-    ("host", 1),         // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
+    ("hook_handler", 6),
+    ("host", 1), // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
     ("image", 8),
     ("markdown", 1),
     ("markdown_mirror", 1), // markdown_mirror.content_request — plugin 전용 host 메서드, CLI 진입점 없음
@@ -43,13 +36,9 @@ const EXPECTED: &[(&str, usize)] = &[
     ("remote", 13),
     ("session", 3),
     ("settings", 3),
-    // 32 → 30: `surface.raw_key` / `surface.switch_input_source` 가 debug 표
-    // (`DEBUG_METHODS`)로 이동. 사용자 입력 재현을 release 표면에서 뺀 보안
-    // 목적 제거라 major bump 없이 처리된다(ADR-0012 · api-conventions.md
-    // "안정성 정책" 의 보안 예외).
-    // + `surface.read_since_scan_mark` — 출력 스캐너 전용 커서 (ADR-0013).
+    // 입력 재현 메서드는 release에서 제외된 debug 표에 있어 이 개수에 포함되지 않는다(ADR-0012).
     ("surface", 33),
-    ("system", 3), // + system.pressure
+    ("system", 3),
     ("tab", 4),
     ("telemetry", 12),
     ("terminal", 11),
@@ -95,9 +84,7 @@ fn cli_naming_namespace_counts_match_method_table() {
 
     assert!(
         errors.is_empty(),
-        "host namespace count 스냅샷이 METHOD_TABLE 과 drift:\n  {}\n\
-         갱신: 메서드 추가/제거 후 tests/cli_naming_count_drift.rs 의 \
-         `EXPECTED` 표를 동기화.",
+        "namespace별 메서드 수가 기록과 다르다. 실제 추가·제거를 확인하고 EXPECTED를 갱신한다:\n  {}",
         errors.join("\n  ")
     );
 }

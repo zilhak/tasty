@@ -1,4 +1,4 @@
-//! Run the shipped CLI entry point, including clap exits, without a live instance.
+//! 실행 중인 인스턴스 없이 CLI 진입점의 도움말·clap 오류를 확인한다.
 #[path = "spawn_diag/mod.rs"]
 mod spawn_diag;
 
@@ -64,7 +64,7 @@ fn help_and_parse_errors_follow_locale_while_wire_messages_stay_unchanged() {
             assert!(err.contains(error), "{locale} {args:?}: {err}");
             assert!(err.contains(details), "{locale} {args:?}: {err}");
         }
-        // A fixture server speaks the existing wire format. Only the CLI presentation runs.
+        // 로컬 모의 서버는 기존 응답 형식을 쓰고 CLI의 표시만 검증한다.
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let port_file = home.join("fixture.port");
@@ -113,10 +113,7 @@ fn help_and_parse_errors_follow_locale_while_wire_messages_stay_unchanged() {
     }
 }
 
-/// 서브커맨드 없이 `--response-timeout-ms` 를 주면 실을 요청이 없다. 조용히 버리지 않고
-/// 명령 쪽과 같은 exit 2 로 거절한다. augmented help 갈래(`TASTY_SURFACE_ID` 가 있고
-/// `--launch` 가 없음)로 재는 것은 거절이 빠져도 GUI 가 뜨지 않는 갈래라서다 — 두 갈래는
-/// 라우팅의 같은 한 자리에서 거절된다.
+/// 서브커맨드 없는 response-timeout-ms를 거절하는지 확인한다. 거절이 빠져도 GUI가 뜨지 않도록 augmented-help 환경을 사용한다.
 #[test]
 fn a_reply_bound_without_a_command_is_refused_instead_of_dropped() {
     let root = tempfile::tempdir().unwrap();
