@@ -19,7 +19,6 @@ TO="$2"
 case "$FROM" in /*) die "레포 상대 경로로 줘라: $FROM" ;; esac
 case "$TO"   in /*) die "레포 상대 경로로 줘라: $TO" ;; esac
 
-# 아래 ROOT는 저장소 경로의 첫 구성 요소다. 실제 검사기의 수집 범위와 같지는 않다.
 FROM_ROOT="${FROM%%/*}"
 TO_ROOT="${TO%%/*}"
 

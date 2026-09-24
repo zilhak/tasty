@@ -135,7 +135,6 @@ for g in "${GATES[@]}"; do
     elif [ "$hc" = "$cap" ] && [ "$bc" = "$bcap" ]; then
         note="$note ☆ 양끝이 상한에 붙어 있고 상한이 그대로다 — 이 게이트는 rc 로 충분했다"
     fi
-    # 개수 차이는 동시 변경의 영향을 포함할 수 있어 확정값으로 안내하지 않는다.
     printf '%-34s %8s %8s %+8d [확정]   %s%s\n' "$g" "$bc" "$hc" "$d" "$cap" "$note"
 done
 
