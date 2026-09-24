@@ -1,53 +1,20 @@
-//! ADR-0043 의 재검토 조건 하나에 **발화 자리**를 준다 —
-//! "host 프로세스가 stdout 에 쓰는 경로가 생긴다(현재는 없음)".
-//!
-//! 그 ADR 은 EPIPE 처리를 **CLI 클라이언트 갈래에만** 격리했다. host 는 자식 stdin 을
-//! `Stdio::piped()` 로 열고 쓰므로 같은 처방을 host 에 적용하면 자식이 먼저 죽을 때
-//! host 가 통째로 죽는다. 그 격리가 성립하는 근거가 **host 는 stdout 에 안 쓴다** 는
-//! 실측 하나다. 그 전제가 깨지는 날을 사람이 알아채야 발동하는 상태였다.
-//!
-//! # 좌변
-//!
-//! 루트 패키지의 **출하되는** `.rs` — `src/**` 에서 파일 단위 test-only 와 인라인
-//! `#[cfg(test)]` 줄을 뺀 것. 조건의 주어가 "host **프로세스**가 쓰는 경로" 이므로
-//! 출하 밖의 코드는 좌변이 아니다. 실측 2026-09-08: 그것을 빼기 전 거친 계수가 17 이고
-//! 뺀 뒤가 0 이다 — 안 빼면 이 시험은 첫날부터 빨갛고, 빨간 이유가 조건과 무관하다.
-//!
-//! # 이미 있는 판사와 무엇이 다른가
-//!
-//! `tests/cli_stdout_broken_pipe.rs` 의 `cli_crate_has_no_direct_stdout_print` 는 좌변이
-//! `crates/tasty-cli/src` **뿐**이다. host 트리(`src/`)를 안 덮는다. 두 트리는 처방이
-//! 반대다 — 저쪽은 `outln!` 로 바꾸라고 하고, 이쪽은 **애초에 쓰지 말라**고 한다
-//! (host 에는 EPIPE 를 접을 경계가 없다). 같은 물음에 판사를 둘 만든 것이 아니다.
-//!
-//! 매크로 호출을 가르는 술어는 [`tasty_doc_guards::source_text::invokes_macro`] **하나**를
-//! 양쪽이 쓴다. 사본을 두면 한쪽만 고쳐진 날 답이 갈린다.
-//!
-//! # 이 가드가 안 보는 것
-//!
-//! `write!(io::stdout(), …)` 처럼 매크로 이름이 아니라 핸들로 쓰는 자리. 오늘 그 형태는
-//! 0 이고, 세려면 핸들 별칭을 따라가야 해서 술어가 근사가 된다. 늘어나면 그때 축을 넓힌다.
+//! 루트 패키지 출하 코드의 print·println 사용을 찾아 stdout 정책을 재검토하게 한다(ADR-0043).
+//! CLI의 broken pipe 종료 처리를 host에 그대로 적용하면 자식 stdin 파이프 오류로 host까지 종료될 수 있다.
+//! 주석·문자열과 파일·인라인 테스트 코드는 제외한다. CLI 크레이트의 출력은 별도 검사 대상이다.
+//! stdout 핸들로 직접 쓰는 경우는 찾지 못하고, 루트 코드가 실제 host 경로인지도 사람이 확인해야 한다.
 
 use tasty_doc_guards::cfg_predicate::cfg_gated_lines;
 use tasty_doc_guards::repo_root;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{invokes_macro, mask_non_code, rust_sources};
 
-/// 훑은 `.rs` 수의 하한. 수집이 죽으면 "쓰는 자리 없음" 은 언제나 참이 된다.
-/// 실측 2026-09-08: `src/**` 의 추적 `.rs` 605 개.
+/// 2026-09-08 추적 src Rust 파일605개를 기준으로 둔 수집 하한.
 const MIN_SOURCES: usize = 400;
 
-/// stdout 에 쓰는 std 매크로. `eprintln!`/`eprint!` 는 **stderr 라 대상이 아니다** —
-/// 이 목록에 넣지 마라. 그 둘을 섞는 것이 이 가드가 생긴 계기다.
+/// stdout 매크로만 등록한다. eprint·eprintln은 stderr라 제외한다.
 const STDOUT_MACROS: &[&str] = &["println", "print"];
 
-/// 한 파일 안에서 stdout 에 쓰는 **출하되는** 줄. 반환은 `(1-기준 줄번호, 줄 내용)`.
-///
-/// 거르는 것이 둘이고 **둘 다 필요하다**:
-/// - 주석·문자열 — `mask_non_code`. 안 지우면 "`println!` 을 쓰지 마라" 는 주석 자신이
-///   위반이 된다(실측 2026-09-08: 그런 줄이 4 개다).
-/// - 인라인 `#[cfg(test)]` 블록 — 그 줄은 출하 산출물에 안 들어가므로 조건의 주어가
-///   아니다. 파일 **단위** test-only 는 호출부가 [`test_only_files`] 로 먼저 뺀다.
+/// 마스킹한 코드에서 인라인 테스트를 제외해 stdout 매크로 호출 줄을 찾는다. 파일 단위 테스트는 호출부가 제외한다.
 fn stdout_write_lines(text: &str) -> Vec<(usize, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let gated = cfg_gated_lines(&lines, "test");
@@ -70,8 +37,7 @@ fn the_shipped_host_has_no_direct_stdout_write() {
     let sources = rust_sources(&root, &["src"]);
     assert!(
         sources.len() >= MIN_SOURCES,
-        "루트 패키지 소스를 {} 개만 모았다(하한 {MIN_SOURCES}) — 수집이 죽으면 아래 판정은 \
-         빈 집합을 훑고 조용히 통과한다",
+        "루트 패키지 소스를 {}개만 수집했다(하한 {MIN_SOURCES}). 수집 범위를 확인한다.",
         sources.len()
     );
 
@@ -96,27 +62,11 @@ fn the_shipped_host_has_no_direct_stdout_write() {
 
     assert!(
         offenders.is_empty(),
-        "host 가 출하되는 코드에서 stdout 에 직접 쓴다:\n{}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0043 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0043-cli-errors-and-diagnostic-logs.md).\n\
-         그 ADR 은 EPIPE 를 종료 코드 0 으로 접는 처방을 **CLI 클라이언트 갈래에만** \
-         격리했고, 그 격리의 근거가 \"host 는 stdout 에 안 쓴다\" 는 실측이다. \
-         host 에서 쓰기 시작하면 그 경계가 host 를 안 덮는다.\n\
-         순서가 있다. (1) 그 자리가 정말 host 갈래인지 본다 — 루트 패키지 안에도 \
-         CLI 로 라우팅되는 갈래가 있다. (2) host 갈래면 `tracing` 으로 옮길 수 있는지 \
-         먼저 본다(사용자에게 보이는 stdout 이 아니라 진단이면 그게 맞다). \
-         (3) 정말 stdout 이어야 하면 그 ADR 의 경계를 다시 쓴다 — **host 의 SIGPIPE 를 \
-         되돌리면 자식이 먼저 죽을 때 host 가 통째로 죽는다.**\n\
-         ☞ 이 시험을 지워서 통과시키지 마라. 그러면 재검토 조건이 다시 문장이 된다.",
+        "루트 출하 코드에서 stdout 매크로 호출을 찾았다:\n{}\n실제 host 경로인지 확인한다. 진단이면 tracing을 사용하고 stdout이 필요하다면 ADR-0043의 CLI·host 오류 처리 경계를 재검토한다. host의 SIGPIPE 처리를 바꾸면 자식 파이프 오류가 host를 종료시킬 수 있다.",
         offenders.join("\n")
     );
 }
 
-/// 술어가 `eprintln!` 을 `println` 으로 세지 않는지. 이 픽스처는 이 파일의 상수에서
-/// 파생하지 않는다 — 형태만 잰다.
-///
-/// 이 자리가 존재하는 이유는 실측 사고다: 부분문자열로 세면 stderr 세 자리가 stdout 으로
-/// 잡히고, 그 계수를 근거로 ADR 이 낡았다고 판단하게 된다.
 #[test]
 fn the_predicate_tells_stdout_macros_from_stderr_ones() {
     let cases: &[(&str, bool)] = &[
@@ -136,23 +86,12 @@ fn the_predicate_tells_stdout_macros_from_stderr_ones() {
     }
     assert!(
         wrong.is_empty(),
-        "매크로 술어가 stdout 과 stderr 를 못 가른다:\n{}\n\
-         ★ 못 가르면 이 가드는 **더 많이 잡는 쪽으로** 틀리고, 그 계수를 근거로 \
-         stdout 정책이 낡았다는 잘못된 판정이 나온다.",
+        "stdout과 stderr 매크로를 구별하지 못했다:\n{}",
         wrong.join("\n")
     );
 }
 
-/// 인라인 `#[cfg(test)]` 필터의 **합성 양성 대조**.
-///
-/// 실측 2026-09-08: 이 레포에서 그 필터는 **0 건**을 지운다 — 거친 계수 17 의 분해는
-/// `eprintln!` 3 · 주석 4 · 실제 호출 10 이고, 그 10 은 **전부 파일 단위** test-only 라
-/// 호출부에서 이미 빠진다. 살아 있는 표본이 없는 절은 죽은 채로 초록이므로, 합성
-/// 입력으로 양성 대조를 만든다(`shipping_scope` 가 bench·example 절을 두지 않은 것과 같은 이유).
-///
-/// 필터를 지우지 않는 이유: 지우면 출하 안 되는 인라인 test 코드가 위반으로 나가고,
-/// 그 실패문의 처방("ADR-0043 의 경계를 다시 써라")이 **실재하지 않는 조건에 대한
-/// 처방**이 된다.
+/// 실제 소스에서 해당 입력이 없어도 인라인 테스트와 주석 제외가 작동하는지 합성 입력으로 확인한다.
 #[test]
 fn inline_cfg_test_blocks_are_not_shipped_lines() {
     let src = "\

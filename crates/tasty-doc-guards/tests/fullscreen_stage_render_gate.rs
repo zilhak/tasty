@@ -1,52 +1,18 @@
-//! 전체화면 무대 렌더 분기의 **위치 계약**을 소스 구조로 고정하는 가드.
-//!
-//! 무대를 "뒤 렌더 스킵" 으로 나이브하게 구현하면 조용히 죽는 기능이 있다. 아래 제약은
-//! 어느 것도 GPU 없이 런타임으로 단정할 수 없어(스크린샷·attach relay·
-//! swapchain 이 전부 실제 어댑터를 요구한다) 소스 구조로 고정한다. 선례:
-//! `crates/tasty-doc-guards/tests/design_token_adherence.rs` / `crates/tasty-doc-guards/tests/no_emoji_in_source.rs`.
-//!
-//! 1. **분기는 offscreen surface 스크린샷 뒤에 온다.** 앞으로 옮기면
-//!    `ui.screenshot --surface <id>` 요청이 큐에 남아 영구 대기한다 — release
-//!    에이전트 기능이라 무대 때문에 죽으면 안 된다.
-//! 2. **분기는 레이아웃/`resize_all` 앞에 온다.** 뒤로 밀면 무대 중에도 PTY grid 가
-//!    재계산돼 "원본은 진입 시점 그대로" 계약이 깨진다.
-//! 3. **무대 경로도 window 캡처 + `present` 를 수행한다.** 건너뛰면 `ui.screenshot`
-//!    (window)이 영구 대기하고, 그러면 무대가 제대로 그려졌는지 자동 검증할 수단이
-//!    사라진다.
-//! 4. **`render_if_dirty` 는 무대를 이유로 조기 반환하지 않는다.** attach mesh relay 가
-//!    그 앞에 있어, 끊으면 로컬 전체화면이 원격 사용자 화면을 멈춘다.
-//! 5. **레이아웃 영속화는 무대를 모른다.** 재시작이 전체화면 상태로 부팅되면 사용자가
-//!    창을 조작할 수 없다. 이것만 순회를 끼므로 하한과 대조군이 함께 붙는다.
-//! 6. **모달 열기 요청 래치를 지우는 자리가 render 앞에 온다.** 뒤로 밀면 그 래치는
-//!    한 번의 `handle_redraw` 안에서 서고 지워져, 그것을 읽는 키/마우스 게이트 넷이
-//!    영영 참이 되지 않는다.
-//!
-//! ★ 6 은 무대 이야기가 아니다. 같은 본문(`handle_redraw`)의 **위치 계약**이라 여기 둔다 —
-//! 2 와 4 가 이미 그 본문과 `render_if_dirty` 를 읽고 있어서, 따로 파일을 내면 같은 함수
-//! 본문에 판정기가 둘이 된다. 파일 이름을 넓히는 쪽은 재 보고 접었다: 이 파일 이름을
-//! 인용하는 자리가 넷인데(`docs/design/systems/fullscreen-stage.md` ·
-//! `docs/adr/0018-explicit-capture-and-fullscreen-stage.md` · `src/state/fullscreen_stage_tests.rs` ·
-//! `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs`) 넷 다 무대 문맥이라,
-//! 이름을 넓히면 그 넷이 잃는 신호가 6 이 얻는 것보다 크다. 같은 형태의 선례도 있다 —
-//! `fullscreen_stage_input_gate.rs` 는 무대 가드인데 `settings_open_requested` 가 든 식을
-//! 통째로 박는다. 식이 거기 있어서다.
-//!
-//! 5 의 범위는 **레이아웃 영속화 모듈 하나**다. `src/app/persistence.rs` 와
-//! `src/intent/preset_capture.rs` 는 여기서 안 본다 — 물음이 다르기 때문이다. preset 은
-//! 사용자가 명시적으로 캡처하고 명시적으로 되살리는 것이라 "부팅이 조작 불가 상태로
-//! 시작된다" 는 논거가 그대로 안 옮겨 간다. 그쪽을 재는 채널은 여기 **없다.**
+//! 전체화면 무대의 렌더 분기 순서와 캡처·화면 제출·격자 유지 경로를 소스에서 확인한다.
+//! 서피스 캡처는 무대 분기 전에 처리하고, 원본 레이아웃 갱신은 무대 중 생략해야 한다.
+//! 무대 화면의 window 캡처와 present는 유지하며 attach 중계가 있는 render_if_dirty를 중단하지 않는다.
+//! 무대 상태는 레이아웃에 저장하지 않는다. 이 검사는 core/layout_persistence만 확인하고
+//! app/persistence와 명시적인 프리셋 캡처는 검사하지 않는다.
+//! 같은 redraw 함수의 순서에 의존하는 모달 열기 요청 처리도 함께 확인한다.
+//! GPU 동작 자체가 아닌 호출·조건 문자열과 위치를 검사한다.
 
-// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
-// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
-// — docs/dev-guide/error-handling.md.
+// 이유: 테스트의 반환값 무시는 제품 코드의 lint 예외 명부에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     tasty_doc_guards::repo_root()
 }
 
@@ -55,7 +21,6 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
 }
 
-/// `needle` 이 정확히 한 번 나오는 바이트 오프셋.
 fn only_at(hay: &str, needle: &str, what: &str) -> usize {
     let n = hay.matches(needle).count();
     assert_eq!(
@@ -66,13 +31,12 @@ fn only_at(hay: &str, needle: &str, what: &str) -> usize {
     hay.find(needle).expect("checked above")
 }
 
-/// `fn <name>` 부터 다음 최상위 `\n    fn ` / `\n    pub` 직전까지의 대략적 본문.
+/// 함수 시작부터4칸 들여쓰기의 다음 fn·pub fn·문서 주석 전까지 읽는 대략적인 범위다.
 fn fn_body<'a>(src: &'a str, header: &str) -> &'a str {
     let start = src
         .find(header)
         .unwrap_or_else(|| panic!("no fn: {header}"));
     let rest = &src[start + header.len()..];
-    // 같은 impl 안의 다음 함수 선언(4칸 들여쓰기)까지를 본문으로 본다.
     let end = rest
         .find("\n    fn ")
         .into_iter()
@@ -126,9 +90,7 @@ fn render_if_dirty_has_no_stage_early_return() {
     let body = fn_body(&src, "fn render_if_dirty(");
     assert!(
         !body.contains("fullscreen_stage"),
-        "`render_if_dirty` 가 무대 조건을 참조한다 — 이 함수는 attach mesh relay 를 \
-         품고 있어 무대를 이유로 끊으면 원격 사용자 화면이 멈춘다(주체 간 비침범). \
-         무대 분기는 `Gpu::render` 안에 둔다."
+        "render_if_dirty가 무대를 참조한다. attach 중계를 중단하지 않도록 무대 렌더 분기는 Gpu::render에 둔다."
     );
 }
 
@@ -144,41 +106,23 @@ fn terminal_resize_is_the_gated_one_in_handle_redraw() {
     );
 }
 
-/// ★ 무대 이야기가 아니다 — 같은 본문의 위치 계약이라 여기 둔다(헤더 6 참조).
-///
-/// `settings_open_requested`/`plugins_open` 은 **열기 요청 래치**다. 세우는 자리는 egui
-/// 패스(`src/adapters/ui/draw.rs` 의 사이드바 버튼)이고 그 패스는 `render_if_dirty`
-/// **안에서** 돈다. 지우는 자리는 `dispatch_pending_modal_opens` 다. 그래서 지움이
-/// render 보다 **앞**일 때만 값이 프레임 경계 하나를 건너 산다 — 그 구간이 곧 이 래치를
-/// 읽는 게이트 셋이 참일 수 있는 유일한 시간이다.
-///
-/// **이 가드가 못 보는 것**: 그 구간의 실제 길이(ms)와, 세터가 정말 `render_if_dirty`
-/// 안에서 불리는지. 뒤쪽은 소스 텍스트로 따라갈 수 없어(egui 패스가 여러 겹) 여기서는
-/// 안 묻는다 — 묻는 척하면 통과가 근거가 된다.
+/// 모달 열기 요청은 render_if_dirty 안의 egui 처리에서 설정된다.
+/// 요청 처리가 render 뒤에 있으면 같은 프레임에서 설정·해제가 끝나 다른 입력 이벤트가 요청 상태를 볼 수 없다.
+/// 여기서는 처리 순서만 확인하며 실제 지속 시간과 설정 함수의 호출 경로는 검증하지 않는다.
 #[test]
 fn the_modal_open_latch_is_cleared_before_the_pass_that_sets_it() {
     let src = read("src/view/main/redraw.rs");
     let body = fn_body(&src, "fn handle_redraw(");
 
     let clear = body.find("self.dispatch_pending_modal_opens();").expect(
-        "`handle_redraw` 에서 `dispatch_pending_modal_opens` 가 사라졌다 — 열기 요청 \
-         래치를 지우는 자리가 없으면 그 값은 다음 프레임에도 참인 채 남고, 키/마우스 \
-         게이트 셋이 영구히 열린 채 터미널 입력을 삼킨다.",
+        "handle_redraw에서 모달 열기 요청 처리를 찾지 못했다. 요청 상태가 남아 입력을 계속 차단하지 않는지 확인한다.",
     );
     let render = body
         .find("self.render_if_dirty(")
         .expect("`handle_redraw` 에서 `render_if_dirty` 가 사라졌다");
     assert!(
         clear < render,
-        "`dispatch_pending_modal_opens` 가 `render_if_dirty` 뒤로 갔다. 래치를 세우는 \
-         egui 패스가 `render_if_dirty` 안이라, 뒤에 두면 세우기와 지우기가 **한 번의 \
-         `handle_redraw` 안에서** 끝난다 — 그 사이에 이벤트 처리가 없으므로 그 값을 읽는 \
-         셋(`AppState::keyboard_overlay_open` · `MainView::mouse_overlay_open` · \
-         `try_consume_escape_key`)은 영영 참이 되지 않는다. \
-         셋 다 winit `WindowEvent` 핸들러에서 불려 `handle_redraw` 밖이기 때문이다. \
-         그리고 아무것도 빨개지지 않는다 — 그 구간을 런타임으로 재는 시험이 없다. \
-         되돌릴지 계약을 고칠지 정해라: 고치는 쪽이면 그 셋을 죽은 항으로 지우는 것이 \
-         같은 커밋에 와야 한다."
+        "모달 열기 요청 처리가 render_if_dirty 뒤에 있다. 같은 redraw에서 요청 설정과 해제가 끝나면 다른 입력 이벤트가 요청 상태를 볼 수 없다. 순서를 복원하거나 요청 상태를 읽는 경로와 계약을 함께 재검토한다."
     );
 }
 
@@ -207,7 +151,6 @@ fn window_resize_does_not_touch_the_grid_during_a_stage() {
         "gpu.resize 가 무대 게이트 안으로 들어갔다 — GPU 서페이스 크기는 무대 여부와 \
          무관하게 창을 따라가야 한다."
     );
-    // 줄바꿈 위치는 rustfmt 소관이라 needle 에 넣지 않는다.
     for after_gate in ["self.core_state.update_grid_size(", ".resize_all("] {
         let at = arm
             .find(after_gate)
@@ -219,41 +162,16 @@ fn window_resize_does_not_touch_the_grid_during_a_stage() {
     }
 }
 
-/// 무대는 휘발성이다 — 재시작이 전체화면 상태로 부팅되면 사용자가 창을 조작할 수 없는
-/// 상태가 된다. 그래서 레이아웃 영속화 코드는 무대를 알면 안 된다.
-///
-/// **이 단정은 부정형이고, 부정 단정은 혼자 서면 안 된다.** "위반이 0" 과 "아무 파일도
-/// 안 읽었다" 가 같은 초록이기 때문이다 — 그리고 뒤쪽이 나는 순간은 하필 모듈이 옮겨
-/// 가거나 이름이 바뀐 때, 즉 위반이 새로 들어오기 가장 쉬운 때다. 그래서 인구를 먼저
-/// 세고, 그 하한은 공용 순회가 자기 실패문과 함께 강제한다.
-///
-/// 모수는 **모듈 디렉토리와 그 모듈 파일을 합친 것**이다. 한때 디렉토리만 훑었는데,
-/// 그러면 `layout_persistence.rs` 자신이 인구 밖이라 거기 들어온 참조는 영영 안 보인다.
+/// 무대는 저장 대상이 아니다. 레이아웃 영속화의 모듈 파일과 하위 디렉터리를 모두 검사한다.
 const PERSISTENCE_FLOOR: Floor = Floor {
     min: 4,
     measured: 6,
     measured_on: "2026-09-08",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("ee7a32349"),
-    why_this_gap: "이 모수는 레이아웃 영속화 모듈의 `.rs` 개수이고 2026-09-08 에 \
-                   `ee7a32349` 에서 6 이었다. 움직임의 **단위는 파일 하나**다 — 근거: 이 \
-                   모듈은 2026-05-20 에 파일 하나가 여섯으로 갈린 뒤 그 값이 한 번도 안 \
-                   움직였고, `src/core/` 의 형제 모듈 전체를 3272 커밋으로 훑어도 한 표본 \
-                   최대 이동이 1 이며(`agent` 9→13 · `state` 6→13) **줄어든 사건은 0 건**이다. \
-                   여유 2 는 그 단위의 두 배다: 한 번의 정리가 인접한 파일 둘을 접는 폭까지 \
-                   견디되(예: `tests.rs` 를 인라인 `#[cfg(test)]` 로 접으면서 `schema.rs` 를 \
-                   흡수), 셋째부터는 짖는다. 옛 값은 여유 3 이었고 그것은 이 모수의 절반이라, \
-                   같은 자리에 적힌 '넓게 잡으면 모듈이 반쯤 사라져도 통과한다' 는 경고가 \
-                   가리키는 상태가 곧 그 값 자신이었다. ★ 이 여유가 감당 못 하는 사건이 \
-                   하나 있다 — 2026-05-20 의 분해를 되돌려 디렉토리를 파일 하나로 접는 \
-                   변경이다. 그때는 이 하한이 먼저 짖고, 그것이 옳다: 실패문은 하한을 내리라 \
-                   하지 않고 다시 재라고 한다. 순회가 죽어서 나오는 값은 0 이나 1 이라 그 \
-                   사건과 종료 코드로는 안 갈리고, 무엇이 일어났는지는 사람이 본다.",
+    why_this_gap: "레이아웃 영속화 모듈의 Rust 파일은 2026-09-08의 ee7a32349에서6개였다. 당시 형제 모듈3272커밋의 한 변경에서 파일 수가 움직인 최대 단위1을 기준으로 여유2를 뒀다. 모듈을 하나의 파일로 합치는 변경은 이 범위를 넘으므로 실제 재구성과 수집 실패를 구별해 다시 측정해야 한다.",
 };
 
-/// 영속화 모듈의 소스. 순회 루트를 `src/core` 로 잡고 접두사로 좁히는 이유는, 모듈
-/// 디렉토리와 같은 이름의 모듈 파일이 **형제**라 한 루트로는 둘을 같이 못 담기 때문이다.
-/// 모듈이 통째로 이름을 바꾸면 이 접두사가 아무것도 안 고르고, 그때는 하한이 빨개진다 —
-/// 그것이 노리는 바다.
+/// 모듈 파일과 같은 이름의 디렉터리를 함께 수집하도록 상위 core에서 시작해 접두어로 좁힌다.
 fn persistence_sources(root: &Path, floor: &Floor) -> Result<Vec<Walked>, String> {
     walk_with_floor(
         &root.join("src/core"),
@@ -264,12 +182,11 @@ fn persistence_sources(root: &Path, floor: &Floor) -> Result<Vec<Walked>, String
     )
 }
 
-/// 무대를 참조하는지 판정하는 유일한 자리 — 대조군도 이것을 부른다.
+/// 무대 식별자 문자열의 참조를 찾는다. 실제 직렬화 여부를 분석하지는 않는다.
 fn mentions_stage(text: &str) -> bool {
     text.contains("fullscreen_stage")
 }
 
-/// 순회가 모은 파일 중 무대를 참조하는 것.
 fn stage_referencing(files: &[Walked]) -> Vec<String> {
     let mut hits = Vec::new();
     for found in files {
@@ -285,29 +202,18 @@ fn stage_referencing(files: &[Walked]) -> Vec<String> {
 #[test]
 fn stage_state_is_not_persisted() {
     let root = repo_root();
-    // 순회 실패를 삼키지 않는다. 삼키면 이 아래의 `is_empty()` 가 "위반이 없다" 가
-    // 아니라 "아무것도 안 봤다" 를 뜻하게 되고, 둘은 같은 초록으로 나온다.
     let files =
         persistence_sources(&root, &PERSISTENCE_FLOOR).unwrap_or_else(|why| panic!("{why}"));
     let hits = stage_referencing(&files);
     assert!(
         hits.is_empty(),
-        "레이아웃 영속화가 무대를 참조한다: {hits:?} — 무대는 영속화 대상이 아니다. \
-         재시작이 전체화면 상태로 부팅되면 사용자가 창을 조작할 수 없다."
+        "레이아웃 영속화에서 무대 참조를 찾았다: {hits:?}. 무대는 저장 대상이 아니다."
     );
 }
 
-/// 대조군: 위 판정이 **심어 둔 참조를 실제로 집는가.**
-///
-/// 갈래를 둘 둔다. 하나만 두면 못 가른다 — 심은 것을 집었다는 것만으로는 그 판정이
-/// 아무거나 집는 것인지 알 수 없고, 안 집었다는 것만으로는 순회가 죽은 것인지 알 수
-/// 없다. 두 갈래가 서로의 대조다.
 #[test]
 fn the_persistence_scan_reacts_to_a_planted_reference() {
-    // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
-    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
-    // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
-    // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+    // 플랫폼마다 다른 시각 해상도에 의존하지 않도록 임시 경로는 PID와 단조 카운터로 구별한다.
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let base = std::env::temp_dir().join(format!(
         "tasty-stage-persist-probe-{}-{}",
@@ -317,7 +223,6 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
     let module_dir = base.join("src/core/layout_persistence");
     std::fs::create_dir_all(&module_dir).expect("픽스처 디렉토리");
 
-    // 실제 모수와 같은 모양: 모듈 파일 하나 + 디렉토리 안 셋.
     let plain = [
         (
             base.join("src/core/layout_persistence.rs"),
@@ -330,7 +235,6 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
     for (path, text) in &plain {
         std::fs::write(path, text).expect("픽스처 파일");
     }
-    // 순회가 이 접두사 밖까지 긁는지도 함께 본다 — 긁으면 아래 두 수가 어긋난다.
     std::fs::write(
         base.join("src/core/state.rs"),
         "let x = fullscreen_stage_active();\n",
@@ -347,7 +251,6 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
                        아니라 순회가 살아 있는가이기 때문이다.",
     };
 
-    // --- 갈래 1: 참조가 없으면 안 집는다 ---
     let clean = persistence_sources(&base, &probe).expect("픽스처 순회가 하한에 걸렸다");
     assert_eq!(
         clean.len(),
@@ -360,7 +263,6 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
         "무대를 안 쓰는 픽스처에서 위반이 나왔다 — 판정이 아무거나 집는다"
     );
 
-    // --- 갈래 2: 심으면 집는다 ---
     std::fs::write(
         module_dir.join("restore.rs"),
         "fn restore(s: &Snapshot) { s.fullscreen_stage; }\n",
@@ -370,11 +272,9 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
     assert_eq!(
         stage_referencing(&planted),
         vec!["src/core/layout_persistence/restore.rs".to_string()],
-        "심어 둔 무대 참조를 판정이 못 집는다 — 그러면 본 시험의 초록은 '위반이 없다' 가 \
-         아니라 '무엇도 못 집는다' 를 뜻한다"
+        "합성 입력에 추가한 무대 참조를 검출하지 못했다"
     );
 
-    // 판정은 이미 끝났다. `unwrap` 을 쓰면 임시 디렉토리 삭제 실패가 이 가드의 빨강으로
-    // 둔갑한다.
+    // 이유: 검사 후 임시 경로 정리 실패는 판정 결과에 영향을 주지 않는다.
     let _ = std::fs::remove_dir_all(&base);
 }

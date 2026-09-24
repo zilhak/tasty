@@ -1,48 +1,8 @@
-//! 가이드가 적는 **설치 사실**이 패키징 소스와 어긋나지 않는다.
-//!
-//! # 이 축은 앞서 한 번 잘못 판정했다
-//!
-//! 2026-09-06 에 "설치 절차 본문은 소스가 WiX 선언과 스크립트 내부 변수이고 가이드는
-//! 산문이라 **공통 어휘가 없다**" 로 접었다. 2026-09-07 에 다시 재니 **셋으로 갈렸다** —
-//! 어휘가 그대로 같은 것, 한 홉 변환으로 같은 것, 소스에 아예 없는 것. 앞 판정은 셋째
-//! 하나를 보고 전체를 덮은 것이었다.
-//!
-//! | 가이드가 적는 것 | 소스 | 어휘 |
-//! |---|---|---|
-//! | `/usr/bin/tasty` | `Cargo.toml` 의 deb·rpm `assets` 의 `dest` | **그대로** |
-//! | `libvulkan1` | `[package.metadata.deb]` 의 `recommends` | **그대로** |
-//! | `vulkan-loader` | `[package.metadata.generate-rpm.requires]` 의 키 | **그대로** |
-//! | `C:\Program Files\tasty\bin\tasty.exe` | `wix/main.wxs` 의 `Name=` 사슬 | **한 홉**(사슬을 잇는다) |
-//! | `GLIBC_2.39` | 없다 | — CI 러너 이미지가 정한다. 저장소 문자열 0 |
-//!
-//! 앞 넷을 잰다. 다섯째는 아래 `NOT_IN_ANY_SOURCE` 에 사유와 함께 등록한다 — 모수에서
-//! 빼면 "그런 물음이 있었다" 는 것까지 사라진다.
-//!
-//! # 왜 놓아도 되는가
-//!
-//! 이 축은 **사실 대응**이지 표기 선택이 아니다. 단축키 축에서 가드를 접은 이유는 설정
-//! 어휘(`alt+up`)와 읽는 표기(`Alt+↑`)가 서로 다른 두 어휘이고 가이드 쪽이 사람을 위해
-//! 일부러 다르기 때문인데, 설치 경로에는 그런 두 어휘가 없다. `/usr/bin/tasty` 는 하나뿐이고
-//! 어긋나면 그냥 틀린 것이다. ⇒ 빨개졌을 때 가장 싼 초록화가 **가이드를 참값으로 고치는 것**
-//! 이고, 그건 보호 대상을 안 깎는다.
-//!
-//! # 안 덮는 것 (재고 적는다)
-//!
-//! - **부분문자열이다.** 가이드가 `vulkan-loader-dev` 라고 적어도 `vulkan-loader` 를 품으므로
-//!   통과한다. 변이로 확인했다 — `vulkan-loader` 를 `vulkan-loaderX` 로 바꾼 변이는 **안 죽었고**,
-//!   `vulkan-svc` 로 바꾼 변이는 죽었다. 낱말 경계를 보게 만들 수 있지만 가이드가 그 이름을
-//!   문장 안에서 어떻게 감싸는지가 자유로워서 경계 규칙이 곧 표기 규칙이 된다 — 그건 단축키
-//!   축에서 접은 것과 같은 압력이다.
-//! - **설치 *절차*(순서·명령)는 안 본다.** `sudo apt remove tasty` 같은 줄의 원본은 패키지
-//!   이름 하나뿐이고 나머지는 배포판 관례라 저장소에 없다. 이 가드가 보는 것은 절차가 아니라
-//!   **설치 사실**(어디에 놓이나 · 무엇에 의존하나)이다.
-//! - **macOS 경로**(`/Applications/Tasty.app/Contents/MacOS/tasty`)는 아직 안 든다. 원본이
-//!   `scripts/build-macos-dmg.sh` 의 번들 조립과 `scripts/install-macos.sh` 의 복사 대상에
-//!   흩어져 있어 한 홉이 아니라 여러 홉이다. 잴 수 있는지부터 다시 재야 한다.
-//!
-//! # 채널
-//!
-//! `doc-guards.yml` — main push · PR 마다 경로 필터 없이 돈다.
+//! 설치 가이드의 Linux 설치 경로·Vulkan 의존 이름과 Windows 설치 경로를 패키징 소스와 대조한다.
+//! WiX의 디렉터리 이름은 이어 붙여 경로를 만들고 가이드에서 부분문자열로 찾는다.
+//! 접미사가 다른 이름도 통과할 수 있으며 설치·제거 절차의 정확성, macOS 경로, glibc 요구 버전은 검사하지 않는다.
+//! 저장소에서 직접 대조할 값이 없는 항목은 이유를 기록한다.
+//! doc-guards.yml의 경로 필터 없는 main push·PR에서 실행된다.
 
 use std::path::{Path, PathBuf};
 
@@ -54,8 +14,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// 읽기 실패는 건너뛰지 않는다 — 파일이 사라지면 모수가 조용히 비고, 그때의 "미스 0" 은
-/// 일치했다는 뜻이 아니라 아무것도 안 읽었다는 뜻이다.
 fn read(rel: &str) -> String {
     let p = repo_root().join(rel);
     std::fs::read_to_string(&p)
@@ -66,8 +24,7 @@ fn guide() -> String {
     read("site/content/getting-started/install.md")
 }
 
-/// 소스에 원본이 없는 설치 사실과 그 사유. **모수에서 빼지 않고 여기 적는다** — 빼면
-/// 그런 물음이 있었다는 것까지 사라진다.
+/// 이 검사에서 소스 값과 대조하지 못하는 설치 정보와 이유.
 struct NotInAnySource {
     fact: &'static str,
     why: &'static str,
@@ -75,20 +32,14 @@ struct NotInAnySource {
 
 const NOT_IN_ANY_SOURCE: &[NotInAnySource] = &[NotInAnySource {
     fact: "GLIBC_2.39",
-    why: "glibc 하한은 저장소가 아니라 **빌드 러너 이미지**가 정한다(Ubuntu 24.04). \
-          저장소 전체에서 이 문자열은 가이드 밖에 0 건이라 대조할 원본이 없다 — \
-          러너를 올리면 이 숫자가 낡지만 그것을 잡는 채널은 이 가드가 아니다.",
+    why: "glibc 요구 버전은 빌드 환경의 영향을 받으며 이 검사는 패키징 소스에서 그 값을 추출하지 않는다. 러너나 빌드 환경을 바꿀 때는 산출물의 요구 버전을 별도로 확인해야 한다.",
 }];
 
 #[test]
 fn the_linux_binary_path_the_guide_states_is_the_packaging_destination() {
     let manifest = read("Cargo.toml");
 
-    // ★ 두 패키지 형식이 **같은 사실을 다른 문법으로** 적는다. 하나만 보면 다른 하나가
-    //   바뀌어도 조용하다.
-    //   deb  — 배열형. 목적지가 **디렉토리**(`usr/bin/`, 앞 슬래시 없음)라 파일 이름은
-    //          소스 쪽 `target/release/tasty` 에서 온다. 이어야 `/usr/bin/tasty` 가 된다.
-    //   rpm  — 표형. 목적지가 전체 경로라 그대로 읽힌다.
+    // deb는 디렉터리 목적지와 원본 파일명을 합치고 rpm은 전체 목적지 경로를 사용하므로 각각 확인한다.
     assert!(
         manifest.contains(r#"["target/release/tasty", "usr/bin/", "755"]"#),
         "`[package.metadata.deb]` 의 실행 파일 asset 줄을 못 찾았다 — deb 설치 위치가 \
@@ -109,7 +60,7 @@ fn the_linux_binary_path_the_guide_states_is_the_packaging_destination() {
 #[test]
 fn the_gpu_dependency_names_the_guide_states_are_the_packaging_ones() {
     let manifest = read("Cargo.toml");
-    // 배포판마다 패키지 이름이 다르다 — deb 는 recommends, rpm 은 requires 키.
+    // 배포판별 의존 이름과 recommends·requires 구분을 유지한다.
     for (needle, where_) in [
         (r#"recommends = "libvulkan1""#, "libvulkan1"),
         (r#"vulkan-loader = "*""#, "vulkan-loader"),
@@ -126,11 +77,7 @@ fn the_gpu_dependency_names_the_guide_states_are_the_packaging_ones() {
     }
 }
 
-/// WiX 의 `Name=` 사슬을 이어 실행 파일의 설치 경로 꼬리를 만든다.
-///
-/// 이것이 **한 홉 변환**이다. 소스에는 `tasty` · `bin` · `tasty.exe` 가 따로 있고 가이드에는
-/// 이어진 경로가 있다 — 대조하려면 잇는 규칙을 여기 적어 둬야 한다. 규칙을 안 적고 통짜
-/// 문자열로 찾으면 소스에 없는 것을 없다고 보고하게 된다.
+/// WiX의 두 디렉터리 Name과 실행 파일명을 이어 Windows 설치 경로의 끝부분을 구한다.
 fn wix_exe_path_tail() -> String {
     let wxs = read("wix/main.wxs");
     let name_after = |id: &str| -> String {
@@ -146,9 +93,7 @@ fn wix_exe_path_tail() -> String {
     };
     let app = name_after("APPLICATIONFOLDER");
     let bin = name_after("Bin");
-    // 실행 파일 이름은 그 아래 `File` 의 Name 이다. 사슬을 잇기 전에 그것이 실재하는지
-    // 본다 — 없으면 아래 `format!` 이 소스에 없는 경로를 지어내고, 그 경로가 가이드와
-    // 안 맞는다는 보고는 참이지만 이유가 거짓이 된다.
+    // 고정 파일명을 경로에 붙이기 전에 WiX에 해당 이름이 있는지 확인한다.
     assert!(
         wxs.contains("Name='tasty.exe'"),
         "`wix/main.wxs` 에서 실행 파일 `Name='tasty.exe'` 를 못 찾았다 — 실행 파일 이름이 \
@@ -173,8 +118,7 @@ fn the_windows_path_the_guide_states_is_the_wix_name_chain() {
 
 #[test]
 fn every_fact_without_a_source_is_registered_with_its_reason() {
-    // 등록된 사실은 가이드에는 있고 소스에는 없어야 한다. 소스에 생겼으면 등록을 지우고
-    // 위처럼 대조로 올려라 — 안 그러면 잴 수 있게 된 것을 계속 못 잰다고 적어 두게 된다.
+    // 가이드가 이 사실을 아직 언급하는지와 사유의 최소 길이만 확인한다. 소스에 새 기준이 생겼는지는 자동으로 판정하지 않는다.
     for e in NOT_IN_ANY_SOURCE {
         assert!(
             guide().contains(e.fact),
@@ -191,9 +135,7 @@ fn every_fact_without_a_source_is_registered_with_its_reason() {
 
 #[test]
 fn the_guide_page_is_actually_being_read() {
-    // 위 단정들은 전부 `guide().contains(...)` 다. 파일이 비면 전부 빨개지긴 하지만,
-    // 반대로 **모수 쪽**(Cargo.toml · main.wxs)이 비면 조용해질 수 있는 자리가 남는다.
-    // 세 파일이 다 실물인지 여기서 한 번 본다.
+    // 비교 대상 세 파일의 기본 구조가 남아 있는지 확인한다.
     let g = guide();
     assert!(
         g.len() > 2000 && g.contains("## 설치 위치"),
