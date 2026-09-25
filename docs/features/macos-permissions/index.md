@@ -207,6 +207,9 @@ TCC 데몬 응답 대기가 필요하므로 매 프레임 조회하면 설정 �
 아직 보관된 값이 없다면 `permission_snapshot()`이 한 번 측정한다. 정상적인 시작 과정에서는
 부팅 때 먼저 측정하므로 화면을 그릴 때 다시 측정하지 않는다.
 
+안내 여부를 판단하는 함수는 모든 GUI 빌드에 포함한다. Linux와 Windows에서는 실제 권한을
+조회하지 않고 Full Disk Access를 `Unknown`, 화면 기록을 허용 상태로 반환하므로 안내가 뜨지 않는다.
+
 캡처와 키 주입 경로는 이 스냅샷을 쓰지 않는다. `screen_capture.rs`의
 `screen_recording_authorized()`와 `input_source.rs`의 `accessibility_trusted()`는 동작
 직전에 직접 측정하도록 되어 있다(위 "화면 기록"과 "주입 시점의 소비"). 표시용 캐시로

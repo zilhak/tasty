@@ -301,7 +301,6 @@ fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAcc
 /// Full Disk Access가 `Unknown`이면 허용되지 않은 것으로 보지 않는다. 추정할 근거가
 /// 없다는 뜻일 뿐이어서, 이를 미승인으로 세면 권한을 가진 사용자에게도 부팅마다 안내가
 /// 뜬다.
-#[cfg(any(test, all(target_os = "macos", feature = "gui")))]
 fn should_show_permission_notice(full_disk_access: FullDiskAccess, screen_recording: bool) -> bool {
     matches!(full_disk_access, FullDiskAccess::Denied) || !screen_recording
 }
