@@ -40,8 +40,7 @@ enum Status {
     Missing,
     /// 확인 불가. Full Disk Access를 추정할 근거가 없을 때만 나오며 muted 색을 쓴다.
     Unknown,
-    /// 조회 수단 없음. 파일 폴더에만 쓴다. 상태를 물어보는 행위 자체가 프롬프트라서 잴
-    /// 방법이 없다. 비워 두면 허용된 것으로 읽히므로 이 문구를 적는다.
+    /// 폴더 접근 권한은 확인하려고 접근하면 권한 요청 대화상자가 뜰 수 있어 자동으로 확인하지 않는다.
     NotObservable,
 }
 
@@ -51,7 +50,7 @@ impl Status {
             Status::Granted => ("Granted", theme.accent_success().to_egui()),
             Status::Missing => ("Not granted", theme.text_muted().to_egui()),
             Status::Unknown => ("Unknown", theme.text_muted().to_egui()),
-            Status::NotObservable => ("Cannot be observed", theme.text_muted().to_egui()),
+            Status::NotObservable => ("Cannot check automatically", theme.text_muted().to_egui()),
         };
         egui::RichText::new(label).color(color)
     }
@@ -119,9 +118,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "This is the only place a permission request starts — Tasty raises no prompts at \
-         boot (ADR-0569). Full Disk Access is absent from the request button because no app \
+         boot (ADR-0052). Full Disk Access is absent from the request button because no app \
          can ask for it; the secondary button sends the user to System Settings instead. The \
-         file folder row can never show a real state: asking macOS for it is the prompt.",
+         folder access row cannot show the permission state automatically: checking access \
+         can open a permission prompt.",
     );
 }
 
@@ -139,7 +139,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, fda: Status, screen: Status, requesti
                         ("Full Disk Access", fda),
                         ("Screen recording", screen),
                         (
-                            "File folders (Downloads · Documents · Desktop · volumes)",
+                            "Folder access (Downloads · Documents · Desktop · volumes)",
                             Status::NotObservable,
                         ),
                     ] {

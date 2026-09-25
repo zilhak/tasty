@@ -190,28 +190,22 @@ macOS에서만 보이며, 권한 요청이 시작되는 유일한 화면이다. 
 Full Disk Access 행은 허용됨, 허용 안 됨, 확인 불가 세 가지를 그대로 보여준다. 판단할
 근거가 없는 상태를 "허용 안 됨"으로 적으면 이미 허용한 사용자에게 잘못 안내하게 된다.
 
-파일 폴더 행에는 상태를 적을 수 없어 "조회 수단 없음"이라고 쓴다. 비워 두면 허용된
-것으로 읽힌다.
+폴더 접근 권한은 자동으로 확인할 수 없어 "자동 확인 불가"로 표시한다.
 
-요청이 진행 중일 때는 [모든 권한 요청하기]가 비활성이 되고 아래 설명 줄이 진행 문구로
-바뀐다. 플랫폼 쪽에서도 같은 조건을 막고 있으므로, 이 비활성은 그 거부를 눈에 보이게
-하는 역할이다.
+중복 요청을 막기 위해 요청 중에는 [모든 권한 요청하기] 버튼을 비활성화하고 진행 문구를
+표시한다. 플랫폼 코드에서도 진행 중인 요청이 있으면 새 요청을 받지 않는다.
 
-상태는 이 화면에서 측정하지 않고 보관된 스냅샷을 읽는다. 측정(Full Disk Access 추정의
-`File::open`, `CGPreflightScreenCaptureAccess`, debug 빌드의 `AXIsProcessTrusted`)은
-`refresh_permission_snapshot()` 안에서만 일어나고, 그리는 쪽은 `permission_snapshot()`으로
-값을 읽기만 한다. 측정을 그리는 경로에 두면 TCC 데몬 IPC가 프레임마다 반복된다. 설정
-창은 변경이 있을 때만 다시 그리므로 가만히 두면 돌지 않지만, 마우스 이동이나 호버처럼
-repaint를 유발하는 입력이 있는 동안에는 그 횟수만큼 반복되고, 응답이 늦는 만큼 창이
-멈춘다.
+화면은 `permission_snapshot()`으로 보관된 상태를 읽는다. 권한 조회에는 파일 접근과
+TCC 데몬 응답 대기가 필요하므로 매 프레임 조회하면 설정 창이 멈출 수 있다.
+`refresh_permission_snapshot()`은 다음 시점에 표시용 상태를 갱신한다.
 
-다시 측정하는 시점은 세 곳이다. 부팅할 때 한 번(`wants_permission_notice`가 측정한 값을
-그대로 보관하므로 부팅 안내 판단과 화면 표시가 같은 측정을 공유한다), 권한 화면에 들어올
-때(`apply_l2_select`), 설정 창에 포커스가 돌아올 때
-(`SettingsView::handle_event`의 `WindowEvent::Focused(true)`)다. 마지막 시점이 없으면
-보관된 값이 곧 틀린 값이 된다. Full Disk Access는 앱이 요청할 수 없어 사용자가 시스템
-설정을 다녀와야 하고 화면 기록도 거부한 뒤에는 시스템 설정에서만 되돌릴 수 있는데, 창으로
-돌아오는 순간이 값이 달라지는 유일한 시점이기 때문이다.
+- 부팅할 때 (`wants_permission_notice`): 시작 안내 여부를 판단할 때도 같은 값을 쓴다.
+- 권한 탭에 들어올 때 (`apply_l2_select`).
+- 설정 창에 포커스가 돌아올 때 (`SettingsView::handle_event`): 시스템 설정에서 바꾼 권한을 반영한다.
+- 권한 요청이 끝날 때 (`request_all_permissions`): 완료를 알리기 전에 결과를 반영한다.
+
+아직 보관된 값이 없다면 `permission_snapshot()`이 한 번 측정한다. 정상적인 시작 과정에서는
+부팅 때 먼저 측정하므로 화면을 그릴 때 다시 측정하지 않는다.
 
 캡처와 키 주입 경로는 이 스냅샷을 쓰지 않는다. `screen_capture.rs`의
 `screen_recording_authorized()`와 `input_source.rs`의 `accessibility_trusted()`는 동작
@@ -232,7 +226,7 @@ repaint를 유발하는 입력이 있는 동안에는 그 횟수만큼 반복되
 
 ## 비-목표 (Out of scope)
 
-**사전 발화가 원천적으로 불가능한 것** — 대상별로 프롬프트가 갈라져 사전 열거가 안 된다:
+**미리 일괄 요청하지 않는 권한** — 접근할 앱마다 승인이 필요하다:
 
 - **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮이며, 그 안내는 위 "Full Disk Access" 절이 담당한다.
 - **다른 앱 제어** (Automation / Apple Events) — 대상 앱 단위. 셸에서 `osascript` 를 쓸 때 발생하며 사전 열거 불가. **FDA 로도 덮이지 않는다** — FDA 는 파일 접근 서비스이고 Automation 은 완전히 별개 서비스라, FDA 를 줘도 대상 앱별 승인은 계속 요구된다. tasty는 이를 미리 일괄 요청하지 않는다. tasty 자신은 Apple Events 를 보내지 않는다.
@@ -257,7 +251,7 @@ repaint를 유발하는 입력이 있는 동안에는 그 횟수만큼 반복되
 - Given FDA 는 허용됐지만 화면 기록이 미승인 When 부팅 Then 안내를 띄운다
 - Given FDA 프로브 경로가 하나도 존재하지 않음(`NotFound`) + 화면 기록 승인 When 부팅 Then 판정 불가로 보고 안내를 띄우지 않는다
 - Given FDA 판정 불가 + 화면 기록 미승인 When 부팅 Then 안내를 띄운다 — 화면 기록 쪽 근거는 확실하다
-- Given FDA 와 화면 기록을 모두 허용했지만 파일 폴더는 한 번도 요청하지 않음 When 부팅 Then 안내가 뜨지 않는다 (알려진 사각 — 재는 행위 자체가 프롬프트다)
+- Given FDA 와 화면 기록을 모두 허용했지만 파일 폴더는 한 번도 요청하지 않음 When 부팅 Then 안내가 뜨지 않는다 (폴더 접근 권한은 확인 과정에서 권한 요청 대화상자가 뜰 수 있어 시작 안내의 판단에서 제외한다)
 - Given 안내를 본 뒤 권한을 부여 When 재부팅 Then 안내가 뜨지 않는다
 - Given 안내를 본 뒤 권한을 주지 않음 When 재부팅 Then 안내가 다시 뜬다
 - Given ad-hoc 서명 빌드에 FDA 를 준 뒤 재빌드 When 부팅 Then 승인이 초기화돼 안내가 다시 뜬다

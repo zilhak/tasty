@@ -1857,9 +1857,9 @@ accessibility_label = "Accessibility (key injection)"
 status_granted = "Granted"
 status_missing = "Not granted"
 status_unknown = "Unknown"
-detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears, and nothing in Tasty is blocked by it. File folders cannot be queried at all, because asking is itself the prompt, so their state is unknown until you request them."
-file_access_label = "File folders (Downloads · Documents · Desktop · volumes)"
-status_not_observable = "Cannot be observed"
+detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears, and nothing in Tasty is blocked by it. Folder access permissions cannot be checked automatically. Accessing a folder to check can open a permission prompt."
+file_access_label = "Folder access (Downloads · Documents · Desktop · volumes)"
+status_not_observable = "Cannot check automatically"
 request_all = "Request all permissions"
 requesting = "Requesting permissions. Answer each prompt as it appears. The next one only shows once you have answered the previous."
 request_note = "This requests the file folder and screen recording permissions one at a time. Items you have already allowed or denied do not prompt again, and a denied item can only be restored in System Settings. Full Disk Access cannot be requested by an app, so use the button above to add Tasty yourself."
@@ -1868,7 +1868,7 @@ open_full_disk_access = "Open Full Disk Access settings"
 # 전체 디스크 접근은 Automation·화면 기록·손쉬운 사용 권한과 별개다.
 [macos_permissions.notice]
 title = "Some permissions are not granted"
-body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without the permission a prompt interrupts you mid-task, or a feature quietly does nothing.
+body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without permission, a prompt may interrupt your work or a feature may not work.
 
 Some permissions currently look like they are not granted. Settings > General > Permissions shows which ones and what state they are in.
 

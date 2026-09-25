@@ -327,21 +327,9 @@ pub fn wants_permission_notice() -> bool {
 
 // ── 표시용 권한 상태 스냅샷 ────────────────────────────────────────────────────
 //
-// 설정 > 일반 > 권한 탭은 상태를 직접 측정하지 않고 보관된 값을 읽는다. 측정은 파일 열기
-// syscall과 TCC 데몬 IPC라서, 렌더 경로에 두면 tccd 응답이 늦는 만큼 설정 창이 멈춘다.
-// 게다가 마우스 이동이나 호버처럼 repaint를 유발하는 입력이 이어지는 동안 그 횟수만큼
-// 반복된다. 값이 필요한 시점은 매 프레임이 아니라 상태가 바뀔 수 있었던 시점이다.
-//
-// 값을 보관하는 이상 갱신 시점도 함께 정해야 한다. Full Disk Access는 앱이 요청할 수
-// 없어 사용자가 시스템 설정을 다녀오는 과정이 반드시 생기고, 화면 기록도 한 번 거부하면
-// 시스템 설정에서만 되돌릴 수 있다. 부팅 때 잰 값만 들고 있으면 그 결과가 화면에 반영되지
-// 않는다. 그래서 세 시점에 다시 측정한다. 부팅 한 번(`wants_permission_notice`),
-// 권한 화면 진입(`apply_l2_select`), 설정 창 포커스 복귀(`SettingsView::handle_event`)다.
-//
-// 캡처와 키 주입 경로는 이 스냅샷을 쓰지 않는다. `screen_capture.rs`의
-// `screen_recording_authorized()`와 `input_source.rs`의 `accessibility_trusted()`는
-// 동작 직전에 직접 측정하도록 되어 있다(각 함수의 주석 참고). 두 곳까지 같은 캐시로
-// 묶으면 실제 동작 여부를 낡은 값으로 판단하게 된다.
+// 권한 조회에는 파일 접근과 TCC 데몬 응답 대기가 필요하다. 매 프레임 조회하면 설정 창이
+// 멈출 수 있어 표시용 값을 보관한다. 부팅, 권한 탭 진입, 설정 창 포커스 복귀, 권한 요청
+// 완료 시 갱신한다. 캡처와 키 입력 전송은 실행 직전의 권한이 필요하므로 이 값을 쓰지 않는다.
 
 /// 권한 화면이 표시하는 상태 묶음. 측정한 시점의 값이므로, 그 뒤 사용자가 시스템
 /// 설정에서 바꾼 내용은 다음 갱신 전까지 반영되지 않는다.
@@ -361,7 +349,7 @@ pub struct PermissionSnapshot {
 static PERMISSION_SNAPSHOT: std::sync::RwLock<Option<PermissionSnapshot>> =
     std::sync::RwLock::new(None);
 
-/// 보관된 값을 읽기만 한다. 측정은 하지 않으며, 화면을 그리는 경로가 호출한다.
+/// 화면에 표시할 값을 읽는다. 보관된 값이 없을 때만 직접 측정한다.
 ///
 /// 아직 한 번도 측정하지 않았다면 그 자리에서 한 번 측정한다. 부팅 때 먼저 측정하므로
 /// 정상적인 흐름에서는 일어나지 않는다. 측정 없이 "허용 안 됨"으로 표시해 권한을 가진
@@ -375,8 +363,7 @@ pub fn permission_snapshot() -> PermissionSnapshot {
     refresh_permission_snapshot()
 }
 
-/// 지금 상태를 다시 측정해 보관하고 그 값을 돌려준다. 위에 적은 세 갱신 시점에서만
-/// 호출한다.
+/// 지금 상태를 다시 측정해 보관하고 그 값을 돌려준다.
 pub fn refresh_permission_snapshot() -> PermissionSnapshot {
     let snapshot = measure_permissions();
     // 측정이 이 함수에서만 일어나는지 로그로 확인할 수 있게 남긴다.
@@ -578,7 +565,7 @@ mod tests {
             .expect("시퀀스가 끝나면 완료 통지가 와야 한다");
         assert!(
             !permission_request_running(),
-            "완료 통지 시점에는 깃발이 이미 내려가 있어야 한다"
+            "완료 통지 시점에는 REQUEST_RUNNING이 false여야 한다"
         );
 
         // 끝난 뒤에는 다시 시작할 수 있어야 한다. 진행 중 표시가 남아 있으면 안 된다.
