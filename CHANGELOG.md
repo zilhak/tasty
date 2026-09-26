@@ -16,6 +16,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-27
+
 ### Added
 
 - **앱별 Shift+Enter 입력 설정**: 설정 → 터미널 → 입력에서 실행 파일명별 줄바꿈 문자(LF) 전송을 켜고 끄거나 규칙을 추가·삭제할 수 있다. Claude Code 플러그인은 최초 활성화에서 `claude`의 LF 규칙을 등록하며 기존 사용자 설정과 이후 수정·삭제를 보존한다. CLI `tasty settings get-input-rules`, `set-input-rule`, `remove-input-rule`, `initialize-input-rule`과 대응 IPC를 제공한다. Windows 기본 키 전송은 Shift+Enter·Ctrl+J의 Win32 키 정보를 보존한다.
