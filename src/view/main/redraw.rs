@@ -48,6 +48,28 @@ pub(crate) fn next_webview_attempts(
     }
 }
 
+/// 활성 탭에서 빠진 webview 중 이번 프레임에 키보드 포커스를 회수할 surface를 고른다.
+///
+/// 직전 프레임에 활성이었다가 빠진 surface를 `pending`에 모은다. 다시 활성이 되었거나
+/// 사라진 surface는 뺀다. host 창이 OS 포커스를 가질 때만 모은 surface를 꺼내므로
+/// 배경 창에서 일어난 전환은 사용자가 창으로 돌아올 때까지 미뤄진다.
+pub(crate) fn take_hidden_webview_focus_targets(
+    prev_active: &std::collections::HashSet<u32>,
+    now_active: &std::collections::HashSet<u32>,
+    is_live: impl Fn(u32) -> bool,
+    pending: &mut std::collections::HashSet<u32>,
+    host_focused: bool,
+) -> Vec<u32> {
+    pending.extend(prev_active.difference(now_active).copied());
+    pending.retain(|sid| !now_active.contains(sid) && is_live(*sid));
+    if !host_focused {
+        return Vec::new();
+    }
+    let mut targets: Vec<u32> = pending.drain().collect();
+    targets.sort_unstable();
+    targets
+}
+
 impl MainView {
     pub(super) fn handle_redraw(
         &mut self,
@@ -657,6 +679,24 @@ impl MainView {
         } else {
             self.webview_overlay_focus_released = false;
         }
+
+        // 탭·workspace 전환으로 활성 탭에서 빠진 webview도 숨기기 전에 포커스를 회수한다.
+        // Linux·Windows의 webview는 별도 OS 창이라 숨겨도 포커스가 부모로 돌아오지 않을 수 있다.
+        // 숨긴 뒤에는 backend가 포커스가 이미 밖에 있다고 판정할 수 있어 순서가 중요하다.
+        let now_active: std::collections::HashSet<u32> = active_html.keys().copied().collect();
+        let release = take_hidden_webview_focus_targets(
+            &self.webview_prev_active,
+            &now_active,
+            |sid| self.webviews.contains_key(&sid),
+            &mut self.webview_focus_release_pending,
+            self.base.focused,
+        );
+        for sid in release {
+            if let Some(wv) = self.webviews.get(&sid) {
+                wv.release_keyboard_focus();
+            }
+        }
+        self.webview_prev_active = now_active;
 
         // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
         // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
@@ -2277,8 +2317,76 @@ fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_me
 #[cfg(test)]
 mod tests {
     use super::category_header_menu_items;
+    use super::take_hidden_webview_focus_targets;
     use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
     use crate::webview::WebViewCreateError;
+
+    fn set(ids: &[u32]) -> std::collections::HashSet<u32> {
+        ids.iter().copied().collect()
+    }
+
+    /// 활성 탭에서 빠진 surface만 한 번 회수 대상이 되고 다음 프레임에는 다시 나오지 않는다.
+    #[test]
+    fn a_surface_leaving_the_active_tab_is_released_once() {
+        let mut pending = set(&[]);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1, 2]),
+            &set(&[2]),
+            |_| true,
+            &mut pending,
+            true,
+        );
+        assert_eq!(got, vec![1]);
+        let again =
+            take_hidden_webview_focus_targets(&set(&[2]), &set(&[2]), |_| true, &mut pending, true);
+        assert!(again.is_empty(), "같은 전이를 매 프레임 회수하면 안 된다");
+    }
+
+    /// 활성으로 남거나 새로 활성이 된 surface는 회수하지 않는다.
+    #[test]
+    fn staying_or_becoming_active_is_not_a_release() {
+        let mut pending = set(&[]);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[1, 3]),
+            |_| true,
+            &mut pending,
+            true,
+        );
+        assert!(got.is_empty());
+    }
+
+    /// 창이 OS 포커스를 갖지 않으면 회수를 미루고, 포커스를 되찾은 프레임에 한 번 회수한다.
+    #[test]
+    fn an_unfocused_window_defers_the_release_until_it_is_focused() {
+        let mut pending = set(&[]);
+        let got =
+            take_hidden_webview_focus_targets(&set(&[1]), &set(&[]), |_| true, &mut pending, false);
+        assert!(got.is_empty(), "배경 창에서는 OS 포커스를 건드리지 않는다");
+        let got =
+            take_hidden_webview_focus_targets(&set(&[]), &set(&[]), |_| true, &mut pending, true);
+        assert_eq!(got, vec![1]);
+        assert!(pending.is_empty());
+    }
+
+    /// 미룬 사이 다시 활성이 되었거나 닫힌 surface는 회수 대상에서 빠진다.
+    #[test]
+    fn a_deferred_release_is_dropped_when_the_surface_returns_or_closes() {
+        let mut pending = set(&[]);
+        take_hidden_webview_focus_targets(&set(&[1, 2]), &set(&[]), |_| true, &mut pending, false);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[]),
+            &set(&[1]),
+            |sid| sid != 2,
+            &mut pending,
+            true,
+        );
+        assert!(
+            got.is_empty(),
+            "돌아온 surface와 닫힌 surface는 회수하지 않는다"
+        );
+        assert!(pending.is_empty());
+    }
 
     /// 영구 실패는 첫 시도 뒤 재시도를 멈춘다.
     #[test]

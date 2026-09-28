@@ -145,8 +145,16 @@ macOS의 performKeyEquivalent도 실제 first responder가 자기 뷰 안에 있
 
 ## 포커스 — 회수는 **조건부**다
 
-overlay를 열어 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 자식 안에 있을 때만
-부모 winit 창으로 회수한다. overlay가 닫혀도 native 자식 focus를 자동 복원하지 않는다.
+host가 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 자식 안에 있을 때만
+부모 winit 창으로 회수한다. 가리는 경로는 두 가지다.
+
+- overlay를 열 때: 모든 webview를 대상으로 개폐마다 한 번 회수한다.
+- 탭·workspace 전환으로 surface가 활성 탭에서 빠질 때: 그 surface만 전이마다 한 번 회수한다.
+  숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
+  창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
+
+탐색이 끝나지 않아 활성 탭의 webview를 숨기는 경우와 surface를 닫는 경우는 회수하지 않는다.
+다시 보이거나 overlay가 닫혀도 native 자식 focus를 자동 복원하지 않는다.
 
 | 플랫폼 | 자식 focus 확인 | 회수 대상 |
 |--------|----------------|-----------|
@@ -155,8 +163,13 @@ overlay를 열어 webview를 가릴 때 host 창이 활성이고 실제 focus가
 | Windows | GetFocus가 자기 HWND 또는 IsChild인지 확인 | 부모 HWND |
 
 호출부의 base.focused와 backend의 실제 focus 검사를 함께 유지한다.
-하나를 생략하면 IPC로 overlay를 여는 동안 다른 앱의 focus를 가져올 수 있다.
+하나를 생략하면 IPC로 overlay를 열거나 탭을 바꾸는 동안 다른 앱의 focus를 가져올 수 있다.
 컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
+
+호출부의 base.focused는 winit의 Focused 이벤트를 따른다. Linux/X11에서는 X focus가 webview 자식 창으로
+들어가면 winit이 부모 창에 Focused(false)를 보내므로, 그 상태에서는 두 경로 모두 호출부 조건에서 멈춘다.
+Xvfb에서 X focus를 자식 창에 직접 넣어 확인했다. 실제 클릭은 X focus를 부모 창에 남겨 이 상태를 만들지 않았다.
+Windows의 winit도 WM_KILLFOCUS를 Focused(false)로 바꾸지만 실행 환경에서 확인하지 않았다.
 
 <a id="도메인-라이브러리로는-아무것도-새지-않는다"></a>
 

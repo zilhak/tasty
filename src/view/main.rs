@@ -100,6 +100,11 @@ pub struct MainView {
     /// overlay 가 열려 webview 키보드 포커스를 이미 host 로 회수했는지(edge 판정).
     /// overlay 가 닫히면 false 로 돌아가 다음 개폐에 다시 1 회만 회수한다.
     pub(crate) webview_overlay_focus_released: bool,
+    /// 직전 동기화에서 활성 탭에 있던 webview surface. 탭·workspace 전환으로
+    /// 활성 탭에서 빠진 surface를 한 번만 가려내는 edge 판정에 쓴다.
+    pub(crate) webview_prev_active: std::collections::HashSet<u32>,
+    /// 활성 탭에서 빠졌지만 창이 OS 포커스를 갖지 않아 아직 키보드 포커스를 회수하지 않은 surface.
+    pub(crate) webview_focus_release_pending: std::collections::HashSet<u32>,
     /// 마지막 동기화에서 실제 표시 중인 native webview가 있는지. Linux 키 조회 타이머에 사용한다.
     pub(crate) webview_any_visible: bool,
     /// 바인딩 정책을 매 프레임 만들지 않도록 마지막 원본 설정을 보관한다.
@@ -203,6 +208,8 @@ impl MainView {
             webview_reveal_pending: std::collections::HashMap::new(),
             webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
             webview_overlay_focus_released: false,
+            webview_prev_active: std::collections::HashSet::new(),
+            webview_focus_release_pending: std::collections::HashSet::new(),
             webview_any_visible: false,
             webview_policy_src: None,
             webview_policy_plugin_epoch: None,
