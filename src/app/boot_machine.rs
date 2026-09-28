@@ -479,6 +479,8 @@ impl App {
                     body,
                     on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
                     extra_buttons: Vec::new(),
+                    emphasis: false,
+                    dismiss_label: Some(crate::i18n::t("db_error.quit").to_string()),
                 },
             );
         }
@@ -491,6 +493,8 @@ impl App {
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
                     on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                     extra_buttons: Vec::new(),
+                    emphasis: false,
+                    dismiss_label: None,
                 },
             );
         }
@@ -513,6 +517,8 @@ impl App {
                 body: crate::i18n::t("macos_permissions.notice.body").to_string(),
                 on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 extra_buttons: permission_notice_buttons(),
+                emphasis: true,
+                dismiss_label: None,
             },
         );
     }

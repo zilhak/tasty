@@ -508,6 +508,8 @@ fn info_modal_entry(body: &str) -> InfoModal {
         body: body.to_string(),
         on_close: InfoModalAction::Continue,
         extra_buttons: Vec::new(),
+        emphasis: false,
+        dismiss_label: None,
     }
 }
 

@@ -610,6 +610,8 @@ impl App {
                 body: body.clone(),
                 on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 extra_buttons: Vec::new(),
+                emphasis: false,
+                dismiss_label: None,
             };
             crate::adapters::ui::info_modal::show_info_modal(&mut view.state, modal);
         } else {
@@ -712,6 +714,8 @@ fn build_db_init_error_modal(
         body,
         on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
         extra_buttons: Vec::new(),
+        emphasis: false,
+        dismiss_label: Some(crate::i18n::t("db_error.quit").to_string()),
     }
 }
 
@@ -723,6 +727,8 @@ fn build_theme_fallback_modal(
         body: crate::i18n::t_fmt("theme_error.body", invalid_theme_name),
         on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
         extra_buttons: Vec::new(),
+        emphasis: false,
+        dismiss_label: None,
     }
 }
 

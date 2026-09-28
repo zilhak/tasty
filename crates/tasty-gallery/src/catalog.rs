@@ -1367,13 +1367,25 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "info-modal",
-                    "Info modal",
-                    vec![spec(
-                        "info-modal",
-                        "Boot notice queue — one message at a time",
-                        Some("440px · height 140..360 · [OK] 가장 오른쪽 + 추가 액션 버튼"),
-                        components::info_modal::draw,
-                    )],
+                    "Info modal shell — notice queue",
+                    vec![
+                        spec(
+                            "info-modal",
+                            "One shell for every queued message",
+                            Some(
+                                "440 × 140..360 · body text-secondary · dismiss = Primary, rightmost · DB error = Quit",
+                            ),
+                            components::info_modal::draw,
+                        ),
+                        spec(
+                            "info-modal-permissions",
+                            "Permissions notice (macOS) — the long case",
+                            Some(
+                                "scroll top / mid / end · paths · lead-ins · command chip · scroll edge above buttons",
+                            ),
+                            components::info_modal::draw_permissions,
+                        ),
+                    ],
                 ),
                 section(
                     "script-confirm",

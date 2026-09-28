@@ -18,6 +18,7 @@ pub mod file_handler;
 mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
+mod info_modal;
 mod input;
 mod keyboard_cursor;
 mod language_select;
@@ -56,6 +57,11 @@ pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView}
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
+pub use info_modal::{
+    InfoModalButton, InfoModalOutput, InfoModalSpan, InfoModalSpanKind, InfoModalView,
+    footer_height as info_modal_footer_height, info_modal, parse_emphasis as info_modal_parse,
+    shell_height as info_modal_shell_height,
+};
 pub use input::Input;
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};

@@ -395,6 +395,7 @@ impl PopupState {
                 | "port_scanner"
                 | transfer::TRANSFER_PROGRESS_POPUP_ID
                 | transfer::TRANSFER_ERROR_POPUP_ID
+                | crate::adapters::ui::info_modal::INFO_MODAL_ID
         ) {
             LogicalPx(0.0)
         } else {

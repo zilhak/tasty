@@ -1,12 +1,15 @@
 //! 부팅 오류 등을 큐에 담아 차례로 보여주는 안내 팝업.
-//! 확인·Enter·Escape로 현재 메시지를 닫고 큐가 비면 팝업도 닫는다.
+//! 닫기 버튼·Enter·Escape로 현재 메시지를 닫고 큐가 비면 팝업도 닫는다.
+//!
+//! 본문과 버튼 행은 갤러리와 같은 `tasty_ui_widgets::info_modal`이 그린다. 제목은 팝업
+//! 타이틀바에 있고, 셸 배경·타이틀바 글자 크기·선 색은 `popup/draw.rs`가 이 팝업 id로 고른다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{ButtonVariant, InfoModalView};
 
 #[derive(Debug, Clone)]
 pub enum InfoModalAction {
@@ -41,16 +44,16 @@ pub struct InfoModal {
     pub title: String,
     pub body: String,
     pub on_close: InfoModalAction,
-    /// [확인] 왼쪽에 그려지는 추가 버튼들. 비어 있으면 [확인] 하나만 나온다.
+    /// 닫기 버튼 왼쪽에 그려지는 추가 버튼들. 비어 있으면 닫기 버튼 하나만 나온다.
     pub extra_buttons: Vec<InfoModalButton>,
+    /// 본문의 강조 표기(`**도입부**` · `*경로*` · `` `명령` ``)를 해석한다. 강조를 직접 쓴
+    /// 메시지(현재 macOS 권한 안내)만 켠다.
+    pub emphasis: bool,
+    /// 닫기 버튼 라벨. 없으면 `button.ok`다. 앱을 끝내는 메시지는 그 동작을 라벨로 쓴다.
+    pub dismiss_label: Option<String>,
 }
 
 pub const INFO_MODAL_ID: &str = "info_modal";
-const DEFAULT_WIDTH: LogicalPx = LogicalPx(440.0);
-const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
-const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
-/// 고정된 버튼 행 높이. 갤러리는 토큰으로 계산하므로 gallery_copied_dimensions로 차이를 검사한다.
-const FOOTER_ROOM: LogicalPx = LogicalPx(48.0);
 
 /// 안내를 큐에 추가한다. 부팅 안내는 에이전트 요청이 아니므로 사용자 입력을 받는 팝업으로 연다.
 pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
@@ -73,24 +76,27 @@ pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> S
         .unwrap_or_default()
 }
 
+/// 셸 높이는 직전 프레임에 잰 본문 높이로 정한다. 처음 여는 프레임은 아직 잰 값이 없어
+/// 글자 수로 줄 수를 어림한다. 어림이 틀려도 다음 프레임에 맞춰진다.
 pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    let body_len = state
-        .dialogs
-        .info_modal_queue
-        .front()
-        .map(|m| m.body.chars().count())
-        .unwrap_or(0);
-    // 문자 수로 대략 높이를 정한다. 실제 줄바꿈과 다르면 본문 스크롤로 처리한다.
-    let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
-    let line_h = theme::theme().font_size_body.value() * 1.5;
-    let body_h = approx_lines * line_h;
-    let total_h = (popup::title_bar_height()
-        + popup::content_margin().scaled(2.0)
-        + LogicalPx(body_h)
-        + FOOTER_ROOM)
-        .min(MAX_HEIGHT)
-        .max(MIN_HEIGHT);
-    egui::vec2(DEFAULT_WIDTH.value(), total_h.value())
+    let th = theme::theme();
+    let body_h = state.dialogs.info_modal_body_height.unwrap_or_else(|| {
+        let (chars, paragraphs) = state
+            .dialogs
+            .info_modal_queue
+            .front()
+            .map(|m| (m.body.chars().count(), m.body.split("\n\n").count()))
+            .unwrap_or((0, 1));
+        // 셸 폭 440에서 본문 13px 한 줄에 들어가는 글자 수의 어림값.
+        const APPROX_CHARS_PER_LINE: usize = 60;
+        let lines = chars.div_ceil(APPROX_CHARS_PER_LINE).max(1) as f32 + paragraphs as f32;
+        let line_h = th.font_size_body.value() * th.line_height_ui;
+        LogicalPx(lines * line_h)
+            + th.info_modal_para_gap() * paragraphs.saturating_sub(1) as f32
+            + th.spacing_md * 2.0
+    });
+    let h = tasty_ui_widgets::info_modal_shell_height(&th, popup::title_bar_height(), body_h);
+    egui::vec2(th.info_modal_width().value(), h.value())
 }
 
 /// 확인 버튼 외의 닫기 경로도 큐를 처리한다. 확인이 이미 큐를 비웠으면 다시 꺼내지 않는다.
@@ -102,6 +108,7 @@ pub fn on_close_info_modal(
     let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
         return;
     };
+    state.dialogs.info_modal_body_height = None;
     if let InfoModalAction::Exit(code) = modal.on_close {
         tracing::info!("info modal exit requested (code={code})");
         std::process::exit(code);
@@ -124,47 +131,43 @@ pub fn draw_info_modal(
         return PopupAction::Close;
     };
 
-    let margin = th.spacing_sm.value();
-    let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(margin, th.spacing_xs.value()));
-    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
-    let ui = &mut child_ui;
-
-    // 예상보다 긴 본문이 버튼을 밀어내지 않도록 버튼 높이를 확보하고 나머지를 스크롤한다.
-    let body_max_h = (ui.available_height() - FOOTER_ROOM.value()).max(0.0);
-    egui::ScrollArea::vertical()
-        .max_height(body_max_h)
-        .auto_shrink([false, true])
-        .drag_to_scroll(false)
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(&current.body)
-                    .color(th.text_primary())
-                    .size(th.font_size_body.value()),
-            );
-        });
-
-    let mut confirm =
-        ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
-    let mut open_permission_settings = false;
-
-    ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
-        vspace(ui, th.spacing_xs);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(t("button.ok")).clicked() {
-                confirm = true;
-            }
-            for button in &current.extra_buttons {
-                if ui.button(&button.label).clicked() {
-                    match &button.action {
-                        InfoModalButtonAction::OpenPermissionSettings => {
-                            open_permission_settings = true
-                        }
-                    }
-                }
-            }
-        });
+    let mut buttons: Vec<tasty_ui_widgets::InfoModalButton<'_>> = current
+        .extra_buttons
+        .iter()
+        .map(|b| tasty_ui_widgets::InfoModalButton {
+            label: &b.label,
+            variant: ButtonVariant::Secondary,
+        })
+        .collect();
+    buttons.push(tasty_ui_widgets::InfoModalButton {
+        label: current.dismiss_label.as_deref().unwrap_or(t("button.ok")),
+        variant: ButtonVariant::Primary,
     });
+    let out = tasty_ui_widgets::info_modal(
+        ui,
+        &th,
+        &InfoModalView {
+            // 다음 메시지가 앞 메시지의 스크롤 위치를 물려받지 않도록 메시지마다 id를 바꾼다.
+            id_salt: egui::Id::new(INFO_MODAL_ID).with((&current.title, &current.body)),
+            body: &current.body,
+            emphasis: current.emphasis,
+            buttons: &buttons,
+            scroll_to: None,
+        },
+    );
+    state.dialogs.info_modal_body_height = Some(out.body_content_height);
+
+    let dismiss_idx = buttons.len() - 1;
+    let confirm = out.clicked == Some(dismiss_idx)
+        || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
+    let mut open_permission_settings = false;
+    if let Some(i) = out.clicked
+        && let Some(button) = current.extra_buttons.get(i)
+    {
+        match button.action {
+            InfoModalButtonAction::OpenPermissionSettings => open_permission_settings = true,
+        }
+    }
 
     if open_permission_settings {
         state.dialogs.permission_settings_requested = true;
@@ -175,6 +178,7 @@ pub fn draw_info_modal(
     }
 
     let popped = state.dialogs.info_modal_queue.pop_front();
+    state.dialogs.info_modal_body_height = None;
     if let Some(modal) = popped
         && let InfoModalAction::Exit(code) = modal.on_close
     {

@@ -113,6 +113,9 @@ pub struct DialogState {
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 안내 대기열. 확인 버튼으로 맨 앞 항목을 처리한다.
     pub(crate) info_modal_queue: VecDeque<InfoModal>,
+    /// 맨 앞 안내의 본문 높이를 직전 프레임에 잰 값. sizer가 셸 높이를 정할 때 읽고,
+    /// 맨 앞 항목이 바뀌면 비운다.
+    pub(crate) info_modal_body_height: Option<tasty_type_geometry::length::LogicalPx>,
     /// 안내 모달의 [권한 설정 열기]가 눌렸는지 나타낸다. 팝업을 그리는 코드는 winit
     /// 이벤트 루프에 접근할 수 없어 여기에 표시만 하고, App 계층이 프레임 시작에 읽어
     /// 처리한다.
@@ -189,6 +192,7 @@ impl DialogState {
             tab_drag: None,
             ws_drag: None,
             info_modal_queue: VecDeque::new(),
+            info_modal_body_height: None,
             permission_settings_requested: false,
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),

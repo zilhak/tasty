@@ -38,29 +38,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
     ),
     (
-        "모달 폭",
-        Side::Lit("src/adapters/ui/info_modal.rs", "DEFAULT_WIDTH"),
-        Side::Lit(GALLERY_INFO_MODAL, "WIDTH"),
-    ),
-    (
-        "모달 높이 하한(clamp)",
-        Side::Lit("src/adapters/ui/info_modal.rs", "MIN_HEIGHT"),
-        Side::Lit(GALLERY_INFO_MODAL, "MIN_HEIGHT"),
-    ),
-    (
-        "모달 높이 상한(clamp)",
-        Side::Lit("src/adapters/ui/info_modal.rs", "MAX_HEIGHT"),
-        Side::Lit(GALLERY_INFO_MODAL, "MAX_HEIGHT"),
-    ),
-    (
-        "모달 본문 아래 버튼행 높이",
-        Side::Lit("src/adapters/ui/info_modal.rs", "FOOTER_ROOM"),
-        Side::ThemeSum(
-            GALLERY_INFO_MODAL,
-            &["item_height_interactive", "spacing_lg", "spacing_xs"],
-        ),
-    ),
-    (
         "popup 제목바 높이",
         Side::ThemeSum("src/adapters/ui/popup.rs", &["item_height_interactive"]),
         Side::Lit(GALLERY_POPUP_FRAME, "TITLE_BAR_HEIGHT"),
@@ -340,7 +317,6 @@ const HOST_KB_IMPORT_EXPORT: &str = "src/view/settings/ui/keybindings_tab/import
 const GALLERY_KB_IMPORT_EXPORT: &str =
     "crates/tasty-gallery/src/catalog/components/kb_import_export.rs";
 const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
-const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
 const GALLERY_PLUGINS_WINDOW: &str =
     "crates/tasty-gallery/src/catalog/components/plugins_window.rs";
@@ -472,11 +448,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 55개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 51개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        55,
-        "비교 명부가 {}쌍이다(기록 55). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        51,
+        "비교 명부가 {}쌍이다(기록 51). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);
@@ -749,18 +725,15 @@ fn the_checkable_roster_premises_still_hold() {
     }
 
     // 있는 상수도 찾지 못하는 파서가 빈 결과로 통과하지 않도록 대조한다.
-    let known = read("src/adapters/ui/info_modal.rs");
+    let known = read("src/view/plugins/ui.rs");
     assert!(
-        const_site(&known, "FOOTER_ROOM").is_some(),
-        "기존 상수 FOOTER_ROOM을 찾지 못했다. 다른 상수가 없다는 결과를 판단하기 전에 파서를 확인한다."
+        const_site(&known, "SEGMENT_TAB_LABEL_PRIMITIVE_12").is_some(),
+        "기존 상수 SEGMENT_TAB_LABEL_PRIMITIVE_12를 찾지 못했다. 다른 상수가 없다는 결과를 판단하기 전에 파서를 확인한다."
     );
 }
 
 /// 주석의 본체 언급을 지워 대상을 줄이지 못하도록 이름을 고정한다. 주석과 명부를 함께 지우는 변경은 별도 검토가 필요하다.
 const CONFESSED: &[(&str, &str)] = &[
-    (GALLERY_INFO_MODAL, "WIDTH"),
-    (GALLERY_INFO_MODAL, "MIN_HEIGHT"),
-    (GALLERY_INFO_MODAL, "MAX_HEIGHT"),
     (GALLERY_POPUP_FRAME, "TITLE_BAR_HEIGHT"),
     (GALLERY_POPUP_FRAME, "CONTENT_MARGIN"),
     (GALLERY_POPUP_FRAME, "TITLE_BTN_SIZE"),

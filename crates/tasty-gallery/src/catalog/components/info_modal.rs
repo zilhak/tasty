@@ -1,101 +1,211 @@
-//! 부팅 안내·오류 메시지 팝업의 정적 예제.
-//! 본문은 높이를 제한해 스크롤하고 확인 버튼은 오른쪽 아래에 둔다.
-//! 본체와 달리 버튼은 공용 tasty-ui-widgets::Button을 사용한다.
+//! 부팅·실행 중 안내 메시지 큐의 모달 셸 예제.
+//!
+//! 본문과 버튼 행은 본체와 같은 `tasty_ui_widgets::info_modal`을 호출한다. 셸 크기는
+//! `info-modal-*` 토큰과 `info_modal_shell_height`로 정한다. 타이틀바는 본체 팝업
+//! 타이틀바(`src/adapters/ui/popup/draw.rs`)를 따라 그린다 — 채움 bg-sidebar, 가운데 제목,
+//! 아래 1px 선. 안내 모달만 제목을 `font-size-max`로, 선을 `info-modal-title-edge`로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant};
+use tasty_ui_widgets::{
+    ButtonVariant, InfoModalButton, InfoModalView, info_modal, info_modal_shell_height,
+};
 
-use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
+use crate::catalog::popup_frame::{self, TITLE_BAR_HEIGHT, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 본체 `info_modal.rs` 의 `DEFAULT_WIDTH`.
-const WIDTH: LogicalPx = LogicalPx(440.0);
-/// 본체 `info_modal.rs` 의 `MIN_HEIGHT`.
-const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
-/// 본체 `info_modal.rs` 의 `MAX_HEIGHT`.
-const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
+const THEME_NOT_FOUND: &str =
+    "The theme \"gruvbox-hard\" set in settings.toml was not found, so the default theme is used.";
+const DB_LOCKED: &str = "The database file is locked by another Tasty process. Close the other \
+                         instance and start Tasty again.";
+/// 본체 `lang/en.toml`의 `macos_permissions.notice.body`와 같은 문구와 강조 표기.
+const PERMISSIONS_NOTICE: &str = "Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without permission, a prompt may interrupt your work or a feature may not work.
 
-/// 본체 `info_modal_sizer` 와 같은 규칙으로 높이를 낸다 —
-/// 60자/줄 가정 · 줄높이 = body 폰트 × 1.5 · 하단 버튼 영역 48 · clamp.
-fn sizer_height(theme: &Theme, body: &str) -> LogicalPx {
-    let approx_lines = (body.chars().count() as f32 / 60.0).ceil().max(2.0);
-    let line_h = theme.font_size_body * 1.5;
-    let footer_h = theme.item_height_interactive + theme.spacing_lg + theme.spacing_xs;
-    (popup_frame::TITLE_BAR_HEIGHT
-        + popup_frame::CONTENT_MARGIN * 2.0
-        + line_h * approx_lines
-        + footer_h)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT)
-}
+Some permissions currently look like they are not granted. *Settings > General > Permissions* shows which ones and what state they are in.
 
-/// 모달 1장. `extra` 는 [OK] 왼쪽에 붙는 추가 버튼 라벨.
-fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Option<&str>) {
-    let h = sizer_height(theme, body);
-    popup_frame::draw(
-        ui,
-        theme,
+**Full Disk Access:** macOS has no way for an app to ask for this, so add Tasty yourself in *System Settings > Privacy & Security > Full Disk Access*. Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
+
+**Screen recording:** this is used by the screenshot feature. Turn it on in *System Settings > Privacy & Security > Screen & System Audio Recording*. Once you deny it, the app cannot ask again and only System Settings can turn it back on.
+
+If you build Tasty yourself, sign it with the \"Tasty Dev\" certificate first (`./scripts/macos-codesign-identity.sh --create`). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
+
+Once you grant them, this notice stops appearing. There is no setting to turn it off, because recording that you dismissed it would leave no way to tell you when a permission is reset later.";
+
+const OK: &[InfoModalButton<'static>] = &[InfoModalButton {
+    label: "OK",
+    variant: ButtonVariant::Primary,
+}];
+const QUIT: &[InfoModalButton<'static>] = &[InfoModalButton {
+    label: "Quit",
+    variant: ButtonVariant::Primary,
+}];
+const PERMISSIONS_BUTTONS: &[InfoModalButton<'static>] = &[
+    InfoModalButton {
+        label: "Open permission settings",
+        variant: ButtonVariant::Secondary,
+    },
+    InfoModalButton {
+        label: "OK",
+        variant: ButtonVariant::Primary,
+    },
+];
+
+/// 모달 한 장. 높이는 직전 프레임에 잰 본문 높이로 정하며, 첫 프레임은 상한으로 그린다.
+#[allow(clippy::too_many_arguments)] // reason: 한 장의 입력(제목·본문·강조·버튼·스크롤)을 그대로 받는다.
+fn modal(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    key: &str,
+    title: &str,
+    body: &str,
+    emphasis: bool,
+    buttons: &[InfoModalButton<'_>],
+    scroll_to: Option<f32>,
+) {
+    let id = egui::Id::new("gallery_info_modal").with(key);
+    let body_key = id.with("body_h");
+    let measured = ui.ctx().data(|d| d.get_temp::<f32>(body_key));
+    let h = measured.map_or(theme.info_modal_max_height(), |b| {
+        info_modal_shell_height(theme, TITLE_BAR_HEIGHT, LogicalPx(b))
+    });
+    let (frame, _) = ui.allocate_exact_size(
+        egui::vec2(theme.info_modal_width().value(), h.value()),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(frame.expand(theme.spacing_lg.value()));
+    let radius = theme.corner_radius.value();
+    painter.add(theme.shadow_modal().to_egui().as_shape(frame, radius));
+    painter.rect_filled(frame, radius, theme.bg_panel().to_egui());
+    painter.rect_stroke(
+        frame,
+        radius,
+        egui::Stroke::new(theme.border_width.value(), theme.border_frame().to_egui()),
+        egui::StrokeKind::Outside,
+    );
+
+    let title_rect = egui::Rect::from_min_size(
+        frame.min,
+        egui::vec2(frame.width(), TITLE_BAR_HEIGHT.value()),
+    );
+    let cr = radius as u8;
+    painter.rect_filled(
+        title_rect,
+        egui::CornerRadius {
+            nw: cr,
+            ne: cr,
+            sw: 0,
+            se: 0,
+        },
+        theme.bg_sidebar().to_egui(),
+    );
+    painter.hline(
+        title_rect.x_range(),
+        title_rect.max.y,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.info_modal_title_edge().to_egui(),
+        ),
+    );
+    let buttons_left =
+        popup_frame::draw_title_buttons(&painter, theme, title_rect, TitleButtons::CLOSE);
+    let pad = theme.spacing_sm.value();
+    let title_avail = egui::Rect::from_min_max(
+        egui::pos2(title_rect.min.x + pad, title_rect.min.y),
+        egui::pos2(
+            (buttons_left - pad).max(title_rect.min.x + pad),
+            title_rect.max.y,
+        ),
+    );
+    painter.with_clip_rect(title_avail).text(
+        title_avail.center(),
+        egui::Align2::CENTER_CENTER,
         title,
-        WIDTH,
-        h,
-        ContentInset::INSET,
-        TitleButtons::CLOSE,
-        // 창 중앙 팝업이므로 modal 그림자를 쓴다.
-        Some(theme.shadow_modal()),
-        |ui| {
-            // 본체와 같은 규칙 — 본문이 넘치면 스크롤하고 버튼 행은 자리를 지킨다.
-            let footer_h =
-                (theme.item_height_interactive + theme.spacing_lg + theme.spacing_xs).value();
-            egui::ScrollArea::vertical()
-                .max_height((ui.available_height() - footer_h).max(0.0))
-                .auto_shrink([false, true])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(body)
-                            .size(theme.font_size_body.value())
-                            .color(theme.text_primary().to_egui()),
-                    );
-                });
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
-                ui.add_space(theme.spacing_xs.value());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    Button::new("OK")
-                        .variant(ButtonVariant::Primary)
-                        .show(ui, theme);
-                    if let Some(label) = extra {
-                        Button::new(label)
-                            .variant(ButtonVariant::Secondary)
-                            .show(ui, theme);
-                    }
-                });
-            });
+        egui::FontId::proportional(theme.font_size_max.value()),
+        theme.text_primary().to_egui(),
+    );
+
+    let content = egui::Rect::from_min_max(egui::pos2(frame.min.x, title_rect.max.y), frame.max);
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(content);
+    let out = info_modal(
+        &mut child,
+        theme,
+        &InfoModalView {
+            id_salt: id,
+            body,
+            emphasis,
+            buttons,
+            scroll_to,
         },
     );
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(body_key, out.body_content_height.value()));
 }
 
-pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "Notice (OK only)", |ui| {
+fn shell_cluster(ui: &mut egui::Ui, theme: &Theme, key: &str, label: &str, db: bool) {
+    spec::cluster(ui, theme, label, |ui| {
+        if db {
             modal(
                 ui,
                 theme,
-                "Theme fallback",
-                "The configured theme could not be read, so the built-in Mocha theme is in use. \
-                 Your theme file is left untouched.",
+                key,
+                "Database initialization error",
+                DB_LOCKED,
+                false,
+                QUIT,
                 None,
-            )
-        });
-        spec::cluster(ui, theme, "With follow-up action", |ui| {
+            );
+        } else {
             modal(
                 ui,
                 theme,
-                "Some permissions are not granted",
-                "Full Disk Access and screen recording are not granted. Settings › General › \
-                 Permissions shows the current state of each; Full Disk Access has to be added \
-                 in System Settings because no app can request it.",
-                Some("Open System Settings"),
-            )
+                key,
+                "Theme not found",
+                THEME_NOT_FOUND,
+                false,
+                OK,
+                None,
+            );
+        }
+    });
+}
+
+/// 셸 공통 규칙 — 한 문장짜리 메시지와 앱을 끝내는 메시지.
+pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    // 모달 폭 440 두 장이 문서 컬럼에 들어가므로 두 장씩 한 줄에 놓는다.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            shell_cluster(
+                ui,
+                theme,
+                "theme",
+                "Theme not found — one sentence, min height",
+                false,
+            );
+            shell_cluster(
+                ui,
+                theme,
+                "db",
+                "Database initialization error — quits",
+                true,
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            shell_cluster(ui, &latte, "theme-latte", "Theme not found — Latte", false);
+            shell_cluster(
+                ui,
+                &latte,
+                "db-latte",
+                "Database initialization error — Latte",
+                true,
+            );
         });
     });
 
@@ -103,34 +213,111 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "440px · height 140..360 (body 길이로 산출)"),
-            ("title", "큐 head 의 title — 타이틀바에 실린다"),
             (
-                "body",
-                "font-size-body · text-primary · 좌우 8 / 상하 4 inset",
+                "size",
+                "info-modal-width 440 × min-height 140 .. max-height 360",
             ),
-            ("footer", "bottom-up RIGHT · [OK] 가 가장 오른쪽"),
+            ("title", "popup title bar · font-size-max 14 · rule below"),
+            ("body", "13 · text-secondary · para gap 12 · plain"),
+            (
+                "scroll edge",
+                "above buttons, only while content is hidden below",
+            ),
+            ("dismiss", "Primary, rightmost · Enter / Esc"),
+            ("app-ending", "same Primary, label Quit"),
         ],
         &[
+            TokenChip::new("bg-panel", "shell", theme.bg_panel().to_egui()),
             TokenChip::new(
-                "surface-raised",
-                "popup frame",
-                theme.surface_raised().to_egui(),
+                "info-modal-title-edge",
+                "title bar rule",
+                theme.info_modal_title_edge().to_egui(),
             ),
             TokenChip::new(
-                "surface-hover",
-                "title bar",
-                theme.surface_hover().to_egui(),
+                "info-modal-scroll-edge",
+                "rule above buttons",
+                theme.info_modal_scroll_edge().to_egui(),
             ),
-            TokenChip::new("text-primary", "body", theme.text_primary().to_egui()),
+            TokenChip::new("text-secondary", "body", theme.text_secondary().to_egui()),
         ],
     );
 
     spec::note(
         ui,
         theme,
-        "큐 모델이다 — 여러 건이 쌓이면 [OK] 마다 다음 메시지로 넘어가고, 마지막을 확인해야 \
-         popup 이 닫힌다. X 로 닫아도 head 를 pop 해 남은 안내가 유실되지 않는다. \
-         추가 버튼(설정 패널 열기 등)은 모달을 닫지 않는다 — 안내를 다시 읽을 수 있어야 한다.",
+        "큐 모델이다 — 여러 건이 쌓이면 닫기 버튼마다 다음 메시지로 넘어가고, 마지막을 \
+         닫아야 popup 이 닫힌다. X 로 닫아도 head 를 pop 해 남은 안내가 유실되지 않는다. \
+         데이터베이스 오류는 버튼이 하나뿐이고 라벨이 Quit 이다 — 누르면 앱이 끝난다.",
+    );
+}
+
+/// macOS 권한 안내 — 본문이 가장 긴 경우. 강조 표기는 이 메시지만 쓴다.
+pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let cases: [(&str, &str, &Theme, f32); 4] = [
+        ("perm-top", "scrolled to top", theme, 0.0),
+        ("perm-mid", "mid-way", theme, 0.5),
+        ("perm-end", "at the end", theme, 1.0),
+        ("perm-top-latte", "top — Latte", &latte, 0.0),
+    ];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for pair in cases.chunks(2) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                for &(key, label, th, scroll) in pair {
+                    spec::cluster(ui, th, label, |ui| {
+                        modal(
+                            ui,
+                            th,
+                            key,
+                            "Some permissions are not granted",
+                            PERMISSIONS_NOTICE,
+                            true,
+                            PERMISSIONS_BUTTONS,
+                            Some(scroll),
+                        );
+                    });
+                }
+            });
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("height", "140..360 · body scrolls"),
+            ("paths", "text-primary (medium은 색으로만)"),
+            ("lead-ins", "text-primary (semibold는 색으로만)"),
+            ("command", "mono · caption · surface-raised 배경"),
+            (
+                "buttons",
+                "Open permission settings (Secondary) · OK (Primary, rightmost)",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "text-primary",
+                "paths · lead-ins",
+                theme.text_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "command chip",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "info-modal-scroll-edge",
+                "rule above buttons",
+                theme.info_modal_scroll_edge().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "[Open permission settings] 는 모달을 닫지 않는다 — 설정 창이 따로 뜨므로 안내를 다시 \
+         읽을 수 있어야 한다. 스크롤 경계는 맨 위와 중간에서만 보이고 끝에서는 사라진다.",
     );
 }

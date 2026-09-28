@@ -144,7 +144,7 @@ Allow 미기록으로 정상 호출의 사후 행동 감사가 불가능한 대�
 
 #### `state.db` — 인메모리 폴백 없음
 
-`db::init()` 실패는 **치명적**이다. `:memory:` 폴백을 두지 않는다 — `DbInitError` 로 분류해 사용자에게 InfoModal 로 안내한 뒤 앱을 종료한다(`src/app/window_lifecycle.rs`). variant 별로 i18n key 를 가진다:
+`db::init()` 실패는 **치명적**이다. `:memory:` 폴백을 두지 않는다 — `DbInitError` 로 분류해 사용자에게 InfoModal 로 안내한 뒤 앱을 종료한다(`src/app/window_lifecycle.rs`). 이 안내의 버튼은 하나이며 라벨이 `db_error.quit`("Quit")이다. variant 별로 i18n key 를 가진다:
 
 | variant | 의미 | i18n key |
 |---------|------|----------|
