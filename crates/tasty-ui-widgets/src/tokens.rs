@@ -65,23 +65,8 @@ pub const TOAST_MIN_INNER_WIDTH: f32 = 48.0;
 /// 스코프 폭의 80% 를 쓰되 그 결과가 이 값보다 작아지지 않게 하는 하한.
 pub const TOAST_MIN_MAX_WIDTH: f32 = 80.0;
 
-// ── 빈/로딩/오류 중앙 블록 — file_picker · remote_attach 공통 이디엄 ────────────
-
-/// 빈 상태·로딩·오류 블록의 아이콘 크기. 대응 Theme 토큰이 없다.
-pub const CENTER_GLYPH_SIZE: f32 = 22.0;
-
-/// 본체의 중앙 정렬 블록 높이. 갤러리 높이와 다른 상태이며 디자인 확인 전에는 맞추지 않는다.
-pub const CENTER_BLOCK_H_POPUP: f32 = 100.0;
-
-/// 갤러리의 중앙 정렬 블록 높이. 본체와의 차이는 아직 해결되지 않았다.
-pub const CENTER_BLOCK_H_SPECIMEN: f32 = 120.0;
-
-/// 빈 상태 글리프 크기 — 아이콘 스케일(12·14·15·16) 밖의 일회성 값. 설정
-/// Misc › Scripts 와 그 갤러리 specimen 이 같은 상수를 읽는다.
-pub const EMPTY_STATE_GLYPH_SIZE: f32 = 26.0;
-
-/// 클립보드 뷰어 CenterState 아이콘 크기 — 아이콘 글리프 토큰 상한(16) 밖의 화면
-/// 전용 고정값. plugin 본체와 갤러리 specimen 이 같은 상수를 읽는다.
+/// 클립보드 뷰어 가운데 아이콘 크기 — 콘텐츠 글리프라 공용 `CenterState`(icon-size-lg)
+/// 밖에 남는 화면 전용 고정값. plugin 본체와 갤러리 specimen 이 같은 상수를 읽는다.
 pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;
 
 // ── 본체 ↔ 갤러리 specimen 공용 — 4px 그리드 밖 구조값 ─────────────────────────

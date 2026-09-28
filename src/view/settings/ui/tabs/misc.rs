@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tasty_type_geometry::length::LogicalPx;
 
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, kbd,
+    Button, ButtonVariant, CenterState, ControlSize, IconButton, IconButtonVariant, Input, kbd,
 };
 
 use crate::adapters::ui::icons;
@@ -18,7 +18,7 @@ use tasty_ui_widgets::vspace;
 const BADGE_HEIGHT: LogicalPx = LogicalPx(16.0);
 // 빈 상태 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
 // specimen(`components/script_manager.rs`)이 같은 상수를 읽는다.
-use tasty_ui_widgets::tokens::{EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2};
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 /// Add card 라벨 컬럼 폭 (디자인 `width: 100`).
 const ADD_LABEL_W: LogicalPx = LogicalPx(100.0);
 
@@ -755,29 +755,11 @@ fn commit_add(settings: &mut Settings, st: &mut ScriptsUiState) {
     st.changed = None;
 }
 
-/// 빈 상태 — 중앙 글리프 26 + "No scripts registered" + Add-script 프롬프트.
+/// 빈 상태 — 목록 자리에 공용 CenterState 를 자연 높이로 그린다.
 fn draw_empty(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
-    ui.vertical_centered(|ui| {
-        ui.add_space(th.spacing_xl.value());
-        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(EMPTY_GLYPH, EMPTY_GLYPH), egui::Sense::hover());
-        icons::SCRIPT
-            .image(EMPTY_GLYPH, th.text_muted().to_egui())
-            .paint_at(ui, rect);
-        ui.label(
-            egui::RichText::new(t("settings.scripts.empty_title"))
-                .size(th.font_size_max.value())
-                .color(th.text_secondary()),
-        );
-        ui.set_max_width(th.measure_sm.value());
-        ui.label(
-            egui::RichText::new(t("settings.scripts.empty_body"))
-                .size(th.font_size_term_sm.value())
-                .color(th.text_muted()),
-        );
-        ui.add_space(th.spacing_xl.value());
-    });
+    CenterState::empty(icons::SCRIPT, t("settings.scripts.empty_title"))
+        .sub_line(Some(t("settings.scripts.empty_body")))
+        .show(ui, th, None);
 }
 
 /// 절대 경로의 홈 디렉토리 접두를 `~` 로 축약(표시용).

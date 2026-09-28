@@ -24,7 +24,7 @@ use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
 use crate::theme::{self, Theme};
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, hspace};
+use tasty_ui_widgets::{CenterState, IconButton, IconButtonVariant, hspace};
 
 pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
@@ -37,7 +37,6 @@ const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 
 // 원격 연결 화면과 같은 공용 중앙 안내 영역 치수.
-use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -275,56 +274,37 @@ fn draw_body(
                 });
         }
         FpViewState::Loading => {
-            center_state(
-                ui,
-                th,
-                body_height,
-                CenterGlyph::Spinner,
-                props.loading_label,
-                if props.remote_host.is_some() {
-                    Some(props.loading_body_remote)
-                } else {
-                    Some(props.loading_body_local)
-                },
-                None,
-            );
+            let sub = if props.remote_host.is_some() {
+                props.loading_body_remote
+            } else {
+                props.loading_body_local
+            };
+            CenterState::loading(props.loading_label)
+                .sub_line(Some(sub))
+                .show(ui, th, Some(body_height));
         }
         FpViewState::Empty => {
-            center_state(
+            CenterState::empty(icons::FOLDER_OPEN, props.empty_label).show(
                 ui,
                 th,
-                body_height,
-                CenterGlyph::Icon(icons::FOLDER_OPEN, th.text_placeholder().into()),
-                props.empty_label,
-                None,
-                None,
+                Some(body_height),
             );
         }
         FpViewState::ErrorPerm(reason) => {
-            let retry = center_state(
-                ui,
-                th,
-                body_height,
-                CenterGlyph::Icon(icons::ALERT_TRIANGLE, th.accent_danger().into()),
-                props.error_perm_title,
-                Some(reason.as_str()),
-                Some(props.error_perm_retry),
-            );
-            if retry {
+            let out = CenterState::error(icons::ALERT_TRIANGLE, props.error_perm_title)
+                .sub_line(Some(reason.as_str()))
+                .action(props.error_perm_retry, None)
+                .show(ui, th, Some(body_height));
+            if out.action_clicked {
                 *action = FilePickerAction::Refresh;
             }
         }
         FpViewState::ErrorConn(reason) => {
-            let retry = center_state(
-                ui,
-                th,
-                body_height,
-                CenterGlyph::Icon(icons::ALERT_TRIANGLE, th.accent_danger().into()),
-                props.error_conn_title,
-                Some(reason.as_str()),
-                Some(props.error_conn_reconnect),
-            );
-            if retry {
+            let out = CenterState::error(icons::ALERT_TRIANGLE, props.error_conn_title)
+                .sub_line(Some(reason.as_str()))
+                .action(props.error_conn_reconnect, None)
+                .show(ui, th, Some(body_height));
+            if out.action_clicked {
                 *action = FilePickerAction::Refresh;
             }
         }
@@ -419,70 +399,6 @@ fn entry_row(
     } else {
         None
     }
-}
-
-enum CenterGlyph {
-    Spinner,
-    Icon(icons::Icon, egui::Color32),
-}
-
-/// 로딩/빈/에러 상태 공통 렌더. Retry/Reconnect 버튼 클릭 시 `true`.
-fn center_state(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    body_height: LogicalPx,
-    glyph: CenterGlyph,
-    heading: &str,
-    body_text: Option<&str>,
-    action_label: Option<&str>,
-) -> bool {
-    let mut clicked = false;
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), body_height.value()),
-        egui::Layout::top_down(egui::Align::Center),
-        |ui| {
-            ui.add_space(
-                (body_height - LogicalPx(CENTER_BLOCK_H))
-                    .max(LogicalPx(0.0))
-                    .scaled(0.5)
-                    .value(),
-            );
-            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-            match glyph {
-                CenterGlyph::Spinner => {
-                    Spinner::new().size(CENTER_GLYPH_SIZE).show(ui, th);
-                }
-                CenterGlyph::Icon(icon, color) => {
-                    ui.add(icon.image(CENTER_GLYPH_SIZE, color));
-                }
-            }
-            ui.label(
-                egui::RichText::new(heading)
-                    .size(th.font_size_body.value())
-                    .strong()
-                    .color(th.text_primary()),
-            );
-            if let Some(b) = body_text {
-                ui.set_max_width(th.file_picker_note_max_width().value());
-                ui.label(
-                    egui::RichText::new(b)
-                        .size(th.font_size_caption.value())
-                        .color(th.text_muted()),
-                );
-            }
-            if let Some(label) = action_label {
-                ui.add_space(th.spacing_xs.value());
-                if Button::new(label)
-                    .variant(ButtonVariant::Secondary)
-                    .show(ui, th)
-                    .clicked()
-                {
-                    clicked = true;
-                }
-            }
-        },
-    );
-    clicked
 }
 
 /// 원격 호스트를 user@host 형태로 표시하는 배지.

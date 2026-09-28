@@ -11,7 +11,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_remote::browse::{self as remote_browse, RemoteWorkspace};
 use tasty_remote_profiles::RemoteProfiles;
 use tasty_ssh::{SshCancel, SshTunnel};
-use tasty_ui_widgets::{Button, ButtonVariant, StatusKind, status_dot};
+use tasty_ui_widgets::{Button, ButtonVariant, CenterState, StatusKind, status_dot};
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
@@ -34,7 +34,7 @@ const HEADER_H: LogicalPx = LogicalPx(47.0);
 const FOOTER_H: LogicalPx = LogicalPx(49.0);
 
 // 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
-use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 const CAPS_H: LogicalPx = LogicalPx(30.0);
 const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0);
 const WS_ROW_H: LogicalPx = LogicalPx(34.0);
@@ -811,45 +811,27 @@ fn draw_right_pane(
     let sel_name = st.attach_sel.clone().unwrap_or_default();
     match &st.conn {
         Conn::Initial => {
-            center_state(
-                ui,
-                th,
-                rect,
-                CenterKind::Glyph(icons::TERMINAL_PROMPT, th.text_placeholder().into()),
-                t("remote_attach.select_profile"),
-                th.text_muted(),
-                t("remote_attach.select_profile_hint"),
-                false,
-            );
+            CenterState::empty(icons::TERMINAL_PROMPT, t("remote_attach.select_profile"))
+                .sub_line(Some(t("remote_attach.select_profile_hint")))
+                .show_in(ui, th, rect);
             RightAction::None
         }
         Conn::Connecting => {
-            center_state(
-                ui,
-                th,
-                rect,
-                CenterKind::Spinner,
-                t("remote_attach.connecting"),
-                th.text_secondary(),
-                &t("remote_attach.connecting_hint")
-                    .replace("{name}", &sel_name)
-                    .replace("{secs}", &BROWSE_DEADLINE.as_secs().to_string()),
-                false,
-            );
+            let hint = t("remote_attach.connecting_hint")
+                .replace("{name}", &sel_name)
+                .replace("{secs}", &BROWSE_DEADLINE.as_secs().to_string());
+            CenterState::loading(t("remote_attach.connecting"))
+                .sub_line(Some(&hint))
+                .show_in(ui, th, rect);
             RightAction::None
         }
         Conn::Error(msg) => {
             let msg = msg.clone();
-            if center_state(
-                ui,
-                th,
-                rect,
-                CenterKind::Glyph(icons::ALERT_TRIANGLE, th.accent_danger().into()),
-                t("remote_attach.cant_connect"),
-                th.text_primary(),
-                &msg,
-                true,
-            ) {
+            let out = CenterState::error(icons::ALERT_TRIANGLE, t("remote_attach.cant_connect"))
+                .sub_line(Some(&msg))
+                .action(t("remote_attach.retry"), Some(icons::REFRESH))
+                .show_in(ui, th, rect);
+            if out.action_clicked {
                 RightAction::RetryBrowse
             } else {
                 RightAction::None
@@ -1238,62 +1220,6 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
         }
     });
     resp.clicked()
-}
-
-enum CenterKind {
-    Glyph(icons::Icon, egui::Color32),
-    Spinner,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn center_state(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    rect: egui::Rect,
-    kind: CenterKind,
-    heading: &str,
-    heading_color: tasty_type_appearance::color::HexColor,
-    caption: &str,
-    retry: bool,
-) -> bool {
-    let mut col = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(th.spacing_lg.value(), th.spacing_xl.value())))
-            .layout(egui::Layout::top_down(egui::Align::Center)),
-    );
-    col.set_clip_rect(rect);
-    col.add_space((rect.height() - 130.0).max(0.0) * 0.5);
-    col.spacing_mut().item_spacing.y = th.spacing_sm.value();
-    match kind {
-        CenterKind::Glyph(g, c) => {
-            col.add(g.image(CENTER_GLYPH_SIZE, c));
-        }
-        CenterKind::Spinner => {
-            tasty_ui_widgets::Spinner::new()
-                .size(CENTER_GLYPH_SIZE)
-                .show(&mut col, th);
-        }
-    }
-    col.label(
-        egui::RichText::new(heading)
-            .size(th.font_size_body.value())
-            .strong()
-            .color(heading_color),
-    );
-    col.label(
-        egui::RichText::new(caption)
-            .size(th.font_size_caption.value())
-            .color(th.text_muted()),
-    );
-    if retry {
-        col.add_space(th.spacing_xs.value());
-        return Button::new(t("remote_attach.retry"))
-            .variant(ButtonVariant::Secondary)
-            .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
-            .show(&mut col, th)
-            .clicked();
-    }
-    false
 }
 
 enum FooterAction {
