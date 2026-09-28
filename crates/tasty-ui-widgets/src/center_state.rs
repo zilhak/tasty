@@ -1,12 +1,13 @@
 //! 목록 자리에 들어가는 빈·로딩·오류 중앙 블록(CenterState).
 //! 글리프(로딩은 스피너)·제목·보조 줄로 이루어지며 받은 영역 안에서 세로 가운데에 놓인다.
-//! 보조 줄이 없어도 캡션 한 줄 높이를 예약해 변형이 바뀌어도 글리프가 움직이지 않는다.
+//! 보조 줄이 없어도 캡션 한 줄 높이를 예약해 loading·empty·error 사이에서 글리프가 움직이지 않는다.
+//! 액션 버튼이 있으면 화면 시안처럼 버튼까지 한 열로 가운데에 두므로 글리프가 그만큼 올라간다.
 //! 값은 모두 `center_state_*` 컴포넌트 토큰에서 읽으므로 UI 배율을 따른다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::{Button, ButtonVariant, Spinner};
+use crate::{Button, ButtonVariant, ControlSize, Spinner};
 
 /// CenterState 변형. 오류만 글리프 색이 다르다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -16,8 +17,8 @@ pub enum CenterStateVariant {
     Error,
 }
 
-/// 블록 아래에 붙는 선택 액션(Retry·Reconnect 등). 시안의 CenterState 에는 없는
-/// 호스트 요소라 글리프 위치 계산에서 제외한다.
+/// 블록 아래에 붙는 선택 액션(Retry·Reconnect 등). 화면 시안처럼 버튼까지 한 열로
+/// 세로 가운데에 둔다.
 struct CenterStateAction<'a> {
     label: &'a str,
     icon: Option<tasty_icons::Icon>,
@@ -39,6 +40,8 @@ pub struct CenterStateOutput {
     pub title: egui::Rect,
     /// 보조 줄 슬롯. 보조 줄이 없어도 캡션 한 줄 높이를 차지한다.
     pub sub_slot: egui::Rect,
+    /// 액션 버튼 영역. 액션이 없으면 `None`.
+    pub action: Option<egui::Rect>,
     pub action_clicked: bool,
 }
 
@@ -88,7 +91,7 @@ impl<'a> CenterState<'a> {
         let width = LogicalPx(ui.available_width());
         let height = height.unwrap_or_else(|| {
             let texts = self.texts(ui, theme, width);
-            texts.block_h(theme) + theme.spacing_md * 2.0
+            self.block_h(theme, &texts) + theme.spacing_md * 2.0
         });
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(width.value(), height.value()),
@@ -110,7 +113,7 @@ impl<'a> CenterState<'a> {
         let avail_h = LogicalPx(region.height()) - pad * 2.0;
         let top = LogicalPx(region.top())
             + pad
-            + (avail_h - texts.block_h(theme)).max(LogicalPx(0.0)) * 0.5;
+            + (avail_h - self.block_h(theme, &texts)).max(LogicalPx(0.0)) * 0.5;
         let cx = region.center().x;
 
         let glyph = egui::Rect::from_min_size(
@@ -167,9 +170,9 @@ impl<'a> CenterState<'a> {
         }
 
         let mut action_clicked = false;
+        let mut action_rect = None;
         if let Some(action) = self.action {
-            // 버튼 위 간격은 원격 연결 시안의 열 간격 space-sm 과 marginTop space-xs 합이다.
-            let action_top = sub_slot.bottom() + (theme.spacing_sm + theme.spacing_xs).value();
+            let action_top = sub_slot.bottom() + action_gap(theme).value();
             let mut col = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(egui::Rect::from_min_max(
@@ -179,7 +182,9 @@ impl<'a> CenterState<'a> {
                     .layout(egui::Layout::top_down(egui::Align::Center)),
             );
             col.set_clip_rect(clip);
-            let mut button = Button::new(action.label).variant(ButtonVariant::Secondary);
+            let mut button = Button::new(action.label)
+                .variant(ButtonVariant::Secondary)
+                .size(ACTION_SIZE);
             let paint_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
                 if let Some(icon) = action.icon {
                     icon.image(rect.height(), c).paint_at(ui, rect);
@@ -188,14 +193,27 @@ impl<'a> CenterState<'a> {
             if action.icon.is_some() {
                 button = button.leading_icon(&paint_icon);
             }
-            action_clicked = button.show(&mut col, theme).clicked();
+            let resp = button.show(&mut col, theme);
+            action_clicked = resp.clicked();
+            action_rect = Some(resp.rect);
         }
 
         CenterStateOutput {
             glyph,
             title,
             sub_slot,
+            action: action_rect,
             action_clicked,
+        }
+    }
+
+    /// 글리프부터 보조 줄 슬롯 끝까지, 액션이 있으면 버튼 끝까지의 높이.
+    fn block_h(&self, theme: &Theme, texts: &Texts) -> LogicalPx {
+        let block = texts.block_h(theme);
+        if self.action.is_some() {
+            block + action_gap(theme) + LogicalPx(ACTION_SIZE.height(theme))
+        } else {
+            block
         }
     }
 
@@ -236,6 +254,14 @@ impl<'a> CenterState<'a> {
     }
 }
 
+/// 액션 버튼 크기. 본체가 쓰던 기본 크기를 유지한다.
+const ACTION_SIZE: ControlSize = ControlSize::Md;
+
+/// 보조 줄 슬롯 끝 → 버튼 간격. 화면 시안의 열 간격 space-sm 과 버튼 marginTop space-xs 합이다.
+fn action_gap(theme: &Theme) -> LogicalPx {
+    theme.spacing_sm + theme.spacing_xs
+}
+
 struct Texts {
     title: std::sync::Arc<egui::Galley>,
     sub: Option<std::sync::Arc<egui::Galley>>,
@@ -244,7 +270,7 @@ struct Texts {
 }
 
 impl Texts {
-    /// 글리프부터 보조 줄 슬롯 끝까지의 높이. 액션은 포함하지 않는다.
+    /// 글리프부터 보조 줄 슬롯 끝까지의 높이.
     fn block_h(&self, theme: &Theme) -> LogicalPx {
         theme.center_state_glyph_size()
             + theme.center_state_gap()

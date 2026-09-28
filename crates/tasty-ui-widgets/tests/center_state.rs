@@ -1,4 +1,5 @@
-//! CenterState 가 변형과 무관하게 글리프 위치를 유지하고 토큰 값으로 배치하는지 검사한다.
+//! CenterState 가 loading·empty·error 사이에서 글리프 위치를 유지하고 토큰 값으로 배치하는지,
+//! 액션 버튼이 있으면 버튼까지 한 열로 가운데에 두는지 검사한다.
 
 use egui::{Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -41,7 +42,6 @@ fn center_state_reserves_sub_line_so_glyph_does_not_move() {
     let (error, _) = render(&theme, || {
         CenterState::error(tasty_icons::ALERT_CIRCLE, "Could not read this folder")
             .sub_line(Some("Permission denied (os error 13)"))
-            .action("Retry", None)
     });
     assert_eq!(loading.glyph.top(), empty.glyph.top());
     assert_eq!(empty.glyph.top(), error.glyph.top());
@@ -64,6 +64,28 @@ fn center_state_uses_token_geometry() {
     assert!((out.glyph.center().x - out.title.center().x).abs() < 0.5);
     let block = out.glyph.union(out.sub_slot);
     assert!((block.center().y - (region_top + REGION_H * 0.5)).abs() <= 0.5);
+}
+
+#[test]
+fn center_state_centres_the_action_with_the_block() {
+    let theme = tasty_themes::mocha_fallback();
+    let (plain, _) = render(&theme, || {
+        CenterState::error(tasty_icons::ALERT_TRIANGLE, "Permission denied")
+            .sub_line(Some("Permission denied (os error 13)"))
+    });
+    let (out, region_top) = render(&theme, || {
+        CenterState::error(tasty_icons::ALERT_TRIANGLE, "Permission denied")
+            .sub_line(Some("Permission denied (os error 13)"))
+            .action("Retry", None)
+    });
+    let button = out.action.expect("action drawn");
+    // 보조 줄 슬롯 끝 → 버튼 = space-sm + space-xs.
+    assert_eq!(button.top() - out.sub_slot.bottom(), 12.0);
+    let block = out.glyph.union(button);
+    assert!((block.center().y - (region_top + REGION_H * 0.5)).abs() <= 0.5);
+    // 버튼 높이와 간격의 절반만큼 글리프가 올라간다.
+    let lift = plain.glyph.top() - out.glyph.top();
+    assert!((lift - (12.0 + button.height()) * 0.5).abs() <= 0.5);
 }
 
 #[test]

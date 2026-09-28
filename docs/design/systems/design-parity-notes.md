@@ -197,10 +197,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **보조 줄 슬롯**: 보조 줄이 없어도 캡션 한 줄을 예약한다. 예약 높이는 실제 보조 줄과 같은
   `LayoutJob` 경로로 잰 한 줄 galley 높이다. `Fonts::row_height` 는 소수점 아래가 달라
   loading 과 empty 사이에서 글리프가 0.17px 움직였다.
-- **액션 버튼**: 시안 CenterState 에는 버튼이 없다. 본체의 Retry·Reconnect 는 위젯 액션으로
-  보조 줄 아래 `space-sm + space-xs`(원격 연결 시안 `RaCenterState` 의 열 간격과 marginTop)에
-  둔다. 버튼은 가운데 계산에서 빼므로 버튼이 있는 오류 상태도 글리프 위치가 다른 변형과 같다.
-  시안 flex 가 버튼까지 포함해 가운데에 둘 때보다 블록이 버튼 높이의 절반만큼 아래에 있다.
+- **액션 버튼**: 버튼이 있는 블록의 가운데 기준은 원격 `design-request/center-state-followup.md` 로 질의 중이다.
 - **글리프 선택**: 크기와 색은 위젯이 정하고 어떤 아이콘을 쓸지는 호스트가 정한다. 갤러리
   CenterState specimen 은 시안대로 오류에 `ALERT_CIRCLE` 을 쓰고, 본체 file picker·remote attach
   는 각 화면 시안의 `ALERT_TRIANGLE`, remote attach 초기 상태는 `TERMINAL_PROMPT` 를 유지한다.
