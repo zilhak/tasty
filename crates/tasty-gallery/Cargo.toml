@@ -23,6 +23,8 @@ tasty-design-tokens = { path = "../tasty-design-tokens" }
 tasty-egui-theme = { path = "../tasty-egui-theme" }
 # 본체와 같은 고정폭 글꼴로 텍스트 폭을 측정한다.
 tasty-font = { path = "../tasty-font" }
+# 본체 번역 파일의 문구를 사본 없이 그대로 보여준다.
+tasty-i18n = { path = "../tasty-i18n" }
 tasty-icons = { path = "../tasty-icons", features = ["egui"] }
 # 설정 파일을 읽지 않고 기본 키바인딩으로 전환 예제의 라벨을 만든다.
 tasty-settings = { path = "../tasty-settings" }

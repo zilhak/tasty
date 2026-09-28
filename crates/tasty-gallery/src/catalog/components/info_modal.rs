@@ -18,18 +18,20 @@ const THEME_NOT_FOUND: &str =
     "The theme \"gruvbox-hard\" set in settings.toml was not found, so the default theme is used.";
 const DB_LOCKED: &str = "The database file is locked by another Tasty process. Close the other \
                          instance and start Tasty again.";
-/// 본체 `lang/en.toml`의 `macos_permissions.notice.body`와 같은 문구와 강조 표기.
-const PERMISSIONS_NOTICE: &str = "Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without permission, a prompt may interrupt your work or a feature may not work.
+/// 권한 안내 본문의 번역 키. 본체와 같은 문자열과 강조 표기를 `lang/en.toml`에서 읽는다.
+const PERMISSIONS_NOTICE_KEY: &str = "macos_permissions.notice.body";
 
-Some permissions currently look like they are not granted. *Settings > General > Permissions* shows which ones and what state they are in.
-
-**Full Disk Access:** macOS has no way for an app to ask for this, so add Tasty yourself in *System Settings > Privacy & Security > Full Disk Access*. Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
-
-**Screen recording:** this is used by the screenshot feature. Turn it on in *System Settings > Privacy & Security > Screen & System Audio Recording*. Once you deny it, the app cannot ask again and only System Settings can turn it back on.
-
-If you build Tasty yourself, sign it with the \"Tasty Dev\" certificate first (`./scripts/macos-codesign-identity.sh --create`). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
-
-Once you grant them, this notice stops appearing. There is no setting to turn it off, because recording that you dismissed it would leave no way to tell you when a permission is reset later.";
+/// 권한 안내 본문. 갤러리는 설정을 읽지 않으므로 처음 쓸 때 영어 번역표로 한 번 초기화한다.
+fn permissions_notice() -> &'static str {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let report = tasty_i18n::init("en");
+        if report.fell_back() {
+            tracing::warn!("gallery i18n init fell back: {report:?}");
+        }
+    });
+    tasty_i18n::t(PERMISSIONS_NOTICE_KEY)
+}
 
 const OK: &[InfoModalButton<'static>] = &[InfoModalButton {
     label: "OK",
@@ -271,7 +273,7 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
                             th,
                             key,
                             "Some permissions are not granted",
-                            PERMISSIONS_NOTICE,
+                            permissions_notice(),
                             true,
                             PERMISSIONS_BUTTONS,
                             Some(scroll),
