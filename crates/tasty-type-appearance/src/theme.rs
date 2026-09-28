@@ -271,6 +271,10 @@ pub struct ThemeSizing {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
+    /// 빈 상태·오류 안내처럼 화면 가운데에 놓이는 큰 글리프 (design `--tasty-icon-size-lg`).
+    pub icon_glyph_size_lg: LogicalPx,
+    /// 뷰 상단 도구 막대 높이 (design `--tasty-toolbar-height`). UI 배율을 적용한다.
+    pub toolbar_height: LogicalPx,
     /// 목록 행 액션 아이콘의 크기. 다른 아이콘과 함께 UI 배율을 적용한다.
     /// 대응하는 DTCG 치수 토큰은 없다.
     pub icon_glyph_size_row_action: LogicalPx,
@@ -379,6 +383,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     icon_glyph_size_xs: LogicalPx(12.0),
     icon_glyph_size_sm: LogicalPx(14.0),
     icon_glyph_size_md: LogicalPx(16.0),
+    icon_glyph_size_lg: LogicalPx(24.0),
     icon_glyph_size_row_action: LogicalPx(15.0),
     sidebar_logo_size: LogicalPx(22.0),
     sidebar_logo_collapsed_size: LogicalPx(24.0),
@@ -392,6 +397,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     tab_bar_label_font_size: LogicalPx(13.0),
     tab_bar_arrow_font_size: LogicalPx(11.0),
     status_bar_height: LogicalPx(24.0),
+    toolbar_height: LogicalPx(32.0),
     titlebar_height: LogicalPx(36.0),
     traffic_size: LogicalPx(12.0),
     caption_width: LogicalPx(46.0),
@@ -869,6 +875,10 @@ pub struct Theme {
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
     pub icon_glyph_size_md: LogicalPx,
+    /// 빈 상태·오류 안내처럼 화면 가운데에 놓이는 큰 글리프 (design `--tasty-icon-size-lg`).
+    pub icon_glyph_size_lg: LogicalPx,
+    /// 뷰 상단 도구 막대 높이 (design `--tasty-toolbar-height`). UI 배율을 적용한다.
+    pub toolbar_height: LogicalPx,
     /// 목록 행 액션 아이콘 크기. 대응 DTCG 토큰은 없지만 다른 아이콘처럼 배율을 적용한다.
     pub icon_glyph_size_row_action: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
@@ -1057,6 +1067,7 @@ impl Theme {
             icon_glyph_size_xs: zoomed(SIZING.icon_glyph_size_xs),
             icon_glyph_size_sm: zoomed(SIZING.icon_glyph_size_sm),
             icon_glyph_size_md: zoomed(SIZING.icon_glyph_size_md),
+            icon_glyph_size_lg: zoomed(SIZING.icon_glyph_size_lg),
             icon_glyph_size_row_action: zoomed(SIZING.icon_glyph_size_row_action),
             sidebar_logo_size: zoomed(SIZING.sidebar_logo_size),
             sidebar_logo_collapsed_size: zoomed(SIZING.sidebar_logo_collapsed_size),
@@ -1072,6 +1083,7 @@ impl Theme {
             tab_bar_arrow_font_size: SIZING.tab_bar_arrow_font_size,
             // 작업영역 하단 StatusBar — tab_bar 와 동일하게 zoom 미적용.
             status_bar_height: SIZING.status_bar_height,
+            toolbar_height: zoomed(SIZING.toolbar_height),
             // Titlebar (CSD) 전용 — px 고정 디자인, tab_bar 와 동일하게 zoom 미적용.
             titlebar_height: SIZING.titlebar_height,
             traffic_size: SIZING.traffic_size,
@@ -2149,6 +2161,8 @@ mod tests {
         // icon sm/md 정합 확인
         assert_eq!(t.icon_glyph_size_sm.value(), 14.0);
         assert_eq!(t.icon_glyph_size_md.value(), 16.0);
+        assert_eq!(t.icon_glyph_size_lg.value(), 24.0);
+        assert_eq!(t.toolbar_height.value(), 32.0);
         assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
     }
 

@@ -45,6 +45,7 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.icon-size-xs", "icon_glyph_size_xs"),
     ("semantic.icon-size-sm", "icon_glyph_size_sm"),
     ("semantic.icon-size-md", "icon_glyph_size_md"),
+    ("semantic.icon-size-lg", "icon_glyph_size_lg"),
     // 가독 폭 / form-control 폭
     ("semantic.measure-sm", "measure_sm"),
     ("semantic.measure-md", "measure_md"),
@@ -56,6 +57,7 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.field-width-lg", "field_width_lg"),
     // 세부 치수 (semantic)
     ("semantic.status-bar-height", "status_bar_height"),
+    ("semantic.toolbar-height", "toolbar_height"),
     ("semantic.titlebar-height", "titlebar_height"),
     ("semantic.overlay-top-offset", "overlay_top_offset"),
     // component 전용 필드 — 사이드바 (host UI zoom 영향 받음)

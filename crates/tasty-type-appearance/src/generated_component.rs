@@ -445,7 +445,7 @@ impl crate::theme::Theme {
     /// `component.center-state-glyph-size` → `{semantic.icon-size-lg}` = 24px
     #[inline]
     pub fn center_state_glyph_size(&self) -> LogicalPx {
-        LogicalPx((24.0 * self.ui_zoom).round())
+        self.icon_glyph_size_lg
     }
 
     /// `component.center-state-line-gap` → `{semantic.space-xs}` = 4px
@@ -1171,7 +1171,7 @@ impl crate::theme::Theme {
     /// `component.git-toolbar-height` → `{semantic.toolbar-height}` = 32px
     #[inline]
     pub fn git_toolbar_height(&self) -> LogicalPx {
-        LogicalPx((32.0 * self.ui_zoom).round())
+        self.toolbar_height
     }
 
     /// `component.help-hint-color` → `{semantic.text-muted}`
