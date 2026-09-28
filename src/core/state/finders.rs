@@ -138,6 +138,20 @@ impl CoreState {
             .unwrap_or(false)
     }
 
+    /// 파일 dispatch가 실제로 쓸 식별 깊이. mirror origin의 경로는 원격 파일이라 요청과 관계없이
+    /// 파일 이름만 본다(ADR-0022). 식별 요청과 IPC 응답이 같은 값을 쓰도록 한 곳에서 정한다.
+    pub(crate) fn dispatch_depth_for_origin(
+        &self,
+        origin_surface_id: Option<u32>,
+        requested: crate::file::format::DetectDepth,
+    ) -> crate::file::format::DetectDepth {
+        if origin_surface_id.is_some_and(|sid| self.is_mirror_surface(sid)) {
+            crate::file::format::DetectDepth::Name
+        } else {
+            requested
+        }
+    }
+
     /// 로컬 구조 변경을 막을 mirror workspace를 찾는다. 비구조 요청이나 없는 대상은 None이다.
     pub(crate) fn mirror_workspace_index_for_structural(
         &self,

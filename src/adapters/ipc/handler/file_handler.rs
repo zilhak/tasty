@@ -126,6 +126,8 @@ fn default_depth() -> String {
 
 /// 파일 식별을 worker에 맡기고 즉시 응답한다. 결과는 IdentifyDone으로 적용한다.
 /// depth는 확장자/glob만 보는 cheap 또는 magic/MIME도 보는 deep이며 기본값은 deep이다.
+/// origin_surface_id가 mirror surface이면 경로는 원격 파일이라 depth와 관계없이 이름 기반 식별만 하고,
+/// 응답의 depth도 실제로 쓴 "name"을 보고한다.
 /// 상대 경로는 실행 환경에 따라 달라질 수 있어 절대 경로를 권장한다.
 /// 사용자 요청 여부는 dispatch_origin_of가 호스트에 기록된 입력으로 판정한다.
 #[cfg(feature = "gui")]
@@ -190,11 +192,16 @@ pub fn handle_dispatch(
         crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
         crate::file::dispatch::FileDispatchOrigin::Agent => intent.from_agent_ipc(),
     });
+    let effective_depth = match engine.dispatch_depth_for_origin(req.origin_surface_id, depth) {
+        DetectDepth::Name => "name",
+        DetectDepth::Cheap => "cheap",
+        DetectDepth::Deep => "deep",
+    };
     JsonRpcResponse::success(
         id,
         json!({
             "accepted": true,
-            "depth": req.depth,
+            "depth": effective_depth,
             "ignore_size_limit": req.ignore_size_limit,
         }),
     )

@@ -409,3 +409,24 @@ fn a_webview_navigation_backs_only_one_dispatch() {
     }
     assert_eq!(origins, vec![true, false]);
 }
+
+/// mirror origin은 요청 depth와 관계없이 이름으로만 식별하므로 응답도 실제 깊이를 보고한다.
+#[test]
+fn a_mirror_origin_dispatch_reports_the_name_depth() {
+    for (mirror, expected) in [(false, "deep"), (true, "name")] {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        engine.workspaces[0].mirror = mirror;
+        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let resp = handle_dispatch(
+            &mut out,
+            &mut state,
+            &engine,
+            &CallerContext::Local,
+            json!(1),
+            json!({"path": "/remote/doc.md", "depth": "deep", "origin_surface_id": sid}),
+        );
+        let result = resp.result.expect("dispatch accepted");
+        assert_eq!(result["depth"], expected, "mirror={mirror}");
+    }
+}

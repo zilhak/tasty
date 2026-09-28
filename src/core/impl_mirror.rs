@@ -477,12 +477,7 @@ impl Core {
                     crate::core::origin::require_origin_pane(engine, sid)
                         .map_err(anyhow::Error::msg)?;
                 }
-                // mirror origin의 경로는 원격 파일이다. 로컬 파일시스템으로 판정하지 않는다(ADR-0022).
-                let depth = if origin_surface_id.is_some_and(|sid| engine.is_mirror_surface(sid)) {
-                    crate::file::format::DetectDepth::Name
-                } else {
-                    depth
-                };
+                let depth = engine.dispatch_depth_for_origin(origin_surface_id, depth);
                 match engine.identify_worker.as_ref() {
                     Some(worker) => {
                         worker.spawn_identify(
