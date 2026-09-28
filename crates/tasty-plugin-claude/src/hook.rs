@@ -200,51 +200,13 @@ pub(crate) fn is_subagent_stop_failure(event: &str, agent_id: Option<&str>) -> b
 /// 두 필드가 모두 없거나 해석할 수 없으면 `None` 이며, 이전처럼 Stop 을 턴 종료로 처리한다.
 /// 두 필드는 CLI 가 stdin JSON 값을 그대로 넘기므로 JSON 값이고, 직접 플래그로 주면 문자열이다.
 pub(crate) fn background_work_pending(params: &Value) -> Option<String> {
-    if let Some(waiting) = params.get("waiting_on_background_work") {
-        match waiting {
-            Value::Bool(b) => return b.then(|| "waiting_on_background_work".to_string()),
-            Value::String(s) if s == "true" => {
-                return Some("waiting_on_background_work".to_string());
-            }
-            Value::String(s) if s == "false" => return None,
-            other => tracing::warn!(
-                "claude hook: unreadable waiting_on_background_work {other} — falling back to background_tasks"
-            ),
-        }
+    if let Some(waiting) = params
+        .get("waiting_on_background_work")
+        .and_then(read_waiting_flag)
+    {
+        return waiting.then(|| "waiting_on_background_work".to_string());
     }
-    let tasks = match params.get("background_tasks")? {
-        Value::String(raw) => match serde_json::from_str::<Value>(raw) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    "claude hook: background_tasks is not JSON ({e}) — treating the stop as a turn end"
-                );
-                return None;
-            }
-        },
-        other => other.clone(),
-    };
-    let Some(items) = tasks.as_array() else {
-        tracing::warn!(
-            "claude hook: background_tasks is not an array — treating the stop as a turn end"
-        );
-        return None;
-    };
-    let pending: Vec<String> = items
-        .iter()
-        .filter(|t| {
-            matches!(
-                t.get("status").and_then(Value::as_str),
-                Some("running" | "pending")
-            )
-        })
-        .map(|t| {
-            t.get("type")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown")
-                .to_string()
-        })
-        .collect();
+    let pending = pending_background_task_types(params.get("background_tasks")?)?;
     (!pending.is_empty()).then(|| {
         format!(
             "{} background task(s): {}",
@@ -252,6 +214,63 @@ pub(crate) fn background_work_pending(params: &Value) -> Option<String> {
             pending.join(",")
         )
     })
+}
+
+/// `waiting_on_background_work` 값을 읽는다. 해석할 수 없으면 `None` 이며 background_tasks 로 넘어간다.
+fn read_waiting_flag(value: &Value) -> Option<bool> {
+    let flag = match value {
+        Value::Bool(b) => Some(*b),
+        Value::String(s) if s == "true" => Some(true),
+        Value::String(s) if s == "false" => Some(false),
+        _ => None,
+    };
+    if flag.is_none() {
+        tracing::warn!(
+            "claude hook: unreadable waiting_on_background_work {value} — falling back to background_tasks"
+        );
+    }
+    flag
+}
+
+/// `background_tasks` 에서 `running`·`pending` 항목의 종류를 모은다. 배열이 아니면 `None` 이다.
+fn pending_background_task_types(value: &Value) -> Option<Vec<String>> {
+    let parsed;
+    let tasks = match value {
+        Value::String(raw) => {
+            parsed = serde_json::from_str::<Value>(raw)
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        "claude hook: background_tasks is not JSON ({e}) — treating the stop as a turn end"
+                    )
+                })
+                .ok()?;
+            &parsed
+        }
+        other => other,
+    };
+    let Some(items) = tasks.as_array() else {
+        tracing::warn!(
+            "claude hook: background_tasks is not an array — treating the stop as a turn end"
+        );
+        return None;
+    };
+    Some(
+        items
+            .iter()
+            .filter(|t| {
+                matches!(
+                    t.get("status").and_then(Value::as_str),
+                    Some("running" | "pending")
+                )
+            })
+            .map(|t| {
+                t.get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string()
+            })
+            .collect(),
+    )
 }
 
 /// 새 턴으로 처리할 이벤트. 이전 턴의 오류가 새 알림을 막지 않도록 중복 기록을 초기화한다.
@@ -402,13 +421,9 @@ pub(crate) fn apply_hook(
                 kind: "completion",
             });
         }
-        "subagent-stop" => {
-            // 서브에이전트가 끝났을 뿐 메인 턴은 이어진다. 상태·완료 알림·화면 알림을 만들지 않는다.
-            // Claude Code 는 내부 에이전트(agent_type 이 빈 값)의 종료도 이 훅으로 보내며, 턴 도중에도 온다.
-            tracing::info!(
-                "claude hook subagent-stop s{surface_id}: subagent finished, main turn continues — state unchanged"
-            );
-        }
+        // 서브에이전트가 끝났을 뿐 메인 턴은 이어진다. 상태·완료 알림·화면 알림을 만들지 않는다.
+        // Claude Code 는 내부 에이전트(agent_type 이 빈 값)의 종료도 이 훅으로 보내며, 턴 도중에도 온다.
+        "subagent-stop" => log_subagent_stop(surface_id),
         "stop" => {
             calls.push(HostCall::SetState {
                 surface_id,
@@ -525,6 +540,12 @@ pub(crate) fn apply_hook(
         }
     }
     Ok(calls)
+}
+
+fn log_subagent_stop(surface_id: u32) {
+    tracing::info!(
+        "claude hook subagent-stop s{surface_id}: subagent finished, main turn continues — state unchanged"
+    );
 }
 
 /// session-start 가 복원할 프로필 계획.
