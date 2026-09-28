@@ -1266,6 +1266,17 @@ impl Theme {
         }
     }
 
+    /// 비활성 글자. 밝은 테마는 한 단계 진한 neutral-800(overlay2)을 사용한다.
+    /// `semantic.text-disabled`의 Latte remap이다.
+    #[inline]
+    pub fn text_disabled(&self) -> HexColor {
+        if self.is_light {
+            self.overlay2
+        } else {
+            self.overlay1
+        }
+    }
+
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
     #[inline]
     pub fn overlay_hover(&self) -> HexColor {
@@ -1839,6 +1850,9 @@ mod tests {
         let light = Theme::with_colors(distinct_colors(), true);
         assert_eq!(light.text_on_accent(), TEXT_ON_ACCENT_LIGHT);
         assert_ne!(light.text_on_accent(), light.crust);
+        // light(Latte): 비활성 글자는 neutral-800(overlay2)으로 role-remap.
+        assert_eq!(light.text_disabled(), light.overlay2);
+        assert_ne!(light.text_disabled(), light.overlay1);
 
         // 보더
         assert_eq!(th.border_default(), th.surface0);

@@ -62,12 +62,6 @@ impl crate::theme::Theme {
         self.subtext0
     }
 
-    /// `semantic.text-disabled` → `{primitive.color-neutral-700}`
-    #[inline]
-    pub fn text_disabled(&self) -> HexColor {
-        self.overlay1
-    }
-
     /// `semantic.text-placeholder` → `{primitive.color-neutral-600}`
     #[inline]
     pub fn text_placeholder(&self) -> HexColor {

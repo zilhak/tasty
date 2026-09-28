@@ -166,7 +166,6 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.text-primary", "text_primary", "text"),
     ("semantic.text-secondary", "text_secondary", "subtext1"),
     ("semantic.text-muted", "text_muted", "subtext0"),
-    ("semantic.text-disabled", "text_disabled", "overlay1"),
     (
         "semantic.text-placeholder",
         "text_placeholder",
@@ -216,6 +215,10 @@ const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
     (
         "semantic.text-on-accent",
         "is_light role-remap (Mocha=crust / Latte=white) — 단순 alias 아님",
+    ),
+    (
+        "semantic.text-disabled",
+        "is_light role-remap (Mocha=overlay1 / Latte=overlay2) — 단순 alias 아님",
     ),
     (
         "semantic.overlay-hover",
