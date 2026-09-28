@@ -38,6 +38,23 @@ pub struct PaneTabBarView {
     pub is_focused: bool,
     /// 가로 스크롤 오프셋 (logical px).
     pub scroll_offset: f32,
+    /// 이동 대기 표시를 둘 탭 인덱스와 형태. 없으면 None이다.
+    pub move_mark: Option<(usize, TabMoveMark)>,
+}
+
+/// 탭 칸의 이동 대기 표시. 탭이 대상이면 링, 대상 서피스를 담은 비활성 탭이면 글리프다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabMoveMark {
+    Ring,
+    Glyph,
+}
+
+/// pane 탭 바 Area의 레이어. 이동 링과 점유 테두리도 이 레이어에 그려 탭 바 위, 팝업 아래에 둔다.
+pub fn pane_tab_bar_layer(pane_id: u32) -> egui::LayerId {
+    egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new(format!("pane_tabs_{pane_id}")),
+    )
 }
 
 /// View 입력 — drag 진행 중인 탭의 상태. None 이면 drag overlay 미표시.
@@ -182,6 +199,25 @@ fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Ta
         .collect()
 }
 
+/// 이 pane의 탭 칸에 둘 이동 대기 표시.
+fn tab_move_mark(
+    mark: Option<crate::adapters::ui::move_source::MoveSourceMark>,
+    pane_id: u32,
+) -> Option<(usize, TabMoveMark)> {
+    use crate::adapters::ui::move_source::MoveSourceMark as M;
+    match mark? {
+        M::TabRing {
+            pane_id: p,
+            tab_index,
+        } if p == pane_id => Some((tab_index, TabMoveMark::Ring)),
+        M::TabGlyph {
+            pane_id: p,
+            tab_index,
+        } if p == pane_id => Some((tab_index, TabMoveMark::Glyph)),
+        _ => None,
+    }
+}
+
 /// 화면 입력을 만들고 결과를 앱 상태에 반영한다.
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
@@ -192,6 +228,12 @@ pub fn draw_pane_tab_bars(
 ) {
     let th = theme::theme();
     let focused_pane_id = state.focused_pane_id(engine);
+    let move_mark = crate::adapters::ui::move_source::resolve(
+        engine,
+        state.active_workspace,
+        pane_rects,
+        state.tab_bar_height,
+    );
 
     let mut panes: Vec<PaneTabBarView> = Vec::new();
     {
@@ -235,6 +277,7 @@ pub fn draw_pane_tab_bars(
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 scroll_offset: pane.tab_scroll_offset,
+                move_mark: tab_move_mark(move_mark, pane_id),
             });
         }
     }
@@ -435,6 +478,7 @@ mod tests {
             active_tab: active,
             is_focused: focused,
             scroll_offset: 0.0,
+            move_mark: None,
         }
     }
 
@@ -601,5 +645,83 @@ mod tests {
         let result = compute_tab_is_busy(&engine, &tabs);
 
         assert_eq!(result, vec![false]);
+    }
+
+    /// 이동 대기 표시를 단 pane 하나를 그린 뒤 모든 도형을 돌려준다.
+    fn shapes_with_move_mark(mark: Option<(usize, TabMoveMark)>) -> Vec<egui::Shape> {
+        let ctx = egui::Context::default();
+        let mut pane = mk_pane(1, &["a", "b", "c"], 0, true);
+        pane.move_mark = mark;
+        let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
+        let panes = vec![pane];
+        // Area는 첫 프레임을 크기 측정에만 쓰므로 두 번째 프레임의 도형을 읽는다.
+        let mut out = egui::FullOutput::default();
+        for _ in 0..2 {
+            out = ctx.run(egui::RawInput::default(), |ctx| {
+                let props = PaneTabBarsProps {
+                    theme: &theme,
+                    kb: &kb,
+                    panes: &panes,
+                    scale_factor: 1.0,
+                    tab_width: 160.0,
+                    tab_font_size: 12.0,
+                    active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                    drag: None,
+                    switch_overlay_pane: None,
+                };
+                drop(draw_pane_tab_bars_view(ctx, &props));
+            });
+        }
+        out.shapes.into_iter().map(|c| c.shape).collect()
+    }
+
+    /// 새 Area는 페이드인 중이라 알파가 곱해진 색으로 나온다. 알파를 걷어 낸 색으로 비교한다.
+    fn is_move_color(c: egui::Color32) -> bool {
+        let pink: egui::Color32 = test_theme().move_source_ring().into();
+        // egui는 감마 공간에서 알파를 곱하므로 같은 공간에서 나눈다.
+        let a = u32::from(c.a());
+        let un = |x: u8| (u32::from(x) * 255 / a.max(1)) as u8;
+        a > 0
+            && [(c.r(), pink.r()), (c.g(), pink.g()), (c.b(), pink.b())]
+                .iter()
+                .all(|&(x, y)| un(x).abs_diff(y) <= 3)
+    }
+
+    fn move_colored_segments(shapes: &[egui::Shape]) -> Vec<[egui::Pos2; 2]> {
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::LineSegment { points, stroke } if is_move_color(stroke.color) => {
+                    Some(*points)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn move_ring_dashes_stay_on_the_marked_tab_cell() {
+        let segments = move_colored_segments(&shapes_with_move_mark(Some((1, TabMoveMark::Ring))));
+        assert!(!segments.is_empty());
+        // 탭 1은 탭 0(160)과 구분선(1) 뒤에서 시작하고 자기 오른쪽 구분선까지 포함한다.
+        for [a, b] in segments {
+            for p in [a, b] {
+                assert!((161.0..=322.0).contains(&p.x), "{p:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn move_glyph_marks_the_tab_without_a_ring() {
+        // 글리프는 SVG 이미지라 이미지 로더가 없는 테스트 컨텍스트에서는 도형으로 확인할 수 없다.
+        let shapes = shapes_with_move_mark(Some((2, TabMoveMark::Glyph)));
+        assert!(move_colored_segments(&shapes).is_empty());
+    }
+
+    #[test]
+    fn no_move_mark_paints_no_move_color() {
+        let shapes = shapes_with_move_mark(None);
+        assert!(move_colored_segments(&shapes).is_empty());
     }
 }

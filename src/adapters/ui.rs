@@ -19,6 +19,7 @@ pub(crate) mod info_modal;
 pub mod layout_context;
 pub(crate) mod modifier_hint_overlay;
 pub(crate) mod mouse_capture_menu;
+pub(crate) mod move_source;
 pub(crate) mod notification;
 pub(crate) mod overlay;
 pub mod popup;

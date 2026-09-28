@@ -77,7 +77,7 @@ pub fn draw_pane_tab_bars_view(
             }
         }
 
-        let area_response = egui::Area::new(egui::Id::new(format!("pane_tabs_{}", info.pane_id)))
+        let area_response = egui::Area::new(super::pane_tab_bar_layer(info.pane_id).id)
             .fixed_pos(egui::pos2(logical_x, logical_y))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -194,6 +194,17 @@ pub fn draw_pane_tab_bars_view(
                                     th.tab_separator().to_egui_premultiplied(),
                                 );
                                 x += separator_w;
+                            }
+
+                            // 탭 칸 링은 오른쪽 구분선까지 포함하므로 모든 탭과 구분선 뒤에 그린다.
+                            if let Some((i, super::TabMoveMark::Ring)) = info.move_mark {
+                                let cell_x =
+                                    clip_start_x - scroll + i as f32 * (tab_w + separator_w);
+                                let cell = egui::Rect::from_min_size(
+                                    egui::pos2(cell_x, clip_rect.min.y),
+                                    egui::vec2(tab_w + separator_w, bar_h),
+                                );
+                                tasty_ui_widgets::paint_move_source_ring(&painter, th, cell);
                             }
 
                             {

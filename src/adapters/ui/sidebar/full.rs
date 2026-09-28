@@ -30,6 +30,8 @@ pub(super) fn entry_view(
         attached: engine.attach.workspace_holder(ws.id).is_some(),
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,
+        move_source: crate::adapters::ui::move_source::workspace_cue(engine, active_ws)
+            == Some(global_idx),
     }
 }
 

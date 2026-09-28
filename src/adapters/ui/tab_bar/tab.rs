@@ -157,6 +157,7 @@ pub(super) fn draw_tab(
     if is_busy {
         text_right -= dot_reserve;
     }
+    text_right = paint_move_glyph(ui, context, i, tab_rect, text_right);
     let available_w = (text_right - text_x).max(0.0);
     let font_id = egui::FontId::proportional(label_font_size);
     let final_galley = layout_tab_label(painter, name, font_id, text_color, LogicalPx(available_w));
@@ -248,6 +249,30 @@ pub(super) fn draw_tab(
 
     x += tab_w;
     LogicalPx(x)
+}
+
+/// 대상 서피스를 담은 비활성 탭이면 제목 뒤에 move 글리프를 그린다. 제목에 남는 오른쪽 끝을 반환한다.
+fn paint_move_glyph(
+    ui: &mut egui::Ui,
+    context: &TabRenderContext<'_, '_>,
+    i: usize,
+    tab_rect: egui::Rect,
+    text_right: f32,
+) -> f32 {
+    if context.info.move_mark != Some((i, super::TabMoveMark::Glyph)) {
+        return text_right;
+    }
+    let th = context.props.theme;
+    let glyph = tasty_ui_widgets::move_source_glyph_size(th);
+    let slot = egui::Rect::from_min_size(
+        egui::pos2(text_right - glyph, tab_rect.center().y - glyph / 2.0),
+        egui::vec2(glyph, glyph),
+    );
+    let prev_clip = ui.clip_rect();
+    ui.set_clip_rect(context.clip_rect.intersect(prev_clip));
+    tasty_ui_widgets::paint_move_source_glyph(ui, th, slot);
+    ui.set_clip_rect(prev_clip);
+    text_right - glyph - th.spacing_xs.value()
 }
 
 /// Fit the label into the space left by the leading icon, busy dot and close slot.

@@ -31,6 +31,8 @@ pub struct WorkspaceEntryView {
     /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
     pub is_mirror: bool,
     pub is_active: bool,
+    /// 이동 대기 대상이 이 워크스페이스 안에 있고 화면에 보이지 않는지. move 글리프로 표시한다.
+    pub move_source: bool,
 }
 
 /// 카테고리별 행과 전역 인덱스. 클릭·드래그 동작이 같은 워크스페이스를 가리키도록 전역 인덱스를 유지한다.
@@ -1189,6 +1191,13 @@ fn draw_rail_category_button(
 /// Collapsed 레일 워크스페이스 아바타 1개 — 머리글자 사각 + 상태 dot/링 + 클릭 action.
 /// 그룹/평면 렌더가 공유한다. `global_idx` 는 반드시 전역 인덱스여야 클릭/switch overlay
 /// 가 올바른 워크스페이스를 가리킨다.
+/// 워크스페이스 행의 move 글리프. 이름 뒤, 배지 묶음 앞에 놓인다.
+fn paint_move_source_row_glyph(ui: &mut egui::Ui, th: &Theme) {
+    let size = tasty_ui_widgets::move_source_glyph_size(th);
+    let (slot, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    tasty_ui_widgets::paint_move_source_glyph(ui, th, slot);
+}
+
 fn draw_collapsed_avatar(
     ui: &mut egui::Ui,
     props: &SidebarCollapsedProps<'_>,
@@ -1280,6 +1289,10 @@ fn draw_collapsed_avatar(
             ),
             egui::StrokeKind::Inside,
         );
+    }
+    // 이동 대기 칩은 알림 점·mirror 칩과 겹치지 않도록 왼쪽 아래에 둔다.
+    if ws.move_source {
+        tasty_ui_widgets::paint_move_source_chip(ui, th, rect, th.bg_sidebar().into());
     }
     // mirror 표시는 배경색으로 둘러 다른 알림·점유 표시와 구분한다.
     if ws.is_mirror {
@@ -1389,6 +1402,12 @@ fn draw_workspace_card(
                         ws.needs_input_count,
                         BadgeVariant::Warning,
                     );
+                }
+                if ws.move_source {
+                    if ws.completion_count + ws.needs_input_count > 0 {
+                        ui.add_space(th.spacing_xs.value());
+                    }
+                    paint_move_source_row_glyph(ui, th);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(
@@ -1504,6 +1523,7 @@ mod tests {
             needs_input_count: 0,
             attached: false,
             is_mirror: false,
+            move_source: false,
             is_active,
         }
     }
@@ -1747,6 +1767,7 @@ mod tests {
                 needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
+                move_source: false,
                 is_active: true,
             },
             WorkspaceEntryView {
@@ -1758,6 +1779,7 @@ mod tests {
                 needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
+                move_source: false,
                 is_active: false,
             },
             WorkspaceEntryView {
@@ -1769,6 +1791,7 @@ mod tests {
                 needs_input_count: 0,
                 attached: false,
                 is_mirror: false,
+                move_source: false,
                 is_active: false,
             },
         ];
@@ -1889,6 +1912,7 @@ mod tests {
             needs_input_count: 0,
             attached: true,
             is_mirror: false,
+            move_source: false,
             is_active: true,
         }];
         let actions = run_collapsed(ws, false);

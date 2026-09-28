@@ -562,6 +562,7 @@ fn draw_occupied_overlays(
     let th = theme::theme();
 
     struct Occ {
+        pane_id: u32,
         sid: u32,
         hard: bool,
         x: f32,
@@ -599,6 +600,7 @@ fn draw_occupied_overlays(
                 };
                 let logical = r.rect.to_logical(scale_factor);
                 occ.push(Occ {
+                    pane_id,
                     sid: r.id,
                     hard,
                     x: logical.x.value().round_ui(),
@@ -614,11 +616,10 @@ fn draw_occupied_overlays(
     }
 
     // 장식 테두리는 입력을 받는 Area 대신 painter로 그려 터미널·구분선 입력을 가로채지 않는다.
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new("occupied_overlays_border"),
-    ));
+    // 페인 탭 바 레이어에 그려 팝업 아래에 두고, 뒤에 그리는 이동 링이 이 테두리를 덮게 한다.
     for o in &occ {
+        let painter =
+            ctx.layer_painter(crate::adapters::ui::tab_bar::pane_tab_bar_layer(o.pane_id));
         let border_color = if o.hard {
             th.accent_occupied_hard()
         } else {
