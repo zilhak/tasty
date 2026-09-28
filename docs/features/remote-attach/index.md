@@ -64,10 +64,9 @@ mirror하는 kind만 원격 새 탭으로 forward한다. 1순위 핸들러가 �
 선택한다. 원격에 그 kind가 없어 실패하면 아래 실패 회신 규칙대로 toast가 뜬다. 그 밖의 형식은
 `explorer.state.remote_open_unsupported` 안내로 끝난다([파일 핸들러](../file-handler/index.md)).
 터미널 링크와 파일 선택 창의 원격 경로는 아직 이 경로를 쓰지 않는다.
-headless 서버도 같다. attach 요청이 오면 서버가 plugin을 시작하고 markdown kind를 등록하며,
-그 뒤의 더블클릭은 서버에 markdown 탭을 만들고 client가 원문을 받는다(2026-09-28 loopback 실측).
-kind 등록이 끝나기 전에 더블클릭한 경우는 실측하지 않았다. 이때 서버가 요청을 거절하면
-아래 실패 회신 규칙대로 사용자 toast가 뜬다.
+headless 서버도 같다. attach 요청이 오면 서버가 plugin을 시작해 markdown kind를 등록하고,
+그 뒤의 더블클릭은 서버에 markdown 탭을 만들어 client가 원문을 받는다. 등록이 끝나기 전에 도착한
+요청은 원격에 kind가 없는 경우와 같이 아래 실패 회신 규칙을 따른다.
 
 **markdown**은 핸드셰이크에서 원격 경로와 탭 제목을 받고 필요한 때 원문을 요청한다.
 client에 번들 plugin이 아직 등록되지 않았으면 placeholder를 유지하다 등록 후 채운다.
