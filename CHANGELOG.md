@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`.svg` 파일이 HTML 뷰어로 바로 열린다.** 호스트 기본 판별기에 `svg`(확장자 `.svg`)를 추가하고, HTML Viewer 플러그인이 여기에 `com.tasty.html/svg-viewer` 핸들러를 붙인다. 탐색기 더블클릭이나 `tasty file-handler dispatch`로 `.svg`를 열면 핸들러 선택 창 없이 HTML 서피스가 열려 웹뷰가 렌더한다. 플러그인 매니페스트에 `file_handler.handle:svg` 권한이 추가됐으며 번들 플러그인은 재승인 없이 반영된다. 플러그인을 끄면 판별기는 남고 핸들러가 없어 선택 창이 뜬다.
+
 ## [0.11.0] - 2026-09-27
 
 ### Added
