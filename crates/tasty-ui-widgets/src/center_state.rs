@@ -141,9 +141,9 @@ impl<'a> CenterState<'a> {
             (CenterStateVariant::Loading, _) | (_, None) => {
                 let mut slot = ui.new_child(egui::UiBuilder::new().max_rect(glyph));
                 slot.set_clip_rect(clip);
+                // 시안 Spinner 는 자기 color(text-muted)가 감싼 글리프 색을 이긴다.
                 Spinner::new()
                     .size(glyph_size.value())
-                    .color(glyph_fg)
                     .show(&mut slot, theme);
             }
             (_, Some(icon)) => {
