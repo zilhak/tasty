@@ -727,7 +727,7 @@ General L1의 마지막 L2 서브탭이다. 디자인은 원격 킷의
 | FDA 행 `Button secondary sm`(Open System Settings) | `Button::Secondary/Sm` → `open_full_disk_access_settings()` | 동(열지 않고 그리기만) |
 | `mpNote`(설명 줄) | caption · `line-height-ui` · `text-muted` · `measure-xl`에서 줄바꿈. 요청 중에는 스피너 + `text-secondary` 진행 문구로 교체 | 동 |
 | `Tag`("debug", 손쉬운 사용 행) | debug 빌드에서만 행을 넣음 | E 시나리오 |
-| `InfoModalShell`(440 × 140..360, 본문 스크롤, 버튼 줄 위 스크롤 경계) | `src/adapters/ui/info_modal.rs::draw` → `tasty_ui_widgets::info_modal` | `components/info_modal.rs::draw` (`info-modal` spec) |
+| `InfoModalShell`(440 × 140..360, 본문 스크롤, 버튼 줄 위 스크롤 경계) | `src/adapters/ui/info_modal.rs::draw_info_modal` → `tasty_ui_widgets::info_modal` | `components/info_modal.rs::draw` (`info-modal` spec) |
 | `PermissionNoticeModal`(강조 표기가 있는 본문) | 같은 셸, `InfoModal.emphasis = true` | `components/info_modal.rs::draw_permissions` (`info-modal-permissions` spec) |
 
 갤러리는 본체보다 많은 것을 보여준다. 시안의 A~E 조합(아무것도 허용하지 않음, 모두 허용,
