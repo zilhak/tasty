@@ -412,7 +412,7 @@ help = "ターンを終了させた API エラーの種類（例：overloaded、
 help = "フックがサブエージェント内で発火したときのサブエージェント ID（メインスレッドでは無し）。stdin JSON の 'agent_id' から自動設定。これを持つ stop-failure はサブエージェントの API エラーでメインターンは続くため無視"
 
 [claude.cli.arg.hook_args.background_tasks]
-help = "セッションに残っているバックグラウンドタスクの一覧（JSON 配列）。Stop フックで stdin JSON の 'background_tasks' から自動的に設定される。running または pending の項目がある stop はメイン応答が終わっただけでバックグラウンド作業は続くため、子を idle にせず active のままにする。"
+help = "セッションに残っているバックグラウンドタスクの一覧（JSON 配列）。Stop フックで stdin JSON の 'background_tasks' から自動的に設定される。終了を表さない status の項目（終了値は completed、failed、cancelled、canceled、killed、stopped、error、done で、未知の値や status のない項目も未終了として数える）がある stop はメイン応答が終わっただけでバックグラウンド作業は続くため、子を idle にせず active のままにする。"
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
 help = "セッションがバックグラウンド作業の完了を待っているかどうか（\"true\"/\"false\"）。Claude Code が送る場合は stdin JSON の 'waiting_on_background_work' から自動的に設定される。値があれば --background-tasks の代わりにこの値で判定する。"

@@ -196,7 +196,8 @@ pub(crate) fn is_subagent_stop_failure(event: &str, agent_id: Option<&str>) -> b
 /// Stop payload 가 아직 끝나지 않은 백그라운드 작업을 보고하면 그 요약을 돌려준다.
 ///
 /// `waiting_on_background_work` 가 있으면 그 값을 따른다. 없으면 `background_tasks` 에서
-/// `status` 가 `running`·`pending` 인 항목을 센다. 항목의 종류(subagent·shell 등)는 가리지 않는다.
+/// 끝을 뜻하는 `status`([`FINISHED_TASK_STATUSES`])가 아닌 항목을 센다. 항목의 종류(subagent·shell 등)는
+/// 가리지 않는다.
 /// 두 필드가 모두 없거나 해석할 수 없으면 `None` 이며, 이전처럼 Stop 을 턴 종료로 처리한다.
 /// 두 필드는 CLI 가 stdin JSON 값을 그대로 넘기므로 JSON 값이고, 직접 플래그로 주면 문자열이다.
 pub(crate) fn background_work_pending(params: &Value) -> Option<String> {
@@ -232,7 +233,32 @@ fn read_waiting_flag(value: &Value) -> Option<bool> {
     flag
 }
 
-/// `background_tasks` 에서 `running`·`pending` 항목의 종류를 모은다. 배열이 아니면 `None` 이다.
+/// 끝난 작업을 뜻하는 `status` 값. 대소문자는 가리지 않는다.
+///
+/// 공식 hooks 문서(2026-09-28 확인)는 `background_tasks` 항목을 진행 중인 작업(in-flight)이라 하고
+/// 진행 중인 작업이 없으면 배열이 비어 있다고 설명하며, `status` 값 목록은 주지 않는다.
+/// 2.1.283 실측 값은 `running` 뿐이었다. 그래서 목록에 없는 값과 `status` 가 없는 항목은 모두 대기로 본다.
+/// `completed`·`failed` 는 이 모듈의 시험이 쓰는 값이고, 나머지는 흔한 종료어다.
+const FINISHED_TASK_STATUSES: &[&str] = &[
+    "completed",
+    "failed",
+    "cancelled",
+    "canceled",
+    "killed",
+    "stopped",
+    "error",
+    "done",
+];
+
+fn is_finished_task(task: &Value) -> bool {
+    task.get("status").and_then(Value::as_str).is_some_and(|s| {
+        FINISHED_TASK_STATUSES
+            .iter()
+            .any(|f| s.eq_ignore_ascii_case(f))
+    })
+}
+
+/// `background_tasks` 에서 끝나지 않은 항목의 종류를 모은다. 배열이 아니면 `None` 이다.
 fn pending_background_task_types(value: &Value) -> Option<Vec<String>> {
     let parsed;
     let tasks = match value {
@@ -257,12 +283,7 @@ fn pending_background_task_types(value: &Value) -> Option<Vec<String>> {
     Some(
         items
             .iter()
-            .filter(|t| {
-                matches!(
-                    t.get("status").and_then(Value::as_str),
-                    Some("running" | "pending")
-                )
-            })
+            .filter(|t| !is_finished_task(t))
             .map(|t| {
                 t.get("type")
                     .and_then(Value::as_str)
@@ -927,6 +948,8 @@ mod tests {
         let done = json!([
             { "id": "a", "type": "shell", "status": "completed" },
             { "id": "b", "type": "subagent", "status": "failed" },
+            { "id": "c", "type": "shell", "status": "Cancelled" },
+            { "id": "d", "type": "monitor", "status": "killed" },
         ]);
         assert_eq!(
             background_work_pending(&json!({ "background_tasks": done })),
@@ -946,6 +969,21 @@ mod tests {
         let defensive =
             json!([{ "id": "t1", "name": "build", "status": "pending", "created_at": "x" }]);
         assert!(background_work_pending(&json!({ "background_tasks": defensive })).is_some());
+    }
+
+    /// 문서가 값 목록을 주지 않으므로 끝을 뜻하지 않는 모르는 값과 status 가 없는 항목은 대기다.
+    #[test]
+    fn an_unknown_or_missing_status_is_pending_work() {
+        for item in [
+            json!({ "id": "q", "type": "shell", "status": "queued" }),
+            json!({ "id": "s", "type": "workflow", "status": "starting" }),
+            json!({ "id": "n", "type": "subagent" }),
+        ] {
+            assert!(
+                background_work_pending(&json!({ "background_tasks": [item] })).is_some(),
+                "{item} 는 대기로 본다"
+            );
+        }
     }
 
     /// 플래그로 직접 준 값은 JSON 문자열로 온다.

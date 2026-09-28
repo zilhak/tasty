@@ -412,7 +412,7 @@ help = "턴을 끝낸 API 에러 종류(예: overloaded, rate_limit, server_erro
 help = "서브에이전트에서 발생한 훅의 agent_id입니다(메인 스레드에서는 없음). stdin JSON의 'agent_id'에서 자동 입력합니다. 이 값이 있는 stop-failure는 서브에이전트의 API 오류이므로 메인 턴을 중단한 것으로 처리하지 않습니다."
 
 [claude.cli.arg.hook_args.background_tasks]
-help = "세션에 남아 있는 백그라운드 작업 목록(JSON 배열). Stop 훅에서 stdin JSON의 'background_tasks'로 자동으로 채운다. running 또는 pending 항목이 있는 stop은 메인 응답만 끝난 것이고 백그라운드 작업은 계속되므로, 자식을 idle로 바꾸지 않고 active로 둔다."
+help = "세션에 남아 있는 백그라운드 작업 목록(JSON 배열). Stop 훅에서 stdin JSON의 'background_tasks'로 자동으로 채운다. 끝을 뜻하지 않는 status의 항목(끝 값은 completed, failed, cancelled, canceled, killed, stopped, error, done이며, 모르는 값이나 status가 없는 항목도 끝나지 않은 것으로 센다)이 있는 stop은 메인 응답만 끝난 것이고 백그라운드 작업은 계속되므로, 자식을 idle로 바꾸지 않고 active로 둔다."
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
 help = "세션이 백그라운드 작업의 완료를 기다리는지 여부(\"true\"/\"false\"). Claude Code가 보내면 stdin JSON의 'waiting_on_background_work'로 자동으로 채운다. 값이 있으면 --background-tasks 대신 이 값으로 판정한다."

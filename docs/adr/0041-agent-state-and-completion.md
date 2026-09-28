@@ -38,8 +38,10 @@ API 오류 뒤 Claude 자동 재개는 사용자가 켜야 동작한다. 지정�
 Claude의 메인 턴이 이어지는 동안에는 idle을 보고하지 않는다. `SubagentStop`은 서브에이전트의
 종료일 뿐이므로 상태·완료 알림·화면 알림·경과 시간 기록을 만들지 않는다. `Stop` payload가
 끝나지 않은 백그라운드 작업을 보고하면 그 Stop은 대기이며 턴 종료가 아니다. 판정에는
-`waiting_on_background_work`가 있으면 그 값을, 없으면 `background_tasks`의 `running`·`pending`
-항목 유무를 쓰고, 항목 종류는 가리지 않는다. 대기 Stop은 `active`만 보고하며 완료 알림·경과 시간·
+`waiting_on_background_work`가 있으면 그 값을, 없으면 `background_tasks`에 끝나지 않은 항목이
+있는지를 쓰고, 항목 종류는 가리지 않는다. 끝난 항목은 `status`가 `completed`·`failed`·`cancelled`·`canceled`·`killed`·`stopped`·`error`·`done`
+중 하나(대소문자 무관)인 항목이다. 공식 hooks 문서(2026-09-28 확인)는 항목을 진행 중인 작업이라
+하고 `status` 값 목록을 주지 않으므로, 목록에 없는 값과 `status`가 없는 항목은 대기로 센다. 대기 Stop은 `active`만 보고하며 완료 알림·경과 시간·
 자동 재개 성공 처리를 하지 않는다. 두 필드가 없으면 이전처럼 Stop을 턴 종료로 본다.
 
 부모에게 전달하는 완료·입력 대기·정지 알림은 부모 종류와 무관하게 완료 로그에 기록한다.
@@ -61,6 +63,7 @@ Claude의 메인 턴이 이어지는 동안에는 idle을 보고하지 않는다
 `terminal.state`의 `needs_input` 해제는 도구 종료까지 늦어질 수 있고, 자동 재개는 사용자 입력 흔적만 있어도
 보수적으로 취소한다. 끝나지 않는 백그라운드 명령을 남긴 채 턴을 끝낸 Claude 자식은 idle이
 되지 않아 spawn·tell 대기 노드와 완료 알림이 오지 않는다. 대기 노드에는 제한 시간을 두어야 한다.
+Claude Code가 끝난 항목에 위 목록에 없는 `status`를 붙여 남기면 그 자식도 idle이 되지 않는다.
 Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
@@ -75,6 +78,9 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   백그라운드 대기처럼 긴 구간을 막지 못한다. 두 방법 대신 훅 보고 자체를 바로잡는다.
 - 백그라운드 서브에이전트만 대기로 보고 셸은 제외하면 `run_in_background` 셸을 기다리는 턴이 일찍
   끝난다. 끝나지 않는 셸 때문에 idle이 오지 않는 위험을 감수하고 종류를 가리지 않는다.
+- `running`·`pending`처럼 진행을 뜻하는 값만 대기로 세면 문서에 없는 진행 값이 오는 순간 턴 도중에
+  idle이 된다. 조기 종결은 후속 작업을 미완성 산출물로 실행하게 하므로, 끝을 뜻하는 값만 목록으로 두고
+  모르는 값 때문에 idle이 늦어지거나 오지 않는 위험을 택한다.
 
 - 승인 화면 문구나 무출력으로 승인 대기를 추측하면 버전 변화와 장기 실행을 오판할 수 있다.
   구조화된 훅이 있는 경우 이를 사용한다.
@@ -114,6 +120,9 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   그 자식을 `idle`·`needs_input`으로 바꾸지 않고 `active` 또는 `stale`로 보고하는지(`evidence`를
   함께 본다. 출력·훅이 오래 조용하면 `output_and_hook_silent`, 전경이 셸이면 `foreground_is_shell`의
   `stale`이 된다), 대기 노드가 `tasty agent task-list`에서 `running`에 머무는지를 함께 본다. 자식 화면에 실행 중인 백그라운드 명령이 남아 있는지도 확인한다.
+- 끝난 백그라운드 항목이 끝 값 목록에 없는 `status`로 `background_tasks`에 남는 사례가 보일 때.
+  자동 검사는 없다. 위 추적 훅의 Stop payload에서 항목의 `status`를 보고, 그 작업이 끝났는데도
+  플러그인 로그에 `waiting on background work` 줄이 이어지는지 확인한다.
 - Stop 게이트의 차단 결과를 상태 보고와 연결할 수단이 생길 때.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.
 
