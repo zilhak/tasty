@@ -58,6 +58,16 @@ pub(crate) fn host_window_has_os_focus(
     winit_focused || webview_holds()
 }
 
+/// 포커스 회수 대상으로 남길 surface인지. 닫힌 surface의 webview는 같은 프레임 뒤에서
+/// 제거되므로 map에 남아 있어도 이번 프레임의 HTML surface 목록에 없으면 제외한다.
+pub(crate) fn webview_release_candidate_is_live(
+    sid: u32,
+    all_html_ids: &[u32],
+    has_webview: impl Fn(u32) -> bool,
+) -> bool {
+    all_html_ids.contains(&sid) && has_webview(sid)
+}
+
 /// 활성 탭에서 빠진 webview 중 이번 프레임에 키보드 포커스를 회수할 surface를 고른다.
 ///
 /// 직전 프레임에 활성이었다가 빠진 surface를 `pending`에 모은다. 다시 활성이 되었거나
@@ -702,7 +712,11 @@ impl MainView {
         let release = take_hidden_webview_focus_targets(
             &self.webview_prev_active,
             &now_active,
-            |sid| self.webviews.contains_key(&sid),
+            |sid| {
+                webview_release_candidate_is_live(sid, &all_html_ids, |s| {
+                    self.webviews.contains_key(&s)
+                })
+            },
             &mut self.webview_focus_release_pending,
             || {
                 host_window_has_os_focus(self.base.focused, || {
@@ -2337,7 +2351,10 @@ fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_me
 mod tests {
     use super::category_header_menu_items;
     use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
-    use super::{host_window_has_os_focus, take_hidden_webview_focus_targets};
+    use super::{
+        host_window_has_os_focus, take_hidden_webview_focus_targets,
+        webview_release_candidate_is_live,
+    };
     use crate::webview::WebViewCreateError;
 
     fn set(ids: &[u32]) -> std::collections::HashSet<u32> {
@@ -2401,6 +2418,37 @@ mod tests {
         );
         assert_eq!(got, vec![1]);
         assert!(pending.is_empty());
+    }
+
+    /// 활성 탭의 surface를 닫은 프레임에는 webview가 아직 map에 남아 있어도 회수하지 않는다.
+    #[test]
+    fn closing_an_active_surface_is_not_a_release() {
+        let mut pending = set(&[]);
+        let all_html_ids: Vec<u32> = vec![];
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[]),
+            |sid| webview_release_candidate_is_live(sid, &all_html_ids, |_| true),
+            &mut pending,
+            || true,
+        );
+        assert!(got.is_empty(), "닫힌 surface에 회수를 호출했다");
+        assert!(pending.is_empty());
+    }
+
+    /// 다른 탭으로 전환된 surface는 목록과 map에 모두 남아 회수 대상이다.
+    #[test]
+    fn a_switched_away_surface_remains_a_release_candidate() {
+        let mut pending = set(&[]);
+        let all_html_ids: Vec<u32> = vec![1];
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[]),
+            |sid| webview_release_candidate_is_live(sid, &all_html_ids, |_| true),
+            &mut pending,
+            || true,
+        );
+        assert_eq!(got, vec![1]);
     }
 
     /// 미룬 사이 다시 활성이 되었거나 닫힌 surface는 회수 대상에서 빠진다.
