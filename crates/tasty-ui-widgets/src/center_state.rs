@@ -254,8 +254,8 @@ impl<'a> CenterState<'a> {
     }
 }
 
-/// 액션 버튼 크기. 본체가 쓰던 기본 크기를 유지한다.
-const ACTION_SIZE: ControlSize = ControlSize::Md;
+/// 액션 버튼 크기. 화면 시안의 `Button size="sm"` 이다.
+const ACTION_SIZE: ControlSize = ControlSize::Sm;
 
 /// 보조 줄 슬롯 끝 → 버튼 간격. 화면 시안의 열 간격 space-sm 과 버튼 marginTop space-xs 합이다.
 fn action_gap(theme: &Theme) -> LogicalPx {

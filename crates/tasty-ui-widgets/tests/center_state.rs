@@ -79,13 +79,15 @@ fn center_state_centres_the_action_with_the_block() {
             .action("Retry", None)
     });
     let button = out.action.expect("action drawn");
+    // 화면 시안의 size="sm" — item-height-tab.
+    assert_eq!(button.height(), 24.0);
     // 보조 줄 슬롯 끝 → 버튼 = space-sm + space-xs.
     assert_eq!(button.top() - out.sub_slot.bottom(), 12.0);
     let block = out.glyph.union(button);
     assert!((block.center().y - (region_top + REGION_H * 0.5)).abs() <= 0.5);
-    // 버튼 높이와 간격의 절반만큼 글리프가 올라간다.
+    // 버튼 높이와 간격의 절반((12 + 24) / 2)만큼 글리프가 올라간다.
     let lift = plain.glyph.top() - out.glyph.top();
-    assert!((lift - (12.0 + button.height()) * 0.5).abs() <= 0.5);
+    assert!((lift - 18.0).abs() <= 0.5);
 }
 
 #[test]
