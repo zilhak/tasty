@@ -1,4 +1,4 @@
-use super::remote_openable_handler;
+use super::is_remote_openable;
 use crate::core::identify_port::IdentifySpawner;
 use crate::core::intent::DomainIntent;
 use crate::file::dispatch::picker_apply::tests::build_test_core;
@@ -193,23 +193,148 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
         open_surface("not_registered"),
     ] {
         assert!(
-            remote_openable_handler(&engine, vec![handler(action.clone())]).is_none(),
+            !is_remote_openable(&engine, &handler(action.clone())),
             "{action:?} must not open on the remote",
         );
     }
-    let picked = remote_openable_handler(
+    assert!(is_remote_openable(
         &engine,
-        vec![
-            handler(HandlerAction::System),
-            handler(open_surface("html")),
-            handler(open_surface("markdown")),
-        ],
-    )
-    .expect("markdown is remote-openable");
-    assert!(matches!(
-        &picked.action,
-        HandlerAction::OpenSurface { surface_kind, .. } if surface_kind == "markdown"
+        &handler(open_surface("markdown"))
     ));
+}
+
+/// 1순위가 원격에 열 수 없는 Ipc이고 2순위가 markdown인 mirror 환경을 만든다.
+fn mirror_with_ipc_first() -> (
+    crate::core::Core,
+    crate::state::AppState,
+    crate::core::CoreState,
+    u32,
+) {
+    let (core, _) = build_test_core();
+    let (state, mut engine) = crate::state::tests::test_state();
+    register_kind(&engine, "com.tasty.markdown", "markdown");
+    FileHandlerRegistryPort::install_plugin_handlers(
+        engine.file_handler.as_ref(),
+        "com.example.ipc",
+        &[
+            serde_json::json!({"id": "open", "detector": "remote-test", "priority": 0,
+            "action": {"kind": "ipc", "method": "example.open"}}),
+        ],
+    );
+    FileHandlerRegistryPort::install_plugin_handlers(
+        engine.file_handler.as_ref(),
+        "com.tasty.markdown",
+        &[
+            serde_json::json!({"id": "open", "detector": "remote-test", "priority": 10,
+            "action": {"kind": "open_surface", "surface_kind": "markdown", "param_key": "file"}}),
+        ],
+    );
+    engine.workspaces[0].mirror = true;
+    let sid = engine.workspaces[0].all_surface_ids()[0];
+    (core, state, engine, sid)
+}
+
+#[test]
+fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
+    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    // 최근 목록에 원격에 열 수 없는 핸들러가 있어도 picker에 보이면 안 된다.
+    engine
+        .file_handler_recent
+        .record(&HandlerId::new("com.example.ipc/open"));
+    apply_identify_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        FileTarget::new("/remote/doc.md"),
+        Some(DetectorId::new("remote-test")),
+        Some(sid),
+        FileDispatchOrigin::User,
+        false,
+    );
+    assert!(engine.pending_structural_forward.is_empty());
+    assert!(state.pending_handler_ipc.is_empty());
+    let picker = state
+        .dialogs
+        .file_handler_picker
+        .as_ref()
+        .expect("user open shows the remote picker");
+    let ids: Vec<&str> = picker
+        .candidates
+        .iter()
+        .chain(picker.recent.iter())
+        .map(|s| s.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["com.tasty.markdown/open"]);
+    assert_eq!(picker.origin_surface_id, Some(sid));
+    assert!(picker.default_handler.is_none());
+    assert!(!picker.candidates_are_fallback);
+    assert_eq!(state.toasts.len(), 0);
+}
+
+#[test]
+fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
+    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    apply_identify_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        FileTarget::new("/remote/doc.md"),
+        Some(DetectorId::new("remote-test")),
+        Some(sid),
+        FileDispatchOrigin::Agent,
+        false,
+    );
+    assert!(
+        state.dialogs.file_handler_picker.is_none(),
+        "에이전트 요청은 사용자 화면에 picker를 띄우지 않는다"
+    );
+    assert!(state.pending_handler_ipc.is_empty());
+    assert_eq!(engine.pending_structural_forward.len(), 1);
+    assert!(!engine.pending_structural_forward[0].user_triggered);
+}
+
+#[test]
+fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers() {
+    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    let target = crate::file::dispatch::DispatchTarget::File(FileTarget::new("/remote/doc.md"));
+
+    crate::file::dispatch::apply_file_picker_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        target.clone(),
+        crate::state::FileHandlerPickerResult::Selected(HandlerId::new("com.example.ipc/open")),
+        Some(sid),
+        FileDispatchOrigin::User,
+        false,
+    );
+    assert!(state.pending_handler_ipc.is_empty());
+    assert!(engine.pending_structural_forward.is_empty());
+
+    crate::file::dispatch::apply_file_picker_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        target,
+        crate::state::FileHandlerPickerResult::Selected(HandlerId::new("com.tasty.markdown/open")),
+        Some(sid),
+        FileDispatchOrigin::User,
+        false,
+    );
+    assert_eq!(engine.pending_structural_forward.len(), 1);
+    let forward = &engine.pending_structural_forward[0];
+    let StructuralOp::NewTab {
+        surface_kind,
+        params,
+        ..
+    } = &forward.op
+    else {
+        panic!("expected a NewTab forward, got {:?}", forward.op);
+    };
+    assert_eq!(surface_kind, "markdown");
+    assert_eq!(params, &serde_json::json!({"file": "/remote/doc.md"}));
+    assert!(forward.user_triggered);
+    assert_eq!(state.recent_files.get("markdown"), Vec::<String>::new());
 }
 
 #[derive(Default)]

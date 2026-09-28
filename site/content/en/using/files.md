@@ -1,4 +1,4 @@
-<!-- source-hash: d5511cca1c15 -->
+<!-- source-hash: 88f8ef24c1c3 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -77,7 +77,7 @@ If you have bound a shortcut to a single letter with no modifier, that letter ac
 - **Set as Root** — moves the root of the left tree.
 - **Add to Favorites** — gives it a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`.
 
-The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Double-clicking a markdown file opens a tab for it on the remote computer; for a type that can't be opened remotely, you only see a notice.
+The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
 
 ## Markdown
 

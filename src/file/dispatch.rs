@@ -312,6 +312,9 @@ fn handler_may_run(
         tracing::warn!("{message}");
         return false;
     }
+    if remote::rejects_handler_for_origin(engine, handler, origin_surface_id) {
+        return false;
+    }
     if !handler_accepts_target(&handler.action, target) {
         tracing::warn!(
             handler_id = %handler.id,

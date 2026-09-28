@@ -59,7 +59,8 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 사용한다. 붙여넣기·잘라내기·이름 변경·삭제·시스템에서 열기·새 탭·즐겨찾기 추가는
 메뉴에서 숨기거나 실행 시 차단한다([탐색기 제한](../explorer/index.md#mirrorattach-explorer-의-browse-only-강제)).
 파일 더블클릭은 client가 파일 이름만으로 식별하고, `open_surface` 핸들러 중 client에서 콘텐츠를
-mirror하는 kind만 원격 새 탭으로 forward한다. 사용자 origin이라 원격과 client 모두 새 탭을
+mirror하는 kind만 원격 새 탭으로 forward한다. 1순위 핸들러가 그런 kind가 아니면 원격에 열 수 있는
+핸들러만 담은 핸들러 picker를 띄운다. 사용자 origin이라 원격과 client 모두 새 탭을
 선택한다. 원격에 그 kind가 없어 실패하면 아래 실패 회신 규칙대로 toast가 뜬다. 그 밖의 형식은
 `explorer.state.remote_open_unsupported` 안내로 끝난다([파일 핸들러](../file-handler/index.md)).
 터미널 링크와 파일 선택 창의 원격 경로는 아직 이 경로를 쓰지 않는다.
