@@ -75,18 +75,16 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// 탭 하나(디자인 `HsTab`)를 그리고 폭을 돌려준다. 마커는 공용 함수로 라벨 뒤에 둔다.
-#[allow(clippy::too_many_arguments)]
+/// 스트립 왼쪽 끝에 탭 하나(디자인 `HsTab`)를 그린다. 마커는 공용 함수로 라벨 뒤에 둔다.
 fn tab(
     ui: &mut egui::Ui,
     theme: &Theme,
     strip: egui::Rect,
-    x: f32,
     label: &str,
     glyph: MockGlyph,
     active: bool,
     marker: Option<(HtmlScriptMarkerKind, &str)>,
-) -> f32 {
+) {
     let pad = theme.spacing_sm.value();
     let gap = theme.spacing_xs.value();
     let icon = theme.tab_icon_size().value();
@@ -103,7 +101,7 @@ fn tab(
     );
     let marker_w = marker.map_or(0.0, |_| gap + theme.html_script_marker_size().value());
     let w = pad + icon + gap + galley.size().x + marker_w + pad;
-    let rect = egui::Rect::from_min_size(egui::pos2(x, strip.top()), egui::vec2(w, strip.height()));
+    let rect = egui::Rect::from_min_size(strip.min, egui::vec2(w, strip.height()));
     let painter = ui.painter().clone();
     if active {
         painter.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
@@ -140,7 +138,6 @@ fn tab(
         rect.y_range(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
-    w
 }
 
 /// 탭 스트립을 그리고 그 아래 콘텐츠 rect를 돌려준다.
@@ -160,7 +157,7 @@ fn tab_strip(
     );
     ui.painter()
         .rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
-    tab(ui, theme, strip, strip.left(), label, glyph, active, marker);
+    tab(ui, theme, strip, label, glyph, active, marker);
     ui.painter().hline(
         strip.x_range(),
         strip.bottom() + bw / 2.0,
