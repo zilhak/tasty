@@ -82,7 +82,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("title", "body 13 · text-secondary"),
             ("sub", "caption 11 · text-muted · wraps at 300"),
             ("height", "none — centres in the list region"),
-            ("ui_scale", "scales (tokens) — 20 / 24 / 29 glyph"),
+            ("ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"),
         ],
         &[
             TokenChip::new(
