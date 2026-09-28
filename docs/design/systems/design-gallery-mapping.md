@@ -900,6 +900,19 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
 
+## 탭 스트립 스크롤 화살표 — disabled ink (Layouts)
+
+디자인 `gallery/foundations.jsx` Spec "Disabled ink — no contrast target, Latte one step up"의 C4 행과 순서 사다리 ↔ 갤러리 `catalog/components/tab_bar.rs::draw_scroll_arrows`(Layouts › Tab strips, `tab-scroll-arrows` spec) ↔ 본체 `src/adapters/ui/tab_bar/view.rs`의 `<`·`>` 화살표.
+
+| 디자인 요소 | 갤러리 | 본체 | 비고 |
+|---|---|---|---|
+| C4 스트립(`control-height-tab` 높이, `size-288` 폭, bg-sidebar, radius-sm) | `scroll_strip` | 탭이 넘치는 pane의 탭 바 | 폭 288은 예제 전용 이름 붙은 상수 |
+| 화살표 칸(`control-height-tab` 정사각, surface-raised, chevron `icon-size-xs`) | `arrow_cell` | `"<"`·`">"` 문자, `tab_bar_arrow_font_size`, 칸 채움 없음 | 색만 같다. 모양·칸 채움 차이는 디자인 확인 요청 중 |
+| `<` disabled · `>` enabled 잉크 | `tab_scroll_arrow_fg_disabled()` · `tab_scroll_arrow_fg()` | 같은 접근자 | 둘 다 component role. 값은 text-disabled · text-muted |
+| 순서 사다리 placeholder < disabled < muted < secondary < primary | `ink_ladder` | 없음(규칙 전시) | 순서 규칙은 [theme 문서](theme.md) 대비 행 |
+
+C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 나란히 그린다.
+
 ## Move source highlight (Layouts)
 
 디자인 `gallery/layouts-move.jsx`(Layouts › Move source highlight, `#movesource`) ↔ 본체 `src/adapters/ui/{move_source,tab_bar,sidebar/view}.rs` ↔ 갤러리 `catalog/components/move_source.rs`(`movesource` 섹션). 링·글리프·레일 칩은 본체와 갤러리가 같은 `tasty_ui_widgets` painter를 호출한다. 주변 화면(사이드바·탭 바·서피스)은 갤러리가 정적 데이터로 흉내 낸다.

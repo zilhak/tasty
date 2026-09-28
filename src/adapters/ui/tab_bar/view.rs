@@ -106,9 +106,9 @@ pub fn draw_pane_tab_bars_view(
                                     egui::Sense::click(),
                                 );
                                 let arrow_color = if can_left {
-                                    th.text_muted()
+                                    th.tab_scroll_arrow_fg()
                                 } else {
-                                    th.text_disabled()
+                                    th.tab_scroll_arrow_fg_disabled()
                                 };
                                 if resp.hovered() && can_left {
                                     ui.painter().rect_filled(
@@ -267,9 +267,9 @@ pub fn draw_pane_tab_bars_view(
                                     egui::Sense::click(),
                                 );
                                 let arrow_color = if can_right {
-                                    th.text_muted()
+                                    th.tab_scroll_arrow_fg()
                                 } else {
-                                    th.text_disabled()
+                                    th.tab_scroll_arrow_fg_disabled()
                                 };
                                 if resp.hovered() && can_right {
                                     ui.painter().rect_filled(
