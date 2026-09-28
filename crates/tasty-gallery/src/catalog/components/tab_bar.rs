@@ -1,8 +1,9 @@
 //! 페인 탭바의 활성 표시와 응답 대기·완료 알림 색을 비교하는 정적 예제.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
-use crate::catalog::icons::{PLUS, SEARCH, SPLIT};
+use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph, PLUS, SEARCH, SPLIT};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
@@ -222,5 +223,180 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "활성 탭은 bg-panel 배경과 상단 accent 선으로 표시한다. 제목 색은 응답 대기, 완료, 활성 순서로 고른다. 실제 사용자 포커스를 받으면 알림이 해제되지만, 이 예제는 활성 상태와 알림이 함께 있을 때의 우선순위도 보여준다.",
+    );
+}
+
+/// 스크롤 화살표 예제 스트립의 폭. 디자인 Disabled ink Spec의 C4 행이 `--tasty-size-288`을 쓴다.
+const SCROLL_STRIP_W: LogicalPx = LogicalPx(288.0);
+
+/// 디자인 C4 행의 탭 스트립 스크롤 화살표 칸: surface-raised 칸에 chevron을 그린다.
+fn arrow_cell(
+    ui: &egui::Ui,
+    theme: &Theme,
+    cell: egui::Rect,
+    glyph: MockGlyph,
+    ink: egui::Color32,
+) {
+    ui.painter()
+        .rect_filled(cell, 0.0, egui::Color32::from(theme.surface_raised()));
+    let size = theme.icon_glyph_size_xs.value();
+    glyph.image(size, ink).paint_at(
+        ui,
+        egui::Rect::from_center_size(cell.center(), egui::vec2(size, size)),
+    );
+}
+
+/// 왼쪽 끝까지 스크롤한 스트립: `<`는 disabled, `>`는 enabled 잉크.
+fn scroll_strip(ui: &mut egui::Ui, theme: &Theme) {
+    let h = theme.item_height_tab.value();
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(SCROLL_STRIP_W.value(), h), egui::Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        theme.corner_radius_sm.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+    let left = egui::Rect::from_min_size(rect.min, egui::vec2(h, h));
+    let right =
+        egui::Rect::from_min_size(egui::pos2(rect.right() - h, rect.top()), egui::vec2(h, h));
+    arrow_cell(
+        ui,
+        theme,
+        left,
+        CHEVRON_LEFT,
+        egui::Color32::from(theme.tab_scroll_arrow_fg_disabled()),
+    );
+    arrow_cell(
+        ui,
+        theme,
+        right,
+        CHEVRON_RIGHT,
+        egui::Color32::from(theme.tab_scroll_arrow_fg()),
+    );
+    ui.painter_at(rect).text(
+        egui::pos2(left.right() + theme.spacing_sm.value(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "server · dev · vim · logs",
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        egui::Color32::from(theme.text_secondary()),
+    );
+}
+
+/// 순서 규칙 사다리: placeholder < disabled < muted < secondary < primary.
+fn ink_ladder(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+        for (name, ink) in [
+            ("placeholder", theme.text_placeholder()),
+            ("disabled", theme.text_disabled()),
+            ("muted", theme.text_muted()),
+            ("secondary", theme.text_secondary()),
+            ("primary", theme.text_primary()),
+        ] {
+            egui::Frame::new()
+                .fill(egui::Color32::from(theme.bg_panel()))
+                .corner_radius(theme.corner_radius_sm.value())
+                .inner_margin(egui::Margin::symmetric(
+                    theme.spacing_sm.value() as i8,
+                    theme.spacing_xs.value() as i8,
+                ))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(name)
+                            .size(theme.font_size_caption.value())
+                            .color(egui::Color32::from(ink)),
+                    );
+                });
+        }
+    });
+}
+
+/// Mocha·Latte 한 장. 디자인 C4 행의 비율 문구를 그대로 싣는다.
+fn scroll_card(ui: &mut egui::Ui, theme: &Theme, name: &str, ratios: &str) {
+    egui::Frame::new()
+        .fill(egui::Color32::from(theme.bg_app()))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                ui.label(
+                    egui::RichText::new(name)
+                        .size(theme.font_size_caption.value())
+                        .color(egui::Color32::from(theme.text_muted())),
+                );
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                    ui.label(
+                        egui::RichText::new(ratios)
+                            .monospace()
+                            .size(theme.font_size_micro.value())
+                            .color(egui::Color32::from(theme.text_muted())),
+                    );
+                    scroll_strip(ui, theme);
+                });
+                ink_ladder(ui, theme);
+            });
+        });
+}
+
+/// 탭 스트립 스크롤 화살표의 enabled·disabled 잉크(디자인 Foundations › Disabled ink의 C4 행).
+pub fn draw_scroll_arrows(ui: &mut egui::Ui, theme: &Theme) {
+    let mocha = tasty_themes::mocha_fallback();
+    let latte = crate::host_shell::latte_theme();
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        scroll_card(
+            ui,
+            &mocha,
+            "Mocha",
+            "C4 · tab-strip scroll — disabled 3.40:1 · enabled 5.65:1",
+        );
+        scroll_card(
+            ui,
+            &latte,
+            "Latte",
+            "C4 · tab-strip scroll — disabled 2.56:1 · enabled 3.65:1",
+        );
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("A · target", "none — WCAG exempts disabled"),
+            ("rule 1 · order", "placeholder < disabled < muted"),
+            ("rule 2 · parity", "Latte text-disabled → neutral-800"),
+            (
+                "enabled arrow",
+                "active control glyph → text-muted (3:1 non-text)",
+            ),
+            ("one ink", "labels + glyphs share text-disabled"),
+        ],
+        &[
+            TokenChip::new(
+                "tab-scroll-arrow-fg",
+                "→ text-muted",
+                theme.tab_scroll_arrow_fg().into(),
+            ),
+            TokenChip::new(
+                "tab-scroll-arrow-fg-disabled",
+                "→ text-disabled",
+                theme.tab_scroll_arrow_fg_disabled().into(),
+            ),
+            TokenChip::new(
+                "text-disabled",
+                "Mocha n700 · Latte n800",
+                theme.text_disabled().into(),
+            ),
+        ],
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't lift disabled to 4.5:1. In Latte that lands on text-muted and disabled stops reading as disabled. The hierarchy is the requirement; contrast is reported, not targeted.",
     );
 }
