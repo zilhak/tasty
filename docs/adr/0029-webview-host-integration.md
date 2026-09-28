@@ -36,7 +36,7 @@ NavState는 도메인 모델에 두고 키 정책은 설정 객체 대신 단축
 자식의 포커스 판정은 다른 앱이 포커스를 가진 동안 거짓이어야 한다. macOS는 first responder가 비활성 창에도 남으므로 key window 여부도 함께 확인한다.
 
 Linux의 foreign X11 창은 생성·조회 사이 XSync, NULL 오류 처리, 실패 시 정리와 제한된 재시도를 사용한다.
-종료는 GDK의 hide·close 처리를 먼저 끝내고 X 창을 파괴한다.
+종료는 GDK의 hide·close 처리를 먼저 끝내고 GDK 연결을 sync한 뒤 X 창을 파괴한다. X 창을 지우는 winit 연결과 GDK 연결 사이에는 서버의 처리 순서 보장이 없기 때문이다.
 크기 변경은 native container와 실제 렌더 target 모두에 전달한다.
 원격 콘텐츠 차단은 navigation과 하위 리소스 요청을 함께 처리한다.
 

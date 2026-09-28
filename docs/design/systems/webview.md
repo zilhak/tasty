@@ -92,12 +92,15 @@ Linux는 X11 핸들을 잘못된 스레드에서 쓰면 정의되지 않은 동�
 PlatformWebView의 Drop이 OS 자원을 정리하며 부모 winit 창이 먼저 사라진 경우도 처리한다.
 
 - Linux: 정리 구간에 GDK error trap을 설치한다. webview.destroy → gtk_window.hide+GTK pump →
-  gtk_window.close+pump → XDestroyWindow+XSync+pump 순서다. hide·close는 예약형이므로 pump가 실제 순서를 완성한다.
+  gtk_window.close+pump → GDK 연결 sync → XDestroyWindow+XSync+pump 순서다. hide·close는 예약형이므로 pump가 실제 순서를 완성한다.
+  X 창은 winit 연결로 파괴하고 GDK는 자기 연결로 요청을 낸다. X 서버는 연결 사이의 처리 순서를 보장하지 않으므로 파괴 전에 GDK 연결을 sync한다.
+  trap은 push 이후의 요청만 잡는다. drop 직전 `set_visible(false)`의 hide처럼 trap 전에 낸 GDK 요청도 이 sync가 파괴보다 먼저 처리시킨다.
   남은 X 오류는 warning으로 기록한다. trap만 두고 순서를 생략하지 않는다.
 - macOS: removeFromSuperview 뒤 ARC가 자원을 정리한다.
 - Windows: controller.Close 뒤 DestroyWindow를 호출한다. 이미 닫힌 경우는 trace로 기록한다.
 
 종료 회귀를 재현할 때는 실제 native webview가 생성된 것을 먼저 확인하고 탭 닫기와 창 닫기를 구별한다.
+보이던 webview가 overlay 없이 곧바로 제거되는 경로(원격 attach mirror의 surface 변환처럼 구조 변경이 왕복 뒤에 도착하는 경우)도 따로 확인한다.
 
 ## 탐색 상태 — 소유는 도메인 모델이다
 
