@@ -389,20 +389,7 @@ pub(crate) fn open_surface_tab(
                     .mirror_workspace_index_for_structural(&intent)
                     .is_none();
             if let Err(e) = core.apply(engine, intent) {
-                // mirror pane이면 원격 실행 큐에 넣은 것이다. 실패가 아니며 회신으로 결과를 받는다.
-                if e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
-                    .is_some_and(|b| b.forwarded)
-                {
-                    let origin = match dispatch_origin {
-                        FileDispatchOrigin::User => crate::intent::IntentOrigin::User {
-                            source: crate::intent::UserSource::Menu("file_dispatch"),
-                        },
-                        FileDispatchOrigin::Agent => crate::intent::IntentOrigin::Agent {
-                            source: crate::intent::AgentSource::Ipc,
-                        },
-                    };
-                    crate::core::mark_last_forward_user_triggered(engine, &e, &origin);
-                    crate::core::mark_last_forward_agent_origin(engine, &e, &origin);
+                if mark_remote_forward(engine, &e, dispatch_origin) {
                     return true;
                 }
                 tracing::warn!(
@@ -428,6 +415,33 @@ pub(crate) fn open_surface_tab(
             });
         }
     }
+    true
+}
+
+/// mirror pane이면 원격 실행 큐에 넣은 것이다. 실패가 아니며 결과는 원격 회신으로 받는다.
+/// 요청 주체를 마지막 forward에 표시해야 하므로 CreateTab apply 직후에 호출한다.
+#[cfg(feature = "gui")]
+fn mark_remote_forward(
+    engine: &mut crate::core::CoreState,
+    err: &anyhow::Error,
+    dispatch_origin: FileDispatchOrigin,
+) -> bool {
+    if !err
+        .downcast_ref::<crate::core::MirrorStructuralBlocked>()
+        .is_some_and(|b| b.forwarded)
+    {
+        return false;
+    }
+    let origin = match dispatch_origin {
+        FileDispatchOrigin::User => crate::intent::IntentOrigin::User {
+            source: crate::intent::UserSource::Menu("file_dispatch"),
+        },
+        FileDispatchOrigin::Agent => crate::intent::IntentOrigin::Agent {
+            source: crate::intent::AgentSource::Ipc,
+        },
+    };
+    crate::core::mark_last_forward_user_triggered(engine, err, &origin);
+    crate::core::mark_last_forward_agent_origin(engine, err, &origin);
     true
 }
 
