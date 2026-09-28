@@ -689,6 +689,8 @@ rename = "Rename Tab"
 close = "Close Tab"
 move_left = "Move Left"
 move_right = "Move Right"
+move_tab = "Move Tab"
+move_tab_here = "Move Tab Here"
 
 [pane_context_menu]
 new_terminal = "New Terminal"
@@ -929,6 +931,7 @@ ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "Screen recording permission is required. Turn Tasty on in System Settings > Privacy & Security > Screen & System Audio Recording."
 surface_cut = "Surface cut. Right-click the destination and choose 'Move Surface Here'."
+tab_cut = "Tab cut. Right-click the destination tab and choose 'Move Tab Here'."
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
 vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"

@@ -25,6 +25,16 @@ pub(crate) struct SurfaceCloseCascade {
         )
     )]
     pub(crate) closed_pane_ids: Vec<u32>,
+    /// 닫힌 탭들이 있던 pane. None이면 첫 닫힌 pane이나 lifecycle 캐시로 찾는다.
+    /// 탭 이동처럼 닫힌 탭과 닫힌 pane이 서로 다른 곳에 있을 때 채운다.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "the tab.closed host event it feeds has a consumer only in the gui build"
+        )
+    )]
+    pub(crate) closed_tabs_pane: Option<u32>,
     pub(crate) workspace_purged: Option<(usize, u32)>,
     pub(crate) workspaces_now_empty: bool,
     pub(crate) is_user_close: bool,
@@ -57,6 +67,7 @@ impl SurfaceCloseCascade {
             cleanup_targets,
             closed_tab_ids,
             closed_pane_ids,
+            closed_tabs_pane: None,
             workspace_purged,
             workspaces_now_empty,
             is_user_close,
@@ -89,6 +100,42 @@ impl SurfaceCloseCascade {
             cleanup_targets: b_cleanup.into_iter().collect(),
             closed_tab_ids,
             closed_pane_ids,
+            closed_tabs_pane: None,
+            workspace_purged,
+            workspaces_now_empty,
+            is_user_close,
+        })
+    }
+
+    /// 탭·페인 이동에서 옮긴 source는 살려 두고 덮어쓴 target만 정리한다.
+    /// 다른 이벤트나 moved=false이면 None이다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn from_container_move_applied(
+        event: crate::core::intent::CoreEvent,
+        is_user_close: bool,
+    ) -> Option<Self> {
+        let crate::core::intent::CoreEvent::ContainerMoveApplied {
+            moved,
+            cleanup_targets,
+            cascade_level,
+            closed_tab_ids,
+            closed_tabs_pane,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+        } = event
+        else {
+            return None;
+        };
+        if !moved {
+            return None;
+        }
+        Some(Self {
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            closed_tabs_pane,
             workspace_purged,
             workspaces_now_empty,
             is_user_close,
@@ -150,7 +197,12 @@ pub(crate) fn cascade_surface_closed(
 
     #[cfg(feature = "gui")]
     {
-        enqueue_closed_tab_events(state, &c.closed_tab_ids, &c.closed_pane_ids);
+        enqueue_closed_tab_events(
+            state,
+            &c.closed_tab_ids,
+            c.closed_tabs_pane,
+            &c.closed_pane_ids,
+        );
         enqueue_closed_pane_events(state, &c.closed_pane_ids);
     }
 
@@ -211,12 +263,12 @@ fn reclaim_closed_surfaces(
 fn enqueue_closed_tab_events(
     state: &mut dyn CascadeWindow,
     closed_tab_ids: &[u32],
+    closed_tabs_pane: Option<u32>,
     closed_pane_ids: &[u32],
 ) {
     for tab_id in closed_tab_ids {
-        let pane_id = closed_pane_ids
-            .first()
-            .copied()
+        let pane_id = closed_tabs_pane
+            .or_else(|| closed_pane_ids.first().copied())
             .unwrap_or_else(|| state.lifecycle_baseline_pane_of(*tab_id).unwrap_or(0));
         state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
             tab_id: *tab_id,

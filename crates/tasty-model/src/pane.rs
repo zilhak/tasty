@@ -200,15 +200,22 @@ impl Pane {
     /// then it lands on the tab that slid into the slot (or the last one).
     /// See `docs/design/policies/focus.md`.
     pub fn remove_tab_preserving_active(&mut self, tab_index: usize) {
+        self.take_tab_preserving_active(tab_index);
+    }
+
+    /// Same as [`Self::remove_tab_preserving_active`], but hands the removed
+    /// tab back so a move can put it elsewhere without rebuilding it.
+    pub fn take_tab_preserving_active(&mut self, tab_index: usize) -> Option<Tab> {
         if tab_index >= self.tabs.len() {
-            return;
+            return None;
         }
-        self.tabs.remove(tab_index);
+        let tab = self.tabs.remove(tab_index);
         if tab_index < self.active_tab {
             self.active_tab -= 1;
         } else if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
+        Some(tab)
     }
 
     /// Close the tab at the given index. Returns false if the tab can't be closed

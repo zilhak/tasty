@@ -1,10 +1,10 @@
-# Surface 위치 이동 (서피스 이동 / 서피스를 이곳으로 이동)
+# Surface·Tab 위치 이동 (이동 / 이곳으로 이동)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`)
+- **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`, 탭 헤더 `탭 이동` → `탭을 이곳으로 이동`)
 - **ADR**: 없음
-- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`
-- **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`)
+- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 탭 이동 `DomainIntent::ReplaceTabWithTab`·`Core::apply_replace_tab_with_tab` (`src/core/impl_move_container.rs`), 결과 `CoreEvent::ContainerMoveApplied` → `SurfaceCloseCascade::from_container_move_applied` (`src/core/structural_cascade.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`
+- **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`/`Tab`)
 
 ## 목적
 
@@ -16,7 +16,7 @@
 
 - 어떤 surface 든 "빈 공간"(특정 대상이 없는 영역)을 우클릭하면 `[surface 전용 항목] + 구분선 + [서피스 이동] + [서피스를 이곳으로 이동]` OS 메뉴가 뜬다. `서피스를 이곳으로 이동` 은 **대기 슬롯에 surface 가 있을 때만** 나타난다. 대기 중인 것이 없거나 다른 종류면 숨긴다.
 - **서피스 이동**: 그 surface 의 id 를 단일 대기 슬롯 `pending_move` 에 `PendingMove::Surface(id)` 로 넣고, 그 surface 영역(`ToastScope::Surface`)에 "서피스를 잘라냈습니다…" Info 토스트(`toast.surface_cut`)를 띄운다. 도메인 변경이 아니라 UI 핸들러에서 슬롯만 설정 — 사용자 조작이므로 release 경로다.
-- **대기 슬롯**: 종류(`PendingMove`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대기 해제 조작은 없다.
+- **대기 슬롯**: 종류(`PendingMove::Surface`/`Tab`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 종류와 관계없이 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대기 해제 조작은 없다. `CoreState` 가 윈도우마다 있으므로 슬롯도 윈도우별이며, 윈도우를 넘는 이동은 지원하지 않는다.
 - **서피스를 이곳으로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source_surface_id, target_surface_id }` 를 `from_user_context_menu` origin 으로 발행한다.
 - surface 종류에 따라 두 생산 경로가 있다 — 타입은 `PendingNativeMenu::TerminalSurface`(terminal, selection-copy 항목이 있어 별도 variant) / `Surface`(비-terminal)로 나뉘지만, "서피스 이동"/"서피스를 이곳으로 이동" 두 항목은 두 variant 모두에 동일하게 뜬다:
   - **terminal**(winit, `src/view/main/mouse.rs`) — winit 경로는 **terminal 전용**이다. mouse-tracking 위임(ADR-0015) 미해당 시 terminal surface 메뉴를 낸다. 비-terminal 은 winit 이 메뉴를 만들지 않고 egui 프레임에 위임(`return`)한다.
@@ -36,6 +36,22 @@
 - **PTY 보존(R1)**: 이동 경로는 source 에 대해 `TerminalStore::remove`/`cleanup_surface` 를 절대 호출하지 않는다. surface_id 가 불변이라 store 가 자동 추종한다. 코어 테스트 `move_surface_tests`(`src/core/impl_move.rs`)가 이 불변식을 고정한다.
 - **포커스 독립성**: 모든 조회는 surface_id 기준(focused_* 미사용). 슬롯·이동은 사용자 우클릭 조작이라 포커스 부수효과는 사용자 맥락 안에서만 발생. release 에 포커스 변경 API 없음.
 - **가드**: self-ref(source==target)·source 무효(이미 닫힘)·target 무효 → no-op(대기 슬롯만 비움). 구조 증명상 B 는 A detach 후에도 항상 생존하므로 missing-B 분기는 방어적 로깅(`tracing::error!`)만 둔다.
+
+## 탭 이동
+
+탭 헤더 우클릭 메뉴 끝에 구분선과 `탭 이동` 이 항상 붙는다. `탭을 이곳으로 이동` 은 대기 슬롯이 `PendingMove::Tab(id)` 이고 그 id 가 우클릭한 탭이 아닐 때만 붙는다. 메뉴를 여는 순간 우클릭한 탭의 `Tab::id` 를 잡아 두고, 메뉴가 닫힌 뒤에도 인덱스가 아니라 이 ID 로 대상을 찾는다. 그 사이 탭이 닫혔으면 아무것도 하지 않는다.
+
+- **탭 이동**: 슬롯에 `PendingMove::Tab(tab_id)` 를 넣고 그 탭의 페인 영역(`ToastScope::Pane`)에 "탭을 잘라냈습니다…" Info 토스트(`toast.tab_cut`)를 띄운다.
+- **탭을 이곳으로 이동**: 슬롯을 비우고 `DomainIntent::ReplaceTabWithTab { source_tab_id, target_tab_id }` 를 `from_user_context_menu` origin 으로 발행한다.
+
+`apply_replace_tab_with_tab` 은 서피스 이동과 같은 replace 의미다.
+
+1. **source detach** — source `Tab` 객체를 그대로 떼어 낸다(탭 ID·이름·surface ID·Terminal·scrollback 유지, Terminal store 미접촉). 같은 페인에 다른 탭이 있으면 탭만 빠지고(활성 탭은 같은 탭을 계속 가리킴), 유일 탭이면 페인을 닫고(`close_pane_preserving_focus`), 워크스페이스의 유일 페인이면 워크스페이스를 제거한다.
+2. **target replace** — target 탭을 ID 로 다시 찾아(같은 페인에서 source 가 앞에 있었다면 인덱스가 줄어듦) 같은 인덱스에 source 탭을 넣는다. target 이 활성 탭이었다면 옮긴 탭이 활성 탭이 된다. 교체된 target 탭의 모든 surface(deferred 포함)는 `collect_close_targets` 로 모아 `ContainerMoveApplied.cleanup_targets` 에 싣고, 기존 close cascade 가 PTY 종료·자원 정리를 한다. 닫은 항목 히스토리에는 남기지 않는다.
+
+이벤트의 닫힌 탭 목록에는 target 탭만 들어가고 source 탭은 들어가지 않는다. source 가 떠나 사라진 페인·워크스페이스는 닫힌 목록에 들어간다. `tab.closed` 알림은 target 탭이 있던 페인(`closed_tabs_pane`)으로 나가며, source 페인이 함께 사라져도 그 페인 소속으로 잘못 나가지 않는다. 옮긴 탭의 `tab.moved` 는 탭 위치 변화를 보는 lifecycle 감지가 한 번 낸다(같은 페인 안 교체면 나지 않는다).
+
+source 또는 target 워크스페이스가 mirror 면 로컬 실행을 막는다(`mirror_workspace_index_for_structural`). 원격으로 전달하는 `StructuralOp` 는 없어 mirror 안의 탭 이동은 지원하지 않는다.
 
 ## 비-목표
 

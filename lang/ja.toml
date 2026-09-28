@@ -689,6 +689,8 @@ rename = "タブ名を変更"
 close = "タブを閉じる"
 move_left = "左へ移動"
 move_right = "右へ移動"
+move_tab = "タブを移動"
+move_tab_here = "タブをここへ移動"
 
 [pane_context_menu]
 new_terminal = "新規ターミナル"
@@ -925,6 +927,7 @@ ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "画面収録の権限が必要です。システム設定 > プライバシーとセキュリティ > 画面とシステムオーディオの収録で Tasty をオンにしてください。"
 surface_cut = "サーフェスを切り取りました。移動先で「サーフェスをここへ移動」を選んでください。"
+tab_cut = "タブを切り取りました。移動先で「タブをここへ移動」を選んでください。"
 vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
 vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
 vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"

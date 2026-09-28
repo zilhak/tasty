@@ -842,3 +842,56 @@ mod wiring {
         );
     }
 }
+
+/// 옮긴 탭은 저장·복원 뒤에도 새 위치에 있고, 이동 대기 슬롯은 저장 대상이 아니다.
+#[test]
+fn moved_tab_is_saved_at_its_new_position() {
+    use super::SavedLayout;
+    use crate::core::state::PendingMove;
+    use crate::core::{Core, CoreState};
+
+    let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+    let new_engine = || CoreState::new(80, 24, waker.clone()).expect("engine");
+    let mut engine = new_engine();
+    let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+    let pane0 = engine.find_pane_by_id_mut(p0).unwrap();
+    pane0.tabs[0].explicit_name = Some("MOVED".to_string());
+    let tab_a = pane0.tabs[0].id;
+    let keep_tab = engine.next_ids.next_tab();
+    let keep_sid = engine.next_ids.next_surface();
+    engine
+        .find_pane_by_id_mut(p0)
+        .unwrap()
+        .add_terminal_marker_tab(keep_tab, keep_sid);
+    let ws1 = crate::model::Workspace::new_with_terminal_marker(
+        engine.next_ids.next_workspace(),
+        "ws1".to_string(),
+        engine.next_ids.next_pane(),
+        engine.next_ids.next_tab(),
+        engine.next_ids.next_surface(),
+    );
+    let q = ws1.pane_layout().all_pane_ids()[0];
+    let tab_q = ws1.pane_layout().find_pane(q).unwrap().tabs[0].id;
+    engine.workspaces.push(ws1);
+
+    Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
+    engine.pending_move = Some(PendingMove::Tab(keep_tab));
+    let saved = SavedLayout::capture(&mut engine, 0);
+
+    let mut restored = new_engine();
+    assert!(saved.restore(&mut restored));
+    let names = |ws: usize| -> Vec<Option<String>> {
+        let layout = restored.workspaces[ws].pane_layout();
+        let pid = layout.all_pane_ids()[0];
+        layout
+            .find_pane(pid)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|t| t.explicit_name.clone())
+            .collect()
+    };
+    assert_eq!(names(0), vec![None]);
+    assert_eq!(names(1), vec![Some("MOVED".to_string())]);
+    assert!(restored.pending_move.is_none());
+}

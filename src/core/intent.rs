@@ -128,6 +128,16 @@ pub(crate) enum DomainIntent {
         source_surface_id: u32,
         target_surface_id: u32,
     },
+    /// source 탭(ID·이름·surface·Terminal·scrollback 유지)을 target 탭 자리로 옮긴다.
+    /// 덮어쓴 target 탭은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(dead_code, reason = "only the gui-only tab context menu issues it")
+    )]
+    ReplaceTabWithTab {
+        source_tab_id: u32,
+        target_tab_id: u32,
+    },
 
     SendToSurface {
         surface_id: u32,
@@ -320,6 +330,26 @@ pub(crate) enum CoreEvent {
         closed_tab_ids: Vec<u32>,
         closed_pane_ids: Vec<u32>,
         /// source가 떠나 사라진 workspace의 (인덱스, ID).
+        workspace_purged: Option<(usize, u32)>,
+        workspaces_now_empty: bool,
+    },
+    /// 탭·페인 replace 이동의 결과. cleanup_targets·closed_tab_ids는 덮어쓴 target 쪽이며
+    /// 옮긴 source는 넣지 않는다. cascade_level·closed_pane_ids·workspace_purged는 source가 떠나
+    /// 비게 된 구조와 덮어쓴 target 페인을 나타낸다. closed_tabs_pane은 닫힌 탭이 있던 pane이다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "only the gui dispatcher runs the cleanup cascade for a move"
+        )
+    )]
+    ContainerMoveApplied {
+        moved: bool,
+        cleanup_targets: Vec<(u32, Option<String>)>,
+        cascade_level: CascadeLevel,
+        closed_tab_ids: Vec<u32>,
+        closed_tabs_pane: Option<u32>,
+        closed_pane_ids: Vec<u32>,
         workspace_purged: Option<(usize, u32)>,
         workspaces_now_empty: bool,
     },

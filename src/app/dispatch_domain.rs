@@ -266,6 +266,13 @@ impl App {
                     self.dispatch_surface_closed_cascade(source, c);
                 }
             }
+            ev @ CoreEvent::ContainerMoveApplied { .. } => {
+                if let Some(c) =
+                    SurfaceCloseCascade::from_container_move_applied(ev, origin.is_user())
+                {
+                    self.dispatch_surface_closed_cascade(source, c);
+                }
+            }
             CoreEvent::SurfaceSent { .. } => {}
             CoreEvent::TerminalRespawned { .. } => {}
             CoreEvent::ClosedItemRestored { restored, kind } => {

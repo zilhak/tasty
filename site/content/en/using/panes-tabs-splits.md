@@ -1,4 +1,4 @@
-<!-- source-hash: 8585f2a4738e -->
+<!-- source-hash: acc4faf0967d -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -77,6 +77,15 @@ Moves a live Surface to another Tab · Pane · Workspace. For a terminal, the ru
 Only one cut item is remembered. Cutting something else replaces the earlier one.
 
 The destination Surface is closed and the moved Surface takes its place. Create an empty terminal first and use it as the destination. Over a program that captures the mouse (vim and so on), use `Shift+right-click`.
+
+## Moving Tabs
+
+Moves one Tab, together with its splits, to another Pane or Workspace. For a terminal, the running program and the scrollback go with it.
+
+1. Right-click the Tab to move > **Move Tab**. A notice that the Tab was cut appears briefly over its Pane.
+2. Right-click the destination Tab > **Move Tab Here**. This item appears only while another Tab is cut.
+
+The destination Tab is closed together with its Surfaces and the moved Tab takes its place. If the moved Tab was the last Tab of its Pane, that Pane closes; if it was in the last Pane of the Workspace, the Workspace closes. Tabs in a remote Workspace (one connected with attach) cannot be moved. A cut item can only be moved within the same window.
 
 ## Changing the kind
 

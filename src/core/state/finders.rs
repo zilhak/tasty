@@ -168,6 +168,19 @@ impl CoreState {
                             .map(|(i, _)| i)
                     })
             }
+            D::ReplaceTabWithTab {
+                source_tab_id,
+                target_tab_id,
+            } => {
+                // 탭 이동도 양쪽 중 하나라도 mirror이면 로컬에서 실행하지 않는다.
+                let ws_of_tab = |tab_id: u32| {
+                    self.find_pane_for_tab(tab_id)
+                        .and_then(|pid| self.find_workspace_index_for_pane(pid))
+                };
+                ws_of_tab(*source_tab_id)
+                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .or_else(|| ws_of_tab(*target_tab_id))
+            }
             D::SplitPane {
                 target_pane_id: pid,
                 ..

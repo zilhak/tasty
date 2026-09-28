@@ -414,6 +414,14 @@ impl Core {
                 source_surface_id,
                 target_surface_id,
             )]),
+            DomainIntent::ReplaceTabWithTab {
+                source_tab_id,
+                target_tab_id,
+            } => Ok(vec![Self::apply_replace_tab_with_tab(
+                engine,
+                source_tab_id,
+                target_tab_id,
+            )]),
             DomainIntent::SendToSurface {
                 surface_id,
                 payload,

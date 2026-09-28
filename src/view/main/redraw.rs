@@ -1063,8 +1063,19 @@ impl MainView {
     }
 
     fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
-        let items = self.build_tab_context_menu_items(pane_id, tab_index);
+        // 이동 항목은 메뉴가 열린 동안 탭 순서가 바뀌어도 같은 탭을 가리키도록 ID로 고정한다.
+        let tab_id = self
+            .core_state
+            .find_pane_by_id(pane_id)
+            .and_then(|p| p.tabs.get(tab_index))
+            .map(|t| t.id);
+        let items = self.build_tab_context_menu_items(pane_id, tab_index, tab_id);
         self.open_native_menu(x, y, &items, move |this, result| {
+            if let (Some(tab_id), Some(item)) = (tab_id, result)
+                && this.apply_tab_move_selection(tab_id, item)
+            {
+                return;
+            }
             // continuation 은 메뉴가 닫힌 뒤(플랫폼에 따라 여러 프레임 뒤)
             // 실행된다 — 그 사이 탭이 닫혔을 수 있으므로 대상을 재확인한다.
             if this
@@ -1128,13 +1139,14 @@ impl MainView {
         }
     }
 
-    /// tab 우클릭 컨텍스트 메뉴 항목 8개 구성. move left/right 는 인접 위치
-    /// 존재 여부로 활성/비활성을 미리 계산한다.
+    /// tab 우클릭 컨텍스트 메뉴 항목 구성. move left/right 는 인접 위치
+    /// 존재 여부로 활성/비활성을 미리 계산하고, 이동 항목은 대기 슬롯에 따라 붙인다.
     fn build_tab_context_menu_items(
         &mut self,
         pane_id: u32,
         tab_index: usize,
-    ) -> [crate::platform::native_menu::MenuItem; 8] {
+        tab_id: Option<u32>,
+    ) -> Vec<crate::platform::native_menu::MenuItem> {
         use crate::platform::native_menu::MenuItem;
         let engine = &mut self.core_state;
         let tab_count = self
@@ -1158,7 +1170,7 @@ impl MainView {
             MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
         };
 
-        [
+        let mut items = vec![
             MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
             MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
             MenuItem::separator(),
@@ -1167,7 +1179,11 @@ impl MainView {
             MenuItem::separator(),
             MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
             MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
-        ]
+        ];
+        if let Some(tab_id) = tab_id {
+            self.push_tab_move_items(&mut items, tab_id);
+        }
+        items
     }
 
     /// mirror의 탭 이동은 원격으로 보내고, 그 외에는 로컬 탭 순서를 변경한다.
