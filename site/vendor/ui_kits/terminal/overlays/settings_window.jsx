@@ -690,7 +690,8 @@ const KB_L2_SEPARATED = ["Import / Export"];
 const L1_LABEL = { General: "General", Terminal: "Terminal", Appearance: "Appearance",
   Keybindings: "Keybindings", FileHandler: "Handler", Misc: "Misc", Plugins: "Plugins" };
 const L2 = {
-  General: ["General", "Notifications", "Accessibility"],
+  // Permissions exists in macOS builds only (last L2 of General). Shown here so the kit carries it.
+  General: ["General", "Notifications", "Accessibility", "Permissions"],
   Terminal: ["General", "Mouse Capture", "TUI", "Performance"],
   Appearance: ["Theme", "Colors", "General", "Display", "Tasty", "Terminal", ...APPEARANCE_PLUGIN_PAGES, "HTML"],
   // Keybindings L2 — TRANSCRIBED from src/view/settings/ui.rs:906-950 (eleven
@@ -1055,6 +1056,10 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
           <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>High contrast (coming soon)</span>
         </>
       );
+    if (l2 === "Permissions") {
+      const MacPermissionsPane = window.TastyKit.MacPermissionsPane;
+      return <MacPermissionsPane scenario="none" />;
+    }
     // General/General
     return (
       <>
@@ -1120,8 +1125,13 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
                 {body()}
               </div>
             ) : (
-              <div className="tasty-scroll" style={{ flex: 1, padding: "var(--tasty-space-lg)", overflow: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
-                {body()}
+              <div className="tasty-scroll" style={{ flex: 1, padding: "var(--tasty-space-lg)", overflow: "auto" }}>
+                {/* The 620 cap lives HERE — on the settings content column — so every
+                    non-full-bleed subtab inherits it and no block carries its own width.
+                    Full-bleed subtabs replace this column with their own layout. */}
+                <div style={{ maxWidth: "var(--tasty-settings-content-max-width)", display: "flex", flexDirection: "column", gap: 14 }}>
+                  {body()}
+                </div>
               </div>
             )}
             {/* The window runs its own ToastManager (settings.rs) — export

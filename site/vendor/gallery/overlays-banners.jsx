@@ -1,16 +1,19 @@
 // Tasty Gallery — Overlays · Banners (the 4th overlay family)
-// One of the four Overlays sub-pages. Frame components are shared from
+// One of the five Overlays sub-pages (dialogs · windows · popups · banners · tutorial). Frame components are shared from
 // overlays-shared.jsx (window.OverlaysShared); this file holds only the
 // page's specimens + nav. See the other overlays-*.jsx for the rest.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;
 const { IconButton, Kbd, Tag } = window.TastyDesignSystem_41fd3f;
 const { BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, BannerShellG, TtlBannerG, StackDemoG, BannerMoreMenuG, BannerMoreDemoG, ic } = window.OverlaysShared;
 
+const { HtmlScriptBanner, HtmlSurfaceG, TermSurfaceG } = window.TastyKit;
+
 const NAV = [
   { id: "banner", label: "Banner" },
   { id: "mousecapture", label: "Mouse capture" },
   { id: "more", label: "Banner more menu" },
   { id: "blacklist", label: "Capture blacklist" },
+  { id: "htmlscript", label: "HTML script notice" },
 ];
 
 function Page() {
@@ -170,6 +173,64 @@ function Page() {
             specs={[["lives in", "Settings › Terminal"], ["group", "hint switch + blacklist (1 section)"], ["row", "28px · pattern (mono) + × remove"], ["add", "Input + Add button (disabled when empty)"], ["match", "case-insensitive substring or * wildcard"], ["default", "empty list"]]}
             tokens={[{ tok: "--tasty-overlay-hover", use: "row hover (8%)" }, { tok: "--tasty-accent-warning", use: "match-rule notice", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-input-bg", use: "add field", color: "var(--tasty-input-bg)" }]} />
           <Note>The wheel is always forwarded to the program even for blacklisted apps — only clicks/drags are intercepted. A blacklisted foreground app also suppresses the capture banner on that surface.</Note>
+        </Spec>
+      </Section>
+
+      <Section id="htmlscript" title="HTML script notice — the first inset banner (2026-09-28)">
+        <Spec title="Placement — inset, scoped to one surface"
+          when={<>The HTML page is a native WebView layered over tasty's GPU frame, so a floating banner would be hidden under it. Approach <b>⒜</b>: tasty paints the banner and the surface's WebView rect <b>shrinks</b> by the banner's height. This is a formal <b>inset</b> placement in the banner system, for any scope whose content is a native layer: same shell, margin <b>8 on all four sides</b> (<span className="tok">--tasty-banner-inset-gap</span> is the new bottom one), and the page starts below it. Floating stays the default everywhere else. Scope is the <b>surface</b>: the terminal beside it is untouched. Showing or clearing the banner resizes the page once; there is no animation on the rect.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-lg)", alignItems: "stretch" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · two surfaces side by side, banner on the HTML one only</span>
+                <div style={{ display: "flex", gap: "var(--tasty-border-width)", background: "var(--tasty-border-frame)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                  <HtmlSurfaceG />
+                  <TermSurfaceG />
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["approach", "⒜ egui banner + WebView rect inset"], ["placement", "inset (new banner variant) · floating unchanged"], ["margin", "8 top / sides / bottom"], ["scope", "the HTML surface only"], ["focus", "never takes it · clicks don't reach the page"], ["TTL", "none — stays until allow or ×"]]}
+            tokens={[{ tok: "--tasty-banner-inset-gap", use: "8 — banner → page (new)" }, { tok: "--tasty-banner-margin", use: "8 top / sides" }, { tok: "--tasty-banner-bg", use: "shell", color: "var(--tasty-banner-bg)" }, { tok: "--tasty-banner-border", use: "edge", color: "var(--tasty-banner-border)" }]} />
+          <Dont><b>Don't</b> inject the notice into the document DOM (⒞): the page could hide or forge it, and its button can't run with scripts off. <b>Don't</b> build three native overlays (⒝) for one notice.</Dont>
+        </Spec>
+        <Spec title="Banner states"
+          when={<>Informational, not a warning: blocking is the default working as intended. Leading glyph <b>lock</b> in <span className="tok">--tasty-html-script-banner-glyph</span> (→ accent-info). One action, <b>[Allow for this document]</b>, Secondary / Sm — a relaxation should not be the loudest thing on screen, and there is no second action (the global switch lives in Settings › Appearance › HTML). Title and body each wrap to <b>2 lines</b> max, then clamp; the button never wraps. The scope ("this document", "until Tasty restarts") is in the body copy. After Allow the document reloads once: the action is replaced by a spinner + <i>Reloading with scripts allowed</i>, × is withheld, and the banner fades out (120ms) when the new load commits.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-md)", alignItems: "stretch" }}>
+            {[["1 · blocked (default)", {}], ["2 · hover — × revealed", { hover: true }], ["3 · after Allow — reloading", { state: "reloading" }], ["remote content also blocked — body branch", { remote: true }]].map(([cap, p]) => (
+              <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", maxWidth: "var(--tasty-size-600)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <HtmlScriptBanner {...p} />
+              </div>
+            ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>5 · narrow surface (360) — action wraps under the body</span>
+              <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden", alignSelf: "flex-start" }}><HtmlSurfaceG width="var(--tasty-size-360)" narrow height={300} /></div>
+            </div>
+          </Stage>
+          <Meta
+            specs={[["title", "\"Scripts in this document are blocked\" · 13/600"], ["body", "caption · text-muted · ≤ 2 lines"], ["remote branch", "network scripts stay blocked — says so"], ["action", "Secondary / Sm · no wrap"], ["reloading", "spinner + label · no × · fade out on commit"], ["narrow", "< ~420 → action on its own line, body-aligned"]]}
+            tokens={[{ tok: "--tasty-html-script-banner-glyph", use: "lock → accent-info", color: "var(--tasty-html-script-banner-glyph)" }, { tok: "--tasty-banner-title-font-size", use: "13" }, { tok: "--tasty-banner-body-font-size", use: "11" }]} />
+        </Spec>
+        <Spec title="After × and after Allow — the tab-strip marker"
+          when={<>× hides the notice for this load; scripts stay blocked. A <b>lock</b> marker then sits in the surface's tab, after the label (<span className="tok">--tasty-html-script-marker-fg</span> → glyph-dim, 12px). Clicking it <b>shows the banner again</b> — it re-explains before offering Allow, and never allows on its own. Mouse only, no focus change. After Allow, the tab carries a <b>script</b> glyph in text-muted with a tooltip; it is not clickable. Navigating to another document clears both, and the new document starts over. <code>#fragment</code> moves keep them.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                {[["4a · dismissed — lock, click to re-show", "blocked"], ["4b · allowed this session", "allowed"]].map(([cap, m]) => (
+                  <div key={m} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                    <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · {cap}</span>
+                    <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}><HtmlSurfaceG banner={null} marker={m} width="var(--tasty-size-240)" height={120} /></div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["dismissed", "lock · glyph-dim · click → banner again"], ["allowed", "scriptFile · text-muted · tooltip only"], ["size", "12 (icon-size-xs) in the 24 strip"], ["cleared by", "navigation to another document · app restart"], ["kept on", "#fragment moves"], ["no banner when", "no runnable script · already allowed · sandbox off"]]}
+            tokens={[{ tok: "--tasty-html-script-marker-fg", use: "→ glyph-dim", color: "var(--tasty-html-script-marker-fg)" }, { tok: "--tasty-html-script-marker-allowed-fg", use: "→ text-muted", color: "var(--tasty-html-script-marker-allowed-fg)" }, { tok: "--tasty-html-script-marker-size", use: "→ icon-size-xs" }]} />
+          <Note><b>Firing:</b> only when the user views the document (opened it, or selected the surface). Agent/IPC opens, session restore and background loads keep a "has scripts" flag and show the banner the first time the user looks at that surface.</Note>
         </Spec>
       </Section>
     </>

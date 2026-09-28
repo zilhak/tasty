@@ -1,5 +1,5 @@
 // Tasty Gallery — Overlays · Popups & menus (anchored, no scrim)
-// One of the four Overlays sub-pages. Frame components are shared from
+// One of the five Overlays sub-pages (dialogs · windows · popups · banners · tutorial). Frame components are shared from
 // overlays-shared.jsx (window.OverlaysShared); this file holds only the
 // page's specimens + nav. See the other overlays-*.jsx for the rest.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;

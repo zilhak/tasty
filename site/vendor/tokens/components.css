@@ -11,7 +11,9 @@
    States: -hover / -active / -focus / -disabled / -checked / -on
    ============================================================ */
 
-:root {
+/* also on [data-theme] so a scoped theme wrapper (e.g. a gallery Latte specimen)
+   re-resolves this tier against its own primitives instead of inheriting :root values */
+:root, [data-theme] {
   /* ─────────────────  CORE  ───────────────── */
 
   /* Button */
@@ -206,8 +208,13 @@
   --tasty-tab-close-size:          var(--tasty-size-16);
   --tasty-tab-close-radius:        var(--tasty-radius-sm);
   --tasty-tab-indicator-width:     var(--tasty-size-2);
-  --tasty-tab-dot-size:            var(--tasty-status-dot-size);
+  --tasty-tab-dot-size:            var(--tasty-status-dot-size-compact); /* 6 — dense chrome (24px strip), not the generic 8 */
   --tasty-tab-icon-size:           var(--tasty-icon-size-sm);
+  /* tab-strip scroll arrows (< >) — enabled is an ACTIVE control glyph (1.4.11 3:1),
+     disabled takes the one disabled ink. Ground = surface-raised (the strip's arrow
+     cell). Flat ratios: Mocha muted 5.65 · disabled 3.40; Latte muted 3.65 · disabled 2.56. */
+  --tasty-tab-scroll-arrow-fg:          var(--tasty-text-muted);
+  --tasty-tab-scroll-arrow-fg-disabled: var(--tasty-text-disabled);
 
   /* TreeRow */
   --tasty-tree-row-height:         var(--tasty-control-height-tree);
@@ -335,6 +342,16 @@
   --tasty-banner-countdown-fg:        var(--tasty-text-muted);
   --tasty-banner-recessed-opacity:    var(--tasty-opacity-recessed);  /* lower-scope banner dimmed behind a higher one (≈60% transparent) */
   --tasty-banner-fade:                var(--tasty-motion-ui);         /* 120ms alpha appear / dismiss — position never moves (non-terminal, so fade is allowed) */
+  /* INSET placement — for a scope whose content is a native layer tasty cannot
+     paint over (the HTML WebView). The banner keeps its shell but the content
+     area starts BELOW it: margin 8 on all four sides, the page is pushed down. */
+  --tasty-banner-inset-gap:           var(--tasty-space-sm);          /* 8 — banner bottom → page top (inset only) */
+
+  /* HTML surface — script-blocked notice (inset banner) + tab marker */
+  --tasty-html-script-banner-glyph:   var(--tasty-accent-info);       /* lock glyph — informational, not a warning */
+  --tasty-html-script-marker-fg:      var(--tasty-glyph-dim);         /* tab-strip lock after dismiss (blocked, notice hidden) */
+  --tasty-html-script-marker-allowed-fg: var(--tasty-text-muted);     /* tab-strip script glyph while allowed this session */
+  --tasty-html-script-marker-size:    var(--tasty-icon-size-xs);      /* 12 — sits inside the 24px tab strip */
 
   /* Banner "more" (⋯) menu — a SECOND affordance in the banner's top-right
      column, left of the × , and the anchored menu it opens. The menu reuses the
@@ -361,6 +378,11 @@
      dot carries live activity alone. Remote-mirror identity lives on the workspace
      row (see Workspace row · mirror below), never on this dot. */
   --tasty-status-dot-size:         var(--tasty-size-8);
+  /* COMPACT dot — the same status role inside 24px-tall chrome (tab strip,
+     workspace status bar, collapsed sidebar rail). 8 crowds a 24px row once a
+     ring or a label sits beside it; 6 is the dense-chrome member of the dot
+     family. NOT a second meaning — same colors, smaller footprint. */
+  --tasty-status-dot-size-compact: var(--tasty-size-6);
   --tasty-status-dot-idle:         var(--tasty-status-idle);
   --tasty-status-dot-success:      var(--tasty-accent-success);
   --tasty-status-dot-warning:      var(--tasty-accent-warning);
@@ -376,6 +398,20 @@
   --tasty-status-dot-attached-ring-offset: var(--tasty-size-2);
   --tasty-status-dot-pulse-duration: var(--tasty-duration-1600);
 
+  /* Workspace status bar (24px host chrome) */
+  --tasty-statusbar-dot-size:      var(--tasty-status-dot-size-compact); /* 6 — same dense-chrome member as the tab dot */
+  --tasty-statusbar-glyph:         var(--tasty-glyph-dim);   /* leading item glyphs (branch, shell, grid) */
+  --tasty-statusbar-theme-glyph:   var(--tasty-glyph-dim);   /* theme indicator is a GLYPH, not a colored dot — light/dark is not a status */
+  /* ONE size for every inline glyph in the bar (branch, shell, grid, theme). The
+     theme cell is the same box in both themes — a dimension must not depend on
+     which theme is active; sun/theme optical parity is corrected in the ASSET
+     (icons/sun.svg ray extent), never by giving one glyph a different size. */
+  --tasty-statusbar-glyph-size:    var(--tasty-icon-size-xs); /* 12 — smallest inline glyph step; scales with the UI scale like the rest */
+
+  /* Git viewer diff toolbar — a CONTAINER height, deliberately not button-height
+     (28): the toolbar is a 32px bar that holds 28px controls with 2px of air. */
+  --tasty-git-toolbar-height:      var(--tasty-toolbar-height); /* 32 — re-pointed at the shared container-toolbar role (value unchanged) */
+
   /* Workspace row — mirror (remote-linked) indicator. A small remote-link glyph
      leading the workspace name marks a row as a local MIRROR of a remote tasty
      instance. It is a separate axis from the status dot (execution), the attached
@@ -384,6 +420,30 @@
   --tasty-workspace-mirror-fg:     var(--tasty-accent-remote);
   --tasty-workspace-mirror-icon-size: var(--tasty-icon-size-xs);
   --tasty-workspace-mirror-gap:    var(--tasty-space-xs);
+  /* Workspace row (expanded sidebar) — the status dot sits in a RESERVED slot the
+     size of the attached mark's full bbox: 8 + 2×(2+2) = 16. Reserved on every
+     row (attached or not) so title x never shifts. Ring clearances at scale 1:
+     card edge 8 · active accent bar (0..2) 6 · label 4. Body x = 8 + 16 + 4 = 28. */
+  --tasty-workspace-row-padding-x: var(--tasty-space-sm);   /* 8 — row left inset */
+  --tasty-workspace-dot-slot:      var(--tasty-size-16);    /* 16 — = attached ring outer diameter */
+  --tasty-workspace-dot-gap:       var(--tasty-space-xs);   /* 4 — slot → title / subtitle / pill */
+
+  /* Move source — the pending "Move Surface / Tab / Pane" target (app-wide, max one).
+     IS the target  → dashed ring drawn INSIDE the target rect (surface rect · tab cell
+                      rect · whole pane rect = tab strip + content), painted LAST, above
+                      notification / occupancy borders, occupancy overlay and the active-
+                      tab indicator. Dashes cover; gaps show whatever is underneath.
+     CONTAINS it    → the nearest VISIBLE container (inactive tab cell, or workspace row
+                      / rail avatar when it lives in another workspace) shows the move
+                      glyph. Static — no motion, so no reduced-motion variant. */
+  --tasty-move-source-ring:        var(--tasty-accent-move);
+  --tasty-move-source-ring-width:  var(--tasty-focus-ring-width);  /* 2 — the "pointing ring" weight */
+  --tasty-move-source-dash:        var(--tasty-size-4);            /* 4 on */
+  --tasty-move-source-dash-gap:    var(--tasty-size-4);            /* 4 off */
+  --tasty-move-source-glyph:       var(--tasty-accent-move);
+  --tasty-move-source-glyph-size:  var(--tasty-icon-size-xs);      /* 12 — tab cell · workspace row */
+  --tasty-move-source-chip-size:   var(--tasty-size-12);           /* rail avatar corner chip (bottom-left) */
+  --tasty-move-source-chip-glyph-size: var(--tasty-size-8);
 
   /* Spinner — indeterminate scan/install progress */
   --tasty-spinner-size:            var(--tasty-size-16);
@@ -412,7 +472,7 @@
        needs-input (2px yellow) > occupancy (1px green/peach) > completion (2px blue)
      NeedsInput outranks occupancy because occupancy means "held, working, as
      expected" — exactly the reading that would hide a session that has STOPPED
-     to ask the human something. Completion stays below occupancy. */
+     to ask the human something. Completion stays below occupancy (ADR-0040). */
   --tasty-surface-highlight-input-border: var(--tasty-attention-needs-input);
   --tasty-surface-highlight-input-width:  var(--tasty-focus-ring-width);  /* 2px */
   --tasty-surface-highlight-done-width:  var(--tasty-focus-ring-width);  /* 2px */
@@ -515,6 +575,7 @@
   --tasty-port-favorites-row-height: var(--tasty-control-height-tree); /* 22 — denser than a table row */
   --tasty-port-favorites-max-height: var(--tasty-size-112);            /* 5 rows, then scroll */
   --tasty-port-star-col-width:       var(--tasty-size-28);             /* leading tight column in the table */
+  --tasty-port-process-col-min-width: var(--tasty-size-200);           /* Process column — a MINIMUM, not a fixed width: the column grows with the table and never shrinks below this. The gallery specimen pins 200 only because its stage is fixed. */
   --tasty-port-star-on:              var(--tasty-accent-warning);      /* registered — gold, as Explorer favorites */
   --tasty-port-star-off:             var(--tasty-text-muted);          /* unregistered — muted outline */
   --tasty-port-state-none-dot:       var(--tasty-status-dot-idle);     /* NONE badge (favorite not in the scan) */
@@ -522,6 +583,7 @@
   /* ─────────────────  OVERLAYS (gallery specimen layouts)  ───────────────── */
   /* Plugins window */
   --tasty-plugins-list-width:       var(--tasty-size-288); /* left installed-list column */
+  --tasty-plugins-header-glyph:     var(--tasty-accent-decorative); /* window-header ornament — peach, but decorative: NOT accent-attention */
   /* Plugin avatar — the square initial mark that stands in for a plugin icon
      (a plugin manifest carries no image). TWO sizes only: sm on list rows,
      lg on a detail/preview identity block. The tint is mixed into
@@ -542,6 +604,68 @@
   /* Settings window */
   --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
   --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
+  --tasty-settings-content-max-width: var(--tasty-size-620); /* content column cap — cards, tables and notice blocks all stop here */
+  /* Settings › General › Permissions (macOS) — four states, told apart by
+     GLYPH + WORD, colour only as a third channel. Unknown and Not observable
+     share the muted ink but never the glyph. */
+  --tasty-perm-granted-fg:      var(--tasty-accent-success);   /* check */
+  --tasty-perm-missing-fg:      var(--tasty-accent-warning);   /* alertCircle */
+  --tasty-perm-unknown-fg:      var(--tasty-text-muted);       /* helpCircle */
+  --tasty-perm-unobservable-fg: var(--tasty-text-muted);       /* eyeOff */
+  --tasty-perm-status-gap:      var(--tasty-space-xs);         /* glyph ↔ word */
+  --tasty-perm-row-height:      var(--tasty-settings-row-min-height); /* 32 */
+
+  /* Info modal — boot notice queue (one message at a time). Shell unchanged
+     from the product: 440 wide, 140..360 tall; the body scrolls, the button row
+     never does. */
+  --tasty-info-modal-width:      var(--tasty-size-440);
+  --tasty-info-modal-min-height: var(--tasty-size-140);
+  --tasty-info-modal-max-height: var(--tasty-size-360);
+  --tasty-info-modal-title-edge: var(--tasty-border-default); /* 1px rule under the title bar — always drawn (shell rule, every message) */
+  --tasty-info-modal-para-gap:   var(--tasty-space-md);        /* 12 between paragraphs */
+  --tasty-info-modal-scroll-edge: var(--tasty-border-default); /* 1px rule, shown only on the side that has hidden content */
+
+  /* CenterState — the one centred empty / loading / error block (file picker,
+     remote attach, Settings › Misc › Scripts). No fixed height: it centres in
+     the region it replaces. The sub line slot is always reserved so switching
+     variants never moves the glyph. */
+  --tasty-center-state-glyph-size: var(--tasty-icon-size-lg);  /* 24 — was 22 (CENTER_GLYPH_SIZE) and 26 (EMPTY_STATE_GLYPH_SIZE) */
+  --tasty-center-state-gap:        var(--tasty-space-sm);      /* 8 glyph → title */
+  --tasty-center-state-line-gap:   var(--tasty-space-xs);      /* 4 title → sub */
+  --tasty-center-state-glyph-fg:   var(--tasty-glyph-dim);
+  --tasty-center-state-error-fg:   var(--tasty-accent-danger);
+  --tasty-center-state-title-fg:   var(--tasty-text-secondary);
+  --tasty-center-state-sub-fg:     var(--tasty-text-muted);
+  --tasty-center-state-max-width:  var(--tasty-measure-sm);    /* 300 — wraps before it */
+  /* Keybindings › Import / Export — the diff table + option-migration card.
+     These were raw --tasty-size-* reads in the spec jsx; opened as named
+     component tokens so the implementing side reads tokens, not constants. */
+  --tasty-kb-ie-select-column-width: var(--tasty-size-32);  /* diff-table leading checkbox column */
+  --tasty-kb-ie-action-column-width: var(--tasty-size-288); /* migration-row action label column (ja longest label measures 255) — also the indent of a row's sub-line */
+  --tasty-kb-ie-from-column-width:   var(--tasty-size-120); /* migration-row original (option-bearing) shortcut column */
+  --tasty-kb-ie-slot-height:         var(--tasty-control-height-tab); /* 24 — read-only replacement slot chip */
+  --tasty-kb-ie-slot-min-width:      var(--tasty-size-140); /* slot chip min width — keeps empty and filled slots the same size */
+  --tasty-kb-ie-notice-inset:        var(--tasty-space-md);  /* notice / action-card inner padding, both axes (the spec jsx's 14 was off-grid — snapped to 12) */
+  /* File picker (Open / Save) — breadcrumb measures. Two different axes:
+     ONE crumb's own cap (past it that crumb ellipsises) and the hidden-ancestor
+     menu's width band. The path's middle elision is a render rule, not a width. */
+  --tasty-fp-crumb-max-width:      var(--tasty-size-180); /* a single crumb's cap — longer folder names ellipsise inside the crumb */
+  --tasty-fp-crumb-menu-min-width: var(--tasty-size-180); /* … menu floor — same measure as a crumb, so short names still read as a menu */
+  --tasty-fp-crumb-menu-max-width: var(--tasty-size-320); /* … menu ceiling (same as popover/toast) — longer labels ellipsise instead of growing */
+  /* Crumb FLOORS — the caps above are maxima; these are the widths a crumb may
+     not shrink past. The path bar allocates in priority order: current folder,
+     then parent, then root, then the … menu. Squeeze order and the final
+     single-crumb fallback are specified in the gallery file-picker specimens. */
+  --tasty-fp-crumb-min-width:         var(--tasty-size-64); /* an ANCESTOR crumb's floor — below this it moves into the … menu */
+  --tasty-fp-crumb-current-min-width: var(--tasty-size-96); /* the CURRENT folder's floor — it never goes below this while any ancestor is still painted */
+  --tasty-fp-bar-hysteresis:          var(--tasty-size-8);  /* grow-back margin: a crumb returns only when 8px MORE than its floor is free, so a drag-resize can't flap */
+  --tasty-fp-popup-min-width:         var(--tasty-size-320); /* the picker's own floor — clamped by the owning surface, which always wins */
+  /* File HANDLER picker — the Recent row's trailing "when" fragment. The column
+     is RESERVED at the widest vocabulary member (the absolute date, 10 mono
+     D2Coding chars at 11px = 55) so a bucket change while the popup is open — it recomputes
+     every frame — never reflows the id beside it. The when never shrinks and
+     never drops: the id yields, it already has a front-elision rule. */
+  --tasty-fh-when-width:              var(--tasty-size-56);
   /* Color swatch (settings color editor) */
   --tasty-swatch-size:              var(--tasty-size-16);
   --tasty-swatch-radius:            var(--tasty-radius-sm);

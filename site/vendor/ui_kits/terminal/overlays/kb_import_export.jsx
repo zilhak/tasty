@@ -46,7 +46,7 @@ const IE_GROUPS = [
 const MODIFIER_COMBOS = ["Ctrl", "Alt", "Shift", "Ctrl+Alt", "Ctrl+Shift", "Alt+Shift", "Ctrl+Alt+Shift"];
 // Sentinel first option — a modifier Select must be able to read "not chosen
 // yet"; without it the first real combo would look like an answer.
-const IE_PICK = "— pick a modifier —";
+const IE_PICK = "Select a modifier";
 const IE_MIGRATE = [
   { id: "m1", action: "Screenshot to clipboard", from: "Option+Shift+4", kind: "record", value: "Ctrl+Shift+4" },
   { id: "m2", action: "Category axis modifier", from: "Option", kind: "modifier", value: "", fanout: "10 slots on this axis change with it" },
@@ -67,7 +67,7 @@ function IeDiffTable({ groups, changedOnly, collapsed, onToggleGroup, sel, onSel
   const cell = { padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)",
     fontSize: 13, display: "flex", alignItems: "center" };
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-size-32) minmax(0,1.6fr) 1fr 1fr", alignItems: "stretch" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-kb-ie-select-column-width) minmax(0,1.6fr) 1fr 1fr", alignItems: "stretch" }}>
       <div style={{ ...head }} />
       <div style={{ ...head, textAlign: "left" }}>Action</div>
       <div style={{ ...head }}>Current</div>
@@ -138,9 +138,9 @@ function IeMigrateRow({ row, onSet }) {
       borderTop: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-md)", minHeight: "var(--tasty-size-28)", flexWrap: "wrap" }}>
         {/* label column fixed at 288 — the ja longest action label measures 255px */}
-        <span style={{ width: "var(--tasty-size-288)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)",
+        <span style={{ width: "var(--tasty-kb-ie-action-column-width)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.action}</span>
-        <span style={{ ...mono, width: "var(--tasty-size-120)", flex: "none", color: "var(--tasty-text-muted)" }}>{row.from}</span>
+        <span style={{ ...mono, width: "var(--tasty-kb-ie-from-column-width)", flex: "none", color: "var(--tasty-text-muted)" }}>{row.from}</span>
         <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-text-muted)" }}><Icon name="chevronRight" size={14} /></span>
         {/* widget kind 2 — an axis modifier can only be PICKED (capture ignores
             modifier-only input); kind 1 — a combo is RECORDED. */}
@@ -149,8 +149,8 @@ function IeMigrateRow({ row, onSet }) {
             onChange={(e) => onSet(row.id, e.target.value === IE_PICK ? "" : e.target.value)}
             style={{ width: "var(--tasty-field-width-md)" }} />
         ) : (
-          <button type="button" onClick={() => onSet(row.id, row.value ? "" : "Ctrl+Shift+9")} style={{ minWidth: 140,
-            height: "var(--tasty-size-24)", padding: "0 var(--tasty-space-sm)", cursor: "pointer", ...mono,
+          <button type="button" onClick={() => onSet(row.id, row.value ? "" : "Ctrl+Shift+9")} style={{ minWidth: "var(--tasty-kb-ie-slot-min-width)",
+            height: "var(--tasty-kb-ie-slot-height)", padding: "0 var(--tasty-space-sm)", cursor: "pointer", ...mono,
             background: "var(--tasty-surface-raised)", color: row.value ? "var(--tasty-text-primary)" : "var(--tasty-text-disabled)",
             border: "var(--tasty-border-width) solid " + (state === "conflict" ? "var(--tasty-accent-danger)" : "var(--tasty-border-default)"),
             borderRadius: "var(--tasty-radius)", textAlign: "left" }}>
@@ -167,12 +167,12 @@ function IeMigrateRow({ row, onSet }) {
         )}
       </div>
       {row.conflict && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: "var(--tasty-size-288)", fontSize: 11, color: "var(--tasty-accent-danger)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: "var(--tasty-kb-ie-action-column-width)", fontSize: 11, color: "var(--tasty-accent-danger)" }}>
           <Icon name="alertTriangle" size={14} /><span>{row.conflict} — the shortcut-conflict popup opens on Apply.</span>
         </div>
       )}
       {row.fanout && !row.conflict && (
-        <div style={{ paddingLeft: "var(--tasty-size-288)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{row.fanout}</div>
+        <div style={{ paddingLeft: "var(--tasty-kb-ie-action-column-width)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{row.fanout}</div>
       )}
     </div>
   );
@@ -180,10 +180,11 @@ function IeMigrateRow({ row, onSet }) {
 
 function IeMigrateCard({ rows, onSet }) {
   const left = rows.filter((r) => !r.value && !r.unbound).length;
+  const conflicts = rows.filter((r) => r.conflict).length;
   const done = left === 0;
   const tone = done ? "var(--tasty-accent-success)" : "var(--tasty-accent-warning)";
   return (
-    <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
+    <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-kb-ie-notice-inset)",
       background: "color-mix(in srgb, " + tone + " 11%, transparent)",
       border: "var(--tasty-border-width) solid color-mix(in srgb, " + tone + " 36%, transparent)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: tone, fontSize: 13, fontWeight: 600 }}>
@@ -200,6 +201,15 @@ function IeMigrateCard({ rows, onSet }) {
           : <><span style={mono}>option</span> never matches on this OS — these bindings would look bound and do nothing.
             Give each one a replacement, or leave it unbound. <b>Apply</b> stays disabled until none are left.</>}
       </p>
+      {/* §4 — several conflicts: COUNT FIRST, from 2 up. Each row keeps its own
+          inline reason (it names which binding), so this never lists them. */}
+      {conflicts > 1 && (
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)",
+          maxWidth: "var(--tasty-measure-lg)" }}>
+          <b style={{ color: "var(--tasty-accent-danger)" }}>{conflicts} conflicts</b> — those shortcuts are already bound.
+          The shortcut-conflict popup opens on Apply.
+        </p>
+      )}
       <div style={{ marginTop: "var(--tasty-space-sm)" }}>
         {rows.map((r) => <IeMigrateRow key={r.id} row={r} onSet={onSet} />)}
       </div>
@@ -208,11 +218,14 @@ function IeMigrateCard({ rows, onSet }) {
 }
 
 // ── Entry (list position) — two actions, not a list ──────────────────────
-function IeActionRow({ glyph, title, desc, action }) {
+// `notice` — §1: an export failure is told INLINE in the row that started it
+// (success is a toast; a failure carries a retry, so it must not auto-dismiss).
+function IeActionRow({ glyph, title, desc, action, notice }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-md)",
-      padding: "var(--tasty-space-md) var(--tasty-size-14)", borderRadius: "var(--tasty-radius)",
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)",
+      padding: "var(--tasty-kb-ie-notice-inset)", borderRadius: "var(--tasty-radius)",
       background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-md)" }}>
       <span style={{ display: "inline-flex", flex: "none", marginTop: 2, color: "var(--tasty-text-muted)" }}><Icon name={glyph} size={16} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, color: "var(--tasty-text-primary)" }}>{title}</div>
@@ -220,6 +233,8 @@ function IeActionRow({ glyph, title, desc, action }) {
           maxWidth: "var(--tasty-measure-md)" }}>{desc}</p>
       </div>
       <span style={{ flex: "none" }}>{action}</span>
+      </div>
+      {notice}
     </div>
   );
 }
@@ -256,13 +271,14 @@ function IePickerPopup({ mode, onClose, onPick }) {
 
 // `variant` drives the specimen states: "ready" (entry), "pending" (migration
 // unresolved), "resolved", "nomigration", "failed".
-function KbImportExportSubtab({ variant = "ready", onFlash }) {
-  const [view, setView] = React.useState(variant === "ready" ? "list" : "detail");
+function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCause = "readonly", osError = "os error 28: No space left on device" }) {
+  const [view, setView] = React.useState(variant === "ready" || variant === "exportfailed" ? "list" : "detail");
   const [picker, setPicker] = React.useState(null);
   const [changedOnly, setChangedOnly] = React.useState(true);
   const [collapsed, setCollapsed] = React.useState({});
   const [sel, setSel] = React.useState({});
   const [failed, setFailed] = React.useState(variant === "failed");
+  const [exportError, setExportError] = React.useState(variant === "exportfailed" ? "~/tasty/" + IE_FILE : null);
   const [rows, setRows] = React.useState(
     variant === "resolved" ? IE_MIGRATE.map((r) => ({ ...r, value: r.value || "Ctrl+Shift+8", conflict: null }))
       : variant === "nomigration" ? [] : IE_MIGRATE);
@@ -285,7 +301,7 @@ function KbImportExportSubtab({ variant = "ready", onFlash }) {
     // §6-6 — a broken file is a fact about the thing you were looking at, so it
     // is told INLINE in the detail area, not as a toast or a popup.
     <div style={{ padding: "var(--tasty-space-lg)" }}>
-      <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
+      <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-kb-ie-notice-inset)",
         background: "color-mix(in srgb, var(--tasty-accent-danger) 12%, transparent)",
         border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-danger) 35%, transparent)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: "var(--tasty-accent-danger)", fontSize: 13, fontWeight: 600 }}>
@@ -293,7 +309,9 @@ function KbImportExportSubtab({ variant = "ready", onFlash }) {
         </div>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
           <span style={mono}>~/Downloads/settings.json</span> — expected a keybinding export (TOML, a <span style={mono}>[keybindings]</span> table);
-          parsing stopped at line 1. Nothing was changed.
+          {/* §3 — no line number: the clause is REPLACED, not dropped. The middle
+              sentence always says why; the outer sentences never change. */}
+          {failLine ? <> parsing stopped at line {failLine}.</> : <> the file isn't TOML.</>} Nothing was changed.
         </p>
         <div style={{ marginTop: "var(--tasty-space-sm)" }}>
           <Button variant="secondary" size="sm" onClick={() => { setFailed(false); setPicker("import"); }}>Choose another file</Button>
@@ -348,7 +366,33 @@ function KbImportExportSubtab({ variant = "ready", onFlash }) {
           </p>
           <IeActionRow glyph="download" title="Export"
             desc="Writes every binding — general, quick switch, script bindings and plugin overrides — to one file."
-            action={<Button variant="secondary" size="sm" onClick={() => setPicker("export")}>Export…</Button>} />
+            action={<Button variant="secondary" size="sm" disabled={!!exportError} onClick={() => setPicker("export")}>Export…</Button>}
+            notice={exportError && (
+              <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-kb-ie-notice-inset)",
+                background: "color-mix(in srgb, var(--tasty-accent-danger) 12%, transparent)",
+                border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-danger) 35%, transparent)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: "var(--tasty-accent-danger)", fontSize: 13, fontWeight: 600 }}>
+                  <Icon name="alertCircle" size={16} /><span>The export wasn't written</span>
+                </div>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
+                  {/* The middle clause comes from a FIXED set; an unknown cause falls
+                      back to "the write didn't finish." and the OS string goes on its
+                      own muted line below — never spliced into the sentence. */}
+                  <span style={mono}>{exportError}</span> — {failCause === "readonly" ? "the folder is read-only."
+                    : failCause === "denied" ? "you don't have permission to write there."
+                      : failCause === "space" ? "the disk is full."
+                        : "the write didn't finish."} Nothing was written.
+                </p>
+                {failCause === "other" && osError && (
+                  <div style={{ ...mono, marginTop: "var(--tasty-space-xs)", fontSize: 11, color: "var(--tasty-text-muted)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "var(--tasty-measure-md)" }} title={osError}>{osError}</div>
+                )}
+                <div style={{ marginTop: "var(--tasty-space-sm)", display: "flex", gap: "var(--tasty-space-sm)" }}>
+                  <Button variant="secondary" size="sm" onClick={() => setExportError(null)}>Try again</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setExportError(null); setPicker("export"); }}>Choose another location…</Button>
+                </div>
+              </div>
+            )} />
           <IeActionRow glyph="file" title="Import"
             desc="Reads a keybinding file and shows the changes against your current bindings before anything is written."
             action={<Button variant="primary" size="sm" onClick={() => setPicker("import")}>Import…</Button>} />

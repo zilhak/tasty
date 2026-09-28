@@ -86,6 +86,7 @@
   --tasty-size-2:   2px;
   --tasty-size-3:   3px;
   --tasty-size-4:   4px;
+  --tasty-size-6:   6px;  /* compact status dot — dots inside 24px-tall chrome (tab strip, status bar, sidebar rail) */
   --tasty-size-8:   8px;
   --tasty-size-12:  12px;
   --tasty-size-14:  14px;
@@ -108,10 +109,13 @@
   --tasty-size-320: 320px; /* toast / popover max-width */
   /* layout / form-control / measure widths (fixed product dimensions; like 22/46
      above, some are off the 4px grid — real control widths, not spacing rhythm) */
+  --tasty-size-64:  64px;  /* file-picker ancestor-crumb floor */
   --tasty-size-88:  88px;
   --tasty-size-90:  90px;
+  --tasty-size-96:  96px;  /* file-picker current-folder crumb floor */
   --tasty-size-110: 110px;
   --tasty-size-112: 112px;
+  --tasty-size-140: 140px; /* keybinding replacement-slot min width */
   --tasty-size-160: 160px;
   --tasty-size-168: 168px; /* DAG node card width */
   --tasty-size-180: 180px;
@@ -119,10 +123,13 @@
   --tasty-size-220: 220px; /* autocomplete dropdown default max-height (~7 rows) */
   --tasty-size-288: 288px;
   --tasty-size-300: 300px;
+  --tasty-size-360: 360px; /* info modal max height (boot notice queue) */
   --tasty-size-400: 400px;
+  --tasty-size-440: 440px; /* info modal width (boot notice queue) */
   --tasty-size-460: 460px;
   --tasty-size-560: 560px;
   --tasty-size-600: 600px; /* explorer sidebar "small surface" threshold */
+  --tasty-size-620: 620px; /* settings content column max width */
 
   /* ── Radius scale ─────────────────────────────────────────── */
   --tasty-radius-2:    2px;
@@ -145,6 +152,7 @@
   --tasty-font-size-16: 16px;
   --tasty-font-size-17: 17px;  /* "tasty." brand wordmark (mono) — BRANDING exception to the 14px UI cap (see semantic font-size-brand-wordmark) */
   --tasty-font-size-20: 20px;  /* markdown-surface H1 (rendered content, not UI chrome) */
+  --tasty-font-size-30: 30px;  /* first-run brand display title — BRANDING exception to the 14px UI cap, same class as the wordmark (see semantic font-size-brand-display) */
 
   /* ── Weight scale ─────────────────────────────────────────── */
   --tasty-font-weight-400: 400;
@@ -189,6 +197,13 @@
      0.4 and 0.65 both drop 10-13px text under the 4.5:1 floor once the whole
      card is painted at that opacity, so the readable dim step is 0.75. */
   --tasty-opacity-dimmed: 0.75; /* @kind other */
+  /* TINTED-FILL IDIOM — one accent painted as a soft fill + a stronger edge of the
+     same hue (info badges, notice blocks, warning callouts, status chips). Two
+     coefficients, used as a PAIR; every tinted box in the system reads these two
+     and nothing else. Border-only variants (chip remote tag) take the border
+     coefficient alone; fill-only variants (warning callout) take the fill alone. */
+  --tasty-opacity-tint-fill:   0.12; /* @kind other */
+  --tasty-opacity-tint-border: 0.36; /* @kind other */
 }
 
 /* ============================================================
@@ -205,7 +220,7 @@
   --tasty-color-neutral-600:  #9ca0b0; /* overlay0 */
   --tasty-color-neutral-700:  #8c8fa1; /* overlay1 */
   --tasty-color-neutral-800:  #7c7f93; /* overlay2 */
-  --tasty-color-neutral-900:  #6c6f85; /* subtext0 */
+  --tasty-color-neutral-900:  #63667c; /* subtext0 — DIVERGES from upstream catppuccin latte (#6c6f85, 4.37:1 on base = AA fail). Darkened to clear 4.5:1 on base (4.99), mantle (4.64), #fff (5.64) while keeping the ramp order: any darker collapses the gap to subtext1 (#5c5f77) and text-muted/secondary stop reading apart. crust (4.26) / surface0 (3.65) stay accepted exceptions — see zilhak/tasty ADR-0080. */
   --tasty-color-neutral-1000: #5c5f77; /* subtext1 */
   --tasty-color-neutral-1100: #4c4f69; /* text     */
 

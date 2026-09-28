@@ -362,7 +362,7 @@
           <span style={{ display: "inline-flex", flex: "none", color: k.accent }}>{k.icon}</span>
           <span style={{ fontSize: 14, fontWeight: 600, flex: "none" }}>{k.label}</span>
           {path.length > 0 && (
-            <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflow: "hidden", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", whiteSpace: "nowrap" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", minWidth: 0, overflow: "hidden", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", whiteSpace: "nowrap" }}>
               {path.map((seg, i) => (
                 <React.Fragment key={i}>
                   {i > 0 && <span style={{ flex: "none" }}>›</span>}
@@ -373,7 +373,7 @@
           )}
           <div style={{ flex: 1 }} />
           {dirty && (
-            <span title="Draft — applied on OK" style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontSize: 11, color: "var(--tasty-text-muted)" }}>
+            <span title="Draft — applied on OK" style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)", flex: "none", fontSize: 11, color: "var(--tasty-text-muted)" }}>
               <span style={{ width: 6, height: 6, borderRadius: "var(--tasty-radius-full)", background: "var(--tasty-preset-cfg-draft-fg)" }} />unsaved
             </span>
           )}
@@ -465,7 +465,7 @@
             return (
               <button key={t.id} onClick={(e) => { e.stopPropagation(); dispatch({ type: "active", paneId: node.id, idx: i }); }}
                 onMouseEnter={edit ? () => setHoverTab(i) : undefined} onMouseLeave={edit ? () => setHoverTab(null) : undefined}
-                style={{ appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, height: 20, padding: showX ? "0 3px 0 9px" : "0 9px",
+                style={{ appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)", height: 20, padding: showX ? "0 3px 0 9px" : "0 9px",
                   border: 0, borderRight: "1px solid var(--tasty-separator)", flex: "0 1 auto", minWidth: 0,
                   fontFamily: "var(--tasty-font-ui)", fontSize: 11,
                   background: on ? "var(--tasty-bg-panel)" : "transparent",
@@ -527,7 +527,7 @@
       </div>
     );
     return (
-      <div style={{ display: "flex", flexDirection: row ? "row" : "column", flex: 1, minWidth: 0, minHeight: 0, gap: 5, background: "var(--tasty-bg-app)" }}>
+      <div style={{ display: "flex", flexDirection: row ? "row" : "column", flex: 1, minWidth: 0, minHeight: 0, gap: "var(--tasty-space-xs)", background: "var(--tasty-bg-app)" }}>
         {child(node.first, node.ratio)}
         {child(node.second, 1 - node.ratio)}
       </div>
@@ -713,7 +713,7 @@
               <div style={{ flex: 1 }} />
               {edit ? (
                 <>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--tasty-text-muted)", marginRight: 4 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)", fontSize: 11, color: "var(--tasty-text-muted)", marginRight: 4 }}>
                     <span style={{ display: "inline-flex", color: "var(--tasty-accent-success)", transform: "scale(.8)" }}>{I.check}</span> saved automatically
                   </span>
                   <Button size="sm" variant="primary" leadingIcon={I.check} onClick={() => { setEdit(false); setSel(null); }}>Done</Button>

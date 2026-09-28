@@ -261,6 +261,24 @@ function Page() {
             specs={[["frame", "560 × 460 · resizable"], ["titlebar", "28px drag strip"], ["list rows", "36px · ~8 visible"], ["swap", "DrillDown, 0ms"], ["dismiss", <>outside click · <span className="ic">Esc</span> · ×</>]]}
             tokens={[{ tok: "--tasty-dag-popup-width", use: "560 frame" }, { tok: "--tasty-dag-popup-height", use: "460 frame" }, { tok: "--tasty-drilldown-backbar-height", use: "36 back bar" }, { tok: "--tasty-shadow-modal", use: "lift" }]} />
         </Spec>
+
+        <Spec title="Detail view — the header keeps the runner badge only"
+          when={<>The popup's list → detail flow reuses the graph screen, which drags the graph header along: the <b>runner badge</b>, the <b>DAG selector</b> and the <b>zoom cluster</b> all arrive in a view that shows one node — and the back bar's actions slot sits empty beneath them. Settled: <b>no second header</b>. The <b>back bar is the detail's chrome</b>, and its <b>actions slot</b> carries the <b>compact zoom cluster</b> (beside the graph it scales) and the <b>runner badge</b> (it describes the run the node belongs to). The <b>DAG selector is hidden</b>: the back-bar title already names the DAG, and switching DAGs under an open node detail has no meaning. Back restores the list, its header, and the selection.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>list — full header</div>
+              <DagWindow />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>detail — open a row above: the back bar carries zoom + runner badge</div>
+              <DagWindow />
+            </div>
+          </Stage>
+          <Meta
+            specs={[["frame", "560×460 — unchanged"], ["detail header", "none — the back bar is the chrome"], ["back bar actions", "compact zoom cluster + runner badge"], ["DAG selector", "hidden in detail"], ["back bar", <>36 — <span className="tok">--tasty-drilldown-backbar-height</span></>], ["back", "restores the list, keeps the selection"], ["close / reset", "unchanged host contract"]]}
+            tokens={[{ tok: "--tasty-drilldown-backbar-height", use: "back bar" }, { tok: "--tasty-dag-popup-width", use: "560 frame" }, { tok: "--tasty-dag-popup-height", use: "460 frame" }]} />
+          <Note>The actions slot was empty in the current build; this fills it rather than inventing a second bar. If a future detail view needs no zoom, the slot simply goes back to empty.</Note>
+        </Spec>
       </Section>
     </>
   );

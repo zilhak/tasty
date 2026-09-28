@@ -115,17 +115,20 @@ function ExpInternalTabs() {
   );
 }
 
-function SegToggle() {
+// Explorer view toggle — a SEGMENT (picks a value: how the same listing is drawn), so it
+// takes the R1 segment recipe: accent fill + on-accent ink. Never surface-active (row-selection only).
+function SegToggle({ value = "detail", hover = null }) {
   const items = [["grid", ic.grid], ["list", ic.list], ["detail", ic.detail]];
   return (
     <div style={{ display: "flex", alignItems: "center", flex: "none", height: 28, padding: 2, gap: 2,
       background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
       {items.map(([k, glyph]) => {
-        const active = k === "detail";
+        const active = k === value;
+        const hov = k === hover && !active;
         return (
           <span key={k} aria-label={k} title={k} style={{ width: 24, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center",
-            borderRadius: "var(--tasty-radius-sm)", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)",
-            background: active ? "var(--tasty-surface-active)" : "transparent" }}>{glyph}</span>
+            borderRadius: "var(--tasty-radius-sm)", color: active ? "var(--tasty-segtoggle-on-fg)" : "var(--tasty-text-muted)",
+            background: active ? "var(--tasty-segtoggle-on-bg)" : hov ? "var(--tasty-overlay-hover)" : "transparent" }}>{glyph}</span>
         );
       })}
     </div>
@@ -213,14 +216,14 @@ function favPinHeight(bodyH) {
 const TREE_SHORT = [
   { label: "Home", depth: 0, open: true },
   { label: "Downloads", depth: 1, open: true, active: true },
-  { label: "figma-exports", depth: 2, leaf: true },
+  { label: "mockup-exports", depth: 2, leaf: true },
   { label: "Documents", depth: 1 },
   { label: "Projects", depth: 1 },
 ];
 const TREE_LONG = [
   { label: "Home", depth: 0, open: true },
   { label: "Downloads", depth: 1, open: true, active: true },
-  { label: "figma-exports", depth: 2, leaf: true },
+  { label: "mockup-exports", depth: 2, leaf: true },
   { label: "invoices", depth: 2, leaf: true },
   { label: "Documents", depth: 1, open: true },
   { label: "contracts", depth: 2, leaf: true },
@@ -244,7 +247,7 @@ const TREE_LONG = [
 
 const FAVS_DEFAULT = [["tasty", true], ["Documents", false], ["screenshots", false]];
 const FAVS_MANY = [["tasty", true], ["crates", false], ["design-system", false], ["Documents", false],
-  ["figma-exports", false], ["screenshots", false], ["wallpapers", false], ["invoices", false],
+  ["mockup-exports", false], ["screenshots", false], ["wallpapers", false], ["invoices", false],
   [".config", false], ["playground", false]];
 
 function FavRow({ name, active }) {
@@ -324,7 +327,7 @@ function ExpDetail() {
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)" }}>
       <DetailHeader />
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <DetailRow glyph={ic.folder} name="figma-exports" size="—" date="2026-06-20 14:30" type="Folder" />
+        <DetailRow glyph={ic.folder} name="mockup-exports" size="—" date="2026-06-20 14:30" type="Folder" />
         <DetailRow glyph={ic.file} name="report.pdf" size="2.4 MB" date="2026-06-24 09:12" type="PDF" />
         <DetailRow glyph={ic.image} name="diagram.png" size="488 KB" date="2026-06-26 18:05" type="PNG" state="selected" glyphColor="var(--tasty-accent-info)" />
         <DetailRow glyph={ic.file} name="notes.md" size="12 KB" date="2026-06-27 11:40" type="Markdown" state="hover" />
@@ -376,7 +379,7 @@ function GridCell({ glyph, name, state, glyphColor }) {
 function ExpGridMini() {
   return (
     <div style={{ flex: 1, background: "var(--tasty-bg-panel)", padding: 8, display: "flex", flexWrap: "wrap", gap: 4, alignContent: "flex-start" }}>
-      <GridCell glyph={ic.folder} name="figma-exports" />
+      <GridCell glyph={ic.folder} name="mockup-exports" />
       <GridCell glyph={ic.file} name="rust-toolchain.toml" />
       <GridCell glyph={ic.image} name="diagram.png" state="selected" glyphColor="var(--tasty-accent-info)" />
       <GridCell glyph={ic.file} name="notes.md" state="hover" />
@@ -387,7 +390,7 @@ function ExpGridMini() {
 }
 
 function ExpListMini() {
-  const rows = [[ic.folder, "figma-exports", null], [ic.file, "report.pdf", null], [ic.image, "diagram.png", "selected"], [ic.file, "notes.md", "hover"], [ic.file, "build.sh", null], [ic.file, "archive.zip", "cut"]];
+  const rows = [[ic.folder, "mockup-exports", null], [ic.file, "report.pdf", null], [ic.image, "diagram.png", "selected"], [ic.file, "notes.md", "hover"], [ic.file, "build.sh", null], [ic.file, "archive.zip", "cut"]];
   return (
     <div style={{ flex: 1, background: "var(--tasty-bg-panel)", padding: "6px 4px" }}>
       {rows.map(([g, n, st], i) => (
@@ -824,8 +827,35 @@ function Page() {
           </Stage>
           <Meta
             specs={[["surface", "fills a work-area tile"], ["internal tabs", <>28px · per-cwd, with <span className="ic">×</span> + <span className="ic">＋</span></>], ["toolbar", "44px · nav · path field · view toggle"], ["sidebar", <>196px — Files tree + Favorites</>], ["splitter", <>1px <span className="tok">--tasty-separator</span>, drag to resize</>], ["row height", <>26px (Detail) <span className="tok">--tasty-control-height-tree</span> family</>], ["selected row", <span className="tok">--tasty-surface-active</span>]]}
-            tokens={[{ tok: "--tasty-bg-panel", use: "surface + content", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-bg-sidebar", use: "tabs + sidebar + header", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-surface-raised", use: "view toggle", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-input-bg", use: "path field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-surface-active", use: "selected / current", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-warning", use: "favorite star", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-primary", use: "active tab bar", color: "var(--tasty-accent-primary)" }]} />
+            tokens={[{ tok: "--tasty-bg-panel", use: "surface + content", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-bg-sidebar", use: "tabs + sidebar + header", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-surface-raised", use: "view toggle container", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-segtoggle-on-bg", use: "view toggle — selected segment", color: "var(--tasty-segtoggle-on-bg)" }, { tok: "--tasty-input-bg", use: "path field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-surface-active", use: "selected row (rows only)", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-warning", use: "favorite star", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-primary", use: "active tab bar", color: "var(--tasty-accent-primary)" }]} />
           <Note>Defaults chosen (briefs left these open): <b>Detail</b> is the default view; the right-hand preview panel is <b>dropped</b> in favour of a wider content area (re-add later as a toggle if needed); no in-toolbar filter search in this pass; the tree is rooted at <b>Home</b>. Favorites are global across surfaces.</Note>
+        </Spec>
+
+        <Spec title="View toggle (SegToggle) — a segment, so it fills (settled)"
+          when={<>The 2026-09-17 rule reads “<b>underline switches a view, fill picks a value</b>”. The Explorer view toggle looked like it sat on both sides: it is drawn as a fill, but what it changes is called <code>ExplorerViewMode</code>. It is a <b>segment</b>. “View” in the rule means <i>different content</i> — a tab strip swaps what is shown. grid / list / detail show the <b>same listing</b> drawn three ways; that is a setting, a value. So the selected segment takes the segment recipe already settled for the remote Connection toggle: <span className="tok">--tasty-accent-primary</span> fill + <span className="tok">--tasty-text-on-accent</span> ink — icon-only segments included, the glyph inherits the ink via <code>currentColor</code>. <span className="tok">--tasty-surface-active</span> leaves this control for good: it is <b>row selection</b>, never a segment fill. Off and hover are unchanged.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})}
+                style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14, background: "var(--tasty-bg-app)",
+                  border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
+                {[["on = detail · off = grid, list", { value: "detail" }], ["hover on an off segment (list)", { value: "detail", hover: "list" }], ["on = grid", { value: "grid" }]].map(([cap, props]) => (
+                  <div key={cap} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44, padding: "0 8px", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)", border: "1px solid var(--tasty-border-default)" }}>
+                      <PathField icon={ic.folderOpen} path="~/Downloads" />
+                      <SegToggle {...props} />
+                    </div>
+                    <span style={{ width: 190, fontSize: 11, color: "var(--tasty-text-muted)" }}>{cap}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["verdict", "a VALUE — segment recipe (fill), same as remote Connection"], ["on", <><span className="tok">--tasty-segtoggle-on-bg</span> → accent-primary · <span className="tok">--tasty-segtoggle-on-fg</span> → text-on-accent</>], ["off", <><span className="tok">--tasty-text-muted</span> glyph, no fill</>], ["hover (off)", <span className="tok">--tasty-overlay-hover</span>], ["container", <>surface-raised + border-default 1px · radius — unchanged; width = pad*2 + seg*3 + gap*2 + border*2</>], ["ink contrast", "Mocha crust on blue ≈ 9.4:1 · Latte white on blue ≈ 4.8:1 — AA in both"], ["motion", "0ms — click swaps immediately"], ["surface-active", "row selection only — not a segment fill, not a tab fill"]]}
+            tokens={[{ tok: "--tasty-segtoggle-on-bg", use: "selected segment fill", color: "var(--tasty-segtoggle-on-bg)" }, { tok: "--tasty-segtoggle-on-fg", use: "selected segment glyph", color: "var(--tasty-segtoggle-on-fg)" }, { tok: "--tasty-text-muted", use: "off glyph", color: "var(--tasty-text-muted)" }, { tok: "--tasty-surface-raised", use: "container", color: "var(--tasty-surface-raised)" }]} />
+          <Note>Rule, extended: <b>underline switches content (tab strip); fill picks a value (segment) — including a value that only changes how the same content is drawn.</b> <span className="tok">--tasty-surface-active</span> is row selection and belongs to neither. No third branch is needed; the word “view” in a variable name does not make a control a tab strip.</Note>
+          <Dont><b>Don't</b> draw a 2px underline inside the toggle container — the segments sit on the container's own border and an underline would collide with it; that vocabulary belongs to tab strips at the top of a surface.</Dont>
         </Spec>
 
         <Spec title="Sidebar Favorites — populated vs. empty state"
@@ -886,7 +916,7 @@ function Page() {
             <div style={{ display: "flex", gap: 16, padding: 14, background: "var(--tasty-bg-panel)" }}>
               <ViewModeColumn title="Grid (icons)" sub="icon 16 + 3-line name (…); image = thumbnail slot"><ExpGridMini /></ViewModeColumn>
               <ViewModeColumn title="List" sub="small icon + name, one dense column"><ExpListMini /></ViewModeColumn>
-              <ViewModeColumn title="Detail" sub="sortable columns: Name · Size · Date · Type"><div style={{ display: "flex", flexDirection: "column", flex: 1 }}><DetailHeader /><div style={{ flex: 1, background: "var(--tasty-bg-panel)" }}><DetailRow glyph={ic.folder} name="figma-exports" size="—" date="06-20 14:30" type="Folder" /><DetailRow glyph={ic.file} name="report.pdf" size="2.4 MB" date="06-24 09:12" type="PDF" /><DetailRow glyph={ic.image} name="diagram.png" size="488 KB" date="06-26 18:05" type="PNG" state="selected" glyphColor="var(--tasty-accent-info)" /></div></div></ViewModeColumn>
+              <ViewModeColumn title="Detail" sub="sortable columns: Name · Size · Date · Type"><div style={{ display: "flex", flexDirection: "column", flex: 1 }}><DetailHeader /><div style={{ flex: 1, background: "var(--tasty-bg-panel)" }}><DetailRow glyph={ic.folder} name="mockup-exports" size="—" date="06-20 14:30" type="Folder" /><DetailRow glyph={ic.file} name="report.pdf" size="2.4 MB" date="06-24 09:12" type="PDF" /><DetailRow glyph={ic.image} name="diagram.png" size="488 KB" date="06-26 18:05" type="PNG" state="selected" glyphColor="var(--tasty-accent-info)" /></div></div></ViewModeColumn>
             </div>
           </Stage>
           <Meta

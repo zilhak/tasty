@@ -277,6 +277,7 @@ function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
 function DagSurface({ dags = [window.TastyDag.DAG_BUILD], initialId, narrow: forceNarrow, style }) {
   const [dagId, setDagId] = React.useState(initialId || dags[0].id);
   const [dir, setDir] = React.useState("td");
+  const [z, setZ] = React.useState(1); // detail-view zoom — lives in the back bar (S2)
   const [sel, setSel] = React.useState(null);
   const [narrowAuto, setNarrowAuto] = React.useState(false);
   const box = React.useRef(null);
@@ -369,6 +370,7 @@ function DagWindow({ onClose, entries = DAG_LIST, scope = "tasty" }) {
   const [openId, setOpenId] = React.useState(null);
   const [sel, setSel] = React.useState(null);
   const [dir, setDir] = React.useState("td");
+  const [z, setZ] = React.useState(1); // detail-view zoom — lives in the back bar (S2)
 
   const rows = entries.filter((e) => {
     if (mine && e.dag.workspace !== scope) return false;
@@ -397,7 +399,19 @@ function DagWindow({ onClose, entries = DAG_LIST, scope = "tasty" }) {
 
         <DrillDown view={open ? "detail" : "list"} title={open ? open.dag.name : ""}
           onBack={() => { setOpenId(null); setSel(null); }}
-          actions={open ? <RunnerBadge runner={open.dag.runner} hint={false} /> : null}
+          /* S2 — the detail view has NO second header. The back bar IS the
+             detail's chrome: its actions slot carries the zoom cluster (compact,
+             beside the graph it scales) and the runner badge (it describes the
+             run this node belongs to). The DAG selector is deliberately absent —
+             the back-bar title already names the DAG, and switching DAGs under
+             an open node detail has no meaning. */
+          actions={open ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+              <ZoomCluster z={z} onZoom={(d) => setZ((v) => Math.min(2, Math.max(0.5, +(v + d * 0.1).toFixed(2))))}
+                onFit={() => setZ(1)} dir={dir} onDir={setDir} compact />
+              <RunnerBadge runner={open.dag.runner} hint={false} />
+            </span>
+          ) : null}
           detail={open ? (
             <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
               <div style={{ flex: 1, minHeight: 0, display: "flex" }}>

@@ -15,7 +15,9 @@
    overridden in the [data-theme="latte"] block below.
    ============================================================ */
 
-:root {
+/* also on [data-theme] so a scoped theme wrapper (e.g. a gallery Latte specimen)
+   re-resolves this tier against its own primitives instead of inheriting :root values */
+:root, [data-theme] {
   /* ── Surfaces / elevation (tint, never shadow) ────────────── */
   --tasty-bg-app:        var(--tasty-color-neutral-0);   /* window chrome, deepest */
   --tasty-bg-sidebar:    var(--tasty-color-neutral-100);  /* sidebars, side panels */
@@ -30,6 +32,11 @@
   --tasty-text-muted:       var(--tasty-color-neutral-900);
   --tasty-text-disabled:    var(--tasty-color-neutral-700);
   --tasty-text-placeholder: var(--tasty-color-neutral-600);
+  /* dim/secondary GLYPH ink — decorative or orienting marks that must recede:
+     sidebar collapse chevrons, dim category icons, inert list affordances.
+     Same ramp step as placeholder, a DIFFERENT role: placeholder is unentered
+     user text, this is chrome. Disabled controls take text-disabled, not this. */
+  --tasty-glyph-dim:        var(--tasty-color-neutral-600);
   --tasty-text-on-accent:   var(--tasty-color-neutral-0); /* dark text atop a filled accent (Latte → white) */
   --tasty-text-on-window-close: var(--tasty-color-white); /* glyph atop the (dark) Windows close-hover fill — white in both themes */
 
@@ -49,9 +56,15 @@
   --tasty-accent-attention: var(--tasty-color-peach);
   --tasty-accent-danger:  var(--tasty-color-red);
   --tasty-accent-agent:   var(--tasty-color-mauve);  /* AI-agent surfaces / actions */
+  /* decorative accent — a warm mark on window chrome (a header glyph) that
+     carries NO state meaning. Same peach primitive as accent-attention on
+     purpose (one warm tone in the system), kept a separate role so a header
+     ornament never reads as "this needs attention". */
+  --tasty-accent-decorative: var(--tasty-color-peach);
   --tasty-accent-window-close: var(--tasty-color-os-windows-close); /* OS-native window-close hover (Windows CSD) */
   --tasty-accent-attached: var(--tasty-color-lavender); /* workspace claimed by ANOTHER client (multi-client attach) — deliberately NOT danger-red, which means error */
   --tasty-accent-remote:   var(--tasty-color-sky); /* MIRROR: this workspace is a local mirror of a REMOTE tasty instance (an origin/identity, NOT an execution state) — an axis of its own, kept off the status dot */
+  --tasty-accent-move:     var(--tasty-color-pink); /* MOVE SOURCE: the one surface / tab / pane armed by "Move Surface / Tab / Pane" and waiting for "… Here". A pending-action marker, not a state or an attention kind — its own hue so it never reads as notice (yellow/blue), occupancy (green/peach), agent (mauve) or attach (lavender) */
 
   /* OCCUPANCY — a subject (remote user / AI agent) HOLDS a terminal surface.
      Two tiers share ONE visual channel (the surface border) and are told apart
@@ -117,6 +130,12 @@
   /* ── Borders ──────────────────────────────────────────────── */
   --tasty-border-default: var(--tasty-color-neutral-300);
   --tasty-border-strong:  var(--tasty-color-neutral-400);
+  /* structural FRAME edge — one step above border-strong: pane dividers, the
+     popup frame outline + its titlebar underline, the border of a surface whose
+     GPU layer is inactive. FOUR places, closed list. A card outline or divider
+     INSIDE a panel is a partition → border-strong, never this.
+     Same ramp step as surface-active, a different role (that one is a FILL). */
+  --tasty-border-frame:   var(--tasty-color-neutral-500);
   --tasty-border-focus:   var(--tasty-color-blue);
 
   /* ── States — derived overlay tints (Latte → black) ───────── */
@@ -189,15 +208,21 @@
   --tasty-control-height-tab:  var(--tasty-size-24); /* tab strip */
   --tasty-tab-width:           var(--tasty-size-150);
   --tasty-titlebar-height:     var(--tasty-size-36); /* CSD window titlebar (4px grid) */
+  --tasty-toolbar-height:      var(--tasty-size-32); /* in-surface CONTAINER toolbar (git diff bar, viewer toolbars) — a container role, NOT control-height 28 or button-height-lg */
   --tasty-status-bar-height:   var(--tasty-size-24); /* workspace-area bottom StatusBar — fixed host-chrome height, OUTSIDE the UI zoom scale (like titlebar / tab strip / caption) */
 
   /* ── Icon glyph sizing (svg width/height inside controls) ── */
   --tasty-icon-size-xs: var(--tasty-size-12); /* chevrons, close, inline glyphs */
   --tasty-icon-size-sm: var(--tasty-size-14); /* tree / tab / menu icons */
   --tasty-icon-size-md: var(--tasty-size-16); /* toolbar / input / toast icons */
+  --tasty-icon-size-lg: var(--tasty-size-24); /* centred state glyph (empty / loading / error blocks) — replaces the off-scale 22 and 26 */
 
   /* ── Disabled state ── */
   --tasty-state-disabled-opacity: var(--tasty-opacity-disabled);
+
+  /* ── Tinted fill + edge (the accent-box idiom) ── */
+  --tasty-tint-fill-alpha:   var(--tasty-opacity-tint-fill);   /* 0.12 — accent as a soft fill */
+  --tasty-tint-border-alpha: var(--tasty-opacity-tint-border); /* 0.36 — the same accent as the edge */
 
   /* ── Typography roles ─────────────────────────────────────── */
   --tasty-font-ui:   var(--tasty-font-family-sans);
@@ -209,6 +234,7 @@
   --tasty-font-size-heading: var(--tasty-font-size-13); /* same size, weight 600 */
   --tasty-font-size-max:     var(--tasty-font-size-14); /* hard ceiling for UI chrome */
   --tasty-font-size-prose-h1: var(--tasty-font-size-20); /* markdown Heading ANCHOR — rendered CONTENT, exempt from the UI cap. REDEFINED for the egui_commonmark adoption: no longer a per-level pixel size but the top of the library's interpolated heading ladder (the egui `Heading` text-style; H2–H6 are interpolated between this and Body by the library, not individually set). */
+  --tasty-font-size-brand-display: var(--tasty-font-size-30); /* first-run shell-setup brand title — BRANDING exception to the 14px UI cap, the second and last one after the wordmark */
   --tasty-font-size-brand-wordmark: var(--tasty-font-size-17); /* "tasty." sidebar wordmark (mono) — sanctioned BRANDING exception to the 14px UI cap, the same way prose-h1 is content-exempt. The ONLY UI-chrome type over 14. */
   --tasty-font-size-term-sm: var(--tasty-font-size-12);
   --tasty-font-size-term:    var(--tasty-font-size-14); /* default terminal cell */
@@ -288,6 +314,13 @@
    ============================================================ */
 [data-theme="latte"] {
   --tasty-text-on-accent: var(--tasty-color-white);
+
+  /* disabled ink — Latte's light end of the ramp is compressed (neutral-600..800
+     sit within 1.2:1 of each other), so the same ramp step reads fainter than in
+     Mocha. One step up restores parity: Mocha n700 on panel 4.44 · Latte n800 3.49.
+     Still strictly below text-muted (n900) → the enabled > disabled order holds.
+     No contrast TARGET for disabled (WCAG 1.4.3 / 1.4.11 exempt it). */
+  --tasty-text-disabled: var(--tasty-color-neutral-800);
 
   --tasty-overlay-hover:  var(--tasty-alpha-black-8);
   --tasty-overlay-active: var(--tasty-alpha-black-12);

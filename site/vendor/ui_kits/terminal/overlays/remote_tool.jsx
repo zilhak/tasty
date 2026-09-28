@@ -792,6 +792,8 @@ function RemoteTool({ onClose, onFlash }) {
                 <ProfileRow key={p.id} p={p} passkeyNames={passkeyNames} onRedetect={pRedetect}
                   onEdit={pEdit} onDelete={(x) => setPView({ type: "confirm", profile: x })} />
               ))}
+              <LocalSshSection state={sshCfg} profileTargets={profiles.map((p) => p.target)}
+                onImport={(h) => onFlash && onFlash(`Added profile from ssh config: ${h.alias}`)} />
             </ListShell>
           )
         ) : tab === "attach" ? (

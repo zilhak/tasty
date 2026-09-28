@@ -10,12 +10,60 @@ const {
   HelpHint, Tooltip, ListCtrl,
 } = window.TastyDesignSystem_41fd3f;
 
+const CIcon = window.TastyDesignSystem_41fd3f.Icon;
+
+// Workspace row (expanded sidebar) — attached-ring slot specimen. geom="product"
+// reproduces the rejected 4 / 8 / 4 geometry for comparison only.
+function WsColG({ children }) {
+  return <div style={{ width: "var(--tasty-size-200)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>{children}</div>;
+}
+function WsRowG({ name, active, hover, attached, pill, sub, geom = "settled" }) {
+  const prod = geom === "product";
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: prod ? "var(--tasty-space-xs)" : "var(--tasty-workspace-dot-gap)",
+      padding: prod ? "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-xs)" : "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-workspace-row-padding-x)",
+      background: active ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
+      boxShadow: active ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+      <span style={{ flex: "none", width: prod ? "var(--tasty-status-dot-size)" : "var(--tasty-workspace-dot-slot)", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+        <StatusDot status="running" attached={attached} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-size-2)" }}>
+        <span style={{ fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-medium)", lineHeight: "var(--tasty-line-height-ui)", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+        {pill && <span style={{ alignSelf: "flex-start" }}><Tag variant="info">remote</Tag></span>}
+        {sub && <span style={{ fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+// CenterState — the one centred empty / loading / error block.
+const CS_COPY = {
+  fp: { loading: ["Loading folder", ""], empty: ["This folder is empty", "Files you add here appear in this list."], error: ["Could not read this folder", "Permission denied (os error 13)"] },
+  scripts: { loading: ["Loading scripts", ""], empty: ["No scripts", "Add a Lua script to run it on a lifecycle event."], error: ["Could not load scripts", "~/.config/tasty/scripts is not readable"] },
+};
+function CenterStateG({ variant = "empty", host = "fp" }) {
+  const [title, sub] = CS_COPY[host][variant];
+  const glyph = variant === "error" ? "alertCircle" : host === "scripts" ? "scriptFile" : "folderOpen";
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--tasty-space-md)" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", maxWidth: "var(--tasty-center-state-max-width)" }}>
+        <span style={{ display: "inline-flex", marginBottom: "var(--tasty-center-state-gap)", color: variant === "error" ? "var(--tasty-center-state-error-fg)" : "var(--tasty-center-state-glyph-fg)" }}>
+          {variant === "loading" ? <Spinner size="var(--tasty-center-state-glyph-size)" /> : <CIcon name={glyph} size="var(--tasty-center-state-glyph-size)" />}
+        </span>
+        <span style={{ fontSize: "var(--tasty-font-size-body)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-center-state-title-fg)" }}>{title}</span>
+        <span style={{ marginTop: "var(--tasty-center-state-line-gap)", minHeight: "calc(var(--tasty-font-size-caption) * var(--tasty-line-height-ui))", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-center-state-sub-fg)", textWrap: "pretty" }}>{sub}</span>
+      </div>
+    </div>
+  );
+}
+
 const NAV = [
   { id: "buttons", label: "Buttons" },
   { id: "chips", label: "Badge · Tag · Kbd" },
   { id: "forms", label: "Form controls" },
   { id: "nav", label: "Tab · TreeRow · Menu" },
   { id: "feedback", label: "StatusDot · Spinner · Toast" },
+  { id: "centerstate", label: "CenterState" },
   { id: "helphint", label: "HelpHint · Tooltip" },
   { id: "text", label: "Hint text" },
   { id: "data", label: "Table" },
@@ -145,6 +193,53 @@ function Components() {
             <Cluster label="shortcuts"><Kbd keys="Ctrl+K" /><Kbd keys="Ctrl+Shift+N" /><Kbd keys={["⌘", ","]} /><Kbd keys="Esc" /></Cluster>
           </Stage>
           <Meta tokens={[{ tok: "--tasty-font-mono", use: "keycap" }, { tok: "--tasty-surface-raised", use: "cap fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-default", use: "cap border" }]} />
+        <Spec title="One keycap, no palette variant"
+          when={<>The command palette drew its own keycaps — <b>18</b> square, <b>5</b> side padding, <b>4</b> gap, <b>11</b>px type — against <b>Kbd</b>'s 16 / 4 / 3 / 10. That is drift, not a variant: nothing about a palette row asks for a bigger key, and a second size would have to be maintained in two places. The palette <b>converges on Kbd</b>. In a <b>28px</b> palette row a 16px cap leaves 6px of air above and below and still centres on the row's text baseline, so no row height or alignment changes.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
+            {[["settled — Kbd (16 / 4 / 3 / 10)", true], ["dropped — palette-only cap (18 / 5 / 4 / 11)", false]].map(([label, canonical]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6, width: 380 }}>
+                <div style={{ fontSize: 11, color: canonical ? "var(--tasty-accent-success)" : "var(--tasty-text-muted)" }}>{label}</div>
+                <div style={{ background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", padding: 4 }}>
+                  {[["Split pane right", "Ctrl+Shift+D"], ["Open file…", "Ctrl+P"]].map(([cmd, keys]) => (
+                    <div key={cmd} style={{ height: 28, display: "flex", alignItems: "center", gap: 8, padding: "0 8px", borderRadius: "var(--tasty-radius-sm)" }}>
+                      <span style={{ flex: 1, fontSize: 13, color: "var(--tasty-text-secondary)" }}>{cmd}</span>
+                      {canonical
+                        ? <Kbd keys={keys} />
+                        : <span style={{ display: "inline-flex", gap: 4 }}>{keys.split("+").map((k) => (
+                            <span key={k} style={{ minWidth: 18, height: 18, padding: "0 5px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-kbd-fg)", background: "var(--tasty-kbd-bg)",
+                              border: "1px solid var(--tasty-kbd-border)", borderRadius: "var(--tasty-radius-sm)",
+                              boxShadow: "0 var(--tasty-kbd-shadow-depth) 0 var(--tasty-kbd-border)" }}>{k}</span>))}
+                          </span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["min side", <>16 — <span className="tok">--tasty-kbd-size</span> (was 18)</>], ["padding-x", <>4 — <span className="tok">--tasty-kbd-padding-x</span> (was 5)</>], ["gap", <>3 — <span className="tok">--tasty-kbd-gap</span> (was 4)</>], ["font", <>10 — <span className="tok">--tasty-kbd-font-size</span> (was 11)</>], ["bottom edge", <>unchanged — <span className="tok">--tasty-kbd-shadow-depth</span></>], ["row", "28px palette row — unchanged, 6px air per side"], ["new tokens", "none"]]}
+            tokens={[{ tok: "--tasty-kbd-size", use: "cap min side" }, { tok: "--tasty-kbd-padding-x", use: "cap side padding" }, { tok: "--tasty-kbd-gap", use: "between caps" }, { tok: "--tasty-kbd-font-size", use: "cap label" }]} />
+          <Note>The switch-number overlay keycap already reads the Kbd tokens, so the palette was the last divergent cap. One keycap in the system now.</Note>
+        </Spec>
+
+        <Spec title="Glyph sizes are icons, not type"
+          when={<>Four values were sitting in the font scale because they were written as font sizes: the <b>toggle check</b> (12), the <b>spinner</b> and the <b>switch-overlay keycap digit</b> (16), and the <b>clipboard image glyph</b> (30). Three of them are <b>glyphs</b>, so they are judged by the icon family and land on it exactly — <b>12 = </b><span className="tok">--tasty-icon-size-xs</span>, <b>16 = </b><span className="tok">--tasty-icon-size-md</span>. The clipboard glyph is a <b>content</b> mark and snaps to the sanctioned <b>28</b> exception it sits next to, dropping the 30. No font token is created for any of them.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 26, flexWrap: "wrap" }}>
+            {[["toggle check", "var(--tasty-icon-size-xs)", "check"], ["spinner", "var(--tasty-icon-size-md)", null], ["clipboard glyph", "28px", "clipboard"]].map(([label, size, icon]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: 34, color: "var(--tasty-text-secondary)" }}>
+                  {icon ? <GIcon d={icon === "check" ? <path d="m5 13 4 4L19 7" /> : <><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /></>} size={icon === "check" ? 12 : 28} /> : <Spinner size={16} />}
+                </span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>{label} · {size.replace("var(--tasty-", "").replace(")", "")}</span>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["toggle check", <>12 → <span className="tok">--tasty-icon-size-xs</span></>], ["spinner default", <>16 → <span className="tok">--tasty-icon-size-md</span></>], ["switch-overlay digit", <>16 — stays on <span className="tok">--tasty-kbd-size</span> (a keycap, not an icon)</>], ["clipboard glyph", "30 → 28 (the existing content-glyph exception)"], ["central glyph 22 / empty glyph 26", "unchanged named exceptions"], ["new font tokens", "none"]]}
+            tokens={[{ tok: "--tasty-icon-size-xs", use: "12 — inline glyphs" }, { tok: "--tasty-icon-size-md", use: "16 — toolbar / spinner" }, { tok: "--tasty-spinner-size", use: "→ icon-size-md" }]} />
+          <Note>Font <b>sizes</b> and glyph <b>sizes</b> are separate families. A 16px glyph next to 13px text is not a type-scale violation; it is an icon at its own size.</Note>
+        </Spec>
         </Spec>
       </Section>
 
@@ -398,20 +493,130 @@ function Components() {
         </Spec>
 
         <Spec title="Toast stack"
-          when={<>When several notices fire close together they <b>stack</b> rather than replace — newest on top, anchored to one corner, each keeping its own intent rail. Cap the visible count (older ones collapse into a “+N more” row) so the stack never walks off-screen. Same card as a single Toast; only the layout (vertical gap, z-order) is new.</>}>
-          <Stage variant="solo center" style={{ padding: 24, background: "var(--tasty-bg-app)" }}>
-            <div style={{ width: 320, display: "flex", flexDirection: "column", gap: 8 }}>
+          when={<>When several notices fire close together they <b>stack</b> rather than replace — they grow <b>upward from the anchor corner</b>, so the newest card sits at the bottom and older ones are pushed up, each keeping its own intent rail. A scope holds at most <b>5</b> at once; a sixth arriving drops the oldest (topmost) card immediately. Cards that would run past the scope's top edge are simply not drawn — there is no overflow row. Every floating card is fully opaque regardless of age; alpha is only for enter / exit. Same card as a single Toast; only the layout (vertical gap, order) is new.</>}>
+          <Stage variant="solo" style={{ padding: 24, background: "var(--tasty-bg-app)", display: "flex", justifyContent: "flex-end", alignItems: "flex-end", minHeight: 300 }}>
+            <div style={{ width: 320, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 8 }}>
+              <Toast variant="info">Two notices while importing the bundle</Toast>
+              <Toast variant="warning">Held by another client (readonly)</Toast>
               <Toast variant="agent">Agent opened 3 surfaces in background</Toast>
               <Toast variant="success" hint={<Kbd keys="⌘C" />}>Path copied to clipboard</Toast>
-              <Toast variant="warning">Held by another client (readonly)</Toast>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 22,
-                fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>+2 more</div>
+              <Toast variant="danger">Force detach — connection dropped</Toast>
             </div>
           </Stage>
           <Meta
-            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest on top"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "N visible → “+N more”"], ["width", "~320–380px"]]}
-            tokens={[{ tok: "--tasty-space-sm", use: "stack gap" }, { tok: "--tasty-surface-raised", use: "each card", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-text-muted", use: "overflow row", color: "var(--tasty-text-muted)" }]} />
-          <Dont><b>Don’t</b> let the stack grow unbounded. Cap it and collapse the tail — a wall of toasts buries the newest signal, which is the one that matters.</Dont>
+            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", "~320–380px"]]}
+            tokens={[{ tok: "--tasty-space-sm", use: "stack gap" }, { tok: "--tasty-surface-raised", use: "each card", color: "var(--tasty-surface-raised)" }]} />
+          <Dont><b>Don’t</b> let the stack grow unbounded, and don’t fold the tail into a “+N more” row either. Hold the cap by dropping the oldest card — a wall of toasts buries the newest signal, and an overflow counter is one more thing to read instead of the notice itself.</Dont>
+        <Spec title="The dot family — 8 generic, 6 in dense chrome, and the attached ring"
+          when={<>Dots come in <b>one role</b> and <b>two footprints</b>. The generic status dot is <b>8</b> (badges, tags, list rows). Inside <b>24px-tall chrome</b> — the pane tab strip, the workspace status bar, the collapsed sidebar rail — it is <b>6</b> (<span className="tok">--tasty-status-dot-size-compact</span>): 8 crowds a 24px row the moment a ring or a label sits beside it. That settles three drifting numbers at once — the tab busy dot keeps its 6 (it is <b>not</b> an alias of the generic 8 any more), the status bar's <b>7 becomes 6</b>, and the rail's 6 is now named rather than hard-coded. The <b>active tab marker</b> stays <b>4</b>: a different role (position, not state) and untouched. The <b>attached ring</b> adopts the token pair <b>2 / 2</b> — offset measured from the <b>dot's outer edge to the ring's inner edge</b> — replacing the 1.5 / 1.5 the product drew; in 24px chrome the whole mark is 6 + 2×(2+2) = <b>14</b> (11.9 / 14 / 16.8). <b>Corrected 2026-09-28:</b> the one place a ring actually ships is the expanded-sidebar <b>workspace row</b>, a list row on the generic 8 — its mark is 8 + 2×(2+2) = <b>16</b> (13.6 / 16 / 19.2) and it sits in a reserved 16px slot (next spec). The 14 figure applies to no shipping surface today.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 18, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: 28, alignItems: "flex-end", flexWrap: "wrap" }}>
+              {[["generic · 8", "var(--tasty-status-dot-size)", null], ["dense chrome · 6", "var(--tasty-status-dot-size-compact)", null], ["attached · 6 + ring 2/2", "var(--tasty-status-dot-size-compact)", true], ["tab marker · 4 (other role)", "4px", null]].map(([label, size, ring]) => (
+                <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  <div style={{ height: 24, display: "flex", alignItems: "center", justifyContent: "center", width: 40, background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius-sm)" }}>
+                    <span style={{ width: size, height: size, borderRadius: "var(--tasty-radius-pill)",
+                      background: ring ? "var(--tasty-status-dot-success)" : "var(--tasty-status-dot-success)",
+                      boxShadow: ring ? "0 0 0 var(--tasty-status-dot-attached-ring-offset) var(--tasty-bg-sidebar), 0 0 0 calc(var(--tasty-status-dot-attached-ring-offset) + var(--tasty-status-dot-attached-ring-width)) var(--tasty-status-dot-attached-ring)" : "none" }} />
+                  </div>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>{label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+              {[["ui_scale 0.85", 0.85], ["1", 1], ["1.2", 1.2]].map(([label, z]) => (
+                <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>{label} — bbox {(14 * z).toFixed(1)} in a 24 bar</span>
+                  <div style={{ height: 24, width: 150, display: "flex", alignItems: "center", gap: 8, padding: "0 8px", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius-sm)" }}>
+                    <span style={{ width: 6 * z, height: 6 * z, flex: "none", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-status-dot-success)",
+                      boxShadow: `0 0 0 ${2 * z}px var(--tasty-bg-sidebar), 0 0 0 ${4 * z}px var(--tasty-status-dot-attached-ring)` }} />
+                    <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>attached</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+              {[["toast gap 6 — the product today", 6], ["toast gap 8 — settled", 8]].map(([label, g]) => (
+                <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: g === 8 ? "var(--tasty-accent-success)" : "var(--tasty-text-muted)" }}>{label}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: g, width: 260 }}>
+                    <Toast variant="success">Keybindings exported.</Toast>
+                    <Toast variant="info">Two notices while importing the bundle — open Import / Export to read them.</Toast>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Stage>
+          <Meta
+            specs={[["generic dot", <>8 — <span className="tok">--tasty-status-dot-size</span> (unchanged)</>], ["dense chrome", <>6 — <span className="tok">--tasty-status-dot-size-compact</span> (new)</>], ["tab busy dot", "6 — keeps its value, now its own role"], ["status bar dot", "7 → 6 (visible change)"], ["sidebar rail dot", "6 — unchanged, now tokenised"], ["active tab marker", "4 — different role, untouched"], ["attached ring", "width 2 / offset 2 (1.5 → 2, visible change)"], ["attached bbox", "compact 6 → 14 · generic 8 → 16 (workspace row, the only ring in product)"], ["offset measured", "dot outer edge → ring inner edge"], ["toast gap", "6 → 8 (visible change, 4px grid)"], ["badge / tag dots", "unchanged at 8"]]}
+            tokens={[{ tok: "--tasty-status-dot-size-compact", use: "tab · status bar · rail" }, { tok: "--tasty-tab-dot-size", use: "→ compact" }, { tok: "--tasty-statusbar-dot-size", use: "→ compact" }, { tok: "--tasty-status-dot-attached-ring-width", use: "2" }, { tok: "--tasty-status-dot-attached-ring-offset", use: "2" }, { tok: "--tasty-toast-gap", use: "8, unchanged token" }]} />
+          <Dont><b>Don't</b> push the whole family to one number. A dot in a 24px strip and a dot on a 36px list row are the same <i>meaning</i> at two <i>densities</i>; collapsing them either crowds the strip or shrinks every badge.</Dont>
+          <Note><b>Unchanged by this decision:</b> every badge, tag and status consumer of the generic 8; the 4px active marker; the dot colours and their meanings (idle / busy / attached / needs-input / completion).</Note>
+        </Spec>
+        <Spec title="Attached ring in the workspace row — a reserved 16px slot (2026-09-28)"
+          when={<>The workspace row keeps the generic <b>8</b> dot, so the attached mark is <b>16</b>. The row reserves a <b>16px dot slot</b> (<span className="tok">--tasty-workspace-dot-slot</span>) on <b>every</b> row, attached or not, and centres the dot in it. Row left inset <b>8</b> (<span className="tok">--tasty-workspace-row-padding-x</span>), slot → body <b>4</b> (<span className="tok">--tasty-workspace-dot-gap</span>). Body x = 8 + 16 + 4 = <b>28</b> for title, remote pill and subtitle alike. Clearances from the ring's outer edge at scale 1: card edge <b>8</b>, active accent bar (x 0–2) <b>6</b>, label <b>4</b>. All three are tokens, so they scale with ui_scale and hold at 0.85 and 1.2. Compact 6 was rejected: this is a list row, and the 8 = list rows rule stays exception-free.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-lg)", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>
+                <span style={{ width: "100%", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · ui_scale 1</span>
+                {[["active", { active: true }], ["inactive", {}], ["hover", { hover: true }]].map(([st, p]) => (
+                  <div key={st} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                    <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{st}</span>
+                    <WsColG>
+                      <WsRowG {...p} attached name="second" />
+                      <WsRowG {...p} name="api-server" />
+                      <WsRowG {...p} attached name="staging" pill sub="ssh deploy@10.0.4.12" />
+                    </WsColG>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+              {[["ui_scale 0.85 — bbox 13.6", 0.85], ["ui_scale 1.2 — bbox 19.2", 1.2]].map(([cap, z]) => (
+                <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                  <div style={{ zoom: z }}><WsColG><WsRowG active attached name="second" /><WsRowG attached name="staging" pill sub="ssh deploy@10.0.4.12" /></WsColG></div>
+                </div>
+              ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-accent-danger)" }}>rejected — product today (inset 4 · slot 8 · gap 4)</span>
+                <div style={{ zoom: 2 }}><WsColG><WsRowG geom="product" active attached name="second" /></WsColG></div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-accent-success)" }}>settled — 2× zoom (inset 8 · slot 16 · gap 4)</span>
+                <div style={{ zoom: 2 }}><WsColG><WsRowG active attached name="second" /></WsColG></div>
+              </div>
+            </div>
+          </Stage>
+          <Meta
+            specs={[["dot", <>8 — <span className="tok">--tasty-status-dot-size</span> (unchanged)</>], ["attached bbox", "8 + 2×(2+2) = 16 → 13.6 / 16 / 19.2"], ["row inset", "product 4 → 8"], ["dot slot", "product 8 → 16, reserved on every row"], ["slot → body", "4 (unchanged)"], ["body x", "product 12 → 28 (title · pill · subtitle)"], ["clearance", "card 8 · accent bar 6 · label 4"], ["collapsed rail", "unchanged — avatar square border, no ring"]]}
+            tokens={[{ tok: "--tasty-workspace-row-padding-x", use: "→ space-sm 8" }, { tok: "--tasty-workspace-dot-slot", use: "→ size-16" }, { tok: "--tasty-workspace-dot-gap", use: "→ space-xs 4" }, { tok: "--tasty-status-dot-attached-ring", use: "lavender", color: "var(--tasty-status-dot-attached-ring)" }]} />
+          <Dont><b>Don't</b> size the slot to the dot and let the outline overflow into padding and gap. The kit's 8 / 8 held the label clear, but the ring still reached the active accent bar. Reserve the whole mark.</Dont>
+        </Spec>
+        </Spec>
+      </Section>
+
+      <Section id="centerstate" title="CenterState — empty · loading · error">
+        <Spec title="One centred block for every empty list (2026-09-28)"
+          when={<>The file picker, the remote-attach popup and <b>Settings › Misc › Scripts</b> all show the same block where their list would be: glyph or spinner, a title line, and an optional sub line. It is <b>one part</b> with three variants. Glyph = <b>24</b> (<span className="tok">--tasty-icon-size-lg</span>, new icon tier) for both the old centre glyph 22 and the scripts glyph 26. <b>No fixed height</b>: the block centres in the region it replaces, so the product's 100 and the specimen's 120 both go. The sub line slot is <b>always reserved</b>, one caption line even when empty, so loading → empty → error never moves the glyph. Everything is a token, so the block scales with ui_scale (0.85 / 1 / 1.2).</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-lg)", alignItems: "flex-start" }}>
+            {[["file picker · remote attach", "fp"], ["Settings › Misc › Scripts", "scripts"]].map(([host, k]) => (
+              <div key={k} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{host}</span>
+                <div style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
+                  {["loading", "empty", "error"].map((v) => (
+                    <div key={v} style={{ width: "var(--tasty-size-288)", height: k === "fp" ? "var(--tasty-size-220)" : "var(--tasty-size-160)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                      <div style={{ height: "var(--tasty-control-height)", flex: "none", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{k === "fp" ? "~/work/tasty/assets" : "Scripts · " + v}</div>
+                      <CenterStateG variant={v} host={k} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["variants", "loading · empty · error"], ["glyph / spinner", "24 — icon-size-lg (was 22 · 26)"], ["glyph → title", "8"], ["title → sub", "4 · sub slot always reserved"], ["title", "body 13 · text-secondary"], ["sub", "caption 11 · text-muted · wraps at 300"], ["height", "none — centres in the list region"], ["ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"]]}
+            tokens={[{ tok: "--tasty-center-state-glyph-size", use: "→ icon-size-lg 24" }, { tok: "--tasty-center-state-glyph-fg", use: "→ glyph-dim", color: "var(--tasty-center-state-glyph-fg)" }, { tok: "--tasty-center-state-error-fg", use: "→ accent-danger", color: "var(--tasty-center-state-error-fg)" }, { tok: "--tasty-center-state-gap", use: "8" }, { tok: "--tasty-center-state-line-gap", use: "4" }, { tok: "--tasty-center-state-max-width", use: "→ measure-sm 300" }]} />
+          <Note><b>Clipboard centre glyph 28</b> is a content glyph (T6, 2026-09-17) and stays outside this part.</Note>
         </Spec>
       </Section>
 

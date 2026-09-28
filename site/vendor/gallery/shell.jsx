@@ -10,8 +10,8 @@
 // ============================================================
 const { useState, useEffect } = React;
 
-// Catalog is grouped so the left nav stays legible as it grows (e.g. the four
-// Overlays sub-pages, and a future "Screens" group for per-implementation designs).
+// Catalog is grouped so the left nav stays legible as it grows (e.g. the five
+// Overlays sub-pages; Surfaces / Chrome / Plugins each hold one page today).
 const PAGE_GROUPS = [
   { group: "Foundations", pages: [
     { key: "foundations", label: "Foundations", href: "index.html", desc: "tokens" },
@@ -292,7 +292,7 @@ function Note({ children }) { return <p className="note">{children}</p>; }
 function Do({ children }) { return <p className="do">{children}</p>; }
 function Dont({ children }) { return <p className="dont">{children}</p>; }
 
-// inline icon (lucide-style 2px) — shared by pages
+// gallery-chrome-only inline glyph (2px stroke). Legacy: still consumed by layouts.jsx `ic`; product UI must use <Icon name> (icons/<name>.svg) instead.
 function GIcon({ d, size = 16, fill }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={fill || "none"}

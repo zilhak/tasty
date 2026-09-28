@@ -3,7 +3,7 @@
 // 2-depth (tabs→sections→content) content idioms, and surface focus
 // states. Turn on Specs to see width/height rails on each region.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;
-const { IconButton, Button, Tab, TreeRow, StatusDot, Tag, Badge, BadgeGroup, Input, MenuItem, Switch, ListCtrl, DrillDown } = window.TastyDesignSystem_41fd3f;
+const { Kbd, Icon, IconButton, Button, Tab, TreeRow, StatusDot, Tag, Badge, BadgeGroup, Input, MenuItem, Switch, ListCtrl, DrillDown } = window.TastyDesignSystem_41fd3f;
 
 const NAV = [
   { id: "sidebar", label: "Sidebar & rail" },
@@ -15,6 +15,8 @@ const NAV = [
   { id: "divider", label: "Divider" },
   { id: "surfaces", label: "Surface focus states" },
   { id: "attention", label: "Attention kinds" },
+  { id: "movesource", label: "Move source" },
+  { id: "statusbar", label: "Workspace status bar" },
 ];
 
 const ic = {
@@ -23,6 +25,8 @@ const ic = {
   term: <GIcon d={<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 15h4" /></>} />,
   md: <GIcon d={<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 15V9l2.5 3L12 9v6M16 9v4m0 0 2-2m-2 2-2-2" /></>} />,
   plus: <GIcon d={<path d="M12 5v14M5 12h14" />} />,
+  branch: <GIcon d={<><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="8" r="2.5" /><path d="M6 8.5v7M8.5 7H14a2 2 0 0 1 2 2v0" /></>} size={12} />,
+  sun: <GIcon d={<><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.2 4.2l1.4 1.4m12.8 12.8 1.4 1.4M2 12h2m16 0h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" /></>} size={12} />,
   settings: <GIcon d={<><circle cx="12" cy="12" r="3" /><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>} />,
   plug: <GIcon d={<path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8zM12 16v6" />} />,
   tools: <GIcon d={<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />} />,
@@ -871,6 +875,84 @@ function Layouts() {
             tokens={[{ tok: "--tasty-tab-fg-needs-input", use: "blocked tab title", color: "var(--tasty-tab-fg-needs-input)" }, { tok: "--tasty-tab-fg-completion", use: "finished tab title", color: "var(--tasty-tab-fg-completion)" }, { tok: "--tasty-surface-highlight-input-border", use: "blocked surface edge", color: "var(--tasty-surface-highlight-input-border)" }, { tok: "--tasty-surface-highlight-input-width", use: "2px — matches completion" }]} />
           <Note><b>Why NeedsInput outranks occupancy.</b> Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy. Because attention clears on focus, an <i>active</i> tab or a <i>focused</i> surface never renders an attention tint; the ordering above only settles the unfocused cases.</Note>
           <Dont><b>Don't</b> stack the two edges (a 1px occupancy line inside a 2px NeedsInput line). One channel, one color — stacked edges read as a rendering bug at these widths.</Dont>
+        </Spec>
+      </Section>
+
+      <Section id="movesource" title="Move source highlight">
+        {window.GalleryMoveSource ? <window.GalleryMoveSource /> : null}
+      </Section>
+
+      <Section id="statusbar" title="Workspace status bar">
+        <Spec title="What the 24px bar carries, and what goes first when it can't"
+          when={<>The bar is a <b>read-only summary of the focused surface</b> plus one keyboard reminder. Left cluster, in this order: <b>git branch</b> (glyph + name), <b>surface id</b> (mono <code>s3·p1</code>), <b>shell</b>, <b>grid</b> (<code>120×32</code>). Right cluster: the <b>palette shortcut</b> and the <b>theme</b> glyph. Nothing here is a destination — clicking an item never moves focus, and the data is read from the focused surface at the existing 1Hz cache. Items that have no value <b>disappear</b> rather than showing a dash: outside a repo the branch item is absent, not empty.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
+            {[["wide — everything", 720, { branch: "feat/dag-detail" }],
+              ["narrower — grid then shell drop", 470, { branch: "feat/dag-detail", drop: 2 }],
+              ["narrow — surface id drops, branch truncates", 340, { branch: "feat/dag-detail-and-runner-badge", drop: 3 }],
+              ["floor — branch glyph + palette + theme", 210, { branch: "feat/dag-detail", drop: 5 }],
+              ["not a repo — the branch item is absent", 470, { branch: null, drop: 2 }],
+              ["detached HEAD — short sha in the branch slot", 470, { branch: "@ 4f9c1ab", drop: 2 }]].map(([label, w, o]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div style={{ width: w, height: "var(--tasty-status-bar-height)", display: "flex", alignItems: "center", gap: 10, padding: "0 10px",
+                  background: "var(--tasty-bg-sidebar)", border: "1px solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius-sm)",
+                  fontSize: 11, color: "var(--tasty-text-muted)", overflow: "hidden" }}>
+                  {o.branch && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flex: "none", maxWidth: 160, overflow: "hidden" }}>
+                      <span style={{ display: "inline-flex", color: "var(--tasty-statusbar-glyph)" }}>{ic.branch}</span>
+                      {(o.drop || 0) < 5 && <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.branch}</span>}
+                    </span>
+                  )}
+                  {(o.drop || 0) < 3 && <span style={{ fontFamily: "var(--tasty-font-mono)", flex: "none" }}>s3·p1</span>}
+                  {(o.drop || 0) < 2 && <span style={{ flex: "none" }}>zsh</span>}
+                  {(o.drop || 0) < 1 && <span style={{ fontFamily: "var(--tasty-font-mono)", flex: "none" }}>120×32</span>}
+                  <div style={{ flex: 1 }} />
+                  {(o.drop || 0) < 4 && <span style={{ flex: "none" }}><Kbd keys="Ctrl+K" /></span>}
+                  <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-statusbar-theme-glyph)" }}>{ic.sun}</span>
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["height", <>24 — <span className="tok">--tasty-status-bar-height</span>, outside the UI scale</>], ["left", "branch · surface id · shell · grid"], ["right", "palette shortcut · theme glyph"], ["glyphs", <span className="tok">--tasty-statusbar-glyph</span>], ["theme", <>a <code>sun</code> / <code>theme</code> glyph, <b>not</b> a coloured dot</>], ["drop order", "1 grid → 2 shell → 3 surface id → 4 palette cap → 5 branch text (glyph stays)"], ["never drops", "theme glyph"], ["no value", "the item is absent — never a dash"], ["detached HEAD", "short sha in the branch slot"], ["interaction", "read-only; no item moves focus"], ["refresh", "1Hz cache — unchanged"]]}
+            tokens={[{ tok: "--tasty-status-bar-height", use: "24px bar" }, { tok: "--tasty-statusbar-glyph", use: "item glyphs", color: "var(--tasty-statusbar-glyph)" }, { tok: "--tasty-statusbar-theme-glyph", use: "theme indicator", color: "var(--tasty-statusbar-theme-glyph)" }, { tok: "--tasty-statusbar-dot-size", use: "6 — when a surface dot is shown" }]} />
+          <Note>The theme indicator used to borrow <b>accent-warning</b> for light and <b>accent-agent</b> for dark. Light-vs-dark is not a warning and not an agent, so it becomes a <b>glyph in dim ink</b> — no colour role is minted for it.</Note>
+          <Dont><b>Don't</b> add counts, clocks, CPU meters or notification badges. Anything that changes faster than the bar's 1Hz read, or that is not a property of the focused surface, belongs elsewhere.</Dont>
+        </Spec>
+
+        <Spec title="Theme cell — one glyph box, both themes (settled)"
+          when={<>The theme cell draws <code>sun</code> in Latte and <code>theme</code> in Mocha at <b>one size</b>: <span className="tok">--tasty-statusbar-glyph-size</span> = <span className="tok">--tasty-icon-size-xs</span> (12), the same box every other inline glyph in the bar uses. A dimension must not depend on which theme is active, so the two glyphs are <b>not</b> given different sizes. They used to read differently anyway — <code>sun</code>'s rays ran to the edge of the 24 box (ink 92%) while <code>theme</code>'s ring stops short (ink 83%), so Latte's glyph measured <b>+2px taller</b> than the caption beside it at every UI scale. That is a drawing fault, not a sizing one, so it is fixed <b>in the asset</b>: <code>icons/sun.svg</code> ray extent pulled to the same 83% ink box. Both glyphs now land at 10px ink inside the 12 box, matching the 11px caption's ascender.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 16, alignItems: "stretch" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end",
+                  background: "var(--tasty-bg-app)", padding: 12, borderRadius: "var(--tasty-radius)", border: "1px solid var(--tasty-border-default)" }}>
+                  {[0.85, 1, 1.2].map((s) => (
+                    <div key={s} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>UI scale ×{s}</div>
+                      <div style={{ height: "var(--tasty-status-bar-height)", display: "flex", alignItems: "center", gap: 8, padding: "0 10px",
+                        background: "var(--tasty-bg-sidebar)", border: "1px solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius-sm)",
+                        fontSize: Math.round(11 * s), color: "var(--tasty-text-muted)" }}>
+                        <span style={{ width: "var(--tasty-statusbar-dot-size)", height: "var(--tasty-statusbar-dot-size)", flex: "none",
+                          borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-status-idle)" }} />
+                        <span>main</span>
+                        <span style={{ display: "inline-flex", color: "var(--tasty-statusbar-theme-glyph)" }}><Icon name="sun" size={Math.round(12 * s)} /></span>
+                        <span>Latte</span>
+                        <span style={{ display: "inline-flex", color: "var(--tasty-statusbar-theme-glyph)" }}><Icon name="theme" size={Math.round(12 * s)} /></span>
+                        <span>Mocha</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["glyph box", <>12 — <span className="tok">--tasty-statusbar-glyph-size</span> → <span className="tok">--tasty-icon-size-xs</span></>], ["per theme", "the same value — Mocha and Latte never differ"], ["per glyph", "the same value — sun and theme never differ"], ["UI scale", <>rides the scale with the rest: round(12×s) = 10 / 12 / 14</>], ["bar height", "24, outside the UI scale — unchanged"], ["ink ratio", "83% of the box for both glyphs (10px ink at box 12)"], ["optical fix", <>asset — <code>icons/sun.svg</code> rays 2→3 / 22→21, diagonals to ±6.4</>], ["ink before", "sun 92% · theme 83% → Latte read +2px large"], ["color", <span className="tok">--tasty-statusbar-theme-glyph</span>]]}
+            tokens={[{ tok: "--tasty-statusbar-glyph-size", use: "every inline glyph in the bar" }, { tok: "--tasty-icon-size-xs", use: "the semantic it aliases" }, { tok: "--tasty-statusbar-theme-glyph", use: "theme glyph ink", color: "var(--tasty-statusbar-theme-glyph)" }, { tok: "--tasty-statusbar-dot-size", use: "6 — the dot on the same line" }]} />
+          <Note>The two glyphs sit side by side here <b>only to compare them</b>. In the product the cell carries exactly one: <code>sun</code> in Latte, <code>theme</code> in Mocha, with the theme name beside it.</Note>
+          <Dont><b>Don't</b> give <code>sun</code> its own size token to cancel the overshoot. A size that changes with theme state turns a dimension into a state, and the same overshoot would follow <code>sun</code> into every other place it is drawn. Optical parity belongs in the glyph.</Dont>
         </Spec>
       </Section>
 

@@ -89,7 +89,7 @@ function PaletteFrame() {
   ];
   return (
     <div align="top" style={{ width: 480, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 16px 48px rgba(0,0,0,.5)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: 10, borderBottom: "1px solid var(--tasty-separator)" }}>
         <Input block icon={ic.search} placeholder="Type to search commands…" defaultValue="" />
       </div>
@@ -110,7 +110,7 @@ function PaletteFrame() {
 function ApprovalFrame() {
   return (
     <div style={{ width: 440, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--tasty-accent-agent)" }} />
         <span style={{ fontSize: 14, fontWeight: 600 }}>Approve agent action</span>
@@ -139,7 +139,7 @@ git push --force origin main</pre>
 function RenameFrame() {
   return (
     <div style={{ width: 360, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: "14px 14px 0" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>Rename workspace</div>
         <div style={{ fontSize: 12, color: "var(--tasty-text-muted)", marginBottom: 12 }}>Press <Kbd keys="↵" /> to confirm, <Kbd keys="Esc" /> to cancel.</div>
@@ -158,7 +158,7 @@ function SettingsFrame() {
   const L2 = ["Theme", "General", "Terminal"];
   return (
     <div style={{ width: 620, height: 380, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
-      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       {/* L1 top tabs */}
       <div style={{ display: "flex", alignItems: "center", height: 44, flex: "none", padding: "0 12px", gap: 2,
         borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
@@ -224,7 +224,7 @@ function SettingsGeneralOverlayFrame() {
   const active = 3;
   return (
     <div style={{ width: 620, height: 380, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
-      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", height: 44, flex: "none", padding: "0 12px", gap: 2,
         borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Settings</span>
@@ -270,7 +270,7 @@ function SettingsRemoteTransferFrame() {
   const active = 4;
   return (
     <div style={{ width: 620, height: 380, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
-      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", height: 44, flex: "none", padding: "0 12px", gap: 2,
         borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Settings</span>
@@ -325,7 +325,7 @@ function SettingsRemoteTransferFrame() {
 function TransferProgressFrame({ name = "sprint-42-demo.mp4", pct = 27, done = "34.6 MiB", total = "128.0 MiB", rate = "2.1 MiB/s" }) {
   return (
     <div style={{ width: "var(--tasty-transfer-popup-width)", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.download}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Receiving file</span>
@@ -355,7 +355,7 @@ function TransferProgressFrame({ name = "sprint-42-demo.mp4", pct = 27, done = "
 function TransferErrorFrame({ retry = false, name = "sprint-42-demo.mp4", reason = "capacity exceeded — transfers folder is at its 500 MiB limit" }) {
   return (
     <div style={{ width: "var(--tasty-transfer-popup-width)", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)" }}>{ic.warn}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Transfer failed</span>
@@ -390,7 +390,7 @@ function ToolsMenuFrame() {
       {/* the menu, anchored above the button */}
       <div role="menu" aria-label="Tools" style={{ position: "absolute", left: 12, bottom: 52, width: 160,
         background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-        borderRadius: "var(--tasty-radius)", padding: 6, boxShadow: "0 8px 28px rgba(0,0,0,.4)" }}>
+        borderRadius: "var(--tasty-radius)", padding: 6, boxShadow: "var(--tasty-shadow-popover)" }}>
         {builtin.map((l) => <MenuItem key={l} label={l} />)}
         <MenuItem separator />
         {plugin.map((l) => <MenuItem key={l} label={l} />)}
@@ -493,7 +493,7 @@ function PortsFrame({ favorites = "mixed" }) {
   ];
   return (
     <div style={{ width: "100%", maxWidth: 640, height: 460, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
-      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.port}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Listening ports</span>
@@ -521,7 +521,7 @@ function PortsFrame({ favorites = "mixed" }) {
 }
 
 // ── Remote connections — 520×460, three top tabs, list view ──
-function RemoteFrame({ tab = "profiles" }) {
+function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
   const Caption = ({ children }) => <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", fontFamily: "var(--tasty-font-mono)" }}>{children}</span>;
   const ProfileRow = ({ name, label, type, target, passkey, detecting }) => (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 4px", borderBottom: "1px solid var(--tasty-separator)" }}>
@@ -575,7 +575,7 @@ function RemoteFrame({ tab = "profiles" }) {
   );
   return (
     <div style={{ width: 520, height: 440, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
-      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.remote}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Remote connections</span>
@@ -602,9 +602,9 @@ function RemoteFrame({ tab = "profiles" }) {
         <Button variant="secondary" size="sm" leadingIcon={ic.plus}>Add profile</Button>
         <div style={{ position: "relative" }}>
           <Button variant="primary" size="sm" leadingIcon={ic.funnel}>Filter · 3/4</Button>
-          <div role="dialog" aria-label="Filter by protocol" style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 5, width: 236,
+          <div role="dialog" aria-label="Filter by protocol" style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 5, width: "var(--tasty-remote-filter-menu-width)",
             background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
-            boxShadow: "0 8px 28px rgba(0,0,0,.4)", overflow: "hidden" }}>
+            boxShadow: "var(--tasty-shadow-popover)", overflow: "hidden" }}>
             <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--tasty-separator)", fontFamily: "var(--tasty-font-mono)",
               fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>Filter by protocol</div>
             <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -635,8 +635,165 @@ function RemoteFrame({ tab = "profiles" }) {
         <ProfileRow name="db-primary" type="ssh" target="postgres@db.internal:2222" passkey="" />
         <ProfileRow name="edge-cache" label="staging" type="ssh" target="root@edge.example.com" passkey="edge-pem" detecting />
         <ProfileRow name="media-nas" label="lab" type="smb" target="host=nas.local  share=media" passkey="nas-cred" />
+        {ssh !== "none" && <LocalSshSection state={ssh} />}
       </div>
       </>
+      )}
+    </div>
+  );
+}
+
+// ── R2 — local ~/.ssh/config hosts: a SECONDARY list under the profiles ──
+// Settled shape: same scroll as the profile list (it is the same question —
+// "which machine" — and a separate tab would hide it), but visually one tier
+// down, so it can never be mistaken for a stored profile:
+//   · a section header (11px uppercase label + mono source path + count), not a card
+//   · two lines per row instead of three: alias, then user@host:port in mono
+//   · no per-row icon buttons; ONE ghost "Add profile" action, right-aligned,
+//     which is the existing import action (no new behaviour)
+//   · a host already imported shows a muted "in profiles" Tag and no action
+// Empty / failure are one muted line each — a missing ssh config is not an error.
+function LocalSshSection({ state = "hosts" }) {
+  const hosts = [
+    { alias: "gb10", target: "maya@gb10.local:22" },
+    { alias: "prod-web", target: "deploy@10.0.4.12:22", have: true },
+    { alias: "eu-west-build-farm-bastion-01", target: "ci-runner@bastion-01.eu-west.build.example.com:2222" },
+  ];
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--tasty-border-frame)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, padding: "2px 4px 6px" }}>
+        <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--tasty-text-secondary)" }}>From ssh config</span>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>~/.ssh/config</span>
+        <div style={{ flex: 1 }} />
+        {state === "hosts" && <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{hosts.length}</span>}
+      </div>
+      {state === "empty" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>No hosts in ~/.ssh/config.</div>}
+      {state === "unreadable" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>Can't read ~/.ssh/config — permission denied.</div>}
+      {state === "hosts" && hosts.map((h) => (
+        <div key={h.alias} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: "1px solid var(--tasty-separator)" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: "var(--tasty-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.alias}</div>
+            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.target}</div>
+          </div>
+          {h.have
+            ? <Tag>in profiles</Tag>
+            : <Button variant="ghost" size="sm" leadingIcon={ic.plus}>Add profile</Button>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── ShellMock — the whole window at 1/1 scale, small: CSD titlebar · sidebar ·
+// pane tab strip · two surfaces · status bar. Exists so a SCOPED scrim can be
+// judged against everything it does and does not cover.
+//   scope: "none" | "window" | "surface"   which rect the scrim dims
+//   split: "v" (side by side) | "h" (stacked)
+//   child: true → a Browse picker opened from the popup (two shells, ONE scrim)
+function ShellMock({ scope = "none", split = "v", child = false, narrow = false, clamp = false }) {
+  const W = narrow ? 560 : 760, H = 380;
+  const surfaceScrim = scope === "surface";
+  const Term = ({ lines, focused, children, label }) => (
+    <div style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden",
+      background: focused ? "var(--tasty-surface-terminal-focused-bg)" : "var(--tasty-surface-terminal-unfocused-bg)" }}>
+      <div style={{ padding: "8px 10px", fontFamily: "var(--tasty-font-mono)", fontSize: 11, lineHeight: 1.6,
+        color: focused ? "var(--tasty-text-secondary)" : "var(--tasty-text-muted)", whiteSpace: "pre" }}>{lines}</div>
+      {children}
+    </div>
+  );
+  const popup = (
+    <div style={{ position: "relative", width: clamp ? 220 : 300, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-frame)",
+      borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: child ? "visible" : "hidden" }}>
+      <div style={{ padding: "10px 12px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Open markdown file</div>
+        <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>docs/architecture.md</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, padding: "0 12px 10px" }}>
+        <Button variant="secondary" size="sm">Browse…</Button>
+        <div style={{ flex: 1 }} />
+        <Button variant="ghost" size="sm">Cancel</Button>
+        <Button variant="primary" size="sm">Open</Button>
+      </div>
+      {child && (
+        <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", zIndex: 3,
+          width: clamp ? 200 : 260, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-frame)",
+          borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
+          <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, borderBottom: "1px solid var(--tasty-separator)" }}>Open file</div>
+          <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+            {["configs", "docs", "README.md"].map((n, i) => (
+              <div key={n} style={{ display: "flex", alignItems: "center", gap: 6, height: 20, fontSize: 12,
+                color: i === 2 ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
+                <Icon name={i === 2 ? "file" : "folder"} size={12} />{n}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <div style={{ width: W, height: H, display: "flex", flexDirection: "column", overflow: "hidden",
+      border: "1px solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-bg-app)", position: "relative" }}>
+      {/* titlebar */}
+      <div style={{ flex: "none", height: 28, display: "flex", alignItems: "center", gap: 6, padding: "0 10px",
+        background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>tasty — agents-prod</span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        {/* sidebar */}
+        <div style={{ flex: "none", width: narrow ? 120 : 148, background: "var(--tasty-bg-sidebar)", borderRight: "1px solid var(--tasty-border-frame)", padding: 8,
+          display: "flex", flexDirection: "column", gap: 6 }}>
+          {["agents-prod", "build", "notes"].map((n, i) => (
+            <div key={n} style={{ display: "flex", alignItems: "center", gap: 6, height: 22, padding: "0 6px", borderRadius: "var(--tasty-radius-sm)",
+              background: i === 0 ? "var(--tasty-surface-active)" : "transparent", fontSize: 12,
+              color: i === 0 ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
+              <span style={{ width: "var(--tasty-statusbar-dot-size)", height: "var(--tasty-statusbar-dot-size)", borderRadius: "var(--tasty-radius-pill)",
+                background: i === 0 ? "var(--tasty-status-dot-success)" : "var(--tasty-status-dot-idle)" }} />{n}
+            </div>
+          ))}
+        </div>
+        {/* work area */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: "none", height: 24, display: "flex", alignItems: "stretch", background: "var(--tasty-bg-panel)", borderBottom: "1px solid var(--tasty-separator)" }}>
+            {["zsh", "cargo watch"].map((t, i) => (
+              <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "0 10px", fontSize: 11,
+                color: i === 0 ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)",
+                borderBottom: i === 0 ? "2px solid var(--tasty-accent-primary)" : "2px solid transparent",
+                borderRight: "1px solid var(--tasty-separator)" }}>
+                {t}
+                {i === 1 && <span style={{ width: "var(--tasty-tab-dot-size)", height: "var(--tasty-tab-dot-size)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-status-dot-success)" }} />}
+              </span>
+            ))}
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: split === "v" ? "row" : "column" }}>
+            <div style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0, display: "flex" }}>
+              <Term focused lines={"$ tail -f deploy.log\n[12:04] applied 3 manifests\n[12:05] waiting for rollout…"} />
+              {/* the scrim — surface scope: this rect, nothing else */}
+              {surfaceScrim && <div style={{ position: "absolute", inset: 0, background: "var(--tasty-scrim-bg)", zIndex: 1 }} />}
+              {scope === "surface" && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2, padding: 8 }}>{popup}</div>
+              )}
+            </div>
+            <div style={{ flex: "none", ...(split === "v" ? { width: 1 } : { height: 1 }), background: "var(--tasty-border-frame)" }} />
+            <Term lines={"$ git status\nOn branch feat/dag-detail\nnothing to commit"} />
+          </div>
+        </div>
+      </div>
+      {/* status bar */}
+      <div style={{ flex: "none", height: "var(--tasty-status-bar-height)", display: "flex", alignItems: "center", gap: 10, padding: "0 10px",
+        background: "var(--tasty-bg-sidebar)", borderTop: "1px solid var(--tasty-separator)", fontSize: 11, color: "var(--tasty-text-muted)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Icon name="gitBranch" size={12} />feat/dag-detail</span>
+        <span style={{ fontFamily: "var(--tasty-font-mono)" }}>s3·p1</span>
+        <div style={{ flex: 1 }} />
+        <Kbd keys="Cmd K" />
+        <span style={{ display: "inline-flex", color: "var(--tasty-statusbar-theme-glyph)" }}><Icon name="sun" size={12} /></span>
+      </div>
+      {/* window-scope scrim covers chrome too — drawn last, above everything */}
+      {scope === "window" && (
+        <>
+          <div style={{ position: "absolute", inset: 0, background: "var(--tasty-scrim-bg)", zIndex: 4 }} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5 }}>{popup}</div>
+        </>
       )}
     </div>
   );
@@ -664,7 +821,7 @@ function SearchBarFrame() {
       {/* the search bar */}
       <div role="search" style={{ position: "absolute", top: 8, right: 8, width: 360, maxWidth: "calc(100% - 16px)",
         display: "flex", alignItems: "center", gap: 4, padding: 4, background: "var(--tasty-surface-raised)",
-        border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+        border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
         <span style={{ flex: 1, minWidth: 60, display: "flex" }}><Input block defaultValue="tasty" /></span>
         <span style={{ flex: "none", width: 40, textAlign: "center", fontSize: 12, color: "var(--tasty-text-muted)", fontVariantNumeric: "tabular-nums" }}>2/3</span>
         <IconButton size="sm" aria-label="Previous"><Icon name="chevronUp" size={14} /></IconButton>
@@ -681,7 +838,7 @@ function SearchBarFrame() {
 function ConvertFrame() {
   return (
     <div style={{ width: 400, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: "14px 14px 0" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Convert surface</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
@@ -705,39 +862,231 @@ function ConvertFrame() {
 }
 
 // ── File handler picker — "Open with…" list ──
-function FileHandlerFrame() {
-  const handlers = [
-    { name: "Markdown preview", meta: "built-in", icon: ic.md, sel: true, dflt: true },
-    { name: "Text editor", meta: "built-in", icon: ic.edit, sel: false },
-    { name: "Terminal (less)", meta: "built-in", icon: ic.term, sel: false },
-    { name: "Git diff", meta: "plugin · git-helper", icon: <Icon name="gitBranch" />, sel: false, agent: true },
-  ];
+// One frame, five states (default · recent · fallback · empty · long) driven by
+// props so the implementing side can transcribe a single component.
+//   state:   "default" | "recent" | "fallback" | "empty" | "long"
+//   headless: true  = the frame draws its OWN header (recommended, path once)
+//             false = common popup titlebar above it (path drawn twice)
+//   footer:  "actions" (settled — Cancel / Open). "checkbox" / "disabled" exist
+//            only for the F1 decision specimen; nothing ships them.
+// F2/F3 — a row is rendered from the handler model ONLY:
+//   { id, owner: "host" | "user" | "plugin", kind, name?, icon?, when? }
+// There is no icon field and no display-name field in the model, so both are
+// DERIVED, and a plugin may override either through its manifest:
+//   icon — from the surface KIND the handler's action opens (FH_KIND_ICON);
+//          an unknown / undeclared kind falls back to "file". A plugin-declared
+//          icon must be a name in icons.json; anything else falls back the same way.
+//   name — the id's LOCAL segment (after the last "/"), verbatim. A declared
+//          name wins; an id with no "/" is shown whole.
+// The second line always carries origin + the full id, so the id is visible
+// exactly once per row and the name line never has to hold it.
+const FH_KIND_ICON = { markdown: "markdown", html: "html", image: "image", directory: "folder",
+  editor: "edit", pager: "terminal", terminal: "terminal", log: "listView", table: "columns", binary: "layers" };
+const fhIcon = (h) => <Icon name={(h.icon && FH_KIND_ICON[h.kind] !== undefined ? h.icon : null) || FH_KIND_ICON[h.kind] || "file"} />;
+const fhName = (h) => h.name || (h.id.includes("/") ? h.id.slice(h.id.lastIndexOf("/") + 1) : h.id);
+const FH_ROWS = {
+  suggested: [
+    { id: "com.tasty.markdown/preview", owner: "host", kind: "markdown", name: "Markdown preview", dflt: true },
+    { id: "com.tasty.text/editor", owner: "host", kind: "editor", name: "Text editor" },
+    { id: "com.tasty.pager/less", owner: "host", kind: "pager", name: "Terminal (less)" },
+    { id: "dev.git-helper.diff/viewer", owner: "plugin", kind: "markdown" },
+  ],
+  // T1–T3 — the relative-time vocabulary, one row per bucket. The `when` string
+  // is the WHOLE vocabulary: six buckets, and past a week it stops counting and
+  // shows the date. An ISO-style date is locale-neutral (no ko/ja string, no
+  // plural rule), bounded at 10 chars, and sorts visually in a mono column.
+  recent: [
+    { id: "com.tasty.text/editor", owner: "host", kind: "editor", name: "Text editor", when: "just now" },
+    { id: "com.tasty.log/viewer", owner: "host", kind: "log", name: "Log viewer", when: "12m ago" },
+    { id: "dev.tabular.csv/table", owner: "plugin", kind: "table", name: "CSV table", when: "2h ago" },
+    { id: "io.binview.hex/viewer", owner: "plugin", kind: "binary", when: "yesterday" },
+    { id: "com.tasty.image/viewer", owner: "host", kind: "image", name: "Image viewer", when: "4d ago" },
+    { id: "com.tasty.shell/editor-env", owner: "host", kind: "editor", name: "Open in $EDITOR", when: "2026-08-30" },
+  ],
+  all: [
+    { id: "com.tasty.text/editor", owner: "host", kind: "editor", name: "Text editor" },
+    { id: "com.tasty.pager/less", owner: "host", kind: "pager", name: "Terminal (less)" },
+    { id: "com.tasty.markdown/preview", owner: "host", kind: "markdown", name: "Markdown preview" },
+    { id: "com.tasty.log/viewer", owner: "host", kind: "log", name: "Log viewer" },
+    { id: "io.binview.hex/viewer", owner: "plugin", kind: "binary" },
+  ],
+  // one list mixing the three F2/F3 cases: declared name + icon (plugin),
+  // nothing declared (host), and an id long enough to need elision
+  mixed: [
+    { id: "com.tasty.image/viewer", owner: "host", kind: "image" },
+    { id: "dev.imgview.raster/preview", owner: "plugin", kind: "image", name: "Raster preview", icon: "image", dflt: true },
+    { id: "com.tasty.text/editor", owner: "user", kind: "editor", name: "Text editor" },
+    { id: "net.example.enterprise.documents.attachments/inline-preview-handler", owner: "plugin", kind: "html" },
+  ],
+};
+const FH_LONG = [
+  ...FH_ROWS.suggested,
+  { id: "com.tasty.log/viewer", owner: "host", kind: "log", name: "Log viewer" },
+  { id: "io.binview.hex/viewer", owner: "plugin", kind: "binary" },
+  { id: "dev.imgview.raster/preview", owner: "plugin", kind: "image", name: "Image preview" },
+  { id: "dev.tabular.csv/table", owner: "plugin", kind: "table", name: "CSV table" },
+  { id: "com.tasty.shell/editor-env", owner: "host", kind: "editor", name: "Open in $EDITOR" },
+  { id: "com.tasty.tree/reveal", owner: "host", kind: "directory", name: "Reveal in file tree" },
+];
+
+const FH_OWNER_WORD = { host: "built-in", user: "you", plugin: "plugin" };
+function FhRow({ h, sel, dim }) {
+  const plugin = h.owner === "plugin";
+  // the id line elides at the FRONT: a reverse-DNS id's tail is what identifies
+  // the handler, the vendor prefix is the repeated part (same rule as the path
+  // in the header). Elided in the model, rendered LTR.
+  const idText = h.id.length > 34 ? "…" + h.id.slice(-33) : h.id;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: "var(--tasty-radius-sm)",
+      background: sel ? "var(--tasty-surface-active)" : "transparent",
+      boxShadow: sel ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      <span style={{ display: "inline-flex", color: plugin ? "var(--tasty-accent-agent)" : "var(--tasty-text-muted)", opacity: dim && !plugin ? 0.8 : 1 }}>{fhIcon(h)}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: "var(--tasty-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          fontFamily: h.name ? "var(--tasty-font-ui)" : "var(--tasty-font-mono)" }}>{fhName(h)}</div>
+        <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden", display: "flex", gap: 5, minWidth: 0 }}>
+          <span style={{ flex: "none", color: plugin ? "var(--tasty-accent-agent)" : "var(--tasty-text-muted)" }}>{FH_OWNER_WORD[h.owner]}</span>
+          <span style={{ flex: "none", color: "var(--tasty-text-disabled)" }}>·</span>
+          <span style={{ fontFamily: "var(--tasty-font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>{idText}</span>
+          {h.when && <><span style={{ flex: "none", color: "var(--tasty-text-disabled)" }}>·</span><span style={{ flex: "none", width: "var(--tasty-fh-when-width)" }}>{h.when}</span></>}
+        </div>
+      </div>
+      {h.dflt && <Tag variant="accent">default</Tag>}
+    </div>
+  );
+}
+
+// group label — the one device that separates "suggested" from "recent" / "all"
+function FhGroup({ label, count, caption, tone }) {
+  return (
+    <div style={{ padding: "8px 10px 4px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase",
+          color: tone === "attention" ? "var(--tasty-accent-attention)" : "var(--tasty-text-secondary)" }}>{label}</span>
+        {count != null && <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", fontFamily: "var(--tasty-font-mono)" }}>{count}</span>}
+      </div>
+      {caption && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginTop: 2 }}>{caption}</div>}
+    </div>
+  );
+}
+
+function FhHeader({ state, path }) {
+  const fmt = state === "fallback" ? "unknown" : state === "empty" ? "markdown" : "markdown";
+  return (
+    <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--tasty-separator)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Open file with…</span>
+        {state === "fallback"
+          ? <Tag>format unknown</Tag>
+          : <Tag variant="accent">{fmt}</Tag>}
+      </div>
+      {/* long paths are truncated at the FRONT before render — the filename is the
+          tail and matters most. Done in the model layer (already-elided literal),
+          NOT with direction:rtl, which reorders the run and clips the wrong end.
+          T5 — the cut is driven by the MEASURED line box (390 inside the 420
+          frame: 420 − 1px border × 2 − 14px inset × 2), at a segment boundary:
+          drop whole leading segments and prefix "…/" until the rest fits.
+          70 mono chars at 11px is the derived cap
+          where measuring is not available (D2Coding 5.5px per char). A single segment
+          longer than the line is the one case that cuts mid-segment. */}
+      <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "clip", minWidth: 0 }}>
+        {path || (state === "long" || state === "fallback" ? "…/federation/screens.tsx" : "docs/architecture.md")}
+      </span>
+    </div>
+  );
+}
+
+function FhTitlebar() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 28, padding: "0 6px 0 10px",
+      background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
+      <span style={{ fontSize: 12, color: "var(--tasty-text-secondary)", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        Open with — …/screens.tsx
+      </span>
+      <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.x}</span>
+    </div>
+  );
+}
+
+// F1 — SETTLED (b): the picker is a pure dispatcher. Every pick is one-time, so
+// the footer is Cancel / Open and nothing else. The two rejected readings are
+// kept renderable ONLY for the decision specimen (variant "checkbox" / "disabled");
+// no shipping state uses them, and no frame passes them any more.
+function FhFooter({ variant = "actions", canOpen = true }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+      {variant === "checkbox" && <Checkbox label="Always open .md with this" defaultChecked />}
+      {variant === "disabled" && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: 0.5 }}>
+          <Checkbox label="Always open .md with this" disabled />
+          <Tag>soon</Tag>
+        </span>
+      )}
+      <div style={{ flex: 1 }} />
+      <Button variant="ghost">Cancel</Button>
+      <Button variant="primary" disabled={!canOpen}>Open</Button>
+    </div>
+  );
+}
+
+function FileHandlerFrame({ state = "default", headless = true, footer = "actions", path }) {
+  const long = state === "long";
+  const rowsOf = (key) => (state === "mixed" ? FH_ROWS.mixed : key);
+  const listStyle = { padding: 6, ...(long ? { maxHeight: 264, overflow: "auto" } : null) };
   return (
     <div style={{ width: 420, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
-      <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--tasty-separator)" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Open file with…</div>
-        <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>docs/architecture.md</span>
-      </div>
-      <div style={{ padding: 6 }}>
-        {handlers.map((h) => (
-          <div key={h.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: "var(--tasty-radius-sm)",
-            background: h.sel ? "var(--tasty-surface-active)" : "transparent",
-            boxShadow: h.sel ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
-            <span style={{ display: "inline-flex", color: h.agent ? "var(--tasty-accent-agent)" : "var(--tasty-text-muted)" }}>{h.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: "var(--tasty-text-primary)" }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{h.meta}</div>
-            </div>
-            {h.dflt && <Tag variant="accent">default</Tag>}
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
+      {!headless && <FhTitlebar />}
+      <FhHeader state={state} path={path} />
+
+      {state === "fallback" && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 14px",
+          background: "var(--tasty-surface-raised)", borderBottom: "1px solid var(--tasty-separator)" }}>
+          <span style={{ display: "inline-flex", color: "var(--tasty-accent-attention)", flex: "0 0 auto" }}>{ic.warn}</span>
+          <span style={{ fontSize: 11, color: "var(--tasty-text-secondary)", lineHeight: 1.5 }}>
+            One-time choice — nothing is registered for this format. This screen shows again next time.
+          </span>
+        </div>
+      )}
+
+      {state === "empty" ? (
+        <div style={{ padding: "32px 14px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", color: "var(--tasty-text-disabled)" }}>{ic.file}</span>
+          <div style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>No handlers registered.</div>
+          <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", textAlign: "center" }}>Register one in Settings › Handlers to open this file.</div>
+          <Button variant="secondary" size="sm" style={{ marginTop: 4 }}>Register a handler in Settings</Button>
+        </div>
+      ) : (
+        <div style={{ position: "relative" }}>
+          <div style={listStyle}>
+            {state === "fallback" ? (
+              <>
+                <FhGroup label="All handlers" count={FH_ROWS.all.length} caption="No handler matches this format." tone="attention" />
+                {FH_ROWS.all.map((h, i) => <FhRow key={h.id} h={h} sel={i === 0} />)}
+              </>
+            ) : (
+              <>
+                <FhGroup label="Suggested" count={(long ? FH_LONG : rowsOf(FH_ROWS.suggested)).length} />
+                {(long ? FH_LONG : rowsOf(FH_ROWS.suggested)).map((h, i) => <FhRow key={h.id} h={h} sel={i === 0} />)}
+                {state === "recent" && (
+                  <>
+                    <div style={{ height: 1, background: "var(--tasty-separator)", margin: "8px 10px 0" }} />
+                    <FhGroup label="Recent" count={FH_ROWS.recent.length} caption="Recently used — not matched to this format." />
+                    {FH_ROWS.recent.map((h) => <FhRow key={h.id} h={h} dim />)}
+                  </>
+                )}
+              </>
+            )}
           </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", padding: "8px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
-        <Checkbox label="Always open .md with this" defaultChecked />
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", gap: 8 }}><Button variant="ghost">Cancel</Button><Button variant="primary">Open</Button></div>
-      </div>
+          {long && (
+            <div style={{ position: "absolute", left: 1, right: 1, bottom: 0, height: 20, pointerEvents: "none",
+              background: "linear-gradient(to bottom, transparent, var(--tasty-bg-panel))" }} />
+          )}
+        </div>
+      )}
+
+      <FhFooter variant={footer} canOpen={state !== "empty"} />
     </div>
   );
 }
@@ -757,7 +1106,7 @@ function PresetFrame() {
   ];
   return (
     <div style={{ width: 440, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid var(--tasty-separator)", display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Apply preset</span>
         <div style={{ flex: 1 }} />
@@ -798,7 +1147,7 @@ function MarkdownOpenFrame() {
   );
   return (
     <div style={{ width: 420, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: "14px 14px 0" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>Open markdown file</div>
         <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 12 }}>README.md</div>
@@ -1599,7 +1948,10 @@ function RemoteFormFrame({ variant = "ssh", error }) {
   );
   const seg = (label, active) => (
     <div style={{ display: "flex", alignItems: "center", height: "var(--tasty-control-height)", padding: "0 12px", borderRadius: "var(--tasty-radius)", fontSize: 13, cursor: "pointer",
-      background: active ? "var(--tasty-surface-active)" : "var(--tasty-surface-raised)", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
+      /* R1 — a SEGMENTED control's active segment is an accent FILL (same as
+         Apply-preset scope and the clipboard type segment). surface-active is the
+         row-selection fill and is not used here. Tab STRIPS keep the underline. */
+      background: active ? "var(--tasty-accent-primary)" : "var(--tasty-surface-raised)", color: active ? "var(--tasty-text-on-accent)" : "var(--tasty-text-secondary)",
       border: "1px solid " + (active ? "var(--tasty-border-strong)" : "var(--tasty-border-default)") }}>{label}</div>
   );
   return (
@@ -1878,7 +2230,7 @@ function CategoryEditFrame({ mode = "new", error }) {
   const errText = error === "empty" ? "Enter a category name." : error === "reserved" ? "\u201Cnormal\u201D is reserved." : error === "duplicate" ? "A category named \u201CServices\u201D already exists." : null;
   return (
     <div style={{ width: 360, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ padding: "14px 14px 0" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{mode === "new" ? "New category" : "Rename category"}</div>
         <div style={{ fontSize: 12, color: "var(--tasty-text-muted)", marginBottom: 12 }}>Press <Kbd keys="↵" /> to confirm, <Kbd keys="Esc" /> to cancel.</div>
@@ -1898,7 +2250,7 @@ function CategoryEditFrame({ mode = "new", error }) {
 function CategoryDeleteFrame() {
   return (
     <div style={{ width: 380, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.55)" }}>
+      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 14px 0" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)" }}>{catIc.trash}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Delete category?</span>
@@ -2293,18 +2645,65 @@ function FpRow({ kind, name, size, mod, selected, focus, multi, checked, dim }) 
     </div>
   );
 }
-function FpCrumbs({ items }) {
+// Overflow rule: the path bar NEVER pushes the footer or the refresh button.
+// Deep paths elide in the MIDDLE — root + … + the last two segments (the
+// current folder and its parent are the two that orient you) — and the … is
+// a menu that lists the hidden ancestors.
+// Allocation (settled 2026-09-17): the bar measures the width LEFT OVER after
+// the trailing buttons and their gap — never the popup width. Priority, highest
+// first: current folder → parent → root → the … menu. So the squeeze runs in
+// this order, each step only when the previous one has hit its floor:
+//   1 ancestors fold into the … menu, one per step (already approved)
+//   2 the parent crumb shrinks 180 → 64 (--tasty-fp-crumb-min-width)
+//   3 the current folder shrinks 180 → 96 (--tasty-fp-crumb-current-min-width)
+//   4 the parent folds into the … menu too, leaving root › … › current
+//   5 root folds in as well — SINGLE-CRUMB mode: … › current, the floor of the
+//     design. The current folder is never clipped without a visible ellipsis.
+// Growing back needs 8px more than the floor (--tasty-fp-bar-hysteresis) so a
+// drag-resize cannot flap. The current folder elides at the FRONT ("…-bbbb"):
+// its tail is what tells two sibling folders apart. Ancestors elide at the tail.
+function FpCrumbs({ items, elide = false, single = false }) {
+  const shown = single
+    ? [{ label: "…", hidden: items.length - 1 }, items[items.length - 1]]
+    : elide && items.length > 3
+      ? [items[0], { label: "…", hidden: items.length - 3 }, ...items.slice(-2)]
+      : items;
+  const alloc = (it, i, n) => {
+    if (it.hidden) return { flex: "none" };                       // the … menu never shrinks
+    if (it.current) return { flex: "0 1 auto", minWidth: "var(--tasty-fp-crumb-current-min-width)", maxWidth: "var(--tasty-fp-crumb-max-width)" };
+    if (it.root) return { flex: "0 1 auto", minWidth: 0, maxWidth: "var(--tasty-fp-crumb-max-width)" };
+    return { flex: "0 1 auto", minWidth: "var(--tasty-fp-crumb-min-width)", maxWidth: "var(--tasty-fp-crumb-max-width)" };
+  };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, flexWrap: "nowrap", overflow: "hidden" }}>
-      {items.map((it, i) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, flexWrap: "nowrap", overflow: "hidden" }}>
+      {shown.map((it, i) => (
         <React.Fragment key={i}>
           {i > 0 && <span style={{ flex: "none", display: "inline-flex", color: "var(--tasty-text-disabled)" }}><Icon name="chevronRight" size={13} /></span>}
-          <span style={{ flex: "none", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          <span title={it.hidden ? "Show " + it.hidden + (it.hidden === 1 ? " hidden folder" : " hidden folders") : undefined} style={{ ...alloc(it, i, shown.length), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             fontSize: 12, fontFamily: it.root ? "var(--tasty-font-mono)" : "var(--tasty-font-ui)",
             cursor: it.current ? "default" : "pointer",
             color: it.current ? "var(--tasty-text-primary)" : "var(--tasty-accent-primary)",
             fontWeight: it.current ? 600 : 400 }}>{it.label}</span>
         </React.Fragment>
+      ))}
+    </div>
+  );
+}
+// The … menu: the hidden ancestors, in path order, one row each. Width is
+// content-measured inside a band (min = one crumb's measure, max = the popover
+// ceiling) so a short path doesn't get a wide menu and a long one truncates.
+function FpCrumbMenu({ items }) {
+  return (
+    <div style={{ position: "absolute", top: "100%", left: 44, marginTop: 4, zIndex: 5,
+      minWidth: "var(--tasty-fp-crumb-menu-min-width)", maxWidth: "var(--tasty-fp-crumb-menu-max-width)",
+      padding: 4, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
+      borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
+      {items.map((l, i) => (
+        <div key={l} style={{ display: "flex", alignItems: "center", gap: 8, height: 28, padding: "0 8px", borderRadius: "var(--tasty-radius-sm)",
+          fontSize: 13, background: i === 0 ? "var(--tasty-overlay-hover)" : "transparent", color: "var(--tasty-text-secondary)" }}>
+          <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-primary)" }}><Icon name="folder" size={14} /></span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+        </div>
       ))}
     </div>
   );
@@ -2319,11 +2718,21 @@ function FpHostBadge({ host }) {
     </span>
   );
 }
-function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filterOpen = false }) {
+function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filterOpen = false, mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false }) {
   const host = "deploy@10.0.4.12";
-  const crumbs = remote
+  const saving = mode === "save";
+  const deepTail = [{ label: "tasty" }, { label: "config" }, { label: "keybindings" }, { label: "exports" }, { label: "2026-09", current: true }];
+  const LONG_PARENT = "long-folder-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const LONG_CURRENT = "current-folder-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const crumbs = pathKind === "longtwo"
+    ? [{ label: "/", root: true }, { label: "Users" }, { label: "maya" }, { label: LONG_PARENT }, { label: LONG_CURRENT, current: true }]
+    : pathKind === "longroot"
+      ? [{ label: "\\\\build-farm-eu-west\\releases$", root: true }, { label: "2026" }, { label: "09" }, { label: "nightly", current: true }]
+      : remote
     ? [{ label: host, root: true }, { label: "home" }, { label: "deploy" }, { label: "agents-prod", current: true }]
-    : [{ label: "/", root: true }, { label: "Users" }, { label: "maya" }, { label: "projects", current: true }];
+    : deep
+      ? [{ label: "/", root: true }, { label: "Users" }, { label: "maya" }, ...deepTail]
+      : [{ label: "/", root: true }, { label: "Users" }, { label: "maya" }, { label: "projects", current: true }];
   const borderMode = remote && indicator === "border";
   const files = [
     { kind: "folder", name: "configs", size: "—", mod: "Jul 12 09:14" },
@@ -2336,6 +2745,13 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
     { kind: "file", name: ".env", size: "218 B", mod: "Jul 09 10:30" },
   ];
   const fileName = multi ? "README.md, package.json, pipeline.yaml" : "README.md";
+  // save mode: the INPUT is the only target. Picking a list row just writes its
+  // name into the input — and since every listed name exists, a pick IS the
+  // overwrite state (save="picked"). Editing the name away from the picked row
+  // clears the selection and the confirm goes back to Save (save="edited").
+  const saveName = save === "picked" ? "pipeline.yaml" : save === "edited" ? "pipeline-v2.yaml" : "keybindings-2026-09-14.toml";
+  const saveSelected = save === "picked" ? "pipeline.yaml" : null;
+  const overwrite = saving && save === "picked";
   const canOpen = (state === "loaded" || state === "empty" ? state === "loaded" : false);
   const center = (kids) => (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -2345,7 +2761,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
     ? { title: "Remote connection lost", body: <>The SSH tunnel to <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{host}</span> dropped. Reconnect to resume browsing from the last folder.</> }
     : { title: "Permission denied", body: <>You don't have permission to read <span style={{ fontFamily: "var(--tasty-font-mono)" }}>/home/deploy/agents-prod</span>. Try a different folder or check access.</> };
   return (
-    <div style={{ width: 640, height: 480, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
+    <div style={{ width: w, height: h, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
       border: borderMode ? "1px solid var(--tasty-accent-info)" : "1px solid var(--tasty-border-strong)",
       borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       {borderMode && <div style={{ height: 2, flex: "none", background: "var(--tasty-accent-info)" }} />}
@@ -2354,17 +2770,17 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
         <span style={{ display: "inline-flex", color: remote && indicator === "glyph" ? "var(--tasty-accent-info)" : "var(--tasty-text-muted)" }}>
           {remote && (indicator === "glyph" || indicator === "border") ? <Icon name="remote" /> : <Icon name="file" />}
         </span>
-        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--tasty-text-primary)" }}>Open file</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--tasty-text-primary)" }}>{saving ? "Save file" : "Open file"}</span>
         {remote && indicator === "badge" && <FpHostBadge host={host} />}
         {remote && indicator === "glyph" && <span style={{ fontSize: 12, fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-accent-info)" }}>{host}</span>}
         <div style={{ flex: 1 }} />
         <IconButton size="sm" aria-label="Close">{ic.x}</IconButton>
       </div>
       {/* path bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px 6px 14px", flex: "none", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
-        <FpCrumbs items={crumbs} />
-        <div style={{ flex: 1 }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px 6px 14px", flex: "none", position: "relative", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
+        <FpCrumbs items={crumbs} elide={deep || pathKind === "longtwo"} single={single} />
         <IconButton size="sm" aria-label="Refresh">{ic.refresh}</IconButton>
+        {crumbMenu && <FpCrumbMenu items={crumbs.slice(1, -2).map((c) => c.label)} />}
       </div>
       {/* list header */}
       {state === "loaded" && (
@@ -2384,8 +2800,8 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
               <FpRow key={f.name} {...f}
                 multi={multi}
                 checked={multi && f.pick && ["README.md", "package.json", "pipeline.yaml"].includes(f.name)}
-                selected={!multi && f.name === "README.md"}
-                focus={!multi && f.name === "pipeline.yaml"} />
+                selected={folderSel ? f.name === "configs" : saving ? f.name === saveSelected : !multi && f.name === "README.md"}
+                focus={!saving && !multi && !folderSel && f.name === "pipeline.yaml"} />
             ))}
           </div>
         )}
@@ -2409,7 +2825,9 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
       <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "none", padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: "var(--tasty-text-muted)", flex: "none", width: 64 }}>File name</span>
-          <span style={{ flex: 1, minWidth: 0, display: "flex" }}><Input block defaultValue={state === "loaded" ? fileName : ""} placeholder="No file selected" /></span>
+          <span style={{ flex: 1, minWidth: 0, display: "flex" }}>
+            <Input block defaultValue={saving ? saveName : folderSel ? "" : state === "loaded" ? fileName : ""} placeholder={saving ? "Type a file name" : "No file selected"} />
+          </span>
           <span style={{ flex: "none", position: "relative" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 8px", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
               background: "var(--tasty-bg-panel)", fontSize: 12, color: "var(--tasty-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -2417,11 +2835,27 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
             </span>
           </span>
         </div>
+        {folderSel && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.5, color: "var(--tasty-text-muted)" }}>
+            <span style={{ display: "inline-flex", flex: "none", marginTop: 1 }}><Icon name="folder" size={13} /></span>
+            <span>{saving
+              ? <>Folders aren't save targets — double-click <span style={{ fontFamily: "var(--tasty-font-mono)" }}>configs</span> to open it.</>
+              : <><span style={{ fontFamily: "var(--tasty-font-mono)" }}>configs</span> is a folder — <b style={{ fontWeight: 600 }}>Open</b> enters it.</>}</span>
+          </div>
+        )}
+        {overwrite && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.5, color: "var(--tasty-accent-warning)" }}>
+            <span style={{ display: "inline-flex", flex: "none", marginTop: 1 }}><Icon name="alertTriangle" size={13} /></span>
+            <span><span style={{ fontFamily: "var(--tasty-font-mono)" }}>{saveName}</span> already exists in this folder. Saving replaces it.</span>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {multi && <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>3 selected</span>}
-          <div style={{ flex: 1 }} />
-          <Button variant="ghost">Cancel</Button>
-          <Button variant="primary" disabled={!canOpen}>Open</Button>
+          <div style={{ flex: 1, minWidth: 0 }} />
+          <span style={{ flex: "none", display: "flex" }}><Button variant="ghost">Cancel</Button></span>
+          <span style={{ flex: "none", display: "flex" }}>
+            <Button variant="primary" disabled={!saving && !canOpen}>{saving ? (overwrite ? "Overwrite" : "Save") : "Open"}</Button>
+          </span>
         </div>
       </div>
     </div>
@@ -2432,12 +2866,12 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
 window.OverlaysShared = {
   ic, Backdrop,
   PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDragValue,
-  ToolsMenuFrame, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, SearchBarFrame,
-  ConvertFrame, FileHandlerFrame, PresetFrame, MarkdownOpenFrame,
+  ToolsMenuFrame, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
+  ConvertFrame, FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,
   NumCap, HeldLabel, TabStripMock, SidebarMock, RailMock, CatSwitchSidebarMock, CatSwitchRailMock,
   BannerShellG, BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, TtlBannerG, StackDemoG,
   BannerMoreMenuG, BannerMoreDemoG, MoreLabel,
-  GitViewerFrame, ClipboardFrame, RemoteFormFrame, ScriptManagerFrame,
+  GitViewerFrame, ClipboardFrame, RemoteFormFrame, ScriptManagerFrame, ShellMock,
   RemoteAttachFrame, RaNewRow, RaWsPeek,
   FilePickerFrame,
   ModifierHintPanelG,

@@ -5,8 +5,11 @@
 const { Section, Spec, Stage, Cluster, Meta, Note, Do, Dont } = window.Gallery;
 const { Button, Tag, StatusDot, Input, Badge, Toast } = window.TastyDesignSystem_41fd3f;
 
+const FIcon = window.TastyDesignSystem_41fd3f.Icon;
+
 const NAV = [
   { id: "elevation", label: "Color — elevation" },
+  { id: "floating", label: "Elevation — floating surfaces" },
   { id: "text", label: "Color — text" },
   { id: "accents", label: "Color — accent roles" },
   { id: "terminal", label: "Color — terminal / ANSI" },
@@ -14,6 +17,7 @@ const NAV = [
   { id: "spacing", label: "Spacing" },
   { id: "shape", label: "Radius · border · motion" },
   { id: "uiscale", label: "UI scale" },
+  { id: "rolegaps", label: "Role gaps — settled" },
 ];
 
 // ── a labelled surface tile (token + what uses it) ──
@@ -23,6 +27,36 @@ function Tile({ bg, name, role, dark }) {
       padding: "11px 13px", minWidth: 168 }}>
       <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11.5, color: "var(--tasty-text-primary)" }}>{name}</div>
       <div style={{ fontSize: 11.5, color: "var(--tasty-text-muted)", marginTop: 3 }}>{role}</div>
+    </div>
+  );
+}
+
+// ── the two floating-surface shadows, shown on the surfaces that own them ──
+function FloatMenu() {
+  return (
+    <div style={{ width: 180, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
+      borderRadius: "var(--tasty-radius)", padding: 4, boxShadow: "var(--tasty-shadow-popover)" }}>
+      {["Split pane", "New tab", "Rename…"].map((l, i) => (
+        <div key={l} style={{ height: 28, display: "flex", alignItems: "center", padding: "0 8px", fontSize: 13,
+          borderRadius: "var(--tasty-radius-sm)", color: "var(--tasty-text-primary)",
+          background: i === 0 ? "var(--tasty-overlay-hover)" : "transparent" }}>{l}</div>
+      ))}
+    </div>
+  );
+}
+
+function FloatModal() {
+  return (
+    <div style={{ position: "relative", width: 300, height: 148, background: "var(--tasty-scrim-bg)",
+      borderRadius: "var(--tasty-radius)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 220, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
+        borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)", fontSize: 13, fontWeight: 600 }}>Delete workspace</div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "8px 14px" }}>
+          <Button variant="ghost" size="sm">Cancel</Button>
+          <Button variant="danger" size="sm">Delete</Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -184,7 +218,37 @@ function Foundations() {
               { tok: "--tasty-surface-active", use: "selected", color: "var(--tasty-surface-active)" },
             ]} />
           <Do><b>Do</b> tint up exactly one ramp step each time you nest a container.</Do>
-          <Dont><b>Don't</b> add a <code>box-shadow</code> to cards or panels — only the modal scrim layer uses shadow.</Dont>
+          <Dont><b>Don't</b> add a <code>box-shadow</code> to cards or panels — only floating surfaces use shadow (next section).</Dont>
+        </Spec>
+      </Section>
+
+      {/* FLOATING SURFACES — the two-shadow exception */}
+      <Section id="floating" title="Elevation — floating surfaces (the two shadows)">
+        <Spec title="Two shadows, and the rule that picks one"
+          when={<>In-page depth is tint. A surface that <b>leaves the page</b> gets a shadow, and there are exactly two — no third value, no per-component shadow. The rule is the surface's relationship to the ground: <b>anchored and scrim-less</b> (it floats over live content it doesn't own) takes <b>--tasty-shadow-popover</b>; <b>centered and scrim-backed</b> (it owns the viewport) takes <b>--tasty-shadow-modal</b> — <i>and</i> the scrim. The scrim dims the ground but draws no edge, so on a dark theme a dark modal on dimmed dark ground loses its silhouette; the shadow is what carries the edge.</>}>
+          <Stage variant="solo center" style={{ gap: 28, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+              <FloatMenu />
+              <Lbl tok="--tasty-shadow-popover">0 6px 18px · 40% — anchored, scrim-less</Lbl>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+              <FloatModal />
+              <Lbl tok="--tasty-shadow-modal">0 20px 60px · 55% — centered, scrim-backed</Lbl>
+            </div>
+          </Stage>
+          <Meta
+            specs={[["popover surfaces", "search bar · tools menu · context menu · tooltip · autocomplete · multiselect menu · banner + its more-menu · modifier-hint · tutorial callout · switch-number overlay"],
+              ["modal surfaces", "command palette · ports · remote · settings · plugins · preset editor · git viewer · clipboard viewer · DAG popup · centered dialogs"],
+              ["not listed", "no shadow"],
+              ["layers", "single — never stacked"],
+              ["color", "pure black alpha only — no tinted shadow"],
+              ["geometry", "integer px, non-negative spread, off the 4px grid on purpose"],
+              ["themes", "one value for mocha and latte"],
+              ["transition", "none — geometry is fixed; banner / modifier-hint fade by opacity only"]]}
+            tokens={[{ tok: "--tasty-shadow-popover", use: "anchored overlays" }, { tok: "--tasty-shadow-modal", use: "scrim-backed surfaces" }, { tok: "--tasty-scrim-bg", use: "the dim behind a modal", color: "var(--tasty-scrim-bg)" }]} />
+          <Do><b>Do</b> reference the token. Every floating surface in this system resolves to one of these two values — a hand-written <code>box-shadow</code> is how a third shadow gets into the product.</Do>
+          <Dont><b>Don't</b> put a shadow on an anchored surface that already sits inside a shadowed one (a menu opened inside a modal), and don't stack layers to make a "bigger" lift.</Dont>
+          <Note>One sanctioned exception lives outside this pair: <code>--tasty-titlebar-csd-shadow</code> (<code>0 18px 50px -8px</code>) is OS window-frame chrome, and its negative spread is functional — it keeps the falloff inside the 8px band that carries the resize edges.</Note>
         </Spec>
       </Section>
 
@@ -426,6 +490,195 @@ function Foundations() {
             ]} />
           <Dont><b>Don't</b> read a named stop (<span className="ic">--tasty-ui-scale-lg</span>) in a component, and <b>don't</b> add per-component size tokens (no "sidebar = medium"). One multiplier, read in one place, the 4px grid intact.</Dont>
           <Note>Implementation: the sidebar root sets <span className="ic">zoom: var(--tasty-ui-scale)</span> with <span className="ic">height: 100%</span> so it fills top-to-bottom at any scale. Nothing else reads <span className="tok">--tasty-ui-scale</span> — the title bar, tab strip, panes, and modals render at fixed size, so terminal columns and tab hit-targets never shift.</Note>
+        </Spec>
+      </Section>
+
+      <Section id="rolegaps" title="Role gaps — settled">
+        <Spec title="Colors that had no role of their own"
+          when={<>Seven places were reading a role whose <b>value</b> matched but whose <b>meaning</b> didn't. Four get a name, three move to the role they should always have used. New roles preserve the pixel; moves change it, and each is called out.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 10, alignItems: "stretch" }}>
+            {[["C1", "pane divider · GPU-inactive surface border · popup frame", "surface-active (a fill)", "--tasty-border-frame", "new role · popup frame MOVES", "var(--tasty-border-frame)"],
+              ["C2", "sidebar dim chevron · dim icons", "text-placeholder (unentered text)", "--tasty-glyph-dim", "new role · same pixel", "var(--tasty-glyph-dim)"],
+              ["C3", "disabled text in ports / convert / remote", "text-placeholder", "--tasty-text-disabled", "MOVES — disabled is its own ink", "var(--tasty-text-disabled)"],
+              ["C4", "tab-strip scroll arrow, disabled", "border-strong (a border)", "--tasty-text-disabled", "MOVES — same rule as C3", "var(--tasty-text-disabled)"],
+              ["C5", "status-bar theme indicator", "accent-warning / accent-agent", "--tasty-statusbar-theme-glyph", "MOVES — a glyph, no colour role", "var(--tasty-statusbar-theme-glyph)"],
+              ["C6", "StatusDot idle", "text-muted", "--tasty-status-dot-idle", "MOVES — the canonical idle tone", "var(--tasty-status-dot-idle)"],
+              ["C7", "Plugins window header glyph", "accent-attention (a state)", "--tasty-accent-decorative", "new role · same pixel", "var(--tasty-accent-decorative)"]].map(([id, place, was, now, verdict, color]) => (
+              <div key={id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 10px", background: "var(--tasty-bg-panel)",
+                border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ flex: "none", width: 26, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{id}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--tasty-text-secondary)" }}>{place}</span>
+                <span style={{ flex: "none", width: 190, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{was}</span>
+                <span style={{ flex: "none", width: 20, height: 20, borderRadius: "var(--tasty-radius-sm)", background: color, border: "1px solid var(--tasty-border-default)" }} />
+                <span style={{ flex: "none", width: 210, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-primary)" }}>{now}</span>
+                <span style={{ flex: "none", width: 200, fontSize: 11, color: /MOVES/.test(verdict) ? "var(--tasty-accent-warning)" : "var(--tasty-text-muted)" }}>{verdict}</span>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["new semantic roles", "border-frame · glyph-dim · accent-decorative"], ["new component role", "statusbar-theme-glyph (→ glyph-dim)"], ["moves (pixel changes)", "C3 · C4 · C5 · C6"], ["Latte", "all four new roles track the ramp — no per-theme remap"], ["contrast", "C3 / C4 are disabled ink — exempt from 4.5:1; C2 is chrome, not text"]]}
+            tokens={[{ tok: "--tasty-border-frame", use: "divider / frame edge", color: "var(--tasty-border-frame)" }, { tok: "--tasty-glyph-dim", use: "dim chrome glyphs", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-decorative", use: "header ornament", color: "var(--tasty-accent-decorative)" }, { tok: "--tasty-text-disabled", use: "every disabled label / glyph", color: "var(--tasty-text-disabled)" }]} />
+          <Note>The three value-preserving holdouts elsewhere (tab hover fill, tab separator, toast border) are confirmed as <b>intended visual changes</b> — move them to canonical; they were never design questions.</Note>
+        </Spec>
+
+        <Spec title="C1 correction — the popup frame does move, and should (settled)"
+          when={<>C1 was transcribed as “pixel-unchanged”. That holds for two of its three places: the <b>pane divider</b> and the <b>GPU-inactive surface border</b> came from <span className="tok">--tasty-surface-active</span>, the same ramp step. The <b>popup frame</b> came from <span className="tok">--tasty-border-strong</span> one step below, so it moved — neutral-400 → neutral-500. <b>The move is the correct outcome, not a regression.</b> A frame is the edge between a floating surface and everything behind it and needs more separation than a line <i>inside</i> that surface; the popup's internal dividers stay on <span className="tok">--tasty-border-strong</span> exactly one step below, so frame and content now read in the right order. The step is chosen for contrast, not for lightness: in Mocha neutral-500 is brighter than the panel, in Latte it is darker. Both gain.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})}
+                style={{ display: "flex", flexDirection: "column", gap: 8, padding: 14, background: "var(--tasty-bg-app)",
+                  border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  {[["settled — border-frame", "var(--tasty-border-frame)", true], ["rejected — border-strong", "var(--tasty-border-strong)", false]].map(([cap, edge, on]) => (
+                    <div key={cap} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div style={{ fontSize: 11, color: on ? "var(--tasty-accent-success)" : "var(--tasty-text-muted)" }}>{cap}</div>
+                      <div style={{ width: 216, background: "var(--tasty-bg-panel)", border: "1px solid " + edge, borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                        <div style={{ height: 28, display: "flex", alignItems: "center", padding: "0 10px", fontSize: 12,
+                          color: "var(--tasty-text-secondary)", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid " + edge }}>Listening ports</div>
+                        <div style={{ padding: "10px 10px 0", fontSize: 12, color: "var(--tasty-text-primary)" }}>Show all (system-wide)</div>
+                        <div style={{ height: 1, background: "var(--tasty-border-strong)", margin: "10px 0 0" }} />
+                        <div style={{ padding: "8px 10px 12px", fontSize: 11, color: "var(--tasty-text-muted)" }}>Favorites</div>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>appearance cards — inactive → border-strong</div>
+                    <div style={{ display: "flex", gap: 8, padding: 10, width: 150, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                      <div style={{ flex: 1, height: 64, borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)", border: "2px solid var(--tasty-accent-primary)" }} />
+                      <div style={{ flex: 1, height: 64, borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)" }} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>pane divider — unchanged</div>
+                    <div style={{ display: "flex", height: 104, width: 150, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                      <div style={{ flex: 1, background: "var(--tasty-bg-app)" }} />
+                      <div style={{ width: 1, background: "var(--tasty-border-frame)" }} />
+                      <div style={{ flex: 1, background: "var(--tasty-bg-app)" }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["popup frame", <span className="tok">--tasty-border-frame</span>], ["popup titlebar underline", <>the same — it is part of the frame</>], ["popup inner dividers", <>unchanged — <span className="tok">--tasty-border-strong</span>, one step below</>], ["pane divider", "border-frame — pixel unchanged"], ["GPU-inactive surface border", "border-frame — pixel unchanged"], ["Mocha frame vs panel", "1.80:1 → 2.46:1"], ["Latte frame vs panel", "1.60:1 → 1.91:1"], ["4.5:1", "not applicable — a 1px structural edge is not text; the move raises separation in both themes"], ["transcription fix", "C1 reads “new role; the popup frame moves one step up”, not “pixel-unchanged”"], ["fifth call site", <>Settings › Appearance <b>inactive card border</b> is NOT a frame — it is a line inside a panel → <span className="tok">--tasty-border-strong</span> (neutral-500 → 400, pixel changes). The frame list stays at <b>four</b>.</>]]}
+            tokens={[{ tok: "--tasty-border-frame", use: "popup frame · titlebar underline · pane divider · GPU-inactive surface", color: "var(--tasty-border-frame)" }, { tok: "--tasty-border-strong", use: "dividers INSIDE a surface", color: "var(--tasty-border-strong)" }]} />
+          <Dont><b>Don't</b> mint a popup-only border role to put the old value back. Three places, one meaning — the edge that bounds a frame — and a fourth role would only record that one of them used to be wrong.</Dont>
+          <Note><b>Frame vs partition, stated once.</b> <span className="tok">--tasty-border-frame</span> bounds a surface against what is <i>behind</i> it: popup frame · popup titlebar underline · pane divider · GPU-inactive surface border. Anything drawn <i>inside</i> a panel that separates siblings — dividers, card outlines, section rules — is a partition and reads <span className="tok">--tasty-border-strong</span> (or <span className="tok">--tasty-border-default</span> when quieter). The appearance-tab card border arrived on <code>border_frame()</code> only by a value-preserving port from <code>surface_active()</code>; it moves down one step so the outer-edge &gt; inner-line order holds inside Settings too. The active card keeps its accent edge.</Note>
+        </Spec>
+
+        <Spec title="Half-pixel type sizes snap to the scale"
+          when={<>A <code>.5</code> font size can never equal a token: UI sizes pass through <code>round()</code> at every zoom. All of them snap, by one rule — <b>text you read snaps up, numeric micro-labels snap down</b>.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 10, alignItems: "stretch" }}>
+            {[["T1", "Plugins segment label / badge / count", "12.5 / 9.5 / 10.5", "12 / 10 / 10"],
+              ["T2", "Plugins Attention title / reason / fingerprint / label", "13.5 / 12.5 / 11.5 / 10.5", "13 / 12 / 11 / 10"],
+              ["T3", "sidebar notification badge number", "9.5", "10 (micro)"],
+              ["T4", "command palette hint", "10.5", "11 (caption — it is read, not counted)"],
+              ["T5", "first-run brand title / warning", "30 / 12.5", "30 kept as --tasty-font-size-brand-display / 12"],
+              ["T6", "clipboard image glyph", "30", "28 — icon family, existing exception"]].map(([id, place, was, now]) => (
+              <div key={id} style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "8px 10px", background: "var(--tasty-bg-panel)",
+                border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ flex: "none", width: 26, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{id}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--tasty-text-secondary)" }}>{place}</span>
+                <span style={{ flex: "none", width: 200, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{was}</span>
+                <span style={{ flex: "none", width: 330, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-primary)" }}>{now}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 24, paddingTop: 6, flexWrap: "wrap" }}>
+              {[0.85, 1, 1.2].map((z) => (
+                <div key={z} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>ui_scale {z}</span>
+                  {[["13", 13], ["12", 12], ["11", 11], ["10", 10]].map(([label, s]) => (
+                    <span key={label} style={{ fontSize: Math.round(s * z), color: "var(--tasty-text-secondary)" }}>Needs attention — {Math.round(s * z)}px</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </Stage>
+          <Meta
+            specs={[["rule", "read text → snap up · numeric micro-label → snap down"], ["scale used", "13 body · 12 term-sm · 11 caption · 10 micro"], ["new primitive", "font-size-30 (branding exception, named)"], ["glyphs", "judged on the icon family, not the type scale"], ["zoom", "integers at 0.85 / 1 / 1.2 — no .5 survives round()"]]}
+            tokens={[{ tok: "--tasty-font-size-brand-display", use: "first-run brand title (30)" }, { tok: "--tasty-font-size-caption", use: "11 — hints" }, { tok: "--tasty-font-size-micro", use: "10 — badge counts" }]} />
+        </Spec>
+
+        <Spec title="One tinted-box recipe: 12% fill, 36% edge"
+          when={<>The same “accent as a soft box” idiom had drifted into four coefficient pairs (0.14/0.45, 0.12/0.35, 0.11/0.36, 0.12/none). They converge on <b>one public pair</b> — <span className="tok">--tasty-tint-fill-alpha</span> 0.12 and <span className="tok">--tasty-tint-border-alpha</span> 0.36 — with two sanctioned partial uses: <b>fill only</b> (warning callout) and <b>border only</b> (the remote chip tag). Every accent uses the same two numbers, so a tinted box is recognisable across the app regardless of hue.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
+            {[["fill + border — the default", true, true], ["fill only — warning callout", true, false], ["border only — remote chip", false, true]].map(([label, fill, border]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</span>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {[["info", "var(--tasty-accent-info)"], ["warning", "var(--tasty-accent-warning)"], ["danger", "var(--tasty-accent-danger)"], ["success", "var(--tasty-accent-success)"]].map(([name, col]) => (
+                    <span key={name} style={{ display: "inline-flex", alignItems: "center", height: 24, padding: "0 10px", borderRadius: "var(--tasty-radius)",
+                      fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: col,
+                      background: fill ? `color-mix(in srgb, ${col} calc(var(--tasty-tint-fill-alpha) * 100%), transparent)` : "transparent",
+                      border: border ? `1px solid color-mix(in srgb, ${col} calc(var(--tasty-tint-border-alpha) * 100%), transparent)` : "1px solid transparent" }}>{name}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["fill", <>0.12 — <span className="tok">--tasty-tint-fill-alpha</span></>], ["edge", <>0.36 — <span className="tok">--tasty-tint-border-alpha</span></>], ["retired", "0.14/0.45 · 0.12/0.35 · 0.11/0.36"], ["partial uses", "fill-only · border-only (same coefficients)"], ["affected", "file-picker info badge · keybinding IE notice & migrate card · Plugins error box / Installed badge / Attention banner · warning callout · remote & script badges · chip remote tag"], ["clipboard inset (I1)", "14 → 12 (--tasty-space-md) — the 4px grid wins; no 14 semantic is opened"]]}
+            tokens={[{ tok: "--tasty-tint-fill-alpha", use: "every tinted fill" }, { tok: "--tasty-tint-border-alpha", use: "every tinted edge" }, { tok: "--tasty-space-md", use: "clipboard header / type-bar / footer inset" }]} />
+          <Note>Opacity coefficients are <b>primitives</b> (<span className="tok">--tasty-opacity-tint-fill</span> / <span className="tok">-border</span>) with semantic aliases, so a per-role override stays possible later without re-scattering literals.</Note>
+        </Spec>
+        <Spec title="Disabled ink — no contrast target, Latte one step up (2026-09-28)"
+          when={<>WCAG 1.4.3 and 1.4.11 exempt disabled controls, and a 4.5:1 target would collapse the hierarchy: in Latte the first ramp step that clears 4.5:1 on the panel is neutral-900, which is already <span className="tok">--tasty-text-muted</span>. So disabled gets <b>no contrast target</b>. Two rules replace it. <b>Order:</b> disabled sits strictly below <span className="tok">--tasty-text-muted</span> and above <span className="tok">--tasty-text-placeholder</span> on the ramp, and the ink step is the only thing that marks disabled (no extra opacity on the label). <b>Parity:</b> the Latte ramp is compressed at its light end, so <span className="tok">--tasty-text-disabled</span> remaps to <b>neutral-800</b> in Latte (Mocha stays neutral-700). Labels and glyphs still share the one ink. The <b>enabled</b> tab-strip arrow is an active control glyph and moves to <span className="tok">--tasty-text-muted</span>, which clears 3:1 in both themes. Ratios below are flat colour on the control's own ground; thin AA glyphs measure about 0.3–0.6 lower.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null, { c3: "3.40", c4: "3.40", en: "5.65" }, { c3: "3.40 (n700, unchanged)", c4: "3.40", en: "4.45 (n800)" }], ["Latte", "latte", { c3: "2.56", c4: "2.56", en: "3.65" }, { c3: "2.07 (n700)", c4: "2.07", en: "2.56 (n800)" }]].map(([label, attr, now, was]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>C3 · port scanner footer — disabled {now.c3}:1 (was {was.c3})</span>
+                  <div style={{ display: "flex", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)" }}>
+                    {[["Refresh", false], ["Copy address", true], ["Kill process", true]].map(([l, dis]) => (
+                      <span key={l} style={{ height: "var(--tasty-control-height)", display: "inline-flex", alignItems: "center", padding: "0 var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-medium)", color: dis ? "var(--tasty-text-disabled)" : "var(--tasty-text-primary)" }}>{l}</span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>C4 · tab-strip scroll — disabled {now.c4}:1 · enabled {now.en}:1 (was {was.en})</span>
+                  <div style={{ display: "flex", alignItems: "stretch", height: "var(--tasty-control-height-tab)", width: "var(--tasty-size-288)", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius-sm)", overflow: "hidden" }}>
+                    <span style={{ width: "var(--tasty-control-height-tab)", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--tasty-surface-raised)", color: "var(--tasty-tab-scroll-arrow-fg-disabled)" }}><FIcon name="chevronLeft" size="var(--tasty-icon-size-xs)" /></span>
+                    <span style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)" }}>server · dev · vim · logs</span>
+                    <span style={{ width: "var(--tasty-control-height-tab)", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--tasty-surface-raised)", color: "var(--tasty-tab-scroll-arrow-fg)" }}><FIcon name="chevronRight" size="var(--tasty-icon-size-xs)" /></span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "var(--tasty-space-xs)", alignItems: "center" }}>
+                  {[["placeholder", "var(--tasty-text-placeholder)"], ["disabled", "var(--tasty-text-disabled)"], ["muted", "var(--tasty-text-muted)"], ["secondary", "var(--tasty-text-secondary)"], ["primary", "var(--tasty-text-primary)"]].map(([n, v]) => (
+                    <span key={n} style={{ padding: "var(--tasty-space-xs) var(--tasty-space-sm)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius-sm)", fontSize: "var(--tasty-font-size-caption)", color: v }}>{n}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["A · target", "none — WCAG exempts disabled"], ["rule 1 · order", "placeholder < disabled < muted"], ["rule 2 · parity", "Latte remap n700 → n800"], ["B · ground", "n/a (no target) — report on the control's own ground"], ["C · enabled arrow", "in scope → text-muted (3:1 non-text)"], ["one ink", "labels + glyphs, unchanged principle"], ["pixels", "Latte disabled everywhere · both themes' enabled arrow"]]}
+            tokens={[{ tok: "--tasty-text-disabled", use: "Mocha n700 · Latte n800", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-tab-scroll-arrow-fg", use: "→ text-muted", color: "var(--tasty-tab-scroll-arrow-fg)" }, { tok: "--tasty-tab-scroll-arrow-fg-disabled", use: "→ text-disabled", color: "var(--tasty-tab-scroll-arrow-fg-disabled)" }]} />
+          <Dont><b>Don't</b> lift disabled to 4.5:1. In Latte that lands on text-muted and disabled stops reading as disabled. The hierarchy is the requirement; contrast is reported, not targeted.</Dont>
+        </Spec>
+        <Spec title="Structural dimensions — the leftovers (2026-09-28)"
+          when={<>Four items with no design answer, settled. <b>A · B</b>: the centre glyph 22 and the scripts empty glyph 26 become one <b>CenterState</b> part on a new icon tier, <span className="tok">--tasty-icon-size-lg</span> = 24 (Components › CenterState). <b>C</b>: no nominal block height; the block centres in its list region. <b>D</b>: a 32px in-surface toolbar is a container role, so it gets <span className="tok">--tasty-toolbar-height</span> and <span className="tok">--tasty-git-toolbar-height</span> re-points to it (value unchanged). Scroll max-height 200 and column min-width 200 stay <b>screen-only dimensions, no token</b> (named const + reason comment); they are one-off layout limits, and borrowing <span className="tok">--tasty-field-width-lg</span> or <span className="tok">--tasty-settings-sidebar-width</span> would be a false coupling. <b>E</b>: popup default sizes stay <b>outside the token system</b>. They are per-popup screen values; a size tier would imply they are interchangeable. Values design owns are fixed below, snapped to the 4px grid.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)" }}>
+              <thead><tr>{["popup", "code today", "canonical W × H", "note"].map((h) => <th key={h} style={{ textAlign: "left", padding: "var(--tasty-space-xs) var(--tasty-space-md)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-strong)" }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {[["notifications","350 × 400","352 × 400","W snapped to grid"],["script changed confirm","360 × 150","360 × 152","H snapped to grid"],["search bar","360 × 28","360 × 28",""],["info modal","440 × 160","440 × 140..360","named: --tasty-info-modal-width / -max-height"],["approval","480 × 240","480 × 240",""],["file picker","640 × 480","640 × 480",""],["port scanner","660 × 520","660 × 520",""],["command palette","540 × 412","540 × 412",""],["DAG list","560 × 460","560 × 460","already --tasty-dag-popup-width / -height"],["remote tool","520 × 460","520 × 460",""],["remote attach","680 × 460","680 × 460",""],["transfer progress","400 × 180","400 × 180",""],["transfer error","400 × 200","400 × 200",""],["preset apply ×3","360 × 320","360 × 320",""]].map(([n, a, b, note]) => (
+                  <tr key={n}>
+                    <td style={{ padding: "var(--tasty-space-xs) var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{n}</td>
+                    <td style={{ padding: "var(--tasty-space-xs) var(--tasty-space-md)", fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{a}</td>
+                    <td style={{ padding: "var(--tasty-space-xs) var(--tasty-space-md)", fontFamily: "var(--tasty-font-mono)", color: a === b ? "var(--tasty-text-primary)" : "var(--tasty-accent-warning)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{b}</td>
+                    <td style={{ padding: "var(--tasty-space-xs) var(--tasty-space-md)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Stage>
+          <Meta
+            specs={[["A centre glyph", "22 → 24 · --tasty-center-state-glyph-size"], ["B scripts glyph", "26 → 24 · merged with A"], ["C block height", "100 / 120 → none (centres in region)"], ["D toolbar 32", "→ --tasty-toolbar-height (new semantic)"], ["D scroll max 200 · col min 200", "screen-only, no token"], ["E popup sizes", "outside tokens · 350 → 352 · 150 → 152"], ["ui_scale", "A–D tokens scale · E and screen-only consts do not"]]}
+            tokens={[{ tok: "--tasty-icon-size-lg", use: "→ size-24 (new tier)" }, { tok: "--tasty-toolbar-height", use: "→ size-32 (new)" }, { tok: "--tasty-git-toolbar-height", use: "→ toolbar-height" }]} />
+          <Note>Moving A · B · D onto tokens puts them on ui_scale: at 0.85 / 1.2 the pixels change (glyph 20.4 / 28.8). That is intended — they are UI chrome, not screen frames.</Note>
         </Spec>
       </Section>
     </>

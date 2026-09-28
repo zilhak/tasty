@@ -58,11 +58,15 @@ function WorkspaceRow({ ws, active, onClick, onContextMenu }) {
   const [hover, setHover] = React.useState(false);
   return (
     <div onClick={onClick} onContextMenu={onContextMenu} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)",
+      style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-workspace-dot-gap)",
+        padding: "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-workspace-row-padding-x)",
         cursor: "pointer", position: "relative",
         background: active ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
         boxShadow: active ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
-      <span style={{ flex: "none", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center" }}>
+      {/* dot slot = the attached mark's full bbox (16), reserved on EVERY row so the
+          title x (8 + 16 + 4 = 28) never shifts; the ring can't reach the card edge,
+          the 2px active accent bar, or the label. See --tasty-workspace-dot-slot. */}
+      <span style={{ flex: "none", width: "var(--tasty-workspace-dot-slot)", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <StatusDot status={ws.status} attached={ws.attached}
           pulse={ws.status === "agent" || ws.status === "running"}
           title={ws.attached ? "Attached on another client" : undefined} />
@@ -109,7 +113,7 @@ function WorkspaceRow({ ws, active, onClick, onContextMenu }) {
         )}
       </div>
       {ws.notif > 0 && (
-        <span style={{ flex: "none", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center" }}>
+        <span style={{ flex: "none", marginLeft: "var(--tasty-space-xs)", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center" }}>
           <Badge variant="primary">{ws.notif}</Badge>
         </span>
       )}
