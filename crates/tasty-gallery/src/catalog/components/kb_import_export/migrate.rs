@@ -12,8 +12,8 @@ use super::notices::notices;
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
     CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_FROM_W, MIGRATE_LABEL_W,
-    MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState, RECORD_SLOT_MIN_W, SPECIMEN_W, STATE,
-    State, Widget, detail_frame,
+    MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState, SPECIMEN_W, STATE, State, Widget,
+    detail_frame,
 };
 
 pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
@@ -455,7 +455,7 @@ fn record_slot(ui: &mut egui::Ui, theme: &Theme, r: &MigrateRow) {
         .painter()
         .layout_no_wrap(r.value.to_string(), font, fg.to_egui());
     let pad = theme.spacing_sm.value();
-    let w = (galley.rect.width() + pad * 2.0).max(RECORD_SLOT_MIN_W.value());
+    let w = (galley.rect.width() + pad * 2.0).max(theme.kb_ie_slot_min_width().value());
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(w, theme.item_height_tab.value()),
         egui::Sense::click(),

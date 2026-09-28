@@ -41,8 +41,6 @@ const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
 const MIGRATE_LABEL_W: LogicalPx = LogicalPx(288.0);
 /// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
 const MIGRATE_FROM_W: LogicalPx = LogicalPx(120.0);
-/// 녹화 슬롯 최소 폭 — 디자인 `--tasty-kb-ie-slot-min-width`(→ `size-140`).
-const RECORD_SLOT_MIN_W: LogicalPx = LogicalPx(140.0);
 /// 그룹 헤더의 chevron ↔ 그룹명, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`(그리드 밖 값,
 /// 스냅하지 않는다).
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);

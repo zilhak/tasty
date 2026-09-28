@@ -18,10 +18,6 @@ use crate::catalog::widgets::dialog as kit;
 const WIDTH: LogicalPx = LogicalPx(1100.0);
 const HEIGHT: LogicalPx = LogicalPx(700.0);
 const L2_WIDTH: LogicalPx = LogicalPx(200.0);
-/// 콘텐츠 컬럼 상한 — 디자인 `--tasty-settings-content-max-width`. 창이 아무리 넓어도
-/// 한 블록이 이보다 넓어지지 않는다. full-bleed 서브탭(자기 레이아웃을 들고 컬럼을
-/// 대체하는 것)만 예외이고, 본문 산문은 이것과 **다른 축**인 `measure-md` 를 그대로 쓴다.
-const CONTENT_MAX_W: LogicalPx = LogicalPx(620.0);
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
@@ -334,9 +330,9 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
             ui.set_min_width(content_w.value());
             ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            // 모든 콘텐츠 블록에 같은 최대폭을 적용한다.
+            // 모든 콘텐츠 블록에 같은 최대폭을 적용한다. 본문 산문은 이것과 다른 축인 measure-md를 쓴다.
             let inner = (content_w - theme.spacing_lg.scaled(2.0))
-                .min(CONTENT_MAX_W)
+                .min(theme.settings_content_max_width())
                 .value();
             ui.vertical(|ui| {
                 mono(ui, theme, "Theme preset");
