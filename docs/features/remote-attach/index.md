@@ -57,7 +57,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 **explorer**는 활성 탭의 root만 처음 전달하고, 이후 필요한 경로를 client가 조회한다.
 `ExplorerViewStore`가 surface별 요청과 캐시를 관리한다. 파일 피커와 같은 인가 규칙을
 사용한다. 붙여넣기·잘라내기·이름 변경·삭제·시스템에서 열기·새 탭·즐겨찾기 추가는
-메뉴에서 숨기거나 실행 시 차단한다([탐색기 제한](../explorer/index.md#mirrorattach-explorer-의-browse-only-강제)).
+메뉴에서 숨기거나 실행 시 차단한다([탐색기 제한](../explorer/index.md#mirrorattach-explorer-의-파일-변경-차단)).
 파일 더블클릭은 client가 파일 이름만으로 식별하고, `open_surface` 핸들러 중 client에서 콘텐츠를
 mirror하는 kind만 원격 새 탭으로 forward한다. 1순위 핸들러가 그런 kind가 아니면 원격에 열 수 있는
 핸들러만 담은 핸들러 picker를 띄운다. 사용자 origin이라 원격과 client 모두 새 탭을

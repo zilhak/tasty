@@ -2002,7 +2002,7 @@ impl MainView {
         cwd: &std::path::Path,
         is_folder: bool,
     ) {
-        // (ADR-0022) mirror explorer 는 browse-only — 표시된 경로는 원격
+        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 표시된 경로는 원격
         // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
         // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
         if self.core_state.is_mirror_surface(surface_id) {
@@ -2032,7 +2032,7 @@ impl MainView {
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
     fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (ADR-0022) mirror explorer 는 browse-only.
+        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2054,7 +2054,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
-        // (ADR-0022) mirror explorer 는 browse-only.
+        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2067,7 +2067,7 @@ impl MainView {
 
     /// 이름 변경 (아이템 40).
     fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (ADR-0022) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
+        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 이 가드가 먼저 막아서
         // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
         // `path.exists()` 게이트까지 도달하지 않음).
         if self.core_state.is_mirror_surface(surface_id) {
