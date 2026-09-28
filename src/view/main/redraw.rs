@@ -48,21 +48,32 @@ pub(crate) fn next_webview_attempts(
     }
 }
 
+/// host 창이 OS 포커스를 가졌는지. webview 자식이 포커스를 쥐면 winit은 부모 창에
+/// Focused(false)를 보내므로 자식이 포커스를 가진 경우도 활성으로 본다.
+/// `webview_holds`는 OS에 포커스를 묻는 호출이라 winit 값이 거짓일 때만 부른다.
+pub(crate) fn host_window_has_os_focus(
+    winit_focused: bool,
+    webview_holds: impl FnOnce() -> bool,
+) -> bool {
+    winit_focused || webview_holds()
+}
+
 /// 활성 탭에서 빠진 webview 중 이번 프레임에 키보드 포커스를 회수할 surface를 고른다.
 ///
 /// 직전 프레임에 활성이었다가 빠진 surface를 `pending`에 모은다. 다시 활성이 되었거나
 /// 사라진 surface는 뺀다. host 창이 OS 포커스를 가질 때만 모은 surface를 꺼내므로
 /// 배경 창에서 일어난 전환은 사용자가 창으로 돌아올 때까지 미뤄진다.
+/// `host_focused`는 모은 surface가 있을 때만 부른다.
 pub(crate) fn take_hidden_webview_focus_targets(
     prev_active: &std::collections::HashSet<u32>,
     now_active: &std::collections::HashSet<u32>,
     is_live: impl Fn(u32) -> bool,
     pending: &mut std::collections::HashSet<u32>,
-    host_focused: bool,
+    host_focused: impl FnOnce() -> bool,
 ) -> Vec<u32> {
     pending.extend(prev_active.difference(now_active).copied());
     pending.retain(|sid| !now_active.contains(sid) && is_live(*sid));
-    if !host_focused {
+    if pending.is_empty() || !host_focused() {
         return Vec::new();
     }
     let mut targets: Vec<u32> = pending.drain().collect();
@@ -670,7 +681,11 @@ impl MainView {
         // 포커스가 해제되지 않는다. 닫을 때 자동으로 native 자식에 포커스를 돌려주지는 않는다.
         // 다른 앱의 포커스를 바꾸지 않도록 이 창이 OS 포커스를 가질 때만 처리한다.
         if overlay_open {
-            if !self.webview_overlay_focus_released && self.base.focused {
+            if !self.webview_overlay_focus_released
+                && host_window_has_os_focus(self.base.focused, || {
+                    self.webviews.values().any(|wv| wv.holds_keyboard_focus())
+                })
+            {
                 for wv in self.webviews.values() {
                     wv.release_keyboard_focus();
                 }
@@ -689,7 +704,11 @@ impl MainView {
             &now_active,
             |sid| self.webviews.contains_key(&sid),
             &mut self.webview_focus_release_pending,
-            self.base.focused,
+            || {
+                host_window_has_os_focus(self.base.focused, || {
+                    self.webviews.values().any(|wv| wv.holds_keyboard_focus())
+                })
+            },
         );
         for sid in release {
             if let Some(wv) = self.webviews.get(&sid) {
@@ -2317,8 +2336,8 @@ fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_me
 #[cfg(test)]
 mod tests {
     use super::category_header_menu_items;
-    use super::take_hidden_webview_focus_targets;
     use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
+    use super::{host_window_has_os_focus, take_hidden_webview_focus_targets};
     use crate::webview::WebViewCreateError;
 
     fn set(ids: &[u32]) -> std::collections::HashSet<u32> {
@@ -2334,11 +2353,16 @@ mod tests {
             &set(&[2]),
             |_| true,
             &mut pending,
-            true,
+            || true,
         );
         assert_eq!(got, vec![1]);
-        let again =
-            take_hidden_webview_focus_targets(&set(&[2]), &set(&[2]), |_| true, &mut pending, true);
+        let again = take_hidden_webview_focus_targets(
+            &set(&[2]),
+            &set(&[2]),
+            |_| true,
+            &mut pending,
+            || true,
+        );
         assert!(again.is_empty(), "같은 전이를 매 프레임 회수하면 안 된다");
     }
 
@@ -2351,7 +2375,7 @@ mod tests {
             &set(&[1, 3]),
             |_| true,
             &mut pending,
-            true,
+            || true,
         );
         assert!(got.is_empty());
     }
@@ -2360,11 +2384,21 @@ mod tests {
     #[test]
     fn an_unfocused_window_defers_the_release_until_it_is_focused() {
         let mut pending = set(&[]);
-        let got =
-            take_hidden_webview_focus_targets(&set(&[1]), &set(&[]), |_| true, &mut pending, false);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[]),
+            |_| true,
+            &mut pending,
+            || false,
+        );
         assert!(got.is_empty(), "배경 창에서는 OS 포커스를 건드리지 않는다");
-        let got =
-            take_hidden_webview_focus_targets(&set(&[]), &set(&[]), |_| true, &mut pending, true);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[]),
+            &set(&[]),
+            |_| true,
+            &mut pending,
+            || true,
+        );
         assert_eq!(got, vec![1]);
         assert!(pending.is_empty());
     }
@@ -2373,19 +2407,63 @@ mod tests {
     #[test]
     fn a_deferred_release_is_dropped_when_the_surface_returns_or_closes() {
         let mut pending = set(&[]);
-        take_hidden_webview_focus_targets(&set(&[1, 2]), &set(&[]), |_| true, &mut pending, false);
+        take_hidden_webview_focus_targets(
+            &set(&[1, 2]),
+            &set(&[]),
+            |_| true,
+            &mut pending,
+            || false,
+        );
         let got = take_hidden_webview_focus_targets(
             &set(&[]),
             &set(&[1]),
             |sid| sid != 2,
             &mut pending,
-            true,
+            || true,
         );
         assert!(
             got.is_empty(),
             "돌아온 surface와 닫힌 surface는 회수하지 않는다"
         );
         assert!(pending.is_empty());
+    }
+
+    /// 회수할 surface가 없는 프레임에는 OS에 포커스를 묻지 않는다.
+    #[test]
+    fn nothing_pending_does_not_query_the_os_focus() {
+        let mut pending = set(&[]);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[1]),
+            |_| true,
+            &mut pending,
+            || panic!("회수 대상이 없는데 포커스를 물었다"),
+        );
+        assert!(got.is_empty());
+    }
+
+    /// winit이 포커스를 잃었다고 해도 webview 자식이 포커스를 쥐었으면 창은 활성이다.
+    #[test]
+    fn a_webview_child_holding_focus_counts_as_an_active_window() {
+        assert!(host_window_has_os_focus(false, || true));
+        assert!(!host_window_has_os_focus(false, || false));
+        assert!(host_window_has_os_focus(true, || panic!(
+            "winit 값이 참이면 OS에 묻지 않는다"
+        )));
+    }
+
+    /// X focus가 자식 안에 있는 상태(winit false)에서 탭을 바꾸면 미루지 않고 바로 회수한다.
+    #[test]
+    fn a_tab_switch_while_the_child_holds_focus_is_released_at_once() {
+        let mut pending = set(&[]);
+        let got = take_hidden_webview_focus_targets(
+            &set(&[1]),
+            &set(&[]),
+            |_| true,
+            &mut pending,
+            || host_window_has_os_focus(false, || true),
+        );
+        assert_eq!(got, vec![1]);
     }
 
     /// 영구 실패는 첫 시도 뒤 재시도를 멈춘다.

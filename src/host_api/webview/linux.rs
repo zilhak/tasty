@@ -521,6 +521,13 @@ impl PlatformWebView {
         }
     }
 
+    /// X focus가 이 WebView 안에 있는지. X focus는 서버 전역이라 참이면 이 앱이 OS 포커스를 가진 것이다.
+    /// 자식 창이 focus를 가지면 winit이 부모 창에 Focused(false)를 보내므로 호출부가 창 활성 판정에 함께 쓴다.
+    pub fn holds_keyboard_focus(&self) -> bool {
+        self.assert_origin_thread();
+        self.x11_focus_is_inside()
+    }
+
     fn x11_focus_is_inside(&self) -> bool {
         let mut focus: std::os::raw::c_ulong = 0;
         let mut revert: std::os::raw::c_int = 0;

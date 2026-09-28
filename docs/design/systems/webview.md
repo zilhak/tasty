@@ -162,14 +162,25 @@ host가 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 �
 | macOS | firstResponder가 자기 뷰 또는 하위 뷰인지 확인 | contentView(winit 뷰), nil 사용 금지 |
 | Windows | GetFocus가 자기 HWND 또는 IsChild인지 확인 | 부모 HWND |
 
-호출부의 base.focused와 backend의 실제 focus 검사를 함께 유지한다.
-하나를 생략하면 IPC로 overlay를 열거나 탭을 바꾸는 동안 다른 앱의 focus를 가져올 수 있다.
-컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
+창 활성 판정은 `host_window_has_os_focus`가 맡는다. base.focused가 참이거나, 어느 webview의
+holds_keyboard_focus가 참이면 창이 활성이다. base.focused는 winit의 Focused 이벤트를 따르는데,
+Linux/X11에서는 자식 창이 focus를 가져가면 winit이 부모 창에 Focused(false)를 보낸다(실측).
+Windows의 winit도 WM_KILLFOCUS를 Focused(false)로 바꾼다(winit 소스 확인).
+그래서 base.focused만으로는 회수가 필요한 바로 그 상태에서 회수가 막힌다.
 
-호출부의 base.focused는 winit의 Focused 이벤트를 따른다. Linux/X11에서는 X focus가 webview 자식 창으로
-들어가면 winit이 부모 창에 Focused(false)를 보내므로, 그 상태에서는 두 경로 모두 호출부 조건에서 멈춘다.
-Xvfb에서 X focus를 자식 창에 직접 넣어 확인했다. 실제 클릭은 X focus를 부모 창에 남겨 이 상태를 만들지 않았다.
-Windows의 winit도 WM_KILLFOCUS를 Focused(false)로 바꾸지만 실행 환경에서 확인하지 않았다.
+holds_keyboard_focus는 위 표의 자식 focus 확인을 다시 쓰며 다른 앱이 OS focus를 가진 동안에는 거짓이어야 한다.
+
+| 플랫폼 | 다른 앱이 focus를 가질 때 거짓인 이유 |
+|--------|--------------------------------------|
+| Linux | X focus는 서버 전역이다 |
+| Windows | GetFocus는 호출 스레드의 큐가 비활성이면 널을 돌려준다 |
+| macOS | first responder는 비활성 창에도 남으므로 key window 여부를 함께 확인한다 |
+
+OS 조회는 base.focused가 거짓이고 회수할 대상이 있을 때만 한다. 탭 전환 경로는 회수할 surface가 없는 프레임에 조회하지 않는다.
+창 활성 판정 없이 backend의 회수 조건(자식 focus 확인)만 쓰면 macOS에서 IPC로 overlay를 열거나 탭을 바꿀 때 비활성 창의 first responder가 바뀐다.
+컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
+Linux/X11(Xvfb)에서는 X focus를 자식 창에 직접 넣은 상태와 다른 X 클라이언트가 focus를 가진 상태를 확인했다.
+실제 클릭은 X focus를 부모 창에 남겨 앞의 상태를 만들지 않았다. Windows·macOS는 실행 환경에서 확인하지 않았다.
 
 <a id="도메인-라이브러리로는-아무것도-새지-않는다"></a>
 

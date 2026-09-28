@@ -399,6 +399,13 @@ impl PlatformWebView {
         }
     }
 
+    /// 창이 key window이고 이 WebView나 자손이 first responder인지.
+    /// first responder는 비활성 창에도 남으므로 key window 여부를 함께 본다.
+    pub fn holds_keyboard_focus(&self) -> bool {
+        self.webview.window().is_some_and(|w| w.isKeyWindow())
+            && view_holds_first_responder(&self.webview)
+    }
+
     pub fn set_visible(&self, visible: bool) {
         self.webview.setHidden(!visible);
     }

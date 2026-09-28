@@ -337,6 +337,13 @@ impl PlatformWebView {
         }
     }
 
+    /// 이 WebView 또는 자손이 키보드 포커스를 가졌는지. GetFocus는 이 스레드가 비활성이면 널을
+    /// 돌려주므로 참이면 이 앱이 OS 포커스를 가진 것이다. 자식이 포커스를 가지면 winit이 부모 창에
+    /// Focused(false)를 보내므로 호출부가 창 활성 판정에 함께 쓴다.
+    pub fn holds_keyboard_focus(&self) -> bool {
+        self.focus_is_inside()
+    }
+
     fn focus_is_inside(&self) -> bool {
         // SAFETY: 호출은 main thread(winit event loop). GetFocus 는 인자가 없고, 이
         // 스레드 메시지 큐가 활성이 아니면 널 HWND 를 돌려준다 — 다른 앱이 포커스를
