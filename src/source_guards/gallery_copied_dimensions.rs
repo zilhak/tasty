@@ -115,19 +115,9 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_ICON_ONLY_MIN"),
     ),
     (
-        "프리셋 pane 사이 간격",
-        Side::Lit(HOST_PRESET_DEMO, "PANE_GAP"),
-        Side::Lit(GALLERY_PRESET_EDITOR, "PANE_GAP"),
-    ),
-    (
         "프리셋 leaf 탭 스트립 높이",
         Side::Lit(HOST_PRESET_DEMO, "STRIP_H"),
         Side::Lit(GALLERY_PRESET_EDITOR, "STRIP_H"),
-    ),
-    (
-        "프리셋 탭 사이 간격",
-        Side::Lit(HOST_PRESET_DEMO, "TAB_GAP"),
-        Side::Lit(GALLERY_PRESET_EDITOR, "TAB_GAP"),
     ),
     (
         "프리셋 탭 좌우 여백",
@@ -443,11 +433,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 50개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 48개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        50,
-        "비교 명부가 {}쌍이다(기록 50). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        48,
+        "비교 명부가 {}쌍이다(기록 48). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);

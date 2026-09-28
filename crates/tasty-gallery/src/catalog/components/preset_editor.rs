@@ -8,8 +8,6 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — jsx inline style 전사).
-/// `PaneTree` 의 `gap:5` — bordered pane 카드 사이의 bg-app 공백 = 상위(pane) divider.
-const PANE_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab strip `height:20`.
 const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// `Pane` 의 활성 탭 본문 `padding:3`.
@@ -18,8 +16,6 @@ const BODY_PAD: LogicalPx = LogicalPx(3.0);
 const LEAF_GAP: LogicalPx = LogicalPx(6.0);
 /// mini tab `padding:0 9px`.
 const TAB_PAD_X: LogicalPx = LogicalPx(9.0);
-/// mini tab 아이콘↔라벨 `gap:5`.
-const TAB_GAP: LogicalPx = LogicalPx(5.0);
 /// 편집 상태 `MiniHandle` 한 변 크기.
 const E_HANDLE_SZ: LogicalPx = LogicalPx(18.0);
 /// 편집 핸들 클러스터 모서리 inset.
@@ -421,7 +417,7 @@ fn elide_to_width(
     }
 }
 
-/// 상위 레이아웃(pane split). Leaf = pane 카드, Split = 5px bg-app gap 으로 분할.
+/// 상위 레이아웃(pane split). Leaf = pane 카드, Split = `space-xs` bg-app gap 으로 분할.
 fn draw_pane_tree(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Pane) {
     match node {
         Pane::Leaf { tabs, active } => draw_pane_card(ui, theme, rect, tabs, *active),
@@ -432,7 +428,7 @@ fn draw_pane_tree(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Pan
             second,
         } => {
             // 패널 사이 틈에는 배경을 남겨 얇은 서피스 구분선과 구별한다.
-            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, PANE_GAP);
+            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, theme.spacing_xs);
             draw_pane_tree(ui, theme, r1, first);
             draw_pane_tree(ui, theme, r2, second);
         }
@@ -462,7 +458,7 @@ fn draw_pane_card(
     for (i, t) in tabs.iter().enumerate() {
         let on = i == active;
         let lw = LogicalPx(text_width(ui, t.name, tab_font.clone()));
-        let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X;
+        let tw = TAB_PAD_X + icon_sz + theme.spacing_xs + lw + TAB_PAD_X;
         let tab_rect = egui::Rect::from_min_size(
             egui::pos2(x.value(), strip.min.y),
             egui::vec2(tw.value(), STRIP_H.value()),
@@ -493,7 +489,7 @@ fn draw_pane_card(
         paint_glyph(ui, tab_kind(t).icon(), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
+                tab_rect.min.x + (TAB_PAD_X + icon_sz + theme.spacing_xs).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -860,7 +856,8 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     for (i, (kind, name, on, hovered)) in tabs.iter().enumerate() {
         let lw = LogicalPx(text_width(ui, name, tab_font.clone()));
         // × 예약: 편집 && 탭>1 → 우측 패딩 9→3 + marginLeft 1 + 14 close.
-        let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD;
+        let tw =
+            TAB_PAD_X + icon_sz + theme.spacing_xs + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD;
         let tab_rect = egui::Rect::from_min_size(
             egui::pos2(x.value(), strip.min.y),
             egui::vec2(tw.value(), STRIP_H.value()),
@@ -892,7 +889,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         paint_glyph(ui, kind.icon(), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
+                tab_rect.min.x + (TAB_PAD_X + icon_sz + theme.spacing_xs).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -1141,7 +1138,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("pane split", "bordered cards · 5px app-bg gap"),
+            ("pane split", "bordered cards · space-xs app-bg gap"),
             ("tab strip", "20px mini row · 2px accent bar"),
             ("surface split", "1px hairline (lower layout)"),
             ("leaf", "kind icon + label, centered (mono)"),
