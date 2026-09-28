@@ -1332,8 +1332,10 @@ fn draw_workspace_card(
     };
 
     // 행 배경은 모서리와 바깥 여백 없이 사이드바 폭을 채운다.
+    // 제목·REMOTE 줄·부제·설명은 모두 점 슬롯과 간격 뒤에서 시작한다.
+    let body_indent = th.workspace_dot_slot().value() + th.workspace_dot_gap().value();
     let frame = egui::Frame::new().fill(bg).inner_margin(egui::Margin {
-        left: th.spacing_xs.value() as i8,
+        left: th.workspace_row_padding_x().value() as i8,
         right: card_inner_margin_x(th),
         top: card_inner_margin_y(th),
         bottom: card_inner_margin_y(th),
@@ -1342,10 +1344,14 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+            ui.spacing_mut().item_spacing.x = th.workspace_dot_gap().value();
             // 실행 상태는 점 색, 다른 클라이언트 점유는 링, mirror는 별도 줄로 표시한다.
-            // 점 자리는 항상 확보해 이름 시작 위치가 바뀌지 않게 한다.
-            let dot_slot = egui::vec2(th.spacing_sm.value(), 16.0);
+            // 슬롯은 attached ring 전체를 담는 폭으로 모든 행에서 예약해 이름 시작 위치를 고정한다.
+            // 높이는 시안대로 제목 한 줄 높이다.
+            let dot_slot = egui::vec2(
+                th.workspace_dot_slot().value(),
+                th.font_size_body.value() * th.line_height_ui,
+            );
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             if let Some(digit) = switch_digit {
                 // 같은 슬롯 가운데 키캡을 그려 이름 시작 위치를 유지한다.
@@ -1426,7 +1432,7 @@ fn draw_workspace_card(
         if ws.is_mirror {
             vspace(ui, STRUCT_GAP_1);
             let resp = ui.horizontal(|ui| {
-                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
+                ui.add_space(body_indent);
                 ui.spacing_mut().item_spacing.x = th.workspace_mirror_gap().value();
                 ui.add(icons::TERMINAL_PROMPT.image(
                     th.workspace_mirror_icon_size().value(),
@@ -1446,7 +1452,7 @@ fn draw_workspace_card(
         if !ws.subtitle.is_empty() {
             vspace(ui, STRUCT_GAP_1);
             ui.horizontal(|ui| {
-                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
+                ui.add_space(body_indent);
                 // 부제는 이름과 정렬하고 일반 UI 글꼴을 사용한다.
                 ui.add(
                     egui::Label::new(
@@ -1462,7 +1468,7 @@ fn draw_workspace_card(
         if !ws.description.is_empty() {
             vspace(ui, STRUCT_GAP_3);
             ui.horizontal(|ui| {
-                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
+                ui.add_space(body_indent);
                 // 설명은 이름과 정렬하고 최대 두 줄로 줄인다.
                 let size = th.font_size_caption.value();
                 let mut job = egui::text::LayoutJob {
