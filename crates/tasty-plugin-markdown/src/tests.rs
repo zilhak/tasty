@@ -444,6 +444,76 @@ fn picker_start_on_mirror_reads_remote_cwd_only() {
     }));
     assert_eq!(start.dir.as_deref(), Some("/srv/remote"));
     assert_eq!(start.origin_surface_id, Some(9));
+    assert!(start.remote);
+}
+
+// ---- 확정 경로 조합 ----
+
+fn start(dir: Option<&str>, remote: bool) -> PickerStart {
+    PickerStart {
+        dir: dir.map(str::to_string),
+        origin_surface_id: Some(1),
+        remote,
+    }
+}
+
+/// 로컬 surface의 상대경로는 observed_cwd 기준으로 조합한다. 구분자는 로컬 OS 규칙이다.
+#[test]
+fn a_local_relative_path_joins_the_observed_cwd() {
+    let expected = std::path::Path::new("/work/proj")
+        .join("docs/a.md")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        popup::resolve_confirmed_path("docs/a.md", &start(Some("/work/proj"), false)),
+        expected
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_local_absolute_path_is_kept() {
+    assert_eq!(
+        popup::resolve_confirmed_path("/etc/a.md", &start(Some("/work/proj"), false)),
+        "/etc/a.md"
+    );
+}
+
+/// 원격 경로는 로컬 OS와 관계없이 원격 cwd의 모양으로 구분자를 고른다.
+#[test]
+fn a_remote_relative_path_uses_the_remote_separator() {
+    let r = |dir: &str, input: &str| popup::resolve_confirmed_path(input, &start(Some(dir), true));
+    assert_eq!(r("/srv/remote", "a.md"), "/srv/remote/a.md");
+    assert_eq!(r("/srv/remote/", "docs/a.md"), "/srv/remote/docs/a.md");
+    assert_eq!(r("C:\\Users\\me", "a.md"), "C:\\Users\\me\\a.md");
+    assert_eq!(r("C:\\Users\\me\\", "a.md"), "C:\\Users\\me\\a.md");
+    assert_eq!(r("\\\\host\\share", "a.md"), "\\\\host\\share\\a.md");
+}
+
+#[test]
+fn a_remote_absolute_path_is_kept_whatever_its_os() {
+    let r = |input: &str| popup::resolve_confirmed_path(input, &start(Some("/srv/remote"), true));
+    assert_eq!(r("/etc/a.md"), "/etc/a.md");
+    assert_eq!(r("D:\\notes\\a.md"), "D:\\notes\\a.md");
+    assert_eq!(r("D:/notes/a.md"), "D:/notes/a.md");
+    assert_eq!(r("\\\\host\\share\\a.md"), "\\\\host\\share\\a.md");
+}
+
+/// cwd를 모르거나 `~`로 시작하면 조합하지 않고 입력을 그대로 보낸다.
+#[test]
+fn an_unresolvable_path_is_sent_as_typed() {
+    assert_eq!(
+        popup::resolve_confirmed_path("a.md", &start(None, true)),
+        "a.md"
+    );
+    assert_eq!(
+        popup::resolve_confirmed_path("a.md", &start(Some(""), false)),
+        "a.md"
+    );
+    assert_eq!(
+        popup::resolve_confirmed_path("~/a.md", &start(Some("/srv/remote"), true)),
+        "~/a.md"
+    );
 }
 
 #[test]
@@ -461,6 +531,7 @@ fn trigger_params_carry_start_dir_and_origin() {
     let start = PickerStart {
         dir: Some("/work/proj".to_string()),
         origin_surface_id: Some(7),
+        remote: false,
     };
     let params = popup::file_picker_trigger_params(42, &start);
     assert_eq!(params["owner_popup_instance"], json!(42));

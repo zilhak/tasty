@@ -39,6 +39,8 @@ pub(crate) struct PickerStart {
     pub(crate) dir: Option<String>,
     /// 팝업을 띄운 로컬 surface — host 가 로컬/원격 판정을 이 surface 의 workspace 로 한다.
     pub(crate) origin_surface_id: Option<u32>,
+    /// dir가 원격 호스트의 경로인지. 확정 경로를 조합할 규칙을 고른다.
+    pub(crate) remote: bool,
 }
 
 impl PickerStart {
@@ -59,7 +61,49 @@ impl PickerStart {
                 .get("origin_surface_id")
                 .and_then(Value::as_u64)
                 .map(|v| v as u32),
+            remote: is_mirror,
         }
+    }
+}
+
+/// 확정한 상대경로를 팝업을 띄운 surface의 셸 cwd 기준 절대경로로 만든다.
+/// 절대경로, `~`로 시작하는 경로, cwd를 모르는 경우는 입력을 그대로 둔다.
+/// 원격 경로는 로컬 OS 규칙이 아니라 원격 cwd의 모양으로 구분자를 고른다.
+pub(crate) fn resolve_confirmed_path(input: &str, start: &PickerStart) -> String {
+    let Some(dir) = start.dir.as_deref().filter(|d| !d.is_empty()) else {
+        return input.to_string();
+    };
+    if input.starts_with('~') {
+        return input.to_string();
+    }
+    if start.remote {
+        return join_remote(dir, input);
+    }
+    let path = std::path::Path::new(input);
+    if path.is_absolute() {
+        return input.to_string();
+    }
+    std::path::Path::new(dir)
+        .join(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Windows 경로는 드라이브 문자나 `\\`로 시작한다. 그 밖은 Unix 경로로 본다.
+fn is_windows_style(path: &str) -> bool {
+    let b = path.as_bytes();
+    path.starts_with("\\\\") || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
+}
+
+fn join_remote(dir: &str, input: &str) -> String {
+    // 드라이브 상대경로(`C:a.md`)도 원격 OS가 해석하도록 그대로 둔다.
+    if input.starts_with('/') || input.starts_with('\\') || is_windows_style(input) {
+        return input.to_string();
+    }
+    if is_windows_style(dir) {
+        format!("{}\\{input}", dir.trim_end_matches(['\\', '/']))
+    } else {
+        format!("{}/{input}", dir.trim_end_matches('/'))
     }
 }
 
@@ -155,7 +199,15 @@ impl MarkdownPlugin {
                 let (path, convert_sid) = self
                     .file_open
                     .get(&iid)
-                    .map(|s| (s.path_input.trim().to_string(), s.convert_surface_id))
+                    .map(|s| {
+                        let input = s.path_input.trim();
+                        let path = if input.is_empty() {
+                            String::new()
+                        } else {
+                            resolve_confirmed_path(input, &s.picker_start)
+                        };
+                        (path, s.convert_surface_id)
+                    })
                     .unwrap_or_default();
                 if !path.is_empty() {
                     match convert_sid {
