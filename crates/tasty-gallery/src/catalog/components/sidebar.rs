@@ -221,56 +221,14 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     y += theme.spacing_lg.value();
 
     for (name, badge, active, mirror) in WORKSPACES {
-        let row = egui::Rect::from_min_size(
+        let row = WsRowSpec::plain(name, *badge, *active, *mirror);
+        let card_h = row_h + ws_row_extra_h(theme, &row);
+        let card = egui::Rect::from_min_size(
             egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
-            egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
+            egui::vec2(w - theme.spacing_xs.value() * 2.0, card_h),
         );
-        if *active {
-            p.rect_filled(
-                row,
-                theme.corner_radius_sm.value(),
-                egui::Color32::from(theme.surface_active()),
-            );
-            let bar = egui::Rect::from_min_size(
-                row.min,
-                egui::vec2(theme.tab_indicator_width.value(), row.height()),
-            );
-            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
-        }
-        let dot_r = theme.status_dot_size.value() * 0.5;
-        let dc = egui::pos2(row.min.x + theme.spacing_md.value() + dot_r, row.center().y);
-        // 실행 상태 점과 원격 연결 표시는 별개다.
-        p.circle_filled(
-            dc,
-            dot_r,
-            egui::Color32::from(if *active {
-                theme.accent_success()
-            } else {
-                theme.status_dot_idle()
-            }),
-        );
-        let name_x = dc.x + dot_r + theme.spacing_sm.value();
-        p.text(
-            egui::pos2(name_x, row.center().y),
-            egui::Align2::LEFT_CENTER,
-            name,
-            egui::FontId::proportional(theme.font_size_body.value()),
-            egui::Color32::from(if *active {
-                theme.text_primary()
-            } else {
-                theme.text_secondary()
-            }),
-        );
-        if let Some(b) = badge {
-            paint_ws_count_badge(&p, theme, row, b);
-        }
-        mirror_pill_line(ui, theme, row, name_x, *mirror);
-        let extra = if *mirror {
-            theme.spacing_xs.value() + mirror_pill_line_h(theme)
-        } else {
-            0.0
-        };
-        y += row_h + extra + theme.spacing_xs.value();
+        paint_ws_row(ui, theme, card, &row);
+        y += card_h + theme.spacing_xs.value();
     }
 
     let footer_h = row_h * FOOTER.len() as f32 + pad;
@@ -364,48 +322,131 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
-/// 워크스페이스 행 1개(그룹 렌더용) — dot + name + optional badge, active 배경/accent bar.
-fn paint_ws_row(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    rect: egui::Rect,
-    name: &str,
-    badge: Option<&str>,
-    active: bool,
+/// 행 배경 상태. hover는 비활성 행 위에 겹치는 overlay다.
+#[derive(Clone, Copy, PartialEq)]
+enum RowState {
+    Active,
+    Inactive,
+    Hover,
+}
+
+/// 워크스페이스 행 1개의 표시 내용. 본체 `draw_workspace_card`의 축을 그대로 옮긴다.
+struct WsRowSpec<'a> {
+    name: &'a str,
+    badge: Option<&'a str>,
+    state: RowState,
+    busy: bool,
+    attached: bool,
     mirror: bool,
-) {
-    let p = ui.painter_at(rect);
-    if active {
-        p.rect_filled(
-            rect,
-            theme.corner_radius_sm.value(),
-            egui::Color32::from(theme.surface_active()),
-        );
-        let bar = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
-        );
-        p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+    subtitle: Option<&'a str>,
+}
+
+impl<'a> WsRowSpec<'a> {
+    /// 기존 데모 행. 활성 행만 실행 중으로 표시하고 attached·부제는 없다.
+    fn plain(name: &'a str, badge: Option<&'a str>, active: bool, mirror: bool) -> Self {
+        Self {
+            name,
+            badge,
+            state: if active {
+                RowState::Active
+            } else {
+                RowState::Inactive
+            },
+            busy: active,
+            attached: false,
+            mirror,
+            subtitle: None,
+        }
     }
-    let dot_r = theme.status_dot_size.value() * 0.5;
-    let dc = egui::pos2(
-        rect.min.x + theme.spacing_md.value() + dot_r,
-        rect.center().y,
+}
+
+/// 점 슬롯 중심 x와 본문 x. 슬롯은 attached 여부와 무관하게 모든 행에서 예약해
+/// ring 전체(점 8 + 2×(offset + 폭))가 inset·간격 안에 들어가게 한다.
+fn ws_row_columns(theme: &Theme, card: egui::Rect) -> (f32, f32) {
+    let slot_x = card.min.x + theme.workspace_row_padding_x().value();
+    let slot = theme.workspace_dot_slot().value();
+    (
+        slot_x + slot * 0.5,
+        slot_x + slot + theme.workspace_dot_gap().value(),
+    )
+}
+
+/// 부제 한 줄 높이. 본체 부제와 같은 글꼴에 UI 줄간격을 적용한다.
+fn subtitle_line_h(theme: &Theme) -> f32 {
+    theme.sidebar_button_label_font_size.value() * theme.line_height_ui
+}
+
+/// 제목 줄 아래에 붙는 REMOTE 줄·부제 줄의 높이 합.
+fn ws_row_extra_h(theme: &Theme, row: &WsRowSpec) -> f32 {
+    let mut h = 0.0;
+    if row.mirror {
+        h += theme.spacing_xs.value() + mirror_pill_line_h(theme);
+    }
+    if row.subtitle.is_some() {
+        h += theme.spacing_xs.value() + subtitle_line_h(theme);
+    }
+    h
+}
+
+/// 워크스페이스 행 1개 — 슬롯 가운데 점(+ attached ring), 이름, 배지, REMOTE 줄, 부제.
+/// `card`는 제목 줄과 추가 줄을 모두 포함하며 배경·hover·accent bar가 카드 전체를 덮는다.
+fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowSpec) {
+    let p = ui.painter_at(card);
+    match row.state {
+        RowState::Active => {
+            p.rect_filled(
+                card,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
+            let bar = egui::Rect::from_min_size(
+                card.min,
+                egui::vec2(theme.tab_indicator_width.value(), card.height()),
+            );
+            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+        }
+        RowState::Hover => {
+            p.rect_filled(
+                card,
+                theme.corner_radius_sm.value(),
+                theme.hover_overlay.to_egui_premultiplied(),
+            );
+        }
+        RowState::Inactive => {}
+    }
+    let title = egui::Rect::from_min_size(
+        card.min,
+        egui::vec2(card.width(), theme.item_height_interactive.value()),
     );
+    let (dot_x, name_x) = ws_row_columns(theme, card);
+    let dc = egui::pos2(dot_x, title.center().y);
+    let dot_r = theme.status_dot_size.value() * 0.5;
     p.circle_filled(
         dc,
         dot_r,
-        egui::Color32::from(if active {
+        egui::Color32::from(if row.busy {
             theme.accent_success()
         } else {
             theme.status_dot_idle()
         }),
     );
-    let name_x = dc.x + dot_r + theme.spacing_sm.value();
+    // 링의 offset은 점의 바깥쪽에서 링 안쪽까지의 거리다(본체와 같은 식).
+    if row.attached {
+        let ring_w = theme.status_dot_attached_ring_width().value();
+        p.circle_stroke(
+            dc,
+            dot_r + theme.status_dot_attached_ring_offset().value() + ring_w * 0.5,
+            egui::Stroke::new(
+                ring_w,
+                egui::Color32::from(theme.status_dot_attached_ring()),
+            ),
+        );
+    }
+    let active = row.state == RowState::Active;
     p.text(
-        egui::pos2(name_x, rect.center().y),
+        egui::pos2(name_x, title.center().y),
         egui::Align2::LEFT_CENTER,
-        name,
+        row.name,
         egui::FontId::proportional(theme.font_size_body.value()),
         egui::Color32::from(if active {
             theme.text_primary()
@@ -413,10 +454,25 @@ fn paint_ws_row(
             theme.text_secondary()
         }),
     );
-    if let Some(b) = badge {
-        paint_ws_count_badge(&p, theme, rect, b);
+    if let Some(b) = row.badge {
+        paint_ws_count_badge(&p, theme, title, b);
     }
-    mirror_pill_line(ui, theme, rect, name_x, mirror);
+    mirror_pill_line(ui, theme, title, name_x, row.mirror);
+    if let Some(sub) = row.subtitle {
+        let pill = if row.mirror {
+            theme.spacing_xs.value() + mirror_pill_line_h(theme)
+        } else {
+            0.0
+        };
+        let top = title.bottom() + pill + theme.spacing_xs.value();
+        p.text(
+            egui::pos2(name_x, top + subtitle_line_h(theme) * 0.5),
+            egui::Align2::LEFT_CENTER,
+            sub,
+            egui::FontId::proportional(theme.sidebar_button_label_font_size.value()),
+            egui::Color32::from(theme.text_muted()),
+        );
+    }
 }
 
 /// 카테고리 그룹(확장) — chevron 헤더 + 소속 행. 접힌/빈 카테고리는 헤더만.
@@ -492,17 +548,14 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
         // 헤더가 이미 아래쪽 선을 그리므로 구분선을 덧그리지 않는다.
         if !*collapsed && !rows.is_empty() {
             for (name, badge, active, mirror) in *rows {
-                let row = egui::Rect::from_min_size(
+                let row = WsRowSpec::plain(name, *badge, *active, *mirror);
+                let card_h = row_h + ws_row_extra_h(theme, &row);
+                let card = egui::Rect::from_min_size(
                     egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
-                    egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
+                    egui::vec2(w - theme.spacing_xs.value() * 2.0, card_h),
                 );
-                paint_ws_row(ui, theme, row, name, *badge, *active, *mirror);
-                let extra = if *mirror {
-                    theme.spacing_xs.value() + mirror_pill_line_h(theme)
-                } else {
-                    0.0
-                };
-                y += row_h + extra + theme.spacing_xs.value();
+                paint_ws_row(ui, theme, card, &row);
+                y += card_h + theme.spacing_xs.value();
             }
         }
     }
@@ -750,5 +803,119 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "펼친 사이드바는 이름과 배지를 표시하고 접힌 레일은 아이콘 중심으로 보여준다. 원격 미러는 펼친 행의 REMOTE 배지 또는 아바타 오른쪽 아래 표시로 구분한다. 카테고리에는 접기 버튼이 있으며 접힌 레일에서는 경계선으로 표시한다. 응답 대기 배지는 완료 배지 왼쪽에 놓인다. 레일의 점 하나는 응답 대기, 완료, 실행 순서로 대표 상태를 표시한다.",
+    );
+}
+
+/// attached ring 예제 행: 시안 "Attached ring in the workspace row"와 같은 세 행.
+/// (이름, attached, REMOTE 줄, 부제).
+const ATTACHED_ROWS: &[(&str, bool, bool, Option<&str>)] = &[
+    ("second", true, false, None),
+    ("api-server", false, false, None),
+    ("staging", true, true, Some("ssh deploy@10.0.4.12")),
+];
+
+/// 행 여러 개를 사이드바 폭의 카드 열로 그린다.
+fn ws_column(ui: &mut egui::Ui, theme: &Theme, rows: &[WsRowSpec]) {
+    let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
+    let row_h = theme.item_height_interactive.value();
+    let heights: Vec<f32> = rows
+        .iter()
+        .map(|r| row_h + ws_row_extra_h(theme, r))
+        .collect();
+    let h = heights.iter().sum::<f32>() + theme.spacing_xs.value() * (rows.len() as f32 + 1.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter_at(rect).rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+    let mut y = rect.min.y + theme.spacing_xs.value();
+    for (row, card_h) in rows.iter().zip(heights) {
+        let card = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
+            egui::vec2(w - theme.spacing_xs.value() * 2.0, card_h),
+        );
+        paint_ws_row(ui, theme, card, row);
+        y += card_h + theme.spacing_xs.value();
+    }
+}
+
+fn attached_rows(state: RowState) -> Vec<WsRowSpec<'static>> {
+    ATTACHED_ROWS
+        .iter()
+        .map(|(name, attached, mirror, subtitle)| WsRowSpec {
+            name,
+            badge: None,
+            state,
+            busy: true,
+            attached: *attached,
+            mirror: *mirror,
+            subtitle: *subtitle,
+        })
+        .collect()
+}
+
+/// 같은 팔레트를 다른 UI 배율로 다시 만든다. 토큰은 배율을 타므로 슬롯·inset·간격이 함께 변한다.
+fn with_zoom(base: &Theme, zoom: f32) -> Theme {
+    Theme::with_colors_and_zoom(base.to_colors(), base.is_light, zoom)
+}
+
+/// 워크스페이스 행의 attached ring — 모든 행이 16 슬롯을 예약한다.
+pub fn draw_attached_ring(ui: &mut egui::Ui, theme: &Theme) {
+    let palettes = [
+        ("Mocha", tasty_themes::mocha_fallback()),
+        ("Latte", crate::host_shell::latte_theme()),
+    ];
+    // 팔레트마다 그 팔레트의 무대 배경 위에 세 상태 열을 놓는다.
+    for (palette, base) in &palettes {
+        let th = with_zoom(base, theme.ui_zoom);
+        spec::stage(ui, &th, StageVariant::Wrap, |ui| {
+            for (state, label) in [
+                (RowState::Active, "active"),
+                (RowState::Inactive, "inactive"),
+                (RowState::Hover, "hover"),
+            ] {
+                spec::cluster(ui, &th, &format!("{palette} · {label}"), |ui| {
+                    ws_column(ui, &th, &attached_rows(state))
+                });
+            }
+        });
+    }
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for key in ["small", "large"] {
+            let zoom = tasty_settings::AppearanceSettings::ui_scale_factor_for(key);
+            let th = with_zoom(theme, theme.ui_zoom * zoom);
+            let mut rows = attached_rows(RowState::Inactive);
+            rows[0].state = RowState::Active;
+            rows.remove(1);
+            spec::cluster(ui, theme, &format!("ui_scale {zoom}"), |ui| {
+                ws_column(ui, &th, &rows)
+            });
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("dot", "8 (status-dot-size)"),
+            ("attached bbox", "8 + 2×(2+2) = 16"),
+            ("row inset", "8 (workspace-row-padding-x)"),
+            ("dot slot", "16, reserved on every row (workspace-dot-slot)"),
+            ("slot → body", "4 (workspace-dot-gap)"),
+            ("body x", "28 (title · remote pill · subtitle)"),
+            ("clearance", "card 8 · accent bar 6 · label 4"),
+        ],
+        &[TokenChip::new(
+            "status-dot-attached-ring",
+            "attached ring",
+            theme.status_dot_attached_ring().into(),
+        )],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "워크스페이스 행은 일반 점 8을 유지하고 attached ring까지 담는 16 슬롯을 모든 행에 예약한다. ring이 없는 행도 이름·REMOTE 줄·부제가 같은 x에서 시작한다. 슬롯·inset·간격은 토큰이라 UI 배율을 따라 함께 변한다.",
     );
 }

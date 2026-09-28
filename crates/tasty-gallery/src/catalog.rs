@@ -1468,12 +1468,20 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "sidebar",
                     "Sidebar & rail",
-                    vec![spec(
-                        "sidebar",
-                        "Sidebar (Full / Collapsed)",
-                        Some("Full 212 expands names; collapsed 52 rail keeps icon slots"),
-                        components::sidebar::draw,
-                    )],
+                    vec![
+                        spec(
+                            "sidebar",
+                            "Sidebar (Full / Collapsed)",
+                            Some("Full 212 expands names; collapsed 52 rail keeps icon slots"),
+                            components::sidebar::draw,
+                        ),
+                        spec(
+                            "sidebar-attached-ring",
+                            "Attached ring in the workspace row",
+                            Some("Every row reserves a 16 dot slot; body x 28"),
+                            components::sidebar::draw_attached_ring,
+                        ),
+                    ],
                 ),
                 section(
                     "tabs",
