@@ -320,7 +320,7 @@ text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 - **순서**: 잉크 강도는 `text_placeholder()` < `text_disabled()` < `text_muted()`다. 잉크 단계가 라벨의 유일한 disabled 신호이므로 disabled 라벨에 opacity를 추가로 곱하지 않는다. 라벨과 글리프는 같은 disabled 잉크를 쓴다.
 - **패리티**: Mocha의 text-disabled는 neutral-700(overlay1), Latte의 text-disabled는 neutral-800(overlay2)이다. Latte 램프의 밝은 끝은 neutral-600~800이 서로 가까워 같은 단계가 Mocha보다 흐리게 읽히므로 한 단계 위를 쓴다. 그래도 text-muted(neutral-900)보다는 약해 순서 규칙이 유지된다.
 
-활성 상태의 컨트롤 글리프는 이 예외에 들지 않는다. 탭 스트립의 스크롤할 수 있는 화살표(`tab_scroll_arrow_fg()`)는 1.4.11의 3:1 대상이다. 탭 스트립 배경 `surface_raised` 위에서 WCAG 공식으로 계산한 평면색 비율은 다음과 같다.
+활성 상태의 컨트롤 글리프는 이 예외에 들지 않는다. 탭 스트립의 스크롤할 수 있는 화살표(`tab_scroll_arrow_fg()`)는 1.4.11의 3:1 대상이다. 화살표 칸 바탕 `surface_raised`(본체는 포커스된 pane 의 스트립 배경, 비포커스 pane 은 `bg_sidebar`) 위에서 WCAG 공식으로 계산한 평면색 비율은 다음과 같다.
 
 | 테마 | placeholder | disabled | muted(활성 화살표) |
 |---|---|---|---|
