@@ -100,6 +100,7 @@ host UI와 공용 위젯은 semantic 접근자를 사용한다. 원시 팔레트
 | 표현할 역할 | 사용할 접근자 |
 |---|---|
 | 비활성 라벨·글리프 | `text_disabled()` |
+| 탭 스트립 스크롤 화살표 | `tab_scroll_arrow_fg()`(스크롤할 수 있음) · `tab_scroll_arrow_fg_disabled()`(끝에 닿음) |
 | 입력 전 안내 | `text_placeholder()` |
 | 약하게 표시하는 chrome 글리프 | `glyph_dim()` |
 | popup 프레임·pane divider·GPU 비활성 보더 | `border_frame()` |
@@ -225,7 +226,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |
 | 반경 | `corner_radius_sm` 2, 기본 4, `_lg` 8. 반경이 없으면 `CornerRadius::ZERO`. |
 | hover·active | `hover_overlay` 8%, `active_overlay` 12%. 밝은 테마는 검정, 어두운 테마는 흰색에서 만든다. |
-| 텍스트 대비 | 최소 4.5:1. Latte의 기존 예외는 아래 대비 표를 따른다. |
+| 텍스트 대비 | 최소 4.5:1. Latte의 기존 예외는 아래 대비 표를 따른다. disabled 잉크는 대비 목표를 두지 않고 순서·패리티 규칙을 따른다(아래 "disabled 잉크" 절). |
 
 이 표의 수치를 호출부에 복사하지 말고 해당 Theme 필드·접근자를 사용한다. 승인 없이 새 값을 정하거나 비슷한 값의 다른 토큰으로 바꾸지 않는다. 보편적인 표·버튼·선택 위젯은 [공용 위젯](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)으로 구현한다.
 
@@ -311,6 +312,20 @@ text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 즉 surface0 위에서 AA 를 넘는 중성 전경은 `text` 하나뿐이고, surface1/surface2 는 `text` 조차 미달이다. 이는 catppuccin latte 의 raised/hover 배경단이 라이트 테마치고 어둡기 때문이며, 고치려면 중성색 팔레트 전체를 다시 설계하고 저장소의 팔레트 사본과 DTCG export를 함께 갱신해야 한다. 컴포넌트별 회피(해당 화면만 `text_secondary`/`text_primary` 로 승격)는 가능하지만 상태바·탭바의 확정 시안을 바꾸는 일이라 디자인 요청 없이 진행하지 않는다.
 
 **새 UI 를 그릴 때는 이 표를 근거로 배경을 고른다** — muted 캡션을 얹을 배경은 `base`/`mantle`/`#ffffff` 로 한정하고, `surface0` 이상 어두운 배경 위에는 `text_primary` 를 쓴다.
+
+### disabled 잉크 — 대비 목표 없음
+
+비활성 라벨·글리프(`text_disabled()`와 이를 가리키는 component 역할)에는 대비 목표를 두지 않는다. WCAG 1.4.3과 1.4.11은 비활성 UI 구성요소를 대비 요구에서 제외한다. 대신 두 규칙을 지킨다.
+
+- **순서**: 잉크 강도는 `text_placeholder()` < `text_disabled()` < `text_muted()`다. 잉크 단계가 라벨의 유일한 disabled 신호이므로 disabled 라벨에 opacity를 추가로 곱하지 않는다. 라벨과 글리프는 같은 disabled 잉크를 쓴다.
+- **패리티**: Mocha의 text-disabled는 neutral-700(overlay1), Latte의 text-disabled는 neutral-800(overlay2)이다. Latte 램프의 밝은 끝은 neutral-600~800이 서로 가까워 같은 단계가 Mocha보다 흐리게 읽히므로 한 단계 위를 쓴다. 그래도 text-muted(neutral-900)보다는 약해 순서 규칙이 유지된다.
+
+활성 상태의 컨트롤 글리프는 이 예외에 들지 않는다. 탭 스트립의 스크롤할 수 있는 화살표(`tab_scroll_arrow_fg()`)는 1.4.11의 3:1 대상이다. 탭 스트립 배경 `surface_raised` 위에서 WCAG 공식으로 계산한 평면색 비율은 다음과 같다.
+
+| 테마 | placeholder | disabled | muted(활성 화살표) |
+|---|---|---|---|
+| Mocha (`#313244`) | 2.57 | 3.40 | 5.65 |
+| Latte (`#ccd0da`) | 1.69 | 2.56 | 3.65 |
 
 ### Host UI zoom
 
