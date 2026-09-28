@@ -193,10 +193,12 @@ reader는 `next_offset = retention_start + 파일 안 위치`를 저장한다.
 이미 자식을 실행했다면 구독 이전에 기록된 내용도 먼저 확인한다.
 
 ```
-Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
+Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", timeout_ms: 1800000 })
 ```
 
-`-n0`은 구독 시작 이전의 줄을 건너뛴다. persistent 구독은 세션 동안 유지하며,
+`-n0`은 구독 시작 이전의 줄을 건너뛴다. Monitor에는 `persistent` 같은 상시 유지 옵션이 없고
+`timeout_ms`의 최댓값은 30분이다. 만료 알림을 받으면 같은 명령으로 다시 구독하고, 직후
+`tasty claude children`으로 자식 상태를 한 번 조회해 만료와 재구독 사이에 끝난 자식을 놓치지 않는다.
 도구 제공 여부와 실제 전달은 아래 상류 제약을 확인한다.
 
 #### Monitor 사용 시 주의 (상류 제약)
