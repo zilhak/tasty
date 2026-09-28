@@ -175,7 +175,7 @@ description = "Install tasty hooks into ~/.claude/settings.json"
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type, error, agent_id, background_tasks, waiting_on_background_work) when invoked by Claude Code's hook system."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type, error, agent_id, background_tasks) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -415,7 +415,7 @@ help = "Subagent ID when the hook fires inside a subagent (absent on the main th
 help = "Background tasks still attached to the session, as a JSON array. Auto-populated from stdin JSON 'background_tasks' on the Stop hook. A stop with any item whose status does not mean finished (completed, failed, cancelled, canceled, killed, stopped, error, done; unknown or missing status counts as unfinished) only ended the main response while background work continues, so the child stays active instead of going idle."
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
-help = "Whether the session is waiting for background work to finish (\"true\"/\"false\"). Auto-populated from stdin JSON 'waiting_on_background_work' when Claude Code sends it; when present it decides instead of --background-tasks."
+help = "Whether the session is waiting for background work to finish (\"true\"/\"false\"). Not in the official hooks documentation (checked 2026-09-28) or in observed Claude Code 2.1.283 payloads; read defensively from stdin JSON 'waiting_on_background_work' if it ever arrives, and when present it decides instead of --background-tasks."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID."

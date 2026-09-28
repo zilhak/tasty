@@ -175,7 +175,7 @@ description = "~/.claude/settings.jsonにtastyフックをインストール"
 description = "~/.claude/settings.jsonからtastyフックを削除"
 
 [claude.cli.sub.hook]
-description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、message、notification_type、error、agent_id、background_tasks、waiting_on_background_work）を読み取ります。"
+description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、message、notification_type、error、agent_id、background_tasks）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
 
 [claude.cli.sub.checklist-hook]
 description = "Stopフックゲートの判定。stdinからJSON（session_id、prompt_id、stop_hook_active、last_assistant_message）を読み取ります。--gateで判定する登録ゲートを選択（既定値：continue-checklist）。"
@@ -415,7 +415,7 @@ help = "フックがサブエージェント内で発火したときのサブエ
 help = "セッションに残っているバックグラウンドタスクの一覧（JSON 配列）。Stop フックで stdin JSON の 'background_tasks' から自動的に設定される。終了を表さない status の項目（終了値は completed、failed、cancelled、canceled、killed、stopped、error、done で、未知の値や status のない項目も未終了として数える）がある stop はメイン応答が終わっただけでバックグラウンド作業は続くため、子を idle にせず active のままにする。"
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
-help = "セッションがバックグラウンド作業の完了を待っているかどうか（\"true\"/\"false\"）。Claude Code が送る場合は stdin JSON の 'waiting_on_background_work' から自動的に設定される。値があれば --background-tasks の代わりにこの値で判定する。"
+help = "セッションがバックグラウンド作業の完了を待っているかどうか（\"true\"/\"false\"）。公式 hooks ドキュメント（2026-09-28 確認）と Claude Code 2.1.283 の実測 payload にはないが、届いた場合は stdin JSON の 'waiting_on_background_work' から防御的に設定される。値があれば --background-tasks の代わりにこの値で判定する。"
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "ゲート対象サーフェスID。セッションの目標照会に使用。既定値は呼び出し元のTASTY_SURFACE_ID"

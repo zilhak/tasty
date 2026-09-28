@@ -41,7 +41,9 @@ Claude의 메인 턴이 이어지는 동안에는 idle을 보고하지 않는다
 `waiting_on_background_work`가 있으면 그 값을, 없으면 `background_tasks`에 끝나지 않은 항목이
 있는지를 쓰고, 항목 종류는 가리지 않는다. 끝난 항목은 `status`가 `completed`·`failed`·`cancelled`·`canceled`·`killed`·`stopped`·`error`·`done`
 중 하나(대소문자 무관)인 항목이다. 공식 hooks 문서(2026-09-28 확인)는 항목을 진행 중인 작업이라
-하고 `status` 값 목록을 주지 않으므로, 목록에 없는 값과 `status`가 없는 항목은 대기로 센다. 대기 Stop은 `active`만 보고하며 완료 알림·경과 시간·
+하고 `status` 값 목록을 주지 않으므로, 목록에 없는 값과 `status`가 없는 항목은 대기로 센다.
+`waiting_on_background_work` 필드와 `pending` 같은 `status` 값은 공식 문서와 Claude Code 2.1.283
+실측에 없지만, 오면 방어적으로 읽는다. 대기 Stop은 `active`만 보고하며 완료 알림·경과 시간·
 자동 재개 성공 처리를 하지 않는다. 두 필드가 없으면 이전처럼 Stop을 턴 종료로 본다.
 
 부모에게 전달하는 완료·입력 대기·정지 알림은 부모 종류와 무관하게 완료 로그에 기록한다.
@@ -105,7 +107,7 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
 
 - 승인 완료 이벤트나 도구별 승인 식별자가 추가돼 현재 해제 지연을 줄일 수 있을 때.
 - 외부 CLI가 허용하는 승인 모드나 훅 payload를 바꿀 때.
-- Claude Code가 `background_tasks`·`waiting_on_background_work`의 모양이나 의미를 바꿀 때.
+- Claude Code가 `background_tasks`의 모양이나 의미를 바꾸거나 `waiting_on_background_work`를 새로 보낼 때.
   이 필드를 검사하는 자동 검사는 없다. 확인하려면 `claude.spawn`의 `profile_file`로 Stop 훅
   stdin을 파일에 덧붙이는 추적 훅을 붙인 자식에게 백그라운드 서브에이전트나 `run_in_background`
   셸을 쓰게 하고, 기록된 Stop payload의 필드 이름과 항목의 `status` 값을 대조한다.
