@@ -942,10 +942,10 @@ mod tests {
         let shell =
             json!([{ "id": "b1", "type": "shell", "status": "running", "command": "sleep 15" }]);
         assert!(background_work_pending(&json!({ "background_tasks": shell })).is_some());
-        // 공식 문서 예시의 모양(name·status:"pending"·created_at, type 없음).
-        let documented =
+        // 방어적으로 읽는 모양: 문서·실측에 없는 status "pending" 과 type 이 없는 항목도 대기로 본다.
+        let defensive =
             json!([{ "id": "t1", "name": "build", "status": "pending", "created_at": "x" }]);
-        assert!(background_work_pending(&json!({ "background_tasks": documented })).is_some());
+        assert!(background_work_pending(&json!({ "background_tasks": defensive })).is_some());
     }
 
     /// 플래그로 직접 준 값은 JSON 문자열로 온다.

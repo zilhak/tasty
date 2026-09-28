@@ -277,8 +277,10 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 `active`로만 보고하고 `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개의
 성공 처리를 하지 않는다. 두 필드가 없거나 해석할 수 없으면 이전처럼 턴 종료로 처리한다.
 Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`·`status`·`description`·
-`agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서의
-예시는 항목 모양이 다르다(`id`·`name`·`status`·`created_at`). 두 모양 모두 `status`만 읽는다.
+`agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서
+(2026-09-28 확인)의 `background_tasks` 항목 필드도 실측과 같은 모양이다. 문서는 `status`를 값 목록 없이
+"Current task status"로만 설명하고 `waiting_on_background_work`는 다루지 않는다. Tasty는 문서에 없는
+`waiting_on_background_work`와 `status` `pending`도 대기로 방어적으로 읽는다.
 끝나지 않는 백그라운드 명령(개발 서버 등)을 남긴 채 턴을 끝내면 그 자식은 idle이 되지 않는다.
 Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 여전히 idle을 기록한다. 두 훅은 따로
 실행되며 이 판정은 게이트의 결과를 읽지 않는다. 판정 근거와 재검토 조건은
