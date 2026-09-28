@@ -104,14 +104,16 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   stdin을 파일에 덧붙이는 추적 훅을 붙인 자식에게 백그라운드 서브에이전트나 `run_in_background`
   셸을 쓰게 하고, 기록된 Stop payload의 필드 이름과 항목의 `status` 값을 대조한다.
   같은 턴에서 플러그인 로그(`tasty plugin logs com.tasty.claude`)에
-  `claude hook stop s<N>: waiting on background work (… background task(s): …) — main turn continues, stays active`
-  줄이 없거나 `claude hook: background_tasks is not JSON`·`claude hook: background_tasks is not an array`·
-  `claude hook: unreadable waiting_on_background_work` 경고가 나오면 판정 입력이 바뀐 것이다.
+  `claude hook stop s<N>: waiting on background work (<판정 근거>) — main turn continues, stays active`
+  줄이 없거나(괄호 값은 `waiting_on_background_work`가 true면 `waiting_on_background_work`,
+  `background_tasks`로 판정했으면 `N background task(s): <type 목록>`이다) `claude hook: background_tasks is not JSON`·
+  `claude hook: background_tasks is not an array`·`claude hook: unreadable waiting_on_background_work` 경고가 나오면 판정 입력이 바뀐 것이다.
 - 끝나지 않는 백그라운드 명령 때문에 idle이 오지 않는 사례가 보고될 때.
   자동으로 감지하지 않는다. 사례를 확인하려면 해당 자식의 플러그인 로그에서 마지막
   `waiting on background work` 줄 뒤에 idle을 만드는 Stop이 없는지 보고, `tasty claude children`이
-  그 자식을 계속 `active`로 보고하는지, 대기 노드가 `tasty agent task-list`에서 `running`에
-  머무는지를 함께 본다. 자식 화면에 실행 중인 백그라운드 명령이 남아 있는지도 확인한다.
+  그 자식을 `idle`·`needs_input`으로 바꾸지 않고 `active` 또는 `stale`로 보고하는지(`evidence`를
+  함께 본다. 출력·훅이 오래 조용하면 `output_and_hook_silent`, 전경이 셸이면 `foreground_is_shell`의
+  `stale`이 된다), 대기 노드가 `tasty agent task-list`에서 `running`에 머무는지를 함께 본다. 자식 화면에 실행 중인 백그라운드 명령이 남아 있는지도 확인한다.
 - Stop 게이트의 차단 결과를 상태 보고와 연결할 수단이 생길 때.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.
 
