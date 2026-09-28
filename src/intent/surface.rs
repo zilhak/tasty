@@ -97,10 +97,12 @@ fn convert(
                 .or_else(|| state.resolve_inherit_cwd_from_surface(engine, surface_id));
             // 적용 전에 기록하므로 철회된 kind는 get_live로 제외한다.
             // 별칭 정규화는 저장을 하지 않아 위에서는 get을 사용해도 된다.
-            if engine
-                .surface_registry
-                .get_live(kind)
-                .is_some_and(|d| d.records_recent)
+            // mirror surface의 경로는 원격 파일이라 로컬 최근 목록에서 다시 열 수 없다.
+            if !engine.is_mirror_surface(surface_id)
+                && engine
+                    .surface_registry
+                    .get_live(kind)
+                    .is_some_and(|d| d.records_recent)
             {
                 state.record_recent(kind, &params);
             }

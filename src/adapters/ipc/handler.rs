@@ -691,7 +691,7 @@ fn route_engine_handler(
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
         "completion_strategy.list" => completion_strategy::handle_list(id),
         #[cfg(feature = "gui")]
-        "markdown.navigate" => markdown::handle_navigate(out, id, request.params.clone()),
+        "markdown.navigate" => markdown::handle_navigate(out, engine, id, request.params.clone()),
         // kind에 상관없이 최근 목록만 조회하므로 GUI가 필요 없다.
         "recent.query" => recent::handle_query(window, id, request.params.clone()),
         // 결과를 전달하는 App::dispatch_pending_git_query_forwards가 GUI 전용이다(ADR-0022).

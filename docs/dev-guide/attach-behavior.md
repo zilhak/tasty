@@ -290,7 +290,10 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
   `{forwarded:true, workspace_index}`를 성공 응답으로 보낸다. 원격 완료는 이후 delta로 확인한다.
 - **실패 표시**: 사용자 GUI 요청의 원격 실패는 toast로, 에이전트 요청은 silent_failure에
   따라 warn 로그로 남긴다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)).
-  markdown.navigate는 큐 등록 직후 `{accepted:true}`를 보내는 예외다. 이 응답에는 실행·forward
+  markdown.navigate는 큐 등록 직후 `{accepted:true}`를 보내는 예외다. 로컬 surface이면 큐에 넣기 전에
+  로컬 파일 존재를 확인하고 없으면 `path not found`로 거절한다. mirror surface의 경로는 원격 파일이므로
+  로컬 존재 검사 없이 큐에 넣고, 파일이 있는지는 원격 서버가 판단한다. mirror surface 대상 변환은
+  원격 경로를 로컬 최근 목록에 기록하지 않는다. 이 응답에는 실행·forward
   결과가 없으며 에이전트의 로컬/원격 실패는 warn 로그로 남는다. 사용자 GUI의 같은 원격 작업은
   attach.toast.mirror_structural_forward_failed를 사용한다.
 - **전달할 수 없는 요청**: mirror와 local 사이의 move-surface 등은 forwarded=false로

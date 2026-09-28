@@ -270,6 +270,57 @@ fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
     );
 }
 
+/// mirror surface의 경로는 원격 파일이라 로컬 최근 목록에 남기면 로컬 경로로 다시 열린다.
+#[test]
+fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
+    let (mut core, mut state, mut engine) = fixture();
+    let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
+        "kind": "probe_recent_mirror",
+        "display_name_i18n_key": "surface.kind.markdown",
+        "rendering": "webview",
+        "records_recent": true,
+    }))
+    .expect("probe decl");
+    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+    crate::plugin_bridge::remote_kind::register_remote_kind(
+        &engine.surface_registry,
+        "com.x.probe_mirror",
+        &decl,
+        host_cmd_tx,
+    );
+    let surface_id = *state
+        .active_workspace(&engine)
+        .all_surface_ids()
+        .first()
+        .expect("fixture surface");
+    engine.workspaces[0].mirror = true;
+
+    crate::intent::surface::handle(
+        &mut core,
+        &mut state,
+        &mut engine,
+        &Intent::ConvertSurface {
+            surface_id,
+            target: ConvertTarget::Kind {
+                cwd: None,
+                kind: "probe_recent_mirror".to_string(),
+                params: serde_json::json!({ "file": "/remote/only.md" }),
+            },
+        }
+        .from_user_menu("test"),
+    );
+    assert_eq!(
+        engine.pending_structural_forward.len(),
+        1,
+        "변환 요청을 원격으로 전달한다"
+    );
+    assert_eq!(
+        state.recent_files.get("probe_recent_mirror"),
+        Vec::<String>::new(),
+        "원격 경로는 로컬 최근 목록에 기록하지 않는다"
+    );
+}
+
 /// Intent 큐를 거치지 않는 IPC 구조 요청에도 silent_failure가 붙어야 한다.
 #[test]
 fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {
