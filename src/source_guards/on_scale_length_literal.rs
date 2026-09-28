@@ -131,7 +131,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // specimen 폭 360·440과 표 열 140은 새 스케일 값이라 집계되며, 같은 숫자의 토큰과 역할이 다르다.
         // HTML 스크립트 배너 예제의 surface 액자 240·360·120·300과 상태 카드 폭 600은 디자인 Stage 값이며
         // 대응하는 Theme 접근자가 없다.
-        125,
+        // 이동 대기 예제의 화면 196·사이드바 160·행 28·아바타 28·겹침 칸 88은 디자인 specimen 값이다.
+        130,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -590,7 +591,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (35, 83, 0, 12),
+        (40, 83, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -706,14 +707,14 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        (183, 266),
+        (183, 281),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
     assert_eq!(
         (floors, unit_space),
         // 값 1의 clamp·서브픽셀 비교 문턱을 별도로 센다.
-        (18, roster),
+        (19, roster),
         "값 1의 하한·정규화 좌표 수가 달라졌다. 별도 집계 대상의 변경을 확인하고 기록을 갱신한다."
     );
     for (path, head, budget, why) in UNIT_SPACE_SITES {

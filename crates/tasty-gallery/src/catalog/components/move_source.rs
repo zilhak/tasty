@@ -3,6 +3,7 @@
 //! 링은 대상 rect에서 가장 마지막에 그린다. 본체의 대상 선택·해제 규칙은 이 예제가 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     move_source_glyph_size, paint_move_source_chip, paint_move_source_glyph, paint_move_source_ring,
 };
@@ -10,19 +11,19 @@ use tasty_ui_widgets::{
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 예제 화면 폭. 문서 컬럼(최대 1080) 안에 스테이지 여백과 함께 들어가는 specimen 값이다.
-const SCREEN_W: f32 = 960.0;
-/// 예제 화면 높이. 디자인 specimen의 고정 높이이며 대응 토큰이 없다.
-const SCREEN_H: f32 = 196.0;
-/// 예제 사이드바 폭. 본체 사이드바보다 좁은 specimen 값이다.
-const SIDEBAR_W: f32 = 160.0;
-/// 예제 워크스페이스 행 높이.
-const WS_ROW_H: f32 = 28.0;
-/// 겹침 예제의 서피스 높이.
-const OVERLAP_H: f32 = 88.0;
-/// 탭 칸 예제의 행 라벨 폭.
-const ROW_LABEL_W: f32 = 80.0;
-/// 접힌 레일 아바타 한 변.
-const AVATAR: f32 = 28.0;
+const SCREEN_W: LogicalPx = LogicalPx(960.0);
+/// 예제 화면 높이. 디자인 specimen(layouts-move.jsx `Screen`)의 고정 높이이며 대응 토큰이 없다.
+const SCREEN_H: LogicalPx = LogicalPx(196.0);
+/// 예제 사이드바 폭. 디자인 specimen(`Screen`)이 정한 전시용 폭이며 대응 토큰이 없다.
+const SIDEBAR_W: LogicalPx = LogicalPx(160.0);
+/// 예제 워크스페이스 행 높이. 디자인 specimen(`WsRow`)의 값이며 대응 토큰이 없다.
+const WS_ROW_H: LogicalPx = LogicalPx(28.0);
+/// 겹침 예제의 서피스 높이. 디자인 specimen의 겹침 칸 높이다.
+const OVERLAP_H: LogicalPx = LogicalPx(88.0);
+/// 탭 칸 예제의 행 라벨 폭. 디자인 specimen의 첫 열 폭이다.
+const ROW_LABEL_W: LogicalPx = LogicalPx(80.0);
+/// 접힌 레일 아바타 한 변. 디자인 specimen(`RailAvatar`)의 값이다.
+const AVATAR: LogicalPx = LogicalPx(28.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Edge {
@@ -205,7 +206,7 @@ fn paint_surface(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &SurfCfg
         c(theme.accent_success()),
     );
     p.text(
-        origin + egui::vec2(0.0, line),
+        origin + egui::Vec2::Y * line,
         egui::Align2::LEFT_TOP,
         format!("> {}", s.cmd),
         font,
@@ -314,19 +315,21 @@ fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, w: &WsCfg) {
 }
 
 fn screen(ui: &mut egui::Ui, theme: &Theme, wss: &[WsCfg], panes: &[PaneCfg<'_>]) {
-    let w = ui.available_width().min(SCREEN_W);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, SCREEN_H), egui::Sense::hover());
+    let w = ui.available_width().min(SCREEN_W.value());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, SCREEN_H.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     let sep = theme.border_width.value();
     p.rect_filled(rect, 0.0, c(theme.separator));
-    let side = egui::Rect::from_min_size(rect.min, egui::vec2(SIDEBAR_W, rect.height()));
+    let side = egui::Rect::from_min_size(rect.min, egui::vec2(SIDEBAR_W.value(), rect.height()));
     p.rect_filled(side, 0.0, c(theme.bg_sidebar()));
     let mut y = side.min.y + theme.spacing_sm.value();
     for row in wss {
-        let r =
-            egui::Rect::from_min_size(egui::pos2(side.min.x, y), egui::vec2(SIDEBAR_W, WS_ROW_H));
+        let r = egui::Rect::from_min_size(
+            egui::pos2(side.min.x, y),
+            egui::vec2(SIDEBAR_W.value(), WS_ROW_H.value()),
+        );
         paint_ws_row(ui, theme, r, row);
-        y += WS_ROW_H + theme.border_width.value() * 2.0;
+        y += WS_ROW_H.value() + theme.border_width.value() * 2.0;
     }
     let main = egui::Rect::from_min_max(egui::pos2(side.max.x + sep, rect.min.y), rect.max);
     let n = panes.len().max(1) as f32;
@@ -504,8 +507,10 @@ fn tab_states(ui: &mut egui::Ui, theme: &Theme) {
         ] {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                let (lr, _) =
-                    ui.allocate_exact_size(egui::vec2(ROW_LABEL_W, bar_h), egui::Sense::hover());
+                let (lr, _) = ui.allocate_exact_size(
+                    egui::vec2(ROW_LABEL_W.value(), bar_h),
+                    egui::Sense::hover(),
+                );
                 ui.painter_at(lr).text(
                     lr.left_center(),
                     egui::Align2::LEFT_CENTER,
@@ -581,8 +586,10 @@ fn off_screen(ui: &mut egui::Ui, theme: &Theme) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
             for (ch, cue) in [("T", false), ("D", true), ("S", false)] {
-                let (r, _) =
-                    ui.allocate_exact_size(egui::vec2(AVATAR, AVATAR), egui::Sense::hover());
+                let (r, _) = ui.allocate_exact_size(
+                    egui::vec2(AVATAR.value(), AVATAR.value()),
+                    egui::Sense::hover(),
+                );
                 let p = ui.painter_at(r.expand(theme.border_width.value()));
                 p.rect_filled(r, theme.corner_radius.value(), c(theme.surface_raised()));
                 p.text(
@@ -667,13 +674,15 @@ fn overlap_row(ui: &mut egui::Ui, theme: &Theme, prefix: &str) {
         ),
     ];
     let gap = theme.spacing_sm.value();
-    let w = ((ui.available_width().min(SCREEN_W) - gap * 3.0) / 4.0).max(theme.tab_width.value());
+    let w = ((ui.available_width().min(SCREEN_W.value()) - gap * 3.0) / 4.0)
+        .max(theme.tab_width.value());
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         for (label, s) in cases {
             ui.vertical(|ui| {
                 caption(ui, theme, &format!("{prefix}{label}"));
-                let (r, _) = ui.allocate_exact_size(egui::vec2(w, OVERLAP_H), egui::Sense::hover());
+                let (r, _) =
+                    ui.allocate_exact_size(egui::vec2(w, OVERLAP_H.value()), egui::Sense::hover());
                 paint_surface(ui, theme, r, &s);
             });
         }
