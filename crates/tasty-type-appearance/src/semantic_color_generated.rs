@@ -134,6 +134,12 @@ impl crate::theme::Theme {
         self.lavender
     }
 
+    /// `semantic.accent-move` → `{primitive.color-pink}`
+    #[inline]
+    pub fn accent_move(&self) -> HexColor {
+        self.pink
+    }
+
     /// `semantic.accent-decorative` → `{primitive.color-peach}`
     #[inline]
     pub fn accent_decorative(&self) -> HexColor {

@@ -120,6 +120,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-macos-close", "accent_macos_close()"),
     ("semantic.accent-macos-min", "accent_macos_min()"),
     ("semantic.accent-macos-zoom", "accent_macos_zoom()"),
+    ("semantic.accent-move", "accent_move()"),
     ("semantic.accent-occupied-hard", "accent_occupied_hard()"),
     ("semantic.accent-occupied-soft", "accent_occupied_soft()"),
     ("semantic.accent-primary", "accent_primary()"),
@@ -196,6 +197,8 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),
+    // 이동 대기 표시는 상태나 알림 종류가 아닌 별도 역할이다.
+    ("semantic.accent-move", "accent_move", "pink"),
     // 장식과 주의 환기는 색이 같아도 역할을 구분한다.
     ("semantic.accent-decorative", "accent_decorative", "peach"),
     // 상태 표시 (status-*)

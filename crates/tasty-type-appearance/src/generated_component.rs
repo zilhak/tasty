@@ -1768,10 +1768,22 @@ impl crate::theme::Theme {
         LogicalPx((4.0 * self.ui_zoom).round())
     }
 
+    /// `component.move-source-glyph` → `{semantic.accent-move}`
+    #[inline]
+    pub fn move_source_glyph(&self) -> HexColor {
+        self.accent_move()
+    }
+
     /// `component.move-source-glyph-size` → `{semantic.icon-size-xs}` = 12px
     #[inline]
     pub fn move_source_glyph_size(&self) -> LogicalPx {
         self.icon_glyph_size_xs
+    }
+
+    /// `component.move-source-ring` → `{semantic.accent-move}`
+    #[inline]
+    pub fn move_source_ring(&self) -> HexColor {
+        self.accent_move()
     }
 
     /// `component.move-source-ring-width` → `{semantic.focus-ring-width}` = 2px
