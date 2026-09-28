@@ -22,8 +22,6 @@ use crate::adapters::ui::zoomed_px as z;
 
 // 이 화면 전용 치수는 배율 1 기준이며 사용할 때 z로 UI 배율을 적용한다.
 // 갤러리는 전역 zoom을 사용하므로 같은 치수에 별도 배율을 곱하지 않는다.
-/// 상위(pane) divider = bordered 카드 사이 bg-app 공백.
-const PANE_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab strip height.
 const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
@@ -34,8 +32,6 @@ const BODY_PAD: LogicalPx = LogicalPx(3.0);
 const LEAF_GAP: LogicalPx = LogicalPx(6.0);
 /// mini tab 좌우 padding.
 const TAB_PAD_X: LogicalPx = LogicalPx(9.0);
-/// mini tab 아이콘↔라벨 gap.
-const TAB_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab close `×` 히트영역 한 변(14×14).
 const CLOSE_HIT: LogicalPx = LogicalPx(14.0);
 /// close `×` 왼쪽 margin(라벨과의 간격).
@@ -1953,7 +1949,7 @@ fn field_value(leaf: &Leaf, target: &PresetFieldTarget) -> String {
     }
 }
 
-/// 상위 레이아웃(pane split). Leaf = pane 카드, Split = 5px bg-app gap.
+/// 상위 레이아웃(pane split). Leaf = pane 카드, Split = `spacing_xs` bg-app gap.
 fn draw_pane_tree(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -1969,7 +1965,7 @@ fn draw_pane_tree(
             first,
             second,
         } => {
-            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, z(theme, PANE_GAP).value());
+            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, theme.spacing_xs.value());
             draw_pane_tree(ui, theme, r1, first, cx);
             draw_pane_tree(ui, theme, r2, second, cx);
         }
@@ -2007,13 +2003,13 @@ fn draw_pane_card(
         let tw = if show_close {
             z(theme, TAB_PAD_X)
                 + icon_sz
-                + z(theme, TAB_GAP)
+                + theme.spacing_xs
                 + lw
                 + z(theme, CLOSE_MARGIN)
                 + z(theme, CLOSE_HIT)
                 + z(theme, CLOSE_TAB_PAD)
         } else {
-            z(theme, TAB_PAD_X) + icon_sz + z(theme, TAB_GAP) + lw + z(theme, TAB_PAD_X)
+            z(theme, TAB_PAD_X) + icon_sz + theme.spacing_xs + lw + z(theme, TAB_PAD_X)
         };
         let tab_rect = egui::Rect::from_min_size(
             egui::pos2(x.value(), strip.min.y),
@@ -2057,7 +2053,7 @@ fn draw_pane_card(
         paint_icon(ui, cx.catalog.kind_icon(rep), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + (z(theme, TAB_PAD_X) + icon_sz + z(theme, TAB_GAP)).value(),
+                tab_rect.min.x + (z(theme, TAB_PAD_X) + icon_sz + theme.spacing_xs).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,

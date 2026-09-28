@@ -147,7 +147,7 @@ held-full / released-rail / held-rail cluster.
 | `SurfaceBox` (leaf, kind 라벨만) | `draw_surface_box` | `draw_surface_box` (`Leaf{kind,label}`) |
 | `SurfaceView` (하위 surface split, 1px hairline) | `draw_surf` | `draw_surf` (`SurfNode`) |
 | `Pane` (mini tab strip + 활성 탭 본문) | `draw_pane_card` | `draw_pane_card` — strip **클릭 가능**(live) |
-| `PaneTree` (상위 pane split, 5px bg-app gap) | `draw_pane_tree` | `draw_pane_tree` (`PaneNode`) |
+| `PaneTree` (상위 pane split, `space-xs` bg-app gap) | `draw_pane_tree` | `draw_pane_tree` (`PaneNode`) |
 | `PreviewBody` (scope 분기) | `draw_scope_body` | `DemoLayout::show` (`Root::Panes`/`TabFrame`) |
 | `KINDS`(아이콘/accent) | `Kind::{icon,accent}` (정적 4종) | `kind_icon`/`kind_accent` (kind str→`icons::Icon`, plugin kind 중립 fallback) |
 | `activeKind`(탭 대표 kind) | `tab_kind` | `SurfNode::rep_kind` |

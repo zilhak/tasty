@@ -398,9 +398,11 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   opacity 를 준다. 본체는 배경을 먼저 칠하는 셸 구조라 그 위의 행·탭 글자에 `set_opacity` 를 건다.
   입력 차단은 시안의 `pointer-events: none` 대신 그 영역 위에 나중에 얹은 막(`block_input`)이
   hover·click 을 받고, 리스트 스크롤도 끈다.
-- **4px 그리드로 맞춘 raw 간격.** 시안의 raw 값 중 토큰이 없는 것은 가까운 토큰으로 옮겼다 —
-  헤더·unsaved 의 `gap: 5` → `space-xs`(4), unsaved 점 6px → `status-dot-size-compact`(6),
-  라벨↔입력 `gap: 3` → `STRUCT_GAP_3`, 선택 leaf 핸들 사이 `gap: 2` → `STRUCT_GAP_2`.
+- **4px 그리드로 맞춘 간격.** 헤더 unsaved 묶음, mini tab 아이콘↔라벨, 미리보기 pane 사이
+  split 공백은 시안과 같이 `space-xs`(4)를 쓴다. unsaved 점은 `status-dot-size-compact`(6),
+  라벨↔입력 `gap: 3` 은 `STRUCT_GAP_3`, 선택 leaf 핸들 사이 `gap: 2` 는 `STRUCT_GAP_2` 다.
+  시안 편집 툴바는 "saved automatically" 앞에 `accent-success` 체크 글리프를 `space-xs` 간격으로
+  그린다. 본체 툴바는 문구만 그리고 갤러리에는 이 툴바 예제가 없어 이 간격이 적용될 자리가 없다.
 - **근거**: `gallery/preset_editor.jsx` (`SurfaceSettings`/`useSurfaceCfg`/`switchKind`/`normalize`).
 - **결정 근거**: kind 전환 · default 선채움 · autofocus 없음 · 저장 실패 시 화면 유지 · 더블클릭 범위의
   근거 · 대안 · 재검토 조건은 [ADR-0038](../../adr/0038-preset-drafts-and-store-conflicts.md).
