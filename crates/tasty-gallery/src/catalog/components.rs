@@ -33,6 +33,7 @@ pub mod markdown_open;
 pub mod markdown_viewer;
 pub mod md_large_file;
 pub mod modifier_hint;
+pub mod move_source;
 pub mod notification_panel;
 pub mod occupancy_borders;
 pub mod plugin_settings;

@@ -1562,6 +1562,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "movesource",
+                    "Move source highlight",
+                    vec![spec(
+                        "movesource",
+                        "Move source — dashed ring and off-screen glyph",
+                        Some(
+                            "2px pink dashed ring inside the target · move glyph on the nearest visible container",
+                        ),
+                        components::move_source::draw,
+                    )],
+                ),
+                section(
                     "dag-graph",
                     "Task DAG · canvas & nodes",
                     vec![
