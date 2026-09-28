@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, kbd};
+use tasty_ui_widgets::{Button, ButtonVariant, CenterState, IconButton, IconButtonVariant, kbd};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -12,7 +12,6 @@ use crate::catalog::widgets::dialog as kit;
 /// 갤러리 프레임 최대 폭 (jsx `maxWidth: 560`). 본체는 settings content 폭을 상속하나
 /// 갤러리 미러는 카드로 감싸 560 으로 bound.
 const FRAME_MAX_W: LogicalPx = LogicalPx(560.0);
-use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 
@@ -67,8 +66,8 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Empty state — same tone as the FileHandler / Explorer favorites empty states: \
-         centered glyph, a title, and an Add-script prompt.",
+        "Empty state — the shared CenterState part (Components › CenterState): \
+         glyph 24, a title, and an Add-script prompt.",
     );
 }
 
@@ -276,31 +275,13 @@ fn changed_badge(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().galley(pos, galley, warn);
 }
 
+/// 목록이 들어갈 자리에 공용 CenterState 를 자연 높이로 그린다(본체 Settings 와 같은 호출).
 fn empty_state(ui: &mut egui::Ui, theme: &Theme) {
-    ui.vertical_centered(|ui| {
-        ui.add_space(theme.spacing_xl.value());
-        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        kit::icon(
-            ui,
-            icons::SCRIPT,
-            LogicalPx(EMPTY_GLYPH),
-            theme.text_muted().to_egui(),
-        );
-        ui.label(
-            egui::RichText::new("No scripts registered")
-                .size(theme.font_size_max.value())
-                .color(theme.text_secondary().to_egui()),
-        );
-        ui.set_max_width(theme.measure_sm.value());
-        ui.label(
-            egui::RichText::new(
-                "Click Add script to register a Lua script and bind it to a shortcut.",
-            )
-            .size(theme.font_size_term_sm.value())
-            .color(theme.text_muted().to_egui()),
-        );
-        ui.add_space(theme.spacing_xl.value());
-    });
+    CenterState::empty(icons::SCRIPT, "No scripts registered")
+        .sub_line(Some(
+            "Click Add script to register a Lua script and bind it to a shortcut.",
+        ))
+        .show(ui, theme, None);
 }
 
 fn meta_note(ui: &mut egui::Ui, theme: &Theme) {

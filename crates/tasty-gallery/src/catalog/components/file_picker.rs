@@ -1,19 +1,16 @@
 //! 로컬·원격 파일 선택과 저장 화면의 정적 예제. 본체의 디렉터리 조회를 실행하지 않는다.
 //! 원격 대상은 호스트 배지로 구분한다. 선택·저장 상태와 긴 경로 표시를 비교한다.
 
+mod footer;
+mod path_bar;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::{
-    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH,
-};
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, checkbox};
+use tasty_ui_widgets::{CenterState, IconButton, IconButtonVariant, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
-
-mod footer;
-mod path_bar;
 
 // 화면 전용 고정 치수. 대응 토큰이 없는 값은 디자인 값을 유지한다.
 const FRAME_W: LogicalPx = LogicalPx(640.0);
@@ -41,8 +38,6 @@ const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 /// 디자인에서 정한 13px 아이콘. 대응 Theme 크기 토큰이 없어 그대로 사용한다.
 const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 
-/// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
-const EMPTY_BODY_MAX_W: LogicalPx = LogicalPx(340.0);
 const HOST: &str = "deploy@10.0.4.12";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -277,22 +272,25 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("loading", "Spinner · reads dir (remote: over SSH)"),
-            ("empty", "folderOpen glyph + muted line"),
-            ("error", "danger glyph · title · reason · action"),
+            ("empty", "folderOpen glyph · CenterState"),
+            (
+                "error",
+                "danger glyph · title · reason · action below the block",
+            ),
             ("perm vs. conn", "Retry vs. Reconnect (resumes)"),
             ("multi", "checkbox col · joined names · N selected"),
             ("Open", "disabled while loading / error / empty"),
         ],
         &[
             TokenChip::new(
-                "accent-danger",
+                "center-state-error-fg",
                 "error glyph",
-                theme.accent_danger().to_egui(),
+                theme.center_state_error_fg().to_egui(),
             ),
             TokenChip::new(
-                "text-placeholder",
-                "empty glyph",
-                theme.text_placeholder().to_egui(),
+                "center-state-glyph-fg",
+                "empty glyph · spinner",
+                theme.center_state_glyph_fg().to_egui(),
             ),
         ],
     );
@@ -785,103 +783,42 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             ui,
             theme,
             body_h,
-            icons::FOLDER,
-            theme.text_placeholder().to_egui(),
-            true,
-            "Loading folder…",
-            theme.text_secondary().to_egui(),
-            Some("Reading the directory over SSH."),
-            None,
+            CenterState::loading("Loading folder…").sub_line(Some("Reading the directory over SSH.")),
         ),
         FpState::Empty => center(
             ui,
             theme,
             body_h,
-            icons::FOLDER_OPEN,
-            theme.text_placeholder().to_egui(),
-            false,
-            "This folder is empty",
-            theme.text_muted().to_egui(),
-            None,
-            None,
+            CenterState::empty(icons::FOLDER_OPEN, "This folder is empty"),
         ),
         FpState::ErrorPerm => center(
             ui,
             theme,
             body_h,
-            icons::ALERT_TRIANGLE,
-            theme.accent_danger().to_egui(),
-            false,
-            "Permission denied",
-            theme.text_primary().to_egui(),
-            Some(
-                "You don't have permission to read this folder. Try a different folder or check access.",
-            ),
-            Some("Retry"),
+            CenterState::error(icons::ALERT_TRIANGLE, "Permission denied")
+                .sub_line(Some(
+                    "You don't have permission to read this folder. Try a different folder or check access.",
+                ))
+                .action("Retry", Some(icons::REFRESH)),
         ),
         FpState::ErrorConn => center(
             ui,
             theme,
             body_h,
-            icons::ALERT_TRIANGLE,
-            theme.accent_danger().to_egui(),
-            false,
-            "Remote connection lost",
-            theme.text_primary().to_egui(),
-            Some("The SSH tunnel dropped. Reconnect to resume browsing from the last folder."),
-            Some("Reconnect"),
+            CenterState::error(icons::ALERT_TRIANGLE, "Remote connection lost")
+                .sub_line(Some(
+                    "The SSH tunnel dropped. Reconnect to resume browsing from the last folder.",
+                ))
+                .action("Reconnect", Some(icons::REFRESH)),
         ),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn center(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    body_h: LogicalPx,
-    glyph: MockGlyph,
-    glyph_color: egui::Color32,
-    spinner: bool,
-    heading: &str,
-    heading_color: egui::Color32,
-    body_text: Option<&str>,
-    action: Option<&str>,
-) {
+/// 목록 자리에 공용 CenterState 를 본체와 같은 폭으로 그린다.
+fn center(ui: &mut egui::Ui, theme: &Theme, body_h: LogicalPx, state: CenterState<'_>) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(FRAME_W.value(), body_h.value()),
         egui::Sense::hover(),
     );
-    let mut col = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::top_down(egui::Align::Center)),
-    );
-    col.add_space(((body_h - LogicalPx(EMPTY_BLOCK_H)).max(LogicalPx(0.0)) * 0.5).value());
-    col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-    if spinner {
-        Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
-    } else {
-        kit::icon(&mut col, glyph, LogicalPx(EMPTY_GLYPH), glyph_color);
-    }
-    col.label(
-        egui::RichText::new(heading)
-            .size(theme.font_size_body.value())
-            .strong()
-            .color(heading_color),
-    );
-    if let Some(b) = body_text {
-        col.set_max_width(EMPTY_BODY_MAX_W.value());
-        col.label(
-            egui::RichText::new(b)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    }
-    if let Some(label) = action {
-        col.add_space(theme.spacing_xs.value());
-        Button::new(label)
-            .variant(ButtonVariant::Secondary)
-            .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
-            .show(&mut col, theme);
-    }
+    state.show_in(ui, theme, rect);
 }

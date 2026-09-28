@@ -480,6 +480,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "centerstate",
+                    "CenterState — empty · loading · error",
+                    vec![spec(
+                        "center-state",
+                        "One centred block for every empty list",
+                        Some(
+                            "loading · empty · error × file picker / Settings Scripts — glyph 24, sub slot always reserved",
+                        ),
+                        components::prim_center_state::draw,
+                    )],
+                ),
+                section(
                     "text",
                     "Hint text",
                     vec![spec(

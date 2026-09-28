@@ -110,10 +110,12 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 126,
-        measured_on: "2026-09-23",
+        measured: 127,
+        measured_on: "2026-09-28",
         counted_on: super::CountedOn::Tree(
-            "cc2e5e72e — crates/<크레이트>/tests/ 바로 아래 통합 테스트 타깃 126개를 확인했다.",
+            "935fe085c + CenterState 위젯 테스트 추가 커밋 — 기준 트리의 126개에 \
+             crates/tasty-ui-widgets/tests/center_state.rs 하나를 더해 127개를 확인했다. \
+             이전 회차: cc2e5e72e — 126개.",
         ),
         how: "crates/<크레이트>/tests/<파일>.rs 형태의 네 구성요소 경로만 센다. 세 번째 요소가 tests이며 파일명이 .rs로 끝나야 한다.",
     };

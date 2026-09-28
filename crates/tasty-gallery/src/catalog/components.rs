@@ -43,6 +43,7 @@ pub mod preset_editor;
 pub mod preset_surface_settings;
 pub mod prim_autocomplete;
 pub mod prim_button;
+pub mod prim_center_state;
 pub mod prim_chips;
 pub mod prim_drilldown;
 pub mod prim_forms;
