@@ -233,11 +233,11 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
-`session_id`/`message`/`notification_type`/`error`/`agent_id` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type`/`--error`/`--agent-id` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`waiting_on_background_work` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 뒤의 두 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
-| `Stop` | `""`(전체) | `stop` | `idle` | `claude-idle` | — | `completion` |
+| `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active` | `claude-idle`(대기 Stop은 없음) | — | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set** | `completion` |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
@@ -267,6 +267,22 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 이벤트 키만 전달하므로 이 meta를 사용한다([훅](../../features/hooks/index.md)).
 Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-start`/`active`)과
 `session-end`에서는 지운다. `notify-done`은 meta가 있으면 상태 알림 뒤에 오류 종류를 붙인다.
+
+**백그라운드 작업을 기다리는 Stop은 턴 종료가 아니다.** Claude Code는 백그라운드
+서브에이전트나 `run_in_background` 셸이 실행 중이어도 메인 응답을 끝내고 `Stop`을 보낸다.
+작업이 끝나면 `<task-notification>`으로 시작하는 prompt의 `UserPromptSubmit`으로 새 턴을 열고,
+그 턴의 `Stop`이 실제 종료가 된다. 그래서 `stop` 훅은 stdin의 `waiting_on_background_work`가
+있으면 그 값으로, 없으면 `background_tasks`에 `status`가 `running`·`pending`인 항목이 있는지로
+대기 여부를 판정한다. 항목의 종류(subagent·shell)는 가리지 않는다. 대기 Stop이면 상태를
+`active`로만 보고하고 `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개의
+성공 처리를 하지 않는다. 두 필드가 없거나 해석할 수 없으면 이전처럼 턴 종료로 처리한다.
+Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`·`status`·`description`·
+`agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서의
+예시는 항목 모양이 다르다(`id`·`name`·`status`·`created_at`). 두 모양 모두 `status`만 읽는다.
+끝나지 않는 백그라운드 명령(개발 서버 등)을 남긴 채 턴을 끝내면 그 자식은 idle이 되지 않는다.
+Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 여전히 idle을 기록한다. 두 훅은 따로
+실행되며 이 판정은 게이트의 결과를 읽지 않는다. 판정 근거와 재검토 조건은
+[에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)에 있다.
 
 `SubagentStop`은 서브에이전트가 끝났다는 신호이며 메인 턴의 끝이 아니다. 상태·`claude-idle`·
 `surface.completion`·telemetry `wall_time_ms`를 만들지 않고 로그만 남긴다. Claude Code 2.1.283은

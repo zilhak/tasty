@@ -175,7 +175,7 @@ description = "~/.claude/settings.json에 tasty 훅 설치"
 description = "~/.claude/settings.json에서 tasty 훅 제거"
 
 [claude.cli.sub.hook]
-description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, message, notification_type, error, agent_id)를 읽습니다."
+description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, message, notification_type, error, agent_id, background_tasks, waiting_on_background_work)를 읽습니다."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop 훅 게이트 판정. stdin에서 JSON(session_id, prompt_id, stop_hook_active, last_assistant_message)을 읽습니다. --gate로 판정할 등록 게이트 선택(기본값: continue-checklist)."
@@ -410,6 +410,12 @@ help = "턴을 끝낸 API 에러 종류(예: overloaded, rate_limit, server_erro
 
 [claude.cli.arg.hook_args.agent_id]
 help = "서브에이전트에서 발생한 훅의 agent_id입니다(메인 스레드에서는 없음). stdin JSON의 'agent_id'에서 자동 입력합니다. 이 값이 있는 stop-failure는 서브에이전트의 API 오류이므로 메인 턴을 중단한 것으로 처리하지 않습니다."
+
+[claude.cli.arg.hook_args.background_tasks]
+help = "세션에 남아 있는 백그라운드 작업 목록(JSON 배열). Stop 훅에서 stdin JSON의 'background_tasks'로 자동으로 채운다. running 또는 pending 항목이 있는 stop은 메인 응답만 끝난 것이고 백그라운드 작업은 계속되므로, 자식을 idle로 바꾸지 않고 active로 둔다."
+
+[claude.cli.arg.hook_args.waiting_on_background_work]
+help = "세션이 백그라운드 작업의 완료를 기다리는지 여부(\"true\"/\"false\"). Claude Code가 보내면 stdin JSON의 'waiting_on_background_work'로 자동으로 채운다. 값이 있으면 --background-tasks 대신 이 값으로 판정한다."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "게이트 대상 서피스 ID. 해당 세션의 목표 조회에 사용. 기본값은 호출자의 TASTY_SURFACE_ID"

@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tasty_plugin_agent_common::host_call::HostCall;
 use tasty_plugin_agent_common::reboot::{
     build_notice, ensure_submitted, is_safe_session_id, parse_options, screen_contains,
 };
@@ -343,7 +344,7 @@ pub(crate) fn validate_profile_file(path: &str, tr: &Translator) -> Result<(), I
 }
 
 /// 부착된 프로필 경로를 읽는다. 없거나 조회에 실패하면 None을 반환한다.
-fn fetch_profile_meta(host: &HostHandle, surface_id: u32) -> Option<String> {
+fn fetch_profile_meta<H: HostCall>(host: &H, surface_id: u32) -> Option<String> {
     host.call(
         "surface.meta.get",
         json!({ "surface_id": surface_id, "key": PROFILE_META_KEY }),
@@ -371,7 +372,7 @@ fn unset_profile_meta(host: &HostHandle, surface_id: u32) {
     }
 }
 
-fn fetch_profile_names_meta(host: &HostHandle, surface_id: u32) -> Option<String> {
+fn fetch_profile_names_meta<H: HostCall>(host: &H, surface_id: u32) -> Option<String> {
     host.call(
         "surface.meta.get",
         json!({ "surface_id": surface_id, "key": PROFILE_NAMES_META_KEY }),
@@ -405,7 +406,7 @@ pub(crate) struct AttachedProfile {
     pub path: Option<String>,
 }
 
-pub(crate) fn attached_profile_summary(host: &HostHandle, surface_id: u32) -> AttachedProfile {
+pub(crate) fn attached_profile_summary<H: HostCall>(host: &H, surface_id: u32) -> AttachedProfile {
     let names = fetch_profile_names_meta(host, surface_id);
     let path = if names.is_none() {
         fetch_profile_meta(host, surface_id)

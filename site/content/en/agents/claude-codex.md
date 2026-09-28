@@ -1,4 +1,4 @@
-<!-- source-hash: 6c64e32b60c7 -->
+<!-- source-hash: 0a351a9489d5 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -72,7 +72,7 @@ tasty codex spawn --workspace workers --cwd ~/proj --sandbox read-only \
 | `--prompt <text>` | First instruction sent right after launch |
 | `--surface <ID>` | Parent Surface (default: yourself) |
 
-`spawn` **returns immediately**. There is no separate wait command. With the child’s hooks and [receiving setup](#4-receiving-completion-notifications) in place, the child’s reported idle state is delivered to the parent. Idle does not establish task success.
+`spawn` **returns immediately**. There is no separate wait command. With the child’s hooks and [receiving setup](#4-receiving-completion-notifications) in place, the child’s reported idle state is delivered to the parent. Idle does not establish task success. A Claude child is not idle when one of its subagents finishes or when it ends a response while background work is still running. It is reported once the background work finishes and the response that follows ends. If it leaves a command running in the background that never ends, such as a dev server, it never becomes idle.
 
 It is safer for the parent to put children in a **different Workspace** than its own. You cannot spawn into a remote mirror Workspace.
 

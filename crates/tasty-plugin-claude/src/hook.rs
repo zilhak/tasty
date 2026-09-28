@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
+use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 // 지역 HostCall enum과 이름을 구분하기 위한 호스트 호출 trait 별칭.
 use tasty_plugin_agent_common::host_call::HostCall as HostCallSink;
 
@@ -63,11 +63,11 @@ pub enum HostCall {
     SurfaceCompletion { surface_id: u32, kind: &'static str },
 }
 
-pub(crate) fn handle_claude_hook(
+pub(crate) fn handle_claude_hook<H: HostCallSink>(
     state: &mut ClaudeState,
     scanner: &Arc<Mutex<ErrorScanner>>,
     resume: &Mutex<crate::auto_resume::ResumeTable>,
-    host: &HostHandle,
+    host: &H,
     params: &Value,
     data_dir: Option<&Path>,
     tr: &Translator,
@@ -99,6 +99,30 @@ pub(crate) fn handle_claude_hook(
             "event": event,
             "ignored": "subagent",
             "host_call_failures": 0,
+        }));
+    }
+
+    if event == "stop"
+        && let Some(pending) = background_work_pending(params)
+    {
+        // 메인 응답만 끝났고 백그라운드 작업이 남아 있다. 작업이 끝나면 Claude Code 가
+        // 새 턴(UserPromptSubmit)을 열고 그 턴의 Stop 이 진짜 종료가 된다.
+        // idle·완료 알림·화면 알림·wall_time 기록·자동 재개 성공 처리를 하지 않고,
+        // 턴이 이어진다는 사실만 active 로 보고한다.
+        tracing::info!(
+            "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
+        );
+        let calls = [HostCall::SetState {
+            surface_id,
+            state: "active",
+        }];
+        let host_call_failures = deliver_all(host, &calls);
+        return Ok(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": event,
+            "waiting": "background_work",
+            "host_call_failures": host_call_failures,
         }));
     }
 
@@ -167,6 +191,67 @@ pub(crate) fn handle_claude_hook(
 /// 이 오류만으로 메인 세션을 idle로 바꾸거나 완료 알림을 보내지 않는다.
 pub(crate) fn is_subagent_stop_failure(event: &str, agent_id: Option<&str>) -> bool {
     event == "stop-failure" && agent_id.is_some_and(|a| !a.is_empty())
+}
+
+/// Stop payload 가 아직 끝나지 않은 백그라운드 작업을 보고하면 그 요약을 돌려준다.
+///
+/// `waiting_on_background_work` 가 있으면 그 값을 따른다. 없으면 `background_tasks` 에서
+/// `status` 가 `running`·`pending` 인 항목을 센다. 항목의 종류(subagent·shell 등)는 가리지 않는다.
+/// 두 필드가 모두 없거나 해석할 수 없으면 `None` 이며, 이전처럼 Stop 을 턴 종료로 처리한다.
+/// 두 필드는 CLI 가 stdin JSON 값을 그대로 넘기므로 JSON 값이고, 직접 플래그로 주면 문자열이다.
+pub(crate) fn background_work_pending(params: &Value) -> Option<String> {
+    if let Some(waiting) = params.get("waiting_on_background_work") {
+        match waiting {
+            Value::Bool(b) => return b.then(|| "waiting_on_background_work".to_string()),
+            Value::String(s) if s == "true" => {
+                return Some("waiting_on_background_work".to_string());
+            }
+            Value::String(s) if s == "false" => return None,
+            other => tracing::warn!(
+                "claude hook: unreadable waiting_on_background_work {other} — falling back to background_tasks"
+            ),
+        }
+    }
+    let tasks = match params.get("background_tasks")? {
+        Value::String(raw) => match serde_json::from_str::<Value>(raw) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    "claude hook: background_tasks is not JSON ({e}) — treating the stop as a turn end"
+                );
+                return None;
+            }
+        },
+        other => other.clone(),
+    };
+    let Some(items) = tasks.as_array() else {
+        tracing::warn!(
+            "claude hook: background_tasks is not an array — treating the stop as a turn end"
+        );
+        return None;
+    };
+    let pending: Vec<String> = items
+        .iter()
+        .filter(|t| {
+            matches!(
+                t.get("status").and_then(Value::as_str),
+                Some("running" | "pending")
+            )
+        })
+        .map(|t| {
+            t.get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string()
+        })
+        .collect();
+    (!pending.is_empty()).then(|| {
+        format!(
+            "{} background task(s): {}",
+            pending.len(),
+            pending.join(",")
+        )
+    })
 }
 
 /// 새 턴으로 처리할 이벤트. 이전 턴의 오류가 새 알림을 막지 않도록 중복 기록을 초기화한다.
@@ -693,6 +778,249 @@ mod tests {
                 Ok(json!({}))
             }
         }
+    }
+
+    /// 호출한 메서드와 인자를 모두 기록하는 mock 호스트. 모든 호출이 성공한다.
+    #[derive(Default)]
+    struct RecordingHost {
+        seen: std::cell::RefCell<Vec<(String, Value)>>,
+    }
+
+    impl HostCallSink for RecordingHost {
+        fn call(
+            &self,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            self.seen.borrow_mut().push((method.to_string(), params));
+            Ok(json!({}))
+        }
+    }
+
+    impl RecordingHost {
+        fn methods(&self) -> Vec<String> {
+            self.seen.borrow().iter().map(|(m, _)| m.clone()).collect()
+        }
+
+        fn states(&self) -> Vec<String> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "terminal.set_state")
+                .map(|(_, p)| p["state"].as_str().unwrap_or("").to_string())
+                .collect()
+        }
+
+        fn fired(&self) -> Vec<String> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "surface.fire_hook")
+                .map(|(_, p)| p["event"].as_str().unwrap_or("").to_string())
+                .collect()
+        }
+
+        fn unset_keys(&self) -> Vec<String> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "surface.meta.unset")
+                .map(|(_, p)| p["key"].as_str().unwrap_or("").to_string())
+                .collect()
+        }
+    }
+
+    /// 훅 처리기 전체를 한 번 돌리는 준비물. wall_time 시작과 자동 재개 시도 1회를 미리 남긴다.
+    struct HookRig {
+        state: ClaudeState,
+        scanner: Arc<Mutex<ErrorScanner>>,
+        resume: Mutex<crate::auto_resume::ResumeTable>,
+        host: RecordingHost,
+    }
+
+    impl HookRig {
+        const SURFACE: u32 = 7;
+
+        fn new() -> Self {
+            let mut state = ClaudeState::default();
+            state.mark_session_start(Self::SURFACE, 1_000);
+            let resume = Mutex::new(crate::auto_resume::ResumeTable::default());
+            crate::auto_resume::lock_table(&resume).record_attempt(Self::SURFACE);
+            Self {
+                state,
+                scanner: Arc::new(Mutex::new(ErrorScanner::new())),
+                resume,
+                host: RecordingHost::default(),
+            }
+        }
+
+        fn run(&mut self, params: Value) -> Value {
+            handle_claude_hook(
+                &mut self.state,
+                &self.scanner,
+                &self.resume,
+                &self.host,
+                &params,
+                None,
+                &test_translator(),
+            )
+            .expect("hook handled")
+        }
+
+        /// 자동 재개 시도 기록이 아직 남아 있는가(성공 처리로 지워지지 않았는가).
+        fn resume_attempts_kept(&self) -> bool {
+            crate::auto_resume::lock_table(&self.resume).on_success(Self::SURFACE) > 0
+        }
+
+        fn wall_time_open(&mut self) -> bool {
+            self.state.take_wall_time(Self::SURFACE, u64::MAX).is_some()
+        }
+    }
+
+    /// Claude Code 2.1.283 이 백그라운드 서브에이전트를 남긴 채 보낸 Stop 의 background_tasks.
+    fn running_subagent() -> Value {
+        json!([{
+            "id": "a05303b937811e7fc",
+            "type": "subagent",
+            "status": "running",
+            "description": "README first line",
+            "agent_type": "Explore",
+        }])
+    }
+
+    #[test]
+    fn background_work_is_not_pending_without_either_field() {
+        assert_eq!(background_work_pending(&json!({ "event": "stop" })), None);
+    }
+
+    #[test]
+    fn background_work_is_not_pending_for_an_empty_list() {
+        assert_eq!(
+            background_work_pending(&json!({ "background_tasks": [] })),
+            None
+        );
+    }
+
+    #[test]
+    fn background_work_is_not_pending_when_every_item_finished() {
+        let done = json!([
+            { "id": "a", "type": "shell", "status": "completed" },
+            { "id": "b", "type": "subagent", "status": "failed" },
+        ]);
+        assert_eq!(
+            background_work_pending(&json!({ "background_tasks": done })),
+            None
+        );
+    }
+
+    #[test]
+    fn a_running_subagent_or_shell_or_pending_item_is_pending_work() {
+        assert!(
+            background_work_pending(&json!({ "background_tasks": running_subagent() })).is_some()
+        );
+        let shell =
+            json!([{ "id": "b1", "type": "shell", "status": "running", "command": "sleep 15" }]);
+        assert!(background_work_pending(&json!({ "background_tasks": shell })).is_some());
+        // 공식 문서 예시의 모양(name·status:"pending"·created_at, type 없음).
+        let documented =
+            json!([{ "id": "t1", "name": "build", "status": "pending", "created_at": "x" }]);
+        assert!(background_work_pending(&json!({ "background_tasks": documented })).is_some());
+    }
+
+    /// 플래그로 직접 준 값은 JSON 문자열로 온다.
+    #[test]
+    fn background_tasks_given_as_a_json_string_is_read_too() {
+        let raw = running_subagent().to_string();
+        assert!(background_work_pending(&json!({ "background_tasks": raw })).is_some());
+        assert_eq!(
+            background_work_pending(&json!({ "background_tasks": "not json" })),
+            None,
+            "해석할 수 없으면 이전처럼 턴 종료로 본다"
+        );
+    }
+
+    #[test]
+    fn waiting_on_background_work_decides_when_present() {
+        let both =
+            json!({ "waiting_on_background_work": false, "background_tasks": running_subagent() });
+        assert_eq!(background_work_pending(&both), None);
+        let waiting = json!({ "waiting_on_background_work": true, "background_tasks": [] });
+        assert!(background_work_pending(&waiting).is_some());
+        let as_text = json!({ "waiting_on_background_work": "true" });
+        assert!(background_work_pending(&as_text).is_some());
+    }
+
+    /// 백그라운드 작업을 기다리는 Stop 은 턴 종료가 아니다. idle·완료 알림·화면 알림을 만들지 않고,
+    /// wall_time 을 닫지 않으며 자동 재개의 성공 처리(시도 기록 삭제)도 하지 않는다.
+    #[test]
+    fn stop_with_running_background_tasks_keeps_the_child_active() {
+        let mut rig = HookRig::new();
+        let out = rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "background_tasks": running_subagent(),
+        }));
+        assert_eq!(out["waiting"], "background_work");
+        assert_eq!(rig.host.methods(), vec!["terminal.set_state"]);
+        assert_eq!(rig.host.states(), vec!["active"]);
+        assert!(
+            rig.resume_attempts_kept(),
+            "자동 재개 시도 기록이 남아야 한다"
+        );
+        assert!(rig.wall_time_open(), "wall_time 이 열려 있어야 한다");
+    }
+
+    #[test]
+    fn stop_with_empty_background_tasks_is_idle_as_before() {
+        let mut rig = HookRig::new();
+        rig.run(json!({ "event": "stop", "surface": HookRig::SURFACE, "background_tasks": [] }));
+        assert_eq!(rig.host.states(), vec!["idle"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+        assert!(
+            rig.host
+                .methods()
+                .contains(&"surface.completion".to_string())
+        );
+        assert!(rig.host.methods().contains(&"telemetry.record".to_string()));
+        assert!(
+            rig.host
+                .unset_keys()
+                .contains(&crate::auto_resume::COUNT_META_KEY.to_string()),
+            "성공한 턴은 자동 재개 시도 기록을 지운다"
+        );
+        assert!(!rig.resume_attempts_kept());
+    }
+
+    /// 필드를 보내지 않는 옛 Claude Code 에서도 동작은 그대로다.
+    #[test]
+    fn stop_without_background_fields_is_idle_as_before() {
+        let mut rig = HookRig::new();
+        rig.run(json!({ "event": "stop", "surface": HookRig::SURFACE }));
+        assert_eq!(rig.host.states(), vec!["idle"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+    }
+
+    #[test]
+    fn stop_with_only_finished_background_tasks_is_idle() {
+        let mut rig = HookRig::new();
+        let done = json!([{ "id": "b1", "type": "shell", "status": "completed" }]);
+        rig.run(json!({ "event": "stop", "surface": HookRig::SURFACE, "background_tasks": done }));
+        assert_eq!(rig.host.states(), vec!["idle"]);
+    }
+
+    /// 서브에이전트 종료는 처리기 전체를 거쳐도 호스트 호출·wall_time·자동 재개에 흔적을 남기지 않는다.
+    #[test]
+    fn subagent_stop_through_the_handler_leaves_no_trace() {
+        let mut rig = HookRig::new();
+        rig.run(json!({
+            "event": "subagent-stop",
+            "surface": HookRig::SURFACE,
+            "agent_id": "a8724a00da74ad1c7",
+            "background_tasks": running_subagent(),
+        }));
+        assert!(rig.host.methods().is_empty(), "{:?}", rig.host.methods());
+        assert!(rig.resume_attempts_kept());
+        assert!(rig.wall_time_open());
     }
 
     /// 시작·종료의 호스트 호출이 모두 실패해도 열 개를 모두 시도하고 실패 횟수를 반환해야 한다.

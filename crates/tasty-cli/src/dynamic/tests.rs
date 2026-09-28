@@ -663,3 +663,55 @@ fn claude_hook_args_carry_the_stop_failure_error_from_stdin() {
     // 서브에이전트 실패를 메인 턴 종료와 가르는 필드 — 빠지면 plugin 이 둘을 구별 못 한다.
     assert_eq!(params.get("agent_id"), Some(&Value::String("sub-1".into())));
 }
+
+/// Stop payload 의 배열·bool 필드가 모양을 바꾸지 않고 plugin 인자로 넘어가는지 확인한다.
+/// plugin 은 background_tasks 배열의 항목 status 로 백그라운드 대기 Stop 을 가린다.
+#[test]
+fn claude_hook_args_carry_background_work_fields_from_stdin_unchanged() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tasty-plugin-claude");
+    let manifest =
+        tasty_plugin_manifest::Manifest::load(&dir).expect("claude manifest should load");
+    let cli = manifest
+        .contributes
+        .cli
+        .iter()
+        .find(|c| c.name == "claude")
+        .expect("claude cli decl");
+    let group = cli.arg_groups.get("hook_args").expect("hook_args group");
+
+    // Claude Code 2.1.283 이 백그라운드 셸을 남긴 채 보낸 Stop payload 의 모양.
+    let background = serde_json::json!([{
+        "id": "bsav6ob35",
+        "type": "shell",
+        "status": "running",
+        "description": "sleep 15",
+        "command": "sleep 15; echo done-bg",
+    }]);
+    let mut params = Map::new();
+    params.insert("event".into(), Value::String("stop".into()));
+    let stdin = serde_json::json!({
+        "session_id": "s",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": background,
+        "waiting_on_background_work": true,
+    });
+    merge_stdin_params(&mut params, group, &stdin).expect("array and bool pass through");
+
+    assert_eq!(params.get("background_tasks"), Some(&background));
+    assert_eq!(
+        params.get("waiting_on_background_work"),
+        Some(&Value::Bool(true))
+    );
+
+    // 필드가 없는 옛 payload 에서는 인자도 생기지 않는다.
+    let mut params = Map::new();
+    merge_stdin_params(
+        &mut params,
+        group,
+        &serde_json::json!({ "session_id": "s" }),
+    )
+    .expect("no background fields");
+    assert!(!params.contains_key("background_tasks"));
+    assert!(!params.contains_key("waiting_on_background_work"));
+}
