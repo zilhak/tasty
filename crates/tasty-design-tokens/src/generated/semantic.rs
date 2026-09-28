@@ -88,6 +88,9 @@ pub const FONT_WEIGHT_NORMAL: u16 = super::primitive::FONT_WEIGHT_400;
 /// `semantic.font-weight-semibold` → `{primitive.font-weight-600}` = 600
 pub const FONT_WEIGHT_SEMIBOLD: u16 = super::primitive::FONT_WEIGHT_600;
 
+/// `semantic.icon-size-lg` → `{primitive.size-24}` = 24px
+pub const ICON_SIZE_LG: LogicalPx = super::primitive::SIZE_24;
+
 /// `semantic.icon-size-md` → `{primitive.size-16}` = 16px
 pub const ICON_SIZE_MD: LogicalPx = super::primitive::SIZE_16;
 
@@ -183,6 +186,9 @@ pub const TINT_FILL_ALPHA: f32 = super::primitive::OPACITY_TINT_FILL;
 
 /// `semantic.titlebar-height` → `{primitive.size-36}` = 36px
 pub const TITLEBAR_HEIGHT: LogicalPx = super::primitive::SIZE_36;
+
+/// `semantic.toolbar-height` → `{primitive.size-32}` = 32px
+pub const TOOLBAR_HEIGHT: LogicalPx = super::primitive::SIZE_32;
 
 /// `semantic.ui-scale` → `{semantic.ui-scale-md}` = 1
 pub const UI_SCALE: f32 = UI_SCALE_MD;

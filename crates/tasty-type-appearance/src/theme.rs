@@ -1532,14 +1532,6 @@ impl Theme {
         MOTION_HOLD_REVEAL_SHIFT_MS
     }
 
-    /// 설정 콘텐츠 컬럼의 최대 폭. 개별 블록이 아닌 스크롤 컬럼에 적용한다.
-    /// 전체 폭을 쓰는 하위 탭은 자체 레이아웃을 사용하며 설명문 폭은 measure_md로 따로 제한한다.
-    /// 대응 디자인 토큰이 없어 접근자로 관리한다.
-    #[inline]
-    pub fn settings_content_max_width(&self) -> LogicalPx {
-        LogicalPx((620.0 * self.ui_zoom).round())
-    }
-
     // 보조 키 안내 패널의 치수와 색상.
     /// 기본 너비 (180px). `--tasty-modhint-width` → `--tasty-size-180`.
     /// 열린 사이드바 폭(`AppearanceSettings.sidebar_width` 기본 180)과 정렬.

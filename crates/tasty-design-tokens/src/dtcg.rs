@@ -308,6 +308,7 @@ const COMPONENT_GROUPS: &[&str] = &[
     "icon-button",
     "help-hint",
     "status-dot",
+    "move-source",
     "switch-overlay",
     "tree-row",
     "plugins-list",

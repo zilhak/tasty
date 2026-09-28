@@ -61,6 +61,9 @@ pub mod banner {
     /// `component.banner-gap` → `{semantic.space-md}` = 12px
     pub const GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
 
+    /// `component.banner-inset-gap` → `{semantic.space-sm}` = 8px
+    pub const INSET_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
     /// `component.banner-margin` → `{semantic.space-sm}` = 8px
     pub const MARGIN: LogicalPx = crate::generated::semantic::SPACE_SM;
 
@@ -127,6 +130,22 @@ pub mod button {
 
     /// `component.button-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+}
+
+pub mod center {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.center-state-gap` → `{semantic.space-sm}` = 8px
+    pub const STATE_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.center-state-glyph-size` → `{semantic.icon-size-lg}` = 24px
+    pub const STATE_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_LG;
+
+    /// `component.center-state-line-gap` → `{semantic.space-xs}` = 4px
+    pub const STATE_LINE_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.center-state-max-width` → `{semantic.measure-sm}` = 300px
+    pub const STATE_MAX_WIDTH: LogicalPx = crate::generated::semantic::MEASURE_SM;
 }
 
 pub mod checkbox {
@@ -342,8 +361,8 @@ pub mod fp {
 pub mod git {
     use tasty_type_geometry::length::LogicalPx;
 
-    /// `component.git-toolbar-height` → `{primitive.size-32}` = 32px
-    pub const TOOLBAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
+    /// `component.git-toolbar-height` → `{semantic.toolbar-height}` = 32px
+    pub const TOOLBAR_HEIGHT: LogicalPx = crate::generated::semantic::TOOLBAR_HEIGHT;
 }
 
 pub mod help_hint {
@@ -354,6 +373,13 @@ pub mod help_hint {
 
     /// `component.help-hint-size` → `{semantic.icon-size-sm}` = 14px
     pub const SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
+}
+
+pub mod html {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.html-script-marker-size` → `{semantic.icon-size-xs}` = 12px
+    pub const SCRIPT_MARKER_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
 }
 
 pub mod icon_button {
@@ -367,6 +393,22 @@ pub mod icon_button {
 
     /// `component.icon-button-size-sm` → `{primitive.size-24}` = 24px
     pub const SIZE_SM: LogicalPx = crate::generated::primitive::SIZE_24;
+}
+
+pub mod info {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.info-modal-max-height` → `{primitive.size-360}` = 360px
+    pub const MODAL_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_360;
+
+    /// `component.info-modal-min-height` → `{primitive.size-140}` = 140px
+    pub const MODAL_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_140;
+
+    /// `component.info-modal-para-gap` → `{semantic.space-md}` = 12px
+    pub const MODAL_PARA_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.info-modal-width` → `{primitive.size-440}` = 440px
+    pub const MODAL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_440;
 }
 
 pub mod input {
@@ -386,6 +428,28 @@ pub mod input {
 
     /// `component.input-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+}
+
+pub mod kb {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.kb-ie-action-column-width` → `{primitive.size-288}` = 288px
+    pub const IE_ACTION_COLUMN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+
+    /// `component.kb-ie-from-column-width` → `{primitive.size-120}` = 120px
+    pub const IE_FROM_COLUMN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_120;
+
+    /// `component.kb-ie-notice-inset` → `{semantic.space-md}` = 12px
+    pub const IE_NOTICE_INSET: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.kb-ie-select-column-width` → `{primitive.size-32}` = 32px
+    pub const IE_SELECT_COLUMN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_32;
+
+    /// `component.kb-ie-slot-height` → `{semantic.control-height-tab}` = 24px
+    pub const IE_SLOT_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TAB;
+
+    /// `component.kb-ie-slot-min-width` → `{primitive.size-140}` = 140px
+    pub const IE_SLOT_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_140;
 }
 
 pub mod kbd {
@@ -498,6 +562,28 @@ pub mod modhint {
     pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
 }
 
+pub mod move_source {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.move-source-chip-glyph-size` → `{primitive.size-8}` = 8px
+    pub const CHIP_GLYPH_SIZE: LogicalPx = crate::generated::primitive::SIZE_8;
+
+    /// `component.move-source-chip-size` → `{primitive.size-12}` = 12px
+    pub const CHIP_SIZE: LogicalPx = crate::generated::primitive::SIZE_12;
+
+    /// `component.move-source-dash` → `{primitive.size-4}` = 4px
+    pub const DASH: LogicalPx = crate::generated::primitive::SIZE_4;
+
+    /// `component.move-source-dash-gap` → `{primitive.size-4}` = 4px
+    pub const DASH_GAP: LogicalPx = crate::generated::primitive::SIZE_4;
+
+    /// `component.move-source-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    pub const GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+
+    /// `component.move-source-ring-width` → `{semantic.focus-ring-width}` = 2px
+    pub const RING_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+}
+
 pub mod multiselect {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -542,6 +628,16 @@ pub mod multiselect {
 
     /// `component.multiselect-row-padding-x` → `{component.menu-item-padding-x}` = 12px
     pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
+}
+
+pub mod perm {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.perm-row-height` → `{component.settings-row-min-height}` = 32px
+    pub const ROW_HEIGHT: LogicalPx = super::settings::ROW_MIN_HEIGHT;
+
+    /// `component.perm-status-gap` → `{semantic.space-xs}` = 4px
+    pub const STATUS_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 }
 
 pub mod plugin {
@@ -670,6 +766,9 @@ pub mod select {
 
 pub mod settings {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px
+    pub const CONTENT_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_620;
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
@@ -995,9 +1094,18 @@ pub mod tree_row {
 pub mod workspace {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.workspace-dot-gap` → `{semantic.space-xs}` = 4px
+    pub const DOT_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.workspace-dot-slot` → `{primitive.size-16}` = 16px
+    pub const DOT_SLOT: LogicalPx = crate::generated::primitive::SIZE_16;
+
     /// `component.workspace-mirror-gap` → `{semantic.space-xs}` = 4px
     pub const MIRROR_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.workspace-mirror-icon-size` → `{semantic.icon-size-xs}` = 12px
     pub const MIRROR_ICON_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+
+    /// `component.workspace-row-padding-x` → `{semantic.space-sm}` = 8px
+    pub const ROW_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
 }

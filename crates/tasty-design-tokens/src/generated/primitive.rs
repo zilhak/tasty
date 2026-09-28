@@ -142,6 +142,9 @@ pub(crate) const SIZE_120: LogicalPx = LogicalPx(120.0);
 /// `primitive.size-14` = 14px
 pub(crate) const SIZE_14: LogicalPx = LogicalPx(14.0);
 
+/// `primitive.size-140` = 140px
+pub(crate) const SIZE_140: LogicalPx = LogicalPx(140.0);
+
 /// `primitive.size-150` = 150px
 pub(crate) const SIZE_150: LogicalPx = LogicalPx(150.0);
 
@@ -199,6 +202,9 @@ pub(crate) const SIZE_320: LogicalPx = LogicalPx(320.0);
 /// `primitive.size-36` = 36px
 pub(crate) const SIZE_36: LogicalPx = LogicalPx(36.0);
 
+/// `primitive.size-360` = 360px
+pub(crate) const SIZE_360: LogicalPx = LogicalPx(360.0);
+
 /// `primitive.size-4` = 4px
 pub(crate) const SIZE_4: LogicalPx = LogicalPx(4.0);
 
@@ -207,6 +213,9 @@ pub(crate) const SIZE_400: LogicalPx = LogicalPx(400.0);
 
 /// `primitive.size-44` = 44px
 pub(crate) const SIZE_44: LogicalPx = LogicalPx(44.0);
+
+/// `primitive.size-440` = 440px
+pub(crate) const SIZE_440: LogicalPx = LogicalPx(440.0);
 
 /// `primitive.size-46` = 46px
 pub(crate) const SIZE_46: LogicalPx = LogicalPx(46.0);
@@ -231,6 +240,9 @@ pub(crate) const SIZE_6: LogicalPx = LogicalPx(6.0);
 
 /// `primitive.size-600` = 600px
 pub(crate) const SIZE_600: LogicalPx = LogicalPx(600.0);
+
+/// `primitive.size-620` = 620px
+pub(crate) const SIZE_620: LogicalPx = LogicalPx(620.0);
 
 /// `primitive.size-64` = 64px
 pub(crate) const SIZE_64: LogicalPx = LogicalPx(64.0);

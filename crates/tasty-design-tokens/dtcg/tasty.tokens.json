@@ -1,5 +1,5 @@
 {
-  "$description": "Tasty Design System의 W3C DTCG 토큰. primitive → semantic → component 계층과 별칭을 사용한다. 기본 테마는 Mocha이며 테마별 값은 Latte 확장에 둔다. tokens의 CSS에서 생성한다.",
+  "$description": "Tasty Design System — W3C DTCG token export. 3 tiers: primitive → semantic → component. Aliases ({tier.key}) mirror the CSS var() chain. Theme-scoped primitives & semantic role-remaps carry a Latte value under $extensions[\"com.tasty.mode\"].latte; baseline $value is Catppuccin Mocha. Generated from tokens/{primitives,semantic,components}.css — full parity, do not hand-edit.",
   "$extensions": {
     "com.tasty.themes": [
       "mocha (default)",
@@ -393,6 +393,10 @@
       "$type": "dimension",
       "$value": "112px"
     },
+    "size-140": {
+      "$type": "dimension",
+      "$value": "140px"
+    },
     "size-160": {
       "$type": "dimension",
       "$value": "160px"
@@ -421,9 +425,17 @@
       "$type": "dimension",
       "$value": "300px"
     },
+    "size-360": {
+      "$type": "dimension",
+      "$value": "360px"
+    },
     "size-400": {
       "$type": "dimension",
       "$value": "400px"
+    },
+    "size-440": {
+      "$type": "dimension",
+      "$value": "440px"
     },
     "size-44": {
       "$type": "dimension",
@@ -444,6 +456,10 @@
     "size-600": {
       "$type": "dimension",
       "$value": "600px"
+    },
+    "size-620": {
+      "$type": "dimension",
+      "$value": "620px"
     },
     "radius-2": {
       "$type": "dimension",
@@ -666,7 +682,12 @@
     },
     "text-disabled": {
       "$type": "color",
-      "$value": "{primitive.color-neutral-700}"
+      "$value": "{primitive.color-neutral-700}",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "{primitive.color-neutral-800}"
+        }
+      }
     },
     "text-placeholder": {
       "$type": "color",
@@ -724,6 +745,10 @@
     "accent-remote": {
       "$type": "color",
       "$value": "{primitive.color-sky}"
+    },
+    "accent-move": {
+      "$type": "color",
+      "$value": "{primitive.color-pink}"
     },
     "accent-occupied-soft": {
       "$type": "color",
@@ -924,6 +949,10 @@
       "$type": "dimension",
       "$value": "{primitive.size-36}"
     },
+    "toolbar-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-32}"
+    },
     "status-bar-height": {
       "$type": "dimension",
       "$value": "{primitive.size-24}"
@@ -939,6 +968,10 @@
     "icon-size-md": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"
+    },
+    "icon-size-lg": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}"
     },
     "state-disabled-opacity": {
       "$type": "number",
@@ -1856,6 +1889,14 @@
       "$type": "dimension",
       "$value": "{semantic.icon-size-sm}"
     },
+    "tab-scroll-arrow-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "tab-scroll-arrow-fg-disabled": {
+      "$type": "color",
+      "$value": "{semantic.text-disabled}"
+    },
     "tree-row-height": {
       "$type": "dimension",
       "$value": "{semantic.control-height-tree}"
@@ -2212,6 +2253,26 @@
       "$type": "duration",
       "$value": "{semantic.motion-ui}"
     },
+    "banner-inset-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "html-script-banner-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-info}"
+    },
+    "html-script-marker-fg": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "html-script-marker-allowed-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "html-script-marker-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
     "banner-more-column-gap": {
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
@@ -2319,6 +2380,50 @@
     "workspace-mirror-gap": {
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
+    },
+    "workspace-row-padding-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "workspace-dot-slot": {
+      "$type": "dimension",
+      "$value": "{primitive.size-16}"
+    },
+    "workspace-dot-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "move-source-ring": {
+      "$type": "color",
+      "$value": "{semantic.accent-move}"
+    },
+    "move-source-ring-width": {
+      "$type": "dimension",
+      "$value": "{semantic.focus-ring-width}"
+    },
+    "move-source-dash": {
+      "$type": "dimension",
+      "$value": "{primitive.size-4}"
+    },
+    "move-source-dash-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-4}"
+    },
+    "move-source-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-move}"
+    },
+    "move-source-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
+    "move-source-chip-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-12}"
+    },
+    "move-source-chip-glyph-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-8}"
     },
     "spinner-size": {
       "$type": "dimension",
@@ -2655,6 +2760,114 @@
     "settings-row-min-height": {
       "$type": "dimension",
       "$value": "{primitive.size-32}"
+    },
+    "settings-content-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-620}"
+    },
+    "perm-granted-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-success}"
+    },
+    "perm-missing-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}"
+    },
+    "perm-unknown-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "perm-unobservable-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "perm-status-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "perm-row-height": {
+      "$type": "dimension",
+      "$value": "{component.settings-row-min-height}"
+    },
+    "info-modal-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-440}"
+    },
+    "info-modal-min-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-140}"
+    },
+    "info-modal-max-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-360}"
+    },
+    "info-modal-title-edge": {
+      "$type": "color",
+      "$value": "{semantic.border-default}"
+    },
+    "info-modal-para-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
+    },
+    "info-modal-scroll-edge": {
+      "$type": "color",
+      "$value": "{semantic.border-default}"
+    },
+    "center-state-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-lg}"
+    },
+    "center-state-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "center-state-line-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "center-state-glyph-fg": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "center-state-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}"
+    },
+    "center-state-title-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
+    },
+    "center-state-sub-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}"
+    },
+    "center-state-max-width": {
+      "$type": "dimension",
+      "$value": "{semantic.measure-sm}"
+    },
+    "kb-ie-select-column-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-32}"
+    },
+    "kb-ie-action-column-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-288}"
+    },
+    "kb-ie-from-column-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-120}"
+    },
+    "kb-ie-slot-height": {
+      "$type": "dimension",
+      "$value": "{semantic.control-height-tab}"
+    },
+    "kb-ie-slot-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-140}"
+    },
+    "kb-ie-notice-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
     },
     "swatch-size": {
       "$type": "dimension",
@@ -3457,7 +3670,7 @@
     },
     "git-toolbar-height": {
       "$type": "dimension",
-      "$value": "{primitive.size-32}"
+      "$value": "{semantic.toolbar-height}"
     },
     "port-process-col-min-width": {
       "$type": "dimension",

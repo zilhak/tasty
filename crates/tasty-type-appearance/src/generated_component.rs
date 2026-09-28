@@ -202,6 +202,12 @@ impl crate::theme::Theme {
         self.spacing_md
     }
 
+    /// `component.banner-inset-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn banner_inset_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
     /// `component.banner-margin` → `{semantic.space-sm}` = 8px
     #[inline]
     pub fn banner_margin(&self) -> LogicalPx {
@@ -416,6 +422,54 @@ impl crate::theme::Theme {
     #[inline]
     pub fn button_secondary_border_hover(&self) -> HexColor {
         self.border_strong()
+    }
+
+    /// `component.center-state-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn center_state_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.center-state-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn center_state_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.center-state-glyph-fg` → `{semantic.glyph-dim}`
+    #[inline]
+    pub fn center_state_glyph_fg(&self) -> HexColor {
+        self.glyph_dim()
+    }
+
+    /// `component.center-state-glyph-size` → `{semantic.icon-size-lg}` = 24px
+    #[inline]
+    pub fn center_state_glyph_size(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.center-state-line-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn center_state_line_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.center-state-max-width` → `{semantic.measure-sm}` = 300px
+    #[inline]
+    pub fn center_state_max_width(&self) -> LogicalPx {
+        self.measure_sm
+    }
+
+    /// `component.center-state-sub-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn center_state_sub_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.center-state-title-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn center_state_title_fg(&self) -> HexColor {
+        self.text_secondary()
     }
 
     /// `component.checkbox-bg` → `{semantic.surface-raised}`
@@ -1114,7 +1168,7 @@ impl crate::theme::Theme {
         LogicalPx((320.0 * self.ui_zoom).round())
     }
 
-    /// `component.git-toolbar-height` → `{primitive.size-32}` = 32px
+    /// `component.git-toolbar-height` → `{semantic.toolbar-height}` = 32px
     #[inline]
     pub fn git_toolbar_height(&self) -> LogicalPx {
         LogicalPx((32.0 * self.ui_zoom).round())
@@ -1142,6 +1196,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn help_hint_size(&self) -> LogicalPx {
         self.icon_glyph_size_sm
+    }
+
+    /// `component.html-script-banner-glyph` → `{semantic.accent-info}`
+    #[inline]
+    pub fn html_script_banner_glyph(&self) -> HexColor {
+        self.accent_info()
+    }
+
+    /// `component.html-script-marker-allowed-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn html_script_marker_allowed_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.html-script-marker-fg` → `{semantic.glyph-dim}`
+    #[inline]
+    pub fn html_script_marker_fg(&self) -> HexColor {
+        self.glyph_dim()
+    }
+
+    /// `component.html-script-marker-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn html_script_marker_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
     }
 
     /// `component.icon-button-bg-active` → `{semantic.overlay-active}`
@@ -1184,6 +1262,42 @@ impl crate::theme::Theme {
     #[inline]
     pub fn icon_button_size_sm(&self) -> LogicalPx {
         LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.info-modal-max-height` → `{primitive.size-360}` = 360px
+    #[inline]
+    pub fn info_modal_max_height(&self) -> LogicalPx {
+        LogicalPx((360.0 * self.ui_zoom).round())
+    }
+
+    /// `component.info-modal-min-height` → `{primitive.size-140}` = 140px
+    #[inline]
+    pub fn info_modal_min_height(&self) -> LogicalPx {
+        LogicalPx((140.0 * self.ui_zoom).round())
+    }
+
+    /// `component.info-modal-para-gap` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn info_modal_para_gap(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.info-modal-scroll-edge` → `{semantic.border-default}`
+    #[inline]
+    pub fn info_modal_scroll_edge(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.info-modal-title-edge` → `{semantic.border-default}`
+    #[inline]
+    pub fn info_modal_title_edge(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.info-modal-width` → `{primitive.size-440}` = 440px
+    #[inline]
+    pub fn info_modal_width(&self) -> LogicalPx {
+        LogicalPx((440.0 * self.ui_zoom).round())
     }
 
     /// `component.input-bg` → `{semantic.surface-raised}`
@@ -1256,6 +1370,42 @@ impl crate::theme::Theme {
     #[inline]
     pub fn input_radius(&self) -> LogicalPx {
         self.corner_radius
+    }
+
+    /// `component.kb-ie-action-column-width` → `{primitive.size-288}` = 288px
+    #[inline]
+    pub fn kb_ie_action_column_width(&self) -> LogicalPx {
+        LogicalPx((288.0 * self.ui_zoom).round())
+    }
+
+    /// `component.kb-ie-from-column-width` → `{primitive.size-120}` = 120px
+    #[inline]
+    pub fn kb_ie_from_column_width(&self) -> LogicalPx {
+        LogicalPx((120.0 * self.ui_zoom).round())
+    }
+
+    /// `component.kb-ie-notice-inset` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn kb_ie_notice_inset(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.kb-ie-select-column-width` → `{primitive.size-32}` = 32px
+    #[inline]
+    pub fn kb_ie_select_column_width(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
+    /// `component.kb-ie-slot-height` → `{semantic.control-height-tab}` = 24px
+    #[inline]
+    pub fn kb_ie_slot_height(&self) -> LogicalPx {
+        self.item_height_tab
+    }
+
+    /// `component.kb-ie-slot-min-width` → `{primitive.size-140}` = 140px
+    #[inline]
+    pub fn kb_ie_slot_min_width(&self) -> LogicalPx {
+        LogicalPx((140.0 * self.ui_zoom).round())
     }
 
     /// `component.kbd-bg` → `{semantic.surface-raised}`
@@ -1594,6 +1744,42 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.move-source-chip-glyph-size` → `{primitive.size-8}` = 8px
+    #[inline]
+    pub fn move_source_chip_glyph_size(&self) -> LogicalPx {
+        LogicalPx((8.0 * self.ui_zoom).round())
+    }
+
+    /// `component.move-source-chip-size` → `{primitive.size-12}` = 12px
+    #[inline]
+    pub fn move_source_chip_size(&self) -> LogicalPx {
+        LogicalPx((12.0 * self.ui_zoom).round())
+    }
+
+    /// `component.move-source-dash` → `{primitive.size-4}` = 4px
+    #[inline]
+    pub fn move_source_dash(&self) -> LogicalPx {
+        LogicalPx((4.0 * self.ui_zoom).round())
+    }
+
+    /// `component.move-source-dash-gap` → `{primitive.size-4}` = 4px
+    #[inline]
+    pub fn move_source_dash_gap(&self) -> LogicalPx {
+        LogicalPx((4.0 * self.ui_zoom).round())
+    }
+
+    /// `component.move-source-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn move_source_glyph_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
+    }
+
+    /// `component.move-source-ring-width` → `{semantic.focus-ring-width}` = 2px
+    #[inline]
+    pub fn move_source_ring_width(&self) -> LogicalPx {
+        self.focus_ring_width
+    }
+
     /// `component.multiselect-all-fg` → `{semantic.accent-primary}`
     #[inline]
     pub fn multiselect_all_fg(&self) -> HexColor {
@@ -1766,6 +1952,42 @@ impl crate::theme::Theme {
     #[inline]
     pub fn multiselect_summary_fg_empty(&self) -> HexColor {
         self.text_placeholder()
+    }
+
+    /// `component.perm-granted-fg` → `{semantic.accent-success}`
+    #[inline]
+    pub fn perm_granted_fg(&self) -> HexColor {
+        self.accent_success()
+    }
+
+    /// `component.perm-missing-fg` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn perm_missing_fg(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.perm-row-height` → `{component.settings-row-min-height}` = 32px
+    #[inline]
+    pub fn perm_row_height(&self) -> LogicalPx {
+        self.settings_row_min_height()
+    }
+
+    /// `component.perm-status-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn perm_status_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.perm-unknown-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn perm_unknown_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.perm-unobservable-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn perm_unobservable_fg(&self) -> HexColor {
+        self.text_muted()
     }
 
     /// `component.plugin-avatar-border-width` → `{semantic.border-width}` = 1px
@@ -2048,6 +2270,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn select_radius(&self) -> LogicalPx {
         self.corner_radius
+    }
+
+    /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px
+    #[inline]
+    pub fn settings_content_max_width(&self) -> LogicalPx {
+        LogicalPx((620.0 * self.ui_zoom).round())
     }
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
@@ -2500,6 +2728,18 @@ impl crate::theme::Theme {
         self.spacing_sm
     }
 
+    /// `component.tab-scroll-arrow-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn tab_scroll_arrow_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.tab-scroll-arrow-fg-disabled` → `{semantic.text-disabled}`
+    #[inline]
+    pub fn tab_scroll_arrow_fg_disabled(&self) -> HexColor {
+        self.text_disabled()
+    }
+
     /// `component.tab-separator` → `{semantic.separator}`
     #[inline]
     pub fn tab_separator(&self) -> HexColor {
@@ -2944,6 +3184,18 @@ impl crate::theme::Theme {
         self.font_size_micro
     }
 
+    /// `component.workspace-dot-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn workspace_dot_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.workspace-dot-slot` → `{primitive.size-16}` = 16px
+    #[inline]
+    pub fn workspace_dot_slot(&self) -> LogicalPx {
+        LogicalPx((16.0 * self.ui_zoom).round())
+    }
+
     /// `component.workspace-mirror-fg` → `{semantic.accent-remote}`
     #[inline]
     pub fn workspace_mirror_fg(&self) -> HexColor {
@@ -2960,5 +3212,11 @@ impl crate::theme::Theme {
     #[inline]
     pub fn workspace_mirror_icon_size(&self) -> LogicalPx {
         self.icon_glyph_size_xs
+    }
+
+    /// `component.workspace-row-padding-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn workspace_row_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
     }
 }
