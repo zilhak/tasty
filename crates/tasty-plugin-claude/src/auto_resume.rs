@@ -244,6 +244,7 @@ pub(crate) fn lock_table(table: &Mutex<ResumeTable>) -> std::sync::MutexGuard<'_
 
 /// hook 이벤트 하나를 표에 반영한다. `stop-failure` 이면 설정을 읽어 예약을 건다.
 /// 서브에이전트의 `stop-failure` 는 호출부(`hook.rs`)가 이미 걸러 이 함수에 오지 않는다.
+/// 백그라운드 작업을 기다리는 `stop` 도 턴 종료가 아니므로 호출부가 걸러 이 함수에 오지 않는다.
 pub(crate) fn observe_hook<H: HostCall>(
     table: &Mutex<ResumeTable>,
     host: &H,
