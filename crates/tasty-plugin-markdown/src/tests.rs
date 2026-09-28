@@ -481,6 +481,28 @@ fn file_open_dispatch_params_carry_the_owner_popup() {
     assert!(params.get("origin_surface_id").is_none());
 }
 
+/// 파일열기 팝업의 제자리 변환도 자기 팝업을 실어 보낸다. 주소창 이동은 팝업이 없어 싣지 않는다.
+#[test]
+fn navigate_params_carry_the_owner_popup_only_from_the_popup() {
+    let from_popup = navigate_params(3, " /work/a.md ", Some(42)).expect("params");
+    assert_eq!(
+        from_popup,
+        json!({ "surface_id": 3, "path": "/work/a.md", "owner_popup_instance": 42 })
+    );
+    let from_addr = navigate_params(3, "/work/a.md", None).expect("params");
+    assert!(from_addr.get("owner_popup_instance").is_none());
+    assert!(navigate_params(3, "  ", Some(42)).is_none());
+}
+
+/// 외부 호출자가 `owner_popup_instance` 를 넣어도 host 로 다시 보낼 때는 빠진다.
+#[test]
+fn a_forwarded_external_navigate_drops_the_owner_popup() {
+    let forwarded = forwarded_navigate_params(
+        json!({ "surface_id": 3, "path": "/work/a.md", "owner_popup_instance": 42 }),
+    );
+    assert_eq!(forwarded, json!({ "surface_id": 3, "path": "/work/a.md" }));
+}
+
 /// 링크 열기 요청에 호스트가 보낸 URL과 원래 surface를 전달한다.
 /// 호스트가 사용자 입력을 확인하고 같은 Pane에 새 탭을 연다.
 #[test]

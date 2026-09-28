@@ -399,7 +399,9 @@ impl Plugin for MarkdownPlugin {
         match ctx.method.as_str() {
             "markdown.reload" => self.markdown_reload(&ctx.params),
             // 이 네임스페이스의 외부 요청은 플러그인에 먼저 오므로 호스트 구현에 다시 전달한다.
-            "markdown.navigate" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
+            "markdown.navigate" => Ok(ctx
+                .host
+                .call(&ctx.method, forwarded_navigate_params(ctx.params))?),
             // 최근 파일은 호스트가 관리하므로 kind를 지정해 조회한다.
             "markdown.recent" => Ok(ctx
                 .host
@@ -548,7 +550,7 @@ impl Plugin for MarkdownPlugin {
                     dispatch_link(&host, ctx.surface_id, &ctx.url, click);
                 }
             }
-            render::NavIntent::Addr(path) => navigate(&host, ctx.surface_id, &path),
+            render::NavIntent::Addr(path) => navigate(&host, ctx.surface_id, &path, None),
         }
     }
 }
@@ -928,16 +930,37 @@ fn external_link_params(sid: u32, url: &str) -> Value {
     json!({ "surface_id": sid, "url": url })
 }
 
-/// 주소창 확정 이동을 host `markdown.navigate` 로 보낸다 — 같은 surface 제자리 이동.
-fn navigate(host: &HostHandle, sid: u32, path: &str) {
-    let path = path.trim();
-    if path.is_empty() {
+/// 주소창·file-open 팝업의 확정 이동을 host `markdown.navigate` 로 보낸다 — 같은 surface 제자리 이동.
+/// 팝업에서 확정했으면 `owner_popup_instance` 로 그 팝업을 실어 host 가 사용자 요청으로 판정하게 한다.
+fn navigate(host: &HostHandle, sid: u32, path: &str, owner_popup_instance: Option<u64>) {
+    let Some(params) = navigate_params(sid, path, owner_popup_instance) else {
         return;
-    }
-    let params = json!({ "surface_id": sid, "path": path });
+    };
     if let Err(e) = host.call("markdown.navigate", params) {
         tracing::warn!("markdown navigate failed: {e}");
     }
+}
+
+/// `markdown.navigate` 파라미터. 빈 경로면 None이다.
+fn navigate_params(sid: u32, path: &str, owner_popup_instance: Option<u64>) -> Option<Value> {
+    let path = path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let mut params = json!({ "surface_id": sid, "path": path });
+    if let Some(instance) = owner_popup_instance {
+        params["owner_popup_instance"] = json!(instance);
+    }
+    Some(params)
+}
+
+/// 외부 `markdown.navigate` 를 host 로 다시 보낼 때는 `owner_popup_instance` 를 뺀다.
+/// host 는 이 플러그인을 호출자로 보므로, 남기면 외부 요청이 사용자 요청으로 판정될 수 있다(ADR-0031).
+fn forwarded_navigate_params(mut params: Value) -> Value {
+    if let Some(map) = params.as_object_mut() {
+        map.remove("owner_popup_instance");
+    }
+    params
 }
 
 fn main() -> anyhow::Result<()> {

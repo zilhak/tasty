@@ -279,7 +279,7 @@ image 요청은 host arm까지 전달되지만 헤드리스 구현이 없어 거
 
 | 메서드 | 왜 |
 |--------|-----|
-| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `AppState` 만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0003](../adr/0003-headless-behavior.md)의 역할 분리에 따라 GUI와 core의 책임을 나누면 headless에서 이 host arm을 제공할 여지가 있다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
+| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `CoreState`(mirror 여부)와 `IpcWindow`(팝업의 사용자 입력 기록)만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0003](../adr/0003-headless-behavior.md)의 역할 분리에 따라 GUI와 core의 책임을 나누면 headless에서 이 host arm을 제공할 여지가 있다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
 
 헤드리스에서 부르면 응답이 한 겹 감싸여 온다 — `-32017 host call 'call#N' failed: method
 'markdown.navigate' is registered but this binary has no dispatch arm for it`. 번들

@@ -160,7 +160,7 @@ impl MarkdownPlugin {
                 if !path.is_empty() {
                     match convert_sid {
                         // convert 대상 surface → 제자리 markdown 변환.
-                        Some(sid) => navigate(&ctx.host, sid, &path),
+                        Some(sid) => navigate(&ctx.host, sid, &path, Some(iid)),
                         // 대상 없음 → 새 탭으로 연다.
                         None => open_markdown_file(&ctx.host, iid, &path),
                     }

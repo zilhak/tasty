@@ -52,10 +52,12 @@
 
   | 조건 | 호출 |
   |---|---|
-  | `surface_id` 있음 | `markdown.navigate {surface_id,path}`로 해당 surface를 제자리 변환. host는 로컬 surface이면 로컬 파일 존재를 확인하고, mirror surface이면 원격 경로로 보고 확인 없이 원격에 전달한다. |
+  | `surface_id` 있음 | `markdown.navigate {surface_id,path,owner_popup_instance}`로 해당 surface를 제자리 변환. host는 로컬 surface이면 로컬 파일 존재를 확인하고, mirror surface이면 원격 경로로 보고 확인 없이 원격에 전달한다. |
   | `surface_id` 없음 | `file_handler.dispatch {path,depth:"deep",owner_popup_instance}`로 새 탭 열기 |
 
-  확정 요청의 `owner_popup_instance`도 file-open 자신의 인스턴스다. host는 이를 통해 사용자가 조작한 팝업의 요청임을 확인하고 새 탭을 선택한다. 빠지면 에이전트 요청으로 처리해 새 탭을 선택하지 않는다([ADR-0031](../../adr/0031-file-handler-routing.md)).
+  두 확정 요청의 `owner_popup_instance`도 file-open 자신의 인스턴스다. host는 `file_handler.dispatch`와 같은 규칙으로 사용자가 조작한 팝업의 요청임을 확인한다. 사용자 요청이면 새 탭을 선택하고, mirror 제자리 변환의 원격 실패를 toast로 알린다. 빠지면 에이전트 요청으로 처리해 새 탭을 선택하지 않고 원격 실패도 warn 로그로만 남긴다([ADR-0031](../../adr/0031-file-handler-routing.md)).
+
+  주소창 이동은 팝업이 없으므로 `markdown.navigate`에 `owner_popup_instance`를 싣지 않는다. 외부 CLI·IPC의 `markdown.navigate`는 plugin이 host로 다시 보내는데, 이때 `owner_popup_instance`를 제거한다. host는 이 요청의 호출자를 plugin으로 보므로, 필드를 남기면 외부 요청이 사용자 요청으로 판정될 수 있다.
 
 - **링크 클릭 라우팅** — 문서 안의 모든 non-anchor 링크 destination 은 HTML 생성 시점에 내부 nav-fragment 스킴(`#tasty-nav:link:<percent-encoded-dest>`)으로 rewrite 된다(`render::rewrite_link_dest`) — 실제 `href` 를 그대로 두면 native WebView 가 진짜 파일/미지 스킴으로 navigate 해버려(host 는 *원격* http(s) 만 차단) 렌더된 문서가 그 자리에서 깨진다.
   fragment 만 바뀌는 same-document navigation 은 (a) WebKitGTK 의 `decide-policy` 로는 여전히 캡처되지만(→ host 가 `webview.navigation_attempt` 이벤트로 forward) (b) 실제 페이지 리로드는 일으키지 않는다(실측 검증됨) — 이 성질로 "클릭을 가로채되 화면은 안 깨지는" 신호 채널을 만든다.

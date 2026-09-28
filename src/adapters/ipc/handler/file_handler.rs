@@ -205,8 +205,9 @@ pub fn handle_dispatch(
 /// webview는 소유 플러그인이 쓴 페이지의 사용자 제스처를 host가 같은 플러그인에 통지했어야 한다.
 /// 통지된 URL과 요청 URL이 같아야 하며 이 기록은 한 번만 쓸 수 있다.
 /// 어느 조건에도 맞지 않거나 외부 IPC 호출이면 에이전트 요청으로 처리한다(ADR-0031).
+/// markdown.navigate도 팝업 확정 요청을 같은 규칙으로 판정한다.
 #[cfg(feature = "gui")]
-fn dispatch_origin_of(
+pub(super) fn dispatch_origin_of(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     caller: &tasty_ipc::caller::CallerContext,
     owner_popup_instance: Option<u64>,
@@ -224,7 +225,7 @@ fn dispatch_origin_of(
         tracing::debug!(
             plugin_id = %plugin_id,
             instance_id,
-            "file_handler.dispatch: owner_popup_instance is not a user-activated popup of the caller; treated as an agent request",
+            "owner_popup_instance is not a user-activated popup of the caller; treated as an agent request",
         );
     }
     if let Some(url) = user_navigation_url {

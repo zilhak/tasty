@@ -13,11 +13,16 @@ struct NavigateReq {
     surface_id: u32,
     /// 이동할 파일의 절대 경로.
     path: String,
+    /// 요청을 확정한 file-open 팝업. 호출 플러그인 소유이고 사용자 입력을 받았으면 사용자 요청이다.
+    #[serde(default)]
+    owner_popup_instance: Option<u64>,
 }
 
 pub fn handle_navigate(
     out: &mut crate::ipc::window_port::IntentOutbox,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &crate::core::CoreState,
+    caller: &tasty_ipc::caller::CallerContext,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -30,31 +35,33 @@ pub fn handle_navigate(
         return JsonRpcResponse::error(id, -32602, format!("path not found: {}", req.path));
     }
 
-    navigate_now(out, req.surface_id, &req.path);
-    JsonRpcResponse::success(id, json!({ "accepted": true }))
-}
-
-pub(crate) fn navigate_now(
-    out: &mut crate::ipc::window_port::IntentOutbox,
-    surface_id: u32,
-    path: &str,
-) {
-    out.push(
-        crate::intent::Intent::ConvertSurface {
-            surface_id,
-            target: crate::intent::ConvertTarget::Kind {
-                cwd: None,
-                kind: "markdown".to_string(),
-                params: json!({ "file": path }),
-            },
-        }
-        .from_agent_ipc(),
+    // 원격 변환 실패를 toast로 알릴지도 이 출처로 정한다.
+    let origin = super::file_handler::dispatch_origin_of(
+        window,
+        caller,
+        req.owner_popup_instance,
+        None,
+        None,
     );
+    let intent = crate::intent::Intent::ConvertSurface {
+        surface_id: req.surface_id,
+        target: crate::intent::ConvertTarget::Kind {
+            cwd: None,
+            kind: "markdown".to_string(),
+            params: json!({ "file": req.path }),
+        },
+    };
+    out.push(match origin {
+        crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
+        crate::file::dispatch::FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+    });
+    JsonRpcResponse::success(id, json!({ "accepted": true }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_ipc::caller::CallerContext;
 
     #[test]
     fn navigate_req_parses_surface_and_path() {
@@ -65,23 +72,105 @@ mod tests {
     }
 
     const MISSING: &str = "/definitely/not/on/this/machine.md";
+    const PLUGIN: &str = "com.tasty.markdown";
+    const POPUP: u64 = 7;
 
-    fn navigate(mirror: bool) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
-        let (state, mut engine) = crate::state::tests::test_state();
+    fn plugin_caller(plugin_id: &str) -> CallerContext {
+        CallerContext::Plugin {
+            plugin_id: plugin_id.to_string(),
+            permissions: std::sync::Arc::new(std::collections::HashSet::new()),
+        }
+    }
+
+    /// activated는 확정 입력을 받은 팝업의 (소유 플러그인, 인스턴스)다.
+    fn navigate_with(
+        mirror: bool,
+        caller: &CallerContext,
+        activated: Option<(&str, u64)>,
+        extra: serde_json::Value,
+    ) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
+        let (mut state, mut engine) = crate::state::tests::test_state();
         let sid = *state
             .active_workspace(&engine)
             .all_surface_ids()
             .first()
             .expect("fixture surface");
         engine.workspaces[0].mirror = mirror;
+        if let Some((plugin, instance)) = activated {
+            state
+                .plugin_popup_user_activated
+                .insert(instance, plugin.to_string());
+        }
+        let mut params = json!({ "surface_id": sid, "path": MISSING });
+        if let (Some(p), Some(e)) = (params.as_object_mut(), extra.as_object()) {
+            p.extend(e.clone());
+        }
         let mut out = crate::ipc::window_port::IntentOutbox::default();
-        let resp = handle_navigate(
-            &mut out,
-            &engine,
-            json!(1),
-            json!({ "surface_id": sid, "path": MISSING }),
-        );
+        let resp = handle_navigate(&mut out, &mut state, &engine, caller, json!(1), params);
         (resp, out.into_vec(), sid)
+    }
+
+    fn navigate(mirror: bool) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
+        navigate_with(mirror, &CallerContext::Local, None, json!({}))
+    }
+
+    /// 대상이 mirror라 경로 검사 없이 intent가 나온다. 반환값은 사용자 요청 여부다.
+    fn navigate_is_user(
+        caller: &CallerContext,
+        activated: Option<(&str, u64)>,
+        extra: serde_json::Value,
+    ) -> bool {
+        let (resp, emitted, _) = navigate_with(true, caller, activated, extra);
+        assert!(resp.error.is_none(), "navigate: {:?}", resp.error);
+        assert_eq!(emitted.len(), 1);
+        emitted[0].origin.is_user()
+    }
+
+    #[test]
+    fn navigate_from_user_activated_own_popup_is_user_origin() {
+        assert!(navigate_is_user(
+            &plugin_caller(PLUGIN),
+            Some((PLUGIN, POPUP)),
+            json!({ "owner_popup_instance": POPUP }),
+        ));
+    }
+
+    #[test]
+    fn navigate_naming_another_plugins_popup_is_agent_origin() {
+        assert!(!navigate_is_user(
+            &plugin_caller(PLUGIN),
+            Some(("com.example.other", POPUP)),
+            json!({ "owner_popup_instance": POPUP }),
+        ));
+    }
+
+    /// 닫혔거나 사용자 입력을 받지 않은 팝업은 활성 기록이 없다.
+    #[test]
+    fn navigate_naming_a_closed_popup_is_agent_origin() {
+        assert!(!navigate_is_user(
+            &plugin_caller(PLUGIN),
+            None,
+            json!({ "owner_popup_instance": POPUP }),
+        ));
+    }
+
+    #[test]
+    fn navigate_from_external_ipc_stays_agent_origin_even_with_owner_field() {
+        assert!(!navigate_is_user(
+            &CallerContext::Local,
+            Some((PLUGIN, POPUP)),
+            json!({ "owner_popup_instance": POPUP }),
+        ));
+    }
+
+    /// 주소창 이동처럼 팝업 없이 보낸 플러그인 요청은 에이전트 요청이다.
+    #[test]
+    fn navigate_without_owner_popup_is_agent_origin() {
+        assert!(!navigate_is_user(
+            &plugin_caller(PLUGIN),
+            Some((PLUGIN, POPUP)),
+            json!({}),
+        ));
     }
 
     /// 원격 경로는 attach한 로컬 컴퓨터에 없을 수 있으므로 원격 서버에 판단을 맡긴다.
