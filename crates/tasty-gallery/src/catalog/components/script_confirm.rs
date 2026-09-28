@@ -80,7 +80,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "360px · bg-panel · popup 기본 크기 360×150"),
+            ("frame", "360px · bg-panel · popup 기본 크기 360×152"),
             ("name", "font-size-caption mono text-muted · truncate"),
             ("warning", "tag(Warning) + caption text-secondary"),
             ("footer", "Run anyway(Primary) / Cancel(Ghost) · 우측정렬"),

@@ -1403,7 +1403,7 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "notifications",
                         "Unread header · entry list · empty state",
-                        Some("350×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
+                        Some("352×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
                         components::notification_panel::draw,
                     )],
                 ),

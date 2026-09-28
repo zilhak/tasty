@@ -10,7 +10,7 @@ use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// `popup/defs.rs` 의 `notifications` 기본 크기.
-const PANEL_W: LogicalPx = LogicalPx(350.0);
+const PANEL_W: LogicalPx = LogicalPx(352.0);
 const PANEL_H: LogicalPx = LogicalPx(400.0);
 /// 본체 unread 배경 알파 (0..255).
 const UNREAD_BG_ALPHA: u8 = 20;
@@ -180,7 +180,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "350×400 · 전체화면 무대 선언 popup (fit + X)"),
+            ("frame", "352×400 · 전체화면 무대 선언 popup (fit + X)"),
             ("header", "\"{n} unread\" caption muted + Mark all read(sm)"),
             ("unread", "accent-primary 저알파 배경 + `*` 마커"),
             (
