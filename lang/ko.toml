@@ -5493,7 +5493,7 @@ about = "파일 핸들러 흐름으로 경로 열기(탐색기 더블클릭과 �
 help = "열 경로"
 
 [cli.help._root.file-handler.dispatch.arg.depth]
-help = "검사 깊이: `cheap`(확장자, 파일명 패턴, 디렉터리 여부) 또는 `deep`(내용 검사도 포함)"
+help = "검사 깊이: `cheap`(확장자, 파일명 패턴, 디렉터리 여부) 또는 `deep`(내용 검사도 포함). 기준 서피스가 미러링된 원격 워크스페이스에 있으면 무시된다. 경로가 원격 파일이므로 확장자와 파일명 패턴만 확인한다. 응답에는 요청한 깊이가 그대로 표시된다"
 
 [cli.help._root.file-handler.dispatch.arg.origin_surface]
 help = "결과 서피스를 포커스된 페인 대신 이 서피스가 속한 페인의 탭으로 추가"

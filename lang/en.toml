@@ -5499,7 +5499,7 @@ about = "Open a path through the file-handler dispatch flow — the same route t
 help = "Path to dispatch"
 
 [cli.help._root.file-handler.dispatch.arg.depth]
-help = "Detection depth: `cheap` (extension, filename glob, directory check) or `deep` (also inspect contents)"
+help = "Detection depth: `cheap` (extension, filename glob, directory check) or `deep` (also inspect contents). Ignored when the origin surface belongs to a mirror workspace: the path is a remote file, so only the extension and filename glob are checked. The response still echoes the requested depth"
 
 [cli.help._root.file-handler.dispatch.arg.origin_surface]
 help = "Add the resulting surface as a tab of this surface's pane instead of the focused pane"

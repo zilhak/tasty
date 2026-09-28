@@ -38,7 +38,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 `origin_surface_id` 가 mirror workspace 의 surface 이면 경로는 원격 호스트의 파일이다. 입구는 mirror explorer 의 더블클릭과 mirror origin 을 준 `file_handler.dispatch` 다.
 
-- 식별은 요청한 깊이와 관계없이 Name 으로 한다. client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다. `file_handler.dispatch` 응답의 `depth` 는 이때 실제로 쓴 `name` 을 보고하고, CLI `--depth` 는 무시된다.
+- 식별은 요청한 깊이와 관계없이 Name 으로 한다. client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다. CLI `--depth` 도 무시된다. `file_handler.dispatch` 응답의 `depth` 는 요청값을 그대로 돌려주므로 실제 식별 방식을 나타내지 않는다.
 - 한계: 확장자·파일명으로 정해지지 않는 형식(magic·MIME 으로만 식별되는 파일)은 매칭되지 않는다. Name 은 대상을 항상 파일로 보므로 디렉터리 경로는 `$directory` 에 매칭되지 않는다. 탐색기는 원격 목록이 파일이라고 알려 준 항목만 보내지만 IPC 입구는 이를 보장하지 않는다. 두 경우 모두 에이전트 요청은 `accepted:true` 응답 뒤 warn 로그로 끝난다.
 - 원격에 열 수 있는 핸들러는 `OpenSurface` 이면서 그 kind 와 client 에 등록한 plugin 쌍이 원문 전달·mesh mirror 허용 목록에 있는 것이다. 현재 markdown(`com.tasty.markdown`)과 허용된 egui-mesh kind 가 해당한다. html 은 mirror 에서 placeholder 라 제외한다.
 - 1순위 핸들러가 원격에 열 수 있으면 로컬과 같이 바로 실행한다.

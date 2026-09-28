@@ -19,8 +19,8 @@ pub enum FileHandlerCommands {
         /// Detection depth: `cheap` (extension, filename glob, directory check)
         /// or `deep` (also inspect contents). Ignored when the origin surface
         /// belongs to a mirror workspace: the path is a remote file, so only the
-        /// extension and filename glob are checked and the response reports
-        /// `name`.
+        /// extension and filename glob are checked. The response still echoes
+        /// the requested depth.
         #[arg(long, default_value = "cheap")]
         depth: String,
         /// Add the resulting surface as a tab of this surface's pane instead of

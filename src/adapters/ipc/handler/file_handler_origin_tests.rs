@@ -410,10 +410,10 @@ fn a_webview_navigation_backs_only_one_dispatch() {
     assert_eq!(origins, vec![true, false]);
 }
 
-/// mirror origin은 요청 depth와 관계없이 이름으로만 식별하므로 응답도 실제 깊이를 보고한다.
+/// mirror origin은 이름으로만 식별하지만 응답 depth는 요청값을 그대로 돌려준다. 응답 필드의 의미는 바꾸지 않는다.
 #[test]
-fn a_mirror_origin_dispatch_reports_the_name_depth() {
-    for (mirror, expected) in [(false, "deep"), (true, "name")] {
+fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
+    for (mirror, expected) in [(false, "deep"), (true, "deep")] {
         let (mut state, mut engine) = crate::state::tests::test_state();
         engine.workspaces[0].mirror = mirror;
         let sid = engine.workspaces[0].all_surface_ids()[0];
