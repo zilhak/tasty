@@ -311,11 +311,21 @@ cargo() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    // 빈 refs 시나리오는 로그 파일을 남기지 않으므로 픽스처 루트를 순회하고 logs/ 아래만 모은다.
+    let fixture_floor = Floor {
+        min: 1,
+        measured: 1,
+        measured_on: "2026-09-28",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
+        why_this_gap: "합성 트리라 이 시험이 직접 쓴 commands.sh 하나가 항상 있다. \
+                       빈 refs 에서는 그것만 남고, 검사를 돌린 시나리오는 calls 와 로그 파일이 더해진다.",
+    };
+    let fixture_files =
+        walk_with_floor(&root, &root, &fixture_floor, Descend::Everything, &|_| true)
+            .unwrap_or_else(|why| panic!("{why}"));
     let mut logs = String::new();
-    for run in std::fs::read_dir(root.join("logs")).unwrap() {
-        for entry in std::fs::read_dir(run.unwrap().path()).unwrap() {
-            logs.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap());
-        }
+    for file in fixture_files.iter().filter(|w| w.rel.starts_with("logs/")) {
+        logs.push_str(&std::fs::read_to_string(&file.path).unwrap());
     }
     (
         output.status.success(),
