@@ -1,4 +1,4 @@
-//! 탭을 다른 탭 자리로 옮긴다(replace). 옮기는 Tab 객체와 Terminal은 그대로 두고
+//! 탭·페인을 다른 탭·페인 자리로 옮긴다(replace). 옮기는 Tab·Pane 객체와 Terminal은 그대로 두고
 //! 덮어쓴 쪽의 후속 정리 대상을 반환한다. 명세: docs/features/surface-move/index.md.
 
 use super::*;
@@ -102,6 +102,125 @@ impl Core {
         }
     }
 
+    /// source 페인을 떼어 target 페인 자리(분할 트리의 같은 위치·비율)에 넣고 target 페인을 닫힌 것으로 반환한다.
+    /// Terminal store는 여기서 지우지 않는다. 성공하지 않아도 이동 대기 슬롯은 비운다.
+    pub(super) fn apply_replace_pane_with_pane(
+        engine: &mut crate::core::CoreState,
+        source_pane_id: u32,
+        target_pane_id: u32,
+    ) -> CoreEvent {
+        engine.pending_move = None;
+
+        if source_pane_id == target_pane_id {
+            return container_move_noop();
+        }
+        let Some(source_ws) = engine.find_workspace_index_for_pane(source_pane_id) else {
+            return container_move_noop();
+        };
+        if engine
+            .find_workspace_index_for_pane(target_pane_id)
+            .is_none()
+        {
+            return container_move_noop();
+        }
+
+        let Some((pane, detached)) = Self::detach_pane_for_move(engine, source_ws, source_pane_id)
+        else {
+            return container_move_noop();
+        };
+
+        // source workspace가 사라졌으면 인덱스가 바뀌므로 target을 ID로 다시 찾는다.
+        let Some(target_ws) = engine.find_workspace_index_for_pane(target_pane_id) else {
+            tracing::error!(
+                source_pane_id,
+                target_pane_id,
+                "move pane: target not found after detaching source"
+            );
+            return container_move_failed(detached);
+        };
+        let ws = &mut engine.workspaces[target_ws];
+        let replaced = match ws.pane_layout_mut().replace_pane(target_pane_id, pane) {
+            Ok(replaced) => replaced,
+            Err(_) => {
+                tracing::error!(
+                    source_pane_id,
+                    target_pane_id,
+                    "move pane: failed to replace target pane"
+                );
+                return container_move_failed(detached);
+            }
+        };
+        if ws.focused_pane == target_pane_id {
+            ws.focused_pane = source_pane_id;
+        }
+
+        let mut cleanup_targets = Vec::new();
+        for tab in &replaced.tabs {
+            collect_close_targets(tab, engine, &mut cleanup_targets);
+        }
+        let closed_tab_ids = replaced.tabs.iter().map(|t| t.id).collect();
+        let mut closed_pane_ids = detached.closed_pane_ids;
+        closed_pane_ids.push(target_pane_id);
+        engine.mark_layout_dirty();
+
+        CoreEvent::ContainerMoveApplied {
+            moved: true,
+            cleanup_targets,
+            cascade_level: detached.cascade_level,
+            closed_tab_ids,
+            closed_tabs_pane: Some(target_pane_id),
+            closed_pane_ids,
+            workspace_purged: detached.workspace_purged,
+            workspaces_now_empty: detached.workspaces_now_empty,
+        }
+    }
+
+    /// source 페인을 떼어 반환한다. 다른 페인이 있으면 형제가 자리를 채우고, 유일 페인이면
+    /// workspace를 제거한다. 떠난 페인 자신은 닫힌 목록에 넣지 않는다.
+    fn detach_pane_for_move(
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+        pane_id: u32,
+    ) -> Option<(crate::model::Pane, SourceDetached)> {
+        let panes_len = engine.workspaces[ws_idx].pane_layout().all_pane_ids().len();
+        if panes_len > 1 {
+            let pane = engine.workspaces[ws_idx].detach_pane_preserving_focus(pane_id)?;
+            engine.mark_layout_dirty();
+            return Some((
+                pane,
+                SourceDetached {
+                    cascade_level: CascadeLevel::Pane,
+                    closed_pane_ids: vec![],
+                    workspace_purged: None,
+                    workspaces_now_empty: false,
+                },
+            ));
+        }
+
+        // 제거한 workspace에서 pane을 못 찾는 일이 없도록 제거 전에 확인한다.
+        engine.workspaces[ws_idx].pane_layout().find_pane(pane_id)?;
+        let workspace_id = engine.workspaces[ws_idx].id;
+        let mut ws = engine.workspaces.remove(ws_idx);
+        let empty = crate::model::Pane {
+            id: 0,
+            tabs: vec![],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        };
+        let pane = std::mem::replace(ws.pane_layout_mut().find_pane_mut(pane_id)?, empty);
+        let workspaces_now_empty = engine.workspaces.is_empty();
+        engine.mark_layout_dirty();
+        Some((
+            pane,
+            SourceDetached {
+                cascade_level: CascadeLevel::Workspace,
+                closed_pane_ids: vec![],
+                workspace_purged: Some((ws_idx, workspace_id)),
+                workspaces_now_empty,
+            },
+        ))
+    }
+
     /// source 탭을 떼어 반환한다. 비게 된 pane·workspace는 지우되 Terminal store와
     /// scrollback은 유지하며 닫기 snapshot도 만들지 않는다. 떠난 탭 자신은 닫힌 목록에 넣지 않는다.
     fn detach_tab_for_move(
@@ -176,7 +295,7 @@ impl Core {
 }
 
 #[cfg(test)]
-mod move_tab_tests {
+mod move_container_tests {
     use super::*;
     use crate::core::intent::DomainIntent;
     use crate::core::state::PendingMove;
@@ -536,5 +655,219 @@ mod move_tab_tests {
             })
             .collect();
         assert_eq!(closed, vec![(tab_b, pane)]);
+    }
+
+    #[test]
+    fn move_pane_replaces_target_and_keeps_source_terminals() {
+        let mut engine = test_engine();
+        let (p1, tab_a, a) = first_pane(&mut engine);
+        let (p2, _tab_p2, _p2_sid) = split_new_pane(&mut engine, p1);
+        let (q, tab_q, q_sid) = push_workspace(&mut engine);
+        let (tab_q2, q2_sid) = add_tab(&mut engine, q);
+        engine.workspaces[1].focused_pane = q;
+        engine.pending_move = Some(PendingMove::Pane(p1));
+
+        let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, q);
+        let CoreEvent::ContainerMoveApplied {
+            moved,
+            cleanup_targets,
+            cascade_level,
+            closed_tab_ids,
+            closed_tabs_pane,
+            closed_pane_ids,
+            workspace_purged,
+            ..
+        } = ev
+        else {
+            panic!("unexpected event: {ev:?}");
+        };
+        assert!(moved);
+        assert!(matches!(cascade_level, CascadeLevel::Pane));
+        assert_eq!(cleanup_targets, vec![(q_sid, None), (q2_sid, None)]);
+        assert_eq!(closed_tab_ids, vec![tab_q, tab_q2]);
+        assert_eq!(closed_tabs_pane, Some(q));
+        assert_eq!(closed_pane_ids, vec![q]);
+        assert!(workspace_purged.is_none());
+
+        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p2]);
+        assert_eq!(engine.workspaces[1].pane_layout().all_pane_ids(), vec![p1]);
+        assert_eq!(engine.workspaces[1].focused_pane, p1);
+        let moved_pane = engine.find_pane_by_id(p1).unwrap();
+        assert_eq!(moved_pane.tabs[0].id, tab_a);
+        assert!(engine.terminals.contains(a), "source terminal must survive");
+        assert!(engine.pending_move.is_none());
+    }
+
+    #[test]
+    fn move_pane_inherits_target_split_position() {
+        let mut engine = test_engine();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        let (_q, _tab_q, _q_sid) = push_workspace(&mut engine);
+        let q = engine.workspaces[1].pane_layout().all_pane_ids()[0];
+        let new_pane_id = engine.next_ids.next_pane();
+        let tab_id = engine.next_ids.next_tab();
+        let sid = engine.next_ids.next_surface();
+        let r = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
+        assert!(
+            engine.workspaces[1]
+                .pane_layout_mut()
+                .split_pane_in_place(q, SplitDirection::Vertical, r)
+                .is_none()
+        );
+        if let crate::model::PaneNode::Split { ratio, .. } = engine.workspaces[1].pane_layout_mut()
+        {
+            *ratio = 0.3;
+        }
+        let (p_extra, _, _) = split_new_pane(&mut engine, p1);
+
+        Core::apply_replace_pane_with_pane(&mut engine, p1, new_pane_id);
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids(),
+            vec![p_extra]
+        );
+        assert_eq!(
+            engine.workspaces[1].pane_layout().all_pane_ids(),
+            vec![q, p1]
+        );
+        assert!(matches!(
+            engine.workspaces[1].pane_layout(),
+            crate::model::PaneNode::Split { ratio, .. } if *ratio == 0.3
+        ));
+    }
+
+    #[test]
+    fn move_only_pane_purges_source_workspace() {
+        let mut engine = test_engine();
+        let (p0, _tab_a, a) = first_pane(&mut engine);
+        let ws0_id = engine.workspaces[0].id;
+        let (q, _tab_q, q_sid) = push_workspace(&mut engine);
+
+        let ev = Core::apply_replace_pane_with_pane(&mut engine, p0, q);
+        let CoreEvent::ContainerMoveApplied {
+            moved,
+            cleanup_targets,
+            cascade_level,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+            ..
+        } = ev
+        else {
+            panic!("unexpected event: {ev:?}");
+        };
+        assert!(moved);
+        assert!(matches!(cascade_level, CascadeLevel::Workspace));
+        assert_eq!(workspace_purged, Some((0, ws0_id)));
+        assert!(!workspaces_now_empty);
+        assert_eq!(closed_pane_ids, vec![q], "source pane 은 닫힌 목록에 없다");
+        assert_eq!(cleanup_targets, vec![(q_sid, None)]);
+        assert_eq!(engine.workspaces.len(), 1);
+        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p0]);
+        assert!(engine.terminals.contains(a));
+    }
+
+    #[test]
+    fn move_pane_self_ref_is_noop_and_clears_slot() {
+        let mut engine = test_engine();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        engine.pending_move = Some(PendingMove::Pane(p1));
+        let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, p1);
+        assert!(matches!(
+            ev,
+            CoreEvent::ContainerMoveApplied { moved: false, .. }
+        ));
+        assert!(engine.pending_move.is_none());
+        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p1]);
+    }
+
+    #[test]
+    fn move_pane_missing_target_is_noop_and_keeps_source() {
+        let mut engine = test_engine();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        let (p2, _, _) = split_new_pane(&mut engine, p1);
+        engine.pending_move = Some(PendingMove::Pane(p1));
+        let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, 999_999);
+        assert!(matches!(
+            ev,
+            CoreEvent::ContainerMoveApplied { moved: false, .. }
+        ));
+        assert!(engine.pending_move.is_none());
+        assert_eq!(
+            engine.workspaces[0].pane_layout().all_pane_ids(),
+            vec![p1, p2]
+        );
+    }
+
+    #[test]
+    fn move_pane_into_mirror_workspace_is_blocked() {
+        let mut engine = test_engine();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        let (q, _tab_q, _q_sid) = push_workspace(&mut engine);
+        let intent = DomainIntent::ReplacePaneWithPane {
+            source_pane_id: p1,
+            target_pane_id: q,
+        };
+        assert_eq!(engine.mirror_workspace_index_for_structural(&intent), None);
+        engine.workspaces[1].mirror = true;
+        assert_eq!(
+            engine.mirror_workspace_index_for_structural(&intent),
+            Some(1)
+        );
+        engine.workspaces[1].mirror = false;
+        engine.workspaces[0].mirror = true;
+        assert_eq!(
+            engine.mirror_workspace_index_for_structural(&intent),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn moved_pane_target_is_not_recorded_in_closed_history() {
+        let mut engine = test_engine();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        let (q, _tab_q, _q_sid) = push_workspace(&mut engine);
+        Core::apply_replace_pane_with_pane(&mut engine, p1, q);
+        assert!(engine.closed_items.is_empty());
+    }
+
+    /// 페인 이동의 호스트 이벤트: 교체된 Q 의 탭은 Q 소속으로 닫히고 Q 의 pane.closed 가 난다.
+    /// 옮긴 페인의 탭은 pane ID 가 같아 tab.moved 를 내지 않는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn move_pane_host_events_close_only_the_target() {
+        use crate::core::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
+        use crate::state::PendingHostEvent as E;
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (p1, _tab_a, _a) = first_pane(&mut engine);
+        split_new_pane(&mut engine, p1);
+        let (q, tab_q, _q_sid) = push_workspace(&mut engine);
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        state.detect_tab_lifecycle(&engine);
+        // 이동 전 준비 과정의 알림은 검사 대상이 아니므로 버린다.
+        state.take_pending_host_events();
+
+        let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, q);
+        let c = SurfaceCloseCascade::from_container_move_applied(ev, true).expect("moved");
+        cascade_surface_closed(&mut core, &mut state, &mut engine, c);
+        state.detect_tab_lifecycle(&engine);
+        let events = state.take_pending_host_events();
+
+        assert!(!events.iter().any(|e| matches!(e, E::TabMoved { .. })));
+        let closed: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                E::TabClosed { tab_id, pane_id } => Some((*tab_id, *pane_id)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(closed, vec![(tab_q, q)]);
+        let closed_panes: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                E::PaneClosed { pane_id } => Some(*pane_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(closed_panes, vec![q]);
     }
 }

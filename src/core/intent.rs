@@ -138,6 +138,16 @@ pub(crate) enum DomainIntent {
         source_tab_id: u32,
         target_tab_id: u32,
     },
+    /// source 페인(ID·탭·surface·Terminal·scrollback 유지)을 target 페인 자리로 옮긴다.
+    /// 덮어쓴 target 페인은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(dead_code, reason = "only the gui-only tab context menu issues it")
+    )]
+    ReplacePaneWithPane {
+        source_pane_id: u32,
+        target_pane_id: u32,
+    },
 
     SendToSurface {
         surface_id: u32,

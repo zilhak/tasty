@@ -159,6 +159,7 @@ impl ShellConfig {
 pub(crate) enum PendingMove {
     Surface(crate::model::SurfaceId),
     Tab(crate::model::TabId),
+    Pane(crate::model::PaneId),
 }
 
 #[derive(Clone, Debug)]

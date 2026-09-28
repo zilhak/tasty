@@ -96,6 +96,17 @@ impl Workspace {
         removed
     }
 
+    /// pane을 트리에서 떼어 돌려준다. 그 pane이 포커스 대상이었을 때만 남은 pane으로 포커스를 옮긴다.
+    /// 유일한 pane은 뗄 수 없어 None이다.
+    pub fn detach_pane_preserving_focus(&mut self, pane_id: PaneId) -> Option<Pane> {
+        let was_focused = self.focused_pane == pane_id;
+        let detached = self.pane_layout_mut().detach_pane(pane_id)?;
+        if was_focused && let Some(first) = self.pane_layout().first_pane() {
+            self.focused_pane = first.id;
+        }
+        Some(detached)
+    }
+
     /// Create a workspace from a pre-built Pane (for non-terminal surface types).
     pub fn new_with_pane(id: WorkspaceId, name: String, pane: Pane) -> Self {
         let focused_pane = pane.id;

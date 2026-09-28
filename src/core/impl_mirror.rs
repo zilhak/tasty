@@ -422,6 +422,14 @@ impl Core {
                 source_tab_id,
                 target_tab_id,
             )]),
+            DomainIntent::ReplacePaneWithPane {
+                source_pane_id,
+                target_pane_id,
+            } => Ok(vec![Self::apply_replace_pane_with_pane(
+                engine,
+                source_pane_id,
+                target_pane_id,
+            )]),
             DomainIntent::SendToSurface {
                 surface_id,
                 payload,

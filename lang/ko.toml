@@ -691,6 +691,8 @@ move_left = "왼쪽으로 이동"
 move_right = "오른쪽으로 이동"
 move_tab = "탭 이동"
 move_tab_here = "탭을 이곳으로 이동"
+move_pane = "페인 이동"
+move_pane_here = "페인을 이곳으로 이동"
 
 [pane_context_menu]
 new_terminal = "새 터미널"
@@ -926,6 +928,7 @@ cut_files = "파일 잘라냄"
 ctrl_c_ignored_after_paste = "붙여넣기 직후의 Ctrl+C가 무시되었습니다"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "화면 기록 권한이 필요합니다. 시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 기록에서 Tasty 를 켜 주세요."
+pane_cut = "페인을 잘라냈습니다. 옮길 곳의 탭에서 '페인을 이곳으로 이동'을 고르세요."
 surface_cut = "서피스를 잘라냈습니다. 옮길 곳에서 '서피스를 이곳으로 이동'을 고르세요."
 tab_cut = "탭을 잘라냈습니다. 옮길 곳에서 '탭을 이곳으로 이동'을 고르세요."
 vi_copy_blocked_alt_screen = "전체 화면 앱이 실행 중일 때는 복사 모드를 사용할 수 없습니다"

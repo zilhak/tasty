@@ -149,6 +149,50 @@ impl PaneNode {
         }
     }
 
+    /// Detach the leaf `target_id` by promoting its sibling and hand the pane back
+    /// so a move can place it elsewhere. Returns `None` for the root leaf (the only
+    /// pane) and when the pane is not in this tree.
+    pub fn detach_pane(&mut self, target_id: PaneId) -> Option<Pane> {
+        let PaneNode::Split { first, second, .. } = self else {
+            return None;
+        };
+        let first_is_target = matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+        let second_is_target = matches!(second.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+        if !first_is_target && !second_is_target {
+            return first
+                .detach_pane(target_id)
+                .or_else(|| second.detach_pane(target_id));
+        }
+        let placeholder = PaneNode::Leaf(Pane {
+            id: 0,
+            tabs: vec![],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        });
+        let PaneNode::Split { first, second, .. } = std::mem::replace(self, placeholder) else {
+            return None;
+        };
+        let (target, sibling) = if first_is_target {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        *self = *sibling;
+        match *target {
+            PaneNode::Leaf(pane) => Some(pane),
+            PaneNode::Split { .. } => None,
+        }
+    }
+
+    /// Put `pane` in place of the leaf `target_id`, keeping the split shape and
+    /// ratios. Returns the replaced pane, or hands `pane` back when not found.
+    pub fn replace_pane(&mut self, target_id: PaneId, pane: Pane) -> Result<Pane, Pane> {
+        match self.find_pane_mut(target_id) {
+            Some(slot) => Ok(std::mem::replace(slot, pane)),
+            None => Err(pane),
+        }
+    }
+
     /// Return a reference to the first (leftmost/topmost) pane in the tree.
     pub fn first_pane(&self) -> Option<&Pane> {
         match self {

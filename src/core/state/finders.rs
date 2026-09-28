@@ -181,6 +181,15 @@ impl CoreState {
                     .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
                     .or_else(|| ws_of_tab(*target_tab_id))
             }
+            D::ReplacePaneWithPane {
+                source_pane_id,
+                target_pane_id,
+            } => {
+                // 페인 이동도 양쪽 중 하나라도 mirror이면 로컬에서 실행하지 않는다.
+                self.find_workspace_index_for_pane(*source_pane_id)
+                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .or_else(|| self.find_workspace_index_for_pane(*target_pane_id))
+            }
             D::SplitPane {
                 target_pane_id: pid,
                 ..

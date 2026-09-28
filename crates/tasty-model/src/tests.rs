@@ -545,6 +545,83 @@ fn pane_node_close_pane_not_found() {
     assert_eq!(node.all_pane_ids(), vec![1, 2]);
 }
 
+fn empty_pane(id: u32) -> Pane {
+    Pane {
+        id,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    }
+}
+
+#[test]
+fn detach_leaf_returns_pane_and_promotes_sibling() {
+    let mut node = PaneNode::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.5,
+        first: Box::new(PaneNode::Leaf(empty_pane(1))),
+        second: Box::new(PaneNode::Leaf(empty_pane(2))),
+    };
+    let detached = node.detach_pane(1).expect("pane 1 detached");
+    assert_eq!(detached.id, 1);
+    assert!(matches!(&node, PaneNode::Leaf(p) if p.id == 2));
+}
+
+#[test]
+fn detach_nested_leaf_keeps_outer_split() {
+    let mut node = PaneNode::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.3,
+        first: Box::new(PaneNode::Leaf(empty_pane(1))),
+        second: Box::new(PaneNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(empty_pane(2))),
+            second: Box::new(PaneNode::Leaf(empty_pane(3))),
+        }),
+    };
+    assert_eq!(node.detach_pane(3).map(|p| p.id), Some(3));
+    assert_eq!(node.all_pane_ids(), vec![1, 2]);
+    assert!(matches!(node, PaneNode::Split { ratio, .. } if ratio == 0.3));
+}
+
+#[test]
+fn detach_root_leaf_is_refused() {
+    let mut node = PaneNode::Leaf(empty_pane(1));
+    assert!(node.detach_pane(1).is_none());
+    assert!(matches!(&node, PaneNode::Leaf(p) if p.id == 1));
+}
+
+#[test]
+fn detach_missing_pane_leaves_tree_unchanged() {
+    let mut node = PaneNode::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.5,
+        first: Box::new(PaneNode::Leaf(empty_pane(1))),
+        second: Box::new(PaneNode::Leaf(empty_pane(2))),
+    };
+    assert!(node.detach_pane(99).is_none());
+    assert_eq!(node.all_pane_ids(), vec![1, 2]);
+}
+
+#[test]
+fn replace_leaf_keeps_split_ratio() {
+    let mut node = PaneNode::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.3,
+        first: Box::new(PaneNode::Leaf(empty_pane(1))),
+        second: Box::new(PaneNode::Leaf(empty_pane(2))),
+    };
+    let Ok(replaced) = node.replace_pane(2, empty_pane(9)) else {
+        panic!("pane 2 must be replaced");
+    };
+    assert_eq!(replaced.id, 2);
+    assert_eq!(node.all_pane_ids(), vec![1, 9]);
+    assert!(matches!(node, PaneNode::Split { ratio, .. } if ratio == 0.3));
+    let missing = node.replace_pane(42, empty_pane(10));
+    assert!(matches!(missing, Err(p) if p.id == 10));
+}
+
 // ---- SurfaceLayout tests ----
 
 #[test]
