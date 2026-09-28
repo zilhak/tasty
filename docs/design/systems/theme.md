@@ -271,7 +271,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 활성 탭 위치 마커 | 4. 상태 종류를 표시하는 점과 다른 역할. |
 | attached ring | 폭 2 + offset 2. offset은 점 바깥 경계부터 ring 안쪽 경계까지다. |
 
-compact 점과 ring의 전체 폭은 14로 24px chrome 안에 들어간다. Plugins Attention의 7, 색 override·튜토리얼의 5 같은 남은 별도 값은 임의로 맞추지 않는다. 4px 간격 그리드는 점 지름 규칙이 아니다.
+워크스페이스 행의 attached 점은 일반 점 8을 쓰므로 ring까지 포함한 전체 폭이 16이다. 행은 attached 여부와 무관하게 `workspace_dot_slot()` 16 슬롯을 모든 행에 예약하고 점을 슬롯 가운데에 둔다. 왼쪽 inset은 `workspace_row_padding_x()` 8, 슬롯과 본문 사이는 `workspace_dot_gap()` 4라 제목·REMOTE 줄·부제·설명이 카드 끝에서 28에 시작한다. compact 점과 ring의 전체 폭 14는 24px chrome에 맞춘 값이며 현재 소비처가 없다. Plugins Attention의 7, 색 override·튜토리얼의 5 같은 남은 별도 값은 임의로 맞추지 않는다. 4px 간격 그리드는 점 지름 규칙이 아니다.
 
 accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12와 `tint_border_alpha()` 0.36을 사용한다. 승인된 채움만 사용과 테두리만 사용도 같은 값을 쓴다. 다만 별도 역할의 경고 테두리처럼 이 조합이 아닌 값은 사유가 있는 상수다. 같은 숫자라도 역할이 다르면 opacity 토큰으로 바꾸지 않는다.
 
