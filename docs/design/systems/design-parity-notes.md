@@ -197,7 +197,9 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **보조 줄 슬롯**: 보조 줄이 없어도 캡션 한 줄을 예약한다. 예약 높이는 실제 보조 줄과 같은
   `LayoutJob` 경로로 잰 한 줄 galley 높이다. `Fonts::row_height` 는 소수점 아래가 달라
   loading 과 empty 사이에서 글리프가 0.17px 움직였다.
-- **액션 버튼**: 버튼이 있는 블록의 가운데 기준은 원격 `design-request/center-state-followup.md` 로 질의 중이다.
+- **액션 버튼**: 버튼이 있으면 보조 줄 슬롯 아래 `space-sm + space-xs`(12) 간격과 버튼(높이 28)까지
+  한 열로 보고 세로 가운데에 둔다. 화면 시안의 flex 열과 같다. 그래서 버튼이 있는 오류 변형의
+  글리프는 버튼 없는 변형보다 (12 + 28) / 2 = 20 위에 있다.
 - **글리프 선택**: 크기와 색은 위젯이 정하고 어떤 아이콘을 쓸지는 호스트가 정한다. 갤러리
   CenterState specimen 은 시안대로 오류에 `ALERT_CIRCLE` 을 쓰고, 본체 file picker·remote attach
   는 각 화면 시안의 `ALERT_TRIANGLE`, remote attach 초기 상태는 `TERMINAL_PROMPT` 를 유지한다.
