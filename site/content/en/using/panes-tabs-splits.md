@@ -1,4 +1,4 @@
-<!-- source-hash: 6071fb63d726 -->
+<!-- source-hash: 37df4f569954 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -95,6 +95,17 @@ Moves one Pane, with all of its Tabs, to another split position or another Works
 2. Right-click a Tab of the destination Pane > **Move Pane Here**. This item appears only while another Pane is cut.
 
 The destination Pane is closed together with its Tabs, and the moved Pane takes its place at the same size. The neighboring Pane grows to fill the original spot. If the moved Pane was the last Pane of its Workspace, that Workspace closes. Panes in a remote Workspace cannot be moved, and a cut item can only be moved within the same window.
+
+## Spotting what is cut
+
+A cut Surface, Tab or Pane gets a pink dotted border on its inside. A Surface gets it around its own area, a Tab around its title cell, and a Pane around the whole Pane including its tab row. Every other border is a solid line, so the dots set it apart. On a Surface that also has a notification border, the original border shows between the dots.
+
+When the cut item is not on screen, a move icon appears on whatever holds it.
+
+- In a Tab that is not showing: after that Tab's title.
+- In another Workspace: on that Workspace's row in the sidebar. With the sidebar collapsed, at the bottom-left of its avatar.
+
+The mark goes away when the move is done, when you cut something else, or when the cut item is closed. It stays while you switch Tabs or Workspaces, and it does not block clicks.
 
 ## Changing the kind
 

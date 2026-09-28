@@ -23,6 +23,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | `accent-decorative` | `peach` | `#fab387` | 헤더 장식 accent(Plugins 창 헤더 glyph). `accent-attention`(주의 환기)과 값만 같다 |
 | `accent-primary` | `accent_primary()` | `#89b4fa` | primary 버튼·포커스·활성 탭 언더라인 |
 | `accent-danger` | `accent_danger()` | — | |
+| `accent-move` | `pink` | `#f5c2e7` | 이동 대기 대상 표시(`move-source-ring`·`move-source-glyph`). 상태나 알림 종류가 아닌 대기 중 동작 표시라 다른 accent와 겹치지 않는 색을 쓴다. Latte `#ea76cb` |
 | `os-macos-close` | `accent_macos_close()` | `#ec6a5e` | macOS 신호등 close (테마 불변 OS 리터럴, const `OS_MACOS_CLOSE`) |
 | `os-macos-min` | `accent_macos_min()` | `#f4bf4f` | macOS 신호등 minimize (const `OS_MACOS_MIN`) |
 | `os-macos-zoom` | `accent_macos_zoom()` | `#61c554` | macOS 신호등 zoom (const `OS_MACOS_ZOOM`) |

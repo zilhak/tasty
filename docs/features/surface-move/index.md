@@ -3,8 +3,8 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`, 탭 헤더 `탭 이동` → `탭을 이곳으로 이동`, 탭 헤더 `페인 이동` → `페인을 이곳으로 이동`)
 - **ADR**: 없음
-- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 탭·페인 이동 `DomainIntent::ReplaceTabWithTab`/`ReplacePaneWithPane`·`Core::apply_replace_tab_with_tab`/`apply_replace_pane_with_pane` (`src/core/impl_move_container.rs`), `PaneNode::detach_pane`/`replace_pane` (`crates/tasty-model/src/pane_tree.rs`), 결과 `CoreEvent::ContainerMoveApplied` → `SurfaceCloseCascade::from_container_move_applied` (`src/core/structural_cascade.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`
-- **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`/`Tab`)
+- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 탭·페인 이동 `DomainIntent::ReplaceTabWithTab`/`ReplacePaneWithPane`·`Core::apply_replace_tab_with_tab`/`apply_replace_pane_with_pane` (`src/core/impl_move_container.rs`), `PaneNode::detach_pane`/`replace_pane` (`crates/tasty-model/src/pane_tree.rs`), 결과 `CoreEvent::ContainerMoveApplied` → `SurfaceCloseCascade::from_container_move_applied` (`src/core/structural_cascade.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`, 대기 표시 `src/adapters/ui/move_source.rs`(대상 해석)·`tasty_ui_widgets::paint_move_source_ring`/`paint_move_source_glyph`/`paint_move_source_chip`
+- **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`/`Tab`), 대기 대상의 점선 링과 move 글리프([이동 대기 표시](#이동-대기-표시)). 갤러리 Layouts › Move source highlight
 
 ## 목적
 
@@ -16,7 +16,7 @@
 
 - 어떤 surface 든 "빈 공간"(특정 대상이 없는 영역)을 우클릭하면 `[surface 전용 항목] + 구분선 + [서피스 이동] + [서피스를 이곳으로 이동]` OS 메뉴가 뜬다. `서피스를 이곳으로 이동` 은 **대기 슬롯에 surface 가 있을 때만** 나타난다. 대기 중인 것이 없거나 다른 종류면 숨긴다.
 - **서피스 이동**: 그 surface 의 id 를 단일 대기 슬롯 `pending_move` 에 `PendingMove::Surface(id)` 로 넣고, 그 surface 영역(`ToastScope::Surface`)에 "서피스를 잘라냈습니다…" Info 토스트(`toast.surface_cut`)를 띄운다. 도메인 변경이 아니라 UI 핸들러에서 슬롯만 설정 — 사용자 조작이므로 release 경로다.
-- **대기 슬롯**: 종류(`PendingMove::Surface`/`Tab`/`Pane`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 종류와 관계없이 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대기 해제 조작은 없다. `CoreState` 가 윈도우마다 있으므로 슬롯도 윈도우별이며, 윈도우를 넘는 이동은 지원하지 않는다.
+- **대기 슬롯**: 종류(`PendingMove::Surface`/`Tab`/`Pane`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 종류와 관계없이 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대상이 닫혀 어느 워크스페이스에서도 찾을 수 없으면 다음 GUI 프레임에서 비운다(`move_source::clear_if_target_closed`) — 닫힌 대상의 표시와 "이곳으로 이동" 항목이 남지 않는다. 대기 해제 조작은 없다. `CoreState` 가 윈도우마다 있으므로 슬롯도 윈도우별이며, 윈도우를 넘는 이동은 지원하지 않는다.
 - **서피스를 이곳으로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source_surface_id, target_surface_id }` 를 `from_user_context_menu` origin 으로 발행한다.
 - surface 종류에 따라 두 생산 경로가 있다 — 타입은 `PendingNativeMenu::TerminalSurface`(terminal, selection-copy 항목이 있어 별도 variant) / `Surface`(비-terminal)로 나뉘지만, "서피스 이동"/"서피스를 이곳으로 이동" 두 항목은 두 variant 모두에 동일하게 뜬다:
   - **terminal**(winit, `src/view/main/mouse.rs`) — winit 경로는 **terminal 전용**이다. mouse-tracking 위임(ADR-0015) 미해당 시 terminal surface 메뉴를 낸다. 비-terminal 은 winit 이 메뉴를 만들지 않고 egui 프레임에 위임(`return`)한다.
@@ -69,10 +69,25 @@ source 또는 target 워크스페이스가 mirror 면 로컬 실행을 막는다
 
 source 또는 target 워크스페이스가 mirror 면 로컬 실행을 막는다. 원격으로 전달하는 `StructuralOp` 는 없다.
 
+## 이동 대기 표시
+
+슬롯이 가리키는 대상을 화면에서 알아볼 수 있게 한다. 대상은 슬롯의 ID로 모든 워크스페이스에서 찾는다(`move_source::resolve`·`workspace_cue`). 포커스나 활성 탭으로 대상을 고르지 않는다.
+
+- **링**: 대상 rect **안쪽**에 대시 링을 그린다. 2px(`move_source_ring_width` = `focus_ring_width`), 4px 선·4px 간격(`move_source_dash`·`move_source_dash_gap`), 색 `move_source_ring()` = `accent_move()`(pink). 선 전체를 rect 안에 두어 이웃과 공유하는 1px 구분선을 덮지 않는다. 변마다 대시 위상을 새로 시작한다. 정적 표시이며 입력을 받지 않는다.
+- **rect**: 서피스는 서피스 영역, 탭은 탭 칸(오른쪽 구분선 포함), 페인은 탭 바와 콘텐츠를 합친 페인 rect다. 페인 링은 탭 바를 감싸고 서피스 링은 감싸지 않아 세 종류가 구별된다. 탭 링은 활성·비활성·hover 상태와 관계없이 칸 위에 그린다.
+- **보이지 않는 대상**: 대상에서 위로 올라가 처음 보이는 컨테이너 하나에만 move 글리프(`move_source_glyph()`, 12px `move_source_glyph_size`)를 둔다. 텍스트는 없다.
+  - 대상 서피스가 활성 워크스페이스의 비활성 탭 안에 있으면 그 탭 칸의 제목 뒤. 제목이 먼저 줄어든다.
+  - 대상(종류 무관)이 다른 워크스페이스에 있으면 사이드바의 그 워크스페이스 행(이름 뒤, 배지 묶음 앞). 접힌 레일에서는 아바타 왼쪽 아래 12px 칩(`move_source_chip_size`, 글리프 8px `move_source_chip_glyph_size`, 바탕 `bg_sidebar`). 오른쪽 위는 알림 점, 오른쪽 아래는 mirror 칩이 쓴다.
+  - 활성 워크스페이스에 있지만 그 페인이 그려지지 않는 프레임(다른 페인 확대 등)에는 아무것도 그리지 않는다.
+- **겹침**: 링은 대상 rect에서 가장 마지막에 그린다. 서피스·페인 링은 대상 페인의 탭 바 레이어(`tab_bar::pane_tab_bar_layer`, Foreground Area)에 탭 바·점유 테두리 뒤에 그리므로 포커스 배경·점유 오버레이·알림(Middle 레이어)·점유 테두리·활성 탭 표시 위에 온다. 대시가 덮고 간격으로 아래 테두리가 보인다(우선순위 판정 없음). 점유 테두리도 같은 레이어에 그리므로 두 표시 모두 팝업 아래에 남는다.
+- **수명**: 지정하면 나타나고, 이동 실행·다른 대상 지정·대상 닫힘에 사라진다. 포커스·탭·워크스페이스 전환에는 유지한다.
+- **대비**: Latte pink는 밝은 배경에서 약 2.5:1이다. [테마 규칙](../../design/systems/theme.md)의 4.5:1은 텍스트 대비 규칙이며, 링의 의미는 대시 패턴이 전달한다.
+
 ## 비-목표
 
 - 복사(copy)·surface 스냅샷 이동·drag-and-drop UI.
-- 이동 전 확인 다이얼로그. 대기 중인 대상의 시각 피드백은 토스트뿐이다.
+- 이동 전 확인 다이얼로그.
+- 대기 중인 대상을 탐색기의 잘라내기처럼 흐리게 표시하기 — 대상은 대기 중에도 그대로 쓸 수 있고, 흐림은 비포커스 서피스의 흐림과 겹친다. 목적지 후보 표시 — 다른 모든 대상이 후보라 표시할 정보가 없다.
 - 에이전트용 IPC/CLI — 이동 지정/이곳으로 이동은 사용자 우클릭 클립보드형 조작이라 GUI 전용이다([convert-surface](../convert-surface/index.md) 의 사용자 전용 팝업과 같은 원칙). 슬롯 `pending_move` 는 사용자 상태다.
 - plugin 전용 컨텍스트 항목의 실제 선언 — 빈공간 판정 골격까지만. plugin 컨텍스트 메뉴 protocol 은 이 기능의 범위 밖이다 (UiNode DSL 제거로 선언 방식 재설계 필요).
 

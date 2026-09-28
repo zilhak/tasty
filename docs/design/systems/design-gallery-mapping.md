@@ -899,6 +899,19 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
 
+## Move source highlight (Layouts)
+
+디자인 `gallery/layouts-move.jsx`(Layouts › Move source highlight, `#movesource`) ↔ 본체 `src/adapters/ui/{move_source,tab_bar,sidebar/view}.rs` ↔ 갤러리 `catalog/components/move_source.rs`(`movesource` 섹션). 링·글리프·레일 칩은 본체와 갤러리가 같은 `tasty_ui_widgets` painter를 호출한다. 주변 화면(사이드바·탭 바·서피스)은 갤러리가 정적 데이터로 흉내 낸다.
+
+| 디자인 컴포넌트 | 본체 함수 | 갤러리 함수 | 비고 |
+|---|---|---|---|
+| `MoveRing` | `tasty_ui_widgets::paint_move_source_ring` ← `move_source::draw_move_source_ring`(서피스·페인), `tab_bar/view.rs`(탭 칸) | `move_source.rs::paint_surface`·`paint_pane`·`paint_tab` | rect 안쪽 2px 대시 4/4. 대상 rect에서 마지막에 그린다 |
+| `MoveGlyph`(탭 칸) | `tab_bar/tab.rs::paint_move_glyph` → `paint_move_source_glyph` | `move_source.rs::paint_tab`(`cue`) | 제목 뒤 |
+| `MoveGlyph`(워크스페이스 행) | `sidebar/view.rs::paint_move_source_row_glyph` | `move_source.rs::paint_ws_row` | 이름 뒤, 배지 묶음 앞 |
+| `RailAvatar` 칩 | `sidebar/view.rs::draw_collapsed_avatar` → `paint_move_source_chip` | `move_source.rs::off_screen`(4c) | 왼쪽 아래 12px 칩, 글리프 8px |
+
+색·치수는 `move_source_*` component 접근자와 `accent_move()`에서 읽는다([토큰 대응](design-token-mapping.md)). 대상 해석·수명·겹침 규칙은 [이동 기능 문서](../../features/surface-move/index.md#이동-대기-표시)에 있다.
+
 ## Task DAG — surface · canvas · node (Layouts)
 
 디자인 `gallery/dag.jsx` (카탈로그 페이지) + `ui_kits/terminal/overlays/dag_view.jsx`
