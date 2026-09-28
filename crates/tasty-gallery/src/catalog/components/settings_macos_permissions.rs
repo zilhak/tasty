@@ -1,75 +1,110 @@
 //! 설정 › 일반 › 권한 화면의 specimen. macOS 전용 L2 서브탭이다.
 //!
-//! 본체는 `src/view/settings/ui/tabs/macos_permissions.rs`의
-//! `draw_macos_permissions_tab`이다. 이 화면은 디자인 시안 없이 본체와 같은 토큰·위젯으로
-//! 조립했다. 권한 요청 버튼과 진행 표시는 [ADR-0052]로 새로 생긴 요소라 어느 시안에도
-//! 없다. 나중에 시안이 오면 이 specimen이 대조 기준이 된다.
-//!
-//! 콘텐츠 컬럼은 라벨과 상태 두 열로 된 grid(Full Disk Access · 화면 기록 · 파일 폴더,
-//! debug 빌드에서는 손쉬운 사용 한 행 추가), 그 아래 muted 주석, 버튼 행
-//! (primary "Request all permissions", secondary "Open Full Disk Access settings"),
-//! muted 설명 줄로 이루어진다. 갤러리는 본체에 의존하지 않으므로 TCC와 플랫폼에 의존하는
-//! `draw_macos_permissions_tab`을 직접 호출하지 않고 같은 위젯과 토큰으로 같은 화면을
-//! 다시 만든다. settings_remote_transfer도 같은 방식이다.
-//!
-//! 이 specimen의 쓸모는 상태 조합을 한자리에서 볼 수 있다는 점이다. 본체에서는 실제
-//! 장비의 TCC 상태 하나만 보인다. 특히 Full Disk Access의 "Unknown"은 추정에 쓰는 경로가
-//! 하나도 없는 macOS에서만 나와 재현하기 어렵고, 요청 진행 중 화면도 실제 프롬프트를
-//! 띄우지 않고서는 볼 수 없다.
-//!
-//! [ADR-0052]: ../../../../docs/adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md
+//! 본체 `src/view/settings/ui/tabs/macos_permissions.rs`와 같은
+//! `tasty_ui_widgets::mac_permissions`를 호출한다. 본체는 실제 장비의 TCC 상태 하나만
+//! 보여주지만, 여기서는 시안의 A~E 조합을 나란히 둔다. 특히 Full Disk Access의 "Unknown"은
+//! 추정에 쓰는 경로가 하나도 없는 macOS에서만 나오고, 요청 진행 중 화면은 실제 프롬프트를
+//! 띄우지 않고서는 볼 수 없다. 손쉬운 사용 행은 debug 빌드에만 있다(ADR-0012).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{MacPermissionsView, PermRow, PermState, mac_permissions};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-use crate::catalog::widgets::dialog as kit;
 
-/// 디자인의 설정 콘텐츠 컬럼 폭에 맞춘 프레임 크기다. settings_remote_transfer와 같은
-/// 값을 쓴다.
+/// 시안 specimen 카드의 폭(primitive `size-560`). 설정 콘텐츠 컬럼 폭에 대응하는 Theme
+/// 값이 없다. settings_remote_transfer와 같은 값을 쓴다.
 const WIDTH: LogicalPx = LogicalPx(560.0);
 
-/// 각 행에 표시하는 상태. 본체의 `fda_status_text`, `status_text`, 파일 폴더 행에
-/// 대응한다.
+const FDA_HINT: &str =
+    "macOS has no API to report Full Disk Access, so this state is inferred and can be wrong.";
+const FOLDER_HINT: &str =
+    "Checking a folder would itself open a permission prompt, so Tasty does not check.";
+const DETECTION_NOTE: &str = "These states are a snapshot from startup, from opening this page, \
+     and from this window regaining focus. Nothing in Tasty is blocked by them; they only decide \
+     whether the startup notice appears.";
+const REQUEST_NOTE: &str = "Asks for folder access, then screen recording, one prompt at a time. \
+     Items you already allowed or denied are not asked again, and a denied item can only be \
+     restored in System Settings. Full Disk Access cannot be requested by an app: use Open \
+     System Settings in its row and add Tasty yourself.";
+const REQUESTING_NOTE: &str = "Requesting permissions. Answer each prompt as it appears; the next \
+     one shows after you answer.";
+
+/// 시안의 시나리오. (Full Disk Access, 화면 기록, 손쉬운 사용)
 #[derive(Clone, Copy)]
-enum Status {
-    /// 허용됨. accent-success 색을 쓴다.
-    Granted,
-    /// 허용 안 됨. 확실히 허용되지 않은 상태이며 muted 색을 쓴다.
-    Missing,
-    /// 확인 불가. Full Disk Access를 추정할 근거가 없을 때만 나오며 muted 색을 쓴다.
-    Unknown,
-    /// 폴더 접근 권한은 확인하려고 접근하면 권한 요청 대화상자가 뜰 수 있어 자동으로 확인하지 않는다.
-    NotObservable,
+enum Scenario {
+    None,
+    All,
+    FdaUnknown,
+    Requesting,
 }
 
-impl Status {
-    fn text(self, theme: &Theme) -> egui::RichText {
-        let (label, color) = match self {
-            Status::Granted => ("Granted", theme.accent_success().to_egui()),
-            Status::Missing => ("Not granted", theme.text_muted().to_egui()),
-            Status::Unknown => ("Unknown", theme.text_muted().to_egui()),
-            Status::NotObservable => ("Cannot check automatically", theme.text_muted().to_egui()),
-        };
-        egui::RichText::new(label).color(color)
+impl Scenario {
+    fn states(self) -> (PermState, PermState, PermState) {
+        match self {
+            Scenario::None | Scenario::Requesting => {
+                (PermState::Missing, PermState::Missing, PermState::Missing)
+            }
+            Scenario::All => (PermState::Granted, PermState::Granted, PermState::Granted),
+            Scenario::FdaUnknown => (PermState::Unknown, PermState::Granted, PermState::Granted),
+        }
+    }
+}
+
+fn word(state: PermState) -> &'static str {
+    match state {
+        PermState::Granted => "Granted",
+        PermState::Missing => "Not granted",
+        PermState::Unknown => "Unknown",
+        PermState::NotObservable => "Cannot check automatically",
     }
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "Nothing granted yet", |ui| {
-            panel(ui, theme, Status::Missing, Status::Missing, false);
-        });
-        spec::cluster(ui, theme, "All granted", |ui| {
-            panel(ui, theme, Status::Granted, Status::Granted, false);
-        });
-        spec::cluster(ui, theme, "Full Disk Access estimate has no basis", |ui| {
-            panel(ui, theme, Status::Unknown, Status::Granted, false);
-        });
-        spec::cluster(ui, theme, "Requesting", |ui| {
-            panel(ui, theme, Status::Missing, Status::Missing, true);
-        });
+    let latte = crate::host_shell::latte_theme();
+    let cases: [(&str, &str, &Theme, Scenario, bool); 7] = [
+        (
+            "a",
+            "A · nothing granted — Mocha",
+            theme,
+            Scenario::None,
+            false,
+        ),
+        (
+            "a-latte",
+            "A · nothing granted — Latte",
+            &latte,
+            Scenario::None,
+            false,
+        ),
+        ("b", "B · all granted", theme, Scenario::All, false),
+        (
+            "c",
+            "C · FDA unknown, screen granted",
+            theme,
+            Scenario::FdaUnknown,
+            false,
+        ),
+        ("d", "D · requesting", theme, Scenario::Requesting, false),
+        ("e", "E · debug build (4 rows)", theme, Scenario::None, true),
+        (
+            "e-latte",
+            "E · debug build — Latte",
+            &latte,
+            Scenario::All,
+            true,
+        ),
+    ];
+    // 카드 폭 560 두 장이 문서 컬럼에 들어가므로 두 장씩 한 줄에 놓는다.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for pair in cases.chunks(2) {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                for &(key, label, th, scenario, debug) in pair {
+                    spec::cluster(ui, th, label, |ui| pane(ui, th, key, scenario, debug));
+                }
+            });
+        }
     });
 
     spec::meta(
@@ -78,38 +113,58 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("L2 position", "last — macOS only, after Display"),
             (
-                "rows",
-                "Full Disk Access · Screen recording · File folders (+ Accessibility in debug)",
-            ),
-            ("row grid", "label · status · gap 12 / row gap 8"),
-            (
-                "buttons",
-                "Request all (primary) · Open FDA settings (secondary)",
+                "columns",
+                "label (1fr) · status · row action · gap space-lg",
             ),
             (
-                "while requesting",
-                "primary disabled · hint line swaps to progress",
+                "row",
+                "min perm-row-height 32 · pad space-xs · 1px border-default rule",
             ),
             (
-                "status colors",
-                "granted = accent-success · everything else = text-muted",
+                "status",
+                "glyph icon-size-sm 14 + word · gap perm-status-gap 4",
             ),
+            ("FDA action", "Secondary / Sm, in the FDA row"),
+            ("primary", "Request all permissions · Primary / Md"),
+            (
+                "requesting",
+                "button disabled · note line → spinner + text-secondary copy",
+            ),
+            (
+                "notes",
+                "caption 11 · line-height-ui · text-muted · wrap at measure-xl",
+            ),
+            (
+                "narrow",
+                "status + action wrap to the next line, right-aligned",
+            ),
+            ("debug row", "Tag \"debug\""),
         ],
         &[
             TokenChip::new(
-                "accent-success",
-                "granted status",
-                theme.accent_success().to_egui(),
+                "perm-granted-fg",
+                "check",
+                theme.perm_granted_fg().to_egui(),
             ),
             TokenChip::new(
-                "text-muted",
-                "other statuses + notes",
-                theme.text_muted().to_egui(),
+                "perm-missing-fg",
+                "alertCircle",
+                theme.perm_missing_fg().to_egui(),
             ),
             TokenChip::new(
-                "spacing-md",
-                "grid column gap",
-                theme.surface_active().to_egui(),
+                "perm-unknown-fg",
+                "helpCircle",
+                theme.perm_unknown_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "perm-unobservable-fg",
+                "eyeOff",
+                theme.perm_unobservable_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "border-default",
+                "row rules",
+                theme.border_default().to_egui(),
             ),
         ],
     );
@@ -118,80 +173,78 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "This is the only place a permission request starts — Tasty raises no prompts at \
-         boot (ADR-0052). Full Disk Access is absent from the request button because no app \
-         can ask for it; the secondary button sends the user to System Settings instead. The \
-         folder access row cannot show the permission state automatically: checking access \
-         can open a permission prompt.",
+         boot (ADR-0052). Unknown (inference failed) and Cannot check (deliberately not looked \
+         at) share the muted ink but never the glyph; an empty status cell would read as fine.",
     );
 }
 
-/// 화면 한 벌을 그린다. 본체와 같은 순서로 상태 grid, 주석, 버튼 행, 설명 줄을 쌓는다.
-fn panel(ui: &mut egui::Ui, theme: &Theme, fda: Status, screen: Status, requesting: bool) {
-    kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-
-            egui::Grid::new(ui.next_auto_id())
-                .num_columns(2)
-                .spacing([theme.spacing_md.value(), theme.spacing_sm.value()])
-                .show(ui, |ui| {
-                    for (label, status) in [
-                        ("Full Disk Access", fda),
-                        ("Screen recording", screen),
-                        (
-                            "Folder access (Downloads · Documents · Desktop · volumes)",
-                            Status::NotObservable,
-                        ),
-                    ] {
-                        ui.label(label);
-                        ui.label(status.text(theme));
-                        ui.end_row();
-                    }
-                });
-
-            muted(
+/// 시안 specimen 카드 한 장: bg-panel · border-frame · 안쪽 space-lg.
+fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: bool) {
+    let (fda, screen, ax) = scenario.states();
+    let mut rows = vec![
+        PermRow {
+            label: "Full Disk Access",
+            hint: Some(FDA_HINT),
+            detail: None,
+            tag: None,
+            state: fda,
+            state_label: word(fda),
+            action: Some("Open System Settings"),
+        },
+        PermRow {
+            label: "Screen recording",
+            hint: None,
+            detail: None,
+            tag: None,
+            state: screen,
+            state_label: word(screen),
+            action: None,
+        },
+        PermRow {
+            label: "Folder access",
+            hint: Some(FOLDER_HINT),
+            detail: Some("Downloads · Documents · Desktop · volumes"),
+            tag: None,
+            state: PermState::NotObservable,
+            state_label: word(PermState::NotObservable),
+            action: None,
+        },
+    ];
+    if debug {
+        rows.push(PermRow {
+            label: "Accessibility (key injection)",
+            hint: None,
+            detail: None,
+            tag: Some("debug"),
+            state: ax,
+            state_label: word(ax),
+            action: None,
+        });
+    }
+    let pad = theme.spacing_lg;
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_frame().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(pad.value() as i8))
+        .show(ui, |ui| {
+            ui.set_width((WIDTH - pad * 2.0).value());
+            // specimen이라 버튼을 눌러도 요청하거나 시스템 설정을 열지 않는다.
+            mac_permissions(
                 ui,
                 theme,
-                "macOS offers no API to ask whether an app has Full Disk Access, so this state \
-                 is inferred and can be wrong.",
-            );
-
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                // specimen이라 클릭에 반응할 필요가 없다. 실제 요청은 본체가 한다.
-                let _ = Button::new("Request all permissions")
-                    .variant(ButtonVariant::Primary)
-                    .size(ControlSize::Md)
-                    .enabled(!requesting)
-                    .show(ui, theme);
-                // specimen이라 시스템 설정을 열지 않는다. 그 동작은 본체가 한다.
-                let _ = Button::new("Open Full Disk Access settings")
-                    .variant(ButtonVariant::Secondary)
-                    .size(ControlSize::Md)
-                    .show(ui, theme);
-            });
-
-            muted(
-                ui,
-                theme,
-                if requesting {
-                    "Requesting permissions. Answer each prompt as it appears — the next one \
-                     only shows once you answer the previous."
-                } else {
-                    "This requests the file folder and screen recording permissions one at a \
-                     time. Items you already allowed or denied do not prompt again."
+                &MacPermissionsView {
+                    id_salt: egui::Id::new("gallery_mac_permissions").with(key),
+                    rows: &rows,
+                    detection_note: DETECTION_NOTE,
+                    request_label: "Request all permissions",
+                    request_note: REQUEST_NOTE,
+                    requesting_note: REQUESTING_NOTE,
+                    requesting: matches!(scenario, Scenario::Requesting),
                 },
             );
         });
-    });
-}
-
-/// caption 크기에 text-muted 색을 쓰는 설명 줄. settings_remote_transfer의 `row_desc`와
-/// 같은 자리다.
-fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
 }

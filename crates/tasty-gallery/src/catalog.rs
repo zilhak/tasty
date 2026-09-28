@@ -1237,7 +1237,7 @@ pub fn pages() -> Vec<Page> {
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(
-                                "status rows (3 Full Disk Access states) · Request all (primary, disabled while running) · Open FDA settings",
+                                "3-column table · glyph + word states · FDA row action · HelpHints · debug Tag · requesting spinner (A–E, Mocha + Latte)",
                             ),
                             components::settings_macos_permissions::draw,
                         ),

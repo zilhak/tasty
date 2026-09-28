@@ -23,6 +23,7 @@ mod input;
 mod keyboard_cursor;
 mod language_select;
 mod listctrl;
+mod mac_permissions;
 mod menu_item;
 mod multi_select;
 mod path_field;
@@ -65,6 +66,9 @@ pub use info_modal::{
 pub use input::Input;
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
+pub use mac_permissions::{
+    MacPermissionsOutput, MacPermissionsView, PermRow, PermState, mac_permissions,
+};
 pub use menu_item::{MenuItemVariant, menu_item, menu_item_kbd, menu_separator};
 pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
