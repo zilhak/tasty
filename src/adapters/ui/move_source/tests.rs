@@ -203,7 +203,7 @@ fn hidden_pane_in_the_active_workspace_emits_nothing() {
     let (left, _, _) = first_pane(&engine);
     let (right, _) = split_new_pane(&mut engine, left);
     engine.pending_move = Some(PendingMove::Pane(right));
-    // 확대 등으로 right가 그려지지 않는 프레임.
+    // right가 pane_rects에 없는 프레임. 지금은 생기지 않는 방어 경로다.
     let panes = [(left, rect(0.0, 0.0, 400.0, 300.0))];
     assert!(same(resolve(&engine, 0, &panes, BAR), None));
 }

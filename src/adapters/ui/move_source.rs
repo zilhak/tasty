@@ -52,8 +52,9 @@ pub(crate) fn workspace_cue(engine: &CoreState, active_ws: usize) -> Option<usiz
 }
 
 /// 슬롯을 표시할 단서로 바꾼다. `pane_rects`는 활성 워크스페이스에서 지금 보이는 페인이다.
-/// 대상이 다른 워크스페이스에 있거나, 활성 워크스페이스에 있어도 보이는 컨테이너가 없으면
-/// (예: 확대된 다른 페인) None이다.
+/// 대상이 다른 워크스페이스에 있거나 대상 페인이 `pane_rects`에 없으면 None이다.
+/// 활성 워크스페이스의 페인은 모두 `pane_rects`에 있으므로 뒤의 경우는 방어용이다.
+/// 탭 칸이 탭 바 스크롤 밖에 있거나 rect가 링보다 좁아 보이지 않는 경우는 여기서 거르지 않는다.
 pub(crate) fn resolve(
     engine: &CoreState,
     active_ws: usize,
