@@ -54,6 +54,11 @@ const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
         "attach 프로필 연결 방식 식별자(ssh_ref 참조)",
     ),
     (
+        "settings.macos_permissions.debug_tag",
+        &["ko", "ja"],
+        "빌드 종류 식별자(debug 빌드) — ko/ja 문구도 'debug 빌드' 로 부른다",
+    ),
+    (
         "remote_tool.field_passkey",
         &["ko", "ja"],
         "WebAuthn 용어 — 같은 팝업의 탭명(remote_tool.tab_passkeys)도 Passkey 로 통일",
