@@ -187,6 +187,27 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)).
 - **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
 
+## CenterState — 가운데 계산과 시안 밖 요소
+
+- **구조**: 시안 `CenterStateG` 는 글리프·제목·보조 줄의 세 요소를 flex 로 영역 가운데에 둔다.
+  `tasty_ui_widgets::CenterState` 는 세 요소의 높이를 먼저 재고 `center-state-*` 토큰으로 직접
+  배치한다. 블록 높이 상수는 없고, 받은 영역(file picker 본문 · remote attach 우측 pane)에서
+  위아래 `space-md` 안쪽의 가운데에 놓인다. Settings › Misc › Scripts 에는 고정 높이 목록
+  영역이 없으므로 블록 높이에 위아래 `space-md` 를 더한 자연 높이로 그린다.
+- **보조 줄 슬롯**: 보조 줄이 없어도 캡션 한 줄을 예약한다. 예약 높이는 실제 보조 줄과 같은
+  `LayoutJob` 경로로 잰 한 줄 galley 높이다. `Fonts::row_height` 는 소수점 아래가 달라
+  loading 과 empty 사이에서 글리프가 0.17px 움직였다.
+- **액션 버튼**: 시안 CenterState 에는 버튼이 없다. 본체의 Retry·Reconnect 는 위젯 액션으로
+  보조 줄 아래 `space-sm + space-xs`(원격 연결 시안 `RaCenterState` 의 열 간격과 marginTop)에
+  둔다. 버튼은 가운데 계산에서 빼므로 버튼이 있는 오류 상태도 글리프 위치가 다른 변형과 같다.
+  시안 flex 가 버튼까지 포함해 가운데에 둘 때보다 블록이 버튼 높이의 절반만큼 아래에 있다.
+- **글리프 선택**: 크기와 색은 위젯이 정하고 어떤 아이콘을 쓸지는 호스트가 정한다. 갤러리
+  CenterState specimen 은 시안대로 오류에 `ALERT_CIRCLE` 을 쓰고, 본체 file picker·remote attach
+  는 각 화면 시안의 `ALERT_TRIANGLE`, remote attach 초기 상태는 `TERMINAL_PROMPT` 를 유지한다.
+- **굵기와 배율**: 제목은 시안에 굵기 지정이 없어 기본 굵기다. 글리프 크기는 `ui_scale`
+  0.85 / 1 / 1.2 에서 20 / 24 / 29 다. 시안 표기 20.4 / 28.8 과의 차이는 Theme 배율 반올림이다.
+- **근거**: `crates/tasty-ui-widgets/src/center_state.rs`, `crates/tasty-ui-widgets/tests/center_state.rs`.
+
 ## Button variant — egui 엔 CSS variant 없음 → fill/stroke 수동 조합
 
 - **증상**: 디자인 Button 의 primary/ghost 같은 variant 는 CSS 클래스로 갈리는데 egui 엔

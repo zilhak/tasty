@@ -58,7 +58,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 | `RaAttachProfileRow` | `remote_attach/rows.rs`의 `profile_row` (`remote-workspace-attach` spec 좌 pane) | `profile_row` |
 | `RaNewWsRow` | `remote_attach/new_row.rs`의 `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `draw_ws_list` → `new_ws_row` (+ `dot_slot_glyph` / `new_ws_error` / `row_separator`) |
 | `RaRemoteWsRow` | `remote_attach/rows.rs`의 `ws_row` (+ `dot_slot_status`) | `ws_row` |
-| `RaCenterState` | `remote_attach/panes.rs`의 `center_state` (`remote-workspace-attach-states` spec) | `center_state` |
+| `RaCenterState` | `remote_attach/panes.rs`의 `right_pane` → 공용 `CenterState` (`remote-workspace-attach-states` spec) | `draw_right_pane` → 공용 `CenterState` |
 | `RaInUseBadge` | `remote_attach/rows.rs`의 `badge` | `badge` |
 | loaded 렌더 경로(`conn==="loaded"`) | `remote_attach/panes.rs`의 `loaded_pane` (+ `remote_attach/rows.rs`의 `empty_line`) | `draw_right_pane`의 `Loaded` 분기 → `draw_ws_list` |
 | footer `Connect` / `Create & connect` | `remote_attach.rs`의 `footer` | `draw_footer` |
@@ -371,6 +371,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` |
 | `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
+| `gallery/components.jsx` `CenterStateG`(Section `centerstate`) | `CenterState` / `CenterStateVariant` / `CenterStateOutput` (loading·empty·error, 글리프 24 · 제목 · 보조 줄 슬롯 항상 예약, 받은 영역 안 세로 가운데, 선택 액션 버튼) | `prim_center_state` (Components `CenterState — empty · loading · error`) |
 | `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` |
 | `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` |
@@ -619,7 +620,7 @@ markdown 은 Column · Solo · Column · Wrap 네 무대. 화면 전용 고정�
 | `ScriptChangedBadge` | inline | inline | `accent-warning` color-mix(40% border/12% bg) · mono `font-size-micro`(10) + warn glyph 12 |
 | `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono 12 |
 | Add card | inline | (list variant만) | `surface-raised` bg + `border-default` + `radius` · 라벨폭 100 · row `settings-row-min-height` |
-| Empty state | inline | `empty` variant | 중앙 script glyph 26 + "No scripts registered" 14/`text-secondary` + `measure-sm` 프롬프트 |
+| Empty state | `draw_empty` → 공용 `CenterState` | `empty` variant(같은 위젯) | `SCRIPT` 글리프 `center-state-glyph-size`(24) + 제목 body 13 `center-state-title-fg` + 보조 caption `center-state-sub-fg` · `center-state-max-width`(300) 줄바꿈, 자연 높이 |
 
 **전사 스펙 (jsx inline style → LogicalPx / Theme)**:
 - ScriptRow: `align-items:flex-start`, `gap: space-md`(12), `padding: space-sm space-xs`(8/4), 하단 `1px separator`. glyph 16 `text-muted` `margin-top:2`. 중앙 flex1 `min-width:0` col `gap:2`. 우측 `flex:none` `gap: space-sm`(8).
@@ -820,7 +821,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | root=mono, 중간=accent 링크, current=bold 비클릭 |
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
 | `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
-| 로딩/빈폴더/에러(권한·연결끊김) | `center`(state 분기) | Spinner · folderOpen · ALERT_TRIANGLE + Retry/Reconnect |
+| 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · ALERT_TRIANGLE, Retry/Reconnect 는 위젯 액션(블록 아래) |
 | footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
 | footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
 | `FilePickerFrame mode/save/deep` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
