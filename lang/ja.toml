@@ -1161,6 +1161,9 @@ danger = "危険"
 [approval.notification]
 body_fallback = "応答待ちの承認リクエストがあります。"
 
+[file_handler.format]
+svg = "SVG"
+
 [file_handler.picker]
 title = "ファイルハンドラを選択"
 header_title = "次で開く…"

@@ -1,4 +1,4 @@
-<!-- source-hash: b520a68d5337 -->
+<!-- source-hash: 2c8658d8bb51 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -15,7 +15,7 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 | `Alt+'` | Changes the current Surface to another kind ([Changing the kind](panes-tabs-splits.md#changing-the-kind)) |
 | CLI | `tasty new tab --pane 1 --type markdown --file README.md` and so on |
 
-The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` is HTML, and a folder is Explorer. When nothing settles which one opens it, the **Open file with…** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
+The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` and `.svg` are HTML, and a folder is Explorer. When nothing settles which one opens it, the **Open file with…** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
 
 The **Open file with…** window lists the file path, detected format, and available handlers. Each handler has an icon, a name, and its origin (**built-in** · **you** · **plugin**).
 

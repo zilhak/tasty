@@ -14,7 +14,7 @@ URI/경로 입력을 **(1) 형식 식별 → (2) 등록 핸들러 디스패치**
 
 ### 형식 식별 (`FileFormatRegistry`)
 
-DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`). rule 종류 — Cheap(IO 없음): `extension`·`path_glob`·`is_directory`; Deep(8KB head + MIME): `magic`·`mime`·`lua`(sandbox 5.4)·`structure_check`(JSON Schema). Deep 평가는 호출당 head/MIME 를 캐시(IO 1 회). pre-filter 로 디렉토리/파일 대상에 맞는 detector 만 평가. 호스트 default 는 `default-file-format.toml`(html, `$directory`…), markdown/image detector 는 각 plugin 이 contribute.
+DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`). rule 종류 — Cheap(IO 없음): `extension`·`path_glob`·`is_directory`; Deep(8KB head + MIME): `magic`·`mime`·`lua`(sandbox 5.4)·`structure_check`(JSON Schema). Deep 평가는 호출당 head/MIME 를 캐시(IO 1 회). pre-filter 로 디렉토리/파일 대상에 맞는 detector 만 평가. 호스트 default 는 `default-file-format.toml`(html, svg, `$directory`), markdown/image detector 는 각 plugin 이 contribute.
 
 ### 핸들러 디스패치 (`FileHandlerRegistry`)
 

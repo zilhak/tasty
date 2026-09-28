@@ -1161,6 +1161,9 @@ danger = "위험"
 [approval.notification]
 body_fallback = "응답을 기다리는 승인 요청이 있습니다."
 
+[file_handler.format]
+svg = "SVG"
+
 [file_handler.picker]
 title = "파일 핸들러 선택"
 header_title = "다음으로 열기…"

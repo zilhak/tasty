@@ -16,12 +16,12 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 ## 내부 동작
 
 - **surface_kind `html` (webview)** — host 트리엔 `RemoteSurface` marker, 실제 콘텐츠는 네이티브 WebView 오버레이. surface 의 `webview_url()` 로 URL 식별.
-- **파일 핸들러** — `handler` `open_surface{surface_kind:"html"}`. `detector "html"` 은 **host 가 유지**(`default-file-format.toml`) — 플러그인 disable 시에도 확장자 인식이 남도록. HTML 파일 열기 시 이 surface.
+- **파일 핸들러** — `handler` 둘: `viewer`(detector `html`)와 `svg-viewer`(detector `svg`), 둘 다 `open_surface{surface_kind:"html", param_key:"url"}`. `detector "html"`·`detector "svg"` 는 **host 가 유지**(`default-file-format.toml`) — 플러그인 disable 시에도 확장자 인식이 남도록. HTML·SVG 파일 열기 시 이 surface. SVG 는 image 플러그인이 디코드하지 못하므로 WebView 가 렌더하며, `svg` detector 에 붙는 기본 핸들러가 이것 하나라 picker 없이 열린다.
 - **cli** — `tasty html open …`. `html.*` IPC(URL 설정 등 — `webview.set_url`).
 
 ## 인터페이스
 
-- **사용자**: HTML 파일 열기 → html surface(WebView).
+- **사용자**: HTML·SVG 파일 열기 → html surface(WebView).
 - **AI Agent**: `tasty html …` CLI / `html.*` IPC. surface 생성은 [work-area](../../features/work-area/index.md) (`--type html --url …`).
 
 ## 비-목표
@@ -34,6 +34,8 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 - Given html 플러그인 활성 When `tasty new tab --type html --url <u>` Then WebView surface 가 그 URL 을 띄운다.
 - Given HTML 파일 열기 Then html surface 로 뜬다.
 - Given 플러그인 disable Then `html` 확장자 detector 는 host 가 유지한다.
+- Given html 플러그인 활성 When 탐색기에서 `.svg` 파일을 더블클릭 Then 핸들러 선택 창 없이 html surface 새 탭이 열려 SVG 를 렌더한다.
+- Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 
 ## 화면
 
@@ -45,7 +47,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 
 ### 트리거
 
-HTML 파일 열기 또는 `html` surface 생성(`--url`).
+HTML·SVG 파일 열기 또는 `html` surface 생성(`--url`).
 
 ### UI 요소 인벤토리
 

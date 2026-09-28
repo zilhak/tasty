@@ -10,6 +10,14 @@ kind = "extension"
 values = ["html", "htm"]
 
 [[detector]]
+id = "svg"
+display_name_i18n_key = "file_handler.format.svg"
+
+[[detector.rule]]
+kind = "extension"
+values = ["svg"]
+
+[[detector]]
 id = "$directory"
 display_name_i18n_key = "file_handler.format.directory"
 

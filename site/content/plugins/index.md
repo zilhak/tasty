@@ -16,7 +16,7 @@
 |---------|-----|---------|---------|
 | **Markdown Viewer** | `com.tasty.markdown` | `.md` 파일을 렌더해 보여주는 마크다운 서피스. 파일이 바뀌면 자동으로 다시 읽습니다 | 탭 스트립 우클릭 > **새 마크다운...** <!-- en: New Markdown... -->, 탐색기에서 `.md` 열기, `tasty markdown reload` · `recent` |
 | **Image** | `com.tasty.image` | 이미지 뷰어 겸 간단한 그림판. 같은 폴더의 다음 · 이전 이미지로 넘기고 PNG 로 저장합니다 | **새 이미지** <!-- en: New Image -->, 이미지 파일 열기, `tasty image open` · `save` · `export` · `next` · `prev` · `paste` · `list` |
-| **HTML Viewer** | `com.tasty.html` | HTML 파일과 URL 을 내장 웹뷰로 보여주는 서피스 | **새 HTML...** <!-- en: New HTML... -->, `.html` 열기, `tasty html open` |
+| **HTML Viewer** | `com.tasty.html` | HTML·SVG 파일과 URL 을 내장 웹뷰로 보여주는 서피스 | **새 HTML...** <!-- en: New HTML... -->, `.html` · `.svg` 열기, `tasty html open` |
 | **Clipboard Viewer** | `com.tasty.clipboard-viewer` | 지금 클립보드에 든 내용을 텍스트 · 파일 · 이미지 · HTML 로 분류해 보여주는 팝업. 이력은 저장하지 않습니다 | **도구** <!-- en: Tools --> > **클립보드 뷰어** <!-- en: Clipboard Viewer -->, `Ctrl+Shift+H` |
 | **Git Viewer** | `com.tasty.git-viewer` | 현재 디렉터리 저장소의 status · log · diff 를 읽기 전용으로 보여주는 팝업. worktree 가 여러 개면 왼쪽에서 고릅니다 | **도구** > **Git**, 단축키는 직접 지정 |
 | **Claude Code** | `com.tasty.claude` | Claude Code 를 Tasty 안에서 띄우고, 자식 인스턴스를 만들어 메시지를 보내고 완료를 알려 받는 멀티에이전트 명령 | `tasty claude launch` · `spawn` · `tell` … — [Claude · Codex 와 함께 쓰기](../agents/claude-codex.md) |
@@ -96,7 +96,7 @@
 |---------|------|
 | Markdown Viewer | `surface.read` `surface.write` `fs.read` `file_handler.define` `file_handler.handle:markdown` `ui.settings_page` `ui.popup` |
 | Image | `surface.read` `surface.write` `clipboard.read` `fs.read` `fs.write` `file_handler.define` `file_handler.handle:image` |
-| HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `ui.settings_page` |
+| HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `file_handler.handle:svg` `ui.settings_page` |
 | Clipboard Viewer | `clipboard.read` `ui.popup` `ui.tool_item` |
 | Git Viewer | `ui.popup` `ui.tool_item` `fs.read` |
 | Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |

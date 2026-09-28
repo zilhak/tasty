@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.html"
 name = "HTML Viewer"
-version = "0.1.41"
+version = "0.1.42"
 description = "HTML viewer surface. Uses tasty's native WebView overlay toolkit."
 api_version = "1"
 permissions = [
@@ -9,6 +9,7 @@ permissions = [
     "surface.write",
     "file_handler.define",
     "file_handler.handle:html",
+    "file_handler.handle:svg",
     "ui.settings_page",
 ]
 lang_dir = "lang"
@@ -42,6 +43,17 @@ id = "viewer"
 detector = "html"
 priority = 50
 display_name_i18n_key = "file_handler.host.html-viewer"
+[contributes.handler.action]
+kind = "open_surface"
+surface_kind = "html"
+param_key = "url"
+
+# 호스트의 SVG 감지기를 사용한다. 이미지 plugin은 SVG를 디코드하지 못하므로 WebView로 렌더한다.
+[[contributes.handler]]
+id = "svg-viewer"
+detector = "svg"
+priority = 50
+display_name_i18n_key = "file_handler.host.svg-viewer"
 [contributes.handler.action]
 kind = "open_surface"
 surface_kind = "html"

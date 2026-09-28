@@ -14,6 +14,10 @@ html = "HTML"
 "settings.scheme.light" = "라이트"
 "settings.scheme.dark" = "다크"
 
+# 파일 핸들러 표시명 (호스트가 t() 로 해석).
+[file_handler.host]
+"svg-viewer" = "SVG 뷰어"
+
 [settings.subtab]
 html = "HTML"
 

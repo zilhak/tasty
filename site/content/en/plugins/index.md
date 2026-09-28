@@ -1,4 +1,4 @@
-<!-- source-hash: a0b2d7dfa8bc -->
+<!-- source-hash: 6cea8f9a7d2d -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -17,7 +17,7 @@ Features such as the Markdown viewer, the image viewer and the Claude Code integ
 |---------|-----|---------|---------|
 | **Markdown Viewer** | `com.tasty.markdown` | A Markdown Surface that renders `.md` files. Re-reads the file automatically when it changes | Right-click the tab strip > **New Markdown...**, open a `.md` in the explorer, `tasty markdown reload` · `recent` |
 | **Image** | `com.tasty.image` | An image viewer and simple paint tool. Steps to the next · previous image in the same folder and saves as PNG | **New Image**, opening an image file, `tasty image open` · `save` · `export` · `next` · `prev` · `paste` · `list` |
-| **HTML Viewer** | `com.tasty.html` | A Surface that shows HTML files and URLs in an embedded webview | **New HTML...**, opening an `.html`, `tasty html open` |
+| **HTML Viewer** | `com.tasty.html` | A Surface that shows HTML and SVG files and URLs in an embedded webview | **New HTML...**, opening an `.html` or `.svg`, `tasty html open` |
 | **Clipboard Viewer** | `com.tasty.clipboard-viewer` | A popup that shows what is currently on the clipboard, classified as text · file · image · HTML. Keeps no history | **Tools** > **Clipboard Viewer**, `Ctrl+Shift+H` |
 | **Git Viewer** | `com.tasty.git-viewer` | A read-only popup showing the status · log · diff of the repository in the current directory. With several worktrees, pick one on the left | **Tools** > **Git**, keybinding assigned by you |
 | **Claude Code** | `com.tasty.claude` | Multi-agent commands that launch Claude Code inside Tasty, spawn child instances, send them messages and get notified on completion | `tasty claude launch` · `spawn` · `tell` … — [Working with Claude · Codex](../agents/claude-codex.md) |
@@ -97,7 +97,7 @@ Permissions granted to the bundled plugins:
 |---------|------|
 | Markdown Viewer | `surface.read` `surface.write` `fs.read` `file_handler.define` `file_handler.handle:markdown` `ui.settings_page` `ui.popup` |
 | Image | `surface.read` `surface.write` `clipboard.read` `fs.read` `fs.write` `file_handler.define` `file_handler.handle:image` |
-| HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `ui.settings_page` |
+| HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `file_handler.handle:svg` `ui.settings_page` |
 | Clipboard Viewer | `clipboard.read` `ui.popup` `ui.tool_item` |
 | Git Viewer | `ui.popup` `ui.tool_item` `fs.read` |
 | Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
