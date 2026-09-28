@@ -1,4 +1,4 @@
-<!-- source-hash: c96d2989776a -->
+<!-- source-hash: 8585f2a4738e -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -71,8 +71,10 @@ When the layout is restored, the shells of Tabs not visible on screen are not la
 
 Moves a live Surface to another Tab · Pane · Workspace. For a terminal, the running program and the scrollback go with it.
 
-1. Right-click an empty area of the Surface to move > **Cut**.
-2. Right-click an empty area of the destination Surface > **Move Here**.
+1. Right-click an empty area of the Surface to move > **Move Surface**. A notice that the Surface was cut appears briefly over it.
+2. Right-click an empty area of the destination Surface > **Move Surface Here**. This item appears only while a Surface is cut.
+
+Only one cut item is remembered. Cutting something else replaces the earlier one.
 
 The destination Surface is closed and the moved Surface takes its place. Create an empty terminal first and use it as the destination. Over a program that captures the mouse (vim and so on), use `Shift+right-click`.
 

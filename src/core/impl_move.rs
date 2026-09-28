@@ -4,7 +4,7 @@ use super::*;
 
 impl Core {
     /// source를 트리에서 떼어 target 위치에 붙인다. Terminal store는 여기서 지우지 않는다.
-    /// target 정리는 반환된 이벤트의 호출자가 맡는다. 성공하지 않아도 cut 슬롯은 비운다.
+    /// target 정리는 반환된 이벤트의 호출자가 맡는다. 성공하지 않아도 이동 대기 슬롯은 종류와 관계없이 비운다.
     pub(super) fn apply_move_surface(
         engine: &mut crate::core::CoreState,
         source_id: u32,
@@ -12,7 +12,7 @@ impl Core {
     ) -> CoreEvent {
         use crate::core::intent::CascadeLevel;
 
-        engine.pending_move_surface = None;
+        engine.pending_move = None;
 
         let noop = || CoreEvent::MoveSurfaceApplied {
             moved: false,
@@ -369,20 +369,20 @@ mod move_surface_tests {
             engine.terminals.contains(b),
             "apply 직후에는 B의 Terminal store 항목도 남아 있어야 한다"
         );
-        assert!(engine.pending_move_surface.is_none());
+        assert!(engine.pending_move.is_none());
     }
 
     #[test]
     fn move_self_ref_is_noop() {
         let mut engine = test_engine();
         let a = engine.workspaces[0].all_surface_ids()[0];
-        engine.pending_move_surface = Some(a);
+        engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, a);
         assert!(matches!(
             ev,
             CoreEvent::MoveSurfaceApplied { moved: false, .. }
         ));
-        assert!(engine.pending_move_surface.is_none());
+        assert!(engine.pending_move.is_none());
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod move_surface_tests {
         engine
             .terminals
             .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
-        engine.pending_move_surface = Some(a);
+        engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
 
         let ev = Core::apply_move_surface(&mut engine, a, 999_999);
         assert!(matches!(
@@ -401,6 +401,19 @@ mod move_surface_tests {
         ));
         assert!(engine.terminals.contains(a));
         assert!(engine.find_workspace_index_for_surface(a).is_some());
-        assert!(engine.pending_move_surface.is_none());
+        assert!(engine.pending_move.is_none());
+    }
+
+    #[test]
+    fn move_surface_clears_pending_slot_of_any_kind() {
+        let mut engine = test_engine();
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
+        let ev = Core::apply_move_surface(&mut engine, a, a);
+        assert!(matches!(
+            ev,
+            CoreEvent::MoveSurfaceApplied { moved: false, .. }
+        ));
+        assert!(engine.pending_move.is_none());
     }
 }

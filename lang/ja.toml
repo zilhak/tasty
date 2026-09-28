@@ -708,8 +708,8 @@ link_copy = "コピー"
 link_open_with = "プログラムから開く"
 
 [surface_context_menu]
-cut = "切り取り"
-move_here = "ここに移動"
+move = "サーフェスを移動"
+move_here = "サーフェスをここへ移動"
 
 [titlebar]
 minimize = "最小化"
@@ -924,6 +924,7 @@ cut_files = "ファイルを切り取りました"
 ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "画面収録の権限が必要です。システム設定 > プライバシーとセキュリティ > 画面とシステムオーディオの収録で Tasty をオンにしてください。"
+surface_cut = "サーフェスを切り取りました。移動先で「サーフェスをここへ移動」を選んでください。"
 vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
 vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
 vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"

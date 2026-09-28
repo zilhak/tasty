@@ -52,7 +52,7 @@
 | [webhook](webhook/index.md) — 인바운드 웹훅 리스너 (인증 · UTF-8 변환 전 JSON 입력 상한 · HTTP 연결 정리 비용 · 재시작 복원) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers (리스너는 headless) |
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
-| [surface-move](surface-move/index.md) — Surface 위치 이동 (잘라내기/여기로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
+| [surface-move](surface-move/index.md) — Surface 위치 이동 (서피스 이동/서피스를 이곳으로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
 | [explorer](explorer/index.md) — 내장 파일 관리자 surface (탐색/열기/뷰모드) | 로컬 사용자 · AI Agent | host surface |
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (창별 슬롯 파일 `layouts/NN.json`·scrollback) | 로컬 사용자 | 없음 |
 | [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |

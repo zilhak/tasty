@@ -147,6 +147,19 @@ impl ShellConfig {
     }
 }
 
+/// 이동 대기 중인 대상의 종류와 ID. "이곳으로 이동"은 메뉴 대상과 종류가 같을 때만 연다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    all(not(feature = "gui"), not(test)),
+    expect(
+        dead_code,
+        reason = "only the gui-only context menus mark items for moving"
+    )
+)]
+pub(crate) enum PendingMove {
+    Surface(crate::model::SurfaceId),
+}
+
 #[derive(Clone, Debug)]
 #[cfg(feature = "gui")]
 pub struct ExplorerClipboard {
@@ -283,8 +296,8 @@ pub struct CoreState {
     /// 폴링에서 전경 이름이 바뀔 때 올리는 번호. PID나 실제 프로세스 동일성을 판별하는 값은 아니다.
     pub(crate) foreground_generation: std::collections::HashMap<u32, u64>,
 
-    /// 잘라내기 후 이동할 surface ID. 단일 슬롯이며 저장하지 않는다.
-    pub(crate) pending_move_surface: Option<crate::model::SurfaceId>,
+    /// "이동"으로 지정한 대상. 종류와 관계없이 하나만 대기하며 새로 지정하면 덮어쓴다. 저장하지 않는다.
+    pub(crate) pending_move: Option<PendingMove>,
 
     /// Explorer의 파일 복사·잘라내기 목록. OS 텍스트 클립보드와 별개이며 저장하지 않는다.
     #[cfg(feature = "gui")]
@@ -573,7 +586,7 @@ impl CoreState {
             foreground_generation: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             branch_cache: branch::BranchCache::default(),
-            pending_move_surface: None,
+            pending_move: None,
             #[cfg(feature = "gui")]
             explorer_clipboard: None,
             #[cfg(feature = "gui")]

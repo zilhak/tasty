@@ -343,7 +343,7 @@ mod tab_title_tests {
         engine.refresh_tab_osc_title(b);
         assert_eq!(display_name(&engine, pane_id), "TITLE-B");
 
-        engine.pending_move_surface = Some(a);
+        engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, b);
         assert!(matches!(
             ev,

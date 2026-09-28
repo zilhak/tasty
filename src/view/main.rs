@@ -9,6 +9,7 @@ mod fullscreen_window;
 mod keyboard;
 mod link_menu;
 mod mouse;
+mod move_menu;
 mod preset_actions;
 mod redraw;
 pub(crate) mod selection;

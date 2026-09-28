@@ -1,9 +1,9 @@
-# Surface 위치 이동 (잘라내기 / 여기로 이동)
+# Surface 위치 이동 (서피스 이동 / 서피스를 이곳으로 이동)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `잘라내기` → `여기로 이동`)
+- **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`)
 - **ADR**: 없음
-- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 슬롯 `CoreState::pending_move_surface` (`src/core/state.rs`)
+- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`
 - **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`)
 
 ## 목적
@@ -14,10 +14,11 @@
 
 ### 사용자 트리거 (두 단계)
 
-- 어떤 surface 든 "빈 공간"(특정 대상이 없는 영역)을 우클릭하면 `[surface 전용 항목] + 구분선 + [잘라내기] + [여기로 이동]` OS 메뉴가 뜬다. `여기로 이동` 은 **잘라낸 대상이 대기 중일 때만** 나타난다.
-- **잘라내기**: 그 surface 의 id 를 세션 단일 슬롯 `pending_move_surface` 에 마킹한다. 도메인 변경이 아니라 UI 핸들러에서 슬롯만 설정 — 사용자 조작이므로 release 경로다.
-- **여기로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source_surface_id, target_surface_id }` 를 `from_user_context_menu` origin 으로 발행한다.
-- surface 종류에 따라 두 생산 경로가 있다 — 타입은 `PendingNativeMenu::TerminalSurface`(terminal, selection-copy 항목이 있어 별도 variant) / `Surface`(비-terminal)로 나뉘지만, "잘라내기"/"여기로 이동" 두 항목은 두 variant 모두에 동일하게 뜬다:
+- 어떤 surface 든 "빈 공간"(특정 대상이 없는 영역)을 우클릭하면 `[surface 전용 항목] + 구분선 + [서피스 이동] + [서피스를 이곳으로 이동]` OS 메뉴가 뜬다. `서피스를 이곳으로 이동` 은 **대기 슬롯에 surface 가 있을 때만** 나타난다. 대기 중인 것이 없거나 다른 종류면 숨긴다.
+- **서피스 이동**: 그 surface 의 id 를 단일 대기 슬롯 `pending_move` 에 `PendingMove::Surface(id)` 로 넣고, 그 surface 영역(`ToastScope::Surface`)에 "서피스를 잘라냈습니다…" Info 토스트(`toast.surface_cut`)를 띄운다. 도메인 변경이 아니라 UI 핸들러에서 슬롯만 설정 — 사용자 조작이므로 release 경로다.
+- **대기 슬롯**: 종류(`PendingMove`)와 ID 를 함께 담는 슬롯 하나뿐이다. 새로 이동을 지정하면 이전 대기를 덮어쓴다. 저장하지 않으며, 이동 요청을 실행하면(성공 여부와 무관) 비운다. 대기 해제 조작은 없다.
+- **서피스를 이곳으로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source_surface_id, target_surface_id }` 를 `from_user_context_menu` origin 으로 발행한다.
+- surface 종류에 따라 두 생산 경로가 있다 — 타입은 `PendingNativeMenu::TerminalSurface`(terminal, selection-copy 항목이 있어 별도 variant) / `Surface`(비-terminal)로 나뉘지만, "서피스 이동"/"서피스를 이곳으로 이동" 두 항목은 두 variant 모두에 동일하게 뜬다:
   - **terminal**(winit, `src/view/main/mouse.rs`) — winit 경로는 **terminal 전용**이다. mouse-tracking 위임(ADR-0015) 미해당 시 terminal surface 메뉴를 낸다. 비-terminal 은 winit 이 메뉴를 만들지 않고 egui 프레임에 위임(`return`)한다.
   - **비-terminal surface**(explorer/empty/markdown/image/mesh/webview chrome/remote) — **egui 패널 단일 경로**(`emit_surface_menu_fallback`, `src/adapters/ui/egui_panels.rs`)가 release 시점 `secondary_clicked()` 를 패널 논리 rect 와 대조해 surface 를 식별하고 메뉴를 낸다. explorer 는 예외적으로 `apply_explorer_action` 이 위치별 `Explorer`/`ExplorerFavorite` 를 먼저 슬롯에 선점하며, fallback 은 `is_none()` 가드로 이를 존중한다(한 프레임 한 메뉴, 중복 메뉴 없음).
 
@@ -39,8 +40,8 @@
 ## 비-목표
 
 - 복사(copy)·surface 스냅샷 이동·drag-and-drop UI.
-- 잘라내기 시각 피드백(흐림 등) · 이동 전 확인 다이얼로그.
-- 에이전트용 IPC/CLI — 잘라내기/이동은 사용자 우클릭 클립보드형 조작이라 GUI 전용이다([convert-surface](../convert-surface/index.md) 의 사용자 전용 팝업과 같은 원칙). 슬롯 `pending_move_surface` 는 사용자 상태다.
+- 이동 전 확인 다이얼로그. 대기 중인 대상의 시각 피드백은 토스트뿐이다.
+- 에이전트용 IPC/CLI — 이동 지정/이곳으로 이동은 사용자 우클릭 클립보드형 조작이라 GUI 전용이다([convert-surface](../convert-surface/index.md) 의 사용자 전용 팝업과 같은 원칙). 슬롯 `pending_move` 는 사용자 상태다.
 - plugin 전용 컨텍스트 항목의 실제 선언 — 빈공간 판정 골격까지만. plugin 컨텍스트 메뉴 protocol 은 이 기능의 범위 밖이다 (UiNode DSL 제거로 선언 방식 재설계 필요).
 
 ## 관련

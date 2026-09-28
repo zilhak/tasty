@@ -708,8 +708,8 @@ link_copy = "Copy"
 link_open_with = "Open With…"
 
 [surface_context_menu]
-cut = "Cut"
-move_here = "Move Here"
+move = "Move Surface"
+move_here = "Move Surface Here"
 
 [titlebar]
 minimize = "Minimize"
@@ -928,6 +928,7 @@ cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 # 권한이 없는 경우에만 표시한다. 사용자가 캡처를 취소하면 토스트를 띄우지 않는다.
 screen_recording_permission_required = "Screen recording permission is required. Turn Tasty on in System Settings > Privacy & Security > Screen & System Audio Recording."
+surface_cut = "Surface cut. Right-click the destination and choose 'Move Surface Here'."
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
 vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"

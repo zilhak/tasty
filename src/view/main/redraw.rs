@@ -1678,16 +1678,7 @@ impl MainView {
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         ));
         items.push(MenuItem::separator());
-        items.push(MenuItem::new(
-            10,
-            crate::i18n::t("surface_context_menu.cut"),
-        ));
-        if engine.pending_move_surface.is_some() {
-            items.push(MenuItem::new(
-                11,
-                crate::i18n::t("surface_context_menu.move_here"),
-            ));
-        }
+        self.push_surface_move_items(&mut items);
         self.open_native_menu(x, y, &items, move |this, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
             if !this.core_state.has_surface(surface_id) {
@@ -1717,22 +1708,11 @@ impl MainView {
                         tracing::warn!("terminal: open selected path failed: {e}");
                     }
                 }
-                Some(10) => {
-                    // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
-                    this.core_state.pending_move_surface = Some(surface_id);
+                Some(item) => {
+                    // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
+                    this.apply_surface_move_selection(surface_id, item);
                 }
-                Some(11) => {
-                    if let Some(source) = this.core_state.pending_move_surface.take() {
-                        this.state.dispatch_intent(
-                            crate::core::intent::DomainIntent::MoveSurface {
-                                source_surface_id: source,
-                                target_surface_id: surface_id,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                }
-                _ => {}
+                None => {}
             }
         });
     }
@@ -1755,25 +1735,15 @@ impl MainView {
     }
 
     fn handle_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
-        let engine = &mut self.core_state;
         use crate::platform::native_menu::MenuItem;
         // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
-        // 잘라내기 / (대기 있을 때) 여기로 이동.
+        // 서피스 이동 / (서피스가 대기 중일 때) 서피스를 이곳으로 이동.
         let mut items = vec![MenuItem::new(
             1,
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         )];
         items.push(MenuItem::separator());
-        items.push(MenuItem::new(
-            10,
-            crate::i18n::t("surface_context_menu.cut"),
-        ));
-        if engine.pending_move_surface.is_some() {
-            items.push(MenuItem::new(
-                11,
-                crate::i18n::t("surface_context_menu.move_here"),
-            ));
-        }
+        self.push_surface_move_items(&mut items);
         self.open_native_menu(x, y, &items, move |this, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
             if !this.core_state.has_surface(surface_id) {
@@ -1790,21 +1760,11 @@ impl MainView {
                         crate::adapters::ui::ToastScope::Surface(surface_id),
                     );
                 }
-                Some(10) => {
-                    this.core_state.pending_move_surface = Some(surface_id);
+                Some(item) => {
+                    // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
+                    this.apply_surface_move_selection(surface_id, item);
                 }
-                Some(11) => {
-                    if let Some(source) = this.core_state.pending_move_surface.take() {
-                        this.state.dispatch_intent(
-                            crate::core::intent::DomainIntent::MoveSurface {
-                                source_surface_id: source,
-                                target_surface_id: surface_id,
-                            }
-                            .from_user_context_menu(),
-                        );
-                    }
-                }
-                _ => {}
+                None => {}
             }
         });
     }
