@@ -99,8 +99,19 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
 
 - 승인 완료 이벤트나 도구별 승인 식별자가 추가돼 현재 해제 지연을 줄일 수 있을 때.
 - 외부 CLI가 허용하는 승인 모드나 훅 payload를 바꿀 때.
-- Claude Code가 `background_tasks`·`waiting_on_background_work`의 모양이나 의미를 바꾸거나,
-  끝나지 않는 백그라운드 명령 때문에 idle이 오지 않는 사례가 보고될 때.
+- Claude Code가 `background_tasks`·`waiting_on_background_work`의 모양이나 의미를 바꿀 때.
+  이 필드를 검사하는 자동 검사는 없다. 확인하려면 `claude.spawn`의 `profile_file`로 Stop 훅
+  stdin을 파일에 덧붙이는 추적 훅을 붙인 자식에게 백그라운드 서브에이전트나 `run_in_background`
+  셸을 쓰게 하고, 기록된 Stop payload의 필드 이름과 항목의 `status` 값을 대조한다.
+  같은 턴에서 플러그인 로그(`tasty plugin logs com.tasty.claude`)에
+  `claude hook stop s<N>: waiting on background work (… background task(s): …) — main turn continues, stays active`
+  줄이 없거나 `claude hook: background_tasks is not JSON`·`claude hook: background_tasks is not an array`·
+  `claude hook: unreadable waiting_on_background_work` 경고가 나오면 판정 입력이 바뀐 것이다.
+- 끝나지 않는 백그라운드 명령 때문에 idle이 오지 않는 사례가 보고될 때.
+  자동으로 감지하지 않는다. 사례를 확인하려면 해당 자식의 플러그인 로그에서 마지막
+  `waiting on background work` 줄 뒤에 idle을 만드는 Stop이 없는지 보고, `tasty claude children`이
+  그 자식을 계속 `active`로 보고하는지, 대기 노드가 `tasty agent task-list`에서 `running`에
+  머무는지를 함께 본다. 자식 화면에 실행 중인 백그라운드 명령이 남아 있는지도 확인한다.
 - Stop 게이트의 차단 결과를 상태 보고와 연결할 수단이 생길 때.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.
 
