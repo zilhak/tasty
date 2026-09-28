@@ -661,6 +661,9 @@ impl Drop for PlatformWebView {
         // foreign GdkWindow는 GTK 위젯 소유 창이 아니므로 widget destroy 대신 close를 사용한다.
         self.gtk_window.close();
         pump_gtk();
+        // GDK는 자기 연결로 요청을 내고 X 창은 아래에서 winit 연결로 지운다. 서버는 연결 사이의 처리 순서를
+        // 보장하지 않으므로 GDK 연결을 sync해 trap 전에 낸 요청(drop 직전 set_visible(false)의 hide 등)까지 먼저 처리시킨다.
+        self.gdk_window.display().sync();
         // SAFETY: 이 객체가 생성한 X 창을 생성 스레드에서 지운다. GDK의 후속 오류는 위 트랩으로 기록한다.
         unsafe {
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
