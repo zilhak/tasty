@@ -121,6 +121,10 @@ pub const OPACITY_DISABLED: f32 = 0.5;
 /// 와 같은 이유로 순수 비율 f32 상수.
 pub const OPACITY_RECESSED: f32 = 0.4;
 
+/// 진행 중이라 한 단계 물러난 내용의 톤 (`--tasty-opacity-dimmed` = 0.75). 흐려져도
+/// 4.5:1 대비를 유지하는 값이며 재로드 중인 배너 본문이 쓴다.
+pub const OPACITY_DIMMED: f32 = 0.75;
+
 /// Shift만 누를 때 보조 키 안내를 표시하기까지의 지연. 타이핑 중 불필요한 표시를 줄인다.
 /// 다른 보조 키 조합은 기본 지연을 사용한다. 애니메이션 시간이 아니므로 모션 감소 설정과 무관하다.
 /// 대응하는 디자인 토큰이 없어 수동으로 정의한다.
@@ -1503,6 +1507,12 @@ impl Theme {
         OPACITY_RECESSED
     }
 
+    /// 진행 중이라 물러난 내용의 opacity (0.75). `--tasty-opacity-dimmed`.
+    #[inline]
+    pub fn opacity_dimmed(&self) -> f32 {
+        OPACITY_DIMMED
+    }
+
     /// 잘라내기 대기 중인 파일의 아이콘·라벨을 50%로 흐리게 한다. disabled와 같은 계수를 공유한다.
     #[inline]
     pub fn opacity_cut(&self) -> f32 {
@@ -2328,6 +2338,7 @@ mod tests {
         );
         assert_eq!(dark.brand_melon_flesh(), light.brand_melon_flesh());
         assert_eq!(dark.opacity_disabled(), 0.5);
+        assert_eq!(dark.opacity_dimmed(), 0.75);
     }
 
     /// prose / term 폰트는 surface CONTENT 라 UI zoom 미적용 (micro 는 적용).

@@ -804,6 +804,36 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "htmlscript",
+                    "HTML script notice — the first inset banner",
+                    vec![
+                        spec(
+                            "html-script-placement",
+                            "Placement — inset, scoped to one surface",
+                            Some(
+                                "Same shell, margin 8 on all four sides · the WebView rect starts below it · the terminal beside it is untouched",
+                            ),
+                            widgets::html_script_banner::draw_placement,
+                        ),
+                        spec(
+                            "html-script-states",
+                            "Banner states",
+                            Some(
+                                "lock in accent-info · one Secondary/Sm action · reloading swaps the action for a spinner and hides ×",
+                            ),
+                            widgets::html_script_banner::draw_states,
+                        ),
+                        spec(
+                            "html-script-markers",
+                            "After × and after Allow — the tab-strip marker",
+                            Some(
+                                "lock (glyph-dim) re-shows the banner on click · script (text-muted) is tooltip only",
+                            ),
+                            widgets::html_script_banner::draw_markers,
+                        ),
+                    ],
+                ),
+                section(
                     "palette",
                     "Command palette",
                     vec![spec(

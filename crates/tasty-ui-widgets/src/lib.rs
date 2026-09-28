@@ -7,6 +7,7 @@
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
 mod autocomplete;
+mod banner;
 pub mod brand;
 mod button;
 mod chip;
@@ -17,6 +18,7 @@ mod drilldown;
 pub mod file_handler;
 mod help_hint;
 mod horizontal_tab_bar;
+mod html_script_banner;
 mod icon_button;
 mod info_modal;
 mod input;
@@ -47,6 +49,7 @@ mod warning_callout;
 pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };
+pub use banner::{banner_shell, inset_banner_zone, inset_content_rect};
 pub use button::{Button, ButtonVariant};
 pub use chip::{
     BadgeVariant, KbdKey, TagVariant, badge, badge_dot, kbd, kbd_parts, kbd_parts_at,
@@ -57,6 +60,10 @@ pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
+pub use html_script_banner::{
+    HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,
+    html_script_banner, html_script_marker,
+};
 pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
 pub use info_modal::{
     InfoModalButton, InfoModalOutput, InfoModalSpan, InfoModalSpanKind, InfoModalView,

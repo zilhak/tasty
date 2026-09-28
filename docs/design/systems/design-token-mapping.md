@@ -32,6 +32,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | 디자인 토큰 | tasty Theme | 값 | 비고 |
 |---|---|---|---|
 | `opacity-disabled` | `opacity_disabled()` | `0.5` | disabled 컨트롤 공통 디밍. const `OPACITY_DISABLED`. 모든 위젯이 disabled 시 이 값으로 `gamma_multiply` |
+| `opacity-dimmed` | `opacity_dimmed()` | `0.75` | 진행 중이라 물러난 내용(재로드 중인 배너 본문). const `OPACITY_DIMMED`. 흐려져도 4.5:1 대비를 유지한다 |
 | `tint-fill-alpha` | `tint_fill_alpha()` | `0.12` | accent 로 옅게 깐 채움. const `TINT_FILL_ALPHA` |
 | `tint-border-alpha` | `tint_border_alpha()` | `0.36` | 같은 accent 의 테두리. const `TINT_BORDER_ALPHA`. **짝으로 쓰는 것이 기본**이고 승인된 부분 사용 둘(채움만: warning callout·misc/remote/script 배지 · 테두리만: chip remote 태그) |
 

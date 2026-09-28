@@ -5,7 +5,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, kbd, switch,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, banner_shell, kbd,
+    switch,
 };
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -18,32 +19,6 @@ const STACK_FRONT_BANNER_H: LogicalPx = LogicalPx(56.0);
 
 fn dim(color: egui::Color32, opacity: f32) -> egui::Color32 {
     color.gamma_multiply(opacity)
-}
-
-/// 배너 프레임과 안쪽 콘텐츠를 그린다. opacity는 배경·테두리·그림자에 곱한다.
-fn banner_shell(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    opacity: f32,
-    content: impl FnOnce(&mut egui::Ui),
-) {
-    let bg = dim(theme.banner_bg().to_egui(), opacity);
-    let border = dim(theme.banner_border().to_egui(), opacity);
-    let mut shadow = theme.shadow_popover().to_egui();
-    shadow.color = shadow.color.gamma_multiply(opacity);
-    egui::Frame::new()
-        .fill(bg)
-        .stroke(egui::Stroke::new(theme.border_width.value(), border))
-        .corner_radius(theme.corner_radius_lg.value())
-        .shadow(shadow)
-        .inner_margin(egui::Margin::symmetric(
-            theme.spacing_md.value() as i8,
-            theme.spacing_sm.value() as i8,
-        ))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            content(ui);
-        });
 }
 
 /// 인라인 leading 글리프 — `size` 정사각, `color` tint.

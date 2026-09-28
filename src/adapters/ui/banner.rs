@@ -6,7 +6,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, banner_shell};
 
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
@@ -424,37 +424,6 @@ pub struct BannerDrawResult {
     pub layer: egui::LayerId,
 }
 
-/// Theme의 배너 배경·테두리·모서리·그림자로 카드를 그린다.
-/// opacity로 어둡게 표시하며 실제 카드 영역을 반환해 입력 판정에 쓴다.
-fn draw_shell(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    opacity: f32,
-    content: impl FnOnce(&mut egui::Ui),
-) -> egui::Rect {
-    let dim = |c: egui::Color32| c.gamma_multiply(opacity);
-    let mut shadow = theme.shadow_popover().to_egui();
-    shadow.color = shadow.color.gamma_multiply(opacity);
-    egui::Frame::new()
-        .fill(dim(theme.banner_bg().to_egui()))
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            dim(theme.banner_border().to_egui()),
-        ))
-        .corner_radius(theme.corner_radius_lg.value())
-        .shadow(shadow)
-        .inner_margin(egui::Margin::symmetric(
-            theme.spacing_md.value() as i8,
-            theme.spacing_sm.value() as i8,
-        ))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            content(ui);
-        })
-        .response
-        .rect
-}
-
 impl BannerManager {
     /// TTL과 표시·닫기를 처리한다. view_placeholder가 없으면 View 배너는 표시하지 않는다.
     /// more_menu_open_for의 버튼은 hover와 관계없이 강조한다.
@@ -559,7 +528,7 @@ impl BannerManager {
 
                     let mut mesh_content_rect: Option<egui::Rect> = None;
                     let mut child = ui_at(area_ui, slot.zone);
-                    let card_rect = draw_shell(&mut child, theme, opacity, |ui| {
+                    let card_rect = banner_shell(&mut child, theme, opacity, |ui| {
                         if let Some((_, _, height)) = &slot.mesh {
                             // 우측 제어 버튼 영역을 빼고 플러그인 mesh의 합성 영역을 확보한다.
                             let aff = theme.item_height_interactive.value();

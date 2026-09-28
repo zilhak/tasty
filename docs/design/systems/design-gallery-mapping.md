@@ -240,6 +240,8 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 |---|---|---|---|
 | `gallery/layouts.jsx` **Workspace status bar** (하단 24px 바, 좌 요약 / 우 리마인더) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
 | `gallery/overlays.jsx` `NumCap` (16px 숫자 키캡) | `tasty_ui_widgets::paint_num_keycap` (`crates/tasty-ui-widgets/src/chip.rs`; 레이아웃 갈래는 같은 파일의 `num_keycap`) | `src/adapters/ui/switch_overlay.rs::paint_keycap` (slot 좌표·등장 페이드 alpha) | `switch` (Overlays, `components/switch_overlay.rs::keycap_at`) |
+| `gallery/overlays-banners.jsx` `BannerShellG` (배너 셸) | `tasty_ui_widgets::banner_shell` (`crates/tasty-ui-widgets/src/banner.rs`; inset 기하 `inset_banner_zone`·`inset_content_rect`) | `src/adapters/ui/banner.rs::BannerManager::draw` (배치·z-order·디밍·hover) | `banner-*` (Overlays, `widgets/banner.rs`) · `html-script-*` (`widgets/html_script_banner.rs`) |
+| `ui_kits/terminal/overlays/html_script_banner.jsx` `HtmlScriptBanner`·`HtmlScriptMarker` | `tasty_ui_widgets::html_script_banner`·`html_script_marker` (`crates/tasty-ui-widgets/src/html_script_banner.rs`) | 아직 없음(본체 연결은 HTML surface 스크립트 허용 기능에서 한다) | `html-script-*` (Overlays, `widgets/html_script_banner.rs`) |
 
 crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::Area` 와 `LayerId`
 (부유 배치·z-order 는 본체 정책), i18n 라벨·tooltip 문자열(위젯 crate 는 `tasty-i18n`
@@ -472,7 +474,7 @@ immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toas
 
 | 디자인 jsx 함수 | 갤러리 함수 | 비고 |
 |---|---|---|
-| `BannerShellG` | `banner_shell` | surface-raised fill + 1px border-strong + radius-8 + popover shadow, padding 12/8. `opacity`<1 → 전 색 디밍(recessed) |
+| `BannerShellG` | `tasty_ui_widgets::banner_shell`(본체 `BannerManager::draw`도 같은 함수) | surface-raised fill + 1px border-strong + radius-8 + popover shadow, padding 12/8. `opacity`<1 → 전 색 디밍(recessed) |
 | `BannerScope` | `faux_scope` | 탭 스트립(28, 비워둠) + 디밍 콘텐츠 + 배너 존(탭바 아래 8px, 양옆 8px). 배너가 탭바를 덮지 않는 위치 관계 전사 |
 | `MouseCaptureBannerG` (Spec 1) | `draw` | 예시 배너: mouse 글리프 + 제목 + 본문 + `Shift` kbd hint + action 2(Secondary/Ghost). × 는 기본 숨김 |
 | Spec 2 plain/TTL | `draw_dismiss` | plain(× 노출 상태) + TTL(check 글리프 + 우상단 카운트다운 `6`) 두 행을 Column 으로 |
@@ -482,6 +484,28 @@ immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toas
 글리프: mouse/check 는 `crates/tasty-icons` 의 `MOUSE`/`CHECK` 글리프(warn = 기존
 `ALERT_TRIANGLE`, × = 기존 `CLOSE`). 카탈로그 등록은 Overlays 페이지에 `banner`
 Section 1개(6 Spec) — `fullscreen-stage` 다음.
+
+### HTML script notice (inset 배너)
+
+디자인 `gallery/overlays-banners.jsx`의 `#htmlscript` Section(3 Spec)과
+`ui_kits/terminal/overlays/html_script_banner.jsx` ↔ 갤러리
+`crates/tasty-gallery/src/catalog/widgets/html_script_banner.rs` (Overlays › `HTML script notice — the first
+inset banner`, `banner` Section 다음). 배너와 마커는 본체가 호출할 공용 함수를 그대로 쓰고,
+탭 스트립·WebView 자리·터미널 surface만 갤러리가 흉내 낸다.
+
+| 디자인 jsx 함수 | 공용 함수 / 갤러리 함수 | 비고 |
+|---|---|---|
+| `HtmlScriptBanner` | `tasty_ui_widgets::html_script_banner`(`HtmlScriptBannerView`) | 셸 > 행 [lock 글리프 `icon_glyph_size_md` · `html_script_banner_glyph()` \| 제목 `banner_title_font_size` · 본문 `banner_body_font_size` text-muted, 각 2줄 clamp \| Secondary/Sm 액션] + 우상단 닫기 슬롯(top `banner_padding_y`, right `spacing_sm`). 행 gap `banner_gap`, 오른쪽 예약 `icon_button_size_sm + space_sm + space_xs`. reloading은 스피너 `icon_glyph_size_sm` + 라벨이 액션 자리를 대신하고 본문에 `opacity_dimmed()`, 닫기 숨김. narrow는 액션이 본문 왼쪽 가장자리에 맞춰 다음 줄 |
+| `HtmlScriptMarker` | `tasty_ui_widgets::html_script_marker`(`HtmlScriptMarkerKind`) | Blocked = `LOCK` · `html_script_marker_fg()`, 클릭 가능 / Allowed = `SCRIPT`(design `scriptFile`) · `html_script_marker_allowed_fg()`, 툴팁만. 크기 `html_script_marker_size()` |
+| `HtmlSurfaceG` | `html_surface` | 탭 스트립 → `inset_banner_zone` 안의 배너 → `inset_content_rect`의 페이지 자리 |
+| `HsTab` | `tab` | `tab_height` · padding `spacing_sm` · gap `spacing_xs` · caption 라벨 · 활성 bg-panel + 하단 `tab_indicator_width` accent-primary · 오른쪽 separator |
+| `HsPage` | `page_stand_in` | 터미널 focused bg, mono micro 라벨 + surface-raised 막대 3개 |
+| `TermSurfaceG` | `term_surface` | 터미널 unfocused bg, 배너 없음 |
+| Spec 1 · 2 · 3 | `draw_placement` · `draw_states` · `draw_markers` | Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 나란히 그린다 |
+
+제목의 semibold는 egui에 굵기 family가 없어 재현하지 않는다([디자인 정합 지침](design-parity-notes.md)).
+글리프 nudge 1과 제목↔본문 간격 2는 디자인이 primitive `size-1`·`size-2`를 직접 써서 역할 토큰이 없으므로
+위젯의 이름 붙은 상수에 배율만 적용한다. 재로드 커밋 뒤 120ms 페이드는 정적 예제에서 재현하지 않는다.
 
 ## warning-callout (Components)
 

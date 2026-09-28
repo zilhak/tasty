@@ -129,7 +129,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 전시용 프레임·스크롤 위치와 본체를 재현하는 치수를 구별해 해당 선언의 근거를 유지한다.
         // 권한 화면 예제의 콘텐츠 폭 560처럼 예제별 폭에 대응하는 Theme 값은 없다.
         // specimen 폭 360·440과 표 열 140은 새 스케일 값이라 집계되며, 같은 숫자의 토큰과 역할이 다르다.
-        120,
+        // HTML 스크립트 배너 예제의 surface 액자 240·360·120·300과 상태 카드 폭 600은 디자인 Stage 값이며
+        // 대응하는 Theme 접근자가 없다.
+        125,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -138,7 +140,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // FH_TARGET_MONO_ADVANCE는 한 글자를 더할 때 잰 폭 증가분이므로 폰트가 바뀌면 다시 측정한다.
         // 스케일 밖 값은 이 집계에 포함되지 않는다.
         // 권한 화면의 라벨↔부연 간격 2는 디자인 primitive size-2이며 대응하는 Theme 접근자가 없다.
-        16,
+        // HTML 스크립트 배너의 글리프 nudge 1과 제목↔본문 간격 2도 디자인이 primitive size-1·size-2를 직접 쓴다.
+        18,
         "공용 위젯",
     ),
     (
@@ -587,7 +590,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (30, 83, 0, 12),
+        (35, 83, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -703,7 +706,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        (182, 257),
+        (183, 266),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

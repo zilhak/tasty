@@ -50,8 +50,19 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 - 너비: parent 폭 **100% − 좌우 margin**.
 - margin: **상 8px / 좌 8px / 우 8px**, **하단 margin 없음**(`spacing_sm`).
 - border-radius: **8px**(약간 둥근 사각형 패널) — `corner_radius_lg`(= `--tasty-radius-8`, 시스템 기본 4px 의 의도적 2배). 기본 반경과 구분된 토큰을 사용한다.
-- 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`draw_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
+- 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`banner_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
 - 배경 / 보더 / 그림자: **Theme 토큰** — `banner_bg()`(→ `surface_raised`/surface0) 배경 + 1px `banner_border()`(→ `border_strong`) 보더 + `shadow_popover()`(= `--tasty-shadow-popover`) 그림자. 본문 색은 `banner_fg()`(→ text_primary), leading 글리프 기본색은 `banner_icon_fg()`(→ text_muted, 심각도 배너는 override), 카운트다운은 `banner_countdown_fg()`(→ text_muted). 하위 스코프 디밍은 `opacity_recessed()`(0.4), 페이드 모션은 없다(`banner_fade()` 는 생성만 되고 소비처가 없다).
+
+### inset 배치
+
+tasty가 위에 그릴 수 없는 네이티브 레이어(HTML surface의 WebView 등)를 콘텐츠로 가진 스코프는 floating 대신 inset 배치를 쓴다. floating 배너는 네이티브 레이어 아래에 가려지기 때문이다. inset은 일회성 예외가 아니라 배너 시스템의 정식 배치이며, 그 밖의 스코프는 floating이 기본값이다.
+
+- 셸·패딩·닫기 슬롯은 floating과 같다. 같은 `banner_shell`을 쓴다.
+- margin: **상·좌·우 8px(`banner_margin()`) + 하 8px(`banner_inset_gap()`)**. 네 변 모두 margin을 둔다.
+- 콘텐츠 rect가 배너만큼 줄어든다. 네이티브 콘텐츠는 배너 카드 아래 `banner_inset_gap()` 뒤에서 시작하고 배너가 콘텐츠를 덮지 않는다.
+- 배너를 표시하거나 치울 때 콘텐츠 rect는 한 번 바뀐다. rect 변화에 애니메이션을 두지 않는다.
+- 기하는 `tasty_ui_widgets::inset_banner_zone`(배너를 둘 영역)과 `inset_content_rect`(카드 아래 콘텐츠 rect)가 계산한다.
+- 첫 사용처는 HTML surface의 스크립트 차단 안내다. 스코프는 그 surface 하나이며 옆 surface에는 배너가 없다. 배너 view는 `tasty_ui_widgets::html_script_banner`, 닫거나 허용한 뒤 탭 라벨 뒤에 남는 표지는 `html_script_marker`다.
 
 ## 닫기 버튼 / 카운트다운 (우측 상단, 같은 자리)
 
@@ -143,7 +154,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 ## 구조
 
-배너 관리자는 `src/adapters/ui/banner.rs`에 있다. GUI가 없어도 쓰는 `BannerId`·`BannerScope`는 `crates/tasty-model/src/banner_kind.rs`에 둔다([model-view-split](../../dev-guide/model-view-split.md)).
+배너 관리자는 `src/adapters/ui/banner.rs`에 있다. 셸 그리기(`banner_shell`)와 inset 기하는 본체와 갤러리가 함께 쓰도록 `crates/tasty-ui-widgets/src/banner.rs`에 둔다. GUI가 없어도 쓰는 `BannerId`·`BannerScope`는 `crates/tasty-model/src/banner_kind.rs`에 둔다([model-view-split](../../dev-guide/model-view-split.md)).
 
 | 타입 | 역할 |
 |---|---|

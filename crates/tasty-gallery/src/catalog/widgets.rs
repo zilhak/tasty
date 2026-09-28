@@ -4,6 +4,7 @@ pub mod banner;
 pub mod dialog;
 pub mod divider;
 pub mod hint_text;
+pub mod html_script_banner;
 pub mod layout_1depth;
 pub mod layout_2depth;
 pub mod multi_tab_layout;
