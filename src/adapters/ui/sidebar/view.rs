@@ -1188,9 +1188,6 @@ fn draw_rail_category_button(
     resp.clicked().then_some(rect)
 }
 
-/// Collapsed 레일 워크스페이스 아바타 1개 — 머리글자 사각 + 상태 dot/링 + 클릭 action.
-/// 그룹/평면 렌더가 공유한다. `global_idx` 는 반드시 전역 인덱스여야 클릭/switch overlay
-/// 가 올바른 워크스페이스를 가리킨다.
 /// 워크스페이스 행의 move 글리프. 이름 뒤, 배지 묶음 앞에 놓인다.
 fn paint_move_source_row_glyph(ui: &mut egui::Ui, th: &Theme) {
     let size = tasty_ui_widgets::move_source_glyph_size(th);
@@ -1198,6 +1195,9 @@ fn paint_move_source_row_glyph(ui: &mut egui::Ui, th: &Theme) {
     tasty_ui_widgets::paint_move_source_glyph(ui, th, slot);
 }
 
+/// Collapsed 레일 워크스페이스 아바타 1개 — 머리글자 사각 + 상태 dot/링 + 클릭 action.
+/// 그룹/평면 렌더가 공유한다. `global_idx` 는 반드시 전역 인덱스여야 클릭/switch overlay
+/// 가 올바른 워크스페이스를 가리킨다.
 fn draw_collapsed_avatar(
     ui: &mut egui::Ui,
     props: &SidebarCollapsedProps<'_>,
