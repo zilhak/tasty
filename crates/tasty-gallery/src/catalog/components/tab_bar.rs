@@ -325,7 +325,7 @@ fn ink_ladder(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// Mocha·Latte 한 장. 디자인 C4 행의 비율 문구를 그대로 싣는다.
+/// Mocha·Latte 한 장. 디자인 C4 행의 비율 문구(이전 값 포함)를 그대로 싣는다.
 fn scroll_card(ui: &mut egui::Ui, theme: &Theme, name: &str, ratios: &str) {
     egui::Frame::new()
         .fill(egui::Color32::from(theme.bg_app()))
@@ -367,13 +367,13 @@ pub fn draw_scroll_arrows(ui: &mut egui::Ui, theme: &Theme) {
             ui,
             &mocha,
             "Mocha",
-            "C4 · tab-strip scroll — disabled 3.40:1 · enabled 5.65:1",
+            "C4 · tab-strip scroll — disabled 3.40:1 · enabled 5.65:1 (was 4.45 (n800))",
         );
         scroll_card(
             ui,
             &latte,
             "Latte",
-            "C4 · tab-strip scroll — disabled 2.56:1 · enabled 3.65:1",
+            "C4 · tab-strip scroll — disabled 2.56:1 · enabled 3.65:1 (was 2.56 (n800))",
         );
     });
 
@@ -383,14 +383,24 @@ pub fn draw_scroll_arrows(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("A · target", "none — WCAG exempts disabled"),
             ("rule 1 · order", "placeholder < disabled < muted"),
-            ("rule 2 · parity", "Latte text-disabled → neutral-800"),
+            ("rule 2 · parity", "Latte remap n700 → n800"),
             (
-                "enabled arrow",
-                "active control glyph → text-muted (3:1 non-text)",
+                "B · ground",
+                "n/a (no target) — report on the control's own ground",
             ),
-            ("one ink", "labels + glyphs share text-disabled"),
+            ("C · enabled arrow", "in scope → text-muted (3:1 non-text)"),
+            ("one ink", "labels + glyphs, unchanged principle"),
+            (
+                "pixels",
+                "Latte disabled everywhere · both themes' enabled arrow",
+            ),
         ],
         &[
+            TokenChip::new(
+                "text-disabled",
+                "Mocha n700 · Latte n800",
+                theme.text_disabled().into(),
+            ),
             TokenChip::new(
                 "tab-scroll-arrow-fg",
                 "→ text-muted",
@@ -400,11 +410,6 @@ pub fn draw_scroll_arrows(ui: &mut egui::Ui, theme: &Theme) {
                 "tab-scroll-arrow-fg-disabled",
                 "→ text-disabled",
                 theme.tab_scroll_arrow_fg_disabled().into(),
-            ),
-            TokenChip::new(
-                "text-disabled",
-                "Mocha n700 · Latte n800",
-                theme.text_disabled().into(),
             ),
         ],
     );
