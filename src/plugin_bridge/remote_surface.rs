@@ -37,6 +37,8 @@ pub struct RemoteSurface {
     /// 호스트가 보관하는 cwd. 생성 시 선언된 파일 경로나 상속 cwd로 채우고,
     /// surface.set_cwd로 갱신할 수 있다.
     pub cwd: Arc<Mutex<Option<PathBuf>>>,
+    /// 생성 인자의 file. 플러그인 snapshot이 오기 전에도 attach 원문 대상 경로를 알린다.
+    pub initial_file: Option<PathBuf>,
 }
 
 // 필드별로 poison을 처음 한 번 기록한다. 값 하나를 교체하는 락이므로 기존 값을 복구한다.
@@ -76,6 +78,7 @@ impl RemoteSurface {
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
             cwd: Arc::new(Mutex::new(None)),
+            initial_file: None,
         }
     }
 
@@ -94,6 +97,7 @@ impl RemoteSurface {
             webview_owner_took_over: Arc::clone(&self.webview_owner_took_over),
             nav_state: Arc::clone(&self.nav_state),
             cwd: Arc::clone(&self.cwd),
+            initial_file: self.initial_file.clone(),
         }
     }
 
@@ -163,6 +167,16 @@ impl RemoteSurface {
         ) = name;
     }
 
+    /// 생성 인자에서 비어 있지 않은 file을 기억한다.
+    pub fn with_initial_file(mut self, params: &Value) -> Self {
+        self.initial_file = params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .filter(|f| !f.is_empty())
+            .map(PathBuf::from);
+        self
+    }
+
     pub fn cache_snapshot(&self, data: Value) {
         *crate::poison::recover_mutex(
             self.snapshot_cache.lock(),
@@ -228,7 +242,9 @@ impl Surface for RemoteSurface {
         .as_ref()
         .and_then(|v| v.get("file"))
         .and_then(|v| v.as_str())
-        .map(PathBuf::from);
+        .map(PathBuf::from)
+        // 변환 직후 원격 전달은 플러그인 snapshot보다 먼저 나간다.
+        .or_else(|| self.initial_file.clone());
         Some((self.kind_static, self.plugin_id.as_str(), file))
     }
 
@@ -283,6 +299,21 @@ mod tests {
         assert_eq!(s.nav_state(), NavState::Loading);
         s.set_display_name("Browser".into());
         assert_eq!(s.display_name(), "Browser");
+    }
+
+    /// snapshot이 오기 전에는 생성 인자의 file을, 온 뒤에는 snapshot의 file을 알린다.
+    #[test]
+    fn attach_content_file_falls_back_to_the_create_param_until_a_snapshot_arrives() {
+        let s = RemoteSurface::new(1, "markdown", "com.tasty.markdown".into(), "md".into())
+            .with_initial_file(&serde_json::json!({ "file": "/remote/a.md" }));
+        let file = |s: &RemoteSurface| s.attach_content_info().and_then(|(_, _, f)| f);
+        assert_eq!(file(&s), Some(PathBuf::from("/remote/a.md")));
+        s.cache_snapshot(serde_json::json!({ "file": "/remote/b.md" }));
+        assert_eq!(file(&s), Some(PathBuf::from("/remote/b.md")));
+
+        let empty = RemoteSurface::new(2, "markdown", "com.tasty.markdown".into(), "md".into())
+            .with_initial_file(&serde_json::json!({ "file": "" }));
+        assert_eq!(file(&empty), None);
     }
 
     #[test]

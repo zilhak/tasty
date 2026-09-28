@@ -72,7 +72,8 @@ pub fn register_remote_kind(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| kind_static.to_string());
             let surface =
-                RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name);
+                RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name)
+                    .with_initial_file(params);
             // 선언한 파일 경로에서 얻은 cwd를 상속 cwd보다 우선한다.
             // 이 값은 호스트 source_cwd용이며 플러그인에 보내는 cwd는 원래 인자를 유지한다.
             let surface_cwd = crate::core::surface_registry::PresetFieldSpec::derive_cwd(
