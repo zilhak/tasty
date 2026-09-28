@@ -204,7 +204,8 @@ pub(crate) fn telemetry_for_hook(
         "session-start" => {
             state.mark_session_start(surface_id, now_ms);
         }
-        "stop" | "stop-failure" | "subagent-stop" | "session-end" => {
+        // subagent-stop 은 메인 턴의 끝이 아니므로 경과 시간을 닫지 않는다.
+        "stop" | "stop-failure" | "session-end" => {
             if let Some(elapsed) = state.take_wall_time(surface_id, now_ms) {
                 out.push(HostCall::TelemetryRecord {
                     metric: "wall_time_ms",
@@ -316,7 +317,14 @@ pub(crate) fn apply_hook(
                 kind: "completion",
             });
         }
-        "stop" | "subagent-stop" => {
+        "subagent-stop" => {
+            // 서브에이전트가 끝났을 뿐 메인 턴은 이어진다. 상태·완료 알림·화면 알림을 만들지 않는다.
+            // Claude Code 는 내부 에이전트(agent_type 이 빈 값)의 종료도 이 훅으로 보내며, 턴 도중에도 온다.
+            tracing::info!(
+                "claude hook subagent-stop s{surface_id}: subagent finished, main turn continues — state unchanged"
+            );
+        }
+        "stop" => {
             calls.push(HostCall::SetState {
                 surface_id,
                 state: "idle",
@@ -767,25 +775,15 @@ mod tests {
         );
     }
 
+    /// 서브에이전트 종료는 메인 턴의 끝이 아니다. 턴 도중에 와도 자식을 idle 로 만들거나
+    /// 완료 알림(claude-idle)·화면 알림을 내면 spawn/tell 대기 노드가 조기에 끝난다.
     #[test]
-    fn subagent_stop_treated_like_stop() {
+    fn subagent_stop_does_not_mark_the_main_session_idle() {
         let calls = apply_hook("subagent-stop", 7, None, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
-            vec![
-                HostCall::SetState {
-                    surface_id: 7,
-                    state: "idle",
-                },
-                HostCall::FireHook {
-                    surface_id: 7,
-                    event: "claude-idle",
-                },
-                HostCall::SurfaceCompletion {
-                    surface_id: 7,
-                    kind: "completion",
-                },
-            ]
+            Vec::new(),
+            "subagent-stop 은 호스트 호출을 만들지 않는다"
         );
     }
 
@@ -976,15 +974,13 @@ mod tests {
     }
 
     #[test]
-    fn subagent_stop_also_raises_surface_completion_highlight() {
+    fn subagent_stop_raises_no_surface_completion_highlight() {
         let calls = apply_hook("subagent-stop", 7, None, None, None, &test_translator()).unwrap();
-        assert!(calls.iter().any(|c| matches!(
-            c,
-            HostCall::SurfaceCompletion {
-                surface_id: 7,
-                kind: "completion",
-            }
-        )));
+        assert!(
+            !calls
+                .iter()
+                .any(|c| matches!(c, HostCall::SurfaceCompletion { .. }))
+        );
     }
 
     #[test]
@@ -1510,6 +1506,27 @@ mod tests {
         // 두번째 stop 은 start 가 없으므로 발행 안 함.
         let again = telemetry_for_hook(&mut state, "stop", 7, None, 9_000);
         assert!(again.is_empty());
+    }
+
+    /// 서브에이전트 종료가 메인 턴의 경과 시간을 닫으면 뒤의 진짜 stop 이 기록을 잃는다.
+    #[test]
+    fn telemetry_subagent_stop_keeps_the_wall_time_open_for_the_main_stop() {
+        let mut state = ClaudeState::default();
+        telemetry_for_hook(&mut state, "session-start", 7, None, 1_000);
+        let sub = telemetry_for_hook(&mut state, "subagent-stop", 7, None, 3_000);
+        assert!(
+            sub.is_empty(),
+            "subagent-stop 은 wall_time 을 기록하지 않는다"
+        );
+        let stopped = telemetry_for_hook(&mut state, "stop", 7, None, 5_000);
+        assert_eq!(
+            stopped,
+            vec![HostCall::TelemetryRecord {
+                metric: "wall_time_ms",
+                value: 4_000.0,
+                surface_id: 7,
+            }]
+        );
     }
 
     #[test]

@@ -87,13 +87,13 @@ clear 전송 실패는 재시도하지 않는다. 오래된 확인을 나중에 
 |---|---|---|
 | 신규 toast 알림, Windows 절전 복귀 알림 | Completion | 별도 생성 |
 | completion IPC/CLI | 요청 kind; 기본 Completion | 만들지 않음 |
-| Claude stop, subagent-stop, session-end | Completion | 훅별 알림 정책을 따름 |
+| Claude stop, stop-failure, session-end | Completion | 훅별 알림 정책을 따름 |
 | Claude notification(비-idle_prompt), AskUserQuestion pre-tool-use | NeedsInput | 훅별 알림 정책을 따름 |
 | Codex PermissionRequest | NeedsInput | plugin 정책을 따름 |
 | OSC 133 D 명령 종료 | 성공·실패와 관계없이 Completion | 만들지 않음 |
 | 서버 Attention push | 서버 값 그대로 | 만들지 않음 |
 
-Claude prompt-submit·session-start·active·post-tool-use는 새 attention을 만들지 않는다.
+Claude prompt-submit·session-start·active·post-tool-use·subagent-stop은 새 attention을 만들지 않는다.
 Codex PostToolUse·Interrupt도 만들지 않으며 Codex Stop은 현재 Completion attention 대신 완료 알림 경로를 쓴다.
 OSC 133은 셸 통합이 설치된 개별 명령 종료를 뜻한다. 종료 코드는 memory 명령 기록과 CommandCompleted 훅에도 남긴다.
 coalesce된 기존 toast는 신규 attention 발생으로 세지 않는다.

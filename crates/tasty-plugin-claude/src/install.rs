@@ -10,6 +10,7 @@ use tasty_plugin_sdk::i18n::Translator;
 /// UserPromptSubmit은 다음 턴의 상태를 active로 바꾼다.
 /// AskUserQuestion의 전후 훅은 입력 대기와 응답 이후 상태를 구분한다.
 /// StopFailure는 API 오류로 끝난 턴도 상태·알림에 반영하기 위해 등록한다.
+/// SubagentStop은 상태를 바꾸지 않고 로그만 남긴다. 이미 설치된 항목과 호환되도록 등록은 유지한다.
 pub const MANAGED_HOOKS: &[(&str, &str, &str)] = &[
     ("Stop", "stop", ""),
     ("Notification", "notification", ""),

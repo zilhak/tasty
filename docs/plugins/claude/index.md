@@ -237,7 +237,8 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
-| `Stop` / `SubagentStop` | `""`(전체) | `stop` / `subagent-stop` | `idle` | `claude-idle` | — | `completion` |
+| `Stop` | `""`(전체) | `stop` | `idle` | `claude-idle` | — | `completion` |
+| `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set** | `completion` |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `needs_input`(단 `notification_type`이 `idle_prompt`면 건너뜀 — 무입력 대기 오탐이라 실제 질문 없음) | `needs-input`(동일 조건) | — | `needs_input`(동일 조건) |
@@ -267,6 +268,12 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-start`/`active`)과
 `session-end`에서는 지운다. `notify-done`은 meta가 있으면 상태 알림 뒤에 오류 종류를 붙인다.
 
+`SubagentStop`은 서브에이전트가 끝났다는 신호이며 메인 턴의 끝이 아니다. 상태·`claude-idle`·
+`surface.completion`·telemetry `wall_time_ms`를 만들지 않고 로그만 남긴다. Claude Code 2.1.283은
+사용자가 띄운 서브에이전트 외에 `agent_type`이 빈 내부 에이전트의 종료도 이 훅으로 보내며,
+메인 턴 도중에도 보낸다(격리 인스턴스 실측). 이 훅을 idle로 보면 spawn·tell 대기 노드가
+자식 작업 도중 끝난다. 이미 설치된 설정과 호환되도록 등록은 유지한다.
+
 서브에이전트의 `stop-failure`는 메인 턴의 상태·알림·meta를 바꾸지 않고 로그만 남긴다.
 Payload에 `agent_id`가 있는지로 구분한다. 메인 턴은 서브에이전트 실패를 도구 결과로 받고
 계속 진행할 수 있기 때문이다. 이 필드 구분은 Claude Code 2.1.280의 payload 조립부를
@@ -277,7 +284,7 @@ install이 심는 훅은 이 9개뿐이다 — matcher가 지정되지 않은 `P
 install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다. `PreToolUse`/`PostToolUse`처럼 matcher가 있는 이벤트는 marker 일치만으로는 matcher 값까지 보증되지 않으므로, install이 matcher도 canonical 값(`AskUserQuestion`)으로 함께 갱신한다.
 
 이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-stop-failure`/`claude-error`/`claude-error-stalled` 5개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 5개 키로의 hook 등록도 거부된다.
-**이 5개가 전부 위 9개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/SubagentStop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
+**이 5개가 전부 위 9개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
 API 에러로 턴이 **끝나면** `StopFailure`가 구조적 신호를 주지만, 요청이 응답 없이 매달리면 턴이 끝나지 않아 `Stop`도 `StopFailure`도 **발생하지 않는다** — 그때는 PTY에 찍히는 에러 문자열과 출력 정적이 얻을 수 있는 유일한 신호다.
 `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
