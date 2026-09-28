@@ -292,8 +292,11 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
   따라 warn 로그로 남긴다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)).
   markdown.navigate는 큐 등록 직후 `{accepted:true}`를 보내는 예외다. 로컬 surface이면 큐에 넣기 전에
   로컬 파일 존재를 확인하고 없으면 `path not found`로 거절한다. mirror surface의 경로는 원격 파일이므로
-  로컬 존재 검사 없이 큐에 넣고, 파일이 있는지는 원격 서버가 판단한다. mirror surface 대상 변환은
-  원격 경로를 로컬 최근 목록에 기록하지 않는다. 이 응답에는 실행·forward
+  로컬 존재 검사 없이 큐에 넣고, 파일이 있는지는 원격 서버가 판단한다. mirror surface 대상 변환과 mirror pane에
+  여는 새 탭은 원격 경로를 로컬 최근 목록에 기록하지 않는다. 새 탭의 판정 대상은 탭이 만들어질 pane이며
+  Core::apply의 forward 판정(mirror_workspace_index_for_structural)과 같은 기준을 쓴다. 변환 대상 없이 연
+  파일열기 팝업은 요청에 origin을 싣지 않아 처리 시점의 활성 pane에 탭을 만든다. 확정 뒤 식별이 끝나기
+  전에 로컬 workspace로 전환하면 원격 경로가 로컬 pane에 열리고 최근 목록에 기록될 수 있다. 이 응답에는 실행·forward
   결과가 없으며 에이전트의 로컬/원격 실패는 warn 로그로 남는다. markdown 파일열기 팝업의 제자리
   변환은 `owner_popup_instance`를 실어 보내고, host는 file_handler.dispatch와 같은 규칙으로 사용자
   요청인지 판정한다. 사용자 요청의 원격 실패는 attach.toast.mirror_structural_forward_failed로 알린다.

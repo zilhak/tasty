@@ -321,6 +321,96 @@ fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
     );
 }
 
+fn register_recent_probe(engine: &crate::core::CoreState, kind: &str, plugin_id: &str) {
+    let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
+        "kind": kind,
+        "display_name_i18n_key": "surface.kind.markdown",
+        "rendering": "webview",
+        "records_recent": true,
+    }))
+    .expect("probe decl");
+    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+    crate::plugin_bridge::remote_kind::register_remote_kind(
+        &engine.surface_registry,
+        plugin_id,
+        &decl,
+        host_cmd_tx,
+    );
+}
+
+fn new_tab_with_file(
+    core: &mut crate::core::Core,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    kind: &str,
+    file: &str,
+) {
+    crate::intent::tab::handle(
+        core,
+        state,
+        engine,
+        &Intent::NewTab {
+            kind: Some(kind.to_string()),
+            params: serde_json::json!({ "file": file }),
+        }
+        .from_user_menu("test"),
+    );
+}
+
+/// mirror pane에 새 탭을 열면 경로가 원격 파일이라 로컬 최근 목록에 기록하지 않는다.
+#[test]
+fn a_new_tab_in_a_mirror_pane_leaves_no_local_recent_entry() {
+    let (mut core, mut state, mut engine) = fixture();
+    register_recent_probe(&engine, "probe_recent_newtab", "com.x.probe_newtab");
+    engine.workspaces[0].mirror = true;
+
+    new_tab_with_file(
+        &mut core,
+        &mut state,
+        &mut engine,
+        "probe_recent_newtab",
+        "/remote/only.md",
+    );
+    assert_eq!(
+        engine.pending_structural_forward.len(),
+        1,
+        "새 탭 요청을 원격으로 전달한다"
+    );
+    assert_eq!(
+        state.recent_files.get("probe_recent_newtab"),
+        Vec::<String>::new(),
+        "원격 경로는 로컬 최근 목록에 기록하지 않는다"
+    );
+}
+
+/// 로컬 pane의 새 탭은 계속 최근 목록에 기록한다.
+#[test]
+fn a_new_tab_in_a_local_pane_records_the_recent_entry() {
+    let (mut core, mut state, mut engine) = fixture();
+    register_recent_probe(
+        &engine,
+        "probe_recent_newtab_local",
+        "com.x.probe_newtab_local",
+    );
+
+    new_tab_with_file(
+        &mut core,
+        &mut state,
+        &mut engine,
+        "probe_recent_newtab_local",
+        "/local/only.md",
+    );
+    assert!(
+        engine.pending_structural_forward.is_empty(),
+        "로컬 pane은 원격으로 전달하지 않는다"
+    );
+    assert_eq!(
+        state.recent_files.get("probe_recent_newtab_local"),
+        vec!["/local/only.md".to_string()],
+        "로컬 경로는 최근 목록에 기록한다"
+    );
+}
+
 /// Intent 큐를 거치지 않는 IPC 구조 요청에도 silent_failure가 붙어야 한다.
 #[test]
 fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {

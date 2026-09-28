@@ -1,4 +1,4 @@
-<!-- source-hash: ddfa116083be -->
+<!-- source-hash: c4f3365c4e09 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -102,7 +102,7 @@ tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/pro
 - Image Surfaces show their content as well, and clicks and key presses reach the remote.
 - The explorer can only be browsed — renaming, deleting and opening files are blocked.
 - Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — only the refresh button changes color (if the remote Tasty is a headless build, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, and once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file.
-- When you convert a mirror Surface to markdown, the path you type in the **Open Markdown File** popup or pick with **Browse…** opens as a file on the remote computer. A relative path is taken from the remote terminal's current folder. A file opened this way is not added to this computer's recent files list.
+- While you're viewing a mirror, when the **Open Markdown File** popup converts a Surface to markdown or opens a new tab, the path you type in the popup or pick with **Browse…** opens as a file on the remote computer. A relative path is taken from the remote terminal's current folder. A file opened this way is not added to this computer's recent files list.
 - HTML Surfaces appear as empty areas; their content is not shown yet.
 - `--raw` works only at the Surface level.
 - Unless you pass `--no-reconnect`, it automatically tries to reconnect when SSH drops.

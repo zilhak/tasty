@@ -38,13 +38,11 @@ fn new_tab(
         params.clone()
     };
 
-    if engine
+    let records_recent = engine
         .surface_registry
         .get(kind)
-        .is_some_and(|d| d.records_recent)
-    {
-        state.record_recent(kind, &surface_params);
-    }
+        .is_some_and(|d| d.records_recent);
+    let recent_params = records_recent.then(|| surface_params.clone());
 
     let intent = crate::core::intent::DomainIntent::CreateTab {
         pane_id,
@@ -55,6 +53,15 @@ fn new_tab(
         // 에이전트 요청으로 사용자가 보던 탭을 바꾸지 않는다.
         activate: origin.is_user(),
     };
+    // mirror pane의 탭은 원격에 만들어지므로 경로도 원격 파일이다. 로컬 최근 목록에서 다시 열 수 없다.
+    // Core::apply가 forward를 정하는 판정과 같은 기준을 쓴다.
+    if let Some(params) = recent_params
+        && engine
+            .mirror_workspace_index_for_structural(&intent)
+            .is_none()
+    {
+        state.record_recent(kind, &params);
+    }
     match core.apply(engine, intent) {
         Ok(events) => {
             #[cfg(feature = "gui")]

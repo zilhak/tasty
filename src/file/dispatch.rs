@@ -380,6 +380,12 @@ pub(crate) fn open_surface_tab(
                 surface_params: params.clone(),
                 activate: dispatch_origin.selects_result(),
             };
+            // mirror pane에 여는 경로는 원격 파일이다. forward가 성공으로 처리되더라도 기록하지 않도록
+            // Core::apply의 forward 판정과 같은 기준으로 먼저 거른다.
+            let records_recent = records_recent
+                && engine
+                    .mirror_workspace_index_for_structural(&intent)
+                    .is_none();
             if let Err(e) = core.apply(engine, intent) {
                 tracing::warn!(
                     pane_id,
