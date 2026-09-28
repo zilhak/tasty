@@ -14,7 +14,7 @@ URI/경로 입력을 **(1) 형식 식별 → (2) 등록 핸들러 디스패치**
 
 ### 형식 식별 (`FileFormatRegistry`)
 
-DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`). rule 종류 — Cheap(IO 없음): `extension`·`path_glob`·`is_directory`; Deep(8KB head + MIME): `magic`·`mime`·`lua`(sandbox 5.4)·`structure_check`(JSON Schema). Deep 평가는 호출당 head/MIME 를 캐시(IO 1 회). pre-filter 로 디렉토리/파일 대상에 맞는 detector 만 평가. 호스트 default 는 `default-file-format.toml`(html, svg, `$directory`), markdown/image detector 는 각 plugin 이 contribute.
+DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`). 식별 깊이는 셋이다 — Name(파일시스템 접근 없음, 대상을 파일로 보고 `extension`·`path_glob` 만): 원격 대상용; rule 종류 — Cheap(디렉터리 확인 외 IO 없음): `extension`·`path_glob`·`is_directory`; Deep(8KB head + MIME): `magic`·`mime`·`lua`(sandbox 5.4)·`structure_check`(JSON Schema). Deep 평가는 호출당 head/MIME 를 캐시(IO 1 회). pre-filter 로 디렉토리/파일 대상에 맞는 detector 만 평가. 호스트 default 는 `default-file-format.toml`(html, svg, `$directory`), markdown/image detector 는 각 plugin 이 contribute.
 
 ### 핸들러 디스패치 (`FileHandlerRegistry`)
 
@@ -33,6 +33,17 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 | `OpenSurface` | `{param_key: 경로}` | `param_key = "url"` 인 핸들러만 — `{url: 원문}` (html 핸들러 → webview) |
 | `System` | `file://` URI 로 OS opener | 원문 그대로 OS opener |
 | `Ipc` | plugin 에 `{"path": 경로}` | 받지 않음 |
+
+### 원격(mirror) 대상
+
+`origin_surface_id` 가 mirror workspace 의 surface 이면 경로는 원격 호스트의 파일이다. 입구는 mirror explorer 의 더블클릭과 mirror origin 을 준 `file_handler.dispatch` 다.
+
+- 식별은 요청한 깊이와 관계없이 Name 으로 한다. client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다. 확장자·파일명으로 정해지지 않는 형식은 매칭되지 않는다.
+- 매칭 핸들러를 우선순위 순서로 보고, `OpenSurface` 이면서 그 kind 와 client 에 등록한 plugin 쌍이 원문 전달·mesh mirror 허용 목록에 있는 첫 핸들러를 실행한다. 현재 markdown(`com.tasty.markdown`)과 허용된 egui-mesh kind 가 해당한다. html 은 mirror 에서 placeholder 라 제외한다.
+- 실행한 `CreateTab` 은 원격 `StructuralOp::NewTab` 으로 forward 된다. 이 forward 는 실패가 아니며 `file_dispatch CreateTab failed` 경고를 남기지 않는다. 사용자 요청은 원격·client 양쪽에서 새 탭을 선택하고, 에이전트 요청의 원격 실패는 warn 로그로만 남는다.
+- 실행할 핸들러가 없으면(`System`·`Ipc` 뿐, 허용되지 않은 kind, 매칭 없음) 로컬 핸들러 전체 picker 를 띄우지 않는다. 사용자 요청이면 `explorer.state.remote_open_unsupported` toast, 에이전트 요청이면 warn 로그로 끝난다.
+- 원격 경로는 로컬 최근 목록에 기록하지 않는다.
+- 터미널 링크(`open_remote_placeholder_picker`)와 파일 선택 창(원격 경로 복사)은 아직 이 경로를 쓰지 않아 탐색기와 다르게 동작한다. 판정은 `file::dispatch::remote` 한 곳에 있어 두 진입점이 재사용할 수 있다. 근거 [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md).
 
 ### Contribution 머지 + 부팅 자동 등록
 

@@ -1213,3 +1213,73 @@ fn the_user_entry_is_seen_the_same_after_boot_and_after_a_reload() {
     reg.set_user_detector_disabled(&id, true);
     assert_eq!(seen(&reg), (true, vec![plugin]));
 }
+
+/// Name 식별은 로컬 파일시스템을 읽지 않는다. 같은 경로의 로컬 디렉터리·파일이 결과를 바꾸면 안 된다.
+#[test]
+fn identify_name_ignores_the_local_file_system() {
+    let reg = FileFormatRegistry::new();
+    install_host_with_markdown(&reg);
+    let markdown = Some(DetectorId("markdown".into()));
+    let dir = tempfile::tempdir().unwrap();
+
+    let missing = FileTarget::new(dir.path().join("missing").join("doc.md"));
+    assert_eq!(reg.identify(&missing, DetectDepth::Name), markdown);
+
+    // 같은 이름의 로컬 디렉터리가 있어도 파일로 판정한다. Cheap은 디렉터리로 본다.
+    let local_dir = dir.path().join("doc.md");
+    std::fs::create_dir(&local_dir).unwrap();
+    let as_dir = FileTarget::new(local_dir);
+    assert_ne!(reg.identify(&as_dir, DetectDepth::Cheap), markdown);
+    assert_eq!(reg.identify(&as_dir, DetectDepth::Name), markdown);
+
+    // 내용이 다른 로컬 파일도 읽지 않는다.
+    let local_file = dir.path().join("other.md");
+    std::fs::write(&local_file, [0x89, 0x50, 0x4E, 0x47]).unwrap();
+    assert_eq!(
+        reg.identify(&FileTarget::new(local_file), DetectDepth::Name),
+        markdown
+    );
+}
+
+/// Name 식별은 path glob을 보지만 magic처럼 내용을 읽어야 하는 규칙은 평가하지 않는다.
+#[test]
+fn identify_name_matches_path_globs_but_not_content_rules() {
+    let reg = FileFormatRegistry::new();
+    let user_toml = r#"
+            [[detector]]
+            id = "png"
+            [[detector.rule]]
+            kind = "magic"
+            offset = 0
+            bytes_hex = "89504E470D0A1A0A"
+        "#;
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("file-handlers.toml");
+    std::fs::write(&cfg, user_toml).unwrap();
+    reg.install_user_config(&cfg);
+    reg.install_plugin_detectors(
+        "com.example.docker",
+        &[DetectorDecl {
+            id: "dockerfile".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: None,
+            rule: vec![DetectorRuleDecl::PathGlob {
+                pattern: "Dockerfile".into(),
+            }],
+        }],
+    );
+
+    let img_path = dir.path().join("masquerade.dat");
+    std::fs::write(&img_path, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).unwrap();
+    let img = FileTarget::new(img_path);
+    assert_eq!(
+        reg.identify(&img, DetectDepth::Deep),
+        Some(DetectorId("png".into()))
+    );
+    assert_eq!(reg.identify(&img, DetectDepth::Name), None);
+    assert_eq!(
+        reg.identify(&target("/remote/Dockerfile"), DetectDepth::Name),
+        Some(DetectorId("dockerfile".into())),
+    );
+}

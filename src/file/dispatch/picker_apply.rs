@@ -21,6 +21,20 @@ pub(crate) fn apply_identify_result(
         tracing::warn!("{message}");
         return;
     }
+    if let Some(sid) = origin_surface_id
+        && engine.is_mirror_surface(sid)
+    {
+        crate::file::dispatch::remote::apply_remote_identify_result(
+            core,
+            state,
+            engine,
+            target,
+            detector,
+            sid,
+            dispatch_origin,
+        );
+        return;
+    }
     let handlers = match &detector {
         Some(d) => engine.file_handler.handlers_for(d),
         None => Vec::new(),
@@ -117,7 +131,7 @@ fn selected_handler_id(result: FileHandlerPickerResult) -> Option<crate::file::h
 mod origin_tests;
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::sync::{Arc, Mutex};
 
     use std::path::PathBuf;
@@ -126,7 +140,7 @@ mod tests {
     use crate::core::builder::CoreBuilder;
 
     /// 직접 쓰지 않는 port도 Core 생성에 필요하므로 검사 대역을 주입한다.
-    pub(super) fn build_test_core() -> (Core, CoreState) {
+    pub(in crate::file::dispatch) fn build_test_core() -> (Core, CoreState) {
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,

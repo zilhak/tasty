@@ -835,7 +835,7 @@ no_permission = "権限がありません"
 loading = "読み込み中…"
 error_conn_timeout = "リモートホストが時間内に応答しませんでした。"
 remote_listing_truncated = "リモートフォルダーの項目が多すぎるため、一覧の一部だけを表示しています。"
-remote_open_unsupported = "リモートファイルを開く機能はまだサポートされていません。"
+remote_open_unsupported = "この形式のリモートファイルはまだ開けません。"
 remote_write_unsupported = "ミラーされたリモートエクスプローラーではこの操作をまだサポートしていません。"
 
 [script.confirm]

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용 + browse-only)
+- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용, 파일 변경 미지원, 더블클릭은 원격 탭 열기)
 - **코드**: surface kind 등록 `register_explorer` (`src/core/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
 - **화면**: 호스트 내장 egui surface
 
@@ -76,13 +76,22 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 ### mirror(attach) explorer 의 browse-only 강제
 
-ADR-0022의 탐색 전용 규칙(rename/delete/새 폴더 만들기 등은 미지원)는 파일 더블클릭 열기(`OpenFile`)뿐 아니라 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
+ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 만들기 등)을 아직 지원하지 않으며, 이 제한은 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
 
 - **컨텍스트 메뉴에서부터 숨김**: 붙여넣기/잘라내기/이름 변경/휴지통으로 이동/시스템에서 열기/새 탭으로 열기 항목이 `build_explorer_context_menu`(즐겨찾기 행은 `handle_explorer_favorite_native_menu`)에서 아예 노출되지 않는다. copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 그대로 노출된다.
 - **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
 - **rename 팝업의 `path.exists()` 게이트**(`draw_rename_popup`, `src/adapters/ui/dialog.rs`)는 위 가드가 먼저 막기 때문에 mirror 경로에서는 도달하지 않는다 — 이 게이트는 로컬(비-mirror) 시나리오에서 대상이 그 사이 사라진 경우를 위한 안전장치로만 남는다.
 - **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
 - **새 탭으로 열기가 차단되는 이유**: `AppState::add_kind_tab_by_owner`(`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 mirror 구조 변경을 원격으로 forward하는 `forward_mirror_structural` 을 거치지 않고 로컬 pane을 직접 변경한다. mirror 트리 동기화(`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격 authoritative 트리 기준 전체 재구성이므로, 이렇게 로컬에서만 생긴 탭은 원격 트리에 없어 다음 구조 델타 수신 시 제거된다 — 사용자가 연 탭이 다음 동기화 때 사라질 수 있다. 이 기능을 지원하려면 소유 surface를 기준으로 `StructuralOp::NewTab`을 원격에 전달해야 한다.
+
+### mirror explorer 의 파일 열기
+
+mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파일의 탭을 만든다.
+
+- 식별은 파일 이름만 본다(`DetectDepth::Name` — 확장자·path glob). client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다.
+- 매칭 핸들러 중 `open_surface` 이면서 client 가 그 kind 의 콘텐츠를 mirror 하는 것(현재 markdown, 허용된 egui-mesh kind)만 실행한다. 선택한 핸들러의 `CreateTab` 은 원격 `StructuralOp::NewTab` 으로 forward 되고 사용자 origin 으로 표시돼 원격과 client 양쪽에서 새 탭이 선택된다.
+- 그 밖의 경우(`system`·`ipc` 핸들러, html 처럼 placeholder 로 보이는 kind, 매칭 없음)에는 로컬 fallback picker 를 띄우지 않고 `explorer.state.remote_open_unsupported` toast 로 안내한다.
+- 원격 경로는 로컬 최근 목록에 기록하지 않는다. 규칙 전체는 [파일 핸들러](../file-handler/index.md) 의 원격 대상 절을 따른다.
 
 ### 즐겨찾기 (favorites)
 

@@ -835,7 +835,7 @@ no_permission = "권한 없음"
 loading = "불러오는 중…"
 error_conn_timeout = "원격 호스트가 제시간에 응답하지 않았습니다."
 remote_listing_truncated = "원격 폴더에 항목이 너무 많아 목록의 일부만 표시합니다."
-remote_open_unsupported = "원격 파일 열기는 아직 지원하지 않습니다."
+remote_open_unsupported = "이 형식의 원격 파일은 아직 열 수 없습니다."
 remote_write_unsupported = "미러링된 원격 탐색기에서는 이 작업을 아직 지원하지 않습니다."
 
 [script.confirm]

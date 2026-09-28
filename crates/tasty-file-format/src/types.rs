@@ -163,6 +163,9 @@ pub enum DetectDepth {
     Cheap,
     /// + magic bytes + MIME + Lua/structure-check.
     Deep,
+    /// 파일시스템을 읽지 않는다. 대상을 파일로 보고 확장자·path glob만 확인한다.
+    /// 원격 파일처럼 로컬 경로로 해석하면 안 되는 대상에 사용하며, 파일 여부는 호출자가 보장한다.
+    Name,
 }
 
 #[cfg(test)]

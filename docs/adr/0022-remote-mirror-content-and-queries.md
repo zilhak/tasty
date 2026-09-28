@@ -9,6 +9,8 @@
 
 원격 mirror는 실제 PTY와 파일을 소유하지 않는다. 화면 크기나 파일 내용을 로컬에서 임의로 확정하면 서버와 화면이 달라진다.
 
+원격 attach는 로컬 workspace와 같은 기능을 제공하는 것을 목표로 한다. 작업량 때문에 기능별로 단계적으로 추가하고 있다. 아래에서 mirror가 아직 제공하지 않는 기능은 하지 않기로 한 선택이 아니라 아직 구현하지 않은 단계다.
+
 ## Decision
 
 mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize한 뒤 보낸 Resize로 확정한다. client는 미리 grid를 바꾸지 않는다. 서버의 일반 창 resize는 hard 점유 surface를 건너뛴다. resize 규칙은 Core::resize_all_terminals 한 곳에서 처리한다.
@@ -19,7 +21,11 @@ mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize�
 
 원격 Git 조회는 tasty-git-core의 데이터 타입과 조회 로직을 host와 plugin이 공유한다. git_viewer.query는 request_id를 먼저 반환하고 응답은 해당 plugin에 event로 전달한 뒤 repaint를 요청한다. 서버는 surface ID로 실제 원격 cwd를 찾는다. 원격 경로를 로컬 파일 경로로 해석하지 않는다.
 
-원격 explorer는 파일 피커의 list_dir 요청을 재사용한다. 디렉토리 탐색만 지원하고 파일 변경·더블클릭 내용 열기는 제공하지 않는다. 각 view가 경로별 대기 요청과 캐시를 관리한다. 파일 피커의 단일 요청 상태를 여러 explorer가 공유하거나 host에 중복 registry를 만들지 않는다.
+원격 explorer는 파일 피커의 list_dir 요청을 재사용한다. 각 view가 경로별 대기 요청과 캐시를 관리한다. 파일 피커의 단일 요청 상태를 여러 explorer가 공유하거나 host에 중복 registry를 만들지 않는다.
+
+원격 explorer의 파일 더블클릭은 client가 판정하고 결과만 원격에 보낸다. 식별은 `DetectDepth::Name`으로 파일 이름의 확장자·path glob만 본다. 디렉터리 확인을 포함해 client 파일시스템을 읽지 않으며, 파일 여부는 원격 목록이 알려 준 값을 믿는다. 매칭 핸들러 중 `OpenSurface`이면서 그 kind와 client 등록 plugin 쌍이 원문 전달(`is_attach_content_allowed`)이나 mesh mirror(`is_egui_mesh_allowed`) 허용 목록에 있는 첫 핸들러만 실행한다. 실행은 기존 구조 변경 forward(`CreateTab` → `StructuralOp::NewTab`)를 사용자 origin으로 표시해 보낸다. 서버의 markdown plugin이 서버 파일을 읽고, client는 기존 markdown mirror로 원문을 받는다. System·Ipc 핸들러, placeholder로 보이는 kind(html), 매칭 없음은 로컬 fallback picker 없이 끝난다. 사용자 요청이면 안내 toast를, 에이전트 요청이면 warn 로그를 남긴다. 원격 경로는 로컬 최근 목록에 기록하지 않는다. mirror origin을 가진 `file_handler.dispatch`도 같은 규칙을 따른다. 파일 변경(이름 변경·삭제·붙여넣기)은 아직 제공하지 않는다. 터미널 링크와 파일 선택 창의 원격 경로는 이 경로를 쓰지 않는다.
+
+이 선택은 2026-09-28에 바뀌었다. 처음(2026-09-24)에는 원격 explorer가 디렉터리 탐색만 지원하고 파일 변경·더블클릭 내용 열기를 제공하지 않았다. 당시에는 list_dir 외의 원격 파일 소비자가 없었고, 로컬 식별·핸들러를 원격 경로에 적용하면 client 파일을 잘못 읽는 문제가 있었다. 사용자가 내용 열기를 요구했고, 이름만 보는 식별과 허용 kind 필터로 그 문제를 막을 수 있어 열기를 추가했다. 새 권한은 필요하지 않다. 원격 탭 생성은 점유 holder가 보내는 기존 구조 변경 경로이며 원문 조회도 기존 점유 인가를 따른다.
 
 markdown mirror는 HTML·픽셀 대신 원문 문자열을 전달하고 client plugin이 자신의 테마로 렌더한다. handshake에는 전용 markdown role과 표시용 원격 경로만 넣고 원문은 surface ID로 따로 요청한다. 모델은 후보를 모으고 host가 kind/plugin 허용 목록을 검증한다. html은 임의 URL일 수 있어 같은 원문 조회에 포함하지 않는다.
 
@@ -65,13 +71,15 @@ Git 핸들 자체를 직렬화할 수 없으므로 조회 결과 데이터만 �
 
 서버 HTML은 크기가 크고 client 테마와 recent 상태를 반영하지 않는다. markdown을 mesh로 되돌리면 현재 WebView 렌더 구조를 다시 바꿔야 한다. 임시 로컬 파일로 받으면 원격 경로·감시·recent를 잘못 해석하고 파일 수명 정책도 필요하다. 자동 원문 갱신은 사용자의 읽던 위치를 바꿀 수 있다.
 
+원격 explorer의 파일 열기에서 DispatchFile 자체를 원격에 보내 서버가 식별·실행하게 하면 서버 detector와 파일을 써서 식별은 더 정확하다. 하지만 headless 서버는 file_handler.dispatch를 지원하지 않고(`-32017`), 매칭이 없을 때의 picker가 서버 화면에 떠 원격 사용자의 조작이 로컬 사용자의 화면을 바꾼다. client의 Deep 식별이나 `Cheap`을 쓰면 같은 경로의 client 파일·디렉터리를 읽는다.
+
 mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비terminal에는 저장할 수 없다. PathBuf와 bool을 나누면 bool을 무시한 사용이 가능하다. 소비자별 질문이나 OSC 7만 사용하면 같은 비동기 조회를 반복하거나 OSC 7 없는 셸을 놓친다.
 
 ## Reconsideration Triggers
 
 고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 화면 크기 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 가져오기 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
 
-비-Tasty 호스트나 매우 큰 파일에서 native 전송이 불리하면 다른 프로토콜을 비교한다. bulk 인가·수명이 attach와 어긋나면 결속 방식을 검토한다. Git soft timeout·잘림 안내·동시 popup 격리 요구가 생기면 요청 상태를 보강한다. list_dir 소비자가 늘거나 파일 변경·내용 열기 요구가 생기면 라우팅과 권한을 함께 검토한다.
+비-Tasty 호스트나 매우 큰 파일에서 native 전송이 불리하면 다른 프로토콜을 비교한다. bulk 인가·수명이 attach와 어긋나면 결속 방식을 검토한다. Git soft timeout·잘림 안내·동시 popup 격리 요구가 생기면 요청 상태를 보강한다. list_dir 소비자가 늘거나 파일 변경 요구가 생기면 라우팅과 권한을 함께 검토한다. 터미널 링크나 파일 선택 창도 원격 열기로 확장할 때, `OpenSurface` 외 action(System·Ipc)을 원격에서 실행해야 할 때, 확장자로 정할 수 없는 형식 때문에 원격 Deep 식별이 필요해질 때 원격 파일 열기 판정 위치를 다시 검토한다.
 
 다른 kind에 원문 전달을 확장하거나 markdown이 mesh 후보로도 들어오면 역할 분류를 검토한다. 원격 상대 자산·편집 요구는 별도 전송·쓰기 정책이 필요하다. 예산에 자주 걸리면 프레임 상한만 높이지 말고 청크 전달을 검토한다.
 

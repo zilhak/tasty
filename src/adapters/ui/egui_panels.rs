@@ -339,15 +339,7 @@ pub(crate) fn apply_explorer_action(
     use crate::explorer_ui::ExplorerAction as A;
     match &act {
         A::OpenFile(path) => {
-            // 원격 탐색기는 목록 조회만 지원하므로 파일 열기는 안내로 대신한다.
-            if engine.is_mirror_surface(sid) {
-                state.toasts.push(
-                    crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
-                    crate::adapters::ui::ToastKind::Info,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-                return;
-            }
+            // mirror 탐색기의 경로는 원격 파일이다. 식별과 핸들러 선택은 file::dispatch::remote가 맡는다.
             state.dispatch_intent(
                 crate::core::intent::DomainIntent::DispatchFile {
                     target: crate::file::format::FileTarget::new(path.clone()),
@@ -668,5 +660,41 @@ fn draw_occupied_overlays(
 
     if let Some(sid) = pending_force_detach {
         engine.release_occupancy(sid);
+    }
+}
+
+#[cfg(test)]
+mod explorer_open_tests {
+    /// 탐색기 더블클릭은 mirror 여부와 관계없이 origin surface를 실은 사용자 파일 dispatch가 된다.
+    #[test]
+    fn an_explorer_open_dispatches_the_file_with_its_origin_on_both_sides() {
+        for mirror in [false, true] {
+            let (mut state, mut engine) = crate::state::tests::test_state();
+            engine.workspaces[0].mirror = mirror;
+            let sid = engine.workspaces[0].all_surface_ids()[0];
+            super::apply_explorer_action(
+                &mut state,
+                &mut engine,
+                sid,
+                crate::explorer_ui::ExplorerAction::OpenFile("/some/doc.md".into()),
+            );
+            assert_eq!(state.toasts.len(), 0, "mirror={mirror}");
+            let intents = state.take_pending_intents();
+            assert_eq!(intents.len(), 1, "mirror={mirror}");
+            let crate::intent::Intent::Domain(crate::core::intent::DomainIntent::DispatchFile {
+                origin_surface_id,
+                dispatch_origin,
+                ..
+            }) = &intents[0].body
+            else {
+                panic!("expected DispatchFile, got {:?}", intents[0].body);
+            };
+            assert_eq!(*origin_surface_id, Some(sid));
+            assert_eq!(
+                *dispatch_origin,
+                crate::file::dispatch::FileDispatchOrigin::User
+            );
+            assert!(intents[0].origin.is_user());
+        }
     }
 }

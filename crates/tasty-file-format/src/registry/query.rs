@@ -50,6 +50,7 @@ impl FileFormatRegistry {
 
     /// 매칭 detector를 반환하며 없으면 None이다. Cheap은 파일 내용 없이 판정하고,
     /// Deep은 magic·MIME·Lua·구조 검증도 수행하며 DeepCtx로 head/MIME을 재사용한다.
+    /// Name은 디렉터리 확인도 하지 않고 파일로 간주해 확장자·path glob만 본다.
     /// 파일 확장자의 후보는 우선순위 표와 설치 순서로 고른다. 후보가 없으면 나머지 규칙을 순회한다.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
         // URL은 DispatchTarget::Url에서 처리한다. 마지막 경로의 확장자를 로컬 파일로 오인하지 않는다.
@@ -58,7 +59,10 @@ impl FileFormatRegistry {
         }
         self.ensure_finalized();
         let inner = self.lock_read();
-        let is_dir = target.is_directory();
+        let is_dir = match depth {
+            DetectDepth::Name => false,
+            DetectDepth::Cheap | DetectDepth::Deep => target.is_directory(),
+        };
 
         // 확장자 fast path — 파일에만 적용. 디렉토리는 IsDirectory pre-filter 로 처리.
         if !is_dir
@@ -70,8 +74,9 @@ impl FileFormatRegistry {
 
         let mut deep_ctx = match depth {
             DetectDepth::Deep => Some(DeepCtx::new()),
-            DetectDepth::Cheap => None,
+            DetectDepth::Cheap | DetectDepth::Name => None,
         };
+        let name_only = depth == DetectDepth::Name;
 
         // 파일마다 매칭 인덱스를 한 번 구하고 아래 규칙들이 공유한다.
         let matched_globs = target
@@ -99,6 +104,11 @@ impl FileFormatRegistry {
                     DetectorRuleKind::PathGlob { pattern } => {
                         inner.path_globs.pattern_matched(pattern, &matched_globs)
                     }
+                    // 확장자는 문자열만 비교한다. 나머지 규칙은 파일을 읽어야 해 평가하지 않는다.
+                    DetectorRuleKind::Extension { .. } if name_only => {
+                        evaluate_cheap(&rule.kind, target)
+                    }
+                    _ if name_only => false,
                     _ => match deep_ctx.as_mut() {
                         Some(ctx) => evaluate_deep(&rule.kind, target, ctx),
                         None => evaluate_cheap(&rule.kind, target),

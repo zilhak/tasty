@@ -47,7 +47,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 | terminal | 화면 스냅샷과 이후 출력 전달 | 입력은 점유 client만 보낸다 |
 | 허용된 bundled egui-mesh(image/mesh_demo) | mesh 프레임 전달 | 입력 역방향 전달은 headless 서버에서만 지원한다. GUI 서버에서는 콘텐츠만 보인다 |
 | markdown | 원문을 받아 client의 markdown plugin이 자체 테마·설정으로 렌더 | 원격 상대경로 이미지·링크는 client에 파일이 없어 깨질 수 있다. 주소창으로 다른 파일을 열 수 없다 |
-| explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색 | 파일 내용 열기·수정은 지원하지 않는다 |
+| explorer | `list_dir_request` / `list_dir_result`로 디렉토리 탐색. 파일 더블클릭은 원격에 새 탭으로 연다 | 원격에서 콘텐츠를 mirror하는 kind(markdown 등)만 열 수 있다. 파일 수정은 아직 지원하지 않는다 |
 | 나머지(예: html) | placeholder | 콘텐츠 mirror 미지원 |
 
 **mesh**는 GUI·headless 서버 모두에서 프레임을 전달한다. GUI 서버에서는 로컬 redraw가
@@ -58,6 +58,11 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 `ExplorerViewStore`가 surface별 요청과 캐시를 관리한다. 파일 피커와 같은 인가 규칙을
 사용한다. 붙여넣기·잘라내기·이름 변경·삭제·시스템에서 열기·새 탭·즐겨찾기 추가는
 메뉴에서 숨기거나 실행 시 차단한다([탐색기 제한](../explorer/index.md#mirrorattach-explorer-의-browse-only-강제)).
+파일 더블클릭은 client가 파일 이름만으로 식별하고, `open_surface` 핸들러 중 client에서 콘텐츠를
+mirror하는 kind만 원격 새 탭으로 forward한다. 사용자 origin이라 원격과 client 모두 새 탭을
+선택한다. 원격에 그 kind가 없어 실패하면 아래 실패 회신 규칙대로 toast가 뜬다. 그 밖의 형식은
+`explorer.state.remote_open_unsupported` 안내로 끝난다([파일 핸들러](../file-handler/index.md)).
+터미널 링크와 파일 선택 창의 원격 경로는 아직 이 경로를 쓰지 않는다.
 
 **markdown**은 핸드셰이크에서 원격 경로와 탭 제목을 받고 필요한 때 원문을 요청한다.
 client에 번들 plugin이 아직 등록되지 않았으면 placeholder를 유지하다 등록 후 채운다.
@@ -370,6 +375,8 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 ## Acceptance Criteria
 
 - Given 동일 머신 두 인스턴스 When 한쪽이 다른 쪽 surface 를 attach Then mirror grid 가 원본과 일치한다(`--dump-after` 로 검증).
+- Given mirror workspace 의 explorer When 사용자가 `.md` 파일을 더블클릭 Then 원격에 그 파일의 markdown 탭이 생겨 양쪽에서 선택되고, client 는 원격 원문을 그린다. client 파일시스템과 로컬 최근 목록은 쓰이지 않는다(`file::dispatch::remote` 테스트).
+- Given mirror workspace 의 explorer When 원격에 열 수 있는 `open_surface` 핸들러가 없는 파일을 더블클릭 Then 로컬 picker·System·Ipc 핸들러 없이 안내 toast 만 뜬다.
 - Given mirror 워크스페이스의 surface When 원격에 등록되지 않은 kind 로 convert 가 forward 돼 원격에서 실패 Then 회신 사유는 원격이 낸 `unknown surface kind: <kind>` 그대로이고, 대상 surface 가 있는데 "not found" 로 오지 않는다(`core::attach_runtime` 의 `forward_convert_unknown_kind_reports_the_remote_reason`).
 - Given surface 가 이미 점유됨 When 다른 client 가 attach 시도 Then holder 정보를 담아 거부된다.
 - Given 점유된 surface When 서버측 GUI 키/`surface.send` Then 입력이 차단되고 client 입력만 도달한다.
