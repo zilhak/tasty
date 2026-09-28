@@ -233,7 +233,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
-`session_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`waiting_on_background_work` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 뒤의 두 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`와 이 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
