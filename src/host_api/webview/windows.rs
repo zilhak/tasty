@@ -36,6 +36,14 @@ pub struct PlatformWebView {
     parent_hwnd: HWND,
 }
 
+/// 종료 신호가 게이트가 시작한 마지막 로드의 것인지. ID를 알 수 없는 쪽이 있으면 현재 로드로 본다.
+fn is_current_load(current: Option<u64>, ended: Option<u64>) -> bool {
+    match (current, ended) {
+        (Some(c), Some(e)) => c == e,
+        _ => true,
+    }
+}
+
 fn set_js(webview: &ICoreWebView2, enabled: bool) {
     // SAFETY: webview/settings는 호출 동안 valid, main thread 호출.
     unsafe {
@@ -222,6 +230,11 @@ impl PlatformWebView {
             let nav_start = nav_state.clone();
             let pending_nav = pending_navigations.clone();
             let gate_start = script_gate.clone();
+            // 게이트가 시작한 마지막 로드의 NavigationId. 새 로드가 앞 로드를 취소하면 앞 로드의
+            // NavigationCompleted가 새 로드의 NavigationStarting 뒤에 올 수 있으므로, 종료 신호는
+            // 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
+            let gate_generation: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+            let generation_start = gate_generation.clone();
             let mut tok_start: i64 = 0;
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
             // 로드 시작과 응답 결정을 여기서 함께 한다(ADR-0053 후보 이벤트, 미측정).
@@ -263,6 +276,17 @@ impl PlatformWebView {
                         if let (Some(gate), Some(wv)) = (gate_start.borrow().as_ref(), &sender)
                             && !skip
                         {
+                            let mut nav_id = 0u64;
+                            match args.NavigationId(&mut nav_id) {
+                                Ok(()) => generation_start.set(Some(nav_id)),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "WebView surface {surface_id}: NavigationId failed ({e}); \
+                                         any navigation end finishes this load"
+                                    );
+                                    generation_start.set(None);
+                                }
+                            }
                             gate.load_started();
                             set_js(wv, gate.main_response(&uri_str));
                         }
@@ -300,14 +324,34 @@ impl PlatformWebView {
 
             let nav_done = nav_state.clone();
             let gate_done = script_gate.clone();
+            let generation_done = gate_generation.clone();
             let mut tok_done: i64 = 0;
             let h_done = NavigationCompletedEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
-                    if let (Some(js), Some(wv)) = (
-                        gate_done.borrow().as_ref().and_then(|g| g.finished()),
-                        &sender,
-                    ) {
-                        set_js(wv, js);
+                    let nav_id = args.as_ref().and_then(|a| {
+                        let mut id = 0u64;
+                        match a.NavigationId(&mut id) {
+                            Ok(()) => Some(id),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "WebView surface {surface_id}: NavigationId failed on \
+                                     completion ({e}); the gate treats it as the current load"
+                                );
+                                None
+                            }
+                        }
+                    });
+                    if is_current_load(generation_done.get(), nav_id) {
+                        if let (Some(js), Some(wv)) = (
+                            gate_done.borrow().as_ref().and_then(|g| g.finished()),
+                            &sender,
+                        ) {
+                            set_js(wv, js);
+                        }
+                    } else {
+                        tracing::debug!(
+                            "WebView surface {surface_id}: ignoring the end of a superseded load"
+                        );
                     }
                     let Some(args) = args else { return Ok(()) };
                     let mut is_success = BOOL(0);

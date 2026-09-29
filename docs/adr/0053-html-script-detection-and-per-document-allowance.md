@@ -136,6 +136,9 @@ OS별 구현은 다음과 같다.
 - Windows와 macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
 - 두 OS에서 bfcache를 끌 수 있는지는 구현할 때 확인한다. 응답 단계 없이 commit된 문서는 지문이 없어 허용할 수 없다.
 - 두 OS에서도 허용 기록은 새 main frame 문서가 commit될 때 갱신한다. commit 없이 끝난 로드에서는 화면 문서의 허용 상태로 JS를 되돌린다. 이 시점에 대응하는 이벤트는 구현에서 정하며 측정하지 않았다.
+  - 두 OS는 로드 시작과 응답 결정을 navigation 시작 콜백에서 함께 한다. 새 로드가 앞 로드를 취소하면 앞 로드의 종료 신호가 새 로드의 시작 뒤에 올 수 있다. 이 신호가 새 로드의 대기 값을 지우면 새 문서가 지문 없이 기록된다.
+  - Windows는 `NavigationStarting`의 `NavigationId`를 로드 세대로 기록하고, `NavigationCompleted`는 자기 `NavigationId`가 현재 세대일 때만 복원한다. 앞 로드의 늦은 종료는 무시한다(순서 자체는 미측정).
+  - macOS는 로드를 구분하지 않는다. `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`이 모두 복원한다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다(미측정). 이 머신에서 macOS 코드를 컴파일할 수 없어 WKNavigation으로 세대를 구분하는 변경은 실제 Mac에서 측정한 뒤 한다.
 
 ### 배너 표시 시점
 
@@ -185,6 +188,8 @@ OS별 구현은 다음과 같다.
   - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요하다. 이 API는 WebKitGTK 2.40부터 있어 바인딩 feature를 `v2_40`으로 둔다(`Cargo.toml`). 최소 런타임도 WebKitGTK 2.40이 된다.
   - Windows는 `NavigationStarting` 안에서 정한 `IsScriptEnabled`가 같은 navigation에 적용되는지 측정하지 않았다. API 문서가 근거다.
   - macOS는 delegate 시그니처가 바뀌고, 실제 Mac에서 확인하기 전까지 미검증이다.
+  - macOS에서 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다(미측정). 그 문서는 스크립트가 있어도 배너가 뜨지 않고 허용할 수 없으며, 허용된 문서의 재로드였다면 허용이 풀린다. Windows는 `NavigationId` 세대로 이 경우를 막는다.
+  - macOS의 `decidePolicyForNavigationAction`은 서브프레임 navigation에도 기본 preferences(`allowsContentJavaScript` 참)를 돌려준다. WebKit이 서브프레임에서 이 값을 쓰는지는 확인하지 않았다(미측정).
   - Windows와 macOS의 bfcache 복원 동작도 미측정이다.
 - 에이전트는 release에서 스크립트 문서를 자동으로 실행할 수 없다. 자동화에는 debug 빌드나 전역 설정이 필요하다.
 - 에이전트가 연 문서는 사용자가 그 문서를 보기 전까지 배너 없이 차단 상태로 남는다.
@@ -233,11 +238,15 @@ OS별 구현은 다음과 같다.
 실행 결과로 확인한다.
 
 - Windows에서 `NavigationStarting` 안의 설정이 같은 navigation에 적용되지 않으면 해제 시점을 다시 정한다.
+- macOS에서 앞 로드의 종료가 새 로드 시작 뒤에 오는 것이 측정되면, WKNavigation 포인터로 로드 세대를 구분해 종료 신호가 현재 로드일 때만 복원하게 한다.
+- macOS에서 차단 문서의 iframe 스크립트가 실행되면 서브프레임 navigation의 preferences를 main frame 문서의 판단에 맞춘다.
 - macOS에서 `allowsContentJavaScript`를 설정한 navigation의 첫 로드에 스크립트가 실행되면 해제 시점을 다시 정한다.
 - Windows나 macOS의 bfcache 복원에서 허용되지 않은 문서의 스크립트가 다시 실행되면 복원 경로의 차단을 추가한다.
 - 두 OS 모두 Linux와 같은 방법으로 확인한다.
   - 스크립트가 제목을 바꾸는 문서 두 개를 만들고, 링크로 이동한 뒤 새 문서의 제목을 읽는다.
   - iframe이 있는 허용 문서를 연다. 뒤로 가기로 timer가 있는 문서를 복원한다.
+  - macOS에서는 iframe이 있는 차단 문서를 열고 iframe 스크립트가 실행되는지 확인한다.
+  - 로드 중 링크를 눌러 앞 로드를 취소하고, 앞 로드의 종료 신호와 새 로드의 시작 순서를 기록한다.
 - 사용자가 오탐이나 미탐을 보고하면 스캔 규칙과 실제 실행 여부를 같은 문서로 비교한다.
 
 ## References
