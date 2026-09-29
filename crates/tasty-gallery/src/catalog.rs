@@ -482,14 +482,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "centerstate",
                     "CenterState — empty · loading · error",
-                    vec![spec(
-                        "center-state",
-                        "One centred block for every empty list",
-                        Some(
-                            "loading · empty · error × file picker / Settings Scripts — glyph 24, sub slot always reserved",
+                    vec![
+                        spec(
+                            "center-state",
+                            "One centred block for every empty list",
+                            Some(
+                                "loading · empty · error × file picker / Settings Scripts — glyph 24, sub slot always reserved",
+                            ),
+                            components::prim_center_state::draw,
                         ),
-                        components::prim_center_state::draw,
-                    )],
+                        spec(
+                            "center-state-action",
+                            "Error glyph and the action slot",
+                            Some(
+                                "alertTriangle is part-owned · the action hangs 12 below the sub slot, outside the centring",
+                            ),
+                            components::prim_center_state::draw_action_slot,
+                        ),
+                    ],
                 ),
                 section(
                     "text",

@@ -1,5 +1,5 @@
-//! CenterState 의 세 변형(loading·empty·error)을 두 호스트 크기의 카드에 나란히 보여준다.
-//! 본체 file picker·remote attach·Settings › Misc › Scripts 와 같은 공용 위젯을 호출한다.
+//! CenterState 의 세 변형(loading·empty·error)과 액션이 달린 error 를 두 호스트 크기의 카드에
+//! 나란히 보여준다. 본체 file picker·remote attach·Settings › Misc › Scripts 와 같은 공용 위젯을 호출한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -10,7 +10,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 디자인 무대 카드 폭(`--tasty-size-288`). 목록 영역을 흉내 내는 액자다.
 const CARD_W: LogicalPx = LogicalPx(288.0);
-/// file picker·remote attach 호스트 카드 높이(디자인 `--tasty-size-220`).
+/// file picker·remote attach 호스트 카드 높이(디자인 `--tasty-size-220`). 오류 글리프·액션 슬롯
+/// 예제의 정사각 카드 한 변도 시안에서 같은 `--tasty-size-220` 이다.
 const CARD_H_PICKER: LogicalPx = LogicalPx(220.0);
 /// Settings › Misc › Scripts 호스트 카드 높이(디자인 `--tasty-size-160`).
 const CARD_H_SCRIPTS: LogicalPx = LogicalPx(160.0);
@@ -21,10 +22,12 @@ enum Host {
     Scripts,
 }
 
-const VARIANTS: [CenterStateVariant; 3] = [
-    CenterStateVariant::Loading,
-    CenterStateVariant::Empty,
-    CenterStateVariant::Error,
+/// 디자인 카드 열: loading · empty · error · error + action.
+const COLUMNS: [(CenterStateVariant, bool); 4] = [
+    (CenterStateVariant::Loading, false),
+    (CenterStateVariant::Empty, false),
+    (CenterStateVariant::Error, false),
+    (CenterStateVariant::Error, true),
 ];
 
 /// 디자인 `CS_COPY` 의 문구.
@@ -75,7 +78,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("variants", "loading · empty · error"),
+            ("variants", "loading · empty · error · error + action"),
             ("glyph / spinner", "24 — icon-size-lg (was 22 · 26)"),
             ("glyph → title", "8"),
             ("title → sub", "4 · sub slot always reserved"),
@@ -130,14 +133,14 @@ fn host_row(ui: &mut egui::Ui, theme: &Theme, label: &str, host: Host) {
         );
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-            for v in VARIANTS {
-                card(ui, theme, host, v);
+            for (v, action) in COLUMNS {
+                card(ui, theme, host, v, action);
             }
         });
     });
 }
 
-fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant) {
+fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant, action: bool) {
     let h = match host {
         Host::Picker => CARD_H_PICKER,
         Host::Scripts => CARD_H_SCRIPTS,
@@ -158,6 +161,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant) {
     );
     let head_text = match host {
         Host::Picker => "~/work/tasty/assets".to_owned(),
+        Host::Scripts if action => format!("Scripts · {} + action", variant_name(v)),
         Host::Scripts => format!("Scripts · {}", variant_name(v)),
     };
     painter.text(
@@ -174,6 +178,18 @@ fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant) {
     );
 
     let region = egui::Rect::from_min_max(egui::pos2(rect.left(), head.bottom()), rect.max);
+    state(host, v, action).show_in(ui, theme, region);
+
+    painter.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(bw, theme.border_strong().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 디자인 `CenterStateG` — 호스트 문구와 빈 상태 글리프, 선택 Retry 액션.
+fn state(host: Host, v: CenterStateVariant, action: bool) -> CenterState<'static> {
     let (title, sub) = copy(host, v);
     let glyph = match host {
         Host::Picker => icons::FOLDER_OPEN,
@@ -183,13 +199,84 @@ fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant) {
         CenterStateVariant::Loading => CenterState::loading(title),
         CenterStateVariant::Empty => CenterState::empty(glyph, title),
         CenterStateVariant::Error => CenterState::error(title),
-    };
-    state.sub_line(sub).show_in(ui, theme, region);
+    }
+    .sub_line(sub);
+    if action {
+        state.action("Retry", Some(icons::REFRESH))
+    } else {
+        state
+    }
+}
 
+/// 오류 글리프는 부품 소유, 액션은 가운데 정렬 밖에 매달린다 — 액션 유무로 글리프가 움직이지 않는다.
+pub fn draw_action_slot(ui: &mut egui::Ui, theme: &Theme) {
+    let palettes = [
+        ("Mocha", tasty_themes::mocha_fallback()),
+        ("Latte", crate::host_shell::latte_theme()),
+    ];
+    for (palette, base) in &palettes {
+        let th = Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+        spec::stage(ui, &th, StageVariant::Wrap, |ui| {
+            for (action, label) in [(false, "error"), (true, "error + action")] {
+                spec::cluster(ui, &th, &format!("{palette} · {label}"), |ui| {
+                    slot_card(ui, &th, action)
+                });
+            }
+        });
+    }
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("error glyph", "alertTriangle — part-owned, every host"),
+            ("empty glyph", "host-chosen"),
+            ("action", "Button secondary · sm (24)"),
+            ("sub → action", "12 · center-state-action-gap"),
+            ("centring", "glyph · title · sub only — action hangs below"),
+            (
+                "short region",
+                "action may reach the region's bottom padding; never pushes the glyph",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "center-state-action-gap",
+                "→ space-md 12",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new("button-height-sm", "24", theme.accent_primary().to_egui()),
+            TokenChip::new(
+                "center-state-error-fg",
+                "→ accent-danger",
+                theme.center_state_error_fg().to_egui(),
+            ),
+        ],
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't put the button in the centred column. Loading → error + Retry would jump the glyph up by half the button, and with no animation that reads as a glitch.",
+    );
+}
+
+/// 디자인 `--tasty-size-220` 정사각 카드에 file picker 문구의 error 를 그린다.
+fn slot_card(ui: &mut egui::Ui, theme: &Theme, action: bool) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(CARD_H_PICKER.value(), CARD_H_PICKER.value()),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        theme.bg_panel().to_egui(),
+    );
+    state(Host::Picker, CenterStateVariant::Error, action).show_in(ui, theme, rect);
     painter.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(bw, theme.border_strong().to_egui()),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         egui::StrokeKind::Inside,
     );
 }
