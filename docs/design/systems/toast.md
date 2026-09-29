@@ -55,11 +55,11 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 ## 스코프
 
-`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 아래에서 위로 쌓고, 스코프가 화면에서 사라지면 즉시 제거.
+`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 스코프가 화면에서 사라지면 즉시 제거.
 
 ## 시각 / 레이아웃
 
-모든 색·치수는 Theme 토큰([theme.md](theme.md)). 배경 `surface0` + 1px `surface1` 보더 + `corner_radius`, 본문 `font_size_body`, 스코프 우측 하단 정렬·스택. 종류 강조는 `toast_accent_width`의 좌측 컬러 바:
+모든 색·치수는 Theme 토큰([theme.md](theme.md)). 배경 `surface-raised` + 1px `toast-border`(= `border-strong`) 보더 + `corner_radius`, 본문 `font_size_body`, 스코프 우측 하단 정렬·스택, 카드 사이 간격 `space-sm`(8). 종류 강조는 좌측 컬러 바다. 바 두께는 현재 `TOAST_ACCENT_BAR_WIDTH`(= `spacing_xs`, 4px)이며 시안 토큰 `toast-accent-width`(3px)와 다르다:
 
 | 종류 | 바 색 | 용도 |
 |------|-------|------|
@@ -78,7 +78,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 
 ## 합치기 / 제한
 
-같은 스코프에서 같은 메시지가 짧은 시간(기본 500ms) 내 다시 발생하면 새로 만들지 않고 **기존 토스트 수명만 갱신**(연속 Ctrl+C 깜빡임 방지). 스코프당 최대 동시 5개, 초과 시 가장 오래된 것 즉시 제거.
+같은 스코프에서 같은 메시지가 짧은 시간(기본 500ms) 내 다시 발생하면 새로 만들지 않고 **기존 토스트 수명만 갱신**(연속 Ctrl+C 깜빡임 방지). 스코프당 최대 동시 5개, 초과 시 가장 오래된(맨 위) 것 즉시 제거. 넘친 토스트를 `+N more` 같은 요약 행으로 접지 않는다. 쉬는 카드는 나이와 관계없이 모두 불투명(alpha 1)이고 불투명도는 등장·소멸 페이드에만 쓴다.
 
 본문은 **200자(유니코드 문자 기준)** 로 제한한다. 초과 시 앞 200자만 남기고 줄바꿈 + 안내 접미(`toast.char_limit_notice`)를 붙여(`<앞 200자>\n(200자 제한)`) 긴 입력 때문에 토스트가 지나치게 길어지는 것을 막는다. 길이/자르기는 char 경계로 처리해 멀티바이트에서 안전하며, coalesce 비교 이전(`push` 진입부 `truncate_message`)에 적용된다.
 
