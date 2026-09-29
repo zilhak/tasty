@@ -320,6 +320,17 @@ text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 - **순서**: 잉크 강도는 `text_placeholder()` < `text_disabled()` < `text_muted()`다. 잉크 단계가 라벨의 유일한 disabled 신호이므로 disabled 라벨에 opacity를 추가로 곱하지 않는다. 라벨과 글리프는 같은 disabled 잉크를 쓴다.
 - **패리티**: Mocha의 text-disabled는 neutral-700(overlay1), Latte의 text-disabled는 neutral-800(overlay2)이다. Latte 램프의 밝은 끝은 neutral-600~800이 서로 가까워 같은 단계가 Mocha보다 흐리게 읽히므로 한 단계 위를 쓴다. 그래도 text-muted(neutral-900)보다는 약해 순서 규칙이 유지된다.
 
+### disabled 컨트롤 — 중립 박스와 잉크
+
+disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계없이 같은 중립 박스와 disabled 잉크로 그린다.
+
+- **박스**: 채움 `state_disabled_fill()`(= surface-raised), 테두리 `state_disabled_border()`(= border-default). Button의 모든 변형(Ghost는 박스 없음), solid IconButton, Input, Select·MultiSelect 트리거, Checkbox 박스, Switch 트랙이 이 박스를 쓴다. accent 채움은 disabled에서 빠진다. Button은 component 역할 `button_disabled_bg/border/fg()`로 읽는다.
+- **잉크**: 라벨·아이콘·체크·thumb·placeholder·addon·단축키 표시는 모두 `state_disabled_fg()`(= text-disabled)를 쓴다. MenuItem·ListCtrl·IconButton(ghost)은 박스 없이 잉크만 바꾼다. TreeRow의 disabled 표현은 디자인 결정 대기 중이다. 시안에 TreeRow disabled 상태가 없고, 현재 호출처는 모두 enabled 상태로 그린다.
+- **상호작용**: hover·active 오버레이를 그리지 않는다. egui의 `add_enabled(false)`/`ui.disable()`은 도형을 fade 색 쪽으로 섞어 박스 색을 바꾸므로, 공용 위젯은 hover만 감지하는 sense(Button)나 `TextEdit::interactive(false)`(Input)로 입력을 막는다.
+- **디밍과 구분**: `state_dim_opacity()`(0.5)는 꺼진 hook 행·잘라내기 대기(`cut_pending_opacity()`)·preset 편집 중 비활성 영역(`preset_cfg_dim_opacity()`)처럼 **항목 전체를 물러나게** 할 때만 곱한다. disabled 컨트롤 신호로 쓰지 않는다.
+
+갤러리 Components 페이지의 Spec "Disabled — ink, never opacity"가 Mocha·Latte에서 다섯 변형과 IconButton·Checkbox·Switch의 enabled/disabled를 나란히 보여 준다.
+
 활성 상태의 컨트롤 글리프는 이 예외에 들지 않는다. 탭 스트립의 스크롤할 수 있는 화살표(`tab_scroll_arrow_fg()`)는 1.4.11의 3:1 대상이다. 화살표 칸 바탕 `surface_raised`(본체는 포커스된 pane 의 스트립 배경, 비포커스 pane 은 `bg_sidebar`) 위에서 WCAG 공식으로 계산한 평면색 비율은 다음과 같다.
 
 | 테마 | placeholder | disabled | muted(활성 화살표) |

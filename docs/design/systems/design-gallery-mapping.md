@@ -359,6 +359,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 |---|---|---|
 | `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` |
 | `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg, leading_icon/trailing_icon) | `prim_button` |
+| `core/Button` disabled | `Button::enabled(false)` — 모든 변형이 같은 `button-disabled-*` 박스와 잉크, ghost 는 박스 없음, opacity 없음 | `prim_button::draw_disabled`(Spec "Disabled — ink, never opacity", Mocha·Latte) |
 | `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` |
 | `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` |
 | `core/Badge` | `badge` / `badge_dot` | `prim_chips` |
@@ -712,7 +713,7 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 | `body()` File Detectors 분기 | `view/settings/ui/file_handler_tab/detectors.rs` | `::draw_detectors` | name 13 `text-secondary` + desc 12 `text-muted` · Switch 우측 |
 | `body()` File Handlers 분기 | `view/settings/ui/file_handler_tab/handlers.rs` | `::draw_file_handlers` | name 13 + `Tag`(kind) + Switch(marginLeft auto) |
 | `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro 12 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
-| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `opacity-disabled` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono 한 줄 요약) |
+| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `state-dim-opacity` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono 한 줄 요약) |
 
 **전사 노트**:
 - jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 기존 관례(mono

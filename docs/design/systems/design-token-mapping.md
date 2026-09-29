@@ -18,6 +18,9 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | `text-secondary` | `subtext1` | `#bac2de` | |
 | `text-muted` | `subtext0` | `#a6adc8` | |
 | `text-disabled` | `overlay1` | `#7f849c` | **비활성 상태의 글자·아이콘 색.** 모든 disabled 라벨·글리프가 이 role 을 읽는다 |
+| `state-disabled-fg` | `state_disabled_fg()` → `text-disabled` | `#7f849c` | disabled 컨트롤의 잉크(라벨·아이콘·체크·thumb). component `button-disabled-fg` 가 가리킨다 |
+| `state-disabled-fill` | `state_disabled_fill()` → `surface-raised` | `#313244` | disabled 컨트롤의 박스 채움. 모든 Button 변형(ghost 제외)·solid IconButton·Input·Select 트리거·Checkbox 박스·Switch 트랙이 같은 채움을 쓴다. component `button-disabled-bg` |
+| `state-disabled-border` | `state_disabled_border()` → `border-default` | — | disabled 컨트롤의 박스 테두리. component `button-disabled-border` |
 | `glyph-dim` | `overlay0` | `#6c7086` | 덜 강조할 창 아이콘(사이드바 dim chevron·dim 아이콘·상태바 글리프). `text-placeholder` 와 값만 같고 role 이 다르다 — **disabled 용이 아니다** |
 | `border-frame` | `surface2` | `#585b70` | 틀의 선 **넷**(popup 프레임 · titlebar 아래 선 · pane divider · GPU 비활성 보더). popup **내부** 구분선은 `border-strong` 에 남는다. `surface-active` 와 값만 같다 |
 | `accent-decorative` | `peach` | `#fab387` | 헤더 장식 accent(Plugins 창 헤더 glyph). `accent-attention`(주의 환기)과 값만 같다 |
@@ -32,7 +35,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 
 | 디자인 토큰 | tasty Theme | 값 | 비고 |
 |---|---|---|---|
-| `opacity-disabled` | `opacity_disabled()` | `0.5` | disabled 컨트롤 공통 디밍. const `OPACITY_DISABLED`. 모든 위젯이 disabled 시 이 값으로 `gamma_multiply` |
+| `state-dim-opacity` | `state_dim_opacity()` | `0.5` | 흐리게 표시하는 **항목**(꺼진 hook 행 · 잘라내기 대기 · preset 편집 중 비활성 영역)의 디밍. const `OPACITY_DISABLED`. `cut-pending-opacity`(`cut_pending_opacity()`)와 `preset-cfg-dim-opacity`(`preset_cfg_dim_opacity()`)가 이 값을 가리킨다. **disabled 컨트롤 신호가 아니다** — disabled 컨트롤은 아래 `state-disabled-*` 박스와 잉크로 그리고 opacity를 곱하지 않는다 |
 | `opacity-dimmed` | `opacity_dimmed()` | `0.75` | 진행 중이라 물러난 내용(재로드 중인 배너 본문). const `OPACITY_DIMMED`. 흐려져도 4.5:1 대비를 유지한다 |
 | `tint-fill-alpha` | `tint_fill_alpha()` | `0.12` | accent 로 옅게 깐 채움. const `TINT_FILL_ALPHA` |
 | `tint-border-alpha` | `tint_border_alpha()` | `0.36` | 같은 accent 의 테두리. const `TINT_BORDER_ALPHA`. **짝으로 쓰는 것이 기본**이고 승인된 부분 사용 둘(채움만: warning callout·misc/remote/script 배지 · 테두리만: chip remote 태그) |
@@ -73,7 +76,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | Badge / Tag / Kbd | pill 높이 | 16 | size-16. Kbd min-width 도 16 |
 | Badge / Tag / Kbd | 폰트 | micro(10) | `font_size_micro` |
 | MenuItem | 아이콘 글리프 | 16 | icon-size-md (15 → 16 snap), `icon_glyph_size_md` |
-| (공용) | disabled opacity | 0.5 | `opacity_disabled()` |
+| (공용) | disabled 박스 | fill · border · fg | `state_disabled_fill()` · `state_disabled_border()` · `state_disabled_fg()` — opacity 없음 |
 
 ## switch-number overlay (chrome)
 

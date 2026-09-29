@@ -53,6 +53,14 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 - 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`banner_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
 - 배경 / 보더 / 그림자: **Theme 토큰** — `banner_bg()`(→ `surface_raised`/surface0) 배경 + 1px `banner_border()`(→ `border_strong`) 보더 + `shadow_popover()`(= `--tasty-shadow-popover`) 그림자. 본문 색은 `banner_fg()`(→ text_primary), leading 글리프 기본색은 `banner_icon_fg()`(→ text_muted, 심각도 배너는 override), 카운트다운은 `banner_countdown_fg()`(→ text_muted). 하위 스코프 디밍은 `opacity_recessed()`(0.4), 페이드 모션은 없다(`banner_fade()` 는 생성만 되고 소비처가 없다).
 
+### 배너 위 버튼
+
+배너 배경은 Secondary 버튼의 기본 채움과 같은 surface-raised다. 그래서 배너 안의 Secondary 버튼은 한 단계 올린 박스를 쓴다. 채움은 `banner_button_bg()`(→ surface-hover), 테두리는 `banner_button_border()`(→ border-frame)이며 hover에서도 테두리를 유지한다. 이 규칙은 특정 배너가 아니라 배너 표면 전체의 문맥 규칙이다(디자인의 `data-surface="banner"`).
+
+- `banner_shell`은 콘텐츠 클로저를 `tasty_ui_widgets::banner_surface` 안에서 그린다. 그 안에서 그린 `Button`의 Secondary 변형은 자동으로 배너 박스를 쓴다. 셸 밖에서 배너 콘텐츠를 그리는 위젯은 `banner_surface(ui, |ui| …)`로 직접 문맥을 켠다.
+- 문맥은 클로저가 끝나면 이전 상태로 돌아가고 중첩할 수 있다. 다른 변형(Primary·Ghost 등)과 disabled 버튼은 영향을 받지 않는다.
+- plugin이 mesh로 그리는 배너 콘텐츠는 host 위젯을 거치지 않으므로 이 문맥이 적용되지 않는다.
+
 ### inset 배치
 
 tasty가 위에 그릴 수 없는 네이티브 레이어(HTML surface의 WebView 등)를 콘텐츠로 가진 스코프는 floating 대신 inset 배치를 쓴다. floating 배너는 네이티브 레이어 아래에 가려지기 때문이다. inset은 일회성 예외가 아니라 배너 시스템의 정식 배치이며, 그 밖의 스코프는 floating이 기본값이다.
