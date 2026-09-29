@@ -78,8 +78,10 @@ const FAVS_MANY: &[(&str, bool)] = &[
 
 /// design ExpSidebar width 196.
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
-/// 높이 600 미만의 비율 계산과 두 영역의 개별 스크롤을 보여주는 예제 크기.
-const DEMO_BODY_H: LogicalPx = LogicalPx(340.0);
+/// 시안 2-region Spec 네 예제의 body 높이(`ExpSidebar height={620}`). pin 240.
+const SPLIT_BODY_H: LogicalPx = LogicalPx(620.0);
+/// 시안 Favorites populated/empty Spec의 body 높이(`ExpSidebar height={300}`). pin 120.
+const FAVORITES_BODY_H: LogicalPx = LogicalPx(300.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
@@ -88,8 +90,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "files — long tree scrolls, favorites stays pinned",
         |ui| {
             stage(ui, theme, StageVariant::Tight, |ui| {
-                panel(ui, theme, |ui| {
-                    two_region(ui, theme, "a", TREE_LONG, FAVS_FEW);
+                panel(ui, theme, SPLIT_BODY_H, |ui| {
+                    two_region(ui, theme, "a", SPLIT_BODY_H, TREE_LONG, FAVS_FEW);
                 });
             });
         },
@@ -101,8 +103,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "files — short tree leaves blank space above pin",
         |ui| {
             stage(ui, theme, StageVariant::Tight, |ui| {
-                panel(ui, theme, |ui| {
-                    two_region(ui, theme, "b", TREE_SHORT, FAVS_FEW);
+                panel(ui, theme, SPLIT_BODY_H, |ui| {
+                    two_region(ui, theme, "b", SPLIT_BODY_H, TREE_SHORT, FAVS_FEW);
                 });
             });
         },
@@ -110,8 +112,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     cluster(ui, theme, "favorites — empty state", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
-            panel(ui, theme, |ui| {
-                two_region(ui, theme, "c", TREE_LONG, &[]);
+            panel(ui, theme, SPLIT_BODY_H, |ui| {
+                two_region(ui, theme, "c", SPLIT_BODY_H, TREE_LONG, &[]);
             });
         });
     });
@@ -122,18 +124,38 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "favorites — own scroll (many favorites)",
         |ui| {
             stage(ui, theme, StageVariant::Tight, |ui| {
-                panel(ui, theme, |ui| {
-                    two_region(ui, theme, "d", TREE_LONG, FAVS_MANY);
+                panel(ui, theme, SPLIT_BODY_H, |ui| {
+                    two_region(ui, theme, "d", SPLIT_BODY_H, TREE_LONG, FAVS_MANY);
                 });
             });
         },
     );
+
+    cluster(ui, theme, "with favorites", |ui| {
+        stage(ui, theme, StageVariant::Tight, |ui| {
+            panel(ui, theme, FAVORITES_BODY_H, |ui| {
+                two_region(ui, theme, "e", FAVORITES_BODY_H, TREE_SHORT, FAVS_FEW);
+            });
+        });
+    });
+
+    cluster(ui, theme, "empty — caption persists", |ui| {
+        stage(ui, theme, StageVariant::Tight, |ui| {
+            panel(ui, theme, FAVORITES_BODY_H, |ui| {
+                two_region(ui, theme, "f", FAVORITES_BODY_H, TREE_SHORT, &[]);
+            });
+        });
+    });
 
     meta(
         ui,
         theme,
         &[
             ("width", "196 (design ExpSidebar)"),
+            (
+                "example body",
+                "620 → pin 240 · populated/empty 300 → pin 120",
+            ),
             (
                 "split",
                 "Files flex(top) → fixed border → Favorites pinned(bottom)",
@@ -187,8 +209,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 데모 사이드바 컨테이너 — 배경 + 보더 + 고정 폭/높이(`DEMO_BODY_H`).
-fn panel(ui: &mut egui::Ui, theme: &Theme, contents: impl FnOnce(&mut egui::Ui)) {
+/// 데모 사이드바 컨테이너 — 배경 + 보더 + 고정 폭/높이(`body_h`).
+fn panel(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    body_h: LogicalPx,
+    contents: impl FnOnce(&mut egui::Ui),
+) {
     egui::Frame::new()
         .fill(egui::Color32::from(theme.bg_sidebar()))
         .stroke(egui::Stroke::new(
@@ -197,7 +224,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, contents: impl FnOnce(&mut egui::Ui))
         ))
         .show(ui, |ui| {
             ui.set_width(SIDEBAR_W.value());
-            ui.set_height(DEMO_BODY_H.value());
+            ui.set_height(body_h.value());
             ui.spacing_mut().item_spacing.y = 0.0;
             contents(ui);
         });
@@ -209,16 +236,25 @@ fn two_region(
     ui: &mut egui::Ui,
     theme: &Theme,
     id_salt: &str,
+    body_h: LogicalPx,
     tree: &[Node],
     favs: &[(&str, bool)],
 ) {
     // 예제마다 같은 라벨을 쓰므로 위젯 ID의 범위를 나눈다.
-    ui.push_id(id_salt, |ui| two_region_inner(ui, theme, tree, favs));
+    ui.push_id(id_salt, |ui| {
+        two_region_inner(ui, theme, body_h, tree, favs)
+    });
 }
 
-fn two_region_inner(ui: &mut egui::Ui, theme: &Theme, tree: &[Node], favs: &[(&str, bool)]) {
-    let fav_h = favorites_pin_height(DEMO_BODY_H);
-    let files_h = (DEMO_BODY_H - fav_h - theme.border_width).max(LogicalPx(0.0));
+fn two_region_inner(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    body_h: LogicalPx,
+    tree: &[Node],
+    favs: &[(&str, bool)],
+) {
+    let fav_h = favorites_pin_height(body_h);
+    let files_h = (body_h - fav_h - theme.border_width).max(LogicalPx(0.0));
 
     ui.allocate_ui_with_layout(
         egui::vec2(SIDEBAR_W.value(), files_h.value()),

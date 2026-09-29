@@ -138,7 +138,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 본체와 같은 수기 Theme 접근자를 써서 이 수에 들어가지 않는다.
         // 원격 도구 예제의 SSH config 빈 상태 카드 폭 300은 디자인 Stage 액자 값이다.
         // 알림 패널 예제의 폭 352는 새 스케일 값이라 집계되며 본체 popup 기본 크기표와 같은 값이다.
-        130,
+        // 탐색기 사이드바 예제의 body 620·300은 디자인 `ExpSidebar` specimen 높이이며 역할 토큰이 없다.
+        132,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -596,7 +597,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (45, 78, 0, 12),
+        (47, 78, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
