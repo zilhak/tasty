@@ -293,7 +293,7 @@ fn draw_body(
         FpViewState::ErrorPerm(reason) => {
             let out = CenterState::error(props.error_perm_title)
                 .sub_line(Some(reason.as_str()))
-                .action(props.error_perm_retry, None)
+                .action(props.error_perm_retry, Some(icons::REFRESH))
                 .show(ui, th, Some(body_height));
             if out.action_clicked {
                 *action = FilePickerAction::Refresh;
@@ -302,7 +302,7 @@ fn draw_body(
         FpViewState::ErrorConn(reason) => {
             let out = CenterState::error(props.error_conn_title)
                 .sub_line(Some(reason.as_str()))
-                .action(props.error_conn_reconnect, None)
+                .action(props.error_conn_reconnect, Some(icons::REFRESH))
                 .show(ui, th, Some(body_height));
             if out.action_clicked {
                 *action = FilePickerAction::Refresh;

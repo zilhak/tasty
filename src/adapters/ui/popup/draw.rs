@@ -37,6 +37,8 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 
 /// 팝업 종류별 배경. file_handler_picker의 배경은 default Tag 채움색과 구분해야 한다.
 /// popup_shell_fill_keeps_the_default_tag_visible에서 두 색을 비교한다.
+/// file picker 는 오류 상태의 Secondary 버튼(`button-secondary-bg` = surface-raised)이 셸에
+/// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
         "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
@@ -45,6 +47,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
         super::transfer::TRANSFER_PROGRESS_POPUP_ID
         | super::transfer::TRANSFER_ERROR_POPUP_ID
         | super::file_handler_picker::PICKER_POPUP_ID
+        | super::file_picker::FILE_PICKER_POPUP_ID
         | crate::adapters::ui::info_modal::INFO_MODAL_ID => th.bg_panel().into(),
         _ => th.surface_raised().into(),
     }
@@ -795,6 +798,19 @@ mod tests {
             shell, tag,
             "핸들러 선택기 셸이 tag-bg 와 같은 색이면 format Tag 가 사라진다"
         );
+        assert_eq!(shell, egui::Color32::from(th.bg_panel()));
+    }
+
+    /// file picker 오류 상태의 Retry·Reconnect(Secondary) 채움과 테두리가 셸과 달라야 버튼으로 보인다.
+    #[test]
+    fn file_picker_shell_keeps_the_secondary_button_visible() {
+        let th = theme::theme();
+        let shell: egui::Color32 =
+            popup_bg_fill(super::super::file_picker::FILE_PICKER_POPUP_ID, &th);
+        let fill: egui::Color32 = th.button_secondary_bg().into();
+        let edge: egui::Color32 = th.button_secondary_border().into();
+        assert_ne!(shell, fill, "셸과 Secondary 버튼 채움이 같은 색이다");
+        assert_ne!(shell, edge, "셸과 Secondary 버튼 테두리가 같은 색이다");
         assert_eq!(shell, egui::Color32::from(th.bg_panel()));
     }
 
