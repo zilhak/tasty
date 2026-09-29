@@ -19,7 +19,7 @@ const TREE_SHORT: &[(&str, u16, bool)] = &[
 const TREE_LONG: &[(&str, u16, bool)] = &[
     ("Home", 0, false),
     ("Downloads", 1, true),
-    ("figma-exports", 2, false),
+    ("mockup-exports", 2, false),
     ("screenshots", 2, false),
     ("archive", 2, false),
     ("Documents", 1, false),
@@ -46,7 +46,7 @@ const FAVS_MANY: &[(&str, bool)] = &[
     ("tasty", true),
     ("Documents", false),
     ("screenshots", false),
-    ("figma-exports", false),
+    ("mockup-exports", false),
     ("Downloads", false),
     ("Projects", false),
     ("archive", false),
