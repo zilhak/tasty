@@ -4,6 +4,7 @@
 
 pub mod chrome_loading;
 pub mod components;
+pub mod foundations_disabled_ink;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
@@ -228,12 +229,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "text",
                     "Color — text",
-                    vec![spec(
-                        "text",
-                        "Hierarchy by text color, on any surface",
-                        Some("primary → secondary → muted → disabled → placeholder"),
-                        theme::text,
-                    )],
+                    vec![
+                        spec(
+                            "text",
+                            "Hierarchy by text color, on any surface",
+                            Some("primary → secondary → muted → disabled → placeholder"),
+                            theme::text,
+                        ),
+                        spec(
+                            "disabled-ink",
+                            "Disabled ink — no contrast target, Latte one step up",
+                            Some(
+                                "Order placeholder < disabled < muted, Latte remaps to n800 · disabled controls take this ink with no opacity",
+                            ),
+                            foundations_disabled_ink::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "accents",
