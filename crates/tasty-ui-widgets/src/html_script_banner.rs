@@ -4,7 +4,6 @@
 //! 좁은 surface에서는 액션이 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려간다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 
 use crate::banner::banner_shell;
 use crate::button::{Button, ButtonVariant};
@@ -13,16 +12,13 @@ use crate::icon_button::{IconButton, IconButtonVariant};
 use crate::spinner::Spinner;
 use crate::tooltip::{Tooltip, TooltipPlacement};
 
-/// 글리프를 제목 첫 줄에 맞추려고 내리는 거리. 디자인은 역할 토큰 없이 primitive `size-1`을
-/// 직접 쓰고, 대응하는 Theme 치수가 없어 배율만 적용해 쓴다.
-const GLYPH_TOP_NUDGE: LogicalPx = LogicalPx(1.0);
-/// 제목 줄과 본문 줄 사이 간격. 디자인은 primitive `size-2`를 직접 쓴다.
-const TITLE_BODY_GAP: LogicalPx = LogicalPx(2.0);
 /// 제목과 본문은 각각 두 줄까지 보이고 나머지는 말줄임한다.
 const MAX_TEXT_ROWS: usize = 2;
 
-fn zoomed(px: LogicalPx, theme: &Theme) -> f32 {
-    (px.value() * theme.ui_zoom).round()
+/// surface 폭이 `banner_narrow_below`보다 좁으면 액션을 본문 아래 줄로 내린다.
+/// surface 크기가 바뀔 때마다 다시 판정하며 내용 길이로 임계값을 바꾸지 않는다.
+pub fn html_script_banner_is_narrow(surface_width: f32, theme: &Theme) -> bool {
+    surface_width < theme.banner_narrow_below().value()
 }
 
 /// 배너가 표시하는 단계. 닫힘·허용 뒤에는 배너 대신 탭 마커가 남는다.
@@ -150,8 +146,8 @@ fn draw_row(ui: &mut egui::Ui, theme: &Theme, view: &HtmlScriptBannerView<'_>) -
     let row_w = (ui.available_width() - reserve).max(0.0);
     let glyph = theme.icon_glyph_size_md.value();
     let gap = theme.banner_gap().value();
-    let nudge = zoomed(GLYPH_TOP_NUDGE, theme);
-    let text_gap = zoomed(TITLE_BODY_GAP, theme);
+    let nudge = theme.banner_glyph_offset().value();
+    let text_gap = theme.banner_text_gap().value();
     let action = action_size(ui, theme, view);
 
     let body_w = if view.narrow {
@@ -273,13 +269,15 @@ pub enum HtmlScriptMarkerKind {
     Allowed,
 }
 
-/// 마커 글리프를 그린다. hover 때 `tooltip`을 보이며, Blocked 마커만 클릭을 받는다.
+/// 마커를 `html_script_marker_hit` 정사각 칸 가운데에 그린다. hover 때 `tooltip`을 보인다.
+/// Blocked 마커만 클릭을 받고 hover 채움을 가진다. Allowed 마커는 툴팁만 있다.
 pub fn html_script_marker(
     ui: &mut egui::Ui,
     theme: &Theme,
     kind: HtmlScriptMarkerKind,
     tooltip: &str,
 ) -> egui::Response {
+    let hit = theme.html_script_marker_hit().value();
     let size = theme.html_script_marker_size().value();
     let (glyph, color, sense) = match kind {
         HtmlScriptMarkerKind::Blocked => (
@@ -293,8 +291,16 @@ pub fn html_script_marker(
             egui::Sense::hover(),
         ),
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), sense);
-    glyph.image(size, color.to_egui()).paint_at(ui, rect);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(hit, hit), sense);
+    if kind == HtmlScriptMarkerKind::Blocked && resp.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            theme.html_script_marker_hover_bg().to_egui_premultiplied(),
+        );
+    }
+    let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(size, size));
+    glyph.image(size, color.to_egui()).paint_at(ui, glyph_rect);
     if resp.hovered() {
         Tooltip::new(tooltip)
             .placement(TooltipPlacement::Bottom)
@@ -305,5 +311,19 @@ pub fn html_script_marker(
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     } else {
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn narrow_starts_just_below_the_token_width() {
+        let t = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let below = t.banner_narrow_below().value();
+        assert!(html_script_banner_is_narrow(below - 1.0, &t));
+        assert!(!html_script_banner_is_narrow(below, &t));
+        assert!(!html_script_banner_is_narrow(below + 1.0, &t));
     }
 }

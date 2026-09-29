@@ -6,7 +6,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind, html_script_banner,
-    html_script_marker, inset_banner_zone, inset_content_rect,
+    html_script_banner_is_narrow, html_script_marker, inset_banner_zone, inset_content_rect,
 };
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -15,7 +15,7 @@ use crate::i18n::t;
 
 /// 디자인 `HtmlSurfaceG`·`TermSurfaceG`의 기본 높이. 두 surface를 나란히 보이는 전시 공간이다.
 const SURFACE_STAGE_H: LogicalPx = LogicalPx(260.0);
-/// 좁은 surface 예제의 폭. 디자인은 `--tasty-size-360`을 쓰며 액션이 다음 줄로 내려가는 폭이다.
+/// 좁은 surface 예제의 폭. 디자인은 `--tasty-size-360`을 쓰며 `banner-narrow-below`(440)보다 좁다.
 const NARROW_SURFACE_W: LogicalPx = LogicalPx(360.0);
 /// 좁은 surface 예제의 높이. 두 줄로 늘어난 배너 아래에도 페이지 자리가 남도록 디자인이 정했다.
 const NARROW_SURFACE_H: LogicalPx = LogicalPx(300.0);
@@ -37,19 +37,14 @@ const RELOADING: &str = "banner.html_script.reloading";
 const MARKER_BLOCKED: &str = "banner.html_script.marker_blocked";
 const MARKER_ALLOWED: &str = "banner.html_script.marker_allowed";
 
-fn view(
-    state: HtmlScriptBannerState,
-    remote: bool,
-    hover: bool,
-    narrow: bool,
-) -> HtmlScriptBannerView<'static> {
+fn view(state: HtmlScriptBannerState, remote: bool, hover: bool) -> HtmlScriptBannerView<'static> {
     HtmlScriptBannerView {
         title: t(TITLE),
         body: t(if remote { BODY_REMOTE } else { BODY }),
         action: t(ACTION),
         reloading: t(RELOADING),
         state,
-        narrow,
+        narrow: false,
         force_hover: hover,
     }
 }
@@ -77,7 +72,8 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// 스트립 왼쪽 끝에 탭 하나(디자인 `HsTab`)를 그린다. 마커는 공용 함수로 라벨 뒤에 둔다.
+/// 스트립 왼쪽 끝에 탭 하나(디자인 `HsTab`)를 그린다.
+/// 라벨 뒤 오른쪽 끝에 고정 cluster [마커 · 닫기 슬롯]을 두고, 라벨이 먼저 말줄임된다.
 fn tab(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -87,23 +83,14 @@ fn tab(
     active: bool,
     marker: Option<(HtmlScriptMarkerKind, &str)>,
 ) {
-    let pad = theme.spacing_sm.value();
-    let gap = theme.spacing_xs.value();
-    let icon = theme.tab_icon_size().value();
+    let w = theme.tab_width.value().min(strip.width());
+    let rect = egui::Rect::from_min_size(strip.min, egui::vec2(w, strip.height()));
     let fg = if active {
         theme.text_primary()
     } else {
         theme.text_muted()
     }
     .to_egui();
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        fg,
-    );
-    let marker_w = marker.map_or(0.0, |_| gap + theme.html_script_marker_size().value());
-    let w = pad + icon + gap + galley.size().x + marker_w + pad;
-    let rect = egui::Rect::from_min_size(strip.min, egui::vec2(w, strip.height()));
     let painter = ui.painter().clone();
     if active {
         painter.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
@@ -115,26 +102,57 @@ fn tab(
         );
     }
     let cy = rect.center().y;
-    let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + pad, cy - icon / 2.0),
-        egui::vec2(icon, icon),
+    let status_gap = theme.tab_status_gap().value();
+    let close = theme.tab_close_size().value();
+    let hit = theme.html_script_marker_hit().value();
+
+    // cluster는 오른쪽 끝에서 왼쪽으로 쌓는다: 닫기 슬롯, 그 왼쪽에 마커.
+    let close_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            rect.right() - theme.spacing_xs.value() - close,
+            cy - close / 2.0,
+        ),
+        egui::vec2(close, close),
     );
-    glyph.image(icon, fg).paint_at(ui, icon_rect);
-    let label_x = icon_rect.right() + gap;
-    painter.galley(
-        egui::pos2(label_x, cy - galley.size().y / 2.0),
-        galley.clone(),
-        fg,
-    );
+    if active {
+        let x = theme.icon_glyph_size_xs.value();
+        tasty_icons::CLOSE
+            .image(x, theme.text_muted().to_egui())
+            .paint_at(
+                ui,
+                egui::Rect::from_center_size(close_rect.center(), egui::vec2(x, x)),
+            );
+    }
+    let mut cluster_left = close_rect.left();
     if let Some((kind, tip)) = marker {
-        let size = theme.html_script_marker_size().value();
         let m = egui::Rect::from_min_size(
-            egui::pos2(label_x + galley.size().x + gap, cy - size / 2.0),
-            egui::vec2(size, size),
+            egui::pos2(cluster_left - status_gap - hit, cy - hit / 2.0),
+            egui::vec2(hit, hit),
         );
         let mut mui = ui.new_child(egui::UiBuilder::new().max_rect(m));
         html_script_marker(&mut mui, theme, kind, tip);
+        cluster_left = m.left();
     }
+
+    let icon = theme.tab_icon_size().value();
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + theme.tab_padding_x().value(), cy - icon / 2.0),
+        egui::vec2(icon, icon),
+    );
+    glyph.image(icon, fg).paint_at(ui, icon_rect);
+    let gap = theme.tab_gap().value();
+    let label_x = icon_rect.right() + gap;
+    let label_w = (cluster_left - gap - label_x).max(0.0);
+    let mut job = egui::text::LayoutJob::single_section(
+        label.to_owned(),
+        egui::TextFormat::simple(
+            egui::FontId::proportional(theme.font_size_caption.value()),
+            fg,
+        ),
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(label_w);
+    let galley = ui.fonts(|f| f.layout_job(job));
+    painter.galley(egui::pos2(label_x, cy - galley.size().y / 2.0), galley, fg);
     painter.vline(
         rect.right(),
         rect.y_range(),
@@ -212,7 +230,8 @@ fn html_surface(
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
     let scope = tab_strip(ui, theme, rect, "report.html", icons::HTML, true, marker);
     let page = match banner {
-        Some(v) => {
+        Some(mut v) => {
+            v.narrow = html_script_banner_is_narrow(rect.width(), theme);
             let mut child =
                 ui.new_child(egui::UiBuilder::new().max_rect(inset_banner_zone(scope, theme)));
             child.set_clip_rect(rect);
@@ -293,7 +312,7 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
                                 ui,
                                 th,
                                 left,
-                                Some(view(HtmlScriptBannerState::Blocked, false, false, false)),
+                                Some(view(HtmlScriptBannerState::Blocked, false, false)),
                                 None,
                             );
                             term_surface(ui, th, right);
@@ -343,19 +362,19 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     let cases: [(&str, HtmlScriptBannerView<'static>); 4] = [
         (
             "1 · blocked (default)",
-            view(HtmlScriptBannerState::Blocked, false, false, false),
+            view(HtmlScriptBannerState::Blocked, false, false),
         ),
         (
             "2 · hover — × revealed",
-            view(HtmlScriptBannerState::Blocked, false, true, false),
+            view(HtmlScriptBannerState::Blocked, false, true),
         ),
         (
             "3 · after Allow — reloading",
-            view(HtmlScriptBannerState::Reloading, false, false, false),
+            view(HtmlScriptBannerState::Reloading, false, false),
         ),
         (
             "remote content also blocked — body branch",
-            view(HtmlScriptBannerState::Blocked, true, false, false),
+            view(HtmlScriptBannerState::Blocked, true, false),
         ),
     ];
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
@@ -385,7 +404,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                             ui,
                             theme,
                             inner,
-                            Some(view(HtmlScriptBannerState::Blocked, false, false, true)),
+                            Some(view(HtmlScriptBannerState::Blocked, false, false)),
                             None,
                         );
                     },
@@ -404,7 +423,12 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("remote branch", "network scripts stay blocked — says so"),
             ("action", "Secondary / Sm · no wrap"),
             ("reloading", "spinner + label · no × · body dimmed 0.75"),
-            ("narrow", "< ~420 → action on its own line, body-aligned"),
+            (
+                "narrow",
+                "surface width < 440 → action on its own line, body-aligned",
+            ),
+            ("glyph nudge", "1 · banner-glyph-offset"),
+            ("title ↔ body", "2 · banner-text-gap"),
         ],
         &[
             TokenChip::new(
@@ -500,6 +524,8 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("dismissed", "lock · glyph-dim · click → banner again"),
             ("allowed", "scriptFile · text-muted · tooltip only"),
             ("size", "12 (icon-size-xs) in the 24 strip"),
+            ("slot", "first in the tab's right cluster · 16 hit"),
+            ("lock hover", "overlay-hover fill · scriptFile has none"),
             ("cleared by", "navigation to another document · app restart"),
             ("kept on", "#fragment moves"),
             (
@@ -523,6 +549,17 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                 "→ icon-size-xs",
                 theme.text_muted().to_egui(),
             ),
+            TokenChip::new(
+                "html-script-marker-hit",
+                "→ size-16",
+                theme.text_muted().to_egui(),
+            ),
+            TokenChip::new(
+                "html-script-marker-hover-bg",
+                "→ overlay-hover",
+                theme.html_script_marker_hover_bg().to_egui_premultiplied(),
+            ),
+            TokenChip::new("tab-status-gap", "→ 4", theme.text_muted().to_egui()),
         ],
     );
     spec::note(
