@@ -200,6 +200,7 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
   - 스트립이 좁아 양쪽 예약이 겹치면 버튼 앞 영역으로 대신해 제목이 버튼과 겹치지 않게 한다. 폭은 0 아래로 내려가지 않는다.
 - **잘린 제목만 호버 Tooltip 으로 전체 문구를 보여 준다** — 말줄임이 일어난 제목의 띠 위에 포인터가 `tooltip-delay` 동안 머물면 `tasty_ui_widgets::show_popup_title_tooltip`이 공용 `Tooltip`을 띄운다. 위에 들어가면 위, 아니면 아래에 뜨고 둘 다 안 되면 위(창 안으로 당김)다. 잘리지 않은 제목, 버튼 위, 끌어 옮기는 중에는 뜨지 않는다. 제목을 보이려고 popup 을 넓히지 않는다. 갤러리 `popup_frame::title_tooltip`도 같은 함수를 쓴다.
 - **버튼 칸은 IconButton sm 크기다** — `popup-title-btn-size`(24), 버튼 사이 `popup-title-btn-gap`(4), 오른쪽 끝에서 `popup-title-edge-inset`(4). 본체 `close_btn_rect`·`fullscreen_btn_rect`와 갤러리 `popup_frame::draw_title_buttons`가 같은 Theme 접근자를 읽는다.
+- **버튼은 IconButton sm 규칙으로 그린다** — 닫기는 `icons::CLOSE`, 전체화면은 `icons::FIT` 글리프를 `icon_glyph_size_sm` 크기로 그린다. 타이틀바는 Ui 없이 painter로 그리고 hit-test를 매니저가 하므로, 판정 결과(호버, 호버 중 누름)를 `tasty_ui_widgets::paint_icon_button_state`에 넘겨 `IconButton` 위젯과 같은 배경(`icon-button-overlay-hover`, 누름 `icon-button-bg-active`)과 글리프 색(`icon-button-fg`, 호버 `icon-button-fg-hover`)을 얻는다. 글리프는 `tasty_ui_widgets::paint_popup_title_glyph`가 SVG 텍스처를 painter에 올린다. 이 버튼들은 키보드 포커스를 받지 않는다.
 - **개별 popup 은 타이틀 문자열을 미리 축약하지 않는다.** `title_key`/`title_fn`은 원본 텍스트(전체 경로, 원본 문구 등)를 그대로 반환하면 된다 — 문자 수 기준 임의 축약(예: N자 초과 시 `.../parent/name`)을 타이틀 겹침 방지 목적으로 넣지 않는다. 폭 기준 elide 가 아닌 문자 수 기준 축약은 폰트/문자 폭이 다르면 여전히 겹치거나 불필요하게 짧아질 수 있다.
 - **본문이 경로를 스스로 그리는 자리는 다르다 — 거기서는 앞에서 자른다.** 타이틀 겹침 방지가 아니라 **어느 쪽 끝이 정보인가**의 문제다. 경로와 reverse-DNS id 는 꼬리가 대상을 가르고 앞쪽이 반복되는 부분이라, 잘라야 하면 앞에서 자르고(`…/federation/screens.tsx`) 그 결과를 좌→우로 그린다. `direction: rtl` 류의 뒤집기는 런을 재배열해 정보가 있는 끝을 자른다. `file_handler_picker.rs` 의 `elide_target_front()`(헤더 경로) · `elide_id_front()`(행의 handler id)가 그 형태다.
 - **본문(body) 텍스트는 별개**: 타이틀 밖의 본문 라벨(예: "대상: /긴/경로")은 이 elide 로직의 대상이 아니다. 본문이 popup 폭을 넘지 않게 하려면 각 popup 이 자체적으로 축약하거나 `ui.available_width()` 기준 elide를 적용한다(`transfer.rs`의 `elide_mono()` 참고).
@@ -212,7 +213,7 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 - **대상 무대는 먼저 존재해야 한다** — `fullscreen::defs::all_defs()` 에 같은 id 의 `StageDef` 를 등록한다(방법: [fullscreen-stage.md](../design/systems/fullscreen-stage.md)). 두 테이블의 정합은 단위 테스트가 강제한다(`popup_declared_stages_exist_and_are_not_headless`).
 - **headless popup 에는 달 수 없다** — 타이틀바가 없어 버튼을 놓을 자리가 없다. 값이 `Some` 이어도 그려지지 않고, 같은 테스트가 그 조합을 금지한다.
 - **원본 popup 은 닫히지 않는다** — 무대가 덮을 뿐이고 나오면 그대로 다시 보인다. 무대 콘텐츠는 이 popup 의 인스턴스가 아니라 **같은 형태로 그린 별도 콘텐츠**이므로, 무대에서 무엇을 하든 popup 상태에 반영되지 않는다.
-- **글리프는 `fit` 아이콘이다** — × 왼쪽 버튼 칸 가운데에 IconButton sm 글리프 크기(`icon_glyph_size_sm`)로 `icons::FIT`을 그린다. 타이틀바는 Ui 없이 painter로 그리므로 `tasty_ui_widgets::paint_popup_title_glyph`가 SVG 텍스처를 painter에 올린다.
+- **글리프는 `fit` 아이콘이다** — 닫기 버튼 왼쪽 칸에 닫기 버튼과 같은 IconButton sm 규칙(위 "타이틀 길이 처리"의 버튼 항목)으로 `icons::FIT`을 그린다.
 - **버튼을 달지 않은 popup 은 타이틀바가 변하지 않는다** — close 버튼 rect 는 전체화면 버튼 유무와 무관하게 타이틀바 우측 끝 고정이다. 제목은 버튼 수에 맞는 대칭 예약(위 "타이틀 길이 처리")을 따른다.
 
 ## 텍스트 입력이 있는 팝업

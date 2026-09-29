@@ -4,7 +4,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    elide_popup_title, paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
+    ControlSize, IconButtonState, elide_popup_title, paint_icon_button_state,
+    paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
     tooltip_hover_delay_elapsed,
 };
 
@@ -92,6 +93,7 @@ pub fn title_tooltip(
 
 /// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다. 본체 `PopupManager`와
 /// 같은 토큰(`popup-title-btn-size`·`-btn-gap`·`-edge-inset`)으로 배치한다.
+/// 버튼은 IconButton sm 규칙(호버·누름 배경, 글리프 색)으로 그리고 포인터 위치로 상태를 정한다.
 /// 제목은 이 경계를 넘지 않도록 줄여야 한다.
 pub fn draw_title_buttons(
     ctx: &egui::Context,
@@ -100,7 +102,6 @@ pub fn draw_title_buttons(
     title_rect: egui::Rect,
     buttons: TitleButtons,
 ) -> f32 {
-    let fg: egui::Color32 = theme.text_muted().into();
     let size = theme.popup_title_btn_size();
     let close_rect = egui::Rect::from_center_size(
         egui::pos2(
@@ -109,17 +110,28 @@ pub fn draw_title_buttons(
         ),
         egui::Vec2::splat(size.value()),
     );
+    let (hover_pos, down) = ctx.input(|i| (i.pointer.hover_pos(), i.pointer.primary_down()));
+    let button = |rect: egui::Rect, icon: icons::MockGlyph, name: &str| {
+        let hovered = hover_pos.is_some_and(|p| rect.contains(p));
+        let tint = paint_icon_button_state(
+            painter,
+            theme,
+            rect,
+            IconButtonState::ghost(hovered, hovered && down),
+        );
+        let glyph = ControlSize::Sm.icon_glyph(theme);
+        let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
+        if let Err(err) = paint_popup_title_glyph(ctx, painter, icon, glyph_rect, tint) {
+            tracing::warn!("gallery popup {name} glyph failed to load: {err}");
+        }
+    };
     let mut left = title_rect.max.x;
     if buttons.close {
-        let c = close_rect.center();
-        let x = 5.0;
-        let stroke = egui::Stroke::new(theme.icon_stroke_width.value(), fg);
-        painter.line_segment([c - egui::vec2(x, x), c + egui::vec2(x, x)], stroke);
-        painter.line_segment([c + egui::vec2(-x, x), c + egui::vec2(x, -x)], stroke);
+        button(close_rect, icons::CLOSE, "close");
         left = close_rect.min.x;
     }
     if buttons.fullscreen {
-        // close 왼쪽, popup-title-btn-gap 간격. 글리프는 IconButton sm 과 같은 크기의 `fit`.
+        // close 왼쪽, popup-title-btn-gap 간격.
         let rect = egui::Rect::from_center_size(
             egui::pos2(
                 close_rect.center().x - (size + theme.popup_title_btn_gap()).value(),
@@ -127,11 +139,7 @@ pub fn draw_title_buttons(
             ),
             close_rect.size(),
         );
-        let glyph = theme.icon_glyph_size_sm.value();
-        let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
-        if let Err(err) = paint_popup_title_glyph(ctx, painter, icons::FIT, glyph_rect, fg) {
-            tracing::warn!("gallery popup fit glyph failed to load: {err}");
-        }
+        button(rect, icons::FIT, "fit");
         left = rect.min.x;
     }
     left

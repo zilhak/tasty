@@ -70,7 +70,9 @@ pub use html_script_banner::{
     HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,
     html_script_banner, html_script_banner_is_narrow, html_script_marker,
 };
-pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
+pub use icon_button::{
+    IconButton, IconButtonState, IconButtonVariant, IconPainter, paint_icon_button_state,
+};
 pub use info_modal::{
     InfoModalButton, InfoModalOutput, InfoModalSpan, InfoModalSpanKind, InfoModalView,
     footer_height as info_modal_footer_height, info_modal, parse_emphasis as info_modal_parse,

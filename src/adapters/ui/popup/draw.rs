@@ -67,6 +67,32 @@ fn popup_title_style(
     }
 }
 
+/// 타이틀바 버튼 하나를 IconButton sm 규칙(호버·누름 배경, 글리프 색)으로 그린다.
+/// hit-test는 매니저가 하므로 판정 결과만 받는다.
+fn title_icon_button(
+    ctx: &egui::Context,
+    painter: &egui::Painter,
+    th: &tasty_type_appearance::theme::Theme,
+    rect: egui::Rect,
+    icon: crate::adapters::ui::icons::Icon,
+    hovered: bool,
+    primary_down: bool,
+) {
+    let tint = tasty_ui_widgets::paint_icon_button_state(
+        painter,
+        th,
+        rect,
+        tasty_ui_widgets::IconButtonState::ghost(hovered, hovered && primary_down),
+    );
+    let glyph = tasty_ui_widgets::ControlSize::Sm.icon_glyph(th);
+    let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
+    if let Err(err) =
+        tasty_ui_widgets::paint_popup_title_glyph(ctx, painter, icon, glyph_rect, tint)
+    {
+        tracing::warn!("popup title button glyph failed to load: {err}");
+    }
+}
+
 /// 포인터가 있는 테두리를 반환한다. 계산은 egui 좌표를 사용한다.
 fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<ResizeEdges> {
     let left = pos.x <= rect.min.x + band;
@@ -479,31 +505,15 @@ impl PopupManager {
 
                 if let Some(rect) = fullscreen_btn_rect {
                     let hovered = matches!(hovered_fullscreen, Some((id, _)) if id == popup_id);
-                    if hovered {
-                        painter.rect_filled(
-                            rect,
-                            th.corner_radius_sm.value(),
-                            th.hover_overlay.to_egui_premultiplied(),
-                        );
-                    }
-                    // IconButton sm 과 같은 글리프 크기로 `fit` 아이콘을 그린다.
-                    let glyph = th.icon_glyph_size_sm.value();
-                    let glyph_rect =
-                        egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
-                    let tint = if hovered {
-                        th.text_primary().into()
-                    } else {
-                        th.text_muted().into()
-                    };
-                    if let Err(err) = tasty_ui_widgets::paint_popup_title_glyph(
+                    title_icon_button(
                         ctx,
                         &painter,
+                        &th,
+                        rect,
                         crate::adapters::ui::icons::FIT,
-                        glyph_rect,
-                        tint,
-                    ) {
-                        tracing::warn!("popup fullscreen glyph failed to load: {err}");
-                    }
+                        hovered,
+                        primary_down,
+                    );
                     if hovered {
                         // painter로 그린 버튼에는 Response가 없어 툴팁을 직접 표시한다.
                         egui::show_tooltip_at(
@@ -516,34 +526,14 @@ impl PopupManager {
                     }
                 }
 
-                let is_close_hovered = hovered_close == Some(popup_id);
-                if is_close_hovered {
-                    painter.rect_filled(
-                        close_btn_rect,
-                        2.0,
-                        th.hover_overlay.to_egui_premultiplied(),
-                    );
-                }
-                let x_size = 5.0;
-                let x_color = if is_close_hovered {
-                    th.accent_danger()
-                } else {
-                    th.text_muted()
-                };
-                let center = close_btn_rect.center();
-                painter.line_segment(
-                    [
-                        center - egui::vec2(x_size, x_size),
-                        center + egui::vec2(x_size, x_size),
-                    ],
-                    egui::Stroke::new(th.icon_stroke_width.value(), x_color),
-                );
-                painter.line_segment(
-                    [
-                        center + egui::vec2(-x_size, x_size),
-                        center + egui::vec2(x_size, -x_size),
-                    ],
-                    egui::Stroke::new(th.icon_stroke_width.value(), x_color),
+                title_icon_button(
+                    ctx,
+                    &painter,
+                    &th,
+                    close_btn_rect,
+                    crate::adapters::ui::icons::CLOSE,
+                    hovered_close == Some(popup_id),
+                    primary_down,
                 );
             }
 

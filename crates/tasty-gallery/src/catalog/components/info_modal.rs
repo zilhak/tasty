@@ -351,14 +351,17 @@ pub fn draw_title_bar(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("centre", "strip centre, always"),
             ("reserve", "4 + N × 24 + (N − 1) × 4 + 4 → 32 · 60 per side"),
-            ("buttons", "IconButton sm 24 (was 20 in the product)"),
+            (
+                "buttons",
+                "IconButton sm 24 · close / fit glyph · hover and press overlays",
+            ),
             ("order", "fullscreen (fit) · close"),
             ("fullscreen", "only when the popup declares a stage"),
             ("long title", "ellipsis inside the band"),
         ],
         &[
             TokenChip::new("bg-sidebar", "title bar", theme.bg_sidebar().to_egui()),
-            TokenChip::new("text-muted", "glyphs", theme.text_muted().to_egui()),
+            TokenChip::new("icon-button-fg", "glyphs", theme.icon_button_fg().to_egui()),
         ],
     );
 
