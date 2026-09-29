@@ -219,7 +219,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "size",
                 "info-modal-width 440 × min-height 140 .. max-height 360",
             ),
-            ("title", "popup title bar · font-size-max 14 · rule below"),
+            (
+                "title",
+                "shared popup title bar · bg-sidebar · centred, one line · font-size-max 14 · rule below",
+            ),
+            (
+                "close ×",
+                "dismiss, same as Enter / Esc · outside click never closes",
+            ),
             ("body", "13 · text-secondary · para gap 12 · plain"),
             (
                 "scroll edge",
