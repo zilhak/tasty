@@ -36,6 +36,7 @@ const BODY: &str = "banner.html_script.body";
 const BODY_REMOTE: &str = "banner.html_script.body_remote";
 const ACTION: &str = "banner.html_script.action";
 const RELOADING: &str = "banner.html_script.reloading";
+const ACTION_LOADING: &str = "banner.html_script.action_loading";
 const MARKER_BLOCKED: &str = "banner.html_script.marker_blocked";
 const MARKER_ALLOWED: &str = "banner.html_script.marker_allowed";
 
@@ -45,6 +46,7 @@ fn view(state: HtmlScriptBannerState, remote: bool, hover: bool) -> HtmlScriptBa
         body: t(if remote { BODY_REMOTE } else { BODY }),
         action: t(ACTION),
         reloading: t(RELOADING),
+        loading_tooltip: t(ACTION_LOADING),
         state,
         narrow: false,
         force_hover: hover,
@@ -359,9 +361,9 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 2 — 배너 상태. 기본·hover·재로드·원격 본문 분기와 좁은 surface.
+/// Spec 2 — 배너 상태. 기본·hover·재로드·로드 중·원격 본문 분기와 좁은 surface.
 pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
-    let cases: [(&str, HtmlScriptBannerView<'static>); 4] = [
+    let cases: [(&str, HtmlScriptBannerView<'static>); 5] = [
         (
             "1 · blocked (default)",
             view(HtmlScriptBannerState::Blocked, false, false),
@@ -373,6 +375,10 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         (
             "3 · after Allow — reloading",
             view(HtmlScriptBannerState::Reloading, false, false),
+        ),
+        (
+            "4 · surface loading a new document — Allow disabled until commit (tooltip on hover)",
+            view(HtmlScriptBannerState::Loading, false, false),
         ),
         (
             "remote content also blocked — body branch",
@@ -395,7 +401,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 caption(
                     ui,
                     theme,
-                    "5 · narrow surface (360) — action wraps under the body",
+                    "6 · narrow surface (360) — action wraps under the body",
                 );
                 framed(
                     ui,
@@ -425,6 +431,10 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("remote branch", "network scripts stay blocked — says so"),
             ("action", "Secondary / Sm · no wrap"),
             ("reloading", "spinner + label · no × · fade out on commit"),
+            (
+                "loading (still blocked)",
+                "Allow disabled from load start to commit · no delay · tooltip (top) \"Available when the document finishes loading\" · × kept",
+            ),
             (
                 "narrow",
                 "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned",
@@ -478,6 +488,12 @@ pub fn draw_banner_button(ui: &mut egui::Ui, theme: &Theme) {
                                 ui,
                                 th,
                                 &view(HtmlScriptBannerState::Blocked, false, false),
+                            );
+                            caption(ui, th, &format!("{name} · loading — disabled on the shell"));
+                            html_script_banner(
+                                ui,
+                                th,
+                                &view(HtmlScriptBannerState::Loading, false, false),
                             );
                         });
                     });

@@ -984,6 +984,7 @@ body = "Buttons and menus that need JavaScript may not respond. Allowing applies
 body_remote = "Some of its scripts load from the network, which stays blocked. Allowing runs only the scripts inside this document, until Tasty restarts."
 action = "Allow for this document"
 reloading = "Reloading with scripts allowed"
+action_loading = "Available when the document finishes loading"
 marker_blocked = "Scripts blocked. Click to show the notice again."
 marker_allowed = "Scripts allowed for this document until Tasty restarts"
 

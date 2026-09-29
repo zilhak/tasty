@@ -980,6 +980,7 @@ body = "JavaScript가 필요한 버튼과 메뉴가 반응하지 않을 수 있�
 body_remote = "일부 스크립트는 네트워크에서 불러오며 계속 차단됩니다. 허용하면 Tasty를 다시 시작할 때까지 이 문서 안의 스크립트만 실행됩니다."
 action = "이 문서에서 허용"
 reloading = "스크립트를 허용하고 다시 불러오는 중"
+action_loading = "문서를 다 불러오면 사용할 수 있습니다"
 marker_blocked = "스크립트가 차단되었습니다. 클릭하면 안내를 다시 표시합니다."
 marker_allowed = "Tasty를 다시 시작할 때까지 이 문서의 스크립트가 허용됩니다"
 

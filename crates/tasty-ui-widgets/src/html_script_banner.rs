@@ -10,7 +10,7 @@ use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::icon_button::{IconButton, IconButtonVariant};
 use crate::spinner::Spinner;
-use crate::tooltip::{Tooltip, TooltipPlacement};
+use crate::tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 
 /// 제목과 본문은 각각 두 줄까지 보이고 나머지는 말줄임한다.
 const MAX_TEXT_ROWS: usize = 2;
@@ -26,6 +26,9 @@ pub fn html_script_banner_is_narrow(surface_width: f32, theme: &Theme) -> bool {
 pub enum HtmlScriptBannerState {
     /// 스크립트가 차단된 기본 상태. 액션 버튼을 보이고 hover 때 닫기 버튼을 드러낸다.
     Blocked,
+    /// 차단된 채 surface가 새 문서를 로드하는 중(commit 전). 액션 버튼을 비활성으로 그리고
+    /// hover 때 위쪽 툴팁으로 이유를 보인다. 닫기 버튼은 Blocked와 같다.
+    Loading,
     /// 허용을 누른 뒤 한 번 다시 읽는 중. 액션 자리를 스피너와 라벨이 대신하고 닫기 버튼을 숨긴다.
     Reloading,
 }
@@ -36,6 +39,8 @@ pub struct HtmlScriptBannerView<'a> {
     pub body: &'a str,
     pub action: &'a str,
     pub reloading: &'a str,
+    /// Loading 단계의 비활성 버튼 툴팁.
+    pub loading_tooltip: &'a str,
     pub state: HtmlScriptBannerState,
     /// surface가 좁아 액션을 본문 아래 줄로 내린다.
     pub narrow: bool,
@@ -77,7 +82,7 @@ fn text_galley(
 fn action_size(ui: &egui::Ui, theme: &Theme, view: &HtmlScriptBannerView<'_>) -> egui::Vec2 {
     let height = ControlSize::Sm.height(theme);
     let width = match view.state {
-        HtmlScriptBannerState::Blocked => {
+        HtmlScriptBannerState::Blocked | HtmlScriptBannerState::Loading => {
             let font = egui::FontId::proportional(ControlSize::Sm.font_size(theme));
             let w = ui.fonts(|f| {
                 f.layout_no_wrap(view.action.to_owned(), font, egui::Color32::PLACEHOLDER)
@@ -112,6 +117,21 @@ fn draw_action(
             .size(ControlSize::Sm)
             .show(&mut child, theme)
             .clicked(),
+        HtmlScriptBannerState::Loading => {
+            // 전환은 잉크만 바뀐다. 지연이나 유예 없이 로드 시작부터 commit까지 비활성이다.
+            let resp = Button::new(view.action)
+                .variant(ButtonVariant::Secondary)
+                .size(ControlSize::Sm)
+                .enabled(false)
+                .show(&mut child, theme);
+            if tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
+                Tooltip::new(view.loading_tooltip)
+                    .placement(TooltipPlacement::Top)
+                    .id_source(resp.id)
+                    .show(ui, theme, resp.rect);
+            }
+            false
+        }
         HtmlScriptBannerState::Reloading => {
             let spin = theme.icon_glyph_size_sm.value();
             let spin_rect = egui::Rect::from_min_size(
@@ -234,7 +254,7 @@ pub fn html_script_banner(
     });
     let hovered = view.force_hover || ui.rect_contains_pointer(rect);
     let mut dismiss_clicked = false;
-    if hovered && view.state == HtmlScriptBannerState::Blocked {
+    if hovered && view.state != HtmlScriptBannerState::Reloading {
         let side = theme.icon_button_size_sm().value();
         let slot = egui::Rect::from_min_size(
             egui::pos2(
@@ -318,25 +338,58 @@ pub fn html_script_marker(
 mod tests {
     use super::*;
 
-    /// 차단 배너를 한 번 그려 모든 도형을 돌려준다.
-    fn blocked_banner_shapes(narrow: bool) -> (Theme, Vec<egui::Shape>) {
+    /// 배너를 한 번 그려 모든 도형을 돌려준다.
+    fn banner_shapes(state: HtmlScriptBannerState, narrow: bool) -> (Theme, Vec<egui::Shape>) {
+        let (theme, _, shapes) = banner_render(state, narrow, false);
+        (theme, shapes)
+    }
+
+    /// 배너를 한 번 그려 배너 rect와 모든 도형을 돌려준다.
+    fn banner_render(
+        state: HtmlScriptBannerState,
+        narrow: bool,
+        force_hover: bool,
+    ) -> (Theme, egui::Rect, Vec<egui::Shape>) {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let view = HtmlScriptBannerView {
             title: "Scripts in this document are blocked",
             body: "Buttons and menus that need JavaScript may not respond.",
             action: "Allow for this document",
             reloading: "Reloading with scripts allowed",
-            state: HtmlScriptBannerState::Blocked,
+            loading_tooltip: "Available when the document finishes loading",
+            state,
             narrow,
-            force_hover: false,
+            force_hover,
         };
         let ctx = egui::Context::default();
+        let mut rect = egui::Rect::NOTHING;
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                html_script_banner(ui, &theme, &view);
+                rect = html_script_banner(ui, &theme, &view).rect;
             });
         });
-        (theme, out.shapes.into_iter().map(|c| c.shape).collect())
+        (
+            theme,
+            rect,
+            out.shapes.into_iter().map(|c| c.shape).collect(),
+        )
+    }
+
+    /// hover 때 닫기(×) 슬롯 안에 그려진 도형이 있는지 본다. 슬롯 위치는 본문과 같은 식으로 구한다.
+    fn draws_in_the_close_slot(state: HtmlScriptBannerState) -> bool {
+        let (theme, rect, shapes) = banner_render(state, false, true);
+        let side = theme.icon_button_size_sm().value();
+        let slot = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.right() - theme.spacing_sm.value() - side,
+                rect.top() + theme.banner_padding_y().value(),
+            ),
+            egui::vec2(side, side),
+        );
+        shapes.iter().any(|s| {
+            let b = s.visual_bounding_rect();
+            b.is_positive() && slot.expand(0.5).contains_rect(b)
+        })
     }
 
     fn has_rect(shapes: &[egui::Shape], pred: impl Fn(&egui::epaint::RectShape) -> bool) -> bool {
@@ -348,7 +401,7 @@ mod tests {
     #[test]
     fn allow_button_uses_the_banner_button_box() {
         for narrow in [false, true] {
-            let (theme, shapes) = blocked_banner_shapes(narrow);
+            let (theme, shapes) = banner_shapes(HtmlScriptBannerState::Blocked, narrow);
             let bg = theme.banner_button_bg().to_egui();
             let border = theme.banner_button_border().to_egui();
             assert!(has_rect(&shapes, |r| r.fill == bg), "narrow={narrow}");
@@ -358,6 +411,36 @@ mod tests {
                 "narrow={narrow}"
             );
         }
+    }
+
+    #[test]
+    fn loading_draws_allow_in_the_disabled_box_instead_of_the_banner_box() {
+        for narrow in [false, true] {
+            let (theme, shapes) = banner_shapes(HtmlScriptBannerState::Loading, narrow);
+            let disabled_bg = theme.button_disabled_bg().to_egui();
+            let disabled_border = theme.button_disabled_border().to_egui();
+            assert!(
+                has_rect(&shapes, |r| r.fill == disabled_bg),
+                "narrow={narrow}"
+            );
+            assert!(
+                has_rect(&shapes, |r| r.stroke.color == disabled_border
+                    && r.stroke.width > 0.0),
+                "narrow={narrow}"
+            );
+            let banner_bg = theme.banner_button_bg().to_egui();
+            assert!(
+                !has_rect(&shapes, |r| r.fill == banner_bg),
+                "narrow={narrow}"
+            );
+        }
+    }
+
+    #[test]
+    fn loading_keeps_the_close_button_on_hover() {
+        assert!(draws_in_the_close_slot(HtmlScriptBannerState::Blocked));
+        assert!(draws_in_the_close_slot(HtmlScriptBannerState::Loading));
+        assert!(!draws_in_the_close_slot(HtmlScriptBannerState::Reloading));
     }
 
     #[test]

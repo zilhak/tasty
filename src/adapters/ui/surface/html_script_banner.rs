@@ -120,6 +120,7 @@ pub fn draw(
         }),
         action: t("banner.html_script.action"),
         reloading: t("banner.html_script.reloading"),
+        loading_tooltip: t("banner.html_script.action_loading"),
         state: shown.state,
         narrow: html_script_banner_is_narrow(panel.width(), theme),
         force_hover: false,
