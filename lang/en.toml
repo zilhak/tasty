@@ -814,7 +814,7 @@ detail = "Detail"
 [explorer.column]
 name = "Name"
 size = "Size"
-modified = "Modified"
+modified = "Date modified"
 type = "Type"
 
 [explorer.status]

@@ -232,7 +232,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     sort_id: Some(1_usize),
                 },
                 TableColumn {
-                    title: "Modified",
+                    title: "Date modified",
                     width: TableColumnWidth::Initial {
                         initial: LogicalPx(132.0),
                         at_least: LogicalPx(108.0),

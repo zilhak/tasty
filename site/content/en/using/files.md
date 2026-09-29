@@ -43,7 +43,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
 - **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, and the view switch (**Grid** · **List** · **Detail**).
-- **Right** — the items in the current folder. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Modified** · **Type** column headers to sort.
+- **Right** — the items in the current folder. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
