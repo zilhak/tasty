@@ -120,11 +120,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_PRESET_EDITOR, "TAB_PAD_X"),
     ),
     (
-        "전송 팝업 폭",
-        Side::Lit(HOST_TRANSFER, "FRAME_W"),
-        Side::Lit(GALLERY_TRANSFER, "FRAME_W"),
-    ),
-    (
         "전송 팝업 좌우 여백",
         Side::Lit(HOST_TRANSFER, "PAD_X"),
         Side::Lit(GALLERY_TRANSFER, "PAD_X"),
@@ -423,11 +418,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 46개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 45개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        46,
-        "비교 명부가 {}쌍이다(기록 46). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        45,
+        "비교 명부가 {}쌍이다(기록 45). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);

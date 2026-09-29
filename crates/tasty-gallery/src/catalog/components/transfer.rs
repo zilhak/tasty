@@ -11,8 +11,6 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant};
 use crate::catalog::widgets::dialog as kit;
 
-/// `--tasty-transfer-popup-width` (size-400).
-const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
 const PAD_X: LogicalPx = LogicalPx(14.0);
 /// 헤더 세로 패딩 (디자인 12 = space-md).
@@ -97,7 +95,7 @@ struct ProgressRow {
     rate: &'static str,
 }
 
-/// 400px 프레임 셸 (bg-panel + 1px border-strong + modal shadow). item_spacing 0 —
+/// `transfer-popup-width` 프레임 셸 (bg-panel + 1px border-strong + modal shadow). item_spacing 0 —
 /// 각 구역이 자체 패딩을 가진다.
 fn frame(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
@@ -109,10 +107,10 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         .corner_radius(theme.corner_radius.value())
         .shadow(theme.shadow_modal().to_egui())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W.value());
+            ui.set_width(theme.transfer_popup_width().value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W.value());
+                ui.set_width(theme.transfer_popup_width().value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 add(ui);
             });
@@ -131,7 +129,7 @@ fn header_band(
     let content_h = LogicalPx(20.0);
     let band_h = HEADER_PAD_Y.scaled(2.0) + content_h;
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::vec2(theme.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -348,7 +346,7 @@ fn footer_buttons(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::
     let btn_h = LogicalPx(ControlSize::Sm.height(theme));
     let band_h = FOOTER_PAD_Y.scaled(2.0) + btn_h;
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::vec2(theme.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(

@@ -16,8 +16,6 @@ use crate::theme;
 pub const TRANSFER_PROGRESS_POPUP_ID: &str = "transfer_progress";
 pub const TRANSFER_ERROR_POPUP_ID: &str = "transfer_error";
 
-/// `--tasty-transfer-popup-width` (size-400).
-const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
 const PAD_X: LogicalPx = LogicalPx(14.0);
 /// 헤더 세로 패딩 (디자인 12 = space-md).
@@ -82,14 +80,18 @@ pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
         .map(|p| p.rows.len())
         .unwrap_or(1)
         .max(1);
+    let th = theme::theme();
     let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
-    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&theme::theme()));
+    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
     // 행 하나: fileRow(~18) + gap + bar(4) + gap + statsRow(~15).
     let row_h = LogicalPx(18.0) + BODY_GAP + LogicalPx(4.0) + BODY_GAP + LogicalPx(15.0);
     let body_h = BODY_PAD.scaled(2.0)
         + row_h.scaled(n as f32)
         + BODY_GAP.scaled((n.saturating_sub(1)) as f32);
-    egui::vec2(FRAME_W.value(), (header_h + body_h + footer_h).value())
+    egui::vec2(
+        th.transfer_popup_width().value(),
+        (header_h + body_h + footer_h).value(),
+    )
 }
 
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
@@ -103,14 +105,17 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
         .front()
         .map(|e| (e.name.chars().count(), e.reason.chars().count()))
         .unwrap_or((0, 0));
-    // 본문 폭 372(400 − 2×14). 대략 문자당 ~7px → prose ~53자/줄, well ~50자/줄.
+    // 본문 폭 372(배율 1의 transfer-popup-width 400 − 2×14). 대략 문자당 ~7px → prose ~53자/줄, well ~50자/줄.
     let prose_lines = (((name_len + 22) as f32) / 53.0).ceil().max(1.0);
     let prose_h = prose_lines * th.font_size_body.value() * 1.5;
     let well_lines = ((reason_len as f32) / 50.0).ceil().max(1.0);
     // well: 패딩 8+8 + 텍스트 줄.
     let well_h = 16.0 + well_lines * th.font_size_caption.value() * 1.4;
     let body_h = BODY_PAD.scaled(2.0) + LogicalPx(prose_h) + BODY_GAP + LogicalPx(well_h);
-    egui::vec2(FRAME_W.value(), (header_h + body_h + footer_h).value())
+    egui::vec2(
+        th.transfer_popup_width().value(),
+        (header_h + body_h + footer_h).value(),
+    )
 }
 
 /// 닫을 때 진행 표시 상태를 비운다. 전송 자체를 중단하는 훅은 아니다.
@@ -143,7 +148,7 @@ pub fn draw_transfer_progress(
     let mut cancel = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.vertical(|ui| {
-        ui.set_width(FRAME_W.value());
+        ui.set_width(th.transfer_popup_width().value());
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         header_band(
             ui,
@@ -219,7 +224,7 @@ pub fn draw_transfer_error(
     let mut retry = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.vertical(|ui| {
-        ui.set_width(FRAME_W.value());
+        ui.set_width(th.transfer_popup_width().value());
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         header_band(
             ui,
@@ -310,7 +315,7 @@ fn header_band(
 ) {
     let band_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::vec2(th.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -483,7 +488,7 @@ fn footer_buttons<R>(
     let btn_h = ControlSize::Sm.height(th);
     let band_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(btn_h);
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::vec2(th.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(

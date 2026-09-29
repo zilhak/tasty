@@ -285,7 +285,7 @@ semantic/primitive 종착.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
 |---|---|---|---|
-| `--tasty-transfer-popup-width` | → `size-400` (400px) | `FRAME_W: LogicalPx` 400 | 진행·실패 프레임 폭. egui 좌표로 넘길 때 값을 변환 |
+| `--tasty-transfer-popup-width` | → `size-400` (400px) | `transfer_popup_width()` | 진행·실패 프레임 폭. UI 배율을 곱한다(본체와 갤러리 공용) |
 | `--tasty-progress-height` | → `size-4` (4px) | `Theme::spacing_xs`(=4) | determinate bar 두께. size-4 = space-xs 값 일치 → 기존 필드 재사용 |
 | `--tasty-progress-radius` | → `radius-sm` (2px) | `Theme::corner_radius_sm` | bar 라운드 |
 | `--tasty-progress-track-bg` | → `bg-app` | `Theme::bg_app()` | recessed track(패널보다 어둡게) |
