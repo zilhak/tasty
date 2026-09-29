@@ -277,7 +277,10 @@ fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, w: &WsCfg) {
         p.rect_filled(rect, 0.0, c(theme.surface_active()));
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.tab_indicator_width().value(), rect.height()),
+            egui::vec2(
+                theme.workspace_row_active_bar_width().value(),
+                rect.height(),
+            ),
         );
         p.rect_filled(bar, 0.0, c(theme.accent_primary()));
     }

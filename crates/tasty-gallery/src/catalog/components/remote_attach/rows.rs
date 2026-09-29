@@ -113,14 +113,14 @@ fn dot_slot_status(ui: &mut egui::Ui, theme: &Theme, kind: StatusKind, pulse: bo
     status_dot(&mut c, theme, kind, "", pulse, false);
 }
 
-/// 선택 행의 inset accent 좌측바 — listctrl 과 같은 2px 토큰.
+/// 선택 행의 inset accent 좌측바. 한쪽 변 선택 띠라 hairline selection_edge_width를 쓴다.
 pub(super) fn selected_bar(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let bar = egui::Rect::from_min_size(
         rect.min,
-        egui::vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
+        egui::vec2(theme.selection_edge_width.value(), rect.height()),
     );
     ui.painter()
-        .rect_filled(bar, 0.0, theme.listctrl_selected_bar().to_egui());
+        .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
 }
 
 pub(super) fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {

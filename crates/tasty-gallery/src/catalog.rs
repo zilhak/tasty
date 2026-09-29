@@ -1519,7 +1519,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "sidebar-attached-ring",
                             "Attached ring in the workspace row",
-                            Some("Every row reserves a 16 dot slot; body x 28"),
+                            Some(
+                                "Every row reserves the derived dot slot (16 at scale 1); body x 28",
+                            ),
                             components::sidebar::draw_attached_ring,
                         ),
                     ],

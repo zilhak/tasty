@@ -88,7 +88,7 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
         );
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
+            egui::vec2(theme.selection_edge_width.value(), rect.height()),
         );
         ui.painter()
             .rect_filled(bar, 0.0, theme.accent_primary().to_egui());

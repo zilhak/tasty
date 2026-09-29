@@ -362,6 +362,7 @@ impl<'a> WsRowSpec<'a> {
 
 /// 점 슬롯 중심 x와 본문 x. 슬롯은 attached 여부와 무관하게 모든 행에서 예약해
 /// ring 전체(점 8 + 2×(offset + 폭))가 inset·간격 안에 들어가게 한다.
+/// 슬롯 폭은 점과 ring을 각각 반올림한 뒤 더한 값이다(0.85 → 15 · 1 → 16 · 1.2 → 18).
 fn ws_row_columns(theme: &Theme, card: egui::Rect) -> (f32, f32) {
     let slot_x = card.min.x + theme.workspace_row_padding_x().value();
     let slot = theme.workspace_dot_slot().value();
@@ -401,7 +402,10 @@ fn paint_ws_row(ui: &mut egui::Ui, theme: &Theme, card: egui::Rect, row: &WsRowS
             );
             let bar = egui::Rect::from_min_size(
                 card.min,
-                egui::vec2(theme.tab_indicator_width.value(), card.height()),
+                egui::vec2(
+                    theme.workspace_row_active_bar_width().value(),
+                    card.height(),
+                ),
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         }
@@ -888,9 +892,11 @@ pub fn draw_attached_ring(ui: &mut egui::Ui, theme: &Theme) {
             let mut rows = attached_rows(RowState::Inactive);
             rows[0].state = RowState::Active;
             rows.remove(1);
-            spec::cluster(ui, theme, &format!("ui_scale {zoom}"), |ui| {
-                ws_column(ui, &th, &rows)
-            });
+            let caption = format!(
+                "ui_scale {zoom} — slot {} (derived)",
+                th.workspace_dot_slot().value()
+            );
+            spec::cluster(ui, theme, &caption, |ui| ws_column(ui, &th, &rows));
         }
     });
 
@@ -901,10 +907,29 @@ pub fn draw_attached_ring(ui: &mut egui::Ui, theme: &Theme) {
             ("dot", "8 (status-dot-size)"),
             ("attached bbox", "8 + 2×(2+2) = 16"),
             ("row inset", "8 (workspace-row-padding-x)"),
-            ("dot slot", "16, reserved on every row (workspace-dot-slot)"),
+            (
+                "dot slot",
+                "16, reserved on every row — derived: round(dot) + 2×(round(ring-width) + round(ring-offset))",
+            ),
+            (
+                "slot height",
+                "the title label's own line box — never grows the row",
+            ),
             ("slot → body", "4 (workspace-dot-gap)"),
             ("body x", "28 (title · remote pill · subtitle)"),
             ("clearance", "card 8 · accent bar 6 · label 4"),
+            (
+                "active bar",
+                "2, hairline, zoom-exempt (workspace-row-active-bar-width → selection-edge-width)",
+            ),
+            (
+                "ui_scale 0.85",
+                "inset 7 · slot 15 (derived) · gap 3 → label x 25 · clear card 7 · bar 5 · label 3",
+            ),
+            (
+                "ui_scale 1.2",
+                "inset 10 · slot 18 · gap 5 → label x 33 · row height unchanged",
+            ),
         ],
         &[TokenChip::new(
             "status-dot-attached-ring",
@@ -916,6 +941,6 @@ pub fn draw_attached_ring(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "워크스페이스 행은 일반 점 8을 유지하고 attached ring까지 담는 16 슬롯을 모든 행에 예약한다. ring이 없는 행도 이름·REMOTE 줄·부제가 같은 x에서 시작한다. 슬롯·inset·간격은 토큰이라 UI 배율을 따라 함께 변한다.",
+        "워크스페이스 행은 일반 점 8을 유지하고 attached ring까지 담는 16 슬롯을 모든 행에 예약한다. ring이 없는 행도 이름·REMOTE 줄·부제가 같은 x에서 시작한다. inset·간격은 토큰마다 반올림하고, 슬롯은 반올림한 점과 ring을 더해 만들어 ring이 항상 슬롯 안에 들어간다. 활성 행의 accent bar는 hairline이라 배율과 무관하게 2다.",
     );
 }
