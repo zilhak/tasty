@@ -53,7 +53,7 @@ function PluginRowG({ name, meta, state = "rest", disabled }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", width: 260,
       padding: "var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", background: bg,
-      boxShadow: state === "selected" ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none",
+      boxShadow: state === "selected" ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none",
       opacity: disabled ? "var(--tasty-state-dim-opacity)" : 1 /* disabled PLUGIN = dimmed item, still selectable */ }}>
       <PluginAvatarG initial={name.charAt(0).toUpperCase()} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -966,6 +966,28 @@ function Page() {
             specs={[["origin", <>Tag: <b>host</b> · <b>you</b> · plugin id (<span className="tok">--tasty-accent-agent</span>)</>], ["remove", "user rows only"], ["not removable", <>lock glyph, <span className="tok">--tasty-glyph-dim</span>, with tooltip</>], ["not a disabled button", "nothing is pending — an affordance would lie"], ["IpcSequence", "mono one-line summary, steps joined by →"], ["sequence editing", "Edit → the sequence editor (no inline edit)"], ["registry", "unchanged — defaults re-seed on start"]]}
             tokens={[{ tok: "--tasty-glyph-dim", use: "lock glyph", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-agent", use: "plugin origin", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-font-mono", use: "event · action · sequence" }]} />
           <Note>The design's earlier “remove on every row” is dropped: the registry policy wins, and the lock is the honest reading of it.</Note>
+        </Spec>
+        <Spec title="Appearance › colour rows — the Default hex is read-only, not disabled (2026-09-29)"
+          when={<>With <b>Default</b> checked, a colour row has no override and its hex field cannot be edited. The field still carries the <b>base value in use</b>, the only text value on the row, so it is <b>read-only</b>, not disabled: the same neutral box as a disabled Input, with the value in <span className="tok">--tasty-input-readonly-fg</span> (text-secondary) instead of the disabled ink. The value can be selected and copied; the field takes focus (1px focus edge, no ring). Unchecking Default starts the override and the field becomes a normal Input. Applies to the Tasty colour rows, the terminal surface background row and the Colors group.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, theme]) => (
+              <div key={label} {...(theme ? { "data-theme": theme } : {})} style={{ width: "var(--tasty-size-360)", display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", marginBottom: "var(--tasty-space-xs)" }}>{label}</span>
+                {[["accent", "#89b4fa", null], ["surface_bg", "#1e1e2e", "#181825"], ["selection", "#45475a", null]].map(([field, base, ov]) => (
+                  <div key={field} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-control-height)" }}>
+                    <span style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "var(--tasty-radius-pill)", flex: "none", background: ov ? "var(--tasty-accent-primary)" : "transparent" }} />
+                    <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: ov ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)" }}>{field}</span>
+                    <span style={{ flex: "none", display: "flex", width: "var(--tasty-field-width-xs)" }}><Input block mono readOnly={!ov} defaultValue={ov || base} /></span>
+                    <span style={{ width: "var(--tasty-swatch-size)", height: "var(--tasty-swatch-size)", borderRadius: "var(--tasty-swatch-radius)", flex: "none", background: ov || base, opacity: ov ? 1 : "var(--tasty-state-dim-opacity)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)" }} />
+                    <WCheckbox label="Default" checked={!ov} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "text-secondary"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
+            tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
       </Section>
 

@@ -264,7 +264,7 @@ function Components() {
       {/* FORMS */}
       <Section id="forms" title="Form controls">
         <Spec title="Input" badges={<HoverBadge label="focus me" />}
-          when={<>Single-line field. Use <code>mono</code> for paths, IDs, regex, hex. <code>icon</code> for a leading affordance (search), <code>addon</code> for a trailing unit. <code>invalid</code> turns the border + ring red.</>}>
+          when={<>Single-line field. Use <code>mono</code> for paths, IDs, regex, hex. <code>icon</code> for a leading affordance (search), <code>addon</code> for a trailing unit. <code>invalid</code> turns the border + ring red. <code>readOnly</code> (2026-09-29) is for a value that can't be edited <b>now</b> but is still read: the disabled neutral box, the value in <span className="tok">--tasty-input-readonly-fg</span> (text-secondary), focusable, selectable and copyable. <code>disabled</code> means the control itself is unavailable.</>}>
           <Stage variant="column" style={{ gap: 12 }}>
             <Cluster label="default · icon · addon — click to focus">
               <Input placeholder="Workspace name" style={{ width: 200 }} />
@@ -276,10 +276,14 @@ function Components() {
               <Input invalid defaultValue="bad value" style={{ width: 160 }} />
               <Input disabled placeholder="Disabled" style={{ width: 160 }} />
             </Cluster>
+            <Cluster label="readOnly vs disabled — same box, readable value (2026-09-29)">
+              <Input mono readOnly defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
+              <Input mono disabled defaultValue="#89b4fa" style={{ width: "var(--tasty-field-width-xs)" }} />
+            </Cluster>
           </Stage>
           <Meta
             specs={[["height", <>28px <span className="tok">--tasty-control-height</span></>], ["border", "1px → focus ring 2px"], ["padding", <>0 <span className="tok">--tasty-space-sm</span></>]]}
-            tokens={[{ tok: "--tasty-surface-raised", use: "fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-focus", use: "ring", color: "var(--tasty-border-focus)" }, { tok: "--tasty-accent-danger", use: "invalid", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-placeholder", use: "hint" }]} />
+            tokens={[{ tok: "--tasty-surface-raised", use: "fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-focus", use: "ring", color: "var(--tasty-border-focus)" }, { tok: "--tasty-accent-danger", use: "invalid", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-placeholder", use: "hint" }, { tok: "--tasty-input-readonly-fg", use: "read-only value → text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
 
         <Spec title="Select · Checkbox · Switch"
@@ -417,8 +421,9 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["height", <>22px <span className="tok">--tasty-control-height-tree</span></>], ["indent", "14px / level"], ["selected", <span className="tok">--tasty-surface-active</span>]]}
+            specs={[["height", <>22px <span className="tok">--tasty-control-height-tree</span></>], ["indent", "14px / level"], ["selected", <span className="tok">--tasty-surface-active</span>], ["disabled", "none — no such state (2026-09-29)"]]}
             tokens={[{ tok: "--tasty-surface-active", use: "selected", color: "var(--tasty-surface-active)" }, { tok: "--tasty-overlay-hover", use: "hover" }, { tok: "--tasty-text-muted", use: "meta + icon", color: "var(--tasty-text-muted)" }]} />
+          <Note><b>No disabled state (2026-09-29).</b> A tree row names something that exists. A folder without read permission or a favourite on a dropped remote stays a normal row: selectable, expandable, and opening it reports the reason (CenterState error in the explorer body). Greying it would hide the one row the user needs to act on. The product's <code>enabled</code> argument is removed. A pending cut is a dimmed item (<span className="tok">--tasty-cut-pending-opacity</span>), not disabled.</Note>
         </Spec>
 
         <Spec title="MenuItem"
@@ -511,9 +516,9 @@ function Components() {
         </Spec>
 
         <Spec title="Toast stack"
-          when={<>When several notices fire close together they <b>stack</b> rather than replace — they grow <b>upward from the anchor corner</b>, so the newest card sits at the bottom and older ones are pushed up, each keeping its own intent rail. A scope holds at most <b>5</b> at once; a sixth arriving drops the oldest (topmost) card immediately. Cards that would run past the scope's top edge are simply not drawn — there is no overflow row. Every floating card is fully opaque regardless of age; alpha is only for enter / exit. Same card as a single Toast; only the layout (vertical gap, order) is new.</>}>
+          when={<>When several notices fire close together they <b>stack</b> rather than replace — they grow <b>upward from the anchor corner</b>, so the newest card sits at the bottom and older ones are pushed up, each keeping its own intent rail. A scope holds at most <b>5</b> at once; a sixth arriving drops the oldest (topmost) card immediately. Cards that would run past the scope's top edge are simply not drawn — there is no overflow row. Every floating card is fully opaque regardless of age; alpha is only for enter / exit. Same card as a single Toast; only the layout (vertical gap, order) is new. <b>Width (2026-09-29):</b> each card keeps its <b>own content width</b>, capped at <span className="tok">--tasty-toast-max-width</span>; the stack aligns <b>right edges</b> to the anchor, so a short notice is narrower than a long one. There is no shared stack width, so nothing re-flows when a card enters or leaves.</>}>
           <Stage variant="solo" style={{ padding: 24, background: "var(--tasty-bg-app)", display: "flex", justifyContent: "flex-end", alignItems: "flex-end", minHeight: 300 }}>
-            <div style={{ width: 320, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 8 }}>
+            <div style={{ width: "var(--tasty-toast-max-width)", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "flex-end", gap: "var(--tasty-space-sm)" }}>
               <Toast variant="info">Two notices while importing the bundle</Toast>
               <Toast variant="warning">Held by another client (readonly)</Toast>
               <Toast variant="agent">Agent opened 3 surfaces in background</Toast>
@@ -522,7 +527,7 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", "~320–380px"]]}
+            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", <>content width per card, cap <span className="tok">--tasty-toast-max-width</span> (320) · right edges align</>]]}
             tokens={[{ tok: "--tasty-space-sm", use: "stack gap" }, { tok: "--tasty-surface-raised", use: "each card", color: "var(--tasty-surface-raised)" }]} />
           <Dont><b>Don’t</b> let the stack grow unbounded, and don’t fold the tail into a “+N more” row either. Hold the cap by dropping the oldest card — a wall of toasts buries the newest signal, and an overflow counter is one more thing to read instead of the notice itself.</Dont>
         <Spec title="The dot family — 8 generic, 6 in dense chrome, and the attached ring"
@@ -632,7 +637,7 @@ function Components() {
             ))}
           </Stage>
           <Meta
-            specs={[["variants", "loading · empty · error"], ["glyph / spinner", "24 — icon-size-lg (was 22 · 26)"], ["glyph → title", "8"], ["title → sub", "4 · sub slot always reserved"], ["title", "body 13 · text-secondary"], ["sub", "caption 11 · text-muted · wraps at 300"], ["height", "none — centres in the list region"], ["ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"]]}
+            specs={[["variants", "loading · empty · error"], ["glyph / spinner", "24 — icon-size-lg (was 22 · 26)"], ["glyph → title", "8"], ["title → sub", "4 · sub slot always reserved"], ["title", "body 13 · text-secondary"], ["sub", "caption 11 · text-muted · wraps at 300"], ["height", "none — centres in the list region; unsized hosts (natural): block + 2 × 12, with action block + 2 × 48"], ["ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"]]}
             tokens={[{ tok: "--tasty-center-state-glyph-size", use: "→ icon-size-lg 24" }, { tok: "--tasty-center-state-glyph-fg", use: "→ glyph-dim", color: "var(--tasty-center-state-glyph-fg)" }, { tok: "--tasty-center-state-error-fg", use: "→ accent-danger", color: "var(--tasty-center-state-error-fg)" }, { tok: "--tasty-center-state-gap", use: "8" }, { tok: "--tasty-center-state-line-gap", use: "4" }, { tok: "--tasty-center-state-max-width", use: "→ measure-sm 300" }]} />
           <Note><b>Clipboard centre glyph 28</b> is a content glyph (T6, 2026-09-17) and stays outside this part.</Note>
         </Spec>
@@ -653,6 +658,28 @@ function Components() {
             specs={[["error glyph", "alertTriangle — part-owned, every host"], ["empty glyph", "host-chosen"], ["action", "Button secondary · sm (24)"], ["sub → action", "12 · center-state-action-gap"], ["centring", "glyph · title · sub only — action hangs below"], ["short region", "action may reach the region's bottom padding; never pushes the glyph"]]}
             tokens={[{ tok: "--tasty-center-state-action-gap", use: "→ space-md 12" }, { tok: "--tasty-button-height-sm", use: "24" }, { tok: "--tasty-center-state-error-fg", use: "→ accent-danger", color: "var(--tasty-center-state-error-fg)" }]} />
           <Dont><b>Don't</b> put the button in the centred column. Loading → error + Retry would jump the glyph up by half the button, and with no animation that reads as a glitch.</Dont>
+        </Spec>
+        <Spec title="Unsized host + action — symmetric natural height (2026-09-29)"
+          when={<>When the host gives <b>no height</b> (<code>natural</code>; the Settings › Misc › Scripts list is the one such host today) the part takes its own height. Without an action that is the block plus <span className="tok">--tasty-space-md</span> above and below. With an action the part reserves the <b>action band on both sides</b>: padding-block = space-md + <span className="tok">--tasty-center-state-action-gap</span> + <span className="tok">--tasty-button-height-sm</span> = <b>48</b>. The block stays centred, so the glyph sits where it does without the action; the action ends <b>space-md (12)</b> above the bottom edge and never overflows into the next widget. The cost is 36 of empty space above the glyph, accepted. The cards below have no fixed height; the part sets it.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", alignItems: "flex-start", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                {[["empty", false], ["error + action", true]].map(([capt, act]) => (
+                  <div key={capt} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                    <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{label} · {capt}</span>
+                    <div style={{ width: "var(--tasty-size-220)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                      <CenterState natural variant={act ? "error" : "empty"} glyph="scriptFile" title={CS_COPY.scripts[act ? "error" : "empty"][0]} sub={CS_COPY.scripts[act ? "error" : "empty"][1]}
+                        action={act ? <Button variant="secondary" size="sm" leadingIcon={<CIcon name="refresh" size="var(--tasty-icon-size-sm)" />}>Retry</Button> : null} />
+                      <div style={{ height: "var(--tasty-control-height)", flex: "none", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", borderTop: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>next widget</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["prop", "natural — host gives no height"], ["no action", "padding-block space-md (12)"], ["with action", "padding-block 12 + 12 + 24 = 48, both sides"], ["block", "stays centred — glyph position independent of the action"], ["below the action", "space-md (12) — no new token"], ["rejected", "top-pinned block (glyph moves) · current overflow (6px into the next widget)"]]}
+            tokens={[{ tok: "--tasty-space-md", use: "12 outer pad" }, { tok: "--tasty-center-state-action-gap", use: "→ space-md 12" }, { tok: "--tasty-button-height-sm", use: "24" }]} />
         </Spec>
       </Section>
 
@@ -710,6 +737,7 @@ function Components() {
               ["radius", <span className="tok">--tasty-tooltip-radius</span>],
               ["max-width", <>240 <span className="tok">--tasty-tooltip-max-width</span></>],
               ["placement", "top / bottom / left / right"],
+              ["over native content", "tab strip · pane head: always top, clamped inside the window (Layouts › Pane tab strip)"],
               ["delay", <>150ms <span className="tok">--tasty-tooltip-delay</span></>],
             ]}
             tokens={[
@@ -776,7 +804,7 @@ function Components() {
             <div style={{ width: "100%" }}><ListCtrlDemo /></div>
           </Stage>
           <Meta
-            specs={[["row", <>label · [description] · [trailing] · chevron</>], ["min height", <>36px <span className="tok">--tasty-listctrl-row-min-height</span></>], ["hover", <span className="tok">--tasty-overlay-hover</span>], ["selected", <><span className="tok">--tasty-surface-active</span> + 2px accent bar</>], ["chevron", "trailing drill-in affordance (default on)"], ["divider", <><span className="tok">--tasty-separator</span> hairline between rows</>], ["disabled", <>dimmed, no chevron, non-selectable</>]]}
+            specs={[["row", <>label · [description] · [trailing] · chevron</>], ["min height", <>36px <span className="tok">--tasty-listctrl-row-min-height</span></>], ["hover", <span className="tok">--tasty-overlay-hover</span>], ["selected", <><span className="tok">--tasty-surface-active</span> + 2px accent bar</>], ["chevron", "trailing drill-in affordance (default on)"], ["divider", <><span className="tok">--tasty-separator</span> hairline between rows</>], ["disabled", <><span className="tok">--tasty-state-disabled-fg</span> ink · no chevron · non-selectable · trailing Tag/Badge → disabled variant</>]]}
             tokens={[
               { tok: "--tasty-listctrl-row-bg-hover", use: "row hover", color: "var(--tasty-overlay-hover)" },
               { tok: "--tasty-listctrl-row-bg-selected", use: "selected row", color: "var(--tasty-surface-active)" },
@@ -786,6 +814,25 @@ function Components() {
               { tok: "--tasty-listctrl-chevron-fg", use: "drill-in chevron", color: "var(--tasty-text-muted)" },
             ]} />
           <Do><b>Do</b> reach for <span className="ic">ListCtrl</span> when a row leads somewhere (drill-down, apply). <b>Don't</b> use it for tabular data with multiple comparable columns — that's <span className="ic">Table</span>. The <b>trailing slot</b> is for one status marker (Active / a count), not a second data column.</Do>
+        </Spec>
+        <Spec title="Disabled row with a trailing marker — the ink rule (2026-09-29)"
+          when={<>A disabled row follows the same rule as a disabled control: <b>ink, never opacity</b>. Icon, label, description take <span className="tok">--tasty-state-disabled-fg</span>; the chevron goes; no hover, not selectable. The <b>trailing Tag / Badge drops to its disabled variant</b>: the neutral box (<span className="tok">--tasty-tag-disabled-bg</span> / <span className="tok">-border</span>, <span className="tok">--tasty-badge-disabled-bg</span>) with the same ink. Accent fills and tint edges drop out, so the disabled ink never sits on an accent. The marker is not hidden: what it says (Active, a count) is still true of the row. Tag and Badge also take a <code>disabled</code> prop for use outside ListCtrl.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ width: "var(--tasty-size-320)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</span>
+                <ListCtrl selectedId="default" items={[
+                  { id: "default", label: "Default", description: "enabled · success Tag", trailing: <Tag variant="success" dot>Active</Tag> },
+                  { id: "d-success", label: "Readline", description: "disabled · success Tag", trailing: <Tag variant="success" dot>Active</Tag>, disabled: true },
+                  { id: "d-accent", label: "Custom", description: "disabled · accent Tag", trailing: <Tag variant="accent">edited</Tag>, disabled: true },
+                  { id: "d-badge", label: "Imported", description: "disabled · Badge", trailing: <Badge variant="primary">3</Badge>, disabled: true },
+                ]} />
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["row ink", <span className="tok">--tasty-state-disabled-fg</span>], ["chevron", "hidden"], ["trailing", "kept · disabled variant (neutral box + ink)"], ["accent Tag", "fill drops out"], ["tint edge", <>→ <span className="tok">--tasty-state-disabled-border</span></>], ["opacity", "none"]]}
+            tokens={[{ tok: "--tasty-tag-disabled-bg", use: "→ state-disabled-fill", color: "var(--tasty-tag-disabled-bg)" }, { tok: "--tasty-tag-disabled-border", use: "→ state-disabled-border", color: "var(--tasty-tag-disabled-border)" }, { tok: "--tasty-tag-disabled-fg", use: "→ state-disabled-fg", color: "var(--tasty-tag-disabled-fg)" }, { tok: "--tasty-badge-disabled-bg", use: "→ state-disabled-fill", color: "var(--tasty-badge-disabled-bg)" }]} />
         </Spec>
       </Section>
     </>

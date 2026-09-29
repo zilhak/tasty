@@ -14,8 +14,33 @@
 //           (the title bar rule already bounds the top)
 //   buttons DS Button widget, right-aligned; the dismiss button is Primary, rightmost
 //   keys    Enter / Esc = the dismiss button
+//
+// Title bar buttons (2026-09-29, design-request/popup-title-two-buttons.md): the title is centred
+// on the STRIP, whatever sits on the right. Both sides reserve
+//   reserve(N) = popup-title-edge-inset + N × popup-title-btn-size + (N − 1) × popup-title-btn-gap + popup-title-text-gap
+//   N = 1 (×): 32 · N = 2 (fullscreen + ×): 60.
+// Buttons are IconButton sm (24, popup-title-btn-size) — the product's 20 goes. Fullscreen (glyph fit)
+// sits left of ×, popup-title-btn-gap (4) apart, and only on popups that declare a fullscreen stage.
 (() => {
 const { Button, IconButton, Icon } = window.TastyDesignSystem_41fd3f;
+
+const TITLE_RESERVE = (n) => `calc(var(--tasty-popup-title-edge-inset) + ${n} * var(--tasty-popup-title-btn-size) + ${n - 1} * var(--tasty-popup-title-btn-gap) + var(--tasty-popup-title-text-gap))`;
+
+// The shared popup title bar. fullscreen = the popup declares a fullscreen stage (adds the fit button).
+function PopupTitleBar({ title, id, fullscreen = false, edge = "var(--tasty-info-modal-title-edge)" }) {
+  const n = fullscreen ? 2 : 1;
+  return (
+    <div style={{ flex: "none", position: "relative", height: "var(--tasty-control-height)", display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "0 " + TITLE_RESERVE(n), background: "var(--tasty-bg-sidebar)", borderBottom: "var(--tasty-border-width) solid " + edge }}>
+      <span id={id} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{title}</span>
+      <span style={{ position: "absolute", right: "var(--tasty-popup-title-edge-inset)", top: 0, bottom: 0, display: "flex", alignItems: "center", gap: "var(--tasty-popup-title-btn-gap)" }}>
+        {fullscreen && <IconButton size="sm" aria-label="Fullscreen" title="Fullscreen"><Icon name="fit" /></IconButton>}
+        <IconButton size="sm" aria-label="Close"><Icon name="close" /></IconButton>
+      </span>
+    </div>
+  );
+}
 
 // scroll: "top" | "mid" | "bottom" | "fits" (no overflow)
 function InfoModalShell({ title, children, actions, scroll = "fits", id = "info-modal" }) {
@@ -31,15 +56,7 @@ function InfoModalShell({ title, children, actions, scroll = "fits", id = "info-
       minHeight: "var(--tasty-info-modal-min-height)", maxHeight: "var(--tasty-info-modal-max-height)",
       display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)",
       borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
-      <div style={{ flex: "none", position: "relative", height: "var(--tasty-control-height)", display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "0 calc(var(--tasty-icon-button-size-sm) + var(--tasty-space-sm))", background: "var(--tasty-bg-sidebar)",
-        borderBottom: "var(--tasty-border-width) solid var(--tasty-info-modal-title-edge)" }}>
-        <span id={id + "-title"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{title}</span>
-        <span style={{ position: "absolute", right: "var(--tasty-space-xs)", top: 0, bottom: 0, display: "flex", alignItems: "center" }}>
-          <IconButton size="sm" aria-label="Close"><Icon name="close" /></IconButton>
-        </span>
-      </div>
+      <PopupTitleBar title={title} id={id + "-title"} />
       <div ref={ref} className="tasty-scroll" style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--tasty-space-md) var(--tasty-space-lg)",
         display: "flex", flexDirection: "column", gap: "var(--tasty-info-modal-para-gap)",
         fontSize: "var(--tasty-font-size-body)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)" }}>
@@ -70,5 +87,16 @@ function DbInitErrorModal() {
   );
 }
 
-window.TastyKit = Object.assign(window.TastyKit || {}, { InfoModalShell, ThemeNotFoundModal, DbInitErrorModal });
+// Notifications popup head (352 wide) — the one popup that declares a fullscreen stage today.
+function NotificationsPopupHead({ title = "Notifications", w = "var(--tasty-notifications-popup-width)" }) {
+  return (
+    <div style={{ width: w, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)",
+      borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
+      <PopupTitleBar title={title} fullscreen />
+      <div style={{ padding: "var(--tasty-space-md) var(--tasty-space-lg)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-muted)" }}>No notifications.</div>
+    </div>
+  );
+}
+
+window.TastyKit = Object.assign(window.TastyKit || {}, { InfoModalShell, ThemeNotFoundModal, DbInitErrorModal, PopupTitleBar, NotificationsPopupHead });
 })();

@@ -5,6 +5,8 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: "danger" | "primary" | "warning" | "agent" | "success" | "neutral";
   /** Render as a bare status dot with no label. */
   dot?: boolean;
+  /** Disabled ink rule — neutral fill + text-disabled for every variant. Automatic inside a disabled ListCtrl row. */
+  disabled?: boolean;
   children?: React.ReactNode;
 }
 

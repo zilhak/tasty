@@ -3,6 +3,10 @@ import React from "react";
 /**
  * Tasty Tag — a small monospace label for surface kinds, permissions,
  * plugin origins ("built-in"), and detector rule types.
+ *
+ * disabled (own prop, or any Tag inside a disabled ListCtrl row) follows the ink
+ * rule: every variant draws the neutral box (tag-disabled-bg / -border) with the
+ * disabled ink; accent fills and tint edges drop out, the dot takes the ink too.
  */
 
 const CSS = `
@@ -29,6 +33,7 @@ const CSS = `
 .tasty-tag--attention{ color: var(--tasty-accent-attention); border-color: color-mix(in srgb, var(--tasty-accent-attention) 40%, transparent); }
 .tasty-tag--danger { color: var(--tasty-accent-danger);  border-color: color-mix(in srgb, var(--tasty-accent-danger) 40%, transparent); }
 .tasty-tag--info   { color: var(--tasty-accent-info);    border-color: color-mix(in srgb, var(--tasty-accent-info) 40%, transparent); }
+.tasty-tag--disabled { background: var(--tasty-tag-disabled-bg); border-color: var(--tasty-tag-disabled-border); color: var(--tasty-tag-disabled-fg); }
 .tasty-tag__dot { width: var(--tasty-tag-dot-size); height: var(--tasty-tag-dot-size); border-radius: var(--tasty-radius-pill); background: currentColor; flex: none; }
 `;
 
@@ -42,11 +47,12 @@ function ensureCss() {
   injected = true;
 }
 
-export function Tag({ variant = "default", dot = false, className = "", children, ...rest }) {
+export function Tag({ variant = "default", dot = false, disabled = false, className = "", children, ...rest }) {
   ensureCss();
   const cls = [
     "tasty-tag",
     variant !== "default" ? `tasty-tag--${variant}` : "",
+    disabled ? "tasty-tag--disabled" : "",
     className,
   ].filter(Boolean).join(" ");
   return (

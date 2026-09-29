@@ -4,6 +4,10 @@ import React from "react";
  * Tasty TreeRow — a row in the sidebar / file explorer tree. 22px tall
  * (item-height-tree), supports indent levels, an optional disclosure
  * chevron, a leading icon, and a selected state.
+ *
+ * No disabled state (2026-09-29). A tree row names something that exists; if it
+ * can't be opened (no permission, remote dropped) the row stays a normal row and
+ * the open attempt reports why. Dimmed items (pending cut) use state-dim-opacity.
  */
 
 const CSS = `

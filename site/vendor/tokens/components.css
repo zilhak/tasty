@@ -81,6 +81,9 @@
   --tasty-badge-success-fg:        var(--tasty-text-on-accent);
   --tasty-badge-neutral-bg:        var(--tasty-surface-active);
   --tasty-badge-neutral-fg:        var(--tasty-text-primary);
+  /* disabled host row (ListCtrl) — the ink rule: neutral fill, disabled ink, no accent fill (2026-09-29) */
+  --tasty-badge-disabled-bg:       var(--tasty-state-disabled-fill);
+  --tasty-badge-disabled-fg:       var(--tasty-state-disabled-fg);
   --tasty-badge-group-gap:         var(--tasty-space-xs);  /* 4 — gap when two kind badges share a row's trailing slot */
 
   /* Tag — outlined chip */
@@ -93,6 +96,10 @@
   --tasty-tag-bg:                  var(--tasty-surface-raised);
   --tasty-tag-fg:                  var(--tasty-text-secondary);
   --tasty-tag-border:              var(--tasty-border-default);
+  /* disabled (own prop or a disabled ListCtrl row) — neutral box + disabled ink; accent fill and tint edge drop out (2026-09-29) */
+  --tasty-tag-disabled-bg:         var(--tasty-state-disabled-fill);
+  --tasty-tag-disabled-border:     var(--tasty-state-disabled-border);
+  --tasty-tag-disabled-fg:         var(--tasty-state-disabled-fg);
 
   /* Kbd — keycap */
   --tasty-kbd-size:                var(--tasty-size-16);
@@ -121,6 +128,11 @@
   --tasty-input-border-focus:      var(--tasty-border-focus);
   --tasty-input-border-invalid:    var(--tasty-accent-danger);
   --tasty-input-icon-fg:           var(--tasty-text-muted);
+  /* read-only — not editable NOW, but the value is information (Appearance colour rows at Default).
+     Same neutral box as disabled; the value keeps a readable ink. Selectable + copyable, focusable. (2026-09-29) */
+  --tasty-input-readonly-bg:       var(--tasty-state-disabled-fill);
+  --tasty-input-readonly-border:   var(--tasty-state-disabled-border);
+  --tasty-input-readonly-fg:       var(--tasty-text-secondary);
 
   /* Select */
   --tasty-select-height:           var(--tasty-control-height);
@@ -537,7 +549,7 @@
   --tasty-listctrl-row-bg-hover:     var(--tasty-overlay-hover);
   --tasty-listctrl-row-bg-selected:  var(--tasty-surface-active);
   --tasty-listctrl-selected-bar:     var(--tasty-accent-primary);  /* 2px accent left bar on the selected row */
-  --tasty-listctrl-selected-bar-width: var(--tasty-size-2);
+  --tasty-listctrl-selected-bar-width: var(--tasty-selection-edge-width); /* 2 — hairline, zoom-exempt. Same role as tab indicator / workspace row (2026-09-29) */
   --tasty-listctrl-divider:          var(--tasty-separator);
 
   /* Markdown-surface inline GFM table — a SEPARATE renderer from the shared
@@ -681,6 +693,27 @@
   --tasty-fp-crumb-current-min-width: var(--tasty-size-96); /* the CURRENT folder's floor — it never goes below this while any ancestor is still painted */
   --tasty-fp-bar-hysteresis:          var(--tasty-size-8);  /* grow-back margin: a crumb returns only when 8px MORE than its floor is free, so a drag-resize can't flap */
   --tasty-fp-popup-min-width:         var(--tasty-size-320); /* the picker's own floor — clamped by the owning surface, which always wins */
+  /* File picker section insets (2026-09-29) — every section starts on ONE line (fp-inset-start = the list's space-md),
+     so the header glyph, first crumb, list-header Name, row icon and footer label share a column. 10 / 14 / 6 / 5 / 30 retire. */
+  --tasty-fp-inset-start:             var(--tasty-space-md);  /* 12 — header · path bar · list header · rows · footer */
+  --tasty-fp-inset-end:               var(--tasty-space-sm);  /* 8 — header / path bar trailing IconButton edge */
+  --tasty-fp-section-gap:             var(--tasty-space-sm);  /* 8 — item gap inside header / path bar / footer rows */
+  --tasty-fp-header-pad-y:            var(--tasty-space-sm);  /* 8 — header height = 8 + 24 (IconButton sm) + 8 = 40, content-driven, no fixed token */
+  --tasty-fp-path-pad-y:              var(--tasty-space-xs);  /* 4 — path bar = 4 + 24 + 4 = 32 */
+  --tasty-fp-list-head-pad-y:         var(--tasty-space-xs);  /* 4 — mono micro (10) uppercase column labels */
+  --tasty-fp-row-pad-y:               var(--tasty-space-xs);  /* 4 — FpRow */
+  --tasty-fp-footer-pad-y:            var(--tasty-space-sm);  /* 8 — footer x inset = fp-inset-start on both sides */
+  --tasty-fp-footer-label-width:      var(--tasty-size-64);   /* "File name" label column */
+  --tasty-fp-filter-height:           var(--tasty-control-height); /* 28 — the file-type filter chip matches the Input beside it (was 30) */
+
+  /* Shared popup title bar — right-hand buttons (× , and fullscreen when the popup declares a stage) (2026-09-29).
+     The title is centred on the STRIP: both sides reserve the same width,
+     reserve(N) = edge-inset + N × btn-size + (N − 1) × btn-gap + text-gap  → N=1: 32 · N=2: 60. */
+  --tasty-popup-title-btn-size:       var(--tasty-icon-button-size-sm); /* 24 — was 20 in the product */
+  --tasty-popup-title-btn-gap:        var(--tasty-space-xs);  /* 4 — fullscreen ↔ close */
+  --tasty-popup-title-edge-inset:     var(--tasty-space-xs);  /* 4 — rightmost button ↔ strip edge */
+  --tasty-popup-title-text-gap:       var(--tasty-space-xs);  /* 4 — leftmost button ↔ title ellipsis */
+  --tasty-notifications-popup-width:  var(--tasty-size-352);  /* notifications popup default width (352 × 400) — the one popup with a fullscreen stage today */
   /* File HANDLER picker — the Recent row's trailing "when" fragment. The column
      is RESERVED at the widest vocabulary member (the absolute date, 10 mono
      D2Coding chars at 11px = 55) so a bucket change while the popup is open — it recomputes

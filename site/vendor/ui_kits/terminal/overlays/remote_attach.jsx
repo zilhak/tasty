@@ -116,7 +116,7 @@ function RaAttachProfileRow({ a, selected, onSelect }) {
       style={{ display: "flex", flexDirection: "column", gap: 2, cursor: "pointer", position: "relative",
         padding: "var(--tasty-space-sm) var(--tasty-space-md)",
         background: selected ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
-        boxShadow: selected ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+        boxShadow: selected ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, lineHeight: "var(--tasty-line-height-ui)", flex: "0 1 auto",
           color: selected ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
@@ -150,7 +150,7 @@ function RaNewWsRow({ selected, onSelect, phase = "rest", error, onRetry }) {
         style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", position: "relative",
           padding: "var(--tasty-space-sm) var(--tasty-space-md)", cursor: creating ? "default" : "pointer",
           background: selected ? "var(--tasty-surface-active)" : (!creating && hover) ? "var(--tasty-overlay-hover)" : "transparent",
-          boxShadow: selected ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+          boxShadow: selected ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
         {/* glyph occupies the status-dot slot → shared left alignment line */}
         <span style={{ flex: "none", width: "var(--tasty-status-dot-size)", display: "inline-flex", alignItems: "center", justifyContent: "center",
           color: creating ? "var(--tasty-text-muted)" : failed ? "var(--tasty-accent-danger)" : "var(--tasty-accent-primary)" }}>
@@ -191,7 +191,7 @@ function RaRemoteWsRow({ w, selected, onSelect }) {
       style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", position: "relative",
         padding: "var(--tasty-space-sm) var(--tasty-space-md)", cursor: disabled ? "default" : "pointer",
         background: selected ? "var(--tasty-surface-active)" : (!disabled && hover) ? "var(--tasty-overlay-hover)" : "transparent",
-        boxShadow: selected ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+        boxShadow: selected ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
       {/* execution dot — busy=running(green), else idle */}
       <span style={{ flex: "none", display: "inline-flex", alignItems: "center", opacity: disabled ? 0.5 : 1 }}>
         <StatusDot status={w.busy ? "running" : "idle"} pulse={w.busy} />

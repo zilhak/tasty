@@ -3,6 +3,12 @@ import React from "react";
 /**
  * Tasty Input — single-line text field. 28px tall, 1px border,
  * focus ring in accent-primary. Optional leading icon + addon.
+ *
+ * disabled — the control is unavailable: neutral box + disabled ink, no pointer.
+ * readOnly — not editable NOW, but the value is information (2026-09-29, e.g. an
+ *   Appearance colour row at Default showing the base hex). Same neutral box as
+ *   disabled, the value keeps --tasty-input-readonly-fg (text-secondary). It stays
+ *   focusable, selectable and copyable; focus shows the 1px focus edge, no ring.
  */
 
 const CSS = `
@@ -36,6 +42,9 @@ const CSS = `
 .tasty-input[data-disabled="true"] { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); pointer-events: none; }
 .tasty-input[data-disabled="true"] input, .tasty-input[data-disabled="true"] input::placeholder,
 .tasty-input[data-disabled="true"] .tasty-input__icon, .tasty-input[data-disabled="true"] .tasty-input__addon { color: var(--tasty-state-disabled-fg); }
+.tasty-input[data-readonly="true"] { background: var(--tasty-input-readonly-bg); border-color: var(--tasty-input-readonly-border); }
+.tasty-input[data-readonly="true"] input { color: var(--tasty-input-readonly-fg); cursor: text; }
+.tasty-input[data-readonly="true"]:focus-within { border-color: var(--tasty-border-focus); box-shadow: none; }
 .tasty-input__icon { display: inline-flex; color: var(--tasty-text-muted); flex: none; }
 .tasty-input__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-input__addon { color: var(--tasty-text-muted); font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); flex: none; }
@@ -58,6 +67,7 @@ export function Input({
   mono = false,
   invalid = false,
   disabled = false,
+  readOnly = false,
   className = "",
   ...rest
 }) {
@@ -70,9 +80,9 @@ export function Input({
     className,
   ].filter(Boolean).join(" ");
   return (
-    <div className={cls} data-disabled={disabled}>
+    <div className={cls} data-disabled={disabled} data-readonly={!disabled && readOnly}>
       {icon && <span className="tasty-input__icon">{icon}</span>}
-      <input disabled={disabled} {...rest} />
+      <input disabled={disabled} readOnly={readOnly} {...rest} />
       {addon && <span className="tasty-input__addon">{addon}</span>}
     </div>
   );

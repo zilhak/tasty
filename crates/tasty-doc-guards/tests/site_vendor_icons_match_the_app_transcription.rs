@@ -38,6 +38,7 @@ const PAIRS: &[(&str, &str)] = &[
     ("chevronsLeft", "chevrons_left"),
     ("chevronsRight", "chevrons_right"),
     ("move", "move"),
+    ("fit", "fit"),
     ("terminal", "terminal"),
     ("markdown", "markdown"),
     ("html", "html"),
@@ -85,7 +86,7 @@ const PAIRS: &[(&str, &str)] = &[
 ];
 
 /// 앱에만 있는 아이콘. 사이트 사본에도 추가되면 PAIRS로 옮긴다.
-const APP_ONLY: &[&str] = &["arrow_down", "arrow_right", "fit", "minus", "redo", "undo"];
+const APP_ONLY: &[&str] = &["arrow_down", "arrow_right", "minus", "redo", "undo"];
 
 /// 채운 글리프 — 사이트 `FILL_GLYPHS` 와 앱 `fill_icon!` 이 같은 집합을 가리켜야 한다.
 /// 사이트 이름으로 적는다.
@@ -767,5 +768,22 @@ fn the_app_has_exactly_the_recorded_extra_glyphs() {
     assert_eq!(
         extra, recorded,
         "앱 전용 아이콘 목록이 달라졌다. 새 아이콘의 디자인 근거를 확인하고, 사이트 사본에도 생긴 아이콘은 PAIRS로 옮긴다."
+    );
+}
+
+#[test]
+fn every_site_glyph_is_paired_with_the_app() {
+    let files = vendor_files();
+    let registry = vendor_registry(&read(VENDOR_REGISTRY));
+    let paired: BTreeSet<&str> = PAIRS.iter().map(|(s, _)| *s).collect();
+    let unpaired: BTreeSet<&str> = files
+        .keys()
+        .chain(registry.keys())
+        .map(String::as_str)
+        .filter(|k| !paired.contains(k))
+        .collect();
+    assert!(
+        unpaired.is_empty(),
+        "사이트 사본에만 있는 아이콘이 있다: {unpaired:?}. 앱에 전사하고 PAIRS에 추가한다. 앱의 같은 이름 아이콘이 APP_ONLY에 있으면 그 항목도 옮긴다."
     );
 }

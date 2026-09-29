@@ -940,7 +940,7 @@ function FhRow({ h, sel, dim }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: "var(--tasty-radius-sm)",
       background: sel ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: sel ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      boxShadow: sel ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ display: "inline-flex", color: plugin ? "var(--tasty-accent-agent)" : "var(--tasty-text-muted)", opacity: dim && !plugin ? 0.8 : 1 }}>{fhIcon(h)}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, color: "var(--tasty-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
@@ -1118,7 +1118,7 @@ function PresetFrame() {
       <div style={{ padding: 6 }}>
         {presets.map((p) => (
           <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: "var(--tasty-radius-sm)",
-            background: p.sel ? "var(--tasty-surface-active)" : "transparent", boxShadow: p.sel ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+            background: p.sel ? "var(--tasty-surface-active)" : "transparent", boxShadow: p.sel ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
             <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.layers}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, color: "var(--tasty-text-primary)" }}>{p.name}</div>
@@ -1220,7 +1220,7 @@ function WsRowMock({ n, name, sub, status, active, held }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm)",
       background: active ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ flex: "none", height: 18, display: "inline-flex", alignItems: "center" }}>
         {held ? <NumCap n={n} active={active} /> : <StatusDot status={status} pulse={status === "running" || status === "agent"} />}
       </span>
@@ -1307,7 +1307,7 @@ function CatSwitchSidebarMock({ held }) {
   );
   const Row = ({ name, status, active }) => (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "7px 9px",
-      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ flex: "none", height: 18, display: "inline-flex", alignItems: "center" }}><StatusDot status={status} pulse={status === "running" || status === "agent"} /></span>
       <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
     </div>
@@ -1682,7 +1682,7 @@ function GitViewerFrame({ diff }) {
   const mono = { fontFamily: "var(--tasty-font-mono)", fontSize: 12 };
   const WtRow = ({ name, oid, type, state, reason, active, dim }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 10px", borderBottom: "1px solid var(--tasty-separator)",
-      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none", opacity: dim ? 0.7 : 1 }}>
+      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none", opacity: dim ? 0.7 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ ...mono, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           color: dim ? "var(--tasty-text-disabled)" : active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
@@ -1697,7 +1697,7 @@ function GitViewerFrame({ diff }) {
   );
   const StRow = ({ p, tone, dir, file, active }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, height: 26, padding: "0 12px",
-      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       {gvPill(p, tone, false, 18)}
       <span style={{ ...mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         <span style={{ color: "var(--tasty-text-muted)" }}>{dir}</span><span style={{ color: "var(--tasty-text-primary)" }}>{file}</span>
@@ -2168,7 +2168,7 @@ function CategorySidebarFrame({ collapsedRail }) {
   );
   const Row = ({ name, sub, status, active }) => (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px", cursor: "pointer",
-      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ height: 18, display: "inline-flex", alignItems: "center", flex: "none" }}>
         <StatusDot status={status} pulse={status === "running" || status === "agent"} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2463,7 +2463,7 @@ function RaProfile({ name, label, target, selected, inactive }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "var(--tasty-space-sm) var(--tasty-space-md)", position: "relative",
       background: selected ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      boxShadow: selected ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: selected ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
           {name}{label && <span style={{ fontWeight: 400, color: "var(--tasty-text-muted)" }}>  ({label})</span>}
@@ -2478,7 +2478,7 @@ function RaWs({ name, panes, busy, selected, attached }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "var(--tasty-space-sm) var(--tasty-space-md)", position: "relative",
       background: selected ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      boxShadow: selected ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ opacity: attached ? 0.5 : 1, display: "inline-flex" }}><StatusDot status={busy ? "running" : "idle"} pulse={busy} /></span>
       <span style={{ fontSize: 13, fontWeight: 500, color: attached ? "var(--tasty-text-disabled)" : selected ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--tasty-text-muted)", opacity: attached ? 0.6 : 1 }}>{ic.split}{panes}</span>
@@ -2495,7 +2495,7 @@ function RaNewRow({ selected, hover, phase = "rest", error, sep = true }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "var(--tasty-space-sm) var(--tasty-space-md)", position: "relative",
         background: selected ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
-        boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+        boxShadow: selected ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
         <span style={{ flex: "none", width: "var(--tasty-status-dot-size)", display: "inline-flex", alignItems: "center", justifyContent: "center",
           color: creating ? "var(--tasty-text-muted)" : failed ? "var(--tasty-accent-danger)" : "var(--tasty-accent-primary)" }}>
           {creating ? <Spinner size={14} /> : <Icon name={failed ? "alertTriangle" : "plus"} size={14} />}
@@ -2538,7 +2538,8 @@ function RemoteAttachFrame({ state = "loaded", newPhase = "rest", newSelected, e
     <div style={{ width: 680, height: 460, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
       border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       {/* header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px 10px 14px", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
+      {/* section insets (2026-09-29): every section starts on fp-inset-start (12) — header glyph, first crumb, Name, row icon and footer label share one column */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)", padding: "var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-end) var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-start)", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.remote}</span>
         <span style={{ fontSize: 14, fontWeight: 600, color: "var(--tasty-text-primary)" }}>Add remote workspace</span>
         <div style={{ flex: 1 }} />
@@ -2617,9 +2618,9 @@ function RemoteAttachFrame({ state = "loaded", newPhase = "rest", newSelected, e
 function FpRow({ kind, name, size, mod, selected, focus, multi, checked, dim }) {
   const isFolder = kind === "folder";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px var(--tasty-space-md)", position: "relative", cursor: "default",
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-fp-row-pad-y) var(--tasty-fp-inset-start)", position: "relative", cursor: "default",
       background: selected ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none",
+      boxShadow: selected ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none",
       outline: focus ? "1px solid var(--tasty-accent-primary)" : "none", outlineOffset: -1,
       opacity: dim ? 0.5 : 1 }}>
       {multi && <span style={{ display: "inline-flex", flex: "none" }}><Checkbox checked={!!checked} /></span>}
@@ -2754,7 +2755,8 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
       borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
       {borderMode && <div style={{ height: 2, flex: "none", background: "var(--tasty-accent-info)" }} />}
       {/* header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px 10px 14px", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
+      {/* section insets (2026-09-29): every section starts on fp-inset-start (12) — header glyph, first crumb, Name, row icon and footer label share one column */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)", padding: "var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-end) var(--tasty-fp-header-pad-y) var(--tasty-fp-inset-start)", flex: "none", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: remote && indicator === "glyph" ? "var(--tasty-accent-info)" : "var(--tasty-text-muted)" }}>
           {remote && (indicator === "glyph" || indicator === "border") ? <Icon name="remote" /> : <Icon name="file" />}
         </span>
@@ -2765,15 +2767,15 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
         <IconButton size="sm" aria-label="Close">{ic.x}</IconButton>
       </div>
       {/* path bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px 6px 14px", flex: "none", position: "relative", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)", padding: "var(--tasty-fp-path-pad-y) var(--tasty-fp-inset-end) var(--tasty-fp-path-pad-y) var(--tasty-fp-inset-start)", flex: "none", position: "relative", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
         <FpCrumbs items={crumbs} elide={deep || pathKind === "longtwo"} single={single} />
         <IconButton size="sm" aria-label="Refresh">{ic.refresh}</IconButton>
         {crumbMenu && <FpCrumbMenu items={crumbs.slice(1, -2).map((c) => c.label)} />}
       </div>
       {/* list header */}
       {state === "loaded" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px var(--tasty-space-md)", flex: "none", borderBottom: "1px solid var(--tasty-separator)",
-          fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-fp-list-head-pad-y) var(--tasty-fp-inset-start)", flex: "none", borderBottom: "1px solid var(--tasty-separator)",
+          fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>
           {multi && <span style={{ width: 16, flex: "none" }} />}
           <span style={{ width: 16, flex: "none" }} /><span style={{ flex: 1 }}>Name</span>
           <span style={{ width: 68, textAlign: "right", flex: "none" }}>Size</span>
@@ -2799,14 +2801,14 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
         {state === "empty" && <CenterState variant="empty" glyph="folderOpen" title="This folder is empty" />}
       </div>
       {/* footer */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "none", padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--tasty-text-muted)", flex: "none", width: 64 }}>File name</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-fp-section-gap)", flex: "none", padding: "var(--tasty-fp-footer-pad-y) var(--tasty-fp-inset-start)", borderTop: "1px solid var(--tasty-separator)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)" }}>
+          <span style={{ fontSize: 12, color: "var(--tasty-text-muted)", flex: "none", width: "var(--tasty-fp-footer-label-width)" }}>File name</span>
           <span style={{ flex: 1, minWidth: 0, display: "flex" }}>
             <Input block defaultValue={saving ? saveName : folderSel ? "" : state === "loaded" ? fileName : ""} placeholder={saving ? "Type a file name" : "No file selected"} />
           </span>
           <span style={{ flex: "none", position: "relative" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 8px", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: "var(--tasty-fp-filter-height)", padding: "0 8px", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
               background: "var(--tasty-bg-panel)", fontSize: 12, color: "var(--tasty-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>
               All files <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}><Icon name="chevronDown" size={13} /></span>
             </span>

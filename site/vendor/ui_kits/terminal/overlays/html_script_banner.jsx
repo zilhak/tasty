@@ -69,11 +69,14 @@ function HtmlScriptBanner({ state = "blocked", remote = false, hover = false, na
 // the tab-strip marker: lock (blocked + notice dismissed) · scriptFile (allowed this session).
 // Sits in the tab cell's RIGHT CLUSTER (Layouts › Pane tab strip): marker · move · busy · close,
 // --tasty-tab-status-gap apart. lock = 16 hit cell with its own hover; scriptFile = tooltip only.
+// Tooltip placement (2026-09-29): TOP. Tab-strip / pane-head tooltips never open down into the
+// content rect — a native WebView there is drawn above egui and would hide the bubble.
 function HtmlScriptMarker({ kind = "blocked", hover = false }) {
   const allowed = kind === "allowed";
   const [h, setH] = React.useState(false);
   return (
-    <span title={allowed ? HS_COPY.markerAllowed : HS_COPY.markerBlocked} role={allowed ? "img" : "button"}
+    <Tooltip placement="top" content={allowed ? HS_COPY.markerAllowed : HS_COPY.markerBlocked}>
+    <span role={allowed ? "img" : "button"}
       aria-label={allowed ? HS_COPY.markerAllowed : HS_COPY.markerBlocked}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{ display: "inline-flex", flex: "none", alignItems: "center", justifyContent: "center",
@@ -82,6 +85,7 @@ function HtmlScriptMarker({ kind = "blocked", hover = false }) {
         color: allowed ? "var(--tasty-html-script-marker-allowed-fg)" : "var(--tasty-html-script-marker-fg)" }}>
       <HsIcon name={allowed ? "scriptFile" : "lock"} size="var(--tasty-html-script-marker-size)" />
     </span>
+    </Tooltip>
   );
 }
 

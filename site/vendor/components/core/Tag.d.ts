@@ -5,6 +5,8 @@ export interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: "default" | "accent" | "agent" | "success" | "warning" | "attention" | "danger" | "info";
   /** Prefix with a small status dot in the current color. */
   dot?: boolean;
+  /** Disabled ink rule — neutral box + text-disabled for every variant (accent fill / tint edge drop out). Automatic inside a disabled ListCtrl row. */
+  disabled?: boolean;
   children?: React.ReactNode;
 }
 

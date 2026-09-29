@@ -686,7 +686,7 @@
                     style={{ appearance: "none", cursor: "pointer", textAlign: "left", width: "100%", display: "flex", flexDirection: "column", gap: 1,
                       padding: "7px 9px", border: 0, marginTop: 1, borderRadius: "var(--tasty-radius-sm)",
                       background: on ? "var(--tasty-surface-active)" : "transparent",
-                      boxShadow: on ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+                      boxShadow: on ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
                     <span style={{ fontSize: 13, color: on ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{p.name}</span>
                     <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10.5, color: "var(--tasty-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.subtitle}</span>
                   </button>

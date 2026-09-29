@@ -142,11 +142,11 @@ stroke_icon!(
 );
 // 줌 축소. PLUS 의 대응.
 stroke_icon!(MINUS, "minus", r#"<path d="M5 12h14"/>"#);
-// 내용 전체가 보이도록 맞춤(zoom-to-fit). 네 모서리를 바깥으로 펴는 형태.
+// popup 전체화면 무대 글리프(design `fit`). 네 모서리 괄호. 현재 DAG 뷰 Fit 버튼이 쓴다.
 stroke_icon!(
     FIT,
     "fit",
-    r#"<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>"#
+    r#"<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>"#
 );
 // 4방향 이동/재배치(design `move`).
 stroke_icon!(

@@ -11,6 +11,10 @@ export interface CenterStateProps extends React.HTMLAttributes<HTMLDivElement> {
   sub?: React.ReactNode;
   /** Optional action (Button variant="secondary" size="sm"). Hangs below the block, outside the centring. */
   action?: React.ReactNode;
+  /** Host gives NO height (e.g. Settings › Misc › Scripts). The part takes its natural height;
+   *  with an action it pads both sides by space-md + action-gap + button-height-sm (48) so the
+   *  block stays centred and the action never overflows. Default false (centre in the region). */
+  natural?: boolean;
 }
 
 /** The one centred empty / loading / error block that replaces a list region. */

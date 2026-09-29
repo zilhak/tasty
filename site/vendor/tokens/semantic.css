@@ -231,7 +231,7 @@
 
   /* ── Stacked text + one-edge marks ── */
   --tasty-label-detail-gap:     var(--tasty-size-2); /* label line ↔ its detail line in one text stack (permission row, banner title ↔ body, workspace row). On-scale. */
-  --tasty-selection-edge-width: var(--tasty-size-2); /* one-edge selection bar (tab indicator, active workspace row, remote-attach / preset list rows). HAIRLINE — zoom-exempt like border-width */
+  --tasty-selection-edge-width: var(--tasty-size-2); /* one-edge selection bar (tab indicator, active workspace row, ListCtrl + every selected list row: file handler / git viewer / plugins / remote-attach / preset / file picker). HAIRLINE — zoom-exempt like border-width */
 
   /* ── Tinted fill + edge (the accent-box idiom) ── */
   --tasty-tint-fill-alpha:   var(--tasty-opacity-tint-fill);   /* 0.12 — accent as a soft fill */

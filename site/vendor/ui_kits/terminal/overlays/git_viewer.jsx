@@ -75,7 +75,7 @@ function WtRow({ wt, selected, onSelect }) {
         padding: "var(--tasty-space-sm) var(--tasty-space-md)", border: 0,
         borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)",
         background: selected ? "var(--tasty-surface-active)" : "transparent",
-        boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none", opacity: invalid ? 0.7 : 1 }}>
+        boxShadow: selected ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none", opacity: invalid ? 0.7 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0 }}>
         <span style={{ ...gvMono, color: nameColor, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{wt.name}</span>
         {wt.type === "main" ? <GBadge tone="info">main</GBadge> : <GBadge>linked</GBadge>}
@@ -104,7 +104,7 @@ function ChRow({ ch, selected, onSelect }) {
       style={{ appearance: "none", textAlign: "left", cursor: "pointer", width: "100%", display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)",
         height: 26, padding: "0 var(--tasty-space-md)", border: 0,
         background: selected ? "var(--tasty-surface-active)" : "transparent",
-        boxShadow: selected ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+        boxShadow: selected ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
       <GBadge tone={ST[ch.p] ? ST[ch.p].tone : null} width={18}>{ch.p}</GBadge>
       <span style={{ ...gvMono, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         <span style={{ color: "var(--tasty-text-muted)" }}>{dir}</span>

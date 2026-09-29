@@ -107,6 +107,7 @@
   --tasty-size-196: 196px; /* explorer sidebar width */
   --tasty-size-240: 240px; /* tooltip max-width · explorer favorites pin height */
   --tasty-size-320: 320px; /* toast / popover max-width */
+  --tasty-size-352: 352px;  /* notifications popup default width */
   /* layout / form-control / measure widths (fixed product dimensions; like 22/46
      above, some are off the 4px grid — real control widths, not spacing rhythm) */
   --tasty-size-64:  64px;  /* file-picker ancestor-crumb floor */

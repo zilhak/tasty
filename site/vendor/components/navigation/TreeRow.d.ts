@@ -20,5 +20,9 @@ export interface TreeRowProps extends React.HTMLAttributes<HTMLDivElement> {
 /**
  * A 22px row for sidebars and file trees — indent, disclosure chevron,
  * icon, label, trailing meta, and a selected state.
+ *
+ * There is deliberately NO disabled state (2026-09-29): an entry that can't be
+ * opened stays a normal, selectable, expandable row and the open reports the
+ * reason. A pending cut is a dimmed ITEM (cut-pending-opacity), not disabled.
  */
 export function TreeRow(props: TreeRowProps): JSX.Element;

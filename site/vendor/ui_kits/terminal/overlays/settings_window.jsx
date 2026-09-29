@@ -107,7 +107,8 @@ function ColorOverridePicker() {
                         background: ov ? "var(--tasty-accent-primary)" : "transparent" }} />
                       <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: 12,
                         color: ov ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)" }}>{field}</span>
-                      <Input mono value={val} disabled={!ov} onChange={(e) => setField(field, e.target.value)} style={{ width: "var(--tasty-field-width-xs)" }} />
+                      {/* Default (no override) = readOnly, not disabled: the base hex is information (2026-09-29) */}
+                      <Input mono value={val} readOnly={!ov} onChange={(e) => setField(field, e.target.value)} style={{ width: "var(--tasty-field-width-xs)" }} />
                       <span style={{ width: "var(--tasty-swatch-size)", height: "var(--tasty-swatch-size)", borderRadius: "var(--tasty-swatch-radius)", flex: "none", background: val,
                         opacity: ov ? 1 : 0.4, border: "var(--tasty-border-width) solid var(--tasty-border-strong)" }} />
                       <Checkbox label="Default" checked={!ov} onChange={() => toggle(field, base)} />

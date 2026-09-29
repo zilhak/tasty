@@ -9,6 +9,12 @@ import React from "react";
  * (used by specimens / always-on demos).
  *
  * <Tooltip content="Explanation…" placement="top"><HelpHint … /></Tooltip>
+ *
+ * Chrome over native content (2026-09-29): tooltips anchored in a pane tab strip
+ * or pane head open TOP. Candidates: top, then bottom; the first whose rect fits
+ * the window and clears every native content rect (WebView) wins. If neither
+ * clears, top is used, clamped to the window. Horizontally the bubble is clamped
+ * to the window edges with --tasty-tooltip-offset. Other anchors keep their own placement.
  */
 
 const CSS = `

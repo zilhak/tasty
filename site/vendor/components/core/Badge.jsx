@@ -8,6 +8,9 @@ import React from "react";
  * (blue) = Completion attention, `warning` (yellow) = NeedsInput attention.
  * When a row shows both, wrap them in <BadgeGroup> so the gap is tokenized and
  * order is fixed: NeedsInput leads, Completion trails.
+ *
+ * disabled (own prop, or inside a disabled ListCtrl row): neutral fill + disabled
+ * ink for every variant — the ink rule, never opacity (2026-09-29).
  */
 
 const CSS = `
@@ -31,6 +34,7 @@ const CSS = `
 .tasty-badge--agent   { background: var(--tasty-badge-agent-bg);   color: var(--tasty-badge-agent-fg); }
 .tasty-badge--success { background: var(--tasty-badge-success-bg); color: var(--tasty-badge-success-fg); }
 .tasty-badge--neutral { background: var(--tasty-badge-neutral-bg); color: var(--tasty-badge-neutral-fg); }
+.tasty-badge--disabled { background: var(--tasty-badge-disabled-bg); color: var(--tasty-badge-disabled-fg); }
 .tasty-badge-group { display: inline-flex; align-items: center; gap: var(--tasty-badge-group-gap); }
 .tasty-badge--dot { min-width: var(--tasty-badge-dot-size); width: var(--tasty-badge-dot-size); height: var(--tasty-badge-dot-size); padding: 0; }
 `;
@@ -45,12 +49,13 @@ function ensureCss() {
   injected = true;
 }
 
-export function Badge({ variant = "danger", dot = false, className = "", children, ...rest }) {
+export function Badge({ variant = "danger", dot = false, disabled = false, className = "", children, ...rest }) {
   ensureCss();
   const cls = [
     "tasty-badge",
     variant !== "danger" ? `tasty-badge--${variant}` : "",
     dot ? "tasty-badge--dot" : "",
+    disabled ? "tasty-badge--disabled" : "",
     className,
   ].filter(Boolean).join(" ");
   return (

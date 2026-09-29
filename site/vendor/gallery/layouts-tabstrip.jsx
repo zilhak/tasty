@@ -4,7 +4,7 @@
 // Requests: html-script-marker-tab-slot · tab-scroll-arrow-shape · move-source-hidden-target.
 (() => {
 const { Spec, Stage, Meta, Note, Do, Dont } = window.Gallery;
-const { Icon, StatusDot } = window.TastyDesignSystem_41fd3f;
+const { Icon, StatusDot, Tooltip } = window.TastyDesignSystem_41fd3f;
 
 const cap = (t) => <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)", marginBottom: "var(--tasty-space-xs)" }}>{t}</div>;
 const THEMES = [["Mocha", null], ["Latte", "latte"]];
@@ -26,7 +26,7 @@ function Marker({ kind, hover }) {
     </span>
   );
 }
-function TabCellS({ label = "report.html", active, hover, marker, markerHover, move, busy, width = "var(--tasty-tab-width)" }) {
+function TabCellS({ label = "report.html", active, hover, marker, markerHover, markerTip, move, busy, width = "var(--tasty-tab-width)" }) {
   const showX = active || hover;
   const fg = active ? "var(--tasty-tab-fg-active)" : hover ? "var(--tasty-tab-fg-hover)" : "var(--tasty-tab-fg)";
   return (
@@ -39,7 +39,9 @@ function TabCellS({ label = "report.html", active, hover, marker, markerHover, m
       <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-caption)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       {/* right cluster — fixed slots, never shrink; the label gives way first */}
       <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: "var(--tasty-tab-status-gap)" }}>
-        {marker && <Marker kind={marker} hover={markerHover} />}
+        {marker && (markerTip
+          ? <Tooltip open placement="top" content={marker === "blocked" ? "Scripts blocked. Click to show the notice again." : "Scripts allowed for this document until Tasty restarts"}><Marker kind={marker} hover={markerHover} /></Tooltip>
+          : <Marker kind={marker} hover={markerHover} />)}
         {move && <span style={{ display: "inline-flex", color: "var(--tasty-move-source-glyph)" }}><Icon name="move" size="var(--tasty-move-source-glyph-size)" /></span>}
         {busy && <span style={{ display: "inline-flex", ["--tasty-status-dot-size"]: "var(--tasty-tab-dot-size)" }}><StatusDot status="running" /></span>}
         <span style={{ width: "var(--tasty-tab-close-size)", height: "var(--tasty-tab-close-size)", display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -91,8 +93,30 @@ function GalleryTabStrip() {
           ))}
         </Stage>
         <Meta
-          specs={[["order", "label … | marker · move · busy · close"], ["cluster gap", "4 · tab-status-gap"], ["label → cluster", "8 · tab-gap"], ["squeeze", "label ellipsises; cluster fixed"], ["lock hit", "16 × 16, hover = overlay-hover"], ["lock click", "re-shows the banner only (no tab switch, no focus change) · mouse only"], ["scriptFile", "tooltip only"]]}
+          specs={[["order", "label … | marker · move · busy · close"], ["cluster gap", "4 · tab-status-gap"], ["label → cluster", "8 · tab-gap"], ["squeeze", "label ellipsises; cluster fixed"], ["lock hit", "16 × 16, hover = overlay-hover"], ["lock click", "re-shows the banner only (no tab switch, no focus change) · mouse only"], ["scriptFile", "tooltip only"], ["tooltip placement", "top (see next spec)"]]}
           tokens={[{ tok: "--tasty-tab-status-gap", use: "→ space-xs 4" }, { tok: "--tasty-html-script-marker-hit", use: "→ size-16" }, { tok: "--tasty-html-script-marker-hover-bg", use: "→ overlay-hover" }, { tok: "--tasty-html-script-marker-fg", use: "lock", color: "var(--tasty-html-script-marker-fg)" }]} />
+      </Spec>
+
+      <Spec title="Tooltips in the strip open upward — native content below (2026-09-29)"
+        when={<>Under an HTML tab the pane body is a <b>native WebView</b>, and the OS always draws it above Tasty's own layer. A tooltip opened <b>down</b> from the strip lands inside it and is never seen. So every tooltip anchored in a <b>pane tab strip or pane head</b> (script marker, close, scroll arrows, head buttons) opens <b>top</b>, over the title area or the pane above, whatever the surface kind, so the strip behaves the same everywhere. Candidates in order: <b>top</b>, then <b>bottom</b>; the first that fits the window and clears every native content rect wins. If neither clears (an HTML pane stacked above another HTML pane), top is used, clamped to the window. Horizontally the bubble clamps to the window edges with <span className="tok">--tasty-tooltip-offset</span>. Hiding the WebView while a tooltip is up is rejected: the page would flash on every hover. Hover delay, copy and click are unchanged.</>}>
+        <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+          {THEMES.map(([label, attr]) => (
+            <Themed key={label} attr={attr}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · html tab active, lock hovered</span>
+              <div style={{ width: "var(--tasty-size-320)", display: "flex", flexDirection: "column", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ height: "var(--tasty-titlebar-height)", flex: "none", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", background: "var(--tasty-bg-app)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>title area</div>
+                <div style={{ display: "flex", background: "var(--tasty-surface-raised)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+                  <TabCellS marker="blocked" active markerHover markerTip />
+                  <TabCellS label="shell" />
+                </div>
+                <div style={{ height: "var(--tasty-size-96)", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--tasty-bg-panel)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>WebView — native, drawn above Tasty</div>
+              </div>
+            </Themed>
+          ))}
+        </Stage>
+        <Meta
+          specs={[["scope", "every tooltip anchored in a pane tab strip or pane head"], ["placement", "top → bottom; first that clears all native rects"], ["neither clears", "top, clamped to the window"], ["horizontal", "clamped to window edges · tooltip-offset 4"], ["WebView hiding", "not used for tooltips"], ["delay · copy · click", "unchanged"]]}
+          tokens={[{ tok: "--tasty-tooltip-offset", use: "→ space-xs 4 · anchor gap + edge clamp" }, { tok: "--tasty-tooltip-bg", use: "bubble", color: "var(--tasty-tooltip-bg)" }]} />
       </Spec>
 
       <Spec title="Scroll arrows — chevron icon, square cell, no own fill (2026-09-29)"

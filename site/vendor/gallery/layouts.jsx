@@ -81,7 +81,7 @@ function FullSidebar() {
         {[["tasty-core", "agent", true, 0, false], ["docs-site", "running", false, 3, false], ["data-etl", "running", false, 1, true], ["scratch", "idle", false, 0, false]].map(([n, st, a, notif, mir]) => (
           <div key={n} style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "6px 9px", borderRadius: "var(--tasty-radius-sm)",
             background: a ? "var(--tasty-surface-active)" : "transparent",
-            boxShadow: a ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+            boxShadow: a ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
             <span style={{ flex: "none", display: "inline-flex", alignItems: "center", height: "calc(13px * var(--tasty-line-height-ui))" }}>
               <StatusDot status={st} pulse={st === "agent" || st === "running"} />
             </span>
@@ -179,7 +179,7 @@ function catRows(rows) {
         <React.Fragment key={n}>
           {i > 0 && <div style={{ height: 1, background: "var(--tasty-separator)", margin: "0 0 0 32px" }} />}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "7px 9px",
-            background: a ? "var(--tasty-surface-active)" : "transparent", boxShadow: a ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+            background: a ? "var(--tasty-surface-active)" : "transparent", boxShadow: a ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
             <span style={{ height: 18, display: "inline-flex", alignItems: "center", flex: "none" }}><StatusDot status={st} pulse={st === "agent" || st === "running"} /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, color: a ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{n}</div>
@@ -358,7 +358,7 @@ function AttentionScale() {
 function AttRow({ name, status, ni, done, active }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 9px", borderRadius: "var(--tasty-radius-sm)",
-      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset 2px 0 0 var(--tasty-accent-primary)" : "none" }}>
+      background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       <StatusDot status={status} pulse={status === "agent" || status === "running"} />
       <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
@@ -855,7 +855,7 @@ function Layouts() {
         </Spec>
 
         <Spec title="Tab title & surface border — the priority ladder"
-          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput appears <i>above</i> occupancy; Completion stays below it.</>}>
+          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput steps <i>above</i> occupancy, the one place it changes an existing ADR-0040 order.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
               <AttTab label="build.log" kind="needs-input" />

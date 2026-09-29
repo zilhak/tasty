@@ -285,7 +285,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             <div key={p.id} onClick={() => setSelId(p.id)} style={{ display: "flex", alignItems: "center",
               gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", cursor: "pointer",
               background: on ? "var(--tasty-surface-active)" : "transparent",
-              boxShadow: on ? `inset var(--tasty-size-2) 0 0 ${pc}` : "none" }}>
+              boxShadow: on ? `inset var(--tasty-selection-edge-width) 0 0 ${pc}` : "none" }}>
               <PluginAvatar plugin={p} size="sm" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: on ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
@@ -601,7 +601,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
                 <div key={p.id} onClick={() => setSelId(p.id)} style={{ display: "flex", alignItems: "center",
                   gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", cursor: "pointer",
                   background: on ? "var(--tasty-surface-active)" : "transparent",
-                  boxShadow: on ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+                  boxShadow: on ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>
                   <PluginAvatar plugin={p} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
