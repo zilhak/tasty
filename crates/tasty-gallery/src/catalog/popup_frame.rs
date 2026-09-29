@@ -3,6 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{PopupTitleAlign, popup_title_text_rect};
 
 /// 본체 popup 상수 — 제목바 높이.
 pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
@@ -43,6 +44,36 @@ impl TitleButtons {
         fullscreen: true,
         close: true,
     };
+
+    /// 제목 정렬 방식. 본체와 같이 오른쪽 버튼 수로 정한다.
+    pub fn title_align(self) -> PopupTitleAlign {
+        PopupTitleAlign::for_button_count(usize::from(self.fullscreen) + usize::from(self.close))
+    }
+}
+
+/// 타이틀바 제목을 본체와 같은 영역 계산으로 가운데에 그린다. 영역 밖은 잘라낸다.
+pub fn draw_title_text(
+    painter: &egui::Painter,
+    theme: &Theme,
+    title_rect: egui::Rect,
+    buttons_left_x: f32,
+    buttons: TitleButtons,
+    title: &str,
+    font: egui::FontId,
+) {
+    let area = popup_title_text_rect(
+        title_rect,
+        buttons_left_x,
+        theme.spacing_sm,
+        buttons.title_align(),
+    );
+    painter.with_clip_rect(area).text(
+        area.center(),
+        egui::Align2::CENTER_CENTER,
+        title,
+        font,
+        theme.text_primary().into(),
+    );
 }
 
 /// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다.
@@ -142,7 +173,6 @@ pub fn draw(
     let bg: egui::Color32 = theme.surface_raised().into();
     let title_bg: egui::Color32 = theme.surface_hover().into();
     let border: egui::Color32 = theme.border_frame().into();
-    let text_color: egui::Color32 = theme.text_primary().into();
 
     if let Some(shadow) = shadow {
         painter.add(
@@ -173,17 +203,16 @@ pub fn draw(
         },
         title_bg,
     );
-    painter.text(
-        egui::pos2(
-            title_rect.min.x + theme.spacing_sm.value(),
-            title_rect.center().y,
-        ),
-        egui::Align2::LEFT_CENTER,
+    let buttons_left = draw_title_buttons(&painter, theme, title_rect, buttons);
+    draw_title_text(
+        &painter,
+        theme,
+        title_rect,
+        buttons_left,
+        buttons,
         title,
         egui::FontId::proportional(theme.font_size_body.value()),
-        text_color,
     );
-    draw_title_buttons(&painter, theme, title_rect, buttons);
 
     let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;
     let content_rect = egui::Rect::from_min_max(

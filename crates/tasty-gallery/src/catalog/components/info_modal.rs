@@ -110,20 +110,14 @@ fn modal(
     );
     let buttons_left =
         popup_frame::draw_title_buttons(&painter, theme, title_rect, TitleButtons::CLOSE);
-    let pad = theme.spacing_sm.value();
-    let title_avail = egui::Rect::from_min_max(
-        egui::pos2(title_rect.min.x + pad, title_rect.min.y),
-        egui::pos2(
-            (buttons_left - pad).max(title_rect.min.x + pad),
-            title_rect.max.y,
-        ),
-    );
-    painter.with_clip_rect(title_avail).text(
-        title_avail.center(),
-        egui::Align2::CENTER_CENTER,
+    popup_frame::draw_title_text(
+        &painter,
+        theme,
+        title_rect,
+        buttons_left,
+        TitleButtons::CLOSE,
         title,
         egui::FontId::proportional(theme.font_size_max.value()),
-        theme.text_primary().to_egui(),
     );
 
     let content = egui::Rect::from_min_max(egui::pos2(frame.min.x, title_rect.max.y), frame.max);

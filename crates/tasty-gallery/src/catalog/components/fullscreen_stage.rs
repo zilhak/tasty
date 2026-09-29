@@ -154,7 +154,10 @@ pub fn draw_titlebar(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("bar", "28px · bg-sidebar · 1px border-strong hairline"),
-            ("title", "centered, elided against the button cluster"),
+            (
+                "title",
+                "× only: centred on the strip · two buttons: before the cluster",
+            ),
             ("buttons", "20px square · 4px gap · 4px from the right edge"),
             ("hover", "overlay-hover fill + text-primary glyph"),
             ("priority", "buttons sit above the drag handle they overlap"),
@@ -173,7 +176,7 @@ pub fn draw_titlebar(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The fullscreen button appears only for popups that declare a stage. The close button keeps its position, and the title width stops before the leftmost button.",
+        "The fullscreen button appears only for popups that declare a stage. The close button keeps its position. With the close button alone the title centres on the whole strip; with both buttons the title width stops before the leftmost button.",
     );
 }
 
@@ -206,16 +209,13 @@ fn host_title_bar(ui: &mut egui::Ui, theme: &Theme, title: &str, buttons: TitleB
         egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
     let buttons_left = popup_frame::draw_title_buttons(&painter, theme, rect, buttons);
-    let pad = theme.spacing_sm.value();
-    let avail = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x + pad, rect.min.y),
-        egui::pos2((buttons_left - pad).max(rect.min.x + pad), rect.max.y),
-    );
-    painter.with_clip_rect(avail).text(
-        avail.center(),
-        egui::Align2::CENTER_CENTER,
+    popup_frame::draw_title_text(
+        &painter,
+        theme,
+        rect,
+        buttons_left,
+        buttons,
         title,
         egui::FontId::proportional(theme.font_size_body.value()),
-        theme.text_primary().to_egui(),
     );
 }
