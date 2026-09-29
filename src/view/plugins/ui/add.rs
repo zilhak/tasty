@@ -92,9 +92,23 @@ fn draw_add_preview(
 
     ui.heading(t("plugins.add_preview_heading"));
     vspace(ui, th.spacing_sm);
+    let blocked_key = add_blocked_reason_key(&preview);
+    // 경고와 액션 바가 창 안에 남도록, 같은 내용을 보이지 않게 먼저 그려 높이를 잰다.
+    let footer_height = {
+        let mut probe = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(ui.available_rect_before_wrap())
+                .sizing_pass()
+                .invisible(),
+        );
+        draw_preview_footer(&mut probe, &preview, blocked_key, th);
+        probe.min_rect().height()
+    };
+    let scroll_height =
+        (ui.available_height() - footer_height - ui.spacing().item_spacing.y).max(0.0);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
-        .max_height(ui.available_height() - 60.0)
+        .max_height(scroll_height)
         .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -160,17 +174,65 @@ fn draw_add_preview(
             }
         });
 
+    let footer = draw_preview_footer(ui, &preview, blocked_key, th);
+    if footer.add {
+        let action = match &preview.trust_state {
+            AddTrustState::Trusted => PluginsAction::Install {
+                src_path: preview.src_path.clone(),
+            },
+            AddTrustState::UntrustedWithPubkey {
+                fingerprint,
+                pubkey_b64,
+                ..
+            } => PluginsAction::TrustAndInstall {
+                src_path: preview.src_path.clone(),
+                plugin_id: preview.id.clone(),
+                pubkey_b64: pubkey_b64.clone(),
+                permissions: preview.permissions.clone(),
+                publisher_fingerprint: fingerprint.clone(),
+            },
+            // 이 상태는 blocked_key가 있어 버튼이 disabled라 도달하지 않는다. 안전망으로 일반 Install.
+            AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_) => {
+                PluginsAction::Install {
+                    src_path: preview.src_path.clone(),
+                }
+            }
+        };
+        actions.push(action);
+        reset_add_state(ui_state);
+    }
+    if footer.cancel {
+        reset_add_state(ui_state);
+    }
+}
+
+/// 프리뷰 하단에서 누른 버튼.
+struct FooterClicks {
+    add: bool,
+    cancel: bool,
+}
+
+/// 프리뷰 하단 — 신뢰 경고와 액션 바. 높이 측정과 실제 그리기가 같은 함수를 쓴다.
+fn draw_preview_footer(
+    ui: &mut egui::Ui,
+    preview: &AddPreview,
+    blocked_key: Option<&'static str>,
+    th: &theme::Theme,
+) -> FooterClicks {
     // Untrusted plugin 경고 — 빨간색 영역. 이미 설치된 plugin 은 표시 X
     // (그쪽이 더 의미 있는 메시지).
     if preview.already_installed.is_none() {
-        draw_untrusted_warning(ui, &preview, th);
+        draw_untrusted_warning(ui, preview, th);
     }
 
     vspace(ui, th.spacing_md);
     ui.separator();
     vspace(ui, th.spacing_sm);
     // 추가할 수 없는 매니페스트는 Add를 숨기지 않고 disabled로 두고, 이유를 왼쪽에 적는다.
-    let blocked_key = add_blocked_reason_key(&preview);
+    let mut clicks = FooterClicks {
+        add: false,
+        cancel: false,
+    };
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), ControlSize::Md.height(th)),
         egui::Layout::left_to_right(egui::Align::Center),
@@ -191,38 +253,12 @@ fn draw_add_preview(
                 let cancel = Button::new(t("button.cancel"))
                     .variant(ButtonVariant::Ghost)
                     .show(ui, th);
-                if add.clicked() {
-                    let action = match &preview.trust_state {
-                        AddTrustState::Trusted => PluginsAction::Install {
-                            src_path: preview.src_path.clone(),
-                        },
-                        AddTrustState::UntrustedWithPubkey {
-                            fingerprint,
-                            pubkey_b64,
-                            ..
-                        } => PluginsAction::TrustAndInstall {
-                            src_path: preview.src_path.clone(),
-                            plugin_id: preview.id.clone(),
-                            pubkey_b64: pubkey_b64.clone(),
-                            permissions: preview.permissions.clone(),
-                            publisher_fingerprint: fingerprint.clone(),
-                        },
-                        // 이 상태는 blocked_key가 있어 버튼이 disabled라 도달하지 않는다. 안전망으로 일반 Install.
-                        AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_) => {
-                            PluginsAction::Install {
-                                src_path: preview.src_path.clone(),
-                            }
-                        }
-                    };
-                    actions.push(action);
-                    reset_add_state(ui_state);
-                }
-                if cancel.clicked() {
-                    reset_add_state(ui_state);
-                }
+                clicks.add = add.clicked();
+                clicks.cancel = cancel.clicked();
             });
         },
     );
+    clicks
 }
 
 /// 추가할 수 없는 매니페스트의 이유 키. 추가할 수 있으면 `None`.
@@ -432,5 +468,90 @@ mod tests {
             None
         );
         assert_eq!(add_blocked_reason_key(&preview(with_pubkey, None)), None);
+    }
+
+    /// 창 안에 그려진 글자 사각형들. 클립 밖으로 나간 글자는 사용자에게 보이지 않으므로 뺀다.
+    fn visible_text_rects(
+        output: &egui::FullOutput,
+        screen: egui::Rect,
+    ) -> Vec<(String, egui::Rect)> {
+        fn walk(
+            shape: &egui::Shape,
+            clip: egui::Rect,
+            screen: egui::Rect,
+            out: &mut Vec<(String, egui::Rect)>,
+        ) {
+            match shape {
+                egui::Shape::Vec(shapes) => {
+                    for s in shapes {
+                        walk(s, clip, screen, out);
+                    }
+                }
+                egui::Shape::Text(text) => {
+                    let rect = text.galley.rect.translate(text.pos.to_vec2());
+                    if clip.contains_rect(rect) && screen.contains_rect(rect) {
+                        out.push((text.galley.text().to_string(), rect));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, clipped.clip_rect, screen, &mut out);
+        }
+        out
+    }
+
+    /// 신뢰 경고가 있는 프리뷰에서도 액션 바(막힌 이유·Cancel·Add)가 창 안에 보인다.
+    /// 스크롤 영역이 아래에 고정 높이만 남기면 경고와 액션 바가 창 밖으로 밀려난다.
+    #[test]
+    fn action_bar_stays_inside_the_window_below_a_trust_warning() {
+        let states = [
+            AddTrustState::UntrustedNoPubkey {
+                fingerprint: "16:43:83:e3:a7:6d:5c:20".into(),
+                reason: AddTrustReason::UnknownKey,
+            },
+            AddTrustState::SigError("tasty-plugin.toml.sig sidecar missing".into()),
+        ];
+        for trust_state in states {
+            let reason =
+                t(add_blocked_reason_key(&preview(trust_state.clone(), None))
+                    .expect("blocked state"))
+                .to_string();
+            let wanted = [
+                reason,
+                t("button.cancel").to_string(),
+                t("plugins.add_button").to_string(),
+            ];
+            for height in [300.0, 560.0, 760.0] {
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(880.0, height));
+                let mut ui_state = PluginsUiState {
+                    add_preview: Some(preview(trust_state.clone(), None)),
+                    ..Default::default()
+                };
+                let mut actions = Vec::new();
+                let ctx = egui::Context::default();
+                let raw = egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                let output = ctx.run(raw, |ctx| {
+                    draw_add_tab(
+                        ctx,
+                        &PluginsSnapshot::default(),
+                        &mut ui_state,
+                        &mut actions,
+                    );
+                });
+                let texts = visible_text_rects(&output, screen);
+                for label in &wanted {
+                    assert!(
+                        texts.iter().any(|(text, _)| text == label),
+                        "{trust_state:?} at height {height}: {label:?} is not visible inside the window"
+                    );
+                }
+            }
+        }
     }
 }
