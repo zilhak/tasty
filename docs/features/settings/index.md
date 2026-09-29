@@ -40,7 +40,8 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 > **surface 폰트 override 저장소**: surface-kind 폰트 override 는 전부 `appearance.plugin_font_overrides.<kind>`(generic per-kind, host 는 live 경로에서 특정 kind 이름을 모른다)로 수렴한다. 단 레거시 top-level `[markdown_font]`/`[explorer_font]` 섹션은 **전환기 back-compat 로 유지**한다(`migrate_legacy_font_overrides` 가 load 시 `plugin_font_overrides` 로 일회성 승계 — 읽기 전용, write-back 없음). 이전 버전 사용자의 설정을 옮길 수 있도록 유지하는 호환 경로다.
 
 > **설정 적용**: host 가 `resolve_webview_settings` 로 `plugin_settings."com.tasty.html"` 을 읽어 네이티브 webview 에 직접 적용한다(별도 host→plugin IPC 없음 — `font_override` 호스트 적용과 같은 선례). 적용 현황:
-> - **zoom · sandbox(JS on/off)**: 3 OS 모두 실효.
+> - **zoom**: 3 OS 모두 실효.
+> - **sandbox scripts**: 켜 두면 main frame 문서마다 JS를 끄고, 사용자가 허용한 문서에서만 켠다. `resolve_webview_settings`는 전역 값만 넘기고 문서별 판정은 navigation 콜백이 한다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)). 끄면 모든 문서에서 JS를 켠다. 문서별 적용 시점은 Linux에서만 측정했다.
 > - **color_scheme**(`prefers-color-scheme` 강제): macOS 실효(NSAppearance). Windows/Linux 는 no-op(후속).
 > - **allow remote content**(원격 http/https 서브리소스 차단): 3 OS 모두 실효 — macOS 는 `WKContentRuleList`, Windows 는 `WebResourceRequested` 403, Linux 는 같은 스키마의 content filter 를 `WebKitUserContentFilterStore` 로 컴파일해 user content manager 에 붙인다(네비게이션은 decide-policy 가 따로 막는다). 근거·대안은 [ADR-0029](../../adr/0029-webview-host-integration.md). 플랫폼별 백엔드는 해당 OS에서 검증해야 한다.
 
