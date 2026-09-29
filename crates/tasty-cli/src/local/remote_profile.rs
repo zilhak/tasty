@@ -4,9 +4,9 @@
 use anyhow::Result;
 use tasty_i18n::{t, t_args, t_fmt, t_fmt2};
 use tasty_remote_profiles::{
-    ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost, config_availability,
-    enumerate_hosts, imported_as, is_valid_shell, prepare_import, sanitize_passkey_name,
-    user_config_path,
+    ConfigAvailability, ImportError, Passkeys, RemoteProfile, RemoteProfiles, SshConfigHost,
+    config_availability, enumerate_hosts, imported_as, is_valid_shell, prepare_import,
+    sanitize_passkey_name, user_config_path,
 };
 
 use crate::commands::remote_profile::RemoteProfileCommands;
@@ -402,14 +402,7 @@ fn list_local(json: bool) -> Result<()> {
         let shown = path
             .map(|p| tasty_utils::path::tilde_abbreviate(&p))
             .unwrap_or_else(|| "~/.ssh/config".into());
-        let key = if !avail.exists {
-            "cli.remote_profile.list_local_no_config"
-        } else if !avail.readable {
-            "cli.remote_profile.list_local_unreadable"
-        } else {
-            "cli.remote_profile.list_local_no_alias"
-        };
-        outln!("{}", t_fmt(key, &shown))?;
+        outln!("{}", t_fmt(list_local_empty_key(avail), &shown))?;
         return Ok(());
     }
     // 헤더는 `list` 와 같은 이유로 패딩 포함 한 줄 전체를 번역 값으로 둔다.
@@ -424,6 +417,17 @@ fn list_local(json: bool) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+/// 목록이 비었을 때의 문구 키. 부재·못 읽음 문장은 GUI "From ssh config" 섹션과 같다.
+fn list_local_empty_key(avail: ConfigAvailability) -> &'static str {
+    if !avail.exists {
+        "cli.remote_profile.list_local_no_config"
+    } else if !avail.readable {
+        "cli.remote_profile.list_local_unreadable"
+    } else {
+        "cli.remote_profile.list_local_no_alias"
+    }
 }
 
 /// 화면에만 쓰는 HostName[:Port] 요약. 둘 다 없으면 -를 반환한다.
@@ -558,4 +562,40 @@ fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) -> R
         None => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 기본 경로에서 CLI의 부재·못 읽음 문장이 GUI 섹션 문장과 같은지.
+    #[test]
+    fn empty_lines_match_the_gui_section() {
+        tasty_i18n::init("en");
+        let path = "~/.ssh/config";
+        let missing = ConfigAvailability {
+            exists: false,
+            readable: false,
+        };
+        let unreadable = ConfigAvailability {
+            exists: true,
+            readable: false,
+        };
+        assert_eq!(
+            t_fmt(list_local_empty_key(missing), path),
+            t("remote_tool.local_ssh_missing")
+        );
+        assert_eq!(
+            t_fmt(list_local_empty_key(unreadable), path),
+            t("remote_tool.local_ssh_unreadable")
+        );
+        let readable = ConfigAvailability {
+            exists: true,
+            readable: true,
+        };
+        assert_eq!(
+            list_local_empty_key(readable),
+            "cli.remote_profile.list_local_no_alias"
+        );
+    }
 }
