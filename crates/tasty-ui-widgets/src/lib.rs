@@ -58,8 +58,9 @@ pub use center_state::{
     CENTER_STATE_ERROR_GLYPH, CenterState, CenterStateOutput, CenterStateVariant,
 };
 pub use chip::{
-    BadgeVariant, KbdKey, TagVariant, badge, badge_dot, kbd, kbd_parts, kbd_parts_at,
-    kbd_parts_width, kbd_width, num_keycap, paint_badge_dot, paint_num_keycap, tag, tag_width,
+    BadgeVariant, KbdKey, TagVariant, badge, badge_disabled, badge_dot, disabled_chip_scope,
+    in_disabled_chip_scope, kbd, kbd_parts, kbd_parts_at, kbd_parts_width, kbd_width, num_keycap,
+    paint_badge_dot, paint_num_keycap, tag, tag_disabled, tag_width,
 };
 pub use chrome_slot::top_right_inset_square;
 pub use control::ControlSize;

@@ -1,7 +1,10 @@
 //! Badge, Tag, Kbd를 각각 보여주는 예제.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, badge_dot, kbd, tag};
+use tasty_ui_widgets::{
+    BadgeVariant, TagVariant, badge, badge_disabled, badge_dot, disabled_chip_scope, kbd, tag,
+    tag_disabled,
+};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
@@ -19,6 +22,15 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
             badge_dot(ui, theme, BadgeVariant::Danger);
             badge_dot(ui, theme, BadgeVariant::Agent);
             badge_dot(ui, theme, BadgeVariant::Success);
+        });
+        // 시안 Badge `disabled` — 모든 variant가 중립 채움과 disabled ink 한 벌이다.
+        cluster(ui, theme, "disabled", |ui| {
+            badge_disabled(ui, theme, "3");
+            badge_disabled(ui, theme, "12");
+            badge_disabled(ui, theme, "ok");
+            disabled_chip_scope(ui, |ui| {
+                badge_dot(ui, theme, BadgeVariant::Danger);
+            });
         });
     });
 
@@ -51,6 +63,11 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
                 "agent",
                 egui::Color32::from(theme.badge_agent_bg()),
             ),
+            TokenChip::new(
+                "badge-disabled-bg",
+                "disabled fill",
+                egui::Color32::from(theme.badge_disabled_bg()),
+            ),
             TokenChip::without_color("font-size-caption", "label 11px"),
         ],
     );
@@ -67,6 +84,12 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
             tag(ui, theme, "running", TagVariant::Success, true);
             tag(ui, theme, "readonly", TagVariant::Warning, true);
             tag(ui, theme, "error", TagVariant::Danger, true);
+        });
+        // 시안 Tag `disabled` — accent 채움과 tint 테두리가 빠지고 점도 같은 ink다.
+        cluster(ui, theme, "disabled", |ui| {
+            tag_disabled(ui, theme, "terminal", false);
+            tag_disabled(ui, theme, "markdown", false);
+            tag_disabled(ui, theme, "running", true);
         });
     });
 
@@ -85,6 +108,11 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
                 "accent-info",
                 "info tone",
                 egui::Color32::from(theme.accent_info()),
+            ),
+            TokenChip::new(
+                "tag-disabled-fg",
+                "disabled ink",
+                egui::Color32::from(theme.tag_disabled_fg()),
             ),
         ],
     );

@@ -35,6 +35,32 @@ fn mono(size: f32) -> egui::FontId {
     egui::FontId::monospace(size)
 }
 
+/// disabled 행 문맥을 기록하는 egui 임시 데이터 키. 값은 중첩 깊이다.
+fn disabled_chip_scope_id() -> egui::Id {
+    egui::Id::new("tasty_ui_widgets::chip::disabled_chip_scope")
+}
+
+/// `content`를 disabled 문맥(시안 `.is-disabled` 행)에서 그린다.
+/// 이 안의 [`tag`]·[`badge`]·[`badge_dot`]은 variant와 관계없이 disabled 변형으로 그린다.
+/// disabled ListCtrl 행이 trailing 슬롯에 적용한다.
+pub fn disabled_chip_scope<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let id = disabled_chip_scope_id();
+    let prev = ui.ctx().data(|d| d.get_temp::<u32>(id)).unwrap_or(0);
+    ui.ctx().data_mut(|d| d.insert_temp(id, prev + 1));
+    let out = content(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(id, prev));
+    out
+}
+
+/// 지금 그리는 위치가 [`disabled_chip_scope`] 안인지. 직접 그리는 trailing renderer가
+/// 자기 글자·글리프를 disabled ink로 바꿀 때 읽는다.
+pub fn in_disabled_chip_scope(ui: &egui::Ui) -> bool {
+    ui.ctx()
+        .data(|d| d.get_temp::<u32>(disabled_chip_scope_id()))
+        .unwrap_or(0)
+        > 0
+}
+
 /// 상태 점 없는 태그의 폭을 계산한다. 그리기 전 가용 폭과 비교할 때 사용한다.
 pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     let pad_x = theme.tag_padding_x().value();
@@ -47,6 +73,7 @@ pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
 }
 
 /// Tag — 모노 라벨 chip. `dot` 이 true 면 선행 상태 점(현재 fg 색).
+/// [`disabled_chip_scope`] 안에서는 [`tag_disabled`]와 같게 그린다.
 pub fn tag(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -54,10 +81,36 @@ pub fn tag(
     variant: TagVariant,
     dot: bool,
 ) -> egui::Response {
+    let colors = if in_disabled_chip_scope(ui) {
+        tag_disabled_colors(theme)
+    } else {
+        tag_colors(theme, variant)
+    };
+    paint_tag(ui, theme, label, dot, colors)
+}
+
+/// disabled Tag — 모든 variant가 중립 상자(tag-disabled-bg·border)와 disabled ink를 쓴다.
+/// accent 채움과 tint 테두리는 빠지고 상태 점도 같은 ink다. opacity는 쓰지 않는다.
+pub fn tag_disabled(ui: &mut egui::Ui, theme: &Theme, label: &str, dot: bool) -> egui::Response {
+    paint_tag(ui, theme, label, dot, tag_disabled_colors(theme))
+}
+
+/// Tag 채움·테두리·글자색.
+type TagColors = (egui::Color32, Option<egui::Color32>, egui::Color32);
+
+fn tag_disabled_colors(theme: &Theme) -> TagColors {
+    (
+        theme.tag_disabled_bg().to_egui(),
+        Some(theme.tag_disabled_border().to_egui()),
+        theme.tag_disabled_fg().to_egui(),
+    )
+}
+
+fn tag_colors(theme: &Theme, variant: TagVariant) -> TagColors {
     // 테두리의 공통 비율은 Theme에서 읽고 대응 토큰이 없는 두 비율만 아래에 둔다.
     const TAG_BORDER_OPACITY: f32 = 0.4;
     const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;
-    let (fill, border, fg) = match variant {
+    match variant {
         TagVariant::Default => (
             theme.tag_bg().to_egui(),
             Some(theme.tag_border().to_egui()),
@@ -126,7 +179,16 @@ pub fn tag(
             ),
             theme.accent_danger().to_egui(),
         ),
-    };
+    }
+}
+
+fn paint_tag(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    dot: bool,
+    (fill, border, fg): TagColors,
+) -> egui::Response {
     let radius = theme.tag_radius().value();
     let bw = theme.border_width.value();
     let pad_x = theme.tag_padding_x().value();
@@ -164,13 +226,35 @@ pub fn tag(
 }
 
 /// Badge — 채움 count/status pill (디자인 `core/Badge`).
+/// [`disabled_chip_scope`] 안에서는 [`badge_disabled`]와 같게 그린다.
 pub fn badge(
     ui: &mut egui::Ui,
     theme: &Theme,
     label: &str,
     variant: BadgeVariant,
 ) -> egui::Response {
-    let (fill, fg) = match variant {
+    let colors = if in_disabled_chip_scope(ui) {
+        badge_disabled_colors(theme)
+    } else {
+        badge_colors(theme, variant)
+    };
+    paint_badge(ui, theme, label, colors)
+}
+
+/// disabled Badge — 모든 variant가 중립 채움(badge-disabled-bg)과 disabled ink를 쓴다.
+pub fn badge_disabled(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Response {
+    paint_badge(ui, theme, label, badge_disabled_colors(theme))
+}
+
+fn badge_disabled_colors(theme: &Theme) -> (egui::Color32, egui::Color32) {
+    (
+        theme.badge_disabled_bg().to_egui(),
+        theme.badge_disabled_fg().to_egui(),
+    )
+}
+
+fn badge_colors(theme: &Theme, variant: BadgeVariant) -> (egui::Color32, egui::Color32) {
+    match variant {
         BadgeVariant::Danger => (
             theme.accent_danger().to_egui(),
             theme.text_on_accent().to_egui(),
@@ -191,7 +275,15 @@ pub fn badge(
             theme.surface_active().to_egui(),
             theme.text_primary().to_egui(),
         ),
-    };
+    }
+}
+
+fn paint_badge(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    (fill, fg): (egui::Color32, egui::Color32),
+) -> egui::Response {
     let pad_x = theme.badge_padding_x().value();
     let badge_sz = theme.badge_size().value();
     let galley = ui.painter().layout_no_wrap(
@@ -209,10 +301,19 @@ pub fn badge(
 }
 
 /// 상태 점의 영역을 할당한 뒤 공용 그리기 함수를 호출한다.
+/// [`disabled_chip_scope`] 안에서는 badge-disabled-bg로 칠한다.
 pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egui::Response {
     let dot_sz = theme.badge_dot_size().value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
-    paint_badge_dot(ui.painter(), theme, rect.center(), variant);
+    if in_disabled_chip_scope(ui) {
+        ui.painter().circle_filled(
+            rect.center(),
+            dot_sz * 0.5,
+            theme.badge_disabled_bg().to_egui(),
+        );
+    } else {
+        paint_badge_dot(ui.painter(), theme, rect.center(), variant);
+    }
     resp
 }
 
@@ -508,4 +609,69 @@ fn draw_keycap_box(
         ],
         egui::Stroke::new(bottom_border, border),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_chip_scope_marks_only_its_own_scope_and_nests() {
+        let ctx = egui::Context::default();
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                assert!(!in_disabled_chip_scope(ui));
+                disabled_chip_scope(ui, |ui| {
+                    assert!(in_disabled_chip_scope(ui));
+                    disabled_chip_scope(ui, |ui| assert!(in_disabled_chip_scope(ui)));
+                    assert!(in_disabled_chip_scope(ui));
+                });
+                assert!(!in_disabled_chip_scope(ui));
+            });
+        });
+    }
+
+    /// disabled 변형은 variant와 관계없이 중립 상자와 disabled ink 한 벌이다. accent 채움이 남지 않는다.
+    #[test]
+    fn disabled_variants_drop_accent_fill_and_tint_edge() {
+        let theme = tasty_themes::mocha_fallback();
+        let (fill, border, fg) = tag_disabled_colors(&theme);
+        assert_eq!(fill, theme.state_disabled_fill().to_egui());
+        assert_eq!(border, Some(theme.state_disabled_border().to_egui()));
+        assert_eq!(fg, theme.state_disabled_fg().to_egui());
+        for variant in [TagVariant::Accent, TagVariant::Success, TagVariant::Agent] {
+            assert_ne!(tag_colors(&theme, variant).2, fg);
+        }
+        let (bfill, bfg) = badge_disabled_colors(&theme);
+        assert_eq!(bfill, theme.state_disabled_fill().to_egui());
+        assert_eq!(bfg, theme.state_disabled_fg().to_egui());
+    }
+
+    /// 문맥 안의 `tag`·`badge`는 호출부를 바꾸지 않아도 disabled 변형으로 그린다.
+    #[test]
+    fn tag_and_badge_inside_the_scope_paint_the_disabled_ink() {
+        let theme = tasty_themes::mocha_fallback();
+        let ink = theme.state_disabled_fg().to_egui();
+        let accent = theme.accent_primary().to_egui();
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                disabled_chip_scope(ui, |ui| {
+                    tag(ui, &theme, "edited", TagVariant::Accent, false);
+                    badge(ui, &theme, "3", BadgeVariant::Primary);
+                });
+            });
+        });
+        let mut text_colors = Vec::new();
+        let mut fills = Vec::new();
+        for clipped in &output.shapes {
+            match &clipped.shape {
+                egui::Shape::Text(t) => text_colors.push(t.fallback_color),
+                egui::Shape::Rect(r) => fills.push(r.fill),
+                _ => {}
+            }
+        }
+        assert_eq!(text_colors, vec![ink, ink]);
+        assert!(!fills.contains(&accent), "accent fill left in {fills:?}");
+    }
 }
