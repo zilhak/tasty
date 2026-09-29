@@ -2,7 +2,7 @@
 //! 미신뢰 플러그인 예제는 공개키가 있어 신뢰 등록이 가능한 경우만 보여준다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 /// 경로 입력 오른쪽의 Verify 버튼 공간을 확보한다.
 fn field_width(theme: &Theme, available: f32) -> f32 {
@@ -110,13 +110,55 @@ pub(super) fn preview_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     untrusted_warning(&mut child, theme);
 
     child.separator();
-    child.horizontal(|ui| {
-        Button::new("Add")
-            .variant(ButtonVariant::Primary)
-            .show(ui, theme);
-        Button::new("Cancel")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
+    action_bar(&mut child, theme, None);
+}
+
+/// 프리뷰 하단 액션 바 — 본체 `draw_add_preview` 의 버튼 줄.
+/// `blocked` 가 있으면 Add 를 숨기지 않고 disabled 로 두고 이유를 왼쪽에 적는다.
+pub(super) fn action_bar(ui: &mut egui::Ui, theme: &Theme, blocked: Option<&str>) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Md.height(theme)),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            if let Some(reason) = blocked {
+                ui.label(
+                    egui::RichText::new(reason)
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                Button::new("Add")
+                    .variant(ButtonVariant::Primary)
+                    .enabled(blocked.is_none())
+                    .show(ui, theme);
+                Button::new("Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme);
+            });
+        },
+    );
+}
+
+/// 추가할 수 없는 세 이유의 액션 바를 나란히 쌓는다 — 본체 `add_blocked_reason_key`.
+pub(super) fn blocked_bars(ui: &mut egui::Ui, theme: &Theme, width: f32) {
+    // cluster 는 가로로 흐르므로 세 바를 세로로 쌓는다.
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        for reason in [
+            "Already installed",
+            "Unsigned, and no public key to check it against",
+            "Signature check failed",
+        ] {
+            egui::Frame::new()
+                .fill(theme.bg_panel().to_egui())
+                .inner_margin(theme.spacing_md.value())
+                .show(ui, |ui| {
+                    ui.set_width(width);
+                    action_bar(ui, theme, Some(reason));
+                });
+        }
     });
 }
 

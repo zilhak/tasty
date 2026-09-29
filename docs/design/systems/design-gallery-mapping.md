@@ -308,7 +308,7 @@ footer에는 “Always open …” 체크박스를 두지 않는다. 파일 피�
 | installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `plugins_window/installed.rs`: `list_pane` / `detail_pane` — 상세 블록 열셋 전량(빈 상태 · health error 박스 · Status/Configure · Surface kinds · Permissions · Commands · Install path/Log · Uninstall 2 분기 포함) |
 | `AttentionPanel` (4케이스) | `src/view/plugins/ui/attention.rs` `draw_attention_tab` | `plugins_window/attention.rs`: `list_pane` / `detail_pane` / `banner` / `reason_detail` / `action_bar` / `reason_cards` |
 | `FingerprintLine` | `src/view/plugins/ui/attention.rs` `fingerprint_line` — Attention 서명 절과 Add 미신뢰 경고가 함께 쓴다. mono caption 라벨(text-secondary)·값(text-muted) 뒤에 IconButton sm `copy`(툴팁 Copy fingerprint), 간격 `spacing_sm`. 값이 없으면 줄을 그리지 않고, Attention 액션 바에는 복사 버튼이 없다 | `plugins_window/attention.rs` `fingerprint_line`(Attention `reason_detail` · Add `untrusted_warning`) |
-| `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` |
+| `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` / `action_bar` / `blocked_bars` — 액션 바는 오른쪽 Cancel(Ghost) + Add(Primary). 추가할 수 없으면(이미 설치됨 · 공개키 없음 · 서명 오류, 본체 `add_blocked_reason_key`) Add 를 숨기지 않고 disabled 로 두고 왼쪽에 이유를 caption·text-muted 로 적는다 |
 | `PluginAvatar` | `src/view/plugins/ui/list.rs` · `attention.rs` — 목록 행(32)과 상세 identity(46) 넷 | 공용 위젯 `tasty-ui-widgets` `plugin_avatar` / `paint_plugin_avatar` 를 `plugins_window/installed.rs` · `attention.rs` 의 `list_pane` · `detail_pane` 이 부른다 |
 
 severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서명 계열만 danger, 권한
@@ -316,7 +316,7 @@ severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서�
 실패 하나만 본다).
 
 검증: specimen 이 여덟 상태(Installed 넷 — 선택 · health error · 무선택 · uninstall 확인,
-Attention 둘 — 목록 있음 · 빈 상태, Add 둘 — 경로입력 · 매니페스트 프리뷰)를 세로로 모두
+Attention 둘 — 목록 있음 · 빈 상태, Add 둘 — 경로입력 · 매니페스트 프리뷰)와 추가 불가 액션 바 셋(이미 설치됨 · 공개키 없음 · 서명 오류)를 세로로 모두
 그리므로 탭 전환 없이 대조한다. Installed 무대는 상세가 길어 `measure_xl`, Add 매니페스트 프리뷰 무대는 경고·fingerprint 줄·액션 바를 담도록 `measure_md` 로 높다 — 본체는
 그 자리를 `ScrollArea` 로 접지만 갤러리는 접으면 캡처에서 사라진다. 페이지는 Overlays(idx 3)
 이고 이 섹션은 그 페이지 아래쪽(뒤에 `drop-overlay` 하나)이라 스크롤 오프셋을 준다 — 정확한 y 는 위에 섹션이 늘면 밀리므로

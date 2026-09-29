@@ -396,6 +396,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             spec::stage(ui, theme, StageVariant::Solo, |ui| window(ui, theme, tab));
         });
     }
+    spec::cluster(ui, theme, "Add plugin — blocked (3 reasons)", |ui| {
+        let width = stage_size(theme, Tab::Add { preview: true }).x;
+        add::blocked_bars(ui, theme, width);
+    });
     spec::cluster(ui, theme, "attention reasons (4)", |ui| {
         attention::reason_cards(ui, theme);
     });
@@ -428,7 +432,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "add",
-                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태",
+                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태 · 액션 바는 오른쪽 Cancel(ghost) + Add(primary), 추가할 수 없으면 Add disabled + 왼쪽 이유(caption, text-muted)",
             ),
         ],
         &[

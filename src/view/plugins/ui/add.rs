@@ -5,7 +5,7 @@ use tasty_type_geometry::length::LogicalPx;
 /// 미리보기 이름의 primitive 폰트 크기. ui_scale을 적용하지 않는다(ADR-0035).
 const ADD_PREVIEW_NAME_PRIMITIVE_16: LogicalPx = LogicalPx(16.0);
 
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 
 use super::attention::fingerprint_line;
 use super::{
@@ -169,43 +169,72 @@ fn draw_add_preview(
     vspace(ui, th.spacing_md);
     ui.separator();
     vspace(ui, th.spacing_sm);
-    ui.horizontal(|ui| {
-        let can_add = preview.already_installed.is_none()
-            && !matches!(
-                preview.trust_state,
-                AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_)
-            );
-        let add_btn = ui.add_enabled(can_add, egui::Button::new(t("plugins.add_button")));
-        if add_btn.clicked() {
-            let action = match &preview.trust_state {
-                AddTrustState::Trusted => PluginsAction::Install {
-                    src_path: preview.src_path.clone(),
-                },
-                AddTrustState::UntrustedWithPubkey {
-                    fingerprint,
-                    pubkey_b64,
-                    ..
-                } => PluginsAction::TrustAndInstall {
-                    src_path: preview.src_path.clone(),
-                    plugin_id: preview.id.clone(),
-                    pubkey_b64: pubkey_b64.clone(),
-                    permissions: preview.permissions.clone(),
-                    publisher_fingerprint: fingerprint.clone(),
-                },
-                // can_add=false 이므로 도달 불가. 안전망으로 일반 Install fallthrough.
-                AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_) => {
-                    PluginsAction::Install {
-                        src_path: preview.src_path.clone(),
-                    }
+    // 추가할 수 없는 매니페스트는 Add를 숨기지 않고 disabled로 두고, 이유를 왼쪽에 적는다.
+    let blocked_key = add_blocked_reason_key(&preview);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Md.height(th)),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            if let Some(key) = blocked_key {
+                ui.label(
+                    egui::RichText::new(t(key))
+                        .size(th.font_size_caption.value())
+                        .color(egui::Color32::from(th.text_muted())),
+                );
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let add = Button::new(t("plugins.add_button"))
+                    .variant(ButtonVariant::Primary)
+                    .enabled(blocked_key.is_none())
+                    .show(ui, th);
+                let cancel = Button::new(t("button.cancel"))
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, th);
+                if add.clicked() {
+                    let action = match &preview.trust_state {
+                        AddTrustState::Trusted => PluginsAction::Install {
+                            src_path: preview.src_path.clone(),
+                        },
+                        AddTrustState::UntrustedWithPubkey {
+                            fingerprint,
+                            pubkey_b64,
+                            ..
+                        } => PluginsAction::TrustAndInstall {
+                            src_path: preview.src_path.clone(),
+                            plugin_id: preview.id.clone(),
+                            pubkey_b64: pubkey_b64.clone(),
+                            permissions: preview.permissions.clone(),
+                            publisher_fingerprint: fingerprint.clone(),
+                        },
+                        // 이 상태는 blocked_key가 있어 버튼이 disabled라 도달하지 않는다. 안전망으로 일반 Install.
+                        AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_) => {
+                            PluginsAction::Install {
+                                src_path: preview.src_path.clone(),
+                            }
+                        }
+                    };
+                    actions.push(action);
+                    reset_add_state(ui_state);
                 }
-            };
-            actions.push(action);
-            reset_add_state(ui_state);
-        }
-        if ui.button(t("button.cancel")).clicked() {
-            reset_add_state(ui_state);
-        }
-    });
+                if cancel.clicked() {
+                    reset_add_state(ui_state);
+                }
+            });
+        },
+    );
+}
+
+/// 추가할 수 없는 매니페스트의 이유 키. 추가할 수 있으면 `None`.
+fn add_blocked_reason_key(preview: &AddPreview) -> Option<&'static str> {
+    if preview.already_installed.is_some() {
+        return Some("plugins.add_blocked_installed");
+    }
+    match preview.trust_state {
+        AddTrustState::UntrustedNoPubkey { .. } => Some("plugins.add_blocked_no_pubkey"),
+        AddTrustState::SigError(_) => Some("plugins.add_blocked_sig_error"),
+        AddTrustState::Trusted | AddTrustState::UntrustedWithPubkey { .. } => None,
+    }
 }
 
 /// `Add Plugin` 탭 하단의 출처 미상 plugin 경고 영역. accent_danger 빨간 박스.
@@ -344,5 +373,64 @@ fn compute_trust_state(dir: &std::path::Path) -> AddTrustState {
             }
         }
         Err(e) => AddTrustState::SigError(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preview(trust_state: AddTrustState, already_installed: Option<String>) -> AddPreview {
+        AddPreview {
+            src_path: "/tmp/p".into(),
+            id: "com.example.p".into(),
+            name: "p".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            authors: Vec::new(),
+            homepage: String::new(),
+            surface_kinds: Vec::new(),
+            permissions: Vec::new(),
+            already_installed,
+            trust_state,
+        }
+    }
+
+    #[test]
+    fn blocked_reason_names_each_state_that_cannot_be_added() {
+        let no_pubkey = AddTrustState::UntrustedNoPubkey {
+            fingerprint: "fp".into(),
+            reason: AddTrustReason::UnknownKey,
+        };
+        let with_pubkey = AddTrustState::UntrustedWithPubkey {
+            fingerprint: "fp".into(),
+            pubkey_b64: "k".into(),
+            reason: AddTrustReason::UnknownKey,
+        };
+        assert_eq!(
+            add_blocked_reason_key(&preview(AddTrustState::Trusted, Some("x".into()))),
+            Some("plugins.add_blocked_installed")
+        );
+        // 이미 설치됐다는 이유가 서명 이유보다 먼저다.
+        assert_eq!(
+            add_blocked_reason_key(&preview(
+                AddTrustState::SigError("bad".into()),
+                Some("x".into())
+            )),
+            Some("plugins.add_blocked_installed")
+        );
+        assert_eq!(
+            add_blocked_reason_key(&preview(no_pubkey, None)),
+            Some("plugins.add_blocked_no_pubkey")
+        );
+        assert_eq!(
+            add_blocked_reason_key(&preview(AddTrustState::SigError("bad".into()), None)),
+            Some("plugins.add_blocked_sig_error")
+        );
+        assert_eq!(
+            add_blocked_reason_key(&preview(AddTrustState::Trusted, None)),
+            None
+        );
+        assert_eq!(add_blocked_reason_key(&preview(with_pubkey, None)), None);
     }
 }

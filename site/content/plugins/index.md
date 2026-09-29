@@ -68,7 +68,7 @@
 
 1. **플러그인 폴더 경로** <!-- en: Plugin folder path --> 에 `tasty-plugin.toml` 이 들어 있는 폴더를 입력하거나 **플러그인 폴더 찾기…** <!-- en: Find plugin folder… --> 로 고릅니다.
 2. **확인** <!-- en: Verify --> 을 누르면 **플러그인 정보** <!-- en: Plugin information --> 에 이름 · 버전 · 설명과 **요구 권한** 이 미리 보입니다.
-3. **추가** <!-- en: Add --> 를 누릅니다.
+3. **추가** <!-- en: Add --> 를 누릅니다. 추가할 수 없는 플러그인이면 버튼이 비활성으로 남고 왼쪽에 이유가 표시됩니다 — **이미 설치됨** <!-- en: Already installed -->, **서명되지 않았고 확인할 공개키도 없음** <!-- en: Unsigned, and no public key to check it against -->, **서명 확인 실패** <!-- en: Signature check failed -->.
 4. 검증된 키로 서명되지 않은 플러그인이면 **출처를 알 수 없는 플러그인** <!-- en: Unknown source plugin --> 확인 창이 뜹니다. 지문을 확인하고 진행하면 그 키가 신뢰 목록에 기록돼 다음부터는 묻지 않습니다. 서명 키 파일(`tasty-plugin.toml.pub`)이 없으면 등록할 수 없으므로 배포자에게 요청합니다.
 
 설치하면 플러그인이 요청한 권한이 허용됩니다. 추가하기 전에 미리보기에서 권한 목록을 확인하세요.
