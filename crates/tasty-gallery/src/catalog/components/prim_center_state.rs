@@ -78,7 +78,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("variants", "loading · empty · error · error + action"),
+            ("variants", "loading · empty · error"),
             ("glyph / spinner", "24 — icon-size-lg (was 22 · 26)"),
             ("glyph → title", "8"),
             ("title → sub", "4 · sub slot always reserved"),
