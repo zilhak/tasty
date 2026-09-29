@@ -19,6 +19,7 @@ use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
+use super::load_generation::is_current_load;
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -34,14 +35,6 @@ pub struct PlatformWebView {
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
     parent_hwnd: HWND,
-}
-
-/// 종료 신호가 게이트가 시작한 마지막 로드의 것인지. ID를 알 수 없는 쪽이 있으면 현재 로드로 본다.
-fn is_current_load(current: Option<u64>, ended: Option<u64>) -> bool {
-    match (current, ended) {
-        (Some(c), Some(e)) => c == e,
-        _ => true,
-    }
 }
 
 fn set_js(webview: &ICoreWebView2, enabled: bool) {

@@ -2,6 +2,8 @@
 //! 백엔드는 같은 이름의 메서드를 제공하고 cfg로 선택한다. 차이는 docs/design/systems/webview.md를 따른다.
 
 pub mod keys;
+#[cfg(any(windows, test))]
+mod load_generation;
 pub mod script_gate;
 
 #[cfg(target_os = "linux")]
