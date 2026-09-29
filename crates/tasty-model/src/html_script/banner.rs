@@ -19,6 +19,8 @@ pub enum BannerPhase {
     Hidden,
     /// 스크립트가 차단된 기본 상태.
     Blocked,
+    /// 차단된 채 새 문서를 로드하는 중이다(commit 전). 허용 버튼을 비활성으로 그린다.
+    Loading,
     /// 허용한 뒤 재로드가 commit되기 전.
     Reloading,
 }
@@ -28,6 +30,7 @@ impl BannerPhase {
         match self {
             Self::Hidden => "hidden",
             Self::Blocked => "blocked",
+            Self::Loading => "loading",
             Self::Reloading => "reloading",
         }
     }
@@ -125,7 +128,11 @@ impl HtmlScriptState {
             return BannerPhase::Reloading;
         }
         if self.banner.shown && self.wants_banner() {
-            BannerPhase::Blocked
+            if self.loading_before_commit() {
+                BannerPhase::Loading
+            } else {
+                BannerPhase::Blocked
+            }
         } else {
             BannerPhase::Hidden
         }

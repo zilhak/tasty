@@ -47,6 +47,13 @@ fn resolve(
             }),
             FadeMemo::default(),
         ),
+        BannerPhase::Loading => (
+            Some(Shown {
+                state: HtmlScriptBannerState::Loading,
+                alpha: 1.0,
+            }),
+            FadeMemo::default(),
+        ),
         BannerPhase::Reloading => (
             Some(Shown {
                 state: HtmlScriptBannerState::Reloading,

@@ -25,6 +25,19 @@ fn blocked_and_reloading_show_at_full_opacity() {
 }
 
 #[test]
+fn loading_shows_the_disabled_allow_at_full_opacity() {
+    let (shown, memo) = phase_after(BannerPhase::Loading, FadeMemo::default(), 0.0);
+    assert_eq!(
+        shown,
+        Some(Shown {
+            state: HtmlScriptBannerState::Loading,
+            alpha: 1.0
+        })
+    );
+    assert_eq!(memo, FadeMemo::default());
+}
+
+#[test]
 fn a_committed_reload_fades_out_over_the_banner_fade() {
     let (_, memo) = phase_after(BannerPhase::Reloading, FadeMemo::default(), 1.0);
     let (shown, memo) = phase_after(BannerPhase::Hidden, memo, 2.0);

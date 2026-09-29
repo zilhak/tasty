@@ -98,6 +98,8 @@ pub enum AllowError {
     NoDocument,
     /// 현재 문서의 지문이 없다(`file://`이 아니거나 응답 단계 없이 commit됐다).
     NoFingerprint,
+    /// 새 문서를 로드하는 중이고 아직 commit 전이다. 허용은 commit된 문서에만 묶는다.
+    Loading,
 }
 
 impl std::fmt::Display for AllowError {
@@ -108,6 +110,9 @@ impl std::fmt::Display for AllowError {
                 "the current document has no content fingerprint (not a file:// document, \
                  or it was committed without a response decision)",
             ),
+            Self::Loading => {
+                f.write_str("a new document is loading; allowing waits until it commits")
+            }
         }
     }
 }
@@ -198,6 +203,11 @@ impl HtmlScriptState {
         }
     }
 
+    /// 로드가 시작됐고 아직 main frame commit 전이다. 이 동안 허용을 받지 않는다.
+    pub fn loading_before_commit(&self) -> bool {
+        self.load_in_flight && !self.committed_since_start
+    }
+
     /// 지금 webview에 적용할 JS 값.
     ///
     /// 로드가 진행 중이고 아직 commit 전이면 응답 단계의 판단(없으면 끔)을 따른다.
@@ -206,7 +216,7 @@ impl HtmlScriptState {
         if !self.sandbox {
             return true;
         }
-        if self.load_in_flight && !self.committed_since_start {
+        if self.loading_before_commit() {
             return self.pending.as_ref().is_some_and(|p| p.matched);
         }
         self.current_is_allowed()
@@ -286,7 +296,12 @@ impl HtmlScriptState {
     }
 
     /// 현재 문서를 허용으로 기록하고 재로드를 요청한다. 파일을 다시 읽지 않는다.
+    ///
+    /// 로드 중(commit 전)에는 거절한다. 그때 기록하면 곧 commit될 새 문서의 판정이 허용을 풀기 때문이다.
     pub fn allow_current(&mut self) -> Result<(), AllowError> {
+        if self.loading_before_commit() {
+            return Err(AllowError::Loading);
+        }
         let doc = self.current.as_ref().ok_or(AllowError::NoDocument)?;
         let scan = doc.scan.ok_or(AllowError::NoFingerprint)?;
         self.allowance = Some(Allowance {

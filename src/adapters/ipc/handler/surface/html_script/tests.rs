@@ -64,6 +64,7 @@ fn reports_detection_and_a_pending_banner_without_changing_it() {
     assert_eq!(r["document"]["fingerprint"], "ab".repeat(32));
     assert_eq!(r["allowed"], false);
     assert_eq!(r["javascript"], false);
+    assert_eq!(r["loading"], false);
     assert!(r["allowance"].is_null());
     assert_eq!(r["banner"]["phase"], "hidden");
     assert_eq!(r["banner"]["pending_view"], true);
@@ -73,6 +74,37 @@ fn reports_detection_and_a_pending_banner_without_changing_it() {
         before,
         "조회가 상태를 바꿨다"
     );
+}
+
+#[test]
+fn reports_a_load_before_its_commit_and_the_loading_banner() {
+    let (_state, engine, sid) = state_with_html_tab();
+    let rs = html_surface(&engine, sid);
+    let scan = |b: u8| ScriptScan {
+        fingerprint: Fingerprint([b; 32]),
+        detection: ScriptDetection::Scripts,
+    };
+    rs.with_html_script(|st| {
+        st.on_user_view();
+        st.on_load_started();
+        st.on_main_response("file:///docs/a.html", Some(scan(1)));
+        st.on_committed(Some("file:///docs/a.html"));
+        st.on_load_finished();
+        st.update_banner();
+        st.on_load_started();
+        st.on_main_response("file:///docs/a.html", Some(scan(2)));
+        st.update_banner();
+    });
+    let r = html_script_of(&engine, sid).result.expect("result");
+    assert_eq!(r["loading"], true);
+    assert_eq!(r["banner"]["phase"], "loading");
+    rs.with_html_script(|st| {
+        st.on_committed(Some("file:///docs/a.html"));
+        st.update_banner();
+    });
+    let r = html_script_of(&engine, sid).result.expect("result");
+    assert_eq!(r["loading"], false);
+    assert_eq!(r["banner"]["phase"], "blocked");
 }
 
 #[test]

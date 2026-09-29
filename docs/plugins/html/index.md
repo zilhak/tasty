@@ -23,9 +23,9 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
   - 정규 파일만 스캔한다. FIFO·장치 같은 파일은 읽지 않고 지문 없음으로 두므로 그 문서는 허용할 수 없다.
   - Linux html surface는 WebKit page cache를 끈다. 뒤로·앞으로 가기도 캐시 복원이 아니라 파일을 다시 읽는 새 로드가 되어 같은 게이트를 거친다.
   - 배너 발화 판정은 `tasty_model::html_script::banner`에 있다. 사용자가 그 문서를 봤을 때만 배너 단계가 `blocked`가 되고, 에이전트가 연 문서·세션 복원·보이지 않는 탭의 문서는 `pending_view`만 기록한다. 판정은 포커스와 활성 탭을 바꾸지 않는다.
-  - 배너 그리기: `src/adapters/ui/surface/html_script_banner.rs`가 webview chrome 위에 inset 배너를 그린다([배너 시스템 §inset 배치](../../design/systems/banner.md#inset-배치)). 그린 카드 아래 `banner_inset_gap`까지의 높이를 AppState에 남기면 같은 프레임의 WebView 동기화가 그만큼 WebView를 내리고 줄인다. surface 폭이 `banner_narrow_below` 미만이면 narrow 배치(액션이 다음 줄)로 그린다. 허용을 누르면 재로드 중 배너가 액션 자리에 스피너를 보이고, 새 문서가 commit되어 단계가 `hidden`이 되면 `banner_fade` 동안 흐려지며 사라진다. 닫기(×)와 문서 교체는 즉시 사라진다. 배너는 키보드 포커스를 가져가지 않는다.
+  - 배너 그리기: `src/adapters/ui/surface/html_script_banner.rs`가 webview chrome 위에 inset 배너를 그린다([배너 시스템 §inset 배치](../../design/systems/banner.md#inset-배치)). 그린 카드 아래 `banner_inset_gap`까지의 높이를 AppState에 남기면 같은 프레임의 WebView 동기화가 그만큼 WebView를 내리고 줄인다. surface 폭이 `banner_narrow_below` 미만이면 narrow 배치(액션이 다음 줄)로 그린다. surface가 새 문서를 로드하는 동안(로드 시작부터 main frame commit 전까지) 단계는 `loading`이고 허용 버튼은 비활성이며 hover하면 위쪽 툴팁으로 이유를 보인다. 이 동안 모델도 허용을 받지 않는다(`AllowError::Loading`). commit 뒤 새 문서에 스크립트가 있으면 `blocked`로 돌아오고 없으면 배너가 사라진다. 허용을 누르면 재로드 중 배너가 액션 자리에 스피너를 보이고, 새 문서가 commit되어 단계가 `hidden`이 되면 `banner_fade` 동안 흐려지며 사라진다. 닫기(×)와 문서 교체는 즉시 사라진다. 배너는 키보드 포커스를 가져가지 않는다.
   - 탭 표지: `HtmlScriptState::marker`가 표지를 정한다. 차단된 배너를 닫았으면 lock(`Blocked`), 현재 문서를 허용했으면 scriptFile(`Allowed`)이고 sandbox가 꺼져 있으면 없다. 탭 바는 이동 글리프 왼쪽에 `html_script_marker_hit` 칸과 `tab_status_gap`을 잡아 표지를 그린다. 탭에 html surface가 여럿이면 `Blocked`를 먼저 보인다. lock 클릭은 배너만 다시 보이며 탭 전환·포커스 변경은 하지 않는다. scriptFile은 툴팁만 있다.
-  - 조회: `tasty surface html-script --surface <id>`(IPC `surface.html_script`)가 현재 문서의 URL·감지 결과(`none`/`scripts`/`scripts_remote_only`)·지문, 허용 기록, 현재 JS 적용 값, 배너 단계(`hidden`/`blocked`/`reloading`)와 표지(`viewed`·`pending_view`·`shown`·`dismissed`)를 돌려준다. 읽기만 하므로 배너를 띄우거나 사용자가 본 것으로 기록하지 않는다. html이 아닌 surface는 거절하고 헤드리스 빌드는 빌드 미지원 오류(`-32017`)로 답한다.
+  - 조회: `tasty surface html-script --surface <id>`(IPC `surface.html_script`)가 현재 문서의 URL·감지 결과(`none`/`scripts`/`scripts_remote_only`)·지문, 허용 기록, 현재 JS 적용 값, 로드 진행 여부(`loading`, 로드 시작 뒤 commit 전이면 `true`), 배너 단계(`hidden`/`blocked`/`loading`/`reloading`)와 표지(`viewed`·`pending_view`·`shown`·`dismissed`)를 돌려준다. 읽기만 하므로 배너를 띄우거나 사용자가 본 것으로 기록하지 않는다. html이 아닌 surface는 거절하고 헤드리스 빌드는 빌드 미지원 오류(`-32017`)로 답한다.
   - 허용: release에서는 사용자만 GUI로 허용한다. 에이전트용 허용 재현은 debug 전용 `debug.html_script.allow`다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ## 인터페이스
@@ -52,6 +52,9 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 - Given 사용자가 배너의 ×를 눌렀다 When 탭 바를 그린다 Then 그 탭에 lock 표지가 보이고 조회의 `banner.dismissed`는 `true`다.
 - Given lock 표지가 있는 탭이 비활성 When 사용자가 lock을 누른다 Then 조회의 `banner.phase`는 `blocked`이고 활성 탭은 바뀌지 않는다.
 - Given 사용자가 [이 문서에서 허용]을 눌렀다 When 재로드가 끝난다 Then 조회의 `allowed`·`javascript`는 `true`, `banner.phase`는 `hidden`이고 탭에 scriptFile 표지가 보인다.
+- Given 사용자가 보고 있는 surface의 배너가 `blocked` When 그 surface가 새 문서를 로드하기 시작했고 아직 commit 전이다 Then 조회의 `loading`은 `true`, `banner.phase`는 `loading`이고 허용 버튼은 비활성이며 ×는 그대로 누를 수 있다.
+- Given 배너 단계가 `loading`이고 그 로드는 사용자가 연 이동(링크·뒤로 가기·재로드처럼 호스트가 URL을 넣지 않은 이동)이다 When 새 문서가 commit되고 그 문서에 스크립트가 있다 Then 조회의 `loading`은 `false`, `banner.phase`는 `blocked`이고 허용 버튼이 다시 활성이다.
+- Given 배너 단계가 `loading`이고 그 로드는 에이전트가 넣은 이동(`tasty html open` 등)이다 When 스크립트가 있는 새 문서가 commit된다 Then [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md#배너-표시-시점)대로 `banner.phase`는 `hidden`, `banner.pending_view`는 `true`이고 사용자가 그 surface를 선택할 때 배너가 `blocked`로 뜬다.
 - Given 터미널이나 markdown surface When `surface.html_script` Then invalid params로 거절한다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 

@@ -1,4 +1,4 @@
-use super::super::{Fingerprint, ScriptDetection, ScriptScan};
+use super::super::{AllowError, Fingerprint, ScriptDetection, ScriptScan};
 use super::*;
 
 const A: &str = "file:///docs/a.html";
@@ -156,6 +156,47 @@ fn a_reload_that_never_commits_ends_the_reloading_phase() {
     st.on_load_started();
     assert_eq!(st.on_load_finished(), Some(true));
     assert_eq!(st.update_banner(), BannerPhase::Hidden);
+}
+
+#[test]
+fn allow_waits_while_a_reload_with_changed_content_is_loading() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    host_load(&mut st, A, scripts(1));
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+    // 화면 문서 A를 다시 읽는 중, 응답 단계에서 내용이 바뀐 것이 보였고 아직 commit 전이다.
+    st.on_load_started();
+    assert_eq!(st.update_banner(), BannerPhase::Loading);
+    st.on_main_response(A, Some(scripts(2)));
+    assert!(st.loading_before_commit());
+    assert_eq!(st.update_banner(), BannerPhase::Loading);
+    // 버튼은 비활성이고, 다른 경로로 허용을 불러도 기록하지 않는다.
+    assert_eq!(st.allow_current(), Err(AllowError::Loading));
+    assert!(st.allowance().is_none());
+    assert!(!st.take_reload_request());
+    // commit 뒤에는 새 내용의 문서가 화면 문서가 되고, 스크립트가 있어 다시 허용할 수 있다.
+    st.on_committed(Some(A));
+    assert!(!st.loading_before_commit());
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+    st.allow_current().expect("allow after commit");
+    assert_eq!(
+        st.allowance().map(|a| a.fingerprint),
+        Some(Fingerprint([2; 32])),
+        "허용은 commit된 새 내용에 묶인다"
+    );
+}
+
+#[test]
+fn a_load_that_ends_without_a_commit_returns_to_blocked() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    host_load(&mut st, A, scripts(1));
+    st.update_banner();
+    st.on_load_started();
+    assert_eq!(st.update_banner(), BannerPhase::Loading);
+    assert_eq!(st.on_load_finished(), Some(false));
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+    st.allow_current().expect("allow once the load is gone");
 }
 
 #[test]
