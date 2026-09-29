@@ -666,6 +666,8 @@ fn route_engine_handler(
         "webhook.config" => webhook::handle_config(id, &request.params),
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(engine, caller, id, &request.params),
+        #[cfg(feature = "gui")]
+        "surface.html_script" => surface::handle_html_script(engine, id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(engine, id),
         "tree" => handle_tree(window, engine, id),

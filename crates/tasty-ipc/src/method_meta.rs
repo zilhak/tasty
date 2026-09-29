@@ -258,6 +258,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.cursor_position", plugin(Read, &[TerminalRead])),
         ("surface.foreground_process", plugin(Read, &[TerminalRead])),
         ("surface.locate", plugin(Read, &[SurfaceRead])),
+        ("surface.html_script", plugin(Read, &[SurfaceRead])),
         ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn])),
         ("surface.is_typing", plugin(Read, &[TerminalRead])),
         // ── child-terminal 관리 (docs/features/child-terminal/index.md) ─────────────

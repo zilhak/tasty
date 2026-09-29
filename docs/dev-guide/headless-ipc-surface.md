@@ -301,6 +301,7 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 |--------|-----|
 | `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0031](../adr/0031-file-handler-routing.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
 | `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — `Core::apply` 가 거절한다([ADR-0003](../adr/0003-headless-behavior.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
+| `surface.html_script` | 읽는 스크립트 상태가 gui 전용인 네이티브 WebView의 탐색 콜백에서만 채워진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |
 
 ### `debug.*` 36 건
 

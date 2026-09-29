@@ -134,6 +134,7 @@ CLI는 `tasty events fetch`와 `tasty events follow`다. `follow`는 다시 연�
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
 - 원격 연결 프로필: `remote.profile.{list,get,add,detect,remove,list_local,import}`(`list_local`=로컬 `~/.ssh/config` alias 열거·읽기 전용, `import`=그 alias 를 ssh 프로필로 등록·셸 감지 없음)(구 `tool.ssh.*`/`ssh.profile.*`는 alias로 한시 호환) — [remote-profiles](../features/remote-profiles/index.md)
 - webview: `webview.set_url`
+- html 스크립트 상태: `surface.html_script {surface_id}` — html surface의 현재 문서 감지 결과·지문·허용 기록·배너 단계와 표지를 읽는다. 조회는 배너를 띄우거나 사용자 열람으로 기록하지 않는다. html이 아닌 surface는 거절하며 헤드리스 빌드에서는 `-32017`이다 — [html plugin](../plugins/html/index.md)
 - 스크린샷: `ui.screenshot {path, surface_id?, window_id?}` (local-only, focus 독립 — 대상을 ID 로 지정) — [screenshot-methods](../ai-verification/screenshot-methods.md)
 
 ### 시스템 상태와 요청 압력

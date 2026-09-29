@@ -2575,6 +2575,13 @@ long = "서피스가 속한 페인과 트리에 남아 있는지 출력합니다
 [cli.help._root.surface.locate.arg.surface]
 help = "서피스 ID(필수)"
 
+[cli.help._root.surface.html-script]
+about = "html 서피스의 스크립트 상태 출력: 현재 문서의 감지 결과, 실행 허용 여부, 배너 상태"
+long = "html 서피스의 스크립트 상태를 출력합니다. 현재 문서의 감지 결과, 실행 허용 여부, 배너 상태를 보여 줍니다. 조회만 하므로 배너를 띄우거나 사용자가 문서를 본 것으로 기록하지 않습니다. 대상은 항상 --surface로 명시합니다. 헤드리스 빌드에서는 사용할 수 없습니다."
+
+[cli.help._root.surface.html-script.arg.surface]
+help = "서피스 ID(필수)"
+
 [cli.help._root.surface.respawn-terminal]
 about = "서피스·탭·위치를 유지하며 터미널 서피스의 셸 재시작"
 long = "서피스·탭·위치를 유지하며 터미널 서피스의 셸을 재시작합니다. 대상은 항상 --surface로 명시합니다."

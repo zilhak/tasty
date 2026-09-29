@@ -1,4 +1,4 @@
-<!-- source-hash: 61d3b2bfe35e -->
+<!-- source-hash: 3b5d0932bdfc -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -126,6 +126,7 @@ Shows a local HTML file or a URL in the OS web view. Press **New HTML...** and t
 ```sh
 tasty html open --surface 5 ./dist/index.html
 tasty new tab --pane 1 --type html --url http://localhost:3000
+tasty surface html-script --surface 5   # script detection, allowance and notice state
 ```
 
 ## Git view

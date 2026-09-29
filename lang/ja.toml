@@ -2575,6 +2575,13 @@ long = "サーフェスの所属ペインとツリー内に残っているかを
 [cli.help._root.surface.locate.arg.surface]
 help = "サーフェスID（必須）"
 
+[cli.help._root.surface.html-script]
+about = "htmlサーフェスのスクリプト状態を出力：現在の文書の検出結果、実行許可の有無、バナーの状態"
+long = "htmlサーフェスのスクリプト状態を出力します。現在の文書の検出結果、実行許可の有無、バナーの状態を表示します。照会のみのため、バナーを表示したりユーザーが文書を見たと記録したりしません。対象は必ず --surface で指定します。ヘッドレスビルドでは使用できません。"
+
+[cli.help._root.surface.html-script.arg.surface]
+help = "サーフェスID（必須）"
+
 [cli.help._root.surface.respawn-terminal]
 about = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動"
 long = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動します。対象は必ず --surface で指定します。"

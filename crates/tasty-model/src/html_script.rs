@@ -29,6 +29,22 @@ impl ScriptDetection {
     pub fn has_scripts(self) -> bool {
         !matches!(self, Self::None)
     }
+
+    /// 조회 응답에 쓰는 이름.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Scripts => "scripts",
+            Self::ScriptsRemoteOnly => "scripts_remote_only",
+        }
+    }
+}
+
+impl Fingerprint {
+    /// 소문자 16진수 64자.
+    pub fn to_hex(&self) -> String {
+        self.0.iter().map(|b| format!("{b:02x}")).collect()
+    }
 }
 
 /// 한 번의 원본 읽기로 구한 감지 결과와 지문.

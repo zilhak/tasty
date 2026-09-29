@@ -59,6 +59,17 @@ pub enum SurfaceCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Print the script state of an html surface: what was detected in the
+    /// current document, whether it may run, and the banner state.
+    ///
+    /// Read-only: the query never shows the banner and never counts as the
+    /// user viewing the document. The target surface is always given
+    /// explicitly with --surface. Not available in a headless build.
+    HtmlScript {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
     /// Restart the shell of a terminal surface in place, keeping the surface,
     /// its tab and its position.
     ///

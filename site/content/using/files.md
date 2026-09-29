@@ -125,6 +125,7 @@ tasty image export --surface 5 out.png
 ```sh
 tasty html open --surface 5 ./dist/index.html
 tasty new tab --pane 1 --type html --url http://localhost:3000
+tasty surface html-script --surface 5   # 스크립트 감지 결과·허용 여부·안내 상태 조회
 ```
 
 ## Git 보기

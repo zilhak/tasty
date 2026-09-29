@@ -1835,6 +1835,21 @@ fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
         Some(-32017),
         "헤드리스의 webview.set_url은 메서드 부재와 구별되는 빌드 미지원 오류여야 한다: {resp}"
     );
+
+    let resp = tasty.call_raw("surface.html_script", json!({}));
+    let code = resp["error"]["code"].as_i64();
+    #[cfg(feature = "gui")]
+    assert_eq!(
+        code,
+        Some(-32602),
+        "gui 는 surface.html_script 에 답하고 빠진 surface_id 를 거절한다: {resp}"
+    );
+    #[cfg(not(feature = "gui"))]
+    assert_eq!(
+        code,
+        Some(-32017),
+        "헤드리스의 surface.html_script는 빌드 미지원 오류여야 한다: {resp}"
+    );
 }
 /// 여러 대상 종류에 없는 ID를 지정했을 때 거절하는지 확인하고, 있는 ID의 일부 요청도 함께 검사한다.
 #[test]
