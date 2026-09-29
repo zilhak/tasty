@@ -178,9 +178,13 @@ fn disabled_grid(ui: &mut egui::Ui, th: &Theme, name: &str) {
 pub fn draw_disabled(ui: &mut egui::Ui, theme: &Theme) {
     let mocha = palette(&tasty_themes::mocha_fallback(), theme.ui_zoom);
     let latte = palette(&crate::host_shell::latte_theme(), theme.ui_zoom);
-    stage(ui, theme, StageVariant::Wrap, |ui| {
-        disabled_grid(ui, &mocha, "Mocha");
-        disabled_grid(ui, &latte, "Latte");
+    // 두 팔레트 패널을 위쪽에 맞춰 나란히 둔다(시안 flex-start, 간격 space-md).
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+            disabled_grid(ui, &mocha, "Mocha");
+            disabled_grid(ui, &latte, "Latte");
+        });
     });
 
     meta(
