@@ -25,6 +25,8 @@ const MARKER_SURFACE_W: LogicalPx = LogicalPx(240.0);
 const MARKER_SURFACE_H: LogicalPx = LogicalPx(120.0);
 /// 상태 예제 한 장의 최대 폭. 디자인은 `--tasty-size-600`을 쓴다.
 const STATE_CARD_MAX_W: LogicalPx = LogicalPx(600.0);
+/// 배너 버튼 예제의 테마별 패널 폭. 디자인은 `--tasty-size-560`을 쓴다.
+const BUTTON_PANEL_W: LogicalPx = LogicalPx(560.0);
 /// 페이지 자리의 가짜 본문 막대 폭 비율. 디자인 `HsPage`의 60%·85%·70%다.
 const PAGE_BAR_FRACTIONS: [f32; 3] = [0.60, 0.85, 0.70];
 
@@ -450,7 +452,66 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Spec 3 — 닫은 뒤와 허용한 뒤의 탭 스트립 마커.
+/// Spec 3 — 배너 셸 위 Secondary 버튼. 모든 배너 공통 규칙을 HTML 스크립트 배너로 Mocha·Latte에 보인다.
+pub fn draw_banner_button(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let mocha = mocha();
+    spec::stage(ui, theme, StageVariant::Tight, |ui| {
+        app_backdrop(ui, theme, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+            for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
+                egui::Frame::new()
+                    .fill(th.bg_app().to_egui())
+                    .stroke(egui::Stroke::new(
+                        th.border_width.value(),
+                        th.border_default().to_egui(),
+                    ))
+                    .corner_radius(th.corner_radius.value())
+                    .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                    .show(ui, |ui| {
+                        let inner = BUTTON_PANEL_W.value() - 2.0 * th.spacing_md.value();
+                        ui.set_width(inner);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                            caption(ui, th, &format!("{name} · blocked, hover the button"));
+                            html_script_banner(
+                                ui,
+                                th,
+                                &view(HtmlScriptBannerState::Blocked, false, false),
+                            );
+                        });
+                    });
+            }
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("where", "Secondary inside any banner shell"),
+            ("fill", "surface-hover (one step above banner-bg)"),
+            ("edge", "border-frame (one step above banner-border)"),
+            ("hover", "overlay-hover · edge unchanged"),
+            ("variant", "none new — context rule in Button"),
+        ],
+        &[
+            TokenChip::new(
+                "banner-button-bg",
+                "→ surface-hover",
+                theme.banner_button_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "banner-button-border",
+                "→ border-frame",
+                theme.banner_button_border().to_egui(),
+            ),
+            TokenChip::new("banner-bg", "shell", theme.banner_bg().to_egui()),
+        ],
+    );
+}
+
+/// Spec 4 — 닫은 뒤와 허용한 뒤의 탭 스트립 마커.
 pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
     let mocha = mocha();

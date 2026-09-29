@@ -873,6 +873,14 @@ pub fn pages() -> Vec<Page> {
                             widgets::html_script_banner::draw_states,
                         ),
                         spec(
+                            "html-script-banner-button",
+                            "A button on the banner shell",
+                            Some(
+                                "Secondary inside any banner shell goes one ramp step up · fill surface-hover · edge border-frame",
+                            ),
+                            widgets::html_script_banner::draw_banner_button,
+                        ),
+                        spec(
                             "html-script-markers",
                             "After × and after Allow — the tab-strip marker",
                             Some(
