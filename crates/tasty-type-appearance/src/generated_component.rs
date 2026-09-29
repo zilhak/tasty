@@ -184,6 +184,18 @@ impl crate::theme::Theme {
         self.font_size_caption
     }
 
+    /// `component.banner-button-bg` → `{semantic.surface-hover}`
+    #[inline]
+    pub fn banner_button_bg(&self) -> HexColor {
+        self.surface_hover()
+    }
+
+    /// `component.banner-button-border` → `{semantic.border-frame}`
+    #[inline]
+    pub fn banner_button_border(&self) -> HexColor {
+        self.border_frame()
+    }
+
     /// `component.banner-countdown-font-size` → `{semantic.font-size-micro}` = 10px
     #[inline]
     pub fn banner_countdown_font_size(&self) -> LogicalPx {
@@ -200,6 +212,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn banner_gap(&self) -> LogicalPx {
         self.spacing_md
+    }
+
+    /// `component.banner-glyph-offset` → `{primitive.size-1}` = 1px
+    #[inline]
+    pub fn banner_glyph_offset(&self) -> LogicalPx {
+        LogicalPx((1.0 * self.ui_zoom).round())
     }
 
     /// `component.banner-inset-gap` → `{semantic.space-sm}` = 8px
@@ -274,6 +292,12 @@ impl crate::theme::Theme {
         LogicalPx((56.0 * self.ui_zoom).round())
     }
 
+    /// `component.banner-narrow-below` → `{primitive.size-440}` = 440px
+    #[inline]
+    pub fn banner_narrow_below(&self) -> LogicalPx {
+        LogicalPx((440.0 * self.ui_zoom).round())
+    }
+
     /// `component.banner-padding-x` → `{semantic.space-md}` = 12px
     #[inline]
     pub fn banner_padding_x(&self) -> LogicalPx {
@@ -290,6 +314,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn banner_radius(&self) -> LogicalPx {
         LogicalPx((8.0 * self.ui_zoom).round())
+    }
+
+    /// `component.banner-text-gap` → `{semantic.label-detail-gap}` = 2px
+    #[inline]
+    pub fn banner_text_gap(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
     }
 
     /// `component.banner-title-font-size` → `{semantic.font-size-body}` = 13px
@@ -422,6 +452,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn button_secondary_border_hover(&self) -> HexColor {
         self.border_strong()
+    }
+
+    /// `component.center-state-action-gap` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn center_state_action_gap(&self) -> LogicalPx {
+        self.spacing_md
     }
 
     /// `component.center-state-error-fg` → `{semantic.accent-danger}`
@@ -1214,6 +1250,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn html_script_marker_fg(&self) -> HexColor {
         self.glyph_dim()
+    }
+
+    /// `component.html-script-marker-hit` → `{primitive.size-16}` = 16px
+    #[inline]
+    pub fn html_script_marker_hit(&self) -> LogicalPx {
+        LogicalPx((16.0 * self.ui_zoom).round())
+    }
+
+    /// `component.html-script-marker-hover-bg` → `{semantic.overlay-hover}`
+    #[inline]
+    pub fn html_script_marker_hover_bg(&self) -> HexColor {
+        self.overlay_hover()
     }
 
     /// `component.html-script-marker-size` → `{semantic.icon-size-xs}` = 12px
@@ -2728,7 +2776,7 @@ impl crate::theme::Theme {
         self.accent_primary()
     }
 
-    /// `component.tab-indicator-width` → `{primitive.size-2}` = 2px
+    /// `component.tab-indicator-width` → `{semantic.selection-edge-width}` = 2px
     #[inline]
     pub fn tab_indicator_width(&self) -> LogicalPx {
         self.tab_indicator_width
@@ -2752,10 +2800,40 @@ impl crate::theme::Theme {
         self.text_disabled()
     }
 
+    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn tab_scroll_arrow_glyph_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
+    }
+
+    /// `component.tab-scroll-arrow-hover-bg` → `{semantic.overlay-hover}`
+    #[inline]
+    pub fn tab_scroll_arrow_hover_bg(&self) -> HexColor {
+        self.overlay_hover()
+    }
+
+    /// `component.tab-scroll-arrow-move-fg` → `{component.move-source-glyph}`
+    #[inline]
+    pub fn tab_scroll_arrow_move_fg(&self) -> HexColor {
+        self.move_source_glyph()
+    }
+
+    /// `component.tab-scroll-arrow-width` → `{semantic.control-height-tab}` = 24px
+    #[inline]
+    pub fn tab_scroll_arrow_width(&self) -> LogicalPx {
+        self.item_height_tab
+    }
+
     /// `component.tab-separator` → `{semantic.separator}`
     #[inline]
     pub fn tab_separator(&self) -> HexColor {
         self.separator
+    }
+
+    /// `component.tab-status-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn tab_status_gap(&self) -> LogicalPx {
+        self.spacing_xs
     }
 
     /// `component.tab-strip-width` → `{semantic.tab-width}` = 150px
@@ -3224,6 +3302,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn workspace_mirror_icon_size(&self) -> LogicalPx {
         self.icon_glyph_size_xs
+    }
+
+    /// `component.workspace-row-active-bar-width` → `{semantic.selection-edge-width}` = 2px
+    #[inline]
+    pub fn workspace_row_active_bar_width(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
     }
 
     /// `component.workspace-row-padding-x` → `{semantic.space-sm}` = 8px

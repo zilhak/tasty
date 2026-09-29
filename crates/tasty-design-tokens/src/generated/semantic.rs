@@ -100,6 +100,9 @@ pub const ICON_SIZE_SM: LogicalPx = super::primitive::SIZE_14;
 /// `semantic.icon-size-xs` → `{primitive.size-12}` = 12px
 pub const ICON_SIZE_XS: LogicalPx = super::primitive::SIZE_12;
 
+/// `semantic.label-detail-gap` → `{primitive.size-2}` = 2px
+pub const LABEL_DETAIL_GAP: LogicalPx = super::primitive::SIZE_2;
+
 /// `semantic.letter-spacing-ui` → `{primitive.letter-spacing-0}` = 0
 pub const LETTER_SPACING_UI: LogicalPx = super::primitive::LETTER_SPACING_0;
 
@@ -154,6 +157,9 @@ pub const RADIUS_PILL: LogicalPx = super::primitive::RADIUS_FULL;
 /// `semantic.radius-sm` → `{primitive.radius-2}` = 2px
 pub const RADIUS_SM: LogicalPx = super::primitive::RADIUS_2;
 
+/// `semantic.selection-edge-width` → `{primitive.size-2}` = 2px
+pub const SELECTION_EDGE_WIDTH: LogicalPx = super::primitive::SIZE_2;
+
 /// `semantic.space-lg` → `{primitive.size-16}` = 16px
 pub const SPACE_LG: LogicalPx = super::primitive::SIZE_16;
 
@@ -168,6 +174,9 @@ pub const SPACE_XL: LogicalPx = super::primitive::SIZE_24;
 
 /// `semantic.space-xs` → `{primitive.size-4}` = 4px
 pub const SPACE_XS: LogicalPx = super::primitive::SIZE_4;
+
+/// `semantic.state-dim-opacity` → `{primitive.opacity-disabled}` = 0.5
+pub const STATE_DIM_OPACITY: f32 = super::primitive::OPACITY_DISABLED;
 
 /// `semantic.state-disabled-opacity` → `{primitive.opacity-disabled}` = 0.5
 pub const STATE_DISABLED_OPACITY: f32 = super::primitive::OPACITY_DISABLED;

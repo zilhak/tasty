@@ -61,6 +61,9 @@ pub mod banner {
     /// `component.banner-gap` → `{semantic.space-md}` = 12px
     pub const GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
 
+    /// `component.banner-glyph-offset` → `{primitive.size-1}` = 1px
+    pub const GLYPH_OFFSET: LogicalPx = crate::generated::primitive::SIZE_1;
+
     /// `component.banner-inset-gap` → `{semantic.space-sm}` = 8px
     pub const INSET_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
 
@@ -88,6 +91,9 @@ pub mod banner {
     /// `component.banner-more-reserve` → `{primitive.size-56}` = 56px
     pub const MORE_RESERVE: LogicalPx = crate::generated::primitive::SIZE_56;
 
+    /// `component.banner-narrow-below` → `{primitive.size-440}` = 440px
+    pub const NARROW_BELOW: LogicalPx = crate::generated::primitive::SIZE_440;
+
     /// `component.banner-padding-x` → `{semantic.space-md}` = 12px
     pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_MD;
 
@@ -99,6 +105,9 @@ pub mod banner {
 
     /// `component.banner-recessed-opacity` → `{primitive.opacity-recessed}` = 0.4
     pub const RECESSED_OPACITY: f32 = crate::generated::primitive::OPACITY_RECESSED;
+
+    /// `component.banner-text-gap` → `{semantic.label-detail-gap}` = 2px
+    pub const TEXT_GAP: LogicalPx = crate::generated::semantic::LABEL_DETAIL_GAP;
 
     /// `component.banner-title-font-size` → `{semantic.font-size-body}` = 13px
     pub const TITLE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BODY;
@@ -135,6 +144,9 @@ pub mod button {
 pub mod center {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.center-state-action-gap` → `{semantic.space-md}` = 12px
+    pub const STATE_ACTION_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
+
     /// `component.center-state-gap` → `{semantic.space-sm}` = 8px
     pub const STATE_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
 
@@ -156,6 +168,12 @@ pub mod checkbox {
 
     /// `component.checkbox-size` → `{primitive.size-16}` = 16px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
+}
+
+pub mod cut {
+
+    /// `component.cut-pending-opacity` → `{semantic.state-dim-opacity}` = 0.5
+    pub const PENDING_OPACITY: f32 = crate::generated::semantic::STATE_DIM_OPACITY;
 }
 
 pub mod dag {
@@ -377,6 +395,9 @@ pub mod help_hint {
 
 pub mod html {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.html-script-marker-hit` → `{primitive.size-16}` = 16px
+    pub const SCRIPT_MARKER_HIT: LogicalPx = crate::generated::primitive::SIZE_16;
 
     /// `component.html-script-marker-size` → `{semantic.icon-size-xs}` = 12px
     pub const SCRIPT_MARKER_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
@@ -691,8 +712,8 @@ pub mod port {
 pub mod preset {
     use tasty_type_geometry::length::LogicalPx;
 
-    /// `component.preset-cfg-dim-opacity` → `{semantic.state-disabled-opacity}` = 0.5
-    pub const CFG_DIM_OPACITY: f32 = crate::generated::semantic::STATE_DISABLED_OPACITY;
+    /// `component.preset-cfg-dim-opacity` → `{semantic.state-dim-opacity}` = 0.5
+    pub const CFG_DIM_OPACITY: f32 = crate::generated::semantic::STATE_DIM_OPACITY;
 
     /// `component.preset-cfg-field-gap` → `{semantic.space-md}` = 12px
     pub const CFG_FIELD_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
@@ -936,11 +957,20 @@ pub mod tab {
     /// `component.tab-icon-size` → `{semantic.icon-size-sm}` = 14px
     pub const ICON_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
 
-    /// `component.tab-indicator-width` → `{primitive.size-2}` = 2px
-    pub const INDICATOR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_2;
+    /// `component.tab-indicator-width` → `{semantic.selection-edge-width}` = 2px
+    pub const INDICATOR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
 
     /// `component.tab-padding-x` → `{semantic.space-sm}` = 8px
     pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    pub const SCROLL_ARROW_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+
+    /// `component.tab-scroll-arrow-width` → `{semantic.control-height-tab}` = 24px
+    pub const SCROLL_ARROW_WIDTH: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TAB;
+
+    /// `component.tab-status-gap` → `{semantic.space-xs}` = 4px
+    pub const STATUS_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.tab-strip-width` → `{semantic.tab-width}` = 150px
     pub const STRIP_WIDTH: LogicalPx = crate::generated::semantic::TAB_WIDTH;
@@ -1105,6 +1135,9 @@ pub mod workspace {
 
     /// `component.workspace-mirror-icon-size` → `{semantic.icon-size-xs}` = 12px
     pub const MIRROR_ICON_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+
+    /// `component.workspace-row-active-bar-width` → `{semantic.selection-edge-width}` = 2px
+    pub const ROW_ACTIVE_BAR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
 
     /// `component.workspace-row-padding-x` → `{semantic.space-sm}` = 8px
     pub const ROW_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;

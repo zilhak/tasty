@@ -977,6 +977,30 @@
       "$type": "number",
       "$value": "{primitive.opacity-disabled}"
     },
+    "state-disabled-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-disabled}"
+    },
+    "state-disabled-fill": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}"
+    },
+    "state-disabled-border": {
+      "$type": "color",
+      "$value": "{semantic.border-default}"
+    },
+    "state-dim-opacity": {
+      "$type": "number",
+      "$value": "{primitive.opacity-disabled}"
+    },
+    "label-detail-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
+    },
+    "selection-edge-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
+    },
     "font-ui": {
       "$type": "fontFamily",
       "$value": "{primitive.font-family-sans}"
@@ -1348,6 +1372,26 @@
     "button-ghost-fg-hover": {
       "$type": "color",
       "$value": "{semantic.text-primary}"
+    },
+    "button-disabled-bg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fill}"
+    },
+    "button-disabled-border": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-border}"
+    },
+    "button-disabled-fg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fg}"
+    },
+    "banner-button-bg": {
+      "$type": "color",
+      "$value": "{semantic.surface-hover}"
+    },
+    "banner-button-border": {
+      "$type": "color",
+      "$value": "{semantic.border-frame}"
     },
     "icon-button-size": {
       "$type": "dimension",
@@ -1879,7 +1923,7 @@
     },
     "tab-indicator-width": {
       "$type": "dimension",
-      "$value": "{primitive.size-2}"
+      "$value": "{semantic.selection-edge-width}"
     },
     "tab-dot-size": {
       "$type": "dimension",
@@ -1889,6 +1933,10 @@
       "$type": "dimension",
       "$value": "{semantic.icon-size-sm}"
     },
+    "tab-status-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
     "tab-scroll-arrow-fg": {
       "$type": "color",
       "$value": "{semantic.text-muted}"
@@ -1896,6 +1944,22 @@
     "tab-scroll-arrow-fg-disabled": {
       "$type": "color",
       "$value": "{semantic.text-disabled}"
+    },
+    "tab-scroll-arrow-width": {
+      "$type": "dimension",
+      "$value": "{semantic.control-height-tab}"
+    },
+    "tab-scroll-arrow-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
+    "tab-scroll-arrow-hover-bg": {
+      "$type": "color",
+      "$value": "{semantic.overlay-hover}"
+    },
+    "tab-scroll-arrow-move-fg": {
+      "$type": "color",
+      "$value": "{component.move-source-glyph}"
     },
     "tree-row-height": {
       "$type": "dimension",
@@ -2273,6 +2337,26 @@
       "$type": "dimension",
       "$value": "{semantic.icon-size-xs}"
     },
+    "html-script-marker-hit": {
+      "$type": "dimension",
+      "$value": "{primitive.size-16}"
+    },
+    "html-script-marker-hover-bg": {
+      "$type": "color",
+      "$value": "{semantic.overlay-hover}"
+    },
+    "banner-glyph-offset": {
+      "$type": "dimension",
+      "$value": "{primitive.size-1}"
+    },
+    "banner-text-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.label-detail-gap}"
+    },
+    "banner-narrow-below": {
+      "$type": "dimension",
+      "$value": "{primitive.size-440}"
+    },
     "banner-more-column-gap": {
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
@@ -2388,6 +2472,10 @@
     "workspace-dot-slot": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"
+    },
+    "workspace-row-active-bar-width": {
+      "$type": "dimension",
+      "$value": "{semantic.selection-edge-width}"
     },
     "workspace-dot-gap": {
       "$type": "dimension",
@@ -2845,6 +2933,10 @@
       "$type": "dimension",
       "$value": "{semantic.measure-sm}"
     },
+    "center-state-action-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
+    },
     "kb-ie-select-column-width": {
       "$type": "dimension",
       "$value": "{primitive.size-32}"
@@ -2974,7 +3066,11 @@
     },
     "preset-cfg-dim-opacity": {
       "$type": "number",
-      "$value": "{semantic.state-disabled-opacity}"
+      "$value": "{semantic.state-dim-opacity}"
+    },
+    "cut-pending-opacity": {
+      "$type": "number",
+      "$value": "{semantic.state-dim-opacity}"
     },
     "switch-overlay-size": {
       "$type": "dimension",
