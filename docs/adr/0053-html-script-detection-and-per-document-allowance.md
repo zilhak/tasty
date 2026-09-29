@@ -1,6 +1,6 @@
 # ADR-0053: HTML 문서의 스크립트는 원본 파일에서 감지하고 사용자만 문서 단위로 허용한다
 
-- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령은 구현됐고 배너와 탭 마커를 그리는 부분은 아직 없다. Windows와 macOS의 navigation별 적용 시점은 측정하지 않았다
+- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령·inset 배너·탭 표지가 구현됐다. Windows와 macOS에서 navigation별 적용 시점과 로드 종료 순서, macOS 서브프레임의 JS 적용은 측정하지 않았다
 - **Date**: 2026-09-29
 - **Tags**: plugins, webview, html, javascript, sandbox, banner, ipc, security
 - **Group**: plugins
