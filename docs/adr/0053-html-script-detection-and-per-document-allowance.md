@@ -46,6 +46,8 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 세 OS가 같은 규칙으로 판정해야 하므로, 모두에서 동작하는 원본 스캔을 택한다.
 스캔하는 크기에는 상한을 둔다. 상한 값은 구현 문서에서 정한다. 상한은 감지 스캔에만 적용하며, 아래 내용 지문은 상한과 관계없이 파일 전체를 덮는다.
 상한을 넘은 부분에만 스크립트가 있으면 감지하지 못한다. 이 경우 JS가 꺼진 채 배너가 뜨지 않는다. 즉 실패해도 JS가 켜지지는 않는다.
+정규 파일만 스캔한다. FIFO·장치 파일은 거절하므로 지문이 없고, JS가 꺼진 채 허용할 수 없다.
+스캔은 응답 단계의 UI 스레드에서 한다. FIFO는 여는 순간 쓰는 쪽을 기다리며 막혔고 `/dev/zero`는 읽기가 끝나지 않았다(측정). 그래서 막히지 않게 연 핸들로 종류를 먼저 확인한다.
 
 ### 범위
 
@@ -88,10 +90,17 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - 새 창 요청(`target=_blank` 등). 현재 문서를 바꾸지 않는다.
 - fragment만 바뀌는 이동.
 
-문서가 바뀌면 새 문서의 스크립트가 실행되기 전에 JS를 끈다. redraw에서 사후에 되돌리지 않는다. OS별 구현은 다음과 같다.
+문서가 바뀌면 새 문서의 스크립트가 실행되기 전에 JS를 끈다. redraw에서 사후에 되돌리지 않는다.
+
+- 설정 경로(`resolve_webview_settings`)는 전역 "Sandbox scripts" 값만 backend에 넘긴다. 문서 단위 JS는 backend의 navigation 콜백이 surface의 허용 상태로 정해 그 자리에서 적용한다.
+- 이유: redraw에서 문서 단위 값을 사후에 적용하면 그 사이 시작된 다른 문서의 로드에 이전 문서의 허용이 샌다. 콜백은 로드 단계와 같은 순서로 불리므로 이 경합이 없다.
+- 전역 값이 바뀌면 backend는 그 값을 허용 상태에 반영하고, 진행 중인 로드가 있으면 그 로드의 응답 단계 판단을, 없으면 화면 문서의 허용 여부를 적용한다.
+
+OS별 구현은 다음과 같다.
 
 - **Linux(측정함, WebKitGTK 2.50.4)**: `NavigationAction`에는 main frame과 서브프레임을 구분할 정보가 없다. iframe 문서의 navigation도 `get_frame_name()`이 None이고 type이 `other`로 같았다. 그래서 navigation action에서는 판단하지 않고, 다음 두 신호를 쓴다.
   - `load-changed` `STARTED`: main frame 로드에서만 온다(측정 결과 iframe 로드에서는 오지 않았다). 여기서 JS를 무조건 끈다.
+    - 끈 설정은 화면에 남아 있는 현재 문서에도 적용된다. 허용된 문서에서 응답이 오지 않는 로드(FIFO)를 시작하자 1초 간격 timer가 5.3초 동안 멈췄고, 중단 뒤 복원하자 다시 돌았다(측정). 끈 직후 같은 이벤트 처리 턴에서 이미 예약된 timer가 한 번 실행된 경우는 있었다(측정 1회).
     - 이 시점의 `get_uri()`는 링크 이동에서 이전 문서 URI를 돌려준다(측정). 그래서 URL을 판정에 쓰지 않는다.
     - 응답 단계의 결과(대기 값)를 여기서 비운다.
   - `decide-policy`의 `RESPONSE` 결정: `ResponsePolicyDecision::is_main_frame_main_resource()`(2.40부터)가 참일 때만 동작한다.
@@ -121,7 +130,9 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
-- **macOS(미측정, API 문서 근거)**: 현재의 전역 `javaScriptEnabled`(deprecated) 대신 `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 판단한다. 새 창 요청은 `targetFrame`이 nil이다.
+- **macOS(미측정, API 문서 근거)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 판단한다. 새 창 요청은 `targetFrame`이 nil이다.
+  - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
+  - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).
 - Windows와 macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
 - 두 OS에서 bfcache를 끌 수 있는지는 구현할 때 확인한다. 응답 단계 없이 commit된 문서는 지문이 없어 허용할 수 없다.
 - 두 OS에서도 허용 기록은 새 main frame 문서가 commit될 때 갱신한다. commit 없이 끝난 로드에서는 화면 문서의 허용 상태로 JS를 되돌린다. 이 시점에 대응하는 이벤트는 구현에서 정하며 측정하지 않았다.
@@ -228,7 +239,8 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - [ADR-0036](0036-overlay-scope-and-lifetime.md): 배너의 입력과 수명. 에이전트 동작과 배너에 관한 재검토 조건.
 - [debug IPC 가이드](../dev-guide/debug-ipc.md): debug 전용 핸들러의 격리 조건.
 - [Webview 호스트 계약](../design/systems/webview.md).
-- `src/view/main/redraw.rs`의 `resolve_webview_settings`: 현재 JS 설정 결정.
+- `src/view/main/redraw.rs`의 `resolve_webview_settings`: 전역 sandbox 값 전달.
+- `src/host_api/webview/script_gate.rs`: navigation 콜백과 허용 상태의 연결.
 - 현재 navigation 콜백:
   - `src/host_api/webview/linux.rs`의 `connect_decide_policy`, `connect_load_failed`
   - `src/host_api/webview/macos.rs`의 navigation delegate
