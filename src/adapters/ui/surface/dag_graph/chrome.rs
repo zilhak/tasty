@@ -469,7 +469,7 @@ fn draw_zoom_cluster(
         theme,
         cell(side),
         "fit",
-        icons::FIT,
+        icons::MOVE,
         true,
         t("dag.zoom.fit"),
     ) {

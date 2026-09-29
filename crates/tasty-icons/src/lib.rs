@@ -142,7 +142,7 @@ stroke_icon!(
 );
 // 줌 축소. PLUS 의 대응.
 stroke_icon!(MINUS, "minus", r#"<path d="M5 12h14"/>"#);
-// popup 전체화면 무대 글리프(design `fit`). 네 모서리 괄호. 현재 DAG 뷰 Fit 버튼이 쓴다.
+// popup 전체화면 무대 글리프(design `fit`). 네 모서리 괄호. 아직 소비처는 없다.
 stroke_icon!(
     FIT,
     "fit",
