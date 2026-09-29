@@ -18,6 +18,31 @@ pub enum ButtonVariant {
     Agent,
 }
 
+/// 배너 셸 안이라는 문맥을 기록하는 egui 임시 데이터 키. 값은 중첩 깊이다.
+fn banner_surface_id() -> egui::Id {
+    egui::Id::new("tasty_ui_widgets::button::banner_surface")
+}
+
+/// `content`를 배너 셸 문맥(시안 `data-surface="banner"`)에서 그린다.
+/// 이 안의 Secondary 버튼은 배너 배경보다 한 단계 위의 채움과 테두리
+/// (`banner_button_bg`·`banner_button_border`)를 쓴다. `banner_shell`이 모든 배너에 적용한다.
+pub fn banner_surface<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let id = banner_surface_id();
+    let prev = ui.ctx().data(|d| d.get_temp::<u32>(id)).unwrap_or(0);
+    ui.ctx().data_mut(|d| d.insert_temp(id, prev + 1));
+    let out = content(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(id, prev));
+    out
+}
+
+/// 지금 그리는 위치가 배너 셸 문맥 안인지.
+fn on_banner_surface(ui: &egui::Ui) -> bool {
+    ui.ctx()
+        .data(|d| d.get_temp::<u32>(banner_surface_id()))
+        .unwrap_or(0)
+        > 0
+}
+
 /// Button 빌더.
 pub struct Button<'a> {
     label: &'a str,
@@ -136,6 +161,12 @@ impl<'a> Button<'a> {
                     None,
                     theme.button_danger_fg().to_egui(),
                 ),
+                // 배너 위에서는 채움과 테두리가 배너 배경보다 한 단계 위이며 hover에도 테두리가 그대로다.
+                ButtonVariant::Secondary if on_banner_surface(ui) => (
+                    Some(theme.banner_button_bg().to_egui()),
+                    Some(theme.banner_button_border().to_egui()),
+                    theme.button_fg().to_egui(),
+                ),
                 ButtonVariant::Secondary => {
                     let b = if resp.hovered() {
                         theme.button_secondary_border_hover()
@@ -215,5 +246,26 @@ impl<'a> Button<'a> {
         }
 
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn banner_surface_marks_only_its_own_scope_and_nests() {
+        let ctx = egui::Context::default();
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                assert!(!on_banner_surface(ui));
+                banner_surface(ui, |ui| {
+                    assert!(on_banner_surface(ui));
+                    banner_surface(ui, |ui| assert!(on_banner_surface(ui)));
+                    assert!(on_banner_surface(ui));
+                });
+                assert!(!on_banner_surface(ui));
+            });
+        });
     }
 }

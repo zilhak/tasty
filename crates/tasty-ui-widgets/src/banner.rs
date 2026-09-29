@@ -5,6 +5,7 @@ use tasty_type_appearance::theme::Theme;
 
 /// Theme의 배너 배경·테두리·모서리·그림자로 카드를 그린다.
 /// opacity로 어둡게 표시하며 실제 카드 영역을 반환해 입력 판정에 쓴다.
+/// 내용은 배너 문맥([`crate::banner_surface`])에서 그려 배너 위 Secondary 버튼이 한 단계 위 상자를 쓴다.
 pub fn banner_shell(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -28,7 +29,7 @@ pub fn banner_shell(
         ))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            content(ui);
+            crate::banner_surface(ui, content);
         })
         .response
         .rect

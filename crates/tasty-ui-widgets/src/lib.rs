@@ -52,7 +52,7 @@ pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };
 pub use banner::{banner_shell, inset_banner_zone, inset_content_rect};
-pub use button::{Button, ButtonVariant};
+pub use button::{Button, ButtonVariant, banner_surface};
 pub use center_state::{
     CENTER_STATE_ERROR_GLYPH, CenterState, CenterStateOutput, CenterStateVariant,
 };
