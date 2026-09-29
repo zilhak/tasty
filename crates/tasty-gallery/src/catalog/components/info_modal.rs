@@ -21,16 +21,9 @@ const DB_LOCKED: &str = "The database file is locked by another Tasty process. C
 /// 권한 안내 본문의 번역 키. 본체와 같은 문자열과 강조 표기를 `lang/en.toml`에서 읽는다.
 const PERMISSIONS_NOTICE_KEY: &str = "macos_permissions.notice.body";
 
-/// 권한 안내 본문. 갤러리는 설정을 읽지 않으므로 처음 쓸 때 영어 번역표로 한 번 초기화한다.
+/// 권한 안내 본문.
 fn permissions_notice() -> &'static str {
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        let report = tasty_i18n::init("en");
-        if report.fell_back() {
-            tracing::warn!("gallery i18n init fell back: {report:?}");
-        }
-    });
-    tasty_i18n::t(PERMISSIONS_NOTICE_KEY)
+    crate::i18n::t(PERMISSIONS_NOTICE_KEY)
 }
 
 const OK: &[InfoModalButton<'static>] = &[InfoModalButton {

@@ -978,6 +978,15 @@ disable_suffix = ""
 title = "Shell integration not detected"
 body = "Command-completion hooks (docker build, just run, etc.) need OSC 133 shell integration. See docs/features/hooks for setup."
 
+[banner.html_script]
+title = "Scripts in this document are blocked"
+body = "Buttons and menus that need JavaScript may not respond. Allowing applies to this document only, until Tasty restarts."
+body_remote = "Some of its scripts load from the network, which stays blocked. Allowing runs only the scripts inside this document, until Tasty restarts."
+action = "Allow for this document"
+reloading = "Reloading with scripts allowed"
+marker_blocked = "Scripts blocked. Click to show the notice again."
+marker_allowed = "Scripts allowed for this document until Tasty restarts"
+
 [port_scanner]
 heading = "Listening ports"
 no_ports = "No listening TCP ports in this terminal's process tree."

@@ -974,6 +974,15 @@ disable_suffix = "에 대해 마우스 캡처 비활성화"
 title = "셸 통합이 감지되지 않았습니다"
 body = "명령 완료 훅(docker build, just run 등)은 OSC 133 셸 통합이 필요합니다. 설정 방법은 docs/features/hooks 를 참고하세요."
 
+[banner.html_script]
+title = "이 문서의 스크립트가 차단되었습니다"
+body = "JavaScript가 필요한 버튼과 메뉴가 반응하지 않을 수 있습니다. 허용은 Tasty를 다시 시작할 때까지 이 문서에만 적용됩니다."
+body_remote = "일부 스크립트는 네트워크에서 불러오며 계속 차단됩니다. 허용하면 Tasty를 다시 시작할 때까지 이 문서 안의 스크립트만 실행됩니다."
+action = "이 문서에서 허용"
+reloading = "스크립트를 허용하고 다시 불러오는 중"
+marker_blocked = "스크립트가 차단되었습니다. 클릭하면 안내를 다시 표시합니다."
+marker_allowed = "Tasty를 다시 시작할 때까지 이 문서의 스크립트가 허용됩니다"
+
 [port_scanner]
 heading = "연결 대기 중인 포트"
 no_ports = "이 터미널과 하위 프로세스에 연결을 기다리는 TCP 포트가 없습니다."

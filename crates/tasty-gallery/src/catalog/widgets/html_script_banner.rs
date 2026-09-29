@@ -11,6 +11,7 @@ use tasty_ui_widgets::{
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::i18n::t;
 
 /// 디자인 `HtmlSurfaceG`·`TermSurfaceG`의 기본 높이. 두 surface를 나란히 보이는 전시 공간이다.
 const SURFACE_STAGE_H: LogicalPx = LogicalPx(260.0);
@@ -27,13 +28,14 @@ const STATE_CARD_MAX_W: LogicalPx = LogicalPx(600.0);
 /// 페이지 자리의 가짜 본문 막대 폭 비율. 디자인 `HsPage`의 60%·85%·70%다.
 const PAGE_BAR_FRACTIONS: [f32; 3] = [0.60, 0.85, 0.70];
 
-const TITLE: &str = "Scripts in this document are blocked";
-const BODY: &str = "Buttons and menus that need JavaScript may not respond. Allowing applies to this document only, until Tasty restarts.";
-const BODY_REMOTE: &str = "Some of its scripts load from the network, which stays blocked. Allowing runs only the scripts inside this document, until Tasty restarts.";
-const ACTION: &str = "Allow for this document";
-const RELOADING: &str = "Reloading with scripts allowed";
-const MARKER_BLOCKED: &str = "Scripts blocked. Click to show the notice again.";
-const MARKER_ALLOWED: &str = "Scripts allowed for this document until Tasty restarts";
+/// 문안은 본체와 같은 번역 키에서 읽는다. 사본을 두면 확정 문안과 어긋날 수 있다.
+const TITLE: &str = "banner.html_script.title";
+const BODY: &str = "banner.html_script.body";
+const BODY_REMOTE: &str = "banner.html_script.body_remote";
+const ACTION: &str = "banner.html_script.action";
+const RELOADING: &str = "banner.html_script.reloading";
+const MARKER_BLOCKED: &str = "banner.html_script.marker_blocked";
+const MARKER_ALLOWED: &str = "banner.html_script.marker_allowed";
 
 fn view(
     state: HtmlScriptBannerState,
@@ -42,10 +44,10 @@ fn view(
     narrow: bool,
 ) -> HtmlScriptBannerView<'static> {
     HtmlScriptBannerView {
-        title: TITLE,
-        body: if remote { BODY_REMOTE } else { BODY },
-        action: ACTION,
-        reloading: RELOADING,
+        title: t(TITLE),
+        body: t(if remote { BODY_REMOTE } else { BODY }),
+        action: t(ACTION),
+        reloading: t(RELOADING),
         state,
         narrow,
         force_hover: hover,
@@ -392,11 +394,12 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
+    let title_spec = format!("\"{}\" · 13", t(TITLE));
     spec::meta(
         ui,
         theme,
         &[
-            ("title", "\"Scripts in this document are blocked\" · 13"),
+            ("title", title_spec.as_str()),
             ("body", "caption · text-muted · ≤ 2 lines"),
             ("remote branch", "network scripts stay blocked — says so"),
             ("action", "Secondary / Sm · no wrap"),
@@ -453,12 +456,12 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                                     (
                                         "4a · dismissed — lock, click to re-show",
                                         HtmlScriptMarkerKind::Blocked,
-                                        MARKER_BLOCKED,
+                                        t(MARKER_BLOCKED),
                                     ),
                                     (
                                         "4b · allowed this session",
                                         HtmlScriptMarkerKind::Allowed,
-                                        MARKER_ALLOWED,
+                                        t(MARKER_ALLOWED),
                                     ),
                                 ] {
                                     ui.vertical(|ui| {
@@ -529,4 +532,27 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
          Agent/IPC opens, session restore and background loads keep a \"has scripts\" flag and \
          show the banner the first time the user looks at that surface.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_copy_key_resolves_to_english_text() {
+        for key in [
+            TITLE,
+            BODY,
+            BODY_REMOTE,
+            ACTION,
+            RELOADING,
+            MARKER_BLOCKED,
+            MARKER_ALLOWED,
+        ] {
+            let text = t(key);
+            assert_ne!(text, key, "{key} is missing from lang/en.toml");
+            assert!(!text.is_empty(), "{key}");
+        }
+        assert_eq!(t(TITLE), "Scripts in this document are blocked");
+    }
 }

@@ -7,3 +7,4 @@
 pub mod catalog;
 pub mod fonts;
 pub mod host_shell;
+pub mod i18n;
