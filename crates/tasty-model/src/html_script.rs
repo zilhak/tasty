@@ -4,6 +4,8 @@
 //! 로드 때 구한 파일 전체 지문에 묶이고, 다른 main frame 문서가 commit되면 풀린다.
 //! backend의 navigation 콜백이 아래 `on_*` 메서드를 순서대로 부르고 돌려받은 값으로 JS를 켜거나 끈다.
 
+pub mod scan;
+
 /// 문서 원본 전체의 SHA-256 지문.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Fingerprint(pub [u8; 32]);
