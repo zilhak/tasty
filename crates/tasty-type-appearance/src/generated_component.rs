@@ -3298,12 +3298,6 @@ impl crate::theme::Theme {
         self.spacing_xs
     }
 
-    /// `component.workspace-dot-slot` → `{primitive.size-16}` = 16px
-    #[inline]
-    pub fn workspace_dot_slot(&self) -> LogicalPx {
-        LogicalPx((16.0 * self.ui_zoom).round())
-    }
-
     /// `component.workspace-mirror-fg` → `{semantic.accent-remote}`
     #[inline]
     pub fn workspace_mirror_fg(&self) -> HexColor {
@@ -3325,7 +3319,7 @@ impl crate::theme::Theme {
     /// `component.workspace-row-active-bar-width` → `{semantic.selection-edge-width}` = 2px
     #[inline]
     pub fn workspace_row_active_bar_width(&self) -> LogicalPx {
-        LogicalPx((2.0 * self.ui_zoom).round())
+        self.selection_edge_width
     }
 
     /// `component.workspace-row-padding-x` → `{semantic.space-sm}` = 8px

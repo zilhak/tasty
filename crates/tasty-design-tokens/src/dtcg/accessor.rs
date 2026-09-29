@@ -61,6 +61,7 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.titlebar-height", "titlebar_height"),
     ("semantic.overlay-top-offset", "overlay_top_offset"),
     ("semantic.label-detail-gap", "label_detail_gap"),
+    ("semantic.selection-edge-width", "selection_edge_width"),
     // component 전용 필드 — 사이드바 (host UI zoom 영향 받음)
     ("component.sidebar-logo-size", "sidebar_logo_size"),
     (
@@ -283,6 +284,8 @@ const EXISTING_THEME_DIM_ACCESSOR_NAMES: &[&str] = &[
     "modhint_min_width",
     "modhint_min_height",
     "modhint_section_gap",
+    // 점·ring을 각각 반올림한 뒤 더하는 파생 치수다. 토큰 값 하나에 배율을 곱하면 틀린다.
+    "workspace_dot_slot",
 ];
 
 /// component 토큰 kebab 이름 → snake_case 접근자 함수명 (전체 이름 그대로 —

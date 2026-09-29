@@ -469,7 +469,7 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// vec2 이후 같은 줄의 focus_ring_width를 바 용도로 의심해 보고한다.
-/// 링과 바는 값이 같아도 배율 적용이 달라 바에는 tab_indicator_width를 사용한다.
+/// 링과 바는 값이 같아도 배율 적용이 달라 바에는 selection_edge_width 역할을 사용한다.
 /// 변수 경유나 좌표 산술은 찾지 못하며 인자·타입을 정밀하게 분석하지 않는다.
 fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     for (i, line) in lines.iter().enumerate() {
@@ -481,7 +481,7 @@ fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
         };
         if line[v..].contains("focus_ring_width") {
             out.push(format!(
-                "  {}:{} — vec2 이후에 focus_ring_width가 있다. 바 용도라면 tab_indicator_width를 사용한다.",
+                "  {}:{} — vec2 이후에 focus_ring_width가 있다. 바 용도라면 selection_edge_width 역할(탭은 tab_indicator_width)을 사용한다.",
                 rel,
                 i + 1
             ));
@@ -526,7 +526,7 @@ fn no_literal_margin_fields_or_item_spacing() {
          · 0 은 그리드의 원점이라 규칙 안에 있다 — 다만 네 변이 전부 0 이면 \
          `Margin::ZERO`\n\
          · 링 토큰을 바에 쓰지 말 것 — 감싸는 획은 `focus_ring_width`, 한쪽 변에 \
-         붙는 띠는 `tab_indicator_width`(둘 다 2 지만 zoom 거동이 다르다)\n{}",
+         붙는 띠는 `selection_edge_width` 역할(둘 다 2 지만 zoom 거동이 다르다)\n{}",
         violations.join("\n")
     );
 }

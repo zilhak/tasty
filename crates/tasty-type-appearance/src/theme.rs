@@ -251,7 +251,7 @@ pub struct ThemeSizing {
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
     /// 대상을 둘러싸는 포커스·선택 링의 굵기. 색상은 용도별로 고른다.
-    /// 한쪽 변에만 붙는 표시에는 tab_indicator_width를 사용한다.
+    /// 한쪽 변에만 붙는 선택 표시에는 selection_edge_width를 사용한다.
     pub focus_ring_width: LogicalPx,
     /// painter로 직접 그리는 창 버튼 글리프의 선 굵기. 대응하는 DTCG 치수 토큰은 없다.
     pub icon_stroke_width: LogicalPx,
@@ -352,8 +352,10 @@ pub struct ThemeSizing {
     pub spinner_size: LogicalPx,
     /// 토스트 좌측 accent 바 두께 (3px).
     pub toast_accent_width: LogicalPx,
-    /// 한쪽 변의 활성 표시 두께. 대상을 둘러싸는 링은 focus_ring_width를 사용한다.
+    /// 탭 밑줄 두께. selection_edge_width와 같은 역할이며 둘러싸는 링은 focus_ring_width를 사용한다.
     pub tab_indicator_width: LogicalPx,
+    /// 선택 항목의 한쪽 변에 붙는 띠 두께 (2px).
+    pub selection_edge_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
     /// 한 글 묶음 안에서 라벨 줄과 그 부연 줄 사이 간격 (2px).
@@ -423,6 +425,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     spinner_size: LogicalPx(16.0),
     toast_accent_width: LogicalPx(3.0),
     tab_indicator_width: LogicalPx(2.0),
+    selection_edge_width: LogicalPx(2.0),
     overlay_top_offset: LogicalPx(88.0),
     label_detail_gap: LogicalPx(2.0),
 };
@@ -856,7 +859,7 @@ pub struct Theme {
     /// 기본 보더 굵기 (1px).
     /// hairline 보더는 UI zoom 제외.
     pub border_width: LogicalPx,
-    /// 대상을 둘러싸는 포커스·선택 링의 굵기. 한쪽 변의 표시는 tab_indicator_width를 사용한다.
+    /// 대상을 둘러싸는 포커스·선택 링의 굵기. 한쪽 변의 선택 표시는 selection_edge_width를 사용한다.
     pub focus_ring_width: LogicalPx,
     /// 창 버튼 글리프의 hairline 굵기. 버튼의 고정 치수에 맞춰 UI zoom 제외.
     pub icon_stroke_width: LogicalPx,
@@ -942,8 +945,11 @@ pub struct Theme {
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
-    /// 한쪽 변의 활성 표시. hairline 띠이므로 UI zoom 제외.
+    /// 탭 밑줄. hairline 띠이므로 UI zoom 제외.
     pub tab_indicator_width: LogicalPx,
+    /// 선택 항목의 한쪽 변 띠(탭 밑줄·활성 워크스페이스 행·remote attach·preset 목록 행).
+    /// hairline 띠이므로 UI zoom 제외.
+    pub selection_edge_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
     /// 라벨 줄 ↔ 부연 줄 간격. 글자와 함께 커지므로 UI zoom 적용.
     pub label_detail_gap: LogicalPx,
@@ -1114,6 +1120,7 @@ impl Theme {
             spinner_size: zoomed(SIZING.spinner_size),
             toast_accent_width: zoomed(SIZING.toast_accent_width),
             tab_indicator_width: SIZING.tab_indicator_width,
+            selection_edge_width: SIZING.selection_edge_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             label_detail_gap: zoomed(SIZING.label_detail_gap),
             ui_zoom,
@@ -1595,6 +1602,20 @@ impl Theme {
         MOTION_HOLD_REVEAL_SHIFT_MS
     }
 
+    /// 워크스페이스 행의 상태 점 슬롯 폭. attached ring 전체를 담도록 반올림한 점 지름과
+    /// ring 폭·offset을 더해 만든다. 슬롯만 따로 반올림하면 0.85에서 ring(15)이 슬롯(14)을
+    /// 넘으므로 `--tasty-workspace-dot-slot`(size-16)의 배율 값을 쓰지 않는다.
+    /// 0.85 → 15 · 1 → 16 · 1.2 → 18.
+    #[inline]
+    pub fn workspace_dot_slot(&self) -> LogicalPx {
+        LogicalPx(
+            self.status_dot_size.value()
+                + 2.0
+                    * (self.status_dot_attached_ring_width().value()
+                        + self.status_dot_attached_ring_offset().value()),
+        )
+    }
+
     // 보조 키 안내 패널의 치수와 색상.
     /// 기본 너비 (180px). `--tasty-modhint-width` → `--tasty-size-180`.
     /// 열린 사이드바 폭(`AppearanceSettings.sidebar_width` 기본 180)과 정렬.
@@ -2020,6 +2041,39 @@ mod tests {
         let large = Theme::with_colors_and_zoom(dummy_colors(), false, 1.2);
         assert_ne!(small.corner_radius, base.corner_radius);
         assert_ne!(large.corner_radius, base.corner_radius);
+    }
+
+    /// 슬롯은 점·ring을 각각 반올림한 뒤 더한다. 16에 배율을 곱해 반올림하면 0.85에서 14가 되어
+    /// ring 전체(15)를 담지 못한다.
+    #[test]
+    fn workspace_dot_slot_is_derived_after_rounding() {
+        for (z, want) in [(0.85, 15.0), (1.0, 16.0), (1.2, 18.0)] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+            assert_eq!(t.workspace_dot_slot(), LogicalPx(want), "배율 {z}");
+            let ring = t.status_dot_size.value()
+                + 2.0
+                    * (t.status_dot_attached_ring_width().value()
+                        + t.status_dot_attached_ring_offset().value());
+            assert!(
+                ring <= t.workspace_dot_slot().value(),
+                "배율 {z}에서 ring {ring}이 슬롯을 넘는다"
+            );
+        }
+    }
+
+    /// 한쪽 변 선택 띠는 hairline이라 배율과 무관하게 2다.
+    #[test]
+    fn selection_edge_bars_stay_two_at_every_zoom() {
+        for z in [0.85, 1.0, 1.2, 1.5, 2.0] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+            assert_eq!(t.selection_edge_width, LogicalPx(2.0), "배율 {z}");
+            assert_eq!(
+                t.workspace_row_active_bar_width(),
+                LogicalPx(2.0),
+                "배율 {z}"
+            );
+            assert_eq!(t.tab_indicator_width(), LogicalPx(2.0), "배율 {z}");
+        }
     }
 
     #[test]

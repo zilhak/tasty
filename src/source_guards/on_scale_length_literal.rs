@@ -67,7 +67,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-type-appearance/src/theme.rs",
-        50,
+        51,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
@@ -711,7 +711,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        (183, 283),
+        (183, 286),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
