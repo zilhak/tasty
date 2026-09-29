@@ -89,10 +89,6 @@ pub const BOOT_CARD_CORNER_RADIUS: f32 = 12.0;
 /// `component.badge-radius` 는 `semantic.radius-sm`(2)다.
 pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;
 
-/// 팝업 제목줄 버튼의 크기. 대응하는 size 토큰이 없어 별도로 둔다.
-/// 본체는 여기에 UI 배율을 곱하고 갤러리는 egui 전역 배율을 사용하므로 그대로 읽는다.
-pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
-
 // 플러그인 아바타는 목록과 상세에서 크기가 다르다. 같은 값의 다른 역할 토큰으로 대체하지 않는다.
 
 /// plugin 목록 행 왼쪽 아바타 한 변. 디자인 `<PluginAvatar size={32}>`

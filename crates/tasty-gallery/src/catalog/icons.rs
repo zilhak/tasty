@@ -40,6 +40,7 @@ const NAV: &[Entry] = &[
     (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
     (ARROW_RIGHT, "arrowRight", "go / submit (markdown address)"),
     (MOVE, "move", "move / reposition (4-way)"),
+    (FIT, "fit", "fullscreen stage (popup title bar)"),
 ];
 
 const VIEW: &[Entry] = &[

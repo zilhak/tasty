@@ -48,11 +48,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Alias(GALLERY_POPUP_FRAME, "CONTENT_MARGIN"),
     ),
     (
-        "popup 타이틀바 우측 끝 여백",
-        Side::ThemeSum("src/adapters/ui/popup.rs", &["spacing_xs"]),
-        Side::Alias(GALLERY_POPUP_FRAME, "TITLE_BTN_EDGE_PAD"),
-    ),
-    (
         "종료 확인 창 폭",
         Side::Lit("src/app/modal/quit.rs", "WINDOW_W"),
         Side::Lit(GALLERY_QUIT_MODAL, "WINDOW_W"),
@@ -428,11 +423,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 47개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 46개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        47,
-        "비교 명부가 {}쌍이다(기록 47). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        46,
+        "비교 명부가 {}쌍이다(기록 46). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);
@@ -465,29 +460,20 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
         "갤러리를 고정값으로 바꾸면 해당 치수는 테마를 따르지 않는다.",
         "값을 맞추는 방법이 기존 디자인 의도를 보존하는지 검토한다.",
         "비교 항목을 지우기만 하면 복사본의 불일치를 찾지 못한다.",
-        "두 곳이 같은 공용 정의를 읽게 됐을 때는 비교 항목을 제거할 수 있다. 예: 본체와 popup_frame::TITLE_BTN_SIZE는 tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE를 함께 사용한다."
+        "두 곳이 같은 공용 정의를 읽게 됐을 때는 비교 항목을 제거할 수 있다. 예: 본체 preset 편집기의 HANDLE_GAP과 갤러리 E_HANDLE_GAP은 tasty_ui_widgets::tokens::STRUCT_GAP_2를 함께 사용한다."
     );
     println!("[사본 치수] {} 쌍\n{table}", COPIED.len());
 }
 
 /// 공용 토큰을 함께 읽어 별도 값 비교가 필요 없는 항목. (갤러리 파일, 상수, 토큰, 본체 파일, 사유).
-const SHARES_ONE_ITEM: &[(&str, &str, &str, &str, &str)] = &[
-    (
-        GALLERY_POPUP_FRAME,
-        "TITLE_BTN_SIZE",
-        "tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE",
-        "src/adapters/ui/popup.rs",
-        "본체와 갤러리가 둘 다 `tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE` 를 읽는다",
-    ),
-    (
-        GALLERY_PRESET_EDITOR,
-        "E_HANDLE_GAP",
-        "tasty_ui_widgets::tokens::STRUCT_GAP_2",
-        "src/adapters/ui/preset/demo_layout.rs",
-        "선택 leaf 의 설정·삭제 핸들 사이 간격 — 본체 `HANDLE_GAP` 과 갤러리가 둘 다 \
+const SHARES_ONE_ITEM: &[(&str, &str, &str, &str, &str)] = &[(
+    GALLERY_PRESET_EDITOR,
+    "E_HANDLE_GAP",
+    "tasty_ui_widgets::tokens::STRUCT_GAP_2",
+    "src/adapters/ui/preset/demo_layout.rs",
+    "선택 leaf 의 설정·삭제 핸들 사이 간격 — 본체 `HANDLE_GAP` 과 갤러리가 둘 다 \
          `tasty_ui_widgets::tokens::STRUCT_GAP_2` 를 읽는다",
-    ),
-];
+)];
 
 /// 의도적으로 다른 치수. (갤러리 파일, 상수, 본체에 생기면 재검토할 이름, 사유).
 const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[
@@ -716,8 +702,6 @@ fn the_checkable_roster_premises_still_hold() {
 const CONFESSED: &[(&str, &str)] = &[
     (GALLERY_POPUP_FRAME, "TITLE_BAR_HEIGHT"),
     (GALLERY_POPUP_FRAME, "CONTENT_MARGIN"),
-    (GALLERY_POPUP_FRAME, "TITLE_BTN_SIZE"),
-    (GALLERY_POPUP_FRAME, "TITLE_BTN_EDGE_PAD"),
     (GALLERY_QUIT_MODAL, "WINDOW_W"),
     (GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_W"),
     (GALLERY_PRESET_EDITOR, "E_HANDLE_GAP"),

@@ -9,8 +9,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// `popup/defs.rs` 의 `notifications` 기본 크기.
-const PANEL_W: LogicalPx = LogicalPx(352.0);
+/// `popup/defs.rs` 의 `notifications` 기본 높이. 폭은 `notifications-popup-width` 토큰이다.
 const PANEL_H: LogicalPx = LogicalPx(400.0);
 /// 본체 unread 배경 알파 (0..255).
 const UNREAD_BG_ALPHA: u8 = 20;
@@ -115,7 +114,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
         ui,
         theme,
         "Notifications",
-        PANEL_W,
+        theme.notifications_popup_width(),
         PANEL_H,
         ContentInset::INSET,
         TitleButtons::FULLSCREEN_AND_CLOSE,

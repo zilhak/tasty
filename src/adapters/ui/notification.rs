@@ -163,6 +163,27 @@ pub(crate) fn draw_notification_content_inner(
         });
 }
 
+/// 알림 popup 기본 높이. 대응하는 토큰이 없어 배율 전 값으로 둔다.
+const POPUP_HEIGHT: tasty_type_geometry::length::LogicalPx =
+    tasty_type_geometry::length::LogicalPx(400.0);
+
+/// 폭은 `notifications-popup-width` 토큰, 높이는 기본 높이이며 둘 다 UI 배율을 따른다.
+pub fn notifications_popup_size() -> egui::Vec2 {
+    let th = theme::theme();
+    egui::vec2(
+        th.notifications_popup_width().value(),
+        crate::adapters::ui::zoomed_px(&th, POPUP_HEIGHT).value(),
+    )
+}
+
+/// PopupDef.sizer — 배율이 바뀌어도 폭 토큰을 다시 계산한다.
+pub fn notifications_popup_sizer(
+    _state: &AppState,
+    _engine: &crate::core::CoreState,
+) -> egui::Vec2 {
+    notifications_popup_size()
+}
+
 /// PopupDef::draw_fn for the notifications panel.
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,

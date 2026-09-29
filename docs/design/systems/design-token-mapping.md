@@ -296,6 +296,21 @@ semantic/primitive 종착.
 > reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
 
+## Popup 타이틀바 · 알림 popup 폭
+
+디자인 `tokens/components.css` 의 `--tasty-popup-title-*` 와 `--tasty-notifications-popup-width`. 공용 popup
+타이틀바(`src/adapters/ui/popup.rs`·`popup/draw.rs`, 갤러리 `catalog/popup_frame.rs`)의 버튼 칸과 제목 예약 폭,
+전체화면 무대를 선언한 알림 popup 의 폭이다. 제목 예약 폭 = edge-inset + N × btn-size + (N − 1) × btn-gap +
+text-gap(버튼 하나 32, 둘 60).
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
+|---|---|---|---|
+| `--tasty-popup-title-btn-size` | → `icon-button-size-sm` → `size-24` (24px) | `popup_title_btn_size()` | 배율 적용. 닫기·전체화면 버튼 칸 |
+| `--tasty-popup-title-btn-gap` | → `space-xs` (4px) | `popup_title_btn_gap()` | 버튼 사이 간격 |
+| `--tasty-popup-title-edge-inset` | → `space-xs` (4px) | `popup_title_edge_inset()` | 오른쪽 끝과 닫기 버튼 사이 |
+| `--tasty-popup-title-text-gap` | → `space-xs` (4px) | `popup_title_text_gap()` | 버튼 묶음과 제목 띠 사이. `popup_title_text_rect` 의 대칭 예약에 더한다 |
+| `--tasty-notifications-popup-width` | → `size-352` (352px) | `notifications_popup_width()` | 배율 적용. 본체 `notification.rs` 의 sizer 와 갤러리 알림 패널이 읽는다 |
+
 ## Convert popup 폭
 
 디자인 `tokens/components.css` 의 `--tasty-convert-popup-width`. surface 변환 팝업(`popup/convert.rs`)의

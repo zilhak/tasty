@@ -262,7 +262,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | `overlays/command_palette.jsx` (480px) | `src/adapters/ui/popup/command_palette.rs::draw_command_palette_view` | `command_palette` (Overlays "Command palette") |
 | `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
-| (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
+| `ui_kits/terminal/overlays/info_modal.jsx` `PopupTitleBar`(fullscreen) · `gallery/overlays-dialogs.jsx` "Popup title bar" Spec | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼 — `fit` 아이콘, 24 칸) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
 **`command_palette` 의 단축키만은 복제가 아니다.** 프레임·행·footer 는 위 표대로 mock 복제지만,
 행 우측의 키캡은 본체와 갤러리가 **같은 함수**(`tasty_ui_widgets::kbd_parts_at`)를 부른다 —
@@ -346,7 +346,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 |---|---|---|
 | `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 `.rs` 대부분 |
 | `toast_card.rs` | `tasty-type-appearance` 의 `ToastKind` · `tasty-ui-widgets` 의 `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
-| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`, 버튼 수로 정렬 결정) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
+| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`·`elide_popup_title`, 버튼 수와 무관하게 대칭) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
 
 <a id="primitive-컴포넌트-레이어-components"></a>
 
@@ -764,7 +764,7 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
 
 안내 모달은 제목을 공용 팝업 타이틀바에 둔다. 시안도 이 모양이다: 채움 `bg-sidebar`,
-높이 `control-height`, 한 줄 제목(넘치면 말줄임), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 이 팝업만 제목 크기
+높이 `control-height`, 한 줄 제목(넘치면 말줄임), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고 버튼 칸은 IconButton sm 24다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 이 spec 의 머리는 본체 알림 popup 처럼 본문 크기 제목과 `border-frame` 선으로 그린다. 이 팝업만 제목 크기
 `font-size-max`와 아래 선 `info-modal-title-edge`를 쓴다. ×는 dismiss 버튼·Enter·Esc와
 같은 동작이고, 바깥 클릭으로는 닫히지 않는다.
 

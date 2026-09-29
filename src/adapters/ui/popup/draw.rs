@@ -3,6 +3,7 @@
 use crate::adapters::ui::LayoutContext;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::elide_popup_title as elide_for_width;
 
 use super::occlusion::{Occluder, PointOwnership, point_ownership};
 use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
@@ -85,32 +86,6 @@ fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<Resiz
     }
 }
 
-/// 텍스트가 폭을 넘으면 끝을 …로 줄인다.
-fn elide_for_width(ctx: &egui::Context, text: &str, font: egui::FontId, max_width: f32) -> String {
-    if max_width <= 0.0 {
-        return String::new();
-    }
-    let width_of = |t: &str| {
-        ctx.fonts(|f| {
-            f.layout_no_wrap(t.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
-                .rect
-                .width()
-        })
-    };
-    if width_of(text) <= max_width {
-        return text.to_owned();
-    }
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let candidate: String = chars.iter().collect::<String>() + "…";
-        if width_of(&candidate) <= max_width {
-            return candidate;
-        }
-    }
-    "…".to_owned()
-}
-
 /// 잡은 엣지 조합 → 리사이즈 커서. 모서리는 대각선, 단일 엣지는 수평/수직.
 fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
     use egui::CursorIcon as C;
@@ -122,23 +97,6 @@ fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
         (true, _, _, _) | (_, true, _, _) => C::ResizeHorizontal,
         (_, _, true, _) | (_, _, _, true) => C::ResizeVertical,
         _ => C::Default,
-    }
-}
-
-/// 타이틀바는 Ui 없이 painter로 그리므로 전체화면 아이콘도 선으로 그린다.
-/// 버튼의 60% 크기 안에서 디자인의 팔 비율 5/18을 유지한다.
-fn paint_fullscreen_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
-    let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
-    let arm = g.width() * (5.0 / 18.0);
-    let stroke = egui::Stroke::new(theme::theme().icon_stroke_width.value(), color);
-    for (corner, dx, dy) in [
-        (g.left_top(), 1.0, 1.0),
-        (g.right_top(), -1.0, 1.0),
-        (g.left_bottom(), 1.0, -1.0),
-        (g.right_bottom(), -1.0, -1.0),
-    ] {
-        painter.line_segment([corner, corner + egui::vec2(arm * dx, 0.0)], stroke);
-        painter.line_segment([corner, corner + egui::vec2(0.0, arm * dy)], stroke);
     }
 }
 
@@ -465,7 +423,6 @@ impl PopupManager {
                 let title_rect = popup.title_rect();
                 let close_btn_rect = popup.close_btn_rect();
                 let fullscreen_btn_rect = popup.fullscreen_btn_rect();
-                let buttons_left_x = popup.title_buttons_left_x();
 
                 let cr = th.corner_radius.value() as u8;
                 painter.rect_filled(
@@ -487,18 +444,9 @@ impl PopupManager {
                     egui::Stroke::new(th.border_width.value(), title_edge),
                 );
 
-                // 닫기 버튼만 있으면 스트립 전체 기준으로 가운데 둔다. 버튼이 둘일 때의
-                // 규칙은 시안에 아직 없어 버튼 앞 영역의 가운데에 두는 기존 배치를 유지한다.
+                // 버튼 수와 관계없이 양쪽에 같은 폭을 비워 제목을 스트립 가운데에 둔다.
                 let title_font = egui::FontId::proportional(title_size.value());
-                let title_align = tasty_ui_widgets::PopupTitleAlign::for_button_count(
-                    1 + usize::from(fullscreen_btn_rect.is_some()),
-                );
-                let title_avail_rect = tasty_ui_widgets::popup_title_text_rect(
-                    title_rect,
-                    buttons_left_x,
-                    th.spacing_sm,
-                    title_align,
-                );
+                let title_avail_rect = popup.title_text_rect();
                 let elided_title = elide_for_width(
                     ctx,
                     &popup.title,
@@ -522,15 +470,24 @@ impl PopupManager {
                             th.hover_overlay.to_egui_premultiplied(),
                         );
                     }
-                    paint_fullscreen_glyph(
+                    // IconButton sm 과 같은 글리프 크기로 `fit` 아이콘을 그린다.
+                    let glyph = th.icon_glyph_size_sm.value();
+                    let glyph_rect =
+                        egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
+                    let tint = if hovered {
+                        th.text_primary().into()
+                    } else {
+                        th.text_muted().into()
+                    };
+                    if let Err(err) = tasty_ui_widgets::paint_popup_title_glyph(
+                        ctx,
                         &painter,
-                        rect,
-                        if hovered {
-                            th.text_primary().into()
-                        } else {
-                            th.text_muted().into()
-                        },
-                    );
+                        crate::adapters::ui::icons::FIT,
+                        glyph_rect,
+                        tint,
+                    ) {
+                        tracing::warn!("popup fullscreen glyph failed to load: {err}");
+                    }
                     if hovered {
                         // painter로 그린 버튼에는 Response가 없어 툴팁을 직접 표시한다.
                         egui::show_tooltip_at(

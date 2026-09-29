@@ -81,13 +81,21 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 )];
 
 /// 픽셀이 아닌 정규화 좌표를 파일·호출 이름별로 등록하고 수를 맞춘다.
-const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
-    "crates/tasty-plugin-image/src/render.rs",
-    "pos2",
-    4,
-    "텍스처 UV — 0..1 정규화 좌표라 픽셀이 아니다. 전체 텍스처를 가리키는 \
-     `pos2(1.0, 1.0)` 의 1 은 1px 가 아니라 100% 다",
-)];
+const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[
+    (
+        "crates/tasty-plugin-image/src/render.rs",
+        "pos2",
+        4,
+        "텍스처 UV — 0..1 정규화 좌표라 픽셀이 아니다. 전체 텍스처를 가리키는 \
+         `pos2(1.0, 1.0)` 의 1 은 1px 가 아니라 100% 다",
+    ),
+    (
+        "crates/tasty-ui-widgets/src/popup_title.rs",
+        "pos2",
+        2,
+        "popup 타이틀바 글리프 텍스처 UV — 전체 텍스처를 가리키는 `pos2(1.0, 1.0)` 은 100% 다",
+    ),
+];
 
 fn is_in_unit_space(hit: &Hit) -> bool {
     UNIT_SPACE_SITES
@@ -99,17 +107,18 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        55,
+        53,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
-        // 스케일에 size-140·352·360·440·620이 들어오면서 기존 popup 크기표의 352·360·440·140이 새로 집계됐다.
+        // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
         "src/adapters/ui/",
         // 본체 chrome의 역할별 치수다. 테마 접근자가 생긴 값은 옮기되 같은 숫자의 다른 역할과 혼동하지 않는다.
         // 튜토리얼 popup 360·탐색기 열 140 같은 기존 값은 새 스케일 값이라 집계된다.
-        50,
+        // 알림 popup 기본 높이 400은 대응 토큰이 없어 notification.rs 의 sizer 에 남는다(폭은 토큰).
+        51,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
@@ -137,10 +146,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 튜토리얼 주제 목록의 스크롤 상한 200은 DTCG 토큰이 없는 화면 전용 치수다. 배율을 타므로
         // 본체와 같은 수기 Theme 접근자를 써서 이 수에 들어가지 않는다.
         // 원격 도구 예제의 SSH config 빈 상태 카드 폭 300은 디자인 Stage 액자 값이다.
-        // 알림 패널 예제의 폭 352는 새 스케일 값이라 집계되며 본체 popup 기본 크기표와 같은 값이다.
         // 탐색기 사이드바 예제의 body 620·300과 pin 비교 줄의 560은 디자인 `ExpSidebar` specimen 높이이며
         // 역할 토큰이 없다.
-        133,
+        132,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -598,7 +606,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (49, 77, 0, 12),
+        (49, 76, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -714,7 +722,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        (184, 298),
+        (182, 294),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

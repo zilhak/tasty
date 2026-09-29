@@ -792,7 +792,7 @@ pub fn pages() -> Vec<Page> {
                             "fullscreen-stage-titlebar",
                             "Entry point — the popup title bar button",
                             Some(
-                                "Only a popup that declares a stage gets it · 20px square left of the X",
+                                "Only a popup that declares a stage gets it · 24px fit button left of the X",
                             ),
                             components::fullscreen_stage::draw_titlebar,
                         ),
@@ -1455,6 +1455,14 @@ pub fn pages() -> Vec<Page> {
                                 "440 × 140..360 · body text-secondary · dismiss = Primary, rightmost · DB error = Quit",
                             ),
                             components::info_modal::draw,
+                        ),
+                        spec(
+                            "popup-title-bar",
+                            "Popup title bar — one or two buttons, title centred on the strip",
+                            Some(
+                                "reserve 32 (× only) · 60 (fit + ×) per side · IconButton sm 24 · long title ellipsises in the band",
+                            ),
+                            components::info_modal::draw_title_bar,
                         ),
                         spec(
                             "info-modal-permissions",

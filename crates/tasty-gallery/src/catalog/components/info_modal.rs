@@ -109,13 +109,12 @@ fn modal(
         ),
     );
     let buttons_left =
-        popup_frame::draw_title_buttons(&painter, theme, title_rect, TitleButtons::CLOSE);
+        popup_frame::draw_title_buttons(ui.ctx(), &painter, theme, title_rect, TitleButtons::CLOSE);
     popup_frame::draw_title_text(
         &painter,
         theme,
         title_rect,
         buttons_left,
-        TitleButtons::CLOSE,
         title,
         egui::FontId::proportional(theme.font_size_max.value()),
     );
@@ -251,6 +250,128 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "큐 모델이다 — 여러 건이 쌓이면 닫기 버튼마다 다음 메시지로 넘어가고, 마지막을 \
          닫아야 popup 이 닫힌다. X 로 닫아도 head 를 pop 해 남은 안내가 유실되지 않는다. \
          데이터베이스 오류는 버튼이 하나뿐이고 라벨이 Quit 이다 — 누르면 앱이 끝난다.",
+    );
+}
+
+/// 알림 popup 머리 — 전체화면 무대를 선언한 popup 이라 버튼이 둘(fit + ×)이다.
+/// 타이틀바는 본체 popup 타이틀바와 같이 본문 크기 제목과 border-frame 선으로 그린다.
+fn notifications_head(ui: &mut egui::Ui, theme: &Theme, title: &str) {
+    let body_font = egui::FontId::proportional(theme.font_size_body.value());
+    let line = ui.fonts(|f| f.row_height(&body_font));
+    let body_h = theme.spacing_md.scaled(2.0) + LogicalPx(line);
+    let (frame, _) = ui.allocate_exact_size(
+        egui::vec2(
+            theme.notifications_popup_width().value(),
+            (TITLE_BAR_HEIGHT + body_h).value(),
+        ),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(frame.expand(theme.spacing_lg.value()));
+    let radius = theme.corner_radius.value();
+    painter.rect_filled(frame, radius, theme.bg_panel().to_egui());
+    painter.rect_stroke(
+        frame,
+        radius,
+        egui::Stroke::new(theme.border_width.value(), theme.border_frame().to_egui()),
+        egui::StrokeKind::Outside,
+    );
+    let title_rect = egui::Rect::from_min_size(
+        frame.min,
+        egui::vec2(frame.width(), TITLE_BAR_HEIGHT.value()),
+    );
+    let cr = radius as u8;
+    painter.rect_filled(
+        title_rect,
+        egui::CornerRadius {
+            nw: cr,
+            ne: cr,
+            sw: 0,
+            se: 0,
+        },
+        theme.bg_sidebar().to_egui(),
+    );
+    painter.hline(
+        title_rect.x_range(),
+        title_rect.max.y,
+        egui::Stroke::new(theme.border_width.value(), theme.border_frame().to_egui()),
+    );
+    let buttons_left = popup_frame::draw_title_buttons(
+        ui.ctx(),
+        &painter,
+        theme,
+        title_rect,
+        TitleButtons::FULLSCREEN_AND_CLOSE,
+    );
+    popup_frame::draw_title_text(
+        &painter,
+        theme,
+        title_rect,
+        buttons_left,
+        title,
+        body_font.clone(),
+    );
+    painter.text(
+        egui::pos2(
+            frame.min.x + theme.spacing_lg.value(),
+            title_rect.max.y + theme.spacing_md.value(),
+        ),
+        egui::Align2::LEFT_TOP,
+        "No notifications.",
+        body_font,
+        theme.text_muted().to_egui(),
+    );
+}
+
+/// 공용 popup 타이틀바 — 버튼이 하나든 둘이든 제목은 스트립 가운데다.
+pub fn draw_title_bar(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for (label, th) in [("Mocha", theme), ("Latte", &latte)] {
+            spec::cluster(
+                ui,
+                th,
+                &format!("{label} · two buttons · short title"),
+                |ui| {
+                    notifications_head(ui, th, "Notifications");
+                },
+            );
+            spec::cluster(
+                ui,
+                th,
+                &format!("{label} · two buttons · long title ellipsises in the symmetric band"),
+                |ui| {
+                    notifications_head(
+                        ui,
+                        th,
+                        "Notifications from every workspace and remote host",
+                    );
+                },
+            );
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("centre", "strip centre, always"),
+            ("reserve", "4 + N × 24 + (N − 1) × 4 + 4 → 32 · 60 per side"),
+            ("buttons", "IconButton sm 24 (was 20 in the product)"),
+            ("order", "fullscreen (fit) · close"),
+            ("fullscreen", "only when the popup declares a stage"),
+            ("long title", "ellipsis inside the band"),
+        ],
+        &[
+            TokenChip::new("bg-sidebar", "title bar", theme.bg_sidebar().to_egui()),
+            TokenChip::new("text-muted", "glyphs", theme.text_muted().to_egui()),
+        ],
+    );
+
+    spec::dont(
+        ui,
+        theme,
+        "Don't centre the title in the space left of the buttons. With two buttons the title \
+         then sits 28 px left of centre, and two popups side by side no longer line up.",
     );
 }
 

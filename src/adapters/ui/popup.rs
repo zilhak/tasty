@@ -192,10 +192,13 @@ pub fn content_margin() -> LogicalPx {
     LogicalPx(crate::theme::theme().spacing_xs.value().round_ui())
 }
 
-/// 타이틀바 우측 버튼 사이 간격 — `Theme.spacing_xs`(디자인 4px 그리드) 의 round_ui.
+/// 타이틀바 우측 버튼 사이 간격 — `popup-title-btn-gap` 의 round_ui.
 pub fn title_btn_gap() -> f32 {
     use egui::emath::GuiRounding as _;
-    crate::theme::theme().spacing_xs.value().round_ui()
+    crate::theme::theme()
+        .popup_title_btn_gap()
+        .value()
+        .round_ui()
 }
 
 /// 헤더 드래그 rect 를 담는 egui temp memory Id (popup id 로 네임스페이스).
@@ -423,8 +426,8 @@ impl PopupState {
     fn close_btn_rect(&self) -> egui::Rect {
         let title = self.title_rect();
         let th = crate::theme::theme();
-        let size = super::zoomed_px(&th, tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE).value();
-        let edge_pad = th.spacing_xs.value();
+        let size = th.popup_title_btn_size().value();
+        let edge_pad = th.popup_title_edge_inset().value();
         let center = egui::pos2(title.max.x - size * 0.5 - edge_pad, title.center().y);
         egui::Rect::from_center_size(center, egui::vec2(size, size))
     }
@@ -451,6 +454,16 @@ impl PopupState {
             .unwrap_or_else(|| self.close_btn_rect())
             .min
             .x
+    }
+
+    /// 제목을 그리고 말줄임할 띠. 버튼 수와 관계없이 양쪽에 같은 예약을 비운다
+    /// (`popup-title-text-gap` 포함, 버튼 하나 32 · 둘 60).
+    fn title_text_rect(&self) -> egui::Rect {
+        tasty_ui_widgets::popup_title_text_rect(
+            self.title_rect(),
+            self.title_buttons_left_x(),
+            crate::theme::theme().popup_title_text_gap(),
+        )
     }
 
     /// Clamp position so popup stays within the given screen rect.
@@ -820,6 +833,19 @@ mod tests {
             close.min.x - close.width() - title_btn_gap()
         );
         assert!(with.fullscreen_btn_rect().unwrap().max.x <= close.min.x);
+    }
+
+    /// 제목 띠는 버튼 하나면 양쪽 32, 둘이면 양쪽 60을 비우고 스트립 가운데에 놓인다.
+    #[test]
+    fn title_band_reserves_32_or_60_on_both_sides() {
+        for (stage, reserve) in [(None, 32.0), (Some("blank"), 60.0)] {
+            let p = titled(stage, false);
+            let strip = p.title_rect();
+            let band = p.title_text_rect();
+            assert_eq!(p.close_btn_rect().width(), 24.0, "{stage:?}");
+            assert_eq!(band.min.x - strip.min.x, reserve, "{stage:?}");
+            assert_eq!(strip.max.x - band.max.x, reserve, "{stage:?}");
+        }
     }
 
     /// `close()` 는 호출 직전 `open` 이었던 popup 만 `closed_queue` 에 push 한다.

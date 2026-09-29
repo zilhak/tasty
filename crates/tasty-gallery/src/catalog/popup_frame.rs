@@ -3,19 +3,15 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{PopupTitleAlign, popup_title_text_rect};
+use tasty_ui_widgets::{elide_popup_title, paint_popup_title_glyph, popup_title_text_rect};
+
+use crate::catalog::icons;
 
 /// 본체 popup 상수 — 제목바 높이.
 pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
 /// 본체 popup 콘텐츠의 위아래 여백. 본체 Theme.spacing_xs와 같은 토큰을 읽는다.
 /// 갤러리는 Theme 치수에 배율을 곱하지 않고 egui 전역 배율을 사용한다.
 pub const CONTENT_MARGIN: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
-/// 본체 popup과 공유하는 타이틀바 버튼 크기.
-pub const TITLE_BTN_SIZE: LogicalPx = tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE;
-/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백. 본체는 이 자리에
-/// `Theme.spacing_xs` 를 쓴다(간격이라 배율을 탄다). 갤러리는 egui 전역 zoom 이라
-/// 같은 토큰을 여기서 상수로 읽어도 값이 같다.
-pub const TITLE_BTN_EDGE_PAD: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
 
 /// 타이틀바 우측 버튼 세트. 본체 `PopupManager` 구성과 같다 — close(X) 는 타이틀바가
 /// 있는 모든 popup 에, fullscreen 은 **전체화면 무대를 선언한 popup** 에만 붙는다
@@ -44,53 +40,47 @@ impl TitleButtons {
         fullscreen: true,
         close: true,
     };
-
-    /// 제목 정렬 방식. 본체와 같이 오른쪽 버튼 수로 정한다.
-    pub fn title_align(self) -> PopupTitleAlign {
-        PopupTitleAlign::for_button_count(usize::from(self.fullscreen) + usize::from(self.close))
-    }
 }
 
-/// 타이틀바 제목을 본체와 같은 영역 계산으로 가운데에 그린다. 영역 밖은 잘라낸다.
+/// 타이틀바 제목을 본체와 같은 대칭 영역 계산으로 스트립 가운데에 그린다. 넘치면 본체와
+/// 같이 말줄임한다.
 pub fn draw_title_text(
     painter: &egui::Painter,
     theme: &Theme,
     title_rect: egui::Rect,
     buttons_left_x: f32,
-    buttons: TitleButtons,
     title: &str,
     font: egui::FontId,
 ) {
-    let area = popup_title_text_rect(
-        title_rect,
-        buttons_left_x,
-        theme.spacing_sm,
-        buttons.title_align(),
-    );
+    let area = popup_title_text_rect(title_rect, buttons_left_x, theme.popup_title_text_gap());
+    let shown = elide_popup_title(painter.ctx(), title, font.clone(), area.width());
     painter.with_clip_rect(area).text(
         area.center(),
         egui::Align2::CENTER_CENTER,
-        title,
+        shown,
         font,
         theme.text_primary().into(),
     );
 }
 
-/// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다.
+/// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다. 본체 `PopupManager`와
+/// 같은 토큰(`popup-title-btn-size`·`-btn-gap`·`-edge-inset`)으로 배치한다.
 /// 제목은 이 경계를 넘지 않도록 줄여야 한다.
 pub fn draw_title_buttons(
+    ctx: &egui::Context,
     painter: &egui::Painter,
     theme: &Theme,
     title_rect: egui::Rect,
     buttons: TitleButtons,
 ) -> f32 {
     let fg: egui::Color32 = theme.text_muted().into();
+    let size = theme.popup_title_btn_size();
     let close_rect = egui::Rect::from_center_size(
         egui::pos2(
-            title_rect.max.x - (TITLE_BTN_SIZE.scaled(0.5) + TITLE_BTN_EDGE_PAD).value(),
+            title_rect.max.x - (size.scaled(0.5) + theme.popup_title_edge_inset()).value(),
             title_rect.center().y,
         ),
-        egui::Vec2::splat(TITLE_BTN_SIZE.value()),
+        egui::Vec2::splat(size.value()),
     );
     let mut left = title_rect.max.x;
     if buttons.close {
@@ -102,26 +92,18 @@ pub fn draw_title_buttons(
         left = close_rect.min.x;
     }
     if buttons.fullscreen {
-        // close 왼쪽, 4px(space-xs) 간격.
+        // close 왼쪽, popup-title-btn-gap 간격. 글리프는 IconButton sm 과 같은 크기의 `fit`.
         let rect = egui::Rect::from_center_size(
             egui::pos2(
-                close_rect.center().x - (TITLE_BTN_SIZE + theme.spacing_xs).value(),
+                close_rect.center().x - (size + theme.popup_title_btn_gap()).value(),
                 close_rect.center().y,
             ),
             close_rect.size(),
         );
-        // 디자인 `fit` — 24 viewBox 안 브래킷 사각형 18, 팔 길이 5.
-        let g = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(rect.width() * 0.6));
-        let arm = g.width() * (5.0 / 18.0);
-        let stroke = egui::Stroke::new(theme.icon_stroke_width.value(), fg);
-        for (corner, dx, dy) in [
-            (g.left_top(), 1.0, 1.0),
-            (g.right_top(), -1.0, 1.0),
-            (g.left_bottom(), 1.0, -1.0),
-            (g.right_bottom(), -1.0, -1.0),
-        ] {
-            painter.line_segment([corner, corner + egui::vec2(arm * dx, 0.0)], stroke);
-            painter.line_segment([corner, corner + egui::vec2(0.0, arm * dy)], stroke);
+        let glyph = theme.icon_glyph_size_sm.value();
+        let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(glyph));
+        if let Err(err) = paint_popup_title_glyph(ctx, painter, icons::FIT, glyph_rect, fg) {
+            tracing::warn!("gallery popup fit glyph failed to load: {err}");
         }
         left = rect.min.x;
     }
@@ -203,13 +185,12 @@ pub fn draw(
         },
         title_bg,
     );
-    let buttons_left = draw_title_buttons(&painter, theme, title_rect, buttons);
+    let buttons_left = draw_title_buttons(ui.ctx(), &painter, theme, title_rect, buttons);
     draw_title_text(
         &painter,
         theme,
         title_rect,
         buttons_left,
-        buttons,
         title,
         egui::FontId::proportional(theme.font_size_body.value()),
     );
