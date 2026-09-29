@@ -564,6 +564,11 @@ const PATHLESS_LENGTH_TOKENS: &[(&str, &str)] = &[
          이름이라 이 토큰의 경로가 아니다",
     ),
     (
+        "semantic.label-detail-gap",
+        "component `banner-text-gap` 의 alias 로만 쓰인다 — 그 접근자는 역할 이름이라 이 \
+         토큰의 경로가 아니다",
+    ),
+    (
         "semantic.letter-spacing-ui",
         "자간은 egui `extra_letter_spacing` 에 f32 로 넘어가고 이 토큰의 소비처가 없다",
     ),
@@ -571,6 +576,11 @@ const PATHLESS_LENGTH_TOKENS: &[(&str, &str)] = &[
         "semantic.radius-pill",
         "component `switch-radius` 의 alias 로만 쓰인다 — 그 접근자는 역할 이름이라 이 \
          토큰의 경로가 아니다",
+    ),
+    (
+        "semantic.selection-edge-width",
+        "component `tab-indicator-width`·`workspace-row-active-bar-width` 의 alias 로만 \
+         쓰인다 — 그 접근자들은 역할 이름이라 이 토큰의 경로가 아니다",
     ),
 ];
 
