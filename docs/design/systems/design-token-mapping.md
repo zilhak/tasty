@@ -272,7 +272,7 @@ semantic/primitive 종착.
 | `--tasty-listctrl-row-bg-hover` | → `overlay-hover` | `listctrl_row_bg_hover()` | premultiplied 워시 |
 | `--tasty-listctrl-row-bg-selected` | → `surface-active` | `listctrl_row_bg_selected()` | |
 | `--tasty-listctrl-selected-bar` | → `accent-primary` | `listctrl_selected_bar()` | 좌측 accent 바 |
-| `--tasty-listctrl-selected-bar-width` | → `size-2` (2px) | `listctrl_selected_bar_width()` | (`ui_zoom` 적용) |
+| `--tasty-listctrl-selected-bar-width` | → `selection-edge-width` (2px) | `listctrl_selected_bar_width()` | `selection_edge_width` 반환 (hairline, `ui_zoom` 제외) |
 | `--tasty-listctrl-divider` | → `separator` | `listctrl_divider()` | 행 사이 헤어라인 |
 
 > desc 줄과 라벨 사이 1px 간격(디자인 `.tasty-listctrl__text { gap: 1px }`)은 spacing
@@ -359,9 +359,10 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 `tab_indicator_width` 가 아니다. 두 토큰은 값이 같지만(2) 가리키는 역할이 다르고, 이 자리는
 목록 행이라 `listctrl` 계열이다. 같은 역할의 다른 자리(`tasty_ui_widgets::listctrl` · 갤러리
 `prim_listctrl` · `git_viewer`)가 이미 이쪽을 쓴다. 같은 값이어도 역할이 다른 토큰으로 대체하지 않는다.
-remote attach 목록 행(`remote_attach/rows`와 본체 `popup/remote_attach.rs`)과 preset 목록 행은 디자인이
-한쪽 변 선택 띠(`selection_edge_width`, hairline)로 정했으므로 이 계열이 아니다. `listctrl` 계열이
-같은 역할로 합쳐지는지는 아직 디자인이 정하지 않았다.
+`listctrl-selected-bar-width`는 한쪽 변 선택 띠 `selection-edge-width`를 가리키므로 값은
+`selection_edge_width`(2px, hairline, 배율 제외)와 같다. remote attach 목록 행(`remote_attach/rows`와
+본체 `popup/remote_attach.rs`)과 preset 목록 행은 대응하는 component 토큰이 없어 `selection_edge_width`를
+직접 읽는다.
 
 이 치수에는 대응하는 역할의 토큰이 없다. `crates/tasty-ui-widgets/src/tokens.rs`의 `FH_*` 상수를 본체와 갤러리가 함께 사용한다. 4px 배수인지와 해당 역할의 토큰이 있는지는 별도로 확인한다.
 
@@ -405,7 +406,7 @@ remote attach 목록 행(`remote_attach/rows`와 본체 `popup/remote_attach.rs`
 
 디자인 시스템의 DTCG 토큰과 Rust `Theme` 필드, 그리고 실제 `th.*`/`theme.*` 호출처를 잇는 매핑 참조. [theme.md](theme.md) 의 토큰 구조를 호출처 관점에서 보충한다.
 
-> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (908 토큰 = primitive 127 / semantic 152 / component 629 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
+> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (932 토큰 = primitive 128 / semantic 152 / component 652 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
 
 ### 구조 모델
 

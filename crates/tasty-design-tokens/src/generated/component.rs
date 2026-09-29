@@ -372,8 +372,38 @@ pub mod fp {
     /// `component.fp-crumb-min-width` → `{primitive.size-64}` = 64px
     pub const CRUMB_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_64;
 
+    /// `component.fp-filter-height` → `{semantic.control-height}` = 28px
+    pub const FILTER_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
+
+    /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
+    pub const FOOTER_LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_64;
+
+    /// `component.fp-footer-pad-y` → `{semantic.space-sm}` = 8px
+    pub const FOOTER_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.fp-header-pad-y` → `{semantic.space-sm}` = 8px
+    pub const HEADER_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.fp-inset-end` → `{semantic.space-sm}` = 8px
+    pub const INSET_END: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.fp-inset-start` → `{semantic.space-md}` = 12px
+    pub const INSET_START: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.fp-list-head-pad-y` → `{semantic.space-xs}` = 4px
+    pub const LIST_HEAD_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.fp-path-pad-y` → `{semantic.space-xs}` = 4px
+    pub const PATH_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
     /// `component.fp-popup-min-width` → `{primitive.size-320}` = 320px
     pub const POPUP_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
+
+    /// `component.fp-row-pad-y` → `{semantic.space-xs}` = 4px
+    pub const ROW_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.fp-section-gap` → `{semantic.space-sm}` = 8px
+    pub const SECTION_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
 }
 
 pub mod git {
@@ -519,8 +549,8 @@ pub mod listctrl {
     /// `component.listctrl-row-padding-y` → `{semantic.space-sm}` = 8px
     pub const ROW_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
 
-    /// `component.listctrl-selected-bar-width` → `{primitive.size-2}` = 2px
-    pub const SELECTED_BAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_2;
+    /// `component.listctrl-selected-bar-width` → `{semantic.selection-edge-width}` = 2px
+    pub const SELECTED_BAR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
 }
 
 pub mod md {
@@ -651,6 +681,13 @@ pub mod multiselect {
     pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
 }
 
+pub mod notifications {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.notifications-popup-width` → `{primitive.size-352}` = 352px
+    pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_352;
+}
+
 pub mod perm {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -691,6 +728,22 @@ pub mod plugins_list {
 
     /// `component.plugins-list-width` → `{primitive.size-288}` = 288px
     pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+}
+
+pub mod popup {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.popup-title-btn-gap` → `{semantic.space-xs}` = 4px
+    pub const TITLE_BTN_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.popup-title-btn-size` → `{component.icon-button-size-sm}` = 24px
+    pub const TITLE_BTN_SIZE: LogicalPx = super::icon_button::SIZE_SM;
+
+    /// `component.popup-title-edge-inset` → `{semantic.space-xs}` = 4px
+    pub const TITLE_EDGE_INSET: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.popup-title-text-gap` → `{semantic.space-xs}` = 4px
+    pub const TITLE_TEXT_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 }
 
 pub mod port {

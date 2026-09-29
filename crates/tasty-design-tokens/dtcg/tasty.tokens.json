@@ -377,6 +377,10 @@
       "$type": "dimension",
       "$value": "320px"
     },
+    "size-352": {
+      "$type": "dimension",
+      "$value": "352px"
+    },
     "size-88": {
       "$type": "dimension",
       "$value": "88px"
@@ -1501,6 +1505,14 @@
       "$type": "color",
       "$value": "{semantic.text-primary}"
     },
+    "badge-disabled-bg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fill}"
+    },
+    "badge-disabled-fg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fg}"
+    },
     "badge-group-gap": {
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
@@ -1540,6 +1552,18 @@
     "tag-border": {
       "$type": "color",
       "$value": "{semantic.border-default}"
+    },
+    "tag-disabled-bg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fill}"
+    },
+    "tag-disabled-border": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-border}"
+    },
+    "tag-disabled-fg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fg}"
     },
     "kbd-size": {
       "$type": "dimension",
@@ -1628,6 +1652,18 @@
     "input-icon-fg": {
       "$type": "color",
       "$value": "{semantic.text-muted}"
+    },
+    "input-readonly-bg": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-fill}"
+    },
+    "input-readonly-border": {
+      "$type": "color",
+      "$value": "{semantic.state-disabled-border}"
+    },
+    "input-readonly-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-secondary}"
     },
     "select-height": {
       "$type": "dimension",
@@ -2409,6 +2445,10 @@
       "$type": "dimension",
       "$value": "{primitive.size-8}"
     },
+    "status-dot-size-compact": {
+      "$type": "dimension",
+      "$value": "{primitive.size-6}"
+    },
     "status-dot-idle": {
       "$type": "color",
       "$value": "{semantic.status-idle}"
@@ -2452,6 +2492,26 @@
     "status-dot-pulse-duration": {
       "$type": "duration",
       "$value": "{primitive.duration-1600}"
+    },
+    "statusbar-dot-size": {
+      "$type": "dimension",
+      "$value": "{component.status-dot-size-compact}"
+    },
+    "statusbar-glyph": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "statusbar-theme-glyph": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "statusbar-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
+    "git-toolbar-height": {
+      "$type": "dimension",
+      "$value": "{semantic.toolbar-height}"
     },
     "workspace-mirror-fg": {
       "$type": "color",
@@ -2675,7 +2735,7 @@
     },
     "listctrl-selected-bar-width": {
       "$type": "dimension",
-      "$value": "{primitive.size-2}"
+      "$value": "{semantic.selection-edge-width}"
     },
     "listctrl-divider": {
       "$type": "color",
@@ -2785,6 +2845,10 @@
       "$type": "dimension",
       "$value": "{primitive.size-28}"
     },
+    "port-process-col-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-200}"
+    },
     "port-star-on": {
       "$type": "color",
       "$value": "{semantic.accent-warning}"
@@ -2800,6 +2864,10 @@
     "plugins-list-width": {
       "$type": "dimension",
       "$value": "{primitive.size-288}"
+    },
+    "plugins-header-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-decorative}"
     },
     "plugin-avatar-size-sm": {
       "$type": "dimension",
@@ -2960,6 +3028,98 @@
     "kb-ie-notice-inset": {
       "$type": "dimension",
       "$value": "{semantic.space-md}"
+    },
+    "fp-crumb-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-180}"
+    },
+    "fp-crumb-menu-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-180}"
+    },
+    "fp-crumb-menu-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "fp-crumb-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-64}"
+    },
+    "fp-crumb-current-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-96}"
+    },
+    "fp-bar-hysteresis": {
+      "$type": "dimension",
+      "$value": "{primitive.size-8}"
+    },
+    "fp-popup-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "fp-inset-start": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
+    },
+    "fp-inset-end": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "fp-section-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "fp-header-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "fp-path-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "fp-list-head-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "fp-row-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "fp-footer-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "fp-footer-label-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-64}"
+    },
+    "fp-filter-height": {
+      "$type": "dimension",
+      "$value": "{semantic.control-height}"
+    },
+    "popup-title-btn-size": {
+      "$type": "dimension",
+      "$value": "{component.icon-button-size-sm}"
+    },
+    "popup-title-btn-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "popup-title-edge-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "popup-title-text-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "notifications-popup-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-352}"
+    },
+    "fh-when-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-56}"
     },
     "swatch-size": {
       "$type": "dimension",
@@ -3739,70 +3899,6 @@
     "dag-popup-height": {
       "$type": "dimension",
       "$value": "{primitive.size-460}"
-    },
-    "status-dot-size-compact": {
-      "$type": "dimension",
-      "$value": "{primitive.size-6}"
-    },
-    "statusbar-dot-size": {
-      "$type": "dimension",
-      "$value": "{component.status-dot-size-compact}"
-    },
-    "statusbar-glyph": {
-      "$type": "color",
-      "$value": "{semantic.glyph-dim}"
-    },
-    "statusbar-glyph-size": {
-      "$type": "dimension",
-      "$value": "{semantic.icon-size-xs}"
-    },
-    "fh-when-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-56}"
-    },
-    "statusbar-theme-glyph": {
-      "$type": "color",
-      "$value": "{semantic.glyph-dim}"
-    },
-    "git-toolbar-height": {
-      "$type": "dimension",
-      "$value": "{semantic.toolbar-height}"
-    },
-    "port-process-col-min-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-200}"
-    },
-    "fp-crumb-max-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-180}"
-    },
-    "fp-crumb-menu-min-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-180}"
-    },
-    "fp-crumb-menu-max-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-320}"
-    },
-    "fp-crumb-min-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-64}"
-    },
-    "fp-crumb-current-min-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-96}"
-    },
-    "fp-bar-hysteresis": {
-      "$type": "dimension",
-      "$value": "{primitive.size-8}"
-    },
-    "fp-popup-min-width": {
-      "$type": "dimension",
-      "$value": "{primitive.size-320}"
-    },
-    "plugins-header-glyph": {
-      "$type": "color",
-      "$value": "{semantic.accent-decorative}"
     }
   }
 }

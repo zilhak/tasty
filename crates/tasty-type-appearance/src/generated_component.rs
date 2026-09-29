@@ -112,6 +112,18 @@ impl crate::theme::Theme {
         self.text_on_accent()
     }
 
+    /// `component.badge-disabled-bg` → `{semantic.state-disabled-fill}`
+    #[inline]
+    pub fn badge_disabled_bg(&self) -> HexColor {
+        self.state_disabled_fill()
+    }
+
+    /// `component.badge-disabled-fg` → `{semantic.state-disabled-fg}`
+    #[inline]
+    pub fn badge_disabled_fg(&self) -> HexColor {
+        self.state_disabled_fg()
+    }
+
     /// `component.badge-dot-size` → `{component.status-dot-size}` = 8px
     #[inline]
     pub fn badge_dot_size(&self) -> LogicalPx {
@@ -1216,10 +1228,70 @@ impl crate::theme::Theme {
         LogicalPx((64.0 * self.ui_zoom).round())
     }
 
+    /// `component.fp-filter-height` → `{semantic.control-height}` = 28px
+    #[inline]
+    pub fn fp_filter_height(&self) -> LogicalPx {
+        self.item_height_interactive
+    }
+
+    /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
+    #[inline]
+    pub fn fp_footer_label_width(&self) -> LogicalPx {
+        LogicalPx((64.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-footer-pad-y` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn fp_footer_pad_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.fp-header-pad-y` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn fp_header_pad_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.fp-inset-end` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn fp_inset_end(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.fp-inset-start` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn fp_inset_start(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.fp-list-head-pad-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn fp_list_head_pad_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.fp-path-pad-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn fp_path_pad_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
     /// `component.fp-popup-min-width` → `{primitive.size-320}` = 320px
     #[inline]
     pub fn fp_popup_min_width(&self) -> LogicalPx {
         LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-row-pad-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn fp_row_pad_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.fp-section-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn fp_section_gap(&self) -> LogicalPx {
+        self.spacing_sm
     }
 
     /// `component.git-toolbar-height` → `{semantic.toolbar-height}` = 32px
@@ -1438,6 +1510,24 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.input-readonly-bg` → `{semantic.state-disabled-fill}`
+    #[inline]
+    pub fn input_readonly_bg(&self) -> HexColor {
+        self.state_disabled_fill()
+    }
+
+    /// `component.input-readonly-border` → `{semantic.state-disabled-border}`
+    #[inline]
+    pub fn input_readonly_border(&self) -> HexColor {
+        self.state_disabled_border()
+    }
+
+    /// `component.input-readonly-fg` → `{semantic.text-secondary}`
+    #[inline]
+    pub fn input_readonly_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+
     /// `component.kb-ie-action-column-width` → `{primitive.size-288}` = 288px
     #[inline]
     pub fn kb_ie_action_column_width(&self) -> LogicalPx {
@@ -1624,10 +1714,10 @@ impl crate::theme::Theme {
         self.accent_primary()
     }
 
-    /// `component.listctrl-selected-bar-width` → `{primitive.size-2}` = 2px
+    /// `component.listctrl-selected-bar-width` → `{semantic.selection-edge-width}` = 2px
     #[inline]
     pub fn listctrl_selected_bar_width(&self) -> LogicalPx {
-        LogicalPx((2.0 * self.ui_zoom).round())
+        self.selection_edge_width
     }
 
     /// `component.md-code-bg` → `{semantic.surface-raised}`
@@ -2032,6 +2122,12 @@ impl crate::theme::Theme {
         self.text_placeholder()
     }
 
+    /// `component.notifications-popup-width` → `{primitive.size-352}` = 352px
+    #[inline]
+    pub fn notifications_popup_width(&self) -> LogicalPx {
+        LogicalPx((352.0 * self.ui_zoom).round())
+    }
+
     /// `component.perm-granted-fg` → `{semantic.accent-success}`
     #[inline]
     pub fn perm_granted_fg(&self) -> HexColor {
@@ -2120,6 +2216,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn plugins_list_width(&self) -> LogicalPx {
         LogicalPx((288.0 * self.ui_zoom).round())
+    }
+
+    /// `component.popup-title-btn-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn popup_title_btn_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.popup-title-btn-size` → `{component.icon-button-size-sm}` = 24px
+    #[inline]
+    pub fn popup_title_btn_size(&self) -> LogicalPx {
+        self.icon_button_size_sm()
+    }
+
+    /// `component.popup-title-edge-inset` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn popup_title_edge_inset(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.popup-title-text-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn popup_title_text_gap(&self) -> LogicalPx {
+        self.spacing_xs
     }
 
     /// `component.port-favorites-bg` → `{semantic.bg-sidebar}`
@@ -2936,6 +3056,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn tag_border(&self) -> HexColor {
         self.border_default()
+    }
+
+    /// `component.tag-disabled-bg` → `{semantic.state-disabled-fill}`
+    #[inline]
+    pub fn tag_disabled_bg(&self) -> HexColor {
+        self.state_disabled_fill()
+    }
+
+    /// `component.tag-disabled-border` → `{semantic.state-disabled-border}`
+    #[inline]
+    pub fn tag_disabled_border(&self) -> HexColor {
+        self.state_disabled_border()
+    }
+
+    /// `component.tag-disabled-fg` → `{semantic.state-disabled-fg}`
+    #[inline]
+    pub fn tag_disabled_fg(&self) -> HexColor {
+        self.state_disabled_fg()
     }
 
     /// `component.tag-dot-size` → `{primitive.size-8}` = 8px

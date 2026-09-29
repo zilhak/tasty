@@ -42,7 +42,7 @@ UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테�
 | `tasty-type-appearance::theme` | `Theme` · `ThemeColors` · `PartialColors` · `ThemeSizing`/`SIZING` · `SurfaceTheme`/`FALLBACK_SURFACE` · `derive_overlays` · `Theme::surface(id)` | 없음 |
 | `tasty-themes` | 전역 `RwLock<Theme>` + `theme()/set_theme()` · `ThemeFile`(TOML) · mocha/latte 임베드 · scan/load/apply/resolve/install · `first_run_init`/`sync_builtin_themes` | `~/.tasty/themes/` |
 | `tasty-settings::appearance` | `AppearanceSettings.{theme,theme_base,theme_overrides,theme_is_light,ui_scale}` | settings IO |
-| `tasty-design-tokens` | 디자인 DTCG export vendor(`dtcg/tasty.tokens.json`, 908 토큰 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정) + 치수 const 생성(`crates/tasty-design-tokens/src/generated/` — primitive 는 `pub(crate)` 로 3-tier 규율 강제) + **component tier 접근자 생성**(`tasty-type-appearance/src/generated_component.rs` 로 산출 — `&Theme` 경유 치수·색 접근자, 아래 "Component tier 접근자") + freshness/`SIZING` 정합/mocha·latte 색 드리프트 가드 테스트. 생성 const 는 초기값·정합용 — 런타임 소비는 `&Theme` 경유(zoom 우회 금지). vendor 갱신 절차는 crate README | 없음 |
+| `tasty-design-tokens` | 디자인 DTCG export vendor(`dtcg/tasty.tokens.json`, 932 토큰 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정) + 치수 const 생성(`crates/tasty-design-tokens/src/generated/` — primitive 는 `pub(crate)` 로 3-tier 규율 강제) + **component tier 접근자 생성**(`tasty-type-appearance/src/generated_component.rs` 로 산출 — `&Theme` 경유 치수·색 접근자, 아래 "Component tier 접근자") + freshness/`SIZING` 정합/mocha·latte 색 드리프트 가드 테스트. 생성 const 는 초기값·정합용 — 런타임 소비는 `&Theme` 경유(zoom 우회 금지). vendor 갱신 절차는 crate README | 없음 |
 
 의존 방향은 `type-geometry ← type-appearance ← tasty-themes ← tasty-settings`다. `tasty-design-tokens` 는 `type-geometry` 만 런타임 의존(정합 테스트만 dev-deps 로 type-appearance/themes 참조) — 본체·egui 미의존.
 
@@ -222,7 +222,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 폰트 상한 | UI는 14px. 콘텐츠 폰트는 별도이며 브랜드 워드마크 17·부트 락업 30은 승인된 예외다. |
 | 보더 | `border_width` 1px. |
 | 지목 링 | 대상을 감싸는 획은 `focus_ring_width` 2px. 색은 용도에 맞는 semantic 색을 고른다. |
-| 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`로 읽고 둘 다 이 역할을 가리킨다. remote attach·preset 목록 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. |
+| 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`, 목록 행 선택 바는 `listctrl_selected_bar_width()`로 읽고 모두 이 역할을 가리킨다. remote attach·preset 목록 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. |
 | painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |
 | 반경 | `corner_radius_sm` 2, 기본 4, `_lg` 8. 반경이 없으면 `CornerRadius::ZERO`. |
 | hover·active | `hover_overlay` 8%, `active_overlay` 12%. 밝은 테마는 검정, 어두운 테마는 흰색에서 만든다. |

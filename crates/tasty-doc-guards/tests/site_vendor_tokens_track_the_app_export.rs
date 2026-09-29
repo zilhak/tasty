@@ -21,7 +21,32 @@ const TIERS: [(&str, &str); 3] = [
 
 /// 사이트에 반영하지 못한 토큰을 이름별로 기록한다. 개수만 같고 이름이 달라져도 실패한다.
 /// 갱신된 토큰은 목록에서 제거한다. 반영을 미루며 항목을 추가하려면 커밋 메시지에 사유를 적는다.
-const LAGGING: &[(&str, &str)] = &[];
+const LAGGING: &[(&str, &str)] = &[
+    ("primitive", "size-352"),
+    ("component", "badge-disabled-bg"),
+    ("component", "badge-disabled-fg"),
+    ("component", "fp-filter-height"),
+    ("component", "fp-footer-label-width"),
+    ("component", "fp-footer-pad-y"),
+    ("component", "fp-header-pad-y"),
+    ("component", "fp-inset-end"),
+    ("component", "fp-inset-start"),
+    ("component", "fp-list-head-pad-y"),
+    ("component", "fp-path-pad-y"),
+    ("component", "fp-row-pad-y"),
+    ("component", "fp-section-gap"),
+    ("component", "input-readonly-bg"),
+    ("component", "input-readonly-border"),
+    ("component", "input-readonly-fg"),
+    ("component", "notifications-popup-width"),
+    ("component", "popup-title-btn-gap"),
+    ("component", "popup-title-btn-size"),
+    ("component", "popup-title-edge-inset"),
+    ("component", "popup-title-text-gap"),
+    ("component", "tag-disabled-bg"),
+    ("component", "tag-disabled-border"),
+    ("component", "tag-disabled-fg"),
+];
 
 /// 빈 결과끼리 비교해 통과하지 않도록 토큰 수 하한을 둔다.
 /// 앱 818·사이트 791개를 측정했을 때 수집 실패를 찾을 수 있도록 그보다 낮게 정한 값이다.
