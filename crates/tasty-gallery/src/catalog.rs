@@ -566,6 +566,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::prim_listctrl::draw,
                         ),
+                        spec(
+                            "listctrl-disabled-trailing",
+                            "Disabled row with a trailing marker — the ink rule",
+                            Some(
+                                "Ink, never opacity — the chevron goes, the trailing Tag / Badge stays in its disabled variant",
+                            ),
+                            components::prim_listctrl::draw_disabled_trailing,
+                        ),
                     ],
                 ),
                 section(

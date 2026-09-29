@@ -3,9 +3,14 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{ListCtrl, ListCtrlItem, TagVariant, tag};
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{BadgeVariant, ListCtrl, ListCtrlItem, TagVariant, badge, tag};
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+
+/// 시안 Spec 패널의 바깥 폭 `--tasty-size-320`(시안은 border-box라 padding·border 포함).
+/// 공개 토큰 접근자가 없어 갤러리 무대 치수로 둔다.
+const THEME_PANEL_WIDTH: LogicalPx = LogicalPx(320.0);
 
 thread_local! {
     static SEL: RefCell<usize> = const { RefCell::new(0) };
@@ -51,6 +56,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row", "min-height 36 + desc"),
             ("selected", "surface-active + 2px bar"),
             ("divided", "separator hairline"),
+            (
+                "disabled",
+                "state-disabled-fg ink · no chevron · non-selectable",
+            ),
+            ("disabled trailing", "Tag/Badge → disabled variant"),
         ],
         &[
             TokenChip::new(
@@ -102,6 +112,117 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "listctrl-chevron-fg",
                 "drill-in chevron",
                 egui::Color32::from(theme.listctrl_chevron_fg()),
+            ),
+        ],
+    );
+}
+
+/// disabled 행의 trailing 표지 — ink 규칙. 한 테마의 패널 하나를 그린다.
+fn disabled_trailing_panel(ui: &mut egui::Ui, th: &Theme, name: &str) {
+    let frame = egui::Frame::new()
+        .fill(egui::Color32::from(th.bg_panel()))
+        .stroke(egui::Stroke::new(
+            th.border_width.value(),
+            egui::Color32::from(th.border_default()),
+        ))
+        .corner_radius(th.corner_radius.value())
+        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8));
+    // 바깥 폭이 시안 값이 되도록 padding·border를 뺀 폭을 콘텐츠에 준다.
+    let content_w = THEME_PANEL_WIDTH.value() - frame.total_margin().sum().x;
+    frame.show(ui, |ui| {
+        // 바깥 horizontal_top의 가로 배치를 물려받지 않게 세로로 쌓는다.
+        ui.vertical(|ui| {
+            ui.set_width(content_w);
+            disabled_trailing_rows(ui, th, name);
+        });
+    });
+}
+
+/// 패널 안 — 테마 이름과 네 행.
+fn disabled_trailing_rows(ui: &mut egui::Ui, th: &Theme, name: &str) {
+    ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+    ui.label(
+        egui::RichText::new(name)
+            .size(th.font_size_caption.value())
+            .color(egui::Color32::from(th.text_muted())),
+    );
+    let success = |ui: &mut egui::Ui, th: &Theme| {
+        tag(ui, th, "Active", TagVariant::Success, true);
+    };
+    let accent = |ui: &mut egui::Ui, th: &Theme| {
+        tag(ui, th, "edited", TagVariant::Accent, false);
+    };
+    let count = |ui: &mut egui::Ui, th: &Theme| {
+        badge(ui, th, "3", BadgeVariant::Primary);
+    };
+    let items = [
+        ListCtrlItem::new("Default")
+            .description("enabled · success Tag")
+            .trailing(&success),
+        ListCtrlItem::new("Readline")
+            .description("disabled · success Tag")
+            .trailing(&success)
+            .disabled(true),
+        ListCtrlItem::new("Custom")
+            .description("disabled · accent Tag")
+            .trailing(&accent)
+            .disabled(true),
+        ListCtrlItem::new("Imported")
+            .description("disabled · Badge")
+            .trailing(&count)
+            .disabled(true),
+    ];
+    ui.push_id(("listctrl_disabled_trailing", name), |ui| {
+        ListCtrl::new().show(ui, th, &items, Some(0));
+    });
+}
+
+/// disabled 행의 trailing Tag·Badge — 숨기지 않고 disabled 변형으로 그린다(Mocha·Latte).
+pub fn draw_disabled_trailing(ui: &mut egui::Ui, theme: &Theme) {
+    // 갤러리 배율을 따르도록 두 팔레트에 현재 zoom을 입힌다.
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let mocha = with_zoom(tasty_themes::mocha_fallback());
+    let latte = with_zoom(crate::host_shell::latte_theme());
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+            disabled_trailing_panel(ui, &mocha, "Mocha");
+            disabled_trailing_panel(ui, &latte, "Latte");
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("row ink", "state-disabled-fg"),
+            ("chevron", "hidden"),
+            ("trailing", "kept · disabled variant (neutral box + ink)"),
+            ("accent Tag", "fill drops out"),
+            ("tint edge", "→ state-disabled-border"),
+            ("opacity", "none"),
+        ],
+        &[
+            TokenChip::new(
+                "tag-disabled-bg",
+                "→ state-disabled-fill",
+                egui::Color32::from(theme.tag_disabled_bg()),
+            ),
+            TokenChip::new(
+                "tag-disabled-border",
+                "→ state-disabled-border",
+                egui::Color32::from(theme.tag_disabled_border()),
+            ),
+            TokenChip::new(
+                "tag-disabled-fg",
+                "→ state-disabled-fg",
+                egui::Color32::from(theme.tag_disabled_fg()),
+            ),
+            TokenChip::new(
+                "badge-disabled-bg",
+                "→ state-disabled-fill",
+                egui::Color32::from(theme.badge_disabled_bg()),
             ),
         ],
     );

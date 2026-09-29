@@ -8,8 +8,11 @@ use tasty_type_geometry::length::LogicalPx;
 use crate::icon_button::IconPainter;
 use crate::tokens::STRUCT_GAP_1;
 
-/// trailing 슬롯 renderer: 행 우측(chevron 왼쪽)에 Tag/Badge 등을 그린다.
+/// trailing 슬롯 renderer: 행 우측(chevron 왼쪽)에 Tag/Badge 등 상태 표지 하나를 그린다.
 /// 예: `|ui, theme| { tag(ui, theme, "Active", TagVariant::Success, true); }`.
+/// disabled 행에서는 [`crate::disabled_chip_scope`] 안에서 호출되므로 `tag`·`badge`는
+/// 자동으로 disabled 변형이 된다. 직접 그리는 글자·글리프는
+/// [`crate::in_disabled_chip_scope`]로 신호를 읽어 disabled ink를 쓴다.
 pub type ListCtrlTrailing<'a> = &'a dyn Fn(&mut egui::Ui, &Theme);
 
 /// 목록의 한 행. 클릭 결과는 items 기준 인덱스다.
@@ -22,7 +25,7 @@ pub struct ListCtrlItem<'a> {
     pub icon: Option<IconPainter<'a>>,
     /// chevron 앞 trailing 슬롯 (Tag/Badge 등).
     pub trailing: Option<ListCtrlTrailing<'a>>,
-    /// 선택 불가·흐림 처리 (chevron 도 숨김).
+    /// 선택 불가. 글자·글리프는 disabled ink, chevron은 숨기고 trailing은 disabled 변형으로 둔다.
     pub disabled: bool,
 }
 
@@ -272,9 +275,13 @@ impl<'a> ListCtrl<'a> {
                     .layout(egui::Layout::right_to_left(egui::Align::Center)),
             );
             if item.disabled {
-                child.disable();
+                // egui의 비활성 Ui는 색을 흐리므로 쓰지 않는다. 표지는 disabled 변형으로 그리고
+                // 선택 가능한 라벨만 끈다. 행 자체는 위에서 hover만 감지한다.
+                child.style_mut().interaction.selectable_labels = false;
+                crate::chip::disabled_chip_scope(&mut child, |ui| trailing(ui, theme));
+            } else {
+                trailing(&mut child, theme);
             }
-            trailing(&mut child, theme);
             right = child.min_rect().left() - theme.spacing_sm.value();
         }
 
@@ -392,6 +399,85 @@ mod tests {
             LogicalPx(1.0),
         );
         assert_eq!(h.value(), 41.0);
+    }
+
+    /// 행 둘(enabled·disabled)을 그리고 `click` 행을 누른 결과, trailing이 받은 신호,
+    /// trailing 글자색을 모은다.
+    fn run_rows(click: Option<usize>) -> (Option<usize>, Vec<bool>, Vec<egui::Color32>) {
+        use std::cell::RefCell;
+        let theme = tasty_themes::mocha_fallback();
+        let seen = RefCell::new(Vec::new());
+        let trailing = |ui: &mut egui::Ui, th: &Theme| {
+            seen.borrow_mut()
+                .push(crate::chip::in_disabled_chip_scope(ui));
+            crate::chip::tag(ui, th, "Active", crate::chip::TagVariant::Success, true);
+        };
+        let items = [
+            ListCtrlItem::new("Default").trailing(&trailing),
+            ListCtrlItem::new("Readline")
+                .trailing(&trailing)
+                .disabled(true),
+        ];
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+        let mut clicked = None;
+        let mut frame = |events: Vec<egui::Event>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    seen.borrow_mut().clear();
+                    if let Some(i) = ListCtrl::new().show(ui, &theme, &items, None).clicked {
+                        clicked = Some(i);
+                    }
+                });
+            })
+        };
+        let mut output = frame(Vec::new());
+        if let Some(row) = click {
+            // 행 가운데를 누르고 뗀다. 행 높이는 min-height, 패널 위 여백은 CentralPanel 기본값이다.
+            let top = ctx.style().spacing.window_margin.top as f32;
+            let row_h = theme.listctrl_row_min_height().value();
+            let pos = egui::pos2(100.0, top + row_h * (row as f32 + 0.5));
+            let press = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            frame(vec![egui::Event::PointerMoved(pos), press(true)]);
+            output = frame(vec![press(false)]);
+        }
+        let mut inks = Vec::new();
+        for clipped in &output.shapes {
+            if let egui::Shape::Text(t) = &clipped.shape
+                && t.galley.text() == "Active"
+            {
+                inks.push(t.fallback_color);
+            }
+        }
+        (clicked, seen.into_inner(), inks)
+    }
+
+    /// disabled 행은 누르면 clicked가 없고, trailing은 disabled 신호를 받아 fade 없는 disabled ink로 그린다.
+    #[test]
+    fn disabled_row_ignores_clicks_and_signals_its_trailing() {
+        let theme = tasty_themes::mocha_fallback();
+        // 대조: 같은 방법으로 enabled 행을 누르면 clicked가 잡힌다.
+        assert_eq!(run_rows(Some(0)).0, Some(0));
+        let (clicked, seen, inks) = run_rows(Some(1));
+        assert_eq!(clicked, None);
+        assert_eq!(seen, vec![false, true]);
+        assert_eq!(
+            inks,
+            vec![
+                theme.accent_success().to_egui(),
+                theme.tag_disabled_fg().to_egui()
+            ]
+        );
     }
 
     #[test]
