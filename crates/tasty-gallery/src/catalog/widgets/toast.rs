@@ -126,6 +126,13 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
          opaque — alpha is only for enter and exit.",
     );
 
+    note(
+        ui,
+        theme,
+        "The host has no agent ToastKind and no hint slot yet, so the agent card uses the \
+         Info accent and the success card omits its hint.",
+    );
+
     meta(
         ui,
         theme,

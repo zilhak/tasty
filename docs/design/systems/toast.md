@@ -68,6 +68,8 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 | Warning | `yellow` | 주의 |
 | Error | `red` | 실패 |
 
+시안의 Toast에는 이 넷 외에 `agent` 변형(`accent-agent` 바)과 본문 옆 `hint` 슬롯(mono Kbd)이 있다. 본체 `ToastKind`와 `ToastEntryView`에는 둘 다 없다. 그래서 갤러리의 Toast stack과 Toast view Case 6은 시안의 agent 카드를 Info 강조색으로 그리고, success 카드의 hint는 생략한다.
+
 > 페이드(등장/소멸 알파만, 위치 이동 없음)는 적용된다 — theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 규칙은 **터미널 콘텐츠** 한정이라 비-터미널 알림 UI 에는 적용되지 않는다.
 
 **경계 처리**: 토스트의 모든 변은 자기 스코프 `scope_rect` 안에 머문다. ① `max_width` 는 surface 안쪽 폭(`width - 2*margin`)으로 클램프해 좁은 surface 에서 좌측 누출을 막고(정상 폭 surface 에선 0.8 폭이 그대로라 시각 무변경), ② 스택이 스코프 상단을 넘으면 더 오래된 토스트는 그리지 않으며, ③ scope 경계로 painter 를 클립해 1px 단위 누출까지 차단한다. 우측 하단 정렬 자체는 유지된다.
