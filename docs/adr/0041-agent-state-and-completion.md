@@ -53,6 +53,13 @@ Claude의 메인 턴이 이어지는 동안에는 idle을 보고하지 않는다
 하고 값 목록을 주지 않아, 진행 값만 세면 문서에 없는 진행 값에서 조기 종결된다. 그래서 끝을 뜻하는 값만
 목록으로 두는 지금의 판정으로 바꿨다.
 
+Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기다리는지 판단한다. 공식 hooks
+문서의 유형 가운데 도구 승인(`permission_prompt`), MCP 입력 폼과 URL 열기(`elicitation_dialog`·
+`elicitation_url_dialog`), 사용량 한도가 풀린 뒤의 `Enter` 대기(`quota_auto_resume_stale`),
+`agent_needs_input`은 `needs_input`이다. 한도로 멈췄던 작업의 재개(`quota_auto_resume_fired`)는
+`active`이고, 나머지 유형은 상태를 바꾸지 않는다. 필드가 없으면 `needs_input`이다. 목록에 없는 값은
+상태를 바꾸지 않고 경고만 남긴다. 유형별 표는 [Claude 통합](../plugins/claude/index.md#notification-유형별-상태)에 있다.
+
 부모에게 전달하는 완료·입력 대기·정지 알림은 부모 종류와 무관하게 완료 로그에 기록한다.
 부모 PTY에 사용자 메시지처럼 넣지 않으며 Codex App Server의 별도 전달 경로도 두지 않는다.
 부모가 그 로그를 읽을 수단은 따로 준비해야 한다. 로그 기록이 부모의 읽기나 다음 턴 시작을
@@ -73,7 +80,7 @@ Claude의 메인 턴이 이어지는 동안에는 idle을 보고하지 않는다
 보수적으로 취소한다. 끝나지 않는 백그라운드 명령을 남긴 채 턴을 끝낸 Claude 자식은 idle이
 되지 않아 spawn·tell 대기 노드와 완료 알림이 오지 않는다. 대기 노드에는 제한 시간을 두어야 한다.
 Claude Code가 끝난 항목에 위 목록에 없는 `status`를 붙여 남기면 그 자식도 idle이 되지 않는다.
-Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
+Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
 
@@ -91,6 +98,15 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   idle이 된다. 조기 종결은 후속 작업을 미완성 산출물로 실행하게 하므로, 끝을 뜻하는 값만 목록으로 두고
   모르는 값 때문에 idle이 늦어지거나 오지 않는 위험을 택한다.
 
+- 목록에 없는 `notification_type`을 `needs_input`으로 보면 새 입력 대기 유형을 놓치지 않지만, 입력 대기가
+  아닌 새 유형이 턴 도중에 오면 spawn·tell 대기 노드와 후속 작업이 조기에 진행된다. 입력 대기 유형은
+  `*_prompt`·`*_dialog`·`*_needs_input`처럼 이름으로 드러날 가능성이 높고 조기 종결의 피해가 더 커서
+  상태를 바꾸지 않는 쪽을 택한다.
+- `elicitation_complete`·`elicitation_response`로 `active`를 되돌리면 대기가 풀린 것을 반영할 수 있지만,
+  `needs_input`의 원인을 기록하지 않으므로 겹친 승인 대기까지 지운다. 원인별 해제 구조가 없어 상태를 바꾸지 않는다.
+- `agent_needs_input`을 무시하면 agent view의 다른 세션 대기나 auto mode의 classifier 요금 안내(약 6초 동안 입력이 없을 때)로
+  조기 종결되지 않지만, 이 세션이 teammate 설정 질문을 하는 경우의 대기를 놓친다. payload로 세 경우를 구분할 수 없어
+  `needs_input`을 유지한다.
 - 승인 화면 문구나 무출력으로 승인 대기를 추측하면 버전 변화와 장기 실행을 오판할 수 있다.
   구조화된 훅이 있는 경우 이를 사용한다.
 - 권한 우회를 기본값으로 정하거나 복원 명령에 남기면 사용자의 설정과 호출 범위를 넘을 수 있다.
@@ -133,6 +149,11 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   자동 검사는 없다. 위 추적 훅의 Stop payload에서 항목의 `status`를 보고, 그 작업이 끝났는데도
   플러그인 로그에 `waiting on background work` 줄이 이어지는지 확인한다.
 - Stop 게이트의 차단 결과를 상태 보고와 연결할 수단이 생길 때.
+- Claude Code가 `Notification` 유형을 추가·변경하거나 payload가 `agent_needs_input`의 세 경우를 구분하게 될 때.
+  코드 목록과 [Claude 통합](../plugins/claude/index.md#notification-유형별-상태) 표의 일치는 claude plugin
+  테스트 `the_docs_notification_table_matches_the_effect_list`가 검사한다. 공식 문서와의 일치는 자동으로
+  검사하지 않는다. 공식 hooks 문서의 Notification matcher 값 목록을 표와 대조하고, 플러그인 로그의
+  `unknown notification_type` 경고를 확인한다.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.
 
 - 완료 로그의 미독 손실·파일 수·부모 자동 수신 요구가 현재 보존 방식으로 감당되지 않을 때.

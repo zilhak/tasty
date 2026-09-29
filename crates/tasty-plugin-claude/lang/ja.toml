@@ -403,7 +403,7 @@ help = "Claude CodeセッションID。フック呼び出し時にstdin JSONの 
 help = "フックメッセージ（通知トークン抽出に使用）。stdin JSONの 'message' から自動設定"
 
 [claude.cli.arg.hook_args.notification_type]
-help = "Claude Code通知のサブタイプ（例：permission_prompt、idle_prompt）。stdin JSONの 'notification_type' から自動設定。needs_input信号からidle_promptを除外する際に使用"
+help = "Claude Code通知のサブタイプ（例：permission_prompt、auth_success）。stdin JSONの 'notification_type' から自動設定。通知が needs_input を記録するか、active を記録するか、状態を変えないかを決める。値がなければ needs_input を記録し、一覧にない値なら状態を変えない"
 
 [claude.cli.arg.hook_args.error]
 help = "ターンを終了させた API エラーの種類（例：overloaded、rate_limit、server_error、authentication_failed）。StopFailure フックで stdin JSON の 'error' から自動設定"

@@ -394,8 +394,61 @@ fn extract_tokens(text: &str) -> Option<u64> {
     None
 }
 
+/// `Notification` 한 건이 자식 상태에 주는 효과.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotificationEffect {
+    /// 이 세션이 사용자 입력을 기다린다.
+    NeedsInput,
+    /// 멈췄던 작업이 이어진다.
+    Active,
+    /// 상태를 바꾸지 않는다.
+    Unchanged,
+}
+
+/// Claude Code `Notification` 의 `notification_type` 별 효과. 공식 hooks 문서의
+/// Notification matcher 값 목록을 모두 적는다. `docs/plugins/claude/index.md` 의
+/// "Notification 유형별 상태" 표가 같은 목록이며 테스트가 두 목록을 비교한다.
+pub(crate) const NOTIFICATION_EFFECTS: &[(&str, NotificationEffect)] = &[
+    ("permission_prompt", NotificationEffect::NeedsInput),
+    ("elicitation_dialog", NotificationEffect::NeedsInput),
+    ("elicitation_url_dialog", NotificationEffect::NeedsInput),
+    ("quota_auto_resume_stale", NotificationEffect::NeedsInput),
+    // agent view 의 다른 백그라운드 세션 대기나 auto mode 의 classifier 요금 안내(약 6초 무입력)일 수도 있지만
+    // payload 로 teammate 설정 질문과 구분할 수 없어 이 세션의 대기로 본다.
+    ("agent_needs_input", NotificationEffect::NeedsInput),
+    ("quota_auto_resume_fired", NotificationEffect::Active),
+    // 턴이 끝난 지 약 60초 뒤의 재알림이다. 턴 종료는 Stop 이 이미 기록했다.
+    ("idle_prompt", NotificationEffect::Unchanged),
+    ("auth_success", NotificationEffect::Unchanged),
+    ("agent_completed", NotificationEffect::Unchanged),
+    // 대기가 풀렸다는 알림이다. needs_input 의 원인을 기록하지 않으므로 active 로 바꾸면 겹친 다른 대기까지 지운다.
+    ("elicitation_complete", NotificationEffect::Unchanged),
+    ("elicitation_response", NotificationEffect::Unchanged),
+    ("quota_auto_resume_disabled", NotificationEffect::Unchanged),
+];
+
+/// `notification_type` 의 효과를 정한다. 필드가 없으면 유형이 생기기 전 버전과 같이 입력 대기로 본다.
+/// 목록에 없는 값은 입력 대기로 보면 spawn/tell 대기 노드가 조기에 끝나므로 상태를 바꾸지 않고 기록만 남긴다.
+pub(crate) fn notification_effect(
+    surface_id: u32,
+    notification_type: Option<&str>,
+) -> NotificationEffect {
+    let Some(ty) = notification_type else {
+        return NotificationEffect::NeedsInput;
+    };
+    match NOTIFICATION_EFFECTS.iter().find(|(name, _)| *name == ty) {
+        Some((_, effect)) => *effect,
+        None => {
+            tracing::warn!(
+                "claude hook notification s{surface_id}: unknown notification_type {ty:?} — state left unchanged"
+            );
+            NotificationEffect::Unchanged
+        }
+    }
+}
+
 /// 훅 이벤트를 호스트 호출 목록으로 바꾼다.
-/// notification은 idle_prompt만 제외하고 나머지 값·누락은 needs_input으로 처리한다.
+/// notification은 [`NOTIFICATION_EFFECTS`] 에 따라 처리한다.
 pub(crate) fn apply_hook(
     event: &str,
     surface_id: u32,
@@ -485,9 +538,8 @@ pub(crate) fn apply_hook(
                 kind: "completion",
             });
         }
-        "notification" => {
-            // idle_prompt만 제외하고 다른 알림은 입력 대기로 처리한다.
-            if notification_type != Some("idle_prompt") {
+        "notification" => match notification_effect(surface_id, notification_type) {
+            NotificationEffect::NeedsInput => {
                 calls.push(HostCall::SetState {
                     surface_id,
                     state: "needs_input",
@@ -501,7 +553,12 @@ pub(crate) fn apply_hook(
                     kind: "needs_input",
                 });
             }
-        }
+            NotificationEffect::Active => calls.push(HostCall::SetState {
+                surface_id,
+                state: "active",
+            }),
+            NotificationEffect::Unchanged => {}
+        },
         "pre-tool-use" => {
             // 설치된 훅의 matcher는 AskUserQuestion이다. 질문 전 입력 대기로 표시한다.
             calls.push(HostCall::SetState {
@@ -1241,31 +1298,163 @@ mod tests {
         assert!(calls.is_empty());
     }
 
-    #[test]
-    fn notification_unknown_type_still_sets_needs_input() {
-        // idle_prompt 이외의 값은 입력 대기로 처리한다.
-        let calls = apply_hook(
+    fn notification_calls(ty: &str) -> Vec<HostCall> {
+        apply_hook(
             "notification",
             100,
             None,
-            Some("auth_success"),
+            Some(ty),
             None,
             &test_translator(),
         )
+        .unwrap()
+    }
+
+    #[test]
+    fn notifications_that_wait_for_input_set_needs_input() {
+        for ty in [
+            "permission_prompt",
+            "elicitation_dialog",
+            "elicitation_url_dialog",
+            "quota_auto_resume_stale",
+            "agent_needs_input",
+        ] {
+            assert_eq!(
+                notification_calls(ty),
+                vec![
+                    HostCall::SetState {
+                        surface_id: 100,
+                        state: "needs_input",
+                    },
+                    HostCall::FireHook {
+                        surface_id: 100,
+                        event: "needs-input",
+                    },
+                    HostCall::SurfaceCompletion {
+                        surface_id: 100,
+                        kind: "needs_input",
+                    },
+                ],
+                "{ty}"
+            );
+        }
+    }
+
+    /// 입력 대기가 아닌 알림이 턴 도중에 오면 needs_input 이 spawn/tell 대기 노드를 조기에 끝낸다.
+    #[test]
+    fn notifications_that_do_not_wait_for_input_leave_the_state_alone() {
+        for ty in [
+            "idle_prompt",
+            "auth_success",
+            "agent_completed",
+            "elicitation_complete",
+            "elicitation_response",
+            "quota_auto_resume_disabled",
+            "future_type",
+        ] {
+            assert_eq!(notification_calls(ty), Vec::new(), "{ty}");
+        }
+    }
+
+    #[test]
+    fn quota_auto_resume_fired_marks_the_child_active() {
+        assert_eq!(
+            notification_calls("quota_auto_resume_fired"),
+            vec![HostCall::SetState {
+                surface_id: 100,
+                state: "active",
+            }]
+        );
+        // 작업 재개 알림은 새 턴이 아니므로 claude-error 중복 기록을 초기화하지 않는다.
+        assert!(!is_new_turn_event("notification"));
+    }
+
+    #[test]
+    fn every_listed_notification_type_is_covered_by_the_tests() {
+        let tested = [
+            "permission_prompt",
+            "elicitation_dialog",
+            "elicitation_url_dialog",
+            "quota_auto_resume_stale",
+            "agent_needs_input",
+            "idle_prompt",
+            "auth_success",
+            "agent_completed",
+            "elicitation_complete",
+            "elicitation_response",
+            "quota_auto_resume_disabled",
+            "quota_auto_resume_fired",
+        ];
+        let listed: std::collections::BTreeSet<&str> =
+            NOTIFICATION_EFFECTS.iter().map(|(name, _)| *name).collect();
+        assert_eq!(listed, tested.into_iter().collect());
+        assert_eq!(listed.len(), NOTIFICATION_EFFECTS.len(), "중복 항목");
+    }
+
+    /// 문서 표 "Notification 유형별 상태" 는 [`NOTIFICATION_EFFECTS`] 의 사본이다.
+    /// 유형 이름과 효과를 양방향으로 비교한다.
+    #[test]
+    fn the_docs_notification_table_matches_the_effect_list() {
+        let doc = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/plugins/claude/index.md"),
+        )
         .unwrap();
-        assert!(!calls.is_empty());
-        assert!(calls.iter().any(|c| matches!(
-            c,
-            HostCall::SetState {
-                state: "needs_input",
-                ..
+        let rows = notification_doc_rows(&doc);
+        let code: std::collections::BTreeMap<String, &str> = NOTIFICATION_EFFECTS
+            .iter()
+            .map(|(name, effect)| (name.to_string(), effect_doc_label(*effect)))
+            .collect();
+        assert_eq!(rows, code);
+    }
+
+    fn effect_doc_label(effect: NotificationEffect) -> &'static str {
+        match effect {
+            NotificationEffect::NeedsInput => "needs_input",
+            NotificationEffect::Active => "active",
+            NotificationEffect::Unchanged => "변경 없음",
+        }
+    }
+
+    /// `#### Notification 유형별 상태` 제목 아래 첫 표에서 (유형, 상태) 행을 읽는다.
+    fn notification_doc_rows(doc: &str) -> std::collections::BTreeMap<String, &str> {
+        let start = doc
+            .find("#### Notification 유형별 상태")
+            .expect("docs 표 제목");
+        let mut rows = std::collections::BTreeMap::new();
+        let mut in_table = false;
+        for line in doc[start..].lines().skip(1) {
+            if line.starts_with('|') {
+                in_table = true;
+                let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+                let (Some(ty), Some(state)) = (cells.get(1), cells.get(2)) else {
+                    continue;
+                };
+                if let Some(name) = ty.strip_prefix('`').and_then(|t| t.strip_suffix('`')) {
+                    let state = state.trim_matches('`');
+                    assert!(
+                        rows.insert(name.to_string(), state).is_none(),
+                        "docs 표 중복 {name}"
+                    );
+                }
+            } else if in_table {
+                break;
             }
-        )));
+        }
+        rows
+    }
+
+    #[test]
+    fn the_docs_table_reader_sees_a_changed_row() {
+        let doc = "#### Notification 유형별 상태\n\n| 유형 | 상태 |\n|---|---|\n| `a` | needs_input |\n| `b` | 변경 없음 |\n\n| `c` | active |\n";
+        let rows = notification_doc_rows(doc);
+        assert_eq!(rows.len(), 2, "표 뒤의 다른 표는 읽지 않는다");
+        assert_eq!(rows["b"], "변경 없음");
     }
 
     #[test]
     fn notification_missing_type_still_sets_needs_input() {
-        // notification_type이 없어도 입력 대기로 처리한다.
+        // notification_type 이 생기기 전 버전과 같이 필드가 없으면 입력 대기로 처리한다.
         let calls = apply_hook("notification", 100, None, None, None, &test_translator()).unwrap();
         assert!(calls.iter().any(|c| matches!(
             c,

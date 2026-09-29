@@ -403,7 +403,7 @@ help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when
 help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'."
 
 [claude.cli.arg.hook_args.notification_type]
-help = "Claude Code notification subtype (e.g. permission_prompt, idle_prompt). Auto-populated from stdin JSON 'notification_type'. Used to exclude idle_prompt from the needs_input signal."
+help = "Claude Code notification subtype (e.g. permission_prompt, auth_success). Auto-populated from stdin JSON 'notification_type'. Decides whether the notification sets needs_input, sets active, or leaves the state unchanged. A missing value sets needs_input; an unlisted value leaves the state unchanged."
 
 [claude.cli.arg.hook_args.error]
 help = "API error kind that ended the turn (e.g. overloaded, rate_limit, server_error, authentication_failed). Auto-populated from stdin JSON 'error' on the StopFailure hook."

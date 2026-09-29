@@ -241,7 +241,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set** | `completion` |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
-| `Notification` | `""`(전체) | `notification` | `needs_input`(단 `notification_type`이 `idle_prompt`면 건너뜀 — 무입력 대기 오탐이라 실제 질문 없음) | `needs-input`(동일 조건) | — | `needs_input`(동일 조건) |
+| `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure` **unset** | — |
 | `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
@@ -256,6 +256,31 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 `UserPromptSubmit`은 child가 2번째 이후 prompt를 받을 때 직전 `Stop` hook이 남긴 `idle=true` 잔재를 지우는 데 필수다 — 미등록 시 실제로는 active인 child를 idle로 오보고하는 상태 버그가 생긴다.
 `PreToolUse`/`PostToolUse`만 matcher `AskUserQuestion`으로 좁혀 등록돼 그 툴 호출에만 발생한다(나머지 7개는 matcher `""`로 이벤트 전체를 받는다) — 실측(실제 Claude Code를 띄워 hook stdin payload를 덤프해 확인) 결과 `AskUserQuestion` 답변은 `UserPromptSubmit`을 발생시키지 않으므로(질문/답변이 같은 prompt turn 안의 tool 상호작용이라 새 프롬프트로 집계되지 않음), 기존 `UserPromptSubmit`(→active)만으로는 이 케이스의 needs_input 해제 시점을 잡을 수 없다.
 `PreToolUse`가 질문 UI가 뜨기 **전에** 발생해(`tool_input.questions` 포함) needs_input을 켜고, `PostToolUse`가 답변 즉시(관찰상 `duration_ms: 0`) 그 짝으로 active로 되돌린다 — `needs_input`은 이제 `Notification`과 `PreToolUse` 두 경로에서 나온다.
+
+#### Notification 유형별 상태
+
+`Notification`은 `notification_type`에 따라 처리한다. 아래 표는 공식 hooks 문서의 Notification matcher 값 목록 전부다.
+`needs_input`은 상태를 `needs_input`으로 바꾸고 `needs-input` 훅과 `needs_input` 화면 알림을 함께 보낸다.
+`active`는 상태만 바꾼다. 변경 없음은 호스트 호출을 만들지 않는다. 입력 토큰 기록(`input_tokens`)은 유형과 무관하게 `message`에서 읽는다.
+
+| 유형 | 상태 | 이유 |
+|---|---|---|
+| `permission_prompt` | `needs_input` | 도구 사용 승인 대기 |
+| `elicitation_dialog` | `needs_input` | MCP 서버의 입력 폼 대기 |
+| `elicitation_url_dialog` | `needs_input` | MCP 서버의 URL 열기 요청 대기 |
+| `quota_auto_resume_stale` | `needs_input` | 사용량 한도가 풀린 뒤 `Enter`를 기다린다 |
+| `agent_needs_input` | `needs_input` | agent view의 다른 백그라운드 세션이 기다리는 경우와 auto mode의 classifier 요금 안내(약 6초 동안 입력이 없을 때)도 이 유형이지만, payload로 teammate 설정 질문과 구분할 수 없어 이 세션의 대기로 본다 |
+| `quota_auto_resume_fired` | `active` | 사용량 한도로 멈췄던 작업을 이어 간다 |
+| `idle_prompt` | 변경 없음 | 응답을 마친 지 약 60초 뒤의 재알림이다. 턴 종료는 `Stop`이 이미 기록했다 |
+| `auth_success` | 변경 없음 | 인증 완료. 입력 대기가 아니다 |
+| `agent_completed` | 변경 없음 | 다른 백그라운드 세션의 종료다 |
+| `elicitation_complete` | 변경 없음 | 대기가 풀렸다는 알림이다. `needs_input`의 원인을 기록하지 않으므로 `active`로 바꾸면 겹친 다른 대기까지 지운다 |
+| `elicitation_response` | 변경 없음 | `elicitation_complete`와 같다 |
+| `quota_auto_resume_disabled` | 변경 없음 | 사용량 한도 대기를 이어 가지 않고 끝냈다. 입력 대기가 아니다 |
+
+- `notification_type`이 없으면 `needs_input`으로 처리한다. 유형 필드가 생기기 전 버전과 같은 동작이다.
+- 목록에 없는 값은 상태를 바꾸지 않고 plugin 로그에 경고를 남긴다. 입력 대기가 아닌 새 유형을 `needs_input`으로 받으면 `spawn`/`tell` 대기 노드와 `--depends-on` 후속 작업이 자식 턴 도중에 진행된다. 입력 대기 유형이 새로 생기면 이 표와 코드 목록에 추가한다.
+- 이 표는 `hook.rs`의 `NOTIFICATION_EFFECTS`와 같은 목록이다. plugin 크레이트 테스트가 유형과 상태를 양방향으로 비교한다.
 
 `StopFailure`는 API 오류로 끝난 턴을 알린다. `529 Overloaded`, rate limit, 인증 실패 등의
 오류가 여기에 해당한다. 이 훅에서는 상태를 idle로 바꾸고 `claude-idle`도 보내 부모의
@@ -304,7 +329,7 @@ install이 심는 훅은 이 9개뿐이다 — matcher가 지정되지 않은 `P
 install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다. `PreToolUse`/`PostToolUse`처럼 matcher가 있는 이벤트는 marker 일치만으로는 matcher 값까지 보증되지 않으므로, install이 matcher도 canonical 값(`AskUserQuestion`)으로 함께 갱신한다.
 
 이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-stop-failure`/`claude-error`/`claude-error-stalled` 5개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 5개 키로의 hook 등록도 거부된다.
-**이 5개가 전부 위 9개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(idle_prompt 제외)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
+**이 5개가 전부 위 9개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(`needs_input` 유형)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
 API 에러로 턴이 **끝나면** `StopFailure`가 구조적 신호를 주지만, 요청이 응답 없이 매달리면 턴이 끝나지 않아 `Stop`도 `StopFailure`도 **발생하지 않는다** — 그때는 PTY에 찍히는 에러 문자열과 출력 정적이 얻을 수 있는 유일한 신호다.
 `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 

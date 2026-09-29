@@ -403,7 +403,7 @@ help = "Claude Code 세션 ID. 훅 호출 시 stdin JSON의 'session_id'에서 �
 help = "훅 메시지(알림 토큰 추출에 사용). stdin JSON의 'message'에서 자동 입력"
 
 [claude.cli.arg.hook_args.notification_type]
-help = "Claude Code 알림 하위 종류(예: permission_prompt, idle_prompt). stdin JSON의 'notification_type'에서 자동 입력. needs_input 신호에서 idle_prompt를 제외하는 데 사용"
+help = "Claude Code 알림 하위 종류(예: permission_prompt, auth_success). stdin JSON의 'notification_type'에서 자동 입력. 알림이 needs_input을 기록할지, active를 기록할지, 상태를 그대로 둘지 정한다. 값이 없으면 needs_input을 기록하고 목록에 없는 값이면 상태를 그대로 둔다"
 
 [claude.cli.arg.hook_args.error]
 help = "턴을 끝낸 API 에러 종류(예: overloaded, rate_limit, server_error, authentication_failed). StopFailure 훅에서 stdin JSON의 'error'로 자동 입력"
