@@ -2073,6 +2073,7 @@ mod tests {
                 "배율 {z}"
             );
             assert_eq!(t.tab_indicator_width(), LogicalPx(2.0), "배율 {z}");
+            assert_eq!(t.listctrl_selected_bar_width(), LogicalPx(2.0), "배율 {z}");
         }
     }
 
