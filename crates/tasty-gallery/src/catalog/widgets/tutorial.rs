@@ -11,8 +11,6 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
-/// 주제 목록만 스크롤하도록 제한하는 specimen 상한. 팝업 머리와 진행 영역은 밖에 둔다.
-const TOPIC_LIST_SCROLL_MAX_H: LogicalPx = LogicalPx(200.0);
 /// 중앙 topic 팝업 주위의 scrim을 보여 주는 데모 무대 높이. marker 링 크기가 아니다.
 const TOPIC_STAGE_H: LogicalPx = LogicalPx(300.0);
 const TAIL: LogicalPx = LogicalPx(12.0); // 12px diamond → 삼각 tail
@@ -440,8 +438,10 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                 .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
                 .show(ui, |ui| {
                     ui.set_width(POPUP_W.value());
+                    // 주제 목록만 스크롤한다. 본체와 같은 상한이며, 배율을 타는 행을 묶으므로 상한도 배율을 탄다.
+                    // 화면 전용 치수라 DTCG 토큰이 없고 수기 Theme 접근자가 값을 가진다(디자인 결정).
                     egui::ScrollArea::vertical()
-                        .max_height(TOPIC_LIST_SCROLL_MAX_H.value())
+                        .max_height(theme.tutorial_topic_body_max_height().value())
                         .auto_shrink([false, true])
                         .drag_to_scroll(false)
                         .show(ui, |ui| {
