@@ -934,12 +934,12 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 
 ## 탭 스트립 스크롤 화살표 — disabled ink (Layouts)
 
-디자인 `gallery/foundations.jsx` Spec "Disabled ink — no contrast target, Latte one step up"의 C4 행과 순서 사다리 ↔ 갤러리 `catalog/components/tab_bar.rs::draw_scroll_arrows`(Layouts › Tab strips, `tab-scroll-arrows` spec) ↔ 본체 `src/adapters/ui/tab_bar/view.rs`의 `<`·`>` 화살표.
+디자인 `gallery/foundations.jsx` Spec "Disabled ink — no contrast target, Latte one step up"의 C4 행과 순서 사다리 ↔ 갤러리 `catalog/components/tab_bar.rs::draw_scroll_arrows`(Layouts › Tab strips, `tab-scroll-arrows` spec) ↔ 본체 `src/adapters/ui/tab_bar/view.rs`의 스크롤 화살표.
 
 | 디자인 요소 | 갤러리 | 본체 | 비고 |
 |---|---|---|---|
 | C4 스트립(`control-height-tab` 높이, `size-288` 폭, surface-raised, radius-sm) | `scroll_strip` | 탭이 넘치는 pane의 탭 바 | 폭 288은 예제 전용 이름 붙은 상수 |
-| 화살표 칸(`tab-scroll-arrow-width` 정사각, 자체 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow_cell` | `"<"`·`">"` 문자, `tab_bar_arrow_font_size`, 칸 채움 없음 | 모양은 아래 "페인 탭 스트립 — 스크롤 화살표 모양"을 따른다 |
+| 화살표 칸(`tab-scroll-arrow-width` 정사각, 자체 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow_cell` | 같은 모양(공용 `paint_tab_scroll_arrow`) | 모양은 아래 "페인 탭 스트립 — 스크롤 화살표 모양"을 따른다 |
 | `<` disabled · `>` enabled 잉크 | `tab_scroll_arrow_fg_disabled()` · `tab_scroll_arrow_fg()` | 같은 접근자 | 둘 다 component role. 값은 text-disabled · text-muted |
 | 순서 사다리 placeholder < disabled < muted < secondary < primary | `ink_ladder` | 없음(규칙 전시) | 순서 규칙은 [theme 문서](theme.md) 대비 행 |
 
@@ -952,7 +952,7 @@ C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는
 | 디자인 요소 | 갤러리 | 본체 | 비고 |
 |---|---|---|---|
 | `Strip`(`size-560` 폭, 포커스 surface-raised · 비포커스 bg-sidebar, 아래 separator) | `strip` | 탭이 넘치는 pane의 탭 바 | 폭 560은 예제 전용 이름 붙은 상수 |
-| `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` | `"<"`·`">"` 문자 | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
+| `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` | `tasty_ui_widgets::paint_tab_scroll_arrow`. 칸 폭은 zoom을 적용하지 않는 스트립 높이 `tab_bar_height` | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
 | 도달한 끝은 disabled(`tab-scroll-arrow-fg-disabled`) | `arrow`의 `disabled` | `can_left`·`can_right` | disabled 쪽은 hover 채움·응답이 없다 |
 | `TabCellS` 최소형(아이콘 · 제목 · 닫기 칸) | `tab_cell` | `tab_bar/tab.rs::draw_tab` | 두 번째 탭이 활성이다 |
 

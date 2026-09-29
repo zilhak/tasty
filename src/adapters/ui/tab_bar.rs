@@ -901,4 +901,100 @@ mod tests {
         let shapes = shapes_with_move_mark(None);
         assert!(move_colored_segments(&shapes).is_empty());
     }
+
+    /// 이미지 로더를 설치하고 pane 하나를 여러 프레임 그린 뒤 마지막 프레임의 도형을 돌려준다.
+    /// 새 Area의 페이드인이 끝나도록 충분히 그린다.
+    fn settled_strip_shapes(pane: PaneTabBarView) -> Vec<egui::Shape> {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
+        let panes = vec![pane];
+        let mut out = egui::FullOutput::default();
+        for _ in 0..30 {
+            out = ctx.run(egui::RawInput::default(), |ctx| {
+                let props = PaneTabBarsProps {
+                    theme: &theme,
+                    kb: &kb,
+                    panes: &panes,
+                    scale_factor: 1.0,
+                    tab_width: 160.0,
+                    tab_font_size: 12.0,
+                    active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                    drag: None,
+                    switch_overlay_pane: None,
+                    native_content: &[],
+                };
+                drop(draw_pane_tab_bars_view(ctx, &props));
+            });
+        }
+        let mut shapes = Vec::new();
+        fn flatten(s: egui::Shape, out: &mut Vec<egui::Shape>) {
+            match s {
+                egui::Shape::Vec(v) => v.into_iter().for_each(|s| flatten(s, out)),
+                other => out.push(other),
+            }
+        }
+        out.shapes
+            .into_iter()
+            .for_each(|c| flatten(c.shape, &mut shapes));
+        shapes
+    }
+
+    /// 스크롤 화살표 글리프(`tab_scroll_arrow_glyph_size` 정사각 이미지)의 중심과 tint.
+    fn arrow_glyphs(shapes: &[egui::Shape]) -> Vec<(egui::Pos2, egui::Color32)> {
+        let size = test_theme().tab_scroll_arrow_glyph_size().value();
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r)
+                    if r.brush.is_some()
+                        && (r.rect.width() - size).abs() < 0.01
+                        && (r.rect.height() - size).abs() < 0.01 =>
+                {
+                    Some((r.rect.center(), r.fill))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn scrolling_pane(scroll: f32) -> PaneTabBarView {
+        let mut pane = mk_pane_w(1, &["a", "b", "c", "d", "e", "f", "g", "h"], 0, true, 400.0);
+        pane.scroll_offset = scroll;
+        pane
+    }
+
+    #[test]
+    fn scroll_arrows_are_chevrons_in_square_strip_height_cells() {
+        let th = test_theme();
+        let shapes = settled_strip_shapes(scrolling_pane(0.0));
+        let bar_h = th.tab_bar_height.value();
+        // 폭 400에서 split·search 두 칸(28씩)을 뺀 344가 [왼쪽 화살표][viewport][오른쪽 화살표]다.
+        let right_center = 400.0 - 28.0 * 2.0 - bar_h / 2.0;
+        let glyphs = arrow_glyphs(&shapes);
+        assert_eq!(glyphs.len(), 2, "{glyphs:?}");
+        assert!((glyphs[0].0.x - bar_h / 2.0).abs() < 0.01, "{glyphs:?}");
+        assert!((glyphs[1].0.x - right_center).abs() < 0.01, "{glyphs:?}");
+        assert_eq!(glyphs[0].1, th.tab_scroll_arrow_fg_disabled().to_egui());
+        assert_eq!(glyphs[1].1, th.tab_scroll_arrow_fg().to_egui());
+        let arrow_text = shapes.iter().any(|s| match s {
+            egui::Shape::Text(t) => matches!(t.galley.text(), "<" | ">"),
+            _ => false,
+        });
+        assert!(!arrow_text, "화살표를 문자로 그리지 않는다");
+    }
+
+    #[test]
+    fn scrolled_to_the_end_disables_the_right_arrow() {
+        let th = test_theme();
+        let glyphs = arrow_glyphs(&settled_strip_shapes(scrolling_pane(10_000.0)));
+        assert_eq!(
+            glyphs.iter().map(|g| g.1).collect::<Vec<_>>(),
+            vec![
+                th.tab_scroll_arrow_fg().to_egui(),
+                th.tab_scroll_arrow_fg_disabled().to_egui()
+            ]
+        );
+    }
 }

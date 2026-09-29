@@ -4,6 +4,7 @@ use super::{PaneTabBarView, PaneTabBarsOutput, PaneTabBarsProps, TabBarAction};
 use crate::adapters::ui::icons;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{TabScrollArrowInk, TabScrollArrowSide};
 
 /// 순수 시각 view. MainViewState/CoreState/`theme::theme()` 비의존.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — pane별 탭바 horizontal 클로저 나열이 구조적(clippy 가 클로저를 과대계상)
@@ -22,10 +23,11 @@ pub fn draw_pane_tab_bars_view(
     let plus_w: f32 = 28.0;
     let icon_btn_w: f32 = 28.0;
     let icon_glyph: f32 = 14.0;
-    let arrow_w: f32 = 20.0;
+    // 스크롤 화살표 칸은 스트립 높이와 같은 정사각이다. `tab_scroll_arrow_width()`와 같은
+    // control-height-tab 토큰이지만, 스트립 높이처럼 zoom을 적용하지 않는 값을 써야 정사각이 유지된다.
+    let arrow_w = bar_h;
     let separator_w: f32 = 1.0;
     let plus_font_size = th.tab_bar_label_font_size.value();
-    let arrow_font_size = th.tab_bar_arrow_font_size.value();
 
     let dimensions = StripDimensions {
         tab_width: LogicalPx(tab_w),
@@ -105,24 +107,13 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                let arrow_color = if can_left {
-                                    th.tab_scroll_arrow_fg()
-                                } else {
-                                    th.tab_scroll_arrow_fg_disabled()
-                                };
-                                if resp.hovered() && can_left {
-                                    ui.painter().rect_filled(
-                                        r,
-                                        0.0,
-                                        th.overlay_hover().to_egui_premultiplied(),
-                                    );
-                                }
-                                ui.painter().text(
-                                    r.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "<",
-                                    egui::FontId::proportional(arrow_font_size),
-                                    arrow_color.into(),
+                                tasty_ui_widgets::paint_tab_scroll_arrow(
+                                    ui,
+                                    th,
+                                    r,
+                                    TabScrollArrowSide::Left,
+                                    arrow_ink(can_left),
+                                    resp.hovered(),
                                 );
                                 if resp.clicked() && can_left {
                                     output.actions.push(TabBarAction::ScrollLeft {
@@ -266,24 +257,13 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                let arrow_color = if can_right {
-                                    th.tab_scroll_arrow_fg()
-                                } else {
-                                    th.tab_scroll_arrow_fg_disabled()
-                                };
-                                if resp.hovered() && can_right {
-                                    ui.painter().rect_filled(
-                                        r,
-                                        0.0,
-                                        th.overlay_hover().to_egui_premultiplied(),
-                                    );
-                                }
-                                ui.painter().text(
-                                    r.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    ">",
-                                    egui::FontId::proportional(arrow_font_size),
-                                    arrow_color.into(),
+                                tasty_ui_widgets::paint_tab_scroll_arrow(
+                                    ui,
+                                    th,
+                                    r,
+                                    TabScrollArrowSide::Right,
+                                    arrow_ink(can_right),
+                                    resp.hovered(),
                                 );
                                 if resp.clicked() && can_right {
                                     output.actions.push(TabBarAction::ScrollRight {
@@ -391,6 +371,15 @@ pub fn draw_pane_tab_bars_view(
     }
 
     output
+}
+
+/// 스크롤할 수 있는 쪽은 enabled, 끝에 닿은 쪽은 disabled 잉크다.
+fn arrow_ink(can_scroll: bool) -> TabScrollArrowInk {
+    if can_scroll {
+        TabScrollArrowInk::Enabled
+    } else {
+        TabScrollArrowInk::Disabled
+    }
 }
 
 /// Dimensions shared by strip assembly and overlay geometry.

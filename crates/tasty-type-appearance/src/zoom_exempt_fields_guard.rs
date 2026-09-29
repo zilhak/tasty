@@ -59,7 +59,6 @@ const EXEMPT: &[(&str, Reason)] = &[
     ("tab_width", Reason::TabBar),
     ("tab_bar_height", Reason::TabBar),
     ("tab_bar_label_font_size", Reason::TabBar),
-    ("tab_bar_arrow_font_size", Reason::TabBar),
     ("status_bar_height", Reason::StatusBar),
     ("titlebar_height", Reason::Titlebar),
     ("traffic_size", Reason::Titlebar),

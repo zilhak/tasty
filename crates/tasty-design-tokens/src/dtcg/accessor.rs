@@ -107,7 +107,6 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     // 위의 배율 적용 필드가 먼저 선택된다. 아래 필드는 치수 검사에 필요하다.
     ("semantic.control-height-tab", "tab_bar_height"),
     ("semantic.font-size-body", "tab_bar_label_font_size"),
-    ("semantic.font-size-caption", "tab_bar_arrow_font_size"),
 ];
 
 /// semantic 색 토큰과 Theme 필드·메서드의 대응표. `self.<expr>`로 생성한다.

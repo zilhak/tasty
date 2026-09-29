@@ -68,7 +68,6 @@ fn sizing_value(field: &str) -> f32 {
         "tab_indicator_width" => SIZING.tab_indicator_width.0,
         "tab_bar_height" => SIZING.tab_bar_height.0,
         "tab_bar_label_font_size" => SIZING.tab_bar_label_font_size.0,
-        "tab_bar_arrow_font_size" => SIZING.tab_bar_arrow_font_size.0,
         other => panic!(
             "sizing_parity: SEMANTIC_DIM_TO_THEME_FIELD 의 필드 `{other}` 가 \
              sizing_value() 에 없음 — match arm 을 추가할 것"

@@ -99,7 +99,7 @@ Pane 이 존재하면 항상 그 위에 표시(Pane 마다 하나).
 - **탭** — leading **kind 아이콘** + 표시명. 상태 표지: **busy 녹색 점**, **알림 노란 라벨**. **활성 탭** 강조, **포커스 Pane** 여부로 스트립 배경(surface0 vs mantle) 구분.
 - **close 버튼**(✕) — 활성 탭 또는 hover 시 우측에 노출.
 - **`+` 추가 버튼** — 새 탭. 우클릭 = 프리셋 생성 메뉴.
-- **스크롤 화살표**(◀▶) — 탭이 폭을 넘칠 때만.
+- **스크롤 화살표**(◀▶) — 탭이 폭을 넘칠 때만. chevron 아이콘(`tab_scroll_arrow_glyph_size`)을 스트립 높이와 같은 정사각 칸에 그리고, 칸은 채우지 않아 스트립 바탕이 그대로 보인다. 끝에 닿은 쪽은 disabled 잉크이며 hover 채움과 클릭 응답이 없다. 스크롤할 수 있는 쪽에만 hover 채움(`tab_scroll_arrow_hover_bg`)을 깐다. 공용 위젯 `horizontal_tab_bar_with_arrows`도 같은 painter(`tasty_ui_widgets::paint_tab_scroll_arrow`)를 쓴다.
 - **우측 액션** — split(⊟) / search(🔍) 아이콘 → 해당 Pane 분할 / 활성 surface 검색.
 - 탭 너비·라벨 폰트 크기는 **사용자 옵션**.
 

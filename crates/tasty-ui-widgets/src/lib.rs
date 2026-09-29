@@ -66,7 +66,9 @@ pub use chrome_slot::top_right_inset_square;
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;
-pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
+pub use horizontal_tab_bar::{
+    TabScrollArrowInk, TabScrollArrowSide, horizontal_tab_bar_with_arrows, paint_tab_scroll_arrow,
+};
 pub use html_script_banner::{
     HtmlScriptBannerOutput, HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind,
     html_script_banner, html_script_banner_is_narrow, html_script_marker,

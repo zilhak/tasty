@@ -79,7 +79,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.set_max_width(theme.measure_sm.value());
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
-                    horizontal_tab_bar_with_arrows(ui, "gallery_layout_shell", TABS, &mut st.tab);
+                    horizontal_tab_bar_with_arrows(
+                        ui,
+                        theme,
+                        "gallery_layout_shell",
+                        TABS,
+                        &mut st.tab,
+                    );
                 });
             });
         });

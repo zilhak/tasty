@@ -306,8 +306,6 @@ pub struct ThemeSizing {
     pub tab_bar_height: LogicalPx,
     /// "+" 새 탭 버튼 폰트 크기.
     pub tab_bar_label_font_size: LogicalPx,
-    /// 좌/우 스크롤 화살표 폰트 크기.
-    pub tab_bar_arrow_font_size: LogicalPx,
     // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
     // tab_bar 와 동일하게 px 고정 — with_colors_and_zoom 에서 SIZING 그대로 복사.
     /// 작업영역 하단 StatusBar 높이.
@@ -404,7 +402,6 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     sidebar_collapsed_workspace_height: LogicalPx(28.0),
     tab_bar_height: LogicalPx(24.0),
     tab_bar_label_font_size: LogicalPx(13.0),
-    tab_bar_arrow_font_size: LogicalPx(11.0),
     status_bar_height: LogicalPx(24.0),
     toolbar_height: LogicalPx(32.0),
     titlebar_height: LogicalPx(36.0),
@@ -908,9 +905,6 @@ pub struct Theme {
     /// 탭 라벨 폰트 크기.
     /// 탭바 크롬은 UI zoom 제외.
     pub tab_bar_label_font_size: LogicalPx,
-    /// 좌/우 스크롤 화살표 폰트 크기.
-    /// 탭바 크롬은 UI zoom 제외.
-    pub tab_bar_arrow_font_size: LogicalPx,
     // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
     /// 작업영역 하단 StatusBar 높이.
     /// 상태바 크롬은 UI zoom 제외.
@@ -1096,7 +1090,6 @@ impl Theme {
             // Tab bar 전용 — 사용자 제약 "탭바 zoom 제외" 에 따라 SIZING 그대로 (zoom 미적용).
             tab_bar_height: SIZING.tab_bar_height,
             tab_bar_label_font_size: SIZING.tab_bar_label_font_size,
-            tab_bar_arrow_font_size: SIZING.tab_bar_arrow_font_size,
             // 작업영역 하단 StatusBar — tab_bar 와 동일하게 zoom 미적용.
             status_bar_height: SIZING.status_bar_height,
             toolbar_height: zoomed(SIZING.toolbar_height),
@@ -2129,7 +2122,6 @@ mod tests {
         );
         assert_eq!(base.tab_bar_height, zoomed.tab_bar_height);
         assert_eq!(base.tab_bar_label_font_size, zoomed.tab_bar_label_font_size);
-        assert_eq!(base.tab_bar_arrow_font_size, zoomed.tab_bar_arrow_font_size);
         assert_eq!(base.titlebar_height, zoomed.titlebar_height);
         assert_eq!(base.traffic_size, zoomed.traffic_size);
         assert_eq!(base.caption_width, zoomed.caption_width);
@@ -2184,14 +2176,6 @@ mod tests {
         assert_eq!(
             t_large.tab_bar_label_font_size,
             SIZING.tab_bar_label_font_size
-        );
-        assert_eq!(
-            t_small.tab_bar_arrow_font_size,
-            SIZING.tab_bar_arrow_font_size
-        );
-        assert_eq!(
-            t_large.tab_bar_arrow_font_size,
-            SIZING.tab_bar_arrow_font_size
         );
         // titlebar(CSD) 토큰도 zoom 무관 (px 고정 정책).
         assert_eq!(t_small.titlebar_height, SIZING.titlebar_height);
