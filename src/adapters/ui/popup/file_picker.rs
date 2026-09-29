@@ -170,18 +170,29 @@ pub enum FilePickerAction {
     EditName(String),
 }
 
+/// 뷰 한 프레임의 결과.
+pub struct FilePickerViewOut {
+    pub action: FilePickerAction,
+    /// 뷰가 그린 헤더 줄. 셸 타이틀바가 없는 popup 은 이 사각형을 이동 손잡이로 보고한다.
+    /// Esc 로 바로 닫히는 프레임에는 헤더를 그리지 않아 `Rect::NOTHING` 이다.
+    pub header_rect: egui::Rect,
+}
+
 /// 헤더·경로·푸터 영역을 먼저 정하고 목록에는 남은 높이를 준다.
 /// 긴 경로는 breadcrumb 안에서 줄여 푸터 버튼 영역을 보존한다.
-pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> FilePickerAction {
+pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> FilePickerViewOut {
     let ctx = ui.ctx().clone();
     if props.owns_escape && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        return FilePickerAction::Cancel;
+        return FilePickerViewOut {
+            action: FilePickerAction::Cancel,
+            header_rect: egui::Rect::NOTHING,
+        };
     }
 
     let th = props.theme;
     let mut action = FilePickerAction::None;
 
-    ui.horizontal(|ui| {
+    let header = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         ui.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
@@ -205,6 +216,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
             }
         });
     });
+    let header_rect = header.response.rect;
     ui.add_space(th.spacing_xs.value());
     hline(ui, th);
 
@@ -245,7 +257,10 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     footer::draw_footer(&mut footer_ui, props, &mut action);
 
     ui.advance_cursor_after_rect(rest);
-    action
+    FilePickerViewOut {
+        action,
+        header_rect,
+    }
 }
 
 fn draw_body(
@@ -583,8 +598,10 @@ pub fn draw_file_picker(
         error_conn_reconnect,
     };
 
-    let action = draw_file_picker_view(ui, &props);
-    apply_action(state, engine, action)
+    let out = draw_file_picker_view(ui, &props);
+    // 셸 타이틀바가 없으므로 위젯 헤더 줄을 이동 손잡이로 보고한다.
+    super::report_header_drag_rect(ui.ctx(), FILE_PICKER_POPUP_ID, out.header_rect);
+    apply_action(state, engine, out.action)
 }
 
 fn apply_action(

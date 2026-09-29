@@ -108,6 +108,13 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 
 <a id="목록의-긴-파일명-1"></a>
 
+### 창 구성 — 헤더는 하나다
+
+본체 file picker popup 은 셸 타이틀바 없이(`headless`) 뷰가 그린 헤더 한 줄로 시작한다. 헤더는
+파일 글리프 · 제목 · 원격이면 host 배지 · 닫기 ✕ 다. 이 헤더 줄이 이동 손잡이다 — 뷰가 그린 헤더
+사각형을 매니저에 보고하고(`DragHandle::Region`), 빈 곳을 끌면 popup 이 움직인다. 헤더 안의 ✕ 는
+드래그보다 먼저 입력을 받는다. 닫는 길은 헤더 ✕ · Cancel · Esc 이고 셋 다 `Cancelled` 를 남긴다.
+
 ### 긴 경로 — 넘침은 path bar 가 흡수한다
 
 경로가 아무리 깊거나 성분 이름이 길어도 footer 의 취소·확정 버튼은 popup 안에 온전히 남는다.
@@ -342,6 +349,10 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   그 요청을 낸 plugin 에만(unicast) push 된다.
 - Given Tools 메뉴로 연 기존 흐름(`requester: None`) Then `file_picker.trigger` 도입 후에도
   동일하게 동작하고 결과 이벤트가 발생하지 않는다(회귀 없음).
+- Given 본체 file picker 를 연다 When 첫 프레임이 그려진다 Then 제목과 닫기 ✕ 는 헤더에 한 번씩만
+  보이고, 셸 타이틀바는 없다.
+- Given 본체 file picker 가 열려 있다 When 헤더의 빈 곳을 끌면 Then popup 이 이동하고, 헤더 ✕ 를
+  누르면 이동하지 않고 닫히며 결과는 `Cancelled` 다.
 - Given 설정 › 기타 › 스크립트 Add card When Browse… 를 누르면 Then 설정 창 안에 로컬 홈
   디렉토리를 보여주는 파일 선택 popup 이 열리고, 떠 있는 동안 IPC 왕복(`tasty list info`)이
   응답한다.

@@ -877,17 +877,66 @@ fn file_picker_escape_close_marks_cancelled() {
     ));
 }
 
+/// 한 egui context 로 프레임을 이어 그린다. 위젯 버튼 클릭과 드래그는 누름·뗌이 같은
+/// context 의 여러 프레임에 걸쳐야 인식된다.
+fn run_frames(
+    inputs: Vec<egui::RawInput>,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) -> egui::Context {
+    let ctx = egui::Context::default();
+    for raw in inputs {
+        drop(ctx.run(raw, |ctx| {
+            draw_popups(ctx, state, engine, &[], term_rect(), 1.0);
+        }));
+    }
+    ctx
+}
+
+fn pointer_input(pos: egui::Pos2, pressed: Option<bool>) -> egui::RawInput {
+    let mut raw = empty_input();
+    raw.events.push(egui::Event::PointerMoved(pos));
+    if let Some(pressed) = pressed {
+        raw.events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    raw
+}
+
+/// 뷰가 첫 프레임에 보고한 file picker 헤더 줄.
+fn file_picker_header_rect(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) -> egui::Rect {
+    let ctx = run_frames(vec![empty_input()], state, engine);
+    crate::adapters::ui::popup::reported_header_drag_rect(&ctx, FILE_PICKER_POPUP_ID)
+        .expect("file picker 뷰가 헤더 줄을 보고해야 한다")
+}
+
+/// 셸 타이틀바가 없어 닫기 ×는 위젯 헤더 오른쪽 끝에 있다. 그 버튼으로 닫아도 헤더 드래그가
+/// 가로채지 않고 Cancelled 가 남는다. 실제 클릭처럼 버튼 위에 먼저 올린 뒤 누른다 — 매니저는
+/// 직전 프레임에 위젯이 포인터를 가졌는지로 버튼과 드래그 영역을 가른다.
 #[test]
-fn file_picker_x_button_close_marks_cancelled() {
+fn file_picker_header_close_button_marks_cancelled() {
     let (mut state, mut engine) = test_state();
     state.dialogs.file_picker = Some(mk_file_picker_data());
     state
         .popups
         .open_at_focused(FILE_PICKER_POPUP_ID, FIXED_POS);
-    let (pos, size) = primed_popup_geometry(FILE_PICKER_POPUP_ID, &mut state, &mut engine);
+    let header = file_picker_header_rect(&mut state, &mut engine);
+    let close = egui::pos2(header.right() - header.height() / 2.0, header.center().y);
 
-    run_frame(
-        press_input(close_button_point(pos, size)),
+    run_frames(
+        vec![
+            empty_input(),
+            pointer_input(close, None),
+            pointer_input(close, Some(true)),
+            pointer_input(close, Some(false)),
+        ],
         &mut state,
         &mut engine,
     );
@@ -897,6 +946,39 @@ fn file_picker_x_button_close_marks_cancelled() {
         state.dialogs.file_picker.as_ref().unwrap().result,
         Some(FilePickerResult::Cancelled)
     ));
+}
+
+/// 헤더의 빈 곳(제목 오른쪽)을 끌면 popup 이 이동하고 닫히지 않는다.
+#[test]
+fn file_picker_header_drag_moves_the_popup() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.file_picker = Some(mk_file_picker_data());
+    state
+        .popups
+        .open_at_focused(FILE_PICKER_POPUP_ID, FIXED_POS);
+    let header = file_picker_header_rect(&mut state, &mut engine);
+    let before = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().pos;
+    let grab = header.center();
+    let delta = egui::vec2(-60.0, -40.0);
+
+    run_frames(
+        vec![
+            empty_input(),
+            pointer_input(grab, Some(true)),
+            pointer_input(grab + delta * 0.5, None),
+            pointer_input(grab + delta, None),
+            pointer_input(grab + delta, Some(false)),
+        ],
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(state.popups.is_open(FILE_PICKER_POPUP_ID));
+    let after = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().pos;
+    assert!(
+        (after - before - delta).length() < 1.0,
+        "헤더를 {delta:?} 끌었는데 popup 위치가 {before:?} → {after:?}"
+    );
 }
 
 #[test]

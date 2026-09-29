@@ -210,7 +210,10 @@ pub fn report_header_drag_rect(ctx: &egui::Context, popup_id: PopupId, rect: egu
 }
 
 /// 뷰가 보고한 헤더 드래그 rect 를 읽는다(hit-test 용). 아직 보고 전이면 None.
-fn reported_header_drag_rect(ctx: &egui::Context, popup_id: PopupId) -> Option<egui::Rect> {
+pub(crate) fn reported_header_drag_rect(
+    ctx: &egui::Context,
+    popup_id: PopupId,
+) -> Option<egui::Rect> {
     ctx.memory(|m| m.data.get_temp(header_drag_rect_id(popup_id)))
 }
 

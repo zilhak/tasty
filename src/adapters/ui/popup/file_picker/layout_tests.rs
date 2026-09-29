@@ -4,9 +4,17 @@ use super::*;
 const CONFIRM: &str = "CONFIRM-LABEL";
 const CANCEL: &str = "CANCEL-LABEL";
 
-/// 메인 피커 PopupDef 와 같은 크기의 popup 이 실제로 내주는 콘텐츠 사각형(타이틀바·여백 제외).
+/// 메인 피커 PopupDef 대로(셸 타이틀바 유무 포함) 만든 같은 크기의 popup.
+fn picker_state(size: egui::Vec2) -> crate::adapters::ui::popup::PopupState {
+    let def = crate::adapters::ui::popup::defs::find(FILE_PICKER_POPUP_ID)
+        .expect("file picker PopupDef 가 등록돼 있어야 한다");
+    crate::adapters::ui::popup::PopupState::new(FILE_PICKER_POPUP_ID, "t", size)
+        .with_headless(def.headless)
+}
+
+/// 그 popup 이 실제로 내주는 콘텐츠 사각형(타이틀바·여백 제외).
 fn content_rect(size: egui::Vec2) -> egui::Rect {
-    crate::adapters::ui::popup::PopupState::new(FILE_PICKER_POPUP_ID, "t", size).content_rect()
+    picker_state(size).content_rect()
 }
 
 fn deep_crumbs(depth: usize, seg: &str) -> Vec<CrumbView> {
@@ -178,6 +186,28 @@ fn footer_buttons_are_never_clipped_at_any_path_length() {
             }
         }
     }
+}
+
+/// 셸 타이틀바 없이 위젯 헤더 하나만 있다 — 제목은 한 번만 칠해지고, popup 윗변에서
+/// 타이틀바 한 줄 높이 안에 들어간다. 셸 타이틀바가 있으면 위젯 헤더가 그만큼 내려간다.
+#[test]
+fn the_title_is_painted_once_in_the_top_strip_of_the_popup() {
+    let size = egui::vec2(640.0, 480.0);
+    let (_, shapes) = painted(
+        size,
+        &deep_crumbs(1, "d"),
+        FilePickerMode::Open { selection_text: "" },
+    );
+    let hits: Vec<_> = shapes.iter().filter(|(t, _, _)| t == "title").collect();
+    assert_eq!(hits.len(), 1, "제목은 한 번만 칠해진다: {hits:?}");
+    let top = picker_state(size).pos.y;
+    let strip = crate::adapters::ui::popup::title_bar_height().value();
+    assert!(
+        hits[0].1.bottom() <= top + strip,
+        "제목이 popup 윗줄({top}..{}) 밖에 있다: {:?}",
+        top + strip,
+        hits[0].1
+    );
 }
 
 /// 깊은 경로는 가운데를 접고, 위치를 알려주는 둘(현재 폴더와 부모)과 root 는 보인다.

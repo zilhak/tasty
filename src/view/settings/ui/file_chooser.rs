@@ -415,7 +415,7 @@ fn draw_view(
         error_conn_title: t("filepicker.error_conn.title"),
         error_conn_reconnect: t("filepicker.error_conn.reconnect"),
     };
-    draw_file_picker_view(ui, &props)
+    draw_file_picker_view(ui, &props).action
 }
 
 #[cfg(test)]

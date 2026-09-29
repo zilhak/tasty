@@ -168,9 +168,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: Some(super::file_picker::picker_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
-                headless: false,
+                // 위젯이 제목·닫기 헤더를 직접 그리므로 셸 타이틀바를 두지 않는다.
+                headless: true,
                 sticky_focus: false,
-                drag_handle: DragHandle::TitleBar,
+                drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_picker::draw_file_picker,
