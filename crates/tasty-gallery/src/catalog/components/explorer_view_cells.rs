@@ -6,67 +6,115 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
 
-use crate::catalog::icons::{FILE, FOLDER, MockGlyph};
+use crate::catalog::icons::{FILE, FOLDER, IMAGE, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 /// 셀 폭.
 const CELL_W: LogicalPx = LogicalPx(80.0);
 
+/// 샘플 항목의 종류. 이미지는 accent-info 로 칠한다(본체 explorer 와 같은 규칙).
 #[derive(Clone, Copy)]
-struct Entry {
-    glyph: MockGlyph,
-    name: &'static str,
-    /// 본체 Entry와 같은 필드 구성을 유지한다. 이 예제의 폴더 표시는 glyph로 정한다.
-    #[allow(dead_code)]
-    dir: bool,
+enum Kind {
+    Folder,
+    File,
+    Image,
 }
 
+impl Kind {
+    fn glyph(self) -> MockGlyph {
+        match self {
+            Kind::Folder => FOLDER,
+            Kind::File => FILE,
+            Kind::Image => IMAGE,
+        }
+    }
+
+    /// 이미지만 accent-info, 나머지는 `muted`(호출부가 정한 기본 글리프 색)를 쓴다.
+    fn tint(self, theme: &Theme, muted: egui::Color32) -> egui::Color32 {
+        match self {
+            Kind::Image => egui::Color32::from(theme.accent_info()),
+            Kind::Folder | Kind::File => muted,
+        }
+    }
+}
+
+/// 시안이 정적으로 보여 주는 셀 상태. 선택은 클릭으로 바뀌므로 여기 두지 않는다.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    None,
+    Hover,
+    Cut,
+}
+
+#[derive(Clone, Copy)]
+struct Entry {
+    kind: Kind,
+    name: &'static str,
+    mark: Mark,
+}
+
+const fn entry(kind: Kind, name: &'static str, mark: Mark) -> Entry {
+    Entry { kind, name, mark }
+}
+
+/// 시안 `ExpGridMini`. 선택 초기값은 diagram.png(GRID_SEL).
 const GRID: &[Entry] = &[
-    Entry {
-        glyph: FOLDER,
-        name: "src",
-        dir: true,
-    },
-    Entry {
-        glyph: FOLDER,
-        name: "assets",
-        dir: true,
-    },
-    Entry {
-        glyph: FILE,
-        name: "photo.png",
-        dir: false,
-    },
-    Entry {
-        glyph: FILE,
-        name: "README.md",
-        dir: false,
-    },
-    // 긴 이름 샘플 — 3줄 wrap + '…' 말줄임 시연 (design ExpGridMini).
-    Entry {
-        glyph: FILE,
-        name: "rust-toolchain.toml",
-        dir: false,
-    },
-    Entry {
-        glyph: FILE,
-        name: "THIRD_PARTY_LICENSES.md",
-        dir: false,
-    },
+    entry(Kind::Folder, "mockup-exports", Mark::None),
+    // 긴 이름 샘플 — 3줄 wrap + '…' 말줄임 시연.
+    entry(Kind::File, "rust-toolchain.toml", Mark::None),
+    entry(Kind::Image, "diagram.png", Mark::None),
+    entry(Kind::File, "notes.md", Mark::Hover),
+    entry(Kind::File, "THIRD_PARTY_LICENSES.md", Mark::None),
+    entry(Kind::Folder, "node_modules", Mark::None),
+];
+
+/// 시안 `ExpListMini`. 선택 초기값은 diagram.png(LIST_SEL).
+const LIST: &[Entry] = &[
+    entry(Kind::Folder, "mockup-exports", Mark::None),
+    entry(Kind::File, "report.pdf", Mark::None),
+    entry(Kind::Image, "diagram.png", Mark::None),
+    entry(Kind::File, "notes.md", Mark::Hover),
+    entry(Kind::File, "build.sh", Mark::None),
+    entry(Kind::File, "archive.zip", Mark::Cut),
 ];
 
 struct DetailRow {
-    glyph: MockGlyph,
+    kind: Kind,
     name: &'static str,
     size: &'static str,
     modified: &'static str,
-    kind: &'static str,
+    kind_label: &'static str,
 }
+
+/// 시안 View modes 의 Detail 열. 선택 초기값은 diagram.png(DETAIL_SEL).
+const DETAIL: &[DetailRow] = &[
+    DetailRow {
+        kind: Kind::Folder,
+        name: "mockup-exports",
+        size: "—",
+        modified: "06-20 14:30",
+        kind_label: "Folder",
+    },
+    DetailRow {
+        kind: Kind::File,
+        name: "report.pdf",
+        size: "2.4 MB",
+        modified: "06-24 09:12",
+        kind_label: "PDF",
+    },
+    DetailRow {
+        kind: Kind::Image,
+        name: "diagram.png",
+        size: "488 KB",
+        modified: "06-26 18:05",
+        kind_label: "PNG",
+    },
+];
 
 thread_local! {
     static GRID_SEL: RefCell<usize> = const { RefCell::new(2) };
-    static LIST_SEL: RefCell<usize> = const { RefCell::new(0) };
-    static DETAIL_SEL: RefCell<usize> = const { RefCell::new(3) };
+    static LIST_SEL: RefCell<usize> = const { RefCell::new(2) };
+    static DETAIL_SEL: RefCell<usize> = const { RefCell::new(2) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -117,60 +165,47 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             .show(ui, |ui| {
                 ui.set_width(theme.measure_sm.value());
                 ui.spacing_mut().item_spacing.y = 0.0;
-                LIST_SEL.with(|s| {
-                    let mut sel = s.borrow_mut();
-                    for (i, e) in GRID.iter().enumerate() {
-                        let g = e.glyph;
-                        let r = tree_row(
-                            ui,
-                            theme,
-                            0,
-                            false,
-                            false,
-                            Some(&|ui, rect, c| g.image(rect.height(), c).paint_at(ui, rect)),
-                            e.name,
-                            None,
-                            i == *sel,
-                            true,
-                        );
-                        if r.clicked() {
-                            *sel = i;
+                // cluster 의 가로 배치를 물려받으면 행 scope 가 옆으로 붙는다. 세로 배치 안에 둔다.
+                ui.vertical(|ui| {
+                    LIST_SEL.with(|s| {
+                        let mut sel = s.borrow_mut();
+                        for (i, e) in LIST.iter().enumerate() {
+                            let clicked = ui
+                                .scope(|ui| {
+                                    if e.mark == Mark::Cut {
+                                        ui.multiply_opacity(theme.cut_pending_opacity());
+                                    }
+                                    if e.mark == Mark::Hover {
+                                        static_row_hover(ui, theme);
+                                    }
+                                    let kind = e.kind;
+                                    tree_row(
+                                        ui,
+                                        theme,
+                                        0,
+                                        false,
+                                        false,
+                                        Some(&|ui, rect, c| {
+                                            kind.glyph()
+                                                .image(rect.height(), kind.tint(theme, c))
+                                                .paint_at(ui, rect)
+                                        }),
+                                        e.name,
+                                        None,
+                                        i == *sel,
+                                        true,
+                                    )
+                                    .clicked()
+                                })
+                                .inner;
+                            if clicked {
+                                *sel = i;
+                            }
                         }
-                    }
+                    });
                 });
             });
     });
-
-    let rows = [
-        DetailRow {
-            glyph: FOLDER,
-            name: "src",
-            size: "—",
-            modified: "2026-06-20",
-            kind: "Folder",
-        },
-        DetailRow {
-            glyph: FOLDER,
-            name: "assets",
-            size: "—",
-            modified: "2026-06-18",
-            kind: "Folder",
-        },
-        DetailRow {
-            glyph: FILE,
-            name: "README.md",
-            size: "4.7 KB",
-            modified: "2026-06-27",
-            kind: "Markdown",
-        },
-        DetailRow {
-            glyph: FILE,
-            name: "photo.png",
-            size: "1.2 MB",
-            modified: "2026-06-28",
-            kind: "PNG image",
-        },
-    ];
 
     cluster(
         ui,
@@ -217,68 +252,80 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             ];
 
-            DETAIL_SEL.with(|s| {
-                let mut sel = s.borrow_mut();
-                let selected = *sel;
-                let out = Table::new(columns)
-                    .active_sort(0_usize, TableSortDir::Asc)
-                    .header_fill(egui::Color32::from(theme.bg_sidebar()))
-                    .selectable(true)
-                    .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
-                    .id_salt("explorer_detail_demo")
-                    .show(
-                        ui,
-                        theme,
-                        &rows,
-                        |row: &DetailRow| {
-                            rows.iter().position(|r| r.name == row.name) == Some(selected)
-                        },
-                        |ui, th, row, col| match col {
-                            0 => {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                                    let g = row.glyph;
-                                    let sz = th.icon_glyph_size_md.value();
-                                    let (rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(sz, sz),
-                                        egui::Sense::hover(),
-                                    );
-                                    g.image(sz, egui::Color32::from(th.text_muted()))
-                                        .paint_at(ui, rect);
+            // cluster 는 가로 배치라 표 본문이 헤더 오른쪽(화면 밖)으로 밀린다. 세로 배치 안에 둔다.
+            ui.vertical(|ui| {
+                DETAIL_SEL.with(|s| {
+                    let mut sel = s.borrow_mut();
+                    let selected = *sel;
+                    let out = Table::new(columns)
+                        .active_sort(0_usize, TableSortDir::Asc)
+                        .header_fill(egui::Color32::from(theme.bg_sidebar()))
+                        .selectable(true)
+                        .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
+                        .id_salt("explorer_detail_demo")
+                        .show(
+                            ui,
+                            theme,
+                            DETAIL,
+                            |row: &DetailRow| {
+                                DETAIL.iter().position(|r| r.name == row.name) == Some(selected)
+                            },
+                            |ui, th, row, col| match col {
+                                0 => {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                                        let sz = th.icon_glyph_size_md.value();
+                                        let (rect, _) = ui.allocate_exact_size(
+                                            egui::vec2(sz, sz),
+                                            egui::Sense::hover(),
+                                        );
+                                        row.kind
+                                            .glyph()
+                                            .image(
+                                                sz,
+                                                row.kind
+                                                    .tint(th, egui::Color32::from(th.text_muted())),
+                                            )
+                                            .paint_at(ui, rect);
+                                        ui.label(
+                                            egui::RichText::new(row.name)
+                                                .size(th.font_size_body.value())
+                                                .color(egui::Color32::from(th.text_primary())),
+                                        );
+                                    });
+                                }
+                                1 => {
+                                    ui.add_space(th.spacing_sm.value());
                                     ui.label(
-                                        egui::RichText::new(row.name)
-                                            .size(th.font_size_body.value())
-                                            .color(egui::Color32::from(th.text_primary())),
+                                        egui::RichText::new(row.size)
+                                            .font(egui::FontId::monospace(
+                                                th.font_size_caption.value(),
+                                            ))
+                                            .color(egui::Color32::from(th.text_muted())),
                                     );
-                                });
-                            }
-                            1 => {
-                                ui.add_space(th.spacing_sm.value());
-                                ui.label(
-                                    egui::RichText::new(row.size)
-                                        .font(egui::FontId::monospace(th.font_size_caption.value()))
-                                        .color(egui::Color32::from(th.text_muted())),
-                                );
-                            }
-                            2 => {
-                                ui.label(
-                                    egui::RichText::new(row.modified)
-                                        .font(egui::FontId::monospace(th.font_size_caption.value()))
-                                        .color(egui::Color32::from(th.text_muted())),
-                                );
-                            }
-                            _ => {
-                                ui.label(
-                                    egui::RichText::new(row.kind)
-                                        .size(th.font_size_caption.value())
-                                        .color(egui::Color32::from(th.text_muted())),
-                                );
-                            }
-                        },
-                    );
-                if let Some(i) = out.clicked_row {
-                    *sel = i;
-                }
+                                }
+                                2 => {
+                                    ui.label(
+                                        egui::RichText::new(row.modified)
+                                            .font(egui::FontId::monospace(
+                                                th.font_size_caption.value(),
+                                            ))
+                                            .color(egui::Color32::from(th.text_muted())),
+                                    );
+                                }
+                                _ => {
+                                    ui.label(
+                                        egui::RichText::new(row.kind_label)
+                                            .size(th.font_size_caption.value())
+                                            .color(egui::Color32::from(th.text_muted())),
+                                    );
+                                }
+                            },
+                        );
+                    if let Some(i) = out.clicked_row {
+                        *sel = i;
+                    }
+                });
             });
         },
     );
@@ -348,7 +395,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
             theme.corner_radius.value(),
             egui::Color32::from(theme.surface_active()),
         );
-    } else if resp.hovered() {
+    } else if resp.hovered() || e.mark == Mark::Hover {
         p.rect_filled(
             rect,
             theme.corner_radius.value(),
@@ -370,8 +417,12 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         ),
         egui::vec2(glyph, glyph),
     );
-    e.glyph
-        .image(glyph, fg_dim(egui::Color32::from(theme.text_muted())))
+    e.kind
+        .glyph()
+        .image(
+            glyph,
+            fg_dim(e.kind.tint(theme, egui::Color32::from(theme.text_muted()))),
+        )
         .paint_at(ui, glyph_rect);
 
     let label_color = fg_dim(if selected {
@@ -410,4 +461,20 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
     );
 
     resp.clicked()
+}
+
+/// 시안이 hover 상태로 보여 주는 목록 행의 배경. 다음 `tree_row` 자리에 먼저 칠한다.
+/// 실제 포인터가 올라가 있으면 `tree_row` 가 같은 배경을 칠하므로 겹쳐 칠하지 않는다.
+fn static_row_hover(ui: &mut egui::Ui, theme: &Theme) {
+    let rect = egui::Rect::from_min_size(
+        ui.cursor().min,
+        egui::vec2(ui.available_width(), theme.tree_row_height().value()),
+    );
+    if !ui.rect_contains_pointer(rect) {
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            theme.tree_row_bg_hover().to_egui_premultiplied(),
+        );
+    }
 }
