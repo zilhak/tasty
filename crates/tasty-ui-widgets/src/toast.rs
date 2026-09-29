@@ -7,8 +7,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
 
 use crate::tokens::{
-    TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_GAP,
-    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_PADDING_X as PADDING_X,
+    TOAST_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_PADDING_X as PADDING_X,
     TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
 };
 
@@ -139,10 +138,11 @@ pub fn layout_card(
     max_width: f32,
 ) -> (std::sync::Arc<egui::Galley>, egui::Vec2) {
     let font = egui::FontId::proportional(theme.font_size_body.value());
+    let accent_w = theme.toast_accent_width.value();
     // wrap_width 음수 방지(스코프 클램프로 max_width 가 작아질 때).
-    let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
+    let wrap_width = (max_width - PADDING_X * 2.0 - accent_w).max(1.0);
     let galley = ctx.fonts(|f| f.layout(message, font, theme.text_primary().into(), wrap_width));
-    let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
+    let toast_w = (galley.size().x + PADDING_X * 2.0 + accent_w).min(max_width);
     let toast_h = galley.size().y + PADDING_Y * 2.0;
     (galley, egui::vec2(toast_w, toast_h))
 }
@@ -202,10 +202,9 @@ pub fn draw_card(
         egui::StrokeKind::Inside,
     );
 
-    let bar_rect = egui::Rect::from_min_max(
-        rect.min,
-        egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
-    );
+    let accent_w = theme.toast_accent_width.value();
+    let bar_rect =
+        egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + accent_w, rect.max.y));
     let bar_radius = egui::CornerRadius {
         nw: theme.corner_radius.value() as u8,
         sw: theme.corner_radius.value() as u8,
@@ -214,9 +213,6 @@ pub fn draw_card(
     };
     painter.rect_filled(bar_rect, bar_radius, colors.accent);
 
-    let text_pos = egui::pos2(
-        rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
-        rect.min.y + PADDING_Y,
-    );
+    let text_pos = egui::pos2(rect.min.x + accent_w + PADDING_X, rect.min.y + PADDING_Y);
     painter.galley(text_pos, galley, colors.text);
 }

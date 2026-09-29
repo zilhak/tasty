@@ -46,7 +46,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("rail", "toast-accent-width left"),
+            ("rail", "toast-accent-width (3) left"),
             ("radius", "4"),
             ("fill", "surface-raised"),
             ("max-width", "toast-max-width"),

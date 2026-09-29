@@ -53,9 +53,6 @@ pub const TOAST_SCOPE_MARGIN: f32 = SIZING.spacing_md.0;
 pub const TOAST_PADDING_X: f32 = SIZING.spacing_md.0;
 /// 본문 텍스트의 상하 여백. = `SIZING.spacing_sm`.
 pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
-/// 좌측 컬러 바 두께. = `SIZING.spacing_xs`.
-pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
-
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
 
