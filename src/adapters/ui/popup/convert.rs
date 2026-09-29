@@ -4,12 +4,9 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
-use egui::emath::GuiRounding as _;
 use serde_json::json;
 use tasty_type_geometry::length::LogicalPx;
 
-/// Item height in the convert popup menu.
-const ITEM_HEIGHT: LogicalPx = LogicalPx(24.0);
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
 const HIDDEN_KINDS: &[&str] = &["empty"];
 /// 메뉴의 우선 표시 순서. 나머지는 이름순으로 배치한다. kind의 실행 동작과는 별개다.
@@ -17,34 +14,28 @@ const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 /// registry가 비어 있을 수 있는 등록 시점의 임시 항목 수. 실제 크기는 sizer에서 다시 계산한다.
 const DEFAULT_KIND_COUNT: usize = 5;
 
-/// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
+/// Sizer: 현재 kind 를 뺀 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// `popup::frame::draw_popup_layer`가 프레임마다 호출하므로 plugin이 새 kind를
-/// 등록한 직후 자동으로 popup 높이가 맞춰진다.
+/// 등록한 직후나 UI 배율이 바뀐 직후 자동으로 popup 크기가 맞춰진다.
 pub fn convert_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
-    let count = enumerate_convertible_kinds(state, engine).len();
-    convert_popup_size_for(count, effective_item_spacing(engine))
+    convert_popup_size_for(&theme::theme(), listed_kinds(state, engine).len())
 }
 
 /// Default size used when the popup is first registered (registry가 비어 있을 수 있는 시점).
 pub fn convert_popup_default_size() -> egui::Vec2 {
-    // ui_scale 미적용 baseline (medium = 1.0). sizer 가 매 프레임 재계산하므로 실제
-    // 렌더링에는 영향 없음 — register 시점 placeholder.
-    convert_popup_size_for(DEFAULT_KIND_COUNT, theme::theme().spacing_xs.value())
+    // sizer 가 매 프레임 재계산하므로 실제 렌더링에는 영향 없음 — register 시점 placeholder.
+    convert_popup_size_for(&theme::theme(), DEFAULT_KIND_COUNT)
 }
 
-/// 실제 egui 항목 간격과 같은 값으로 크기를 계산한다. Theme에 이미 UI 배율이 적용돼 있다.
-fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
-    theme::theme().spacing_xs.value().round_ui()
-}
-
-fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
+/// 폭은 `convert-popup-width` 토큰(UI 배율 적용), 높이는 타이틀바 + 콘텐츠 여백 × 2 +
+/// 행 수 × MenuItem 높이다. 행 사이 간격은 없다.
+fn convert_popup_size_for(th: &Theme, count: usize) -> egui::Vec2 {
     let count = count.max(1);
-    let content_h = ITEM_HEIGHT.scaled(count as f32)
-        + LogicalPx((count.saturating_sub(1)) as f32 * item_spacing);
+    let content_h = th.menu_item_height().scaled(count as f32);
     // 누적 반올림 오차와 anti-alias 경계 잘림을 줄이기 위한 1px 여유.
     let safety_margin = 1.0;
     egui::vec2(
-        200.0,
+        th.convert_popup_width().value(),
         (popup::title_bar_height()
             + popup::content_margin().scaled(2.0)
             + content_h
@@ -58,43 +49,46 @@ mod size_tests {
     use super::*;
 
     /// 마지막 항목이 잘리지 않으려면 sizer popup_h 가 *실제 필요 height* 이상이어야
-    /// 한다. 실제 필요 = title_bar_height() + 2·content_margin() + N·ITEM_HEIGHT
-    ///                + (N−1)·actual_spacing.
-    fn assert_fits(count: usize, item_spacing: f32) {
-        let popup_h = convert_popup_size_for(count, item_spacing).y;
+    /// 한다. 실제 필요 = title_bar_height() + 2·content_margin() + N·menu_item_height.
+    fn assert_fits(count: usize) {
+        let th = theme::theme();
+        let popup_h = convert_popup_size_for(&th, count).y;
         let needed = popup::title_bar_height()
             + popup::content_margin().scaled(2.0)
-            + ITEM_HEIGHT.scaled(count as f32)
-            + LogicalPx((count.saturating_sub(1)) as f32 * item_spacing);
+            + th.menu_item_height().scaled(count as f32);
         assert!(
             LogicalPx(popup_h) >= needed,
-            "popup_h ({popup_h}) < needed ({needed}) for count={count} spacing={item_spacing}"
+            "popup_h ({popup_h}) < needed ({needed}) for count={count}"
         );
     }
 
     #[test]
-    fn fits_five_items_medium_scale() {
-        assert_fits(5, 4.0);
-    }
-
-    #[test]
-    fn fits_five_items_large_scale() {
-        assert_fits(5, 4.78125);
-    }
-
-    #[test]
-    fn fits_five_items_small_scale() {
-        assert_fits(5, 3.40625);
-    }
-
-    #[test]
     fn fits_single_item() {
-        assert_fits(1, 4.0);
+        assert_fits(1);
     }
 
     #[test]
-    fn fits_many_items_large_scale() {
-        assert_fits(10, 4.78125);
+    fn fits_five_items() {
+        assert_fits(5);
+    }
+
+    #[test]
+    fn fits_many_items() {
+        assert_fits(10);
+    }
+
+    /// 폭은 옛 리터럴 200 이 아니라 토큰 240 에 UI 배율을 곱한 값이다.
+    #[test]
+    fn width_is_the_token_times_ui_scale() {
+        for zoom in [0.85, 1.0, 1.2] {
+            let base = theme::theme();
+            let th = Theme::with_colors_and_zoom(base.to_colors(), base.is_light, zoom);
+            assert_eq!(
+                convert_popup_size_for(&th, 3).x,
+                (240.0 * zoom).round(),
+                "zoom {zoom}"
+            );
+        }
     }
 }
 
@@ -129,6 +123,24 @@ struct ConvertItem {
     kind: &'static str,
     label: String,
     shortcut: Option<char>,
+    icon: icons::Icon,
+}
+
+/// 팝업에 나열할 항목 — 대상 surface 의 현재 kind 는 바꿀 대상이 아니라 뺀다.
+fn listed_kinds(state: &AppState, engine: &crate::core::CoreState) -> Vec<ConvertItem> {
+    let current = state
+        .dialogs
+        .convert_popup
+        .and_then(|id| current_surface_kind(state, engine, id));
+    without_current(enumerate_convertible_kinds(state, engine), current)
+}
+
+/// 현재 kind 를 목록에서 뺀다. 나머지 순서는 그대로다. 현재 kind 가 없으면 전부 남긴다.
+fn without_current(items: Vec<ConvertItem>, current: Option<&str>) -> Vec<ConvertItem> {
+    items
+        .into_iter()
+        .filter(|it| Some(it.kind) != current)
+        .collect()
 }
 
 /// SurfaceKindRegistry로부터 변환 가능한 kind 목록을 생성.
@@ -137,6 +149,7 @@ struct ConvertItem {
 /// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
 /// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
+/// - icon: registry 의 아이콘 이름. 없으면 FILE.
 fn enumerate_convertible_kinds(
     state: &AppState,
     engine: &crate::core::CoreState,
@@ -171,10 +184,17 @@ fn enumerate_convertible_kinds(
         if let Some(c) = shortcut {
             used_shortcuts.push(c);
         }
+        let icon = engine
+            .surface_registry
+            .get(kind)
+            .and_then(|d| d.icon.clone())
+            .map(|n| icons::from_name(&n))
+            .unwrap_or(icons::FILE);
         items.push(ConvertItem {
             kind,
             label,
             shortcut,
+            icon,
         });
     }
     items
@@ -212,13 +232,13 @@ pub enum ConvertResult {
     Close,
 }
 
-/// 앱 상태 없이 그릴 수 있는 메뉴 항목.
+/// 앱 상태 없이 그릴 수 있는 메뉴 항목. 현재 kind 는 이미 빠져 있다.
+/// 첫 글자 단축키는 동작만 하고 행에 글자를 표시하지 않는다(디자인 kit 과 같다).
 #[derive(Debug, Clone)]
 pub struct ConvertItemView {
     pub kind: String,
     pub label: String,
-    pub shortcut: Option<char>,
-    pub is_current: bool,
+    pub icon: icons::Icon,
 }
 
 /// Props 일체. 호출처가 AppState/CoreState 에서 추출해서 전달.
@@ -229,24 +249,11 @@ pub struct ConvertProps {
     pub selected_index: Option<usize>,
 }
 
-impl ConvertProps {
-    /// `items` 의 인덱스 중 `is_current == false` 인 항목들. selectable 후보.
-    pub fn selectable_indices(&self) -> Vec<usize> {
-        self.items
-            .iter()
-            .enumerate()
-            .filter(|(_, it)| !it.is_current)
-            .map(|(i, _)| i)
-            .collect()
-    }
-}
-
 /// View 의 출력 — 사용자 입력의 의미. wrapper 가 AppState/CoreState 에 반영.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConvertViewAction {
     None,
-    /// 사용자가 항목을 클릭. (current 항목은 호출되지 않음.) wrapper 는 `kind`
-    /// 를 `action_for_kind` 로 변환해 적용한다.
+    /// 사용자가 항목을 클릭. wrapper 는 `kind` 를 `action_for_kind` 로 변환해 적용한다.
     Clicked {
         idx: usize,
         kind: String,
@@ -259,64 +266,28 @@ pub fn draw_convert_view(
     theme: &Theme,
     props: &ConvertProps,
 ) -> ConvertViewAction {
-    let popup_w = ui.available_width();
     let mut action = ConvertViewAction::None;
+    // MenuItem 행은 간격 없이 쌓는다.
+    ui.spacing_mut().item_spacing.y = 0.0;
 
     for (idx, item) in props.items.iter().enumerate() {
-        let is_current = item.is_current;
-        let is_selected = props.selected_index == Some(idx);
-
-        let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
-        // 체크 기호는 글꼴 누락을 피하려 SVG로 그리며, 라벨은 같은 들여쓰기로 정렬한다.
-        let label = format!("    {}    {}", item.label, shortcut_str);
-        let text_color = if is_current {
-            theme.text_disabled()
-        } else {
-            theme.text_primary()
-        };
-
-        let sense = if is_current {
-            egui::Sense::hover()
-        } else {
-            egui::Sense::click()
-        };
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT.value()), sense);
-
-        if is_selected {
-            ui.painter()
-                .rect_filled(rect, 0.0, theme.active_overlay.to_egui_premultiplied());
-        } else if !is_current && resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, 0.0, theme.hover_overlay.to_egui_premultiplied());
-        }
-        if !is_current && resp.hovered() {
+        let icon = item.icon;
+        let resp = tasty_ui_widgets::menu_item(
+            ui,
+            theme,
+            Some(&|ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+                icon.image(rect.height(), c).paint_at(ui, rect);
+            }),
+            &item.label,
+            None,
+            tasty_ui_widgets::MenuItemVariant::Normal,
+            props.selected_index == Some(idx),
+            true,
+        );
+        if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-
-        let text_pos = egui::pos2(
-            rect.min.x + theme.spacing_sm.value(),
-            rect.center().y - theme.font_size_body.value() / 2.0,
-        );
-        ui.painter().text(
-            text_pos,
-            egui::Align2::LEFT_TOP,
-            &label,
-            egui::FontId::proportional(theme.font_size_body.value()),
-            text_color.into(),
-        );
-
-        if is_current {
-            let icon_sz = theme.font_size_body.value();
-            let icon_rect = egui::Rect::from_min_size(
-                egui::pos2(text_pos.x, rect.center().y - icon_sz / 2.0),
-                egui::vec2(icon_sz, icon_sz),
-            );
-            icons::CHECK
-                .image(icon_sz, text_color.into())
-                .paint_at(ui, icon_rect);
-        }
-
-        if resp.clicked() && !is_current {
+        if resp.clicked() {
             action = ConvertViewAction::Clicked {
                 idx,
                 kind: item.kind.clone(),
@@ -333,16 +304,10 @@ pub fn draw_convert_content(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
 ) -> Option<ConvertResult> {
-    let surface_id = state.dialogs.convert_popup?;
+    state.dialogs.convert_popup?;
 
-    let current_kind = current_surface_kind(state, engine, surface_id);
-    let internal_items = enumerate_convertible_kinds(state, engine);
-    let props = props_from_items(
-        &internal_items,
-        current_kind,
-        state.dialogs.convert_popup_selected,
-    );
-    let selectable_indices = props.selectable_indices();
+    let internal_items = listed_kinds(state, engine);
+    let count = internal_items.len();
 
     let ctx = ui.ctx().clone();
 
@@ -352,31 +317,18 @@ pub fn draw_convert_content(
 
     let selected = state.dialogs.convert_popup_selected;
 
-    if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !selectable_indices.is_empty() {
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && count > 0 {
         let new_sel = match selected {
-            None => selectable_indices[0],
-            Some(cur) => {
-                if let Some(pos) = selectable_indices.iter().position(|&i| i == cur) {
-                    selectable_indices[(pos + 1) % selectable_indices.len()]
-                } else {
-                    selectable_indices[0]
-                }
-            }
+            Some(cur) if cur < count => (cur + 1) % count,
+            _ => 0,
         };
         state.dialogs.convert_popup_selected = Some(new_sel);
     }
 
-    if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !selectable_indices.is_empty() {
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && count > 0 {
         let new_sel = match selected {
-            None => *selectable_indices.last().unwrap(),
-            Some(cur) => {
-                if let Some(pos) = selectable_indices.iter().position(|&i| i == cur) {
-                    selectable_indices
-                        [(pos + selectable_indices.len() - 1) % selectable_indices.len()]
-                } else {
-                    *selectable_indices.last().unwrap()
-                }
-            }
+            Some(cur) if cur < count => (cur + count - 1) % count,
+            _ => count - 1,
         };
         state.dialogs.convert_popup_selected = Some(new_sel);
     }
@@ -385,7 +337,7 @@ pub fn draw_convert_content(
 
     if ctx.input(|i| i.key_pressed(egui::Key::Enter))
         && let Some(sel) = state.dialogs.convert_popup_selected
-        && selectable_indices.contains(&sel)
+        && sel < count
     {
         action = Some(action_for_kind(engine, internal_items[sel].kind));
     }
@@ -403,19 +355,14 @@ pub fn draw_convert_content(
                 && modifiers.is_none()
                 && let Some(key) = physical_key
                 && let Some(ch) = letter_key_to_char(key)
-                && let Some(item) = internal_items
-                    .iter()
-                    .find(|it| it.shortcut == Some(ch) && Some(it.kind) != current_kind)
+                && let Some(item) = internal_items.iter().find(|it| it.shortcut == Some(ch))
             {
                 action = Some(action_for_kind(engine, item.kind));
             }
         }
     });
 
-    let view_props = ConvertProps {
-        items: props.items,
-        selected_index: state.dialogs.convert_popup_selected,
-    };
+    let view_props = props_from_items(&internal_items, state.dialogs.convert_popup_selected);
     let view_action = draw_convert_view(ui, &theme::theme(), &view_props);
     if let ConvertViewAction::Clicked { kind, .. } = view_action {
         action = Some(action_for_kind(engine, &kind));
@@ -425,18 +372,13 @@ pub fn draw_convert_content(
 }
 
 /// 항목 목록과 현재 kind로 화면 입력을 만든다.
-fn props_from_items(
-    items: &[ConvertItem],
-    current_kind: Option<&'static str>,
-    selected_index: Option<usize>,
-) -> ConvertProps {
+fn props_from_items(items: &[ConvertItem], selected_index: Option<usize>) -> ConvertProps {
     let items = items
         .iter()
         .map(|it| ConvertItemView {
             kind: it.kind.to_string(),
             label: it.label.clone(),
-            shortcut: it.shortcut,
-            is_current: Some(it.kind) == current_kind,
+            icon: it.icon,
         })
         .collect();
     ConvertProps {
@@ -576,47 +518,55 @@ mod props_tests {
             kind,
             label: kind.to_string(),
             shortcut,
+            icon: icons::FILE,
         }
     }
 
     #[test]
-    fn marks_current_kind() {
-        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
-        let props = props_from_items(&items, Some("terminal"), None);
-        assert!(props.items[0].is_current);
-        assert!(!props.items[1].is_current);
+    fn keeps_every_listed_item_in_order() {
+        let items = vec![mk("markdown", Some('M')), mk("image", Some('I'))];
+        let props = props_from_items(&items, None);
+        let kinds: Vec<&str> = props.items.iter().map(|it| it.kind.as_str()).collect();
+        assert_eq!(kinds, ["markdown", "image"]);
+        assert_eq!(props.items[1].label, "image");
     }
 
     #[test]
-    fn selectable_indices_excludes_current() {
+    fn no_current_kind_keeps_every_item() {
+        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
+        let kinds: Vec<&str> = without_current(items, None)
+            .iter()
+            .map(|it| it.kind)
+            .collect();
+        assert_eq!(kinds, ["terminal", "markdown"]);
+    }
+
+    #[test]
+    fn the_current_kind_is_left_out_and_the_rest_keep_their_order() {
         let items = vec![
-            mk("terminal", Some('T')),
             mk("markdown", Some('M')),
+            mk("terminal", Some('T')),
             mk("image", Some('I')),
+            mk("explorer", Some('E')),
         ];
-        let props = props_from_items(&items, Some("markdown"), None);
-        assert_eq!(props.selectable_indices(), vec![0, 2]);
-    }
-
-    #[test]
-    fn no_current_kind_means_all_selectable() {
-        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
-        let props = props_from_items(&items, None, None);
-        assert_eq!(props.selectable_indices(), vec![0, 1]);
+        let kinds: Vec<&str> = without_current(items, Some("terminal"))
+            .iter()
+            .map(|it| it.kind)
+            .collect();
+        assert_eq!(kinds, ["markdown", "image", "explorer"]);
     }
 
     #[test]
     fn empty_props_default() {
         let props = ConvertProps::default();
         assert!(props.items.is_empty());
-        assert!(props.selectable_indices().is_empty());
         assert_eq!(props.selected_index, None);
     }
 
     #[test]
     fn preserves_selected_index() {
         let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
-        let props = props_from_items(&items, Some("terminal"), Some(1));
+        let props = props_from_items(&items, Some(1));
         assert_eq!(props.selected_index, Some(1));
     }
 }

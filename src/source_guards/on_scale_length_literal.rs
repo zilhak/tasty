@@ -107,7 +107,7 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        53,
+        51,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
         // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.

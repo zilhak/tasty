@@ -318,7 +318,7 @@ text-gap(버튼 하나 32, 둘 60).
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
-| `--tasty-convert-popup-width` | → `size-240` (240px) | `convert_popup_width()` | 배율 적용. 본체 `popup/convert.rs` 의 크기 계산은 아직 이 접근자를 읽지 않는다 |
+| `--tasty-convert-popup-width` | → `size-240` (240px) | `convert_popup_width()` | 배율 적용. 본체 `popup/convert.rs` 의 sizer 와 갤러리 `components/convert.rs` 가 읽는다 |
 
 <a id="attention-kind--needsinputcompletion-surface-highlight-adr-0062"></a>
 

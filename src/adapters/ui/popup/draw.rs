@@ -42,9 +42,8 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 /// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
-        "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
-            th.bg_panel().into()
-        }
+        "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach"
+        | "convert_surface" => th.bg_panel().into(),
         super::transfer::TRANSFER_PROGRESS_POPUP_ID
         | super::transfer::TRANSFER_ERROR_POPUP_ID
         | super::file_handler_picker::PICKER_POPUP_ID

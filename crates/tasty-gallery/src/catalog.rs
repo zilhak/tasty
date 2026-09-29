@@ -1103,12 +1103,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "convert",
                     "Convert surface",
-                    vec![spec(
-                        "convert",
-                        "Swap a surface's type in place",
-                        Some("400px · From → To, scrollback preserved"),
-                        components::convert::draw,
-                    )],
+                    vec![
+                        spec(
+                            "convert",
+                            "Convert popup — pick the kind to become",
+                            Some(
+                                "240 × ui_scale · shared title bar (× only) · one MenuItem per kind",
+                            ),
+                            components::convert::draw,
+                        ),
+                        spec(
+                            "convert-narrow",
+                            "Narrow popup, long title — width scales",
+                            Some(
+                                "ja · 1.2 before (literal 200) and after (240 × 1.2) · Mocha · Latte",
+                            ),
+                            components::convert::draw_narrow,
+                        ),
+                    ],
                 ),
                 section(
                     "filehandler",

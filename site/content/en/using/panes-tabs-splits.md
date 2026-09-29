@@ -1,4 +1,4 @@
-<!-- source-hash: e88f41d80c30 -->
+<!-- source-hash: c32d8c355eab -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -111,7 +111,7 @@ The mark goes away when the move is done, when you cut something else, or when t
 
 ## Changing the kind
 
-Press `Alt+'` and the **Surface Type** popup appears. It changes the current Surface, in place, to **Terminal** · **Explorer** · **Markdown** · **HTML...** · **Image** · **DAG**. Choose with the arrow keys and `Enter`, or with the first letter. The button in the middle of an empty Surface is the same popup.
+Press `Alt+'` and the **Surface Type** popup appears. It changes the current Surface, in place, to **Terminal** · **Explorer** · **Markdown** · **HTML...** · **Image** · **DAG**. Choose with the arrow keys and `Enter`, or with the first letter. The current kind is not in the list. The button in the middle of an empty Surface is the same popup.
 
 - Changing to Explorer opens the terminal's current directory as the root.
 - Markdown · HTML ask for a file path · URL.
