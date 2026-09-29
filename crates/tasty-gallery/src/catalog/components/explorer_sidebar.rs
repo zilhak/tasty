@@ -6,7 +6,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tree_row;
 
 use crate::catalog::icons::{FOLDER, STAR, STAR_FILL};
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, note, stage};
 
 /// 시안 `TreeNode` 의 chevron 자리: 펼침 · 접힘 · 없음(leaf).
 #[derive(Clone, Copy)]
@@ -82,6 +82,17 @@ const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 const SPLIT_BODY_H: LogicalPx = LogicalPx(620.0);
 /// 시안 Favorites populated/empty Spec의 body 높이(`ExpSidebar height={300}`). pin 120.
 const FAVORITES_BODY_H: LogicalPx = LogicalPx(300.0);
+/// 시안 pin 비교 줄의 40% 구간 예제 body 높이(`[620, 560, 420, 300]`의 560). pin 224.
+const PIN_STRIP_UPPER_H: LogicalPx = LogicalPx(560.0);
+/// 시안 pin 비교 줄의 40% 구간 예제 body 높이(`[620, 560, 420, 300]`의 420). pin 168.
+const PIN_STRIP_LOWER_H: LogicalPx = LogicalPx(420.0);
+/// 시안 2-region Spec 아래 pin 비교 줄의 body 높이 순서. pin 240·224·168·120.
+const PIN_STRIP_BODY_H: [LogicalPx; 4] = [
+    SPLIT_BODY_H,
+    PIN_STRIP_UPPER_H,
+    PIN_STRIP_LOWER_H,
+    FAVORITES_BODY_H,
+];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
@@ -131,6 +142,45 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         },
     );
 
+    // 시안 비교 줄: 긴 트리와 기본 즐겨찾기로 body 높이마다 pin 높이를 보여 준다.
+    // 네 예제가 창 끝을 넘지 않고 줄을 바꾸도록 본문 컬럼 폭 안에 둔다.
+    body_column(ui, |ui| {
+        cluster(ui, theme, "pin height by body height", |ui| {
+            // 시안처럼 높이가 다른 예제를 위쪽에 맞춘다. 크기를 먼저 알려야 폭을 넘는 예제가
+            // 다음 줄로 간다.
+            let wrap_top = egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true);
+            ui.with_layout(wrap_top, |ui| {
+                for (i, body_h) in PIN_STRIP_BODY_H.into_iter().enumerate() {
+                    let size = egui::vec2(SIDEBAR_W.value(), body_h.value());
+                    ui.allocate_ui_with_layout(
+                        size,
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(pin_strip_label(body_h))
+                                    .font(egui::FontId::monospace(theme.font_size_micro.value()))
+                                    .color(egui::Color32::from(theme.text_muted())),
+                            );
+                            stage(ui, theme, StageVariant::Tight, |ui| {
+                                panel(ui, theme, body_h, |ui| {
+                                    two_region(
+                                        ui,
+                                        theme,
+                                        &format!("pin{i}"),
+                                        body_h,
+                                        TREE_LONG,
+                                        FAVS_FEW,
+                                    );
+                                });
+                            });
+                        },
+                    );
+                }
+            });
+        });
+    });
+
     cluster(ui, theme, "with favorites", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
             panel(ui, theme, FAVORITES_BODY_H, |ui| {
@@ -156,6 +206,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "example body",
                 "620 → pin 240 · populated/empty 300 → pin 120",
             ),
+            ("pin strip", "body 620·560·420·300 → pin 240·224·168·120"),
             (
                 "split",
                 "Files flex(top) → fixed border → Favorites pinned(bottom)",
@@ -316,16 +367,31 @@ fn two_region_inner(
     );
 }
 
+/// design `FAV_PIN` — `favPinHeight`가 쓰는 기본 높이·문턱·비율·하한.
+const PIN_BASE: LogicalPx = LogicalPx(240.0);
+const PIN_THRESHOLD: LogicalPx = LogicalPx(600.0);
+const PIN_RATIO: f32 = 0.4;
+const PIN_MIN: LogicalPx = LogicalPx(120.0);
+
+/// 시안 비교 줄 라벨: `body {h} → pin {pin}` 뒤에 계산 구간을 붙인다.
+fn pin_strip_label(body_h: LogicalPx) -> String {
+    let pin = favorites_pin_height(body_h);
+    let kind = if body_h >= PIN_THRESHOLD {
+        format!(" ({} flat)", PIN_BASE.value())
+    } else if pin <= PIN_MIN {
+        " (min clamp)".to_string()
+    } else {
+        " (40%)".to_string()
+    };
+    format!("body {} → pin {}{kind}", body_h.value(), pin.value())
+}
+
 /// design `favPinHeight` 전사 — 본체 `explorer.rs::favorites_pin_height` 와 동일 공식.
 fn favorites_pin_height(body_h: LogicalPx) -> LogicalPx {
-    const BASE: LogicalPx = LogicalPx(240.0);
-    const THRESHOLD: LogicalPx = LogicalPx(600.0);
-    const RATIO: f32 = 0.4;
-    const MIN: LogicalPx = LogicalPx(120.0);
-    if body_h <= LogicalPx(0.0) || body_h >= THRESHOLD {
-        return BASE;
+    if body_h <= LogicalPx(0.0) || body_h >= PIN_THRESHOLD {
+        return PIN_BASE;
     }
-    (LogicalPx((body_h * RATIO / 4.0).value().round()) * 4.0).max(MIN)
+    (LogicalPx((body_h * PIN_RATIO / 4.0).value().round()) * 4.0).max(PIN_MIN)
 }
 
 fn fav_row(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
