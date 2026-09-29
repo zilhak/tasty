@@ -150,8 +150,8 @@ struct LocalSshCache {
     /// 파일 자체가 있는지. "설정이 없다" 와 "있는데 alias 가 0 건" 은 사용자가 할 일이
     /// 다르다.
     exists: bool,
-    /// 경로는 있지만 읽을 수 없는 상태. 권한 거부뿐 아니라 디렉터리인 경우도 포함하므로
-    /// 오류 원인을 권한으로 단정하지 않는다.
+    /// 경로는 있지만 읽을 수 없는 상태. 권한 거부뿐 아니라 디렉터리이거나 UTF-8이 아닌
+    /// 경우도 포함하므로 오류 원인을 권한으로 단정하지 않는다.
     unreadable: bool,
 }
 
@@ -2943,6 +2943,22 @@ mod tests {
             cache.unreadable,
             "디렉토리를 '읽히는 빈 설정' 으로 오독하면 안 된다"
         );
+        assert_eq!(
+            local_ssh_empty_key(&cache),
+            "remote_tool.local_ssh_unreadable"
+        );
+    }
+
+    /// UTF-8이 아닌 config를 호스트 0건의 빈 설정으로 표시하지 않는다.
+    #[test]
+    fn cache_marks_invalid_utf8_config_unreadable() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("config");
+        std::fs::write(&path, b"Host a\n\xff\xfe\n").expect("write fixture");
+
+        let cache = local_ssh_cache_at(Some(path));
+        assert!(cache.exists);
+        assert!(cache.unreadable, "디코드 실패는 읽기 실패다");
         assert_eq!(
             local_ssh_empty_key(&cache),
             "remote_tool.local_ssh_unreadable"

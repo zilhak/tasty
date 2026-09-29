@@ -39,7 +39,7 @@ pub fn user_config_path() -> Option<PathBuf> {
 pub struct ConfigAvailability {
     /// 그 경로에 무언가 있는가(정규 파일이 아니어도 true).
     pub exists: bool,
-    /// File::open에 성공한 정규 파일인지. UTF-8이나 설정 문법은 검사하지 않는다.
+    /// 정규 파일이고 UTF-8 텍스트로 끝까지 읽히는지. 설정 문법은 검사하지 않는다.
     pub readable: bool,
 }
 
@@ -51,7 +51,8 @@ pub fn config_availability(path: Option<&Path>) -> ConfigAvailability {
     ConfigAvailability {
         exists: p.exists(),
         // 디렉터리도 open에 성공할 수 있어 정규 파일 여부를 함께 확인한다.
-        readable: std::fs::File::open(p).is_ok() && p.is_file(),
+        // UTF-8이 아니면 열거가 0건이 되므로 "호스트 없음"이 아니라 읽기 실패로 본다.
+        readable: p.is_file() && std::fs::read_to_string(p).is_ok(),
     }
 }
 
@@ -745,6 +746,17 @@ Host gx10
             !a.readable,
             "정규 파일이 아니면 읽을 수 있는 것으로 치지 않는다"
         );
+    }
+
+    /// 열리는 정규 파일이어도 UTF-8이 아니면 읽을 수 있는 설정으로 판정하지 않는다.
+    #[test]
+    fn config_availability_treats_invalid_utf8_as_unreadable() {
+        let dir = tmpdir("avail-utf8");
+        let p = dir.path().join("config");
+        std::fs::write(&p, b"Host a\n\xff\xfe\n").expect("비 UTF-8 픽스처");
+        let a = config_availability(Some(&p));
+        assert!(a.exists, "파일은 그대로 있다");
+        assert!(!a.readable, "디코드에 실패하면 readable 이 false 여야 한다");
     }
 
     #[test]
