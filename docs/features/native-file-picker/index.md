@@ -115,6 +115,9 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 사각형을 매니저에 보고하고(`DragHandle::Region`), 빈 곳을 끌면 popup 이 움직인다. 헤더 안의 ✕ 는
 드래그보다 먼저 입력을 받는다. 닫는 길은 헤더 ✕ · Cancel · Esc 이고 셋 다 `Cancelled` 를 남긴다.
 
+헤더 아래 path bar 줄은 `bg-sidebar` 로 창 좌우 끝까지 칠해져 헤더·목록(`bg-panel`)과 구분된다. 설정 창의
+파일 선택기도 같은 뷰를 그리므로 path bar 모양이 같다.
+
 ### 긴 경로 — 넘침은 path bar 가 흡수한다
 
 경로가 아무리 깊거나 성분 이름이 길어도 footer 의 취소·확정 버튼은 popup 안에 온전히 남는다.
@@ -353,6 +356,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   보이고, 셸 타이틀바는 없다.
 - Given 본체 file picker 가 열려 있다 When 헤더의 빈 곳을 끌면 Then popup 이 이동하고, 헤더 ✕ 를
   누르면 이동하지 않고 닫히며 결과는 `Cancelled` 다.
+- Given 본체 file picker 를 연다 When path bar 가 그려진다 Then 그 줄 배경은 창 좌우 끝까지 `bg-sidebar` 이고
+  헤더·목록(`bg-panel`)과 구분된다.
 - Given 설정 › 기타 › 스크립트 Add card When Browse… 를 누르면 Then 설정 창 안에 로컬 홈
   디렉토리를 보여주는 파일 선택 popup 이 열리고, 떠 있는 동안 IPC 왕복(`tasty list info`)이
   응답한다.

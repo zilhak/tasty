@@ -62,6 +62,25 @@ fn painted_selection(
     entries: &[FilePickerEntryView],
     selection: &str,
 ) -> (egui::Rect, Vec<(String, egui::Rect, egui::Rect)>) {
+    let (content, shapes) = painted_shapes(size, crumbs, mode, entries, selection);
+    let mut out = Vec::new();
+    for clipped in shapes.iter() {
+        if let egui::epaint::Shape::Text(t) = &clipped.shape {
+            let rect = egui::Rect::from_min_size(t.pos, t.galley.size());
+            out.push((t.galley.text().to_string(), rect, clipped.clip_rect));
+        }
+    }
+    (content, out)
+}
+
+/// 두 번째 프레임에 칠해진 모양 전체.
+fn painted_shapes(
+    size: egui::Vec2,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+    selection: &str,
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     let content = content_rect(size);
@@ -97,7 +116,6 @@ fn painted_selection(
     let mut out = Vec::new();
     // 첫 프레임은 폰트가 확정되지 않아 galley 가 비는 경우가 있어 두 번 돈다.
     for _ in 0..2 {
-        out.clear();
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -107,6 +125,8 @@ fn painted_selection(
         };
         let full = ctx.run(input, |ctx| {
             egui::Area::new(egui::Id::new("fp_layout_test"))
+                // 등장 페이드가 색을 반투명하게 바꾸지 않도록 끈다.
+                .fade_in(false)
                 .fixed_pos(content.min)
                 .constrain(false)
                 .show(ctx, |ui| {
@@ -116,12 +136,7 @@ fn painted_selection(
                     draw_file_picker_view(ui, &props);
                 });
         });
-        for clipped in full.shapes.iter() {
-            if let egui::epaint::Shape::Text(t) = &clipped.shape {
-                let rect = egui::Rect::from_min_size(t.pos, t.galley.size());
-                out.push((t.galley.text().to_string(), rect, clipped.clip_rect));
-            }
-        }
+        out = full.shapes;
     }
     (content, out)
 }
@@ -207,6 +222,43 @@ fn the_title_is_painted_once_in_the_top_strip_of_the_popup() {
         "제목이 popup 윗줄({top}..{}) 밖에 있다: {:?}",
         top + strip,
         hits[0].1
+    );
+}
+
+/// 경로 막대 줄은 창 좌우 끝까지 bg-sidebar 로 칠해지고, 그 안에 breadcrumb 가 있다.
+#[test]
+fn the_path_bar_band_is_filled_edge_to_edge_with_bg_sidebar() {
+    let size = egui::vec2(640.0, 480.0);
+    let (content, shapes) = painted_shapes(
+        size,
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    let fill = crate::theme::theme().bg_sidebar().to_egui();
+    let popup = picker_state(size).popup_rect();
+    let bands: Vec<egui::Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    let crumb = shapes
+        .iter()
+        .find_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == "crumb-01" => {
+                Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        })
+        .expect("breadcrumb 이 칠해져야 한다");
+    assert!(
+        bands.iter().any(|b| b.left() <= popup.left()
+            && b.right() >= popup.right()
+            && b.contains_rect(crumb)),
+        "경로 막대를 덮는 전폭 bg-sidebar 띠가 없다: bands {bands:?}, crumb {crumb:?}, popup {popup:?}, content {content:?}"
     );
 }
 

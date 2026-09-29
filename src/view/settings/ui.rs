@@ -1,4 +1,4 @@
-mod file_chooser;
+pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
 mod tabs;

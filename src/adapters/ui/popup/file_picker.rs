@@ -189,10 +189,29 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
         };
     }
 
+    // 콘텐츠 영역은 창 가장자리까지 온다. 경로 막대 배경은 전폭으로 칠하고
+    // 나머지 구역은 셸 공통 여백만큼 안쪽에 그린다.
+    let outer = ui.available_rect_before_wrap();
+    let mut inner = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("file_picker_inset")
+            .max_rect(outer.shrink(super::content_margin().value()))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    let out = draw_view_sections(&mut inner, props, outer);
+    ui.advance_cursor_after_rect(outer);
+    out
+}
+
+fn draw_view_sections(
+    ui: &mut egui::Ui,
+    props: &FilePickerProps<'_>,
+    outer: egui::Rect,
+) -> FilePickerViewOut {
     let th = props.theme;
     let mut action = FilePickerAction::None;
 
-    let header = ui.horizontal(|ui| {
+    ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         ui.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
@@ -216,13 +235,23 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
             }
         });
     });
-    let header_rect = header.response.rect;
     ui.add_space(th.spacing_xs.value());
-    hline(ui, th);
+    // 헤더 줄은 창 위쪽 여백과 좌우 여백까지 이동 영역으로 쓴다.
+    let header_rect =
+        egui::Rect::from_min_max(outer.min, egui::pos2(outer.right(), ui.cursor().top()));
+    // 채움이 구분선과 경로 막대 위젯 아래에 깔리도록 자리를 먼저 잡아 둔다.
+    let band_shape = ui.painter().add(egui::Shape::Noop);
+    let band_top = ui.cursor().top();
+    hline(ui, th, outer.x_range());
 
     path_bar::path_bar(ui, props, &mut action);
     ui.add_space(th.spacing_xs.value());
-    hline(ui, th);
+    let band = egui::Rect::from_x_y_ranges(outer.x_range(), band_top..=ui.cursor().top());
+    ui.painter().set(
+        band_shape,
+        egui::Shape::rect_filled(band, 0.0, th.bg_sidebar().to_egui()),
+    );
+    hline(ui, th, outer.x_range());
 
     let rest = ui.available_rect_before_wrap();
     let footer_h =
@@ -459,10 +488,10 @@ fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
     ui.painter().galley(pos, galley, info_color);
 }
 
-fn hline(ui: &mut egui::Ui, th: &Theme) {
+fn hline(ui: &mut egui::Ui, th: &Theme, x: egui::Rangef) {
     let rect = ui.available_rect_before_wrap();
     ui.painter().hline(
-        rect.x_range(),
+        x,
         rect.top(),
         egui::Stroke::new(th.border_width.value(), th.separator),
     );

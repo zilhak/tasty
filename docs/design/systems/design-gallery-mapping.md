@@ -812,7 +812,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
 `catalog/components/file_picker.rs`.
-본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다.
+본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다. 셸 공통 내부 여백을 두지 않는 popup 이라 path bar 의 `bg-sidebar` 띠와 구분선이 창 좌우 끝까지 닿고, 나머지 구역은 뷰가 셸 여백(`spacing-xs`)만큼 안쪽에 그린다. 디자인의 구역별 안쪽 패딩(header 10/10/10/14 · path bar 6/8/6/14 등)은 대응 토큰이 없어 본체는 아직 셸 여백과 기존 간격 토큰(`spacing-xs`·`spacing-sm`)을 쓴다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
@@ -824,7 +824,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | `FilePickerFrame`(container) | `card` | 640×480 · bg-panel · border-strong · modal shadow |
 | header(glyph·title·host indicator·✕) | `header` | 글리프 항상 `FILE`(B안의 remote 글리프 스왑 미반영) |
 | host 배지(§6.1 A안, 채택) | `host_badge` | mono `user@host` · `accent-info` 14%/45% 배경/보더 |
-| path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | root=mono, 중간=accent 링크, current=bold 비클릭 |
+| path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | `bg-sidebar` 전폭 띠 · 아래 `separator` 1px. root=mono, 중간=accent 링크, current=bold 비클릭 |
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
 | `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
 | 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · 부품 소유 오류 글리프(alertTriangle). Retry/Reconnect 는 refresh 아이콘을 단 위젯 액션으로, 가운데 정렬 밖 보조 슬롯 아래에 매달린다 |
