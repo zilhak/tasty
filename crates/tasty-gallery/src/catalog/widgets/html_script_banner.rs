@@ -413,7 +413,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
-    let title_spec = format!("\"{}\" · 13", t(TITLE));
+    let title_spec = format!("\"{}\" · 13/600", t(TITLE));
     spec::meta(
         ui,
         theme,
@@ -422,13 +422,13 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("body", "caption · text-muted · ≤ 2 lines"),
             ("remote branch", "network scripts stay blocked — says so"),
             ("action", "Secondary / Sm · no wrap"),
-            ("reloading", "spinner + label · no × · body dimmed 0.75"),
+            ("reloading", "spinner + label · no × · fade out on commit"),
             (
                 "narrow",
-                "surface width < 440 → action on its own line, body-aligned",
+                "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned",
             ),
-            ("glyph nudge", "1 · banner-glyph-offset"),
-            ("title ↔ body", "2 · banner-text-gap"),
+            ("glyph nudge", "1 · --tasty-banner-glyph-offset"),
+            ("title ↔ body", "2 · --tasty-banner-text-gap (every banner)"),
         ],
         &[
             TokenChip::new(
@@ -438,11 +438,6 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new("banner-title-font-size", "13", theme.banner_fg().to_egui()),
             TokenChip::new("banner-body-font-size", "11", theme.text_muted().to_egui()),
-            TokenChip::new(
-                "opacity-dimmed",
-                "reloading body",
-                theme.text_muted().to_egui(),
-            ),
         ],
     );
     spec::note(
@@ -524,8 +519,6 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("dismissed", "lock · glyph-dim · click → banner again"),
             ("allowed", "scriptFile · text-muted · tooltip only"),
             ("size", "12 (icon-size-xs) in the 24 strip"),
-            ("slot", "first in the tab's right cluster · 16 hit"),
-            ("lock hover", "overlay-hover fill · scriptFile has none"),
             ("cleared by", "navigation to another document · app restart"),
             ("kept on", "#fragment moves"),
             (
@@ -549,17 +542,6 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                 "→ icon-size-xs",
                 theme.text_muted().to_egui(),
             ),
-            TokenChip::new(
-                "html-script-marker-hit",
-                "→ size-16",
-                theme.text_muted().to_egui(),
-            ),
-            TokenChip::new(
-                "html-script-marker-hover-bg",
-                "→ overlay-hover",
-                theme.html_script_marker_hover_bg().to_egui_premultiplied(),
-            ),
-            TokenChip::new("tab-status-gap", "→ 4", theme.text_muted().to_egui()),
         ],
     );
     spec::note(
