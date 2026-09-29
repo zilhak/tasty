@@ -141,6 +141,6 @@ if let Some(new) = selected_new { *sub_tab = new; }
 
 `Table::selectable(true)`는 본문 셀에서 기본 라벨 텍스트 선택을 끈다. 파일 이름 글자 위에서도 행 선택·우클릭·더블클릭이 작동해야 하기 때문이다. 헤더의 명시적인 정렬 클릭은 유지한다. 행 선택을 사용하지 않는 `selectable(false)` 표는 기본 텍스트 선택을 유지한다.
 
-높이를 지정하지 않은 표는 헤더와 본문 행 모두 `table_cell_height`(28)를 쓴다. 표 안에서는 세로 `item_spacing`을 0으로 둔다. egui_extras는 행 사이에 부모의 세로 간격을 두고 선택·줄무늬 배경을 그 간격까지 넓히기 때문이다. 그래서 `row_height`·`header_height`로 준 값이 곧 보이는 행 높이다. 표 뒤의 위젯에는 부모의 간격이 그대로 적용된다. 회귀 검사는 `crates/tasty-ui-widgets/tests/table_row_click.rs`의 `unsized_rows_and_header_use_table_cell_height`다.
+높이를 지정하지 않은 표는 헤더와 본문 행 모두 `table_cell_height`(28)를 쓴다. 표 안에서는 세로 `item_spacing`을 0으로 둔다. egui_extras는 행 사이에 부모의 세로 간격을 두고 선택·줄무늬 배경을 그 간격까지 넓히기 때문이다. 그래서 `row_height`·`header_height`로 준 값이 곧 보이는 행 높이다. 표 뒤의 위젯에는 부모의 간격이 그대로 적용된다. 선택 행 배경은 `table_row_bg_selected`(surface-active)다. egui_extras는 선택 행을 텍스트 선택색으로 칠하므로 표가 행에만 이 색을 넣고, 셀 안의 텍스트 선택색은 그대로 둔다. 회귀 검사는 `crates/tasty-ui-widgets/tests/table_row_click.rs`의 `unsized_rows_and_header_use_table_cell_height`와 `selected_row_fill_is_table_row_bg_selected`다.
 
 행 선택 표에서 복사가 필요하면 행 메뉴에 경로·주소 등 필요한 값의 복사 기능을 제공한다. 이 규칙은 본문 라벨의 기본 sense를 바꾸는 것이며, 셀에 명시적으로 넣은 버튼 등 다른 위젯의 입력까지 무효로 만들지는 않는다. 회귀 검사는 `crates/tasty-ui-widgets/tests/table_row_click.rs`에 있다.

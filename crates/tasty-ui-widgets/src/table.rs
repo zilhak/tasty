@@ -212,47 +212,51 @@ impl<'a, K> Table<'a, K> {
                 builder = builder.column(to_column(col.width));
             }
 
-            builder
-                .header(header_h, |mut header| {
-                    for col in columns {
-                        header.col(|ui| {
-                            if header_cell(ui, theme, col, active_sort, header_pad_x) {
-                                clicked_sort = col.sort_id;
-                            }
-                        });
-                    }
-                })
-                .body(|mut body| {
-                    for (i, row) in rows.iter().enumerate() {
-                        body.row(row_h, |mut tr| {
-                            tr.set_selected(is_selected(row));
-                            for (c, col) in columns.iter().enumerate() {
-                                tr.col(|ui| {
-                                    // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
-                                    if selectable {
-                                        ui.style_mut().interaction.selectable_labels = false;
+            let mut table = builder.header(header_h, |mut header| {
+                for col in columns {
+                    header.col(|ui| {
+                        if header_cell(ui, theme, col, active_sort, header_pad_x) {
+                            clicked_sort = col.sort_id;
+                        }
+                    });
+                }
+            });
+            // egui_extras 는 선택 행 배경을 텍스트 선택색으로 칠한다. 행에는 `table-row-bg-selected`를
+            // 쓰고, 셀 안의 텍스트 선택은 원래 색을 유지한다.
+            let text_selection_fill = table.ui_mut().visuals().selection.bg_fill;
+            table.ui_mut().visuals_mut().selection.bg_fill = theme.table_row_bg_selected().into();
+            table.body(|mut body| {
+                for (i, row) in rows.iter().enumerate() {
+                    body.row(row_h, |mut tr| {
+                        tr.set_selected(is_selected(row));
+                        for (c, col) in columns.iter().enumerate() {
+                            tr.col(|ui| {
+                                ui.visuals_mut().selection.bg_fill = text_selection_fill;
+                                // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
+                                if selectable {
+                                    ui.style_mut().interaction.selectable_labels = false;
+                                }
+                                match col.align {
+                                    TableAlign::Left => cell(ui, theme, row, c),
+                                    TableAlign::Right => {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| cell(ui, theme, row, c),
+                                        );
                                     }
-                                    match col.align {
-                                        TableAlign::Left => cell(ui, theme, row, c),
-                                        TableAlign::Right => {
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| cell(ui, theme, row, c),
-                                            );
-                                        }
-                                    }
-                                });
-                            }
-                            let row_resp = tr.response();
-                            if row_resp.clicked() {
-                                clicked_row = Some(i);
-                            }
-                            if row_resp.secondary_clicked() {
-                                secondary_clicked_row = Some(i);
-                            }
-                        });
-                    }
-                });
+                                }
+                            });
+                        }
+                        let row_resp = tr.response();
+                        if row_resp.clicked() {
+                            clicked_row = Some(i);
+                        }
+                        if row_resp.secondary_clicked() {
+                            secondary_clicked_row = Some(i);
+                        }
+                    });
+                }
+            });
         };
 
         let mut run = |ui: &mut egui::Ui| {

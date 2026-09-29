@@ -1,5 +1,5 @@
 //! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다. 높이를 지정하지 않은 표의
-//! 헤더와 본문 행이 `table_cell_height`인지도 검사한다.
+//! 헤더와 본문 행이 `table_cell_height`인지, 선택 행 배경이 `table_row_bg_selected`인지도 검사한다.
 //! 본문 텍스트 선택과 헤더 정렬 클릭의 구분은 docs/architecture/ui-widgets-crate.md를 따른다.
 
 use std::cell::RefCell;
@@ -219,4 +219,64 @@ fn unsized_rows_and_header_use_table_cell_height() {
             "ui_zoom {zoom}: first row centre {first} vs header {cell_h} + half row"
         );
     }
+}
+
+/// 선택 행의 배경은 `table_row_bg_selected` 로 칠하고 행 높이만큼 덮는다.
+#[test]
+fn selected_row_fill_is_table_row_bg_selected() {
+    let theme = tasty_themes::mocha_fallback();
+    let fill: egui::Color32 = theme.table_row_bg_selected().into();
+    let ctx = egui::Context::default();
+    let text_selection_fill = ctx.style().visuals.selection.bg_fill;
+    let cell_selection_fills = RefCell::new(Vec::new());
+    let mut shapes = Vec::new();
+    for _ in 0..2 {
+        let out = ctx.run(raw(vec![]), |c| {
+            egui::CentralPanel::default().show(c, |ui| {
+                let columns = vec![TableColumn {
+                    title: "Name",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(140.0),
+                        clip: true,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None::<Col>,
+                }];
+                Table::new(columns).selectable(true).show(
+                    ui,
+                    &theme,
+                    ROWS,
+                    |row: &Row| row.name == "bravo.rs",
+                    |ui, _th, row: &Row, _col| {
+                        cell_selection_fills
+                            .borrow_mut()
+                            .push(ui.visuals().selection.bg_fill);
+                        ui.label(row.name);
+                    },
+                );
+            });
+        });
+        shapes = out.shapes;
+    }
+    let bands: Vec<Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bands.len(), 1, "one selected row band: {bands:?}");
+    assert!(
+        (bands[0].height() - theme.table_cell_height().value()).abs() <= 0.5,
+        "selected band height {}",
+        bands[0].height()
+    );
+    assert!(
+        !cell_selection_fills.borrow().is_empty()
+            && cell_selection_fills
+                .borrow()
+                .iter()
+                .all(|c| *c == text_selection_fill),
+        "cell text selection keeps the egui selection fill"
+    );
 }
