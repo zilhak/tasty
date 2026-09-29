@@ -314,6 +314,14 @@ pub fn pages() -> Vec<Page> {
                             components::prim_button::draw,
                         ),
                         spec(
+                            "button-disabled",
+                            "Disabled — ink, never opacity",
+                            Some(
+                                "Every variant draws the same neutral box with the disabled ink; accent fills drop out",
+                            ),
+                            components::prim_button::draw_disabled,
+                        ),
+                        spec(
                             "icon-button",
                             "IconButton",
                             Some("Square icon-only control for toolbars and row affordances"),
