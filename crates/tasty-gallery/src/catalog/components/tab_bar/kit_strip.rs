@@ -1,8 +1,10 @@
-//! 페인 탭 스트립 시안(`gallery/layouts-tabstrip.jsx`)의 스크롤 화살표 예제.
-//! 스트립·탭 칸·화살표는 정적 데이터로 그린다. 본체의 스크롤 계산은 실행하지 않는다.
+//! 페인 탭 스트립 시안(`gallery/layouts-tabstrip.jsx`)의 스크롤 화살표·숨은 이동 대상 예제.
+//! 스트립·탭 칸은 정적 데이터로 그리고 화살표는 본체와 같은 `paint_tab_scroll_arrow`로 그린다.
+//! 본체의 스크롤·노출 판정은 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{TabScrollArrowInk, TabScrollArrowSide as Side, paint_tab_scroll_arrow};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -19,17 +21,13 @@ enum At {
     End,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Side {
-    Left,
-    Right,
-}
-
 #[derive(Clone, Copy)]
 struct StripCfg {
     focused: bool,
     at: At,
     hover: Option<Side>,
+    /// 이동 대기 대상이 가려진 쪽. 시안 `moveSide`.
+    mv: Option<Side>,
 }
 
 fn c(h: impl Into<egui::Color32>) -> egui::Color32 {
@@ -68,29 +66,20 @@ fn themed(ui: &mut egui::Ui, theme: &Theme, name: &str, add: impl FnOnce(&mut eg
         });
 }
 
-/// 시안 `Arrow`: 자체 채움 없는 정사각 칸. hover 채움은 enabled 쪽에만 깐다.
-fn arrow(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, side: Side, disabled: bool, hover: bool) {
-    if hover && !disabled {
-        ui.painter().rect_filled(
-            rect,
-            0.0,
-            theme.tab_scroll_arrow_hover_bg().to_egui_premultiplied(),
-        );
-    }
+/// 시안 `Arrow`의 잉크 우선순위: disabled > move > fg.
+fn arrow(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, side: Side, cfg: StripCfg) {
+    let disabled = match side {
+        Side::Left => cfg.at == At::Start,
+        Side::Right => cfg.at == At::End,
+    };
     let ink = if disabled {
-        theme.tab_scroll_arrow_fg_disabled()
+        TabScrollArrowInk::Disabled
+    } else if cfg.mv == Some(side) {
+        TabScrollArrowInk::Move
     } else {
-        theme.tab_scroll_arrow_fg()
+        TabScrollArrowInk::Enabled
     };
-    let glyph = match side {
-        Side::Left => tasty_icons::CHEVRON_LEFT,
-        Side::Right => tasty_icons::CHEVRON_RIGHT,
-    };
-    let size = theme.tab_scroll_arrow_glyph_size().value();
-    glyph.image(size, c(ink)).paint_at(
-        ui,
-        egui::Rect::from_center_size(rect.center(), egui::vec2(size, size)),
-    );
+    paint_tab_scroll_arrow(ui, theme, rect, side, ink, cfg.hover == Some(side));
 }
 
 /// 시안 `TabCellS`의 스트립용 최소형: 아이콘·제목과 닫기 칸(활성일 때만 보임).
@@ -192,22 +181,8 @@ fn strip(ui: &mut egui::Ui, theme: &Theme, cfg: StripCfg) {
         }
     }
 
-    arrow(
-        ui,
-        theme,
-        left,
-        Side::Left,
-        cfg.at == At::Start,
-        cfg.hover == Some(Side::Left),
-    );
-    arrow(
-        ui,
-        theme,
-        right,
-        Side::Right,
-        cfg.at == At::End,
-        cfg.hover == Some(Side::Right),
-    );
+    arrow(ui, theme, left, Side::Left, cfg);
+    arrow(ui, theme, right, Side::Right, cfg);
     ui.painter().hline(
         rect.x_range(),
         rect.max.y - theme.border_width.value() * 0.5,
@@ -234,6 +209,7 @@ const SHAPE_ROWS: [(&str, StripCfg); 5] = [
             focused: true,
             at: At::Start,
             hover: None,
+            mv: None,
         },
     ),
     (
@@ -242,6 +218,7 @@ const SHAPE_ROWS: [(&str, StripCfg); 5] = [
             focused: true,
             at: At::Mid,
             hover: Some(Side::Right),
+            mv: None,
         },
     ),
     (
@@ -250,6 +227,7 @@ const SHAPE_ROWS: [(&str, StripCfg); 5] = [
             focused: true,
             at: At::End,
             hover: None,
+            mv: None,
         },
     ),
     (
@@ -258,6 +236,7 @@ const SHAPE_ROWS: [(&str, StripCfg); 5] = [
             focused: false,
             at: At::Mid,
             hover: None,
+            mv: None,
         },
     ),
     (
@@ -266,6 +245,7 @@ const SHAPE_ROWS: [(&str, StripCfg); 5] = [
             focused: false,
             at: At::Start,
             hover: Some(Side::Left),
+            mv: None,
         },
     ),
 ];
@@ -316,5 +296,77 @@ pub fn draw_scroll_shape(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Don't draw arrows with a font glyph. A proportional < at 11px renders thinner than the icon stroke and depends on the UI font.",
+    );
+}
+
+const MOVE_ROWS: [(&str, StripCfg); 4] = [
+    (
+        "target out on the right",
+        StripCfg {
+            focused: true,
+            at: At::Start,
+            hover: None,
+            mv: Some(Side::Right),
+        },
+    ),
+    (
+        "target out on the left",
+        StripCfg {
+            focused: true,
+            at: At::End,
+            hover: None,
+            mv: Some(Side::Left),
+        },
+    ),
+    (
+        "target out on the right · hover",
+        StripCfg {
+            focused: true,
+            at: At::Mid,
+            hover: Some(Side::Right),
+            mv: Some(Side::Right),
+        },
+    ),
+    (
+        "unfocused pane · target out on the left",
+        StripCfg {
+            focused: false,
+            at: At::Mid,
+            hover: None,
+            mv: Some(Side::Left),
+        },
+    ),
+];
+
+/// 이동 대기 대상이 스크롤 밖에 있으면 그쪽 화살표가 move glyph 분홍으로 바뀐다.
+pub fn draw_move_cue(ui: &mut egui::Ui, theme: &Theme) {
+    let mocha = tasty_themes::mocha_fallback();
+    let latte = crate::host_shell::latte_theme();
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        strip_card(ui, &mocha, "Mocha", &MOVE_ROWS);
+        strip_card(ui, &latte, "Latte", &MOVE_ROWS);
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("where", "the scroll arrow on the target's side"),
+            ("colour", "accent-move (same as the glyph)"),
+            ("tab · surface target", "same cue"),
+            ("visible", "cell fully inside the viewport"),
+            ("input", "none of its own — the arrow's normal step scroll"),
+            ("too-small rect", "no substitute"),
+            ("maximise", "out of scope — new request later"),
+        ],
+        &[TokenChip::new(
+            "tab-scroll-arrow-move-fg",
+            "→ move-source-glyph",
+            c(theme.tab_scroll_arrow_move_fg()),
+        )],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Nothing new appears in the strip. The arrow already means \"more tabs this way\"; the pink says the move source is one of them.",
     );
 }

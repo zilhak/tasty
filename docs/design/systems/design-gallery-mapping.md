@@ -952,11 +952,22 @@ C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는
 | 디자인 요소 | 갤러리 | 본체 | 비고 |
 |---|---|---|---|
 | `Strip`(`size-560` 폭, 포커스 surface-raised · 비포커스 bg-sidebar, 아래 separator) | `strip` | 탭이 넘치는 pane의 탭 바 | 폭 560은 예제 전용 이름 붙은 상수 |
-| `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` | `tasty_ui_widgets::paint_tab_scroll_arrow`. 칸 폭은 zoom을 적용하지 않는 스트립 높이 `tab_bar_height` | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
+| `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` → `paint_tab_scroll_arrow` | `tasty_ui_widgets::paint_tab_scroll_arrow`. 칸 폭은 zoom을 적용하지 않는 스트립 높이 `tab_bar_height` | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
 | 도달한 끝은 disabled(`tab-scroll-arrow-fg-disabled`) | `arrow`의 `disabled` | `can_left`·`can_right` | disabled 쪽은 hover 채움·응답이 없다 |
 | `TabCellS` 최소형(아이콘 · 제목 · 닫기 칸) | `tab_cell` | `tab_bar/tab.rs::draw_tab` | 두 번째 탭이 활성이다 |
 
 Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 그린다. 행 다섯 개와 Meta 행·토큰 칩·Don't 문구는 시안을 그대로 옮긴다.
+
+### 숨은 이동 대상 화살표
+
+디자인 같은 파일의 Spec "Move source scrolled out of view — the arrow on that side turns pink" ↔ 갤러리 `kit_strip.rs::draw_move_cue`(`tab-move-cue` spec) ↔ 본체 `view.rs`의 스크롤 화살표 잉크.
+
+| 디자인 요소 | 갤러리 | 본체 | 비고 |
+|---|---|---|---|
+| 대상이 가려진 쪽 화살표 `tab-scroll-arrow-move-fg` | `StripCfg.mv` → `TabScrollArrowInk::Move` | 대상 탭 칸의 노출 판정 결과 | 잉크 우선순위 disabled > move > fg는 시안 `Arrow`와 같다 |
+| 행 네 개(오른쪽 밖 · 왼쪽 밖 · 오른쪽 밖 hover · 비포커스 왼쪽 밖) | `MOVE_ROWS` | — | 시안 행을 그대로 옮긴다 |
+
+화살표는 두 예제 모두 본체와 같은 `tasty_ui_widgets::paint_tab_scroll_arrow`로 그린다.
 
 ## Move source highlight (Layouts)
 

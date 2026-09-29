@@ -8,7 +8,7 @@ use tasty_type_geometry::length::LogicalPx;
 use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph, PLUS, SEARCH, SPLIT};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-pub use kit_strip::draw_scroll_shape;
+pub use kit_strip::{draw_move_cue, draw_scroll_shape};
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
 

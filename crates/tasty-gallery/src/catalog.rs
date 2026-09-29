@@ -1617,6 +1617,14 @@ pub fn pages() -> Vec<Page> {
                             components::tab_bar::draw_scroll_shape,
                         ),
                         spec(
+                            "tab-move-cue",
+                            "Move source scrolled out of view — the arrow on that side turns pink",
+                            Some(
+                                "tab-scroll-arrow-move-fg until the target cell is fully inside the viewport",
+                            ),
+                            components::tab_bar::draw_move_cue,
+                        ),
+                        spec(
                             "multitab",
                             "Multi-tier tabs",
                             Some("Workspace tier + pane tier, two levels max"),
