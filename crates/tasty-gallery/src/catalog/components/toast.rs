@@ -19,7 +19,7 @@ const SPECIMEN_W: LogicalPx = LogicalPx(480.0);
 const SPECIMEN_H_SINGLE: LogicalPx = LogicalPx(120.0);
 /// 여러 줄 wrap 케이스의 세로 — 한 장이 세로로 자란다.
 const SPECIMEN_H_WRAP: LogicalPx = LogicalPx(180.0);
-/// 4 개 스택 케이스의 세로.
+/// 스코프 상한(5장) 스택 케이스의 세로.
 const SPECIMEN_H_STACK: LogicalPx = LogicalPx(280.0);
 
 /// 데모 프레임 좌상단 "scope (frame)" 라벨의 세로 인셋. 4px 그리드 밖(6px)이라
@@ -194,8 +194,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
         ui.label(
             egui::RichText::new(
-                "Case 6 — 4 toast 스택 (id 오름차순: Info → Success → Warning → Error). \
-                     alpha 그라데이션으로 fade-in/out 단계 시각화.",
+                "Case 6 — 스코프 상한 5장 스택 (오래된 것 위 → 최신 아래, 모두 alpha=1.0). \
+                     여섯 번째가 오면 가장 오래된 것이 빠지며 \"+N more\" 행은 없다.",
             )
             .strong()
             .color(egui::Color32::from(theme.text_primary())),
@@ -209,23 +209,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![
                 ToastEntryView {
                     kind: ToastKind::Info,
-                    message: "Connected to plugin host.".into(),
-                    alpha: 0.4, // 가장 오래된 — fade-out 진행
-                },
-                ToastEntryView {
-                    kind: ToastKind::Success,
-                    message: "Loaded 3 plugins.".into(),
-                    alpha: 0.7,
+                    message: "Two notices while importing the bundle".into(),
+                    alpha: 1.0,
                 },
                 ToastEntryView {
                     kind: ToastKind::Warning,
-                    message: "Plugin 'foo' missing signature.".into(),
+                    message: "Held by another client (readonly)".into(),
+                    alpha: 1.0,
+                },
+                // 시안의 agent 변형은 본체 ToastKind에 없어 Info 강조색으로 대신한다.
+                ToastEntryView {
+                    kind: ToastKind::Info,
+                    message: "Agent opened 3 surfaces in background".into(),
+                    alpha: 1.0,
+                },
+                ToastEntryView {
+                    kind: ToastKind::Success,
+                    message: "Path copied to clipboard".into(),
                     alpha: 1.0,
                 },
                 ToastEntryView {
                     kind: ToastKind::Error,
-                    message: "Failed to start 'bar': missing entrypoint.".into(),
-                    alpha: 1.0, // 가장 최근 — full opacity
+                    message: "Force detach — connection dropped".into(),
+                    alpha: 1.0,
                 },
             ],
         );
@@ -233,7 +239,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         vspace(ui, theme.spacing_md);
         ui.label(
             egui::RichText::new(
-                "본체 ToastManager가 수명과 불투명도를 계산해 전달한다. 그리기 함수는 시간을 재지 않으며, 이 예제는 불투명도를 고정해 비교한다.",
+                "본체 ToastManager가 수명과 불투명도를 계산해 전달한다. 쉬는 카드는 모두 불투명하고 \
+                     불투명도는 등장·소멸 페이드에만 쓴다. 그리기 함수는 시간을 재지 않는다.",
             )
             .small()
             .color(egui::Color32::from(theme.text_muted())),
