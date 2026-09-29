@@ -192,3 +192,33 @@ fn turning_the_sandbox_off_hides_a_shown_banner() {
     st.set_sandbox(false);
     assert_eq!(st.update_banner(), BannerPhase::Hidden);
 }
+
+#[test]
+fn the_marker_follows_dismiss_allow_and_the_document() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    host_load(&mut st, A, scripts(1));
+    st.update_banner();
+    assert_eq!(st.marker(), None, "배너가 떠 있는 동안에는 표지가 없다");
+    st.dismiss_banner();
+    assert_eq!(st.marker(), Some(ScriptMarker::Blocked));
+    st.reshow_banner();
+    assert_eq!(st.marker(), None);
+    st.allow_current().expect("allow");
+    assert_eq!(st.marker(), Some(ScriptMarker::Allowed));
+    load(&mut st, B, scripts(2));
+    assert_eq!(st.marker(), None, "다른 문서는 허용을 잇지 않는다");
+}
+
+#[test]
+fn no_marker_without_scripts_or_with_the_sandbox_off() {
+    let mut st = HtmlScriptState::new(true);
+    host_load(&mut st, A, scan(1, ScriptDetection::None));
+    st.dismiss_banner();
+    assert_eq!(st.marker(), None);
+    let mut st = HtmlScriptState::new(true);
+    host_load(&mut st, A, scripts(1));
+    st.dismiss_banner();
+    st.set_sandbox(false);
+    assert_eq!(st.marker(), None);
+}

@@ -7,7 +7,7 @@
 pub mod banner;
 pub mod scan;
 
-pub use banner::BannerPhase;
+pub use banner::{BannerPhase, ScriptMarker};
 
 /// 문서 원본 전체의 SHA-256 지문.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

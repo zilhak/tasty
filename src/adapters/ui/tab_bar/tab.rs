@@ -158,6 +158,8 @@ pub(super) fn draw_tab(
         text_right -= dot_reserve;
     }
     text_right = paint_move_glyph(ui, context, i, tab_rect, text_right);
+    let marker_slot;
+    (marker_slot, text_right) = html_script_marker_slot(context, i, tab_rect, text_right);
     let available_w = (text_right - text_x).max(0.0);
     let font_id = egui::FontId::proportional(label_font_size);
     let final_galley = layout_tab_label(painter, name, font_id, text_color, LogicalPx(available_w));
@@ -173,6 +175,8 @@ pub(super) fn draw_tab(
         );
         // close 버튼 (active or hover) — 우측 끝. 클릭은
         // SwitchTab 보다 우선.
+        let marker_clicked =
+            marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, slot));
         let show_close = is_active || resp.hovered();
         let close_clicked = if show_close {
             let cs = 14.0;
@@ -202,17 +206,13 @@ pub(super) fn draw_tab(
         } else {
             false
         };
-        if close_clicked {
-            output.actions.push(TabBarAction::CloseTab {
-                pane_id: info.pane_id,
-                tab_index: i,
-            });
-        } else if resp.clicked() {
-            output.actions.push(TabBarAction::SwitchTab {
-                pane_id: info.pane_id,
-                tab_index: i,
-            });
-        }
+        output.actions.extend(primary_click_action(
+            info.pane_id,
+            i,
+            close_clicked,
+            marker_clicked,
+            resp.clicked(),
+        ));
         if resp.secondary_clicked() {
             output.actions.push(TabBarAction::OpenContextMenu {
                 pane_id: info.pane_id,
@@ -273,6 +273,76 @@ fn paint_move_glyph(
     tasty_ui_widgets::paint_move_source_glyph(ui, th, slot);
     ui.set_clip_rect(prev_clip);
     text_right - glyph - th.spacing_xs.value()
+}
+
+/// 탭 한 칸의 왼쪽 클릭을 동작 하나로 정한다. 닫기, 스크립트 표지, 탭 전환 순으로 우선한다.
+fn primary_click_action(
+    pane_id: u32,
+    tab_index: usize,
+    close_clicked: bool,
+    marker_clicked: Option<u32>,
+    tab_clicked: bool,
+) -> Option<TabBarAction> {
+    if close_clicked {
+        Some(TabBarAction::CloseTab { pane_id, tab_index })
+    } else if let Some(surface_id) = marker_clicked {
+        Some(TabBarAction::ShowHtmlScriptBanner { surface_id })
+    } else if tab_clicked {
+        Some(TabBarAction::SwitchTab { pane_id, tab_index })
+    } else {
+        None
+    }
+}
+
+/// html 스크립트 표지 칸을 이동 글리프 왼쪽에 잡는다. 제목에 남는 오른쪽 끝을 함께 돌려준다.
+fn html_script_marker_slot(
+    context: &TabRenderContext<'_, '_>,
+    i: usize,
+    tab_rect: egui::Rect,
+    text_right: f32,
+) -> (Option<(egui::Rect, super::TabScriptMarker)>, f32) {
+    let Some(marker) = context
+        .info
+        .tab_html_script_marker
+        .get(i)
+        .copied()
+        .flatten()
+    else {
+        return (None, text_right);
+    };
+    let th = context.props.theme;
+    let hit = th.html_script_marker_hit().value();
+    let slot = egui::Rect::from_min_size(
+        egui::pos2(text_right - hit, tab_rect.center().y - hit / 2.0),
+        egui::vec2(hit, hit),
+    );
+    (
+        Some((slot, marker)),
+        text_right - hit - th.tab_status_gap().value(),
+    )
+}
+
+/// 표지를 그리고, 사용자가 lock 을 눌렀으면 그 surface id 를 돌려준다.
+fn paint_html_script_marker(
+    ui: &mut egui::Ui,
+    context: &TabRenderContext<'_, '_>,
+    i: usize,
+    (slot, marker): (egui::Rect, super::TabScriptMarker),
+) -> Option<u32> {
+    use tasty_ui_widgets::HtmlScriptMarkerKind;
+    let tooltip = crate::i18n::t(match marker.kind {
+        HtmlScriptMarkerKind::Blocked => "banner.html_script.marker_blocked",
+        HtmlScriptMarkerKind::Allowed => "banner.html_script.marker_allowed",
+    });
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(slot).id_salt((
+        "html_script_marker",
+        context.info.pane_id,
+        i,
+    )));
+    child.set_clip_rect(context.clip_rect.intersect(ui.clip_rect()));
+    let resp =
+        tasty_ui_widgets::html_script_marker(&mut child, context.props.theme, marker.kind, tooltip);
+    resp.clicked().then_some(marker.surface_id)
 }
 
 /// Fit the label into the space left by the leading icon, busy dot and close slot.

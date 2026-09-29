@@ -33,7 +33,28 @@ impl BannerPhase {
     }
 }
 
+/// 탭 스트립에 남기는 스크립트 상태 표지.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptMarker {
+    /// 차단된 채 배너를 닫았다. 누르면 배너를 다시 보인다.
+    Blocked,
+    /// 이 문서에 스크립트를 허용했다.
+    Allowed,
+}
+
 impl HtmlScriptState {
+    /// 탭 표지. 전역 sandbox가 꺼져 있으면 없다. 문서가 바뀌면 허용과 닫힘이 풀리므로 함께 사라진다.
+    pub fn marker(&self) -> Option<ScriptMarker> {
+        if !self.sandbox {
+            return None;
+        }
+        if self.current_is_allowed() {
+            return Some(ScriptMarker::Allowed);
+        }
+        let has_scripts = self.current_detection().is_some_and(|d| d.has_scripts());
+        (has_scripts && self.banner.dismissed).then_some(ScriptMarker::Blocked)
+    }
+
     /// 호스트가 URL을 넣어 로드를 시작한다. 다음 문서는 이전 문서의 열람을 이어받지 않는다.
     /// 첫 문서 전의 선택은 남긴다. 사용자가 연 파일은 새 탭 선택 뒤에 첫 로드가 온다.
     pub fn on_host_load_requested(&mut self) {

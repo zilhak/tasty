@@ -122,6 +122,9 @@ pub fn apply_tab_bar_actions(
                     drag.current_x = mouse_x;
                 }
             }
+            TabBarAction::ShowHtmlScriptBanner { surface_id } => {
+                show_html_script_banner(engine, surface_id);
+            }
             TabBarAction::DragEnd { pane_id } => {
                 apply_drag_end(
                     state,
@@ -135,6 +138,19 @@ pub fn apply_tab_bar_actions(
             }
         }
     }
+}
+
+/// 사용자가 탭의 lock 표지를 눌렀다. 표지를 누른 것 자체가 문서를 본 것이다.
+fn show_html_script_banner(engine: &crate::core::CoreState, surface_id: u32) {
+    let Some(rs) = engine.find_surface_by_id(surface_id).and_then(|s| {
+        s.as_any()
+            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+    }) else {
+        tracing::warn!("html script marker: surface {surface_id} is gone");
+        return;
+    };
+    tracing::debug!("html script marker: surface {surface_id} banner shown again by the user");
+    rs.with_html_script(|st| st.reshow_banner());
 }
 
 /// 검색 버튼은 터미널에서만 동작한다. 검색창은 terminal 데이터만 읽는다.

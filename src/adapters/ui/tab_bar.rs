@@ -40,6 +40,15 @@ pub struct PaneTabBarView {
     pub scroll_offset: f32,
     /// 이동 대기 표시를 둘 탭 인덱스와 형태. 없으면 None이다.
     pub move_mark: Option<(usize, TabMoveMark)>,
+    /// 탭별 html 스크립트 표지와 그 표지가 가리키는 surface.
+    pub tab_html_script_marker: Vec<Option<TabScriptMarker>>,
+}
+
+/// 탭 칸의 html 스크립트 표지. lock 을 누르면 이 surface 의 배너를 다시 보인다(ADR-0053).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TabScriptMarker {
+    pub surface_id: u32,
+    pub kind: tasty_ui_widgets::HtmlScriptMarkerKind,
 }
 
 /// 탭 칸의 이동 대기 표시. 탭이 대상이면 링, 대상 서피스를 담은 비활성 탭이면 글리프다.
@@ -153,6 +162,10 @@ pub enum TabBarAction {
     DragEnd {
         pane_id: u32,
     },
+    /// 탭의 lock 표지 클릭. 그 surface 의 배너만 다시 보이며 탭 전환·포커스 이동은 없다.
+    ShowHtmlScriptBanner {
+        surface_id: u32,
+    },
 }
 
 impl TabBarAction {
@@ -175,6 +188,7 @@ impl TabBarAction {
             | TabBarAction::OpenNewTabButtonContextMenu { .. }
             | TabBarAction::DragUpdate { .. }
             | TabBarAction::DragEnd { .. }
+            | TabBarAction::ShowHtmlScriptBanner { .. }
             | TabBarAction::AutoScrollToActiveTab { .. } => None,
         }
     }
@@ -195,6 +209,45 @@ fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Ta
         .map(|t| {
             let sids = t.all_surface_ids();
             sids.iter().any(|sid| engine.is_surface_busy(*sid))
+        })
+        .collect()
+}
+
+/// 탭별 html 스크립트 표지. 탭 안의 html surface 중 닫힌 차단 표지(lock)를 허용 표지보다 먼저 고른다.
+fn compute_tab_html_script_markers(
+    engine: &crate::core::CoreState,
+    tabs: &[crate::model::Tab],
+) -> Vec<Option<TabScriptMarker>> {
+    use tasty_model::html_script::ScriptMarker;
+    use tasty_ui_widgets::HtmlScriptMarkerKind;
+    tabs.iter()
+        .map(|t| {
+            let mut found: Option<TabScriptMarker> = None;
+            for sid in t.all_surface_ids() {
+                let Some(rs) = engine.find_surface_by_id(sid).and_then(|s| {
+                    s.as_any()
+                        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+                }) else {
+                    continue;
+                };
+                if rs.kind_static != "html" {
+                    continue;
+                }
+                let kind = match rs.with_html_script(|st| st.marker()) {
+                    Some(ScriptMarker::Blocked) => HtmlScriptMarkerKind::Blocked,
+                    Some(ScriptMarker::Allowed) => HtmlScriptMarkerKind::Allowed,
+                    None => continue,
+                };
+                let marker = TabScriptMarker {
+                    surface_id: sid,
+                    kind,
+                };
+                if kind == HtmlScriptMarkerKind::Blocked {
+                    return Some(marker);
+                }
+                found.get_or_insert(marker);
+            }
+            found
         })
         .collect()
 }
@@ -252,6 +305,7 @@ pub fn draw_pane_tab_bars(
                 })
                 .collect();
             let tab_is_busy = compute_tab_is_busy(engine, &pane.tabs);
+            let tab_html_script_marker = compute_tab_html_script_markers(engine, &pane.tabs);
             panes.push(PaneTabBarView {
                 pane_id,
                 rect: pane_rect,
@@ -278,6 +332,7 @@ pub fn draw_pane_tab_bars(
                 is_focused: pane_id == focused_pane_id,
                 scroll_offset: pane.tab_scroll_offset,
                 move_mark: tab_move_mark(move_mark, pane_id),
+                tab_html_script_marker,
             });
         }
     }
@@ -479,6 +534,7 @@ mod tests {
             is_focused: focused,
             scroll_offset: 0.0,
             move_mark: None,
+            tab_html_script_marker: vec![None; n],
         }
     }
 
@@ -645,6 +701,103 @@ mod tests {
         let result = compute_tab_is_busy(&engine, &tabs);
 
         assert_eq!(result, vec![false]);
+    }
+
+    /// 탭 0 가운데 줄의 `x`를 누르고 떼어 나온 동작을 돌려준다.
+    fn click_tab_row(pane: &PaneTabBarView, x: f32) -> Vec<TabBarAction> {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
+        let panes = vec![pane.clone()];
+        let pos = egui::pos2(x, theme.tab_bar_height.value() / 2.0);
+        let press = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frames = [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![egui::Event::PointerMoved(pos)],
+            vec![press(true)],
+            vec![press(false)],
+        ];
+        let mut actions = Vec::new();
+        for events in frames {
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            drop(ctx.run(input, |ctx| {
+                let props = PaneTabBarsProps {
+                    theme: &theme,
+                    kb: &kb,
+                    panes: &panes,
+                    scale_factor: 1.0,
+                    tab_width: 160.0,
+                    tab_font_size: 12.0,
+                    active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                    drag: None,
+                    switch_overlay_pane: None,
+                };
+                actions = draw_pane_tab_bars_view(ctx, &props).actions;
+            }));
+        }
+        actions
+    }
+
+    fn marker_pane(kind: tasty_ui_widgets::HtmlScriptMarkerKind) -> PaneTabBarView {
+        let mut pane = mk_pane(1, &["page", "b"], 1, true);
+        pane.tab_html_script_marker[0] = Some(TabScriptMarker {
+            surface_id: 7,
+            kind,
+        });
+        pane
+    }
+
+    /// 탭 0을 오른쪽에서 왼쪽으로 훑어 표지가 받은 클릭 위치를 모은다.
+    fn marker_click_xs(pane: &PaneTabBarView) -> Vec<f32> {
+        (0..40)
+            .map(|k| 2.0 + 4.0 * k as f32)
+            .filter(|&x| {
+                click_tab_row(pane, x)
+                    .iter()
+                    .any(|a| matches!(a, TabBarAction::ShowHtmlScriptBanner { surface_id: 7 }))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn blocked_marker_click_reshows_the_banner_instead_of_switching() {
+        let pane = marker_pane(tasty_ui_widgets::HtmlScriptMarkerKind::Blocked);
+        let xs = marker_click_xs(&pane);
+        assert!(!xs.is_empty());
+        let hit = test_theme().html_script_marker_hit().value();
+        // 표지 칸은 탭 오른쪽 묶음 안에만 있다.
+        assert!(xs.iter().all(|&x| x > 160.0 - 64.0 && x < 160.0), "{xs:?}");
+        assert!(xs.last().unwrap() - xs[0] <= hit, "{xs:?}");
+        let on_marker = click_tab_row(&pane, xs[0]);
+        assert!(
+            !on_marker
+                .iter()
+                .any(|a| matches!(a, TabBarAction::SwitchTab { .. })),
+            "{on_marker:?}"
+        );
+        // 표지 밖은 평소처럼 탭 전환이다.
+        assert!(
+            click_tab_row(&pane, 20.0)
+                .iter()
+                .any(|a| matches!(a, TabBarAction::SwitchTab { tab_index: 0, .. }))
+        );
+    }
+
+    #[test]
+    fn allowed_marker_and_no_marker_take_no_click() {
+        let allowed = marker_pane(tasty_ui_widgets::HtmlScriptMarkerKind::Allowed);
+        assert!(marker_click_xs(&allowed).is_empty());
+        let mut none = allowed.clone();
+        none.tab_html_script_marker[0] = None;
+        assert!(marker_click_xs(&none).is_empty());
     }
 
     /// 이동 대기 표시를 단 pane 하나를 그린 뒤 모든 도형을 돌려준다.
