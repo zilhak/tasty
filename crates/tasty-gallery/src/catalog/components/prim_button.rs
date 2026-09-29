@@ -4,7 +4,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, checkbox, switch};
 
 use super::glyph;
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
@@ -199,9 +199,10 @@ pub fn draw_disabled(ui: &mut egui::Ui, theme: &Theme) {
             ("accent fill", "drops out when disabled"),
             ("opacity", "none on disabled controls"),
             ("hover / active", "not drawn"),
+            ("cursor", "default"),
             (
                 "dimmed items",
-                "switched-off rows · pending cut · inert regions → state-dim-opacity (0.5)",
+                "switched-off rows · pending cut · inert regions → state-dim-opacity (0.5), not this rule",
             ),
         ],
         &[
@@ -221,5 +222,11 @@ pub fn draw_disabled(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.button_disabled_fg()),
             ),
         ],
+    );
+    dont(
+        ui,
+        theme,
+        "Don't multiply a disabled control by 0.5. Its label lands at a different step for every \
+         variant, and a faded accent fill still reads as \"the primary action\".",
     );
 }
