@@ -1,6 +1,6 @@
 //! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다. 높이를 지정하지 않은 표의
 //! 헤더와 본문 행이 `table_cell_height`인지, 선택·hover 행 배경이 `table_row_bg_selected`·
-//! `table_row_bg_hover`인지도 검사한다.
+//! `table_row_bg_hover`인지, `header_pad_right`가 오른쪽 정렬 열 제목을 안쪽으로 미는지도 검사한다.
 //! 본문 텍스트 선택과 헤더 정렬 클릭의 구분은 docs/architecture/ui-widgets-crate.md를 따른다.
 
 use std::cell::RefCell;
@@ -348,5 +348,68 @@ fn hovered_row_fill_is_table_row_bg_hover() {
             .iter()
             .all(|c| *c == widget_hover_fill),
         "cell widgets keep the egui hover fill"
+    );
+}
+
+/// 오른쪽 정렬 열 제목 "Kind" 글자 영역의 오른쪽 끝.
+fn right_header_text_right(theme: &Theme, pad_right: f32) -> f32 {
+    let ctx = egui::Context::default();
+    let mut shapes = Vec::new();
+    for _ in 0..2 {
+        let out = ctx.run(raw(vec![]), |c| {
+            egui::CentralPanel::default().show(c, |ui| {
+                let columns = vec![
+                    TableColumn {
+                        title: "Name",
+                        width: TableColumnWidth::Remainder {
+                            at_least: LogicalPx(140.0),
+                            clip: true,
+                        },
+                        align: TableAlign::Left,
+                        sort_id: None::<Col>,
+                    },
+                    TableColumn {
+                        title: "Kind",
+                        width: TableColumnWidth::Initial {
+                            initial: LogicalPx(92.0),
+                            at_least: LogicalPx(72.0),
+                        },
+                        align: TableAlign::Right,
+                        sort_id: None,
+                    },
+                ];
+                Table::new(columns).header_pad_right(pad_right).show(
+                    ui,
+                    theme,
+                    ROWS,
+                    |_row: &Row| false,
+                    |ui, _th, row: &Row, col| {
+                        ui.label(if col == 0 { row.name } else { row.kind });
+                    },
+                );
+            });
+        });
+        shapes = out.shapes;
+    }
+    shapes
+        .iter()
+        .find_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == "Kind" => {
+                Some(t.visual_bounding_rect().right())
+            }
+            _ => None,
+        })
+        .expect("right-aligned header text drawn")
+}
+
+#[test]
+fn header_pad_right_moves_right_aligned_titles_in() {
+    let theme = tasty_themes::mocha_fallback();
+    let pad = theme.spacing_sm.value();
+    let flush = right_header_text_right(&theme, 0.0);
+    let padded = right_header_text_right(&theme, pad);
+    assert!(
+        ((flush - padded) - pad).abs() <= 0.5,
+        "right header title moves in by {pad}: flush {flush}, padded {padded}"
     );
 }

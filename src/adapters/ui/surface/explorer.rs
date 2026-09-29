@@ -1442,6 +1442,8 @@ fn detail_view(
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
         .header_fill(theme.table_header_bg().to_egui())
+        // Size 제목 끝을 본문 Size 값처럼 날짜 열에서 띄운다(design DetailHeader paddingRight).
+        .header_pad_right(theme.spacing_sm.value())
         .selectable(true)
         .id_salt(format!("explorer_detail_{id_suffix}"))
         .show(

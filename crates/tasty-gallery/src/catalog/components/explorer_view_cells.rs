@@ -260,6 +260,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     let out = Table::new(columns)
                         .active_sort(0_usize, TableSortDir::Asc)
                         .header_fill(egui::Color32::from(theme.table_header_bg()))
+                        // design DetailHeader: Size 제목 paddingRight 8, 본문 Size 셀과 같은 여백.
+                        .header_pad_right(theme.spacing_sm.value())
                         .selectable(true)
                         .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
                         .id_salt("explorer_detail_demo")
@@ -350,7 +352,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "detail cells",
-                "Name flex · Size/Date mono 11 · Size padR 8",
+                "Name flex · Size/Date mono 11 · Size padR 8 (th+td)",
             ),
             ("selected", "surface-active (no border)"),
             ("detail name", "table-row-fg · selected text-primary"),

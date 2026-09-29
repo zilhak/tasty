@@ -62,6 +62,7 @@ pub struct Table<'a, K> {
     active_sort: Option<(K, TableSortDir)>,
     header_fill: Option<egui::Color32>,
     header_pad_x: f32,
+    header_pad_right: f32,
     header_height: Option<f32>,
     row_height: Option<f32>,
     max_scroll_height: Option<f32>,
@@ -79,6 +80,7 @@ impl<'a, K> Table<'a, K> {
             active_sort: None,
             header_fill: None,
             header_pad_x: 0.0,
+            header_pad_right: 0.0,
             header_height: None,
             row_height: None,
             max_scroll_height: None,
@@ -110,6 +112,13 @@ impl<'a, K> Table<'a, K> {
     /// 헤더 셀 좌측 패딩(디자인 th padding-x). 기본 0.
     pub fn header_pad_x(mut self, pad: f32) -> Self {
         self.header_pad_x = pad;
+        self
+    }
+
+    /// `TableAlign::Right` 헤더 셀의 오른쪽 여백. 본문 셀이 오른쪽에 같은 여백을 두는 열에서
+    /// 제목 끝을 값 끝과 맞춘다. 왼쪽 정렬 헤더에는 적용하지 않는다. 기본 0.
+    pub fn header_pad_right(mut self, pad: f32) -> Self {
+        self.header_pad_right = pad;
         self
     }
 
@@ -178,6 +187,7 @@ impl<'a, K> Table<'a, K> {
         let columns = &self.columns;
         let active_sort = self.active_sort;
         let header_pad_x = self.header_pad_x;
+        let header_pad_right = self.header_pad_right;
         let selectable = self.selectable;
         let striped = self.striped;
         let max_scroll_height = self.max_scroll_height;
@@ -215,7 +225,8 @@ impl<'a, K> Table<'a, K> {
             let mut table = builder.header(header_h, |mut header| {
                 for col in columns {
                     header.col(|ui| {
-                        if header_cell(ui, theme, col, active_sort, header_pad_x) {
+                        if header_cell(ui, theme, col, active_sort, header_pad_x, header_pad_right)
+                        {
                             clicked_sort = col.sort_id;
                         }
                     });
@@ -311,6 +322,7 @@ fn header_cell<K: Copy + PartialEq>(
     col: &TableColumn<'_, K>,
     active_sort: Option<(K, TableSortDir)>,
     pad_x: f32,
+    pad_right: f32,
 ) -> bool {
     let is_active = match (col.sort_id, active_sort) {
         (Some(k), Some((ak, _))) => k == ak,
@@ -356,8 +368,13 @@ fn header_cell<K: Copy + PartialEq>(
     match col.align {
         TableAlign::Left => do_cell(ui),
         TableAlign::Right => {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), do_cell)
-                .inner
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if pad_right > 0.0 {
+                    ui.add_space(pad_right);
+                }
+                do_cell(ui)
+            })
+            .inner
         }
     }
 }
