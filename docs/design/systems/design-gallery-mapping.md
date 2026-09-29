@@ -347,7 +347,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 |---|---|---|
 | `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 `.rs` 대부분 |
 | `toast_card.rs` | `tasty-type-appearance` 의 `ToastKind` · `tasty-ui-widgets` 의 `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
-| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`·`elide_popup_title`, 버튼 수와 무관하게 대칭) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
+| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`·`elide_popup_title`, 버튼 수와 무관하게 대칭, 잘리면 띠를 돌려줘 `title_tooltip`이 전체 제목 Tooltip 을 붙인다) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
 
 <a id="primitive-컴포넌트-레이어-components"></a>
 
@@ -375,7 +375,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` |
 | `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
 | `feedback/CenterState` · `gallery/components.jsx` `CenterStateG`(Section `centerstate`) | `CenterState` / `CenterStateVariant` / `CenterStateOutput` / `CENTER_STATE_ERROR_GLYPH` (loading·empty·error, 글리프 24 · 제목 · 보조 줄 슬롯 항상 예약, 받은 영역 안 세로 가운데, 오류 글리프 alertTriangle 부품 소유, 선택 액션은 가운데 정렬 밖 보조 슬롯 아래 `center-state-action-gap`, 높이 없는 호스트는 대칭 자연 높이 — 액션이 있으면 위아래 48) | `prim_center_state` (Components `CenterState — empty · loading · error` 의 `center-state` · `center-state-action` · `center-state-unsized` spec) |
-| `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` |
+| `feedback/Tooltip` | `Tooltip`(text/placement/id_source · `placement_top_then_bottom` · painter 전용 호출부의 `show_in`) · 호버 지연 `tooltip_hover_delay_elapsed` | `prim_help_hint` · convert(잘린 제목) |
 | `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` |
@@ -765,7 +765,7 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
 
 안내 모달은 제목을 공용 팝업 타이틀바에 둔다. 시안도 이 모양이다: 채움 `bg-sidebar`,
-높이 `control-height`, 한 줄 제목(넘치면 말줄임), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고 버튼 칸은 IconButton sm 24다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 이 spec 의 머리는 본체 알림 popup 처럼 본문 크기 제목과 `border-frame` 선으로 그린다. 이 팝업만 제목 크기
+높이 `control-height`, 한 줄 제목(넘치면 말줄임하고 잘렸을 때만 호버 Tooltip 으로 전체 제목, 위 → 아래 배치), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고 버튼 칸은 IconButton sm 24다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 이 spec 의 머리는 본체 알림 popup 처럼 본문 크기 제목과 `border-frame` 선으로 그린다. 이 팝업만 제목 크기
 `font-size-max`와 아래 선 `info-modal-title-edge`를 쓴다. ×는 dismiss 버튼·Enter·Esc와
 같은 동작이고, 바깥 클릭으로는 닫히지 않는다.
 

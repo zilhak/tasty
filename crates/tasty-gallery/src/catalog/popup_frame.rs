@@ -3,7 +3,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{elide_popup_title, paint_popup_title_glyph, popup_title_text_rect};
+use tasty_ui_widgets::{
+    elide_popup_title, paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
+    tooltip_hover_delay_elapsed,
+};
 
 use crate::catalog::icons;
 
@@ -43,7 +46,7 @@ impl TitleButtons {
 }
 
 /// 타이틀바 제목을 본체와 같은 대칭 영역 계산으로 스트립 가운데에 그린다. 넘치면 본체와
-/// 같이 말줄임한다.
+/// 같이 말줄임하고, 잘렸을 때만 제목 띠를 돌려준다([`title_tooltip`]에 넘긴다).
 pub fn draw_title_text(
     painter: &egui::Painter,
     theme: &Theme,
@@ -51,9 +54,10 @@ pub fn draw_title_text(
     buttons_left_x: f32,
     title: &str,
     font: egui::FontId,
-) {
+) -> Option<egui::Rect> {
     let area = popup_title_text_rect(title_rect, buttons_left_x, theme.popup_title_text_gap());
     let shown = elide_popup_title(painter.ctx(), title, font.clone(), area.width());
+    let cut = shown != title;
     painter.with_clip_rect(area).text(
         area.center(),
         egui::Align2::CENTER_CENTER,
@@ -61,6 +65,29 @@ pub fn draw_title_text(
         font,
         theme.text_primary().into(),
     );
+    cut.then_some(area)
+}
+
+/// 잘린 제목(`draw_title_text`가 돌려준 띠)에 전체 제목 Tooltip을 붙인다. 본체처럼 띠 위에서
+/// `tooltip-delay`만큼 머물면 뜨고, `open`이면 호버 없이 표시한다(specimen).
+pub fn title_tooltip(
+    ui: &egui::Ui,
+    theme: &Theme,
+    title: &str,
+    band: Option<egui::Rect>,
+    open: bool,
+) {
+    let Some(band) = band else { return };
+    // 한 페이지에 타이틀바가 여러 개라 띠 위치로 버블·타이머를 구분한다.
+    let id = egui::Id::new("gallery.popup_title_tip")
+        .with(band.min.x.to_bits())
+        .with(band.min.y.to_bits());
+    let hovered = ui.rect_contains_pointer(band);
+    // 강제 표시는 띠가 다 보일 때만 — 스크롤로 가려진 띠의 버블이 창 안으로 당겨져 떠 있지 않게.
+    let forced = open && ui.clip_rect().contains_rect(band);
+    if forced || tooltip_hover_delay_elapsed(ui.ctx(), theme, id, hovered) {
+        show_popup_title_tooltip(ui.ctx(), theme, id, title, band);
+    }
 }
 
 /// 타이틀바 버튼을 painter로 그리고 버튼 영역의 왼쪽 끝을 반환한다. 본체 `PopupManager`와
@@ -186,7 +213,7 @@ pub fn draw(
         title_bg,
     );
     let buttons_left = draw_title_buttons(ui.ctx(), &painter, theme, title_rect, buttons);
-    draw_title_text(
+    let cut_band = draw_title_text(
         &painter,
         theme,
         title_rect,
@@ -194,6 +221,7 @@ pub fn draw(
         title,
         egui::FontId::proportional(theme.font_size_body.value()),
     );
+    title_tooltip(ui, theme, title, cut_band, false);
 
     let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;
     let content_rect = egui::Rect::from_min_max(

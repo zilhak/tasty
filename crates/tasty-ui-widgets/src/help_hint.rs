@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::tooltip::{Tooltip, TooltipPlacement};
+use crate::tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 
 /// HelpHint 빌더.
 pub struct HelpHint<'a> {
@@ -61,7 +61,7 @@ impl<'a> HelpHint<'a> {
 
         let resp = resp.on_hover_cursor(egui::CursorIcon::Help);
 
-        let show = self.open || hover_delay_elapsed(ui, theme, resp.id, hovered);
+        let show = self.open || tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, hovered);
         if show {
             let tip_id = self.id.unwrap_or_else(|| resp.id.with("tooltip"));
             Tooltip::new(self.text)
@@ -70,28 +70,6 @@ impl<'a> HelpHint<'a> {
                 .show(ui, theme, rect);
         }
         resp
-    }
-}
-
-/// 호버가 시작된 시각부터 지연을 계산하고 벗어나면 초기화한다.
-/// 다른 egui 도움말의 대기 시간을 바꾸지 않도록 자체 타이머를 사용한다.
-fn hover_delay_elapsed(ui: &egui::Ui, theme: &Theme, id: egui::Id, hovered: bool) -> bool {
-    let key = id.with("help_hint_hover_started_at");
-    if hovered {
-        let now = ui.ctx().input(|i| i.time);
-        let start = ui
-            .ctx()
-            .data_mut(|d| *d.get_temp_mut_or_insert_with(key, || now));
-        if now - start < theme.tooltip_delay().to_secs_f64() {
-            // delay 경과 후 자동으로 다시 판정되도록 repaint 예약.
-            ui.ctx().request_repaint();
-            false
-        } else {
-            true
-        }
-    } else {
-        ui.ctx().data_mut(|d| d.remove::<f64>(key));
-        false
     }
 }
 

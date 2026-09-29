@@ -459,6 +459,23 @@ impl PopupManager {
                     title_font,
                     th.text_primary().into(),
                 );
+                // 잘린 제목만 호버 시 전체 제목을 보여 준다. 끌어 옮기는 중에는 띄우지 않는다.
+                if elided_title != popup.title {
+                    let tip_id = egui::Id::new("popup.title_tooltip").with(popup_id);
+                    let band_hovered = hovered_popup == Some(popup_id)
+                        && !primary_down
+                        && pointer_pos.is_some_and(|p| title_avail_rect.contains(p));
+                    if tasty_ui_widgets::tooltip_hover_delay_elapsed(ctx, &th, tip_id, band_hovered)
+                    {
+                        tasty_ui_widgets::show_popup_title_tooltip(
+                            ctx,
+                            &th,
+                            tip_id,
+                            &popup.title,
+                            title_avail_rect,
+                        );
+                    }
+                }
 
                 if let Some(rect) = fullscreen_btn_rect {
                     let hovered = matches!(hovered_fullscreen, Some((id, _)) if id == popup_id);

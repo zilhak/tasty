@@ -47,8 +47,34 @@ impl<'a> Tooltip<'a> {
         self
     }
 
+    /// 위에 들어가면 위, 아니면 아래에 들어가면 아래, 둘 다 안 되면 위(창 안으로 당김)로 배치한다.
+    /// `bounds`는 버블이 들어가야 하는 영역(보통 창 전체)이다.
+    pub fn placement_top_then_bottom(
+        self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        anchor: egui::Rect,
+        bounds: egui::Rect,
+    ) -> Self {
+        let offset = theme.spacing_xs.value();
+        let height = self.bubble_height(ctx, theme);
+        let placement = if anchor.top() - offset - height >= bounds.top()
+            || anchor.bottom() + offset + height > bounds.bottom()
+        {
+            TooltipPlacement::Top
+        } else {
+            TooltipPlacement::Bottom
+        };
+        self.placement(placement)
+    }
+
     /// `anchor` rect 를 기준으로 버블을 그린다(강제 표시). hover/delay 판정은 호출부 몫.
     pub fn show(self, ui: &egui::Ui, theme: &Theme, anchor: egui::Rect) {
+        self.show_in(ui.ctx(), theme, anchor);
+    }
+
+    /// `Ui` 없이 painter만 쓰는 호출부용 [`Tooltip::show`].
+    pub fn show_in(self, ctx: &egui::Context, theme: &Theme, anchor: egui::Rect) {
         let offset = theme.spacing_xs.value();
         // 앵커 rect 중앙 기준 앵커 포인트 + 버블 pivot(버블에서 앵커에 붙는 변).
         let (anchor_pos, pivot) = match self.placement {
@@ -70,9 +96,36 @@ impl<'a> Tooltip<'a> {
             ),
         };
 
-        // 텍스트는 border-box 240 을 넘지 않도록 padding(x=space-sm ×2)을 뺀 폭에서 wrap.
         let pad_x = theme.spacing_sm.value();
         let pad_y = theme.spacing_xs.value();
+        let job = self.layout_job(theme);
+
+        egui::Area::new(self.id)
+            .order(egui::Order::Tooltip)
+            .fixed_pos(anchor_pos)
+            .pivot(pivot)
+            .constrain(true) // 화면/모달 밖으로 나가면 egui 기본 constrain 이 안으로 당김.
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(theme.surface_raised().to_egui())
+                    .stroke(egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.border_strong().to_egui(),
+                    ))
+                    .corner_radius(theme.corner_radius.value())
+                    .shadow(theme.shadow_popover().to_egui())
+                    .inner_margin(egui::Margin::symmetric(pad_x as i8, pad_y as i8))
+                    .show(ui, |ui| {
+                        ui.set_max_width(theme.tooltip_max_width.value());
+                        ui.label(job);
+                    });
+            });
+    }
+
+    fn layout_job(&self, theme: &Theme) -> egui::text::LayoutJob {
+        // 텍스트는 border-box 240 을 넘지 않도록 padding(x=space-sm ×2)을 뺀 폭에서 wrap.
+        let pad_x = theme.spacing_sm.value();
         let text_wrap = (theme.tooltip_max_width.value() - pad_x * 2.0).max(0.0);
 
         let caption = theme.font_size_caption.value();
@@ -92,27 +145,87 @@ impl<'a> Tooltip<'a> {
                 ..Default::default()
             },
         );
+        job
+    }
 
-        egui::Area::new(self.id)
-            .order(egui::Order::Tooltip)
-            .fixed_pos(anchor_pos)
-            .pivot(pivot)
-            .constrain(true) // 화면/모달 밖으로 나가면 egui 기본 constrain 이 안으로 당김.
-            .interactable(false)
-            .show(ui.ctx(), |ui| {
-                egui::Frame::new()
-                    .fill(theme.surface_raised().to_egui())
-                    .stroke(egui::Stroke::new(
-                        theme.border_width.value(),
-                        theme.border_strong().to_egui(),
-                    ))
-                    .corner_radius(theme.corner_radius.value())
-                    .shadow(theme.shadow_popover().to_egui())
-                    .inner_margin(egui::Margin::symmetric(pad_x as i8, pad_y as i8))
-                    .show(ui, |ui| {
-                        ui.set_max_width(theme.tooltip_max_width.value());
-                        ui.label(job);
-                    });
-            });
+    /// 버블 높이 — 텍스트 + 위아래 padding + 위아래 테두리.
+    fn bubble_height(&self, ctx: &egui::Context, theme: &Theme) -> f32 {
+        let text = ctx.fonts(|f| f.layout_job(self.layout_job(theme)).size().y);
+        text + theme.spacing_xs.scaled(2.0).value() + theme.border_width.scaled(2.0).value()
+    }
+}
+
+/// `hovered`가 이어진 시간이 `tooltip-delay`를 넘었는지 판정한다. 벗어나면 초기화한다.
+/// 다른 egui 도움말의 대기 시간을 바꾸지 않도록 `id`별 자체 타이머를 사용한다.
+pub fn tooltip_hover_delay_elapsed(
+    ctx: &egui::Context,
+    theme: &Theme,
+    id: egui::Id,
+    hovered: bool,
+) -> bool {
+    let key = id.with("tooltip_hover_started_at");
+    if hovered {
+        let now = ctx.input(|i| i.time);
+        let start = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(key, || now));
+        if now - start < theme.tooltip_delay().to_secs_f64() {
+            // delay 경과 후 자동으로 다시 판정되도록 repaint 예약.
+            ctx.request_repaint();
+            false
+        } else {
+            true
+        }
+    } else {
+        ctx.data_mut(|d| d.remove::<f64>(key));
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn theme() -> Theme {
+        Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
+    }
+
+    /// 창 안의 한 줄 앵커가 받는 배치.
+    fn placement_for(anchor_top: f32) -> TooltipPlacement {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let anchor =
+            egui::Rect::from_min_size(egui::pos2(100.0, anchor_top), egui::vec2(200.0, 28.0));
+        let ctx = egui::Context::default();
+        let mut placement = TooltipPlacement::Left;
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            placement = Tooltip::new("Surface Type")
+                .placement_top_then_bottom(ctx, &theme(), anchor, bounds)
+                .placement;
+        });
+        placement
+    }
+
+    #[test]
+    fn top_is_used_when_the_bubble_fits_above() {
+        assert_eq!(placement_for(300.0), TooltipPlacement::Top);
+    }
+
+    #[test]
+    fn bottom_is_used_when_the_bubble_does_not_fit_above() {
+        assert_eq!(placement_for(0.0), TooltipPlacement::Bottom);
+    }
+
+    #[test]
+    fn top_is_kept_when_neither_side_fits() {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 30.0));
+        let anchor = egui::Rect::from_min_size(egui::pos2(100.0, 1.0), egui::vec2(200.0, 28.0));
+        let ctx = egui::Context::default();
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            let t = Tooltip::new("Surface Type").placement_top_then_bottom(
+                ctx,
+                &theme(),
+                anchor,
+                bounds,
+            );
+            assert_eq!(t.placement, TooltipPlacement::Top);
+        });
     }
 }

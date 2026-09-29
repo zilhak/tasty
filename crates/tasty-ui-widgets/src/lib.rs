@@ -92,7 +92,9 @@ pub use multi_select::{
 };
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
-pub use popup_title::{elide_popup_title, paint_popup_title_glyph, popup_title_text_rect};
+pub use popup_title::{
+    elide_popup_title, paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
+};
 pub use remote_tool::{
     FILTER_DROPDOWN_MAX_HEIGHT, FILTER_DROPDOWN_MIN_WIDTH, LocalSshHost, LocalSshSectionData,
     ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap, draw_local_ssh_section,
@@ -115,7 +117,7 @@ pub use toast::{
     fade_alpha as toast_fade_alpha, layout_card as toast_layout_card,
 };
 pub use toggle::{checkbox, checkbox_width, switch};
-pub use tooltip::{Tooltip, TooltipPlacement};
+pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 pub use tree_row::tree_row;
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
 pub use warning_callout::warning_callout;

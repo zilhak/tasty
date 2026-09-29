@@ -31,7 +31,8 @@ fn scaled(theme: &Theme, zoom: f32) -> Theme {
 }
 
 /// 본체 convert popup 한 장. 높이 = 타이틀바 + 콘텐츠 여백 × 2 + 행 수 × MenuItem 높이.
-fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx) {
+/// `open_tip`이면 잘린 제목의 Tooltip을 호버 없이 띄운다(specimen).
+fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx, open_tip: bool) {
     let title_h = th.item_height_interactive;
     let margin = th.spacing_xs;
     let rows = th.menu_item_height().scaled(KINDS.len() as f32);
@@ -69,7 +70,7 @@ fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx) {
     );
     let buttons_left =
         popup_frame::draw_title_buttons(ui.ctx(), &painter, th, title_rect, TitleButtons::CLOSE);
-    popup_frame::draw_title_text(
+    let cut_band = popup_frame::draw_title_text(
         &painter,
         th,
         title_rect,
@@ -77,6 +78,7 @@ fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx) {
         title,
         egui::FontId::proportional(th.font_size_body.value()),
     );
+    popup_frame::title_tooltip(ui, th, title, cut_band, open_tip);
 
     let content = egui::Rect::from_min_max(
         egui::pos2(
@@ -117,7 +119,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("Latte · en · ui_scale 1.0", &latte),
         ] {
             spec::cluster(ui, th, label, |ui| {
-                popup(ui, th, "Surface Type", th.convert_popup_width());
+                popup(ui, th, "Surface Type", th.convert_popup_width(), false);
             });
         }
     });
@@ -173,7 +175,7 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "Mocha · ja · 1.2 — before: literal 200 (cuts)",
             |ui| {
-                popup(ui, &mocha_12, JA_TITLE, LITERAL_WIDTH_BEFORE);
+                popup(ui, &mocha_12, JA_TITLE, LITERAL_WIDTH_BEFORE, false);
             },
         );
         spec::cluster(
@@ -181,7 +183,13 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "Mocha · ja · 1.2 — convert-popup-width 240 × 1.2 (fits)",
             |ui| {
-                popup(ui, &mocha_12, JA_TITLE, mocha_12.convert_popup_width());
+                popup(
+                    ui,
+                    &mocha_12,
+                    JA_TITLE,
+                    mocha_12.convert_popup_width(),
+                    false,
+                );
             },
         );
         spec::cluster(
@@ -189,19 +197,26 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
             &latte,
             "Latte · ja · 1.2 — convert-popup-width 240 × 1.2 (fits)",
             |ui| {
-                popup(ui, &latte_12, JA_TITLE, latte_12.convert_popup_width());
+                popup(
+                    ui,
+                    &latte_12,
+                    JA_TITLE,
+                    latte_12.convert_popup_width(),
+                    false,
+                );
             },
         );
         spec::cluster(
             ui,
             theme,
-            "Mocha · still too long — ellipsis inside the band",
+            "Mocha · still too long — ellipsis + full title tooltip (forced open)",
             |ui| {
                 popup(
                     ui,
                     theme,
                     "Convert this surface to another type",
                     theme.convert_popup_width(),
+                    true,
                 );
             },
         );
@@ -217,6 +232,10 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("band", "width − 2 × reserve(N) · convert 240 → 176"),
             ("overflow", "ellipsis inside the band"),
+            (
+                "tooltip",
+                "only when cut · full title on hover after tooltip-delay · top, then bottom",
+            ),
             ("widen to fit", "no"),
         ],
         &[TokenChip::new(

@@ -110,7 +110,7 @@ fn modal(
     );
     let buttons_left =
         popup_frame::draw_title_buttons(ui.ctx(), &painter, theme, title_rect, TitleButtons::CLOSE);
-    popup_frame::draw_title_text(
+    let cut_band = popup_frame::draw_title_text(
         &painter,
         theme,
         title_rect,
@@ -118,6 +118,7 @@ fn modal(
         title,
         egui::FontId::proportional(theme.font_size_max.value()),
     );
+    popup_frame::title_tooltip(ui, theme, title, cut_band, false);
 
     let content = egui::Rect::from_min_max(egui::pos2(frame.min.x, title_rect.max.y), frame.max);
     let mut child = ui.new_child(
@@ -302,7 +303,7 @@ fn notifications_head(ui: &mut egui::Ui, theme: &Theme, title: &str) {
         title_rect,
         TitleButtons::FULLSCREEN_AND_CLOSE,
     );
-    popup_frame::draw_title_text(
+    let cut_band = popup_frame::draw_title_text(
         &painter,
         theme,
         title_rect,
@@ -310,6 +311,7 @@ fn notifications_head(ui: &mut egui::Ui, theme: &Theme, title: &str) {
         title,
         body_font.clone(),
     );
+    popup_frame::title_tooltip(ui, theme, title, cut_band, false);
     painter.text(
         egui::pos2(
             frame.min.x + theme.spacing_lg.value(),

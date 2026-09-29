@@ -4,7 +4,10 @@
 //! `popup-title-edge-inset + N × popup-title-btn-size + (N − 1) × popup-title-btn-gap +
 //! popup-title-text-gap`이다(버튼 하나 32, 둘 60).
 
+use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+
+use crate::tooltip::Tooltip;
 
 /// 제목을 그리고 말줄임할 사각형을 반환한다. 폭은 0 이상이며 버튼 영역과 겹치지 않는다.
 /// `buttons_left_x`는 가장 왼쪽 버튼의 왼쪽 경계이고 버튼이 없으면 `title_rect.max.x`다.
@@ -61,6 +64,22 @@ pub fn elide_popup_title(
         }
     }
     "…".to_owned()
+}
+
+/// 잘린 제목의 전체 문구를 제목 띠 `band`에 붙인 Tooltip으로 보여 준다. 배치는 위, 들어가지
+/// 않으면 아래다. `show`는 호출부가 판정한다(호버 지연 경과 또는 강제 표시). 제목이 잘리지 않았으면
+/// 호출하지 않는다.
+pub fn show_popup_title_tooltip(
+    ctx: &egui::Context,
+    theme: &Theme,
+    id: egui::Id,
+    title: &str,
+    band: egui::Rect,
+) {
+    Tooltip::new(title)
+        .id_source(id)
+        .placement_top_then_bottom(ctx, theme, band, ctx.screen_rect())
+        .show_in(ctx, theme, band);
 }
 
 /// painter만 쓰는 타이틀바에 아이콘을 그린다. SVG 텍스처가 아직 준비되지 않았으면
