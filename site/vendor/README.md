@@ -14,7 +14,7 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
 
 1. **파일 목록을 비교한다.** `DesignSync.list_files`로 받은 원격 경로와 `find site/vendor -type f`로 얻은 로컬 목록을 비교한다. 새 파일, 삭제된 파일, 이름이 바뀐 파일을 확인한다. 아래 "원본에서 제외한 것"에 해당하는 경로는 비교에서 뺀다.
 2. **변경된 파일을 받는다.** `DesignSync.get_file`로 파일을 하나씩 받아 같은 상대 경로에 쓴다. 원격에서 삭제된 파일은 사본에서도 지운다. `get_file`의 256 KiB 상한을 넘는 파일은 별도로 처리하고 그 사실을 기록한다.
-3. **로컬 변형을 다시 적용한다.** 아래 "원본과 다르게 둔 자리"의 문구 변경 2곳과 출처 메타데이터 제거를 적용한다. `cargo test -p tasty-doc-guards --test no_todo_file_citation`으로 로컬 작업 문서 인용이 남지 않았는지 확인한다.
+3. **로컬 변형을 다시 적용한다.** 아래 "원본과 다르게 둔 자리"의 세 가지(로컬 문서 인용 3곳, 옛 ADR 번호 인용, 출처 메타데이터 제거)를 적용한다. `cargo test -p tasty-doc-guards --test no_todo_file_citation`으로 로컬 작업 문서 인용이 남지 않았는지 확인한다.
 4. **토큰과 아이콘을 비교한다.** 다음 검사를 실행한다.
 
    ```sh
@@ -47,6 +47,12 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
 - **`_ds_bundle.js`**: 브라우저에서 직접 실행하는 전역 번들이다. 사이트는 `components/`를 직접 번들하므로 필요 없다.
 - **`icons.json`**: `icons/*.svg`에서 생성한 아이콘 이름·그룹·역할·`paths`·`fill` 명부다. 사이트는 `ICON_PATHS`를 사용하므로 추가 사본을 두지 않는다. 앱 아이콘은 이 명부를 참고해 옮긴 것이며, `crates/tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs`가 `ICON_PATHS`와 앱 구현을 비교한다.
 - **프리뷰 `index.html`**: 원격 킷의 번들에 의존한다. `ui_kits/terminal/overlays/*.html`, `titlebar/*.html`의 단독 미리보기와 킷 `README.md`도 제외한다. 사이트는 `.jsx`를 변환해 사용한다.
+- **`tokens/tasty.tokens.json`**: DTCG 원본이다. 앱이 가져오는 사본은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json`에 두고(갱신 절차는 `crates/tasty-design-tokens/README.md`), 사이트는 CSS 토큰만 쓴다. `tokens/fonts.css`는 위 웹폰트 항목으로 제외한다.
+- **컴포넌트 보조 파일**: `components/**/*.prompt.md`(디자인 도구용 사용 안내)와 `components/*/*.card.html`(디자인 시스템 패널 카드)은 사이트가 쓰지 않는다.
+- **`changelog/`**: 원격 디자인 결정문이다. 저장소의 결정은 `docs/`와 ADR에 둔다.
+- **루트 문서와 도구 파일**: `readme.md`, `FEATURES.md`, `CLAUDE.md`, `SKILL.md`, `TOKENS.md`, `Canvas.dc.html`, `thumbnail.html`, `.thumbnail`, `support.js`, `_ds_manifest.json`, `_adherence.oxlintrc.json`. 원격 프로젝트 운영용이며 사이트가 쓰지 않는다. 진입점 `styles.css`만 가져온다.
+- **작업 폴더**: `design-request/`, `design-tasks/`, `explorations/`, `scraps/`, `screenshots/`, `uploads/`. 요청·작업 기록과 시안 초안이다.
+- **`fonts/`, `assets/icons/`**: 폰트 원본은 웹폰트 항목으로 제외한다. `assets/icons/`는 앱 아이콘 원본(`.icns`·`.ico`·PNG·멜론 SVG)과 보조 SVG라 사이트가 쓰지 않는다. `assets/screens/`는 `screens/`로 가져온다.
 
 ## 원본과 다르게 둔 자리
 
