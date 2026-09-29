@@ -170,6 +170,13 @@ pub mod checkbox {
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
 }
 
+pub mod convert {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.convert-popup-width` → `{primitive.size-240}` = 240px
+    pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+}
+
 pub mod cut {
 
     /// `component.cut-pending-opacity` → `{semantic.state-dim-opacity}` = 0.5

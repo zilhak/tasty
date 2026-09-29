@@ -296,6 +296,15 @@ semantic/primitive 종착.
 > reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
 
+## Convert popup 폭
+
+디자인 `tokens/components.css` 의 `--tasty-convert-popup-width`. surface 변환 팝업(`popup/convert.rs`)의
+고정 폭 role 이다.
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
+|---|---|---|---|
+| `--tasty-convert-popup-width` | → `size-240` (240px) | `convert_popup_width()` | 배율 적용. 본체 `popup/convert.rs` 의 크기 계산은 아직 이 접근자를 읽지 않는다 |
+
 <a id="attention-kind--needsinputcompletion-surface-highlight-adr-0062"></a>
 
 ## Attention kind — NeedsInput/Completion (surface-highlight)
@@ -406,7 +415,7 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 
 디자인 시스템의 DTCG 토큰과 Rust `Theme` 필드, 그리고 실제 `th.*`/`theme.*` 호출처를 잇는 매핑 참조. [theme.md](theme.md) 의 토큰 구조를 호출처 관점에서 보충한다.
 
-> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (932 토큰 = primitive 128 / semantic 152 / component 652 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
+> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (933 토큰 = primitive 128 / semantic 152 / component 653 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
 
 ### 구조 모델
 

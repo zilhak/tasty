@@ -580,6 +580,12 @@ impl crate::theme::Theme {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
 
+    /// `component.convert-popup-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn convert_popup_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
     /// `component.dag-canvas-bg` → `{semantic.bg-panel}`
     #[inline]
     pub fn dag_canvas_bg(&self) -> HexColor {

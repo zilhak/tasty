@@ -3113,6 +3113,10 @@
       "$type": "dimension",
       "$value": "{semantic.space-xs}"
     },
+    "convert-popup-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}"
+    },
     "notifications-popup-width": {
       "$type": "dimension",
       "$value": "{primitive.size-352}"
