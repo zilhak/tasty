@@ -152,7 +152,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/",
-        15,
+        13,
         "나머지 크레이트(dag-layout·model·plugin 뷰어·settings·geometry)",
     ),
 ];

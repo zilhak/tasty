@@ -417,7 +417,10 @@ fn wt_row(
 
     if selected {
         ui.painter().rect_filled(
-            Rect::from_min_size(rect.min, vec2(2.0, rect.height())),
+            Rect::from_min_size(
+                rect.min,
+                vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
+            ),
             0.0,
             theme.accent_primary().to_egui(),
         );
@@ -582,7 +585,10 @@ fn ch_row(ui: &mut egui::Ui, theme: &Theme, entry: &StatusEntry, selected: bool)
 
     if selected {
         ui.painter().rect_filled(
-            Rect::from_min_size(rect.min, vec2(2.0, rect.height())),
+            Rect::from_min_size(
+                rect.min,
+                vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
+            ),
             0.0,
             theme.accent_primary().to_egui(),
         );
