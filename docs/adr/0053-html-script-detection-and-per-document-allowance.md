@@ -58,6 +58,13 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 
 허용은 surface, main frame 문서의 URL, 내용 지문에 묶인다. URL은 fragment를 뺀 값이다. 내용 지문은 파일 전체를 스트리밍 해시로 구한다.
 지문을 스캔 상한까지만 구하면 상한 뒤에 덧붙인 스크립트가 허용된 채 실행된다(리뷰 측정). 그래서 지문 범위를 스캔 범위와 분리한다.
+
+지문은 로드할 때 구한다.
+- html surface에서 main frame `file://` 문서를 로드할 때마다 감지 스캔과 같은 읽기로 파일 전체 지문을 구한다. 허용 여부와 관계없이 모든 로드에서 구한다.
+- 구한 지문과 감지 결과는 그 문서가 commit될 때 surface의 "현재 문서" 기록이 된다. 기록 항목은 URL, 지문, 감지 결과다.
+- 허용 클릭은 그 시점의 현재 문서 `{URL, 지문}`을 허용으로 기록한다. 클릭할 때 파일을 다시 읽지 않는다.
+- 이유: 허용 대상은 사용자가 보고 배너 감지 결과가 나온 그 내용이어야 한다. 클릭할 때 지문을 구하면, 사용자가 본 뒤 파일을 바꿔 둔 내용이 경합 없이 실행된다(리뷰 측정).
+- 화면 문서는 마지막 main frame commit에서 호스트가 기록한 현재 문서다. webview의 현재 URI 조회로 판정하지 않는다.
 사용자에게 보이는 문안("until Tasty restarts", 갤러리의 "cleared by: navigation to another document · app restart")과 같은 규칙이다.
 
 - **같은 문서의 재로드**: 허용을 유지한다. 사용자의 재로드(F5 등)와 허용 직후 호스트가 하는 재로드를 구분하지 않는다.
@@ -66,6 +73,8 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - **허용 기록의 갱신 시점**: 허용 기록은 다른 main frame 문서가 commit될 때 해제한다.
   - 새 문서의 JS를 켤지 끌지는 commit 전의 응답 단계에서 정한다. 이 판단은 허용 기록을 바꾸지 않는다.
   - 응답 단계에서 허용과 일치한 문서가 commit되면 허용을 유지한다. 그 밖의 문서가 commit되면 허용을 해제한다. 응답 단계 없이 commit되는 bfcache 복원도 해제에 포함된다.
+  - 응답 단계의 결과는 로드마다 새로 둔다. 로드가 시작될 때 이전 로드의 결과를 비우고, commit에서 소비한다. 비우지 않으면 앞선 재로드의 "일치"가 뒤이은 bfcache commit에 남아 허용이 유지된다(리뷰 측정).
+  - 응답 단계 없이 commit된 문서는 지문이 없다. 이 문서는 허용할 수 없다. Linux는 아래처럼 page cache를 꺼서 이 경우를 없앤다.
 - **문서가 바뀌지 않고 끝나는 로드**: 로드 실패, 중단, 다운로드처럼 main frame 문서가 commit되지 않고 로드가 끝나는 경우다.
   - 화면에 남은 문서가 허용된 문서이면 JS를 허용 상태로 되돌린다. 멈춘 채 두지 않는다.
   - 허용 기록은 그대로 둔다.
@@ -82,7 +91,10 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - **Linux(측정함, WebKitGTK 2.50.4)**: `NavigationAction`에는 main frame과 서브프레임을 구분할 정보가 없다. iframe 문서의 navigation도 `get_frame_name()`이 None이고 type이 `other`로 같았다. 그래서 navigation action에서는 판단하지 않고, 다음 두 신호를 쓴다.
   - `load-changed` `STARTED`: main frame 로드에서만 온다(측정 결과 iframe 로드에서는 오지 않았다). 여기서 JS를 무조건 끈다.
     - 이 시점의 `get_uri()`는 링크 이동에서 이전 문서 URI를 돌려준다(측정). 그래서 URL을 판정에 쓰지 않는다.
-  - `decide-policy`의 `RESPONSE` 결정: `ResponsePolicyDecision::is_main_frame_main_resource()`(2.40부터)가 참일 때만 응답 URL과 내용 지문으로 허용 여부를 정해 JS를 켜거나 끈다.
+    - 응답 단계의 결과(대기 값)를 여기서 비운다.
+  - `decide-policy`의 `RESPONSE` 결정: `ResponsePolicyDecision::is_main_frame_main_resource()`(2.40부터)가 참일 때만 동작한다.
+    - `file://`이면 원본을 읽어 감지 스캔과 전체 지문을 구한다. 응답 URL과 지문을 허용과 비교해 JS를 켜거나 끈다. 결과(URL, 지문, 감지 결과, 일치 여부)는 대기 값으로 둔다.
+    - 문서상으로는 결정 객체를 잡아 두고 나중에 결정할 수 있다. 따라서 읽기와 해시를 main thread 밖에서 하고 끝난 뒤 결정을 넘기는 분리가 가능해 보인다. 구현에서의 가능 여부는 검토하지 않았다.
     - 측정에서 iframe 응답은 거짓이었다.
     - 여기서 켜고 끈 설정은 그 문서의 첫 스크립트부터 적용됐다.
     - 이 단계에서는 JS만 정한다. 허용 기록은 `load-changed` `COMMITTED`에서 갱신한다.
@@ -91,16 +103,24 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   - fragment 이동에는 `load-changed`가 오지 않는다. JS 상태가 유지됐다.
   - bfcache 복원에는 `RESPONSE` 결정이 오지 않는다. `STARTED`에서 끈 상태가 유지되어, 복원된 문서의 timer가 멈춘 채로 남았다.
     - `STARTED`에서 끄지 않으면 허용된 문서에서 뒤로 가기로 복원한 허용되지 않은 문서의 timer가 다시 실행됐다(측정).
+  - html surface는 page cache(`enable-page-cache`)를 끈다.
+    - 끄면 뒤로·앞으로 가기도 `STARTED` → main `RESPONSE` → `COMMITTED` 순서의 새 로드가 됐다(측정). 모든 main frame commit이 지문을 가진다.
+    - `STARTED`에서 끄는 규칙은 그대로 둔다.
+  - `COMMITTED`에서 대기 값을 소비해 현재 문서를 기록한다.
   - Tasty는 `load-failed` 핸들러가 `true`를 돌려 WebKit 기본 오류 페이지를 띄우지 않는다(`src/host_api/webview/linux.rs`의 `connect_load_failed`).
     - 이 설정에서 main frame 로드가 실패하면 문서가 바뀌지 않는다. 대상은 없는 파일, 그리고 "Frame load interrupted"로 끝나는 다운로드 응답이다.
-    - 두 경우 모두 `STARTED`(끔) 뒤 `COMMITTED` 없이 `load-failed`와 `FINISHED`가 왔다. 복원하지 않으면 화면의 허용 문서가 JS 꺼진 채 멈췄다(리뷰 측정).
+    - 두 경우 모두 `STARTED`(끔) 뒤 `COMMITTED` 없이 `load-failed`와 `FINISHED`가 왔다. 화면에는 이전 문서가 남았다. 복원하지 않으면 화면의 허용 문서가 JS 꺼진 채 멈췄다(리뷰 측정).
   - 복원은 `load-changed` `FINISHED`에서 한다. 직전 `STARTED` 뒤 `COMMITTED`가 없었으면, 화면 문서의 허용 여부대로 JS를 되돌린다.
+    - 화면 문서는 마지막 `COMMITTED`에서 호스트가 기록한 현재 문서다. `FINISHED` 시점이나 `stop_loading` 뒤의 `get_uri()`는 쓰지 않는다.
+      - 취소된 로드의 `FINISHED` 시점 `get_uri()`는 아직 시작하지 않은 다음 URL을 돌려줬다(리뷰 측정).
+      - `load_uri` 직후 `stop_loading`하면 이벤트가 없는데도 `get_uri()`가 새 URL로 남았다. 화면은 이전 문서였다(리뷰 측정).
     - `load-failed`는 기록만 한다. 측정한 두 경우 모두 `load-failed` 뒤에 `FINISHED`가 왔다. `FINISHED` 한 곳에서 처리하면 commit 없이 끝나는 다른 경로도 함께 다룬다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
 - **macOS(미측정, API 문서 근거)**: 현재의 전역 `javaScriptEnabled`(deprecated) 대신 `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 판단한다. 새 창 요청은 `targetFrame`이 nil이다.
 - Windows와 macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
+- 두 OS에서 bfcache를 끌 수 있는지는 구현할 때 확인한다. 응답 단계 없이 commit된 문서는 지문이 없어 허용할 수 없다.
 - 두 OS에서도 허용 기록은 새 main frame 문서가 commit될 때 갱신한다. commit 없이 끝난 로드에서는 화면 문서의 허용 상태로 JS를 되돌린다. 이 시점에 대응하는 이벤트는 구현에서 정하며 측정하지 않았다.
 
 ### 배너 표시 시점
@@ -131,10 +151,11 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - 정적 스캔은 실제 실행 여부와 다를 수 있다.
   - 조건부 주석이나 문자열 안의 태그 모양 때문에 오탐이 생길 수 있다. 오탐이 생겨도 배너가 뜨는 것뿐이고 JS가 켜지지는 않는다.
   - 크기 상한을 넘은 부분만의 스크립트는 놓친다. 이 경우 JS가 꺼진 채 배너가 없다.
-- 내용 지문은 파일 전체를 해시하므로, 허용과 비교할 때마다 파일 전체를 읽는다. 대상은 허용된 URL로 가는 main frame 응답이다. 스캔 상한은 이 비용을 제한하지 않는다.
-  - 큰 파일에서는 응답 결정이 해시가 끝날 때까지 늦어진다. Linux와 macOS에서는 이 결정이 main thread 콜백 안에서 실행된다.
-  - 허용이 없는 문서는 비교할 필요가 없어 전체 해시를 하지 않는다.
-- 지문을 구한 뒤 webview가 파일 본문을 읽기 전에 내용이 바뀌면, 바뀐 내용이 JS가 켜진 채 실행된다.
+- 모든 main frame `file://` 로드에서 파일 전체를 읽어 해시한다. 허용 여부와 관계없다. 스캔 상한은 이 비용을 제한하지 않는다.
+  - 큰 파일에서는 응답 결정이 해시가 끝날 때까지 늦어진다.
+  - Linux와 macOS에서 응답 결정은 main thread 콜백이다. 읽기와 해시를 이 콜백과 분리해 main thread 밖에서 할 수 있는지는 검토하지 않았다. Linux는 문서상 결정을 보류할 수 있다.
+- Linux html surface는 page cache를 쓰지 않는다. 뒤로·앞으로 가기가 캐시 복원 대신 파일을 다시 읽는 새 로드가 된다.
+- 로드 때 지문을 구한 뒤 webview가 파일 본문을 읽기 전에 내용이 바뀌면, 바뀐 내용이 JS가 켜진 채 실행된다. 남는 창은 이 구간뿐이다. 지문을 로드 때 구하므로, 사용자가 본 뒤 클릭 전에 바꾸는 경로는 없다.
   - 리뷰 측정에서 응답 핸들러 안에서 파일을 바꾸자 바뀐 스크립트가 실행됐다. 실제 창의 길이와 적중 확률은 측정하지 않았다.
   - 파일을 쓸 수 있는 에이전트는 내용을 번갈아 쓰면서 release IPC로 같은 URL 로드를 반복해 이 창을 노릴 수 있다. 전제는 두 가지다. 에이전트에게 그 파일의 쓰기 권한이 있고, 사용자가 그 문서를 한 번 허용했어야 한다.
   - 이 위험은 수용한다. 파일을 쓸 수 있는 에이전트는 이미 셸로 임의 코드를 실행할 수 있다. 따라서 이 창이 새 권한을 주지 않는다. 스크립트 차단이 막는 대상은 신뢰하지 않는 HTML이며, 로컬 에이전트가 아니다.
@@ -161,6 +182,10 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - **허용을 URL에만 묶기**: 같은 경로의 파일 내용이 바뀌어도 허용이 남는다.
 - **허용 기록을 응답 단계에서 해제**: 다운로드 응답 한 번으로 화면의 허용 문서가 허용을 잃는다. 없는 파일 실패에서는 해제가 일어나지 않는 등 경로마다 결과가 달라진다(리뷰 측정). 그래서 commit에서 해제한다.
 - **commit 없이 끝난 로드 뒤 JS를 꺼 둔 채 두기**: 허용 문서가 멈춘 채 남는다. 사용자가 재로드해야 복구된다.
+- **허용 클릭 때 지문 구하기**: 허용이 없는 문서는 해시하지 않아도 된다. 하지만 사용자가 본 뒤 클릭 전에 파일을 바꾸면 그 내용이 경합 없이 실행된다. 리뷰 측정에서 제목이 `EVIL-ran`이 됐다. 허용 대상이 사용자가 본 내용이 아니게 된다.
+- **로드마다 대기 값을 비우지 않기**: 허용 재로드의 "일치"가 이어지는 bfcache commit에 남는다. 앞으로 가기로 돌아온 문서에서 commit 없는 로드 뒤 JS가 복원됐다(리뷰 측정).
+- **webview의 현재 URI로 화면 문서 판정**: 취소된 로드와 `stop_loading` 뒤에는 화면에 없는 URL을 돌려준다(리뷰 측정).
+- **Linux page cache 유지**: 캐시 복원에는 응답 단계가 없어 지문 없는 문서가 생긴다. 로컬 파일의 재로드 비용보다 이 예외를 없애는 쪽을 택했다.
 - **지문을 스캔 상한까지만 구하기**: 상한 뒤에 덧붙인 스크립트가 허용된 채 실행된다(리뷰 측정).
 - **상한을 넘는 파일은 허용할 수 없게 하기**: 큰 문서는 전역 설정 없이 실행할 방법이 없어진다. 전체 해시 비용을 감수하는 쪽을 택했다.
 - **호스트가 스캔·해시한 바이트를 webview에 그대로 공급**(custom scheme 등): 경합은 없어진다. 대신 `file://` origin과 상대 경로 해석, 하위 리소스 접근이 달라져 문서 동작이 바뀐다. 이 비용에 비해 막는 위협이 새 권한이 아니다.
@@ -180,6 +205,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 - 서브프레임별로 JS를 켜고 끌 수 있는 API가 생기면 허용 범위를 main frame 문서로 좁힐지 다시 정한다.
 - 지원하는 Linux 배포판의 WebKitGTK가 2.40보다 낮으면 main frame 판별 방법을 다시 정한다.
 - 에이전트가 파일 쓰기 없이 로드만 할 수 있는 실행 형태가 생기면 지문과 읽기 사이의 경합을 다시 정한다. 원격 에이전트나 쓰기 권한이 없는 샌드박스 에이전트가 예다. 이때는 이 창이 새 권한이 되므로, 호스트가 읽은 바이트를 공급하는 방식을 다시 비교한다.
+- Windows나 macOS에서 응답 단계 없이 commit되는 문서가 생기고 bfcache를 끌 수 없으면, 지문 없는 문서의 허용 방법과 배너 동작을 디자인과 함께 다시 정한다.
 - `load-failed` 핸들러가 WebKit 기본 오류 페이지를 쓰도록 바뀌면 commit 없는 로드의 복원 규칙을 다시 확인한다.
 
 실행 결과로 확인한다.
