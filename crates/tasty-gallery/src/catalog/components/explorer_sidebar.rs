@@ -8,51 +8,72 @@ use tasty_ui_widgets::tree_row;
 use crate::catalog::icons::{FOLDER, STAR, STAR_FILL};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
-/// (label, depth, active) — 짧은 트리, 스크롤 없이 상단 영역에 빈 공간을 남긴다.
-const TREE_SHORT: &[(&str, u16, bool)] = &[
-    ("Home", 0, false),
-    ("Downloads", 1, true),
-    ("Documents", 1, false),
+/// 시안 `TreeNode` 의 chevron 자리: 펼침 · 접힘 · 없음(leaf).
+#[derive(Clone, Copy)]
+enum Fold {
+    Open,
+    Closed,
+    Leaf,
+}
+use Fold::{Closed, Leaf, Open};
+
+/// (label, depth, fold, active)
+type Node = (&'static str, u16, Fold, bool);
+
+/// 짧은 트리(시안 `TREE_SHORT`), 스크롤 없이 상단 영역에 빈 공간을 남긴다.
+const TREE_SHORT: &[Node] = &[
+    ("Home", 0, Open, false),
+    ("Downloads", 1, Open, true),
+    ("mockup-exports", 2, Leaf, false),
+    ("Documents", 1, Closed, false),
+    ("Projects", 1, Closed, false),
 ];
 
-/// (label, depth, active) — 긴 트리, 상단 영역 스크롤을 유발한다.
-const TREE_LONG: &[(&str, u16, bool)] = &[
-    ("Home", 0, false),
-    ("Downloads", 1, true),
-    ("mockup-exports", 2, false),
-    ("screenshots", 2, false),
-    ("archive", 2, false),
-    ("Documents", 1, false),
-    ("Projects", 1, false),
-    ("tasty", 2, false),
-    ("crates", 3, false),
-    ("src", 3, false),
-    ("docs", 3, false),
-    ("Pictures", 1, false),
-    ("Music", 1, false),
-    ("Videos", 1, false),
-    ("Desktop", 1, false),
+/// 긴 트리(시안 `TREE_LONG`), 상단 영역 스크롤을 유발한다.
+const TREE_LONG: &[Node] = &[
+    ("Home", 0, Open, false),
+    ("Downloads", 1, Open, true),
+    ("mockup-exports", 2, Leaf, false),
+    ("invoices", 2, Leaf, false),
+    ("Documents", 1, Open, false),
+    ("contracts", 2, Leaf, false),
+    ("notes", 2, Leaf, false),
+    ("Projects", 1, Open, false),
+    ("tasty", 2, Open, false),
+    ("crates", 3, Leaf, false),
+    ("docs", 3, Leaf, false),
+    ("src", 3, Leaf, false),
+    ("target", 3, Leaf, false),
+    ("design-system", 2, Leaf, false),
+    ("playground", 2, Leaf, false),
+    ("Pictures", 1, Open, false),
+    ("screenshots", 2, Leaf, false),
+    ("wallpapers", 2, Leaf, false),
+    ("Music", 1, Closed, false),
+    ("Videos", 1, Closed, false),
+    (".config", 1, Closed, false),
+    (".cache", 1, Closed, false),
 ];
 
-/// (label, active) — 소수 즐겨찾기, 고정 영역 안에 전부 들어간다.
+/// (label, active) — 소수 즐겨찾기(시안 `FAVS_DEFAULT`), 고정 영역 안에 전부 들어간다.
 const FAVS_FEW: &[(&str, bool)] = &[
     ("tasty", true),
     ("Documents", false),
     ("screenshots", false),
 ];
 
-/// (label, active) — 다수 즐겨찾기(10개), 고정 영역을 넘겨 자체 스크롤을 유발한다.
+/// (label, active) — 다수 즐겨찾기(시안 `FAVS_MANY`, 10개), 고정 영역을 넘겨 자체 스크롤을 유발한다.
 const FAVS_MANY: &[(&str, bool)] = &[
     ("tasty", true),
+    ("crates", false),
+    ("design-system", false),
     ("Documents", false),
-    ("screenshots", false),
     ("mockup-exports", false),
-    ("Downloads", false),
-    ("Projects", false),
-    ("archive", false),
-    ("Pictures", false),
-    ("Music", false),
-    ("Desktop", false),
+    ("screenshots", false),
+    ("wallpapers", false),
+    ("invoices", false),
+    (".config", false),
+    ("playground", false),
 ];
 
 /// design ExpSidebar width 196.
@@ -90,7 +111,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(ui, theme, "favorites — empty state", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
             panel(ui, theme, |ui| {
-                two_region(ui, theme, "c", TREE_SHORT, &[]);
+                two_region(ui, theme, "c", TREE_LONG, &[]);
             });
         });
     });
@@ -102,7 +123,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         |ui| {
             stage(ui, theme, StageVariant::Tight, |ui| {
                 panel(ui, theme, |ui| {
-                    two_region(ui, theme, "d", TREE_SHORT, FAVS_MANY);
+                    two_region(ui, theme, "d", TREE_LONG, FAVS_MANY);
                 });
             });
         },
@@ -188,19 +209,14 @@ fn two_region(
     ui: &mut egui::Ui,
     theme: &Theme,
     id_salt: &str,
-    tree: &[(&str, u16, bool)],
+    tree: &[Node],
     favs: &[(&str, bool)],
 ) {
     // 예제마다 같은 라벨을 쓰므로 위젯 ID의 범위를 나눈다.
     ui.push_id(id_salt, |ui| two_region_inner(ui, theme, tree, favs));
 }
 
-fn two_region_inner(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    tree: &[(&str, u16, bool)],
-    favs: &[(&str, bool)],
-) {
+fn two_region_inner(ui: &mut egui::Ui, theme: &Theme, tree: &[Node], favs: &[(&str, bool)]) {
     let fav_h = favorites_pin_height(DEMO_BODY_H);
     let files_h = (DEMO_BODY_H - fav_h - theme.border_width).max(LogicalPx(0.0));
 
@@ -214,15 +230,14 @@ fn two_region_inner(
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
-                    for (i, (label, depth, active)) in tree.iter().enumerate() {
+                    for (i, &(label, depth, fold, active)) in tree.iter().enumerate() {
                         ui.push_id(i, |ui| {
-                            let leaf = *depth >= 2;
                             tree_row(
                                 ui,
                                 theme,
-                                *depth,
-                                !leaf,
-                                *depth == 1,
+                                depth,
+                                !matches!(fold, Leaf),
+                                matches!(fold, Open),
                                 Some(&|ui, rect, _c| {
                                     FOLDER
                                         .image(
@@ -233,7 +248,7 @@ fn two_region_inner(
                                 }),
                                 label,
                                 None,
-                                *active,
+                                active,
                                 true,
                             )
                         });
