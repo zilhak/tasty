@@ -132,7 +132,30 @@ fn listed_kinds(state: &AppState, engine: &crate::core::CoreState) -> Vec<Conver
         .dialogs
         .convert_popup
         .and_then(|id| current_surface_kind(state, engine, id));
-    without_current(enumerate_convertible_kinds(state, engine), current)
+    listed_items(enumerate_convertible_kinds(state, engine), current)
+}
+
+/// 현재 kind 를 뺀 뒤 단축키를 배정한다. 빠진 현재 kind 가 보이는 항목의 첫 글자를 차지하지 않는다.
+fn listed_items(items: Vec<ConvertItem>, current: Option<&str>) -> Vec<ConvertItem> {
+    assign_shortcuts(without_current(items, current))
+}
+
+/// kind 첫 글자(영문)를 대문자 단축키로 배정한다. 첫 글자가 겹치면 뒤 항목은 단축키가 없다.
+fn assign_shortcuts(mut items: Vec<ConvertItem>) -> Vec<ConvertItem> {
+    let mut used: Vec<char> = Vec::new();
+    for item in &mut items {
+        item.shortcut = item
+            .kind
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_alphabetic())
+            .map(|c| c.to_ascii_uppercase())
+            .filter(|c| !used.contains(c));
+        if let Some(c) = item.shortcut {
+            used.push(c);
+        }
+    }
+    items
 }
 
 /// 현재 kind 를 목록에서 뺀다. 나머지 순서는 그대로다. 현재 kind 가 없으면 전부 남긴다.
@@ -148,7 +171,7 @@ fn without_current(items: Vec<ConvertItem>, current: Option<&str>) -> Vec<Conver
 /// - PREFERRED_ORDER를 먼저, 나머지는 이름순으로 표시한다.
 /// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
-/// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
+/// - shortcut: 비워 둔다. 현재 kind 를 뺀 뒤 [`assign_shortcuts`]가 배정한다.
 /// - icon: registry 의 아이콘 이름. 없으면 FILE.
 fn enumerate_convertible_kinds(
     state: &AppState,
@@ -171,19 +194,9 @@ fn enumerate_convertible_kinds(
         }
     });
 
-    let mut used_shortcuts: Vec<char> = Vec::new();
     let mut items = Vec::with_capacity(kinds.len());
     for kind in kinds {
         let label = resolve_label(state, engine, kind);
-        let shortcut = kind
-            .chars()
-            .next()
-            .filter(|c| c.is_ascii_alphabetic())
-            .map(|c| c.to_ascii_uppercase())
-            .filter(|c| !used_shortcuts.contains(c));
-        if let Some(c) = shortcut {
-            used_shortcuts.push(c);
-        }
         let icon = engine
             .surface_registry
             .get(kind)
@@ -193,7 +206,7 @@ fn enumerate_convertible_kinds(
         items.push(ConvertItem {
             kind,
             label,
-            shortcut,
+            shortcut: None,
             icon,
         });
     }
@@ -554,6 +567,30 @@ mod props_tests {
             .map(|it| it.kind)
             .collect();
         assert_eq!(kinds, ["markdown", "image", "explorer"]);
+    }
+
+    /// 첫 글자가 같은 두 kind 중 앞선 것이 현재 kind 이면 목록에 보이는 뒤의 kind 가 그 글자를 받는다.
+    #[test]
+    fn shortcuts_are_assigned_after_the_current_kind_is_left_out() {
+        let items = vec![mk("markdown", None), mk("mermaid", None), mk("image", None)];
+        let listed = listed_items(items, Some("markdown"));
+        let got: Vec<(&str, Option<char>)> =
+            listed.iter().map(|it| (it.kind, it.shortcut)).collect();
+        assert_eq!(got, [("mermaid", Some('M')), ("image", Some('I'))]);
+    }
+
+    #[test]
+    fn a_later_kind_with_a_taken_first_letter_has_no_shortcut() {
+        let items = vec![
+            mk("markdown", None),
+            mk("mermaid", None),
+            mk("9patch", None),
+        ];
+        let got: Vec<Option<char>> = listed_items(items, None)
+            .iter()
+            .map(|it| it.shortcut)
+            .collect();
+        assert_eq!(got, [Some('M'), None, None]);
     }
 
     #[test]
