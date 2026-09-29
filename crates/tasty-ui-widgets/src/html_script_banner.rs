@@ -318,6 +318,48 @@ pub fn html_script_marker(
 mod tests {
     use super::*;
 
+    /// 차단 배너를 한 번 그려 모든 도형을 돌려준다.
+    fn blocked_banner_shapes(narrow: bool) -> (Theme, Vec<egui::Shape>) {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let view = HtmlScriptBannerView {
+            title: "Scripts in this document are blocked",
+            body: "Buttons and menus that need JavaScript may not respond.",
+            action: "Allow for this document",
+            reloading: "Reloading with scripts allowed",
+            state: HtmlScriptBannerState::Blocked,
+            narrow,
+            force_hover: false,
+        };
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                html_script_banner(ui, &theme, &view);
+            });
+        });
+        (theme, out.shapes.into_iter().map(|c| c.shape).collect())
+    }
+
+    fn has_rect(shapes: &[egui::Shape], pred: impl Fn(&egui::epaint::RectShape) -> bool) -> bool {
+        shapes
+            .iter()
+            .any(|s| matches!(s, egui::Shape::Rect(r) if pred(r)))
+    }
+
+    #[test]
+    fn allow_button_uses_the_banner_button_box() {
+        for narrow in [false, true] {
+            let (theme, shapes) = blocked_banner_shapes(narrow);
+            let bg = theme.banner_button_bg().to_egui();
+            let border = theme.banner_button_border().to_egui();
+            assert!(has_rect(&shapes, |r| r.fill == bg), "narrow={narrow}");
+            assert!(
+                has_rect(&shapes, |r| r.stroke.color == border
+                    && r.stroke.width > 0.0),
+                "narrow={narrow}"
+            );
+        }
+    }
+
     #[test]
     fn narrow_starts_just_below_the_token_width() {
         let t = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
