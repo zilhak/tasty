@@ -1,4 +1,4 @@
-//! 입력 필드의 아이콘·단위·글꼴·오류·비활성 상태 예제.
+//! 입력 필드의 아이콘·단위·글꼴·오류·비활성·읽기 전용 상태 예제.
 //! 편집 내용은 예제마다 별도 버퍼에 보관한다.
 
 use std::cell::RefCell;
@@ -11,7 +11,7 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
     // 예제 초깃값이 입력 중인 내용을 덮지 않도록 한 번만 초기화한다.
-    static BUFS: RefCell<Option<[String; 6]>> = const { RefCell::new(None) };
+    static BUFS: RefCell<Option<[String; 8]>> = const { RefCell::new(None) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -28,6 +28,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "s_01HXK9".to_string(),
                 "bad value".to_string(),
                 String::new(),
+                "#89b4fa".to_string(),
+                "#89b4fa".to_string(),
             ]
         });
         stage(ui, theme, StageVariant::Column, |ui| {
@@ -70,6 +72,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .width(md)
                     .show(ui, theme, &mut bufs[5]);
             });
+            // 읽기 전용은 disabled와 같은 상자에 값을 text-secondary로 둔다. 포커스·선택·복사가 된다.
+            cluster(
+                ui,
+                theme,
+                "readOnly vs disabled — same box, readable value",
+                |ui| {
+                    Input::new()
+                        .mono(true)
+                        .read_only(true)
+                        .width(xs)
+                        .show(ui, theme, &mut bufs[6]);
+                    Input::new()
+                        .mono(true)
+                        .enabled(false)
+                        .width(xs)
+                        .show(ui, theme, &mut bufs[7]);
+                },
+            );
         });
     });
 
@@ -98,6 +118,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.accent_danger()),
             ),
             TokenChip::without_color("text-placeholder", "placeholder"),
+            TokenChip::new(
+                "input-readonly-fg",
+                "read-only value → text-secondary",
+                egui::Color32::from(theme.input_readonly_fg()),
+            ),
         ],
     );
 }

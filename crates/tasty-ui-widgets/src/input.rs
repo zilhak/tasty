@@ -11,6 +11,8 @@ pub struct Input<'a> {
     mono: bool,
     invalid: bool,
     enabled: bool,
+    /// 지금은 고칠 수 없지만 읽는 값(시안 `readOnly`). disabled와 함께면 무시한다.
+    read_only: bool,
     /// 고정 폭. `None` 이면 가용 폭을 채운다(디자인 `block`).
     width: Option<f32>,
     icon: Option<IconPainter<'a>>,
@@ -34,6 +36,7 @@ impl<'a> Input<'a> {
             mono: false,
             invalid: false,
             enabled: true,
+            read_only: false,
             width: None,
             icon: None,
             addon: None,
@@ -59,6 +62,14 @@ impl<'a> Input<'a> {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// 읽기 전용. disabled와 같은 중립 상자(input-readonly-bg·border)에 값은
+    /// input-readonly-fg(text-secondary)로 그린다. 편집은 막고 포커스·선택·복사는 허용하며,
+    /// 포커스는 1px focus 테두리만 두고 ring은 그리지 않는다. `enabled(false)`면 무시한다.
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
         self
     }
 
@@ -106,10 +117,13 @@ impl<'a> Input<'a> {
         let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
         // disabled는 opacity 없이 disabled 상자 role과 disabled ink를 쓴다.
-        let bg = if self.enabled {
-            theme.input_bg()
-        } else {
+        let read_only = self.enabled && self.read_only;
+        let bg = if !self.enabled {
             theme.state_disabled_fill()
+        } else if read_only {
+            theme.input_readonly_bg()
+        } else {
+            theme.input_bg()
         };
         ui.painter().rect_filled(outer, radius, bg.to_egui());
 
@@ -161,7 +175,12 @@ impl<'a> Input<'a> {
             } else {
                 egui::FontId::proportional(body)
             };
-            let (hint, text_color) = if self.enabled {
+            let (hint, text_color) = if read_only {
+                (
+                    tasty_egui_theme::hint_text(theme, self.placeholder),
+                    theme.input_readonly_fg().to_egui(),
+                )
+            } else if self.enabled {
                 (
                     tasty_egui_theme::hint_text(theme, self.placeholder),
                     self.text_color
@@ -172,7 +191,10 @@ impl<'a> Input<'a> {
                 (egui::RichText::new(self.placeholder).color(ink), ink)
             };
             // egui의 비활성 Ui는 색을 배경 쪽으로 흐리므로 대신 비대화형 TextEdit로 입력을 막는다.
-            let te = egui::TextEdit::singleline(buf)
+            // 읽기 전용은 변경할 수 없는 &str 버퍼를 넘겨 편집만 막고 포커스·선택·복사는 둔다.
+            let mut view: &str = buf.as_str();
+            let text: &mut dyn egui::TextBuffer = if read_only { &mut view } else { buf };
+            let te = egui::TextEdit::singleline(text)
                 .frame(false)
                 .desired_width(te_w)
                 .hint_text(hint)
@@ -190,6 +212,12 @@ impl<'a> Input<'a> {
 
         let border = if !self.enabled {
             theme.state_disabled_border().to_egui()
+        } else if read_only {
+            if resp.has_focus() {
+                theme.input_border_focus().to_egui()
+            } else {
+                theme.input_readonly_border().to_egui()
+            }
         } else if self.invalid {
             theme.input_border_invalid().to_egui()
         } else if resp.has_focus() {
@@ -203,7 +231,7 @@ impl<'a> Input<'a> {
             egui::Stroke::new(bw, border),
             egui::StrokeKind::Inside,
         );
-        if resp.has_focus() {
+        if resp.has_focus() && !read_only {
             let ring = if self.invalid {
                 theme.input_border_invalid().to_egui()
             } else {
@@ -228,6 +256,144 @@ impl<'a> Input<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Frame {
+        focused: bool,
+        output: egui::FullOutput,
+    }
+
+    /// 읽기 전용 Input 하나를 `events`와 함께 한 프레임 그린다.
+    fn frame(
+        ctx: &egui::Context,
+        theme: &Theme,
+        buf: &mut String,
+        events: Vec<egui::Event>,
+    ) -> Frame {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(400.0, 200.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut focused = false;
+        let output = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let resp = Input::new().mono(true).read_only(true).show(ui, theme, buf);
+                focused = resp.has_focus();
+            });
+        });
+        Frame { focused, output }
+    }
+
+    fn strokes(output: &egui::FullOutput) -> Vec<egui::Color32> {
+        output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.stroke.width > 0.0 => Some(r.stroke.color),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 읽기 전용 값은 클릭하면 포커스를 받고, 전체 선택·복사는 되지만 입력으로는 바뀌지 않는다.
+    /// 포커스 때는 1px focus 테두리 하나만 있고 ring은 없다.
+    #[test]
+    fn read_only_input_focuses_and_copies_but_does_not_edit() {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let mut buf = String::from("#89b4fa");
+
+        let idle = frame(&ctx, &theme, &mut buf, Vec::new());
+        assert!(!idle.focused);
+        assert_eq!(
+            strokes(&idle.output),
+            vec![theme.input_readonly_border().to_egui()]
+        );
+        let fills: Vec<_> = idle
+            .output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.fill != egui::Color32::TRANSPARENT => Some(r.fill),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            fills.contains(&theme.input_readonly_bg().to_egui()),
+            "{fills:?}"
+        );
+        let inks: Vec<_> = idle
+            .output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == "#89b4fa" => Some(t.fallback_color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(inks, vec![theme.input_readonly_fg().to_egui()]);
+
+        let pos = egui::pos2(40.0, 8.0 + theme.input_height().value() * 0.5);
+        let press = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(
+            &ctx,
+            &theme,
+            &mut buf,
+            vec![egui::Event::PointerMoved(pos), press(true)],
+        );
+        let clicked = frame(&ctx, &theme, &mut buf, vec![press(false)]);
+        let clicked = if clicked.focused {
+            clicked
+        } else {
+            frame(&ctx, &theme, &mut buf, Vec::new())
+        };
+        assert!(clicked.focused, "a read-only value takes focus on click");
+
+        let edited = frame(
+            &ctx,
+            &theme,
+            &mut buf,
+            vec![
+                egui::Event::Key {
+                    key: egui::Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::COMMAND,
+                },
+                egui::Event::Copy,
+                egui::Event::Text("x".into()),
+                egui::Event::Key {
+                    key: egui::Key::Backspace,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert_eq!(buf, "#89b4fa");
+        assert!(edited.focused);
+        let copied = edited
+            .output
+            .platform_output
+            .commands
+            .iter()
+            .any(|c| matches!(c, egui::OutputCommand::CopyText(t) if t == "#89b4fa"));
+        assert!(copied, "{:?}", edited.output.platform_output.commands);
+        assert_eq!(
+            strokes(&edited.output),
+            vec![theme.input_border_focus().to_egui()]
+        );
+    }
 
     /// 가로 배치에서 Input은 outer 한 칸만 차지한다. 다음 위젯은 outer.right + item_spacing.x에서
     /// 시작하고, 필드 안쪽 padding만큼 겹치지 않는다.

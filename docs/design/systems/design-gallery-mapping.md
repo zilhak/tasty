@@ -362,7 +362,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` |
 | `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg, leading_icon/trailing_icon) | `prim_button` |
 | `core/Button` disabled | `Button::enabled(false)` — 모든 변형이 같은 `button-disabled-*` 박스와 잉크, ghost 는 박스 없음, opacity 없음 | `prim_button::draw_disabled`(Spec "Disabled — ink, never opacity", Mocha·Latte) |
-| `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` |
+| `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) · `read_only` — disabled와 같은 `input-readonly-*` 상자, 값은 text-secondary, 포커스(1px focus 테두리, ring 없음)·선택·복사 가능 | `prim_input` (클러스터 "readOnly vs disabled — same box, readable value") |
 | `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) · disabled `tag_disabled` — 모든 variant가 `tag-disabled-*` 중립 상자와 ink, 점도 같은 ink | `prim_chips` (클러스터 "disabled") |
 | `core/Badge` | `badge` / `badge_dot` · disabled `badge_disabled` — `badge-disabled-*` 중립 채움과 ink | `prim_chips` (클러스터 "disabled") |
 | `core/Tag`·`core/Badge` disabled 문맥 | `disabled_chip_scope` / `in_disabled_chip_scope` — 문맥 안의 `tag`·`badge`·`badge_dot`은 variant와 관계없이 disabled 변형으로 그린다 | disabled ListCtrl 행의 trailing(아래 `data/ListCtrl`) |
