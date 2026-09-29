@@ -14,7 +14,7 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
 
 1. **파일 목록을 비교한다.** `DesignSync.list_files`로 받은 원격 경로와 `find site/vendor -type f`로 얻은 로컬 목록을 비교한다. 새 파일, 삭제된 파일, 이름이 바뀐 파일을 확인한다. 아래 "원본에서 제외한 것"에 해당하는 경로는 비교에서 뺀다.
 2. **변경된 파일을 받는다.** `DesignSync.get_file`로 파일을 하나씩 받아 같은 상대 경로에 쓴다. 원격에서 삭제된 파일은 사본에서도 지운다. `get_file`의 256 KiB 상한을 넘는 파일은 별도로 처리하고 그 사실을 기록한다.
-3. **로컬 변형을 다시 적용한다.** 아래 "원본과 다르게 둔 자리"의 세 가지(로컬 문서 인용 5곳, 옛 ADR 번호 인용, 출처 메타데이터 제거)를 적용한다. `cargo test -p tasty-doc-guards --test no_todo_file_citation`으로 로컬 작업 문서 인용이 남지 않았는지 확인한다.
+3. **로컬 변형을 다시 적용한다.** 아래 "원본과 다르게 둔 자리"의 세 가지(로컬 문서 인용, 옛 ADR 번호 인용, 출처 메타데이터 제거)를 적용한다. `cargo test -p tasty-doc-guards --test no_todo_file_citation`으로 로컬 작업 문서 인용이 남지 않았는지 확인한다.
 4. **토큰과 아이콘을 비교한다.** 다음 검사를 실행한다.
 
    ```sh
@@ -62,8 +62,12 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
   - `ui_kits/terminal/overlays/settings_window.jsx`: Hook Handlers 서브탭 설명의 "see … todo"를 "not yet built"로 바꾼다.
   - `gallery/components.jsx`: AutoComplete 노트의 "tracked as a separate implementation TODO"를 "tracked as separate implementation work"로 바꾼다.
   - `tokens/semantic.css`: `--tasty-text-disabled` 주석 끝의 원격 changelog 인용("see changelog/…")을 지운다.
-  - `ui_kits/terminal/overlays/info_modal.jsx`: Narrow popups 주석의 원격 요청문서 인용(`design-request/…`)을 지우고 날짜만 남긴다.
-  - `ui_kits/terminal/overlays/settings_window.jsx`: File Extension Mapping 주석의 원격 요청문서 인용(`design-request/…`)을 지우고 날짜만 남긴다.
+  - 원격 요청문서 인용(`design-request/…`)을 지운다. 날짜가 함께 적혀 있으면 날짜만 남긴다("Design request: … (날짜 answer)." 줄은 "Designed 날짜."로 바꾼다). 대상은 다음과 같다.
+    - `ui_kits/terminal/overlays/info_modal.jsx`: 머리 주석, Title bar buttons 주석, Narrow popups 주석.
+    - `ui_kits/terminal/overlays/settings_window.jsx`: File Extension Mapping 주석.
+    - `ui_kits/terminal/overlays/html_script_banner.jsx`, `ui_kits/terminal/overlays/macos_permissions.jsx`: 머리 주석의 "Design request:" 줄.
+    - `ui_kits/terminal/overlays/dag_view.jsx`, `gallery/dag.jsx`, `ui_kits/terminal/overlays/kb_import_export.jsx`: 머리 주석.
+    - `ui_kits/terminal/overlays/port_scanner.jsx`: FAVORITES 주석.
 - **옛 ADR 번호 인용**: 원격 사본은 저장소의 ADR을 재정리하기 전 번호를 인용한다. 이 번호는 지금 저장소의 ADR과 맞지 않으므로 인용을 지우거나 현재 ADR·기능 문서로 바꾸고 뜻은 남긴다. `gallery/components.jsx`, `gallery/layouts.jsx`, `gallery/overlays-windows.jsx`, `ui_kits/terminal/overlays/settings_window.jsx`, `ui_kits/terminal/overlays/plugins_window.jsx`에 있다. 갱신할 때는 `git diff`로 이전 사본의 처리 방식을 확인해 같은 방식으로 적용한다.
 - **출처 메타데이터**: 렌더링에 쓰지 않는 base64 C2PA 매니페스트가 사본 크기를 늘리므로 `<metadata>` 요소와 `xmlns:c2pa` 속성을 제거한다. 렌더링 구조와 값은 유지한다. `grep -rl c2pa site/vendor/ --exclude=README.md`의 출력이 없어야 한다. README는 절차 설명이므로 이 검사와 사본 수정일 계산에서 제외한다.
 

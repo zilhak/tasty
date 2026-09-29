@@ -1,6 +1,6 @@
 // Tasty Gallery — Surfaces · Task DAG
 // Specimens for the read-only Task DAG surface + workspace popup
-// (design-request/dag-view.md). Parts live in ui_kits/terminal/overlays/
+// Parts live in ui_kits/terminal/overlays/
 // dag_view.jsx + dag_surfaces.jsx; this page only catalogues them.
 const { Section, Spec, Stage, Cluster, Meta, Note, Do, Dont } = window.Gallery;
 const { Kbd, Tag, Icon } = window.TastyDesignSystem_41fd3f;

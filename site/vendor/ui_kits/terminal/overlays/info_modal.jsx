@@ -1,6 +1,6 @@
 // Info modal SHELL — the boot / runtime notice queue (one message at a time).
 // Repo: src/adapters/ui/info_modal.rs (shell) + popup/defs.rs (title in the popup title bar).
-// Design request: design-request/macos-permissions-followup.md (2026-09-28).
+// Designed 2026-09-28.
 //
 // Shell rules (apply to EVERY queued message, not just the permissions notice):
 //   frame   440 wide × 140..360 tall; body scrolls, title bar + button row never do
@@ -15,7 +15,7 @@
 //   buttons DS Button widget, right-aligned; the dismiss button is Primary, rightmost
 //   keys    Enter / Esc = the dismiss button
 //
-// Title bar buttons (2026-09-29, design-request/popup-title-two-buttons.md): the title is centred
+// Title bar buttons (2026-09-29): the title is centred
 // on the STRIP, whatever sits on the right. Both sides reserve
 //   reserve(N) = popup-title-edge-inset + N × popup-title-btn-size + (N − 1) × popup-title-btn-gap + popup-title-text-gap
 //   N = 1 (×): 32 · N = 2 (fullscreen + ×): 60.

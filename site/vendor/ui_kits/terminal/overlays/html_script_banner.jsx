@@ -1,5 +1,5 @@
 // HTML surface — script-blocked notice (INSET banner) + tab-strip marker.
-// Design request: design-request/html-script-consent-banner.md (2026-09-28 answer).
+// Designed 2026-09-28.
 //
 // Placement ⒜: tasty paints the banner; the surface's WebView rect shrinks by
 // banner height + --tasty-banner-inset-gap. The banner never overlaps the page.

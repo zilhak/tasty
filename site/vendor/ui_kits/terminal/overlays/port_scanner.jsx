@@ -5,7 +5,7 @@
 //   table needs the width). Source now matches: defs.rs:124 = 660×520.
 // Standalone preview: port_scanner.html
 //
-// FAVORITES (design-request/port-scanner-favorites.md) — resolved open decisions:
+// FAVORITES — resolved open decisions:
 //   §6.1 frame stays 660×520. The favorites region is BOUNDED (caption 22 +
 //        list capped at --tasty-port-favorites-max-height 112), so the table
 //        keeps ≥ ~300px and the popup never grows.

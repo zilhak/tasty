@@ -1,5 +1,5 @@
 // Tasty UI kit — Settings › Keybindings › Import / Export.
-// Answers design-request/keybinding-import-export.md. Borrows the Preset
+// Borrows the Preset
 // drill-down skeleton (list-position entry → detail with a back bar whose RIGHT
 // slot holds Apply, over a diff grid) and adds three things Preset does not have:
 //   • GROUP HEADERS in the diff grid (4 groups: general combos / quick-switch /

@@ -1,6 +1,6 @@
 // macOS permissions — Settings › General › Permissions (L2, macOS builds only)
 // and the boot "Some permissions are not granted" info modal.
-// Design request: design-request/macos-permissions.md (2026-09-28 answer).
+// Designed 2026-09-28.
 //
 // Box boundaries for the implementer:
 //   pane:  content column (settings 620 cap) > status table [label | status | row action]

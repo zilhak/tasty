@@ -1,4 +1,4 @@
-// Tasty UI kit — Task DAG view (design-request/dag-view.md).
+// Tasty UI kit — Task DAG view.
 // Two surfaces, ONE canvas: a full-tab graph surface (DagSurface) and a
 // workspace-scoped popup that drills list → detail (DagWindow).
 //
