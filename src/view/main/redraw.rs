@@ -644,6 +644,7 @@ impl MainView {
             tracing::warn!("WebView surface {sid}: created without a URL; nothing will be loaded");
             return;
         };
+        self.note_host_webview_load(sid);
         if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
             wv.load_url(url);
         } else {
@@ -684,6 +685,7 @@ impl MainView {
                 continue;
             }
             if let Some(wv) = self.webviews.get(&sid) {
+                self.note_host_webview_load(sid);
                 if url.starts_with("file://")
                     || url.starts_with("http://")
                     || url.starts_with("https://")
@@ -705,6 +707,7 @@ impl MainView {
         let (active_html, all_html_ids) = self.collect_html_surfaces(scale_factor);
         self.create_missing_webviews(&all_html_ids, &active_html, scale_factor);
         self.resync_webview_urls(&all_html_ids);
+        self.update_html_script_banners(&all_html_ids);
 
         // When any egui overlay (context menu, popup, dialog) is open,
         // hide all WebViews so they don't cover the overlay.
@@ -903,7 +906,7 @@ impl MainView {
     }
 
     /// surface_id 로 RemoteSurface 를 찾아 반환. nav_state mirror 기록에 쓴다.
-    fn find_remote_surface(
+    pub(super) fn find_remote_surface(
         &self,
         surface_id: u32,
     ) -> Option<&crate::plugin_bridge::remote_surface::RemoteSurface> {

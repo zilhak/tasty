@@ -4,7 +4,10 @@
 //! 로드 때 구한 파일 전체 지문에 묶이고, 다른 main frame 문서가 commit되면 풀린다.
 //! backend의 navigation 콜백이 아래 `on_*` 메서드를 순서대로 부르고 돌려받은 값으로 JS를 켜거나 끈다.
 
+pub mod banner;
 pub mod scan;
+
+pub use banner::BannerPhase;
 
 /// 문서 원본 전체의 SHA-256 지문.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,9 +62,11 @@ struct PendingResponse {
     matched: bool,
 }
 
-/// 배너 표시에 필요한 문서 단위 표지. 표시 판단은 호스트가 한다.
+/// 배너 표시에 필요한 문서 단위 표지. 판정 규칙은 [`banner`] 모듈에 있다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BannerFlags {
+    /// 사용자가 이 문서를 봤다. 사용자 선택이나 사용자가 보던 문서의 페이지 안 이동으로 선다.
+    pub viewed: bool,
     /// 감지 결과는 있지만 사용자가 아직 이 문서를 보지 않았다.
     pub pending_view: bool,
     /// 이 문서에서 배너를 띄웠다.
@@ -105,6 +110,12 @@ pub struct HtmlScriptState {
     committed_since_start: bool,
     /// 허용 직후 호스트가 같은 문서를 다시 로드해야 한다.
     reload_requested: bool,
+    /// 허용 뒤 재로드가 끝나지 않았다. 배너가 재로드 중 상태를 보인다.
+    reloading_after_allow: bool,
+    /// 다음 로드는 호스트가 URL을 넣은 로드다(plugin·IPC·복원). 이전 문서의 열람을 이어받지 않는다.
+    host_requested_load: bool,
+    /// 문서가 아직 없거나 로드 중일 때 사용자가 이 surface를 선택했다. 다음 commit 문서를 본 것으로 한다.
+    viewed_before_commit: bool,
     banner: BannerFlags,
 }
 
@@ -129,6 +140,9 @@ impl HtmlScriptState {
             load_in_flight: false,
             committed_since_start: false,
             reload_requested: false,
+            reloading_after_allow: false,
+            host_requested_load: false,
+            viewed_before_commit: false,
             banner: BannerFlags::default(),
         }
     }
@@ -234,8 +248,14 @@ impl HtmlScriptState {
         );
         self.current = record;
         if !same_document {
-            self.banner = BannerFlags::default();
+            let viewed =
+                self.viewed_before_commit || (self.banner.viewed && !self.host_requested_load);
+            self.banner = BannerFlags {
+                viewed,
+                ..BannerFlags::default()
+            };
         }
+        self.end_load_marks();
         self.committed_since_start = true;
         self.effective_js()
     }
@@ -245,6 +265,7 @@ impl HtmlScriptState {
         let restore = self.load_in_flight && !self.committed_since_start;
         self.load_in_flight = false;
         self.pending = None;
+        self.end_load_marks();
         restore.then(|| self.effective_js())
     }
 
@@ -257,6 +278,7 @@ impl HtmlScriptState {
             fingerprint: scan.fingerprint,
         });
         self.reload_requested = true;
+        self.reloading_after_allow = true;
         Ok(())
     }
 

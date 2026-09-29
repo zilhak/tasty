@@ -6,6 +6,7 @@ mod divider_drag;
 mod egui_mesh;
 mod file_drop;
 mod fullscreen_window;
+mod html_script_banner;
 mod keyboard;
 mod link_menu;
 mod mouse;
@@ -104,6 +105,11 @@ pub struct MainView {
     /// 직전 동기화에서 활성 탭에 있던 webview surface. 탭·workspace 전환으로
     /// 활성 탭에서 빠진 surface를 한 번만 가려내는 edge 판정에 쓴다.
     pub(crate) webview_prev_active: std::collections::HashSet<u32>,
+    /// 배너 발화 판정이 마지막으로 본 포커스 surface. 첫 프레임 전에는 `None`이다.
+    pub(crate) html_script_seen_focus: Option<Option<u32>>,
+    /// html surface별 지금 보여야 할 배너 단계. 숨김은 넣지 않는다.
+    pub(crate) html_script_phases:
+        std::collections::HashMap<u32, tasty_model::html_script::BannerPhase>,
     /// 활성 탭에서 빠졌지만 창이 OS 포커스를 갖지 않아 아직 키보드 포커스를 회수하지 않은 surface.
     pub(crate) webview_focus_release_pending: std::collections::HashSet<u32>,
     /// 마지막 동기화에서 실제 표시 중인 native webview가 있는지. Linux 키 조회 타이머에 사용한다.
@@ -210,6 +216,8 @@ impl MainView {
             webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
             webview_overlay_focus_released: false,
             webview_prev_active: std::collections::HashSet::new(),
+            html_script_seen_focus: None,
+            html_script_phases: std::collections::HashMap::new(),
             webview_focus_release_pending: std::collections::HashSet::new(),
             webview_any_visible: false,
             webview_policy_src: None,
