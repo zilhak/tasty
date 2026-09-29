@@ -75,6 +75,7 @@ pub mod closed_item;
 mod dag_graph_surface;
 mod empty_surface;
 mod explorer_panel;
+pub mod html_script;
 mod nav_state;
 mod pane;
 mod pane_tree;
