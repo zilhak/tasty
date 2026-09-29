@@ -70,7 +70,7 @@ tasty가 위에 그릴 수 없는 네이티브 레이어(HTML surface의 WebView
 - 콘텐츠 rect가 배너만큼 줄어든다. 네이티브 콘텐츠는 배너 카드 아래 `banner_inset_gap()` 뒤에서 시작하고 배너가 콘텐츠를 덮지 않는다.
 - 배너를 표시하거나 치울 때 콘텐츠 rect는 한 번 바뀐다. rect 변화에 애니메이션을 두지 않는다.
 - 기하는 `tasty_ui_widgets::inset_banner_zone`(배너를 둘 영역)과 `inset_content_rect`(카드 아래 콘텐츠 rect)가 계산한다.
-- 첫 사용처는 HTML surface의 스크립트 차단 안내다. 스코프는 그 surface 하나이며 옆 surface에는 배너가 없다. 배너 view는 `tasty_ui_widgets::html_script_banner`, 닫거나 허용한 뒤 탭 라벨 뒤에 남는 표지는 `html_script_marker`다.
+- 첫 사용처는 HTML surface의 스크립트 차단 안내다. 스코프는 그 surface 하나이며 옆 surface에는 배너가 없다. 배너 view는 `tasty_ui_widgets::html_script_banner`, 닫거나 허용한 뒤 탭 라벨 뒤에 남는 표지는 `html_script_marker`다. 본체는 `src/adapters/ui/surface/html_script_banner.rs`가 webview chrome 위에 배너를 그리고, 카드 아래 `banner_inset_gap`까지의 높이만큼 WebView 영역을 줄인다. surface 폭이 `banner_narrow_below()` 미만이면 narrow 배치를 쓴다.
 
 ## 닫기 버튼 / 카운트다운 (우측 상단, 같은 자리)
 
