@@ -141,7 +141,7 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             ("order", "newest bottom"),
             ("gap", "space-sm 8"),
             ("cap", "5 per scope → oldest dropped"),
-            ("width", "toast-max-width 320"),
+            ("width", "~320–380px"),
         ],
         &[
             TokenChip::new(
