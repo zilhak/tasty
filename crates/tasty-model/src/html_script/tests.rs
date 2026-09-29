@@ -153,6 +153,19 @@ fn the_pending_response_does_not_leak_into_the_next_load() {
 }
 
 #[test]
+fn a_new_load_drops_the_pending_response_even_without_a_finish() {
+    let mut st = allowed_a();
+    // 허용 재로드가 응답 단계에서 일치한 뒤, 종료 신호 없이 다음 로드가 시작된다.
+    st.on_load_started();
+    assert!(st.on_main_response(A, Some(scan(1))));
+    st.on_load_started();
+    // 새 로드는 응답 단계 없이 다른 문서로 commit된다. 앞 로드의 일치가 넘어오면 안 된다.
+    assert!(!st.on_committed(Some(C)));
+    assert!(st.allowance().is_none());
+    assert_eq!(st.current().map(|d| d.url.as_str()), Some(C));
+}
+
+#[test]
 fn an_allowed_document_on_screen_does_not_turn_javascript_on_for_a_load_in_flight() {
     let mut st = allowed_a();
     st.on_load_started();
