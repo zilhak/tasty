@@ -18,6 +18,7 @@ fn state_with_html_tab() -> (crate::state::AppState, crate::core::CoreState, u32
         host_cmd_tx,
     );
     let (_, sid) = state
+        // intent-exempt: 시험 준비용으로 html 탭을 모델에 직접 만든다. 조회 핸들러만 검사한다.
         .add_kind_tab(&mut engine, "html", &json!({ "file": "/docs/a.html" }))
         .expect("html tab");
     (state, engine, sid)
