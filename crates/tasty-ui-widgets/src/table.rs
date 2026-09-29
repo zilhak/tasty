@@ -113,13 +113,13 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
-    /// 헤더 행 높이. 미지정 시 `font_body + 10`.
+    /// 헤더 행 높이. 미지정 시 `table_cell_height`.
     pub fn header_height(mut self, h: f32) -> Self {
         self.header_height = Some(h);
         self
     }
 
-    /// 본문 행 높이. 미지정 시 `font_body + 14`.
+    /// 본문 행 높이. 미지정 시 `table_cell_height`.
     pub fn row_height(mut self, h: f32) -> Self {
         self.row_height = Some(h);
         self
@@ -166,10 +166,10 @@ impl<'a, K> Table<'a, K> {
     where
         K: Copy + PartialEq,
     {
-        // 별도 행 높이 토큰이 없어 본문 글꼴 크기에 기본 여백을 더한다.
-        let body_f = theme.table_font_size().value();
-        let header_h = self.header_height.unwrap_or(body_f + 10.0);
-        let row_h = self.row_height.unwrap_or(body_f + 14.0);
+        // 헤더와 본문 행은 같은 `table-cell-height` 역할을 쓴다.
+        let cell_h = theme.table_cell_height().value();
+        let header_h = self.header_height.unwrap_or(cell_h);
+        let row_h = self.row_height.unwrap_or(cell_h);
 
         let mut clicked_sort: Option<K> = None;
         let mut clicked_row: Option<usize> = None;
@@ -256,21 +256,27 @@ impl<'a, K> Table<'a, K> {
         };
 
         let mut run = |ui: &mut egui::Ui| {
-            if horizontal_scroll {
-                // 헤더와 행을 같은 가로 스크롤 안에 놓는다.
-                egui::ScrollArea::horizontal()
-                    .auto_shrink([false, true])
-                    // 세로와 마찬가지로 가로 드래그 패닝도 끈다.
-                    .drag_to_scroll(false)
-                    .show(ui, |ui| {
-                        ui.set_min_width(total_w.value());
-                        let band = total_w.max(LogicalPx(ui.available_width()));
-                        draw_core(ui, band);
-                    });
-            } else {
-                let band = LogicalPx(ui.max_rect().width());
-                draw_core(ui, band);
-            }
+            // egui_extras 는 행 사이에 부모의 세로 item_spacing 을 두고 선택·줄무늬 배경을 그 간격까지
+            // 넓힌다. 표 안에서만 간격을 0으로 두어 지정한 높이가 곧 보이는 행 높이가 되게 한다.
+            // 표 뒤의 위젯에는 scope 밖에서 부모의 간격이 그대로 적용된다.
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                if horizontal_scroll {
+                    // 헤더와 행을 같은 가로 스크롤 안에 놓는다.
+                    egui::ScrollArea::horizontal()
+                        .auto_shrink([false, true])
+                        // 세로와 마찬가지로 가로 드래그 패닝도 끈다.
+                        .drag_to_scroll(false)
+                        .show(ui, |ui| {
+                            ui.set_min_width(total_w.value());
+                            let band = total_w.max(LogicalPx(ui.available_width()));
+                            draw_core(ui, band);
+                        });
+                } else {
+                    let band = LogicalPx(ui.max_rect().width());
+                    draw_core(ui, band);
+                }
+            });
         };
 
         match self.id_salt {

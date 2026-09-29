@@ -1441,7 +1441,7 @@ fn detail_view(
     let scroll_to: Option<PathBuf> = view.scroll_to.clone();
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
-        .header_fill(theme.bg_sidebar().to_egui())
+        .header_fill(theme.table_header_bg().to_egui())
         .selectable(true)
         .id_salt(format!("explorer_detail_{id_suffix}"))
         .show(

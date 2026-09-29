@@ -259,7 +259,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     let selected = *sel;
                     let out = Table::new(columns)
                         .active_sort(0_usize, TableSortDir::Asc)
-                        .header_fill(egui::Color32::from(theme.bg_sidebar()))
+                        .header_fill(egui::Color32::from(theme.table_header_bg()))
                         .selectable(true)
                         .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
                         .id_salt("explorer_detail_demo")
@@ -335,8 +335,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("grid cell", "glyph 16 + 3-line label (…) · fixed height"),
-            ("list row", "22 control-height-tree (tree_row)"),
-            ("detail row", "Name flex · Size/Date mono 11 · Size padR 8"),
+            ("list row", "22 · tree-row-height (file tree row)"),
+            (
+                "detail row / header",
+                "28 · table-cell-height (shared Table)",
+            ),
+            (
+                "detail cells",
+                "Name flex · Size/Date mono 11 · Size padR 8",
+            ),
             ("selected", "surface-active (no border)"),
             ("glyph", "folder/file text-muted · image accent-info"),
             ("cut", "foreground 50% opacity until paste"),
@@ -369,7 +376,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "The grid draws glyphs and labels; image textures are not loaded in this example. List and detail views use the shared tree_row and Table widgets. Cut-pending cells dim the icon and label to 50% while preserving the selection or hover background.",
+        "The grid draws glyphs and labels; image textures are not loaded in this example. List and detail views use the shared tree_row and Table widgets. Cut-pending cells dim the icon and label to 50% while preserving the selection or hover background. No explorer-specific row height: the list reuses the tree row (22), and the detail header and body rows reuse the shared Table height (28).",
     );
 }
 

@@ -1,4 +1,5 @@
-//! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다.
+//! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다. 높이를 지정하지 않은 표의
+//! 헤더와 본문 행이 `table_cell_height`인지도 검사한다.
 //! 본문 텍스트 선택과 헤더 정렬 클릭의 구분은 docs/architecture/ui-widgets-crate.md를 따른다.
 
 use std::cell::RefCell;
@@ -118,9 +119,9 @@ fn frame(
     (out.expect("table drawn"), probe.into_inner())
 }
 
-/// 헤더 행 중앙 좌표. 헤더 높이는 `Table` 기본값(`table_font_size + 10`).
+/// 헤더 행 중앙 좌표. 헤더 높이는 `Table` 기본값(`table_cell_height`).
 fn header_pos(theme: &Theme, probe: &Probe) -> Pos2 {
-    let header_h = theme.table_font_size().value() + 10.0;
+    let header_h = theme.table_cell_height().value();
     pos2(
         probe.name_rects[0].left() + 5.0,
         probe.table_top + header_h * 0.5,
@@ -193,4 +194,29 @@ fn selectable_keeps_header_sort_click() {
         "헤더 제목 클릭은 정렬 토글로 그대로 동작해야 한다"
     );
     assert_eq!(out.clicked_row, None, "헤더 클릭은 행 클릭이 아니다");
+}
+
+/// 높이를 지정하지 않은 표는 헤더와 본문 행 모두 `table_cell_height`를 쓴다.
+#[test]
+fn unsized_rows_and_header_use_table_cell_height() {
+    let base = tasty_themes::mocha_fallback();
+    for zoom in [0.85, 1.0, 1.2] {
+        let theme = Theme::with_colors_and_zoom(base.extract_colors(), false, zoom);
+        let ctx = egui::Context::default();
+        // 첫 프레임은 글꼴 준비와 열 폭 계산에 쓰고 두 번째 프레임을 잰다.
+        frame(&ctx, &theme, true, vec![]);
+        let (_, probe) = frame(&ctx, &theme, true, vec![]);
+        let cell_h = theme.table_cell_height().value();
+        let pitch = probe.name_rects[1].center().y - probe.name_rects[0].center().y;
+        assert!(
+            (pitch - cell_h).abs() <= 0.5,
+            "ui_zoom {zoom}: row pitch {pitch} vs table_cell_height {cell_h}"
+        );
+        // 헤더 아래에 첫 행이 온다. 첫 행 라벨 중심 = 표 상단 + 헤더 + 행 절반.
+        let first = probe.name_rects[0].center().y - probe.table_top;
+        assert!(
+            (first - (cell_h + cell_h * 0.5)).abs() <= 1.0,
+            "ui_zoom {zoom}: first row centre {first} vs header {cell_h} + half row"
+        );
+    }
 }
