@@ -827,7 +827,7 @@ fn draw_right_pane(
         }
         Conn::Error(msg) => {
             let msg = msg.clone();
-            let out = CenterState::error(icons::ALERT_TRIANGLE, t("remote_attach.cant_connect"))
+            let out = CenterState::error(t("remote_attach.cant_connect"))
                 .sub_line(Some(&msg))
                 .action(t("remote_attach.retry"), Some(icons::REFRESH))
                 .show_in(ui, th, rect);

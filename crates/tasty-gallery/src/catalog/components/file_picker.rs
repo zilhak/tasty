@@ -795,7 +795,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             ui,
             theme,
             body_h,
-            CenterState::error(icons::ALERT_TRIANGLE, "Permission denied")
+            CenterState::error("Permission denied")
                 .sub_line(Some(
                     "You don't have permission to read this folder. Try a different folder or check access.",
                 ))
@@ -805,7 +805,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             ui,
             theme,
             body_h,
-            CenterState::error(icons::ALERT_TRIANGLE, "Remote connection lost")
+            CenterState::error("Remote connection lost")
                 .sub_line(Some(
                     "The SSH tunnel dropped. Reconnect to resume browsing from the last folder.",
                 ))

@@ -291,7 +291,7 @@ fn draw_body(
             );
         }
         FpViewState::ErrorPerm(reason) => {
-            let out = CenterState::error(icons::ALERT_TRIANGLE, props.error_perm_title)
+            let out = CenterState::error(props.error_perm_title)
                 .sub_line(Some(reason.as_str()))
                 .action(props.error_perm_retry, None)
                 .show(ui, th, Some(body_height));
@@ -300,7 +300,7 @@ fn draw_body(
             }
         }
         FpViewState::ErrorConn(reason) => {
-            let out = CenterState::error(icons::ALERT_TRIANGLE, props.error_conn_title)
+            let out = CenterState::error(props.error_conn_title)
                 .sub_line(Some(reason.as_str()))
                 .action(props.error_conn_reconnect, None)
                 .show(ui, th, Some(body_height));

@@ -71,7 +71,7 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
         }
         // 본체와 같은 원격 인스턴스 미실행 오류 예제. 내부 stderr·포트 경로는 표시하지 않는다.
         RaState::Error => {
-            CenterState::error(icons::ALERT_TRIANGLE, "Can't connect")
+            CenterState::error("Can't connect")
                 .sub_line(Some(
                     "No tasty instance appears to be running on the remote host.",
                 ))

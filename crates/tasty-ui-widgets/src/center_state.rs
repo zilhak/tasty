@@ -1,7 +1,9 @@
 //! 목록 자리에 들어가는 빈·로딩·오류 중앙 블록(CenterState).
 //! 글리프(로딩은 스피너)·제목·보조 줄로 이루어지며 받은 영역 안에서 세로 가운데에 놓인다.
 //! 보조 줄이 없어도 캡션 한 줄 높이를 예약해 loading·empty·error 사이에서 글리프가 움직이지 않는다.
-//! 액션 버튼이 있으면 화면 시안처럼 버튼까지 한 열로 가운데에 두므로 글리프가 그만큼 올라간다.
+//! 가운데 정렬 대상은 글리프·제목·보조 줄뿐이다. 액션 버튼은 그 블록 아래에 매달려 정렬에서
+//! 빠지므로 액션 유무와 관계없이 글리프 위치가 같다.
+//! 오류 글리프는 부품이 정한다(`CENTER_STATE_ERROR_GLYPH`). 호스트는 빈 상태 글리프만 고른다.
 //! 값은 모두 `center_state_*` 컴포넌트 토큰에서 읽으므로 UI 배율을 따른다.
 
 use tasty_type_appearance::theme::Theme;
@@ -17,8 +19,10 @@ pub enum CenterStateVariant {
     Error,
 }
 
-/// 블록 아래에 붙는 선택 액션(Retry·Reconnect 등). 화면 시안처럼 버튼까지 한 열로
-/// 세로 가운데에 둔다.
+/// 오류 변형이 항상 쓰는 글리프. 호스트가 바꿀 수 없다.
+pub const CENTER_STATE_ERROR_GLYPH: tasty_icons::Icon = tasty_icons::ALERT_TRIANGLE;
+
+/// 보조 줄 슬롯 아래에 매달리는 선택 액션(Retry·Reconnect 등). 가운데 정렬에서 빠진다.
 struct CenterStateAction<'a> {
     label: &'a str,
     icon: Option<tasty_icons::Icon>,
@@ -55,8 +59,13 @@ impl<'a> CenterState<'a> {
         Self::new(CenterStateVariant::Empty, Some(glyph), title)
     }
 
-    pub fn error(glyph: tasty_icons::Icon, title: &'a str) -> Self {
-        Self::new(CenterStateVariant::Error, Some(glyph), title)
+    /// 글리프는 `CENTER_STATE_ERROR_GLYPH` 로 고정이다.
+    pub fn error(title: &'a str) -> Self {
+        Self::new(
+            CenterStateVariant::Error,
+            Some(CENTER_STATE_ERROR_GLYPH),
+            title,
+        )
     }
 
     fn new(variant: CenterStateVariant, glyph: Option<tasty_icons::Icon>, title: &'a str) -> Self {
@@ -75,7 +84,7 @@ impl<'a> CenterState<'a> {
         self
     }
 
-    /// 보조 줄 아래의 Secondary 버튼.
+    /// 보조 줄 슬롯 아래 `center_state_action_gap` 에 매달리는 Secondary·sm 버튼.
     pub fn action(mut self, label: &'a str, icon: Option<tasty_icons::Icon>) -> Self {
         self.action = Some(CenterStateAction { label, icon });
         self
@@ -91,7 +100,7 @@ impl<'a> CenterState<'a> {
         let width = LogicalPx(ui.available_width());
         let height = height.unwrap_or_else(|| {
             let texts = self.texts(ui, theme, width);
-            self.block_h(theme, &texts) + theme.spacing_md * 2.0
+            self.natural_h(theme, &texts) + theme.spacing_md * 2.0
         });
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(width.value(), height.value()),
@@ -113,7 +122,7 @@ impl<'a> CenterState<'a> {
         let avail_h = LogicalPx(region.height()) - pad * 2.0;
         let top = LogicalPx(region.top())
             + pad
-            + (avail_h - self.block_h(theme, &texts)).max(LogicalPx(0.0)) * 0.5;
+            + (avail_h - texts.block_h(theme)).max(LogicalPx(0.0)) * 0.5;
         let cx = region.center().x;
 
         let glyph = egui::Rect::from_min_size(
@@ -172,7 +181,7 @@ impl<'a> CenterState<'a> {
         let mut action_clicked = false;
         let mut action_rect = None;
         if let Some(action) = self.action {
-            let action_top = sub_slot.bottom() + action_gap(theme).value();
+            let action_top = sub_slot.bottom() + theme.center_state_action_gap().value();
             let mut col = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(egui::Rect::from_min_max(
@@ -207,11 +216,11 @@ impl<'a> CenterState<'a> {
         }
     }
 
-    /// 글리프부터 보조 줄 슬롯 끝까지, 액션이 있으면 버튼 끝까지의 높이.
-    fn block_h(&self, theme: &Theme, texts: &Texts) -> LogicalPx {
+    /// 높이를 받지 않았을 때 할당할 자연 높이. 가운데 블록에 매달린 액션까지 담는다.
+    fn natural_h(&self, theme: &Theme, texts: &Texts) -> LogicalPx {
         let block = texts.block_h(theme);
         if self.action.is_some() {
-            block + action_gap(theme) + LogicalPx(ACTION_SIZE.height(theme))
+            block + theme.center_state_action_gap() + LogicalPx(ACTION_SIZE.height(theme))
         } else {
             block
         }
@@ -256,11 +265,6 @@ impl<'a> CenterState<'a> {
 
 /// 액션 버튼 크기. 화면 시안의 `Button size="sm"` 이다.
 const ACTION_SIZE: ControlSize = ControlSize::Sm;
-
-/// 보조 줄 슬롯 끝 → 버튼 간격. 화면 시안의 열 간격 space-sm 과 버튼 marginTop space-xs 합이다.
-fn action_gap(theme: &Theme) -> LogicalPx {
-    theme.spacing_sm + theme.spacing_xs
-}
 
 struct Texts {
     title: std::sync::Arc<egui::Galley>,

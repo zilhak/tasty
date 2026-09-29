@@ -182,7 +182,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, host: Host, v: CenterStateVariant) {
     let state = match v {
         CenterStateVariant::Loading => CenterState::loading(title),
         CenterStateVariant::Empty => CenterState::empty(glyph, title),
-        CenterStateVariant::Error => CenterState::error(icons::ALERT_CIRCLE, title),
+        CenterStateVariant::Error => CenterState::error(title),
     };
     state.sub_line(sub).show_in(ui, theme, region);
 

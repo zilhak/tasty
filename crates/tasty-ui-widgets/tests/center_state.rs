@@ -1,5 +1,5 @@
 //! CenterState 가 loading·empty·error 사이에서 글리프 위치를 유지하고 토큰 값으로 배치하는지,
-//! 액션 버튼이 있으면 버튼까지 한 열로 가운데에 두는지 검사한다.
+//! 액션 버튼이 가운데 정렬에서 빠져 블록 아래에 매달리는지 검사한다.
 
 use egui::{Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
@@ -40,7 +40,7 @@ fn center_state_reserves_sub_line_so_glyph_does_not_move() {
             .sub_line(Some("Files you add here appear in this list."))
     });
     let (error, _) = render(&theme, || {
-        CenterState::error(tasty_icons::ALERT_CIRCLE, "Could not read this folder")
+        CenterState::error("Could not read this folder")
             .sub_line(Some("Permission denied (os error 13)"))
     });
     assert_eq!(loading.glyph.top(), empty.glyph.top());
@@ -67,27 +67,39 @@ fn center_state_uses_token_geometry() {
 }
 
 #[test]
-fn center_state_centres_the_action_with_the_block() {
+fn center_state_hangs_the_action_below_the_centred_block() {
     let theme = tasty_themes::mocha_fallback();
     let (plain, _) = render(&theme, || {
-        CenterState::error(tasty_icons::ALERT_TRIANGLE, "Permission denied")
-            .sub_line(Some("Permission denied (os error 13)"))
+        CenterState::error("Permission denied").sub_line(Some("Permission denied (os error 13)"))
     });
     let (out, region_top) = render(&theme, || {
-        CenterState::error(tasty_icons::ALERT_TRIANGLE, "Permission denied")
+        CenterState::error("Permission denied")
             .sub_line(Some("Permission denied (os error 13)"))
-            .action("Retry", None)
+            .action("Retry", Some(tasty_icons::REFRESH))
     });
     let button = out.action.expect("action drawn");
-    // 화면 시안의 size="sm" — item-height-tab.
+    // 시안의 Button size="sm".
     assert_eq!(button.height(), 24.0);
-    // 보조 줄 슬롯 끝 → 버튼 = space-sm + space-xs.
+    // 보조 줄 슬롯 끝 → 버튼 = center-state-action-gap(12).
+    assert_eq!(
+        LogicalPx(button.top() - out.sub_slot.bottom()),
+        theme.center_state_action_gap()
+    );
     assert_eq!(button.top() - out.sub_slot.bottom(), 12.0);
-    let block = out.glyph.union(button);
+    // 가로 가운데.
+    assert!((button.center().x - out.glyph.center().x).abs() <= 0.5);
+    // 가운데 정렬은 글리프·제목·보조 줄만 대상으로 한다. 액션이 있어도 글리프가 움직이지 않는다.
+    assert_eq!(plain.glyph.top(), out.glyph.top());
+    let block = out.glyph.union(out.sub_slot);
     assert!((block.center().y - (region_top + REGION_H * 0.5)).abs() <= 0.5);
-    // 버튼 높이와 간격의 절반((12 + 24) / 2)만큼 글리프가 올라간다.
-    let lift = plain.glyph.top() - out.glyph.top();
-    assert!((lift - 18.0).abs() <= 0.5);
+}
+
+#[test]
+fn center_state_error_glyph_is_owned_by_the_part() {
+    assert_eq!(
+        tasty_ui_widgets::CENTER_STATE_ERROR_GLYPH.uri,
+        tasty_icons::ALERT_TRIANGLE.uri
+    );
 }
 
 #[test]
