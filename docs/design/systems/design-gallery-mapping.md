@@ -20,7 +20,7 @@
 | `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
-| `LocalSshSection` | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다 |
+| `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·unreadable config 빈 상태 두 장 |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |

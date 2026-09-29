@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
+use crate::tokens::STRUCT_GAP_2;
 use crate::vspace;
 use crate::{TagVariant, tag};
 
@@ -286,11 +286,6 @@ pub fn draw_tab_strip(ui: &mut egui::Ui, th: &Theme, data: &TabStripData<'_>) ->
 // SSH 설정 항목은 프로필 목록 아래 별도 구역으로 표시한다.
 // 이미 가져온 호스트는 버튼 대신 상태 태그를 표시하며, 설정 없음은 오류색으로 표시하지 않는다.
 
-/// 대응하는 공용 토큰이 없는 디자인의 섹션 상단 여백.
-const SSH_SECTION_MARGIN_TOP: LogicalPx = LogicalPx(10.0);
-/// 헤더와 행의 간격. 같은 숫자의 상태 점 토큰과 역할이 달라 공유하지 않는다.
-const SSH_GAP: LogicalPx = LogicalPx(6.0);
-
 /// 대문자 헤딩의 자간 비율. 글꼴 크기에 곱해 논리 픽셀로 변환한다.
 const SECTION_HEADING_TRACKING_EM: f32 = 0.06;
 
@@ -338,7 +333,7 @@ pub fn draw_local_ssh_section(
 ) -> Option<usize> {
     let mut clicked = None;
     // 프로필과 별도 구역임을 구분선으로 표시한다.
-    vspace(ui, SSH_SECTION_MARGIN_TOP);
+    vspace(ui, th.spacing_md);
     ui.painter().hline(
         ui.max_rect().x_range(),
         ui.cursor().top(),
@@ -346,9 +341,11 @@ pub fn draw_local_ssh_section(
     );
     vspace(ui, th.spacing_sm);
 
+    // 헤더와 빈 상태 줄은 위 size-2 · 아래 space-xs 여백을 둔다.
+    vspace(ui, STRUCT_GAP_2);
     ssh_inset(ui, th, |ui| {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = SSH_GAP.value();
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
             selectable_label_tracked(
                 ui,
                 &data.heading.to_uppercase(),
@@ -377,22 +374,23 @@ pub fn draw_local_ssh_section(
             }
         });
     });
-    vspace(ui, SSH_GAP);
+    vspace(ui, th.spacing_xs);
 
     if data.hosts.is_empty() {
+        vspace(ui, STRUCT_GAP_2);
         // 비어 있는 이유를 표시하되 설정 부재를 경고색으로 표현하지 않는다.
         ssh_inset(ui, th, |ui| {
             selectable_text(
                 ui,
                 data.empty_message,
                 th.text_muted(),
-                th.font_size_term_sm.value(),
+                th.font_size_caption.value(),
                 false,
                 false,
                 TextWrap::Wrap,
             );
         });
-        vspace(ui, SSH_GAP);
+        vspace(ui, th.spacing_xs);
         return None;
     }
     for (i, h) in data.hosts.iter().enumerate() {
@@ -411,7 +409,7 @@ fn draw_local_ssh_row(
     data: &LocalSshSectionData<'_>,
 ) -> bool {
     let mut clicked = false;
-    vspace(ui, SSH_GAP);
+    vspace(ui, th.spacing_xs);
     ssh_inset(ui, th, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
@@ -432,7 +430,7 @@ fn draw_local_ssh_row(
                     clicked = true;
                 }
                 ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
+                    ui.spacing_mut().item_spacing.y = th.label_detail_gap.value();
                     let w = ui.available_width();
                     selectable_text(
                         ui,
@@ -456,7 +454,7 @@ fn draw_local_ssh_row(
             });
         });
     });
-    vspace(ui, SSH_GAP);
+    vspace(ui, th.spacing_xs);
     ui.painter().hline(
         ui.max_rect().x_range(),
         ui.cursor().top(),

@@ -15,6 +15,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 const WIDTH: LogicalPx = LogicalPx(520.0);
+/// SSH config 빈 상태 카드 폭. 디자인 "From ssh config" Spec 의 Stage 액자 값이다.
+const SSH_STATE_WIDTH: LogicalPx = LogicalPx(300.0);
 
 struct Profile {
     name: &'static str,
@@ -145,6 +147,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
         });
+        // 호스트가 없을 때와 config 를 못 읽을 때는 한 줄 muted 문구만 바뀐다.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            ssh_state_card(ui, theme, "no hosts", "No hosts in ~/.ssh/config.");
+            ssh_state_card(
+                ui,
+                theme,
+                "unreadable config",
+                "Can't read ~/.ssh/config — permission denied.",
+            );
+        });
     });
 
     spec::meta(
@@ -164,6 +177,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "local ssh",
                 "section header · 2-line row · ghost Add profile · Tag when already in profiles",
             ),
+            (
+                "local ssh box",
+                "rule border-frame · margin-top space-md · padding-top space-sm",
+            ),
+            (
+                "local ssh header",
+                "caption uppercase + mono path + count · gap space-sm · pad size-2 / space-xs",
+            ),
+            (
+                "local ssh row",
+                "pad space-xs · gap space-sm · alias ↔ target label-detail-gap · separator below",
+            ),
+            (
+                "empty / unreadable",
+                "one caption line · text-muted · no error tone",
+            ),
         ],
         &[
             TokenChip::new("bg-sidebar", "tab strip", theme.bg_sidebar().to_egui()),
@@ -178,6 +207,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Remote profiles store connection details for their protocol. SSH profiles supply the connection and authentication settings; Attach records add the remote Tasty executable and port discovery options.",
     );
+}
+
+/// SSH config 섹션의 빈 상태 한 장. 목록 없이 같은 공용 view 를 부른다.
+fn ssh_state_card(ui: &mut egui::Ui, theme: &Theme, label: &str, message: &str) {
+    spec::cluster(ui, theme, label, |ui| {
+        kit::frame_card(ui, theme, SSH_STATE_WIDTH, kit::panel_fill(theme), |ui| {
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                draw_local_ssh_section(
+                    ui,
+                    theme,
+                    &LocalSshSectionData {
+                        heading: "From ssh config",
+                        path: "~/.ssh/config",
+                        in_profiles_tag: "in profiles",
+                        add_label: "Add profile",
+                        empty_message: message,
+                        hosts: &[],
+                    },
+                );
+            });
+        });
+    });
 }
 
 /// 공용 탭 바에 라벨과 활성 항목을 전달한다. 배경은 카드 전체 폭을 채운다.
