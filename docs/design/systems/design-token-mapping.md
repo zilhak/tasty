@@ -9,7 +9,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | 디자인 토큰 | tasty Theme | mocha hex | 비고 |
 |---|---|---|---|
 | `bg-sidebar` | `mantle` | `#181825` | 사이드바·**탭 바** 등 한 단계 더 어두운 면 |
-| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner / file_handler_picker / 전송 진행·실패). 실제 배경 선택은 다음 함수가 정한다: `popup::draw::popup_bg_fill` |
+| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner / file_handler_picker / file picker / 전송 진행·실패). 실제 배경 선택은 다음 함수가 정한다: `popup::draw::popup_bg_fill` |
 | `surface-raised` | `surface0` | `#313244` | 카드·입력·메뉴·command_palette 본문, secondary 버튼 fill |
 | `border-default` | `surface0` | `#313244` | |
 | `border-strong` | `surface1` | `#45475a` | 팝업 외곽선·강한 구분 |

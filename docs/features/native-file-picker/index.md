@@ -310,6 +310,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Given mirror workspace 가 도중에 사라짐(disconnect) Then popup 이 즉시 `ErrorConn` 으로
   전이한다(soft timeout 만료를 기다리지 않음).
 - Given 원격 디렉토리 읽기가 권한 거부로 실패 Then `ErrorPerm` 상태로 전이한다.
+- Given `ErrorPerm` 또는 `ErrorConn` 상태 When 본문이 그려짐 Then 오류 글리프·제목·사유가 목록 자리
+  가운데에 놓이고, refresh 아이콘을 단 Retry(연결 끊김은 Reconnect) Secondary 버튼이 그 아래에
+  매달린다. 창 배경은 bg-panel 이라 버튼 채움·테두리가 창과 구분된다.
 - Given attach 점유가 없는 client 가 `list_dir_request` 를 보냄 Then 서버가 거부 회신한다
   (`ok: false`).
 - Given 로컬 파일을 확정 Then `DomainIntent::DispatchFile` 이 발생해 기존 오픈 경로로

@@ -189,7 +189,8 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 
 ## CenterState — 가운데 계산과 시안 밖 요소
 
-- **구조**: 시안 `CenterStateG` 는 글리프·제목·보조 줄의 세 요소를 flex 로 영역 가운데에 둔다.
+- **구조**: 시안 DS 컴포넌트 `CenterState`(`components/feedback/CenterState.jsx`)는 글리프·제목·보조
+  줄의 세 요소만 flex 로 영역 가운데에 두고, 액션은 그 블록 아래에 절대 위치로 매단다.
   `tasty_ui_widgets::CenterState` 는 세 요소의 높이를 먼저 재고 `center-state-*` 토큰으로 직접
   배치한다. 블록 높이 상수는 없고, 받은 영역(file picker 본문 · remote attach 우측 pane)에서
   위아래 `space-md` 안쪽의 가운데에 놓인다. Settings › Misc › Scripts 에는 고정 높이 목록
@@ -197,12 +198,15 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **보조 줄 슬롯**: 보조 줄이 없어도 캡션 한 줄을 예약한다. 예약 높이는 실제 보조 줄과 같은
   `LayoutJob` 경로로 잰 한 줄 galley 높이다. `Fonts::row_height` 는 소수점 아래가 달라
   loading 과 empty 사이에서 글리프가 0.17px 움직였다.
-- **액션 버튼**: 버튼이 있으면 보조 줄 슬롯 아래 `space-sm + space-xs`(12) 간격과 버튼(`size="sm"`,
-  높이 24)까지 한 열로 보고 세로 가운데에 둔다. 화면 시안의 flex 열과 같다. 그래서 버튼이 있는
-  오류 변형의 글리프는 버튼 없는 변형보다 (12 + 24) / 2 = 18 위에 있다.
-- **글리프 선택**: 크기와 색은 위젯이 정하고 어떤 아이콘을 쓸지는 호스트가 정한다. 갤러리
-  CenterState specimen 은 시안대로 오류에 `ALERT_CIRCLE` 을 쓰고, 본체 file picker·remote attach
-  는 각 화면 시안의 `ALERT_TRIANGLE`, remote attach 초기 상태는 `TERMINAL_PROMPT` 를 유지한다.
+- **액션 버튼**: 부품의 슬롯이다. Secondary·`sm`(높이 24) 버튼을 보조 줄 슬롯 끝에서
+  `center-state-action-gap`(12) 아래, 가로 가운데에 매단다. 가운데 정렬 계산에서 빠지므로 액션이
+  있든 없든 글리프 위치가 같다. 영역이 낮으면 버튼이 아래쪽 안쪽 여백까지 내려가거나 영역 밖으로
+  잘릴 수 있지만 글리프를 밀어 올리지는 않는다. 높이를 받지 않는 호스트(Settings › Misc ›
+  Scripts)의 자연 높이에는 액션까지 담는다.
+- **글리프 선택**: 크기와 색은 위젯이 정한다. 오류 글리프도 부품이 정한다 — 모든 호스트에서
+  `alertTriangle`(`CENTER_STATE_ERROR_GLYPH`)이고 `CenterState::error` 는 글리프를 받지 않는다.
+  호스트는 빈 상태 글리프만 고른다(file picker `FOLDER_OPEN`, Scripts `SCRIPT`, remote attach
+  초기 상태 `REMOTE` — 본체는 같은 아이콘의 별칭 `TERMINAL_PROMPT` 로 부른다).
 - **굵기와 배율**: 제목은 시안에 굵기 지정이 없어 기본 굵기다. 글리프 크기는 `ui_scale`
   0.85 / 1 / 1.2 에서 20 / 24 / 29 다. 시안 표기 20.4 / 28.8 과의 차이는 Theme 배율 반올림이다.
 - **근거**: `crates/tasty-ui-widgets/src/center_state.rs`, `crates/tasty-ui-widgets/tests/center_state.rs`.
