@@ -106,13 +106,18 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             .show(ui, |ui| {
                 ui.set_width(theme.measure_lg.value());
                 ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    for card in &stack {
-                        ui.scope(|ui| {
+                    // 시안: 폭 toast-max-width 열, 카드는 자기 내용 폭으로 오른쪽 끝을 맞춘다.
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(theme.toast_max_width.value(), 0.0),
+                        egui::Layout::top_down(egui::Align::Max),
+                        |ui| {
                             ui.set_width(theme.toast_max_width.value());
-                            draw_toast_card(ui, theme, card, 1.0);
-                        });
-                    }
+                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                            for card in &stack {
+                                draw_toast_card(ui, theme, card, 1.0);
+                            }
+                        },
+                    );
                 });
             });
     });
@@ -123,7 +128,9 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
         "Anchored bottom-right and stacked bottom-up: the newest card is at the bottom, \
          space-sm gap. At most 5 per scope; a 6th drops the oldest (topmost) immediately. \
          Cards past the scope's top edge are not drawn, and every resting card is fully \
-         opaque — alpha is only for enter and exit.",
+         opaque — alpha is only for enter and exit. Each card keeps its own content width, \
+         capped at toast-max-width, and right edges align to the anchor; there is no shared \
+         stack width, so nothing re-flows when a card enters or leaves.",
     );
 
     note(
@@ -141,7 +148,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             ("order", "newest bottom"),
             ("gap", "space-sm 8"),
             ("cap", "5 per scope → oldest dropped"),
-            ("width", "~320–380px"),
+            (
+                "width",
+                "content width per card, cap toast-max-width (320) · right edges align",
+            ),
         ],
         &[
             TokenChip::new(

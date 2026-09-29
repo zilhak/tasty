@@ -72,7 +72,9 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 > 페이드(등장/소멸 알파만, 위치 이동 없음)는 적용된다 — theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 규칙은 **터미널 콘텐츠** 한정이라 비-터미널 알림 UI 에는 적용되지 않는다.
 
-**경계 처리**: 토스트의 모든 변은 자기 스코프 `scope_rect` 안에 머문다. ① `max_width` 는 surface 안쪽 폭(`width - 2*margin`)으로 클램프해 좁은 surface 에서 좌측 누출을 막고(정상 폭 surface 에선 0.8 폭이 그대로라 시각 무변경), ② 스택이 스코프 상단을 넘으면 더 오래된 토스트는 그리지 않으며, ③ scope 경계로 painter 를 클립해 1px 단위 누출까지 차단한다. 우측 하단 정렬 자체는 유지된다.
+**카드 폭**: 스택의 카드마다 자기 내용 폭을 쓰고 상한은 `toast_max_width`(`toast-max-width` = 320)다. 오른쪽 끝을 앵커에 맞추므로 짧은 알림은 긴 알림보다 좁다. 공유 스택 폭이 없어 카드가 들어오고 나가도 다른 카드가 다시 흐르지 않는다.
+
+**경계 처리**: 토스트의 모든 변은 자기 스코프 `scope_rect` 안에 머문다. ① 카드 폭 상한은 surface 안쪽 폭(`width - 2*margin`)으로도 클램프해 좁은 surface 에서 좌측 누출을 막고, ② 스택이 스코프 상단을 넘으면 더 오래된 토스트는 그리지 않으며, ③ scope 경계로 painter 를 클립해 1px 단위 누출까지 차단한다. 우측 하단 정렬 자체는 유지된다.
 
 ## 입력 — 소비하지 않음
 
@@ -99,7 +101,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
   `Painter` 를 받는 이유는 호출부마다 그릴 레이어가 다르기 때문이다: 본체는
   `Order::Tooltip` 레이어 painter 를, 갤러리는 무대 frame 의 painter 를 넘긴다.
 - `toast_layout_card(ctx, theme, message, max_width)` — 본문 galley 와 카드 크기(폭 × 높이).
-  폭 상한을 **어디서 얻는가**(본체는 스코프 폭, 단일 카드는 `toast_max_width`)만 부르는 쪽이
+  폭 상한을 **어디서 얻는가**(스택은 `toast_max_width` 와 스코프 안쪽 폭 중 작은 값, 단일 카드는 `toast_max_width`)만 부르는 쪽이
   정하고, 줄바꿈 폭·패딩·accent 바·높이는 여기서 한 번만 정한다.
 - `toast_card_colors(theme, kind, alpha)` — alpha 를 반영한 fill · border · accent · 글자 색.
   alpha 를 곱하는 순서가 여기 고정돼 있다 — 테마 색(straight)에 곱한 뒤 `Color32` 로 바꾼다.

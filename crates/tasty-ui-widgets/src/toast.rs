@@ -8,8 +8,8 @@ use tasty_type_appearance::toast_kind::ToastKind;
 
 use crate::tokens::{
     TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_GAP,
-    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
-    TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_PADDING_X as PADDING_X,
+    TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
 };
 
 /// 등장 페이드 시간(ms).
@@ -86,11 +86,10 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
                 continue;
             }
 
-            // 좁은 영역에서도 왼쪽 여백을 넘지 않도록 카드 폭을 제한한다.
+            // 카드마다 내용 폭을 쓰고 상한은 `toast_max_width`다. 공유 스택 폭이 없어 카드가
+            // 들고 나도 다른 카드가 다시 흐르지 않는다. 좁은 영역에서는 왼쪽 여백도 넘지 않는다.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8)
-                .max(TOAST_MIN_MAX_WIDTH)
-                .min(inner_limit);
+            let max_width = th.toast_max_width.value().min(inner_limit);
             let (galley, size) = layout_card(&ctx, th, entry.message.clone(), max_width);
             let (toast_w, toast_h) = (size.x, size.y);
 

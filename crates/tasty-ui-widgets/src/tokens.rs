@@ -62,9 +62,6 @@ pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
 /// 좁은 스코프에서 카드 폭을 제한할 때 사용하는 하한. 본문 줄바꿈 폭은 별도로 1 이상으로 제한한다.
 pub const TOAST_MIN_INNER_WIDTH: f32 = 48.0;
 
-/// 스코프 폭의 80% 를 쓰되 그 결과가 이 값보다 작아지지 않게 하는 하한.
-pub const TOAST_MIN_MAX_WIDTH: f32 = 80.0;
-
 /// 클립보드 뷰어 가운데 아이콘 크기 — 콘텐츠 글리프라 공용 `CenterState`(icon-size-lg)
 /// 밖에 남는 화면 전용 고정값. plugin 본체와 갤러리 specimen 이 같은 상수를 읽는다.
 pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;

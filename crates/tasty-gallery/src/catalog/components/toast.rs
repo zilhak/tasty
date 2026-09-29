@@ -13,7 +13,7 @@ use crate::catalog::toast_card::ToastKind;
 
 // 한 줄·여러 줄·스택을 비교할 예제 영역의 크기.
 
-/// 모든 케이스 공통 가로. wrap 케이스가 80% 폭 클램프를 실제로 넘도록 정한 값.
+/// 모든 케이스 공통 가로. wrap 케이스의 본문이 카드 폭 상한(toast-max-width)을 넘도록 정한 값.
 const SPECIMEN_W: LogicalPx = LogicalPx(480.0);
 /// 토스트 1 개 케이스의 세로.
 const SPECIMEN_H_SINGLE: LogicalPx = LogicalPx(120.0);
@@ -169,7 +169,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         vspace(ui, theme.spacing_lg);
 
         ui.label(
-            egui::RichText::new("Case 5 — 긴 본문 (max_width 80% 내 줄바꿈 wrap)")
+            egui::RichText::new("Case 5 — 긴 본문 (카드 폭 상한 toast-max-width 320 안에서 줄바꿈 wrap)")
                 .strong()
                 .color(egui::Color32::from(theme.text_primary())),
         );
@@ -182,7 +182,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![ToastEntryView {
                 kind: ToastKind::Warning,
                 message:
-                    "이것은 매우 긴 toast 메시지로, scope 의 가로 80% 폭을 초과하면 여러 줄에 \
+                    "이것은 매우 긴 toast 메시지로, 카드 폭 상한 toast-max-width(320)를 넘으면 여러 줄에 \
                          걸쳐 wrap 된다. 본체 view 가 ctx.fonts(|f| f.layout(...)) 로 측정하고 \
                          toast 카드 크기를 동적으로 늘린다. 여기서는 mock 으로 같은 알고리즘을 \
                          시연한다."
