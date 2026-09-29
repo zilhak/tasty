@@ -39,6 +39,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - **최소 glibc**: 빌드 환경(Ubuntu 24.04, glibc 2.39)보다 오래된 배포판(Ubuntu 20.04/Debian 11 등)은
   `tasty: /lib/x86_64-linux-gnu/libc.so.6: version 'GLIBC_2.39' not found` 로 실행이 안 될 수 있다.
   구배포판 지원을 위한 별도 빌드는 제공하지 않는다 — 필요하면 소스 빌드([dev-guide/build](dev-guide/build.md)).
+- **최소 WebKitGTK**: HTML·Markdown 뷰어가 WebKitGTK 2.40 API를 사용한다(`Cargo.toml`의 `webkit2gtk` feature `v2_40`). 빌드 기준인 Ubuntu 24.04의 `libwebkit2gtk-4.1`은 이를 만족한다(2026-09-29 Ubuntu 24.04 arm64에서 2.50.4 확인).
 
 ## macOS
 

@@ -164,7 +164,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   - 파일을 쓸 수 있는 에이전트는 내용을 번갈아 쓰면서 release IPC로 같은 URL 로드를 반복해 이 창을 노릴 수 있다. 전제는 두 가지다. 에이전트에게 그 파일의 쓰기 권한이 있고, 사용자가 그 문서를 한 번 허용했어야 한다.
   - 이 위험은 수용한다. 파일을 쓸 수 있는 에이전트는 이미 셸로 임의 코드를 실행할 수 있다. 따라서 이 창이 새 권한을 주지 않는다. 스크립트 차단이 막는 대상은 신뢰하지 않는 HTML이며, 로컬 에이전트가 아니다.
 - 해제 시점을 navigation 콜백에 두므로 세 백엔드의 콜백 코드를 수정해야 한다.
-  - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요하다. 이 API는 WebKitGTK 2.40부터 있어 바인딩 feature를 `v2_40`으로 올려야 한다(현재 `v2_38`).
+  - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요하다. 이 API는 WebKitGTK 2.40부터 있어 바인딩 feature를 `v2_40`으로 둔다(`Cargo.toml`). 최소 런타임도 WebKitGTK 2.40이 된다.
   - Windows는 `NavigationStarting` 안에서 정한 `IsScriptEnabled`가 같은 navigation에 적용되는지 측정하지 않았다. API 문서가 근거다.
   - macOS는 delegate 시그니처가 바뀌고, 실제 Mac에서 확인하기 전까지 미검증이다.
   - Windows와 macOS의 bfcache 복원 동작도 미측정이다.

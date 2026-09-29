@@ -309,7 +309,8 @@ impl PlatformWebView {
                     PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction => {
                         decision
                             .downcast_ref::<NavigationPolicyDecision>()
-                            .and_then(|d| d.request())
+                            .and_then(|d| d.navigation_action())
+                            .and_then(|a| a.request())
                             .and_then(|r| r.uri())
                     }
                     _ => None,

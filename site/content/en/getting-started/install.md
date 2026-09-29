@@ -1,4 +1,4 @@
-<!-- source-hash: 48c61db95a8b -->
+<!-- source-hash: deb32d80e1db -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -46,6 +46,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - `.tar.gz` requires you to set up PATH and the menu entry yourself. If a required system library is missing, `tasty` tells you what is missing and exits.
 - The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. The release process also uploads these notice files separately to the release page.
 - The build baseline is Ubuntu 24.04 (glibc 2.39), so on older distributions (Ubuntu 20.04, Debian 11, etc.) it may fail to start with a `GLIBC_2.39 not found` error. No separate build is provided for older distributions.
+- The HTML and Markdown viewers need WebKitGTK 2.40 or later. The `libwebkit2gtk-4.1` of the Ubuntu 24.04 build baseline meets this.
 
 ## macOS
 

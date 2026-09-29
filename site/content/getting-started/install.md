@@ -45,6 +45,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - `.tar.gz` 는 PATH 등록과 메뉴 등록을 직접 해야 합니다. 필요한 시스템 라이브러리가 없으면 `tasty` 실행 시 무엇이 빠졌는지 안내하고 종료합니다.
 - 라이선스 고지(Tasty 의 MIT 본문 · 함께 번들하는 폰트와 markdown 렌더링 엔진의 라이선스 본문 · 제3자 고지 문서)는 산출물 안에 함께 들어 있습니다. `.deb` 은 `/usr/share/doc/tasty/`, `.rpm` 과 `.AppImage` 는 `usr/share/licenses/tasty/`, `.tar.gz` 는 압축을 푼 디렉토리 최상단입니다. 릴리스 배포 절차는 이 고지 파일들을 릴리스 페이지에도 별도로 올립니다.
 - 빌드 기준이 Ubuntu 24.04(glibc 2.39)라서 그보다 오래된 배포판(Ubuntu 20.04, Debian 11 등)에서는 `GLIBC_2.39 not found` 오류로 실행되지 않을 수 있습니다. 구배포판용 빌드는 따로 제공하지 않습니다.
+- HTML · 마크다운 뷰어는 WebKitGTK 2.40 이상이 필요합니다. 빌드 기준인 Ubuntu 24.04 의 `libwebkit2gtk-4.1` 은 이 조건을 만족합니다.
 
 ## macOS
 
