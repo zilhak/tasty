@@ -138,10 +138,5 @@ fn untrusted_warning(ui: &mut egui::Ui, theme: &Theme) {
         .size(theme.font_size_caption.value())
         .color(theme.text_primary().to_egui()),
     );
-    ui.label(
-        egui::RichText::new("Fingerprint: SHA256:9f2c…a17e")
-            .monospace()
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
+    super::attention::fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
 }

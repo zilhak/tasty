@@ -35,6 +35,8 @@ fn list_w(theme: &Theme) -> f32 {
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
         Tab::Installed { .. } => theme.measure_xl,
+        // 매니페스트 프리뷰는 경고와 fingerprint 줄까지 담아야 액션 바가 무대 안에 든다.
+        Tab::Add { preview: true } => theme.measure_md,
         _ => theme.measure_sm,
     };
     egui::vec2(list_w(theme) + theme.measure_md.value(), h.value())

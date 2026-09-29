@@ -12,9 +12,11 @@ const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
+use crate::adapters::ui::icons;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    PluginAvatarSize, hspace, margin_all, margin_sym, paint_plugin_avatar, plugin_avatar, vspace,
+    ControlSize, IconButton, IconButtonVariant, PluginAvatarSize, hspace, margin_all, margin_sym,
+    paint_plugin_avatar, plugin_avatar, vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -308,19 +310,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
             mono_header(ui, "plugins.attn_signature");
             vspace(ui, th.spacing_xs);
             if let Some(fp) = &entry.fingerprint {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(t("plugins.attn_fingerprint"))
-                            .size(th.font_size_caption.value())
-                            .color(egui::Color32::from(th.text_secondary())),
-                    );
-                    ui.label(
-                        egui::RichText::new(fp)
-                            .monospace()
-                            .size(th.font_size_caption.value())
-                            .color(egui::Color32::from(th.text_muted())),
-                    );
-                });
+                fingerprint_line(ui, th, fp);
             }
         }
         AttentionKind::HealthError => {
@@ -346,6 +336,42 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
             }
         }
     }
+}
+
+/// fingerprint 라벨, 값, 복사 IconButton을 한 줄에 그린다.
+/// 값이 없으면 호출하지 않으므로 복사 버튼에는 disabled 상태가 없다.
+pub(super) fn fingerprint_line(ui: &mut egui::Ui, th: &theme::Theme, fingerprint: &str) {
+    // 라벨이 버튼보다 먼저 배치되므로 줄 높이를 버튼 높이로 먼저 잡아야 세로 가운데가 맞는다.
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Sm.height(th)),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            ui.label(
+                egui::RichText::new(t("plugins.attn_fingerprint"))
+                    .monospace()
+                    .size(th.font_size_caption.value())
+                    .color(egui::Color32::from(th.text_secondary())),
+            );
+            ui.label(
+                egui::RichText::new(fingerprint)
+                    .monospace()
+                    .size(th.font_size_caption.value())
+                    .color(egui::Color32::from(th.text_muted())),
+            );
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::COPY.image(rect.width(), c).paint_at(ui, rect);
+                })
+                .on_hover_text(t("plugins.attn_copy_fingerprint"))
+                .clicked()
+            {
+                ui.ctx().copy_text(fingerprint.to_owned());
+            }
+        },
+    );
 }
 
 /// 상태 텍스트 + 사유별 조치 버튼.
@@ -393,19 +419,8 @@ fn draw_action_bar(
                         actions.push(PluginsAction::OpenSettings);
                     }
                 }
-                AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
-                    let enabled = entry.fingerprint.is_some();
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::new(t("plugins.attn_copy_fingerprint")),
-                        )
-                        .clicked()
-                        && let Some(fp) = &entry.fingerprint
-                    {
-                        ui.ctx().copy_text(fp.clone());
-                    }
-                }
+                // 복사는 fingerprint 줄의 IconButton이 맡으므로 액션 바에 버튼을 두지 않는다.
+                AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {}
             },
         );
     });

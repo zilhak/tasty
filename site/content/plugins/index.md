@@ -57,7 +57,7 @@
 
 | 표시 | 뜻 | 할 일 |
 |------|----|------|
-| **서명을 신뢰할 수 없음** <!-- en: Signature not trusted --> | 신뢰 목록에 없는 키로 서명됨 | 출처를 확인한 뒤 **지문 복사** <!-- en: Copy fingerprint --> 로 대조하고, 믿을 수 있으면 **재승인** <!-- en: Re-approve --> |
+| **서명을 신뢰할 수 없음** <!-- en: Signature not trusted --> | 신뢰 목록에 없는 키로 서명됨 | 출처를 확인한 뒤 지문 옆 **지문 복사** <!-- en: Copy fingerprint --> 버튼으로 복사해 대조하고, 믿을 수 있으면 **재승인** <!-- en: Re-approve --> |
 | **서명이 유효하지 않음** <!-- en: Signature invalid --> | 서명이 없거나 검증 실패 | 배포자에게 올바른 패키지를 받습니다 |
 | **권한이 변경됨** <!-- en: Permissions changed --> | 업데이트로 요구 권한이 바뀜 | **새로 요청됨** <!-- en: newly requested --> 목록을 보고 **재승인** |
 | **실행 오류** <!-- en: Runtime error --> | 활성인데 실행 중 실패 | **로그** 를 확인합니다 |

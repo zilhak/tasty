@@ -1,12 +1,13 @@
 //! 서명·권한·실행 오류로 확인이 필요한 플러그인 예제.
 //! 본체는 선택한 하나를 표시하지만 갤러리는 네 사유를 나란히 보여준다.
 
+use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PluginAvatarSize, TagVariant, margin_all, paint_plugin_avatar,
-    plugin_avatar, tag,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, PluginAvatarSize,
+    TagVariant, margin_all, paint_plugin_avatar, plugin_avatar, tag,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -51,11 +52,12 @@ impl Kind {
     }
 
     /// 액션 바 우측 버튼 — 본체 `draw_action_bar` 의 사유별 분기.
-    fn action(self) -> &'static str {
+    /// 서명 사유는 복사를 fingerprint 줄이 맡아 버튼이 없다.
+    fn action(self) -> Option<&'static str> {
         match self {
-            Self::PermissionsChanged => "Re-approve",
-            Self::HealthError => "Configure",
-            Self::UnknownKey | Self::SignatureInvalid => "Copy fingerprint",
+            Self::PermissionsChanged => Some("Re-approve"),
+            Self::HealthError => Some("Configure"),
+            Self::UnknownKey | Self::SignatureInvalid => None,
         }
     }
 
@@ -242,19 +244,7 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         }
         Kind::UnknownKey | Kind::SignatureInvalid => {
             mono_header(ui, "Signature");
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("fingerprint")
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_secondary().to_egui()),
-                );
-                ui.label(
-                    egui::RichText::new("SHA256:9f2c…a17e")
-                        .monospace()
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
-                );
-            });
+            fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
         }
         Kind::HealthError => {
             mono_header(ui, "Log");
@@ -278,6 +268,50 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     }
 }
 
+/// 복사 버튼 툴팁. 본체와 같은 번역 키를 `lang/en.toml`에서 읽는다.
+/// 갤러리는 설정을 읽지 않으므로 처음 쓸 때 영어 번역표로 한 번 초기화한다.
+fn copy_fingerprint_tooltip() -> &'static str {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let report = tasty_i18n::init("en");
+        if report.fell_back() {
+            tracing::warn!("gallery i18n init fell back: {report:?}");
+        }
+    });
+    tasty_i18n::t("plugins.attn_copy_fingerprint")
+}
+
+/// fingerprint 라벨·값·복사 IconButton 한 줄 — 본체 `fingerprint_line`.
+pub(super) fn fingerprint_line(ui: &mut egui::Ui, theme: &Theme, value: &str) {
+    // 라벨이 버튼보다 먼저 배치되므로 줄 높이를 버튼 높이로 먼저 잡아야 세로 가운데가 맞는다.
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            ui.label(
+                egui::RichText::new("fingerprint")
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_secondary().to_egui()),
+            );
+            ui.label(
+                egui::RichText::new(value)
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+            IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, theme, &|ui, rect, c| {
+                    icons::COPY.image(rect.width(), c).paint_at(ui, rect);
+                })
+                .on_hover_text(copy_fingerprint_tooltip());
+        },
+    );
+}
+
 /// 상태 점 + 상태 텍스트 + 우측 조치 버튼 — 본체 `draw_action_bar`.
 fn action_bar(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     let color = sev_color(theme, kind);
@@ -294,9 +328,11 @@ fn action_bar(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
                 .color(color),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            Button::new(kind.action())
-                .variant(ButtonVariant::Secondary)
-                .show(ui, theme);
+            if let Some(label) = kind.action() {
+                Button::new(label)
+                    .variant(ButtonVariant::Secondary)
+                    .show(ui, theme);
+            }
         });
     });
 }

@@ -1,4 +1,4 @@
-<!-- source-hash: 6cea8f9a7d2d -->
+<!-- source-hash: 95fa1ea7e77c -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -58,7 +58,7 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 
 | Shown | Meaning | What to do |
 |------|----|------|
-| **Signature not trusted** | Signed with a key not in the trust list | Confirm the source, compare with **Copy fingerprint**, and if you trust it, **Re-approve** |
+| **Signature not trusted** | Signed with a key not in the trust list | Confirm the source, copy the fingerprint with the **Copy fingerprint** button next to it and compare, and if you trust it, **Re-approve** |
 | **Signature invalid** | No signature, or verification failed | Get a correct package from the distributor |
 | **Permissions changed** | An update changed the required permissions | Read the **newly requested** list and **Re-approve** |
 | **Runtime error** | Enabled but failed while running | Check the **Log** |

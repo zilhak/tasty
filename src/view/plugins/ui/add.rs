@@ -7,6 +7,7 @@ const ADD_PREVIEW_NAME_PRIMITIVE_16: LogicalPx = LogicalPx(16.0);
 
 use tasty_ui_widgets::vspace;
 
+use super::attention::fingerprint_line;
 use super::{
     AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot, PluginsUiState,
 };
@@ -229,7 +230,7 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
                 egui::RichText::new(t("plugins.trust_unknown_body"))
                     .color(egui::Color32::from(th.text_primary())),
             );
-            ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
+            fingerprint_line(ui, th, fingerprint);
         }
         AddTrustState::UntrustedNoPubkey {
             fingerprint,
@@ -244,7 +245,7 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
             };
             ui.label(egui::RichText::new(title).strong().color(red));
             ui.label(egui::RichText::new(t("plugins.trust_no_pubkey")).color(red));
-            ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
+            fingerprint_line(ui, th, fingerprint);
         }
         AddTrustState::SigError(msg) => {
             vspace(ui, th.spacing_md);
