@@ -202,12 +202,12 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   `center-state-action-gap`(12) 아래, 가로 가운데에 매단다. 가운데 정렬 계산에서 빠지므로 액션이
   있든 없든 글리프 위치가 같다. 영역이 낮으면 버튼이 아래쪽 안쪽 여백까지 내려가거나 영역 밖으로
   잘릴 수 있지만 글리프를 밀어 올리지는 않는다.
-- **높이를 받지 않는 경로의 액션**: `show(…, None)` 은 블록·액션 간격·버튼 높이에 위아래
-  `space-md` 를 더해 할당하지만 가운데 계산은 블록만 쓴다. 그래서 액션이 있으면 블록이
-  (간격+버튼)/2 만큼 내려가 앉고 버튼 끝이 할당 영역 아래로 (간격+버튼)/2 − `space-md` = 6px
-  넘친다. 즉 자연 높이 경로는 액션을 영역 안에 담지 못한다. 시안에는 높이 개념이 없어(액션은
-  absolute) 이 경우의 규칙이 없고, 디자인 답을 기다린다. 지금 이 경로를 쓰는 호출부(Settings ›
-  Misc › Scripts)는 빈 상태뿐이라 액션이 없다.
+- **높이를 받지 않는 경로(시안 `natural`)**: `show(…, None)` 은 블록 위아래에 같은 띠를 둔 자연
+  높이를 할당한다. 액션이 없으면 띠는 `space-md`(12)다. 액션이 있으면 띠가
+  `space-md` + `center-state-action-gap` + `button-height-sm` = 48 이라 블록은 가운데에 남고, 액션은
+  할당 영역 아래 끝에서 `space-md` 위에서 끝난다. 자연 높이는 블록 + 2 × 12, 액션이 있으면
+  블록 + 2 × 48 이고 다음 위젯으로 넘치지 않는다. 글리프 위 36 의 빈 공간은 시안이 받아들인 값이다.
+  지금 이 경로를 쓰는 호출부(Settings › Misc › Scripts)는 빈 상태뿐이라 액션이 없다.
 - **글리프 선택**: 크기와 색은 위젯이 정한다. 오류 글리프도 부품이 정한다 — 모든 호스트에서
   `alertTriangle`(`CENTER_STATE_ERROR_GLYPH`)이고 `CenterState::error` 는 글리프를 받지 않는다.
   호스트는 빈 상태 글리프만 고른다(file picker `FOLDER_OPEN`, Scripts `SCRIPT`, remote attach

@@ -518,6 +518,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::prim_center_state::draw_action_slot,
                         ),
+                        spec(
+                            "center-state-unsized",
+                            "Unsized host + action — symmetric natural height",
+                            Some(
+                                "no host height · with an action the part reserves 48 above and below, the action ends 12 above the edge",
+                            ),
+                            components::prim_center_state::draw_unsized,
+                        ),
                     ],
                 ),
                 section(

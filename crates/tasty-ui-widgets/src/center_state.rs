@@ -3,6 +3,8 @@
 //! 보조 줄이 없어도 캡션 한 줄 높이를 예약해 loading·empty·error 사이에서 글리프가 움직이지 않는다.
 //! 가운데 정렬 대상은 글리프·제목·보조 줄뿐이다. 액션 버튼은 그 블록 아래에 매달려 정렬에서
 //! 빠지므로 액션 유무와 관계없이 글리프 위치가 같다.
+//! 높이를 받지 않은 호스트(`show(…, None)`)에서는 블록 위아래에 같은 띠를 두는 자연 높이를 쓴다.
+//! 액션이 있으면 띠에 액션 몫을 더해 블록은 가운데에 남고 액션이 할당 영역 안에서 끝난다.
 //! 오류 글리프는 부품이 정한다(`CENTER_STATE_ERROR_GLYPH`). 호스트는 빈 상태 글리프만 고른다.
 //! 값은 모두 `center_state_*` 컴포넌트 토큰에서 읽으므로 UI 배율을 따른다.
 
@@ -90,7 +92,7 @@ impl<'a> CenterState<'a> {
         self
     }
 
-    /// 가용 폭 전체와 `height`(없으면 블록 자연 높이)를 할당하고 그 안에 그린다.
+    /// 가용 폭 전체와 `height`(없으면 자연 높이, `natural_h`)를 할당하고 그 안에 그린다.
     pub fn show(
         self,
         ui: &mut egui::Ui,
@@ -100,7 +102,7 @@ impl<'a> CenterState<'a> {
         let width = LogicalPx(ui.available_width());
         let height = height.unwrap_or_else(|| {
             let texts = self.texts(ui, theme, width);
-            self.natural_h(theme, &texts) + theme.spacing_md * 2.0
+            self.natural_h(theme, &texts)
         });
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(width.value(), height.value()),
@@ -216,14 +218,18 @@ impl<'a> CenterState<'a> {
         }
     }
 
-    /// 높이를 받지 않았을 때 할당할 자연 높이. 가운데 블록에 매달린 액션까지 담는다.
+    /// 높이를 받지 않았을 때 할당할 자연 높이. 블록 위아래에 같은 띠를 둔다.
+    /// 액션이 없으면 띠는 `spacing_md`다. 액션이 있으면 `spacing_md + center_state_action_gap
+    /// + button_height_sm`이라 블록은 가운데에 남고 액션은 아래 끝에서 `spacing_md` 위에서 끝난다.
     fn natural_h(&self, theme: &Theme, texts: &Texts) -> LogicalPx {
-        let block = texts.block_h(theme);
-        if self.action.is_some() {
-            block + theme.center_state_action_gap() + LogicalPx(ACTION_SIZE.height(theme))
+        let band = if self.action.is_some() {
+            theme.spacing_md
+                + theme.center_state_action_gap()
+                + LogicalPx(ACTION_SIZE.height(theme))
         } else {
-            block
-        }
+            theme.spacing_md
+        };
+        texts.block_h(theme) + band * 2.0
     }
 
     fn texts(&self, ui: &egui::Ui, theme: &Theme, region_w: LogicalPx) -> Texts {

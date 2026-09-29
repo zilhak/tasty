@@ -1,5 +1,6 @@
 //! CenterState 의 세 변형(loading·empty·error)과 액션이 달린 error 를 두 호스트 크기의 카드에
 //! 나란히 보여준다. 본체 file picker·remote attach·Settings › Misc › Scripts 와 같은 공용 위젯을 호출한다.
+//! 높이를 주지 않는 호스트(`show(…, None)`)의 대칭 자연 높이는 별도 예제가 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -84,7 +85,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("title → sub", "4 · sub slot always reserved"),
             ("title", "body 13 · text-secondary"),
             ("sub", "caption 11 · text-muted · wraps at 300"),
-            ("height", "none — centres in the list region"),
+            (
+                "height",
+                "none — centres in the list region; unsized hosts (natural): block + 2 × 12, with action block + 2 × 48",
+            ),
             ("ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"),
         ],
         &[
@@ -279,4 +283,89 @@ fn slot_card(ui: &mut egui::Ui, theme: &Theme, action: bool) {
         egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         egui::StrokeKind::Inside,
     );
+}
+
+/// 높이를 주지 않는 호스트 — 부품이 자기 높이를 정한다. 액션이 있으면 위아래에 액션 띠를 둔다.
+pub fn draw_unsized(ui: &mut egui::Ui, theme: &Theme) {
+    let palettes = [
+        ("Mocha", tasty_themes::mocha_fallback()),
+        ("Latte", crate::host_shell::latte_theme()),
+    ];
+    for (palette, base) in &palettes {
+        let th = Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+        spec::stage(ui, &th, StageVariant::Wrap, |ui| {
+            for (action, label) in [(false, "empty"), (true, "error + action")] {
+                spec::cluster(ui, &th, &format!("{palette} · {label}"), |ui| {
+                    unsized_card(ui, &th, action)
+                });
+            }
+        });
+    }
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("prop", "natural — host gives no height"),
+            ("no action", "padding-block space-md (12)"),
+            ("with action", "padding-block 12 + 12 + 24 = 48, both sides"),
+            (
+                "block",
+                "stays centred — glyph position independent of the action",
+            ),
+            ("below the action", "space-md (12) — no new token"),
+            (
+                "rejected",
+                "top-pinned block (glyph moves) · current overflow (6px into the next widget)",
+            ),
+        ],
+        &[
+            TokenChip::new("space-md", "12 outer pad", theme.accent_primary().to_egui()),
+            TokenChip::new(
+                "center-state-action-gap",
+                "→ space-md 12",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new("button-height-sm", "24", theme.accent_primary().to_egui()),
+        ],
+    );
+}
+
+/// 디자인 `--tasty-size-220` 폭 카드. 높이는 CenterState 가 정하고 아래에 "next widget" 줄을 둔다.
+fn unsized_card(ui: &mut egui::Ui, theme: &Theme, action: bool) {
+    let bw = theme.border_width.value();
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(bw, theme.border_strong().to_egui()))
+        .corner_radius(theme.corner_radius.value())
+        .show(ui, |ui| {
+            // cluster 는 내용을 가로 줄바꿈 배치로 받는다. 카드 안은 위에서 아래로 쌓는다.
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_width(CARD_H_PICKER.value());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let v = if action {
+                    CenterStateVariant::Error
+                } else {
+                    CenterStateVariant::Empty
+                };
+                state(Host::Scripts, v, action).show(ui, theme, None);
+                let (row, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), theme.item_height_interactive.value()),
+                    egui::Sense::hover(),
+                );
+                let painter = ui.painter_at(row);
+                painter.hline(
+                    row.x_range(),
+                    row.top() + bw * 0.5,
+                    egui::Stroke::new(bw, theme.border_default().to_egui()),
+                );
+                painter.text(
+                    egui::pos2(row.left() + theme.spacing_sm.value(), row.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    "next widget",
+                    egui::FontId::proportional(theme.font_size_caption.value()),
+                    theme.text_muted().to_egui(),
+                );
+            });
+        });
 }
