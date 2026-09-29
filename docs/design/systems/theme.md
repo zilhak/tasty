@@ -222,7 +222,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 폰트 상한 | UI는 14px. 콘텐츠 폰트는 별도이며 브랜드 워드마크 17·부트 락업 30은 승인된 예외다. |
 | 보더 | `border_width` 1px. |
 | 지목 링 | 대상을 감싸는 획은 `focus_ring_width` 2px. 색은 용도에 맞는 semantic 색을 고른다. |
-| 한쪽 강조 바 | 활성 행 좌측·탭 밑줄은 `tab_indicator_width` 2px. 토스트 바는 `toast_accent_width` 3px. |
+| 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`로 읽고 둘 다 이 역할을 가리킨다. remote attach·preset 목록 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. |
 | painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |
 | 반경 | `corner_radius_sm` 2, 기본 4, `_lg` 8. 반경이 없으면 `CornerRadius::ZERO`. |
 | hover·active | `hover_overlay` 8%, `active_overlay` 12%. 밝은 테마는 검정, 어두운 테마는 흰색에서 만든다. |
@@ -272,7 +272,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 활성 탭 위치 마커 | 4. 상태 종류를 표시하는 점과 다른 역할. |
 | attached ring | 폭 2 + offset 2. offset은 점 바깥 경계부터 ring 안쪽 경계까지다. |
 
-워크스페이스 행의 attached 점은 일반 점 8을 쓰므로 ring까지 포함한 전체 폭이 16이다. 행은 attached 여부와 무관하게 `workspace_dot_slot()` 16 슬롯을 모든 행에 예약하고 점을 슬롯 가운데에 둔다. 왼쪽 inset은 `workspace_row_padding_x()` 8, 슬롯과 본문 사이는 `workspace_dot_gap()` 4라 제목·REMOTE 줄·부제·설명이 카드 끝에서 28에 시작한다. compact 점과 ring의 전체 폭 14는 24px chrome에 맞춘 값이며 현재 소비처가 없다. Plugins Attention의 7, 색 override·튜토리얼의 5 같은 남은 별도 값은 임의로 맞추지 않는다. 4px 간격 그리드는 점 지름 규칙이 아니다.
+워크스페이스 행의 attached 점은 일반 점 8을 쓰므로 ring까지 포함한 전체 폭이 16이다. 행은 attached 여부와 무관하게 `workspace_dot_slot()` 슬롯을 모든 행에 예약하고 점을 슬롯 가운데에 둔다. 슬롯 폭은 반올림한 점 지름에 반올림한 ring 폭과 offset의 두 배를 더해 만든다. 슬롯을 따로 반올림하면 0.85에서 ring(15)이 슬롯(14)을 넘기 때문이다. 그래서 슬롯은 0.85·1·1.2에서 15·16·18이고, 생성 접근자가 아닌 `theme.rs`의 수기 접근자다. 슬롯 높이는 제목 라벨이 실제로 차지하는 한 줄 높이라 슬롯이 행을 키우지 않는다. 왼쪽 inset은 `workspace_row_padding_x()` 8, 슬롯과 본문 사이는 `workspace_dot_gap()` 4라 제목·REMOTE 줄·부제·설명이 배율 1에서 카드 끝으로부터 28에 시작한다. 활성 행의 accent bar는 `workspace_row_active_bar_width()` 2(hairline)라 배율과 무관하게 2다. compact 점과 ring의 전체 폭 14는 24px chrome에 맞춘 값이며 현재 소비처가 없다. Plugins Attention의 7, 색 override·튜토리얼의 5 같은 남은 별도 값은 임의로 맞추지 않는다. 4px 간격 그리드는 점 지름 규칙이 아니다.
 
 accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12와 `tint_border_alpha()` 0.36을 사용한다. 승인된 채움만 사용과 테두리만 사용도 같은 값을 쓴다. 다만 별도 역할의 경고 테두리처럼 이 조합이 아닌 값은 사유가 있는 상수다. 같은 숫자라도 역할이 다르면 opacity 토큰으로 바꾸지 않는다.
 
@@ -343,7 +343,7 @@ disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계
 `AppearanceSettings.ui_scale`(`small/medium/large` = `0.85/1.0/1.2`). `install_global_with_runtime`(`ThemeRuntime.ui_zoom`) 이 `Theme::with_colors_and_zoom` 으로 sizing 토큰 자체에 배율을 곱해 전역 `Theme` 재빌드 — UI 호출부에서는 다시 배율을 곱하지 않는다(`theme().spacing_*`에 이미 적용됨).
 
 - **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius`(`_sm`/`_lg` 포함) · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
-- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `tab_indicator_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
+- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `tab_indicator_width` · `selection_edge_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
   이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 검사가 해당 필드 이름을 표시하며 실패한다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
 - **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 정수 픽셀로 반올림.
 - **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발생 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).

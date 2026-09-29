@@ -358,7 +358,10 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 선택 행의 2px 좌측 바는 **`listctrl_selected_bar_width` · `listctrl_selected_bar`** 다 —
 `tab_indicator_width` 가 아니다. 두 토큰은 값이 같지만(2) 가리키는 역할이 다르고, 이 자리는
 목록 행이라 `listctrl` 계열이다. 같은 역할의 다른 자리(`tasty_ui_widgets::listctrl` · 갤러리
-`prim_listctrl` · `git_viewer` · `remote_attach/rows`)가 이미 이쪽을 쓴다. 같은 값이어도 역할이 다른 토큰으로 대체하지 않는다.
+`prim_listctrl` · `git_viewer`)가 이미 이쪽을 쓴다. 같은 값이어도 역할이 다른 토큰으로 대체하지 않는다.
+remote attach 목록 행(`remote_attach/rows`와 본체 `popup/remote_attach.rs`)과 preset 목록 행은 디자인이
+한쪽 변 선택 띠(`selection_edge_width`, hairline)로 정했으므로 이 계열이 아니다. `listctrl` 계열이
+같은 역할로 합쳐지는지는 아직 디자인이 정하지 않았다.
 
 이 치수에는 대응하는 역할의 토큰이 없다. `crates/tasty-ui-widgets/src/tokens.rs`의 `FH_*` 상수를 본체와 갤러리가 함께 사용한다. 4px 배수인지와 해당 역할의 토큰이 있는지는 별도로 확인한다.
 
