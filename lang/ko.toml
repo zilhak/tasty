@@ -1244,6 +1244,11 @@ save_button = "저장"
 overwrite_button = "덮어쓰기"
 overwrite_warning = "이 폴더에 {name}이(가) 이미 있습니다. 저장하면 덮어씁니다."
 
+[filepicker.column]
+name = "이름"
+size = "크기"
+modified = "수정일"
+
 [file_drop]
 hover_label = "여기에 드롭하여 열기"
 multi_files = "{n}개 파일"

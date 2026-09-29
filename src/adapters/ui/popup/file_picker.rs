@@ -130,6 +130,10 @@ pub struct FilePickerProps<'a> {
     pub error_perm_retry: &'a str,
     pub error_conn_title: &'a str,
     pub error_conn_reconnect: &'a str,
+    /// 목록 머리의 열 이름. 대문자 변환은 렌더가 한다(kit `text-transform: uppercase`).
+    pub col_name: &'a str,
+    pub col_size: &'a str,
+    pub col_modified: &'a str,
 }
 
 /// 선택한 폴더 하나의 이름. 푸터 안내와 확정 버튼이 같은 판정을 쓴다.
@@ -249,7 +253,7 @@ fn draw_view_sections(
     header.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
     header.label(
         egui::RichText::new(props.title_label)
-            .size(th.font_size_body.value())
+            .size(th.font_size_max.value())
             .strong()
             .color(th.text_primary()),
     );
@@ -345,6 +349,10 @@ fn draw_body(
     let th = props.theme;
     match &props.state {
         FpViewState::Loaded => {
+            // 머리와 목록은 붙어 있다.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            // 목록은 머리를 그리고 남은 높이 안에서 스크롤한다. egui 가 남은 높이로 제한한다.
+            list_head(ui, props);
             egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
                 .max_height(body_height.value())
@@ -401,6 +409,69 @@ fn draw_body(
     }
 }
 
+/// 목록 머리 높이. 위아래 `fp-list-head-pad-y`와 micro 글꼴 줄(`line-height-ui`)로 정해진다.
+pub(super) fn list_head_height(th: &Theme) -> LogicalPx {
+    let pad = th.fp_list_head_pad_y();
+    pad + th.font_size_micro.scaled(th.line_height_ui) + pad
+}
+
+/// FpRow 열 위치. 목록 머리와 행이 같은 계산을 써서 열 이름이 값 위에 맞는다.
+struct Cols {
+    icon_left: LogicalPx,
+    name_left: LogicalPx,
+    name_right: LogicalPx,
+    size_right: LogicalPx,
+    modified_right: LogicalPx,
+}
+
+fn cols(rect: egui::Rect, th: &Theme) -> Cols {
+    let icon_left = LogicalPx(rect.left()) + th.fp_inset_start();
+    let name_left = icon_left + th.icon_glyph_size_md + th.spacing_sm;
+    // 오른쪽의 고정 열부터 배치하고 이름은 남은 폭을 쓴다.
+    let modified_right = LogicalPx(rect.right()) - th.fp_inset_start();
+    let size_right = modified_right - MOD_COL_W - th.spacing_sm;
+    let name_right = size_right - SIZE_COL_W - th.spacing_sm;
+    Cols {
+        icon_left,
+        name_left,
+        name_right,
+        size_right,
+        modified_right,
+    }
+}
+
+/// 열 이름 행(kit list header). mono micro 대문자, text-muted, 아래 구분선.
+fn list_head(ui: &mut egui::Ui, props: &FilePickerProps<'_>) {
+    let th = props.theme;
+    let h = list_head_height(th);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), h.value()),
+        egui::Sense::hover(),
+    );
+    let c = cols(rect, th);
+    let font = egui::FontId::monospace(th.font_size_micro.value());
+    let muted: egui::Color32 = th.text_muted().into();
+    let painter = ui.painter();
+    for (x, align, label) in [
+        (c.name_left, egui::Align2::LEFT_CENTER, props.col_name),
+        (c.size_right, egui::Align2::RIGHT_CENTER, props.col_size),
+        (
+            c.modified_right,
+            egui::Align2::RIGHT_CENTER,
+            props.col_modified,
+        ),
+    ] {
+        painter.text(
+            egui::pos2(x.value(), rect.center().y),
+            align,
+            label.to_uppercase(),
+            font.clone(),
+            muted,
+        );
+    }
+    hline(ui, th, rect.x_range(), rect.bottom());
+}
+
 /// 목록 행 높이. 위아래 `fp-row-pad-y`와 아이콘·이름 줄(`line-height-ui`) 중 높은 쪽으로 정해진다.
 /// 줄 높이를 글꼴 행 높이로 재지 않아 갤러리와 본체의 글꼴 구성이 달라도 같은 높이가 된다.
 pub(super) fn row_height(th: &Theme) -> LogicalPx {
@@ -424,6 +495,13 @@ fn entry_row(
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, th.surface_active().to_egui());
+        // 한쪽 선택 bar — kit FpRow `inset selection-edge-width 0 0 accent-primary`.
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.selection_edge_width.value(), rect.height()),
+        );
+        ui.painter()
+            .rect_filled(bar, 0.0, th.accent_primary().to_egui());
     } else if resp.hovered() {
         ui.painter()
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
@@ -436,22 +514,22 @@ fn entry_row(
     } else {
         (icons::FILE, th.text_muted())
     };
+    let c = cols(rect, th);
     let glyph_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.left() + th.fp_inset_start().value(),
-            rect.center().y - glyph_size * 0.5,
-        ),
+        egui::pos2(c.icon_left.value(), rect.center().y - glyph_size * 0.5),
         egui::vec2(glyph_size, glyph_size),
     );
     glyph
         .image(glyph_size, glyph_color.into())
         .paint_at(ui, icon_rect);
-    // 오른쪽의 고정 열부터 배치하고 이름만 남은 폭에서 말줄임한다.
-    let modified_right = LogicalPx(rect.right()) - th.fp_inset_start();
-    let size_right = modified_right - MOD_COL_W - th.spacing_sm;
-    let name_right = size_right - SIZE_COL_W - th.spacing_sm;
-    let name_left = LogicalPx(icon_rect.right()) + th.spacing_sm;
+    let Cols {
+        name_left,
+        name_right,
+        size_right,
+        modified_right,
+        ..
+    } = c;
     let name_color = if selected {
         th.text_primary().to_egui()
     } else {
@@ -677,6 +755,9 @@ pub fn draw_file_picker(
         error_perm_retry,
         error_conn_title,
         error_conn_reconnect,
+        col_name: t("filepicker.column.name"),
+        col_size: t("filepicker.column.size"),
+        col_modified: t("filepicker.column.modified"),
     };
 
     let out = draw_file_picker_view(ui, &props);

@@ -1248,6 +1248,11 @@ save_button = "Save"
 overwrite_button = "Overwrite"
 overwrite_warning = "{name} already exists in this folder. Saving replaces it."
 
+[filepicker.column]
+name = "Name"
+size = "Size"
+modified = "Modified"
+
 [file_drop]
 hover_label = "Drop to open"
 multi_files = "{n} files"

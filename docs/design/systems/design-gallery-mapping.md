@@ -824,7 +824,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 - 목록 머리는 `fp-list-head-pad-y`(4)와 `font-size-micro` 라벨 한 줄, 행은 `fp-row-pad-y`(4)와 아이콘(16)·이름 줄 중 높은 쪽으로 높이가 정해진다. 줄 높이는 디자인 기본 줄 높이 `line-height-ui`(1.4)를 글꼴 크기에 곱한 값이라 행은 4 + 13 × 1.4 + 4 = 26.2다. 글꼴 행 높이로 재지 않으므로 갤러리와 본체의 글꼴 구성이 달라도 높이가 같다.
 - 푸터는 위아래 `fp-footer-pad-y`(8)다. 라벨 폭은 `fp-footer-label-width`(64)다. 갤러리의 타입 필터 칩 높이는 `fp-filter-height`(28)다.
 
-본체는 목록 머리(NAME/SIZE/MODIFIED), 선택 행 좌측 bar, 타입 필터 칩을 그리지 않는다.
+본체도 목록 머리(NAME/SIZE/MODIFIED)와 선택 행 좌측 bar를 그린다. 열 위치는 행과 목록 머리가 같은 계산(`cols`)을 쓴다. 선택 bar 폭은 `selection-edge-width`, 색은 `accent-primary`다. 헤더 제목은 `font-size-max`(14)에 `strong`이다(egui는 semibold를 고르지 못한다). 본체는 타입 필터 칩을 그리지 않는다. 칩의 동작과 필터가 있을 때의 문구가 디자인에 없다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /

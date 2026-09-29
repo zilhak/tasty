@@ -87,6 +87,22 @@ fn painted_shapes_in(
     entries: &[FilePickerEntryView],
     selection: &str,
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
+    painted_frames(popup, crumbs, mode, entries, selection, 2, &|_, _| {
+        Vec::new()
+    })
+}
+
+/// `frames` 프레임을 그리고 마지막 프레임의 모양을 돌려준다. `events` 는 프레임 번호와
+/// 콘텐츠 사각형을 받아 그 프레임의 입력을 만든다.
+fn painted_frames(
+    popup: &crate::adapters::ui::popup::PopupState,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+    selection: &str,
+    frames: usize,
+    events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     let content = popup.content_rect();
@@ -118,15 +134,21 @@ fn painted_shapes_in(
         error_perm_retry: "",
         error_conn_title: "",
         error_conn_reconnect: "",
+        col_name: "Name",
+        col_size: "Size",
+        col_modified: "Modified",
     };
     let mut out = Vec::new();
-    // 첫 프레임은 폰트가 확정되지 않아 galley 가 비는 경우가 있어 두 번 돈다.
-    for _ in 0..2 {
+    // 첫 프레임은 폰트가 확정되지 않아 galley 가 비는 경우가 있어 두 번 이상 돈다.
+    for frame in 0..frames {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(2000.0, 1500.0),
             )),
+            // 부드러운 스크롤이 몇 프레임 안에 끝나도록 시간을 크게 넘긴다.
+            time: Some(frame as f64),
+            events: events(frame, content),
             ..Default::default()
         };
         let full = ctx.run(input, |ctx| {
@@ -550,5 +572,227 @@ fn every_section_starts_on_the_fp_inset_start_column() {
         content.bottom() - text_rect(CONFIRM).center().y,
         th.fp_footer_pad_y().value() + th.button_height().value() * 0.5,
         "푸터 아래 여백",
+    );
+}
+
+/// 칠해진 텍스트 하나의 사각형과 글꼴 크기.
+fn text_shape(shapes: &[egui::epaint::ClippedShape], label: &str) -> (egui::Rect, f32) {
+    let hits: Vec<_> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == label => Some((
+                egui::Rect::from_min_size(t.pos, t.galley.size()),
+                t.galley.job.sections[0].format.font_id.size,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hits.len(), 1, "{label} 은 한 번 칠해진다: {hits:?}");
+    hits[0]
+}
+
+/// kit FilePickerFrame 의 목록 머리 — 경로 막대 바로 아래 mono micro 대문자 열 이름이
+/// 행 값과 같은 열에 서고, 첫 행은 머리 높이(4 + 10 × 1.4 + 4) 아래에서 시작한다.
+#[test]
+fn the_list_head_names_the_columns_above_the_rows() {
+    let th = crate::theme::theme();
+    let (content, shapes) = painted_shapes(
+        egui::vec2(640.0, 480.0),
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    let (name, name_size) = text_shape(&shapes, "NAME");
+    let (size_col, _) = text_shape(&shapes, "SIZE");
+    let (modified, _) = text_shape(&shapes, "MODIFIED");
+    assert_eq!(
+        name_size,
+        th.font_size_micro.value(),
+        "열 이름은 micro 크기"
+    );
+    let (row0, _) = text_shape(&shapes, "file-0.toml");
+    let near = |got: f32, want: f32, what: &str| {
+        assert!((got - want).abs() <= 1.0, "{what}: {got}, 기대 {want}");
+    };
+    near(name.left(), row0.left(), "Name 열 왼쪽");
+    let first_row_values: Vec<egui::Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t)
+                if (t.galley.text() == "1 KB" || t.galley.text() == "2026-09-14")
+                    && (t.pos.y + t.galley.size().y * 0.5 - row0.center().y).abs() < 1.0 =>
+            {
+                Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(first_row_values.len(), 2, "첫 행의 크기·수정일");
+    near(
+        size_col.right(),
+        first_row_values[0].right(),
+        "Size 열 오른쪽",
+    );
+    near(
+        modified.right(),
+        first_row_values[1].right(),
+        "Modified 열 오른쪽",
+    );
+    // 헤더 40 + 경로 막대 32 아래가 머리, 그 아래 첫 행.
+    let head_top = content.top() + 72.0;
+    let head_h = list_head_height(&th).value();
+    assert!((head_h - 22.0).abs() < 0.05, "머리 높이 {head_h}");
+    near(name.center().y, head_top + head_h * 0.5, "머리 가운데");
+    near(
+        row0.center().y,
+        head_top + head_h + row_height(&th).value() * 0.5,
+        "첫 행 가운데",
+    );
+}
+
+/// 선택 행은 surface-active 채움에 왼쪽 한 변만 selection-edge 폭 accent bar 를 둔다.
+#[test]
+fn the_selected_row_has_one_edge_selection_bar() {
+    let th = crate::theme::theme();
+    let (content, shapes) = painted_shapes(
+        egui::vec2(640.0, 480.0),
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    let (row1, _) = text_shape(&shapes, "file-1.toml");
+    let accent = th.accent_primary().to_egui();
+    let bars: Vec<egui::Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r)
+                if r.fill == accent && r.rect.y_range().contains(row1.center().y) =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bars.len(), 1, "선택 bar 는 하나: {bars:?}");
+    let bar = bars[0];
+    assert_eq!(bar.width(), th.selection_edge_width.value(), "bar 폭");
+    assert_eq!(bar.left(), content.left(), "bar 는 행 왼쪽 끝");
+    assert!(
+        (bar.height() - row_height(&th).value()).abs() < 0.05,
+        "bar 높이 {}",
+        bar.height()
+    );
+}
+
+/// 헤더 제목은 kit 대로 14(font-size-max)다.
+#[test]
+fn the_header_title_uses_the_modal_title_size() {
+    let th = crate::theme::theme();
+    let (_, shapes) = painted_shapes(
+        egui::vec2(640.0, 480.0),
+        &deep_crumbs(1, "d"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    let (_, size) = text_shape(&shapes, "title");
+    assert_eq!(size, th.font_size_max.value());
+}
+
+/// 목록 머리 아래에 separator 선이 하나 있다(kit `borderBottom: 1px solid separator`).
+#[test]
+fn the_list_head_has_one_separator_along_its_bottom() {
+    let th = crate::theme::theme();
+    let (content, shapes) = painted_shapes(
+        egui::vec2(640.0, 480.0),
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    // 헤더 40 + 경로 막대 32 + 머리 높이.
+    let head_bottom = content.top() + 72.0 + list_head_height(&th).value();
+    let lines: Vec<[egui::Pos2; 2]> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::LineSegment { points, stroke }
+                if stroke.color == egui::Color32::from(th.separator)
+                    && (points[0].y - head_bottom).abs() < 1.0
+                    && (points[1].y - head_bottom).abs() < 1.0 =>
+            {
+                Some(*points)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 1, "머리 아래 separator 는 하나: {lines:?}");
+    assert_eq!(lines[0][0].x.min(lines[0][1].x), content.left(), "왼쪽 끝");
+    assert_eq!(
+        lines[0][0].x.max(lines[0][1].x),
+        content.right(),
+        "오른쪽 끝"
+    );
+}
+
+/// 목록이 본문 칸보다 길 때 끝까지 스크롤하면 마지막 행이 푸터에 가리지 않고 온전히 보인다.
+/// 본문 칸이 푸터까지 번지면 끝까지 스크롤한 마지막 행이 푸터에 가린다. 이 경우를 잡는다.
+#[test]
+fn the_last_row_is_fully_visible_after_scrolling_to_the_end() {
+    let entries = entries();
+    let last = entries.last().expect("행이 있다").name.clone();
+    let (content, shapes) = painted_frames(
+        &picker_state(egui::vec2(640.0, 480.0)),
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries,
+        "file-1.toml",
+        12,
+        &|frame, content| {
+            let pos = egui::pos2(content.center().x, content.top() + 150.0);
+            let mut ev = vec![egui::Event::PointerMoved(pos)];
+            if (1..6).contains(&frame) {
+                ev.push(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -5000.0),
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            ev
+        },
+    );
+    let texts: Vec<(String, egui::Rect, egui::Rect)> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => Some((
+                t.galley.text().to_string(),
+                egui::Rect::from_min_size(t.pos, t.galley.size()),
+                c.clip_rect,
+            )),
+            _ => None,
+        })
+        .collect();
+    let (_, first, first_clip) = texts
+        .iter()
+        .find(|(t, _, _)| t == "file-0.toml")
+        .expect("첫 행");
+    assert!(
+        first.bottom() <= first_clip.top(),
+        "끝까지 스크롤되지 않았다 — 첫 행 {first:?} 이 보이는 영역 {first_clip:?} 안에 있다"
+    );
+    assert_fully_visible(content, &texts, &last, "끝까지 스크롤");
+    // 보이는 영역이 푸터로 번져도 위 검사는 통과하므로 푸터 첫 줄보다 위에 있는지도 본다.
+    let (_, last_rect, _) = texts
+        .iter()
+        .find(|(t, _, _)| *t == last)
+        .expect("마지막 행");
+    let (_, footer_label, _) = texts
+        .iter()
+        .find(|(t, _, _)| t == "File name")
+        .expect("푸터 라벨");
+    assert!(
+        last_rect.bottom() <= footer_label.top(),
+        "마지막 행 {last_rect:?} 이 푸터 라벨 {footer_label:?} 과 겹친다"
     );
 }

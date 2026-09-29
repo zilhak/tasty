@@ -1244,6 +1244,11 @@ save_button = "保存"
 overwrite_button = "上書き"
 overwrite_warning = "{name} はこのフォルダーに既に存在します。保存すると置き換えられます。"
 
+[filepicker.column]
+name = "名前"
+size = "サイズ"
+modified = "更新日時"
+
 [file_drop]
 hover_label = "ドロップして開く"
 multi_files = "{n}個のファイル"

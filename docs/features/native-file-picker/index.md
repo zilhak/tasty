@@ -117,6 +117,17 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 
 헤더 아래 path bar 줄은 `bg-sidebar` 로 창 좌우 끝까지 칠해져 헤더·목록(`bg-panel`)과 구분된다.
 
+목록이 보일 때는 path bar 아래에 열 이름 줄(목록 머리)이 있다. 이름·크기·수정일 열 이름을 mono
+micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바로 위에 선다. 문구는 파일 선택기 전용
+`filepicker.column.*` 키다. kit 의 열 이름(Name·Size·Modified)을 따르며, 탐색기 열 이름과
+따로 둔다. 선택한 행은 `surface-active` 로 채우고 왼쪽 한 변에만
+`selection-edge-width` 폭의 `accent-primary` 막대를 둔다. 헤더 제목은 모달 제목 크기(`font-size-max`, 14)다.
+`layout_tests.rs`의 `the_list_head_names_the_columns_above_the_rows`,
+`the_list_head_has_one_separator_along_its_bottom`, `the_selected_row_has_one_edge_selection_bar`,
+`the_header_title_uses_the_modal_title_size`가 실제로 칠한 모양으로 이를 검사한다. 목록은 머리를 뺀
+나머지 높이 안에서 스크롤한다. `the_last_row_is_fully_visible_after_scrolling_to_the_end`는 행이 많은
+목록을 끝까지 스크롤했을 때 마지막 행이 푸터와 겹치지 않고 온전히 보이는지 검사한다.
+
 설정 창의 파일 선택기도 같은 뷰를 같은 셸 구조로 그린다. 셸 타이틀바가 없고(`headless`), 뷰가
 보고한 헤더 줄이 이동 손잡이이며, 창 배경은 `bg-panel` 이다.
 
@@ -295,7 +306,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   는 매번 교체). 메인 피커는 열기 전용이라 footer 이름 칸이 읽기 전용이다 — 편집 가능한 이름 칸은
   설정 창의 저장 모드에만 있다.
 - **타입 필터 칩** — 디자인 footer 의 "All files ▾" 칩은 구현되지 않았다. 필터는 호출처가 정하는
-  `filters` 뿐이다.
+  `filters` 뿐이다. 디자인에는 칩을 눌렀을 때의 동작과 필터가 있을 때의 문구가 없다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
   태그를 같은 채널에 얹었다.
 - **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만

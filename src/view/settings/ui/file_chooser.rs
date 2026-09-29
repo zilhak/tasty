@@ -414,6 +414,9 @@ fn draw_view(
         error_perm_retry: t("filepicker.error_perm.retry"),
         error_conn_title: t("filepicker.error_conn.title"),
         error_conn_reconnect: t("filepicker.error_conn.reconnect"),
+        col_name: t("filepicker.column.name"),
+        col_size: t("filepicker.column.size"),
+        col_modified: t("filepicker.column.modified"),
     };
     let out = draw_file_picker_view(ui, &props);
     crate::adapters::ui::popup::report_header_drag_rect(
