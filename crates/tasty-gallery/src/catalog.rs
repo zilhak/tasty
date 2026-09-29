@@ -1609,6 +1609,14 @@ pub fn pages() -> Vec<Page> {
                             components::tab_bar::draw_scroll_arrows,
                         ),
                         spec(
+                            "tab-scroll-arrow-shape",
+                            "Scroll arrows — chevron icon, square cell, no own fill",
+                            Some(
+                                "chevron 12 · 24×24 cell on the strip ground · hover on the enabled side only",
+                            ),
+                            components::tab_bar::draw_scroll_shape,
+                        ),
+                        spec(
                             "multitab",
                             "Multi-tier tabs",
                             Some("Workspace tier + pane tier, two levels max"),

@@ -1,10 +1,14 @@
 //! 페인 탭바의 활성 표시와 응답 대기·완료 알림 색을 비교하는 정적 예제.
 
+mod kit_strip;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph, PLUS, SEARCH, SPLIT};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+pub use kit_strip::draw_scroll_shape;
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
 
@@ -229,49 +233,39 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 /// 스크롤 화살표 예제 스트립의 폭. 디자인 Disabled ink Spec의 C4 행이 `--tasty-size-288`을 쓴다.
 const SCROLL_STRIP_W: LogicalPx = LogicalPx(288.0);
 
-/// 디자인 C4 행의 탭 스트립 스크롤 화살표 칸: surface-raised 칸에 chevron을 그린다.
-/// 시안은 스트립의 `overflow: hidden` + `radius-sm`으로 칸의 바깥 모서리를 자르므로
-/// `corners`에는 스트립 끝에 닿는 두 모서리만 반경을 준다.
+/// 디자인 C4 행의 탭 스트립 스크롤 화살표 칸. 칸은 자체 채움 없이 스트립 바탕 위에 chevron만 그린다.
 fn arrow_cell(
     ui: &egui::Ui,
     theme: &Theme,
     cell: egui::Rect,
-    corners: egui::CornerRadius,
     glyph: MockGlyph,
     ink: egui::Color32,
 ) {
-    ui.painter()
-        .rect_filled(cell, corners, egui::Color32::from(theme.surface_raised()));
-    let size = theme.icon_glyph_size_xs.value();
+    let size = theme.tab_scroll_arrow_glyph_size().value();
     glyph.image(size, ink).paint_at(
         ui,
         egui::Rect::from_center_size(cell.center(), egui::vec2(size, size)),
     );
 }
 
-/// 왼쪽 끝까지 스크롤한 스트립: `<`는 disabled, `>`는 enabled 잉크.
+/// 왼쪽 끝까지 스크롤한 스트립: `<`는 disabled, `>`는 enabled 잉크. 스트립 전체가 surface-raised다.
 fn scroll_strip(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.item_height_tab.value();
+    let w = theme.tab_scroll_arrow_width().value();
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(SCROLL_STRIP_W.value(), h), egui::Sense::hover());
     ui.painter().rect_filled(
         rect,
         theme.corner_radius_sm.value(),
-        egui::Color32::from(theme.bg_sidebar()),
+        egui::Color32::from(theme.surface_raised()),
     );
-    let left = egui::Rect::from_min_size(rect.min, egui::vec2(h, h));
+    let left = egui::Rect::from_min_size(rect.min, egui::vec2(w, h));
     let right =
-        egui::Rect::from_min_size(egui::pos2(rect.right() - h, rect.top()), egui::vec2(h, h));
-    let r = theme.corner_radius_sm.value() as u8;
+        egui::Rect::from_min_size(egui::pos2(rect.right() - w, rect.top()), egui::vec2(w, h));
     arrow_cell(
         ui,
         theme,
         left,
-        egui::CornerRadius {
-            nw: r,
-            sw: r,
-            ..egui::CornerRadius::ZERO
-        },
         CHEVRON_LEFT,
         egui::Color32::from(theme.tab_scroll_arrow_fg_disabled()),
     );
@@ -279,11 +273,6 @@ fn scroll_strip(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         right,
-        egui::CornerRadius {
-            ne: r,
-            se: r,
-            ..egui::CornerRadius::ZERO
-        },
         CHEVRON_RIGHT,
         egui::Color32::from(theme.tab_scroll_arrow_fg()),
     );

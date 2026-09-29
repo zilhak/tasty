@@ -938,12 +938,25 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 
 | 디자인 요소 | 갤러리 | 본체 | 비고 |
 |---|---|---|---|
-| C4 스트립(`control-height-tab` 높이, `size-288` 폭, bg-sidebar, radius-sm) | `scroll_strip` | 탭이 넘치는 pane의 탭 바 | 폭 288은 예제 전용 이름 붙은 상수 |
-| 화살표 칸(`control-height-tab` 정사각, surface-raised, chevron `icon-size-xs`) | `arrow_cell` | `"<"`·`">"` 문자, `tab_bar_arrow_font_size`, 칸 채움 없음 | 색만 같다. 모양·칸 채움 차이는 디자인 확인 요청 중 |
+| C4 스트립(`control-height-tab` 높이, `size-288` 폭, surface-raised, radius-sm) | `scroll_strip` | 탭이 넘치는 pane의 탭 바 | 폭 288은 예제 전용 이름 붙은 상수 |
+| 화살표 칸(`tab-scroll-arrow-width` 정사각, 자체 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow_cell` | `"<"`·`">"` 문자, `tab_bar_arrow_font_size`, 칸 채움 없음 | 모양은 아래 "페인 탭 스트립 — 스크롤 화살표 모양"을 따른다 |
 | `<` disabled · `>` enabled 잉크 | `tab_scroll_arrow_fg_disabled()` · `tab_scroll_arrow_fg()` | 같은 접근자 | 둘 다 component role. 값은 text-disabled · text-muted |
 | 순서 사다리 placeholder < disabled < muted < secondary < primary | `ink_ladder` | 없음(규칙 전시) | 순서 규칙은 [theme 문서](theme.md) 대비 행 |
 
 C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 나란히 그린다. C4 비율 문구(`(was …)` 포함)와 Meta 행·토큰 칩은 시안 문구를 그대로 옮긴다. 시안의 "pixels" 행은 시안 쪽 이전 가정(enabled = n800) 기준이라, 본체는 이미 text-muted였으므로 enabled 화살표 픽셀이 바뀌지 않았다.
+
+## 페인 탭 스트립 — 스크롤 화살표 모양 (Layouts)
+
+디자인 `gallery/layouts-tabstrip.jsx` Spec "Scroll arrows — chevron icon, square cell, no own fill" ↔ 갤러리 `catalog/components/tab_bar/kit_strip.rs::draw_scroll_shape`(Layouts › Tab strips, `tab-scroll-arrow-shape` spec) ↔ 본체 `src/adapters/ui/tab_bar/view.rs`의 스크롤 화살표.
+
+| 디자인 요소 | 갤러리 | 본체 | 비고 |
+|---|---|---|---|
+| `Strip`(`size-560` 폭, 포커스 surface-raised · 비포커스 bg-sidebar, 아래 separator) | `strip` | 탭이 넘치는 pane의 탭 바 | 폭 560은 예제 전용 이름 붙은 상수 |
+| `Arrow`(`tab-scroll-arrow-width` × `tab-height`, 채움 없음, chevron `tab-scroll-arrow-glyph-size`) | `arrow` | `"<"`·`">"` 문자 | enabled 쪽에만 `tab-scroll-arrow-hover-bg` |
+| 도달한 끝은 disabled(`tab-scroll-arrow-fg-disabled`) | `arrow`의 `disabled` | `can_left`·`can_right` | disabled 쪽은 hover 채움·응답이 없다 |
+| `TabCellS` 최소형(아이콘 · 제목 · 닫기 칸) | `tab_cell` | `tab_bar/tab.rs::draw_tab` | 두 번째 탭이 활성이다 |
+
+Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 그린다. 행 다섯 개와 Meta 행·토큰 칩·Don't 문구는 시안을 그대로 옮긴다.
 
 ## Move source highlight (Layouts)
 
