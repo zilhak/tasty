@@ -128,15 +128,17 @@ pub(super) fn draw_keybinding_entries(
                         th.text_primary()
                     };
 
-                    let button = egui::Button::new(
-                        egui::RichText::new(&display_text)
-                            .color(text_color)
-                            .monospace(),
-                    )
-                    .fill(bg_color)
-                    .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
+                    let button = record_button(
+                        &th,
+                        can_record,
+                        &display_text,
+                        text_color,
+                        bg_color,
+                        BUTTON_WIDTH,
+                        BUTTON_HEIGHT,
+                    );
 
-                    if ui.add_enabled(can_record, button).clicked() {
+                    if ui.add(button).clicked() {
                         *recording_field = Some(RecordingSlot {
                             field_id: field_id.to_string(),
                             idx,
@@ -168,16 +170,21 @@ pub(super) fn draw_keybinding_entries(
                     th.text_muted()
                 };
                 let add_width = if bindings_len == 0 {
-                    BUTTON_WIDTH.value()
+                    BUTTON_WIDTH
                 } else {
-                    ADD_BUTTON_WIDTH.value()
+                    ADD_BUTTON_WIDTH
                 };
-                let add_btn =
-                    egui::Button::new(egui::RichText::new(&add_label).color(add_fg).monospace())
-                        .fill(add_bg)
-                        .min_size(egui::vec2(add_width, BUTTON_HEIGHT.value()));
+                let add_btn = record_button(
+                    &th,
+                    can_record,
+                    &add_label,
+                    add_fg,
+                    add_bg,
+                    add_width,
+                    BUTTON_HEIGHT,
+                );
                 if ui
-                    .add_enabled(can_record, add_btn)
+                    .add(add_btn)
                     .on_hover_text(t("settings.keybindings.add_binding_button"))
                     .clicked()
                 {
@@ -191,4 +198,33 @@ pub(super) fn draw_keybinding_entries(
         });
         ui.add_space(row_gap.value());
     }
+}
+
+/// 녹화 버튼. 다른 녹화가 대기 중이면(`enabled=false`) egui의 비활성 흐림 대신
+/// disabled 상자 role과 disabled ink로 그리고 클릭을 받지 않는다.
+pub(super) fn record_button(
+    th: &tasty_type_appearance::theme::Theme,
+    enabled: bool,
+    label: &str,
+    fg: tasty_type_appearance::color::HexColor,
+    bg: tasty_type_appearance::color::HexColor,
+    width: LogicalPx,
+    height: LogicalPx,
+) -> egui::Button<'static> {
+    let button = if enabled {
+        egui::Button::new(egui::RichText::new(label).color(fg).monospace()).fill(bg)
+    } else {
+        egui::Button::new(
+            egui::RichText::new(label)
+                .color(th.state_disabled_fg())
+                .monospace(),
+        )
+        .fill(th.state_disabled_fill())
+        .stroke(egui::Stroke::new(
+            th.border_width.value(),
+            th.state_disabled_border(),
+        ))
+        .sense(egui::Sense::hover())
+    };
+    button.min_size(egui::vec2(width.value(), height.value()))
 }

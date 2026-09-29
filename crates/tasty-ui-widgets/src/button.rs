@@ -1,6 +1,7 @@
 //! Theme 토큰으로 채움·외곽선·투명 버튼을 그린다.
 //! 호버와 누름 상태는 애니메이션 없이 바로 반영한다.
 //! 별도 굵은 글꼴을 등록하지 않으므로 글꼴 굵기 대신 색으로 강조를 구분한다.
+//! disabled는 opacity를 곱하지 않는다. 모든 variant가 같은 중립 상자와 disabled ink로 그려진다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -107,60 +108,65 @@ impl<'a> Button<'a> {
         };
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(desired_w, height), sense);
 
-        let op = |c: egui::Color32| {
-            if self.enabled {
-                c
-            } else {
-                c.gamma_multiply(theme.opacity_disabled())
+        let (fill, border, fg) = if !self.enabled {
+            // accent 채움은 빠지고 모든 variant가 같은 중립 상자를 쓴다. Ghost는 상자가 없다.
+            let fg = theme.button_disabled_fg().to_egui();
+            match self.variant {
+                ButtonVariant::Ghost => (None, None, fg),
+                _ => (
+                    Some(theme.button_disabled_bg().to_egui()),
+                    Some(theme.button_disabled_border().to_egui()),
+                    fg,
+                ),
             }
-        };
-
-        let (fill, border, fg) = match self.variant {
-            ButtonVariant::Primary => (
-                Some(theme.button_primary_bg().to_egui()),
-                None,
-                theme.button_primary_fg().to_egui(),
-            ),
-            ButtonVariant::Agent => (
-                Some(theme.button_agent_bg().to_egui()),
-                None,
-                theme.button_agent_fg().to_egui(),
-            ),
-            ButtonVariant::Danger => (
-                Some(theme.button_danger_bg().to_egui()),
-                None,
-                theme.button_danger_fg().to_egui(),
-            ),
-            ButtonVariant::Secondary => {
-                let b = if self.enabled && resp.hovered() {
-                    theme.button_secondary_border_hover()
-                } else {
-                    theme.button_secondary_border()
-                };
-                (
-                    Some(theme.button_secondary_bg().to_egui()),
-                    Some(b.to_egui()),
-                    theme.button_fg().to_egui(),
-                )
-            }
-            ButtonVariant::Ghost => {
-                let f = if self.enabled && resp.hovered() {
-                    theme.button_ghost_fg_hover()
-                } else {
-                    theme.button_ghost_fg()
-                };
-                (None, None, f.to_egui())
+        } else {
+            match self.variant {
+                ButtonVariant::Primary => (
+                    Some(theme.button_primary_bg().to_egui()),
+                    None,
+                    theme.button_primary_fg().to_egui(),
+                ),
+                ButtonVariant::Agent => (
+                    Some(theme.button_agent_bg().to_egui()),
+                    None,
+                    theme.button_agent_fg().to_egui(),
+                ),
+                ButtonVariant::Danger => (
+                    Some(theme.button_danger_bg().to_egui()),
+                    None,
+                    theme.button_danger_fg().to_egui(),
+                ),
+                ButtonVariant::Secondary => {
+                    let b = if resp.hovered() {
+                        theme.button_secondary_border_hover()
+                    } else {
+                        theme.button_secondary_border()
+                    };
+                    (
+                        Some(theme.button_secondary_bg().to_egui()),
+                        Some(b.to_egui()),
+                        theme.button_fg().to_egui(),
+                    )
+                }
+                ButtonVariant::Ghost => {
+                    let f = if resp.hovered() {
+                        theme.button_ghost_fg_hover()
+                    } else {
+                        theme.button_ghost_fg()
+                    };
+                    (None, None, f.to_egui())
+                }
             }
         };
 
         if let Some(f) = fill {
-            ui.painter().rect_filled(rect, radius, op(f));
+            ui.painter().rect_filled(rect, radius, f);
         }
         if let Some(b) = border {
             ui.painter().rect_stroke(
                 rect,
                 radius,
-                egui::Stroke::new(bw, op(b)),
+                egui::Stroke::new(bw, b),
                 egui::StrokeKind::Inside,
             );
         }
@@ -186,7 +192,7 @@ impl<'a> Button<'a> {
             + (if has_trailing { icon_glyph + gap } else { 0.0 });
         let mut x = rect.center().x - group_w * 0.5;
         let cy = rect.center().y;
-        let fg_col = op(fg);
+        let fg_col = fg;
 
         if let Some(paint) = self.leading_icon {
             let irect = egui::Rect::from_center_size(

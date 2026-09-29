@@ -105,8 +105,13 @@ impl<'a> Input<'a> {
         let width = self.width.unwrap_or_else(|| ui.available_width());
         let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
-        ui.painter()
-            .rect_filled(outer, radius, theme.input_bg().to_egui());
+        // disabled는 opacity 없이 disabled 상자 role과 disabled ink를 쓴다.
+        let bg = if self.enabled {
+            theme.input_bg()
+        } else {
+            theme.state_disabled_fill()
+        };
+        ui.painter().rect_filled(outer, radius, bg.to_egui());
 
         let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
         let inner_w = inner.width();
@@ -131,7 +136,11 @@ impl<'a> Input<'a> {
             .unwrap_or(0.0);
         let te_w = (inner_w - icon_w - addon_w).max(0.0);
 
-        let muted = theme.input_icon_fg().to_egui();
+        let muted = if self.enabled {
+            theme.input_icon_fg().to_egui()
+        } else {
+            theme.state_disabled_fg().to_egui()
+        };
         let resp = ui
             .allocate_new_ui(
                 egui::UiBuilder::new()
@@ -151,17 +160,26 @@ impl<'a> Input<'a> {
                     } else {
                         egui::FontId::proportional(body)
                     };
+                    let (hint, text_color) = if self.enabled {
+                        (
+                            tasty_egui_theme::hint_text(theme, self.placeholder),
+                            self.text_color
+                                .unwrap_or_else(|| theme.input_fg().to_egui()),
+                        )
+                    } else {
+                        let ink = theme.state_disabled_fg().to_egui();
+                        (egui::RichText::new(self.placeholder).color(ink), ink)
+                    };
+                    // egui의 비활성 Ui는 색을 배경 쪽으로 흐리므로 대신 비대화형 TextEdit로 입력을 막는다.
                     let te = egui::TextEdit::singleline(buf)
                         .frame(false)
                         .desired_width(te_w)
-                        .hint_text(tasty_egui_theme::hint_text(theme, self.placeholder))
+                        .hint_text(hint)
                         .font(font)
                         .horizontal_align(self.align)
-                        .text_color(
-                            self.text_color
-                                .unwrap_or_else(|| theme.input_fg().to_egui()),
-                        );
-                    let r = ui.add_enabled(self.enabled, te);
+                        .text_color(text_color)
+                        .interactive(self.enabled);
+                    let r = ui.add(te);
                     if let Some(g) = addon_galley {
                         let (arect, _) =
                             ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());
@@ -172,7 +190,9 @@ impl<'a> Input<'a> {
             )
             .inner;
 
-        let border = if self.invalid {
+        let border = if !self.enabled {
+            theme.state_disabled_border().to_egui()
+        } else if self.invalid {
             theme.input_border_invalid().to_egui()
         } else if resp.has_focus() {
             theme.input_border_focus().to_egui()

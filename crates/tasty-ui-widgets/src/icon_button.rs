@@ -78,17 +78,24 @@ impl IconButton {
         let radius = theme.icon_button_radius().value();
 
         // solid 배경과 테두리는 대응 컴포넌트 토큰이 없어 의미별 토큰을 사용한다.
+        // disabled solid는 disabled 상자 role을 읽는다.
         if self.variant == IconButtonVariant::Solid {
+            let (fill, edge) = if self.enabled {
+                (theme.surface_raised(), theme.border_default())
+            } else {
+                (theme.state_disabled_fill(), theme.state_disabled_border())
+            };
             ui.painter().rect(
                 rect,
                 radius,
-                theme.surface_raised().to_egui(),
-                egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+                fill.to_egui(),
+                egui::Stroke::new(theme.border_width.value(), edge.to_egui()),
                 egui::StrokeKind::Inside,
             );
         }
 
-        if self.active || (self.enabled && resp.is_pointer_button_down_on()) {
+        // disabled는 active·hover 배경을 그리지 않는다.
+        if self.enabled && (self.active || resp.is_pointer_button_down_on()) {
             ui.painter().rect_filled(
                 rect,
                 radius,
@@ -102,17 +109,15 @@ impl IconButton {
             );
         }
 
-        let color = if self.active {
+        // disabled 글리프는 opacity 없이 disabled ink를 쓴다.
+        let color = if !self.enabled {
+            theme.state_disabled_fg().to_egui()
+        } else if self.active {
             theme.accent_primary().to_egui()
-        } else if self.variant == IconButtonVariant::Solid || (self.enabled && resp.hovered()) {
+        } else if self.variant == IconButtonVariant::Solid || resp.hovered() {
             theme.icon_button_fg_hover().to_egui()
         } else {
             theme.icon_button_fg().to_egui()
-        };
-        let color = if self.enabled {
-            color
-        } else {
-            color.gamma_multiply(theme.opacity_disabled())
         };
 
         let glyph = self.size.icon_glyph(theme);

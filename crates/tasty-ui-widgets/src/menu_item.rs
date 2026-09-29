@@ -96,11 +96,12 @@ fn menu_item_inner(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    // disabled 항목의 아이콘·라벨·단축키 문구는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
 
@@ -154,7 +155,8 @@ fn menu_item_inner(
         Some(Shortcut::Keys(keys)) => {
             let parts: Vec<crate::KbdKey<'_>> =
                 keys.iter().map(|k| crate::KbdKey::Text(k)).collect();
-            let w = crate::kbd_parts_at(ui, theme, &parts, right, rect.center().y);
+            let ink = (!enabled).then(|| theme.state_disabled_fg().to_egui());
+            let w = crate::chip::kbd_parts_at_ink(ui, theme, &parts, right, rect.center().y, ink);
             right -= w.value() + gap;
         }
         None => {}

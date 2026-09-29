@@ -229,9 +229,10 @@ impl<'a> ListCtrl<'a> {
             );
         }
 
+        // disabled 행의 아이콘·라벨·설명은 opacity 없이 disabled ink를 쓴다.
         let dim = |c: egui::Color32| {
             if item.disabled {
-                c.gamma_multiply(theme.opacity_disabled())
+                theme.state_disabled_fg().to_egui()
             } else {
                 c
             }

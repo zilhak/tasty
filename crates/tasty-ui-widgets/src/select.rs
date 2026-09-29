@@ -82,11 +82,12 @@ fn select_impl(
     let chevron_room = theme.select_chevron_room().value();
 
     let (rect, resp) = alloc_trigger(ui, theme, width, enabled);
+    // disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
 
@@ -173,18 +174,17 @@ pub(crate) fn paint_trigger_box(
     border: HexColor,
     enabled: bool,
 ) {
-    let dim = |c: egui::Color32| {
-        if enabled {
-            c
-        } else {
-            c.gamma_multiply(theme.opacity_disabled())
-        }
+    // disabled 트리거는 상태별 테두리 대신 disabled 상자 role을 쓴다.
+    let (fill, edge) = if enabled {
+        (theme.select_bg(), border)
+    } else {
+        (theme.state_disabled_fill(), theme.state_disabled_border())
     };
     painter.rect(
         rect,
         theme.select_radius().value(),
-        dim(theme.select_bg().to_egui()),
-        egui::Stroke::new(theme.border_width.value(), dim(border.to_egui())),
+        fill.to_egui(),
+        egui::Stroke::new(theme.border_width.value(), edge.to_egui()),
         egui::StrokeKind::Inside,
     );
 }

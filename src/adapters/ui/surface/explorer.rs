@@ -1590,13 +1590,11 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
     }
     let glyph = theme.icon_glyph_size_md.value();
     let gr = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    // disabled 도구 아이콘은 opacity 없이 disabled ink를 쓴다.
     let color = if enabled {
         theme.text_secondary().to_egui()
     } else {
-        theme
-            .text_muted()
-            .to_egui()
-            .gamma_multiply(theme.opacity_disabled())
+        theme.state_disabled_fg().to_egui()
     };
     icon.image(glyph, color).paint_at(ui, gr);
     let resp = if enabled {

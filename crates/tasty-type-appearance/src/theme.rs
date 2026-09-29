@@ -1521,12 +1521,6 @@ impl Theme {
         BRAND_MELON_FLESH
     }
 
-    /// disabled 컨트롤을 흐리던 opacity. 새 disabled 규칙(`state_disabled_*`)으로 옮기는 동안만 남긴다.
-    #[inline]
-    pub fn opacity_disabled(&self) -> f32 {
-        OPACITY_DISABLED
-    }
-
     /// 흐린 항목의 opacity (0.5). `semantic.state-dim-opacity`. 꺼진 행·잘라내기 대기·
     /// 편집 중 비활성 영역처럼 상호작용할 수 있는 항목이 자기 색을 유지한 채 흐려진다.
     /// disabled 컨트롤에는 쓰지 않는다(`state_disabled_*`).

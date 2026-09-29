@@ -55,11 +55,12 @@ pub fn checkbox(
         resp.mark_changed();
     }
 
-    let dim = |c: egui::Color32| {
+    // disabled는 opacity 없이 disabled ink를 쓴다. 상자·트랙은 아래에서 disabled 상자 role로 바꾼다.
+    let ink = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
     let box_rect = egui::Rect::from_min_size(
@@ -68,7 +69,12 @@ pub fn checkbox(
     );
     // checked 는 accent 채움(checkbox-bg-checked)이 fill=border 를 겸한다(별도
     // checkbox-border-checked 토큰 없음). unchecked 는 checkbox-bg/-border.
-    let (fill, border) = if *checked {
+    let (fill, border) = if !enabled {
+        (
+            theme.state_disabled_fill().to_egui(),
+            theme.state_disabled_border().to_egui(),
+        )
+    } else if *checked {
         (
             theme.checkbox_bg_checked().to_egui(),
             theme.checkbox_bg_checked().to_egui(),
@@ -82,8 +88,8 @@ pub fn checkbox(
     ui.painter().rect(
         box_rect,
         radius,
-        dim(fill),
-        egui::Stroke::new(bw, dim(border)),
+        fill,
+        egui::Stroke::new(bw, border),
         egui::StrokeKind::Inside,
     );
     if *checked {
@@ -91,7 +97,7 @@ pub fn checkbox(
         let glyph = theme.icon_glyph_size_xs.value();
         let o = box_rect.center() - egui::vec2(glyph, glyph) * 0.5;
         let p = |fx: f32, fy: f32| o + egui::vec2(glyph * fx, glyph * fy);
-        let stroke = egui::Stroke::new(CHECK_STROKE, dim(theme.checkbox_check_fg().to_egui()));
+        let stroke = egui::Stroke::new(CHECK_STROKE, ink(theme.checkbox_check_fg().to_egui()));
         ui.painter()
             .line_segment([p(0.22, 0.55), p(0.42, 0.74)], stroke);
         ui.painter()
@@ -102,7 +108,7 @@ pub fn checkbox(
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter()
-        .galley(label_pos, galley, dim(theme.text_primary().to_egui()));
+        .galley(label_pos, galley, ink(theme.text_primary().to_egui()));
     resp
 }
 
@@ -143,11 +149,12 @@ pub fn switch(
         resp.mark_changed();
     }
 
-    let dim = |c: egui::Color32| {
+    // disabled는 opacity 없이 disabled ink를 쓴다. 상자·트랙은 아래에서 disabled 상자 role로 바꾼다.
+    let ink = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
     let track = egui::Rect::from_min_size(
@@ -156,7 +163,12 @@ pub fn switch(
     );
     // checked on-track 은 switch-track-bg-on 이 fill=border 겸함. unchecked 는
     // switch-track-bg + border-default(switch track-border 토큰 없음 → semantic).
-    let (track_fill, track_border) = if *checked {
+    let (track_fill, track_border) = if !enabled {
+        (
+            theme.state_disabled_fill().to_egui(),
+            theme.state_disabled_border().to_egui(),
+        )
+    } else if *checked {
         (
             theme.switch_track_bg_on().to_egui(),
             theme.switch_track_bg_on().to_egui(),
@@ -171,8 +183,8 @@ pub fn switch(
     ui.painter().rect(
         track,
         track_h * 0.5,
-        dim(track_fill),
-        egui::Stroke::new(bw, dim(track_border)),
+        track_fill,
+        egui::Stroke::new(bw, track_border),
         egui::StrokeKind::Inside,
     );
     let thumb_x = if *checked {
@@ -188,13 +200,13 @@ pub fn switch(
     ui.painter().circle_filled(
         egui::pos2(thumb_x, track.center().y),
         thumb_sz * 0.5,
-        dim(thumb_color),
+        ink(thumb_color),
     );
 
     if let Some(g) = galley {
         let pos = egui::pos2(track.right() + gap, rect.center().y - g.rect.height() * 0.5);
         ui.painter()
-            .galley(pos, g, dim(theme.text_primary().to_egui()));
+            .galley(pos, g, ink(theme.text_primary().to_egui()));
     }
     resp
 }

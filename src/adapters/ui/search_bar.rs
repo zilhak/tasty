@@ -234,7 +234,7 @@ fn icon_button_frame(
 }
 
 /// chevron SVG 를 담은 IconButton sm — prev/next 네비게이션. `enabled=false` 면
-/// opacity 0.45 로 흐리게 그리고 클릭을 받지 않는다. Returns true when clicked.
+/// disabled ink로 그리고 클릭을 받지 않는다. Returns true when clicked.
 fn nav_button(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -243,11 +243,9 @@ fn nav_button(
     tooltip: impl Into<egui::WidgetText>,
 ) -> bool {
     let (rect, resp) = icon_button_frame(ui, theme, enabled, false);
-    // disabled 아이콘 버튼 톤. `opacity_disabled`(0.5)와 값이 다르다 — 이 자리를
-    // 그 토큰으로 보낼지는 디자인 판단이라 값에 이름만 둔다.
-    const ICON_BUTTON_DISABLED_OPACITY: f32 = 0.45;
+    // disabled 아이콘 버튼은 공용 IconButton과 같이 opacity 없이 disabled ink를 쓴다.
     let color: egui::Color32 = if !enabled {
-        egui::Color32::from(theme.text_secondary()).gamma_multiply(ICON_BUTTON_DISABLED_OPACITY)
+        theme.state_disabled_fg().into()
     } else if resp.hovered() {
         theme.text_primary().into()
     } else {

@@ -241,11 +241,12 @@ pub fn multi_select(
     }
 
     let (rect, resp) = alloc_trigger(ui, theme, width, enabled);
+    // disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
 

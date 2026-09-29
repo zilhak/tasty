@@ -406,10 +406,16 @@ fn slot_row(
         } else {
             th.text_primary()
         };
-        let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
-            .fill(bg)
-            .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
-        if ui.add_enabled(can_record, btn).clicked() {
+        let btn = super::entries::record_button(
+            &th,
+            can_record,
+            &display,
+            fg,
+            bg,
+            BUTTON_WIDTH,
+            BUTTON_HEIGHT,
+        );
+        if ui.add(btn).clicked() {
             *recording_field = Some(RecordingSlot {
                 field_id: String::new(),
                 idx: 0,

@@ -414,6 +414,19 @@ pub fn kbd_parts_at(
     right_x: f32,
     center_y: f32,
 ) -> LogicalPx {
+    kbd_parts_at_ink(ui, theme, keys, right_x, center_y, None)
+}
+
+/// `kbd_parts_at`과 같지만 `ink`가 있으면 키 글자·글리프와 `+`를 그 색으로 그린다.
+/// disabled 메뉴 항목이 키캡 상자는 두고 글자만 disabled ink로 바꿀 때 쓴다.
+pub(crate) fn kbd_parts_at_ink(
+    ui: &egui::Ui,
+    theme: &Theme,
+    keys: &[KbdKey<'_>],
+    right_x: f32,
+    center_y: f32,
+    ink: Option<egui::Color32>,
+) -> LogicalPx {
     let total = kbd_parts_width(ui.ctx(), theme, keys);
     if keys.is_empty() {
         return total;
@@ -422,8 +435,8 @@ pub fn kbd_parts_at(
     let bw = theme.border_width.value();
     let border = theme.kbd_border().to_egui();
     let fill = theme.kbd_bg().to_egui();
-    let fg = theme.kbd_fg().to_egui();
-    let plus = theme.text_muted().to_egui();
+    let fg = ink.unwrap_or_else(|| theme.kbd_fg().to_egui());
+    let plus = ink.unwrap_or_else(|| theme.text_muted().to_egui());
     let micro = theme.kbd_font_size().value();
     let icon_glyph = theme.icon_glyph_size_sm.value();
     let gap = theme.kbd_gap().value();

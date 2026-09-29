@@ -39,11 +39,12 @@ pub fn tree_row(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    // disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
         if enabled {
             c
         } else {
-            c.gamma_multiply(theme.opacity_disabled())
+            theme.state_disabled_fg().to_egui()
         }
     };
     let indent_per_depth = theme.tree_row_indent().value();
