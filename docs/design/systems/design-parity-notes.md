@@ -247,6 +247,9 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   dimension 은 DTCG 생성기가 `LogicalPx` 로 못 담아 스킵한다
   (`crates/tasty-design-tokens/src/dtcg.rs` 의 `Skip::EmUnit`).
 - **처방**: weight 는 크기+색으로 근사한다. 나머지 둘은 값이 준비되면 해당 API로 적용한다.
+- **디자인 확인**: 권한 안내 모달의 제목(600)·도입부(semibold)·경로(medium)는 굵기 없이
+  `text-primary` 색으로만 본문과 구분하며, 디자인이 이 근사를 받아들였다. 굵은 UI 글꼴을
+  등록하기 전까지 다른 자리도 같은 근사를 쓴다.
 - **근거**: `crates/tasty-gallery/src/catalog/typography.rs` — specimen 은 지금 weight 축만
   기록하고 letter-spacing·line-height 토큰 값은 아직 싣지 않는다.
 

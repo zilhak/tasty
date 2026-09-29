@@ -761,11 +761,16 @@ Full Disk Access 확인 불가, 요청 중, debug 빌드)을 나란히 놓는데
 TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌드에서만
 보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
 
-안내 모달은 제목을 본체 팝업 타이틀바에 둔다. 시안의 셸은 채움 없는 왼쪽 정렬 제목이지만,
-본체의 팝업 타이틀바(채움 `bg-sidebar`, 가운데 제목, 닫기 X)를 그대로 쓰고 제목 크기
-`font-size-max`와 아래 선 `info-modal-title-edge`만 시안을 따른다. 시안의 font weight
-(semibold 도입부, medium 경로)는 egui가 표현하지 못해 `text-primary` 색으로만 구분하고, 명령
-칩의 radius와 안쪽 여백은 텍스트 레이아웃 배경에 줄 수 없어 배경색만 옮긴다.
+안내 모달은 제목을 공용 팝업 타이틀바에 둔다. 시안도 이 모양이다: 채움 `bg-sidebar`,
+높이 `control-height`, 한 줄 가운데 제목(넘치면 말줄임), 오른쪽 닫기 ×. 이 팝업만 제목 크기
+`font-size-max`와 아래 선 `info-modal-title-edge`를 쓴다. ×는 dismiss 버튼·Enter·Esc와
+같은 동작이고, 바깥 클릭으로는 닫히지 않는다.
+
+디자인이 확정한 근사가 두 가지 있다. 제목과 권한 안내의 도입부·경로 강조는 굵기 없이
+`text-primary` 색으로만 본문(`text-secondary`)과 구분한다. egui UI에 굵은 글꼴을 등록하지 않기
+때문이며, 디자인은 이 색 근사를 받아들였다. 명령 칩은 mono 글자에 `surface-raised` 배경색만
+두고 반경과 좌우 여백은 없다. `PermRow`의 라벨 줄과 부연 줄 사이는 semantic
+`label-detail-gap`(Theme `label_detail_gap`)이다.
 
 ## Settings › General › Remote transfer
 

@@ -48,6 +48,7 @@ fn sizing_value(field: &str) -> f32 {
         "toolbar_height" => SIZING.toolbar_height.0,
         "titlebar_height" => SIZING.titlebar_height.0,
         "overlay_top_offset" => SIZING.overlay_top_offset.0,
+        "label_detail_gap" => SIZING.label_detail_gap.0,
         "sidebar_logo_size" => SIZING.sidebar_logo_size.0,
         "sidebar_logo_collapsed_size" => SIZING.sidebar_logo_collapsed_size.0,
         "sidebar_wordmark_font_size" => SIZING.sidebar_wordmark_font_size.0,

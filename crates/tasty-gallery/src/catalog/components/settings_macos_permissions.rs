@@ -120,6 +120,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "row",
                 "min perm-row-height 32 · pad space-xs · 1px border-default rule",
             ),
+            ("label ↔ detail", "label-detail-gap 2"),
             (
                 "status",
                 "glyph icon-size-sm 14 + word · gap perm-status-gap 4",

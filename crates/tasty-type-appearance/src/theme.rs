@@ -355,6 +355,8 @@ pub struct ThemeSizing {
     pub tab_indicator_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
+    /// 한 글 묶음 안에서 라벨 줄과 그 부연 줄 사이 간격 (2px).
+    pub label_detail_gap: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -421,6 +423,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     toast_accent_width: LogicalPx(3.0),
     tab_indicator_width: LogicalPx(2.0),
     overlay_top_offset: LogicalPx(88.0),
+    label_detail_gap: LogicalPx(2.0),
 };
 
 // ============================================================================
@@ -941,6 +944,8 @@ pub struct Theme {
     /// 한쪽 변의 활성 표시. hairline 띠이므로 UI zoom 제외.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
+    /// 라벨 줄 ↔ 부연 줄 간격. 글자와 함께 커지므로 UI zoom 적용.
+    pub label_detail_gap: LogicalPx,
 
     /// 컴포넌트 접근자가 직접 보관한 치수에 적용할 UI 배율.
     /// 생성자에서 이미 확대한 필드에는 다시 곱하지 않는다.
@@ -1109,6 +1114,7 @@ impl Theme {
             toast_accent_width: zoomed(SIZING.toast_accent_width),
             tab_indicator_width: SIZING.tab_indicator_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
+            label_detail_gap: zoomed(SIZING.label_detail_gap),
             ui_zoom,
             reduced_motion: false,
             is_light,

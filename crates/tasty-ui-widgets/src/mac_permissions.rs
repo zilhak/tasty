@@ -10,7 +10,6 @@
 //! 버튼만 돌려준다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 
 use crate::button::{Button, ButtonVariant};
 use crate::chip::{TagVariant, tag, tag_width};
@@ -18,10 +17,6 @@ use crate::control::ControlSize;
 use crate::help_hint::HelpHint;
 use crate::spinner::Spinner;
 use crate::tooltip::TooltipPlacement;
-
-/// 라벨 줄과 보조 줄 사이 간격. 디자인은 이 자리에 역할 토큰 없이 primitive `size-2`를
-/// 직접 쓰고, 대응하는 Theme 치수가 없어 배율만 적용해 쓴다.
-const LABEL_DETAIL_GAP: LogicalPx = LogicalPx(2.0);
 
 /// 권한 상태 네 가지. "확인 불가"와 "자동 확인 불가"는 색이 같고 글리프로 구분한다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,7 +174,7 @@ fn perm_row(ui: &mut egui::Ui, theme: &Theme, id: egui::Id, row: &PermRow<'_>) -
     let glyph = theme.icon_glyph_size_sm.value();
     let status_gap = theme.perm_status_gap().value();
     let hint_gap = theme.help_hint_gap().value();
-    let detail_gap = (LABEL_DETAIL_GAP.value() * theme.ui_zoom).round();
+    let detail_gap = theme.label_detail_gap.value();
 
     // 오른쪽 묶음(상태 + 행 액션)의 폭을 먼저 잰다.
     let word = body_galley(

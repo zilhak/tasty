@@ -319,7 +319,7 @@ impl crate::theme::Theme {
     /// `component.banner-text-gap` → `{semantic.label-detail-gap}` = 2px
     #[inline]
     pub fn banner_text_gap(&self) -> LogicalPx {
-        LogicalPx((2.0 * self.ui_zoom).round())
+        self.label_detail_gap
     }
 
     /// `component.banner-title-font-size` → `{semantic.font-size-body}` = 13px

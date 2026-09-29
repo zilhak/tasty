@@ -67,7 +67,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-type-appearance/src/theme.rs",
-        49,
+        50,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
@@ -144,9 +144,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 아바타·파일 선택기·원격 도구의 치수는 같은 값의 다른 토큰으로 대체할 수 없다.
         // FH_TARGET_MONO_ADVANCE는 한 글자를 더할 때 잰 폭 증가분이므로 폰트가 바뀌면 다시 측정한다.
         // 스케일 밖 값은 이 집계에 포함되지 않는다.
-        // 권한 화면의 라벨↔부연 간격 2는 디자인 primitive size-2이며 대응하는 Theme 접근자가 없다.
-        // HTML 스크립트 배너의 글리프 nudge 1과 제목↔본문 간격 2도 디자인이 primitive size-1·size-2를 직접 쓴다.
-        18,
+        // HTML 스크립트 배너의 글리프 nudge 1과 제목↔본문 간격 2는 디자인이 primitive size-1·size-2를 직접 쓴다.
+        17,
         "공용 위젯",
     ),
     (
