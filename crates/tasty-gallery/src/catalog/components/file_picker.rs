@@ -218,11 +218,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
-            TokenChip::new(
-                "bg-sidebar",
-                "path / list-header bar",
-                theme.bg_sidebar().to_egui(),
-            ),
+            TokenChip::new("bg-sidebar", "path bar", theme.bg_sidebar().to_egui()),
             TokenChip::new(
                 "surface-active",
                 "selected row",
