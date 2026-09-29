@@ -70,14 +70,7 @@ fn popup(ui: &mut egui::Ui, th: &Theme, title: &str, width: LogicalPx, open_tip:
     );
     let buttons_left =
         popup_frame::draw_title_buttons(ui.ctx(), &painter, th, title_rect, TitleButtons::CLOSE);
-    let cut_band = popup_frame::draw_title_text(
-        &painter,
-        th,
-        title_rect,
-        buttons_left,
-        title,
-        egui::FontId::proportional(th.font_size_body.value()),
-    );
+    let cut_band = popup_frame::draw_title_text(&painter, th, title_rect, buttons_left, title);
     popup_frame::title_tooltip(ui, th, title, cut_band, open_tip);
 
     let content = egui::Rect::from_min_max(

@@ -212,13 +212,6 @@ fn host_title_bar(ui: &mut egui::Ui, theme: &Theme, title: &str, buttons: TitleB
         egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
     let buttons_left = popup_frame::draw_title_buttons(ui.ctx(), &painter, theme, rect, buttons);
-    let cut_band = popup_frame::draw_title_text(
-        &painter,
-        theme,
-        rect,
-        buttons_left,
-        title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-    );
+    let cut_band = popup_frame::draw_title_text(&painter, theme, rect, buttons_left, title);
     popup_frame::title_tooltip(ui, theme, title, cut_band, false);
 }

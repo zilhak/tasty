@@ -194,6 +194,7 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 
 타이틀바 텍스트가 길면 우측 상단 버튼군과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — 버튼군 왼쪽 경계(`title_buttons_left_x()`: 전체화면 버튼이 있으면 그 왼쪽 경계, 없으면 `close_btn_rect` 왼쪽 경계)을 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `tasty_ui_widgets::elide_popup_title()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용). 갤러리도 같은 함수로 말줄임한다.
 
+- **제목 글꼴은 `font-size-max`다** — 디자인 PopupTitleBar 의 크기를 모든 popup 에 쓴다. 본체 `draw.rs`와 갤러리 `popup_frame::draw_title_text`가 `tasty_ui_widgets::popup_title_font`를 함께 읽는다. 디자인의 semibold 는 egui UI에 굵은 글꼴을 등록하지 않아 재현하지 않는다.
 - **제목은 버튼 수와 관계없이 스트립 가운데다** — `tasty_ui_widgets::popup_title_text_rect`가 계산하고 갤러리도 같은 함수를 쓴다. 본체는 `PopupState::title_text_rect()`로 띠를 구하며 `draw.rs`와 단위 테스트가 이 메서드를 함께 쓴다.
   - 오른쪽 예약 폭(가장자리 여백 + 버튼 칸 + 버튼 사이 간격 + 제목 간격)을 왼쪽에도 똑같이 비운다. 토큰으로는 `popup-title-edge-inset + N × popup-title-btn-size + (N − 1) × popup-title-btn-gap + popup-title-text-gap`이고, 배율 1에서 닫기 버튼만 있으면 32, 전체화면 버튼까지 있으면 60이다. 나란히 놓인 두 popup 의 제목이 같은 선에 맞는다.
   - 말줄임 폭은 스트립 폭 − 2 × 예약 폭이라, 폭이 좁은 popup 에서 긴 번역 제목이 더 일찍 잘린다. 제목이 이 띠를 넘어도 왼쪽 빈 공간으로 밀지 않는다.

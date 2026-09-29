@@ -765,8 +765,8 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).
 
 안내 모달은 제목을 공용 팝업 타이틀바에 둔다. 시안도 이 모양이다: 채움 `bg-sidebar`,
-높이 `control-height`, 한 줄 제목(넘치면 말줄임하고 잘렸을 때만 호버 Tooltip 으로 전체 제목, 위 → 아래 배치), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고, 버튼은 IconButton sm(24 칸, `close`·`fit` 글리프, 호버·누름 표시)으로 그린다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 이 spec 의 머리는 본체 알림 popup 처럼 본문 크기 제목과 `border-frame` 선으로 그린다. 이 팝업만 제목 크기
-`font-size-max`와 아래 선 `info-modal-title-edge`를 쓴다. ×는 dismiss 버튼·Enter·Esc와
+높이 `control-height`, 한 줄 제목(넘치면 말줄임하고 잘렸을 때만 호버 Tooltip 으로 전체 제목, 위 → 아래 배치), 오른쪽 닫기 ×. 제목은 양쪽에 버튼 예약 폭을 대칭으로 비운 스트립 전체 기준 가운데에 온다(`tasty_ui_widgets::popup_title_text_rect`, 본체와 갤러리 공용). 예약 폭은 버튼 하나면 32, 전체화면 버튼까지 둘이면 60이고, 버튼은 IconButton sm(24 칸, `close`·`fit` 글리프, 호버·누름 표시)으로 그린다. 갤러리 Overlays "Info modal shell" 절의 `popup-title-bar` spec(`components/info_modal.rs::draw_title_bar`)이 시안 `gallery/overlays-dialogs.jsx` 의 두 버튼 Spec(알림 popup 머리, 짧은/긴 제목, Mocha·Latte)을 옮긴다. 제목은 모든 popup 에서 `font-size-max` 크기다(`tasty_ui_widgets::popup_title_font`, 본체와 갤러리 공용). 디자인의 semibold 는 굵기를 재현하지 않는다. 이 spec 의 머리는 본체 알림 popup 처럼 `border-frame` 선으로 그린다. 안내 모달만
+아래 선에 `info-modal-title-edge`를 쓴다. ×는 dismiss 버튼·Enter·Esc와
 같은 동작이고, 바깥 클릭으로는 닫히지 않는다.
 
 디자인이 확정한 근사가 두 가지 있다. 제목과 권한 안내의 도입부·경로 강조는 굵기 없이

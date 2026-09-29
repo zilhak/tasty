@@ -95,7 +95,8 @@ pub use multi_select::{
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use popup_title::{
-    elide_popup_title, paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
+    elide_popup_title, paint_popup_title_glyph, popup_title_font, popup_title_text_rect,
+    show_popup_title_tooltip,
 };
 pub use remote_tool::{
     FILTER_DROPDOWN_MAX_HEIGHT, FILTER_DROPDOWN_MIN_WIDTH, LocalSshHost, LocalSshSectionData,

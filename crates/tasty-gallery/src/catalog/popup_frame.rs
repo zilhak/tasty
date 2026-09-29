@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     ControlSize, IconButtonState, elide_popup_title, paint_icon_button_state,
-    paint_popup_title_glyph, popup_title_text_rect, show_popup_title_tooltip,
+    paint_popup_title_glyph, popup_title_font, popup_title_text_rect, show_popup_title_tooltip,
     tooltip_hover_delay_elapsed,
 };
 
@@ -46,7 +46,7 @@ impl TitleButtons {
     };
 }
 
-/// 타이틀바 제목을 본체와 같은 대칭 영역 계산으로 스트립 가운데에 그린다. 넘치면 본체와
+/// 타이틀바 제목을 본체와 같은 글꼴(`popup_title_font`)과 대칭 영역 계산으로 스트립 가운데에 그린다. 넘치면 본체와
 /// 같이 말줄임하고, 잘렸을 때만 제목 띠를 돌려준다([`title_tooltip`]에 넘긴다).
 pub fn draw_title_text(
     painter: &egui::Painter,
@@ -54,8 +54,8 @@ pub fn draw_title_text(
     title_rect: egui::Rect,
     buttons_left_x: f32,
     title: &str,
-    font: egui::FontId,
 ) -> Option<egui::Rect> {
+    let font = popup_title_font(theme);
     let area = popup_title_text_rect(title_rect, buttons_left_x, theme.popup_title_text_gap());
     let shown = elide_popup_title(painter.ctx(), title, font.clone(), area.width());
     let cut = shown != title;
@@ -221,14 +221,7 @@ pub fn draw(
         title_bg,
     );
     let buttons_left = draw_title_buttons(ui.ctx(), &painter, theme, title_rect, buttons);
-    let cut_band = draw_title_text(
-        &painter,
-        theme,
-        title_rect,
-        buttons_left,
-        title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-    );
+    let cut_band = draw_title_text(&painter, theme, title_rect, buttons_left, title);
     title_tooltip(ui, theme, title, cut_band, false);
 
     let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;

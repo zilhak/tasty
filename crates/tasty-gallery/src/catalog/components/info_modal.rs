@@ -3,7 +3,7 @@
 //! 본문과 버튼 행은 본체와 같은 `tasty_ui_widgets::info_modal`을 호출한다. 셸 크기는
 //! `info-modal-*` 토큰과 `info_modal_shell_height`로 정한다. 타이틀바는 본체 팝업
 //! 타이틀바(`src/adapters/ui/popup/draw.rs`)를 따라 그린다 — 채움 bg-sidebar, 가운데 제목,
-//! 아래 1px 선. 안내 모달만 제목을 `font-size-max`로, 선을 `info-modal-title-edge`로 그린다.
+//! `font-size-max` 제목, 아래 1px 선. 안내 모달만 선을 `info-modal-title-edge`로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -103,14 +103,7 @@ fn modal(
     );
     let buttons_left =
         popup_frame::draw_title_buttons(ui.ctx(), &painter, theme, title_rect, TitleButtons::CLOSE);
-    let cut_band = popup_frame::draw_title_text(
-        &painter,
-        theme,
-        title_rect,
-        buttons_left,
-        title,
-        egui::FontId::proportional(theme.font_size_max.value()),
-    );
+    let cut_band = popup_frame::draw_title_text(&painter, theme, title_rect, buttons_left, title);
     popup_frame::title_tooltip(ui, theme, title, cut_band, false);
 
     let content = egui::Rect::from_min_max(egui::pos2(frame.min.x, title_rect.max.y), frame.max);
@@ -248,7 +241,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 알림 popup 머리 — 전체화면 무대를 선언한 popup 이라 버튼이 둘(fit + ×)이다.
-/// 타이틀바는 본체 popup 타이틀바와 같이 본문 크기 제목과 border-frame 선으로 그린다.
+/// 타이틀바는 본체 popup 타이틀바와 같이 `font-size-max` 제목과 border-frame 선으로 그린다.
 fn notifications_head(ui: &mut egui::Ui, theme: &Theme, title: &str) {
     let body_font = egui::FontId::proportional(theme.font_size_body.value());
     let line = ui.fonts(|f| f.row_height(&body_font));
@@ -296,14 +289,7 @@ fn notifications_head(ui: &mut egui::Ui, theme: &Theme, title: &str) {
         title_rect,
         TitleButtons::FULLSCREEN_AND_CLOSE,
     );
-    let cut_band = popup_frame::draw_title_text(
-        &painter,
-        theme,
-        title_rect,
-        buttons_left,
-        title,
-        body_font.clone(),
-    );
+    let cut_band = popup_frame::draw_title_text(&painter, theme, title_rect, buttons_left, title);
     popup_frame::title_tooltip(ui, theme, title, cut_band, false);
     painter.text(
         egui::pos2(
@@ -349,6 +335,10 @@ pub fn draw_title_bar(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
+            (
+                "title",
+                "font-size-max 14 · text-primary · semibold not reproduced",
+            ),
             ("centre", "strip centre, always"),
             ("reserve", "4 + N × 24 + (N − 1) × 4 + 4 → 32 · 60 per side"),
             (

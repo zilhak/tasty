@@ -54,16 +54,13 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
     }
 }
 
-/// 타이틀바 제목 글자 크기와 아래 선 색. 안내 모달은 디자인의 info modal 셸 규칙
-/// (제목 `font-size-max`, 선 `info-modal-title-edge`)을 따르고 나머지는 공통 값을 쓴다.
-fn popup_title_style(
-    popup_id: PopupId,
-    th: &tasty_type_appearance::theme::Theme,
-) -> (tasty_type_geometry::length::LogicalPx, egui::Color32) {
+/// 타이틀바 아래 선 색. 안내 모달은 디자인의 info modal 셸 규칙(`info-modal-title-edge`)을
+/// 따르고 나머지는 공통 값을 쓴다.
+fn popup_title_edge(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     if popup_id == crate::adapters::ui::info_modal::INFO_MODAL_ID {
-        (th.font_size_max, th.info_modal_title_edge().into())
+        th.info_modal_title_edge().into()
     } else {
-        (th.font_size_body, th.border_frame().into())
+        th.border_frame().into()
     }
 }
 
@@ -460,7 +457,7 @@ impl PopupManager {
                     },
                     th.bg_sidebar(),
                 );
-                let (title_size, title_edge) = popup_title_style(popup_id, &th);
+                let title_edge = popup_title_edge(popup_id, &th);
                 painter.line_segment(
                     [
                         egui::pos2(title_rect.min.x, title_rect.max.y),
@@ -470,7 +467,7 @@ impl PopupManager {
                 );
 
                 // 버튼 수와 관계없이 양쪽에 같은 폭을 비워 제목을 스트립 가운데에 둔다.
-                let title_font = egui::FontId::proportional(title_size.value());
+                let title_font = tasty_ui_widgets::popup_title_font(&th);
                 let title_avail_rect = popup.title_text_rect();
                 let elided_title = elide_for_width(
                     ctx,

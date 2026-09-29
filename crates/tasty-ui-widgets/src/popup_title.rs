@@ -9,6 +9,12 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::tooltip::Tooltip;
 
+/// popup 타이틀바 제목 글꼴. 디자인 PopupTitleBar의 `font-size-max`다. 디자인의 semibold는
+/// egui UI에 굵은 글꼴을 등록하지 않아 재현하지 않는다.
+pub fn popup_title_font(theme: &Theme) -> egui::FontId {
+    egui::FontId::proportional(theme.font_size_max.value())
+}
+
 /// 제목을 그리고 말줄임할 사각형을 반환한다. 폭은 0 이상이며 버튼 영역과 겹치지 않는다.
 /// `buttons_left_x`는 가장 왼쪽 버튼의 왼쪽 경계이고 버튼이 없으면 `title_rect.max.x`다.
 /// `text_gap`은 버튼 묶음과 제목 사이 간격(`popup-title-text-gap`)이다.
