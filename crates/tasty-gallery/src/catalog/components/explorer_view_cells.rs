@@ -7,7 +7,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
 
 use crate::catalog::icons::{FILE, FOLDER, IMAGE, MockGlyph};
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, note, stage};
 
 /// 셀 폭.
 const CELL_W: LogicalPx = LogicalPx(80.0);
@@ -251,8 +251,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             ];
 
-            // cluster 는 가로 배치라 표 본문이 헤더 오른쪽(화면 밖)으로 밀린다. 세로 배치 안에 둔다.
-            ui.vertical(|ui| {
+            // 페이지 본문은 가로 폭 제한이 없어 Remainder 열이 남은 폭을 모두 차지한다.
+            // 설명과 같은 본문 컬럼 폭의 세로 배치 안에 두어 네 열이 본문 안에 들어오게 한다.
+            body_column(ui, |ui| {
                 DETAIL_SEL.with(|s| {
                     let mut sel = s.borrow_mut();
                     let selected = *sel;

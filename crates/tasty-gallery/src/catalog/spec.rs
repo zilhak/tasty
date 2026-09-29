@@ -212,7 +212,7 @@ pub(crate) fn body_column_width_id() -> egui::Id {
 
 /// 예제가 가용 폭을 늘려도 설명이 창 밖으로 잘리지 않도록 본문 컬럼 폭에 맞춘다.
 /// 저장된 컬럼 폭이 없으면 현재 가용 폭을 사용한다.
-fn body_column<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(crate) fn body_column<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let wrap_w = ui
         .data(|d| d.get_temp::<f32>(body_column_width_id()))
         .filter(|w| *w > 0.0)
