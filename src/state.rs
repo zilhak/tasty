@@ -319,6 +319,10 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) webview_user_navigations: crate::plugin_bridge::user_navigation::UserNavigations,
 
+    /// debug IPC가 요청한 webview 탐색 조작. sync_webviews가 소비한다.
+    #[cfg(all(feature = "gui", debug_assertions))]
+    pub(crate) debug_webview_history: Vec<(u32, crate::webview::DebugHistoryAction)>,
+
     /// 플러그인 배너의 (instance_id, 콘텐츠 물리 rect). 호스트 egui 뒤에 mesh를 합성한다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_banner_regions: Vec<(u64, crate::model::PhysicalRect)>,
@@ -514,6 +518,8 @@ impl AppState {
             plugin_popup_user_activated: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             webview_user_navigations: std::collections::HashMap::new(),
+            #[cfg(all(feature = "gui", debug_assertions))]
+            debug_webview_history: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_mesh_banner_regions: Vec::new(),
             #[cfg(feature = "gui")]

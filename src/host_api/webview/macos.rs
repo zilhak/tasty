@@ -2,6 +2,7 @@
 //! Reference: wry/src/wkwebview/mod.rs (MIT license, Tauri)
 
 use std::cell::{Cell, RefCell};
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use block2::{DynBlock, RcBlock};
@@ -14,12 +15,13 @@ use objc2_app_kit::{
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{
     WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationAction,
-    WKNavigationActionPolicy, WKNavigationDelegate, WKUserContentController, WKWebView,
-    WKWebViewConfiguration,
+    WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationType, WKUserContentController,
+    WKWebView, WKWebViewConfiguration, WKWebpagePreferences,
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
+use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
 struct NavDelegateIvars {
@@ -27,6 +29,25 @@ struct NavDelegateIvars {
     nav_state: Rc<Cell<NavState>>,
     /// 차단 여부와 별도로 기록한 탐색 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    /// html surface의 문서 단위 스크립트 허용. 없으면 탐색 단위 JS를 바꾸지 않는다.
+    script_gate: Rc<RefCell<Option<ScriptGate>>>,
+}
+
+impl NavDelegateIvars {
+    /// 로드가 commit 없이 끝났을 때 게이트 상태를 되돌린다. 화면 문서의 JS는 탐색 단위라 그대로다.
+    fn gate_finished(&self) {
+        if let Some(js) = self
+            .script_gate
+            .borrow()
+            .as_ref()
+            .and_then(|g| g.finished())
+        {
+            tracing::debug!(
+                "WebView surface {}: the load ended without a commit; the next navigation decides js (now {js})",
+                self.surface_id
+            );
+        }
+    }
 }
 
 define_class!(
@@ -55,6 +76,21 @@ define_class!(
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load finished");
             self.ivars().nav_state.set(NavState::Done);
+            self.ivars().gate_finished();
+        }
+
+        /// main frame 문서가 commit됐다(ADR-0053 후보 이벤트, 미측정).
+        #[unsafe(method(webView:didCommitNavigation:))]
+        fn did_commit(&self, web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+            if let Some(gate) = self.ivars().script_gate.borrow().as_ref() {
+                // SAFETY: main thread WebKit delegate 호출. URL()은 Retained 값을 반환한다.
+                let url = unsafe { web_view.URL().and_then(|u| u.absoluteString()) };
+                let js = gate.committed(url.map(|u| u.to_string()).as_deref());
+                tracing::debug!(
+                    "WebView surface {}: committed with js={js}",
+                    self.ivars().surface_id
+                );
+            }
         }
 
         #[unsafe(method(webView:didFailNavigation:withError:))]
@@ -70,6 +106,7 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
+            self.ivars().gate_finished();
         }
 
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
@@ -85,15 +122,21 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
+            self.ivars().gate_finished();
         }
 
         /// 탐색 시도를 기록하고 Allow로 응답한다. 원격 차단은 별도 content rule에 맡긴다.
-        #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
+        /// 이 메서드를 구현하면 preferences가 없는 판단 메서드는 불리지 않는다.
+        /// main frame 탐색의 JS는 여기서 탐색 단위 preferences로 정한다(ADR-0053 후보 이벤트, 미측정).
+        #[unsafe(method(webView:decidePolicyForNavigationAction:preferences:decisionHandler:))]
         fn decide_policy(
             &self,
             _web_view: &WKWebView,
             navigation_action: &WKNavigationAction,
-            decision_handler: &DynBlock<dyn Fn(WKNavigationActionPolicy)>,
+            preferences: &WKWebpagePreferences,
+            decision_handler: &DynBlock<
+                dyn Fn(WKNavigationActionPolicy, NonNull<WKWebpagePreferences>),
+            >,
         ) {
             // SAFETY: main thread WebKit delegate 호출(WKNavigationDelegate 는
             // MainThreadOnly). request()/URL()/absoluteString() 은 이 호출 동안 살아있는
@@ -104,16 +147,37 @@ define_class!(
                     .URL()
                     .and_then(|u| u.absoluteString())
             };
+            let url = url.map(|u| u.to_string());
+            if let (Some(gate), Some(url)) = (self.ivars().script_gate.borrow().as_ref(), &url) {
+                // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()/
+                // navigationType()은 이 호출 동안 유효한 navigation_action을 읽는다.
+                #[allow(clippy::multiple_unsafe_ops_per_block)]
+                let (main_frame, reload) = unsafe {
+                    (
+                        navigation_action
+                            .targetFrame()
+                            .is_some_and(|f| f.isMainFrame()),
+                        navigation_action.navigationType() == WKNavigationType::Reload,
+                    )
+                };
+                // 같은 문서의 fragment 이동은 로드가 아니므로 건너뛴다. 재로드는 fragment가 있어도 거친다.
+                if main_frame && (reload || !gate.is_fragment_move(url)) {
+                    gate.load_started();
+                    let js = gate.main_response(url);
+                    // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
+                    unsafe { preferences.setAllowsContentJavaScript(js) };
+                }
+            }
             if let Some(url) = url {
                 self.ivars()
                     .pending_navigations
                     .borrow_mut()
                     .push(PendingNavigation {
-                        url: url.to_string(),
+                        url,
                         user_gesture: false,
                     });
             }
-            decision_handler.call((WKNavigationActionPolicy::Allow,));
+            decision_handler.call((WKNavigationActionPolicy::Allow, NonNull::from(preferences)));
         }
     }
 );
@@ -124,11 +188,13 @@ impl NavDelegate {
         surface_id: u32,
         nav_state: Rc<Cell<NavState>>,
         pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+        script_gate: Rc<RefCell<Option<ScriptGate>>>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(NavDelegateIvars {
             surface_id,
             nav_state,
             pending_navigations,
+            script_gate,
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
@@ -260,6 +326,7 @@ pub struct PlatformWebView {
     block_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    script_gate: Rc<RefCell<Option<ScriptGate>>>,
     /// WKWebView의 delegate 참조가 weak이므로 여기서 수명을 유지한다.
     _nav_delegate: Retained<NavDelegate>,
 }
@@ -309,11 +376,13 @@ impl PlatformWebView {
             let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<PendingNavigation>>> =
                 Rc::new(RefCell::new(Vec::new()));
+            let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
             let nav_delegate = NavDelegate::new(
                 mtm,
                 surface_id,
                 nav_state.clone(),
                 pending_navigations.clone(),
+                script_gate.clone(),
             );
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
@@ -363,6 +432,7 @@ impl PlatformWebView {
                 block_remote,
                 nav_state,
                 pending_navigations,
+                script_gate,
                 _nav_delegate: nav_delegate,
             })
         }
@@ -454,13 +524,59 @@ impl PlatformWebView {
         }
     }
 
+    /// 게이트가 붙은 webview에서는 전역 JS를 켜 두고 탐색 단위 preferences로 문서 JS를 정한다.
+    /// 전역 값이 꺼져 있으면 탐색 단위 허용도 효과가 없기 때문이다. 바뀐 sandbox 설정은 다음 탐색부터 적용된다.
     pub fn set_javascript_enabled(&self, enabled: bool) {
+        let global = match self.script_gate.borrow().as_ref() {
+            Some(gate) => {
+                gate.set_sandbox(!enabled);
+                true
+            }
+            None => enabled,
+        };
+        self.set_global_javascript(global);
+    }
+
+    fn set_global_javascript(&self, enabled: bool) {
         // SAFETY: main thread. configuration().preferences() 는 main thread KVC 대상.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let config = self.webview.configuration();
             let prefs = config.preferences();
             let _: () = objc2::msg_send![&prefs, setJavaScriptEnabled: enabled];
+        }
+    }
+
+    /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
+    pub fn attach_script_gate(&self, gate: ScriptGate) {
+        self.set_global_javascript(true);
+        *self.script_gate.borrow_mut() = Some(gate);
+    }
+
+    pub fn reload(&self) {
+        // SAFETY: main thread WKWebView API.
+        if unsafe { self.webview.reload() }.is_none() {
+            tracing::debug!("WKWebView reload started no navigation");
+        }
+    }
+
+    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_history(&self, action: super::DebugHistoryAction) {
+        // SAFETY: main thread WKWebView API.
+        let navigation = unsafe {
+            match action {
+                super::DebugHistoryAction::Back => self.webview.goBack(),
+                super::DebugHistoryAction::Forward => self.webview.goForward(),
+                super::DebugHistoryAction::Reload => self.webview.reload(),
+                super::DebugHistoryAction::Stop => {
+                    self.webview.stopLoading();
+                    return;
+                }
+            }
+        };
+        if navigation.is_none() {
+            tracing::debug!("WKWebView {action:?} started no navigation");
         }
     }
 

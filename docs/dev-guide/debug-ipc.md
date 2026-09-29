@@ -98,6 +98,8 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.lua.eval` | `source` | Lua 스크립트를 워커에서 실행한다 — fire-and-forget 이라 응답은 `scheduled` 뿐이고 결과·부수효과는 로그로 관측한다. 임의 코드 실행이라 debug 격리가 유일한 경계다 |
 | `debug.plugin_banner.open` | `banner_id`, `surface_id` | plugin 이 기여한 배너를 강제로 띄운다 (응답 `instance_id`). 위 `debug.banner.*` 는 빌트인 배너 쪽이다 |
 | `debug.plugin_banner.close` | `instance_id` | plugin 배너 인스턴스 강제 close (응답 `closed`) |
+| `debug.html_script.allow` | `surface_id` | html surface의 스크립트 허용 클릭을 재현한다. 현재 문서를 허용으로 기록하고 재로드를 요청한다(응답 `url`·`detection`). 지문이 없는 문서(`file://`이 아니거나 응답 단계 없이 commit된 문서)는 `-32000`으로 거절한다. release에서는 사용자만 GUI로 허용한다([ADR-0053](../adr/0053-html-script-detection-and-per-document-allowance.md)) |
+| `debug.webview.history` | `surface_id`, `action`(back/forward/reload/stop) | html surface webview의 뒤로·앞으로·재로드·중지를 재현한다. 요청을 받은 창의 다음 redraw에서 적용하며, 그 창에 해당 webview가 없으면 경고 로그만 남긴다(응답 `queued`) |
 | `system.shutdown` | `{}` | 프로세스 종료를 요청한다 — 응답 `shutdown`을 먼저 보내고 `AppEvent::Shutdown`을 발행한다. 사용자만 내리던 것을 에이전트가 내리므로 debug 전용이다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
 | `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS gui 빌드 전용** (다른 조합은 `-32015` ‡). `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |

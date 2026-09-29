@@ -19,6 +19,7 @@ use winit::raw_window_handle::{
 };
 
 use super::keys::WebViewKeySink;
+use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -32,6 +33,8 @@ pub struct PlatformWebView {
     block_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
+    script_gate: Rc<RefCell<Option<ScriptGate>>>,
     parent_x11_window: std::os::raw::c_ulong,
     /// X11 foreign 창의 GDK 참조. Drop 중 GDK 연결의 오류 트랩에도 사용한다.
     gdk_window: gtk::gdk::Window,
@@ -49,6 +52,12 @@ impl Drop for ContentFilter {
         // SAFETY: 이 포인터는 `webkit_user_content_filter_store_save_finish` 가 준
         // full ref 이고 이 타입만이 소유한다. Drop 은 한 번만 돈다.
         unsafe { webkit2gtk::ffi::webkit_user_content_filter_unref(self.0) };
+    }
+}
+
+fn set_js(wv: &WebView, enabled: bool) {
+    if let Some(settings) = WebViewExt::settings(wv) {
+        settings.set_enable_javascript(enabled);
     }
 }
 
@@ -297,10 +306,12 @@ impl PlatformWebView {
         // 탐색 정책만으로 서브리소스를 막을 수 없어 content filter도 별도로 설치한다.
         let block_remote = Rc::new(Cell::new(true));
         let pending_navigations = Rc::new(RefCell::new(Vec::new()));
+        let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
         {
             let block = block_remote.clone();
             let pending_nav = pending_navigations.clone();
-            webview.connect_decide_policy(move |_wv, decision, decision_type| {
+            let gate = script_gate.clone();
+            webview.connect_decide_policy(move |wv, decision, decision_type| {
                 let uri = match decision_type {
                     PolicyDecisionType::Response => decision
                         .downcast_ref::<ResponsePolicyDecision>()
@@ -315,6 +326,24 @@ impl PlatformWebView {
                     }
                     _ => None,
                 };
+                // navigation action에는 frame 정보가 없어 main frame 응답에서만 문서 JS를 정한다(ADR-0053).
+                if matches!(decision_type, PolicyDecisionType::Response)
+                    && let Some(gate) = gate.borrow().as_ref()
+                    && decision
+                        .downcast_ref::<ResponsePolicyDecision>()
+                        .is_some_and(|d| d.is_main_frame_main_resource())
+                    && let Some(uri) = &uri
+                {
+                    set_js(wv, gate.main_response(uri.as_str()));
+                }
+                if let Some(uri) = &uri
+                    && !matches!(decision_type, PolicyDecisionType::Response)
+                {
+                    tracing::debug!(
+                        "WebView surface {surface_id}: navigation {decision_type:?} {}",
+                        uri.as_str()
+                    );
+                }
                 // 탐색 시도는 차단 여부와 별개로 기록한다. 응답 정책 이벤트는 제외한다.
                 if matches!(
                     decision_type,
@@ -348,18 +377,32 @@ impl PlatformWebView {
         let nav_state = Rc::new(Cell::new(NavState::Idle));
         {
             let nav = nav_state.clone();
-            webview.connect_load_changed(move |_wv, event| match event {
+            let gate = script_gate.clone();
+            // load-changed는 main frame 로드에서만 온다(ADR-0053 측정). 화면 문서는 commit에서 기록한다.
+            webview.connect_load_changed(move |wv, event| match event {
                 LoadEvent::Started => {
                     tracing::debug!("WebView surface {surface_id}: load started");
                     nav.set(NavState::Loading);
+                    if let Some(gate) = gate.borrow().as_ref() {
+                        set_js(wv, gate.load_started());
+                    }
+                }
+                LoadEvent::Committed => {
+                    if let Some(gate) = gate.borrow().as_ref() {
+                        let uri = wv.uri();
+                        set_js(wv, gate.committed(uri.as_deref()));
+                    }
                 }
                 LoadEvent::Finished => {
                     if nav.get() != NavState::Failed {
                         tracing::debug!("WebView surface {surface_id}: load finished");
                         nav.set(NavState::Done);
                     }
+                    if let Some(js) = gate.borrow().as_ref().and_then(|g| g.finished()) {
+                        set_js(wv, js);
+                    }
                 }
-                _ => {} // Redirected / Committed 은 무시
+                _ => {} // Redirected 는 무시
             });
         }
         {
@@ -432,6 +475,7 @@ impl PlatformWebView {
             block_remote,
             nav_state,
             pending_navigations,
+            script_gate,
             parent_x11_window: parent_xid as _,
             gdk_window,
             ucm,
@@ -605,9 +649,37 @@ impl PlatformWebView {
         self.webview.set_zoom_level(factor);
     }
 
+    /// 게이트가 붙은 webview에서는 전역 sandbox 설정으로 받고, 문서 단위 판단을 적용한다.
     pub fn set_javascript_enabled(&self, enabled: bool) {
+        let js = match self.script_gate.borrow().as_ref() {
+            Some(gate) => gate.set_sandbox(!enabled),
+            None => enabled,
+        };
+        set_js(&self.webview, js);
+    }
+
+    /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
+    /// page cache를 끄면 뒤로·앞으로 가기도 응답 단계를 거쳐 모든 문서가 지문을 가진다(ADR-0053).
+    pub fn attach_script_gate(&self, gate: ScriptGate) {
         if let Some(settings) = WebViewExt::settings(&self.webview) {
-            settings.set_enable_javascript(enabled);
+            settings.set_enable_page_cache(false);
+        }
+        set_js(&self.webview, gate.effective_js());
+        *self.script_gate.borrow_mut() = Some(gate);
+    }
+
+    pub fn reload(&self) {
+        self.webview.reload();
+    }
+
+    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_history(&self, action: super::DebugHistoryAction) {
+        match action {
+            super::DebugHistoryAction::Back => self.webview.go_back(),
+            super::DebugHistoryAction::Forward => self.webview.go_forward(),
+            super::DebugHistoryAction::Reload => self.webview.reload(),
+            super::DebugHistoryAction::Stop => self.webview.stop_loading(),
         }
     }
 

@@ -3410,6 +3410,21 @@ about = "ID로 지정한 플러그인 배너 닫기"
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "`plugin-banner open`이 반환한 배너 인스턴스 ID"
 
+[cli.help._root.debug.html-script-allow]
+about = "html 서피스에서 \"스크립트 허용\" 클릭을 재현합니다. 현재 문서를 허용으로 기록하고 다시 로드합니다(debug 빌드 전용). release에서는 사용자만 GUI로 스크립트를 허용합니다."
+
+[cli.help._root.debug.html-script-allow.arg.surface]
+help = "대상 html 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.webview-history]
+about = "html 서피스의 웹뷰에서 뒤로·앞으로·새로 고침·중지 한 단계를 재현합니다(debug 빌드 전용). 사용자의 페이지 이동을 대신합니다."
+
+[cli.help._root.debug.webview-history.arg.surface]
+help = "대상 html 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.webview-history.arg.action]
+help = "back, forward, reload, stop 중 하나"
+
 [cli.help._root.debug.stream-echo]
 about = "스트리밍 채널을 열어 서버→클라이언트 push 경로 검증: 데이터 프레임 N개를 보내 각각의 에코 응답 확인(debug 빌드 전용)"
 

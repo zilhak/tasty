@@ -123,6 +123,17 @@ pub(super) fn debug_command_to_method_params(
         ),
         DebugCommands::Inject(sub) => inject_debug_command_to_method_params(sub),
         DebugCommands::PluginBanner(sub) => plugin_banner_debug_command_to_method_params(sub),
+        DebugCommands::HtmlScriptAllow { surface } => (
+            "debug.html_script.allow",
+            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+        ),
+        DebugCommands::WebviewHistory { surface, action } => (
+            "debug.webview.history",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "action": action,
+            }),
+        ),
         DebugCommands::StreamEcho { .. } => {
             unreachable!("debug stream-echo is dispatched before request mapping")
         }

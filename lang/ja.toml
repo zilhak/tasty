@@ -3410,6 +3410,21 @@ about = "ID で指定したプラグインのバナーを閉じる"
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "`plugin-banner open` が返したバナーインスタンスID"
 
+[cli.help._root.debug.html-script-allow]
+about = "html サーフェスで「スクリプトを許可」のクリックを再現します。現在のドキュメントを許可として記録し、再読み込みします (debug ビルド専用)。release ではユーザーだけが GUI でスクリプトを許可します。"
+
+[cli.help._root.debug.html-script-allow.arg.surface]
+help = "対象 html サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.webview-history]
+about = "html サーフェスの Web ビューで戻る・進む・再読み込み・停止を 1 回再現します (debug ビルド専用)。ユーザーのページ移動の代わりに使います。"
+
+[cli.help._root.debug.webview-history.arg.surface]
+help = "対象 html サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.webview-history.arg.action]
+help = "back、forward、reload、stop のいずれか"
+
 [cli.help._root.debug.stream-echo]
 about = "ストリーミングチャネルを開きサーバー→クライアントのpush経路を検証：N個のデータフレームを送り、それぞれのエコー応答を確認（debugビルド専用）"
 

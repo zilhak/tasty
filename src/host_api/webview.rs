@@ -2,6 +2,7 @@
 //! 백엔드는 같은 이름의 메서드를 제공하고 cfg로 선택한다. 차이는 docs/design/systems/webview.md를 따른다.
 
 pub mod keys;
+pub mod script_gate;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -54,6 +55,16 @@ pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKey
 pub struct PendingNavigation {
     pub url: String,
     pub user_gesture: bool,
+}
+
+/// debug IPC가 재현하는 사용자 탐색 조작.
+#[cfg(debug_assertions)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DebugHistoryAction {
+    Back,
+    Forward,
+    Reload,
+    Stop,
 }
 
 /// 논리 좌표의 사각형. 물리 좌표 변환은 to_physical/from_physical로 모은다.

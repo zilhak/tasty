@@ -34,6 +34,9 @@ pub struct RemoteSurface {
     /// 네이티브 WebView의 탐색 상태 사본. 호스트 UI가 로딩·오류를 표시할 때 쓴다.
     #[cfg(any(feature = "gui", test))]
     pub nav_state: Arc<Mutex<NavState>>,
+    /// html 문서의 스크립트 감지와 문서 단위 허용(ADR-0053). native backend의 navigation 콜백과 공유한다.
+    #[cfg(feature = "gui")]
+    pub html_script: Arc<Mutex<tasty_model::html_script::HtmlScriptState>>,
     /// 호스트가 보관하는 cwd. 생성 시 선언된 파일 경로나 상속 cwd로 채우고,
     /// surface.set_cwd로 갱신할 수 있다.
     pub cwd: Arc<Mutex<Option<PathBuf>>>,
@@ -56,6 +59,10 @@ const WEBVIEW_URL_WHAT: &str = "remote surface webview url";
 #[cfg(any(feature = "gui", test))]
 const NAV_STATE_WHAT: &str = "remote surface nav state";
 const CWD_WHAT: &str = "remote surface cwd";
+#[cfg(feature = "gui")]
+static HTML_SCRIPT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "gui")]
+const HTML_SCRIPT_WHAT: &str = "remote surface html script state";
 
 impl RemoteSurface {
     pub fn new(
@@ -77,6 +84,8 @@ impl RemoteSurface {
             webview_owner_took_over: Arc::new(AtomicBool::new(false)),
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
+            #[cfg(feature = "gui")]
+            html_script: Arc::default(),
             cwd: Arc::new(Mutex::new(None)),
             initial_file: None,
         }
@@ -96,6 +105,7 @@ impl RemoteSurface {
             webview_page_by_owner: Arc::clone(&self.webview_page_by_owner),
             webview_owner_took_over: Arc::clone(&self.webview_owner_took_over),
             nav_state: Arc::clone(&self.nav_state),
+            html_script: Arc::clone(&self.html_script),
             cwd: Arc::clone(&self.cwd),
             initial_file: self.initial_file.clone(),
         }
@@ -152,6 +162,19 @@ impl RemoteSurface {
             NAV_STATE_WHAT,
             &NAV_STATE_POISON_REPORTED,
         )
+    }
+
+    /// 스크립트 허용 상태를 잠그고 `f`를 실행한다.
+    #[cfg(feature = "gui")]
+    pub fn with_html_script<R>(
+        &self,
+        f: impl FnOnce(&mut tasty_model::html_script::HtmlScriptState) -> R,
+    ) -> R {
+        f(&mut crate::poison::recover_mutex(
+            self.html_script.lock(),
+            HTML_SCRIPT_WHAT,
+            &HTML_SCRIPT_POISON_REPORTED,
+        ))
     }
 
     pub fn set_cwd(&self, cwd: Option<PathBuf>) {

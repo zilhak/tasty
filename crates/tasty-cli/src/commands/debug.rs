@@ -228,6 +228,24 @@ pub enum DebugCommands {
     /// Debug builds only — `debug banner` is the host built-in banner instead.
     #[command(subcommand)]
     PluginBanner(PluginBannerDebugCommands),
+    /// Reproduce the "allow scripts" click on an html surface: record the
+    /// current document as allowed and reload it. Debug builds only — in
+    /// release only the user allows scripts, through the GUI.
+    HtmlScriptAllow {
+        /// Target html surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Reproduce a webview history step (back, forward, reload, stop) on an
+    /// html surface. Debug builds only — it stands in for user navigation.
+    WebviewHistory {
+        /// Target html surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+        /// One of back, forward, reload, stop.
+        #[arg(long, value_parser = ["back", "forward", "reload", "stop"])]
+        action: String,
+    },
     /// Open a streaming channel and verify the server→client push path: send N
     /// data frames and expect each one echoed back (debug builds only).
     StreamEcho {

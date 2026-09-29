@@ -30,7 +30,10 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `nav_state` | — | `NavState` | |
 | `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 늘 `false` 다 — 아래 "탐색" |
 | `set_zoom` | `f64` | — | |
-| `set_javascript_enabled` | `bool` | — | |
+| `set_javascript_enabled` | `bool` | — | 스크립트 게이트가 붙은 webview 에서는 값을 전역 sandbox 설정으로 `gate.set_sandbox` 에 넘기고, 적용하는 값은 문서별 판정이다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)). macOS 는 전역 preference 를 켜 두고 문서별 값을 navigation 정책의 webpage preferences 로 준다 |
+| `attach_script_gate` | `ScriptGate` | — | 첫 로드 전에 부른다. Linux 만 page cache 를 꺼서 뒤로·앞으로 가기도 응답 단계를 거치게 한다([ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)) |
+| `reload` | — | — | |
+| `debug_history` | `DebugHistoryAction` | — | debug 빌드 전용이다. 뒤로·앞으로·다시 불러오기·중지를 재현한다 |
 | `set_color_scheme` | `ColorScheme` | — | |
 | `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0029](../../adr/0029-webview-host-integration.md)) |
 | `Drop` | — | — | 아래 "수명" |

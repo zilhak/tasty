@@ -543,6 +543,7 @@ impl MainView {
                             bounds,
                             describe_webview_url(url.as_ref())
                         );
+                        self.attach_script_gate(sid, &wv, &settings);
                         self.load_initial_url(sid, &wv, url.as_ref());
                         // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
                         settings.apply(&wv);
@@ -556,6 +557,47 @@ impl MainView {
                     }
                     Err(e) => self.record_webview_failure(sid, attempts, &e),
                 }
+            }
+        }
+    }
+
+    /// html surface에 문서 단위 스크립트 허용을 붙인다(ADR-0053). 첫 로드 전에 sandbox 값을 맞춘다.
+    fn attach_script_gate(
+        &self,
+        sid: u32,
+        wv: &crate::webview::PlatformWebView,
+        settings: &crate::webview::HtmlWebViewSettings,
+    ) {
+        let Some(rs) = self
+            .find_remote_surface(sid)
+            .filter(|rs| rs.kind_static == "html")
+        else {
+            return;
+        };
+        let gate = crate::webview::script_gate::ScriptGate::new(
+            sid,
+            std::sync::Arc::clone(&rs.html_script),
+        );
+        gate.set_sandbox(!settings.javascript_enabled);
+        wv.attach_script_gate(gate);
+    }
+
+    /// 허용 직후의 재로드와 debug 탐색 조작을 native webview에 전달한다.
+    fn apply_webview_requests(&mut self) {
+        for (sid, wv) in &self.webviews {
+            let reload = self
+                .find_remote_surface(*sid)
+                .is_some_and(|rs| rs.with_html_script(|st| st.take_reload_request()));
+            if reload {
+                tracing::debug!("WebView surface {sid}: reloading after the script allowance");
+                wv.reload();
+            }
+        }
+        #[cfg(debug_assertions)]
+        for (sid, action) in std::mem::take(&mut self.state.debug_webview_history) {
+            match self.webviews.get(&sid) {
+                Some(wv) => wv.debug_history(action),
+                None => tracing::warn!("debug webview {action:?}: surface {sid} has no webview"),
             }
         }
     }
@@ -778,6 +820,7 @@ impl MainView {
                 self.webview_applied_settings.insert(sid, resolved);
             }
         }
+        self.apply_webview_requests();
 
         // native nav_state 를 RemoteSurface 로 mirror — egui 렌더 경로(egui_panels →
         // webview_chrome)가 다음 프레임에 읽어 loading/error chrome 을 그린다. borrow 충돌
@@ -894,6 +937,7 @@ impl MainView {
         // HTML plugin은 임의 콘텐츠를 열 수 있어 기본적으로 JS를 막는다.
         // markdown은 정화한 문서의 탐색 스크립트를 실행해야 하므로 기본값이 다르다.
         // 사용자가 저장한 설정은 이 기본값보다 우선한다.
+        // html은 이 값을 전역 sandbox로 받고 문서 단위 허용은 backend의 게이트가 적용한다(ADR-0053).
         let sandbox_default = plugin_id != "com.tasty.markdown";
         let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
             Some(PluginSettingValue::Bool(b)) => *b,

@@ -3416,6 +3416,21 @@ about = "Close a plugin banner instance by id"
 [cli.help._root.debug.plugin-banner.close.arg.instance_id]
 help = "Banner instance id returned by `plugin-banner open`"
 
+[cli.help._root.debug.html-script-allow]
+about = "Reproduce the \"allow scripts\" click on an html surface: record the current document as allowed and reload it. Debug builds only — in release only the user allows scripts, through the GUI"
+
+[cli.help._root.debug.html-script-allow.arg.surface]
+help = "Target html surface id (defaults to the current surface)"
+
+[cli.help._root.debug.webview-history]
+about = "Reproduce a webview history step (back, forward, reload, stop) on an html surface. Debug builds only — it stands in for user navigation"
+
+[cli.help._root.debug.webview-history.arg.surface]
+help = "Target html surface id (defaults to the current surface)"
+
+[cli.help._root.debug.webview-history.arg.action]
+help = "One of back, forward, reload, stop"
+
 [cli.help._root.debug.stream-echo]
 about = "Open a streaming channel and verify the server→client push path: send N data frames and expect each one echoed back (debug builds only)"
 

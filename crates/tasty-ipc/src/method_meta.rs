@@ -758,6 +758,9 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.plugin_banner.close",
         local_only(MethodEffect::Idempotent),
     ),
+    // html 문서 스크립트 허용 클릭과 뒤로·앞으로·재로드·중지 재현. release 미노출.
+    ("debug.html_script.allow", local_only(MethodEffect::Mutate)),
+    ("debug.webview.history", local_only(MethodEffect::Mutate)),
     (
         "debug.event_bus.list_subscribers",
         local_only(MethodEffect::Read),

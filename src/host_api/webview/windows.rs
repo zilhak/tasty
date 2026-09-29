@@ -19,6 +19,7 @@ use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
+use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -30,7 +31,23 @@ pub struct PlatformWebView {
     nav_state: Rc<Cell<NavState>>,
     /// 원격 차단 여부와 별도로 기록한 NavigationStarting 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
+    /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
+    script_gate: Rc<RefCell<Option<ScriptGate>>>,
     parent_hwnd: HWND,
+}
+
+fn set_js(webview: &ICoreWebView2, enabled: bool) {
+    // SAFETY: webview/settings는 호출 동안 valid, main thread 호출.
+    unsafe {
+        match webview.Settings() {
+            Ok(settings) => {
+                if let Err(e) = settings.SetIsScriptEnabled(enabled) {
+                    tracing::warn!("WebView2 SetIsScriptEnabled failed: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
+        }
+    }
 }
 
 /// 창 핸들·종류 오류는 Permanent, 이후 native 생성·등록 오류는 Transient로 분류한다.
@@ -201,11 +218,15 @@ impl PlatformWebView {
             let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<PendingNavigation>>> =
                 Rc::new(RefCell::new(Vec::new()));
+            let script_gate: Rc<RefCell<Option<ScriptGate>>> = Rc::new(RefCell::new(None));
             let nav_start = nav_state.clone();
             let pending_nav = pending_navigations.clone();
+            let gate_start = script_gate.clone();
             let mut tok_start: i64 = 0;
+            // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
+            // 로드 시작과 응답 결정을 여기서 함께 한다(ADR-0053 후보 이벤트, 미측정).
             let h_start = NavigationStartingEventHandler::create(Box::new(
-                move |_sender, args| -> windows::core::Result<()> {
+                move |sender, args| -> windows::core::Result<()> {
                     tracing::debug!("WebView surface {surface_id}: load started");
                     nav_start.set(NavState::Loading);
                     if let Some(args) = args {
@@ -226,6 +247,25 @@ impl PlatformWebView {
                                 false
                             }
                         };
+                        // 같은 문서의 fragment 이동은 건너뛴다. 종류를 알 수 없거나 재로드면 게이트를 거친다.
+                        let kind = args
+                            .cast::<ICoreWebView2NavigationStartingEventArgs3>()
+                            .and_then(|a| {
+                                let mut k = COREWEBVIEW2_NAVIGATION_KIND::default();
+                                a.NavigationKind(&mut k).map(|()| k)
+                            })
+                            .ok();
+                        let skip = kind.is_some_and(|k| k != COREWEBVIEW2_NAVIGATION_KIND_RELOAD)
+                            && gate_start
+                                .borrow()
+                                .as_ref()
+                                .is_some_and(|g| g.is_fragment_move(&uri_str));
+                        if let (Some(gate), Some(wv)) = (gate_start.borrow().as_ref(), &sender)
+                            && !skip
+                        {
+                            gate.load_started();
+                            set_js(wv, gate.main_response(&uri_str));
+                        }
                         pending_nav.borrow_mut().push(PendingNavigation {
                             url: uri_str,
                             user_gesture,
@@ -238,10 +278,37 @@ impl PlatformWebView {
                 .add_NavigationStarting(&h_start, &mut tok_start)
                 .map_err(|e| transient(format!("add_NavigationStarting failed: {e}")))?;
 
+            // ContentLoading을 main frame commit으로 본다(ADR-0053 후보 이벤트, 미측정).
+            let gate_commit = script_gate.clone();
+            let mut tok_content: i64 = 0;
+            let h_content = ContentLoadingEventHandler::create(Box::new(
+                move |sender, _args| -> windows::core::Result<()> {
+                    if let (Some(gate), Some(wv)) = (gate_commit.borrow().as_ref(), &sender) {
+                        let mut uri = windows::core::PWSTR::null();
+                        wv.Source(&mut uri)?;
+                        let uri_str = uri.to_string().ok();
+                        // 반환 URI의 할당은 호출자가 해제한다.
+                        CoTaskMemFree(Some(uri.0 as *const c_void));
+                        set_js(wv, gate.committed(uri_str.as_deref()));
+                    }
+                    Ok(())
+                },
+            ));
+            webview
+                .add_ContentLoading(&h_content, &mut tok_content)
+                .map_err(|e| transient(format!("add_ContentLoading failed: {e}")))?;
+
             let nav_done = nav_state.clone();
+            let gate_done = script_gate.clone();
             let mut tok_done: i64 = 0;
             let h_done = NavigationCompletedEventHandler::create(Box::new(
-                move |_sender, args| -> windows::core::Result<()> {
+                move |sender, args| -> windows::core::Result<()> {
+                    if let (Some(js), Some(wv)) = (
+                        gate_done.borrow().as_ref().and_then(|g| g.finished()),
+                        &sender,
+                    ) {
+                        set_js(wv, js);
+                    }
                     let Some(args) = args else { return Ok(()) };
                     let mut is_success = BOOL(0);
                     args.IsSuccess(&mut is_success)?;
@@ -319,6 +386,7 @@ impl PlatformWebView {
                 allow_remote,
                 nav_state,
                 pending_navigations,
+                script_gate,
                 parent_hwnd: parent,
             })
         }
@@ -442,17 +510,42 @@ impl PlatformWebView {
         }
     }
 
+    /// 게이트가 붙은 webview에서는 전역 sandbox 설정으로 받고, 문서 단위 판단을 적용한다.
     pub fn set_javascript_enabled(&self, enabled: bool) {
-        // SAFETY: webview/settings는 self가 살아있는 동안 valid, main thread 호출.
-        unsafe {
-            match self.webview.Settings() {
-                Ok(settings) => {
-                    if let Err(e) = settings.SetIsScriptEnabled(enabled) {
-                        tracing::warn!("WebView2 SetIsScriptEnabled failed: {e}");
-                    }
-                }
-                Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
+        let js = match self.script_gate.borrow().as_ref() {
+            Some(gate) => gate.set_sandbox(!enabled),
+            None => enabled,
+        };
+        set_js(&self.webview, js);
+    }
+
+    /// 문서 단위 스크립트 허용을 붙인다. 첫 로드 전에 호출한다.
+    pub fn attach_script_gate(&self, gate: ScriptGate) {
+        set_js(&self.webview, gate.effective_js());
+        *self.script_gate.borrow_mut() = Some(gate);
+    }
+
+    pub fn reload(&self) {
+        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출.
+        if let Err(e) = unsafe { self.webview.Reload() } {
+            tracing::warn!("WebView2 Reload failed: {e}");
+        }
+    }
+
+    /// 사용자 탐색 조작을 debug IPC에서 재현한다.
+    #[cfg(debug_assertions)]
+    pub fn debug_history(&self, action: super::DebugHistoryAction) {
+        // SAFETY: webview는 self가 살아있는 동안 valid, main thread 호출.
+        let result = unsafe {
+            match action {
+                super::DebugHistoryAction::Back => self.webview.GoBack(),
+                super::DebugHistoryAction::Forward => self.webview.GoForward(),
+                super::DebugHistoryAction::Reload => self.webview.Reload(),
+                super::DebugHistoryAction::Stop => self.webview.Stop(),
             }
+        };
+        if let Err(e) = result {
+            tracing::warn!("WebView2 {action:?} failed: {e}");
         }
     }
 

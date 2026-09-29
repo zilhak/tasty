@@ -6,6 +6,8 @@ pub(crate) mod cli_entry_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
+#[cfg(all(debug_assertions, feature = "gui"))]
+mod debug_html_script;
 #[cfg(debug_assertions)]
 mod debug_nav;
 #[cfg(debug_assertions)]
@@ -1058,6 +1060,13 @@ fn route_debug_handler(
         #[cfg(feature = "gui")]
         "debug.banner.set_countdown" => {
             debug::handle_debug_banner_set_countdown(state, id, &request.params)
+        }
+        // 허용 클릭과 페이지 이동 조작을 재현한다(ADR-0053).
+        #[cfg(feature = "gui")]
+        "debug.html_script.allow" => debug_html_script::handle_allow(engine, id, &request.params),
+        #[cfg(feature = "gui")]
+        "debug.webview.history" => {
+            debug_html_script::handle_history(state, engine, id, &request.params)
         }
         _ => return None,
     })
