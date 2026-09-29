@@ -717,7 +717,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+            egui::vec2(th.selection_edge_width.value(), rect.height()),
         );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if resp.hovered() {
@@ -966,7 +966,7 @@ fn new_ws_row(
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+            egui::vec2(th.selection_edge_width.value(), rect.height()),
         );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !creating && resp.hovered() {
@@ -1155,7 +1155,7 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+            egui::vec2(th.selection_edge_width.value(), rect.height()),
         );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !disabled && resp.hovered() {

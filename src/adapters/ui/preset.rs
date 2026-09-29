@@ -397,7 +397,7 @@ fn draw_list_row(
         p.rect_filled(rect, radius, theme.surface_active().to_egui());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
+            egui::vec2(theme.selection_edge_width.value(), rect.height()),
         );
         p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     } else if resp.hovered() {

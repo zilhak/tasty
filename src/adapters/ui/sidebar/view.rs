@@ -1347,11 +1347,10 @@ fn draw_workspace_card(
             ui.spacing_mut().item_spacing.x = th.workspace_dot_gap().value();
             // 실행 상태는 점 색, 다른 클라이언트 점유는 링, mirror는 별도 줄로 표시한다.
             // 슬롯은 attached ring 전체를 담는 폭으로 모든 행에서 예약해 이름 시작 위치를 고정한다.
-            // 높이는 시안대로 제목 한 줄 높이다.
-            let dot_slot = egui::vec2(
-                th.workspace_dot_slot().value(),
-                th.font_size_body.value() * th.line_height_ui,
-            );
+            // 높이는 제목 라벨이 실제로 차지하는 한 줄 높이다. 슬롯이 행을 키우지 않는다.
+            let title_row_h =
+                ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_body.value())));
+            let dot_slot = egui::vec2(th.workspace_dot_slot().value(), title_row_h);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             if let Some(digit) = switch_digit {
                 // 같은 슬롯 가운데 키캡을 그려 이름 시작 위치를 유지한다.
@@ -1504,7 +1503,13 @@ fn draw_workspace_card(
 
     // 활성 표시선은 행 안쪽에 그려 상태 점과 겹치지 않게 한다.
     if ws.is_active {
-        let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
+        let bar = egui::Rect::from_min_size(
+            card_rect.min,
+            egui::vec2(
+                th.workspace_row_active_bar_width().value(),
+                card_rect.height(),
+            ),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     }
 
