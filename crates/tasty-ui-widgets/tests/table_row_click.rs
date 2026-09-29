@@ -352,7 +352,7 @@ fn hovered_row_fill_is_table_row_bg_hover() {
 }
 
 /// 오른쪽 정렬 열 제목 "Kind" 글자 영역의 오른쪽 끝.
-fn right_header_text_right(theme: &Theme, pad_right: f32) -> f32 {
+fn right_header_text_right(theme: &Theme, pad_right: LogicalPx) -> f32 {
     let ctx = egui::Context::default();
     let mut shapes = Vec::new();
     for _ in 0..2 {
@@ -405,11 +405,11 @@ fn right_header_text_right(theme: &Theme, pad_right: f32) -> f32 {
 #[test]
 fn header_pad_right_moves_right_aligned_titles_in() {
     let theme = tasty_themes::mocha_fallback();
-    let pad = theme.spacing_sm.value();
-    let flush = right_header_text_right(&theme, 0.0);
+    let pad = theme.spacing_sm;
+    let flush = right_header_text_right(&theme, LogicalPx(0.0));
     let padded = right_header_text_right(&theme, pad);
     assert!(
-        ((flush - padded) - pad).abs() <= 0.5,
+        ((flush - padded) - pad.value()).abs() <= 0.5,
         "right header title moves in by {pad}: flush {flush}, padded {padded}"
     );
 }

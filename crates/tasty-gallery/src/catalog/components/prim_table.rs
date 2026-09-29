@@ -133,7 +133,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .active_sort(SortKey::Port, TableSortDir::Asc)
                     .header_fill(egui::Color32::from(theme.bg_sidebar()))
                     .selectable(true)
-                    .max_scroll_height(theme.overlay_top_offset.value() * 3.0)
+                    .max_scroll_height(theme.overlay_top_offset * 3.0)
                     .id_salt("prim_table_demo")
                     .show(
                         ui,

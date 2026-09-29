@@ -1812,12 +1812,13 @@ fn draw_table(
     rows: &[PortRowView],
 ) -> Option<PortScannerAction> {
     let th = props.theme;
-    let text_h = th.font_size_body.value() + 6.0;
+    let text_h = th.font_size_body + LogicalPx(6.0);
 
     // 본문 높이에서 고정 헤더와 간격만 뺀다. 푸터는 바깥 패널이 이미 확보했다.
-    let header_h = text_h + 4.0;
-    let gap = ui.spacing().item_spacing.y;
-    let max_scroll = (ui.available_height() - header_h - gap).max(text_h + 8.0);
+    let header_h = text_h + LogicalPx(4.0);
+    let gap = LogicalPx(ui.spacing().item_spacing.y);
+    let max_scroll =
+        (LogicalPx(ui.available_height()) - header_h - gap).max(text_h + LogicalPx(8.0));
 
     // 열별 최소 폭의 합이 가용 폭을 넘으면 본문만 가로 스크롤한다.
     // 남는 폭은 Address·Process에 나누며 Port만 오른쪽 정렬한다.
@@ -1872,9 +1873,9 @@ fn draw_table(
         .selectable(true)
         .horizontal_scroll(true)
         .header_fill(th.bg_sidebar().into())
-        .header_pad_x(12.0)
+        .header_pad_x(LogicalPx(12.0))
         .header_height(header_h)
-        .row_height(text_h + 8.0)
+        .row_height(text_h + LogicalPx(8.0))
         .max_scroll_height(max_scroll)
         .show(
             ui,

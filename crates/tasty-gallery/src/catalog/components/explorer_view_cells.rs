@@ -261,9 +261,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .active_sort(0_usize, TableSortDir::Asc)
                         .header_fill(egui::Color32::from(theme.table_header_bg()))
                         // design DetailHeader: Size 제목 paddingRight 8, 본문 Size 셀과 같은 여백.
-                        .header_pad_right(theme.spacing_sm.value())
+                        .header_pad_right(theme.spacing_sm)
                         .selectable(true)
-                        .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
+                        .max_scroll_height(theme.overlay_top_offset * 2.0)
                         .id_salt("explorer_detail_demo")
                         .show(
                             ui,

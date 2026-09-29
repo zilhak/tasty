@@ -61,11 +61,11 @@ pub struct Table<'a, K> {
     columns: Vec<TableColumn<'a, K>>,
     active_sort: Option<(K, TableSortDir)>,
     header_fill: Option<egui::Color32>,
-    header_pad_x: f32,
-    header_pad_right: f32,
-    header_height: Option<f32>,
-    row_height: Option<f32>,
-    max_scroll_height: Option<f32>,
+    header_pad_x: LogicalPx,
+    header_pad_right: LogicalPx,
+    header_height: Option<LogicalPx>,
+    row_height: Option<LogicalPx>,
+    max_scroll_height: Option<LogicalPx>,
     id_salt: Option<egui::Id>,
     selectable: bool,
     striped: bool,
@@ -79,8 +79,8 @@ impl<'a, K> Table<'a, K> {
             columns,
             active_sort: None,
             header_fill: None,
-            header_pad_x: 0.0,
-            header_pad_right: 0.0,
+            header_pad_x: LogicalPx(0.0),
+            header_pad_right: LogicalPx(0.0),
             header_height: None,
             row_height: None,
             max_scroll_height: None,
@@ -110,32 +110,32 @@ impl<'a, K> Table<'a, K> {
     }
 
     /// 헤더 셀 좌측 패딩(디자인 th padding-x). 기본 0.
-    pub fn header_pad_x(mut self, pad: f32) -> Self {
+    pub fn header_pad_x(mut self, pad: LogicalPx) -> Self {
         self.header_pad_x = pad;
         self
     }
 
     /// `TableAlign::Right` 헤더 셀의 오른쪽 여백. 본문 셀이 오른쪽에 같은 여백을 두는 열에서
     /// 제목 끝을 값 끝과 맞춘다. 왼쪽 정렬 헤더에는 적용하지 않는다. 기본 0.
-    pub fn header_pad_right(mut self, pad: f32) -> Self {
+    pub fn header_pad_right(mut self, pad: LogicalPx) -> Self {
         self.header_pad_right = pad;
         self
     }
 
     /// 헤더 행 높이. 미지정 시 `table_cell_height`.
-    pub fn header_height(mut self, h: f32) -> Self {
+    pub fn header_height(mut self, h: LogicalPx) -> Self {
         self.header_height = Some(h);
         self
     }
 
     /// 본문 행 높이. 미지정 시 `table_cell_height`.
-    pub fn row_height(mut self, h: f32) -> Self {
+    pub fn row_height(mut self, h: LogicalPx) -> Self {
         self.row_height = Some(h);
         self
     }
 
     /// 내부 ScrollArea 최대 높이(이 높이를 넘으면 본문이 스크롤된다).
-    pub fn max_scroll_height(mut self, h: f32) -> Self {
+    pub fn max_scroll_height(mut self, h: LogicalPx) -> Self {
         self.max_scroll_height = Some(h);
         self
     }
@@ -176,7 +176,7 @@ impl<'a, K> Table<'a, K> {
         K: Copy + PartialEq,
     {
         // 헤더와 본문 행은 같은 `table-cell-height` 역할을 쓴다.
-        let cell_h = theme.table_cell_height().value();
+        let cell_h = theme.table_cell_height();
         let header_h = self.header_height.unwrap_or(cell_h);
         let row_h = self.row_height.unwrap_or(cell_h);
 
@@ -201,7 +201,7 @@ impl<'a, K> Table<'a, K> {
             if let Some(fill) = header_fill {
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(ui.max_rect().left(), ui.cursor().top()),
-                    egui::vec2(band_w.value(), header_h),
+                    egui::vec2(band_w.value(), header_h.value()),
                 );
                 ui.painter().rect_filled(rect, 0.0, fill);
             }
@@ -216,13 +216,13 @@ impl<'a, K> Table<'a, K> {
                 builder = builder.sense(egui::Sense::click());
             }
             if let Some(ms) = max_scroll_height {
-                builder = builder.max_scroll_height(ms);
+                builder = builder.max_scroll_height(ms.value());
             }
             for col in columns {
                 builder = builder.column(to_column(col.width));
             }
 
-            let mut table = builder.header(header_h, |mut header| {
+            let mut table = builder.header(header_h.value(), |mut header| {
                 for col in columns {
                     header.col(|ui| {
                         if header_cell(ui, theme, col, active_sort, header_pad_x, header_pad_right)
@@ -243,7 +243,7 @@ impl<'a, K> Table<'a, K> {
                 theme.table_row_bg_hover().to_egui_premultiplied();
             table.body(|mut body| {
                 for (i, row) in rows.iter().enumerate() {
-                    body.row(row_h, |mut tr| {
+                    body.row(row_h.value(), |mut tr| {
                         tr.set_selected(is_selected(row));
                         for (c, col) in columns.iter().enumerate() {
                             tr.col(|ui| {
@@ -321,8 +321,8 @@ fn header_cell<K: Copy + PartialEq>(
     theme: &Theme,
     col: &TableColumn<'_, K>,
     active_sort: Option<(K, TableSortDir)>,
-    pad_x: f32,
-    pad_right: f32,
+    pad_x: LogicalPx,
+    pad_right: LogicalPx,
 ) -> bool {
     let is_active = match (col.sort_id, active_sort) {
         (Some(k), Some((ak, _))) => k == ak,
@@ -353,8 +353,8 @@ fn header_cell<K: Copy + PartialEq>(
 
     let clickable = col.sort_id.is_some();
     let do_cell = move |ui: &mut egui::Ui| -> bool {
-        if pad_x > 0.0 {
-            ui.add_space(pad_x);
+        if pad_x.value() > 0.0 {
+            ui.add_space(pad_x.value());
         }
         if clickable {
             ui.add(egui::Label::new(rich).sense(egui::Sense::click()))
@@ -369,8 +369,8 @@ fn header_cell<K: Copy + PartialEq>(
         TableAlign::Left => do_cell(ui),
         TableAlign::Right => {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if pad_right > 0.0 {
-                    ui.add_space(pad_right);
+                if pad_right.value() > 0.0 {
+                    ui.add_space(pad_right.value());
                 }
                 do_cell(ui)
             })

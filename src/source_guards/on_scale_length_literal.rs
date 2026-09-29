@@ -107,10 +107,12 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        51,
+        56,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
         // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.
+        // 포트 스캐너 표의 글자 높이 여백 6·4·8·8과 헤더 왼쪽 여백 12는 Table 길이 setter가 LogicalPx를
+        // 받게 되면서 LogicalPx로 감싸 집계된다. 값은 이전과 같다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
@@ -722,7 +724,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        (182, 300),
+        (184, 301),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
