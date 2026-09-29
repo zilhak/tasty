@@ -24,7 +24,7 @@ use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
 use crate::theme::{self, Theme};
-use tasty_ui_widgets::{CenterState, IconButton, IconButtonVariant, hspace};
+use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant};
 
 pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
@@ -32,7 +32,6 @@ pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
 pub(crate) const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 // FilePickerFrame/FpRow 열 치수 — gallery specimen 과 같은 구조 폭.
-const ROW_H: LogicalPx = LogicalPx(28.0);
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 
@@ -189,18 +188,37 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
         };
     }
 
-    // 콘텐츠 영역은 창 가장자리까지 온다. 경로 막대 배경은 전폭으로 칠하고
-    // 나머지 구역은 셸 공통 여백만큼 안쪽에 그린다.
+    // 콘텐츠 영역은 창 가장자리까지 온다. 구역마다 배경·구분선은 전폭으로 두고
+    // 내용은 `fp-*` 인셋 안에 그린다.
     let outer = ui.available_rect_before_wrap();
-    let mut inner = ui.new_child(
-        egui::UiBuilder::new()
-            .id_salt("file_picker_inset")
-            .max_rect(outer.shrink(super::content_margin().value()))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    let out = draw_view_sections(&mut inner, props, outer);
+    let out = draw_view_sections(ui, props, outer);
     ui.advance_cursor_after_rect(outer);
     out
+}
+
+/// 헤더 높이. 고정값이 없고 위아래 `fp-header-pad-y`와 sm IconButton으로 정해진다.
+fn header_height(th: &Theme) -> LogicalPx {
+    let pad = th.fp_header_pad_y();
+    pad + LogicalPx(ControlSize::Sm.height(th)) + pad
+}
+
+/// 경로 막대 높이. 위아래 `fp-path-pad-y`와 sm IconButton으로 정해진다.
+fn path_bar_height(th: &Theme) -> LogicalPx {
+    let pad = th.fp_path_pad_y();
+    pad + LogicalPx(ControlSize::Sm.height(th)) + pad
+}
+
+/// 구역 사각형에서 좌우 인셋과 위아래 여백을 뺀 내용 사각형.
+fn section_inner(
+    rect: egui::Rect,
+    start: LogicalPx,
+    end: LogicalPx,
+    pad_y: LogicalPx,
+) -> egui::Rect {
+    egui::Rect::from_min_max(
+        egui::pos2(rect.left() + start.value(), rect.top() + pad_y.value()),
+        egui::pos2(rect.right() - end.value(), rect.bottom() - pad_y.value()),
+    )
 }
 
 fn draw_view_sections(
@@ -211,49 +229,69 @@ fn draw_view_sections(
     let th = props.theme;
     let mut action = FilePickerAction::None;
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        ui.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
-        ui.label(
-            egui::RichText::new(props.title_label)
-                .size(th.font_size_body.value())
-                .strong()
-                .color(th.text_primary()),
-        );
-        if let Some(host) = props.remote_host {
-            host_badge(ui, th, host);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                })
-                .clicked()
-            {
-                action = FilePickerAction::Cancel;
-            }
-        });
-    });
-    ui.add_space(th.spacing_xs.value());
-    // 헤더 줄은 창 위쪽 여백과 좌우 여백까지 이동 영역으로 쓴다.
-    let header_rect =
-        egui::Rect::from_min_max(outer.min, egui::pos2(outer.right(), ui.cursor().top()));
-    // 채움이 구분선과 경로 막대 위젯 아래에 깔리도록 자리를 먼저 잡아 둔다.
-    let band_shape = ui.painter().add(egui::Shape::Noop);
-    let band_top = ui.cursor().top();
-    hline(ui, th, outer.x_range());
-
-    path_bar::path_bar(ui, props, &mut action);
-    ui.add_space(th.spacing_xs.value());
-    let band = egui::Rect::from_x_y_ranges(outer.x_range(), band_top..=ui.cursor().top());
-    ui.painter().set(
-        band_shape,
-        egui::Shape::rect_filled(band, 0.0, th.bg_sidebar().to_egui()),
+    // 헤더 줄 전체가 이동 손잡이다.
+    let header_rect = egui::Rect::from_min_size(
+        outer.min,
+        egui::vec2(outer.width(), header_height(th).value()),
     );
-    hline(ui, th, outer.x_range());
+    let mut header = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("file_picker_header")
+            .max_rect(section_inner(
+                header_rect,
+                th.fp_inset_start(),
+                th.fp_inset_end(),
+                th.fp_header_pad_y(),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    header.spacing_mut().item_spacing.x = th.fp_section_gap().value();
+    header.add(icons::FILE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
+    header.label(
+        egui::RichText::new(props.title_label)
+            .size(th.font_size_body.value())
+            .strong()
+            .color(th.text_primary()),
+    );
+    if let Some(host) = props.remote_host {
+        host_badge(&mut header, th, host);
+    }
+    header.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if IconButton::new()
+            .variant(IconButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .show(ui, th, &|ui, rect, c| {
+                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+            })
+            .clicked()
+        {
+            action = FilePickerAction::Cancel;
+        }
+    });
 
-    let rest = ui.available_rect_before_wrap();
+    // 경로 막대는 전폭 bg-sidebar 띠 위에 그린다.
+    let band = egui::Rect::from_min_size(
+        egui::pos2(outer.left(), header_rect.bottom()),
+        egui::vec2(outer.width(), path_bar_height(th).value()),
+    );
+    ui.painter()
+        .rect_filled(band, 0.0, th.bg_sidebar().to_egui());
+    hline(ui, th, outer.x_range(), band.top());
+    let mut path_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("file_picker_path")
+            .max_rect(section_inner(
+                band,
+                th.fp_inset_start(),
+                th.fp_inset_end(),
+                th.fp_path_pad_y(),
+            ))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    path_bar::path_bar(&mut path_ui, props, &mut action);
+    hline(ui, th, outer.x_range(), band.bottom());
+
+    let rest = egui::Rect::from_min_max(egui::pos2(outer.left(), band.bottom()), outer.max);
     let footer_h =
         footer::footer_height(ui, props).min(LogicalPx(rest.height()).max(LogicalPx(0.0)));
     let footer_rect = egui::Rect::from_min_max(
@@ -276,16 +314,22 @@ fn draw_view_sections(
         &mut action,
     );
 
+    hline(ui, th, outer.x_range(), footer_rect.top());
+    let footer_inner = section_inner(
+        footer_rect,
+        th.fp_inset_start(),
+        th.fp_inset_start(),
+        th.fp_footer_pad_y(),
+    );
     let mut footer_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("file_picker_footer")
-            .max_rect(footer_rect)
+            .max_rect(footer_inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
     footer::draw_footer(&mut footer_ui, props, &mut action);
 
-    ui.advance_cursor_after_rect(rest);
     FilePickerViewOut {
         action,
         header_rect,
@@ -307,6 +351,8 @@ fn draw_body(
                 .auto_shrink([false, true])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
+                    // 행은 붙어 있고 높이는 `row_height`가 모두 정한다.
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     for entry in props.entries {
                         if let Some(a) = entry_row(ui, props, entry)
                             && (matches!(action, FilePickerAction::None)
@@ -355,6 +401,14 @@ fn draw_body(
     }
 }
 
+/// 목록 행 높이. 위아래 `fp-row-pad-y`와 아이콘·이름 줄(`line-height-ui`) 중 높은 쪽으로 정해진다.
+/// 줄 높이를 글꼴 행 높이로 재지 않아 갤러리와 본체의 글꼴 구성이 달라도 같은 높이가 된다.
+pub(super) fn row_height(th: &Theme) -> LogicalPx {
+    let pad = th.fp_row_pad_y();
+    let name = th.font_size_body.scaled(th.line_height_ui);
+    pad + name.max(th.icon_glyph_size_md) + pad
+}
+
 /// 목록 한 행. 클릭 의도가 있으면 돌려준다.
 fn entry_row(
     ui: &mut egui::Ui,
@@ -364,7 +418,7 @@ fn entry_row(
     let th = props.theme;
     let selected = props.selected.iter().any(|s| s == &entry.name);
     let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), ROW_H.value()),
+        egui::vec2(ui.available_width(), row_height(th).value()),
         egui::Sense::click(),
     );
     if selected {
@@ -385,7 +439,7 @@ fn entry_row(
     let glyph_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(
-            rect.left() + th.spacing_md.value(),
+            rect.left() + th.fp_inset_start().value(),
             rect.center().y - glyph_size * 0.5,
         ),
         egui::vec2(glyph_size, glyph_size),
@@ -394,7 +448,7 @@ fn entry_row(
         .image(glyph_size, glyph_color.into())
         .paint_at(ui, icon_rect);
     // 오른쪽의 고정 열부터 배치하고 이름만 남은 폭에서 말줄임한다.
-    let modified_right = LogicalPx(rect.right()) - th.spacing_md;
+    let modified_right = LogicalPx(rect.right()) - th.fp_inset_start();
     let size_right = modified_right - MOD_COL_W - th.spacing_sm;
     let name_right = size_right - SIZE_COL_W - th.spacing_sm;
     let name_left = LogicalPx(icon_rect.right()) + th.spacing_sm;
@@ -447,7 +501,6 @@ fn entry_row(
 
 /// 원격 호스트를 user@host 형태로 표시하는 배지.
 fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
-    hspace(ui, th.spacing_sm);
     let info = th.accent_info();
     let font = egui::FontId::monospace(th.font_size_caption.value());
     let galley = ui
@@ -488,11 +541,10 @@ fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
     ui.painter().galley(pos, galley, info_color);
 }
 
-fn hline(ui: &mut egui::Ui, th: &Theme, x: egui::Rangef) {
-    let rect = ui.available_rect_before_wrap();
+fn hline(ui: &egui::Ui, th: &Theme, x: egui::Rangef, y: f32) {
     ui.painter().hline(
         x,
-        rect.top(),
+        y,
         egui::Stroke::new(th.border_width.value(), th.separator),
     );
 }

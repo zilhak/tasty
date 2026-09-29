@@ -468,3 +468,66 @@ fn the_current_folder_elides_at_the_front_and_never_clips_without_an_ellipsis() 
     assert_fully_visible(content, &shapes, CONFIRM, "narrow");
     assert_fully_visible(content, &shapes, CANCEL, "narrow");
 }
+
+/// 구역마다 `fp-*` 인셋을 쓴다. 헤더는 8 + sm IconButton 24 + 8 = 40, 경로 막대는
+/// 4 + 24 + 4 = 32이고, 헤더 글리프·첫 crumb·행 아이콘·푸터 라벨이 창 안쪽 + 12에서 시작한다.
+#[test]
+fn every_section_starts_on_the_fp_inset_start_column() {
+    let th = crate::theme::theme();
+    let size = egui::vec2(640.0, 480.0);
+    let (content, shapes) = painted_shapes(
+        size,
+        &deep_crumbs(2, "crumb"),
+        FilePickerMode::Open { selection_text: "" },
+        &entries(),
+        "file-1.toml",
+    );
+    let text_rect = |label: &str| {
+        shapes
+            .iter()
+            .find_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == label => {
+                    Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{label} 이 칠해지지 않았다"))
+    };
+    let fill = th.bg_sidebar().to_egui();
+    let band = shapes
+        .iter()
+        .find_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+            _ => None,
+        })
+        .expect("경로 막대 띠가 칠해져야 한다");
+    assert_eq!(band.top() - content.top(), 40.0, "헤더 높이");
+    assert_eq!(band.height(), 32.0, "경로 막대 높이");
+
+    let start = content.left() + th.fp_inset_start().value();
+    let icon_col = th.icon_glyph_size_md.value() + th.fp_section_gap().value();
+    let name_col = th.icon_glyph_size_md.value() + th.spacing_sm.value();
+    let near = |got: f32, want: f32, what: &str| {
+        assert!((got - want).abs() <= 1.0, "{what}: x {got}, 기대 {want}");
+    };
+    // 글리프는 텍스트 앞 한 칸이므로 제목·행 이름 위치에서 역산한다.
+    near(text_rect("title").left() - icon_col, start, "헤더 글리프");
+    near(text_rect("/").left(), start, "첫 crumb");
+    near(
+        text_rect("file-2.toml").left() - name_col,
+        start,
+        "행 아이콘",
+    );
+    near(text_rect("File name").left(), start, "푸터 라벨");
+    // 행 높이는 4 + 이름 줄(13 × 1.4) + 4다. egui 가 좌표를 1/16 단위로 맞춘다.
+    let pitch = text_rect("file-3.toml").center().y - text_rect("file-2.toml").center().y;
+    assert!(
+        (pitch - row_height(&th).value()).abs() < 0.05 && (pitch - 26.2).abs() < 0.05,
+        "행 간격 {pitch}"
+    );
+    near(
+        content.bottom() - text_rect(CONFIRM).center().y,
+        th.fp_footer_pad_y().value() + th.button_height().value() * 0.5,
+        "푸터 아래 여백",
+    );
+}

@@ -813,7 +813,17 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
 `catalog/components/file_picker.rs`.
-본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다. 셸 공통 내부 여백을 두지 않는 popup 이라 path bar 의 `bg-sidebar` 띠와 구분선이 창 좌우 끝까지 닿고, 나머지 구역은 뷰가 셸 여백(`spacing-xs`)만큼 안쪽에 그린다. 디자인의 구역별 안쪽 패딩(header 10/10/10/14 · path bar 6/8/6/14 등)은 대응 토큰이 없어 본체는 아직 셸 여백과 기존 간격 토큰(`spacing-xs`·`spacing-sm`)을 쓴다.
+본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다. 셸 공통 내부 여백을 두지 않는 popup 이라 구역의 배경·구분선(path bar 의 `bg-sidebar` 띠 포함)은 창 좌우 끝까지 닿는다.
+
+구역 안쪽 여백은 갤러리와 본체 모두 `component.fp-*` 토큰을 쓴다.
+
+- 모든 구역의 시작선은 `fp-inset-start`(12)다. 헤더 글리프·첫 crumb·목록 머리·행 아이콘·푸터 라벨이 한 열에 선다. 헤더와 path bar 의 끝 IconButton 쪽은 `fp-inset-end`(8)이고, 푸터는 양쪽 모두 `fp-inset-start`다.
+- 구역 안 간격은 `fp-section-gap`(8)이다.
+- 헤더에는 고정 높이가 없다. `fp-header-pad-y`(8) + sm IconButton(24) + 8 = 40이고, 원격 host 배지(22)는 이 안에 들어간다. path bar 는 `fp-path-pad-y`(4) + 24 + 4 = 32다.
+- 목록 머리는 `fp-list-head-pad-y`(4)와 `font-size-micro` 라벨 한 줄, 행은 `fp-row-pad-y`(4)와 아이콘(16)·이름 줄 중 높은 쪽으로 높이가 정해진다. 줄 높이는 디자인 기본 줄 높이 `line-height-ui`(1.4)를 글꼴 크기에 곱한 값이라 행은 4 + 13 × 1.4 + 4 = 26.2다. 글꼴 행 높이로 재지 않으므로 갤러리와 본체의 글꼴 구성이 달라도 높이가 같다.
+- 푸터는 위아래 `fp-footer-pad-y`(8)다. 라벨 폭은 `fp-footer-label-width`(64)다. 갤러리의 타입 필터 칩 높이는 `fp-filter-height`(28)다.
+
+본체는 목록 머리(NAME/SIZE/MODIFIED), 선택 행 좌측 bar, 타입 필터 칩을 그리지 않는다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /

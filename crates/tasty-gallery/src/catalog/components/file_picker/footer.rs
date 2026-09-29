@@ -4,8 +4,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use super::{
-    CRUMB_GLYPH, FOLDER_SEL, FOOTER_CHIP_W, FOOTER_H, FOOTER_LABEL_W, FRAME_W, FpState,
-    MULTI_PICKED, Mode, Variant,
+    CRUMB_GLYPH, FOLDER_SEL, FOOTER_CHIP_W, FRAME_W, FpState, MULTI_PICKED, Mode, Variant,
 };
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
@@ -21,9 +20,11 @@ fn warning_line_height(ui: &egui::Ui, theme: &Theme) -> LogicalPx {
 /// footer 높이. 덮어쓰기 줄과 폴더 안내 줄은 서로 배타적이지 않지만, 한 줄이 늘 때마다
 /// 그 줄과 그 위 간격만큼 커진다.
 pub(super) fn footer_height(ui: &egui::Ui, theme: &Theme, v: Variant) -> LogicalPx {
-    let mut h = FOOTER_H;
+    let pad = theme.fp_footer_pad_y();
+    let gap = theme.fp_section_gap();
+    let mut h = pad + theme.input_height() + gap + theme.button_height() + pad;
     for _ in 0..usize::from(v.overwrite()) + usize::from(v.folder_sel) {
-        h = h + warning_line_height(ui, theme) + theme.spacing_sm;
+        h = h + warning_line_height(ui, theme) + gap;
     }
     h
 }
@@ -40,12 +41,12 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(
-            rect.left() + theme.spacing_lg.value(),
-            rect.top() + theme.spacing_sm.value(),
+            rect.left() + theme.fp_inset_start().value(),
+            rect.top() + theme.fp_footer_pad_y().value(),
         ),
         egui::pos2(
-            rect.right() - theme.spacing_lg.value(),
-            rect.bottom() - theme.spacing_sm.value(),
+            rect.right() - theme.fp_inset_start().value(),
+            rect.bottom() - theme.fp_footer_pad_y().value(),
         ),
     );
     let mut col = ui.new_child(
@@ -53,7 +54,7 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
             .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+    col.spacing_mut().item_spacing.y = theme.fp_section_gap().value();
 
     let multi = v.multi;
     // 열기 모드에서 고른 것이 폴더면 이름 칸은 비어 있다 — 확정 버튼이 읽는 값은 파일 이름이고,
@@ -70,10 +71,10 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
         Mode::Save(_) => "Type a file name",
     };
     col.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        ui.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
         // 라벨·타입 필터 칩은 flex:none — 이름 칸(flex:1; min-width:0)만 준다.
         ui.allocate_ui_with_layout(
-            egui::vec2(FOOTER_LABEL_W.value(), 0.0),
+            egui::vec2(theme.fp_footer_label_width().value(), 0.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(
@@ -84,7 +85,8 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
             },
         );
         let remaining = ui.available_width();
-        let input_w = (LogicalPx(remaining) - FOOTER_CHIP_W - theme.spacing_sm).max(LogicalPx(0.0));
+        let input_w =
+            (LogicalPx(remaining) - FOOTER_CHIP_W - theme.fp_section_gap()).max(LogicalPx(0.0));
         kit::field(
             ui,
             theme,
@@ -196,7 +198,7 @@ fn overwrite_line(ui: &mut egui::Ui, theme: &Theme, name: &str) {
 
 /// "All files ▾" 타입 필터 칩 — 정적(팝오버 미열림) specimen.
 fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
-    let h = theme.item_height_interactive.value();
+    let h = theme.fp_filter_height().value();
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W.value(), h), egui::Sense::hover());
     ui.painter().rect_filled(

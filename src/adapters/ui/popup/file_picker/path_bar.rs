@@ -1,7 +1,7 @@
 //! 파일 경로와 상위 이동·새로고침 버튼. 긴 경로는 breadcrumb 안에서 줄인다.
 
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{IconButton, IconButtonVariant, MenuItemVariant, menu_item};
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, MenuItemVariant, menu_item};
 
 use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Role, plan};
 
@@ -17,7 +17,7 @@ pub(super) fn path_bar(
 ) {
     let th = props.theme;
     let (row, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), th.item_height_interactive.value()),
+        egui::vec2(ui.available_width(), ControlSize::Sm.height(th)),
         egui::Sense::hover(),
     );
     let mut buttons = ui.new_child(
@@ -29,6 +29,7 @@ pub(super) fn path_bar(
     buttons.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
     if IconButton::new()
         .variant(IconButtonVariant::Ghost)
+        .size(ControlSize::Sm)
         .show(&mut buttons, th, &|ui, rect, c| {
             icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
         })
@@ -38,6 +39,7 @@ pub(super) fn path_bar(
     }
     if IconButton::new()
         .variant(IconButtonVariant::Ghost)
+        .size(ControlSize::Sm)
         .show(&mut buttons, th, &|ui, rect, c| {
             icons::CHEVRON_UP.image(rect.height(), c).paint_at(ui, rect)
         })
@@ -45,7 +47,7 @@ pub(super) fn path_bar(
     {
         *action = FilePickerAction::NavigateUp;
     }
-    let crumbs_right = (buttons.min_rect().left() - th.spacing_sm.value()).max(row.left());
+    let crumbs_right = (buttons.min_rect().left() - th.fp_section_gap().value()).max(row.left());
     let crumbs_rect = egui::Rect::from_min_max(row.min, egui::pos2(crumbs_right, row.bottom()));
     let mut crumbs_ui = ui.new_child(
         egui::UiBuilder::new()

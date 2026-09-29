@@ -9,10 +9,6 @@ use super::{
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
-/// footer "File name" 라벨의 고정폭(디자인 `width:64; flex:none`). 라벨이 이보다 길면
-/// 라벨 폭을 쓴다 — 줄지 않는 쪽은 라벨이다. 갤러리 specimen `FOOTER_LABEL_W` 와 같은 값.
-const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0);
-
 /// 덮어쓰기 경고 줄 한 줄의 높이 — caption 글꼴의 행 높이와 경고 글리프 중 큰 쪽.
 fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
     let row = ui.fonts(|f| f.row_height(&egui::FontId::proportional(th.font_size_caption.value())));
@@ -23,7 +19,9 @@ fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
 /// 폴더 안내와 덮어쓰기 경고가 함께 필요하므로 두 줄을 모두 포함한다.
 pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> LogicalPx {
     let th = props.theme;
-    let mut h = th.spacing_sm + th.input_height() + th.spacing_sm + th.button_height();
+    let pad = th.fp_footer_pad_y();
+    let gap = th.fp_section_gap();
+    let mut h = pad + th.input_height() + gap + th.button_height() + pad;
     let extra = usize::from(selected_folder(props).is_some())
         + usize::from(matches!(
             props.mode,
@@ -33,7 +31,7 @@ pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> Logic
             }
         ));
     for _ in 0..extra {
-        h = h + warning_line_height(ui, th) + th.spacing_sm;
+        h = h + warning_line_height(ui, th) + gap;
     }
     h
 }
@@ -48,8 +46,8 @@ pub(super) fn draw_footer(
     let th = props.theme;
     let area = ui.max_rect();
     let w = area.width();
-    ui.spacing_mut().item_spacing = egui::vec2(th.spacing_sm.value(), 0.0);
-    ui.add_space(th.spacing_sm.value());
+    let gap = th.fp_section_gap().value();
+    ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
 
     let (name_row, _) = ui.allocate_exact_size(
         egui::vec2(w, th.input_height().value()),
@@ -61,13 +59,14 @@ pub(super) fn draw_footer(
             .max_rect(name_row)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    row.spacing_mut().item_spacing.x = th.spacing_sm.value();
+    row.spacing_mut().item_spacing.x = gap;
+    // 라벨은 `fp-footer-label-width` 고정폭이고, 번역문이 더 길면 라벨 폭을 쓴다.
     let label = row.painter().layout_no_wrap(
         props.name_field_label.to_owned(),
         egui::FontId::proportional(th.font_size_caption.value()),
         th.text_muted().into(),
     );
-    let label_w = FOOTER_LABEL_W.value().max(label.size().x);
+    let label_w = th.fp_footer_label_width().value().max(label.size().x);
     let (label_rect, _) =
         row.allocate_exact_size(egui::vec2(label_w, name_row.height()), egui::Sense::hover());
     row.painter().galley(
@@ -103,7 +102,7 @@ pub(super) fn draw_footer(
     }
 
     if let Some(folder) = selected_folder(props) {
-        ui.add_space(th.spacing_sm.value());
+        ui.add_space(gap);
         let (line, _) = ui.allocate_exact_size(
             egui::vec2(w, warning_line_height(ui, th).value()),
             egui::Sense::hover(),
@@ -117,7 +116,7 @@ pub(super) fn draw_footer(
         ..
     } = props.mode
     {
-        ui.add_space(th.spacing_sm.value());
+        ui.add_space(gap);
         let (line, _) = ui.allocate_exact_size(
             egui::vec2(w, warning_line_height(ui, th).value()),
             egui::Sense::hover(),
@@ -125,7 +124,7 @@ pub(super) fn draw_footer(
         overwrite_line(ui, th, line, props.overwrite_warning, name);
     }
 
-    ui.add_space(th.spacing_sm.value());
+    ui.add_space(gap);
     let (buttons_row, _) = ui.allocate_exact_size(
         egui::vec2(w, th.button_height().value()),
         egui::Sense::hover(),

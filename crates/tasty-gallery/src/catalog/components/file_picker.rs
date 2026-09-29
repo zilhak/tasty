@@ -6,7 +6,7 @@ mod path_bar;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{CenterState, IconButton, IconButtonVariant, checkbox};
+use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -15,15 +15,8 @@ use crate::catalog::widgets::dialog as kit;
 // 화면 전용 고정 치수. 대응 토큰이 없는 값은 디자인 값을 유지한다.
 const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: LogicalPx = LogicalPx(480.0);
-const HEADER_H: LogicalPx = LogicalPx(44.0); // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
-const HEADER_PAD_L: LogicalPx = LogicalPx(14.0); // 디자인 L14
-const PATH_H: LogicalPx = LogicalPx(36.0); // padding ~6/6 + refresh IconButton(sm)
-const LIST_HEAD_H: LogicalPx = LogicalPx(26.0); // caption row — loaded/multi 상태만
-const FOOTER_H: LogicalPx = LogicalPx(84.0); // name row(28) + gap(8) + action row(28) + padding 10/10 근사 — 덮어쓰기 경고 줄은 `footer_height` 가 더한다
-const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 16
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
-const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
 /// 브레드크럼 한 성분의 최대 폭(디자인 `FpCrumbs` span `maxWidth:180`, 넘치면 말줄임).
 /// 대응 Theme 토큰이 없는 구조 폭이다.
 const CRUMB_MAX_W: LogicalPx = LogicalPx(180.0);
@@ -39,6 +32,32 @@ const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 
 const HOST: &str = "deploy@10.0.4.12";
+
+/// 헤더 높이. 고정값이 없고 위아래 `fp-header-pad-y`와 sm IconButton으로 정해진다.
+/// host 배지(22)는 이 안에 들어간다.
+fn header_height(theme: &Theme) -> LogicalPx {
+    let pad = theme.fp_header_pad_y();
+    pad + LogicalPx(ControlSize::Sm.height(theme)) + pad
+}
+
+/// 경로 막대 높이. 위아래 `fp-path-pad-y`와 sm 새로고침 IconButton으로 정해진다.
+fn path_bar_height(theme: &Theme) -> LogicalPx {
+    let pad = theme.fp_path_pad_y();
+    pad + LogicalPx(ControlSize::Sm.height(theme)) + pad
+}
+
+/// 목록 머리 높이. 위아래 `fp-list-head-pad-y`와 micro 라벨 한 줄(`line-height-ui`)로 정해진다.
+fn list_head_height(theme: &Theme) -> LogicalPx {
+    let pad = theme.fp_list_head_pad_y();
+    pad + theme.font_size_micro.scaled(theme.line_height_ui) + pad
+}
+
+/// 목록 행 높이. 위아래 `fp-row-pad-y`와 아이콘·이름 줄(`line-height-ui`) 중 높은 쪽으로 정해진다.
+fn row_height(theme: &Theme) -> LogicalPx {
+    let pad = theme.fp_row_pad_y();
+    let name = theme.font_size_body.scaled(theme.line_height_ui);
+    pad + name.max(theme.icon_glyph_size_md) + pad
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FpState {
@@ -466,7 +485,12 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                 // footer 를 먼저 재고 남은 높이를 본문에 준다 — 덮어쓰기 경고 줄이 footer 를
                 // 키우면 본문이 줄지 footer 가 밀려나지 않는다.
                 let footer_h = footer::footer_height(ui, theme, v);
-                body(ui, theme, v, FRAME_H - HEADER_H - PATH_H - footer_h);
+                body(
+                    ui,
+                    theme,
+                    v,
+                    FRAME_H - header_height(theme) - path_bar_height(theme) - footer_h,
+                );
                 footer::footer(ui, theme, v, footer_h);
             });
         });
@@ -474,7 +498,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
 
 fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), HEADER_H.value()),
+        egui::vec2(FRAME_W.value(), header_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -484,12 +508,12 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(
-            rect.left() + HEADER_PAD_L.value(),
-            rect.top() + theme.spacing_sm.value(),
+            rect.left() + theme.fp_inset_start().value(),
+            rect.top() + theme.fp_header_pad_y().value(),
         ),
         egui::pos2(
-            rect.right() - theme.spacing_sm.value(),
-            rect.bottom() - theme.spacing_sm.value(),
+            rect.right() - theme.fp_inset_end().value(),
+            rect.bottom() - theme.fp_header_pad_y().value(),
         ),
     );
     let mut child = ui.new_child(
@@ -497,7 +521,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             .max_rect(inner)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    child.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
     kit::icon(
         &mut child,
         icons::FILE,
@@ -518,6 +542,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         IconButton::new()
             .variant(IconButtonVariant::Ghost)
+            .size(ControlSize::Sm)
             .show(ui, theme, &|ui, rect, c| {
                 icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
             });
@@ -574,7 +599,7 @@ struct Cols {
 }
 
 fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
-    let pad = theme.spacing_md;
+    let pad = theme.fp_inset_start();
     let gap = theme.spacing_sm;
     let glyph = theme.icon_glyph_size_md;
     let mut x = LogicalPx(rect.left()) + pad;
@@ -626,7 +651,7 @@ fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: LogicalPx) -> Str
 
 fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), LIST_HEAD_H.value()),
+        egui::vec2(FRAME_W.value(), list_head_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -670,7 +695,8 @@ fn row(
     focus: bool,
 ) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, ROW_H.value()), egui::Sense::hover());
+    let h = row_height(theme);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -749,7 +775,10 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
         FpState::Loaded => {
             list_header(ui, theme, multi);
             let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(FRAME_W.value(), (body_h - LIST_HEAD_H).value()),
+                egui::vec2(
+                    FRAME_W.value(),
+                    (body_h - list_head_height(theme)).value(),
+                ),
                 egui::Sense::hover(),
             );
             let mut col = ui.new_child(

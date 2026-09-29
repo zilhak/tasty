@@ -1,16 +1,16 @@
 //! 파일 선택 예제의 경로와 새로고침 버튼.
 
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{IconButton, IconButtonVariant};
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
-use super::{CRUMB_GLYPH, CRUMB_MAX_W, FRAME_W, HEADER_PAD_L, HOST, PATH_H, Variant, elide};
+use super::{CRUMB_GLYPH, CRUMB_MAX_W, FRAME_W, HOST, Variant, elide, path_bar_height};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_type_appearance::theme::Theme;
 
 pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), PATH_H.value()),
+        egui::vec2(FRAME_W.value(), path_bar_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter()
@@ -21,8 +21,14 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
-        egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom()),
+        egui::pos2(
+            rect.left() + theme.fp_inset_start().value(),
+            rect.top() + theme.fp_path_pad_y().value(),
+        ),
+        egui::pos2(
+            rect.right() - theme.fp_inset_end().value(),
+            rect.bottom() - theme.fp_path_pad_y().value(),
+        ),
     );
     // 새로고침 버튼의 공간을 먼저 확보한 뒤 남은 폭에 경로를 그린다.
     let mut child = ui.new_child(
@@ -30,9 +36,10 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             .max_rect(inner)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
-    child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    child.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
     IconButton::new()
         .variant(IconButtonVariant::Ghost)
+        .size(ControlSize::Sm)
         .show(&mut child, theme, &|ui, rect, c| {
             icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
         });
