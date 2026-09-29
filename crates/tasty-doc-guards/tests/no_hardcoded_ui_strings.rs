@@ -104,11 +104,6 @@ const LITERAL_TOKEN_ALLOWLIST: &[&str] = &[
 /// 사라지면(=고쳐지면) 항목을 지우라고 fail 한다. 새 위반을 여기 넣어 덮지 않는다.
 const PENDING_FIX_LITERALS: &[(&str, &str, &str)] = &[
     (
-        "src/gfx/gpu/shell_setup.rs",
-        "OK",
-        "확인 버튼 라벨 — t(\"button.ok\") 로 대체 (ko 는 '확인')",
-    ),
-    (
         "crates/tasty-ipc/src/client/stream.rs",
         "unknown error",
         "stream.open 거절 사유 폴백 — bail! 로 CLI stderr 에 노출",

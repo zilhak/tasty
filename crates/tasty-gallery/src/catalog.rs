@@ -1861,6 +1861,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "shell-setup",
+                    "First-run shell setup",
+                    vec![spec(
+                        "shell-setup-buttons",
+                        "Button row — Cancel / Use this shell",
+                        Some(
+                            "Shared Button secondary + primary md, confirm disabled while invalid",
+                        ),
+                        chrome_loading::draw_shell_setup_buttons,
+                    )],
+                ),
+                section(
                     "shutdown-loading",
                     "Shutdown loading screen",
                     vec![

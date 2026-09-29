@@ -4,7 +4,7 @@ use winit::window::Window;
 const SETUP_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use crate::i18n::t;
-use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, margin_sym, vspace};
 
 use super::{GpuState, ShellSetupAction};
 use tasty_type_geometry::length::LogicalPx;
@@ -51,7 +51,6 @@ impl GpuState {
             let amber = th.accent_warning();
             let red_err = th.accent_danger();
             let accent_ok = th.accent_success();
-            let accent_dis = th.surface_hover();
 
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(bg_panel.into()))
@@ -150,67 +149,34 @@ impl GpuState {
 
                     vspace(ui, th.spacing_lg);
 
-                    ui.vertical_centered(|ui| {
-                        ui.horizontal(|ui| {
-                            let btn_size = egui::vec2(110.0, 34.0);
-
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new(t("button.cancel"))
-                                            .size(th.button_font_size().value())
-                                            .color(text_dim),
-                                    )
-                                    .min_size(btn_size)
-                                    .fill(th.bg_panel())
-                                    .stroke(egui::Stroke::new(th.border_width.value(), border))
-                                    .corner_radius(
-                                        tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS,
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                action = ShellSetupAction::Exit;
-                            }
-
-                            hspace(ui, th.spacing_md);
-
-                            let (ok_fill, ok_stroke, ok_text) = if is_valid {
-                                (
-                                    th.accent_success(),
-                                    egui::Stroke::new(th.border_width.value(), th.accent_success()),
-                                    th.bg_panel(),
-                                )
-                            } else {
-                                (
-                                    accent_dis,
-                                    egui::Stroke::new(th.border_width.value(), th.border_frame()),
-                                    th.text_placeholder(),
-                                )
-                            };
-
-                            let ok_resp = ui.add_enabled(
-                                is_valid,
-                                egui::Button::new(
-                                    egui::RichText::new("OK")
-                                        .size(th.button_font_size().value())
-                                        .strong()
-                                        .color(ok_text),
-                                )
-                                .min_size(btn_size)
-                                .fill(ok_fill)
-                                .stroke(ok_stroke)
-                                .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
-                            );
-                            if ok_resp.clicked()
+                    // 시안: 오른쪽 정렬 버튼 줄, Cancel = secondary, 확인 = primary(md).
+                    // 확인 버튼의 disabled는 공용 Button의 ink 규칙으로 그린다.
+                    let row_h = ControlSize::Md.height(&th);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                            let confirm = Button::new(t("settings.terminal.shell_confirm"))
+                                .variant(ButtonVariant::Primary)
+                                .enabled(is_valid)
+                                .show(ui, &th);
+                            if confirm.clicked()
                                 || (response.lost_focus()
                                     && ui.input(|i| i.key_pressed(egui::Key::Enter))
                                     && is_valid)
                             {
                                 action = ShellSetupAction::Confirmed;
                             }
-                        });
-                    });
+                            if Button::new(t("button.cancel"))
+                                .variant(ButtonVariant::Secondary)
+                                .show(ui, &th)
+                                .clicked()
+                            {
+                                action = ShellSetupAction::Exit;
+                            }
+                        },
+                    );
                 });
         });
 

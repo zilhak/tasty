@@ -2,10 +2,10 @@
 //! 본체와 공통 브랜드 위젯·Theme 값을 사용하며 두 화면은 문구만 다르게 그린다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::Spinner;
 use tasty_ui_widgets::brand::{self};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
 
-use crate::catalog::spec::{meta, note};
+use crate::catalog::spec::{TokenChip, meta, note};
 
 // 크기가 다른 예제 창에서도 로딩 요소의 크기를 유지하는지 비교한다.
 
@@ -207,5 +207,63 @@ pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "A shutdown with nothing to wait for never renders this frame at all — the state machine reaches Done inside its first drive.",
+    );
+}
+
+/// 첫 실행 셸 설정의 버튼 줄. 확인은 공용 Button primary, 취소는 secondary이고
+/// 경로가 실행 파일이 아니면 확인을 disabled ink로 그린다.
+fn draw_shell_setup_row(ui: &mut egui::Ui, theme: &Theme, valid: bool) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        Button::new("Cancel")
+            .variant(ButtonVariant::Secondary)
+            .size(ControlSize::Md)
+            .show(ui, theme);
+        Button::new("Use this shell")
+            .variant(ButtonVariant::Primary)
+            .size(ControlSize::Md)
+            .enabled(valid)
+            .show(ui, theme);
+    });
+}
+
+fn draw_shell_setup_pair(ui: &mut egui::Ui, theme: &Theme) {
+    // 가운데 정렬 줄 안에 줄을 넣으면 두 번째 줄이 아래로 밀리므로 위쪽에 맞춘다.
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
+        draw_shell_setup_row(ui, theme, true);
+        draw_shell_setup_row(ui, theme, false);
+    });
+}
+
+pub fn draw_shell_setup_buttons(ui: &mut egui::Ui, theme: &Theme) {
+    draw_shell_setup_pair(ui, theme);
+    ui.add_space(theme.spacing_lg.value());
+    let latte = crate::host_shell::latte_theme();
+    egui::Frame::new()
+        .fill(latte.bg_app().to_egui())
+        .inner_margin(theme.spacing_md.value())
+        .show(ui, |ui| draw_shell_setup_pair(ui, &latte));
+    meta(
+        ui,
+        theme,
+        &[
+            (
+                "confirm",
+                "Button primary md · Use this shell · disabled while invalid",
+            ),
+            ("cancel", "Button secondary md"),
+            ("row", "right-aligned · gap space-sm"),
+        ],
+        &[TokenChip::new(
+            "state-disabled-fg",
+            "disabled confirm ink",
+            egui::Color32::from(theme.state_disabled_fg()),
+        )],
+    );
+    note(
+        ui,
+        theme,
+        "Left: a valid path. Right: no usable shell at the path — the confirm keeps its slot and takes the shared disabled ink; there is no success fill.",
     );
 }

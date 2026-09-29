@@ -121,7 +121,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/",
-        10,
+        9,
         "그 밖의 본체 gfx·state·app 치수. 역할에 맞는 토큰과 외부 API 경계 여부를 위치별로 검토한다.",
     ),
     (
