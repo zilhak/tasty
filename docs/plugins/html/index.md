@@ -51,7 +51,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 - Given surface 폭이 `banner_narrow_below` 미만 When 배너를 그린다 Then 허용 버튼이 본문 아래 줄에 놓인다.
 - Given 사용자가 배너의 ×를 눌렀다 When 탭 바를 그린다 Then 그 탭에 lock 표지가 보이고 조회의 `banner.dismissed`는 `true`다.
 - Given lock 표지가 있는 탭이 비활성 When 사용자가 lock을 누른다 Then 조회의 `banner.phase`는 `blocked`이고 활성 탭은 바뀌지 않는다.
-- Given 사용자가 [이 문서 허용]을 눌렀다 When 재로드가 끝난다 Then 조회의 `allowed`·`javascript`는 `true`, `banner.phase`는 `hidden`이고 탭에 scriptFile 표지가 보인다.
+- Given 사용자가 [이 문서에서 허용]을 눌렀다 When 재로드가 끝난다 Then 조회의 `allowed`·`javascript`는 `true`, `banner.phase`는 `hidden`이고 탭에 scriptFile 표지가 보인다.
 - Given 터미널이나 markdown surface When `surface.html_script` Then invalid params로 거절한다.
 - Given 플러그인 disable When `.svg` 파일을 열기 Then `svg` detector 는 남고 핸들러가 없어 선택 창이 뜨며, 헤더 형식 표시는 `svg` 다.
 
