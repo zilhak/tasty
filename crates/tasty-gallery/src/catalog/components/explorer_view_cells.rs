@@ -287,10 +287,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                                     .tint(th, egui::Color32::from(th.text_muted())),
                                             )
                                             .paint_at(ui, rect);
+                                        // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
+                                        let is_sel = DETAIL.iter().position(|r| r.name == row.name)
+                                            == Some(selected);
+                                        let name_fg = if is_sel {
+                                            th.text_primary()
+                                        } else {
+                                            th.table_row_fg()
+                                        };
                                         ui.label(
                                             egui::RichText::new(row.name)
                                                 .size(th.font_size_body.value())
-                                                .color(egui::Color32::from(th.text_primary())),
+                                                .color(egui::Color32::from(name_fg)),
                                         );
                                     });
                                 }
@@ -345,6 +353,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "Name flex · Size/Date mono 11 · Size padR 8",
             ),
             ("selected", "surface-active (no border)"),
+            ("detail name", "table-row-fg · selected text-primary"),
             ("glyph", "folder/file text-muted · image accent-info"),
             ("cut", "foreground 50% opacity until paste"),
             ("sort", "header indicator (accent-primary)"),
@@ -364,6 +373,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "accent-primary",
                 "sel border / sort",
                 egui::Color32::from(theme.accent_primary()),
+            ),
+            TokenChip::new(
+                "table-row-fg",
+                "detail name",
+                egui::Color32::from(theme.table_row_fg()),
             ),
             TokenChip::new(
                 "text-muted",

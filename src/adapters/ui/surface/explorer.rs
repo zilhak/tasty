@@ -1474,10 +1474,16 @@ fn detail_view(
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
                             let (icon, c) = entry_icon(th, row);
                             icon.image(sz, dim(c)).paint_at(ui, rect);
+                            // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
+                            let name_fg = if row.name != ".." && selected.contains(&row.path) {
+                                th.text_primary()
+                            } else {
+                                th.table_row_fg()
+                            };
                             ui.label(
                                 egui::RichText::new(&row.name)
                                     .size(th.font_size_body.value())
-                                    .color(dim(th.text_primary().to_egui())),
+                                    .color(dim(name_fg.to_egui())),
                             );
                         });
                     }
