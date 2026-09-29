@@ -267,7 +267,7 @@ fn draw_hook_row(
 
     let resp = ui.scope(|ui| {
         if !on {
-            ui.set_opacity(th.opacity_disabled());
+            ui.set_opacity(th.state_dim_opacity());
         }
         // jsx padding: sm(상하) xs(좌우), 내부 행간 gap xs.
         egui::Frame::NONE

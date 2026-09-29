@@ -551,7 +551,7 @@ fn draw_hook_row(
     let on = st.hooks[i].on;
     let resp = ui.scope(|ui| {
         if !on {
-            ui.set_opacity(theme.opacity_disabled());
+            ui.set_opacity(theme.state_dim_opacity());
         }
         egui::Frame::NONE
             .inner_margin(egui::Margin {

@@ -352,6 +352,24 @@ impl crate::theme::Theme {
         self.text_on_accent()
     }
 
+    /// `component.button-disabled-bg` → `{semantic.state-disabled-fill}`
+    #[inline]
+    pub fn button_disabled_bg(&self) -> HexColor {
+        self.state_disabled_fill()
+    }
+
+    /// `component.button-disabled-border` → `{semantic.state-disabled-border}`
+    #[inline]
+    pub fn button_disabled_border(&self) -> HexColor {
+        self.state_disabled_border()
+    }
+
+    /// `component.button-disabled-fg` → `{semantic.state-disabled-fg}`
+    #[inline]
+    pub fn button_disabled_fg(&self) -> HexColor {
+        self.state_disabled_fg()
+    }
+
     /// `component.button-fg` → `{semantic.text-primary}`
     #[inline]
     pub fn button_fg(&self) -> HexColor {

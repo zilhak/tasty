@@ -1262,7 +1262,7 @@ fn grid_cell(
 
     let fg_dim = |c: egui::Color32| {
         if cut {
-            c.gamma_multiply(theme.opacity_cut())
+            c.gamma_multiply(theme.cut_pending_opacity())
         } else {
             c
         }
@@ -1349,11 +1349,11 @@ fn list_view(
         let (icon, glyph_color) = entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
-        // cut-pending 행은 행 전체를 opacity_cut(50%) 로 디밍(스코프 opacity 로 통째 디밍).
+        // cut-pending 행은 행 전체를 cut_pending_opacity(50%) 로 디밍(스코프 opacity 로 통째 디밍).
         let resp = ui
             .scope(|ui| {
                 if cut {
-                    ui.set_opacity(theme.opacity_cut());
+                    ui.set_opacity(theme.cut_pending_opacity());
                 }
                 tree_row(
                     ui,
@@ -1455,11 +1455,11 @@ fn detail_view(
             // `..`(name == "..", read_dir 은 이 이름을 반환하지 않음) 는 선택 대상 아님.
             |row: &DirEntryInfo| row.name != ".." && selected.contains(&row.path),
             |ui, th, row, col| {
-                // cut-pending 행은 전경(아이콘+텍스트)을 opacity_cut(50%) 로 디밍.
+                // cut-pending 행은 전경(아이콘+텍스트)을 cut_pending_opacity(50%) 로 디밍.
                 // Table 이 그리는 선택/hover 배경은 그대로 유지.
                 let dim = |c: egui::Color32| {
                     if cut.contains(&row.path) {
-                        c.gamma_multiply(th.opacity_cut())
+                        c.gamma_multiply(th.cut_pending_opacity())
                     } else {
                         c
                     }

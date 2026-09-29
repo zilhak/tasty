@@ -358,7 +358,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
 
     let fg_dim = |c: egui::Color32| {
         if cut {
-            c.gamma_multiply(theme.opacity_cut())
+            c.gamma_multiply(theme.cut_pending_opacity())
         } else {
             c
         }

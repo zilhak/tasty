@@ -112,8 +112,9 @@ pub const OS_MACOS_ZOOM: HexColor = HexColor::from_rgb(0x61, 0xc5, 0x54);
 #[allow(clippy::disallowed_methods)] // reason: 브랜드 고정 리터럴 색 — 테마 무관
 pub const BRAND_MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
 
-/// disabled 컨트롤 공통 톤 (`--tasty-opacity-disabled` = 0.5). 모든 위젯이 이 값으로
-/// 통일한다. LogicalPx 가 아닌 순수 비율이므로 별도 f32 상수.
+/// 흐린 항목 공통 톤 (`--tasty-opacity-disabled` = 0.5). 이름과 달리 disabled 컨트롤 신호가
+/// 아니다. 꺼진 행·잘라내기 대기·비활성 영역처럼 상호작용할 수 있는 항목을 흐리며,
+/// disabled 컨트롤은 opacity 없이 disabled ink를 쓴다. LogicalPx 가 아닌 순수 비율이므로 별도 f32 상수.
 pub const OPACITY_DISABLED: f32 = 0.5;
 
 /// 뒤로 물러난(recessed) 요소 공통 톤 (`--tasty-opacity-recessed` = 0.4). 상위 스코프
@@ -1299,6 +1300,26 @@ impl Theme {
         }
     }
 
+    // ── disabled 컨트롤 (state-disabled-*) — opacity 없이 중립 상자와 disabled ink ──
+
+    /// disabled 컨트롤의 라벨·글리프 ink. `semantic.state-disabled-fg` → text-disabled.
+    #[inline]
+    pub fn state_disabled_fg(&self) -> HexColor {
+        self.text_disabled()
+    }
+
+    /// disabled 컨트롤의 채움. `semantic.state-disabled-fill` → surface-raised.
+    #[inline]
+    pub fn state_disabled_fill(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// disabled 컨트롤의 테두리. `semantic.state-disabled-border` → border-default.
+    #[inline]
+    pub fn state_disabled_border(&self) -> HexColor {
+        self.border_default()
+    }
+
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
     #[inline]
     pub fn overlay_hover(&self) -> HexColor {
@@ -1434,10 +1455,10 @@ impl Theme {
 
     /// 프리셋 편집기 surface 설정 화면이 열려 있는 동안 왼쪽 preset 리스트와 L1 scope
     /// 탭을 흐리게 하는 opacity. design `--tasty-preset-cfg-dim-opacity` →
-    /// `state-disabled-opacity`. number 토큰이라 생성기가 접근자를 만들지 않는다.
+    /// `state-dim-opacity`. number 토큰이라 생성기가 접근자를 만들지 않는다.
     #[inline]
     pub fn preset_cfg_dim_opacity(&self) -> f32 {
-        self.opacity_disabled()
+        self.state_dim_opacity()
     }
 
     // ── Titlebar (CSD) 컴포넌트 색 — 신규 primitive 없이 기존 semantic 접근자 조합으로 구성 ──
@@ -1500,9 +1521,17 @@ impl Theme {
         BRAND_MELON_FLESH
     }
 
-    /// disabled 컨트롤 공통 opacity (0.5). 모든 위젯이 disabled 디밍에 이 값을 쓴다.
+    /// disabled 컨트롤을 흐리던 opacity. 새 disabled 규칙(`state_disabled_*`)으로 옮기는 동안만 남긴다.
     #[inline]
     pub fn opacity_disabled(&self) -> f32 {
+        OPACITY_DISABLED
+    }
+
+    /// 흐린 항목의 opacity (0.5). `semantic.state-dim-opacity`. 꺼진 행·잘라내기 대기·
+    /// 편집 중 비활성 영역처럼 상호작용할 수 있는 항목이 자기 색을 유지한 채 흐려진다.
+    /// disabled 컨트롤에는 쓰지 않는다(`state_disabled_*`).
+    #[inline]
+    pub fn state_dim_opacity(&self) -> f32 {
         OPACITY_DISABLED
     }
 
@@ -1519,10 +1548,11 @@ impl Theme {
         OPACITY_DIMMED
     }
 
-    /// 잘라내기 대기 중인 파일의 아이콘·라벨을 50%로 흐리게 한다. disabled와 같은 계수를 공유한다.
+    /// 잘라내기 대기 중인 파일의 아이콘·라벨을 흐리게 한다.
+    /// design `--tasty-cut-pending-opacity` → `state-dim-opacity`.
     #[inline]
-    pub fn opacity_cut(&self) -> f32 {
-        OPACITY_DISABLED
+    pub fn cut_pending_opacity(&self) -> f32 {
+        self.state_dim_opacity()
     }
 
     // ── 컴포넌트 토큰 (banner) — 기존 semantic 접근자 / 신규 primitive 조합 ──
@@ -2343,7 +2373,7 @@ mod tests {
             HexColor::from_rgb(0xf2, 0x5d, 0x6b)
         );
         assert_eq!(dark.brand_melon_flesh(), light.brand_melon_flesh());
-        assert_eq!(dark.opacity_disabled(), 0.5);
+        assert_eq!(dark.state_dim_opacity(), 0.5);
         assert_eq!(dark.opacity_dimmed(), 0.75);
     }
 
