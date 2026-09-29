@@ -8,7 +8,7 @@ use tasty_ui_widgets::{
     status_dot, tag,
 };
 
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, body_column, meta, stage};
 use tasty_type_geometry::length::LogicalPx;
 
 /// 정렬 가능 컬럼 키 (port 컬럼만 정렬 데모).
@@ -75,114 +75,117 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         },
     ];
 
-    stage(ui, theme, StageVariant::Tight, |ui| {
-        let columns = vec![
-            TableColumn {
-                title: "Port",
-                width: TableColumnWidth::Initial {
-                    initial: LogicalPx(84.0),
-                    at_least: LogicalPx(60.0),
+    // Remainder 열이 창 폭까지 늘지 않도록 설명과 같은 본문 컬럼 폭 안에 둔다.
+    body_column(ui, |ui| {
+        stage(ui, theme, StageVariant::Tight, |ui| {
+            let columns = vec![
+                TableColumn {
+                    title: "Port",
+                    width: TableColumnWidth::Initial {
+                        initial: LogicalPx(84.0),
+                        at_least: LogicalPx(60.0),
+                    },
+                    align: TableAlign::Right,
+                    sort_id: Some(SortKey::Port),
                 },
-                align: TableAlign::Right,
-                sort_id: Some(SortKey::Port),
-            },
-            TableColumn {
-                title: "Proto",
-                width: TableColumnWidth::Initial {
-                    initial: LogicalPx(76.0),
-                    at_least: LogicalPx(60.0),
+                TableColumn {
+                    title: "Proto",
+                    width: TableColumnWidth::Initial {
+                        initial: LogicalPx(76.0),
+                        at_least: LogicalPx(60.0),
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None,
                 },
-                align: TableAlign::Left,
-                sort_id: None,
-            },
-            TableColumn {
-                title: "Address",
-                width: TableColumnWidth::Remainder {
-                    at_least: LogicalPx(100.0),
-                    clip: false,
+                TableColumn {
+                    title: "Address",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(100.0),
+                        clip: false,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None,
                 },
-                align: TableAlign::Left,
-                sort_id: None,
-            },
-            TableColumn {
-                title: "Process",
-                width: TableColumnWidth::Remainder {
-                    at_least: LogicalPx(100.0),
-                    clip: false,
+                TableColumn {
+                    title: "Process",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(100.0),
+                        clip: false,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None,
                 },
-                align: TableAlign::Left,
-                sort_id: None,
-            },
-            TableColumn {
-                title: "State",
-                width: TableColumnWidth::Initial {
-                    initial: LogicalPx(140.0),
-                    at_least: LogicalPx(100.0),
+                TableColumn {
+                    title: "State",
+                    width: TableColumnWidth::Initial {
+                        initial: LogicalPx(140.0),
+                        at_least: LogicalPx(100.0),
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None,
                 },
-                align: TableAlign::Left,
-                sort_id: None,
-            },
-        ];
+            ];
 
-        SELECTED.with(|s| {
-            let mut sel = s.borrow_mut();
-            let selected = *sel;
-            let out = Table::new(columns)
-                .active_sort(SortKey::Port, TableSortDir::Asc)
-                .header_fill(egui::Color32::from(theme.bg_sidebar()))
-                .selectable(true)
-                .max_scroll_height(theme.overlay_top_offset.value() * 3.0)
-                .id_salt("prim_table_demo")
-                .show(
-                    ui,
-                    theme,
-                    &rows,
-                    |row: &Row| rows.iter().position(|r| r.port == row.port) == Some(selected),
-                    |ui, th, row, col| match col {
-                        3 => {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            SELECTED.with(|s| {
+                let mut sel = s.borrow_mut();
+                let selected = *sel;
+                let out = Table::new(columns)
+                    .active_sort(SortKey::Port, TableSortDir::Asc)
+                    .header_fill(egui::Color32::from(theme.bg_sidebar()))
+                    .selectable(true)
+                    .max_scroll_height(theme.overlay_top_offset.value() * 3.0)
+                    .id_salt("prim_table_demo")
+                    .show(
+                        ui,
+                        theme,
+                        &rows,
+                        |row: &Row| rows.iter().position(|r| r.port == row.port) == Some(selected),
+                        |ui, th, row, col| match col {
+                            3 => {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                                    ui.label(
+                                        egui::RichText::new(row.proc)
+                                            .size(th.font_size_body.value())
+                                            .monospace()
+                                            .color(egui::Color32::from(th.text_primary())),
+                                    );
+                                    tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
+                                });
+                            }
+                            4 => {
+                                let listen = row.state == "LISTEN";
+                                let kind = if listen {
+                                    StatusKind::Running
+                                } else {
+                                    StatusKind::Waiting
+                                };
+                                status_dot(ui, th, kind, row.state, listen, false);
+                            }
+                            _ => {
+                                let (text, muted) = match col {
+                                    0 => (row.port.to_string(), false),
+                                    1 => (row.proto.to_string(), true),
+                                    _ => (row.addr.to_string(), true),
+                                };
+                                let color = if muted {
+                                    egui::Color32::from(th.text_muted())
+                                } else {
+                                    egui::Color32::from(th.text_primary())
+                                };
                                 ui.label(
-                                    egui::RichText::new(row.proc)
+                                    egui::RichText::new(text)
                                         .size(th.font_size_body.value())
                                         .monospace()
-                                        .color(egui::Color32::from(th.text_primary())),
+                                        .color(color),
                                 );
-                                tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
-                            });
-                        }
-                        4 => {
-                            let listen = row.state == "LISTEN";
-                            let kind = if listen {
-                                StatusKind::Running
-                            } else {
-                                StatusKind::Waiting
-                            };
-                            status_dot(ui, th, kind, row.state, listen, false);
-                        }
-                        _ => {
-                            let (text, muted) = match col {
-                                0 => (row.port.to_string(), false),
-                                1 => (row.proto.to_string(), true),
-                                _ => (row.addr.to_string(), true),
-                            };
-                            let color = if muted {
-                                egui::Color32::from(th.text_muted())
-                            } else {
-                                egui::Color32::from(th.text_primary())
-                            };
-                            ui.label(
-                                egui::RichText::new(text)
-                                    .size(th.font_size_body.value())
-                                    .monospace()
-                                    .color(color),
-                            );
-                        }
-                    },
-                );
-            if let Some(i) = out.clicked_row {
-                *sel = i;
-            }
+                            }
+                        },
+                    );
+                if let Some(i) = out.clicked_row {
+                    *sel = i;
+                }
+            });
         });
     });
 
