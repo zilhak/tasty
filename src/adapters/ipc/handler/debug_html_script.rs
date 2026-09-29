@@ -50,7 +50,7 @@ pub(super) fn handle_allow(
         st.allow_current().map(|()| {
             (
                 st.current().map(|d| d.url.clone()),
-                st.current_detection().map(|d| format!("{d:?}")),
+                st.current_detection().map(|d| d.as_str()),
             )
         })
     });
