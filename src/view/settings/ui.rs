@@ -14,7 +14,7 @@ use tabs::*;
 pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
-use crate::adapters::ui::popup::{PopupManager, PopupState};
+use crate::adapters::ui::popup::{DragHandle, PopupManager, PopupState};
 use crate::file::format::{DetectorId, FileFormatRegistry};
 use crate::file::handler::FileHandlerRegistry;
 use crate::i18n::t;
@@ -409,13 +409,18 @@ impl SettingsUiState {
             );
         }
         // 타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
+        // 메인 파일 선택기처럼 셸 타이틀바 없이 뷰의 헤더 한 줄을 이동 손잡이로 쓴다.
         popups.register(
             PopupState::new(
                 file_chooser::FILE_CHOOSER_POPUP_ID,
                 file_chooser::chooser_title(false),
                 file_chooser::chooser_size(),
             )
-            .with_close_on_outside_click(false),
+            .with_close_on_outside_click(false)
+            .with_headless(true)
+            .with_drag_handle(DragHandle::Region(
+                crate::adapters::ui::popup::defs::panel_header_drag_strip,
+            )),
         );
         Self {
             active_tab: SettingsTab::General,
@@ -893,17 +898,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         import_answer = Some(false);
     }
 
-    // 파일 선택: view 가 끝냈으면 popup 을 닫고, 타이틀바 ✕ 로 닫혔으면 취소로 남긴다.
-    if chooser_done {
-        // intent-exempt: 설정 창 내부 sub-popup close.
-        ui_state.popups.close(file_chooser::FILE_CHOOSER_POPUP_ID);
-    }
-    if popup_result
-        .closed
-        .contains(&file_chooser::FILE_CHOOSER_POPUP_ID)
-    {
-        ui_state.file_chooser.cancel();
-    }
+    settle_file_chooser(ui_state, chooser_done, &popup_result.closed);
     apply_file_chooser_outcomes(ui_state);
 
     if ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID)
@@ -938,6 +933,22 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     }
 
     result
+}
+
+/// 파일 선택 한 프레임의 마무리. 뷰가 끝냈으면 popup 을 닫고, 뷰 밖 경로로 닫혔으면
+/// 취소로 남긴다.
+fn settle_file_chooser(
+    ui_state: &mut SettingsUiState,
+    chooser_done: bool,
+    closed: &[&'static str],
+) {
+    if chooser_done {
+        // intent-exempt: 설정 창 내부 sub-popup close.
+        ui_state.popups.close(file_chooser::FILE_CHOOSER_POPUP_ID);
+    }
+    if closed.contains(&file_chooser::FILE_CHOOSER_POPUP_ID) {
+        ui_state.file_chooser.cancel();
+    }
 }
 
 /// 설정 창 popup 중 Esc 를 받을 하나 — 열린 것 중 z 순서가 가장 위인 것.
@@ -1893,6 +1904,9 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
         }
     }
 }
+
+#[cfg(test)]
+mod file_chooser_popup_tests;
 
 #[cfg(all(test, debug_assertions))]
 mod tab_key_tests {

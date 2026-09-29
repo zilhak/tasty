@@ -6,7 +6,8 @@ use super::{DragHandle, PopupDef, PopupScope, PopupState};
 
 /// 실제 헤더 영역을 아직 보고하지 않은 첫 프레임의 드래그 영역.
 /// 다음 프레임부터 뷰가 보고한 영역을 사용하며 겹치는 위젯 입력이 우선한다.
-fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
+/// 설정 창 파일 선택기도 같은 규칙을 쓴다.
+pub(crate) fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
     egui::Rect::from_min_size(
         s.pos,
         egui::vec2(s.size.x * 0.5, super::title_bar_height().value()),

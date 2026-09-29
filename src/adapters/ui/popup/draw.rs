@@ -37,7 +37,7 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 
 /// 팝업 종류별 배경. file_handler_picker의 배경은 default Tag 채움색과 구분해야 한다.
 /// popup_shell_fill_keeps_the_default_tag_visible에서 두 색을 비교한다.
-/// file picker 는 오류 상태의 Secondary 버튼(`button-secondary-bg` = surface-raised)이 셸에
+/// file picker(설정 창 파일 선택기 포함)는 오류 상태의 Secondary 버튼(`button-secondary-bg` = surface-raised)이 셸에
 /// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
@@ -48,6 +48,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
         | super::transfer::TRANSFER_ERROR_POPUP_ID
         | super::file_handler_picker::PICKER_POPUP_ID
         | super::file_picker::FILE_PICKER_POPUP_ID
+        | crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID
         | crate::adapters::ui::info_modal::INFO_MODAL_ID => th.bg_panel().into(),
         _ => th.surface_raised().into(),
     }

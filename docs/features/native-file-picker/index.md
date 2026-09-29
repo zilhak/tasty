@@ -115,8 +115,10 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 사각형을 매니저에 보고하고(`DragHandle::Region`), 빈 곳을 끌면 popup 이 움직인다. 헤더 안의 ✕ 는
 드래그보다 먼저 입력을 받는다. 닫는 길은 헤더 ✕ · Cancel · Esc 이고 셋 다 `Cancelled` 를 남긴다.
 
-헤더 아래 path bar 줄은 `bg-sidebar` 로 창 좌우 끝까지 칠해져 헤더·목록(`bg-panel`)과 구분된다. 설정 창의
-파일 선택기도 같은 뷰를 그리므로 path bar 모양이 같다.
+헤더 아래 path bar 줄은 `bg-sidebar` 로 창 좌우 끝까지 칠해져 헤더·목록(`bg-panel`)과 구분된다.
+
+설정 창의 파일 선택기도 같은 뷰를 같은 셸 구조로 그린다. 셸 타이틀바가 없고(`headless`), 뷰가
+보고한 헤더 줄이 이동 손잡이이며, 창 배경은 `bg-panel` 이다.
 
 ### 긴 경로 — 넘침은 path bar 가 흡수한다
 
@@ -258,8 +260,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **제목**: 기본은 모드의 제목이고, 여는 쪽이 `set_title` 로 덮어쓸 수 있다(가져오기/내보내기가 자기 제목을 쓴다).
 - **확장자 필터**: 메인 피커와 같은 `matches_filters` — 디렉토리는 거르지 않는다.
 - **결과 전달**: 여는 쪽이 `consumer` 키(`&'static str`)를 주고, 닫힌 뒤 같은 키로
-  `take_outcome` 해 `Confirmed(PathBuf)` 또는 `Cancelled` 를 1 회 가져간다. 타이틀바 ✕ 로 닫히면
-  취소로 남는다.
+  `take_outcome` 해 `Confirmed(PathBuf)` 또는 `Cancelled` 를 1 회 가져간다. 헤더 ✕ · Cancel · Esc 로
+  닫히면 취소로 남는다.
 - **Esc**: 설정 창 popup 중 열려 있는 것의 z 순서가 가장 높은 하나만 받는다
   (`settings_escape_owner`). 파일 선택이 충돌 확인 popup 위에 떠 있으면 충돌 popup 의 키 처리
   (Enter/Y/Esc/N)는 돌지 않는다. Esc 는 설정 창 자체를 닫지 않는다.
@@ -365,8 +367,10 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   보이며, 디렉토리나 필터 밖 파일은 확정되지 않는다.
 - Given 설정 창 파일 선택에서 파일을 확정 Then 그 절대 경로가 연 쪽(`consumer`)으로 돌아간다
   (스크립트 Add card 는 파일 경로와, 비어 있으면 표시 이름을 채운다).
-- Given 설정 창 파일 선택이 Esc 또는 타이틀바 ✕ 로 닫힘 Then 결과는 `Cancelled` 이고 연 쪽의
+- Given 설정 창 파일 선택이 Esc 또는 헤더 ✕ 로 닫힘 Then 결과는 `Cancelled` 이고 연 쪽의
   입력은 바뀌지 않는다.
+- Given 설정 창 파일 선택기를 연다 When 첫 프레임이 그려진다 Then 제목과 닫기 ✕ 는 헤더에 한 번씩만
+  보이고, 셸 타이틀바는 없다. 헤더의 빈 곳을 끌면 popup 이 이동한다.
 - Given 저장 모드 When 파일명을 입력하고 확정하면 Then 현재 디렉토리 + 파일명 경로가 돌아가고,
   파일명이 비었거나 경로 구분자·`.`·`..` 이거나 나열된 폴더 이름이면 확정 버튼이 비활성이다.
 - Given 저장 모드가 열려 있다 When 화면을 본다 Then 확정 수단은 footer primary 버튼 하나뿐이다.

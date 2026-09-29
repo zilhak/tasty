@@ -12,11 +12,6 @@ fn picker_state(size: egui::Vec2) -> crate::adapters::ui::popup::PopupState {
         .with_headless(def.headless)
 }
 
-/// 그 popup 이 실제로 내주는 콘텐츠 사각형(타이틀바·여백 제외).
-fn content_rect(size: egui::Vec2) -> egui::Rect {
-    picker_state(size).content_rect()
-}
-
 fn deep_crumbs(depth: usize, seg: &str) -> Vec<CrumbView> {
     let mut out = vec![CrumbView { label: "/".into() }];
     out.extend((1..depth).map(|i| CrumbView {
@@ -81,9 +76,20 @@ fn painted_shapes(
     entries: &[FilePickerEntryView],
     selection: &str,
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
+    painted_shapes_in(&picker_state(size), crumbs, mode, entries, selection)
+}
+
+/// `popup` 이 내주는 콘텐츠 사각형에 뷰를 그린다.
+fn painted_shapes_in(
+    popup: &crate::adapters::ui::popup::PopupState,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+    selection: &str,
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
-    let content = content_rect(size);
+    let content = popup.content_rect();
     let selected = vec![selection.to_string()];
     let props = FilePickerProps {
         theme: &th,
@@ -228,16 +234,31 @@ fn the_title_is_painted_once_in_the_top_strip_of_the_popup() {
 /// 경로 막대 줄은 창 좌우 끝까지 bg-sidebar 로 칠해지고, 그 안에 breadcrumb 가 있다.
 #[test]
 fn the_path_bar_band_is_filled_edge_to_edge_with_bg_sidebar() {
-    let size = egui::vec2(640.0, 480.0);
-    let (content, shapes) = painted_shapes(
-        size,
+    assert_path_band_is_full_width(&picker_state(egui::vec2(640.0, 480.0)));
+}
+
+/// 같은 뷰를 쓰는 설정 창 파일 선택기도 셸 공통 여백 없이 띠가 창 끝까지 닿는다.
+#[test]
+fn the_settings_chooser_path_bar_band_is_filled_edge_to_edge() {
+    let popup = crate::adapters::ui::popup::PopupState::new(
+        crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID,
+        "t",
+        egui::vec2(640.0, 480.0),
+    )
+    .with_headless(true);
+    assert_path_band_is_full_width(&popup);
+}
+
+fn assert_path_band_is_full_width(popup_state: &crate::adapters::ui::popup::PopupState) {
+    let (content, shapes) = painted_shapes_in(
+        popup_state,
         &deep_crumbs(2, "crumb"),
         FilePickerMode::Open { selection_text: "" },
         &entries(),
         "file-1.toml",
     );
     let fill = crate::theme::theme().bg_sidebar().to_egui();
-    let popup = picker_state(size).popup_rect();
+    let popup = popup_state.popup_rect();
     let bands: Vec<egui::Rect> = shapes
         .iter()
         .filter_map(|c| match &c.shape {
