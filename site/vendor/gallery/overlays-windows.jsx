@@ -54,7 +54,7 @@ function PluginRowG({ name, meta, state = "rest", disabled }) {
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", width: 260,
       padding: "var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", background: bg,
       boxShadow: state === "selected" ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none",
-      opacity: disabled ? "var(--tasty-state-disabled-opacity)" : 1 }}>
+      opacity: disabled ? "var(--tasty-state-dim-opacity)" : 1 /* disabled PLUGIN = dimmed item, still selectable */ }}>
       <PluginAvatarG initial={name.charAt(0).toUpperCase()} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-primary)" }}>{name}</div>

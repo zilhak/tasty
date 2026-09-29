@@ -29,7 +29,8 @@ const CSS = `
 .tasty-iconbtn--sm svg { width: var(--tasty-icon-size-sm); height: var(--tasty-icon-size-sm); }
 .tasty-iconbtn--solid { background: var(--tasty-surface-raised); border-color: var(--tasty-border-default); color: var(--tasty-text-primary); }
 .tasty-iconbtn--active { color: var(--tasty-accent-primary); background: var(--tasty-overlay-active); }
-.tasty-iconbtn[disabled] { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-iconbtn[disabled] { color: var(--tasty-state-disabled-fg); background: transparent; cursor: default; pointer-events: none; }
+.tasty-iconbtn--solid[disabled] { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); }
 `;
 
 let injected = false;

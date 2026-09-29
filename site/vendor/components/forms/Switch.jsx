@@ -25,7 +25,12 @@ const CSS = `
 .tasty-switch input:checked + .tasty-switch__track .tasty-switch__thumb { transform: translateX(var(--tasty-switch-thumb-travel)); background: var(--tasty-switch-thumb-bg-on); }
 .tasty-switch input:focus-visible + .tasty-switch__track { outline: var(--tasty-focus-ring-width) solid var(--tasty-border-focus); outline-offset: 2px; }
 .tasty-switch__label { font-size: var(--tasty-font-size-body); color: var(--tasty-text-primary); }
-.tasty-switch[data-disabled="true"] { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-switch[data-disabled="true"] { cursor: default; pointer-events: none; }
+.tasty-switch[data-disabled="true"] input + .tasty-switch__track,
+.tasty-switch[data-disabled="true"] input:checked + .tasty-switch__track { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); }
+.tasty-switch[data-disabled="true"] input + .tasty-switch__track .tasty-switch__thumb,
+.tasty-switch[data-disabled="true"] input:checked + .tasty-switch__track .tasty-switch__thumb { background: var(--tasty-state-disabled-fg); }
+.tasty-switch[data-disabled="true"] .tasty-switch__label { color: var(--tasty-state-disabled-fg); }
 `;
 
 let injected = false;

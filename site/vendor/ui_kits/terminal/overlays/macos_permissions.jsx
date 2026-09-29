@@ -43,7 +43,7 @@ function PermRow({ label, hint, sub, tag, state, action }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", columnGap: "var(--tasty-space-lg)",
       minHeight: "var(--tasty-perm-row-height)", padding: "var(--tasty-space-xs) 0", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>
-      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-size-2)" }}>
+      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-help-hint-gap)", flexWrap: "wrap", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>
           {label}{hint && <HelpHint label={hint} placement="bottom" />}{tag && <Tag>{tag}</Tag>}
         </span>
@@ -90,8 +90,12 @@ function MacPermissionsPane({ scenario = "none", debug = false }) {
 // ── boot info modal ──────────────────────────────────────────────────────
 const mpPath = { color: "var(--tasty-text-primary)", fontWeight: "var(--tasty-font-weight-medium)" };
 const mpLead = { color: "var(--tasty-text-primary)", fontWeight: "var(--tasty-font-weight-semibold)" };
+// emphasis (2026-09-29): colour carries it — text-primary vs the text-secondary body. The weights
+// below are the web rendering only; the product may draw them at regular weight (egui has no bold
+// UI family) and that is accepted. Command chip = mono + surface-raised run background ONLY:
+// no radius, no side padding, wraps anywhere (one plain background run per wrapped line).
 const mpCmd = { fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)",
-  background: "var(--tasty-surface-raised)", borderRadius: "var(--tasty-radius-sm)", padding: "0 var(--tasty-space-xs)", overflowWrap: "anywhere" };
+  background: "var(--tasty-surface-raised)", overflowWrap: "anywhere" };
 
 function PermNoticeBody() {
   return (

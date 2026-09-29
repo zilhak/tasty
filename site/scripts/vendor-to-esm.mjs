@@ -297,6 +297,12 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     if (!(global in GALLERY_MODULE)) galleryPublished.set(global, { mod: `./${name}`, local });
 }
 
+// Gallery page names, from the vendored `<page>.html` files. Only these are
+// links: a specimen string such as a tab label "report.html" stays text.
+const galleryHtml = new Set(
+  readdirSync(join(vendor, "gallery")).filter((n) => n.endsWith(".html")).map((n) => n.slice(0, -5)),
+);
+
 let galleryCount = 0;
 const galleryPages = [];
 for (const name of readdirSync(join(vendor, "gallery")).sort()) {
@@ -417,7 +423,8 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
   // Specimen prose cross-links to sibling pages by the filename the gallery is
   // served under as a folder of documents. Here each is a route, under the
   // deployment base like every other link on the site.
-  src = src.replace(/(.)"([a-z][a-z0-9-]*)\.html(#[^"]*)?"/g, (_all, before, key, hash) => {
+  src = src.replace(/(.)"([a-z][a-z0-9-]*)\.html(#[^"]*)?"/g, (all, before, key, hash) => {
+    if (!galleryHtml.has(key)) return all;
     needsBase = true;
     const rest = `design/gallery/${key === "index" ? "" : `${key}/`}${hash || ""}`;
     return before + baseHref(before, rest);

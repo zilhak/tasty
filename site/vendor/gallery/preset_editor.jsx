@@ -532,7 +532,7 @@
         {child(node.second, 1 - node.ratio)}
       </div>
     );
-    // the 5px bg-app gap between bordered pane cards IS the pane (upper) divider — heavier than a surface hairline.
+    // the space-xs bg-app gap between bordered pane cards IS the pane (upper) divider — heavier than a surface hairline.
   }
 
   // ── scope-aware preview body ──────────────────────────────
@@ -780,7 +780,7 @@
             </div>
           </Stage>
           <Meta
-            specs={[["pane split", "bordered cards · 5px app-bg gap"], ["tab strip", "20px mini row · accent bar"], ["surface split", "1px hairline (lower layout)"], ["leaf", "icon + kind + field summary"], ["summary", "label:value rows · mono · front-trunc paths"], ["degrade", "drop summary <96×72 · icon-only <46"]]}
+            specs={[["pane split", "bordered cards · space-xs app-bg gap"], ["tab strip", "20px mini row · accent bar"], ["surface split", "1px hairline (lower layout)"], ["leaf", "icon + kind + field summary"], ["summary", "label:value rows · mono · front-trunc paths"], ["degrade", "drop summary <96×72 · icon-only <46"]]}
             tokens={[{ tok: "--tasty-bg-app", use: "surface fill / pane gap", color: "var(--tasty-bg-app)" }, { tok: "--tasty-border-default", use: "pane card / surface hairline", color: "var(--tasty-border-default)" }, { tok: "--tasty-preset-leaf-label-fg", use: "summary label", color: "var(--tasty-text-muted)" }, { tok: "--tasty-preset-leaf-value-fg", use: "summary value", color: "var(--tasty-text-secondary)" }]} />
           <Do><b>Do</b> separate the two split levels by <b>weight</b>: a heavy gap+border for pane (upper) splits, a hairline for surface (lower) splits — so the hierarchy reads at a glance even at thumbnail scale.</Do>
           <Dont><b>Don't</b> render surface <i>contents</i> (a program's live output). A leaf shows only its <b>kind</b> + its <b>configured fields</b> (cwd / startup / file / url) — the preview is about <i>structure &amp; config</i>, not runtime data. Empty fields hide their row; below ~96×72px the summary drops, below 46px the label drops too. And never draw a <b>form</b> inside a leaf — parameters are edited on the settings screen.</Dont>

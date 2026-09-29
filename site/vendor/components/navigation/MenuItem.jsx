@@ -30,7 +30,8 @@ const CSS = `
 .tasty-menuitem__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-menuitem__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tasty-menuitem__shortcut { flex: none; font-family: var(--tasty-font-mono); font-size: var(--tasty-menu-item-shortcut-font-size); color: var(--tasty-text-muted); }
-.tasty-menuitem[data-disabled="true"] { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-menuitem[data-disabled="true"] { pointer-events: none; }
+.tasty-menuitem[data-disabled="true"], .tasty-menuitem[data-disabled="true"] * { color: var(--tasty-state-disabled-fg); }
 .tasty-menu-sep { height: var(--tasty-border-width); margin: var(--tasty-space-xs) 0; background: var(--tasty-separator); }
 `;
 

@@ -33,7 +33,8 @@ const CSS = `
 .tasty-listctrl__row:hover { background: var(--tasty-listctrl-row-bg-hover); }
 .tasty-listctrl__row.is-selected { background: var(--tasty-listctrl-row-bg-selected);
   box-shadow: inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar); }
-.tasty-listctrl__row.is-disabled { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-listctrl__row.is-disabled { pointer-events: none; }
+.tasty-listctrl__row.is-disabled, .tasty-listctrl__row.is-disabled * { color: var(--tasty-state-disabled-fg); }
 .tasty-listctrl__icon { flex: none; display: inline-flex; color: var(--tasty-listctrl-icon-fg); }
 .tasty-listctrl__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-listctrl__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }

@@ -62,7 +62,7 @@ function WorkspaceRow({ ws, active, onClick, onContextMenu }) {
         padding: "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-workspace-row-padding-x)",
         cursor: "pointer", position: "relative",
         background: active ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
-        boxShadow: active ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+        boxShadow: active ? "inset var(--tasty-workspace-row-active-bar-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
       {/* dot slot = the attached mark's full bbox (16), reserved on EVERY row so the
           title x (8 + 16 + 4 = 28) never shifts; the ring can't reach the card edge,
           the 2px active accent bar, or the label. See --tasty-workspace-dot-slot. */}

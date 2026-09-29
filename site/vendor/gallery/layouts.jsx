@@ -610,6 +610,7 @@ function Layouts() {
             specs={[["tab height", <>24px <span className="tok">--tasty-control-height-tab</span></>], ["tab width", <>150px <span className="tok">--tasty-tab-width</span></>], ["strip fill", <span className="tok">--tasty-bg-sidebar</span>], ["active", "panel fill + accent top bar"]]}
             tokens={[{ tok: "--tasty-bg-sidebar", use: "strip", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-bg-panel", use: "active tab", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-accent-primary", use: "active bar", color: "var(--tasty-accent-primary)" }]} />
         </Spec>
+        {window.GalleryTabStrip ? <window.GalleryTabStrip /> : null}
       </Section>
 
       {/* 1-DEPTH */}

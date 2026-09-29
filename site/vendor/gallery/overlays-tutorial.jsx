@@ -110,7 +110,7 @@ function TopicPopup({ scaled }) {
         <b style={{ fontSize: 13, color: "var(--tasty-text-primary)", fontWeight: 600 }}>튜토리얼</b>
         <div style={{ marginLeft: "auto", color: "var(--tasty-text-muted)", cursor: "pointer" }}>✕</div>
       </div>
-      <div style={{ maxHeight: 200, overflowY: "auto", padding: "var(--tasty-space-sm)" }}>
+      <div style={{ maxHeight: "var(--tasty-size-200)", overflowY: "auto", padding: "var(--tasty-space-sm)" }}>{/* screen-only cap (no DTCG token) — scales with ui_scale like the rows it bounds */}
         <Topic n={1} sel title="워크스페이스 · 패인 · 탭 · 서피스" desc="화면 구조 4개 기본 개념." done={scaled} />
         {scaled && <>
           <Topic n={2} title="커맨드 팔레트 & 단축키" desc="모든 명령을 키보드로." />

@@ -210,11 +210,25 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["title", "\"Scripts in this document are blocked\" · 13/600"], ["body", "caption · text-muted · ≤ 2 lines"], ["remote branch", "network scripts stay blocked — says so"], ["action", "Secondary / Sm · no wrap"], ["reloading", "spinner + label · no × · fade out on commit"], ["narrow", "< ~420 → action on its own line, body-aligned"]]}
+            specs={[["title", "\"Scripts in this document are blocked\" · 13/600"], ["body", "caption · text-muted · ≤ 2 lines"], ["remote branch", "network scripts stay blocked — says so"], ["action", "Secondary / Sm · no wrap"], ["reloading", "spinner + label · no × · fade out on commit"], ["narrow", "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned"], ["glyph nudge", "1 · --tasty-banner-glyph-offset"], ["title ↔ body", "2 · --tasty-banner-text-gap (every banner)"]]}
             tokens={[{ tok: "--tasty-html-script-banner-glyph", use: "lock → accent-info", color: "var(--tasty-html-script-banner-glyph)" }, { tok: "--tasty-banner-title-font-size", use: "13" }, { tok: "--tasty-banner-body-font-size", use: "11" }]} />
         </Spec>
+        <Spec title="A button on the banner shell (2026-09-29)"
+          when={<>The shell is <span className="tok">--tasty-banner-bg</span> = surface-raised, which is also the Secondary button's fill, and its edge (border-default) is the same ramp step. On a banner the button would be text only. Rule for <b>every banner</b>: a Secondary inside a banner shell (<code>data-surface="banner"</code>) goes <b>one ramp step up</b>, fill <span className="tok">--tasty-banner-button-bg</span> (→ surface-hover) with edge <span className="tok">--tasty-banner-button-border</span> (→ border-frame). Hover is the normal Button overlay (8%) on top; the edge does not change on hover here. No new variant: the context decides. Disabled on a banner follows the disabled rule (neutral box, disabled ink).</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", width: "var(--tasty-size-560)", maxWidth: "100%", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · blocked, hover the button</span>
+                <HtmlScriptBanner />
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["where", "Secondary inside any banner shell"], ["fill", "surface-hover (one step above banner-bg)"], ["edge", "border-frame (one step above banner-border)"], ["hover", "overlay-hover · edge unchanged"], ["variant", "none new — context rule in Button"]]}
+            tokens={[{ tok: "--tasty-banner-button-bg", use: "→ surface-hover", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-banner-button-border", use: "→ border-frame", color: "var(--tasty-banner-button-border)" }, { tok: "--tasty-banner-bg", use: "shell", color: "var(--tasty-banner-bg)" }]} />
+        </Spec>
         <Spec title="After × and after Allow — the tab-strip marker"
-          when={<>× hides the notice for this load; scripts stay blocked. A <b>lock</b> marker then sits in the surface's tab, after the label (<span className="tok">--tasty-html-script-marker-fg</span> → glyph-dim, 12px). Clicking it <b>shows the banner again</b> — it re-explains before offering Allow, and never allows on its own. Mouse only, no focus change. After Allow, the tab carries a <b>script</b> glyph in text-muted with a tooltip; it is not clickable. Navigating to another document clears both, and the new document starts over. <code>#fragment</code> moves keep them.</>}>
+          when={<>× hides the notice for this load; scripts stay blocked. A <b>lock</b> marker then sits in the surface's tab, first in the tab's right-hand status cluster (Layouts › Pane tab strip; <span className="tok">--tasty-html-script-marker-fg</span> → glyph-dim, 12px). Clicking it <b>shows the banner again</b> — it re-explains before offering Allow, and never allows on its own. Mouse only, no focus change. After Allow, the tab carries a <b>script</b> glyph in text-muted with a tooltip; it is not clickable. Navigating to another document clears both, and the new document starts over. <code>#fragment</code> moves keep them.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
             {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
               <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>

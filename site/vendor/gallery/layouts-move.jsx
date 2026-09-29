@@ -75,7 +75,7 @@ function WsRow({ name, active, cue, status = "idle" }) {
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--tasty-workspace-dot-gap)", height: 28,
       padding: "0 var(--tasty-workspace-row-padding-x)", fontSize: 13,
       background: active ? "var(--tasty-surface-active)" : "transparent",
-      boxShadow: active ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none",
+      boxShadow: active ? "inset var(--tasty-workspace-row-active-bar-width) 0 0 var(--tasty-accent-primary)" : "none",
       color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
       <span style={{ width: "var(--tasty-workspace-dot-slot)", flex: "none", display: "inline-flex", justifyContent: "center" }}><StatusDot status={status} /></span>
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>

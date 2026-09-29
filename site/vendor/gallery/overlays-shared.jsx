@@ -8,7 +8,7 @@
 // rename. These are the patterns an agent should copy for any new
 // dialog — exact frame dimensions and the scrim contract are spec'd.
 const { Section, Spec, Stage, Meta, Note, Do, Dont } = window.Gallery;
-const { MenuItem, Input, Select, Switch, Checkbox, Button, IconButton, Tag, Kbd, Badge, Table, StatusDot, Spinner, Icon } = window.TastyDesignSystem_41fd3f;
+const { MenuItem, Input, Select, Switch, Checkbox, Button, IconButton, Tag, Kbd, Badge, Table, StatusDot, Spinner, Icon, CenterState } = window.TastyDesignSystem_41fd3f;
 
 const NAV = [
   { id: "scrim", label: "Scrim & frame" },
@@ -653,6 +653,7 @@ function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
 //     which is the existing import action (no new behaviour)
 //   · a host already imported shows a muted "in profiles" Tag and no action
 // Empty / failure are one muted line each — a missing ssh config is not an error.
+// Static specimen of the kit component ui_kits/terminal/overlays/remote_tool.jsx › LocalSshSection (the definition).
 function LocalSshSection({ state = "hosts" }) {
   const hosts = [
     { alias: "gb10", target: "maya@gb10.local:22" },
@@ -1358,7 +1359,7 @@ function CatSwitchRailMock({ held }) {
 // Shared shell; sits at the top of a scope's content area, never over the tab bar.
 function BannerShellG({ recessed, zIndex, children }) {
   return (
-    <div style={{ width: "100%", position: "relative", zIndex,
+    <div data-surface="banner" style={{ width: "100%", position: "relative", zIndex,
       background: "var(--tasty-banner-bg)", color: "var(--tasty-banner-fg)",
       border: "1px solid var(--tasty-banner-border)", borderRadius: "var(--tasty-banner-radius)",
       boxShadow: "var(--tasty-banner-shadow)", opacity: recessed ? "var(--tasty-banner-recessed-opacity)" : 1 }}>
@@ -1439,8 +1440,8 @@ function MouseCaptureBannerG({ glyph = true, body, lines, app = "vim", more = tr
       <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-banner-gap)",
           padding: "var(--tasty-banner-padding-y) var(--tasty-banner-padding-x)" }}>
-        {glyph && <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-banner-icon-fg)" }}>{ic.mouse}</span>}
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2,
+        {glyph && <span style={{ display: "inline-flex", flex: "none", marginTop: "var(--tasty-banner-glyph-offset)", color: "var(--tasty-banner-icon-fg)" }}>{ic.mouse}</span>}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-banner-text-gap)",
           paddingRight: more ? "var(--tasty-banner-more-reserve)" : 28 }}>
           <div style={{ fontSize: "var(--tasty-banner-title-font-size)", fontWeight: 600, color: "var(--tasty-banner-fg)", lineHeight: 1.4 }}>Mouse input captured</div>
           <div style={{ fontSize: "var(--tasty-banner-body-font-size)", color: "var(--tasty-text-muted)", lineHeight: 1.45 }}>{body || defBody}</div>
@@ -2558,22 +2559,9 @@ function RemoteAttachFrame({ state = "loaded", newPhase = "rest", newSelected, e
         </div>
         {/* right */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          {state === "initial" && center(<>
-            <span style={{ display: "inline-flex", color: "var(--tasty-text-placeholder)", transform: "scale(1.4)" }}>{ic.remote}</span>
-            <span style={{ fontSize: 13, color: "var(--tasty-text-muted)" }}>Select an attach profile</span>
-            <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 300 }}>Pick a profile on the left to connect and list the remote instance's workspaces.</span>
-          </>)}
-          {state === "loading" && center(<>
-            <Spinner size={22} />
-            <span style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>Connecting…</span>
-            <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 300 }}>Establishing the SSH tunnel to <span style={{ fontFamily: "var(--tasty-font-mono)" }}>gb10</span> and listing workspaces. This can take a few seconds.</span>
-          </>)}
-          {state === "error" && center(<>
-            <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)", transform: "scale(1.4)" }}>{ic.warn}</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--tasty-text-primary)" }}>Can't connect</span>
-            <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 300, lineHeight: 1.5 }}>SSH authentication failed — passkey “old-rsa” was rejected by legacy-box.</span>
-            <span style={{ marginTop: 4 }}><Button variant="secondary" size="sm" leadingIcon={ic.refresh}>Retry</Button></span>
-          </>)}
+          {state === "initial" && <CenterState variant="empty" glyph="remote" title="Select an attach profile" sub="Pick a profile on the left to connect and list the remote instance's workspaces." />}
+          {state === "loading" && <CenterState variant="loading" title="Connecting…" sub={<>Establishing the SSH tunnel to <span style={{ fontFamily: "var(--tasty-font-mono)" }}>gb10</span> and listing workspaces. This can take a few seconds.</>} />}
+          {state === "error" && <CenterState variant="error" title="Can't connect" sub="SSH authentication failed — passkey “old-rsa” was rejected by legacy-box." action={<Button variant="secondary" size="sm" leadingIcon={<Icon name="refresh" size="var(--tasty-icon-size-sm)" />}>Retry</Button>} />}
           {state === "loaded" && (<>
             <div style={{ ...caps, padding: "10px 12px 4px", display: "flex", alignItems: "center", gap: 8 }}>
               <span>Remote workspaces</span><span style={{ color: "var(--tasty-text-disabled)" }}>·</span>
@@ -2805,21 +2793,10 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
             ))}
           </div>
         )}
-        {state === "loading" && center(<>
-          <Spinner size={22} />
-          <span style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>Loading folder…</span>
-          <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 320 }}>{remote ? <>Reading <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{host}</span> over SSH.</> : "Reading the directory contents."}</span>
-        </>)}
-        {(state === "error-perm" || state === "error-conn") && center(<>
-          <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)", transform: "scale(1.4)" }}>{ic.warn}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--tasty-text-primary)" }}>{errText.title}</span>
-          <span style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 340, lineHeight: 1.5 }}>{errText.body}</span>
-          <span style={{ marginTop: 4 }}><Button variant="secondary" size="sm" leadingIcon={ic.refresh}>{state === "error-conn" ? "Reconnect" : "Retry"}</Button></span>
-        </>)}
-        {state === "empty" && center(<>
-          <span style={{ display: "inline-flex", color: "var(--tasty-text-placeholder)", transform: "scale(1.4)" }}><Icon name="folderOpen" /></span>
-          <span style={{ fontSize: 13, color: "var(--tasty-text-muted)" }}>This folder is empty</span>
-        </>)}
+        {state === "loading" && <CenterState variant="loading" title="Loading folder…" sub={remote ? <>Reading <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{host}</span> over SSH.</> : "Reading the directory contents."} />}
+        {(state === "error-perm" || state === "error-conn") && <CenterState variant="error" title={errText.title} sub={errText.body}
+          action={<Button variant="secondary" size="sm" leadingIcon={<Icon name="refresh" size="var(--tasty-icon-size-sm)" />}>{state === "error-conn" ? "Reconnect" : "Retry"}</Button>} />}
+        {state === "empty" && <CenterState variant="empty" glyph="folderOpen" title="This folder is empty" />}
       </div>
       {/* footer */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "none", padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>

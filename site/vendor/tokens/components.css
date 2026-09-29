@@ -39,6 +39,13 @@
   --tasty-button-secondary-border-hover: var(--tasty-border-strong);
   --tasty-button-ghost-fg:         var(--tasty-text-secondary);
   --tasty-button-ghost-fg-hover:   var(--tasty-text-primary);
+  /* disabled — every variant draws the same neutral box (2026-09-29); ghost keeps no fill/edge */
+  --tasty-button-disabled-bg:      var(--tasty-state-disabled-fill);
+  --tasty-button-disabled-border:  var(--tasty-state-disabled-border);
+  --tasty-button-disabled-fg:      var(--tasty-state-disabled-fg);   /* label + leading/trailing icons */
+  /* Secondary on a banner shell (banner-bg = surface-raised): one ramp step up so the box reads */
+  --tasty-banner-button-bg:        var(--tasty-surface-hover);
+  --tasty-banner-button-border:    var(--tasty-border-frame);
 
   /* IconButton — square */
   --tasty-icon-button-size:        var(--tasty-control-height);     /* 28 */
@@ -207,14 +214,21 @@
   --tasty-tab-separator:           var(--tasty-separator);
   --tasty-tab-close-size:          var(--tasty-size-16);
   --tasty-tab-close-radius:        var(--tasty-radius-sm);
-  --tasty-tab-indicator-width:     var(--tasty-size-2);
+  --tasty-tab-indicator-width:     var(--tasty-selection-edge-width); /* 2 — hairline, zoom-exempt */
   --tasty-tab-dot-size:            var(--tasty-status-dot-size-compact); /* 6 — dense chrome (24px strip), not the generic 8 */
   --tasty-tab-icon-size:           var(--tasty-icon-size-sm);
-  /* tab-strip scroll arrows (< >) — enabled is an ACTIVE control glyph (1.4.11 3:1),
+  --tasty-tab-status-gap:          var(--tasty-space-xs); /* 4 — between right-cluster items: html marker · move glyph · busy dot · close (2026-09-29) */
+  /* tab-strip scroll arrows (chevron icons) — enabled is an ACTIVE control glyph (1.4.11 3:1),
      disabled takes the one disabled ink. Ground = surface-raised (the strip's arrow
      cell). Flat ratios: Mocha muted 5.65 · disabled 3.40; Latte muted 3.65 · disabled 2.56. */
   --tasty-tab-scroll-arrow-fg:          var(--tasty-text-muted);
   --tasty-tab-scroll-arrow-fg-disabled: var(--tasty-text-disabled);
+  /* shape (2026-09-29) — every horizontal tab-bar scroll arrow (pane strip + horizontal_tab_bar_with_arrows):
+     chevron ICON (never the < > characters), square cell = strip height, no own fill. */
+  --tasty-tab-scroll-arrow-width:      var(--tasty-control-height-tab);  /* 24 */
+  --tasty-tab-scroll-arrow-glyph-size: var(--tasty-icon-size-xs);        /* 12 */
+  --tasty-tab-scroll-arrow-hover-bg:   var(--tasty-overlay-hover);       /* enabled side only */
+  --tasty-tab-scroll-arrow-move-fg:    var(--tasty-move-source-glyph);   /* the side that hides the move-source target */
 
   /* TreeRow */
   --tasty-tree-row-height:         var(--tasty-control-height-tree);
@@ -352,6 +366,11 @@
   --tasty-html-script-marker-fg:      var(--tasty-glyph-dim);         /* tab-strip lock after dismiss (blocked, notice hidden) */
   --tasty-html-script-marker-allowed-fg: var(--tasty-text-muted);     /* tab-strip script glyph while allowed this session */
   --tasty-html-script-marker-size:    var(--tasty-icon-size-xs);      /* 12 — sits inside the 24px tab strip */
+  --tasty-html-script-marker-hit:     var(--tasty-size-16);           /* 16 square cell around the 12 glyph — lock click / hover target */
+  --tasty-html-script-marker-hover-bg: var(--tasty-overlay-hover);    /* lock only; scriptFile has no hover fill */
+  --tasty-banner-glyph-offset:        var(--tasty-size-1);            /* 1 — leading glyph nudge onto the title's cap line */
+  --tasty-banner-text-gap:            var(--tasty-label-detail-gap);  /* 2 — title ↔ body (every banner) */
+  --tasty-banner-narrow-below:        var(--tasty-size-440);          /* SURFACE width below which the action wraps under the body */
 
   /* Banner "more" (⋯) menu — a SECOND affordance in the banner's top-right
      column, left of the × , and the anchored menu it opens. The menu reuses the
@@ -425,7 +444,8 @@
      row (attached or not) so title x never shifts. Ring clearances at scale 1:
      card edge 8 · active accent bar (0..2) 6 · label 4. Body x = 8 + 16 + 4 = 28. */
   --tasty-workspace-row-padding-x: var(--tasty-space-sm);   /* 8 — row left inset */
-  --tasty-workspace-dot-slot:      var(--tasty-size-16);    /* 16 — = attached ring outer diameter */
+  --tasty-workspace-dot-slot:      var(--tasty-size-16);    /* 16 at scale 1 — DERIVED in Theme: round(dot) + 2 × (round(ring-width) + round(ring-offset)); never rounded on its own (0.85 → 15, 1.2 → 18). Square; height does not grow the row. */
+  --tasty-workspace-row-active-bar-width: var(--tasty-selection-edge-width); /* 2 — hairline, zoom-exempt */
   --tasty-workspace-dot-gap:       var(--tasty-space-xs);   /* 4 — slot → title / subtitle / pill */
 
   /* Move source — the pending "Move Surface / Tab / Pane" target (app-wide, max one).
@@ -637,6 +657,7 @@
   --tasty-center-state-title-fg:   var(--tasty-text-secondary);
   --tasty-center-state-sub-fg:     var(--tasty-text-muted);
   --tasty-center-state-max-width:  var(--tasty-measure-sm);    /* 300 — wraps before it */
+  --tasty-center-state-action-gap: var(--tasty-space-md);      /* 12 sub slot → optional action (Button secondary · sm). The action is outside the centring. */
   /* Keybindings › Import / Export — the diff table + option-migration card.
      These were raw --tasty-size-* reads in the spec jsx; opened as named
      component tokens so the implementing side reads tokens, not constants. */
@@ -728,7 +749,8 @@
   --tasty-preset-cfg-form-padding:    var(--tasty-space-lg);  /* 16 around the body */
   --tasty-preset-cfg-field-gap:       var(--tasty-space-md);  /* 12 between fields */
   --tasty-preset-cfg-draft-fg:        var(--tasty-accent-warning); /* "unsaved" dot + caption in the header */
-  --tasty-preset-cfg-dim-opacity:     var(--tasty-state-disabled-opacity); /* list + scope tabs while open */
+  --tasty-preset-cfg-dim-opacity:     var(--tasty-state-dim-opacity); /* list + scope tabs while open (inert, not disabled) */
+  --tasty-cut-pending-opacity:        var(--tasty-state-dim-opacity); /* explorer: file cut, waiting for paste (icon + label) */
 
   /* ─────────────────  CHROME · SWITCH-NUMBER OVERLAY  ───────────────── */
   /* Transient number keycaps painted over tabs / workspaces WHILE the

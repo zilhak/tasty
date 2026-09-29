@@ -33,7 +33,9 @@ const CSS = `
 }
 .tasty-input input::placeholder { color: var(--tasty-text-placeholder); }
 .tasty-input input:disabled { cursor: not-allowed; }
-.tasty-input[data-disabled="true"] { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-input[data-disabled="true"] { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); pointer-events: none; }
+.tasty-input[data-disabled="true"] input, .tasty-input[data-disabled="true"] input::placeholder,
+.tasty-input[data-disabled="true"] .tasty-input__icon, .tasty-input[data-disabled="true"] .tasty-input__addon { color: var(--tasty-state-disabled-fg); }
 .tasty-input__icon { display: inline-flex; color: var(--tasty-text-muted); flex: none; }
 .tasty-input__icon svg { width: var(--tasty-icon-size-md); height: var(--tasty-icon-size-md); display: block; }
 .tasty-input__addon { color: var(--tasty-text-muted); font-family: var(--tasty-font-mono); font-size: var(--tasty-font-size-caption); flex: none; }

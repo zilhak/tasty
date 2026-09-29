@@ -612,6 +612,49 @@ function ProtocolFilter({ protocols, hidden, onApply }) {
   );
 }
 
+// ── "From ssh config" — hosts read from ~/.ssh/config under the profile list ──
+// Kit definition (2026-09-29). gallery/overlays-shared.jsx LocalSshSection is the
+// static specimen of THIS component (state only) and must match it.
+//   state          "hosts" | "empty" | "unreadable"
+//   profileTargets user@host:port of existing ssh profiles → that host shows
+//                  a muted "in profiles" Tag instead of the action
+//   onImport(host) the existing import action (one ghost button per row)
+const SSH_CONFIG_HOSTS = [
+  { alias: "gb10", target: "maya@gb10.local:22" },
+  { alias: "prod-web", target: "deploy@10.0.4.12:22" },
+  { alias: "eu-west-build-farm-bastion-01", target: "ci-runner@bastion-01.eu-west.build.example.com:2222" },
+];
+function LocalSshSection({ state = "hosts", hosts = SSH_CONFIG_HOSTS, profileTargets = [], onImport }) {
+  const caption = { fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" };
+  const line = { padding: "var(--tasty-size-2) var(--tasty-space-xs) var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" };
+  return (
+    <div style={{ marginTop: "var(--tasty-space-md)", paddingTop: "var(--tasty-space-sm)", borderTop: "var(--tasty-border-width) solid var(--tasty-border-frame)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--tasty-space-sm)", padding: "var(--tasty-size-2) var(--tasty-space-xs) var(--tasty-space-xs)" }}>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--tasty-text-secondary)" }}>From ssh config</span>
+        <span style={caption}>~/.ssh/config</span>
+        <div style={{ flex: 1 }} />
+        {state === "hosts" && <span style={caption}>{hosts.length}</span>}
+      </div>
+      {state === "empty" && <div style={line}>No hosts in ~/.ssh/config.</div>}
+      {state === "unreadable" && <div style={line}>Can't read ~/.ssh/config — permission denied.</div>}
+      {state === "hosts" && hosts.map((h) => {
+        const have = profileTargets.includes(h.target);
+        return (
+          <div key={h.alias} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-xs)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)" }}>
+              <div style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.alias}</div>
+              <div style={{ ...caption, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.target}</div>
+            </div>
+            {have
+              ? <Tag>in profiles</Tag>
+              : <Button variant="ghost" size="sm" leadingIcon={<Icon name="plus" size="var(--tasty-icon-size-sm)" />} onClick={() => onImport && onImport(h)}>Add profile</Button>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── empty / add-bar list shell ──────────────────────────────────────────
 function ListShell({ addLabel, onAdd, empty, children, hasItems, rightSlot }) {
   return (
@@ -650,6 +693,7 @@ function RemoteTool({ onClose, onFlash }) {
   const [kErr, setKErr] = React.useState("");
   const [aErr, setAErr] = React.useState("");
   const [revealed, setRevealed] = React.useState(() => new Set());
+  const [sshCfg] = React.useState("hosts"); // ~/.ssh/config read result: "hosts" | "empty" | "unreadable"
   const timers = React.useRef({});
   const passkeyNames = passkeys.map((k) => k.name);
   const sshProfiles = profiles.filter((p) => isSshType(p.type));
@@ -792,7 +836,7 @@ function RemoteTool({ onClose, onFlash }) {
                 <ProfileRow key={p.id} p={p} passkeyNames={passkeyNames} onRedetect={pRedetect}
                   onEdit={pEdit} onDelete={(x) => setPView({ type: "confirm", profile: x })} />
               ))}
-              <LocalSshSection state={sshCfg} profileTargets={profiles.map((p) => p.target)}
+              <LocalSshSection state={sshCfg} profileTargets={profiles.filter((p) => isSshType(p.type)).map((p) => `${p.user}@${p.host}:${p.port}`)}
                 onImport={(h) => onFlash && onFlash(`Added profile from ssh config: ${h.alias}`)} />
             </ListShell>
           )
@@ -835,4 +879,4 @@ function RemoteTool({ onClose, onFlash }) {
   );
 }
 
-window.TastyKit = Object.assign(window.TastyKit || {}, { RemoteTool });
+window.TastyKit = Object.assign(window.TastyKit || {}, { RemoteTool, LocalSshSection });

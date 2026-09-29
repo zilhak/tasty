@@ -137,8 +137,8 @@ function SegToggle({ value = "detail", hover = null }) {
 
 function ExpToolbar() {
   const navBtn = (label, glyph, disabled) => (
-    <span style={{ opacity: disabled ? "var(--tasty-state-disabled-opacity)" : 1, pointerEvents: disabled ? "none" : "auto", display: "inline-flex" }}>
-      <IconButton size="sm" aria-label={label}>{glyph}</IconButton>
+    <span style={{ display: "inline-flex" }}>
+      <IconButton size="sm" aria-label={label} disabled={disabled}>{glyph}</IconButton>
     </span>
   );
   return (
@@ -712,8 +712,8 @@ function HtmlSettings() {
 
 function ImgBtn({ glyph, label, disabled }) {
   return (
-    <span style={{ opacity: disabled ? "var(--tasty-state-disabled-opacity)" : 1, pointerEvents: disabled ? "none" : "auto", display: "inline-flex" }}>
-      <IconButton size="sm" aria-label={label}>{glyph}</IconButton>
+    <span style={{ display: "inline-flex" }}>
+      <IconButton size="sm" aria-label={label} disabled={disabled}>{glyph}</IconButton>
     </span>
   );
 }

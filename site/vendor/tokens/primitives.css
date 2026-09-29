@@ -189,7 +189,9 @@
   --tasty-scale-120: 1.2; /* @kind other */
 
   /* ── Opacity ─────────────────────────────────────── */
-  /* single disabled tone shared by all controls */
+  /* DIM coefficient — an interactive-but-inactive item (switched-off row, pending cut,
+     modal-inert region). NOT a disabled-control signal: disabled controls read the
+     disabled ink (--tasty-text-disabled) and no opacity (2026-09-29). Name kept, no rename. */
   --tasty-opacity-disabled: 0.5; /* @kind other */
   /* a lower-tier banner dimmed BEHIND a higher-scope banner (≈60% transparent) */
   --tasty-opacity-recessed: 0.4; /* @kind other */
@@ -220,7 +222,7 @@
   --tasty-color-neutral-600:  #9ca0b0; /* overlay0 */
   --tasty-color-neutral-700:  #8c8fa1; /* overlay1 */
   --tasty-color-neutral-800:  #7c7f93; /* overlay2 */
-  --tasty-color-neutral-900:  #63667c; /* subtext0 — DIVERGES from upstream catppuccin latte (#6c6f85, 4.37:1 on base = AA fail). Darkened to clear 4.5:1 on base (4.99), mantle (4.64), #fff (5.64) while keeping the ramp order: any darker collapses the gap to subtext1 (#5c5f77) and text-muted/secondary stop reading apart. crust (4.26) / surface0 (3.65) stay accepted exceptions — see zilhak/tasty ADR-0080. */
+  --tasty-color-neutral-900:  #63667c; /* subtext0 — DIVERGES from upstream catppuccin latte (#6c6f85, 4.37:1 on base = AA fail). Darkened to clear 4.5:1 on base (4.99), mantle (4.64), #fff (5.64) while keeping the ramp order: any darker collapses the gap to subtext1 (#5c5f77) and text-muted/secondary stop reading apart. crust (4.26) / surface0 (3.65) stay accepted exceptions — see zilhak/tasty ADR-0035. */
   --tasty-color-neutral-1000: #5c5f77; /* subtext1 */
   --tasty-color-neutral-1100: #4c4f69; /* text     */
 

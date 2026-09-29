@@ -4,8 +4,13 @@
 // Placement ⒜: tasty paints the banner; the surface's WebView rect shrinks by
 // banner height + --tasty-banner-inset-gap. The banner never overlaps the page.
 // Box boundaries for the implementer: shell (BannerShell) > row [glyph | body | action]
-// + dismiss slot (absolute, top-right). Narrow (< ~420 surface width): action wraps
-// under the body, aligned to the body's left edge.
+// + dismiss slot (absolute, top-right). Narrow: when the SURFACE width is below
+// --tasty-banner-narrow-below (440), the action wraps under the body, aligned to the
+// body's left edge. Re-judged on every surface resize, no animation. Content never
+// overrides the threshold: at 440 the longest locale label still fits beside a
+// two-line body (the title and body clamp at 2 lines, so the row height is bounded).
+// Button on the shell: Secondary reads the banner-button tokens via [data-surface="banner"]
+// (surface-hover fill · border-frame edge · hover = the usual overlay). Applies to every banner.
 //
 // Fires only when the USER views the document (opened it, or selected the surface).
 // Agent/IPC opens, session restore and background tabs only record "has scripts".
@@ -35,16 +40,16 @@ function HtmlScriptBanner({ state = "blocked", remote = false, hover = false, na
     <Button size="sm" variant="secondary" style={{ whiteSpace: "nowrap" }}>{HS_COPY.action}</Button>
   );
   return (
-    <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} style={{ position: "relative",
+    <div data-surface="banner" onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} style={{ position: "relative",
       background: "var(--tasty-banner-bg)", color: "var(--tasty-banner-fg)", border: "var(--tasty-border-width) solid var(--tasty-banner-border)",
       borderRadius: "var(--tasty-banner-radius)", boxShadow: "var(--tasty-banner-shadow)" }}>
       <div style={{ display: "flex", flexWrap: narrow ? "wrap" : "nowrap", alignItems: narrow ? "flex-start" : "center", gap: "var(--tasty-banner-gap)",
         padding: "var(--tasty-banner-padding-y) var(--tasty-banner-padding-x)",
         paddingRight: "calc(var(--tasty-icon-button-size-sm) + var(--tasty-space-sm) + var(--tasty-space-xs))" }}>
-        <span style={{ display: "inline-flex", flex: "none", alignSelf: "flex-start", marginTop: "var(--tasty-size-1)", color: "var(--tasty-html-script-banner-glyph)" }}>
+        <span style={{ display: "inline-flex", flex: "none", alignSelf: "flex-start", marginTop: "var(--tasty-banner-glyph-offset)", color: "var(--tasty-html-script-banner-glyph)" }}>
           <HsIcon name="lock" size="var(--tasty-icon-size-md)" />
         </span>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-size-2)", opacity: reloading ? "var(--tasty-opacity-dimmed)" : 1 }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-banner-text-gap)", opacity: reloading ? "var(--tasty-opacity-dimmed)" : 1 }}>
           <div style={{ fontSize: "var(--tasty-banner-title-font-size)", fontWeight: "var(--tasty-font-weight-semibold)", lineHeight: "var(--tasty-line-height-ui)",
             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{HS_COPY.title}</div>
           <div style={{ fontSize: "var(--tasty-banner-body-font-size)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-muted)", textWrap: "pretty",
@@ -61,12 +66,19 @@ function HtmlScriptBanner({ state = "blocked", remote = false, hover = false, na
 }
 
 // the tab-strip marker: lock (blocked + notice dismissed) · scriptFile (allowed this session)
-function HtmlScriptMarker({ kind = "blocked" }) {
+// the tab-strip marker: lock (blocked + notice dismissed) · scriptFile (allowed this session).
+// Sits in the tab cell's RIGHT CLUSTER (Layouts › Pane tab strip): marker · move · busy · close,
+// --tasty-tab-status-gap apart. lock = 16 hit cell with its own hover; scriptFile = tooltip only.
+function HtmlScriptMarker({ kind = "blocked", hover = false }) {
   const allowed = kind === "allowed";
+  const [h, setH] = React.useState(false);
   return (
     <span title={allowed ? HS_COPY.markerAllowed : HS_COPY.markerBlocked} role={allowed ? "img" : "button"}
       aria-label={allowed ? HS_COPY.markerAllowed : HS_COPY.markerBlocked}
-      style={{ display: "inline-flex", flex: "none", cursor: allowed ? "default" : "pointer",
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ display: "inline-flex", flex: "none", alignItems: "center", justifyContent: "center",
+        width: "var(--tasty-html-script-marker-hit)", height: "var(--tasty-html-script-marker-hit)", borderRadius: "var(--tasty-radius-sm)",
+        cursor: allowed ? "default" : "pointer", background: !allowed && (hover || h) ? "var(--tasty-html-script-marker-hover-bg)" : "transparent",
         color: allowed ? "var(--tasty-html-script-marker-allowed-fg)" : "var(--tasty-html-script-marker-fg)" }}>
       <HsIcon name={allowed ? "scriptFile" : "lock"} size="var(--tasty-html-script-marker-size)" />
     </span>
@@ -75,13 +87,17 @@ function HtmlScriptMarker({ kind = "blocked" }) {
 
 function HsTab({ label, icon, active, marker }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)", height: "var(--tasty-control-height-tab)",
-      padding: "0 var(--tasty-space-sm)", maxWidth: "var(--tasty-tab-width)", fontSize: "var(--tasty-font-size-caption)", borderRight: "var(--tasty-border-width) solid var(--tasty-separator)",
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-tab-gap)", height: "var(--tasty-control-height-tab)",
+      padding: "0 var(--tasty-space-xs) 0 var(--tasty-tab-padding-x)", width: "var(--tasty-tab-width)", fontSize: "var(--tasty-font-size-caption)", borderRight: "var(--tasty-border-width) solid var(--tasty-separator)",
       background: active ? "var(--tasty-bg-panel)" : "transparent", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)",
       boxShadow: active ? "inset 0 calc(-1 * var(--tasty-tab-indicator-width)) 0 var(--tasty-accent-primary)" : "none" }}>
       <span style={{ display: "inline-flex", flex: "none" }}><HsIcon name={icon} size="var(--tasty-tab-icon-size)" /></span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-      {marker && <HtmlScriptMarker kind={marker} />}
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: "var(--tasty-tab-status-gap)" }}>
+        {marker && <HtmlScriptMarker kind={marker} />}
+        <span style={{ width: "var(--tasty-tab-close-size)", height: "var(--tasty-tab-close-size)", display: "inline-flex", alignItems: "center", justifyContent: "center",
+          color: "var(--tasty-text-muted)", visibility: active ? "visible" : "hidden" }}><HsIcon name="close" size="var(--tasty-icon-size-xs)" /></span>
+      </span>
     </span>
   );
 }

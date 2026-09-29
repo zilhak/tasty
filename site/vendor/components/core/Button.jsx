@@ -4,6 +4,7 @@ import React from "react";
  * Tasty Button — the primary interactive control.
  * 28px tall (item-height-interactive), 1px border, 4px radius,
  * 8%/12% hover/active overlays derived from the active theme.
+ * Disabled: neutral box + disabled ink (no opacity), same for every variant.
  */
 
 const CSS = `
@@ -56,7 +57,14 @@ const CSS = `
 .tasty-btn--ghost { background: transparent; color: var(--tasty-text-secondary); }
 .tasty-btn--ghost:hover { color: var(--tasty-text-primary); }
 
-.tasty-btn[disabled] { opacity: var(--tasty-state-disabled-opacity); cursor: not-allowed; pointer-events: none; }
+/* disabled = ink, never opacity (2026-09-29): every variant draws the same neutral box,
+   accent fills drop out, label + icons take the disabled ink, no hover / active overlay. */
+.tasty-btn[disabled] { background: var(--tasty-button-disabled-bg); border-color: var(--tasty-button-disabled-border);
+  color: var(--tasty-button-disabled-fg); cursor: default; pointer-events: none; }
+.tasty-btn--ghost[disabled] { background: transparent; border-color: transparent; }
+.tasty-btn[disabled]::after { background: transparent; }
+/* Secondary on a banner shell — one ramp step up from banner-bg so the box reads */
+[data-surface="banner"] .tasty-btn--secondary:not([disabled]) { background: var(--tasty-banner-button-bg); border-color: var(--tasty-banner-button-border); }
 .tasty-btn--block { display: flex; width: 100%; }
 `;
 

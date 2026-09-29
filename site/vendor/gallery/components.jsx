@@ -7,7 +7,7 @@ const {
   Button, IconButton, Badge, BadgeGroup, Tag, Kbd,
   Input, Select, MultiSelect, AutoComplete, Checkbox, Switch,
   Tab, TreeRow, MenuItem, StatusDot, Toast, Table, Spinner,
-  HelpHint, Tooltip, ListCtrl,
+  HelpHint, Tooltip, ListCtrl, CenterState,
 } = window.TastyDesignSystem_41fd3f;
 
 const CIcon = window.TastyDesignSystem_41fd3f.Icon;
@@ -23,11 +23,12 @@ function WsRowG({ name, active, hover, attached, pill, sub, geom = "settled" }) 
     <div style={{ display: "flex", alignItems: "flex-start", gap: prod ? "var(--tasty-space-xs)" : "var(--tasty-workspace-dot-gap)",
       padding: prod ? "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-xs)" : "var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-space-sm) var(--tasty-workspace-row-padding-x)",
       background: active ? "var(--tasty-surface-active)" : hover ? "var(--tasty-overlay-hover)" : "transparent",
-      boxShadow: active ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
+      boxShadow: active ? "inset var(--tasty-workspace-row-active-bar-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
+      {/* slot: width = workspace-dot-slot; height = the title label's own line box (never taller → never grows the row) */}
       <span style={{ flex: "none", width: prod ? "var(--tasty-status-dot-size)" : "var(--tasty-workspace-dot-slot)", height: "calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui))", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         <StatusDot status="running" attached={attached} />
       </span>
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-size-2)" }}>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)" }}>
         <span style={{ fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-medium)", lineHeight: "var(--tasty-line-height-ui)", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
         {pill && <span style={{ alignSelf: "flex-start" }}><Tag variant="info">remote</Tag></span>}
         {sub && <span style={{ fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
@@ -41,20 +42,10 @@ const CS_COPY = {
   fp: { loading: ["Loading folder", ""], empty: ["This folder is empty", "Files you add here appear in this list."], error: ["Could not read this folder", "Permission denied (os error 13)"] },
   scripts: { loading: ["Loading scripts", ""], empty: ["No scripts", "Add a Lua script to run it on a lifecycle event."], error: ["Could not load scripts", "~/.config/tasty/scripts is not readable"] },
 };
-function CenterStateG({ variant = "empty", host = "fp" }) {
+function CenterStateG({ variant = "empty", host = "fp", action = false }) {
   const [title, sub] = CS_COPY[host][variant];
-  const glyph = variant === "error" ? "alertCircle" : host === "scripts" ? "scriptFile" : "folderOpen";
-  return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--tasty-space-md)" }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", maxWidth: "var(--tasty-center-state-max-width)" }}>
-        <span style={{ display: "inline-flex", marginBottom: "var(--tasty-center-state-gap)", color: variant === "error" ? "var(--tasty-center-state-error-fg)" : "var(--tasty-center-state-glyph-fg)" }}>
-          {variant === "loading" ? <Spinner size="var(--tasty-center-state-glyph-size)" /> : <CIcon name={glyph} size="var(--tasty-center-state-glyph-size)" />}
-        </span>
-        <span style={{ fontSize: "var(--tasty-font-size-body)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-center-state-title-fg)" }}>{title}</span>
-        <span style={{ marginTop: "var(--tasty-center-state-line-gap)", minHeight: "calc(var(--tasty-font-size-caption) * var(--tasty-line-height-ui))", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-center-state-sub-fg)", textWrap: "pretty" }}>{sub}</span>
-      </div>
-    </div>
-  );
+  return <CenterState variant={variant} glyph={host === "scripts" ? "scriptFile" : "folderOpen"} title={title} sub={sub}
+    action={action ? <Button variant="secondary" size="sm" leadingIcon={<CIcon name="refresh" size="var(--tasty-icon-size-sm)" />}>Retry</Button> : null} />;
 }
 
 const NAV = [
@@ -142,6 +133,33 @@ function Components() {
               { tok: "--tasty-overlay-hover", use: "8% hover" },
               { tok: "--tasty-text-on-accent", use: "filled label" },
             ]} />
+        </Spec>
+
+        <Spec title="Disabled — ink, never opacity (2026-09-29)"
+          when={<>A disabled control is <b>not faded</b>. Every variant draws the same <b>neutral box</b> (<span className="tok">--tasty-button-disabled-bg</span> / <span className="tok">-border</span>) and its label and icons take the one disabled ink (<span className="tok">--tasty-button-disabled-fg</span> → text-disabled). Accent fills (primary · agent · danger) <b>drop out</b>, so the disabled ink never sits on an accent. Ghost keeps no box. No hover or active overlay; cursor stays default. The same rule runs through IconButton, Input, Select, MultiSelect, Checkbox, Switch, MenuItem and ListCtrl.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "grid", gridTemplateColumns: "auto auto auto", gap: "var(--tasty-space-sm) var(--tasty-space-md)", alignItems: "center", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>enabled</span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>disabled</span>
+                {["primary", "agent", "danger", "secondary", "ghost"].map((v) => (
+                  <React.Fragment key={v}>
+                    <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>{v}</span>
+                    <span style={{ display: "flex" }}><Button variant={v} leadingIcon={ic.plus}>New tab</Button></span>
+                    <span style={{ display: "flex" }}><Button variant={v} leadingIcon={ic.plus} disabled>New tab</Button></span>
+                  </React.Fragment>
+                ))}
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>controls</span>
+                <span style={{ display: "flex", gap: "var(--tasty-space-sm)", alignItems: "center" }}><IconButton aria-label="Search">{ic.search}</IconButton><Checkbox defaultChecked label="Wrap" /><Switch defaultChecked /></span>
+                <span style={{ display: "flex", gap: "var(--tasty-space-sm)", alignItems: "center" }}><IconButton disabled aria-label="Search">{ic.search}</IconButton><Checkbox defaultChecked disabled label="Wrap" /><Switch defaultChecked disabled /></span>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["fill / edge", "surface-raised / border-default — every variant (ghost: none)"], ["label + icons", "text-disabled (one ink)"], ["accent fill", "drops out when disabled"], ["opacity", "none on disabled controls"], ["hover / active", "not drawn"], ["cursor", "default"], ["dimmed items", "switched-off rows · pending cut · inert regions → state-dim-opacity (0.5), not this rule"]]}
+            tokens={[{ tok: "--tasty-button-disabled-bg", use: "→ state-disabled-fill", color: "var(--tasty-button-disabled-bg)" }, { tok: "--tasty-button-disabled-border", use: "→ state-disabled-border", color: "var(--tasty-button-disabled-border)" }, { tok: "--tasty-button-disabled-fg", use: "→ state-disabled-fg", color: "var(--tasty-button-disabled-fg)" }, { tok: "--tasty-state-dim-opacity", use: "items only" }]} />
+          <Dont><b>Don't</b> multiply a disabled control by 0.5. Its label lands at a different step for every variant, and a faded accent fill still reads as "the primary action".</Dont>
         </Spec>
 
         <Spec title="IconButton"
@@ -553,7 +571,7 @@ function Components() {
           <Note><b>Unchanged by this decision:</b> every badge, tag and status consumer of the generic 8; the 4px active marker; the dot colours and their meanings (idle / busy / attached / needs-input / completion).</Note>
         </Spec>
         <Spec title="Attached ring in the workspace row — a reserved 16px slot (2026-09-28)"
-          when={<>The workspace row keeps the generic <b>8</b> dot, so the attached mark is <b>16</b>. The row reserves a <b>16px dot slot</b> (<span className="tok">--tasty-workspace-dot-slot</span>) on <b>every</b> row, attached or not, and centres the dot in it. Row left inset <b>8</b> (<span className="tok">--tasty-workspace-row-padding-x</span>), slot → body <b>4</b> (<span className="tok">--tasty-workspace-dot-gap</span>). Body x = 8 + 16 + 4 = <b>28</b> for title, remote pill and subtitle alike. Clearances from the ring's outer edge at scale 1: card edge <b>8</b>, active accent bar (x 0–2) <b>6</b>, label <b>4</b>. All three are tokens, so they scale with ui_scale and hold at 0.85 and 1.2. Compact 6 was rejected: this is a list row, and the 8 = list rows rule stays exception-free.</>}>
+          when={<>The workspace row keeps the generic <b>8</b> dot, so the attached mark is <b>16</b>. The row reserves a <b>16px dot slot</b> (<span className="tok">--tasty-workspace-dot-slot</span>) on <b>every</b> row, attached or not, and centres the dot in it. Row left inset <b>8</b> (<span className="tok">--tasty-workspace-row-padding-x</span>), slot → body <b>4</b> (<span className="tok">--tasty-workspace-dot-gap</span>). Body x = 8 + 16 + 4 = <b>28</b> for title, remote pill and subtitle alike. Clearances from the ring's outer edge at scale 1: card edge <b>8</b>, active accent bar (x 0–2) <b>6</b>, label <b>4</b>. All three are tokens and scale with ui_scale. <b>Rounding (2026-09-29):</b> the slot is <b>derived after rounding</b>, never rounded on its own: slot = round(dot) + 2 × (round(ring-width) + round(ring-offset)). At 0.85 that is 7 + 2 × (2 + 2) = <b>15</b> (not round(13.6) = 14), so the ring always fits its slot; at 1.2 it is 10 + 8 = <b>18</b>. The slot is square and its height is the title's own line box, so it never adds row height. The active bar is a hairline (<span className="tok">--tasty-workspace-row-active-bar-width</span>, 2, zoom-exempt). Compact 6 was rejected: this is a list row, and the 8 = list rows rule stays exception-free.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-lg)", alignItems: "flex-start" }}>
             {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
               <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>
@@ -588,8 +606,8 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["dot", <>8 — <span className="tok">--tasty-status-dot-size</span> (unchanged)</>], ["attached bbox", "8 + 2×(2+2) = 16 → 13.6 / 16 / 19.2"], ["row inset", "product 4 → 8"], ["dot slot", "product 8 → 16, reserved on every row"], ["slot → body", "4 (unchanged)"], ["body x", "product 12 → 28 (title · pill · subtitle)"], ["clearance", "card 8 · accent bar 6 · label 4"], ["collapsed rail", "unchanged — avatar square border, no ring"]]}
-            tokens={[{ tok: "--tasty-workspace-row-padding-x", use: "→ space-sm 8" }, { tok: "--tasty-workspace-dot-slot", use: "→ size-16" }, { tok: "--tasty-workspace-dot-gap", use: "→ space-xs 4" }, { tok: "--tasty-status-dot-attached-ring", use: "lavender", color: "var(--tasty-status-dot-attached-ring)" }]} />
+            specs={[["dot", <>8 — <span className="tok">--tasty-status-dot-size</span> (unchanged)</>], ["attached bbox", "8 + 2×(2+2) = 16 → 13.6 / 16 / 19.2"], ["row inset", "product 4 → 8"], ["dot slot", "product 8 → 16, reserved on every row"], ["slot → body", "4 (unchanged)"], ["body x", "product 12 → 28 (title · pill · subtitle)"], ["clearance", "card 8 · accent bar 6 · label 4"], ["ui_scale 0.85", "inset 7 · slot 15 (derived) · gap 3 → ring 7..22, label x 25 · clear card 7 · bar 5 · label 3"], ["ui_scale 1.2", "inset 10 · slot 18 · gap 5 → label x 33 · row height unchanged"], ["collapsed rail", "unchanged — avatar square border, no ring"]]}
+            tokens={[{ tok: "--tasty-workspace-row-padding-x", use: "→ space-sm 8" }, { tok: "--tasty-workspace-dot-slot", use: "→ size-16" }, { tok: "--tasty-workspace-dot-gap", use: "→ space-xs 4" }, { tok: "--tasty-workspace-row-active-bar-width", use: "→ selection-edge-width 2 (hairline)" }, { tok: "--tasty-status-dot-attached-ring", use: "lavender", color: "var(--tasty-status-dot-attached-ring)" }]} />
           <Dont><b>Don't</b> size the slot to the dot and let the outline overflow into padding and gap. The kit's 8 / 8 held the label clear, but the ring still reached the active accent bar. Reserve the whole mark.</Dont>
         </Spec>
         </Spec>
@@ -603,10 +621,10 @@ function Components() {
               <div key={k} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{host}</span>
                 <div style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
-                  {["loading", "empty", "error"].map((v) => (
-                    <div key={v} style={{ width: "var(--tasty-size-288)", height: k === "fp" ? "var(--tasty-size-220)" : "var(--tasty-size-160)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
-                      <div style={{ height: "var(--tasty-control-height)", flex: "none", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{k === "fp" ? "~/work/tasty/assets" : "Scripts · " + v}</div>
-                      <CenterStateG variant={v} host={k} />
+                  {[["loading"], ["empty"], ["error"], ["error", true]].map(([v, act]) => (
+                    <div key={v + (act ? "-a" : "")} style={{ width: "var(--tasty-size-288)", height: k === "fp" ? "var(--tasty-size-220)" : "var(--tasty-size-160)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                      <div style={{ height: "var(--tasty-control-height)", flex: "none", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", borderBottom: "var(--tasty-border-width) solid var(--tasty-border-default)" }}>{k === "fp" ? "~/work/tasty/assets" : "Scripts · " + v + (act ? " + action" : "")}</div>
+                      <CenterStateG variant={v} host={k} action={act} />
                     </div>
                   ))}
                 </div>
@@ -617,6 +635,24 @@ function Components() {
             specs={[["variants", "loading · empty · error"], ["glyph / spinner", "24 — icon-size-lg (was 22 · 26)"], ["glyph → title", "8"], ["title → sub", "4 · sub slot always reserved"], ["title", "body 13 · text-secondary"], ["sub", "caption 11 · text-muted · wraps at 300"], ["height", "none — centres in the list region"], ["ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"]]}
             tokens={[{ tok: "--tasty-center-state-glyph-size", use: "→ icon-size-lg 24" }, { tok: "--tasty-center-state-glyph-fg", use: "→ glyph-dim", color: "var(--tasty-center-state-glyph-fg)" }, { tok: "--tasty-center-state-error-fg", use: "→ accent-danger", color: "var(--tasty-center-state-error-fg)" }, { tok: "--tasty-center-state-gap", use: "8" }, { tok: "--tasty-center-state-line-gap", use: "4" }, { tok: "--tasty-center-state-max-width", use: "→ measure-sm 300" }]} />
           <Note><b>Clipboard centre glyph 28</b> is a content glyph (T6, 2026-09-17) and stays outside this part.</Note>
+        </Spec>
+        <Spec title="Error glyph and the action slot (2026-09-29)"
+          when={<>The part owns the <b>error glyph</b>: always <b>alertTriangle</b>, in every host (<code>CENTER_STATE_ERROR_GLYPH</code>). Hosts choose only the <b>empty</b> glyph (folderOpen, scriptFile, remote …). The optional <b>action</b> (Retry / Reconnect / New workspace) is a part slot: <b>Button secondary · sm</b>, <span className="tok">--tasty-center-state-action-gap</span> (12) below the reserved sub slot, horizontally centred. It is <b>outside the centring</b>: only glyph · title · sub are centred, so error with and without an action puts the glyph in the same place (see the last column above). The block is now the DS component <span className="ic">CenterState</span>; the file picker and remote attach frames render it.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-md)", flexWrap: "wrap" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                {[false, true].map((act) => (
+                  <div key={String(act)} style={{ width: "var(--tasty-size-220)", height: "var(--tasty-size-220)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                    <CenterStateG variant="error" host="fp" action={act} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["error glyph", "alertTriangle — part-owned, every host"], ["empty glyph", "host-chosen"], ["action", "Button secondary · sm (24)"], ["sub → action", "12 · center-state-action-gap"], ["centring", "glyph · title · sub only — action hangs below"], ["short region", "action may reach the region's bottom padding; never pushes the glyph"]]}
+            tokens={[{ tok: "--tasty-center-state-action-gap", use: "→ space-md 12" }, { tok: "--tasty-button-height-sm", use: "24" }, { tok: "--tasty-center-state-error-fg", use: "→ accent-danger", color: "var(--tasty-center-state-error-fg)" }]} />
+          <Dont><b>Don't</b> put the button in the centred column. Loading → error + Retry would jump the glyph up by half the button, and with no animation that reads as a glitch.</Dont>
         </Spec>
       </Section>
 

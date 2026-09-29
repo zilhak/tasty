@@ -220,8 +220,7 @@ function TriggerRow({ triggers, onAdd, onRemove }) {
             height: 16, padding: "0 var(--tasty-space-xs)", borderRadius: "var(--tasty-radius-sm)",
             borderStyle: "dashed", borderWidth: "var(--tasty-border-width)", borderColor: "var(--tasty-border-default)",
             background: open ? "var(--tasty-overlay-active)" : "transparent", whiteSpace: "nowrap",
-            fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", lineHeight: 1, color: "var(--tasty-text-muted)",
-            opacity: none ? "var(--tasty-opacity-disabled)" : 1 }}>
+            fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", lineHeight: 1, color: none ? "var(--tasty-state-disabled-fg)" : "var(--tasty-text-muted)" }}>
           <span>Add trigger…</span><span style={{ display: "inline-flex" }}><Icon name={SD.caret} size={12} /></span>
         </button>
         {open && !none && (
@@ -463,7 +462,7 @@ function HookRow({ h, onToggle, onCmd, onDelete }) {
   const o = HOOK_ORIGIN[h.origin] || HOOK_ORIGIN.user;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm) var(--tasty-space-xs)",
-      borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", opacity: h.on ? 1 : "var(--tasty-opacity-disabled)" }}>
+      borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", opacity: h.on ? 1 : "var(--tasty-state-dim-opacity)" /* switched-off hook = dimmed ITEM (still editable), not a disabled control */ }}>
       {/* line 1 — id · origin · priority · status · remove */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0 }}>
         <span style={{ flex: "0 1 auto", fontFamily: "var(--tasty-font-mono)", fontSize: 13, fontWeight: 600, color: "var(--tasty-text-primary)",

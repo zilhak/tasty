@@ -23,7 +23,10 @@ const CSS = `
 .tasty-check input:checked + .tasty-check__box svg { opacity: 1; }
 .tasty-check input:focus-visible + .tasty-check__box { outline: var(--tasty-focus-ring-width) solid var(--tasty-border-focus); outline-offset: 1px; }
 .tasty-check__label { font-size: var(--tasty-font-size-body); color: var(--tasty-text-primary); }
-.tasty-check[data-disabled="true"] { opacity: var(--tasty-state-disabled-opacity); pointer-events: none; }
+.tasty-check[data-disabled="true"] { cursor: default; pointer-events: none; }
+.tasty-check[data-disabled="true"] input + .tasty-check__box,
+.tasty-check[data-disabled="true"] input:checked + .tasty-check__box { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); color: var(--tasty-state-disabled-fg); }
+.tasty-check[data-disabled="true"] .tasty-check__label { color: var(--tasty-state-disabled-fg); }
 `;
 
 let injected = false;

@@ -49,7 +49,8 @@ const CSS = `
   border-color: var(--tasty-multiselect-border-focus);
   box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-multiselect-border-focus);
 }
-.tasty-mselect__trigger[data-disabled="true"] { opacity: var(--tasty-state-disabled-opacity); cursor: not-allowed; }
+.tasty-mselect__trigger[data-disabled="true"] { background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); cursor: default; }
+.tasty-mselect__trigger[data-disabled="true"], .tasty-mselect__trigger[data-disabled="true"] * { color: var(--tasty-state-disabled-fg); }
 .tasty-mselect__summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .tasty-mselect__summary[data-empty="true"] { color: var(--tasty-multiselect-summary-fg-empty); }
 .tasty-mselect__chevron {

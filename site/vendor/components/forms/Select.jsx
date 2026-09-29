@@ -25,7 +25,8 @@ const CSS = `
 }
 .tasty-select select:hover { border-color: var(--tasty-border-strong); }
 .tasty-select select:focus { outline: 0; border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
-.tasty-select select:disabled { opacity: var(--tasty-state-disabled-opacity); cursor: not-allowed; }
+.tasty-select select:disabled { color: var(--tasty-state-disabled-fg); background: var(--tasty-state-disabled-fill); border-color: var(--tasty-state-disabled-border); cursor: default; }
+.tasty-select:has(select:disabled) .tasty-select__chevron { color: var(--tasty-state-disabled-fg); }
 .tasty-select__chevron {
   position: absolute; right: var(--tasty-select-chevron-offset); top: 50%; transform: translateY(-50%);
   pointer-events: none; color: var(--tasty-text-muted);

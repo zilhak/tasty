@@ -17,7 +17,7 @@
 //   Footer: Connect (enabled only when a selectable remote workspace is chosen) ·
 //           Cancel (always enabled — closes, aborting any in-flight connect).
 // Standalone preview: remote_attach.html
-const { Button, IconButton, Tag, StatusDot } = window.TastyDesignSystem_41fd3f;
+const { Button, IconButton, Tag, StatusDot, CenterState } = window.TastyDesignSystem_41fd3f;
 const { ic, Icon, Scrim, Spinner } = window.TastyKit;
 
 // ── icons (lucide-style, drawn through TastyKit.Icon) ──
@@ -299,37 +299,22 @@ function RemoteAttach({ onClose, onFlash }) {
 
           {/* RIGHT — remote workspaces (4 states) */}
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            {/* centred states render the DS CenterState part (2026-09-29): part owns sizes, colours,
+                type and the error glyph (alertTriangle); the Retry action hangs below, outside the centring. */}
             {conn === "initial" && (
-              <RaCenterState>
-                <span style={{ display: "inline-flex", color: "var(--tasty-text-placeholder)" }}><Icon name={RA_IC.remote} size={22} /></span>
-                <span style={{ fontSize: 13, color: "var(--tasty-text-muted)" }}>Select an attach profile</span>
-                <span style={{ ...raCaption, maxWidth: "var(--tasty-measure-sm)" }}>
-                  Pick a profile on the left to connect and list the remote instance's workspaces.
-                </span>
-              </RaCenterState>
+              <CenterState variant="empty" glyph={RA_IC.remote} title="Select an attach profile"
+                sub="Pick a profile on the left to connect and list the remote instance's workspaces." />
             )}
 
             {conn === "connecting" && (
-              <RaCenterState>
-                <Spinner size={22} />
-                <span style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>Connecting…</span>
-                <span style={{ ...raCaption, maxWidth: "var(--tasty-measure-sm)" }}>
-                  Establishing the SSH tunnel to <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{selAttach && selAttach.name}</span> and listing workspaces. This can take a few seconds.
-                </span>
-              </RaCenterState>
+              <CenterState variant="loading" title="Connecting…"
+                sub={<>Establishing the SSH tunnel to <span style={{ fontFamily: "var(--tasty-font-mono)" }}>{selAttach && selAttach.name}</span> and listing workspaces. This can take a few seconds.</>} />
             )}
 
             {conn === "error" && (
-              <RaCenterState>
-                <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)" }}><Icon name={RA_IC.warn} size={22} /></span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--tasty-text-primary)" }}>Can't connect</span>
-                <span style={{ ...raCaption, maxWidth: "var(--tasty-measure-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>
-                  {(selAttach && RA_ERRORS[selAttach.id]) || "The remote instance didn't respond."}
-                </span>
-                <span style={{ marginTop: "var(--tasty-space-xs)" }}>
-                  <Button variant="secondary" size="sm" leadingIcon={<Icon name={RA_IC.refresh} size={14} />} onClick={retry}>Retry</Button>
-                </span>
-              </RaCenterState>
+              <CenterState variant="error" title="Can't connect"
+                sub={(selAttach && RA_ERRORS[selAttach.id]) || "The remote instance didn't respond."}
+                action={<Button variant="secondary" size="sm" leadingIcon={<Icon name={RA_IC.refresh} size="var(--tasty-icon-size-sm)" />} onClick={retry}>Retry</Button>} />
             )}
 
             {/* loaded — ONE render path whether or not the remote has workspaces (§6-1, plan B):

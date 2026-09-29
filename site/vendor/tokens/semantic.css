@@ -217,8 +217,21 @@
   --tasty-icon-size-md: var(--tasty-size-16); /* toolbar / input / toast icons */
   --tasty-icon-size-lg: var(--tasty-size-24); /* centred state glyph (empty / loading / error blocks) — replaces the off-scale 22 and 26 */
 
-  /* ── Disabled state ── */
-  --tasty-state-disabled-opacity: var(--tasty-opacity-disabled);
+  /* ── Disabled state (2026-09-29) — ink, never opacity ──
+     A DISABLED control (non-interactive) keeps a neutral box and drops its ink:
+     label + glyphs → disabled ink, fill → state-disabled-fill, edge → state-disabled-border.
+     Accent-filled variants lose the accent (no text-disabled on an accent fill). No hover /
+     active overlay. An interactive-but-inactive ITEM (switched-off row, pending cut) is not
+     disabled — it dims with state-dim-opacity and keeps its own colours. */
+  --tasty-state-disabled-fg:      var(--tasty-text-disabled);
+  --tasty-state-disabled-fill:    var(--tasty-surface-raised);
+  --tasty-state-disabled-border:  var(--tasty-border-default);
+  --tasty-state-dim-opacity:      var(--tasty-opacity-disabled);   /* 0.5 — dimmed ITEMS, not disabled controls */
+  --tasty-state-disabled-opacity: var(--tasty-opacity-disabled);   /* DEPRECATED alias (2026-09-29): no control reads it; migrate readers to state-dim-opacity or to the ink rule */
+
+  /* ── Stacked text + one-edge marks ── */
+  --tasty-label-detail-gap:     var(--tasty-size-2); /* label line ↔ its detail line in one text stack (permission row, banner title ↔ body, workspace row). On-scale. */
+  --tasty-selection-edge-width: var(--tasty-size-2); /* one-edge selection bar (tab indicator, active workspace row, remote-attach / preset list rows). HAIRLINE — zoom-exempt like border-width */
 
   /* ── Tinted fill + edge (the accent-box idiom) ── */
   --tasty-tint-fill-alpha:   var(--tasty-opacity-tint-fill);   /* 0.12 — accent as a soft fill */
