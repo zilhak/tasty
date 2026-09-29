@@ -32,6 +32,8 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 
 탭바를 기본 버튼으로 클릭하면 해당 pane으로 포커스를 옮긴다. 탭 자체뿐 아니라 빈 영역·스크롤 화살표·추가·분할·검색 버튼도 포함한다. 빈 영역에서는 탭을 바꾸지 않고 pane 포커스만 옮긴다.
 
+HTML 탭의 lock 표지(스크립트 차단 안내를 닫은 뒤 탭 제목 뒤에 남는 자물쇠) 클릭은 예외다. 안내만 다시 띄우고 pane 포커스와 활성 탭을 바꾸지 않는다. 비활성 탭의 lock을 눌러도 그 탭으로 전환하지 않는다.
+
 우클릭 메뉴는 `pane_id`·`tab_index`로 대상을 전달하므로 포커스를 옮기지 않는다. 이 동작은 사용자가 GUI에서 직접 클릭한 결과이며, 에이전트가 포커스를 바꾸지 못하게 하는 IPC 규칙과는 별개다.
 
 구현은 `src/adapters/ui/tab_bar.rs`의 `TabBarAction::focus_target_pane`과 `src/adapters/ui/tab_bar/apply.rs`의 `apply_tab_bar_actions`에 있다.
