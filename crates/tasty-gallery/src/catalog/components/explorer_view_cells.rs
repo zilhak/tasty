@@ -193,7 +193,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                         e.name,
                                         None,
                                         i == *sel,
-                                        true,
                                     )
                                     .clicked()
                                 })

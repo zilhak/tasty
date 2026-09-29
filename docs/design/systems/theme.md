@@ -325,7 +325,7 @@ text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계없이 같은 중립 박스와 disabled 잉크로 그린다.
 
 - **박스**: 채움 `state_disabled_fill()`(= surface-raised), 테두리 `state_disabled_border()`(= border-default). Button의 모든 변형(Ghost는 박스 없음), solid IconButton, Input, Select·MultiSelect 트리거, Checkbox 박스, Switch 트랙이 이 박스를 쓴다. accent 채움은 disabled에서 빠진다. Button은 component 역할 `button_disabled_bg/border/fg()`로 읽는다.
-- **잉크**: 라벨·아이콘·체크·thumb·placeholder·addon·단축키 표시는 모두 `state_disabled_fg()`(= text-disabled)를 쓴다. MenuItem·ListCtrl·IconButton(ghost)은 박스 없이 잉크만 바꾼다. TreeRow의 disabled 표현은 디자인 결정 대기 중이다. 시안에 TreeRow disabled 상태가 없고, 현재 호출처는 모두 enabled 상태로 그린다.
+- **잉크**: 라벨·아이콘·체크·thumb·placeholder·addon·단축키 표시는 모두 `state_disabled_fg()`(= text-disabled)를 쓴다. MenuItem·ListCtrl·IconButton(ghost)은 박스 없이 잉크만 바꾼다. TreeRow는 disabled 상태가 없다. 열 수 없는 항목(읽기 권한 없는 폴더, 연결이 끊긴 원격 즐겨찾기)도 일반 행으로 선택·펼치기를 받고, 열었을 때 탐색기 본문이 이유를 알린다. 그래서 `tree_row`에는 `enabled` 인자가 없다. 잘라내기 대기 항목은 disabled가 아니라 dim 항목이다.
 - **상호작용**: hover·active 오버레이를 그리지 않는다. egui의 `add_enabled(false)`/`ui.disable()`은 도형을 fade 색 쪽으로 섞어 박스 색을 바꾸므로, 공용 위젯은 hover만 감지하는 sense(Button)나 `TextEdit::interactive(false)`(Input)로 입력을 막는다.
 - **디밍과 구분**: `state_dim_opacity()`(0.5)는 꺼진 hook 행·잘라내기 대기(`cut_pending_opacity()`)·preset 편집 중 비활성 영역(`preset_cfg_dim_opacity()`)처럼 **항목 전체를 물러나게** 할 때만 곱한다. disabled 컨트롤 신호로 쓰지 않는다.
 

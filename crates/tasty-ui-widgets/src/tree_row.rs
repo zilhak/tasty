@@ -3,6 +3,7 @@
 //! [chevron] [icon] label [meta]. height control-height-tree(22), depth 들여쓰기.
 //! hover overlay-hover+text-primary, selected surface-active+text-primary(아이콘
 //! accent-primary). chevron 은 has_children 일 때만, open 이면 90° 회전.
+//! disabled 상태는 없다. 열 수 없는 항목도 일반 행으로 두고, 여는 쪽이 이유를 알린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -24,7 +25,6 @@ pub fn tree_row(
     label: &str,
     meta: Option<&str>,
     selected: bool,
-    enabled: bool,
 ) -> egui::Response {
     let height = theme.tree_row_height().value();
     let pad_l = theme.tree_row_gap().value();
@@ -33,26 +33,13 @@ pub fn tree_row(
     let body = theme.tree_row_font_size().value();
     let width = ui.available_width();
 
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
-    // disabled 글자·글리프는 opacity 없이 disabled ink를 쓴다.
-    let dim = |c: egui::Color32| {
-        if enabled {
-            c
-        } else {
-            theme.state_disabled_fg().to_egui()
-        }
-    };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let indent_per_depth = theme.tree_row_indent().value();
 
     if selected {
         ui.painter()
             .rect_filled(rect, radius, theme.tree_row_bg_active().to_egui());
-    } else if enabled && resp.hovered() {
+    } else if resp.hovered() {
         ui.painter().rect_filled(
             rect,
             radius,
@@ -60,7 +47,7 @@ pub fn tree_row(
         );
     }
 
-    let fg = if selected || (enabled && resp.hovered()) {
+    let fg = if selected || resp.hovered() {
         theme.tree_row_fg_active().to_egui()
     } else {
         theme.tree_row_fg().to_egui()
@@ -87,7 +74,7 @@ pub fn tree_row(
         };
         ui.painter().add(egui::Shape::line(
             pts,
-            egui::Stroke::new(theme.icon_stroke_width.value(), dim(muted)),
+            egui::Stroke::new(theme.icon_stroke_width.value(), muted),
         ));
     }
     x += CHEVRON_SLOT + GAP;
@@ -102,7 +89,7 @@ pub fn tree_row(
             egui::pos2(x + ICON_GLYPH * 0.5, rect.center().y),
             egui::vec2(ICON_GLYPH, ICON_GLYPH),
         );
-        paint(ui, irect, dim(icon_color));
+        paint(ui, irect, icon_color);
         x += ICON_GLYPH + GAP;
     }
 
@@ -117,7 +104,7 @@ pub fn tree_row(
             right - g.rect.width(),
             rect.center().y - g.rect.height() * 0.5,
         );
-        ui.painter().galley(pos, g.clone(), dim(muted));
+        ui.painter().galley(pos, g.clone(), muted);
         right -= g.rect.width() + GAP;
     }
 
@@ -131,9 +118,7 @@ pub fn tree_row(
         egui::pos2(right.max(x), rect.bottom()),
     );
     let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
-    ui.painter()
-        .with_clip_rect(label_rect)
-        .galley(pos, g, dim(fg));
+    ui.painter().with_clip_rect(label_rect).galley(pos, g, fg);
 
     resp
 }

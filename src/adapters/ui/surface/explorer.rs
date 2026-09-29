@@ -737,7 +737,6 @@ fn favorite_row(
         &fav.label,
         None,
         selected,
-        true,
     );
     if resp.clicked() && action.is_none() {
         *action = Some(ExplorerAction::Navigate(fav.path.clone()));
@@ -802,7 +801,6 @@ fn tree_node(
         &name,
         None,
         selected,
-        true,
     );
     // chevron 영역은 펼치기, 나머지 영역은 해당 경로로 이동한다.
     if resp.clicked() {
@@ -1339,7 +1337,6 @@ fn list_view(
             "..",
             None,
             false,
-            true,
         );
         if resp.double_clicked() && action.is_none() {
             *action = Some(ExplorerAction::Navigate(p));
@@ -1365,7 +1362,6 @@ fn list_view(
                     &e.name,
                     None,
                     selected,
-                    true,
                 )
             })
             .inner;

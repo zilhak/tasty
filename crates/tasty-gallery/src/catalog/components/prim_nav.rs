@@ -6,7 +6,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator, tree_row};
 
 use super::glyph;
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 thread_local! {
     static SEL: RefCell<usize> = const { RefCell::new(0) };
@@ -132,7 +132,6 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
                             label,
                             (!meta.is_empty()).then_some(*meta),
                             i == *sel,
-                            true,
                         );
                         if r.clicked() {
                             *sel = i;
@@ -149,6 +148,7 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
             ("height", "22 control-height-tree"),
             ("indent", "space-md / level"),
             ("selected", "surface-active"),
+            ("disabled", "none — no such state (2026-09-29)"),
         ],
         &[
             TokenChip::new(
@@ -167,5 +167,15 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.text_muted()),
             ),
         ],
+    );
+    note(
+        ui,
+        theme,
+        "No disabled state (2026-09-29). A tree row names something that exists. A folder without \
+         read permission or a favourite on a dropped remote stays a normal row: selectable, \
+         expandable, and opening it reports the reason (CenterState error in the explorer body). \
+         Greying it would hide the one row the user needs to act on. The product's enabled \
+         argument is removed. A pending cut is a dimmed item (cut-pending-opacity), not \
+         disabled.",
     );
 }

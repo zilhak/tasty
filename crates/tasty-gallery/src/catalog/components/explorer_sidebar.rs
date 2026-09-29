@@ -249,7 +249,6 @@ fn two_region_inner(ui: &mut egui::Ui, theme: &Theme, tree: &[Node], favs: &[(&s
                                 label,
                                 None,
                                 active,
-                                true,
                             )
                         });
                     }
@@ -309,7 +308,6 @@ fn fav_row(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
         label,
         None,
         active,
-        true,
     );
 }
 
