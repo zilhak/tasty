@@ -221,10 +221,15 @@ impl<'a, K> Table<'a, K> {
                     });
                 }
             });
-            // egui_extras 는 선택 행 배경을 텍스트 선택색으로 칠한다. 행에는 `table-row-bg-selected`를
-            // 쓰고, 셀 안의 텍스트 선택은 원래 색을 유지한다.
+            // egui_extras 는 선택 행 배경을 텍스트 선택색으로, hover 행 배경을 위젯 hover 색으로 칠한다.
+            // 행에는 `table-row-bg-selected`·`table-row-bg-hover`를 쓰고, 셀 안의 텍스트 선택과
+            // 위젯 hover 는 원래 색을 유지한다.
             let text_selection_fill = table.ui_mut().visuals().selection.bg_fill;
-            table.ui_mut().visuals_mut().selection.bg_fill = theme.table_row_bg_selected().into();
+            let widget_hover_fill = table.ui_mut().visuals().widgets.hovered.bg_fill;
+            let row_visuals = table.ui_mut().visuals_mut();
+            row_visuals.selection.bg_fill = theme.table_row_bg_selected().into();
+            row_visuals.widgets.hovered.bg_fill =
+                theme.table_row_bg_hover().to_egui_premultiplied();
             table.body(|mut body| {
                 for (i, row) in rows.iter().enumerate() {
                     body.row(row_h, |mut tr| {
@@ -232,6 +237,7 @@ impl<'a, K> Table<'a, K> {
                         for (c, col) in columns.iter().enumerate() {
                             tr.col(|ui| {
                                 ui.visuals_mut().selection.bg_fill = text_selection_fill;
+                                ui.visuals_mut().widgets.hovered.bg_fill = widget_hover_fill;
                                 // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
                                 if selectable {
                                     ui.style_mut().interaction.selectable_labels = false;

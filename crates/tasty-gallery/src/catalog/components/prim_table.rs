@@ -194,6 +194,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("header", "sticky bg-sidebar"),
             ("cell", "mono"),
             ("selected", "surface-active"),
+            ("hover", "overlay-hover"),
         ],
         &[
             TokenChip::new(

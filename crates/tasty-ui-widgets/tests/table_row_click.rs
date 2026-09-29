@@ -1,5 +1,6 @@
 //! 행 선택 표에서 글자 위 클릭도 행 클릭으로 처리하는지 검사한다. 높이를 지정하지 않은 표의
-//! 헤더와 본문 행이 `table_cell_height`인지, 선택 행 배경이 `table_row_bg_selected`인지도 검사한다.
+//! 헤더와 본문 행이 `table_cell_height`인지, 선택·hover 행 배경이 `table_row_bg_selected`·
+//! `table_row_bg_hover`인지도 검사한다.
 //! 본문 텍스트 선택과 헤더 정렬 클릭의 구분은 docs/architecture/ui-widgets-crate.md를 따른다.
 
 use std::cell::RefCell;
@@ -278,5 +279,74 @@ fn selected_row_fill_is_table_row_bg_selected() {
                 .iter()
                 .all(|c| *c == text_selection_fill),
         "cell text selection keeps the egui selection fill"
+    );
+}
+
+#[test]
+fn hovered_row_fill_is_table_row_bg_hover() {
+    let theme = tasty_themes::mocha_fallback();
+    let fill = theme.table_row_bg_hover().to_egui_premultiplied();
+    let cell_h = theme.table_cell_height().value();
+    let ctx = egui::Context::default();
+    let widget_hover_fill = ctx.style().visuals.widgets.hovered.bg_fill;
+    let table_top = RefCell::new(0.0_f32);
+    let cell_hover_fills = RefCell::new(Vec::new());
+    let mut shapes = Vec::new();
+    // 첫 프레임에서 표 위치를 얻고, 이후 세 번째 행(charlie.md) 위에 포인터를 둔다.
+    for i in 0..4 {
+        let events = if i == 0 {
+            vec![]
+        } else {
+            vec![ptr_move(pos2(40.0, *table_top.borrow() + cell_h * 3.5))]
+        };
+        let out = ctx.run(raw(events), |c| {
+            egui::CentralPanel::default().show(c, |ui| {
+                *table_top.borrow_mut() = ui.cursor().top();
+                let columns = vec![TableColumn {
+                    title: "Name",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(140.0),
+                        clip: true,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None::<Col>,
+                }];
+                Table::new(columns).selectable(true).show(
+                    ui,
+                    &theme,
+                    ROWS,
+                    |_row: &Row| false,
+                    |ui, _th, row: &Row, _col| {
+                        cell_hover_fills
+                            .borrow_mut()
+                            .push(ui.visuals().widgets.hovered.bg_fill);
+                        ui.label(row.name);
+                    },
+                );
+            });
+        });
+        shapes = out.shapes;
+    }
+    let bands: Vec<Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bands.len(), 1, "one hovered row band: {bands:?}");
+    let top = *table_top.borrow();
+    assert!(
+        (bands[0].top() - (top + cell_h * 3.0)).abs() <= 0.5
+            && (bands[0].height() - cell_h).abs() <= 0.5,
+        "hovered band {:?} for table top {top}",
+        bands[0]
+    );
+    assert!(
+        cell_hover_fills
+            .borrow()
+            .iter()
+            .all(|c| *c == widget_hover_fill),
+        "cell widgets keep the egui hover fill"
     );
 }
