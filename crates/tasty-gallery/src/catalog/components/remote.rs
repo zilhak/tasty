@@ -147,15 +147,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
         });
-        // 호스트가 없을 때와 config 를 못 읽을 때는 한 줄 muted 문구만 바뀐다.
+        // 호스트 없음·파일 없음·못 읽음은 한 줄 muted 문구만 바뀐다. 못 읽음은 원인을 나누지 않는다.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
             ssh_state_card(ui, theme, "no hosts", "No hosts in ~/.ssh/config.");
+            ssh_state_card(ui, theme, "no file", "No ~/.ssh/config found.");
             ssh_state_card(
                 ui,
                 theme,
-                "unreadable config",
-                "Can't read ~/.ssh/config — permission denied.",
+                "unreadable config (any open error · directory · not UTF-8)",
+                "Can't read ~/.ssh/config. Check the file and its permissions.",
             );
         });
     });
@@ -190,7 +191,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "pad space-xs · gap space-sm · alias ↔ target label-detail-gap · separator below",
             ),
             (
-                "empty / unreadable",
+                "empty / failure",
                 "one caption line · text-muted · no error tone",
             ),
         ],

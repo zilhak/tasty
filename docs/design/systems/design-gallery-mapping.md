@@ -20,7 +20,7 @@
 | `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
-| `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·unreadable config 빈 상태 두 장 |
+| `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·no file·unreadable config 빈 상태 세 장 |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
@@ -33,7 +33,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 탭 스트립과 세그먼트는 역할과 색이 다르다. 화면을 전환하는 탭은 2px `accent-primary` 밑줄과 weight 600을 사용한다. 값을 선택하는 세그먼트는 `accent-primary` 채움과 `text-on-accent` 글자를 쓴다. `surface-active`는 행 선택용이므로 두 컴포넌트에 대신 쓰지 않는다. 본체의 `tasty_ui_widgets::segmented`와 갤러리의 `seg_chip`이 같은 규칙을 따른다.
 
-로컬 SSH config는 카드 대신 섹션 헤더와 2줄 행으로 표시한다. 헤더는 11px 대문자 라벨·고정폭 경로·오른쪽 개수이며, 행은 alias와 `user@host:port`다. 행 아이콘 버튼 대신 ghost `Add profile`을 사용하고, 등록된 호스트에는 `in profiles` Tag를 표시한다. 빈 상태와 읽기 실패는 `text-muted` 한 줄로 알린다. 본체와 갤러리 모두 `tasty_ui_widgets::draw_local_ssh_section`을 호출한다.
+로컬 SSH config는 카드 대신 섹션 헤더와 2줄 행으로 표시한다. 헤더는 11px 대문자 라벨·고정폭 경로·오른쪽 개수이며, 행은 alias와 `user@host:port`다. 행 아이콘 버튼 대신 ghost `Add profile`을 사용하고, 등록된 호스트에는 `in profiles` Tag를 표시한다. 호스트 없음·파일 없음·읽기 실패는 `text-muted` 한 줄로 알리며, 읽기 실패 문구는 권한·디렉터리·UTF-8 아님 같은 원인을 나누지 않는다. 본체와 갤러리 모두 `tasty_ui_widgets::draw_local_ssh_section`을 호출한다.
 
 디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 자간 `letterSpacing: 0.06em`은 `SECTION_HEADING_TRACKING_EM`(0.06)에 글자 크기를 곱해 `TextFormat::extra_letter_spacing`으로 적용한다. caption 11px에서는 0.66px이며, 사이드바의 0.07em(10px에서 0.7px)과 같은 방법이다.
 
