@@ -20,7 +20,7 @@
 │ 프로필 목록         [+ 추가][⤓필터]│  add-bar (필터는 프로필 탭 전용)
 │ ▸ prod-box   user@host:22   [✎][⌫]│  목록 — 편집/삭제
 │ ▸ staging    …                   │
-│ ─── SSH CONFIG 에서 ~/.ssh/config  3│  읽기 전용 섹션 (프로필 탭 전용)
+│ ─── SSH 설정에 등록된 호스트    3│  읽기 전용 섹션 (프로필 탭 전용) · 헤더에 ~/.ssh/config 경로
 │   gx10                            │  2줄 행 — alias
 │   deploy@10.0.0.5:2200 [+ 프로필 추가]│  우측 ghost 액션 하나
 │   prod-web / deploy@10.0.4.12 (등록됨)│  이미 등록됐으면 Tag
@@ -54,7 +54,7 @@
   - **`port_mode` 는 ssh 폼 입력이 아니다**: shell 선택에서 자동 도출되는 내부 필드(`shell_to_port_mode`). `auto` 면 저장 후 워커가 감지해 채운다. (attach 가 명시 override 하려면 Attach 폼의 Port mode.)
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
 - **검증 에러**: 이름 빈 값/중복, host 빈 값, port 형식, 저장 실패 메시지.
-- **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래 같은 스크롤**, 하위 영역): `border-frame` 구분선 + 섹션 헤더(대문자 `ssh config 에서` 라벨 + config 경로 mono + 우측 호스트 수) + 행들. 섹션 본문은 프로필 행보다 `space-xs` 만큼 들여쓰고, 구분선은 들여쓰지 않는다 — 프로필 목록과 구분되는 하위 영역임을 나타낸다.
+- **로컬 SSH config 섹션** (원격 접속 프로필 탭 전용, 프로필 목록 **아래 같은 스크롤**, 하위 영역): `border-frame` 구분선 + 섹션 헤더(대문자 `SSH 설정에 등록된 호스트` 라벨(en `From ssh config`) + config 경로 mono + 우측 호스트 수) + 행들. 섹션 본문은 프로필 행보다 `space-xs` 만큼 들여쓰고, 구분선은 들여쓰지 않는다 — 프로필 목록과 구분되는 하위 영역임을 나타낸다.
   - 행은 **2줄**이다 — alias(`text-secondary`, body) 위에 `user@host:port`(mono, caption, `text-muted`). 둘 다 폭이 좁으면 말줄임한다. 우측 슬롯을 먼저 잡아 긴 alias 가 액션을 밀어내지 않는다.
   - **아이콘 버튼이 없다.** 행 액션은 ghost `프로필 추가` 버튼 하나(leading `+`)이고, 이미 등록된 호스트는 액션 대신 `등록됨` Tag 를 보인다 — 같은 호스트를 두 번 등록하는 중복을 비활성 버튼이 아니라 **상태 표시**로 막는다.
   - **읽기 전용**이다 — 여기 나열되는 것은 tasty 레코드가 아니라 사용자의 `~/.ssh/config` 라, tasty 가 편집·삭제하지 않는다. 그래서 행 액션이 가져오기 하나뿐이다.
