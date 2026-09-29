@@ -486,15 +486,17 @@ impl PopupManager {
                     egui::Stroke::new(th.border_width.value(), title_edge),
                 );
 
-                // 제목이 오른쪽 버튼 영역을 침범하지 않도록 줄인다.
+                // 닫기 버튼만 있으면 스트립 전체 기준으로 가운데 둔다. 버튼이 둘일 때의
+                // 규칙은 시안에 아직 없어 버튼 앞 영역의 가운데에 두는 기존 배치를 유지한다.
                 let title_font = egui::FontId::proportional(title_size.value());
-                let title_pad = th.spacing_sm.value();
-                let title_avail_rect = egui::Rect::from_min_max(
-                    egui::pos2(title_rect.min.x + title_pad, title_rect.min.y),
-                    egui::pos2(
-                        (buttons_left_x - title_pad).max(title_rect.min.x + title_pad),
-                        title_rect.max.y,
-                    ),
+                let title_align = tasty_ui_widgets::PopupTitleAlign::for_button_count(
+                    1 + usize::from(fullscreen_btn_rect.is_some()),
+                );
+                let title_avail_rect = tasty_ui_widgets::popup_title_text_rect(
+                    title_rect,
+                    buttons_left_x,
+                    th.spacing_sm,
+                    title_align,
                 );
                 let elided_title = elide_for_width(
                     ctx,
