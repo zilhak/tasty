@@ -19,21 +19,39 @@
 // on the STRIP, whatever sits on the right. Both sides reserve
 //   reserve(N) = popup-title-edge-inset + N × popup-title-btn-size + (N − 1) × popup-title-btn-gap + popup-title-text-gap
 //   N = 1 (×): 32 · N = 2 (fullscreen + ×): 60.
+// Narrow popups (2026-09-29):
+//   · every popup width is a token and scales with ui_scale like every other size. Scaling alone
+//     keeps the title/band ratio, so a width must be sized for its longest locale title at 1.0:
+//     convert popup 200 → convert-popup-width 240 (band 176; ja title ≈ 139).
+//   · a title that still doesn't fit ellipsises in the band (rule unchanged) and, ONLY when it is
+//     cut, shows the full title in a Tooltip on hover (shared placement: top, then bottom).
 // Buttons are IconButton sm (24, popup-title-btn-size) — the product's 20 goes. Fullscreen (glyph fit)
 // sits left of ×, popup-title-btn-gap (4) apart, and only on popups that declare a fullscreen stage.
 (() => {
-const { Button, IconButton, Icon } = window.TastyDesignSystem_41fd3f;
+const { Button, IconButton, Icon, MenuItem } = window.TastyDesignSystem_41fd3f;
 
 const TITLE_RESERVE = (n) => `calc(var(--tasty-popup-title-edge-inset) + ${n} * var(--tasty-popup-title-btn-size) + ${n - 1} * var(--tasty-popup-title-btn-gap) + var(--tasty-popup-title-text-gap))`;
 
 // The shared popup title bar. fullscreen = the popup declares a fullscreen stage (adds the fit button).
 function PopupTitleBar({ title, id, fullscreen = false, edge = "var(--tasty-info-modal-title-edge)" }) {
   const n = fullscreen ? 2 : 1;
+  const tRef = React.useRef(null);
+  const [cut, setCut] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const el = tRef.current; if (!el) return;
+    const check = () => { const c = el.scrollWidth > el.clientWidth; setCut((p) => (p === c ? p : c)); };
+    check();
+    const ro = new ResizeObserver(check); ro.observe(el);
+    return () => ro.disconnect();
+  }, [title]);
+  // Same DOM in both states (no re-parenting); the full title surfaces only when cut.
+  // Kit stand-in for the hover Tooltip: the native title attribute.
+  const text = <span ref={tRef} id={id} title={cut ? title : undefined} style={{ display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{title}</span>;
   return (
     <div style={{ flex: "none", position: "relative", height: "var(--tasty-control-height)", display: "flex", alignItems: "center", justifyContent: "center",
       padding: "0 " + TITLE_RESERVE(n), background: "var(--tasty-bg-sidebar)", borderBottom: "var(--tasty-border-width) solid " + edge }}>
-      <span id={id} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{title}</span>
+      <span style={{ display: "flex", minWidth: 0 }}>{text}</span>
       <span style={{ position: "absolute", right: "var(--tasty-popup-title-edge-inset)", top: 0, bottom: 0, display: "flex", alignItems: "center", gap: "var(--tasty-popup-title-btn-gap)" }}>
         {fullscreen && <IconButton size="sm" aria-label="Fullscreen" title="Fullscreen"><Icon name="fit" /></IconButton>}
         <IconButton size="sm" aria-label="Close"><Icon name="close" /></IconButton>
@@ -98,5 +116,21 @@ function NotificationsPopupHead({ title = "Notifications", w = "var(--tasty-noti
   );
 }
 
-window.TastyKit = Object.assign(window.TastyKit || {}, { InfoModalShell, ThemeNotFoundModal, DbInitErrorModal, PopupTitleBar, NotificationsPopupHead });
+// Convert surface (2026-09-29): the product's small list popup is the target shape (the 400 dialog
+// is retired). Title bar + one MenuItem per kind the surface can become; click converts, Esc / × close.
+// Width = convert-popup-width (240 × ui_scale); height = title + rows.
+const CONVERT_KINDS = [["markdown", "Markdown"], ["html", "HTML"], ["folder", "Explorer"], ["image", "Image"]];
+function ConvertSurfacePopup({ title = "Surface Type", kinds = CONVERT_KINDS, active = 0 }) {
+  return (
+    <div style={{ width: "var(--tasty-convert-popup-width)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)",
+      borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
+      <PopupTitleBar title={title} />
+      <div style={{ display: "flex", flexDirection: "column", padding: "var(--tasty-space-xs)" }}>
+        {kinds.map(([ic, label], i) => <MenuItem key={ic} icon={<Icon name={ic} />} label={label} active={i === active} />)}
+      </div>
+    </div>
+  );
+}
+
+window.TastyKit = Object.assign(window.TastyKit || {}, { ConvertSurfacePopup, InfoModalShell, ThemeNotFoundModal, DbInitErrorModal, PopupTitleBar, NotificationsPopupHead });
 })();

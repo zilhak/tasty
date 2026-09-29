@@ -713,6 +713,7 @@
   --tasty-popup-title-btn-gap:        var(--tasty-space-xs);  /* 4 — fullscreen ↔ close */
   --tasty-popup-title-edge-inset:     var(--tasty-space-xs);  /* 4 — rightmost button ↔ strip edge */
   --tasty-popup-title-text-gap:       var(--tasty-space-xs);  /* 4 — leftmost button ↔ title ellipsis */
+  --tasty-convert-popup-width:        var(--tasty-size-240);  /* convert-surface list popup width (was literal 200) — band 176 fits the ja title; × ui_scale like every popup width (2026-09-29) */
   --tasty-notifications-popup-width:  var(--tasty-size-352);  /* notifications popup default width (352 × 400) — the one popup with a fullscreen stage today */
   /* File HANDLER picker — the Recent row's trailing "when" fragment. The column
      is RESERVED at the widest vocabulary member (the absolute date, 10 mono

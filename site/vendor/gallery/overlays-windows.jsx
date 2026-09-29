@@ -13,6 +13,63 @@ const WSelect = window.TastyDesignSystem_41fd3f.Select;
 const WTag = window.TastyDesignSystem_41fd3f.Tag;
 const { Backdrop, PaletteFrame, LocalSshSection, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, ToastDragValue, GitViewerFrame, ClipboardFrame, RemoteFormFrame, RemoteAttachFrame, RaNewRow, RaWsPeek, FilePickerFrame, ScriptManagerFrame, ic } = window.OverlaysShared;
 
+// 2026-09-29 disabled sites without a screen — static specimens of the kit
+// (plugins_window.jsx FingerprintLine / Add bar, settings_window.jsx ExtensionMapping).
+function FpLineG({ value }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
+      <span style={{ color: "var(--tasty-text-secondary)" }}>fingerprint</span><span>{value}</span>
+      <IconButton size="sm" aria-label="Copy fingerprint"><WIcon name="copy" /></IconButton>
+    </div>
+  );
+}
+function AddBarG({ blocked, trusted = true }) {
+  const why = { installed: "Already installed", "unsigned-no-key": "Unsigned, and no public key to check it against", "signature-error": "Signature check failed" }[blocked];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)", borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", background: "var(--tasty-bg-panel)" }}>
+      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{why || "Grants 3 permissions"}</span>
+      <div style={{ flex: 1 }} />
+      <Button variant="ghost">Cancel</Button>
+      {blocked ? <Button variant="primary" disabled>Add plugin</Button> : trusted ? <Button variant="primary">Add plugin</Button> : <Button variant="agent">Trust &amp; add</Button>}
+    </div>
+  );
+}
+function ExtMapG({ draft = "", detectors = true }) {
+  const groups = [{ ext: ".md", rows: [["Markdown viewer", true], ["Editor", true], ["html-preview", false]] }, { ext: ".log", rows: [["Log viewer", true]] }];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", width: "var(--tasty-size-360)", maxWidth: "100%" }}>
+      <div style={{ display: "flex", gap: "var(--tasty-space-sm)" }}>
+        <Input block mono placeholder="extension, e.g. .log" defaultValue={draft} />
+        <Button variant="secondary" size="sm" disabled={!draft || !detectors}>Add</Button>
+      </div>
+      {groups.map((g) => {
+        const cand = g.rows.filter(([, c]) => c).length;
+        return (
+          <div key={g.ext} style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", padding: "var(--tasty-space-xs) 0" }}>{g.ext}</div>
+            {g.rows.map(([name, c], i) => (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-settings-row-min-height)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+                <span style={{ width: "var(--tasty-space-lg)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{i + 1}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-body)", color: c ? "var(--tasty-text-secondary)" : "var(--tasty-text-disabled)" }}>{name}</span>
+                {!c && <WTag disabled>off</WTag>}
+                <IconButton size="sm" aria-label="Move up" disabled={!c || i === 0}><WIcon name="chevronUp" /></IconButton>
+                <IconButton size="sm" aria-label="Move down" disabled={!c || i >= cand - 1}><WIcon name="chevronDown" /></IconButton>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+const ThemePair = ({ children }) => (
+  <>{[["Mocha", null], ["Latte", "latte"]].map(([label, t]) => (
+    <div key={label} {...(t ? { "data-theme": t } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)", minWidth: 0 }}>
+      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</span>{children}
+    </div>
+  ))}</>
+);
+
 const NAV = [
   { id: "palette", label: "Command palette" },
   { id: "ports", label: "Listening ports" },
@@ -23,7 +80,7 @@ const NAV = [
   { id: "settings", label: "Settings window" },
   { id: "permissions", label: "General › Permissions (macOS)" },
   { id: "kbimportexport", label: "Keybindings · Import / Export" },
-  { id: "pluginswindow", label: "Plugins window · avatar" },
+  { id: "pluginswindow", label: "Plugins window · avatar · disabled sites" },
   { id: "scripts", label: "Misc · Scripts" },
   { id: "gitviewer", label: "Git viewer" },
   { id: "clipboard", label: "Clipboard viewer" },
@@ -670,7 +727,7 @@ function Page() {
               <RemoteFrame />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[["no hosts", "empty"], ["unreadable config", "unreadable"]].map(([label, st]) => (
+              {[["no hosts", "empty"], ["no file", "missing"], ["unreadable config (any open error · directory · not UTF-8)", "unreadable"]].map(([label, st]) => (
                 <div key={st} style={{ display: "flex", flexDirection: "column", gap: 6, width: 300 }}>
                   <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
                   <div style={{ padding: "8px 12px", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)" }}>
@@ -684,7 +741,7 @@ function Page() {
             specs={[["place", "below the profile list, same scroll"], ["header", <>11px uppercase label · <span className="tok">--tasty-font-mono</span> source path · count</>], ["separator", <>1px <span className="tok">--tasty-border-frame</span> above the section</>], ["row", "alias (13, secondary) + user@host:port (mono 11, muted)"], ["action", "ghost Add profile — the existing import, no new behaviour"], ["already imported", <>Tag <b>in profiles</b>, no action</>], ["empty / failure", "one muted line each, no error tone"], ["long alias", "ellipsises; the target line never wraps"]]}
             tokens={[{ tok: "--tasty-border-frame", use: "section rule", color: "var(--tasty-border-frame)" }, { tok: "--tasty-text-secondary", use: "alias + section label", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "target · source path · states", color: "var(--tasty-text-muted)" }]} />
           <Dont><b>Don't</b> give these rows the profile row's edit / delete / re-detect buttons. The file is the user's own; tasty reads it and never writes it.</Dont>
-          <Note>A missing or unreadable <code>~/.ssh/config</code> is <b>not an error</b> — one muted line, no warning tone, section header stays so the origin is still explained.</Note>
+          <Note>A missing or unreadable <code>~/.ssh/config</code> is <b>not an error</b> — one muted line, no warning tone, section header stays so the origin is still explained. <b>States (2026-09-29)</b>: <b>empty</b> = read, 0 hosts → “No hosts in ~/.ssh/config.” · <b>missing</b> = no file → “No ~/.ssh/config found.” · <b>unreadable</b> = the file exists but can't be read — permission denied, any other open error, a directory at that path, or invalid UTF-8 — one cause-neutral line “Can't read ~/.ssh/config. Check the file and its permissions.” The UI does not split causes; an undecodable file must not fall through to the empty line.</Note>
         </Spec>
       </Section>
 
@@ -989,6 +1046,16 @@ function Page() {
             specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "text-secondary"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
             tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
+        <Spec title="FileHandler › File Extension Mapping — order + Add (2026-09-29)"
+          when={<>The product's structure is the design (it replaces the earlier per-extension Select). An extension <b>Input + Add</b> (Button secondary sm, the same pair as the capture blacklist), then per extension an <b>ordered detector list</b> — first match wins. Reorder with <b>IconButton sm</b> <code>chevronUp</code> / <code>chevronDown</code> (the ▲ ▼ text glyphs go). Arrows are <b>disabled, not hidden</b>: ▲ on the top row, ▼ on the last candidate, both on a row whose detector is off (muted name + disabled Tag), so rows keep one slot layout. Add is disabled while the input is empty or no detector is installed.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><ExtMapG /></ThemePair>
+            <ThemePair><ExtMapG draft=".toml" /></ThemePair>
+          </Stage>
+          <Meta
+            specs={[["add", "Button secondary sm · disabled: empty input or no detector"], ["order", "IconButton sm chevronUp / chevronDown"], ["top / last row", "▲ / ▼ disabled"], ["non-candidate row", "both disabled · name text-disabled · Tag disabled \"off\""], ["hide instead?", "no — slots stay put"]]}
+            tokens={[{ tok: "--tasty-state-disabled-fg", use: "disabled ink", color: "var(--tasty-state-disabled-fg)" }, { tok: "--tasty-settings-row-min-height", use: "row" }]} />
+        </Spec>
       </Section>
 
       <Section id="permissions" title="Settings › General › Permissions (macOS) — 2026-09-28">
@@ -1038,6 +1105,24 @@ function Page() {
             tokens={[{ tok: "--tasty-plugin-avatar-size-sm", use: "32 — list row" }, { tok: "--tasty-plugin-avatar-size-lg", use: "46 — detail / manifest preview" }, { tok: "--tasty-plugin-avatar-bg", use: "tinted square", color: "var(--tasty-plugin-avatar-bg)" }, { tok: "--tasty-plugin-avatar-border", use: "1px edge", color: "var(--tasty-plugin-avatar-border)" }, { tok: "--tasty-plugin-avatar-fg", use: "the initial", color: "var(--tasty-plugin-avatar-fg)" }, { tok: "--tasty-plugin-avatar-initial-font-size-sm", use: "14 at sm" }, { tok: "--tasty-plugin-avatar-initial-font-size-lg", use: "16 at lg — mark exception to the UI cap" }, { tok: "--tasty-plugin-avatar-initial-weight", use: "bold" }, { tok: "--tasty-plugin-avatar-border-width", use: "= --tasty-border-width" }]} />
           <Note><b>The mark carries identity, not classification.</b> An earlier draft coloured it by a plugin <i>category</i>, but a manifest has no category field — every real install fell back to one colour, so the hue said nothing while implying a taxonomy. Colour is now fixed at <span className="tok">--tasty-plugin-avatar-fg</span> for every plugin; state (running / error / needs attention) is already carried by the row's status dot and callouts, which is where a reader looks for it. If a classification axis is ever wanted here, it needs a manifest field first — and then it is a new decision, not this token.</Note>
           <Dont><b>Don't</b> mix the tint into the row background to "blend" on a selected row — the mark would then shift colour with row state and stop being a stable identity. And don't re-derive the initial's size from the box (<code>round(size × 0.42)</code>): that produced 19px at lg, off the type scale and over the UI cap with no decision behind it.</Dont>
+        </Spec>
+        <Spec title="Copy fingerprint · Add plugin that can't be added (2026-09-29)"
+          when={<><b>Copy fingerprint</b> moves out of the action bar: an <b>IconButton sm</b> <code>copy</code> right after the mono fingerprint, in Attention and in the Add plugin manifest card alike. No fingerprint → no line and no button (nothing to copy, so no disabled state). Attention's action bar keeps <b>Details</b> only. <b>Add plugin</b> on a verified manifest that can't be added (already installed · unsigned with no public key · signature error) stays in its slot <b>disabled</b> — the variant it would have had, drawn with the shared disabled ink — and the reason replaces "Grants N permissions" on the left of the bar.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair>
+              <FpLineG value="a13c 4e7f 2b08 9d51  ·  ed25519" />
+              <div style={{ width: "var(--tasty-size-560)", maxWidth: "100%", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+                <AddBarG />
+                <AddBarG trusted={false} />
+                <AddBarG blocked="installed" />
+                <AddBarG blocked="unsigned-no-key" />
+                <AddBarG blocked="signature-error" />
+              </div>
+            </ThemePair>
+          </Stage>
+          <Meta
+            specs={[["copy fingerprint", "IconButton sm copy · after the value · absent without a fingerprint"], ["attention bar", "Details (secondary) only"], ["add — blocked", "disabled Add plugin · reason on the left"], ["reasons", "Already installed · Unsigned, and no public key to check it against · Signature check failed"]]}
+            tokens={[{ tok: "--tasty-state-disabled-fg", use: "disabled ink", color: "var(--tasty-state-disabled-fg)" }, { tok: "--tasty-text-muted", use: "reason", color: "var(--tasty-text-muted)" }]} />
         </Spec>
       </Section>
 

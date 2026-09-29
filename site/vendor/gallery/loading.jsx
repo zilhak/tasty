@@ -6,6 +6,9 @@
 // and the guidelines/brand-logo.html lockup verbatim.
 const { Section, Spec, Stage, Meta, Note } = window.Gallery;
 const { Spinner } = window.TastyDesignSystem_41fd3f;
+const LButton = window.TastyDesignSystem_41fd3f.Button;
+const LInput = window.TastyDesignSystem_41fd3f.Input;
+const LIcon = window.TastyDesignSystem_41fd3f.Icon;
 
 const NAV = [
   { id: "default", label: "Default 1280×720" },
@@ -13,6 +16,7 @@ const NAV = [
   { id: "phases", label: "Phase variants" },
   { id: "spinner", label: "Spinner spec" },
   { id: "latte", label: "Latte variant" },
+  { id: "shellsetup", label: "First-run shell setup" },
 ];
 
 // Brand lockup — inherited verbatim from guidelines/brand-logo.html (branding
@@ -61,6 +65,30 @@ function BootFrame({ w, h, z = 1, phase, showPhase = true, theme }) {
   return (
     <div style={wrap}>
       <div style={vp} {...(theme ? { "data-theme": theme } : {})}>{content}</div>
+    </div>
+  );
+}
+
+// First-run shell setup (render_shell_setup) — 2026-09-29. Same boot surface + lockup,
+// then a form: title · sub · path Input · validation line · Cancel / Use this shell.
+function ShellSetupFrame({ valid = true, theme }) {
+  return (
+    <div style={{ display: "inline-block", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius-8)", overflow: "hidden" }}>
+      <div {...(theme ? { "data-theme": theme } : {})} style={{ width: 640, height: 480, background: "var(--tasty-bg-app)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <Lockup />
+        <div style={{ marginTop: "var(--tasty-space-xl)", width: "var(--tasty-size-360)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+          <div style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>Choose a shell</div>
+          <div style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)" }}>New terminals start this shell. You can change it later in Settings.</div>
+          <LInput block mono defaultValue={valid ? "/bin/zsh" : "/usr/local/bin/fsh"} />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-caption)", color: valid ? "var(--tasty-accent-success)" : "var(--tasty-accent-danger)" }}>
+            <LIcon name={valid ? "check" : "alertCircle"} size="var(--tasty-icon-size-sm)" />{valid ? "Executable found" : "No executable at this path"}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-sm)" }}>
+            <LButton variant="secondary">Cancel</LButton>
+            <LButton variant="primary" disabled={!valid}>Use this shell</LButton>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -155,6 +183,20 @@ function Page() {
             <BootFrame w={640} h={480} z={0.7} phase="Loading plugins…" theme="latte" />
           </Stage>
           <Note>Same token names, light values. The <code>--tasty-bg-app</code> fill doubles as the GPU clear color, so it must be read from the resolved theme (not hard-coded dark) on the implementing side.</Note>
+        </Spec>
+      </Section>
+      <Section id="shellsetup" title="First-run shell setup — 2026-09-29">
+        <Spec title="Shell path form — Cancel / Use this shell"
+          when={<>Shown on the boot surface when no usable shell is configured (<code>render_shell_setup</code>). Same fill and lockup as the loading screen, then a 360-wide form: title, one-line sub, mono path <b>Input</b>, a validation line (glyph + word), and a right-aligned button row. The confirm moves to the shared <b>Button primary</b> (md) — the hand-painted accent-success fill goes, there is no success variant — and is labelled by what it does, <b>Use this shell</b> (the untranslated "OK" goes; i18n key). <b>Cancel</b> is Button secondary. While the path is not an executable, the primary is <b>disabled</b> with the shared ink rule; the validation line says why.</>}>
+          <Stage variant="solo" style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-lg)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)" }} eager>
+            <ShellSetupFrame valid />
+            <ShellSetupFrame valid={false} />
+            <ShellSetupFrame valid theme="latte" />
+            <ShellSetupFrame valid={false} theme="latte" />
+          </Stage>
+          <Meta
+            specs={[["form width", "360 · --tasty-size-360"], ["stack", "lockup → (space-xl) → title · sub · input · validation · buttons (space-sm)"], ["title", "14 / 600 · text-primary"], ["validation", "check + Executable found (success) · alertCircle + No executable at this path (danger)"], ["confirm", "Button primary md · Use this shell · disabled while invalid"], ["cancel", "Button secondary md"]]}
+            tokens={[{ tok: "--tasty-accent-success", use: "valid line", color: "var(--tasty-accent-success)" }, { tok: "--tasty-accent-danger", use: "invalid line", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-state-disabled-fg", use: "disabled confirm ink", color: "var(--tasty-state-disabled-fg)" }]} />
         </Spec>
       </Section>
     </>

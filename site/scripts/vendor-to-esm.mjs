@@ -176,6 +176,18 @@ for (const file of kitFiles) {
     return name;
   });
 
+  // `const DsIcon = window.TastyDesignSystem_41fd3f.Icon;` — one symbol under a
+  // local name, which may differ from a kit symbol of the same name.
+  src = src.replace(
+    /^[ \t]*const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.(TastyKit|TastyDag|TastyDesignSystem_41fd3f)\.([A-Za-z_$][\w$]*)\s*;[ \t]*$/gm,
+    (all, local, which, name) => {
+      const target = lookup(which, name);
+      if (!target || target === dest) return all;
+      add(target, local === name ? name : `${name} as ${local}`);
+      return "";
+    },
+  );
+
   src = src.replace(PROP, (all, which, name) => {
     const target = lookup(which, name);
     if (!target || target === dest) return all;

@@ -669,7 +669,8 @@ function LocalSshSection({ state = "hosts" }) {
         {state === "hosts" && <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{hosts.length}</span>}
       </div>
       {state === "empty" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>No hosts in ~/.ssh/config.</div>}
-      {state === "unreadable" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>Can't read ~/.ssh/config — permission denied.</div>}
+      {state === "missing" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>No ~/.ssh/config found.</div>}
+      {state === "unreadable" && <div style={{ padding: "2px 4px 6px", fontSize: 12, color: "var(--tasty-text-muted)" }}>Can't read ~/.ssh/config. Check the file and its permissions.</div>}
       {state === "hosts" && hosts.map((h) => (
         <div key={h.alias} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: "1px solid var(--tasty-separator)" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -830,33 +831,6 @@ function SearchBarFrame() {
         <Toggle label="Aa" /><Toggle label=".*" /><Toggle label="ab" active />
         <span style={{ width: 1, alignSelf: "stretch", margin: "0 2px", background: "var(--tasty-separator)" }} />
         <IconButton size="sm" aria-label="Close">{ic.x}</IconButton>
-      </div>
-    </div>
-  );
-}
-
-// ── Convert surface — small dialog ──
-function ConvertFrame() {
-  return (
-    <div style={{ width: 400, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
-      <div style={{ padding: "14px 14px 0" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Convert surface</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>From</span>
-            <Tag>terminal</Tag>
-          </div>
-          <span style={{ color: "var(--tasty-text-muted)", marginTop: 16 }}>{ic.swap}</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
-            <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>To</span>
-            <Select options={["markdown", "editor", "log viewer"]} style={{ width: "100%" }} />
-          </div>
-        </div>
-        <p style={{ margin: 0, fontSize: 11, color: "var(--tasty-text-muted)", lineHeight: 1.5 }}>The running process keeps its scrollback; only the surface renderer changes.</p>
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: 14 }}>
-        <Button variant="ghost">Cancel</Button><Button variant="primary">Convert</Button>
       </div>
     </div>
   );
@@ -2846,7 +2820,7 @@ window.OverlaysShared = {
   ic, Backdrop,
   PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDragValue,
   ToolsMenuFrame, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
-  ConvertFrame, FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,
+  FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,
   NumCap, HeldLabel, TabStripMock, SidebarMock, RailMock, CatSwitchSidebarMock, CatSwitchRailMock,
   BannerShellG, BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, TtlBannerG, StackDemoG,
   BannerMoreMenuG, BannerMoreDemoG, MoreLabel,

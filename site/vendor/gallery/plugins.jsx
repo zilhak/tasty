@@ -292,7 +292,7 @@ function ExpSidebar({ favorites = FAVS_DEFAULT, tree = "short", height }) {
 function DetailRow({ glyph, name, size, date, type, state, glyphColor }) {
   const bg = state === "selected" ? "var(--tasty-surface-active)" : state === "hover" ? "var(--tasty-overlay-hover)" : "transparent";
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 132px 92px", alignItems: "center", height: 26, padding: "0 10px",
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 132px 92px", alignItems: "center", height: "var(--tasty-table-cell-height)", padding: "0 10px",
       fontSize: 13, background: bg, opacity: state === "cut" ? 0.5 : 1, cursor: "default",
       color: state === "selected" ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -309,8 +309,8 @@ function DetailRow({ glyph, name, size, date, type, state, glyphColor }) {
 function DetailHeader() {
   const cols = [["Name", true], ["Size", false], ["Date modified", false], ["Type", false]];
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 132px 92px", alignItems: "center", height: 26, padding: "0 10px",
-      background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)",
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 132px 92px", alignItems: "center", height: "var(--tasty-table-cell-height)", padding: "0 10px",
+      background: "var(--tasty-table-header-bg)", borderBottom: "1px solid var(--tasty-separator)",
       fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>
       {cols.map(([c, sorted], i) => (
         <span key={c} style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: i === 1 ? "flex-end" : "flex-start",
@@ -394,7 +394,7 @@ function ExpListMini() {
   return (
     <div style={{ flex: 1, background: "var(--tasty-bg-panel)", padding: "6px 4px" }}>
       {rows.map(([g, n, st], i) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: 24, padding: "0 8px", borderRadius: "var(--tasty-radius-sm)",
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: "var(--tasty-tree-row-height)", padding: "0 8px", borderRadius: "var(--tasty-radius-sm)",
           fontSize: 13, opacity: st === "cut" ? 0.5 : 1,
           color: st === "selected" ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
           background: st === "selected" ? "var(--tasty-surface-active)" : st === "hover" ? "var(--tasty-overlay-hover)" : "transparent" }}>
@@ -920,9 +920,9 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["grid cell", "80px · icon 16 + 3-line label wrap (…)"], ["list row", "24px · icon + name"], ["detail row", "26px · 4 columns"], ["cell states", "default · hover (8%) · selected (12%) · cut (50%) · renaming"], ["sort", "click a column header → ▲ / ▼"]]}
-            tokens={[{ tok: "--tasty-overlay-hover", use: "row hover (8%)" }, { tok: "--tasty-surface-active", use: "selected (12%)", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-info", use: "image-file glyph", color: "var(--tasty-accent-info)" }]} />
-          <Note><b>Grid cell</b> (updated): icon shrinks to <span className="tok">icon_glyph_size_md</span> (16, was 28) and the label wraps up to <b>3 lines</b> at <span className="tok">font_size_caption</span> (11) with <b>… overflow</b> on the last line — replacing the old 12-char hard cut. Height is <b>fixed to 3 label lines</b> so grid rows stay uniform (short names reserve the space, label top-aligned). CELL_W stays 80. Real side: <InlineCode>LayoutJob</InlineCode> with <InlineCode>wrap.max_rows = 3</InlineCode> + <InlineCode>overflow_character = '…'</InlineCode>, drop <InlineCode>truncate(&amp;e.name, 12)</InlineCode>, recompute <InlineCode>cell_h</InlineCode>. <b>Cut</b> items dim to ~50% until pasted. A <b>renaming</b> cell swaps its label for an inline Input (extension preserved). Image cells show a thumbnail in the icon slot at implementation time — here a tinted glyph stands in.</Note>
+            specs={[["grid cell", "80px · icon 16 + 3-line label wrap (…)"], ["list row", <>22 · <span className="tok">--tasty-tree-row-height</span> (same row as the file tree) · icon + name</>], ["detail row / header", <>28 · <span className="tok">--tasty-table-cell-height</span> (same as the shared Table) · 4 columns</>], ["cell states", "default · hover (8%) · selected (12%) · cut (50%) · renaming"], ["sort", "click a column header → ▲ / ▼"]]}
+            tokens={[{ tok: "--tasty-tree-row-height", use: "List row (22)" }, { tok: "--tasty-table-cell-height", use: "Detail row + header (28)" }, { tok: "--tasty-overlay-hover", use: "row hover (8%)" }, { tok: "--tasty-surface-active", use: "selected (12%)", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-info", use: "image-file glyph", color: "var(--tasty-accent-info)" }]} />
+          <Note><b>Grid cell</b> (updated): icon shrinks to <span className="tok">icon_glyph_size_md</span> (16, was 28) and the label wraps up to <b>3 lines</b> at <span className="tok">font_size_caption</span> (11) with <b>… overflow</b> on the last line — replacing the old 12-char hard cut. Height is <b>fixed to 3 label lines</b> so grid rows stay uniform (short names reserve the space, label top-aligned). CELL_W stays 80. Real side: <InlineCode>LayoutJob</InlineCode> with <InlineCode>wrap.max_rows = 3</InlineCode> + <InlineCode>overflow_character = '…'</InlineCode>, drop <InlineCode>truncate(&amp;e.name, 12)</InlineCode>, recompute <InlineCode>cell_h</InlineCode>. <b>Cut</b> items dim to ~50% until pasted. A <b>renaming</b> cell swaps its label for an inline Input (extension preserved). Image cells show a thumbnail in the icon slot at implementation time — here a tinted glyph stands in. <b>Row heights (2026-09-29)</b>: no Explorer-specific height. List reuses the tree row (<span className="tok">--tasty-tree-row-height</span> 22), Detail reuses the shared Table (<span className="tok">--tasty-table-cell-height</span> 28 for both header and body rows). The old 24 / 26 literals are retired. Implementer: the Table widget must read <InlineCode>table_cell_height</InlineCode> for <InlineCode>row_height</InlineCode> and <InlineCode>header_height</InlineCode> instead of its font-derived default (~35).</Note>
         </Spec>
 
         <Spec title="Right-click context menu — target resolves to 4 shapes"

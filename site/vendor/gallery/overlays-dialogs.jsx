@@ -4,7 +4,7 @@
 // page's specimens + nav. See the other overlays-*.jsx for the rest.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;
 const { Kbd } = window.TastyDesignSystem_41fd3f;
-const { Backdrop, ApprovalFrame, ConvertFrame, FileHandlerFrame, FhFooter, PresetFrame, MarkdownOpenFrame, RenameFrame, CategoryEditFrame, CategoryDeleteFrame, TransferProgressFrame, TransferErrorFrame, ShellMock } = window.OverlaysShared;
+const { Backdrop, ApprovalFrame, FileHandlerFrame, FhFooter, PresetFrame, MarkdownOpenFrame, RenameFrame, CategoryEditFrame, CategoryDeleteFrame, TransferProgressFrame, TransferErrorFrame, ShellMock } = window.OverlaysShared;
 
 const NAV = [
   { id: "scrim", label: "Scrim & frame" },
@@ -90,12 +90,46 @@ function Page() {
       </Section>
 
 <Section id="convert" title="Convert surface">
-        <Spec title="Convert popup — change the renderer"
-          when={<>A small dialog that converts a surface from one kind to another (terminal → markdown / editor / log viewer) <b>without losing the running process or scrollback</b> — only the renderer changes. From-kind shown as a Tag, target as a Select, a one-line hint, cancel/confirm.</>}>
-          <Stage variant="solo center"><Backdrop height={280}><div align="center"><ConvertFrame /></div></Backdrop></Stage>
+        <Spec title="Convert popup — pick the kind to become (2026-09-29)"
+          when={<>A small list popup that converts a surface to another kind <b>without losing the running process or scrollback</b> — only the renderer changes. The shared popup title bar, then one <b>MenuItem</b> per kind the surface can become; click (or ↵ on the highlighted row) converts, × / Esc close. This is the product's shape and the target — the earlier 400-wide From / To dialog is retired. Width is <span className="tok">--tasty-convert-popup-width</span> (<b>240</b>, was a literal 200) and <b>scales with ui_scale</b> like every popup width; height = title bar + rows.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Mocha · en · ui_scale 1.0</span>
+                <div style={{ zoom: 1 }}><window.TastyKit.ConvertSurfacePopup title="Surface Type" /></div>
+              </div>
+            <div data-theme="latte" style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Latte · en · ui_scale 1.0</span>
+                <div style={{ zoom: 1 }}><window.TastyKit.ConvertSurfacePopup title="Surface Type" /></div>
+              </div>
+          </Stage>
           <Meta
-            specs={[["width", "400px"], ["from", "Tag (read-only)"], ["to", "Select of kinds"], ["actions", "Cancel / Convert"]]}
-            tokens={[{ tok: "--tasty-bg-panel", use: "frame", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-accent-primary", use: "confirm", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-text-muted", use: "hint", color: "var(--tasty-text-muted)" }]} />
+            specs={[["width", "240 × ui_scale · --tasty-convert-popup-width (was literal 200)"], ["title", "shared PopupTitleBar (× only, reserve 32 per side)"], ["rows", "MenuItem 28 · icon + kind label · one per convertible kind"], ["actions", "click / ↵ converts · × / Esc close"]]}
+            tokens={[{ tok: "--tasty-convert-popup-width", use: "→ size-240, × ui_scale" }, { tok: "--tasty-bg-panel", use: "frame", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-border-frame", use: "edge", color: "var(--tasty-border-frame)" }]} />
+        </Spec>
+        <Spec title="Narrow popup, long title — width scales, cut titles get a tooltip (2026-09-29)"
+          when={<>Every popup width is a token and is multiplied by ui_scale, the same as the title and the reserve. Scaling alone keeps the ratio, so the base width must fit the longest locale title at 1.0: the ja title <i>サーフェスタイプ切替</i> is ≈ 139, and 200 leaves a band of 200 − 2 × 32 = 136 — it cuts at every scale. The convert popup's base therefore goes to <b>240</b> (band 176), and at 1.2 everything scales together (288 / 211 / ≈ 167). A title that still overflows ellipsises inside the symmetric band (unchanged), and <b>only then</b> shows the full title in a Tooltip on hover (shared placement: top, then bottom). No content-driven widening: the width stays a token.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Mocha · ja · 1.2 — before: literal 200 (cuts)</span>
+                <div style={{ zoom: 1.2, ["--tasty-convert-popup-width"]: "calc(200px / 1.2)" }}><window.TastyKit.ConvertSurfacePopup title="サーフェスタイプ切替" /></div>
+              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Mocha · ja · 1.2 — convert-popup-width 240 × 1.2 (fits)</span>
+                <div style={{ zoom: 1.2 }}><window.TastyKit.ConvertSurfacePopup title="サーフェスタイプ切替" /></div>
+              </div>
+            <div data-theme="latte" style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Latte · ja · 1.2 — convert-popup-width 240 × 1.2 (fits)</span>
+                <div style={{ zoom: 1.2 }}><window.TastyKit.ConvertSurfacePopup title="サーフェスタイプ切替" /></div>
+              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Mocha · still too long — ellipsis + hover tooltip</span>
+                <div style={{ zoom: 1 }}><window.TastyKit.ConvertSurfacePopup title="Convert this surface to another type" /></div>
+              </div>
+          </Stage>
+          <Meta
+            specs={[["width", "token × ui_scale — never a literal · base sized for the longest locale title at 1.0"], ["band", "width − 2 × reserve(N) · convert 240 → 176"], ["overflow", "ellipsis inside the band"], ["tooltip", "only when the title is cut · full title · top → bottom"], ["widen to fit", "no"]]}
+            tokens={[{ tok: "--tasty-convert-popup-width", use: "240 × ui_scale" }, { tok: "--tasty-popup-title-btn-size", use: "reserve part" }]} />
+          <Dont><b>Don't</b> keep a popup width as a literal outside the scale, and don't widen a popup to its title — the band follows the token width.</Dont>
         </Spec>
       </Section>
 

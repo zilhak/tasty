@@ -24,18 +24,30 @@ const HS_COPY = {
   bodyRemote: "Some of its scripts load from the network, which stays blocked. Allowing runs only the scripts inside this document, until Tasty restarts.",
   action: "Allow for this document",
   reloading: "Reloading with scripts allowed",
+  actionLoading: "Available when the document finishes loading",
   markerBlocked: "Scripts blocked. Click to show the notice again.",
   markerAllowed: "Scripts allowed for this document until Tasty restarts",
 };
 
+// state: "blocked" | "loading" | "reloading"
+//   loading (2026-09-29) = still blocked, but the surface is loading a new document (response
+//   received, not yet committed). Allow is bound to the COMMITTED document's URL + fingerprint,
+//   so it is disabled (standard disabled ink, no opacity) from load start until commit — no delay,
+//   no grace period: a delay would reopen the window it closes. The flip is an ink change only.
+//   Tooltip on the disabled button (top): HS_COPY.actionLoading. × stays available (hover).
+//   After commit: new document still has scripts → back to "blocked" (enabled); none → banner goes.
 function HtmlScriptBanner({ state = "blocked", remote = false, hover = false, narrow = false }) {
   const [h, setH] = React.useState(false);
-  const showX = (hover || h) && state === "blocked";
+  const showX = (hover || h) && (state === "blocked" || state === "loading");
   const reloading = state === "reloading";
   const action = reloading ? (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-button-height-sm)", fontSize: "var(--tasty-banner-body-font-size)", color: "var(--tasty-text-muted)", whiteSpace: "nowrap" }}>
       <Spinner size="var(--tasty-icon-size-sm)" />{HS_COPY.reloading}
     </span>
+  ) : state === "loading" ? (
+    <Tooltip placement="top" content={HS_COPY.actionLoading}>
+      <span style={{ display: "inline-flex" }}><Button size="sm" variant="secondary" disabled style={{ whiteSpace: "nowrap" }}>{HS_COPY.action}</Button></span>
+    </Tooltip>
   ) : (
     <Button size="sm" variant="secondary" style={{ whiteSpace: "nowrap" }}>{HS_COPY.action}</Button>
   );

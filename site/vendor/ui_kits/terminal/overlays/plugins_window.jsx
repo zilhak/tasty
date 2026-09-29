@@ -116,6 +116,29 @@ const SAMPLE_MANIFEST = {
   path: "~/dev/tasty-logwatch",
 };
 
+// Fingerprint line (2026-09-29): mono text + IconButton sm `copy` right after it — the copy
+// action lives with the value, not in the action bar. No fingerprint → no line, no button.
+function FingerprintLine({ value, onCopy }) {
+  const DsIcon = window.TastyDesignSystem_41fd3f.Icon;
+  if (!value) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)",
+      fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
+      <span style={{ color: "var(--tasty-text-secondary)" }}>fingerprint</span>
+      <span>{value}</span>
+      <IconButton size="sm" aria-label="Copy fingerprint" title="Copy fingerprint" onClick={onCopy}><DsIcon name="copy" /></IconButton>
+    </div>
+  );
+}
+
+// Add plugin — a verified manifest that can't be added (2026-09-29): the button stays in its slot,
+// DISABLED (shared ink rule), and the reason replaces "Grants N permissions" on the left of the bar.
+//   manifest.blocked: "installed" | "unsigned-no-key" | "signature-error"
+const ADD_BLOCKED = {
+  "installed": "Already installed",
+  "unsigned-no-key": "Unsigned, and no public key to check it against",
+  "signature-error": "Signature check failed",
+};
 function AddPluginForm({ onAdded, onCancel }) {
   const [path, setPath] = React.useState("");
   const [manifest, setManifest] = React.useState(null);
@@ -123,7 +146,8 @@ function AddPluginForm({ onAdded, onCancel }) {
   const verify = () => {
     const p = path.trim() || SAMPLE_MANIFEST.path;
     setPath(p);
-    setManifest({ ...SAMPLE_MANIFEST, path: p });
+    // demo: a path under ~/.tasty/plugins stands in for "already installed" (disabled Add)
+    setManifest({ ...SAMPLE_MANIFEST, path: p, blocked: p.startsWith("~/.tasty/plugins") ? "installed" : undefined });
   };
   const pick = () => setPathReset("~/dev/tasty-logwatch"); // stands in for the native rfd folder picker
 
@@ -214,11 +238,7 @@ function AddPluginForm({ onAdded, onCancel }) {
                   This plugin isn't signed by a key in your trust store. It runs with the permissions above
                   on every launch — review them, and only add plugins from sources you trust.
                 </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--tasty-font-mono)",
-                  fontSize: 11, color: "var(--tasty-text-muted)" }}>
-                  <span style={{ color: "var(--tasty-text-secondary)" }}>fingerprint</span>
-                  <span>{manifest.fingerprint}</span>
-                </div>
+                <FingerprintLine value={manifest.fingerprint} />
               </div>
             )}
           </div>
@@ -230,12 +250,14 @@ function AddPluginForm({ onAdded, onCancel }) {
         borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
         {manifest && (
           <span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>
-            Grants {manifest.perms.length} permission{manifest.perms.length === 1 ? "" : "s"}
+            {manifest.blocked ? ADD_BLOCKED[manifest.blocked] : <>Grants {manifest.perms.length} permission{manifest.perms.length === 1 ? "" : "s"}</>}
           </span>
         )}
         <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        {manifest && (manifest.trusted
+        {manifest && (manifest.blocked
+          ? <Button variant="primary" disabled>Add plugin</Button>
+          : manifest.trusted
           ? <Button variant="primary" onClick={() => onAdded(manifest)}>Add plugin</Button>
           : <Button variant="agent" onClick={() => onAdded(manifest)}>Trust &amp; add</Button>)}
       </div>
@@ -362,13 +384,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
           {(sel.reason === "unknown-key" || sel.reason === "signature-invalid") && (
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
               <Mono>Signature</Mono>
-              {sel.detail.fingerprint && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--tasty-font-mono)",
-                  fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
-                  <span style={{ color: "var(--tasty-text-secondary)" }}>fingerprint</span>
-                  <span>{sel.detail.fingerprint}</span>
-                </div>
-              )}
+              <FingerprintLine value={sel.detail.fingerprint} onCopy={() => onFlash && onFlash("Fingerprint copied")} />
               {sel.detail.note && <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)",
                 color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.detail.note}</p>}
             </div>

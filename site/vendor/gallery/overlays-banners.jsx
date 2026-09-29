@@ -198,19 +198,19 @@ function Page() {
         <Spec title="Banner states"
           when={<>Informational, not a warning: blocking is the default working as intended. Leading glyph <b>lock</b> in <span className="tok">--tasty-html-script-banner-glyph</span> (→ accent-info). One action, <b>[Allow for this document]</b>, Secondary / Sm — a relaxation should not be the loudest thing on screen, and there is no second action (the global switch lives in Settings › Appearance › HTML). Title and body each wrap to <b>2 lines</b> max, then clamp; the button never wraps. The scope ("this document", "until Tasty restarts") is in the body copy. After Allow the document reloads once: the action is replaced by a spinner + <i>Reloading with scripts allowed</i>, × is withheld, and the banner fades out (120ms) when the new load commits.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-md)", alignItems: "stretch" }}>
-            {[["1 · blocked (default)", {}], ["2 · hover — × revealed", { hover: true }], ["3 · after Allow — reloading", { state: "reloading" }], ["remote content also blocked — body branch", { remote: true }]].map(([cap, p]) => (
+            {[["1 · blocked (default)", {}], ["2 · hover — × revealed", { hover: true }], ["3 · after Allow — reloading", { state: "reloading" }], ["4 · surface loading a new document — Allow disabled until commit (tooltip on hover)", { state: "loading" }], ["remote content also blocked — body branch", { remote: true }]].map(([cap, p]) => (
               <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", maxWidth: "var(--tasty-size-600)" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
                 <HtmlScriptBanner {...p} />
               </div>
             ))}
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
-              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>5 · narrow surface (360) — action wraps under the body</span>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>6 · narrow surface (360) — action wraps under the body</span>
               <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden", alignSelf: "flex-start" }}><HtmlSurfaceG width="var(--tasty-size-360)" narrow height={300} /></div>
             </div>
           </Stage>
           <Meta
-            specs={[["title", "\"Scripts in this document are blocked\" · 13/600"], ["body", "caption · text-muted · ≤ 2 lines"], ["remote branch", "network scripts stay blocked — says so"], ["action", "Secondary / Sm · no wrap"], ["reloading", "spinner + label · no × · fade out on commit"], ["narrow", "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned"], ["glyph nudge", "1 · --tasty-banner-glyph-offset"], ["title ↔ body", "2 · --tasty-banner-text-gap (every banner)"]]}
+            specs={[["title", "\"Scripts in this document are blocked\" · 13/600"], ["body", "caption · text-muted · ≤ 2 lines"], ["remote branch", "network scripts stay blocked — says so"], ["action", "Secondary / Sm · no wrap"], ["reloading", "spinner + label · no × · fade out on commit"], ["loading (still blocked)", "Allow disabled from load start to commit · no delay · tooltip (top) \"Available when the document finishes loading\" · × kept"], ["narrow", "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned"], ["glyph nudge", "1 · --tasty-banner-glyph-offset"], ["title ↔ body", "2 · --tasty-banner-text-gap (every banner)"]]}
             tokens={[{ tok: "--tasty-html-script-banner-glyph", use: "lock → accent-info", color: "var(--tasty-html-script-banner-glyph)" }, { tok: "--tasty-banner-title-font-size", use: "13" }, { tok: "--tasty-banner-body-font-size", use: "11" }]} />
         </Spec>
         <Spec title="A button on the banner shell (2026-09-29)"
@@ -220,6 +220,8 @@ function Page() {
               <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", width: "var(--tasty-size-560)", maxWidth: "100%", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · blocked, hover the button</span>
                 <HtmlScriptBanner />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · loading — disabled on the shell</span>
+                <HtmlScriptBanner state="loading" />
               </div>
             ))}
           </Stage>

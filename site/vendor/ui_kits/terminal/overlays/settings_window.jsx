@@ -704,6 +704,56 @@ const L2 = {
   Plugins: ["git-helper", "ai-review", "docker", "k8s-lens"],
 };
 
+// Settings › FileHandler › File Extension Mapping (2026-09-29).
+// The product's structure is the design: an extension Input + Add, then per extension an ORDERED
+// list of detectors (first match wins). Controls:
+//   Add       Button secondary sm — disabled while the input is empty or no detector is installed
+//   ▲ / ▼     IconButton sm chevronUp / chevronDown per row (the text glyphs go) — disabled, not
+//             hidden, on the top row (▲), the bottom row (▼) and on a row that is not a candidate
+//             (its detector is off / not installed: both). Disabled = the shared ink rule.
+// Rows keep their slot so the arrows never shift between rows.
+const EXT_SEED = [
+  { ext: ".md", rows: [["Markdown viewer", true], ["Editor", true], ["html-preview", false]] },
+  { ext: ".log", rows: [["Log viewer", true]] },
+  { ext: ".html", rows: [["HTML viewer", true], ["Editor", true]] },
+];
+function ExtensionMapping({ detectors = true }) {
+  const DsIcon = window.TastyDesignSystem_41fd3f.Icon;
+  const [map, setMap] = React.useState(EXT_SEED);
+  const [draft, setDraft] = React.useState("");
+  const move = (gi, i, d) => setMap((m) => m.map((g, j) => {
+    if (j !== gi) return g;
+    const rows = g.rows.slice(); const t = rows[i]; rows[i] = rows[i + d]; rows[i + d] = t; return { ...g, rows };
+  }));
+  const add = () => { const e = draft.trim(); if (!e || !detectors) return; setMap((m) => [...m, { ext: e.startsWith(".") ? e : "." + e, rows: [["Editor", true]] }]); setDraft(""); };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)" }}>
+      <div style={{ display: "flex", gap: "var(--tasty-space-sm)" }}>
+        <Input block mono placeholder="extension, e.g. .log" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <Button variant="secondary" size="sm" disabled={!draft.trim() || !detectors} onClick={add}>Add</Button>
+      </div>
+      {map.map((g, gi) => {
+        const cand = g.rows.filter(([, c]) => c).length;
+        return (
+          <div key={g.ext} style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", padding: "var(--tasty-space-xs) 0" }}>{g.ext}</div>
+            {g.rows.map(([name, c], i) => (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-settings-row-min-height)",
+                borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+                <span style={{ width: "var(--tasty-space-lg)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{i + 1}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-body)", color: c ? "var(--tasty-text-secondary)" : "var(--tasty-text-disabled)" }}>{name}</span>
+                {!c && <Tag disabled>off</Tag>}
+                <IconButton size="sm" aria-label="Move up" disabled={!c || i === 0} onClick={() => move(gi, i, -1)}><DsIcon name="chevronUp" /></IconButton>
+                <IconButton size="sm" aria-label="Move down" disabled={!c || i >= cand - 1} onClick={() => move(gi, i, 1)}><DsIcon name="chevronDown" /></IconButton>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
   const [l1, setL1] = React.useState("Appearance");
   const [l2, setL2] = React.useState("Theme");
@@ -931,19 +981,8 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
       if (l2 === "File Extension Mapping")
         return (
           <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <Mono>Extension → handler</Mono>
-              <Button variant="ghost" size="sm">Add mapping</Button>
-            </div>
-            {[["*.png  *.jpg  *.svg", "Image viewer"], ["*.log  *.txt", "Log viewer"],
-              ["*.json  *.yaml  *.toml", "Editor"], ["*.bin  *.hex  *.o", "Hex viewer"]].map(([ext, h], i, a) => (
-              <div key={ext} style={{ display: "flex", alignItems: "center", gap: 12, minHeight: "var(--tasty-settings-row-min-height)",
-                borderBottom: i === a.length - 1 ? "none" : "var(--tasty-border-width) solid var(--tasty-separator)" }}>
-                <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-secondary)" }}>{ext}</span>
-                <span style={{ color: "var(--tasty-text-muted)" }}>→</span>
-                <Select options={["Image viewer", "Log viewer", "Editor", "Hex viewer", "External app"]} defaultValue={h} style={{ width: 150 }} />
-              </div>
-            ))}
+            <Mono>Extension → detectors (first match wins)</Mono>
+            <ExtensionMapping />
           </>
         );
       if (l2 === "File Detectors")

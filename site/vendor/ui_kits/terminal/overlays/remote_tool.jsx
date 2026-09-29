@@ -615,7 +615,12 @@ function ProtocolFilter({ protocols, hidden, onApply }) {
 // ── "From ssh config" — hosts read from ~/.ssh/config under the profile list ──
 // Kit definition (2026-09-29). gallery/overlays-shared.jsx LocalSshSection is the
 // static specimen of THIS component (state only) and must match it.
-//   state          "hosts" | "empty" | "unreadable"
+//   state          "hosts" | "empty" | "missing" | "unreadable"
+//                  empty      = read OK, 0 hosts
+//                  missing    = no file at ~/.ssh/config
+//                  unreadable = exists but can't be read: any open error (permission
+//                               denied included), not a regular file (a directory),
+//                               or not valid UTF-8. One cause-neutral line (2026-09-29).
 //   profileTargets user@host:port of existing ssh profiles → that host shows
 //                  a muted "in profiles" Tag instead of the action
 //   onImport(host) the existing import action (one ghost button per row)
@@ -636,7 +641,8 @@ function LocalSshSection({ state = "hosts", hosts = SSH_CONFIG_HOSTS, profileTar
         {state === "hosts" && <span style={caption}>{hosts.length}</span>}
       </div>
       {state === "empty" && <div style={line}>No hosts in ~/.ssh/config.</div>}
-      {state === "unreadable" && <div style={line}>Can't read ~/.ssh/config — permission denied.</div>}
+      {state === "missing" && <div style={line}>No ~/.ssh/config found.</div>}
+      {state === "unreadable" && <div style={line}>Can't read ~/.ssh/config. Check the file and its permissions.</div>}
       {state === "hosts" && hosts.map((h) => {
         const have = profileTargets.includes(h.target);
         return (
