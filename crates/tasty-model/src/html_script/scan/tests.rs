@@ -248,3 +248,26 @@ fn scan_file_reads_a_file_from_disk() {
         tracing::warn!("temp dir cleanup failed: {e}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn special_files_are_refused_without_blocking() {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("tasty-html-fifo-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let fifo = dir.join("pipe.html");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(status.success(), "mkfifo");
+    // 쓰는 쪽이 없는 FIFO를 막히는 방식으로 열면 이 테스트가 끝나지 않는다.
+    let err = scan_file(&fifo).expect_err("fifo");
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    let err = scan_file(std::path::Path::new("/dev/zero")).expect_err("device");
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    if let Err(e) = std::fs::remove_dir_all(&dir) {
+        tracing::warn!("temp dir cleanup failed: {e}");
+    }
+}
