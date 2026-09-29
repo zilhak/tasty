@@ -136,6 +136,7 @@ pub fn draw_egui_panels(
         std::collections::HashSet::new()
     };
 
+    let mut html_script_insets = std::collections::HashMap::new();
     for info in &infos {
         let id_suffix = info
             .surface_id
@@ -233,16 +234,31 @@ pub fn draw_egui_panels(
             if crate::core::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
                 let nav = remote.nav_state();
-                draw_panel_frame(
+                let banner_inset = draw_panel_frame(
                     ctx,
                     &format!("webview_chrome_{}", id_suffix),
                     info,
                     0,
                     None,
                     |ui| {
+                        let panel = ui.max_rect();
                         crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref(), nav);
+                        let sid = info.surface_id?;
+                        if remote.kind_static != "html" {
+                            return None;
+                        }
+                        crate::adapters::ui::surface::html_script_banner::draw(
+                            ui,
+                            &theme::theme(),
+                            remote,
+                            sid,
+                            panel,
+                        )
                     },
                 );
+                if let (Some(sid), Some(inset)) = (info.surface_id, banner_inset) {
+                    html_script_insets.insert(sid, inset);
+                }
             }
         }
     }
@@ -253,6 +269,7 @@ pub fn draw_egui_panels(
 
     state.explorer_views = explorer_views;
     state.dag_graph_views = dag_views;
+    state.html_script_banner_insets = html_script_insets;
 
     // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
     for (sid, req) in state.explorer_views.drain_outbox() {

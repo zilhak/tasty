@@ -122,6 +122,14 @@ tasty image export --surface 5 out.png
 - 로드 중이면 **불러오는 중…** <!-- en: Loading… -->, 실패하면 **불러오지 못했습니다** <!-- en: Failed to load --> 와 URL 이 보입니다.
 - **설정** > **외관** 의 **HTML** 항목 — **기본 확대** <!-- en: Default zoom --> · **색 구성표** <!-- en: Color scheme --> (**테마 따름** <!-- en: Follow theme --> / 라이트 / 다크) · **원격 콘텐츠 허용** <!-- en: Allow remote content --> · **스크립트 샌드박스** <!-- en: Sandbox scripts -->. 원격 콘텐츠와 스크립트는 기본적으로 막혀 있습니다. 로컬에서 만든 미리보기를 보는 용도라 외부 사이트를 열 때는 **원격 콘텐츠 허용** 을 켜고 **스크립트 샌드박스** 를 꺼야 합니다.
 
+### 스크립트가 막힌 문서
+
+**스크립트 샌드박스** 가 켜져 있을 때 스크립트가 있는 문서를 보면 페이지 위에 **이 문서의 스크립트가 차단되었습니다** <!-- en: Scripts in this document are blocked --> 안내가 뜹니다. 안내는 페이지를 가리지 않고 페이지를 그만큼 아래로 내립니다. HTML 화면이 좁으면 버튼이 설명 아래 줄로 내려갑니다.
+
+- **이 문서에서 허용** <!-- en: Allow for this document --> — 이 문서만 스크립트를 켜고 한 번 다시 불러옵니다. 다른 문서로 이동하거나 Tasty 를 다시 시작하면 다시 막힙니다.
+- 안내 오른쪽 위 **×** — 허용하지 않고 안내만 닫습니다.
+- 에이전트가 연 문서나 세션 복원으로 다시 열린 문서는 사람이 그 탭을 볼 때 안내가 뜹니다. 에이전트는 스크립트를 허용할 수 없고 상태만 조회합니다.
+
 ```sh
 tasty html open --surface 5 ./dist/index.html
 tasty new tab --pane 1 --type html --url http://localhost:3000

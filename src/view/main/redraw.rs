@@ -480,11 +480,13 @@ impl MainView {
                                     0.0
                                 };
                                 // 물리 사각형을 만든 뒤 플랫폼 API에 맞는 논리 좌표로 변환한다.
+                                let top = self.html_script_banner_top(sid, scale_factor);
                                 let physical = crate::webview::PhysicalWebViewBounds {
                                     x: leaf_rect.x.value() as f64 + left,
-                                    y: leaf_rect.y.value() as f64,
+                                    y: leaf_rect.y.value() as f64 + top,
                                     width: (leaf_rect.width.value() as f64 - left - right).max(1.0),
-                                    height: (leaf_rect.height.value() as f64 - bottom).max(1.0),
+                                    height: (leaf_rect.height.value() as f64 - bottom - top)
+                                        .max(1.0),
                                 };
                                 let bounds = crate::webview::WebViewBounds::from_physical(
                                     physical,

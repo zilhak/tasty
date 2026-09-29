@@ -19,7 +19,19 @@ impl MainView {
         }
     }
 
+    /// 배너가 차지하는 높이(물리 px). 배너가 없거나 아직 그리지 않았으면 0이다.
+    /// 배너 카드는 egui 패스가 그리고 이 값은 그 패스가 기록한 높이를 따른다.
+    pub(super) fn html_script_banner_top(&self, sid: u32, scale_factor: f64) -> f64 {
+        self.state
+            .html_script_banner_insets
+            .get(&sid)
+            .map_or(0.0, |inset| {
+                f64::from(inset.to_physical(scale_factor as f32).value())
+            })
+    }
+
     /// 포커스 전이를 사용자 선택으로 알리고 html surface마다 배너 단계를 갱신한다.
+    /// 단계가 바뀌면 다음 프레임에 egui가 배너를 다시 그리도록 dirty를 세운다.
     pub(super) fn update_html_script_banners(&mut self, all_html_ids: &[u32]) {
         self.note_user_selection();
         let mut phases = std::collections::HashMap::new();
@@ -30,6 +42,9 @@ impl MainView {
             if phase != BannerPhase::Hidden {
                 phases.insert(sid, phase);
             }
+        }
+        if phases != self.html_script_phases {
+            self.base.dirty = true;
         }
         self.html_script_phases = phases;
     }

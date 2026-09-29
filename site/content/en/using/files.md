@@ -1,4 +1,4 @@
-<!-- source-hash: 3b5d0932bdfc -->
+<!-- source-hash: 3825b260c0f3 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -122,6 +122,14 @@ Shows a local HTML file or a URL in the OS web view. Press **New HTML...** and t
 
 - While loading, **Loading…** is shown; on failure, **Failed to load** and the URL.
 - The **HTML** item under **Settings** > **Appearance** — **Default zoom** · **Color scheme** (**Follow theme** / light / dark) · **Allow remote content** · **Sandbox scripts**. Remote content and scripts are blocked by default. It is meant for viewing previews built locally, so to open external sites you need to turn **Allow remote content** on and **Sandbox scripts** off.
+
+### Documents with blocked scripts
+
+With **Sandbox scripts** on, viewing a document that contains scripts shows a **Scripts in this document are blocked** notice above the page. The notice does not cover the page; it pushes the page down by its height. When the HTML view is narrow, the button moves to the line below the description.
+
+- **Allow for this document** — turns scripts on for this document only and reloads it once. Navigating to another document or restarting Tasty blocks them again.
+- **×** at the top right of the notice — closes the notice without allowing.
+- A document opened by an agent, or reopened by session restore, shows the notice when a person looks at that tab. Agents cannot allow scripts; they can only query the state.
 
 ```sh
 tasty html open --surface 5 ./dist/index.html

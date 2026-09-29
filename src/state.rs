@@ -341,6 +341,12 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_banner_pending_repaint: std::collections::HashSet<u64>,
 
+    /// html surface마다 스크립트 배너가 차지하는 높이. 패널 위쪽에서 페이지가 시작할 곳까지다.
+    /// egui 패스가 다시 채우고 WebView 동기화가 이만큼 native 페이지를 내린다(ADR-0053).
+    #[cfg(feature = "gui")]
+    pub(crate) html_script_banner_insets:
+        std::collections::HashMap<u32, tasty_type_geometry::length::LogicalPx>,
+
     /// UI·도메인 Intent 대기열. 처리 규칙은 docs/design/flows/action-dispatch.md를 따른다.
     pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
 }
@@ -528,6 +534,8 @@ impl AppState {
             plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
             #[cfg(feature = "gui")]
             plugin_mesh_banner_pending_repaint: std::collections::HashSet::new(),
+            #[cfg(feature = "gui")]
+            html_script_banner_insets: std::collections::HashMap::new(),
             pending_intents: Vec::new(),
         }
     }

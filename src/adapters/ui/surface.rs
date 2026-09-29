@@ -6,4 +6,5 @@
 pub mod dag_graph;
 pub mod empty;
 pub mod explorer;
+pub mod html_script_banner;
 pub mod webview_chrome;
