@@ -98,6 +98,9 @@ pub enum StoreError {
         state: EffectState,
     },
 
+    #[error("effect {0}: cancelling an uncertain effect needs evidence that it did not run")]
+    EvidenceRequired(String),
+
     #[error("effect {0}: transition to Running needs an activation claim")]
     ClaimRequired(String),
 

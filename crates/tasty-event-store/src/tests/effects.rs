@@ -192,6 +192,43 @@ fn uncertain_leaves_only_through_reconciliation() {
 }
 
 #[test]
+fn uncertain_is_cancelled_only_with_evidence_it_did_not_run() {
+    let (_dir, mut store, epoch) = fresh();
+    seed(&mut store, epoch, "fx-1", Pending);
+    store
+        .transition_effect(epoch, &run("fx-1", Pending, 1))
+        .expect("run");
+    store
+        .transition_effect(epoch, &finish("fx-1", Uncertain, 1))
+        .expect("unknown");
+
+    let err = store
+        .transition_effect(epoch, &step("fx-1", Uncertain, Cancelled))
+        .expect_err("no evidence");
+    assert!(matches!(err, StoreError::EvidenceRequired(_)), "{err:?}");
+    assert_eq!(
+        store.effect("fx-1").expect("read").expect("exists").state,
+        Uncertain
+    );
+
+    store
+        .transition_effect(
+            epoch,
+            &EffectTransition {
+                result: Some(b"process never started".to_vec()),
+                ..step("fx-1", Uncertain, Cancelled)
+            },
+        )
+        .expect("cancelled with evidence");
+    let record = store.effect("fx-1").expect("read").expect("exists");
+    assert_eq!(record.state, Cancelled);
+    assert_eq!(
+        record.result.as_deref(),
+        Some(&b"process never started"[..])
+    );
+}
+
+#[test]
 fn late_results_from_old_attempts_or_generations_are_rejected() {
     let (_dir, mut store, epoch) = fresh();
     seed(&mut store, epoch, "fx-1", Pending);

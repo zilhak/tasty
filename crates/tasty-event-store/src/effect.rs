@@ -22,7 +22,7 @@ pub enum EffectState {
     Cancelled,
     /// 새 generation으로 대체된 종료.
     Superseded,
-    /// Running 뒤 결과를 모른다. 대조 결과로만 벗어난다.
+    /// Running 뒤 결과를 모른다. 대조 결과로만 벗어난다. Cancelled로 닫으려면 실행되지 않았다는 증거가 필요하다.
     Uncertain,
 }
 
@@ -36,7 +36,7 @@ impl EffectState {
                 | (Deferred, Pending | Running | Cancelled | Superseded)
                 | (Running, Succeeded | Failed | Uncertain)
                 | (Failed, Pending)
-                | (Uncertain, Succeeded | Failed)
+                | (Uncertain, Succeeded | Failed | Cancelled)
         )
     }
 
@@ -98,6 +98,7 @@ pub struct EffectTransition {
     pub attempt: Option<u32>,
     /// Running으로 갈 때 필요한 실행권.
     pub claim: Option<ActivationClaim>,
+    /// 이 전이의 결과. Uncertain→Cancelled에서는 실행되지 않았다는 대조 증거이며 필수다.
     pub result: Option<Vec<u8>>,
 }
 
@@ -271,6 +272,9 @@ fn validate(t: &EffectTransition, state: EffectState, generation: u64) -> StoreR
             from: t.from,
             to: t.to,
         });
+    }
+    if t.from == EffectState::Uncertain && t.to == EffectState::Cancelled && t.result.is_none() {
+        return Err(StoreError::EvidenceRequired(t.effect_id.clone()));
     }
     Ok(())
 }
