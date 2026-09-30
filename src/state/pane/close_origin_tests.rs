@@ -27,7 +27,7 @@ fn insert_detached(engine: &mut EngineMut<'_>, sid: u32) {
     engine
         .runtime
         .terminals
-        .insert(sid, Terminal::new_detached(80, 24));
+        .insert(sid, Terminal::new_detached(80, 24), None);
 }
 
 /// 닫을 surface를 돌려준다. 시나리오는 활성 workspace 안에서 만든다.

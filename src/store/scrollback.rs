@@ -247,7 +247,10 @@ mod tests {
         let mut item = crate::model::ClosedItem::Surface {
             surface: crate::model::closed_item::ClosedSurface::from_capture(
                 1,
-                Some(crate::core::terminal_store::closed_capture_of(&t)),
+                Some(crate::core::terminal_store::closed_capture_of(
+                    &t,
+                    t.cached_cwd(),
+                )),
             ),
             tab_name: "round-trip".to_string(),
         };

@@ -18,7 +18,7 @@ fn execution_borrows_keep_one_terminal_and_one_task_scope() {
     owner
         .runtime
         .terminals
-        .insert(sid, Terminal::new_detached(80, 24));
+        .insert(sid, Terminal::new_detached(80, 24), None);
     let hub = Arc::clone(owner.task_scope.waker_hub());
     let feed = Arc::clone(owner.task_scope.event_queue());
     let runners = Arc::clone(owner.task_scope.runner_registry());
@@ -121,17 +121,17 @@ fn retired_terminal_content_cannot_mutate_the_replacement_binding() {
     owner
         .runtime
         .terminals
-        .insert(sid, Terminal::new_detached(80, 24));
+        .insert(sid, Terminal::new_detached(80, 24), None);
     let old_epoch = owner
         .runtime
         .terminals
         .get(sid)
         .unwrap()
         .with_content(|v| v.cut().epoch);
-    let mut old = owner
+    let (mut old, _old_pty) = owner
         .runtime
         .terminals
-        .replace(sid, Terminal::new_detached(80, 24))
+        .replace(sid, Terminal::new_detached(80, 24), None)
         .unwrap();
     owner
         .runtime
@@ -157,7 +157,7 @@ fn parked_session_keeps_terminal_hook_and_task_identity() {
     owner
         .runtime
         .terminals
-        .insert(sid, Terminal::new_detached(80, 24));
+        .insert(sid, Terminal::new_detached(80, 24), None);
     let epoch = owner
         .runtime
         .terminals

@@ -332,7 +332,12 @@ impl pty::PtyOutput for TerminalIngest {
     }
 
     fn is_attached(&self) -> bool {
-        self.state.strong_count() > 0
+        let Some(state) = self.state.upgrade() else {
+            return false;
+        };
+        let state =
+            tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED);
+        state.connection.is_active() && state.connection.generation() == self.generation
     }
 }
 
@@ -571,7 +576,7 @@ pub fn spawn_terminal(config: TerminalConfig<'_>, waker: Waker) -> Result<(Termi
             dirty: Arc::clone(&terminal.dirty),
             waker: Arc::clone(&terminal.waker),
         },
-    );
+    )?;
     Ok((terminal, pty))
 }
 

@@ -62,7 +62,7 @@ mod tests {
         let sid = state.focused_surface_id(&engine).unwrap();
         let mut terminal = tasty_terminal::Terminal::new_detached(20, 3);
         terminal.feed_bytes(b"zero\r\none\r\ntwo\r\nthree\r\nfour");
-        engine.runtime.terminals.insert(sid, terminal);
+        engine.runtime.terminals.insert(sid, terminal, None);
         let second_window = TerminalViewports::default();
         state
             .terminal_views

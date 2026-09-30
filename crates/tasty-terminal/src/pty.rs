@@ -8,7 +8,7 @@ use crate::ResourceGeneration;
 use crate::binding::ConnectionLease;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -84,10 +84,10 @@ pub struct PtyObservation {
     pub exit: Option<PtyExit>,
 }
 
-type ExitCell = Arc<(Mutex<PtyObservation>, Condvar)>;
+type ExitCell = Arc<Mutex<PtyObservation>>;
 static EXIT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 fn observe(cell: &ExitCell) -> std::sync::MutexGuard<'_, PtyObservation> {
-    tasty_utils::poison::recover_mutex(cell.0.lock(), "PTY child lifecycle", &EXIT_POISON_REPORTED)
+    tasty_utils::poison::recover_mutex(cell.lock(), "PTY child lifecycle", &EXIT_POISON_REPORTED)
 }
 fn publish_exit(cell: &ExitCell, status: portable_pty::ExitStatus) {
     let mut observation = observe(cell);
@@ -96,7 +96,6 @@ fn publish_exit(cell: &ExitCell, status: portable_pty::ExitStatus) {
         code: Some(status.exit_code() as i32),
         success: status.success(),
     });
-    cell.1.notify_all();
 }
 
 fn publish_wait_failure(cell: &ExitCell) {
@@ -107,7 +106,6 @@ fn publish_wait_failure(cell: &ExitCell) {
         code: None,
         success: false,
     });
-    cell.1.notify_all();
 }
 
 /// Runtime state for one OS resource; it never contains VT grid/content state.
@@ -134,13 +132,10 @@ impl PtyState {
             exit_settled: Arc::new(AtomicBool::new(false)),
             connection: ConnectionLease::new(),
             standalone: None,
-            exit: Arc::new((
-                Mutex::new(PtyObservation {
-                    phase: PtyPhase::Running,
-                    exit: None,
-                }),
-                Condvar::new(),
-            )),
+            exit: Arc::new(Mutex::new(PtyObservation {
+                phase: PtyPhase::Running,
+                exit: None,
+            })),
         }
     }
     pub fn generation(&self) -> ResourceGeneration {
@@ -159,6 +154,7 @@ impl PtyState {
 
 /// spawn 직후 아직 worker를 시작하지 않은 PTY 읽기 끝.
 pub(crate) struct PtyReader(Box<dyn Read + Send>);
+type PreparedIo = (Box<dyn Write + Send>, Box<dyn Read + Send>);
 
 /// OS PTY와 자식 프로세스의 소유자.
 pub struct Pty {
@@ -167,8 +163,7 @@ pub struct Pty {
     writer_wake: Option<mpsc::Sender<Vec<u8>>>,
     /// Drop의 계측 구간 안에서 master를 take해 해제한다. 살아 있는 동안은 Some이다.
     master: Option<Box<dyn portable_pty::MasterPty + Send>>,
-    /// 외부 exit watcher가 take_child로 가져가기 전까지 소유하는 자식.
-    /// Surface 터미널은 자식을 넘기지 않고 자체 kill/reap을 사용한다.
+    /// 일반 surface·standalone·adopt 모두 이 핸들 하나로 관측·종료·회수한다.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// raw read worker. [`Pty::start_reader`] 전에는 None이다.
     _reader_thread: Option<thread::JoinHandle<()>>,
@@ -179,6 +174,16 @@ impl Pty {
     /// 유일한 입력 연결이며, 모든 sink가 사라지면 writer가 끝난다. reader는 호출자가
     /// 받는 쪽을 준비한 뒤 [`start_reader`](Self::start_reader)로 시작한다.
     pub(crate) fn spawn(config: &TerminalConfig<'_>) -> Result<(Self, PtyReader, OutputSink)> {
+        Self::spawn_with_setup(config, |pty| {
+            let master = pty.master.as_ref().expect("spawned master");
+            Ok((master.take_writer()?, master.try_clone_reader()?))
+        })
+    }
+
+    fn spawn_with_setup(
+        config: &TerminalConfig<'_>,
+        prepare: impl FnOnce(&Pty) -> Result<PreparedIo>,
+    ) -> Result<(Self, PtyReader, OutputSink)> {
         let pair = NativePtySystem::default().openpty(pty_size(config.cols, config.rows))?;
 
         let shell = match config.shell {
@@ -206,9 +211,7 @@ impl Pty {
             child: Some(child),
             _reader_thread: None,
         };
-        let master = pty.master.as_ref().expect("spawned master");
-        let mut pty_writer = master.take_writer()?;
-        let pty_reader = master.try_clone_reader()?;
+        let (mut pty_writer, pty_reader) = prepare(&pty)?;
 
         // writer 스레드가 시작되기 전에 초기 입력을 쓴다. 자식은 이미 실행 중이므로
         // 셸의 tcflush/TCSAFLUSH 등으로 입력이 사라질 수 있다.
@@ -239,39 +242,46 @@ impl Pty {
     }
 
     /// raw read worker를 시작한다. 청크마다 `output.on_bytes`를 호출하고 EOF 뒤에는
-    /// 종료를 관측하거나 자식을 넘기거나 받는 쪽이 사라질 때까지 간격을 늘려 깨운다.
-    pub(crate) fn start_reader(&mut self, reader: PtyReader, output: impl PtyOutput) {
+    /// 종료를 관측하거나 자원이 무효화되거나 받는 쪽이 사라질 때까지 간격을 늘려 깨운다.
+    pub(crate) fn start_reader(
+        &mut self,
+        reader: PtyReader,
+        output: impl PtyOutput,
+    ) -> std::io::Result<()> {
         let mut reader = reader.0;
         let eof = Arc::clone(&self.state.reader_eof);
         let settled = Arc::clone(&self.state.exit_settled);
-        self._reader_thread = Some(thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if !output.on_bytes(&buf[..n]) {
-                            return;
+        self._reader_thread = Some(thread::Builder::new().name("pty-reader".into()).spawn(
+            move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if !output.on_bytes(&buf[..n]) {
+                                return;
+                            }
                         }
+                        Err(_) => break,
                     }
-                    Err(_) => break,
                 }
-            }
-            // PTY EOF/error: the next observation checks immediately (bypassing the throttle).
-            eof.store(true, Ordering::Release);
-            output.on_eof();
-            // EOF can precede a waitable child exit. Keep waking with increasing intervals
-            // until the exit is observed, the child is transferred, or the receiver is gone.
-            let mut gap = EOF_REWAKE_FIRST;
-            loop {
-                output.wake();
-                thread::sleep(gap);
-                if settled.load(Ordering::Acquire) || !output.is_attached() {
-                    break;
+                // PTY EOF/error: the next observation checks immediately (bypassing the throttle).
+                eof.store(true, Ordering::Release);
+                output.on_eof();
+                // EOF can precede a waitable child exit. Keep waking with increasing intervals
+                // until the exit is observed, the connection is retired, or the receiver is gone.
+                let mut gap = EOF_REWAKE_FIRST;
+                loop {
+                    output.wake();
+                    thread::sleep(gap);
+                    if settled.load(Ordering::Acquire) || !output.is_attached() {
+                        break;
+                    }
+                    gap = (gap * 2).min(ALIVE_CHECK_INTERVAL);
                 }
-                gap = (gap * 2).min(ALIVE_CHECK_INTERVAL);
-            }
-        }));
+            },
+        )?);
+        Ok(())
     }
 
     /// grid 변경 뒤 OS resize를 예약한다. 실제 적용은 flush 경로에서 한다.
@@ -307,6 +317,10 @@ impl Pty {
 
     /// throttle과 무관하게 예약된 OS resize를 적용한다.
     pub fn force_flush_resize(&mut self) {
+        if !self.state.connection.is_active() {
+            self.state.pending_resize = None;
+            return;
+        }
         if let Some((cols, rows)) = self.state.pending_resize.take() {
             if let Err(e) = self.apply_os_resize(cols, rows) {
                 tracing::warn!("PTY resize failed: {e}");
@@ -317,6 +331,10 @@ impl Pty {
 
     /// OS PTY에 크기를 바로 알린다. master가 없으면 아무 일도 하지 않는다.
     pub fn apply_os_resize(&self, cols: usize, rows: usize) -> Result<()> {
+        anyhow::ensure!(
+            self.state.connection.is_active(),
+            "PTY connection is retired"
+        );
         if let Some(master) = self.master.as_ref() {
             master.resize(pty_size(cols, rows))?;
         }
@@ -419,59 +437,9 @@ impl Drop for Pty {
             }
         }
         let t_drop = Instant::now();
-        if let Some(mut child) = self.child.take() {
+        if let Some(child) = self.child.take() {
             if self.state.exit().is_none() {
-                let cell = Arc::clone(&self.state.exit);
-                observe(&cell).phase = PtyPhase::TerminationRequested;
-                // The waitable child handle is moved, never cloned or reduced to a PID.
-                // Unix signals synchronously; bounded grace and final wait run off the event loop.
-                #[cfg(unix)]
-                let signalled = child.process_id().is_some_and(|pid| {
-                    // SAFETY: this sole owner has not reaped its child, so this PID cannot be reused.
-                    unsafe { libc::kill(pid as i32, libc::SIGHUP) == 0 }
-                });
-                #[cfg(not(unix))]
-                let signalled = child.kill().is_ok();
-                if signalled {
-                    observe(&cell).phase = PtyPhase::Signalled;
-                }
-                thread::spawn(move || {
-                    for _ in 0..40 {
-                        match child.try_wait() {
-                            Ok(Some(status)) => {
-                                publish_exit(&cell, status);
-                                return;
-                            }
-                            Ok(None) => thread::sleep(Duration::from_millis(5)),
-                            Err(error) => {
-                                tracing::warn!("PTY reap check failed: {error}");
-                                publish_wait_failure(&cell);
-                                return;
-                            }
-                        }
-                    }
-                    #[cfg(unix)]
-                    if let Some(pid) = child.process_id() {
-                        // SAFETY: the sole waitable owner just observed this child alive.
-                        if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
-                            tracing::trace!(
-                                "PTY final kill failed: {}",
-                                std::io::Error::last_os_error()
-                            );
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    if let Err(error) = child.kill() {
-                        tracing::trace!("PTY final kill failed: {error}");
-                    }
-                    match child.wait() {
-                        Ok(status) => publish_exit(&cell, status),
-                        Err(error) => {
-                            tracing::warn!("PTY child wait failed: {error}");
-                            publish_wait_failure(&cell);
-                        }
-                    }
-                });
+                retire_child(child, Arc::clone(&self.state.exit));
             }
         }
         // master 해제를 계측 구간 안으로 끌어들인다(위 필드 주석 참조).
@@ -482,6 +450,70 @@ impl Drop for Pty {
         );
         PTY_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+/// Confirm the waitable handle still owns an unreaped child before any PID-based signal.
+fn retire_child(mut child: Box<dyn portable_pty::Child + Send + Sync>, cell: ExitCell) {
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            publish_exit(&cell, status);
+            return;
+        }
+        Err(error) => {
+            tracing::warn!("PTY retirement cannot confirm child ownership: {error}");
+            publish_wait_failure(&cell);
+            return;
+        }
+        Ok(None) => {}
+    }
+    observe(&cell).phase = PtyPhase::TerminationRequested;
+    // The waitable child handle is moved, never cloned or reduced to a PID.
+    // Unix signals synchronously; bounded grace and final wait run off the event loop.
+    #[cfg(unix)]
+    let signalled = match child.process_id() {
+        // SAFETY: this sole owner has not reaped its child, so this PID cannot be reused.
+        Some(pid) => unsafe { libc::kill(pid as i32, libc::SIGHUP) == 0 },
+        None => child.kill().is_ok(),
+    };
+    #[cfg(not(unix))]
+    let signalled = child.kill().is_ok();
+    if signalled {
+        observe(&cell).phase = PtyPhase::Signalled;
+    }
+    thread::spawn(move || {
+        for _ in 0..40 {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    publish_exit(&cell, status);
+                    return;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(5)),
+                Err(error) => {
+                    tracing::warn!("PTY reap check failed: {error}");
+                    publish_wait_failure(&cell);
+                    return;
+                }
+            }
+        }
+        #[cfg(unix)]
+        if let Some(pid) = child.process_id() {
+            // SAFETY: the sole waitable owner just observed this child alive.
+            if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
+                tracing::trace!("PTY final kill failed: {}", std::io::Error::last_os_error());
+            }
+        }
+        #[cfg(not(unix))]
+        if let Err(error) = child.kill() {
+            tracing::trace!("PTY final kill failed: {error}");
+        }
+        match child.wait() {
+            Ok(status) => publish_exit(&cell, status),
+            Err(error) => {
+                tracing::warn!("PTY child wait failed: {error}");
+                publish_wait_failure(&cell);
+            }
+        }
+    });
 }
 
 fn pty_size(cols: usize, rows: usize) -> PtySize {
@@ -648,7 +680,7 @@ mod tests {
     fn raw_output_eof_and_exit_reach_a_non_terminal_receiver() {
         let (mut pty, reader, _sink) = spawn_sh(&["-c", "printf tasty-pty-raw"]);
         let rec = Recorder::default();
-        pty.start_reader(reader, rec.clone());
+        pty.start_reader(reader, rec.clone()).expect("reader start");
 
         wait_until("EOF", || rec.eof.load(Ordering::Acquire));
         assert!(pty.state.reader_eof.load(Ordering::Acquire));
@@ -665,7 +697,7 @@ mod tests {
     fn sink_bytes_reach_the_child_and_advance_progress() {
         let (mut pty, reader, sink) = spawn_sh(&["-c", "read line; printf \"got:%s\" \"$line\""]);
         let rec = Recorder::default();
-        pty.start_reader(reader, rec.clone());
+        pty.start_reader(reader, rec.clone()).expect("reader start");
 
         sink.send(b"ping\r".to_vec()).expect("writer alive");
         wait_until("writer flush", || {
@@ -676,17 +708,111 @@ mod tests {
         });
     }
 
-    /// take_child 뒤에는 EOF 재촉을 멈추고 Drop은 넘긴 자식을 건드리지 않는다.
+    /// Standalone and surface-owned children retain the same kill/wait owner.
     #[test]
-    fn take_child_settles_and_transfers_reaping() {
-        let (mut pty, reader, _sink) = spawn_sh(&["-c", "exit 0"]);
-        pty.start_reader(reader, Recorder::default());
-        let mut child = pty.take_child().expect("owned child");
-        assert!(pty.state.exit_settled.load(Ordering::Acquire));
-        assert_eq!(pty.process_id(), None);
-        assert!(pty.check_alive(), "넘긴 뒤에는 자식이 없어 alive로 본다");
+    fn dropping_the_pty_signals_and_reaps_its_owned_child() {
+        let (mut pty, reader, _sink) = spawn_sh(&["-c", "exec sleep 60"]);
+        pty.start_reader(reader, Recorder::default())
+            .expect("reader start");
+        let completion = Arc::clone(&pty.state.exit);
+        assert_eq!(observe(&completion).phase, PtyPhase::Running);
         drop(pty);
-        let status = child.wait().expect("새 소유자가 회수한다");
-        assert!(status.success());
+        wait_until("owned child reaped", || {
+            observe(&completion).phase == PtyPhase::Reaped
+        });
+        assert!(observe(&completion).exit.is_some());
+    }
+
+    /// Fail after the real child exists, at both reader/writer preparation boundaries.
+    #[test]
+    fn setup_failures_after_spawn_are_reaped_by_the_early_owner() {
+        for writer_was_acquired in [false, true] {
+            let mut completion = None;
+            let mut child_pid = None;
+            let result = Pty::spawn_with_setup(
+                &TerminalConfig {
+                    cols: 80,
+                    rows: 24,
+                    shell: Some("/bin/sh"),
+                    args: &["-c", "exec sleep 60"],
+                    surface_id: 0,
+                    working_dir: None,
+                    initial_input: None,
+                    extra_env: &[],
+                },
+                |pty| {
+                    child_pid = pty.process_id();
+                    completion = Some(Arc::clone(&pty.state.exit));
+                    if writer_was_acquired {
+                        let writer = pty.master.as_ref().unwrap().take_writer()?;
+                        drop(writer);
+                    }
+                    anyhow::bail!("injected I/O handle preparation failure");
+                },
+            );
+            assert!(result.is_err());
+            assert!(
+                child_pid.is_some(),
+                "the injected error must follow an actual spawn"
+            );
+            let completion = completion.expect("owner existed before fallible setup");
+            wait_until("failed setup child reaped", || {
+                observe(&completion).phase == PtyPhase::Reaped
+            });
+        }
+    }
+
+    #[test]
+    fn old_resize_generation_cannot_resize_the_new_physical_pty() {
+        let (mut old, _reader, _sink) = spawn_sh(&["-c", "exec sleep 60"]);
+        let old_generation = old.generation();
+        assert!(old.schedule_resize(old_generation, 99, 31));
+        old.state.connection.revoke();
+        old.force_flush_resize();
+        assert!(!old.has_pending_resize());
+        assert_eq!(old.os_size(), Some((80, 24)));
+        let (mut replacement, _reader, _sink) = spawn_sh(&["-c", "exec sleep 60"]);
+        assert_ne!(old_generation, replacement.generation());
+        assert!(!replacement.schedule_resize(old_generation, 99, 31));
+        replacement.force_flush_resize();
+        assert_eq!(replacement.os_size(), Some((80, 24)));
+    }
+
+    #[derive(Debug)]
+    struct LostChild;
+    impl portable_pty::ChildKiller for LostChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            panic!("unknown ownership must never kill")
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            panic!("must not clone a killer")
+        }
+    }
+    impl portable_pty::Child for LostChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Err(std::io::Error::from_raw_os_error(libc::ECHILD))
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            panic!("unknown ownership must not enter a new wait")
+        }
+        fn process_id(&self) -> Option<u32> {
+            panic!("PID must not be consulted after ECHILD")
+        }
+    }
+
+    #[test]
+    fn retirement_wait_failure_is_reported_without_targeting_a_pid() {
+        let state = PtyState::new();
+        let observed = Arc::clone(&state.exit);
+        retire_child(Box::new(LostChild), Arc::clone(&observed));
+        assert_eq!(observe(&observed).phase, PtyPhase::WaitFailed);
+        assert_eq!(
+            state.exit(),
+            Some(PtyExit {
+                code: None,
+                success: false
+            }),
+            "legacy wait failure response must terminate polling without claiming reap"
+        );
     }
 }

@@ -1503,7 +1503,7 @@ mod forward_exec_tests {
         engine
             .runtime
             .terminals
-            .insert(a, Terminal::new_detached(80, 24));
+            .insert(a, Terminal::new_detached(80, 24), None);
         a
     }
 
@@ -2225,7 +2225,7 @@ mod forward_exec_tests {
         engine
             .runtime
             .terminals
-            .insert(other_sid, Terminal::new_detached(80, 24));
+            .insert(other_sid, Terminal::new_detached(80, 24), None);
         let other_pane = engine.workspaces[other_ws]
             .pane_layout()
             .first_pane()
@@ -2486,7 +2486,12 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
-        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
+        let generation = engine
+            .runtime
+            .terminals
+            .generation(b)
+            .expect("terminal binding");
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b, generation);
         let msgs = drain_control(&rx);
         assert_eq!(msgs.len(), 1, "delta 는 정확히 한 번: {msgs:?}");
         assert_eq!(msgs[0]["event"], "structural_delta");
@@ -2529,9 +2534,19 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
-        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
+        let generation = engine
+            .runtime
+            .terminals
+            .generation(b)
+            .expect("terminal binding");
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b, generation);
         drain_control(&rx);
-        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, a);
+        let generation = engine
+            .runtime
+            .terminals
+            .generation(a)
+            .expect("terminal binding");
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, a, generation);
         assert!(
             engine.find_workspace_index_for_id(ws_id).is_none(),
             "시험 전제: 워크스페이스가 purge 됐다"
@@ -3620,8 +3635,6 @@ mod forward_exec_tests {
     /// 거부는 preset 조회보다 먼저여서 이 시험은 preset 파일 없이 점유 사유만 확인한다.
     #[test]
     fn dispatch_denies_preset_apply_and_pty_attach_when_hard_occupied() {
-        use crate::core::pty_registry::PtySpawnSpec;
-
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
@@ -3632,22 +3645,8 @@ mod forward_exec_tests {
             0,
             "기본 대상은 점유된 workspace 여야 한다"
         );
-        let pty_id = engine
-            .runtime
-            .pty_registry
-            .register(
-                PtySpawnSpec {
-                    owner_agent_id: "agent-x".into(),
-                    cwd: None,
-                    command: vec![],
-                },
-                std::time::Instant::now(),
-            )
-            .expect("register headless pty");
-        engine
-            .runtime
-            .terminals
-            .insert(pty_id, Terminal::new_detached(80, 24));
+        let pty_id =
+            crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
@@ -3710,7 +3709,7 @@ mod forward_exec_tests {
         );
         assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids().len(), 1);
         assert!(
-            engine.runtime.pty_registry.get(pty_id).is_some(),
+            engine.runtime.terminals.is_standalone(pty_id),
             "거부된 pty.attach_surface 는 PTY 를 registry 에 남겨야 한다"
         );
 
@@ -3749,7 +3748,7 @@ mod forward_exec_tests {
         engine
             .runtime
             .terminals
-            .insert(child, Terminal::new_detached(80, 24));
+            .insert(child, Terminal::new_detached(80, 24), None);
         engine.workspaces[0]
             .pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -3826,7 +3825,7 @@ mod forward_exec_tests {
         engine
             .runtime
             .terminals
-            .insert(child, Terminal::new_detached(80, 24));
+            .insert(child, Terminal::new_detached(80, 24), None);
         engine.workspaces[0]
             .pane_layout_mut()
             .find_pane_mut(pane_id)

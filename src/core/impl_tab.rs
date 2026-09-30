@@ -245,7 +245,7 @@ mod tab_title_tests {
         engine
             .runtime
             .terminals
-            .insert(a, Terminal::new_detached(80, 24));
+            .insert(a, Terminal::new_detached(80, 24), None);
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
         engine.workspaces[ws_idx]
@@ -257,7 +257,7 @@ mod tab_title_tests {
         engine
             .runtime
             .terminals
-            .insert(b, Terminal::new_detached(80, 24));
+            .insert(b, Terminal::new_detached(80, 24), None);
         (engine_session, pane_id, a, b)
     }
 

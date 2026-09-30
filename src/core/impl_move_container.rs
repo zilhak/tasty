@@ -318,7 +318,7 @@ mod move_container_tests {
         engine
             .runtime
             .terminals
-            .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(a, tasty_terminal::Terminal::new_detached(80, 24), None);
         let (_, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
         let tab_id = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
         (pane_id, tab_id, a)
@@ -331,7 +331,7 @@ mod move_container_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         engine
             .find_pane_by_id_mut(pane_id)
             .unwrap()
@@ -347,7 +347,7 @@ mod move_container_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
         let ws_idx = engine.find_workspace_index_for_pane(pane_id).unwrap();
         assert!(
@@ -368,7 +368,7 @@ mod move_container_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         engine
             .workspaces
             .push(crate::model::Workspace::new_with_terminal_marker(

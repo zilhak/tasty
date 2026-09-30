@@ -113,7 +113,7 @@ mod attach_block_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
 
         let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
@@ -156,7 +156,7 @@ mod attach_block_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         engine.occupy_soft(sid, /*parent*/ 1, None).unwrap();
         let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));

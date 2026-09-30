@@ -313,7 +313,7 @@ mod move_surface_tests {
         engine
             .runtime
             .terminals
-            .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(a, tasty_terminal::Terminal::new_detached(80, 24), None);
 
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
@@ -326,7 +326,7 @@ mod move_surface_tests {
         engine
             .runtime
             .terminals
-            .insert(b, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(b, tasty_terminal::Terminal::new_detached(80, 24), None);
 
         assert!(engine.runtime.terminals.contains(a));
         assert!(engine.runtime.terminals.contains(b));
@@ -380,7 +380,7 @@ mod move_surface_tests {
         engine
             .runtime
             .terminals
-            .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(a, tasty_terminal::Terminal::new_detached(80, 24), None);
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
 
         let ev = Core::apply_move_surface(&mut engine, a, 999_999);

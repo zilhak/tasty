@@ -349,7 +349,10 @@ impl RequestContext {
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.runtime.terminals.insert(new_surface_id, terminal);
+        engine
+            .runtime
+            .terminals
+            .insert(new_surface_id, terminal.0, Some(terminal.1));
         let new_pane =
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
 

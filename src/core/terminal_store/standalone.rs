@@ -77,3 +77,103 @@ impl TerminalStore {
         self.idle_ttl = ttl;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, atomic::AtomicU32};
+
+    #[test]
+    fn shared_ids_keep_the_standalone_range_and_refuse_wraparound() {
+        let counter = Arc::new(AtomicU32::new(PTY_ID_BASE));
+        let first = TerminalStore::new(Arc::clone(&counter));
+        let second = TerminalStore::new(counter);
+        assert_eq!(first.reserve_pty_id().unwrap(), PTY_ID_BASE);
+        assert_eq!(second.reserve_pty_id().unwrap(), PTY_ID_BASE + 1);
+        assert!(is_surface_id_space(PTY_ID_BASE - 1));
+        assert!(!is_surface_id_space(PTY_ID_BASE));
+        let exhausted = TerminalStore::new(Arc::new(AtomicU32::new(u32::MAX)));
+        assert_eq!(exhausted.reserve_pty_id(), Err(PtySpawnError::IdExhausted));
+        assert_eq!(exhausted.reserve_pty_id(), Err(PtySpawnError::IdExhausted));
+    }
+
+    #[cfg(unix)]
+    fn add(store: &mut TerminalStore, now: Instant, command: &str) -> u32 {
+        let id = store.reserve_pty_id().unwrap();
+        let (terminal, mut pty) = tasty_terminal::spawn_terminal(
+            tasty_terminal::TerminalConfig {
+                cols: 80,
+                rows: 24,
+                shell: Some("/bin/sh"),
+                args: &["-c", command],
+                surface_id: id,
+                working_dir: None,
+                initial_input: None,
+                extra_env: &[],
+            },
+            Arc::new(|| {}),
+        )
+        .unwrap();
+        pty.set_standalone(tasty_terminal::StandalonePty {
+            owner_agent_id: "owner".into(),
+            cwd: None,
+            command: vec![command.into()],
+            created_at: now,
+            last_activity: now,
+        });
+        store.insert(id, terminal, Some(pty));
+        id
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exited_entries_keep_their_limit_slot_until_the_single_entry_is_removed() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        store.set_standalone_limits(1, DEFAULT_IDLE_TTL);
+        let id = add(&mut store, Instant::now(), "exit 7");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while store.standalone(id).unwrap().state().exit().is_none() {
+            store.process_surface(id);
+            assert!(Instant::now() < deadline, "actual child exit not observed");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let pty = store.standalone(id).unwrap();
+        assert_eq!(pty.state().exit().unwrap().code, Some(7));
+        assert_eq!(pty.state().standalone().unwrap().owner_agent_id, "owner");
+        assert_eq!(
+            store.reserve_pty_id(),
+            Err(PtySpawnError::LimitReached { current: 1, max: 1 })
+        );
+        drop(store.remove(id));
+        assert!(store.get(id).is_none() && store.pty(id).is_none());
+        assert!(store.reserve_pty_id().unwrap() > id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn touch_and_adopt_use_the_same_metadata_and_physical_owner() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
+        store.set_standalone_limits(2, Duration::from_secs(10));
+        let now = Instant::now();
+        let first = add(&mut store, now, "exec sleep 60");
+        let second = add(&mut store, now, "exec sleep 60");
+        store.touch_standalone(second, now + Duration::from_secs(9));
+        assert_eq!(
+            store.expired_standalone_ids(now + Duration::from_secs(11)),
+            vec![first]
+        );
+        let generation = store.generation(first).unwrap();
+        let pid = store.pty(first).unwrap().process_id();
+        assert!(store.adopt(first, 5, Arc::new(|| {})));
+        assert!(!store.is_standalone(first) && !store.is_standalone(5));
+        assert!(store.get(first).is_none() && store.pty(first).is_none());
+        assert_eq!(store.generation(5), Some(generation));
+        assert_eq!(store.pty(5).unwrap().process_id(), pid);
+        assert_eq!(
+            store.expired_standalone_ids(now + Duration::from_secs(30)),
+            vec![second]
+        );
+    }
+}

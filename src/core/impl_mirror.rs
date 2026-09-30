@@ -619,7 +619,7 @@ mod mirror_structural_guard_tests {
         engine
             .runtime
             .terminals
-            .insert(a, Terminal::new_detached(80, 24));
+            .insert(a, Terminal::new_detached(80, 24), None);
         let (_ws, pane) = engine.find_workspace_index_for_surface(a).unwrap();
         (a, pane)
     }
@@ -631,27 +631,12 @@ mod mirror_structural_guard_tests {
     // 입양한 PTY 탭은 원격 트리에 없으므로 mirror pane에 붙이지 않는다.
     #[test]
     fn adopt_into_mirror_pane_is_blocked() {
-        use crate::core::pty_registry::PtySpawnSpec;
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
-        let pty_id = engine
-            .runtime
-            .pty_registry
-            .register(
-                PtySpawnSpec {
-                    owner_agent_id: "agent-x".into(),
-                    cwd: None,
-                    command: vec![],
-                },
-                std::time::Instant::now(),
-            )
-            .expect("register headless pty");
-        engine
-            .runtime
-            .terminals
-            .insert(pty_id, Terminal::new_detached(80, 24));
+        let pty_id =
+            crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
         let tabs_before = engine.find_pane_by_id(pane).unwrap().tabs.len();
 
         let err = core
@@ -673,7 +658,7 @@ mod mirror_structural_guard_tests {
         );
         assert!(engine.pending_structural_forward.is_empty());
         assert!(
-            engine.runtime.pty_registry.get(pty_id).is_some(),
+            engine.runtime.terminals.is_standalone(pty_id),
             "PTY 는 registry 에 남아야 한다"
         );
     }
@@ -693,7 +678,7 @@ mod mirror_structural_guard_tests {
                 cwd: None,
             },
         );
-        let still_detached = engine.find_terminal_by_id(a).unwrap().is_detached();
+        let still_detached = engine.runtime.terminals.pty(a).is_none();
         // 가드가 없으면 로컬 셸이 생기므로 단언 전에 정리한다.
         engine.runtime.terminals.remove(a);
         let err = res.expect_err("respawn on a mirror surface must be blocked");
@@ -903,8 +888,6 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn adopt_terminal_in_occupied_workspace_inherits_occupancy() {
-        use crate::core::pty_registry::PtySpawnSpec;
-
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
@@ -915,35 +898,8 @@ mod mirror_structural_guard_tests {
             .acquire_workspace(ws_id, &[a], &[a], client_id)
             .expect("workspace 점유 획득");
 
-        let pty_id = engine
-            .runtime
-            .pty_registry
-            .register(
-                PtySpawnSpec {
-                    owner_agent_id: "agent-x".into(),
-                    cwd: None,
-                    command: vec![],
-                },
-                std::time::Instant::now(),
-            )
-            .expect("register headless pty");
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::spawn_terminal(
-            tasty_terminal::TerminalConfig {
-                cols: 80,
-                rows: 24,
-                shell: sh.shell_ref(),
-                args: &sh.args_ref(),
-                extra_env: &sh.envs_ref(),
-                surface_id: pty_id,
-                working_dir: None,
-                initial_input: None,
-            },
-            waker,
-        )
-        .expect("spawn headless terminal");
-        engine.runtime.terminals.insert(pty_id, terminal);
+        let pty_id =
+            crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
 
         let events = core
             .apply(
@@ -970,41 +926,12 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn adopt_terminal_promotes_headless_pty_preserving_state() {
-        use crate::core::pty_registry::PtySpawnSpec;
-
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
 
-        let pty_id = engine
-            .runtime
-            .pty_registry
-            .register(
-                PtySpawnSpec {
-                    owner_agent_id: "agent-x".into(),
-                    cwd: None,
-                    command: vec![],
-                },
-                std::time::Instant::now(),
-            )
-            .expect("register headless pty");
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::spawn_terminal(
-            tasty_terminal::TerminalConfig {
-                cols: 80,
-                rows: 24,
-                shell: sh.shell_ref(),
-                args: &sh.args_ref(),
-                extra_env: &sh.envs_ref(),
-                surface_id: pty_id,
-                working_dir: None,
-                initial_input: None,
-            },
-            waker,
-        )
-        .expect("spawn headless terminal");
-        engine.runtime.terminals.insert(pty_id, terminal);
+        let pty_id =
+            crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
 
         // 화면 내용을 만든 뒤 이동 후에도 남는지 검사한다. 이것만으로 프로세스 동일성을 증명하지는 않는다.
         engine
@@ -1062,7 +989,7 @@ mod mirror_structural_guard_tests {
         );
 
         assert!(
-            !engine.runtime.pty_registry.contains(pty_id),
+            !engine.runtime.terminals.is_standalone(pty_id),
             "promoted pty must leave the headless registry"
         );
 
@@ -1082,7 +1009,6 @@ mod mirror_structural_guard_tests {
     #[test]
     fn adopt_terminal_forgets_old_pty_waker_gate() {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
-        use crate::core::pty_registry::PtySpawnSpec;
 
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
@@ -1091,35 +1017,8 @@ mod mirror_structural_guard_tests {
         engine.waker_factory = Some(shared);
         let (_a, pane) = seed(&mut engine);
 
-        let pty_id = engine
-            .runtime
-            .pty_registry
-            .register(
-                PtySpawnSpec {
-                    owner_agent_id: "agent-x".into(),
-                    cwd: None,
-                    command: vec![],
-                },
-                std::time::Instant::now(),
-            )
-            .expect("register headless pty");
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::spawn_terminal(
-            tasty_terminal::TerminalConfig {
-                cols: 80,
-                rows: 24,
-                shell: sh.shell_ref(),
-                args: &sh.args_ref(),
-                extra_env: &sh.envs_ref(),
-                surface_id: pty_id,
-                working_dir: None,
-                initial_input: None,
-            },
-            waker,
-        )
-        .expect("spawn headless terminal");
-        engine.runtime.terminals.insert(pty_id, terminal);
+        let pty_id =
+            crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
         assert!(
             factory.made().contains(&pty_id),
             "spawn 흉내는 pty_id 게이트를 만든다"
@@ -1185,7 +1084,7 @@ mod mirror_structural_guard_tests {
         engine
             .runtime
             .terminals
-            .insert(sid1, Terminal::new_detached(80, 24));
+            .insert(sid1, Terminal::new_detached(80, 24), None);
         engine.workspaces[0]
             .pane_layout_mut()
             .find_pane_mut(pane)
@@ -1557,7 +1456,7 @@ mod mirror_structural_guard_tests {
         engine
             .runtime
             .terminals
-            .insert(sid1, Terminal::new_detached(80, 24));
+            .insert(sid1, Terminal::new_detached(80, 24), None);
         let ws1 = crate::model::Workspace::new_with_terminal_marker(
             ws1_id,
             "ws1".to_string(),
@@ -1673,7 +1572,7 @@ mod mirror_structural_guard_tests {
         engine
             .runtime
             .terminals
-            .insert(sid1, Terminal::new_detached(80, 24));
+            .insert(sid1, Terminal::new_detached(80, 24), None);
         let ws1 = crate::model::Workspace::new_with_terminal_marker(
             ws1_id,
             "ws1".to_string(),

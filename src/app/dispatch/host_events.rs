@@ -14,6 +14,25 @@ use crate::app::window_access::engines_mut;
 use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
+fn take_current_host_events(
+    state: &mut crate::state::MainViewState,
+    engine: &EngineRef<'_>,
+) -> Vec<PendingHostEvent> {
+    let mut events = state.take_pending_host_events();
+    events.retain(|event| match event {
+        PendingHostEvent::SurfaceTitleChanged {
+            surface_id,
+            generation,
+            ..
+        } => engine
+            .runtime
+            .terminals
+            .matches_generation(*surface_id, *generation),
+        _ => true,
+    });
+    events
+}
+
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
@@ -22,18 +41,7 @@ impl App {
             s.detect_workspace_activation(engine.core);
             s.detect_tab_focus_change(engine.core);
             s.detect_tab_lifecycle(engine.core);
-            let mut events = s.take_pending_host_events();
-            events.retain(|event| match event {
-                PendingHostEvent::SurfaceTitleChanged {
-                    surface_id,
-                    generation,
-                    ..
-                } => engine
-                    .runtime
-                    .terminals
-                    .matches_generation(*surface_id, *generation),
-                _ => true,
-            });
+            let events = take_current_host_events(s, &engine.as_ref());
             reproject_osc_title_on_focus(&mut engine, &events);
             resolve_hook_fired_task_waits(&self.core, &engine.as_ref(), &events);
             drained.extend(events);
@@ -228,5 +236,46 @@ fn resolve_hook_fired_task_waits(
                 core.now_unix_millis() as u64,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod terminal_generation_tests {
+    use super::*;
+
+    #[test]
+    fn the_real_host_queue_drops_only_the_old_connection_title() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let old = engine.runtime.terminals.generation(surface).unwrap();
+        drop(state.take_pending_host_events());
+        state.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
+            surface_id: surface,
+            generation: old,
+            title: "stale-title".into(),
+        });
+        engine.runtime.terminals.replace(
+            surface,
+            tasty_terminal::Terminal::new_detached(80, 24),
+            None,
+        );
+        let current = engine.runtime.terminals.generation(surface).unwrap();
+        state.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
+            surface_id: surface,
+            generation: current,
+            title: "current-title".into(),
+        });
+        state.enqueue_host_event(PendingHostEvent::SurfaceFocused {
+            surface_id: surface,
+            prev_surface_id: None,
+        });
+        let events = take_current_host_events(&mut state, &engine.as_ref());
+        assert_eq!(events.len(), 2);
+        assert!(
+            matches!(&events[0], PendingHostEvent::SurfaceTitleChanged { title, .. } if title == "current-title")
+        );
+        assert!(matches!(events[1], PendingHostEvent::SurfaceFocused { .. }));
+        assert!(state.take_pending_host_events().is_empty());
     }
 }

@@ -53,7 +53,7 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 - resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약만 하고, collection의 다음 process 처리에서 강제 flush 또는 호스트가 대기 중인 resize를 순회하는 `Pty::flush_resize`(100ms throttle)에서 적용한다. 그래서 tap은 OS 적용 확인이 아니다.
 - child의 kill·wait 소유자는 Pty 하나다. standalone에서 surface로 adopt해도 바뀌지 않으며 정상 Drop의 Unix 신호 전달 뒤 유예·회수는 메인 루프 밖에서 수행한다. reader/writer 준비가 실패해도 이미 생성한 child는 같은 owner가 정리한다.
 - EngineSession의 기존 TerminalStore는 한 항목에 Terminal과 Option<Pty>를 함께 보관한다. Terminal 자체에는 child/master가 없다. 내용 조회는 Terminal만 빌리고 PID·OS cwd·resize는 Pty를 명시적으로 조회한다.
-- resource generation은 현재 프로세스의 연결 신원으로 ContentEpoch와 독립이다. adopt는 세대를 유지하고 respawn은 교체한다. 늦은 reader output·프로토콜 응답·resize 및 종료/제목/cwd 후속 요청은 현재 binding을 확인한다. durable journal activation과 연결된 세대는 아직 구현하지 않았다.
+- resource generation은 현재 프로세스의 연결 신원으로 ContentEpoch와 독립이다. adopt는 세대를 유지하고 respawn은 교체한다. 로컬 Pty의 늦은 reader output·프로토콜 응답·resize 및 종료/제목/cwd 후속 요청은 현재 binding을 확인한다. durable journal activation과 연결된 세대는 아직 구현하지 않았다. mirror 응답은 기존 attach sink로 전달하며, 재연결 전 forwarder 큐의 바이트를 새 연결에서 배제하는 보장은 Remote connection epoch 이행에 남아 있다.
 
 ### 표시 위치의 소유와 읽기
 

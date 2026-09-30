@@ -203,6 +203,9 @@ pub(crate) fn handle_wait(
     if !engine.runtime.terminals.is_standalone(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
+    if let Some(pty) = engine.runtime.terminals.pty_mut(pty_id) {
+        pty.observe_exit();
+    }
     engine
         .runtime
         .terminals
@@ -226,7 +229,7 @@ pub(crate) fn handle_wait(
     }
 }
 
-/// registry와 Terminal을 제거해 PTY master를 닫는다. watcher는 자식 종료를 기다려 회수한다.
+/// 단일 저장소 항목을 제거해 PTY owner를 종료한다. 비동기 reaper가 소유 child를 회수한다.
 /// 이 응답이 자식의 종료 완료를 확인한 것은 아니다.
 pub(crate) fn handle_kill(
     engine: &mut EngineMut<'_>,
@@ -319,7 +322,7 @@ pub(crate) fn handle_attach_surface(
 }
 
 /// idle 항목을 회수한 뒤 등록된 PTY 전체를 반환한다.
-/// watch_phase는 시험 실패 진단에만 사용하므로 공개 응답에 포함하지 않는다.
+/// owner_phase는 시험 실패 진단에만 사용하므로 공개 응답에 포함하지 않는다.
 pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcResponse {
     lazy_sweep(engine);
     let ptys: Vec<Value> = engine
@@ -342,11 +345,11 @@ pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcRespo
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::core::pty_registry::WatchPhase;
+    use tasty_terminal::PtyPhase;
 
     fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -354,7 +357,7 @@ mod tests {
     }
 
     // Clock이 포함된 Core를 준비하고 TempDir을 호출자에게 넘겨 시험 동안 유지한다.
-    fn core() -> (crate::core::Core, tempfile::TempDir) {
+    pub(crate) fn core() -> (crate::core::Core, tempfile::TempDir) {
         use std::sync::{Arc, Mutex};
 
         use tasty_memory::MemoryStorage;
@@ -428,54 +431,55 @@ mod tests {
         )
     }
 
-    /// Condvar로 종료 결과를 기다린다. 보낸 입력은 실패 시 에코와 다른 출력을 구분하는 데 쓴다.
+    /// Drive the same nonblocking owner poll as the host; no detached waiter owns the child.
     fn wait_for_exit(engine: &mut EngineMut<'_>, pty_id: u32, sent: &str) -> Value {
-        let started = std::time::Instant::now();
-        match engine
-            .runtime
-            .pty_registry
-            .wait_for_exit(pty_id, EXIT_WAIT_BUDGET)
-        {
-            Some(exit) => json!({
-                "id": pty_id,
-                "exited": true,
-                "exit_code": exit.code,
-                "success": exit.success,
-            }),
-            None => {
-                let elapsed = started.elapsed();
-                let still_registered = engine.runtime.terminals.is_standalone(pty_id);
-                let observed = observed_pty_state(&engine.as_ref(), pty_id, sent);
+        let started = Instant::now();
+        loop {
+            let result = ok(handle_wait(engine, json!(1), &json!({"id": pty_id})));
+            if result["exited"] == true {
+                return result;
+            }
+            let elapsed = started.elapsed();
+            if elapsed >= EXIT_WAIT_BUDGET {
                 panic!(
                     "{}",
                     exit_wait_failure(
                         pty_id,
                         elapsed,
                         EXIT_WAIT_BUDGET,
-                        still_registered,
-                        &observed
+                        engine.runtime.terminals.is_standalone(pty_id),
+                        &observed_pty_state(&engine.as_ref(), pty_id, sent)
                     )
-                )
+                );
             }
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
-    /// watcher의 마지막 단계로 결과 수집 상태를 설명한다.
-    /// 단계 기록과 자식 종료 시각은 같지 않으므로 자식의 생사를 단정하지 않는다.
-    fn watch_phase_note(phase: WatchPhase) -> &'static str {
+    fn owner_phase_note(phase: PtyPhase) -> &'static str {
         match phase {
-            WatchPhase::NotAttached => "종료 결과를 수집할 watcher가 등록되지 않았다",
-            WatchPhase::Spawned => {
-                "watcher 스레드 생성은 시작했지만 wait 진입은 아직 확인되지 않았다"
+            PtyPhase::Running => "PTY owner가 실행 중이며 종료 결과 기록은 아직 없다",
+            PtyPhase::TerminationRequested => {
+                "종료가 요청됐지만 신호 전달이나 회수 완료는 아직 확인되지 않았다"
             }
-            WatchPhase::Waiting => {
-                "watcher는 종료 대기 단계이며 결과 기록 완료는 아직 확인되지 않았다"
+            PtyPhase::Signalled => "종료 신호가 전달됐지만 결과 기록 완료는 아직 확인되지 않았다",
+            PtyPhase::Reaped => {
+                "종료 결과가 기록됐다. 대기를 마친 뒤 확인한 상태이므로 결과 기록 시각과 스케줄 지연을 함께 확인한다(ADR-0046)"
             }
-            WatchPhase::Reaped => {
-                "종료 결과가 기록됐다. 대기를 마친 뒤 확인한 상태이므로 \
-                 결과 기록 시각과 스케줄 지연을 함께 확인한다(ADR-0046)"
-            }
+            PtyPhase::WaitFailed => "wait 실패로 종료/회수 여부가 불명확하다",
         }
+    }
+
+    pub(crate) fn spawn_test_pty(core: &mut crate::core::Core, engine: &mut EngineMut<'_>) -> u32 {
+        ok(handle_spawn(
+            core,
+            engine,
+            &CallerContext::Local,
+            json!(1),
+            &json!({}),
+        ))["pty_id"]
+            .as_u64()
+            .expect("standalone ID") as u32
     }
 
     /// 보낸 입력의 에코 외에 텍스트가 있는지 확인한다.
@@ -492,20 +496,20 @@ mod tests {
         !visible.replacen(echo, "", 1).trim().is_empty()
     }
 
-    /// 실패 시 watcher 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
+    /// 실패 시 owner 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
     /// 화면과 에코 비교는 관측 보조 자료이며 자식의 생사나 실행 이력을 보장하지 않는다.
     fn observed_pty_state(
         engine: &crate::core::engine_access::EngineRef<'_>,
         pty_id: u32,
         sent: &str,
     ) -> String {
-        let watcher = match engine.runtime.terminals.standalone(pty_id) {
-            Some(e) => watch_phase_note(e.watch_phase()),
-            None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",
+        let owner = match engine.runtime.terminals.standalone(pty_id) {
+            Some(e) => owner_phase_note(e.state().observation().phase),
+            None => "저장소에 standalone 항목이 없어 owner 상태를 읽을 수 없다",
         };
         let Some(t) = engine.find_terminal_by_id(pty_id) else {
             return format!(
-                "관측: [{watcher}] · [Terminal 없음: registry와 저장소가 불일치해 화면을 읽을 수 없다]"
+                "관측: [{owner}] · [Terminal 없음: 저장소에 내용 항목이 없어 화면을 읽을 수 없다]"
             );
         };
         let screen = t.screen_text(false);
@@ -521,12 +525,12 @@ mod tests {
         let shell = if visible.trim().is_empty() {
             "현재 화면에 텍스트가 없다. 이 값만으로 실행 여부를 판단할 수 없다"
         } else if screen_holds_more_than_our_echo(visible, sent) {
-            "에코와 다른 텍스트가 화면에 있다. 종료 상태는 watcher와 함께 확인한다"
+            "에코와 다른 텍스트가 화면에 있다. 종료 상태는 owner와 함께 확인한다"
         } else {
             "보낸 입력의 에코만 있다. 셸 실행 여부는 확인할 수 없다"
         };
         format!(
-            "관측: [{watcher}] · [화면 {shell}] (scrollback {sb} 줄, alt-screen {alt}, \
+            "관측: [{owner}] · [화면 {shell}] (scrollback {sb} 줄, alt-screen {alt}, \
              보낸 것=\"{sent}\", 꼬리=\"{tail}\")",
             sb = t.scrollback_len(),
             alt = t.is_alternate_screen(),
@@ -536,23 +540,23 @@ mod tests {
     }
 
     #[test]
-    fn the_watcher_phase_points_at_the_child_or_at_us_but_never_at_both() {
+    fn the_owner_phase_points_at_the_child_or_at_us_but_never_at_both() {
         let ours = [
-            watch_phase_note(WatchPhase::NotAttached),
-            watch_phase_note(WatchPhase::Spawned),
+            owner_phase_note(PtyPhase::Running),
+            owner_phase_note(PtyPhase::TerminationRequested),
         ];
         for note in ours {
             assert!(
                 !note.contains("자식이 안 죽었다"),
-                "watcher 상태만으로 자식의 생존 여부를 단정했다: {note}"
+                "owner 상태만으로 자식의 생존 여부를 단정했다: {note}"
             );
         }
         assert!(
-            watch_phase_note(WatchPhase::Waiting).contains("결과 기록 완료는 아직 확인되지 않았다")
+            owner_phase_note(PtyPhase::Signalled).contains("결과 기록 완료는 아직 확인되지 않았다")
         );
 
         // Reaped는 결과 기록 완료만 말한다. 자식 종료 시각을 단정하지 않아야 한다.
-        let reaped = watch_phase_note(WatchPhase::Reaped);
+        let reaped = owner_phase_note(PtyPhase::Reaped);
         assert!(
             !reaped.contains("대기 쪽"),
             "완료 상태에서 결과 미수신 대기를 원인으로 단정했다: {reaped}"
@@ -561,15 +565,15 @@ mod tests {
         assert!(reaped.contains("ADR-0046"), "{reaped}");
 
         let all = [
-            watch_phase_note(WatchPhase::NotAttached),
-            watch_phase_note(WatchPhase::Spawned),
-            watch_phase_note(WatchPhase::Waiting),
-            watch_phase_note(WatchPhase::Reaped),
+            owner_phase_note(PtyPhase::Running),
+            owner_phase_note(PtyPhase::TerminationRequested),
+            owner_phase_note(PtyPhase::Signalled),
+            owner_phase_note(PtyPhase::Reaped),
         ];
         let mut seen: Vec<&str> = all.to_vec();
         seen.sort_unstable();
         seen.dedup();
-        assert_eq!(seen.len(), 4, "watcher 상태별 진단이 같아졌다: {all:?}");
+        assert_eq!(seen.len(), 4, "owner 상태별 진단이 같아졌다: {all:?}");
     }
 
     #[test]
@@ -648,7 +652,7 @@ mod tests {
 
         let killed = ok(handle_kill(&mut e, json!(4), &json!({ "id": pty_id })));
         assert_eq!(killed["killed"], Value::Bool(true));
-        assert!(!e.runtime.pty_registry.contains(pty_id));
+        assert!(!e.runtime.terminals.is_standalone(pty_id));
         assert!(e.find_terminal_by_id(pty_id).is_none());
         let listed2 = ok(handle_list(&mut e, json!(5)));
         assert!(
@@ -684,10 +688,9 @@ mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime.pty_registry = crate::core::pty_registry::PtyRegistry::with_limits(
-            2,
-            crate::core::pty_registry::DEFAULT_IDLE_TTL,
-        );
+        e.runtime
+            .terminals
+            .set_standalone_limits(2, crate::core::terminal_store::DEFAULT_IDLE_TTL);
         let caller = CallerContext::Local;
         let a = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let b = handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({}));
@@ -704,7 +707,13 @@ mod tests {
             "error should mention limit: {}",
             err.message
         );
-        for pid in e.runtime.pty_registry.ids() {
+        let ids: Vec<_> = e
+            .runtime
+            .terminals
+            .standalone_iter()
+            .map(|(id, _)| id)
+            .collect();
+        for pid in ids {
             handle_kill(&mut e, json!(0), &json!({ "id": pid }));
         }
     }
@@ -750,8 +759,9 @@ mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime.pty_registry =
-            crate::core::pty_registry::PtyRegistry::with_limits(8, std::time::Duration::ZERO);
+        e.runtime
+            .terminals
+            .set_standalone_limits(8, std::time::Duration::ZERO);
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.waker_factory = Some(shared);
@@ -764,7 +774,7 @@ mod tests {
 
         ok(handle_list(&mut e, json!(2)));
         assert!(
-            !e.runtime.pty_registry.contains(a),
+            !e.runtime.terminals.is_standalone(a),
             "TTL 0 이므로 sweep 이 a 를 회수해야 한다"
         );
         assert!(
@@ -821,8 +831,11 @@ mod tests {
         }
     }
 
-    fn short_ttl_registry(max: usize) -> crate::core::pty_registry::PtyRegistry {
-        crate::core::pty_registry::PtyRegistry::with_limits(max, Duration::from_millis(1))
+    fn short_ttl(engine: &mut EngineMut<'_>, max: usize) {
+        engine
+            .runtime
+            .terminals
+            .set_standalone_limits(max, Duration::from_millis(1));
     }
 
     // 주기 정리도 registry·Terminal·waker를 모두 회수해야 한다.
@@ -833,7 +846,7 @@ mod tests {
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
         e.waker_factory = Some(recorder.clone());
-        e.runtime.pty_registry = short_ttl_registry(8);
+        short_ttl(&mut e, 8);
 
         let spawned = ok(handle_spawn(
             &mut c,
@@ -843,7 +856,7 @@ mod tests {
             &json!({}),
         ));
         let pty_id = spawned["pty_id"].as_u64().expect("pty_id") as u32;
-        assert!(e.runtime.pty_registry.contains(pty_id), "registry entry");
+        assert!(e.runtime.terminals.is_standalone(pty_id), "registry entry");
         assert!(
             e.runtime.terminals.get(pty_id).is_some(),
             "TerminalStore entry"
@@ -854,7 +867,7 @@ mod tests {
 
         assert_eq!(reaped, vec![pty_id], "회수 id");
         assert!(
-            !e.runtime.pty_registry.contains(pty_id),
+            !e.runtime.terminals.is_standalone(pty_id),
             "registry 에서 제거"
         );
         assert!(
@@ -874,18 +887,8 @@ mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        e.runtime.pty_registry = short_ttl_registry(1);
-        e.runtime
-            .pty_registry
-            .register(
-                crate::core::pty_registry::PtySpawnSpec {
-                    owner_agent_id: "agent-1".into(),
-                    cwd: None,
-                    command: vec!["sleep".into(), "3600".into()],
-                },
-                Instant::now(),
-            )
-            .expect("첫 등록은 상한 안");
+        short_ttl(&mut e, 1);
+        spawn_test_pty(&mut c, &mut e);
         std::thread::sleep(Duration::from_millis(5));
 
         let resp = handle_spawn(&mut c, &mut e, &CallerContext::Local, json!(1), &json!({}));

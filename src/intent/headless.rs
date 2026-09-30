@@ -551,7 +551,7 @@ mod tests {
         let mut engine = engine_session.borrow_mut();
         let mut terminal = tasty_terminal::Terminal::new_detached(80, 24);
         terminal.feed_bytes(b"\x1b]7;file://localhost/tmp/tasty-osc7-probe\x07");
-        engine.runtime.terminals.insert(sid, terminal);
+        engine.runtime.terminals.insert(sid, terminal, None);
         engine.layout_dirty.clear();
         let tab_name = |engine: &CoreState| {
             state

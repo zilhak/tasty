@@ -67,3 +67,69 @@ impl OutputSink {
         &self.progress
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, Write};
+    use std::time::Duration;
+
+    struct HeldWriter {
+        bytes: Arc<Mutex<Vec<u8>>>,
+        entered: Option<mpsc::Sender<()>>,
+        release: mpsc::Receiver<()>,
+    }
+    impl Write for HeldWriter {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            if let Some(entered) = self.entered.take() {
+                entered.send(()).unwrap();
+                self.release.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            self.bytes.lock().unwrap().extend_from_slice(data);
+            Ok(data.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// An already-started OS write may finish, but the retired queue must not start the next write.
+    #[test]
+    fn retirement_fences_queued_writes_after_the_in_flight_write() {
+        let connection = crate::binding::ConnectionLease::new();
+        let progress = new_write_progress();
+        let (tx, rx) = mpsc::channel();
+        let sink = OutputSink::with_progress(tx, Arc::clone(&progress)).bind(connection.clone());
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let writer = HeldWriter {
+            bytes: Arc::clone(&bytes),
+            entered: Some(entered_tx),
+            release: release_rx,
+        };
+        let worker_connection = connection.clone();
+        let worker_progress = Arc::clone(&progress);
+        let worker = std::thread::spawn(move || {
+            crate::pty::run_writer_loop(
+                Box::new(writer),
+                rx,
+                worker_progress,
+                Some(worker_connection),
+            )
+        });
+        sink.send(b"started".to_vec()).unwrap();
+        sink.send(b"queued-old".to_vec()).unwrap();
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("actual writer entered write");
+        connection.revoke();
+        assert!(sink.send(b"late-response".to_vec()).is_err());
+        release_tx.send(()).unwrap();
+        drop(sink);
+        worker.join().unwrap();
+        assert_eq!(*bytes.lock().unwrap(), b"started");
+        assert_eq!(*lock_write_progress(&progress.0), 1);
+        assert!(!connection.is_active());
+    }
+}

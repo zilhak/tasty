@@ -529,7 +529,7 @@ mod close_surface_cascade_tests {
         engine
             .runtime
             .terminals
-            .insert(sid, Terminal::new_detached(80, 24));
+            .insert(sid, Terminal::new_detached(80, 24), None);
     }
 
     #[test]

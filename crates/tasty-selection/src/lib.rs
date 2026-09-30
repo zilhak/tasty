@@ -323,25 +323,10 @@ fn is_col_in_range(col: usize, abs_row: usize, sel: &NormalizedSelection) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tasty_terminal::{Terminal, TerminalConfig};
+    use tasty_terminal::Terminal;
 
     fn term(cols: usize, rows: usize) -> Terminal {
-        let waker: tasty_terminal::Waker = Arc::new(|| {});
-        Terminal::new(
-            TerminalConfig {
-                cols,
-                rows,
-                shell: None,
-                args: &[],
-                surface_id: 0,
-                working_dir: None,
-                initial_input: None,
-                extra_env: &[],
-            },
-            waker,
-        )
-        .expect("terminal creation")
+        Terminal::new_detached(cols, rows)
     }
 
     fn select_all(terminal: &Terminal) -> TextSelection {

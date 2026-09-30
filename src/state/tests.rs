@@ -404,7 +404,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     engine
         .runtime
         .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
     // 분할 헬퍼가 포커스를 바꾸지 않아 sid_a를 닫는다.
     assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
 
@@ -440,7 +440,7 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
     engine
         .runtime
         .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
     assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
 
     assert_eq!(engine.closed_items.len(), 0);
@@ -652,7 +652,7 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
     engine
         .runtime
         .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
     assert!(engine.runtime.terminals.contains(sid_a));
 
     let _ = state.take_pending_lifecycle_events();
@@ -2487,10 +2487,11 @@ mod close_refuses_hard_occupied {
             .expect("pane")
             .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
             .expect("surface split");
-        engine
-            .runtime
-            .terminals
-            .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        engine.runtime.terminals.insert(
+            sid_b,
+            tasty_terminal::Terminal::new_detached(80, 24),
+            None,
+        );
         engine.attach.acquire(sid_a, HOLDER).expect("하드 점유");
 
         assert!(!state.close_active_surface(&mut engine), "거절해야 한다");
@@ -2513,10 +2514,11 @@ mod close_refuses_hard_occupied {
             .expect("pane")
             .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
             .expect("surface split");
-        engine
-            .runtime
-            .terminals
-            .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        engine.runtime.terminals.insert(
+            sid_b,
+            tasty_terminal::Terminal::new_detached(80, 24),
+            None,
+        );
 
         assert!(state.close_active_surface(&mut engine));
         assert!(!alive(&engine.as_ref(), sid_a));

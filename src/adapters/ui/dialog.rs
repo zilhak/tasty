@@ -405,7 +405,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         let ws = crate::model::Workspace::new_with_terminal_marker(
             ws_id,
             name.to_string(),

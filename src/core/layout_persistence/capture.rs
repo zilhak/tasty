@@ -345,7 +345,9 @@ mod tests {
 
         let registry = SurfaceKindRegistry::new();
         let mut seen_refs = SeenRefs::new();
-        let mut terminals = crate::core::terminal_store::TerminalStore::new();
+        let mut terminals = crate::core::terminal_store::TerminalStore::new(std::sync::Arc::new(
+            std::sync::atomic::AtomicU32::new(crate::core::terminal_store::PTY_ID_BASE),
+        ));
         let mut ctx = CaptureCtx {
             presentation: &crate::model::StructurePresentationSnapshot::default(),
             registry: &registry,

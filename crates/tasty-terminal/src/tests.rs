@@ -11,8 +11,11 @@ fn noop_waker() -> Waker {
 }
 
 fn test_terminal(cols: usize, rows: usize) -> Terminal {
-    let waker = noop_waker();
-    Terminal::new(
+    Terminal::new_detached(cols, rows)
+}
+
+fn test_pty_terminal(cols: usize, rows: usize) -> (Terminal, Pty) {
+    spawn_terminal(
         TerminalConfig {
             cols,
             rows,
@@ -23,9 +26,17 @@ fn test_terminal(cols: usize, rows: usize) -> Terminal {
             initial_input: None,
             extra_env: &[],
         },
-        waker,
+        noop_waker(),
     )
-    .expect("terminal creation")
+    .expect("terminal/PTY creation")
+}
+
+fn process_pair(terminal: &mut Terminal, pty: &mut Pty) -> bool {
+    pty.force_flush_resize();
+    if pty.observe_exit() {
+        terminal.record_exit(pty.generation());
+    }
+    terminal.process()
 }
 
 #[test]
@@ -754,7 +765,7 @@ fn assert_grid_eq(a: &Terminal, b: &Terminal, ctx: &str) {
 
 #[test]
 fn detached_feed_matches_pty_process_path() {
-    let mut real = test_terminal(40, 12); // PTY-backed; shell output unused
+    let (mut real, _pty) = test_pty_terminal(40, 12); // PTY-backed; shell output unused
     let mut mirror = Terminal::new_detached(40, 12);
     real.process_bytes(MIRROR_SEQ); // shared ingest path (= process() parsing)
     mirror.feed_bytes(MIRROR_SEQ);
@@ -783,7 +794,7 @@ fn detached_feed_is_chunk_boundary_invariant() {
 #[test]
 fn detached_alt_screen_parity() {
     let seq = b"main\x1b[?1049h\x1b[Halt-content\x1b[?1049lback";
-    let mut real = test_terminal(40, 12);
+    let (mut real, _pty) = test_pty_terminal(40, 12);
     let mut mirror = Terminal::new_detached(40, 12);
     real.process_bytes(b"main\x1b[?1049h\x1b[Halt-content");
     mirror.feed_bytes(b"main\x1b[?1049h\x1b[Halt-content");
@@ -794,21 +805,13 @@ fn detached_alt_screen_parity() {
     let _ = seq;
 }
 
-fn pty_state(t: &Terminal) -> &pty::PtyState {
-    &t.pty.as_ref().expect("PTY-backed terminal").state
-}
-
 #[test]
 fn detached_terminal_has_no_pty_state() {
     let mut t = Terminal::new_detached(40, 12);
-    assert_eq!(t.process_id(), None);
-    assert!(!t.is_busy());
-    assert!(t.is_alive(), "detached mirror is considered alive");
     // resize touches only the surface; no PTY notification is queued.
     t.resize(80, 24);
     assert_eq!(t.cols(), 80);
     assert_eq!(t.rows(), 24);
-    assert!(!t.has_pending_pty_resize());
     let (cols, rows) = t.dimensions();
     assert_eq!((cols, rows), (80, 24));
     // process() on a detached terminal is a harmless no-op (no child exit event).
@@ -1120,9 +1123,11 @@ fn resize_tap_emits_new_dims_only_on_change() {
 /// grid 변경과 tap 통지가 먼저이고, OS resize는 예약만 된 뒤 flush에서 적용된다.
 #[test]
 fn resize_taps_the_grid_before_the_os_resize_is_applied() {
-    let mut t = test_terminal(40, 12);
+    let (mut t, mut pty) = test_pty_terminal(40, 12);
     let rx = t.add_resize_tap();
-    t.resize(100, 30);
+    if t.resize(100, 30) {
+        pty.schedule_resize(t.resource_generation(), 100, 30);
+    }
 
     assert_eq!(
         rx.try_recv().unwrap(),
@@ -1130,17 +1135,14 @@ fn resize_taps_the_grid_before_the_os_resize_is_applied() {
         "tap은 grid 변경 즉시 온다"
     );
     assert_eq!(t.dimensions(), (100, 30));
-    assert!(t.has_pending_pty_resize(), "OS resize는 아직 예약 상태다");
-    let pty = t.pty.as_ref().expect("PTY-backed terminal");
+    assert!(pty.has_pending_resize(), "OS resize는 아직 예약 상태다");
     assert_eq!(
         pty.os_size(),
         Some((40, 12)),
         "tap 시점에 OS 크기는 그대로다"
     );
 
-    t.force_flush_pty_resize();
-    assert!(!t.has_pending_pty_resize());
-    let pty = t.pty.as_ref().expect("PTY-backed terminal");
+    pty.force_flush_resize();
     assert_eq!(pty.os_size(), Some((100, 30)), "flush 뒤 OS에 적용된다");
 }
 
@@ -1156,18 +1158,18 @@ fn resize_tap_disconnected_is_pruned() {
 
 #[test]
 fn detached_mirror_is_detached_and_resizes_grid() {
-    // PTY-backed terminal is NOT a detached mirror; the local resize sweep skips
-    // only detached ones.
-    let pty = test_terminal(40, 12);
-    assert!(!pty.is_detached());
-
-    // A detached mirror reports detached and its grid follows an explicit resize
-    // (the remote-driven path), with no PTY SIGWINCH involved.
+    let (source, pty) = test_pty_terminal(40, 12);
+    assert_eq!(source.resource_generation(), pty.generation());
     let mut mirror = Terminal::new_detached(157, 45);
-    assert!(mirror.is_detached());
+    assert_ne!(mirror.resource_generation(), pty.generation());
     assert_eq!((mirror.cols(), mirror.rows()), (157, 45));
     mirror.resize(120, 40);
     assert_eq!((mirror.cols(), mirror.rows()), (120, 40));
+    assert_eq!(
+        pty.os_size(),
+        Some((40, 12)),
+        "remote content cannot resize a local resource"
+    );
 }
 
 /// Snapshot-specific grid comparison. Unlike [`assert_grid_eq`], this does NOT
@@ -1278,29 +1280,28 @@ fn snapshot_as_vt_preserves_alt_screen() {
 
 #[test]
 fn alive_check_throttled_within_window() {
-    let mut t = test_terminal(80, 24);
+    let (mut t, mut pty) = test_pty_terminal(80, 24);
     // In-the-past init: the first process() must check immediately.
-    assert!(pty_state(&t).last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
+    assert!(pty.state.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
 
     // 첫 process 호출이 검사 시각을 갱신했는지 직접 비교한다.
-    let before = pty_state(&t).last_alive_check;
-    t.process();
-    let first = pty_state(&t).last_alive_check;
+    let before = pty.state.last_alive_check;
+    process_pair(&mut t, &mut pty);
+    let first = pty.state.last_alive_check;
     assert!(first > before, "first check stamped now");
 
     // Immediate second call falls inside the throttle window — no re-check.
-    t.process();
+    process_pair(&mut t, &mut pty);
     assert_eq!(
-        first,
-        pty_state(&t).last_alive_check,
+        first, pty.state.last_alive_check,
         "check skipped within window"
     );
 
     // After the window elapses the check runs (and re-stamps) again.
     std::thread::sleep(ALIVE_CHECK_INTERVAL + std::time::Duration::from_millis(100));
-    t.process();
+    process_pair(&mut t, &mut pty);
     assert!(
-        pty_state(&t).last_alive_check > first,
+        pty.state.last_alive_check > first,
         "check re-ran after window"
     );
 }
@@ -1316,7 +1317,7 @@ fn process_exited_eventually_emitted() {
         // 대기 측을 깨우기에 충분하다. 콜백은 절대 블록되면 안 되므로 send(블로킹)가 아니라 try_send.
         let _ = tx.try_send(());
     });
-    let mut t = Terminal::new(
+    let (mut t, mut pty) = spawn_terminal(
         TerminalConfig {
             cols: 80,
             rows: 24,
@@ -1338,7 +1339,7 @@ fn process_exited_eventually_emitted() {
     let mut seen = false;
     let mut polls = 0usize;
     while std::time::Instant::now() < deadline {
-        t.process();
+        process_pair(&mut t, &mut pty);
         polls += 1;
         if t.lock_state()
             .events
@@ -1356,7 +1357,7 @@ fn process_exited_eventually_emitted() {
     }
     if !seen {
         // 실패 시 실제 관측값을 남기되 이 값만으로 원인을 단정하지 않는다.
-        let alive = t.check_process_alive();
+        let alive = pty.check_alive();
         let screen = t.lock_state().screen_text(false);
         let visible = screen.trim_end();
         let tail: String = visible
@@ -1390,7 +1391,7 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
     // 바깥 셸(`-li` 가 붙는다)은 job control 용 tty fd 를 따로 쥘 수 있어 곧장 비대화형
     // `sh` 로 exec 한다(pid 는 그대로라 우리 자식이다). 그 셸이 표준 fd 를 PTY 에서 떼면
     // master 가 EOF 를 보고, 자식은 1 초 뒤에야 끝난다.
-    let mut t = Terminal::new(
+    let (mut t, mut pty) = spawn_terminal(
         TerminalConfig {
             cols: 80,
             rows: 24,
@@ -1421,7 +1422,7 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
             );
         }
         wakes += 1;
-        t.process();
+        process_pair(&mut t, &mut pty);
         if t.lock_state()
             .events
             .iter()
@@ -1429,7 +1430,8 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
         {
             break;
         }
-        if pty_state(&t)
+        if pty
+            .state()
             .reader_eof
             .load(std::sync::atomic::Ordering::Acquire)
         {
@@ -1452,7 +1454,7 @@ fn eof_rewakes_stop_once_the_exit_is_settled() {
         // 버퍼(1)가 차 있으면 이미 깨우기 신호가 대기 중이라 이번 실패는 버려도 된다.
         let _ = tx.try_send(());
     });
-    let mut t = Terminal::new(
+    let (mut t, mut pty) = spawn_terminal(
         TerminalConfig {
             cols: 80,
             rows: 24,
@@ -1473,7 +1475,7 @@ fn eof_rewakes_stop_once_the_exit_is_settled() {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         rx.recv_timeout(remaining)
             .unwrap_or_else(|_| panic!("no ProcessExited within {BUDGET:?}"));
-        t.process();
+        process_pair(&mut t, &mut pty);
         if t.lock_state()
             .events
             .iter()

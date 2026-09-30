@@ -3475,7 +3475,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         engine.set_mirror_surface_busy(local_surface, true);
         engine.set_mirror_surface_cwd(local_surface, Some("/srv/remote".to_string()));
         engine
@@ -3558,7 +3558,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         let before = engine.workspaces.len();
 
         let remote_to_local = HashMap::from([(42u32, local_surface)]);
@@ -3602,7 +3602,7 @@ mod tests {
             engine
                 .runtime
                 .terminals
-                .insert(local_surface, Terminal::new_detached(80, 24));
+                .insert(local_surface, Terminal::new_detached(80, 24), None);
             engine.set_mirror_surface_busy(local_surface, true);
             engine
                 .attach_mesh_frames
@@ -4687,7 +4687,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
@@ -4798,7 +4798,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
         let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
         sess.frame_tx = Arc::new(Mutex::new(tx));
@@ -4873,7 +4873,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
         assert!(
             sess.anchor_ws_id.is_none(),
@@ -5427,7 +5427,7 @@ mod tests {
         engine
             .runtime
             .terminals
-            .insert(local_surface, Terminal::new_detached(80, 24));
+            .insert(local_surface, Terminal::new_detached(80, 24), None);
         parked
     }
 
