@@ -2,6 +2,11 @@
 use super::*;
 
 /// `child` must be the fresh surface returned by this spawn's tab.create.
+/// `origin` is the spawn request's origin; the rollback close runs with it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the rollback close needs the spawn request's origin next to the handler context"
+)]
 pub(super) fn finish(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
