@@ -40,11 +40,18 @@ surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)�
 `close_tab_recording`)가 한다. `Core::apply` 의 close 계열과 AppState 의 직접 닫기
 (`close_active_surface` · `close_surface_by_id` · `close_surface_by_id_no_snapshot` ·
 `close_active_pane` · `close_active_tab` · `close_tab`)가 모두 이 함수를 부른다. 창 경로는
-`Core::apply` 를 거치지 않고 이 세 함수를 직접 부른다. 그래서 `Core::apply` 가 하는 mirror 가드와
-에이전트 origin 표시를 창 경로에서는 AppState 가 먼저 처리한다. mirror workspace 면
-`forward_mirror_structural` 이 사용자 요청(`user_triggered: true`)으로 전달하고 로컬 트리를 바꾸지 않는다.
-그다음 hard 점유 검사를 하고, Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을
-이어서 한다.
+`Core::apply` 를 거치지 않고 이 세 함수를 직접 부르므로 `Core::apply` 의 mirror 가드를 지나지 않는다.
+
+- mirror 가드와 hard 점유 검사는 사용자 입력 진입점 `close_active_surface` · `close_active_pane` ·
+  `close_active_tab` · `close_tab` 에만 있다. mirror workspace 면 `forward_mirror_structural` 이 요청을
+  `user_triggered: true` 로 전달 큐에 넣고 로컬 트리를 바꾸지 않는다.
+- `close_surface_by_id` 에는 가드가 없다. `close_active_surface` 가 검사를 마친 뒤에만 부른다.
+  `close_surface_by_id_no_snapshot` 은 로컬 PTY 종료 정리(`src/app/process_exit.rs`)에서만 부른다.
+- 에이전트 origin 표시는 IPC 경로에만 있다. `Core::apply` 가 아니라 `structural_exec::apply_as_agent` 가
+  `Core::apply` 의 Err 를 받은 뒤 `mark_last_forward_agent_origin` 으로 에이전트 요청임을 표시한다.
+
+닫기가 끝나면 AppState 가 Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을 이어서
+한다.
 
 복원 기록 여부는 `save_snapshot` 인자로 정한다. `Core::apply` 에는 origin 이 없으므로 origin 을 아는
 진입점이 값을 정한다. 사용자 창 닫기는 true, IPC 와 `DomainIntent::{ClosePane,CloseTab}` 은 false,
