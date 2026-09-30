@@ -19,8 +19,6 @@ pub const NORMAL_CATEGORY_NAME: &str = "normal";
 pub struct WorkspaceCategory {
     pub id: WorkspaceCategoryId,
     pub name: String,
-    /// 사이드바에서 이 카테고리 섹션이 접혀 있는지. layout.json 으로 영속.
-    pub collapsed: bool,
 }
 
 impl WorkspaceCategory {
@@ -29,17 +27,12 @@ impl WorkspaceCategory {
         Self {
             id: NORMAL_CATEGORY_ID,
             name: NORMAL_CATEGORY_NAME.to_string(),
-            collapsed: false,
         }
     }
 
     /// 일반(사용자) 카테고리.
     pub fn new(id: WorkspaceCategoryId, name: String) -> Self {
-        Self {
-            id,
-            name,
-            collapsed: false,
-        }
+        Self { id, name }
     }
 
     /// id 가 예약된 normal 인지.

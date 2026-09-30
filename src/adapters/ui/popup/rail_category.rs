@@ -37,7 +37,7 @@ fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<T
     };
     Some(Target {
         label,
-        collapsed: cat.collapsed,
+        collapsed: state.navigation.collapsed_categories.contains(&cat.id),
         is_reserved: cat.is_normal(),
     })
 }
@@ -161,7 +161,7 @@ pub fn draw_rail_category_popup(
     };
     if menu_row(ui, &th, collapse_icon, collapse_label, false) {
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::ToggleCategoryCollapsed { id: cat_id }
+            crate::intent::UiIntent::ToggleCategoryCollapsed { id: cat_id }
                 .from_user_menu("rail_category/toggle_collapsed"),
         );
         return PopupAction::Close;

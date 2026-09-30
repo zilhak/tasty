@@ -57,7 +57,7 @@ pub(crate) struct BootState {
     boot_t0: Instant,
     db_init_error: Option<crate::db::DbInitError>,
     invalid_theme_name: Option<String>,
-    restored_idx: Option<usize>,
+    restored_idx: Option<crate::model::RestoredPresentation>,
     /// 부팅 미완 중 도착한 `AppEvent` — Ready 후 도착 순서대로 재생한다.
     pub(crate) pending_events: Vec<crate::AppEvent>,
 }
@@ -393,11 +393,11 @@ impl App {
         } = boot;
 
         // 복원 예정이면 기본 workspace를 만들지 않았으므로 복원 실패 시 여기서 보충한다.
-        let bootstrapped = match self.engines.pending_mut() {
+        let _bootstrapped = match self.engines.pending_mut() {
             Some(engine) => crate::app::App::bootstrap_workspace_if_empty(&mut self.core, engine),
             None => None,
         };
-        let mut state = self.assemble_app_state(bootstrapped.or(restored_idx));
+        let mut state = self.assemble_app_state(restored_idx);
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);

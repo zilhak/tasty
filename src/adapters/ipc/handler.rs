@@ -132,12 +132,15 @@ pub(crate) fn handle_checked_request(
     engine: &mut CoreState,
     checked: &CheckedRequest<'_>,
 ) -> JsonRpcResponse {
+    engine.refresh_attach_presentation(&state.navigation);
     let started = core.now_instant();
     let mut window = entry_window::EntryWindow::new(state);
     let response = route_checked_request(core, &mut window, engine, checked);
     // 시작과 끝을 같은 Clock으로 재야 주입한 시계와 벽시계가 섞이지 않는다.
     let elapsed = core.now_instant().duration_since(started);
     core.pressure().record_handler(elapsed);
+    state.navigation.reconcile(&engine.workspaces);
+    engine.refresh_attach_presentation(&state.navigation);
     response
 }
 
@@ -599,7 +602,9 @@ fn route_engine_handler(
             workspace::handle_workspace_move(core, window, engine, id, &request.params)
         }
         "workspace.close" => workspace::handle_workspace_close(window, engine, id, &request.params),
-        "workspace_category.list" => workspace_category::handle_list(engine, id),
+        "workspace_category.list" => {
+            workspace_category::handle_list(window.presentation(), engine, id)
+        }
         "workspace_category.create" => {
             workspace_category::handle_create(core, engine, id, &request.params)
         }
@@ -651,7 +656,9 @@ fn route_engine_handler(
         "preset.save" => preset::handle_save(core, id, &request.params),
         "preset.delete" => preset::handle_delete(core, id, &request.params),
         "preset.rename" => preset::handle_rename(core, id, &request.params),
-        "preset.capture" => preset::handle_capture(core, engine, id, &request.params),
+        "preset.capture" => {
+            preset::handle_capture(window.presentation(), core, engine, id, &request.params)
+        }
         "preset.apply" => preset::handle_apply(core, window, engine, id, &request.params),
         "surface.close" => {
             surface::handle_surface_close(core, window, engine, id, &request.params, &origin)
@@ -1188,9 +1195,9 @@ pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -
 /// 도메인 오류 종류를 JSON-RPC 코드로 바꾸고 forward 경로와 같은 사유를 보존한다.
 pub(super) fn structural_failure_response(
     id: serde_json::Value,
-    failure: crate::core::structural_exec::StructuralFailure,
+    failure: crate::app::structural_exec::StructuralFailure,
 ) -> JsonRpcResponse {
-    use crate::core::structural_exec::StructuralFailure;
+    use crate::app::structural_exec::StructuralFailure;
     match failure {
         StructuralFailure::Rejected(msg) => JsonRpcResponse::invalid_params(id, msg),
         StructuralFailure::MissingEvent(msg) => JsonRpcResponse::internal_error(id, msg),

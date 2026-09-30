@@ -220,9 +220,7 @@ impl CoreState {
             | D::RenameCategory { .. }
             | D::DeleteCategory { .. }
             | D::ReorderCategory { .. }
-            | D::SetCategoryCollapsed { .. }
-            | D::ToggleCategoryCollapsed { .. }
-            | D::ToggleAllCategoriesCollapsed => return None,
+            => return None,
             _ => return None,
         }?;
         self.workspaces
@@ -257,7 +255,7 @@ impl CoreState {
                         if tab.contains_surface(surface_id) {
                             return Some(SurfaceDisplayPath {
                                 workspace_name: workspace.name.clone(),
-                                tab_name: Some(tab.display_name()),
+                                tab_name: Some(tab.display_name(Some(surface_id))),
                             });
                         }
                     }

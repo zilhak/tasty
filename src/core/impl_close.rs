@@ -118,7 +118,7 @@ pub(crate) fn surface_close_not_found(surface_id: u32) -> CoreEvent {
 
 impl Core {
     pub(super) fn apply_close_pane(engine: &mut crate::core::CoreState, pane_id: u32) -> CoreEvent {
-        Self::close_pane_recording(engine, pane_id, false)
+        Self::close_pane_recording(engine, pane_id, None)
     }
 
     /// pane을 닫는다. save_snapshot이면 제거 전에 분할 위치를 포함한 복원 기록을 남긴다.
@@ -126,7 +126,7 @@ impl Core {
     pub(crate) fn close_pane_recording(
         engine: &mut crate::core::CoreState,
         pane_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
         let ws_idx = match engine.find_workspace_index_for_pane(pane_id) {
             Some(idx) => idx,
@@ -140,7 +140,9 @@ impl Core {
         };
 
         // 제거 후에는 부모 split 정보를 잃으므로 트리를 바꾸기 전에 복원 사본을 만든다.
-        if save_snapshot && let Some(item) = engine.capture_closed_pane(pane_id) {
+        if let Some(presentation) = presentation
+            && let Some(item) = engine.capture_closed_pane(pane_id, presentation)
+        {
             engine.push_closed_item(item);
         }
 
@@ -168,9 +170,9 @@ impl Core {
     pub(super) fn apply_close_surface(
         engine: &mut crate::core::CoreState,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
-        Self::close_surface_recording(engine, surface_id, save_snapshot, CloseTracePath::Cascade)
+        Self::close_surface_recording(engine, surface_id, presentation, CloseTracePath::Cascade)
     }
 
     /// apply_close_surface와 같은 닫기다. 창 경로는 계측 경로를 Inline으로 넘겨 전체 시간을 직접 기록한다.
@@ -178,7 +180,7 @@ impl Core {
     pub(crate) fn close_surface_recording(
         engine: &mut crate::core::CoreState,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
         trace: CloseTracePath,
     ) -> CoreEvent {
         let loc = match locate_surface_in_pane(engine, surface_id) {
@@ -186,32 +188,32 @@ impl Core {
             None => return surface_close_not_found(surface_id),
         };
         if !loc.surface_is_sole_in_tab && loc.can_close_surface_in_group {
-            return Self::close_case_split(engine, &loc, surface_id, save_snapshot)
+            return Self::close_case_split(engine, &loc, surface_id, presentation)
                 .unwrap_or_else(|| surface_close_not_found(surface_id));
         }
-        if let Some(ev) = Self::close_case_tab(engine, &loc, surface_id, save_snapshot) {
+        if let Some(ev) = Self::close_case_tab(engine, &loc, surface_id, presentation) {
             return ev;
         }
-        if let Some(ev) = Self::close_case_pane(engine, &loc, surface_id, save_snapshot) {
+        if let Some(ev) = Self::close_case_pane(engine, &loc, surface_id, presentation) {
             return ev;
         }
-        Self::close_case_workspace(engine, &loc, surface_id, save_snapshot, trace)
+        Self::close_case_workspace(engine, &loc, surface_id, presentation, trace)
     }
 
     fn close_case_split(
         engine: &mut crate::core::CoreState,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
-        if save_snapshot {
+        if presentation.is_some() {
             let tab_name_opt = {
                 let ws = &engine.workspaces[loc.ws_idx];
                 let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
                 let tab = &pane.tabs[loc.tab_idx];
                 if terminal_surface_in_tab(tab, surface_id).is_some() {
-                    Some(tab.display_name().to_string())
+                    Some(tab.display_name(Some(surface_id)))
                 } else {
                     None
                 }
@@ -237,10 +239,12 @@ impl Core {
         let tab = &mut pane.tabs[loc.tab_idx];
         let closed = tab.close_surface(surface_id);
         // 닫힌 surface의 제목이 남지 않도록 새로 선택된 surface의 제목을 반영한다.
-        let new_focused = tab.focused_surface;
+        let new_focused = tab.first_surface_id();
         if closed {
             engine.mark_layout_dirty();
-            engine.refresh_tab_osc_title(new_focused);
+            if let Some(surface_id) = new_focused {
+                engine.refresh_tab_osc_title(surface_id);
+            }
             return Some(CoreEvent::SurfaceClosed {
                 surface_id,
                 closed: true,
@@ -259,10 +263,10 @@ impl Core {
         engine: &mut crate::core::CoreState,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
-        if save_snapshot {
+        if let Some(presentation) = presentation {
             let ws = &engine.workspaces[loc.ws_idx];
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
@@ -274,6 +278,7 @@ impl Core {
                         &pane.tabs[loc.tab_idx],
                         &mut snap_fn,
                         &|id| terminals.closed_capture(id),
+                        presentation,
                     )
                 };
                 if let Some(snapshot) = snapshot_opt {
@@ -313,11 +318,11 @@ impl Core {
         engine: &mut crate::core::CoreState,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
         // pane 제거가 부모 split을 없애므로 복원할 분할 정보는 제거 전에 캡처한다.
-        if save_snapshot {
+        if let Some(presentation) = presentation {
             let ws = &engine.workspaces[loc.ws_idx];
             if ws.pane_layout().all_pane_ids().len() > 1
                 && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
@@ -336,6 +341,7 @@ impl Core {
                         was_first,
                         &mut snap_fn,
                         &|id| terminals.closed_capture(id),
+                        presentation,
                     )
                 };
                 engine.push_closed_item(snapshot);
@@ -376,7 +382,7 @@ impl Core {
         engine: &mut crate::core::CoreState,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
         trace: CloseTracePath,
     ) -> CoreEvent {
         use crate::close_trace;
@@ -386,18 +392,21 @@ impl Core {
         let path = trace.label();
         // 실제 자원 정리가 이 함수 뒤에 이어지므로 전체 측정 시작 시각을 넘긴다.
         if trace == CloseTracePath::Cascade {
-            crate::close_trace::arm_cascade(Instant::now(), save_snapshot);
+            crate::close_trace::arm_cascade(Instant::now(), presentation.is_some());
         }
-        if save_snapshot {
+        if let Some(presentation) = presentation {
             let t = Instant::now();
             let item = {
                 let mut snap_fn =
                     crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[loc.ws_idx];
                 let terminals = &engine.runtime.terminals;
-                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
-                    terminals.closed_capture(id)
-                })
+                crate::model::ClosedItem::from_workspace(
+                    ws,
+                    &mut snap_fn,
+                    &|id| terminals.closed_capture(id),
+                    presentation,
+                )
             };
             close_trace::log_snapshot(t, &item, path);
             let t = Instant::now();
@@ -438,7 +447,7 @@ impl Core {
     }
 
     pub(super) fn apply_close_tab(engine: &mut crate::core::CoreState, tab_id: u32) -> CoreEvent {
-        Self::close_tab_recording(engine, tab_id, false)
+        Self::close_tab_recording(engine, tab_id, None)
     }
 
     /// 탭을 닫는다. save_snapshot이면 실제로 닫히는 탭만 복원 기록에 남긴다.
@@ -446,7 +455,7 @@ impl Core {
     pub(crate) fn close_tab_recording(
         engine: &mut crate::core::CoreState,
         tab_id: u32,
-        save_snapshot: bool,
+        presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
@@ -477,11 +486,11 @@ impl Core {
             }
         };
 
-        if save_snapshot
+        if let Some(presentation) = presentation
             && let Some(pane) = engine.find_pane_by_id(pane_id)
             && pane.tabs.len() > 1
             && let Some(idx) = pane.tabs.iter().position(|t| t.id == tab_id)
-            && let Some(item) = engine.capture_closed_tab(pane_id, idx)
+            && let Some(item) = engine.capture_closed_tab(pane_id, idx, presentation)
         {
             engine.push_closed_item(item);
         }

@@ -10,8 +10,8 @@
 
 use std::path::PathBuf;
 
+use crate::app::structure_context::CascadeWindow;
 use crate::core::CoreState;
-use crate::core::cascade_window::CascadeWindow;
 use crate::intent::DispatchedIntent;
 
 /// 엔진 핸들러에 필요한 창 연산. state::ipc_window가 구현한다.

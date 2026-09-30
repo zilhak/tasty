@@ -199,7 +199,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 - `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 함수를 반드시 함께 호출한다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
 - 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 요청 출처를 여러 값으로 나타내면 일부만 갱신되는 오류가 생길 수 있다.
-- `workspace.closed` 이벤트는 누가 닫았는지와 관계없이 보낸다. GUI·IPC 닫기와 인라인 정리는 `AppState::after_workspace_removed`(`src/state.rs`)를, Core 연관 정리는 `cascade_surface_closed`(`src/core/structural_cascade.rs`)를 거친다. 두 경로 모두 workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)로 한다. 새 제거 경로도 통지와 이 정리를 함께 수행한다.
+- `workspace.closed` 이벤트는 누가 닫았는지와 관계없이 보낸다. GUI·IPC 닫기와 인라인 정리는 `AppState::after_workspace_removed`(`src/state.rs`)를, Core 연관 정리는 `cascade_surface_closed`(`src/app/structural_cascade.rs`)를 거친다. 두 경로 모두 workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)로 한다. 새 제거 경로도 통지와 이 정리를 함께 수행한다.
 
 ### 파일 열기의 사용자 동작 판정
 
@@ -311,10 +311,10 @@ category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 �
 - `active_modal_id()` / `modal_active` 게이트: `src/app/event_handler.rs`(`self.view.active_modal_id()`), View 디스패치.
 - focus 대상 해석 / `TASTY_SURFACE_ID` / `this`: `crates/tasty-cli/src/request.rs`.
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
-- 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/core/structural_cascade.rs` — 두 빌드가 같은 본문).
+- 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/app/structural_cascade.rs` — 두 빌드가 같은 본문).
 - 재정렬 시 활성 포인터 보정: `active_index_after_move` / `AppState::fix_workspace_pointers_after_move`(`src/state/workspace.rs`) · 호출 경로 `AppState::move_workspace` 와 `cascade_workspace_moved`(`src/app/dispatch_domain.rs`, headless 는 `dispatch_domain_stubs.rs`).
 - 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
-- 탭 생성의 선택 분기: `DomainIntent::CreateTab` 의 `activate` → `Core::apply_create_tab`(`src/core/impl_tab.rs`) 이 `Pane::add_surface_tab` / `Pane::add_surface_tab_background`(`crates/tasty-model/src/pane.rs`) 중 하나를 고른다. 값을 정하는 진입점은 `structural_exec::create_tab`(`src/core/structural_exec.rs`) 의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
+- 탭 생성의 선택 분기: `DomainIntent::CreateTab` 의 `activate` → `Core::apply_create_tab`(`src/core/impl_tab.rs`) 이 `Pane::add_surface_tab` / `Pane::add_surface_tab_background`(`crates/tasty-model/src/pane.rs`) 중 하나를 고른다. 값을 정하는 진입점은 `structural_exec::create_tab`(`src/app/structural_exec.rs`) 의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
 - 워크스페이스 제거 후 뒷정리: 직접 닫기의 `workspace.closed` 전달은 `AppState::after_workspace_removed`(`src/state.rs`), workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`).
 

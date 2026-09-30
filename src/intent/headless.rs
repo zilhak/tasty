@@ -95,7 +95,7 @@ fn route_non_domain(
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
-        Intent::Ui(_) => crate::intent::popup::handle(state, dispatched),
+        Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
         Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }

@@ -27,7 +27,7 @@ impl MainView {
         };
 
         let registry = engine.surface_registry.clone();
-        let preset = capture_workspace_preset(engine, ws, None, &registry)
+        let preset = capture_workspace_preset(&self.state.navigation, engine, ws, None, &registry)
             .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
         self.state.dispatch_intent(
@@ -96,7 +96,7 @@ impl MainView {
         let base_name = "pane".to_string();
 
         let registry = engine.surface_registry.clone();
-        let preset = capture_pane_preset(engine, pane, None, &registry)
+        let preset = capture_pane_preset(&self.state.navigation, engine, pane, None, &registry)
             .ok_or_else(|| anyhow!("pane capture failed"))?;
 
         self.state.dispatch_intent(

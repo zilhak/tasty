@@ -13,18 +13,24 @@ pub(crate) enum RebuildResult {
 }
 
 impl RebuildResult {
-    pub(crate) fn into_tab(self, tab_id: u32, name: String) -> Tab {
+    pub(crate) fn into_tab(
+        self,
+        tab_id: u32,
+        name: String,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Tab {
         match self {
             RebuildResult::Single(surface) => Tab::new_with_surface(tab_id, name, surface),
-            RebuildResult::Layout(layout, focused_surface) => Tab {
-                id: tab_id,
-                name,
-                explicit_name: None,
-                osc_title: None,
-                layout_opt: Some(layout),
-                focused_surface,
-                cached_display_name: None,
-            },
+            RebuildResult::Layout(layout, focused_surface) => {
+                presentation.surfaces.insert(tab_id, focused_surface);
+                Tab {
+                    id: tab_id,
+                    name,
+                    explicit_name: None,
+                    layout_opt: Some(layout),
+                    surface_titles: Default::default(),
+                }
+            }
         }
     }
 }
@@ -184,10 +190,11 @@ pub(crate) fn rebuild_surface_layout(
 pub(crate) fn rebuild_pane_node(
     engine: &mut CoreState,
     closed: ClosedPaneNode,
+    presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<PaneNode> {
     match closed {
         ClosedPaneNode::Leaf(closed_pane) => {
-            let pane = rebuild_pane(engine, closed_pane)?;
+            let pane = rebuild_pane(engine, closed_pane, presentation)?;
             Some(PaneNode::Leaf(pane))
         }
         ClosedPaneNode::Split {
@@ -196,8 +203,8 @@ pub(crate) fn rebuild_pane_node(
             first,
             second,
         } => {
-            let first = rebuild_pane_node(engine, *first)?;
-            let second = rebuild_pane_node(engine, *second)?;
+            let first = rebuild_pane_node(engine, *first, presentation)?;
+            let second = rebuild_pane_node(engine, *second, presentation)?;
             Some(PaneNode::Split {
                 direction,
                 ratio,
@@ -208,24 +215,25 @@ pub(crate) fn rebuild_pane_node(
     }
 }
 
-pub(crate) fn rebuild_pane(engine: &mut CoreState, closed: ClosedPane) -> Option<Pane> {
+pub(crate) fn rebuild_pane(
+    engine: &mut CoreState,
+    closed: ClosedPane,
+    presentation: &mut crate::model::StructurePresentationSnapshot,
+) -> Option<Pane> {
     let pane_id = engine.next_ids.next_pane();
     let mut tabs = Vec::new();
     for closed_tab in closed.tabs {
         let result = rebuild_surface(engine, closed_tab.panel)?;
         let tab_id = engine.next_ids.next_tab();
         let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
-        tabs.push(result.into_tab(tab_id, name));
+        tabs.push(result.into_tab(tab_id, name, presentation));
     }
     if tabs.is_empty() {
         return None;
     }
     let active_tab = closed.active_tab.min(tabs.len() - 1);
-    Some(Pane {
-        id: pane_id,
-        tabs,
-        active_tab,
-    })
+    presentation.tabs.insert(pane_id, tabs[active_tab].id);
+    Some(Pane { id: pane_id, tabs })
 }
 
 /// 공백·따옴표가 있는 경로를 작은따옴표로 감싼다. 그 밖의 셸 특수문자를 모두 처리하는 함수는 아니다.

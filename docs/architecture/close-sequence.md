@@ -13,7 +13,7 @@
 |--------|--------|--------|--------|
 | `gui` | `AppState::close_workspace_at` (`src/state/workspace.rs`) | 워크스페이스 컨텍스트 메뉴 "Close workspace" / 단축키 `close_active_workspace` | 항상 |
 | `inline` | `AppState::close_surface_by_id_inner` (`src/state/pane.rs`) → `Core::close_surface_recording` (`src/core/impl_close.rs`) | surface→tab→pane→workspace cascade 의 창 경로 (사용자 닫기 단축키, PTY exit 등) | `save_snapshot` 조건부 (PTY exit 는 false) |
-| `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/core/structural_cascade.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
+| `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/app/structural_cascade.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
 
 **세 경로의 비용 구조는 근본적으로 다르다.** `gui` 만 "탭이 N 개인 워크스페이스를
 통째로" 닫는다 — 나머지 둘은 cascade 특성상 *마지막 한 개의 surface* 가 닫히면서
@@ -79,7 +79,7 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 host 이벤트 적재만 남는다. AppState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
 부르고, `AppState::cleanup_surface`는 engine 회수 뒤 화면 cache를 해제하는 얇은 래퍼다.
 
-그 회수는 **한 함수**가 소유한다 — `src/core/structural_cascade.rs` 의
+그 회수는 **한 함수**가 소유한다 — `src/app/structural_cascade.rs` 의
 `reclaim_closed_surfaces`. close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·
 `cascade_tab_closed_full`)이 모두 그것을 부르고, 그 셋과 split / tab 생성 cascade 를 사용자
 GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
@@ -127,7 +127,7 @@ headless 에서 아무도 비우지 않아 enqueue 하면 프로세스 수명 �
 원격 mirror 가 forward 한 구조 op 의 실행(`src/core/attach_runtime.rs`)은 도메인 값
 (`Result<(), String>`)으로 답하고, wire 타입(`JsonRpcResponse`)을 만들지 않는다. split /
 tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러가 부르는 것과
-**같은** 도메인 실행 함수(`src/core/structural_exec.rs`)를 부르고, 그 실패
+**같은** 도메인 실행 함수(`src/app/structural_exec.rs`)를 부르고, 그 실패
 (`StructuralFailure`)를 `forward_result` 한 함수가 사유 문자열로 바꾼다. IPC 핸들러는 같은
 실패를 `invalid_params` / `internal_error` / `structural_apply_error` 로 감싼다 — 그래서 같은
 입력에 두 진입점의 사유 문구가 같다. 두 시험으로 사유 문구를 확인한다: 두 진입점의 결과가 같은지

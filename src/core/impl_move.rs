@@ -103,7 +103,6 @@ impl Core {
         }
 
         // split leaf 교체는 focused_surface를 바꾸지 않으므로 직접 이어주고 제목도 갱신한다.
-        Self::transfer_focus_to_a(engine, ws_idx, pane_id, b_tab_idx, source_id, target_id);
         engine.mark_layout_dirty();
         engine.refresh_tab_osc_title(source_id);
 
@@ -179,23 +178,6 @@ impl Core {
         }
     }
 
-    fn transfer_focus_to_a(
-        engine: &mut crate::core::CoreState,
-        ws_idx: usize,
-        pane_id: u32,
-        b_tab_idx: usize,
-        source_id: u32,
-        target_id: u32,
-    ) {
-        let ws = &mut engine.workspaces[ws_idx];
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            let tab = &mut pane.tabs[b_tab_idx];
-            if tab.focused_surface == target_id {
-                tab.focused_surface = source_id;
-            }
-        }
-    }
-
     /// source의 Box를 떼어 반환한다. 비게 된 tab·pane·workspace는 지우되
     /// 이동할 Terminal store 항목과 scrollback은 유지하며 닫기 snapshot도 만들지 않는다.
     #[allow(clippy::type_complexity)]
@@ -236,18 +218,14 @@ impl Core {
                 let layout = tab.take_layout();
                 let (new_layout, extracted) = layout.extract_surface(source_id);
                 tab.put_layout(new_layout);
-                // 떠난 source를 계속 선택하지 않도록 남은 surface로 바꾼다.
-                if tab.focused_surface == source_id
-                    && let Some(first_id) = tab.layout().first_surface_id()
-                {
-                    tab.focused_surface = first_id;
-                }
                 let a_box = extracted?;
-                (a_box, tab.focused_surface)
+                (a_box, tab.first_surface_id())
             };
             engine.mark_layout_dirty();
             // source의 옛 제목이 남은 탭에 남지 않도록 다시 계산한다.
-            engine.refresh_tab_osc_title(source_tab_focused);
+            if let Some(surface_id) = source_tab_focused {
+                engine.refresh_tab_osc_title(surface_id);
+            }
             return Some((a_box, CascadeLevel::Surface, vec![], vec![], None, false));
         }
 

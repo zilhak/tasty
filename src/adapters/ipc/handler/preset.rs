@@ -221,6 +221,7 @@ pub fn handle_rename(
 }
 
 pub fn handle_capture(
+    presentation: &dyn crate::model::StructurePresentation,
     core: &crate::core::Core,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
@@ -239,7 +240,7 @@ pub fn handle_capture(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let (cloned, base_name) = match capture_inner(engine, kind, source_id) {
+    let (cloned, base_name) = match capture_inner(presentation, engine, kind, source_id) {
         Ok(v) => v,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };

@@ -82,7 +82,10 @@ fn rename_tab(
         .find_pane_for_tab(tab_id)
         .and_then(|pane_id| engine.find_pane_by_id(pane_id))
         .and_then(|pane| pane.tabs.iter().find(|t| t.id == tab_id))
-        .map(|tab| tab.display_name().to_string())
+        .map(|tab| {
+            tab.display_name(state.navigation.surface_id(tab))
+                .to_string()
+        })
         .unwrap_or_default();
     state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
         tab_id,
@@ -191,7 +194,9 @@ mod tests {
         handle(&mut core, &mut state, &mut engine, &intent);
         let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
         assert_eq!(tab.explicit_name, None);
-        let title = tab.display_name().to_string();
+        let title = tab
+            .display_name(state.navigation.surface_id(tab))
+            .to_string();
         assert_eq!(tab_renamed(&state), [(tab_id, title, true)]);
     }
 

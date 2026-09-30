@@ -238,10 +238,7 @@ fn build_mirror_forward_op(
         | D::CreateCategory { .. }
         | D::RenameCategory { .. }
         | D::DeleteCategory { .. }
-        | D::ReorderCategory { .. }
-        | D::SetCategoryCollapsed { .. }
-        | D::ToggleCategoryCollapsed { .. }
-        | D::ToggleAllCategoriesCollapsed => None,
+        | D::ReorderCategory { .. } => None,
         _ => None,
     }
 }
@@ -376,15 +373,6 @@ impl Core {
                 from_index,
                 to_index,
             } => Self::apply_reorder_category(engine, from_index, to_index),
-            DomainIntent::SetCategoryCollapsed { id, collapsed } => {
-                Ok(Self::apply_set_category_collapsed(engine, id, collapsed))
-            }
-            DomainIntent::ToggleCategoryCollapsed { id } => {
-                Ok(Self::apply_toggle_category_collapsed(engine, id))
-            }
-            DomainIntent::ToggleAllCategoriesCollapsed => {
-                Ok(Self::apply_toggle_all_categories_collapsed(engine))
-            }
             DomainIntent::CreateTab {
                 pane_id,
                 cwd,
@@ -435,11 +423,13 @@ impl Core {
             }
             DomainIntent::CloseSurface {
                 surface_id,
-                save_snapshot,
+                presentation,
             } => Ok(vec![Self::apply_close_surface(
                 engine,
                 surface_id,
-                save_snapshot,
+                presentation
+                    .as_deref()
+                    .map(|p| p as &dyn crate::model::StructurePresentation),
             )]),
             DomainIntent::ConvertSurface { surface_id, target } => {
                 Ok(vec![Self::apply_convert_surface(
@@ -493,12 +483,14 @@ impl Core {
             }
             #[cfg(feature = "gui")]
             DomainIntent::SaveLayoutNow {
+                presentation,
                 active_workspace,
                 force,
             } => Ok(vec![Self::apply_save_layout_now(
                 engine,
                 active_workspace,
                 force,
+                &*presentation,
             )]),
             #[cfg(feature = "gui")]
             DomainIntent::ApplyPendingLayoutRestore => {

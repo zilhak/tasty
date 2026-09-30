@@ -95,36 +95,6 @@ pub(crate) enum DomainIntent {
         from_index: usize,
         to_index: usize,
     },
-    #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
-        expect(
-            dead_code,
-            reason = "only the gui sidebar and shortcuts fold categories"
-        )
-    )]
-    SetCategoryCollapsed {
-        id: crate::model::WorkspaceCategoryId,
-        collapsed: bool,
-    },
-    #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
-        expect(
-            dead_code,
-            reason = "only the gui sidebar and shortcuts fold categories"
-        )
-    )]
-    ToggleCategoryCollapsed {
-        id: crate::model::WorkspaceCategoryId,
-    },
-    #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
-        expect(
-            dead_code,
-            reason = "only the gui sidebar and shortcuts fold categories"
-        )
-    )]
-    ToggleAllCategoriesCollapsed,
-
     CreateTab {
         pane_id: u32,
         cwd: Option<PathBuf>,
@@ -179,7 +149,7 @@ pub(crate) enum DomainIntent {
     /// 자원·메모리 정리, 활성 workspace 보정과 빈 창 보충은 호출자의 후속 처리다.
     CloseSurface {
         surface_id: u32,
-        save_snapshot: bool,
+        presentation: Option<Box<crate::model::StructurePresentationSnapshot>>,
     },
     /// split 탭의 leaf 또는 단일 surface 탭을 다른 종류로 바꾼다.
     ConvertSurface {
@@ -278,6 +248,7 @@ pub(crate) enum DomainIntent {
     /// debounce 대기는 이 요청을 보내는 호출자가 맡는다.
     #[cfg(feature = "gui")]
     SaveLayoutNow {
+        presentation: Box<crate::model::StructurePresentationSnapshot>,
         active_workspace: usize,
         force: bool,
     },
@@ -490,6 +461,7 @@ pub(crate) enum CoreEvent {
     ClosedItemRestored {
         restored: bool,
         kind: RestoredKind,
+        presentation: Box<crate::model::StructurePresentationSnapshot>,
     },
 
     /// 자식 프로세스 종료. GUI는 hook·알림과 닫기 요청을 이어 처리한다.
@@ -599,7 +571,7 @@ pub(crate) enum CoreEvent {
     #[cfg(feature = "gui")]
     LayoutRestored {
         restored: bool,
-        active_workspace: Option<usize>,
+        presentation: Option<crate::model::RestoredPresentation>,
     },
 
     #[cfg(feature = "gui")]

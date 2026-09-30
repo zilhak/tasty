@@ -1282,12 +1282,16 @@ impl App {
 
         // 점유 변경 직후 readonly 화면을 갱신해 다음 주기 확인까지 빈 화면으로 남지 않게 한다.
         for (_, main, engine) in self.engines_mut().window_pairs() {
+            main.state.navigation.reconcile(&engine.workspaces);
+            engine.refresh_attach_presentation(&main.state.navigation);
             engine.push_structure_changes();
             if engine.refresh_readonly_views() {
                 main.mark_dirty();
             }
         }
-        for engine in self.engines_mut().parked() {
+        for (state, engine) in self.engines_mut().parked_sessions() {
+            state.navigation.reconcile(&engine.workspaces);
+            engine.refresh_attach_presentation(&state.navigation);
             engine.push_structure_changes();
         }
     }
@@ -1527,8 +1531,16 @@ impl App {
         client_id: u32,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
-        for engine in self.engines_mut().windowed_and_parked() {
+        for (state, engine) in self.engines_mut().window_sessions() {
             if engine.find_workspace_index_for_id(workspace_id).is_some() {
+                engine.refresh_attach_presentation(&state.navigation);
+                engine.attach_workspace_for_stream(workspace_id, client_id, hub);
+                return true;
+            }
+        }
+        for (state, engine) in self.engines_mut().parked_sessions() {
+            if engine.find_workspace_index_for_id(workspace_id).is_some() {
+                engine.refresh_attach_presentation(&state.navigation);
                 engine.attach_workspace_for_stream(workspace_id, client_id, hub);
                 return true;
             }

@@ -204,7 +204,14 @@ struct MirrorMeshInfo {
     display_name: String,
 }
 
+#[derive(Default)]
+struct MirrorStructureIds {
+    panes: HashMap<u32, u32>,
+    tabs: HashMap<u32, u32>,
+}
+
 pub(crate) struct AttachClientSession {
+    structure_ids: MirrorStructureIds,
     local_workspace: u32,
     /// 원격 surface ID를 로컬 mirror ID로 바꾼다.
     remote_to_local: HashMap<u32, u32>,
@@ -345,6 +352,7 @@ impl App {
         let proxy;
         let remote_to_local: HashMap<u32, u32>;
         let markdown_locals: HashSet<u32>;
+        let mut structure_ids = MirrorStructureIds::default();
         {
             let Some((main, engine)) = self.focused_pair_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
@@ -359,6 +367,8 @@ impl App {
 
             local_ws_id = ids.next_workspace();
             let mut ws = build_mirror_workspace(
+                &mut structure_ids,
+                &mut main.state.navigation,
                 local_ws_id,
                 &name,
                 &tree,
@@ -401,6 +411,7 @@ impl App {
         spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
 
         self.attach_client_sessions.push(AttachClientSession {
+            structure_ids,
             local_workspace: local_ws_id,
             remote_to_local,
             output,
@@ -471,7 +482,9 @@ impl App {
                 .workspaces
                 .iter()
                 .find(|w| w.id == local_workspace)
-                .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
+                .and_then(|ws| {
+                    capture_focused_remote(&main.state.navigation, ws, &sess.remote_to_local)
+                });
 
             let mut mapping = merge_survivor_mapping(
                 &sess.remote_to_local,
@@ -510,6 +523,8 @@ impl App {
                 );
             };
             let mut ws = build_mirror_workspace(
+                &mut sess.structure_ids,
+                &mut main.state.navigation,
                 local_workspace,
                 &name,
                 &tree,
@@ -521,7 +536,12 @@ impl App {
                 &mut mapping.markdown,
             );
             ws.mirror = true;
-            if !restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local) {
+            if !restore_focus_after_delta(
+                &mut main.state.navigation,
+                &mut ws,
+                old_focused_remote,
+                &sess.remote_to_local,
+            ) {
                 tracing::info!(
                     "gui reconnect: 이전 focus surface 를 재연결 후 트리에서 찾지 못함 — 원격 기본 focus 유지"
                 );
@@ -2131,6 +2151,7 @@ fn apply_one_mirror_event(
         } => {
             let pending_focus = sess.next_delta_focus.take();
             let removed_markdown = apply_mirror_structural_delta(
+                &mut host.state.navigation,
                 sess,
                 host.engine,
                 workspace_id,
@@ -2387,6 +2408,7 @@ fn apply_markdown_content_result_event(
 /// 순수 로컬 포커스 이동은 서버에 전달하지 않으므로 원격 포커스를 그대로 덮어쓰지 않는다.
 /// 사라진 로컬 markdown ID를 반환해 호출자가 플러그인에 destroy를 보낼 수 있게 한다.
 fn apply_mirror_structural_delta(
+    navigation: &mut crate::state::navigation::NavigationState,
     sess: &mut AttachClientSession,
     engine: &mut crate::core::CoreState,
     workspace_id: u32,
@@ -2400,7 +2422,7 @@ fn apply_mirror_structural_delta(
         .workspaces
         .iter()
         .find(|w| w.id == sess.local_workspace)
-        .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
+        .and_then(|ws| capture_focused_remote(navigation, ws, &sess.remote_to_local));
 
     let mut mapping = merge_survivor_mapping(
         &sess.remote_to_local,
@@ -2427,6 +2449,8 @@ fn apply_mirror_structural_delta(
     {
         let name = engine.workspaces[pos].name.clone();
         let mut ws = build_mirror_workspace(
+            &mut sess.structure_ids,
+            navigation,
             sess.local_workspace,
             &name,
             tree,
@@ -2446,16 +2470,20 @@ fn apply_mirror_structural_delta(
                 .first()
                 .and_then(|rid| sess.remote_to_local.get(rid))
         {
-            focus_handled = set_focus_to_surface(&mut ws, new_local);
+            focus_handled = set_focus_to_surface(navigation, &ws, new_local);
         }
         if !focus_handled {
-            let restored =
-                restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local);
+            let restored = restore_focus_after_delta(
+                navigation,
+                &mut ws,
+                old_focused_remote,
+                &sess.remote_to_local,
+            );
             // 옛 포커스가 사라졌으면 닫기 전에 구한 인접 후보를 시도한다. 후보도 없으면 원격 값을 유지한다.
             if !restored && let Some(PendingOpFocus::Close { candidates }) = &pending_focus {
                 for &remote_cand in candidates {
                     if let Some(&local_cand) = sess.remote_to_local.get(&remote_cand)
-                        && set_focus_to_surface(&mut ws, local_cand)
+                        && set_focus_to_surface(navigation, &ws, local_cand)
                     {
                         break;
                     }
@@ -2474,6 +2502,7 @@ fn apply_mirror_structural_delta(
 }
 
 fn restore_focus_after_delta(
+    navigation: &mut crate::state::navigation::NavigationState,
     ws: &mut Workspace,
     old_focused_remote: Option<u32>,
     remote_to_local: &HashMap<u32, u32>,
@@ -2484,19 +2513,23 @@ fn restore_focus_after_delta(
     let Some(&new_local_sid) = remote_to_local.get(&remote_sid) else {
         return false;
     };
-    set_focus_to_surface(ws, new_local_sid)
+    set_focus_to_surface(navigation, ws, new_local_sid)
 }
 
-fn set_focus_to_surface(ws: &mut Workspace, local_sid: u32) -> bool {
+fn set_focus_to_surface(
+    navigation: &mut crate::state::navigation::NavigationState,
+    ws: &Workspace,
+    local_sid: u32,
+) -> bool {
     let Some((pane_id, tab_id)) = find_pane_and_tab_for_surface(ws, local_sid) else {
         return false;
     };
-    ws.focused_pane = pane_id;
-    if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+    navigation.select_pane(ws, pane_id);
+    if let Some(pane) = ws.pane_layout().find_pane(pane_id)
         && let Some(tab_index) = pane.tabs.iter().position(|t| t.id == tab_id)
     {
-        pane.active_tab = tab_index;
-        pane.tabs[tab_index].focused_surface = local_sid;
+        navigation.select_tab(pane, tab_id);
+        navigation.select_surface(&pane.tabs[tab_index], local_sid);
         true
     } else {
         false
@@ -2504,10 +2537,14 @@ fn set_focus_to_surface(ws: &mut Workspace, local_sid: u32) -> bool {
 }
 
 /// pane·tab ID는 재구성 때 달라질 수 있어 포커스를 원격 surface ID로 기억한다.
-fn capture_focused_remote(ws: &Workspace, remote_to_local: &HashMap<u32, u32>) -> Option<u32> {
-    let pane = ws.pane_layout().find_pane(ws.focused_pane)?;
-    let tab = pane.tabs.get(pane.active_tab)?;
-    let local_sid = tab.focused_surface_id()?;
+fn capture_focused_remote(
+    navigation: &crate::state::navigation::NavigationState,
+    ws: &Workspace,
+    remote_to_local: &HashMap<u32, u32>,
+) -> Option<u32> {
+    let pane = ws.pane_layout().find_pane(navigation.pane_id(ws)?)?;
+    let tab = pane.tabs.get(navigation.tab_index(pane))?;
+    let local_sid = navigation.surface_id(tab)?;
     remote_to_local
         .iter()
         .find(|&(_, &l)| l == local_sid)
@@ -2531,6 +2568,8 @@ fn find_pane_and_tab_for_surface(ws: &Workspace, surface_id: u32) -> Option<(u32
 
 #[allow(clippy::too_many_arguments)] // reason: mirror pane 파서 컨텍스트 전체
 fn build_pane_from_json(
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
     p: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
@@ -2569,15 +2608,24 @@ fn build_pane_from_json(
         if t.get("active").and_then(|v| v.as_bool()).unwrap_or(false) {
             active_tab = i;
         }
-        tabs.push(Tab {
-            id: ids.next_tab(),
+        let remote_tab = t.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let tab_id = if remote_tab == 0 {
+            ids.next_tab()
+        } else {
+            *structure_ids
+                .tabs
+                .entry(remote_tab)
+                .or_insert_with(|| ids.next_tab())
+        };
+        let tab = Tab {
+            id: tab_id,
             name: tab_name,
             explicit_name: None,
-            osc_title: None,
             layout_opt: Some(layout),
-            focused_surface,
-            cached_display_name: None,
-        });
+            surface_titles: Default::default(),
+        };
+        navigation.initialize_surface(&tab, focused_surface);
+        tabs.push(tab);
     }
     if tabs.is_empty() {
         let sid = ids.next_surface();
@@ -2585,22 +2633,29 @@ fn build_pane_from_json(
             id: ids.next_tab(),
             name: crate::i18n::t("attach.tab_title_fallback").to_string(),
             explicit_name: None,
-            osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(Box::new(EmptySurface::new(sid)))),
-            focused_surface: sid,
-            cached_display_name: None,
+            surface_titles: Default::default(),
         });
     }
-    Pane {
-        id: ids.next_pane(),
-        tabs,
-        active_tab,
-    }
+    let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let pane_id = if remote_pane == 0 {
+        ids.next_pane()
+    } else {
+        *structure_ids
+            .panes
+            .entry(remote_pane)
+            .or_insert_with(|| ids.next_pane())
+    };
+    let pane = Pane { id: pane_id, tabs };
+    navigation.initialize_tab(&pane, active_tab);
+    pane
 }
 
 /// pane 트리를 읽으며 원격→로컬 pane ID를 기록해 focused_pane을 변환한다.
 #[allow(clippy::too_many_arguments)] // reason: mirror 트리 재귀 파서 컨텍스트 전체
 fn build_pane_node(
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
     node: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
@@ -2613,7 +2668,17 @@ fn build_pane_node(
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
             let remote_pane = node.get("id").and_then(|v| v.as_u64())? as u32;
-            let pane = build_pane_from_json(node, ids, map, term, mesh, explorer, markdown);
+            let pane = build_pane_from_json(
+                structure_ids,
+                navigation,
+                node,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            );
             pane_id_map.insert(remote_pane, pane.id);
             Some(PaneNode::Leaf(pane))
         }
@@ -2624,6 +2689,8 @@ fn build_pane_node(
             };
             let ratio = node.get("ratio").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
             let first = build_pane_node(
+                structure_ids,
+                navigation,
                 node.get("first")?,
                 ids,
                 map,
@@ -2634,6 +2701,8 @@ fn build_pane_node(
                 pane_id_map,
             )?;
             let second = build_pane_node(
+                structure_ids,
+                navigation,
                 node.get("second")?,
                 ids,
                 map,
@@ -2658,6 +2727,8 @@ fn build_pane_node(
 /// 가로 분할로 연결한다. 각 tab의 surface layout은 두 경로에서 같은 파서를 사용한다.
 #[allow(clippy::too_many_arguments)] // reason: mirror workspace 재구성 컨텍스트 전체
 fn build_mirror_workspace(
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
     ws_id: u32,
     name: &str,
     tree: &Value,
@@ -2676,6 +2747,8 @@ fn build_mirror_workspace(
     if let Some(layout_json) = tree.get("pane_layout").filter(|v| !v.is_null()) {
         let mut pane_id_map = HashMap::new();
         if let Some(node) = build_pane_node(
+            structure_ids,
+            navigation,
             layout_json,
             ids,
             map,
@@ -2689,13 +2762,9 @@ fn build_mirror_workspace(
                 .get(&remote_focused_pane)
                 .copied()
                 .unwrap_or_else(|| node.first_pane().map(|p| p.id).unwrap_or(0));
-            return Workspace::from_restored(
-                ws_id,
-                name.to_string(),
-                String::new(),
-                node,
-                focused_local_pane,
-            );
+            let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+            navigation.initialize_pane(&ws, focused_local_pane);
+            return ws;
         }
     }
 
@@ -2710,7 +2779,17 @@ fn build_mirror_workspace(
         let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         local_panes.push((
             remote_pane,
-            build_pane_from_json(p, ids, map, term, mesh, explorer, markdown),
+            build_pane_from_json(
+                structure_ids,
+                navigation,
+                p,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            ),
         ));
     }
 
@@ -2722,13 +2801,11 @@ fn build_mirror_workspace(
             crate::i18n::t("attach.tab_title_fallback").to_string(),
             Box::new(EmptySurface::new(sid)),
         );
-        let fp = pane.id;
         return Workspace::from_restored(
             ws_id,
             name.to_string(),
             String::new(),
             PaneNode::Leaf(pane),
-            fp,
         );
     }
 
@@ -2750,13 +2827,9 @@ fn build_mirror_workspace(
         };
     }
 
-    Workspace::from_restored(
-        ws_id,
-        name.to_string(),
-        String::new(),
-        node,
-        focused_local_pane,
-    )
+    let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+    navigation.initialize_pane(&ws, focused_local_pane);
+    ws
 }
 
 fn build_layout(

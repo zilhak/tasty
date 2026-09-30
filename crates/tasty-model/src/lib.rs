@@ -108,4 +108,6 @@ pub use workspace_category::*;
 mod tests;
 
 mod structure_presentation;
-pub use structure_presentation::StructurePresentation;
+pub use structure_presentation::{
+    RestoredPresentation, StructurePresentation, StructurePresentationSnapshot,
+};

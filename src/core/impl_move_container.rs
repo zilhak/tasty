@@ -83,12 +83,14 @@ impl Core {
         };
         // 같은 인덱스를 교체하므로 target이 활성 탭이었다면 옮긴 탭이 활성 탭이 된다.
         let replaced = std::mem::replace(&mut pane.tabs[target_idx], tab);
-        let moved_focus = pane.tabs[target_idx].focused_surface;
+        let moved_focus = pane.tabs[target_idx].first_surface_id();
 
         let mut cleanup_targets = Vec::new();
         collect_close_targets(&replaced, engine, &mut cleanup_targets);
         engine.mark_layout_dirty();
-        engine.refresh_tab_osc_title(moved_focus);
+        if let Some(surface_id) = moved_focus {
+            engine.refresh_tab_osc_title(surface_id);
+        }
 
         CoreEvent::ContainerMoveApplied {
             moved: true,
@@ -150,9 +152,6 @@ impl Core {
                 return container_move_failed(detached);
             }
         };
-        if ws.focused_pane == target_pane_id {
-            ws.focused_pane = source_pane_id;
-        }
 
         let mut cleanup_targets = Vec::new();
         for tab in &replaced.tabs {
@@ -204,7 +203,6 @@ impl Core {
         let empty = crate::model::Pane {
             id: 0,
             tabs: vec![],
-            active_tab: 0,
         };
         let pane = std::mem::replace(ws.pane_layout_mut().find_pane_mut(pane_id)?, empty);
         let workspaces_now_empty = engine.workspaces.is_empty();
@@ -590,7 +588,7 @@ mod move_container_tests {
         state: &mut crate::state::AppState,
         engine: &mut CoreState,
     ) -> Vec<crate::state::PendingHostEvent> {
-        use crate::core::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
+        use crate::app::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         state.detect_tab_lifecycle(engine);
         // 이동 전 준비 과정의 알림은 검사 대상이 아니므로 버린다.
@@ -844,7 +842,7 @@ mod move_container_tests {
     #[cfg(feature = "gui")]
     #[test]
     fn move_pane_host_events_close_only_the_target() {
-        use crate::core::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
+        use crate::app::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
         use crate::state::PendingHostEvent as E;
         let (mut state, mut engine) = crate::state::tests::test_state();
         let (p1, _tab_a, _a) = first_pane(&mut engine);

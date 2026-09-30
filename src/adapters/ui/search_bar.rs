@@ -375,7 +375,7 @@ fn focused_terminal_surface_id(state: &AppState, engine: &crate::core::CoreState
     ws.pane_layout()
         .find_pane(pane_id)
         .and_then(|pane| pane.tabs.get(state.navigation.tab_index(pane)))
-        .and_then(|tab| tab.focused_surface_id())
+        .and_then(|tab| state.navigation.surface_id(tab))
         .unwrap_or(0)
 }
 

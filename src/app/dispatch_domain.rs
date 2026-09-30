@@ -6,14 +6,14 @@
 use tasty_settings::Settings;
 
 use crate::app::App;
-use crate::app::window_access::{DispatchCtx, engines_mut};
-use crate::core::AttentionKind;
-use crate::core::intent::CoreEvent;
-use crate::core::structural_cascade::{
+use crate::app::structural_cascade::{
     PaneSplitCascade, SurfaceCloseCascade, cascade_pane_closed_full, cascade_pane_split,
     cascade_surface_closed, cascade_surface_created, cascade_surface_split,
     cascade_tab_closed_full, cascade_tab_created,
 };
+use crate::app::window_access::{DispatchCtx, engines_mut};
+use crate::core::AttentionKind;
+use crate::core::intent::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
 
@@ -58,6 +58,7 @@ impl App {
         let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(id) else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
+        engine.refresh_attach_presentation(&state.navigation);
         let applied = core.apply(engine, intent);
         let events = events_or_report(state, engine, &origin, applied);
         for event in events {
@@ -273,9 +274,13 @@ impl App {
             }
             CoreEvent::SurfaceSent { .. } => {}
             CoreEvent::TerminalRespawned { .. } => {}
-            CoreEvent::ClosedItemRestored { restored, kind } => {
+            CoreEvent::ClosedItemRestored {
+                restored,
+                kind,
+                presentation,
+            } => {
                 if restored {
-                    self.dispatch_closed_item_restored_cascade(source, origin, kind);
+                    self.dispatch_closed_item_restored_cascade(source, origin, kind, &presentation);
                 }
             }
 
@@ -355,6 +360,7 @@ impl App {
         source: DispatchSource,
         origin: &IntentOrigin,
         kind: crate::core::intent::RestoredKind,
+        presentation: &crate::model::StructurePresentationSnapshot,
     ) {
         let Some(DispatchCtx {
             state,
@@ -365,7 +371,7 @@ impl App {
         else {
             return;
         };
-        cascade_closed_item_restored(state, engine, origin, kind);
+        cascade_closed_item_restored(state, engine, origin, kind, presentation);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -1230,11 +1236,15 @@ pub(crate) fn cascade_closed_item_restored(
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     kind: crate::core::intent::RestoredKind,
+    presentation: &crate::model::StructurePresentationSnapshot,
 ) {
     use crate::core::intent::RestoredKind;
     if !origin.is_user() {
         return;
     }
+    state
+        .navigation
+        .apply_snapshot(&engine.workspaces, presentation);
     match kind {
         RestoredKind::Nothing => {}
         RestoredKind::Workspace { new_ws_index } => {

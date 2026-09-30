@@ -123,7 +123,7 @@ fn an_agent_surface_close_records_nothing() {
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let before = engine.closed_items.len();
 
-        let closed = crate::core::structural_exec::close_surface(
+        let closed = crate::app::structural_exec::close_surface(
             &mut core,
             &mut state,
             &mut engine,
@@ -159,7 +159,7 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine, _) = arrange(Case::Pane);
     let pane_id = state.active_workspace(&engine).focused_pane;
-    let closed = crate::core::structural_exec::close_pane(
+    let closed = crate::app::structural_exec::close_pane(
         &mut core,
         &mut state,
         &mut engine,
@@ -174,7 +174,7 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     let tab_id = engine
         .find_tab_for_surface(sid)
         .expect("tab of the focused surface");
-    let closed = crate::core::structural_exec::close_tab(
+    let closed = crate::app::structural_exec::close_tab(
         &mut core,
         &mut state,
         &mut engine,
@@ -251,7 +251,7 @@ fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
     state.active_workspace_mut(&mut engine).mirror = true;
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
 
-    let result = crate::core::structural_exec::close_surface(
+    let result = crate::app::structural_exec::close_surface(
         &mut core,
         &mut state,
         &mut engine,

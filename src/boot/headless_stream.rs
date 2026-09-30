@@ -18,6 +18,7 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty() {
         super::headless_plugins::ensure_plugin_manager(app, engine);
     }
+    engine.refresh_attach_presentation(&state.navigation);
     engine
         .attach
         .mark_clients_disconnected(&outcome.disconnected);
@@ -31,6 +32,8 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
     // 직접 구조 op 외의 변경도 점유 client에 전달한다.
+    state.navigation.reconcile(&engine.workspaces);
+    engine.refresh_attach_presentation(&state.navigation);
     engine.push_structure_changes();
 }
 

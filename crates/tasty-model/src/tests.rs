@@ -759,8 +759,7 @@ fn tab_close_surface_in_split() {
         explicit_name: None,
         layout_opt: Some(split_layout),
         focused_surface: 10,
-        osc_title: None,
-        cached_display_name: None,
+        surface_titles: Default::default(),
     };
     let closed = tab.close_surface(10);
     assert!(closed);
@@ -809,8 +808,7 @@ fn tab_is_deferred_detects_placeholder_leaf() {
         explicit_name: None,
         layout_opt: Some(SurfaceLayout::Leaf(Box::new(placeholder))),
         focused_surface: 42,
-        osc_title: None,
-        cached_display_name: None,
+        surface_titles: Default::default(),
     };
     assert!(tab.is_deferred());
     assert_eq!(tab.deferred_surface_ids(), vec![42]);
@@ -836,8 +834,7 @@ fn tab_is_deferred_walks_split_layout() {
         explicit_name: None,
         layout_opt: Some(layout),
         focused_surface: 10,
-        osc_title: None,
-        cached_display_name: None,
+        surface_titles: Default::default(),
     };
     assert!(tab.is_deferred());
     let ids = tab.deferred_surface_ids();
@@ -855,8 +852,7 @@ fn tab_is_not_deferred_with_real_terminal() {
         explicit_name: None,
         layout_opt: Some(SurfaceLayout::Leaf(Box::new(node))),
         focused_surface: 7,
-        osc_title: None,
-        cached_display_name: None,
+        surface_titles: Default::default(),
     };
     assert!(!tab.is_deferred());
     assert_eq!(tab.deferred_surface_ids(), Vec::<SurfaceId>::new());
@@ -880,8 +876,7 @@ fn tab_complete_terminal_spawn_replaces_placeholder_in_split() {
         explicit_name: None,
         layout_opt: Some(layout),
         focused_surface: 11,
-        osc_title: None,
-        cached_display_name: None,
+        surface_titles: Default::default(),
     };
     // Only wake id=11. id=12 must remain deferred.
     assert!(tab.pending_terminal_spawn(11).is_some());

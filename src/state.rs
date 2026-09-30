@@ -387,12 +387,8 @@ impl AppState {
         preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
-        let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         let mut navigation = navigation::NavigationState::default();
         navigation.reconcile(&engine.workspaces);
-        if let Some(ws) = engine.workspaces.get(active_workspace) {
-            navigation.select_workspace(&engine.workspaces, ws.id);
-        }
         Self {
             preset_store,
             memory,
@@ -770,13 +766,20 @@ impl AppState {
     }
 
     /// 워크스페이스 복원 사본을 만든다. 저장 여부는 호출자가 결정한다.
-    fn capture_workspace_snapshot(engine: &CoreState, ws_idx: usize) -> crate::model::ClosedItem {
+    fn capture_workspace_snapshot(
+        &self,
+        engine: &CoreState,
+        ws_idx: usize,
+    ) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
         let ws = &engine.workspaces[ws_idx];
         let terminals = &engine.runtime.terminals;
-        crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
-            terminals.closed_capture(id)
-        })
+        crate::model::ClosedItem::from_workspace(
+            ws,
+            &mut snap_fn,
+            &|id| terminals.closed_capture(id),
+            &self.navigation,
+        )
     }
 
     /// 제거 전에 모든 surface의 ID와 스크롤백 저장 ID를 수집한다.

@@ -21,12 +21,14 @@ impl Core {
         let nothing = || CoreEvent::ClosedItemRestored {
             restored: false,
             kind: RestoredKind::Nothing,
+            presentation: Box::default(),
         };
 
         let Some(item) = pop_for_scope(engine, scope) else {
             return nothing();
         };
 
+        let mut presentation = crate::model::StructurePresentationSnapshot::default();
         let kind = match item {
             ClosedItem::Surface { surface, tab_name } => {
                 let Some(node) = restore_rebuild::rebuild_surface_node(engine, surface) else {
@@ -41,6 +43,7 @@ impl Core {
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
+                presentation.tabs.insert(pane_id, tab_id);
                 RestoredKind::TabIntoPane
             }
             ClosedItem::Tab(closed_tab) => {
@@ -53,10 +56,11 @@ impl Core {
                 };
                 let tab_id = engine.next_ids.next_tab();
                 let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
-                let tab = result.into_tab(tab_id, name);
+                let tab = result.into_tab(tab_id, name, &mut presentation);
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
+                presentation.tabs.insert(pane_id, tab_id);
                 RestoredKind::TabIntoPane
             }
             ClosedItem::Pane {
@@ -66,7 +70,8 @@ impl Core {
                 ratio,
                 was_first,
             } => {
-                let Some(rebuilt) = restore_rebuild::rebuild_pane(engine, pane) else {
+                let Some(rebuilt) = restore_rebuild::rebuild_pane(engine, pane, &mut presentation)
+                else {
                     return nothing();
                 };
                 // 닫힐 당시 위치 대신 호출자가 지정한 대상 pane의 workspace에 복원한다.
@@ -113,7 +118,8 @@ impl Core {
                 ..
             } => {
                 let ws_id = engine.next_ids.next_workspace();
-                let Some(pane_node) = restore_rebuild::rebuild_pane_node(engine, pane_layout)
+                let Some(pane_node) =
+                    restore_rebuild::rebuild_pane_node(engine, pane_layout, &mut presentation)
                 else {
                     return nothing();
                 };
@@ -123,7 +129,8 @@ impl Core {
                 } else {
                     *all_pane_ids.first().unwrap_or(&0)
                 };
-                let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node, actual_focused);
+                let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node);
+                presentation.panes.insert(ws_id, actual_focused);
                 engine.workspaces.push(ws);
                 RestoredKind::Workspace {
                     new_ws_index: engine.workspaces.len() - 1,
@@ -135,6 +142,7 @@ impl Core {
         CoreEvent::ClosedItemRestored {
             restored: true,
             kind,
+            presentation: Box::new(presentation),
         }
     }
 
@@ -287,6 +295,7 @@ impl Core {
         engine: &mut crate::core::CoreState,
         active_workspace: usize,
         force: bool,
+        presentation: &dyn crate::model::StructurePresentation,
     ) -> CoreEvent {
         let g = &engine.settings.general;
         let should_save = if force {
@@ -306,7 +315,7 @@ impl Core {
         let Some(slot) = engine.layout_slot else {
             return CoreEvent::LayoutSaved;
         };
-        crate::core::layout_persistence::save_slot(engine, active_workspace, slot);
+        crate::core::layout_persistence::save_slot(engine, active_workspace, slot, presentation);
         engine.layout_dirty.clear();
         CoreEvent::LayoutSaved
     }
@@ -319,7 +328,7 @@ impl Core {
         let Some(saved) = engine.pending_layout_restore.take() else {
             return CoreEvent::LayoutRestored {
                 restored: false,
-                active_workspace: None,
+                presentation: None,
             };
         };
 
@@ -333,12 +342,12 @@ impl Core {
             seed_surface_id_floor(&mut *guard, &engine.next_ids);
         }
 
-        if !saved.restore(engine) {
+        let Some(presentation) = saved.restore(engine) else {
             return CoreEvent::LayoutRestored {
                 restored: false,
-                active_workspace: None,
+                presentation: None,
             };
-        }
+        };
 
         // 발급 기준만 올리면 죽은 scope는 남으므로 복원된 live ID 목록으로 따로 정리한다.
         {
@@ -361,10 +370,9 @@ impl Core {
             }
         }
 
-        let active = engine.restored_active_workspace.take();
         CoreEvent::LayoutRestored {
             restored: true,
-            active_workspace: active,
+            presentation: Some(presentation),
         }
     }
 }

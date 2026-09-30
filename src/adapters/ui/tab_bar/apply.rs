@@ -206,7 +206,7 @@ fn apply_drag_end(
             let mirror_op = engine
                 .find_pane_by_id(pane_id)
                 .and_then(|p| p.tabs.get(state.navigation.tab_index(p)))
-                .and_then(|t| t.focused_surface_id())
+                .and_then(|t| state.navigation.surface_id(t))
                 .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
                     anchor_surface_id: sid,
                     from_index: drag.tab_index,

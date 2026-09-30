@@ -8,13 +8,52 @@ use super::{Intent, OpenPopupMode, UiIntent};
 use crate::state::AppState;
 
 /// 헤드리스에서는 팝업을 표시할 수 없어 요청을 무시한다.
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    intent: &DispatchedIntent,
+) {
     #[cfg(feature = "gui")]
     {
         let Intent::Ui(ui) = &intent.body else {
             return;
         };
         match ui {
+            UiIntent::SetCategoryCollapsed { id, collapsed } => {
+                if intent.origin.is_user() && engine.categories().iter().any(|c| c.id == *id) {
+                    if *collapsed {
+                        state.navigation.collapsed_categories.insert(*id);
+                    } else {
+                        state.navigation.collapsed_categories.remove(id);
+                    }
+                    engine.mark_layout_dirty();
+                }
+            }
+            UiIntent::ToggleCategoryCollapsed { id } => {
+                if intent.origin.is_user() && engine.categories().iter().any(|c| c.id == *id) {
+                    if !state.navigation.collapsed_categories.remove(id) {
+                        state.navigation.collapsed_categories.insert(*id);
+                    }
+                    engine.mark_layout_dirty();
+                }
+            }
+            UiIntent::ToggleAllCategoriesCollapsed => {
+                if intent.origin.is_user() {
+                    let collapse = engine
+                        .categories()
+                        .iter()
+                        .any(|c| !state.navigation.collapsed_categories.contains(&c.id));
+                    state.navigation.collapsed_categories.clear();
+                    if collapse {
+                        state
+                            .navigation
+                            .collapsed_categories
+                            .extend(engine.categories().iter().map(|c| c.id));
+                    }
+                    engine.mark_layout_dirty();
+                }
+            }
+
             UiIntent::OpenPopup { id, mode } => open(state, id, mode),
             UiIntent::ClosePopup { id } => state.popups.close(id),
             UiIntent::TogglePopup { id, mode } => {
@@ -30,7 +69,7 @@ pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
     }
     #[cfg(not(feature = "gui"))]
     {
-        let _ = (state, intent); // reason: 헤드리스에서는 팝업 요청을 처리하지 않는다.
+        let _ = (state, engine, intent); // reason: 헤드리스에서는 팝업 요청을 처리하지 않는다.
     }
 }
 

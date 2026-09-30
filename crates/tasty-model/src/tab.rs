@@ -3,19 +3,23 @@ use super::surface_trait::Surface;
 use super::terminal_surface::DeferredSpawn;
 use super::{SplitDirection, SurfaceId, TabId, TerminalSurface};
 
+#[derive(Default)]
+pub struct SurfaceTitle {
+    pub osc_title: Option<String>,
+    pub cwd_name: Option<String>,
+}
+
 pub struct Tab {
     pub id: TabId,
     /// Auto-generated name (e.g. "Shell"). Used as fallback when explicit_name is None.
     pub name: String,
     /// Explicitly set tab name. When Some, overrides everything else.
     pub explicit_name: Option<String>,
-    /// OSC 0/2로 받은 런타임 제목. 명시 이름보다 낮고 cached_display_name보다 우선하며 저장하지 않는다.
-    pub osc_title: Option<String>,
     /// surface의 이진트리. take_layout/put_layout 사이에만 None이다.
     /// 지연 생성은 트리 안 EmptySurface의 Deferred 값으로 표현한다.
     pub layout_opt: Option<SurfaceLayout>,
-    /// Cached display name. Updated on CwdChanged/explicit_name change, not every frame.
-    pub cached_display_name: Option<String>,
+    /// Per-surface observed titles. Selection is supplied by the presentation caller.
+    pub surface_titles: std::collections::HashMap<SurfaceId, SurfaceTitle>,
 }
 
 impl Tab {
@@ -38,23 +42,24 @@ impl Tab {
             id,
             name,
             explicit_name,
-            osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
-            cached_display_name: None,
+            surface_titles: Default::default(),
         }
     }
 
     /// Get the display name for this tab (cached, no syscalls).
     /// Priority: explicit_name > osc_title > cached CWD-derived name > fallback "name" field.
-    pub fn display_name(&self) -> String {
+    pub fn display_name(&self, surface_id: Option<SurfaceId>) -> String {
         if let Some(ref explicit) = self.explicit_name {
             return explicit.clone();
         }
-        if let Some(ref osc) = self.osc_title {
-            return osc.clone();
-        }
-        if let Some(ref cached) = self.cached_display_name {
-            return cached.clone();
+        if let Some(title) = surface_id.and_then(|id| self.surface_titles.get(&id)) {
+            if let Some(osc) = &title.osc_title {
+                return osc.clone();
+            }
+            if let Some(cwd) = &title.cwd_name {
+                return cwd.clone();
+            }
         }
         self.name.clone()
     }
@@ -63,28 +68,26 @@ impl Tab {
     /// Caller (CoreState::refresh_tab_display_name) lookups Terminal via
     /// `engine.runtime.terminals.get(focused_surface).and_then(|t| t.get_cwd())` first
     /// and passes the cwd in. Tab itself doesn't see the TerminalStore.
-    pub fn refresh_display_name(&mut self, cwd: Option<&std::path::Path>) {
-        if self.explicit_name.is_some() {
-            return;
-        }
+    pub fn refresh_display_name(&mut self, surface_id: SurfaceId, cwd: Option<&std::path::Path>) {
+        let title = self.surface_titles.entry(surface_id).or_default();
         if let Some(cwd) = cwd {
             if let Some(home) = dirs_home()
                 && cwd == home
             {
-                self.cached_display_name = Some("~".to_string());
+                title.cwd_name = Some("~".to_string());
                 return;
             }
             let path_str = cwd.to_string_lossy();
             if path_str == "/" {
-                self.cached_display_name = Some("/".to_string());
+                title.cwd_name = Some("/".to_string());
                 return;
             }
             if let Some(name) = cwd.file_name() {
-                self.cached_display_name = Some(name.to_string_lossy().to_string());
+                title.cwd_name = Some(name.to_string_lossy().to_string());
                 return;
             }
         }
-        self.cached_display_name = None;
+        title.cwd_name = None;
     }
 
     // ── Layout-based accessors ──
@@ -118,6 +121,8 @@ impl Tab {
 
     /// Put the layout back after structural mutation.
     pub fn put_layout(&mut self, layout: SurfaceLayout) {
+        let ids = layout.all_surface_ids();
+        self.surface_titles.retain(|id, _| ids.contains(id));
         self.layout_opt = Some(layout);
     }
 
@@ -126,7 +131,7 @@ impl Tab {
         self.layout_opt.as_ref()?.find_surface(surface_id)
     }
 
-    pub fn surface_mut(&mut self, surface_id: SurfaceId) -> Option<&mut (dyn Surface + '_)> {
+    pub fn surface_mut(&mut self, surface_id: SurfaceId) -> Option<&mut (dyn Surface + 'static)> {
         match self.layout_opt.as_mut()?.find_leaf_mut(surface_id) {
             Some(surface) => Some(surface.as_mut()),
             None => None,
@@ -325,7 +330,7 @@ impl Tab {
 
     /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
-        self.layout_opt = Some(SurfaceLayout::Leaf(surface));
+        self.put_layout(SurfaceLayout::Leaf(surface));
     }
 
     // ── Split operations ──
@@ -402,7 +407,7 @@ impl Tab {
         };
         serde_json::json!({
             "id": self.id,
-            "name": self.display_name(),
+            "name": self.display_name(selected_surface),
             "surface": layout_json,
         })
     }

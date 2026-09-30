@@ -14,19 +14,17 @@ fn close_surface_via_intent(
     surface_id: u32,
     origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
-    match crate::core::structural_exec::close_surface(
+    match crate::app::structural_exec::close_surface(
         core, window, engine, surface_id, false, origin,
     ) {
-        Ok(crate::core::structural_exec::Closed {
+        Ok(crate::app::structural_exec::Closed {
             id: surface_id,
             closed: true,
         }) => JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id })),
-        Ok(crate::core::structural_exec::Closed { id: surface_id, .. }) => {
-            JsonRpcResponse::success(
-                id,
-                json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
-            )
-        }
+        Ok(crate::app::structural_exec::Closed { id: surface_id, .. }) => JsonRpcResponse::success(
+            id,
+            json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
+        ),
         Err(f) => super::super::structural_failure_response(id, f),
     }
 }

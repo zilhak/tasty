@@ -19,5 +19,7 @@ pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreSta
     // intent-exempt: explicit PTY exit cascade, not a new user or agent command
     state.close_surface_by_id_no_snapshot(engine, surface, true);
     // 닫기 처리가 표시해 둔 구조 변경을 mirror에도 전달한다.
+    state.navigation.reconcile(&engine.workspaces);
+    engine.refresh_attach_presentation(&state.navigation);
     engine.push_structure_changes();
 }

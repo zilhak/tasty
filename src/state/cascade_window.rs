@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use super::AppState;
+use crate::app::structure_context::CascadeWindow;
 use crate::core::CoreState;
-use crate::core::cascade_window::CascadeWindow;
 #[cfg(feature = "gui")]
 use crate::core::host_event::PendingHostEvent;
 

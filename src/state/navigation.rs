@@ -60,6 +60,7 @@ impl Selection {
 /// One owner's navigation, independent from the shared structural model.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NavigationState {
+    pub(crate) collapsed_categories: std::collections::HashSet<u32>,
     workspace: Selection,
     panes: HashMap<WorkspaceId, u32>,
     tabs: HashMap<u32, Selection>,
@@ -67,6 +68,45 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
+    pub(crate) fn restore(
+        &mut self,
+        workspaces: &[Workspace],
+        restored: &crate::model::RestoredPresentation,
+    ) {
+        self.collapsed_categories = restored.selection.collapsed_categories.clone();
+        self.reconcile(workspaces);
+        if let Some(id) = restored.active_workspace {
+            self.select_workspace(workspaces, id);
+        }
+        self.apply_snapshot(workspaces, &restored.selection);
+    }
+
+    pub(crate) fn apply_snapshot(
+        &mut self,
+        workspaces: &[Workspace],
+        selection: &crate::model::StructurePresentationSnapshot,
+    ) {
+        self.reconcile(workspaces);
+        for ws in workspaces {
+            if let Some(id) = selection.panes.get(&ws.id) {
+                self.select_pane(ws, *id);
+            }
+            for id in ws.pane_layout().all_pane_ids() {
+                let Some(pane) = ws.pane_layout().find_pane(id) else {
+                    continue;
+                };
+                if let Some(id) = selection.tabs.get(&pane.id) {
+                    self.select_tab(pane, *id);
+                }
+                for tab in &pane.tabs {
+                    if let Some(id) = selection.surfaces.get(&tab.id) {
+                        self.select_surface(tab, *id);
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn workspace_id(&self, workspaces: &[Workspace]) -> Option<WorkspaceId> {
         self.workspace.resolve(&workspace_ids(workspaces))
     }
@@ -148,6 +188,22 @@ impl NavigationState {
         }
     }
 
+    pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
+        self.panes.entry(workspace.id).or_insert(pane);
+    }
+    pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.tabs.entry(pane.id) {
+            let mut selection = Selection::default();
+            if let Some(tab) = pane.tabs.get(index) {
+                selection.select(tab.id, tab_ids(pane));
+            }
+            entry.insert(selection);
+        }
+    }
+    pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
+        self.surfaces.entry(tab.id).or_insert(surface);
+    }
+
     /// Apply the current structural result. Surviving IDs are retained; missing
     /// selections alone are replaced. New children are initialized without
     /// selecting them in their already existing parent.
@@ -194,6 +250,9 @@ fn tab_ids(pane: &Pane) -> Vec<u32> {
 mod tests;
 
 impl crate::model::StructurePresentation for NavigationState {
+    fn category_collapsed(&self, category: u32) -> bool {
+        self.collapsed_categories.contains(&category)
+    }
     fn pane_id(&self, workspace: &Workspace) -> Option<u32> {
         self.pane_id(workspace)
     }

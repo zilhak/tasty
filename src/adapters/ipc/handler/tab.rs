@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::params::{self, p_try};
-use crate::core::structural_exec::{self, Closed, TabCreated};
+use crate::app::structural_exec::{self, Closed, TabCreated};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;

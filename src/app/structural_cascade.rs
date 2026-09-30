@@ -1,7 +1,7 @@
 //! 구조 변경 뒤 자원 정리·활성 위치 보정·빈 workspace 재생성·알림 등록을 처리한다.
 //! GUI dispatcher, IPC, 원격 forward가 공유한다. 알림 큐와 화면 계측은 GUI에서만 사용한다.
 
-use crate::core::cascade_window::CascadeWindow;
+use crate::app::structure_context::CascadeWindow;
 use crate::core::intent::CascadeLevel;
 use crate::core::origin::IntentOrigin;
 use crate::core::{Core, CoreState};

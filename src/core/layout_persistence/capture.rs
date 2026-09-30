@@ -20,6 +20,7 @@ type MemArc = std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>;
 
 /// 트리 전체가 같은 ID 집합과 저장 설정을 사용하도록 전달하는 공통 상태.
 struct CaptureCtx<'a> {
+    presentation: &'a dyn crate::model::StructurePresentation,
     registry: &'a SurfaceKindRegistry,
     capture_scrollback: bool,
     memory: &'a MemArc,
@@ -29,7 +30,11 @@ struct CaptureCtx<'a> {
 
 impl SavedLayout {
     /// 새 scrollback ID를 Terminal store에도 기록하므로 engine을 변경할 수 있다.
-    pub fn capture(engine: &mut CoreState, active_workspace: usize) -> Self {
+    pub fn capture(
+        engine: &mut CoreState,
+        active_workspace: usize,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Self {
         let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_surface_content;
         let memory = engine.memory.clone();
@@ -39,7 +44,7 @@ impl SavedLayout {
             .map(|c| SavedCategory {
                 id: c.id,
                 name: c.name.clone(),
-                collapsed: c.collapsed,
+                collapsed: presentation.category_collapsed(c.id),
             })
             .collect();
         let mut seen_refs = SeenRefs::new();
@@ -57,6 +62,7 @@ impl SavedLayout {
                 ..
             } = engine;
             let mut ctx = CaptureCtx {
+                presentation,
                 registry: registry.as_ref(),
                 capture_scrollback,
                 memory: &memory,
@@ -84,7 +90,7 @@ impl SavedWorkspace {
         let all_ids = ws.pane_layout().all_pane_ids();
         let focused_pane_index = all_ids
             .iter()
-            .position(|&id| id == ws.focused_pane)
+            .position(|&id| Some(id) == ctx.presentation.pane_id(ws))
             .unwrap_or(0);
         let attach_mapping = ws.attach_mapping.clone();
         let category = ws.category;
@@ -122,7 +128,7 @@ impl SavedPaneNode {
 
 impl SavedPane {
     fn capture(pane: &mut Pane, ctx: &mut CaptureCtx<'_>) -> Self {
-        let active_tab = pane.active_tab;
+        let active_tab = ctx.presentation.tab_index(pane);
         let tabs = pane
             .tabs
             .iter_mut()
@@ -136,11 +142,7 @@ impl SavedTab {
     fn capture(tab: &mut Tab, ctx: &mut CaptureCtx<'_>) -> Self {
         let name = tab.name.clone();
         let explicit_name = tab.explicit_name.clone();
-        let surface = if tab.is_split() {
-            SavedSurfaceLayout::capture_layout(tab.layout_mut(), ctx)
-        } else {
-            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(tab.surface_mut(), ctx))
-        };
+        let surface = SavedSurfaceLayout::capture_layout(tab.layout_mut(), ctx);
         Self {
             name,
             explicit_name,

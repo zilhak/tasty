@@ -34,7 +34,7 @@ pub fn draw_collapsed_sidebar(
         .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
 
-    let sections = build_category_sections(engine, active_ws);
+    let sections = build_category_sections(&state.navigation, engine, active_ws);
 
     let tools_hover = t("sidebar.tools_button");
 

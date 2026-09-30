@@ -61,36 +61,6 @@ impl Core {
         engine.mark_layout_dirty();
         Ok(Vec::new())
     }
-
-    /// 없는 카테고리면 바꾸지 않는다. 접힘은 레이아웃에 저장하므로 저장을 예약한다.
-    pub(super) fn apply_set_category_collapsed(
-        engine: &mut crate::core::CoreState,
-        id: crate::model::WorkspaceCategoryId,
-        collapsed: bool,
-    ) -> Vec<CoreEvent> {
-        engine.set_category_collapsed(id, collapsed);
-        engine.mark_layout_dirty();
-        Vec::new()
-    }
-
-    /// 적용 시점의 상태를 뒤집는다. 없는 카테고리면 바꾸지 않는다.
-    pub(super) fn apply_toggle_category_collapsed(
-        engine: &mut crate::core::CoreState,
-        id: crate::model::WorkspaceCategoryId,
-    ) -> Vec<CoreEvent> {
-        engine.toggle_category_collapsed(id);
-        engine.mark_layout_dirty();
-        Vec::new()
-    }
-
-    /// 하나라도 펼쳐져 있으면 모두 접고, 모두 접혀 있으면 모두 편다.
-    pub(super) fn apply_toggle_all_categories_collapsed(
-        engine: &mut crate::core::CoreState,
-    ) -> Vec<CoreEvent> {
-        engine.toggle_all_categories_collapsed();
-        engine.mark_layout_dirty();
-        Vec::new()
-    }
 }
 
 #[cfg(test)]

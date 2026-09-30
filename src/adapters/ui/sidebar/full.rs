@@ -37,6 +37,7 @@ pub(super) fn entry_view(
 
 /// 카테고리 표시가 켜져 있으면 저장된 순서로 그룹을 만든다. 행은 전역 워크스페이스 인덱스를 유지한다.
 pub(super) fn build_category_sections(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &crate::core::CoreState,
     active_ws: usize,
 ) -> Option<Vec<CategorySectionView>> {
@@ -61,7 +62,7 @@ pub(super) fn build_category_sections(
                     } else {
                         cat.name.clone()
                     },
-                    collapsed: cat.collapsed,
+                    collapsed: presentation.category_collapsed(cat.id),
                     entries,
                 }
             })
@@ -92,7 +93,7 @@ pub fn draw_full_sidebar(
         .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
 
-    let sections = build_category_sections(engine, active_ws);
+    let sections = build_category_sections(&state.navigation, engine, active_ws);
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,
@@ -252,7 +253,7 @@ pub fn draw_full_sidebar(
             SidebarFullAction::CategoryHeaderToggle(cat_id) => {
                 // 카테고리 접힘 상태는 레이아웃에 저장하며 펼친 화면과 레일이 공유한다.
                 state.dispatch_intent(
-                    crate::core::intent::DomainIntent::ToggleCategoryCollapsed { id: cat_id }
+                    crate::intent::UiIntent::ToggleCategoryCollapsed { id: cat_id }
                         .from_user_menu("sidebar_category_header"),
                 );
             }

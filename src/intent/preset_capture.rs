@@ -18,6 +18,7 @@ use tasty_presets::{
 
 /// 탭이 없는 pane이 있으면 None을 반환한다.
 pub fn capture_workspace_preset(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     ws: &Workspace,
     name: Option<String>,
@@ -27,7 +28,7 @@ pub fn capture_workspace_preset(
         name: name.unwrap_or_default(),
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
-        layout: capture_pane_node(engine, ws.pane_layout(), registry)?,
+        layout: capture_pane_node(presentation, engine, ws.pane_layout(), registry)?,
     })
 }
 
@@ -44,6 +45,7 @@ pub fn capture_tab_preset(
 }
 
 pub fn capture_pane_preset(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     pane: &Pane,
     name: Option<String>,
@@ -51,7 +53,7 @@ pub fn capture_pane_preset(
 ) -> Option<PanePreset> {
     Some(PanePreset {
         name: name.unwrap_or_default(),
-        pane: capture_pane(engine, pane, registry)?,
+        pane: capture_pane(presentation, engine, pane, registry)?,
     })
 }
 
@@ -63,13 +65,14 @@ fn to_preset_split(d: SplitDirection) -> PresetSplitDirection {
 }
 
 fn capture_pane_node(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     node: &PaneNode,
     registry: &SurfaceKindRegistry,
 ) -> Option<PresetPaneNode> {
     match node {
         PaneNode::Leaf(pane) => Some(PresetPaneNode::Leaf {
-            pane: capture_pane(engine, pane, registry)?,
+            pane: capture_pane(presentation, engine, pane, registry)?,
         }),
         PaneNode::Split {
             direction,
@@ -79,13 +82,14 @@ fn capture_pane_node(
         } => Some(PresetPaneNode::Split {
             direction: to_preset_split(*direction),
             ratio: *ratio,
-            first: Box::new(capture_pane_node(engine, first, registry)?),
-            second: Box::new(capture_pane_node(engine, second, registry)?),
+            first: Box::new(capture_pane_node(presentation, engine, first, registry)?),
+            second: Box::new(capture_pane_node(presentation, engine, second, registry)?),
         }),
     }
 }
 
 fn capture_pane(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     pane: &Pane,
     registry: &SurfaceKindRegistry,
@@ -97,7 +101,7 @@ fn capture_pane(
     if tabs.is_empty() {
         return None;
     }
-    let active_tab = pane.active_tab.min(tabs.len() - 1);
+    let active_tab = presentation.tab_index(pane).min(tabs.len() - 1);
     Some(PresetPane { tabs, active_tab })
 }
 

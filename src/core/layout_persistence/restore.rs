@@ -109,27 +109,32 @@ impl SavedLayout {
     /// workspace를 하나라도 복원하면 true다. 실패한 workspace는 생략한다.
     /// false여도 이미 발급한 ID·생성한 터미널·메타데이터 등의 변경을 되돌리지는 않는다.
     #[cfg(any(feature = "gui", test))]
-    pub fn restore(self, engine: &mut CoreState) -> bool {
+    pub fn restore(self, engine: &mut CoreState) -> Option<crate::model::RestoredPresentation> {
         if self.workspaces.is_empty() {
-            return false;
+            return None;
         }
 
+        let mut presentation = crate::model::RestoredPresentation::default();
         let active_idx = self.active_workspace.min(self.workspaces.len() - 1);
         // categories가 없던 저장 형식도 정상 분류에 넣도록 마지막에 정규화한다.
         let categories: Vec<crate::model::WorkspaceCategory> = self
             .categories
             .into_iter()
-            .map(|c| crate::model::WorkspaceCategory {
-                id: c.id,
-                name: c.name,
-                collapsed: c.collapsed,
+            .map(|c| {
+                if c.collapsed {
+                    presentation.selection.collapsed_categories.insert(c.id);
+                }
+                crate::model::WorkspaceCategory {
+                    id: c.id,
+                    name: c.name,
+                }
             })
             .collect();
         let mut workspaces = Vec::new();
         for (i, saved_ws) in self.workspaces.into_iter().enumerate() {
             let name = saved_ws.name.clone();
             let is_active = i == active_idx;
-            match saved_ws.restore(engine, is_active) {
+            match saved_ws.restore(engine, is_active, &mut presentation.selection) {
                 Some(ws) => workspaces.push(ws),
                 None => {
                     tracing::warn!("Failed to restore workspace '{}', skipping", name);
@@ -138,23 +143,28 @@ impl SavedLayout {
         }
 
         if workspaces.is_empty() {
-            return false;
+            return None;
         }
 
         let active = self.active_workspace.min(workspaces.len() - 1);
         engine.workspaces = workspaces;
         engine.categories = categories;
         engine.ensure_normal_category();
-        engine.restored_active_workspace = Some(active);
-        true
+        presentation.active_workspace = engine.workspaces.get(active).map(|ws| ws.id);
+        Some(presentation)
     }
 }
 
 impl SavedWorkspace {
     #[cfg(any(feature = "gui", test))]
-    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Workspace> {
+    fn restore(
+        self,
+        engine: &mut CoreState,
+        is_active: bool,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Option<Workspace> {
         let ws_id = engine.next_ids.next_workspace();
-        let pane_layout = self.pane_layout.restore(engine, is_active)?;
+        let pane_layout = self.pane_layout.restore(engine, is_active, presentation)?;
 
         let all_ids = pane_layout.all_pane_ids();
         let focused_pane = all_ids
@@ -163,8 +173,8 @@ impl SavedWorkspace {
             .or_else(|| all_ids.first().copied())
             .unwrap_or(0);
 
-        let mut ws =
-            Workspace::from_restored(ws_id, self.name, self.subtitle, pane_layout, focused_pane);
+        let mut ws = Workspace::from_restored(ws_id, self.name, self.subtitle, pane_layout);
+        presentation.panes.insert(ws_id, focused_pane);
         ws.set_attach_mapping(self.attach_mapping);
         // 없는 category ID는 전체 복원 뒤 normal로 바꾼다.
         ws.set_category(self.category);
@@ -174,10 +184,15 @@ impl SavedWorkspace {
 
 impl SavedPaneNode {
     #[cfg(any(feature = "gui", test))]
-    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<PaneNode> {
+    fn restore(
+        self,
+        engine: &mut CoreState,
+        is_active: bool,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Option<PaneNode> {
         match self {
             SavedPaneNode::Leaf(saved_pane) => {
-                let pane = saved_pane.restore(engine, is_active)?;
+                let pane = saved_pane.restore(engine, is_active, presentation)?;
                 Some(PaneNode::Leaf(pane))
             }
             SavedPaneNode::Split {
@@ -186,8 +201,8 @@ impl SavedPaneNode {
                 first,
                 second,
             } => {
-                let first = first.restore(engine, is_active)?;
-                let second = second.restore(engine, is_active)?;
+                let first = first.restore(engine, is_active, presentation)?;
+                let second = second.restore(engine, is_active, presentation)?;
                 Some(PaneNode::Split {
                     direction: direction.into(),
                     ratio,
@@ -201,7 +216,12 @@ impl SavedPaneNode {
 
 impl SavedPane {
     #[cfg(any(feature = "gui", test))]
-    fn restore(self, engine: &mut CoreState, is_active_workspace: bool) -> Option<Pane> {
+    fn restore(
+        self,
+        engine: &mut CoreState,
+        is_active_workspace: bool,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
         let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
         let tab_count = self.tabs.len();
@@ -225,11 +245,8 @@ impl SavedPane {
             return None;
         }
         let active_tab = saved_active_tab.min(tabs.len() - 1);
-        Some(Pane {
-            id: pane_id,
-            tabs,
-            active_tab,
-        })
+        presentation.tabs.insert(pane_id, tabs[active_tab].id);
+        Some(Pane { id: pane_id, tabs })
     }
 }
 
@@ -238,15 +255,12 @@ impl SavedTab {
     fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Tab> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.surface.restore(engine, is_active)?;
-        let focused_surface = layout.first_surface_id().unwrap_or(0);
         Some(Tab {
             id: tab_id,
             name: self.name,
             explicit_name: self.explicit_name,
             layout_opt: Some(layout),
-            focused_surface,
-            osc_title: None,
-            cached_display_name: None,
+            surface_titles: Default::default(),
         })
     }
 }

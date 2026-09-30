@@ -12,6 +12,17 @@ use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, enc
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
 impl CoreState {
+    pub(crate) fn refresh_attach_presentation(
+        &mut self,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) {
+        self.attach.presentation = crate::model::StructurePresentationSnapshot::capture(
+            &self.workspaces,
+            &self.categories,
+            presentation,
+        );
+    }
+
     /// surface를 점유하고 화면 snapshot과 이후 출력을 보낸다. 거절하면 attach_error와 Detach를 보낸다.
     /// hub는 연결을 등록한 허브여야 한다. forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
     pub fn attach_surface_for_stream(
@@ -566,7 +577,7 @@ impl CoreState {
                 "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
             }));
         }
-        (ws.to_attach_tree_json(), surfaces)
+        (ws.to_attach_tree_json(&self.attach.presentation), surfaces)
     }
 }
 
@@ -601,14 +612,16 @@ fn forward_intent_origin(
 /// origin이 User인 close만 복원 스택에 남기고 Agent의 close는 남기지 않는다.
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
-    state: &mut dyn crate::core::cascade_window::CascadeWindow,
+    state: &mut dyn crate::app::structure_context::CascadeWindow,
     engine: &mut CoreState,
     op: &StructuralOp,
     origin: tasty_ipc::stream::ForwardOrigin,
 ) -> Result<Option<ForwardedDelta>, String> {
-    use crate::core::structural_exec::{self as exec, SplitLevel, SplitRequest};
+    use crate::app::structural_exec::{self as exec, SplitLevel, SplitRequest};
     use serde_json::json;
     use std::collections::HashSet;
+
+    engine.refresh_attach_presentation(state.presentation());
 
     // close가 anchor를 지워도 변경 후 workspace를 찾을 수 있도록 ID를 먼저 보관한다.
     let ws_id = engine
@@ -730,7 +743,9 @@ pub(crate) fn execute_forwarded_structural_op(
                     let idx = tabs.iter().position(|t| t.id == tab_id)?;
                     Some((pane_id, idx))
                 })
-                .and_then(|(pane_id, idx)| engine.capture_closed_tab(pane_id, idx))
+                .and_then(|(pane_id, idx)| {
+                    engine.capture_closed_tab(pane_id, idx, state.presentation())
+                })
             {
                 engine.push_closed_item(item);
             }
@@ -743,7 +758,7 @@ pub(crate) fn execute_forwarded_structural_op(
             // 닫기 전에 캡처해야 pane의 split context가 남는다.
             // 유일한 pane은 닫히지 않으며 capture_closed_pane도 None을 돌려준다.
             if let Some(item) = restorable
-                .then(|| engine.capture_closed_pane(pane_id))
+                .then(|| engine.capture_closed_pane(pane_id, state.presentation()))
                 .flatten()
             {
                 engine.push_closed_item(item);
@@ -884,12 +899,12 @@ pub(crate) fn execute_forwarded_structural_op(
                         return Err("Core::apply returned no MoveSurfaceApplied event".to_string());
                     }
                     match ev.and_then(|ev| {
-                        crate::core::structural_cascade::SurfaceCloseCascade::from_move_surface_applied(
+                        crate::app::structural_cascade::SurfaceCloseCascade::from_move_surface_applied(
                             ev, false,
                         )
                     }) {
                         Some(c) => {
-                            crate::core::structural_cascade::cascade_surface_closed(
+                            crate::app::structural_cascade::cascade_surface_closed(
                                 core, state, engine, c,
                             );
                             Ok(())
@@ -946,9 +961,9 @@ pub(crate) fn execute_forwarded_structural_op(
 
 /// 성공 값은 버리고 실패 문구는 그대로 전달한다. 다른 mirror로 다시 forward한 결과도 성공으로 취급한다.
 fn forward_result<T>(
-    result: Result<T, crate::core::structural_exec::StructuralFailure>,
+    result: Result<T, crate::app::structural_exec::StructuralFailure>,
 ) -> Result<(), String> {
-    use crate::core::structural_exec::StructuralFailure;
+    use crate::app::structural_exec::StructuralFailure;
     match result {
         Ok(_) => Ok(()),
         Err(StructuralFailure::Rejected(msg)) => Err(msg),
@@ -3236,7 +3251,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let (a, _b, _ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
         let pane_id = engine.find_pane_for_surface(a).expect("pane");
-        crate::core::structural_exec::create_tab(
+        crate::app::structural_exec::create_tab(
             &mut core,
             &mut state,
             &mut engine,

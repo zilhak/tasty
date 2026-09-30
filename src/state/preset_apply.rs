@@ -80,7 +80,7 @@ impl AppState {
         let pane_node = self.build_pane_node(engine, &preset.layout)?;
 
         let all_pane_ids = pane_node.all_pane_ids();
-        let focused = *all_pane_ids.first().ok_or(ApplyError::Empty)?;
+        all_pane_ids.first().ok_or(ApplyError::Empty)?;
 
         let name = if preset.name.is_empty() {
             format!("Workspace {}", engine.workspaces.len() + 1)
@@ -88,8 +88,7 @@ impl AppState {
             preset.name.clone()
         };
 
-        let mut ws =
-            Workspace::from_restored(ws_id, name, preset.subtitle.clone(), pane_node, focused);
+        let mut ws = Workspace::from_restored(ws_id, name, preset.subtitle.clone(), pane_node);
         ws.description = preset.description.clone();
         engine.workspaces.push(ws);
         let idx = engine.workspaces.len() - 1;
@@ -126,9 +125,8 @@ impl AppState {
             .find_pane_mut(pane_id)
             .ok_or(ApplyError::PaneNotFound(pane_id))?;
         pane.tabs.push(tab);
-        let new_idx = pane.tabs.len() - 1;
         if opts.focus {
-            pane.active_tab = new_idx;
+            self.navigation.select_tab(pane, tab_id);
         }
 
         engine.mark_layout_dirty();
@@ -181,7 +179,7 @@ impl AppState {
         }
 
         if opts.focus {
-            ws.focused_pane = new_pane_id;
+            self.navigation.select_pane(ws, new_pane_id);
         }
 
         engine.mark_layout_dirty();
@@ -260,17 +258,15 @@ impl AppState {
             tabs.push(self.build_tab(engine, preset_tab)?);
         }
         let active_tab = preset.active_tab.min(tabs.len() - 1);
-        Ok(Pane {
-            id: pane_id,
-            tabs,
-            active_tab,
-        })
+        let pane = Pane { id: pane_id, tabs };
+        self.navigation.goto_tab(&pane, active_tab);
+        Ok(pane)
     }
 
     fn build_tab(&mut self, engine: &mut CoreState, preset: &PresetTab) -> Result<Tab, ApplyError> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.build_surface_layout(engine, &preset.layout)?;
-        let focused_surface = layout.first_surface_id().ok_or(ApplyError::Empty)?;
+        layout.first_surface_id().ok_or(ApplyError::Empty)?;
 
         let auto_name = preset_default_tab_name(engine, &preset.layout);
         let name = preset
@@ -289,9 +285,7 @@ impl AppState {
                 name,
                 explicit_name: preset.explicit_name.clone(),
                 layout_opt: Some(split),
-                focused_surface,
-                osc_title: None,
-                cached_display_name: None,
+                surface_titles: Default::default(),
             }),
         }
     }

@@ -16,6 +16,7 @@ impl App {
                 &mut self.core,
                 engine,
                 state.active_workspace_index(&engine),
+                &state.navigation,
                 force,
                 label,
                 "main",
@@ -26,6 +27,7 @@ impl App {
                 &mut self.core,
                 engine,
                 state.active_workspace_index(&engine),
+                &state.navigation,
                 force,
                 label,
                 "parked",
@@ -41,10 +43,19 @@ impl App {
         core: &mut crate::core::Core,
         engine: &mut crate::core::CoreState,
         active_workspace: usize,
+        presentation: &dyn crate::model::StructurePresentation,
     ) {
         match retire_action(engine.settings.general.restore_layout) {
             RetireAction::Flush => {
-                Self::flush_one_engine(core, engine, active_workspace, true, "retire", "main");
+                Self::flush_one_engine(
+                    core,
+                    engine,
+                    active_workspace,
+                    presentation,
+                    true,
+                    "retire",
+                    "main",
+                );
             }
             RetireAction::Delete => {
                 if let Some(slot) = engine.layout_slot {
@@ -74,11 +85,17 @@ impl App {
         core: &mut crate::core::Core,
         engine: &mut crate::core::CoreState,
         active_workspace: usize,
+        presentation: &dyn crate::model::StructurePresentation,
         force: bool,
         label: &str,
         kind: &str,
     ) {
         let intent = DomainIntent::SaveLayoutNow {
+            presentation: Box::new(crate::model::StructurePresentationSnapshot::capture(
+                &engine.workspaces,
+                &engine.categories,
+                presentation,
+            )),
             active_workspace,
             force,
         };

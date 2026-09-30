@@ -6,13 +6,13 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::core::cascade_window::CascadeWindow;
-use crate::core::intent::{CoreEvent, DomainIntent};
-use crate::core::origin::IntentOrigin;
-use crate::core::structural_cascade::{
+use crate::app::structural_cascade::{
     PaneSplitCascade, SurfaceCloseCascade, cascade_pane_closed_full, cascade_pane_split,
     cascade_surface_closed, cascade_surface_split, cascade_tab_closed_full, cascade_tab_created,
 };
+use crate::app::structure_context::CascadeWindow;
+use crate::core::intent::{CoreEvent, DomainIntent};
+use crate::core::origin::IntentOrigin;
 use crate::core::{Core, CoreState};
 use crate::model::SplitDirection;
 
@@ -163,6 +163,7 @@ pub(crate) fn split(
                 kind: kind.to_string(),
                 surface_params: params.clone(),
             };
+            engine.refresh_attach_presentation(state.presentation());
             let events = apply(core, engine, intent, origin)?;
             let Some(CoreEvent::PaneSplit {
                 workspace_index,
@@ -214,6 +215,7 @@ pub(crate) fn split(
                 kind: kind.to_string(),
                 surface_params: params.clone(),
             };
+            engine.refresh_attach_presentation(state.presentation());
             let events = apply(core, engine, intent, origin)?;
             let Some(CoreEvent::SurfaceSplit {
                 workspace_index,
@@ -339,6 +341,7 @@ pub(crate) fn create_tab(
         surface_params: params,
         activate,
     };
+    engine.refresh_attach_presentation(state.presentation());
     let events = apply(core, engine, intent, origin)?;
 
     let Some(CoreEvent::TabCreated {
@@ -486,8 +489,15 @@ pub(crate) fn close_surface(
 ) -> Result<Closed, StructuralFailure> {
     let intent = DomainIntent::CloseSurface {
         surface_id,
-        save_snapshot,
+        presentation: save_snapshot.then(|| {
+            Box::new(crate::model::StructurePresentationSnapshot::capture(
+                &engine.workspaces,
+                &engine.categories,
+                state.presentation(),
+            ))
+        }),
     };
+    engine.refresh_attach_presentation(state.presentation());
     let events = apply(core, engine, intent, origin)?;
     let Some(event @ CoreEvent::SurfaceClosed { surface_id, .. }) = events.into_iter().next()
     else {

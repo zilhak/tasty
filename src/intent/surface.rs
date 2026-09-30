@@ -58,7 +58,7 @@ fn split(
             ..
         } = ev
         {
-            crate::core::structural_cascade::cascade_surface_split(
+            crate::app::structural_cascade::cascade_surface_split(
                 state,
                 engine,
                 origin,

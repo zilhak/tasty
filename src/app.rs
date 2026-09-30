@@ -54,6 +54,9 @@ pub(crate) mod shutdown_cascade;
 pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
+pub(crate) mod structural_cascade;
+pub(crate) mod structural_exec;
+pub(crate) mod structure_context;
 #[cfg(feature = "gui")]
 pub(crate) mod sweeps;
 pub(crate) mod timer_report;

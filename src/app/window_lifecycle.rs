@@ -216,12 +216,12 @@ impl App {
         };
 
         // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
-        let bootstrapped = match self.engines.pending_mut() {
+        let _bootstrapped = match self.engines.pending_mut() {
             Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, engine),
             None => None,
         };
 
-        Ok(self.assemble_app_state(bootstrapped.or(restored_idx_after_layout)))
+        Ok(self.assemble_app_state(restored_idx_after_layout))
     }
 
     /// 없는 engine·매니저만 초기화하며 새 engine은 기존 engine의 공용 상태를 공유한다.
@@ -320,7 +320,9 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn boot_apply_pending_layout_restore(&mut self) -> Option<usize> {
+    pub(super) fn boot_apply_pending_layout_restore(
+        &mut self,
+    ) -> Option<crate::model::RestoredPresentation> {
         let t5 = std::time::Instant::now();
         let engine = self
             .engines
@@ -333,11 +335,11 @@ impl App {
             Ok(events) => events.into_iter().find_map(|e| {
                 if let crate::core::intent::CoreEvent::LayoutRestored {
                     restored: true,
-                    active_workspace,
+                    presentation,
                 } = e
                 {
                     tracing::info!("Layout restored from slot file (deferred)");
-                    active_workspace
+                    presentation
                 } else {
                     None
                 }
@@ -357,13 +359,15 @@ impl App {
 
     pub(super) fn assemble_app_state(
         &mut self,
-        restored_idx_after_layout: Option<usize>,
+        restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
     ) -> crate::state::AppState {
         let preset_store = self.core.preset_store.clone();
         let memory = self.core.memory_arc();
         let mut state = crate::state::AppState::new(self.core_state_mut(), preset_store, memory);
         if let Some(restored_idx) = restored_idx_after_layout {
-            state.switch_workspace(self.core_state_mut(), restored_idx);
+            state
+                .navigation
+                .restore(&self.core_state().workspaces, &restored_idx);
         }
         if let Some(mgr) = self.plugin_manager.as_ref() {
             state
@@ -490,7 +494,12 @@ impl App {
             return;
         };
         let active_workspace = main.state.active_workspace_index(&session.core_state);
-        Self::retire_main_engine(&mut self.core, &mut session.core_state, active_workspace);
+        Self::retire_main_engine(
+            &mut self.core,
+            &mut session.core_state,
+            active_workspace,
+            &main.state.navigation,
+        );
         drop(main);
         drop(session);
     }

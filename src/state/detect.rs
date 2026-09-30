@@ -68,8 +68,9 @@ impl AppState {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                     for tab in &pane.tabs {
-                        let kind = tab
-                            .focused_surface_id()
+                        let kind = self
+                            .navigation
+                            .surface_id(tab)
                             .and_then(|sid| engine.find_surface_by_id(sid))
                             .map(|s| s.kind().to_string())
                             .unwrap_or_else(|| "unknown".to_string());

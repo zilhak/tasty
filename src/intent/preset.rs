@@ -456,6 +456,7 @@ pub fn rename_inner(
 /// kind에 맞는 워크스페이스·탭·pane ID로 프리셋을 캡처한다.
 /// IPC preset.capture가 사용하며, UI는 캡처한 데이터를 SavePreset에 담는다.
 pub fn capture_inner(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &crate::core::CoreState,
     kind: PresetKind,
     source_id: u32,
@@ -474,7 +475,7 @@ pub fn capture_inner(
             } else {
                 ws.name.clone()
             };
-            let preset = capture_workspace_preset(engine, ws, None, &registry)
+            let preset = capture_workspace_preset(presentation, engine, ws, None, &registry)
                 .ok_or_else(|| "workspace capture failed".to_string())?;
             Ok((ClonedPreset::Workspace(preset), base))
         }
@@ -507,7 +508,7 @@ pub fn capture_inner(
         PresetKind::Pane => {
             for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    let preset = capture_pane_preset(engine, pane, None, &registry)
+                    let preset = capture_pane_preset(presentation, engine, pane, None, &registry)
                         .ok_or_else(|| "pane capture failed".to_string())?;
                     return Ok((ClonedPreset::Pane(preset), "pane".to_string()));
                 }

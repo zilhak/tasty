@@ -22,21 +22,10 @@ impl Core {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     for tab in &mut pane.tabs {
                         if tab.all_surface_ids().contains(&surface_id) {
-                            if tab.explicit_name.is_some() {
-                                return CoreEvent::TabNameUpdated {
-                                    skipped_explicit: true,
-                                };
-                            }
-                            // 선택되지 않은 surface의 출력 때문에 탭 제목이 번갈아 바뀌지 않게 한다.
-                            if tab.focused_surface != surface_id {
-                                return CoreEvent::TabNameUpdated {
-                                    skipped_explicit: false,
-                                };
-                            }
-                            tab.osc_title = Some(name);
-                            return CoreEvent::TabNameUpdated {
-                                skipped_explicit: false,
-                            };
+                            let skipped_explicit = tab.explicit_name.is_some();
+                            tab.surface_titles.entry(surface_id).or_default().osc_title =
+                                Some(name);
+                            return CoreEvent::TabNameUpdated { skipped_explicit };
                         }
                     }
                 }
@@ -118,6 +107,9 @@ impl Core {
             }
         }
 
+        if activate && !is_terminal {
+            engine.attach.presentation.tabs.insert(pane_id, tab_id);
+        }
         if is_terminal {
             engine.send_fast_init(surface_id);
         }
@@ -148,21 +140,12 @@ impl Core {
         tab_id: u32,
         name: Option<String>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        let clear = name.is_none();
-        let focused = engine
+        let tab = engine
             .find_pane_for_tab(tab_id)
             .and_then(|pane_id| engine.find_pane_by_id_mut(pane_id))
             .and_then(|pane| pane.tabs.iter_mut().find(|t| t.id == tab_id))
-            .map(|tab| {
-                tab.explicit_name = name;
-                tab.focused_surface
-            });
-        let Some(focused) = focused else {
-            anyhow::bail!("Tab id {tab_id} not found");
-        };
-        if clear {
-            engine.refresh_tab_osc_title(focused);
-        }
+            .ok_or_else(|| anyhow::anyhow!("Tab id {tab_id} not found"))?;
+        tab.explicit_name = name;
         engine.mark_layout_dirty();
         Ok(Vec::new())
     }

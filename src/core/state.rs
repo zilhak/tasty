@@ -386,7 +386,6 @@ pub struct CoreState {
 
     pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
     /// 복원한 활성 workspace 인덱스. 창 상태를 만들 때 한 번 소비한다.
-    pub(crate) restored_active_workspace: Option<usize>,
     /// deferred Terminal 생성 뒤 적용할 scrollback. 읽지 못했거나 비어 있으면 등록하지 않는다.
     pub(crate) pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// plugin 준비 대기 후 적용할 레이아웃. 대기와 제한 시간 처리는 App이 맡는다.
@@ -619,7 +618,6 @@ impl CoreState {
             #[cfg(feature = "gui")]
             identify_worker: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
-            restored_active_workspace: None,
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             layout_slot,
@@ -698,18 +696,26 @@ impl CoreState {
         &self,
         pane_id: u32,
         tab_index: usize,
+        presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<crate::model::ClosedItem> {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
         let terminals = &self.runtime.terminals;
-        crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
-            terminals.closed_capture(id)
-        })
+        crate::model::closed_item::ClosedTab::from_tab(
+            tab,
+            &mut snap_fn,
+            &|id| terminals.closed_capture(id),
+            presentation,
+        )
         .map(crate::model::ClosedItem::Tab)
     }
 
     /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
-    pub(crate) fn capture_closed_pane(&self, pane_id: u32) -> Option<crate::model::ClosedItem> {
+    pub(crate) fn capture_closed_pane(
+        &self,
+        pane_id: u32,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<crate::model::ClosedItem> {
         let ws = self
             .workspaces
             .get(self.find_workspace_index_for_pane(pane_id)?)?;
@@ -729,6 +735,7 @@ impl CoreState {
             was_first,
             &mut snap_fn,
             &|id| terminals.closed_capture(id),
+            presentation,
         ))
     }
 
@@ -905,8 +912,8 @@ impl CoreState {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     for tab in &mut pane.tabs {
                         if tab.contains_surface(surface_id) {
-                            let cwd = terminals.get(tab.focused_surface).and_then(|t| t.get_cwd());
-                            tab.refresh_display_name(cwd.as_deref());
+                            let cwd = terminals.get(surface_id).and_then(|t| t.get_cwd());
+                            tab.refresh_display_name(surface_id, cwd.as_deref());
                             return;
                         }
                     }
@@ -926,12 +933,8 @@ impl CoreState {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     for tab in &mut pane.tabs {
                         if tab.contains_surface(surface_id) {
-                            if tab.explicit_name.is_some() {
-                                return;
-                            }
-                            tab.osc_title = terminals
-                                .get(tab.focused_surface)
-                                .and_then(|t| t.current_title());
+                            tab.surface_titles.entry(surface_id).or_default().osc_title =
+                                terminals.get(surface_id).and_then(|t| t.current_title());
                             return;
                         }
                     }

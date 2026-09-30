@@ -160,7 +160,7 @@ impl App {
         use crate::intent::Intent;
         match &intent.body {
             Intent::Ui(_) => {
-                crate::intent::popup::handle(state, intent);
+                crate::intent::popup::handle(state, engine, intent);
             }
             Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);

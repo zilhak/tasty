@@ -238,7 +238,7 @@ impl Pane {
                     .unwrap_or(serde_json::Value::Null);
                 serde_json::json!({
                     "id": tab.id,
-                    "name": tab.display_name(),
+                    "name": tab.display_name(presentation.surface_id(tab)),
                     "active": i == presentation.tab_index(self),
                     "focused_surface": presentation.surface_id(tab).unwrap_or(0),
                     "layout": layout,

@@ -188,6 +188,14 @@ pub enum Intent {
 )]
 #[derive(Debug, Clone)]
 pub enum UiIntent {
+    SetCategoryCollapsed {
+        id: u32,
+        collapsed: bool,
+    },
+    ToggleCategoryCollapsed {
+        id: u32,
+    },
+    ToggleAllCategoriesCollapsed,
     OpenPopup {
         id: PopupId,
         mode: OpenPopupMode,

@@ -77,7 +77,7 @@ impl App {
     fn collect_categories(&mut self, id: serde_json::Value) -> JsonRpcResponse {
         let rows = self.merge_fields(
             &id,
-            |_c, _s, e, id| workspace_category::handle_list(e, id),
+            |_c, s, e, id| workspace_category::handle_list(&s.navigation, e, id),
             &[],
         );
         let rows = one(rows);

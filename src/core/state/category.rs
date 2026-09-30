@@ -142,31 +142,6 @@ impl CoreState {
         Ok(())
     }
 
-    /// normal도 접을 수 있다. 변경 뒤 mark_layout_dirty는 호출자 몫이다.
-    pub fn set_category_collapsed(
-        &mut self,
-        id: crate::model::WorkspaceCategoryId,
-        collapsed: bool,
-    ) {
-        if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
-            cat.collapsed = collapsed;
-        }
-    }
-
-    pub fn toggle_category_collapsed(&mut self, id: crate::model::WorkspaceCategoryId) {
-        if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
-            cat.collapsed = !cat.collapsed;
-        }
-    }
-
-    /// 하나라도 펼쳐져 있으면 모두 접고, 모두 접혀 있으면 모두 편다. 저장 예약은 호출자가 맡는다.
-    pub fn toggle_all_categories_collapsed(&mut self) {
-        let target = self.categories.iter().any(|c| !c.collapsed);
-        for cat in &mut self.categories {
-            cat.collapsed = target;
-        }
-    }
-
     /// 존재하는 숫자 ID를 먼저 찾고, 아니면 ASCII 대소문자를 무시해 이름을 찾는다.
     pub fn resolve_category(&self, token: &str) -> Option<crate::model::WorkspaceCategoryId> {
         let t = token.trim();

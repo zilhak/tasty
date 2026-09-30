@@ -144,15 +144,13 @@ impl AppState {
         let collapsed = engine
             .categories()
             .get(section_idx)
-            .is_some_and(|c| c.collapsed);
+            .is_some_and(|c| self.navigation.collapsed_categories.contains(&c.id));
         if collapsed {
             self.dispatch_intent(
-                crate::intent::Intent::Domain(
-                    crate::core::intent::DomainIntent::SetCategoryCollapsed {
-                        id: cat,
-                        collapsed: false,
-                    },
-                )
+                crate::intent::Intent::Ui(crate::intent::UiIntent::SetCategoryCollapsed {
+                    id: cat,
+                    collapsed: false,
+                })
                 .from_user_shortcut("switch_to_category"),
             );
         }
@@ -371,7 +369,7 @@ impl AppState {
         let t_close = Instant::now();
         if save_snapshot {
             let t = Instant::now();
-            let snapshot = super::AppState::capture_workspace_snapshot(engine, ws_idx);
+            let snapshot = self.capture_workspace_snapshot(engine, ws_idx);
             close_trace::log_snapshot(t, &snapshot, path);
             let t = Instant::now();
             engine.push_closed_item(snapshot).log(t.elapsed(), path);
@@ -432,7 +430,7 @@ mod workspace_pointer_tests {
     /// 호출 전체를 감싼 GUI 전용 블록까지 판별하지는 못한다.
     #[test]
     fn both_close_cascades_route_through_the_pointer_helper() {
-        let src = include_str!("../core/structural_cascade.rs");
+        let src = include_str!("../app/structural_cascade.rs");
         let lines: Vec<&str> = src.lines().collect();
         let calls: Vec<usize> = lines
             .iter()

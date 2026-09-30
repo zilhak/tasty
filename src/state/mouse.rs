@@ -192,7 +192,8 @@ impl AppState {
             height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
         };
 
-        let tab = match pane.active_tab_mut() {
+        let selected = self.navigation.tab_index(pane);
+        let tab = match pane.tabs.get_mut(selected) {
             Some(t) => t,
             None => return false,
         };

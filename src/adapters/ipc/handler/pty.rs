@@ -303,7 +303,7 @@ pub(crate) fn handle_attach_surface(
     };
 
     // 생성 이벤트와 polling 기준 상태를 함께 갱신한다.
-    crate::core::structural_cascade::cascade_tab_created(
+    crate::app::structural_cascade::cascade_tab_created(
         window, engine, pane_id, tab_id, surface_id,
     );
 

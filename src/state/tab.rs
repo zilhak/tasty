@@ -243,7 +243,7 @@ impl AppState {
             .active_workspace(engine)
             .pane_layout()
             .find_pane(pane_id)
-            .map(|pane| AppState::pane_sibling_tab_focus_candidates(pane, tab_index))
+            .map(|pane| self.pane_sibling_tab_focus_candidates(pane, tab_index))
             .unwrap_or_default();
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
@@ -282,7 +282,7 @@ impl AppState {
             closed,
             cleanup_targets,
             ..
-        } = crate::core::Core::close_tab_recording(engine, tab_id, true)
+        } = crate::core::Core::close_tab_recording(engine, tab_id, Some(&self.navigation))
         else {
             return false;
         };
@@ -307,7 +307,7 @@ impl AppState {
         let candidates = self
             .focused_pane(engine)
             .map(|pane| {
-                AppState::pane_sibling_tab_focus_candidates(pane, self.navigation.tab_index(pane))
+                self.pane_sibling_tab_focus_candidates(pane, self.navigation.tab_index(pane))
             })
             .unwrap_or_default();
         if self.forward_mirror_structural(engine, mirror_op, candidates) {

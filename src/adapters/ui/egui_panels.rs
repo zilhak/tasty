@@ -272,7 +272,15 @@ pub fn draw_egui_panels(
 
     let active_ws = state.active_workspace_index(&engine);
     let tab_bar_h = state.tab_bar_height;
-    draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
+    draw_occupied_overlays(
+        ctx,
+        &state.navigation,
+        active_ws,
+        tab_bar_h,
+        engine,
+        pane_rects,
+        scale_factor,
+    );
 
     state.explorer_views = explorer_views;
     state.dag_graph_views = dag_views;
@@ -577,6 +585,7 @@ where
 /// 포커스와 관계없이 표시하며 강제 해제 버튼은 hard 점유에만 제공한다.
 fn draw_occupied_overlays(
     ctx: &egui::Context,
+    presentation: &dyn crate::model::StructurePresentation,
     active_ws: usize,
     tab_bar_h: tasty_type_geometry::length::PhysicalPx,
     engine: &mut crate::core::CoreState,
@@ -603,7 +612,7 @@ fn draw_occupied_overlays(
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                 continue;
             };
-            let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) else {
+            let Some(tab) = pane.tabs.get(presentation.tab_index(pane)) else {
                 continue;
             };
             let content_rect = PhysicalRect {

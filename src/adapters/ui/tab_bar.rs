@@ -282,6 +282,7 @@ pub fn draw_pane_tab_bars(
     let th = theme::theme();
     let focused_pane_id = state.focused_pane_id(engine);
     let move_mark = crate::adapters::ui::move_source::resolve(
+        &state.navigation,
         engine,
         state.active_workspace_index(&engine),
         pane_rects,
@@ -309,7 +310,11 @@ pub fn draw_pane_tab_bars(
             panes.push(PaneTabBarView {
                 pane_id,
                 rect: pane_rect,
-                tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
+                tab_names: pane
+                    .tabs
+                    .iter()
+                    .map(|t| t.display_name(state.navigation.surface_id(t)))
+                    .collect(),
                 tab_icons: pane
                     .tabs
                     .iter()

@@ -71,6 +71,7 @@ impl AppState {
     /// 나머지 탭도 순서대로 포함하며 하나뿐인 탭에는 후보가 없다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn pane_sibling_tab_focus_candidates(
+        &self,
         pane: &crate::model::Pane,
         closing_tab_index: usize,
     ) -> Vec<u32> {
@@ -84,14 +85,18 @@ impl AppState {
             closing_tab_index.wrapping_sub(1)
         };
         let mut out = Vec::new();
-        if let Some(sid) = pane.tabs.get(primary).and_then(|t| t.focused_surface_id()) {
+        if let Some(sid) = pane
+            .tabs
+            .get(primary)
+            .and_then(|t| self.navigation.surface_id(t))
+        {
             out.push(sid);
         }
         for (idx, tab) in pane.tabs.iter().enumerate() {
             if idx == closing_tab_index || idx == primary {
                 continue;
             }
-            if let Some(sid) = tab.focused_surface_id() {
+            if let Some(sid) = self.navigation.surface_id(tab) {
                 out.push(sid);
             }
         }
@@ -126,7 +131,7 @@ impl AppState {
                 .filter(|&sid| sid != surface_id)
                 .collect()
         } else {
-            Self::pane_sibling_tab_focus_candidates(pane, tab_index)
+            self.pane_sibling_tab_focus_candidates(pane, tab_index)
         }
     }
 
@@ -142,7 +147,7 @@ impl AppState {
         if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             return true;
         }
-        let target_id = self.active_workspace(engine).focused_pane;
+        let target_id = self.focused_pane_id(engine);
         let in_pane: Vec<u32> = {
             let ws = self.active_workspace(engine);
             ws.pane_layout()
@@ -165,7 +170,7 @@ impl AppState {
             closed,
             cleanup_targets,
             ..
-        } = crate::core::Core::close_pane_recording(engine, target_id, true)
+        } = crate::core::Core::close_pane_recording(engine, target_id, Some(&self.navigation))
         else {
             return false;
         };
@@ -197,7 +202,7 @@ impl AppState {
         let Some(surface_id) = self
             .focused_pane(engine)
             .and_then(|pane| pane.tabs.get(self.navigation.tab_index(pane)))
-            .map(|tab| tab.focused_surface)
+            .map(|tab| self.navigation.surface_id(tab).unwrap_or(0))
         else {
             return false;
         };
@@ -264,7 +269,7 @@ impl AppState {
         let event = crate::core::Core::close_surface_recording(
             engine,
             surface_id,
-            save_snapshot,
+            save_snapshot.then_some(&self.navigation as &dyn crate::model::StructurePresentation),
             crate::core::CloseTracePath::Inline,
         );
         let CoreEvent::SurfaceClosed {

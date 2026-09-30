@@ -152,7 +152,12 @@ pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
 /// 레이아웃을 동기 저장한다. 오류는 로그로 남기며 호출자에게 성공 여부를 반환하지 않는다.
 /// capture가 새 scrollback 저장 ID를 터미널에도 기록하므로 engine을 변경할 수 있다.
 #[cfg(any(feature = "gui", test))]
-pub(crate) fn save_slot(engine: &mut CoreState, active_workspace: usize, slot: LayoutSlotId) {
+pub(crate) fn save_slot(
+    engine: &mut CoreState,
+    active_workspace: usize,
+    slot: LayoutSlotId,
+    presentation: &dyn crate::model::StructurePresentation,
+) {
     // 검사에서 실제 저장 경로 전체를 사용하되 사용자 홈 대신 주입한 디렉터리를 쓴다.
     #[cfg(test)]
     let resolved = engine.layouts_dir_override.clone().or_else(layouts_dir);
@@ -167,7 +172,7 @@ pub(crate) fn save_slot(engine: &mut CoreState, active_workspace: usize, slot: L
             return;
         }
     };
-    save_slot_in_dir(engine, active_workspace, slot, &dir);
+    save_slot_in_dir(engine, active_workspace, slot, &dir, presentation);
 }
 
 /// 손상 원본 보존과 쓰기를 함께 실행한다. 읽지 못한 슬롯의 보호 검사는 이 함수에 없으므로
@@ -178,8 +183,9 @@ pub(crate) fn save_slot_in_dir(
     active_workspace: usize,
     slot: LayoutSlotId,
     dir: &Path,
+    presentation: &dyn crate::model::StructurePresentation,
 ) {
-    let Some(json) = serialize_layout(engine, active_workspace) else {
+    let Some(json) = serialize_layout(engine, active_workspace, presentation) else {
         return;
     };
     // 손상 원본을 백업하지 못하면 새 상태로 덮어쓰지 않는다.
@@ -268,8 +274,12 @@ fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
 }
 
 #[cfg(any(feature = "gui", test))]
-fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<String> {
-    let saved = SavedLayout::capture(engine, active_workspace);
+fn serialize_layout(
+    engine: &mut CoreState,
+    active_workspace: usize,
+    presentation: &dyn crate::model::StructurePresentation,
+) -> Option<String> {
+    let saved = SavedLayout::capture(engine, active_workspace, presentation);
     match serde_json::to_string_pretty(&saved) {
         Ok(j) => Some(j),
         Err(e) => {

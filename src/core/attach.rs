@@ -63,6 +63,9 @@ struct SoftEntry {
 
 #[derive(Default)]
 pub struct OccupancyRegistry {
+    /// Read-only publication projection supplied by the application boundary.
+    /// It is replaced before subscribe/command handling, never imported into a View.
+    pub(crate) presentation: crate::model::StructurePresentationSnapshot,
     surface_locks: HashMap<SurfaceId, AttachLock>,
     /// workspace 터미널은 surface_locks에도 등록해 단일 surface 입력 검사를 공유한다.
     workspace_locks: HashMap<WorkspaceId, AttachLock>,

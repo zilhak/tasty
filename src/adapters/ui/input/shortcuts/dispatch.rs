@@ -174,7 +174,7 @@ impl MainView {
             "toggle_categories_collapsed" => {
                 if engine.settings.general.workspace_categories_enabled {
                     state.dispatch_intent(
-                        crate::core::intent::DomainIntent::ToggleAllCategoriesCollapsed
+                        crate::intent::UiIntent::ToggleAllCategoriesCollapsed
                             .from_user_shortcut("toggle_categories_collapsed"),
                     );
                 }
@@ -332,7 +332,7 @@ impl MainView {
                 {
                     let tab_index = state.navigation.tab_index(pane);
                     if let Some(tab) = pane.tabs.get(tab_index) {
-                        let current_name = tab.display_name();
+                        let current_name = tab.display_name(state.navigation.surface_id(tab));
                         let target = crate::state::RenameTarget::TabName { tab_id: tab.id };
                         let scope = target.popup_scope(engine);
                         state.dialogs.rename = Some((target, current_name));

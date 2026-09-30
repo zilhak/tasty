@@ -1291,8 +1291,8 @@ impl MainView {
     ) {
         let mirror_op = engine
             .find_pane_by_id(pane_id)
-            .and_then(|p| p.tabs.get(p.active_tab))
-            .and_then(|t| t.focused_surface_id())
+            .and_then(|p| p.tabs.get(self.state.navigation.tab_index(p)))
+            .and_then(|t| self.state.navigation.surface_id(t))
             .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
                 anchor_surface_id: sid,
                 from_index,
@@ -1320,7 +1320,7 @@ impl MainView {
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|p| p.tabs.get(tab_index))
-            .map(|t| (t.id, t.display_name()))
+            .map(|t| (t.id, t.display_name(self.state.navigation.surface_id(t))))
         else {
             return;
         };

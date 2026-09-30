@@ -56,6 +56,7 @@ pub(crate) fn workspace_cue(engine: &CoreState, active_ws: usize) -> Option<usiz
 /// 활성 워크스페이스의 페인은 모두 `pane_rects`에 있으므로 뒤의 경우는 방어용이다.
 /// 탭 칸이 탭 바 스크롤 밖에 있거나 rect가 링보다 좁아 보이지 않는 경우는 여기서 거르지 않는다.
 pub(crate) fn resolve(
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     active_ws: usize,
     pane_rects: &[(u32, PhysicalRect)],
@@ -91,7 +92,7 @@ pub(crate) fn resolve(
                 .tabs
                 .iter()
                 .position(|t| t.contains_surface(surface_id))?;
-            if tab_index != state.navigation.tab_index(pane) {
+            if tab_index != presentation.tab_index(pane) {
                 return Some(MoveSourceMark::TabGlyph { pane_id, tab_index });
             }
             let content = PhysicalRect {

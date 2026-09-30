@@ -50,11 +50,11 @@ fn split(
             direction,
         } = ev
         {
-            crate::core::structural_cascade::cascade_pane_split(
+            crate::app::structural_cascade::cascade_pane_split(
                 state,
                 engine,
                 origin,
-                crate::core::structural_cascade::PaneSplitCascade {
+                crate::app::structural_cascade::PaneSplitCascade {
                     workspace_index,
                     original_pane_id,
                     new_pane_id,

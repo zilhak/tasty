@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::core::structural_exec::{self, Closed, SplitLevel, SplitOutcome, SplitRequest};
+use crate::app::structural_exec::{self, Closed, SplitLevel, SplitOutcome, SplitRequest};
 use crate::model::SplitDirection;
 use tasty_ipc::protocol::JsonRpcResponse;
 
