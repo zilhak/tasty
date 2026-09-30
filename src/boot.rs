@@ -416,8 +416,8 @@ fn bootstrap_engine(
         crate::core::CoreState::new_with_ids(80, 24, base_waker, None, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
-    app.core.purge_stale_agent_state_on_boot(&engine);
-    app.core.inject_agent_runner_registry(&engine);
+    app.core.tasks.purge_stale_agent_state_on_boot(&engine);
+    app.core.tasks.inject_agent_runner_registry(&engine);
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
     engine.attach.set_notifier(app.stream_hub.clone());
     Ok(engine)

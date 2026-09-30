@@ -412,7 +412,8 @@ mod tests {
             .and_then(|v| v.as_u64())
             .expect("hook.set returns hook_id");
 
-        core.hook_task_waits
+        core.tasks
+            .hook_task_waits()
             .register(hook_id, ws, task_id.clone(), u64::MAX);
 
         send(

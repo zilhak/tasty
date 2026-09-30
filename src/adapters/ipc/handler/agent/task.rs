@@ -252,8 +252,8 @@ pub fn handle_task_list(
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
 fn runner_status_json(core: &Core, engine: &crate::core::CoreState, workspace_id: u32) -> Value {
-    let ctx = core.runner_context(engine);
-    let status = core.agent_runner_registry().status(&ctx, workspace_id);
+    let ctx = core.tasks.runner_context(engine);
+    let status = core.tasks.runner_registry().status(&ctx, workspace_id);
     runner_status_value(&status)
 }
 
@@ -275,7 +275,7 @@ fn awaiting_external_json(
     workspace_id: u32,
     task_id: &str,
 ) -> Option<Value> {
-    let ctx = core.runner_context(engine);
+    let ctx = core.tasks.runner_context(engine);
     match crate::core::agent::runner_host::load_dispatch_handle(&ctx, workspace_id, task_id)? {
         DispatchHandle::AwaitExternal {
             wait_key,
@@ -782,8 +782,8 @@ pub fn handle_task_run(
         .get("action")
         .and_then(|v| v.as_str())
         .unwrap_or("status");
-    let ctx = core.runner_context(engine);
-    let registry = core.agent_runner_registry();
+    let ctx = core.tasks.runner_context(engine);
+    let registry = core.tasks.runner_registry();
     match action {
         "start" => {
             registry.start(ctx.clone(), workspace_id);

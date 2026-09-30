@@ -408,8 +408,8 @@ impl App {
         // force-detach 통지를 IPC와 같은 스트림으로 보낸다.
         core_state.attach.set_notifier(self.stream_hub.clone());
         // 첫 창을 노출하기 전에 이전 실행의 에이전트 작업 상태를 정리하며 자동 실행은 하지 않는다.
-        self.core.purge_stale_agent_state_on_boot(&core_state);
-        self.core.inject_agent_runner_registry(&core_state);
+        self.core.tasks.purge_stale_agent_state_on_boot(&core_state);
+        self.core.tasks.inject_agent_runner_registry(&core_state);
         Self::report_missing_permissions(&mut state);
         self.register_window(
             gpu,

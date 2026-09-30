@@ -122,6 +122,14 @@ impl CoreBuilder {
             .preset_store
             .ok_or_else(|| anyhow::anyhow!("PresetStore missing"))?;
         let presets: Arc<Mutex<dyn PresetStorage>> = preset_store.clone();
+        let memory = self
+            .memory
+            .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?;
+        let host_ipc_injector = Arc::new(OnceLock::new());
+        let tasks = crate::core::task_service::TaskService::new(
+            memory.clone(),
+            Arc::clone(&host_ipc_injector),
+        );
         Ok(Core {
             fs: self
                 .fs
@@ -139,9 +147,7 @@ impl CoreBuilder {
             sound_player: self
                 .sound_player
                 .ok_or_else(|| anyhow::anyhow!("NotificationSoundPlayer missing"))?,
-            memory: self
-                .memory
-                .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?,
+            memory,
             themes: self
                 .themes
                 .ok_or_else(|| anyhow::anyhow!("ThemeStorage missing"))?,
@@ -150,9 +156,8 @@ impl CoreBuilder {
                 .settings_storage
                 .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?,
             preset_store,
-            host_ipc_injector: Arc::new(OnceLock::new()),
-            runner_registry: Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new()),
-            hook_task_waits: Arc::new(crate::core::agent::hook_wait::HookTaskWaits::new()),
+            host_ipc_injector,
+            tasks,
             pressure: tasty_telemetry::PressureStats::default(),
             gate: tasty_telemetry::GateStats::default(),
             plugin_wait: std::sync::Arc::new(tasty_telemetry::PluginWaitStats::default()),

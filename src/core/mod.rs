@@ -41,6 +41,7 @@ pub(crate) mod state;
 pub(crate) mod structural_cascade;
 pub(crate) mod structural_exec;
 pub(crate) mod surface_registry;
+pub(crate) mod task_service;
 pub(crate) mod terminal_spawn;
 pub(crate) mod terminal_store;
 
@@ -194,9 +195,8 @@ pub(crate) struct Core {
     /// IPC 서버 시작 뒤 주입한다. runner 등 다른 스레드가 host IPC를 호출할 때 쓴다.
     pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
 
-    pub(crate) runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
-
-    pub(crate) hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
+    /// 러너·완료 대기·훅-작업 연결을 가진 작업 실행 서비스.
+    pub(crate) tasks: crate::core::task_service::TaskService,
 
     /// GUI·헤드리스 큐와 핸들러가 같은 요청 압력 계측을 사용한다.
     pressure: tasty_telemetry::PressureStats,
@@ -445,44 +445,6 @@ impl Core {
         &self,
     ) -> Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>> {
         self.host_ipc_injector.clone()
-    }
-
-    pub(crate) fn runner_context(
-        &self,
-        engine: &crate::core::CoreState,
-    ) -> crate::core::agent::runner_host::RunnerContext {
-        crate::core::agent::runner_host::RunnerContext {
-            memory: self.memory.clone(),
-            agent_seq: engine.agent_seq.clone(),
-            host_ipc: self.host_ipc_injector.clone(),
-            task_waker_hub: engine.task_waker_hub.clone(),
-            hook_task_waits: self.hook_task_waits.clone(),
-        }
-    }
-
-    /// 현재 engine의 workspace에 남은 runner 상태를 정리한다. runner 스레드를 자동 시작하지는 않는다.
-    pub(crate) fn purge_stale_agent_state_on_boot(&self, engine: &crate::core::CoreState) {
-        let ctx = self.runner_context(engine);
-        let workspace_ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-        crate::core::agent::runner_thread::purge_stale_agent_state_on_boot(&ctx, &workspace_ids);
-    }
-
-    pub(crate) fn agent_runner_registry(
-        &self,
-    ) -> Arc<crate::core::agent::runner_thread::RunnerRegistry> {
-        self.runner_registry.clone()
-    }
-
-    /// 렌더링 등 Core를 받지 않는 코드가 같은 runner 상태를 조회하도록 Arc를 주입한다.
-    /// OnceLock이 이미 차 있으면 덮어쓰지 않고 경고한다.
-    pub(crate) fn inject_agent_runner_registry(&self, engine: &crate::core::CoreState) {
-        if engine
-            .agent_runner_registry
-            .set(self.agent_runner_registry())
-            .is_err()
-        {
-            tracing::warn!("agent runner registry already injected into CoreState");
-        }
     }
 
     /// 공용 poison 복구 헬퍼로 저장소 락을 얻고 콜백을 실행한다. 콜백이 끝날 때까지 락을 유지한다.

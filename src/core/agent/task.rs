@@ -185,7 +185,7 @@ impl Core {
         hook_id: u64,
         exit_code: Option<i32>,
     ) {
-        let Some((workspace_id, task_id)) = self.hook_task_waits.resolve(hook_id) else {
+        let Some((workspace_id, task_id)) = self.tasks.hook_task_waits().resolve(hook_id) else {
             return;
         };
         let result = TaskResult {
@@ -254,7 +254,7 @@ impl Core {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.delete_checked(workspace_id, task_id, opts)
         })?;
-        let ctx = self.runner_context(engine);
+        let ctx = self.tasks.runner_context(engine);
         for id in &report.deleted {
             evict_task_side_keys(&ctx, workspace_id, id);
         }
@@ -287,7 +287,7 @@ impl Core {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.apply_sweep_plan(workspace_id, &plan)
         })?;
-        let ctx = self.runner_context(engine);
+        let ctx = self.tasks.runner_context(engine);
         for id in &plan.deleted {
             evict_task_side_keys(&ctx, workspace_id, id);
         }
@@ -371,7 +371,8 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.hook_task_waits
+        core.tasks
+            .hook_task_waits()
             .register(42, ws, task_id.clone(), u64::MAX);
         core.resolve_hook_task_wait(&engine, 42, Some(0));
 
@@ -412,7 +413,8 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.hook_task_waits
+        core.tasks
+            .hook_task_waits()
             .register(7, ws, task_id.clone(), u64::MAX);
         core.resolve_hook_task_wait(&engine, 7, None);
         core.resolve_hook_task_wait(&engine, 7, None);
@@ -433,7 +435,8 @@ mod hook_wait_tests {
         core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.hook_task_waits
+        core.tasks
+            .hook_task_waits()
             .register(1, ws, task_id.clone(), u64::MAX);
         core.resolve_hook_task_wait(&engine, 1, Some(1));
 
