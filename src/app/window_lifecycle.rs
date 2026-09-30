@@ -479,7 +479,7 @@ impl App {
         }
     }
 
-    /// 창 관계를 끊고 engine을 저장한 뒤 View, engine 순서로 버린다.
+    /// 창 관계를 끊고 레이아웃 복원 설정에 따라 저장하거나 슬롯 파일을 지운 뒤 View, engine 순서로 버린다.
     pub(crate) fn retire_main_window(
         &mut self,
         wid: winit::window::WindowId,
