@@ -270,9 +270,6 @@ pub struct CoreState {
     // busy 폴링에서 얻은 전경 이름으로 마우스 캡처 제한도 계산한다.
     pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
 
-    // 캡처 자체의 제한과 별도로 안내 배너만 숨길 surface를 보관한다.
-    pub(crate) mouse_capture_banner_suppressed_surfaces: std::collections::HashSet<u32>,
-
     /// 첫 출력 뒤 OSC 133 경계가 없는 surface에 셸 통합 안내를 고려할 기준 시각.
     pub(crate) shell_integration_first_output_at:
         std::collections::HashMap<u32, std::time::Instant>,
@@ -562,7 +559,6 @@ impl CoreState {
             last_forwarded_attention: std::collections::HashMap::new(),
             attention: attention::AttentionStore::default(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
-            mouse_capture_banner_suppressed_surfaces: std::collections::HashSet::new(),
             shell_integration_first_output_at: std::collections::HashMap::new(),
             shell_integration_boundary_seen: std::collections::HashSet::new(),
             shell_integration_hint_shown: std::collections::HashSet::new(),

@@ -835,10 +835,7 @@ impl MainView {
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
     fn report_left_press_capture(&mut self, surface_id: u32) {
-        if self
-            .core_state
-            .is_surface_mouse_capture_banner_suppressed(surface_id)
-        {
+        if mouse_capture_banner_suppressed(&self.core_state, surface_id) {
             return;
         }
         if self.core_state.settings.general.mouse_capture_hint {
@@ -2037,6 +2034,34 @@ mod hover_motion_tests {
             35
         );
         assert_eq!(mouse_report_cb(0, true, false, false, false), 32);
+    }
+}
+
+/// 캡처 동작은 유지하면서 안내 배너만 숨기는 설정인지 확인한다.
+/// busy 폴링이 마지막으로 관측한 전경 이름을 현재 설정과 대조하며, 이름을 모르면 숨기지 않는다.
+fn mouse_capture_banner_suppressed(engine: &crate::core::CoreState, surface_id: u32) -> bool {
+    engine.foreground_name(surface_id).is_some_and(|name| {
+        engine
+            .settings
+            .general
+            .mouse_capture_banner_disabled_for(name)
+    })
+}
+
+#[cfg(test)]
+mod mouse_capture_banner_tests {
+    use super::mouse_capture_banner_suppressed;
+
+    #[test]
+    fn banner_is_suppressed_only_for_a_listed_foreground() {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut e = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        e.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        assert!(!mouse_capture_banner_suppressed(&e, 42));
+        e.foreground_names.insert(42, "vim".to_string());
+        e.foreground_names.insert(43, "htop".to_string());
+        assert!(mouse_capture_banner_suppressed(&e, 42));
+        assert!(!mouse_capture_banner_suppressed(&e, 43));
     }
 }
 

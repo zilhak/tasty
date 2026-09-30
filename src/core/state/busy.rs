@@ -19,8 +19,6 @@ impl CoreState {
         let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let mut mouse_capture_disabled: std::collections::HashSet<u32> =
             std::collections::HashSet::new();
-        let mut mouse_capture_banner_suppressed: std::collections::HashSet<u32> =
-            std::collections::HashSet::new();
         let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
             let Some(terminal) = self.terminals.get(sid) else {
@@ -33,13 +31,6 @@ impl CoreState {
                 if self.settings.general.mouse_capture_disabled_for(&f.name) {
                     mouse_capture_disabled.insert(sid);
                 }
-                if self
-                    .settings
-                    .general
-                    .mouse_capture_banner_disabled_for(&f.name)
-                {
-                    mouse_capture_banner_suppressed.insert(sid);
-                }
                 names.insert(sid, f.name.clone());
             }
         }
@@ -50,7 +41,6 @@ impl CoreState {
         );
 
         self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
-        self.mouse_capture_banner_suppressed_surfaces = mouse_capture_banner_suppressed;
         self.foreground_names = names;
         let changed = self.busy_surfaces != busy;
         self.busy_surfaces = busy;
@@ -60,13 +50,6 @@ impl CoreState {
     /// 마지막 폴링의 캡처 제외 설정. 클릭·드래그를 로컬 선택으로 처리하고 휠은 그대로 둔다.
     pub fn is_surface_mouse_capture_disabled(&self, surface_id: u32) -> bool {
         self.mouse_capture_disabled_surfaces.contains(&surface_id)
-    }
-
-    /// 캡처 동작은 유지하면서 안내 배너만 숨기는 설정이다.
-    #[cfg(any(feature = "gui", test))]
-    pub fn is_surface_mouse_capture_banner_suppressed(&self, surface_id: u32) -> bool {
-        self.mouse_capture_banner_suppressed_surfaces
-            .contains(&surface_id)
     }
 
     /// 로컬 폴링 또는 원격 push 중 하나가 busy이면 true다.
@@ -202,21 +185,11 @@ mod tests {
     }
 
     #[test]
-    fn mouse_capture_banner_suppressed_accessor_reads_cache() {
-        let mut e = engine();
-        assert!(!e.is_surface_mouse_capture_banner_suppressed(42));
-        e.mouse_capture_banner_suppressed_surfaces.insert(42);
-        assert!(e.is_surface_mouse_capture_banner_suppressed(42));
-    }
-
-    #[test]
-    fn refresh_busy_surfaces_replaces_both_mouse_capture_caches() {
+    fn refresh_busy_surfaces_replaces_the_mouse_capture_cache() {
         let mut e = engine();
         e.mouse_capture_disabled_surfaces.insert(99);
-        e.mouse_capture_banner_suppressed_surfaces.insert(99);
-        e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 두 캐시 모두 빈 채로 재계산.
+        e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 빈 채로 재계산.
         assert!(!e.is_surface_mouse_capture_disabled(99));
-        assert!(!e.is_surface_mouse_capture_banner_suppressed(99));
     }
 
     #[test]
