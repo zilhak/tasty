@@ -14,6 +14,8 @@
 호출로 행을 읽으면 이 보장이 없으므로, 렌더·hit-test·추출은 `TerminalReadView`를 사용한다.
 `with_content`는 사용자 선택 없는 live 읽기다. PTY 크기와 VT 응답 경로는 이 viewport와
 독립적이다. alternate screen은 live를 표시하며 primary 앵커는 복귀할 때까지 보존한다.
+대체 화면의 행 좌표는 기본 화면 history 길이와 무관한 0-origin이다. UI 검색도 대체
+grid만 대상으로 하고 공개 content 검색과 IPC whole-buffer 읽기는 별도 계약으로 유지한다.
 화면에 필요한 history 행만 읽으며 memory 행은 borrow하고 disk 행만 개별 로드한다.
 
 ## 프레임 흐름

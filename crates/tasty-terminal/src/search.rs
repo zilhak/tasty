@@ -197,13 +197,26 @@ impl crate::TerminalState {
         query: &str,
         options: &SearchOptions,
     ) -> Result<Vec<SearchMatch>, SearchError> {
+        self.search_buffer(query, options, true)
+    }
+
+    pub(crate) fn search_buffer(
+        &self,
+        query: &str,
+        options: &SearchOptions,
+        include_history: bool,
+    ) -> Result<Vec<SearchMatch>, SearchError> {
         if query.is_empty() {
             return Ok(Vec::new());
         }
 
         let matcher = Matcher::build(query, options)?;
         let mut matches = Vec::new();
-        let scrollback_len = self.scrollback_len();
+        let scrollback_len = if include_history {
+            self.scrollback_len()
+        } else {
+            0
+        };
 
         for i in 0..scrollback_len {
             if let Some(cells) = self.scrollback_line_owned(i) {

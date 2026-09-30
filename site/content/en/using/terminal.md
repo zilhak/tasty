@@ -1,4 +1,4 @@
-<!-- source-hash: 47a98b0e2a4e -->
+<!-- source-hash: 5ee4747b9995 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -83,6 +83,8 @@ tasty clipboard set-text "text to copy"
 ## Search
 
 `Ctrl+F` or `Alt+F`, or the search icon on the tab strip. A search bar appears at the top center of the Surface.
+
+In a normal terminal, search covers the scrollback and the screen. Inside a program that uses an alternate screen, such as vim or less, it searches only the current screen. You can search earlier shell output after leaving the program.
 
 - `Enter` / `Shift+Enter` / `↑` `↓` — next / previous match. The match count is shown as `3/42` and the screen follows.
 - Toggles on the right — **Match case** · **Regular expression** · **Match whole word**.

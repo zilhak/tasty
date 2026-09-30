@@ -795,18 +795,17 @@ impl MainView {
         let Some(terminal) = self.state.focused_terminal(&*engine) else {
             return;
         };
-        if terminal.is_alternate_screen() {
+        let mode = terminal.with_view(&self.state.terminal_views.get(engine, sid), |view| {
+            (!view.is_alternate_screen()).then(|| ViCopyMode::enter(sid, &view))
+        });
+        let Some(mode) = mode else {
             self.state.toasts.push_info(
                 crate::i18n::t("toast.vi_copy_blocked_alt_screen"),
                 crate::adapters::ui::ToastScope::Surface(sid),
             );
             return;
-        }
-        self.vi_copy = Some(
-            terminal.with_view(&self.state.terminal_views.get(engine, sid), |view| {
-                ViCopyMode::enter(sid, &view)
-            }),
-        );
+        };
+        self.vi_copy = Some(mode);
         self.text_selection = None;
         self.base.dirty = true;
     }

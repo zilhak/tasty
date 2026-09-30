@@ -135,11 +135,18 @@ impl TerminalState {
                 self.scrollback.epoch
             },
             revision: self.content_revision,
-            first_row: self.scrollback.first_row,
-            screen_start: self
-                .scrollback
-                .first_row
-                .saturating_add(self.scrollback.total_len()),
+            first_row: if self.use_alternate {
+                0
+            } else {
+                self.scrollback.first_row
+            },
+            screen_start: if self.use_alternate {
+                0
+            } else {
+                self.scrollback
+                    .first_row
+                    .saturating_add(self.scrollback.total_len())
+            },
             cols: self.cols,
             rows: self.rows,
             alternate: self.use_alternate,
@@ -241,14 +248,23 @@ impl crate::TerminalReadView<'_> {
         &self,
         row: usize,
     ) -> Option<Vec<(String, termwiz::cell::CellAttributes)>> {
+        if self.is_alternate_screen() {
+            return None;
+        }
         self.state
             .scrollback_line_owned(row.checked_sub(self.first_row())?)
     }
     pub fn scrollback_line_wrapped(&self, row: usize) -> Option<bool> {
+        if self.is_alternate_screen() {
+            return None;
+        }
         self.state
             .scrollback_line_wrapped(row.checked_sub(self.first_row())?)
     }
     pub fn scrollback_line_full(&self, row: usize) -> Option<crate::ScrollbackLine> {
+        if self.is_alternate_screen() {
+            return None;
+        }
         self.state
             .scrollback_line_full(row.checked_sub(self.first_row())?)
     }
@@ -259,7 +275,9 @@ impl crate::TerminalReadView<'_> {
         query: &str,
         options: &crate::search::SearchOptions,
     ) -> Result<Vec<crate::search::SearchMatch>, crate::search::SearchError> {
-        let mut matches = self.state.search(query, options)?;
+        let mut matches = self
+            .state
+            .search_buffer(query, options, !self.is_alternate_screen())?;
         for found in &mut matches {
             found.row = found.row.saturating_add(self.first_row());
         }
@@ -396,6 +414,31 @@ mod tests {
     }
 
     #[test]
+    fn retained_alternate_rows_and_search_ignore_changes_to_primary_history() {
+        let mut terminal = filled();
+        terminal.feed_bytes(b"\x1b[?47hALT-KEEP");
+        let alt = terminal.content_cut();
+        assert_eq!(alt.screen_start, 0);
+        terminal.feed_bytes(b"\x1b[?47l\r\nPRIMARY-MATCH\r\n6\r\n7\x1b[?47h");
+        terminal.with_content(|view| {
+            assert_eq!(view.cut().epoch, alt.epoch);
+            assert_eq!(view.viewport().top_row, 0);
+            assert_eq!(view.screen_row(0, true), "ALT-KEEP");
+            assert!(view.scrollback_line_full(0).is_none());
+            let options = crate::search::SearchOptions::default();
+            assert_eq!(view.search("ALT-KEEP", &options).unwrap()[0].row, 0);
+            assert!(view.search("PRIMARY", &options).unwrap().is_empty());
+        });
+        assert!(
+            !terminal
+                .search("PRIMARY", &crate::search::SearchOptions::default())
+                .unwrap()
+                .is_empty(),
+            "the public content search keeps its whole-buffer contract"
+        );
+    }
+
+    #[test]
     fn resize_shrink_and_grow_keep_the_anchored_row() {
         let mut terminal = filled();
         let mut viewport = TerminalViewport::default();
@@ -418,8 +461,14 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let worker_barrier = Arc::clone(&barrier);
         let (tx, rx) = mpsc::channel();
+        let (attempt_tx, attempt_rx) = mpsc::channel();
         let worker = std::thread::spawn(move || {
             worker_barrier.wait();
+            assert!(matches!(
+                state.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ));
+            attempt_tx.send(()).unwrap();
             let mut state = state.lock().unwrap();
             state.set_scrollback_limit(2);
             state.ingest(b"\r\n5\r\n6\r\n7");
@@ -429,6 +478,7 @@ mod tests {
         terminal.with_view(&viewport, |view| {
             let cut = view.cut();
             barrier.wait();
+            attempt_rx.recv().unwrap();
             assert!(
                 rx.try_recv().is_err(),
                 "writer cannot finish while reader holds this cut"

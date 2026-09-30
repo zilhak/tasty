@@ -401,6 +401,16 @@ mod tests {
     }
 
     #[test]
+    fn retained_alternate_selection_does_not_move_with_primary_history() {
+        let mut t = Terminal::new_detached(20, 3);
+        t.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour\x1b[?47hALT");
+        let selection = select_all(&t);
+        assert_eq!(extract_selected_text(&t, &selection), "ALT");
+        t.feed_bytes(b"\x1b[?47l\r\nfive\r\nsix\r\nseven\x1b[?47h");
+        assert_eq!(extract_selected_text(&t, &selection), "ALT");
+    }
+
+    #[test]
     fn cleared_alternate_content_rejects_previous_selection() {
         let mut t = Terminal::new_detached(20, 3);
         t.feed_bytes(b"\x1b[?1049hOLD");

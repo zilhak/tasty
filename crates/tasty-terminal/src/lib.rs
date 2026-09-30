@@ -741,7 +741,8 @@ impl TerminalReadView<'_> {
         self.viewport.scroll_offset()
     }
 
-    /// Number of scrollback lines.
+    /// Retained primary history count, including during alternate display.
+    /// Display history length is ContentCut::history_len (zero in alternate).
     pub fn scrollback_len(&self) -> usize {
         self.state.scrollback_len()
     }
@@ -749,6 +750,9 @@ impl TerminalReadView<'_> {
     /// Read one absolute history row. Memory rows borrow; disk rows load only
     /// the requested line, under the same content cut as the viewport.
     pub fn scrollback_line(&self, index: usize) -> Option<std::borrow::Cow<'_, ScrollbackLine>> {
+        if self.is_alternate_screen() {
+            return None;
+        }
         let relative = index.checked_sub(self.viewport.cut.first_row)?;
         if let Some(line) = self.state.scrollback_line(relative) {
             Some(std::borrow::Cow::Borrowed(line))

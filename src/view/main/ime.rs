@@ -397,9 +397,6 @@ fn reconcile_and_compute_anchor(
     })
 }
 
-/// Preedit/commit 모두가 사용하는 "입력 위치" 좌표.
-/// Ink 기반 TUI가 `\e[?25l`로 real cursor를 숨기고 `\e[7m`으로 그린 fake cursor가
-/// 있으면 그걸 우선 사용. 없으면 real cursor.
 fn invalidate_stale_composition(
     preedit: &mut Option<ImePreeditState>,
     advance: &mut usize,
@@ -416,6 +413,9 @@ fn invalidate_stale_composition(
     }
 }
 
+/// Preedit/commit 모두가 사용하는 "입력 위치" 좌표.
+/// Ink 기반 TUI가 `\e[?25l`로 real cursor를 숨기고 `\e[7m`으로 그린 fake cursor가
+/// 있으면 그걸 우선 사용. 없으면 real cursor.
 fn reference_cursor(terminal: &tasty_terminal::TerminalReadView<'_>) -> (usize, usize) {
     if !terminal.cursor_visible()
         && let Some(fake) = terminal.find_fake_cursor_cell()
