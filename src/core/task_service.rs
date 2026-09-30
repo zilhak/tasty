@@ -22,25 +22,29 @@ pub(crate) struct TaskScope {
     waker_hub: Arc<TaskWakerHub>,
     /// runner 스레드에서 생성한 사건을 메인 루프로 넘기는 큐.
     event_queue: Arc<AgentEventQueue>,
-    /// 서비스를 받지 않는 렌더 경로가 runner 상태를 조회하도록 부팅 때 주입한다.
-    runner_registry: OnceLock<Arc<RunnerRegistry>>,
+    /// 서비스를 받지 않는 렌더 경로가 runner 상태를 조회한다. 모든 engine이 TaskService와 같은 Arc를 든다.
+    runner_registry: Arc<RunnerRegistry>,
 }
 
 impl TaskScope {
-    pub(crate) fn new() -> Self {
-        Self::with_seq(Arc::new(AtomicU64::new(0)))
+    /// runner 등록부는 TaskService의 것을 넘긴다. 다른 등록부를 넘기면 화면의 runner 상태가 틀린다.
+    pub(crate) fn new(runner_registry: Arc<RunnerRegistry>) -> Self {
+        Self::with_seq(Arc::new(AtomicU64::new(0)), runner_registry)
     }
 
     /// 허브·사건 큐는 새로 만들고 task ID 순번은 받은 것을 쓴다.
     /// 새 창의 engine은 기존 engine의 순번을 넘겨 ID 발급을 공유한다.
-    pub(crate) fn with_seq(agent_seq: Arc<AtomicU64>) -> Self {
+    pub(crate) fn with_seq(
+        agent_seq: Arc<AtomicU64>,
+        runner_registry: Arc<RunnerRegistry>,
+    ) -> Self {
         // 허브가 기록하는 큐와 메인 루프가 비우는 큐가 같아야 한다.
         let event_queue = Arc::new(AgentEventQueue::new());
         Self {
             agent_seq,
             waker_hub: Arc::new(TaskWakerHub::with_feed(Arc::clone(&event_queue))),
             event_queue,
-            runner_registry: OnceLock::new(),
+            runner_registry,
         }
     }
 
@@ -56,14 +60,18 @@ impl TaskScope {
         &self.event_queue
     }
 
+    #[cfg(test)]
+    pub(crate) fn runner_registry(&self) -> &Arc<RunnerRegistry> {
+        &self.runner_registry
+    }
+
     /// 화면은 표시 중인 DAG의 task만 세므로 러너 실행·crash 여부만 반환한다.
-    /// 레지스트리가 주입되지 않았으면 (false, false)다.
-    #[cfg(feature = "gui")]
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(dead_code, reason = "runner 상태를 읽는 DAG 화면은 gui 빌드에만 있다")
+    )]
     pub(crate) fn runner_liveness(&self, workspace_id: u32) -> (bool, bool) {
-        self.runner_registry
-            .get()
-            .map(|registry| registry.liveness(workspace_id))
-            .unwrap_or((false, false))
+        self.runner_registry.liveness(workspace_id)
     }
 }
 
@@ -123,16 +131,9 @@ impl TaskService {
         &self.hook_task_waits
     }
 
-    /// 렌더링 등 서비스를 받지 않는 코드가 같은 runner 상태를 조회하도록 Arc를 주입한다.
-    /// OnceLock이 이미 차 있으면 덮어쓰지 않고 경고한다.
-    pub(crate) fn inject_agent_runner_registry(&self, scope: &TaskScope) {
-        if scope
-            .runner_registry
-            .set(self.runner_registry.clone())
-            .is_err()
-        {
-            tracing::warn!("agent runner registry already injected into the task scope");
-        }
+    /// engine의 TaskScope를 만들 때 넘길 등록부. 모든 engine이 이 Arc 하나를 공유한다.
+    pub(crate) fn runner_registry(&self) -> &Arc<RunnerRegistry> {
+        &self.runner_registry
     }
 
     /// 이미 실행 중이면 false다. 작업 취소나 OS 자식 종료와는 별개의 계약이다.

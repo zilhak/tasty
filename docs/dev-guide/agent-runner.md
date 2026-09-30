@@ -226,17 +226,18 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 
 ## 호출 경계
 
-`RunnerRegistry` 와 `RunnerContext` 는 `TaskService` 안에서만 다룬다. 바깥 코드는 서비스(`Core.tasks`)와 engine 의 `TaskScope` 를 통해 다음 API 만 부른다.
+`RunnerContext` 는 `TaskService` 안에서만 다룬다. `RunnerRegistry` 는 `TaskService` 가 소유하고 engine 생성 때 `TaskScope` 에 같은 `Arc` 를 넘기는 것 외에는 서비스 밖으로 나가지 않는다. 바깥 코드는 서비스(`Core.tasks`)와 engine 의 `TaskScope` 를 통해 다음 API 만 부른다.
 
 - IPC 핸들러(`src/adapters/ipc/handler/agent/task.rs`): 구성 표의 작업 API, runner 제어 `runner_start`/`runner_stop`/`runner_status`, `AwaitExternal` 대기 정보를 읽는 `dispatch_handle`.
 - `agent.task_await` dispatch(GUI `src/app/ipc/app_methods/task_await.rs`, headless `src/boot/headless_dispatch.rs`): 소유 engine 범위의 `awaiter` 를 받아 워커로 넘긴다.
-- 부팅(`src/boot.rs`, `src/app/boot_machine.rs`): `purge_stale_agent_state_on_boot`, 렌더용 registry 주입 `inject_agent_runner_registry`.
+- 부팅(`src/boot.rs`, `src/app/boot_machine.rs`): `purge_stale_agent_state_on_boot`.
+- engine 생성(`src/boot.rs`, `src/app/window_lifecycle.rs`): `TaskScope` 생성자는 registry `Arc` 를 필수 인자로 받는다. 첫 창·추가 창·headless engine 모두 `TaskService::runner_registry` 의 같은 `Arc` 를 넘긴다.
 - 호스트 이벤트 소비(`src/app/dispatch/host_events.rs`, `src/intent/headless.rs`): `resolve_hook_task_wait`.
 - DAG 화면: 서비스를 받지 않으므로 runner 상태는 `TaskScope::runner_liveness`, 목록은 engine 의 memory 와 범위로 `task_list_from_state`·`dag_list_from_state` 를 읽는다.
 
 ## RunnerRegistry
 
-`TaskService` 의 비공개 필드다. 바깥에서는 위 `runner_*` API 로만 쓴다. workspace 1개당 thread 1개:
+`TaskService` 의 비공개 필드다. 시작·정지·조회는 위 `runner_*` API 로만 하고, 화면은 `TaskScope::runner_liveness` 로 실행·crash 여부만 읽는다. workspace 1개당 thread 1개:
 
 - `start(ctx, ws) -> bool` — 이미 실행 중이면 false(idempotent). crashed 면 정리 후 재시작 허용.
 - `stop(ws) -> bool` — stop_tx + join.

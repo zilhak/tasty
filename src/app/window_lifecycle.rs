@@ -58,6 +58,7 @@ pub(super) fn build_engine_and_plugins(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     gauges: crate::core::PluginGauges,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
@@ -68,6 +69,7 @@ pub(super) fn build_engine_and_plugins(
         factory.clone(),
         proxy,
         memory,
+        runner_registry,
         layout_slot,
         #[cfg(debug_assertions)]
         input_simulation_enabled,
@@ -76,20 +78,39 @@ pub(super) fn build_engine_and_plugins(
     Ok((engine, mgr))
 }
 
+/// 새 창의 engine은 task ID 순번을 기존 engine과 공유하고 runner 등록부는 TaskService의 것을 쓴다.
+fn additional_window_task_scope(
+    src: &crate::core::task_service::TaskScope,
+    tasks: &crate::core::task_service::TaskService,
+) -> crate::core::task_service::TaskScope {
+    crate::core::task_service::TaskScope::with_seq(
+        Arc::clone(src.agent_seq()),
+        Arc::clone(tasks.runner_registry()),
+    )
+}
+
 fn build_core_state_first_boot(
     cols: usize,
     rows: usize,
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<crate::core::CoreState> {
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
-    let mut engine =
-        crate::core::CoreState::new_with_ids(cols, rows, waker, None, Some(layout_slot), memory)?;
+    let mut engine = crate::core::CoreState::new_with_ids(
+        cols,
+        rows,
+        waker,
+        None,
+        Some(layout_slot),
+        memory,
+        runner_registry,
+    )?;
     engine.waker_factory = Some(factory);
     engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
         engine.file_format.clone(),
@@ -226,9 +247,7 @@ impl App {
                     src.approval_store.clone(),
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
-                    crate::core::task_service::TaskScope::with_seq(Arc::clone(
-                        src.task_scope.agent_seq(),
-                    )),
+                    additional_window_task_scope(&src.task_scope, &self.core.tasks),
                     src.next_ids.clone(),
                 )
             });
@@ -256,6 +275,7 @@ impl App {
                     Some(next_ids),
                     Some(layout_slot),
                     self.core.memory_arc(),
+                    Arc::clone(self.core.tasks.runner_registry()),
                 )?;
                 engine.waker_factory = Some(factory.clone());
                 engine.surface_registry = surface_registry;
@@ -283,6 +303,7 @@ impl App {
                     factory.clone(),
                     self.view.proxy.clone(),
                     self.core.memory_arc(),
+                    Arc::clone(self.core.tasks.runner_registry()),
                     layout_slot,
                     #[cfg(debug_assertions)]
                     self.input_simulation_enabled,
@@ -769,3 +790,26 @@ fn show_agent_window(window: &Window, anchor: Option<&Window>) {
 
 #[cfg(test)]
 mod register_focus_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::task_service::{TaskScope, TaskService};
+
+    #[test]
+    fn an_additional_window_scope_shares_the_service_registry_and_the_id_sequence() {
+        let memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> = Arc::new(
+            std::sync::Mutex::new(tasty_memory::MemoryStore::open_in_memory().expect("memory")),
+        );
+        let tasks = TaskService::new(memory, Arc::new(std::sync::OnceLock::new()));
+        let first = TaskScope::new(Arc::clone(tasks.runner_registry()));
+
+        let added = additional_window_task_scope(&first, &tasks);
+
+        assert!(Arc::ptr_eq(
+            added.runner_registry(),
+            tasks.runner_registry()
+        ));
+        assert!(Arc::ptr_eq(added.agent_seq(), first.agent_seq()));
+    }
+}

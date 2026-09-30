@@ -411,18 +411,22 @@ fn bootstrap_engine(
     if let Some(notice) = layout_persistence_notice(boot_settings.general.restore_layout) {
         tracing::warn!("{notice}");
     }
-    let mut engine =
-        // 헤드리스는 슬롯을 점유하지 않으며 레이아웃을 저장·복원하지 않는다.
-        crate::core::CoreState::new_with_ids(80, 24, base_waker, None, None, app.core.memory_arc())?;
+    // 헤드리스는 슬롯을 점유하지 않으며 레이아웃을 저장·복원하지 않는다.
+    let mut engine = crate::core::CoreState::new_with_ids(
+        80,
+        24,
+        base_waker,
+        None,
+        None,
+        app.core.memory_arc(),
+        std::sync::Arc::clone(app.core.tasks.runner_registry()),
+    )?;
     engine.waker_factory = Some(factory);
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
     app.core.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,
         &engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
     );
-    app.core
-        .tasks
-        .inject_agent_runner_registry(&engine.task_scope);
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
     engine.attach.set_notifier(app.stream_hub.clone());
     Ok(engine)

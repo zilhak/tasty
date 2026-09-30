@@ -432,10 +432,22 @@ impl CoreState {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::MemoryStore::open_in_memory()?,
             ));
-        Self::new_with_ids_and_settings(cols, rows, waker, None, None, memory, Settings::default())
+        let runner_registry =
+            std::sync::Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+        Self::new_with_ids_and_settings(
+            cols,
+            rows,
+            waker,
+            None,
+            None,
+            memory,
+            runner_registry,
+            Settings::default(),
+        )
     }
 
     /// 다른 engine과 발급기를 공유할 수 있다. 슬롯이 있고 restore_layout이 켜져 있을 때만 읽는다.
+    /// runner 등록부는 TaskService가 가진 Arc를 넘긴다.
     pub fn new_with_ids(
         cols: usize,
         rows: usize,
@@ -443,6 +455,7 @@ impl CoreState {
         shared_ids: Option<IdGenerator>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        runner_registry: std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>,
     ) -> anyhow::Result<Self> {
         let state = Self::new_with_ids_and_settings(
             cols,
@@ -451,6 +464,7 @@ impl CoreState {
             shared_ids,
             layout_slot,
             memory,
+            runner_registry,
             Settings::load(),
         )?;
         Ok(state)
@@ -494,6 +508,7 @@ impl CoreState {
         shared_ids: Option<IdGenerator>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        runner_registry: std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>,
         settings: Settings,
     ) -> anyhow::Result<Self> {
         // 이 생성자 내부에서 파일을 읽기 전에 검사 전용 홈을 설정한다.
@@ -523,7 +538,7 @@ impl CoreState {
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
-            task_scope: crate::core::task_service::TaskScope::new(),
+            task_scope: crate::core::task_service::TaskScope::new(runner_registry),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
@@ -1104,6 +1119,10 @@ mod engine_creation_failure_tests {
         s
     }
 
+    fn registry() -> std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry> {
+        std::sync::Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new())
+    }
+
     fn in_memory() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
         std::sync::Arc::new(std::sync::Mutex::new(
             tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
@@ -1120,6 +1139,7 @@ mod engine_creation_failure_tests {
             None,
             None,
             in_memory(),
+            registry(),
             bogus_shell_settings(),
         );
         let err = result
@@ -1137,9 +1157,40 @@ mod engine_creation_failure_tests {
         let waker: Waker = std::sync::Arc::new(|| {});
         let mut ok = Settings::default();
         ok.general.restore_layout = false;
-        let engine =
-            CoreState::new_with_ids_and_settings(80, 24, waker, None, None, in_memory(), ok)
-                .expect("default settings must produce an engine");
+        let engine = CoreState::new_with_ids_and_settings(
+            80,
+            24,
+            waker,
+            None,
+            None,
+            in_memory(),
+            registry(),
+            ok,
+        )
+        .expect("default settings must produce an engine");
         assert_eq!(engine.workspaces.len(), 1);
+    }
+
+    #[test]
+    fn the_engine_task_scope_holds_the_runner_registry_it_was_built_with() {
+        let waker: Waker = std::sync::Arc::new(|| {});
+        let mut settings = Settings::default();
+        settings.general.restore_layout = false;
+        let shared = registry();
+        let engine = CoreState::new_with_ids_and_settings(
+            80,
+            24,
+            waker,
+            None,
+            None,
+            in_memory(),
+            std::sync::Arc::clone(&shared),
+            settings,
+        )
+        .expect("default settings must produce an engine");
+        assert!(std::sync::Arc::ptr_eq(
+            engine.task_scope.runner_registry(),
+            &shared
+        ));
     }
 }
