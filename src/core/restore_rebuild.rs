@@ -236,7 +236,9 @@ pub(crate) fn rebuild_pane(
         return None;
     }
     let active_tab = closed.active_tab.min(tabs.len() - 1);
-    presentation.tabs.insert(pane_id, tabs[active_tab].id);
+    presentation
+        .selected_tabs
+        .insert(pane_id, tabs[active_tab].id);
     Some(Pane { id: pane_id, tabs })
 }
 

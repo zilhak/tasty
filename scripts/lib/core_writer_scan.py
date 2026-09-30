@@ -67,16 +67,16 @@ FIELD_WRITES = [
 ]
 TERMINAL_INSERT = re.compile(r"\.\s*terminals\s*\.\s*insert\s*\(")
 
-# AppState 함수가 구조를 바꾸는지 판정할 때 쓰는 하위 연산 이름.
+# View/명령 문맥 함수가 구조를 바꾸는지 판정할 때 쓰는 하위 연산 이름.
 STRUCTURAL_CALLS = [
-    "close_pane_preserving_focus", "detach_pane_preserving_focus", "split_pane_in_place",
+    "split_pane_in_place",
     "close_pane", "detach_pane", "replace_pane", "insert_pane_beside",
     "add_terminal_marker_tab", "add_terminal_marker_tab_background",
-    "split_active_surface_marker", "split_surface_by_id_marker",
-    "split_surface_by_id_with_surface", "remove_tab_preserving_active",
-    "take_tab_preserving_active", "close_tab", "close_active_tab", "close_tab_by_id",
+    "split_surface_by_id_marker",
+    "split_surface_by_id_with_surface", "remove_tab",
+    "take_tab", "close_tab", "close_active_tab", "close_tab_by_id",
     "add_surface_tab", "add_surface_tab_background", "move_tab", "take_layout",
-    "put_layout", "close_surface", "put_surface", "split_focused_surface",
+    "put_layout", "close_surface", "put_surface",
     "split_surface_by_id", "split_surface_by_id_generic", "split_with_surface",
     "split_with_node", "extract_surface", "replace_surface", "set_attach_mapping",
     "set_category", "push_closed_item", "set_workspace_category", "create_category",
@@ -89,7 +89,7 @@ STRUCTURAL_CALL_RE = re.compile(
 SUBOP_RE = re.compile(
     r"\.\s*(" + "|".join(n for n in STRUCTURAL_CALLS
                          if n not in ("set_attach_mapping", "set_category")) + r")\s*\(")
-# 수신자가 `state`이면 AppState 메서드 호출이다. 그 함수는 appstate 지표가 센다.
+# 수신자가 `state`이면 View/명령 문맥 메서드 호출이다. 그 함수는 appstate 지표가 센다.
 APPSTATE_RECEIVER_RE = re.compile(r"\bstate\s*$")
 DIRECT_STRUCTURAL_EXTRA = [
     re.compile(r"\.\s*terminals\s*\.\s*(?:insert|remove|replace)\s*\("),
@@ -229,7 +229,7 @@ def main():
                     {"rel": rel, "pub": is_pub, "body": body, "direct": direct,
                      "line": line_of(text, bs)})
 
-    # 같은 AppState 모듈의 구조 함수를 이름으로 부르는 함수도 구조 함수로 본다.
+    # 같은 state 모듈의 구조 함수를 이름으로 부르는 함수도 구조 함수로 본다.
     defs = [dict(d, name=n) for n, ds in appstate_fns.items() for d in ds]
     names = {d["name"] for d in defs if d["direct"]}
     changed = True

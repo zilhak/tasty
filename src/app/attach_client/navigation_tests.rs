@@ -55,15 +55,15 @@ fn removed_local_pane_uses_remote_default_and_mapping_drops_deleted_ids() {
     assert_eq!(f.navigation.pane_id(&after), Some(c_id));
     assert_eq!(f.structure_ids.panes[&10], a_id);
     assert_eq!(f.structure_ids.panes.len(), 2);
-    assert_eq!(f.structure_ids.tabs.len(), 2);
+    assert_eq!(f.structure_ids.remote_tabs.len(), 2);
     assert!(!f.structure_ids.panes.contains_key(&20));
-    assert!(!f.structure_ids.tabs.contains_key(&200));
+    assert!(!f.structure_ids.remote_tabs.contains_key(&200));
     // Reusing a remote ID after deletion must not reuse stale local identity.
     let replacement = f.rebuild(serde_json::json!({"focused_pane": 20, "panes": [
         pane(20, vec![tab(200, 2, true)])
     ]}));
     assert_eq!(f.structure_ids.panes.len(), 1);
-    assert_eq!(f.structure_ids.tabs.len(), 1);
+    assert_eq!(f.structure_ids.remote_tabs.len(), 1);
     assert_eq!(
         f.navigation.pane_id(&replacement),
         Some(f.structure_ids.panes[&20])
@@ -85,8 +85,11 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
         ])]}),
     );
     let p = after.pane_layout().first_pane().unwrap();
-    assert_eq!(f.navigation.tab_id(p), Some(f.structure_ids.tabs[&300]));
-    assert_eq!(f.structure_ids.tabs.len(), 2);
+    assert_eq!(
+        f.navigation.tab_id(p),
+        Some(f.structure_ids.remote_tabs[&300])
+    );
+    assert_eq!(f.structure_ids.remote_tabs.len(), 2);
     let split_tab = |first, second, focused| {
         serde_json::json!({
             "id": 300, "name": "split", "active": true, "focused_surface": focused,

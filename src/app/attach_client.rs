@@ -209,14 +209,14 @@ struct MirrorMeshInfo {
 #[derive(Default)]
 struct MirrorStructureIds {
     panes: HashMap<u32, u32>,
-    tabs: HashMap<u32, u32>,
+    remote_tabs: HashMap<u32, u32>,
 }
 
 impl MirrorStructureIds {
     fn retain_workspace(&mut self, workspace: &Workspace) {
         let pane_ids = workspace.pane_layout().all_pane_ids();
         self.panes.retain(|_, local| pane_ids.contains(local));
-        self.tabs.retain(|_, local| {
+        self.remote_tabs.retain(|_, local| {
             pane_ids.iter().any(|id| {
                 workspace
                     .pane_layout()
@@ -2637,7 +2637,7 @@ fn build_pane_from_json(
             ids.next_tab()
         } else {
             *structure_ids
-                .tabs
+                .remote_tabs
                 .entry(remote_tab)
                 .or_insert_with(|| ids.next_tab())
         };

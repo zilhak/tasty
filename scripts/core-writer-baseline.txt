@@ -32,9 +32,9 @@ field	src/state/preset_apply.rs	build_tab	1
 field	src/state/workspace.rs	close_workspace_at	1
 field	src/state/workspace.rs	move_workspace	2
 subop	src/adapters/ui/tab_bar/apply.rs	apply_drag_end	1
+subop	src/app/attach_structure.rs	execute_forwarded_structural_op	2
+subop	src/app/structural_cascade.rs	recreate_workspace_if_now_empty	1
 subop	src/app/window_lifecycle.rs	bootstrap_workspace_if_empty	1
-subop	src/core/attach_runtime.rs	execute_forwarded_structural_op	2
-subop	src/core/structural_cascade.rs	recreate_workspace_if_now_empty	1
 subop	src/intent/closed_item.rs	ensure_workspace_for_restore	1
 subop	src/view/main/redraw.rs	move_tab_via_mirror_or_local	1
 subop	src/view/main/redraw.rs	move_workspace_to_category	1

@@ -704,7 +704,7 @@ spawn 시도 1회와 나머지 호출의 래치 진단을 확인한다. 정상 �
 - `subop`: `src/state` 밖에서 구조 하위 연산을 메서드로 호출하는 곳. `appstate` 판정과 같은 목록을 쓴다.
   pane의 `move_tab`, tab의 `close_surface`, layout의 `replace_surface`, CoreState의 category 메서드·`push_closed_item`,
   Core의 `create_default_workspace` 등이 해당한다. setter는 `field`가 세므로 뺀다.
-  수신자가 `state`인 호출은 MainViewState 메서드라서 `appstate`가 대신 센다.
+  수신자가 `state`인 호출은 View/명령 문맥 메서드라서 `appstate`가 대신 센다.
 - `appstate`: `src/state.rs`와 `src/state/` 아래 pub·pub(crate) 함수 중 구조를 바꾸는 함수.
   구조 하위 연산이나 위 필드 쓰기를 직접 호출하거나, 같은 모듈의 구조 함수를 이름으로 호출하는 함수가 해당한다.
 
@@ -931,3 +931,5 @@ pre-commit은 staged 경로를, CI는 추적 파일 전체를 검사한다.
 검사기가 없으면 rc 2이며 `install-shellcheck.sh`와 `dev-setup.sh`로 준비한다.
 info/style는 검사 범위 밖이다. 버전을 올릴 때는 새 진단을 먼저 확인한다.
 커밋별 검증 범위는 위 'push 범위 안쪽의 커밋'을 따른다.
+
+`python3 scripts/lib/test_core_writer_scan.py`는 선택 map/remap과 실제 구조 쓰기를 구별하는 변이 시험이다. Navigation 파일의 `engine.workspaces.clear()`와 App adapter의 `remove_tab`/`take_tab` 호출을 검출한다. 타입을 해석하지 않는 scanner의 한계는 그대로이며 파일 전체 제외를 추가하지 않는다.

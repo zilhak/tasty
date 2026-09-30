@@ -64,7 +64,7 @@ pub(crate) struct NavigationState {
     pub(crate) collapsed_categories: std::collections::HashSet<u32>,
     workspace: Selection,
     panes: HashMap<WorkspaceId, u32>,
-    tabs: HashMap<u32, Selection>,
+    selected_tabs: HashMap<u32, Selection>,
     surfaces: HashMap<u32, SurfaceId>,
 }
 
@@ -101,7 +101,7 @@ impl NavigationState {
                 let Some(pane) = ws.pane_layout().find_pane(id) else {
                     continue;
                 };
-                if let Some(id) = selection.tabs.get(&pane.id) {
+                if let Some(id) = selection.selected_tabs.get(&pane.id) {
                     self.select_tab(pane, *id);
                 }
                 for tab in &pane.tabs {
@@ -132,7 +132,7 @@ impl NavigationState {
     }
 
     pub(crate) fn tab_id(&self, pane: &Pane) -> Option<u32> {
-        self.tabs
+        self.selected_tabs
             .get(&pane.id)
             .and_then(|selection| selection.resolve(&tab_ids(pane)))
             .or_else(|| pane.tabs.first().map(|tab| tab.id))
@@ -166,7 +166,7 @@ impl NavigationState {
     }
 
     pub(crate) fn select_tab(&mut self, pane: &Pane, id: u32) -> bool {
-        self.tabs
+        self.selected_tabs
             .entry(pane.id)
             .or_default()
             .select(id, tab_ids(pane))
@@ -208,7 +208,7 @@ impl NavigationState {
     }
     #[cfg(feature = "gui")]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
-        let selection = self.tabs.entry(pane.id).or_default();
+        let selection = self.selected_tabs.entry(pane.id).or_default();
         if !selection
             .selected
             .is_some_and(|id| pane.tabs.iter().any(|tab| tab.id == id))
@@ -238,17 +238,17 @@ impl NavigationState {
             CoreEvent::MoveSurfaceApplied {
                 replacement: Some((removed, replacement)),
                 ..
-            } => self.replace_surface(*removed, *replacement),
+            } => self.remap_surface_selection(*removed, *replacement),
             CoreEvent::ContainerMoveApplied {
                 replaced_tab,
                 replaced_pane,
                 ..
             } => {
                 if let Some((removed, replacement)) = replaced_tab {
-                    self.replace_tab(*removed, *replacement);
+                    self.remap_tab_selection(*removed, *replacement);
                 }
                 if let Some((removed, replacement)) = replaced_pane {
-                    self.replace_pane(*removed, *replacement);
+                    self.remap_pane_selection(*removed, *replacement);
                 }
             }
             _ => {}
@@ -256,21 +256,21 @@ impl NavigationState {
         self.reconcile(workspaces);
     }
 
-    pub(crate) fn replace_surface(&mut self, removed: u32, replacement: u32) {
+    pub(crate) fn remap_surface_selection(&mut self, removed: u32, replacement: u32) {
         for selected in self.surfaces.values_mut() {
             if *selected == removed {
                 *selected = replacement;
             }
         }
     }
-    pub(crate) fn replace_tab(&mut self, removed: u32, replacement: u32) {
-        for selection in self.tabs.values_mut() {
+    pub(crate) fn remap_tab_selection(&mut self, removed: u32, replacement: u32) {
+        for selection in self.selected_tabs.values_mut() {
             if selection.selected == Some(removed) {
                 selection.selected = Some(replacement);
             }
         }
     }
-    pub(crate) fn replace_pane(&mut self, removed: u32, replacement: u32) {
+    pub(crate) fn remap_pane_selection(&mut self, removed: u32, replacement: u32) {
         for selected in self.panes.values_mut() {
             if *selected == removed {
                 *selected = replacement;
@@ -297,7 +297,10 @@ impl NavigationState {
                     continue;
                 };
                 pane_ids.push(id);
-                self.tabs.entry(id).or_default().reconcile(tab_ids(pane));
+                self.selected_tabs
+                    .entry(id)
+                    .or_default()
+                    .reconcile(tab_ids(pane));
                 for tab in &pane.tabs {
                     live_tabs.push(tab.id);
                     if let Some(layout) = tab.layout_if_initialized() {
@@ -312,7 +315,7 @@ impl NavigationState {
             }
         }
         self.split_hints.retain(|id, _| split_nodes.contains(id));
-        self.tabs.retain(|id, _| pane_ids.contains(id));
+        self.selected_tabs.retain(|id, _| pane_ids.contains(id));
         self.surfaces.retain(|id, _| live_tabs.contains(id));
     }
 }

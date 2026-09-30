@@ -231,7 +231,7 @@ fn moving_a_surface_repairs_the_source_and_replaces_the_selected_destination() {
         .tabs[0]
         .layout_mut()
         .replace_surface(2001, moved.unwrap());
-    nav.replace_surface(2001, 1000);
+    nav.remap_surface_selection(2001, 1000);
     nav.reconcile(&workspaces);
     assert_eq!(
         nav.surface_id(&workspaces[0].pane_layout().first_pane().unwrap().tabs[0]),

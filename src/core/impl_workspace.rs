@@ -42,7 +42,7 @@ impl Core {
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
-                presentation.tabs.insert(pane_id, tab_id);
+                presentation.selected_tabs.insert(pane_id, tab_id);
                 RestoredKind::TabIntoPane
             }
             ClosedItem::Tab(closed_tab) => {
@@ -60,7 +60,7 @@ impl Core {
                 if !push_tab_to_pane(engine, pane_id, tab) {
                     return nothing();
                 }
-                presentation.tabs.insert(pane_id, tab_id);
+                presentation.selected_tabs.insert(pane_id, tab_id);
                 RestoredKind::TabIntoPane
             }
             ClosedItem::Pane {

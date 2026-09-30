@@ -19,7 +19,7 @@ pub struct StructurePresentationSnapshot {
     pub split_hints: std::collections::HashMap<crate::SplitNodeId, bool>,
     pub collapsed_categories: std::collections::HashSet<u32>,
     pub panes: std::collections::HashMap<u32, u32>,
-    pub tabs: std::collections::HashMap<u32, u32>,
+    pub selected_tabs: std::collections::HashMap<u32, u32>,
     pub surfaces: std::collections::HashMap<u32, SurfaceId>,
 }
 
@@ -43,7 +43,7 @@ impl StructurePresentationSnapshot {
             for id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(id) {
                     if let Some(tab) = pane.tabs.get(presentation.tab_index(pane)) {
-                        result.tabs.insert(id, tab.id);
+                        result.selected_tabs.insert(id, tab.id);
                     }
                     for tab in &pane.tabs {
                         let mut nodes = Vec::new();
@@ -78,7 +78,7 @@ impl StructurePresentation for StructurePresentationSnapshot {
             .or_else(|| workspace.pane_layout().first_pane().map(|p| p.id))
     }
     fn tab_index(&self, pane: &Pane) -> usize {
-        self.tabs
+        self.selected_tabs
             .get(&pane.id)
             .and_then(|id| pane.tabs.iter().position(|t| t.id == *id))
             .unwrap_or(0)

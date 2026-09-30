@@ -102,7 +102,7 @@ for m in "${METRICS[@]}"; do
         field) label="구조 필드 직접 쓰기" ;;
         terminal) label="Core::apply 밖 terminals.insert" ;;
         subop) label="src/state 밖 구조 하위 연산 호출" ;;
-        appstate) label="AppState 구조 변경 pub 함수" ;;
+        appstate) label="View/명령 문맥 구조 변경 pub 함수" ;;
     esac
     by_bucket=$(awk -F'\t' -v m="$m" '$1 == m { b[$2]++ } END { for (k in b) printf "%s %d · ", k, b[k] }' \
         "$WORK/rows.tsv")

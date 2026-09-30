@@ -1290,6 +1290,7 @@ fn switch_to_category_falls_back_to_first_when_never_visited() {
     assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
+#[cfg(feature = "gui")]
 #[test]
 fn switch_to_category_auto_expands_collapsed() {
     let (mut state, mut engine) = test_state();
@@ -1301,7 +1302,7 @@ fn switch_to_category_auto_expands_collapsed() {
 
     state.switch_workspace(&mut engine, 0); // active=A(normal)
     state.switch_to_category(&mut engine, 1); // → work
-    // 펼침은 Core 요청으로 큐에 들어가므로 메인 루프처럼 큐를 비운다.
+    // 펼침은 View UI 요청으로 큐에 들어가므로 메인 루프처럼 큐를 비운다.
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     crate::intent::headless::drain_pending_intents(&mut core, &mut state, &mut engine);
     assert!(!state.navigation.collapsed_categories.contains(&work)); // auto-expand

@@ -108,7 +108,11 @@ impl Core {
         }
 
         if activate && !is_terminal {
-            engine.attach.presentation.tabs.insert(pane_id, tab_id);
+            engine
+                .attach
+                .presentation
+                .selected_tabs
+                .insert(pane_id, tab_id);
         }
         if is_terminal {
             engine.send_fast_init(surface_id);
