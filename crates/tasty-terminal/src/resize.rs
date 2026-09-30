@@ -15,6 +15,7 @@ impl TerminalState {
             return false;
         }
 
+        self.content_revision = self.content_revision.wrapping_add(1);
         let old_cols = self.cols;
         let old_rows = self.rows;
 

@@ -39,12 +39,16 @@ fn ed3_preserves_visible_screen() {
 fn ed3_resets_scroll_offset() {
     let mut t = filled();
     // User scrolls up into history.
-    t.scroll_up(2);
-    assert!(t.scroll_offset() > 0, "precondition: scrolled up");
+    let mut viewport = tasty_terminal::TerminalViewport::default();
+    viewport.scroll_up(t.content_cut(), 2);
+    assert!(
+        viewport.resolve(t.content_cut()).scroll_offset() > 0,
+        "precondition: scrolled up"
+    );
 
     t.feed_bytes(b"\x1b[3J");
     assert_eq!(
-        t.scroll_offset(),
+        viewport.resolve(t.content_cut()).scroll_offset(),
         0,
         "viewport must snap back to live when history is erased"
     );

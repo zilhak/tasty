@@ -399,13 +399,14 @@ fn user_scroll_offset_is_compensated() {
     t.feed_bytes(b"\x1b[2J\x1b[H\x1b[5;1HINPUT\x1b[6;1HSTATUS\x1b[1;4r\x1b[4;1H");
     t.feed_bytes(b"SEED______X"); // 이력 1 줄 만들어 스크롤 가능하게
     assert_eq!(t.scrollback_len(), 1);
-    t.scroll_up(1);
-    assert_eq!(t.scroll_offset(), 1);
+    let mut viewport = tasty_terminal::TerminalViewport::default();
+    viewport.scroll_up(t.content_cut(), 1);
+    assert_eq!(viewport.resolve(t.content_cut()).scroll_offset(), 1);
 
     t.feed_bytes(b"\rABCDEFGHIJKLMNOPQRSTU"); // 영역 스크롤 2 회
     assert_eq!(t.scrollback_len(), 3);
     assert_eq!(
-        t.scroll_offset(),
+        viewport.resolve(t.content_cut()).scroll_offset(),
         3,
         "이력이 2 줄 늘었으면 offset 도 2 만큼 따라와야 한다"
     );
@@ -537,7 +538,8 @@ fn alternate_full_screen_wrap_does_not_touch_primary_history() {
     let primary_screen = screen(&t);
     let primary_scrollback = scrollback(&t);
     assert_eq!(primary_scrollback.len(), 1, "이력 한 줄을 만들어 두었다");
-    t.scroll_up(1);
+    let mut viewport = tasty_terminal::TerminalViewport::default();
+    viewport.scroll_up(t.content_cut(), 1);
 
     t.feed_bytes(b"\x1b[?1049h"); // 대체 화면 — DECSTBM 없음
     t.feed_bytes(b"\x1b[5;1H");
@@ -551,9 +553,9 @@ fn alternate_full_screen_wrap_does_not_touch_primary_history() {
         "대체 화면 내용이 primary 이력에 새면 안 된다"
     );
     assert_eq!(
-        t.scroll_offset(),
-        1,
-        "대체 화면 출력이 primary 뷰포트를 밀면 안 된다"
+        viewport.resolve(t.content_cut()).scroll_offset(),
+        0,
+        "대체 화면은 live grid를 표시한다"
     );
 
     t.feed_bytes(b"\x1b[?1049l");
@@ -563,6 +565,7 @@ fn alternate_full_screen_wrap_does_not_touch_primary_history() {
         "대체 화면을 나온 뒤에도 이력은 들어가기 전 그대로여야 한다"
     );
     assert_eq!(screen(&t), primary_screen, "primary 화면도 그대로다");
+    assert_eq!(viewport.resolve(t.content_cut()).scroll_offset(), 1);
 }
 
 /// 화면 밖 하단 마진(`CSI 3;100r` — 6행 화면)은 저장 시점에 마지막 행으로

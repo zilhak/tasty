@@ -185,8 +185,9 @@ impl ScrollbackLineBuilder {
 pub(crate) struct Scrollback {
     lines: VecDeque<ScrollbackLine>,
     limit: usize,
-    /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
-    pub scroll_offset: usize,
+    /// Content identity and retained coordinate origin; no display owner state.
+    pub(crate) epoch: crate::ContentEpoch,
+    pub(crate) first_row: usize,
     disk: Option<disk_scrollback::DiskScrollback>,
 }
 
@@ -195,7 +196,8 @@ impl Scrollback {
         Self {
             lines: VecDeque::new(),
             limit: 10000,
-            scroll_offset: 0,
+            epoch: crate::ContentEpoch::fresh(),
+            first_row: 0,
             disk: None,
         }
     }
@@ -236,22 +238,6 @@ impl Scrollback {
     pub fn total_len(&self) -> usize {
         let disk_count = self.disk.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
         disk_count + self.lines.len()
-    }
-
-    /// Scroll up (towards older content).
-    pub fn scroll_up(&mut self, count: usize) {
-        let max = self.total_len();
-        self.scroll_offset = (self.scroll_offset + count).min(max);
-    }
-
-    /// Scroll down (towards newer/live content).
-    pub fn scroll_down(&mut self, count: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(count);
-    }
-
-    /// Reset scroll position to the bottom (live view).
-    pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = 0;
     }
 
     /// Borrow a specific scrollback line by index (0 = oldest, memory only).
@@ -312,7 +298,8 @@ impl Scrollback {
     /// live. Used by ED3 (`CSI 3J`) erase-scrollback.
     pub fn clear(&mut self) {
         self.lines.clear();
-        self.scroll_offset = 0;
+        self.epoch = crate::ContentEpoch::fresh();
+        self.first_row = 0;
         if let Some(ds) = &mut self.disk
             && let Err(e) = ds.clear()
         {
@@ -327,51 +314,29 @@ impl Scrollback {
                 if let Some(line) = self.lines.pop_front()
                     && let Err(e) = ds.push_lines(&[line])
                 {
+                    // The popped row is lost between retained disk and memory
+                    // ranges. A new content epoch prevents anchors aliasing rows.
+                    self.epoch = crate::ContentEpoch::fresh();
+                    self.first_row = 0;
                     tracing::warn!("disk scrollback push failed: {e}");
                 }
-            } else {
-                self.lines.pop_front();
+            } else if self.lines.pop_front().is_some() {
+                self.first_row = self.first_row.saturating_add(1);
             }
         }
     }
 }
 
 impl TerminalState {
-    /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
-    pub fn scroll_offset(&self) -> usize {
-        self.scrollback.scroll_offset
-    }
-
     /// Set the scrollback buffer limit.
     pub fn set_scrollback_limit(&mut self, limit: usize) {
         self.scrollback.set_limit(limit);
+        self.content_revision = self.content_revision.wrapping_add(1);
     }
 
     /// Enable disk-backed scrollback swap for this terminal.
     pub fn enable_disk_scrollback(&mut self, surface_id: u32) {
         self.scrollback.enable_disk(surface_id);
-    }
-
-    /// Scroll up (towards older content).
-    pub fn scroll_up(&mut self, lines: usize) {
-        self.scrollback.scroll_up(lines);
-    }
-
-    /// Scroll down (towards newer/live content).
-    pub fn scroll_down(&mut self, lines: usize) {
-        self.scrollback.scroll_down(lines);
-    }
-
-    /// Reset scroll position to the bottom (live view).
-    pub fn scroll_to_bottom(&mut self) {
-        self.scrollback.scroll_to_bottom();
-    }
-
-    /// Set scroll offset directly (for search navigation).
-    /// Clamped to [0, scrollback_len].
-    pub fn set_scroll_offset(&mut self, offset: usize) {
-        let max = self.scrollback.total_len();
-        self.scrollback.scroll_offset = offset.min(max);
     }
 
     /// Number of lines in the scrollback buffer (memory + disk).
@@ -461,6 +426,7 @@ impl TerminalState {
     /// Inject scrollback lines (oldest first) into this terminal's scrollback buffer.
     /// Used to restore scrollback after recreating a terminal (closed-item / layout restore).
     pub fn inject_scrollback(&mut self, lines: Vec<crate::ScrollbackLine>) {
+        self.content_revision = self.content_revision.wrapping_add(1);
         for line in lines {
             self.scrollback.push_line(line);
         }
@@ -475,6 +441,7 @@ impl TerminalState {
     /// 영역 상단에 옛 라인을 미리 보여주고 새 prompt 가 그 아래에서 시작하게
     /// 만든다. PTY 가 첫 prompt 를 출력하기 전에 호출해야 한다.
     pub fn prefill_visible_from_scrollback(&mut self, count: usize) -> usize {
+        self.content_revision = self.content_revision.wrapping_add(1);
         use termwiz::surface::Position;
 
         let count = count
@@ -552,10 +519,6 @@ impl TerminalState {
         // Shift saved_line_tails: remove top entries that scrolled off
         for _ in 0..count.min(self.saved_line_tails.len()) {
             self.saved_line_tails.remove(0);
-        }
-        // Compensate scroll_offset so the user's viewport stays in place
-        if self.scrollback.scroll_offset > 0 {
-            self.scrollback.scroll_offset += count;
         }
     }
 

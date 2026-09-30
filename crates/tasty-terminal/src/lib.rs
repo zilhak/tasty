@@ -16,6 +16,7 @@ mod screen;
 mod scrollback;
 mod sink;
 mod snapshot;
+mod viewport;
 mod vte_handler;
 
 pub mod cwd;
@@ -45,6 +46,7 @@ pub use output_buffer::{
 pub use port::TerminalProcess;
 pub use pty::pty_drop_totals;
 pub use scrollback::ScrollbackLine;
+pub use viewport::{ContentCut, ContentEpoch, TerminalViewport, ViewportInfo};
 
 /// Configuration for creating a new Terminal.
 pub struct TerminalConfig<'a> {
@@ -108,6 +110,8 @@ const RESIZE_TAP_CAP: usize = 8;
 /// 파서와 메인 스레드가 공유하는 VTE 상태. 파서는 raw 청크마다 락을 얻고 해제한다.
 /// 렌더·IPC·리사이즈도 같은 락을 사용하므로 경합할 수 있다.
 pub(crate) struct TerminalState {
+    content_revision: u64,
+    alternate_epoch: ContentEpoch,
     /// Primary screen buffer.
     pub(crate) primary_surface: Surface,
     /// Alternate screen buffer (lazily created on DECSET 1049/47).
@@ -368,9 +372,11 @@ impl TerminalState {
     /// Build the PTY-independent VTE state for a fresh terminal.
     fn new(cols: usize, rows: usize) -> Self {
         Self {
+            content_revision: 0,
             primary_surface: Surface::new(cols, rows),
             alternate_surface: None,
             use_alternate: false,
+            alternate_epoch: ContentEpoch::fresh(),
             parser: Parser::new(),
             sink: None,
             enqueued_count: 0,
@@ -422,6 +428,9 @@ impl TerminalState {
     /// `process_bytes` (test injection) so all three take an identical path.
     /// Returns true if the surface changed.
     pub(crate) fn ingest(&mut self, data: &[u8]) -> bool {
+        if !data.is_empty() {
+            self.content_revision = self.content_revision.wrapping_add(1);
+        }
         if data.is_empty() {
             return false;
         }
@@ -623,14 +632,6 @@ impl Terminal {
         f(st.surface())
     }
 
-    /// Run a closure with a read-only [`RenderView`] over the shared state. Locks
-    /// once for an entire terminal render (surface + scrollback + cursor/modes),
-    /// keeping the reader worker's per-chunk lock window the only contention.
-    pub fn with_render_view<R>(&self, f: impl FnOnce(RenderView<'_>) -> R) -> R {
-        let st = self.lock_state();
-        f(RenderView { state: &st })
-    }
-
     /// Process pending terminal state. Parsing happens on the Pty reader worker
     /// (docs/features/terminal/index.md#vte-에뮬레이션), so this only: (1) flushes a deferred PTY resize, (2) reports
     /// whether the parser ingested anything since the last call, (3) detects child
@@ -702,12 +703,13 @@ pub struct AttachSubscription {
 
 /// Read-only render view over a terminal's shared [`TerminalState`], exposing
 /// exactly what the GPU renderer needs while the state lock is held (see
-/// [`Terminal::with_render_view`]).
-pub struct RenderView<'a> {
+/// [`Terminal::with_view`]).
+pub struct TerminalReadView<'a> {
     state: &'a TerminalState,
+    viewport: ViewportInfo,
 }
 
-impl RenderView<'_> {
+impl TerminalReadView<'_> {
     /// Active surface (primary or alternate).
     pub fn surface(&self) -> &Surface {
         self.state.surface()
@@ -736,7 +738,7 @@ impl RenderView<'_> {
 
     /// Current scrollback scroll offset (0 = live bottom).
     pub fn scroll_offset(&self) -> usize {
-        self.state.scroll_offset()
+        self.viewport.scroll_offset()
     }
 
     /// Number of scrollback lines.
@@ -746,7 +748,8 @@ impl RenderView<'_> {
 
     /// Borrow a scrollback line by absolute index.
     pub fn scrollback_line(&self, index: usize) -> Option<&ScrollbackLine> {
-        self.state.scrollback_line(index)
+        self.state
+            .scrollback_line(index.checked_sub(self.viewport.cut.first_row)?)
     }
 }
 

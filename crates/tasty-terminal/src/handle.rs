@@ -114,32 +114,12 @@ impl Terminal {
         self.lock_state().search(query, options)
     }
 
-    pub fn scroll_offset(&self) -> usize {
-        self.lock_state().scroll_offset()
-    }
-
     pub fn set_scrollback_limit(&mut self, limit: usize) {
         self.lock_state().set_scrollback_limit(limit);
     }
 
     pub fn enable_disk_scrollback(&mut self, surface_id: u32) {
         self.lock_state().enable_disk_scrollback(surface_id);
-    }
-
-    pub fn scroll_up(&mut self, lines: usize) {
-        self.lock_state().scroll_up(lines);
-    }
-
-    pub fn scroll_down(&mut self, lines: usize) {
-        self.lock_state().scroll_down(lines);
-    }
-
-    pub fn scroll_to_bottom(&mut self) {
-        self.lock_state().scroll_to_bottom();
-    }
-
-    pub fn set_scroll_offset(&mut self, offset: usize) {
-        self.lock_state().set_scroll_offset(offset);
     }
 
     pub fn scrollback_len(&self) -> usize {

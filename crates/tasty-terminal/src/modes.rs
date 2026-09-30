@@ -110,6 +110,7 @@ impl TerminalState {
                         self.swap_pen_for_surface_switch();
                     }
                     self.use_alternate = true;
+                    self.alternate_epoch = crate::ContentEpoch::fresh();
                     if let Some(alt) = &mut self.alternate_surface {
                         alt.add_change(Change::ClearScreen(ColorAttribute::Default));
                         alt.add_change(Change::CursorPosition {

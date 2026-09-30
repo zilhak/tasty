@@ -2,6 +2,19 @@
 
 터미널은 wgpu 커스텀 셰이더 파이프라인으로 그린다 — egui UI 와 별도로, 각 셀의 배경 + 글리프를 GPU 인스턴스 렌더링한다. 핵심 렌더러는 `src/gfx/renderer.rs` 의 `CellRenderer`.
 
+## 터미널 내용과 사용자 viewport
+
+`TerminalViewport`는 표시면 소비자가 소유하는 읽기 위치다. `Terminal`과
+`TerminalState`는 사용자 offset을 저장하지 않는다. 터미널은 history의 content epoch,
+보존된 첫 행의 좌표와 내용 revision을 제공한다. 출력과 앞쪽 trim이 일어나도 살아 있는
+행의 좌표는 유지되고, ED3·새 terminal·1049 alternate clear는 이전 좌표를 무효화한다.
+
+`Terminal::with_view(&viewport, |view| ...)`는 parser가 사용하는 기존 mutex를 한 번
+잠그고 앵커·치수·행·모드를 같은 내용 cut으로 제공한다. 좌표를 먼저 얻고 별도 terminal
+호출로 행을 읽으면 이 보장이 없으므로, 렌더·hit-test·추출은 `TerminalReadView`를 사용한다.
+`with_content`는 사용자 선택 없는 live 읽기다. PTY 크기와 VT 응답 경로는 이 viewport와
+독립적이다. alternate screen은 live를 표시하며 primary 앵커는 복귀할 때까지 보존한다.
+
 ## 프레임 흐름
 
 1. **Clear pass** — 배경색으로 클리어
