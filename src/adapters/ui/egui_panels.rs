@@ -114,7 +114,7 @@ pub fn draw_egui_panels(
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
     let explorer_favorites = engine.explorer_favorites.items.clone();
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
-    let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = engine
+    let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = state
         .explorer_clipboard
         .as_ref()
         .filter(|c| c.cut)

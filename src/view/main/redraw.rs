@@ -1856,7 +1856,7 @@ impl MainView {
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
         let has_clip = self
-            .core_state
+            .state
             .explorer_clipboard
             .as_ref()
             .map(|c| !c.paths.is_empty())
@@ -2032,7 +2032,7 @@ impl MainView {
 
     /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
     /// 컨텍스트 메뉴와 키보드 단축키(`handle_explorer_shortcut`) 양쪽에서 공유한다.
-    /// 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 전역
+    /// 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 창의 모든 explorer 가 공유하는
     /// `explorer_clipboard` 에 남으면 이후 무관한 로컬(비-mirror) explorer 에
     /// 붙여넣을 때 그 원격 경로 문자열이 소스로 쓰인다. 복사(cut=false)는 fs 접근이
     /// 없어 무해하므로 그대로 둔다.
@@ -2046,7 +2046,7 @@ impl MainView {
             self.toast_remote_write_unsupported();
             return;
         }
-        self.core_state.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+        self.state.explorer_clipboard = Some(crate::state::ExplorerClipboard {
             paths: paths.to_vec(),
             cut,
         });
@@ -2067,17 +2067,16 @@ impl MainView {
             self.toast_remote_write_unsupported();
             return;
         }
-        let engine = &mut self.core_state;
         let dest = if is_folder {
             paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf())
         } else {
             cwd.to_path_buf()
         };
-        if let Some(clip) = engine.explorer_clipboard.clone() {
+        if let Some(clip) = self.state.explorer_clipboard.clone() {
             let (ok, err) = crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
             // 잘라내기는 이동 성공 시 클립보드 소진.
             if clip.cut && err.is_none() {
-                engine.explorer_clipboard = None;
+                self.state.explorer_clipboard = None;
             }
             if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
                 v.request_reload();

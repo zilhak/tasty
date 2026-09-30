@@ -210,6 +210,10 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) explorer_views: crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
 
+    /// Explorer의 파일 복사·잘라내기 목록. 창마다 하나이며 OS 텍스트 클립보드와 별개다. 저장하지 않는다.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
+
     /// DAG 그래프의 조회·레이아웃 캐시와 줌·이동·선택 상태.
     #[cfg(feature = "gui")]
     pub(crate) dag_graph_views: crate::adapters::ui::surface::dag_graph::DagGraphViewStore,
@@ -335,6 +339,14 @@ pub struct DropHoverState {
     pub(crate) cursor: Option<(f32, f32)>,
 }
 
+/// Explorer에서 복사하거나 잘라낸 경로. 붙여넣기가 소비한다.
+#[derive(Clone, Debug)]
+#[cfg(feature = "gui")]
+pub struct ExplorerClipboard {
+    pub paths: Vec<std::path::PathBuf>,
+    pub cut: bool,
+}
+
 impl AppState {
     /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 Core와 같은 정책으로 복구한다.
     pub(crate) fn with_memory<R>(
@@ -449,6 +461,8 @@ impl AppState {
             banners: crate::adapters::ui::BannerManager::new(),
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
+            #[cfg(feature = "gui")]
+            explorer_clipboard: None,
             #[cfg(feature = "gui")]
             dag_graph_views: Default::default(),
             #[cfg(feature = "gui")]

@@ -162,13 +162,6 @@ pub(crate) enum PendingMove {
     Pane(crate::model::PaneId),
 }
 
-#[derive(Clone, Debug)]
-#[cfg(feature = "gui")]
-pub struct ExplorerClipboard {
-    pub paths: Vec<std::path::PathBuf>,
-    pub cut: bool,
-}
-
 /// 사용자가 원격 연결 팝업에서 확정한 요청. 조회에 쓴 SSH 터널을 함께 넘길 수 있다.
 /// IPC 요청과 달리 연결 성공 후 새 mirror를 선택할 수 있어 별도 큐다.
 #[cfg(feature = "gui")]
@@ -300,10 +293,6 @@ pub struct CoreState {
 
     /// "이동"으로 지정한 대상. 종류와 관계없이 하나만 대기하며 새로 지정하면 덮어쓴다. 저장하지 않는다.
     pub(crate) pending_move: Option<PendingMove>,
-
-    /// Explorer의 파일 복사·잘라내기 목록. OS 텍스트 클립보드와 별개이며 저장하지 않는다.
-    #[cfg(feature = "gui")]
-    pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
 
     /// 공용 설정 파일에서 읽은 Explorer 즐겨찾기. 변경 뒤 저장은 호출자가 요청한다.
     #[cfg(feature = "gui")]
@@ -590,7 +579,6 @@ impl CoreState {
             branch_cache: branch::BranchCache::default(),
             pending_move: None,
             #[cfg(feature = "gui")]
-            explorer_clipboard: None,
             #[cfg(feature = "gui")]
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
