@@ -1,6 +1,6 @@
 # ADR-0055: 구조 도메인은 확정 이벤트를 원본으로 삼고 기록·실행·복원을 별도 객체가 맡는다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 구조 변경은 메모리 상태를 직접 바꾸고 레이아웃 snapshot이 복원 원본이다. 아래 객체는 아직 제품 경로에 연결되지 않았다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 구조 변경은 메모리 상태를 직접 바꾸고 레이아웃 snapshot이 복원 원본이다. 아래 객체는 아직 제품 경로에 연결되지 않았다. 미이행: importer의 child terminal 관계 ID 재매핑(슬롯 복원 엔진 활성화 전 필수; 슬롯 JSON에 surface ID가 없어 복원 시 ID 부여 규칙과 함께 설계 필요)
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, persistence, recovery, commands
 - **Group**: foundation
