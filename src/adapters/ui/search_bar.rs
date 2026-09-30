@@ -48,6 +48,7 @@ pub(crate) fn open_or_focus_for(
     if open_elsewhere {
         state
             .popups
+            // intent-exempt: 열린 팝업의 OpenPopup은 무시되고 close→reopen은 늦은 on_close가 새 검색을 지운다. intent 로그 없음.
             .open_at_top_of_scope(SEARCH_BAR_POPUP_ID, scope);
     } else {
         state.dispatch_intent(
