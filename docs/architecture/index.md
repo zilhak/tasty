@@ -107,7 +107,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 둘째와 같은 형태이고 같은 결정([ADR-0001](../adr/0001-crate-dependency-boundaries.md))의 적용이다.
 이 절의 다른 크레이트에는 예외가 없다.
 
-`tasty-event-store`는 인스턴스별 로컬 SQLite event journal의 저장 계약을 구현한다. 본 바이너리의 시험 전용 구조 저널 runtime 모듈만 이 크레이트를 사용하며, 제품 경로에는 연결하지 않았고 제품이 만드는 저장 파일도 없다. 한 journal 파일 안에서 다음을 제공한다.
+`tasty-event-store`는 인스턴스별 로컬 SQLite event journal의 저장 계약을 구현한다. 본 바이너리의 시험 전용 코드(구조 저널 runtime 모듈과 기존 layout importer)만 이 크레이트를 사용하며, 제품 경로에는 연결하지 않았고 제품이 만드는 저장 파일도 없다. 한 journal 파일 안에서 다음을 제공한다.
 
 - stream(엔진)별 revision과 expected revision 검사, 여러 stream을 한 batch로 묶는 원자 commit. batch는 번호와 stream별 revision vector로 식별한다.
 - 이벤트·명령 기록(재시도 키·요청 digest·해소한 대상·진행 상태·응답)·effect 의무를 한 transaction으로 확정한다. 하나라도 실패하면 아무것도 남지 않는다. 재시도 키로 저장된 대상·결과를 조회할 수 있고, 같은 키·같은 요청의 재제출은 새로 쓰지 않고 기존 기록을 돌려준다. 같은 키의 다른 요청은 충돌로 거절한다.
