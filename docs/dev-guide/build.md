@@ -414,8 +414,8 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 ### 의존 방향 규칙 — 도메인은 조립부를 부르지 않는다
 
 도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
-의존 방향은 모듈 경계와 가드로 제한한다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
-`pub(crate)`로 공개한 범위)와 다시 볼 조건은 [ADR-0002](../adr/0002-domain-execution-and-ports.md),
+의존 방향은 모듈 경계와 가드로 제한한다. 떼지 않았던 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
+`pub(crate)`로 공개한 범위)는 [ADR-0002](../adr/0002-domain-execution-and-ports.md), 분리하기로 한 결정과 단계는 [ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md),
 경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
 
 같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.
@@ -424,9 +424,9 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 (파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 검사 대상에서 제외한다. 같은 파일이 도메인
 테스트 전용이 아닌 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
 부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
-`egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md)).
+`egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md), 대체: [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)).
 자동화 실행부(`src/webhook/` · `src/hook_handler/`)가 inbound adapter 를 부르는 방향은
 `automation_runners_do_not_reach_inbound_adapters.rs` 가 같은 판정기로 막는다.
 
 그래서 이 경계를 세운다고 편집 빌드 범위가 줄지는 않는다 — 도메인을 고쳐도 GUI 를 고쳐도 같은
-컴파일 단위(`tasty` lib)가 다시 돈다. 그 범위가 필요해지는 날이 ADR-0002 의 재검토 조건이다.
+컴파일 단위(`tasty` lib)가 다시 돈다. 이 범위를 줄이는 crate 분리는 [ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)이 정했다.

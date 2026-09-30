@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) (surface와 PTY의 ID 범위 분리)
+- **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) (surface와 PTY의 ID 범위 분리)
 - **코드**: `src/core/pty_registry.rs` (registry+exit-code) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 

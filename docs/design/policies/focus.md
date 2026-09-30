@@ -137,7 +137,7 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
 | 알림 배치 | cap 임계·이상 탐지·승인 요청 알림이 활성 워크스페이스에 뜬다 | 사용자에게 보이라고 두는 자리라 에이전트 대상 결정이 아니다 |
 | 효과 scope | `debug.host_popup.open` 의 `workspace_scope` | debug 전용. 사용자 조작 재현이라 창 종속이 뜻 자체다 |
 
-기본값에 활성 상태를 사용하는 요청은 인자를 생략하면 같은 호출도 결과가 달라질 수 있다. 재현 가능한 결과가 필요하면 인자를 명시한다. 요청이 대상을 지정했다면 기록도 그 대상에 귀속한다. 구체적인 예외와 이유는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md)을 따른다.
+기본값에 활성 상태를 사용하는 요청은 인자를 생략하면 같은 호출도 결과가 달라질 수 있다. 재현 가능한 결과가 필요하면 인자를 명시한다. 요청이 대상을 지정했다면 기록도 그 대상에 귀속한다. 구체적인 예외와 이유는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)을 따른다.
 
 계측 태그의 workspace는 요청 대상이 아닐 수 있다. 따라서 이 필드만으로 해당 workspace에서 발생한 작업이라고 판단하지 않는다.
 
@@ -149,7 +149,7 @@ recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 1
     # 다섯 포인터를 센다
     grep -rn 'focused_view_id\|active_workspace\|focused_pane\|active_tab\|focused_surface' <out>
 
-    # 합산 집합의 소속 판정(ADR-0017) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
+    # 합산 집합의 소속 판정(ADR-0059) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
     # `src/app/dispatch/list_global.rs` 의 arm 과 대조한다. 대상 인자가 있는 것
     # (`surface_id` 등을 받는 것)은 라우터가 주인 창을 푸니 합산 대상이 아니다.
     grep -rn 'for ws in &engine.workspaces\|engine.workspaces.iter()' <out>/src/adapters/ipc
@@ -168,7 +168,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 ## 삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다
 
-사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)).
+사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)).
 
 `AppState::active_workspace`와 `Pane::active_tab`은 인덱스다. 앞 항목을 지우면 같은 인덱스가 다른 항목을 가리키므로, 범위 안으로 제한하는 것만으로는 부족하다. 삭제 위치에 맞춰 인덱스도 줄여야 한다.
 
@@ -247,7 +247,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 - 사용자가 에이전트 창을 직접 고르면 `WindowEvent::Focused(true)` 추적이 `focused_view_id` 를
   옮긴다.
 
-근거와 플랫폼별 결과는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
+근거와 플랫폼별 결과는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md).
 
 ## 에이전트가 만든 탭과 선택
 
@@ -270,7 +270,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 - 응답의 `active_tab` 은 "생성 뒤 그 pane 의 활성 탭" 이다 — 에이전트가 만든 탭이면 사용자가
   보던 탭의 인덱스다. 새 탭은 응답의 `surface_id` 로 다룬다.
 
-근거는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
+근거는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md).
 
 <a id="원격이-점유한-surface-는-닫기-요청이-죽이지-않는다"></a>
 

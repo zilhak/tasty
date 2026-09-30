@@ -84,7 +84,7 @@ TTL 기반 정리 세 가지는 `Lax`를 사용한다. 요청이 올 때만 정�
 **직전에** 도는 덕분에 동시 개수 상한 판정을 정확하게 만든다(죽은 항목을 먼저 치우고
 상한을 본다). 대체하면 "실제로는 idle 인 PTY 때문에 spawn 이 상한 초과로 실패" 하는
 회귀가 된다 — 주기 타이머는 최대 90초 뒤에나 도는데 spawn 은 지금 성공해야 한다.
-두 경로는 보완 관계다([터미널 프로세스 수명](../adr/0013-terminal-io-and-process-lifetime.md)).
+두 경로는 보완 관계다([터미널 프로세스 수명](../adr/0060-terminal-and-pty-separation.md)).
 
 두 경로가 공존하면 **후처리가 갈라지는 것**이 다음 위험이다. headless PTY 회수는
 registry 제거 + `TerminalStore` 제거 + waker 게이트 해제 셋을 한 묶음으로 해야 하는데

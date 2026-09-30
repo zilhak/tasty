@@ -209,7 +209,7 @@ in-memory" 가 안 갈린다([ADR-0010](../../adr/0010-storage-failure-reporting
 내려가는 값**) · `sink_capacity`(연결 하나의 큐 상한 — `connections.limit` 과 같은 이유로 값과 함께
 나간다). 연결별 **연속** drop 수는 없다 — 성공 한 번에 0 이 되는 강제 연결 해제 조건이라 읽는 시점에 따라
 같은 사건이 0 으로 보인다. 세 값의 정의와 손실을 받은 client 가 하는 일은
-[ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)
+[ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)
 과 [attach-behavior](../../dev-guide/attach-behavior.md) 에 있다. 허브가 엔진에 주입되지 않은
 조립(단위 시험)에서는 항목이 `null` 이다.
 

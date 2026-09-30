@@ -9,7 +9,7 @@
 - **실행 자원** — 다른 소유자의 핸들 사본이나, 한 계층이 넣고 다른 계층이 비우는 큐.
 
 소유권을 struct 두 개로 가르지 않고 **컴파일 경계와 모듈 경계**로 가른 결정과 그 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md).
+[ADR-0002](../adr/0002-domain-execution-and-ports.md). 이 결정은 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체했으며 이행 중이다.
 "어떤 정의를 gui 전용으로 가르는가" 의 판정 규칙 자체는 [헤드리스 정의 경계](headless-build-boundaries.md)
 가 정본이고, 이 문서는 그 규칙을 `AppState` 에 적용한 결과표다.
 

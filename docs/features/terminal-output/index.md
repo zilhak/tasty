@@ -86,7 +86,7 @@ stderr에 쓴 뒤 종료 코드 1로 끝난다. 새 인자가 없는 기존 호�
 
 셸 통합이 OSC 133 을 보내면 각 명령의 prompt 시작/명령 시작/종료/exit code/명령 문자열을 `tasty-memory`(`surface:<id>` scope, `tasty.commands.<ms>`)에 기록. OSC 133 미지원 셸은 빈 배열.
 
-**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
+**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
 
 **bash/zsh 셸 통합은 자동으로 주입한다.** 사용자의 `.bashrc`/`.zshrc`를 수정하지 않고
 셸 시작 때 OSC 133의 A(prompt 시작), C(명령 실행 직전), D(종료와 exit code)를 보낸다.

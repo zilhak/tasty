@@ -127,7 +127,7 @@ CLI 진입점이 없다고 판단하지 않는다. 인자를 맞추지 못해 �
 | plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. 외부 arm 은 있지만 CLI·agent 호출은 popup 을 안 열고 `-32016` 을 받는다(아래 †plugin-only 절 끝, [ADR-0031](../adr/0031-file-handler-routing.md)) |
 | plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창·파일열기 팝업)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)) |
 | plugin → host 서비스 | `markdown_mirror.content_request` | markdown plugin 이 attach mirror 문서의 원격 원문을 요청한다. `git_viewer.query` 와 같은 비동기 accept 라 `request_id` 만 회신하고 원문은 그 plugin 에 unicast push 되므로 셸이 결과를 받을 수 없다([ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)) |
-| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI로 읽으면 스캐너보다 먼저 커서가 전진해 감시할 출력을 놓칠 수 있다. 에이전트가 출력을 읽을 때는 커서를 움직이지 않는 `tasty read since-mark`를 쓴다([ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md)) |
+| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI로 읽으면 스캐너보다 먼저 커서가 전진해 감시할 출력을 놓칠 수 있다. 에이전트가 출력을 읽을 때는 커서를 움직이지 않는 `tasty read since-mark`를 쓴다([ADR-0060](../adr/0060-terminal-and-pty-separation.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 호출할 수 없다 |
 | plugin → host 서비스 †plugin-only | `webview.open_external` | plugin 이 **자기** webview surface 안에서 클릭된 외부 링크를 host 의 OS 열기 자리로 넘긴다. 대상이 caller plugin 소유 surface 여야 하고, 사용자 브라우저를 여는 것은 에이전트가 자기 작업에 쓰는 능력이 아니다([ADR-0030](../adr/0030-bundled-plugin-data.md)) |
 | plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
@@ -254,7 +254,7 @@ relay 생성 실패 시에는 warn을 남기고 키 없이 실행하는 현재 �
 relay는 완료까지 살아 있으므로 저장 항목 수가 곧 스레드 수 상한은 아니다.
 스레드 누적·재시작 보존 요구가 생기면 설계를 다시 검토한다.
 
-새 경로를 추가하면 키 저장, 진행 중 합류, 호출자 범위, 실제 capability 버전을 함께 확인한다. 단위 테스트가 공용 함수를 검사하는 것과 실제 GUI·plugin 경로가 그 함수를 호출하는 것은 다른 검증이다. 설계 이유는 [멱등 재시도 ADR](../adr/0005-idempotent-mutation-retries.md)을 따른다.
+새 경로를 추가하면 키 저장, 진행 중 합류, 호출자 범위, 실제 capability 버전을 함께 확인한다. 단위 테스트가 공용 함수를 검사하는 것과 실제 GUI·plugin 경로가 그 함수를 호출하는 것은 다른 검증이다. 설계 이유는 [멱등 재시도 ADR](../adr/0057-command-identity-for-mutation-retries.md)을 따른다.
 
 ### plugin 을 거쳐 온 실패도 호스트가 준 코드를 그대로 낸다
 
@@ -384,7 +384,7 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
   비교**해 다르면 연결을 거절한다(`validate_stream_proto`). 그래서 그 값을 올리면 **구 peer의 attach 연결이 거절된다**. 버전은 프레임의
   *기존* 뜻이 바뀔 때만 움직이고, 더해지는 기능은 `ipc.stream.<기능>` 처럼 이름으로
   선언한다. 그 이름을 본 client 만 그 기능을 쓰고, 못 본 client 는 종전 동작을 받는다.
-  본보기와 결정 근거는 [ADR-0023](../adr/0023-attach-state-sync-and-forwarding.md).
+  본보기와 결정 근거는 [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md).
 
 메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /

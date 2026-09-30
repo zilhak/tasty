@@ -2,7 +2,7 @@
 
 - **Status**: Done
 - **주체**: AI Agent (CRUD·소속 변경, IPC/CLI 양면) · 로컬 사용자 (사이드바 그룹·전환·생성/이름변경/삭제, 토글 on 시)
-- **ADR**: [ADR-0017](../../adr/0017-workspace-identity-and-focus.md)
+- **ADR**: [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)
 - **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드 / `set_category_collapsed`) · `src/core/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹·헤더/레일 키캡) · `src/adapters/ui/switch_overlay.rs` (`SwitchTarget::Category` 판정·`category_switch_held`) · `src/adapters/ui/input/shortcuts/numeric.rs` (카테고리 조합+숫자 → `switch_to_category`) · `src/state/workspace.rs` (`switch_to_category` / `category_last_active` / `relative_workspace_in_active_category` 의 경계 넘기) · `crates/tasty-settings/src/general.rs` (`workspace_switch_crosses_category`) · `src/adapters/ui/input/shortcuts/modifier_hint.rs` (`HintRole::CategorySwitch`) · `crates/tasty-settings/src/keybindings.rs` (`category_switch_modifier` / `category_switch_slot_keys`) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴) · `src/state/preset_apply.rs`(`apply_workspace_preset` 의 `category` 파라미터) · `src/adapters/ui/popup/preset_apply.rs`(`preset_apply_target_category` 소비/리셋)
 - **화면**: 설정 토글 on 시 사이드바가 카테고리 섹션으로 그룹 렌더. 확장 사이드바는 밴드형 헤더(bg-app 면 + 상/하 hairline, chevron+대문자 캡스 라벨(secondary)+우측 워크스페이스 카운트, 접힘 토글)+소속 행, 축소 레일은 카테고리 경계 `---` 버튼+우측 앵커드 팝업. 우클릭 컨텍스트 메뉴(헤더/배경/행)와 레일 팝업으로 생성/이름변경/삭제/카테고리 이동. 드래그로 다른 카테고리 이동. **카테고리 modifier 조합(`category_switch_modifier`, 기본 Ctrl+Shift) 홀드** 시 카테고리 헤더 우측(확장)·`---` 경계 중앙(레일)에 숫자 키캡이 뜨고, 숫자로 그 카테고리로 전환한다. 갤러리 specimen: Layouts › Sidebar & rail(그룹), Overlays › Workspace categories(다이얼로그·레일 팝업), Overlays › Switch-number overlay › Category switch(modifier held — 부제가 기본 조합을 설정 기본값에서 파생해 표기).
 
@@ -17,7 +17,7 @@
 - **이름 규칙**: trim 후 빈 이름 거부, `normal`(대소문자 무시) 예약어 거부, 기존 이름과 대소문자 무시 중복 거부.
 - **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다(원칙 1·3).
 - **reorder**: `categories` Vec 순서 변경. **from/to == 0 거부**(normal 0번 고정).
-- **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
+- **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
 - **워크스페이스 축 next/prev 의 카테고리 경계 넘기 옵션**: "다음/이전 워크스페이스" quick-switch(기본 vim 스타일 `j`/`k`, `next_workspace_in_active_category`/`prev_workspace_in_active_category`)는 기본적으로 활성 카테고리 **로컬 목록 안에서만** wrap-around 한다.
   설정 → 일반 → "다음/이전 워크스페이스가 카테고리 경계를 넘음"(`workspace_switch_crosses_category`, 기본 off)을 켜면, 카테고리 마지막 워크스페이스에서 "다음"은 **다음 카테고리의 첫 워크스페이스**로, 카테고리 첫 워크스페이스에서 "이전"은 **이전 카테고리의 마지막 워크스페이스**로 넘어가며 카테고리 목록 자체도 wrap 한다.
   이동 대상은 항상 방향에 맞는 첫/마지막 워크스페이스이며, 아래 카테고리 quick-switch 의 **마지막 활성 workspace로의 이동과는 다르다**(방향성 유지가 우선).

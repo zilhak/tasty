@@ -64,7 +64,7 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 
 `state.dispatch_intent(dispatched)`는 요청을 큐에 넣는다. 요청 출처를 붙이는 빌더로 `.from_user_shortcut("…")`, `.from_user_menu("…")`, `.cascaded_from(intent)`를 사용한다.
 
-IPC 엔진 핸들러는 창 대신 요청별 `IntentOutbox`를 받는다. 핸들러는 `out.push(dispatched)`로 요청을 넣고, 진입점의 게이트·`dispatch_routed`·`record_plugin_rss_samples`가 요청 종료 시 창 큐로 옮긴다. 한 요청 안에서는 추가한 순서를 유지하므로 게이트가 만든 Intent가 먼저 처리된다. [ADR-0002](../../adr/0002-domain-execution-and-ports.md)를 따른다.
+IPC 엔진 핸들러는 창 대신 요청별 `IntentOutbox`를 받는다. 핸들러는 `out.push(dispatched)`로 요청을 넣고, 진입점의 게이트·`dispatch_routed`·`record_plugin_rss_samples`가 요청 종료 시 창 큐로 옮긴다. 한 요청 안에서는 추가한 순서를 유지하므로 게이트가 만든 Intent가 먼저 처리된다. [ADR-0002](../../adr/0002-domain-execution-and-ports.md)를 따른다(대체: [ADR-0054](../../adr/0054-app-core-view-layers-and-state-ownership.md), 이행 중).
 
 GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리한다. 전체 등록 순서를 그대로 따르지는 않으며 `classify_intent`가 정한 종류별로 처리한다.
 
@@ -84,7 +84,7 @@ Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한�
 
 attention·notification 적재, terminal mark, 설정 적용·저장처럼 engine 상태만으로 끝나는 작업을 처리한다. 화면 다시 그리기·토스트·테마 재설치·알림음은 제외한다. OSC 7 cwd의 탭 이름 갱신은 Intent가 아니라 PTY 처리에서 `intent::headless::apply_terminal_cwd_changed`를 직접 호출한다.
 
-헤드리스의 `drain_pending_host_events`도 위 세 시점과 PTY 출력 처리 끝에서 실행한다. `pending_host_events`를 비우고 `HookFired`로 push 완료를 기다리는 agent task를 마감한다. 일반 plugin Event Bus 전달 경로는 없어 나머지 이벤트는 버린다. 지원 범위와 이유는 [ADR-0003](../../adr/0003-headless-behavior.md)을 따른다.
+헤드리스의 `drain_pending_host_events`도 위 세 시점과 PTY 출력 처리 끝에서 실행한다. `pending_host_events`를 비우고 `HookFired`로 push 완료를 기다리는 agent task를 마감한다. 일반 plugin Event Bus 전달 경로는 없어 나머지 이벤트는 버린다. 지원 범위와 이유는 [ADR-0058](../../adr/0058-headless-without-local-views.md)을 따른다.
 
 핸들러는 `match &intent.body`로 도메인 함수를 선택한다. AppState 전체를 trait object가 대여하면 필요한 필드만 따로 변경하기 어렵기 때문이다. 오류는 `tracing::warn!`으로 기록하고, 사용자에게 알려야 할 실패는 사용자·에이전트 정책에 따라 토스트로 표시한다. 패닉을 일으키거나 `let _ =`로 오류를 버리지 않는다.
 

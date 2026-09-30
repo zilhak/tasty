@@ -44,7 +44,7 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
 파일을 컴파일하므로 함수 하나에 본문 하나이고, 빌드 형태의 차이는 그 본문 안의
 `#[cfg(feature = "gui")]` 블록으로만 존재한다. 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md)에 정리되어 있다.
+[ADR-0002](../adr/0002-domain-execution-and-ports.md)에 정리되어 있다. 이 결정은 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체했으며 이행 중이다.
 
 
 ### gui 와 headless 의 차이
@@ -91,7 +91,7 @@ tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러
 (`forward_and_ipc_fail_with_the_same_reason_for_the_same_input`), 문구가 옛 기준과 같은지
 (`failure_reasons_keep_the_base_literals` — 기대 문자열과 비교). convert / restore / move-surface 는 `Core::apply` 를
 직접 부른다. 호출자가 회신하는 것은 `StreamControl::StructuralResult` 다. 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md).
+[ADR-0002](../adr/0002-domain-execution-and-ports.md)이며 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체해 이행 중이다.
 
 ## 단계
 
@@ -227,7 +227,7 @@ C1 은 surface 마다 화면(rows x cols)과 스크롤백 전량을 `ClosedItem`
 라인당 경로(`scrollback_line_full`)도 남아 있지만 selection / search / link 처럼
 소수 라인만 만지는 소비자용이다. 벌크 캡처에 쓰면 두 가지가 겹쳐 비싸진다:
 
-- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0013)
+- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0060)
   이라, 만재 스크롤백 캡처가 파서와 수만 회 경합한다.
 - 디스크 영역 라인은 `line_owned` / `line_wrapped` 가 같은 인덱스를 독립적으로
   읽어 `File::open` 이 라인당 2회가 된다(현재는 `line_full` 단일 조회로 1회).

@@ -150,7 +150,7 @@ GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 �
 끝난다. 서버 전체의 손실 누계와 지금 쌓인 양은 `tasty list pressure` 의 `stream_push` 로
 읽는다([telemetry](../telemetry/index.md)). 종류별 계약·순서·한도는
 [dev-guide/attach-behavior "통지를 받은 client 가 하는 일"](../../dev-guide/attach-behavior.md#통지를-받은-client-가-하는-일-재동기화-계약),
-근거는 [ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)에 정리되어 있다.
+근거는 [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)에 정리되어 있다.
 
 
 ### mirror 워크스페이스 내 구조 변경
@@ -176,22 +176,22 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
   사용자가 만진 plugin popup 에서 온 `file_handler.dispatch`·`markdown.navigate`(markdown 파일열기 팝업의 새 탭 열기·제자리 변환)는 사용자 origin 이라 그 실패는 toast 가 된다([ADR-0031](../../adr/0031-file-handler-routing.md)).
   요청/응답이라 실패 시 로컬·원격 어느 쪽도 구조가 바뀌지 않는다.
-  - **`reason` 은 원격에서 실패를 낸 자리의 문구 그대로다** — split · 새 탭 · convert 모두 같다(예: convert 대상 kind 가 원격에 없으면 `unknown surface kind: <kind>`). client 는 그것을 고치지 않고 toast 끝 괄호 안에 싣는다. 사유가 없을 때의 폴백은 두 층이다: 원격 convert 가 사유 없이 실패하면 `surface <id> was not converted` 를 싣고(원인을 짐작한 "not found" 류 문구를 쓰지 않는다 — 원인이 다를 때 실제 사유를 가린다, [ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)), wire 에 `reason` 이 아예 없으면 client 는 괄호 없는 기본 문구만 띄운다.
+  - **`reason` 은 원격에서 실패를 낸 자리의 문구 그대로다** — split · 새 탭 · convert 모두 같다(예: convert 대상 kind 가 원격에 없으면 `unknown surface kind: <kind>`). client 는 그것을 고치지 않고 toast 끝 괄호 안에 싣는다. 사유가 없을 때의 폴백은 두 층이다: 원격 convert 가 사유 없이 실패하면 `surface <id> was not converted` 를 싣고(원인을 짐작한 "not found" 류 문구를 쓰지 않는다 — 원인이 다를 때 실제 사유를 가린다, [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)), wire 에 `reason` 이 아예 없으면 client 는 괄호 없는 기본 문구만 띄운다.
 - **역반영 (성공 시)**: 성공한 forward 로 원격에 생긴/사라진 surface 를 mirror 트리에 반영한다. 원격이 실행 후 워크스페이스 **전체 트리+surfaces** 를 `StreamControl::StructuralDelta` 로 push(`StructuralResult` 성공 회신 **직후**)하고, client 가 이를 받아 mirror 트리를 증분 재구성한다. survivor(이미 mirror 로 존재하는 원격 surface)는 **기존 mirror 터미널을 그대로 유지**(scrollback 보존)하고, 새 원격 surface 만 새 mirror 로 추가, 사라진 surface 는 제거한다. 최소 증분(surface 별 diff) 대신 full-tree 재동기화를 쓰는 이유: client 는 surface 매핑만 보유한다는 불변식을 지키면서 split·새 탭·닫기(cascade)·탭 순서 변경을 균일하게 반영하기 위함. pane 상위 배치(direction/ratio)도 핸드셰이크와 동일한 트리 필드로 정확히 승계된다.
 - **focus 는 원격이 아니라 client 가 보존한다**: 위 역반영 트리가 담는 focus(어느 pane/탭이 focused 인지)는 원격 값 그대로다 — 순수 pane/탭 전환은 forward 되지 않으므로 원격의 focus 는 사실상 워크스페이스 생성 시점에 고정돼 있다. 매 역반영마다 이 고정값으로 로컬을 통째로 교체하면 사용자가 mirror 안에서 실제로 보고 있던 pane/탭이 매번 첫 pane/첫 탭으로 튀는 문제가 있었다. client 는 교체 직전 로컬 focus 위치를 remote surface id 기준으로 기억해뒀다가 교체 직후 그 위치로 되돌린다.
   - **단, "무관한 delta 로부터 옛 focus 를 지키는 것"과 "이번 조작 자체의 결과로 focus 가 움직여야 하는 것"은 다른 문제다.** 사용자가 mirror 안에서 직접 새 탭/split 을 만들면 옛 focus 복원만으로는 새로 생긴 리소스로 focus 가 전혀 안 옮겨가고, focus 중인 surface 자체를 닫으면 복원 대상이 사라져 원격의 고정값(대개 워크스페이스 첫 pane/첫 탭/첫 surface)으로 튀어 버린다.
     그래서 client 는 이 op 이 **실제 사용자 GUI 조작**(단축키/버튼/컨텍스트 메뉴 — IPC/CLI/에이전트 호출은 제외)이었는지를 forward 시점부터 태그(`user_triggered`)해두고, 성공 회신에 상관지어(op_id) 뒤따르는 delta 적용에서: 새 탭/split 이면 새로 생긴 surface 로 focus 를 옮기고, close 로 옛 focus 복원이 실패했으면 닫히기 **전** 캡처해둔 인접 후보(같은 tab 의 형제 surface, 또는 같은 pane 의 인접 탭)로 fallback 한다.
     IPC/CLI 로 같은 조작을 했을 때는 이 태그가 항상 꺼져 있어 focus 가 그대로 안 움직인다(회귀 없음 — "포커스 독립성" 유지).
   - 메커니즘 상세는 [dev-guide/attach-behavior "focus 보존"](../../dev-guide/attach-behavior.md#mirror-구조-변경-forward).
-- **서버 쪽에서 바뀐 구조도 역반영한다**: 원격 셸이 끝나(`exit`) 원격에서 탭/pane 이 닫히면, forward 가 없었어도 원격이 같은 `StructuralDelta` 를 push 해 mirror 에서도 곧바로 사라진다. 원격에서 로컬 경로로 워크스페이스에 편입된 surface 도 같은 메시지로 mirror 에 나타난다(그 surface 의 화면 스냅샷보다 트리가 먼저 간다). 새 메시지는 없다 — 역반영 메시지를 forward 성공 말고도 보낼 뿐이다([ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)). 그 셸이 워크스페이스의 마지막 surface 였으면 아래 강제 detach 와 같다.
+- **서버 쪽에서 바뀐 구조도 역반영한다**: 원격 셸이 끝나(`exit`) 원격에서 탭/pane 이 닫히면, forward 가 없었어도 원격이 같은 `StructuralDelta` 를 push 해 mirror 에서도 곧바로 사라진다. 원격에서 로컬 경로로 워크스페이스에 편입된 surface 도 같은 메시지로 mirror 에 나타난다(그 surface 의 화면 스냅샷보다 트리가 먼저 간다). 새 메시지는 없다 — 역반영 메시지를 forward 성공 말고도 보낼 뿐이다([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)). 그 셸이 워크스페이스의 마지막 surface 였으면 아래 강제 detach 와 같다.
 - **역반영 대신 강제 detach (workspace 자체가 cascade 로 사라지는 경우)**: workspace 의 **마지막 surface** 를 forward `CloseSurface` 로 닫으면, 원격의 `close_case_workspace`("Case 4: last pane in workspace")가 트리 일부가 아니라 **workspace 자체**를 통째로 purge 한다 — 이 경우 되돌릴 delta 자체가 없다.
   `execute_forwarded_structural_op`(`src/core/attach_runtime.rs`)이 실행 후 워크스페이스를 재조회해 실패를 확인하면, delta 재구성을 시도하는 대신 `force_detach_workspace` 를 호출해 holder 를 강제 detach(Control `force_detached` + `Detach`)시키고 `OccupancyRegistry` 의 lock 도 함께 정리한다.
   client 는 이를 일반 force-detach 와 동일하게 처리해 mirror 를 정리한다 — 재attach 없이도 즉시 반영된다.
   메커니즘 상세는 [dev-guide/attach-behavior "점유 레지스트리"](../../dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry).
-- **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
+- **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
   - **원격에서 누른 복원은 그 워크스페이스 것만 꺼낸다**: 서버의 복원 스택은 워크스페이스로 스코프돼, mirror 사용자의 복원이 서버 앞에 앉은 사용자가 방금 닫은 다른 워크스페이스의 탭을 가져가지 않는다. 반대 방향은 스코프를 걸지 않는다 — 서버 로컬 복원은 지금까지처럼 전역 LIFO 다. forward 된 close 가 서버 자신의 트리에서 탭을 없애므로, 그 기계 앞의 사용자에게도 undo 가 남아야 하기 때문이다.
   - **mirror 안에서 손으로 닫은 것은 되돌려진다**: 원격 사용자의 손으로 닫힌 탭/pane/surface 는 서버의 복원 스택에 남는다.
-  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([identity](../../identity.md) 원칙 1). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)).
+  - **에이전트가 닫은 것은 어느 쪽 복원 스택에도 안 남는다**: 클라이언트의 에이전트가 CLI/IPC 로 mirror 를 닫으면 그 close 도 원격으로 forward 되지만, forward 가 "에이전트의 요청" 이라는 표시를 싣고 서버는 그것을 복원 스택에 넣지 않는다. 그렇지 않으면 서버 앞 사용자의 복원 단축키가 에이전트가 닫은 것을 되살린다 — 사용자의 닫은 항목 히스토리는 사용자가 닫은 것만 담는다([identity](../../identity.md) 원칙 1). 표시가 없는 forward(이 표시 이전의 클라이언트)는 사용자 조작으로 읽는다([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
   - **복원된 탭의 옛 스크롤백은 mirror 에 전량 오지 않는다**: 서버 쪽 터미널은 스크롤백까지 되살아나지만, mirror 는 기존 규약대로 보이는 화면 1 회 스냅샷 + 이후 변경분만 받는다. 원격 윈도우에서 보면 스크롤백이 그대로 있다.
 - **mirror 워크스페이스 자체를 닫는 것**은 로컬 mirror 뷰를 걷어내는 정당한 로컬 동작이라 차단·forward 대상이 아니다.
 - **`terminal.spawn` 은 forward 대상이 아니라 거부 대상이다 ([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md))**: 위 forward 는 fire-and-forget 이라 응답이 원격에서 생긴 리소스의 id 를 담지 않는다.
@@ -312,15 +312,15 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### 창 없는 상태(parked)에서의 세션 수명
 
-attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `parked_states` 에 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
+attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `parked_states` 에 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0054](../../adr/0054-app-core-view-layers-and-state-ownership.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
 
 - **parking 만으로는 세션이 끊기지 않는다.** 고아 판정(`detach_orphaned_mirror_sessions`)이 묻는 것은 "창이 있는가"가 아니라 **"그 mirror 워크스페이스를 들고 있는 engine 이 살아 있는가"** 다 — 창 있는 engine 과 parked engine 을 함께 본다. 창 유무로 판정하면 사용자가 창을 최소화했을 뿐인데 원격에 `Detach` 가 나가 점유가 조용히 풀린다.
 - **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.
 - **정리는 parked engine 에도 동일하게 적용된다.** mirror 워크스페이스 행뿐 아니라 mirror 터미널·mirror busy 엔트리·mesh 프레임 캐시를 함께 걷어내고 `active_workspace` 인덱스를 클램프한다.
-  걷어낸 뒤 그 engine 에 워크스페이스가 하나도 없으면(사용자가 로컬 워크스페이스를 다 닫고 mirror 만 남겼던 경우) 기본 터미널 워크스페이스를 다시 만들어 활성으로 삼는다 — 원격이 끊겼다고 사용자 창을 닫지 않고, 워크스페이스 0 개인 창이 다음 redraw 에서 죽지도 않는다(`AppState::recreate_workspace_if_empty`, 에이전트가 마지막 surface 를 닫은 경우와 같은 복구 — [ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)).
+  걷어낸 뒤 그 engine 에 워크스페이스가 하나도 없으면(사용자가 로컬 워크스페이스를 다 닫고 mirror 만 남겼던 경우) 기본 터미널 워크스페이스를 다시 만들어 활성으로 삼는다 — 원격이 끊겼다고 사용자 창을 닫지 않고, 워크스페이스 0 개인 창이 다음 redraw 에서 죽지도 않는다(`AppState::recreate_workspace_if_empty`, 에이전트가 마지막 surface 를 닫은 경우와 같은 복구 — [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
   판정과 정리의 순회 범위는 **같아야** 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면, 그 engine 이 나중에 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
 - parked engine 에는 창이 없으므로 정리 시 toast 를 쌓지 않는다(토스트 수명이 wall-clock 기준이라 창 복원 시점엔 이미 만료된다).
-- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([ADR-0023](../../adr/0023-attach-state-sync-and-forwarding.md)).
+- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
   `apply_attach_client_output` 은 적용 대상을 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`), 대상을 찾은 **뒤에야** reader 버퍼를 drain 한다.
   창이 없는 동안 도착한 `Data`/`Resize`/`StructuralDelta`/`Activity`/`Attention`/`Cwd`/`Mesh` 는 그 engine 의 mirror 터미널·매핑·트리에 도착 순서대로 반영되므로, 창 복원 시 mirror 는 이미 최신이고 `remote_to_local` 매핑도 desync 되지 않는다 — 로컬 PTY 출력이 parked engine 에서도 파싱되는 것과 같은 대칭이다.
   판정·정리·적용 세 순회의 범위는 **같다**.

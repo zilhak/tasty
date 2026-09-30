@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent(입력 주입은 [terminal-output](../terminal-output/index.md)/`surface.send*`) · 원격(mirror)
-- **ADR**: [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md) — 파서 스레드와 PTY 수명·절전 복구. [ADR-0014](../../adr/0014-terminal-compatibility-scope.md) — 지원 범위와 인라인 그래픽 보류.
+- **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) — 파서 스레드와 PTY 수명·절전 복구. [ADR-0014](../../adr/0014-terminal-compatibility-scope.md) — 지원 범위와 인라인 그래픽 보류.
 - **코드**: `crates/tasty-terminal/` (PTY·VTE·grid·scrollback), 렌더 `src/gfx/`
 - **화면**: GPU 렌더링 셀 그리드 (egui 아님)
 
@@ -161,7 +161,7 @@ ED/EL은 커서 위치를 유지하며 현재 셀을 포함해 지운다.
 
 파싱은 터미널별 reader 스레드에서 수행하고 main 루프는 렌더링과 이벤트만 처리한다.
 공유 grid는 8KB 청크 처리 후 락을 놓는다. 자세한 선택 이유는
-[PTY 처리 결정](../../adr/0013-terminal-io-and-process-lifetime.md)을 참고한다.
+[PTY 처리 결정](../../adr/0060-terminal-and-pty-separation.md)을 참고한다.
 
 ### 스크롤백
 
@@ -210,7 +210,7 @@ Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 
 ## 관련
 
 - [terminal-search](../terminal-search/index.md) · [terminal-link](../terminal-link/index.md) · [clipboard](../clipboard/index.md)
-- [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md) · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
+- [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
 
 ## 휠 스크롤 거리
 

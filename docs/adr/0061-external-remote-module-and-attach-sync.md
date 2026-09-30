@@ -61,6 +61,9 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
 - 손실: 수신을 선언한 client에 `Loss{frames}`를 보낸다(`ipc.stream.loss-notify`). 기존 프로토콜 번호를 올려 구 client를 끊지 않는다.
   큐가 가득 차면 `pending_loss`에 보관하고 실제로 넣은 뒤에만 지운다. 통지 전송으로 lag를 초기화하지 않는다.
   밀린 통지는 write 스레드가 프레임 하나를 꺼내 공간을 만든 직후 넣는다.
+  프레임의 기존 뜻이 바뀔 때만 `STREAM_PROTO`를 올리고, 더해지는 기능은 `ipc.stream.<기능>` 이름으로 선언한다.
+- 전송 압력: lag는 연결별 연속 전송 실패 횟수, `frames_dropped`와 `clients_lagged_out`은 누계, `backlog`는 살아 있는 연결들의 미전송 큐 길이 합이다.
+  누계와 `backlog`는 `system.pressure`에 `sink_capacity`와 함께 노출한다. 연결별 큐 길이를 합산해 끊긴 연결의 backlog가 남지 않게 한다.
 - 복구: 손실 복구는 연결이 전달하는 데이터 중 가장 강한 요구를 따른다. workspace mirror는 Detach 후 이전 연결의 EOF를 확인하고 재attach한다.
   한 세션에서 재attach는 한 번에 하나이고 진행 중 추가 손실은 합산한다. parked 엔진의 복구는 창이 돌아올 때까지 미루되 연결과 출력 처리는 유지한다.
   bulk 중단은 결과 불명으로 처리해 자동 재시도하지 않는다.

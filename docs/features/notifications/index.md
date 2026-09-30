@@ -44,7 +44,7 @@ ID는 인스턴스의 공유 IdGenerator에서 발급하는 u64이며 재시작 
 유지하므로 최근 내용 갱신이 항목을 앞으로 옮기지는 않는다. 기존 한 engine의 순서와
 고정 50개 응답 계약을 유지하며 새로운 limit/필터 인자를 도입하지 않는다.
 
-이는 [목록 합산 원칙](../../adr/0017-workspace-identity-and-focus.md)의
+이는 [목록 합산 원칙](../../adr/0059-id-targets-and-view-owned-selection.md)의
 적용이며, GUI 패널을 전역 패널로 바꾸는 결정이 아니다.
 
 <a id="시스템-알림--사운드"></a>
