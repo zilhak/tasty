@@ -112,6 +112,9 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
     egui::Frame::NONE
         .inner_margin(margin_sym(theme.spacing_md, theme.spacing_sm))
         .show(&mut fu, |ui| {
+            // 본체 dag_list처럼 띠 안의 간격은 hspace로만 둔다. 물려받은 item_spacing이 더해지면
+            // 선택 상자가 오른쪽 여백 밖으로 밀린다.
+            ui.spacing_mut().item_spacing.x = 0.0;
             let filter_w = theme.field_width_md.value();
             let search_w = (filter.width()
                 - theme.spacing_md.value() * 2.0

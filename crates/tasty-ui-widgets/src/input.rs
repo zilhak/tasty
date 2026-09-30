@@ -141,54 +141,52 @@ impl<'a> Input<'a> {
         } else {
             theme.state_disabled_fg().to_egui()
         };
-        let resp = ui
-            .allocate_new_ui(
-                egui::UiBuilder::new()
-                    .max_rect(inner)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    if let Some(paint) = self.icon {
-                        let (irect, _) = ui.allocate_exact_size(
-                            egui::vec2(icon_glyph, icon_glyph),
-                            egui::Sense::hover(),
-                        );
-                        paint(ui, irect, muted);
-                    }
-                    let font = if self.mono {
-                        egui::FontId::monospace(caption)
-                    } else {
-                        egui::FontId::proportional(body)
-                    };
-                    let (hint, text_color) = if self.enabled {
-                        (
-                            tasty_egui_theme::hint_text(theme, self.placeholder),
-                            self.text_color
-                                .unwrap_or_else(|| theme.input_fg().to_egui()),
-                        )
-                    } else {
-                        let ink = theme.state_disabled_fg().to_egui();
-                        (egui::RichText::new(self.placeholder).color(ink), ink)
-                    };
-                    // egui의 비활성 Ui는 색을 배경 쪽으로 흐리므로 대신 비대화형 TextEdit로 입력을 막는다.
-                    let te = egui::TextEdit::singleline(buf)
-                        .frame(false)
-                        .desired_width(te_w)
-                        .hint_text(hint)
-                        .font(font)
-                        .horizontal_align(self.align)
-                        .text_color(text_color)
-                        .interactive(self.enabled);
-                    let r = ui.add(te);
-                    if let Some(g) = addon_galley {
-                        let (arect, _) =
-                            ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());
-                        ui.painter().galley(arect.min, g, muted);
-                    }
-                    r
-                },
-            )
-            .inner;
+        // 부모에는 위의 outer 한 칸만 할당한다. allocate_new_ui는 자식 영역(inner)으로 부모 커서를
+        // 다시 옮겨 가로 배치에서 다음 위젯이 padding만큼 겹치므로, 할당하지 않는 자식 Ui에 그린다.
+        let mut field = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(inner)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let resp = {
+            let ui = &mut field;
+            ui.spacing_mut().item_spacing.x = gap;
+            if let Some(paint) = self.icon {
+                let (irect, _) = ui
+                    .allocate_exact_size(egui::vec2(icon_glyph, icon_glyph), egui::Sense::hover());
+                paint(ui, irect, muted);
+            }
+            let font = if self.mono {
+                egui::FontId::monospace(caption)
+            } else {
+                egui::FontId::proportional(body)
+            };
+            let (hint, text_color) = if self.enabled {
+                (
+                    tasty_egui_theme::hint_text(theme, self.placeholder),
+                    self.text_color
+                        .unwrap_or_else(|| theme.input_fg().to_egui()),
+                )
+            } else {
+                let ink = theme.state_disabled_fg().to_egui();
+                (egui::RichText::new(self.placeholder).color(ink), ink)
+            };
+            // egui의 비활성 Ui는 색을 배경 쪽으로 흐리므로 대신 비대화형 TextEdit로 입력을 막는다.
+            let te = egui::TextEdit::singleline(buf)
+                .frame(false)
+                .desired_width(te_w)
+                .hint_text(hint)
+                .font(font)
+                .horizontal_align(self.align)
+                .text_color(text_color)
+                .interactive(self.enabled);
+            let r = ui.add(te);
+            if let Some(g) = addon_galley {
+                let (arect, _) = ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());
+                ui.painter().galley(arect.min, g, muted);
+            }
+            r
+        };
 
         let border = if !self.enabled {
             theme.state_disabled_border().to_egui()
@@ -224,5 +222,43 @@ impl<'a> Input<'a> {
         let mut resp = resp;
         resp.rect = outer;
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 가로 배치에서 Input은 outer 한 칸만 차지한다. 다음 위젯은 outer.right + item_spacing.x에서
+    /// 시작하고, 필드 안쪽 padding만큼 겹치지 않는다.
+    #[test]
+    fn input_takes_only_its_outer_rect_in_a_horizontal_layout() {
+        let theme = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0));
+        let mut buf = String::from("#89b4fa");
+        let mut seen = None;
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            // 첫 프레임은 폰트 준비용이다. 출력은 쓰지 않는다.
+            drop(ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        let field = Input::new()
+                            .width(theme.field_width_xs.value())
+                            .show(ui, &theme, &mut buf);
+                        let next =
+                            ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        seen = Some((field.rect, next.0, ui.spacing().item_spacing.x));
+                    });
+                });
+            }));
+        }
+        let (outer, next, gap) = seen.expect("frame ran");
+        assert_eq!(outer.width(), theme.field_width_xs.value());
+        assert_eq!(next.left(), outer.right() + gap);
     }
 }

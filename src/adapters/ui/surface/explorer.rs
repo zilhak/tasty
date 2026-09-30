@@ -400,7 +400,9 @@ fn toolbar(
         // 보기 모드 버튼 폭을 먼저 확보하고 남은 폭에 주소창을 제한한다.
         let seg_w = seg_toggle_width(theme);
         let gap = theme.spacing_sm.value();
-        let addr_w = (ui.available_width() - seg_w - gap).max(0.0);
+        // 주소창 영역 뒤에 가로 item_spacing이 한 번 더 붙으므로 그만큼도 빼야 토글의 오른쪽 여백이
+        // 툴바 padding과 같아진다.
+        let addr_w = (ui.available_width() - seg_w - gap - ui.spacing().item_spacing.x).max(0.0);
         let tab_index = panel.active;
         ui.allocate_ui_with_layout(
             egui::vec2(addr_w, ui.available_height()),
