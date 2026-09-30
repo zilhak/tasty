@@ -52,13 +52,15 @@ impl App {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     anyhow::bail!("dispatch_domain_intent: main window {wid:?} not found");
                 };
-                core.apply(&mut main.core_state, intent)?
+                let applied = core.apply(&mut main.core_state, intent);
+                events_or_report(&mut main.state, &mut main.core_state, &origin, applied)
             }
             DispatchSource::Parked(idx) => {
-                let Some((_, engine)) = engines_mut!(self).parked_session(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     anyhow::bail!("dispatch_domain_intent: parked state {idx} not found");
                 };
-                core.apply(engine, intent)?
+                let applied = core.apply(engine, intent);
+                events_or_report(state, engine, &origin, applied)
             }
         };
         for event in events {
@@ -1387,6 +1389,72 @@ pub(crate) fn cascade_workspace_meta_updated(
     }
 }
 
+/// apply 오류는 요청한 창의 state·engine으로 알린다. mirror 차단 toast도 이 경로로 뜬다.
+/// 오류를 여기서 처리하므로 후속 처리할 이벤트가 없다.
+fn events_or_report(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    origin: &IntentOrigin,
+    applied: anyhow::Result<Vec<CoreEvent>>,
+) -> Vec<CoreEvent> {
+    applied.unwrap_or_else(|err| {
+        crate::intent::report_apply_error(state, engine, origin, "dispatch_domain_intent", &err);
+        Vec::new()
+    })
+}
+
 #[cfg(test)]
 #[path = "dispatch_domain_restore_tests.rs"]
 mod restore_tests;
+
+#[cfg(test)]
+mod apply_error_tests {
+    use super::*;
+    use crate::core::intent::DomainIntent;
+    use crate::intent::{AgentSource, UserSource};
+
+    fn blocked_tab_replace() -> (
+        crate::state::AppState,
+        crate::core::CoreState,
+        anyhow::Result<Vec<CoreEvent>>,
+    ) {
+        let (state, mut engine) = crate::state::tests::test_state();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let (_, pane) = engine
+            .find_workspace_index_for_surface(surface)
+            .expect("the first surface has a pane");
+        let tab = engine.find_pane_by_id(pane).expect("pane").tabs[0].id;
+        engine.workspaces[0].mirror = true;
+        let applied = core.apply(
+            &mut engine,
+            DomainIntent::ReplaceTabWithTab {
+                source_tab_id: tab,
+                target_tab_id: tab,
+            },
+        );
+        (state, engine, applied)
+    }
+
+    #[test]
+    fn a_user_tab_replace_on_a_mirror_shows_the_blocked_toast() {
+        let (mut state, mut engine, applied) = blocked_tab_replace();
+        let origin = IntentOrigin::User {
+            source: UserSource::ContextMenu,
+        };
+        let events = events_or_report(&mut state, &mut engine, &origin, applied);
+        assert!(events.is_empty());
+        assert_eq!(state.toasts.len(), 1);
+    }
+
+    #[test]
+    fn an_agent_tab_replace_on_a_mirror_shows_no_toast() {
+        let (mut state, mut engine, applied) = blocked_tab_replace();
+        let origin = IntentOrigin::Agent {
+            source: AgentSource::Ipc,
+        };
+        let events = events_or_report(&mut state, &mut engine, &origin, applied);
+        assert!(events.is_empty());
+        assert_eq!(state.toasts.len(), 0);
+    }
+}

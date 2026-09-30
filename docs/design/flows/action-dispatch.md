@@ -74,7 +74,7 @@ GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리�
 | `Intent::Domain` | 단계 C인 `run_domain_cascade`에서 FIFO로 처리 |
 | `AppearanceChanged` | 프레임 끝에 한 번만 처리 |
 
-Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다.
+Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다. `Core::apply` 오류는 Intent를 등록한 창(또는 parked state)의 state·engine으로 `report_apply_error`에 넘긴다. 그래서 사용자 메뉴에서 고른 mirror 차단 이동도 차단 toast를 띄운다.
 
 헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
 
