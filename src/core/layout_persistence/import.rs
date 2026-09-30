@@ -15,6 +15,8 @@
 // 부팅 경로에 연결하면 이 허용을 지운다.
 #![cfg_attr(not(test), allow(dead_code))]
 
+#[cfg(test)]
+mod shadow;
 pub(crate) mod surface_data;
 #[cfg(test)]
 mod tests;

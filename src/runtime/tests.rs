@@ -4,3 +4,4 @@ mod common;
 
 mod executor;
 mod replay;
+mod shadow_digest;

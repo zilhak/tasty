@@ -12,6 +12,8 @@
 pub(crate) mod command_executor;
 pub(crate) mod engine_session;
 pub(crate) mod journal;
+#[cfg(test)]
+pub(crate) mod shadow_digest;
 
 #[cfg(test)]
 mod tests;
