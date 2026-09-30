@@ -29,7 +29,7 @@ pub enum MethodEffect {
     Mutate,
 }
 
-/// 전송 전에 확인할 멱등 키 계약. Mutate인 호스트 메서드는 Kept, 나머지는 Unneeded다.
+/// 전송 전에 확인할 멱등 키 계약. Mutate와 journal 구조 명령은 Kept이며, 나머지 read/idempotent 요청은 Unneeded다.
 /// 표에 없는 플러그인 고유 이름은 Outside다. 필요한 기능 버전은 실제 실행 경로에 따라 다르다.
 /// App과 GUI debug/namespace forward의 버전은 별도로 지정하며 key_contract_by_layer가 구현과 대조한다.
 
@@ -56,6 +56,8 @@ pub const KEY_KEPT_BY_ROUTER: u32 = 1;
 pub const KEY_KEPT_BY_APP_LAYER: u32 = 2;
 /// GUI debug step과 정적 호스트 이름의 namespace forward에 필요한 기능 버전.
 pub const KEY_KEPT_ON_EVERY_HOST_PATH: u32 = 3;
+/// Journal-backed structure results preserve their original response across engine resumes.
+pub const KEY_KEPT_IN_STRUCTURE_JOURNAL: u32 = 4;
 
 /// 효과 분류에서 기본 키 계약을 만든다. 다른 실행 경로는 전용 생성자로 버전을 지정한다.
 const fn key_contract_of(effect: MethodEffect) -> KeyContract {
@@ -109,6 +111,15 @@ const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> M
 }
 
 impl MethodMeta {
+    const fn kept_in_structure_journal(self) -> Self {
+        Self {
+            key_contract: KeyContract::Kept {
+                since: KEY_KEPT_IN_STRUCTURE_JOURNAL,
+            },
+            ..self
+        }
+    }
+
     /// App에서 처리하는 Mutate의 최소 멱등 키 기능 버전을 지정한다.
     const fn kept_by_app_layer(self) -> Self {
         assert!(
@@ -171,23 +182,32 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── workspace (read/write) ────────────────────────────────────
         ("workspace.list", plugin(Read, &[SurfaceRead])),
         ("workspace.create", plugin(Mutate, &[SurfaceWrite])),
-        ("workspace.update", plugin(Idempotent, &[SurfaceWrite])),
-        ("workspace.move", plugin(Idempotent, &[SurfaceWrite])),
+        (
+            "workspace.update",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
+        (
+            "workspace.move",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         ("workspace.close", plugin(Idempotent, &[SurfaceWrite])),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(Read, &[SurfaceRead])),
-        ("workspace_category.create", plugin(Mutate, &[SurfaceWrite])),
+        (
+            "workspace_category.create",
+            plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         (
             "workspace_category.rename",
-            plugin(Idempotent, &[SurfaceWrite]),
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
         ),
         (
             "workspace_category.delete",
-            plugin(Idempotent, &[SurfaceWrite]),
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
         ),
         (
             "workspace_category.move",
-            plugin(Idempotent, &[SurfaceWrite]),
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
         ),
         // ── pane / split ──────────────────────────────────────────────
         ("pane.list", plugin(Read, &[SurfaceRead])),
@@ -951,6 +971,16 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
 /// 서버가 더 새 메서드를 지원해도 옛 client는 전송 전에 거절할 수 있다.
 pub fn key_contract(method: &str) -> KeyContract {
     method_meta(method).map_or(KeyContract::Outside, |m| m.key_contract)
+}
+
+/// Single declaration used by the host admission adapter and its advertised durable key scope.
+pub fn has_structure_journal_contract(method: &str) -> bool {
+    matches!(
+        key_contract(method),
+        KeyContract::Kept {
+            since: KEY_KEPT_IN_STRUCTURE_JOURNAL
+        }
+    )
 }
 
 #[cfg(test)]

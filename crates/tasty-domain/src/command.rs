@@ -40,6 +40,7 @@ pub enum StructuralCommand {
         operation: crate::OperationId,
         result: crate::PreparationResult,
     },
+    ResetCategories,
     CreateCategory {
         reserved_id: u32,
         name: String,

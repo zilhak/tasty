@@ -53,6 +53,8 @@ impl CoreState {
         assert!(workspace.mirror, "remote projection requires a mirror");
         self.refresh_workspace_display_order();
         self.workspace_display_order.push(workspace.id);
+        self.mirror_projection_tokens
+            .insert(workspace.id, std::sync::Arc::new(()));
         self.mirror_workspaces.push(workspace);
     }
 
@@ -90,6 +92,7 @@ impl CoreState {
                 .iter()
                 .position(|workspace| workspace.id == id)
                 .expect("composite workspace exists");
+            self.mirror_projection_tokens.remove(&id);
             self.mirror_workspaces.remove(index)
         }
     }
@@ -128,11 +131,47 @@ impl CoreState {
             .iter_mut()
             .find(|candidate| candidate.id == workspace.id)
         {
+            self.mirror_projection_tokens
+                .insert(workspace.id, std::sync::Arc::new(()));
             *slot = workspace;
             Ok(())
         } else {
             Err(workspace)
         }
+    }
+
+    pub(crate) fn mirror_projection_token(&self, id: u32) -> Option<std::sync::Weak<()>> {
+        self.mirror_projection_tokens
+            .get(&id)
+            .map(std::sync::Arc::downgrade)
+    }
+
+    pub(crate) fn matches_mirror_projection(&self, id: u32, token: &std::sync::Weak<()>) -> bool {
+        self.mirror_projection_token(id)
+            .is_some_and(|current| current.ptr_eq(token))
+    }
+
+    /// A display continuation cannot reorder the committed local tree or discard new objects.
+    pub(crate) fn apply_workspace_display_order(&mut self, order: Vec<u32>) -> bool {
+        if order.len() != self.workspaces().len()
+            || order
+                .iter()
+                .enumerate()
+                .any(|(index, id)| order[..index].contains(id) || !self.has_workspace(*id))
+            || !order
+                .iter()
+                .filter(|id| {
+                    self.local_workspaces
+                        .iter()
+                        .any(|workspace| workspace.id == **id)
+                })
+                .copied()
+                .eq(self.local_workspaces.iter().map(|workspace| workspace.id))
+        {
+            return false;
+        }
+        self.workspace_display_order = order;
+        true
     }
 
     pub(crate) fn reorder_local_workspaces(&mut self, order: &[u32]) -> Result<(), String> {
@@ -291,6 +330,11 @@ impl CoreState {
         (self.mirror_workspaces, self.local_workspaces) = workspaces
             .into_iter()
             .partition(|workspace| workspace.mirror);
+        self.mirror_projection_tokens = self
+            .mirror_workspaces
+            .iter()
+            .map(|workspace| (workspace.id, std::sync::Arc::new(())))
+            .collect();
     }
     pub(crate) fn set_workspace_mirror_fixture(&mut self, index: usize, mirror: bool) {
         if self.workspace_at(index).expect("fixture workspace").mirror == mirror {
@@ -320,6 +364,8 @@ impl CoreState {
         workspace.mirror = true;
         self.refresh_workspace_display_order();
         self.workspace_display_order.insert(index, workspace.id);
+        self.mirror_projection_tokens
+            .insert(workspace.id, std::sync::Arc::new(()));
         self.mirror_workspaces.push(workspace);
     }
 }

@@ -139,7 +139,7 @@ impl EngineSession {
             runtime: crate::core::engine_runtime::EngineRuntime::new(next_ids.pty_counter()),
             #[cfg(test)]
             _isolated_home: isolated_home,
-            #[cfg(test)]
+            #[cfg(all(test, feature = "gui"))]
             test_host_commands: None,
         };
         #[cfg(test)]

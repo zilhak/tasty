@@ -4,6 +4,7 @@ use crate::runtime::journal_product::{
     Completion, EngineSelection, JournalWorker, Request, ResultValue, Work,
 };
 use crate::runtime::live_projection;
+mod commands;
 mod creation;
 #[cfg(feature = "gui")]
 mod retirement;
@@ -21,6 +22,8 @@ struct Opening {
 
 pub(crate) struct JournalApplication {
     worker: JournalWorker,
+    commands: commands::Commands,
+    changed_engines: std::collections::HashSet<EngineId>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<EngineId, creation::Creation>,
@@ -58,6 +61,8 @@ impl JournalApplication {
         let worker = JournalWorker::spawn(home, wake.clone()).map_err(anyhow::Error::msg)?;
         Ok(Self {
             worker,
+            commands: Default::default(),
+            changed_engines: Default::default(),
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),
@@ -144,6 +149,7 @@ impl JournalApplication {
         }
         if let Err(reason) = &result {
             self.halted = Some(reason.clone());
+            self.fail_pending_commands(reason);
         }
         result
     }
@@ -153,6 +159,7 @@ impl JournalApplication {
         for _ in 0..MAX_COMPLETIONS {
             if self.started {
                 self.submit_openings()?;
+                self.submit_commands()?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
                 self.submit_retirements()?;
@@ -226,7 +233,7 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap ACK: {error:?}"))?;
                     self.started = true;
                 }
-                Completion::StartupFailed(error) => return Err(error),
+                Completion::StartupFailed(error) | Completion::Halted(error) => return Err(error),
                 Completion::Publish {
                     batch,
                     before,
@@ -330,6 +337,8 @@ impl JournalApplication {
                             }
                             self.known_slots.insert(slot, retired);
                         }
+                        session.core_state.mark_layout_dirty();
+                        self.changed_engines.insert(session.id);
                         if let Some(binding) = session.journal_binding.as_mut() {
                             binding.published_cut = Some(batch.batch_id);
                             if let Some(last) = events.last() {
@@ -342,6 +351,9 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    if self.answer_command(ticket, &result, sessions)? {
+                        continue;
+                    }
                     #[cfg(feature = "gui")]
                     if self.finish_retirement(ticket, &result)? {
                         continue;

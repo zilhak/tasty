@@ -18,10 +18,40 @@ const MAX_DRAIN_ROUNDS: usize = 8;
 
 /// IPC 응답을 보내기 전에 대기 명령을 적용한다.
 /// 예를 들어 surface.set_mark 응답 후에는 surface.read_since_mark로 그 마커를 읽을 수 있어야 한다.
+#[cfg(test)]
 pub(crate) fn drain_pending_intents(
     core: &mut Core,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
+) {
+    drain_with(core, state, engine, |_, _| false);
+}
+
+#[cfg(not(feature = "gui"))]
+pub(crate) fn drain_pending_intents_in_app(
+    core: &mut Core,
+    state: &mut RequestContext,
+    engine: &mut EngineMut<'_>,
+    journal: &mut crate::app::journal::JournalApplication,
+) {
+    let engine_id = state.engine_id;
+    drain_with(core, state, engine, |core, dispatched| {
+        let Intent::Domain(intent) = &dispatched.body else {
+            return false;
+        };
+        let Some(id) = engine_id else {
+            tracing::error!("headless structural intent has no application engine owner");
+            return true;
+        };
+        journal.admit_metadata_intent(id, core, intent, &dispatched.origin)
+    });
+}
+
+fn drain_with(
+    core: &mut Core,
+    state: &mut RequestContext,
+    engine: &mut EngineMut<'_>,
+    mut journal_admission: impl FnMut(&CoreState, &DispatchedIntent) -> bool,
 ) {
     for _ in 0..MAX_DRAIN_ROUNDS {
         let batch = state.take_pending_intents();
@@ -29,7 +59,9 @@ pub(crate) fn drain_pending_intents(
             return;
         }
         for dispatched in batch {
-            apply_one(core, state, engine, dispatched);
+            if !journal_admission(engine.core, &dispatched) {
+                apply_one(core, state, engine, dispatched);
+            }
         }
     }
     if !state.pending_intents.is_empty() {

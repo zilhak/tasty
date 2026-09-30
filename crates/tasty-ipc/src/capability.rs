@@ -40,7 +40,7 @@ pub const CAPABILITIES: &[Capability] = &[
     // 메서드 표가 요구하는 가장 높은 버전을 선언해 구현 범위와 맞춘다.
     Capability {
         name: "ipc.idempotency-key",
-        version: crate::method_meta::KEY_KEPT_ON_EVERY_HOST_PATH,
+        version: crate::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL,
     },
     // 스트림 handshake가 실제로 비교하는 상수를 사용한다.
     Capability {

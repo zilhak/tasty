@@ -1,4 +1,4 @@
-<!-- source-hash: 2f7b59a2a5ff -->
+<!-- source-hash: 65fbe16ad5af -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -447,6 +447,8 @@ queue_dispatch describes taking commands out of the queue and running them.
 
 in_flight can decrease. A command that is still running remains counted after its caller stops waiting. Increasing time-limited rounds or expired_before_run can indicate that queue
 processing is not keeping up with incoming requests.
+
+Category creation, renaming, deletion and reordering, plus workspace information and order changes, return the original result when retried with the same key, even after the app restarts. Later moves or renames do not cause the retry to select a different target. Retrieving a saved result does not reapply a remote screen's local display name or position. Other commands do not all provide this protection across restarts.
 
 #### Duplicate requests (`keyed_requests`)
 

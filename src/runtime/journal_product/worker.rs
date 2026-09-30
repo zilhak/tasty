@@ -9,7 +9,7 @@ use std::sync::{Arc, mpsc};
 use tasty_event_store::CommandLookup;
 
 use super::decider::{ResolvedCommand, StructureDecider};
-use super::{Admission, Completion, QUEUE_CAPACITY, Request, ResultValue, Work, identity};
+use super::{Admission, Completion, QUEUE_CAPACITY, ResultValue, Work, identity};
 use crate::runtime::command_executor::{Executor, Request as ExecuteRequest};
 use crate::runtime::journal;
 
@@ -24,11 +24,12 @@ type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
 
 pub(super) fn run(
     home: PathBuf,
-    requests: mpsc::Receiver<Request>,
+    requests: mpsc::Receiver<super::QueuedRequest>,
     completions: mpsc::SyncSender<Completion>,
     acknowledgements: Acknowledgements,
     closed: Arc<AtomicBool>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    #[cfg(test)] fail_next_publication: Arc<AtomicBool>,
 ) {
     let send = |completion| {
         if completions.send(completion).is_err() {
@@ -65,15 +66,18 @@ pub(super) fn run(
     }
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut halted: Option<String> = None;
-    while let Ok(request) = requests.recv() {
+    while let Ok(queued) = requests.recv() {
+        let request = queued.request;
+        drop(queued._bytes);
         if closed.load(Ordering::Acquire) {
             break;
         }
+        let was_halted = halted.is_some();
         let mut predecessor = if matches!(
             request.work,
             Work::OpenEngine { .. }
                 | Work::RetireEngine(_)
-                | Work::Resolve(_)
+                | Work::Resolve { .. }
                 | Work::Prepared { .. }
                 | Work::CleanupFinished { .. }
                 | Work::InstallationRejected { .. }
@@ -90,7 +94,7 @@ pub(super) fn run(
         } else {
             None
         };
-        let followers = if matches!(request.work, Work::Resolve(_) | Work::CancelAdmission) {
+        let followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission) {
             pending
                 .get(&request.ticket)
                 .map(|p| p.followers.clone())
@@ -113,10 +117,18 @@ pub(super) fn run(
                     _ => None,
                 },
                 &send,
+                #[cfg(test)]
+                &fail_next_publication,
             )
         {
             halted = Some(error.clone());
             result = Err(error);
+        }
+        if !was_halted
+            && let Some(reason) = &halted
+            && !send(Completion::Halted(reason.clone()))
+        {
+            return;
         }
         for ticket in std::iter::once(request.ticket).chain(followers) {
             if !send(Completion::Finished {
@@ -156,19 +168,15 @@ fn handle(
             {
                 return Err("journal admission ticket already exists".into());
             }
-            if pending
-                .values()
-                .map(|p| 1 + p.followers.len())
-                .sum::<usize>()
-                >= QUEUE_CAPACITY
-            {
-                return Err("journal admission capacity exhausted".into());
-            }
+            let pending_count: usize = pending.values().map(|p| 1 + p.followers.len()).sum();
             if let Some(key) = &admission.key {
                 for (leader, existing) in pending.iter_mut() {
                     if existing.admission.key.as_ref() == Some(key) {
                         if existing.admission.original_digest != admission.original_digest {
                             return Err("idempotency key belongs to a different request".into());
+                        }
+                        if pending_count >= QUEUE_CAPACITY {
+                            return Err("journal admission capacity exhausted".into());
                         }
                         existing.followers.push(ticket);
                         return Ok(ResultValue::JoinedAdmission {
@@ -193,7 +201,15 @@ fn handle(
                     CommandLookup::Miss => {}
                 }
             }
-            if pending.len() >= QUEUE_CAPACITY {
+            let held_bytes: usize = pending
+                .values()
+                .map(|pending| pending.admission.original_digest.len())
+                .sum();
+            if held_bytes.saturating_add(admission.original_digest.len()) > super::MAX_QUEUED_BYTES
+            {
+                return Err("journal pending admission byte capacity exhausted".into());
+            }
+            if pending_count >= QUEUE_CAPACITY {
                 return Err("journal admission capacity exhausted".into());
             }
             pending.insert(
@@ -207,14 +223,25 @@ fn handle(
             );
             Ok(ResultValue::NeedsResolution)
         }
-        Work::Resolve(changes) => {
+        Work::Resolve { changes, response } => {
             let admitted = pending
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
             for change in &changes {
+                if response.is_some()
+                    && matches!(
+                        change.command,
+                        tasty_domain::StructuralCommand::PrepareCreation { .. }
+                    )
+                {
+                    return Err(
+                        "creation wire response requires its operation completion template".into(),
+                    );
+                }
                 if matches!(
                     change.command,
                     tasty_domain::StructuralCommand::OpenEngine { .. }
+                        | tasty_domain::StructuralCommand::RetireEngine { .. }
                         | tasty_domain::StructuralCommand::FinishCreation { .. }
                         | tasty_domain::StructuralCommand::FinishCleanup { .. }
                         | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
@@ -248,6 +275,7 @@ fn handle(
                     causation_id: admission.causation_id,
                     command: ResolvedCommand {
                         original_digest: admission.original_digest,
+                        response,
                         changes,
                         effect_result: None,
                         cancellation: None,
@@ -357,6 +385,7 @@ fn publish(
     acks: &Acknowledgements,
     engine_binding: Option<super::EngineBinding>,
     send: &impl Fn(Completion) -> bool,
+    #[cfg(test)] fail_next_publication: &AtomicBool,
 ) -> Result<(), String> {
     executor.with_state(|_| ()).map_err(|e| e.to_string())?;
     loop {
@@ -371,6 +400,10 @@ fn publish(
         let Some(batch) = next else {
             return Ok(());
         };
+        #[cfg(test)]
+        if fail_next_publication.swap(false, Ordering::AcqRel) {
+            return Err("injected failure after commit before publication".into());
+        }
         let decoded = journal::stream_batch(&batch).map_err(|e| e.to_string())?;
         let mut previous = predecessor
             .take()

@@ -192,15 +192,18 @@ impl Creation {
                 };
                 self.submit(
                     worker,
-                    Work::Resolve(vec![StreamCommand {
-                        stream: self.binding.stream.clone(),
-                        command: StructuralCommand::PrepareCreation {
-                            operation: OperationId(String::new()),
-                            command_id: String::new(),
-                            input,
-                            plan,
-                        },
-                    }]),
+                    Work::Resolve {
+                        changes: vec![StreamCommand {
+                            stream: self.binding.stream.clone(),
+                            command: StructuralCommand::PrepareCreation {
+                                operation: OperationId(String::new()),
+                                command_id: String::new(),
+                                input,
+                                plan,
+                            },
+                        }],
+                        response: None,
+                    },
                 )?;
                 Stage::Commit
             }

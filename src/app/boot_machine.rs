@@ -458,7 +458,14 @@ impl App {
             pending_events,
         } = boot;
 
-        let mut state = self.assemble_app_state(restored_idx);
+        let mut state = match self.assemble_app_state(restored_idx) {
+            Ok(state) => state,
+            Err(error) => {
+                tracing::error!("cannot register the initial committed engine: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);

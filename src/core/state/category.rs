@@ -37,16 +37,6 @@ impl CoreState {
         &self.categories
     }
 
-    /// 기능을 끌 때 normal로 소속을 합친다. workspace의 전역 순서는 유지한다.
-    #[cfg(feature = "gui")]
-    pub fn collapse_categories_to_normal(&mut self) {
-        use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
-        for ws in self.workspaces_mut() {
-            ws.set_category(NORMAL_CATEGORY_ID);
-        }
-        self.categories = vec![WorkspaceCategory::normal()];
-    }
-
     /// 이름을 검증해 카테고리를 추가한다. 호출자가 mark_layout_dirty를 요청해야 저장된다.
     pub fn create_category(
         &mut self,

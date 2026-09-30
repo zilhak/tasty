@@ -26,7 +26,7 @@ const UNPAIRED_RATCHET: usize = 4;
 /// 2026-09-08의 2b0176eef에서 38개였다. 프로세스별 한 번만 실행하거나 호출자가 서로 다른
 /// 판별자를 주는 경우도 포함돼 수 자체가 결함 개수는 아니다. 호출부 조건을 검토해야 한다.
 /// 스레드 ID는 같은 스레드의 재호출을 구분하지 못한다. 사유가 있으면 이 수에서 제외한다.
-const RECALL_BLIND_RATCHET: usize = 38;
+const RECALL_BLIND_RATCHET: usize = 37;
 
 /// 실제 검사와 작은 합성 입력이 같은 실패 판정을 쓰도록 하한·래칫을 인자로 받는다.
 struct Floors {
@@ -133,9 +133,9 @@ fn every_temp_path_is_uniquified_or_reasoned() {
 }
 
 /// 같은 파일에서 호출을 찾지 못한 판별자 전달 경로의 수다.
-/// 2026-09-08의 0911d0113에서 10개 중 1개였다(DiskScrollback::new의 호출자는 다른 파일).
+/// DiskScrollback now creates its own unique instance file instead of relying on caller identity.
 /// 호출은 마스킹한 코드에서, 판별자 문자열은 원문에서 읽는다. 호출 미발견은 안전 판정이 아니다.
-const CHAINS_NOT_SEEN_RATCHET: usize = 1;
+const CHAINS_NOT_SEEN_RATCHET: usize = 0;
 
 /// 같은 파일에서 찾은 임시 경로 헬퍼 호출들이 같은 판별자를 전달하는지 확인한다.
 #[test]

@@ -96,6 +96,7 @@ pub(super) fn open(
             causation_id: None,
             command: ResolvedCommand {
                 original_digest: digest,
+                response: None,
                 changes: vec![StreamCommand {
                     stream: stream.clone(),
                     command: StructuralCommand::OpenEngine {
@@ -256,6 +257,7 @@ pub(super) fn retire(
             causation_id: None,
             command: ResolvedCommand {
                 original_digest: digest,
+                response: None,
                 changes: vec![StreamCommand {
                     stream: binding.stream,
                     command: StructuralCommand::RetireEngine {
@@ -269,7 +271,11 @@ pub(super) fn retire(
         })
         .map_err(|error| error.to_string())?;
     // The legacy export is no longer a resume authority. Remove it only after durable retirement.
-    if let Some(slot) = slot {
+    if matches!(
+        executed.source,
+        crate::runtime::command_executor::Source::Committed { .. }
+    ) && let Some(slot) = slot
+    {
         let path = home.join("layouts").join(format!("{slot:02}.json"));
         if let Err(error) = std::fs::remove_file(&path)
             && error.kind() != std::io::ErrorKind::NotFound

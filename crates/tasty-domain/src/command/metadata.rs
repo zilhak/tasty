@@ -5,7 +5,8 @@ type Result<T> = std::result::Result<T, Rejection>;
 
 pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralDecision> {
     match cmd {
-        StructuralCommand::CreateCategory { .. }
+        StructuralCommand::ResetCategories
+        | StructuralCommand::CreateCategory { .. }
         | StructuralCommand::RenameCategory { .. }
         | StructuralCommand::DeleteCategory { .. }
         | StructuralCommand::ReorderCategory { .. } => category(m, cmd),
@@ -32,6 +33,24 @@ pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<Struct
 fn category(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralDecision> {
     let mut events = Vec::new();
     let result = match cmd {
+        StructuralCommand::ResetCategories => {
+            for (index, workspace) in m.workspace_order.iter().enumerate() {
+                if m.workspaces[workspace].category != 0 {
+                    events.push(DomainEvent::WorkspaceMoved {
+                        id: *workspace,
+                        category: 0,
+                        index,
+                    });
+                }
+            }
+            events.extend(
+                m.category_order
+                    .iter()
+                    .filter(|id| **id != 0)
+                    .map(|id| DomainEvent::CategoryClosed { id: *id }),
+            );
+            StructuralResult::Updated
+        }
         StructuralCommand::CreateCategory { reserved_id, name } => {
             if *reserved_id == 0 || m.categories.contains_key(reserved_id) {
                 return Err(Rejection("category ID was not freshly reserved".into()));

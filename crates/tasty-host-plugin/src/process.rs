@@ -112,6 +112,8 @@ pub(crate) fn try_send_request<T>(
 }
 
 pub struct PluginProcess {
+    /// Async replies must identify this owner rather than a later process with the same plugin ID.
+    reply_binding: Arc<()>,
     pub plugin_id: String,
     child: Option<Child>,
     /// 직렬화한 요청 줄. 바이트 상한을 검사한 결과를 writer가 그대로 쓴다.
@@ -202,6 +204,7 @@ impl PluginProcess {
             ledger.open_queue(plugin_id, Direction::Event),
         );
         Self {
+            reply_binding: Arc::new(()),
             plugin_id: plugin_id.into(),
             child: None,
             req_tx,
@@ -323,6 +326,7 @@ impl PluginProcess {
             None => HandleStreamState::Unavailable,
         };
         Ok(Self {
+            reply_binding: Arc::new(()),
             plugin_id: package.manifest.id.clone(),
             child: Some(child),
             req_tx,
@@ -488,6 +492,11 @@ impl PluginProcess {
     /// `shutdown` 이후나 stub 인스턴스에서는 `None`.
     pub fn child_pid(&self) -> Option<u32> {
         self.child.as_ref().map(|c| c.id())
+    }
+
+    /// A non-owning token for replies delayed by a host commit or another asynchronous boundary.
+    pub fn reply_binding(&self) -> std::sync::Weak<()> {
+        Arc::downgrade(&self.reply_binding)
     }
 
     /// 요청을 직렬화하고 개수·바이트 상한 안에서 큐에 넣는다. 포화 시 기다리지 않는다.

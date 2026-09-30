@@ -201,6 +201,8 @@ pub struct CoreState {
     pub(crate) mirror_workspaces: Vec<Workspace>,
     /// Composite display projection; local relative order comes from the committed model.
     workspace_display_order: Vec<u32>,
+    /// Lifetime token for volatile annotations; replaced by every remote structural projection.
+    mirror_projection_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
     /// 표시 순서의 카테고리. 생성·복원 뒤 기본 normal 항목을 앞에 두도록 정규화한다.
     pub(crate) categories: Vec<crate::model::WorkspaceCategory>,
     pub(crate) next_ids: IdGenerator,
@@ -450,6 +452,7 @@ impl CoreState {
             local_workspaces: Vec::new(),
             mirror_workspaces: Vec::new(),
             workspace_display_order: Vec::new(),
+            mirror_projection_tokens: Default::default(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
             next_ids: next_ids.clone(),
             default_cols: cols,

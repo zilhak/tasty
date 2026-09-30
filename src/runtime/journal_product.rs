@@ -7,11 +7,12 @@ mod binding;
 mod decider;
 mod identity;
 mod preparation;
+mod response;
 pub(crate) mod view_record;
 mod worker;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 
@@ -22,9 +23,12 @@ use super::command_executor::Executed;
 pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
 pub(crate) use preparation::{ClaimedPreparation, EffectLease, PreparationInput, ShellRecipe};
+pub(crate) use response::ResponsePlan;
 
 const QUEUE_CAPACITY: usize = 64;
-const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+const MAX_REQUEST_BYTES: usize =
+    crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES;
+const MAX_QUEUED_BYTES: usize = tasty_ipc::admission::QUEUED_BYTES_LIMIT;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Admission {
@@ -45,7 +49,10 @@ pub(crate) enum Work {
     },
     /// Current permissions are checked by App before this lookup. Targets are not resolved yet.
     Admit(Admission),
-    Resolve(Vec<StreamCommand>),
+    Resolve {
+        changes: Vec<StreamCommand>,
+        response: Option<ResponsePlan>,
+    },
     Reserve(Vec<(IdKind, u32)>),
     #[cfg(feature = "gui")]
     SaveView(view_record::StoredView),
@@ -107,6 +114,8 @@ pub(crate) enum Completion {
         bootstrap: StructureModels,
     },
     StartupFailed(String),
+    /// Canonical/publication cut is no longer available. Every App reader and writer must halt.
+    Halted(String),
     /// All affected local engines must apply this as one publication before acknowledging.
     Publish {
         /// Explicit bootstrap destination, allocated on the worker before this batch.
@@ -128,12 +137,31 @@ pub(crate) enum SubmitError {
     Stopped,
 }
 
+struct QueuedRequest {
+    request: Request,
+    _bytes: QueuedBytes,
+}
+
+struct QueuedBytes {
+    count: usize,
+    held: Arc<AtomicUsize>,
+}
+
+impl Drop for QueuedBytes {
+    fn drop(&mut self) {
+        self.held.fetch_sub(self.count, Ordering::AcqRel);
+    }
+}
+
 pub(crate) struct JournalWorker {
-    requests: Option<mpsc::SyncSender<Request>>,
+    requests: Option<mpsc::SyncSender<QueuedRequest>>,
+    queued_bytes: Arc<AtomicUsize>,
     completions: Option<mpsc::Receiver<Completion>>,
     acknowledgements: Option<mpsc::SyncSender<(u64, Result<(), String>)>>,
     closed: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    #[cfg(test)]
+    pub(crate) fail_next_publication: Arc<AtomicBool>,
 }
 
 impl JournalWorker {
@@ -145,37 +173,75 @@ impl JournalWorker {
         let (acknowledgements, acks) = mpsc::sync_channel(1);
         let closed = Arc::new(AtomicBool::new(false));
         let stopped = closed.clone();
+        #[cfg(test)]
+        let fail_next_publication = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        let publication_fault = fail_next_publication.clone();
         let thread = std::thread::Builder::new()
             .name("structure-journal".into())
             .spawn(move || {
-                worker::run(home, incoming, outgoing, acks, stopped, wake);
+                worker::run(
+                    home,
+                    incoming,
+                    outgoing,
+                    acks,
+                    stopped,
+                    wake,
+                    #[cfg(test)]
+                    publication_fault,
+                );
             })
             .map_err(|e| e.to_string())?;
         Ok(Self {
             requests: Some(requests),
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
             completions: Some(completions),
             acknowledgements: Some(acknowledgements),
             closed,
             thread: Some(thread),
+            #[cfg(test)]
+            fail_next_publication,
         })
     }
 
     pub(crate) fn submit(&self, request: Request) -> Result<(), SubmitError> {
+        self.submit_owned(request).map_err(|(error, _)| error)
+    }
+
+    pub(crate) fn submit_owned(&self, request: Request) -> Result<(), (SubmitError, Request)> {
         if self.closed.load(Ordering::Acquire) {
-            return Err(SubmitError::Stopped);
+            return Err((SubmitError::Stopped, request));
         }
-        if request_size(&request.work) > MAX_REQUEST_BYTES {
-            return Err(SubmitError::TooLarge);
+        let bytes = request_size(&request.work);
+        if bytes > MAX_QUEUED_BYTES || request_payload_too_large(&request.work) {
+            return Err((SubmitError::TooLarge, request));
         }
-        match self
-            .requests
-            .as_ref()
-            .ok_or(SubmitError::Stopped)?
-            .try_send(request)
+        let Some(requests) = self.requests.as_ref() else {
+            return Err((SubmitError::Stopped, request));
+        };
+        if self
+            .queued_bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |held| {
+                held.checked_add(bytes)
+                    .filter(|next| *next <= MAX_QUEUED_BYTES)
+            })
+            .is_err()
         {
+            return Err((SubmitError::Busy, request));
+        }
+        let queued = QueuedRequest {
+            request,
+            _bytes: QueuedBytes {
+                count: bytes,
+                held: self.queued_bytes.clone(),
+            },
+        };
+        match requests.try_send(queued) {
             Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(_)) => Err(SubmitError::Busy),
-            Err(mpsc::TrySendError::Disconnected(_)) => Err(SubmitError::Stopped),
+            Err(mpsc::TrySendError::Full(queued)) => Err((SubmitError::Busy, queued.request)),
+            Err(mpsc::TrySendError::Disconnected(queued)) => {
+                Err((SubmitError::Stopped, queued.request))
+            }
         }
     }
 
@@ -223,7 +289,19 @@ impl Drop for JournalWorker {
     }
 }
 
-fn request_size(work: &Work) -> usize {
+// Internal resolution may carry both a fixed decision input and its frozen response. Its total
+// bytes share the queue budget; the public request limit applies to the admitted user payload.
+fn request_payload_too_large(work: &Work) -> bool {
+    match work {
+        Work::Admit(header) => header.original_digest.len() > MAX_REQUEST_BYTES,
+        Work::PutPreparation(input) => {
+            serde_json::to_vec(&input.params).map_or(true, |bytes| bytes.len() > MAX_REQUEST_BYTES)
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn request_size(work: &Work) -> usize {
     match work {
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
@@ -245,8 +323,8 @@ fn request_size(work: &Work) -> usize {
                     .len()
                     .saturating_add(key.idempotency_key.len())
             })),
-        Work::Resolve(commands) => {
-            serde_json::to_vec(commands).map_or(usize::MAX, |bytes| bytes.len())
+        Work::Resolve { changes, response } => {
+            serde_json::to_vec(&(changes, response)).map_or(usize::MAX, |bytes| bytes.len())
         }
         Work::Reserve(kinds) => kinds
             .len()

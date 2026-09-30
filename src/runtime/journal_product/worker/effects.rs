@@ -229,6 +229,7 @@ fn finish(
         causation_id: Some(causation),
         command: ResolvedCommand {
             original_digest: digest,
+            response: None,
             changes: vec![StreamCommand {
                 stream: lease.stream.clone(),
                 command,
@@ -273,6 +274,7 @@ fn cancel_unstarted(
         causation_id: Some(original_command),
         command: ResolvedCommand {
             original_digest: digest,
+            response: None,
             changes: vec![StreamCommand {
                 stream: stream.into(),
                 command,

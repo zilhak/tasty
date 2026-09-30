@@ -539,6 +539,17 @@ fn dispatch_headless_event(
         if let Err(error) = app.journal.poll_bootstrap(&mut [session]) {
             tracing::error!("committed structure publication halted: {error}");
         }
+        if !app.journal.is_halted() {
+            app.journal.resolve_headless_requests(session, state);
+            if !app.journal.take_changed_engines().is_empty() {
+                state.reconcile_presentation(&session.core_state);
+                session
+                    .borrow_mut()
+                    .refresh_attach_presentation(&state.navigation);
+            }
+        }
+        app.journal
+            .deliver_plugin_replies(app.plugin_manager.as_mut());
         return std::ops::ControlFlow::Continue(());
     }
     if app.journal.is_halted()
@@ -607,10 +618,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     start_ipc_and_seed(&mut app, &waker);
 
     let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
+    let engine_id = session.id;
     let mut engine = session.borrow_mut();
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
     let mut state = crate::state::CommandContext::new(&mut engine, preset_store, memory);
+    state.engine_id = Some(engine_id);
 
     hooks::lua::fire(
         app.lua_engine.as_ref(),
@@ -635,7 +648,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     loop {
         if !app.journal.is_halted() {
-            crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
+            crate::intent::headless::drain_pending_intents_in_app(
+                &mut app.core,
+                &mut state,
+                &mut engine,
+                &mut app.journal,
+            );
             crate::intent::headless::drain_pending_host_events(
                 &app.core,
                 &mut state,

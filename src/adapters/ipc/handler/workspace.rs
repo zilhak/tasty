@@ -7,7 +7,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 /// attach_profile을 우선하고 없으면 attach_ssh를 읽는다. 둘 다 없으면 매핑 없음이다.
 /// 잘못된 원격 workspace 값은 생략으로 처리하지 않고 거절한다.
-fn parse_attach_mapping(
+pub(crate) fn parse_attach_mapping(
     params: &serde_json::Value,
 ) -> Result<Option<WorkspaceAttachMapping>, String> {
     let remote_workspace = params::read_int::<u32>(params, "attach_remote_workspace")?;
@@ -56,7 +56,7 @@ fn is_loopback_attach_host(host: &str) -> bool {
 
 /// release에서는 loopback attach 매핑을 거절한다. 로컬 mirror 시험은 debug attach를 쓴다.
 #[cfg(not(debug_assertions))]
-fn reject_loopback_attach(
+pub(crate) fn reject_loopback_attach(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -78,7 +78,7 @@ fn reject_loopback_attach(
 /// - 필드 없음 → `Ok(None)` (호출자가 normal 기본값 유지).
 /// - 숫자(id) 또는 문자열(이름/id 토큰) → 존재하면 `Ok(Some(id))`.
 /// - 주어졌으나 해석 불가 → `Err(메시지)`.
-fn resolve_category_param(
+pub(crate) fn resolve_category_param(
     engine: &crate::core::CoreState,
     params: &serde_json::Value,
 ) -> Result<Option<crate::model::WorkspaceCategoryId>, String> {
@@ -91,7 +91,7 @@ fn resolve_category_param(
     }
 }
 
-fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
+pub(crate) fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
     match mapping {
         Some(m) => serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
         None => serde_json::Value::Null,

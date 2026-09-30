@@ -120,6 +120,33 @@ pub(crate) struct RetryCounts {
     pub(crate) in_flight: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RetryOutcome {
+    Executed,
+    Replayed,
+    Conflicted,
+    Discarded,
+    InFlight,
+}
+
+impl RetryCounts {
+    fn note(&mut self, outcome: RetryOutcome) {
+        let count = match outcome {
+            RetryOutcome::Executed => &mut self.executed,
+            RetryOutcome::Replayed => &mut self.replayed,
+            RetryOutcome::Conflicted => &mut self.conflicted,
+            RetryOutcome::Discarded => &mut self.discarded,
+            RetryOutcome::InFlight => &mut self.in_flight,
+        };
+        *count = count.saturating_add(1);
+    }
+}
+
+/// Journal and legacy routing report to the same process-wide bounded counters.
+pub(crate) fn note_journal_retry(outcome: RetryOutcome) {
+    store().counts.note(outcome);
+}
+
 /// 프로세스당 하나인 멱등성 기록 저장소.
 #[derive(Debug, Default)]
 pub(crate) struct Store {
@@ -173,14 +200,13 @@ impl Store {
                 Stored::InFlight { .. } => Decision::InFlight,
             },
         };
-        let slot = match decision {
-            Decision::Execute(_) => &mut self.counts.executed,
-            Decision::Replay(_) => &mut self.counts.replayed,
-            Decision::Conflict => &mut self.counts.conflicted,
-            Decision::Discarded => &mut self.counts.discarded,
-            Decision::InFlight => &mut self.counts.in_flight,
-        };
-        *slot = slot.saturating_add(1);
+        self.counts.note(match decision {
+            Decision::Execute(_) => RetryOutcome::Executed,
+            Decision::Replay(_) => RetryOutcome::Replayed,
+            Decision::Conflict => RetryOutcome::Conflicted,
+            Decision::Discarded => RetryOutcome::Discarded,
+            Decision::InFlight => RetryOutcome::InFlight,
+        });
         decision
     }
 
@@ -366,7 +392,7 @@ fn digest(method: &str, params: &serde_json::Value) -> u64 {
 
 /// 키는 연결이 아니라 호출자별로 구분한다. 재시도는 다른 연결에서 올 수 있다.
 /// Local은 한 주체로, 플러그인과 에이전트는 각각의 ID로 구분해 다른 호출자의 응답을 섞지 않는다.
-fn caller_scope(caller: &CallerContext) -> String {
+pub(crate) fn caller_scope(caller: &CallerContext) -> String {
     match caller {
         CallerContext::Local => "local".to_string(),
         CallerContext::Plugin { plugin_id, .. } => format!("plugin:{plugin_id}"),
@@ -722,6 +748,12 @@ pub(crate) fn declaration() -> serde_json::Value {
         "max_response_bytes": MAX_STORED_RESPONSE_BYTES,
         "max_key_bytes": MAX_KEY_BYTES,
         "survives_restart": false,
+        "structure_journal": {
+            "methods": tasty_ipc::method_meta::METHOD_TABLE.iter().filter(|(method, _)| tasty_ipc::method_meta::has_structure_journal_contract(method)).map(|(method, _)| *method).collect::<Vec<_>>(),
+            "survives_restart": true,
+            "scope": "data_home_journal",
+            "implicit_target": "first_admission",
+        },
     })
 }
 

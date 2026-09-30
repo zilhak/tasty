@@ -220,7 +220,7 @@ CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 
 연결이 바뀌어도 같은 주체의 재시도를 찾는다.
 같은 키·같은 요청은 저장 응답을 idempotent_replay:true로 반환하고, 다른 요청이면 -32063으로 실행을 막는다.
 권한·cap·rate 거절은 저장하지 않는다.
-보존 시간·개수·개별 응답 크기·키 길이는 system.info에서 상수로부터 선언하며 재시작을 넘는 보장은 없다.
+메모리 보존 경로의 시간·개수·개별 응답 크기·키 길이는 system.info에서 상수로부터 선언하며 그 경로는 재시작을 넘는 보장이 없다. 구조 저널로 연결된 이름은 별도 structure_journal 선언을 따른다.
 항목 퇴출 후에는 다시 실행될 수 있지만 큰 응답만 버릴 때는 키를 남겨 -32064로 실행 완료·응답 없음 상태를 알린다.
 응답 표지가 없는 것만으로 계약 밖이라고 판단하지 않는다.
 client는 부수효과 전에 capability를 확인한다.
@@ -230,18 +230,22 @@ client는 부수효과 전에 capability를 확인한다.
 
 #### 어느 경로에 걸리나 — 호스트가 아는 이름은 전부 안, plugin 고유 이름만 밖
 
-메서드별 KeyContract는 Kept{since}·Unneeded·Outside로 선언한다. Mutate 여부와 저장 보장 여부를 구분하며 Read·Idempotent는 Unneeded다. client는 Kept의 since 이상 capability를 요구하고 Unneeded도 최소 지원 버전을 확인한다. 서버 capability는 표가 요구하는 최대 버전에서 파생한다. 멱등 키 기능 버전 1은 engine, 버전 2는 App 경로의 보장을 뜻한다. 새 라우팅 계층을 열 때 실제 저장소 경로와 선언을 양방향으로 검증한다.
+메서드별 KeyContract는 Kept{since}·Unneeded·Outside로 선언한다. Mutate 여부와 저장 보장 여부를 구분한다. Read·Idempotent의 기본값은 Unneeded이며, 구조 저널에 연결된 Idempotent는 최초 대상과 응답을 보존하기 위해 Kept를 선언한다. client는 Kept의 since 이상 capability를 요구하고 Unneeded도 최소 지원 버전을 확인한다. 서버 capability는 표가 요구하는 최대 버전에서 파생한다. 멱등 키 기능 버전 1은 engine, 버전 2는 App 경로의 보장을 뜻한다. 새 라우팅 계층을 열 때 실제 저장소 경로와 선언을 양방향으로 검증한다.
 
 멱등 키 기능 버전 3은 호스트가 아는 Mutate 이름을 GUI debug와 namespace forward에서도 보호한다.
 image·markdown처럼 plugin으로 전달되는 호스트 이름은 forward_keeping_the_key가 Kept를 확인하고 공용 relay를 사용한다.
 plugin 고유 이름까지 같은 Mutate라는 이유로 저장하면 Outside 계약이 깨지므로 Kept 판정을 생략하지 않는다.
 GUI debug 두 단계도 공용 저장 경로로 묶는다.
 원 요청 대신 키를 뗀 relay 인자를 전달하고 forward 완료 전 재시도도 합류시킨다.
-host injector·plugin host-call·구조 stream op에는 호출자 멱등 키 자체가 없다.
+host injector·plugin host-call·구조 stream op에는 현재 호출자 멱등 키 자체가 없다. plugin host-call의 공개 구조 요청도 plugin 주체로 같은 journal admission을 거치지만, 현재 plugin 프로토콜에서 키를 전달한다는 보장은 아니다.
 실제 GUI dispatch·plugin 왕복 및 루프 밖 조기 호출까지 검증됐다고 보장하지 않는다.
 텍스트 가드가 확인하는 호출 모양을 벗어난 우회는 별도 행동 검증 대상이다.
 
 호스트 표가 모르는 plugin 고유 이름은 Outside다. send_idempotent는 이런 이름을 연결에 쓰기 전에 KeyOutsideContract로 거절한다. 구 client가 직접 키를 실어 보내면 plugin 고유 호출의 중복 실행을 호스트가 막아주지는 않는다. 플러그인이 정확히 한 번의 실행을 요구하면 자체 요청 ID 계약이 필요하다. 낡은 client가 새 호스트 이름을 모를 때도 안전하게 거절하므로 이 경우 client 업데이트가 필요하다.
+
+버전 4의 `structure_journal.methods`는 현재 `workspace_category.create/rename/delete/move`와 `workspace.update/move`다. GUI·headless 요청에 키가 있으면 현재 권한 검사 뒤 원본 key를 조회하고, 처음 실행할 때만 ID·index를 해소한다. plugin host-call도 같은 admission을 거치지만 현재 caller key는 없다. 같은 key의 진행 중 요청은 ID 예약 전에도 합류한다. 최종 JSON-RPC 본문은 확정 기록으로 보존하며 재시도에서는 요청 id만 바꾼다. 대상이 이동·삭제되거나 worker가 재시작해도 최초 결과를 돌려준다. 도메인 거절도 Failed 응답으로 남고, admission 크기·큐 거절은 해당 요청만 종료한다. 이 목록 밖의 이름은 기존 메모리/Outside 계약을 따른다.
+
+mirror metadata와 혼합 목록의 mirror 위치는 비영속 표시 상태다. 로컬 구조 commit·projection 뒤 최초 완료에서만 표시 continuation을 적용하고 응답을 보낸다. delta·재연결로 같은 ID의 mirror 구조가 교체되면 이전 continuation을 버린다. 저장 응답 재시도는 과거 표시 변경이나 host 알림을 다시 내지 않는다. 이 process-local token은 원격 전송 큐의 connection epoch 보장을 대신하지 않는다.
 
 #### 진행 중 요청과 보장 한계
 

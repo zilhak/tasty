@@ -10,16 +10,14 @@ use tasty_doc_guards::cfg_predicate::cfg_gated_lines;
 /// 어댑터 부재 외의 예상하지 못한 실패는 크래시 보고를 유지하기로 한 예외다.
 const SCANNED: &[&str] = &[
     "src/app/window_lifecycle.rs",
+    "src/app/window_lifecycle/pending.rs",
     "src/app/modal/settings.rs",
     "src/app/modal/plugins.rs",
     "src/app/modal/quit.rs",
 ];
 
 /// 사용자 입력·환경 오류가 아닌 코드 불변식의 단언만 허용한다.
-const INVARIANT_ALLOWLIST: &[&str] = &[
-    "pending engine must be initialized before layout restore",
-    "pending engine must be present to register a main window",
-];
+const INVARIANT_ALLOWLIST: &[&str] = &[];
 
 fn read(rel: &str) -> String {
     let p: PathBuf = tasty_doc_guards::repo_root().join(rel);

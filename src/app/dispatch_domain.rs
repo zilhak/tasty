@@ -53,8 +53,40 @@ impl App {
             anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
         };
         let origin = dispatched.origin;
-        let core = &mut self.core;
         let id = source.engine();
+        if let Some(session) = self.engines.session_mut(id)
+            && self
+                .journal
+                .admit_metadata_intent(session.id, &session.core_state, &intent, &origin)
+        {
+            return Ok(());
+        }
+        if let crate::core::intent::DomainIntent::RenameTab { tab_id, name } = &intent {
+            let session = self
+                .engines
+                .session_mut(id)
+                .ok_or_else(|| anyhow::anyhow!("intent engine disappeared"))?;
+            if !session
+                .core_state
+                .find_pane_for_tab(*tab_id)
+                .and_then(|pane| session.core_state.find_workspace_index_for_pane(pane))
+                .and_then(|index| session.core_state.workspace_at(index))
+                .is_some_and(|workspace| workspace.mirror)
+            {
+                return self
+                    .journal
+                    .admit_fixed_intent(
+                        session,
+                        vec![tasty_domain::StructuralCommand::RenameTab {
+                            tab_id: *tab_id,
+                            name: name.clone(),
+                        }],
+                        &origin,
+                    )
+                    .map_err(anyhow::Error::msg);
+            }
+        }
+        let core = &mut self.core;
         let Some(DispatchCtx {
             state, mut engine, ..
         }) = engines_mut!(self).resolve(id)
@@ -96,7 +128,7 @@ impl App {
         }
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {
-                self.cascade_settings_updated(new_settings);
+                self.cascade_settings_updated(new_settings, origin);
             }
             CoreEvent::NotificationPushRequested {
                 ws_id,
@@ -1067,7 +1099,46 @@ impl App {
     }
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
-    fn cascade_settings_updated(&mut self, new_settings: Settings) {
+    fn cascade_settings_updated(&mut self, new_settings: Settings, origin: &IntentOrigin) {
+        let generation = match self.journal.note_settings_intent() {
+            Ok(generation) => generation,
+            Err(error) => {
+                tracing::error!("settings admission failed: {error}");
+                return;
+            }
+        };
+        let turning_off = self
+            .engines()
+            .windowed_and_parked()
+            .next()
+            .is_some_and(|engine| engine.settings.general.workspace_categories_enabled)
+            && !new_settings.general.workspace_categories_enabled;
+        if turning_off {
+            let ids: Vec<_> = self
+                .engines()
+                .windows()
+                .filter_map(|(window, _)| self.engines.of_window(window))
+                .chain(self.engines().parked_with_ids().map(|(id, _)| id))
+                .collect();
+            let mut changes = Vec::new();
+            for id in ids {
+                let Some(binding) = self.engines.journal_binding(id) else {
+                    tracing::error!("category reset engine has no journal binding");
+                    return;
+                };
+                changes.push(crate::runtime::journal_product::StreamCommand {
+                    stream: binding.stream.clone(),
+                    command: tasty_domain::StructuralCommand::ResetCategories,
+                });
+            }
+            self.journal
+                .admit_settings_reset(generation, changes, new_settings, origin);
+            return;
+        }
+        self.apply_settings_after_structure(new_settings);
+    }
+
+    pub(crate) fn apply_settings_after_structure(&mut self, new_settings: Settings) {
         let prev_settings = self
             .engines()
             .windowed_and_parked()
@@ -1078,24 +1149,13 @@ impl App {
         let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
         let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
         let prev_language = prev_settings.map(|s| s.general.language.clone());
-        let prev_categories_enabled = prev_settings.map(|s| s.general.workspace_categories_enabled);
-        let categories_turned_off = prev_categories_enabled == Some(true)
-            && !new_settings.general.workspace_categories_enabled;
 
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
             engine.settings = new_settings.clone();
-            if categories_turned_off {
-                engine.collapse_categories_to_normal();
-                engine.layout_dirty.mark_dirty();
-            }
             main.mark_dirty();
         }
         for mut engine in self.engines_mut().parked() {
             engine.settings = new_settings.clone();
-            if categories_turned_off {
-                engine.collapse_categories_to_normal();
-                engine.layout_dirty.mark_dirty();
-            }
         }
         if let Err(e) = new_settings.save() {
             // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.

@@ -30,7 +30,7 @@ mod first_line;
 /// 값을 늘리면 저장소에 넣을 수 있는 항목도 전송에서 거절될 수 있다.
 /// 최악의 JSON escape는 2MiB, base64는 7MiB 값부터 해당한다.
 /// 기본값과의 관계는 admission 시험이 확인하며 사용자별 설정까지 보장하지 않는다.
-const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
 
 /// 정상 줄·EOF·크기 초과·기한 만료·읽기 실패를 구분한다.
 enum LineRead {

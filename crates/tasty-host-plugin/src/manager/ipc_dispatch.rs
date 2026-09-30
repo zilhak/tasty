@@ -49,6 +49,30 @@ impl PluginManager {
         }
     }
 
+    /// Reject a delayed reply if the original process owner has been replaced or retired.
+    /// A true result means the binding matched; existing queue-pressure logging still applies.
+    pub fn send_bound_ipc_result(
+        &mut self,
+        plugin_id: &str,
+        binding: &std::sync::Weak<()>,
+        call_id: u64,
+        response: JsonRpcResponse,
+    ) -> bool {
+        if !self
+            .processes
+            .get(plugin_id)
+            .is_some_and(|process| process.reply_binding().ptr_eq(binding))
+        {
+            return false;
+        }
+        let (result, error, code) = match response.error {
+            Some(error) => (None, Some(error.message), Some(error.code)),
+            None => (response.result, None, None),
+        };
+        self.send_ipc_result(plugin_id, call_id, result, error, code);
+        true
+    }
+
     /// namespace 소유자와 권한을 확인해 호출을 전달한다. 응답은 response_tx로 돌려준다.
     /// origin은 호스트의 원 요청 번호이며 plugin에는 보내지 않는다.
     /// 번호를 모르거나 중간 file-handler 큐에서 잃었으면 None이다.

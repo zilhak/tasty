@@ -66,6 +66,9 @@ fn dispatch_command(
             return std::ops::ControlFlow::Continue(());
         }
     };
+    if app.journal.admit_ipc(&cmd, &caller) {
+        return std::ops::ControlFlow::Continue(());
+    }
     match intercept_app_layer(app, state, engine, &caller, &cmd) {
         Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
         #[cfg(debug_assertions)]
@@ -97,7 +100,12 @@ fn dispatch_command(
     super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
     let resp = crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
     // 응답 전에 요청의 Intent와 후속 이벤트를 적용한다.
-    crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+    crate::intent::headless::drain_pending_intents_in_app(
+        &mut app.core,
+        state,
+        engine,
+        &mut app.journal,
+    );
     crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
     send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())

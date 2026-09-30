@@ -142,6 +142,8 @@ impl RequestContext {
             terminal_views: Default::default(),
             #[cfg(any(feature = "gui", debug_assertions, test))]
             category_last_active: std::collections::HashMap::new(),
+            #[cfg(not(feature = "gui"))]
+            engine_id: None,
             #[cfg(feature = "gui")]
             settings_open_requested: false,
             #[cfg(feature = "gui")]

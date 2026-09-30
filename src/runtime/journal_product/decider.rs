@@ -24,6 +24,7 @@ pub(crate) struct StreamCommand {
 pub(crate) struct ResolvedCommand {
     /// Caller method and original arguments, before implicit target resolution.
     pub(crate) original_digest: Vec<u8>,
+    pub(crate) response: Option<super::ResponsePlan>,
     pub(crate) changes: Vec<StreamCommand>,
     pub(crate) effect_result: Option<super::EffectLease>,
     pub(crate) cancellation: Option<tasty_event_store::EffectTransition>,
@@ -51,6 +52,26 @@ impl Decider for StructureDecider {
     }
 
     fn decide(
+        &self,
+        state: &StructureModels,
+        command: &ResolvedCommand,
+        context: &mut DecisionContext<'_>,
+    ) -> Result<Decision<StreamEvent, NewEffect>, Rejection> {
+        match self.decide_changes(state, command, context) {
+            Err(error) if command.response.is_some() => Ok(Decision {
+                events: Vec::new(),
+                effects: Vec::new(),
+                resolved: serde_json::to_vec(&command.changes)
+                    .map_err(|error| Rejection(error.to_string()))?,
+                response: super::ResponsePlan::rejected(&error),
+            }),
+            result => result,
+        }
+    }
+}
+
+impl StructureDecider {
+    fn decide_changes(
         &self,
         state: &StructureModels,
         command: &ResolvedCommand,
@@ -124,7 +145,10 @@ impl Decider for StructureDecider {
             effects,
             resolved: serde_json::to_vec(&resolved_changes)
                 .map_err(|e| Rejection(e.to_string()))?,
-            response: serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
+            response: match &command.response {
+                Some(response) => response.render(&candidate)?,
+                None => serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
+            },
         })
     }
 }
@@ -158,9 +182,16 @@ impl JournalDecider for StructureDecider {
             )
         });
         let pending = !internal && !decision.effects.is_empty();
+        let failed = command.response.is_some()
+            && serde_json::from_slice::<tasty_ipc::protocol::JsonRpcResponse>(&decision.response)
+                .expect("public structural response serializes")
+                .error
+                .is_some();
         CommandRecordPlan {
             status: if pending {
                 CommandStatus::InProgress
+            } else if failed {
+                CommandStatus::Failed
             } else {
                 CommandStatus::Completed
             },

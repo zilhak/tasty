@@ -13,7 +13,14 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
     finished(&worker, 101).unwrap();
     submit(&worker, 101, Work::Reserve(vec![(IdKind::Category, 1)]));
     finished(&worker, 101).unwrap();
-    submit(&worker, 101, Work::Resolve(vec![category("slot-2", 2)]));
+    submit(
+        &worker,
+        101,
+        Work::Resolve {
+            changes: vec![category("slot-2", 2)],
+            response: None,
+        },
+    );
     publish(&worker);
     finished(&worker, 101).unwrap();
     submit(&worker, 1, Work::Admit(header("two-workspaces")));
@@ -55,8 +62,8 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
     submit(
         &worker,
         1,
-        Work::Resolve(
-            (0..2)
+        Work::Resolve {
+            changes: (0..2)
                 .map(|index| StreamCommand {
                     stream: format!("structure:slot-{}", index + 1),
                     command: StructuralCommand::PrepareCreation {
@@ -84,7 +91,8 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
                     },
                 })
                 .collect(),
-        ),
+            response: None,
+        },
     );
     let prepared = publish(&worker);
     finished(&worker, 1).unwrap();

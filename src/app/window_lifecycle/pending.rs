@@ -19,6 +19,7 @@ impl App {
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions) {
             tracing::error!("journal publication halted: {error}");
         }
+        self.resolve_journal_requests();
         for id in self.journal.take_retired_engines() {
             drop(self.engines.finish_retiring(id));
         }
@@ -43,30 +44,35 @@ impl App {
             }
             return;
         }
-        let Some(pending) = self.pending_window.as_ref() else {
+        let Some(pending) = self.pending_window.as_mut() else {
             return;
         };
         let id = pending.engine;
         if self.engines.journal_binding(id).is_none() {
             return;
         }
-        let deadline = *self
-            .pending_window
-            .as_mut()
-            .expect("opening window")
-            .plugin_deadline
-            .get_or_insert_with(|| {
-                std::time::Instant::now() + crate::app::boot_machine::PLUGIN_WAIT_DEADLINE
-            });
+        let deadline = *pending.plugin_deadline.get_or_insert_with(|| {
+            std::time::Instant::now() + crate::app::boot_machine::PLUGIN_WAIT_DEADLINE
+        });
         let needed = self.boot_required_plugin_kinds();
         if !self.boot_pump_step_plugins_registered(&needed) && std::time::Instant::now() < deadline
         {
             return;
         }
-        let session = self
-            .engines
-            .session_mut(id)
-            .expect("opening engine remains registered");
+        let Some(session) = self.engines.session_mut(id) else {
+            if let Some(pending) = self.pending_window.take() {
+                if let Some(completion) = pending.completion {
+                    completion.reply_window_create(Err("opening engine disappeared".into()));
+                }
+                self.notify_window_creation_failed(
+                    WindowCreationTarget::NewWindow,
+                    pending.origin,
+                    "journal engine initialization failed",
+                    "opening engine disappeared",
+                );
+            }
+            return;
+        };
         let result = self.journal.poll_restore_bootstrap(session);
         if let Err(error) = result {
             if let Some(pending) = self.pending_window.take() {
@@ -85,9 +91,25 @@ impl App {
         if !self.journal.is_ready(id) {
             return;
         }
-        let pending = self.pending_window.take().expect("opening window");
+        let Some(pending) = self.pending_window.take() else {
+            return;
+        };
         let presentation = self.journal.take_restored_presentation(id);
-        let mut state = self.assemble_app_state(presentation);
+        let mut state = match self.assemble_app_state(presentation) {
+            Ok(state) => state,
+            Err(error) => {
+                if let Some(completion) = pending.completion {
+                    completion.reply_window_create(Err(error.clone()));
+                }
+                self.notify_window_creation_failed(
+                    WindowCreationTarget::NewWindow,
+                    pending.origin,
+                    "cannot assemble the committed engine View",
+                    error,
+                );
+                return;
+            }
+        };
         if let Some(error) = pending.db_init_error {
             crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,

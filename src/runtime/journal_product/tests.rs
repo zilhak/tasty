@@ -1,4 +1,6 @@
 mod aggregate;
+mod pressure;
+mod retirement;
 
 use super::*;
 use std::time::Duration;
@@ -123,7 +125,10 @@ fn duplicate_admission_resolves_once_and_multistream_result_waits_for_publicatio
     submit(
         &worker,
         1,
-        Work::Resolve(vec![category("slot-1", 1), category("slot-2", 2)]),
+        Work::Resolve {
+            changes: vec![category("slot-1", 1), category("slot-2", 2)],
+            response: None,
+        },
     );
     let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publication before response")
@@ -177,7 +182,14 @@ fn rejected_publication_halts_later_commands_without_returning_success() {
         finished(&worker, 1).unwrap(),
         ResultValue::Reserved(_)
     ));
-    submit(&worker, 1, Work::Resolve(vec![category("slot-1", 1)]));
+    submit(
+        &worker,
+        1,
+        Work::Resolve {
+            changes: vec![category("slot-1", 1)],
+            response: None,
+        },
+    );
     let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publish")
     };
@@ -312,32 +324,35 @@ fn prepare_workspace(
     submit(
         worker,
         ticket,
-        Work::Resolve(vec![StreamCommand {
-            stream: "structure:slot-1".into(),
-            command: StructuralCommand::PrepareCreation {
-                operation: OperationId(String::new()),
-                command_id: String::new(),
-                input: DataRef(input),
-                plan: CreationPlan {
-                    destination: CreationDestination::Workspace {
-                        workspace: id(IdKind::Workspace),
-                        pane: id(IdKind::Pane),
-                        tab: id(IdKind::Tab),
-                        name: name.into(),
-                        category: 1,
-                        subtitle: String::new(),
-                        description: String::new(),
+        Work::Resolve {
+            changes: vec![StreamCommand {
+                stream: "structure:slot-1".into(),
+                command: StructuralCommand::PrepareCreation {
+                    operation: OperationId(String::new()),
+                    command_id: String::new(),
+                    input: DataRef(input),
+                    plan: CreationPlan {
+                        destination: CreationDestination::Workspace {
+                            workspace: id(IdKind::Workspace),
+                            pane: id(IdKind::Pane),
+                            tab: id(IdKind::Tab),
+                            name: name.into(),
+                            category: 1,
+                            subtitle: String::new(),
+                            description: String::new(),
+                        },
+                        surface: SurfaceSpec {
+                            id: id(IdKind::Surface),
+                            kind: kind.into(),
+                            data: None,
+                        },
+                        tab_name: "created".into(),
+                        explicit_name: None,
                     },
-                    surface: SurfaceSpec {
-                        id: id(IdKind::Surface),
-                        kind: kind.into(),
-                        data: None,
-                    },
-                    tab_name: "created".into(),
-                    explicit_name: None,
                 },
-            },
-        }]),
+            }],
+            response: None,
+        },
     );
     let batch = publish(worker);
     let operation = batch.streams["structure:slot-1"]
@@ -374,7 +389,14 @@ fn seed_category(worker: &JournalWorker) {
         Work::Reserve(vec![(IdKind::Category, 1), (IdKind::Surface, 1)]),
     );
     finished(worker, 100).unwrap();
-    submit(worker, 100, Work::Resolve(vec![category("slot-1", 1)]));
+    submit(
+        worker,
+        100,
+        Work::Resolve {
+            changes: vec![category("slot-1", 1)],
+            response: None,
+        },
+    );
     publish(worker);
     finished(worker, 100).unwrap();
 }
@@ -738,28 +760,31 @@ fn complete_conversion_and_reap(
     submit(
         worker,
         10,
-        Work::Resolve(vec![StreamCommand {
-            stream: binding.stream.clone(),
-            command: StructuralCommand::PrepareCreation {
-                operation: OperationId(String::new()),
-                command_id: String::new(),
-                input,
-                plan: CreationPlan {
-                    destination: CreationDestination::Convert {
-                        surface: sid,
-                        previous_activation: Some(1),
-                        explicit_name: Some(None),
+        Work::Resolve {
+            changes: vec![StreamCommand {
+                stream: binding.stream.clone(),
+                command: StructuralCommand::PrepareCreation {
+                    operation: OperationId(String::new()),
+                    command_id: String::new(),
+                    input,
+                    plan: CreationPlan {
+                        destination: CreationDestination::Convert {
+                            surface: sid,
+                            previous_activation: Some(1),
+                            explicit_name: Some(None),
+                        },
+                        surface: SurfaceSpec {
+                            id: sid,
+                            kind: "empty".into(),
+                            data: None,
+                        },
+                        tab_name: String::new(),
+                        explicit_name: None,
                     },
-                    surface: SurfaceSpec {
-                        id: sid,
-                        kind: "empty".into(),
-                        data: None,
-                    },
-                    tab_name: String::new(),
-                    explicit_name: None,
                 },
-            },
-        }]),
+            }],
+            response: None,
+        },
     );
     let batch = publish(worker);
     let operation = batch.streams[&binding.stream]

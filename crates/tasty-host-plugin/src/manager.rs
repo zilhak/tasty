@@ -595,6 +595,31 @@ prefix = "{prefix}"
     }
 
     #[test]
+    fn delayed_ipc_result_never_reaches_a_replacement_plugin_process() {
+        let mut manager = PluginManager::new(empty_waker());
+        let (old, old_rx) = PluginProcess::stub_with_request_rx("same-plugin");
+        let binding = old.reply_binding();
+        manager.processes.insert("same-plugin".into(), old);
+        let (new, new_rx) = PluginProcess::stub_with_request_rx("same-plugin");
+        let current = new.reply_binding();
+        let _retired = manager.processes.insert("same-plugin".into(), new).unwrap();
+        let response = || {
+            tasty_ipc::protocol::JsonRpcResponse::success(
+                serde_json::Value::Null,
+                serde_json::json!({"done":true}),
+            )
+        };
+        assert!(!manager.send_bound_ipc_result("same-plugin", &binding, 7, response()));
+        assert!(old_rx.try_recv().is_err());
+        assert!(new_rx.try_recv().is_err());
+        assert!(manager.send_bound_ipc_result("same-plugin", &current, 8, response()));
+        let request = new_rx.try_recv().unwrap();
+        assert_eq!(request.method, crate::protocol::METHOD_IPC_RESULT);
+        assert_eq!(request.params["call_id"], 8);
+        assert_eq!(request.params["result"]["done"], true);
+    }
+
+    #[test]
     fn validate_namespace_call_method_not_found() {
         let mut mgr = PluginManager::new(empty_waker());
         let err = mgr

@@ -75,6 +75,7 @@ impl DiskScrollback {
         } else {
             "tasty-scrollback"
         };
+        // reason: shared directory only; create_instance_file uses a unique create_new path per owner.
         let dir = std::env::temp_dir().join(subdir);
         std::fs::create_dir_all(&dir)?;
         let (file_path, mut f) = create_instance_file(&dir, surface_id)?;

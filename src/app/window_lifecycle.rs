@@ -301,13 +301,13 @@ impl App {
     pub(super) fn assemble_app_state(
         &mut self,
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
-    ) -> crate::state::MainViewState {
+    ) -> Result<crate::state::MainViewState, String> {
         let preset_store = self.core.preset_store.clone();
         let memory = self.core.memory_arc();
         let engine = self
             .engines
             .pending_mut()
-            .expect("assembling the pending engine View");
+            .ok_or("no pending engine is available to assemble the View")?;
         let mut state = crate::state::MainViewState::new(engine.core, preset_store, memory);
         if let Some(restored_idx) = restored_idx_after_layout {
             state
@@ -321,7 +321,7 @@ impl App {
             // 이후 목록 갱신을 기다리지 않고 첫 화면부터 플러그인 명령을 표시한다.
             state.palette_plugin_commands = mgr.plugin_palette_commands();
         }
-        state
+        Ok(state)
     }
 
     pub(super) fn boot_required_plugin_kinds(&self) -> Vec<String> {
@@ -559,12 +559,21 @@ impl App {
         } else {
             self.ensure_engine_and_plugins(&gpu, settings.appearance.sidebar_width)
                 .map_err(|error| error.to_string())?;
-            let engine = self.engines.pending_id().expect("new pending engine");
-            let session = self.engines.session_mut(engine).expect("pending engine");
+            let engine = self
+                .engines
+                .pending_id()
+                .ok_or("new pending engine is unavailable")?;
+            let session = self
+                .engines
+                .session_mut(engine)
+                .ok_or("pending engine is unavailable")?;
             self.journal.begin_engine(
                 session,
                 crate::runtime::journal_product::EngineSelection::Slot {
-                    slot: session.core_state.layout_slot.expect("GUI layout slot"),
+                    slot: session
+                        .core_state
+                        .layout_slot
+                        .ok_or("pending GUI engine has no layout slot")?,
                     resume: session.core_state.settings.general.restore_layout,
                 },
             )?;

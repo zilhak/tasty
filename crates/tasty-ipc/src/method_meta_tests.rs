@@ -700,6 +700,12 @@ fn a_host_method_declaration_follows_its_effect() {
     };
     for (name, meta) in METHOD_TABLE.iter().chain(DEBUG_METHODS) {
         match (meta.effect, meta.key_contract) {
+            (
+                MethodEffect::Mutate | MethodEffect::Idempotent,
+                KeyContract::Kept {
+                    since: crate::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL,
+                },
+            ) => {}
             (MethodEffect::Read | MethodEffect::Idempotent, KeyContract::Unneeded) => {}
             (MethodEffect::Mutate, KeyContract::Kept { since })
                 if since == KEY_KEPT_BY_ROUTER

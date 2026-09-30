@@ -177,7 +177,7 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
 - 엔진마다 journal 파일을 나눠야 하거나 여러 journal이 구조 ID를 나눠 써야 하는 요구가 생기면 ID 예약 절의 journal 배치와 발급 범위를 다시 정한다.
-- 슬롯 선택·폐기 정책이 바뀌면 아래 incarnation 규칙과 View checkpoint의 binding 검사를 함께 다시 본다. 과거 명령 identity·미완 효과를 슬롯 재사용 때문에 지우지 않는다.
+- 슬롯 선택·폐기 정책이 바뀌면 위 incarnation 규칙과 View checkpoint의 binding 검사를 함께 다시 본다. 과거 명령 identity·미완 효과를 슬롯 재사용 때문에 지우지 않는다.
 - 구조 kind의 `u32` 범위가 고갈에 가까워지거나 surface·PTY 외의 ID 종류가 같은 공간을 쓰게 되면 좁힘 규칙과 wire 표현을 다시 본다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 

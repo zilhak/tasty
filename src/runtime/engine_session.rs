@@ -4,7 +4,6 @@
 #![warn(dead_code)]
 
 use crate::core::engine_access::EngineMut;
-#[cfg(feature = "gui")]
 use crate::core::engine_access::EngineRef;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -39,7 +38,7 @@ pub(crate) struct EngineSession {
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
     #[cfg(test)]
     _isolated_home: Option<crate::test_support::IsolatedHome>,
-    #[cfg(test)]
+    #[cfg(all(test, feature = "gui"))]
     pub(crate) test_host_commands:
         Option<std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd>>,
 }
@@ -55,7 +54,6 @@ impl EngineSession {
         }
     }
 
-    #[cfg(feature = "gui")]
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
             core: &self.core_state,

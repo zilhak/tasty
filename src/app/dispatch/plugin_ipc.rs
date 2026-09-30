@@ -62,6 +62,12 @@ impl App {
                 );
                 continue;
             }
+            if self
+                .journal
+                .admit_plugin(&request, &caller, &call, self.plugin_manager.as_ref())
+            {
+                continue;
+            }
             self.handle_ipc_default_dispatch(&call, &checked);
         }
     }

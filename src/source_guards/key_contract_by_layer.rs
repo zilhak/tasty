@@ -372,3 +372,72 @@ fn the_debug_layers_judge_handled_by_the_step() {
         body.trim()
     );
 }
+
+#[test]
+fn journal_key_declarations_match_the_connected_structural_resolver() {
+    use tasty_ipc::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL;
+    let implemented: BTreeSet<_> = ["category.rs", "workspace.rs"]
+        .into_iter()
+        .flat_map(|file| {
+            method_literals(&strip_comments(shipped(&read(&format!(
+                "src/app/journal/commands/{file}"
+            )))))
+        })
+        .filter(|method| METHOD_TABLE.iter().any(|(name, _)| name == method))
+        .collect();
+    let advertised = declared(|contract| {
+        contract
+            == KeyContract::Kept {
+                since: KEY_KEPT_IN_STRUCTURE_JOURNAL,
+            }
+    });
+    assert_eq!(
+        advertised.len(),
+        6,
+        "this resolver must cover every advertised journal method"
+    );
+    assert_eq!(
+        advertised
+            .iter()
+            .map(|method| method.to_string())
+            .collect::<BTreeSet<_>>(),
+        implemented
+    );
+    for (path, function, gate, routing) in [
+        (
+            GUI_DISPATCH,
+            "fn ipc_dispatch_command",
+            "gates_before_routing(",
+            "ipc_step_routing(",
+        ),
+        (
+            HEADLESS_DISPATCH,
+            "fn dispatch_command",
+            "check_request(",
+            "request_resource_id(",
+        ),
+    ] {
+        let source = strip_comments(shipped(&read(path)));
+        let body = fn_body(&source, function).expect("IPC dispatch body");
+        assert!(
+            journal_before_targets(&body, gate, routing),
+            "{path}: current gate -> journal admission -> target routing"
+        );
+        assert!(!journal_before_targets(
+            &body.replace("admit_ipc(", "bypassed("),
+            gate,
+            routing
+        ));
+        let reordered = format!("request_resource_id(); {body}");
+        if routing == "request_resource_id(" {
+            assert!(!journal_before_targets(&reordered, gate, routing));
+        }
+    }
+}
+
+fn journal_before_targets(body: &str, gate: &str, routing: &str) -> bool {
+    match (body.find(gate), body.find("admit_ipc("), body.find(routing)) {
+        (Some(gate), Some(admit), Some(route)) => gate < admit && admit < route,
+        _ => false,
+    }
+}
