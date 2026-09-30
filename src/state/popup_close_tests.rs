@@ -32,7 +32,7 @@ const CONVERT_SURFACE_POPUP_ID: PopupId = "convert_surface";
 const RENAME_POPUP_ID: PopupId = "rename";
 const SCRIPT_CHANGED_CONFIRM_POPUP_ID: PopupId = "script_changed_confirm";
 
-fn term_rect() -> PhysicalRect {
+pub(super) fn term_rect() -> PhysicalRect {
     PhysicalRect {
         x: PhysicalPx(0.0),
         y: PhysicalPx(0.0),
