@@ -31,6 +31,7 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 | 0057 | [변경 요청 재시도는 호출자별 명령 identity로 구분하고 기록 범위에서는 이벤트와 함께 확정한다](0057-command-identity-for-mutation-retries.md) | Accepted | 2026-09-30 | ipc, idempotency, retry, event-sourcing |
 | 0058 | [헤드리스는 로컬 View 없이 같은 명령 실행 경계로 작업을 완료한다](0058-headless-without-local-views.md) | Accepted | 2026-09-30 | headless, lifecycle, features, architecture |
 | 0063 | [이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다](0063-event-store-storage-fencing-and-effect-states.md) | Accepted | 2026-09-30 | event-sourcing, storage, sqlite, durability, effects, fencing |
+| 0064 | [저널 도메인 모델과 CommandExecutor는 새 crate `tasty-domain`에 새로 작성한다](0064-journal-domain-model-and-command-executor-crate.md) | Accepted | 2026-09-30 | architecture, crates, domain, event-sourcing, commands |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결
