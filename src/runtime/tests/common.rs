@@ -1,14 +1,15 @@
 //! 시험 공용 도우미와 여러 batch에 걸친 구조 시나리오.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use tasty_domain::{
     DataRef, DomainEvent, MetadataTarget, Placement, Ratio, STRUCTURE_STREAM, SplitSpec,
     SurfaceSpec,
 };
 use tasty_event_store::{
-    BatchCut, CommitOutcome, CommitRequest, EventStore, ExpectedRevision, NewEvent, StreamAppend,
-    StreamId, WriterEpoch,
+    BatchCut, CommitOutcome, CommitRequest, EventStore, ExpectedRevision, NewEvent, StoreError,
+    StreamAppend, StreamId, WriterEpoch,
 };
 use tasty_model::SplitDirection;
 
@@ -22,8 +23,35 @@ pub(super) fn db_path(dir: &tempfile::TempDir) -> PathBuf {
 
 pub(super) fn open(path: &Path) -> (EventStore, WriterEpoch) {
     let mut store = EventStore::open(path, JOURNAL).expect("open journal");
-    let epoch = store.acquire_writer().expect("acquire writer");
+    let epoch = retry_while_locked(|| store.acquire_writer()).expect("acquire writer");
     (store, epoch)
+}
+
+/// writer 잠금을 얻을 때까지 잠시 다시 시도한다.
+/// 같은 시험 바이너리의 다른 시험이 fork한 자식은 exec 전까지 잠금 파일의 열린 파일 설명을
+/// 공유하므로, drop한 저장소의 잠금이 잠시 남아 재오픈 직후 `WriterLocked`가 날 수 있다.
+pub(super) fn retry_while_locked<T, E: AsLockError>(
+    mut attempt: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match attempt() {
+            Err(error) if error.is_writer_locked() && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}
+
+pub(super) trait AsLockError {
+    fn is_writer_locked(&self) -> bool;
+}
+
+impl AsLockError for StoreError {
+    fn is_writer_locked(&self) -> bool {
+        matches!(self, StoreError::WriterLocked)
+    }
 }
 
 pub(super) fn new_event(id: String, event: &DomainEvent) -> NewEvent {
