@@ -186,9 +186,14 @@ pub(crate) fn open_picker(
         result: None,
         ignore_size_limit,
     });
-    state
-        .popups
-        .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
+    let intent = crate::intent::UiIntent::OpenPopup {
+        id: crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID,
+        mode: crate::intent::OpenPopupMode::CenteredFocused,
+    };
+    state.dispatch_intent(match dispatch_origin {
+        FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
+        FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+    });
 }
 
 /// 최근 목록과 후보 양쪽에서 대상에 맞지 않는 항목을 빼고 중복 후보를 제거한다.
@@ -232,9 +237,14 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
         result: None,
         ignore_size_limit: false,
     });
-    state
-        .popups
-        .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
+    // 호출자는 링크 메뉴와 마우스 클릭뿐이라 사용자 요청으로 연다.
+    state.dispatch_intent(
+        crate::intent::UiIntent::OpenPopup {
+            id: crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID,
+            mode: crate::intent::OpenPopupMode::CenteredFocused,
+        }
+        .from_user_context_menu(),
+    );
 }
 
 #[cfg(feature = "gui")]

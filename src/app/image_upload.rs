@@ -273,9 +273,14 @@ impl App {
                 reason,
                 retry,
             });
-            main.state
-                .popups
-                .open_centered_focused(TRANSFER_ERROR_POPUP_ID);
+            // 업로드는 사용자의 붙여넣기나 재시도 버튼에서 시작된다.
+            main.state.dispatch_intent(
+                crate::intent::UiIntent::OpenPopup {
+                    id: TRANSFER_ERROR_POPUP_ID,
+                    mode: crate::intent::OpenPopupMode::CenteredFocused,
+                }
+                .from_user_menu("transfer_error"),
+            );
             main.mark_dirty();
         }
     }

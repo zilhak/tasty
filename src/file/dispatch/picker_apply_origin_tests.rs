@@ -20,6 +20,18 @@ fn handler(action: HandlerAction) -> FileHandler {
     }
 }
 
+/// 식별 결과가 picker를 열면 요청 출처를 그대로 실은 OpenPopup 하나만 큐에 남는다.
+fn take_picker_open_request(state: &mut crate::state::AppState, agent: bool) {
+    let pending = state.take_pending_intents();
+    assert_eq!(pending.len(), 1);
+    assert!(matches!(
+        &pending[0].body,
+        crate::intent::Intent::Ui(crate::intent::UiIntent::OpenPopup { id, .. })
+            if *id == crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID
+    ));
+    assert_eq!(pending[0].origin.is_agent(), agent);
+}
+
 #[test]
 fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
@@ -46,6 +58,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         false,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
+    take_picker_open_request(&mut state, true);
     core.apply(
         &mut engine,
         DomainIntent::CreateWorkspace {
@@ -170,6 +183,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         true,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
+    take_picker_open_request(&mut state, true);
     assert_eq!(picker.origin_surface_id, Some(sid));
     assert!(picker.ignore_size_limit);
     let recent_before = state.file_handler_recent.list().len();
@@ -322,4 +336,28 @@ fn a_user_origin_selects_its_result_tab() {
         "선택은 방금 append 된 탭이어야 한다"
     );
     assert!(state.pending_intents.is_empty());
+}
+
+#[test]
+fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
+    let (mut core, _) = build_test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let sid = engine.workspaces[0].all_surface_ids()[0];
+    apply_identify_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        FileTarget::new("/unknown"),
+        None,
+        Some(sid),
+        FileDispatchOrigin::User,
+        false,
+    );
+    take_picker_open_request(&mut state, false);
+
+    crate::file::dispatch::open_remote_placeholder_picker(
+        &mut state,
+        FileTarget::new("/remote/a.md"),
+    );
+    take_picker_open_request(&mut state, false);
 }
