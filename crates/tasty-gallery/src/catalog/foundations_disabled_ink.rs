@@ -1,11 +1,22 @@
 //! disabled 잉크 예제. 대비 목표 없이 순서와 테마 간 패리티만 지킨다.
-//! C3 행은 port scanner 푸터를 공용 Button으로 그린다. C4 행(탭 스트립 스크롤 화살표)은
-//! Layouts › Tab strips의 "Tab strip scroll arrows — disabled ink"에 있다.
+//! C3 행은 port scanner 푸터를 공용 Button으로 그린다. C4 행은 탭 스트립 스크롤 화살표를
+//! 시안 패널대로 그린다. 같은 화살표의 모양 규칙은 Layouts › Tab strips에 있다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
+use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, dont, meta, stage};
+
+/// C4 스트립 폭. 시안이 `--tasty-size-288`을 쓴다.
+const C4_STRIP_W: LogicalPx = LogicalPx(288.0);
+
+/// 한 패널의 대비 캡션.
+struct Captions<'a> {
+    c3: &'a str,
+    c4: &'a str,
+}
 
 #[inline]
 fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
@@ -27,8 +38,37 @@ fn caption(ui: &mut egui::Ui, th: &Theme, text: &str) {
     );
 }
 
-/// 한 팔레트 패널: C3 푸터 행과 잉크 단계 줄.
-fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, c3: &str) {
+/// C4 행: surface-raised 스트립 양끝의 스크롤 화살표. 왼쪽은 끝까지 스크롤해 disabled,
+/// 오른쪽은 enabled 잉크다. 화살표 칸에는 자체 채움이 없다.
+fn c4_strip(ui: &mut egui::Ui, th: &Theme) {
+    let h = th.item_height_tab.value();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(C4_STRIP_W.value(), h), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, th.corner_radius_sm.value(), ec(th.surface_raised()));
+    let w = th.tab_scroll_arrow_width().value();
+    let glyph = th.tab_scroll_arrow_glyph_size().value();
+    let arrow = |cell: egui::Rect, g: MockGlyph, ink: egui::Color32| {
+        g.image(glyph, ink).paint_at(
+            ui,
+            egui::Rect::from_center_size(cell.center(), egui::vec2(glyph, glyph)),
+        );
+    };
+    let left = egui::Rect::from_min_size(rect.min, egui::vec2(w, h));
+    let right =
+        egui::Rect::from_min_size(egui::pos2(rect.right() - w, rect.top()), egui::vec2(w, h));
+    arrow(left, CHEVRON_LEFT, ec(th.tab_scroll_arrow_fg_disabled()));
+    arrow(right, CHEVRON_RIGHT, ec(th.tab_scroll_arrow_fg()));
+    ui.painter_at(rect).text(
+        egui::pos2(left.right() + th.spacing_sm.value(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "server · dev · vim · logs",
+        egui::FontId::proportional(th.font_size_caption.value()),
+        ec(th.text_secondary()),
+    );
+}
+
+/// 한 팔레트 패널: C3 푸터 행, C4 스크롤 화살표 행, 잉크 단계 줄.
+fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, captions: &Captions) {
     egui::Frame::new()
         .fill(ec(th.bg_app()))
         .stroke(egui::Stroke::new(
@@ -46,7 +86,7 @@ fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, c3: &str) {
             );
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
-                caption(ui, th, c3);
+                caption(ui, th, captions.c3);
                 egui::Frame::new()
                     .fill(ec(th.bg_panel()))
                     .corner_radius(th.corner_radius.value())
@@ -63,6 +103,11 @@ fn panel(ui: &mut egui::Ui, th: &Theme, name: &str, c3: &str) {
                                 .show(ui, th);
                         });
                     });
+            });
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                caption(ui, th, captions.c4);
+                c4_strip(ui, th);
             });
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
@@ -104,13 +149,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui,
                 &mocha,
                 "Mocha",
-                "C3 · port scanner footer (ink example; the footer stays Close + Copy address) — disabled 3.40:1 (was 3.40 (n700, unchanged))",
+                &Captions {
+                    c3: "C3 · port scanner footer (ink example; the footer stays Close + Copy address) — disabled 3.40:1 (was 3.40 (n700, unchanged))",
+                    c4: "C4 · tab-strip scroll — disabled 3.40:1 · enabled 5.65:1 (was 4.45 (n800))",
+                },
             );
             panel(
                 ui,
                 &latte,
                 "Latte",
-                "C3 · port scanner footer (ink example; the footer stays Close + Copy address) — disabled 2.56:1 (was 2.07 (n700))",
+                &Captions {
+                    c3: "C3 · port scanner footer (ink example; the footer stays Close + Copy address) — disabled 2.56:1 (was 2.07 (n700))",
+                    c4: "C4 · tab-strip scroll — disabled 2.56:1 · enabled 3.65:1 (was 2.56 (n800))",
+                },
             );
         });
     });
