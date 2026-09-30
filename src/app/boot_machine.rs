@@ -394,7 +394,9 @@ impl App {
 
         // 복원 예정이면 기본 workspace를 만들지 않았으므로 복원 실패 시 여기서 보충한다.
         let _bootstrapped = match self.engines.pending_mut() {
-            Some(engine) => crate::app::App::bootstrap_workspace_if_empty(&mut self.core, engine),
+            Some(engine) => {
+                crate::app::App::bootstrap_workspace_if_empty(&mut self.core, &mut engine)
+            }
             None => None,
         };
         let mut state = self.assemble_app_state(restored_idx);

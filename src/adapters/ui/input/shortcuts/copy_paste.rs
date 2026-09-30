@@ -1,5 +1,6 @@
 //! Copy/Paste 단축키.
 
+use crate::core::engine_access::EngineMut;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::view::main::MainView;
@@ -20,7 +21,7 @@ pub(crate) enum ExplorerAction {
 impl MainView {
     pub(super) fn handle_copy_shortcut(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
@@ -32,7 +33,7 @@ impl MainView {
     }
 
     /// 처리하지 못하면 false로 반환해 탐색기 파일 복사 등 다음 경로로 넘긴다.
-    pub(crate) fn run_copy(&mut self, engine: &mut crate::core::CoreState) -> bool {
+    pub(crate) fn run_copy(&mut self, engine: &mut EngineMut<'_>) -> bool {
         // 붙여넣기 직후 짧은 시간 동안은 오타 방지를 위해 복사·SIGINT 없이 안내만 한다.
         if let Some(t) = self.last_terminal_paste_at
             && t.elapsed() < crate::view::main::PASTE_CTRL_C_COOLDOWN
@@ -155,7 +156,7 @@ impl MainView {
 
     pub(super) fn handle_paste_shortcut(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
@@ -166,7 +167,7 @@ impl MainView {
         self.run_paste(engine)
     }
 
-    pub(crate) fn run_paste(&mut self, engine: &mut crate::core::CoreState) -> bool {
+    pub(crate) fn run_paste(&mut self, engine: &mut EngineMut<'_>) -> bool {
         // 키보드와 팔레트 붙여넣기 모두 사용자 입력으로 기록한다.
         if let Some(sid) = self.state.focused_surface_id(&*engine) {
             engine.record_typing(sid);

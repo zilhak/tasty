@@ -2,6 +2,7 @@
 //! 결과를 트리에 붙이는 일은 호출자가 맡으며 부분 생성 뒤 실패를 되돌리지는 않는다.
 
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::model::closed_item::*;
 use crate::model::{
     DeferredPlugin, EmptySurface, Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface,
@@ -36,7 +37,7 @@ impl RebuildResult {
 }
 
 pub(crate) fn rebuild_surface(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     closed: ClosedPanel,
     presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<RebuildResult> {
@@ -75,7 +76,7 @@ pub(crate) fn rebuild_surface(
 }
 
 pub(crate) fn rebuild_surface_node(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     closed: ClosedSurface,
 ) -> Option<TerminalSurface> {
     let surface_id = engine.next_ids.next_surface();
@@ -161,7 +162,7 @@ pub(crate) fn rebuild_surface_node(
 }
 
 pub(crate) fn rebuild_surface_layout(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     closed: ClosedSurfaceLayout,
     presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<SurfaceLayout> {
@@ -192,7 +193,7 @@ pub(crate) fn rebuild_surface_layout(
 }
 
 pub(crate) fn rebuild_pane_node(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     closed: ClosedPaneNode,
     presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<PaneNode> {
@@ -220,7 +221,7 @@ pub(crate) fn rebuild_pane_node(
 }
 
 pub(crate) fn rebuild_pane(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     closed: ClosedPane,
     presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<Pane> {
@@ -262,7 +263,7 @@ mod deferred_plugin_tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn generic_tab(id: u32, kind: &str) -> ClosedTab {

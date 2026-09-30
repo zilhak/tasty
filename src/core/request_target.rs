@@ -19,6 +19,8 @@ pub(crate) enum Kind {
     Category,
 }
 
+use crate::core::engine_access::EngineRef;
+
 impl Kind {
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -168,7 +170,7 @@ fn numeric_or_numeric_string(params: &serde_json::Value, key: &str) -> Option<u6
 }
 
 /// engine별 자원 보유 판정. u32 종류의 범위를 넘는 ID는 다른 ID로 잘라 조회하지 않는다.
-pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: ResourceId) -> bool {
+pub(crate) fn engine_has_resource(engine: &EngineRef<'_>, rid: ResourceId) -> bool {
     let narrow = u32::try_from(rid.id).ok();
     match rid.kind {
         Kind::Surface => narrow.is_some_and(|id| engine.has_surface(id)),
@@ -407,7 +409,8 @@ mod tests {
     fn an_engine_reports_the_global_hook_it_owns() {
         use crate::hook_runtime::global::HookCondition;
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let id = engine.hooks.add_global_hook(
             HookCondition::Interval(std::time::Duration::from_secs(60)),
             "echo x".into(),

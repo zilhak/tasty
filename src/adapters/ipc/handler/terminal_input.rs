@@ -87,7 +87,9 @@ mod tests {
     #[test]
     fn rule_updates_use_settings_intents_and_reject_invalid_values() {
         let _home = crate::test_support::TastyHomeGuard::new();
-        let engine = CoreState::new(80, 24, std::sync::Arc::new(|| {})).unwrap();
+        let engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, std::sync::Arc::new(|| {}))
+                .unwrap();
         let mut out = IntentOutbox::default();
         let response = handle_input_rule_update(
             &mut out,
@@ -135,7 +137,9 @@ mod tests {
     #[test]
     fn plugin_initialization_uses_authenticated_owner_and_does_not_reapply() {
         let _home = crate::test_support::TastyHomeGuard::new();
-        let mut engine = CoreState::new(80, 24, std::sync::Arc::new(|| {})).unwrap();
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, std::sync::Arc::new(|| {}))
+                .unwrap();
         let caller = CallerContext::Plugin {
             plugin_id: "com.tasty.claude".into(),
             permissions: Default::default(),

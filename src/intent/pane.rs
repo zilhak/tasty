@@ -3,13 +3,14 @@
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::model::SplitDirection;
 use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     if let Intent::SplitPane { direction } = &intent.body {
@@ -20,12 +21,12 @@ pub fn handle(
 fn split(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     direction: SplitDirection,
     origin: &IntentOrigin,
 ) {
     let pane_id = state.focused_pane_id(engine);
-    let cwd = state.resolve_inherit_cwd(engine);
+    let cwd = state.resolve_inherit_cwd(&engine.as_ref());
     let intent = crate::core::intent::DomainIntent::SplitPane {
         target_pane_id: pane_id,
         direction,

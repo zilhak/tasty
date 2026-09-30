@@ -284,7 +284,7 @@ mod tests {
 
     fn state() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     /// 같은 surface의 알림을 별개 항목으로 검사하기 위해 합치기 시간을 0으로 둔다.

@@ -5,6 +5,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::send_response;
 use crate::state::RequestContext;
@@ -13,7 +14,7 @@ use crate::state::RequestContext;
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
@@ -33,7 +34,7 @@ pub(crate) fn pump_ipc(
 fn dispatch_command(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {
     // 큐 대기는 이미 계측했다. 실행 기한이 지났으면 권한·rate limit을 소비하기 전에 응답한다.
@@ -109,7 +110,7 @@ enum Intercepted {
 fn intercept_app_layer(
     app: &mut App,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &crate::ipc::caller::CallerContext,
     cmd: &crate::ipc::server::IpcCommand,
 ) -> Option<Intercepted> {

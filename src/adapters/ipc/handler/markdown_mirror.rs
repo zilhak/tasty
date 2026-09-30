@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn content_request_queues_and_returns_nonzero_request_id() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let resp = handle_content_request(&mut engine, json!(1), &json!({ "surface_id": 7 }));
         let rid = resp
             .result
@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn content_request_carries_the_agent_origin() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let resp = handle_content_request(
             &mut engine,
             json!(1),
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn content_request_without_surface_id_is_invalid_params() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let resp = handle_content_request(&mut engine, json!(1), &json!({}));
         assert!(resp.error.is_some());
         assert!(engine.pending_markdown_content_forward.is_empty());

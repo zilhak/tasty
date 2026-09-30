@@ -1,5 +1,6 @@
 //! 원격 cwd를 로컬 파일 작업에 잘못 쓰지 않도록 출처를 구분한다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use super::CoreState;
@@ -44,35 +45,6 @@ impl SurfaceCwd {
 }
 
 impl CoreState {
-    /// mirror push 값이 있으면 우선한다. 없으면 Terminal 또는 surface에서 찾는다.
-    /// mirror 소속이면 대체 조회한 값도 Remote다. inherit_cwd 설정은 소비자가 적용한다.
-    pub(crate) fn surface_cwd(&self, surface_id: u32) -> Option<SurfaceCwd> {
-        if let Some(pushed) = self.mirror_surface_cwd.get(&surface_id) {
-            return Some(SurfaceCwd::Remote(pushed.clone()));
-        }
-        let surface = self.find_surface_by_id(surface_id)?;
-        let path = if surface.kind() == "terminal" {
-            self.runtime
-                .terminals
-                .get(surface_id)
-                .and_then(|t| t.get_cwd())
-        } else {
-            surface.source_cwd()
-        }?;
-        if self.is_mirror_surface(surface_id) {
-            Some(SurfaceCwd::Remote(RemoteCwd::new(
-                path.to_string_lossy().into_owned(),
-            )))
-        } else {
-            Some(SurfaceCwd::Local(path))
-        }
-    }
-
-    pub(crate) fn local_surface_cwd(&self, surface_id: u32) -> Option<PathBuf> {
-        self.surface_cwd(surface_id)
-            .and_then(SurfaceCwd::into_local)
-    }
-
     /// 원격 push 캐시를 설정한다. None은 캐시를 지우지만 surface_cwd의 대체 조회까지 막지는 않는다.
     #[cfg(any(feature = "gui", test))]
     pub fn set_mirror_surface_cwd(&mut self, surface_id: u32, cwd: Option<String>) {
@@ -91,28 +63,6 @@ impl CoreState {
     pub fn forget_mirror_surface_cwd(&mut self, surface_id: u32) {
         self.mirror_surface_cwd.remove(&surface_id);
     }
-
-    /// 하드 점유 surface의 (holder, ID, cwd) 전송 후보. 최초 None도 포함한다.
-    /// holder와 값으로 중복을 구분하고 점유가 끝난 캐시는 지운다.
-    /// 전송 전에 캐시를 갱신하므로 실패 후 같은 값의 재전송은 보장하지 않는다.
-    pub fn surface_cwd_forwards(
-        &mut self,
-    ) -> Vec<(crate::core::attach::AttachClientId, u32, Option<String>)> {
-        let locks = self.attach.locks_snapshot();
-        let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.last_forwarded_cwd
-            .retain(|sid, _| occupied.contains(sid));
-        let mut out = Vec::new();
-        for (sid, lock) in locks {
-            let cwd = self.surface_cwd(sid).map(SurfaceCwd::into_wire);
-            let record = (lock.holder, cwd);
-            if self.last_forwarded_cwd.get(&sid) != Some(&record) {
-                out.push((record.0, sid, record.1.clone()));
-                self.last_forwarded_cwd.insert(sid, record);
-            }
-        }
-        out
-    }
 }
 
 #[cfg(test)]
@@ -122,7 +72,7 @@ mod tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
@@ -207,5 +157,72 @@ mod tests {
         e.set_mirror_surface_cwd(42, Some("/srv/remote".to_string()));
         e.forget_mirror_surface_cwd(42);
         assert!(e.mirror_surface_cwd.is_empty());
+    }
+}
+
+impl EngineMut<'_> {
+    /// 하드 점유 surface의 (holder, ID, cwd) 전송 후보. 최초 None도 포함한다.
+    /// holder와 값으로 중복을 구분하고 점유가 끝난 캐시는 지운다.
+    /// 전송 전에 캐시를 갱신하므로 실패 후 같은 값의 재전송은 보장하지 않는다.
+    pub fn surface_cwd_forwards(
+        &mut self,
+    ) -> Vec<(crate::core::attach::AttachClientId, u32, Option<String>)> {
+        let locks = self.attach.locks_snapshot();
+        let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
+        self.last_forwarded_cwd
+            .retain(|sid, _| occupied.contains(sid));
+        let mut out = Vec::new();
+        for (sid, lock) in locks {
+            let cwd = self.surface_cwd(sid).map(SurfaceCwd::into_wire);
+            let record = (lock.holder, cwd);
+            if self.last_forwarded_cwd.get(&sid) != Some(&record) {
+                out.push((record.0, sid, record.1.clone()));
+                self.last_forwarded_cwd.insert(sid, record);
+            }
+        }
+        out
+    }
+}
+
+impl EngineRef<'_> {
+    /// mirror push 값이 있으면 우선한다. 없으면 Terminal 또는 surface에서 찾는다.
+    /// mirror 소속이면 대체 조회한 값도 Remote다. inherit_cwd 설정은 소비자가 적용한다.
+    pub(crate) fn surface_cwd(&self, surface_id: u32) -> Option<SurfaceCwd> {
+        if let Some(pushed) = self.mirror_surface_cwd.get(&surface_id) {
+            return Some(SurfaceCwd::Remote(pushed.clone()));
+        }
+        let surface = self.find_surface_by_id(surface_id)?;
+        let path = if surface.kind() == "terminal" {
+            self.runtime
+                .terminals
+                .get(surface_id)
+                .and_then(|t| t.get_cwd())
+        } else {
+            surface.source_cwd()
+        }?;
+        if self.is_mirror_surface(surface_id) {
+            Some(SurfaceCwd::Remote(RemoteCwd::new(
+                path.to_string_lossy().into_owned(),
+            )))
+        } else {
+            Some(SurfaceCwd::Local(path))
+        }
+    }
+
+    pub(crate) fn local_surface_cwd(&self, surface_id: u32) -> Option<PathBuf> {
+        self.surface_cwd(surface_id)
+            .and_then(SurfaceCwd::into_local)
+    }
+}
+
+impl EngineMut<'_> {
+    /// mirror push 값이 있으면 우선한다. 없으면 Terminal 또는 surface에서 찾는다.
+    /// mirror 소속이면 대체 조회한 값도 Remote다. inherit_cwd 설정은 소비자가 적용한다.
+    pub(crate) fn surface_cwd(&self, surface_id: u32) -> Option<SurfaceCwd> {
+        self.as_ref().surface_cwd(surface_id)
+    }
+
+    pub(crate) fn local_surface_cwd(&self, surface_id: u32) -> Option<PathBuf> {
+        self.as_ref().local_surface_cwd(surface_id)
     }
 }

@@ -1,5 +1,6 @@
 //! 비동기 식별·picker 결과를 GUI 상태에 적용한다.
 
+use crate::core::engine_access::EngineMut;
 use crate::core::{Core, CoreState};
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
@@ -8,7 +9,7 @@ use crate::state::{FileHandlerPickerResult, RequestContext};
 pub(crate) fn apply_identify_result(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     target: FileTarget,
     detector: Option<DetectorId>,
     origin_surface_id: Option<u32>,
@@ -82,7 +83,7 @@ pub(crate) fn apply_identify_result(
 pub(crate) fn apply_file_picker_result(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     target: DispatchTarget,
     result: FileHandlerPickerResult,
     origin_surface_id: Option<u32>,
@@ -154,7 +155,8 @@ pub(super) mod tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let engine = CoreState::new(80, 24, waker).expect("engine");
+        let engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));

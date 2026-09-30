@@ -1,10 +1,11 @@
 //! pane 또는 탭 안의 surface를 분할한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     pub(super) fn apply_split_pane(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         target_pane_id: u32,
         direction: crate::model::SplitDirection,
         cwd: Option<std::path::PathBuf>,
@@ -76,7 +77,7 @@ impl Core {
 
     /// 탭 안에 surface를 추가한다. 터미널 생성은 대상 조회보다 먼저이며 뒤의 실패 시 store 삽입을 되돌리지 않는다.
     pub(super) fn apply_split_surface(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         target_surface_id: u32,
         direction: crate::model::SplitDirection,
         cwd: Option<std::path::PathBuf>,

@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::core::engine_access::EngineMut;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -9,7 +10,7 @@ use super::require_surface_id;
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     surface_id: u32,
     origin: &crate::core::origin::IntentOrigin,
@@ -55,7 +56,7 @@ pub(in crate::adapters::ipc::handler) fn refuse_if_hard_occupied(
 pub(crate) fn handle_surface_close(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,
@@ -83,7 +84,7 @@ pub(crate) fn handle_surface_close(
 pub(crate) fn handle_surface_close_self(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,

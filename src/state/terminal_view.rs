@@ -1,4 +1,5 @@
 //! Per-window display positions. Terminal resources remain in Core's existing store.
+use crate::core::engine_access::EngineRef;
 use std::collections::HashMap;
 use tasty_terminal::{ContentCut, TerminalViewport};
 
@@ -27,7 +28,7 @@ impl TerminalViewports {
     }
     pub fn update(
         &mut self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
         apply: impl FnOnce(&mut TerminalViewport, ContentCut),
     ) {

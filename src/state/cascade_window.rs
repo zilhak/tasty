@@ -1,5 +1,6 @@
 //! App adapter의 결과 처리를 View 또는 headless 명령 문맥에 연결한다.
 
+use crate::core::engine_access::EngineRef;
 use std::path::PathBuf;
 
 use super::RequestContext;
@@ -48,7 +49,7 @@ impl CascadeWindow for RequestContext {
 
     fn resolve_inherit_cwd_from_surface(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
     ) -> Option<PathBuf> {
         RequestContext::resolve_inherit_cwd_from_surface(self, engine, surface_id)

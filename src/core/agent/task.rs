@@ -1,5 +1,6 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
+use crate::core::engine_access::EngineRef;
 use tasty_agent::task::{
     TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
 };
@@ -315,7 +316,7 @@ mod hook_wait_tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn core() -> (Core, tempfile::TempDir) {
@@ -343,7 +344,7 @@ mod hook_wait_tests {
         (core, home_tmp)
     }
 
-    fn mk_ready_task(core: &Core, engine: &CoreState, workspace_id: u32) -> TaskId {
+    fn mk_ready_task(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> TaskId {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),
@@ -537,7 +538,7 @@ mod task_delete_tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn core() -> (Core, tempfile::TempDir) {
@@ -565,7 +566,7 @@ mod task_delete_tests {
         (core, home_tmp)
     }
 
-    fn mk_ready_task(core: &Core, engine: &CoreState, workspace_id: u32) -> TaskId {
+    fn mk_ready_task(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> TaskId {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),

@@ -2,42 +2,9 @@
 
 use crate::core::CoreState;
 use crate::core::attach::AttachClientId;
+use crate::core::engine_access::EngineMut;
 use tasty_ipc::stream::{StreamFrame, StreamTag, StructuralOp};
 use tasty_ipc::stream_hub::PushResult;
-
-impl CoreState {
-    /// 변경 표시가 있는 workspace의 전체 트리를 holder에 보낸다. 사라진 workspace는 강제 분리한다.
-    /// forward 실행은 자체 delta를 보내고 표시를 지워 중복 통지를 피한다.
-    /// notifier가 없거나 송신에 실패해도 여기서는 변경 표시를 다시 쌓지 않는다.
-    pub(crate) fn push_structure_changes(&mut self) {
-        for ws_id in self.attach.take_structure_changed() {
-            let Some(holder) = self.attach.workspace_holder(ws_id) else {
-                continue;
-            };
-            let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
-                self.attach.force_detach_workspace(ws_id);
-                continue;
-            };
-            let Some(hub) = self.attach.notifier() else {
-                continue;
-            };
-            let class = self.workspaces[idx].classify_attach_surfaces();
-            let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
-            let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
-                workspace_id: ws_id,
-                tree,
-                surfaces,
-            };
-            let frame = StreamFrame::new(
-                StreamTag::Control,
-                serde_json::to_vec(&delta).unwrap_or_default(),
-            );
-            if let PushResult::Unknown | PushResult::Disconnected = hub.push(holder, frame) {
-                tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
-            }
-        }
-    }
-}
 
 /// wire 오류 설명이며 client가 원문을 표시한다. 서버에서 UI 번역을 적용하지 않는다.
 fn workspace_not_found_reason() -> String {
@@ -81,4 +48,38 @@ pub(crate) fn unresolved_forward_reason<'a>(
         .into_iter()
         .find_map(|e| unresolved_anchor_reason(e, client_id, op))
         .unwrap_or_else(workspace_not_found_reason)
+}
+
+impl EngineMut<'_> {
+    /// 변경 표시가 있는 workspace의 전체 트리를 holder에 보낸다. 사라진 workspace는 강제 분리한다.
+    /// forward 실행은 자체 delta를 보내고 표시를 지워 중복 통지를 피한다.
+    /// notifier가 없거나 송신에 실패해도 여기서는 변경 표시를 다시 쌓지 않는다.
+    pub(crate) fn push_structure_changes(&mut self) {
+        for ws_id in self.attach.take_structure_changed() {
+            let Some(holder) = self.attach.workspace_holder(ws_id) else {
+                continue;
+            };
+            let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
+                self.attach.force_detach_workspace(ws_id);
+                continue;
+            };
+            let Some(hub) = self.attach.notifier() else {
+                continue;
+            };
+            let class = self.core.workspaces[idx].classify_attach_surfaces();
+            let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
+            let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
+                workspace_id: ws_id,
+                tree,
+                surfaces,
+            };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&delta).unwrap_or_default(),
+            );
+            if let PushResult::Unknown | PushResult::Disconnected = hub.push(holder, frame) {
+                tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
+            }
+        }
+    }
 }

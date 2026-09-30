@@ -3,6 +3,7 @@
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineRef;
 use crate::ipc::server::{IpcCommand, send_response};
 
 impl App {
@@ -61,12 +62,13 @@ mod tests {
 
     fn engine_with_workspace(workspace_id: u32) -> CoreState {
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).expect("engine");
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         engine.workspaces[0].id = workspace_id;
         engine
     }
 
-    fn ready_task(core: &crate::core::Core, engine: &CoreState, workspace_id: u32) -> String {
+    fn ready_task(core: &crate::core::Core, engine: &EngineRef<'_>, workspace_id: u32) -> String {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),

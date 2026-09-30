@@ -4,6 +4,7 @@
 #![cfg(debug_assertions)]
 
 use super::params::{self, p_try};
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 use tasty_model::TabSwitch;
 
@@ -40,7 +41,7 @@ pub(super) fn handle_debug_switch_tab(
 /// 사용자 메뉴의 workspace 닫기를 재현한다. 복원 기록과 포커스가 바뀌므로 디버그 전용이다.
 pub(super) fn handle_debug_close_workspace(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -68,7 +69,7 @@ pub(super) fn handle_debug_close_workspace(
 /// 사용자의 workspace 전환을 재현한다. OS 창 포커스는 바꾸지 않는다.
 pub(super) fn handle_debug_switch_workspace(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

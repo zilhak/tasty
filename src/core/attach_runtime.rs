@@ -1,6 +1,7 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::collections::HashMap;
 use std::thread;
 
@@ -21,100 +22,6 @@ impl CoreState {
             &self.categories,
             presentation,
         );
-    }
-
-    /// surface를 점유하고 화면 snapshot과 이후 출력을 보낸다. 거절하면 attach_error와 Detach를 보낸다.
-    /// hub는 연결을 등록한 허브여야 한다. forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
-    pub fn attach_surface_for_stream(
-        &mut self,
-        surface_id: SurfaceId,
-        client_id: AttachClientId,
-        hub: &StreamHub,
-    ) {
-        if !self.runtime.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
-            if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
-                && crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(&kind, &plugin_id)
-            {
-                self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
-                return;
-            }
-            reject_attach(hub, client_id, "not_found", None);
-            return;
-        }
-
-        match self.attach.acquire(surface_id, client_id) {
-            Ok(_) => {}
-            Err(AttachError::AlreadyAttached { holder }) => {
-                reject_attach(hub, client_id, "already_attached", Some(holder));
-                return;
-            }
-            Err(_) => {
-                reject_attach(hub, client_id, "lock_error", None);
-                return;
-            }
-        }
-
-        self.ensure_surface_initialized(surface_id);
-
-        let Some(terminal) = self.runtime.terminals.get_mut(surface_id) else {
-            let _ = self.attach.release(surface_id, client_id); // 이미 해제됐으면 추가 처리가 필요 없다.
-            reject_attach(hub, client_id, "spawn_failed", None);
-            return;
-        };
-
-        let cols = terminal.cols();
-        let rows = terminal.rows();
-        // reader worker가 다른 스레드에서 ingest하므로 snapshot과 tap을 한 번의 잠금으로 건다.
-        // 이후 허브에서 발생할 수 있는 전송 손실까지 막는 것은 아니다.
-        let tasty_terminal::AttachSubscription {
-            snapshot,
-            output: tap_rx,
-            resize: resize_rx,
-        } = terminal.snapshot_and_tap();
-
-        let attached = serde_json::json!({
-            "event": "attached",
-            "surface_id": surface_id,
-            "cols": cols,
-            "rows": rows,
-        });
-        let attached_frame = StreamFrame::new(
-            StreamTag::Control,
-            serde_json::to_vec(&attached).unwrap_or_default(),
-        );
-        let _ = hub.push(client_id, attached_frame); // 실패한 통지는 재시도하지 않는다.
-        let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot)); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
-
-        let hub2 = hub.clone();
-        thread::spawn(move || {
-            for chunk in tap_rx {
-                match hub2.push(client_id, StreamFrame::new(StreamTag::Data, chunk)) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-
-        let hub3 = hub.clone();
-        thread::spawn(move || {
-            for (cols, rows) in resize_rx {
-                let msg = StreamControl::Resize {
-                    surface_id,
-                    cols,
-                    rows,
-                };
-                let frame = StreamFrame::new(
-                    StreamTag::Control,
-                    serde_json::to_vec(&msg).unwrap_or_default(),
-                );
-                match hub3.push(client_id, frame) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-
-        tracing::debug!("attach: surface {surface_id} -> client {client_id}");
     }
 
     /// mesh surface는 PTY snapshot·tap 없이 점유와 attached 통지만 처리한다.
@@ -207,217 +114,6 @@ impl CoreState {
         self.mesh_mirror.push_input(surface_id, input)
     }
 
-    /// 점유한 surface의 PTY로 입력을 보낸다. 서버 로컬 입력 차단은 우회한다.
-    /// 해당 점유나 터미널이 없으면 false다.
-    pub fn feed_attached_input(&mut self, client_id: AttachClientId, bytes: &[u8]) -> bool {
-        let Some(surface_id) = self.attach.surface_held_by(client_id) else {
-            return false;
-        };
-        if let Some(terminal) = self.runtime.terminals.get_mut(surface_id) {
-            terminal.send_bytes(bytes);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// workspace의 모든 멤버를 점유하고 트리·surface 정보를 보낸다.
-    /// 터미널에는 surface ID를 붙인 snapshot·출력·resize 전송을 등록한다.
-    /// mesh·explorer·markdown은 각 role로, 지원하지 않는 종류는 placeholder로 보낸다.
-    pub fn attach_workspace_for_stream(
-        &mut self,
-        workspace_id: u32,
-        client_id: AttachClientId,
-        hub: &StreamHub,
-    ) {
-        let Some(idx) = self.find_workspace_index_for_id(workspace_id) else {
-            reject_attach(hub, client_id, "workspace_not_found", None);
-            return;
-        };
-        let class = self.workspaces[idx].classify_attach_surfaces();
-        // 화면을 복제할 수 없는 멤버도 workspace 점유에 포함한다.
-        let members: Vec<SurfaceId> = class
-            .terminals
-            .iter()
-            .chain(class.non_terminals.iter())
-            .chain(class.explorers.iter().map(|(sid, _)| sid))
-            .chain(class.mesh_candidates.iter().map(|(sid, _, _)| sid))
-            .chain(class.content_candidates.iter().map(|(sid, _, _, _)| sid))
-            .copied()
-            .collect();
-
-        match self
-            .attach
-            .acquire_workspace(workspace_id, &class.terminals, &members, client_id)
-        {
-            Ok(_) => {}
-            Err(AttachError::AlreadyAttached { holder }) => {
-                reject_attach(hub, client_id, "already_attached", Some(holder));
-                return;
-            }
-            Err(_) => {
-                reject_attach(hub, client_id, "lock_error", None);
-                return;
-            }
-        }
-
-        for &sid in &class.terminals {
-            self.ensure_surface_initialized(sid);
-        }
-
-        let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
-        let descriptor_frame = StreamFrame::new(
-            StreamTag::Control,
-            serde_json::to_vec(&descriptor).unwrap_or_default(),
-        );
-        let _ = hub.push(client_id, descriptor_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
-
-        for &sid in &class.terminals {
-            self.tap_surface_for_stream(sid, client_id, hub);
-        }
-
-        let (mesh_whitelisted, _mesh_rejected) = mesh_mirror_candidates(&class);
-        let (content_whitelisted, content_rejected) = content_mirror_candidates(&class);
-        tracing::debug!(
-            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} content, {} placeholders)",
-            class.terminals.len(),
-            mesh_whitelisted.len(),
-            content_whitelisted.len(),
-            class.non_terminals.len()
-                + (class.mesh_candidates.len() - mesh_whitelisted.len())
-                + content_rejected.len(),
-        );
-    }
-
-    /// workspace 연결에 터미널 snapshot과 출력·resize tap을 등록한다.
-    /// snapshot과 tap은 한 번의 잠금으로 걸어 그 사이 출력이 빠지지 않게 한다.
-    /// forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
-    pub(crate) fn tap_surface_for_stream(
-        &mut self,
-        sid: SurfaceId,
-        client_id: AttachClientId,
-        hub: &StreamHub,
-    ) {
-        let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
-            return;
-        };
-        let tasty_terminal::AttachSubscription {
-            snapshot,
-            output: tap_rx,
-            resize: resize_rx,
-        } = terminal.snapshot_and_tap();
-        let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
-        let _ = hub.push(client_id, snapshot_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
-        let hub2 = hub.clone();
-        thread::spawn(move || {
-            for chunk in tap_rx {
-                match hub2.push(
-                    client_id,
-                    StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
-                ) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-
-        let hub3 = hub.clone();
-        thread::spawn(move || {
-            for (cols, rows) in resize_rx {
-                let msg = StreamControl::Resize {
-                    surface_id: sid,
-                    cols,
-                    rows,
-                };
-                let frame = StreamFrame::new(
-                    StreamTag::Control,
-                    serde_json::to_vec(&msg).unwrap_or_default(),
-                );
-                match hub3.push(client_id, frame) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-    }
-
-    /// 새 workspace 멤버의 점유를 등록한다. 로컬 생성이면 delta를 먼저 보내고 tap한다.
-    /// forward 실행 중에는 호출자가 delta 뒤에 tap하므로 여기서는 tap을 생략한다.
-    /// notifier가 없어도 점유는 등록한다.
-    pub(crate) fn tap_new_workspace_member(
-        &mut self,
-        workspace_id: WorkspaceId,
-        surface_id: SurfaceId,
-        is_terminal: bool,
-    ) {
-        if !self
-            .attach
-            .add_workspace_member(workspace_id, surface_id, is_terminal)
-        {
-            return;
-        }
-        if self.attach.is_auto_tap_suppressed() {
-            return;
-        }
-        // client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta를 먼저 보낸다.
-        self.attach.mark_structure_changed(workspace_id);
-        self.push_structure_changes();
-        if !is_terminal {
-            return;
-        }
-        let Some(holder) = self.attach.workspace_holder(workspace_id) else {
-            return;
-        };
-        let Some(hub) = self.attach.notifier() else {
-            return;
-        };
-        self.tap_surface_for_stream(surface_id, holder, &hub);
-    }
-
-    /// 해당 workspace를 점유한 client의 입력만 지정 터미널로 보낸다.
-    pub fn feed_attached_workspace_input(
-        &mut self,
-        client_id: AttachClientId,
-        remote_surface_id: u32,
-        bytes: &[u8],
-    ) -> bool {
-        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
-            return false;
-        };
-        if self.attach.workspace_holder(ws) != Some(client_id) {
-            return false;
-        }
-        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
-            terminal.send_bytes(bytes);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// 점유를 확인한 뒤 실제 PTY 크기 변경을 시도한다. 대상·점유가 없으면 false다.
-    /// true가 크기 변화를 뜻하지는 않는다. 변화가 있으면 기존 resize tap이 통지한다.
-    pub fn apply_attached_workspace_resize(
-        &mut self,
-        client_id: AttachClientId,
-        remote_surface_id: u32,
-        cols: usize,
-        rows: usize,
-    ) -> bool {
-        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
-            return false;
-        };
-        if self.attach.workspace_holder(ws) != Some(client_id) {
-            return false;
-        }
-        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
-            terminal.resize(cols, rows);
-            true
-        } else {
-            false
-        }
-    }
-
     /// mirror에서 사용자가 읽은 attention을 지운다. 해당 workspace의 holder만 요청할 수 있다.
     /// 반환값은 대상과 점유가 맞았는지이며, 실제로 지운 레코드가 있었는지는 구별하지 않는다.
     pub fn apply_attached_attention_clear(
@@ -462,122 +158,6 @@ impl CoreState {
             );
             let _ = hub.push(client_id, frame); // 송신 실패에도 변화분 캐시는 갱신돼 같은 값은 다시 보내지 않는다.
         }
-    }
-
-    /// 서버가 알아낸 cwd의 변화분을 mirror에 보낸다. mirror에는 조회할 로컬 PTY가 없다.
-    pub fn forward_surface_cwd(&mut self, hub: &StreamHub) {
-        for (client_id, surface_id, cwd) in self.surface_cwd_forwards() {
-            let msg = StreamControl::Cwd { surface_id, cwd };
-            let frame = StreamFrame::new(
-                StreamTag::Control,
-                serde_json::to_vec(&msg).unwrap_or_default(),
-            );
-            let _ = hub.push(client_id, frame); // 송신 실패에도 변화분 캐시는 갱신돼 같은 값은 다시 보내지 않는다.
-        }
-    }
-
-    fn build_workspace_descriptor(
-        &self,
-        idx: usize,
-        workspace_id: u32,
-        class: &AttachSurfaceClass,
-    ) -> serde_json::Value {
-        let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
-        serde_json::json!({
-            "event": "attached_workspace",
-            "workspace_id": workspace_id,
-            "name": self.workspaces[idx].name,
-            "tree": tree,
-            "surfaces": surfaces,
-        })
-    }
-
-    /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.
-    pub(crate) fn build_workspace_tree_surfaces(
-        &self,
-        idx: usize,
-        class: &AttachSurfaceClass,
-    ) -> (serde_json::Value, Vec<serde_json::Value>) {
-        let ws = &self.workspaces[idx];
-        let mut kinds: HashMap<u32, &'static str> = HashMap::new();
-        let mut display_names: HashMap<u32, String> = HashMap::new();
-        for pane_id in ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                for tab in &pane.tabs {
-                    tab.for_each_surface(&mut |s| {
-                        if let Some(id) = s.surface_id() {
-                            kinds.insert(id, s.kind());
-                            display_names.insert(id, s.display_name());
-                        }
-                    });
-                }
-            }
-        }
-        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
-        let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
-
-        let mut surfaces = Vec::new();
-        for &sid in &class.terminals {
-            let (cols, rows) = self
-                .runtime
-                .terminals
-                .get(sid)
-                .map(|t| (t.cols(), t.rows()))
-                .unwrap_or((80, 24));
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "terminal",
-                "cols": cols,
-                "rows": rows,
-            }));
-        }
-        for (sid, kind, plugin_id) in &mesh_whitelisted {
-            let display_name = display_names
-                .get(sid)
-                .cloned()
-                .unwrap_or_else(|| kind.to_string());
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "mesh",
-                "kind": kind,
-                "plugin_id": plugin_id,
-                "display_name": display_name,
-            }));
-        }
-        // explorer는 root만 보낸다. client는 이를 초기 cwd로도 사용한다.
-        for (sid, root) in &class.explorers {
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "explorer",
-                "root": root.to_string_lossy(),
-            }));
-        }
-        // 파일 내용은 별도 요청으로 받는다. file은 표시용 서버 경로이며 client의 로컬 파일 경로가 아니다.
-        for (sid, _kind, file) in &content_whitelisted {
-            let display_name = display_names
-                .get(sid)
-                .cloned()
-                .unwrap_or_else(|| kinds.get(sid).copied().unwrap_or("markdown").to_string());
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "markdown",
-                "file": file.as_ref().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
-                "display_name": display_name,
-            }));
-        }
-        for &sid in class
-            .non_terminals
-            .iter()
-            .chain(mesh_rejected.iter())
-            .chain(content_rejected.iter())
-        {
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "placeholder",
-                "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
-            }));
-        }
-        (ws.to_attach_tree_json(&self.attach.presentation), surfaces)
     }
 }
 
@@ -887,7 +467,7 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
 /// worktree_path가 있으면 그 경로를 쓰고, 없으면 서버 터미널에서 cwd를 조회한다.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_git_query_request(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     hub: &StreamHub,
     client_id: u32,
     request_id: u64,
@@ -904,11 +484,11 @@ pub(crate) fn handle_git_query_request(
     } else {
         match kind {
             GitQueryKind::Snapshot => {
-                git_query_snapshot(engine, surface_id, worktree_path.as_deref())
+                git_query_snapshot(&engine.as_ref(), surface_id, worktree_path.as_deref())
             }
             GitQueryKind::Diff => match diff_path.as_deref() {
                 Some(p) if !p.trim().is_empty() => {
-                    git_query_diff(engine, surface_id, worktree_path.as_deref(), p)
+                    git_query_diff(&engine.as_ref(), surface_id, worktree_path.as_deref(), p)
                 }
                 _ => Err("missing diff_path for kind=diff".to_string()),
             },
@@ -942,7 +522,7 @@ pub(crate) fn handle_git_query_request(
 }
 
 fn resolve_git_query_target(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     surface_id: u32,
     worktree_path: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
@@ -963,7 +543,7 @@ fn resolve_git_query_target(
 /// Git 상태·로그·worktree를 수집한다. worktree는 모두 싣고 남은 예산으로 상태·로그를 자른다.
 /// worktree 목록 자체가 예산을 넘을 수 있으며 전체 프레임 크기를 다시 검사하지 않는다.
 fn git_query_snapshot(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     surface_id: u32,
     worktree_path: Option<&str>,
 ) -> Result<serde_json::Value, String> {
@@ -1006,7 +586,7 @@ fn git_query_snapshot(
 
 /// 파일 diff를 hunk 단위로 예산에 맞춰 반환한다. 응답의 나머지 필드는 이 예산에 포함하지 않는다.
 fn git_query_diff(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     surface_id: u32,
     worktree_path: Option<&str>,
     diff_path: &str,
@@ -1482,7 +1062,7 @@ mod git_query_tests {
 
     fn test_engine() -> crate::core::CoreState {
         let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::core::CoreState::new(80, 24, term_waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).expect("engine")
     }
 
     #[test]
@@ -1701,7 +1281,8 @@ mod mesh_descriptor_display_name_tests {
         display_name: &str,
     ) -> (crate::core::CoreState, usize) {
         let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
         let surface: Box<dyn crate::model::Surface> = Box::new(EguiMeshSurface::new(
             100,
             kind,
@@ -1779,7 +1360,8 @@ mod forward_exec_tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let term_waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn MemoryStorage>> =
@@ -1803,7 +1385,7 @@ mod forward_exec_tests {
         (core, state, engine, home_tmp)
     }
 
-    fn seed(engine: &mut crate::core::CoreState) -> u32 {
+    fn seed(engine: &mut EngineMut<'_>) -> u32 {
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -1994,7 +1576,7 @@ mod forward_exec_tests {
     fn forward_empty_new_tab(
         core: &mut crate::core::Core,
         state: &mut RequestContext,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         anchor: u32,
         origin: ForwardOrigin,
     ) {
@@ -2721,7 +2303,7 @@ mod forward_exec_tests {
     fn attached_pair(
         core: &mut crate::core::Core,
         state: &mut RequestContext,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
     ) -> (u32, u32, u32, tasty_ipc::stream_hub::SinkReceiver) {
         let a = seed(engine);
         let b = execute_forwarded_structural_op(
@@ -2896,7 +2478,8 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let (_a, _b, _ws_id, _rx) = attached_pair(&mut core, &mut state, &mut engine);
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut other = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        let mut other =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         push_unrelated_workspace(&mut other, 900, 901);
         let op = StructuralOp::CloseSurface { surface_id: 901 };
         let reason = |engines: Vec<&crate::core::CoreState>| {
@@ -4556,5 +4139,451 @@ mod bulk_capacity_tests {
     fn capacity_saturates_on_overflow() {
         assert!(exceeds_capacity(u64::MAX, 1, 500));
         assert!(exceeds_capacity(u64::MAX - 1, 100, 1_000_000));
+    }
+}
+
+impl EngineMut<'_> {
+    /// surface를 점유하고 화면 snapshot과 이후 출력을 보낸다. 거절하면 attach_error와 Detach를 보낸다.
+    /// hub는 연결을 등록한 허브여야 한다. forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
+    pub fn attach_surface_for_stream(
+        &mut self,
+        surface_id: SurfaceId,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        if !self.runtime.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
+            if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
+                && crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(&kind, &plugin_id)
+            {
+                self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
+                return;
+            }
+            reject_attach(hub, client_id, "not_found", None);
+            return;
+        }
+
+        match self.attach.acquire(surface_id, client_id) {
+            Ok(_) => {}
+            Err(AttachError::AlreadyAttached { holder }) => {
+                reject_attach(hub, client_id, "already_attached", Some(holder));
+                return;
+            }
+            Err(_) => {
+                reject_attach(hub, client_id, "lock_error", None);
+                return;
+            }
+        }
+
+        self.ensure_surface_initialized(surface_id);
+
+        let Some(terminal) = self.runtime.terminals.get_mut(surface_id) else {
+            let _ = self.attach.release(surface_id, client_id); // 이미 해제됐으면 추가 처리가 필요 없다.
+            reject_attach(hub, client_id, "spawn_failed", None);
+            return;
+        };
+
+        let cols = terminal.cols();
+        let rows = terminal.rows();
+        // reader worker가 다른 스레드에서 ingest하므로 snapshot과 tap을 한 번의 잠금으로 건다.
+        // 이후 허브에서 발생할 수 있는 전송 손실까지 막는 것은 아니다.
+        let tasty_terminal::AttachSubscription {
+            snapshot,
+            output: tap_rx,
+            resize: resize_rx,
+        } = terminal.snapshot_and_tap();
+
+        let attached = serde_json::json!({
+            "event": "attached",
+            "surface_id": surface_id,
+            "cols": cols,
+            "rows": rows,
+        });
+        let attached_frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&attached).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, attached_frame); // 실패한 통지는 재시도하지 않는다.
+        let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot)); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+
+        let hub2 = hub.clone();
+        thread::spawn(move || {
+            for chunk in tap_rx {
+                match hub2.push(client_id, StreamFrame::new(StreamTag::Data, chunk)) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+
+        let hub3 = hub.clone();
+        thread::spawn(move || {
+            for (cols, rows) in resize_rx {
+                let msg = StreamControl::Resize {
+                    surface_id,
+                    cols,
+                    rows,
+                };
+                let frame = StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&msg).unwrap_or_default(),
+                );
+                match hub3.push(client_id, frame) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+
+        tracing::debug!("attach: surface {surface_id} -> client {client_id}");
+    }
+
+    /// 점유한 surface의 PTY로 입력을 보낸다. 서버 로컬 입력 차단은 우회한다.
+    /// 해당 점유나 터미널이 없으면 false다.
+    pub fn feed_attached_input(&mut self, client_id: AttachClientId, bytes: &[u8]) -> bool {
+        let Some(surface_id) = self.attach.surface_held_by(client_id) else {
+            return false;
+        };
+        if let Some(terminal) = self.runtime.terminals.get_mut(surface_id) {
+            terminal.send_bytes(bytes);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// workspace의 모든 멤버를 점유하고 트리·surface 정보를 보낸다.
+    /// 터미널에는 surface ID를 붙인 snapshot·출력·resize 전송을 등록한다.
+    /// mesh·explorer·markdown은 각 role로, 지원하지 않는 종류는 placeholder로 보낸다.
+    pub fn attach_workspace_for_stream(
+        &mut self,
+        workspace_id: u32,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        let Some(idx) = self.find_workspace_index_for_id(workspace_id) else {
+            reject_attach(hub, client_id, "workspace_not_found", None);
+            return;
+        };
+        let class = self.core.workspaces[idx].classify_attach_surfaces();
+        // 화면을 복제할 수 없는 멤버도 workspace 점유에 포함한다.
+        let members: Vec<SurfaceId> = class
+            .terminals
+            .iter()
+            .chain(class.non_terminals.iter())
+            .chain(class.explorers.iter().map(|(sid, _)| sid))
+            .chain(class.mesh_candidates.iter().map(|(sid, _, _)| sid))
+            .chain(class.content_candidates.iter().map(|(sid, _, _, _)| sid))
+            .copied()
+            .collect();
+
+        match self
+            .attach
+            .acquire_workspace(workspace_id, &class.terminals, &members, client_id)
+        {
+            Ok(_) => {}
+            Err(AttachError::AlreadyAttached { holder }) => {
+                reject_attach(hub, client_id, "already_attached", Some(holder));
+                return;
+            }
+            Err(_) => {
+                reject_attach(hub, client_id, "lock_error", None);
+                return;
+            }
+        }
+
+        for &sid in &class.terminals {
+            self.ensure_surface_initialized(sid);
+        }
+
+        let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
+        let descriptor_frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&descriptor).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, descriptor_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+
+        for &sid in &class.terminals {
+            self.tap_surface_for_stream(sid, client_id, hub);
+        }
+
+        let (mesh_whitelisted, _mesh_rejected) = mesh_mirror_candidates(&class);
+        let (content_whitelisted, content_rejected) = content_mirror_candidates(&class);
+        tracing::debug!(
+            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} content, {} placeholders)",
+            class.terminals.len(),
+            mesh_whitelisted.len(),
+            content_whitelisted.len(),
+            class.non_terminals.len()
+                + (class.mesh_candidates.len() - mesh_whitelisted.len())
+                + content_rejected.len(),
+        );
+    }
+
+    /// workspace 연결에 터미널 snapshot과 출력·resize tap을 등록한다.
+    /// snapshot과 tap은 한 번의 잠금으로 걸어 그 사이 출력이 빠지지 않게 한다.
+    /// forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
+    pub(crate) fn tap_surface_for_stream(
+        &mut self,
+        sid: SurfaceId,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
+            return;
+        };
+        let tasty_terminal::AttachSubscription {
+            snapshot,
+            output: tap_rx,
+            resize: resize_rx,
+        } = terminal.snapshot_and_tap();
+        let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
+        let _ = hub.push(client_id, snapshot_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+        let hub2 = hub.clone();
+        thread::spawn(move || {
+            for chunk in tap_rx {
+                match hub2.push(
+                    client_id,
+                    StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
+                ) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+
+        let hub3 = hub.clone();
+        thread::spawn(move || {
+            for (cols, rows) in resize_rx {
+                let msg = StreamControl::Resize {
+                    surface_id: sid,
+                    cols,
+                    rows,
+                };
+                let frame = StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&msg).unwrap_or_default(),
+                );
+                match hub3.push(client_id, frame) {
+                    PushResult::Unknown | PushResult::Disconnected => break,
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    /// 새 workspace 멤버의 점유를 등록한다. 로컬 생성이면 delta를 먼저 보내고 tap한다.
+    /// forward 실행 중에는 호출자가 delta 뒤에 tap하므로 여기서는 tap을 생략한다.
+    /// notifier가 없어도 점유는 등록한다.
+    pub(crate) fn tap_new_workspace_member(
+        &mut self,
+        workspace_id: WorkspaceId,
+        surface_id: SurfaceId,
+        is_terminal: bool,
+    ) {
+        if !self
+            .attach
+            .add_workspace_member(workspace_id, surface_id, is_terminal)
+        {
+            return;
+        }
+        if self.attach.is_auto_tap_suppressed() {
+            return;
+        }
+        // client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta를 먼저 보낸다.
+        self.attach.mark_structure_changed(workspace_id);
+        self.push_structure_changes();
+        if !is_terminal {
+            return;
+        }
+        let Some(holder) = self.attach.workspace_holder(workspace_id) else {
+            return;
+        };
+        let Some(hub) = self.attach.notifier() else {
+            return;
+        };
+        self.tap_surface_for_stream(surface_id, holder, &hub);
+    }
+
+    /// 해당 workspace를 점유한 client의 입력만 지정 터미널로 보낸다.
+    pub fn feed_attached_workspace_input(
+        &mut self,
+        client_id: AttachClientId,
+        remote_surface_id: u32,
+        bytes: &[u8],
+    ) -> bool {
+        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
+            return false;
+        };
+        if self.attach.workspace_holder(ws) != Some(client_id) {
+            return false;
+        }
+        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
+            terminal.send_bytes(bytes);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 점유를 확인한 뒤 실제 PTY 크기 변경을 시도한다. 대상·점유가 없으면 false다.
+    /// true가 크기 변화를 뜻하지는 않는다. 변화가 있으면 기존 resize tap이 통지한다.
+    pub fn apply_attached_workspace_resize(
+        &mut self,
+        client_id: AttachClientId,
+        remote_surface_id: u32,
+        cols: usize,
+        rows: usize,
+    ) -> bool {
+        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
+            return false;
+        };
+        if self.attach.workspace_holder(ws) != Some(client_id) {
+            return false;
+        }
+        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
+            terminal.resize(cols, rows);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 서버가 알아낸 cwd의 변화분을 mirror에 보낸다. mirror에는 조회할 로컬 PTY가 없다.
+    pub fn forward_surface_cwd(&mut self, hub: &StreamHub) {
+        for (client_id, surface_id, cwd) in self.surface_cwd_forwards() {
+            let msg = StreamControl::Cwd { surface_id, cwd };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&msg).unwrap_or_default(),
+            );
+            let _ = hub.push(client_id, frame); // 송신 실패에도 변화분 캐시는 갱신돼 같은 값은 다시 보내지 않는다.
+        }
+    }
+}
+
+impl EngineRef<'_> {
+    fn build_workspace_descriptor(
+        &self,
+        idx: usize,
+        workspace_id: u32,
+        class: &AttachSurfaceClass,
+    ) -> serde_json::Value {
+        let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
+        serde_json::json!({
+            "event": "attached_workspace",
+            "workspace_id": workspace_id,
+            "name": self.core.workspaces[idx].name,
+            "tree": tree,
+            "surfaces": surfaces,
+        })
+    }
+
+    /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.
+    pub(crate) fn build_workspace_tree_surfaces(
+        &self,
+        idx: usize,
+        class: &AttachSurfaceClass,
+    ) -> (serde_json::Value, Vec<serde_json::Value>) {
+        let ws = &self.core.workspaces[idx];
+        let mut kinds: HashMap<u32, &'static str> = HashMap::new();
+        let mut display_names: HashMap<u32, String> = HashMap::new();
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                for tab in &pane.tabs {
+                    tab.for_each_surface(&mut |s| {
+                        if let Some(id) = s.surface_id() {
+                            kinds.insert(id, s.kind());
+                            display_names.insert(id, s.display_name());
+                        }
+                    });
+                }
+            }
+        }
+        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
+        let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
+
+        let mut surfaces = Vec::new();
+        for &sid in &class.terminals {
+            let (cols, rows) = self
+                .runtime
+                .terminals
+                .get(sid)
+                .map(|t| (t.cols(), t.rows()))
+                .unwrap_or((80, 24));
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "terminal",
+                "cols": cols,
+                "rows": rows,
+            }));
+        }
+        for (sid, kind, plugin_id) in &mesh_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kind.to_string());
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "mesh",
+                "kind": kind,
+                "plugin_id": plugin_id,
+                "display_name": display_name,
+            }));
+        }
+        // explorer는 root만 보낸다. client는 이를 초기 cwd로도 사용한다.
+        for (sid, root) in &class.explorers {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "explorer",
+                "root": root.to_string_lossy(),
+            }));
+        }
+        // 파일 내용은 별도 요청으로 받는다. file은 표시용 서버 경로이며 client의 로컬 파일 경로가 아니다.
+        for (sid, _kind, file) in &content_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kinds.get(sid).copied().unwrap_or("markdown").to_string());
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "markdown",
+                "file": file.as_ref().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+                "display_name": display_name,
+            }));
+        }
+        for &sid in class
+            .non_terminals
+            .iter()
+            .chain(mesh_rejected.iter())
+            .chain(content_rejected.iter())
+        {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "placeholder",
+                "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
+            }));
+        }
+        (ws.to_attach_tree_json(&self.attach.presentation), surfaces)
+    }
+}
+
+impl EngineMut<'_> {
+    fn build_workspace_descriptor(
+        &self,
+        idx: usize,
+        workspace_id: u32,
+        class: &AttachSurfaceClass,
+    ) -> serde_json::Value {
+        self.as_ref()
+            .build_workspace_descriptor(idx, workspace_id, class)
+    }
+
+    /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.
+    pub(crate) fn build_workspace_tree_surfaces(
+        &self,
+        idx: usize,
+        class: &AttachSurfaceClass,
+    ) -> (serde_json::Value, Vec<serde_json::Value>) {
+        self.as_ref().build_workspace_tree_surfaces(idx, class)
     }
 }

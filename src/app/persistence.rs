@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::app::window_access::engines_mut;
+use crate::core::engine_access::EngineMut;
 use crate::core::intent::DomainIntent;
 
 impl App {
@@ -41,7 +42,7 @@ impl App {
     /// 참조가 사라진 scrollback 파일은 다음 부팅의 전체 슬롯 GC가 회수한다.
     pub(crate) fn retire_main_engine(
         core: &mut crate::core::Core,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,
     ) {
@@ -83,7 +84,7 @@ impl App {
 
     fn flush_one_engine(
         core: &mut crate::core::Core,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,
         force: bool,

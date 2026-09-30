@@ -1,3 +1,4 @@
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -207,14 +208,9 @@ pub struct CoreState {
     pub(crate) settings: Settings,
 
     pub(crate) notifications: NotificationStore,
-    /// surface 훅과 전역 훅의 엔진별 등록·감시 상태.
-    pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
-
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
     pub(crate) command_index: crate::core::command_index::CommandIndex,
-
-    pub(crate) observer_router: crate::output_observer::ObserverRouter,
 
     pub(crate) approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
 
@@ -223,9 +219,6 @@ pub struct CoreState {
 
     /// 이 engine의 메모리 내 이상 탐지 상태. 탐지 기록 저장은 호출자가 맡는다.
     pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
-
-    /// 이 engine의 작업 순번·완료 대기·사건 큐. 자원의 정의와 사용은 TaskService 모듈이 맡는다.
-    pub(crate) task_scope: crate::core::task_service::TaskScope,
 
     pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -288,9 +281,6 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) port_favorites: crate::core::port_favorites::PortFavorites,
 
-    /// 실제 Terminal·PTY 원본 컬렉션. 이 위치에서 drop돼 Terminal 정리 순서를 유지한다.
-    pub(crate) runtime: crate::core::engine_runtime::EngineRuntime,
-
     /// attach 점유는 연결 수명 동안만 유지하며 저장·복원하지 않는다.
     pub(crate) attach: crate::core::attach::OccupancyRegistry,
 
@@ -300,16 +290,6 @@ pub struct CoreState {
     /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
-
-    /// 서버의 attach 점유 터미널을 표시할 사본. GUI 타이머가 갱신하며 원본 PTY는 계속 유지한다.
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "only the gui render_pass and attach poll read the readonly mirror"
-        )
-    )]
-    pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
 
     /// IPC가 요청한 GUI attach 대기열. 처리 후 사용자의 선택을 옮기지 않는다.
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
@@ -415,60 +395,9 @@ pub struct CoreState {
 
     /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-
-    /// 검사 중 홈 경로 override를 유지한다. 다른 필드의 Drop까지 격리하려면 마지막 필드여야 한다.
-    /// 생성 때만 잠시 바꾸면 이후 저장·정리 코드가 실제 홈을 사용할 수 있다.
-    #[cfg(test)]
-    _isolated_home: Option<crate::test_support::IsolatedHome>,
 }
 
 impl CoreState {
-    /// 기본 Settings와 in-memory 저장소로 생성한다. 사용자 config.toml의 설정을 읽지 않는다.
-    // 이유: 현재 호출처가 모두 #[cfg(test)]에 있다.
-    #[allow(dead_code)]
-    pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
-        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-            std::sync::Arc::new(std::sync::Mutex::new(
-                tasty_memory::MemoryStore::open_in_memory()?,
-            ));
-        let runner_registry =
-            std::sync::Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
-        Self::new_with_ids_and_settings(
-            cols,
-            rows,
-            waker,
-            None,
-            None,
-            memory,
-            runner_registry,
-            Settings::default(),
-        )
-    }
-
-    /// 다른 engine과 발급기를 공유할 수 있다. 슬롯이 있고 restore_layout이 켜져 있을 때만 읽는다.
-    /// runner 등록부는 TaskService가 가진 Arc를 넘긴다.
-    pub fn new_with_ids(
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        shared_ids: Option<IdGenerator>,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>,
-    ) -> anyhow::Result<Self> {
-        let state = Self::new_with_ids_and_settings(
-            cols,
-            rows,
-            waker,
-            shared_ids,
-            layout_slot,
-            memory,
-            runner_registry,
-            Settings::load(),
-        )?;
-        Ok(state)
-    }
-
     /// 슬롯 로드 판정을 대기 복원·쓰기 보호·백업 필요 플래그에 반영한다.
     pub(crate) fn accept_slot_load(
         &mut self,
@@ -500,22 +429,17 @@ impl CoreState {
         crate::core::layout_persistence::slot_preservation_is_blocked(slot)
     }
 
-    fn new_with_ids_and_settings(
+    pub(crate) fn new_base(
         cols: usize,
         rows: usize,
         waker: Waker,
-        shared_ids: Option<IdGenerator>,
+        next_ids: IdGenerator,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>,
         settings: Settings,
-    ) -> anyhow::Result<Self> {
-        // 이 생성자 내부에서 파일을 읽기 전에 검사 전용 홈을 설정한다.
-        #[cfg(test)]
-        let isolated_home = Some(crate::test_support::IsolatedHome::new());
+    ) -> Self {
         let restore_layout = settings.general.restore_layout;
 
-        let next_ids = shared_ids.unwrap_or_default();
         let mut engine = Self {
             workspaces: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
@@ -525,19 +449,11 @@ impl CoreState {
             waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_counter(500, next_ids.notification_counter()),
-            hooks: crate::hook_runtime::HookRuntimeState::with_counters(
-                next_ids.hook_counter(),
-                next_ids.global_hook_counter(),
-            ),
             closed_items: crate::model::ClosedItemStore::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
-            observer_router: crate::output_observer::ObserverRouter::with_counter(
-                next_ids.observer_counter(),
-            ),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
-            task_scope: crate::core::task_service::TaskScope::new(runner_registry),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
@@ -559,12 +475,10 @@ impl CoreState {
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::port_favorites::PortFavorites::load(),
-            runtime: crate::core::engine_runtime::EngineRuntime::new(next_ids.pty_counter()),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
-            readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             #[cfg(feature = "gui")]
             pending_screenshot_captures: Vec::new(),
@@ -629,8 +543,6 @@ impl CoreState {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             memory,
-            #[cfg(test)]
-            _isolated_home: isolated_home,
         };
 
         engine
@@ -647,38 +559,7 @@ impl CoreState {
             engine.accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
         }
 
-        // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
-        if engine.pending_layout_restore.is_none() {
-            let ws_id = engine.next_ids.next_workspace();
-            let pane_id = engine.next_ids.next_pane();
-            let tab_id = engine.next_ids.next_tab();
-            let surface_id = engine.next_ids.next_surface();
-            let sh = ShellConfig::from_settings(&engine.settings);
-            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
-                surface_id,
-                crate::core::terminal_spawn::ShellSpawnOpts {
-                    cols,
-                    rows,
-                    shell: sh.shell_ref(),
-                    shell_args: &sh.args_ref(),
-                    extra_env: &sh.envs_ref(),
-                    waker,
-                    working_dir: None,
-                },
-            )?;
-            engine.runtime.terminals.insert(surface_id, terminal);
-            let ws = Workspace::new_with_terminal_marker(
-                ws_id,
-                "Workspace 1".to_string(),
-                pane_id,
-                tab_id,
-                surface_id,
-            );
-            engine.workspaces = vec![ws];
-            engine.send_fast_init(surface_id);
-        }
-
-        Ok(engine)
+        engine
     }
 
     /// 설정과 factory가 있으면 surface별 waker, 아니면 공용 waker를 반환한다.
@@ -689,54 +570,6 @@ impl CoreState {
             return factory.make_targeted_waker(surface_id);
         }
         self.waker.clone()
-    }
-
-    /// 트리에서 제거하기 전에 탭의 복원 snapshot을 만든다. 복원 목록에 넣는 일은 호출자가 맡는다.
-    pub(crate) fn capture_closed_tab(
-        &self,
-        pane_id: u32,
-        tab_index: usize,
-        presentation: &dyn crate::model::StructurePresentation,
-    ) -> Option<crate::model::ClosedItem> {
-        let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
-        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
-        let terminals = &self.runtime.terminals;
-        crate::model::closed_item::ClosedTab::from_tab(
-            tab,
-            &mut snap_fn,
-            &|id| terminals.closed_capture(id),
-            presentation,
-        )
-        .map(crate::model::ClosedItem::Tab)
-    }
-
-    /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
-    pub(crate) fn capture_closed_pane(
-        &self,
-        pane_id: u32,
-        presentation: &dyn crate::model::StructurePresentation,
-    ) -> Option<crate::model::ClosedItem> {
-        let ws = self
-            .workspaces
-            .get(self.find_workspace_index_for_pane(pane_id)?)?;
-        if ws.pane_layout().all_pane_ids().len() <= 1 {
-            return None;
-        }
-        let pane = ws.pane_layout().find_pane(pane_id)?;
-        let (direction, ratio, was_first, sibling_pane_id) =
-            ws.pane_layout().locate_split_context(pane_id)?;
-        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
-        let terminals = &self.runtime.terminals;
-        Some(crate::model::ClosedItem::from_pane(
-            pane,
-            sibling_pane_id,
-            direction,
-            ratio,
-            was_first,
-            &mut snap_fn,
-            &|id| terminals.closed_capture(id),
-            presentation,
-        ))
     }
 
     /// 현재 트리에서 복원 항목의 출처 workspace를 찾는다. 트리를 바꾸기 전에 호출해야 한다.
@@ -805,11 +638,6 @@ impl CoreState {
     pub fn record_typing(&mut self, surface_id: u32) {
         self.last_key_input
             .insert(surface_id, std::time::Instant::now());
-    }
-
-    #[cfg(feature = "gui")]
-    pub fn resync_terminal_palettes(&mut self) {
-        self.runtime.terminals.resync_palettes();
     }
 
     pub fn is_typing(&self, surface_id: u32) -> bool {
@@ -903,46 +731,6 @@ impl CoreState {
 }
 
 impl CoreState {
-    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
-        let workspaces = &mut self.workspaces;
-        let terminals = &self.runtime.terminals;
-        for workspace in workspaces {
-            let pane_ids = workspace.pane_layout().all_pane_ids();
-            for pid in pane_ids {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.contains_surface(surface_id) {
-                            let cwd = terminals.get(surface_id).and_then(|t| t.get_cwd());
-                            tab.refresh_display_name(surface_id, cwd.as_deref());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// surface_id가 속한 탭에서 실제 선택된 surface의 제목을 읽는다.
-    /// 제목이 없으면 OSC 제목을 비우고 사용자가 명시한 탭 이름은 유지한다.
-    pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
-        let workspaces = &mut self.workspaces;
-        let terminals = &self.runtime.terminals;
-        for workspace in workspaces {
-            let pane_ids = workspace.pane_layout().all_pane_ids();
-            for pid in pane_ids {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.contains_surface(surface_id) {
-                            tab.surface_titles.entry(surface_id).or_default().osc_title =
-                                terminals.get(surface_id).and_then(|t| t.current_title());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     #[cfg(feature = "gui")]
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
         self.default_cols = cols;
@@ -1060,7 +848,7 @@ mod default_params_tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
@@ -1134,7 +922,7 @@ mod engine_creation_failure_tests {
     #[test]
     fn a_bogus_shell_path_makes_engine_creation_return_err_not_panic() {
         let waker: Waker = std::sync::Arc::new(|| {});
-        let result = CoreState::new_with_ids_and_settings(
+        let result = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
             80,
             24,
             waker,
@@ -1159,7 +947,7 @@ mod engine_creation_failure_tests {
         let waker: Waker = std::sync::Arc::new(|| {});
         let mut ok = Settings::default();
         ok.general.restore_layout = false;
-        let engine = CoreState::new_with_ids_and_settings(
+        let engine = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
             80,
             24,
             waker,
@@ -1179,7 +967,7 @@ mod engine_creation_failure_tests {
         let mut settings = Settings::default();
         settings.general.restore_layout = false;
         let shared = registry();
-        let engine = CoreState::new_with_ids_and_settings(
+        let engine = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
             80,
             24,
             waker,
@@ -1194,5 +982,124 @@ mod engine_creation_failure_tests {
             engine.task_scope.runner_registry(),
             &shared
         ));
+    }
+}
+
+impl EngineMut<'_> {
+    #[cfg(feature = "gui")]
+    pub fn resync_terminal_palettes(&mut self) {
+        self.runtime.terminals.resync_palettes();
+    }
+
+    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
+        let workspaces = &mut self.core.workspaces;
+        let terminals = &self.runtime.terminals;
+        for workspace in workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            let cwd = terminals.get(surface_id).and_then(|t| t.get_cwd());
+                            tab.refresh_display_name(surface_id, cwd.as_deref());
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// surface_id가 속한 탭에서 실제 선택된 surface의 제목을 읽는다.
+    /// 제목이 없으면 OSC 제목을 비우고 사용자가 명시한 탭 이름은 유지한다.
+    pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
+        let workspaces = &mut self.core.workspaces;
+        let terminals = &self.runtime.terminals;
+        for workspace in workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            tab.surface_titles.entry(surface_id).or_default().osc_title =
+                                terminals.get(surface_id).and_then(|t| t.current_title());
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl EngineRef<'_> {
+    /// 트리에서 제거하기 전에 탭의 복원 snapshot을 만든다. 복원 목록에 넣는 일은 호출자가 맡는다.
+    pub(crate) fn capture_closed_tab(
+        &self,
+        pane_id: u32,
+        tab_index: usize,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<crate::model::ClosedItem> {
+        let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
+        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let terminals = &self.runtime.terminals;
+        crate::model::closed_item::ClosedTab::from_tab(
+            tab,
+            &mut snap_fn,
+            &|id| terminals.closed_capture(id),
+            presentation,
+        )
+        .map(crate::model::ClosedItem::Tab)
+    }
+
+    /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
+    pub(crate) fn capture_closed_pane(
+        &self,
+        pane_id: u32,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<crate::model::ClosedItem> {
+        let ws = self
+            .workspaces
+            .get(self.find_workspace_index_for_pane(pane_id)?)?;
+        if ws.pane_layout().all_pane_ids().len() <= 1 {
+            return None;
+        }
+        let pane = ws.pane_layout().find_pane(pane_id)?;
+        let (direction, ratio, was_first, sibling_pane_id) =
+            ws.pane_layout().locate_split_context(pane_id)?;
+        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let terminals = &self.runtime.terminals;
+        Some(crate::model::ClosedItem::from_pane(
+            pane,
+            sibling_pane_id,
+            direction,
+            ratio,
+            was_first,
+            &mut snap_fn,
+            &|id| terminals.closed_capture(id),
+            presentation,
+        ))
+    }
+}
+
+impl EngineMut<'_> {
+    /// 트리에서 제거하기 전에 탭의 복원 snapshot을 만든다. 복원 목록에 넣는 일은 호출자가 맡는다.
+    pub(crate) fn capture_closed_tab(
+        &self,
+        pane_id: u32,
+        tab_index: usize,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<crate::model::ClosedItem> {
+        self.as_ref()
+            .capture_closed_tab(pane_id, tab_index, presentation)
+    }
+
+    /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
+    pub(crate) fn capture_closed_pane(
+        &self,
+        pane_id: u32,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<crate::model::ClosedItem> {
+        self.as_ref().capture_closed_pane(pane_id, presentation)
     }
 }

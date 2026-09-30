@@ -4,12 +4,13 @@
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     if let Intent::NewTab { kind, params } = &intent.body {
@@ -20,7 +21,7 @@ pub fn handle(
 fn new_tab(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     kind: Option<&str>,
     params: &serde_json::Value,
     origin: &IntentOrigin,
@@ -28,7 +29,7 @@ fn new_tab(
     let kind = kind.unwrap_or("terminal");
     let pane_id = state.focused_pane_id(engine);
     let cwd = if kind == "terminal" {
-        state.resolve_inherit_cwd(engine)
+        state.resolve_inherit_cwd(&engine.as_ref())
     } else {
         None
     };

@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::model::SplitDirection;
 
 // 다른 상태·팝업 시험도 같은 engine/RequestContext 구성을 사용한다.
@@ -15,7 +16,7 @@ pub(crate) fn test_state_with_memory(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 ) -> (RequestContext, crate::core::CoreState) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+    let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
     // 플러그인 프로세스 없이 WebView kind와 오버레이 등록을 구성한다.
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "markdown",
@@ -62,10 +63,7 @@ pub(crate) fn test_state_with_memory(
     (state, engine)
 }
 
-fn collect_surface_ids(
-    state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
-) -> Vec<u32> {
+fn collect_surface_ids(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> Vec<u32> {
     let ws = state.active_workspace_mut(engine);
     let ws_ids: std::collections::HashSet<u32> = ws.all_surface_ids().into_iter().collect();
     engine
@@ -76,10 +74,7 @@ fn collect_surface_ids(
         .collect()
 }
 
-fn collect_all_surface_ids(
-    _state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
-) -> Vec<u32> {
+fn collect_all_surface_ids(_state: &mut RequestContext, engine: &mut EngineMut<'_>) -> Vec<u32> {
     engine
         .runtime
         .terminals
@@ -828,7 +823,7 @@ fn reify_displayed_surfaces_is_noop_without_deferred() {
     assert_eq!(before.len(), after.len(), "deferred 없으면 no-op");
 }
 
-fn add_test_workspace(state: &mut RequestContext, engine: &mut crate::core::CoreState) {
+fn add_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         crate::core::WorkspaceCreationParams::terminal(),
@@ -840,10 +835,7 @@ fn add_test_workspace(state: &mut RequestContext, engine: &mut crate::core::Core
     state.set_active_workspace_index(engine, index);
 }
 
-fn add_mirror_test_workspace(
-    state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
-) -> u32 {
+fn add_mirror_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
     add_test_workspace(state, engine);
     let idx = state.active_workspace_index(engine);
     let ws = engine
@@ -1461,7 +1453,7 @@ fn resolve_inherit_cwd_from_unknown_surface_is_none() {
 /// 실제 attach 없이 mirror 플래그와 explorer root로 원격 cwd를 구성한다.
 fn focused_explorer(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> (u32, std::path::PathBuf) {
     let root = crate::test_support::abs_path("remote/proj");
     let (_tab, sid) = state
@@ -1626,7 +1618,7 @@ fn set_explorer_cwd_moves_root_and_clears_history() {
 #[cfg(feature = "gui")]
 fn two_pane_setup(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> (
     u32, /* pane_a: 비focused */
     u32, /* pane_b: focused */
@@ -1953,7 +1945,7 @@ fn workspace_close_purges_each_surface_scope_once() {
 /// 첫 workspace의 유일한 surface를 에이전트 경로로 닫아 workspace까지 연관 제거한다.
 fn close_last_surface_of_first_workspace(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> (u32, u32, u32) {
     add_test_workspace(state, engine);
     let victim_ws = engine.workspaces[0].id;
@@ -1967,7 +1959,7 @@ fn close_last_surface_of_first_workspace(
     (victim_ws, kept_ws, victim_sids[0])
 }
 
-fn run_cascade_close(state: &mut RequestContext, engine: &mut crate::core::CoreState, sid: u32) {
+fn run_cascade_close(state: &mut RequestContext, engine: &mut EngineMut<'_>, sid: u32) {
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let closed = crate::app::structural_exec::close_surface(
         &mut core,
@@ -2315,7 +2307,7 @@ mod close_refuses_hard_occupied {
 
     const HOLDER: u32 = 1;
 
-    fn add_ws(engine: &mut crate::core::CoreState) -> usize {
+    fn add_ws(engine: &mut EngineMut<'_>) -> usize {
         let event = crate::core::apply_create_workspace_inner(
             engine,
             crate::core::WorkspaceCreationParams::terminal(),
@@ -2328,7 +2320,7 @@ mod close_refuses_hard_occupied {
     }
 
     /// 레이아웃과 TerminalStore가 같은 대상의 정리 여부에 동의하는지 확인한다.
-    fn alive(engine: &crate::core::CoreState, sid: u32) -> bool {
+    fn alive(engine: &EngineRef<'_>, sid: u32) -> bool {
         let in_tree = engine
             .workspaces
             .iter()
@@ -2341,7 +2333,7 @@ mod close_refuses_hard_occupied {
         in_tree
     }
 
-    fn split_pane(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
+    fn split_pane(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
         state
             .test_split_pane(engine, SplitDirection::Vertical)
             .expect("pane split");

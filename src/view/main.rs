@@ -22,6 +22,7 @@ pub(crate) mod ime;
 
 pub(crate) use divider_drag::{DividerDrag, DividerDragKind};
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
@@ -260,7 +261,7 @@ impl MainView {
 
     /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
     /// 단축키 소비/포커스 전환 직전에 호출.
-    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut EngineMut<'_>) {
         ime::flush_preedit(self, engine);
     }
 
@@ -271,13 +272,13 @@ impl MainView {
     }
 
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
-    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut EngineMut<'_>) {
         ime::recalc_anchor(self, engine);
     }
 
     /// 조합 입력 대상과 같은 순서로 plugin 팝업·mesh surface·터미널의 IME 후보창 위치를 고른다.
     /// plugin 위젯은 host의 PlatformOutput에 없으므로 mesh 프레임으로 받은 위치를 사용한다.
-    pub(crate) fn update_ime_cursor_area(&self, engine: &crate::core::CoreState) {
+    pub(crate) fn update_ime_cursor_area(&self, engine: &EngineRef<'_>) {
         // 무대 중에는 보이지 않는 배경 surface의 IME 위치를 사용하지 않는다.
         if self.state.fullscreen_stage_active() {
             return;
@@ -351,7 +352,7 @@ impl MainView {
     /// 창의 engine과 함께 창 이벤트를 처리한다. engine은 App registry가 창 ID로 찾아 넘긴다.
     fn handle_engine_event(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         event: WindowEvent,
         ctx: &mut ViewCtx<'_>,
     ) -> ViewAction {
@@ -563,7 +564,7 @@ impl View for MainView {
             tracing::warn!("main window event without an engine: {event:?}");
             return ViewAction::None;
         };
-        self.handle_engine_event(&mut session.core_state, event, ctx)
+        self.handle_engine_event(&mut session.borrow_mut(), event, ctx)
     }
 
     fn render(&mut self) {

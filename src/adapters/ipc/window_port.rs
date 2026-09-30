@@ -8,6 +8,7 @@
 //!
 //! 창 자체를 조작하는 GUI·debug 핸들러는 별도 라우터가 EntryWindow를 통해 호출한다(ADR-0002).
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use crate::app::structure_context::CascadeWindow;
@@ -21,7 +22,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     fn active_workspace_index(&self, engine: &CoreState) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.
-    fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf>;
+    fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<PathBuf>;
 
     /// workspace 생성 후 이벤트와 활성 선택 조건을 처리한다.
     fn cascade_workspace_created(
@@ -43,7 +44,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     /// 워크스페이스 하나를 닫고 창 쪽 자원과 활성 포인터를 정리한다. 닫았으면 `true`.
     fn close_workspace_at(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         ws_idx: usize,
         origin: crate::state::WorkspaceCloseOrigin,
     ) -> bool;
@@ -58,7 +59,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     fn apply_preset(
         &mut self,
         core: &crate::core::Core,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         target: crate::intent::preset::PresetApplyTarget,
         options: crate::state::preset_apply::ApplyOptions,
     ) -> Result<crate::intent::preset::ApplyOutcome, crate::intent::preset::PresetMutationError>;

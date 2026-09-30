@@ -1,6 +1,7 @@
 use crate::core::CoreState;
 
 use super::RequestContext;
+use crate::core::engine_access::EngineMut;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +49,7 @@ impl RequestContext {
     /// 별도의 host event는 만들지 않는다.
     pub(crate) fn recreate_workspace_if_empty(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         context: &str,
     ) -> bool {
         if !engine.workspaces.is_empty() {
@@ -72,7 +73,7 @@ impl RequestContext {
 
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
-    pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
+    pub fn switch_workspace(&mut self, engine: &mut EngineMut<'_>, index: usize) {
         if index < engine.workspaces.len() {
             self.set_active_workspace_index(engine, index);
             let cat = engine.workspaces[index].category;
@@ -86,7 +87,7 @@ impl RequestContext {
     /// 접힌 카테고리는 펼쳐 저장하고, 마지막으로 본 워크스페이스를 선택한다.
     /// 기록된 대상이 없거나 다른 카테고리로 이동했다면 첫 항목을 선택한다.
     #[cfg(any(feature = "gui", test))]
-    pub fn switch_to_category(&mut self, engine: &mut CoreState, section_idx: usize) {
+    pub fn switch_to_category(&mut self, engine: &mut EngineMut<'_>, section_idx: usize) {
         let Some(cat) = engine.categories().get(section_idx).map(|c| c.id) else {
             return;
         };
@@ -129,7 +130,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub fn switch_workspace_in_active_category(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         local_idx: usize,
     ) {
         if self.active_workspace_index(engine) >= engine.workspaces.len() {
@@ -149,7 +150,7 @@ impl RequestContext {
     /// 마지막 항목에서는 workspace_switch_crosses_category에 따라 같은 카테고리의
     /// 처음으로 돌아가거나 다음 카테고리로 넘어간다.
     #[cfg(any(feature = "gui", test))]
-    pub fn next_workspace_in_active_category(&mut self, engine: &mut CoreState) {
+    pub fn next_workspace_in_active_category(&mut self, engine: &mut EngineMut<'_>) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, 1) {
             self.switch_workspace(engine, target);
         }
@@ -157,7 +158,7 @@ impl RequestContext {
 
     /// 이전 항목으로 이동한다. 경계 처리는 next_workspace_in_active_category와 반대다.
     #[cfg(any(feature = "gui", test))]
-    pub fn prev_workspace_in_active_category(&mut self, engine: &mut CoreState) {
+    pub fn prev_workspace_in_active_category(&mut self, engine: &mut EngineMut<'_>) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
             self.switch_workspace(engine, target);
         }
@@ -220,14 +221,14 @@ impl RequestContext {
     /// 다음 카테고리로 순환하며, 해당 카테고리에서 마지막으로 본 항목을 선택한다.
     /// 카테고리가 하나뿐이면 처리하지 않는다. 사용자 키 입력 경로다.
     #[cfg(any(feature = "gui", test))]
-    pub fn next_category(&mut self, engine: &mut CoreState) {
+    pub fn next_category(&mut self, engine: &mut EngineMut<'_>) {
         if let Some(section_idx) = self.relative_category_section(engine, 1) {
             self.switch_to_category(engine, section_idx);
         }
     }
 
     #[cfg(any(feature = "gui", test))]
-    pub fn prev_category(&mut self, engine: &mut CoreState) {
+    pub fn prev_category(&mut self, engine: &mut EngineMut<'_>) {
         if let Some(section_idx) = self.relative_category_section(engine, -1) {
             self.switch_to_category(engine, section_idx);
         }
@@ -266,7 +267,7 @@ impl RequestContext {
     /// 활성 워크스페이스의 각 pane에서 활성 탭에 속한 지연 터미널을 초기화한다.
     /// 비활성 탭은 전환할 때까지 지연 상태로 남긴다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
-    fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
+    fn ensure_active_workspace_initialized(&mut self, engine: &mut EngineMut<'_>) {
         let mut deferred: Vec<u32> = Vec::new();
         {
             let ws = &engine.workspaces[self.active_workspace_index(engine)];
@@ -284,7 +285,7 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
+    pub fn close_active_workspace(&mut self, engine: &mut EngineMut<'_>) -> bool {
         self.close_workspace_at(
             engine,
             self.active_workspace_index(engine),
@@ -297,7 +298,7 @@ impl RequestContext {
     /// 제거 후 활성 인덱스를 보정하며 workspace.closed는 after_workspace_removed에서 보낸다.
     pub fn close_workspace_at(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         ws_idx: usize,
         origin: WorkspaceCloseOrigin,
     ) -> bool {
@@ -318,13 +319,14 @@ impl RequestContext {
         let t_close = Instant::now();
         if save_snapshot {
             let t = Instant::now();
-            let snapshot = self.capture_workspace_snapshot(engine, ws_idx);
+            let snapshot = self.capture_workspace_snapshot(&engine.as_ref(), ws_idx);
             close_trace::log_snapshot(t, &snapshot, path);
             let t = Instant::now();
             engine.push_closed_item(snapshot).log(t.elapsed(), path);
         }
         let t = Instant::now();
-        let targets = super::RequestContext::collect_workspace_close_targets(engine, ws_idx);
+        let targets =
+            super::RequestContext::collect_workspace_close_targets(&engine.as_ref(), ws_idx);
         close_trace::log_collect(t, targets.len(), path);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);

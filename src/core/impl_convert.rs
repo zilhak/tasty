@@ -1,11 +1,12 @@
 //! surface 종류를 바꾸고 탭 제목을 갱신한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     /// split 탭은 해당 leaf만 교체하고 단일 surface 탭은 전체 surface를 교체한다.
     pub(super) fn apply_convert_surface(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         target: crate::core::intent::ConvertSurfaceTarget,
     ) -> CoreEvent {
@@ -69,7 +70,7 @@ impl Core {
 
     /// 새 surface를 만든다. Terminal 생성 시 store도 바뀌므로 호출자가 이후 실패해도 되돌리지 않는다.
     fn create_surface_for_convert(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         target: crate::core::intent::ConvertSurfaceTarget,
     ) -> Result<(Box<dyn crate::model::Surface>, Option<Option<String>>), CoreEvent> {

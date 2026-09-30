@@ -1,6 +1,7 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
+use crate::core::engine_access::EngineMut;
 use crate::model::LogicalPx;
 use crate::state::MainViewState;
 use egui::emath::GuiRounding as _;
@@ -8,7 +9,7 @@ use egui::emath::GuiRounding as _;
 /// 탭바 동작을 처리한다. 직접 조작은 대상 pane으로 먼저 포커스를 옮긴다.
 pub fn apply_tab_bar_actions(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     actions: Vec<TabBarAction>,
     panes: &[PaneTabBarView],
     tab_w: f32,

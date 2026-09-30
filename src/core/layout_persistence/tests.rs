@@ -610,7 +610,7 @@ mod wiring {
 
     fn engine_with_layouts(dir: &Path) -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         std::fs::create_dir_all(dir).unwrap();
         engine.layouts_dir_override = Some(dir.to_path_buf());
         engine.layout_slot = Some(1);
@@ -891,7 +891,9 @@ fn moved_tab_is_saved_at_its_new_position() {
     use crate::core::{Core, CoreState};
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let new_engine = || CoreState::new(80, 24, waker.clone()).expect("engine");
+    let new_engine = || {
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker.clone()).expect("engine")
+    };
     let mut engine = new_engine();
     let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
     let pane0 = engine.find_pane_by_id_mut(p0).unwrap();
@@ -947,7 +949,9 @@ fn moved_pane_is_saved_at_its_new_position() {
     use crate::core::{Core, CoreState};
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let new_engine = || CoreState::new(80, 24, waker.clone()).expect("engine");
+    let new_engine = || {
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker.clone()).expect("engine")
+    };
     let mut engine = new_engine();
     let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
     engine.find_pane_by_id_mut(p0).unwrap().tabs[0].explicit_name = Some("MOVED".to_string());

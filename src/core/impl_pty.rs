@@ -1,6 +1,7 @@
 //! PTY 출력을 읽고 터미널 이벤트·크기 변경을 처리한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 /// workspace만 읽어 목표 grid를 모은다. 이후 Terminal store를 변경할 때 borrow가 겹치지 않게 한다.
 #[cfg(feature = "gui")]
@@ -45,7 +46,7 @@ impl Core {
     /// 지정 터미널의 출력을 읽고 engine에 쌓인 터미널 이벤트를 처리한다. GUI·헤드리스가 함께 사용한다.
     pub(crate) fn process_pty_output(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
     ) -> ProcessPtyOutcome {
         engine.process_surface(surface_id);
@@ -55,7 +56,7 @@ impl Core {
 
     pub(crate) fn process_all_pty_output(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
     ) -> ProcessPtyOutcome {
         engine.process_all();
         let events = self.drain_terminal_events(engine);
@@ -63,7 +64,7 @@ impl Core {
     }
 
     /// observer·명령 이력·클립보드는 여기서 처리하고 App 후속 처리가 필요한 이벤트를 반환한다.
-    fn drain_terminal_events(&mut self, engine: &mut crate::core::CoreState) -> Vec<CoreEvent> {
+    fn drain_terminal_events(&mut self, engine: &mut EngineMut<'_>) -> Vec<CoreEvent> {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
         let mut out = Vec::with_capacity(raw.len());
@@ -114,7 +115,7 @@ impl Core {
 
     fn handle_output_appended(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         sid: u32,
         text: &str,
         out: &mut Vec<CoreEvent>,
@@ -176,7 +177,7 @@ impl Core {
 
     /// resize 제한 주기에 따라 반영하고 미처리 요청이 남았는지 반환한다.
     #[cfg(feature = "gui")]
-    pub(crate) fn flush_pty_resizes(engine: &mut crate::core::CoreState) -> bool {
+    pub(crate) fn flush_pty_resizes(engine: &mut EngineMut<'_>) -> bool {
         engine.flush_all_pty_resizes()
     }
 
@@ -184,7 +185,7 @@ impl Core {
     #[cfg(feature = "gui")]
     pub(crate) fn resize_all_terminals(
         tab_bar_height: crate::model::PhysicalPx,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         terminal_rect: crate::model::PhysicalRect,
         cell_width: f32,
         cell_height: f32,
@@ -219,7 +220,7 @@ impl Core {
 
     /// busy 집합이 바뀌었는지 반환해 창의 다시 그리기 여부를 정한다.
     #[cfg(feature = "gui")]
-    pub(crate) fn update_busy_surfaces(engine: &mut crate::core::CoreState) -> bool {
+    pub(crate) fn update_busy_surfaces(engine: &mut EngineMut<'_>) -> bool {
         engine.refresh_busy_surfaces()
     }
 }

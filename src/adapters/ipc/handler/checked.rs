@@ -1,5 +1,6 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
+use crate::core::engine_access::EngineMut;
 use crate::core::{Core, CoreState};
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
@@ -115,7 +116,11 @@ mod tests {
         .unwrap();
     }
 
-    fn observations(core: &mut Core, state: &mut RequestContext, engine: &mut CoreState) -> usize {
+    fn observations(
+        core: &mut Core,
+        state: &mut RequestContext,
+        engine: &mut EngineMut<'_>,
+    ) -> usize {
         let mut req = request("telemetry.summary");
         req.params = json!({"agent": "gate-probe", "metric": "ipc_calls"});
         super::super::handle_with_caller(core, state, engine, &req, &CallerContext::Local)

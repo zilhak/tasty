@@ -1,12 +1,13 @@
 //! workspace 생성·이동·메타데이터와 레이아웃 저장·닫힌 항목 복원을 처리한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     /// scope에 맞는 항목을 꺼내 engine에 복원한다. App의 활성 workspace 변경은 호출자가 맡는다.
     /// 복원 중 실패해도 꺼낸 항목이나 이미 만든 자원을 되돌리는 처리는 여기서 하지 않는다.
     pub(super) fn apply_restore_closed_item(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         target_pane_id: Option<u32>,
         scope: crate::core::intent::RestoreScope,
     ) -> CoreEvent {
@@ -147,7 +148,7 @@ impl Core {
     }
 
     pub(super) fn apply_respawn_terminal(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         cwd: Option<std::path::PathBuf>,
     ) -> CoreEvent {
@@ -264,7 +265,7 @@ impl Core {
 
     pub(super) fn apply_create_workspace(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         params: WorkspaceCreationParams,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         Ok(vec![apply_create_workspace_inner(engine, params)?])
@@ -274,7 +275,7 @@ impl Core {
     /// 생성 이벤트를 dispatcher에 넘기지 않으므로 여기서는 plugin 생성 알림을 보내지 않는다.
     pub(crate) fn create_default_workspace(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
     ) -> anyhow::Result<usize> {
         let event = apply_create_workspace_inner(engine, WorkspaceCreationParams::terminal())?;
         match event {
@@ -317,9 +318,7 @@ impl Core {
 
     /// 대기 중인 저장 레이아웃을 꺼내 복원하고 활성 workspace 후보를 반환한다.
     #[cfg(feature = "gui")]
-    pub(super) fn apply_apply_pending_layout_restore(
-        engine: &mut crate::core::CoreState,
-    ) -> CoreEvent {
+    pub(super) fn apply_apply_pending_layout_restore(engine: &mut EngineMut<'_>) -> CoreEvent {
         let Some(saved) = engine.pending_layout_restore.take() else {
             return CoreEvent::LayoutRestored {
                 restored: false,
@@ -398,7 +397,7 @@ impl WorkspaceCreationParams {
 }
 
 pub(crate) fn apply_create_workspace_inner(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     params: WorkspaceCreationParams,
 ) -> anyhow::Result<CoreEvent> {
     let WorkspaceCreationParams {

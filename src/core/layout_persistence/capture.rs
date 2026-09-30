@@ -56,11 +56,8 @@ impl SavedLayout {
             .filter(|ws| !ws.mirror)
             .count();
         let workspaces: Vec<SavedWorkspace> = {
-            let CoreState {
-                workspaces,
-                runtime: crate::core::engine_runtime::EngineRuntime { terminals, .. },
-                ..
-            } = engine;
+            let workspaces = &mut engine.core.workspaces;
+            let terminals = &mut engine.runtime.terminals;
             let mut ctx = CaptureCtx {
                 presentation,
                 registry: registry.as_ref(),
@@ -391,7 +388,8 @@ mod tests {
     /// scrollback 저장을 꺼 이 capture가 디스크를 쓰지 않게 한다. engine 생성의 파일 읽기까지 막지는 않는다.
     fn engine_with_workspaces(specs: &[(&str, bool)]) -> CoreState {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).expect("engine");
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         engine.settings.general.restore_surface_content = false;
         let workspaces: Vec<Workspace> = specs
             .iter()

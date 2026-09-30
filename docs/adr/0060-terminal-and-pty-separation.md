@@ -1,6 +1,6 @@
 # ADR-0060: 터미널 내용과 OS PTY 연결을 별도 객체로 나누고 엔진이 한 곳에서 소유한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 `Terminal`이 VT 상태와 PTY 핸들을 함께 갖고, `TerminalStore`와 `PtyRegistry`가 각각 컬렉션을 가진다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. EngineSession이 EngineRuntime의 TerminalStore·child 관계·PtyRegistry와 readonly 표시 사본을 소유한다. 현재 `Terminal`은 여전히 VT 상태와 PTY 핸들을 함께 가지며, Terminal/Pty의 물리 소유 분리와 standalone watcher 통합은 남아 있다
 - **Date**: 2026-09-30
 - **Tags**: terminal, pty, lifecycle, ownership
 - **Group**: terminal

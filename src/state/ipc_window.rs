@@ -1,5 +1,6 @@
 //! IPC의 IpcWindow 요청을 RequestContext의 창 연산에 연결한다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use super::RequestContext;
@@ -11,7 +12,7 @@ impl IpcWindow for RequestContext {
         self.active_workspace_index(engine)
     }
 
-    fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf> {
+    fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<PathBuf> {
         RequestContext::resolve_inherit_cwd(self, engine)
     }
 
@@ -42,7 +43,7 @@ impl IpcWindow for RequestContext {
 
     fn close_workspace_at(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         ws_idx: usize,
         origin: super::WorkspaceCloseOrigin,
     ) -> bool {
@@ -60,7 +61,7 @@ impl IpcWindow for RequestContext {
     fn apply_preset(
         &mut self,
         core: &crate::core::Core,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         target: crate::intent::preset::PresetApplyTarget,
         options: super::preset_apply::ApplyOptions,
     ) -> Result<crate::intent::preset::ApplyOutcome, crate::intent::preset::PresetMutationError>

@@ -2,6 +2,7 @@
 //! 상태바 레이어·위치는 본체에서 정하며 갤러리는 같은 공용 화면 함수를 사용한다.
 //! 표시 항목: docs/features/workspace-status-bar/index.md.
 
+use crate::core::engine_access::EngineMut;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
@@ -28,7 +29,7 @@ pub fn status_bar_bottom_inset(scale_factor: f32) -> PhysicalPx {
 pub fn draw_status_bar(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {

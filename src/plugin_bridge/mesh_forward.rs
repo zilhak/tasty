@@ -154,7 +154,8 @@ mod tests {
     /// 터미널 대신 mesh surface를 만들고 client가 hard 점유·구독한 engine을 준비한다.
     fn make_parked_engine(client_id: AttachClientId) -> (CoreState, u32) {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).expect("core state");
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("core state");
 
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         let surface_id = engine.workspaces[0]

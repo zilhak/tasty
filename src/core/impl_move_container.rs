@@ -2,6 +2,7 @@
 //! 덮어쓴 쪽의 후속 정리 대상을 반환한다. 명세: docs/features/surface-move/index.md.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 use crate::core::impl_close::collect_close_targets;
 use crate::core::intent::CascadeLevel;
 
@@ -48,7 +49,7 @@ impl Core {
     /// source 탭을 떼어 target 탭 자리에 넣고 target 탭을 닫힌 것으로 반환한다.
     /// Terminal store는 여기서 지우지 않는다. 성공하지 않아도 이동 대기 슬롯은 비운다.
     pub(super) fn apply_replace_tab_with_tab(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         source_tab_id: u32,
         target_tab_id: u32,
     ) -> CoreEvent {
@@ -90,7 +91,7 @@ impl Core {
         let moved_focus = pane.tabs[target_idx].first_surface_id();
 
         let mut cleanup_targets = Vec::new();
-        collect_close_targets(&replaced, engine, &mut cleanup_targets);
+        collect_close_targets(&replaced, &engine.as_ref(), &mut cleanup_targets);
         engine.mark_layout_dirty();
         if let Some(surface_id) = moved_focus {
             engine.refresh_tab_osc_title(surface_id);
@@ -113,7 +114,7 @@ impl Core {
     /// source 페인을 떼어 target 페인 자리(분할 트리의 같은 위치·비율)에 넣고 target 페인을 닫힌 것으로 반환한다.
     /// Terminal store는 여기서 지우지 않는다. 성공하지 않아도 이동 대기 슬롯은 비운다.
     pub(super) fn apply_replace_pane_with_pane(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         source_pane_id: u32,
         target_pane_id: u32,
     ) -> CoreEvent {
@@ -161,7 +162,7 @@ impl Core {
 
         let mut cleanup_targets = Vec::new();
         for tab in &replaced.tabs {
-            collect_close_targets(tab, engine, &mut cleanup_targets);
+            collect_close_targets(tab, &engine.as_ref(), &mut cleanup_targets);
         }
         let closed_tab_ids = replaced.tabs.iter().map(|t| t.id).collect();
         let mut closed_pane_ids = detached.closed_pane_ids;
@@ -308,11 +309,11 @@ mod move_container_tests {
 
     fn test_engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     /// 첫 workspace의 첫 pane과 그 첫 탭·surface. surface에는 detached Terminal을 붙인다.
-    fn first_pane(engine: &mut CoreState) -> (u32, u32, u32) {
+    fn first_pane(engine: &mut EngineMut<'_>) -> (u32, u32, u32) {
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -324,7 +325,7 @@ mod move_container_tests {
     }
 
     /// pane에 detached Terminal을 가진 탭을 하나 더 붙인다.
-    fn add_tab(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
+    fn add_tab(engine: &mut EngineMut<'_>, pane_id: u32) -> (u32, u32) {
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         engine
@@ -339,7 +340,7 @@ mod move_container_tests {
     }
 
     /// 첫 workspace의 pane을 나눠 새 pane(탭 하나)을 만든다.
-    fn split_new_pane(engine: &mut CoreState, pane_id: u32) -> (u32, u32, u32) {
+    fn split_new_pane(engine: &mut EngineMut<'_>, pane_id: u32) -> (u32, u32, u32) {
         let new_pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
@@ -359,7 +360,7 @@ mod move_container_tests {
     }
 
     /// 새 workspace(pane 하나, 탭 하나)를 붙인다.
-    fn push_workspace(engine: &mut CoreState) -> (u32, u32, u32) {
+    fn push_workspace(engine: &mut EngineMut<'_>) -> (u32, u32, u32) {
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
@@ -596,7 +597,7 @@ mod move_container_tests {
         source_tab: u32,
         target_tab: u32,
         state: &mut crate::state::RequestContext,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
     ) -> Vec<crate::state::PendingHostEvent> {
         use crate::app::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();

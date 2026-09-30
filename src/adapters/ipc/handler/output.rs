@@ -1,6 +1,7 @@
 //! 출력 관찰의 조회·변경은 Core의 observer_* 함수를 통해 수행한다.
 
 use super::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -11,7 +12,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_observe_start(
     core: &mut Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -22,7 +23,7 @@ pub fn handle_observe_start(
     match core.observer_register(engine, spec) {
         Ok(observer_id) => {
             let info = core
-                .observer_info(engine, observer_id)
+                .observer_info(&engine.as_ref(), observer_id)
                 .expect("just-registered observer must exist");
             JsonRpcResponse::success(id, json!({ "observer_id": observer_id, "info": info }))
         }
@@ -32,7 +33,7 @@ pub fn handle_observe_start(
 
 pub fn handle_observe_stop(
     core: &mut Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -46,18 +47,14 @@ pub fn handle_observe_stop(
     }
 }
 
-pub fn handle_observe_list(
-    core: &Core,
-    engine: &crate::core::CoreState,
-    id: Value,
-) -> JsonRpcResponse {
+pub fn handle_observe_list(core: &Core, engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
     let items = core.observer_list(engine);
     JsonRpcResponse::success(id, json!({ "observers": items }))
 }
 
 pub fn handle_observe_info(
     core: &Core,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

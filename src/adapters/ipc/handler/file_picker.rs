@@ -3,6 +3,7 @@
 //! 이미 열린 피커는 대체하지 않고 두 번째 요청을 거절한다.
 //! 대체하면 기존 요청자에게 취소를 통지할 수 없어 결과를 기다리는 요청이 남기 때문이다.
 
+use crate::core::engine_access::EngineMut;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -35,7 +36,7 @@ struct FilePickerTriggerReq {
 
 pub fn handle_trigger(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -80,7 +81,7 @@ pub fn handle_trigger(
             dir: Some(dir),
             origin_surface_id: req.origin_surface_id,
         },
-        None => FilePickerStart::from_surface(engine, req.origin_surface_id),
+        None => FilePickerStart::from_surface(&engine.as_ref(), req.origin_surface_id),
     };
     crate::adapters::ui::popup::file_picker::open(state, engine, requester, req.filters, start);
 
@@ -95,7 +96,8 @@ mod tests {
 
     fn make_test_state() -> (RequestContext, crate::core::CoreState) {
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
         let preset_store = Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));

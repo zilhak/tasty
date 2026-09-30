@@ -7,6 +7,7 @@
 #[path = "entry_window_debug.rs"]
 mod debug;
 
+use crate::core::engine_access::EngineMut;
 use crate::ipc::window_port::IpcWindow;
 use crate::state::RequestContext;
 
@@ -32,7 +33,7 @@ impl<'a> EntryWindow<'a> {
     #[cfg(feature = "gui")]
     pub(crate) fn route_window(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         caller: &CallerContext,
         request: &JsonRpcRequest,
         id: serde_json::Value,

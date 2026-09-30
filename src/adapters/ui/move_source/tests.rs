@@ -3,7 +3,7 @@ use crate::model::SplitDirection;
 
 fn test_engine() -> CoreState {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    CoreState::new(80, 24, waker).expect("engine")
+    crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
 }
 
 fn rect(x: f32, y: f32, w: f32, h: f32) -> PhysicalRect {

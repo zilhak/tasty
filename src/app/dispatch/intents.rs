@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::app::window_access::{DispatchCtx, engines_mut};
+use crate::core::engine_access::EngineMut;
 use crate::ipc;
 use crate::runtime::engine_session::EngineId;
 
@@ -154,7 +155,7 @@ impl App {
     fn dispatch_one_intent(
         core: &mut crate::core::Core,
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         intent: &crate::intent::DispatchedIntent,
     ) {
         use crate::intent::Intent;

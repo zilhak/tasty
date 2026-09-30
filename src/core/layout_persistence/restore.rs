@@ -2,6 +2,7 @@
 //! 호출자가 required_plugin_kinds로 필요한 종류를 확인하고 plugin 준비를 기다린다.
 
 #[cfg(any(feature = "gui", test))]
+use crate::core::engine_access::EngineMut;
 use std::path::PathBuf;
 
 #[cfg(any(feature = "gui", test))]
@@ -109,7 +110,7 @@ impl SavedLayout {
     /// workspace를 하나라도 복원하면 true다. 실패한 workspace는 생략한다.
     /// false여도 이미 발급한 ID·생성한 터미널·메타데이터 등의 변경을 되돌리지는 않는다.
     #[cfg(any(feature = "gui", test))]
-    pub fn restore(self, engine: &mut CoreState) -> Option<crate::model::RestoredPresentation> {
+    pub fn restore(self, engine: &mut EngineMut<'_>) -> Option<crate::model::RestoredPresentation> {
         if self.workspaces.is_empty() {
             return None;
         }
@@ -159,7 +160,7 @@ impl SavedWorkspace {
     #[cfg(any(feature = "gui", test))]
     fn restore(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Workspace> {
@@ -186,7 +187,7 @@ impl SavedPaneNode {
     #[cfg(any(feature = "gui", test))]
     fn restore(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<PaneNode> {
@@ -218,7 +219,7 @@ impl SavedPane {
     #[cfg(any(feature = "gui", test))]
     fn restore(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         is_active_workspace: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Pane> {
@@ -256,7 +257,7 @@ impl SavedTab {
     #[cfg(any(feature = "gui", test))]
     fn restore(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Tab> {
@@ -277,7 +278,7 @@ impl SavedSurfaceLayout {
     #[cfg(any(feature = "gui", test))]
     fn restore(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<SurfaceLayout> {
@@ -310,7 +311,7 @@ impl SavedSurfaceLayout {
 
 impl SavedSurface {
     #[cfg(any(feature = "gui", test))]
-    fn restore_leaf(self, engine: &mut CoreState, is_active: bool) -> Option<Box<dyn Surface>> {
+    fn restore_leaf(self, engine: &mut EngineMut<'_>, is_active: bool) -> Option<Box<dyn Surface>> {
         let surface_id = engine.next_ids.next_surface();
         match self {
             SavedSurface::Terminal {
@@ -366,7 +367,7 @@ impl SavedSurface {
     #[cfg(any(feature = "gui", test))]
     fn restore_immediate_inner(
         self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
     ) -> Option<Box<dyn Surface>> {
         match self {
@@ -386,7 +387,7 @@ impl SavedSurface {
 
 #[cfg(any(feature = "gui", test))]
 fn restore_terminal_immediate(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     surface_id: u32,
     cwd: Option<String>,
     restore_command: Option<String>,

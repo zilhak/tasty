@@ -161,7 +161,8 @@ fn workspace(id: u32, name: &str, category: u32, layout: PaneNode) -> Workspace 
 /// scrollback 저장을 끈 빈 엔진. 이 capture는 디스크를 쓰지 않는다.
 fn engine() -> CoreState {
     let waker: tasty_terminal::Waker = Arc::new(|| {});
-    let mut engine = CoreState::new(80, 24, waker).expect("engine");
+    let mut engine =
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
     engine.settings.general.restore_surface_content = false;
     engine
 }

@@ -2,6 +2,7 @@
 //! 사용자 닫기만 복원 기록을 남기는지 검사한다.
 
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::core::intent::{CascadeLevel, CoreEvent, DomainIntent};
 use crate::model::{ClosedItem, SplitDirection};
 use crate::state::RequestContext;
@@ -23,7 +24,7 @@ enum Case {
 
 const CASES: [Case; 4] = [Case::Surface, Case::Tab, Case::Pane, Case::Workspace];
 
-fn insert_detached(engine: &mut CoreState, sid: u32) {
+fn insert_detached(engine: &mut EngineMut<'_>, sid: u32) {
     engine
         .runtime
         .terminals

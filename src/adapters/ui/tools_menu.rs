@@ -2,6 +2,7 @@
 //! 플러그인 이벤트·팝업 요청은 큐에 넣고 surface 열기는 사용자 포커스 pane을 대상으로 한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
+use crate::core::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;
@@ -80,7 +81,7 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn draw_tools_menu(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -122,7 +123,7 @@ pub fn draw_tools_menu(
     }
     if open_file_picker {
         let start = popup::file_picker::FilePickerStart::from_surface(
-            engine,
+            &engine.as_ref(),
             state.focused_surface_id(engine),
         );
         popup::file_picker::open(state, engine, None, Vec::new(), start);
@@ -196,11 +197,7 @@ pub fn draw_tools_menu(
 }
 
 /// 사용자 클릭의 플러그인 도구를 실행한다. debug.tool.invoke는 대상 ID를 받는 별도 경로다.
-pub fn invoke_tool(
-    state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
-    item: &ToolItem,
-) {
+pub fn invoke_tool(state: &mut MainViewState, engine: &mut EngineMut<'_>, item: &ToolItem) {
     match &item.action {
         ToolAction::Event { event_key } => {
             let payload = serde_json::json!({ "tool_id": item.key });
@@ -220,7 +217,7 @@ pub fn invoke_tool(
             // cwd·mirror 정보를 함께 전달하며 local_surface_id는 원격 조회 대상에 사용한다.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
                 let origin = state.focused_surface_id(engine);
-                let context = state.popup_surface_context(engine, origin);
+                let context = state.popup_surface_context(&engine.as_ref(), origin);
                 state
                     .pending_popup_opens
                     .push(crate::state::PendingPopupOpen {

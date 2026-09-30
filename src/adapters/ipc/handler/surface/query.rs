@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -35,7 +36,7 @@ pub(crate) fn with_screen_diagnostics(
 /// 마지막 N줄을 읽는다. 하단 빈 줄은 건너뛰고 부족하면 스크롤백에서 채운다.
 /// show_dim은 기본 false이며 dim 셀을 제외한다. 터미널 여부와 보관량도 반환한다.
 pub(crate) fn handle_screen_text(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -71,7 +72,7 @@ pub(crate) fn handle_screen_text(
 }
 
 pub(crate) fn handle_cursor_position(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -100,7 +101,7 @@ pub(crate) fn handle_cursor_position(
 /// 개별 DECSET 플래그나 실제 PTY 전송 여부는 알리지 않는다.
 /// effective_click은 휠에 적용되지 않아 캡처 차단 상태에서도 휠 보고는 가능하다.
 pub(crate) fn handle_mouse_tracking(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -171,7 +172,7 @@ fn mouse_tracking_label(mode: tasty_terminal::MouseTrackingMode) -> &'static str
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -198,7 +199,7 @@ pub(crate) fn handle_foreground_process(
 /// cwd가 있으면 새 프로세스의 작업 폴더로 사용한다.
 pub(crate) fn handle_surface_respawn_terminal(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

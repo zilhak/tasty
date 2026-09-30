@@ -1,6 +1,7 @@
 //! 우클릭 메뉴 대상. 메뉴 결과는 메뉴를 연 뒤에 도착하므로 그 사이 바뀐 순서를 반영해 다시 찾는다.
 
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 
 /// workspace 메뉴를 연 대상. 인덱스는 에이전트의 닫기·이동으로 다른 workspace를 가리킬 수 있어 ID로 보관한다.
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +60,7 @@ mod tests {
     use super::*;
     use crate::state::tests::test_state;
 
-    fn push_workspace(engine: &mut CoreState) -> u32 {
+    fn push_workspace(engine: &mut EngineMut<'_>) -> u32 {
         let event = crate::core::apply_create_workspace_inner(
             engine,
             crate::core::WorkspaceCreationParams::terminal(),

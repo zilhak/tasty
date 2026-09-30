@@ -3,6 +3,7 @@
 #![cfg(debug_assertions)]
 
 use super::params::{self, p_try};
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::state::RequestContext;
@@ -29,7 +30,7 @@ pub(super) fn require_input_simulation(
 /// Encodes as SGR mouse (mode 1006) bytes: ESC [ < Cb ; Cx ; Cy M/m
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_mouse(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -357,7 +358,7 @@ pub(super) fn handle_debug_banner_set_countdown(
 /// Inject a key event into a surface's PTY.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_key(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

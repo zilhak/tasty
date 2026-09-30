@@ -1,5 +1,6 @@
 use winit::event_loop::ActiveEventLoop;
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::plugin::PluginManager;
 use crate::view::ui::View;
 
@@ -94,7 +95,7 @@ pub(crate) fn take_hidden_webview_focus_targets(
 impl MainView {
     pub(super) fn handle_redraw(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
@@ -251,7 +252,7 @@ impl MainView {
     /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
     fn render_if_dirty(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
@@ -262,7 +263,7 @@ impl MainView {
         // global PTY wakes, direct parser injection and attach mirrors.
         self.recalc_ime_preedit_anchor(engine);
         self.base.begin_frame();
-        self.update_ime_cursor_area(engine);
+        self.update_ime_cursor_area(&engine.as_ref());
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
             self.forward_egui_mesh_context(engine, mgr);
@@ -281,7 +282,7 @@ impl MainView {
     /// 실제 GPU 프레임 제출 + surface 에러 분기 처리.
     fn submit_gpu_frame(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         plugin_manager: Option<&PluginManager>,
     ) {
         let link_hover = self
@@ -372,7 +373,7 @@ impl MainView {
 
     /// 팝업이 닫힌 뒤 팔레트 명령을 실행한다.
     /// 호스트 명령은 여기서 실행하고 plugin 명령은 App의 처리 큐에 넣는다.
-    fn dispatch_pending_command_palette(&mut self, engine: &mut crate::core::CoreState) {
+    fn dispatch_pending_command_palette(&mut self, engine: &mut EngineMut<'_>) {
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
@@ -1071,7 +1072,7 @@ impl MainView {
 
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
-    fn process_pending_native_menu(&mut self, engine: &mut crate::core::CoreState) {
+    fn process_pending_native_menu(&mut self, engine: &mut EngineMut<'_>) {
         use crate::state::PendingNativeMenu;
 
         // OS 메뉴는 무대 위에 뜨므로 요청을 버린다. 무대 종료 뒤에는 좌표도 유효하지 않다.
@@ -1159,7 +1160,7 @@ impl MainView {
 
     fn handle_tab_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         tab_index: usize,
         x: f32,
@@ -1188,7 +1189,7 @@ impl MainView {
     /// 검사한다.
     fn apply_tab_menu_selection(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         tab_index: usize,
         result: Option<u32>,
@@ -1342,7 +1343,7 @@ impl MainView {
 
     fn handle_pane_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         x: f32,
         y: f32,
@@ -1372,7 +1373,7 @@ impl MainView {
     /// 검사한다.
     fn apply_pane_menu_selection(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         result: Option<u32>,
     ) {
@@ -1389,8 +1390,11 @@ impl MainView {
                 self.state.select_pane(engine, pane_id);
                 if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                     // intent-exempt: surface_id 결과 의존 (후속 convert)
-                    self.state
-                        .enqueue_convert_input_popup(engine, "markdown", Some(surface_id));
+                    self.state.enqueue_convert_input_popup(
+                        &engine.as_ref(),
+                        "markdown",
+                        Some(surface_id),
+                    );
                 }
             }
             Some(5) => {
@@ -1449,7 +1453,7 @@ impl MainView {
 
     fn handle_workspace_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         ws_idx: usize,
         x: f32,
         y: f32,
@@ -1795,7 +1799,7 @@ impl MainView {
 
     fn handle_terminal_surface_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1809,7 +1813,7 @@ impl MainView {
             self.text_selection
                 .as_ref()
                 .filter(|s| s.surface_id == surface_id)
-                .and_then(|s| Self::resolve_selection_open_path(engine, s))
+                .and_then(|s| Self::resolve_selection_open_path(&engine.as_ref(), s))
         } else {
             None
         };
@@ -1882,7 +1886,7 @@ impl MainView {
     /// 선택한 실제 파일·폴더 경로를 찾는다. surface 일치는 호출자가 확인한다.
     /// 원격 호스트 경로를 로컬 파일 관리자로 열 수 없으므로 mirror는 제외한다.
     fn resolve_selection_open_path(
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         sel: &crate::selection::TextSelection,
     ) -> Option<std::path::PathBuf> {
         let terminal = engine.visible_terminal(sel.surface_id)?;
@@ -1939,7 +1943,7 @@ impl MainView {
 
     fn handle_explorer_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         paths: Vec<std::path::PathBuf>,
         cwd: std::path::PathBuf,
@@ -2302,7 +2306,7 @@ impl MainView {
     /// mirror에서는 금지한다. 로컬에만 만든 탭은 다음 원격 구조 동기화에서 사라진다.
     fn explorer_menu_open_in_new_tab(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
@@ -2335,7 +2339,7 @@ impl MainView {
 
     fn handle_explorer_favorite_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         path: std::path::PathBuf,
         x: f32,

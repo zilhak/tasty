@@ -4,6 +4,7 @@
 //! create는 포커스된 창에 만들고, move의 from_index 호환 입력도 해당 창을 사용한다.
 
 use super::params::{self, p_try};
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::core::intent::DomainIntent;
@@ -37,7 +38,7 @@ pub fn handle_list(
 /// 새 카테고리 생성. `name` 검증(대소문자 무시 중복·예약어 거부) 후 Vec 끝에 추가.
 pub fn handle_create(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -60,7 +61,7 @@ pub fn handle_create(
 /// 카테고리 이름 변경. normal 은 거부.
 pub fn handle_rename(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -83,7 +84,7 @@ pub fn handle_rename(
 /// 카테고리 삭제. normal 은 거부. 내부 워크스페이스는 normal 로 귀속(active 불변).
 pub fn handle_delete(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -101,7 +102,7 @@ pub fn handle_delete(
 /// 둘을 함께 지정하면 거절한다. to_index는 선택한 창 안의 목적지다.
 pub fn handle_move(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

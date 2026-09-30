@@ -1,6 +1,7 @@
 //! 상태바가 표시할 한 surface의 Git HEAD 캐시. 창마다 두며 GUI의 busy 폴링에서 갱신한다.
 //! 매 렌더링마다 디스크를 읽지 않으며 원격 cwd를 로컬 경로로 해석하지 않는다.
 
+use crate::core::engine_access::EngineRef;
 use std::path::{Path, PathBuf};
 
 use super::RequestContext;
@@ -25,7 +26,7 @@ impl RequestContext {
     /// 대상 ID 또는 HEAD 값이 바뀌었으면 true이며 호출자가 redraw에 반영한다.
     pub(crate) fn refresh_status_bar_branch(
         &mut self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: Option<u32>,
     ) -> bool {
         let branch = surface_id

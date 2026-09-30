@@ -2,6 +2,7 @@
 
 #![cfg(debug_assertions)]
 
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::plugin::manifest::ToolAction;
@@ -54,7 +55,7 @@ pub fn handle_list(
 /// 항목을 찾지 못하면 invalid_params로 거부.
 pub fn handle_invoke(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

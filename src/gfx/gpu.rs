@@ -7,6 +7,7 @@ mod render_pass;
 mod screenshot;
 mod shell_setup;
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -346,7 +347,7 @@ impl GpuState {
     pub fn render(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&tasty_selection::TextSelection>,
@@ -357,7 +358,7 @@ impl GpuState {
         let render_start = std::time::Instant::now();
 
         // surface 캡처를 먼저 처리한다. 별도 텍스처를 쓰고 투영값을 복원해 뒤의 화면 렌더에 영향이 없게 한다.
-        self.handle_pending_surface_screenshot(state, engine);
+        self.handle_pending_surface_screenshot(state, &engine.as_ref());
 
         // 무대 분기는 surface 캡처 뒤, 레이아웃·PTY 크기 갱신 전에 둔다.
         // 앞당기면 surface 캡처를 처리하지 못하고 뒤로 미루면 배경 PTY 크기가 바뀐다.
@@ -472,7 +473,7 @@ impl GpuState {
         self.render_terminals(
             &view,
             &regions,
-            engine,
+            &engine.as_ref(),
             focused_surface_id,
             selection,
             vi_cursor,
@@ -573,11 +574,7 @@ impl GpuState {
     /// Pending offscreen surface screenshot(agent action, focus-independent) 소비.
     /// A hard-occupied surface shows a readonly mirror server-side; capture what
     /// the user would see (mirror), else the live terminal.
-    fn handle_pending_surface_screenshot(
-        &mut self,
-        state: &MainViewState,
-        engine: &crate::core::CoreState,
-    ) {
+    fn handle_pending_surface_screenshot(&mut self, state: &MainViewState, engine: &EngineRef<'_>) {
         let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
             return;
         };

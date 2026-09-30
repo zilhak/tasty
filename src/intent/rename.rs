@@ -4,6 +4,7 @@
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::core::intent::DomainIntent;
 use crate::state::RequestContext;
 
@@ -32,7 +33,7 @@ pub enum DirectRename {
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     let Intent::DirectRename(rename) = &intent.body else {
@@ -69,7 +70,7 @@ pub fn handle(
 fn rename_tab(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     tab_id: u32,
     name: Option<String>,
     origin: &IntentOrigin,
@@ -102,7 +103,7 @@ fn rename_tab(
 fn rename_workspace(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     workspace_id: u32,
     name: Option<String>,
     subtitle: Option<String>,

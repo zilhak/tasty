@@ -1,4 +1,5 @@
 use super::MainView;
+use crate::core::engine_access::EngineMut;
 use crate::core::intent::{DomainIntent, SendPayload};
 
 /// bracketed paste 시작·본문·끝을 같은 큐 순서로 보낸다.
@@ -41,7 +42,7 @@ pub(crate) fn dispatch_paste(w: &mut MainView, surface_id: u32, bracketed: bool,
 }
 
 impl MainView {
-    pub fn paste_to_terminal(&mut self, engine: &mut crate::core::CoreState) {
+    pub fn paste_to_terminal(&mut self, engine: &mut EngineMut<'_>) {
         let text = match &mut self.clipboard {
             Some(cb) => cb.get_text(),
             None => None,

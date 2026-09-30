@@ -1,6 +1,7 @@
 //! IPC 구조 변경은 호출자 종류와 무관하게 에이전트 요청으로 실행된다.
 //! 사용자 포커스·닫은 항목·lifecycle의 사용자 닫기 표시를 바꾸지 않는지 확인한다.
 
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 use std::sync::Arc;
 use tasty_plugin_manifest::Permission;
@@ -50,7 +51,7 @@ fn user_focus(state: &RequestContext, engine: &crate::core::CoreState) -> (u32, 
 fn call(
     core: &mut crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     method: &str,
     params: serde_json::Value,

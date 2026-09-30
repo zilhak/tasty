@@ -1,3 +1,4 @@
+use crate::core::engine_access::EngineRef;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
 use crate::renderer::RenderPreedit;
@@ -50,7 +51,7 @@ impl GpuState {
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         focused_surface_id: Option<u32>,
         selection: Option<&tasty_selection::TextSelection>,
         vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,

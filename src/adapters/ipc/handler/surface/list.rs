@@ -1,9 +1,10 @@
 use serde_json::json;
 
+use crate::core::engine_access::EngineRef;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(crate) fn handle_surface_list(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut surfaces = Vec::new();
@@ -20,7 +21,7 @@ pub(crate) fn handle_surface_list(
 }
 
 fn collect_tab_surface_info(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     tab: &crate::model::Tab,
     pane_id: u32,
     workspace_id: u32,
@@ -79,7 +80,7 @@ fn collect_tab_surface_info(
 }
 
 fn collect_surface_layout_info(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     layout: &crate::model::SurfaceLayout,
     pane_id: u32,
     workspace_id: u32,

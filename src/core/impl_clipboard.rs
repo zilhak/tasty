@@ -1,10 +1,11 @@
 //! OSC 52 클립보드 읽기 요청을 처리한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     /// 설정이 허용할 때만 로컬 클립보드를 읽고 답한다. 기본값은 거절이며 이때 응답 바이트도 보내지 않는다.
-    pub(super) fn handle_clipboard_query(&mut self, engine: &mut crate::core::CoreState, sid: u32) {
+    pub(super) fn handle_clipboard_query(&mut self, engine: &mut EngineMut<'_>, sid: u32) {
         let allow = engine.settings.general.allow_clipboard_read;
         let clip = if allow {
             match self.clipboard.read_text() {

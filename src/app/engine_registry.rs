@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use winit::window::WindowId;
 
-use crate::core::CoreState;
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::runtime::engine_session::{EngineId, EngineSession};
 use crate::state::MainViewState;
 
@@ -21,7 +21,7 @@ pub(crate) struct ParkedView {
 
 /// [`EngineRegistry::split_by_id`]의 결과. id별 engine, 창 관계, parked 목록, 임시 engine id 순이다.
 pub(crate) type SplitById<'a> = (
-    HashMap<EngineId, &'a mut CoreState>,
+    HashMap<EngineId, EngineMut<'a>>,
     &'a HashMap<WindowId, EngineId>,
     &'a mut Vec<ParkedView>,
     Option<EngineId>,
@@ -39,11 +39,13 @@ pub(crate) struct EngineRegistry {
 
 impl EngineRegistry {
     /// 새 engine을 임시 관계로 넣는다. 이미 임시 engine이 있으면 넣지 않고 되돌려준다.
-    pub(crate) fn insert_pending(&mut self, core_state: CoreState) -> Result<EngineId, CoreState> {
+    pub(crate) fn insert_pending(
+        &mut self,
+        session: EngineSession,
+    ) -> Result<EngineId, EngineSession> {
         if self.pending.is_some() {
-            return Err(core_state);
+            return Err(session);
         }
-        let session = EngineSession::new(core_state);
         let id = session.id;
         self.sessions.insert(id, session);
         self.pending = Some(id);
@@ -54,15 +56,15 @@ impl EngineRegistry {
         self.pending
     }
 
-    pub(crate) fn pending(&self) -> Option<&CoreState> {
+    pub(crate) fn pending(&self) -> Option<EngineRef<'_>> {
         self.pending
             .and_then(|id| self.sessions.get(&id))
-            .map(|s| &s.core_state)
+            .map(|s| s.as_ref())
     }
 
-    pub(crate) fn pending_mut(&mut self) -> Option<&mut CoreState> {
+    pub(crate) fn pending_mut(&mut self) -> Option<EngineMut<'_>> {
         let id = self.pending?;
-        self.sessions.get_mut(&id).map(|s| &mut s.core_state)
+        self.sessions.get_mut(&id).map(|s| s.borrow_mut())
     }
 
     /// 임시 engine을 창에 연결한다. 임시 관계에서 빠진다.
@@ -110,23 +112,23 @@ impl EngineRegistry {
             .map(|(wid, _)| *wid)
     }
 
-    pub(crate) fn get(&self, id: EngineId) -> Option<&CoreState> {
-        self.sessions.get(&id).map(|s| &s.core_state)
+    pub(crate) fn get(&self, id: EngineId) -> Option<EngineRef<'_>> {
+        self.sessions.get(&id).map(|s| s.as_ref())
     }
 
-    pub(crate) fn get_mut(&mut self, id: EngineId) -> Option<&mut CoreState> {
-        self.sessions.get_mut(&id).map(|s| &mut s.core_state)
+    pub(crate) fn get_mut(&mut self, id: EngineId) -> Option<EngineMut<'_>> {
+        self.sessions.get_mut(&id).map(|s| s.borrow_mut())
     }
 
     pub(crate) fn session_mut(&mut self, id: EngineId) -> Option<&mut EngineSession> {
         self.sessions.get_mut(&id)
     }
 
-    pub(crate) fn window_engine(&self, wid: WindowId) -> Option<&CoreState> {
+    pub(crate) fn window_engine(&self, wid: WindowId) -> Option<EngineRef<'_>> {
         self.of_window(wid).and_then(|id| self.get(id))
     }
 
-    pub(crate) fn window_engine_mut(&mut self, wid: WindowId) -> Option<&mut CoreState> {
+    pub(crate) fn window_engine_mut(&mut self, wid: WindowId) -> Option<EngineMut<'_>> {
         self.of_window(wid).and_then(|id| self.get_mut(id))
     }
 
@@ -137,18 +139,18 @@ impl EngineRegistry {
     /// parked 항목의 id·View 복원 자료·engine. 보관 순서다.
     pub(crate) fn parked_sessions(
         &self,
-    ) -> impl Iterator<Item = (EngineId, &MainViewState, &CoreState)> {
+    ) -> impl Iterator<Item = (EngineId, &MainViewState, EngineRef<'_>)> {
         self.parked.iter().filter_map(|p| {
             self.sessions
                 .get(&p.engine)
-                .map(|s| (p.engine, &p.state, &s.core_state))
+                .map(|s| (p.engine, &p.state, s.as_ref()))
         })
     }
 
     /// parked 항목을 가변으로 순회한다. 한 engine은 한 항목에만 있으므로 각 참조를 한 번만 넘긴다.
     pub(crate) fn parked_sessions_mut(
         &mut self,
-    ) -> impl Iterator<Item = (EngineId, &mut MainViewState, &mut CoreState)> {
+    ) -> impl Iterator<Item = (EngineId, &mut MainViewState, EngineMut<'_>)> {
         let Self {
             sessions, parked, ..
         } = self;
@@ -157,7 +159,7 @@ impl EngineRegistry {
         parked.iter_mut().filter_map(move |p| {
             by_id
                 .remove(&p.engine)
-                .map(|s| (p.engine, &mut p.state, &mut s.core_state))
+                .map(|s| (p.engine, &mut p.state, s.borrow_mut()))
         })
     }
 
@@ -165,20 +167,20 @@ impl EngineRegistry {
     pub(crate) fn parked_session_mut(
         &mut self,
         id: EngineId,
-    ) -> Option<(&mut MainViewState, &mut CoreState)> {
+    ) -> Option<(&mut MainViewState, EngineMut<'_>)> {
         let Self {
             sessions, parked, ..
         } = self;
         let p = parked.iter_mut().find(|p| p.engine == id)?;
         let s = sessions.get_mut(&id)?;
-        Some((&mut p.state, &mut s.core_state))
+        Some((&mut p.state, s.borrow_mut()))
     }
 
     /// 창 engine과 그 창 ID. `order`는 창 순회 순서다.
     pub(crate) fn windows_in<'a>(
         &'a self,
         order: impl Iterator<Item = WindowId> + 'a,
-    ) -> impl Iterator<Item = (WindowId, &'a CoreState)> + 'a {
+    ) -> impl Iterator<Item = (WindowId, EngineRef<'a>)> + 'a {
         order.filter_map(move |wid| self.window_engine(wid).map(|e| (wid, e)))
     }
 
@@ -192,7 +194,7 @@ impl EngineRegistry {
         } = self;
         let by_id = sessions
             .values_mut()
-            .map(|s| (s.id, &mut s.core_state))
+            .map(|s| (s.id, s.borrow_mut()))
             .collect();
         (by_id, by_window, parked, *pending)
     }
@@ -212,11 +214,11 @@ impl EngineRegistry {
     pub(crate) fn park_for_test(
         &mut self,
         state: MainViewState,
-        core_state: CoreState,
+        session: EngineSession,
     ) -> EngineId {
         let wid = WindowId::from(u64::MAX - self.sessions.len() as u64);
         let id = self
-            .insert_pending(core_state)
+            .insert_pending(session)
             .unwrap_or_else(|_| panic!("시험 중 임시 engine이 남아 있다"));
         self.attach_window(wid, id);
         self.park(wid, state);

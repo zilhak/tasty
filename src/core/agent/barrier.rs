@@ -1,5 +1,6 @@
 //! Core의 메모리 저장소로 barrier를 생성·조회·갱신한다.
 
+use crate::core::engine_access::EngineRef;
 use tasty_agent::{AgentError, Barrier, BarrierState, BarrierStore};
 use tasty_memory::HOST_OWNER;
 
@@ -24,7 +25,7 @@ impl Core {
     /// 신호가 요구 수를 채우면 Closed 이벤트를 큐에 넣는다. timeout 갱신은 이벤트를 만들지 않는다.
     pub(crate) fn barrier_signal(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         workspace_id: u32,
         name: &str,
         now_ms: u64,

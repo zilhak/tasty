@@ -2,6 +2,7 @@
 //! Intent 경로는 origin에 따라 포커스와 창 열기를 처리하며, IPC는 inner 함수를 직접 호출해 응답한다.
 
 use super::{DispatchedIntent, Intent};
+use crate::core::engine_access::{EngineMut, EngineRef};
 
 /// 호출자가 미리 캡처해 큐에 넣는 프리셋 데이터.
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ use tasty_presets::{PresetError, PresetKind};
 pub fn handle(
     core: &crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
@@ -76,7 +77,7 @@ pub fn handle(
 fn apply(
     core: &crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
     target: PresetApplyTarget,
 ) {
@@ -293,7 +294,7 @@ pub struct PresetSaveRequest<'a> {
 pub fn apply_inner(
     core: &crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     target: PresetApplyTarget,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
@@ -457,7 +458,7 @@ pub fn rename_inner(
 /// IPC preset.capture가 사용하며, UI는 캡처한 데이터를 SavePreset에 담는다.
 pub fn capture_inner(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {

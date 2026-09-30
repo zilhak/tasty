@@ -1,10 +1,11 @@
 //! attach 점유 중 로컬 입력을 차단하고 headless PTY를 surface로 옮긴다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     pub(super) fn apply_send_to_surface(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         payload: crate::core::intent::SendPayload,
     ) -> CoreEvent {
@@ -38,7 +39,7 @@ impl Core {
     /// 기존 headless Terminal을 새 surface ID로 옮긴다. PTY와 scrollback을 새로 만들지 않는다.
     /// registry 상태와 pane을 먼저 검사한다. store 항목이 없으면 발급한 ID는 사용하지 못하고 실패한다.
     pub(super) fn apply_adopt_terminal(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         pty_id: u32,
     ) -> anyhow::Result<Vec<CoreEvent>> {
@@ -104,7 +105,7 @@ mod attach_block_tests {
 
     fn test_engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]

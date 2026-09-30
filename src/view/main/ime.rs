@@ -2,6 +2,7 @@
 //! Windows·Linux는 빈 Preedit이나 Disabled가 글자마다 올 수 있어 화면만 지우고
 //! PTY 에코 위치 보정은 유지한다. 공통 처리는 Commit 문자 폭을 더하고 에코가 따라온 만큼 뺀다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use tasty_plugin_protocol::ImeWire;
 use winit::event::Ime;
 
@@ -14,7 +15,7 @@ use crate::view::ui::View as _;
 /// None 이거나 text 가 비어있으면 no-op.
 fn dispatch_send_text(
     w: &mut MainView,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     surface_id: Option<u32>,
     text: &str,
 ) {
@@ -36,7 +37,7 @@ fn dispatch_send_text(
 
 pub(super) fn handle_event(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     event: Ime,
     egui_consumed: bool,
 ) {
@@ -121,7 +122,7 @@ fn forward_ime_to_attach_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
 /// PTY 출력이 도착해 terminal cursor(또는 TUI의 fake cursor)가 움직였을 수 있을
 /// 때 호출. advance가 차감되어 0이 되거나, fake cursor가 최신 위치로 갱신된 순간을
 /// 포착해 preedit anchor를 재계산한다.
-pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut crate::core::CoreState) {
+pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut EngineMut<'_>) {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let Some(preedit) = &w.ime_preedit else {
         return;
@@ -169,7 +170,7 @@ pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut crate::core::CoreStat
 }
 
 /// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
-pub(super) fn flush_preedit(w: &mut MainView, engine: &mut crate::core::CoreState) {
+pub(super) fn flush_preedit(w: &mut MainView, engine: &mut EngineMut<'_>) {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let preedit = match w.ime_preedit.take() {
         Some(p) if !p.text.is_empty() => p,
@@ -179,7 +180,7 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &mut crate::core::CoreStat
             return;
         }
     };
-    dispatch_send_text(w, engine, Some(preedit.surface_id), &preedit.text);
+    dispatch_send_text(w, &engine.as_ref(), Some(preedit.surface_id), &preedit.text);
     engine.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -211,13 +212,13 @@ fn clear_all(w: &mut MainView, engine: &mut crate::core::CoreState) {
 #[cfg(debug_assertions)]
 pub(crate) fn ipc_set_preedit(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let surface_id = w.state.focused_surface_id(engine)?;
-    let terminal = w.state.focused_terminal(engine)?;
+    let terminal = w.state.focused_terminal(&engine.as_ref())?;
     let (col, row, cut) = terminal.with_content(|view| {
         let (col, row) = view.cursor_position();
         (col, row, view.cut())
@@ -246,16 +247,16 @@ pub(crate) fn ipc_set_preedit(
         },
         surface_id,
     });
-    w.update_ime_cursor_area(engine);
+    w.update_ime_cursor_area(&engine.as_ref());
     w.mark_dirty();
     Some((anchor_col, anchor_row, surface_id))
 }
 
 #[cfg(debug_assertions)]
-pub(crate) fn ipc_commit(w: &mut MainView, engine: &mut crate::core::CoreState, text: &str) {
+pub(crate) fn ipc_commit(w: &mut MainView, engine: &mut EngineMut<'_>, text: &str) {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
-        && let Some(terminal) = w.state.focused_terminal(engine)
+        && let Some(terminal) = w.state.focused_terminal(&engine.as_ref())
     {
         w.ime_advance_base = terminal.cursor_position();
     }
@@ -264,7 +265,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, engine: &mut crate::core::CoreState, 
     }
     w.ime_preedit = None;
     let sid = w.state.focused_surface_id(engine);
-    dispatch_send_text(w, engine, sid, text);
+    dispatch_send_text(w, &engine.as_ref(), sid, text);
     if let Some(sid) = sid {
         engine.record_typing(sid);
     }
@@ -296,7 +297,7 @@ fn on_disabled(w: &mut MainView, engine: &mut crate::core::CoreState) {
 
 fn on_preedit(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     text: String,
     cursor: Option<(usize, usize)>,
 ) {
@@ -319,14 +320,14 @@ fn on_preedit(
         }),
         _ => None,
     };
-    w.update_ime_cursor_area(engine);
+    w.update_ime_cursor_area(&engine.as_ref());
     w.mark_dirty();
 }
 
-fn on_commit(w: &mut MainView, engine: &mut crate::core::CoreState, text: String) {
+fn on_commit(w: &mut MainView, engine: &mut EngineMut<'_>, text: String) {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
-        && let Some(terminal) = w.state.focused_terminal(engine)
+        && let Some(terminal) = w.state.focused_terminal(&engine.as_ref())
     {
         w.ime_advance_base = terminal.with_content(|view| reference_cursor(&view));
     }
@@ -336,7 +337,7 @@ fn on_commit(w: &mut MainView, engine: &mut crate::core::CoreState, text: String
     w.ime_preedit = None;
 
     let sid = w.state.focused_surface_id(engine);
-    dispatch_send_text(w, engine, sid, &text);
+    dispatch_send_text(w, &engine.as_ref(), sid, &text);
     if let Some(sid) = sid {
         engine.record_typing(sid);
     }
@@ -368,10 +369,10 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
 
 fn reconcile_and_compute_anchor(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> Option<tasty_selection::SelectionPoint> {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
-    let terminal = w.state.focused_terminal(engine)?;
+    let terminal = w.state.focused_terminal(&engine.as_ref())?;
     let (ref_col, ref_row, cut) = terminal.with_content(|view| {
         let (col, row) = reference_cursor(&view);
         (col, row, view.cut())

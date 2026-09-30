@@ -1,4 +1,5 @@
 #[cfg(any(feature = "gui", test))]
+use crate::core::engine_access::EngineMut;
 use serde_json::Value;
 #[cfg(all(test, feature = "gui"))]
 use serde_json::json;
@@ -12,7 +13,7 @@ use crate::core::CoreState;
 
 impl RequestContext {
     #[cfg(any(feature = "gui", test))]
-    pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
+    pub fn add_tab(&mut self, engine: &mut EngineMut<'_>) -> anyhow::Result<()> {
         // mirror에서는 원격 요청만 큐에 넣으며 로컬 탭을 만들지 않는다.
         let mirror_op =
             self.focused_surface_id(engine)
@@ -24,7 +25,7 @@ impl RequestContext {
         if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             return Ok(());
         }
-        let cwd = self.resolve_inherit_cwd(engine);
+        let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
         let cols = engine.default_cols;
@@ -61,7 +62,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
@@ -78,7 +79,7 @@ impl RequestContext {
         }
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
-        let cwd = self.resolve_inherit_cwd(engine);
+        let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
         let name = crate::core::surface_registry::default_tab_name_for_kind(
@@ -101,7 +102,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab_by_owner(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         owner_surface_id: u32,
         kind: &str,
         params: &Value,
@@ -124,7 +125,7 @@ impl RequestContext {
         };
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
-        let cwd = self.resolve_inherit_cwd(engine);
+        let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
         let name = crate::core::surface_registry::default_tab_name_for_kind(
@@ -183,7 +184,7 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    pub fn add_empty_tab(&mut self, engine: &mut CoreState) -> Option<(u32, u32)> {
+    pub fn add_empty_tab(&mut self, engine: &mut EngineMut<'_>) -> Option<(u32, u32)> {
         self.add_kind_tab(engine, "empty", &Value::Null).ok()
     }
 
@@ -229,7 +230,12 @@ impl RequestContext {
 
     /// 지정한 pane의 탭을 닫는다. 포커스와 무관하게 사본 저장·정리·dirty 갱신을 수행한다.
     #[cfg(feature = "gui")]
-    pub fn close_tab(&mut self, engine: &mut CoreState, pane_id: u32, tab_index: usize) -> bool {
+    pub fn close_tab(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        pane_id: u32,
+        tab_index: usize,
+    ) -> bool {
         let mirror_op = self
             .active_workspace(engine)
             .pane_layout()
@@ -256,7 +262,7 @@ impl RequestContext {
                 .find_pane(pane_id)
                 && let Some(tab) = pane.tabs.get(tab_index)
             {
-                crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
+                crate::core::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };
@@ -277,7 +283,7 @@ impl RequestContext {
 
     /// Core 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     #[cfg(any(feature = "gui", test))]
-    fn close_tab_through_core(&mut self, engine: &mut CoreState, tab_id: u32) -> bool {
+    fn close_tab_through_core(&mut self, engine: &mut EngineMut<'_>, tab_id: u32) -> bool {
         let crate::core::intent::CoreEvent::TabClosed {
             closed,
             cleanup_targets,
@@ -299,7 +305,7 @@ impl RequestContext {
 
     /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
+    pub fn close_active_tab(&mut self, engine: &mut EngineMut<'_>) -> bool {
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
@@ -319,7 +325,7 @@ impl RequestContext {
             if let Some(pane) = self.focused_pane(engine)
                 && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
             {
-                crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
+                crate::core::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };
@@ -342,7 +348,7 @@ impl RequestContext {
     /// 시험 준비용 Markdown 탭 생성. 제품 경로는 Intent/Core를 사용한다.
     pub(crate) fn test_add_markdown_tab(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         file_path: String,
     ) -> anyhow::Result<()> {
         self.add_kind_tab(engine, "markdown", &json!({"file": file_path}))

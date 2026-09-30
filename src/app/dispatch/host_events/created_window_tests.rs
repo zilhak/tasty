@@ -1,6 +1,7 @@
 //! workspace.created의 window_id는 발행 시점에 그 workspace를 가진 창이며, 없으면 0이다.
 //! 쌓인 사건에는 window_id가 없고, 발행 경로는 created_window로만 payload 값을 만들 수 있다.
 
+use crate::core::engine_access::EngineMut;
 use winit::window::WindowId;
 
 use super::workspace::created_window;
@@ -22,7 +23,7 @@ fn created_workspace_ids(state: &mut MainViewState) -> Vec<u32> {
         .collect()
 }
 
-fn create_from_the_ui(state: &mut MainViewState, engine: &mut CoreState) -> u32 {
+fn create_from_the_ui(state: &mut MainViewState, engine: &mut EngineMut<'_>) -> u32 {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     state.take_pending_host_events();
     let intent = crate::intent::Intent::NewWorkspace {
@@ -37,7 +38,7 @@ fn create_from_the_ui(state: &mut MainViewState, engine: &mut CoreState) -> u32 
     ids[0]
 }
 
-fn create_from_ipc(state: &mut MainViewState, engine: &mut CoreState) -> u32 {
+fn create_from_ipc(state: &mut MainViewState, engine: &mut EngineMut<'_>) -> u32 {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     state.take_pending_host_events();
     let response = crate::adapters::ipc::handler::workspace::handle_workspace_create(

@@ -2,6 +2,7 @@
 //! 별도 토큰 대신 SSH와 loopback 연결을 신뢰한다. client_id는 stream.open에서 발급한다.
 
 use super::params::{self, p_try};
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::core::CoreState;
@@ -18,7 +19,7 @@ fn require_client_id(
 
 /// `attach.acquire` { surface_id, client_id } → 배타 lock 획득(동시 attach 거부).
 pub(crate) fn handle_acquire(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

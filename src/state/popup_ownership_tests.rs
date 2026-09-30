@@ -6,6 +6,7 @@ use crate::adapters::ui::popup::PopupManager;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
 use crate::adapters::ui::popup::{PopupScope, defs};
 use crate::app::dispatch::plugin_popup_events::cancel_child_file_picker;
+use crate::core::engine_access::EngineMut;
 use crate::state::{
     FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState, RequestContext,
 };
@@ -213,7 +214,7 @@ fn scope_hidden_popup_is_not_the_escape_candidate() {
     assert_eq!(id, PORT_SCANNER_ID);
 }
 
-pub(super) fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
+pub(super) fn push_workspace(engine: &mut EngineMut<'_>) -> u32 {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         crate::core::WorkspaceCreationParams::terminal(),

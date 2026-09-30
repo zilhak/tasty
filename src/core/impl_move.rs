@@ -1,12 +1,13 @@
 //! surface를 다른 surface 위치로 옮긴다. 원본 터미널은 유지하고 덮어쓴 대상의 후속 정리를 반환한다.
 
 use super::*;
+use crate::core::engine_access::{EngineMut, EngineRef};
 
 impl Core {
     /// source를 트리에서 떼어 target 위치에 붙인다. Terminal store는 여기서 지우지 않는다.
     /// target 정리는 반환된 이벤트의 호출자가 맡는다. 성공하지 않아도 이동 대기 슬롯은 종류와 관계없이 비운다.
     pub(super) fn apply_move_surface(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         source_id: u32,
         target_id: u32,
     ) -> CoreEvent {
@@ -63,7 +64,7 @@ impl Core {
     /// source를 떼는 동안 위치가 바뀔 수 있어 target을 ID로 다시 찾는다.
     #[allow(clippy::too_many_arguments)]
     fn attach_a_to_target(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         source_id: u32,
         target_id: u32,
         a_box: Box<dyn crate::model::Surface>,
@@ -88,7 +89,7 @@ impl Core {
             };
 
         let Some((ws_idx, pane_id, b_tab_idx, b_persist)) =
-            Self::locate_target_slot(engine, source_id, target_id)
+            Self::locate_target_slot(&engine.as_ref(), source_id, target_id)
         else {
             return fail(&closed_tab_ids, &closed_pane_ids);
         };
@@ -122,7 +123,7 @@ impl Core {
 
     /// source 제거가 인덱스를 바꿀 수 있어 target 위치와 scrollback 저장 ID를 다시 조회한다.
     fn locate_target_slot(
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         source_id: u32,
         target_id: u32,
     ) -> Option<(usize, u32, usize, Option<String>)> {
@@ -185,7 +186,7 @@ impl Core {
     /// 이동할 Terminal store 항목과 scrollback은 유지하며 닫기 snapshot도 만들지 않는다.
     #[allow(clippy::type_complexity)]
     fn detach_surface_for_move(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         source_id: u32,
     ) -> Option<(
         Box<dyn crate::model::Surface>,
@@ -300,7 +301,7 @@ mod move_surface_tests {
 
     fn test_engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     /// 실제 PTY 대신 detached Terminal을 써서 store 항목과 정리 대상 반환을 확인한다.

@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use crate::core::engine_access::EngineMut;
 use crate::i18n::{t, t_fmt};
 use crate::state::MainViewState;
 use crate::theme;
@@ -11,7 +12,7 @@ use tasty_ui_widgets::{margin_all, vspace};
 pub(crate) fn draw_notification_content_inner(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     let th = theme::theme();
 
@@ -188,7 +189,7 @@ pub fn notifications_popup_sizer(
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> crate::adapters::ui::popup::PopupAction {
     draw_notification_content_inner(ui, state, engine);
     crate::adapters::ui::popup::PopupAction::None

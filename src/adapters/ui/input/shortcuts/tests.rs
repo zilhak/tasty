@@ -1,5 +1,6 @@
 //! shortcuts 모듈 단위 테스트 — binding parsing/matching + zoom 단축키.
 
+use crate::core::engine_access::EngineMut;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey, SmolStr};
 
 use super::physical_key_to_logical;
@@ -283,7 +284,7 @@ fn option_binding_never_matches_on_non_macos() {
 
 fn fresh_state() -> (crate::state::MainViewState, crate::core::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+    let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -381,10 +382,7 @@ fn zoom_out_clamps_at_6px() {
 
 // 사용자 설정과 무관하게 기본 quick-switch 설정을 사용한다.
 
-fn add_test_workspace(
-    state: &mut crate::state::MainViewState,
-    engine: &mut crate::core::CoreState,
-) {
+fn add_test_workspace(state: &mut crate::state::MainViewState, engine: &mut EngineMut<'_>) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         crate::core::WorkspaceCreationParams::terminal(),

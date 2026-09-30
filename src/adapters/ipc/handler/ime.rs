@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::params::{self, p_try};
+use crate::core::engine_access::EngineMut;
 use crate::view::main::MainView;
 use crate::view::main::ime as window_ime;
 use crate::view::ui::View as _;
@@ -9,7 +10,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// IME 상태는 창마다 다르므로 MainView를 직접 받아 입력을 재현한다.
 pub fn handle_ime_method(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     method: &str,
     params: &serde_json::Value,
     id: serde_json::Value,
@@ -39,7 +40,7 @@ fn handle_ime_disable(w: &mut MainView, id: serde_json::Value) -> JsonRpcRespons
 
 fn handle_ime_preedit(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -75,7 +76,7 @@ fn handle_ime_preedit(
 
 fn handle_ime_commit(
     w: &mut MainView,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {

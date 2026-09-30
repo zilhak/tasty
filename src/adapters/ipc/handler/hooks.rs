@@ -1,5 +1,6 @@
 use super::params::require_u32;
 use super::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 use tasty_hooks::HookEvent;
 
@@ -38,7 +39,7 @@ fn validate_hook_event(
 
 pub(crate) fn handle_hook_set(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -120,7 +121,7 @@ pub(crate) fn handle_hook_set(
 }
 
 pub(crate) fn handle_hook_list(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -152,7 +153,7 @@ pub(crate) fn handle_hook_list(
 
 pub(crate) fn handle_hook_unset(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -167,7 +168,7 @@ pub(crate) fn handle_hook_unset(
 
 pub(crate) fn handle_global_hook_set(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -204,7 +205,7 @@ pub(crate) fn handle_global_hook_set(
 }
 
 pub(crate) fn handle_global_hook_list(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
@@ -226,7 +227,7 @@ pub(crate) fn handle_global_hook_list(
 
 pub(crate) fn handle_global_hook_unset(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -242,7 +243,7 @@ pub(crate) fn handle_global_hook_unset(
 pub(crate) fn handle_surface_fire_hook(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

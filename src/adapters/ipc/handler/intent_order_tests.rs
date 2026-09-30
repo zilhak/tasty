@@ -1,6 +1,7 @@
 //! 요청별 IntentOutbox를 창 큐로 옮겨도 순서가 유지되는지 확인한다.
 //! 기존 항목 뒤에, 진입 검사와 핸들러가 만든 intent를 요청 순서대로 추가해야 한다.
 
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 use std::sync::Arc;
 use tasty_plugin_manifest::Permission;
@@ -178,7 +179,7 @@ fn core_with_ordered_memory() -> crate::core::Core {
 fn set_notify_and_approval_caps(
     core: &mut crate::core::Core,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     agent: &str,
     metric: &str,
 ) {

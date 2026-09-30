@@ -1,3 +1,4 @@
+use crate::core::engine_access::EngineMut;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -1557,11 +1558,7 @@ impl App {
         self.feed_input_on_owning_engine(client_id, bytes)
     }
 
-    fn demux_workspace_input(
-        engine: &mut crate::core::CoreState,
-        client_id: u32,
-        bytes: &[u8],
-    ) -> bool {
+    fn demux_workspace_input(engine: &mut EngineMut<'_>, client_id: u32, bytes: &[u8]) -> bool {
         match crate::ipc::stream::decode_mux(bytes) {
             Some((sid, payload)) => engine.feed_attached_workspace_input(client_id, sid, payload),
             None => false,

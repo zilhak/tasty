@@ -2,6 +2,7 @@
 //! 권한·요청자·점유 검사는 각 진입점이 먼저 수행해야 한다. wire 응답 조립도 진입점 몫이다.
 //! forward의 대상 해석·복원 snapshot·출력 tap 제어는 attach_runtime이 맡는다.
 
+use crate::core::engine_access::EngineMut;
 use std::path::PathBuf;
 
 use serde_json::Value;
@@ -35,7 +36,7 @@ impl From<anyhow::Error> for StructuralFailure {
 pub(crate) fn execute(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: DomainIntent,
 ) -> anyhow::Result<Vec<CoreEvent>> {
     engine.refresh_attach_presentation(state.presentation());
@@ -93,7 +94,7 @@ pub(crate) fn select_created_tabs(
 fn apply(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: DomainIntent,
     origin: &IntentOrigin,
 ) -> Result<Vec<CoreEvent>, StructuralFailure> {
@@ -135,7 +136,7 @@ pub(crate) enum SplitOutcome {
 pub(crate) fn split(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     req: SplitRequest<'_>,
     origin: &IntentOrigin,
 ) -> Result<SplitOutcome, StructuralFailure> {
@@ -340,7 +341,7 @@ pub(crate) struct TabCreated {
 pub(crate) fn create_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     pane_id: u32,
     params: &Value,
     activate: bool,
@@ -417,7 +418,7 @@ pub(crate) fn create_tab(
         ));
     };
 
-    cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+    cascade_tab_created(state, &engine.as_ref(), pane_id, tab_id, surface_id);
     if activate && origin.is_user() {
         state.select_tab_result(engine, pane_id, tab_id);
     }
@@ -444,7 +445,7 @@ pub(crate) struct Closed {
 pub(crate) fn close_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     tab_id: u32,
     origin: &IntentOrigin,
 ) -> Result<Closed, StructuralFailure> {
@@ -485,7 +486,7 @@ pub(crate) fn close_tab(
 pub(crate) fn close_pane(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     pane_id: u32,
     origin: &IntentOrigin,
 ) -> Result<Closed, StructuralFailure> {
@@ -526,7 +527,7 @@ pub(crate) fn close_pane(
 pub(crate) fn move_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     pane_id: u32,
     from_index: usize,
     to_index: usize,
@@ -563,7 +564,7 @@ pub(crate) fn move_tab(
 pub(crate) fn close_surface(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     surface_id: u32,
     save_snapshot: bool,
     origin: &IntentOrigin,

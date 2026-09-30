@@ -10,6 +10,7 @@
     )
 )]
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::core::CoreState;
@@ -26,18 +27,40 @@ impl EngineId {
     }
 }
 
-/// engine 하나와 그 id. 창에 놓이면 MainView가 둘을 나눠 보관한다.
+/// 엔진 수명 원본. 창 연결은 App registry에 있고 실행 자원은 이 객체와 함께 산다.
+/// observer/hook/task를 Terminal보다 먼저 정리한다. TaskScope drop은 task 취소가 아니다.
 pub(crate) struct EngineSession {
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
+    pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
+    pub(crate) task_scope: crate::core::task_service::TaskScope,
+    pub(crate) observer_router: crate::output_observer::ObserverRouter,
+    pub(crate) runtime: crate::core::engine_runtime::EngineRuntime,
+    /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
+    #[cfg(test)]
+    _isolated_home: Option<crate::test_support::IsolatedHome>,
 }
 
 impl EngineSession {
-    /// 새 engine에 id를 붙인다. 이미 id가 있는 engine을 다시 감쌀 때는 필드로 만든다.
-    pub(crate) fn new(core_state: CoreState) -> Self {
-        Self {
-            id: EngineId::issue(),
-            core_state,
+    pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {
+        EngineMut {
+            core: &mut self.core_state,
+            runtime: &mut self.runtime,
+            hooks: &mut self.hooks,
+            task_scope: &mut self.task_scope,
+            observer_router: &mut self.observer_router,
+        }
+    }
+
+    pub(crate) fn as_ref(&self) -> EngineRef<'_> {
+        EngineRef {
+            core: &self.core_state,
+            runtime: &self.runtime,
+            hooks: &self.hooks,
+            task_scope: &self.task_scope,
+            observer_router: &self.observer_router,
         }
     }
 }
+
+mod bootstrap;

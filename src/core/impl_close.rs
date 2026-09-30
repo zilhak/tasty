@@ -1,6 +1,7 @@
 //! surface·tab·pane·workspace를 닫고 호출자에게 후속 정리 대상을 반환한다.
 
 use super::*;
+use crate::core::engine_access::{EngineMut, EngineRef};
 
 fn terminal_surface_in_tab(
     tab: &crate::model::Tab,
@@ -16,7 +17,7 @@ fn terminal_surface_in_tab(
 /// 레이아웃을 지우기 전에 surface ID와 scrollback 저장 ID를 모아 후속 정리에 넘긴다.
 pub(crate) fn collect_close_targets(
     tab: &crate::model::Tab,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     out: &mut Vec<(u32, Option<String>)>,
 ) {
     tab.for_each_surface(&mut |s| {
@@ -117,14 +118,14 @@ pub(crate) fn surface_close_not_found(surface_id: u32) -> CoreEvent {
 }
 
 impl Core {
-    pub(super) fn apply_close_pane(engine: &mut crate::core::CoreState, pane_id: u32) -> CoreEvent {
+    pub(super) fn apply_close_pane(engine: &mut EngineMut<'_>, pane_id: u32) -> CoreEvent {
         Self::close_pane_recording(engine, pane_id, None)
     }
 
     /// pane을 닫는다. save_snapshot이면 제거 전에 분할 위치를 포함한 복원 기록을 남긴다.
     /// 사용자 닫기만 기록한다. 기록 여부는 origin을 아는 진입점이 정한다.
     pub(crate) fn close_pane_recording(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
@@ -149,7 +150,7 @@ impl Core {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
             for tab in &pane.tabs {
-                collect_close_targets(tab, engine, &mut targets);
+                collect_close_targets(tab, &engine.as_ref(), &mut targets);
             }
         }
 
@@ -168,7 +169,7 @@ impl Core {
     /// 빈 상위 tab·pane·workspace까지 닫을 수 있다.
     /// 창 자원·메모리 정리와 활성 workspace 보정·대체 workspace 생성은 호출자의 후속 처리다.
     pub(super) fn apply_close_surface(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
@@ -178,7 +179,7 @@ impl Core {
     /// apply_close_surface와 같은 닫기다. 창 경로는 계측 경로를 Inline으로 넘겨 전체 시간을 직접 기록한다.
     /// save_snapshot은 사용자 닫기에서만 true다. 기록 여부는 origin을 아는 진입점이 정한다.
     pub(crate) fn close_surface_recording(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
         trace: CloseTracePath,
@@ -201,7 +202,7 @@ impl Core {
     }
 
     fn close_case_split(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
@@ -260,7 +261,7 @@ impl Core {
     }
 
     fn close_case_tab(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
@@ -291,7 +292,7 @@ impl Core {
             let ws = &engine.workspaces[loc.ws_idx];
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
-                collect_close_targets(&pane.tabs[loc.tab_idx], engine, &mut targets);
+                collect_close_targets(&pane.tabs[loc.tab_idx], &engine.as_ref(), &mut targets);
             }
         }
         let ws = &mut engine.workspaces[loc.ws_idx];
@@ -315,7 +316,7 @@ impl Core {
     }
 
     fn close_case_pane(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
@@ -355,7 +356,7 @@ impl Core {
                 && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
             {
                 for tab in &pane.tabs {
-                    collect_close_targets(tab, engine, &mut targets);
+                    collect_close_targets(tab, &engine.as_ref(), &mut targets);
                     closed_tab_ids.push(tab.id);
                 }
             }
@@ -379,7 +380,7 @@ impl Core {
     }
 
     fn close_case_workspace(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         loc: &SurfaceCloseLocation,
         surface_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
@@ -422,7 +423,7 @@ impl Core {
                 closed_pane_ids.push(pid);
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        collect_close_targets(tab, engine, &mut targets);
+                        collect_close_targets(tab, &engine.as_ref(), &mut targets);
                         closed_tab_ids.push(tab.id);
                     }
                 }
@@ -446,14 +447,14 @@ impl Core {
         }
     }
 
-    pub(super) fn apply_close_tab(engine: &mut crate::core::CoreState, tab_id: u32) -> CoreEvent {
+    pub(super) fn apply_close_tab(engine: &mut EngineMut<'_>, tab_id: u32) -> CoreEvent {
         Self::close_tab_recording(engine, tab_id, None)
     }
 
     /// 탭을 닫는다. save_snapshot이면 실제로 닫히는 탭만 복원 기록에 남긴다.
     /// pane의 마지막 탭은 닫지 않으므로 기록하지 않는다. 기록 여부는 origin을 아는 진입점이 정한다.
     pub(crate) fn close_tab_recording(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         tab_id: u32,
         presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> CoreEvent {
@@ -464,7 +465,7 @@ impl Core {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid)
                     && let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id)
                 {
-                    collect_close_targets(tab, engine, &mut targets);
+                    collect_close_targets(tab, &engine.as_ref(), &mut targets);
                     found_pane_id = Some(pid);
                     break;
                 }
@@ -521,10 +522,10 @@ mod close_surface_cascade_tests {
 
     fn test_engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
-    fn insert_detached(engine: &mut CoreState, sid: u32) {
+    fn insert_detached(engine: &mut EngineMut<'_>, sid: u32) {
         engine
             .runtime
             .terminals

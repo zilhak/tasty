@@ -1,6 +1,7 @@
 //! image.open과 image.list는 호스트에서 처리한다. 픽셀 편집은 image 플러그인으로 전달한다.
 //! open은 surface_id를 명시하고 list는 모든 이미지 surface를 조회한다.
 
+use crate::core::engine_access::EngineMut;
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -10,7 +11,7 @@ use super::require_surface_id;
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
 pub fn handle_open(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -117,7 +118,8 @@ mod tests {
 
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
 
-        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
@@ -161,7 +163,7 @@ mod tests {
         (core, state, engine, home_tmp)
     }
 
-    fn first_surface_id(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
+    fn first_surface_id(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
         let ws_ids: std::collections::HashSet<u32> = state
             .active_workspace_mut(engine)
             .all_surface_ids()

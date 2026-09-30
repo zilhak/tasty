@@ -1,5 +1,6 @@
 use egui::emath::GuiRounding as _;
 
+use crate::core::engine_access::EngineMut;
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
 use crate::theme;
@@ -27,7 +28,7 @@ struct EguiPanelInfo {
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
@@ -94,7 +95,7 @@ pub fn draw_egui_panels(
     {
         let requests: Vec<_> = infos.iter().filter_map(|i| i.dag_poll.clone()).collect();
         let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-        dag_views.poll(engine, &requests);
+        dag_views.poll(&engine.as_ref(), &requests);
         state.dag_graph_views = dag_views;
     }
 

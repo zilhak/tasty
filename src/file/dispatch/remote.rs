@@ -2,6 +2,7 @@
 //! 식별은 파일 이름만 보는 DetectDepth::Name으로 끝나며, 원격 NewTab으로 보낼 수 있는 핸들러만 실행한다.
 //! 규칙은 [ADR-0022](../../../docs/adr/0022-remote-mirror-content-and-queries.md)를 따른다.
 
+use crate::core::engine_access::EngineMut;
 use crate::core::{Core, CoreState};
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
 use crate::file::format::{DetectorId, FileTarget};
@@ -56,7 +57,7 @@ fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
 pub(crate) fn apply_remote_identify_result(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     target: FileTarget,
     detector: Option<DetectorId>,
     origin_surface_id: u32,

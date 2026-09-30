@@ -3,6 +3,7 @@
 //! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 두 저장소를 함께 정리한다.
 
 use super::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::time::Instant;
 
 use serde_json::{Value, json};
@@ -43,14 +44,14 @@ fn parse_command(params: &Value) -> Vec<String> {
 
 /// 주기 정리와 별도로 spawn/list 직전에도 만료 항목을 회수한다.
 /// spawn 상한을 검사하기 전에 빈 슬롯을 확보해야 하므로 주기 타이머만으로 대체하지 않는다.
-fn lazy_sweep(engine: &mut CoreState) {
+fn lazy_sweep(engine: &mut EngineMut<'_>) {
     // 공용 함수가 회수까지 마쳤으므로 반환된 ID 목록은 사용하지 않는다.
     let _ = engine.sweep_idle_ptys(Instant::now());
 }
 
 pub(crate) fn handle_spawn(
     core: &mut crate::core::Core,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -144,7 +145,11 @@ pub(crate) fn handle_spawn(
 
 /// `pty.write` — 실행 중 PTY 에 입력(stdin)을 그대로 보낸다(as-is, 자동 제출 없음 —
 /// 호출자가 개행/`\r` 포함). idle 타이머 리셋.
-pub(crate) fn handle_write(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_write(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let pty_id = match require_u32(params, "id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -169,7 +174,11 @@ pub(crate) fn handle_write(engine: &mut CoreState, id: Value, params: &Value) ->
 
 /// 현재 화면을 읽고 idle 시간을 갱신한다. lines는 하단 빈 줄을 빼고 마지막 N줄을 고르며
 /// 부족하면 스크롤백에서 채운다. show_dim은 기본 false로 dim 셀을 제외한다.
-pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_read(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let pty_id = match require_u32(params, "id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -204,7 +213,11 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
 }
 
 /// 종료 결과의 현재 상태를 즉시 반환한다. 기다리지는 않으며 idle 시간을 갱신한다.
-pub(crate) fn handle_wait(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_wait(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let pty_id = match require_u32(params, "id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -234,7 +247,11 @@ pub(crate) fn handle_wait(engine: &mut CoreState, id: Value, params: &Value) -> 
 
 /// registry와 Terminal을 제거해 PTY master를 닫는다. watcher는 자식 종료를 기다려 회수한다.
 /// 이 응답이 자식의 종료 완료를 확인한 것은 아니다.
-pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_kill(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let pty_id = match require_u32(params, "id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -257,7 +274,7 @@ pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> 
 pub(crate) fn handle_attach_surface(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -304,7 +321,11 @@ pub(crate) fn handle_attach_surface(
 
     // 생성 이벤트와 polling 기준 상태를 함께 갱신한다.
     crate::app::structural_cascade::cascade_tab_created(
-        window, engine, pane_id, tab_id, surface_id,
+        window,
+        &engine.as_ref(),
+        pane_id,
+        tab_id,
+        surface_id,
     );
 
     JsonRpcResponse::success(
@@ -319,7 +340,7 @@ pub(crate) fn handle_attach_surface(
 
 /// idle 항목을 회수한 뒤 등록된 PTY 전체를 반환한다.
 /// watch_phase는 시험 실패 진단에만 사용하므로 공개 응답에 포함하지 않는다.
-pub(crate) fn handle_list(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
+pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcResponse {
     lazy_sweep(engine);
     let ptys: Vec<Value> = engine
         .runtime
@@ -348,7 +369,7 @@ mod tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     // Clock이 포함된 Core를 준비하고 TempDir을 호출자에게 넘겨 시험 동안 유지한다.
@@ -427,7 +448,7 @@ mod tests {
     }
 
     /// Condvar로 종료 결과를 기다린다. 보낸 입력은 실패 시 에코와 다른 출력을 구분하는 데 쓴다.
-    fn wait_for_exit(engine: &mut CoreState, pty_id: u32, sent: &str) -> Value {
+    fn wait_for_exit(engine: &mut EngineMut<'_>, pty_id: u32, sent: &str) -> Value {
         let started = std::time::Instant::now();
         match engine
             .runtime
@@ -492,7 +513,7 @@ mod tests {
 
     /// 실패 시 watcher 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
     /// 화면과 에코 비교는 관측 보조 자료이며 자식의 생사나 실행 이력을 보장하지 않는다.
-    fn observed_pty_state(engine: &CoreState, pty_id: u32, sent: &str) -> String {
+    fn observed_pty_state(engine: &EngineRef<'_>, pty_id: u32, sent: &str) -> String {
         let watcher = match engine.runtime.pty_registry.get(pty_id) {
             Some(e) => watch_phase_note(e.watch_phase()),
             None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",

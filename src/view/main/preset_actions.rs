@@ -1,6 +1,7 @@
 //! 현재 워크스페이스·탭·패널 구성을 읽어 Intent::SavePreset으로 보낸다.
 //! 저장 이름 결정, 파일 저장, 프리셋 창 열기는 src/intent/preset.rs에서 처리한다.
 
+use crate::core::engine_access::EngineMut;
 use anyhow::{Result, anyhow};
 
 use crate::intent::preset_capture::{
@@ -13,7 +14,7 @@ use super::MainView;
 impl MainView {
     pub(crate) fn save_workspace_preset_from_idx(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         ws_idx: usize,
     ) -> Result<()> {
         let ws = engine
@@ -27,8 +28,14 @@ impl MainView {
         };
 
         let registry = engine.surface_registry.clone();
-        let preset = capture_workspace_preset(&self.state.navigation, engine, ws, None, &registry)
-            .ok_or_else(|| anyhow!("workspace capture failed"))?;
+        let preset = capture_workspace_preset(
+            &self.state.navigation,
+            &engine.as_ref(),
+            ws,
+            None,
+            &registry,
+        )
+        .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
         self.state.dispatch_intent(
             Intent::SavePreset {
@@ -44,7 +51,7 @@ impl MainView {
 
     pub(crate) fn save_tab_preset_from_pane_tab(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         tab_index: usize,
     ) -> Result<()> {
@@ -68,7 +75,7 @@ impl MainView {
         };
 
         let registry = engine.surface_registry.clone();
-        let preset = capture_tab_preset(engine, tab, None, &registry)
+        let preset = capture_tab_preset(&engine.as_ref(), tab, None, &registry)
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
         self.state.dispatch_intent(
@@ -85,7 +92,7 @@ impl MainView {
 
     pub(crate) fn save_pane_preset_from_pane_id(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
     ) -> Result<()> {
         let ws = self.state.active_workspace(engine);
@@ -96,8 +103,14 @@ impl MainView {
         let base_name = "pane".to_string();
 
         let registry = engine.surface_registry.clone();
-        let preset = capture_pane_preset(&self.state.navigation, engine, pane, None, &registry)
-            .ok_or_else(|| anyhow!("pane capture failed"))?;
+        let preset = capture_pane_preset(
+            &self.state.navigation,
+            &engine.as_ref(),
+            pane,
+            None,
+            &registry,
+        )
+        .ok_or_else(|| anyhow!("pane capture failed"))?;
 
         self.state.dispatch_intent(
             Intent::SavePreset {

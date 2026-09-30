@@ -6,6 +6,7 @@
 //! 기본 GUI 시험에서도 이 모듈을 컴파일해 큐 처리를 검증한다.
 //! 설계: docs/design/flows/action-dispatch.md, docs/adr/0003-headless-behavior.md.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::core::intent::CoreEvent;
 use crate::core::{AttentionKind, Core, CoreState};
 use crate::intent::{DispatchedIntent, Intent};
@@ -20,7 +21,7 @@ const MAX_DRAIN_ROUNDS: usize = 8;
 pub(crate) fn drain_pending_intents(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     for _ in 0..MAX_DRAIN_ROUNDS {
         let batch = state.take_pending_intents();
@@ -45,7 +46,7 @@ pub(crate) fn drain_pending_intents(
 pub(crate) fn drain_pending_host_events(
     core: &Core,
     state: &mut RequestContext,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
 ) {
     for event in state.take_pending_host_events() {
         if let crate::state::PendingHostEvent::HookFired {
@@ -64,7 +65,7 @@ pub(crate) fn drain_pending_host_events(
 
 /// OSC 7의 cwd 변경을 탭 이름에 반영한다.
 /// 레이아웃 dirty는 원격 attach의 스냅샷 차이 계산에도 필요하다.
-pub(crate) fn apply_terminal_cwd_changed(engine: &mut CoreState, surface_id: u32) {
+pub(crate) fn apply_terminal_cwd_changed(engine: &mut EngineMut<'_>, surface_id: u32) {
     if !engine.has_surface(surface_id) {
         return;
     }
@@ -75,7 +76,7 @@ pub(crate) fn apply_terminal_cwd_changed(engine: &mut CoreState, surface_id: u32
 fn apply_one(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     dispatched: DispatchedIntent,
 ) {
     if !matches!(dispatched.body, Intent::Domain(_)) {
@@ -101,7 +102,7 @@ fn apply_one(
 fn route_non_domain(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
@@ -126,7 +127,7 @@ fn route_non_domain(
 }
 
 /// CoreEvent에서 engine 상태 변경만 처리한다. 창 갱신과 토스트는 제외한다.
-fn handle_core_event(engine: &mut CoreState, event: CoreEvent) {
+fn handle_core_event(engine: &mut EngineMut<'_>, event: CoreEvent) {
     match event {
         CoreEvent::SettingsUpdated(new_settings) => apply_settings(engine, new_settings),
         CoreEvent::NotificationPushRequested {
@@ -252,7 +253,7 @@ mod tests {
     fn send(
         core: &mut Core,
         state: &mut RequestContext,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         method: &str,
         params: serde_json::Value,
     ) {
@@ -354,7 +355,7 @@ mod tests {
     fn set_a_hook(
         core: &mut Core,
         state: &mut RequestContext,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         sid: u32,
     ) -> u64 {
         let resp = crate::ipc::handler::handle_with_caller(

@@ -2,6 +2,7 @@
 //! 검증과 변경은 CoreState의 카테고리 메서드가 맡고, 성공하면 레이아웃 저장을 예약한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     pub(super) fn apply_set_workspace_category(
@@ -70,16 +71,17 @@ mod tests {
 
     fn fixture() -> (Core, CoreState) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).expect("engine");
+        let mut engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         engine.layout_dirty.clear();
         (crate::ipc::handler::cli_entry_tests::test_core(), engine)
     }
 
-    fn apply(core: &mut Core, engine: &mut CoreState, intent: DomainIntent) -> Vec<CoreEvent> {
+    fn apply(core: &mut Core, engine: &mut EngineMut<'_>, intent: DomainIntent) -> Vec<CoreEvent> {
         core.apply(engine, intent).expect("apply")
     }
 
-    fn create(core: &mut Core, engine: &mut CoreState, name: &str) -> u32 {
+    fn create(core: &mut Core, engine: &mut EngineMut<'_>, name: &str) -> u32 {
         let events = apply(
             core,
             engine,

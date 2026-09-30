@@ -54,6 +54,7 @@ pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
+use crate::core::engine_access::{EngineMut, EngineRef};
 #[cfg(feature = "gui")]
 use crate::model::LogicalPx;
 #[cfg(any(feature = "gui", test))]
@@ -309,7 +310,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub(crate) fn enqueue_convert_input_popup(
         &mut self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         kind: &str,
         convert_surface_id: Option<u32>,
     ) -> bool {
@@ -349,7 +350,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn popup_surface_context(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: Option<u32>,
     ) -> serde_json::Value {
         use crate::core::state::SurfaceCwd;
@@ -504,7 +505,7 @@ impl RequestContext {
     /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
     pub(crate) fn cleanup_surface(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         persist_id: Option<String>,
     ) {
@@ -515,7 +516,7 @@ impl RequestContext {
     /// cleanup_surface와 같은 정리를 하며 도메인 단계별 시간을 sums에 합산한다.
     pub(crate) fn cleanup_surface_traced(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         persist_id: Option<String>,
         sums: &mut crate::close_trace::CleanupSums,
@@ -537,7 +538,7 @@ impl RequestContext {
     /// 워크스페이스 복원 사본을 만든다. 저장 여부는 호출자가 결정한다.
     fn capture_workspace_snapshot(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         ws_idx: usize,
     ) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
@@ -553,7 +554,7 @@ impl RequestContext {
 
     /// 제거 전에 모든 surface의 ID와 스크롤백 저장 ID를 수집한다.
     fn collect_workspace_close_targets(
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         ws_idx: usize,
     ) -> Vec<(u32, Option<String>)> {
         let mut targets = Vec::new();
@@ -584,7 +585,7 @@ impl RequestContext {
     /// 제거 후에는 kind를 찾을 수 없으므로 호출자가 넘긴 값을 사용한다.
     fn cleanup_targets(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         targets: Vec<(u32, Option<String>, Option<&'static str>)>,
         is_user_close: bool,
         trace: Option<&'static str>,
@@ -684,7 +685,7 @@ impl RequestContext {
 
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.
-    pub(crate) fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<std::path::PathBuf> {
+    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd || engine.workspaces.is_empty() {
             return None;
         }
@@ -695,7 +696,7 @@ impl RequestContext {
     /// cwd 상속 설정이 켜져 있으면 지정한 surface의 로컬 경로를 반환한다.
     pub(crate) fn resolve_inherit_cwd_from_surface(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
     ) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd {

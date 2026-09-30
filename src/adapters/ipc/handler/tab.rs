@@ -2,6 +2,7 @@ use serde_json::json;
 
 use super::params::{self, p_try};
 use crate::app::structural_exec::{self, Closed, TabCreated};
+use crate::core::engine_access::EngineMut;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
@@ -56,7 +57,7 @@ pub fn handle_tab_list(
 pub fn handle_tab_create(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,
@@ -89,7 +90,7 @@ pub fn handle_tab_create(
 pub fn handle_tab_close(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,
@@ -129,7 +130,7 @@ pub fn handle_tab_close(
 pub fn handle_tab_move(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,

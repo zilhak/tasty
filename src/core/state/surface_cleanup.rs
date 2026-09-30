@@ -2,35 +2,9 @@
 //! 창 상태 없이 호출할 수 있어 GUI와 headless의 모든 닫기 경로가 같은 정리를 쓴다.
 
 use super::CoreState;
+use crate::core::engine_access::EngineMut;
 
 impl CoreState {
-    /// 닫힌 surface의 터미널·인덱스·메모리·점유를 정리하고 단계별 시간을 sums에 합산한다.
-    /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
-    pub(crate) fn cleanup_surface_traced(
-        &mut self,
-        surface_id: u32,
-        persist_id: Option<String>,
-        sums: &mut crate::close_trace::CleanupSums,
-    ) {
-        use std::time::Instant;
-        sums.surfaces += 1;
-        let t = Instant::now();
-        Self::delete_scrollback_persist(persist_id);
-        sums.scrollback_delete += t.elapsed();
-        let t = Instant::now();
-        self.drop_terminal(surface_id);
-        sums.terminal_drop += t.elapsed();
-        let t = Instant::now();
-        self.drop_surface_indices(surface_id);
-        sums.indices_drop += t.elapsed();
-        let t = Instant::now();
-        self.purge_surface_memory_scope(surface_id);
-        sums.memory_purge += t.elapsed();
-        // 닫힌 surface 점유만 지운다. 다른 surface가 남은 workspace 점유는 유지한다.
-        self.attach.forget_closed_surface(surface_id);
-        self.forget_mirror_surface_extras(surface_id);
-    }
-
     /// 닫힌 surface의 busy·cwd·mesh frame(mirror 전용)과 attention 레코드를 지운다.
     /// attention은 로컬 surface도 두 빌드에서 가지므로 로컬 레코드도 함께 지운다.
     /// client 쪽 정리는 workspace가 이미 없으면 건너뛰므로 사용자 닫기 경로도 여기서 회수한다.
@@ -45,24 +19,6 @@ impl CoreState {
     fn delete_scrollback_persist(persist_id: Option<String>) {
         if let Some(pid) = persist_id {
             crate::scrollback_store::delete(&pid);
-        }
-    }
-
-    /// Terminal과 부속 상태를 저장소에서 제거한다. 실제 종료 처리는 Terminal의 Drop에 맡긴다.
-    fn drop_terminal(&mut self, surface_id: u32) {
-        self.pending_scrollback_inject.remove(&surface_id);
-        if let Some(old_terminal) = self.runtime.terminals.remove(surface_id) {
-            drop(old_terminal);
-        }
-    }
-
-    fn drop_surface_indices(&mut self, surface_id: u32) {
-        self.command_index.drop_surface(surface_id);
-        self.observer_router.drop_surface(surface_id);
-        self.hooks.forget_surface(surface_id);
-        self.forget_shell_integration_hint(surface_id);
-        if let Some(factory) = self.waker_factory.as_ref() {
-            factory.forget_surface(surface_id);
         }
     }
 
@@ -156,5 +112,52 @@ mod tests {
             engine.attach_mesh_frames.get(sid).is_none(),
             "mesh frame 남음"
         );
+    }
+}
+
+impl EngineMut<'_> {
+    /// 닫힌 surface의 터미널·인덱스·메모리·점유를 정리하고 단계별 시간을 sums에 합산한다.
+    /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
+    pub(crate) fn cleanup_surface_traced(
+        &mut self,
+        surface_id: u32,
+        persist_id: Option<String>,
+        sums: &mut crate::close_trace::CleanupSums,
+    ) {
+        use std::time::Instant;
+        sums.surfaces += 1;
+        let t = Instant::now();
+        CoreState::delete_scrollback_persist(persist_id);
+        sums.scrollback_delete += t.elapsed();
+        let t = Instant::now();
+        self.drop_terminal(surface_id);
+        sums.terminal_drop += t.elapsed();
+        let t = Instant::now();
+        self.drop_surface_indices(surface_id);
+        sums.indices_drop += t.elapsed();
+        let t = Instant::now();
+        self.purge_surface_memory_scope(surface_id);
+        sums.memory_purge += t.elapsed();
+        // 닫힌 surface 점유만 지운다. 다른 surface가 남은 workspace 점유는 유지한다.
+        self.attach.forget_closed_surface(surface_id);
+        self.forget_mirror_surface_extras(surface_id);
+    }
+
+    /// Terminal과 부속 상태를 저장소에서 제거한다. 실제 종료 처리는 Terminal의 Drop에 맡긴다.
+    fn drop_terminal(&mut self, surface_id: u32) {
+        self.pending_scrollback_inject.remove(&surface_id);
+        if let Some(old_terminal) = self.runtime.terminals.remove(surface_id) {
+            drop(old_terminal);
+        }
+    }
+
+    fn drop_surface_indices(&mut self, surface_id: u32) {
+        self.command_index.drop_surface(surface_id);
+        self.observer_router.drop_surface(surface_id);
+        self.hooks.forget_surface(surface_id);
+        self.forget_shell_integration_hint(surface_id);
+        if let Some(factory) = self.waker_factory.as_ref() {
+            factory.forget_surface(surface_id);
+        }
     }
 }

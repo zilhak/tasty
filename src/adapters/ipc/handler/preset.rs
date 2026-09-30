@@ -2,6 +2,7 @@
 //! IPC는 성공/실패를 동기로 응답해야 하므로 intent 큐를 거치지 않는다.
 //! 적용할 때 focus:false로 사용자 포커스를 유지한다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
@@ -223,7 +224,7 @@ pub fn handle_rename(
 pub fn handle_capture(
     presentation: &dyn crate::model::StructurePresentation,
     core: &crate::core::Core,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -258,7 +259,7 @@ pub fn handle_capture(
 pub fn handle_apply(
     core: &crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

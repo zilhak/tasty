@@ -12,6 +12,7 @@ mod created_window_tests;
 use crate::app::App;
 use crate::app::window_access::engines_mut;
 use crate::core::CoreState;
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
 impl App {
@@ -187,7 +188,7 @@ impl App {
 
 /// 포커스가 옮겨온 surface의 제목을 탭에 반영한다.
 /// 배경 탭의 포커스 변경은 여기서 감지하지 않아 닫기·이동 경로가 직접 반영한다.
-fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEvent]) {
+fn reproject_osc_title_on_focus(engine: &mut EngineMut<'_>, events: &[PendingHostEvent]) {
     for ev in events {
         if let PendingHostEvent::SurfaceFocused { surface_id, .. } = ev {
             engine.refresh_tab_osc_title(*surface_id);
@@ -199,7 +200,7 @@ fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEve
 /// 다른 engine을 넘기면 대기자를 깨울 waker hub가 달라진다.
 fn resolve_hook_fired_task_waits(
     core: &crate::core::Core,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     events: &[PendingHostEvent],
 ) {
     for ev in events {

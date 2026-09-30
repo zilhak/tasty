@@ -5,6 +5,7 @@ pub(crate) mod picker_apply;
 #[cfg(feature = "gui")]
 pub(crate) mod remote;
 
+use crate::core::engine_access::EngineMut;
 use std::path::PathBuf;
 
 #[cfg(feature = "gui")]
@@ -272,7 +273,7 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
 pub fn execute_handler_action(
     core: &mut crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     handler: &FileHandler,
     target: &DispatchTarget,
     origin_surface_id: Option<u32>,
@@ -363,7 +364,7 @@ fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::
 pub(crate) fn open_surface_tab(
     core: &mut crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     surface_kind: &str,
     params: serde_json::Value,
     origin_surface_id: Option<u32>,

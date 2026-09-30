@@ -1,6 +1,7 @@
 //! Remote structural requests are resolved and applied at the shared application boundary.
 
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::model::SurfaceId;
 use tasty_ipc::stream::StructuralOp;
 
@@ -36,7 +37,7 @@ pub(crate) fn forward_intent_origin(
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
     state: &mut dyn crate::app::structure_context::CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     op: &StructuralOp,
     origin: tasty_ipc::stream::ForwardOrigin,
 ) -> Result<Option<ForwardedDelta>, String> {

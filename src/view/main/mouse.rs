@@ -1,3 +1,4 @@
+use crate::core::engine_access::{EngineMut, EngineRef};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
@@ -12,7 +13,7 @@ use tasty_type_geometry::length::PhysicalPx;
 impl MainView {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
-    pub(crate) fn update_hovered_link(&mut self, engine: &mut crate::core::CoreState) -> bool {
+    pub(crate) fn update_hovered_link(&mut self, engine: &mut EngineMut<'_>) -> bool {
         let prev = self
             .hovered_link
             .as_ref()
@@ -30,7 +31,7 @@ impl MainView {
         {
             None
         } else {
-            self.compute_hovered_link(engine)
+            self.compute_hovered_link(&engine.as_ref())
         };
 
         let changed = prev
@@ -41,10 +42,7 @@ impl MainView {
         changed
     }
 
-    pub(super) fn compute_hovered_link(
-        &self,
-        engine: &crate::core::CoreState,
-    ) -> Option<HoveredLink> {
+    pub(super) fn compute_hovered_link(&self, engine: &EngineRef<'_>) -> Option<HoveredLink> {
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -134,7 +132,7 @@ impl MainView {
 
     pub(super) fn handle_cursor_moved(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         position: winit::dpi::PhysicalPosition<f64>,
         egui_consumed: bool,
     ) {
@@ -234,7 +232,7 @@ impl MainView {
                             | tasty_terminal::MouseTrackingMode::AllMotion
                     )
                 {
-                    let (col, row) = self.mouse_cell_for_report(engine, sid, x, y);
+                    let (col, row) = self.mouse_cell_for_report(&engine.as_ref(), sid, x, y);
                     if self.last_mouse_report_cell != Some((sid, col, row)) {
                         self.report_mouse_event(engine, sid, x, y, button, true, false);
                     }
@@ -245,7 +243,7 @@ impl MainView {
             let is_dragging =
                 self.left_mouse_down && self.text_selection.as_ref().is_some_and(|s| s.dragging);
             if is_dragging
-                && let Some((point, _)) = self.mouse_to_grid(engine, x, y, &terminal_rect)
+                && let Some((point, _)) = self.mouse_to_grid(&engine.as_ref(), x, y, &terminal_rect)
             {
                 if let Some(sel) = &mut self.text_selection {
                     if sel.anchor.epoch != point.epoch {
@@ -334,7 +332,7 @@ impl MainView {
     /// 남은 클릭을 버튼별 핸들러에 전달한다.
     pub(super) fn handle_mouse_input(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         button_state: ElementState,
         button: MouseButton,
         egui_consumed: bool,
@@ -528,11 +526,7 @@ impl MainView {
 
     /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0015), 아니면 tasty 컨텍스트
     /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
-    fn handle_right_button(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        button_state: ElementState,
-    ) {
+    fn handle_right_button(&mut self, engine: &mut EngineMut<'_>, button_state: ElementState) {
         // 링크 메뉴 스냅샷은 한 클릭 사이클의 것이다 — press 는 이전 값을 버리고, release 는
         // 아래 early return 보다 먼저 회수해 다음 사이클로 새지 않게 한다.
         let released_link = match button_state {
@@ -571,7 +565,8 @@ impl MainView {
         // `try_handle_link_click` 을 위임 판정보다 먼저 부르는 것과 같은 게이트다.
         let link = match button_state {
             ElementState::Pressed => {
-                self.right_link_press = self.terminal_link_menu_target(engine, surface_id);
+                self.right_link_press =
+                    self.terminal_link_menu_target(&engine.as_ref(), surface_id);
                 self.right_link_press.clone()
             }
             ElementState::Released => released_link,
@@ -619,11 +614,7 @@ impl MainView {
     }
 
     /// 미들클릭 라우팅: 트래킹 ON 에서만 앱에 보고 (트래킹 OFF 는 무동작 유지).
-    fn handle_middle_button(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        button_state: ElementState,
-    ) {
+    fn handle_middle_button(&mut self, engine: &mut EngineMut<'_>, button_state: ElementState) {
         let terminal_rect = self.compute_terminal_rect();
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
@@ -661,11 +652,7 @@ impl MainView {
 
     /// 좌클릭 라우팅: 상태 갱신(left_mouse_down·vi_copy 종료) 후 링크클릭 →
     /// press(divider/selection) → release 로 위임.
-    fn handle_left_button(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        button_state: ElementState,
-    ) {
+    fn handle_left_button(&mut self, engine: &mut EngineMut<'_>, button_state: ElementState) {
         if button_state == ElementState::Pressed {
             self.left_mouse_down = true;
             // 이전 클릭의 링크 실행 여부를 비운다.
@@ -698,7 +685,7 @@ impl MainView {
     /// 아니면 아무것도 안 함 — 어느 쪽이든 `true`(selection 경로로 안 샘).
     fn try_handle_link_click(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -735,7 +722,7 @@ impl MainView {
                 self.base.dirty = true;
             }
         }
-        if let Some(hovered) = self.compute_hovered_link(engine) {
+        if let Some(hovered) = self.compute_hovered_link(&engine.as_ref()) {
             // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
             // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.
@@ -778,7 +765,7 @@ impl MainView {
     /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
     fn handle_left_press(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -810,7 +797,7 @@ impl MainView {
     /// `left_click_local_select` 결정에 따라 로컬 선택 시작 / 앱 보고 / Shift extend.
     fn begin_left_selection(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -832,7 +819,7 @@ impl MainView {
             // Start text selection (only if not mouse-tracking or Shift held)
             let mouse_tracking = self
                 .state
-                .focused_terminal(engine)
+                .focused_terminal(&engine.as_ref())
                 .map(|t| t.mouse_tracking())
                 .unwrap_or(tasty_terminal::MouseTrackingMode::None);
             (need_flush, mouse_tracking)
@@ -874,7 +861,7 @@ impl MainView {
     /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(ADR-0015).
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
-    fn report_left_press_capture(&mut self, engine: &mut crate::core::CoreState, surface_id: u32) {
+    fn report_left_press_capture(&mut self, engine: &mut EngineMut<'_>, surface_id: u32) {
         if mouse_capture_banner_suppressed(&*engine, surface_id) {
             return;
         }
@@ -901,7 +888,7 @@ impl MainView {
     /// (press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
     fn handle_left_release(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -962,7 +949,7 @@ impl MainView {
     /// (마우스 리포팅 전송용). surface 를 못 찾으면 `(1, 1)`.
     fn mouse_cell_for_report(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1015,7 +1002,7 @@ impl MainView {
     /// divider와 창 리사이즈 영역에서는 보고하지 않는다(ADR-0015).
     fn report_hover_motion(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -1061,7 +1048,7 @@ impl MainView {
         }) {
             return;
         }
-        let (col, row) = self.mouse_cell_for_report(engine, sid, x, y);
+        let (col, row) = self.mouse_cell_for_report(&engine.as_ref(), sid, x, y);
         if self.last_mouse_report_cell == Some((sid, col, row)) {
             return;
         }
@@ -1073,7 +1060,7 @@ impl MainView {
     /// 보고 시점에 해당 surface 에서 조회한다.
     fn report_mouse_event(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1081,7 +1068,7 @@ impl MainView {
         motion: bool,
         release: bool,
     ) {
-        let (col, row) = self.mouse_cell_for_report(engine, surface_id, x, y);
+        let (col, row) = self.mouse_cell_for_report(&engine.as_ref(), surface_id, x, y);
         let sgr = engine
             .find_terminal_by_id(surface_id)
             .map(|t| t.sgr_mouse())
@@ -1101,7 +1088,7 @@ impl MainView {
 
     pub(super) fn handle_mouse_wheel(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         delta: MouseScrollDelta,
         egui_consumed: bool,
     ) {
@@ -1267,15 +1254,17 @@ impl MainView {
                     );
                 } else {
                     // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
-                    self.state
-                        .terminal_views
-                        .update(engine, surface_id, |viewport, cut| {
+                    self.state.terminal_views.update(
+                        &engine.as_ref(),
+                        surface_id,
+                        |viewport, cut| {
                             if lines > 0 {
                                 viewport.scroll_up(cut, lines as usize);
                             } else if lines < 0 {
                                 viewport.scroll_down(cut, (-lines) as usize);
                             }
-                        });
+                        },
+                    );
                     self.base.dirty = true;
                 }
             }
@@ -2091,7 +2080,8 @@ mod mouse_capture_banner_tests {
     #[test]
     fn banner_is_suppressed_only_for_a_listed_foreground() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut e = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        let mut e =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         e.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
         assert!(!mouse_capture_banner_suppressed(&e, 42));
         e.foreground_names.insert(42, "vim".to_string());

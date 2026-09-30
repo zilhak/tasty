@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
+use crate::core::engine_access::EngineMut;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -51,7 +52,7 @@ pub fn handle_barrier_create(
 
 pub fn handle_barrier_signal(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -66,7 +67,7 @@ pub fn handle_barrier_signal(
     };
     mark_durability(
         core,
-        match core.barrier_signal(engine, workspace_id, &name, now_ms()) {
+        match core.barrier_signal(&engine.as_ref(), workspace_id, &name, now_ms()) {
             Ok(b) => serialize(id, b),
             Err(e) => agent_err_to_response(id, e),
         },

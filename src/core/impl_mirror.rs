@@ -1,6 +1,7 @@
 //! mirror workspace의 구조 변경은 로컬 실행을 막고, GUI에서는 원격 실행 큐로 보낸다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 /// mirror의 구조 변경을 로컬에서 실행하지 않았다는 오류.
 /// 호출자는 downcast해 forward 여부에 맞게 응답·사용자 안내를 처리한다.
@@ -271,7 +272,7 @@ impl Core {
     /// 설정·알림 등은 이벤트를 받은 App dispatcher가 적용한다.
     pub(crate) fn apply(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         intent: DomainIntent,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         // mirror 구조를 로컬에서 바꾸면 원격 트리와 달라지므로 먼저 forward 또는 거절한다.
@@ -562,7 +563,8 @@ mod mirror_structural_guard_tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let engine = CoreState::new(80, 24, waker).expect("engine");
+        let engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
@@ -588,7 +590,7 @@ mod mirror_structural_guard_tests {
         (core, engine)
     }
 
-    fn seed(engine: &mut CoreState) -> (u32, u32) {
+    fn seed(engine: &mut EngineMut<'_>) -> (u32, u32) {
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime

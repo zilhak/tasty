@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -130,7 +131,7 @@ pub fn handle_workspace_list(
 /// surface_id를 지정하면 그 대상의 cwd를 쓴다. 생략한 경우만 창의 포커스 surface를 따른다.
 fn inherit_cwd_for_create(
     window: &dyn crate::ipc::window_port::IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     named_surface: Option<u32>,
 ) -> Option<std::path::PathBuf> {
     match named_surface {
@@ -146,7 +147,7 @@ fn resolve_create_cwd(
     params: &serde_json::Value,
     kind: &str,
     window: &dyn crate::ipc::window_port::IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: &serde_json::Value,
 ) -> Result<Option<std::path::PathBuf>, JsonRpcResponse> {
     let explicit_cwd = params
@@ -172,7 +173,7 @@ fn resolve_create_cwd(
 pub fn handle_workspace_create(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -184,7 +185,13 @@ pub fn handle_workspace_create(
         .get("type")
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
-    let resolved_cwd = p_try!(resolve_create_cwd(params, kind, window, engine, &id));
+    let resolved_cwd = p_try!(resolve_create_cwd(
+        params,
+        kind,
+        window,
+        &engine.as_ref(),
+        &id
+    ));
 
     if let Some(def) = engine.surface_registry.get_live(kind)
         && let Some(missing) = def.first_missing_required_param(params)
@@ -310,7 +317,7 @@ pub fn handle_workspace_create(
 pub fn handle_workspace_update(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -453,7 +460,7 @@ pub fn handle_workspace_update(
 /// 창 종료는 별도 window.close 요청이며 마지막 workspace 닫기로 대신하지 않는다.
 pub fn handle_workspace_close(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -549,7 +556,7 @@ fn last_workspace_refusal() -> &'static str {
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -605,7 +612,7 @@ mod close_tests {
     use super::*;
     use serde_json::json;
 
-    fn add_workspace(engine: &mut crate::core::CoreState) -> u32 {
+    fn add_workspace(engine: &mut EngineMut<'_>) -> u32 {
         let event = crate::core::apply_create_workspace_inner(
             engine,
             crate::core::WorkspaceCreationParams::terminal(),
@@ -825,7 +832,7 @@ mod create_cwd_tests {
 
     fn open_explorer(
         state: &mut crate::state::RequestContext,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         rel: &str,
     ) -> (u32, std::path::PathBuf) {
         let root = crate::test_support::abs_path(rel);

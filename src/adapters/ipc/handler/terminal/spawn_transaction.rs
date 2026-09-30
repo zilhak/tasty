@@ -1,5 +1,6 @@
 //! Commit the newly created child's relationship before any command reaches its PTY.
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 /// `child` must be the fresh surface returned by this spawn's tab.create.
 /// `origin` is the spawn request's origin; the rollback close runs with it.
@@ -10,7 +11,7 @@ use super::*;
 pub(super) fn finish(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: &Value,
     parent: u32,
     child: ChildEntry,
@@ -46,7 +47,7 @@ pub(super) fn finish(
 fn rollback(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     parent: u32,
     child: &ChildEntry,
     mut original: JsonRpcResponse,

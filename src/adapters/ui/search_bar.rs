@@ -1,5 +1,6 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme::Theme;
@@ -65,7 +66,7 @@ pub(crate) fn open_or_focus_for(
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     let theme = crate::theme::theme();
 
@@ -119,7 +120,7 @@ pub fn draw_search_bar(
                 if response.changed() {
                     let surface_id = focused_terminal_surface_id(state, engine);
                     state.search.surface_id = surface_id;
-                    run_search(state, engine);
+                    run_search(state, &engine.as_ref());
                 }
 
                 let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -192,7 +193,7 @@ pub fn draw_search_bar(
             t("search.case_tooltip"),
         ) {
             state.search.case_insensitive = !state.search.case_insensitive;
-            run_search(state, engine);
+            run_search(state, &engine.as_ref());
         }
         if toggle_button(
             ui,
@@ -202,7 +203,7 @@ pub fn draw_search_bar(
             t("search.regex_tooltip"),
         ) {
             state.search.regex = !state.search.regex;
-            run_search(state, engine);
+            run_search(state, &engine.as_ref());
         }
         if toggle_button(
             ui,
@@ -212,7 +213,7 @@ pub fn draw_search_bar(
             t("search.whole_word_tooltip"),
         ) {
             state.search.whole_word = !state.search.whole_word;
-            run_search(state, engine);
+            run_search(state, &engine.as_ref());
         }
 
         draw_divider(ui, &theme);
@@ -340,7 +341,7 @@ fn toggle_button(
 }
 
 /// 검색 상태 필드를 빌려 검색을 실행한다.
-fn run_search(state: &mut MainViewState, engine: &crate::core::CoreState) {
+fn run_search(state: &mut MainViewState, engine: &EngineRef<'_>) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
     let options = SearchOptions {
@@ -382,12 +383,12 @@ fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::core::Core
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(state: &mut MainViewState, engine: &mut crate::core::CoreState) {
+fn scroll_to_current_match(state: &mut MainViewState, engine: &mut EngineMut<'_>) {
     let surface_id = state.search.surface_id;
     let search = &state.search;
     state
         .terminal_views
-        .update(engine, surface_id, |viewport, cut| {
+        .update(&engine.as_ref(), surface_id, |viewport, cut| {
             if let Some(offset) = search.scroll_to_current(cut) {
                 viewport.set_scroll_offset(cut, offset);
             }

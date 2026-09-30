@@ -3,12 +3,13 @@
 use super::{DispatchedIntent, Intent};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     if let Intent::NewWorkspace {
@@ -32,7 +33,7 @@ pub fn handle(
 fn new_workspace(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     kind: Option<&str>,
     params: &serde_json::Value,
     category: Option<crate::model::WorkspaceCategoryId>,
@@ -52,7 +53,7 @@ fn new_workspace(
     let kind = kind.unwrap_or("terminal");
     // 새 PTY는 로컬에서 실행하므로 mirror의 원격 cwd는 상속하지 않는다.
     let cwd = if kind == "terminal" && params.is_null() {
-        state.resolve_inherit_cwd(engine)
+        state.resolve_inherit_cwd(&engine.as_ref())
     } else {
         None
     };

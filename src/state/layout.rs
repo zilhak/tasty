@@ -1,5 +1,6 @@
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
+use crate::core::engine_access::EngineMut;
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
 use super::RequestContext;
@@ -94,7 +95,7 @@ impl RequestContext {
 
     /// 활성 워크스페이스의 각 활성 탭에서 지연된 surface 초기화를 시도한다.
     /// 입력 경로마다 복원 처리를 넣는 대신 그리기 전에 한 번 순회한다.
-    pub fn reify_displayed_surfaces(&self, engine: &mut CoreState) {
+    pub fn reify_displayed_surfaces(&self, engine: &mut EngineMut<'_>) {
         if engine.workspaces.is_empty() {
             return;
         }
@@ -218,7 +219,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub fn resize_all(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,

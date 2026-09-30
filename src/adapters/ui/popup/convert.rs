@@ -1,5 +1,6 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
+use crate::core::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme;
@@ -106,7 +107,7 @@ pub fn on_close_convert_popup(
 pub fn draw_convert_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     match draw_convert_content(ui, state, engine) {
         Some(ConvertResult::Close) => PopupAction::Close,
@@ -403,7 +404,7 @@ fn props_from_items(items: &[ConvertItem], selected_index: Option<usize>) -> Con
 /// Apply the convert action to the state.
 pub fn apply_convert_action(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     action: ConvertAction,
 ) {
     let Some(surface_id) = state.dialogs.convert_popup else {
@@ -422,7 +423,7 @@ pub fn apply_convert_action(
         }
         ConvertAction::RequiresInput(kind) => {
             // 파일 입력이 필요한 kind는 surface_id를 전달해 플러그인의 열기 팝업을 사용한다.
-            state.enqueue_convert_input_popup(engine, &kind, Some(surface_id));
+            state.enqueue_convert_input_popup(&engine.as_ref(), &kind, Some(surface_id));
         }
         ConvertAction::Kind(kind) => {
             state.dispatch_intent(

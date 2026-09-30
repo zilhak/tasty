@@ -1,6 +1,7 @@
 //! 활성 워크스페이스·pane·surface 접근. 워크스페이스가 없을 수 있는 호출자는 Option 또는 빈 목록 검사를 사용한다.
 
 #[cfg(feature = "gui")]
+use crate::core::engine_access::EngineRef;
 use tasty_terminal::Terminal;
 
 use super::RequestContext;
@@ -122,7 +123,7 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
+    pub fn focused_terminal<'a>(&self, engine: &'a EngineRef<'_>) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.runtime.terminals.get(id)
     }

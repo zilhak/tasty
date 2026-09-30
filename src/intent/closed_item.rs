@@ -6,6 +6,7 @@
 use super::{DispatchedIntent, Intent};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// Surface·Tab·Pane을 복원할 워크스페이스가 없으면 먼저 만든다.
@@ -13,7 +14,7 @@ use crate::state::RequestContext;
 fn ensure_workspace_for_restore(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     use crate::model::closed_item::ClosedItem;
     let top_needs_workspace = matches!(
@@ -34,7 +35,7 @@ fn ensure_workspace_for_restore(
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     if !matches!(&intent.body, Intent::RestoreClosedItem) {

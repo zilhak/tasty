@@ -1,6 +1,7 @@
 //! 창 생성·등록과 engine 초기화·복원을 담당한다.
 //! 첫 창은 boot_machine이 단계를 나눠 실행하고 새 창 생성은 동기 경로로 같은 하위 함수를 사용한다.
 
+use crate::core::engine_access::EngineMut;
 use std::sync::Arc;
 
 use winit::window::Window;
@@ -102,7 +103,7 @@ fn build_core_state_first_boot(
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
-    let mut engine = crate::core::CoreState::new_with_ids(
+    let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
         cols,
         rows,
         waker,
@@ -111,14 +112,13 @@ fn build_core_state_first_boot(
         memory,
         runner_registry,
     )?;
-    engine.waker_factory = Some(factory);
-    engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
-        engine.file_format.clone(),
-        proxy,
-    )));
+    engine.core_state.waker_factory = Some(factory);
+    engine.core_state.identify_worker = Some(Arc::new(
+        crate::identify_worker::IdentifyWorker::new(engine.file_format.clone(), proxy),
+    ));
     #[cfg(debug_assertions)]
     {
-        engine.input_simulation_enabled = input_simulation_enabled;
+        engine.core_state.input_simulation_enabled = input_simulation_enabled;
     }
     tracing::info!(
         target: "tasty::boot",
@@ -217,7 +217,7 @@ impl App {
 
         // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
         let _bootstrapped = match self.engines.pending_mut() {
-            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, engine),
+            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, &mut engine),
             None => None,
         };
 
@@ -268,7 +268,7 @@ impl App {
                 let t_engine = std::time::Instant::now();
                 // 기본 workspace 생성부터 ID를 발급하므로 기존 발급기를 생성 전에 주입한다.
                 let waker: crate::terminal::Waker = factory.make_default_waker();
-                let mut engine = crate::core::CoreState::new_with_ids(
+                let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
                     cols,
                     rows,
                     waker,
@@ -277,18 +277,18 @@ impl App {
                     self.core.memory_arc(),
                     Arc::clone(self.core.tasks.runner_registry()),
                 )?;
-                engine.waker_factory = Some(factory.clone());
-                engine.surface_registry = surface_registry;
-                engine.file_format = file_format;
-                engine.file_handler = file_handler;
-                engine.identify_worker = identify_worker;
-                engine.approval_store = approval_store;
-                engine.telemetry_seq = telemetry_seq;
-                engine.anomaly_detector = anomaly_detector;
+                engine.core_state.waker_factory = Some(factory.clone());
+                engine.core_state.surface_registry = surface_registry;
+                engine.core_state.file_format = file_format;
+                engine.core_state.file_handler = file_handler;
+                engine.core_state.identify_worker = identify_worker;
+                engine.core_state.approval_store = approval_store;
+                engine.core_state.telemetry_seq = telemetry_seq;
+                engine.core_state.anomaly_detector = anomaly_detector;
                 engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
                 {
-                    engine.input_simulation_enabled = self.input_simulation_enabled;
+                    engine.core_state.input_simulation_enabled = self.input_simulation_enabled;
                 }
                 tracing::info!(
                     target: "tasty::boot",
@@ -329,7 +329,7 @@ impl App {
             .pending_mut()
             .expect("pending engine must be initialized before layout restore");
         let restored = match self.core.apply(
-            engine,
+            &mut engine,
             crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
         ) {
             Ok(events) => events.into_iter().find_map(|e| {
@@ -723,8 +723,8 @@ impl App {
         let Some(core_state) = self.engines.get_mut(engine) else {
             return;
         };
-        if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, core_state) {
-            state.set_active_workspace_index(core_state, idx);
+        if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, &mut core_state) {
+            state.set_active_workspace_index(core_state.core, idx);
         }
     }
 
@@ -732,7 +732,7 @@ impl App {
     /// 부팅·추가 창 경로가 함께 사용한다. 생성 실패는 로그를 남기고 None을 반환한다.
     pub(super) fn bootstrap_workspace_if_empty(
         core: &mut crate::core::Core,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
     ) -> Option<usize> {
         if !engine.workspaces.is_empty() {
             return None;

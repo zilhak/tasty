@@ -1,6 +1,7 @@
 use winit::window::Window;
 
 use crate::adapters::ui;
+use crate::core::engine_access::EngineMut;
 use crate::model::PhysicalRect;
 use crate::settings::EffectiveFont;
 use crate::state::MainViewState;
@@ -83,7 +84,7 @@ impl GpuState {
     pub(super) fn run_egui_frame(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         window: &Window,
         pane_rects: &[(u32, PhysicalRect)],
         dividers: &[PhysicalRect],

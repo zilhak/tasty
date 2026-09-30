@@ -18,6 +18,9 @@ pub(crate) struct EngineRuntime {
 
     /// surface가 없는 PTY의 등록 정보와 watcher 결과. Terminal은 terminals에 있다. 비영속이다.
     pub(crate) pty_registry: PtyRegistry,
+
+    /// hard attach 중 서버의 표시 사본. 원본 PTY와 별개인 기존 detached Terminal이다.
+    pub(crate) readonly_views: std::collections::HashMap<u32, tasty_terminal::Terminal>,
 }
 
 impl EngineRuntime {
@@ -27,6 +30,7 @@ impl EngineRuntime {
             terminals: TerminalStore::new(),
             child_terminals: ChildTerminalRegistry::load(),
             pty_registry: PtyRegistry::with_counter(pty_counter),
+            readonly_views: std::collections::HashMap::new(),
         }
     }
 }

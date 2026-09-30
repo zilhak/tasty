@@ -1,5 +1,6 @@
 //! 펼친 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
+use crate::core::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::MainViewState;
@@ -80,7 +81,7 @@ pub struct FullSidebarResult {
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     sidebar_width: f32,
     plugin_alert: usize,
 ) -> FullSidebarResult {

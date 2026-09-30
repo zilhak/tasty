@@ -16,6 +16,7 @@ pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod command_index;
 pub(crate) mod egui_mesh_surface;
+pub(crate) mod engine_access;
 pub(crate) mod engine_runtime;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_favorites;
@@ -64,6 +65,7 @@ pub(crate) mod request_target;
 pub(crate) use state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
 pub(crate) use state::{AttentionKind, CoreState};
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use intent::ProcessPtyOutcome;
@@ -310,7 +312,7 @@ impl Core {
 
     pub(crate) fn observer_register(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         spec: crate::output_observer::ObserverSpec,
     ) -> Result<u64, crate::output_observer::ObserverError> {
         let memory = engine.memory.clone();
@@ -321,7 +323,7 @@ impl Core {
 
     pub(crate) fn observer_unregister(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         observer_id: u64,
     ) -> Result<(), crate::output_observer::ObserverError> {
         engine.observer_router.unregister(observer_id)?;
@@ -331,14 +333,14 @@ impl Core {
 
     pub(crate) fn observer_list(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
     ) -> Vec<crate::output_observer::ObserverInfo> {
         engine.observer_router.list()
     }
 
     pub(crate) fn observer_info(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         observer_id: u64,
     ) -> Option<crate::output_observer::ObserverInfo> {
         engine.observer_router.info(observer_id)
@@ -348,7 +350,7 @@ impl Core {
     /// parser 스레드가 이미 출력 처리 중이므로 다음 process_surface까지 미루면 중간 출력 이벤트를 놓칠 수 있다.
     pub(crate) fn register_surface_hook(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         event: tasty_hooks::HookEvent,
         binding: tasty_hooks::HookBinding,
@@ -363,7 +365,7 @@ impl Core {
 
     pub(crate) fn unregister_surface_hook(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         hook_id: u64,
     ) -> bool {
         let removed = engine.hooks.remove_surface_hook(hook_id);
@@ -373,7 +375,7 @@ impl Core {
 
     pub(crate) fn register_global_hook(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         condition: crate::global_hooks::HookCondition,
         command: String,
         label: Option<String>,
@@ -383,7 +385,7 @@ impl Core {
 
     pub(crate) fn unregister_global_hook(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         hook_id: u32,
     ) -> bool {
         engine.hooks.remove_global_hook(hook_id)

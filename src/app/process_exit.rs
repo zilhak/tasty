@@ -1,11 +1,12 @@
 //! GUI와 헤드리스가 공유하는 PTY 종료 처리. 창이 없다는 이유로 호출하지 않는다.
+use crate::core::engine_access::EngineMut;
 use crate::core::{Core, CoreState};
 use crate::state::RequestContext;
 
 pub(crate) fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     surface: u32,
 ) {
     // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.

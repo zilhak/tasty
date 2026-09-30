@@ -3,6 +3,7 @@
 //! 행을 선택하면 주소를 복사할 수 있고 즐겨찾기는 별도 시스템 조회 결과와 함께 표시한다.
 //! 화면 함수는 앱 상태 없이 입력을 받아 사용자 동작을 반환한다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::mpsc;
@@ -412,7 +413,7 @@ fn write_filter_state(ctx: &egui::Context, filter: FilterState) {
 pub fn draw_port_scanner_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -431,7 +432,7 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(
             &mut state.port_scan,
             &state.navigation,
-            engine,
+            &engine.as_ref(),
             &ctx,
             target_show_all_system,
         );
@@ -443,7 +444,7 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(
             &mut state.port_favorites_scan,
             &state.navigation,
-            engine,
+            &engine.as_ref(),
             &ctx,
             true,
         );
@@ -577,7 +578,7 @@ pub fn draw_port_scanner_popup(
             kick_off_scan(
                 &mut state.port_scan,
                 &state.navigation,
-                engine,
+                &engine.as_ref(),
                 &ctx,
                 target_show_all_system,
             );
@@ -585,7 +586,7 @@ pub fn draw_port_scanner_popup(
                 kick_off_scan(
                     &mut state.port_favorites_scan,
                     &state.navigation,
-                    engine,
+                    &engine.as_ref(),
                     &ctx,
                     true,
                 );
@@ -780,7 +781,7 @@ fn scope_from_flag(show_all_system: bool) -> ScanScope {
 /// workspace/tab display path. The background worker can run without any
 /// CoreState reference.
 fn build_snapshot(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     presentation: &dyn crate::model::StructurePresentation,
     show_all_system: bool,
 ) -> ScanSnapshot {
@@ -815,7 +816,7 @@ fn build_snapshot(
 pub fn kick_off_scan(
     slot: &mut PortScanState,
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     ctx: &egui::Context,
     show_all_system: bool,
 ) {

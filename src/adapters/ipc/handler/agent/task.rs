@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
 use crate::core::Core;
@@ -18,7 +19,7 @@ use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_
 
 pub fn handle_task_create(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -224,7 +225,7 @@ fn retain_by_state(tasks: &mut Vec<Task>, states: Option<&[String]>) {
 
 pub fn handle_task_list(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -244,7 +245,7 @@ pub fn handle_task_list(
                 json!({
                     "total": tasks.len(),
                     "tasks": tasks,
-                    "runner": runner_status_json(core, engine, workspace_id),
+                    "runner": runner_status_json(core, &engine.as_ref(), workspace_id),
                 }),
             )
         }
@@ -254,7 +255,7 @@ pub fn handle_task_list(
 /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 반환한다.
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
-fn runner_status_json(core: &Core, engine: &crate::core::CoreState, workspace_id: u32) -> Value {
+fn runner_status_json(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> Value {
     runner_status_value(&core.tasks.runner_status(&engine.task_scope, workspace_id))
 }
 
@@ -272,7 +273,7 @@ fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus)
 /// AwaitExternal은 상태만 보면 Running이므로 대기 중인 신호와 기한을 함께 반환한다.
 fn awaiting_external_json(
     core: &Core,
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     workspace_id: u32,
     task_id: &str,
 ) -> Option<Value> {
@@ -293,7 +294,7 @@ fn awaiting_external_json(
 
 pub fn handle_task_get(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -317,7 +318,8 @@ pub fn handle_task_get(
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             if is_running
                 && let Some(obj) = v.as_object_mut()
-                && let Some(info) = awaiting_external_json(core, engine, workspace_id, &task_id)
+                && let Some(info) =
+                    awaiting_external_json(core, &engine.as_ref(), workspace_id, &task_id)
             {
                 obj.insert("awaiting_external".to_string(), info);
             }
@@ -328,7 +330,7 @@ pub fn handle_task_get(
 
 pub fn handle_task_cancel(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -361,7 +363,7 @@ pub fn handle_task_cancel(
 
 pub fn handle_task_retry(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -537,7 +539,7 @@ fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
 
 pub fn handle_task_graph(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -559,7 +561,7 @@ pub fn handle_task_graph(
 
     // 사이클이 있어도 그래프는 반환한다.
     let cycle = TaskGraph::build(&tasks).detect_cycles().err();
-    let runner = runner_status_json(core, engine, workspace_id);
+    let runner = runner_status_json(core, &engine.as_ref(), workspace_id);
 
     match format.as_str() {
         "dot" => JsonRpcResponse::success(
@@ -604,7 +606,7 @@ fn dag_summary_json(dag: &tasty_agent::DagSummary, include_tasks: bool) -> Value
 
 pub fn handle_dag_list(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -653,7 +655,7 @@ fn subset_cycle(tasks: &[Task]) -> Option<AgentError> {
 
 pub fn handle_dag_get(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -685,7 +687,7 @@ pub fn handle_dag_get(
     };
 
     let cycle = subset_cycle(&tasks);
-    let runner = runner_status_json(core, engine, dag.workspace_id);
+    let runner = runner_status_json(core, &engine.as_ref(), dag.workspace_id);
     let summary = dag_summary_json(&dag, true);
 
     match format.as_str() {
@@ -715,7 +717,7 @@ pub fn handle_dag_get(
 
 pub fn handle_task_reduce(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -771,7 +773,7 @@ pub fn handle_task_reduce(
 /// 상태 조회 실패 시 카운트는 null이고 store_error에 원인을 담는다.
 pub fn handle_task_run(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -806,7 +808,7 @@ pub fn handle_task_run(
 /// 외부에서 작업 결과를 보고하는 진입점. 러너는 이 IPC 대신 RunnerContext로 저장소를 직접 갱신한다.
 pub fn handle_task_set_result(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -886,7 +888,7 @@ pub fn handle_task_set_result(
 /// cascade는 참조자를 함께 지우고 force는 참조 검사만 생략한다. Running 삭제는 항상 거절한다.
 pub fn handle_task_delete(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -935,7 +937,7 @@ fn purge_filter_from_params(params: &Value, now_ms: u64) -> Result<TaskPurgeFilt
 /// 두 필터를 모두 생략하면 거절한다. dry_run은 deleted/retained 계획만 반환한다.
 pub fn handle_task_purge(
     core: &Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

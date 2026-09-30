@@ -4,6 +4,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// 조회에 필요한 매니저와 설치 목록을 준비한다. 플러그인 설치·권한 부여·프로세스 실행은 하지 않는다.
@@ -56,7 +57,7 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
 }
 
 /// hello 등록·플러그인 IPC·mesh 전달을 처리한다. GUI popup·banner 처리는 포함하지 않는다.
-pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &mut CoreState) {
+pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &mut EngineMut<'_>) {
     if app.plugin_manager.is_none() {
         return;
     }
@@ -75,7 +76,7 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &m
 pub(crate) fn pump_plugins_if_due(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     now: std::time::Instant,
 ) -> bool {
     let deadline = app.plugin_manager.as_ref().and_then(|m| m.next_deadline());
@@ -113,7 +114,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 pub(crate) fn ensure_plugin_for_surface_kind(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     request: &crate::ipc::protocol::JsonRpcRequest,
 ) {
     // 메서드명으로 한정하지 않고 type 필드를 읽는다. 이미 등록된 kind면 바로 반환한다.
@@ -151,7 +152,7 @@ pub(crate) fn ensure_plugin_for_surface_kind(
 fn wait_for_started_owner(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     kind: &str,
     owner: &str,
 ) {
@@ -387,7 +388,7 @@ fn gates_before_intercept<'a>(
 fn dispatch_plugin_ipc_calls_headless(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     let calls = match app.plugin_manager.as_mut() {
         Some(mgr) => mgr.take_pending_plugin_calls(),

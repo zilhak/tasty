@@ -4,6 +4,7 @@
 //! mode 가 활성일 때 keyboard 핸들러가 `handle_vi_key` 로 키를 가로채 PTY 송신을
 //! 차단한다. mouse drag 가 시작되면 자동 종료된다 (mouse.rs).
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::selection::{SelectionMode, SelectionPoint, TextSelection};
@@ -780,7 +781,7 @@ use super::MainView;
 
 impl MainView {
     /// `pending_enter_copy_mode` 플래그를 소비하고 mode 진입을 시도한다.
-    pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &mut EngineMut<'_>) {
         if !self.state.dialogs.pending_enter_copy_mode {
             return;
         }
@@ -813,7 +814,7 @@ impl MainView {
     /// vi mode 가 활성일 때 키 이벤트를 가로채고 처리한다. true 면 키가 소비됨.
     pub(crate) fn try_handle_vi_key(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         key: &winit::keyboard::Key,
         modifiers: ModifiersState,
     ) -> bool {
@@ -836,7 +837,7 @@ impl MainView {
             ViKeyOutcome::NotHandled => return false,
             ViKeyOutcome::Consumed => {}
             ViKeyOutcome::Moved => {
-                self.vi_copy_viewport_align(engine);
+                self.vi_copy_viewport_align(&engine.as_ref());
             }
             ViKeyOutcome::Yank => {
                 self.vi_copy_yank(engine);
@@ -898,7 +899,7 @@ impl MainView {
     }
 
     /// cursor 가 viewport 밖이면 scroll 하여 정렬.
-    fn vi_copy_viewport_align(&mut self, engine: &crate::core::CoreState) {
+    fn vi_copy_viewport_align(&mut self, engine: &EngineRef<'_>) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
@@ -920,7 +921,7 @@ impl MainView {
     }
 
     /// 현재 vi selection 을 클립보드에 복사하고 mode 종료.
-    fn vi_copy_yank(&mut self, engine: &mut crate::core::CoreState) {
+    fn vi_copy_yank(&mut self, engine: &mut EngineMut<'_>) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
@@ -954,7 +955,7 @@ impl MainView {
         self.vi_copy = None;
     }
 
-    fn vi_copy_search_navigate(&mut self, engine: &mut crate::core::CoreState, forward: bool) {
+    fn vi_copy_search_navigate(&mut self, engine: &mut EngineMut<'_>, forward: bool) {
         if self.state.search.matches.is_empty() {
             return;
         }
@@ -973,7 +974,7 @@ impl MainView {
         Self::vi_copy_jump_to_current_match(self, engine);
     }
 
-    fn vi_copy_jump_to_current_match(view: &mut Self, engine: &mut crate::core::CoreState) {
+    fn vi_copy_jump_to_current_match(view: &mut Self, engine: &mut EngineMut<'_>) {
         let m = match view
             .state
             .search
@@ -990,7 +991,7 @@ impl MainView {
                 absolute_row: m.row,
             };
         }
-        view.vi_copy_viewport_align(engine);
+        view.vi_copy_viewport_align(&engine.as_ref());
     }
 
     /// `live_selection` 우선 — vi mode 의 1-cell cursor 또는 visual selection 을

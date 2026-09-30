@@ -19,8 +19,9 @@ pub(crate) mod trace;
 pub(crate) mod waker;
 pub(crate) mod wiring;
 
-#[cfg(feature = "gui")]
 use crate::App;
+#[cfg(feature = "gui")]
+use crate::core::engine_access::EngineMut;
 use crate::{cli, hooks};
 
 fn log_vacuum_result(result: tasty_memory::Result<bool>) {
@@ -245,7 +246,7 @@ impl DropTailCounters {
 fn run_due_timers(
     app: &mut crate::app::App,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     use std::time::Instant;
 
@@ -288,7 +289,7 @@ fn run_due_timers(
 fn handle_terminal_output(
     app: &mut crate::app::App,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: Option<u32>,
 ) {
     // drain 전에 깨움 중복 방지 표지를 풀어 처리 도중 새 출력의 깨움을 잃지 않게 한다.
@@ -323,7 +324,7 @@ fn handle_terminal_output(
 fn fire_terminal_hooks(
     app: &crate::app::App,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     events: Vec<crate::core::intent::CoreEvent>,
 ) {
     let exec = app.core.hook_executor();
@@ -412,7 +413,7 @@ fn bootstrap_engine(
         tracing::warn!("{notice}");
     }
     // 헤드리스는 슬롯을 점유하지 않으며 레이아웃을 저장·복원하지 않는다.
-    let mut engine = crate::core::CoreState::new_with_ids(
+    let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
         80,
         24,
         base_waker,
@@ -474,7 +475,7 @@ fn wait_for_event(
 fn dispatch_headless_event(
     app: &mut crate::app::App,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     waker: &crate::adapters::production::headless_waker::HeadlessWaker,
     event: crate::AppEvent,
 ) -> std::ops::ControlFlow<()> {

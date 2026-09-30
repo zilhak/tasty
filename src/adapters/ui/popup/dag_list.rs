@@ -3,6 +3,7 @@
 //! 목록은 기본적으로 모든 워크스페이스를 포함하며 현재 워크스페이스만 고를 수도 있다.
 //! release IPC로 팝업을 강제로 열지는 않는다. 에이전트는 agent.dag_list/get으로 데이터를 읽는다.
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use std::time::Instant;
 
 use tasty_icons as icons;
@@ -102,7 +103,7 @@ impl DagListState {
             .is_none_or(|t| now.duration_since(t) >= POLL_INTERVAL)
     }
 
-    fn poll_list(&mut self, engine: &crate::core::CoreState) {
+    fn poll_list(&mut self, engine: &EngineRef<'_>) {
         let now = Instant::now();
         if !self.list_is_stale(now) {
             return;
@@ -183,7 +184,7 @@ fn status_matches(selected: &[bool], rollup: DagStatus) -> bool {
 pub fn draw_dag_list_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     let active_workspace_id = engine
         .workspaces
@@ -203,9 +204,10 @@ pub fn draw_dag_list_popup(
         return PopupAction::Close;
     }
 
-    dag.poll_list(engine);
+    dag.poll_list(&engine.as_ref());
     if let (Some(ws), Some(id)) = (dag.open_workspace, dag.open_dag.clone()) {
-        dag.graph.poll_if_stale(engine, ws, Some(id.as_str()));
+        dag.graph
+            .poll_if_stale(&engine.as_ref(), ws, Some(id.as_str()));
     }
 
     // 양수 request_repaint_after는 GPU 콜백에서 무시하므로 타이머 허브로 다음 조회를 예약한다.

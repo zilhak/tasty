@@ -3,6 +3,7 @@
 //! 그릴 때 스크롤 ID를 저장하고 on_close에서 임시 상태를 지운다.
 
 use super::StageAction;
+use crate::core::engine_access::EngineMut;
 
 pub(crate) use crate::fullscreen_stages::NOTIFICATIONS_STAGE_ID;
 
@@ -19,7 +20,7 @@ fn content_scroll_id(ui: &egui::Ui) -> egui::Id {
 pub(crate) fn draw(
     ui: &mut egui::Ui,
     state: &mut crate::state::MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> StageAction {
     let th = crate::theme::theme();
     let frame = ui.max_rect();

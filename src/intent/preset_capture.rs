@@ -4,6 +4,7 @@
 //! PTY·스크롤백·attach 세션은 보존하지 않는다. 터미널의 params는 비워 두며,
 //! 복원을 미룬 EmptySurface는 원래 터미널 또는 플러그인 정보를 보존한다.
 
+use crate::core::engine_access::EngineRef;
 use serde_json::Value;
 
 use crate::core::CoreState;
@@ -19,7 +20,7 @@ use tasty_presets::{
 /// 탭이 없는 pane이 있으면 None을 반환한다.
 pub fn capture_workspace_preset(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     ws: &Workspace,
     name: Option<String>,
     registry: &SurfaceKindRegistry,
@@ -33,7 +34,7 @@ pub fn capture_workspace_preset(
 }
 
 pub fn capture_tab_preset(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     tab: &Tab,
     name: Option<String>,
     registry: &SurfaceKindRegistry,
@@ -46,7 +47,7 @@ pub fn capture_tab_preset(
 
 pub fn capture_pane_preset(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     pane: &Pane,
     name: Option<String>,
     registry: &SurfaceKindRegistry,
@@ -66,7 +67,7 @@ fn to_preset_split(d: SplitDirection) -> PresetSplitDirection {
 
 fn capture_pane_node(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     node: &PaneNode,
     registry: &SurfaceKindRegistry,
 ) -> Option<PresetPaneNode> {
@@ -90,7 +91,7 @@ fn capture_pane_node(
 
 fn capture_pane(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     pane: &Pane,
     registry: &SurfaceKindRegistry,
 ) -> Option<PresetPane> {
@@ -105,7 +106,7 @@ fn capture_pane(
     Some(PresetPane { tabs, active_tab })
 }
 
-fn capture_tab(engine: &CoreState, tab: &Tab, registry: &SurfaceKindRegistry) -> PresetTab {
+fn capture_tab(engine: &EngineRef<'_>, tab: &Tab, registry: &SurfaceKindRegistry) -> PresetTab {
     PresetTab {
         explicit_name: tab.explicit_name.clone(),
         layout: capture_surface_layout(engine, tab.layout(), registry),
@@ -113,7 +114,7 @@ fn capture_tab(engine: &CoreState, tab: &Tab, registry: &SurfaceKindRegistry) ->
 }
 
 fn capture_surface_layout(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     layout: &SurfaceLayout,
     registry: &SurfaceKindRegistry,
 ) -> PresetSurfaceLayout {
@@ -139,7 +140,7 @@ fn capture_surface_layout(
 /// 등록되지 않은 kind는 empty로 저장해 분할 구조를 보존한다.
 /// 등록된 kind의 snapshot이 없으면 params를 빈 객체로 저장한다.
 fn capture_surface(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     surface: &dyn Surface,
     registry: &SurfaceKindRegistry,
 ) -> PresetSurface {
@@ -224,7 +225,7 @@ mod tests {
     }
 
     fn engine() -> CoreState {
-        CoreState::new(80, 24, waker()).expect("CoreState::new")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker()).expect("CoreState::new")
     }
 
     fn registry() -> SurfaceKindRegistry {

@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::app::structural_exec::{self, Closed, SplitLevel, SplitOutcome, SplitRequest};
+use crate::core::engine_access::EngineMut;
 use crate::model::SplitDirection;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -36,7 +37,7 @@ pub fn handle_pane_list(
 pub fn handle_pane_close(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,
@@ -101,7 +102,7 @@ pub(super) fn resolve_surface_target(
 pub fn handle_split(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
     origin: &crate::core::origin::IntentOrigin,

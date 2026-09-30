@@ -1,6 +1,7 @@
 //! 구조 변경 뒤 필요한 창 상태 갱신·자원 정리·이벤트·튜토리얼 처리를 선언한다.
 //! 도메인이 RequestContext 타입에 의존하지 않도록 창 쪽에서 이 trait을 구현한다.
 
+use crate::core::engine_access::EngineRef;
 use std::path::PathBuf;
 
 use crate::core::CoreState;
@@ -22,7 +23,7 @@ pub(crate) trait CascadeWindow {
     /// inherit_cwd 설정과 원래 surface의 cwd를 함께 확인한다.
     fn resolve_inherit_cwd_from_surface(
         &self,
-        engine: &CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
     ) -> Option<PathBuf>;
 

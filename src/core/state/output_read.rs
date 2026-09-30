@@ -1,6 +1,8 @@
 use super::CoreState;
 
-impl CoreState {
+use crate::core::engine_access::EngineMut;
+
+impl EngineMut<'_> {
     /// 지정한 surface의 사용자 mark 이후 출력. 로컬 Terminal이 없으면 빈 문자열이다.
     pub fn read_since_mark_of(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.runtime

@@ -1,6 +1,7 @@
 //! 프리셋 데이터로 워크스페이스·탭·pane을 만든다.
 //! 활성 전환은 ApplyOptions.focus로 정하며 IPC에서는 false를 사용한다.
 
+use crate::core::engine_access::EngineMut;
 use tasty_presets::{
     PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
@@ -71,7 +72,7 @@ impl RequestContext {
     /// 새 워크스페이스 인덱스를 반환한다. 존재하지 않는 category는 normal로 남는다.
     pub fn apply_workspace_preset(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &WorkspacePreset,
         category: Option<crate::model::WorkspaceCategoryId>,
         opts: ApplyOptions,
@@ -109,7 +110,7 @@ impl RequestContext {
     /// 지정 pane 또는 활성 워크스페이스의 포커스된 pane에 탭을 추가하고 ID를 반환한다.
     pub fn apply_tab_preset(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &TabPreset,
         target_pane_id: Option<u32>,
         opts: ApplyOptions,
@@ -136,7 +137,7 @@ impl RequestContext {
     /// 지정 워크스페이스 또는 활성 워크스페이스에 pane을 분할해 추가하고 ID를 반환한다.
     pub fn apply_pane_preset(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &PanePreset,
         target_workspace_id: Option<u32>,
         opts: ApplyOptions,
@@ -218,7 +219,7 @@ impl RequestContext {
 
     fn build_pane_node(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         node: &PresetPaneNode,
     ) -> Result<PaneNode, ApplyError> {
         match node {
@@ -246,7 +247,7 @@ impl RequestContext {
 
     fn build_pane(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &PresetPane,
     ) -> Result<Pane, ApplyError> {
         if preset.tabs.is_empty() {
@@ -263,7 +264,11 @@ impl RequestContext {
         Ok(pane)
     }
 
-    fn build_tab(&mut self, engine: &mut CoreState, preset: &PresetTab) -> Result<Tab, ApplyError> {
+    fn build_tab(
+        &mut self,
+        engine: &mut EngineMut<'_>,
+        preset: &PresetTab,
+    ) -> Result<Tab, ApplyError> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.build_surface_layout(engine, &preset.layout)?;
         layout.first_surface_id().ok_or(ApplyError::Empty)?;
@@ -292,7 +297,7 @@ impl RequestContext {
 
     fn build_surface_layout(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &PresetSurfaceLayout,
     ) -> Result<SurfaceLayout, ApplyError> {
         match preset {
@@ -323,7 +328,7 @@ impl RequestContext {
 
     fn build_leaf_surface(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         preset: &PresetSurface,
     ) -> Result<Box<dyn Surface>, ApplyError> {
         let surface_id = engine.next_ids.next_surface();
@@ -495,7 +500,8 @@ mod tests {
 
     fn test_state() -> (crate::state::RequestContext, CoreState) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = CoreState::new(80, 24, waker).expect("CoreState::new");
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker)
+            .expect("CoreState::new");
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));

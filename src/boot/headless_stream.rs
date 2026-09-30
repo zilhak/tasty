@@ -6,13 +6,14 @@
 
 use crate::app::App;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
 
 pub(crate) fn handle_stream_ready(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     let mut outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
     apply(app, state, engine, &mut outcome);
@@ -21,7 +22,7 @@ pub(crate) fn handle_stream_ready(
 fn apply(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     outcome: &mut PumpOutcome,
 ) {
     if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty() {
@@ -46,7 +47,7 @@ fn apply(
     engine.push_structure_changes();
 }
 
-fn apply_attach_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_attach_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, surface_id) in std::mem::take(&mut outcome.attach_requests) {
         engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
     }
@@ -64,7 +65,7 @@ fn apply_input_frames(
         )
     )]
     app: &mut App,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     outcome: &mut PumpOutcome,
 ) {
     for (client_id, bytes) in std::mem::take(&mut outcome.input_frames) {
@@ -93,7 +94,7 @@ fn apply_input_frames(
 fn apply_structural_ops(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     outcome: &mut PumpOutcome,
 ) {
     for (client_id, op_id, op, origin) in std::mem::take(&mut outcome.structural_ops) {
@@ -151,7 +152,7 @@ fn apply_structural_ops(
     }
 }
 
-fn apply_mirror_state(engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_mirror_state(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, remote_surface_id) in std::mem::take(&mut outcome.attention_clear_requests) {
         // attention 해제는 다음 상태 diff에서 mirror로 전달한다.
         engine.apply_attached_attention_clear(client_id, remote_surface_id);
@@ -251,7 +252,7 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
     }
 }
 
-fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;

@@ -8,6 +8,7 @@ mod view;
 pub use apply::apply_tab_bar_actions;
 pub use view::{compute_drop_index, draw_pane_tab_bars_view};
 
+use crate::core::engine_access::EngineMut;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::PhysicalPx;
 use tasty_type_geometry::rect::PhysicalRect;
@@ -275,7 +276,7 @@ fn tab_move_mark(
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
@@ -680,7 +681,7 @@ mod tests {
 
     fn test_engine() -> crate::core::CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::core::CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn tab_with_surface(sid: crate::model::SurfaceId) -> crate::model::Tab {

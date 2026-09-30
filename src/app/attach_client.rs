@@ -7,6 +7,7 @@ mod dispatch;
 #[cfg(test)]
 mod navigation_tests;
 
+use crate::core::engine_access::EngineMut;
 use dispatch::{AttachSource, Outcome, dispatch_attach};
 
 use std::collections::{HashMap, HashSet};
@@ -1338,7 +1339,7 @@ fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, 
 
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
 fn remove_mirror_workspace_from_engine(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     state: &mut crate::state::MainViewState,
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
@@ -1697,7 +1698,7 @@ fn make_mirror_surface(
     cols: usize,
     rows: usize,
     frame_tx: &SharedFrameSender,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) {
     let mut mirror = Terminal::new_detached(cols, rows);
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
@@ -1783,7 +1784,7 @@ fn merge_survivor_mapping(
     surfaces: &[Value],
     ids: &crate::core::state::IdGenerator,
     frame_tx: &SharedFrameSender,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> SurvivorMapping {
     let mut new_map: HashMap<u32, u32> = HashMap::new();
     let mut terminal_locals: HashSet<u32> = HashSet::new();
@@ -2430,7 +2431,7 @@ fn apply_markdown_content_result_event(
 fn apply_mirror_structural_delta(
     navigation: &mut crate::state::navigation::NavigationState,
     sess: &mut AttachClientSession,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     workspace_id: u32,
     tree: &Value,
     surfaces: &[Value],
@@ -4391,7 +4392,7 @@ mod tests {
     fn merge_survivor_mapping_prefers_server_display_name_and_falls_back_to_kind() {
         let ids = IdGenerator::new();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4429,7 +4430,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         // 별도 발급기를 만들면 기본 workspace의 ID와 충돌하므로 engine의 발급기를 공유한다.
         let ids = engine.next_ids.clone();
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
@@ -4520,7 +4521,7 @@ mod tests {
     #[test]
     fn merge_survivor_mapping_forgets_the_occupancy_of_a_remotely_closed_surface() {
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let ids = engine.next_ids.clone();
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
@@ -4579,7 +4580,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         // 기본 workspace와 ID가 충돌하지 않도록 engine의 발급기를 공유한다.
         let ids = engine.next_ids.clone();
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
@@ -5070,7 +5071,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
         let ids = engine.next_ids.clone();
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
@@ -5126,7 +5127,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, "com.example.other-markdown");
         let ids = engine.next_ids.clone();
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
@@ -5169,7 +5170,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let ids = engine.next_ids.clone();
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
@@ -5237,7 +5238,7 @@ mod tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
         let ids = engine.next_ids.clone();
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();

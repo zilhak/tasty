@@ -3,6 +3,7 @@
 
 #![cfg(debug_assertions)]
 
+use crate::core::engine_access::EngineMut;
 use crate::model::PhysicalPx;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
@@ -70,7 +71,7 @@ impl MainView {
     /// 에 없으면 `false`.
     pub(crate) fn debug_inject_mesh_pointer(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         fx: f32,
         fy: f32,

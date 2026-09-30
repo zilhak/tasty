@@ -4,6 +4,7 @@
 
 mod spawn_transaction;
 
+use crate::core::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
 use crate::core::child_terminal::ChildEntry;
@@ -91,7 +92,11 @@ fn format_index_ranges(sorted: &[u32]) -> String {
 }
 
 /// `--surface`(parent) 명시가 없으면 유일 parent 로 폴백. 0 또는 2+ 면 에러(호출자 명시 요구).
-fn resolve_parent(engine: &CoreState, params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
+fn resolve_parent(
+    engine: &EngineRef<'_>,
+    params: &Value,
+    id: &Value,
+) -> Result<u32, JsonRpcResponse> {
     if let Some(p) = optional_u32(params, "surface", id)? {
         return Ok(p);
     }
@@ -154,7 +159,7 @@ enum SendTextError {
 
 /// 점유를 확인하고 필요한 초기화를 거쳐 ack를 받을 수 있는 방식으로 본문을 보낸다.
 fn send_text_to_surface_with_ack(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     surface_id: u32,
     text: &str,
 ) -> Result<tasty_terminal::WriteAck, SendTextError> {
@@ -171,7 +176,7 @@ fn send_text_to_surface_with_ack(
 /// 본문을 보내고 별도 스레드에서 ack 대기와 제출 CR 주입을 수행한다.
 /// CR도 surface.send를 거쳐 점유 검사를 받는다. ack 대기 만료 뒤에도 제출을 시도한다.
 fn send_body_then_submit(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     core: &Core,
     id: &Value,
     surface_id: u32,
@@ -246,7 +251,7 @@ fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
 pub(crate) fn handle_spawn(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
     origin: &crate::core::origin::IntentOrigin,
@@ -359,7 +364,7 @@ pub(crate) fn handle_spawn(
 
 pub(crate) fn handle_tell(
     core: &mut Core,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -396,12 +401,12 @@ fn clear_idle_for_new_prompt(
 }
 
 pub(crate) fn handle_children(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -437,7 +442,11 @@ fn liveness_fields(liveness: ChildLiveness) -> serde_json::Map<String, Value> {
 
 /// 명시한 자식 surface를 목록 조회와 같은 child_liveness 함수로 판정한다.
 /// 관계가 사라져도 surface가 살아 있을 수 있어 실제 트리와 PTY 상태를 따로 확인한다.
-pub(crate) fn handle_state(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_state(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
     let surface_id = match require_u32(params, "surface", &id) {
         Ok(s) => s,
@@ -448,7 +457,11 @@ pub(crate) fn handle_state(engine: &mut CoreState, id: Value, params: &Value) ->
     JsonRpcResponse::success(id, Value::Object(out))
 }
 
-pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_parent(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
     let child_surface = match require_u32(params, "surface", &id) {
         Ok(s) => s,
@@ -473,13 +486,13 @@ pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -
 pub(crate) fn handle_kill(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
     origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -556,9 +569,13 @@ pub(crate) fn handle_kill(
 
 /// surface를 닫지 않고 부모·자식 관계와 soft 점유를 해제한다. hard 점유는 건드리지 않는다.
 /// soft 점유가 이미 없어도 관계 제거는 성공으로 처리한다.
-pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_release(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -598,9 +615,13 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
 /// 기존 surface를 자식으로 등록한다. 임의의 기존 대상이므로 soft 점유를 먼저 확보한다.
 /// 실패하면 관계를 추가하지 않는다. 새 surface를 만드는 spawn은 관계 등록 후 점유하며
 /// 실패 시 spawn_transaction이 이번에 만든 surface와 관계를 정리한다.
-pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_adopt(
+    engine: &mut EngineMut<'_>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -673,12 +694,12 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
 
 pub(crate) fn handle_respawn(
     core: &mut Core,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -770,7 +791,7 @@ pub(crate) fn handle_respawn(
 #[allow(clippy::too_many_arguments)]
 fn send_broadcast_to_child(
     core: &mut Core,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: &Value,
     sid: u32,
     body: &str,
@@ -798,11 +819,11 @@ fn send_broadcast_to_child(
 
 pub(crate) fn handle_broadcast(
     core: &mut Core,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let parent = match resolve_parent(engine, params, &id) {
+    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -845,7 +866,7 @@ pub(crate) fn handle_broadcast(
 /// 훅은 idle/needs_input/active만 보고할 수 있다.
 /// exited/stale은 호스트가 트리·PTY에서 판정하는 출력 상태이므로 입력으로 받지 않는다.
 pub(crate) fn handle_set_state(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -891,7 +912,7 @@ mod tests {
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn child(sid: u32, index: u32) -> ChildEntry {
@@ -1362,7 +1383,7 @@ mod tests {
     fn set_state_idle_clears_a_pending_needs_input() {
         let mut e = engine();
         e.runtime.child_terminals.register_child(7, child(5001, 0));
-        fn push_child_state(e: &mut CoreState, state: &str) {
+        fn push_child_state(e: &mut EngineMut<'_>, state: &str) {
             let resp = handle_set_state(e, json!(1), &json!({ "surface": 5001, "state": state }));
             assert!(resp.error.is_none(), "{state} 주입이 거부됐다");
         }

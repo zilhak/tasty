@@ -88,6 +88,7 @@ pub mod session;
 pub(crate) use checked::check_without_engine;
 pub(crate) use checked::{CheckedRequest, check_request};
 
+use crate::core::engine_access::EngineMut;
 use std::borrow::Cow;
 
 use serde_json::json;
@@ -114,7 +115,7 @@ use crate::state::RequestContext;
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     request: &JsonRpcRequest,
     caller: &CallerContext,
 ) -> JsonRpcResponse {
@@ -129,7 +130,7 @@ pub fn handle_with_caller(
 pub(crate) fn handle_checked_request(
     core: &mut crate::core::Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
 ) -> JsonRpcResponse {
     engine.refresh_attach_presentation(&state.navigation);
@@ -148,7 +149,7 @@ pub(crate) fn handle_checked_request(
 fn route_checked_request(
     core: &mut crate::core::Core,
     window: &mut entry_window::EntryWindow<'_>,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
 ) -> JsonRpcResponse {
     let request = checked.request();
@@ -171,7 +172,7 @@ fn route_checked_request(
 fn dispatch_routed(
     core: &mut crate::core::Core,
     window: &mut entry_window::EntryWindow<'_>,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
@@ -572,7 +573,7 @@ fn route_engine_handler(
     core: &mut crate::core::Core,
     window: &mut dyn IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
@@ -656,9 +657,13 @@ fn route_engine_handler(
         "preset.save" => preset::handle_save(core, id, &request.params),
         "preset.delete" => preset::handle_delete(core, id, &request.params),
         "preset.rename" => preset::handle_rename(core, id, &request.params),
-        "preset.capture" => {
-            preset::handle_capture(window.presentation(), core, engine, id, &request.params)
-        }
+        "preset.capture" => preset::handle_capture(
+            window.presentation(),
+            core,
+            &engine.as_ref(),
+            id,
+            &request.params,
+        ),
         "preset.apply" => preset::handle_apply(core, window, engine, id, &request.params),
         "surface.close" => {
             surface::handle_surface_close(core, window, engine, id, &request.params, &origin)
@@ -666,7 +671,7 @@ fn route_engine_handler(
         "surface.close_self" => {
             surface::handle_surface_close_self(core, window, engine, id, &request.params, &origin)
         }
-        "surface.list" => surface::handle_surface_list(engine, id),
+        "surface.list" => surface::handle_surface_list(&engine.as_ref(), id),
         "surface.kinds" => surface::handle_surface_kinds(engine, id),
         "surface.send" => surface::handle_surface_send(core, engine, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(core, engine, id, &request.params),
@@ -691,13 +696,19 @@ fn route_engine_handler(
         "surface.command_at" => surface::handle_command_at(core, engine, id, &request.params),
         "output.observe_start" => output::handle_observe_start(core, engine, id, &request.params),
         "output.observe_stop" => output::handle_observe_stop(core, engine, id, &request.params),
-        "output.observe_list" => output::handle_observe_list(core, engine, id),
-        "output.observe_info" => output::handle_observe_info(core, engine, id, &request.params),
-        "surface.screen_text" => surface::handle_screen_text(engine, id, &request.params),
-        "surface.cursor_position" => surface::handle_cursor_position(engine, id, &request.params),
-        "surface.mouse_tracking" => surface::handle_mouse_tracking(engine, id, &request.params),
+        "output.observe_list" => output::handle_observe_list(core, &engine.as_ref(), id),
+        "output.observe_info" => {
+            output::handle_observe_info(core, &engine.as_ref(), id, &request.params)
+        }
+        "surface.screen_text" => surface::handle_screen_text(&engine.as_ref(), id, &request.params),
+        "surface.cursor_position" => {
+            surface::handle_cursor_position(&engine.as_ref(), id, &request.params)
+        }
+        "surface.mouse_tracking" => {
+            surface::handle_mouse_tracking(&engine.as_ref(), id, &request.params)
+        }
         "surface.foreground_process" => {
-            surface::handle_foreground_process(engine, id, &request.params)
+            surface::handle_foreground_process(&engine.as_ref(), id, &request.params)
         }
         "surface.locate" => surface::handle_surface_locate(engine, id, &request.params),
         "surface.respawn_terminal" => {
@@ -714,10 +725,10 @@ fn route_engine_handler(
         "surface.meta.list" => meta::handle_surface_meta_list(core, engine, id, &request.params),
         "surface.set_cwd" => surface::handle_set_cwd(engine, id, &request.params),
         "hook.set" => hooks::handle_hook_set(core, engine, id, &request.params),
-        "hook.list" => hooks::handle_hook_list(engine, id, &request.params),
+        "hook.list" => hooks::handle_hook_list(&engine.as_ref(), id, &request.params),
         "hook.unset" => hooks::handle_hook_unset(core, engine, id, &request.params),
         "global_hook.set" => hooks::handle_global_hook_set(core, engine, id, &request.params),
-        "global_hook.list" => hooks::handle_global_hook_list(engine, id),
+        "global_hook.list" => hooks::handle_global_hook_list(&engine.as_ref(), id),
         "global_hook.unset" => hooks::handle_global_hook_unset(core, engine, id, &request.params),
         "webhook.register" => webhook::handle_register(caller, id, &request.params),
         "webhook.list" => webhook::handle_list(id),
@@ -1031,7 +1042,7 @@ fn route_engine_handler(
 #[cfg(feature = "gui")]
 fn route_window_handler(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
@@ -1047,7 +1058,7 @@ fn route_window_handler(
 #[cfg(debug_assertions)]
 fn route_debug_handler(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -1061,12 +1072,14 @@ fn route_debug_handler(
         #[cfg(feature = "gui")]
         "debug.gpu.stall" => debug::handle_debug_gpu_stall(id, &request.params),
         // 터미널 그리드 조회·수정은 헤드리스 debug에서도 제공한다.
-        "debug.cell_info" => debug_terminal::handle_debug_cell_info(engine, id, &request.params),
+        "debug.cell_info" => {
+            debug_terminal::handle_debug_cell_info(&engine.as_ref(), id, &request.params)
+        }
         "debug.screen_attrs" => {
-            debug_terminal::handle_debug_screen_attrs(engine, id, &request.params)
+            debug_terminal::handle_debug_screen_attrs(&engine.as_ref(), id, &request.params)
         }
         "debug.glyph_color" => {
-            debug_terminal::handle_debug_glyph_color(engine, id, &request.params)
+            debug_terminal::handle_debug_glyph_color(&engine.as_ref(), id, &request.params)
         }
         "debug.feed_bytes" => debug_terminal::handle_debug_feed_bytes(engine, id, &request.params),
         #[cfg(feature = "gui")]
@@ -1357,7 +1370,7 @@ fn handle_is_typing(
 }
 
 fn handle_send_wait_idle(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

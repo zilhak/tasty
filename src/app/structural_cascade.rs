@@ -2,6 +2,7 @@
 //! GUI dispatcher, IPC, 원격 forward가 공유한다. 알림 큐와 화면 계측은 GUI에서만 사용한다.
 
 use crate::app::structure_context::CascadeWindow;
+use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::core::intent::CascadeLevel;
 use crate::core::origin::IntentOrigin;
 use crate::core::{Core, CoreState};
@@ -184,7 +185,7 @@ pub(crate) struct PaneSplitCascade {
 pub(crate) fn cascade_surface_closed(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     c: SurfaceCloseCascade,
 ) {
     #[cfg(feature = "gui")]
@@ -244,7 +245,7 @@ pub(crate) fn cascade_surface_closed(
 )]
 fn reclaim_closed_surfaces(
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
     trace: Option<&'static str>,
@@ -301,7 +302,7 @@ fn enqueue_closed_pane_events(state: &mut dyn CascadeWindow, closed_pane_ids: &[
 fn recreate_workspace_if_now_empty(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     workspaces_now_empty: bool,
 ) {
     if !workspaces_now_empty {
@@ -392,7 +393,7 @@ pub(crate) fn cascade_pane_closed(state: &mut dyn CascadeWindow, pane_id: u32) {
 )]
 pub(crate) fn cascade_pane_closed_full(
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     pane_id: u32,
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
@@ -458,7 +459,7 @@ fn find_surface_location(
 )]
 pub(crate) fn cascade_tab_created(
     state: &mut dyn CascadeWindow,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     pane_id: u32,
     tab_id: u32,
     surface_id: u32,
@@ -513,7 +514,7 @@ pub(crate) fn cascade_tab_closed(state: &mut dyn CascadeWindow, tab_id: u32, pan
 )]
 pub(crate) fn cascade_tab_closed_full(
     state: &mut dyn CascadeWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     tab_id: u32,
     pane_id: Option<u32>,
     cleanup_targets: Vec<(u32, Option<String>)>,

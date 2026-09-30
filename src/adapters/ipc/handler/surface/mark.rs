@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::core::engine_access::EngineMut;
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -27,7 +28,7 @@ pub(crate) fn handle_set_mark(
 /// 두 방식 모두 보관 범위·다음 위치·유실 바이트·스트림 식별자를 반환한다.
 /// surface ID 재사용이나 터미널 재시작을 구분하도록 cursor에는 stream도 필요하다(ADR-0034).
 pub(crate) fn handle_read_since_mark(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -181,7 +182,7 @@ fn refused(
 /// 스캐너 전용 커서를 읽고 전진시킨다. 사용자 마크와 별개다.
 /// 소비자가 둘이면 서로 읽을 구간을 건너뛰게 되므로 하나만 사용해야 한다(ADR-0013).
 pub(crate) fn handle_read_since_scan_mark(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -204,7 +205,7 @@ pub(crate) fn handle_read_since_scan_mark(
 /// /`exit_code` 같이 ANSI escape 자체가 의미인 파서를 쓸 수 있도록 raw 텍스트
 /// (strip_ansi=false) 를 항상 입력으로 한다.
 pub(crate) fn handle_parse_since_mark(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -1,4 +1,5 @@
 use crate::adapters::ipc::handler::params::require_u32;
+use crate::core::engine_access::EngineMut;
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -100,7 +101,7 @@ fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
 
 fn dispatch_send(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     surface_id: u32,
     payload: crate::core::intent::SendPayload,
 ) -> SendOutcome {
@@ -124,7 +125,7 @@ fn dispatch_send(
 
 pub(crate) fn handle_surface_send(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -151,7 +152,7 @@ pub(crate) fn handle_surface_send(
 
 pub(crate) fn handle_surface_send_key(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -235,7 +236,7 @@ pub(crate) fn handle_surface_send_key(
 /// `invalid_params` if the surface_id refers to neither a live terminal nor a
 /// deferred placeholder.
 pub(crate) fn handle_surface_wake(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -256,7 +257,7 @@ pub(crate) fn handle_surface_wake(
 
 pub(crate) fn handle_surface_send_combo(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -320,7 +321,7 @@ pub(crate) fn handle_surface_send_combo(
 
 pub(crate) fn handle_surface_send_to(
     core: &mut crate::core::Core,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

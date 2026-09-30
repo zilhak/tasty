@@ -1,5 +1,6 @@
 use crate::core::CoreState;
 #[cfg(test)]
+use crate::core::engine_access::EngineMut;
 use crate::model::SplitDirection;
 
 use super::RequestContext;
@@ -137,7 +138,7 @@ impl RequestContext {
 
     /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
+    pub fn close_active_pane(&mut self, engine: &mut EngineMut<'_>) -> bool {
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
                 anchor_surface_id: sid,
@@ -155,7 +156,11 @@ impl RequestContext {
                 .map(|pane| {
                     let mut t: Vec<(u32, Option<String>)> = Vec::new();
                     for tab in &pane.tabs {
-                        crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
+                        crate::core::impl_close::collect_close_targets(
+                            tab,
+                            &engine.as_ref(),
+                            &mut t,
+                        );
                     }
                     t.into_iter().map(|(sid, _)| sid).collect()
                 })
@@ -187,7 +192,7 @@ impl RequestContext {
 
     /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
+    pub fn close_active_surface(&mut self, engine: &mut EngineMut<'_>) -> bool {
         let focused_sid = self.focused_surface_id(engine);
         let mirror_op = focused_sid
             .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
@@ -215,7 +220,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn close_surface_by_id(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -226,7 +231,7 @@ impl RequestContext {
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -246,7 +251,7 @@ impl RequestContext {
     /// 이 조합은 pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close가 검사한다.
     fn close_surface_by_id_inner(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         surface_id: u32,
         save_snapshot: bool,
         is_user_close: bool,
@@ -323,7 +328,7 @@ impl RequestContext {
     /// 시험 준비용 직접 분할. 제품 코드는 Core의 DomainIntent::SplitPane을 사용한다.
     pub(crate) fn test_split_pane(
         &mut self,
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         direction: SplitDirection,
     ) -> anyhow::Result<()> {
         let cwd = self.resolve_inherit_cwd(engine);

@@ -2,6 +2,7 @@
 //! 보이는 surface만 다음 조회 시각을 내보내고 호스트가 나머지 타이머를 취소한다.
 //! 레이아웃 캐시는 ID·엣지·방향·치수를 비교하며 task 상태만 바뀌면 좌표를 유지한다.
 
+use crate::core::engine_access::EngineRef;
 use std::collections::HashMap;
 use std::hash::{Hash as _, Hasher as _};
 use std::time::{Duration, Instant};
@@ -132,7 +133,7 @@ impl DagGraphView {
     /// surface와 팝업이 공유하는 주기별 데이터 조회.
     pub fn poll_if_stale(
         &mut self,
-        engine: &crate::core::CoreState,
+        engine: &EngineRef<'_>,
         workspace_id: u32,
         dag_id: Option<&str>,
     ) {
@@ -296,7 +297,7 @@ impl DagGraphViewStore {
     }
 
     /// 렌더링의 engine 대여가 시작되기 전에 보이는 DAG 데이터를 읽는다.
-    pub fn poll(&mut self, engine: &crate::core::CoreState, requests: &[DagPollRequest]) {
+    pub fn poll(&mut self, engine: &EngineRef<'_>, requests: &[DagPollRequest]) {
         self.note_visible(requests);
         for req in requests {
             self.views.entry(req.surface_id).or_default().poll_if_stale(
@@ -317,7 +318,7 @@ impl DagGraphViewStore {
 
 /// 한 화면 분의 데이터를 memory store 에서 읽어 화면 형태로 만든다.
 fn fetch(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     workspace_id: u32,
     dag_id: Option<&str>,
 ) -> Result<DagData, String> {

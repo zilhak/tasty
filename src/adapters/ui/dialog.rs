@@ -2,6 +2,7 @@
 //! 호출자가 실제 대상 변경을 적용한다. 갤러리도 같은 view를 사용한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
+use crate::core::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::state::{MainViewState, RenameTarget};
 use crate::theme;
@@ -397,7 +398,7 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn push_workspace(engine: &mut crate::core::CoreState, name: &str) -> u32 {
+    fn push_workspace(engine: &mut EngineMut<'_>, name: &str) -> u32 {
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
@@ -420,7 +421,7 @@ mod tests {
     /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
     fn apply_rename_and_drain(
         state: &mut MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         target: RenameTarget,
         buffer: &str,
     ) {
@@ -596,7 +597,7 @@ mod tests {
 
     fn engine() -> crate::core::CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::core::CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]

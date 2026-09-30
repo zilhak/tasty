@@ -2,6 +2,7 @@
 //! 토스트와 attach 클라이언트가 필요한 GUI 전용 시험이다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 fn fixture() -> (
     crate::core::Core,
@@ -389,7 +390,7 @@ fn register_recent_probe(engine: &crate::core::CoreState, kind: &str, plugin_id:
 fn new_tab_with_file(
     core: &mut crate::core::Core,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     kind: &str,
     file: &str,
 ) {

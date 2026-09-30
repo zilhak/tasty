@@ -1,6 +1,7 @@
 //! 설정된 키바인딩을 그룹 순서대로 비교해 처음 매칭된 액션을 실행한다.
 //! 그룹 순서도 충돌 우선순위에 영향을 준다.
 
+use crate::core::engine_access::EngineMut;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -32,7 +33,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -108,7 +109,7 @@ impl MainView {
 
     pub(super) fn match_create_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -136,7 +137,7 @@ impl MainView {
 
     fn match_split_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -261,7 +262,7 @@ impl MainView {
 
     fn match_close_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -371,7 +372,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_restore_quit_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -409,13 +410,13 @@ impl MainView {
 
     fn match_convert_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
         if matches_any_binding(&kb.open_markdown, key, mods) {
-            state.enqueue_convert_input_popup(engine, "markdown", None);
+            state.enqueue_convert_input_popup(&engine.as_ref(), "markdown", None);
             return true;
         }
         if matches_any_binding(&kb.open_explorer, key, mods) {
@@ -440,7 +441,7 @@ impl MainView {
         }
         if matches_any_binding(&kb.convert_to_markdown, key, mods) {
             if let Some(sid) = state.focused_surface_id(engine) {
-                state.enqueue_convert_input_popup(engine, "markdown", Some(sid));
+                state.enqueue_convert_input_popup(&engine.as_ref(), "markdown", Some(sid));
             }
             return true;
         }
@@ -482,7 +483,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_window_tab_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -676,7 +677,7 @@ impl MainView {
 
     fn match_tools_menu_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -739,11 +740,13 @@ impl MainView {
     /// 로컬/원격 대상 정보를 준비해야 하므로 팝업 ID만 보내지 않고 메뉴와 같은 열기 함수를 쓴다.
     pub(crate) fn open_file_picker_tool(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
     ) {
         use crate::adapters::ui::popup::file_picker;
-        let start =
-            file_picker::FilePickerStart::from_surface(engine, state.focused_surface_id(engine));
+        let start = file_picker::FilePickerStart::from_surface(
+            &engine.as_ref(),
+            state.focused_surface_id(engine),
+        );
         file_picker::open(state, engine, None, Vec::new(), start);
     }
 

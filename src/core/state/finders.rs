@@ -1,6 +1,7 @@
 //! 포커스와 무관하게 모든 workspace에서 ID의 소속과 객체를 찾는다.
 
 use super::CoreState;
+use crate::core::engine_access::EngineMut;
 
 impl CoreState {
     pub fn find_surface_by_id(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
@@ -29,18 +30,6 @@ impl CoreState {
             }
         }
         ids
-    }
-
-    /// 현재 트리에 없는 자식 등록을 정리한다. 변경이 있으면 저장을 시도한다.
-    pub fn reconcile_child_terminals(&mut self) {
-        let live = self.live_surface_ids();
-        let summary = self
-            .runtime
-            .child_terminals
-            .reconcile_with_live_surfaces(&live);
-        if summary.changed() {
-            self.runtime.child_terminals.save();
-        }
     }
 
     pub fn find_pane_for_surface(&self, surface_id: u32) -> Option<u32> {
@@ -275,4 +264,18 @@ impl CoreState {
 pub struct SurfaceDisplayPath {
     pub workspace_name: String,
     pub tab_name: Option<String>,
+}
+
+impl EngineMut<'_> {
+    /// 현재 트리에 없는 자식 등록을 정리한다. 변경이 있으면 저장을 시도한다.
+    pub fn reconcile_child_terminals(&mut self) {
+        let live = self.live_surface_ids();
+        let summary = self
+            .runtime
+            .child_terminals
+            .reconcile_with_live_surfaces(&live);
+        if summary.changed() {
+            self.runtime.child_terminals.save();
+        }
+    }
 }

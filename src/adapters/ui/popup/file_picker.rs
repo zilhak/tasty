@@ -12,6 +12,7 @@ mod footer;
 mod layout_tests;
 mod path_bar;
 
+use crate::core::engine_access::EngineRef;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tasty_type_geometry::length::LogicalPx;
@@ -882,7 +883,7 @@ pub struct FilePickerStart {
 
 impl FilePickerStart {
     /// surface 의 cwd 에서 출발한다. mirror surface 면 원격 cwd 문자열을 그대로 싣는다.
-    pub fn from_surface(engine: &crate::core::CoreState, surface_id: Option<u32>) -> Self {
+    pub fn from_surface(engine: &EngineRef<'_>, surface_id: Option<u32>) -> Self {
         use crate::core::state::SurfaceCwd;
         let dir = surface_id
             .and_then(|sid| engine.surface_cwd(sid))

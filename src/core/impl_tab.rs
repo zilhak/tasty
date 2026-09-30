@@ -1,6 +1,7 @@
 //! 탭 생성·이동·제목 변경을 처리한다.
 
 use super::*;
+use crate::core::engine_access::EngineMut;
 
 impl Core {
     /// ID로 대상 탭을 찾는다. 사용자가 명시한 이름은 유지하고 선택된 surface의 제목만 반영한다.
@@ -38,7 +39,7 @@ impl Core {
 
     /// 비터미널은 activate에 따라 선택하고 terminal은 항상 배경 탭으로 만든다.
     pub(super) fn apply_create_tab(
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         pane_id: u32,
         cwd: Option<std::path::PathBuf>,
         kind: String,
@@ -177,7 +178,7 @@ impl Core {
 mod create_tab_selection_tests {
     use super::*;
 
-    fn create(engine: &mut CoreState, pane_id: u32, kind: &str, activate: bool) -> usize {
+    fn create(engine: &mut EngineMut<'_>, pane_id: u32, kind: &str, activate: bool) -> usize {
         let events = Core::apply_create_tab(
             engine,
             pane_id,
@@ -196,7 +197,8 @@ mod create_tab_selection_tests {
 
     fn engine_and_pane() -> (CoreState, u32) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let engine = CoreState::new(80, 24, waker).expect("engine");
+        let engine =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let sid = engine.workspaces[0].all_surface_ids()[0];
         let pane_id = engine.find_pane_for_surface(sid).expect("pane");
         (engine, pane_id)
@@ -226,7 +228,7 @@ mod tab_title_tests {
 
     fn test_engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        CoreState::new(80, 24, waker).expect("engine")
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     fn split_tab_engine() -> (CoreState, u32, u32, u32) {
@@ -251,7 +253,7 @@ mod tab_title_tests {
         (engine, pane_id, a, b)
     }
 
-    fn set_title(engine: &mut CoreState, sid: u32, title: &str) {
+    fn set_title(engine: &mut EngineMut<'_>, sid: u32, title: &str) {
         engine
             .runtime
             .terminals

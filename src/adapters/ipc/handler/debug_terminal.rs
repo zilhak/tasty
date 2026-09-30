@@ -4,6 +4,7 @@
 #![cfg(debug_assertions)]
 
 use super::params::{self, p_try};
+use crate::core::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -11,7 +12,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::require_surface_id;
 
 pub(super) fn handle_debug_cell_info(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -62,7 +63,7 @@ pub(super) fn cell_info_to_json(info: &tasty_terminal::CellInfo) -> serde_json::
 
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_screen_attrs(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -96,7 +97,7 @@ pub(super) fn handle_debug_screen_attrs(
 /// bytes는 hex, text는 UTF-8 그대로 받으며 text의 이스케이프 표기는 해석하지 않는다.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_feed_bytes(
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -133,7 +134,7 @@ pub(super) fn handle_debug_feed_bytes(
 /// 선택·링크 hover·커서·IME에 따른 색 덮어쓰기는 포함하지 않는다.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_glyph_color(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -1,5 +1,6 @@
 //! 단축키와 명령 팔레트의 액션 실행.
 
+use crate::core::engine_access::EngineMut;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -27,7 +28,7 @@ impl MainView {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: action_id 문자열→액션 평면 match 디스패치 — 단축키와 1:1, arm 나열
     pub(crate) fn dispatch_action_by_id(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         action_id: &str,
     ) -> bool {
         use crate::adapters::ui::popup::PopupScope;
@@ -287,7 +288,7 @@ impl MainView {
                 }
             }
             "open_markdown" => {
-                state.enqueue_convert_input_popup(engine, "markdown", None);
+                state.enqueue_convert_input_popup(&engine.as_ref(), "markdown", None);
             }
             "open_explorer" => Self::open_explorer_tab(state),
             "convert_surface" => {
@@ -305,7 +306,7 @@ impl MainView {
             }
             "convert_to_markdown" => {
                 if let Some(sid) = state.focused_surface_id(engine) {
-                    state.enqueue_convert_input_popup(engine, "markdown", Some(sid));
+                    state.enqueue_convert_input_popup(&engine.as_ref(), "markdown", Some(sid));
                 }
             }
             "convert_to_explorer" => {
@@ -515,7 +516,7 @@ impl MainView {
     #[cfg(not(target_os = "macos"))]
     fn handle_window_control_shortcuts(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         key: &Key,
         mods: ModifiersState,
         kb: &crate::settings::KeybindingSettings,
@@ -597,7 +598,7 @@ impl MainView {
 
     pub(crate) fn handle_shortcut(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {

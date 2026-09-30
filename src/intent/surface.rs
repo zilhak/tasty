@@ -3,13 +3,14 @@
 use super::{ConvertTarget, DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::model::SplitDirection;
 use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
@@ -26,7 +27,7 @@ pub fn handle(
 fn split(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     direction: SplitDirection,
     origin: &IntentOrigin,
 ) {
@@ -34,7 +35,7 @@ fn split(
         tracing::warn!("SplitSurface: no focused surface");
         return;
     };
-    let cwd = state.resolve_inherit_cwd_from_surface(engine, sid);
+    let cwd = state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid);
     let intent = crate::core::intent::DomainIntent::SplitSurface {
         target_surface_id: sid,
         direction,
@@ -73,7 +74,7 @@ fn split(
 fn convert(
     core: &mut Core,
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     surface_id: u32,
     target: &ConvertTarget,
     origin: &IntentOrigin,
@@ -82,7 +83,7 @@ fn convert(
 
     let domain_target = match target {
         ConvertTarget::Terminal => {
-            let cwd = state.resolve_inherit_cwd(engine);
+            let cwd = state.resolve_inherit_cwd(&engine.as_ref());
             ConvertSurfaceTarget::Terminal { cwd }
         }
         ConvertTarget::Kind { cwd, kind, params } => {
@@ -94,7 +95,7 @@ fn convert(
             // cwd가 생략되고 상속 설정이 켜져 있으면 변환할 surface의 로컬 cwd를 사용한다.
             let resolved_cwd = cwd
                 .clone()
-                .or_else(|| state.resolve_inherit_cwd_from_surface(engine, surface_id));
+                .or_else(|| state.resolve_inherit_cwd_from_surface(&engine.as_ref(), surface_id));
             // 적용 전에 기록하므로 철회된 kind는 get_live로 제외한다.
             // 별칭 정규화는 저장을 하지 않아 위에서는 get을 사용해도 된다.
             // mirror surface의 경로는 원격 파일이라 로컬 최근 목록에서 다시 열 수 없다.

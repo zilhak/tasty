@@ -20,6 +20,7 @@ use crate::adapters::ui::popup::transfer::{
     TRANSFER_ERROR_POPUP_ID, TRANSFER_PROGRESS_POPUP_ID, TransferError, TransferProgress,
 };
 use crate::adapters::ui::popup::{PopupId, title_bar_height};
+use crate::core::engine_access::EngineMut;
 use crate::intent::{Intent, UiIntent};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::state::{
@@ -1226,7 +1227,7 @@ fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
 
 fn open_scoped(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     id: PopupId,
     scope: crate::adapters::ui::popup::PopupScope,
 ) {
@@ -1345,7 +1346,7 @@ fn tab_rename_popup_closes_with_its_tab() {
 /// 두 탭을 만들고 활성 탭의 surface와 다른 탭의 surface를 돌려준다.
 fn two_tab_surfaces(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
 ) -> (u32, u32, u32) {
     let other = state.focused_surface_id(engine).expect("first surface");
     state.add_tab(engine).unwrap();
@@ -1357,7 +1358,7 @@ fn two_tab_surfaces(
     (tab_id, target, other)
 }
 
-fn close_tab(engine: &mut crate::core::CoreState, tab_id: u32) {
+fn close_tab(engine: &mut EngineMut<'_>, tab_id: u32) {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     core.apply(
         engine,
@@ -1459,10 +1460,7 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
 const SEARCH_BAR: PopupId = "search_bar";
 
 /// Ctrl+F·메뉴·탭바 검색 버튼이 공유하는 진입점을 부르고 쌓인 intent를 처리한다.
-fn find_in_focused_surface(
-    state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
-) {
+fn find_in_focused_surface(state: &mut crate::state::RequestContext, engine: &mut EngineMut<'_>) {
     let focused = state.focused_surface_id(engine);
     crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "test");
     for intent in state.take_pending_intents() {
