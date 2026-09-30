@@ -1325,7 +1325,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "settings-file-extension-mapping",
                             "Handler › File Extension Mapping",
-                            Some("ext cluster (mono) → handler Select · Add mapping"),
+                            Some(
+                                "Input + Add · per extension an ordered detector list · chevron IconButtons disabled, not hidden",
+                            ),
                             components::settings_handler::draw_extension_mapping,
                         ),
                         spec(

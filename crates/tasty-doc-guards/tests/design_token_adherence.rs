@@ -68,11 +68,6 @@ const LENGTH_SETTER_PREFIXES: &[&str] = &[
 /// 리터럴이 제거되면 항목도 제거한다. 범위 예외인 ALLOWLIST_PREFIXES와 구분한다.
 const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
     (
-        "src/view/settings/ui/file_handler_tab/extension_mapping.rs",
-        "desired_width(",
-        "120.0",
-    ),
-    (
         "src/view/settings/ui/file_handler_tab/handlers.rs",
         "desired_width(",
         "80.0",

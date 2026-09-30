@@ -6,8 +6,8 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, TagVariant, select,
-    switch, tag,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, TagVariant, switch,
+    tag, tag_disabled,
 };
 
 use crate::catalog::icons;
@@ -40,95 +40,221 @@ fn row_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     );
 }
 
-const EXT_HANDLERS: &[&str] = &[
-    "Image viewer",
-    "Log viewer",
-    "Editor",
-    "Hex viewer",
-    "External app",
-];
-/// jsx seed: (ext cluster, 기본 handler index in EXT_HANDLERS).
-const EXT_ROWS: &[(&str, usize)] = &[
-    ("*.png  *.jpg  *.svg", 0),
-    ("*.log  *.txt", 1),
-    ("*.json  *.yaml  *.toml", 2),
-    ("*.bin  *.hex  *.o", 3),
+/// 시안 Spec 패널의 바깥 폭 `--tasty-size-360`(시안은 border-box라 padding·border 포함).
+/// 공개 역할 토큰이 없어 갤러리 무대 치수로 둔다.
+const EXT_PANEL_WIDTH: LogicalPx = LogicalPx(360.0);
+
+/// 시안 `ExtMapG` seed: (확장자, [(detector, 후보 여부)]) — 먼저 맞는 detector가 이긴다.
+const EXT_GROUPS: &[(&str, &[(&str, bool)])] = &[
+    (
+        ".md",
+        &[
+            ("Markdown viewer", true),
+            ("Editor", true),
+            ("html-preview", false),
+        ],
+    ),
+    (".log", &[("Log viewer", true)]),
 ];
 
 thread_local! {
-    static EXT_STATE: RefCell<Vec<usize>> =
-        RefCell::new(EXT_ROWS.iter().map(|(_, h)| *h).collect());
+    // 두 패널 짝(빈 입력 · ".toml")의 Mocha·Latte 입력 버퍼.
+    static EXT_DRAFTS: RefCell<[String; 4]> = RefCell::new([
+        String::new(),
+        String::new(),
+        ".toml".to_string(),
+        ".toml".to_string(),
+    ]);
 }
 
-pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 설정 창 내부 콘텐츠이므로 그림자를 추가하지 않는다.
-        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                ui.horizontal(|ui| {
-                    mono_head(ui, theme, "Extension → handler");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // specimen 은 상태가 없다 — 클릭 응답을 받아 처리할 곳이 없다.
-                        let _ = Button::new("Add mapping")
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .show(ui, theme);
-                    });
+/// 확장자 아래 detector 한 행 — 순번 · 이름 · (비후보면 Tag disabled "off") · ▲ · ▼.
+/// ▲▼는 숨기지 않고 disabled로 두어 행마다 같은 자리를 지킨다.
+fn ext_detector_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    index: usize,
+    name: &str,
+    candidate: bool,
+    last_candidate: bool,
+) {
+    let resp = ui.horizontal(|ui| {
+        ui.set_min_height(theme.settings_row_min_height().value());
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        let (num_rect, _) = ui.allocate_exact_size(
+            egui::vec2(theme.spacing_lg.value(), theme.font_size_caption.value()),
+            egui::Sense::hover(),
+        );
+        ui.painter().text(
+            num_rect.left_center(),
+            egui::Align2::LEFT_CENTER,
+            (index + 1).to_string(),
+            egui::FontId::monospace(theme.font_size_caption.value()),
+            theme.text_muted().to_egui(),
+        );
+        let name_fg = if candidate {
+            theme.text_secondary()
+        } else {
+            theme.text_disabled()
+        };
+        ui.label(
+            egui::RichText::new(name)
+                .size(theme.font_size_body.value())
+                .color(name_fg.to_egui()),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .enabled(candidate && !last_candidate)
+                .show(ui, theme, &|ui, rect, c| {
+                    icons::CHEVRON_DOWN
+                        .image(rect.width(), c)
+                        .paint_at(ui, rect);
                 });
-                EXT_STATE.with(|s| {
-                    let sel = &mut *s.borrow_mut();
-                    for (i, (ext, _)) in EXT_ROWS.iter().enumerate() {
-                        let resp = ui.horizontal(|ui| {
-                            ui.set_min_height(theme.settings_row_min_height().value());
-                            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+            IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .enabled(candidate && index > 0)
+                .show(ui, theme, &|ui, rect, c| {
+                    icons::CHEVRON_UP.image(rect.width(), c).paint_at(ui, rect);
+                });
+            if !candidate {
+                tag_disabled(ui, theme, "off", false);
+            }
+        });
+    });
+    row_separator(ui, theme, resp.response.rect);
+}
+
+/// 시안 `ExtMapG` 패널 — Input + Add, 그 아래 확장자별 detector 순서 목록.
+fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String) {
+    let frame = egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_frame().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8));
+    // 바깥 폭이 시안 값이 되도록 padding·border를 뺀 폭을 콘텐츠에 준다.
+    let content_w = EXT_PANEL_WIDTH.value() - frame.total_margin().sum().x;
+    frame.show(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(content_w);
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // 이 예제에는 detector가 설치돼 있다 — 입력이 비었을 때만 막힌다.
+                    Button::new("Add")
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .enabled(!draft.trim().is_empty())
+                        .show(ui, theme);
+                    Input::new()
+                        .mono(true)
+                        .placeholder("extension, e.g. .log")
+                        .width(ui.available_width())
+                        .show(ui, theme, draft);
+                });
+            });
+            for (ext, rows) in EXT_GROUPS {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    // 시안 `padding: xs 0` — 위·아래에만 여백을 둔다.
+                    let head_y = theme.spacing_xs.value().round() as i8;
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            top: head_y,
+                            bottom: head_y,
+                            ..egui::Margin::ZERO
+                        })
+                        .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new(*ext)
                                     .monospace()
-                                    .size(theme.font_size_term_sm.value())
+                                    .size(theme.font_size_caption.value())
                                     .color(theme.text_secondary().to_egui()),
                             );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    select(
-                                        ui,
-                                        theme,
-                                        &format!("gallery_ext_map_{i}"),
-                                        &mut sel[i],
-                                        EXT_HANDLERS,
-                                        theme.field_width_md.value(),
-                                        true,
-                                    );
-                                    ui.label(
-                                        egui::RichText::new("→")
-                                            .color(theme.text_muted().to_egui()),
-                                    );
-                                },
-                            );
                         });
-                        if i + 1 < EXT_ROWS.len() {
-                            row_separator(ui, theme, resp.response.rect);
-                        }
+                    let last = rows.iter().rposition(|(_, c)| *c);
+                    for (i, (name, candidate)) in rows.iter().enumerate() {
+                        ext_detector_row(ui, theme, i, name, *candidate, Some(i) == last);
                     }
                 });
-            });
+            }
+        });
+    });
+}
+
+/// 시안 `ThemePair` — 같은 패널을 Mocha·Latte로 나란히 둔다.
+/// `pair`는 짝 번호다. 입력 버퍼 내용이 아니라 고정 번호로 id를 구분해야 입력 중에도 포커스가 유지된다.
+fn ext_map_theme_pair(ui: &mut egui::Ui, theme: &Theme, pair: usize, drafts: &mut [String]) {
+    // 갤러리 배율을 따르도록 두 팔레트에 현재 zoom을 입힌다.
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
+        ("Latte", with_zoom(crate::host_shell::latte_theme())),
+    ];
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        for ((label, th), draft) in themes.iter().zip(drafts.iter_mut()) {
+            egui::Frame::new()
+                .fill(th.bg_app().to_egui())
+                .corner_radius(th.corner_radius.value())
+                .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                        ui.label(
+                            egui::RichText::new(*label)
+                                .size(th.font_size_caption.value())
+                                .color(th.text_muted().to_egui()),
+                        );
+                        ui.push_id(("ext_map", pair, *label), |ui| {
+                            ext_map_panel(ui, th, draft);
+                        });
+                    });
+                });
+        }
+    });
+}
+
+pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+        EXT_DRAFTS.with(|d| {
+            let drafts = &mut *d.borrow_mut();
+            let (empty, typed) = drafts.split_at_mut(2);
+            ext_map_theme_pair(ui, theme, 0, empty);
+            ext_map_theme_pair(ui, theme, 1, typed);
         });
     });
     spec::meta(
         ui,
         theme,
         &[
-            ("row", "ext(mono 12) 좌 · → · Select(150) 우"),
+            (
+                "add",
+                "Button secondary sm · disabled: empty input or no detector",
+            ),
+            ("order", "IconButton sm chevronUp / chevronDown"),
+            ("top / last row", "▲ / ▼ disabled"),
+            (
+                "non-candidate row",
+                "both disabled · name text-disabled · Tag disabled \"off\"",
+            ),
+            ("hide instead?", "no — slots stay put"),
             ("row height", "settings-row-min-height"),
-            ("divider", "1px separator · 마지막 행 없음"),
         ],
         &[
             TokenChip::new(
-                "text-secondary",
-                "ext cluster",
-                theme.text_secondary().to_egui(),
+                "state-disabled-fg",
+                "disabled ink",
+                theme.state_disabled_fg().to_egui(),
             ),
-            TokenChip::new("text-muted", "→ glyph", theme.text_muted().to_egui()),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
             TokenChip::without_color("settings-row-min-height", "row"),
         ],
