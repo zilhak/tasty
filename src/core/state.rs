@@ -1033,7 +1033,7 @@ mod id_generator_tests {
 
     #[test]
     fn two_engines_do_not_hand_out_the_same_global_hook_id() {
-        use crate::host_api::hooks::global::{GlobalHookManager, HookCondition};
+        use crate::hook_runtime::global::{GlobalHookManager, HookCondition};
         let ids = IdGenerator::new();
         let mut a = GlobalHookManager::with_counter(ids.global_hook_counter());
         let mut b = GlobalHookManager::with_counter(ids.global_hook_counter());

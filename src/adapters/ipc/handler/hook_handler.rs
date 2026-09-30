@@ -12,10 +12,11 @@ use serde_json::json;
 
 use crate::core::Core;
 use crate::hook_handler::{
-    self, HookHandlerAction, HookHandlerId, HookShellEnv, HookSource, IpcCall, SequenceNotQueued,
-    SequenceOrigin, SubstitutionContext, UserHookHandlerActionDecl, UserHookHandlerUpsertDecl,
-    build_env, enqueue_sequence, spawn_shell,
+    self, HookHandlerAction, HookHandlerId, HookShellEnv, HookSource, IpcCall, SequenceOrigin,
+    SubstitutionContext, UserHookHandlerActionDecl, UserHookHandlerUpsertDecl, build_env,
+    spawn_shell,
 };
+use crate::hook_runtime::{SequenceNotQueued, enqueue_sequence};
 use tasty_ipc::host_call::HostIpcInjector;
 use tasty_ipc::protocol::JsonRpcResponse;
 

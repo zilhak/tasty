@@ -3,15 +3,18 @@
 
 use tasty_hooks::{HookBinding, HookEvent};
 
-use super::env::{HookShellEnv, build_env};
-use super::exec::{SequenceOrigin, SubstitutionContext, enqueue_sequence};
-use super::registry::global;
-use super::types::{HookHandlerAction, HookHandlerId, IpcCall, TriggerSource, validate_binding};
+use super::worker::enqueue_sequence;
+use crate::hook_handler::env::{HookShellEnv, build_env};
+use crate::hook_handler::exec::{SequenceOrigin, SubstitutionContext};
+use crate::hook_handler::registry::global;
+use crate::hook_handler::types::{
+    HookHandlerAction, HookHandlerId, IpcCall, TriggerSource, validate_binding,
+};
 use tasty_ipc::host_call::HostIpcInjector;
 
 /// 실제 수신 이벤트로 payload를 만들고 셸 환경변수와 IPC 값 치환에 함께 사용한다.
 /// IPC injector가 없으면 해당 시퀀스는 로그 후 건너뛴다.
-pub fn execute_binding(
+pub(super) fn execute_binding(
     binding: &HookBinding,
     injector: Option<&HostIpcInjector>,
     event: &HookEvent,

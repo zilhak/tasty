@@ -405,7 +405,7 @@ mod tests {
     /// 대상 해석뿐 아니라 해당 종류를 engine에서 찾는 함수도 확인한다.
     #[test]
     fn an_engine_reports_the_global_hook_it_owns() {
-        use crate::host_api::hooks::global::HookCondition;
+        use crate::hook_runtime::global::HookCondition;
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).expect("engine");
         let id = engine.hooks.add_global_hook(

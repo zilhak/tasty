@@ -229,7 +229,7 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
 `crates/tasty-plugin-claude/src/notifications.rs`, codex 는
 `crates/tasty-plugin-codex/src/handlers.rs`)이
 등록하는 `command` 는 `tasty claude notify-done ...` / `tasty codex notify-caller ...` 형태로,
-**`tasty` 자기 자신을 PATH 로 재호출**한다. 이 셸 커맨드는 `src/hook_handler/trigger.rs::spawn_shell`
+**`tasty` 자기 자신을 PATH 로 재호출**한다. 이 셸 커맨드는 `src/hook_runtime/trigger.rs::spawn_shell`
 이 `sh -c`(windows `cmd /C`)로 실행하며 **부모(host 앱) 프로세스의 환경을 상속**한다.
 
 - **함정**: 패키징된 `.app` 을 macOS LaunchServices(Dock/Finder 더블클릭/`open Tasty.app`)로 띄우면
@@ -248,7 +248,7 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
   인터랙티브 터미널이 `tasty` CLI 를 찾는 것도 이 경로 덕분)이 **동일 로직**을 쓴다. 구분자(`:`/`;`)는
   `std::env::{split_paths,join_paths}` 로 크로스플랫폼 처리.
 - **회귀 방어**: `crates/tasty-utils/src/process.rs` 의 `prepends_self_binary_dir_to_minimal_path`
-  (순수 함수, 최소 PATH prepend 검증) + `src/hook_handler/trigger.rs` 의
+  (순수 함수, 최소 PATH prepend 검증) + `src/hook_runtime/trigger.rs` 의
   `inline_shell_resolves_self_binary_via_augmented_path`(self-dir 없는 PATH 에서 basename 재호출 성공
   end-to-end 검증).
 

@@ -1,4 +1,4 @@
-//! webhook과 hook handler의 제품 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
+//! webhook·hook handler·hook runtime의 제품 코드가 IPC 수신부·CLI 진입부·메인 루프를 직접 참조하는지 검사한다.
 //! 내부 IPC 호출은 tasty_ipc::host_call::HostIpcInjector로 주입해야 한다(ADR-0002).
 //! 같은 크레이트 안의 경계이므로 컴파일러가 의존 방향을 제한하지 않는다.
 //! 공유 crate_paths 파서로 경로를 읽고 파일·인라인 test 전용 코드를 제외한다.
@@ -9,12 +9,16 @@ use tasty_doc_guards::repo_root;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::rust_sources;
 
-const RUNNER_ROOTS: &[&str] = &["src/webhook", "src/hook_handler"];
+const RUNNER_ROOTS: &[&str] = &["src/webhook", "src/hook_handler", "src/hook_runtime"];
 
-/// 두 실행부를 모두 수집했는지 확인할 파일.
-const RUNNER_ANCHORS: &[&str] = &["src/webhook/mod.rs", "src/hook_handler/mod.rs"];
+/// 세 실행부를 모두 수집했는지 확인할 파일.
+const RUNNER_ANCHORS: &[&str] = &[
+    "src/webhook/mod.rs",
+    "src/hook_handler/mod.rs",
+    "src/hook_runtime/mod.rs",
+];
 
-/// 수집 누락을 찾는 하한. 2026-09-22 실측 18개(webhook10·hook_handler8).
+/// 수집 누락을 찾는 하한. 2026-09-30 실측 21개(webhook10·hook_handler7·hook_runtime4).
 const MIN_RUNNER_FILES: usize = 14;
 
 /// 금지할 루트 이름과 사유. src/lib.rs의 재노출 별칭도 포함한다.

@@ -97,8 +97,8 @@ pub(crate) use file::identify_worker;
 pub(crate) use gfx::gpu;
 #[cfg(feature = "gui")]
 pub(crate) use gfx::renderer;
+pub(crate) use hook_runtime::global as global_hooks;
 pub(crate) use host_api::hooks;
-pub(crate) use host_api::hooks::global as global_hooks;
 #[cfg(feature = "gui")]
 pub(crate) use host_api::webview;
 #[cfg(feature = "gui")]

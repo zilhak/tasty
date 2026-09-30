@@ -1,6 +1,13 @@
-//! 엔진별 훅 등록·감시 상태를 소유한다.
-//! 여러 엔진이 공유하는 handler 정의 registry는 `hook_handler`에 있고, 여기에는 엔진마다 따로 두는 상태만 둔다.
+//! 엔진별 훅 등록·감시 상태와 발화한 훅의 실행을 소유한다.
+//! 여러 엔진이 공유하는 handler 정의 registry는 `hook_handler`에 있고, 여기에는 엔진마다 따로 두는 상태와
+//! 바인딩 실행·전역 훅 셸 실행·IpcSequence worker를 둔다. worker와 OS 프로세스는 이 모듈의 private 자원이다.
 //! 이름에 global이 붙은 전역 훅도 엔진별 등록이며 프로세스 전역 원본으로 합치지 않는다([ADR-0062](../../docs/adr/0062-task-service-and-hook-runtime.md)).
+
+pub(crate) mod global;
+mod trigger;
+mod worker;
+
+pub(crate) use worker::{SequenceNotQueued, enqueue_sequence};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64};
@@ -8,7 +15,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64};
 use tasty_hooks::{FiredHook, HookBinding, HookEvent, HookManager};
 
 use crate::core::host_event::PendingHostEvent;
-use crate::global_hooks::{GlobalHookManager, HookCondition};
+use global::{GlobalHookManager, HookCondition};
 
 /// 발화한 바인딩을 실행할 때 쓰는 IPC 주입기. 없으면 IpcSequence handler를 건너뛴다.
 pub(crate) struct HookExecutor {
@@ -22,7 +29,7 @@ impl HookExecutor {
 
     /// 바인딩 실행을 시작만 하고 셸 작업의 완료는 기다리지 않는다.
     fn run(&self, fired: &FiredHook, surface_id: u32) {
-        crate::hook_handler::trigger::execute_binding(
+        trigger::execute_binding(
             &fired.binding,
             self.injector.as_ref(),
             &fired.event,
@@ -184,9 +191,11 @@ impl HookRuntimeState {
             .collect()
     }
 
-    /// 조건을 만족한 전역 훅의 명령을 돌려준다. 실행은 호출자가 맡는다.
-    pub(crate) fn tick_global(&mut self) -> Vec<(u32, String)> {
-        self.global.tick()
+    /// 조건을 만족한 전역 훅의 셸 명령을 실행한다. 자식의 완료는 기다리지 않는다.
+    pub(crate) fn run_due_global_hooks(&mut self) {
+        for (_, command) in self.global.tick() {
+            global::spawn_command(&command);
+        }
     }
 }
 

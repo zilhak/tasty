@@ -425,7 +425,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 테스트 전용이 아닌 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
 부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
 `egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md), 대체: [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)).
-자동화 실행부(`src/webhook/` · `src/hook_handler/`)가 inbound adapter 를 부르는 방향은
+자동화 실행부(`src/webhook/` · `src/hook_handler/` · `src/hook_runtime/`)가 inbound adapter 를 부르는 방향은
 `automation_runners_do_not_reach_inbound_adapters.rs` 가 같은 판정기로 막는다.
 
 그래서 이 경계를 세운다고 편집 빌드 범위가 줄지는 않는다 — 도메인을 고쳐도 GUI 를 고쳐도 같은

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
 - **ADR**: 없음
-- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_handler/trigger.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/core/state/idle_hooks.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
+- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_runtime/trigger.rs`, 전역 훅 감시·셸 실행 `src/hook_runtime/global.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/core/state/idle_hooks.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
 - **화면**: 없음
 
 ## 목적
@@ -81,10 +81,11 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 - **`InlineShell(cmd)`** — 하위호환 익명 셸(`tasty set hook --command "..."`). 레지스트리에 등록되지 않는 인라인 핸들러라 export/영속화 대상이 아니다.
 
 `tasty-hooks`는 surface와 이벤트를 매칭해 `FiredHook`을 반환한다. 레지스트리 조회와 실제 실행은
-`hook_handler::trigger::execute_binding`이 담당한다.
+`hook_runtime::trigger::execute_binding`이 담당한다. 핸들러 정의 레지스트리는 엔진이 공유하고(`src/hook_handler/`),
+훅 등록·감시 상태와 실행은 엔진별 `HookRuntimeState`와 `src/hook_runtime/`이 맡는다.
 
 IpcSequence는 호스트 명령 큐를 처리하는 스레드에서 기다리지 않는다.
-지연 생성한 `hook-sequence` 워커 하나가 surface hook과 수동 `hook_handler.dispatch`를 접수 순서대로 실행한다.
+지연 생성한 `hook-sequence` 워커 하나(`src/hook_runtime/worker.rs`)가 surface hook과 수동 `hook_handler.dispatch`를 접수 순서대로 실행한다.
 한 시퀀스의 step이 응답하거나 대기가 끝나면 다음 step으로 넘어가며 오류를 기록하고 계속한다.
 webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 않는다.
 
@@ -116,7 +117,7 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 
 ##### 트리거 payload (이벤트별 key)
 
-훅 트리거의 payload 는 `src/hook_handler/trigger.rs` 의 `trigger_payload` 가 조립한다 — 셸 env(`TASTY_HOOK_*`)와 IpcSequence 값슬롯(`${body.*}`)이 같은 소스에서 파생되는 단일 지점이다. 값은 **등록 패턴이 아니라 실제 관측된 이벤트**에서 채운다(예: `output-match:ERR.*` 로 등록해도 `matched_text` 는 실제로 매칭된 줄).
+훅 트리거의 payload 는 `src/hook_runtime/trigger.rs` 의 `trigger_payload` 가 조립한다 — 셸 env(`TASTY_HOOK_*`)와 IpcSequence 값슬롯(`${body.*}`)이 같은 소스에서 파생되는 단일 지점이다. 값은 **등록 패턴이 아니라 실제 관측된 이벤트**에서 채운다(예: `output-match:ERR.*` 로 등록해도 `matched_text` 는 실제로 매칭된 줄).
 
 | 이벤트 | payload key | 셸 env | 값 |
 |--------|-------------|--------|-----|

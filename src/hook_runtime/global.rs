@@ -181,25 +181,25 @@ impl GlobalHookManager {
 
         to_fire
     }
+}
 
-    /// 셸 프로세스 생성을 요청한다. 실패는 로그에 남기며 자식 완료·종료 코드는 기다리지 않는다.
-    pub fn execute_command(command: &str) {
-        #[cfg(windows)]
-        let mut cmd = {
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/C", command]);
-            c
-        };
-        #[cfg(not(windows))]
-        let mut cmd = {
-            let mut c = std::process::Command::new("sh");
-            c.args(["-c", command]);
-            c
-        };
-        let result = tasty_utils::process::hide_console(&mut cmd).spawn();
-        if let Err(e) = result {
-            tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
-        }
+/// 전역 훅 명령의 셸 프로세스 생성을 요청한다. 실패는 로그에 남기며 자식 완료·종료 코드는 기다리지 않는다.
+pub(super) fn spawn_command(command: &str) {
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    let result = tasty_utils::process::hide_console(&mut cmd).spawn();
+    if let Err(e) = result {
+        tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
     }
 }
 
