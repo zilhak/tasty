@@ -123,17 +123,18 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 `tasty-domain`은 구조 저널의 도메인 부분을 시험 전용으로 구현한다. 본 바이너리의 `CoreState`가 구조 상태의 유일한 원본이며, 이 크레이트의 모델은 그와 동시에 원본이 되지 않는다. 의존 방향은 `tasty-domain` → `tasty-model`이고 `tasty-event-store`에는 의존하지 않는다. 두 크레이트를 연결하는 것은 본 바이너리의 runtime 모듈이다.
 
-- 저널 전용 구조 모델: workspace·category·pane·tab·surface 트리, 이름, 소속, 분할 비율, surface kind와 자료 참조, metadata. 선택·포커스·접힘 같은 View 상태는 담지 않는다. workspace·category·pane·tab·surface ID와 분할 방향은 `tasty-model`의 타입을 쓰고, revision·batch 번호·분할 비율 비트·surface 자료 참조처럼 저널에만 필요한 값은 이 크레이트에 둔다. 새 ID는 공급자 trait에서 받는다.
-- 구조 이벤트(create·split·move·rename·close, metadata 설정·삭제)와 이벤트 본문 codec. 이벤트마다 type tag와 schema version을 붙이고 모르는 tag·version은 오류로 중단한다. 분할 비율은 f32 비트를 그대로 저장한다. snapshot 본문은 model version과 함께 해석한다. 저장 봉투·저장 형식 버전·migration은 이벤트 저장소가 정한다.
-- pure evolve: 저장 batch가 아니라 해석을 마친 도메인 batch(batch 번호와 revision이 붙은 구조 이벤트 목록)를 받는다. 모델 사본에 모두 적용한 뒤 교체하므로 일부만 반영되지 않으며, batch 순서와 구조 stream revision의 연속성을 검사한다.
+- 엔진별 구조 stream: journal 하나에 엔진마다 구조 stream이 하나 있고 이름은 `structure:` 접두로 시작한다. 이 접두가 없는 stream은 구조 이벤트로 해석하지 않는다.
+- 저널 전용 구조 모델(엔진 하나): workspace·category·pane·tab·surface 트리, 이름, 소속, 분할 비율, surface kind와 자료 참조. workspace의 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 typed 필드이고, metadata는 사용자 정의 키만 담는다. 선택·포커스·접힘 같은 View 상태는 담지 않는다. workspace·category·pane·tab·surface ID와 분할 방향은 `tasty-model`의 타입을 쓰고, revision·batch 번호·분할 비율 비트·surface 자료 참조처럼 저널에만 필요한 값은 이 크레이트에 둔다. 새 ID는 공급자 trait에서 받는다.
+- 구조 이벤트(create·split·move·rename·close, workspace 부제·설명과 attach 매핑 설정, tab 사용자 지정 이름 설정, metadata 설정·삭제)와 이벤트 본문 codec. 이벤트마다 type tag와 schema version을 붙이고 모르는 tag·version은 오류로 중단한다. 분할 비율은 f32 비트를 그대로 저장한다. snapshot 본문은 한 batch 위치의 모든 엔진 모델이며 model version과 함께 해석한다. 저장 봉투·저장 형식 버전·migration은 이벤트 저장소가 정한다.
+- pure evolve: 저장 batch가 아니라 해석을 마친 도메인 batch(batch 번호와 엔진 stream별로 revision이 붙은 구조 이벤트 목록)를 받는다. batch 하나를 모든 엔진 모델 사본에 적용한 뒤 교체하므로 한 엔진만 반영되는 일이 없으며, batch 순서와 엔진 stream별 revision의 연속성을 검사한다. 이벤트가 없는 엔진 모델도 적용 위치를 옮긴다.
 - decide 계약: 상태·명령만 보고 이벤트·effect·응답을 정한다. 새 ID와 시각은 결정 문맥으로 받는다.
 
 본 바이너리의 구조 저널 runtime 모듈(`src/runtime/`)은 두 크레이트를 연결하며, 아직 제품 경로에서 호출하지 않는 시험 전용 모듈이다.
 
-- 저장 batch에서 구조 stream 이벤트만 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 같은 모델·ID·revision을 만든다.
+- 엔진의 구조 stream 이름을 레이아웃 슬롯 번호로 정한다(`structure:slot-<번호>`). 저장 batch에서 엔진 구조 stream 이벤트만 stream별로 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 모든 엔진에서 같은 모델·ID·revision을 만든다. snapshot 하나가 모든 엔진 모델과 그 surface 자료 참조를 함께 pin한다.
 - decide 계약에 대해 generic한 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
 
-기존 layout 슬롯을 구조 journal로 가져오는 importer(`src/core/layout_persistence/import.rs`)도 시험 전용이며 부팅 경로에 연결하지 않았다. 슬롯 JSON 하나를 기존 슬롯 판정(높은 version·해석 실패 거절)으로 읽고, 새 ID를 journal의 ID 예약에서 받아 이벤트 batch 하나와 명령 기록으로 확정한다. 슬롯 안의 위치(workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응은 결과와 명령 기록에 남기며, 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고 다른 내용이면 거절한다. 도메인 모델에 자리가 없는 값(workspace subtitle·description·attach 매핑, tab의 사용자 지정 이름, terminal의 cwd·복원 명령·scrollback 참조, plugin surface 자료)은 `import.` 접두 metadata로 담는다. scrollback 파일이 있으면 내용을 payload로 저장해 이벤트에서 pin하고, 없으면 참조만 남긴다. 선택 workspace·focus pane·선택 tab·카테고리 접힘은 이벤트로 만들지 않고 결과로만 돌려준다.
+기존 layout 슬롯을 구조 journal로 가져오는 importer(`src/core/layout_persistence/import.rs`)도 시험 전용이며 부팅 경로에 연결하지 않았다. 슬롯 JSON 하나를 기존 슬롯 판정(높은 version·해석 실패 거절)으로 읽고, 그 슬롯 엔진의 구조 stream에 이벤트 batch 하나와 명령 기록으로 확정한다. 새 ID는 journal의 ID 예약에서 받으므로 여러 슬롯을 가져와도 엔진 사이에서 겹치지 않으며, surface ID는 standalone PTY ID 기준값 아래에서만 받는다. 슬롯 안의 위치(workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응은 결과와 명령 기록에 남기며, 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고 다른 내용이면 거절한다. workspace 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 전용 이벤트로 기록한다. terminal의 cwd·복원 명령·scrollback과 plugin surface 자료는 이벤트가 아니라 surface 저장 자료 payload 하나로 저장하고 이벤트에서 pin하며, 저장할 값이 없으면 자료 참조를 만들지 않는다. scrollback 파일이 없으면 저장 자료에 참조만 남긴다. 선택 workspace·focus pane·선택 tab·카테고리 접힘은 이벤트로 만들지 않고 결과로만 돌려준다.
 
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)

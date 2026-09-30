@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 데이터 홈의 구조 journal 하나에서 구조 ID를 전역 발급하는 배선과 `u32` 좁힘(영속 ID 예약 절), importer의 엔진별 stream 분리
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 데이터 홈의 구조 journal 하나에서 구조 ID를 전역 발급하는 배선과 `u32` 좁힘(영속 ID 예약 절)
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -134,7 +134,7 @@ ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이
 
 데이터 홈에 구조 journal이 하나이므로 모든 엔진의 구조 쓰기가 한 파일의 writer에서 직렬화된다. 이 지연은 구조 명령 commit 지연 측정으로 확인한다.
 여러 엔진을 바꾸는 명령은 추가 장치 없이 한 transaction으로 확정할 수 있다.
-현재 layout importer는 한 저장소에 여러 슬롯을 가져올 때 모두 같은 구조 stream 하나에 이어 붙인다. 엔진이 stream이라는 배치와 맞지 않으므로 활성화 전에 슬롯마다 해당 엔진의 stream으로 가져오도록 고쳐야 한다.
+시험 전용 layout importer는 슬롯마다 해당 엔진의 구조 stream으로 가져오며, surface ID는 standalone PTY ID 기준값 아래에서 예약한다.
 
 schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 DB를 걸러내지 못한다. 이 저장소의 다른 DB는 그 표를 쓰지 않는다.
 

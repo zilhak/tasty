@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), typed 메타데이터 필드와 이벤트, 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
+- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. typed 메타데이터 필드와 전용 이벤트, surface 저장 자료도 시험 전용 importer까지 반영됐다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -57,7 +57,7 @@ CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대�
 
 ## Consequences
 
-현재 importer는 위 속성을 `import.` 접두 generic metadata 키에 임시로 넣는다. 제품에 연결하기 전에 typed 필드와 surface 저장 자료로 바꿔야 한다.
+시험 전용 importer는 위 속성을 typed 이벤트로, terminal·plugin surface 자료를 surface 저장 자료 payload로 기록하며 `import.` 접두 metadata 키를 쓰지 않는다.
 memory DB의 사용자 기능 `surface.meta`는 이 저널의 generic metadata와 별개이며, 두 저장소의 관계는 이 결정이 정하지 않는다.
 
 저장 계약을 도메인 이벤트로 검증하는 순수 부분을 `-p tasty-domain` 단위에서 시험할 수 있고, root 빌드와 교집합 없이 병렬로 작성할 수 있다.
