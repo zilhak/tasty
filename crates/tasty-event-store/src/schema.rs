@@ -100,6 +100,9 @@ const V1: &str = r#"
         outcome TEXT,
         -- 이 attempt가 Running에서 벗어날 때 보고한 결과. 재시도해도 지우지 않는다.
         result BLOB,
+        -- Uncertain으로 끝난 attempt를 대조로 닫은 상태와 결과. Running 시점 값과 따로 둔다.
+        reconciled_outcome TEXT,
+        reconciled_result BLOB,
         PRIMARY KEY (effect_id, attempt)
     );
 

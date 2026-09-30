@@ -152,6 +152,47 @@ fn retry_clears_the_current_result_and_keeps_it_per_attempt() {
 }
 
 #[test]
+fn reconciliation_is_kept_on_the_attempt_after_a_retry() {
+    let (_dir, mut store, epoch) = fresh();
+    seed(&mut store, epoch, "fx-1", Pending);
+    store
+        .transition_effect(epoch, &run("fx-1", Pending, 1))
+        .expect("run");
+    let lost = EffectTransition {
+        result: Some(b"worker vanished".to_vec()),
+        ..finish("fx-1", Uncertain, 1)
+    };
+    store.transition_effect(epoch, &lost).expect("unknown");
+    let reconciled = EffectTransition {
+        result: Some(b"reconciled: exit 1".to_vec()),
+        ..step("fx-1", Uncertain, Failed)
+    };
+    store
+        .transition_effect(epoch, &reconciled)
+        .expect("reconcile");
+    store
+        .transition_effect(epoch, &step("fx-1", Failed, Pending))
+        .expect("retry");
+    assert_eq!(
+        store.effect("fx-1").expect("read").expect("exists").result,
+        None
+    );
+
+    let attempts = store.effect_attempts("fx-1").expect("attempts");
+    assert_eq!(attempts.len(), 1);
+    let first = &attempts[0];
+    // Running 시점의 결과는 대조로 덮이지 않는다.
+    assert_eq!(first.outcome, Some(Uncertain));
+    assert_eq!(first.result.as_deref(), Some(&b"worker vanished"[..]));
+    assert_eq!(first.reconciled_outcome, Some(Failed));
+    assert_eq!(
+        first.reconciled_result.as_deref(),
+        Some(&b"reconciled: exit 1"[..])
+    );
+    assert_eq!(first.writer_epoch, epoch);
+}
+
+#[test]
 fn transitions_outside_the_table_are_rejected() {
     let (_dir, mut store, epoch) = fresh();
     let cases = [

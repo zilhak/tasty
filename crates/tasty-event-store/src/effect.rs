@@ -126,6 +126,10 @@ pub struct AttemptRecord {
     pub outcome: Option<EffectState>,
     /// Running에서 벗어날 때 보고한 결과. 이후 재시도로 effect의 현재 결과가 비워져도 남는다.
     pub result: Option<Vec<u8>>,
+    /// Uncertain으로 끝난 attempt를 대조로 닫은 상태. 대조 전이면 `None`이다.
+    pub reconciled_outcome: Option<EffectState>,
+    /// 대조가 보고한 결과(증거 포함).
+    pub reconciled_result: Option<Vec<u8>>,
 }
 
 impl EventStore {
@@ -170,7 +174,8 @@ impl EventStore {
     pub fn effect_attempts(&self, effect_id: &str) -> StoreResult<Vec<AttemptRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT attempt, journal_id, engine_id, surface_id, runtime_epoch,
-                activation_generation, writer_epoch, outcome, result
+                activation_generation, writer_epoch, outcome, result, reconciled_outcome,
+                reconciled_result
              FROM effect_attempts WHERE effect_id = ?1 ORDER BY attempt",
         )?;
         let rows = stmt.query_map([effect_id], read_attempt)?;
@@ -227,6 +232,9 @@ pub(crate) fn apply_transition(
     let mut next_attempt = attempt;
     if t.from == EffectState::Running {
         close_attempt(conn, t, attempt)?;
+    }
+    if t.from == EffectState::Uncertain {
+        record_reconciliation(conn, t, attempt)?;
     }
     if t.to == EffectState::Running {
         next_attempt = attempt + 1;
@@ -303,6 +311,16 @@ fn close_attempt(conn: &Connection, t: &EffectTransition, current: u32) -> Store
     conn.execute(
         "UPDATE effect_attempts SET outcome = ?3, result = ?4 WHERE effect_id = ?1 AND attempt = ?2",
         params![t.effect_id, current, t.to.as_str(), t.result],
+    )?;
+    Ok(())
+}
+
+/// 대조 결과를 Uncertain으로 끝난 attempt 행에 남긴다. 재시도가 effect의 현재 결과를 비워도 남는다.
+fn record_reconciliation(conn: &Connection, t: &EffectTransition, attempt: u32) -> StoreResult<()> {
+    conn.execute(
+        "UPDATE effect_attempts SET reconciled_outcome = ?3, reconciled_result = ?4
+         WHERE effect_id = ?1 AND attempt = ?2",
+        params![t.effect_id, attempt, t.to.as_str(), t.result],
     )?;
     Ok(())
 }
@@ -431,6 +449,8 @@ struct RawAttempt {
     writer_epoch: i64,
     outcome: Option<String>,
     result: Option<Vec<u8>>,
+    reconciled_outcome: Option<String>,
+    reconciled_result: Option<Vec<u8>>,
 }
 
 fn read_attempt(r: &Row<'_>) -> rusqlite::Result<RawAttempt> {
@@ -444,6 +464,8 @@ fn read_attempt(r: &Row<'_>) -> rusqlite::Result<RawAttempt> {
         writer_epoch: r.get(6)?,
         outcome: r.get(7)?,
         result: r.get(8)?,
+        reconciled_outcome: r.get(9)?,
+        reconciled_result: r.get(10)?,
     })
 }
 
@@ -461,6 +483,12 @@ fn finish_attempt(raw: RawAttempt) -> StoreResult<AttemptRecord> {
         writer_epoch: WriterEpoch(to_u64(raw.writer_epoch)?),
         outcome: raw.outcome.as_deref().map(parse_state).transpose()?,
         result: raw.result,
+        reconciled_outcome: raw
+            .reconciled_outcome
+            .as_deref()
+            .map(parse_state)
+            .transpose()?,
+        reconciled_result: raw.reconciled_result,
     })
 }
 
