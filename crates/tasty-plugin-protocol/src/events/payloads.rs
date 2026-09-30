@@ -164,6 +164,8 @@ pub enum SplitLevel {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WorkspaceCreated {
     pub workspace_id: u32,
+    /// 발행 시점에 workspace가 속한 창의 id. 창이 없는 engine(보관 중인 engine 등)에서 만들었거나
+    /// 발행 전에 창에서 사라졌으면 0이며, 0은 창 없음을 뜻한다.
     pub window_id: u64,
     pub name: String,
 }
