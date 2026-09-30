@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
+- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), typed 메타데이터 필드와 이벤트, 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -26,6 +26,11 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 - `tasty-domain`이 소유하는 것: 도메인 이벤트(DomainEvent), 저널 전용 구조 모델(JournalModel), batch 단위의 순수 `evolve`, Decider trait,
   도메인 이벤트 payload codec(type tag·schema version과 바이트 사이의 변환).
   첫 이벤트 범위는 workspace·category·pane·tab·surface의 생성·분할·이동·이름 변경·닫기와 metadata 갱신이다.
+- 사용자와 에이전트가 명시적으로 쓰는 속성은 JournalModel의 typed 필드와 전용 이벤트로 둔다. workspace의 subtitle·description·attach 매핑과 tab의 명시 이름이 여기에 든다.
+  attach 매핑은 workspace와 원격 프로필·원격 workspace를 잇는 사용자 설정이며, `RemoteState`가 소유하는 runtime ID mapping과 다르다.
+  generic metadata 이벤트(`MetadataSet`·`MetadataRemoved`)는 사용자 정의 키에만 쓰고, 이 속성들을 예약 키로 넣지 않는다.
+- 관측값은 이벤트로 만들지 않는다. terminal의 cwd·복원 명령·scrollback 참조는 surface kind별 저장 자료(자료 참조가 가리키는 payload)로 저장·닫기 시점에 캡처한다.
+  cwd가 바뀔 때마다 commit하지 않으며, replay가 과거 cwd를 명령으로 다시 실행하지 않는다.
 - 의존: 값·ID 타입을 재사용하기 위한 `tasty-model`뿐이다. `tasty-event-store`·root·GUI·PTY·SQL 계층을 의존하지 않는다.
   저장 봉투, 저장 형식 버전, migration은 EventStore의 소관이다.
 - codec은 모르는 type tag나 schema version을 만나면 명시 오류로 재구성을 멈춘다. 건너뛰고 계속하지 않는다.
@@ -51,6 +56,9 @@ CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대�
 이 codec은 명시적인 type tag·schema version을 쓰므로 도메인 타입 필드를 바꿔도 저널 직렬화가 자동으로 바뀌지 않는다는 0056의 요구를 지킨다.
 
 ## Consequences
+
+현재 importer는 위 속성을 `import.` 접두 generic metadata 키에 임시로 넣는다. 제품에 연결하기 전에 typed 필드와 surface 저장 자료로 바꿔야 한다.
+memory DB의 사용자 기능 `surface.meta`는 이 저널의 generic metadata와 별개이며, 두 저장소의 관계는 이 결정이 정하지 않는다.
 
 저장 계약을 도메인 이벤트로 검증하는 순수 부분을 `-p tasty-domain` 단위에서 시험할 수 있고, root 빌드와 교집합 없이 병렬로 작성할 수 있다.
 도메인 crate가 GUI·PTY·SQL을 참조하면 컴파일 오류가 난다. 저장소와 도메인을 함께 쓰는 시험(commit 실패 시 상태 불변, 같은 명령 재시도)은

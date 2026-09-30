@@ -21,13 +21,16 @@
 ### 적용 범위
 
 첫 적용 범위는 engine/workspace/category/pane/tab/surface 구조와 이름·소속·분할 비율, 논리 터미널 세션의 수명 사실,
-구조 작업의 진행·보상·정리와 사용자 undo가 참조하는 구조 기록이다. 이 범위에서는 영속 이벤트가 유일한 원본이고
+구조 작업의 진행·보상·정리와 사용자 undo가 참조하는 구조 기록이다.
+여기서 이름에는 workspace·tab 이름과 함께 workspace의 subtitle·description·attach 매핑, tab의 명시 이름이 든다([ADR-0064](0064-journal-domain-model-crate.md)).
+이 범위에서는 영속 이벤트가 유일한 원본이고
 domain snapshot과 조회 모델은 파생값이다. 범위 안의 모든 writer가 새 경계로 옮겨지기 전에는 해당 범위의 저널을 원본으로 활성화하지 않으며,
 같은 대상에 옛 writer와 새 writer를 섞지 않는다.
 
 다음은 범위 밖이며 각자의 원본을 유지한다. 이벤트 저널과 원자적으로 함께 바뀐다고 주장하지 않는다.
 
 - 터미널 grid·scrollback(Terminal), 실제 PTY·프로세스(Pty), busy·단기 attention·live 점유(`LiveDomainState`).
+- Terminal에서 관측하거나 계산한 값: cwd, OSC 제목, tab 표시 이름. 복원에 필요한 cwd·복원 명령·scrollback 참조는 이벤트가 아니라 surface 저장 자료로 남긴다.
 - 외부 연결·ID mapping·구독 진행(Remote), 선택·scroll·popup(View).
 - 설정·memory·secret·approval·agent task·hook·plugin 내부 데이터 같은 기존 서비스 데이터.
 
