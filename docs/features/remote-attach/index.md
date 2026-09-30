@@ -208,16 +208,17 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 
 ### 서버(피점유)측 비-holder 구조 변경 차단
 
-위 절이 다루는 것은 **client(점유 holder)측** 구조 변경이 원격(서버)에서 실행되도록 forward 되는 경로다. 반대 방향 — **서버 자신이 hard-occupied 상태인 자기 workspace 에 대해, 점유 holder 가 아닌 제3자(서버 로컬 IPC/CLI/agent)가 직접** 구조 변경 IPC(`split`/`workspace.close`/`tab.create`/`terminal.spawn`/`pane.close`/`tab.close`/`tab.move`/`surface.close`/`markdown.navigate`/`image.open`)를 호출하는 경우도 배타성 위반이다 — [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 이 정의하는 hard 점유의 배타성은 입력(`apply_send_to_surface`)·resize(`resize_all_terminals`)뿐 아니라 구조 변경까지 적용돼야 한다.
+위 절이 다루는 것은 **client(점유 holder)측** 구조 변경이 원격(서버)에서 실행되도록 forward 되는 경로다. 반대 방향 — **서버 자신이 hard-occupied 상태인 자기 workspace 에 대해, 점유 holder 가 아닌 제3자(서버 로컬 IPC/CLI/agent)가 직접** 구조 변경 IPC(`split`/`workspace.close`/`tab.create`/`terminal.spawn`/`pane.close`/`tab.close`/`tab.move`/`surface.close`/`markdown.navigate`/`image.open`/`preset.apply`/`pty.attach_surface`)를 호출하는 경우도 배타성 위반이다 — [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 이 정의하는 hard 점유의 배타성은 입력(`apply_send_to_surface`)·resize(`resize_all_terminals`)뿐 아니라 구조 변경까지 적용돼야 한다.
 
-- **차단 대상**: 위 IPC 10종을 **일반 IPC/CLI 진입점**(서버 로컬 호출)으로 직접 호출하고, 대상 pane/tab/surface(`terminal.spawn` 은 `pane` 오버라이드까지 반영해 확정된 **최종 pane**) 가 hard-occupied workspace 에 속한 경우.
+- **차단 대상**: 위 IPC 12종을 **일반 IPC/CLI 진입점**(서버 로컬 호출)으로 직접 호출하고, 대상 pane/tab/surface(`terminal.spawn` 은 `pane` 오버라이드까지 반영해 확정된 **최종 pane**) 가 hard-occupied workspace 에 속한 경우.
   요청은 `invalid_params` 에러(안내 문구: "점유 중이라 불가능, 다른 workspace 사용")로 거부되고 트리는 전혀 바뀌지 않는다.
   `terminal.spawn`(`tasty claude/codex spawn` 이 호출) 은 [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) 으로 이 목록에 추가됐다 — spawn 자체는 성공 응답을 주면서 그 결과물(새 surface)이 즉시 같은 hard lock 을 상속받아, spawn 을 호출한 쪽조차 자기 결과물에 입력을 못 넣게 되는 부작용을 막기 위함.
-  다만 `terminal.spawn` 의 판정만 다른 9종과 **집행 지점이 다르다** — 나머지는 라우터 가드(`hard_occupied_structural_guard`)가 method 파라미터로 대상을 찾지만, `terminal.spawn` 의 실제 대상은 `pane` 오버라이드까지 반영해 확정된 pane 이라 그것을 아는 핸들러 안(`spawn_target_guard`)에서 건다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+  다만 `terminal.spawn` 의 판정만 다른 11종과 **집행 지점이 다르다** — 나머지는 라우터 가드(`hard_occupied_structural_guard`)가 method 파라미터로 대상을 찾지만, `terminal.spawn` 의 실제 대상은 `pane` 오버라이드까지 반영해 확정된 pane 이라 그것을 아는 핸들러 안(`spawn_target_guard`)에서 건다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
   덕분에 `--workspace <비점유 ws>` + `--pane <hard-occupied ws 의 pane>` 조합으로 이 가드를 우회하던 구멍도 함께 닫혔다.
   `markdown.navigate`/`image.open` 은 convert 진입점이 kind 별로 흩어져 있어 이 두 method 만 커버한다(완전하지 않음 — host 범용 convert 팝업은 `state.dispatch_intent` 를 직접 호출해 이 IPC 라우팅 자체를 안 타고, 향후 새 kind 가 자기 전용 convert 진입 method 를 추가하면 이 목록에 없는 한 가드가 적용되지 않는다).
 - **차단 대상이 아닌 경우(중요)**: 점유 holder 본인이 mirror 안에서 실제로 만든 구조 변경이 위 forward 경로로 서버에 도달해 실행되는 것은 **정상 동작이며 이 차단의 대상이 아니다** — "attach 연결 자체가 그 workspace 에 대한 구조 변경 권한을 증명한다"는 forward 모델(위 절)을 그대로 유지한다. `terminal.spawn` 은 forward 대상(위 "현재 범위")에 포함되지 않으므로 이 예외와 무관 — 가드 추가가 holder 의 정당한 forward 요청을 막는 회귀는 없다.
-- **알려진 갭**: `pty.attach_surface`(`AdoptTerminal`) 경로도 같은 `tap_new_workspace_member` 후처리를 타 이론상 `terminal.spawn` 과 동일한 부작용을 가질 수 있으나, 아직 이 가드 대상에 포함되지 않았다(재검토 조건은 ADR-0021 참고).
+  `preset.apply` 는 탭 preset 이면 `target_pane_id`, pane preset 이면 `target_workspace_id` 의 workspace 로 판정하고, 대상을 생략하면 적용 코드와 같게 그 창의 활성 workspace 를 대상으로 본다. workspace preset 은 새 workspace 를 만들므로 차단하지 않는다.
+  `pty.attach_surface` 는 `pane_id` 의 workspace 로 판정한다. 거부되면 PTY 는 headless registry 에 그대로 남는다.
 - **차단 근거**: [`docs/identity.md`](../../identity.md) 원칙1(에이전트 행동의 부수효과가 사용자 상태에 닿지 않아야 함) — 서버 로컬에서 만든/닫은/옮긴 탭이 점유 client 화면에 통지 없이 편입/소멸/재배치되면, 원격 사용자가 보고 있는 화면에 자신이 하지 않은 변화가 일어나는 셈이라 이 원칙을 위반한다.
 - **메커니즘**: [dev-guide/attach-behavior "서버 로컬(비-holder) 구조 변경 차단"](../../dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단).
 

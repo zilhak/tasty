@@ -3933,6 +3933,123 @@ mod forward_exec_tests {
         );
     }
 
+    /// preset.apply·pty.attach_surface도 hard 점유 workspace에 탭·pane을 끼워 넣으므로 거부한다.
+    /// 대상을 생략한 preset.apply는 활성 workspace의 pane에 적용되므로 같은 기준으로 판정한다.
+    /// 거부는 preset 조회보다 먼저여서 이 시험은 preset 파일 없이 점유 사유만 확인한다.
+    #[test]
+    fn dispatch_denies_preset_apply_and_pty_attach_when_hard_occupied() {
+        use crate::core::pty_registry::PtySpawnSpec;
+
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        assert_eq!(
+            state.active_workspace, 0,
+            "기본 대상은 점유된 workspace 여야 한다"
+        );
+        let pty_id = engine
+            .pty_registry
+            .register(
+                PtySpawnSpec {
+                    owner_agent_id: "agent-x".into(),
+                    cwd: None,
+                    command: vec![],
+                },
+                std::time::Instant::now(),
+            )
+            .expect("register headless pty");
+        engine
+            .terminals
+            .insert(pty_id, Terminal::new_detached(80, 24));
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], 7)
+            .expect("workspace 점유 획득");
+
+        let tab_count = |engine: &crate::core::CoreState| {
+            engine.workspaces[0]
+                .pane_layout()
+                .find_pane(pane_id)
+                .expect("pane exists")
+                .tabs
+                .len()
+        };
+        let tabs_before = tab_count(&engine);
+
+        for (method, params) in [
+            (
+                "preset.apply",
+                serde_json::json!({ "kind": "tab", "name": "any", "target_pane_id": pane_id }),
+            ),
+            (
+                "preset.apply",
+                serde_json::json!({ "kind": "tab", "name": "any" }),
+            ),
+            (
+                "preset.apply",
+                serde_json::json!({ "kind": "pane", "name": "any", "target_workspace_id": ws_id }),
+            ),
+            (
+                "preset.apply",
+                serde_json::json!({ "kind": "pane", "name": "any" }),
+            ),
+            (
+                "pty.attach_surface",
+                serde_json::json!({ "id": pty_id, "pane_id": pane_id }),
+            ),
+        ] {
+            let req = ipc_request(method, params.clone());
+            let resp = handle_with_caller(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &req,
+                &CallerContext::Local,
+            );
+            let err = resp.error.unwrap_or_else(|| {
+                panic!("{method} {params}: hard-occupied 워크스페이스에 대한 비-holder 요청은 거부돼야 한다")
+            });
+            assert!(
+                err.message.to_lowercase().contains("occupied"),
+                "{method} {params}: 에러 메시지에 점유 안내가 있어야 한다 (got: {})",
+                err.message
+            );
+        }
+
+        assert_eq!(
+            tab_count(&engine),
+            tabs_before,
+            "거부된 요청은 탭을 만들면 안 된다"
+        );
+        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids().len(), 1);
+        assert!(
+            engine.pty_registry.get(pty_id).is_some(),
+            "거부된 pty.attach_surface 는 PTY 를 registry 에 남겨야 한다"
+        );
+
+        // workspace preset은 새 workspace를 만들므로 점유와 무관하다.
+        let req = ipc_request(
+            "preset.apply",
+            serde_json::json!({ "kind": "workspace", "name": "any" }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &CallerContext::Local,
+        );
+        if let Some(err) = resp.error {
+            assert!(
+                !err.message.to_lowercase().contains("occupied"),
+                "workspace preset 은 점유로 거부하면 안 된다 (got: {})",
+                err.message
+            );
+        }
+        engine.terminals.remove(pty_id);
+    }
+
     #[test]
     fn dispatch_denies_terminal_spawn_when_hard_occupied() {
         let (mut core, mut state, mut engine, _home) = make_core_state();

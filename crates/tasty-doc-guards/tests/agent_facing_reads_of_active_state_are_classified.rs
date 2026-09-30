@@ -111,6 +111,12 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "system_info의 활성 index 선언·응답·ID 해소와 워크스페이스 표의 활성 플래그",
     ),
     (
+        "src/adapters/ipc/handler.rs",
+        PolicyScope,
+        1,
+        "대상을 생략한 preset.apply가 적용될 기본 workspace에 hard 점유 거부를 적용한다 — 대상은 preset 적용 코드가 이미 정한 값이고 이 읽기는 거부 여부만 정한다",
+    ),
+    (
         "src/adapters/ipc/handler/approval.rs",
         Attribution,
         1,

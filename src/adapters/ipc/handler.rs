@@ -427,9 +427,11 @@ pub fn record_plugin_rss_samples(
 /// terminal.spawn은 pane 재지정 이후의 spawn_target_guard에서 검사한다.
 /// convert는 아래 열거한 메서드만 검사하며 GUI의 직접 intent나 새 kind의 진입점은 포함하지 않는다.
 /// 대상이 없거나 파라미터가 잘못되면 실제 핸들러가 오류를 반환하도록 넘긴다.
+/// 대상을 생략한 preset.apply는 적용 코드와 같게 이 창의 활성 workspace를 대상으로 본다.
 fn hard_occupied_structural_guard(
     core: &crate::core::Core,
     engine: &crate::core::CoreState,
+    active_ws_idx: usize,
     method: &str,
     params: &serde_json::Value,
     id: &serde_json::Value,
@@ -457,7 +459,7 @@ fn hard_occupied_structural_guard(
                 params::read_int::<usize>(params, "index").ok().flatten()?
             }
         }
-        "tab.create" | "pane.close" | "tab.move" => {
+        "tab.create" | "pane.close" | "tab.move" | "pty.attach_surface" => {
             let pane_id = params::read_int::<u32>(params, "pane_id").ok().flatten()?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
@@ -473,6 +475,27 @@ fn hard_occupied_structural_guard(
             engine
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
+        }
+        // workspace preset은 새 workspace를 만들므로 검사하지 않는다.
+        "preset.apply" => {
+            let active = || {
+                engine
+                    .workspaces
+                    .len()
+                    .checked_sub(1)
+                    .map(|last| active_ws_idx.min(last))
+            };
+            match params.get("kind").and_then(|v| v.as_str())? {
+                "tab" => match params::read_int::<u32>(params, "target_pane_id").ok()? {
+                    Some(pid) => engine.find_workspace_index_for_pane(pid)?,
+                    None => active()?,
+                },
+                "pane" => match params::read_int::<u32>(params, "target_workspace_id").ok()? {
+                    Some(ws_id) => engine.find_workspace_index_for_id(ws_id)?,
+                    None => active()?,
+                },
+                _ => return None,
+            }
         }
         _ => return None,
     };
@@ -534,9 +557,14 @@ fn route_engine_handler(
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
-    if let Some(resp) =
-        hard_occupied_structural_guard(core, engine, &request.method, &request.params, &id)
-    {
+    if let Some(resp) = hard_occupied_structural_guard(
+        core,
+        engine,
+        window.active_workspace_index(),
+        &request.method,
+        &request.params,
+        &id,
+    ) {
         return Some(resp);
     }
     Some(match request.method.as_str() {

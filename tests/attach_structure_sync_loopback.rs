@@ -1,4 +1,5 @@
 //! 셸 종료로 바뀐 구조가 attach holder에 전달되고, 이미 사라진 surface의 요청은 IPC와 같은 이유로 거절되는지 확인한다.
+//! holder가 아닌 로컬 IPC가 점유된 workspace에 탭을 끼워 넣는 우회 경로도 거절되는지 확인한다.
 //! 각 실행은 빌드한 GUI 또는 헤드리스 서버 경로 하나를 검증한다(ADR-0023).
 
 // 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
@@ -202,5 +203,61 @@ fn a_move_surface_target_outside_the_held_workspace_is_rejected() {
         ws_of(src),
         Some(json!(held.id)),
         "source 는 held 에 남아야 한다"
+    );
+}
+
+/// preset.apply와 pty.attach_surface도 tab.create처럼 점유된 workspace의 구조를 바꾸므로 거절돼야 한다.
+/// 거절됐다면 holder에게 보낼 구조 변경도 없다.
+#[test]
+fn a_non_holder_cannot_insert_tabs_through_preset_or_pty_adoption() {
+    let server = common::shared();
+    let src = server.create_workspace("structure-sync-preset-src");
+    let held = server.create_workspace("structure-sync-preset-held");
+    let src_pane = server.first_pane_id_in_workspace(src.id);
+    let held_pane = server.first_pane_id_in_workspace(held.id);
+    let src_tab = server.call("tab.list", json!({ "pane_id": src_pane }))["tabs"][0]["id"]
+        .as_u64()
+        .expect("source tab id");
+    server.call(
+        "preset.capture",
+        json!({ "kind": "tab", "source_id": src_tab, "name": "structure-sync-tab-preset" }),
+    );
+    let pty_id = server.call("pty.spawn", json!({}))["pty_id"]
+        .as_u64()
+        .expect("pty.spawn returns pty_id");
+
+    let mut stream = open_workspace_attach(server.port(), held.id);
+    let tabs = |pane: u64| {
+        server.call("tab.list", json!({ "pane_id": pane }))["tabs"]
+            .as_array()
+            .expect("tabs array")
+            .len()
+    };
+    let before = tabs(held_pane);
+
+    for (method, params) in [
+        (
+            "preset.apply",
+            json!({ "kind": "tab", "name": "structure-sync-tab-preset", "target_pane_id": held_pane }),
+        ),
+        (
+            "pty.attach_surface",
+            json!({ "id": pty_id, "pane_id": held_pane }),
+        ),
+    ] {
+        let resp = server.call_raw(method, params);
+        let message = resp["error"]["message"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{method} must be refused on a held workspace: {resp:?}"));
+        assert!(
+            message.contains("hard-occupied"),
+            "{method}: tab.create 와 같은 점유 사유여야 한다: {message}"
+        );
+    }
+
+    assert_eq!(tabs(held_pane), before, "거절된 요청은 탭을 만들면 안 된다");
+    assert!(
+        structural_delta_until(&mut stream, Instant::now() + Duration::from_secs(2)).is_none(),
+        "거절됐으므로 holder 에게 보낼 구조 변경이 없어야 한다"
     );
 }

@@ -1,4 +1,4 @@
-<!-- source-hash: cab879587046 -->
+<!-- source-hash: e627a2fc5884 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -151,7 +151,7 @@ tasty remote attach --force-detach --workspace 3    # release the occupation of 
 tasty remote attach --force-detach 57               # Surface 57
 ```
 
-While the other side's user is attached, attempting a split · new Tab · `spawn` locally in that Workspace is refused with an "occupied" error. Use another Workspace, or force-detach and then proceed.
+While the other side's user is attached, attempting a split · new Tab · `spawn` locally in that Workspace, applying a Tab or Pane preset from the CLI (`tasty preset apply`), or attaching a background PTY as a Tab (`tasty pty attach-surface`) is refused with an "occupied" error. Use another Workspace, or force-detach and then proceed.
 
 ## Where files received from the remote are stored
 

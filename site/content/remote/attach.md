@@ -150,7 +150,7 @@ tasty remote attach --force-detach --workspace 3    # 이 인스턴스의 워크
 tasty remote attach --force-detach 57               # 서피스 57
 ```
 
-원격 쪽 사용자가 붙어 있는 동안 그 워크스페이스에 로컬에서 분할·탭 생성·`spawn` 을 하려 하면 "점유 중" 오류로 거부됩니다. 다른 워크스페이스를 쓰거나 강제 끊기 후 진행합니다.
+원격 쪽 사용자가 붙어 있는 동안 그 워크스페이스에 로컬에서 분할·탭 생성·`spawn` 을 하거나, CLI 로 탭·페인 preset 을 적용하거나(`tasty preset apply`), 백그라운드 PTY 를 탭으로 붙이려 하면(`tasty pty attach-surface`) "점유 중" 오류로 거부됩니다. 다른 워크스페이스를 쓰거나 강제 끊기 후 진행합니다.
 
 ## 원격에서 받은 파일 저장 위치
 
