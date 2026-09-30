@@ -1,6 +1,6 @@
 # ADR-0059: 구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 활성 workspace·tab 인덱스와 카테고리 복귀 기록은 `CoreState`에, 레이아웃 슬롯 파일은 복원 원본으로 남아 있다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 활성 workspace·tab 인덱스와 카테고리 복귀 기록·접힘(`WorkspaceCategory.collapsed`)은 `CoreState`에, 레이아웃 슬롯 파일은 복원 원본으로 남아 있다
 - **Date**: 2026-09-30
 - **Tags**: workspace, focus, routing, identity, layout
 - **Group**: terminal
@@ -22,7 +22,7 @@
 ### 대상과 선택의 소유
 
 - 구조 명령은 대상을 ID로 지정한다. 대상 생략은 기존 호환 규칙에 따라 진입 계층이 해소하고, 해소한 ID를 명령에 고정한다.
-- 활성 workspace·tab·pane, 카테고리 복귀 기록, viewport는 `ViewState`가 소유한다. `CoreState`에는 사용자 선택을 두지 않는다.
+- 활성 workspace·tab·pane, 카테고리 복귀 기록, 카테고리 접힘, viewport는 `ViewState`가 소유한다. `CoreState`에는 사용자 선택을 두지 않는다.
   분할 트리의 `focus_second`는 선택의 원본이 아니라 생성·복원·wire 왕복에 쓰는 호환 hint로만 다룬다.
 - OS가 알려 준 창 focus와 App의 기본 IPC 라우팅 문맥(대상 없는 요청이 향하는 main 창)은 다른 값이다. 라우팅 문맥과 전역 modal은 `AppState` 한 곳에 둔다.
 - 에이전트 요청은 사용자 선택·스크롤·닫은 항목 기록을 바꾸지 않는다. 예외는 사용자가 보던 대상 자체가 삭제됐을 때의 필수 보정이다.

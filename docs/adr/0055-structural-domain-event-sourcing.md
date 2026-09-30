@@ -33,8 +33,13 @@ domain snapshot과 조회 모델은 파생값이다. 범위 안의 모든 writer
 - Terminal에서 관측하거나 계산한 값: cwd, OSC 제목, tab 표시 이름. 복원에 필요한 cwd·복원 명령·scrollback 참조는 이벤트가 아니라 surface 저장 자료로 남긴다.
 - 외부 연결·ID mapping·구독 진행(Remote), 선택·scroll·popup(View).
 - 설정·memory·secret·approval·agent task·hook·plugin 내부 데이터 같은 기존 서비스 데이터.
+- workspace 트리 밖의 standalone PTY와 child terminal 관계(부모·번호·보고 상태). 둘 다 첫 적용 범위에 넣지 않고 기존 소유자와 저장을 유지한다.
+  대신 surface 닫기가 그 surface의 child 관계를 정리하고, 레이아웃을 가져올 때 옛 surface ID를 새 ID로 바꿔 관계를 다시 쓴다. 두 저장소 사이의 원자성은 보장하지 않는다.
 
 범위 확장은 별도의 완결된 전환 단위로 한다. 기존 서비스 데이터를 이벤트 payload에 통째로 복제하지 않는다.
+
+분할 비율은 사용자가 드래그를 놓을 때 한 번만 확정한다. 드래그 중의 비율은 View의 임시 값이며 이동마다 commit하지 않는다.
+IPC 등 다른 경로가 비율을 바꾸게 되면 같은 비율 확정 명령을 쓴다.
 
 ### 메시지 구분
 
@@ -112,6 +117,9 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 - 모든 서비스 데이터를 하나의 저널로 합치는 안: 기존 저장소의 수명·권한·보존 정책과 맞지 않고 전환 범위가 끝나지 않는다.
 - plugin EventBus를 저장소로 확장하는 안: 통지 링은 손실을 허용하는 소비자 계약이고 확정 순서·transaction을 제공하지 않는다.
 - 객체마다 thread를 두는 안: 순서 보장이 어려워지고 이득이 없다. 책임 분리를 먼저 하고 thread 배치는 측정 뒤 정한다.
+- child terminal 관계를 첫 범위의 이벤트로 두는 안: 관계와 보고 상태(관측값)가 한 저장에 섞여 있어 먼저 나눠야 하고, 나누면 저장처가 둘이 된다.
+- 분할 비율을 드래그 이동마다 commit하는 안: 마우스 이동마다 디스크 commit이 생겨 UI thread가 디스크를 기다리지 않게 한다는 조건과 충돌한다.
+  일정 간격으로 묶어 commit하는 안은 의미 없는 중간 비율이 기록과 undo에 쌓인다.
 
 ## Reconsideration Triggers
 
@@ -120,6 +128,7 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 - 범위 밖 서비스(작업·훅·설정)를 같은 저널에 넣어야 하는 요구가 생기면, 실행 attempt·결과 관측·중복 계약을 먼저 설계하고 범위를 다시 정한다.
 - 여러 호스트가 같은 stream을 쓰거나 호스트 간 원자적 변경이 필요해지면 writer·transaction 모델을 다시 정한다.
 - 범위 안에 CommandExecutor를 거치지 않는 writer가 남아 있으면 해당 범위의 저널 활성화를 보류한다. writer 명부와 실제 mutation 호출부를 대조해 확인한다.
+- 닫힌 surface를 가리키는 child terminal 관계가 남는 결함이 나오면 관계를 이벤트로 옮기는 안을 다시 본다. 그 전에 관계와 보고 상태(관측값)의 저장을 나눠야 한다.
 
 ### 실행 결과로 확인
 
