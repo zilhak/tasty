@@ -94,6 +94,10 @@ Effect(확정된 의무에 따른 외부 실행), Observation(자원에서 관�
 - 기존 레이아웃은 최초 한 번 가져온다. 이관 marker와 초기 event batch를 함께 확정하고, 실패하면 원본 파일을 보존한다.
   저널 활성화 뒤에는 오래된 레이아웃을 다시 원본으로 가져오지 않으며 호환 레이아웃은 export로만 만든다.
 - 저장소가 요구 내구성을 만족하지 못하면 새 도메인 변경을 받지 않는다. 조용히 in-memory로 대체하지 않는다.
+- 사용자 undo(닫은 항목 복원) 목록은 엔진 메모리에 최근 10개만 두고 재시작하면 비운다. 목록을 저널에서 도출하거나 영속하지 않는다.
+  user origin의 닫기는 닫힌 구조 snapshot과 scrollback을 불변 payload로 만들고, close batch와 같은 transaction에서 undo 보유자의 pin으로 참조를 확정한다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)).
+  항목이 목록에서 밀려나면 pin을 풀고 실제 삭제는 GC가 한다. 재시작할 때는 이전 실행의 undo pin을 푼다.
+  복원은 닫기를 취소해 옛 ID를 되살리는 것이 아니라 새 ID로 다시 만드는 생성 명령이다. 어떤 닫기를 기록하는지는 [ADR-0059](0059-id-targets-and-view-owned-selection.md)의 origin 규칙을 따른다.
 
 기존 IPC·CLI의 메서드·인자·오류 의미·응답과 저장 파일 읽기는 유지한다. revision·journal 보장은 capability로 협상한 선택적 확장으로만 제공하고,
 새 event schema를 원격 wire schema로 직접 노출하지 않는다.
@@ -114,6 +118,9 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 - Intent 큐의 위치만 옮기는 안: IPC 동기 경로·plugin·원격·시스템 writer가 기록 밖에 남는다.
 - 현재 `CoreEvent`를 그대로 영속하는 안: 확정 사실과 후속 요청이 섞여 replay가 외부 실행을 다시 일으킨다.
 - 레이아웃 snapshot과 저널을 둘 다 원본으로 두는 안: 두 원본이 갈라졌을 때 어느 쪽이 맞는지 판단할 수 없다.
+- 닫기 batch 자체를 undo 항목으로 삼아 저널에서 목록을 도출하는 안: 로그 보존·정리 설계가 먼저 필요하다. 옛 ID로 되살리면 ID를 재사용하지 않는다는 원칙과 충돌하고,
+  새 ID로 만들면 결과가 메모리 목록과 같아 얻는 것은 재시작 뒤 보존뿐이다. 재시작 뒤에도 남는 undo는 새 기능이라 이 전환의 범위가 아니다.
+- undo 기록을 지금처럼 별도 scrollback 파일과 GUI 경로에 두는 안: 닫기가 저널로 옮겨진 뒤 undo가 참조하는 구조 기록이 저널 밖에 남고 payload pin 계약과 맞지 않는다.
 - 모든 서비스 데이터를 하나의 저널로 합치는 안: 기존 저장소의 수명·권한·보존 정책과 맞지 않고 전환 범위가 끝나지 않는다.
 - plugin EventBus를 저장소로 확장하는 안: 통지 링은 손실을 허용하는 소비자 계약이고 확정 순서·transaction을 제공하지 않는다.
 - 객체마다 thread를 두는 안: 순서 보장이 어려워지고 이득이 없다. 책임 분리를 먼저 하고 thread 배치는 측정 뒤 정한다.
