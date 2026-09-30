@@ -56,6 +56,11 @@ fn synth_root() -> tempfile::TempDir {
         root.join("scripts/lib/judge-bin.sh"),
     )
     .expect("판정기 찾기 공용 복사");
+    fs::copy(
+        format!("{here}/scripts/lib/intent_discipline_scan.py"),
+        root.join("scripts/lib/intent_discipline_scan.py"),
+    )
+    .expect("호출 탐지 스캐너 복사");
     for p in exempt_paths() {
         let f = root.join(&p);
         fs::create_dir_all(f.parent().expect("면제 경로의 부모")).expect("면제 경로 디렉토리");
@@ -141,6 +146,59 @@ fn the_same_call_with_a_reason_passes() {
     );
     let (code, text) = run(d.path());
     assert_eq!(code, 0, "사유가 달렸는데 막혔다:\n{text}");
+}
+
+// rustfmt가 수신자·필드·메서드를 줄마다 나눈 호출도 같은 호출로 보고, 표지 범위는 체인 첫 줄부터 센다.
+const SPLIT_CALL: &str = "    app\n        .popups\n        .open(PopupId::Settings);";
+
+#[test]
+fn a_call_split_over_lines_is_a_violation() {
+    let d = synth_root();
+    write_src(
+        d.path(),
+        "src/zz_split_call.rs",
+        &format!("fn f(app: &mut App) {{\n{SPLIT_CALL}\n}}\n"),
+    );
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 1,
+        "여러 줄로 나뉜 직접 호출인데 위반이 아니다:\n{text}"
+    );
+    assert!(
+        text.contains("src/zz_split_call.rs:4:"),
+        "메서드 줄 좌표를 안 찍는다:\n{text}"
+    );
+}
+
+#[test]
+fn a_split_call_with_a_reason_above_the_chain_passes() {
+    let d = synth_root();
+    write_src(
+        d.path(),
+        "src/zz_split_call.rs",
+        &format!(
+            "fn f(app: &mut App) {{\n    // intent-exempt: 합성 픽스처의 대조군\n{SPLIT_CALL}\n}}\n"
+        ),
+    );
+    let (code, text) = run(d.path());
+    assert_eq!(code, 0, "체인 첫 줄 위에 사유가 달렸는데 막혔다:\n{text}");
+}
+
+#[test]
+fn a_reason_two_lines_above_a_split_call_does_not_count() {
+    let d = synth_root();
+    write_src(
+        d.path(),
+        "src/zz_split_call.rs",
+        &format!(
+            "fn f(app: &mut App) {{\n    // intent-exempt: 합성 픽스처의 대조군\n    let _unused = 1;\n{SPLIT_CALL}\n}}\n"
+        ),
+    );
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 1,
+        "체인 첫 줄보다 두 줄 위의 사유를 인정했다:\n{text}"
+    );
 }
 
 #[test]
