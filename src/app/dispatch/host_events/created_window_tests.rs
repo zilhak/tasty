@@ -6,12 +6,12 @@ use winit::window::WindowId;
 use super::workspace::created_window;
 use crate::app::engine_registry::EngineRegistry;
 use crate::core::CoreState;
-use crate::state::{AppState, PendingHostEvent};
+use crate::state::{MainViewState, PendingHostEvent};
 
 const WINDOW: u64 = 42;
 const OTHER_WINDOW: u64 = 7;
 
-fn created_workspace_ids(state: &mut AppState) -> Vec<u32> {
+fn created_workspace_ids(state: &mut MainViewState) -> Vec<u32> {
     state
         .take_pending_host_events()
         .into_iter()
@@ -22,7 +22,7 @@ fn created_workspace_ids(state: &mut AppState) -> Vec<u32> {
         .collect()
 }
 
-fn create_from_the_ui(state: &mut AppState, engine: &mut CoreState) -> u32 {
+fn create_from_the_ui(state: &mut MainViewState, engine: &mut CoreState) -> u32 {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     state.take_pending_host_events();
     let intent = crate::intent::Intent::NewWorkspace {
@@ -37,7 +37,7 @@ fn create_from_the_ui(state: &mut AppState, engine: &mut CoreState) -> u32 {
     ids[0]
 }
 
-fn create_from_ipc(state: &mut AppState, engine: &mut CoreState) -> u32 {
+fn create_from_ipc(state: &mut MainViewState, engine: &mut CoreState) -> u32 {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     state.take_pending_host_events();
     let response = crate::adapters::ipc::handler::workspace::handle_workspace_create(

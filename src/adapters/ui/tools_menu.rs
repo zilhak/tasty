@@ -6,7 +6,7 @@ use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolItem;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
@@ -79,7 +79,7 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
 
 pub fn draw_tools_menu(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -196,7 +196,11 @@ pub fn draw_tools_menu(
 }
 
 /// 사용자 클릭의 플러그인 도구를 실행한다. debug.tool.invoke는 대상 ID를 받는 별도 경로다.
-pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, item: &ToolItem) {
+pub fn invoke_tool(
+    state: &mut MainViewState,
+    engine: &mut crate::core::CoreState,
+    item: &ToolItem,
+) {
     match &item.action {
         ToolAction::Event { event_key } => {
             let payload = serde_json::json!({ "tool_id": item.key });
@@ -258,7 +262,7 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
 }
 
 /// PopupDef.sizer — 매 프레임 plugin tool registry 의 실제 항목 수로 height 재계산.
-pub fn tools_menu_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn tools_menu_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let plugin_count = state.tool_registry.visible_items().len();
     tools_menu_size_for(
         BUILTIN_TOOLS.len(),
@@ -273,7 +277,10 @@ pub fn tools_menu_default_size() -> egui::Vec2 {
 }
 
 /// 메뉴 위치 계산에 사용할 현재 본체·플러그인 항목의 크기.
-pub fn tools_menu_current_size(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn tools_menu_current_size(
+    state: &MainViewState,
+    engine: &crate::core::CoreState,
+) -> egui::Vec2 {
     tools_menu_sizer(state, engine)
 }
 

@@ -43,7 +43,7 @@ pub fn find(id: &str) -> Option<&'static StageDef> {
 /// 공용 배경과 제목만 확인하는 빈 화면.
 fn draw_blank_stage(
     _ui: &mut egui::Ui,
-    _state: &mut crate::state::AppState,
+    _state: &mut crate::state::MainViewState,
     _engine: &mut crate::core::CoreState,
 ) -> StageAction {
     StageAction::None

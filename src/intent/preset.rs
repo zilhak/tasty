@@ -24,13 +24,13 @@ impl ClonedPreset {
 use crate::intent::preset_capture::{
     capture_pane_preset, capture_tab_preset, capture_workspace_preset,
 };
-use crate::state::AppState;
+use crate::state::RequestContext;
 use crate::state::preset_apply::{ApplyError, ApplyOptions};
 use tasty_presets::{PresetError, PresetKind};
 
 pub fn handle(
     core: &crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
 ) {
@@ -75,7 +75,7 @@ pub fn handle(
 
 fn apply(
     core: &crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
     target: PresetApplyTarget,
@@ -110,7 +110,7 @@ fn apply(
 
 fn save(
     core: &crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     _engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
     request: PresetSaveRequest,
@@ -222,7 +222,7 @@ impl PresetMutationError {
 /// 대상을 생략하면 적용 코드처럼 활성 workspace를 본다. 대상이 없으면 적용 코드가 오류를 낸다.
 /// workspace preset은 새 workspace를 만들므로 검사하지 않는다.
 fn mirror_target_index(
-    state: &AppState,
+    state: &RequestContext,
     engine: &crate::core::CoreState,
     target: &PresetApplyTarget,
 ) -> Option<usize> {
@@ -292,7 +292,7 @@ pub struct PresetSaveRequest<'a> {
 
 pub fn apply_inner(
     core: &crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     target: PresetApplyTarget,
     options: ApplyOptions,

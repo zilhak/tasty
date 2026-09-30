@@ -5,7 +5,7 @@ use crate::adapters::ui::icons;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
 
-/// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
+/// 순수 시각 view. MainViewState/CoreState/`theme::theme()` 비의존.
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — pane별 탭바 horizontal 클로저 나열이 구조적(clippy 가 클로저를 과대계상)
 pub fn draw_pane_tab_bars_view(
     ctx: &egui::Context,

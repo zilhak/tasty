@@ -38,7 +38,7 @@ MainView 의 최상위 컨테이너. 한 MainView 가 **여러 개**를 갖고 �
 
 Pane 은 **독립적인 탭 바를 가진 화면 영역**이다. Workspace 안에서 Pane 들의 배치는 `PaneNode` 이진 트리(`Leaf(Pane)` | `Split { direction, ratio, first, second }`)로 결정되고, **탭 전환과 무관하게 고정**된다 — tmux 의 "분할이 window 에 고정" 에 대응.
 
-- 필드: `id` · `tabs: Vec<Tab>` · `active_tab`(인덱스). 탭 바 가로 스크롤은 도메인 Pane과 별도로 View가 pane ID별 논리 픽셀 값으로 소유한다.
+- 필드: `id` · `tabs: Vec<Tab>`. 탭 바 가로 스크롤은 도메인 Pane과 별도로 View가 pane ID별 논리 픽셀 값으로 소유한다.
 - 탭 동작: 추가(`add_*_tab`, 활성/백그라운드) · 닫기(`close_tab`/`close_tab_by_id` — **마지막 탭은 못 닫음**, `active_tab` 은 제거 위치 기준으로 자동 보정돼 보던 탭을 계속 가리킨다) · 전환(`goto_tab`/`next_tab`/`prev_tab`) · 이동(`move_tab`, `active_tab` 자동 보정).
 - **활성 탭 추종 스크롤**: 탭이 많아 탭 바에 좌우 화살표가 뜬 상태에서 전환(단축키·클릭 공통)하거나 pane 이 리사이즈돼 활성 탭이 뷰포트 밖으로 밀려나면 View의 pane ID별 `tab_bar_scroll`을 자동 보정해 다시 보이게 한다(`src/adapters/ui/tab_bar.rs` `TabBarAction::AutoScrollToActiveTab`). 활성 인덱스/지오메트리가 실제로 바뀐 시점에만 보정하므로, 사용자가 화살표로 수동 스크롤해 둔 상태(활성 탭 불변)는 덮어쓰지 않는다.
 - 분할(상위): `PaneNode::split_pane_in_place` 로 Pane 을 좌우/상하로 쪼갠다. 새 Pane 의 PTY 는 구조 변경 *전에* 미리 생성(트리가 빈 store 상태를 보지 않도록).
@@ -65,7 +65,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 #### Deferred 터미널
 
 레이아웃 복원 시 비활성 탭의 PTY 는 **지연 생성**된다(런타임에 새로 만드는 탭/분할은 항상 즉시 spawn — 지연 대상은 복원되는 비활성 탭뿐이다).
-이 경우 트리 leaf 는 `deferred_spawn` 을 가진 `EmptySurface` placeholder 로 들어가고(빈 layout 이 아님), **화면에 표시되기 직전 단일 지점**(`AppState::reify_displayed_surfaces`, 매 프레임 렌더 직전 호출)에서 `CoreState::reify_deferred_surface` 가 placeholder 종류에 맞는 경로로 실제화한다. 터미널 placeholder 는 `ensure_surface_initialized` 가 PTY 를 띄워 `TerminalSurface` marker 로 교체하고, plugin kind 대기 placeholder 는 `reify_plugin_surface` 가 등록된 kind 의 `restore` 로 교체한다.
+이 경우 트리 leaf 는 `deferred_spawn` 을 가진 `EmptySurface` placeholder 로 들어가고(빈 layout 이 아님), **화면에 표시되기 직전 단일 지점**(`MainViewState::reify_displayed_surfaces`, 매 프레임 렌더 직전 호출)에서 `CoreState::reify_deferred_surface` 가 placeholder 종류에 맞는 경로로 실제화한다. 터미널 placeholder 는 `ensure_surface_initialized` 가 PTY 를 띄워 `TerminalSurface` marker 로 교체하고, plugin kind 대기 placeholder 는 `reify_plugin_surface` 가 등록된 kind 의 `restore` 로 교체한다.
 placeholder 는 생성 정보만 보관한다. PTY 와 waker 는 호스트가 spawn 시점에 만들고, 결과(성공 시 marker 교체, 실패 시 연속 실패 횟수)만 모델에 반영한다. 연속 5회 실패하면 재시도를 멈추고 placeholder 를 남긴다.
 "표시되는 deferred 는 반드시 reify 된다" 가 불변식이며, 이 단일 지점이 모든 노출 경로(키보드 탭 전환, 탭 close, pane focus 전환, 워크스페이스 전환, window 복원)를 한 번에 커버한다 — 전환 입력 핸들러마다 초기화 처리를 따로 추가하지 않는다.
 외부(IPC `surface.list`, 트리 JSON)에는 `type:"Terminal"`, `pty_ready:false` 로 보고된다 — 아직 안 뜬 터미널 자리.

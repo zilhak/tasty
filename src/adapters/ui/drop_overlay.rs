@@ -1,16 +1,16 @@
 //! 외부 drag&drop hover 중 표시되는 시각 피드백.
 //!
-//! `AppState.drop_hover` 가 활성인 동안 terminal_rect 위에 반투명 highlight +
+//! `MainViewState.drop_hover` 가 활성인 동안 terminal_rect 위에 반투명 highlight +
 //! "Drop to open" 라벨 + 1px 보더를 그린다. `HoveredFileCancelled` /
 //! `DroppedFile` 직후 사라진다.
 
 use crate::model::PhysicalRect;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// drop hover overlay 를 egui 프레임 마지막에 그린다 (popup 위, plugin popup 아래).
 pub fn draw_drop_overlay(
     ctx: &egui::Context,
-    state: &AppState,
+    state: &MainViewState,
     _engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,

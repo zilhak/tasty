@@ -58,7 +58,7 @@ fn open_surface(kind: &str) -> HandlerAction {
 /// mirror workspace의 첫 surface를 origin으로 식별 결과를 적용한다.
 fn apply_on_mirror(
     origin: FileDispatchOrigin,
-) -> (crate::state::AppState, crate::core::CoreState, usize) {
+) -> (crate::state::RequestContext, crate::core::CoreState, usize) {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine) = crate::state::tests::test_state();
     register_kind(&engine, "com.tasty.markdown", "markdown");
@@ -206,7 +206,7 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
 /// 1순위가 원격에 열 수 없는 Ipc이고 2순위가 markdown인 mirror 환경을 만든다.
 fn mirror_with_ipc_first() -> (
     crate::core::Core,
-    crate::state::AppState,
+    crate::state::RequestContext,
     crate::core::CoreState,
     u32,
 ) {

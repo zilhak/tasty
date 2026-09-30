@@ -1282,7 +1282,7 @@ impl App {
 
         // 점유 변경 직후 readonly 화면을 갱신해 다음 주기 확인까지 빈 화면으로 남지 않게 한다.
         for (_, main, engine) in self.engines_mut().window_pairs() {
-            main.state.navigation.reconcile(&engine.workspaces);
+            main.state.reconcile_presentation(engine);
             engine.refresh_attach_presentation(&main.state.navigation);
             engine.push_structure_changes();
             if engine.refresh_readonly_views() {
@@ -1290,7 +1290,7 @@ impl App {
             }
         }
         for (state, engine) in self.engines_mut().parked_sessions() {
-            state.navigation.reconcile(&engine.workspaces);
+            state.reconcile_presentation(engine);
             engine.refresh_attach_presentation(&state.navigation);
             engine.push_structure_changes();
         }
@@ -1630,7 +1630,7 @@ impl App {
     }
 
     /// 구조 변경은 점유한 workspace를 가진 MainView에서만 실행한다.
-    /// parked 상태에도 AppState는 있지만 현재 이 실행 루프의 대상은 아니다.
+    /// parked 상태에도 MainViewState는 있지만 현재 이 실행 루프의 대상은 아니다.
     fn apply_forwarded_structural_op(
         &mut self,
         client_id: u32,

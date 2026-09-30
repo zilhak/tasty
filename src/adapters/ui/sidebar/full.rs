@@ -2,7 +2,7 @@
 
 use crate::i18n::t;
 use crate::intent::Intent;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 use super::view::{
@@ -79,7 +79,7 @@ pub struct FullSidebarResult {
 
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     sidebar_width: f32,
     plugin_alert: usize,

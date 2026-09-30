@@ -1,10 +1,10 @@
 //! Sidebar 의 tools 버튼 핸들러 — popup 열기.
 
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// 버튼 왼쪽에 맞춰 위로 연다. 위치는 열 때 정해지므로 현재 플러그인 항목까지 포함한 메뉴 크기를 받는다.
 pub(crate) fn open_tools_menu(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     btn_rect: egui::Rect,
 ) {

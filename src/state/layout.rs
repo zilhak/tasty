@@ -2,9 +2,9 @@ use crate::core::CoreState;
 #[cfg(feature = "gui")]
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
-use super::AppState;
+use super::RequestContext;
 
-impl AppState {
+impl RequestContext {
     /// Compute all surface regions for the active workspace.
     /// Returns: for each pane, the pane rect and all surface regions within it.
     #[cfg(feature = "gui")]

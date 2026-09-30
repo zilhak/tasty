@@ -33,7 +33,7 @@ fn label(intent: &DispatchedIntent) -> String {
     }
 }
 
-fn labels(state: &crate::state::AppState) -> Vec<String> {
+fn labels(state: &crate::state::RequestContext) -> Vec<String> {
     state.pending_intents.iter().map(label).collect()
 }
 
@@ -146,7 +146,7 @@ fn a_rejected_request_leaves_the_queue_untouched() {
 }
 
 // 상한 승인 알림과 핸들러 알림은 source가 같으므로 제목도 구분한다.
-fn detailed_labels(state: &crate::state::AppState) -> Vec<String> {
+fn detailed_labels(state: &crate::state::RequestContext) -> Vec<String> {
     state
         .pending_intents
         .iter()
@@ -177,7 +177,7 @@ fn core_with_ordered_memory() -> crate::core::Core {
 
 fn set_notify_and_approval_caps(
     core: &mut crate::core::Core,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     agent: &str,
     metric: &str,

@@ -1,7 +1,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use serde_json::json;
@@ -17,7 +17,7 @@ const DEFAULT_KIND_COUNT: usize = 5;
 /// Sizer: 현재 kind 를 뺀 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// `popup::frame::draw_popup_layer`가 프레임마다 호출하므로 plugin이 새 kind를
 /// 등록한 직후나 UI 배율이 바뀐 직후 자동으로 popup 크기가 맞춰진다.
-pub fn convert_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn convert_popup_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
     convert_popup_size_for(&theme::theme(), listed_kinds(state, engine).len())
 }
 
@@ -95,7 +95,7 @@ mod size_tests {
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든 대상/선택 상태를 비운다.
 pub fn on_close_convert_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.convert_popup = None;
@@ -105,7 +105,7 @@ pub fn on_close_convert_popup(
 /// PopupDef::draw_fn entry point for the convert surface popup.
 pub fn draw_convert_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     match draw_convert_content(ui, state, engine) {
@@ -127,7 +127,7 @@ struct ConvertItem {
 }
 
 /// 팝업에 나열할 항목 — 대상 surface 의 현재 kind 는 바꿀 대상이 아니라 뺀다.
-fn listed_kinds(state: &AppState, engine: &crate::core::CoreState) -> Vec<ConvertItem> {
+fn listed_kinds(state: &MainViewState, engine: &crate::core::CoreState) -> Vec<ConvertItem> {
     let current = state
         .dialogs
         .convert_popup
@@ -174,7 +174,7 @@ fn without_current(items: Vec<ConvertItem>, current: Option<&str>) -> Vec<Conver
 /// - shortcut: 비워 둔다. 현재 kind 를 뺀 뒤 [`assign_shortcuts`]가 배정한다.
 /// - icon: registry 의 아이콘 이름. 없으면 FILE.
 fn enumerate_convertible_kinds(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
 ) -> Vec<ConvertItem> {
     let snapshot = engine.surface_registry.kinds_snapshot();
@@ -213,7 +213,7 @@ fn enumerate_convertible_kinds(
     items
 }
 
-fn resolve_label(_state: &AppState, engine: &crate::core::CoreState, kind: &str) -> String {
+fn resolve_label(_state: &MainViewState, engine: &crate::core::CoreState, kind: &str) -> String {
     let popup_key = format!("convert_popup.{kind}");
     let tr = t(&popup_key);
     if tr != popup_key.as_str() {
@@ -254,7 +254,7 @@ pub struct ConvertItemView {
     pub icon: icons::Icon,
 }
 
-/// Props 일체. 호출처가 AppState/CoreState 에서 추출해서 전달.
+/// Props 일체. 호출처가 MainViewState/CoreState 에서 추출해서 전달.
 #[derive(Debug, Clone, Default)]
 pub struct ConvertProps {
     pub items: Vec<ConvertItemView>,
@@ -262,7 +262,7 @@ pub struct ConvertProps {
     pub selected_index: Option<usize>,
 }
 
-/// View 의 출력 — 사용자 입력의 의미. wrapper 가 AppState/CoreState 에 반영.
+/// View 의 출력 — 사용자 입력의 의미. wrapper 가 MainViewState/CoreState 에 반영.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConvertViewAction {
     None,
@@ -314,7 +314,7 @@ pub fn draw_convert_view(
 /// 앱 상태에서 메뉴 입력을 만들고 키보드·선택 결과를 처리한다.
 pub fn draw_convert_content(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> Option<ConvertResult> {
     state.dialogs.convert_popup?;
@@ -402,7 +402,7 @@ fn props_from_items(items: &[ConvertItem], selected_index: Option<usize>) -> Con
 
 /// Apply the convert action to the state.
 pub fn apply_convert_action(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     action: ConvertAction,
 ) {
@@ -500,7 +500,7 @@ fn letter_key_to_char(key: &egui::Key) -> Option<char> {
 /// Get the current surface kind for a specific surface ID.
 /// Split tab의 leaf surface도 정확히 식별한다.
 fn current_surface_kind(
-    _state: &AppState,
+    _state: &MainViewState,
     engine: &crate::core::CoreState,
     surface_id: u32,
 ) -> Option<&'static str> {

@@ -8,7 +8,7 @@ use tasty_ui_widgets::{
 use crate::adapters::ui::popup::PopupAction;
 use crate::adapters::ui::tutorial::all_topics;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 /// 팝업 id. `defs.rs::all_defs()` 및 도구 메뉴 배선에서 참조.
@@ -21,7 +21,7 @@ pub fn tutorial_topics_default_size() -> egui::Vec2 {
 
 pub fn draw_tutorial_topics_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     if !state.tutorial.catalog_loaded {
@@ -249,6 +249,10 @@ fn hsep(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, width: f32)
 }
 
 /// Every catalog close path clears only its load latch, never a queued start.
-pub fn on_close(_ctx: &egui::Context, state: &mut AppState, _engine: &mut crate::core::CoreState) {
+pub fn on_close(
+    _ctx: &egui::Context,
+    state: &mut MainViewState,
+    _engine: &mut crate::core::CoreState,
+) {
     state.tutorial.catalog_loaded = false;
 }

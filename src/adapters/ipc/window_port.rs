@@ -1,4 +1,4 @@
-//! IPC 핸들러가 AppState 전체 대신 사용하는 창 연산과 요청별 intent 목록.
+//! IPC 핸들러가 RequestContext 전체 대신 사용하는 창 연산과 요청별 intent 목록.
 //! 창 조회·workspace 변경·이벤트 큐 등 필요한 연산은 IpcWindow로 제공한다.
 //! 구조 변경은 도메인 포트 CascadeWindow를 함께 사용한다.
 //!
@@ -47,9 +47,6 @@ pub(crate) trait IpcWindow: CascadeWindow {
         ws_idx: usize,
         origin: crate::state::WorkspaceCloseOrigin,
     ) -> bool;
-
-    /// 워크스페이스 순서 이동 뒤 활성 포인터를 따라 옮긴다.
-    fn fix_workspace_pointers_after_move(&mut self, engine: &CoreState, from: usize, to: usize);
 
     /// 호스트 이벤트(plugin event bus · hook 대기 task)를 이 창의 큐에 넣는다.
     fn push_host_event(&mut self, event: crate::state::PendingHostEvent);

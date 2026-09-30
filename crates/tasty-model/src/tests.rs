@@ -175,7 +175,6 @@ fn pane_node_compute_rects_single() {
     let pane = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Leaf(pane);
     let rect = PhysicalRect {
@@ -195,12 +194,10 @@ fn pane_node_compute_rects_split() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -229,12 +226,10 @@ fn pane_node_find_pane() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -252,17 +247,14 @@ fn pane_node_all_pane_ids() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let p3 = Pane {
         id: 3,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -283,17 +275,14 @@ fn pane_node_next_prev_pane_id() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let p3 = Pane {
         id: 3,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -318,12 +307,10 @@ fn pane_node_find_divider_at_vertical() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -352,14 +339,12 @@ fn pane_node_split_pane_in_place() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Leaf(p1);
 
     let new_pane = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let result = node.split_pane_in_place(1, SplitDirection::Vertical, new_pane);
     assert!(result.is_none()); // success
@@ -373,14 +358,12 @@ fn pane_node_split_pane_in_place_not_found() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Leaf(p1);
 
     let new_pane = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let result = node.split_pane_in_place(99, SplitDirection::Vertical, new_pane);
     assert!(result.is_some()); // not found, pane returned
@@ -396,20 +379,20 @@ fn pane_close_tab_removes_tab() {
     let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
     pane.add_terminal_marker_tab_background(11, 101, None);
     assert_eq!(pane.tabs.len(), 2);
-    assert!(pane.close_active_tab());
+    assert!(pane.close_tab(0));
     assert_eq!(pane.tabs.len(), 1);
 }
 
 #[test]
-fn pane_add_surface_tab_selects_it_and_the_background_variant_does_not() {
+fn pane_add_variants_append_structure_without_owning_a_selection() {
     use super::EmptySurface;
     let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
     pane.add_surface_tab_background(11, "bg".into(), None, Box::new(EmptySurface::new(101)));
     assert_eq!(pane.tabs.len(), 2);
-    assert_eq!(pane.active_tab, 0, "background tab keeps the selection");
+    assert_eq!(pane.tabs[0].id, 10);
     pane.add_surface_tab(12, "fg".into(), None, Box::new(EmptySurface::new(102)));
     assert_eq!(pane.tabs.len(), 3);
-    assert_eq!(pane.active_tab, 2, "the ordinary variant selects its tab");
+    assert_eq!(pane.tabs[2].id, 12);
 }
 
 #[test]
@@ -417,7 +400,7 @@ fn pane_close_tab_last_tab_fails() {
     let pane = Pane::new_with_terminal_marker(1, 10, 100);
     assert_eq!(pane.tabs.len(), 1);
     let mut pane = pane;
-    assert!(!pane.close_active_tab());
+    assert!(!pane.close_tab(0));
     assert_eq!(pane.tabs.len(), 1);
 }
 
@@ -428,7 +411,6 @@ fn pane_node_close_pane_single_leaf_fails() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Leaf(p1);
     assert!(!node.close_pane(1));
@@ -439,12 +421,10 @@ fn pane_node_close_pane_promotes_sibling() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -463,17 +443,14 @@ fn pane_node_close_pane_nested() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let p3 = Pane {
         id: 3,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -497,12 +474,10 @@ fn pane_node_close_pane_not_found() {
     let p1 = Pane {
         id: 1,
         tabs: vec![],
-        active_tab: 0,
     };
     let p2 = Pane {
         id: 2,
         tabs: vec![],
-        active_tab: 0,
     };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
@@ -515,11 +490,7 @@ fn pane_node_close_pane_not_found() {
 }
 
 fn empty_pane(id: u32) -> Pane {
-    Pane {
-        id,
-        tabs: vec![],
-        active_tab: 0,
-    }
+    Pane { id, tabs: vec![] }
 }
 
 #[test]
@@ -758,14 +729,13 @@ fn tab_close_surface_in_split() {
         name: "Test".to_string(),
         explicit_name: None,
         layout_opt: Some(split_layout),
-        focused_surface: 10,
         surface_titles: Default::default(),
     };
     let closed = tab.close_surface(10);
     assert!(closed);
     assert_eq!(tab.layout().all_surface_ids(), vec![20]);
-    // focused_surface should have been reset to the remaining surface
-    assert_eq!(tab.focused_surface, 20);
+    assert!(tab.surface(10).is_none());
+    assert_eq!(tab.surface(20).unwrap().surface_id(), Some(20));
 }
 
 #[test]
@@ -807,7 +777,6 @@ fn tab_is_deferred_detects_placeholder_leaf() {
         name: "Shell".to_string(),
         explicit_name: None,
         layout_opt: Some(SurfaceLayout::Leaf(Box::new(placeholder))),
-        focused_surface: 42,
         surface_titles: Default::default(),
     };
     assert!(tab.is_deferred());
@@ -826,14 +795,13 @@ fn tab_is_deferred_walks_split_layout() {
         ratio: 0.5,
         first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
         second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
-        focus_second: false,
+        node_id: crate::SplitNodeId::allocate(),
     };
     let tab = Tab {
         id: 1,
         name: "Shell".to_string(),
         explicit_name: None,
         layout_opt: Some(layout),
-        focused_surface: 10,
         surface_titles: Default::default(),
     };
     assert!(tab.is_deferred());
@@ -851,7 +819,6 @@ fn tab_is_not_deferred_with_real_terminal() {
         name: "Shell".to_string(),
         explicit_name: None,
         layout_opt: Some(SurfaceLayout::Leaf(Box::new(node))),
-        focused_surface: 7,
         surface_titles: Default::default(),
     };
     assert!(!tab.is_deferred());
@@ -868,14 +835,13 @@ fn tab_complete_terminal_spawn_replaces_placeholder_in_split() {
         ratio: 0.5,
         first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
         second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
-        focus_second: false,
+        node_id: crate::SplitNodeId::allocate(),
     };
     let mut tab = Tab {
         id: 1,
         name: "Shell".to_string(),
         explicit_name: None,
         layout_opt: Some(layout),
-        focused_surface: 11,
         surface_titles: Default::default(),
     };
     // Only wake id=11. id=12 must remain deferred.
@@ -1076,7 +1042,7 @@ fn surface_layout_to_tree_json_full_preserves_split_ratio() {
     let node2 = test_surface_node(20);
     let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, _) = layout.split_with_node(10, SplitDirection::Horizontal, node2);
-    let json = layout.to_tree_json_full();
+    let json = layout.to_tree_json_full(&crate::StructurePresentationSnapshot::default());
     assert_eq!(json["type"], "Split");
     assert_eq!(json["direction"], "horizontal");
     assert_eq!(json["ratio"], 0.5);
@@ -1187,12 +1153,10 @@ fn pane_gap_in_computed_rects_follows_scale() {
         first: Box::new(PaneNode::Leaf(Pane {
             id: 1,
             tabs: vec![],
-            active_tab: 0,
         })),
         second: Box::new(PaneNode::Leaf(Pane {
             id: 2,
             tabs: vec![],
-            active_tab: 0,
         })),
     };
     let rect = PhysicalRect {

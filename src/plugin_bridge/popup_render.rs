@@ -21,7 +21,7 @@ use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
 use crate::plugin_bridge::wire_scroll;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 
@@ -30,7 +30,7 @@ const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 /// layout에는 같은 프레임에서 호스트 팝업이 사용한 값을 받는다.
 pub fn draw_plugin_popups(
     ctx: &Context,
-    state: &mut AppState,
+    state: &mut RequestContext,
     _engine: &mut crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
     layout: Option<&LayoutContext>,

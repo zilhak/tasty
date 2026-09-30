@@ -6,12 +6,12 @@ use serde_json::json;
 
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolSource;
-use crate::state::AppState;
+use crate::state::RequestContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// `debug.tool.list` — 현재 도구 메뉴에 표시되는 모든 항목을 정렬된 순서로 반환.
 pub fn handle_list(
-    state: &AppState,
+    state: &RequestContext,
     _engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -53,7 +53,7 @@ pub fn handle_list(
 /// `debug.tool.invoke` — `params.key`로 항목을 찾아 사용자 클릭과 동일한 동작을 수행.
 /// 항목을 찾지 못하면 invalid_params로 거부.
 pub fn handle_invoke(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

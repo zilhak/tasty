@@ -15,7 +15,7 @@ use crate::app::engine_registry::{EngineRegistry, ParkedView};
 use crate::core::CoreState;
 use crate::core::layout_persistence::LayoutSlotId;
 use crate::runtime::engine_session::EngineId;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::view;
 use crate::view::main::MainView;
 
@@ -71,8 +71,8 @@ impl<'a> EngineScan<'a> {
         self.engines.window_engine(wid).map(|e| (main, e))
     }
 
-    /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
-    pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
+    /// 창과 parked 항목의 MainViewState·engine 쌍. 창 → parked 순서다.
+    pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a MainViewState, &'a CoreState)> {
         self.window_pairs()
             .map(|(_, m, e)| (&m.state, e))
             .chain(self.parked_sessions())
@@ -87,7 +87,9 @@ impl<'a> EngineScan<'a> {
         self.engines.parked_sessions().map(|(id, _, e)| (id, e))
     }
 
-    pub(crate) fn parked_sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
+    pub(crate) fn parked_sessions(
+        self,
+    ) -> impl Iterator<Item = (&'a MainViewState, &'a CoreState)> {
         self.engines.parked_sessions().map(|(_, s, e)| (s, e))
     }
 
@@ -214,15 +216,17 @@ impl<'a> EngineScanMut<'a> {
         self.engines.window_engine_mut(wid).map(|e| (main, e))
     }
 
-    /// 창의 AppState·engine 쌍.
+    /// 창의 MainViewState·engine 쌍.
     pub(crate) fn window_sessions(
         self,
-    ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+    ) -> impl Iterator<Item = (&'a mut MainViewState, &'a mut CoreState)> {
         self.window_pairs().map(|(_, m, e)| (&mut m.state, e))
     }
 
-    /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
-    pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+    /// 창과 parked 항목의 MainViewState·engine 쌍. 창 → parked 순서다.
+    pub(crate) fn sessions(
+        self,
+    ) -> impl Iterator<Item = (&'a mut MainViewState, &'a mut CoreState)> {
         let SplitMut {
             views,
             mut by_id,
@@ -230,7 +234,7 @@ impl<'a> EngineScanMut<'a> {
             parked,
             ..
         } = self.split();
-        let windowed: Vec<(&'a mut AppState, &'a mut CoreState)> = views
+        let windowed: Vec<(&'a mut MainViewState, &'a mut CoreState)> = views
             .iter_mut()
             .filter_map(|(wid, w)| {
                 let id = by_window.get(wid)?;
@@ -249,17 +253,17 @@ impl<'a> EngineScanMut<'a> {
         self.engines.parked_sessions_mut().map(|(_, _, e)| e)
     }
 
-    /// parked 항목의 id·AppState·engine. id는 `DispatchSource::Engine`에 싣는 값이다.
+    /// parked 항목의 id·MainViewState·engine. id는 `DispatchSource::Engine`에 싣는 값이다.
     pub(crate) fn parked_sessions_with_ids(
         self,
-    ) -> impl Iterator<Item = (EngineId, &'a mut AppState, &'a mut CoreState)> {
+    ) -> impl Iterator<Item = (EngineId, &'a mut MainViewState, &'a mut CoreState)> {
         self.engines.parked_sessions_mut()
     }
 
-    /// parked 항목의 AppState·engine 쌍. 보관 순서다.
+    /// parked 항목의 MainViewState·engine 쌍. 보관 순서다.
     pub(crate) fn parked_sessions(
         self,
-    ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+    ) -> impl Iterator<Item = (&'a mut MainViewState, &'a mut CoreState)> {
         self.engines.parked_sessions_mut().map(|(_, s, e)| (s, e))
     }
 
@@ -267,12 +271,12 @@ impl<'a> EngineScanMut<'a> {
     pub(crate) fn parked_session(
         self,
         id: EngineId,
-    ) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+    ) -> Option<(&'a mut MainViewState, &'a mut CoreState)> {
         self.engines.parked_session_mut(id)
     }
 
     /// 가장 먼저 보관한 parked 항목. 대상 없는 요청의 기본 engine이다.
-    pub(crate) fn first_parked_session(self) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+    pub(crate) fn first_parked_session(self) -> Option<(&'a mut MainViewState, &'a mut CoreState)> {
         self.parked_sessions().next()
     }
 
@@ -280,7 +284,7 @@ impl<'a> EngineScanMut<'a> {
     pub(crate) fn parked_session_with_resource(
         self,
         rid: crate::core::request_target::ResourceId,
-    ) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+    ) -> Option<(&'a mut MainViewState, &'a mut CoreState)> {
         self.parked_sessions()
             .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
     }
@@ -336,7 +340,7 @@ impl<'a> EngineScanMut<'a> {
             .chain(parked.iter().filter_map(move |p| by_id.remove(&p.engine)))
     }
 
-    /// 요청이 가리킨 engine과 그 AppState. 창이 있으면 그 창의 ViewBase도 준다.
+    /// 요청이 가리킨 engine과 그 MainViewState. 창이 있으면 그 창의 ViewBase도 준다.
     pub(crate) fn resolve(self, id: EngineId) -> Option<DispatchCtx<'a>> {
         let SplitMut {
             views,
@@ -363,19 +367,19 @@ impl<'a> EngineScanMut<'a> {
     }
 
     /// 마지막 창을 닫거나 백그라운드로 보낼 때 창 관계를 parked로 바꾼다. 뒤에 붙인다.
-    pub(crate) fn park(self, wid: WindowId, view_restore: AppState) -> Option<EngineId> {
+    pub(crate) fn park(self, wid: WindowId, view_restore: MainViewState) -> Option<EngineId> {
         self.engines.park(wid, view_restore)
     }
 
     /// 새 창에 넘길 parked 항목을 가장 먼저 보관한 것부터 임시 관계로 옮긴다.
-    pub(crate) fn unpark_first(self) -> Option<(EngineId, AppState)> {
+    pub(crate) fn unpark_first(self) -> Option<(EngineId, MainViewState)> {
         self.engines.unpark_first()
     }
 }
 
 /// [`EngineScanMut::resolve`]가 준 요청 대상. 창이 없는 parked engine이면 `view`가 없다.
 pub(crate) struct DispatchCtx<'a> {
-    pub(crate) state: &'a mut AppState,
+    pub(crate) state: &'a mut MainViewState,
     pub(crate) engine: &'a mut CoreState,
     pub(crate) view: Option<&'a mut view::ViewBase>,
 }
@@ -494,7 +498,7 @@ impl App {
     /// parked 조회는 find_parked_with_workspace를 공유하지만 창 있는 engine의 순회는 별도다.
     /// 세 경로의 집합이 같은지 자동 비교하는 검사는 없어 함께 검토해야 한다.
     /// 임시 engine은 제외한다. start_gui_attach는 실제 창에만 mirror를 만들고
-    /// 임시 engine에는 정리 후 active_workspace를 보정할 AppState도 없다. 이 조건이 바뀌면 세 경로를 함께 고친다.
+    /// 임시 engine에는 정리 후 active_workspace를 보정할 MainViewState도 없다. 이 조건이 바뀌면 세 경로를 함께 고친다.
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
         let engines = self.engines();
         any_engine_has_workspace(

@@ -1,7 +1,7 @@
 use egui::emath::GuiRounding as _;
 
 use crate::model::PhysicalRect;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 /// 탐색기의 최근 폴더를 RecentFiles에 저장할 kind. 주소창 자동완성에서 다시 읽는다.
@@ -26,7 +26,7 @@ struct EguiPanelInfo {
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: egui 즉시모드 draw — panel kind별 렌더 분기, 클로저 중첩이 구조적
 pub fn draw_egui_panels(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
@@ -322,7 +322,11 @@ pub fn draw_egui_panels(
 /// 비터미널의 보조 버튼 release를 처리한다. 별도 클릭 위젯을 덮지 않아 내부 버튼과 링크를 가리지 않는다.
 /// 탐색기가 먼저 만든 메뉴가 있으면 유지한다. 없더라도 탐색기 위에서는 일반 surface 메뉴 대신
 /// 현재 폴더의 빈 영역 메뉴를 연다. 좌표는 egui 논리 좌표이며 한 프레임에 메뉴 하나만 선택한다.
-fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: &[EguiPanelInfo]) {
+fn emit_surface_menu_fallback(
+    state: &mut MainViewState,
+    ctx: &egui::Context,
+    infos: &[EguiPanelInfo],
+) {
     if state.dialogs.pending_native_menu.is_some() {
         return;
     }
@@ -363,7 +367,7 @@ fn emit_surface_menu_fallback(state: &mut AppState, ctx: &egui::Context, infos: 
 
 /// 모아 둔 탐색기 액션을 원래 surface ID에 적용한다.
 pub(crate) fn apply_explorer_action(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     sid: u32,
     act: crate::explorer_ui::ExplorerAction,
@@ -456,7 +460,7 @@ pub(crate) fn apply_explorer_action(
 }
 
 fn apply_explorer_panel_action(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     sid: u32,
     act: &crate::explorer_ui::ExplorerAction,

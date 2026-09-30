@@ -370,6 +370,7 @@ pub(crate) enum CoreEvent {
     /// moved=false여도 cut 슬롯은 소비되며, source를 떼고 난 뒤 실패한 경우 구조 변경 정보가 남을 수 있다.
     MoveSurfaceApplied {
         moved: bool,
+        replacement: Option<(u32, u32)>,
         b_cleanup: Option<(u32, Option<String>)>,
         cascade_level: CascadeLevel,
         closed_tab_ids: Vec<u32>,
@@ -390,6 +391,8 @@ pub(crate) enum CoreEvent {
     )]
     ContainerMoveApplied {
         moved: bool,
+        replaced_tab: Option<(u32, u32)>,
+        replaced_pane: Option<(u32, u32)>,
         cleanup_targets: Vec<(u32, Option<String>)>,
         cascade_level: CascadeLevel,
         closed_tab_ids: Vec<u32>,

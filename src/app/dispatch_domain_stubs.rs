@@ -7,7 +7,7 @@
 use crate::core::CoreState;
 use crate::core::intent::RestoredKind;
 use crate::intent::IntentOrigin;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 생성 결과는 두 빌드가 공유하지만 이 필드를 읽는 후속 처리는 GUI에만 있다.
 #[expect(
@@ -24,7 +24,7 @@ pub(crate) struct WorkspaceCreatedCascade {
 }
 
 pub(crate) fn cascade_workspace_created(
-    _state: &mut AppState,
+    _state: &mut RequestContext,
     _engine: &mut CoreState,
     _origin: &IntentOrigin,
     _c: WorkspaceCreatedCascade,
@@ -32,7 +32,7 @@ pub(crate) fn cascade_workspace_created(
 }
 
 pub(crate) fn cascade_closed_item_restored(
-    _state: &mut AppState,
+    _state: &mut RequestContext,
     _engine: &mut CoreState,
     _origin: &IntentOrigin,
     _kind: RestoredKind,
@@ -40,18 +40,8 @@ pub(crate) fn cascade_closed_item_restored(
 ) {
 }
 
-/// 헤드리스도 활성 workspace 인덱스가 실제 위치를 가리켜야 한다.
-pub(crate) fn cascade_workspace_moved(
-    state: &mut AppState,
-    engine: &CoreState,
-    from_index: usize,
-    to_index: usize,
-) {
-    state.fix_workspace_pointers_after_move(&engine, from_index, to_index);
-}
-
 pub(crate) fn cascade_workspace_meta_updated(
-    _state: &mut AppState,
+    _state: &mut RequestContext,
     _workspace_id: u32,
     _name: Option<String>,
     _subtitle: Option<String>,

@@ -66,7 +66,7 @@ pub(crate) fn zoomed_px(
 /// 일반 프레임과 별도로 전체화면 무대만 그린다. 이 프레임에는 호스트 UI나 팝업을 그리지 않는다.
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) {
     fullscreen::draw_fullscreen_stage(ctx, state, engine);
@@ -75,7 +75,7 @@ pub fn draw_fullscreen_stage(
 /// 팝업 뒤에 오버레이를 그린다. 같은 프레임의 플러그인 팝업도 소속 범위를 공유하도록 LayoutContext를 반환한다.
 pub fn draw_popups(
     ctx: &egui::Context,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,

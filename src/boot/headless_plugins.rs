@@ -4,7 +4,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 조회에 필요한 매니저와 설치 목록을 준비한다. 플러그인 설치·권한 부여·프로세스 실행은 하지 않는다.
 /// 매니저 생성 과정에서 로그 디렉터리는 만들어질 수 있다. waker_factory가 없으면 경고 후 생략한다.
@@ -56,7 +56,7 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
 }
 
 /// hello 등록·플러그인 IPC·mesh 전달을 처리한다. GUI popup·banner 처리는 포함하지 않는다.
-pub(crate) fn pump_plugins(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
+pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &mut CoreState) {
     if app.plugin_manager.is_none() {
         return;
     }
@@ -74,7 +74,7 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut AppState, engine: &mut Cor
 /// 플러그인 허브 기한에 깼으면 pump해 지난 기한이 다음 대기를 계속 0으로 만들지 않게 한다.
 pub(crate) fn pump_plugins_if_due(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     now: std::time::Instant,
 ) -> bool {
@@ -112,7 +112,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// 이번 호출이 시작한 프로세스만 연결과 hello 등록을 기다린다. 이 동기 대기 중 다른 IPC는 지연될 수 있다.
 pub(crate) fn ensure_plugin_for_surface_kind(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     request: &crate::ipc::protocol::JsonRpcRequest,
 ) {
@@ -150,7 +150,7 @@ pub(crate) fn ensure_plugin_for_surface_kind(
 /// 이번 호출이 시작한 소유자의 연결과 kind 등록을 기다리고, 등록되지 않았으면 이유를 남긴다.
 fn wait_for_started_owner(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     kind: &str,
     owner: &str,
@@ -384,7 +384,11 @@ fn gates_before_intercept<'a>(
 /// shared_buffer.create는 직접 처리하고 나머지는 공용 handler에 전달한다.
 /// GUI popup·banner 처리는 없으며, 플러그인 사이 namespace 전달도 아직 구현하지 않았다.
 /// 후자는 창이 없어서 불가능한 기능과는 구분한다.
-fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
+fn dispatch_plugin_ipc_calls_headless(
+    app: &mut App,
+    state: &mut RequestContext,
+    engine: &mut CoreState,
+) {
     let calls = match app.plugin_manager.as_mut() {
         Some(mgr) => mgr.take_pending_plugin_calls(),
         None => return,

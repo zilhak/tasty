@@ -450,7 +450,7 @@ impl App {
     }
 
     /// 언어팩 폴백을 한 번 알린다. 설정값은 유지하며 로더가 남긴 경고 로그는 반복하지 않는다.
-    fn report_locale_fallback(state: &mut crate::state::AppState) {
+    fn report_locale_fallback(state: &mut crate::state::MainViewState) {
         if let Some(msg) =
             crate::i18n::load_report().and_then(crate::i18n::LoadReport::user_warning)
         {
@@ -472,7 +472,7 @@ impl App {
 
     /// DB 초기화 실패와 잘못된 테마 이름을 모달로 알린다.
     fn report_boot_init_errors(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         db_init_error: Option<crate::db::DbInitError>,
         invalid_theme_name: Option<String>,
     ) {
@@ -518,7 +518,7 @@ impl App {
     /// 안내를 띄웠다는 사실은 저장하지 않는다. 어떤 권한을 보는지와 그 한계는
     /// `crates/tasty-platform/src/macos_permissions.rs`의 `should_show_permission_notice`에
     /// 있다. macOS가 아니면 아무 일도 하지 않는다.
-    fn report_missing_permissions(state: &mut crate::state::AppState) {
+    fn report_missing_permissions(state: &mut crate::state::MainViewState) {
         if !crate::macos_permissions::wants_permission_notice() {
             return;
         }
@@ -539,7 +539,7 @@ impl App {
     fn report_persistence_incidents(
         settings_origin: tasty_settings::SettingsOrigin,
         engine: &crate::core::CoreState,
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
     ) {
         use crate::adapters::ui::{ToastKind, ToastScope};
         use tasty_settings::SettingsOrigin;
@@ -578,7 +578,7 @@ impl App {
         }
     }
 
-    fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::AppState) {
+    fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::MainViewState) {
         let ipc_proxy = self.view.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);

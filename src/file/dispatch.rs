@@ -14,7 +14,7 @@ use crate::file::handler::HandlerAction;
 #[cfg(feature = "gui")]
 use crate::file::handler::{FileHandler, HandlerId};
 #[cfg(feature = "gui")]
-use crate::state::AppState;
+use crate::state::RequestContext;
 #[cfg(feature = "gui")]
 use crate::state::{FileHandlerPickerData, PickerHandlerSummary};
 #[cfg(feature = "gui")]
@@ -147,7 +147,7 @@ fn hex_val(b: u8) -> Option<u8> {
 /// 빈 후보도 picker로 표시한다. 대상에 맞는 핸들러만 후보·최근 목록에 남긴다.
 #[cfg(feature = "gui")]
 pub(crate) fn open_picker(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     target: DispatchTarget,
     detector: Option<DetectorId>,
@@ -220,7 +220,7 @@ fn picker_lists(
 
 /// 원격 경로는 로컬 핸들러에 넘기지 않도록 후보와 최근 목록이 모두 빈 picker를 만든다.
 #[cfg(feature = "gui")]
-pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileTarget) {
+pub(crate) fn open_remote_placeholder_picker(state: &mut RequestContext, target: FileTarget) {
     let target = DispatchTarget::File(target);
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
@@ -271,7 +271,7 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
 #[cfg(feature = "gui")]
 pub fn execute_handler_action(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     handler: &FileHandler,
     target: &DispatchTarget,
@@ -343,7 +343,7 @@ fn open_system_target(target: &DispatchTarget) {
 }
 
 #[cfg(feature = "gui")]
-fn enqueue_handler_ipc(state: &mut AppState, method: &str, target: &DispatchTarget) -> bool {
+fn enqueue_handler_ipc(state: &mut RequestContext, method: &str, target: &DispatchTarget) -> bool {
     let DispatchTarget::File(file) = target else {
         tracing::warn!(method, "Ipc handler reached with a URL target");
         return false;
@@ -362,7 +362,7 @@ fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::
 #[cfg(feature = "gui")]
 pub(crate) fn open_surface_tab(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     surface_kind: &str,
     params: serde_json::Value,

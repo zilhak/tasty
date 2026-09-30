@@ -111,3 +111,6 @@ mod structure_presentation;
 pub use structure_presentation::{
     RestoredPresentation, StructurePresentation, StructurePresentationSnapshot,
 };
+
+mod split_node_id;
+pub use split_node_id::SplitNodeId;

@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::io;
 
-use crate::core::pty_registry::is_surface_id_space;
 use tasty_memory::{HOST_OWNER, MemoryError, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 fn memory_err_to_io(e: MemoryError) -> io::Error {
@@ -20,7 +19,7 @@ impl SurfaceMetaStore {
         Ok(())
     }
 
-    // 닫힘 시 scope 전체 삭제는 AppState의 수명 정리가 맡는다. plugin/Lua가 직접 쓴 키도 함께 처리해야 한다.
+    // 닫힘 시 scope 전체 삭제는 RequestContext의 수명 정리가 맡는다. plugin/Lua가 직접 쓴 키도 함께 처리해야 한다.
 
     pub fn set(
         mem: &mut dyn MemoryStorage,
@@ -103,6 +102,7 @@ impl SurfaceMetaStore {
     /// 복원 시 발급 기준을 높일 때 PTY 범위의 기록까지 따라가지 않도록 제외한다.
     #[cfg(any(feature = "gui", test))]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
+        use crate::core::pty_registry::is_surface_id_space;
         let scopes = match mem.scopes() {
             Ok(s) => s,
             Err(e) => {
@@ -124,6 +124,7 @@ impl SurfaceMetaStore {
     /// 목록 조회 실패는 0이고 개별 삭제 실패는 로그 후 계속한다. ID 발급기 자체의 범위 검사는 아니다.
     #[cfg(any(feature = "gui", test))]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
+        use crate::core::pty_registry::is_surface_id_space;
         let scopes = match mem.scopes() {
             Ok(s) => s,
             Err(e) => {

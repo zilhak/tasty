@@ -60,6 +60,7 @@ impl Selection {
 /// One owner's navigation, independent from the shared structural model.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NavigationState {
+    pub(crate) split_hints: HashMap<crate::model::SplitNodeId, bool>,
     pub(crate) collapsed_categories: std::collections::HashSet<u32>,
     workspace: Selection,
     panes: HashMap<WorkspaceId, u32>,
@@ -68,12 +69,14 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
+    #[cfg(feature = "gui")]
     pub(crate) fn restore(
         &mut self,
         workspaces: &[Workspace],
         restored: &crate::model::RestoredPresentation,
     ) {
         self.collapsed_categories = restored.selection.collapsed_categories.clone();
+        self.split_hints = restored.selection.split_hints.clone();
         self.reconcile(workspaces);
         if let Some(id) = restored.active_workspace {
             self.select_workspace(workspaces, id);
@@ -81,11 +84,14 @@ impl NavigationState {
         self.apply_snapshot(workspaces, &restored.selection);
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn apply_snapshot(
         &mut self,
         workspaces: &[Workspace],
         selection: &crate::model::StructurePresentationSnapshot,
     ) {
+        self.split_hints
+            .extend(selection.split_hints.iter().map(|(id, hint)| (*id, *hint)));
         self.reconcile(workspaces);
         for ws in workspaces {
             if let Some(id) = selection.panes.get(&ws.id) {
@@ -188,9 +194,11 @@ impl NavigationState {
         }
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
         self.panes.entry(workspace.id).or_insert(pane);
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
         if let std::collections::hash_map::Entry::Vacant(entry) = self.tabs.entry(pane.id) {
             let mut selection = Selection::default();
@@ -200,8 +208,31 @@ impl NavigationState {
             entry.insert(selection);
         }
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
         self.surfaces.entry(tab.id).or_insert(surface);
+    }
+
+    pub(crate) fn replace_surface(&mut self, removed: u32, replacement: u32) {
+        for selected in self.surfaces.values_mut() {
+            if *selected == removed {
+                *selected = replacement;
+            }
+        }
+    }
+    pub(crate) fn replace_tab(&mut self, removed: u32, replacement: u32) {
+        for selection in self.tabs.values_mut() {
+            if selection.selected == Some(removed) {
+                selection.selected = Some(replacement);
+            }
+        }
+    }
+    pub(crate) fn replace_pane(&mut self, removed: u32, replacement: u32) {
+        for selected in self.panes.values_mut() {
+            if *selected == removed {
+                *selected = replacement;
+            }
+        }
     }
 
     /// Apply the current structural result. Surviving IDs are retained; missing
@@ -213,6 +244,7 @@ impl NavigationState {
             .retain(|ws, _| workspaces.iter().any(|w| w.id == *ws));
         let mut pane_ids = Vec::new();
         let mut live_tabs = Vec::new();
+        let mut split_nodes = Vec::new();
         for ws in workspaces {
             if let Some(id) = self.pane_id(ws) {
                 self.panes.insert(ws.id, id);
@@ -225,6 +257,9 @@ impl NavigationState {
                 self.tabs.entry(id).or_default().reconcile(tab_ids(pane));
                 for tab in &pane.tabs {
                     live_tabs.push(tab.id);
+                    if let Some(layout) = tab.layout_if_initialized() {
+                        layout.split_node_ids(&mut split_nodes);
+                    }
                     if let Some(id) = self.surface_id(tab) {
                         self.surfaces.insert(tab.id, id);
                     } else {
@@ -233,6 +268,7 @@ impl NavigationState {
                 }
             }
         }
+        self.split_hints.retain(|id, _| split_nodes.contains(id));
         self.tabs.retain(|id, _| pane_ids.contains(id));
         self.surfaces.retain(|id, _| live_tabs.contains(id));
     }
@@ -250,6 +286,9 @@ fn tab_ids(pane: &Pane) -> Vec<u32> {
 mod tests;
 
 impl crate::model::StructurePresentation for NavigationState {
+    fn split_focus_second(&self, node: crate::model::SplitNodeId) -> bool {
+        self.split_hints.get(&node).copied().unwrap_or(true)
+    }
     fn category_collapsed(&self, category: u32) -> bool {
         self.collapsed_categories.contains(&category)
     }

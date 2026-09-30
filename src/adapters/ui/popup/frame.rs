@@ -1,9 +1,9 @@
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// 마우스 캡처 배너 "더보기" 메뉴가 (액션 클릭이든 outside click/Esc 든) 닫혔으면
 /// 대상 surface 필드를 비운다. 매번 확인해도 무해(idempotent)하다.
 fn cleanup_mouse_capture_menu_target(
-    state: &mut AppState,
+    state: &mut MainViewState,
     dispatch_closed: &[&'static str],
     draw_result_closed: &[&'static str],
 ) {
@@ -19,7 +19,7 @@ const ON_CLOSE_DRAIN_MAX_ROUNDS: u32 = 8;
 /// 닫힌 팝업의 on_close 훅을 실행한다. 훅이 다른 팝업을 닫으면 이어 처리하되 상한을 둔다.
 fn drain_on_close_hooks(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) {
     drain_on_close_hooks_with_lookup(ctx, state, engine, |id| {
@@ -45,11 +45,11 @@ fn scope_target_exists(
 /// 테스트에서 별도 정의 목록을 쓸 수 있도록 훅 조회 함수를 받는다.
 fn drain_on_close_hooks_with_lookup(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     lookup: impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
+    ) -> Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
 ) {
     let mut round = 0u32;
     loop {
@@ -76,7 +76,7 @@ fn drain_on_close_hooks_with_lookup(
 /// 팝업 정의에 따라 그리고 닫기 훅을 처리한다. 오버레이와 같은 LayoutContext를 쓴다.
 pub(crate) fn draw_popup_layer(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     draw_ctx: &crate::adapters::ui::LayoutContext,
 ) {
@@ -176,21 +176,21 @@ mod on_close_drain_tests {
     /// 실제 정의 목록 대신 테스트용 조회 함수를 넣어 닫기 반복·상한을 검사한다.
     type Lookup = HashMap<
         crate::adapters::ui::popup::PopupId,
-        fn(&egui::Context, &mut AppState, &mut crate::core::CoreState),
+        fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState),
     >;
 
     fn lookup_from(
         map: Lookup,
     ) -> impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)> {
+    ) -> Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)> {
         move |id| map.get(id).copied()
     }
 
     static PLAIN_HOOK_FIRES: AtomicU32 = AtomicU32::new(0);
     fn plain_hook(
         _ctx: &egui::Context,
-        _state: &mut AppState,
+        _state: &mut MainViewState,
         _engine: &mut crate::core::CoreState,
     ) {
         PLAIN_HOOK_FIRES.fetch_add(1, Ordering::SeqCst);
@@ -219,7 +219,7 @@ mod on_close_drain_tests {
 
         fn hook_a(
             _ctx: &egui::Context,
-            state: &mut AppState,
+            state: &mut MainViewState,
             _engine: &mut crate::core::CoreState,
         ) {
             A_FIRES.fetch_add(1, Ordering::SeqCst);
@@ -227,7 +227,7 @@ mod on_close_drain_tests {
         }
         fn hook_b(
             _ctx: &egui::Context,
-            _state: &mut AppState,
+            _state: &mut MainViewState,
             _engine: &mut crate::core::CoreState,
         ) {
             B_FIRES.fetch_add(1, Ordering::SeqCst);
@@ -256,7 +256,7 @@ mod on_close_drain_tests {
 
         fn looping_hook(
             _ctx: &egui::Context,
-            state: &mut AppState,
+            state: &mut MainViewState,
             _engine: &mut crate::core::CoreState,
         ) {
             LOOP_FIRES.fetch_add(1, Ordering::SeqCst);

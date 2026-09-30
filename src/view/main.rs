@@ -30,7 +30,7 @@ use winit::keyboard::ModifiersState;
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::selection::TextSelection;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::view::ui::{View, sealed};
 use crate::view::{ViewAction, ViewBase, ViewCtx};
 use crate::{AppEvent, ClipboardContext};
@@ -39,7 +39,7 @@ use crate::{AppEvent, ClipboardContext};
 /// `View` + `sealed::Sealed` 를 직접 구현한다.
 pub struct MainView {
     pub base: ViewBase,
-    pub(crate) state: AppState,
+    pub(crate) state: MainViewState,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -177,7 +177,7 @@ pub(crate) enum MeshHoverTarget {
 impl MainView {
     pub(crate) fn new(
         gpu: GpuState,
-        state: AppState,
+        state: MainViewState,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {

@@ -1,12 +1,12 @@
-//! AppState·CoreState·GpuState에서 디버그 조회용 JSON을 만든다.
+//! MainViewState·CoreState·GpuState에서 디버그 조회용 JSON을 만든다.
 
 use serde_json::{Value, json};
 
 use crate::gpu::GpuState;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 pub fn collect(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
     gpu: Option<&GpuState>,
     ime_active: bool,

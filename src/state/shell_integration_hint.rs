@@ -1,8 +1,8 @@
 //! 셸 통합 안내 배너의 표시 기록. 안내가 필요한지는 Core가 판단하고 여기서는 한 번만 보이게 한다.
 
-use super::AppState;
+use super::RequestContext;
 
-impl AppState {
+impl RequestContext {
     /// 처음 요청받은 surface면 기록하고 true를 반환한다.
     /// 배너를 넣기 전에 기록하므로 표시 실패를 재시도하지 않는다.
     pub(crate) fn take_first_shell_integration_hint(&mut self, surface_id: u32) -> bool {

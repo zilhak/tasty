@@ -15,7 +15,7 @@ pub(crate) enum ZoomAction {
 
 impl MainView {
     pub(super) fn handle_zoom_shortcut(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         key: &Key,
         mods: ModifiersState,
@@ -35,7 +35,7 @@ impl MainView {
 
     /// 줌 실행. 포커스된 surface 가 줌 대상이 아니면 `false`.
     pub(crate) fn apply_zoom(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         action: ZoomAction,
     ) -> bool {

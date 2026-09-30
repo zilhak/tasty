@@ -1,6 +1,6 @@
 use crate::core::CoreState;
 
-use super::AppState;
+use super::RequestContext;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,39 +42,7 @@ impl WorkspaceCloseOrigin {
     }
 }
 
-/// 제거 후에도 같은 워크스페이스를 가리키도록 활성 인덱스를 보정한다.
-/// 활성 대상을 제거했다면 같은 자리의 다음 항목, 없으면 직전 항목을 선택한다.
-/// remaining은 제거 후 개수이며, 0이면 0을 반환한다.
-/// docs/design/policies/focus.md의 삭제로 인한 인덱스 이동 규칙을 따른다.
-#[cfg(test)]
-fn active_index_after_removal(active: usize, removed_idx: usize, remaining: usize) -> usize {
-    if remaining == 0 {
-        return 0;
-    }
-    if active > removed_idx {
-        active - 1
-    } else if active == removed_idx {
-        active.min(remaining - 1)
-    } else {
-        active
-    }
-}
-
-/// 재정렬 후에도 같은 워크스페이스를 가리키도록 활성 인덱스를 보정한다.
-#[cfg(test)]
-fn active_index_after_move(active: usize, from: usize, to: usize) -> usize {
-    if active == from {
-        to
-    } else if from < to && active > from && active <= to {
-        active - 1
-    } else if from > to && active >= to && active < from {
-        active + 1
-    } else {
-        active
-    }
-}
-
-impl AppState {
+impl RequestContext {
     /// 워크스페이스가 없으면 기본 항목을 생성하고 true를 반환한다. 실패하면 false다.
     /// 원격 연결 해제 등으로 빈 상태가 됐을 때 사용자 창을 유지하기 위한 처리이며
     /// 별도의 host event는 만들지 않는다.
@@ -100,25 +68,6 @@ impl AppState {
                 false
             }
         }
-    }
-
-    /// Reconcile IDs after a structural result; origin does not affect repair.
-    pub(crate) fn fix_workspace_pointers_after_removal(
-        &mut self,
-        engine: &CoreState,
-        _removed_idx: usize,
-        _remaining: usize,
-    ) {
-        self.navigation.reconcile(&engine.workspaces);
-    }
-
-    pub(crate) fn fix_workspace_pointers_after_move(
-        &mut self,
-        engine: &CoreState,
-        _from: usize,
-        _to: usize,
-    ) {
-        self.navigation.reconcile(&engine.workspaces);
     }
 
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
@@ -310,7 +259,7 @@ impl AppState {
         }
         let ws = engine.workspaces.remove(from);
         engine.workspaces.insert(to, ws);
-        self.fix_workspace_pointers_after_move(&engine, from, to);
+        self.reconcile_presentation(&engine);
         true
     }
 
@@ -375,12 +324,12 @@ impl AppState {
             engine.push_closed_item(snapshot).log(t.elapsed(), path);
         }
         let t = Instant::now();
-        let targets = super::AppState::collect_workspace_close_targets(engine, ws_idx);
+        let targets = super::RequestContext::collect_workspace_close_targets(engine, ws_idx);
         close_trace::log_collect(t, targets.len(), path);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         self.after_workspace_removed(engine, workspace_id, path);
-        self.fix_workspace_pointers_after_removal(&engine, ws_idx, engine.workspaces.len());
+        self.reconcile_presentation(&engine);
         // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
@@ -401,31 +350,6 @@ impl AppState {
 mod workspace_pointer_tests {
     use super::*;
 
-    #[test]
-    fn removing_an_earlier_workspace_shifts_the_active_pointer_down() {
-        assert_eq!(active_index_after_removal(2, 0, 3), 1);
-    }
-
-    #[test]
-    fn removing_a_later_workspace_leaves_the_active_pointer_alone() {
-        assert_eq!(active_index_after_removal(2, 3, 3), 2);
-    }
-
-    #[test]
-    fn removing_the_active_workspace_lands_on_the_one_that_slid_in() {
-        assert_eq!(active_index_after_removal(1, 1, 3), 1);
-    }
-
-    #[test]
-    fn removing_the_active_last_workspace_falls_back_to_the_previous_one() {
-        assert_eq!(active_index_after_removal(3, 3, 3), 2);
-    }
-
-    #[test]
-    fn removing_the_only_workspace_yields_zero() {
-        assert_eq!(active_index_after_removal(0, 0, 0), 0);
-    }
-
     /// 공통 정리 코드의 보정 호출과 바로 앞 cfg 속성을 검사한다.
     /// 호출 전체를 감싼 GUI 전용 블록까지 판별하지는 못한다.
     #[test]
@@ -435,7 +359,7 @@ mod workspace_pointer_tests {
         let calls: Vec<usize> = lines
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.contains("state.fix_workspace_pointers_after_removal(&engine, "))
+            .filter(|(_, l)| l.contains("state.reconcile_presentation("))
             .map(|(i, _)| i)
             .collect();
         assert!(
@@ -450,33 +374,9 @@ mod workspace_pointer_tests {
             );
         }
         assert!(
-            !src.contains("state.active_workspace_index(&engine) = engine.workspaces.len() - 1"),
-            "close cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
+            !include_str!("../core/state.rs").contains("pub(crate) restored_active_workspace"),
+            "CoreState must not own restored user selection"
         );
-    }
-
-    #[test]
-    fn moving_a_workspace_forward_drags_a_passed_over_pointer_back() {
-        assert_eq!(active_index_after_move(1, 0, 2), 0);
-        assert_eq!(active_index_after_move(2, 0, 2), 1);
-    }
-
-    #[test]
-    fn moving_a_workspace_backward_pushes_a_passed_over_pointer_up() {
-        assert_eq!(active_index_after_move(1, 3, 1), 2);
-        assert_eq!(active_index_after_move(2, 3, 1), 3);
-    }
-
-    #[test]
-    fn moving_the_active_workspace_takes_the_pointer_with_it() {
-        assert_eq!(active_index_after_move(1, 1, 3), 3);
-        assert_eq!(active_index_after_move(3, 3, 0), 0);
-    }
-
-    #[test]
-    fn a_move_outside_the_pointer_leaves_it_alone() {
-        assert_eq!(active_index_after_move(3, 0, 1), 3);
-        assert_eq!(active_index_after_move(0, 2, 3), 0);
     }
 
     // 인덱스가 우연히 같아지는 경우를 피하도록 대상 ID로 확인한다.
@@ -523,29 +423,10 @@ mod workspace_pointer_tests {
         let selected = state.active_workspace(&engine).id;
         let moved = engine.workspaces.remove(0);
         engine.workspaces.insert(3, moved);
-        crate::app::dispatch_domain::cascade_workspace_moved(&mut state, &engine, 0, 3);
+        state.reconcile_presentation(&engine);
         assert_eq!(state.active_workspace(&engine).id, selected);
     }
 
-    // GUI·헤드리스 양쪽의 보정 호출을 소스로 확인한다.
-    #[test]
-    fn both_move_cascades_route_through_the_pointer_helper() {
-        for (label, src) in [
-            ("gui", include_str!("../app/dispatch_domain.rs")),
-            ("headless", include_str!("../app/dispatch_domain_stubs.rs")),
-        ] {
-            assert!(
-                src.contains("fix_workspace_pointers_after_move"),
-                "{label} cascade 가 재정렬 포인터 보정 헬퍼를 부르지 않는다"
-            );
-            assert!(
-                !src.contains("state.active_workspace_index(&engine) = to_index"),
-                "{label} cascade 에 보정 규칙이 인라인으로 복제돼 있다"
-            );
-        }
-    }
-
-    // 첫 항목과 다른 대상을 골라야 fallback이 잘못 실행돼도 시험이 통과하는 일을 막는다.
     #[test]
     fn reordering_keeps_the_category_landing_on_the_same_workspace() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -603,7 +484,7 @@ mod workspace_pointer_tests {
         state.switch_workspace(&mut engine, 0); // B 의 착지점 = ids[0]
 
         engine.workspaces.remove(0);
-        state.fix_workspace_pointers_after_removal(&engine, 0, engine.workspaces.len());
+        state.reconcile_presentation(&engine);
 
         state.switch_to_category(&mut engine, 1);
         assert_eq!(

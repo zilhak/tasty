@@ -3,9 +3,9 @@
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::model::WorkspaceCategoryId;
-use crate::state::{AppState, RenameTarget};
+use crate::state::{MainViewState, RenameTarget};
 
-pub(crate) fn open_new_category_dialog(state: &mut AppState, engine: &crate::core::CoreState) {
+pub(crate) fn open_new_category_dialog(state: &mut MainViewState, engine: &crate::core::CoreState) {
     let target = RenameTarget::NewCategory;
     let scope = target.popup_scope(engine);
     state.dialogs.rename = Some((target, String::new()));
@@ -19,7 +19,7 @@ pub(crate) fn open_new_category_dialog(state: &mut AppState, engine: &crate::cor
 }
 
 pub(crate) fn open_rename_category_dialog(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     cat_id: WorkspaceCategoryId,
 ) {
@@ -36,7 +36,7 @@ pub(crate) fn open_rename_category_dialog(
     );
 }
 
-pub(crate) fn open_delete_category_confirm(state: &mut AppState, cat_id: WorkspaceCategoryId) {
+pub(crate) fn open_delete_category_confirm(state: &mut MainViewState, cat_id: WorkspaceCategoryId) {
     state.dialogs.pending_category_delete = Some(cat_id);
     state.dispatch_intent(
         UiIntent::OpenPopup {

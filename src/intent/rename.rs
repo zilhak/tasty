@@ -5,7 +5,7 @@ use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::intent::DomainIntent;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 대상은 ID로 지정한다. 팝업이 열린 동안 순서가 바뀌어도 같은 대상을 바꾼다.
 #[cfg_attr(
@@ -31,7 +31,7 @@ pub enum DirectRename {
 
 pub fn handle(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     intent: &DispatchedIntent,
 ) {
@@ -68,7 +68,7 @@ pub fn handle(
 
 fn rename_tab(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     tab_id: u32,
     name: Option<String>,
@@ -96,7 +96,7 @@ fn rename_tab(
 
 fn rename_workspace(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     workspace_id: u32,
     name: Option<String>,
@@ -127,7 +127,7 @@ mod tests {
     use super::*;
     use crate::state::PendingHostEvent;
 
-    fn run(make: impl FnOnce(u32) -> DirectRename, mirror: bool) -> (AppState, CoreState) {
+    fn run(make: impl FnOnce(u32) -> DirectRename, mirror: bool) -> (RequestContext, CoreState) {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         engine.workspaces[0].mirror = mirror;
@@ -145,7 +145,7 @@ mod tests {
         (pane_id, tab.id)
     }
 
-    fn tab_renamed(state: &AppState) -> Vec<(u32, String, bool)> {
+    fn tab_renamed(state: &RequestContext) -> Vec<(u32, String, bool)> {
         state
             .pending_host_events
             .iter()
@@ -160,7 +160,7 @@ mod tests {
             .collect()
     }
 
-    fn run_tab(name: Option<&str>, mirror: bool) -> (AppState, CoreState, u32, u32) {
+    fn run_tab(name: Option<&str>, mirror: bool) -> (RequestContext, CoreState, u32, u32) {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         engine.workspaces[0].mirror = mirror;
@@ -221,7 +221,7 @@ mod tests {
         assert!(tab_renamed(&state).is_empty());
     }
 
-    fn renamed_events(state: &AppState) -> Vec<PendingHostEvent> {
+    fn renamed_events(state: &RequestContext) -> Vec<PendingHostEvent> {
         state
             .pending_host_events
             .iter()

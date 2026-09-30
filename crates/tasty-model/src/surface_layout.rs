@@ -22,8 +22,8 @@ pub enum SurfaceLayout {
         ratio: f32,
         first: Box<SurfaceLayout>,
         second: Box<SurfaceLayout>,
-        /// Which branch has focus: false = first, true = second
-        focus_second: bool,
+        /// Stable only during this runtime; compatibility hints live outside the tree.
+        node_id: crate::SplitNodeId,
     },
 }
 
@@ -69,6 +69,20 @@ impl BinaryTree for SurfaceLayout {
 }
 
 impl SurfaceLayout {
+    pub fn split_node_ids(&self, out: &mut Vec<crate::SplitNodeId>) {
+        if let Self::Split {
+            node_id,
+            first,
+            second,
+            ..
+        } = self
+        {
+            out.push(*node_id);
+            first.split_node_ids(out);
+            second.split_node_ids(out);
+        }
+    }
+
     /// Helper: get the surface ID of a Leaf node.
     fn leaf_surface_id(surface: &dyn Surface) -> SurfaceId {
         surface
@@ -91,7 +105,7 @@ impl SurfaceLayout {
                     ratio: 0.5,
                     first: Box::new(SurfaceLayout::Leaf(surface)),
                     second: Box::new(SurfaceLayout::Leaf(new_surface)),
-                    focus_second: true,
+                    node_id: crate::SplitNodeId::allocate(),
                 },
                 None,
             ),
@@ -101,7 +115,7 @@ impl SurfaceLayout {
                 ratio,
                 first,
                 second,
-                focus_second,
+                node_id,
             } => {
                 let (new_first, remaining) =
                     first.split_with_surface(target_id, direction, new_surface);
@@ -114,7 +128,7 @@ impl SurfaceLayout {
                             ratio,
                             first: Box::new(new_first),
                             second: Box::new(new_second),
-                            focus_second,
+                            node_id,
                         },
                         still_remaining,
                     )
@@ -125,7 +139,7 @@ impl SurfaceLayout {
                             ratio,
                             first: Box::new(new_first),
                             second,
-                            focus_second,
+                            node_id,
                         },
                         None,
                     )
@@ -161,7 +175,7 @@ impl SurfaceLayout {
                 ratio,
                 first,
                 second,
-                focus_second,
+                node_id,
             } => {
                 let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
                 let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
@@ -180,7 +194,7 @@ impl SurfaceLayout {
                             ratio,
                             first: Box::new(new_first),
                             second,
-                            focus_second,
+                            node_id,
                         },
                         true,
                     );
@@ -192,7 +206,7 @@ impl SurfaceLayout {
                         ratio,
                         first: Box::new(new_first),
                         second: Box::new(new_second),
-                        focus_second,
+                        node_id,
                     },
                     found_in_second,
                 )
@@ -220,7 +234,7 @@ impl SurfaceLayout {
                 ratio,
                 first,
                 second,
-                focus_second,
+                node_id,
             } => {
                 let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
                 let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
@@ -230,10 +244,7 @@ impl SurfaceLayout {
                         SurfaceLayout::Leaf(s) => Some(s),
                         // `first_is_target` already proved this is a matching Leaf.
                         other => {
-                            return (
-                                other.recombine(*second, direction, ratio, focus_second),
-                                None,
-                            );
+                            return (other.recombine(*second, direction, ratio, node_id), None);
                         }
                     };
                     return (*second, extracted);
@@ -242,10 +253,7 @@ impl SurfaceLayout {
                     let extracted = match *second {
                         SurfaceLayout::Leaf(s) => Some(s),
                         other => {
-                            return (
-                                (*first).recombine(other, direction, ratio, focus_second),
-                                None,
-                            );
+                            return ((*first).recombine(other, direction, ratio, node_id), None);
                         }
                     };
                     return (*first, extracted);
@@ -259,7 +267,7 @@ impl SurfaceLayout {
                             ratio,
                             first: Box::new(new_first),
                             second,
-                            focus_second,
+                            node_id,
                         },
                         extracted_first,
                     );
@@ -271,7 +279,7 @@ impl SurfaceLayout {
                         ratio,
                         first: Box::new(new_first),
                         second: Box::new(new_second),
-                        focus_second,
+                        node_id,
                     },
                     extracted_second,
                 )
@@ -287,14 +295,14 @@ impl SurfaceLayout {
         other: SurfaceLayout,
         direction: SplitDirection,
         ratio: f32,
-        focus_second: bool,
+        node_id: crate::SplitNodeId,
     ) -> SurfaceLayout {
         SurfaceLayout::Split {
             direction,
             ratio,
             first: Box::new(self),
             second: Box::new(other),
-            focus_second,
+            node_id,
         }
     }
 
@@ -414,7 +422,10 @@ impl SurfaceLayout {
     }
 
     /// 원격 mirror가 구조를 복원할 수 있도록 분할 방향·비율·포커스와 surface ID를 보낸다.
-    pub fn to_tree_json_full(&self) -> serde_json::Value {
+    pub fn to_tree_json_full(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         match self {
             SurfaceLayout::Leaf(surface) => serde_json::json!({
                 "type": "Leaf",
@@ -426,7 +437,7 @@ impl SurfaceLayout {
                 ratio,
                 first,
                 second,
-                focus_second,
+                node_id,
             } => serde_json::json!({
                 "type": "Split",
                 "direction": match direction {
@@ -434,9 +445,9 @@ impl SurfaceLayout {
                     SplitDirection::Vertical => "vertical",
                 },
                 "ratio": ratio,
-                "focus_second": focus_second,
-                "first": first.to_tree_json_full(),
-                "second": second.to_tree_json_full(),
+                "focus_second": presentation.split_focus_second(*node_id),
+                "first": first.to_tree_json_full(presentation),
+                "second": second.to_tree_json_full(presentation),
             }),
         }
     }
@@ -550,7 +561,7 @@ mod tests {
             ratio: 0.5,
             first: Box::new(first),
             second: Box::new(second),
-            focus_second: false,
+            node_id: crate::SplitNodeId::allocate(),
         }
     }
 

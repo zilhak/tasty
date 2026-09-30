@@ -153,7 +153,7 @@ impl App {
 
     fn dispatch_one_intent(
         core: &mut crate::core::Core,
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         intent: &crate::intent::DispatchedIntent,
     ) {

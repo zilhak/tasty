@@ -21,7 +21,7 @@ fn handler(action: HandlerAction) -> FileHandler {
 }
 
 /// 식별 결과가 picker를 열면 요청 출처를 그대로 실은 OpenPopup 하나만 큐에 남는다.
-fn take_picker_open_request(state: &mut crate::state::AppState, agent: bool) {
+fn take_picker_open_request(state: &mut crate::state::RequestContext, agent: bool) {
     let pending = state.take_pending_intents();
     assert_eq!(pending.len(), 1);
     assert!(matches!(

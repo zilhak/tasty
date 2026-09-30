@@ -5,11 +5,11 @@
 use super::DispatchedIntent;
 #[cfg(feature = "gui")]
 use super::{Intent, OpenPopupMode, UiIntent};
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 헤드리스에서는 팝업을 표시할 수 없어 요청을 무시한다.
 pub fn handle(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
 ) {
@@ -74,7 +74,7 @@ pub fn handle(
 }
 
 #[cfg(feature = "gui")]
-fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
+fn open(state: &mut RequestContext, id: &'static str, mode: &OpenPopupMode) {
     if state.popups.is_open(id) {
         return;
     }
@@ -100,7 +100,7 @@ mod tests {
     use super::*;
     use crate::adapters::ui::popup::{PopupScope, PopupState};
 
-    fn make_state() -> AppState {
+    fn make_state() -> RequestContext {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
@@ -110,7 +110,7 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
             ));
-        let mut state = AppState::new(&mut engine, preset_store, memory);
+        let mut state = RequestContext::new(&mut engine, preset_store, memory);
         state.popups.register(PopupState::new(
             "test_popup",
             "Test".to_string(),

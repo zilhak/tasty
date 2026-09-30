@@ -1320,7 +1320,7 @@ fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, 
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
 fn remove_mirror_workspace_from_engine(
     engine: &mut crate::core::CoreState,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
@@ -1341,7 +1341,7 @@ fn remove_mirror_workspace_from_engine(
         engine.attach.forget_closed_surface(local);
     }
     engine.workspaces.remove(pos);
-    state.fix_workspace_pointers_after_removal(&engine, pos, engine.workspaces.len());
+    state.reconcile_presentation(&engine);
     // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
     state.recreate_workspace_if_empty(engine, "mirror workspace cleanup");
     true
@@ -1423,14 +1423,14 @@ fn disconnect_disposition(
 
 /// 창과 parked 상태의 공통 적용 대상. 창이 있어야 의미 있는 toast만 구별한다.
 struct MirrorHost<'a> {
-    state: &'a mut crate::state::AppState,
+    state: &'a mut crate::state::MainViewState,
     engine: &'a mut crate::core::CoreState,
     windowed: bool,
 }
 
 impl<'a> MirrorHost<'a> {
     fn windowed(
-        state: &'a mut crate::state::AppState,
+        state: &'a mut crate::state::MainViewState,
         engine: &'a mut crate::core::CoreState,
     ) -> Self {
         Self {
@@ -1441,7 +1441,7 @@ impl<'a> MirrorHost<'a> {
     }
 
     fn parked(
-        state: &'a mut crate::state::AppState,
+        state: &'a mut crate::state::MainViewState,
         engine: &'a mut crate::core::CoreState,
     ) -> Self {
         Self {
@@ -2333,7 +2333,7 @@ fn apply_list_dir_result_event(
 
 fn apply_git_query_result_event(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     request_id: u64,
     ok: bool,
     kind: String,
@@ -2587,10 +2587,17 @@ fn build_pane_from_json(
     let mut active_tab = 0usize;
     for (i, t) in tabs_json.iter().enumerate() {
         let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
-        let layout = build_layout(&layout_json, ids, map, term, mesh, explorer, markdown)
-            .unwrap_or_else(|| {
-                SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
-            });
+        let layout = build_layout(
+            navigation,
+            &layout_json,
+            ids,
+            map,
+            term,
+            mesh,
+            explorer,
+            markdown,
+        )
+        .unwrap_or_else(|| SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface()))));
         let remote_focus = t
             .get("focused_surface")
             .and_then(|v| v.as_u64())
@@ -2833,6 +2840,7 @@ fn build_mirror_workspace(
 }
 
 fn build_layout(
+    navigation: &mut crate::state::navigation::NavigationState,
     node: &Value,
     ids: &crate::core::state::IdGenerator,
     map: &HashMap<u32, u32>,
@@ -2877,8 +2885,18 @@ fn build_layout(
                 .get("focus_second")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let first = build_layout(node.get("first")?, ids, map, term, mesh, explorer, markdown)?;
+            let first = build_layout(
+                navigation,
+                node.get("first")?,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            )?;
             let second = build_layout(
+                navigation,
                 node.get("second")?,
                 ids,
                 map,
@@ -2887,12 +2905,14 @@ fn build_layout(
                 explorer,
                 markdown,
             )?;
+            let node_id = crate::model::SplitNodeId::allocate();
+            navigation.split_hints.insert(node_id, focus_second);
             Some(SurfaceLayout::Split {
                 direction,
                 ratio,
                 first: Box::new(first),
                 second: Box::new(second),
-                focus_second,
+                node_id,
             })
         }
         _ => None,
@@ -3384,13 +3404,13 @@ mod tests {
 
     /// 순수 함수 시험용 parked 항목. registry 없이 id·View 복원 자료·engine만 묶는다.
     struct ParkedEngine {
-        view_restore: crate::state::AppState,
+        view_restore: crate::state::MainViewState,
         session: EngineSession,
     }
 
     impl ParkedEngine {
         fn from_test_state(
-            (view_restore, core_state): (crate::state::AppState, crate::core::CoreState),
+            (view_restore, core_state): (crate::state::MainViewState, crate::core::CoreState),
         ) -> Self {
             Self {
                 view_restore,

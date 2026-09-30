@@ -1,9 +1,9 @@
 use crate::core::CoreState;
 use crate::model::PhysicalPx;
 
-use super::AppState;
+use super::RequestContext;
 
-impl AppState {
+impl RequestContext {
     pub fn move_pane_focus_forward(&mut self, engine: &mut CoreState) {
         let ws = self.active_workspace(engine);
         if let Some(id) = self.navigation.pane_id(ws) {

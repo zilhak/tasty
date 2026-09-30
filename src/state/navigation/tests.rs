@@ -139,3 +139,161 @@ fn snapshot_deleting_multiple_predecessors_uses_the_next_surviving_id() {
     assert_eq!(selection.resolve(&[1, 2]), Some(2));
     assert_eq!(selection.resolve(&[6, 7]), Some(6));
 }
+
+#[test]
+fn tab_navigation_reports_no_change_and_missing_targets_without_mutating_structure() {
+    let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
+    pane.add_terminal_marker_tab(11, 101);
+    pane.add_terminal_marker_tab(12, 102);
+    let mut nav = NavigationState::default();
+    assert_eq!(
+        nav.goto_tab(&pane, 0),
+        crate::model::TabSwitch::AlreadyActive
+    );
+    assert_eq!(nav.goto_tab(&pane, 2), crate::model::TabSwitch::Switched);
+    assert_eq!(
+        nav.goto_tab(&pane, 2),
+        crate::model::TabSwitch::AlreadyActive
+    );
+    assert_eq!(
+        nav.goto_tab(&pane, 9),
+        crate::model::TabSwitch::OutOfRange { tabs: 3 }
+    );
+    assert_eq!(nav.tab_id(&pane), Some(12));
+    assert_eq!(
+        pane.tabs.iter().map(|t| t.id).collect::<Vec<_>>(),
+        [10, 11, 12]
+    );
+}
+
+#[test]
+fn all_tab_removal_positions_preserve_the_legacy_neighbour_policy_by_id() {
+    for (selected, removed, expected) in [(11, 0, 11), (11, 2, 11), (11, 1, 12), (12, 2, 11)] {
+        let mut workspaces = vec![workspace(1)];
+        let pane = workspaces[0].pane_layout_mut().find_pane_mut(10).unwrap();
+        pane.tabs.clear();
+        for tab in [10, 11, 12] {
+            pane.add_terminal_marker_tab(tab, tab * 10);
+        }
+        let mut nav = NavigationState::default();
+        nav.select_tab(pane, selected);
+        nav.reconcile(&workspaces);
+        workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(10)
+            .unwrap()
+            .remove_tab(removed);
+        nav.reconcile(&workspaces);
+        assert_eq!(
+            nav.tab_id(workspaces[0].pane_layout().first_pane().unwrap()),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn moving_a_surface_repairs_the_source_and_replaces_the_selected_destination() {
+    let mut workspaces = vec![workspace(1), workspace(2)];
+    for (ws, first, second) in [(&mut workspaces[0], 1000, 1001)] {
+        ws.pane_layout_mut().find_pane_mut(10).unwrap().tabs[0].split_surface_by_id_generic(
+            first,
+            SplitDirection::Horizontal,
+            Box::new(EmptySurface::new(second)),
+        );
+    }
+    workspaces[1]
+        .pane_layout_mut()
+        .find_pane_mut(20)
+        .unwrap()
+        .tabs[0]
+        .split_surface_by_id_generic(
+            2000,
+            SplitDirection::Horizontal,
+            Box::new(EmptySurface::new(2001)),
+        );
+    let mut nav = NavigationState::default();
+    nav.reconcile(&workspaces);
+    nav.select_surface(
+        &workspaces[1].pane_layout().first_pane().unwrap().tabs[0],
+        2001,
+    );
+    let source = &mut workspaces[0]
+        .pane_layout_mut()
+        .find_pane_mut(10)
+        .unwrap()
+        .tabs[0];
+    let (layout, moved) = source.take_layout().extract_surface(1000);
+    source.put_layout(layout);
+    workspaces[1]
+        .pane_layout_mut()
+        .find_pane_mut(20)
+        .unwrap()
+        .tabs[0]
+        .layout_mut()
+        .replace_surface(2001, moved.unwrap());
+    nav.replace_surface(2001, 1000);
+    nav.reconcile(&workspaces);
+    assert_eq!(
+        nav.surface_id(&workspaces[0].pane_layout().first_pane().unwrap().tabs[0]),
+        Some(1001)
+    );
+    assert_eq!(
+        nav.surface_id(&workspaces[1].pane_layout().first_pane().unwrap().tabs[0]),
+        Some(1000)
+    );
+}
+
+#[test]
+fn legacy_split_hints_follow_node_identity_through_extract_and_resplit() {
+    use crate::model::{StructurePresentation, SurfaceLayout};
+    let mut workspaces = vec![workspace(1)];
+    let tab = &mut workspaces[0]
+        .pane_layout_mut()
+        .find_pane_mut(10)
+        .unwrap()
+        .tabs[0];
+    tab.split_surface_by_id_generic(
+        1000,
+        SplitDirection::Horizontal,
+        Box::new(EmptySurface::new(1001)),
+    );
+    let root = match tab.layout() {
+        SurfaceLayout::Split { node_id, .. } => *node_id,
+        _ => panic!("split"),
+    };
+    tab.split_surface_by_id_generic(
+        1001,
+        SplitDirection::Vertical,
+        Box::new(EmptySurface::new(1002)),
+    );
+    let mut nav = NavigationState::default();
+    nav.split_hints.insert(root, false);
+    let mut before = Vec::new();
+    tab.layout().split_node_ids(&mut before);
+    let child = *before.iter().find(|id| **id != root).unwrap();
+    nav.split_hints.insert(child, false);
+    let (layout, moved) = tab.take_layout().extract_surface(1001);
+    tab.put_layout(layout);
+    tab.split_surface_by_id_generic(1000, SplitDirection::Vertical, moved.unwrap());
+    let mut after = Vec::new();
+    tab.layout().split_node_ids(&mut after);
+    assert!(after.contains(&root));
+    assert!(!after.contains(&child));
+    let replacement = *after.iter().find(|id| **id != root).unwrap();
+    assert_ne!(replacement, child);
+    assert!(!nav.split_focus_second(root));
+    assert!(
+        nav.split_focus_second(replacement),
+        "new split retains the legacy true hint"
+    );
+    nav.reconcile(&workspaces);
+    assert!(
+        !nav.split_hints.contains_key(&child),
+        "retired split metadata is reclaimed"
+    );
+    let tree = workspaces[0].pane_layout().first_pane().unwrap().tabs[0]
+        .layout()
+        .to_tree_json_full(&nav);
+    assert_eq!(tree["focus_second"], false);
+    assert_eq!(tree["first"]["focus_second"], true);
+}

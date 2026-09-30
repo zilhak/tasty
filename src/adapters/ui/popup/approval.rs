@@ -6,7 +6,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_ui_widgets::vspace;
@@ -18,7 +18,7 @@ const MIN_HEIGHT: LogicalPx = LogicalPx(180.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -> String {
+pub fn approval_popup_title(state: &MainViewState, engine: &crate::core::CoreState) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
@@ -30,7 +30,7 @@ pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn approval_popup_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH.value(), MIN_HEIGHT.value());
     };
@@ -232,7 +232,7 @@ fn props_from_record<'a>(
 /// OpenPopup을 보낸다. 실제로 다시 여는 시점은 다음 intent 처리 때다.
 pub fn on_close_approval_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.approval_comment_buffer.clear();
@@ -252,7 +252,7 @@ pub fn on_close_approval_popup(
 /// 큐의 첫 요청을 그리고 사용자 응답을 저장한다.
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let Some(current_id) = state.dialogs.pending_approval_ids.front().cloned() else {
@@ -312,7 +312,7 @@ pub fn draw_approval_popup(
 }
 
 /// 도메인 저장소는 영속화를 맡지 않으므로 응답 후 UI에서 메모리에 저장한다.
-fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
+fn persist_after_respond(state: &MainViewState, record: &ApprovalRecord) {
     use tasty_memory::{MemoryValue, PutOpts, Scope};
     let scope = match record.request.workspace_id {
         Some(wid) => Scope::Workspace(wid),
@@ -339,7 +339,7 @@ fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
 
 /// 중복되지 않은 승인 요청을 큐에 넣고 팝업 열기와 알림을 요청한다.
 pub fn enqueue_approval(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     record: &ApprovalRecord,
 ) {

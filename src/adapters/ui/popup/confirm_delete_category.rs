@@ -4,7 +4,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::{t, t_fmt2};
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -20,7 +20,7 @@ struct Target {
 }
 
 /// `pending_category_delete` 의 대상 카테고리를 해석. 없거나 normal 이면 None(닫힘).
-fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
     let cat_id = state.dialogs.pending_category_delete?;
     let cat = engine.categories().iter().find(|c| c.id == cat_id)?;
     if cat.is_normal() {
@@ -34,7 +34,7 @@ fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<T
 
 /// PopupDef.title_fn — headless 라 실제 타이틀바는 없지만, 접근성/디버그용 라벨.
 pub fn confirm_delete_category_title(
-    _state: &AppState,
+    _state: &MainViewState,
     _engine: &crate::core::CoreState,
 ) -> String {
     t("workspace_category.delete_confirm_title").to_string()
@@ -62,7 +62,7 @@ pub fn confirm_delete_category_default_size() -> egui::Vec2 {
 
 /// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
 pub fn confirm_delete_category_sizer(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
 ) -> egui::Vec2 {
     let body_len = resolve_target(state, engine)
@@ -74,7 +74,7 @@ pub fn confirm_delete_category_sizer(
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 삭제 대상을 비운다.
 pub fn on_close_confirm_delete_category(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.pending_category_delete = None;
@@ -82,7 +82,7 @@ pub fn on_close_confirm_delete_category(
 
 pub fn draw_confirm_delete_category(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();

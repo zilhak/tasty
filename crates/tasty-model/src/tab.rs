@@ -373,7 +373,11 @@ impl Tab {
     }
 
     /// Produce a JSON tree representation of this tab.
-    pub fn to_tree_json(&self, selected_surface: Option<SurfaceId>) -> serde_json::Value {
+    pub fn to_tree_json(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
+        let selected_surface = presentation.surface_id(self);
         let layout_json = if self.is_split() {
             let mut v = serde_json::json!({
                 "type": "SplitLayout",
@@ -384,7 +388,7 @@ impl Tab {
             // 가 이걸로 split tab 의 SurfaceGroup 계층을 그린다. flat `surfaces` 는
             // 호환을 위해 남겨둔다.
             if let Some(layout) = self.layout_if_initialized() {
-                v["layout"] = layout.to_tree_json_full();
+                v["layout"] = layout.to_tree_json_full(presentation);
             }
             v
         } else {
@@ -488,7 +492,8 @@ mod tests {
         });
         assert!(ok, "restore 가 Some 이면 교체돼야");
         let es = tab
-            .surface()
+            .surface(sid)
+            .unwrap()
             .as_any()
             .downcast_ref::<EmptySurface>()
             .expect("still an EmptySurface (실제화 대역)");
@@ -507,7 +512,8 @@ mod tests {
         let ok = tab.reify_deferred_plugin(sid, |_, _| None);
         assert!(!ok, "kind 미등록이면 교체 안 함");
         let es = tab
-            .surface()
+            .surface(sid)
+            .unwrap()
             .as_any()
             .downcast_ref::<EmptySurface>()
             .expect("placeholder 유지");
@@ -583,7 +589,8 @@ mod tests {
             "성공 시 deferred 해제 + TerminalSurface 로 교체"
         );
         assert!(
-            tab.surface()
+            tab.surface(sid)
+                .unwrap()
                 .as_any()
                 .downcast_ref::<TerminalSurface>()
                 .is_some()

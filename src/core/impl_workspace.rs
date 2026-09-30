@@ -1,7 +1,6 @@
 //! workspace 생성·이동·메타데이터와 레이아웃 저장·닫힌 항목 복원을 처리한다.
 
 use super::*;
-use crate::core::pty_registry::PTY_ID_BASE;
 
 impl Core {
     /// scope에 맞는 항목을 꺼내 engine에 복원한다. App의 활성 workspace 변경은 호출자가 맡는다.
@@ -47,7 +46,8 @@ impl Core {
                 RestoredKind::TabIntoPane
             }
             ClosedItem::Tab(closed_tab) => {
-                let Some(result) = restore_rebuild::rebuild_surface(engine, closed_tab.panel)
+                let Some(result) =
+                    restore_rebuild::rebuild_surface(engine, closed_tab.panel, &mut presentation)
                 else {
                     return nothing();
                 };
@@ -546,6 +546,7 @@ pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
     ids: &crate::core::state::IdGenerator,
 ) {
+    use crate::core::pty_registry::PTY_ID_BASE;
     let purged = crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(mem);
     if purged > 0 {
         tracing::error!(

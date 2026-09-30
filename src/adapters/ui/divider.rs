@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::core::AttentionKind;
 use crate::model::PhysicalRect;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_factor: f32) {
@@ -72,7 +72,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
 }
 
 pub(crate) fn regions_from_state(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
@@ -96,7 +96,7 @@ pub(crate) fn regions_from_state(
 
 pub fn draw_surface_highlights(
     ctx: &egui::Context,
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,

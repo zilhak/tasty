@@ -22,7 +22,7 @@ mod scrim_scope_tests;
 pub(crate) mod script_confirm;
 pub(crate) mod transfer;
 
-use crate::state::AppState;
+use crate::state::MainViewState;
 use tasty_type_geometry::length::LogicalPx;
 
 // 새 팝업은 popup::defs의 all_defs()에 등록한다.
@@ -76,7 +76,7 @@ pub struct PopupDrawResult {
     pub hovered: bool,
     /// 그린 팝업 레이어. egui_bridge에서 modifier-hint 바로 위에 배치한다.
     pub layers: Vec<egui::LayerId>,
-    /// 전체화면 버튼으로 요청한 무대 ID. 실제 진입은 AppState를 가진 호출부에서 처리한다.
+    /// 전체화면 버튼으로 요청한 무대 ID. 실제 진입은 MainViewState를 가진 호출부에서 처리한다.
     pub fullscreen_requested: Option<crate::adapters::ui::fullscreen::StageId>,
     /// 실제 그린 팝업의 영역과 z_seq. plugin 팝업이 위에 덮인 host 팝업을 판별할 때 쓴다.
     /// 숨겨진 팝업은 마우스 입력을 가로채지 않도록 제외한다.
@@ -90,11 +90,11 @@ pub struct PopupDef {
     pub title_key: &'static str,
     /// 동적 타이틀. 매 프레임 호출. `title_key` 대신 사용된다. (예: rename popup의
     /// 대상별 제목)
-    pub title_fn: Option<fn(&AppState, &crate::core::CoreState) -> String>,
+    pub title_fn: Option<fn(&MainViewState, &crate::core::CoreState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
     /// 매 프레임 크기를 계산한다. 사용자가 크기를 지정한 팝업에는 적용하지 않는다.
-    pub sizer: Option<fn(&AppState, &crate::core::CoreState) -> egui::Vec2>,
+    pub sizer: Option<fn(&MainViewState, &crate::core::CoreState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다 (컨텍스트 메뉴 스타일).
@@ -109,14 +109,14 @@ pub struct PopupDef {
     pub resizable: bool,
     /// 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용.
     pub min_size: Option<egui::Vec2>,
-    /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
-    pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
+    /// 렌더링 함수. 매 프레임 호출. MainViewState에서 필요한 데이터를 꺼낸다.
+    pub draw_fn: fn(&mut egui::Ui, &mut MainViewState, &mut crate::core::CoreState) -> PopupAction,
     /// 전체화면 버튼으로 열 무대 ID. None이거나 headless면 버튼이 없다.
     /// 무대는 별도 콘텐츠이며 원본 팝업은 열린 채 그 아래 남는다.
     pub fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
     /// 열린 팝업이 close()를 통해 닫히면 closed_queue에 기록하고 frame에서 훅을 호출한다.
     /// egui 임시 상태를 지울 수 있도록 Context를 받는다.
-    pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
+    pub on_close: Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
 }
 
 /// State for a single popup instance.

@@ -6,7 +6,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::{t, t_fmt};
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -21,7 +21,7 @@ struct Target {
 }
 
 /// 대상이 없거나 점유가 이미 풀렸으면 None을 반환한다.
-fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
     let ws_id = state.dialogs.pending_force_detach_workspace?;
     let ws = engine.workspaces.iter().find(|w| w.id == ws_id)?;
     engine.attach.workspace_holder(ws_id)?;
@@ -32,7 +32,7 @@ fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<T
 
 /// PopupDef.title_fn — headless 라 실제 타이틀바는 없지만, 접근성/디버그용 라벨.
 pub fn confirm_force_detach_workspace_title(
-    _state: &AppState,
+    _state: &MainViewState,
     _engine: &crate::core::CoreState,
 ) -> String {
     t("attach.force_detach_confirm_title").to_string()
@@ -60,7 +60,7 @@ pub fn confirm_force_detach_workspace_default_size() -> egui::Vec2 {
 
 /// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
 pub fn confirm_force_detach_workspace_sizer(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
 ) -> egui::Vec2 {
     let body_len = resolve_target(state, engine)
@@ -72,7 +72,7 @@ pub fn confirm_force_detach_workspace_sizer(
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 대상을 비운다.
 pub fn on_close_confirm_force_detach_workspace(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.pending_force_detach_workspace = None;
@@ -80,7 +80,7 @@ pub fn on_close_confirm_force_detach_workspace(
 
 pub fn draw_confirm_force_detach_workspace(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
@@ -158,7 +158,7 @@ pub fn draw_confirm_force_detach_workspace(
 /// 보류 대상의 점유를 해제하고 대상을 비운다. 실제 해제된 holder를 반환하며
 /// 이미 풀렸으면 None이다. 버튼 클릭 재현 없이도 해제 동작을 검사할 수 있다.
 pub(crate) fn apply_force_detach(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> Option<crate::core::attach::AttachClientId> {
     let holder = state

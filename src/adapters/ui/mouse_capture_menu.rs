@@ -8,7 +8,7 @@ use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::settings::GeneralSettings;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme::{self, Theme};
 use tasty_icons::Icon;
 
@@ -25,7 +25,7 @@ pub fn menu_default_size() -> egui::Vec2 {
 
 /// 배너의 더보기 버튼에 맞춰 팝업을 연다. 아래 공간이 부족하면 위에 배치한다.
 pub fn open(
-    state: &mut AppState,
+    state: &mut MainViewState,
     ctx: &egui::Context,
     scope: &BannerScope,
     trigger_rect: egui::Rect,
@@ -77,7 +77,7 @@ fn persist_settings(engine: &mut crate::core::CoreState) {
 /// `PopupDef.draw_fn` — 메뉴 콘텐츠만 그린다(셸은 headless popup 시스템이 그림).
 pub fn draw_menu(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {

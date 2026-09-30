@@ -1,7 +1,7 @@
 //! 플러그인 팝업과 자식 파일 피커의 소속 범위를 호스트가 정한다.
 
 use crate::adapters::ui::popup::{PopupScope, file_picker::FILE_PICKER_POPUP_ID};
-use crate::state::AppState;
+use crate::state::RequestContext;
 use tasty_host_plugin::manager::PopupInstance;
 use tasty_plugin_manifest::PopupScopeDecl;
 
@@ -17,7 +17,7 @@ pub(crate) fn popup_scope(decl: PopupScopeDecl, scope_surface: Option<u32>) -> P
 /// 첫 프레임을 그리기 전에 요청한 플러그인의 팝업에서 범위를 상속한다.
 /// 화면 배치만 바꾸며 입력 초안·선택·요청 ID는 유지한다.
 pub(crate) fn inherit_file_picker_scope<'a>(
-    state: &mut AppState,
+    state: &mut RequestContext,
     instances: impl Iterator<Item = (u64, &'a PopupInstance)>,
 ) {
     let Some(data) = state.dialogs.file_picker.as_ref() else {

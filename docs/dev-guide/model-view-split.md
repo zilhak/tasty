@@ -58,10 +58,10 @@ impl FooViewStore {
 }
 ```
 
-### 3. AppState 등록 + 정리 (`src/state.rs`)
+### 3. MainViewState 등록 + 정리 (`src/state.rs`)
 
 ```rust
-pub struct AppState { /* ... */ pub(crate) foo_views: FooViewStore }
+pub struct MainViewState { /* ... */ pub(crate) foo_views: FooViewStore }
 
 pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
     /* ... */
@@ -97,8 +97,8 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 
 | Model | View | Store |
 |-------|------|-------|
-| `ExplorerPanel` (id, tabs, active) | `ExplorerView` (entries, …) | `AppState::explorer_views` |
-| `DagGraphSurface` (id, dag_id, workspace_id, direction) | `DagGraphView` (data, layout cache, …) | `AppState::dag_graph_views` |
+| `ExplorerPanel` (id, tabs, active) | `ExplorerView` (entries, …) | `MainViewState::explorer_views` |
+| `DagGraphSurface` (id, dag_id, workspace_id, direction) | `DagGraphView` (data, layout cache, …) | `MainViewState::dag_graph_views` |
 | `TerminalSurface` / `EmptySurface` | (없음 — GPU 렌더 또는 id-only) | — |
 
 신규 host surface 추가 시 이 표에 줄을 더한다. plugin surface(`image`/`html`/`markdown`)는 여기 들어오지 않는다.
@@ -108,3 +108,12 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 Workspace·Pane·Tab의 구조에는 현재 사용자 선택을 저장하지 않는다. View의 navigation은 workspace·pane·tab·surface ID를 선택하고, 현재 구조와 대조해 삭제된 선택만 보정한다. 인덱스는 UI 입력과 기존 IPC·저장 형식의 경계에서 변환한다. 이전 순서는 삭제 시 이웃을 찾는 보정 자료이며 별도의 선택 원본이 아니다.
 
 모델의 `StructurePresentation`은 구조를 기존 조회·attach·복원 DTO로 만드는 읽기 전용 입력이다. 직렬화와 복원 사본 캡처가 이 입력을 명시적으로 받으며, 모델이 View 선택을 변경하지 않는다. `Tab::surface`와 `surface_mut`는 명시 surface ID를 찾고 없는 ID에는 `None`을 반환한다. 구조 자체의 대표 surface가 필요한 호출자는 `first_surface_id`라는 기준을 명시한다.
+
+
+## 요청 문맥과 headless
+
+GUI의 `MainViewState`는 `src/state/main.rs`에, GUI 없는 `CommandContext`는 `src/state/command.rs`에 별도 구조체로 정의한다. headless는 MainViewState를 생성하지 않는다. CommandContext의 navigation 값은 로컬 사용자 포커스가 아니라 기존 생략 대상 해소와 응답 호환에 필요한 기본 문맥이다. popup·sidebar·OS/GPU 자원과 설정창 열림 상태는 소유하지 않는다.
+
+공통 App adapter의 `RequestContext`는 빌드에 맞는 수신 타입을 재노출하는 이름이다. 두 원본을 공유하거나 동기화하는 wrapper가 아니며 Core 명령은 이 타입을 받지 않는다. 구조 실행과 결과 처리는 `src/app/structural_exec.rs`와 `structural_cascade.rs`에서 수행한다. 삭제/이동 결과를 받은 뒤 선택 ID와 표시 map을 보정하고, 사용자 생성 continuation만 새 대상을 선택한다.
+
+분할 트리의 `SplitNodeId`는 프로세스 내부에서만 사용하는 node identity다. 기존 `focus_second` wire bool은 navigation의 별도 split-hint map에서 합성한다. 노드 이동·재결합은 ID를 유지하고 새 노드는 새 ID를 받는다. split 생성의 hint 기본값은 true, layout/preset/undo 복원은 false이며 remote 입력은 받은 값을 보존한다. 이 ID는 wire나 journal의 영속 식별자가 아니다.

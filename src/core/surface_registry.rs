@@ -187,7 +187,7 @@ pub struct SurfaceKindDef {
 
     /// 입력·줌·복사 기능. 매니페스트 선언 또는 내장 등록 값으로 설정한다.
     #[cfg_attr(
-        not(feature = "gui"),
+        all(not(feature = "gui"), not(test)),
         expect(
             dead_code,
             reason = "headless에서도 매니페스트 값을 저장하지만 읽는 곳은 GUI의 입력·줌·복사 처리다"
@@ -195,7 +195,7 @@ pub struct SurfaceKindDef {
     )]
     pub consumes_egui_input: bool,
     #[cfg_attr(
-        not(feature = "gui"),
+        all(not(feature = "gui"), not(test)),
         expect(
             dead_code,
             reason = "매니페스트 값은 두 빌드에서 저장하고 GUI에서만 읽는다"
@@ -203,7 +203,7 @@ pub struct SurfaceKindDef {
     )]
     pub zoomable: bool,
     #[cfg_attr(
-        not(feature = "gui"),
+        all(not(feature = "gui"), not(test)),
         expect(
             dead_code,
             reason = "매니페스트 값은 두 빌드에서 저장하고 GUI에서만 읽는다"
@@ -211,7 +211,7 @@ pub struct SurfaceKindDef {
     )]
     pub egui_copy: bool,
     #[cfg_attr(
-        not(feature = "gui"),
+        all(not(feature = "gui"), not(test)),
         expect(
             dead_code,
             reason = "매니페스트 값은 두 빌드에서 저장하고 GUI에서만 읽는다"
@@ -219,7 +219,7 @@ pub struct SurfaceKindDef {
     )]
     pub copy_path: bool,
     #[cfg_attr(
-        not(feature = "gui"),
+        all(not(feature = "gui"), not(test)),
         expect(
             dead_code,
             reason = "매니페스트 값은 두 빌드에서 저장하고 GUI에서만 읽는다"

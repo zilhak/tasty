@@ -9,12 +9,14 @@ pub trait StructurePresentation {
     fn tab_index(&self, pane: &Pane) -> usize;
     fn surface_id(&self, tab: &Tab) -> Option<SurfaceId>;
     fn category_collapsed(&self, category: u32) -> bool;
+    fn split_focus_second(&self, node: crate::SplitNodeId) -> bool;
 }
 
 /// Immutable choices captured when a command is admitted. This value travels
 /// with an undo-capture request; it is never a writable navigation owner.
 #[derive(Clone, Debug, Default)]
 pub struct StructurePresentationSnapshot {
+    pub split_hints: std::collections::HashMap<crate::SplitNodeId, bool>,
     pub collapsed_categories: std::collections::HashSet<u32>,
     pub panes: std::collections::HashMap<u32, u32>,
     pub tabs: std::collections::HashMap<u32, u32>,
@@ -44,6 +46,15 @@ impl StructurePresentationSnapshot {
                         result.tabs.insert(id, tab.id);
                     }
                     for tab in &pane.tabs {
+                        let mut nodes = Vec::new();
+                        if let Some(layout) = tab.layout_if_initialized() {
+                            layout.split_node_ids(&mut nodes);
+                        }
+                        result.split_hints.extend(
+                            nodes
+                                .into_iter()
+                                .map(|node| (node, presentation.split_focus_second(node))),
+                        );
                         if let Some(id) = presentation.surface_id(tab) {
                             result.surfaces.insert(tab.id, id);
                         }
@@ -56,6 +67,9 @@ impl StructurePresentationSnapshot {
 }
 
 impl StructurePresentation for StructurePresentationSnapshot {
+    fn split_focus_second(&self, node: crate::SplitNodeId) -> bool {
+        self.split_hints.get(&node).copied().unwrap_or(true)
+    }
     fn pane_id(&self, workspace: &Workspace) -> Option<u32> {
         self.panes
             .get(&workspace.id)

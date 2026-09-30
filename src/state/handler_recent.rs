@@ -1,6 +1,6 @@
 //! 파일 처리기 선택 이력의 읽기·저장. 저장 실패는 로그만 남기고 화면 동작을 계속한다.
 
-use super::AppState;
+use super::RequestContext;
 
 /// 사용자 처리기 선택 이력. 홈을 못 찾으면 공용 임시 경로에도 읽기·쓰기를 시도한다.
 fn file_handler_recent_path() -> std::path::PathBuf {
@@ -14,7 +14,7 @@ pub(super) fn load() -> crate::file::handler::recent::RecentPicks {
     crate::file::handler::recent::RecentPicks::load(&file_handler_recent_path())
 }
 
-impl AppState {
+impl RequestContext {
     pub(crate) fn record_file_handler_pick(&mut self, id: &crate::file::handler::HandlerId) {
         self.file_handler_recent.record(id);
         let path = file_handler_recent_path();

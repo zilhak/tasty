@@ -18,7 +18,7 @@ fn content_scroll_id(ui: &egui::Ui) -> egui::Id {
 /// 알림 프레임과 목록만 그린다. 제목과 종료 버튼은 공용 전체화면 코드가 제공한다.
 pub(crate) fn draw(
     ui: &mut egui::Ui,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> StageAction {
     let th = crate::theme::theme();
@@ -52,7 +52,7 @@ pub(crate) fn recorded_scroll_id(ctx: &egui::Context) -> Option<egui::Id> {
 /// 이 화면의 스크롤 상태를 정리한다.
 pub(crate) fn on_close(
     ctx: &egui::Context,
-    _state: &mut crate::state::AppState,
+    _state: &mut crate::state::MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     ctx.memory_mut(|m| {

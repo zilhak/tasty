@@ -3,11 +3,11 @@
 use crate::core::{Core, CoreState};
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
-use crate::state::{AppState, FileHandlerPickerResult};
+use crate::state::{FileHandlerPickerResult, RequestContext};
 
 pub(crate) fn apply_identify_result(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
@@ -81,7 +81,7 @@ pub(crate) fn apply_identify_result(
 /// 핸들러가 사라진 경우에도 선택 이력을 기록하는 현재 동작이 있다.
 pub(crate) fn apply_file_picker_result(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     target: DispatchTarget,
     result: FileHandlerPickerResult,
@@ -194,7 +194,7 @@ pub(super) mod tests {
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let mut state = AppState::new(&mut engine, preset_store, memory);
+        let mut state = RequestContext::new(&mut engine, preset_store, memory);
 
         apply_identify_result(
             &mut core,
@@ -242,7 +242,7 @@ pub(super) mod tests {
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let mut state = AppState::new(&mut engine, preset_store, memory);
+        let mut state = RequestContext::new(&mut engine, preset_store, memory);
         let recent_before = state.file_handler_recent.list().len();
 
         apply_file_picker_result(

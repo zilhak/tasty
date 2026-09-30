@@ -1,7 +1,7 @@
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
 use crate::renderer::RenderPreedit;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 use super::GpuState;
 
@@ -9,7 +9,7 @@ impl GpuState {
     pub(super) fn render_clear_pass(
         &self,
         view: &wgpu::TextureView,
-        _state: &AppState,
+        _state: &MainViewState,
         engine: &crate::core::CoreState,
     ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;

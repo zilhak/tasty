@@ -92,7 +92,7 @@ fn close_button_point(popup_pos: egui::Pos2, popup_size: egui::Vec2) -> egui::Po
 
 fn run_frame(
     raw: egui::RawInput,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) {
     let ctx = egui::Context::default();
@@ -103,7 +103,7 @@ fn run_frame(
 
 fn primed_popup_geometry(
     id: PopupId,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) -> (egui::Pos2, egui::Vec2) {
     run_frame(empty_input(), state, engine);
@@ -619,7 +619,7 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
 
 /// client 7이 워크스페이스를 hard 점유하고 확인 팝업이 열린 상태를 만든다.
 fn occupied_workspace_with_popup(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) -> (crate::model::WorkspaceId, Vec<u32>) {
     let ws_id = engine.workspaces[0].id;
@@ -881,7 +881,7 @@ fn file_picker_escape_close_marks_cancelled() {
 /// context 의 여러 프레임에 걸쳐야 인식된다.
 fn run_frames(
     inputs: Vec<egui::RawInput>,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) -> egui::Context {
     let ctx = egui::Context::default();
@@ -909,7 +909,7 @@ fn pointer_input(pos: egui::Pos2, pressed: Option<bool>) -> egui::RawInput {
 
 /// 뷰가 첫 프레임에 보고한 file picker 헤더 줄.
 fn file_picker_header_rect(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) -> egui::Rect {
     let ctx = run_frames(vec![empty_input()], state, engine);
@@ -1009,7 +1009,7 @@ fn file_picker_close_intent_now_marks_cancelled() {
 
 fn push_approval(
     engine: &mut crate::core::CoreState,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     id: &str,
 ) {
     let record = engine
@@ -1212,7 +1212,7 @@ fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
 }
 
 fn open_scoped(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     id: PopupId,
     scope: crate::adapters::ui::popup::PopupScope,
 ) {
@@ -1227,7 +1227,7 @@ fn open_scoped(
 }
 
 fn visible_popup(
-    state: &crate::state::AppState,
+    state: &crate::state::RequestContext,
     engine: &crate::core::CoreState,
 ) -> Option<PopupId> {
     let ctx = super::popup_ownership_tests::live_layout_ctx(state, engine);
@@ -1327,7 +1327,7 @@ fn tab_rename_popup_closes_with_its_tab() {
 
 /// 두 탭을 만들고 활성 탭의 surface와 다른 탭의 surface를 돌려준다.
 fn two_tab_surfaces(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) -> (u32, u32, u32) {
     let other = state.focused_surface_id(engine).expect("first surface");
@@ -1439,7 +1439,7 @@ const SEARCH_BAR: PopupId = "search_bar";
 
 /// Ctrl+F·메뉴·탭바 검색 버튼이 공유하는 진입점을 부르고 쌓인 intent를 처리한다.
 fn find_in_focused_surface(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) {
     let focused = state.focused_surface_id(engine);
@@ -1449,7 +1449,7 @@ fn find_in_focused_surface(
     }
 }
 
-fn type_query(state: &mut crate::state::AppState, query: &str) {
+fn type_query(state: &mut crate::state::RequestContext, query: &str) {
     state.search.query = query.to_string();
     state.search.matches = vec![tasty_terminal::search::SearchMatch {
         row: 0,
@@ -1458,7 +1458,9 @@ fn type_query(state: &mut crate::state::AppState, query: &str) {
     }];
 }
 
-fn search_scope(state: &crate::state::AppState) -> Option<crate::adapters::ui::popup::PopupScope> {
+fn search_scope(
+    state: &crate::state::RequestContext,
+) -> Option<crate::adapters::ui::popup::PopupScope> {
     state.popups.open_scope(SEARCH_BAR).cloned()
 }
 

@@ -26,7 +26,7 @@ fn find_matching_individual_slot(
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: quick-switch dispatch context(정규화된 modifier bool 4개 + 원본 ModifiersState)
     pub(super) fn handle_numeric_switch_shortcuts(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,

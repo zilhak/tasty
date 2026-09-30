@@ -2,7 +2,7 @@
 
 use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::{PopupScope, defs, frame::draw_popup_layer};
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::state::tests::test_state;
 
 /// 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 실제로 있는 surface를 쓴다.
@@ -43,7 +43,7 @@ fn layout_of(surface_rects: Vec<(u32, egui::Rect)>) -> LayoutContext {
     }
 }
 
-fn prepared() -> (AppState, crate::core::CoreState, Ids) {
+fn prepared() -> (MainViewState, crate::core::CoreState, Ids) {
     let (mut state, mut engine) = test_state();
     for def in defs::all_defs() {
         state.popups.register_def(def, 1.0);
@@ -56,7 +56,7 @@ fn prepared() -> (AppState, crate::core::CoreState, Ids) {
 
 /// 한 프레임을 그려 나온 도형을 그대로 돌려준다.
 fn painted_shapes(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     ids: Ids,
 ) -> Vec<egui::epaint::ClippedShape> {
@@ -73,7 +73,7 @@ fn painted_shapes(
 
 /// 한 프레임을 그려 scrim 색으로 칠해진 사각형들의 rect 를 모은다.
 fn scrim_rects(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     ids: Ids,
 ) -> Vec<egui::Rect> {

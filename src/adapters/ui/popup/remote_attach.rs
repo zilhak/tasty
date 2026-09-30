@@ -17,7 +17,7 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 
@@ -487,7 +487,7 @@ fn cleanup(ctx: &egui::Context) {
 /// 직접 닫기 외의 경로에서도 진행 중 조회와 UI가 보관한 터널을 정리한다.
 pub fn on_close_remote_attach_popup(
     ctx: &egui::Context,
-    _state: &mut AppState,
+    _state: &mut MainViewState,
     _engine: &mut CoreState,
 ) {
     cleanup(ctx);
@@ -496,7 +496,7 @@ pub fn on_close_remote_attach_popup(
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
-    _state: &mut AppState,
+    _state: &mut MainViewState,
     engine: &mut CoreState,
 ) -> PopupAction {
     let th = theme::theme();

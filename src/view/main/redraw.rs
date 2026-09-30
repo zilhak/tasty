@@ -99,6 +99,7 @@ impl MainView {
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
+        self.state.reconcile_presentation(engine);
         // 열기 요청은 render_if_dirty 전에 소비해야 한다. egui가 이번 프레임에 만든
         // 요청이 다음 프레임까지 남아 키·마우스 차단과 Escape 취소에 사용되기 때문이다.
         // 순서 검증: crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs.
@@ -324,7 +325,7 @@ impl MainView {
 
     /// egui-mesh(로컬 plugin 대상) + attach mesh mirror(원격 대상) full 재전송
     /// 요청 drain — 렌더 prepare 가 textures_delta 체인 단절을 감지한 대상들.
-    /// surface 는 forward 추적 상태에, popup/banner 는 AppState 에 옮겨 두면
+    /// surface 는 forward 추적 상태에, popup/banner 는 MainViewState 에 옮겨 두면
     /// 다음 tick 의 forward 가 need_full_textures `set_context`/`MeshFullResendRequest`
     /// 를 보낸다. plugin/원격은 스스로 재송신하지 않으므로 다음 tick 을 dirty 로
     /// 보장한다.

@@ -8,7 +8,7 @@ use tasty_plugin_manifest::Permission;
 use crate::core::origin::{AgentSource, IntentOrigin};
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcRequest;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     JsonRpcRequest {
@@ -39,14 +39,14 @@ fn callers() -> [CallerContext; 3] {
 }
 
 /// 활성 workspace의 선택 pane과 각 pane 선택 탭의 선택 surface.
-fn user_focus(state: &AppState, engine: &crate::core::CoreState) -> (u32, Option<u32>) {
+fn user_focus(state: &RequestContext, engine: &crate::core::CoreState) -> (u32, Option<u32>) {
     let ws = state.active_workspace(engine);
     (ws.focused_pane, state.focused_surface_id(engine))
 }
 
 fn call(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     method: &str,

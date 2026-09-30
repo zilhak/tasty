@@ -37,7 +37,18 @@ fn on_bind_success(server: tiny_http::Server, addr: &str) -> WebhookInitReport {
     WebhookInitReport::Bound
 }
 
-fn on_bind_failed(error: String, addr: &str, port: u16) -> WebhookInitReport {
+fn on_bind_failed(
+    error: String,
+    addr: &str,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            unused_variables,
+            reason = "only the gui bind failure report carries the port"
+        )
+    )]
+    port: u16,
+) -> WebhookInitReport {
     tracing::warn!(
         "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
     );

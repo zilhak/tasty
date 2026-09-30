@@ -15,7 +15,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::{t, t_fmt};
-use crate::state::{AppState, FileHandlerPickerResult};
+use crate::state::{FileHandlerPickerResult, MainViewState};
 use crate::theme::{self, Theme};
 
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
@@ -270,7 +270,7 @@ pub fn picker_default_size() -> egui::Vec2 {
     picker_size_for(&theme::theme(), 4, 0, false)
 }
 
-pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn picker_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let th = theme::theme();
     let (c, r, fallback) = state
         .dialogs
@@ -843,7 +843,7 @@ pub fn draw_file_handler_picker_view(
 /// 결과 없이 닫혔으면 Cancelled를 기록해 호출부가 계속 기다리지 않게 한다.
 pub fn on_close_file_handler_picker(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     if let Some(p) = state.dialogs.file_handler_picker.as_mut()
@@ -879,7 +879,7 @@ fn to_entry(s: &crate::state::PickerHandlerSummary, now: i64) -> FileHandlerPick
 /// 실행 상태에서 화면 입력을 만들고 사용자가 고른 동작을 반영한다.
 pub fn draw_file_handler_picker(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let Some(picker) = state.dialogs.file_handler_picker.as_ref() else {

@@ -170,19 +170,16 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 사용자가 보던 대상 자체가 사라졌을 때만 다른 대상으로 이동한다. 보지 않던 workspace·tab·pane을 닫아도 보고 있는 대상은 유지한다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)).
 
-`AppState::active_workspace`와 `Pane::active_tab`은 인덱스다. 앞 항목을 지우면 같은 인덱스가 다른 항목을 가리키므로, 범위 안으로 제한하는 것만으로는 부족하다. 삭제 위치에 맞춰 인덱스도 줄여야 한다.
+`MainViewState.navigation`이 workspace ID, workspace별 pane ID, pane별 tab ID, tab별 surface ID를 소유한다. 기존 응답의 index는 현재 구조에서 계산한다.
 
-| 계층 | 포인터 | 제거가 앞쪽일 때 | 제거된 것이 보던 대상일 때 |
-|---|---|---|---|
-| workspace | `active_workspace`(인덱스) | 한 칸 당김 — 같은 워크스페이스 유지 | 그 자리로 밀려 들어온 워크스페이스(마지막이었으면 직전) |
-| tab | `Pane::active_tab`(인덱스) | 한 칸 당김 — 같은 탭 유지 | 그 자리로 밀려 들어온 탭(마지막이었으면 직전) |
-| pane | `Workspace::focused_pane`(id) | 그대로 — id 는 밀리지 않는다 | 생존 pane 으로 재배정 |
+- 살아 있는 선택 ID는 앞쪽 항목 삭제나 재정렬로 바뀌지 않는다.
+- 선택한 workspace/tab이 사라지면 이전 순서의 다음 생존 ID, 없으면 직전 생존 ID를 고른다. 여러 항목이 함께 삭제된 snapshot에도 같은 규칙을 쓴다.
+- pane/surface 선택이 삭제되면 첫 생존 대상을 고른다. 구조 replace가 대상 B를 A로 대체했다면 그 결과의 ID 대응으로 B의 선택을 A에 연결한다.
+- 이 보정은 origin과 무관하다. 사용자 생성 결과를 새로 선택하는 continuation과 삭제 보정은 별개다.
+- category 복귀 기록은 workspace ID다. 조회할 때 현재 소속을 검사하고 없으면 카테고리의 첫 workspace를 고른다.
+- 삭제된 pane의 탭바 offset, category 표시 자료, split hint는 결과 적용 시 회수한다.
 
-- 이 보정은 **origin 으로 분기하지 않는다.** 대상 기준 보정은 사용자 경로(컨텍스트 메뉴로 앞쪽 탭 닫기)에서도 옳다. origin 게이트는 "에이전트가 새로 만든 것으로 포커스를 옮기지 않는다"(`cascade_workspace_created` · `cascade_surface_split`)처럼 이동 여부가 정책적으로 갈리는 곳에만 쓴다.
-- 카테고리 빠른 전환의 복귀 대상(`AppState::category_last_active`)은 인덱스가 아니라 **워크스페이스 id** 를 값으로 든다. 그래서 제거·재정렬 어느 쪽으로도 밀리지 않는다 — 보정 대상이 아니다. 전환할 때 id 로 워크스페이스를 찾고, 사라졌거나 다른 카테고리로 옮겨졌으면 그 카테고리의 첫 workspace로 폴백한다.
-- 원격 attach 로 forward 된 구조 변경(`execute_forwarded_structural_op`)과 mirror 워크스페이스 teardown 도 같은 close 경로를 타므로 같은 규칙이 적용된다.
-
-구현: tab 은 `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`), workspace 는 `active_index_after_removal` + `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`), pane 은 각 close 경로의 `was_focused` 가드. 제거 위치는 `CoreEvent::SurfaceClosed { workspace_purged }` 로 cascade 에 전달된다 — Core 는 `active_workspace` 를 모르고, cascade 시점엔 워크스페이스가 이미 사라져 위치를 알 수 없기 때문이다. 워크스페이스를 제거하는 **새 경로**를 추가하면 그 함수를 함께 호출한다.
+Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정한다. Core 모델의 필드를 고쳐 View 선택을 바꾸지 않는다. headless의 같은 ID 해소 알고리즘은 로컬 사용자 포커스가 아니라 명령 기본 문맥을 유지한다.
 
 ## 자기 자신 닫기 보호 (Self-Close Protection)
 
@@ -196,10 +193,10 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 에이전트가 **사용자가 보고 있지 않은** 대상을 닫아도 사용자 화면은 움직이지 않는다.
 
-- `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 함수를 반드시 함께 호출한다.
+- `workspace.close` 후 App이 navigation을 현재 구조와 대조한다. 선택 ID가 살아 있으면 유지하고 삭제된 선택만 보정한다. 새 제거 경로도 같은 결과 적용을 거친다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
 - 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 요청 출처를 여러 값으로 나타내면 일부만 갱신되는 오류가 생길 수 있다.
-- `workspace.closed` 이벤트는 누가 닫았는지와 관계없이 보낸다. GUI·IPC 닫기와 인라인 정리는 `AppState::after_workspace_removed`(`src/state.rs`)를, Core 연관 정리는 `cascade_surface_closed`(`src/app/structural_cascade.rs`)를 거친다. 두 경로 모두 workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)로 한다. 새 제거 경로도 통지와 이 정리를 함께 수행한다.
+- `workspace.closed` 이벤트는 누가 닫았는지와 관계없이 보낸다. GUI·IPC 닫기와 인라인 정리는 `MainViewState::after_workspace_removed`(`src/state.rs`)를, Core 연관 정리는 `cascade_surface_closed`(`src/app/structural_cascade.rs`)를 거친다. 두 경로 모두 workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)로 한다. 새 제거 경로도 통지와 이 정리를 함께 수행한다.
 
 ### 파일 열기의 사용자 동작 판정
 
@@ -266,7 +263,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
     popup 을 실어 사용자로 도착하므로 종전대로 새 탭을 선택한다(아래 "에이전트 닫기와 포커스" 의
     파일 열기 항목 · [ADR-0031](../../adr/0031-file-handler-routing.md)).
 - terminal kind 는 `activate` 와 무관하게 background 다. 사용자의 새 터미널 탭은 이 인텐트가
-  아니라 `AppState::add_tab` 이 연다.
+  아니라 `MainViewState::add_tab` 이 연다.
 - 응답의 `active_tab` 은 "생성 뒤 그 pane 의 활성 탭" 이다 — 에이전트가 만든 탭이면 사용자가
   보던 탭의 인덱스다. 새 탭은 응답의 `surface_id` 로 다룬다.
 
@@ -278,7 +275,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 
 hard 점유 대상은 원격 사용자가 사용 중이므로 로컬 사용자와 에이전트의 닫기 요청을 모두 거절한다. 닫은 항목 복원은 같은 명령으로 새 세션을 만들 뿐 기존 PTY 작업을 되살리지 못한다. 로컬 사용자는 점유 표시의 강제 끊기로 점유를 회수한 뒤 닫을 수 있다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
 
-닫기 진입점은 `AppState::refuse_if_hard_occupied`에 닫을 surface 집합을 넘긴다. workspace·tab·pane은 그 안의 모든 surface, surface 닫기는 해당 하나를 검사한다.
+닫기 진입점은 `MainViewState::refuse_if_hard_occupied`에 닫을 surface 집합을 넘긴다. workspace·tab·pane은 그 안의 모든 surface, surface 닫기는 해당 하나를 검사한다.
 
 이 검사는 사용자·에이전트의 닫기 요청에만 적용한다. 이미 종료된 셸의 사후 정리를 막으면 화면에 종료된 surface가 남으므로 공용 정리 함수에서는 거절하지 않는다.
 
@@ -286,36 +283,16 @@ IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.clo
 
 ## 재정렬에서도 포커스 대상은 보존된다
 
-워크스페이스를 재정렬하면 인덱스가 가리키는 대상이 바뀐다 — 제거와 같은 종류의 밀림이다.
-사용자가 보고 있던 워크스페이스는 재정렬 뒤에도 그대로 보고 있어야 한다.
-
-- 옮겨진 것을 보고 있었으면 포인터가 **따라간다**.
-- 옮겨진 구간을 자기 위치가 통과당하면 한 칸 당겨지거나 밀린다.
-- 구간 밖이면 그대로다.
-
-재정렬은 두 경로로 들어온다 — 사이드바 드래그·컨텍스트 메뉴가 부르는
-`AppState::move_workspace`, 그리고 `CoreEvent::WorkspaceMoved` 의 `cascade_workspace_moved`
-(IPC `workspace.move` 도 이쪽). 규칙은 **한 곳에만** 있다: 순수함수
-`active_index_after_move` 와 그것을 적용하는 `AppState::fix_workspace_pointers_after_move`.
-재정렬하는 새 경로를 추가하면 그 함수를 함께 호출한다 — 규칙을 복제하면 어느 경로로
-재정렬했느냐에 따라 포커스가 달라진다.
-
-카테고리 빠른 전환의 복귀 대상은 ID로 저장하므로 인덱스 보정이 필요 없다.
-
-카테고리 안의 표시 순서는 입력 단계에서 전체 workspace 인덱스로 바꾼다.
-카테고리 CRUD나 소속 변경만으로 workspace 배열 순서와 활성 인덱스를 바꾸지 않는다.
-category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 필요하지 않다.
+워크스페이스와 탭 재정렬은 구조 순서만 바꾼다. 사용자가 선택한 ID는 그대로 유지하며 UI와 IPC가 필요한 index를 새 순서에서 계산한다. 카테고리 안의 표시 순서는 입력 단계에서 전체 workspace 위치로 변환한다. category CRUD나 소속 변경만으로 workspace 배열 순서와 선택 ID를 바꾸지 않는다.
 
 ## 코드 위치
 
 - `active_modal_id()` / `modal_active` 게이트: `src/app/event_handler.rs`(`self.view.active_modal_id()`), View 디스패치.
 - focus 대상 해석 / `TASTY_SURFACE_ID` / `this`: `crates/tasty-cli/src/request.rs`.
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
-- 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/app/structural_cascade.rs` — 두 빌드가 같은 본문).
-- 재정렬 시 활성 포인터 보정: `active_index_after_move` / `AppState::fix_workspace_pointers_after_move`(`src/state/workspace.rs`) · 호출 경로 `AppState::move_workspace` 와 `cascade_workspace_moved`(`src/app/dispatch_domain.rs`, headless 는 `dispatch_domain_stubs.rs`).
 - 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
-- 탭 생성의 선택 분기: `DomainIntent::CreateTab` 의 `activate` → `Core::apply_create_tab`(`src/core/impl_tab.rs`) 이 `Pane::add_surface_tab` / `Pane::add_surface_tab_background`(`crates/tasty-model/src/pane.rs`) 중 하나를 고른다. 값을 정하는 진입점은 `structural_exec::create_tab`(`src/app/structural_exec.rs`) 의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
+- 탭 생성의 선택 분기: `DomainIntent::CreateTab`의 `activate`를 Core 결과에 연결하고 App adapter가 사용자 continuation으로 처리한다. 값을 정하는 진입점은 `structural_exec::create_tab`(`src/app/structural_exec.rs`) 의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
-- 워크스페이스 제거 후 뒷정리: 직접 닫기의 `workspace.closed` 전달은 `AppState::after_workspace_removed`(`src/state.rs`), workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`).
+- 워크스페이스 제거 후 뒷정리: 직접 닫기의 `workspace.closed` 전달은 `MainViewState::after_workspace_removed`(`src/state.rs`), workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`).
 
 외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).

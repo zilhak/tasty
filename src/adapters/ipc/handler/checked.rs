@@ -79,7 +79,7 @@ pub(crate) fn check_without_engine<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
+    use crate::state::RequestContext;
     use serde_json::json;
     use std::sync::Arc;
     use tasty_plugin_manifest::Permission;
@@ -115,7 +115,7 @@ mod tests {
         .unwrap();
     }
 
-    fn observations(core: &mut Core, state: &mut AppState, engine: &mut CoreState) -> usize {
+    fn observations(core: &mut Core, state: &mut RequestContext, engine: &mut CoreState) -> usize {
         let mut req = request("telemetry.summary");
         req.params = json!({"agent": "gate-probe", "metric": "ipc_calls"});
         super::super::handle_with_caller(core, state, engine, &req, &CallerContext::Local)

@@ -33,7 +33,7 @@ impl App {
 
 /// foreground 세대가 바뀌면 마우스 캡처 배너만 닫는다. 같은 surface의 다른 배너는 유지한다.
 fn close_stale_mouse_capture_banners(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     core_state: &crate::core::CoreState,
 ) {
     use crate::adapters::ui::BannerScope;

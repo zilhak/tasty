@@ -6,14 +6,16 @@ use crate::adapters::ui::popup::PopupManager;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
 use crate::adapters::ui::popup::{PopupScope, defs};
 use crate::app::dispatch::plugin_popup_events::cancel_child_file_picker;
-use crate::state::{AppState, FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
+use crate::state::{
+    FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState, RequestContext,
+};
 use tasty_plugin_protocol::PopupCloseReason;
 
 const OWNER_IID: u64 = 7;
 const PORT_SCANNER_ID: &str = "port_scanner";
 
 /// owner가 없으면 플러그인이 아닌 도구 메뉴에서 연 피커를 구성한다.
-fn state_with_picker(owner: Option<u64>) -> AppState {
+fn state_with_picker(owner: Option<u64>) -> RequestContext {
     let (mut state, _engine) = test_state();
     state.dialogs.file_picker = Some(FilePickerData {
         mirror_ws_id: None,
@@ -223,7 +225,10 @@ pub(super) fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
     id
 }
 
-pub(super) fn live_layout_ctx(state: &AppState, engine: &crate::core::CoreState) -> LayoutContext {
+pub(super) fn live_layout_ctx(
+    state: &RequestContext,
+    engine: &crate::core::CoreState,
+) -> LayoutContext {
     let rect = super::popup_close_tests::term_rect();
     crate::adapters::ui::layout_context::build_layout_context(state, engine, &[], rect, 1.0)
 }

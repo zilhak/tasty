@@ -731,7 +731,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
                             // 충돌 감지 시 팝업 열기.
                             // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의
-                            // 별도 PopupManager. host Intent 큐(AppState.popups) 와 별개 —
+                            // 별도 PopupManager. host Intent 큐(MainViewState.popups) 와 별개 —
                             // sub-modal 내부 lifecycle 이므로 직접 호출 유지.
                             // 현재 편집 중인 배율로 크기를 먼저 구한 뒤 popups를 변경한다.
                             let conflict_size = if !ui_state.popups.is_open("keybinding_conflict") {

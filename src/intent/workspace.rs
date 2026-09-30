@@ -3,11 +3,11 @@
 use super::{DispatchedIntent, Intent};
 use crate::core::Core;
 use crate::core::CoreState;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     intent: &DispatchedIntent,
 ) {
@@ -31,7 +31,7 @@ pub fn handle(
 
 fn new_workspace(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     kind: Option<&str>,
     params: &serde_json::Value,

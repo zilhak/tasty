@@ -11,7 +11,7 @@ pub use runtime::{PracticeContext, PracticeEvent, TutorialRuntime};
 use crate::adapters::ui::LayoutContext;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
-use crate::state::AppState;
+use crate::state::MainViewState;
 use tasty_type_appearance::theme::Theme;
 
 pub fn resolve_marker_rect(
@@ -33,7 +33,7 @@ pub fn resolve_marker_rect(
 }
 
 /// The catalog can be opened by menu, shortcut or the existing debug UI path.
-pub fn open_catalog(state: &mut AppState) {
+pub fn open_catalog(state: &mut MainViewState) {
     if let Some(a) = state.tutorial.active {
         state.tutorial.interrupt();
         state.tutorial.save_progress(a.topic);
@@ -41,7 +41,7 @@ pub fn open_catalog(state: &mut AppState) {
     state.tutorial.load_progress();
 }
 
-pub fn interrupt_and_reopen(state: &mut AppState) {
+pub fn interrupt_and_reopen(state: &mut MainViewState) {
     if let Some(a) = state.tutorial.active {
         state.tutorial.interrupt();
         state.tutorial.save_progress(a.topic);
@@ -57,7 +57,7 @@ pub fn interrupt_and_reopen(state: &mut AppState) {
 
 pub fn draw_tutorial_overlay(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     layout: &LayoutContext,
     content: egui::Rect,

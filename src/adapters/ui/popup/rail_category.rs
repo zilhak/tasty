@@ -7,7 +7,7 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::intent::Intent;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -27,7 +27,7 @@ struct Target {
 }
 
 /// `state.dialogs.rail_category_popup` 의 대상 카테고리를 engine 에서 해석.
-fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
     let cat_id = state.dialogs.rail_category_popup?;
     let cat = engine.categories().iter().find(|c| c.id == cat_id)?;
     let label = if cat.is_normal() {
@@ -90,7 +90,7 @@ fn menu_row(
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든 대상 카테고리 참조를 비운다.
 pub fn on_close_rail_category_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.rail_category_popup = None;
@@ -98,7 +98,7 @@ pub fn on_close_rail_category_popup(
 
 pub fn draw_rail_category_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -205,7 +205,7 @@ pub fn draw_rail_category_popup(
 
 /// PopupDef.sizer — 헤더 + 행 수로 height 계산. normal 은 Add/Collapse 2행, 비-normal 은
 /// separator + Rename/Delete 를 더한 4행.
-pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn rail_category_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let th = theme::theme();
     let reserved = resolve_target(state, engine)
         .map(|t| t.is_reserved)

@@ -5,7 +5,7 @@
 use super::params::{self, p_try};
 use serde_json::json;
 
-use crate::state::AppState;
+use crate::state::RequestContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -80,7 +80,7 @@ pub(super) fn handle_debug_inject_mouse(
 /// 호스트에 정의된 팝업 목록. 플러그인 팝업은 debug.popup.list로 조회한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_list(
-    state: &AppState,
+    state: &RequestContext,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let items: Vec<_> = crate::adapters::ui::popup::defs::all_defs()
@@ -107,7 +107,7 @@ pub(super) fn handle_debug_host_popup_list(
 /// 사용자 클릭 없이 호스트 팝업을 연다. 디버그 빌드에서만 허용한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_open(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -158,7 +158,7 @@ pub(super) fn handle_debug_host_popup_open(
 
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_close(
-    state: &mut AppState,
+    state: &mut RequestContext,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -176,7 +176,7 @@ pub(super) fn handle_debug_host_popup_close(
 /// 사용자 입력을 재현하는 디버그 기능이고, 응답은 state 조회와 같은 형식이다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_hold(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -204,7 +204,7 @@ pub(super) fn handle_debug_modhint_hold(
 /// draw와 같은 함수로 오버레이 상태를 계산해 반환한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_state(
-    state: &AppState,
+    state: &RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -223,7 +223,10 @@ pub(super) fn handle_debug_modhint_state(
 /// rect는 egui 논리 좌표이고 content_rect는 플러그인 콘텐츠의 물리 픽셀 영역이다.
 /// 호스트 배너의 content_rect는 null이다. 카드 rect는 직전 프레임 값이며 첫 프레임에는 null이다.
 #[cfg(all(debug_assertions, feature = "gui"))]
-pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub(super) fn handle_debug_banner_list(
+    state: &RequestContext,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let defs: Vec<_> = crate::adapters::ui::banner::defs::all_defs()
         .iter()
         .map(|def| {
@@ -289,7 +292,7 @@ pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) 
 /// 배너 정의의 TTL을 적용한다. 사용자 동작을 재현하므로 디버그 빌드에서만 허용한다.
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_show(
-    state: &mut AppState,
+    state: &mut RequestContext,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -316,7 +319,7 @@ pub(super) fn handle_debug_banner_show(
 /// `debug.banner.close` — `{ banner_id }` 로 배너를 닫는다 (표시 중이면 큐 head 승격).
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_close(
-    state: &mut AppState,
+    state: &mut RequestContext,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -334,7 +337,7 @@ pub(super) fn handle_debug_banner_close(
 /// 남은 시간을 강제 설정한다 (만료 직전 상태 등 시각 검증용).
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_set_countdown(
-    state: &mut AppState,
+    state: &mut RequestContext,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

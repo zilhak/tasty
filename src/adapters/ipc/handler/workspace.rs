@@ -592,7 +592,7 @@ pub fn handle_workspace_move(
         Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {
-        window.fix_workspace_pointers_after_move(&engine, from, to);
+        window.reconcile_presentation(&engine);
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }
@@ -821,7 +821,7 @@ mod create_cwd_tests {
     use serde_json::json;
 
     fn open_explorer(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::RequestContext,
         engine: &mut crate::core::CoreState,
         rel: &str,
     ) -> (u32, std::path::PathBuf) {

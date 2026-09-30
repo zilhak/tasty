@@ -1,7 +1,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
 use tasty_type_geometry::length::LogicalPx;
@@ -16,7 +16,7 @@ const SEARCH_BAR_POPUP_ID: &str = "search_bar";
 /// 남겨 두면 다른 surface에서 다시 열 때 이전 surface의 좌표가 강조된다.
 pub fn on_close_search_bar(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.search.clear();
@@ -27,7 +27,7 @@ pub fn on_close_search_bar(
 /// 옮긴다. 닫았다 다시 열면 on_close 훅이 다음 프레임에 늦게 돌아 새 대상의 검색 상태를 지우고,
 /// 열린 팝업에 보내는 OpenPopup intent는 무시되므로 창의 범위를 직접 옮긴다.
 pub(crate) fn open_or_focus_for(
-    state: &mut AppState,
+    state: &mut MainViewState,
     focused_surface: Option<u32>,
     source: &'static str,
 ) {
@@ -64,7 +64,7 @@ pub(crate) fn open_or_focus_for(
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let theme = crate::theme::theme();
@@ -340,7 +340,7 @@ fn toggle_button(
 }
 
 /// 검색 상태 필드를 빌려 검색을 실행한다.
-fn run_search(state: &mut AppState, engine: &crate::core::CoreState) {
+fn run_search(state: &mut MainViewState, engine: &crate::core::CoreState) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
     let options = SearchOptions {
@@ -369,7 +369,7 @@ fn run_search(state: &mut AppState, engine: &crate::core::CoreState) {
     }
 }
 
-fn focused_terminal_surface_id(state: &AppState, engine: &crate::core::CoreState) -> u32 {
+fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::core::CoreState) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = state.navigation.pane_id(ws).unwrap_or(0);
     ws.pane_layout()
@@ -379,7 +379,7 @@ fn focused_terminal_surface_id(state: &AppState, engine: &crate::core::CoreState
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(state: &mut AppState, engine: &mut crate::core::CoreState) {
+fn scroll_to_current_match(state: &mut MainViewState, engine: &mut crate::core::CoreState) {
     let surface_id = state.search.surface_id;
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();

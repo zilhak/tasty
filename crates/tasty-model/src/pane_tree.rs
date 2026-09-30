@@ -450,7 +450,7 @@ mod tests {
             first: Box::new(leaf_pane(7)),
             second: Box::new(leaf_pane(8)),
         };
-        let json = node.to_tree_json_full();
+        let json = node.to_tree_json_full(&crate::StructurePresentationSnapshot::default());
         assert_eq!(json["type"], "Split");
         assert_eq!(json["direction"], "vertical");
         assert!((json["ratio"].as_f64().unwrap() - 0.3).abs() < 1e-6);
@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn to_tree_json_full_leaf_carries_pane_payload() {
         let node = leaf_pane(9);
-        let json = node.to_tree_json_full();
+        let json = node.to_tree_json_full(&crate::StructurePresentationSnapshot::default());
         assert_eq!(json["type"], "Leaf");
         assert_eq!(json["id"], 9);
         assert!(json["tabs"].is_array());

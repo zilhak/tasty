@@ -52,7 +52,7 @@ pub fn handle_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
+    use crate::state::RequestContext;
 
     #[test]
     fn recent_query_agrees_across_states_after_either_window_records() {
@@ -64,7 +64,7 @@ mod tests {
         second.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
         first.record_recent("markdown", &json!({"file": "/notes/one.md"}));
         second.record_recent("markdown", &json!({"file": "/notes/two.md"}));
-        let query = |state: &AppState| {
+        let query = |state: &RequestContext| {
             handle_query(state, json!(1), json!({"kind": "markdown"}))
                 .result
                 .unwrap()

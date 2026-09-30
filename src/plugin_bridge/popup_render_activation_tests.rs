@@ -49,7 +49,7 @@ fn manager_with_popup() -> PluginManager {
 
 fn frame(
     ctx: &Context,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     mgr: &PluginManager,
     events: Vec<Event>,

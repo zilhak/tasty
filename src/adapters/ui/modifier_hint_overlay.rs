@@ -241,7 +241,7 @@ use crate::adapters::ui::icons;
 /// 마우스 입력 차단, 위치·크기 저장, 레이어 정렬에 필요한 렌더링 결과.
 #[derive(Default, Clone, Copy)]
 pub struct HintDrawResult {
-    /// 마우스가 패널 위 → 하위 surface 전파 차단(`AppState::modifier_hint_hovered`).
+    /// 마우스가 패널 위 → 하위 surface 전파 차단(`MainViewState::modifier_hint_hovered`).
     pub hovered: bool,
     /// 드래그/리사이즈를 놓은 시점의 (pos, size). `Some` 이면 호출자가 `UpdateSettings` 로
     /// 영속한다(사용자 행동 → `from_user_menu`). `None` = 이번 프레임 변경 없음.

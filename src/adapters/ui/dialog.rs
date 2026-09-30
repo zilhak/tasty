@@ -3,7 +3,7 @@
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
-use crate::state::{AppState, RenameTarget};
+use crate::state::{MainViewState, RenameTarget};
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -18,7 +18,7 @@ pub fn rename_popup_default_size() -> egui::Vec2 {
     )
 }
 
-pub fn rename_popup_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
+pub fn rename_popup_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
     state
         .dialogs
         .rename
@@ -51,7 +51,7 @@ pub enum RenamePopupAction {
 /// 어떤 경로로 닫혀도 대상과 입력 버퍼를 정리한다.
 pub fn on_close_rename_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.rename = None;
@@ -59,7 +59,7 @@ pub fn on_close_rename_popup(
 
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
@@ -248,7 +248,7 @@ fn rename_target_exists(target: &RenameTarget, engine: &crate::core::CoreState) 
 }
 
 fn apply_rename(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     target: RenameTarget,
     buffer: String,
@@ -274,7 +274,7 @@ fn apply_rename(
 }
 
 fn apply_rename_workspace_name(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     workspace_id: u32,
     buffer: String,
@@ -296,7 +296,7 @@ fn apply_rename_workspace_name(
 }
 
 fn apply_rename_workspace_subtitle(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     workspace_id: u32,
     buffer: String,
@@ -315,7 +315,7 @@ fn apply_rename_workspace_subtitle(
 }
 
 fn apply_rename_tab_name(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     tab_id: u32,
     buffer: String,
@@ -336,7 +336,7 @@ fn apply_rename_tab_name(
 }
 
 fn apply_rename_explorer_entry(
-    state: &mut AppState,
+    state: &mut MainViewState,
     surface_id: u32,
     path: std::path::PathBuf,
     buffer: String,
@@ -368,7 +368,7 @@ fn apply_rename_explorer_add_favorite(
     engine.explorer_favorites.save();
 }
 
-fn apply_rename_new_category(state: &mut AppState, buffer: String) {
+fn apply_rename_new_category(state: &mut MainViewState, buffer: String) {
     state.dispatch_intent(
         crate::core::intent::DomainIntent::CreateCategory { name: buffer }
             .from_user_menu("rename_popup"),
@@ -376,7 +376,7 @@ fn apply_rename_new_category(state: &mut AppState, buffer: String) {
 }
 
 fn apply_rename_category_name(
-    state: &mut AppState,
+    state: &mut MainViewState,
     cat_id: crate::model::WorkspaceCategoryId,
     buffer: String,
 ) {
@@ -419,7 +419,7 @@ mod tests {
 
     /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
     fn apply_rename_and_drain(
-        state: &mut AppState,
+        state: &mut MainViewState,
         engine: &mut crate::core::CoreState,
         target: RenameTarget,
         buffer: &str,

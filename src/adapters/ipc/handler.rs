@@ -103,17 +103,17 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 const PLATFORM_ONLY_MACOS_GUI: &str = "input reproduction over the OS event stream is macOS-only and needs the gui build \
      (CGEventPost / TISSelectInputSource have no equivalent here)";
 use crate::ipc::window_port::IpcWindow;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 호출자를 인증된 종류로 전달하고 공통 권한·cap·rate 검사를 수행한다.
 /// 이미 검사한 요청은 handle_checked_request를 사용한다(ADR-0012).
 ///
 /// 엔진 핸들러는 IpcWindow와 IntentOutbox로 창에 접근한다.
-/// 창 자체를 조작하는 GUI·debug 핸들러만 AppState를 받는다(ADR-0002).
+/// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(ADR-0002).
 #[cfg(test)]
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     request: &JsonRpcRequest,
     caller: &CallerContext,
@@ -125,10 +125,10 @@ pub fn handle_with_caller(
 }
 
 /// 검사한 요청을 실행하고 소요 시간을 기록한다. 예산과 사용량은 다시 집계하지 않는다.
-/// AppState는 EntryWindow로 감싸고 요청의 intent를 해당 창 큐로 전달한다(ADR-0002).
+/// RequestContext는 EntryWindow로 감싸고 요청의 intent를 해당 창 큐로 전달한다(ADR-0002).
 pub(crate) fn handle_checked_request(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     checked: &CheckedRequest<'_>,
 ) -> JsonRpcResponse {
@@ -139,7 +139,7 @@ pub(crate) fn handle_checked_request(
     // 시작과 끝을 같은 Clock으로 재야 주입한 시계와 벽시계가 섞이지 않는다.
     let elapsed = core.now_instant().duration_since(started);
     core.pressure().record_handler(elapsed);
-    state.navigation.reconcile(&engine.workspaces);
+    state.reconcile_presentation(engine);
     engine.refresh_attach_presentation(&state.navigation);
     response
 }
@@ -623,7 +623,7 @@ fn route_engine_handler(
         "tab.list" => tab::handle_tab_list(window.presentation(), engine, id, &request.params),
         "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params, &origin),
         "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params, &origin),
-        "tab.move" => tab::handle_tab_move(core, engine, id, &request.params, &origin),
+        "tab.move" => tab::handle_tab_move(core, window, engine, id, &request.params, &origin),
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
         "terminal.spawn" => {
             terminal::handle_spawn(core, window, engine, id, &request.params, &origin)
@@ -1025,12 +1025,12 @@ fn route_engine_handler(
     })
 }
 
-/// 창 상태를 조작하는 GUI 핸들러는 EntryWindow를 통해 AppState를 받는다(ADR-0002).
+/// 창 상태를 조작하는 GUI 핸들러는 EntryWindow를 통해 RequestContext를 받는다(ADR-0002).
 /// window_router_caller_tests는 아래 match 팔과 호출자 명부를 대조한다.
 /// match 밖의 분기는 검사에서 빠질 수 있으므로 새 진입점의 호출자 제한도 직접 확인한다.
 #[cfg(feature = "gui")]
 fn route_window_handler(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     request: &JsonRpcRequest,
@@ -1046,7 +1046,7 @@ fn route_window_handler(
 
 #[cfg(debug_assertions)]
 fn route_debug_handler(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     request: &JsonRpcRequest,
     id: serde_json::Value,

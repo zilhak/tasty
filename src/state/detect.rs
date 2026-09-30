@@ -1,9 +1,9 @@
 //! 폴링으로 surface·워크스페이스·탭 포커스와 pane 간 탭 이동을 감지한다.
 
-use super::{AppState, PendingHostEvent};
+use super::{PendingHostEvent, RequestContext};
 use crate::core::CoreState;
 
-impl AppState {
+impl RequestContext {
     pub fn detect_focus_change(&mut self, engine: &CoreState) {
         let current = self.focused_surface_id(engine);
         if current == self.last_focused_surface_id {

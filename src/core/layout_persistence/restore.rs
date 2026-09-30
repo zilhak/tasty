@@ -229,7 +229,7 @@ impl SavedPane {
         for (idx, saved_tab) in self.tabs.into_iter().enumerate() {
             // 활성 workspace의 활성 탭만 PTY를 즉시 만들고 나머지는 선택될 때까지 미룬다.
             let tab_is_active = is_active_workspace && idx == saved_active_tab;
-            match saved_tab.restore(engine, tab_is_active) {
+            match saved_tab.restore(engine, tab_is_active, presentation) {
                 Some(tab) => tabs.push(tab),
                 None => {
                     tracing::warn!(
@@ -252,9 +252,14 @@ impl SavedPane {
 
 impl SavedTab {
     #[cfg(any(feature = "gui", test))]
-    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Tab> {
+    fn restore(
+        self,
+        engine: &mut CoreState,
+        is_active: bool,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Option<Tab> {
         let tab_id = engine.next_ids.next_tab();
-        let layout = self.surface.restore(engine, is_active)?;
+        let layout = self.surface.restore(engine, is_active, presentation)?;
         Some(Tab {
             id: tab_id,
             name: self.name,
@@ -268,7 +273,12 @@ impl SavedTab {
 impl SavedSurfaceLayout {
     /// 비활성 탭의 Terminal leaf는 placeholder로 남긴다. Generic은 활성 여부와 무관하게 복원을 시도한다.
     #[cfg(any(feature = "gui", test))]
-    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<SurfaceLayout> {
+    fn restore(
+        self,
+        engine: &mut CoreState,
+        is_active: bool,
+        presentation: &mut crate::model::StructurePresentationSnapshot,
+    ) -> Option<SurfaceLayout> {
         match self {
             SavedSurfaceLayout::Leaf(saved) => {
                 let surface = saved.restore_leaf(engine, is_active)?;
@@ -280,14 +290,16 @@ impl SavedSurfaceLayout {
                 first,
                 second,
             } => {
-                let first = first.restore(engine, is_active)?;
-                let second = second.restore(engine, is_active)?;
+                let first = first.restore(engine, is_active, presentation)?;
+                let second = second.restore(engine, is_active, presentation)?;
+                let node_id = crate::model::SplitNodeId::allocate();
+                presentation.split_hints.insert(node_id, false);
                 Some(SurfaceLayout::Split {
                     direction: direction.into(),
                     ratio,
                     first: Box::new(first),
                     second: Box::new(second),
-                    focus_second: false,
+                    node_id,
                 })
             }
         }

@@ -11,7 +11,7 @@ use crate::plugin::command_registry::{EffectiveBinding, effective_binding};
 use crate::shortcuts::matches_any_binding;
 
 pub fn focused_plugin_surface(
-    state: &crate::state::AppState,
+    state: &crate::state::RequestContext,
     engine: &crate::core::CoreState,
 ) -> Option<(String, u32)> {
     let pane = state.focused_pane(engine)?;

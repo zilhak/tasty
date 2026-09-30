@@ -781,6 +781,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
             forward_result(exec::move_tab(
                 core,
+                state,
                 engine,
                 pane_id,
                 *from_index,
@@ -2180,13 +2181,13 @@ mod mesh_descriptor_display_name_tests {
 #[cfg(test)]
 mod forward_exec_tests {
     use super::execute_forwarded_structural_op;
-    use crate::state::AppState;
+    use crate::state::RequestContext;
     use tasty_ipc::stream::{ForwardOrigin, SplitAxis, StructuralOp};
     use tasty_terminal::Terminal;
 
     fn make_core_state() -> (
         crate::core::Core,
-        AppState,
+        RequestContext,
         crate::core::CoreState,
         tempfile::TempDir,
     ) {
@@ -2208,7 +2209,7 @@ mod forward_exec_tests {
         let memory: Arc<Mutex<dyn MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
         let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
-        let state = AppState::new(&mut engine, preset_store.clone(), memory.clone());
+        let state = RequestContext::new(&mut engine, preset_store.clone(), memory.clone());
         let home_tmp = tempfile::tempdir().expect("test tempdir");
         let core = CoreBuilder::new()
             .with_fs(Arc::new(MemFileSystem::new()))
@@ -2411,7 +2412,7 @@ mod forward_exec_tests {
 
     fn forward_empty_new_tab(
         core: &mut crate::core::Core,
-        state: &mut AppState,
+        state: &mut RequestContext,
         engine: &mut crate::core::CoreState,
         anchor: u32,
         origin: ForwardOrigin,
@@ -3138,7 +3139,7 @@ mod forward_exec_tests {
 
     fn attached_pair(
         core: &mut crate::core::Core,
-        state: &mut AppState,
+        state: &mut RequestContext,
         engine: &mut crate::core::CoreState,
     ) -> (u32, u32, u32, tasty_ipc::stream_hub::SinkReceiver) {
         let a = seed(engine);
@@ -4475,7 +4476,7 @@ mod forward_exec_tests {
             .expect("workspace 점유 획득");
 
         let kill = |core: &mut crate::core::Core,
-                    state: &mut AppState,
+                    state: &mut RequestContext,
                     engine: &mut crate::core::CoreState| {
             let req = ipc_request(
                 "terminal.kill",

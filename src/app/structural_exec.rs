@@ -34,15 +34,20 @@ impl From<anyhow::Error> for StructuralFailure {
 /// Agent는 사용자 toast 대신 로그로, User는 사용자 조작 실패로 표시한다.
 fn apply(
     core: &mut Core,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     intent: DomainIntent,
     origin: &IntentOrigin,
 ) -> Result<Vec<CoreEvent>, StructuralFailure> {
-    core.apply(engine, intent).map_err(|e| {
+    let events = core.apply(engine, intent).map_err(|e| {
         crate::core::mark_last_forward_agent_origin(engine, &e, origin);
         crate::core::mark_last_forward_user_triggered(engine, &e, origin);
         StructuralFailure::Apply(e)
-    })
+    })?;
+    for event in &events {
+        state.apply_structure_result(engine, event);
+    }
+    Ok(events)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +169,7 @@ pub(crate) fn split(
                 surface_params: params.clone(),
             };
             engine.refresh_attach_presentation(state.presentation());
-            let events = apply(core, engine, intent, origin)?;
+            let events = apply(core, state, engine, intent, origin)?;
             let Some(CoreEvent::PaneSplit {
                 workspace_index,
                 original_pane_id,
@@ -216,7 +221,7 @@ pub(crate) fn split(
                 surface_params: params.clone(),
             };
             engine.refresh_attach_presentation(state.presentation());
-            let events = apply(core, engine, intent, origin)?;
+            let events = apply(core, state, engine, intent, origin)?;
             let Some(CoreEvent::SurfaceSplit {
                 workspace_index,
                 pane_id,
@@ -342,7 +347,7 @@ pub(crate) fn create_tab(
         activate,
     };
     engine.refresh_attach_presentation(state.presentation());
-    let events = apply(core, engine, intent, origin)?;
+    let events = apply(core, state, engine, intent, origin)?;
 
     let Some(CoreEvent::TabCreated {
         pane_id,
@@ -388,7 +393,13 @@ pub(crate) fn close_tab(
     tab_id: u32,
     origin: &IntentOrigin,
 ) -> Result<Closed, StructuralFailure> {
-    let events = apply(core, engine, DomainIntent::CloseTab { tab_id }, origin)?;
+    let events = apply(
+        core,
+        state,
+        engine,
+        DomainIntent::CloseTab { tab_id },
+        origin,
+    )?;
 
     let Some(CoreEvent::TabClosed {
         tab_id,
@@ -430,7 +441,13 @@ pub(crate) fn close_pane(
         )));
     }
 
-    let events = apply(core, engine, DomainIntent::ClosePane { pane_id }, origin)?;
+    let events = apply(
+        core,
+        state,
+        engine,
+        DomainIntent::ClosePane { pane_id },
+        origin,
+    )?;
     let Some(CoreEvent::PaneClosed {
         pane_id,
         closed,
@@ -453,6 +470,7 @@ pub(crate) fn close_pane(
 
 pub(crate) fn move_tab(
     core: &mut Core,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     pane_id: u32,
     from_index: usize,
@@ -461,6 +479,7 @@ pub(crate) fn move_tab(
 ) -> Result<bool, StructuralFailure> {
     let events = apply(
         core,
+        state,
         engine,
         DomainIntent::MoveTab {
             pane_id,
@@ -498,7 +517,7 @@ pub(crate) fn close_surface(
         }),
     };
     engine.refresh_attach_presentation(state.presentation());
-    let events = apply(core, engine, intent, origin)?;
+    let events = apply(core, state, engine, intent, origin)?;
     let Some(event @ CoreEvent::SurfaceClosed { surface_id, .. }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(

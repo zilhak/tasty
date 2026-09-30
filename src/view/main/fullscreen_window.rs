@@ -1,4 +1,4 @@
-//! 전체화면 무대 상태를 같은 OS 창에 반영한다. AppState는 창 핸들이 없어
+//! 전체화면 무대 상태를 같은 OS 창에 반영한다. MainViewState는 창 핸들이 없어
 //! 매 프레임 이 모듈에서 전환하고, 무대가 만든 전환만 원래 상태로 되돌린다.
 //! docs/design/systems/fullscreen-stage.md 참고.
 

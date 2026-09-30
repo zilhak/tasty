@@ -8,14 +8,14 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::debug::require_input_simulation;
 use crate::macos_permissions::{RawKeyDecision, accessibility_trusted, raw_key_decision};
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// Switch the macOS input source (e.g. "com.apple.keylayout.ABC" or
 /// "com.apple.inputmethod.Korean.2SetKorean").
 ///
 /// 시스템 전역 입력 소스를 바꾸므로 `--enable-input-simulation` 게이트를 지난다.
 pub fn handle_switch_input_source(
-    _state: &AppState,
+    _state: &RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -40,7 +40,7 @@ pub fn handle_switch_input_source(
 /// CGEvent로 키를 보내 macOS IME 처리를 거친다.
 /// 손쉬운 사용 권한은 호출마다 확인한다. 미승인 시 이벤트가 무시되므로 먼저 오류로 답한다.
 pub fn handle_raw_key(
-    _state: &AppState,
+    _state: &RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

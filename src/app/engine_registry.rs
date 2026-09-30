@@ -11,12 +11,12 @@ use winit::window::WindowId;
 
 use crate::core::CoreState;
 use crate::runtime::engine_session::{EngineId, EngineSession};
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// 창이 없어진 engine을 다시 보여 줄 때 쓸 View 복원 자료. engine 원본은 registry에 남는다.
 pub(crate) struct ParkedView {
     pub(crate) engine: EngineId,
-    pub(crate) state: AppState,
+    pub(crate) state: MainViewState,
 }
 
 /// [`EngineRegistry::split_by_id`]의 결과. id별 engine, 창 관계, parked 목록, 임시 engine id 순이다.
@@ -75,7 +75,7 @@ impl EngineRegistry {
     }
 
     /// 창 관계만 끊고 engine은 그대로 둔다. View 복원 자료를 parked 뒤에 붙인다.
-    pub(crate) fn park(&mut self, wid: WindowId, state: AppState) -> Option<EngineId> {
+    pub(crate) fn park(&mut self, wid: WindowId, state: MainViewState) -> Option<EngineId> {
         let id = self.by_window.remove(&wid)?;
         self.parked.push(ParkedView { engine: id, state });
         Some(id)
@@ -83,7 +83,7 @@ impl EngineRegistry {
 
     /// 가장 먼저 보관한 parked engine을 임시 관계로 옮기고 View 복원 자료를 돌려준다.
     /// 이미 임시 engine이 있으면 옮기지 않는다.
-    pub(crate) fn unpark_first(&mut self) -> Option<(EngineId, AppState)> {
+    pub(crate) fn unpark_first(&mut self) -> Option<(EngineId, MainViewState)> {
         if self.pending.is_some() || self.parked.is_empty() {
             return None;
         }
@@ -137,7 +137,7 @@ impl EngineRegistry {
     /// parked 항목의 id·View 복원 자료·engine. 보관 순서다.
     pub(crate) fn parked_sessions(
         &self,
-    ) -> impl Iterator<Item = (EngineId, &AppState, &CoreState)> {
+    ) -> impl Iterator<Item = (EngineId, &MainViewState, &CoreState)> {
         self.parked.iter().filter_map(|p| {
             self.sessions
                 .get(&p.engine)
@@ -148,7 +148,7 @@ impl EngineRegistry {
     /// parked 항목을 가변으로 순회한다. 한 engine은 한 항목에만 있으므로 각 참조를 한 번만 넘긴다.
     pub(crate) fn parked_sessions_mut(
         &mut self,
-    ) -> impl Iterator<Item = (EngineId, &mut AppState, &mut CoreState)> {
+    ) -> impl Iterator<Item = (EngineId, &mut MainViewState, &mut CoreState)> {
         let Self {
             sessions, parked, ..
         } = self;
@@ -165,7 +165,7 @@ impl EngineRegistry {
     pub(crate) fn parked_session_mut(
         &mut self,
         id: EngineId,
-    ) -> Option<(&mut AppState, &mut CoreState)> {
+    ) -> Option<(&mut MainViewState, &mut CoreState)> {
         let Self {
             sessions, parked, ..
         } = self;
@@ -209,7 +209,11 @@ impl EngineRegistry {
 
     /// 시험용. 창을 거쳐 parked로 옮기는 실제 전이를 그대로 밟는다.
     #[cfg(test)]
-    pub(crate) fn park_for_test(&mut self, state: AppState, core_state: CoreState) -> EngineId {
+    pub(crate) fn park_for_test(
+        &mut self,
+        state: MainViewState,
+        core_state: CoreState,
+    ) -> EngineId {
         let wid = WindowId::from(u64::MAX - self.sessions.len() as u64);
         let id = self
             .insert_pending(core_state)
@@ -240,7 +244,7 @@ mod tests {
 
     use super::*;
 
-    fn test_engine(slot: Option<u32>) -> (AppState, CoreState) {
+    fn test_engine(slot: Option<u32>) -> (MainViewState, CoreState) {
         let (state, mut engine) = crate::state::tests::test_state();
         engine.layout_slot = slot;
         (state, engine)

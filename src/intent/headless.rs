@@ -9,7 +9,7 @@
 use crate::core::intent::CoreEvent;
 use crate::core::{AttentionKind, Core, CoreState};
 use crate::intent::{DispatchedIntent, Intent};
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 한 번에 처리할 묶음 수. 처리 중 명령이 계속 추가돼도 루프를 빠져나올 수 있게 한다.
 /// 남은 명령은 다음 호출에서 처리하며 큐의 크기 자체를 제한하는 값은 아니다.
@@ -17,7 +17,11 @@ const MAX_DRAIN_ROUNDS: usize = 8;
 
 /// IPC 응답을 보내기 전에 대기 명령을 적용한다.
 /// 예를 들어 surface.set_mark 응답 후에는 surface.read_since_mark로 그 마커를 읽을 수 있어야 한다.
-pub(crate) fn drain_pending_intents(core: &mut Core, state: &mut AppState, engine: &mut CoreState) {
+pub(crate) fn drain_pending_intents(
+    core: &mut Core,
+    state: &mut RequestContext,
+    engine: &mut CoreState,
+) {
     for _ in 0..MAX_DRAIN_ROUNDS {
         let batch = state.take_pending_intents();
         if batch.is_empty() {
@@ -38,7 +42,11 @@ pub(crate) fn drain_pending_intents(core: &mut Core, state: &mut AppState, engin
 /// 호스트 이벤트 큐를 비우고 HookFired로 완료를 기다리는 작업을 처리한다.
 /// 나머지 이벤트는 여기서 버리며 플러그인 이벤트 버스로 전달하지 않는다.
 /// 헤드리스에서도 이 이벤트를 구독해야 한다면 별도의 전달 경로가 필요하다.
-pub(crate) fn drain_pending_host_events(core: &Core, state: &mut AppState, engine: &CoreState) {
+pub(crate) fn drain_pending_host_events(
+    core: &Core,
+    state: &mut RequestContext,
+    engine: &CoreState,
+) {
     for event in state.take_pending_host_events() {
         if let crate::state::PendingHostEvent::HookFired {
             hook_id, exit_code, ..
@@ -66,7 +74,7 @@ pub(crate) fn apply_terminal_cwd_changed(engine: &mut CoreState, surface_id: u32
 
 fn apply_one(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     dispatched: DispatchedIntent,
 ) {
@@ -77,9 +85,11 @@ fn apply_one(
     let Intent::Domain(domain) = dispatched.body else {
         return;
     };
+    engine.refresh_attach_presentation(&state.navigation);
     match core.apply(engine, domain) {
         Ok(events) => {
             for event in events {
+                state.apply_structure_result(engine, &event);
                 handle_core_event(engine, event);
             }
         }
@@ -90,7 +100,7 @@ fn apply_one(
 // GUI와 같은 Intent 변종을 처리해 큐에 들어온 요청이 빠지지 않도록 한다.
 fn route_non_domain(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     dispatched: &DispatchedIntent,
 ) {
@@ -217,7 +227,7 @@ mod tests {
             .expect("test Core")
     }
 
-    fn fixture() -> (Core, AppState, CoreState, u32) {
+    fn fixture() -> (Core, RequestContext, CoreState, u32) {
         let (state, engine) = crate::state::tests::test_state();
         let surface_id = *state
             .active_workspace(&engine)
@@ -241,7 +251,7 @@ mod tests {
 
     fn send(
         core: &mut Core,
-        state: &mut AppState,
+        state: &mut RequestContext,
         engine: &mut CoreState,
         method: &str,
         params: serde_json::Value,
@@ -341,7 +351,12 @@ mod tests {
     }
 
     // 반복해서 큐에 넣도록 once가 아닌 훅을 등록한다.
-    fn set_a_hook(core: &mut Core, state: &mut AppState, engine: &mut CoreState, sid: u32) -> u64 {
+    fn set_a_hook(
+        core: &mut Core,
+        state: &mut RequestContext,
+        engine: &mut CoreState,
+        sid: u32,
+    ) -> u64 {
         let resp = crate::ipc::handler::handle_with_caller(
             core,
             state,

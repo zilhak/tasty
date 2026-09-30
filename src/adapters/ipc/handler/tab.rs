@@ -128,6 +128,7 @@ pub fn handle_tab_close(
 
 pub fn handle_tab_move(
     core: &mut crate::core::Core,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -146,7 +147,7 @@ pub fn handle_tab_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    match structural_exec::move_tab(core, engine, pane_id, from, to, origin) {
+    match structural_exec::move_tab(core, window, engine, pane_id, from, to, origin) {
         Ok(moved) => JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id })),
         Err(f) => super::structural_failure_response(id, f),
     }

@@ -24,7 +24,7 @@ use crate::adapters::ui::surface::dag_graph::{
     view::{DagGraphView, POLL_INTERVAL},
 };
 use crate::i18n::{t, t_fmt2};
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 pub const DAG_LIST_POPUP_ID: &str = "dag_list";
 
@@ -34,7 +34,7 @@ const STATUS_SELECT_SALT: &str = "dag_list_status";
 const STATUS_SELECT_OVERLAY_KEY: &str = "dag_list_status";
 
 /// 배율이 적용된 Theme 토큰으로 팝업 크기를 계산한다.
-pub fn dag_list_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn dag_list_sizer(_state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let th = crate::theme::theme();
     egui::vec2(th.dag_popup_width().value(), th.dag_popup_height().value())
 }
@@ -182,7 +182,7 @@ fn status_matches(selected: &[bool], rollup: DagStatus) -> bool {
 /// popup 본문.
 pub fn draw_dag_list_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let active_workspace_id = engine
@@ -519,7 +519,7 @@ fn draw_detail_graph(
 /// 닫힘 정리 — 어떤 경로로 닫히든 다음 open 은 **목록 뷰**에서 시작한다.
 pub fn on_close_dag_list_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.dag_list = DagListState::default();

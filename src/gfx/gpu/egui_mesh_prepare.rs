@@ -21,7 +21,7 @@ use super::GpuState;
 use crate::core::egui_mesh_surface::EguiMeshSurface;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// 디코드 ppp 와 host ppp 의 허용 오차. float 비교라 작은 epsilon.
 const PPP_EPS: f32 = 1.0e-3;
@@ -146,7 +146,7 @@ enum DecodeOutcome {
 /// kind 는 애초에 `EguiMeshSurface` 로 생성되지 않으므로(registry 미등록) 여기 잡히지
 /// 않는다 — registry 미등록 kind 의 합성을 시도하지 않는다(A1-S1 인계 점검).
 pub(super) fn collect_egui_mesh_targets(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
@@ -168,7 +168,7 @@ pub(super) fn collect_egui_mesh_targets(
 /// rect) 일람. [`collect_egui_mesh_targets`]의 attach 대응 — plugin_id 는 로컬에 plugin
 /// 프로세스가 없어 무의미하므로 반환하지 않는다.
 pub(super) fn collect_attach_mesh_targets(
-    state: &AppState,
+    state: &MainViewState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,

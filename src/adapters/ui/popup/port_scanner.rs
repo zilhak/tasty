@@ -14,7 +14,7 @@ use crate::core::CoreState;
 use crate::core::port_favorites::PortFavorites;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
@@ -279,7 +279,7 @@ pub struct PortScannerFilter<'a> {
     pub hidden_by_state: bool,
 }
 
-/// Pure inputs to `draw_port_scanner_view`. Contains no `AppState` /
+/// Pure inputs to `draw_port_scanner_view`. Contains no `MainViewState` /
 /// `CoreState` — every value is read-only. All user-facing strings are
 /// pre-resolved by the wrapper so the view is i18n-agnostic.
 pub struct PortScannerProps<'a> {
@@ -411,7 +411,7 @@ fn write_filter_state(ctx: &egui::Context, filter: FilterState) {
 
 pub fn draw_port_scanner_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut CoreState,
 ) -> PopupAction {
     let th = theme::theme();
@@ -428,13 +428,25 @@ pub fn draw_port_scanner_popup(
         _ => false,
     };
     if need_kick {
-        kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
+        kick_off_scan(
+            &mut state.port_scan,
+            &state.navigation,
+            engine,
+            &ctx,
+            target_show_all_system,
+        );
     }
 
     // 즐겨찾기는 메인 범위와 별개로 시스템 전체를 조회한다. 항목이 없으면 조회하지 않는다.
     let has_favorites = !engine.port_favorites.items.is_empty();
     if has_favorites && matches!(state.port_favorites_scan, PortScanState::Idle) {
-        kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
+        kick_off_scan(
+            &mut state.port_favorites_scan,
+            &state.navigation,
+            engine,
+            &ctx,
+            true,
+        );
     }
 
     // 푸터 total은 상태 필터 적용 후·검색 전 개수다. 선택은 포트 번호로 유지한다.
@@ -562,9 +574,21 @@ pub fn draw_port_scanner_popup(
             PopupAction::Close
         }
         PortScannerAction::Refresh => {
-            kick_off_scan(&mut state.port_scan, engine, &ctx, target_show_all_system);
+            kick_off_scan(
+                &mut state.port_scan,
+                &state.navigation,
+                engine,
+                &ctx,
+                target_show_all_system,
+            );
             if has_favorites {
-                kick_off_scan(&mut state.port_favorites_scan, engine, &ctx, true);
+                kick_off_scan(
+                    &mut state.port_favorites_scan,
+                    &state.navigation,
+                    engine,
+                    &ctx,
+                    true,
+                );
             }
             PopupAction::None
         }
@@ -755,7 +779,11 @@ fn scope_from_flag(show_all_system: bool) -> ScanScope {
 /// Snapshot every Tasty surface that has a live shell PID, paired with its
 /// workspace/tab display path. The background worker can run without any
 /// CoreState reference.
-fn build_snapshot(engine: &CoreState, show_all_system: bool) -> ScanSnapshot {
+fn build_snapshot(
+    engine: &CoreState,
+    presentation: &dyn crate::model::StructurePresentation,
+    show_all_system: bool,
+) -> ScanSnapshot {
     let mut surfaces: Vec<(u32, u32, SurfaceDisplayPath)> = Vec::new();
     for ws in &engine.workspaces {
         for pane_id in ws.pane_layout().all_pane_ids() {
@@ -767,7 +795,7 @@ fn build_snapshot(engine: &CoreState, show_all_system: bool) -> ScanSnapshot {
                         else {
                             continue;
                         };
-                        let Some(path) = engine.surface_display_path(sid) else {
+                        let Some(path) = engine.surface_display_path(sid, presentation) else {
                             continue;
                         };
                         surfaces.push((sid, shell_pid, path));
@@ -786,11 +814,12 @@ fn build_snapshot(engine: &CoreState, show_all_system: bool) -> ScanSnapshot {
 /// 메인 조회와 즐겨찾기 조회는 각각 독립된 상태를 사용한다.
 pub fn kick_off_scan(
     slot: &mut PortScanState,
+    presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     ctx: &egui::Context,
     show_all_system: bool,
 ) {
-    let snapshot = build_snapshot(engine, show_all_system);
+    let snapshot = build_snapshot(engine, presentation, show_all_system);
     let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
     let scope = scope_from_flag(show_all_system);
     *slot = PortScanState::Loading { rx, scope };
@@ -907,13 +936,13 @@ fn build_favorite_rows(
 
 /// Drain a pending result from the channel for both scan slots (main +
 /// favorites). No-op for a slot that isn't `Loading`.
-pub fn poll_scan(state: &mut AppState) {
+pub fn poll_scan(state: &mut MainViewState) {
     poll_state(&mut state.port_scan);
     poll_state(&mut state.port_favorites_scan);
 }
 
 /// Pure state-machine step on `PortScanState` — exposed so unit tests can
-/// drive the transition without building an `AppState`.
+/// drive the transition without building an `MainViewState`.
 fn poll_state(state: &mut PortScanState) {
     if let PortScanState::Loading { rx, scope } = state {
         match rx.try_recv() {
@@ -934,7 +963,7 @@ fn poll_state(state: &mut PortScanState) {
 
 /// Pure view: draws the popup body from `props` and reports intent.
 ///
-/// No `AppState` / `CoreState` / global `theme::theme()` access. Safe to call
+/// No `MainViewState` / `CoreState` / global `theme::theme()` access. Safe to call
 /// from a gallery with mock props.
 pub fn draw_port_scanner_view(
     ui: &mut egui::Ui,

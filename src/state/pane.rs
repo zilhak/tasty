@@ -2,9 +2,9 @@ use crate::core::CoreState;
 #[cfg(test)]
 use crate::model::SplitDirection;
 
-use super::AppState;
+use super::RequestContext;
 
-impl AppState {
+impl RequestContext {
     /// 닫을 대상 중 hard 점유된 surface가 있으면 true를 반환해 요청을 거절한다.
     /// 종료된 PTY의 사후 정리에는 적용하지 않는다. 그 경로까지 막으면 surface가 남는다.
     /// 로컬 사용자는 점유 해제 버튼으로 먼저 연결을 끊을 수 있다.
@@ -299,12 +299,8 @@ impl AppState {
                 }
             }
             CascadeLevel::Workspace => {
-                if let Some((removed_idx, workspace_id)) = *workspace_purged {
-                    self.fix_workspace_pointers_after_removal(
-                        &engine,
-                        removed_idx,
-                        engine.workspaces.len(),
-                    );
+                if let Some((_, workspace_id)) = *workspace_purged {
+                    self.reconcile_presentation(&engine);
                     self.after_workspace_removed(engine, workspace_id, PATH);
                 }
                 let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
@@ -321,7 +317,7 @@ impl AppState {
 }
 
 #[cfg(test)]
-impl AppState {
+impl RequestContext {
     /// 시험 준비용 직접 분할. 제품 코드는 Core의 DomainIntent::SplitPane을 사용한다.
     pub(crate) fn test_split_pane(
         &mut self,
@@ -369,7 +365,7 @@ impl AppState {
 }
 
 #[cfg(feature = "gui")]
-impl AppState {
+impl RequestContext {
     pub(crate) fn observe_tutorial_surface_split(
         &mut self,
         engine: &CoreState,

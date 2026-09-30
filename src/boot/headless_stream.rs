@@ -6,15 +6,24 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::state::AppState;
+use crate::state::RequestContext;
 use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
 
-pub(crate) fn handle_stream_ready(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
+pub(crate) fn handle_stream_ready(
+    app: &mut App,
+    state: &mut RequestContext,
+    engine: &mut CoreState,
+) {
     let mut outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
     apply(app, state, engine, &mut outcome);
 }
 
-fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply(
+    app: &mut App,
+    state: &mut RequestContext,
+    engine: &mut CoreState,
+    outcome: &mut PumpOutcome,
+) {
     if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty() {
         super::headless_plugins::ensure_plugin_manager(app, engine);
     }
@@ -32,7 +41,7 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
     // 직접 구조 op 외의 변경도 점유 client에 전달한다.
-    state.navigation.reconcile(&engine.workspaces);
+    state.reconcile_presentation(engine);
     engine.refresh_attach_presentation(&state.navigation);
     engine.push_structure_changes();
 }
@@ -46,7 +55,18 @@ fn apply_attach_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
     }
 }
 
-fn apply_input_frames(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_input_frames(
+    #[cfg_attr(
+        not(debug_assertions),
+        expect(
+            unused_variables,
+            reason = "only the debug echo of unrouted input writes to the stream hub"
+        )
+    )]
+    app: &mut App,
+    engine: &mut CoreState,
+    outcome: &mut PumpOutcome,
+) {
     for (client_id, bytes) in std::mem::take(&mut outcome.input_frames) {
         // workspace 입력은 surface ID로 나누고 단일 surface 입력은 그대로 전달한다.
         let routed = if engine.attach.client_holds_workspace(client_id) {
@@ -72,7 +92,7 @@ fn apply_input_frames(app: &mut App, engine: &mut CoreState, outcome: &mut PumpO
 
 fn apply_structural_ops(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     outcome: &mut PumpOutcome,
 ) {

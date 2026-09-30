@@ -11,7 +11,7 @@ const PRESET_ROW_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::intent::Intent;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 
@@ -41,7 +41,7 @@ pub enum ApplyPresetAction {
 /// 팝업이 닫힐 때 선택과 대상 카테고리를 비운다. 세 종류 팝업이 공유한다.
 pub fn on_close_apply_preset_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.dialogs.preset_picker_selected = None;
@@ -50,7 +50,7 @@ pub fn on_close_apply_preset_popup(
 
 pub fn draw_apply_workspace_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Workspace)
@@ -58,7 +58,7 @@ pub fn draw_apply_workspace_popup(
 
 pub fn draw_apply_tab_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Tab)
@@ -66,7 +66,7 @@ pub fn draw_apply_tab_popup(
 
 pub fn draw_apply_pane_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Pane)
@@ -74,7 +74,7 @@ pub fn draw_apply_pane_popup(
 
 fn draw_apply_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
     kind: PresetKind,
 ) -> PopupAction {

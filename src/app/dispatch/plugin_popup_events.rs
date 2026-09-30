@@ -1,12 +1,12 @@
 //! 플러그인 popup·banner의 닫기 요청과 포커스 변경을 전달한다.
 
 use crate::app::App;
-use crate::state::{AppState, FilePickerResult};
+use crate::state::{FilePickerResult, MainViewState};
 
 /// 부모 popup이 닫히면 자식 피커를 취소한다. 데이터를 지우지 않고 결과를 채워
 /// 기존 결과 처리 경로가 요청한 플러그인에 취소를 알릴 수 있게 한다.
 pub(crate) fn cancel_child_file_picker(
-    state: &mut AppState,
+    state: &mut MainViewState,
     closed: &[(u64, tasty_plugin_protocol::PopupCloseReason)],
 ) {
     let Some(data) = state.dialogs.file_picker.as_mut() else {

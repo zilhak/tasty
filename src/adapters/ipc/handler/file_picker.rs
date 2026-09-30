@@ -9,7 +9,7 @@ use serde_json::json;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use crate::state::{AppState, FilePickerRequester};
+use crate::state::{FilePickerRequester, RequestContext};
 
 /// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64, start_dir?: string,
 /// origin_surface_id?: u32 }` 요청.
@@ -34,7 +34,7 @@ struct FilePickerTriggerReq {
 }
 
 pub fn handle_trigger(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: serde_json::Value,
@@ -93,13 +93,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tasty_memory::MemoryStorage;
 
-    fn make_test_state() -> (AppState, crate::core::CoreState) {
+    fn make_test_state() -> (RequestContext, crate::core::CoreState) {
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
         let preset_store = Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let state = AppState::new(&mut engine, preset_store, memory);
+        let state = RequestContext::new(&mut engine, preset_store, memory);
         (state, engine)
     }
 

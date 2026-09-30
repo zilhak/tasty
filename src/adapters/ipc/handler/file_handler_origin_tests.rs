@@ -38,7 +38,7 @@ fn dispatch_through(
 type DispatchOutcome = (
     FileDispatchOrigin,
     bool,
-    crate::state::AppState,
+    crate::state::RequestContext,
     crate::core::CoreState,
     u32,
 );
@@ -251,7 +251,7 @@ struct Attempt {
 }
 
 impl Attempt {
-    fn record(&self, state: &mut crate::state::AppState, sid: u32) {
+    fn record(&self, state: &mut crate::state::RequestContext, sid: u32) {
         crate::plugin_bridge::user_navigation::record(
             &mut state.webview_user_navigations,
             sid,

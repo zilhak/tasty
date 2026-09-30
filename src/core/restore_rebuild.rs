@@ -38,6 +38,7 @@ impl RebuildResult {
 pub(crate) fn rebuild_surface(
     engine: &mut CoreState,
     closed: ClosedPanel,
+    presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<RebuildResult> {
     match closed {
         ClosedPanel::Terminal(surface) => {
@@ -48,7 +49,7 @@ pub(crate) fn rebuild_surface(
             layout,
             focused_surface: _,
         } => {
-            let rebuilt_layout = rebuild_surface_layout(engine, layout)?;
+            let rebuilt_layout = rebuild_surface_layout(engine, layout, presentation)?;
             let first_id = rebuilt_layout.first_surface_id().unwrap_or(0);
             Some(RebuildResult::Layout(rebuilt_layout, first_id))
         }
@@ -162,6 +163,7 @@ pub(crate) fn rebuild_surface_node(
 pub(crate) fn rebuild_surface_layout(
     engine: &mut CoreState,
     closed: ClosedSurfaceLayout,
+    presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<SurfaceLayout> {
     match closed {
         ClosedSurfaceLayout::Single(surface) => {
@@ -174,14 +176,16 @@ pub(crate) fn rebuild_surface_layout(
             first,
             second,
         } => {
-            let first = rebuild_surface_layout(engine, *first)?;
-            let second = rebuild_surface_layout(engine, *second)?;
+            let first = rebuild_surface_layout(engine, *first, presentation)?;
+            let second = rebuild_surface_layout(engine, *second, presentation)?;
+            let node_id = crate::model::SplitNodeId::allocate();
+            presentation.split_hints.insert(node_id, false);
             Some(SurfaceLayout::Split {
                 direction,
                 ratio,
                 first: Box::new(first),
                 second: Box::new(second),
-                focus_second: false,
+                node_id,
             })
         }
     }
@@ -223,7 +227,7 @@ pub(crate) fn rebuild_pane(
     let pane_id = engine.next_ids.next_pane();
     let mut tabs = Vec::new();
     for closed_tab in closed.tabs {
-        let result = rebuild_surface(engine, closed_tab.panel)?;
+        let result = rebuild_surface(engine, closed_tab.panel, presentation)?;
         let tab_id = engine.next_ids.next_tab();
         let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
         tabs.push(result.into_tab(tab_id, name, presentation));

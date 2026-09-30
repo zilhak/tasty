@@ -247,7 +247,11 @@ impl CoreState {
 
     /// surface의 workspace 이름과 탭 표시 이름. 트리에 없으면 None이다.
     #[cfg(any(feature = "gui", test))]
-    pub fn surface_display_path(&self, surface_id: u32) -> Option<SurfaceDisplayPath> {
+    pub fn surface_display_path(
+        &self,
+        surface_id: u32,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Option<SurfaceDisplayPath> {
         for workspace in &self.workspaces {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
@@ -255,7 +259,7 @@ impl CoreState {
                         if tab.contains_surface(surface_id) {
                             return Some(SurfaceDisplayPath {
                                 workspace_name: workspace.name.clone(),
-                                tab_name: Some(tab.display_name(Some(surface_id))),
+                                tab_name: Some(tab.display_name(presentation.surface_id(tab))),
                             });
                         }
                     }

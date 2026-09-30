@@ -19,7 +19,7 @@ fn from_preset_split(d: PresetSplitDirection) -> SplitDirection {
     }
 }
 
-use super::AppState;
+use super::RequestContext;
 
 /// focus가 true이면 새 대상을 활성화한다.
 #[derive(Debug, Clone, Copy)]
@@ -67,7 +67,7 @@ impl From<anyhow::Error> for ApplyError {
     }
 }
 
-impl AppState {
+impl RequestContext {
     /// 새 워크스페이스 인덱스를 반환한다. 존재하지 않는 category는 normal로 남는다.
     pub fn apply_workspace_preset(
         &mut self,
@@ -308,12 +308,14 @@ impl AppState {
             } => {
                 let f = self.build_surface_layout(engine, first)?;
                 let s = self.build_surface_layout(engine, second)?;
+                let node_id = crate::model::SplitNodeId::allocate();
+                self.navigation.split_hints.insert(node_id, false);
                 Ok(SurfaceLayout::Split {
                     direction: from_preset_split(*direction),
                     ratio: ratio.clamp(0.05, 0.95),
                     first: Box::new(f),
                     second: Box::new(s),
-                    focus_second: false,
+                    node_id,
                 })
             }
         }
@@ -491,7 +493,7 @@ mod tests {
         assert!(PresetFieldSpec::derive_cwd(&fields, &json!({})).is_none());
     }
 
-    fn test_state() -> (crate::state::AppState, CoreState) {
+    fn test_state() -> (crate::state::RequestContext, CoreState) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = CoreState::new(80, 24, waker).expect("CoreState::new");
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
@@ -501,7 +503,7 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
             ));
-        let state = crate::state::AppState::new(&mut engine, preset_store, memory);
+        let state = crate::state::RequestContext::new(&mut engine, preset_store, memory);
         (state, engine)
     }
 

@@ -15,6 +15,7 @@ impl Core {
         engine.pending_move = None;
 
         let noop = || CoreEvent::MoveSurfaceApplied {
+            replacement: None,
             moved: false,
             b_cleanup: None,
             cascade_level: CascadeLevel::Surface,
@@ -76,6 +77,7 @@ impl Core {
         // 호출자의 moved 검사 때문에 이 정보로 후속 정리가 실행되지 않을 수 있다.
         let fail =
             |closed_tab_ids: &[u32], closed_pane_ids: &[u32]| CoreEvent::MoveSurfaceApplied {
+                replacement: None,
                 moved: false,
                 b_cleanup: None,
                 cascade_level,
@@ -107,6 +109,7 @@ impl Core {
         engine.refresh_tab_osc_title(source_id);
 
         CoreEvent::MoveSurfaceApplied {
+            replacement: Some((target_id, source_id)),
             moved: true,
             b_cleanup: Some((target_id, b_persist)),
             cascade_level,

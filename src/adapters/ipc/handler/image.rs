@@ -94,13 +94,13 @@ fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Valu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
+    use crate::state::RequestContext;
 
     // TempDir을 유지해야 시험 도중 파일이 사라지지 않는다.
     // 플러그인을 실행하지 않으므로 image kind는 시험에서 직접 등록한다.
     fn make_test_core_state() -> (
         crate::core::Core,
-        AppState,
+        RequestContext,
         crate::core::CoreState,
         tempfile::TempDir,
     ) {
@@ -125,7 +125,7 @@ mod tests {
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
         let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
 
-        let state = AppState::new(&mut engine, preset_store.clone(), memory.clone());
+        let state = RequestContext::new(&mut engine, preset_store.clone(), memory.clone());
         let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
             "kind": "image",
             "display_name_i18n_key": "surface.kind.image",
@@ -161,7 +161,7 @@ mod tests {
         (core, state, engine, home_tmp)
     }
 
-    fn first_surface_id(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
+    fn first_surface_id(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
         let ws_ids: std::collections::HashSet<u32> = state
             .active_workspace_mut(engine)
             .all_surface_ids()

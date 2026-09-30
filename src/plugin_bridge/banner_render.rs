@@ -12,12 +12,12 @@ use crate::adapters::ui::PluginBannerCloseKind;
 use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::wire_scroll;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 호스트에서 닫힌 배너와 플러그인 매니저에서 사라진 배너를 양쪽에 반영한다.
 pub fn draw_plugin_banners(
     ctx: &Context,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
 ) {
@@ -82,7 +82,7 @@ pub fn draw_plugin_banners(
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
         // 입력이나 크기 변경 없이 요청한 repaint도 처리한다.
-        // fwd를 가변 차용하기 전에 AppState의 요청 집합에서 꺼낸다.
+        // fwd를 가변 차용하기 전에 RequestContext의 요청 집합에서 꺼낸다.
         let need_repaint = state
             .plugin_mesh_banner_pending_repaint
             .remove(&slot.instance_id);

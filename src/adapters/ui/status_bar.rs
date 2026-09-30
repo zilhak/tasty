@@ -7,7 +7,7 @@ use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 use tasty_ui_widgets::{StatusBarAction, StatusBarData, draw_status_bar_view};
 
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::state::branch::HeadState;
 use crate::theme;
 
@@ -27,7 +27,7 @@ pub fn status_bar_bottom_inset(scale_factor: f32) -> PhysicalPx {
 /// 터미널 영역 바로 아래에 상태바를 그리고 반환된 클릭 동작을 처리한다.
 pub fn draw_status_bar(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,

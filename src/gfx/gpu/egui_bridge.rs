@@ -3,7 +3,7 @@ use winit::window::Window;
 use crate::adapters::ui;
 use crate::model::PhysicalRect;
 use crate::settings::EffectiveFont;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 use super::GpuState;
 
@@ -82,7 +82,7 @@ impl GpuState {
     #[allow(clippy::too_many_arguments)] // reason: frame context 전체 전달
     pub(super) fn run_egui_frame(
         &mut self,
-        state: &mut AppState,
+        state: &mut MainViewState,
         engine: &mut crate::core::CoreState,
         window: &Window,
         pane_rects: &[(u32, PhysicalRect)],

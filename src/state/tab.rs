@@ -6,11 +6,11 @@ use serde_json::json;
 #[cfg(any(feature = "gui", debug_assertions))]
 use tasty_model::TabSwitch;
 
-use super::AppState;
+use super::RequestContext;
 #[cfg(any(feature = "gui", debug_assertions, test))]
 use crate::core::CoreState;
 
-impl AppState {
+impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
         // mirror에서는 원격 요청만 큐에 넣으며 로컬 탭을 만들지 않는다.
@@ -293,6 +293,7 @@ impl AppState {
                 self.enqueue_surface_closed(sid, kind, true);
             }
         }
+        self.reconcile_presentation(engine);
         closed
     }
 
@@ -337,7 +338,7 @@ impl AppState {
 }
 
 #[cfg(all(test, feature = "gui"))]
-impl AppState {
+impl RequestContext {
     /// 시험 준비용 Markdown 탭 생성. 제품 경로는 Intent/Core를 사용한다.
     pub(crate) fn test_add_markdown_tab(
         &mut self,
@@ -404,7 +405,7 @@ impl AppState {
 }
 
 #[cfg(feature = "gui")]
-impl AppState {
+impl RequestContext {
     pub(crate) fn observe_tutorial_tab_created(&mut self, engine: &CoreState, pane: u32, tab: u32) {
         if self.tutorial.active.is_none() {
             return;

@@ -851,7 +851,7 @@ mod tests {
             .record_round(tasty_ipc::dispatch::RoundEnd::TimeBudget);
 
         let call = |core: &mut crate::core::Core,
-                    state: &mut crate::state::AppState,
+                    state: &mut crate::state::RequestContext,
                     engine: &mut crate::core::CoreState,
                     method: &str,
                     params: serde_json::Value,

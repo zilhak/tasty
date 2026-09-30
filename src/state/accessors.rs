@@ -3,10 +3,10 @@
 #[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
 
-use super::AppState;
+use super::RequestContext;
 use crate::core::CoreState;
 
-impl AppState {
+impl RequestContext {
     pub(crate) fn active_workspace_index(&self, engine: &CoreState) -> usize {
         self.navigation.workspace_index(&engine.workspaces)
     }
@@ -17,6 +17,7 @@ impl AppState {
         }
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn select_pane(&mut self, engine: &CoreState, pane_id: u32) {
         if let Some(ws) = engine
             .workspaces
@@ -25,6 +26,53 @@ impl AppState {
         {
             self.navigation.select_pane(ws, pane_id);
         }
+    }
+
+    /// Retire presentation entries with their structure. Unlike the old fields
+    /// on domain objects, these maps do not disappear when the objects drop.
+    pub(crate) fn reconcile_presentation(&mut self, engine: &CoreState) {
+        self.navigation.reconcile(&engine.workspaces);
+        self.navigation
+            .collapsed_categories
+            .retain(|id| engine.categories().iter().any(|c| c.id == *id));
+        #[cfg(any(feature = "gui", debug_assertions, test))]
+        self.category_last_active.retain(|category, workspace| {
+            engine
+                .workspaces
+                .iter()
+                .any(|ws| ws.id == *workspace && ws.category == *category)
+        });
+        #[cfg(feature = "gui")]
+        self.tab_bar_scroll
+            .retain(|id, _| engine.find_pane_by_id(*id).is_some());
+    }
+
+    pub(crate) fn apply_structure_result(
+        &mut self,
+        engine: &CoreState,
+        event: &crate::core::intent::CoreEvent,
+    ) {
+        use crate::core::intent::CoreEvent;
+        match event {
+            CoreEvent::MoveSurfaceApplied {
+                replacement: Some((removed, replacement)),
+                ..
+            } => self.navigation.replace_surface(*removed, *replacement),
+            CoreEvent::ContainerMoveApplied {
+                replaced_tab,
+                replaced_pane,
+                ..
+            } => {
+                if let Some((removed, replacement)) = replaced_tab {
+                    self.navigation.replace_tab(*removed, *replacement);
+                }
+                if let Some((removed, replacement)) = replaced_pane {
+                    self.navigation.replace_pane(*removed, *replacement);
+                }
+            }
+            _ => {}
+        }
+        self.reconcile_presentation(engine);
     }
 
     /// Invariant: caller must ensure `engine.workspaces` is non-empty.
@@ -41,7 +89,7 @@ impl AppState {
         &engine.workspaces[idx]
     }
 
-    #[cfg(any(feature = "gui", debug_assertions, test))]
+    #[cfg(any(feature = "gui", test))]
     pub fn active_workspace_mut<'a>(
         &self,
         engine: &'a mut CoreState,
@@ -104,7 +152,6 @@ impl AppState {
         engine.runtime.terminals.get_mut(id)
     }
 
-    #[cfg(feature = "gui")]
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.navigation
             .pane_id(self.active_workspace(engine))

@@ -106,7 +106,7 @@ fn emit_file_picker_result(
 /// 원격 파일을 내려받지 않고 선택한 경로만 복사한다.
 fn apply_remote_confirm(
     core: &crate::core::Core,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     paths: &[String],
 ) {
     let joined = paths.join("\n");

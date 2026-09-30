@@ -99,7 +99,7 @@ pub enum PendingNativeMenu {
     },
 }
 
-/// 대화상자·팝업의 임시 상태. 새 항목은 AppState 최상위 대신 여기에 둔다.
+/// 대화상자·팝업의 임시 상태. 새 항목은 RequestContext 최상위 대신 여기에 둔다.
 pub struct DialogState {
     pub(crate) rename: Option<(RenameTarget, String)>,
     /// 마우스 캡처 배너 메뉴의 대상 surface ID.

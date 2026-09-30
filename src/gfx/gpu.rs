@@ -20,7 +20,7 @@ use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::stall_watchdog;
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 pub struct ImePreeditState {
     pub text: String,
@@ -346,7 +346,7 @@ impl GpuState {
     #[allow(clippy::too_many_arguments)] // reason: 프레임 렌더 컨텍스트 전체
     pub fn render(
         &mut self,
-        state: &mut AppState,
+        state: &mut MainViewState,
         engine: &mut crate::core::CoreState,
         window: &Window,
         preedit: Option<&ImePreeditState>,
@@ -593,7 +593,7 @@ impl GpuState {
     /// None이면 egui가 정한 커서를 그대로 둔다.
     fn resolve_cursor_icon(
         &self,
-        state: &AppState,
+        state: &MainViewState,
         engine: &crate::core::CoreState,
         terminal_rect: PhysicalRect,
         link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
@@ -626,7 +626,7 @@ impl GpuState {
     /// 배경 콘텐츠 대신 전체화면 무대를 그린다. 창 캡처와 present는 이 경로에서도 처리한다.
     fn render_fullscreen_stage(
         &mut self,
-        state: &mut AppState,
+        state: &mut MainViewState,
         engine: &mut crate::core::CoreState,
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -671,7 +671,7 @@ impl GpuState {
     fn apply_platform_output(
         &mut self,
         window: &Window,
-        state: &AppState,
+        state: &MainViewState,
         platform_output: egui::PlatformOutput,
     ) {
         self.egui_state.set_allow_ime(false);
@@ -723,7 +723,7 @@ impl GpuState {
 
     fn prepare_layout(
         &self,
-        state: &AppState,
+        state: &MainViewState,
         engine: &crate::core::CoreState,
         terminal_rect: PhysicalRect,
     ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {

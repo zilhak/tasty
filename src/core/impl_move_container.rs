@@ -15,6 +15,8 @@ struct SourceDetached {
 
 fn container_move_noop() -> CoreEvent {
     CoreEvent::ContainerMoveApplied {
+        replaced_tab: None,
+        replaced_pane: None,
         moved: false,
         cleanup_targets: vec![],
         cascade_level: CascadeLevel::Tab,
@@ -29,6 +31,8 @@ fn container_move_noop() -> CoreEvent {
 /// source를 떼고 난 뒤 target을 잃은 경우. 이미 바뀐 구조 정보는 싣되 moved=false라 정리는 실행되지 않는다.
 fn container_move_failed(detached: SourceDetached) -> CoreEvent {
     CoreEvent::ContainerMoveApplied {
+        replaced_tab: None,
+        replaced_pane: None,
         moved: false,
         cleanup_targets: vec![],
         cascade_level: detached.cascade_level,
@@ -93,6 +97,8 @@ impl Core {
         }
 
         CoreEvent::ContainerMoveApplied {
+            replaced_tab: Some((target_tab_id, source_tab_id)),
+            replaced_pane: None,
             moved: true,
             cleanup_targets,
             cascade_level: detached.cascade_level,
@@ -163,6 +169,8 @@ impl Core {
         engine.mark_layout_dirty();
 
         CoreEvent::ContainerMoveApplied {
+            replaced_tab: None,
+            replaced_pane: Some((target_pane_id, source_pane_id)),
             moved: true,
             cleanup_targets,
             cascade_level: detached.cascade_level,
@@ -585,7 +593,7 @@ mod move_container_tests {
     fn run_move_and_collect_host_events(
         source_tab: u32,
         target_tab: u32,
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::RequestContext,
         engine: &mut CoreState,
     ) -> Vec<crate::state::PendingHostEvent> {
         use crate::app::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};

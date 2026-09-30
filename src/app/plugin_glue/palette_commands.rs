@@ -1,4 +1,4 @@
-//! PopupDef는 PluginManager에 직접 접근할 수 없어 팔레트 명령 목록을 AppState에 복사한다.
+//! PopupDef는 PluginManager에 직접 접근할 수 없어 팔레트 명령 목록을 MainViewState에 복사한다.
 
 use crate::app::App;
 

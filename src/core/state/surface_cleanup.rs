@@ -101,7 +101,7 @@ impl CoreState {
         crate::close_trace::log_ws_purge(t, path);
     }
 
-    /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 AppState와 같은 정책으로 복구한다.
+    /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 RequestContext와 같은 정책으로 복구한다.
     fn with_memory<R>(&self, f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R) -> R {
         let mut guard = crate::poison::recover_mutex(
             self.memory.lock(),

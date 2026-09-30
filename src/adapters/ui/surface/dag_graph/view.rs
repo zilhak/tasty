@@ -264,7 +264,7 @@ impl DagGraphView {
     }
 }
 
-/// surface id 로 keying 하는 뷰 스토어. `AppState` 가 보유한다.
+/// surface id 로 keying 하는 뷰 스토어. `MainViewState` 가 보유한다.
 #[derive(Default)]
 pub struct DagGraphViewStore {
     views: HashMap<SurfaceId, DagGraphView>,

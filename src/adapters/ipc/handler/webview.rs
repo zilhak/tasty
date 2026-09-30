@@ -132,7 +132,7 @@ mod tests {
 
     /// 포커스를 유지한 채 형제 surface를 추가한다. 실제 PTY를 만들지 않고 모델 변경만 재현한다.
     fn split_in_kind_surface(
-        state: &crate::state::AppState,
+        state: &crate::state::RequestContext,
         engine: &mut crate::core::CoreState,
         target_surface_id: u32,
         kind: &str,
@@ -152,7 +152,10 @@ mod tests {
         new_sid
     }
 
-    fn focused_surface_id(state: &crate::state::AppState, engine: &crate::core::CoreState) -> u32 {
+    fn focused_surface_id(
+        state: &crate::state::RequestContext,
+        engine: &crate::core::CoreState,
+    ) -> u32 {
         let ws = &engine.workspaces[state.active_workspace_index(&engine)];
         let pane = ws
             .pane_layout()

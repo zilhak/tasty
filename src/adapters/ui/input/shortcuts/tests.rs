@@ -281,7 +281,7 @@ fn option_binding_never_matches_on_non_macos() {
     assert!(!matches_binding("option+t", &key, mods_none()));
 }
 
-fn fresh_state() -> (crate::state::AppState, crate::core::CoreState) {
+fn fresh_state() -> (crate::state::MainViewState, crate::core::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
@@ -291,7 +291,7 @@ fn fresh_state() -> (crate::state::AppState, crate::core::CoreState) {
         std::sync::Arc::new(std::sync::Mutex::new(
             tasty_memory::testing::InMemoryStorage::new(),
         ));
-    let state = crate::state::AppState::new(&mut engine, preset_store, memory);
+    let state = crate::state::MainViewState::new(&mut engine, preset_store, memory);
     (state, engine)
 }
 
@@ -381,7 +381,10 @@ fn zoom_out_clamps_at_6px() {
 
 // 사용자 설정과 무관하게 기본 quick-switch 설정을 사용한다.
 
-fn add_test_workspace(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
+fn add_test_workspace(
+    state: &mut crate::state::MainViewState,
+    engine: &mut crate::core::CoreState,
+) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         crate::core::WorkspaceCreationParams::terminal(),

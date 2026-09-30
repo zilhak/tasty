@@ -244,7 +244,7 @@ impl DropTailCounters {
 #[cfg(not(feature = "gui"))]
 fn run_due_timers(
     app: &mut crate::app::App,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
 ) {
     use std::time::Instant;
@@ -287,7 +287,7 @@ fn run_due_timers(
 #[cfg(not(feature = "gui"))]
 fn handle_terminal_output(
     app: &mut crate::app::App,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     id: Option<u32>,
 ) {
@@ -322,7 +322,7 @@ fn handle_terminal_output(
 #[cfg(not(feature = "gui"))]
 fn fire_terminal_hooks(
     app: &crate::app::App,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     events: Vec<crate::core::intent::CoreEvent>,
 ) {
@@ -473,7 +473,7 @@ fn wait_for_event(
 #[cfg(not(feature = "gui"))]
 fn dispatch_headless_event(
     app: &mut crate::app::App,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     waker: &crate::adapters::production::headless_waker::HeadlessWaker,
     event: crate::AppEvent,
@@ -537,7 +537,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let mut engine = bootstrap_engine(&mut app, &boot_settings, &waker)?;
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
-    let mut state = crate::state::AppState::new(&mut engine, preset_store, memory);
+    let mut state = crate::state::CommandContext::new(&mut engine, preset_store, memory);
 
     hooks::lua::fire(
         app.lua_engine.as_ref(),

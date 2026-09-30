@@ -1,18 +1,18 @@
-//! IPC의 IpcWindow 요청을 AppState의 창 연산에 연결한다.
+//! IPC의 IpcWindow 요청을 RequestContext의 창 연산에 연결한다.
 
 use std::path::PathBuf;
 
-use super::AppState;
+use super::RequestContext;
 use crate::adapters::ipc::window_port::{IntentOutbox, IpcWindow};
 use crate::core::CoreState;
 
-impl IpcWindow for AppState {
+impl IpcWindow for RequestContext {
     fn active_workspace_index(&self, engine: &CoreState) -> usize {
         self.active_workspace_index(&engine)
     }
 
     fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf> {
-        AppState::resolve_inherit_cwd(self, engine)
+        RequestContext::resolve_inherit_cwd(self, engine)
     }
 
     fn cascade_workspace_created(
@@ -46,15 +46,11 @@ impl IpcWindow for AppState {
         ws_idx: usize,
         origin: super::WorkspaceCloseOrigin,
     ) -> bool {
-        AppState::close_workspace_at(self, engine, ws_idx, origin)
-    }
-
-    fn fix_workspace_pointers_after_move(&mut self, engine: &CoreState, from: usize, to: usize) {
-        crate::app::dispatch_domain::cascade_workspace_moved(self, engine, from, to);
+        RequestContext::close_workspace_at(self, engine, ws_idx, origin)
     }
 
     fn push_host_event(&mut self, event: super::PendingHostEvent) {
-        AppState::enqueue_host_event(self, event);
+        RequestContext::enqueue_host_event(self, event);
     }
 
     fn recent_files(&self, kind: &str) -> Vec<String> {

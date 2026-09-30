@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::AppState;
+use super::RequestContext;
 use crate::core::CoreState;
 
 /// 브랜치 이름과 detached SHA를 구분한다. 표시용 접두사는 상태바가 붙인다.
@@ -20,7 +20,7 @@ pub(crate) struct BranchCache {
     branch: Option<HeadState>,
 }
 
-impl AppState {
+impl RequestContext {
     /// cwd가 같아도 checkout 결과가 바뀔 수 있어 다시 읽는다.
     /// 대상 ID 또는 HEAD 값이 바뀌었으면 true이며 호출자가 redraw에 반영한다.
     pub(crate) fn refresh_status_bar_branch(

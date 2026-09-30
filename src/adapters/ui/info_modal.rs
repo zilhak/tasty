@@ -6,7 +6,7 @@
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{ButtonVariant, InfoModalView};
@@ -25,7 +25,7 @@ pub enum InfoModalButtonAction {
     /// 채로 남고 [확인]으로만 닫힌다. 설정 창은 별도 창이라 안내를 가릴 수 있어서, 창을
     /// 닫은 뒤에도 무엇을 왜 허용해야 하는지 다시 읽을 수 있어야 하기 때문이다.
     ///
-    /// 팝업을 그리는 코드는 `AppState`만 가지고 있어 winit 이벤트 루프에 접근할 수 없다.
+    /// 팝업을 그리는 코드는 `MainViewState`만 가지고 있어 winit 이벤트 루프에 접근할 수 없다.
     /// 그래서 `dialogs.permission_settings_requested`만 표시해 두고 App 계층이 이를 읽어
     /// 창을 연다.
     // 이유: 이 값을 만드는 곳이 macOS 전용 안내 하나뿐이라 다른 OS 빌드에는 생성처가 없다.
@@ -56,7 +56,7 @@ pub struct InfoModal {
 pub const INFO_MODAL_ID: &str = "info_modal";
 
 /// 안내를 큐에 추가한다. 부팅 안내는 에이전트 요청이 아니므로 사용자 입력을 받는 팝업으로 연다.
-pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
+pub fn show_info_modal(state: &mut MainViewState, modal: InfoModal) {
     state.dialogs.info_modal_queue.push_back(modal);
     state.dispatch_intent(
         crate::intent::UiIntent::OpenPopup {
@@ -67,7 +67,7 @@ pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
     );
 }
 
-pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
+pub fn info_modal_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
     state
         .dialogs
         .info_modal_queue
@@ -78,7 +78,7 @@ pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> S
 
 /// 셸 높이는 직전 프레임에 잰 본문 높이로 정한다. 처음 여는 프레임은 아직 잰 값이 없어
 /// 글자 수로 줄 수를 어림한다. 어림이 틀려도 다음 프레임에 맞춰진다.
-pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn info_modal_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let th = theme::theme();
     let body_h = state.dialogs.info_modal_body_height.unwrap_or_else(|| {
         let (chars, paragraphs) = state
@@ -102,7 +102,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
 /// 확인 버튼 외의 닫기 경로도 큐를 처리한다. 확인이 이미 큐를 비웠으면 다시 꺼내지 않는다.
 pub fn on_close_info_modal(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
@@ -121,7 +121,7 @@ pub fn on_close_info_modal(
 
 pub fn draw_info_modal(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();

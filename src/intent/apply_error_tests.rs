@@ -5,7 +5,7 @@ use super::*;
 
 fn fixture() -> (
     crate::core::Core,
-    crate::state::AppState,
+    crate::state::RequestContext,
     crate::core::CoreState,
 ) {
     let (state, engine) = crate::state::tests::test_state();
@@ -387,7 +387,7 @@ fn register_recent_probe(engine: &crate::core::CoreState, kind: &str, plugin_id:
 
 fn new_tab_with_file(
     core: &mut crate::core::Core,
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     kind: &str,
     file: &str,

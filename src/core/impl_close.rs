@@ -207,13 +207,13 @@ impl Core {
         presentation: Option<&dyn crate::model::StructurePresentation>,
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
-        if presentation.is_some() {
+        if let Some(presentation) = presentation {
             let tab_name_opt = {
                 let ws = &engine.workspaces[loc.ws_idx];
                 let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
                 let tab = &pane.tabs[loc.tab_idx];
                 if terminal_surface_in_tab(tab, surface_id).is_some() {
-                    Some(tab.display_name(Some(surface_id)))
+                    Some(tab.display_name(presentation.surface_id(tab)))
                 } else {
                     None
                 }

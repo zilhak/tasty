@@ -14,7 +14,7 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -291,7 +291,7 @@ fn is_unknown_kind(kind: &str) -> bool {
 /// 닫을 때 폼·조회 슬롯·필터 초안을 버린다. 적용된 필터는 별도 키에 남긴다.
 pub fn on_close_remote_tool_popup(
     ctx: &egui::Context,
-    _state: &mut AppState,
+    _state: &mut MainViewState,
     _engine: &mut CoreState,
 ) {
     clear_ui(ctx);
@@ -300,7 +300,7 @@ pub fn on_close_remote_tool_popup(
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_tool_popup(
     ui: &mut egui::Ui,
-    _state: &mut AppState,
+    _state: &mut MainViewState,
     _engine: &mut CoreState,
 ) -> PopupAction {
     let th = theme::theme();

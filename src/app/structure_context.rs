@@ -1,5 +1,5 @@
 //! 구조 변경 뒤 필요한 창 상태 갱신·자원 정리·이벤트·튜토리얼 처리를 선언한다.
-//! 도메인이 AppState 타입에 의존하지 않도록 창 쪽에서 이 trait을 구현한다.
+//! 도메인이 RequestContext 타입에 의존하지 않도록 창 쪽에서 이 trait을 구현한다.
 
 use std::path::PathBuf;
 
@@ -8,6 +8,11 @@ use crate::core::CoreState;
 use crate::core::host_event::PendingHostEvent;
 
 pub(crate) trait CascadeWindow {
+    fn apply_structure_result(
+        &mut self,
+        engine: &CoreState,
+        event: &crate::core::intent::CoreEvent,
+    );
     /// Apply a live User continuation using the IDs returned by a structural result.
     fn select_surface_result(&mut self, engine: &CoreState, surface: u32);
     fn select_tab_result(&mut self, engine: &CoreState, pane: u32, tab: u32);
@@ -23,12 +28,7 @@ pub(crate) trait CascadeWindow {
 
     fn set_surface_meta(&self, surface_id: u32, key: &str, value: &str) -> std::io::Result<()>;
 
-    fn fix_workspace_pointers_after_removal(
-        &mut self,
-        engine: &CoreState,
-        removed_idx: usize,
-        remaining: usize,
-    );
+    fn reconcile_presentation(&mut self, engine: &CoreState);
 
     fn set_active_workspace(&mut self, engine: &CoreState, index: usize);
 

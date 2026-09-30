@@ -10,7 +10,7 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 pub const TRANSFER_PROGRESS_POPUP_ID: &str = "transfer_progress";
@@ -72,7 +72,7 @@ pub struct TransferError {
 }
 
 /// 진행 팝업 높이 = header + body(행 N개) + footer. 행 수에 맞춰 딱 맞게(빈 하단 방지).
-pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
+pub fn transfer_progress_sizer(state: &MainViewState, _e: &CoreState) -> egui::Vec2 {
     let n = state
         .dialogs
         .transfer_progress
@@ -95,7 +95,7 @@ pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
 }
 
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
-pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
+pub fn transfer_error_sizer(state: &MainViewState, _e: &CoreState) -> egui::Vec2 {
     let th = theme::theme();
     let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
     let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
@@ -121,7 +121,7 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
 /// 닫을 때 진행 표시 상태를 비운다. 전송 자체를 중단하는 훅은 아니다.
 pub fn on_close_transfer_progress(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut CoreState,
 ) {
     state.dialogs.transfer_progress = None;
@@ -131,7 +131,7 @@ pub fn on_close_transfer_progress(
 /// determinate bar + done/total·rate) → ghost Cancel. 행이 없으면 self-close.
 pub fn draw_transfer_progress(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut CoreState,
 ) -> PopupAction {
     let th = theme::theme();
@@ -188,7 +188,7 @@ pub fn draw_transfer_progress(
 /// 처리하고 다음 실패를 표시한다.
 pub fn on_close_transfer_error(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut CoreState,
 ) {
     if state.dialogs.transfer_error.is_empty() {
@@ -205,7 +205,7 @@ pub fn on_close_transfer_error(
 /// /(전송 중 실패만)Retry. Esc/scrim = Dismiss. 큐가 비면 self-close.
 pub fn draw_transfer_error(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut CoreState,
 ) -> PopupAction {
     let th = theme::theme();

@@ -10,7 +10,7 @@ pub enum TabSwitch {
     AlreadyActive,
     /// 대상 인덱스가 범위 밖이다. 실제 탭 수를 함께 반환한다.
     OutOfRange { tabs: usize },
-    /// 포커스된 pane 이 없어 물음이 성립하지 않는다. [`Pane::goto_tab`] 은 이 갈래를
+    /// 포커스된 pane 이 없어 물음이 성립하지 않는다. View의 탭 전환 은 이 갈래를
     /// 내지 않는다 — pane 을 찾아 주는 바깥 층이 더한다.
     NoPane,
 }
@@ -208,7 +208,7 @@ impl Pane {
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let mut t = tab.to_tree_json(presentation.surface_id(tab));
+                let mut t = tab.to_tree_json(presentation);
                 t["active"] = serde_json::json!(i == presentation.tab_index(self));
                 t
             })
@@ -234,7 +234,7 @@ impl Pane {
             .map(|(i, tab)| {
                 let layout = tab
                     .layout_if_initialized()
-                    .map(|l| l.to_tree_json_full())
+                    .map(|l| l.to_tree_json_full(presentation))
                     .unwrap_or(serde_json::Value::Null);
                 serde_json::json!({
                     "id": tab.id,
@@ -253,137 +253,23 @@ impl Pane {
 }
 
 #[cfg(test)]
-mod goto_tab_branch_tests {
-    //! 변경 없음과 대상 부재를 서로 다른 결과로 반환하는지 확인한다.
+mod tests {
     use super::*;
 
-    /// 탭 3 개(id 10/11/12). `active_tab` 은 호출자가 정한다.
-    fn pane_with_three_tabs(active: usize) -> Pane {
+    #[test]
+    fn structural_removal_and_reorder_preserve_remaining_tab_ids() {
         let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
         pane.add_terminal_marker_tab(11, 101);
         pane.add_terminal_marker_tab(12, 102);
-        pane.active_tab = active;
-        pane
-    }
-
-    #[test]
-    fn moving_to_another_tab_switches() {
-        let mut pane = pane_with_three_tabs(0);
-        assert_eq!(pane.goto_tab(2), TabSwitch::Switched);
-        assert_eq!(pane.active_tab, 2, "전환됐다면 활성 탭이 따라가야 한다");
-    }
-
-    #[test]
-    fn moving_to_the_tab_already_shown_is_not_an_error() {
-        let mut pane = pane_with_three_tabs(1);
+        assert!(pane.move_tab(0, 2));
         assert_eq!(
-            pane.goto_tab(1),
-            TabSwitch::AlreadyActive,
-            "이미 보고 있는 탭으로 가는 것은 정상이다 — 바뀔 것이 없을 뿐이다"
+            pane.tabs.iter().map(|t| t.id).collect::<Vec<_>>(),
+            [11, 12, 10]
         );
-        assert_eq!(pane.active_tab, 1);
-    }
-
-    #[test]
-    fn an_index_past_the_end_is_out_of_range_and_says_how_many_there_are() {
-        let mut pane = pane_with_three_tabs(0);
-        assert_eq!(
-            pane.goto_tab(3),
-            TabSwitch::OutOfRange { tabs: 3 },
-            "탭 수를 함께 실어야 호출자가 자기 인덱스를 의심할지 대상을 의심할지 가른다"
-        );
-        assert_eq!(
-            pane.active_tab, 0,
-            "실패한 전환이 활성 탭을 움직이면 안 된다"
-        );
-    }
-
-    #[test]
-    fn already_active_and_out_of_range_are_told_apart() {
-        let mut already = pane_with_three_tabs(0);
-        let mut past_end = pane_with_three_tabs(0);
-        assert_ne!(
-            already.goto_tab(0),
-            past_end.goto_tab(9),
-            "안 바뀌었다와 못 바꾼다가 같은 값으로 나가면 실패문이 거짓말을 한다"
-        );
-    }
-}
-
-#[cfg(test)]
-mod tab_removal_focus_tests {
-    //! 탭 제거 뒤에도 같은 탭을 보고 있는지 ID로 확인한다. 앞쪽 탭을 지우면 인덱스는 달라진다.
-    use super::*;
-
-    /// 탭 3 개(id 10/11/12)를 가진 pane. `active_tab` 은 호출자가 정한다.
-    fn pane_with_three_tabs(active: usize) -> Pane {
-        let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
-        pane.add_terminal_marker_tab(11, 101);
-        pane.add_terminal_marker_tab(12, 102);
-        pane.active_tab = active;
-        pane
-    }
-
-    fn active_tab_id(pane: &Pane) -> TabId {
-        pane.tabs[pane.active_tab].id
-    }
-
-    #[test]
-    fn removing_an_earlier_tab_keeps_the_same_tab_active() {
-        let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
-        pane.remove_tab(0);
-        assert_eq!(
-            active_tab_id(&pane),
-            11,
-            "앞쪽 탭 제거가 보던 탭을 바꾸면 안 된다"
-        );
-    }
-
-    #[test]
-    fn removing_a_later_tab_keeps_the_same_tab_active() {
-        let mut pane = pane_with_three_tabs(1);
-        pane.remove_tab(2);
-        assert_eq!(active_tab_id(&pane), 11);
-    }
-
-    #[test]
-    fn removing_the_active_tab_lands_on_the_tab_that_slid_in() {
-        let mut pane = pane_with_three_tabs(1);
-        pane.remove_tab(1);
-        assert_eq!(
-            active_tab_id(&pane),
-            12,
-            "보던 탭 자체를 닫으면 그 자리로 밀려 들어온 탭으로 간다"
-        );
-    }
-
-    #[test]
-    fn removing_the_active_last_tab_falls_back_to_the_previous_one() {
-        let mut pane = pane_with_three_tabs(2);
-        pane.remove_tab(2);
-        assert_eq!(active_tab_id(&pane), 11);
-    }
-
-    #[test]
-    fn close_tab_by_index_preserves_the_active_tab() {
-        // 마지막 탭이면 단순 범위 보정도 같은 결과가 되므로 가운데 탭을 선택한다.
-        let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
-        assert!(pane.close_tab(0));
-        assert_eq!(active_tab_id(&pane), 11);
-    }
-
-    #[test]
-    fn close_tab_by_id_preserves_the_active_tab() {
-        let mut pane = pane_with_three_tabs(1);
-        assert!(pane.close_tab_by_id(10));
-        assert_eq!(active_tab_id(&pane), 11);
-    }
-
-    #[test]
-    fn removing_an_out_of_range_index_is_a_noop() {
-        let mut pane = pane_with_three_tabs(1);
+        assert_eq!(pane.take_tab(1).unwrap().id, 12);
         pane.remove_tab(9);
-        assert_eq!(pane.tabs.len(), 3);
-        assert_eq!(active_tab_id(&pane), 11);
+        assert_eq!(pane.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), [11, 10]);
+        assert!(pane.close_tab_by_id(10));
+        assert!(!pane.close_tab_by_id(11));
     }
 }

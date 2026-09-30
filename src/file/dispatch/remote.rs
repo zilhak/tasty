@@ -6,7 +6,7 @@ use crate::core::{Core, CoreState};
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction};
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// 원격에 열 수 있는 핸들러인지 확인한다.
 /// OpenSurface이면서 client가 그 kind의 콘텐츠를 mirror하는 경우만 대상이다.
@@ -55,7 +55,7 @@ fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
 /// 그중 첫 핸들러를 실행한다.
 pub(crate) fn apply_remote_identify_result(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
@@ -105,7 +105,7 @@ pub(crate) fn apply_remote_identify_result(
 /// 기존 핸들러 picker를 원격에 열 수 있는 후보만으로 연다. 최근 목록도 같은 조건으로 거른다.
 /// 1순위는 원격에 열 수 없어 목록에 없으므로 기본 핸들러 표시는 두지 않는다.
 fn open_remote_picker(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
@@ -136,7 +136,7 @@ fn open_remote_picker(
     });
 }
 
-fn report_unsupported(state: &mut AppState, target: &FileTarget, origin: FileDispatchOrigin) {
+fn report_unsupported(state: &mut RequestContext, target: &FileTarget, origin: FileDispatchOrigin) {
     match origin {
         FileDispatchOrigin::User | FileDispatchOrigin::PluginUnverified => state.toasts.push(
             crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),

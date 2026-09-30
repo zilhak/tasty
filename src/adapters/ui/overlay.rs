@@ -1,11 +1,11 @@
 //! 토스트·배너·단축키 도움말·튜토리얼을 그린다.
 //! 팝업과 같은 LayoutContext를 공유하되 입력 처리는 각 오버레이의 규칙을 따른다.
 
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 /// 더보기 메뉴가 열려 있는 배너의 범위. 팝업 상태와 대상 surface를 함께 확인한다.
 fn mouse_capture_more_menu_open_for(
-    state: &AppState,
+    state: &MainViewState,
 ) -> Option<crate::adapters::ui::banner::BannerScope> {
     if !state
         .popups
@@ -22,7 +22,7 @@ fn mouse_capture_more_menu_open_for(
 /// 오버레이를 그린다. Foreground 레이어의 상대 순서는 egui_bridge에서도 조정한다.
 pub(crate) fn draw_overlays(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     draw_ctx: &crate::adapters::ui::LayoutContext,
     terminal_rect: crate::model::PhysicalRect,

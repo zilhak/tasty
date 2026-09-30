@@ -3,7 +3,7 @@
 
 //! 호스트 내부 명령 큐.
 //!
-//! AppState::dispatch_intent로 넣은 명령을 App::dispatch_pending_intents가 꺼내
+//! RequestContext::dispatch_intent로 넣은 명령을 App::dispatch_pending_intents가 꺼내
 //! 각 도메인 핸들러에 전달한다. 호출자는 실행 결과를 기다리지 않는다.
 //! 설계는 docs/design/flows/action-dispatch.md를 따른다.
 
@@ -39,7 +39,7 @@ pub use crate::core::origin::{AgentSource, IntentOrigin};
 /// 원격으로 전달한 에이전트 요청에는 실패 회신도 로그만 남기도록 표시한다.
 /// 사용자 표시 규칙은 docs/design/systems/toast.md를 따른다.
 pub fn report_apply_error(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     label: &str,
@@ -74,7 +74,7 @@ pub fn report_apply_error(
 // reason: 헤드리스에는 토스트 매니저가 없어 state를 사용하지 않는다.
 #[cfg_attr(not(feature = "gui"), allow(unused_variables))]
 fn report_withdrawn_kind(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     origin: &IntentOrigin,
     label: &str,
     err: &anyhow::Error,
@@ -101,7 +101,7 @@ fn report_withdrawn_kind(
     );
 }
 
-/// 메인 루프가 처리할 때까지 AppState::pending_intents에 보관하는 명령.
+/// 메인 루프가 처리할 때까지 RequestContext::pending_intents에 보관하는 명령.
 #[derive(Debug, Clone)]
 pub struct DispatchedIntent {
     pub body: Intent,
@@ -436,9 +436,9 @@ impl DispatchedIntent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
+    use crate::state::RequestContext;
 
-    fn make_state() -> AppState {
+    fn make_state() -> RequestContext {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
@@ -448,7 +448,7 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
             ));
-        AppState::new(&mut engine, preset_store, memory)
+        RequestContext::new(&mut engine, preset_store, memory)
     }
 
     #[test]

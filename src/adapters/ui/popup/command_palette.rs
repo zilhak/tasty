@@ -5,7 +5,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::state::command_palette::{self, PaletteCommand};
 use crate::theme;
 use crate::theme::Theme;
@@ -367,7 +367,7 @@ fn items_from_state(
 /// 바깥 클릭 등 그리기를 거치지 않는 닫기에서도 검색어·선택을 초기화한다.
 pub fn on_close_command_palette_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     state.command_palette.reset();
@@ -375,7 +375,10 @@ pub fn on_close_command_palette_popup(
 
 /// 현재 검색 결과 수에 맞춰 카드 높이를 계산한다. 사용자 리사이즈 전까지 매 프레임 적용된다.
 /// 표시 항목 전체를 만들지는 않고 검색 결과 수로 높이를 정한다. 폭에는 UI 배율을 적용한다.
-pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn command_palette_sizer(
+    state: &MainViewState,
+    _engine: &crate::core::CoreState,
+) -> egui::Vec2 {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
     let matched = command_palette::search(&state.command_palette.query, &commands, &labels).len();
@@ -386,7 +389,7 @@ pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState)
 /// 앱 상태를 화면 입력으로 바꾸고 반환된 동작을 처리한다.
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
@@ -777,7 +780,7 @@ mod sizer_wiring_tests {
     use crate::model::{PhysicalPx, PhysicalRect};
     use crate::state::tests::test_state;
 
-    fn run_one_frame(state: &mut AppState, engine: &mut crate::core::CoreState) {
+    fn run_one_frame(state: &mut MainViewState, engine: &mut crate::core::CoreState) {
         let ctx = egui::Context::default();
         let term = PhysicalRect {
             x: PhysicalPx(0.0),

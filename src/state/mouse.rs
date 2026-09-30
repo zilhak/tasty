@@ -1,7 +1,7 @@
 #[cfg(feature = "gui")]
 use crate::model::{DividerInfo, LogicalPx, PhysicalPx, PhysicalRect, SplitDirection};
 
-use super::AppState;
+use super::RequestContext;
 #[cfg(feature = "gui")]
 use crate::core::CoreState;
 
@@ -15,7 +15,7 @@ pub fn divider_hit_threshold_physical(scale_factor: f32) -> f32 {
     DIVIDER_HIT_THRESHOLD.to_physical(scale_factor).value()
 }
 
-impl AppState {
+impl RequestContext {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.
     #[cfg(feature = "gui")]

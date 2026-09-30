@@ -14,7 +14,7 @@ use tasty_type_geometry::rect::PhysicalRect;
 
 use crate::adapters::ui::icons;
 use crate::core::AttentionKind;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 /// View 입력 — pane 한 개 분의 탭 데이터.
@@ -274,7 +274,7 @@ fn tab_move_mark(
 /// 화면 입력을 만들고 결과를 앱 상태에 반영한다.
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,

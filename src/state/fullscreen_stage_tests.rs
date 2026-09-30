@@ -5,7 +5,7 @@ use super::tests::test_state;
 use crate::adapters::ui::draw_popups;
 use crate::adapters::ui::fullscreen;
 
-fn run_stage_frame(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
+fn run_stage_frame(state: &mut crate::state::RequestContext, engine: &mut crate::core::CoreState) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
     drop(ctx.run(egui::RawInput::default(), |ctx| {
@@ -13,7 +13,7 @@ fn run_stage_frame(state: &mut crate::state::AppState, engine: &mut crate::core:
     }));
 }
 
-fn run_normal_frame(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
+fn run_normal_frame(state: &mut crate::state::RequestContext, engine: &mut crate::core::CoreState) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
     drop(ctx.run(egui::RawInput::default(), |ctx| {
@@ -116,7 +116,8 @@ fn stage_frame_drains_the_close_hook_queue() {
 #[test]
 fn stage_frame_paints_only_when_a_stage_is_up() {
     let (mut state, mut engine) = test_state();
-    let painted = |state: &mut crate::state::AppState, engine: &mut crate::core::CoreState| {
+    let painted = |state: &mut crate::state::RequestContext,
+                   engine: &mut crate::core::CoreState| {
         let ctx = egui::Context::default();
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
@@ -129,7 +130,7 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
 }
 
 fn run_normal_frame_with_input(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::RequestContext,
     engine: &mut crate::core::CoreState,
     raw: egui::RawInput,
 ) {
@@ -282,7 +283,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
 fn two_stages_with_the_same_content_do_not_share_scroll_state() {
     let (mut state, mut engine) = test_state();
     let ctx = egui::Context::default();
-    let draw_stage = |state: &mut crate::state::AppState,
+    let draw_stage = |state: &mut crate::state::RequestContext,
                       engine: &mut crate::core::CoreState,
                       id: &'static str| {
         assert!(state.open_fullscreen_stage(id));

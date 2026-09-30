@@ -7,12 +7,12 @@ use crate::app::App;
 use crate::core::CoreState;
 use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::send_response;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 /// GUI와 같은 IPC 회차 예산을 사용한다. 요청이 만든 Intent는 응답 전에 적용한다.
 pub(crate) fn pump_ipc(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
@@ -32,7 +32,7 @@ pub(crate) fn pump_ipc(
 
 fn dispatch_command(
     app: &mut App,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {

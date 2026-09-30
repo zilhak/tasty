@@ -5,7 +5,7 @@ use crate::adapters::ui::{
     popup::{defs, frame::draw_popup_layer},
 };
 use crate::plugin_bridge::popup_scope::inherit_file_picker_scope;
-use crate::state::AppState;
+use crate::state::RequestContext;
 use crate::state::tests::test_state;
 use serde_json::json;
 use tasty_host_plugin::manager::PopupInstance;
@@ -25,7 +25,7 @@ fn parent(scope: &str, target: Option<u32>) -> PopupInstance {
     }
 }
 
-fn trigger(owner: Option<u64>) -> (AppState, crate::core::CoreState) {
+fn trigger(owner: Option<u64>) -> (RequestContext, crate::core::CoreState) {
     let (mut state, mut engine) = test_state();
     for def in defs::all_defs() {
         state.popups.register_def(def, 1.0);
@@ -84,20 +84,20 @@ fn ownerless_and_foreign_owner_cannot_inherit_another_plugins_scope() {
     }
 }
 
-fn assert_visible_gates(state: &AppState) {
+fn assert_visible_gates(state: &RequestContext) {
     assert!(state.popups.has_focused());
-    assert!(AppState::keyboard_overlay_open(state));
+    assert!(RequestContext::keyboard_overlay_open(state));
     assert!(state.has_egui_overlay_open());
 }
 
 /// 숨겨져도 포커스 의도는 남지만 입력 차단은 해제되어야 한다.
-fn assert_hidden_gates(state: &mut AppState) {
+fn assert_hidden_gates(state: &mut RequestContext) {
     assert!(state.popups.is_open(FILE_PICKER_POPUP_ID));
     assert!(state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().focused);
     assert!(!state.popups.has_focused());
     assert!(!state.popups.is_focused(FILE_PICKER_POPUP_ID));
     assert!(state.popups.focused_dismissal_target().is_none());
-    assert!(!AppState::keyboard_overlay_open(state));
+    assert!(!RequestContext::keyboard_overlay_open(state));
     assert!(
         !state.has_egui_overlay_open(),
         "hidden child must not hide native WebViews"
@@ -109,7 +109,7 @@ fn assert_hidden_gates(state: &mut AppState) {
     assert!(state.popups.take_closed_queue().is_empty());
 }
 
-fn assert_work_preserved(state: &AppState, dir: &str, request: u64) {
+fn assert_work_preserved(state: &RequestContext, dir: &str, request: u64) {
     let data = state.dialogs.file_picker.as_ref().unwrap();
     assert_eq!(data.selected, ["draft.md"]);
     assert_eq!(data.current_dir, dir);
@@ -149,7 +149,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
         active_tabs: vec![],
         active_tab_ids: vec![],
     };
-    let mut draw = |state: &mut AppState, layout: &LayoutContext, events| {
+    let mut draw = |state: &mut RequestContext, layout: &LayoutContext, events| {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -199,7 +199,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
     layout.active_workspace = 0;
     draw(&mut state, &layout, vec![]);
     assert!(state.popups.has_focused());
-    assert!(AppState::keyboard_overlay_open(&state));
+    assert!(RequestContext::keyboard_overlay_open(&state));
     assert_eq!(state.host_popup_hittest[0].z_seq, z);
     assert_eq!(
         state.dialogs.file_picker.as_ref().unwrap().selected,

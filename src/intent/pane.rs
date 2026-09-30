@@ -4,11 +4,11 @@ use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
 use crate::core::CoreState;
 use crate::model::SplitDirection;
-use crate::state::AppState;
+use crate::state::RequestContext;
 
 pub fn handle(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     intent: &DispatchedIntent,
 ) {
@@ -19,7 +19,7 @@ pub fn handle(
 
 fn split(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut CoreState,
     direction: SplitDirection,
     origin: &IntentOrigin,

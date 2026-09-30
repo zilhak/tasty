@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::i18n::{t, t_fmt};
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{margin_all, vspace};
@@ -10,7 +10,7 @@ use tasty_ui_widgets::{margin_all, vspace};
 /// Called by the notifications popup's `draw_fn` (see popup_defs).
 pub(crate) fn draw_notification_content_inner(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) {
     let th = theme::theme();
@@ -178,7 +178,7 @@ pub fn notifications_popup_size() -> egui::Vec2 {
 
 /// PopupDef.sizer — 배율이 바뀌어도 폭 토큰을 다시 계산한다.
 pub fn notifications_popup_sizer(
-    _state: &AppState,
+    _state: &MainViewState,
     _engine: &crate::core::CoreState,
 ) -> egui::Vec2 {
     notifications_popup_size()
@@ -187,7 +187,7 @@ pub fn notifications_popup_sizer(
 /// PopupDef::draw_fn for the notifications panel.
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> crate::adapters::ui::popup::PopupAction {
     draw_notification_content_inner(ui, state, engine);

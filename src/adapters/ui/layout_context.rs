@@ -15,7 +15,7 @@ pub struct LayoutContext {
 
 /// 현재 상태와 레이아웃으로 팝업·토스트·배너가 공유할 영역 정보를 만든다.
 pub(crate) fn build_layout_context(
-    state: &crate::state::AppState,
+    state: &crate::state::MainViewState,
     engine: &crate::core::CoreState,
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,

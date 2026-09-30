@@ -18,7 +18,7 @@ impl App {
     }
 
     fn enqueue_close_for_engine(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &crate::core::CoreState,
     ) -> usize {
         let mut targets: Vec<(u32, Option<&'static str>)> = Vec::new();

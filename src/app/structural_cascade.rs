@@ -55,6 +55,7 @@ impl SurfaceCloseCascade {
             closed_pane_ids,
             workspace_purged,
             workspaces_now_empty,
+            ..
         } = event
         else {
             return None;
@@ -88,6 +89,7 @@ impl SurfaceCloseCascade {
             closed_pane_ids,
             workspace_purged,
             workspaces_now_empty,
+            ..
         } = event
         else {
             return None;
@@ -123,6 +125,7 @@ impl SurfaceCloseCascade {
             closed_pane_ids,
             workspace_purged,
             workspaces_now_empty,
+            ..
         } = event
         else {
             return None;
@@ -144,6 +147,13 @@ impl SurfaceCloseCascade {
 }
 
 pub(crate) struct PaneSplitCascade {
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "workspace position is used only by GUI split notifications; command targets are IDs"
+        )
+    )]
     pub(crate) workspace_index: usize,
     #[cfg_attr(
         not(feature = "gui"),
@@ -203,14 +213,14 @@ pub(crate) fn cascade_surface_closed(
         c.workspace_purged.is_some(),
         "workspace level cascade 와 제거 위치는 함께 실려야 한다"
     );
-    if let Some((removed_idx, workspace_id)) = c.workspace_purged {
+    if let Some((_, workspace_id)) = c.workspace_purged {
         // 통지는 소비자가 있는 GUI에서만 쌓고, 메모리 정리는 headless에서도 한다.
         #[cfg(feature = "gui")]
         state.enqueue_host_event(crate::core::host_event::PendingHostEvent::WorkspaceClosed {
             workspace_id,
         });
         engine.purge_workspace_memory_scope(workspace_id, "cascade");
-        state.fix_workspace_pointers_after_removal(&engine, removed_idx, engine.workspaces.len());
+        state.reconcile_presentation(&engine);
     }
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
@@ -332,13 +342,6 @@ pub(crate) fn cascade_surface_split(
 
 /// 분할 알림과 lifecycle 상태를 갱신한다. User origin일 때만 새 pane을 선택한다.
 // 이유: state는 GUI 알림·튜토리얼에만 쓰인다.
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        unused_variables,
-        reason = "only the gui-only split notices and tutorial observation touch the app state"
-    )
-)]
 pub(crate) fn cascade_pane_split(
     state: &mut dyn CascadeWindow,
     engine: &mut CoreState,

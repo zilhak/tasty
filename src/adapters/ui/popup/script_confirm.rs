@@ -3,12 +3,12 @@
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
 
-/// Pure view 의 입력. AppState/CoreState 를 알지 못한다.
+/// Pure view 의 입력. MainViewState/CoreState 를 알지 못한다.
 pub struct ScriptConfirmProps<'a> {
     pub theme: &'a Theme,
     /// 변경된 스크립트 표시 이름.
@@ -27,7 +27,7 @@ pub enum ScriptConfirmAction {
     Run,
 }
 
-/// 순수 view. AppState/CoreState 접근 금지.
+/// 순수 view. MainViewState/CoreState 접근 금지.
 pub fn draw_script_confirm_view(
     ui: &mut egui::Ui,
     props: &ScriptConfirmProps<'_>,
@@ -102,7 +102,7 @@ pub fn draw_script_confirm_view(
 /// 결정 없이 닫혔으면 보류 요청을 정리한다. 실행 결정은 다음 프레임에서 읽으므로 지우지 않는다.
 pub fn on_close_script_confirm_popup(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     if let Some(pending) = state.dialogs.pending_script_confirm.as_ref()
@@ -115,7 +115,7 @@ pub fn on_close_script_confirm_popup(
 /// PopupDef::draw_fn entry.
 pub fn draw_script_confirm_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let Some(pending) = state.dialogs.pending_script_confirm.as_ref() else {

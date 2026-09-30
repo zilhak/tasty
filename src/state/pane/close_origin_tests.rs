@@ -4,7 +4,7 @@
 use crate::core::CoreState;
 use crate::core::intent::{CascadeLevel, CoreEvent, DomainIntent};
 use crate::model::{ClosedItem, SplitDirection};
-use crate::state::AppState;
+use crate::state::RequestContext;
 use crate::state::tests::test_state;
 use tasty_terminal::Terminal;
 
@@ -31,7 +31,7 @@ fn insert_detached(engine: &mut CoreState, sid: u32) {
 }
 
 /// 닫을 surface를 돌려준다. 시나리오는 활성 workspace 안에서 만든다.
-fn arrange(case: Case) -> (AppState, CoreState, u32) {
+fn arrange(case: Case) -> (RequestContext, CoreState, u32) {
     let (mut state, mut engine) = test_state();
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let ws_idx = state.active_workspace_index(&engine);

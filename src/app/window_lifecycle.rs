@@ -202,7 +202,7 @@ impl App {
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> anyhow::Result<crate::state::AppState> {
+    ) -> anyhow::Result<crate::state::MainViewState> {
         self.ensure_engine_and_plugins(gpu, sidebar_width)?;
 
         // main loop 진입 전이라 Intent 큐를 기다리지 않고 복원을 직접 적용한다.
@@ -360,10 +360,11 @@ impl App {
     pub(super) fn assemble_app_state(
         &mut self,
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
-    ) -> crate::state::AppState {
+    ) -> crate::state::MainViewState {
         let preset_store = self.core.preset_store.clone();
         let memory = self.core.memory_arc();
-        let mut state = crate::state::AppState::new(self.core_state_mut(), preset_store, memory);
+        let mut state =
+            crate::state::MainViewState::new(self.core_state_mut(), preset_store, memory);
         if let Some(restored_idx) = restored_idx_after_layout {
             state
                 .navigation
@@ -508,7 +509,7 @@ impl App {
     pub(crate) fn register_window(
         &mut self,
         gpu: GpuState,
-        state: crate::state::AppState,
+        state: crate::state::MainViewState,
         engine: crate::runtime::engine_session::EngineId,
         window: Arc<Window>,
         origin: WindowRequestOrigin,
@@ -694,7 +695,7 @@ impl App {
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) -> anyhow::Result<(
-        crate::state::AppState,
+        crate::state::MainViewState,
         crate::runtime::engine_session::EngineId,
     )> {
         // parked engine은 임시 관계로 옮겨 슬롯을 그대로 쓴다. 새 슬롯을 주면 다른 창의 복원 파일을 덮을 수 있다.
@@ -717,7 +718,7 @@ impl App {
     fn ensure_at_least_one_workspace(
         &mut self,
         engine: crate::runtime::engine_session::EngineId,
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
     ) {
         let Some(core_state) = self.engines.get_mut(engine) else {
             return;

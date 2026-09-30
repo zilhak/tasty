@@ -89,7 +89,7 @@ impl App {
     where
         F: FnMut(
             &crate::core::Core,
-            &mut crate::state::AppState,
+            &mut crate::state::MainViewState,
             &mut crate::core::CoreState,
             serde_json::Value,
         ) -> JsonRpcResponse,
@@ -103,7 +103,7 @@ impl App {
     where
         F: FnMut(
             &crate::core::Core,
-            &mut crate::state::AppState,
+            &mut crate::state::MainViewState,
             &mut crate::core::CoreState,
             serde_json::Value,
         ) -> JsonRpcResponse,
@@ -122,7 +122,7 @@ impl App {
     where
         F: FnMut(
             &crate::core::Core,
-            &mut crate::state::AppState,
+            &mut crate::state::MainViewState,
             &mut crate::core::CoreState,
             serde_json::Value,
         ) -> JsonRpcResponse,
@@ -145,7 +145,7 @@ impl App {
     where
         F: FnMut(
             &crate::core::Core,
-            &mut crate::state::AppState,
+            &mut crate::state::MainViewState,
             &mut crate::core::CoreState,
             serde_json::Value,
         ) -> JsonRpcResponse,

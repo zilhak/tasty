@@ -3,11 +3,11 @@
 
 use serde_json::json;
 
-use crate::state::AppState;
+use crate::state::RequestContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(super) fn handle_ui_state(
-    state: &AppState,
+    state: &RequestContext,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -57,13 +57,13 @@ pub(super) fn handle_ui_state(
         json!({
             "tutorial": tutorial,
             // 열기 요청과 실제 모달 표시는 다르다. 표시 여부는 modal_open으로 확인한다.
-            "settings_open_requested": state.settings_open_requested,
+            "settings_open_requested": state.has_settings_open_request(),
             "keyboard_shortcuts_gated": keyboard_shortcuts_gated,
             "gate_fullscreen_stage_active": state.fullscreen_stage_active(),
-            "gate_settings_open_requested": state.settings_open_requested,
+            "gate_settings_open_requested": state.has_settings_open_request(),
             "gate_input_dialog_open": state.has_input_dialog_open(),
             "gate_host_popup_focused": host_popup_focused,
-            "gate_plugin_popup_open": state.plugin_popup_open,
+            "gate_plugin_popup_open": state.has_plugin_popup(),
             // 모달은 GUI App의 ViewRegistry가 소유한다. 여기서는 모달이 없는 값을 내고,
             // GUI App이 응답을 보내기 전에 활성 모달로 덮어쓴다(App::project_active_modal).
             "modal_open": false,
@@ -83,7 +83,7 @@ pub(super) fn handle_ui_state(
 /// 실제 설정을 미리 바꾸면 후속 처리에서 이전 값과의 차이를 알 수 없으므로 사본만 수정한다.
 /// 알 수 없는 키는 무시하고 잘못된 타입은 거절한다. GUI 없이도 같은 설정 변경 경로를 쓴다.
 pub(super) fn handle_debug_settings_apply(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

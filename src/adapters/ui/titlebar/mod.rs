@@ -7,7 +7,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use crate::AppEvent;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::PhysicalPx;
 
@@ -50,7 +50,7 @@ fn os_controls() -> Option<TitlebarControls> {
 /// 가장자리 버튼 hover도 여기서 초기화하고 이후 화면에서 누적한다.
 pub fn draw_titlebar(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     window: &Window,
     proxy: &EventLoopProxy<AppEvent>,
 ) {

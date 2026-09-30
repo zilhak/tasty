@@ -5,7 +5,7 @@
 pub mod defs;
 pub(crate) mod notifications;
 
-use crate::state::AppState;
+use crate::state::MainViewState;
 
 pub use crate::fullscreen_stages::{StageId, StageMeta};
 
@@ -19,9 +19,9 @@ pub struct StageDef {
     /// 공용 메타데이터를 복제하지 않고 참조한다.
     pub meta: &'static StageMeta,
     /// 공용 배경·제목 안쪽 콘텐츠를 그린다.
-    pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> StageAction,
+    pub draw_fn: fn(&mut egui::Ui, &mut MainViewState, &mut crate::core::CoreState) -> StageAction,
     /// 닫기 큐에서 호출할 정리 훅. 임시 egui 상태를 지울 수 있도록 Context를 받는다.
-    pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
+    pub on_close: Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
 }
 
 impl StageDef {
@@ -45,7 +45,7 @@ const ON_CLOSE_DRAIN_MAX_ROUNDS: u32 = 8;
 /// 닫힌 다음에는 일반 프레임이 되므로 전체화면·일반 그리기 경로 모두에서 처리한다.
 pub fn drain_on_close_hooks(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) {
     let mut round = 0u32;
@@ -75,7 +75,7 @@ pub fn drain_on_close_hooks(
 /// 이 프레임에서는 일반 UI와 팝업을 그리지 않는다.
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) {
     drain_on_close_hooks(ctx, state, engine);

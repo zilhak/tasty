@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
-use crate::state::AppState;
+use crate::state::RequestContext;
 use crate::webview::DebugHistoryAction;
 
 fn find_html_surface<'a>(
@@ -68,7 +68,7 @@ pub(super) fn handle_allow(
 
 /// `debug.webview.history` — 뒤로·앞으로·재로드·중지를 재현한다. 다음 redraw에서 적용한다.
 pub(super) fn handle_history(
-    state: &mut AppState,
+    state: &mut RequestContext,
     engine: &crate::core::CoreState,
     id: Value,
     params: &Value,

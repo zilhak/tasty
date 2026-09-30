@@ -2,7 +2,7 @@ use super::*;
 use tasty_model::html_script::{Fingerprint, ScriptDetection, ScriptScan};
 
 /// 플러그인 프로세스 없이 html kind를 등록하고 html 탭을 연다.
-fn state_with_html_tab() -> (crate::state::AppState, crate::core::CoreState, u32) {
+fn state_with_html_tab() -> (crate::state::RequestContext, crate::core::CoreState, u32) {
     let (mut state, mut engine) = crate::state::tests::test_state();
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
         "kind": "html",

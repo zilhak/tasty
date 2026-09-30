@@ -31,7 +31,7 @@ pub(crate) enum PresetApplyScope {
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -107,7 +107,7 @@ impl MainView {
     }
 
     pub(super) fn match_create_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -135,7 +135,7 @@ impl MainView {
     }
 
     fn match_split_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -211,7 +211,7 @@ impl MainView {
     }
 
     fn match_panel_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -260,7 +260,7 @@ impl MainView {
     }
 
     fn match_close_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -316,7 +316,7 @@ impl MainView {
     }
 
     fn match_focus_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -342,7 +342,7 @@ impl MainView {
     }
 
     fn match_sidebar_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -370,7 +370,7 @@ impl MainView {
 
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_restore_quit_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -408,7 +408,7 @@ impl MainView {
     }
 
     fn match_convert_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -466,7 +466,7 @@ impl MainView {
     /// 캡처가 끝나기 전 포커스가 바뀌어도 대상이 바뀌지 않도록 여기서 로컬/원격을 정해 큐에 넣는다.
     /// 실제 캡처는 App의 백그라운드 작업이 수행한다.
     fn match_capture_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -481,7 +481,7 @@ impl MainView {
 
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_window_tab_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -524,7 +524,7 @@ impl MainView {
     }
 
     fn match_rename_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -576,7 +576,7 @@ impl MainView {
     }
 
     fn match_explorer_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -612,7 +612,7 @@ impl MainView {
     }
 
     fn match_preset_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -643,7 +643,7 @@ impl MainView {
     }
 
     fn match_copy_rename_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -675,7 +675,7 @@ impl MainView {
     }
 
     fn match_tools_menu_bindings(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
@@ -719,7 +719,7 @@ impl MainView {
 
     /// 메뉴와 단축키·팔레트가 같은 위치와 포커스 규칙으로 도구 팝업을 연다.
     pub(crate) fn open_tool_popup(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         popup_id: &'static str,
         action: &'static str,
     ) {
@@ -732,13 +732,13 @@ impl MainView {
         );
     }
 
-    pub(crate) fn open_preset_window(state: &mut crate::state::AppState) {
+    pub(crate) fn open_preset_window(state: &mut crate::state::MainViewState) {
         state.dialogs.pending_open_preset_window = true;
     }
 
     /// 로컬/원격 대상 정보를 준비해야 하므로 팝업 ID만 보내지 않고 메뉴와 같은 열기 함수를 쓴다.
     pub(crate) fn open_file_picker_tool(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
     ) {
         use crate::adapters::ui::popup::file_picker;
@@ -749,7 +749,7 @@ impl MainView {
 
     /// 탐색기는 파일 선택 팝업 없이 새 탭을 연다. 경로가 없으면 홈을 사용한다.
     /// 사용자 단축키는 새 탭을 선택하며 에이전트의 탭 생성과 구별한다(ADR-0017).
-    pub(crate) fn open_explorer_tab(state: &mut crate::state::AppState) {
+    pub(crate) fn open_explorer_tab(state: &mut crate::state::MainViewState) {
         state.dispatch_intent(
             crate::intent::Intent::NewTab {
                 kind: Some("explorer".to_string()),
@@ -761,7 +761,7 @@ impl MainView {
 
     /// 열 때의 활성 workspace에 연결한다. 다른 workspace로 가면 숨고 돌아오면 다시 보인다.
     pub(crate) fn toggle_dag_list_popup(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &crate::core::CoreState,
     ) {
         let workspace_id = state.active_workspace(engine).id;
@@ -777,7 +777,7 @@ impl MainView {
     }
 
     pub(crate) fn queue_screenshot_to_clipboard(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         engine: &mut crate::core::CoreState,
     ) {
         let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
@@ -789,7 +789,7 @@ impl MainView {
     }
 
     pub(crate) fn open_preset_apply_popup(
-        state: &mut crate::state::AppState,
+        state: &mut crate::state::MainViewState,
         scope: PresetApplyScope,
     ) {
         use crate::adapters::ui::popup::preset_apply;

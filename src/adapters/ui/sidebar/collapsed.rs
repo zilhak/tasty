@@ -1,7 +1,7 @@
 //! 접힌 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
 use crate::i18n::t;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::theme;
 
 use super::full::{build_category_sections, entry_view};
@@ -20,7 +20,7 @@ pub struct CollapsedSidebarResult {
 
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &crate::core::CoreState,
     sidebar_width: f32,
     plugin_alert: usize,

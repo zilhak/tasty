@@ -22,7 +22,7 @@ use crate::adapters::ui::icons;
 pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
-use crate::state::{AppState, FilePickerResult, FpLoadState};
+use crate::state::{FilePickerResult, FpLoadState, MainViewState};
 use crate::theme::{self, Theme};
 use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant};
 
@@ -41,7 +41,7 @@ const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// PopupDef.sizer — 고정 640×480(gallery specimen `FRAME_W`/`FRAME_H`).
-pub fn picker_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn picker_sizer(_state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
@@ -85,7 +85,7 @@ pub enum FilePickerMode<'a> {
     },
 }
 
-/// 순수 시각 view 의 입력. AppState/CoreState 의존 없음.
+/// 순수 시각 view 의 입력. MainViewState/CoreState 의존 없음.
 pub struct FilePickerProps<'a> {
     pub theme: &'a Theme,
     /// `Some(host)` 면 헤더에 host 배지 렌더(원격 브라우징).
@@ -100,7 +100,7 @@ pub struct FilePickerProps<'a> {
     pub mode: FilePickerMode<'a>,
     /// 이 프레임에 Esc 를 소비할 자격이 있는가(ADR-0036).
     /// `false` 면 위에 다른 popup 이 있다는 뜻이라 Esc 를 무시한다 — 한 번의 Esc 로
-    /// 스택 전체가 닫히는 것을 막는다. 판정은 `AppState.popup_escape_owner`.
+    /// 스택 전체가 닫히는 것을 막는다. 판정은 `MainViewState.popup_escape_owner`.
     pub owns_escape: bool,
 
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
@@ -630,7 +630,7 @@ fn hline(ui: &egui::Ui, th: &Theme, x: egui::Rangef, y: f32) {
 /// 결과 없이 닫혔으면 Cancelled를 기록해 호출부가 계속 기다리지 않게 한다.
 pub fn on_close_file_picker(
     _ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     _engine: &mut crate::core::CoreState,
 ) {
     if let Some(p) = state.dialogs.file_picker.as_mut()
@@ -643,7 +643,7 @@ pub fn on_close_file_picker(
 /// 상태에서 화면 입력을 만들고 사용자 동작을 반영한다.
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let Some(data) = state.dialogs.file_picker.as_ref() else {
@@ -767,7 +767,7 @@ pub fn draw_file_picker(
 }
 
 fn apply_action(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     action: FilePickerAction,
 ) -> PopupAction {
@@ -920,7 +920,7 @@ fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
 /// start는 출발 디렉터리와 surface이며 플러그인 입력 칸의 값은 포함하지 않는다.
 /// requester가 있으면 결과를 해당 플러그인에만 보낸다. filters가 비면 확장자를 제한하지 않는다.
 pub fn open(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     requester: Option<crate::state::FilePickerRequester>,
     filters: Vec<String>,
@@ -983,7 +983,7 @@ pub(crate) fn matches_filters(filters: &[String], name: &str) -> bool {
 /// 새 대상 디렉토리로 내비게이트: 선택 초기화 + 로컬은 즉시 동기 로드, 원격은
 /// `pending_list_dir_forward` 큐잉 + `Loading` 전이.
 fn navigate(
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut crate::core::CoreState,
     target_of: impl FnOnce(&str, bool) -> String,
 ) {

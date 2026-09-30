@@ -3,7 +3,7 @@
 use crate::core::CoreState;
 use crate::intent::Intent;
 use crate::model::PhysicalRect;
-use crate::state::AppState;
+use crate::state::MainViewState;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 
 use super::sidebar;
@@ -11,7 +11,7 @@ use super::sidebar;
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(
     ctx: &egui::Context,
-    state: &mut AppState,
+    state: &mut MainViewState,
     engine: &mut CoreState,
     scale_factor: f32,
     plugin_alert: usize,

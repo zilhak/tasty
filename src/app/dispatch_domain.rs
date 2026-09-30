@@ -19,7 +19,7 @@ use crate::view::ui::View as _;
 
 /// 요청이 시작된 engine. 도메인 변경과 후속 처리가 같은 engine을 사용한다.
 /// 창·parked 어느 관계든 engine id로 가리켜 사이에 창을 열거나 닫아도 대상이 바뀌지 않는다.
-/// 창 View와 AppState는 처리 시점에 [`resolve`](crate::app::window_access::EngineScanMut::resolve)로 찾는다.
+/// 창 View와 MainViewState는 처리 시점에 [`resolve`](crate::app::window_access::EngineScanMut::resolve)로 찾는다.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DispatchSource {
     Engine(crate::runtime::engine_session::EngineId),
@@ -80,6 +80,10 @@ impl App {
         origin: &IntentOrigin,
         event: CoreEvent,
     ) {
+        if let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(source.engine())
+        {
+            state.apply_structure_result(engine, &event);
+        }
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {
                 self.cascade_settings_updated(new_settings);
@@ -147,13 +151,9 @@ impl App {
                     description,
                 );
             }
-            CoreEvent::WorkspaceMoved {
-                from_index,
-                to_index,
-                moved,
-            } => {
+            CoreEvent::WorkspaceMoved { moved, .. } => {
                 if moved {
-                    self.dispatch_workspace_moved_cascade(source, from_index, to_index);
+                    self.mark_source_window_dirty(source);
                 }
             }
             CoreEvent::TabCreated {
@@ -775,28 +775,6 @@ impl App {
         }
     }
 
-    /// workspace 이동 뒤에도 사용자가 보던 대상을 유지하도록 활성 인덱스를 보정한다.
-    fn dispatch_workspace_moved_cascade(
-        &mut self,
-        source: DispatchSource,
-        from_index: usize,
-        to_index: usize,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_workspace_moved(state, engine, from_index, to_index);
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
     fn dispatch_workspace_meta_updated_cascade(
         &mut self,
         source: DispatchSource,
@@ -1197,7 +1175,7 @@ impl App {
 
 /// workspace 생성의 창별 후속 처리. 사용자 요청일 때만 활성 workspace를 옮긴다.
 pub(crate) fn cascade_workspace_created(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     c: WorkspaceCreatedCascade,
@@ -1232,7 +1210,7 @@ pub(crate) fn cascade_workspace_created(
 /// 복원된 구조는 유지하되 사용자 요청에서만 포커스를 옮긴다.
 /// 이 origin 검사를 호출 경로가 사용자 전용이라는 가정으로 대신하지 않는다.
 pub(crate) fn cascade_closed_item_restored(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     kind: crate::core::intent::RestoredKind,
@@ -1257,18 +1235,8 @@ pub(crate) fn cascade_closed_item_restored(
     }
 }
 
-/// 이동 뒤 활성 인덱스 보정은 AppState의 공용 함수에 맡긴다.
-pub(crate) fn cascade_workspace_moved(
-    state: &mut crate::state::AppState,
-    engine: &crate::core::CoreState,
-    from_index: usize,
-    to_index: usize,
-) {
-    state.fix_workspace_pointers_after_move(&engine, from_index, to_index);
-}
-
 pub(crate) fn cascade_workspace_meta_updated(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     workspace_id: u32,
     name: Option<String>,
     subtitle: Option<String>,
@@ -1288,7 +1256,7 @@ pub(crate) fn cascade_workspace_meta_updated(
 /// apply 오류는 요청한 창의 state·engine으로 알린다. mirror 차단 toast도 이 경로로 뜬다.
 /// 오류를 여기서 처리하므로 후속 처리할 이벤트가 없다.
 fn events_or_report(
-    state: &mut crate::state::AppState,
+    state: &mut crate::state::MainViewState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     applied: anyhow::Result<Vec<CoreEvent>>,
@@ -1310,7 +1278,7 @@ mod apply_error_tests {
     use crate::intent::{AgentSource, UserSource};
 
     fn blocked_tab_replace() -> (
-        crate::state::AppState,
+        crate::state::MainViewState,
         crate::core::CoreState,
         anyhow::Result<Vec<CoreEvent>>,
     ) {

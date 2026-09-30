@@ -254,8 +254,8 @@ mod tests {
             first: Box::new(PaneNode::Leaf(leaf_pane(1, 1, 1))),
             second: Box::new(PaneNode::Leaf(leaf_pane(2, 2, 2))),
         };
-        let ws = Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout, 2);
-        let json = ws.to_attach_tree_json();
+        let ws = Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout);
+        let json = ws.to_attach_tree_json(&crate::StructurePresentationSnapshot::default());
         assert_eq!(json["pane_layout"]["type"], "Split");
         assert_eq!(json["pane_layout"]["direction"], "vertical");
         assert!((json["pane_layout"]["ratio"].as_f64().unwrap() - 0.3).abs() < 1e-6);
@@ -264,7 +264,7 @@ mod tests {
     }
 
     /// pane을 세 개 만들어 비포커스 pane 제거 뒤에도 원래 포커스가 유지되는지 구분한다.
-    fn three_pane_ws(focused: PaneId) -> Workspace {
+    fn three_pane_ws() -> Workspace {
         let pane_layout = PaneNode::Split {
             direction: SplitDirection::Vertical,
             ratio: 0.5,
@@ -276,28 +276,28 @@ mod tests {
                 second: Box::new(PaneNode::Leaf(leaf_pane(3, 3, 3))),
             }),
         };
-        Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout, focused)
+        Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout)
     }
 
     #[test]
     fn closing_an_unfocused_pane_leaves_focus_where_it_was() {
-        let mut ws = three_pane_ws(3);
-        assert!(ws.close_pane_preserving_focus(1));
-        assert_eq!(ws.focused_pane, 3);
+        let mut ws = three_pane_ws();
+        assert!(ws.close_pane(1));
+        assert!(ws.pane_layout().find_pane(3).is_some());
     }
 
     #[test]
     fn closing_the_focused_pane_moves_focus_to_the_first_survivor() {
-        let mut ws = three_pane_ws(3);
-        assert!(ws.close_pane_preserving_focus(3));
-        assert_eq!(ws.focused_pane, 1);
+        let mut ws = three_pane_ws();
+        assert!(ws.close_pane(3));
+        assert!(ws.pane_layout().find_pane(3).is_none());
     }
 
     /// 없는 pane은 닫지 않았다고 반환하며 포커스를 유지한다.
     #[test]
     fn a_close_that_removed_nothing_reports_it() {
-        let mut ws = three_pane_ws(3);
-        assert!(!ws.close_pane_preserving_focus(77));
-        assert_eq!(ws.focused_pane, 3);
+        let mut ws = three_pane_ws();
+        assert!(!ws.close_pane(77));
+        assert!(ws.pane_layout().find_pane(3).is_some());
     }
 }
