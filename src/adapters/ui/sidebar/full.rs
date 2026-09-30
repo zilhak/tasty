@@ -84,7 +84,7 @@ pub fn draw_full_sidebar(
     plugin_alert: usize,
 ) -> FullSidebarResult {
     let th = theme::theme();
-    let active_ws = state.active_workspace;
+    let active_ws = state.active_workspace_index(&engine);
     let workspaces: Vec<WorkspaceEntryView> = engine
         .workspaces
         .iter()

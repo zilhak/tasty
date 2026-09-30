@@ -555,7 +555,7 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.rename_workspace, key, mods) {
-            let ws_idx = state.active_workspace;
+            let ws_idx = state.active_workspace_index(&engine);
             if let Some(ws) = engine.workspaces.get(ws_idx) {
                 let target = crate::state::RenameTarget::WorkspaceName {
                     workspace_id: ws.id,
@@ -654,7 +654,7 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
-            let ws_idx = state.active_workspace;
+            let ws_idx = state.active_workspace_index(&engine);
             if let Some(ws) = engine.workspaces.get(ws_idx) {
                 let target = crate::state::RenameTarget::WorkspaceSubtitle {
                     workspace_id: ws.id,

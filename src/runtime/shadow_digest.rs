@@ -34,7 +34,6 @@ pub(crate) const DIGEST_EXCLUDED: &[(&str, &str)] = &[
         "WorkspaceCategory.collapsed",
         "sidebar state owned by the View",
     ),
-    ("Pane.tab_scroll_offset", "tab bar scroll owned by the View"),
     ("Tab.osc_title", "terminal derived value"),
     ("Tab.cached_display_name", "terminal derived value"),
     (

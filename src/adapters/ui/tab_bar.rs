@@ -283,7 +283,7 @@ pub fn draw_pane_tab_bars(
     let focused_pane_id = state.focused_pane_id(engine);
     let move_mark = crate::adapters::ui::move_source::resolve(
         engine,
-        state.active_workspace,
+        state.active_workspace_index(&engine),
         pane_rects,
         state.tab_bar_height,
     );
@@ -330,7 +330,12 @@ pub fn draw_pane_tab_bars(
                 tab_is_busy,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
-                scroll_offset: pane.tab_scroll_offset,
+                scroll_offset: state
+                    .tab_bar_scroll
+                    .get(&pane_id)
+                    .copied()
+                    .unwrap_or_default()
+                    .value(),
                 move_mark: tab_move_mark(move_mark, pane_id),
                 tab_html_script_marker,
             });

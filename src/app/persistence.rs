@@ -15,7 +15,7 @@ impl App {
             Self::flush_one_engine(
                 &mut self.core,
                 engine,
-                state.active_workspace,
+                state.active_workspace_index(&engine),
                 force,
                 label,
                 "main",
@@ -25,7 +25,7 @@ impl App {
             Self::flush_one_engine(
                 &mut self.core,
                 engine,
-                state.active_workspace,
+                state.active_workspace_index(&engine),
                 force,
                 label,
                 "parked",

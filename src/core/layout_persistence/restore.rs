@@ -229,7 +229,6 @@ impl SavedPane {
             id: pane_id,
             tabs,
             active_tab,
-            tab_scroll_offset: 0.0,
         })
     }
 }

@@ -593,7 +593,7 @@ impl App {
     fn focus_mirror_workspace(&mut self, ws_id: u32) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
             if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
-                main.state.active_workspace = idx;
+                main.state.set_active_workspace_index(&engine, idx);
                 main.mark_dirty();
                 break;
             }
@@ -1321,7 +1321,7 @@ fn remove_mirror_workspace_from_engine(
         engine.attach.forget_closed_surface(local);
     }
     engine.workspaces.remove(pos);
-    state.fix_workspace_pointers_after_removal(pos, engine.workspaces.len());
+    state.fix_workspace_pointers_after_removal(&engine, pos, engine.workspaces.len());
     // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
     state.recreate_workspace_if_empty(engine, "mirror workspace cleanup");
     true
@@ -2595,7 +2595,6 @@ fn build_pane_from_json(
         id: ids.next_pane(),
         tabs,
         active_tab,
-        tab_scroll_offset: 0.0,
     }
 }
 
@@ -3372,7 +3371,7 @@ mod tests {
         engine
             .attach_mesh_frames
             .update(local_surface, vec![1, 2, 3], 0, 0, true);
-        state.active_workspace = engine.workspaces.len() - 1;
+        state.set_active_workspace_index(&engine, engine.workspaces.len() - 1);
 
         let remote_to_local = HashMap::from([(remote_surface, local_surface)]);
         assert!(remove_mirror_workspace_from_engine(
@@ -3400,7 +3399,7 @@ mod tests {
             "mirror cwd 엔트리 제거"
         );
         assert_eq!(
-            state.active_workspace,
+            state.active_workspace_index(&engine),
             engine.workspaces.len() - 1,
             "제거로 out-of-range 가 된 active_workspace 클램프"
         );
@@ -3421,7 +3420,7 @@ mod tests {
         mirror_ws.mirror = true;
         engine.workspaces.clear();
         engine.workspaces.push(mirror_ws);
-        state.active_workspace = 0;
+        state.set_active_workspace_index(&engine, 0);
 
         assert!(remove_mirror_workspace_from_engine(
             &mut engine,
@@ -3436,7 +3435,7 @@ mod tests {
             "기본 워크스페이스가 다시 생긴다"
         );
         assert!(!engine.has_workspace(ws_id));
-        assert_eq!(state.active_workspace, 0);
+        assert_eq!(state.active_workspace_index(&engine), 0);
         assert!(!state.active_workspace(&engine).mirror);
     }
 
@@ -3496,7 +3495,7 @@ mod tests {
             engine
                 .attach_mesh_frames
                 .update(local_surface, vec![1, 2, 3], 0, 0, true);
-            state.active_workspace = engine.workspaces.len() - 1;
+            state.set_active_workspace_index(&engine, engine.workspaces.len() - 1);
         }
 
         assert!(remove_mirror_workspace_from_parked(
@@ -3519,7 +3518,10 @@ mod tests {
             engine.attach_mesh_frames.get(local_surface).is_none(),
             "mesh 프레임 캐시 제거"
         );
-        assert_eq!(state.active_workspace, engine.workspaces.len() - 1);
+        assert_eq!(
+            state.active_workspace_index(&engine),
+            engine.workspaces.len() - 1
+        );
         assert_eq!(
             reg.get(ids[0]).expect("engine").workspaces.len(),
             untouched_ws_count,

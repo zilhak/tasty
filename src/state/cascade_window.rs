@@ -21,12 +21,17 @@ impl CascadeWindow for AppState {
         self.with_memory(|m| crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, value))
     }
 
-    fn fix_workspace_pointers_after_removal(&mut self, removed_idx: usize, remaining: usize) {
-        AppState::fix_workspace_pointers_after_removal(self, removed_idx, remaining);
+    fn fix_workspace_pointers_after_removal(
+        &mut self,
+        engine: &CoreState,
+        removed_idx: usize,
+        remaining: usize,
+    ) {
+        AppState::fix_workspace_pointers_after_removal(self, engine, removed_idx, remaining);
     }
 
-    fn set_active_workspace(&mut self, index: usize) {
-        self.active_workspace = index;
+    fn set_active_workspace(&mut self, engine: &CoreState, index: usize) {
+        self.set_active_workspace_index(&engine, index);
     }
 
     #[cfg(feature = "gui")]

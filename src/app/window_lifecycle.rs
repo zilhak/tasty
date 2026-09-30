@@ -485,11 +485,11 @@ impl App {
         wid: winit::window::WindowId,
         main: Box<crate::view::main::MainView>,
     ) {
-        let active_workspace = main.state.active_workspace;
         let Some(mut session) = self.engines.retire_window(wid) else {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;
         };
+        let active_workspace = main.state.active_workspace_index(&session.core_state);
         Self::retire_main_engine(&mut self.core, &mut session.core_state, active_workspace);
         drop(main);
         drop(session);
@@ -714,7 +714,7 @@ impl App {
             return;
         };
         if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, core_state) {
-            state.active_workspace = idx;
+            state.set_active_workspace_index(core_state, idx);
         }
     }
 

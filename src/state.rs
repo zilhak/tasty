@@ -18,6 +18,7 @@ mod ipc_window;
 #[cfg(any(feature = "gui", test))]
 mod layout;
 pub mod mouse;
+pub(crate) mod navigation;
 pub(crate) mod pane;
 #[cfg(all(test, feature = "gui"))]
 mod popup_close_tests;
@@ -59,7 +60,10 @@ use crate::model::LogicalPx;
 use crate::model::PhysicalPx;
 
 pub struct AppState {
-    pub(crate) active_workspace: usize,
+    pub(crate) navigation: navigation::NavigationState,
+    /// Tab bar viewport by stable pane ID; never part of the domain layout.
+    #[cfg(feature = "gui")]
+    pub(crate) tab_bar_scroll: std::collections::HashMap<u32, LogicalPx>,
     /// 카테고리별로 마지막에 선택한 워크스페이스 ID. 영속화하지 않는다.
     /// 재정렬에 영향을 받지 않도록 인덱스 대신 ID를 저장하며, 찾지 못하면 첫 항목을 선택한다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
@@ -384,10 +388,17 @@ impl AppState {
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
+        let mut navigation = navigation::NavigationState::default();
+        navigation.reconcile(&engine.workspaces);
+        if let Some(ws) = engine.workspaces.get(active_workspace) {
+            navigation.select_workspace(&engine.workspaces, ws.id);
+        }
         Self {
             preset_store,
             memory,
-            active_workspace,
+            navigation,
+            #[cfg(feature = "gui")]
+            tab_bar_scroll: Default::default(),
             #[cfg(any(feature = "gui", debug_assertions, test))]
             category_last_active: std::collections::HashMap::new(),
             #[cfg(any(feature = "gui", debug_assertions))]

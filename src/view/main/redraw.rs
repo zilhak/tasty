@@ -395,7 +395,10 @@ impl MainView {
         engine: &crate::core::CoreState,
         surface_id: u32,
     ) -> bool {
-        let Some(ws) = engine.workspaces.get(self.state.active_workspace) else {
+        let Some(ws) = engine
+            .workspaces
+            .get(self.state.active_workspace_index(&engine))
+        else {
             return false;
         };
         for pane_id in ws.pane_layout().all_pane_ids() {
@@ -421,7 +424,7 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
 
         // Collect all Html surface IDs and their visibility/bounds
-        let active_ws = self.state.active_workspace;
+        let active_ws = self.state.active_workspace_index(&engine);
         let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> =
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();

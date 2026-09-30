@@ -390,7 +390,7 @@ fn add_test_workspace(state: &mut crate::state::AppState, engine: &mut crate::co
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
         panic!("apply_create_workspace_inner did not return WorkspaceCreated");
     };
-    state.active_workspace = index;
+    state.set_active_workspace_index(&engine, index);
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         true,  // alt
         false, // option
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -479,7 +479,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
         true,
         false,
     ));
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn workspace_slot_key_switches_workspace() {
         true,
         false,
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -557,7 +557,7 @@ fn category_combo_routes_to_category_switch() {
         false, // alt
         false, // option
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -586,7 +586,7 @@ fn category_next_prev_keys_cycle_categories() {
         false,
         false,
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -598,7 +598,7 @@ fn category_next_prev_keys_cycle_categories() {
         false,
         false,
     ));
-    assert_eq!(state.active_workspace, 2);
+    assert_eq!(state.active_workspace_index(&engine), 2);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -610,7 +610,7 @@ fn category_next_prev_keys_cycle_categories() {
         false,
         false,
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -631,7 +631,7 @@ fn category_next_prev_keys_noop_when_folders_disabled() {
         false,
         false,
     ));
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
@@ -712,7 +712,7 @@ fn individual_workspace_axis_slot_dispatch() {
         true,
         false,
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -743,7 +743,7 @@ fn individual_category_axis_respects_folders_gate() {
         true,
         false,
     ));
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 
     state.switch_workspace(&mut engine, 0);
     engine.settings.general.workspace_categories_enabled = false;
@@ -758,7 +758,7 @@ fn individual_category_axis_respects_folders_gate() {
         true,
         false,
     ));
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]

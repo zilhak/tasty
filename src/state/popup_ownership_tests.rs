@@ -235,14 +235,14 @@ fn workspace_scoped_popup_follows_its_workspace_after_agent_close() {
     state.popups = registered_manager();
     let a = push_workspace(&mut engine);
     let b = push_workspace(&mut engine);
-    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
     let scope = crate::state::RenameTarget::WorkspaceName { workspace_id: b }.popup_scope(&engine);
     state.popups.open_with_scope(PORT_SCANNER_ID, scope);
 
     assert!(state.close_workspace_at(&mut engine, 0, crate::state::WorkspaceCloseOrigin::Agent));
     assert_eq!(
         engine.find_workspace_index_for_id(b),
-        Some(state.active_workspace)
+        Some(state.active_workspace_index(&engine))
     );
     let ctx = live_layout_ctx(&state, &engine);
     assert!(
@@ -250,7 +250,7 @@ fn workspace_scoped_popup_follows_its_workspace_after_agent_close() {
         "popup of the still-active workspace is hidden"
     );
 
-    state.active_workspace = engine.find_workspace_index_for_id(a).unwrap();
+    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(a).unwrap());
     let ctx = live_layout_ctx(&state, &engine);
     assert!(
         state.popups.topmost_visible_open(Some(&ctx)).is_none(),

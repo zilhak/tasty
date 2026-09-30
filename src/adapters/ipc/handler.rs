@@ -577,7 +577,7 @@ fn route_engine_handler(
     if let Some(resp) = hard_occupied_structural_guard(
         core,
         engine,
-        window.active_workspace_index(),
+        window.active_workspace_index(engine),
         &request.method,
         &request.params,
         &id,
@@ -1215,7 +1215,7 @@ fn handle_system_info(
 /// its workspace IDs so an observation never silently looks like a global count.
 /// window.list reuses the same fields beside the OS window ID.
 pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> serde_json::Value {
-    let active_workspace = window.active_workspace_index();
+    let active_workspace = window.active_workspace_index(engine);
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
@@ -1246,7 +1246,7 @@ pub(crate) fn build_engine_tree(
         .enumerate()
         .map(|(i, ws)| {
             let mut t = ws.to_tree_json();
-            t["active"] = json!(i == window.active_workspace_index());
+            t["active"] = json!(i == window.active_workspace_index(engine));
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);
             t
@@ -1482,7 +1482,10 @@ mod system_info_tests {
         engine.workspaces.clear();
         let info = system_info_fields(&state, &engine);
         assert_eq!(info["workspace_count"], 0);
-        assert_eq!(info["active_workspace"], state.active_workspace);
+        assert_eq!(
+            info["active_workspace"],
+            state.active_workspace_index(&engine)
+        );
         assert!(info["active_workspace_id"].is_null());
         assert_eq!(info["workspace_ids"], serde_json::json!([]));
     }

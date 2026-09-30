@@ -210,7 +210,7 @@ pub(crate) fn cascade_surface_closed(
             workspace_id,
         });
         engine.purge_workspace_memory_scope(workspace_id, "cascade");
-        state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
+        state.fix_workspace_pointers_after_removal(&engine, removed_idx, engine.workspaces.len());
     }
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
@@ -298,7 +298,7 @@ fn recreate_workspace_if_now_empty(
         return;
     }
     match core.create_default_workspace(engine) {
-        Ok(idx) => state.set_active_workspace(idx),
+        Ok(idx) => state.set_active_workspace(engine, idx),
         Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
     }
 }

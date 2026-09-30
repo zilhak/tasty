@@ -139,7 +139,6 @@ fn pane(id: u32, tabs: Vec<Tab>) -> PaneNode {
         id,
         tabs,
         active_tab: 0,
-        tab_scroll_offset: 0.0,
     })
 }
 
@@ -477,7 +476,6 @@ const CORE_MUTATIONS: &[CoreMutation] = &[
 const EXCLUDED_MUTATIONS: &[CoreMutation] = &[
     ("focused pane", |e| e.workspaces[0].focused_pane = 22),
     ("active tab", |e| first_pane(e).active_tab = 1),
-    ("tab scroll", |e| first_pane(e).tab_scroll_offset = 12.0),
     ("focused surface", |e| {
         first_pane(e).tabs[1].focused_surface = 43
     }),
@@ -674,7 +672,6 @@ fn exclusion_list_names_every_excluded_mutation() {
     for field in [
         "Workspace.focused_pane",
         "Pane.active_tab",
-        "Pane.tab_scroll_offset",
         "Tab.focused_surface",
         "SurfaceLayout::Split.focus_second",
         "WorkspaceCategory.collapsed",

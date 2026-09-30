@@ -72,7 +72,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         },
     )
     .unwrap();
-    state.active_workspace = 1;
+    state.set_active_workspace_index(&engine, 1);
     let before = engine.workspaces[0].all_surface_ids();
     let active_tab = engine.find_pane_by_id(pane).unwrap().active_tab;
     let focused_surface = state.focused_surface_id(&engine);
@@ -96,7 +96,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     let after = engine.find_pane_by_id(pane).unwrap();
     assert_ne!(after.active_tab, active_tab);
     assert_eq!(after.active_tab, after.tabs.len() - 1);
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
     assert_eq!(state.focused_surface_id(&engine), focused_surface);
     assert!(state.pending_intents.is_empty());
 }

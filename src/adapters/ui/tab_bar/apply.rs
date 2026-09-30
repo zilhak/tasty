@@ -1,6 +1,7 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
+use crate::model::LogicalPx;
 use crate::state::AppState;
 use egui::emath::GuiRounding as _;
 
@@ -60,22 +61,11 @@ pub fn apply_tab_bar_actions(
                 open_search_for_focused_terminal(state, engine);
             }
             TabBarAction::ScrollLeft { pane_id } => {
-                if let Some(pane) = state
-                    .active_workspace_mut(engine)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-                {
-                    pane.tab_scroll_offset = (pane.tab_scroll_offset - tab_w).max(0.0);
-                }
+                let offset = state.tab_bar_scroll.entry(pane_id).or_default();
+                *offset = (*offset - LogicalPx(tab_w)).max(LogicalPx(0.0));
             }
             TabBarAction::ScrollRight { pane_id } => {
-                if let Some(pane) = state
-                    .active_workspace_mut(engine)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-                {
-                    pane.tab_scroll_offset += tab_w;
-                }
+                *state.tab_bar_scroll.entry(pane_id).or_default() += LogicalPx(tab_w);
             }
             TabBarAction::AutoScrollToActiveTab { pane_id, offset } => {
                 apply_auto_scroll(state, engine, pane_id, offset);
@@ -172,12 +162,13 @@ fn apply_auto_scroll(
     pane_id: u32,
     offset: f32,
 ) {
-    if let Some(pane) = state
-        .active_workspace_mut(engine)
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
+    if state
+        .active_workspace(engine)
+        .pane_layout()
+        .find_pane(pane_id)
+        .is_some()
     {
-        pane.tab_scroll_offset = offset;
+        state.tab_bar_scroll.insert(pane_id, LogicalPx(offset));
     }
 }
 

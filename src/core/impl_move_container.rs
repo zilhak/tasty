@@ -205,7 +205,6 @@ impl Core {
             id: 0,
             tabs: vec![],
             active_tab: 0,
-            tab_scroll_offset: 0.0,
         };
         let pane = std::mem::replace(ws.pane_layout_mut().find_pane_mut(pane_id)?, empty);
         let workspaces_now_empty = engine.workspaces.is_empty();

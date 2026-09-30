@@ -99,7 +99,7 @@ fn an_ipc_split_keeps_the_users_focus_for_every_caller() {
             );
 
             assert_eq!(
-                engine.workspaces[state.active_workspace]
+                engine.workspaces[state.active_workspace_index(&engine)]
                     .all_surface_ids()
                     .len(),
                 2,

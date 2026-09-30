@@ -110,7 +110,7 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
     )
     .expect("두 번째 워크스페이스");
     let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-    state.active_workspace = active;
+    state.set_active_workspace_index(&engine, active);
     let mut params = params;
     if params.get("surface_id").and_then(Value::as_str) == Some("ws1") {
         params["surface_id"] = json!(engine.workspaces[1].all_surface_ids()[0]);

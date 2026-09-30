@@ -17,9 +17,14 @@ pub(crate) trait CascadeWindow {
 
     fn set_surface_meta(&self, surface_id: u32, key: &str, value: &str) -> std::io::Result<()>;
 
-    fn fix_workspace_pointers_after_removal(&mut self, removed_idx: usize, remaining: usize);
+    fn fix_workspace_pointers_after_removal(
+        &mut self,
+        engine: &CoreState,
+        removed_idx: usize,
+        remaining: usize,
+    );
 
-    fn set_active_workspace(&mut self, index: usize);
+    fn set_active_workspace(&mut self, engine: &CoreState, index: usize);
 
     /// 닫힌 surface의 화면 전용 cache를 해제한다. 도메인 자원은 CoreState가 먼저 정리한다.
     #[cfg(feature = "gui")]

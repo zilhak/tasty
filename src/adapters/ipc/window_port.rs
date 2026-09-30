@@ -18,7 +18,7 @@ use crate::intent::DispatchedIntent;
 pub(crate) trait IpcWindow: CascadeWindow {
     /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
     /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0017).
-    fn active_workspace_index(&self) -> usize;
+    fn active_workspace_index(&self, engine: &CoreState) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.
     fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf>;
@@ -49,7 +49,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     ) -> bool;
 
     /// 워크스페이스 순서 이동 뒤 활성 포인터를 따라 옮긴다.
-    fn fix_workspace_pointers_after_move(&mut self, from: usize, to: usize);
+    fn fix_workspace_pointers_after_move(&mut self, engine: &CoreState, from: usize, to: usize);
 
     /// 호스트 이벤트(plugin event bus · hook 대기 task)를 이 창의 큐에 넣는다.
     fn push_host_event(&mut self, event: crate::state::PendingHostEvent);

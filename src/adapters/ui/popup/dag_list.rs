@@ -185,7 +185,10 @@ pub fn draw_dag_list_popup(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
 ) -> PopupAction {
-    let active_workspace_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+    let active_workspace_id = engine
+        .workspaces
+        .get(state.active_workspace_index(&engine))
+        .map(|w| w.id);
     let dag = &mut state.dialogs.dag_list;
 
     // 드롭다운이 열려 있으면 부모 닫기만 건너뛴다. 본문은 그려야 드롭다운이 Escape를 처리한다.

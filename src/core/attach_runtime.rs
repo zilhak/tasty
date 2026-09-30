@@ -2848,7 +2848,7 @@ mod forward_exec_tests {
         )
         .expect("close pane ok");
 
-        let ws_before = state.active_workspace;
+        let ws_before = state.active_workspace_index(&engine);
         let focus_before: Vec<(u32, u32)> = engine
             .workspaces
             .iter()
@@ -2865,7 +2865,8 @@ mod forward_exec_tests {
         )
         .expect("restore must succeed");
         assert_eq!(
-            state.active_workspace, ws_before,
+            state.active_workspace_index(&engine),
+            ws_before,
             "원격의 복원이 로컬 사용자의 활성 워크스페이스를 바꾸면 안 된다"
         );
         let focus_after: Vec<(u32, u32)> = engine
@@ -4237,7 +4238,8 @@ mod forward_exec_tests {
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         assert_eq!(
-            state.active_workspace, 0,
+            state.active_workspace_index(&engine),
+            0,
             "기본 대상은 점유된 workspace 여야 한다"
         );
         let pty_id = engine

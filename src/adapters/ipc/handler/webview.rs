@@ -142,7 +142,7 @@ mod tests {
         let surface = engine
             .create_surface_via_registry(kind, new_sid, None, params)
             .expect("create surface via registry");
-        let ws = &mut engine.workspaces[state.active_workspace];
+        let ws = &mut engine.workspaces[state.active_workspace_index(&engine)];
         let pane_id = ws.focused_pane;
         ws.pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -153,7 +153,7 @@ mod tests {
     }
 
     fn focused_surface_id(state: &crate::state::AppState, engine: &crate::core::CoreState) -> u32 {
-        let ws = &engine.workspaces[state.active_workspace];
+        let ws = &engine.workspaces[state.active_workspace_index(&engine)];
         let pane = ws
             .pane_layout()
             .find_pane(ws.focused_pane)
@@ -355,7 +355,7 @@ mod tests {
         let client = hub.alloc_id();
         let rx = hub.register(client);
         engine.attach.set_notifier(hub);
-        let ws_id = engine.workspaces[state.active_workspace].id;
+        let ws_id = engine.workspaces[state.active_workspace_index(&engine)].id;
         engine
             .attach
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)

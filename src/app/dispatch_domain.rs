@@ -766,14 +766,14 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine: _,
+            engine,
             view,
             ..
         }) = engines_mut!(self).resolve(source.engine())
         else {
             return;
         };
-        cascade_workspace_moved(state, from_index, to_index);
+        cascade_workspace_moved(state, engine, from_index, to_index);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -1207,7 +1207,7 @@ pub(crate) fn cascade_workspace_created(
         cascade_surface_created(state, engine, surface_id);
     }
     if origin.is_user() {
-        state.active_workspace = c.index;
+        state.set_active_workspace_index(&engine, c.index);
     }
 }
 
@@ -1226,7 +1226,7 @@ pub(crate) fn cascade_closed_item_restored(
     match kind {
         RestoredKind::Nothing => {}
         RestoredKind::Workspace { new_ws_index } => {
-            state.active_workspace = new_ws_index;
+            state.set_active_workspace_index(&engine, new_ws_index);
         }
         RestoredKind::TabIntoPane => {}
         RestoredKind::PaneIntoWorkspace { pane_id } => {
@@ -1238,10 +1238,11 @@ pub(crate) fn cascade_closed_item_restored(
 /// 이동 뒤 활성 인덱스 보정은 AppState의 공용 함수에 맡긴다.
 pub(crate) fn cascade_workspace_moved(
     state: &mut crate::state::AppState,
+    engine: &crate::core::CoreState,
     from_index: usize,
     to_index: usize,
 ) {
-    state.fix_workspace_pointers_after_move(from_index, to_index);
+    state.fix_workspace_pointers_after_move(&engine, from_index, to_index);
 }
 
 pub(crate) fn cascade_workspace_meta_updated(

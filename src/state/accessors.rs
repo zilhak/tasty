@@ -7,6 +7,16 @@ use super::AppState;
 use crate::core::CoreState;
 
 impl AppState {
+    pub(crate) fn active_workspace_index(&self, engine: &CoreState) -> usize {
+        self.navigation.workspace_index(&engine.workspaces)
+    }
+
+    pub(crate) fn set_active_workspace_index(&mut self, engine: &CoreState, index: usize) {
+        if let Some(ws) = engine.workspaces.get(index) {
+            self.navigation.select_workspace(&engine.workspaces, ws.id);
+        }
+    }
+
     /// Invariant: caller must ensure `engine.workspaces` is non-empty.
     /// Parked states (after the last window closes) can have zero workspaces —
     /// such callers must use `engine.workspaces.is_empty()` checks instead.
@@ -16,7 +26,7 @@ impl AppState {
             "active_workspace called with empty workspaces"
         );
         let idx = self
-            .active_workspace
+            .active_workspace_index(&engine)
             .min(engine.workspaces.len().saturating_sub(1));
         &engine.workspaces[idx]
     }
@@ -31,7 +41,7 @@ impl AppState {
             "active_workspace_mut called with empty workspaces"
         );
         let idx = self
-            .active_workspace
+            .active_workspace_index(&engine)
             .min(engine.workspaces.len().saturating_sub(1));
         &mut engine.workspaces[idx]
     }

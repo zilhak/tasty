@@ -415,7 +415,9 @@ impl AppState {
         }
     }
     pub(crate) fn tutorial_tab_snapshot(&self, engine: &CoreState) -> Option<(u32, u32, u32)> {
-        let ws = engine.workspaces.get(self.active_workspace)?;
+        let ws = engine
+            .workspaces
+            .get(self.active_workspace_index(&engine))?;
         let pane = ws.pane_layout().find_pane(ws.focused_pane)?;
         Some((ws.id, pane.id, pane.tabs.get(pane.active_tab)?.id))
     }

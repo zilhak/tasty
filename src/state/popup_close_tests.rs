@@ -1243,7 +1243,7 @@ fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
     let (mut state, mut engine) = test_state();
     let b = super::popup_ownership_tests::push_workspace(&mut engine);
     let c = super::popup_ownership_tests::push_workspace(&mut engine);
-    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
     let target = RenameTarget::WorkspaceName { workspace_id: b };
     let scope = target.popup_scope(&engine);
     state.dialogs.rename = Some((target, "B".to_string()));
@@ -1264,7 +1264,7 @@ fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
     );
     assert!(state.dialogs.rename.is_none());
 
-    state.active_workspace = engine.find_workspace_index_for_id(c).unwrap();
+    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(c).unwrap());
     let target = RenameTarget::WorkspaceName { workspace_id: c };
     let scope = target.popup_scope(&engine);
     state.dialogs.rename = Some((target, "C".to_string()));
@@ -1279,7 +1279,7 @@ fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
     let (mut state, mut engine) = test_state();
     let b = super::popup_ownership_tests::push_workspace(&mut engine);
     super::popup_ownership_tests::push_workspace(&mut engine);
-    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
     open_scoped(
         &mut state,
         PORT_SCANNER_POPUP_ID,

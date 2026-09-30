@@ -46,11 +46,8 @@ impl WorkspaceCloseOrigin {
 /// 활성 대상을 제거했다면 같은 자리의 다음 항목, 없으면 직전 항목을 선택한다.
 /// remaining은 제거 후 개수이며, 0이면 0을 반환한다.
 /// docs/design/policies/focus.md의 삭제로 인한 인덱스 이동 규칙을 따른다.
-pub(crate) fn active_index_after_removal(
-    active: usize,
-    removed_idx: usize,
-    remaining: usize,
-) -> usize {
+#[cfg(test)]
+fn active_index_after_removal(active: usize, removed_idx: usize, remaining: usize) -> usize {
     if remaining == 0 {
         return 0;
     }
@@ -64,7 +61,8 @@ pub(crate) fn active_index_after_removal(
 }
 
 /// 재정렬 후에도 같은 워크스페이스를 가리키도록 활성 인덱스를 보정한다.
-pub(crate) fn active_index_after_move(active: usize, from: usize, to: usize) -> usize {
+#[cfg(test)]
+fn active_index_after_move(active: usize, from: usize, to: usize) -> usize {
     if active == from {
         to
     } else if from < to && active > from && active <= to {
@@ -93,7 +91,7 @@ impl AppState {
             crate::core::WorkspaceCreationParams::terminal(),
         ) {
             Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
-                self.active_workspace = index;
+                self.set_active_workspace_index(&engine, index);
                 true
             }
             Ok(_) => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
@@ -104,26 +102,30 @@ impl AppState {
         }
     }
 
-    /// 제거 직후 활성 인덱스를 보정한다. category_last_active는 ID를 저장하므로 제외한다.
+    /// Reconcile IDs after a structural result; origin does not affect repair.
     pub(crate) fn fix_workspace_pointers_after_removal(
         &mut self,
-        removed_idx: usize,
-        remaining: usize,
+        engine: &CoreState,
+        _removed_idx: usize,
+        _remaining: usize,
     ) {
-        self.active_workspace =
-            active_index_after_removal(self.active_workspace, removed_idx, remaining);
+        self.navigation.reconcile(&engine.workspaces);
     }
 
-    /// 재정렬 직후 활성 인덱스를 보정한다. GUI와 CoreEvent 경로가 함께 사용한다.
-    pub(crate) fn fix_workspace_pointers_after_move(&mut self, from: usize, to: usize) {
-        self.active_workspace = active_index_after_move(self.active_workspace, from, to);
+    pub(crate) fn fix_workspace_pointers_after_move(
+        &mut self,
+        engine: &CoreState,
+        _from: usize,
+        _to: usize,
+    ) {
+        self.navigation.reconcile(&engine.workspaces);
     }
 
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
-            self.active_workspace = index;
+            self.set_active_workspace_index(&engine, index);
             let cat = engine.workspaces[index].category;
             self.category_last_active
                 .insert(cat, engine.workspaces[index].id);
@@ -183,10 +185,10 @@ impl AppState {
         engine: &mut CoreState,
         local_idx: usize,
     ) {
-        if self.active_workspace >= engine.workspaces.len() {
+        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
             return;
         }
-        let cat = engine.workspaces[self.active_workspace].category;
+        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
         let global = engine
             .workspaces_in_category(cat)
             .get(local_idx)
@@ -222,15 +224,15 @@ impl AppState {
         engine: &CoreState,
         delta: isize,
     ) -> Option<usize> {
-        if self.active_workspace >= engine.workspaces.len() {
+        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace].category;
+        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
         let locals = engine.workspaces_in_category(cat);
         let len = locals.len();
         let pos = locals
             .iter()
-            .position(|(gi, _)| *gi == self.active_workspace)?;
+            .position(|(gi, _)| *gi == self.active_workspace_index(&engine))?;
 
         if engine.settings.general.workspace_switch_crosses_category {
             let raw = pos as isize + delta;
@@ -287,10 +289,10 @@ impl AppState {
     /// delta(±1) 방향으로 순환할 카테고리의 섹션 인덱스를 구한다.
     #[cfg(any(feature = "gui", test))]
     fn relative_category_section(&self, engine: &CoreState, delta: isize) -> Option<usize> {
-        if self.active_workspace >= engine.workspaces.len() {
+        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace].category;
+        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
         let categories = engine.categories();
         let len = categories.len();
         if len <= 1 {
@@ -310,7 +312,7 @@ impl AppState {
         }
         let ws = engine.workspaces.remove(from);
         engine.workspaces.insert(to, ws);
-        self.fix_workspace_pointers_after_move(from, to);
+        self.fix_workspace_pointers_after_move(&engine, from, to);
         true
     }
 
@@ -320,7 +322,7 @@ impl AppState {
     fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
         let mut deferred: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[self.active_workspace];
+            let ws = &engine.workspaces[self.active_workspace_index(&engine)];
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
                     && let Some(tab) = pane.tabs.get(pane.active_tab)
@@ -336,7 +338,11 @@ impl AppState {
 
     #[cfg(feature = "gui")]
     pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
-        self.close_workspace_at(engine, self.active_workspace, WorkspaceCloseOrigin::User)
+        self.close_workspace_at(
+            engine,
+            self.active_workspace_index(&engine),
+            WorkspaceCloseOrigin::User,
+        )
     }
 
     /// 지정 워크스페이스를 닫고 관련 상태를 정리한다.
@@ -376,7 +382,7 @@ impl AppState {
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         self.after_workspace_removed(engine, workspace_id, path);
-        self.fix_workspace_pointers_after_removal(ws_idx, engine.workspaces.len());
+        self.fix_workspace_pointers_after_removal(&engine, ws_idx, engine.workspaces.len());
         // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
@@ -431,7 +437,7 @@ mod workspace_pointer_tests {
         let calls: Vec<usize> = lines
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.contains("state.fix_workspace_pointers_after_removal("))
+            .filter(|(_, l)| l.contains("state.fix_workspace_pointers_after_removal(&engine, "))
             .map(|(i, _)| i)
             .collect();
         assert!(
@@ -446,7 +452,7 @@ mod workspace_pointer_tests {
             );
         }
         assert!(
-            !src.contains("state.active_workspace = engine.workspaces.len() - 1"),
+            !src.contains("state.active_workspace_index(&engine) = engine.workspaces.len() - 1"),
             "close cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
         );
     }
@@ -488,31 +494,39 @@ mod workspace_pointer_tests {
         }
         let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
 
-        state.active_workspace = 2;
+        state.set_active_workspace_index(&engine, 2);
         assert!(state.move_workspace(&mut engine, 0, 3));
         assert_eq!(
-            engine.workspaces[state.active_workspace].id, ids[2],
+            engine.workspaces[state.active_workspace_index(&engine)].id,
+            ids[2],
             "앞쪽 워크스페이스가 뒤로 가면 보고 있던 것은 한 칸 당겨진다"
         );
 
-        let from = state.active_workspace;
+        let from = state.active_workspace_index(&engine);
         assert!(state.move_workspace(&mut engine, from, 0));
-        assert_eq!(engine.workspaces[state.active_workspace].id, ids[2]);
-        assert_eq!(state.active_workspace, 0);
+        assert_eq!(
+            engine.workspaces[state.active_workspace_index(&engine)].id,
+            ids[2]
+        );
+        assert_eq!(state.active_workspace_index(&engine), 0);
     }
 
     #[test]
-    fn the_move_cascade_applies_the_same_rule_as_move_workspace() {
-        for (active, from, to) in [(2, 0, 3), (1, 3, 1), (1, 1, 3), (3, 0, 1)] {
-            let (mut state, _engine) = crate::state::tests::test_state();
-            state.active_workspace = active;
-            crate::app::dispatch_domain::cascade_workspace_moved(&mut state, from, to);
-            assert_eq!(
-                state.active_workspace,
-                active_index_after_move(active, from, to),
-                "이벤트 처리와 직접 보정 결과가 다르다 (active={active}, {from}->{to})"
-            );
+    fn the_move_cascade_preserves_the_selected_id() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        for _ in 0..3 {
+            crate::core::apply_create_workspace_inner(
+                &mut engine,
+                crate::core::WorkspaceCreationParams::terminal(),
+            )
+            .unwrap();
         }
+        state.set_active_workspace_index(&engine, 2);
+        let selected = state.active_workspace(&engine).id;
+        let moved = engine.workspaces.remove(0);
+        engine.workspaces.insert(3, moved);
+        crate::app::dispatch_domain::cascade_workspace_moved(&mut state, &engine, 0, 3);
+        assert_eq!(state.active_workspace(&engine).id, selected);
     }
 
     // GUI·헤드리스 양쪽의 보정 호출을 소스로 확인한다.
@@ -527,7 +541,7 @@ mod workspace_pointer_tests {
                 "{label} cascade 가 재정렬 포인터 보정 헬퍼를 부르지 않는다"
             );
             assert!(
-                !src.contains("state.active_workspace = to_index"),
+                !src.contains("state.active_workspace_index(&engine) = to_index"),
                 "{label} cascade 에 보정 규칙이 인라인으로 복제돼 있다"
             );
         }
@@ -564,7 +578,8 @@ mod workspace_pointer_tests {
 
         state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            engine.workspaces[state.active_workspace].id, ids[3],
+            engine.workspaces[state.active_workspace_index(&engine)].id,
+            ids[3],
             "재정렬 뒤에도 카테고리에서 마지막으로 본 워크스페이스를 선택해야 한다"
         );
     }
@@ -590,19 +605,21 @@ mod workspace_pointer_tests {
         state.switch_workspace(&mut engine, 0); // B 의 착지점 = ids[0]
 
         engine.workspaces.remove(0);
-        state.fix_workspace_pointers_after_removal(0, engine.workspaces.len());
+        state.fix_workspace_pointers_after_removal(&engine, 0, engine.workspaces.len());
 
         state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            engine.workspaces[state.active_workspace].id, ids[2],
+            engine.workspaces[state.active_workspace_index(&engine)].id,
+            ids[2],
             "제거로 인덱스가 바뀌어도 같은 워크스페이스를 선택해야 한다"
         );
 
         // 대상과 카테고리의 다른 항목도 없으면 이전 활성 상태를 유지한다.
-        let before = state.active_workspace;
+        let before = state.active_workspace_index(&engine);
         state.switch_to_category(&mut engine, 2);
         assert_eq!(
-            state.active_workspace, before,
+            state.active_workspace_index(&engine),
+            before,
             "빈 카테고리의 이전 선택 기록으로 전환하면 안 된다"
         );
     }

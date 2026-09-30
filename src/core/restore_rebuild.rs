@@ -225,7 +225,6 @@ pub(crate) fn rebuild_pane(engine: &mut CoreState, closed: ClosedPane) -> Option
         id: pane_id,
         tabs,
         active_tab,
-        tab_scroll_offset: 0.0,
     })
 }
 

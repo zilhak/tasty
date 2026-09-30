@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn tab_rename_targets_same_tab_after_agent_move() {
         let (mut state, mut engine) = crate::state::tests::test_state();
-        let ws_idx = state.active_workspace;
+        let ws_idx = state.active_workspace_index(&engine);
         let pane_id = engine.workspaces[ws_idx].focused_pane;
         let t2 = engine.next_ids.next_tab();
         let s2 = engine.next_ids.next_surface();

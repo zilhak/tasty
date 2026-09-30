@@ -82,7 +82,11 @@ impl App {
         let prev_active = self.auto_attach_last_active_ws;
         let current_ws_id = self
             .focused_pair()
-            .and_then(|(main, engine)| engine.workspaces.get(main.state.active_workspace))
+            .and_then(|(main, engine)| {
+                engine
+                    .workspaces
+                    .get(main.state.active_workspace_index(&engine))
+            })
             .map(|ws| ws.id);
         self.auto_attach_last_active_ws = current_ws_id;
 
@@ -114,7 +118,7 @@ impl App {
             let Some((main, engine)) = self.focused_pair() else {
                 return;
             };
-            let idx = main.state.active_workspace;
+            let idx = main.state.active_workspace_index(&engine);
             match engine.workspaces.get(idx) {
                 Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
                 None => None,

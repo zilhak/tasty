@@ -14,7 +14,10 @@ pub fn collect(
     let mut info = serde_json::Map::new();
 
     info.insert("workspace_count".into(), json!(engine.workspaces.len()));
-    info.insert("active_workspace".into(), json!(state.active_workspace));
+    info.insert(
+        "active_workspace".into(),
+        json!(state.active_workspace_index(&engine)),
+    );
 
     if let Some(gpu) = gpu {
         info.insert("scale_factor".into(), json!(gpu.scale_factor()));

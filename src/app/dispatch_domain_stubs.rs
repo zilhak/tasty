@@ -40,8 +40,13 @@ pub(crate) fn cascade_closed_item_restored(
 }
 
 /// 헤드리스도 활성 workspace 인덱스가 실제 위치를 가리켜야 한다.
-pub(crate) fn cascade_workspace_moved(state: &mut AppState, from_index: usize, to_index: usize) {
-    state.fix_workspace_pointers_after_move(from_index, to_index);
+pub(crate) fn cascade_workspace_moved(
+    state: &mut AppState,
+    engine: &CoreState,
+    from_index: usize,
+    to_index: usize,
+) {
+    state.fix_workspace_pointers_after_move(&engine, from_index, to_index);
 }
 
 pub(crate) fn cascade_workspace_meta_updated(

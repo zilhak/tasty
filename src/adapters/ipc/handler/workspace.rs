@@ -113,7 +113,7 @@ pub fn handle_workspace_list(
                 "name": ws.name,
                 "subtitle": ws.subtitle,
                 "description": ws.description,
-                "active": i == window.active_workspace_index(),
+                "active": i == window.active_workspace_index(engine),
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
@@ -592,7 +592,7 @@ pub fn handle_workspace_move(
         Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {
-        window.fix_workspace_pointers_after_move(from, to);
+        window.fix_workspace_pointers_after_move(&engine, from, to);
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }
@@ -723,7 +723,7 @@ mod close_tests {
         add_workspace(&mut engine);
         assert_eq!(engine.workspaces.len(), 3);
 
-        state.active_workspace = 2;
+        state.set_active_workspace_index(&engine, 2);
         let viewing_id = engine.workspaces[2].id;
         let target_idx = 1;
         assert_eq!(engine.workspaces[target_idx].id, target_id);
@@ -755,7 +755,8 @@ mod close_tests {
 
         // 앞쪽 항목을 지워 인덱스가 바뀌어도 사용자가 보던 ID는 유지되어야 한다.
         assert_eq!(
-            engine.workspaces[state.active_workspace].id, viewing_id,
+            engine.workspaces[state.active_workspace_index(&engine)].id,
+            viewing_id,
             "앞쪽 워크스페이스를 닫았는데 사용자 시야가 다른 워크스페이스로 옮겨갔다"
         );
 

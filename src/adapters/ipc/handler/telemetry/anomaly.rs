@@ -38,7 +38,7 @@ pub(super) fn fire_anomaly_notification(
     engine: &mut crate::core::CoreState,
     anomaly: &Anomaly,
 ) {
-    let Some(ws) = engine.workspaces.get(window.active_workspace_index()) else {
+    let Some(ws) = engine.workspaces.get(window.active_workspace_index(engine)) else {
         return;
     };
     let ws_id = ws.id;

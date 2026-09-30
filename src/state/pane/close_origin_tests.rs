@@ -34,7 +34,7 @@ fn insert_detached(engine: &mut CoreState, sid: u32) {
 fn arrange(case: Case) -> (AppState, CoreState, u32) {
     let (mut state, mut engine) = test_state();
     let sid_a = state.focused_surface_id(&engine).unwrap();
-    let ws_idx = state.active_workspace;
+    let ws_idx = state.active_workspace_index(&engine);
     let pane_id = state.active_workspace(&engine).focused_pane;
     let target = match case {
         Case::Surface => {
@@ -73,7 +73,7 @@ fn arrange(case: Case) -> (AppState, CoreState, u32) {
             let CoreEvent::WorkspaceCreated { index, .. } = event else {
                 panic!("WorkspaceCreated expected");
             };
-            state.active_workspace = index;
+            state.set_active_workspace_index(&engine, index);
             engine.workspaces[index].all_surface_ids()[0]
         }
     };

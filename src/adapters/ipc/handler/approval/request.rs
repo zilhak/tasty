@@ -95,7 +95,7 @@ pub fn handle_request(
         .or_else(|| {
             engine
                 .workspaces
-                .get(window.active_workspace_index())
+                .get(window.active_workspace_index(engine))
                 .map(|ws| ws.id)
         });
 

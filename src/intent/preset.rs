@@ -231,7 +231,7 @@ fn mirror_target_index(
             .workspaces
             .len()
             .checked_sub(1)
-            .map(|last| state.active_workspace.min(last))
+            .map(|last| state.active_workspace_index(&engine).min(last))
     };
     let idx = match target.kind {
         PresetKind::Tab => match target.target_pane_id {

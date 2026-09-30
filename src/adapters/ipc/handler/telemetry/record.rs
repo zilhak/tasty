@@ -42,7 +42,7 @@ pub fn handle_record(
     let default_agent = caller.agent_id();
     let default_ws = engine
         .workspaces
-        .get(window.active_workspace_index())
+        .get(window.active_workspace_index(engine))
         .map(|ws| ws.id);
     let ts = now_ms();
     let ev = match build_event(params, default_agent.as_str(), default_ws, ts) {
@@ -89,7 +89,7 @@ pub fn handle_record_batch(
     let default_agent = caller.agent_id();
     let default_ws = engine
         .workspaces
-        .get(window.active_workspace_index())
+        .get(window.active_workspace_index(engine))
         .map(|ws| ws.id);
     let ts = now_ms();
     // 잘못된 입력으로 일부만 기록되지 않도록 전체 입력을 먼저 검사한다.

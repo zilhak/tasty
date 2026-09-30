@@ -292,7 +292,11 @@ impl AppState {
             }
             CascadeLevel::Workspace => {
                 if let Some((removed_idx, workspace_id)) = *workspace_purged {
-                    self.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
+                    self.fix_workspace_pointers_after_removal(
+                        &engine,
+                        removed_idx,
+                        engine.workspaces.len(),
+                    );
                     self.after_workspace_removed(engine, workspace_id, PATH);
                 }
                 let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets

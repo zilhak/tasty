@@ -63,7 +63,7 @@ pub(super) fn handle_ui_state(
             "active_modal_id": serde_json::Value::Null,
             "active_modal_kind": serde_json::Value::Null,
             "notification_panel_open": notification_panel_open,
-            "active_workspace": state.active_workspace,
+            "active_workspace": state.active_workspace_index(&engine),
             "workspace_count": engine.workspaces.len(),
             "pane_count": pane_count,
             "tab_count": tab_count,
@@ -147,7 +147,10 @@ mod tests {
         assert!(result["pane_count"].is_null(), "{result}");
         assert!(result["tab_count"].is_null(), "{result}");
         assert!(result["active_tab"].is_null(), "{result}");
-        assert_eq!(result["active_workspace"], state.active_workspace);
+        assert_eq!(
+            result["active_workspace"],
+            state.active_workspace_index(&engine)
+        );
         assert!(result["keyboard_shortcuts_gated"].is_boolean(), "{result}");
     }
 

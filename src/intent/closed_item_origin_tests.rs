@@ -17,7 +17,7 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
     };
     assert_eq!(index, 1);
     assert!(state.close_workspace_at(&mut engine, 1, WorkspaceCloseOrigin::User));
-    state.active_workspace = 0;
+    state.set_active_workspace_index(&engine, 0);
     assert_eq!(engine.workspaces.len(), 1);
     assert_eq!(
         engine.closed_items.len(),
@@ -33,7 +33,7 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
         "복원이 워크스페이스를 되살려야 한다"
     );
     assert_eq!(engine.closed_items.len(), 0);
-    state.active_workspace
+    state.active_workspace_index(&engine)
 }
 
 #[test]

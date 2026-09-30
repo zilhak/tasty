@@ -285,7 +285,7 @@ mod tests {
     fn origin_surface_decides_remote_even_when_active_workspace_is_local() {
         let (mut state, mut engine) = make_test_state();
         let (ws_id, sid) = push_background_mirror(&mut engine);
-        assert!(!engine.workspaces[state.active_workspace].mirror);
+        assert!(!engine.workspaces[state.active_workspace_index(&engine)].mirror);
 
         let resp = handle_trigger(
             &mut state,

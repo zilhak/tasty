@@ -26,7 +26,7 @@ pub fn draw_collapsed_sidebar(
     plugin_alert: usize,
 ) -> CollapsedSidebarResult {
     let th = theme::theme();
-    let active_ws = state.active_workspace;
+    let active_ws = state.active_workspace_index(&engine);
     let workspaces: Vec<WorkspaceEntryView> = engine
         .workspaces
         .iter()

@@ -186,7 +186,7 @@ fn a_plugin_only_window_arm_refuses_cli_and_agent_without_touching_the_window() 
         }
         for caller in [CallerContext::Local, agent.clone()] {
             let (mut state, mut engine) = crate::state::tests::test_state();
-            let active_before = state.active_workspace;
+            let active_before = state.active_workspace_index(&engine);
             let resp = super::route_window_handler(
                 &mut state,
                 &mut engine,
@@ -208,7 +208,8 @@ fn a_plugin_only_window_arm_refuses_cli_and_agent_without_touching_the_window() 
                 "`{method}` 을 {caller:?} 가 불렀는데 포커스를 가진 popup 이 있다"
             );
             assert_eq!(
-                state.active_workspace, active_before,
+                state.active_workspace_index(&engine),
+                active_before,
                 "`{method}` · {caller:?}"
             );
             checked += 1;

@@ -112,7 +112,7 @@ impl GpuState {
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
                 engine,
-                state.active_workspace,
+                state.active_workspace_index(&engine),
                 pane_rects,
                 state.tab_bar_height,
             );

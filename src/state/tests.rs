@@ -830,12 +830,12 @@ fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState)
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
         panic!("apply_create_workspace_inner가 WorkspaceCreated를 반환해야 한다");
     };
-    state.active_workspace = index;
+    state.set_active_workspace_index(&engine, index);
 }
 
 fn add_mirror_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
     add_test_workspace(state, engine);
-    let idx = state.active_workspace;
+    let idx = state.active_workspace_index(&engine);
     let ws = engine
         .workspaces
         .get_mut(idx)
@@ -853,7 +853,7 @@ fn local_attention_raise_is_suppressed_on_mirror_surface() {
     let (mut state, mut engine) = test_state();
     let local_sid = *engine
         .workspaces
-        .get(state.active_workspace)
+        .get(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -885,7 +885,7 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
     let (mut state, mut engine) = test_state();
     let local_sid = *engine
         .workspaces
-        .get(state.active_workspace)
+        .get(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -947,7 +947,7 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
     let mirror_ws_id = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(state.active_workspace_index(&engine))
         .expect("mirror workspace")
         .id;
 
@@ -1023,7 +1023,7 @@ fn occupancy_suppresses_completion_highlight() {
     let (state, mut engine) = test_state();
     let sids = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1065,7 +1065,7 @@ fn needs_input_not_suppressed_by_occupancy() {
     let (state, mut engine) = test_state();
     let sids = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1103,17 +1103,17 @@ fn add_workspace_increments_count() {
 fn switch_workspace_valid() {
     let (mut state, mut engine) = test_state();
     add_test_workspace(&mut state, &mut engine);
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 
     state.switch_workspace(&mut engine, 0);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
 fn switch_workspace_out_of_range() {
     let (mut state, mut engine) = test_state();
     state.switch_workspace(&mut engine, 999);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
@@ -1125,16 +1125,16 @@ fn next_prev_workspace_single_category_wraps() {
 
     state.switch_workspace(&mut engine, 0); // active = A
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // B
+    assert_eq!(state.active_workspace_index(&engine), 1); // B
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // C
+    assert_eq!(state.active_workspace_index(&engine), 2); // C
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → A
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → A
 
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // wrap → C
+    assert_eq!(state.active_workspace_index(&engine), 2); // wrap → C
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // B
+    assert_eq!(state.active_workspace_index(&engine), 1); // B
 }
 
 #[test]
@@ -1153,19 +1153,19 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
 
     state.switch_workspace(&mut engine, 0);
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // C (B=1 건너뜀)
+    assert_eq!(state.active_workspace_index(&engine), 2); // C (B=1 건너뜀)
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → A
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → A
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // wrap → C
+    assert_eq!(state.active_workspace_index(&engine), 2); // wrap → C
 
     state.switch_workspace(&mut engine, 1);
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 3); // D (C=2 건너뜀)
+    assert_eq!(state.active_workspace_index(&engine), 3); // D (C=2 건너뜀)
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // wrap → B
+    assert_eq!(state.active_workspace_index(&engine), 1); // wrap → B
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 3); // wrap → D
+    assert_eq!(state.active_workspace_index(&engine), 3); // wrap → D
 }
 
 #[test]
@@ -1181,7 +1181,7 @@ fn crosses_category_off_keeps_local_wrap() {
 
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → A (normal 의 첫), work 로 넘어가지 않음
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → A (normal 의 첫), work 로 넘어가지 않음
 }
 
 #[test]
@@ -1199,7 +1199,7 @@ fn crosses_category_on_next_lands_on_next_category_first() {
     engine.settings.general.workspace_switch_crosses_category = true;
 
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // work 의 first = C (D 의 last-active 아님)
+    assert_eq!(state.active_workspace_index(&engine), 2); // work 의 first = C (D 의 last-active 아님)
 }
 
 #[test]
@@ -1215,7 +1215,7 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
 
     state.switch_workspace(&mut engine, 2); // active = C (work 의 첫)
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // normal 의 last = B
+    assert_eq!(state.active_workspace_index(&engine), 1); // normal 의 last = B
 }
 
 #[test]
@@ -1231,7 +1231,7 @@ fn crosses_category_on_wraps_across_full_category_list() {
 
     state.switch_workspace(&mut engine, 3); // active = D (마지막 카테고리의 마지막)
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → normal 의 first = A
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → normal 의 first = A
 }
 
 #[test]
@@ -1244,7 +1244,7 @@ fn crosses_category_on_single_category_falls_back_to_local_wrap() {
 
     state.switch_workspace(&mut engine, 2); // active = C (normal 의 마지막, 유일한 카테고리)
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → A, off 일 때와 동일
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → A, off 일 때와 동일
 }
 
 #[test]
@@ -1259,10 +1259,10 @@ fn switch_to_category_lands_on_last_active() {
 
     state.switch_workspace(&mut engine, 3);
     state.switch_workspace(&mut engine, 0);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 
     state.switch_to_category(&mut engine, 1);
-    assert_eq!(state.active_workspace, 3);
+    assert_eq!(state.active_workspace_index(&engine), 3);
 }
 
 #[test]
@@ -1277,7 +1277,7 @@ fn switch_to_category_falls_back_to_first_when_never_visited() {
 
     state.switch_workspace(&mut engine, 0);
     state.switch_to_category(&mut engine, 1);
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -1295,7 +1295,7 @@ fn switch_to_category_auto_expands_collapsed() {
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     crate::intent::headless::drain_pending_intents(&mut core, &mut state, &mut engine);
     assert!(!engine.categories()[1].collapsed); // auto-expand
-    assert_eq!(state.active_workspace, 1); // work first = B
+    assert_eq!(state.active_workspace_index(&engine), 1); // work first = B
 }
 
 #[test]
@@ -1303,7 +1303,7 @@ fn switch_to_category_out_of_range_noop() {
     let (mut state, mut engine) = test_state();
     state.switch_workspace(&mut engine, 0);
     state.switch_to_category(&mut engine, 99);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
@@ -1318,28 +1318,28 @@ fn next_prev_category_wraps_across_categories() {
 
     state.switch_workspace(&mut engine, 0); // active = A (normal)
     state.next_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // work → B
+    assert_eq!(state.active_workspace_index(&engine), 1); // work → B
     state.next_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // play → C
+    assert_eq!(state.active_workspace_index(&engine), 2); // play → C
     state.next_category(&mut engine);
-    assert_eq!(state.active_workspace, 0); // wrap → normal → A
+    assert_eq!(state.active_workspace_index(&engine), 0); // wrap → normal → A
 
     state.prev_category(&mut engine);
-    assert_eq!(state.active_workspace, 2); // wrap → play → C
+    assert_eq!(state.active_workspace_index(&engine), 2); // wrap → play → C
     state.prev_category(&mut engine);
-    assert_eq!(state.active_workspace, 1); // work → B
+    assert_eq!(state.active_workspace_index(&engine), 1); // work → B
 }
 
 #[test]
 fn next_prev_category_noop_when_single_category() {
     let (mut state, mut engine) = test_state();
     add_test_workspace(&mut state, &mut engine); // 같은 normal 카테고리에 워크스페이스 추가.
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 
     state.next_category(&mut engine);
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
     state.prev_category(&mut engine);
-    assert_eq!(state.active_workspace, 1);
+    assert_eq!(state.active_workspace_index(&engine), 1);
 }
 
 #[test]
@@ -1355,19 +1355,19 @@ fn next_category_lands_on_last_active() {
     state.switch_workspace(&mut engine, 0); // normal 로 복귀.
 
     state.next_category(&mut engine); // → work, last-active = C.
-    assert_eq!(state.active_workspace, 2);
+    assert_eq!(state.active_workspace_index(&engine), 2);
 }
 
 #[test]
 fn next_prev_workspace_in_active_category_noop_when_alone() {
     let (mut state, mut engine) = test_state();
     assert_eq!(engine.workspaces.len(), 1);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 
     state.next_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
     state.prev_workspace_in_active_category(&mut engine);
-    assert_eq!(state.active_workspace, 0);
+    assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
@@ -2044,7 +2044,8 @@ fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
 
     assert_eq!(engine.workspaces.len(), 3);
     assert_eq!(
-        engine.workspaces[state.active_workspace].id, viewed_id,
+        engine.workspaces[state.active_workspace_index(&engine)].id,
+        viewed_id,
         "앞쪽 워크스페이스가 닫혀도 사용자가 보던 워크스페이스는 그대로여야 한다"
     );
 }
@@ -2063,7 +2064,7 @@ fn closing_the_viewed_workspace_moves_to_a_neighbour() {
 
     assert_eq!(engine.workspaces.len(), 2);
     assert!(
-        survivors.contains(&engine.workspaces[state.active_workspace].id),
+        survivors.contains(&engine.workspaces[state.active_workspace_index(&engine)].id),
         "닫힌 대상이 보던 워크스페이스였으면 생존 워크스페이스로 이동한다"
     );
 }
@@ -2075,7 +2076,7 @@ fn closing_an_earlier_tab_keeps_the_viewed_tab() {
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.active_workspace(&engine).focused_pane;
-    engine.workspaces[state.active_workspace]
+    engine.workspaces[state.active_workspace_index(&engine)]
         .pane_layout_mut()
         .find_pane_mut(pane_id)
         .unwrap()
@@ -2116,7 +2117,7 @@ fn closing_an_unfocused_pane_keeps_the_focused_pane() {
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     assert_eq!(pane_ids.len(), 3);
     let focused_pane = *pane_ids.last().unwrap();
-    engine.workspaces[state.active_workspace].focused_pane = focused_pane;
+    engine.workspaces[state.active_workspace_index(&engine)].focused_pane = focused_pane;
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
 
@@ -2135,7 +2136,7 @@ fn closing_the_focused_pane_reassigns_focus() {
         .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
     let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
-    engine.workspaces[state.active_workspace].focused_pane = sid0_pane;
+    engine.workspaces[state.active_workspace_index(&engine)].focused_pane = sid0_pane;
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
 
@@ -2226,7 +2227,7 @@ fn closing_a_workspace_emits_the_host_event_for_both_origins() {
 fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
     let (mut state, mut engine) = test_state();
     add_test_workspace(&mut state, &mut engine);
-    let ws_idx = state.active_workspace;
+    let ws_idx = state.active_workspace_index(&engine);
     let surface = engine.workspaces[ws_idx].all_surface_ids()[0];
     let closed_before = engine.closed_items.len();
 
@@ -2249,7 +2250,7 @@ fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
 fn inline_cascade_emits_the_workspace_closed_host_event() {
     let (mut state, mut engine) = test_state();
     add_test_workspace(&mut state, &mut engine);
-    let ws_idx = state.active_workspace;
+    let ws_idx = state.active_workspace_index(&engine);
     let workspace_id = engine.workspaces[ws_idx].id;
     let surface_ids = engine.workspaces[ws_idx].all_surface_ids();
     assert_eq!(

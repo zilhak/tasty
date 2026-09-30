@@ -81,7 +81,6 @@ impl PaneNode {
                             id: new_pane_id,
                             tabs: vec![],
                             active_tab: 0,
-                            tab_scroll_offset: 0.0,
                         })),
                     },
                 );
@@ -121,7 +120,6 @@ impl PaneNode {
                             id: 0,
                             tabs: vec![],
                             active_tab: 0,
-                            tab_scroll_offset: 0.0,
                         }),
                     );
                     if let PaneNode::Split { second, .. } = old {
@@ -136,7 +134,6 @@ impl PaneNode {
                             id: 0,
                             tabs: vec![],
                             active_tab: 0,
-                            tab_scroll_offset: 0.0,
                         }),
                     );
                     if let PaneNode::Split { first, .. } = old {
@@ -167,7 +164,6 @@ impl PaneNode {
             id: 0,
             tabs: vec![],
             active_tab: 0,
-            tab_scroll_offset: 0.0,
         });
         let PaneNode::Split { first, second, .. } = std::mem::replace(self, placeholder) else {
             return None;
@@ -265,7 +261,6 @@ impl PaneNode {
                 id: 0,
                 tabs: vec![],
                 active_tab: 0,
-                tab_scroll_offset: 0.0,
             });
             let original = std::mem::replace(self, placeholder);
             let (first, second) = if new_pane_is_first {
@@ -450,7 +445,6 @@ mod tests {
             id,
             tabs: vec![],
             active_tab: 0,
-            tab_scroll_offset: 0.0,
         })
     }
 

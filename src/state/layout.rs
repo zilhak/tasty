@@ -99,7 +99,7 @@ impl AppState {
             return;
         }
         let idx = self
-            .active_workspace
+            .active_workspace_index(&engine)
             .min(engine.workspaces.len().saturating_sub(1));
         let mut deferred: Vec<u32> = Vec::new();
         {

@@ -101,7 +101,7 @@ impl AppState {
         }
 
         if opts.focus {
-            self.active_workspace = idx;
+            self.set_active_workspace_index(&engine, idx);
         }
         engine.mark_layout_dirty();
         Ok(idx)
@@ -151,7 +151,8 @@ impl AppState {
                 if engine.workspaces.is_empty() {
                     return Err(ApplyError::NoActiveWorkspace);
                 }
-                self.active_workspace.min(engine.workspaces.len() - 1)
+                self.active_workspace_index(&engine)
+                    .min(engine.workspaces.len() - 1)
             }
         };
 
@@ -201,7 +202,9 @@ impl AppState {
                 .ok_or(ApplyError::PaneNotFound(pid))?;
             return Ok((ws_idx, pid));
         }
-        let ws_idx = self.active_workspace.min(engine.workspaces.len() - 1);
+        let ws_idx = self
+            .active_workspace_index(&engine)
+            .min(engine.workspaces.len() - 1);
         let ws = &engine.workspaces[ws_idx];
         let pid = ws.focused_pane;
         if ws.pane_layout().find_pane(pid).is_some() {
@@ -261,7 +264,6 @@ impl AppState {
             id: pane_id,
             tabs,
             active_tab,
-            tab_scroll_offset: 0.0,
         })
     }
 

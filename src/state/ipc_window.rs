@@ -7,8 +7,8 @@ use crate::adapters::ipc::window_port::{IntentOutbox, IpcWindow};
 use crate::core::CoreState;
 
 impl IpcWindow for AppState {
-    fn active_workspace_index(&self) -> usize {
-        self.active_workspace
+    fn active_workspace_index(&self, engine: &CoreState) -> usize {
+        self.active_workspace_index(&engine)
     }
 
     fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf> {
@@ -49,8 +49,8 @@ impl IpcWindow for AppState {
         AppState::close_workspace_at(self, engine, ws_idx, origin)
     }
 
-    fn fix_workspace_pointers_after_move(&mut self, from: usize, to: usize) {
-        crate::app::dispatch_domain::cascade_workspace_moved(self, from, to);
+    fn fix_workspace_pointers_after_move(&mut self, engine: &CoreState, from: usize, to: usize) {
+        crate::app::dispatch_domain::cascade_workspace_moved(self, engine, from, to);
     }
 
     fn push_host_event(&mut self, event: super::PendingHostEvent) {
