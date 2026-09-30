@@ -87,4 +87,4 @@ IPC 핸들러가 registry를 직접 시작·정지하며, App이 대기 허브 �
 - [ADR-0027](0027-lua-and-hook-execution.md) · [ADR-0041](0041-agent-state-and-completion.md) · [ADR-0042](0042-agent-coordination-and-task-views.md) · [ADR-0032](0032-webhook-admission.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)
 - [작업 러너](../dev-guide/agent-runner.md), [훅](../features/hooks/index.md)
-- 현재 구현: `src/core/mod.rs`, `src/core/state.rs`, `src/core/agent/runner_host.rs`, `src/core/agent/task_waker.rs`, `src/core/agent/hook_wait.rs`, `src/app/ipc/app_methods.rs`, `src/core/state/global_hooks.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`.
+- 현재 구현: `src/core/mod.rs`, `src/core/state.rs`, `src/core/agent/runner_host.rs`, `src/core/agent/task_waker.rs`, `src/core/agent/hook_wait.rs`, `src/app/ipc/app_methods.rs`, `src/core/state/global_hooks.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`, `src/hook_runtime/mod.rs`, `src/hook_runtime/worker.rs`, `src/hook_runtime/trigger.rs`, `src/hook_runtime/global.rs`.
