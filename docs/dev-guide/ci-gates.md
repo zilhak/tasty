@@ -403,6 +403,12 @@ cargo build -p tasty-doc-guards --bin workflow-channels
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
+구조 저널 관련 시험도 위 표의 줄을 그대로 따른다. `tasty-domain`·`tasty-event-store` 크레이트 안의 유닛 시험과
+본 바이너리의 `src/runtime/`·layout importer 유닛 시험은 lib 유닛 줄이라 기본 조합의 세 잡과 헤드리스 전체 스위트에서 돈다.
+실제 프로세스를 강제 종료하는 `crates/tasty-event-store/tests/crash.rs`와 잠금 상속을 확인하는
+`crates/tasty-event-store/tests/lock_inheritance.rs`는 통합 테스트라 자동 잡 중에서는 `check-headless` 잡에서만 돈다.
+뒤의 것은 `#![cfg(unix)]`라 Windows에서는 시험이 비어 있다.
+
 <a id="처방을-낼-때는-그-처방을-재는-채널의-이름을-함께-적는다"></a>
 <a id="새-파일을-만들었으면-그-파일이-사는-패키지-밖도-돌려라"></a>
 <a id="같은-파일이라도-컴파일-채널과-실행-채널이-다르다--결론에-둘을-갈라-적는다"></a>
