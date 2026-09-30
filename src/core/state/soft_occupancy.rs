@@ -26,6 +26,8 @@ impl CoreState {
 
     /// 로컬 사용자 강제 해제. workspace의 hard 점유이면 멤버를 함께 해제한다.
     /// soft 점유는 stream client가 아니므로 통지 없이 지운다.
+    /// 사용자 조작 전용이며 에이전트 경로(terminal.kill 등)는 hard 점유를 풀지 않는다.
+    #[cfg(any(feature = "gui", test))]
     pub fn release_occupancy(&mut self, surface_id: u32) -> bool {
         if let Some(ws) = self.attach.workspace_of_surface(surface_id) {
             return self.attach.force_detach_workspace(ws).is_some();
