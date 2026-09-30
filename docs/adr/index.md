@@ -5,7 +5,7 @@
 
 ## 애플리케이션 구조와 IPC
 
-크레이트 의존 방향부터 IPC 응답·재시도·자원 제한, 저장소와 권한까지 다룬다. [ADR-0001](0001-crate-dependency-boundaries.md)에서 관련 선택을 따라갈 수 있다.
+App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크레이트 경계부터 IPC 응답·재시도·자원 제한, 저장소와 권한까지 다룬다. [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)에서 관련 선택을 따라갈 수 있다.
 
 운영 문서: [아키텍처](../architecture/index.md) · [IPC 서버](../architecture/ipc-server.md) · [API 규약](../dev-guide/api-conventions.md)
 
@@ -13,10 +13,10 @@
 | # | Title | Status | Date | Tags |
 |---|-------|--------|------|------|
 | 0001 | [크레이트는 의존 관계와 실행 환경에 따라 나눈다](0001-crate-dependency-boundaries.md) | Accepted | 2026-09-24 | architecture, crates, headless |
-| 0002 | [도메인 작업과 자원 정리는 공용 실행 계층이 맡는다](0002-domain-execution-and-ports.md) | Accepted | 2026-09-24 | architecture, domain, ipc |
-| 0003 | [헤드리스는 화면 없이 완료할 수 있는 작업을 직접 처리한다](0003-headless-behavior.md) | Accepted | 2026-09-24 | headless, lifecycle, features |
+| 0002 | [도메인 작업과 자원 정리는 공용 실행 계층이 맡는다](0002-domain-execution-and-ports.md) | Superseded by 0054 | 2026-09-24 | architecture, domain, ipc |
+| 0003 | [헤드리스는 화면 없이 완료할 수 있는 작업을 직접 처리한다](0003-headless-behavior.md) | Superseded by 0058 | 2026-09-24 | headless, lifecycle, features |
 | 0004 | [IPC는 지원 조건과 실패 원인을 응답으로 구분한다](0004-ipc-discovery-and-errors.md) | Accepted | 2026-09-24 | ipc, compatibility, capabilities |
-| 0005 | [변경 요청 재시도는 호출자별 멱등 키로 구분한다](0005-idempotent-mutation-retries.md) | Accepted | 2026-09-24 | ipc, idempotency, retry |
+| 0005 | [변경 요청 재시도는 호출자별 멱등 키로 구분한다](0005-idempotent-mutation-retries.md) | Superseded by 0057 | 2026-09-24 | ipc, idempotency, retry |
 | 0006 | [로컬 IPC는 TCP를 쓰고 수신·송신 자원을 제한한다](0006-bounded-ipc-transport.md) | Accepted | 2026-09-24 | ipc, transport, backpressure |
 | 0007 | [IPC는 제한된 시간만 실행하고 완료 결과를 돌려준다](0007-ipc-scheduling-and-deadlines.md) | Accepted | 2026-09-24 | ipc, scheduling, timeout |
 | 0008 | [요청 압력은 프로세스 단위의 제한된 진단 정보로 제공한다](0008-ipc-pressure-observability.md) | Accepted | 2026-09-24 | ipc, telemetry, diagnostics |
@@ -25,29 +25,37 @@
 | 0011 | [비밀 데이터의 보호 범위를 IPC와 파일 권한으로 구분한다](0011-secrets-and-local-trust.md) | Accepted | 2026-09-24 | security, secrets, passkey |
 | 0012 | [요청은 라우팅 전에 권한을 확인하고 사용자 입력과 분리한다](0012-request-admission-and-isolation.md) | Accepted | 2026-09-24 | security, permissions, ipc |
 | 0052 | [macOS 권한 프롬프트는 부팅이 아니라 사용자가 요청할 때 띄운다](0052-permission-prompts-are-raised-on-request-not-at-boot.md) | Accepted | 2026-09-24 | macos, permissions, tcc, boot, settings, discoverability, adr-0012 |
+| 0054 | [App·Core·View가 각자의 상태를 소유하고 엔진 수명을 창과 분리한다](0054-app-core-view-layers-and-state-ownership.md) | Accepted | 2026-09-30 | architecture, state, ownership, lifecycle, domain |
+| 0055 | [구조 도메인은 확정 이벤트를 원본으로 삼고 기록·실행·복원을 별도 객체가 맡는다](0055-structural-domain-event-sourcing.md) | Accepted | 2026-09-30 | architecture, event-sourcing, persistence, recovery, commands |
+| 0056 | [도메인·이벤트 저장·작업 실행을 별도 crate로 나눈다](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) | Accepted | 2026-09-30 | architecture, crates, build, domain, headless |
+| 0057 | [변경 요청 재시도는 호출자별 명령 identity로 구분하고 기록 범위에서는 이벤트와 함께 확정한다](0057-command-identity-for-mutation-retries.md) | Accepted | 2026-09-30 | ipc, idempotency, retry, event-sourcing |
+| 0058 | [헤드리스는 로컬 View 없이 같은 명령 실행 경계로 작업을 완료한다](0058-headless-without-local-views.md) | Accepted | 2026-09-30 | headless, lifecycle, features, architecture |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결
 
-PTY와 터미널 호환성, 입력·포커스, 점유와 원격 화면 동기화를 다룬다. [ADR-0013](0013-terminal-io-and-process-lifetime.md)에서 관련 선택을 따라갈 수 있다.
+Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격 화면 동기화를 다룬다. [ADR-0060](0060-terminal-and-pty-separation.md)에서 관련 선택을 따라갈 수 있다.
 
 운영 문서: [터미널](../features/terminal/index.md) · [입력과 포커스](../design/policies/focus.md) · [원격 연결](../dev-guide/attach-behavior.md)
 
 <!-- adr-rows:begin terminal -->
 | # | Title | Status | Date | Tags |
 |---|-------|--------|------|------|
-| 0013 | [PTY 처리와 자식 프로세스 수명을 GUI에서 분리한다](0013-terminal-io-and-process-lifetime.md) | Accepted | 2026-09-24 | terminal, pty, lifecycle |
+| 0013 | [PTY 처리와 자식 프로세스 수명을 GUI에서 분리한다](0013-terminal-io-and-process-lifetime.md) | Superseded by 0060 | 2026-09-24 | terminal, pty, lifecycle |
 | 0014 | [터미널 호환성은 실제 수요와 사용자 상태 보호를 기준으로 정한다](0014-terminal-compatibility-scope.md) | Accepted | 2026-09-24 | terminal, compatibility |
 | 0015 | [마우스와 입력 상태는 실제 입력 경로에서 판단한다](0015-terminal-user-input-routing.md) | Accepted | 2026-09-24 | input, mouse, busy |
 | 0016 | [창의 OS 통합과 종료 처리를 앱 수명에 맞춘다](0016-window-platform-and-shutdown.md) | Accepted | 2026-09-24 | window, platform, shutdown |
-| 0017 | [구조 변경은 ID를 기준으로 하고 사용자 포커스를 보존한다](0017-workspace-identity-and-focus.md) | Accepted | 2026-09-24 | workspace, focus, routing |
+| 0017 | [구조 변경은 ID를 기준으로 하고 사용자 포커스를 보존한다](0017-workspace-identity-and-focus.md) | Superseded by 0059 | 2026-09-24 | workspace, focus, routing |
 | 0018 | [화면 캡처와 전체화면은 대상을 명확히 구분한다](0018-explicit-capture-and-fullscreen-stage.md) | Accepted | 2026-09-24 | screenshot, fullscreen |
 | 0019 | [단축키 문법과 설정을 공유하고 도움말은 실제 키 입력을 따른다](0019-keybinding-settings-and-hints.md) | Accepted | 2026-09-24 | keybindings, settings |
 | 0020 | [원격 연결과 attach 설정을 분리한다](0020-remote-connection-profiles.md) | Accepted | 2026-09-24 | remote, ssh, profiles |
 | 0021 | [점유한 작업은 연결 소유권에 따라 보호한다](0021-occupancy-and-attach-admission.md) | Accepted | 2026-09-24 | attach, occupancy, permissions |
 | 0022 | [원격 화면은 서버 상태를 확인한 뒤 표시한다](0022-remote-mirror-content-and-queries.md) | Accepted | 2026-09-24 | attach, mirror, content |
-| 0023 | [attach 연결의 출력과 구조 변경을 같은 순서로 동기화한다](0023-attach-state-sync-and-forwarding.md) | Accepted | 2026-09-24 | attach, stream, synchronization |
+| 0023 | [attach 연결의 출력과 구조 변경을 같은 순서로 동기화한다](0023-attach-state-sync-and-forwarding.md) | Superseded by 0061 | 2026-09-24 | attach, stream, synchronization |
 | 0024 | [주의 환기 상태는 surface 소유자가 관리한다](0024-attention-ownership-and-clear.md) | Accepted | 2026-09-24 | attention, notifications, ownership |
+| 0059 | [구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다](0059-id-targets-and-view-owned-selection.md) | Accepted | 2026-09-30 | workspace, focus, routing, identity, layout |
+| 0060 | [터미널 내용과 OS PTY 연결을 별도 객체로 나누고 엔진이 한 곳에서 소유한다](0060-terminal-and-pty-separation.md) | Accepted | 2026-09-30 | terminal, pty, lifecycle, ownership |
+| 0061 | [외부 원격 연결은 Remote가 소유하고 attach 동기화는 서버의 확정 순서를 따른다](0061-external-remote-module-and-attach-sync.md) | Accepted | 2026-09-30 | attach, remote, stream, synchronization, plugins |
 <!-- adr-rows:end terminal -->
 
 ## 플러그인·이벤트·파일 열기
@@ -91,7 +99,7 @@ PTY와 터미널 호환성, 입력·포커스, 점유와 원격 화면 동기화
 
 ## 에이전트 실행과 CLI
 
-에이전트 상태·완료 전달, 작업 조율, CLI 오류와 transcript 중계를 다룬다. [ADR-0041](0041-agent-state-and-completion.md)에서 관련 선택을 따라갈 수 있다.
+에이전트 상태·완료 전달, 작업 조율과 작업·훅 실행 소유, CLI 오류와 transcript 중계를 다룬다. [ADR-0041](0041-agent-state-and-completion.md)에서 관련 선택을 따라갈 수 있다.
 
 운영 문서: [작업 러너](../dev-guide/agent-runner.md) · [CLI 구조](../dev-guide/cli-structure.md) · [Agent Stream](../plugins/agent-stream/index.md)
 
@@ -102,6 +110,7 @@ PTY와 터미널 호환성, 입력·포커스, 점유와 원격 화면 동기화
 | 0042 | [에이전트 작업 조율과 DAG 화면은 호스트가 맡는다](0042-agent-coordination-and-task-views.md) | Accepted | 2026-09-24 | agents, tasks, concurrency, dag |
 | 0043 | [CLI 오류 정보는 보존하고 진단 로그는 기록 주체를 나눈다](0043-cli-errors-and-diagnostic-logs.md) | Accepted | 2026-09-24 | cli, errors, logging, hooks |
 | 0044 | [에이전트 응답은 transcript에서 수집해 별도 SSE로 중계한다](0044-agent-transcript-stream.md) | Accepted | 2026-09-24 | agents, transcript, sse, recovery |
+| 0062 | [작업 실행은 TaskService가, 훅 감시와 실행은 HookRuntime이 소유한다](0062-task-service-and-hook-runtime.md) | Accepted | 2026-09-30 | agents, tasks, hooks, ownership, architecture |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포

@@ -1,6 +1,6 @@
 # ADR-0013: PTY 처리와 자식 프로세스 수명을 GUI에서 분리한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0060](0060-terminal-and-pty-separation.md) — Terminal·Pty 분리와 엔진 단일 소유로 대체
 - **Date**: 2026-09-24
 - **Tags**: terminal, pty, lifecycle
 - **Group**: terminal

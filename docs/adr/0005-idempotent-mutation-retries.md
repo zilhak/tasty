@@ -1,6 +1,6 @@
 # ADR-0005: 변경 요청 재시도는 호출자별 멱등 키로 구분한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0057](0057-command-identity-for-mutation-retries.md) — 기록 범위의 영속 명령 identity로 대체
 - **Date**: 2026-09-24
 - **Tags**: ipc, idempotency, retry
 - **Group**: foundation

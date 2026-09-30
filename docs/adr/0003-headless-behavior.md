@@ -1,6 +1,6 @@
 # ADR-0003: 헤드리스는 화면 없이 완료할 수 있는 작업을 직접 처리한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0058](0058-headless-without-local-views.md) — 로컬 View 없는 공용 명령 실행 경계로 대체
 - **Date**: 2026-09-24
 - **Tags**: headless, lifecycle, features
 - **Group**: foundation

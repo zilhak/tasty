@@ -1,6 +1,6 @@
 # ADR-0023: attach 연결의 출력과 구조 변경을 같은 순서로 동기화한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0061](0061-external-remote-module-and-attach-sync.md) — Remote 모듈 소유와 확정 순서 동기화로 대체
 - **Date**: 2026-09-24
 - **Tags**: attach, stream, synchronization
 - **Group**: terminal

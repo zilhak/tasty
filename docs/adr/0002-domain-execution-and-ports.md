@@ -1,6 +1,6 @@
 # ADR-0002: 도메인 작업과 자원 정리는 공용 실행 계층이 맡는다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) — App·Core·View 상태 소유로 대체. crate 배치는 [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)이 대체
 - **Date**: 2026-09-24
 - **Tags**: architecture, domain, ipc
 - **Group**: foundation

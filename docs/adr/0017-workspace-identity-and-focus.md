@@ -1,6 +1,6 @@
 # ADR-0017: 구조 변경은 ID를 기준으로 하고 사용자 포커스를 보존한다
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0059](0059-id-targets-and-view-owned-selection.md) — 사용자 선택의 View 소유와 저널 원본으로 대체
 - **Date**: 2026-09-24
 - **Tags**: workspace, focus, routing
 - **Group**: terminal
