@@ -4050,6 +4050,86 @@ mod forward_exec_tests {
         engine.terminals.remove(pty_id);
     }
 
+    /// terminal.kill은 child가 hard 점유 workspace에 있으면 surface.close처럼 거부한다.
+    /// 점유를 먼저 강제 해제하면 holder가 workspace 전체에서 떨어져 나가므로 registry·점유를 그대로 둔다.
+    /// 점유가 없으면 child의 soft 점유만 풀고 닫는다.
+    #[test]
+    fn dispatch_denies_terminal_kill_when_child_is_hard_occupied() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let parent = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let child = engine.next_ids.next_surface();
+        let tab_id = engine.next_ids.next_tab();
+        engine
+            .terminals
+            .insert(child, Terminal::new_detached(80, 24));
+        engine.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("pane exists")
+            .add_terminal_marker_tab_background(tab_id, child, None);
+        let idx = engine.child_terminals.next_index_for(parent);
+        engine.child_terminals.register_child(
+            parent,
+            crate::core::child_terminal::ChildEntry {
+                child_surface_id: child,
+                index: idx,
+                cwd: None,
+                role: None,
+                nickname: None,
+            },
+        );
+        engine
+            .occupy_soft(child, parent, None)
+            .expect("child soft 점유");
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[parent, child], &[parent, child], 7)
+            .expect("workspace 점유 획득");
+
+        let kill = |core: &mut crate::core::Core,
+                    state: &mut AppState,
+                    engine: &mut crate::core::CoreState| {
+            let req = ipc_request(
+                "terminal.kill",
+                serde_json::json!({ "surface": parent, "child": idx }),
+            );
+            handle_with_caller(core, state, engine, &req, &CallerContext::Local)
+        };
+
+        let resp = kill(&mut core, &mut state, &mut engine);
+        let err = resp
+            .error
+            .expect("hard 점유 child 의 terminal.kill 은 거부돼야 한다");
+        assert!(
+            err.message.contains("hard-occupied"),
+            "surface.close 와 같은 점유 사유여야 한다 (got: {})",
+            err.message
+        );
+        assert_eq!(
+            engine.attach.workspace_holder(ws_id),
+            Some(7),
+            "거부된 kill 은 holder 를 떼어내면 안 된다"
+        );
+        assert!(
+            engine.child_terminals.find_child(parent, idx).is_some(),
+            "거부된 kill 은 child 관계를 지우면 안 된다"
+        );
+        assert!(engine.find_surface_by_id(child).is_some());
+
+        // holder가 떠난 뒤에는 kill이 soft 점유를 풀고 surface를 닫는다.
+        engine.attach.force_detach_workspace(ws_id);
+        engine
+            .occupy_soft(child, parent, None)
+            .expect("hard 해제 뒤 soft 점유 복원");
+        let resp = kill(&mut core, &mut state, &mut engine);
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        assert!(engine.child_terminals.find_child(parent, idx).is_none());
+        assert!(engine.attach.occupancy_of(child).is_none());
+        assert!(engine.find_surface_by_id(child).is_none());
+    }
+
     #[test]
     fn dispatch_denies_terminal_spawn_when_hard_occupied() {
         let (mut core, mut state, mut engine, _home) = make_core_state();

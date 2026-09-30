@@ -219,6 +219,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 - **차단 대상이 아닌 경우(중요)**: 점유 holder 본인이 mirror 안에서 실제로 만든 구조 변경이 위 forward 경로로 서버에 도달해 실행되는 것은 **정상 동작이며 이 차단의 대상이 아니다** — "attach 연결 자체가 그 workspace 에 대한 구조 변경 권한을 증명한다"는 forward 모델(위 절)을 그대로 유지한다. `terminal.spawn` 은 forward 대상(위 "현재 범위")에 포함되지 않으므로 이 예외와 무관 — 가드 추가가 holder 의 정당한 forward 요청을 막는 회귀는 없다.
   `preset.apply` 는 탭 preset 이면 `target_pane_id`, pane preset 이면 `target_workspace_id` 의 workspace 로 판정하고, 대상을 생략하면 적용 코드와 같게 그 창의 활성 workspace 를 대상으로 본다. workspace preset 은 새 workspace 를 만들므로 차단하지 않는다.
   `pty.attach_surface` 는 `pane_id` 의 workspace 로 판정한다. 거부되면 PTY 는 headless registry 에 그대로 남는다.
+  `terminal.kill` 은 child 를 닫기 전에 `surface.close` 와 같은 surface 단위 점유 검사로 거부한다. 점유를 먼저 강제 해제하지 않으므로 holder 는 분리되지 않고 child 관계도 남는다([child-terminal](../child-terminal/index.md)).
 - **차단 근거**: [`docs/identity.md`](../../identity.md) 원칙1(에이전트 행동의 부수효과가 사용자 상태에 닿지 않아야 함) — 서버 로컬에서 만든/닫은/옮긴 탭이 점유 client 화면에 통지 없이 편입/소멸/재배치되면, 원격 사용자가 보고 있는 화면에 자신이 하지 않은 변화가 일어나는 셈이라 이 원칙을 위반한다.
 - **메커니즘**: [dev-guide/attach-behavior "서버 로컬(비-holder) 구조 변경 차단"](../../dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단).
 

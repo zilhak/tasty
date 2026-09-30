@@ -59,7 +59,10 @@ soft 점유 때문에 실패하면 registry는 변경하지 않는다. spawn과 
 release는 자식 관계와 soft 점유만 제거하고 탭은 남긴다. registry에서 제거한 뒤 저장하며,
 점유는 부모까지 확인하는 `release_soft_occupancy(child, parent)`로 해제한다. 따라서 hard
 점유를 해제하지 않는다. 점유가 이미 풀려 있어 해제에 실패하더라도 경고만 기록하고
-관계 제거는 성공한다. kill은 관계·점유를 제거한 뒤 surface도 닫는다.
+관계 제거는 성공한다. kill은 같은 방식으로 관계와 soft 점유를 제거한 뒤 surface도 닫는다.
+kill도 hard 점유는 해제하지 않는다. child가 원격 attach로 hard 점유되어 있으면 `surface.close`와
+같은 사유로 거절하고 관계·점유·탭을 그대로 둔다. 점유를 강제로 풀면 holder가 workspace 전체에서
+분리되기 때문이다.
 
 Claude의 PTY 오류 스캐너는 `terminal.parent`로 관계가 남아 있는지 확인한다. release 후에도
 surface는 살아 있으므로 `surface.locate`로 대신 판단하면 감시를 끝낼 수 없다.
@@ -253,7 +256,8 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 ## Acceptance Criteria
 
 - Given workspace `<ws>` When `terminal.spawn{parent=P, command}` Then 자식 터미널이 생성·registry 등록되고 `occupancy_of(child)==Soft`·`holder.parent==P`·`attached=false`.
-- Given 점유된 child C When `terminal.kill` Then `occupancy_of(C)==None` + surface 닫힘.
+- Given soft 점유된 child C When `terminal.kill` Then `occupancy_of(C)==None` + surface 닫힘.
+- Given 원격 attach로 hard 점유된 workspace의 child C When `terminal.kill` Then "hard-occupied" 에러 반환 + child 관계·holder 점유·surface 모두 그대로.
 - Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.

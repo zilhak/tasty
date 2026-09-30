@@ -32,7 +32,8 @@ fn close_surface_via_intent(
 /// holder의 원격 닫기는 별도 진입점에서 도메인 함수를 직접 호출한다.
 /// 요청 params에 면제 플래그를 두면 누구나 우회할 수 있으므로 허용하지 않는다.
 /// close_self도 호출자 검증 없이 요청 ID를 받으므로 같은 점유 검사를 거친다.
-fn refuse_if_hard_occupied(
+/// terminal.kill도 child를 닫기 전에 같은 검사로 거절한다.
+pub(in crate::adapters::ipc::handler) fn refuse_if_hard_occupied(
     engine: &crate::core::CoreState,
     id: &serde_json::Value,
     surface_id: u32,

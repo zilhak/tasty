@@ -1,5 +1,5 @@
 //! 셸 종료로 바뀐 구조가 attach holder에 전달되고, 이미 사라진 surface의 요청은 IPC와 같은 이유로 거절되는지 확인한다.
-//! holder가 아닌 로컬 IPC가 점유된 workspace에 탭을 끼워 넣는 우회 경로도 거절되는지 확인한다.
+//! holder가 아닌 로컬 IPC가 점유된 workspace에 탭을 끼워 넣거나 닫는 우회 경로도 거절되는지 확인한다.
 //! 각 실행은 빌드한 GUI 또는 헤드리스 서버 경로 하나를 검증한다(ADR-0023).
 
 // 이유: 시험의 정리용 결과 무시는 제품 코드의 오류 처리 목록과 구분한다.
@@ -259,5 +259,68 @@ fn a_non_holder_cannot_insert_tabs_through_preset_or_pty_adoption() {
     assert!(
         structural_delta_until(&mut stream, Instant::now() + Duration::from_secs(2)).is_none(),
         "거절됐으므로 holder 에게 보낼 구조 변경이 없어야 한다"
+    );
+}
+
+/// terminal.kill은 child 터미널을 닫으므로 surface.close와 같은 이유로 거절돼야 한다.
+/// 거절 전에 점유를 풀면 holder가 workspace에서 강제로 떨어져 나간다.
+#[test]
+fn a_non_holder_cannot_kill_a_child_terminal_in_a_held_workspace() {
+    let server = common::shared();
+    let parent_ws = server.create_workspace("structure-sync-kill-parent");
+    let held = server.create_workspace("structure-sync-kill-held");
+    let split = server.call(
+        "split",
+        json!({ "level": "surface", "direction": "vertical", "target_surface": held.surface_id }),
+    );
+    let child = split["new_surface_id"].as_u64().expect("new_surface_id");
+    let adopt = server.call(
+        "terminal.adopt",
+        json!({ "surface": parent_ws.surface_id, "target": child }),
+    );
+    let idx = adopt["child_index"].as_u64().expect("child_index");
+
+    let mut stream = open_workspace_attach(server.port(), held.id);
+
+    let control = server.call_raw("surface.close", json!({ "surface_id": child }));
+    assert!(
+        control.get("error").is_some(),
+        "대조군 surface.close 는 거절돼야 한다: {control:?}"
+    );
+    let kill = server.call_raw(
+        "terminal.kill",
+        json!({ "surface": parent_ws.surface_id, "child": idx }),
+    );
+    let message = kill["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("terminal.kill must be refused on a held workspace: {kill:?}"));
+    assert!(message.contains("hard-occupied"), "{message}");
+
+    let surfaces = server.call("surface.list", json!({}));
+    assert!(
+        surfaces
+            .as_array()
+            .expect("surface list")
+            .iter()
+            .any(|s| s["id"].as_u64() == Some(child)),
+        "거절된 kill 은 surface 를 닫으면 안 된다"
+    );
+    let children = server.call(
+        "terminal.children",
+        json!({ "surface": parent_ws.surface_id }),
+    );
+    assert!(
+        children["children"]
+            .as_array()
+            .expect("children array")
+            .iter()
+            .any(|c| c["surface_id"].as_u64() == Some(child)),
+        "거절된 kill 은 child 관계를 지우면 안 된다: {children}"
+    );
+    // holder가 강제 해제됐다면 force_detached가 오고 이후 split은 holder 거절로 실패한다.
+    let r = split_and_read_new_surface(&mut stream, held.surface_id);
+    assert_ne!(
+        r, held.surface_id,
+        "holder 는 여전히 구조 변경을 forward 할 수 있어야 한다"
     );
 }

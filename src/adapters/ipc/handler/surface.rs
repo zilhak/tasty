@@ -14,6 +14,7 @@ pub(crate) mod query;
 mod send;
 
 pub(crate) use attention::{handle_attention_clear, handle_attention_get};
+pub(in crate::adapters::ipc::handler) use close::refuse_if_hard_occupied;
 pub(crate) use close::{handle_surface_close, handle_surface_close_self};
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
 pub(crate) use completion::handle_completion;

@@ -196,6 +196,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **완료 알림이 안 옵니다** — 자식 CLI의 훅 설치·실행과 [수신 설정](#4-완료-알림-받기)을 확인하세요. 부모가 Claude Code이면 Monitor가 완료 로그를 구독하는지 확인하세요. 훅 전달 실패는 `~/.tasty/hook-failures.log` 에 남습니다. 플러그인 로그는 `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` 가 "claude-session-id meta not set" 으로 실패합니다** — 세션 시작 훅이 세션 ID 를 못 남긴 것입니다. `tasty surface-meta set --key claude-session-id --value <세션ID>` 로 직접 넣습니다.
 - **자식이 spawn 되지 않고 "occupied" 오류** — 대상 워크스페이스가 원격에서 attach 중이거나 mirror 입니다. 다른 워크스페이스를 씁니다.
+- **`kill` 이 "hard-occupied" 오류로 거부됩니다** — 그 자식이 있는 워크스페이스를 원격 사용자가 attach 해 쓰는 중입니다. 자식과의 관계와 탭은 그대로 남습니다. 원격 쪽이 연결을 끊거나 강제 끊기로 점유를 푼 뒤 다시 `kill` 합니다.
 - **macOS 에서 앱 아이콘으로 실행하면 알림이 안 옵니다** — Tasty 가 알림을 쓸 때 `tasty` 를 다시 호출하는데, Tasty 는 자기 실행 파일 경로를 자동으로 PATH 에 넣으므로 보통은 문제없습니다. 그래도 안 되면 `hook-failures.log` 를 봅니다.
 
 <a id="다음-읽을-것"></a>

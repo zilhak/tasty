@@ -1,4 +1,4 @@
-<!-- source-hash: 0a351a9489d5 -->
+<!-- source-hash: 1eb20d4b39bf -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -197,6 +197,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **No completion notification arrives** — check the child CLI’s hook installation and execution, then [receiving setup](#4-receiving-completion-notifications). If the parent is Claude Code, check that Monitor subscribes to the completion log. Hook delivery failures are recorded in `~/.tasty/hook-failures.log`. Plugin logs: `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` fails with "claude-session-id meta not set"** — the session-start hook failed to record the session ID. Set it directly with `tasty surface-meta set --key claude-session-id --value <session ID>`.
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
+- **`kill` is refused with a "hard-occupied" error** — a remote user is attached to the Workspace that holds that child. The child relationship and its Tab stay as they are. Run `kill` again after the remote side disconnects or you release the hold with Force detach.
 - **No notifications when launched from the app icon on macOS** — Tasty calls `tasty` again when it writes notifications, but Tasty adds its own executable path to PATH automatically, so this is normally not a problem. If it still fails, look at `hook-failures.log`.
 
 <a id="what-to-read-next"></a>

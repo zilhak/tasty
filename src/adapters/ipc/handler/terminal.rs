@@ -475,6 +475,20 @@ pub(crate) fn handle_kill(
         Ok(c) => c,
         Err(e) => return e,
     };
+    let Some(child_surface_id) = engine
+        .child_terminals
+        .find_child(parent, child_index)
+        .map(|c| c.child_surface_id)
+    else {
+        return JsonRpcResponse::invalid_params(
+            id,
+            child_not_found_message(&engine.child_terminals, parent, child_index),
+        );
+    };
+    // 원격 holder의 점유를 강제로 풀지 않는다. surface.close와 같은 이유로 거절하고 관계는 그대로 둔다.
+    if let Some(resp) = surface::refuse_if_hard_occupied(engine, &id, child_surface_id) {
+        return resp;
+    }
     let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
         return JsonRpcResponse::invalid_params(
             id,
@@ -483,7 +497,13 @@ pub(crate) fn handle_kill(
     };
     engine.child_terminals.save();
 
-    engine.release_occupancy(removed.child_surface_id);
+    if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent) {
+        tracing::warn!(
+            "terminal.kill: soft occupancy release failed for surface {} \
+             (parent {parent}): {e:?} — closing the surface anyway",
+            removed.child_surface_id
+        );
+    }
 
     let close_params = json!({ "surface_id": removed.child_surface_id });
     if let Err(e) = unwrap_ok(
