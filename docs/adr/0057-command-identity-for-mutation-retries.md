@@ -43,6 +43,11 @@ JSON-RPC ID는 응답 대응용이며 재연결을 넘는 중복 방지 키가 �
 - 응답 본문 cache와 명령 identity를 구분한다. 응답 본문을 퇴출해도 identity가 남아 있으면 새 요청으로 실행하지 않고 결과를 재구성하거나 실행 완료·응답 없음으로 답한다.
 - 같은 저널을 이어서 쓰는 재시작에서는 중복 적용을 막는다. 보존 기간이 끝난 identity의 의미는 그 저널과 함께 끝나며 그 밖의 보장을 알리지 않는다.
   복원 자료를 새 저널로 가져오는 경우에는 key namespace를 새로 만들고 원래 명령을 새 자원에 재실행하지 않는다.
+- 중복 제거 키는 IPC 요청이 준 `idempotency_key` 하나뿐이다. 응답 유실 뒤 재시도가 있는 경로는 IPC뿐이기 때문이다.
+- 키가 없는 경로(GUI·system·hook·Lua·원격 forward)는 CommandExecutor가 발급한 유일한 command ID를 기록 identity로 쓴다. 이 ID는 중복 제거에 쓰지 않는다.
+  요청 출처(origin)는 진입점이 만들어 명시 인자로 넘기며, 실행 경로가 호출자와 무관하게 고정값을 넣지 않는다. 사용자·에이전트 구분 규칙은 [ADR-0059](0059-id-targets-and-view-owned-selection.md)를 따른다.
+- 원격 client가 보낸 구조 요청의 `op_id`는 키로 쓰지 않는다. 재연결 때 0부터 다시 세므로 단독으로는 요청을 식별하지 못한다.
+  명령 기록에는 원격 client·connection epoch·`op_id`를 상관 ID로만 남긴다.
 - 기록 범위 밖의 Mutate는 기존처럼 제한된 메모리 저장소를 쓴다.
 - 보장 범위가 경로마다 다르므로 capability 문구를 실제 보장별로 새로 명시한다. 일부 범위의 영속 보장을 전역 보장으로 알리지 않는다.
   capability를 모르는 기존 client에 재시작을 넘는 보장을 주장하지 않는다.
@@ -65,6 +70,9 @@ JSON-RPC ID는 응답 대응용이며 재연결을 넘는 중복 방지 키가 �
 - 모든 Mutate를 한꺼번에 영속 identity로 옮기는 안: 기록 범위 밖 서비스는 이벤트와 같은 transaction이 없어 영속 키가 실제 변경과 원자적이지 않다.
 - plugin 고유 이름까지 중복 제거하는 안: target plugin이 소유한 실행 계약을 바꾼다.
 - 진행 중 재시도를 무조건 거절하는 안: 생성 ID처럼 다시 조회하기 어려운 결과를 전달하지 못한다.
+- GUI 순번·system 사건 ID·원격 `op_id`까지 모든 경로에 중복 제거 키를 발급하는 안: GUI와 system에는 응답 유실 뒤 재시도가 없어 얻는 것이 없고 key namespace와 보존 규칙만 늘어난다.
+  원격 `op_id`는 connection epoch를 빠뜨리면 다른 명령을 중복으로 오판한다.
+- 원격 `(client, connection epoch, op_id)`만 키로 추가하는 안: 한 연결 안의 중복 전달이 없고 재연결 뒤 재전송도 하지 않아 현재는 얻는 것이 작다.
 
 ## Reconsideration Triggers
 
@@ -73,6 +81,7 @@ JSON-RPC ID는 응답 대응용이며 재연결을 넘는 중복 방지 키가 �
 - 기록 범위가 넓어지면 해당 메서드의 KeyContract와 capability 선언을 같은 변경에서 갱신한다.
 - plugin 고유 메서드가 호스트에 의미를 선언하는 방식이 생기면 계약 밖 분류를 다시 본다.
 - 여러 호스트가 같은 stream을 쓰게 되면 identity의 범위와 유일성 제약을 다시 정한다.
+- 원격 client가 재연결 뒤 구조 요청을 다시 보내게 되면 원격 client·connection epoch·`op_id`를 중복 제거 키로 추가한다.
 
 ### 실행 결과로 확인
 
