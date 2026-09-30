@@ -83,6 +83,7 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
   현재 상태: `DeferredSpawn`은 waker를 담지 않고 waker 공급은 호스트가 spawn 시점에 맡는다. `tasty-model`은 `tasty-terminal`을 의존하지 않으며
   `cargo tree -p tasty-model --edges normal`에 `tasty-terminal`이 나오지 않는다. Surface 트리가 동작을 가진 trait 객체(`Box<dyn Surface>`)를 담는 구조는 남아 있다.
   PTY 실행 계층이 따라오는 결합은 해소됐으므로 이 조건에 따른 추출 시점 판단이 남은 일이다. 판단할 때 [ADR-0064](0064-journal-domain-model-crate.md)의 `tasty-domain`과 합칠지·이름을 정리할지를 함께 정한다.
+  현재 codec 분담: 도메인 payload codec과 그 버전 변환은 [ADR-0064](0064-journal-domain-model-crate.md)의 도메인 crate가, 저장 봉투 형식과 migration은 EventStore가 맡는다.
 - TaskService API와 host port가 정리되면 `tasty-task-runtime` 추출 시점을 판단한다.
 - HookRuntime의 공개 API가 안정되고 root 밖 소비자가 생기면 별도 crate 추출을 검토한다.
 - 순수 터미널 재생·원격 mirror·renderer 테스트에서 PTY 의존을 빼야 하면 별도 PTY crate 추출을 검토한다.

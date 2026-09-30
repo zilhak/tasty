@@ -29,6 +29,7 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 - 의존: 값·ID 타입을 재사용하기 위한 `tasty-model`뿐이다. `tasty-event-store`·root·GUI·PTY·SQL 계층을 의존하지 않는다.
   저장 봉투, 저장 형식 버전, migration은 EventStore의 소관이다.
 - codec은 모르는 type tag나 schema version을 만나면 명시 오류로 재구성을 멈춘다. 건너뛰고 계속하지 않는다.
+  도메인 payload의 schema version을 올릴 때 옛 payload를 새 형식으로 바꾸는 변환(upcast)도 이 codec이 맡는다. EventStore는 봉투의 저장 형식 버전과 migration만 맡는다.
 - Decider에 대해 generic한 CommandExecutor와, 저장소의 batch(`StoredBatch`)와 도메인 batch 사이의 변환 어댑터는 root 내부 runtime 모듈에 둔다.
   명령 identity 조회(대상 해소보다 먼저, [ADR-0057](0057-command-identity-for-mutation-retries.md)), decide, 한 transaction의 commit,
   commit 성공 뒤의 메모리 `evolve`, 응답 순서를 그 모듈이 구현한다.
@@ -39,13 +40,12 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 
 ### ADR-0056과의 관계
 
-이 결정은 ADR-0056을 바꾸지 않는다. 순수 구조 타입은 `tasty-model`에 두고 새 domain-types crate를 만들지 않는다는 배치(0056 표의 순수 구조 타입 행)와
+이 결정은 ADR-0056의 배치 결정을 바꾸지 않는다. 0056 표에서 도메인 Command/Event와 순수 decide/evolve를 `tasty-core`에 두는 행은 `tasty-core` 추출 시점까지 발동하지 않으며, 추출할 때 `tasty-domain`과 합치거나 이름을 정리한다. 순수 구조 타입은 `tasty-model`에 두고 새 domain-types crate를 만들지 않는다는 배치(0056 표의 순수 구조 타입 행)와
 `tasty-domain-types` 신설을 기각한 대안을 따라, `tasty-domain`은 ID·값 타입을 새로 정의하지 않고 `tasty-model`에서 가져온다.
 CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대로 따른다.
 도메인 crate와 `tasty-event-store`의 의존 방향은 0056이 금지한 쪽(도메인 → event-store)을 쓰지 않으며, 두 crate는 서로 의존하지 않는다.
 0056이 EventStore에 둔 저장 형식 버전·codec·migration은 저장 봉투에 관한 것이고, `tasty-domain`의 codec은 그 봉투 안 바이트와 도메인 이벤트 사이의 변환만 맡는다.
 이 codec은 명시적인 type tag·schema version을 쓰므로 도메인 타입 필드를 바꿔도 저널 직렬화가 자동으로 바뀌지 않는다는 0056의 요구를 지킨다.
-Core·CoreState와 도메인 Command/Event를 `tasty-core`가 소유한다는 행은 `tasty-core` 추출 판단 때 적용되며, 그때 `tasty-domain`과 합치거나 이름을 정리해 소유자를 하나로 맞춘다.
 
 ## Consequences
 
