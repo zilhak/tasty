@@ -629,13 +629,11 @@ impl App {
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) -> anyhow::Result<(crate::state::AppState, crate::core::CoreState)> {
-        let (state, parked_engine) = if !self.parked_states.is_empty() {
-            let parked = self.parked_states.remove(0);
+        let (state, parked_engine) = if let Some((st, eng)) = self.engines_mut().unpark_first() {
             tracing::info!(
                 "restoring parked state, {} remaining",
-                self.parked_states.len()
+                self.engines().parked_count()
             );
-            let (st, eng) = parked;
             (st, Some(eng))
         } else {
             let st = self.create_app_state(gpu, sidebar_width)?;

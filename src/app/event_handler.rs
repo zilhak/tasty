@@ -5,6 +5,7 @@ use winit::window::WindowId;
 
 use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
+use crate::app::window_access::engines_mut;
 use crate::stall_watchdog::{self, Site};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
@@ -588,7 +589,7 @@ impl App {
     /// 복원되지 않은 다른 engine도 계속 처리하도록 parked 항목을 모두 순회한다.
     fn forward_mesh_frames_for_parked(&mut self) {
         if let Some(ref mgr) = self.plugin_manager {
-            for (_, engine) in self.parked_states.iter_mut() {
+            for engine in engines_mut!(self).parked() {
                 crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
                     engine,
                     mgr,
@@ -733,14 +734,7 @@ impl App {
     /// 미뤄 둔 PTY resize를 처리한다. 남은 요청이 있으면 다음 redraw를 요청한다.
     fn flush_pending_pty_resizes(&mut self) {
         let mut any_pending = false;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && crate::core::Core::flush_pty_resizes(&mut main.core_state)
-            {
-                any_pending = true;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if crate::core::Core::flush_pty_resizes(engine) {
                 any_pending = true;
             }
@@ -754,14 +748,7 @@ impl App {
 
     /// 출력을 비우기 전에 해당 surface 또는 전역 wake 중복 방지를 해제한다.
     fn note_drained_all(&self, surface_id: Option<u32>) {
-        for w in self.view.views.values() {
-            if let Some(main) = w.as_main()
-                && let Some(factory) = main.core_state.waker_factory.as_ref()
-            {
-                factory.note_drained(surface_id);
-            }
-        }
-        for (_, engine) in self.parked_states.iter() {
+        for engine in self.engines().windowed_and_parked() {
             if let Some(factory) = engine.waker_factory.as_ref() {
                 factory.note_drained(surface_id);
             }
@@ -776,7 +763,6 @@ impl App {
         self.note_drained_all(surface_id);
         let core = &mut self.core;
         let views = &mut self.view.views;
-        let parked_states = &mut self.parked_states;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         if let Some(sid) = surface_id {
             let mut found = false;
@@ -799,7 +785,7 @@ impl App {
                 }
             }
             if !found {
-                for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
+                for (idx, engine) in engines_mut!(self).parked().enumerate() {
                     if engine.find_terminal_by_id(sid).is_some() {
                         let outcome = core.process_pty_output(engine, sid);
                         if !outcome.events.is_empty() {
@@ -819,7 +805,7 @@ impl App {
                 }
                 w.mark_dirty_from(RepaintSource::TerminalOutput);
             }
-            for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
+            for (idx, engine) in engines_mut!(self).parked().enumerate() {
                 let outcome = core.process_all_pty_output(engine);
                 if !outcome.events.is_empty() {
                     pending.push((DispatchSource::Parked(idx), outcome.events));
@@ -840,8 +826,7 @@ impl App {
             let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
             for w in drained {
                 if let Some(main_box) = crate::view::unbox_main(w) {
-                    self.parked_states
-                        .push((main_box.state, main_box.core_state));
+                    self.engines_mut().park(main_box.state, main_box.core_state);
                 }
             }
             self.view.focused_view_id = None;
@@ -849,7 +834,7 @@ impl App {
             self.view.take_active_modal();
             tracing::info!(
                 "minimized to background ({} states parked)",
-                self.parked_states.len()
+                self.engines().parked_count()
             );
         }
         #[cfg(windows)]
@@ -1131,8 +1116,7 @@ impl App {
                 // 마지막 MainView는 engine을 park하므로 레이아웃 슬롯 점유도 유지한다.
                 Some(main_box) if was_last_main => {
                     tracing::info!("last main window closed via request, parking state");
-                    self.parked_states
-                        .push((main_box.state, main_box.core_state));
+                    self.engines_mut().park(main_box.state, main_box.core_state);
                 }
                 Some(mut main_box) => {
                     let active_workspace = main_box.state.active_workspace;
@@ -1175,7 +1159,7 @@ impl App {
             Self::notify_resume_suspects(&mut main.core_state, &suspects);
             w.mark_dirty();
         }
-        for (idx, (_, engine)) in self.parked_states.iter_mut().enumerate() {
+        for (idx, engine) in engines_mut!(self).parked().enumerate() {
             let suspects = engine.wake_terminals_after_resume();
             let outcome = core.process_all_pty_output(engine);
             if !outcome.events.is_empty() {
@@ -1269,28 +1253,13 @@ impl App {
         if clients.is_empty() {
             return;
         }
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.core_state.attach.mark_clients_disconnected(clients);
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.attach.mark_clients_disconnected(clients);
         }
     }
 
     pub(crate) fn release_attach_for_disconnected(&mut self, clients: &[u32]) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                for &cid in clients {
-                    main.core_state.attach.release_all_for_client(cid);
-                    main.core_state.bulk_transfers.clear_client(cid);
-                    main.core_state.capture_uploads.clear_client(cid);
-                    main.core_state.mesh_mirror.remove_for_client(cid);
-                }
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             for &cid in clients {
                 engine.attach.release_all_for_client(cid);
                 engine.bulk_transfers.clear_client(cid);
@@ -1335,7 +1304,7 @@ impl App {
                 }
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             engine.push_structure_changes();
         }
     }
@@ -1432,7 +1401,7 @@ impl App {
                 return;
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.apply_attached_attention_clear(client_id, remote_surface_id) {
                 return;
             }
@@ -1571,7 +1540,7 @@ impl App {
                 }
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.runtime.terminals.contains(surface_id)
                 || engine.is_surface_deferred(surface_id)
             {
@@ -1588,16 +1557,7 @@ impl App {
         client_id: u32,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                let e = &mut main.core_state;
-                if e.find_workspace_index_for_id(workspace_id).is_some() {
-                    e.attach_workspace_for_stream(workspace_id, client_id, hub);
-                    return true;
-                }
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.find_workspace_index_for_id(workspace_id).is_some() {
                 engine.attach_workspace_for_stream(workspace_id, client_id, hub);
                 return true;
@@ -1608,14 +1568,7 @@ impl App {
 
     /// workspace 점유는 surface ID가 붙은 입력, 단일 surface 점유는 원시 입력으로 전달한다.
     fn feed_stream_input(&mut self, client_id: u32, bytes: &[u8]) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.attach.client_holds_workspace(client_id)
-            {
-                return Self::demux_workspace_input(&mut main.core_state, client_id, bytes);
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.attach.client_holds_workspace(client_id) {
                 return Self::demux_workspace_input(engine, client_id, bytes);
             }
@@ -1635,14 +1588,7 @@ impl App {
     }
 
     fn feed_input_on_owning_engine(&mut self, client_id: u32, bytes: &[u8]) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.feed_attached_input(client_id, bytes)
-            {
-                return true;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.feed_attached_input(client_id, bytes) {
                 return true;
             }
@@ -1662,22 +1608,7 @@ impl App {
         theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
         focused: bool,
     ) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.apply_attached_mesh_context(
-                    surface_id,
-                    client_id,
-                    width_px,
-                    height_px,
-                    pixels_per_point,
-                    theme.clone(),
-                    focused,
-                )
-            {
-                return true;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.apply_attached_mesh_context(
                 surface_id,
                 client_id,
@@ -1699,16 +1630,7 @@ impl App {
         client_id: u32,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main
-                    .core_state
-                    .apply_attached_mesh_input(surface_id, client_id, input.clone())
-            {
-                return true;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.apply_attached_mesh_input(surface_id, client_id, input.clone()) {
                 return true;
             }
@@ -1717,16 +1639,7 @@ impl App {
     }
 
     fn apply_mesh_full_resend_on_owning_engine(&mut self, surface_id: u32, client_id: u32) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main
-                    .core_state
-                    .apply_attached_mesh_full_resend(surface_id, client_id)
-            {
-                return true;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.apply_attached_mesh_full_resend(surface_id, client_id) {
                 return true;
             }
@@ -1789,13 +1702,7 @@ impl App {
         }
         if !handled {
             // workspace 점유는 있지만 anchor가 사라진 경우도 구별해 거절한다.
-            let engines = self
-                .view
-                .views
-                .values()
-                .filter_map(|w| w.as_main())
-                .map(|m| &m.core_state)
-                .chain(self.parked_states.iter().map(|(_, e)| e));
+            let engines = self.engines().windowed_and_parked();
             let reason = crate::core::attach_structure_sync::unresolved_forward_reason(
                 engines, client_id, op,
             );
@@ -1825,7 +1732,7 @@ impl App {
                 return;
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
                 return;
             }
@@ -1853,11 +1760,7 @@ impl App {
                     );
                     return;
                 };
-                match find_workspace_holder_engine_mut(
-                    &mut self.view.views,
-                    &mut self.parked_states,
-                    client_id,
-                ) {
+                match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
                     Some(engine) => engine.capture_uploads.append(
                         client_id,
                         upload_id,
@@ -1874,11 +1777,7 @@ impl App {
                 file_name,
             } => {
                 let core = &self.core;
-                match find_workspace_holder_engine_mut(
-                    &mut self.view.views,
-                    &mut self.parked_states,
-                    client_id,
-                ) {
+                match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
                     Some(engine) => {
                         crate::core::attach_runtime::finalize_capture_upload(
                             engine, core, hub, client_id, upload_id, &file_name,
@@ -1910,27 +1809,11 @@ impl App {
     ) {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.attach.client_holds_workspace(client_id)
-            {
-                crate::core::attach_runtime::handle_list_dir_request(
-                    &mut main.core_state,
-                    hub,
-                    client_id,
-                    request_id,
-                    &dir,
-                );
-                return;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
-            if engine.attach.client_holds_workspace(client_id) {
-                crate::core::attach_runtime::handle_list_dir_request(
-                    engine, hub, client_id, request_id, &dir,
-                );
-                return;
-            }
+        if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
+            crate::core::attach_runtime::handle_list_dir_request(
+                engine, hub, client_id, request_id, &dir,
+            );
+            return;
         }
         let payload = serde_json::json!({
             "event": "list_dir_result",
@@ -1956,27 +1839,11 @@ impl App {
             request_id,
             surface_id,
         } = msg;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.attach.client_holds_workspace(client_id)
-            {
-                crate::core::attach_runtime::handle_markdown_content_request(
-                    &mut main.core_state,
-                    hub,
-                    client_id,
-                    request_id,
-                    surface_id,
-                );
-                return;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
-            if engine.attach.client_holds_workspace(client_id) {
-                crate::core::attach_runtime::handle_markdown_content_request(
-                    engine, hub, client_id, request_id, surface_id,
-                );
-                return;
-            }
+        if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
+            crate::core::attach_runtime::handle_markdown_content_request(
+                engine, hub, client_id, request_id, surface_id,
+            );
+            return;
         }
         let payload = serde_json::json!({
             "event": "markdown_content_result",
@@ -2006,37 +1873,18 @@ impl App {
             worktree_path,
             diff_path,
         } = msg;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.attach.client_holds_workspace(client_id)
-            {
-                crate::core::attach_runtime::handle_git_query_request(
-                    &mut main.core_state,
-                    hub,
-                    client_id,
-                    request_id,
-                    surface_id,
-                    kind,
-                    worktree_path,
-                    diff_path,
-                );
-                return;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
-            if engine.attach.client_holds_workspace(client_id) {
-                crate::core::attach_runtime::handle_git_query_request(
-                    engine,
-                    hub,
-                    client_id,
-                    request_id,
-                    surface_id,
-                    kind,
-                    worktree_path,
-                    diff_path,
-                );
-                return;
-            }
+        if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
+            crate::core::attach_runtime::handle_git_query_request(
+                engine,
+                hub,
+                client_id,
+                request_id,
+                surface_id,
+                kind,
+                worktree_path,
+                diff_path,
+            );
+            return;
         }
         let payload = serde_json::json!({
             "event": "git_query_result",
@@ -2124,41 +1972,21 @@ impl App {
         bulk_ws: u32,
         f: impl FnOnce(&mut crate::core::CoreState) -> R,
     ) -> Option<R> {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main
-                    .core_state
-                    .find_workspace_index_for_id(bulk_ws)
-                    .is_some()
-            {
-                return Some(f(&mut main.core_state));
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
-            if engine.find_workspace_index_for_id(bulk_ws).is_some() {
-                return Some(f(engine));
-            }
-        }
-        None
+        self.engines_mut()
+            .windowed_and_parked()
+            .find(|engine| engine.find_workspace_index_for_id(bulk_ws).is_some())
+            .map(f)
     }
 }
 
-/// 창·parked 상태에서 workspace 점유자를 찾는다. 다른 App 필드와 나눠 빌릴 수 있도록 독립 함수로 둔다.
-fn find_workspace_holder_engine_mut<'a>(
-    views: &'a mut std::collections::HashMap<WindowId, Box<dyn View>>,
-    parked_states: &'a mut [(crate::state::AppState, crate::core::CoreState)],
+/// 창 → parked 순서로 workspace 점유자를 찾는다.
+/// 다른 App 필드와 나눠 빌려야 하는 호출부는 [`engines_mut!`]로 핸들을 넘긴다.
+fn find_workspace_holder_engine_mut(
+    engines: crate::app::window_access::EngineScanMut<'_>,
     client_id: u32,
-) -> Option<&'a mut crate::core::CoreState> {
-    for w in views.values_mut() {
-        if let Some(main) = w.as_main_mut()
-            && main.core_state.attach.client_holds_workspace(client_id)
-        {
-            return Some(&mut main.core_state);
-        }
-    }
-    parked_states
-        .iter_mut()
-        .map(|(_, engine)| engine)
+) -> Option<&mut crate::core::CoreState> {
+    engines
+        .windowed_and_parked()
         .find(|engine| engine.attach.client_holds_workspace(client_id))
 }
 

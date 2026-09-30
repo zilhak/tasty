@@ -78,6 +78,10 @@ impl<'a> EngineScan<'a> {
         self.parked.iter().map(|(s, e)| (s, e))
     }
 
+    pub(crate) fn parked_count(self) -> usize {
+        self.parked.len()
+    }
+
     /// 창에 배정되기 전의 임시 engine.
     pub(crate) fn pending(self) -> Option<&'a CoreState> {
         self.pending
@@ -218,6 +222,16 @@ impl<'a> EngineScanMut<'a> {
             .values_mut()
             .filter_map(|w| w.as_main_mut().map(|m| &mut m.core_state))
             .chain(parked.iter_mut().map(|(_, e)| e))
+    }
+
+    /// 마지막 창을 닫거나 백그라운드로 보낼 때 engine을 보관한다. 뒤에 붙인다.
+    pub(crate) fn park(self, state: AppState, engine: CoreState) {
+        self.parked.push((state, engine));
+    }
+
+    /// 새 창에 넘길 parked 항목을 가장 먼저 보관한 것부터 꺼낸다.
+    pub(crate) fn unpark_first(self) -> Option<(AppState, CoreState)> {
+        (!self.parked.is_empty()).then(|| self.parked.remove(0))
     }
 }
 
@@ -570,6 +584,7 @@ mod tests {
         assert_eq!(names(scan.all()), ["p0", "p1", "tmp"]);
         assert_eq!(names(scan.windowed_and_parked()), ["p0", "p1"]);
         assert_eq!(names(scan.parked()), ["p0", "p1"]);
+        assert_eq!(scan.parked_count(), 2);
         assert_eq!(
             names(scan.primary().into_iter()),
             ["tmp"],
@@ -601,6 +616,79 @@ mod tests {
             3,
             "슬롯을 가진 engine이 각각 한 번만 보인다"
         );
+    }
+
+    #[test]
+    fn scan_mut_keeps_order_and_excludes_by_place() {
+        let mut parked = parked(&["p0", "p1"]);
+        let mut pending = Some(engine_with_workspace_name("tmp"));
+        let mut views = HashMap::new();
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
+        let visit = |it: &mut dyn Iterator<Item = &mut crate::core::CoreState>| -> Vec<String> {
+            it.map(|e| e.workspaces[0].name.clone()).collect()
+        };
+        assert_eq!(
+            visit(&mut scan.reborrow().windowed_and_parked()),
+            ["p0", "p1"]
+        );
+        assert_eq!(visit(&mut scan.reborrow().windows_and_pending()), ["tmp"]);
+        assert_eq!(visit(&mut scan.reborrow().parked()), ["p0", "p1"]);
+        let sessions: Vec<String> = scan
+            .reborrow()
+            .sessions()
+            .map(|(_, e)| e.workspaces[0].name.clone())
+            .collect();
+        assert_eq!(
+            sessions,
+            ["p0", "p1"],
+            "sessions는 임시 engine을 넣지 않는다"
+        );
+        assert_eq!(
+            scan.reborrow()
+                .primary()
+                .map(|e| e.workspaces[0].name.clone()),
+            Some("tmp".to_string())
+        );
+    }
+
+    #[test]
+    fn park_appends_and_unpark_takes_the_oldest() {
+        let mut parked = parked(&["p0"]);
+        let mut pending = None;
+        let mut views = HashMap::new();
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
+        let (state, mut engine) = crate::state::tests::test_state();
+        engine.workspaces[0].name = "p1".to_string();
+        scan.reborrow().park(state, engine);
+        let (_, first) = scan.reborrow().unpark_first().expect("보관한 항목");
+        assert_eq!(first.workspaces[0].name, "p0");
+        let (_, second) = scan.reborrow().unpark_first().expect("보관한 항목");
+        assert_eq!(second.workspaces[0].name, "p1");
+        assert!(scan.unpark_first().is_none());
+    }
+
+    #[test]
+    fn parked_session_lookups_use_parked_index() {
+        let mut parked = parked(&["p0", "p1"]);
+        // 첫 항목과 겹치지 않는 ID를 두 번째 항목에만 둔다.
+        let target = parked[0].1.workspaces[0].id + 5_000;
+        parked[1].1.workspaces[0].id = target;
+        let mut pending = None;
+        let mut views = HashMap::new();
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
+        let (_, e) = scan.reborrow().parked_session(1).expect("두 번째 항목");
+        assert_eq!(e.workspaces[0].name, "p1");
+        let (_, e) = scan.reborrow().first_parked_session().expect("첫 항목");
+        assert_eq!(e.workspaces[0].name, "p0");
+        assert!(scan.reborrow().parked_session(2).is_none());
+        let rid = crate::core::request_target::ResourceId {
+            kind: crate::core::request_target::Kind::Workspace,
+            id: u64::from(target),
+        };
+        let (_, e) = scan
+            .parked_session_with_resource(rid)
+            .expect("workspace를 가진 parked 항목");
+        assert_eq!(e.workspaces[0].name, "p1");
     }
 
     fn slots(v: &[LayoutSlotId]) -> HashSet<LayoutSlotId> {
