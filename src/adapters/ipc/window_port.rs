@@ -28,7 +28,6 @@ pub(crate) trait IpcWindow: CascadeWindow {
         &mut self,
         engine: &mut CoreState,
         origin: &crate::intent::IntentOrigin,
-        window_id: u64,
         created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
     );
 

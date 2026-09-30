@@ -115,7 +115,6 @@ fn new_workspace(
                 state,
                 engine,
                 origin,
-                0,
                 crate::app::dispatch_domain::WorkspaceCreatedCascade {
                     workspace_id,
                     index,

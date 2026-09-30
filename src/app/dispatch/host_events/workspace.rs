@@ -6,8 +6,36 @@ use tasty_plugin_protocol::events::payloads::{
     WorkspaceActivated, WorkspaceClosed, WorkspaceCreated, WorkspaceRenamed,
 };
 
+use winit::window::WindowId;
+
+use crate::core::CoreState;
 use crate::hooks::lua::AutofireCtx;
 use crate::plugin::PluginManager;
+
+/// workspace.created payload의 window_id. [`created_window`]로만 만들 수 있어
+/// 발행 경로가 발행 시점 조회를 건너뛰고 값을 넣을 수 없다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CreatedWindow(u64);
+
+#[cfg(test)]
+impl CreatedWindow {
+    pub(super) fn id(self) -> u64 {
+        self.0
+    }
+}
+
+/// 발행 시점에 workspace를 가진 창. 창이 없는 engine(parked)에 있거나 이미 닫혔으면 0이다.
+/// windows는 `App::find_main_with_workspace`가 보는 것과 같은 창 engine 목록이다.
+pub(super) fn created_window<'a>(
+    windows: impl IntoIterator<Item = (WindowId, &'a CoreState)>,
+    workspace_id: u32,
+) -> CreatedWindow {
+    let owner = windows
+        .into_iter()
+        .find(|(_, engine)| engine.has_workspace(workspace_id))
+        .map(|(wid, _)| u64::from(wid));
+    CreatedWindow(owner.unwrap_or(0))
+}
 
 pub(super) fn emit_activated(
     mgr: &mut PluginManager,
@@ -60,12 +88,12 @@ pub(super) fn emit_created(
     lua: Option<&tasty_lua::LuaEngine>,
     autofire: AutofireCtx<'_>,
     workspace_id: u32,
-    window_id: u64,
+    window: CreatedWindow,
     name: String,
 ) {
     let payload = WorkspaceCreated {
         workspace_id,
-        window_id,
+        window_id: window.0,
         name,
     };
     mgr.emit_host_event("workspace.created", &payload, EventScope::System);

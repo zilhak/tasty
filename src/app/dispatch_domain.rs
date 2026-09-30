@@ -812,13 +812,12 @@ impl App {
             state,
             engine,
             view,
-            window,
+            ..
         }) = engines_mut!(self).resolve(source.engine())
         else {
             return;
         };
-        let window_id = window.map_or(0, u64::from);
-        cascade_workspace_created(state, engine, origin, window_id, c);
+        cascade_workspace_created(state, engine, origin, c);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -1183,7 +1182,6 @@ pub(crate) fn cascade_workspace_created(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
-    window_id: u64,
     c: WorkspaceCreatedCascade,
 ) {
     let name = engine
@@ -1193,7 +1191,6 @@ pub(crate) fn cascade_workspace_created(
         .unwrap_or_default();
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
         workspace_id: c.workspace_id,
-        window_id,
         name,
     });
 

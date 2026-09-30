@@ -19,12 +19,9 @@ impl IpcWindow for AppState {
         &mut self,
         engine: &mut CoreState,
         origin: &crate::intent::IntentOrigin,
-        window_id: u64,
         created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
     ) {
-        crate::app::dispatch_domain::cascade_workspace_created(
-            self, engine, origin, window_id, created,
-        );
+        crate::app::dispatch_domain::cascade_workspace_created(self, engine, origin, created);
     }
 
     fn cascade_workspace_meta_updated(

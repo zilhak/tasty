@@ -258,7 +258,6 @@ pub fn handle_workspace_create(
     window.cascade_workspace_created(
         engine,
         &agent_origin,
-        0,
         crate::app::dispatch_domain::WorkspaceCreatedCascade {
             workspace_id,
             index,

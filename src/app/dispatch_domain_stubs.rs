@@ -27,7 +27,6 @@ pub(crate) fn cascade_workspace_created(
     _state: &mut AppState,
     _engine: &mut CoreState,
     _origin: &IntentOrigin,
-    _window_id: u64,
     _c: WorkspaceCreatedCascade,
 ) {
 }

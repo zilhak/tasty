@@ -106,9 +106,9 @@ pub enum PendingHostEvent {
     PaneClosed {
         pane_id: u32,
     },
+    /// window_id는 쌓지 않는다. 발행할 때 workspace를 가진 창을 조회해 채운다.
     WorkspaceCreated {
         workspace_id: u32,
-        window_id: u64,
         name: String,
     },
     /// workspace 종료 통지. 전송 reason은 현재 User로 고정된다.

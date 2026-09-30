@@ -352,7 +352,6 @@ impl<'a> EngineScanMut<'a> {
                 state,
                 engine,
                 view: Some(base),
-                window: Some(*wid),
             });
         }
         let p = parked.iter_mut().find(|p| p.engine == id)?;
@@ -360,7 +359,6 @@ impl<'a> EngineScanMut<'a> {
             state: &mut p.state,
             engine,
             view: None,
-            window: None,
         })
     }
 
@@ -380,7 +378,6 @@ pub(crate) struct DispatchCtx<'a> {
     pub(crate) state: &'a mut AppState,
     pub(crate) engine: &'a mut CoreState,
     pub(crate) view: Option<&'a mut view::ViewBase>,
-    pub(crate) window: Option<WindowId>,
 }
 
 impl App {

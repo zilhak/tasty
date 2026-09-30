@@ -1,90 +1,28 @@
 //! workspace.created의 window_id는 발행 시점에 그 workspace를 가진 창이며, 없으면 0이다.
+//! 쌓인 사건에는 window_id가 없고, 발행 경로는 created_window로만 payload 값을 만들 수 있다.
 
 use winit::window::WindowId;
 
-use super::resolve_created_window;
-use crate::state::PendingHostEvent;
+use super::workspace::created_window;
+use crate::app::engine_registry::EngineRegistry;
+use crate::core::CoreState;
+use crate::state::{AppState, PendingHostEvent};
 
 const WINDOW: u64 = 42;
+const OTHER_WINDOW: u64 = 7;
 
-fn created(workspace_id: u32, window_id: u64) -> PendingHostEvent {
-    PendingHostEvent::WorkspaceCreated {
-        workspace_id,
-        window_id,
-        name: "ws".to_owned(),
-    }
-}
-
-fn window_of(ev: &PendingHostEvent) -> u64 {
-    match ev {
-        PendingHostEvent::WorkspaceCreated { window_id, .. } => *window_id,
-        other => panic!("expected WorkspaceCreated, got {other:?}"),
-    }
-}
-
-#[test]
-fn a_workspace_owned_by_a_window_reports_that_window() {
-    let ev = resolve_created_window(created(5, 0), |ws| (ws == 5).then_some(WINDOW));
-    assert_eq!(window_of(&ev), WINDOW);
-}
-
-#[test]
-fn a_workspace_without_a_window_reports_zero() {
-    let ev = resolve_created_window(created(5, 9), |_| None);
-    assert_eq!(window_of(&ev), 0, "the queued value is not used");
-}
-
-#[test]
-fn the_owning_window_wins_over_the_queued_value() {
-    let ev = resolve_created_window(created(5, 9), |_| Some(WINDOW));
-    assert_eq!(window_of(&ev), WINDOW);
-    // 창 경로가 쌓은 정상값은 그대로 남는다.
-    let ev = resolve_created_window(created(5, WINDOW), |_| Some(WINDOW));
-    assert_eq!(window_of(&ev), WINDOW);
-}
-
-#[test]
-fn other_events_pass_through_without_a_lookup() {
-    let ev = resolve_created_window(
-        PendingHostEvent::WorkspaceClosed { workspace_id: 5 },
-        |_| panic!("only workspace.created looks up its window"),
-    );
-    assert!(matches!(
-        ev,
-        PendingHostEvent::WorkspaceClosed { workspace_id: 5 }
-    ));
-}
-
-/// 쌓인 이벤트에서 workspace.created를 하나 꺼내 창 조회로 보정한다. 창 조회는
-/// `App::find_main_with_workspace`처럼 이 engine을 가진 창 하나를 흉내 낸다.
-fn resolved_created_events(
-    state: &mut crate::state::AppState,
-    engine: &crate::core::CoreState,
-    window: Option<WindowId>,
-) -> Vec<(u32, u64, u64)> {
+fn created_workspace_ids(state: &mut AppState) -> Vec<u32> {
     state
         .take_pending_host_events()
         .into_iter()
-        .filter_map(|ev| {
-            let queued = match &ev {
-                PendingHostEvent::WorkspaceCreated {
-                    workspace_id,
-                    window_id,
-                    ..
-                } => (*workspace_id, *window_id),
-                _ => return None,
-            };
-            let resolved = resolve_created_window(ev, |ws| {
-                window.filter(|_| engine.has_workspace(ws)).map(u64::from)
-            });
-            Some((queued.0, queued.1, window_of(&resolved)))
+        .filter_map(|ev| match ev {
+            PendingHostEvent::WorkspaceCreated { workspace_id, .. } => Some(workspace_id),
+            _ => None,
         })
         .collect()
 }
 
-#[test]
-fn a_ui_new_workspace_in_a_window_reports_that_window() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+fn create_from_the_ui(state: &mut AppState, engine: &mut CoreState) -> u32 {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     state.take_pending_host_events();
     let intent = crate::intent::Intent::NewWorkspace {
@@ -93,52 +31,97 @@ fn a_ui_new_workspace_in_a_window_reports_that_window() {
         category: None,
     }
     .from_user_menu("test");
-    crate::intent::workspace::handle(&mut core, &mut state, &mut engine, &intent);
+    crate::intent::workspace::handle(&mut core, state, engine, &intent);
+    let ids = created_workspace_ids(state);
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    ids[0]
+}
 
-    let window = WindowId::from(WINDOW);
-    let events = resolved_created_events(&mut state, &engine, Some(window));
-    assert_eq!(events.len(), 1, "{events:?}");
-    let (_, queued, resolved) = events[0];
-    assert_eq!(queued, 0, "the UI path does not know its window");
-    assert_eq!(resolved, u64::from(window));
+fn create_from_ipc(state: &mut AppState, engine: &mut CoreState) -> u32 {
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+    state.take_pending_host_events();
+    let response = crate::adapters::ipc::handler::workspace::handle_workspace_create(
+        &mut core,
+        state,
+        engine,
+        serde_json::json!(1),
+        &serde_json::json!({}),
+    );
+    assert!(response.error.is_none(), "{response:?}");
+    let ids = created_workspace_ids(state);
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    ids[0]
+}
+
+/// engine을 창 하나에 붙인 registry. 발행 경로가 보는 창 목록과 같은 순회를 쓴다.
+fn registry_with_window(engine: CoreState, window: u64) -> EngineRegistry {
+    let mut reg = EngineRegistry::default();
+    let id = reg
+        .insert_pending(engine)
+        .unwrap_or_else(|_| panic!("pending engine already present"));
+    reg.attach_window(WindowId::from(window), id);
+    reg
+}
+
+fn window_id_at_emission(reg: &EngineRegistry, windows: &[u64], workspace_id: u32) -> u64 {
+    let order = windows
+        .iter()
+        .map(|w| WindowId::from(*w))
+        .collect::<Vec<_>>();
+    created_window(reg.windows_in(order.into_iter()), workspace_id).id()
+}
+
+#[test]
+fn a_ui_new_workspace_in_a_window_reports_that_window() {
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let ws = create_from_the_ui(&mut state, &mut engine);
+    let reg = registry_with_window(engine, WINDOW);
+    assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), WINDOW);
 }
 
 #[test]
 fn an_ipc_workspace_create_in_a_window_reports_that_window() {
     let (mut state, mut engine) = crate::state::tests::test_state();
-    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    state.take_pending_host_events();
-    let response = crate::adapters::ipc::handler::workspace::handle_workspace_create(
-        &mut core,
-        &mut state,
-        &mut engine,
-        serde_json::json!(1),
-        &serde_json::json!({}),
-    );
-    assert!(response.error.is_none(), "{response:?}");
-
-    let window = WindowId::from(WINDOW);
-    let events = resolved_created_events(&mut state, &engine, Some(window));
-    assert_eq!(events.len(), 1, "{events:?}");
-    let (_, queued, resolved) = events[0];
-    assert_eq!(queued, 0, "the IPC path does not know its window");
-    assert_eq!(resolved, u64::from(window));
+    let ws = create_from_ipc(&mut state, &mut engine);
+    let reg = registry_with_window(engine, WINDOW);
+    assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), WINDOW);
 }
 
 #[test]
-fn a_workspace_in_an_engine_without_a_window_reports_zero() {
+fn only_the_window_that_owns_the_workspace_is_reported() {
     let (mut state, mut engine) = crate::state::tests::test_state();
-    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    state.take_pending_host_events();
-    let intent = crate::intent::Intent::NewWorkspace {
-        kind: None,
-        params: serde_json::json!({}),
-        category: None,
-    }
-    .from_agent_ipc();
-    crate::intent::workspace::handle(&mut core, &mut state, &mut engine, &intent);
+    let ws = create_from_the_ui(&mut state, &mut engine);
+    let (_, other_engine) = crate::state::tests::test_state();
+    let mut reg = registry_with_window(other_engine, OTHER_WINDOW);
+    let id = reg
+        .insert_pending(engine)
+        .unwrap_or_else(|_| panic!("pending engine already present"));
+    reg.attach_window(WindowId::from(WINDOW), id);
+    assert_eq!(
+        window_id_at_emission(&reg, &[OTHER_WINDOW, WINDOW], ws),
+        WINDOW
+    );
+}
 
-    let events = resolved_created_events(&mut state, &engine, None);
-    assert_eq!(events.len(), 1, "{events:?}");
-    assert_eq!(events[0].2, 0);
+#[test]
+fn a_workspace_in_a_parked_engine_reports_zero() {
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let ws = create_from_the_ui(&mut state, &mut engine);
+    let mut reg = registry_with_window(engine, WINDOW);
+    reg.park(WindowId::from(WINDOW), state);
+    assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), 0);
+}
+
+#[test]
+fn a_workspace_closed_before_emission_reports_zero() {
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let ws = create_from_ipc(&mut state, &mut engine);
+    let idx = engine
+        .workspaces
+        .iter()
+        .position(|w| w.id == ws)
+        .expect("created workspace");
+    engine.workspaces.remove(idx);
+    let reg = registry_with_window(engine, WINDOW);
+    assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), 0);
 }
