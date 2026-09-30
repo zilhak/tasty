@@ -179,7 +179,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
   - `tasty terminal children [--surface]` ↔ `terminal.children`
   - `tasty terminal parent --surface <child>` ↔ `terminal.parent`
   - `tasty terminal state --surface <child>` ↔ `terminal.state` — 자식 단건 상태(`idle`/`needs_input`/`active`/`stale`/`exited`) 조회. `terminal.children` 의 항목별 `state` 와 **같은 판정 헬퍼**(`CoreState::child_liveness`)를 쓰므로 목록과 단건의 답이 갈리지 않는다. 이미 registry 에서 정리된(reconcile 로 사라진) surface 도 라이브 트리와 직접 대조해 `"exited"` 로 판별한다 — `ChildTerminalRegistry::state_of` 자체의 미등록 surface `"active"` fallback 계약은 그대로 둔 채, 상위 판정 계층이 그 위에서 죽은 surface 를 걸러낸다
-  - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill`
+  - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill` — child surface 를 먼저 닫고, 실제로 닫혔을 때만 관계를 지우고 `killed_surface_id` 로 답한다. mirror workspace 의 child 처럼 닫기가 원격 실행 큐로 넘어가면 `{"forwarded": true, "surface_id", "child_index"}` 로 답하고 관계·soft 점유를 남긴다(surface 가 사라지면 reconcile 이 정리한다). 닫기가 실패하면 그 오류를 돌려주고 관계·soft 점유는 그대로다
   - `tasty terminal respawn [--surface] --child <n> [--cwd] [--command] [--role] [--nickname]` ↔ `terminal.respawn`
   - `tasty terminal broadcast "<text>" [--surface] [--role]` ↔ `terminal.broadcast`
   - `tasty terminal set-state --surface <child> --state <idle|needs_input|active>` ↔ `terminal.set_state` (에이전트 hook 진입점). **파생 상태(`stale`/`exited`)는 입력으로 받지 않는다** — 출력 전용이다(아래 "상태 판정")
@@ -258,6 +258,7 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 - Given workspace `<ws>` When `terminal.spawn{parent=P, command}` Then 자식 터미널이 생성·registry 등록되고 `occupancy_of(child)==Soft`·`holder.parent==P`·`attached=false`.
 - Given soft 점유된 child C When `terminal.kill` Then `occupancy_of(C)==None` + surface 닫힘.
 - Given 원격 attach로 hard 점유된 workspace의 child C When `terminal.kill` Then "hard-occupied" 에러 반환 + child 관계·holder 점유·surface 모두 그대로.
+- Given mirror workspace의 surface를 adopt한 child C When `terminal.kill` Then GUI는 `forwarded:true`(`killed_surface_id` 없음), headless는 mirror 사유 오류를 반환하고 child 관계·soft 점유·surface 모두 그대로.
 - Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.

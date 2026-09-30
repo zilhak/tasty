@@ -4146,6 +4146,80 @@ mod forward_exec_tests {
         engine.runtime.terminals.remove(pty_id);
     }
 
+    /// mirror surface를 자식으로 둔 terminal.kill은 로컬에서 닫히지 않는다.
+    /// GUI는 원격으로 전달했다고 답하고 헤드리스는 거절한다. 어느 쪽이든 관계와 soft 점유는 남는다.
+    #[test]
+    fn terminal_kill_keeps_the_child_when_a_mirror_child_is_not_closed_locally() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let parent = seed(&mut engine);
+        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let child = engine.next_ids.next_surface();
+        let tab_id = engine.next_ids.next_tab();
+        engine
+            .runtime
+            .terminals
+            .insert(child, Terminal::new_detached(80, 24));
+        engine.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("pane exists")
+            .add_terminal_marker_tab_background(tab_id, child, None);
+        let adopt = ipc_request(
+            "terminal.adopt",
+            serde_json::json!({ "surface": parent, "target": child }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &adopt,
+            &CallerContext::Local,
+        );
+        let idx = resp.result.expect("adopt 성공")["child_index"]
+            .as_u64()
+            .expect("child_index") as u32;
+        engine.workspaces[0].mirror = true;
+
+        let kill = ipc_request(
+            "terminal.kill",
+            serde_json::json!({ "surface": parent, "child": idx }),
+        );
+        let resp = handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &kill,
+            &CallerContext::Local,
+        );
+
+        if cfg!(feature = "gui") {
+            let result = resp
+                .result
+                .unwrap_or_else(|| panic!("forward 는 성공 응답이다: {:?}", resp.error));
+            assert_eq!(result["forwarded"], true, "{result}");
+            assert!(
+                result.get("killed_surface_id").is_none(),
+                "닫지 않은 surface 를 죽였다고 답하면 안 된다: {result}"
+            );
+            assert_eq!(engine.pending_structural_forward.len(), 1);
+        } else {
+            assert!(resp.error.is_some(), "헤드리스는 mirror 닫기를 거절한다");
+        }
+        assert!(
+            engine
+                .runtime
+                .child_terminals
+                .find_child(parent, idx)
+                .is_some(),
+            "닫히지 않은 child 의 관계를 지우면 안 된다"
+        );
+        assert!(
+            engine.attach.occupancy_of(child).is_some(),
+            "닫히지 않은 child 의 soft 점유를 풀면 안 된다"
+        );
+        assert!(engine.find_surface_by_id(child).is_some());
+    }
+
     /// terminal.kill은 child가 hard 점유 workspace에 있으면 surface.close처럼 거부한다.
     /// 점유를 먼저 강제 해제하면 holder가 workspace 전체에서 떨어져 나가므로 registry·점유를 그대로 둔다.
     /// 점유가 없으면 child의 soft 점유만 풀고 닫는다.

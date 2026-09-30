@@ -499,6 +499,27 @@ pub(crate) fn handle_kill(
     if let Some(resp) = surface::refuse_if_hard_occupied(engine, &id, child_surface_id) {
         return resp;
     }
+    // 닫기를 먼저 시도한다. 원격 전달이나 실패로 surface가 남으면 관계와 soft 점유를 그대로 둔다.
+    let close_params = json!({ "surface_id": child_surface_id });
+    let closed = match unwrap_ok(
+        surface::handle_surface_close(core, window, engine, id.clone(), &close_params),
+        &id,
+    ) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    // mirror child는 원격 실행 큐에 들어갔을 뿐이다. 관계는 surface가 사라진 뒤 reconcile이 정리한다.
+    if closed.get("forwarded").and_then(Value::as_bool) == Some(true) {
+        return JsonRpcResponse::success(
+            id,
+            json!({
+                "forwarded": true,
+                "surface_id": child_surface_id,
+                "child_index": child_index,
+            }),
+        );
+    }
+
     let Some(removed) = engine
         .runtime
         .child_terminals
@@ -511,21 +532,16 @@ pub(crate) fn handle_kill(
     };
     engine.runtime.child_terminals.save();
 
-    if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent) {
-        tracing::warn!(
+    // 닫기 정리가 soft 점유도 지우므로 남아 있을 때만 해제한다.
+    match engine.release_soft_occupancy(removed.child_surface_id, parent) {
+        Ok(()) | Err(crate::core::attach::OccupancyError::NotOccupied) => {}
+        Err(e) => tracing::warn!(
             "terminal.kill: soft occupancy release failed for surface {} \
-             (parent {parent}): {e:?} — closing the surface anyway",
+             (parent {parent}): {e:?}",
             removed.child_surface_id
-        );
+        ),
     }
 
-    let close_params = json!({ "surface_id": removed.child_surface_id });
-    if let Err(e) = unwrap_ok(
-        surface::handle_surface_close(core, window, engine, id.clone(), &close_params),
-        &id,
-    ) {
-        return e;
-    }
     JsonRpcResponse::success(
         id,
         json!({
