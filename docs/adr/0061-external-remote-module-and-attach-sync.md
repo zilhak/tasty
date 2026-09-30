@@ -47,7 +47,7 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   - 쓰기: mirror 전용 필드는 RemoteState 세션이 쓰는 단일 창구로만 바꾼다. 로컬 구조 트리는 Remote가 직접 바꾸지 않는다.
     조회는 로컬 목록과 mirror 필드를 함께 찾는 합성 조회로 제공한다.
   - 로컬 사용자와 에이전트의 mirror 구조 조작은 로컬에서 실행하지 않고 서버로 forward한다. 분할·닫기·이동·변환 같은 구조 변경은 mirror ID로 로컬 명령을 만들지 않는다.
-    사이드바 순서와 mirror에 붙인 로컬 메타데이터(이름 변경 등)는 아래 Consequences의 미정 항목을 따른다.
+    사이드바 순서와 mirror에 붙인 로컬 메타데이터(카테고리·부제·설명 등)는 아래 Consequences의 미정 항목을 따른다.
   - 목표 소유는 `RemoteState`의 세션별 mirror projection이다. `CoreState` 안의 전용 필드는 그리로 가는 중간 배치다.
   - ID: mirror의 로컬 workspace·pane·tab·surface ID도 로컬 구조 journal의 같은 예약에서 받는다. 이벤트 없이 예약만 소비한다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)).
     엔진을 넘어 합산하는 목록에 mirror도 들어가므로 로컬 ID와 한 공간에서 유일해야 한다. mirror 전용 발급기는 두지 않는다.
