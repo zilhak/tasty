@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
+use crate::app::window_access::engines_mut;
 use crate::ipc as host_ipc;
 use crate::ipc::server::{IpcCommand, send_response};
 
@@ -75,11 +76,8 @@ impl App {
             }
         }
         // 창과 parked 상태가 같은 종류의 자원을 찾도록 공용 판정을 사용한다.
-        let owner_in_parked = named.and_then(|rid| {
-            self.parked_states
-                .iter_mut()
-                .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
-        });
+        let owner_in_parked =
+            named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
@@ -98,7 +96,7 @@ impl App {
             );
             return IpcStep::Handled;
         }
-        if let Some((state, engine)) = self.parked_states.first_mut() {
+        if let Some((state, engine)) = engines_mut!(self).first_parked_session() {
             let response =
                 host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             self.send_routed_response(cmd, response);

@@ -26,23 +26,10 @@ impl App {
         }
 
         let behavior = self
-            .view
-            .views
-            .values()
-            .find_map(|w| {
-                w.as_main()
-                    .map(|m| m.core_state.settings.general.close_behavior.clone())
-            })
-            .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|(_, e)| e.settings.general.close_behavior.clone())
-            })
-            .or_else(|| {
-                self.core_state
-                    .as_ref()
-                    .map(|e| e.settings.general.close_behavior.clone())
-            })
+            .engines()
+            .all()
+            .next()
+            .map(|e| e.settings.general.close_behavior.clone())
             .unwrap_or_else(|| "ask".to_string());
 
         match behavior.as_str() {

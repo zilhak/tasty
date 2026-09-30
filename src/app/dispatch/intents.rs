@@ -3,6 +3,7 @@
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::ipc;
 use crate::view::ui::View as _;
 
@@ -56,7 +57,7 @@ impl App {
                 }
             }
         }
-        for (idx, (s, _)) in self.parked_states.iter_mut().enumerate() {
+        for (idx, (s, _)) in self.engines_mut().parked_sessions().enumerate() {
             let batch = s.take_pending_intents();
             if !batch.is_empty() {
                 parked_batches.push((idx, batch));
@@ -106,7 +107,7 @@ impl App {
         }
         for (idx, batch) in parked_batches {
             let core = &mut self.core;
-            let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+            let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                 continue;
             };
             for intent in batch {
@@ -158,12 +159,11 @@ impl App {
             .focused_window()
             .map(|w| &w.core_state.settings)
             .or_else(|| {
-                self.view
-                    .views
-                    .values()
-                    .find_map(|w| w.as_main().map(|m| &m.core_state.settings))
+                self.engines()
+                    .windowed_and_parked()
+                    .next()
+                    .map(|e| &e.settings)
             })
-            .or_else(|| self.parked_states.first().map(|(_, e)| &e.settings))
             .map(|s| (s.appearance.clone(), s.theme_runtime()));
         let Some((appearance, runtime)) = picked else {
             return;
@@ -176,10 +176,7 @@ impl App {
         }
 
         // 창 없는 engine도 OSC 색상 조회가 새 팔레트를 반환해야 한다.
-        for main in self.main_windows_iter_mut() {
-            main.core_state.resync_terminal_palettes();
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.resync_terminal_palettes();
         }
     }
@@ -229,16 +226,7 @@ impl App {
         caller: &'a ipc::caller::CallerContext,
     ) -> Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse> {
         let core = &mut self.core;
-        if let Some(w) = self.view.views.values_mut().find_map(|v| v.as_main_mut()) {
-            return ipc::handler::check_request(
-                core,
-                &mut w.state,
-                &mut w.core_state,
-                request,
-                caller,
-            );
-        }
-        if let Some((state, engine)) = self.parked_states.first_mut() {
+        if let Some((state, engine)) = engines_mut!(self).sessions().next() {
             return ipc::handler::check_request(core, state, engine, request, caller);
         }
         ipc::handler::check_without_engine(request, caller)
@@ -286,11 +274,8 @@ impl App {
                 return response;
             }
         }
-        let owner_in_parked = named.and_then(|rid| {
-            self.parked_states
-                .iter_mut()
-                .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
-        });
+        let owner_in_parked =
+            named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
@@ -304,7 +289,7 @@ impl App {
                 crate::core::request_target::unowned_target_message(rid, &request.method),
             );
         }
-        if let Some((state, engine)) = self.parked_states.first_mut() {
+        if let Some((state, engine)) = engines_mut!(self).first_parked_session() {
             let response =
                 ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             self.dispatch_pending_intents();

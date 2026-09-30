@@ -1,7 +1,8 @@
 //! Complete file identification in the explicit origin's owning engine.
 
 use crate::app::App;
-use crate::core::request_target::{Kind, ResourceId, engine_has_resource, unowned_target_message};
+use crate::app::window_access::engines_mut;
+use crate::core::request_target::{Kind, ResourceId, unowned_target_message};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::identify_worker::IdentifyRequestId;
 use crate::view::ui::View;
@@ -44,11 +45,7 @@ impl App {
             return;
         }
         if let Some(rid) = named {
-            if let Some((state, engine)) = self
-                .parked_states
-                .iter_mut()
-                .find(|(_, engine)| engine_has_resource(engine, rid))
-            {
+            if let Some((state, engine)) = engines_mut!(self).parked_session_with_resource(rid) {
                 crate::file::dispatch::apply_identify_result(
                     &mut self.core,
                     state,

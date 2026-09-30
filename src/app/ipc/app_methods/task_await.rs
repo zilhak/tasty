@@ -10,14 +10,7 @@ impl App {
     /// 완료 통지는 소유 engine의 허브로만 가므로 다른 engine의 허브에서 기다리면 놓친다.
     pub(super) fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let engines = || {
-            self.view
-                .views
-                .values()
-                .filter_map(|w| w.as_main().map(|m| &m.core_state))
-                .chain(self.parked_states.iter().map(|(_, e)| e))
-                .chain(self.core_state.as_ref())
-        };
+        let engines = || self.engines().all();
         if engines().next().is_none() {
             send_response(
                 &cmd.response_tx,

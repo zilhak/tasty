@@ -5,6 +5,7 @@
 use serde_json::json;
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::ipc as host_ipc;
 use crate::ipc::handler::{
     attach, hooks, image, notification, output, pane, pty, surface, workspace, workspace_category,
@@ -163,22 +164,10 @@ impl App {
             }
         };
         // pty.list는 종료한 PTY도 정리하므로 engine을 가변으로 빌린다.
-        let Self {
-            view,
-            parked_states,
-            core,
-            ..
-        } = self;
+        // 창과 parked engine을 한 번씩 방문하므로 같은 자원이 두 번 합산되지 않는다.
+        let core = &mut self.core;
         let mut combined: Vec<Vec<serde_json::Value>> = vec![Vec::new(); fields.len().max(1)];
-        for w in view.views.values_mut() {
-            if let Some(m) = w.as_main_mut() {
-                take(
-                    f(core, &mut m.state, &mut m.core_state, id.clone()),
-                    &mut combined,
-                );
-            }
-        }
-        for (s, e) in parked_states.iter_mut() {
+        for (s, e) in engines_mut!(self).sessions() {
             take(f(core, s, e, id.clone()), &mut combined);
         }
         combined

@@ -762,16 +762,10 @@ impl App {
     /// 창 생성 때 공유한 approval_store를 고르고 대기는 공용 함수에 맡긴다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
-            .view
-            .views
-            .values()
-            .find_map(|w| w.as_main().map(|w| w.core_state.approval_store.clone()))
-            .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|(_, e)| e.approval_store.clone())
-            })
-            .or_else(|| self.core_state.as_ref().map(|e| e.approval_store.clone()));
+            .engines()
+            .all()
+            .next()
+            .map(|e| e.approval_store.clone());
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {

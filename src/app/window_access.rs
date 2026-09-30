@@ -165,6 +165,27 @@ impl<'a> EngineScanMut<'a> {
         self.parked.iter_mut().map(|(s, e)| (s, e))
     }
 
+    pub(crate) fn parked_session(
+        self,
+        idx: usize,
+    ) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+        self.parked.get_mut(idx).map(|(s, e)| (s, e))
+    }
+
+    /// 가장 먼저 보관한 parked 항목. 대상 없는 요청의 기본 engine이다.
+    pub(crate) fn first_parked_session(self) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+        self.parked_session(0)
+    }
+
+    /// 요청 대상 자원을 가진 parked 항목. 창의 소유 판정과 같은 `engine_has_resource`를 쓴다.
+    pub(crate) fn parked_session_with_resource(
+        self,
+        rid: crate::core::request_target::ResourceId,
+    ) -> Option<(&'a mut AppState, &'a mut CoreState)> {
+        self.parked_sessions()
+            .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
+    }
+
     pub(crate) fn pending(self) -> Option<&'a mut CoreState> {
         self.pending.as_mut()
     }

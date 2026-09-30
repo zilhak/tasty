@@ -7,6 +7,7 @@ use tasty_settings::Settings;
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::core::AttentionKind;
 use crate::core::intent::CoreEvent;
 use crate::core::structural_cascade::{
@@ -54,7 +55,7 @@ impl App {
                 core.apply(&mut main.core_state, intent)?
             }
             DispatchSource::Parked(idx) => {
-                let Some((_, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((_, engine)) = engines_mut!(self).parked_session(idx) else {
                     anyhow::bail!("dispatch_domain_intent: parked state {idx} not found");
                 };
                 core.apply(engine, intent)?
@@ -371,7 +372,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_closed_item_restored(state, engine, origin, kind);
@@ -394,7 +395,7 @@ impl App {
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, engine, None)
@@ -434,7 +435,7 @@ impl App {
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, engine, None)
@@ -481,7 +482,7 @@ impl App {
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, engine, None)
@@ -513,7 +514,7 @@ impl App {
                 (&mut main.state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, None)
@@ -544,7 +545,7 @@ impl App {
                 (&mut main.state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, None)
@@ -574,7 +575,7 @@ impl App {
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, engine, None)
@@ -610,7 +611,7 @@ impl App {
                 (&mut main.state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, None)
@@ -640,7 +641,7 @@ impl App {
                 &mut main.state
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 state
@@ -662,7 +663,7 @@ impl App {
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 (state, engine, None)
@@ -685,7 +686,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_surface_closed(core, state, engine, c);
@@ -717,7 +718,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_surface_split(
@@ -747,7 +748,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_pane_split(state, engine, origin, c);
@@ -777,7 +778,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
@@ -807,7 +808,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
@@ -839,7 +840,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_tab_closed_full(
@@ -870,7 +871,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_workspace_moved(state, from_index, to_index);
@@ -901,7 +902,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
@@ -931,7 +932,7 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
                     return;
                 };
                 cascade_workspace_created(state, engine, origin, 0, c);
@@ -1078,13 +1079,7 @@ impl App {
     }
 
     fn cascade_terminal_mark_set(&mut self, surface_id: u32) {
-        for main in self.main_windows_iter_mut() {
-            if let Some(t) = main.core_state.find_terminal_by_id_mut(surface_id) {
-                t.set_mark();
-                return;
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
                 return;
@@ -1101,7 +1096,7 @@ impl App {
                 return;
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 engine.raise_attention(surface_id, kind);
                 engine.mark_layout_dirty();
@@ -1128,7 +1123,7 @@ impl App {
                 return;
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
                     engine.clear_attention(surface_id);
@@ -1148,7 +1143,7 @@ impl App {
                 return;
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 engine.refresh_tab_display_name(surface_id);
                 engine.mark_layout_dirty();
@@ -1159,36 +1154,17 @@ impl App {
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
     fn cascade_settings_updated(&mut self, new_settings: Settings) {
-        let prev_appearance = self
-            .main_windows_iter_mut()
+        let prev_settings = self
+            .engines()
+            .windowed_and_parked()
             .next()
-            .map(|w| w.core_state.settings.appearance.clone());
-        let prev_appearance = prev_appearance.or_else(|| {
-            self.parked_states
-                .first()
-                .map(|(_, e)| e.settings.appearance.clone())
-        });
+            .map(|e| &e.settings);
+        let prev_appearance = prev_settings.map(|s| s.appearance.clone());
         let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
         let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
         let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
-        let prev_language = self
-            .main_windows_iter_mut()
-            .next()
-            .map(|w| w.core_state.settings.general.language.clone());
-        let prev_language = prev_language.or_else(|| {
-            self.parked_states
-                .first()
-                .map(|(_, e)| e.settings.general.language.clone())
-        });
-        let prev_categories_enabled = self
-            .main_windows_iter_mut()
-            .next()
-            .map(|w| w.core_state.settings.general.workspace_categories_enabled);
-        let prev_categories_enabled = prev_categories_enabled.or_else(|| {
-            self.parked_states
-                .first()
-                .map(|(_, e)| e.settings.general.workspace_categories_enabled)
-        });
+        let prev_language = prev_settings.map(|s| s.general.language.clone());
+        let prev_categories_enabled = prev_settings.map(|s| s.general.workspace_categories_enabled);
         let categories_turned_off = prev_categories_enabled == Some(true)
             && !new_settings.general.workspace_categories_enabled;
 
@@ -1200,7 +1176,7 @@ impl App {
             }
             main.mark_dirty();
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             engine.settings = new_settings.clone();
             if categories_turned_off {
                 engine.collapse_categories_to_normal();
@@ -1308,7 +1284,7 @@ impl App {
             main.core_state.mark_notification_read(id);
             main.mark_dirty();
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             engine.mark_notification_read(id);
         }
     }
@@ -1318,7 +1294,7 @@ impl App {
             main.core_state.mark_all_notifications_read();
             main.mark_dirty();
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             engine.mark_all_notifications_read();
         }
     }
