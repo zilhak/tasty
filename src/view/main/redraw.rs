@@ -258,6 +258,9 @@ impl MainView {
         if !self.base.dirty {
             return;
         }
+        // Reconcile composition for every displayed content source, including
+        // global PTY wakes, direct parser injection and attach mirrors.
+        self.recalc_ime_preedit_anchor(engine);
         self.base.begin_frame();
         self.update_ime_cursor_area(engine);
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.

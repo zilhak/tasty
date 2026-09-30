@@ -17,6 +17,8 @@
 대체 화면의 행 좌표는 기본 화면 history 길이와 무관한 0-origin이다. UI 검색도 대체
 grid만 대상으로 하고 공개 content 검색과 IPC whole-buffer 읽기는 별도 계약으로 유지한다.
 화면에 필요한 history 행만 읽으며 memory 행은 borrow하고 disk 행만 개별 로드한다.
+IME 조합 보정은 dirty View 프레임에서 후보창 위치와 GPU 제출 전에 수행한다. 특정
+PTY wake 종류에 의존하지 않아 global wake·직접 parser 주입·attach 출력에도 적용된다.
 
 ## 프레임 흐름
 

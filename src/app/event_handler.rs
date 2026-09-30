@@ -765,7 +765,6 @@ impl App {
                     if !outcome.events.is_empty() {
                         pending.push((DispatchSource::Engine(id), outcome.events));
                     }
-                    main.recalc_ime_preedit_anchor(engine);
                     // 출력 처리는 끝냈다. 보이지 않는 surface는 전환할 때 새로 그리므로 지금 redraw하지 않는다.
                     if main.is_surface_visible(engine, sid) {
                         main.mark_dirty_from(RepaintSource::TerminalOutput);
