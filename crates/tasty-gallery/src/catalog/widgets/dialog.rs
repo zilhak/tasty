@@ -283,6 +283,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "frame edge",
                 theme.border_strong().to_egui(),
             ),
+            TokenChip::without_color("radius", "4px corners"),
             TokenChip::new(
                 "surface-raised",
                 "popover frame",

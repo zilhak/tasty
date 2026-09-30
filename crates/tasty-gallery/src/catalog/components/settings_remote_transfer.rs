@@ -108,11 +108,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new(
-                "settings-row-min-height",
-                "row height",
-                theme.surface_active().to_egui(),
-            ),
+            TokenChip::without_color("settings-row-min-height", "row height"),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
             TokenChip::new(
                 "text-muted",

@@ -307,6 +307,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "empty glyph · spinner",
                 theme.center_state_glyph_fg().to_egui(),
             ),
+            TokenChip::without_color("spinner-track", "loading spinner"),
         ],
     );
 
@@ -446,6 +447,9 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                 "selected row bed",
                 theme.overlay_active().to_egui(),
             ),
+            TokenChip::without_color("fp-crumb-menu-max-width", "320 — … menu ceiling (NEW)"),
+            TokenChip::without_color("fp-crumb-menu-min-width", "180 — … menu floor (NEW)"),
+            TokenChip::without_color("fp-crumb-max-width", "180 — one crumb's cap (NEW)"),
         ],
     );
 

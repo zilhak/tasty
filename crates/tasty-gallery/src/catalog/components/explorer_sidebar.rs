@@ -244,6 +244,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "empty hint",
                 egui::Color32::from(theme.text_placeholder()),
             ),
+            TokenChip::without_color("explorer-favorites-pin-min-height", "lower clamp"),
+            TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
+            TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
+            TokenChip::without_color("explorer-sidebar-width", "196 column"),
         ],
     );
 

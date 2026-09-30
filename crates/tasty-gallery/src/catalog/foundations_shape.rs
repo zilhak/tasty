@@ -46,11 +46,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("terminal motion", "0ms — content never animates"),
         ],
         &[
-            TokenChip::new("radius", "4 corner", ec(theme.border_strong())),
-            TokenChip::new("radius-sm", "2 inner", ec(theme.border_strong())),
-            TokenChip::new("motion-ui", "120ms", ec(theme.accent_primary())),
-            TokenChip::new("motion-term", "0ms", ec(theme.text_muted())),
-            TokenChip::new("focus-ring-width", "2px", ec(theme.accent_primary())),
+            TokenChip::without_color("radius", "4 corner"),
+            TokenChip::without_color("radius-sm", "2 inner"),
+            TokenChip::without_color("motion-ui", "120ms"),
+            TokenChip::without_color("motion-term", "0ms"),
+            TokenChip::without_color("focus-ring-width", "2px"),
         ],
     );
     note(

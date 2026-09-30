@@ -112,6 +112,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "delete label",
                 egui::Color32::from(theme.accent_danger()),
             ),
+            TokenChip::without_color("shadow-popover", "float"),
+            TokenChip::without_color("menu-border", "1px edge"),
         ],
     );
 

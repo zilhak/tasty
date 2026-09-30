@@ -284,16 +284,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "grid mark",
                 theme.dag_canvas_dot().to_egui(),
             ),
-            TokenChip::new(
-                "--tasty-dag-layer-gap",
-                "32 flow depth",
-                theme.dag_edge_depends().to_egui(),
-            ),
-            TokenChip::new(
-                "--tasty-dag-sibling-gap",
-                "24 across",
-                theme.dag_edge_depends().to_egui(),
-            ),
+            TokenChip::without_color("--tasty-dag-layer-gap", "32 flow depth"),
+            TokenChip::without_color("--tasty-dag-sibling-gap", "24 across"),
+            TokenChip::without_color("--tasty-dag-edge-corner-radius", "elbow"),
         ],
     );
     spec::note(

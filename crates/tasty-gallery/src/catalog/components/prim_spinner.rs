@@ -70,6 +70,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "default color",
                 egui::Color32::from(theme.text_muted()),
             ),
+            TokenChip::without_color("size-16", "16px default"),
+            TokenChip::without_color("spinner-size", "diameter"),
             TokenChip::new(
                 "icon-size-md",
                 "default 16",

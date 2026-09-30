@@ -130,6 +130,25 @@ pub fn draw_open_values(ui: &mut egui::Ui, theme: &Theme) {
                 "modifier Select before a choice",
                 theme.text_placeholder().to_egui(),
             ),
+            TokenChip::without_color(
+                "kb-ie-notice-inset",
+                "12 — notice / card inset, both axes (NEW, was off-grid 14)",
+            ),
+            TokenChip::without_color("kb-ie-slot-min-width", "140 — slot chip min width (NEW)"),
+            TokenChip::without_color("kb-ie-slot-height", "24 — replacement slot chip (NEW)"),
+            TokenChip::without_color(
+                "kb-ie-from-column-width",
+                "120 — original shortcut column (NEW)",
+            ),
+            TokenChip::without_color(
+                "kb-ie-action-column-width",
+                "288 — action label column + sub-line indent (NEW)",
+            ),
+            TokenChip::without_color("kb-ie-select-column-width", "32 — diff select column (NEW)"),
+            TokenChip::without_color(
+                "settings-content-max-width",
+                "620 — content column cap (NEW)",
+            ),
         ],
     );
     spec::note(

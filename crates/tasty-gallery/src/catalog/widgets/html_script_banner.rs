@@ -339,16 +339,8 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
             ("TTL", "none — stays until allow or ×"),
         ],
         &[
-            TokenChip::new(
-                "banner-inset-gap",
-                "8 — banner → page",
-                theme.text_muted().to_egui(),
-            ),
-            TokenChip::new(
-                "banner-margin",
-                "8 top / sides",
-                theme.text_muted().to_egui(),
-            ),
+            TokenChip::without_color("banner-inset-gap", "8 — banner → page"),
+            TokenChip::without_color("banner-margin", "8 top / sides"),
             TokenChip::new("banner-bg", "shell", theme.banner_bg().to_egui()),
             TokenChip::new("banner-border", "edge", theme.banner_border().to_egui()),
         ],
@@ -448,8 +440,8 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "lock → accent-info",
                 theme.html_script_banner_glyph().to_egui(),
             ),
-            TokenChip::new("banner-title-font-size", "13", theme.banner_fg().to_egui()),
-            TokenChip::new("banner-body-font-size", "11", theme.text_muted().to_egui()),
+            TokenChip::without_color("banner-title-font-size", "13"),
+            TokenChip::without_color("banner-body-font-size", "11"),
         ],
     );
     spec::note(
@@ -614,11 +606,7 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                 "→ text-muted",
                 theme.html_script_marker_allowed_fg().to_egui(),
             ),
-            TokenChip::new(
-                "html-script-marker-size",
-                "→ icon-size-xs",
-                theme.text_muted().to_egui(),
-            ),
+            TokenChip::without_color("html-script-marker-size", "→ icon-size-xs"),
         ],
     );
     spec::note(

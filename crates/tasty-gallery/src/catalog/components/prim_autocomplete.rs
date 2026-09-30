@@ -263,16 +263,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "keyboard-active row",
                 egui::Color32::from(theme.surface_active()),
             ),
-            TokenChip::new(
-                "overlay-hover",
-                "pointer hover row",
-                egui::Color32::from(theme.overlay_hover()),
-            ),
+            TokenChip::without_color("overlay-hover", "pointer hover row"),
             TokenChip::new(
                 "surface-raised",
                 "dropdown fill",
                 egui::Color32::from(theme.surface_raised()),
             ),
+            TokenChip::without_color("table-cell-height", "Detail row + header (28)"),
+            TokenChip::without_color("tree-row-height", "List row (22)"),
+            TokenChip::without_color("autocomplete-max-height", "default cap (220)"),
         ],
     );
 }

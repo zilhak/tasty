@@ -325,6 +325,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "listening",
                 theme.accent_success().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "port/addr/pid"),
             TokenChip::new(
                 "accent-warning",
                 "star on (favorited)",

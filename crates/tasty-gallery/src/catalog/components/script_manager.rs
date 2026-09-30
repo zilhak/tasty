@@ -312,6 +312,7 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_warning().to_egui(),
             ),
             TokenChip::new("text-disabled", "Unbound", theme.text_disabled().to_egui()),
+            TokenChip::without_color("font-mono", "path · trigger chips"),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
         ],
     );

@@ -81,7 +81,8 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_primary().to_egui(),
             ),
             TokenChip::new("accent-agent", "plugin dot", theme.accent_agent().to_egui()),
-            TokenChip::new("separator", "cell rules", theme.separator.to_egui()),
+            TokenChip::without_color("separator", "cell rules"),
+            TokenChip::without_color("letter-spacing-caps", "header + group name tracking"),
         ],
     );
     spec::note(

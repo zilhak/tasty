@@ -162,6 +162,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "eyeOff",
                 theme.perm_unobservable_fg().to_egui(),
             ),
+            TokenChip::without_color("perm-row-height", "→ settings row 32"),
             TokenChip::new(
                 "border-default",
                 "row rules",

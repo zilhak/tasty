@@ -92,11 +92,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("ui_scale", "scales (tokens) — 20.4 / 24 / 28.8 glyph"),
         ],
         &[
-            TokenChip::new(
-                "center-state-glyph-size",
-                "→ icon-size-lg 24",
-                theme.accent_primary().to_egui(),
-            ),
+            TokenChip::without_color("center-state-glyph-size", "→ icon-size-lg 24"),
             TokenChip::new(
                 "center-state-glyph-fg",
                 "→ glyph-dim",
@@ -107,17 +103,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "→ accent-danger",
                 theme.center_state_error_fg().to_egui(),
             ),
-            TokenChip::new("center-state-gap", "8", theme.accent_primary().to_egui()),
-            TokenChip::new(
-                "center-state-line-gap",
-                "4",
-                theme.accent_primary().to_egui(),
-            ),
-            TokenChip::new(
-                "center-state-max-width",
-                "→ measure-sm 300",
-                theme.accent_primary().to_egui(),
-            ),
+            TokenChip::without_color("center-state-gap", "8"),
+            TokenChip::without_color("center-state-line-gap", "4"),
+            TokenChip::without_color("center-state-max-width", "→ measure-sm 300"),
         ],
     );
     spec::note(
@@ -244,12 +232,8 @@ pub fn draw_action_slot(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new(
-                "center-state-action-gap",
-                "→ space-md 12",
-                theme.accent_primary().to_egui(),
-            ),
-            TokenChip::new("button-height-sm", "24", theme.accent_primary().to_egui()),
+            TokenChip::without_color("center-state-action-gap", "→ space-md 12"),
+            TokenChip::without_color("button-height-sm", "24"),
             TokenChip::new(
                 "center-state-error-fg",
                 "→ accent-danger",
@@ -320,13 +304,9 @@ pub fn draw_unsized(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new("space-md", "12 outer pad", theme.accent_primary().to_egui()),
-            TokenChip::new(
-                "center-state-action-gap",
-                "→ space-md 12",
-                theme.accent_primary().to_egui(),
-            ),
-            TokenChip::new("button-height-sm", "24", theme.accent_primary().to_egui()),
+            TokenChip::without_color("space-md", "12 outer pad"),
+            TokenChip::without_color("center-state-action-gap", "→ space-md 12"),
+            TokenChip::without_color("button-height-sm", "24"),
         ],
     );
 }

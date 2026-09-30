@@ -334,6 +334,7 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
                 "inactive name",
                 theme.text_disabled().to_egui(),
             ),
+            TokenChip::without_color("separator", "row dividers"),
             TokenChip::new("text-muted", "target mono", theme.text_muted().to_egui()),
             TokenChip::new("bg-sidebar", "tab strip", theme.bg_sidebar().to_egui()),
         ],
@@ -512,6 +513,8 @@ pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
                 theme.text_on_accent().to_egui(),
             ),
             TokenChip::new("text-muted", "labels / hints", theme.text_muted().to_egui()),
+            TokenChip::without_color("separator", "footer + tab divider"),
+            TokenChip::without_color("remote-label-col", "shared 112 label column"),
         ],
     );
 }

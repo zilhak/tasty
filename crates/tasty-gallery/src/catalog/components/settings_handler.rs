@@ -130,6 +130,7 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new("text-muted", "→ glyph", theme.text_muted().to_egui()),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::without_color("settings-row-min-height", "row"),
         ],
     );
 }
@@ -408,6 +409,7 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
                 "plugin origin tag",
                 theme.accent_agent().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "event · action · sequence"),
             TokenChip::new("glyph-dim", "자물쇠 글리프", theme.glyph_dim().to_egui()),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
             TokenChip::new(

@@ -345,11 +345,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "control fill",
                 egui::Color32::from(theme.surface_raised()),
             ),
-            TokenChip::new(
-                "border-default",
-                "control edge",
-                egui::Color32::from(theme.border_default()),
-            ),
+            TokenChip::without_color("border-default", "control edge"),
             TokenChip::new(
                 "separator",
                 "all-toggle divider",

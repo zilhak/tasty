@@ -97,11 +97,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "invalid edge",
                 egui::Color32::from(theme.accent_danger()),
             ),
-            TokenChip::new(
-                "text-placeholder",
-                "placeholder",
-                egui::Color32::from(theme.text_placeholder()),
-            ),
+            TokenChip::without_color("text-placeholder", "placeholder"),
         ],
     );
 }

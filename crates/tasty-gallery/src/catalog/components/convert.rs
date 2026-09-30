@@ -146,6 +146,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "keyboard row",
                 theme.surface_active().to_egui(),
             ),
+            TokenChip::without_color("convert-popup-width", "→ size-240, × ui_scale"),
         ],
     );
 

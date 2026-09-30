@@ -58,15 +58,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("mono", "D2Coding, term/code surfaces"),
         ],
         &[
-            TokenChip::new("font-ui", "sans family", ec(theme.text_primary())),
-            TokenChip::new("font-mono", "D2Coding", ec(theme.text_secondary())),
-            TokenChip::new("font-size-body", "13px", ec(theme.text_primary())),
-            TokenChip::new("font-size-caption", "11px", ec(theme.text_muted())),
-            TokenChip::new(
-                "font-weight-semibold",
-                "600 heading",
-                ec(theme.accent_primary()),
-            ),
+            TokenChip::without_color("font-ui", "sans family"),
+            TokenChip::without_color("font-mono", "D2Coding"),
+            TokenChip::without_color("font-size-body", "13px"),
+            TokenChip::without_color("font-size-caption", "11px"),
+            TokenChip::without_color("font-weight-semibold", "600 heading"),
         ],
     );
     note(

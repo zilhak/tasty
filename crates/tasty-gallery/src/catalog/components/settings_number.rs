@@ -75,6 +75,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "disabled 라벨 · 단위",
                 theme.text_disabled().to_egui(),
             ),
+            TokenChip::without_color("field-width-xs", "numeric field width"),
         ],
     );
 }

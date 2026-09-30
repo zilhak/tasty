@@ -228,6 +228,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.info_modal_scroll_edge().to_egui(),
             ),
             TokenChip::new("text-secondary", "body", theme.text_secondary().to_egui()),
+            TokenChip::without_color("info-modal-min-height", "→ size-140"),
         ],
     );
 
@@ -423,6 +424,9 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
                 "rule above buttons",
                 theme.info_modal_scroll_edge().to_egui(),
             ),
+            TokenChip::without_color("info-modal-para-gap", "→ space-md 12"),
+            TokenChip::without_color("info-modal-max-height", "→ size-360"),
+            TokenChip::without_color("info-modal-width", "→ size-440"),
         ],
     );
 

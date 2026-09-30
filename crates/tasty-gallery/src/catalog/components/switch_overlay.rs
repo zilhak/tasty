@@ -191,6 +191,7 @@ pub fn draw_tab(ui: &mut egui::Ui, theme: &Theme) {
                 "keycap edge",
                 theme.border_strong().into(),
             ),
+            TokenChip::without_color("switch-overlay-fade", "90ms appear"),
         ],
     );
 
@@ -431,6 +432,7 @@ pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
                 "digit on accent",
                 theme.text_on_accent().into(),
             ),
+            TokenChip::without_color("switch-overlay-size", "16px footprint"),
         ],
     );
 

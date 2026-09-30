@@ -61,11 +61,7 @@ pub fn draw_entry(ui: &mut egui::Ui, theme: &Theme) {
             ("file picker", "popup on the window's PopupManager"),
         ],
         &[
-            TokenChip::new(
-                "separator",
-                "L2 separator + row rules",
-                theme.separator.to_egui(),
-            ),
+            TokenChip::without_color("separator", "L2 separator + row rules"),
             TokenChip::new(
                 "surface-raised",
                 "action row bed",
@@ -76,11 +72,7 @@ pub fn draw_entry(ui: &mut egui::Ui, theme: &Theme) {
                 "action row edge",
                 theme.border_default().to_egui(),
             ),
-            TokenChip::new(
-                "settings-sidebar-width",
-                "200 — L2 column",
-                theme.bg_sidebar().to_egui(),
-            ),
+            TokenChip::without_color("settings-sidebar-width", "200 — L2 column"),
         ],
     );
     spec::note(

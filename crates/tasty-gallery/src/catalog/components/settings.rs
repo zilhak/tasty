@@ -155,6 +155,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "active tab · switch on",
                 theme.accent_primary().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "value text"),
             TokenChip::new(
                 "surface-active",
                 "selected section",

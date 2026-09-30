@@ -365,16 +365,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "header band",
                 theme.bg_sidebar().to_egui(),
             ),
-            TokenChip::new(
-                "--tasty-separator",
-                "header hairline",
-                theme.separator.to_egui_premultiplied(),
-            ),
-            TokenChip::new(
-                "--tasty-dag-detail-sheet-height",
-                "220 sheet",
-                theme.dag_detail_bg().to_egui(),
-            ),
+            TokenChip::without_color("--tasty-separator", "header hairline"),
+            TokenChip::without_color("--tasty-dag-detail-sheet-height", "220 sheet"),
         ],
     );
     spec::note(

@@ -62,6 +62,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "selected row",
                 theme.surface_active().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "layout summary"),
             TokenChip::new(
                 "accent-primary",
                 "inset bar · seg",

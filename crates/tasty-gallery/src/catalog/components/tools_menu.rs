@@ -36,6 +36,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("surface-raised", "frame", theme.surface_raised().to_egui()),
+            TokenChip::without_color("shadow-popover", "lift"),
             TokenChip::new(
                 "overlay-hover",
                 "row hover",

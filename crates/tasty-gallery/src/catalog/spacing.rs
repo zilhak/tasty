@@ -65,11 +65,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("heights", "control heights use their own tokens"),
         ],
         &[
-            TokenChip::new("space-xs", "4 · tight", ec(theme.accent_primary())),
-            TokenChip::new("space-sm", "8 · pair", ec(theme.accent_primary())),
-            TokenChip::new("space-md", "12 · padding", ec(theme.accent_primary())),
-            TokenChip::new("space-lg", "16 · column", ec(theme.accent_primary())),
-            TokenChip::new("space-xl", "24 · region", ec(theme.accent_primary())),
+            TokenChip::without_color("space-xs", "4 · tight"),
+            TokenChip::without_color("space-sm", "8 · pair"),
+            TokenChip::without_color("space-md", "12 · padding"),
+            TokenChip::without_color("space-lg", "16 · column"),
+            TokenChip::without_color("space-xl", "24 · region"),
         ],
     );
     note(

@@ -461,21 +461,9 @@ fn the_mark(ui: &mut egui::Ui, theme: &Theme) {
                 "ring (→ accent-move → pink)",
                 c(theme.move_source_ring()),
             ),
-            TokenChip::new(
-                "--tasty-move-source-ring-width",
-                "2px",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "--tasty-move-source-dash",
-                "dash 4",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "--tasty-move-source-dash-gap",
-                "gap 4",
-                egui::Color32::TRANSPARENT,
-            ),
+            TokenChip::without_color("--tasty-move-source-ring-width", "2px"),
+            TokenChip::without_color("--tasty-move-source-dash", "dash 4"),
+            TokenChip::without_color("--tasty-move-source-dash-gap", "gap 4"),
         ],
     );
     spec::note(
@@ -626,21 +614,9 @@ fn off_screen(ui: &mut egui::Ui, theme: &Theme) {
                 "glyph (→ accent-move)",
                 c(theme.move_source_glyph()),
             ),
-            TokenChip::new(
-                "--tasty-move-source-glyph-size",
-                "12 — row · tab",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "--tasty-move-source-chip-size",
-                "12 — rail chip",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "--tasty-move-source-chip-glyph-size",
-                "8 — glyph in chip",
-                egui::Color32::TRANSPARENT,
-            ),
+            TokenChip::without_color("--tasty-move-source-glyph-size", "12 — row · tab"),
+            TokenChip::without_color("--tasty-move-source-chip-size", "12 — rail chip"),
+            TokenChip::without_color("--tasty-move-source-chip-glyph-size", "8 — glyph in chip"),
         ],
     );
     spec::dont(

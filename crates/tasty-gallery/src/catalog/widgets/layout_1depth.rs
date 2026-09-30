@@ -217,6 +217,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "selected item",
                 theme.surface_active().into(),
             ),
+            TokenChip::without_color("space-lg", "detail pad"),
             TokenChip::new("accent-agent", "agent dot", theme.accent_agent().into()),
         ],
     );

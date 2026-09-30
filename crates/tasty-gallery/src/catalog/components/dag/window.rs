@@ -342,7 +342,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("detail", "back bar + canvas + 220 sheet"),
         ],
         &[
-            TokenChip::new("--tasty-dag-popup-width", "560", theme.bg_panel().to_egui()),
+            TokenChip::without_color("--tasty-dag-popup-width", "560"),
+            TokenChip::without_color("--tasty-shadow-modal", "lift"),
+            TokenChip::without_color("--tasty-drilldown-backbar-height", "36 back bar"),
+            TokenChip::without_color("--tasty-dag-popup-height", "460 frame"),
             TokenChip::new(
                 "--tasty-separator",
                 "band hairlines",

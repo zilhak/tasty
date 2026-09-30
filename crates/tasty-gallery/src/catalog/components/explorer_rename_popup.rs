@@ -50,6 +50,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "Rename button",
                 theme.accent_primary().to_egui(),
             ),
+            TokenChip::without_color("shadow-modal", "popup lift"),
         ],
     );
 

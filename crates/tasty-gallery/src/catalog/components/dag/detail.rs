@@ -369,6 +369,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "log bed",
                 theme.dag_detail_log_bg().to_egui(),
             ),
+            TokenChip::without_color("--tasty-dag-detail-log-max-height", "160 error tail"),
             TokenChip::new(
                 "--tasty-dag-detail-border",
                 "dock hairline",

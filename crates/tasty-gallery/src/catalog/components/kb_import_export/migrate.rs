@@ -95,6 +95,7 @@ pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
                 "empty slot label",
                 theme.text_disabled().to_egui(),
             ),
+            TokenChip::without_color("size-24", "record slot height"),
         ],
     );
     spec::note(

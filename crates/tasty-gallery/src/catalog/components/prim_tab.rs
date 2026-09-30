@@ -99,11 +99,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "top bar",
                 egui::Color32::from(theme.accent_primary()),
             ),
-            TokenChip::new(
-                "separator",
-                "tab divider",
-                egui::Color32::from(theme.separator),
-            ),
+            TokenChip::without_color("separator", "tab divider"),
         ],
     );
 }

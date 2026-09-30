@@ -72,11 +72,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "selected card",
                 theme.accent_primary().to_egui(),
             ),
-            TokenChip::new(
-                "border-default",
-                "idle card",
-                theme.border_default().to_egui(),
-            ),
+            TokenChip::without_color("border-default", "idle card"),
             TokenChip::new(
                 "surface-raised",
                 "card fill",

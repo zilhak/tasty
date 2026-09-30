@@ -173,6 +173,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "table header",
                 theme.md_table_header_bg().to_egui(),
             ),
+            TokenChip::without_color("font-size-prose-h1", "h1 (cap-exempt)"),
             TokenChip::new(
                 "md-table-zebra",
                 "table even row",
@@ -193,6 +194,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "warning alert",
                 theme.accent_warning().to_egui(),
             ),
+            TokenChip::without_color("shadow-modal", "popup lift"),
             TokenChip::new(
                 "accent-agent",
                 "important alert",

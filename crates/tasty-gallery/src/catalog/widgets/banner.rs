@@ -268,11 +268,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("banner-bg", "surface0 fill", theme.banner_bg().to_egui()),
             TokenChip::new("banner-border", "1px edge", theme.banner_border().to_egui()),
+            TokenChip::without_color("banner-margin", "8px top/sides"),
+            TokenChip::without_color("banner-shadow", "floating lift"),
             TokenChip::new(
                 "banner-icon-fg",
                 "mouse glyph",
                 theme.banner_icon_fg().to_egui(),
             ),
+            TokenChip::without_color("banner-recessed-opacity", "dimmed variant"),
         ],
     );
 
@@ -365,11 +368,7 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
             ("default", "empty list"),
         ],
         &[
-            TokenChip::new(
-                "overlay-hover",
-                "row hover",
-                theme.overlay_hover().to_egui(),
-            ),
+            TokenChip::without_color("overlay-hover", "row hover"),
             TokenChip::new(
                 "accent-warning",
                 "match-rule notice",
@@ -570,6 +569,8 @@ pub fn draw_dismiss(ui: &mut egui::Ui, theme: &Theme) {
                 "seconds",
                 theme.banner_countdown_fg().to_egui(),
             ),
+            TokenChip::without_color("banner-fade", "120ms appear/dismiss"),
+            TokenChip::without_color("banner-countdown-font", "mono digits"),
             TokenChip::new(
                 "accent-success",
                 "per-banner glyph",

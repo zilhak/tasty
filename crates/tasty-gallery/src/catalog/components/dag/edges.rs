@@ -214,6 +214,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "reduce",
                 theme.dag_edge_reduce().to_egui(),
             ),
+            TokenChip::without_color("--tasty-dag-edge-dim-opacity", "dead path"),
             TokenChip::new(
                 "--tasty-dag-edge-highlight",
                 "selected",

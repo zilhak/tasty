@@ -405,6 +405,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "viewport rect",
                 theme.dag_minimap_viewport().to_egui(),
             ),
+            TokenChip::without_color("--tasty-dag-minimap-min-surface", "560 cutoff"),
             TokenChip::new(
                 "--tasty-dag-minimap-bg",
                 "minimap bed",

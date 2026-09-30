@@ -81,6 +81,7 @@ pub fn draw_format(ui: &mut egui::Ui, theme: &Theme) {
                 "format Tag",
                 theme.accent_primary().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "path"),
             TokenChip::new("text-muted", "path ink", theme.text_muted().to_egui()),
         ],
     );
@@ -116,6 +117,7 @@ pub fn draw_recent(ui: &mut egui::Ui, theme: &Theme) {
                 theme.text_secondary().to_egui(),
             ),
             TokenChip::new("text-muted", "caption / time", theme.text_muted().to_egui()),
+            TokenChip::without_color("fh-when-width", "when column reserve"),
         ],
     );
     spec::dont(
@@ -144,11 +146,10 @@ pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
             ("column", "reserved at fh-when-width (56px)"),
             ("recompute", "every frame — midnight flips it live"),
         ],
-        &[TokenChip::new(
-            "text-muted",
-            "the whole slot",
-            theme.text_muted().to_egui(),
-        )],
+        &[
+            TokenChip::new("text-muted", "the whole slot", theme.text_muted().to_egui()),
+            TokenChip::without_color("fh-when-width", "when column"),
+        ],
     );
     spec::note(
         ui,
@@ -409,6 +410,7 @@ pub fn draw_rows(ui: &mut egui::Ui, theme: &Theme) {
                 "plugin origin",
                 theme.accent_agent().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "id + undeclared names"),
             TokenChip::new("text-muted", "id line", theme.text_muted().to_egui()),
         ],
     );

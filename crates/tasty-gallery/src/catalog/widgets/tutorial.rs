@@ -595,7 +595,9 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
                 "ring + halo",
                 theme.accent_primary().to_egui(),
             ),
+            TokenChip::without_color("focus-ring-width", "2px stroke"),
             TokenChip::new("scrim-bg", "spotlight dim", theme.scrim().to_egui()),
+            TokenChip::without_color("radius", "corner"),
             TokenChip::new(
                 "border-strong",
                 "callout edge",
@@ -692,6 +694,7 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
                 "edge + tail",
                 theme.border_strong().to_egui(),
             ),
+            TokenChip::without_color("shadow-modal", "floating lift"),
             TokenChip::new(
                 "accent-primary",
                 "step · dot · Next",

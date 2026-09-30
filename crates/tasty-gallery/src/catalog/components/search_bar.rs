@@ -34,6 +34,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "0 matches",
                 theme.accent_danger().to_egui(),
             ),
+            TokenChip::without_color("shadow-popover", "lift"),
         ],
     );
 

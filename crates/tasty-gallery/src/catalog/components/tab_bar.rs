@@ -411,6 +411,8 @@ pub fn draw_scroll_arrows(ui: &mut egui::Ui, theme: &Theme) {
                 "→ text-disabled",
                 theme.tab_scroll_arrow_fg_disabled().into(),
             ),
+            TokenChip::without_color("tab-scroll-arrow-glyph-size", "→ icon-size-xs 12"),
+            TokenChip::without_color("tab-scroll-arrow-width", "→ control-height-tab 24"),
         ],
     );
     spec::dont(

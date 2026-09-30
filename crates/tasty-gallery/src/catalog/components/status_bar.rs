@@ -172,6 +172,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "theme glyph",
                 egui::Color32::from(theme.statusbar_theme_glyph()),
             ),
+            TokenChip::without_color("icon-size-xs", "the semantic it aliases"),
+            TokenChip::without_color("statusbar-glyph-size", "every inline glyph in the bar"),
+            TokenChip::without_color("statusbar-dot-size", "6 — when a surface dot is shown"),
+            TokenChip::without_color("status-bar-height", "24px bar"),
         ],
     );
 }

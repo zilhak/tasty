@@ -164,6 +164,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "panel fill (opaque)",
                 theme.modhint_bg().to_egui(),
             ),
+            TokenChip::without_color("modhint-hold-delay", "500ms hold"),
+            TokenChip::without_color("modhint-fade", "200ms fade-in"),
+            TokenChip::without_color("modhint-shadow", "floating lift"),
             TokenChip::new(
                 "modhint-border",
                 "1px shell",
@@ -189,6 +192,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "empty placeholder text",
                 theme.modhint_empty_fg().to_egui(),
             ),
+            TokenChip::without_color("modhint-section-gap", "between sections (unchanged)"),
             TokenChip::new(
                 "modhint-agent-dot",
                 "plugin row dot",

@@ -82,6 +82,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "active row",
                 theme.surface_active().to_egui(),
             ),
+            TokenChip::without_color("font-mono", "hints"),
             TokenChip::new("accent-primary", "match", theme.accent_primary().to_egui()),
             TokenChip::new("kbd-bg", "keycap fill", theme.kbd_bg().to_egui()),
         ],

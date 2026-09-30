@@ -234,6 +234,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "error glyph",
                 theme.accent_danger().to_egui(),
             ),
+            TokenChip::without_color("spinner-track", "connecting spinner"),
             TokenChip::new(
                 "text-placeholder",
                 "initial glyph",

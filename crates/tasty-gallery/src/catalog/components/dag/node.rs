@@ -488,16 +488,8 @@ pub fn draw_lod(ui: &mut egui::Ui, theme: &Theme) {
                 "selection",
                 theme.dag_node_selected_ring().to_egui(),
             ),
-            TokenChip::new(
-                "--tasty-dag-node-hover-bg",
-                "hover wash",
-                theme.dag_node_hover_bg().to_egui_premultiplied(),
-            ),
-            TokenChip::new(
-                "--tasty-dag-node-dim-opacity",
-                "skipped path",
-                theme.dag_status_skipped().to_egui(),
-            ),
+            TokenChip::without_color("--tasty-dag-node-hover-bg", "hover wash"),
+            TokenChip::without_color("--tasty-dag-node-dim-opacity", "skipped path"),
         ],
     );
     super::canvas::dense_stage(ui, theme);

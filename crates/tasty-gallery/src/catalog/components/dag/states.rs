@@ -61,11 +61,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "banner text",
                 theme.dag_cycle_fg().to_egui(),
             ),
-            TokenChip::new(
-                "--tasty-text-disabled",
-                "empty glyph",
-                theme.text_disabled().to_egui(),
-            ),
+            TokenChip::without_color("--tasty-text-disabled", "empty glyph"),
         ],
     );
     spec::note(

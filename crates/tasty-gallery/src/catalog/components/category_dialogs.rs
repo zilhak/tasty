@@ -169,6 +169,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "delete + error",
                 theme.accent_danger().to_egui(),
             ),
+            TokenChip::without_color("shadow-popover", "lift"),
         ],
     );
 

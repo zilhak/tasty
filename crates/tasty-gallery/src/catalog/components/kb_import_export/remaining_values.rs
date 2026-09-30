@@ -58,6 +58,10 @@ pub fn draw_remaining_values(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_danger().to_egui(),
             ),
             TokenChip::new("text-muted", "OS reason line", theme.text_muted().to_egui()),
+            TokenChip::without_color(
+                "settings-content-max-width",
+                "620 — now set once on the settings content column",
+            ),
         ],
     );
     spec::note(

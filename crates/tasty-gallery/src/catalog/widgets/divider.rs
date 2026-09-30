@@ -69,7 +69,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("axes", "vertical + horizontal"),
         ],
         &[
-            TokenChip::new("separator", "idle line", theme.separator.into()),
+            TokenChip::without_color("separator", "idle line"),
             TokenChip::new(
                 "accent-primary",
                 "hover line + band",
