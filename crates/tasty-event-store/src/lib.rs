@@ -3,7 +3,8 @@
 //! 인스턴스별 로컬 SQLite event journal.
 //!
 //! 한 journal 파일에 stream(엔진)별 revision, 여러 stream을 묶는 원자 batch, 재시도 키로 찾는
-//! 명령 기록, effect 의무와 시도 기록, domain snapshot·consumer checkpoint, 불변 payload를 둔다.
+//! 명령 기록, effect 의무와 시도 기록, domain snapshot·consumer checkpoint, 불변 payload,
+//! kind별 영속 ID 예약을 둔다.
 //! 이벤트·명령·effect는 [`EventStore::commit`] 한 transaction으로 확정되며, 실패하면 아무것도
 //! 남지 않는다.
 //!
@@ -21,6 +22,7 @@ mod command;
 mod commit;
 mod effect;
 mod error;
+mod identity;
 mod payload;
 mod read;
 mod schema;
@@ -36,6 +38,7 @@ pub use effect::{
     ActivationClaim, AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
 };
 pub use error::{StoreError, StoreResult};
+pub use identity::IdRange;
 pub use schema::SCHEMA_VERSION;
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,

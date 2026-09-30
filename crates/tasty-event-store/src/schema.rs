@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1];
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -143,6 +143,14 @@ const V1: &str = r#"
         projection_version INTEGER NOT NULL,
         batch_id INTEGER NOT NULL REFERENCES batches(batch_id),
         PRIMARY KEY (consumer_id, projection_version)
+    );
+"#;
+
+/// kind별 다음 예약 ID(high-water). 값은 줄어들지 않는다.
+const V2: &str = r#"
+    CREATE TABLE id_reservations (
+        kind TEXT PRIMARY KEY,
+        next INTEGER NOT NULL CHECK (next >= 1)
     );
 "#;
 

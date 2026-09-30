@@ -6,5 +6,6 @@ mod atomicity;
 mod commands;
 mod effects;
 mod fencing;
+mod identity;
 mod schema;
 mod snapshots;

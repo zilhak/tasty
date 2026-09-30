@@ -77,6 +77,17 @@ pub enum StoreError {
         to: CommandStatus,
     },
 
+    #[error("reservation for {0} asks for zero ids")]
+    EmptyReservation(String),
+
+    #[error("id space {kind} is exhausted: {count} ids from {next} would pass {max_id}")]
+    IdSpaceExhausted {
+        kind: String,
+        next: u64,
+        count: u64,
+        max_id: u64,
+    },
+
     #[error("unknown effect {0}")]
     UnknownEffect(String),
 
