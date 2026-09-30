@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선, 저널 ID 공간과 runtime ID 공간의 구분(재검토 조건 참조)
+- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 ID 공간과 runtime ID 공간의 구분(재검토 조건 참조)
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -35,6 +35,7 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
   commit 성공 뒤의 메모리 `evolve`, 응답 순서를 그 모듈이 구현한다.
 - 제품 경로에 연결하지 않는다. root의 어떤 부팅·IPC·GUI 경로도 이 모델을 쓰지 않으며, 연결은 root 배선 단계에서 따로 한다.
   그 전까지 JournalModel은 CoreState와 동시에 원본이 아니다. 현재 구조의 원본은 계속 메모리 CoreState와 레이아웃 snapshot이다.
+  연결한 뒤에는 JournalModel이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다([ADR-0065](0065-journal-source-and-core-state-projection.md)).
 - 로그 보존·정리와 journal 사이의 payload 복사는 이 crate를 만드는 단계에 넣지 않고 journal을 복원 원본으로 전환하는 단계에서 설계한다.
   두 항목은 ADR-0063의 미이행 목록에 그대로 남는다.
 
@@ -89,4 +90,5 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 - [ADR-0055](0055-structural-domain-event-sourcing.md) — 객체와 책임, 확정 경계
 - [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) — crate 배치와 `tasty-core` 추출 조건
 - [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
+- [ADR-0065](0065-journal-source-and-core-state-projection.md) — 제품 연결 뒤 JournalModel과 CoreState 트리의 관계, 엔진별 활성화 절차
 - 현재 구현: `crates/tasty-domain/src/model.rs`·`crates/tasty-domain/src/ids.rs`(저널 모델·저널 전용 값·`IdSupplier`), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)
