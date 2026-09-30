@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
@@ -13,6 +13,12 @@ use crate::types::{JournalCut, StreamId, WriterEpoch};
 
 /// 다른 연결이 쓰는 동안 기다리는 시간. 넘으면 SQLITE_BUSY 오류로 돌려준다.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// writer 잠금을 다시 시도하는 총 시간과 간격. 자식 프로세스는 fork·spawn부터 exec까지 잠금 파일의
+/// 열린 파일 설명을 공유하므로, 방금 놓은 잠금이 그동안 남아 있을 수 있다.
+const WRITER_LOCK_WAIT: Duration = Duration::from_secs(2);
+const WRITER_LOCK_FIRST_BACKOFF: Duration = Duration::from_millis(10);
+const WRITER_LOCK_MAX_BACKOFF: Duration = Duration::from_millis(100);
 
 /// writer 잠금 파일 이름에 붙이는 접미사. journal 파일과 같은 디렉터리에 둔다.
 const WRITER_LOCK_SUFFIX: &str = ".writer-lock";
@@ -60,13 +66,13 @@ impl EventStore {
     }
 
     /// 독점 writer 잠금을 얻고 새 writer 세대를 등록한다. 이후 이전 세대의 쓰기는 거절된다.
-    /// 다른 저장소가 잠금을 가지고 있으면 [`StoreError::WriterLocked`], 잠금을 쓸 수 없는
-    /// 환경이면 [`StoreError::WriterLockUnavailable`]로 실패하며 writer가 되지 않는다.
+    /// 잠금이 잡혀 있으면 최대 2초 동안 다시 시도하고, 그래도 잡혀 있으면 [`StoreError::WriterLocked`],
+    /// 잠금을 쓸 수 없는 환경이면 [`StoreError::WriterLockUnavailable`]로 실패하며 writer가 되지 않는다.
     /// 이미 잠금을 가진 저장소가 다시 부르면 세대만 올린다.
     pub fn acquire_writer(&mut self) -> StoreResult<WriterEpoch> {
         let fresh_lock = match self.writer_lock {
             Some(_) => None,
-            None => Some(lock_exclusive(&self.lock_path)?),
+            None => Some(lock_exclusive_with_retry(&self.lock_path)?),
         };
         let epoch = self.register_epoch()?;
         if let Some(lock) = fresh_lock {
@@ -165,6 +171,20 @@ fn writer_lock_path(path: &Path) -> PathBuf {
     let mut name = OsString::from(path.as_os_str());
     name.push(WRITER_LOCK_SUFFIX);
     PathBuf::from(name)
+}
+
+fn lock_exclusive_with_retry(path: &Path) -> StoreResult<File> {
+    let deadline = Instant::now() + WRITER_LOCK_WAIT;
+    let mut backoff = WRITER_LOCK_FIRST_BACKOFF;
+    loop {
+        match lock_exclusive(path) {
+            Err(StoreError::WriterLocked) if Instant::now() < deadline => {
+                std::thread::sleep(backoff.min(deadline.saturating_duration_since(Instant::now())));
+                backoff = (backoff * 2).min(WRITER_LOCK_MAX_BACKOFF);
+            }
+            other => return other,
+        }
+    }
 }
 
 /// 잠금 파일에 독점 잠금을 건다. 기다리지 않는다. SQLite 파일 자체를 잠그지 않는 이유는
