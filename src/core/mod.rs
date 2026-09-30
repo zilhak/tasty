@@ -83,7 +83,7 @@ use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
 
-pub(crate) use impl_close::{SurfaceCloseLocation, locate_surface_in_pane};
+pub(crate) use impl_close::CloseTracePath;
 pub(crate) use impl_mirror::{
     MirrorStructuralBlocked, PendingStructuralForward, mark_last_forward_agent_origin,
     mark_last_forward_user_triggered,

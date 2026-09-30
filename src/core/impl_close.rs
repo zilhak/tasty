@@ -85,6 +85,24 @@ pub(crate) fn locate_surface_in_pane(
     })
 }
 
+/// workspace 닫기 계측 로그의 경로 구분이다.
+/// Cascade는 Core::apply 뒤 cascade_surface_closed가 전체 시간을 기록하도록 시작 시각을 맡긴다.
+/// Inline은 호출한 창 경로가 전체 시간을 직접 기록한다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CloseTracePath {
+    Cascade,
+    Inline,
+}
+
+impl CloseTracePath {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Cascade => "cascade",
+            Self::Inline => "inline",
+        }
+    }
+}
+
 pub(crate) fn surface_close_not_found(surface_id: u32) -> CoreEvent {
     CoreEvent::SurfaceClosed {
         surface_id,
@@ -100,6 +118,16 @@ pub(crate) fn surface_close_not_found(surface_id: u32) -> CoreEvent {
 
 impl Core {
     pub(super) fn apply_close_pane(engine: &mut crate::core::CoreState, pane_id: u32) -> CoreEvent {
+        Self::close_pane_recording(engine, pane_id, false)
+    }
+
+    /// pane을 닫는다. save_snapshot이면 제거 전에 분할 위치를 포함한 복원 기록을 남긴다.
+    /// 사용자 닫기만 기록한다. 기록 여부는 origin을 아는 진입점이 정한다.
+    pub(crate) fn close_pane_recording(
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        save_snapshot: bool,
+    ) -> CoreEvent {
         let ws_idx = match engine.find_workspace_index_for_pane(pane_id) {
             Some(idx) => idx,
             None => {
@@ -110,6 +138,11 @@ impl Core {
                 };
             }
         };
+
+        // 제거 후에는 부모 split 정보를 잃으므로 트리를 바꾸기 전에 복원 사본을 만든다.
+        if save_snapshot && let Some(item) = engine.capture_closed_pane(pane_id) {
+            engine.push_closed_item(item);
+        }
 
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
@@ -137,6 +170,17 @@ impl Core {
         surface_id: u32,
         save_snapshot: bool,
     ) -> CoreEvent {
+        Self::close_surface_recording(engine, surface_id, save_snapshot, CloseTracePath::Cascade)
+    }
+
+    /// apply_close_surface와 같은 닫기다. 창 경로는 계측 경로를 Inline으로 넘겨 전체 시간을 직접 기록한다.
+    /// save_snapshot은 사용자 닫기에서만 true다. 기록 여부는 origin을 아는 진입점이 정한다.
+    pub(crate) fn close_surface_recording(
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        save_snapshot: bool,
+        trace: CloseTracePath,
+    ) -> CoreEvent {
         let loc = match locate_surface_in_pane(engine, surface_id) {
             Some(l) => l,
             None => return surface_close_not_found(surface_id),
@@ -151,7 +195,7 @@ impl Core {
         if let Some(ev) = Self::close_case_pane(engine, &loc, surface_id, save_snapshot) {
             return ev;
         }
-        Self::close_case_workspace(engine, &loc, surface_id, save_snapshot)
+        Self::close_case_workspace(engine, &loc, surface_id, save_snapshot, trace)
     }
 
     fn close_case_split(
@@ -333,14 +377,17 @@ impl Core {
         loc: &SurfaceCloseLocation,
         surface_id: u32,
         save_snapshot: bool,
+        trace: CloseTracePath,
     ) -> CoreEvent {
         use crate::close_trace;
         use crate::core::intent::CascadeLevel;
         use std::time::Instant;
 
+        let path = trace.label();
         // 실제 자원 정리가 이 함수 뒤에 이어지므로 전체 측정 시작 시각을 넘긴다.
-        let t_close = Instant::now();
-        crate::close_trace::arm_cascade(t_close, save_snapshot);
+        if trace == CloseTracePath::Cascade {
+            crate::close_trace::arm_cascade(Instant::now(), save_snapshot);
+        }
         if save_snapshot {
             let t = Instant::now();
             let item = {
@@ -352,9 +399,9 @@ impl Core {
                     terminals.closed_capture(id)
                 })
             };
-            close_trace::log_snapshot(t, &item, "cascade");
+            close_trace::log_snapshot(t, &item, path);
             let t = Instant::now();
-            engine.push_closed_item(item).log(t.elapsed(), "cascade");
+            engine.push_closed_item(item).log(t.elapsed(), path);
         }
         let t_collect = Instant::now();
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
@@ -372,7 +419,7 @@ impl Core {
                 }
             }
         }
-        close_trace::log_collect(t_collect, targets.len(), "cascade");
+        close_trace::log_collect(t_collect, targets.len(), path);
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
         let workspaces_now_empty = engine.workspaces.is_empty();
@@ -391,6 +438,16 @@ impl Core {
     }
 
     pub(super) fn apply_close_tab(engine: &mut crate::core::CoreState, tab_id: u32) -> CoreEvent {
+        Self::close_tab_recording(engine, tab_id, false)
+    }
+
+    /// 탭을 닫는다. save_snapshot이면 실제로 닫히는 탭만 복원 기록에 남긴다.
+    /// pane의 마지막 탭은 닫지 않으므로 기록하지 않는다. 기록 여부는 origin을 아는 진입점이 정한다.
+    pub(crate) fn close_tab_recording(
+        engine: &mut crate::core::CoreState,
+        tab_id: u32,
+        save_snapshot: bool,
+    ) -> CoreEvent {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
         for workspace in &engine.workspaces {
@@ -419,6 +476,15 @@ impl Core {
                 };
             }
         };
+
+        if save_snapshot
+            && let Some(pane) = engine.find_pane_by_id(pane_id)
+            && pane.tabs.len() > 1
+            && let Some(idx) = pane.tabs.iter().position(|t| t.id == tab_id)
+            && let Some(item) = engine.capture_closed_tab(pane_id, idx)
+        {
+            engine.push_closed_item(item);
+        }
 
         let closed = engine
             .find_pane_by_id_mut(pane_id)

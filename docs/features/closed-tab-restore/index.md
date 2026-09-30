@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (`restore_closed`, 기본 `Ctrl+Shift+T`)
 - **ADR**: 없음. 사용자와 에이전트의 구분은 [identity](../../identity.md) §1을 따른다.
-- **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/state/{pane,tab,workspace}.rs` + `src/core/impl_close.rs`(`close_case_pane`/`close_case_tab`/`close_case_workspace` cascade), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/impl_workspace.rs`(`apply_restore_closed_item`)
+- **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/core/impl_close.rs`(`close_surface_recording`/`close_pane_recording`/`close_tab_recording` — 창 경로와 `Core::apply` 공통) + `src/state/workspace.rs`(`close_workspace_at`) + `src/core/attach_runtime.rs`(원격 forward 의 tab/pane 닫기), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/impl_workspace.rs`(`apply_restore_closed_item`)
 - **화면**: 없음 (복원은 focused pane 에 즉시 반영)
 
 ## 목적
@@ -24,7 +24,7 @@
 
 - 복원을 트리거하는 CLI/IPC 없음 (`RestoreClosedItem` intent 는 사용자 단축키 전용).
 - 복원 뒤 포커스 이동(복원한 워크스페이스로 활성 전환 · 복원한 pane 으로 포커스)은 **사용자 요청일 때만** 일어난다. 복원이 사용자 단축키 전용이라는 약속에 기대지 않고 cascade(`cascade_closed_item_restored`)가 origin 을 직접 본다 — 다른 요청이 복원에 닿아도 사용자의 활성 워크스페이스·포커스 pane 은 그대로다.
-- **에이전트가 닫은 항목은 스택에 안 들어간다** — IPC `surface.close` 는 `save_snapshot=false`, `tab.close`/`pane.close`(DomainIntent)는 스냅샷 경로 자체가 없다. 스냅샷 push 는 사용자 단축키/마우스 닫기 경로에서만.
+- **에이전트가 닫은 항목은 스택에 안 들어간다** — 창 경로와 IPC 가 같은 Core 닫기 함수를 부르고, 기록 여부(`save_snapshot`)는 origin 을 아는 진입점이 정한다. IPC `surface.close` 와 `tab.close`/`pane.close`(DomainIntent)는 false, 사용자 단축키/마우스 닫기는 true 다. 창 경로는 닫지 못한 대상(pane 의 마지막 탭 등)을 기록하지 않는다.
 - **원격 attach 로 forward 된 close 도 같은 규칙이다** — 서버는 mirror 에서 온 close 를 요청 주체(`origin`)로 가르고, 원격 사용자의 손 조작만 스냅샷한다. 원격 에이전트의 CLI/IPC close 는 서버 스택에도 안 들어간다([remote-attach](../remote-attach/index.md), [ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)).
 
 ## 비-목표

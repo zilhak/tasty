@@ -257,34 +257,35 @@ impl AppState {
         if self.refuse_if_hard_occupied(engine, in_tab) {
             return false;
         }
-        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        if let Some(pane) = self
+        let Some(tab_id) = self
             .active_workspace(engine)
             .pane_layout()
             .find_pane(pane_id)
-            && let Some(tab) = pane.tabs.get(tab_index)
-        {
-            crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
-        }
-        if let Some(snapshot) = engine.capture_closed_tab(pane_id, tab_index) {
-            engine.push_closed_item(snapshot);
-        }
-        let closed = if let Some(pane) = self
-            .active_workspace_mut(engine)
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-        {
-            pane.close_tab(tab_index)
-        } else {
-            false
+            .and_then(|pane| pane.tabs.get(tab_index))
+            .map(|tab| tab.id)
+        else {
+            return false;
+        };
+        self.close_tab_through_core(engine, tab_id)
+    }
+
+    /// Core 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
+    #[cfg(any(feature = "gui", test))]
+    fn close_tab_through_core(&mut self, engine: &mut CoreState, tab_id: u32) -> bool {
+        let crate::core::intent::CoreEvent::TabClosed {
+            closed,
+            cleanup_targets,
+            ..
+        } = crate::core::Core::close_tab_recording(engine, tab_id, true)
+        else {
+            return false;
         };
         if closed {
-            for (sid, pid) in targets {
+            for (sid, pid) in cleanup_targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
                 self.enqueue_surface_closed(sid, kind, true);
             }
-            engine.mark_layout_dirty();
         }
         closed
     }
@@ -316,31 +317,14 @@ impl AppState {
         if self.refuse_if_hard_occupied(engine, in_tab) {
             return false;
         }
-        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        let active_slot = self.focused_pane(engine).map(|p| (p.id, p.active_tab));
-        if let Some((pane_id, active)) = active_slot
-            && let Some(pane) = self.focused_pane(engine)
-            && let Some(tab) = pane.tabs.get(active)
-        {
-            crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
-            if let Some(snapshot) = engine.capture_closed_tab(pane_id, active) {
-                engine.push_closed_item(snapshot);
-            }
-        }
-        let closed = if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.close_active_tab()
-        } else {
-            false
+        let Some(tab_id) = self
+            .focused_pane(engine)
+            .and_then(|pane| pane.tabs.get(pane.active_tab))
+            .map(|tab| tab.id)
+        else {
+            return false;
         };
-        if closed {
-            for (sid, pid) in targets {
-                let kind = self.surface_kind(engine, sid);
-                self.cleanup_surface(engine, sid, pid);
-                self.enqueue_surface_closed(sid, kind, true);
-            }
-            engine.mark_layout_dirty();
-        }
-        closed
+        self.close_tab_through_core(engine, tab_id)
     }
 }
 
