@@ -625,6 +625,24 @@ fn an_unregistered_surface_kind_is_the_only_known_mismatch() {
     assert!(other.iter().all(|d| known_mismatch(d).is_none()));
 }
 
+/// 제외 목록과 알려진 불일치는 아키텍처 문서에도 같은 이름으로 적는다.
+#[test]
+fn the_architecture_doc_lists_every_exclusion_and_known_mismatch() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/architecture/index.md");
+    let doc = std::fs::read_to_string(&path).expect("architecture doc");
+    let section = doc
+        .split("구조 digest(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n\n###").next())
+        .expect("structure digest section");
+    for (field, _) in DIGEST_EXCLUDED {
+        assert!(section.contains(&format!("`{field}`")), "{field}");
+    }
+    for known in KNOWN_MISMATCHES {
+        assert!(section.contains(&format!("`{}`", known.id)), "{}", known.id);
+    }
+}
+
 #[test]
 fn exclusion_list_names_every_excluded_mutation() {
     let listed: Vec<&str> = DIGEST_EXCLUDED.iter().map(|(field, _)| *field).collect();

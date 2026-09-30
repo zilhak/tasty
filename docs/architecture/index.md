@@ -136,6 +136,16 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 기존 layout 슬롯을 구조 journal로 가져오는 importer(`src/core/layout_persistence/import.rs`)도 시험 전용이며 부팅 경로에 연결하지 않았다. 슬롯 JSON 하나를 기존 슬롯 판정(높은 version·해석 실패 거절)으로 읽고, 그 슬롯 엔진의 구조 stream에 이벤트 batch 하나와 명령 기록으로 확정한다. 새 ID는 journal의 ID 예약에서 받으므로 여러 슬롯을 가져와도 엔진 사이에서 겹치지 않으며, surface ID는 standalone PTY ID 기준값 아래에서만 받는다. 슬롯 안의 위치(workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응은 결과와 명령 기록에 남기며, 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고 다른 내용이면 거절한다. workspace 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 전용 이벤트로 기록한다. terminal의 cwd·복원 명령·scrollback과 plugin surface 자료는 이벤트가 아니라 surface 저장 자료 payload 하나로 저장하고 이벤트에서 pin하며, 저장할 값이 없으면 자료 참조를 만들지 않는다. scrollback 파일이 없으면 저장 자료에 참조만 남긴다. 선택 workspace·focus pane·선택 tab·카테고리 접힘은 이벤트로 만들지 않고 결과로만 돌려준다.
 
+구조 digest(`src/runtime/shadow_digest.rs`, CoreState 쪽은 `src/core/layout_persistence/import/shadow.rs`)는 CoreState와 엔진 구조 stream 하나의 journal 모델이 같은 구조를 나타내는지 비교하는 시험 전용 도구다. [ADR-0065](../adr/0065-journal-source-and-core-state-projection.md)의 shadow 비교와 전환 단계의 완료 판정에 쓰며 제품 경로에는 연결하지 않았다.
+
+- 비교 범위: 두 쪽을 같은 정규 표현으로 옮긴다. category 순서와 이름, workspace 순서·이름·소속 category·부제·설명·attach 매핑·metadata, pane 분할 트리(방향, 비율의 f32 비트), pane마다 tab 순서·이름·사용자 지정 이름, tab마다 surface 분할 트리, surface kind·metadata·저장 자료를 담는다. digest는 정규 표현 직렬화의 FNV-1a 64비트 해시이고, 차이를 찾을 때는 경로별 차이 목록을 쓴다. journal 쪽은 순서 목록에서 닿지 않는 항목과 부모 역참조가 맞지 않는 항목도 결함으로 담는다.
+- ID: 원래 ID로 비교하거나, category·workspace는 표시 순서로, pane·tab·surface는 전체 깊이 우선 순서로 번호를 다시 매겨 비교한다. importer는 새 ID를 받으므로 CoreState와 가져온 모델은 순서 번호로 비교한다.
+- 저장 자료: payload 번호가 아니라 내용으로 비교한다. 바이트 길이와 해시로 비교하거나, surface 저장 자료 형식으로 해석해 비교한다(scrollback은 길이와 해시). 비교에서 뺄 수도 있다.
+- CoreState 쪽 입력은 두 가지다. 트리를 직접 읽은 정규 표현(저장 자료는 비교하지 않는다)과, capture → importer → journal 재구성을 거친 모델의 정규 표현이다. journal 쪽은 전체 로그 replay와 snapshot+tail 재구성에서 같은 digest를 낸다.
+- 비교에서 빼는 값: `Workspace.focused_pane`, `Pane.active_tab`, `Tab.focused_surface`(선택, [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md)의 View 소유), `SurfaceLayout::Split.focus_second`(적용기가 채우는 포커스 hint), `WorkspaceCategory.collapsed`, `Pane.tab_scroll_offset`(View 상태), `Tab.osc_title`, `Tab.cached_display_name`(Terminal 파생값), `Workspace.mirror`(mirror workspace는 로컬 구조가 아니라서 통째로 뺀다), `JournalModel.applied`(journal 위치), `EmptySurface.spawn_attempts`(실행 중 재시도 횟수).
+- 알려진 불일치: `unregistered-surface-kind` — layout capture는 등록되지 않은 kind의 surface를 kind `empty`로 저장하므로, CoreState를 직접 읽은 kind와 가져온 모델의 kind가 다르다. 시험의 세 엔진(다단 분할, 여러 surface kind, typed 필드, 빈 category, mirror workspace 포함)에서 이 불일치 외에는 차이가 없다.
+- 한계: CoreState를 직접 읽은 쪽은 저장 자료와 metadata를 비교하지 않는다. terminal cwd·복원 명령·scrollback의 해석자는 capture이고, surface metadata는 CoreState 트리가 아니라 memory DB에 있다. 저장 자료 비교는 journal 모델끼리(가져온 직후와 재구성 뒤, 서로 다른 journal)만 한다. 순서 번호 비교는 같은 구조에 다른 ID를 매긴 결함을 드러내지 않는다. 결함 목록은 원래 ID로 적으므로 순서 번호 비교에서는 ID만 다른 결함도 차이로 보인다. capture는 scrollback 저장이 켜져 있으면 살아 있는 terminal의 scrollback을 디스크에 쓰고, 겹친 대기 terminal의 scrollback 저장 ID를 새로 정해 CoreState를 바꾼다. 해시는 암호학적 해시가 아니며 판정은 정규 표현의 동등 비교로 한다.
+
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)
 
@@ -185,7 +195,7 @@ ports-and-adapters 배치:
 | `intent/` | **Intent 큐** — 호스트 내부 동작 디스패치. — [action-dispatch](../design/flows/action-dispatch.md) |
 | `host_api/` | 호스트가 외부(plugin/agent)에 제공하는 인터페이스 — Lua hooks, webview |
 | `hook_runtime/` | 엔진별 훅 등록·감시 상태(`HookRuntimeState` — surface 훅·전역 훅)와 발화한 훅의 실행(바인딩 실행 · 전역 훅 셸 실행 · IpcSequence worker). 공유 handler 정의 registry는 `hook_handler/` |
-| `runtime/` | 구조 저널 runtime(시험 전용, 제품 미연결) — 저장 batch ↔ 도메인 batch 변환, journal replay·snapshot, decide 계약에 generic한 command executor. `tasty-domain`과 `tasty-event-store`를 연결한다 |
+| `runtime/` | 구조 저널 runtime(시험 전용, 제품 미연결) — 저장 batch ↔ 도메인 batch 변환, journal replay·snapshot, decide 계약에 generic한 command executor, CoreState와 journal 모델의 구조 digest. `tasty-domain`과 `tasty-event-store`를 연결한다 |
 | `plugin_bridge/` | 호스트 측 plugin 라우팅 facade |
 | `store/` | 인메모리 스토어 — notification, state.db 수명의 창 간 공유 recent_files |
 | `db/` | SQLite `state.db`. — [storage](../design/systems/storage.md) |
