@@ -21,7 +21,7 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0048](../adr/0048-source-guards-and-exemptions.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| Intent 규율 (범위와 한계는 [Intent 규율 검사](#intent-규율-검사)) | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Core::apply 밖 구조 writer (**기준 파일 래칫**, 판정기 `strip-cfg-test`·`mask-source` 선행) | `bash scripts/check-core-writer-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. 범위와 한계는 [구조 writer 래칫](#구조-writer-래칫) | 등급 미정 |
@@ -664,6 +664,32 @@ spawn 시도 1회와 나머지 호출의 래치 진단을 확인한다. 정상 �
 줄면 실제 개선인지 검사 범위 누락인지 확인한 뒤 상한도 내린다. 도구 오류를 빈 결과로
 취급하지 않으며 예외 경로가 사라진 경우도 실패시킨다. 상한과 현재 검사 범위는
 각 스크립트를 따른다. 과거 조사 건수를 별도 정답으로 복제하지 않는다.
+
+### Intent 규율 검사
+
+`check-intent-discipline.sh`는 popup·preset·surface·tab·pane·workspace의 등록된 변경 메서드를
+직접 부르는 곳을 찾는다. 대상 메서드와 허용 표지 규칙은 [action-dispatch](../design/flows/action-dispatch.md#intent-discipline-강제)에 있다.
+호출 탐지는 `scripts/lib/intent_discipline_scan.py`가 `mask-source`로 주석·문자열을 가린 사본에서 한다.
+정규식이 공백과 줄바꿈을 허용해 rustfmt가 `state` / `.popups` / `.open_at_top_of_scope(`로 나눈 체인과
+`.delete(` 다음 줄의 `PresetKind`도 잡는다. `intent-exempt` 표지는 원문에서 읽는다.
+여러 줄 호출은 수신자 체인의 첫 줄부터 메서드 줄까지와 그 위·아래 한 줄에서 표지를 인정한다.
+`[결과사용]`·`[부재 …]` 태그 대조는 셸 부분이 맡는다.
+
+종료코드는 0(위반 0), 1(표지 없는 직접 호출 또는 사유 태그와 코드 불일치), 2(판정기·python 부재, 면제 경로·검사 디렉터리 없음, 탐지 실패)다.
+변이 검증으로 다음을 확인했다.
+
+- 표지 없는 한 줄 호출과 여러 줄 체인 호출은 실패하고 메서드 줄을 출력한다.
+- 여러 줄 호출에 체인 첫 줄 위, 메서드 줄 위, 메서드 줄, 그 아래 줄 중 한 곳에 표지를 달면 통과한다. 체인 첫 줄보다 두 줄 위의 표지는 인정하지 않는다.
+- 한 줄 호출의 판정은 이전 줄 단위 검사와 같다. 표지를 무시하고 뽑은 원시 검출에서 이전 검사의 검출은 모두 남는다.
+- `#[cfg(test)] mod` 본문, 주석·문자열 안의 같은 체인은 세지 않는다.
+
+한계는 다음과 같다.
+
+- 수신자 타입을 해석하지 않는다. 같은 이름의 다른 타입 메서드는 면제 경로 목록으로 관리한다.
+- test 판정은 `*_tests.rs` 파일과 `#[cfg(test)]` 바로 다음의 `mod` 본문만 본다. 다른 cfg 형태나 외부 test 파일 선언은 해석하지 않는다.
+- 가변 참조를 다른 이름에 담은 뒤 부르는 경우, 트레이트·매크로를 거치는 경우, 등록되지 않은 메서드는 잡지 못한다.
+- `[결과사용]` 대조는 표지 줄이나 다음 줄 하나만 읽는다. 여러 줄 호출에서는 결과를 버리는 문장을 알아보지 못할 수 있다.
+- 표지의 사유가 타당한지는 태그 외에는 검증하지 않는다.
 
 ### 구조 writer 래칫
 
