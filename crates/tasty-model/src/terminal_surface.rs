@@ -46,6 +46,24 @@ pub enum Deferred {
     Plugin(DeferredPlugin),
 }
 
+/// 지연 placeholder가 기다리는 실제화 경로의 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeferredKind {
+    /// 호스트가 PTY를 만들어야 한다.
+    Terminal,
+    /// 호스트가 등록된 plugin kind의 restore를 호출해야 한다.
+    Plugin,
+}
+
+impl Deferred {
+    pub fn kind(&self) -> DeferredKind {
+        match self {
+            Deferred::Terminal(_) => DeferredKind::Terminal,
+            Deferred::Plugin(_) => DeferredKind::Plugin,
+        }
+    }
+}
+
 impl Surface for TerminalSurface {
     crate::impl_surface_any!();
 

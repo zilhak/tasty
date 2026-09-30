@@ -113,9 +113,7 @@ impl AppState {
             }
         }
         for sid in deferred {
-            if !engine.ensure_surface_initialized(sid) {
-                engine.reify_plugin_surface(sid);
-            }
+            engine.reify_deferred_surface(sid);
         }
     }
 

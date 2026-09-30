@@ -161,28 +161,6 @@ impl CoreState {
             .get_mut(tab_idx)
     }
 
-    /// 등록된 종류로 placeholder 복원을 시도한다. 종류가 없거나 복원에 실패하면 placeholder가 남는다.
-    #[cfg(any(feature = "gui", test))]
-    pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
-        let registry = self.surface_registry.clone();
-        for ws in &mut self.workspaces {
-            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
-            for pane_id in pane_ids {
-                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    for tab in &mut pane.tabs {
-                        if tab.reify_deferred_plugin(surface_id, |kind, snap| {
-                            let def = registry.get_live(kind)?;
-                            (def.restore)(surface_id, snap).ok()
-                        }) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
-
     /// 대기 중인 scrollback을 꺼내 Terminal에 적용한다. Terminal이 없으면 꺼낸 내용은 버린다.
     /// 이미 시작한 PTY의 첫 출력보다 먼저 적용된다고 보장하지는 않는다.
     pub fn apply_pending_scrollback_inject(&mut self, surface_id: u32) {
@@ -292,6 +270,47 @@ impl CoreState {
     }
 }
 
+/// 종류별 지연 surface 실제화. plugin restore는 GUI 경로와 시험에서만 쓴다.
+#[cfg(any(feature = "gui", test))]
+impl CoreState {
+    /// 지연 placeholder를 종류에 맞는 경로로 실제화하는 단일 진입점이다. 성공하면 true다.
+    /// 터미널은 PTY를 만들고, plugin은 등록된 kind의 restore를 호출한다.
+    /// 포커스·활성 workspace·활성 tab은 바꾸지 않는다.
+    pub fn reify_deferred_surface(&mut self, surface_id: u32) -> bool {
+        let kind = self
+            .deferred_tab_mut(surface_id)
+            .and_then(|tab| tab.deferred_kind(surface_id));
+        match kind {
+            Some(crate::model::DeferredKind::Terminal) => {
+                self.ensure_surface_initialized(surface_id)
+            }
+            Some(crate::model::DeferredKind::Plugin) => self.reify_plugin_surface(surface_id),
+            None => false,
+        }
+    }
+
+    /// 등록된 종류로 placeholder 복원을 시도한다. 종류가 없거나 복원에 실패하면 placeholder가 남는다.
+    pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
+        let registry = self.surface_registry.clone();
+        for ws in &mut self.workspaces {
+            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    for tab in &mut pane.tabs {
+                        if tab.reify_deferred_plugin(surface_id, |kind, snap| {
+                            let def = registry.get_live(kind)?;
+                            (def.restore)(surface_id, snap).ok()
+                        }) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::CoreState;
@@ -327,6 +346,46 @@ mod tests {
         let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
         pane.tabs.push(tab);
         surface_id
+    }
+
+    fn push_deferred_plugin_tab(engine: &mut CoreState, kind: &str) -> u32 {
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let placeholder = EmptySurface::new_deferred_plugin(
+            surface_id,
+            crate::model::DeferredPlugin {
+                kind: kind.to_string(),
+                snapshot: serde_json::Value::Null,
+            },
+        );
+        let tab = Tab::new_named(tab_id, "t".to_string(), None, Box::new(placeholder));
+        let ws = &mut engine.workspaces[0];
+        let pane_id = ws.pane_layout().all_pane_ids()[0];
+        let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
+        pane.tabs.push(tab);
+        surface_id
+    }
+
+    #[test]
+    fn reify_deferred_surface_dispatches_by_kind() {
+        let mut engine = engine();
+        let term = push_deferred_tab(&mut engine, None);
+        let plugin = push_deferred_plugin_tab(&mut engine, "empty");
+        let missing = push_deferred_plugin_tab(&mut engine, "tasty_no_such_kind");
+        let before = active_tab_ids(&engine);
+
+        assert!(engine.reify_deferred_surface(term), "터미널은 PTY 생성");
+        assert!(engine.terminals.get(term).is_some());
+        assert!(
+            engine.reify_deferred_surface(plugin),
+            "등록된 kind 는 restore"
+        );
+        assert!(!engine.is_surface_deferred(plugin));
+        assert!(engine.terminals.get(plugin).is_none(), "plugin 은 PTY 없음");
+        assert!(!engine.reify_deferred_surface(missing), "미등록 kind");
+        assert!(engine.is_surface_deferred(missing), "placeholder 유지");
+        assert!(!engine.reify_deferred_surface(term), "이미 실제화됨");
+        assert_eq!(active_tab_ids(&engine), before, "활성 탭 불변");
     }
 
     fn active_tab_ids(engine: &CoreState) -> Vec<(u32, usize)> {

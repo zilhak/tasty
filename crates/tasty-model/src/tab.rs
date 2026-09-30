@@ -400,6 +400,18 @@ impl Tab {
             .unwrap_or(false)
     }
 
+    /// surface_id가 지연 placeholder면 그 실제화 경로의 종류. 아니면 None.
+    pub fn deferred_kind(&self, surface_id: SurfaceId) -> Option<super::DeferredKind> {
+        self.layout_opt
+            .as_ref()?
+            .find_surface(surface_id)?
+            .as_any()
+            .downcast_ref::<super::EmptySurface>()?
+            .deferred
+            .as_ref()
+            .map(super::Deferred::kind)
+    }
+
     /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
         let sid = surface.surface_id().unwrap_or(0);
@@ -673,6 +685,18 @@ mod tests {
         );
         assert!(tab.pending_terminal_spawn(sid).is_none());
         assert!(!tab.complete_terminal_spawn(sid), "이미 교체된 leaf");
+    }
+
+    #[test]
+    fn deferred_kind_distinguishes_terminal_and_plugin() {
+        use crate::DeferredKind;
+        let tab = deferred_tab(1, deferred_spawn(None));
+        assert_eq!(tab.deferred_kind(1), Some(DeferredKind::Terminal));
+        assert_eq!(tab.deferred_kind(2), None);
+        let tab = deferred_plugin_tab(3, "markdown");
+        assert_eq!(tab.deferred_kind(3), Some(DeferredKind::Plugin));
+        let tab = Tab::new_with_surface(1, "t".to_string(), Box::new(EmptySurface::new(4)));
+        assert_eq!(tab.deferred_kind(4), None, "비-deferred 빈 surface");
     }
 
     /// plugin placeholder 는 터미널 spawn 경로가 건드리지 않는다.
