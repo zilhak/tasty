@@ -6069,7 +6069,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
- "libc",
  "serde",
  "serde_json",
  "sha2",

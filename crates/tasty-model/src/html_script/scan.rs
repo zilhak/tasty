@@ -1,4 +1,5 @@
 //! 문서 원본을 한 번 읽어 스크립트 감지와 파일 전체 지문을 함께 구한다.
+//! 바이트 입력만 다룬다. 파일을 열고 정규 파일인지 확인하는 일은 호스트가 맡는다.
 //!
 //! 감지는 상한까지만 하고 지문은 파일 끝까지 구한다(ADR-0053). 상한 뒤에만 있는 스크립트는
 //! 감지하지 못하며, 이때는 JS가 꺼진 채 배너가 뜨지 않는다.
@@ -37,37 +38,6 @@ pub fn scan_reader(mut reader: impl Read, limit: usize) -> std::io::Result<Scrip
         fingerprint: Fingerprint(hasher.finalize().into()),
         detection: detect_scripts(&head),
     })
-}
-
-/// 정규 파일을 열어 [`scan_reader`]로 스캔한다.
-///
-/// FIFO·장치 파일은 읽기가 끝나지 않거나 쓰는 쪽을 기다리며 막힐 수 있어 거절한다.
-/// 경로를 연 뒤 같은 핸들로 종류를 확인하므로 확인과 읽기 사이에 파일이 바뀌지 않는다.
-pub fn scan_file(path: &std::path::Path) -> std::io::Result<ScriptScan> {
-    let file = open_without_blocking(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "not a regular file",
-        ));
-    }
-    scan_reader(file, SCAN_LIMIT_BYTES)
-}
-
-/// FIFO를 열 때 쓰는 쪽을 기다리지 않도록 unix에서는 `O_NONBLOCK`으로 연다.
-/// 정규 파일 읽기에는 영향이 없다.
-#[cfg(unix)]
-fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
-}
-
-#[cfg(not(unix))]
-fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::File> {
-    std::fs::File::open(path)
 }
 
 /// HTML 원본에서 실행 가능한 스크립트를 찾는다. 주석과 원문 텍스트 요소의 내용은 보지 않는다.

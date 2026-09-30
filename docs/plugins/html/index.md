@@ -21,6 +21,7 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 - **스크립트 감지와 문서 단위 허용** — 전역 설정 sandbox scripts가 켜져 있으면 host가 main frame 문서마다 JS를 끈다. `file://` 문서는 응답 단계에서 원본 파일을 읽어 스크립트를 감지하고 파일 전체 지문을 구한다. 허용은 URL(fragment 제외)과 지문에 묶이며 다른 문서가 commit되면 풀린다. 규칙과 근거는 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md).
   - 스캔 상한: 감지는 파일 앞 4 MiB(`SCAN_LIMIT_BYTES`)까지만 읽는다. 지문은 상한과 관계없이 파일 전체를 해시한다.
   - 정규 파일만 스캔한다. FIFO·장치 같은 파일은 읽지 않고 지문 없음으로 두므로 그 문서는 허용할 수 없다.
+  - 파일 열기와 정규 파일 확인은 host(`src/host_api/webview/script_gate.rs`)가 한다. `tasty_model::html_script::scan`은 받은 바이트로 감지와 지문만 계산하며 파일 시스템에 접근하지 않는다.
   - Linux html surface는 WebKit page cache를 끈다. 뒤로·앞으로 가기도 캐시 복원이 아니라 파일을 다시 읽는 새 로드가 되어 같은 게이트를 거친다.
   - 배너 발화 판정은 `tasty_model::html_script::banner`에 있다. 사용자가 그 문서를 봤을 때만 배너 단계가 `blocked`가 되고, 에이전트가 연 문서·세션 복원·보이지 않는 탭의 문서는 `pending_view`만 기록한다. 판정은 포커스와 활성 탭을 바꾸지 않는다.
   - 배너 그리기: `src/adapters/ui/surface/html_script_banner.rs`가 webview chrome 위에 inset 배너를 그린다([배너 시스템 §inset 배치](../../design/systems/banner.md#inset-배치)). 그린 카드 아래 `banner_inset_gap`까지의 높이를 AppState에 남기면 같은 프레임의 WebView 동기화가 그만큼 WebView를 내리고 줄인다. surface 폭이 `banner_narrow_below` 미만이면 narrow 배치(액션이 다음 줄)로 그린다. surface가 새 문서를 로드하는 동안(로드 시작부터 main frame commit 전까지) 단계는 `loading`이고 허용 버튼은 비활성이며 hover하면 위쪽 툴팁으로 이유를 보인다. 이 동안 모델도 허용을 받지 않는다(`AllowError::Loading`). commit 뒤 새 문서에 스크립트가 있으면 `blocked`로 돌아오고 없으면 배너가 사라진다. 허용을 누르면 재로드 중 배너가 액션 자리에 스피너를 보이고, 새 문서가 commit되어 단계가 `hidden`이 되면 `banner_fade` 동안 흐려지며 사라진다. 닫기(×)와 문서 교체는 즉시 사라진다. 배너는 키보드 포커스를 가져가지 않는다.

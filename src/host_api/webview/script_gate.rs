@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use tasty_model::html_script::{HtmlScriptState, ScriptScan, scan::scan_file, strip_fragment};
+use tasty_model::html_script::scan::{SCAN_LIMIT_BYTES, scan_reader};
+use tasty_model::html_script::{HtmlScriptState, ScriptScan, strip_fragment};
 
 static STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const STATE_WHAT: &str = "html script state";
@@ -120,6 +121,37 @@ fn scan_document_url(surface_id: u32, url: &str) -> Option<ScriptScan> {
     }
 }
 
+/// 정규 파일을 열어 [`scan_reader`]로 스캔한다.
+///
+/// FIFO·장치 파일은 읽기가 끝나지 않거나 쓰는 쪽을 기다리며 막힐 수 있어 거절한다.
+/// 경로를 연 뒤 같은 핸들로 종류를 확인하므로 확인과 읽기 사이에 파일이 바뀌지 않는다.
+fn scan_file(path: &std::path::Path) -> std::io::Result<ScriptScan> {
+    let file = open_without_blocking(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    scan_reader(file, SCAN_LIMIT_BYTES)
+}
+
+/// FIFO를 열 때 쓰는 쪽을 기다리지 않도록 unix에서는 `O_NONBLOCK`으로 연다.
+/// 정규 파일 읽기에는 영향이 없다.
+#[cfg(unix)]
+fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_without_blocking(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}
+
 /// `file://` URL을 로컬 경로로 바꾼다. query·fragment는 버리고 percent escape를 바이트로 복원한다.
 pub fn file_url_to_path(url: &str) -> Option<PathBuf> {
     let rest = url
@@ -218,6 +250,48 @@ mod tests {
             file_url_to_path("file://server/share/a.html"),
             Some(PathBuf::from(r"\\server\share\a.html"))
         );
+    }
+
+    #[test]
+    fn scan_file_reads_a_file_from_disk() {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("tasty-html-scan-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("doc.html");
+        std::fs::write(&path, "<button onclick=x()>b</button>").expect("write");
+        let s = scan_file(&path).expect("scan");
+        assert_eq!(
+            s.detection,
+            tasty_model::html_script::ScriptDetection::Scripts
+        );
+        assert!(scan_file(&dir.join("missing.html")).is_err());
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            tracing::warn!("temp dir cleanup failed: {e}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn special_files_are_refused_without_blocking() {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("tasty-html-fifo-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let fifo = dir.join("pipe.html");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo");
+        assert!(status.success(), "mkfifo");
+        // 쓰는 쪽이 없는 FIFO를 막히는 방식으로 열면 이 테스트가 끝나지 않는다.
+        let err = scan_file(&fifo).expect_err("fifo");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        let err = scan_file(std::path::Path::new("/dev/zero")).expect_err("device");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            tracing::warn!("temp dir cleanup failed: {e}");
+        }
     }
 
     #[test]
