@@ -16,6 +16,7 @@ import sys
 # Core::apply가 호출하는 구현 파일. 이 파일 안의 쓰기는 입구 안으로 보고 세지 않는다.
 APPLY_PATH_FILES = [
     "src/core/impl_attach.rs",
+    "src/core/impl_category.rs",
     "src/core/impl_close.rs",
     "src/core/impl_convert.rs",
     "src/core/impl_mirror.rs",
