@@ -88,8 +88,7 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   손실과 재연결 snapshot 때 출력 stream ID를 바꿔 이전 위치의 독자가 불연속을 알 수 있게 한다.
 - 요청 출처: forward 구조 요청은 origin(user·agent)을 전달한다. 새 client는 user_triggered에 따라 항상 값을 보내고, 필드 생략과 null은 옛 client 호환을 위해 user,
   모르는 값은 프레임을 버리지 않고 agent로 해석한다. tab 선택도 같은 origin을 사용한다. forward의 user origin은 snapshot 여부와 탭 선택을 정하지만 plugin lifecycle의 `is_user_close`와는 구분한다.
-- 닫은 항목 복원: 서버는 user origin의 요청으로 사라진 대상만 복원 기록에 넣는다. user close와, user MoveSurface로 교체된 target surface가 여기에 든다.
-  교체된 surface는 로컬 이동과 같게 복원할 수 있다(현재 서버의 forward MoveSurface는 아직 기록하지 않는다). mirror의 닫은 항목 복원은 PTY와 scrollback이 있는 서버에서 수행하며 로컬 항목을 대신 복원하지 않는다.
+- 닫은 항목 복원: 서버는 user close만 복원 기록에 넣는다. 이동으로 교체된 surface는 로컬 이동과 같게 복원 기록에 넣지 않는다. mirror의 닫은 항목 복원은 PTY와 scrollback이 있는 서버에서 수행하며 로컬 항목을 대신 복원하지 않는다.
   서버의 닫은 항목은 출처 workspace ID를 저장하고, 원격 복원은 anchor workspace의 항목만 고르며 workspace 전체 항목은 그 범위에서 제외한다.
   원격 기록이 비면 안내를 반환하고 로컬 기록을 소비하지 않는다. 로컬 사용자의 복원은 기존 전역 LIFO를 유지한다.
   서버 쪽 복원에서 로컬 복원의 focus 후처리를 실행하지 않는다.
