@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 데이터 홈의 구조 journal 하나에서 구조 ID를 전역 발급하는 배선과 `u32` 좁힘(영속 ID 예약 절)
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 데이터 홈의 구조 journal 하나에서 구조 ID를 전역 발급하는 배선과 `u32` 좁힘(영속 ID 예약 절), 엔진 종료·슬롯 삭제 때 그 엔진 stream을 비우거나 폐기하는 규칙(미결, 재검토 조건 참조)
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -103,6 +103,8 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 호출자가 준 상한과 SQLite 정수에 저장할 수 있는 상한 중 작은 값을 넘는 예약은 되감지 않고 거절하며 상태를 바꾸지 않는다. 0개 예약도 거절한다.
 - 구조 journal은 데이터 홈에 하나 둔다. 엔진은 그 journal 안의 stream이며 엔진마다 journal 파일을 따로 두지 않는다.
   구조 ID는 이 journal의 kind별 예약에서 발급하므로 journal 하나로 모든 엔진에 걸쳐 유일하다. 프로세스가 공유하는 runtime ID 발급기는 이 예약에서 받은 구간을 나눠 주는 캐시가 된다.
+- 엔진의 stream 이름은 그 엔진이 쓰는 레이아웃 슬롯 번호로 정한다(`structure:slot-<N>`). runtime 엔진 ID는 재시작마다 새로 매겨지고,
+  [ADR-0059](0059-id-targets-and-view-owned-selection.md)에서 엔진마다 슬롯이 하나라 슬롯 번호가 엔진의 영속 식별이기 때문이다.
 - wire 표현은 `u32`로 유지한다. surface는 standalone PTY ID 기준값 미만, 그 밖의 구조 kind는 `u32` 최대값을 상한으로 예약한다.
   상한을 넘는 예약은 위 규칙대로 되감지 않고 거절한다. surface와 PTY의 범위 분리는 [ADR-0059](0059-id-targets-and-view-owned-selection.md)를 따른다.
 - journal 밖의 ID(PTY·hook·observer·notification)는 기존 카운터를 쓴다.
@@ -167,6 +169,8 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
 - 엔진마다 journal 파일을 나눠야 하거나 여러 journal이 구조 ID를 나눠 써야 하는 요구가 생기면 ID 예약 절의 journal 배치와 발급 범위를 다시 정한다.
+- 미결: 새 창은 비어 있는 가장 낮은 슬롯을 복원하고 `restore_layout`을 끄면 종료 때 슬롯을 지우므로([ADR-0059](0059-id-targets-and-view-owned-selection.md)),
+  닫힌 엔진의 stream `structure:slot-<N>`을 다음에 슬롯 N을 받는 엔진이 이어받을 수 있다. 엔진 종료·슬롯 삭제 때 stream을 비우거나 폐기하는 규칙은 구조 journal을 제품에 연결하기 전에 정한다.
 - 구조 kind의 `u32` 범위가 고갈에 가까워지거나 surface·PTY 외의 ID 종류가 같은 공간을 쓰게 되면 좁힘 규칙과 wire 표현을 다시 본다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 
