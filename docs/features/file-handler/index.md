@@ -43,7 +43,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 - 원격에 열 수 있는 핸들러는 `OpenSurface` 이면서 그 kind 와 client 에 등록한 plugin 쌍이 원문 전달·mesh mirror 허용 목록에 있는 것이다. 현재 markdown(`com.tasty.markdown`)과 허용된 egui-mesh kind 가 해당한다. html 은 mirror 에서 placeholder 라 제외한다.
 - 1순위 핸들러가 원격에 열 수 있으면 로컬과 같이 바로 실행한다.
 - 1순위가 원격에 열 수 없고 다른 후보가 있으면 사용자 요청은 기존 핸들러 picker 를 띄운다. 후보와 최근 목록에는 원격에 열 수 있는 핸들러만 남기고, 1순위가 목록에 없으므로 기본 핸들러 표시는 두지 않는다. fallback 표시(전체 핸들러 그룹·1 회성 띠)도 쓰지 않는다. picker 에서 고른 핸들러도 같은 조건을 다시 확인한 뒤 원격 새 탭으로 실행한다.
-- 에이전트 요청은 사용자 화면에 picker 를 띄우지 않는다. 우선순위 순서로 원격에 열 수 있는 첫 핸들러를 실행한다.
+- 에이전트 요청은 로컬과 마찬가지로 사용자 화면에 picker 를 띄우지 않는다. 우선순위 순서로 원격에 열 수 있는 첫 핸들러를 실행한다.
 - 실행한 `CreateTab` 은 원격 `StructuralOp::NewTab` 으로 forward 된다. 이 forward 는 실패가 아니며 `file_dispatch CreateTab failed` 경고를 남기지 않는다. 사용자 요청은 원격·client 양쪽에서 새 탭을 선택하고, 에이전트 요청의 원격 실패는 warn 로그로만 남는다.
 - 원격에 열 수 있는 핸들러가 하나도 없으면(`System`·`Ipc` 뿐, 허용되지 않은 kind, 매칭 없음) picker 를 띄우지 않는다. 사용자 요청이면 `explorer.state.remote_open_unsupported` toast, 에이전트 요청이면 warn 로그로 끝난다.
 - 원격 경로는 로컬 최근 목록에 기록하지 않는다.
@@ -125,7 +125,7 @@ picker에서 고른 핸들러는 이번 한 번만 실행한다. 형식별 기�
 
 | 경로 | 후보 | fallback 인가 |
 |---|---|---|
-| 이 detector 에 매칭되는 handler 가 0 개 (`file::dispatch::apply_identify_result`) | `all_handlers()` | 예 |
+| 사용자 요청에서 이 detector 에 매칭되는 handler 가 0 개 (`file::dispatch::apply_identify_result`) | `all_handlers()` | 예 |
 | 터미널 링크 메뉴의 "연결 동작" — 식별을 건너뛰고 강제로 연다 | `all_handlers()` | 예 |
 | 원격(mirror) surface 의 경로 링크 (`open_remote_placeholder_picker`) | **없음** — 후보도 recent 도 안 싣는다 | 아니오 |
 
@@ -150,6 +150,8 @@ picker 취소는 action과 recent 기록을 모두 생략한다. Ipc action payl
 탭 선택 여부는 별도 FileDispatchOrigin으로 결정한다.
 사용자 Explorer 더블클릭·terminal link·drop·picker 확인·연결 동작 메뉴는 User라 결과를 선택한다.
 Agent 요청은 기존 탭과 surface 선택을 유지한다. origin 생략도 같은 원인 규칙을 적용한다.
+에이전트 요청은 로컬·원격 모두 사용자 화면에 picker 를 띄우지 않는다. 로컬에서 매칭 핸들러가 없으면
+fallback picker 대신 warn 로그를 남기고 실행하지 않는다. RPC 는 이미 accepted:true 로 응답했으므로 오류를 따로 돌려주지 않는다.
 현재 focus로 사용자 여부를 추측하지 않는다.
 
 plugin이 중계한 IPC를 User로 인정하는 근거는 두 가지다.

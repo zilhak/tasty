@@ -54,11 +54,11 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         FileTarget::new("/unknown"),
         None,
         Some(sid),
-        FileDispatchOrigin::Agent,
+        FileDispatchOrigin::User,
         false,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
-    take_picker_open_request(&mut state, true);
+    take_picker_open_request(&mut state, false);
     core.apply(
         &mut engine,
         DomainIntent::CreateWorkspace {
@@ -92,8 +92,11 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         .find(|id| !before.contains(id))
         .unwrap();
     assert_eq!(engine.find_pane_for_surface(added), Some(pane));
+    // 사용자 선택은 origin pane의 결과 탭을 고르지만 활성 workspace와 포커스는 옮기지 않는다.
+    let after = engine.find_pane_by_id(pane).unwrap();
+    assert_ne!(after.active_tab, active_tab);
+    assert_eq!(after.active_tab, after.tabs.len() - 1);
     assert_eq!(state.active_workspace, 1);
-    assert_eq!(engine.find_pane_by_id(pane).unwrap().active_tab, active_tab);
     assert_eq!(state.focused_surface_id(&engine), focused_surface);
     assert!(state.pending_intents.is_empty());
 }
@@ -179,11 +182,11 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         target.clone(),
         None,
         Some(sid),
-        FileDispatchOrigin::Agent,
+        FileDispatchOrigin::User,
         true,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
-    take_picker_open_request(&mut state, true);
+    take_picker_open_request(&mut state, false);
     assert_eq!(picker.origin_surface_id, Some(sid));
     assert!(picker.ignore_size_limit);
     let recent_before = state.file_handler_recent.list().len();
@@ -229,7 +232,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         target.clone(),
         None,
         Some(sid),
-        FileDispatchOrigin::Agent,
+        FileDispatchOrigin::User,
         false,
     );
     assert!(state.dialogs.file_handler_picker.is_none());
@@ -360,4 +363,31 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
         FileTarget::new("/remote/a.md"),
     );
     take_picker_open_request(&mut state, false);
+}
+
+/// 매칭 핸들러가 없어도 에이전트 요청은 사용자 화면에 picker를 띄우지 않고 아무것도 실행하지 않는다.
+#[test]
+fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
+    let (mut core, _) = build_test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let recent_before = state.file_handler_recent.list().len();
+    for origin_surface_id in [Some(sid), None] {
+        for detector in [None, Some(DetectorId::new("no-such-detector"))] {
+            apply_identify_result(
+                &mut core,
+                &mut state,
+                &mut engine,
+                FileTarget::new("/unknown"),
+                detector,
+                origin_surface_id,
+                FileDispatchOrigin::Agent,
+                false,
+            );
+            assert!(state.dialogs.file_handler_picker.is_none());
+            assert!(state.pending_intents.is_empty());
+            assert!(state.pending_handler_ipc.is_empty());
+        }
+    }
+    assert_eq!(state.file_handler_recent.list().len(), recent_before);
 }

@@ -39,6 +39,11 @@ pub(crate) fn apply_identify_result(
         Some(d) => engine.file_handler.handlers_for(d),
         None => Vec::new(),
     };
+    if handlers.is_empty() && dispatch_origin == crate::file::dispatch::FileDispatchOrigin::Agent {
+        // 에이전트 요청은 사용자 화면에 picker를 띄우지 않는다. RPC는 이미 수락을 응답했으므로 로그로 알린다.
+        tracing::warn!(target = %target.display(), "no file handler matches this file; not executed");
+        return;
+    }
     let target = DispatchTarget::File(target);
     if handlers.is_empty() {
         // 매칭이 없으면 전체 핸들러를 일회성 선택지로 보여준다. detector 연결을 저장하지 않는다.
@@ -197,7 +202,7 @@ pub(super) mod tests {
             FileTarget::new(PathBuf::from("/tmp/unmatched-target.unknown")),
             Some(unmatched),
             None,
-            crate::file::dispatch::FileDispatchOrigin::Agent,
+            crate::file::dispatch::FileDispatchOrigin::User,
             false,
         );
 
