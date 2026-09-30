@@ -117,6 +117,8 @@ impl ViewRegistry {
         self.active_modal.is_some()
     }
 
+    /// debug ui.state 투영만 종류까지 읽는다. 다른 호출부는 `active_modal_id`를 사용한다.
+    #[cfg(debug_assertions)]
     pub(crate) fn active_modal(&self) -> Option<ActiveModal> {
         self.active_modal
     }
