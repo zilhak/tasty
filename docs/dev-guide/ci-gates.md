@@ -933,3 +933,5 @@ info/style는 검사 범위 밖이다. 버전을 올릴 때는 새 진단을 먼
 커밋별 검증 범위는 위 'push 범위 안쪽의 커밋'을 따른다.
 
 `python3 scripts/lib/test_core_writer_scan.py`는 선택 map/remap과 실제 구조 쓰기를 구별하는 변이 시험이다. Navigation 파일의 `engine.workspaces.clear()`와 App adapter의 `remove_tab`/`take_tab` 호출을 검출한다. 타입을 해석하지 않는 scanner의 한계는 그대로이며 파일 전체 제외를 추가하지 않는다.
+
+활성 상태 읽기 명부는 구 active/focused 식별자와 함께 App의 `presentation()` 및 `.navigation` 접근도 수집한다. 응답 보고·명시 ID 내부의 CWD 상속·사용자 continuation·저장/원격 snapshot을 구분하며, 문자열 집계만으로 대상 선택의 적법성을 판단하지는 않는다.

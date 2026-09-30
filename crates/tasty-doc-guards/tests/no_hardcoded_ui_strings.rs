@@ -54,6 +54,8 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
 
 /// 리터럴 그대로 허용하는 토큰 — 번역하면 의미가 변하는 고유명사·식별자(i18n.md).
 const LITERAL_TOKEN_ALLOWLIST: &[&str] = &[
+    // EmptySurface::type_name의 기존 IPC type 식별자. 번역 대상 표시 문구가 아니다.
+    "Empty",
     // 수식키 · 키 이름
     "Ctrl",
     "Alt",

@@ -21,6 +21,8 @@ const NEEDLES: &[&str] = &[
     "active_surface",
     "active_tab",
     "active_pane",
+    "presentation()",
+    ".navigation",
 ];
 
 /// IPC 핸들러, 호출되는 도메인 코드와 포트 구현 파일을 검사한다.
@@ -34,6 +36,7 @@ const AGENT_FACING: &[&str] = &[
     "src/app/dispatch_domain.rs",
     "src/app/structural_cascade.rs",
     "src/app/structural_exec.rs",
+    "src/app/attach_structure.rs",
     "src/file/identify_worker.rs",
     "src/state/cascade_window.rs",
     "src/state/ipc_window.rs",
@@ -52,6 +55,8 @@ const SCAN_ROOTS: &[&str] = &[
 enum Kind {
     /// 응답에 "무엇이 활성인지" 를 싣는다. 대상 선택이 아니라 상태 보고다.
     Report,
+    /// 저장·undo·원격 publication의 명시 선택 snapshot. 명령 대상을 고르지 않는다.
+    Projection,
     /// 호출자가 준 ID로 찾은 객체의 속성이다. 전역 포커스로 대상을 고르지 않는다.
     IdResolved,
     /// 권한·상한 정책을 적용할 워크스페이스다. 요청 대상을 고르는 값은 아니다.
@@ -64,8 +69,6 @@ enum Kind {
     UserOrigin,
     /// 워크스페이스가 0 이 된 뒤의 복구 — 활성 포인터를 **다시 만든다**.
     Recovery,
-    /// 구조분해에서 `_` 로 버린다. 읽기가 아니다.
-    PatternOnly,
     /// focused가 없으면 다른 창을 써도 된다고 소스에 설명된 경우다.
     AnyWindow,
     /// 활성 상태로 대상을 고르는 결함. 해결을 막는 이유를 적는다.
@@ -77,22 +80,58 @@ use Kind::*;
 /// 줄 번호는 무관한 편집에도 바뀌므로 파일별로 집계하고 변경 시 분류를 다시 검토한다.
 const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
+        "src/app/structural_exec.rs",
+        Projection,
+        6,
+        "구조 실행 전 attach 전송 문맥과 사용자 close 기록용 snapshot을 명시적으로 캡처한다",
+    ),
+    (
+        "src/app/attach_structure.rs",
+        Projection,
+        3,
+        "명시 anchor 요청의 attach 전송 문맥과 사용자 tab/pane close 기록을 캡처한다",
+    ),
+    (
+        "src/adapters/ipc/handler.rs",
+        Projection,
+        3,
+        "요청 전후 attach 전송 문맥을 갱신하고 preset capture에 현재 View의 표시값을 전달한다",
+    ),
+    (
+        "src/app/dispatch/list_global.rs",
+        Report,
+        2,
+        "각 engine의 View를 함께 해소하여 pane과 category 전역 조회 결과를 합성한다",
+    ),
+    (
+        "src/state/cascade_window.rs",
+        UserOrigin,
+        3,
+        "App cascade의 origin 검사를 통과한 surface/tab/pane 결과 ID를 View 선택에 적용한다",
+    ),
+    (
+        "src/state/cascade_window.rs",
+        Projection,
+        1,
+        "공통 App adapter가 요청한 읽기 전용 presentation에 현재 navigation을 빌려 준다",
+    ),
+    (
         "src/adapters/ipc/handler/tab.rs",
         Report,
-        3,
-        "탭 목록의 \"active\" 플래그와 TabCreated 이벤트가 실어 온 active_tab 을 응답에 그대로 싣는다",
+        2,
+        "명시 presentation으로 계산한 생성 후 active_tab을 응답 구조분해와 결과에 싣는다",
     ),
     (
         "src/app/structural_exec.rs",
         IdResolved,
-        2,
+        4,
         "탭 생성과 split 의 cwd 상속 원본을 고를 때 호출자가 준 pane_id(split 은 resolved_pane_id)로 푼 페인의 활성 탭을 본다 — 전역 포커스가 아니다",
     ),
     (
         "src/app/structural_exec.rs",
         Report,
-        3,
-        "TabCreated 이벤트가 실어 온 active_tab 을 결과 값(TabCreated)에 옮겨 담는다 — 핸들러가 그것을 응답에 싣는다",
+        4,
+        "생성 결과와 명시 presentation으로 pane의 현재 활성 탭을 계산하고 응답 값으로 싣는다",
     ),
     (
         "src/adapters/ipc/handler/workspace.rs",
@@ -109,8 +148,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler.rs",
         Report,
-        5,
-        "system_info의 활성 index 선언·응답·ID 해소와 워크스페이스 표의 활성 플래그",
+        9,
+        "system_info와 workspace/category/pane/tab/tree 응답에 해당 View의 선택 상태를 보고한다",
     ),
     (
         "src/adapters/ipc/handler.rs",
@@ -151,7 +190,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler/debug_state.rs",
         DebugOnly,
-        5,
+        6,
         "debug 상태 덤프 전용 파일. 원칙 1 로 release 에 없다",
     ),
     (
@@ -162,12 +201,6 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     ),
     (
         "src/app/dispatch_domain.rs",
-        PatternOnly,
-        1,
-        "TabCreated 를 구조분해하며 active_tab 을 `_` 로 버린다 — 값을 읽지 않는다",
-    ),
-    (
-        "src/app/dispatch_domain.rs",
         Attribution,
         2,
         "알림을 밀어 넣을 때 어느 워크스페이스 알림인지를 채운다",
@@ -175,14 +208,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/app/dispatch_domain.rs",
         UserOrigin,
-        3,
-        "닫은 항목 복원·워크스페이스 이동 — 전부 origin 이 User 일 때만 도는 cascade 다",
-    ),
-    (
-        "src/app/structural_cascade.rs",
-        UserOrigin,
-        1,
-        "surface split 뒤 포커스 서피스 갱신 — origin 이 User 일 때만 돈다(에이전트 split 은 앞에서 return)",
+        4,
+        "새 탭·workspace의 사용자 continuation과 닫은 항목 복원 — 전부 origin User 검사 뒤 선택한다",
     ),
     (
         "src/app/structural_cascade.rs",
@@ -194,7 +221,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "src/state/cascade_window.rs",
         Recovery,
         2,
-        "포트 메서드 set_active_workspace 의 구현 이름과 그 몸체의 대입 — 도메인의 호출은 structural_cascade 의 Recovery 한 자리뿐이다(마지막 워크스페이스가 닫힌 뒤 되만든 기본 워크스페이스를 활성으로 둔다)",
+        "App 포트 set_active_workspace의 구현과 ID 선택 변환 호출이며 빈 workspace 재생성의 선택 보정이다",
     ),
     (
         "src/state/ipc_window.rs",
@@ -400,4 +427,11 @@ fn the_extractor_counts_shipped_code_only() {
         4,
         "합성 원문에서 예상한 출현 수가 달라져 마스킹 결과와 비교할 수 없다"
     );
+}
+
+#[test]
+fn view_and_projection_accesses_remain_visible_after_model_field_removal() {
+    let input =
+        "fn shipped() { state.navigation.tab_id(pane); state.presentation().surface_id(tab); }";
+    assert_eq!(count_needles(&shipped_code(input)), 2);
 }

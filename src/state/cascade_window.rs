@@ -1,4 +1,4 @@
-//! 도메인의 CascadeWindow 요청을 RequestContext의 창 연산에 연결한다.
+//! App adapter의 결과 처리를 View 또는 headless 명령 문맥에 연결한다.
 
 use std::path::PathBuf;
 
