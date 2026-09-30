@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root `src/runtime` 시험 전용 모듈만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합(`u32` 별칭 공유와 `u64` 예약의 좁힘 규칙 포함, 재검토 조건 참조)
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합(`u32` 별칭 공유와 `u64` 예약의 좁힘 규칙 포함, 재검토 조건 참조)
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -138,6 +138,7 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 세대 검사만 쓰는 안: 다른 프로세스가 같은 파일을 열어 아무 확인 없이 새 세대를 등록할 수 있고, 살아 있던 writer는 다음 쓰기부터 Fenced로 거절된다. 두 인스턴스가 같은 데이터 홈을 쓰는 실수를 막지 못한다.
 - journal DB 파일 자체를 잠그는 안: Windows에서는 강제 잠금이라 SQLite가 같은 파일을 읽고 쓰지 못한다. 플랫폼별로 잠금 대상을 달리하면 동작 확인 범위가 늘어난다.
 - 파일 잠금만 쓰는 안: 같은 프로세스 안에서 이전 writer·worker가 늦게 보낸 결과를 막지 못한다.
+- 잠금을 한 번만 시도하는 안: 방금 놓은 잠금을 exec 전의 자식 프로세스가 복제해 쥐고 있으면 실제 writer가 없는데도 이미 사용 중이라는 오류(WriterLocked)가 난다.
 - Uncertain을 새 generation 등장 시 Superseded로 닫는 안: 실제로 실행된 자원의 정리 의무를 잃는다.
 - 재시도 때 이전 결과를 effect에 남겨 두는 안: 새 attempt가 진행 중인데 이전 실패 결과가 보여 복구기가 오독할 수 있다.
 - 새 schema journal을 읽기 전용으로 여는 안: 모르는 이벤트 형식을 해석할 수 없어 조용히 건너뛰게 되고, 옛 바이너리가 만든 결과가 최신 상태처럼 보인다.
