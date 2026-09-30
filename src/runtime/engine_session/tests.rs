@@ -203,3 +203,82 @@ fn parked_session_keeps_terminal_hook_and_task_identity() {
             .is_empty()
     );
 }
+
+#[cfg(all(feature = "gui", unix))]
+#[test]
+fn a_physical_pty_keeps_its_pid_generation_and_io_while_parked() {
+    use crate::app::engine_registry::EngineRegistry;
+    use std::time::{Duration, Instant};
+    let _home = crate::test_support::IsolatedHome::new();
+    let (state, mut owner) = crate::state::tests::test_state();
+    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let (terminal, pty) = tasty_terminal::spawn_terminal(
+        tasty_terminal::TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: Some("/bin/sh"),
+            args: &["-c", "stty -echo; printf READY; while IFS= read -r value; do printf 'RESULT:%s\\n' \"$value\"; done"],
+            surface_id: sid,
+            working_dir: None,
+            initial_input: None,
+            extra_env: &[],
+        },
+        Arc::new(|| {}),
+    ).unwrap();
+    let pid = pty.process_id().unwrap();
+    let generation = pty.generation();
+    owner.runtime.terminals.insert(sid, terminal, Some(pty));
+    let mut registry = EngineRegistry::default();
+    let engine_id = registry.park_for_test(state, owner);
+    let engine = registry.get_mut(engine_id).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !engine
+        .runtime
+        .terminals
+        .get(sid)
+        .unwrap()
+        .screen_text(false)
+        .contains("READY")
+    {
+        assert!(
+            Instant::now() < deadline,
+            "parked reader did not ingest actual PTY output"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    engine
+        .runtime
+        .terminals
+        .get_mut(sid)
+        .unwrap()
+        .send_bytes(b"parked-input\n");
+    while !engine
+        .runtime
+        .terminals
+        .get(sid)
+        .unwrap()
+        .screen_text(false)
+        .contains("RESULT:parked-input")
+    {
+        assert!(
+            Instant::now() < deadline,
+            "parked writer/reader did not complete actual I/O"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(registry.unpark_first().unwrap().0, engine_id);
+    let engine = registry.get_mut(engine_id).unwrap();
+    let pty = engine.runtime.terminals.pty_mut(sid).unwrap();
+    assert_eq!(pty.process_id(), Some(pid));
+    assert_eq!(pty.generation(), generation);
+    assert!(pty.is_alive());
+    assert!(
+        engine
+            .runtime
+            .terminals
+            .get(sid)
+            .unwrap()
+            .screen_text(false)
+            .contains("RESULT:parked-input")
+    );
+}

@@ -181,7 +181,7 @@ mirror grid 는 **client 가 구동(client-driven)** 한다(ADR-0022) — mirror
 
 ## surface cwd 전파
 
-mirror 터미널은 로컬 PTY 가 없어 `Terminal::get_cwd` 의 pid 폴백이 돌지 않는다 — 원격 셸이 OSC 7 을 방출해 출력 바이트에 실려 올 때만 cwd 를 안다. 서버는 PTY 를 소유하므로 OSC 7 이 없어도 OS 조회로 안다. 그래서 busy·attention 과 같은 형태로 **서버가 cwd 를 push** 한다(server→client 단방향, [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)).
+mirror 터미널은 로컬 PTY가 없어 `TerminalStore::cwd`에서 OS PID 조회로 보완할 수 없다 — 원격 셸이 OSC 7 을 방출해 출력 바이트에 실려 올 때만 cwd 를 안다. 서버는 PTY 를 소유하므로 OSC 7 이 없어도 OS 조회로 안다. 그래서 busy·attention 과 같은 형태로 **서버가 cwd 를 push** 한다(server→client 단방향, [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)).
 
 - **서버측 계산·forward**: 같은 1Hz `Tick::Busy` 에서 `EngineMut::forward_surface_cwd`(`core/attach_runtime.rs`)가 `surface_cwd_forwards`(`core/state/surface_cwd.rs`)의 계산 결과를 `StreamControl::Cwd{surface_id, cwd}` 로 holder 에 push 한다. 값은 서버 **자기 트리** 기준의 `EngineRef::surface_cwd` — terminal 은 OSC 7 캐시 → PTY 프로세스의 OS cwd, 그 외 kind 는 `source_cwd()`(explorer root · markdown 파일 부모) — 이고 **모든 kind** 가 대상이다. `inherit_cwd` 설정은 보지 않는다(관측이지 실행이 아니다). 연결 지점은 busy/attention 과 같은 3 곳(`src/app/busy.rs` 의 main window·parked engine, `src/boot.rs` 의 headless).
 - **diff 캐시는 (holder, 값)**: `last_forwarded_cwd` 는 값과 함께 holder 를 기억한다. 값만 기억하면 같은 tick 창 안에서 점유가 풀리고 다른 client 가 잡았을 때 엔트리가 점유 해제 `retain` 을 살아남아 새 holder 가 초기값을 못 받는다. 초기 push 는 값이 `None` 이어도 나간다.
@@ -625,7 +625,7 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 - **조회할 cwd 선택**: 두 API는 경로를 얻는 방식이 다르다.
   `list_dir_request`는 클라이언트가 보낸 `dir` 문자열을 그대로 사용한다.
   `git_query_request`는 `worktree_path`가 없으면 서버가 `surface_id`로 해당 PTY를 찾아
-  `Terminal::get_cwd()`를 호출한다. OSC-7 캐시를 먼저 보고 `/proc`·`proc_pidinfo`로
+  `TerminalStore::cwd(surface_id)`를 호출한다. Terminal의 OSC-7 캐시를 먼저 보고 같은 항목의 Pty에서 PID를 빌려 `/proc`·`proc_pidinfo`로
   보완하므로, 원격 셸이 OSC 7을 보내지 않아도 OS에서 cwd를 조회할 수 있다.
   클라이언트가 재생한 OSC-7 정보에 의존하지 않는다.
 

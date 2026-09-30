@@ -495,13 +495,6 @@ pub(crate) enum CoreEvent {
         body: String,
     },
 
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "some shared event fields are read only by GUI dispatch and remain unused in headless builds"
-        )
-    )]
     TerminalBellRing {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,
@@ -535,13 +528,6 @@ pub(crate) enum CoreEvent {
     },
 
     /// 출력 이후 일정 시간 동안 OSC 133 경계가 없다는 안내 요청. 셸 통합 미설치를 확정한 것은 아니다.
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "some shared event fields are read only by GUI dispatch and remain unused in headless builds"
-        )
-    )]
     TerminalShellIntegrationHint {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,
@@ -549,13 +535,6 @@ pub(crate) enum CoreEvent {
 
     /// 클립보드 쓰기를 시도했다는 알림. Core는 쓰기 오류를 기록하고 이 이벤트도 반환한다.
     /// GUI는 surface 범위의 복사 toast를 표시하므로 이벤트 자체가 쓰기 성공을 보장하지는 않는다.
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "some shared event fields are read only by GUI dispatch and remain unused in headless builds"
-        )
-    )]
     TerminalClipboardSet {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,

@@ -52,7 +52,7 @@ pub(crate) trait PtyOutput: Send + 'static {
     fn is_attached(&self) -> bool;
 }
 
-/// Exit result obtained by the unique child owner, after the child has been reaped.
+/// Compatibility outcome from the child owner. Inspect PtyPhase to distinguish reap from wait failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PtyExit {
     pub code: Option<i32>,

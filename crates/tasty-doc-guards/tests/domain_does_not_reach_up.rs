@@ -94,10 +94,9 @@ const UPPER: &[(&str, &str)] = &[
 /// 제품 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
 /// headless에 소비자가 없는 정의를 제외하는 조건 자체는 허용한다(ADR-0003).
 /// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
-// readonly Terminal 사본은 CoreState의 headless unused 필드에서 EngineRuntime의 GUI 전용 필드로 옮겼다.
-// 필드와 초기화의 두 조건으로 원래 cfg_attr 한 조건을 대체하여 전체 조건 수가 하나 늘었다.
-// SurfaceCwdChanged is GUI-only; its terminal binding match arm must share that gate.
-const GUI_GATES_IN_DOMAIN: usize = 211;
+// Readonly Terminal fields and the SurfaceCwdChanged match arm have no headless consumers.
+// Shared generation fields are read in both hosts and need no conditional dead_code expectation.
+const GUI_GATES_IN_DOMAIN: usize = 208;
 
 /// 2026-09-21 실측 92파일(core84·ports8, test 전용이 아닌 파일 91)을 기준으로 둔 수집 하한.
 const MIN_DOMAIN_FILES: usize = 80;

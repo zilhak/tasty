@@ -145,7 +145,7 @@ close 진입
  ├─ C4 ws_memory_purge     purge_scope(Scope::Workspace) — sqlite 풀스캔
  └─ C5 cleanup_targets     surface 마다 EngineMut::cleanup_surface_traced (합계)
      ├─ C5a scrollback_delete   fs::remove_file
-     ├─ C5b terminal_drop       Terminal drop → PTY kill + master 해제
+     ├─ C5b terminal_drop       Terminal/Pty 항목 drop → 연결 무효화 + Pty 종료 요청·master 해제 (reap은 비동기)
      ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b, 화면 cache 해제는 제외)
      └─ C5d memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔 (surface 당 1회)
 close_total

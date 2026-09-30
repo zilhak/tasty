@@ -138,7 +138,7 @@ impl EngineMut<'_> {
 
 impl EngineMut<'_> {
     /// 유휴 TTL이 지난 등록을 지우고 Terminal과 waker 기록도 함께 정리한다.
-    /// 실제 자식 종료·회수는 Terminal의 소유권과 플랫폼별 Drop 처리에 달려 있다.
+    /// 실제 자식 종료·회수는 같은 항목에 있던 Pty owner의 플랫폼별 Drop이 수행한다.
     pub(crate) fn sweep_idle_ptys(&mut self, now: Instant) -> Vec<u32> {
         let expired = self.runtime.terminals.expired_standalone_ids(now);
         for pty_id in &expired {

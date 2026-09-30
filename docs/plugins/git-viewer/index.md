@@ -45,7 +45,7 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
   (`git_viewer.query` plugin→host IPC → attach `git_query_request`/`git_query_result` 이벤트
   쌍 → Event Bus unicast로 plugin 회신). status/log/diff/worktrees 전부 이 경로로 동작하며,
   refresh·worktree 전환·파일→diff 클릭 각각 별도 왕복을 트리거한다. 서버는 client 가 forward한
-  cwd 문자열이 아니라 자신의 실제 원격 PTY(`surface_id` 로 찾은 `Terminal::get_cwd()`)로 저장소를
+  cwd 문자열이 아니라 서버의 `TerminalStore::cwd(surface_id)`로 OSC-7 캐시와 명시 Pty의 OS cwd를 조회해 저장소를
   discover 한다. 응답이 크면(700KiB 예산) status/log/diff 순으로 잘라 보낸다. 설계 근거·wire
   포맷 상세는 [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md).
 
