@@ -1,3 +1,5 @@
+mod aggregate;
+
 use super::*;
 use std::time::Duration;
 use tasty_domain::{StructuralCommand, StructureModels, evolve_streams};
@@ -123,7 +125,7 @@ fn duplicate_admission_resolves_once_and_multistream_result_waits_for_publicatio
         1,
         Work::Resolve(vec![category("slot-1", 1), category("slot-2", 2)]),
     );
-    let Completion::Publish { batch, before } = receive(&worker) else {
+    let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publication before response")
     };
     assert_eq!(batch.streams.len(), 2);
@@ -176,7 +178,7 @@ fn rejected_publication_halts_later_commands_without_returning_success() {
         ResultValue::Reserved(_)
     ));
     submit(&worker, 1, Work::Resolve(vec![category("slot-1", 1)]));
-    let Completion::Publish { batch, before } = receive(&worker) else {
+    let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publish")
     };
     assert!(
@@ -354,7 +356,12 @@ fn prepare_workspace(
         executed.status,
         tasty_event_store::CommandStatus::InProgress
     );
-    assert_eq!(executed.response, None);
+    let progress: Vec<tasty_domain::StructuralResult> =
+        serde_json::from_slice(executed.response.as_ref().unwrap()).unwrap();
+    assert!(matches!(
+        &progress[..],
+        [tasty_domain::StructuralResult::Pending { .. }]
+    ));
     operation
 }
 
@@ -551,7 +558,7 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
     // Its unrelated original Terminal stays in the store to catch accidental SID replacement.
     engine.replace_local_workspaces(Vec::new());
     engine.categories = vec![crate::model::WorkspaceCategory::new(1, "category-1".into())];
-    let prepared = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
+    let mut prepared = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
     let generation = prepared
         .connection
         .as_ref()
@@ -579,11 +586,11 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
             result: PreparationResult::Ready { data: None },
         },
     );
-    let Completion::Publish { batch, before } = receive(&worker) else {
+    let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publication")
     };
-    let (leaf, installation) = prepared.into_installation();
-    let mut leaves = std::collections::HashMap::from([(sid, leaf)]);
+    let installation = prepared.begin_installation(engine.core).unwrap();
+    let mut leaves = std::collections::HashMap::new();
     let mut retired = Vec::new();
     live_projection::apply(
         engine.core,
@@ -615,12 +622,13 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         &worker,
         5,
         Work::CleanupFinished {
-            lease: installed.lease,
+            lease: installed.lease.clone(),
         },
     );
-    let Completion::Publish { batch, before } = receive(&worker) else {
+    let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("completion publication")
     };
+    leaves.insert(sid, prepared.into_leaf(&installed).unwrap());
     live_projection::apply(
         engine.core,
         &before[&binding.stream],
@@ -763,7 +771,7 @@ fn complete_conversion_and_reap(
         .unwrap();
     finished(worker, 10).unwrap();
     let claimed = claim(worker, 11, operation);
-    let candidate = effect_runner::prepare(engine, binding, claimed).unwrap();
+    let mut candidate = effect_runner::prepare(engine, binding, claimed).unwrap();
     assert_eq!(engine.runtime.terminals.generation(sid), Some(original));
     assert_eq!(
         engine.runtime.terminals.pty(sid).unwrap().process_id(),
@@ -778,11 +786,11 @@ fn complete_conversion_and_reap(
             result: PreparationResult::Ready { data: None },
         },
     );
-    let Completion::Publish { batch, before } = receive(worker) else {
+    let Completion::Publish { batch, before, .. } = receive(worker) else {
         panic!("publication")
     };
-    let (leaf, installation) = candidate.into_installation();
-    let mut leaves = std::collections::HashMap::from([(sid, leaf)]);
+    let installation = candidate.begin_installation(engine.core).unwrap();
+    let mut leaves = std::collections::HashMap::new();
     let mut retired = Vec::new();
     live_projection::apply(
         engine.core,
@@ -795,12 +803,13 @@ fn complete_conversion_and_reap(
         &mut retired,
     )
     .unwrap();
-    let Some(live_projection::Retired::Surface(old)) = retired.first() else {
-        panic!("retired surface")
-    };
-    let installed = installation
-        .install(engine, None, Some(old.as_ref()))
-        .unwrap();
+    assert!(
+        retired.is_empty(),
+        "authorization does not remove the old kind"
+    );
+    assert_eq!(engine.find_surface_by_id(sid).unwrap().kind(), "terminal");
+    let old = effect_runner::RetiringKind::capture(engine.find_surface_by_id(sid).unwrap());
+    let installed = installation.install(engine, None, Some(old)).unwrap();
     assert!(engine.runtime.terminals.get(sid).is_none());
     worker.acknowledge(batch.batch_id, Ok(())).unwrap();
     finished(worker, 12).unwrap();
@@ -823,12 +832,13 @@ fn complete_conversion_and_reap(
         worker,
         14,
         Work::CleanupFinished {
-            lease: installed.lease,
+            lease: installed.lease.clone(),
         },
     );
-    let Completion::Publish { batch, before } = receive(worker) else {
+    let Completion::Publish { batch, before, .. } = receive(worker) else {
         panic!("completion")
     };
+    leaves.insert(sid, candidate.into_leaf(&installed).unwrap());
     live_projection::apply(
         engine.core,
         &before[&binding.stream],
@@ -848,4 +858,90 @@ fn complete_conversion_and_reap(
     };
     assert_eq!(record.status, tasty_event_store::CommandStatus::Completed);
     assert_eq!(engine.find_surface_by_id(sid).unwrap().kind(), "empty");
+}
+
+#[test]
+fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publication() {
+    use crate::runtime::effect_runner::{self, ExecutionBinding};
+    use tasty_domain::PreparationResult;
+    for reload in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let worker = start(home.path());
+        seed_category(&worker);
+        let operation = prepare_workspace(&worker, 1, "late-install", "late-kind");
+        let claimed = claim(&worker, 2, operation);
+        let binding = ExecutionBinding {
+            stream: claimed.lease.stream.clone(),
+            runtime_epoch: claimed.lease.runtime_epoch,
+            engine_incarnation: claimed.engine_incarnation,
+        };
+        let (_view, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let original_ids = engine.live_surface_ids();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let declaration = serde_json::from_value(serde_json::json!({"kind":"late-kind","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
+        crate::plugin_bridge::remote_kind::register_remote_kind(
+            &engine.surface_registry,
+            "com.test.late",
+            &declaration,
+            sender.clone(),
+        );
+        let mut candidate = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
+        let lease = candidate.lease.clone();
+        submit(
+            &worker,
+            3,
+            Work::Prepared {
+                lease: lease.clone(),
+                result: PreparationResult::Ready { data: None },
+            },
+        );
+        publish(&worker);
+        finished(&worker, 3).unwrap();
+        engine.surface_registry.withdraw_plugin("com.test.late");
+        if reload {
+            crate::plugin_bridge::remote_kind::register_remote_kind(
+                &engine.surface_registry,
+                "com.test.late",
+                &declaration,
+                sender,
+            );
+        }
+        let error = match candidate.begin_installation(engine.core) {
+            Ok(_) => panic!("stale kind installed"),
+            Err(error) => error,
+        };
+        assert!(
+            receiver.try_recv().is_err(),
+            "no stale Created was published"
+        );
+        assert_eq!(engine.live_surface_ids(), original_ids);
+        assert!(
+            candidate.discard().is_none(),
+            "remote proxy had no physical PTY to retire"
+        );
+        submit(
+            &worker,
+            4,
+            Work::InstallationRejected {
+                lease,
+                reason: error.to_string(),
+            },
+        );
+        publish(&worker);
+        finished(&worker, 4).unwrap();
+        submit(&worker, 5, Work::Admit(header("late-install")));
+        let ResultValue::Stored(record) = finished(&worker, 5).unwrap() else {
+            panic!("record")
+        };
+        assert_eq!(record.status, tasty_event_store::CommandStatus::Failed);
+        submit(&worker, 6, Work::ReadEngine(binding.stream));
+        let ResultValue::Engine(model) = finished(&worker, 6).unwrap() else {
+            panic!("model")
+        };
+        assert!(
+            model.workspaces.is_empty(),
+            "authorization never published a workspace"
+        );
+    }
 }

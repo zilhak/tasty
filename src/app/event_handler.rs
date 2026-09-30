@@ -21,14 +21,34 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        if self.journal.is_halted()
+            && !matches!(
+                event,
+                AppEvent::Shutdown
+                    | AppEvent::QuitRequested
+                    | AppEvent::IpcReady
+                    | AppEvent::JournalReady
+            )
+        {
+            return;
+        }
+
         // 부팅 중 출력 이벤트를 소비하면 engine이 아직 views에 없어 wake를 잃을 수 있다. 완료 뒤 재생한다.
         if let Some(boot) = self.boot.as_mut()
-            && !matches!(event, AppEvent::Shutdown | AppEvent::QuitRequested)
+            && !matches!(
+                event,
+                AppEvent::Shutdown | AppEvent::QuitRequested | AppEvent::JournalReady
+            )
         {
             boot.pending_events.push(event);
             return;
         }
         match event {
+            AppEvent::JournalReady => {
+                if let Some(boot) = &self.boot {
+                    boot.window.request_redraw();
+                }
+            }
             AppEvent::CreateWindow(origin, completion) => {
                 let outcome = self.create_new_window(event_loop, origin);
                 if let Some(completion) = completion {
@@ -217,6 +237,10 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        if self.journal.is_halted() && !matches!(event, WindowEvent::CloseRequested) {
+            return;
+        }
+
         if let Some(modal_id) = self.view.active_modal_id()
             && id == modal_id
         {
@@ -299,6 +323,13 @@ impl ApplicationHandler<AppEvent> for App {
             } else {
                 winit::event_loop::ControlFlow::Wait
             });
+            return;
+        }
+
+        if self.journal.is_halted() {
+            self.ipc_pacer.loop_reached_about_to_wait();
+            self.process_ipc();
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
             return;
         }
 

@@ -1,6 +1,6 @@
 # ADR-0065: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
 
-- **Status**: Accepted — 구현 상태: 이행 전. 구조 journal은 제품 경로에 연결되지 않았고, 현재 구조의 원본은 메모리 CoreState와 레이아웃 슬롯이다. incremental projection 적용기와 shadow 비교는 시험 경계에 있으며 엔진별 제품 활성화는 아직 없다
+- **Status**: Accepted — 구현 상태: 이행 중. App의 초기 엔진 구성은 journal worker·확정 projection·실제 자원 설치에 연결했다. 선택한 복원 자료도 같은 activation 경계를 사용한다. 일반 구조 producer와 legacy import·복구 경계가 아직 이행 중이므로 엔진 단위 활성화 조건을 모두 충족한 제품 끝점은 아니다
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, domain, projection, migration
 - **Group**: foundation
@@ -37,6 +37,27 @@ IPC 응답과 GUI는 CoreState 트리를 읽는다.
   새로 만든 엔진을 먼저 켜고, 레이아웃 슬롯에서 복원한 엔진은 importer의 이관 marker를 확정한 뒤 켠다.
   mirror 구조가 전용 필드로 옮겨지기 전에는 mirror workspace를 가진 엔진을 켜지 않는다.
 - 활성화 조건은 0055와 같다. 해당 엔진의 범위 안 writer가 모두 CommandExecutor로 합류하고, 옛 writer와 새 writer가 같은 대상을 섞어 쓰지 않아야 한다.
+
+### 현재 이행 경계
+
+`src/app/journal.rs`가 데이터 홈의 worker 하나와 엔진별 비동기 continuation을 연결한다.
+worker의 순수 구조 모델을 초기 논리 projection과 확정 batch 적용에 사용하며,
+App이 별도 가변 JournalModel 원본을 유지하지 않는다. 준비 요청·완료 채널과 복원 읽기 개수,
+App 한 회의 완료 처리량은 제한한다.
+
+생성·변환은 Pending operation과 outbox를 확정하고 claim한 뒤 후보를 만든다.
+준비 성공 다음 commit은 설치 권한·옛 owner 정리 의무만 확정한다. 외부 게시·설치와 정확한
+옛 PTY 회수 뒤 최종 commit이 구조 변경·Ready·원 요청 완료를 함께 확정하고 공개한다.
+설치 전 kind 철회·등록 교체는 후보를 폐기하고 기존 인스턴스를 유지한다.
+외부 게시 이후의 불명 결과는 이행 중인 Recovery 경계에서 대조해야 하며, 알려진 실패로
+바꿔 자동 재실행하지 않는다.
+
+표시면은 첫 capture 전에도 생성 자료 참조를 유지한다. 복원은 snapshot을 우선하고,
+없으면 generic 생성 params/CWD를 사용한다. terminal은 현재 셸 설정과 저장된 명시적
+복원 명령을 사용하며 과거 실행 인자·입력을 자동 재전송하지 않는다.
+복원 capture는 기존 DataRef로 읽고, 같은 자료를 준비 요청에 복사해 다시 저장하지 않는다.
+선택되지 않은 terminal과 아직 등록되지 않은 kind의 지연 활성화 및 일반 명령 진입점은
+계속 이행 중이다. 이 상태를 완전한 writer 단일화나 장애 복구 완료로 해석하지 않는다.
 
 ## Consequences
 

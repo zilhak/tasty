@@ -10,7 +10,9 @@ pub fn boot_phase_text_key(phase: &BootPhase) -> &'static str {
     match phase {
         BootPhase::GpuInit | BootPhase::WaitingEngine { .. } => "boot.phase_gpu_init",
         BootPhase::WaitingPlugins { .. } => "boot.phase_waiting_plugins",
-        BootPhase::RestoringLayout { .. } => "boot.phase_restoring_layout",
+        BootPhase::WaitingJournal | BootPhase::RestoringLayout { .. } => {
+            "boot.phase_restoring_layout"
+        }
     }
 }
 

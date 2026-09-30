@@ -23,7 +23,7 @@ pub(crate) fn clipboard_set_text(
     }
 }
 
-/// remote.workspaces()와 remote.attach가 공유하는 접속 인자. profile과 ssh 중 하나만 받는다.
+/// remote.workspaces와 remote.attach가 공유하는 접속 인자. profile과 ssh 중 하나만 받는다.
 pub(crate) struct RemoteConnParams {
     pub(crate) profile: Option<String>,
     pub(crate) ssh: Option<String>,

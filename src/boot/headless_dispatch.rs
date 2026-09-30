@@ -48,6 +48,10 @@ fn dispatch_command(
             return std::ops::ControlFlow::Continue(());
         }
     };
+    if let Some(response) = app.journal.reject_halted_request(&cmd.request) {
+        send_response(&cmd.response_tx, response);
+        return std::ops::ControlFlow::Continue(());
+    }
     // App 전용 응답도 공용 검사 뒤에 처리한다. checked 요청은 다시 검사하지 않는다.
     let checked = match crate::ipc::handler::check_request(
         &mut app.core,

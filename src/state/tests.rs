@@ -885,10 +885,10 @@ fn add_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) {
 fn add_mirror_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
     add_test_workspace(state, engine);
     let idx = state.active_workspace_index(engine);
+    engine.make_mirror_fixture(idx);
     let ws = engine
-        .workspace_at_mut(idx)
+        .workspace_at(idx)
         .expect("방금 만든 workspace 가 있어야 한다");
-    ws.mirror = true;
     *ws.all_surface_ids()
         .first()
         .expect("새 workspace 에 surface 하나")

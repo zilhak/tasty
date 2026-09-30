@@ -20,12 +20,17 @@ fn operation() -> Operation {
         outcome: None,
         pending_outcome: None,
         cleanup: None,
+        prepared_data: None,
         reconciliation_evidence: None,
     }
 }
 
 pub(super) fn examples() -> Vec<DomainEvent> {
     vec![
+        DomainEvent::EngineIncarnationStarted {
+            previous: 0,
+            current: 1,
+        },
         DomainEvent::OperationPrepared {
             operation: operation(),
         },
@@ -36,6 +41,7 @@ pub(super) fn examples() -> Vec<DomainEvent> {
                 surface: 99,
                 activation_generation: 1,
             },
+            prepared_data: None,
         },
         DomainEvent::OperationFinished {
             id: operation().id,
@@ -57,6 +63,11 @@ pub(super) fn examples() -> Vec<DomainEvent> {
                 generation: 1,
                 phase: ActivationPhase::Ready,
             },
+        },
+        DomainEvent::SurfaceCreationSeeded {
+            id: 1,
+            activation_generation: 1,
+            input: DataRef(11),
         },
         DomainEvent::SurfaceDataRecorded {
             id: 1,

@@ -1,3 +1,4 @@
+mod binding;
 mod effects;
 
 use std::collections::HashMap;
@@ -70,9 +71,11 @@ pub(super) fn run(
         }
         let mut predecessor = if matches!(
             request.work,
-            Work::Resolve(_)
+            Work::OpenEngine { .. }
+                | Work::Resolve(_)
                 | Work::Prepared { .. }
                 | Work::CleanupFinished { .. }
+                | Work::InstallationRejected { .. }
                 | Work::ClaimPreparation { .. }
         ) && halted.is_none()
         {
@@ -104,6 +107,10 @@ pub(super) fn run(
                 &mut published,
                 &mut predecessor,
                 &acknowledgements,
+                match &result {
+                    Ok(ResultValue::Bound(bound)) => Some(bound.binding.clone()),
+                    _ => None,
+                },
                 &send,
             )
         {
@@ -128,6 +135,10 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
+        Work::OpenEngine {
+            selection,
+            normal_category_name,
+        } => binding::open(executor, ticket, selection, normal_category_name),
         Work::Admit(admission) => {
             if pending.contains_key(&ticket)
                 || pending.values().any(|p| p.followers.contains(&ticket))
@@ -190,6 +201,16 @@ fn handle(
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
             for change in &changes {
+                if matches!(
+                    change.command,
+                    tasty_domain::StructuralCommand::OpenEngine { .. }
+                        | tasty_domain::StructuralCommand::FinishCreation { .. }
+                        | tasty_domain::StructuralCommand::FinishCleanup { .. }
+                        | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
+                        | tasty_domain::StructuralCommand::RejectInstallation { .. }
+                ) {
+                    return Err("effect results require their validated lease endpoint".into());
+                }
                 if let tasty_domain::StructuralCommand::PrepareCreation { input, .. } =
                     &change.command
                     && !admitted.inputs.contains(input)
@@ -219,6 +240,7 @@ fn handle(
                         changes,
                         effect_result: None,
                         cancellation: None,
+                        original_results: Default::default(),
                     },
                 })
                 .map_err(|e| e.to_string())?;
@@ -253,6 +275,14 @@ fn handle(
             }
             Ok(ResultValue::Reserved(ranges))
         }
+        Work::ReadPayload(reference) => {
+            let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+            let bytes = inner
+                .store
+                .read_payload(tasty_event_store::PayloadRef(reference.0))
+                .map_err(|error| error.to_string())?;
+            Ok(ResultValue::Payload { reference, bytes })
+        }
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
             .map_err(|e| e.to_string()),
@@ -275,6 +305,7 @@ fn handle(
             effects::claim(executor, &stream, &operation)
         }
         Work::Prepared { lease, result } => effects::prepared(executor, lease, result),
+        Work::InstallationRejected { lease, reason } => effects::rejected(executor, lease, reason),
         Work::CleanupFinished { lease } => effects::cleaned(executor, lease),
         Work::CancelAdmission => {
             if pending.remove(&ticket).is_none() {
@@ -292,6 +323,7 @@ fn publish(
     published: &mut Option<u64>,
     predecessor: &mut Option<tasty_domain::StructureModels>,
     acks: &Acknowledgements,
+    engine_binding: Option<super::EngineBinding>,
     send: &impl Fn(Completion) -> bool,
 ) -> Result<(), String> {
     executor.with_state(|_| ()).map_err(|e| e.to_string())?;
@@ -317,6 +349,7 @@ fn publish(
             .map(|stream| (stream.clone(), previous.stream(stream)))
             .collect();
         if !send(Completion::Publish {
+            engine_binding: engine_binding.clone(),
             batch: decoded,
             before,
         }) {

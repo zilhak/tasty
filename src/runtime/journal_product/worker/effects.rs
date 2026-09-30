@@ -42,6 +42,22 @@ pub(super) fn claim(
     if input.kind != plan.surface.kind {
         return Err("preparation input kind differs from its committed plan".into());
     }
+    let capture = if matches!(
+        plan.destination,
+        tasty_domain::CreationDestination::Restore { .. }
+    ) {
+        plan.surface
+            .data
+            .map(|reference| {
+                inner
+                    .store
+                    .read_payload(PayloadRef(reference.0))
+                    .map_err(|error| error.to_string())
+            })
+            .transpose()?
+    } else {
+        None
+    };
     let effect_id = format!("{}/prepare", id.0);
     let effect = inner
         .store
@@ -108,6 +124,7 @@ pub(super) fn claim(
         },
         input,
         plan,
+        capture,
         engine_incarnation: operation.engine_incarnation,
     }))
 }
@@ -122,6 +139,18 @@ pub(super) fn prepared(
         result,
     };
     finish(executor, lease, command, "prepared")
+}
+
+pub(super) fn rejected(
+    executor: &Executor<StructureDecider>,
+    lease: EffectLease,
+    reason: String,
+) -> Result<ResultValue> {
+    let command = StructuralCommand::RejectInstallation {
+        operation: lease.operation.clone(),
+        reason,
+    };
+    finish(executor, lease, command, "installation-rejected")
 }
 
 pub(super) fn cleaned(
@@ -148,7 +177,7 @@ fn finish(
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
-    let causation = {
+    let (causation, original_results) = {
         let inner = executor.inner.lock().map_err(|error| error.to_string())?;
         if inner.epoch.0 != lease.runtime_epoch {
             return Err("effect result belongs to an earlier runtime".into());
@@ -183,7 +212,12 @@ fn finish(
             .and_then(|model| model.operations.get(&lease.operation))
             .ok_or("effect operation missing")?;
         validate_binding(&effect, &lease.stream, operation)?;
-        operation.command_id.clone()
+        let command_id = operation.command_id.clone();
+        let template = read_original_results(&inner.store, &command_id)?;
+        (
+            command_id.clone(),
+            std::collections::BTreeMap::from([(command_id, template)]),
+        )
     };
     let request = ExecuteRequest {
         key: Some(key),
@@ -198,6 +232,7 @@ fn finish(
             }],
             effect_result: Some(lease),
             cancellation: None,
+            original_results,
         },
     };
     executor
@@ -218,6 +253,13 @@ fn cancel_unstarted(
         reason: "target disappeared before preparation started".into(),
     };
     let digest = serde_json::to_vec(&command).map_err(|error| error.to_string())?;
+    let original_results = {
+        let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+        std::collections::BTreeMap::from([(
+            original_command.clone(),
+            read_original_results(&inner.store, &original_command)?,
+        )])
+    };
     let request = ExecuteRequest {
         key: Some(CommandKey {
             caller_scope: "journal-unstarted-cancellation".into(),
@@ -234,6 +276,7 @@ fn cancel_unstarted(
             }],
             effect_result: None,
             cancellation: Some(transition),
+            original_results,
         },
     };
     executor
@@ -281,4 +324,18 @@ fn validate_binding(
         );
     }
     Ok(())
+}
+
+fn read_original_results(
+    store: &tasty_event_store::EventStore,
+    command_id: &str,
+) -> Result<Vec<tasty_domain::StructuralResult>> {
+    let record = store
+        .command(command_id)
+        .map_err(|error| error.to_string())?
+        .ok_or("original command record missing")?;
+    let response = record
+        .response
+        .ok_or("original command progress results missing")?;
+    serde_json::from_slice(&response).map_err(|error| error.to_string())
 }

@@ -185,6 +185,9 @@ pub struct Surface {
     /// terminal·markdown·plugin kind 등. 해석은 kind 소유자가 한다.
     pub kind: String,
     pub data: Option<DataRef>,
+    /// Kind launch seed remains pinned until an independent capture can restore the surface.
+    #[serde(default)]
+    pub creation_seed: Option<DataRef>,
     pub metadata: BTreeMap<String, String>,
     #[serde(default)]
     pub activation: Option<crate::Activation>,
@@ -229,10 +232,11 @@ impl JournalModel {
     pub fn data_refs(&self) -> impl Iterator<Item = DataRef> + '_ {
         self.surfaces
             .values()
-            .filter_map(|surface| surface.data)
+            .flat_map(|surface| surface.data.into_iter().chain(surface.creation_seed))
             .chain(self.operations.values().flat_map(|operation| {
                 std::iter::once(operation.input)
                     .chain(operation.reconciliation_evidence)
+                    .chain(operation.prepared_data)
                     .chain(
                         operation
                             .creation

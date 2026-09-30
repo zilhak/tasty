@@ -1,5 +1,6 @@
 //! Structural inputs contain fixed identities and values, never live services or an ID allocator.
 
+mod bootstrap;
 mod creation;
 mod metadata;
 
@@ -10,6 +11,11 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    OpenEngine {
+        expected_incarnation: u64,
+        reset_structure: bool,
+        normal_category_name: String,
+    },
     PrepareCreation {
         operation: crate::OperationId,
         command_id: String,
@@ -17,6 +23,10 @@ pub enum StructuralCommand {
         plan: crate::CreationPlan,
     },
     CancelUnstartedCreation {
+        operation: crate::OperationId,
+        reason: String,
+    },
+    RejectInstallation {
         operation: crate::OperationId,
         reason: String,
     },
@@ -101,6 +111,9 @@ impl StructuralCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StructuralResult {
+    EngineOpened {
+        incarnation: u64,
+    },
     Pending {
         operation: crate::OperationId,
     },
@@ -140,10 +153,12 @@ pub fn decide_structure(
     command: &StructuralCommand,
 ) -> Result<StructuralDecision, Rejection> {
     let decision = match command {
+        StructuralCommand::OpenEngine { .. } => bootstrap::decide(model, command)?,
         StructuralCommand::PrepareCreation { .. }
         | StructuralCommand::FinishCreation { .. }
         | StructuralCommand::FinishCleanup { .. }
-        | StructuralCommand::CancelUnstartedCreation { .. } => creation::decide(model, command)?,
+        | StructuralCommand::CancelUnstartedCreation { .. }
+        | StructuralCommand::RejectInstallation { .. } => creation::decide(model, command)?,
         _ => metadata::decide(model, command)?,
     };
     let mut candidate = model.clone();

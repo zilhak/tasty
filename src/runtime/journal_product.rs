@@ -3,6 +3,7 @@
 //! SQLite and canonical models stay on the worker. A committed batch must be acknowledged by
 //! the application projection before a successful response or another mutation is released.
 
+mod binding;
 mod decider;
 mod identity;
 mod preparation;
@@ -17,6 +18,7 @@ use tasty_domain::{IdKind, JournalModel, StreamBatch, StructureModels};
 use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 
 use super::command_executor::Executed;
+pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
 pub(crate) use preparation::{ClaimedPreparation, EffectLease, PreparationInput, ShellRecipe};
 
@@ -34,11 +36,16 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    OpenEngine {
+        selection: EngineSelection,
+        normal_category_name: String,
+    },
     /// Current permissions are checked by App before this lookup. Targets are not resolved yet.
     Admit(Admission),
     Resolve(Vec<StreamCommand>),
     Reserve(Vec<(IdKind, u32)>),
     ReadEngine(String),
+    ReadPayload(tasty_domain::DataRef),
     PutPreparation(PreparationInput),
     ClaimPreparation {
         stream: String,
@@ -47,6 +54,10 @@ pub(crate) enum Work {
     Prepared {
         lease: EffectLease,
         result: tasty_domain::PreparationResult,
+    },
+    InstallationRejected {
+        lease: EffectLease,
+        reason: String,
     },
     CleanupFinished {
         lease: EffectLease,
@@ -62,12 +73,19 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    Bound(BoundEngine),
     NeedsResolution,
-    JoinedAdmission { leader_ticket: u64 },
+    JoinedAdmission {
+        leader_ticket: u64,
+    },
     Stored(CommandRecord),
     Executed(Executed),
     Reserved(Vec<IdRange>),
     Engine(JournalModel),
+    Payload {
+        reference: tasty_domain::DataRef,
+        bytes: Vec<u8>,
+    },
     InputStored(tasty_domain::DataRef),
     Claimed(ClaimedPreparation),
     Cancelled,
@@ -84,6 +102,8 @@ pub(crate) enum Completion {
     StartupFailed(String),
     /// All affected local engines must apply this as one publication before acknowledging.
     Publish {
+        /// Explicit bootstrap destination, allocated on the worker before this batch.
+        engine_binding: Option<EngineBinding>,
         batch: StreamBatch,
         /// One-use predecessor for live preflight; App discards it after publication.
         before: std::collections::BTreeMap<String, JournalModel>,
@@ -198,6 +218,11 @@ impl Drop for JournalWorker {
 
 fn request_size(work: &Work) -> usize {
     match work {
+        Work::OpenEngine {
+            selection,
+            normal_category_name,
+        } => serde_json::to_vec(&(selection, normal_category_name))
+            .map_or(usize::MAX, |bytes| bytes.len()),
         Work::Admit(header) => header
             .original_digest
             .len()
@@ -216,6 +241,7 @@ fn request_size(work: &Work) -> usize {
             .len()
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
         Work::ReadEngine(stream) => stream.len(),
+        Work::ReadPayload(_) => std::mem::size_of::<tasty_domain::DataRef>(),
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
@@ -224,6 +250,9 @@ fn request_size(work: &Work) -> usize {
         }
         Work::Prepared { lease, result } => {
             serde_json::to_vec(&(lease, result)).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::InstallationRejected { lease, reason } => {
+            serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
         }
         Work::CleanupFinished { lease } => {
             serde_json::to_vec(lease).map_or(usize::MAX, |bytes| bytes.len())

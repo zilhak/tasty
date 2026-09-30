@@ -9,7 +9,7 @@ use crate::runtime::journal_product::{ClaimedPreparation, EffectLease};
 use crate::runtime::live_projection::PreparedLeaf;
 use tasty_terminal::{Pty, ResourceGeneration, Terminal};
 
-pub(crate) use installation::{Installation, Installed};
+pub(crate) use installation::{Installation, Installed, RetiringKind};
 
 /// An application binding permits execution for this selected engine in this process only.
 #[derive(Clone, Debug)]
@@ -25,6 +25,35 @@ pub(crate) struct PreparedMaterialization {
     pub(crate) connection: Option<(Terminal, Pty)>,
     pub(crate) publication: Option<PublicationAction>,
     previous_resource: Option<ResourceGeneration>,
+    registration: Option<KindRegistration>,
+    installed: bool,
+    scrollback_persist_id: Option<String>,
+}
+
+#[derive(Clone)]
+pub(super) struct KindRegistration {
+    kind: String,
+    definition: std::sync::Weak<crate::core::surface_registry::SurfaceKindDef>,
+}
+
+impl KindRegistration {
+    fn validate(&self, engine: &crate::core::CoreState) -> anyhow::Result<()> {
+        if let Some(plugin_id) = engine.surface_registry.withdrawn_by(&self.kind) {
+            return Err(crate::core::surface_registry::SurfaceKindWithdrawn {
+                kind: self.kind.clone(),
+                plugin_id,
+            }
+            .into());
+        }
+        let current = engine
+            .surface_registry
+            .get_live(&self.kind)
+            .ok_or_else(|| anyhow::anyhow!("prepared kind is no longer registered"))?;
+        if !self.definition.ptr_eq(&std::sync::Arc::downgrade(&current)) {
+            anyhow::bail!("prepared kind registration was replaced before installation");
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn prepare(
@@ -43,13 +72,15 @@ pub(crate) fn prepare(
     if !matches!(
         claimed.plan.destination,
         tasty_domain::CreationDestination::Convert { .. }
+            | tasty_domain::CreationDestination::Restore { .. }
     ) && (previous_resource.is_some() || engine.find_surface_by_id(surface_id).is_some())
     {
         anyhow::bail!("reserved surface ID already has a live owner");
     }
 
+    let mut scrollback_persist_id = None;
     let input = claimed.input;
-    let (surface, connection, publication) = if input.kind == "terminal" {
+    let (surface, connection, publication, registration) = if input.kind == "terminal" {
         let shell = input
             .shell
             .ok_or_else(|| anyhow::anyhow!("terminal preparation has no shell recipe"))?;
@@ -81,12 +112,42 @@ pub(crate) fn prepare(
         if shell.disk_scrollback {
             terminal.enable_disk_scrollback(surface_id);
         }
+        if let Some(bytes) = &claimed.capture {
+            match crate::core::layout_persistence::import::surface_data::SurfaceData::decode(bytes)?
+            {
+                crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {
+                    scrollback,
+                    scrollback_ref,
+                    ..
+                } => {
+                    scrollback_persist_id = scrollback_ref;
+                    if let Some(blob) = scrollback {
+                        if let Some(lines) =
+                            tasty_terminal::disk_scrollback::deserialize_lines(&blob)
+                        {
+                            if !lines.is_empty() {
+                                terminal.inject_scrollback(lines);
+                                let prefill = terminal.rows() / 2;
+                                terminal.prefill_visible_from_scrollback(prefill);
+                            }
+                        } else {
+                            tracing::warn!(
+                                surface_id,
+                                "stored scrollback could not be decoded; keeping its immutable capture"
+                            );
+                        }
+                    }
+                }
+                _ => anyhow::bail!("terminal activation capture belongs to another kind"),
+            }
+        }
         if !shell.startup_command.trim().is_empty() {
             terminal.send_key(&format!("{}\n", shell.startup_command.trim()));
         }
         (
             Box::new(TerminalSurface { id: surface_id }) as Box<dyn crate::model::Surface>,
             Some((terminal, pty)),
+            None,
             None,
         )
     } else {
@@ -101,11 +162,27 @@ pub(crate) fn prepare(
             .surface_registry
             .get_live(&input.kind)
             .ok_or_else(|| anyhow::anyhow!("surface kind {} is not registered", input.kind))?;
-        let prepared = match input.restore {
+        let restore = match claimed.capture.as_deref() {
+            Some(bytes) => match crate::core::layout_persistence::import::surface_data::SurfaceData::decode(bytes)? {
+                crate::core::layout_persistence::import::surface_data::SurfaceData::Generic { data } => Some(data),
+                _ => anyhow::bail!("generic activation capture belongs to another kind"),
+            },
+            None => input.restore,
+        };
+        let prepared = match restore {
             Some(data) => (definition.restore)(surface_id, &data)?,
             None => (definition.create)(surface_id, input.cwd.as_deref(), &input.params)?,
         };
-        (prepared.surface, None, prepared.publication)
+        let registration = KindRegistration {
+            kind: input.kind.clone(),
+            definition: std::sync::Arc::downgrade(&definition),
+        };
+        (
+            prepared.surface,
+            None,
+            prepared.publication,
+            Some(registration),
+        )
     };
     Ok(PreparedMaterialization {
         lease: claimed.lease,
@@ -116,26 +193,56 @@ pub(crate) fn prepare(
         connection,
         publication,
         previous_resource,
+        registration,
+        installed: false,
+        scrollback_persist_id,
     })
 }
 
 impl PreparedMaterialization {
-    /// Split ownership only after the preparation result is durable; neither part is cloned.
-    pub(crate) fn into_installation(self) -> (PreparedLeaf, Installation) {
-        let id = self
-            .leaf
-            .surface
-            .surface_id()
-            .expect("prepared kind has a fixed surface ID");
-        (
-            self.leaf,
-            Installation {
-                lease: self.lease,
-                surface_id: id,
-                previous_resource: self.previous_resource,
-                connection: self.connection,
-                publication: self.publication,
-            },
-        )
+    /// Installation consumes external handles while the engine keeps the unpublished kind leaf.
+    pub(crate) fn begin_installation(
+        &mut self,
+        engine: &crate::core::CoreState,
+    ) -> anyhow::Result<Installation> {
+        if self.installed {
+            anyhow::bail!("prepared materialization was already installed");
+        }
+        if let Some(registration) = &self.registration {
+            registration.validate(engine)?;
+        }
+        self.installed = true;
+        Ok(Installation {
+            lease: self.lease.clone(),
+            surface_id: self
+                .leaf
+                .surface
+                .surface_id()
+                .expect("prepared surface has a fixed ID"),
+            previous_resource: self.previous_resource,
+            connection: self.connection.take(),
+            publication: self.publication.take(),
+            registration: self.registration.take(),
+            scrollback_persist_id: self.scrollback_persist_id.take(),
+        })
+    }
+
+    pub(crate) fn discard(self) -> Option<tasty_terminal::PtyRetirement> {
+        self.connection.map(|(terminal, pty)| {
+            drop(terminal);
+            pty.retire()
+        })
+    }
+
+    pub(crate) fn into_leaf(self, installed: &Installed) -> anyhow::Result<PreparedLeaf> {
+        if self.lease != installed.lease
+            || !installed.cleanup_complete()?
+            || !self.installed
+            || self.connection.is_some()
+            || self.publication.is_some()
+        {
+            anyhow::bail!("uninstalled materialization cannot be published");
+        }
+        Ok(self.leaf)
     }
 }

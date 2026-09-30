@@ -710,10 +710,7 @@ mod explorer_open_tests {
         for mirror in [false, true] {
             let (mut state, mut engine_session) = crate::state::tests::test_state();
             let mut engine = engine_session.borrow_mut();
-            engine
-                .workspace_at_mut(0)
-                .expect("workspace index is valid")
-                .mirror = mirror;
+            engine.set_workspace_mirror_fixture(0, mirror);
             let sid = engine
                 .workspace_at(0)
                 .expect("workspace index is valid")

@@ -47,6 +47,7 @@ pub(super) fn decide(
                 outcome: None,
                 pending_outcome: None,
                 cleanup: None,
+                prepared_data: None,
                 reconciliation_evidence: None,
             };
             Ok(StructuralDecision {
@@ -98,23 +99,13 @@ pub(super) fn decide(
             let PreparationResult::Ready { data } = result else {
                 unreachable!()
             };
-            let mut plan = plan.clone();
-            plan.surface.data = *data;
-            let mut events = creation_events(model, &plan);
-            let previous_generation = model
-                .surfaces
-                .get(&plan.surface.id)
-                .and_then(|surface| surface.activation.map(|activation| activation.generation));
-            events.push(DomainEvent::SurfaceActivationChanged {
-                id: plan.surface.id,
-                previous_generation,
-                activation: Activation {
-                    generation: operation.activation_generation,
-                    phase: ActivationPhase::Requested,
-                },
-            });
+            let mut events = Vec::new();
             let previous_activation = match &plan.destination {
                 Destination::Convert {
+                    previous_activation,
+                    ..
+                }
+                | Destination::Restore {
                     previous_activation,
                     ..
                 } => Some(*previous_activation),
@@ -127,12 +118,15 @@ pub(super) fn decide(
                     surface: plan.surface.id,
                     previous_activation,
                 },
+                prepared_data: *data,
             });
             Ok(StructuralDecision {
                 events,
                 completed_command: None,
                 effects: Vec::new(),
-                result: created_result(&plan),
+                result: StructuralResult::Pending {
+                    operation: id.clone(),
+                },
             })
         }
         StructuralCommand::FinishCleanup { operation: id } => {
@@ -148,12 +142,11 @@ pub(super) fn decide(
                 .clone()
                 .ok_or_else(|| Rejection("operation is not awaiting cleanup".into()))?;
             let result = match &outcome {
-                OperationOutcome::Succeeded => created_result(
-                    operation
-                        .creation
-                        .as_ref()
-                        .ok_or_else(|| Rejection("creation plan missing".into()))?,
-                ),
+                OperationOutcome::Succeeded => operation
+                    .creation
+                    .as_ref()
+                    .ok_or_else(|| Rejection("creation plan missing".into()))?
+                    .created_result(),
                 OperationOutcome::Failed { reason }
                 | OperationOutcome::Cancelled { reason }
                 | OperationOutcome::Superseded { reason }
@@ -166,20 +159,38 @@ pub(super) fn decide(
                 operation.cleanup,
                 Some(crate::CleanupPlan::InstallPrepared { .. })
             ) {
-                let surface = operation
+                let mut plan = operation
                     .creation
                     .as_ref()
                     .ok_or_else(|| Rejection("creation plan missing".into()))?
-                    .surface
-                    .id;
+                    .clone();
+                validate_target(model, &plan)?;
+                if operation.engine_incarnation != model.engine_incarnation {
+                    return Err(Rejection(
+                        "engine incarnation changed while installation was authorized".into(),
+                    ));
+                }
+                plan.surface.data = operation.prepared_data;
+                events = creation_events(model, &plan);
+                let previous_generation = model
+                    .surfaces
+                    .get(&plan.surface.id)
+                    .and_then(|surface| surface.activation.map(|activation| activation.generation));
                 events.push(DomainEvent::SurfaceActivationChanged {
-                    id: surface,
-                    previous_generation: Some(operation.activation_generation),
+                    id: plan.surface.id,
+                    previous_generation,
                     activation: Activation {
                         generation: operation.activation_generation,
                         phase: ActivationPhase::Ready,
                     },
                 });
+                if !matches!(plan.destination, Destination::Restore { .. }) {
+                    events.push(DomainEvent::SurfaceCreationSeeded {
+                        id: plan.surface.id,
+                        activation_generation: operation.activation_generation,
+                        input: operation.input,
+                    });
+                }
             }
             events.push(DomainEvent::OperationFinished {
                 id: id.clone(),
@@ -190,6 +201,38 @@ pub(super) fn decide(
                 effects: Vec::new(),
                 completed_command: Some(operation.command_id.clone()),
                 result,
+            })
+        }
+        StructuralCommand::RejectInstallation {
+            operation: id,
+            reason,
+        } => {
+            let operation = model
+                .operations
+                .get(id)
+                .ok_or_else(|| Rejection("installation operation missing".into()))?;
+            if operation.outcome.is_some()
+                || !matches!(
+                    operation.cleanup,
+                    Some(crate::CleanupPlan::InstallPrepared { .. })
+                )
+            {
+                return Err(Rejection(
+                    "installation is not waiting for publication".into(),
+                ));
+            }
+            Ok(StructuralDecision {
+                events: vec![DomainEvent::OperationFinished {
+                    id: id.clone(),
+                    outcome: OperationOutcome::Failed {
+                        reason: reason.clone(),
+                    },
+                }],
+                effects: Vec::new(),
+                completed_command: Some(operation.command_id.clone()),
+                result: StructuralResult::Failed {
+                    reason: reason.clone(),
+                },
             })
         }
         StructuralCommand::CancelUnstartedCreation {
@@ -254,6 +297,7 @@ fn failed(
                     surface: plan.surface.id,
                     activation_generation: operation.activation_generation,
                 },
+                prepared_data: None,
             }
         } else {
             DomainEvent::OperationFinished {
@@ -315,6 +359,7 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
             });
             None
         }
+        Destination::Restore { .. } => None,
         Destination::Convert {
             surface,
             explicit_name,
@@ -356,25 +401,4 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
         }
     }
     events
-}
-
-fn created_result(plan: &CreationPlan) -> StructuralResult {
-    let (workspace, pane, tab) = match plan.destination {
-        Destination::Workspace {
-            workspace,
-            pane,
-            tab,
-            ..
-        } => (Some(workspace), Some(pane), Some(tab)),
-        Destination::Tab { pane, tab, .. } | Destination::Pane { pane, tab, .. } => {
-            (None, Some(pane), Some(tab))
-        }
-        _ => (None, None, None),
-    };
-    StructuralResult::Created {
-        workspace,
-        pane,
-        tab,
-        surface: plan.surface.id,
-    }
 }

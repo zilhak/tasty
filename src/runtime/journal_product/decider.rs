@@ -1,5 +1,7 @@
 //! Typed structural commands are decided without access to the store or live resources.
 
+mod completion;
+
 use serde::{Deserialize, Serialize};
 use tasty_domain::{
     Decider, Decision, DecisionContext, DomainEvent, Rejection, StructuralCommand,
@@ -25,6 +27,8 @@ pub(crate) struct ResolvedCommand {
     pub(crate) changes: Vec<StreamCommand>,
     pub(crate) effect_result: Option<super::EffectLease>,
     pub(crate) cancellation: Option<tasty_event_store::EffectTransition>,
+    /// Result templates read before deciding a completion, never fetched from storage inside decide.
+    pub(crate) original_results: std::collections::BTreeMap<String, Vec<StructuralResult>>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,39 +147,14 @@ impl JournalDecider for StructureDecider {
         command: &ResolvedCommand,
         decision: &Decision<StreamEvent, NewEffect>,
     ) -> CommandRecordPlan {
-        let mut command_updates = Vec::new();
-        for recorded in &decision.events {
-            if let DomainEvent::OperationFinished { id, outcome } = &recorded.event
-                && let Some(operation) = state
-                    .streams
-                    .get(recorded.stream.as_str())
-                    .and_then(|model| model.operations.get(id))
-            {
-                let status = match outcome {
-                    tasty_domain::OperationOutcome::Succeeded => CommandStatus::Completed,
-                    tasty_domain::OperationOutcome::Cancelled { .. }
-                    | tasty_domain::OperationOutcome::Superseded { .. } => CommandStatus::Cancelled,
-                    tasty_domain::OperationOutcome::Failed { .. } => CommandStatus::Failed,
-                    tasty_domain::OperationOutcome::Uncertain { .. } => CommandStatus::InProgress,
-                };
-                let status = if decision.effects.is_empty() {
-                    status
-                } else {
-                    CommandStatus::InProgress
-                };
-                command_updates.push(tasty_event_store::CommandUpdate {
-                    command_id: operation.command_id.clone(),
-                    status,
-                    response: status.is_terminal().then(|| decision.response.clone()),
-                });
-            }
-        }
+        let command_updates = completion::aggregate(state, command, decision);
         let internal = command.changes.iter().all(|change| {
             matches!(
                 change.command,
                 StructuralCommand::FinishCreation { .. }
                     | StructuralCommand::FinishCleanup { .. }
                     | StructuralCommand::CancelUnstartedCreation { .. }
+                    | StructuralCommand::RejectInstallation { .. }
             )
         });
         let pending = !internal && !decision.effects.is_empty();
@@ -185,7 +164,7 @@ impl JournalDecider for StructureDecider {
             } else {
                 CommandStatus::Completed
             },
-            response: (!pending).then(|| decision.response.clone()),
+            response: Some(decision.response.clone()),
             command_updates,
             effect_transitions: command
                 .effect_result

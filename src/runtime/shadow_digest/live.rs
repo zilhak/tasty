@@ -78,6 +78,13 @@ pub(crate) fn core_canonical(engine: &CoreState) -> Canonical {
 
 /// 저장 형식이 정하는 kind. 대기 중인 terminal은 terminal, plugin 대기는 기다리는 kind다.
 pub(crate) fn core_kind(surface: &dyn Surface) -> String {
+    if let Some(pending) = surface
+        .as_any()
+        .downcast_ref::<crate::runtime::live_projection::bootstrap::JournalPlaceholder>(
+    ) {
+        return pending.kind.clone();
+    }
+
     if surface.as_any().is::<TerminalSurface>() {
         return "terminal".to_owned();
     }

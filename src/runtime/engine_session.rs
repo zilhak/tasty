@@ -25,15 +25,13 @@ impl EngineId {
 /// 엔진 수명 원본. 창 연결은 App registry에 있고 실행 자원은 이 객체와 함께 산다.
 /// observer/hook/task를 Terminal보다 먼저 정리한다. TaskScope drop은 task 취소가 아니다.
 pub(crate) struct EngineSession {
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "headless has one local session and no engine routing registry"
-        )
-    )]
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
+    pub(crate) journal_binding: Option<crate::runtime::journal_product::EngineBinding>,
+    pub(crate) pending_materializations: std::collections::HashMap<
+        tasty_domain::OperationId,
+        crate::runtime::effect_runner::PreparedMaterialization,
+    >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
     pub(crate) task_scope: crate::core::task_service::TaskScope,
     pub(crate) observer_router: crate::output_observer::ObserverRouter,

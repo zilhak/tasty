@@ -39,6 +39,8 @@ pub struct SplitSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainEvent {
+    #[serde(rename = "engine.incarnation_started")]
+    EngineIncarnationStarted { previous: u64, current: u64 },
     #[serde(rename = "category.created")]
     CategoryCreated {
         id: WorkspaceCategoryId,
@@ -157,6 +159,12 @@ pub enum DomainEvent {
         kind: String,
         data: Option<DataRef>,
     },
+    #[serde(rename = "surface.creation_seeded")]
+    SurfaceCreationSeeded {
+        id: SurfaceId,
+        activation_generation: u64,
+        input: DataRef,
+    },
     #[serde(rename = "surface.data_recorded")]
     SurfaceDataRecorded {
         id: SurfaceId,
@@ -192,6 +200,7 @@ pub enum DomainEvent {
         id: OperationId,
         outcome: OperationOutcome,
         cleanup: crate::CleanupPlan,
+        prepared_data: Option<DataRef>,
     },
     #[serde(rename = "operation.finished")]
     OperationFinished {
@@ -224,6 +233,7 @@ impl DomainEvent {
             }
             Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
             Self::SurfaceDataRecorded { data, .. } => vec![*data],
+            Self::SurfaceCreationSeeded { input, .. } => vec![*input],
             Self::OperationPrepared { operation } => std::iter::once(operation.input)
                 .chain(
                     operation
@@ -232,6 +242,9 @@ impl DomainEvent {
                         .and_then(|plan| plan.surface.data),
                 )
                 .collect(),
+            Self::OperationAwaitingCleanup { prepared_data, .. } => {
+                prepared_data.iter().copied().collect()
+            }
             Self::OperationReconciled { evidence, .. } => vec![*evidence],
             _ => Vec::new(),
         }
@@ -239,6 +252,7 @@ impl DomainEvent {
 
     /// 이 빌드가 아는 모든 type tag. codec은 이 밖의 tag를 거절한다.
     pub const TAGS: &'static [&'static str] = &[
+        "engine.incarnation_started",
         "category.created",
         "category.renamed",
         "category.moved",
@@ -262,6 +276,7 @@ impl DomainEvent {
         "surface.closed",
         "surface.converted",
         "surface.data_recorded",
+        "surface.creation_seeded",
         "surface.activation_changed",
         "pane.ratio_set",
         "surface.ratio_set",
@@ -275,6 +290,7 @@ impl DomainEvent {
 
     pub fn type_tag(&self) -> &'static str {
         match self {
+            Self::EngineIncarnationStarted { .. } => "engine.incarnation_started",
             Self::CategoryCreated { .. } => "category.created",
             Self::CategoryRenamed { .. } => "category.renamed",
             Self::CategoryMoved { .. } => "category.moved",
@@ -298,6 +314,7 @@ impl DomainEvent {
             Self::SurfaceClosed { .. } => "surface.closed",
             Self::SurfaceConverted { .. } => "surface.converted",
             Self::SurfaceDataRecorded { .. } => "surface.data_recorded",
+            Self::SurfaceCreationSeeded { .. } => "surface.creation_seeded",
             Self::SurfaceActivationChanged { .. } => "surface.activation_changed",
             Self::PaneRatioSet { .. } => "pane.ratio_set",
             Self::SurfaceRatioSet { .. } => "surface.ratio_set",

@@ -44,6 +44,15 @@ impl HeadlessWaker {
         send_ipc_ready(&self.tx, &self.ipc_gate);
     }
 
+    pub(crate) fn journal_waker(&self) -> IpcWaker {
+        let tx = self.tx.clone();
+        Arc::new(move || {
+            if tx.send(AppEvent::JournalReady).is_err() {
+                tracing::trace!("journal wake after headless shutdown");
+            }
+        })
+    }
+
     pub(crate) fn stream_waker(&self) -> IpcWaker {
         let tx = self.tx.clone();
         Arc::new(move || {

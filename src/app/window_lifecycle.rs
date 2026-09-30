@@ -500,13 +500,17 @@ impl App {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;
         };
-        let active_workspace = main.state.active_workspace_index(&session.core_state);
-        Self::retire_main_engine(
-            &mut self.core,
-            &mut session.borrow_mut(),
-            active_workspace,
-            &main.state.navigation,
-        );
+        // A halted batch may have changed only part of the live tree. Closing remains available,
+        // but neither capture nor slot deletion may turn that partial projection into restore input.
+        if !self.journal.is_halted() {
+            let active_workspace = main.state.active_workspace_index(&session.core_state);
+            Self::retire_main_engine(
+                &mut self.core,
+                &mut session.borrow_mut(),
+                active_workspace,
+                &main.state.navigation,
+            );
+        }
         drop(main);
         drop(session);
     }

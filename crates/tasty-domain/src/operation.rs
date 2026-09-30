@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DataRef, IdKind};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OperationId(pub String);
 
@@ -52,6 +52,8 @@ pub struct Operation {
     pub pending_outcome: Option<OperationOutcome>,
     #[serde(default)]
     pub cleanup: Option<crate::CleanupPlan>,
+    #[serde(default)]
+    pub prepared_data: Option<DataRef>,
     pub reconciliation_evidence: Option<DataRef>,
 }
 

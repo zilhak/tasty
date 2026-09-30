@@ -4,9 +4,9 @@
 
 #[cfg(any(feature = "gui", test))]
 mod capture;
-mod import;
+pub(crate) mod import;
 mod restore;
-mod schema;
+pub(crate) mod schema;
 #[cfg(any(feature = "gui", test))]
 mod scrollback;
 #[cfg(test)]

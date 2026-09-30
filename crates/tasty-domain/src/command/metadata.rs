@@ -17,10 +17,12 @@ pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<Struct
         | StructuralCommand::MoveTab { .. }
         | StructuralCommand::SetPaneRatio { .. }
         | StructuralCommand::SetSurfaceRatio { .. } => tab_or_ratio(m, cmd),
-        StructuralCommand::PrepareCreation { .. }
+        StructuralCommand::OpenEngine { .. }
+        | StructuralCommand::PrepareCreation { .. }
         | StructuralCommand::FinishCreation { .. }
         | StructuralCommand::FinishCleanup { .. }
-        | StructuralCommand::CancelUnstartedCreation { .. } => {
+        | StructuralCommand::CancelUnstartedCreation { .. }
+        | StructuralCommand::RejectInstallation { .. } => {
             unreachable!("creation has its own decision rules")
         }
     }

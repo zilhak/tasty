@@ -112,6 +112,10 @@ impl App {
             Some(c) => c,
             None => return IpcStep::Handled,
         };
+        if let Some(response) = self.journal.reject_halted_request(&cmd.request) {
+            crate::ipc::server::send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         let checked = match self.gates_before_routing(&cmd.request, &caller) {
             Ok(checked) => checked,
             Err(response) => {

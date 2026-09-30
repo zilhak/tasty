@@ -16,6 +16,7 @@ pub(crate) mod journal;
 pub(crate) mod journal_product;
 pub(crate) mod live_projection;
 pub(crate) mod shadow_digest;
+pub(crate) mod surface_restorer;
 
 #[cfg(test)]
 mod tests;

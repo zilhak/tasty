@@ -453,6 +453,21 @@ fn bootstrap_engine(
         std::sync::Arc::clone(app.core.tasks.runner_registry()),
     )?;
     engine.core_state.waker_factory = Some(factory);
+    app.journal.begin_engine(
+        engine.id,
+        crate::runtime::journal_product::EngineSelection::FreshHeadless,
+    );
+    while engine.journal_binding.is_none() || !app.journal.is_ready(engine.id) {
+        app.journal
+            .poll_bootstrap(&mut [&mut engine])
+            .map_err(anyhow::Error::msg)?;
+        app.journal
+            .poll_restore_bootstrap(&engine)
+            .map_err(anyhow::Error::msg)?;
+        if !app.journal.is_ready(engine.id) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
     app.core.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,
@@ -513,12 +528,28 @@ fn wait_for_event(
 fn dispatch_headless_event(
     app: &mut crate::app::App,
     state: &mut crate::state::RequestContext,
-    engine: &mut EngineMut<'_>,
+    session: &mut crate::runtime::engine_session::EngineSession,
     waker: &crate::adapters::production::headless_waker::HeadlessWaker,
     event: crate::AppEvent,
 ) -> std::ops::ControlFlow<()> {
     use crate::AppEvent;
+    if matches!(event, AppEvent::JournalReady) {
+        if let Err(error) = app.journal.poll_bootstrap(&mut [session]) {
+            tracing::error!("committed structure publication halted: {error}");
+        }
+        return std::ops::ControlFlow::Continue(());
+    }
+    if app.journal.is_halted()
+        && !matches!(
+            event,
+            AppEvent::Shutdown | AppEvent::QuitRequested | AppEvent::IpcReady
+        )
+    {
+        return std::ops::ControlFlow::Continue(());
+    }
+    let engine = &mut session.borrow_mut();
     match event {
+        AppEvent::JournalReady => unreachable!("journal event handled above"),
         AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
         AppEvent::IpcReady => {
@@ -570,7 +601,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let boot_settings = crate::settings::Settings::load();
     let memory_arc = boot_memory(&boot_settings);
 
-    let mut app = App::new_headless(cli.port_file, memory_arc)?;
+    let mut app = App::new_headless(waker.journal_waker(), cli.port_file, memory_arc)?;
     start_ipc_and_seed(&mut app, &waker);
 
     let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
@@ -601,8 +632,14 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
     loop {
-        crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
-        crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine.as_ref());
+        if !app.journal.is_halted() {
+            crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
+            crate::intent::headless::drain_pending_host_events(
+                &app.core,
+                &mut state,
+                &engine.as_ref(),
+            );
+        }
         // 대기 전에 agent 이벤트를 발행한다. 대기 중 새 항목이 쌓이면 다음 루프에서 전달한다.
         {
             let mut agent_events = Vec::new();
@@ -614,22 +651,31 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             );
             crate::app::agent_events::emit(app.plugin_manager.as_mut(), agent_events, dropped);
         }
-        let deadline = crate::app::timers::min_deadline(
-            app.timers.next_deadline(),
-            app.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
-        );
+        let deadline = if app.journal.is_halted() {
+            None
+        } else {
+            crate::app::timers::min_deadline(
+                app.timers.next_deadline(),
+                app.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
+            )
+        };
         let pending = match wait_for_event(&rx, deadline) {
             Wait::Event(ev) => Some(ev),
             Wait::Deadline => None,
             Wait::Disconnected => break,
         };
 
-        run_due_timers(&mut app, &mut state, &mut engine);
+        if !app.journal.is_halted() {
+            run_due_timers(&mut app, &mut state, &mut engine);
+        }
 
         let Some(event) = pending else {
             continue;
         };
-        if dispatch_headless_event(&mut app, &mut state, &mut engine, &waker, event).is_break() {
+        drop(engine);
+        let flow = dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event);
+        engine = session.borrow_mut();
+        if flow.is_break() {
             break;
         }
     }

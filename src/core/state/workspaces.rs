@@ -292,6 +292,16 @@ impl CoreState {
             .into_iter()
             .partition(|workspace| workspace.mirror);
     }
+    pub(crate) fn set_workspace_mirror_fixture(&mut self, index: usize, mirror: bool) {
+        if self.workspace_at(index).expect("fixture workspace").mirror == mirror {
+            return;
+        }
+        if mirror {
+            self.make_mirror_fixture(index);
+        } else {
+            self.make_local_fixture(index);
+        }
+    }
     pub(crate) fn make_local_fixture(&mut self, index: usize) {
         let mut workspace = self.remove_workspace_at(index);
         workspace.mirror = false;

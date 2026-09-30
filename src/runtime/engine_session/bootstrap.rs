@@ -8,8 +8,7 @@ use tasty_terminal::Waker;
 
 impl EngineSession {
     /// 기본 Settings와 in-memory 저장소로 생성한다. 사용자 config.toml의 설정을 읽지 않는다.
-    // 이유: 현재 호출처가 모두 #[cfg(test)]에 있다.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
             std::sync::Arc::new(std::sync::Mutex::new(
@@ -40,7 +39,7 @@ impl EngineSession {
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>,
     ) -> anyhow::Result<Self> {
-        let state = Self::new_with_ids_and_settings(
+        let state = Self::for_journal(
             cols,
             rows,
             waker,
@@ -53,6 +52,31 @@ impl EngineSession {
         Ok(state)
     }
 
+    /// Allocate services and the resource owner without creating a local structure or PTY.
+    pub(crate) fn for_journal(
+        cols: usize,
+        rows: usize,
+        waker: Waker,
+        shared_ids: Option<IdGenerator>,
+        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
+        settings: Settings,
+    ) -> anyhow::Result<Self> {
+        Self::assemble(
+            cols,
+            rows,
+            waker,
+            shared_ids,
+            layout_slot,
+            memory,
+            runner_registry,
+            settings,
+            false,
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn new_with_ids_and_settings(
         cols: usize,
         rows: usize,
@@ -63,12 +87,38 @@ impl EngineSession {
         runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
         settings: Settings,
     ) -> anyhow::Result<Self> {
+        Self::assemble(
+            cols,
+            rows,
+            waker,
+            shared_ids,
+            layout_slot,
+            memory,
+            runner_registry,
+            settings,
+            true,
+        )
+    }
+
+    fn assemble(
+        cols: usize,
+        rows: usize,
+        waker: Waker,
+        shared_ids: Option<IdGenerator>,
+        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
+        settings: Settings,
+        materialize_default: bool,
+    ) -> anyhow::Result<Self> {
         // CoreState와 실행 자원이 파일을 읽기 전에 검사 홈을 설정한다.
         #[cfg(test)]
         let isolated_home = Some(crate::test_support::IsolatedHome::new());
         let next_ids = shared_ids.unwrap_or_default();
         let mut session = Self {
             id: EngineId::issue(),
+            journal_binding: None,
+            pending_materializations: Default::default(),
             core_state: CoreState::new_base(
                 cols,
                 rows,
@@ -94,7 +144,7 @@ impl EngineSession {
         };
         let mut engine = session.borrow_mut();
         // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
-        if engine.pending_layout_restore.is_none() {
+        if materialize_default && engine.pending_layout_restore.is_none() {
             let ws_id = engine.next_ids.next_workspace();
             let pane_id = engine.next_ids.next_pane();
             let tab_id = engine.next_ids.next_tab();

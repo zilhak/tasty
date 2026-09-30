@@ -25,7 +25,7 @@ pub(crate) struct ShellRecipe {
     pub(crate) restore_command: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct EffectLease {
     pub(crate) effect_id: String,
     pub(crate) operation: tasty_domain::OperationId,
@@ -40,6 +40,8 @@ pub(crate) struct ClaimedPreparation {
     pub(crate) lease: EffectLease,
     pub(crate) input: PreparationInput,
     pub(crate) plan: tasty_domain::CreationPlan,
+    /// Immutable capture bytes read by the storage worker, never replayed as PTY input.
+    pub(crate) capture: Option<Vec<u8>>,
     pub(crate) engine_incarnation: u64,
 }
 

@@ -29,6 +29,11 @@ pub enum CreationDestination {
         target: u32,
         split: SplitSpec,
     },
+    /// Re-materialize a selected committed leaf without changing its kind, capture or tree.
+    Restore {
+        surface: u32,
+        previous_activation: Option<u64>,
+    },
     Convert {
         surface: u32,
         previous_activation: Option<u64>,
@@ -64,7 +69,9 @@ impl CreationPlan {
                 vec![entity(IdKind::Pane, *pane), entity(IdKind::Tab, *tab)]
             }
             CreationDestination::Split { .. } => Vec::new(),
-            CreationDestination::Convert { .. } => return Vec::new(),
+            CreationDestination::Convert { .. } | CreationDestination::Restore { .. } => {
+                return Vec::new();
+            }
         };
         result.push(entity(IdKind::Surface, self.surface.id));
         result
@@ -81,7 +88,11 @@ impl CreationPlan {
                 .is_some_and(|pane| *index <= pane.tabs.len()),
             CreationDestination::Pane { target, .. } => model.panes.contains_key(target),
             CreationDestination::Split { target, .. } => model.surfaces.contains_key(target),
-            CreationDestination::Convert {
+            CreationDestination::Restore {
+                surface,
+                previous_activation,
+            }
+            | CreationDestination::Convert {
                 surface,
                 previous_activation,
                 ..
@@ -90,6 +101,9 @@ impl CreationPlan {
                     && model.surfaces.get(surface).is_some_and(|surface| {
                         surface.activation.map(|activation| activation.generation)
                             == *previous_activation
+                            && (!matches!(self.destination, CreationDestination::Restore { .. })
+                                || (surface.kind == self.surface.kind
+                                    && surface.data == self.surface.data))
                     })
             }
         }
@@ -101,7 +115,8 @@ impl CreationPlan {
             CreationDestination::Tab { pane, .. } => (IdKind::Pane, *pane),
             CreationDestination::Pane { target, .. } => (IdKind::Pane, *target),
             CreationDestination::Split { target, .. } => (IdKind::Surface, *target),
-            CreationDestination::Convert { surface, .. } => (IdKind::Surface, *surface),
+            CreationDestination::Convert { surface, .. }
+            | CreationDestination::Restore { surface, .. } => (IdKind::Surface, *surface),
         };
         vec![EntityId { kind, id }]
     }
@@ -137,4 +152,26 @@ pub enum CleanupPlan {
         surface: u32,
         activation_generation: u64,
     },
+}
+
+impl CreationPlan {
+    pub fn created_result(&self) -> crate::StructuralResult {
+        let (workspace, pane, tab) = match self.destination {
+            CreationDestination::Workspace {
+                workspace,
+                pane,
+                tab,
+                ..
+            } => (Some(workspace), Some(pane), Some(tab)),
+            CreationDestination::Tab { pane, tab, .. }
+            | CreationDestination::Pane { pane, tab, .. } => (None, Some(pane), Some(tab)),
+            _ => (None, None, None),
+        };
+        crate::StructuralResult::Created {
+            workspace,
+            pane,
+            tab,
+            surface: self.surface.id,
+        }
+    }
 }

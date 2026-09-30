@@ -8,6 +8,7 @@ pub(super) fn apply_event(
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
+        DomainEvent::EngineIncarnationStarted { .. } => {}
         DomainEvent::CategoryCreated { id, name, index } => engine
             .categories
             .insert(*index, WorkspaceCategory::new(*id, name.clone())),
@@ -142,7 +143,25 @@ pub(super) fn apply_event(
         | DomainEvent::SurfaceRatioSet { .. } => {
             layout::apply_event(engine, event, prepared, retired)?
         }
-        DomainEvent::SurfaceDataRecorded { .. }
+        DomainEvent::SurfaceActivationChanged { id, activation, .. }
+            if activation.phase == tasty_domain::ActivationPhase::Ready
+                && prepared.contains_key(id) =>
+        {
+            let leaf = take_prepared(prepared, *id)?;
+            let target_tab = engine
+                .find_tab_for_surface(*id)
+                .ok_or("restoring surface missing")?;
+            let slot = tab(engine, target_tab)?
+                .layout_mut()
+                .find_leaf_mut(*id)
+                .ok_or("restoring leaf missing")?;
+            if !slot.as_any().is::<bootstrap::JournalPlaceholder>() {
+                return Err("activation cannot replace a live kind without conversion".into());
+            }
+            retired.push(Retired::Surface(std::mem::replace(slot, leaf)));
+        }
+        DomainEvent::SurfaceCreationSeeded { .. }
+        | DomainEvent::SurfaceDataRecorded { .. }
         | DomainEvent::SurfaceActivationChanged { .. }
         | DomainEvent::OperationPrepared { .. }
         | DomainEvent::OperationAwaitingCleanup { .. }

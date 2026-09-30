@@ -142,10 +142,7 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .mirror = mirror;
+        engine.set_workspace_mirror_fixture(0, mirror);
         engine.layout_dirty.clear();
         let rename = make(engine.workspace_at(0).expect("workspace index is valid").id);
         let intent = Intent::DirectRename(rename).from_user_menu("test");
@@ -190,10 +187,7 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .mirror = mirror;
+        engine.set_workspace_mirror_fixture(0, mirror);
         let (pane_id, tab_id) = first_tab(&engine);
         let intent = Intent::DirectRename(DirectRename::TabName {
             tab_id,

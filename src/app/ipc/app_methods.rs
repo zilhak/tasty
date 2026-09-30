@@ -90,7 +90,7 @@ impl App {
             self.ipc_dispatch_task_await(cmd);
             return IpcStep::Handled;
         }
-        if cmd.request.method == "remote.workspaces()" {
+        if cmd.request.method == "remote.workspaces" {
             self.ipc_dispatch_remote_workspaces(cmd);
             return IpcStep::Handled;
         }

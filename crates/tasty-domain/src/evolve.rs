@@ -78,6 +78,15 @@ pub fn evolve(model: &mut JournalModel, batch: &DomainBatch) -> Result<()> {
 
 fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
     match event {
+        DomainEvent::EngineIncarnationStarted { previous, current } => {
+            if m.engine_incarnation != previous || previous.checked_add(1) != Some(current) {
+                return Err(EvolveError::InvalidFact(
+                    "engine incarnation did not advance from its predecessor".into(),
+                ));
+            }
+            m.engine_incarnation = current;
+            Ok(())
+        }
         DomainEvent::CategoryCreated { id, name, index } => create_category(m, id, name, index),
         DomainEvent::CategoryRenamed { id, name } => {
             get_mut(&mut m.categories, IdKind::Category, id)?.name = name;
@@ -157,6 +166,23 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             surface.snapshot_schema = 0;
             Ok(())
         }
+        DomainEvent::SurfaceCreationSeeded {
+            id,
+            activation_generation,
+            input,
+        } => {
+            let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
+            if input.0 == 0
+                || surface.activation.map(|activation| activation.generation)
+                    != Some(activation_generation)
+            {
+                return Err(EvolveError::InvalidFact(
+                    "creation seed belongs to an earlier activation".into(),
+                ));
+            }
+            surface.creation_seed = Some(input);
+            Ok(())
+        }
         DomainEvent::SurfaceDataRecorded {
             id,
             activation_generation,
@@ -200,7 +226,8 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             id,
             outcome,
             cleanup,
-        } => lifecycle::await_cleanup(m, id, outcome, cleanup),
+            prepared_data,
+        } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data),
         DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
         DomainEvent::OperationReconciled {
             id,
@@ -490,6 +517,7 @@ fn insert_surface(m: &mut JournalModel, tab: TabId, spec: SurfaceSpec) {
             tab,
             kind: spec.kind,
             data: spec.data,
+            creation_seed: None,
             metadata: Default::default(),
             activation: None,
             content_generation: 0,

@@ -90,8 +90,11 @@ fn conversion_preserves_the_old_instance_until_commit_and_waits_for_cleanup() {
             },
         },
     );
-    assert_eq!(model.surfaces[&1].kind, "markdown");
-    assert_eq!(model.tabs[&1].explicit_name.as_deref(), Some("notes.md"));
+    assert_eq!(
+        model.surfaces[&1], old_surface,
+        "installation authorization preserves the old visible structure"
+    );
+    assert_eq!(model.tabs[&1].explicit_name, None);
     assert_eq!(result.completed_command, None);
     assert!(
         result.effects.is_empty(),
@@ -105,10 +108,7 @@ fn conversion_preserves_the_old_instance_until_commit_and_waits_for_cleanup() {
             previous_activation: Some(None)
         })
     ));
-    assert_eq!(
-        model.surfaces[&1].activation.unwrap().phase,
-        ActivationPhase::Requested
-    );
+    assert_eq!(model.surfaces[&1].activation, old_surface.activation);
     let complete = execute(
         &mut model,
         &StructuralCommand::FinishCleanup {
@@ -124,6 +124,9 @@ fn conversion_preserves_the_old_instance_until_commit_and_waits_for_cleanup() {
         Some(OperationOutcome::Succeeded)
     );
     assert_eq!(model.operations[&operation].cleanup, None);
+    assert_eq!(model.surfaces[&1].kind, "markdown");
+    assert_eq!(model.surfaces[&1].data, Some(DataRef(88)));
+    assert_eq!(model.tabs[&1].explicit_name.as_deref(), Some("notes.md"));
     assert_eq!(
         model.surfaces[&1].activation.unwrap().phase,
         ActivationPhase::Ready
@@ -147,6 +150,12 @@ fn single_terminal_conversion_clears_explicit_name_but_split_conversion_keeps_it
             &StructuralCommand::FinishCreation {
                 operation: OperationId("convert".into()),
                 result: PreparationResult::Ready { data: None },
+            },
+        );
+        execute(
+            &mut model,
+            &StructuralCommand::FinishCleanup {
+                operation: OperationId("convert".into()),
             },
         );
         assert_eq!(
@@ -193,4 +202,63 @@ fn deleted_target_discards_prepared_resources_before_original_command_completion
         model.operations[&operation].outcome,
         Some(OperationOutcome::Cancelled { .. })
     ));
+}
+
+#[test]
+fn successful_creation_seed_survives_operation_compaction_and_restore_keeps_it() {
+    let mut model = initial(false);
+    let operation = OperationId("seeded".into());
+    execute(&mut model, &convert("seeded", "markdown", None));
+    execute(
+        &mut model,
+        &StructuralCommand::FinishCreation {
+            operation: operation.clone(),
+            result: PreparationResult::Ready { data: None },
+        },
+    );
+    execute(&mut model, &StructuralCommand::FinishCleanup { operation });
+    assert_eq!(model.surfaces[&1].creation_seed, Some(DataRef(77)));
+    model.operations.clear();
+    assert!(model.data_refs().any(|reference| reference == DataRef(77)));
+    let surface = model.surfaces[&1].clone();
+    let operation = OperationId("restored".into());
+    execute(
+        &mut model,
+        &StructuralCommand::PrepareCreation {
+            operation: operation.clone(),
+            command_id: "restore-command".into(),
+            input: DataRef(99),
+            plan: CreationPlan {
+                destination: CreationDestination::Restore {
+                    surface: 1,
+                    previous_activation: surface.activation.map(|a| a.generation),
+                },
+                surface: SurfaceSpec {
+                    id: 1,
+                    kind: surface.kind.clone(),
+                    data: surface.data,
+                },
+                tab_name: String::new(),
+                explicit_name: None,
+            },
+        },
+    );
+    execute(
+        &mut model,
+        &StructuralCommand::FinishCreation {
+            operation: operation.clone(),
+            result: PreparationResult::Ready { data: None },
+        },
+    );
+    assert_eq!(
+        model.surfaces[&1], surface,
+        "authorization does not replace the committed leaf"
+    );
+    execute(&mut model, &StructuralCommand::FinishCleanup { operation });
+    assert_eq!(model.surfaces[&1].kind, surface.kind);
+    assert_eq!(model.surfaces[&1].data, surface.data);
+    assert_eq!(model.surfaces[&1].creation_seed, Some(DataRef(77)));
+    assert!(
+        model.surfaces[&1].activation.unwrap().generation > surface.activation.unwrap().generation
+    );
 }

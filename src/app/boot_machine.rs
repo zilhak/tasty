@@ -24,6 +24,7 @@ pub(crate) const PLUGIN_WAIT_DEADLINE: Duration = Duration::from_millis(300);
 
 pub(crate) enum BootPhase {
     GpuInit,
+    WaitingJournal,
     /// 엔진·플러그인 워커를 기다린다. 결과 없이 채널이 끊기면 동기로 다시 초기화한다.
     WaitingEngine {
         started: Instant,
@@ -189,6 +190,9 @@ impl App {
         if matches!(boot.phase, BootPhase::WaitingEngine { .. }) {
             return self.boot_step_waiting_engine(boot);
         }
+        if matches!(boot.phase, BootPhase::WaitingJournal) {
+            return self.boot_step_waiting_journal(boot);
+        }
         if matches!(boot.phase, BootPhase::WaitingPlugins { .. }) {
             return self.boot_step_waiting_plugins(boot);
         }
@@ -339,6 +343,44 @@ impl App {
     }
 
     fn boot_transition_after_engine(&mut self, boot: &mut BootState) -> bool {
+        let id = self
+            .engines
+            .pending_id()
+            .expect("boot engine was installed");
+        let session = self.engines.session_mut(id).expect("pending engine exists");
+        let slot = session
+            .core_state
+            .layout_slot
+            .expect("GUI engine has a layout slot");
+        self.journal.begin_engine(
+            id,
+            crate::runtime::journal_product::EngineSelection::Slot {
+                slot,
+                resume: session.core_state.settings.general.restore_layout,
+            },
+        );
+        boot.phase = BootPhase::WaitingJournal;
+        false
+    }
+
+    fn boot_step_waiting_journal(&mut self, boot: &mut BootState) -> bool {
+        let id = self.engines.pending_id().expect("pending bootstrap engine");
+        let session = self.engines.session_mut(id).expect("pending engine exists");
+        if let Err(error) = self.journal.poll_bootstrap(&mut [session]) {
+            self.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            return false;
+        }
+        if let Err(error) = self.journal.poll_restore_bootstrap(session) {
+            self.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            return false;
+        }
+        if session.journal_binding.is_none() || !self.journal.is_ready(id) {
+            return false;
+        }
+        self.boot_transition_after_journal(boot)
+    }
+
+    fn boot_transition_after_journal(&mut self, boot: &mut BootState) -> bool {
         if self.core_state().pending_layout_restore.is_some() {
             let needed = self.boot_required_plugin_kinds();
             let now = Instant::now();

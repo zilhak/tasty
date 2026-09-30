@@ -3,6 +3,7 @@
 //! Prepared objects and retired objects each have one owner. Resource execution is the caller's
 //! responsibility; this module neither spawns a process nor reads a stored payload.
 
+pub(crate) mod bootstrap;
 mod layout;
 mod structure;
 
@@ -68,6 +69,22 @@ fn preflight(
                 Some((surface.id, surface.kind.as_str()))
             }
             DomainEvent::SurfaceConverted { id, kind, .. } => Some((*id, kind.as_str())),
+            DomainEvent::SurfaceActivationChanged { id, activation, .. }
+                if activation.phase == tasty_domain::ActivationPhase::Ready
+                    && engine.find_surface_by_id(*id).is_some_and(|surface| {
+                        surface.as_any().is::<bootstrap::JournalPlaceholder>()
+                    }) =>
+            {
+                Some((
+                    *id,
+                    after
+                        .surfaces
+                        .get(id)
+                        .ok_or("restoring logical surface missing")?
+                        .kind
+                        .as_str(),
+                ))
+            }
             DomainEvent::MetadataSet { .. } | DomainEvent::MetadataRemoved { .. } => {
                 return Err("service metadata is not part of the live structure projection".into());
             }

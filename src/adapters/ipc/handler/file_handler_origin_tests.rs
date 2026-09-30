@@ -89,10 +89,7 @@ fn dispatch_through_with(
         assert_eq!(engine.find_pane_for_surface(sid), Some(pane_id));
         params["origin_surface_id"] = json!(sid);
     }
-    engine
-        .workspace_at_mut(0)
-        .expect("workspace index is valid")
-        .mirror = mirror;
+    engine.set_workspace_mirror_fixture(0, mirror);
 
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let resp = handle_dispatch(&mut out, &mut state, &engine, caller, json!(1), params);
@@ -514,10 +511,7 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
     for (mirror, expected) in [(false, "deep"), (true, "deep")] {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .mirror = mirror;
+        engine.set_workspace_mirror_fixture(0, mirror);
         let sid = engine
             .workspace_at(0)
             .expect("workspace index is valid")

@@ -61,6 +61,7 @@ pub(crate) enum AppEvent {
     /// contains the surface_id that has new data. Otherwise None (poll all).
     TerminalOutput(Option<u32>),
     IpcReady,
+    JournalReady,
     /// 들어온 스트림 프레임 큐를 비우도록 깨운다.
     StreamReady,
     /// egui viewport는 모두 ROOT여서 창 ID로 repaint 대상을 구별한다.

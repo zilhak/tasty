@@ -38,6 +38,7 @@ pub(crate) mod image_upload;
 #[cfg(feature = "gui")]
 pub(crate) mod ipc;
 pub(crate) mod ipc_round;
+pub(crate) mod journal;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
@@ -107,6 +108,7 @@ impl std::fmt::Display for NoGpuAdapter {
 impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
+    pub(crate) journal: journal::JournalApplication,
     pub(crate) core: Core,
     pub(crate) hub: Hub,
     /// IPC 연결 스레드가 수신자를 등록하고 메인 루프가 출력을 전송한다.
@@ -285,7 +287,16 @@ impl App {
             let proxy = proxy.clone();
             move || proxy.send_event(AppEvent::TimerTick).is_ok()
         });
+        let journal = journal::JournalApplication::new({
+            let proxy = proxy.clone();
+            Arc::new(move || {
+                if proxy.send_event(AppEvent::JournalReady).is_err() {
+                    tracing::trace!("journal wake after GUI shutdown");
+                }
+            })
+        })?;
         Ok(Self {
+            journal,
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
@@ -356,6 +367,7 @@ impl App {
     /// GUI 자원 없이 mpsc waker로 시작한다.
     #[cfg(not(feature = "gui"))]
     pub(crate) fn new_headless(
+        journal_wake: std::sync::Arc<dyn Fn() + Send + Sync>,
         port_file: Option<String>,
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
     ) -> anyhow::Result<Self> {
@@ -363,6 +375,7 @@ impl App {
         let mut timers = tasty_timer::TimerHub::new();
         timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
+            journal: journal::JournalApplication::new(journal_wake)?,
             core: crate::boot::wiring::build_production_core_headless(memory)?,
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),

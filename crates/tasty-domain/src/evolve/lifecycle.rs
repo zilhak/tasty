@@ -11,6 +11,7 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
         || operation.outcome.is_some()
         || operation.pending_outcome.is_some()
         || operation.cleanup.is_some()
+        || operation.prepared_data.is_some()
         || operation.reconciliation_evidence.is_some()
     {
         return Err(EvolveError::InvalidFact(
@@ -100,6 +101,7 @@ pub(super) fn finish(
     if !matches!(outcome, OperationOutcome::Uncertain { .. }) {
         op.pending_outcome = None;
         op.cleanup = None;
+        op.prepared_data = None;
     }
     op.outcome = Some(outcome);
     op.reconciliation_evidence = evidence;
@@ -182,6 +184,7 @@ pub(super) fn await_cleanup(
     id: OperationId,
     outcome: OperationOutcome,
     cleanup: crate::CleanupPlan,
+    prepared_data: Option<DataRef>,
 ) -> Result<()> {
     let operation = m
         .operations
@@ -190,6 +193,7 @@ pub(super) fn await_cleanup(
     if operation.outcome.is_some()
         || operation.pending_outcome.is_some()
         || operation.cleanup.is_some()
+        || prepared_data.is_some_and(|data| data.0 == 0)
         || matches!(outcome, OperationOutcome::Uncertain { .. })
     {
         return Err(EvolveError::InvalidFact(
@@ -198,5 +202,6 @@ pub(super) fn await_cleanup(
     }
     operation.pending_outcome = Some(outcome);
     operation.cleanup = Some(cleanup);
+    operation.prepared_data = prepared_data;
     Ok(())
 }
