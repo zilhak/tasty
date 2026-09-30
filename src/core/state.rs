@@ -399,9 +399,6 @@ pub struct CoreState {
     pub(crate) file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// PluginManager와 공유하는 파일 처리기 등록부.
     pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
-    /// 사용자가 선택한 처리기 이력. 변경 뒤 저장을 시도하며 실패는 로그로 남긴다.
-    #[cfg(feature = "gui")]
-    pub(crate) file_handler_recent: crate::file::handler::recent::RecentPicks,
     /// App이 GUI 이벤트 루프를 준비한 뒤 주입하는 파일 식별 worker 인터페이스.
     #[cfg(feature = "gui")]
     pub(crate) identify_worker:
@@ -644,10 +641,6 @@ impl CoreState {
                 Arc::new(reg)
             },
             #[cfg(feature = "gui")]
-            file_handler_recent: crate::file::handler::recent::RecentPicks::load(
-                &file_handler_recent_path(),
-            ),
-            #[cfg(feature = "gui")]
             identify_worker: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
@@ -842,19 +835,6 @@ impl CoreState {
             false
         }
     }
-
-    #[cfg(feature = "gui")]
-    pub fn record_file_handler_pick(&mut self, id: &crate::file::handler::HandlerId) {
-        self.file_handler_recent.record(id);
-        let path = file_handler_recent_path();
-        if let Err(e) = self.file_handler_recent.save_atomic(&path) {
-            tracing::warn!(
-                path = %path.display(),
-                error = %e,
-                "file_handler_recent: atomic save failed",
-            );
-        }
-    }
 }
 
 impl CoreState {
@@ -992,15 +972,6 @@ impl CoreState {
 
 fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"))
-}
-
-/// 사용자 처리기 선택 이력. 홈을 못 찾으면 공용 임시 경로에도 읽기·쓰기를 시도한다.
-#[cfg(feature = "gui")]
-fn file_handler_recent_path() -> std::path::PathBuf {
-    tasty_utils::path::tasty_home()
-        .map(|d| d.join("file-handler-recent.json"))
-        // 이유: 사용자 선택 이력의 공유 폴백이며 인스턴스별로 격리하지 않는다.
-        .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
 
 mod attention;

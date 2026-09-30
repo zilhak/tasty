@@ -172,7 +172,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     let picker = state.dialogs.file_handler_picker.take().unwrap();
     assert_eq!(picker.origin_surface_id, Some(sid));
     assert!(picker.ignore_size_limit);
-    let recent_before = engine.file_handler_recent.list().len();
+    let recent_before = state.file_handler_recent.list().len();
     apply_file_picker_result(
         &mut core,
         &mut state,
@@ -184,7 +184,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         picker.ignore_size_limit,
     );
     assert!(state.pending_intents.is_empty());
-    assert_eq!(engine.file_handler_recent.list().len(), recent_before);
+    assert_eq!(state.file_handler_recent.list().len(), recent_before);
 
     // pane은 남기고 명시 origin만 지워 포커스 대체 실행 여부를 확인한다.
     core.apply(
@@ -237,7 +237,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     );
     assert!(state.pending_intents.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
-    assert_eq!(engine.file_handler_recent.list().len(), recent_before);
+    assert_eq!(state.file_handler_recent.list().len(), recent_before);
 }
 
 /// 에이전트가 연 결과는 원래 사용자 선택을 유지해야 한다.

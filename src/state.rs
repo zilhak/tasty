@@ -10,6 +10,8 @@ mod events;
 mod focus;
 #[cfg(all(test, feature = "gui"))]
 mod fullscreen_stage_tests;
+#[cfg(feature = "gui")]
+mod handler_recent;
 mod ipc_window;
 #[cfg(any(feature = "gui", test))]
 mod layout;
@@ -241,6 +243,10 @@ pub struct AppState {
     /// 파일 핸들러의 플러그인 IPC 요청 (ipc_method, target). App이 전달한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
+
+    /// 사용자가 선택한 파일 처리기 이력. 창을 만들 때 공용 파일에서 읽고 선택할 때마다 저장한다.
+    #[cfg(feature = "gui")]
+    pub(crate) file_handler_recent: crate::file::handler::recent::RecentPicks,
 
     /// 외부 파일 드래그 중 경로 목록. 취소하거나 drop하면 지운다.
     #[cfg(feature = "gui")]
@@ -477,6 +483,8 @@ impl AppState {
             pending_popup_opens: Vec::new(),
             #[cfg(feature = "gui")]
             pending_handler_ipc: Vec::new(),
+            #[cfg(feature = "gui")]
+            file_handler_recent: handler_recent::load(),
             #[cfg(feature = "gui")]
             drop_hover: None,
             #[cfg(feature = "gui")]

@@ -238,7 +238,7 @@ fn mirror_with_ipc_first() -> (
 fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
     let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
     // 최근 목록에 원격에 열 수 없는 핸들러가 있어도 picker에 보이면 안 된다.
-    engine
+    state
         .file_handler_recent
         .record(&HandlerId::new("com.example.ipc/open"));
     apply_identify_result(

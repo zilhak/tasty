@@ -156,7 +156,7 @@ pub(crate) fn open_picker(
     dispatch_origin: FileDispatchOrigin,
     ignore_size_limit: bool,
 ) {
-    let recent_entries: Vec<(HandlerId, i64)> = engine
+    let recent_entries: Vec<(HandlerId, i64)> = state
         .file_handler_recent
         .list()
         .iter()
@@ -639,7 +639,7 @@ mod tests {
             .into_iter()
             .next()
             .expect("host default handlers exist");
-        engine.file_handler_recent.record(&any.id);
+        state.file_handler_recent.record(&any.id);
 
         open_picker(
             &mut state,

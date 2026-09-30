@@ -95,7 +95,7 @@ pub(crate) fn apply_file_picker_result(
     let Some(handler) = engine.file_handler.get(&handler_id) else {
         tracing::warn!(handler_id = %handler_id,
             "apply_file_picker_result: handler id from picker no longer in registry");
-        engine.record_file_handler_pick(&handler_id);
+        state.record_file_handler_pick(&handler_id);
         return;
     };
     // true는 요청 수락을 뜻하며 외부 프로그램이나 plugin의 최종 성공 확인은 아니다.
@@ -109,7 +109,7 @@ pub(crate) fn apply_file_picker_result(
         dispatch_origin,
         ignore_size_limit,
     ) {
-        engine.record_file_handler_pick(&handler_id);
+        state.record_file_handler_pick(&handler_id);
     }
 }
 
@@ -232,13 +232,12 @@ pub(super) mod tests {
         );
         let handler_id = crate::file::handler::HandlerId::new("com.example.urlprobe/open");
         assert!(engine.file_handler.get(&handler_id).is_some());
-        let recent_before = engine.file_handler_recent.list().len();
-
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
         let mut state = AppState::new(&mut engine, preset_store, memory);
+        let recent_before = state.file_handler_recent.list().len();
 
         apply_file_picker_result(
             &mut core,
@@ -255,6 +254,6 @@ pub(super) mod tests {
             state.pending_handler_ipc.is_empty(),
             "a URL must not be enqueued for an Ipc handler (it would be sent as `path`)"
         );
-        assert_eq!(engine.file_handler_recent.list().len(), recent_before);
+        assert_eq!(state.file_handler_recent.list().len(), recent_before);
     }
 }
