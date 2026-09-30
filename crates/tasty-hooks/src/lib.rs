@@ -264,9 +264,8 @@ impl HookManager {
             .any(|h| h.surface_id == surface_id && matches!(h.event, HookEvent::OutputMatch(_)))
     }
 
-    /// 이 surface 에 `IdleTimeout` 훅이 하나라도 등록돼 있는가 — idle 폴링
-    /// (`CoreState::poll_idle_timeout_hooks`)이 어느 surface 를 검사할지 고를 때
-    /// 쓴다.
+    /// 이 surface 에 `IdleTimeout` 훅이 하나라도 등록돼 있는가. 외부 조회와 시험용이며,
+    /// 호스트의 idle 판정은 `list_hooks` 로 검사할 surface 를 고른다.
     pub fn has_idle_timeout_hook(&self, surface_id: u32) -> bool {
         self.hooks
             .iter()
