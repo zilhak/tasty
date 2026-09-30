@@ -135,18 +135,19 @@ impl PendingRequest {
 pub(super) enum PendingRequestKind {
     SurfaceCreate {
         surface_id: u32,
+        binding: crate::host_cmd::SurfaceBinding,
     },
     SurfaceRestore {
         surface_id: u32,
+        binding: crate::host_cmd::SurfaceBinding,
     },
     /// 단축키로 실행한 plugin 명령. SurfaceResult로 표시 이름을 갱신할 수 있다.
     CommandInvoke {
         surface_id: u32,
+        binding: Option<crate::host_cmd::SurfaceBinding>,
     },
     /// popup.open IPC 응답 대기. 응답은 [`PopupOpenResult`].
-    PopupOpen {
-        instance_id: u64,
-    },
+    PopupOpen { instance_id: u64 },
     /// 그 외 (host.hello / ping / 등) — 응답 무시.
     Other,
     /// Client IPC 요청을 plugin namespace로 forward한 경우. plugin이 응답을 주면
@@ -986,7 +987,14 @@ prefix = "{prefix}"
             900,
             PendingRequest::now(
                 "com.example.silent",
-                PendingRequestKind::SurfaceRestore { surface_id: 3 },
+                PendingRequestKind::SurfaceRestore {
+                    surface_id: 3,
+                    binding: crate::host_cmd::SurfaceHandles {
+                        display_name: Arc::default(),
+                        snapshot_cache: Arc::default(),
+                    }
+                    .binding(),
+                },
             ),
         );
         mgr.pending_requests.insert(

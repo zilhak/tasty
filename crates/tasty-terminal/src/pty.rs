@@ -152,6 +152,21 @@ impl PtyState {
     }
 }
 
+/// Read-only completion receipt for an exact retired owner; it cannot signal or borrow another Pty.
+pub struct PtyRetirement {
+    generation: ResourceGeneration,
+    exit: ExitCell,
+}
+
+impl PtyRetirement {
+    pub fn generation(&self) -> ResourceGeneration {
+        self.generation
+    }
+    pub fn observation(&self) -> PtyObservation {
+        observe(&self.exit).clone()
+    }
+}
+
 /// spawn 직후 아직 worker를 시작하지 않은 PTY 읽기 끝.
 pub(crate) struct PtyReader(Box<dyn Read + Send>);
 type PreparedIo = (Box<dyn Write + Send>, Box<dyn Read + Send>);
@@ -365,6 +380,16 @@ impl Pty {
     pub(crate) fn os_size(&self) -> Option<(usize, usize)> {
         let size = self.master.as_ref()?.get_size().ok()?;
         Some((usize::from(size.cols), usize::from(size.rows)))
+    }
+
+    /// Start ordinary nonblocking retirement and retain only its observable completion.
+    pub fn retire(self) -> PtyRetirement {
+        let receipt = PtyRetirement {
+            generation: self.generation(),
+            exit: Arc::clone(&self.state.exit),
+        };
+        drop(self);
+        receipt
     }
 
     pub fn state(&self) -> &PtyState {

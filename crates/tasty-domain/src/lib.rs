@@ -23,6 +23,7 @@
 
 mod codec;
 mod command;
+mod creation;
 mod decider;
 mod event;
 mod evolve;
@@ -40,6 +41,9 @@ pub use codec::{
 };
 pub use command::{
     Rejection, StructuralCommand, StructuralDecision, StructuralResult, decide_structure,
+};
+pub use creation::{
+    CleanupPlan, CreationDestination, CreationPlan, PreparationResult, StructuralEffect,
 };
 pub use decider::{Decider, Decision, DecisionContext};
 pub use event::{DomainBatch, DomainEvent, MetadataTarget, RecordedEvent, SplitSpec, SurfaceSpec};

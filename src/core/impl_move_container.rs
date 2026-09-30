@@ -605,10 +605,7 @@ mod move_container_tests {
             engine.mirror_workspace_index_for_structural(&intent),
             Some(1)
         );
-        engine
-            .workspace_at_mut(1)
-            .expect("workspace index is valid")
-            .mirror = false;
+        engine.make_local_fixture(1);
         engine.make_mirror_fixture(0);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),
@@ -931,10 +928,7 @@ mod move_container_tests {
             engine.mirror_workspace_index_for_structural(&intent),
             Some(1)
         );
-        engine
-            .workspace_at_mut(1)
-            .expect("workspace index is valid")
-            .mirror = false;
+        engine.make_local_fixture(1);
         engine.make_mirror_fixture(0);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),

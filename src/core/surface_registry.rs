@@ -3,6 +3,8 @@
 
 pub mod builtins;
 pub mod meta;
+mod prepared;
+pub use prepared::{PreparedKind, PublicationAction};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -162,16 +164,15 @@ pub struct SurfaceKindDef {
     /// cwd 사용 여부는 각 종류가 결정하며 포커스에서 암묵적으로 가져오지 않는다.
     #[allow(clippy::type_complexity)]
     pub create: Arc<
-        dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
+        dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value) -> anyhow::Result<PreparedKind>
             + Send
             + Sync,
     >,
 
     /// Generic의 저장 데이터로 복원한다. PTY 생성이 필요한 Terminal은 별도 복원 경로를 쓴다.
     #[allow(clippy::type_complexity)]
-    pub restore: Arc<
-        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>> + Send + Sync,
-    >,
+    pub restore:
+        Arc<dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<PreparedKind> + Send + Sync>,
 
     /// None이면 layout 저장에서 제외한다.
     pub snapshot: SurfaceSnapshotFn,

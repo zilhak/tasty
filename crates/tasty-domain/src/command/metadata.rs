@@ -17,6 +17,12 @@ pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<Struct
         | StructuralCommand::MoveTab { .. }
         | StructuralCommand::SetPaneRatio { .. }
         | StructuralCommand::SetSurfaceRatio { .. } => tab_or_ratio(m, cmd),
+        StructuralCommand::PrepareCreation { .. }
+        | StructuralCommand::FinishCreation { .. }
+        | StructuralCommand::FinishCleanup { .. }
+        | StructuralCommand::CancelUnstartedCreation { .. } => {
+            unreachable!("creation has its own decision rules")
+        }
     }
 }
 
@@ -89,7 +95,12 @@ fn category(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralDecis
         }
         _ => unreachable!("command family is dispatched above"),
     };
-    Ok(StructuralDecision { events, result })
+    Ok(StructuralDecision {
+        events,
+        result,
+        effects: Vec::new(),
+        completed_command: None,
+    })
 }
 
 fn workspace_change(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralDecision> {
@@ -167,7 +178,12 @@ fn workspace_change(m: &JournalModel, cmd: &StructuralCommand) -> Result<Structu
         }
         _ => unreachable!("command family is dispatched above"),
     };
-    Ok(StructuralDecision { events, result })
+    Ok(StructuralDecision {
+        events,
+        result,
+        effects: Vec::new(),
+        completed_command: None,
+    })
 }
 
 fn tab_or_ratio(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralDecision> {
@@ -241,7 +257,12 @@ fn tab_or_ratio(m: &JournalModel, cmd: &StructuralCommand) -> Result<StructuralD
         }
         _ => unreachable!("command family is dispatched above"),
     };
-    Ok(StructuralDecision { events, result })
+    Ok(StructuralDecision {
+        events,
+        result,
+        effects: Vec::new(),
+        completed_command: None,
+    })
 }
 
 fn mutable_category(m: &JournalModel, id: u32) -> Result<()> {

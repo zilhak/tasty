@@ -34,16 +34,24 @@ pub enum OperationOutcome {
 }
 
 /// Prepared work is replayable without consulting the effect-attempt table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Operation {
     pub id: OperationId,
     pub command_id: String,
+    #[serde(default)]
+    pub engine_incarnation: u64,
+    #[serde(default)]
+    pub creation: Option<crate::CreationPlan>,
     pub targets: Vec<EntityId>,
     pub reserved: Vec<EntityId>,
     /// Immutable, non-secret resolved preparation input owned by this journal.
     pub input: DataRef,
     pub activation_generation: u64,
     pub outcome: Option<OperationOutcome>,
+    #[serde(default)]
+    pub pending_outcome: Option<OperationOutcome>,
+    #[serde(default)]
+    pub cleanup: Option<crate::CleanupPlan>,
     pub reconciliation_evidence: Option<DataRef>,
 }
 

@@ -15,7 +15,7 @@ fn rgb(c: HexColor) -> TerminalRgb {
 
 /// OSC 색 조회용 팔레트. terminal의 focused 색과 ANSI 팔레트를 사용한다.
 /// unfocused 화면의 효과까지 반영한 현재 픽셀값은 아니다.
-fn current_terminal_palette() -> ColorPalette {
+pub(crate) fn current_terminal_palette() -> ColorPalette {
     let theme = crate::theme::theme();
     let surface = theme.surface("terminal");
     let fg = rgb(surface.focused_fg);

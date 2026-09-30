@@ -41,6 +41,9 @@ pub(crate) struct EngineSession {
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
     #[cfg(test)]
     _isolated_home: Option<crate::test_support::IsolatedHome>,
+    #[cfg(test)]
+    pub(crate) test_host_commands:
+        Option<std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd>>,
 }
 
 impl EngineSession {

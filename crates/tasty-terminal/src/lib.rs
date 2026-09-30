@@ -42,7 +42,9 @@ pub use mouse_report::encode_mouse_report;
 pub use output_buffer::{
     OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputRead, OutputReadError, OutputReadRequest,
 };
-pub use pty::{Pty, PtyExit, PtyObservation, PtyPhase, PtyState, StandalonePty, pty_drop_totals};
+pub use pty::{
+    Pty, PtyExit, PtyObservation, PtyPhase, PtyRetirement, PtyState, StandalonePty, pty_drop_totals,
+};
 pub use scrollback::ScrollbackLine;
 pub use viewport::{ContentCut, ContentEpoch, TerminalViewport, ViewportInfo};
 

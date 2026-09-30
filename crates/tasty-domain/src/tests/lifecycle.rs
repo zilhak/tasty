@@ -5,6 +5,8 @@ fn operation() -> Operation {
     Operation {
         id: OperationId("create/1".into()),
         command_id: "command/1".into(),
+        engine_incarnation: 0,
+        creation: None,
         targets: vec![EntityId {
             kind: IdKind::Pane,
             id: 1,
@@ -16,6 +18,8 @@ fn operation() -> Operation {
         input: DataRef(11),
         activation_generation: 1,
         outcome: None,
+        pending_outcome: None,
+        cleanup: None,
         reconciliation_evidence: None,
     }
 }
@@ -24,6 +28,14 @@ pub(super) fn examples() -> Vec<DomainEvent> {
     vec![
         DomainEvent::OperationPrepared {
             operation: operation(),
+        },
+        DomainEvent::OperationAwaitingCleanup {
+            id: operation().id,
+            outcome: OperationOutcome::Succeeded,
+            cleanup: CleanupPlan::DiscardPrepared {
+                surface: 99,
+                activation_generation: 1,
+            },
         },
         DomainEvent::OperationFinished {
             id: operation().id,
@@ -69,6 +81,13 @@ pub(super) fn examples() -> Vec<DomainEvent> {
             ratio: Ratio::from_f32(0.6),
         },
     ]
+}
+
+fn example(tag: &str) -> DomainEvent {
+    examples()
+        .into_iter()
+        .find(|event| event.type_tag() == tag)
+        .unwrap()
 }
 
 fn initial() -> JournalModel {
@@ -117,7 +136,14 @@ fn pending_reservations_replay_without_worker_state_or_visible_surfaces() {
         model, unchanged,
         "reserved identities cannot be reused by another operation"
     );
-    apply(&mut model, &examples()[1..3]).unwrap();
+    apply(
+        &mut model,
+        &[
+            example("operation.finished"),
+            example("operation.reconciled"),
+        ],
+    )
+    .unwrap();
     assert_eq!(
         model.operations[&operation().id].reconciliation_evidence,
         Some(DataRef(12))
@@ -139,7 +165,7 @@ fn pending_reservations_replay_without_worker_state_or_visible_surfaces() {
 #[test]
 fn stale_activation_and_capture_facts_fail_without_partial_publication() {
     let mut model = initial();
-    apply(&mut model, &examples()[3..4]).unwrap();
+    apply(&mut model, &[example("surface.activation_changed")]).unwrap();
     apply(
         &mut model,
         &[DomainEvent::SurfaceActivationChanged {
@@ -193,7 +219,11 @@ fn stale_activation_and_capture_facts_fail_without_partial_publication() {
 #[test]
 fn split_ratio_facts_target_a_node_and_reject_nonfinite_values_atomically() {
     let mut model = initial();
-    apply(&mut model, &examples()[6..]).unwrap();
+    apply(
+        &mut model,
+        &[example("pane.ratio_set"), example("surface.ratio_set")],
+    )
+    .unwrap();
     let before = model.clone();
     for (path, ratio) in [(vec![false], 0.5), (vec![], f32::NAN), (vec![], 1.0)] {
         assert!(
@@ -224,16 +254,22 @@ fn lifecycle_facts_and_payload_references_survive_snapshot_replay() {
         decode_snapshot(MODEL_VERSION, &encode_snapshot(&models).unwrap()).unwrap(),
         models
     );
-    assert_eq!(examples()[0].data_refs(), vec![DataRef(11)]);
-    assert_eq!(examples()[2].data_refs(), vec![DataRef(12)]);
-    assert_eq!(examples()[4].data_refs(), vec![DataRef(13)]);
-    assert_eq!(examples()[5].data_refs(), vec![DataRef(14)]);
+    assert_eq!(example("operation.prepared").data_refs(), vec![DataRef(11)]);
+    assert_eq!(
+        example("operation.reconciled").data_refs(),
+        vec![DataRef(12)]
+    );
+    assert_eq!(
+        example("surface.data_recorded").data_refs(),
+        vec![DataRef(13)]
+    );
+    assert_eq!(example("surface.converted").data_refs(), vec![DataRef(14)]);
 }
 
 #[test]
 fn older_capture_completion_cannot_replace_newer_content_in_the_same_activation() {
     let mut model = initial();
-    apply(&mut model, &examples()[3..4]).unwrap();
+    apply(&mut model, &[example("surface.activation_changed")]).unwrap();
     apply(
         &mut model,
         &[DomainEvent::SurfaceDataRecorded {

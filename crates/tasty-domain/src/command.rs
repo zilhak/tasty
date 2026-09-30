@@ -1,5 +1,6 @@
 //! Structural inputs contain fixed identities and values, never live services or an ID allocator.
 
+mod creation;
 mod metadata;
 
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,23 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    PrepareCreation {
+        operation: crate::OperationId,
+        command_id: String,
+        input: crate::DataRef,
+        plan: crate::CreationPlan,
+    },
+    CancelUnstartedCreation {
+        operation: crate::OperationId,
+        reason: String,
+    },
+    FinishCleanup {
+        operation: crate::OperationId,
+    },
+    FinishCreation {
+        operation: crate::OperationId,
+        result: crate::PreparationResult,
+    },
     CreateCategory {
         reserved_id: u32,
         name: String,
@@ -71,6 +89,7 @@ impl StructuralCommand {
     /// Fresh identities required by this command. Reservation is an admission task, never decide I/O.
     pub fn reserved_ids(&self) -> Vec<crate::EntityId> {
         match self {
+            Self::PrepareCreation { plan, .. } => plan.reserved_ids(),
             Self::CreateCategory { reserved_id, .. } => vec![crate::EntityId {
                 kind: crate::IdKind::Category,
                 id: *reserved_id,
@@ -82,15 +101,33 @@ impl StructuralCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StructuralResult {
+    Pending {
+        operation: crate::OperationId,
+    },
+    Created {
+        workspace: Option<u32>,
+        pane: Option<u32>,
+        tab: Option<u32>,
+        surface: u32,
+    },
+    Failed {
+        reason: String,
+    },
     Updated,
-    CreatedCategory { id: u32 },
-    Moved { moved: bool },
+    CreatedCategory {
+        id: u32,
+    },
+    Moved {
+        moved: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructuralDecision {
     pub events: Vec<DomainEvent>,
     pub result: StructuralResult,
+    pub effects: Vec<crate::StructuralEffect>,
+    pub completed_command: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -102,7 +139,13 @@ pub fn decide_structure(
     model: &JournalModel,
     command: &StructuralCommand,
 ) -> Result<StructuralDecision, Rejection> {
-    let decision = metadata::decide(model, command)?;
+    let decision = match command {
+        StructuralCommand::PrepareCreation { .. }
+        | StructuralCommand::FinishCreation { .. }
+        | StructuralCommand::FinishCleanup { .. }
+        | StructuralCommand::CancelUnstartedCreation { .. } => creation::decide(model, command)?,
+        _ => metadata::decide(model, command)?,
+    };
     let mut candidate = model.clone();
     let after = model.applied.revision.unwrap_or(0);
     let batch_id = model

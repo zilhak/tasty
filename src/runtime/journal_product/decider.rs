@@ -23,6 +23,8 @@ pub(crate) struct ResolvedCommand {
     /// Caller method and original arguments, before implicit target resolution.
     pub(crate) original_digest: Vec<u8>,
     pub(crate) changes: Vec<StreamCommand>,
+    pub(crate) effect_result: Option<super::EffectLease>,
+    pub(crate) cancellation: Option<tasty_event_store::EffectTransition>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,17 +50,41 @@ impl Decider for StructureDecider {
         &self,
         state: &StructureModels,
         command: &ResolvedCommand,
-        _context: &mut DecisionContext<'_>,
+        context: &mut DecisionContext<'_>,
     ) -> Result<Decision<StreamEvent, NewEffect>, Rejection> {
         let mut candidate = state.clone();
         let mut events = Vec::new();
         let mut results: Vec<StructuralResult> = Vec::new();
-        for change in &command.changes {
+        let mut effects = Vec::new();
+        let mut resolved_changes = Vec::new();
+        for (index, change) in command.changes.iter().enumerate() {
             if !tasty_domain::is_structure_stream(&change.stream) {
                 return Err(Rejection("not an engine structure stream".into()));
             }
             let model = candidate.streams.entry(change.stream.clone()).or_default();
-            let decision = decide_structure(model, &change.command)?;
+            let mut resolved = change.command.clone();
+            if let StructuralCommand::PrepareCreation {
+                operation,
+                command_id,
+                ..
+            } = &mut resolved
+            {
+                *command_id = context.command_id.to_owned();
+                *operation =
+                    tasty_domain::OperationId(format!("{}/prepare/{index}", context.command_id));
+            }
+            let decision = decide_structure(model, &resolved)?;
+            resolved_changes.push(StreamCommand {
+                stream: change.stream.clone(),
+                command: resolved,
+            });
+            effects.extend(
+                decision
+                    .effects
+                    .iter()
+                    .map(|effect| new_effect(&change.stream, effect))
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
             let revision = model.applied.revision.unwrap_or(0);
             let batch_id = model
                 .applied
@@ -91,8 +117,9 @@ impl Decider for StructureDecider {
         }
         Ok(Decision {
             events,
-            effects: Vec::new(),
-            resolved: serde_json::to_vec(&command.changes).map_err(|e| Rejection(e.to_string()))?,
+            effects,
+            resolved: serde_json::to_vec(&resolved_changes)
+                .map_err(|e| Rejection(e.to_string()))?,
             response: serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
         })
     }
@@ -112,14 +139,91 @@ impl JournalDecider for StructureDecider {
 
     fn record(
         &self,
-        _command: &ResolvedCommand,
+        state: &StructureModels,
+        command: &ResolvedCommand,
         decision: &Decision<StreamEvent, NewEffect>,
     ) -> CommandRecordPlan {
+        let mut command_updates = Vec::new();
+        for recorded in &decision.events {
+            if let DomainEvent::OperationFinished { id, outcome } = &recorded.event
+                && let Some(operation) = state
+                    .streams
+                    .get(recorded.stream.as_str())
+                    .and_then(|model| model.operations.get(id))
+            {
+                let status = match outcome {
+                    tasty_domain::OperationOutcome::Succeeded => CommandStatus::Completed,
+                    tasty_domain::OperationOutcome::Cancelled { .. }
+                    | tasty_domain::OperationOutcome::Superseded { .. } => CommandStatus::Cancelled,
+                    tasty_domain::OperationOutcome::Failed { .. } => CommandStatus::Failed,
+                    tasty_domain::OperationOutcome::Uncertain { .. } => CommandStatus::InProgress,
+                };
+                let status = if decision.effects.is_empty() {
+                    status
+                } else {
+                    CommandStatus::InProgress
+                };
+                command_updates.push(tasty_event_store::CommandUpdate {
+                    command_id: operation.command_id.clone(),
+                    status,
+                    response: status.is_terminal().then(|| decision.response.clone()),
+                });
+            }
+        }
+        let internal = command.changes.iter().all(|change| {
+            matches!(
+                change.command,
+                StructuralCommand::FinishCreation { .. }
+                    | StructuralCommand::FinishCleanup { .. }
+                    | StructuralCommand::CancelUnstartedCreation { .. }
+            )
+        });
+        let pending = !internal && !decision.effects.is_empty();
         CommandRecordPlan {
-            status: CommandStatus::Completed,
-            response: Some(decision.response.clone()),
-            command_updates: Vec::new(),
-            effect_transitions: Vec::new(),
+            status: if pending {
+                CommandStatus::InProgress
+            } else {
+                CommandStatus::Completed
+            },
+            response: (!pending).then(|| decision.response.clone()),
+            command_updates,
+            effect_transitions: command
+                .effect_result
+                .as_ref()
+                .into_iter()
+                .filter_map(|lease| {
+                    let outcome = decision
+                        .events
+                        .iter()
+                        .find_map(|event| match &event.event {
+                            DomainEvent::OperationFinished { id, outcome }
+                                if *id == lease.operation =>
+                            {
+                                Some(outcome)
+                            }
+                            _ => None,
+                        })?;
+                    let to = match outcome {
+                        tasty_domain::OperationOutcome::Failed { .. } => {
+                            tasty_event_store::EffectState::Failed
+                        }
+                        tasty_domain::OperationOutcome::Uncertain { .. } => {
+                            tasty_event_store::EffectState::Uncertain
+                        }
+                        _ => tasty_event_store::EffectState::Succeeded,
+                    };
+                    Some(tasty_event_store::EffectTransition {
+                        effect_id: lease.effect_id.clone(),
+                        from: tasty_event_store::EffectState::Running,
+                        to,
+                        resource_generation: lease.resource_generation,
+                        attempt: Some(lease.attempt),
+                        claim: None,
+                        result: Some(decision.response.clone()),
+                    })
+                })
+                .chain(command.cancellation.iter().cloned())
+                .collect(),
         }
     }
 
@@ -143,4 +247,34 @@ impl JournalDecider for StructureDecider {
     fn load(&self, store: &EventStore) -> Result<StructureModels, String> {
         journal::load_all(store).map_err(|e| e.to_string())
     }
+}
+
+fn new_effect(
+    stream: &str,
+    effect: &tasty_domain::StructuralEffect,
+) -> Result<NewEffect, Rejection> {
+    use tasty_domain::StructuralEffect;
+    let (operation, generation, step) = match effect {
+        StructuralEffect::PrepareSurface {
+            operation,
+            activation_generation,
+            ..
+        } => (operation, *activation_generation, "prepare"),
+    };
+    Ok(NewEffect {
+        effect_id: format!("{}/{}", operation.0, step),
+        operation_id: operation.0.clone(),
+        // This is the durable activation obligation, not the process-local Pty generation.
+        resource_generation: generation,
+        payload: OpaquePayload {
+            type_tag: "structure.surface_effect".into(),
+            schema_version: 1,
+            bytes: serde_json::to_vec(&super::preparation::RecordedEffect {
+                stream: stream.into(),
+                instruction: effect.clone(),
+            })
+            .map_err(|error| Rejection(error.to_string()))?,
+        },
+        initial: tasty_event_store::EffectState::Pending,
+    })
 }

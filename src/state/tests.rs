@@ -52,13 +52,14 @@ pub(crate) fn test_state_with_memory(
     // 헤드리스 시험은 Markdown 생성 경로를 사용하지 않아 추가 등록을 생략한다.
     #[cfg(feature = "gui")]
     {
-        let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+        let (host_cmd_tx, host_cmd_rx) = std::sync::mpsc::channel();
         crate::plugin_bridge::remote_kind::register_remote_kind(
             &engine.core_state.surface_registry,
             "com.tasty.markdown",
             &decl,
             host_cmd_tx,
         );
+        engine.test_host_commands = Some(host_cmd_rx);
     }
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),

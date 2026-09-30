@@ -103,7 +103,9 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .and_then(|v| v.as_str())
                 .map(ExplorerViewMode::from_str)
                 .unwrap_or(ExplorerViewMode::Detail);
-            Ok(Box::new(ExplorerPanel::new_with_mode(sid, root, view_mode)) as Box<dyn Surface>)
+            Ok(crate::core::surface_registry::PreparedKind::local(
+                Box::new(ExplorerPanel::new_with_mode(sid, root, view_mode)) as Box<dyn Surface>,
+            ))
         }),
         restore: Arc::new(|sid, data| {
             let active = data.get("active").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -112,7 +114,9 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().map(explorer_tab_from_json).collect())
                 .unwrap_or_default();
-            Ok(Box::new(ExplorerPanel::from_tabs(sid, tabs, active)) as Box<dyn Surface>)
+            Ok(crate::core::surface_registry::PreparedKind::local(
+                Box::new(ExplorerPanel::from_tabs(sid, tabs, active)) as Box<dyn Surface>,
+            ))
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let ex = s.as_any().downcast_ref::<ExplorerPanel>()?;
@@ -198,12 +202,16 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         display_name_i18n_key: "surface.kind.empty",
         icon: None,
         create: Arc::new(|sid, cwd, _params| {
-            Ok(
+            Ok(crate::core::surface_registry::PreparedKind::local(
                 Box::new(EmptySurface::new(sid).with_cwd(cwd.map(std::path::PathBuf::from)))
                     as Box<dyn Surface>,
-            )
+            ))
         }),
-        restore: Arc::new(|sid, _data| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
+        restore: Arc::new(|sid, _data| {
+            Ok(crate::core::surface_registry::PreparedKind::local(
+                Box::new(EmptySurface::new(sid)) as Box<dyn Surface>,
+            ))
+        }),
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),
         preset_fields: Vec::new(),
         param_aliases: std::collections::HashMap::new(),
@@ -253,7 +261,9 @@ mod tests {
     fn empty_snapshot_returns_object() {
         let reg = registry_with_builtins();
         let def = reg.get("empty").unwrap();
-        let s = (def.create)(1, None, &json!({})).unwrap();
+        let s = (def.create)(1, None, &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert!(snap.is_object());
     }
@@ -263,7 +273,9 @@ mod tests {
         let reg = registry_with_builtins();
         let def = reg.get("empty").unwrap();
         let cwd = std::path::PathBuf::from("/tmp/carry-test");
-        let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
+        let s = (def.create)(1, Some(cwd.as_path()), &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         assert_eq!(s.source_cwd().as_deref(), Some(cwd.as_path()));
     }
 
@@ -275,13 +287,17 @@ mod tests {
             .expect("explorer is a host builtin kind");
         let root = abs_path("tmp/exp");
         let root_str = root.to_string_lossy().into_owned();
-        let s = (def.create)(5, None, &json!({ "path": &root_str })).unwrap();
+        let s = (def.create)(5, None, &json!({ "path": &root_str }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         assert_eq!(s.kind(), "explorer");
         assert_eq!(s.surface_id(), Some(5));
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert_eq!(snap["tabs"][0]["cwd"], root_str);
         assert_eq!(snap["tabs"][0]["root"], root_str);
-        let restored = (def.restore)(5, &snap).unwrap();
+        let restored = (def.restore)(5, &snap)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         assert_eq!(restored.kind(), "explorer");
         let ex = restored
             .as_any()
@@ -300,7 +316,9 @@ mod tests {
         });
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
-        let restored = (def.restore)(9, &old).unwrap();
+        let restored = (def.restore)(9, &old)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = restored
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -314,7 +332,9 @@ mod tests {
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         let cwd = abs_path("tmp/cwd-default");
-        let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
+        let s = (def.create)(1, Some(cwd.as_path()), &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = s
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -326,7 +346,9 @@ mod tests {
     fn explorer_create_without_path_or_cwd_falls_back_to_absolute_root() {
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
-        let s = (def.create)(1, None, &json!({})).unwrap();
+        let s = (def.create)(1, None, &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = s
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -345,9 +367,15 @@ mod tests {
         let reg = registry_with_builtins();
         let def = reg.get("explorer").unwrap();
         for s in [
-            (def.create)(1, None, &json!({"path": "."})).unwrap(),
-            (def.create)(2, None, &json!({"path": "sub/dir"})).unwrap(),
-            (def.create)(3, Some(std::path::Path::new(".")), &json!({})).unwrap(),
+            (def.create)(1, None, &json!({"path": "."}))
+                .and_then(|prepared| prepared.publish())
+                .unwrap(),
+            (def.create)(2, None, &json!({"path": "sub/dir"}))
+                .and_then(|prepared| prepared.publish())
+                .unwrap(),
+            (def.create)(3, Some(std::path::Path::new(".")), &json!({}))
+                .and_then(|prepared| prepared.publish())
+                .unwrap(),
         ] {
             let root = s
                 .as_any()
@@ -374,6 +402,7 @@ mod tests {
             Some(carry.as_path()),
             &json!({ "path": explicit.to_string_lossy() }),
         )
+        .and_then(|prepared| prepared.publish())
         .unwrap();
         let ex = s
             .as_any()
@@ -381,7 +410,9 @@ mod tests {
             .unwrap();
         assert_eq!(ex.cwd(), explicit.as_path());
 
-        let s = (def.create)(2, Some(carry.as_path()), &json!({})).unwrap();
+        let s = (def.create)(2, Some(carry.as_path()), &json!({}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = s
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -396,7 +427,9 @@ mod tests {
         let home = crate::model::default_root();
 
         let dotted = json!({"tabs": [{"root": ".", "cwd": "."}], "active": 0});
-        let ex = (def.restore)(1, &dotted).unwrap();
+        let ex = (def.restore)(1, &dotted)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = ex
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -405,7 +438,9 @@ mod tests {
         assert_eq!(ex.current_root(), home.as_path());
 
         let missing = json!({"tabs": [{"view_mode": "detail"}], "active": 0});
-        let ex = (def.restore)(2, &missing).unwrap();
+        let ex = (def.restore)(2, &missing)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = ex
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -414,7 +449,9 @@ mod tests {
         assert_eq!(ex.cwd(), home.as_path());
 
         let empty = json!({"tabs": [], "active": 0});
-        let ex = (def.restore)(3, &empty).unwrap();
+        let ex = (def.restore)(3, &empty)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = ex
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -423,7 +460,9 @@ mod tests {
 
         let xy = abs_path("x/y");
         let mixed = json!({"tabs": [{"root": xy.to_string_lossy(), "cwd": "."}], "active": 0});
-        let ex = (def.restore)(4, &mixed).unwrap();
+        let ex = (def.restore)(4, &mixed)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let ex = ex
             .as_any()
             .downcast_ref::<crate::model::ExplorerPanel>()
@@ -436,7 +475,11 @@ mod tests {
     fn terminal_create_errors() {
         let reg = registry_with_builtins();
         let def = reg.get("terminal").unwrap();
-        assert!((def.create)(1, None, &json!({})).is_err());
+        assert!(
+            (def.create)(1, None, &json!({}))
+                .and_then(|prepared| prepared.publish())
+                .is_err()
+        );
     }
 
     #[test]
@@ -466,27 +509,31 @@ fn register_dag_graph(registry: &SurfaceKindRegistry) {
         display_name_i18n_key: "surface.kind.dag_graph",
         icon: Some("git_tree".to_string()),
         create: Arc::new(|sid, _cwd, params| {
-            Ok(Box::new(DagGraphSurface::with_target(
-                sid,
-                dag_id_param(params),
-                params.get("workspace_id").and_then(parse_workspace_id),
-                params
-                    .get("direction")
-                    .and_then(|v| v.as_str())
-                    .map(DagDirection::from_str)
-                    .unwrap_or_default(),
-            )) as Box<dyn Surface>)
+            Ok(crate::core::surface_registry::PreparedKind::local(
+                Box::new(DagGraphSurface::with_target(
+                    sid,
+                    dag_id_param(params),
+                    params.get("workspace_id").and_then(parse_workspace_id),
+                    params
+                        .get("direction")
+                        .and_then(|v| v.as_str())
+                        .map(DagDirection::from_str)
+                        .unwrap_or_default(),
+                )) as Box<dyn Surface>,
+            ))
         }),
         restore: Arc::new(|sid, data| {
-            Ok(Box::new(DagGraphSurface::with_target(
-                sid,
-                dag_id_param(data),
-                data.get("workspace_id").and_then(parse_workspace_id),
-                data.get("direction")
-                    .and_then(|v| v.as_str())
-                    .map(DagDirection::from_str)
-                    .unwrap_or_default(),
-            )) as Box<dyn Surface>)
+            Ok(crate::core::surface_registry::PreparedKind::local(
+                Box::new(DagGraphSurface::with_target(
+                    sid,
+                    dag_id_param(data),
+                    data.get("workspace_id").and_then(parse_workspace_id),
+                    data.get("direction")
+                        .and_then(|v| v.as_str())
+                        .map(DagDirection::from_str)
+                        .unwrap_or_default(),
+                )) as Box<dyn Surface>,
+            ))
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let dag = s.as_any().downcast_ref::<DagGraphSurface>()?;

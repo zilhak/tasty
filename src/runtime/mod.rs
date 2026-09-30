@@ -10,10 +10,11 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 pub(crate) mod command_executor;
+pub(crate) mod effect_runner;
 pub(crate) mod engine_session;
 pub(crate) mod journal;
 pub(crate) mod journal_product;
-#[cfg(test)]
+pub(crate) mod live_projection;
 pub(crate) mod shadow_digest;
 
 #[cfg(test)]

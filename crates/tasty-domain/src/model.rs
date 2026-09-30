@@ -208,6 +208,11 @@ pub struct Applied {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct JournalModel {
     pub applied: Applied,
+    #[serde(default)]
+    pub engine_incarnation: u64,
+    /// Survives operation compaction and failed or cancelled preparation.
+    #[serde(default)]
+    pub activation_high_water: BTreeMap<SurfaceId, u64>,
     pub categories: BTreeMap<WorkspaceCategoryId, Category>,
     pub category_order: Vec<WorkspaceCategoryId>,
     pub workspaces: BTreeMap<WorkspaceId, Workspace>,
@@ -226,7 +231,14 @@ impl JournalModel {
             .values()
             .filter_map(|surface| surface.data)
             .chain(self.operations.values().flat_map(|operation| {
-                std::iter::once(operation.input).chain(operation.reconciliation_evidence)
+                std::iter::once(operation.input)
+                    .chain(operation.reconciliation_evidence)
+                    .chain(
+                        operation
+                            .creation
+                            .as_ref()
+                            .and_then(|plan| plan.surface.data),
+                    )
             }))
     }
 }

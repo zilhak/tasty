@@ -154,6 +154,7 @@ impl JournalDecider for Fake {
 
     fn record(
         &self,
+        _state: &JournalModel,
         _command: &Cmd,
         decision: &Decision<DomainEvent, NewEffect>,
     ) -> crate::runtime::command_executor::CommandRecordPlan {

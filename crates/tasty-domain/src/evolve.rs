@@ -196,6 +196,11 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             lifecycle::ratio(layout, &path, ratio)
         }
         DomainEvent::OperationPrepared { operation } => lifecycle::prepare(m, operation),
+        DomainEvent::OperationAwaitingCleanup {
+            id,
+            outcome,
+            cleanup,
+        } => lifecycle::await_cleanup(m, id, outcome, cleanup),
         DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
         DomainEvent::OperationReconciled {
             id,

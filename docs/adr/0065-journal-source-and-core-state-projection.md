@@ -1,6 +1,6 @@
 # ADR-0065: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
 
-- **Status**: Accepted — 구현 상태: 이행 전. 구조 journal은 제품 경로에 연결되지 않았고, 현재 구조의 원본은 메모리 CoreState와 레이아웃 슬롯이다. projection 적용기·shadow 비교·엔진별 활성화는 아직 없다
+- **Status**: Accepted — 구현 상태: 이행 전. 구조 journal은 제품 경로에 연결되지 않았고, 현재 구조의 원본은 메모리 CoreState와 레이아웃 슬롯이다. incremental projection 적용기와 shadow 비교는 시험 경계에 있으며 엔진별 제품 활성화는 아직 없다
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, domain, projection, migration
 - **Group**: foundation

@@ -196,7 +196,13 @@ impl PluginManager {
                 "surface_id": surface_id,
                 "command_id": command_id,
             }),
-            PendingRequestKind::CommandInvoke { surface_id },
+            PendingRequestKind::CommandInvoke {
+                surface_id,
+                binding: self
+                    .surfaces
+                    .get(&surface_id)
+                    .map(|entry| entry.handles.binding()),
+            },
         );
     }
 }

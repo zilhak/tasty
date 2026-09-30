@@ -62,13 +62,15 @@ pub(crate) fn rebuild_surface(
                         EmptySurface::new_deferred_plugin(id, DeferredPlugin { kind, snapshot });
                     Some(RebuildResult::Single(Box::new(ph)))
                 }
-                Some(def) => match (def.restore)(id, &snapshot) {
-                    Ok(surface) => Some(RebuildResult::Single(surface)),
-                    Err(e) => {
-                        tracing::warn!("restore failed for kind '{}': {e}", kind);
-                        None
+                Some(def) => {
+                    match (def.restore)(id, &snapshot).and_then(|prepared| prepared.publish()) {
+                        Ok(surface) => Some(RebuildResult::Single(surface)),
+                        Err(e) => {
+                            tracing::warn!("restore failed for kind '{}': {e}", kind);
+                            None
+                        }
                     }
-                },
+                }
             }
         }
     }
@@ -385,7 +387,11 @@ mod deferred_plugin_tests {
             display_name_i18n_key: "test.dummy",
             icon: None,
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
-            restore: Arc::new(|id, _| Ok(Box::new(EmptySurface::new(id)) as Box<dyn Surface>)),
+            restore: Arc::new(|id, _| {
+                Ok(crate::core::surface_registry::PreparedKind::local(
+                    Box::new(EmptySurface::new(id)) as Box<dyn Surface>,
+                ))
+            }),
             snapshot: Arc::new(|_| None),
             preset_fields: Vec::new(),
             param_aliases: HashMap::new(),

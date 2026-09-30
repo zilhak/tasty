@@ -68,8 +68,8 @@ pub struct DiskScrollback {
 
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
-        // Surface IDs repeat across instances, so include the process ID to avoid sharing a temp file.
-        // The debug subdirectory groups files; the PID distinguishes running processes.
+        // A replacement may be prepared while the previous instance with the same SID is alive.
+        // Each owner therefore gets its own file; create_new also protects files from an older PID.
         let subdir = if cfg!(debug_assertions) {
             "tasty-scrollback-debug"
         } else {
@@ -77,21 +77,22 @@ impl DiskScrollback {
         };
         let dir = std::env::temp_dir().join(subdir);
         std::fs::create_dir_all(&dir)?;
-        let file_path = dir.join(format!(
-            "surface-{}-{}.scrollback",
-            std::process::id(),
-            surface_id
-        ));
-        let mut f = File::create(&file_path)?;
-        f.write_all(FILE_MAGIC)?;
-        f.write_all(&FORMAT_VERSION.to_le_bytes())?;
-        f.flush()?;
-        Ok(Self {
+        let (file_path, mut f) = create_instance_file(&dir, surface_id)?;
+        let owner = Self {
             file_path,
             disk_line_count: 0,
             line_offsets: Vec::new(),
             file_size: HEADER_LEN,
-        })
+        };
+        let initialized = (|| {
+            f.write_all(FILE_MAGIC)?;
+            f.write_all(&FORMAT_VERSION.to_le_bytes())?;
+            f.flush()
+        })();
+        // Close the file before failure drops the path owner, including on Windows.
+        drop(f);
+        initialized?;
+        Ok(owner)
     }
 
     /// Write lines to disk. Returns number of lines written.
@@ -149,6 +150,30 @@ impl DiskScrollback {
         self.line_offsets.clear();
         self.file_size = HEADER_LEN;
         Ok(())
+    }
+}
+
+fn create_instance_file(
+    directory: &std::path::Path,
+    surface_id: u32,
+) -> std::io::Result<(PathBuf, File)> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_FILE: AtomicU64 = AtomicU64::new(1);
+    loop {
+        let nonce = NEXT_FILE
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                next.checked_add(1)
+            })
+            .map_err(|_| std::io::Error::other("scrollback instance file identity exhausted"))?;
+        let path = directory.join(format!(
+            "surface-{}-{surface_id}-{nonce}.scrollback",
+            std::process::id()
+        ));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
     }
 }
 
@@ -360,6 +385,51 @@ impl DiskScrollback {
 mod tests {
     use super::*;
     use termwiz::cell::{Intensity, Underline};
+
+    #[test]
+    fn overlapping_same_surface_instances_never_replace_or_remove_each_others_rows() {
+        let mut original = DiskScrollback::new(99173).unwrap();
+        let old = ScrollbackLine::new(vec![("original".into(), CellAttributes::default())], false);
+        original.push_lines(&[old]).unwrap();
+        let old_path = original.file_path.clone();
+        {
+            let mut candidate = DiskScrollback::new(99173).unwrap();
+            assert_ne!(candidate.file_path, old_path);
+            candidate
+                .push_lines(&[ScrollbackLine::new(
+                    vec![("candidate".into(), CellAttributes::default())],
+                    false,
+                )])
+                .unwrap();
+            assert_eq!(original.read_line(0).unwrap().unwrap().text, "original");
+        }
+        assert!(old_path.is_file());
+        assert_eq!(original.read_line(0).unwrap().unwrap().text, "original");
+        let mut replacement = DiskScrollback::new(99173).unwrap();
+        replacement
+            .push_lines(&[ScrollbackLine::new(
+                vec![("replacement".into(), CellAttributes::default())],
+                false,
+            )])
+            .unwrap();
+        let replacement_path = replacement.file_path.clone();
+        drop(original);
+        assert!(!old_path.exists());
+        assert!(replacement_path.is_file());
+        assert_eq!(
+            replacement.read_line(0).unwrap().unwrap().text,
+            "replacement"
+        );
+        replacement
+            .push_lines(&[ScrollbackLine::new(
+                vec![("later".into(), CellAttributes::default())],
+                false,
+            )])
+            .unwrap();
+        assert_eq!(replacement.read_line(1).unwrap().unwrap().text, "later");
+        drop(replacement);
+        assert!(!replacement_path.exists());
+    }
 
     fn round_trip(input: ScrollbackLine) -> ScrollbackLine {
         let bytes = serialize_line(&input);

@@ -136,7 +136,7 @@ CoreState의 로컬 트리는 `local_workspaces`, 원격 mirror 트리는 `mirro
 - 엔진의 구조 stream 이름을 레이아웃 슬롯 번호로 정한다(`structure:slot-<번호>`). 저장 batch에서 엔진 구조 stream 이벤트만 stream별로 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 모든 엔진에서 같은 모델·ID·revision을 만든다. snapshot 하나가 모든 엔진 모델과 그 surface 자료 참조를 함께 pin한다.
 - decide 계약에 대해 generic한 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
 
-순수 명령은 metadata·명시 ID 재정렬·revision으로 고정한 split 비율을 결정한다. operation 준비/결과·activation·kind 변환·capture 세대는 별도 확정 사실이며 같은 activation의 늦은 capture도 거절한다. snapshot 모델은 v3이며 v2의 새 필드는 기본값으로 보완한다.
+순수 명령은 metadata·명시 ID 재정렬·revision으로 고정한 split 비율과 종류별 생성 준비·설치 완료를 결정한다. operation 준비/결과·activation·kind 변환·capture 세대는 별도 확정 사실이며 같은 activation의 늦은 capture도 거절한다. snapshot 모델은 v3이며 v2의 새 필드는 기본값으로 보완한다. 생성 준비는 activation high-water를 소비하고 단일 outbox claim 아래 설치·이전 owner 정리를 계속한다. 준비 성공 batch와 최종 완료 batch를 구분하며, 설치 전에는 activation Requested와 원 명령 InProgress를 유지한다. `live_projection`은 기존 kind 객체와 SplitNodeId를 보존하며 확정 사실을 적용한다. `effect_runner`는 고정된 launch input으로 비공개 후보를 만들고 설치한다. 현재 이 실행 경계는 관련 시험에서 연결되며 GUI/headless 명령 진입점의 journal 활성화는 아직 이루어지지 않았다.
 
 `src/runtime/journal_product`의 저장 worker는 bounded 요청/완료 채널과 별도 publication ACK를 사용한다. 원본 key 조회에서 같은 진행 중 요청을 합치고, ID 예약은 decide 밖에서 수행한다. 저장소의 canonical 적용 뒤에도 App의 전체 batch 적용 ACK 전에는 성공 응답과 다음 변경을 내보내지 않는다. 부팅 replay cut도 초기 projection ACK가 필요하다. 현재 이 worker는 실제 저장소를 사용하는 시험으로 검증하며 App의 제품 명령 경로에는 아직 연결하지 않았다.
 

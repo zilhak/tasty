@@ -1,0 +1,380 @@
+use super::*;
+use crate::{
+    Activation, ActivationPhase, CreationDestination as Destination, CreationPlan, Operation,
+    OperationOutcome, PreparationResult, StructuralEffect,
+};
+
+type Result<T> = std::result::Result<T, Rejection>;
+
+pub(super) fn decide(
+    model: &JournalModel,
+    command: &StructuralCommand,
+) -> Result<StructuralDecision> {
+    match command {
+        StructuralCommand::PrepareCreation {
+            operation,
+            command_id,
+            input,
+            plan,
+        } => {
+            validate_target(model, plan)?;
+            if plan.surface.kind.is_empty() {
+                return Err(Rejection("surface kind must not be empty".into()));
+            }
+            let generation = model
+                .activation_high_water
+                .get(&plan.surface.id)
+                .copied()
+                .unwrap_or(0)
+                .max(
+                    model
+                        .surfaces
+                        .get(&plan.surface.id)
+                        .and_then(|surface| surface.activation)
+                        .map_or(0, |activation| activation.generation),
+                )
+                .checked_add(1)
+                .ok_or_else(|| Rejection("activation generation exhausted".into()))?;
+            let operation = Operation {
+                id: operation.clone(),
+                command_id: command_id.clone(),
+                engine_incarnation: model.engine_incarnation,
+                creation: Some(plan.clone()),
+                targets: plan.targets(),
+                reserved: plan.reserved_ids(),
+                input: *input,
+                activation_generation: generation,
+                outcome: None,
+                pending_outcome: None,
+                cleanup: None,
+                reconciliation_evidence: None,
+            };
+            Ok(StructuralDecision {
+                events: vec![DomainEvent::OperationPrepared {
+                    operation: operation.clone(),
+                }],
+                effects: vec![StructuralEffect::PrepareSurface {
+                    operation: operation.id.clone(),
+                    input: *input,
+                    surface: plan.surface.id,
+                    kind: plan.surface.kind.clone(),
+                    activation_generation: generation,
+                }],
+                result: StructuralResult::Pending {
+                    operation: operation.id,
+                },
+                completed_command: None,
+            })
+        }
+        StructuralCommand::FinishCreation {
+            operation: id,
+            result,
+        } => {
+            let operation = model
+                .operations
+                .get(id)
+                .ok_or_else(|| Rejection("preparation operation not found".into()))?;
+            if operation.outcome.is_some() || operation.pending_outcome.is_some() {
+                return Err(Rejection("preparation already has a result".into()));
+            }
+            let plan = operation
+                .creation
+                .as_ref()
+                .ok_or_else(|| Rejection("operation is not a creation".into()))?;
+            if let PreparationResult::Failed { reason } = result {
+                return Ok(failed(operation, plan, reason.clone(), false));
+            }
+            if operation.engine_incarnation != model.engine_incarnation {
+                return Ok(failed(
+                    operation,
+                    plan,
+                    "engine incarnation changed during preparation".into(),
+                    true,
+                ));
+            }
+            if let Err(error) = validate_target(model, plan) {
+                return Ok(failed(operation, plan, error.0, true));
+            }
+            let PreparationResult::Ready { data } = result else {
+                unreachable!()
+            };
+            let mut plan = plan.clone();
+            plan.surface.data = *data;
+            let mut events = creation_events(model, &plan);
+            let previous_generation = model
+                .surfaces
+                .get(&plan.surface.id)
+                .and_then(|surface| surface.activation.map(|activation| activation.generation));
+            events.push(DomainEvent::SurfaceActivationChanged {
+                id: plan.surface.id,
+                previous_generation,
+                activation: Activation {
+                    generation: operation.activation_generation,
+                    phase: ActivationPhase::Requested,
+                },
+            });
+            let previous_activation = match &plan.destination {
+                Destination::Convert {
+                    previous_activation,
+                    ..
+                } => Some(*previous_activation),
+                _ => None,
+            };
+            events.push(DomainEvent::OperationAwaitingCleanup {
+                id: id.clone(),
+                outcome: OperationOutcome::Succeeded,
+                cleanup: crate::CleanupPlan::InstallPrepared {
+                    surface: plan.surface.id,
+                    previous_activation,
+                },
+            });
+            Ok(StructuralDecision {
+                events,
+                completed_command: None,
+                effects: Vec::new(),
+                result: created_result(&plan),
+            })
+        }
+        StructuralCommand::FinishCleanup { operation: id } => {
+            let operation = model
+                .operations
+                .get(id)
+                .ok_or_else(|| Rejection("cleanup operation not found".into()))?;
+            if operation.outcome.is_some() {
+                return Err(Rejection("cleanup already finished".into()));
+            }
+            let outcome = operation
+                .pending_outcome
+                .clone()
+                .ok_or_else(|| Rejection("operation is not awaiting cleanup".into()))?;
+            let result = match &outcome {
+                OperationOutcome::Succeeded => created_result(
+                    operation
+                        .creation
+                        .as_ref()
+                        .ok_or_else(|| Rejection("creation plan missing".into()))?,
+                ),
+                OperationOutcome::Failed { reason }
+                | OperationOutcome::Cancelled { reason }
+                | OperationOutcome::Superseded { reason }
+                | OperationOutcome::Uncertain { reason } => StructuralResult::Failed {
+                    reason: reason.clone(),
+                },
+            };
+            let mut events = Vec::new();
+            if matches!(
+                operation.cleanup,
+                Some(crate::CleanupPlan::InstallPrepared { .. })
+            ) {
+                let surface = operation
+                    .creation
+                    .as_ref()
+                    .ok_or_else(|| Rejection("creation plan missing".into()))?
+                    .surface
+                    .id;
+                events.push(DomainEvent::SurfaceActivationChanged {
+                    id: surface,
+                    previous_generation: Some(operation.activation_generation),
+                    activation: Activation {
+                        generation: operation.activation_generation,
+                        phase: ActivationPhase::Ready,
+                    },
+                });
+            }
+            events.push(DomainEvent::OperationFinished {
+                id: id.clone(),
+                outcome,
+            });
+            Ok(StructuralDecision {
+                events,
+                effects: Vec::new(),
+                completed_command: Some(operation.command_id.clone()),
+                result,
+            })
+        }
+        StructuralCommand::CancelUnstartedCreation {
+            operation: id,
+            reason,
+        } => {
+            let operation = model
+                .operations
+                .get(id)
+                .ok_or_else(|| Rejection("preparation operation not found".into()))?;
+            if operation.outcome.is_some() || operation.pending_outcome.is_some() {
+                return Err(Rejection("operation is no longer unstarted".into()));
+            }
+            Ok(StructuralDecision {
+                events: vec![DomainEvent::OperationFinished {
+                    id: id.clone(),
+                    outcome: OperationOutcome::Cancelled {
+                        reason: reason.clone(),
+                    },
+                }],
+                effects: Vec::new(),
+                completed_command: Some(operation.command_id.clone()),
+                result: StructuralResult::Failed {
+                    reason: reason.clone(),
+                },
+            })
+        }
+        _ => unreachable!("creation commands are dispatched explicitly"),
+    }
+}
+
+fn validate_target(model: &JournalModel, plan: &CreationPlan) -> Result<()> {
+    if !plan.target_is_live(model) {
+        return Err(Rejection(
+            "creation target no longer exists or its activation changed".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn failed(
+    operation: &Operation,
+    plan: &CreationPlan,
+    reason: String,
+    discard: bool,
+) -> StructuralDecision {
+    let outcome = if discard {
+        OperationOutcome::Cancelled {
+            reason: reason.clone(),
+        }
+    } else {
+        OperationOutcome::Failed {
+            reason: reason.clone(),
+        }
+    };
+    StructuralDecision {
+        events: vec![if discard {
+            DomainEvent::OperationAwaitingCleanup {
+                id: operation.id.clone(),
+                outcome,
+                cleanup: crate::CleanupPlan::DiscardPrepared {
+                    surface: plan.surface.id,
+                    activation_generation: operation.activation_generation,
+                },
+            }
+        } else {
+            DomainEvent::OperationFinished {
+                id: operation.id.clone(),
+                outcome,
+            }
+        }],
+        effects: Vec::new(),
+        completed_command: (!discard).then(|| operation.command_id.clone()),
+        result: StructuralResult::Failed { reason },
+    }
+}
+
+fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent> {
+    let mut events = Vec::new();
+    let tab = match &plan.destination {
+        Destination::Workspace {
+            workspace,
+            pane,
+            tab,
+            name,
+            category,
+            subtitle,
+            description,
+        } => {
+            events.push(DomainEvent::WorkspaceCreated {
+                id: *workspace,
+                name: name.clone(),
+                category: *category,
+                index: model.workspace_order.len(),
+                pane: *pane,
+            });
+            events.push(DomainEvent::WorkspaceDetailsSet {
+                id: *workspace,
+                subtitle: subtitle.clone(),
+                description: description.clone(),
+            });
+            Some((*pane, *tab, 0))
+        }
+        Destination::Tab { pane, tab, index } => Some((*pane, *tab, *index)),
+        Destination::Pane {
+            target,
+            pane,
+            tab,
+            split,
+        } => {
+            events.push(DomainEvent::PaneSplit {
+                target: *target,
+                pane: *pane,
+                split: *split,
+            });
+            Some((*pane, *tab, 0))
+        }
+        Destination::Split { target, split } => {
+            events.push(DomainEvent::SurfaceSplit {
+                target: *target,
+                surface: plan.surface.clone(),
+                split: *split,
+            });
+            None
+        }
+        Destination::Convert {
+            surface,
+            explicit_name,
+            ..
+        } => {
+            events.push(DomainEvent::SurfaceConverted {
+                id: *surface,
+                kind: plan.surface.kind.clone(),
+                data: plan.surface.data,
+            });
+            if let Some(name) = explicit_name
+                && let Some(tab) = model
+                    .surfaces
+                    .get(surface)
+                    .and_then(|surface| model.tabs.get(&surface.tab))
+                && matches!(tab.layout, crate::SplitTree::Leaf(_))
+            {
+                events.push(DomainEvent::TabExplicitNameSet {
+                    id: model.surfaces[surface].tab,
+                    name: name.clone(),
+                });
+            }
+            None
+        }
+    };
+    if let Some((pane, id, index)) = tab {
+        events.push(DomainEvent::TabCreated {
+            id,
+            pane,
+            index,
+            name: plan.tab_name.clone(),
+            surface: plan.surface.clone(),
+        });
+        if let Some(name) = &plan.explicit_name {
+            events.push(DomainEvent::TabExplicitNameSet {
+                id,
+                name: Some(name.clone()),
+            });
+        }
+    }
+    events
+}
+
+fn created_result(plan: &CreationPlan) -> StructuralResult {
+    let (workspace, pane, tab) = match plan.destination {
+        Destination::Workspace {
+            workspace,
+            pane,
+            tab,
+            ..
+        } => (Some(workspace), Some(pane), Some(tab)),
+        Destination::Tab { pane, tab, .. } | Destination::Pane { pane, tab, .. } => {
+            (None, Some(pane), Some(tab))
+        }
+        _ => (None, None, None),
+    };
+    StructuralResult::Created {
+        workspace,
+        pane,
+        tab,
+        surface: plan.surface.id,
+    }
+}

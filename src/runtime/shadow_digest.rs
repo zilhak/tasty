@@ -14,6 +14,8 @@
 //!
 //! 이 모듈은 제품 경로에 연결하지 않는다.
 
+pub(crate) mod live;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;

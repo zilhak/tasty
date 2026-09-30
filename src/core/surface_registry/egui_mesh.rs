@@ -133,9 +133,11 @@ fn build_and_register_egui_mesh_kind_def(
         // 여기서는 생성 params만 보관한다. plugin에 surface.create를 보내는 일은 bootstrap 경로가 맡는다.
         create: Arc::new(move |sid, _cwd, params| {
             build_egui_mesh_surface(sid, params, kind_static, plugin_id_for_create.clone())
+                .map(super::PreparedKind::local)
         }),
         restore: Arc::new(move |sid, data| {
             build_egui_mesh_surface(sid, data, kind_static, plugin_id_for_restore.clone())
+                .map(super::PreparedKind::local)
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let ms = s.as_any().downcast_ref::<EguiMeshSurface>()?;
@@ -252,14 +254,18 @@ mod tests {
             HOST_API_VERSION
         ));
         let def = reg.get("mesh_demo").unwrap();
-        let s = (def.create)(5, None, &json!({"display_name": "Readme"})).unwrap();
+        let s = (def.create)(5, None, &json!({"display_name": "Readme"}))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         assert_eq!(s.kind(), "mesh_demo");
         assert_eq!(s.type_name(), "EguiMesh");
         assert_eq!(s.surface_id(), Some(5));
         assert_eq!(s.display_name(), "Readme");
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert_eq!(snap["display_name"], "Readme");
-        let restored = (def.restore)(5, &snap).unwrap();
+        let restored = (def.restore)(5, &snap)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         assert_eq!(restored.kind(), "mesh_demo");
         assert_eq!(restored.display_name(), "Readme");
     }
@@ -274,7 +280,9 @@ mod tests {
             HOST_API_VERSION
         ));
         let def = reg.get("mesh_demo").unwrap();
-        let s = (def.create)(7, None, &json!({ "display_name": "Demo" })).unwrap();
+        let s = (def.create)(7, None, &json!({ "display_name": "Demo" }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert!(
             snap.get("file").is_none(),
@@ -285,6 +293,7 @@ mod tests {
             None,
             &json!({ "display_name": "Doc", "file": "/tmp/a.png" }),
         )
+        .and_then(|prepared| prepared.publish())
         .unwrap();
         let snap2 = (def.snapshot)(s2.as_ref()).unwrap();
         assert_eq!(snap2["file"], "/tmp/a.png");

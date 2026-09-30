@@ -1,3 +1,5 @@
+mod effects;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,6 +16,7 @@ struct Pending {
     admission: Admission,
     followers: Vec<u64>,
     reservations: Vec<tasty_event_store::IdRange>,
+    inputs: Vec<tasty_domain::DataRef>,
 }
 
 type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
@@ -65,6 +68,24 @@ pub(super) fn run(
         if closed.load(Ordering::Acquire) {
             break;
         }
+        let mut predecessor = if matches!(
+            request.work,
+            Work::Resolve(_)
+                | Work::Prepared { .. }
+                | Work::CleanupFinished { .. }
+                | Work::ClaimPreparation { .. }
+        ) && halted.is_none()
+        {
+            match executor.with_state(Clone::clone) {
+                Ok(models) => Some(models),
+                Err(error) => {
+                    halted = Some(error.to_string());
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let followers = if matches!(request.work, Work::Resolve(_) | Work::CancelAdmission) {
             pending
                 .get(&request.ticket)
@@ -78,7 +99,13 @@ pub(super) fn run(
             None => handle(&executor, &mut pending, request.ticket, request.work),
         };
         if halted.is_none()
-            && let Err(error) = publish(&executor, &mut published, &acknowledgements, &send)
+            && let Err(error) = publish(
+                &executor,
+                &mut published,
+                &mut predecessor,
+                &acknowledgements,
+                &send,
+            )
         {
             halted = Some(error.clone());
             result = Err(error);
@@ -153,6 +180,7 @@ fn handle(
                     admission,
                     followers: Vec::new(),
                     reservations: Vec::new(),
+                    inputs: Vec::new(),
                 },
             );
             Ok(ResultValue::NeedsResolution)
@@ -162,6 +190,12 @@ fn handle(
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
             for change in &changes {
+                if let tasty_domain::StructuralCommand::PrepareCreation { input, .. } =
+                    &change.command
+                    && !admitted.inputs.contains(input)
+                {
+                    return Err("preparation input belongs to another admission".into());
+                }
                 for required in change.command.reserved_ids() {
                     if !admitted.reservations.iter().any(|range| {
                         range.kind == required.kind.label()
@@ -183,6 +217,8 @@ fn handle(
                     command: ResolvedCommand {
                         original_digest: admission.original_digest,
                         changes,
+                        effect_result: None,
+                        cancellation: None,
                     },
                 })
                 .map_err(|e| e.to_string())?;
@@ -220,6 +256,26 @@ fn handle(
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
             .map_err(|e| e.to_string()),
+        Work::PutPreparation(input) => {
+            let admitted = pending
+                .get_mut(&ticket)
+                .ok_or("preparation input requires admission")?;
+            let bytes = serde_json::to_vec(&input).map_err(|error| error.to_string())?;
+            let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+            let epoch = inner.epoch;
+            let reference = inner
+                .store
+                .put_payload(epoch, &bytes)
+                .map_err(|error| error.to_string())?;
+            let reference = tasty_domain::DataRef(reference.0);
+            admitted.inputs.push(reference);
+            Ok(ResultValue::InputStored(reference))
+        }
+        Work::ClaimPreparation { stream, operation } => {
+            effects::claim(executor, &stream, &operation)
+        }
+        Work::Prepared { lease, result } => effects::prepared(executor, lease, result),
+        Work::CleanupFinished { lease } => effects::cleaned(executor, lease),
         Work::CancelAdmission => {
             if pending.remove(&ticket).is_none() {
                 for p in pending.values_mut() {
@@ -234,6 +290,7 @@ fn handle(
 fn publish(
     executor: &Executor<StructureDecider>,
     published: &mut Option<u64>,
+    predecessor: &mut Option<tasty_domain::StructureModels>,
     acks: &Acknowledgements,
     send: &impl Fn(Completion) -> bool,
 ) -> Result<(), String> {
@@ -251,7 +308,18 @@ fn publish(
             return Ok(());
         };
         let decoded = journal::stream_batch(&batch).map_err(|e| e.to_string())?;
-        if !send(Completion::Publish(decoded)) {
+        let previous = predecessor
+            .take()
+            .ok_or("committed batch has no live predecessor")?;
+        let before = decoded
+            .streams
+            .keys()
+            .map(|stream| (stream.clone(), previous.stream(stream)))
+            .collect();
+        if !send(Completion::Publish {
+            batch: decoded,
+            before,
+        }) {
             return Err("application projection disconnected".into());
         }
         acknowledge(acks, batch.cut.batch_id)?;

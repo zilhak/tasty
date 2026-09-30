@@ -15,8 +15,28 @@ pub struct SurfaceHandles {
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
 }
 
+/// Process-local identity of one remote kind instance, independent of its reusable surface ID.
+#[derive(Clone)]
+pub struct SurfaceBinding(std::sync::Weak<Mutex<Option<Value>>>);
+
+impl SurfaceHandles {
+    pub fn binding(&self) -> SurfaceBinding {
+        SurfaceBinding(Arc::downgrade(&self.snapshot_cache))
+    }
+}
+
+impl SurfaceBinding {
+    pub fn matches(&self, handles: &SurfaceHandles) -> bool {
+        self.0.ptr_eq(&Arc::downgrade(&handles.snapshot_cache))
+    }
+}
+
 /// registry create/restore closure가 manager에게 보내는 명령.
 pub enum HostCmd {
+    RemoteSurfaceRetired {
+        surface_id: u32,
+        binding: SurfaceBinding,
+    },
     RemoteSurfaceCreated {
         surface_id: u32,
         plugin_id: String,

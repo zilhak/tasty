@@ -149,10 +149,11 @@ impl SavedLayout {
         }
 
         let active = self.active_workspace.min(workspaces.len() - 1);
+        let selected_workspace_id = workspaces[active].id;
         engine.replace_local_workspaces(workspaces);
         engine.categories = categories;
         engine.ensure_normal_category();
-        presentation.active_workspace = engine.workspace_at(active).map(|ws| ws.id);
+        presentation.active_workspace = Some(selected_workspace_id);
         Some(presentation)
     }
 }
@@ -462,7 +463,7 @@ fn restore_generic_immediate(
             return None;
         }
     };
-    match (def.restore)(surface_id, &data) {
+    match (def.restore)(surface_id, &data).and_then(|prepared| prepared.publish()) {
         Ok(s) => Some(s),
         Err(e) => {
             tracing::warn!("Generic restore failed (kind={kind}): {e}");

@@ -160,10 +160,23 @@ impl PluginManager {
             self.namespace_expiries.remove(plugin_id);
         }
         match kind {
-            PendingRequestKind::SurfaceCreate { surface_id }
-            | PendingRequestKind::SurfaceRestore { surface_id }
-            | PendingRequestKind::CommandInvoke { surface_id } => {
-                self.apply_surface_response(plugin_id, surface_id, resp.result);
+            PendingRequestKind::SurfaceCreate {
+                surface_id,
+                binding,
+            }
+            | PendingRequestKind::SurfaceRestore {
+                surface_id,
+                binding,
+            } => {
+                self.apply_surface_response(plugin_id, surface_id, &binding, resp.result);
+            }
+            PendingRequestKind::CommandInvoke {
+                surface_id,
+                binding,
+            } => {
+                if let Some(binding) = binding {
+                    self.apply_surface_response(plugin_id, surface_id, &binding, resp.result);
+                }
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
@@ -309,6 +322,7 @@ impl PluginManager {
         &mut self,
         plugin_id: &str,
         surface_id: u32,
+        binding: &crate::host_cmd::SurfaceBinding,
         result: Option<serde_json::Value>,
     ) {
         let Some(result_value) = result else {
@@ -324,6 +338,9 @@ impl PluginManager {
         let Some(entry) = self.surfaces.get(&surface_id) else {
             return;
         };
+        if entry.plugin_id != plugin_id || !binding.matches(&entry.handles) {
+            return;
+        }
         if let Some(name) = parsed.display_name {
             *tasty_utils::poison::recover_mutex(
                 entry.handles.display_name.lock(),
@@ -903,4 +920,56 @@ fn send_namespace_result(
         JsonRpcResponse::success(original_id, result.unwrap_or(serde_json::Value::Null))
     };
     send_response(response_tx, response);
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::super::RemoteSurfaceEntry;
+    use super::*;
+    use crate::host_cmd::SurfaceHandles;
+
+    fn handles(name: &str) -> SurfaceHandles {
+        SurfaceHandles {
+            display_name: Arc::new(std::sync::Mutex::new(name.into())),
+            snapshot_cache: Arc::default(),
+        }
+    }
+
+    #[test]
+    fn a_late_create_response_cannot_mutate_a_same_id_same_plugin_replacement() {
+        let mut manager =
+            PluginManager::new(Arc::new(tasty_terminal::waker_factory::NoopWakerFactory));
+        let old = handles("old");
+        let fresh = handles("fresh");
+        let plugin = "com.test.kind";
+        manager.surfaces.insert(
+            7,
+            RemoteSurfaceEntry {
+                plugin_id: plugin.into(),
+                handles: fresh.clone(),
+            },
+        );
+        for (id, binding, name) in [(1, old.binding(), "stale"), (2, fresh.binding(), "current")] {
+            manager.pending_requests.insert(
+                id,
+                PendingRequest::now(
+                    plugin,
+                    PendingRequestKind::SurfaceCreate {
+                        surface_id: 7,
+                        binding,
+                    },
+                ),
+            );
+            manager.handle_plugin_response(plugin, PluginResponse { id, result: Some(serde_json::json!({"surface_id":7, "display_name":name, "snapshot":{"name":name}})), error:None, error_code:None });
+            assert_eq!(*old.display_name.lock().unwrap(), "old");
+            assert_eq!(
+                *fresh.display_name.lock().unwrap(),
+                if id == 1 { "fresh" } else { "current" }
+            );
+            assert_eq!(
+                *fresh.snapshot_cache.lock().unwrap(),
+                (id == 2).then(|| serde_json::json!({"name":"current"}))
+            );
+        }
+    }
 }

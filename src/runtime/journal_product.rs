@@ -5,6 +5,7 @@
 
 mod decider;
 mod identity;
+mod preparation;
 mod worker;
 
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 
 use super::command_executor::Executed;
 pub(crate) use decider::StreamCommand;
+pub(crate) use preparation::{ClaimedPreparation, EffectLease, PreparationInput, ShellRecipe};
 
 const QUEUE_CAPACITY: usize = 64;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
@@ -37,6 +39,18 @@ pub(crate) enum Work {
     Resolve(Vec<StreamCommand>),
     Reserve(Vec<(IdKind, u32)>),
     ReadEngine(String),
+    PutPreparation(PreparationInput),
+    ClaimPreparation {
+        stream: String,
+        operation: tasty_domain::OperationId,
+    },
+    Prepared {
+        lease: EffectLease,
+        result: tasty_domain::PreparationResult,
+    },
+    CleanupFinished {
+        lease: EffectLease,
+    },
     CancelAdmission,
 }
 
@@ -54,6 +68,8 @@ pub(crate) enum ResultValue {
     Executed(Executed),
     Reserved(Vec<IdRange>),
     Engine(JournalModel),
+    InputStored(tasty_domain::DataRef),
+    Claimed(ClaimedPreparation),
     Cancelled,
 }
 
@@ -67,7 +83,11 @@ pub(crate) enum Completion {
     },
     StartupFailed(String),
     /// All affected local engines must apply this as one publication before acknowledging.
-    Publish(StreamBatch),
+    Publish {
+        batch: StreamBatch,
+        /// One-use predecessor for live preflight; App discards it after publication.
+        before: std::collections::BTreeMap<String, JournalModel>,
+    },
     Finished {
         ticket: u64,
         result: Result<ResultValue, String>,
@@ -196,6 +216,18 @@ fn request_size(work: &Work) -> usize {
             .len()
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
         Work::ReadEngine(stream) => stream.len(),
+        Work::PutPreparation(input) => {
+            serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::ClaimPreparation { stream, operation } => {
+            stream.len().saturating_add(operation.0.len())
+        }
+        Work::Prepared { lease, result } => {
+            serde_json::to_vec(&(lease, result)).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::CleanupFinished { lease } => {
+            serde_json::to_vec(lease).map_or(usize::MAX, |bytes| bytes.len())
+        }
         Work::CancelAdmission => 0,
     }
 }

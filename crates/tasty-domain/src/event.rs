@@ -187,6 +187,12 @@ pub enum DomainEvent {
 
     #[serde(rename = "operation.prepared")]
     OperationPrepared { operation: Operation },
+    #[serde(rename = "operation.awaiting_cleanup")]
+    OperationAwaitingCleanup {
+        id: OperationId,
+        outcome: OperationOutcome,
+        cleanup: crate::CleanupPlan,
+    },
     #[serde(rename = "operation.finished")]
     OperationFinished {
         id: OperationId,
@@ -218,7 +224,14 @@ impl DomainEvent {
             }
             Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
             Self::SurfaceDataRecorded { data, .. } => vec![*data],
-            Self::OperationPrepared { operation } => vec![operation.input],
+            Self::OperationPrepared { operation } => std::iter::once(operation.input)
+                .chain(
+                    operation
+                        .creation
+                        .as_ref()
+                        .and_then(|plan| plan.surface.data),
+                )
+                .collect(),
             Self::OperationReconciled { evidence, .. } => vec![*evidence],
             _ => Vec::new(),
         }
@@ -253,6 +266,7 @@ impl DomainEvent {
         "pane.ratio_set",
         "surface.ratio_set",
         "operation.prepared",
+        "operation.awaiting_cleanup",
         "operation.finished",
         "operation.reconciled",
         "metadata.set",
@@ -288,6 +302,7 @@ impl DomainEvent {
             Self::PaneRatioSet { .. } => "pane.ratio_set",
             Self::SurfaceRatioSet { .. } => "surface.ratio_set",
             Self::OperationPrepared { .. } => "operation.prepared",
+            Self::OperationAwaitingCleanup { .. } => "operation.awaiting_cleanup",
             Self::OperationFinished { .. } => "operation.finished",
             Self::OperationReconciled { .. } => "operation.reconciled",
             Self::MetadataSet { .. } => "metadata.set",

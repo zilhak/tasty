@@ -592,6 +592,36 @@ impl PluginManager {
         }
     }
 
+    /// Creation and retirement share one FIFO, including an unpumped previous Created command.
+    pub fn enqueue_bound_remote_retirement(
+        &self,
+        surface_id: u32,
+        binding: crate::host_cmd::SurfaceBinding,
+    ) -> Result<(), String> {
+        self.host_cmd_tx
+            .send(HostCmd::RemoteSurfaceRetired {
+                surface_id,
+                binding,
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    /// Retire only the instance captured before replacement, never a newer same-ID registration.
+    fn destroy_bound_remote_surface(
+        &mut self,
+        surface_id: u32,
+        binding: &crate::host_cmd::SurfaceBinding,
+    ) -> bool {
+        let Some(entry) = self.surfaces.get(&surface_id) else {
+            return true;
+        };
+        if !binding.matches(&entry.handles) {
+            return false;
+        }
+        self.destroy_remote_surface(surface_id, None);
+        true
+    }
+
     /// surface 종료를 플러그인에 알리고 호스트의 프레임·상태를 지운다.
     /// 소유자 정보가 없는 surface는 남아 있는 프레임 정보와 매니페스트 종류로 확인한다.
     pub fn destroy_remote_surface(&mut self, surface_id: u32, kind: Option<&str>) {
@@ -651,6 +681,12 @@ impl PluginManager {
                 Err(_) => break,
             };
             match cmd {
+                HostCmd::RemoteSurfaceRetired {
+                    surface_id,
+                    binding,
+                } => {
+                    self.destroy_bound_remote_surface(surface_id, &binding);
+                }
                 HostCmd::RemoteSurfaceCreated {
                     surface_id,
                     plugin_id,
@@ -659,6 +695,7 @@ impl PluginManager {
                     params,
                     handles,
                 } => {
+                    let binding = handles.binding();
                     self.surfaces.insert(
                         surface_id,
                         RemoteSurfaceEntry {
@@ -676,7 +713,10 @@ impl PluginManager {
                             "cwd": cwd_str,
                             "params": params,
                         }),
-                        PendingRequestKind::SurfaceCreate { surface_id },
+                        PendingRequestKind::SurfaceCreate {
+                            surface_id,
+                            binding,
+                        },
                     );
                 }
                 HostCmd::RemoteSurfaceRestored {
@@ -686,6 +726,7 @@ impl PluginManager {
                     data,
                     handles,
                 } => {
+                    let binding = handles.binding();
                     self.surfaces.insert(
                         surface_id,
                         RemoteSurfaceEntry {
@@ -701,7 +742,10 @@ impl PluginManager {
                             "kind": kind,
                             "data": data,
                         }),
-                        PendingRequestKind::SurfaceRestore { surface_id },
+                        PendingRequestKind::SurfaceRestore {
+                            surface_id,
+                            binding,
+                        },
                     );
                 }
             }
@@ -720,6 +764,53 @@ mod tests {
 
     fn mgr() -> PluginManager {
         PluginManager::new(Arc::new(NoopWakerFactory))
+    }
+
+    #[test]
+    fn queued_retirement_orders_between_unpumped_old_and_new_creation() {
+        let mut manager = mgr();
+        let plugin = "com.test.document";
+        let (process, requests) = crate::process::PluginProcess::stub_with_request_rx(plugin);
+        manager.processes.insert(plugin.into(), process);
+        let handles = || crate::host_cmd::SurfaceHandles {
+            display_name: Arc::default(),
+            snapshot_cache: Arc::default(),
+        };
+        let old = handles();
+        let fresh = handles();
+        let create = |handles| HostCmd::RemoteSurfaceCreated {
+            surface_id: 7,
+            plugin_id: plugin.into(),
+            kind: "document".into(),
+            cwd: None,
+            params: json!({}),
+            handles,
+        };
+        manager.host_cmd_tx.send(create(old.clone())).unwrap();
+        assert!(!manager.surfaces.contains_key(&7));
+        manager
+            .enqueue_bound_remote_retirement(7, old.binding())
+            .unwrap();
+        manager.host_cmd_tx.send(create(fresh.clone())).unwrap();
+        manager.drain_host_cmds();
+        assert!(fresh.binding().matches(&manager.surfaces[&7].handles));
+        let methods: Vec<_> = std::iter::from_fn(|| requests.try_recv().ok())
+            .map(|request| request.method)
+            .collect();
+        assert_eq!(
+            methods,
+            [
+                protocol::METHOD_SURFACE_CREATE,
+                protocol::METHOD_SURFACE_DESTROY,
+                protocol::METHOD_SURFACE_CREATE
+            ]
+        );
+        manager
+            .enqueue_bound_remote_retirement(7, old.binding())
+            .unwrap();
+        manager.drain_host_cmds();
+        assert!(fresh.binding().matches(&manager.surfaces[&7].handles));
+        assert!(requests.try_recv().is_err());
     }
 
     fn hello(plugin_id: &str) -> PluginEvent {

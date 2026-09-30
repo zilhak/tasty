@@ -83,17 +83,23 @@ pub fn register_remote_kind(
             .or_else(|| cwd.map(std::path::PathBuf::from));
             surface.set_cwd(surface_cwd);
             let handles = surface.handles();
-            if let Err(e) = tx_create.send(HostCmd::RemoteSurfaceCreated {
+            let command = HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,
                 plugin_id: plugin_id_for_create.clone(),
                 kind: kind_static.to_string(),
                 cwd: cwd.map(std::path::PathBuf::from),
                 params: params.clone(),
                 handles,
-            }) {
-                tracing::warn!("RemoteSurfaceCreated host cmd send failed: {e}");
-            }
-            Ok(Box::new(surface) as Box<dyn Surface>)
+            };
+            let sender = tx_create.clone();
+            Ok(crate::core::surface_registry::PreparedKind::deferred(
+                Box::new(surface),
+                Box::new(move || {
+                    sender.send(command).map_err(|error| {
+                        anyhow::anyhow!("RemoteSurfaceCreated host command failed: {error}")
+                    })
+                }),
+            ))
         }),
         restore: Arc::new(move |sid, data| {
             let surface = RemoteSurface::new(
@@ -105,16 +111,22 @@ pub fn register_remote_kind(
             // 복원 응답을 받기 전에 다시 저장해도 기존 snapshot을 유지한다.
             surface.cache_snapshot(data.clone());
             let handles = surface.handles();
-            if let Err(e) = tx_restore.send(HostCmd::RemoteSurfaceRestored {
+            let command = HostCmd::RemoteSurfaceRestored {
                 surface_id: sid,
                 plugin_id: plugin_id_for_restore.clone(),
                 kind: kind_static.to_string(),
                 data: data.clone(),
                 handles,
-            }) {
-                tracing::warn!("RemoteSurfaceRestored host cmd send failed: {e}");
-            }
-            Ok(Box::new(surface) as Box<dyn Surface>)
+            };
+            let sender = tx_restore.clone();
+            Ok(crate::core::surface_registry::PreparedKind::deferred(
+                Box::new(surface),
+                Box::new(move || {
+                    sender.send(command).map_err(|error| {
+                        anyhow::anyhow!("RemoteSurfaceRestored host command failed: {error}")
+                    })
+                }),
+            ))
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let any = s.as_any();
@@ -149,4 +161,53 @@ pub fn register_remote_kind(
         kind_static,
         plugin_id
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_same_id_candidate_does_not_publish_or_mutate_the_original_before_install() {
+        let registry = SurfaceKindRegistry::new();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let decl = serde_json::from_value(serde_json::json!({
+            "kind":"test-document", "display_name_i18n_key":"surface.kind.markdown", "rendering":"remote"
+        })).unwrap();
+        register_remote_kind(&registry, "com.test.document", &decl, sender);
+        let definition = registry.get_live("test-document").unwrap();
+        let old = (definition.create)(41, None, &serde_json::json!({"display_name":"original"}))
+            .unwrap()
+            .publish()
+            .unwrap();
+        let HostCmd::RemoteSurfaceCreated {
+            handles: old_handles,
+            ..
+        } = receiver.try_recv().unwrap()
+        else {
+            panic!("create")
+        };
+        let candidate =
+            (definition.create)(41, None, &serde_json::json!({"display_name":"candidate"}))
+                .unwrap();
+        assert!(receiver.try_recv().is_err());
+        drop(candidate);
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(old.display_name(), "original");
+        assert_eq!(*old_handles.display_name.lock().unwrap(), "original");
+        let candidate =
+            (definition.create)(41, None, &serde_json::json!({"display_name":"replacement"}))
+                .unwrap();
+        candidate.publish().unwrap();
+        let HostCmd::RemoteSurfaceCreated {
+            handles: new_handles,
+            ..
+        } = receiver.try_recv().unwrap()
+        else {
+            panic!("create")
+        };
+        assert!(!old_handles.binding().matches(&new_handles));
+        assert_eq!(*old_handles.display_name.lock().unwrap(), "original");
+        assert_eq!(*new_handles.display_name.lock().unwrap(), "replacement");
+    }
 }

@@ -28,6 +28,7 @@ pub(crate) trait JournalDecider:
     fn stream_revision(&self, state: &Self::State, stream: &StreamId) -> Option<u64>;
     fn record(
         &self,
+        state: &Self::State,
         command: &Self::Command,
         decision: &Decision<Self::Event, NewEffect>,
     ) -> CommandRecordPlan;
@@ -366,7 +367,7 @@ impl<D: JournalDecider> Executor<D> {
                     payload_refs: self.decider.payload_refs(event),
                 });
         }
-        let plan = self.decider.record(&request.command, decision);
+        let plan = self.decider.record(state, &request.command, decision);
         let mut commit = CommitRequest::new(epoch);
         commit.command = Some(NewCommand {
             command_id: command_id.to_owned(),

@@ -292,6 +292,19 @@ impl CoreState {
             .into_iter()
             .partition(|workspace| workspace.mirror);
     }
+    pub(crate) fn make_local_fixture(&mut self, index: usize) {
+        let mut workspace = self.remove_workspace_at(index);
+        workspace.mirror = false;
+        self.refresh_workspace_display_order();
+        let local_index = self
+            .workspaces()
+            .iter()
+            .take(index)
+            .filter(|w| !w.mirror)
+            .count();
+        self.workspace_display_order.insert(index, workspace.id);
+        self.local_workspaces.insert(local_index, workspace);
+    }
     pub(crate) fn make_mirror_fixture(&mut self, index: usize) {
         let mut workspace = self.remove_workspace_at(index);
         workspace.mirror = true;

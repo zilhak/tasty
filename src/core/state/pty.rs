@@ -128,7 +128,9 @@ impl EngineMut<'_> {
                     for tab in &mut pane.tabs {
                         if tab.reify_deferred_plugin(surface_id, |kind, snap| {
                             let def = registry.get_live(kind)?;
-                            (def.restore)(surface_id, snap).ok()
+                            (def.restore)(surface_id, snap)
+                                .and_then(|prepared| prepared.publish())
+                                .ok()
                         }) {
                             return true;
                         }

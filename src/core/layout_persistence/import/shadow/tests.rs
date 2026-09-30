@@ -506,7 +506,8 @@ const EXCLUDED_MUTATIONS: &[CoreMutation] = &[
             pane(91, vec![tab(92, "m", None, leaf(terminal(93)))]),
         );
         ws.mirror = true;
-        e.insert_local_workspace(0, ws);
+        e.push_mirror_workspace(ws);
+        e.move_workspace_in_display(e.workspaces().len() - 1, 0);
     }),
     ("spawn attempts", |e| {
         let tab = &mut first_pane(e).tabs[1];

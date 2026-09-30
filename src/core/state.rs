@@ -678,13 +678,13 @@ impl CoreState {
             .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
         // 명시한 params가 우선이다. cwd 상속 경로에서 홈으로 바꾸지 않도록 @home은 여기서 해석하지 않는다.
         if def.default_params.is_empty() {
-            return (def.create)(surface_id, cwd, params);
+            return (def.create)(surface_id, cwd, params).and_then(|prepared| prepared.publish());
         }
         let mut owned = params.clone();
         if self.apply_kind_default_params(&def, &mut owned, None) {
-            (def.create)(surface_id, cwd, &owned)
+            (def.create)(surface_id, cwd, &owned).and_then(|prepared| prepared.publish())
         } else {
-            (def.create)(surface_id, cwd, params)
+            (def.create)(surface_id, cwd, params).and_then(|prepared| prepared.publish())
         }
     }
 

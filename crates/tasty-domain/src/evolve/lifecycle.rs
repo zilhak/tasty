@@ -9,6 +9,8 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
         || operation.activation_generation == 0
         || operation.input.0 == 0
         || operation.outcome.is_some()
+        || operation.pending_outcome.is_some()
+        || operation.cleanup.is_some()
         || operation.reconciliation_evidence.is_some()
     {
         return Err(EvolveError::InvalidFact(
@@ -34,6 +36,26 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
                 entity.id
             )));
         }
+    }
+    if let Some(plan) = &operation.creation {
+        let last = m
+            .activation_high_water
+            .get(&plan.surface.id)
+            .copied()
+            .unwrap_or(0)
+            .max(
+                m.surfaces
+                    .get(&plan.surface.id)
+                    .and_then(|surface| surface.activation)
+                    .map_or(0, |activation| activation.generation),
+            );
+        if last.checked_add(1) != Some(operation.activation_generation) {
+            return Err(EvolveError::InvalidFact(
+                "activation generation was already reserved or skipped".into(),
+            ));
+        }
+        m.activation_high_water
+            .insert(plan.surface.id, operation.activation_generation);
     }
     m.operations.insert(operation.id.clone(), operation);
     Ok(())
@@ -75,6 +97,10 @@ pub(super) fn finish(
             "operation outcome cannot be overwritten without reconciliation".into(),
         ));
     }
+    if !matches!(outcome, OperationOutcome::Uncertain { .. }) {
+        op.pending_outcome = None;
+        op.cleanup = None;
+    }
     op.outcome = Some(outcome);
     op.reconciliation_evidence = evidence;
     Ok(())
@@ -100,6 +126,10 @@ pub(super) fn activation(
         ));
     }
     surface.activation = Some(next);
+    m.activation_high_water
+        .entry(id)
+        .and_modify(|last| *last = (*last).max(next.generation))
+        .or_insert(next.generation);
     Ok(())
 }
 
@@ -145,4 +175,28 @@ pub(super) fn ratio<Id>(layout: &mut SplitTree<Id>, path: &[bool], value: Ratio)
         }
         SplitTree::Leaf(_) => Err(EvolveError::Missing("split node".into())),
     }
+}
+
+pub(super) fn await_cleanup(
+    m: &mut JournalModel,
+    id: OperationId,
+    outcome: OperationOutcome,
+    cleanup: crate::CleanupPlan,
+) -> Result<()> {
+    let operation = m
+        .operations
+        .get_mut(&id)
+        .ok_or_else(|| EvolveError::Missing(format!("operation:{}", id.0)))?;
+    if operation.outcome.is_some()
+        || operation.pending_outcome.is_some()
+        || operation.cleanup.is_some()
+        || matches!(outcome, OperationOutcome::Uncertain { .. })
+    {
+        return Err(EvolveError::InvalidFact(
+            "operation cannot await cleanup from this state".into(),
+        ));
+    }
+    operation.pending_outcome = Some(outcome);
+    operation.cleanup = Some(cleanup);
+    Ok(())
 }
