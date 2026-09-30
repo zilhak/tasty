@@ -414,15 +414,9 @@ impl App {
         let theme_runtime = tasty_themes::ThemeRuntime {
             ui_zoom: appearance.ui_scale_factor(),
             ..self
-                .core_state
-                .as_ref()
+                .engines()
+                .primary()
                 .map(|cs| cs.settings.theme_runtime())
-                .or_else(|| {
-                    self.view
-                        .views
-                        .values()
-                        .find_map(|w| w.as_main().map(|m| m.core_state.settings.theme_runtime()))
-                })
                 .unwrap_or_default()
         };
         let proxy = self.view.proxy.clone();
