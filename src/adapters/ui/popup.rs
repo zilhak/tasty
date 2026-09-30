@@ -635,6 +635,20 @@ impl PopupManager {
         }
     }
 
+    /// 범위 대상이 사라진 열린 팝업을 닫는다. ID 범위는 어떤 화면과도 다시 맞지 않아 열린 채 숨기 때문이다.
+    /// 닫힌 팝업은 closed_queue에 들어가 on_close 훅이 이어진다.
+    pub fn close_scope_orphans(&mut self, target_exists: impl Fn(&PopupScope) -> bool) {
+        let orphans: Vec<PopupId> = self
+            .popups
+            .iter()
+            .filter(|p| p.open && !target_exists(&p.scope))
+            .map(|p| p.id)
+            .collect();
+        for id in orphans {
+            self.close(id);
+        }
+    }
+
     /// 닫힌 팝업 목록을 꺼내 비운다. 호출부가 훅을 실행하며 다른 팝업도 닫을 수 있다.
     pub fn take_closed_queue(&mut self) -> Vec<PopupId> {
         std::mem::take(&mut self.closed_queue)

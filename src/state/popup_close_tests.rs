@@ -1210,3 +1210,117 @@ fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
     assert!(state.dialogs.preset_apply_target_category.is_none());
     assert!(state.dialogs.preset_picker_selected.is_none());
 }
+
+fn open_scoped(
+    state: &mut crate::state::AppState,
+    id: PopupId,
+    scope: crate::adapters::ui::popup::PopupScope,
+) {
+    crate::intent::popup::handle(
+        state,
+        &UiIntent::OpenPopup {
+            id,
+            mode: crate::intent::OpenPopupMode::WithScope(scope),
+        }
+        .from_user_menu("test"),
+    );
+}
+
+fn visible_popup(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+) -> Option<PopupId> {
+    let ctx = super::popup_ownership_tests::live_layout_ctx(state, engine);
+    state
+        .popups
+        .topmost_visible_open(Some(&ctx))
+        .map(|(id, _)| id)
+}
+
+/// 범위 workspace가 닫히면 이름 변경 팝업이 닫히고, 다른 workspace에서 다시 열면 보인다.
+#[test]
+fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
+    let (mut state, mut engine) = test_state();
+    let b = super::popup_ownership_tests::push_workspace(&mut engine);
+    let c = super::popup_ownership_tests::push_workspace(&mut engine);
+    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    let target = RenameTarget::WorkspaceName { workspace_id: b };
+    let scope = target.popup_scope(&engine);
+    state.dialogs.rename = Some((target, "B".to_string()));
+    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+
+    let b_idx = engine.find_workspace_index_for_id(b).unwrap();
+    assert!(state.close_workspace_at(
+        &mut engine,
+        b_idx,
+        crate::state::WorkspaceCloseOrigin::Agent
+    ));
+    for _ in 0..3 {
+        run_frame(empty_input(), &mut state, &mut engine);
+    }
+    assert!(
+        !state.popups.is_open(RENAME_POPUP_ID),
+        "rename popup stays open after its workspace closed"
+    );
+    assert!(state.dialogs.rename.is_none());
+
+    state.active_workspace = engine.find_workspace_index_for_id(c).unwrap();
+    let target = RenameTarget::WorkspaceName { workspace_id: c };
+    let scope = target.popup_scope(&engine);
+    state.dialogs.rename = Some((target, "C".to_string()));
+    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(RENAME_POPUP_ID));
+}
+
+/// 범위 workspace가 닫힌 도구 팝업은 활성 workspace로 다시 열면 보인다.
+#[test]
+fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
+    let (mut state, mut engine) = test_state();
+    let b = super::popup_ownership_tests::push_workspace(&mut engine);
+    super::popup_ownership_tests::push_workspace(&mut engine);
+    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    open_scoped(
+        &mut state,
+        PORT_SCANNER_POPUP_ID,
+        crate::adapters::ui::popup::PopupScope::Workspace(b),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    let b_idx = engine.find_workspace_index_for_id(b).unwrap();
+    assert!(state.close_workspace_at(&mut engine, b_idx, crate::state::WorkspaceCloseOrigin::User));
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    let active_id = state.active_workspace(&engine).id;
+    open_scoped(
+        &mut state,
+        PORT_SCANNER_POPUP_ID,
+        crate::adapters::ui::popup::PopupScope::Workspace(active_id),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(PORT_SCANNER_POPUP_ID));
+}
+
+/// 범위 탭이 닫히면 탭 이름 변경 팝업이 닫힌다.
+#[test]
+fn tab_rename_popup_closes_with_its_tab() {
+    let (mut state, mut engine) = test_state();
+    state.add_tab(&mut engine).unwrap();
+    let pane_id = state.focused_pane_id(&engine);
+    let pane = engine.find_pane_by_id(pane_id).unwrap();
+    let tab_id = pane.tabs[pane.active_tab].id;
+    let target = RenameTarget::TabName { tab_id };
+    let scope = target.popup_scope(&engine);
+    state.dialogs.rename = Some((target, "t".to_string()));
+    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+    core.apply(
+        &mut engine,
+        crate::core::intent::DomainIntent::CloseTab { tab_id },
+    )
+    .expect("close tab");
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert!(!state.popups.is_open(RENAME_POPUP_ID));
+    assert!(state.dialogs.rename.is_none());
+}

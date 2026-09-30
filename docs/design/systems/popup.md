@@ -96,7 +96,7 @@ plugin의 egui-mesh 팝업도 키보드 입력을 차단한다. 호스트 PopupM
 
 ## 스코프
 
-팝업은 소속 범위(`PopupScope`)를 가지며 가시성·경계가 결정된다. enum: `Window` / `Workspace(u32)` / `Pane(u32)` / `Tab(u32)` / `Surface(u32)`. 모든 대상은 ID다. 에이전트가 앞쪽 workspace를 닫거나 workspace·탭 순서를 바꿔도 팝업은 연 대상을 따라간다. 같은 인덱스로 밀려온 다른 대상에서 보이지 않는다. `Tab`의 경계는 그 탭이 활성인 pane에서 찾는다.
+팝업은 소속 범위(`PopupScope`)를 가지며 가시성·경계가 결정된다. enum: `Window` / `Workspace(u32)` / `Pane(u32)` / `Tab(u32)` / `Surface(u32)`. 모든 대상은 ID다. 에이전트가 앞쪽 workspace를 닫거나 workspace·탭 순서를 바꿔도 팝업은 연 대상을 따라간다. 같은 인덱스로 밀려온 다른 대상에서 보이지 않는다. `Tab`의 경계는 그 탭이 활성인 pane에서 찾는다. 범위 대상 workspace·탭이 닫혀 사라지면 매 프레임 팝업을 그리기 전에 그 팝업을 닫고 `on_close`를 실행한다. 열린 채 숨어 같은 팝업을 다시 열 수 없게 되는 일을 막는다.
 
 | 스코프 | 가시성 | 경계 clamp | scrim 이 덮는 rect |
 |--------|--------|-----------|--------------------|

@@ -211,7 +211,7 @@ fn scope_hidden_popup_is_not_the_escape_candidate() {
     assert_eq!(id, PORT_SCANNER_ID);
 }
 
-fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
+pub(super) fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         crate::core::WorkspaceCreationParams::terminal(),
@@ -223,7 +223,7 @@ fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
     id
 }
 
-fn live_layout_ctx(state: &AppState, engine: &crate::core::CoreState) -> LayoutContext {
+pub(super) fn live_layout_ctx(state: &AppState, engine: &crate::core::CoreState) -> LayoutContext {
     let rect = super::popup_close_tests::term_rect();
     crate::adapters::ui::layout_context::build_layout_context(state, engine, &[], rect, 1.0)
 }
