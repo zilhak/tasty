@@ -941,16 +941,26 @@ mod tests {
         shapes
     }
 
-    /// 스크롤 화살표 글리프(`tab_scroll_arrow_glyph_size` 정사각 이미지)의 중심과 tint.
+    /// 폭 400인 `scrolling_pane`의 두 화살표 칸 중심 x. split·search 두 칸(28씩)을 뺀 344가
+    /// [왼쪽 화살표][viewport][오른쪽 화살표]다.
+    fn arrow_centers_x() -> [f32; 2] {
+        let bar_h = test_theme().tab_bar_height.value();
+        [bar_h / 2.0, 400.0 - 28.0 * 2.0 - bar_h / 2.0]
+    }
+
+    /// 두 화살표 칸 가운데에 칠한 `tab_scroll_arrow_glyph_size` 정사각 이미지의 중심과 tint.
+    /// 같은 크기의 탭 칸 move 글리프는 칸 중심에 있지 않아 제외된다.
     fn arrow_glyphs(shapes: &[egui::Shape]) -> Vec<(egui::Pos2, egui::Color32)> {
         let size = test_theme().tab_scroll_arrow_glyph_size().value();
+        let centers = arrow_centers_x();
         shapes
             .iter()
             .filter_map(|s| match s {
                 egui::Shape::Rect(r)
                     if r.brush.is_some()
                         && (r.rect.width() - size).abs() < 0.01
-                        && (r.rect.height() - size).abs() < 0.01 =>
+                        && (r.rect.height() - size).abs() < 0.01
+                        && centers.iter().any(|x| (r.rect.center().x - x).abs() < 0.01) =>
                 {
                     Some((r.rect.center(), r.fill))
                 }
@@ -969,12 +979,10 @@ mod tests {
     fn scroll_arrows_are_chevrons_in_square_strip_height_cells() {
         let th = test_theme();
         let shapes = settled_strip_shapes(scrolling_pane(0.0));
-        let bar_h = th.tab_bar_height.value();
-        // 폭 400에서 split·search 두 칸(28씩)을 뺀 344가 [왼쪽 화살표][viewport][오른쪽 화살표]다.
-        let right_center = 400.0 - 28.0 * 2.0 - bar_h / 2.0;
+        let [left_center, right_center] = arrow_centers_x();
         let glyphs = arrow_glyphs(&shapes);
         assert_eq!(glyphs.len(), 2, "{glyphs:?}");
-        assert!((glyphs[0].0.x - bar_h / 2.0).abs() < 0.01, "{glyphs:?}");
+        assert!((glyphs[0].0.x - left_center).abs() < 0.01, "{glyphs:?}");
         assert!((glyphs[1].0.x - right_center).abs() < 0.01, "{glyphs:?}");
         assert_eq!(glyphs[0].1, th.tab_scroll_arrow_fg_disabled().to_egui());
         assert_eq!(glyphs[1].1, th.tab_scroll_arrow_fg().to_egui());
@@ -996,5 +1004,147 @@ mod tests {
                 th.tab_scroll_arrow_fg_disabled().to_egui()
             ]
         );
+    }
+
+    fn hidden(i: usize, scroll: f32) -> Option<tasty_ui_widgets::TabScrollArrowSide> {
+        // 칸 폭 160 + 구분선 1, viewport 300.
+        view::hidden_move_side(
+            i,
+            tasty_type_geometry::length::LogicalPx(161.0),
+            tasty_type_geometry::length::LogicalPx(160.0),
+            tasty_type_geometry::length::LogicalPx(scroll),
+            tasty_type_geometry::length::LogicalPx(300.0),
+        )
+    }
+
+    #[test]
+    fn a_move_target_counts_as_visible_only_when_its_cell_is_fully_inside() {
+        use tasty_ui_widgets::TabScrollArrowSide::{Left, Right};
+        // 탭 1은 [161, 321]. viewport [scroll, scroll + 300].
+        assert_eq!(
+            hidden(1, 21.0),
+            None,
+            "오른쪽 끝이 viewport 끝과 같으면 보인다"
+        );
+        assert_eq!(
+            hidden(1, 20.5),
+            Some(Right),
+            "0.5만 넘쳐도 오른쪽에 가려진다"
+        );
+        assert_eq!(
+            hidden(1, 161.0),
+            None,
+            "왼쪽 끝이 viewport 시작과 같으면 보인다"
+        );
+        assert_eq!(hidden(1, 161.5), Some(Left), "0.5만 잘려도 왼쪽에 가려진다");
+        assert_eq!(hidden(0, 0.0), None);
+        assert_eq!(hidden(7, 0.0), Some(Right));
+        assert_eq!(hidden(0, 400.0), Some(Left));
+    }
+
+    fn marked_pane(mark: TabMoveMark, target: usize, scroll: f32) -> PaneTabBarView {
+        let mut pane = scrolling_pane(scroll);
+        pane.move_mark = Some((target, mark));
+        pane
+    }
+
+    #[test]
+    fn the_arrow_toward_a_hidden_move_target_turns_pink_for_tab_and_surface_targets() {
+        let th = test_theme();
+        let pink = th.tab_scroll_arrow_move_fg().to_egui();
+        for mark in [TabMoveMark::Ring, TabMoveMark::Glyph] {
+            // 스크롤 0에서 탭 7은 오른쪽 밖이다. 왼쪽은 끝에 닿아 disabled로 남는다.
+            let glyphs = arrow_glyphs(&settled_strip_shapes(marked_pane(mark, 7, 0.0)));
+            assert_eq!(
+                glyphs.iter().map(|g| g.1).collect::<Vec<_>>(),
+                vec![th.tab_scroll_arrow_fg_disabled().to_egui(), pink],
+                "{mark:?}"
+            );
+            // 끝까지 스크롤하면 탭 0은 왼쪽 밖이다. 오른쪽은 끝에 닿아 disabled다.
+            let glyphs = arrow_glyphs(&settled_strip_shapes(marked_pane(mark, 0, 10_000.0)));
+            assert_eq!(
+                glyphs.iter().map(|g| g.1).collect::<Vec<_>>(),
+                vec![pink, th.tab_scroll_arrow_fg_disabled().to_egui()],
+                "{mark:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_fully_visible_move_target_leaves_the_arrows_alone() {
+        let th = test_theme();
+        let glyphs = arrow_glyphs(&settled_strip_shapes(marked_pane(
+            TabMoveMark::Ring,
+            0,
+            0.0,
+        )));
+        assert_eq!(
+            glyphs.iter().map(|g| g.1).collect::<Vec<_>>(),
+            vec![
+                th.tab_scroll_arrow_fg_disabled().to_egui(),
+                th.tab_scroll_arrow_fg().to_egui()
+            ]
+        );
+    }
+
+    fn run_frame(
+        ctx: &egui::Context,
+        pane: &PaneTabBarView,
+        raw: egui::RawInput,
+        actions: &mut Vec<TabBarAction>,
+    ) {
+        let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
+        let panes = vec![pane.clone()];
+        drop(ctx.run(raw, |ctx| {
+            let props = PaneTabBarsProps {
+                theme: &theme,
+                kb: &kb,
+                panes: &panes,
+                scale_factor: 1.0,
+                tab_width: 160.0,
+                tab_font_size: 12.0,
+                active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                drag: None,
+                switch_overlay_pane: None,
+                native_content: &[],
+            };
+            actions.extend(draw_pane_tab_bars_view(ctx, &props).actions);
+        }));
+    }
+
+    /// 분홍 화살표 클릭은 한 칸 스크롤만 낸다. 대상으로 건너뛰거나 포커스를 옮기지 않는다.
+    #[test]
+    fn clicking_the_pink_arrow_is_the_normal_step_scroll() {
+        let ctx = egui::Context::default();
+        let pane = marked_pane(TabMoveMark::Ring, 7, 0.0);
+        let bar_h = test_theme().tab_bar_height.value();
+        let right = egui::pos2(arrow_centers_x()[1], bar_h / 2.0);
+        let mut actions = Vec::new();
+        // Area가 크기를 재고 페이드인을 마칠 때까지 입력 없이 그린 뒤 누르고 뗀다.
+        let steps =
+            std::iter::repeat_n(None, 30).chain([Some(None), Some(Some(true)), Some(Some(false))]);
+        for step in steps {
+            let mut raw = egui::RawInput::default();
+            let Some(pressed) = step else {
+                run_frame(&ctx, &pane, raw, &mut Vec::new());
+                continue;
+            };
+            raw.events.push(egui::Event::PointerMoved(right));
+            if let Some(pressed) = pressed {
+                raw.events.push(egui::Event::PointerButton {
+                    pos: right,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            run_frame(&ctx, &pane, raw, &mut actions);
+        }
+        let non_auto: Vec<_> = actions
+            .into_iter()
+            .filter(|a| !matches!(a, TabBarAction::AutoScrollToActiveTab { .. }))
+            .collect();
+        assert_eq!(non_auto, vec![TabBarAction::ScrollRight { pane_id: 1 }]);
     }
 }

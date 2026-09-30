@@ -79,6 +79,17 @@ pub fn draw_pane_tab_bars_view(
             }
         }
 
+        // 이동 대기 대상 탭 칸이 스크롤에 가려진 쪽. 그쪽 화살표가 move 잉크를 쓰고 disabled가 되지 않는다.
+        let move_cue = info.move_mark.filter(|_| needs_scroll).and_then(|(i, _)| {
+            hidden_move_side(
+                i,
+                LogicalPx(tab_w + separator_w),
+                LogicalPx(tab_w),
+                LogicalPx(scroll),
+                LogicalPx(viewport_w),
+            )
+        });
+
         let area_response = egui::Area::new(super::pane_tab_bar_layer(info.pane_id).id)
             .fixed_pos(egui::pos2(logical_x, logical_y))
             .order(egui::Order::Foreground)
@@ -102,7 +113,8 @@ pub fn draw_pane_tab_bars_view(
                             ui.spacing_mut().item_spacing.x = 0.0;
 
                             if needs_scroll {
-                                let can_left = scroll > 0.0;
+                                let cue = move_cue == Some(TabScrollArrowSide::Left);
+                                let can_left = scroll > 0.0 || cue;
                                 let (r, resp) = ui.allocate_exact_size(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
@@ -112,7 +124,7 @@ pub fn draw_pane_tab_bars_view(
                                     th,
                                     r,
                                     TabScrollArrowSide::Left,
-                                    arrow_ink(can_left),
+                                    arrow_ink(can_left, cue),
                                     resp.hovered(),
                                 );
                                 if resp.clicked() && can_left {
@@ -252,7 +264,8 @@ pub fn draw_pane_tab_bars_view(
                             }
 
                             if needs_scroll {
-                                let can_right = scroll < max_scroll;
+                                let cue = move_cue == Some(TabScrollArrowSide::Right);
+                                let can_right = scroll < max_scroll || cue;
                                 let (r, resp) = ui.allocate_exact_size(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
@@ -262,7 +275,7 @@ pub fn draw_pane_tab_bars_view(
                                     th,
                                     r,
                                     TabScrollArrowSide::Right,
-                                    arrow_ink(can_right),
+                                    arrow_ink(can_right, cue),
                                     resp.hovered(),
                                 );
                                 if resp.clicked() && can_right {
@@ -373,12 +386,34 @@ pub fn draw_pane_tab_bars_view(
     output
 }
 
-/// 스크롤할 수 있는 쪽은 enabled, 끝에 닿은 쪽은 disabled 잉크다.
-fn arrow_ink(can_scroll: bool) -> TabScrollArrowInk {
-    if can_scroll {
+/// 이동 대기 대상이 가려진 쪽은 move, 스크롤할 수 있는 쪽은 enabled, 끝에 닿은 쪽은 disabled 잉크다.
+fn arrow_ink(can_scroll: bool, move_cue: bool) -> TabScrollArrowInk {
+    if move_cue {
+        TabScrollArrowInk::Move
+    } else if can_scroll {
         TabScrollArrowInk::Enabled
     } else {
         TabScrollArrowInk::Disabled
+    }
+}
+
+/// 탭 칸 `tab_index`가 viewport 안에 완전히 들어오지 않았으면 가려진 쪽을 돌려준다.
+/// 칸은 콘텐츠 좌표 `[i × pitch, i × pitch + cell_w]`를 차지한다. 일부만 보여도 가려진 것으로 친다.
+pub(super) fn hidden_move_side(
+    tab_index: usize,
+    pitch: LogicalPx,
+    cell_w: LogicalPx,
+    scroll: LogicalPx,
+    viewport_w: LogicalPx,
+) -> Option<TabScrollArrowSide> {
+    let start = tab_index as f32 * pitch.value();
+    let end = start + cell_w.value();
+    if start < scroll.value() {
+        Some(TabScrollArrowSide::Left)
+    } else if end > scroll.value() + viewport_w.value() {
+        Some(TabScrollArrowSide::Right)
+    } else {
+        None
     }
 }
 
