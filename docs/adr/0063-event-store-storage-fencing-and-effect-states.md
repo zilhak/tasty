@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: `tasty-event-store`는 있지만 제품에 연결되지 않았다. 독점 파일 잠금은 미구현이며, effect·명령 상태 전이의 일부가 아직 코드에 반영되지 않았다
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사와 복원 manifest 전환, 데이터 홈 공유 ID 할당기, 로그 보존·정리와 용량 예산, projection 출력과 cursor의 동시 갱신
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -16,8 +16,9 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 
 - 큰 불변 내용(surface snapshot·scrollback 같은 payload)을 journal DB 안에 둘지 별도 파일로 둘지.
   계획 단계에서는 임시 파일 작성→sync→rename→부모 디렉터리 sync를 거친 파일 blob을 가정했다.
-- 한 journal의 활성 writer를 무엇으로 하나로 제한할지. 현재 코드는 journal 메타데이터의 writer 세대(epoch)를 쓰기마다 검사할 뿐
-  파일 잠금이 없어, 같은 파일을 연 다른 프로세스가 새 세대를 등록하면 살아 있는 writer가 조용히 거절된다.
+- 한 journal의 활성 writer를 무엇으로 하나로 제한할지. journal 메타데이터의 writer 세대(epoch)를 쓰기마다 검사하는 것만으로는
+  같은 파일을 연 다른 프로세스가 언제든 새 세대를 등록할 수 있고, 그 순간부터 살아 있던 writer의 다음 쓰기가 Fenced 오류로 거절된다.
+  writer 자리를 빼앗는 쪽은 아무 확인 없이 성공한다.
 - effect와 명령 상태의 허용 전이. 특히 결과 불명(Uncertain) effect의 종료 방법, 재시도 뒤 이전 결과의 처리, 비종료 명령 상태의 역행 여부.
 - 이 빌드보다 새 schema의 journal과 journal이 아닌 SQLite 파일을 열 때의 처리.
 
@@ -36,12 +37,18 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 
 ### writer는 독점 파일 잠금과 세대 검사를 함께 쓴다
 
-- 제품에 연결하는 단계에서 journal 파일에 대한 OS 독점 잠금을 추가한다. 잠금을 얻지 못하면 writer로 열지 않고 이미 사용 중이라고 알린다.
-  잠금은 한 journal의 활성 writer를 프로세스 단위로 하나로 제한하고, 같은 journal의 resume는 명시한 journal 선택과 이 잠금으로만 허용한다.
-- writer 세대(epoch) fencing은 잠금과 함께 유지한다. 모든 쓰기 API는 현재 세대를 확인한 transaction에서만 쓰며, 새 세대가 등록되면 이전 세대의 쓰기를 거절한다.
-  세대 검사는 같은 프로세스 안의 이전 writer·worker의 늦은 결과를 막는 장치이고, 잠금은 다른 프로세스를 막는 장치다. 한쪽이 다른 쪽을 대체하지 않는다.
-- 잠금을 얻을 수 없는 파일시스템이나 플랫폼에서는 writer 모드로 열지 않는다. 세대 검사만으로 조용히 계속하지 않는다.
-- 현재 코드에는 잠금이 없다. 다른 프로세스가 같은 파일을 여는 것을 막지 않으며, 이 상태로 제품 경로에 연결하지 않는다.
+- journal은 잠금 없이 열 수 있고 이 상태에서는 읽기만 한다. writer가 되려면 OS 독점 잠금을 얻은 뒤 새 세대를 등록한다.
+  잠금은 기다리지 않고 시도하며, 다른 저장소(다른 프로세스 포함)가 쥐고 있으면 이미 사용 중이라는 오류로 실패하고 writer가 되지 않는다.
+  잠금은 한 journal의 활성 writer를 하나로 제한하고, 같은 journal의 resume는 명시한 journal 선택과 이 잠금으로만 허용한다.
+- 잠금 대상은 journal DB 파일이 아니라 그 옆의 `<journal 파일 경로>.writer-lock` 파일이다. Windows의 파일 잠금(LockFileEx)은 강제 잠금이라
+  DB 파일 자체를 잠그면 같은 파일에 대한 SQLite 자신의 읽기·쓰기까지 막히기 때문이다. 세 플랫폼에서 같은 방식을 쓴다.
+- 잠금 파일은 writer가 끝나도 지우지 않는다. 잠금을 놓는 사이에 파일을 지우면 다음 두 프로세스가 서로 다른 새 파일을 만들어 각각 잠금을 얻을 수 있기 때문이다.
+  잠금은 writer를 놓거나 저장소를 닫을 때, 그리고 프로세스가 비정상 종료할 때 OS가 푼다.
+- writer 세대(epoch) fencing은 잠금과 함께 유지한다. 모든 쓰기 API는 잠금 보유를 먼저 확인하고, 이어서 현재 세대를 확인한 transaction에서만 쓴다.
+  잠금 없이 쓰는 것은 journal을 열 때의 schema migration과 journal ID 기록뿐이며, 둘 다 SQLite의 쓰기 transaction으로 직렬화된다.
+  잠금이 없으면 현재 세대 값을 알아도 쓰지 못한다. 잠금을 가진 저장소가 새 세대를 등록하면 이전 세대의 다음 쓰기부터 Fenced로 거절된다.
+  세대 검사는 같은 저장소 안의 이전 writer·worker가 늦게 보낸 쓰기를 막는 장치이고, 잠금은 다른 저장소·프로세스를 막는 장치다. 한쪽이 다른 쪽을 대체하지 않는다.
+- 잠금 파일을 만들 수 없거나 잠금을 쓸 수 없는 파일시스템·플랫폼에서는 writer가 되지 않고 잠금을 쓸 수 없다고 알린다. 세대 검사만으로 계속하지 않는다.
 
 ### effect 상태 전이
 
@@ -51,19 +58,23 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 | Deferred | Pending, Running, Cancelled, Superseded | 명시 활성화로만 진행 |
 | Running | Succeeded, Failed, Uncertain | 결과를 낸 attempt가 현재 attempt여야 함 |
 | Failed | Pending | 같은 effect identity의 다음 attempt로 재시도 |
-| Uncertain | Succeeded, Failed, Cancelled | 대조 결과로만. Cancelled는 실행되지 않았다는 증거가 있을 때만 |
+| Uncertain | Succeeded, Failed, Cancelled | 대조 결과로만. Cancelled는 실행되지 않았다는 증거를 결과로 함께 기록할 때만 |
 | Succeeded, Cancelled, Superseded | 없음 | 종료 |
 
 - 모든 전이는 저장된 현재 상태·resource generation·attempt와 대조한다(compare-and-set). 다르면 늦은 결과로 보고 거절한다.
 - Running 진입은 activation claim(journal·엔진·surface·runtime epoch·activation generation)을 얻어야 하며, 같은 generation의 실행권은 effect 하나만 갖는다.
 - Uncertain은 새 generation이 생겼다는 이유만으로 성공·취소로 바꾸지 않는다. 대조로 실제 실행 여부를 확인한 뒤 그 결과로만 벗어나며, 확인 전에는 원래 자원의 대조·정리 의무를 유지한다.
   Running에서 바로 Superseded로 가지 않는다. 결과를 모르는 시도를 대체된 것으로 덮지 않기 위해서다.
-- 결과는 attempt마다 보존한다. effect의 현재 결과는 가장 최근 attempt의 결과이며, 재시도(Failed→Pending)로 새 attempt를 시작하면 현재 결과를 비운다.
-  이전 attempt의 결과는 attempt 기록에 남긴다. 복구기가 결과 유무로 상태를 추정하지 않도록 하기 위해서다.
+- Uncertain→Cancelled는 증거가 없으면 거절하고 effect를 Uncertain으로 둔다. 저장소는 증거가 있는지만 확인하며 내용의 타당성은 effect 종류별 대조가 판단한다.
+- 결과는 attempt마다 보존한다. effect의 현재 결과는 가장 최근 attempt 또는 그 대조의 결과이며, 재시도(Failed→Pending)로 새 attempt를 시작하면 현재 결과를 비운다.
+  attempt 기록에는 Running에서 벗어날 때의 상태와 결과를 남긴다. 복구기가 결과 유무로 상태를 추정하지 않도록 하기 위해서다.
+- Uncertain에서 대조로 벗어나면(Succeeded·Failed·Cancelled) 대조한 상태와 결과를 해당 attempt 기록의 별도 칸(대조 상태·대조 결과)에 남긴다.
+  Running 시점의 상태(Uncertain)와 결과는 덮어쓰지 않는다. 이후 재시도로 effect의 현재 결과가 비워져도 대조 결과는 attempt 기록에 남는다.
 
 ### 명령 상태 전이
 
 - 명령 상태는 Accepted → InProgress → 종료(Completed·Failed·Cancelled)로만 진행한다. Accepted에서 바로 종료할 수 있지만 InProgress에서 Accepted로 역행하지 않는다.
+  역행하는 갱신은 거절하며 그 갱신을 담은 commit 전체가 반영되지 않는다.
 - 종료된 명령은 바꾸지 않는다. 같은 키의 재요청은 종료 기록을 돌려받는다.
 - 진행 중 응답은 새 값으로 교체할 수 있고, 종료할 때 최종 응답을 확정한다.
 
@@ -85,6 +96,7 @@ GC로 지운 공간은 VACUUM 전까지 파일 크기로 돌아오지 않는다.
 
 잠금과 세대 검사를 함께 쓰면 두 프로세스가 같은 journal에 번갈아 쓰는 경우와 같은 프로세스 안의 늦은 결과를 모두 막는다.
 잠금을 지원하지 않는 환경(일부 네트워크 파일시스템 등)에서는 writer로 열 수 없으므로 데이터 홈 위치에 제약이 생긴다.
+journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 정리 작업은 실행 중인 writer가 없음을 확인한 뒤에만 한다.
 
 전이표를 고정하면 복구기가 상태 이름만으로 다음 동작을 정할 수 있다. Uncertain에서 Cancelled로 가려면 실행되지 않았다는 증거가 필요하므로
 대조 수단이 없는 effect는 Uncertain으로 오래 남을 수 있다. 이는 결과를 아는 척하지 않기 위해 감수한다.
@@ -100,7 +112,8 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 
 - payload를 파일 blob으로 두는 안: DB 크기와 WAL 부담은 줄지만 파일 작성·sync·rename·디렉터리 sync와 DB commit의 순서, 고아 파일 GC, 플랫폼별 영속성 검증이 필요하다.
   현재 payload 크기 분포를 측정하기 전에는 이 복잡도를 감수할 근거가 없다.
-- 세대 검사만 쓰는 안: 다른 프로세스가 같은 파일을 열어 새 세대를 등록하면 살아 있는 writer가 조용히 밀려난다. 두 인스턴스가 같은 데이터 홈을 쓰는 실수를 막지 못한다.
+- 세대 검사만 쓰는 안: 다른 프로세스가 같은 파일을 열어 아무 확인 없이 새 세대를 등록할 수 있고, 살아 있던 writer는 다음 쓰기부터 Fenced로 거절된다. 두 인스턴스가 같은 데이터 홈을 쓰는 실수를 막지 못한다.
+- journal DB 파일 자체를 잠그는 안: Windows에서는 강제 잠금이라 SQLite가 같은 파일을 읽고 쓰지 못한다. 플랫폼별로 잠금 대상을 달리하면 동작 확인 범위가 늘어난다.
 - 파일 잠금만 쓰는 안: 같은 프로세스 안에서 이전 writer·worker가 늦게 보낸 결과를 막지 못한다.
 - Uncertain을 새 generation 등장 시 Superseded로 닫는 안: 실제로 실행된 자원의 정리 의무를 잃는다.
 - 재시도 때 이전 결과를 effect에 남겨 두는 안: 새 attempt가 진행 중인데 이전 실패 결과가 보여 복구기가 오독할 수 있다.
@@ -111,7 +124,7 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 
 ### 코드와 설정에서 확인
 
-- 제품 연결 전에 독점 파일 잠금이 추가됐는지 확인한다. 잠금 없이 writer를 여는 경로가 남아 있으면 연결하지 않는다.
+- 제품에 연결할 때 모든 쓰기 경로가 잠금을 얻은 writer를 거치는지 확인한다. 잠금 없이 쓰는 경로가 생기면 연결하지 않는다.
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - projection lane에서 출력과 cursor의 동시 갱신 API를 설계하면 checkpoint 키 형태(batch 단위 또는 stream별)를 이 결정과 대조한다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
