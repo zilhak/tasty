@@ -27,11 +27,11 @@ impl App {
             Some(rid) => self.find_main_with_resource(rid),
             None => self.view.focused_view_id,
         };
-        if let Some((main, engine)) = window.and_then(|id| engines_mut!(self).window_pair(id)) {
+        if let Some((main, mut engine)) = window.and_then(|id| engines_mut!(self).window_pair(id)) {
             crate::file::dispatch::apply_identify_result(
                 &mut self.core,
                 &mut main.state,
-                engine,
+                &mut engine,
                 target,
                 detector,
                 origin_surface_id,
@@ -42,11 +42,12 @@ impl App {
             return;
         }
         if let Some(rid) = named {
-            if let Some((state, engine)) = engines_mut!(self).parked_session_with_resource(rid) {
+            if let Some((state, mut engine)) = engines_mut!(self).parked_session_with_resource(rid)
+            {
                 crate::file::dispatch::apply_identify_result(
                     &mut self.core,
                     state,
-                    engine,
+                    &mut engine,
                     target,
                     detector,
                     origin_surface_id,

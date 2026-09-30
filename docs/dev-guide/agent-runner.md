@@ -13,7 +13,7 @@ IPC/CLI 명세는 [API의 agent namespace](../reference/api.md)를 따른다.
 | `crates/tasty-agent/src/platform/` | cross-platform pid liveness probe(`process_alive`) |
 | `src/core/agent/runner_host.rs` | `HostExecutor` — `TaskExecutor` host 구현 + `RunnerContext`(memory + agent_seq + host_ipc injector) |
 | `src/core/agent/runner_thread.rs` | `RunnerRegistry` — workspace 별 thread start/stop/status + 재시작 후 정리 |
-| `src/core/task_service.rs` | `TaskService` — `Core.tasks` 로 조립되는 작업 실행 서비스. `RunnerRegistry`·`HookTaskWaits` 를 소유하고 `RunnerContext` 를 만든다. engine별 자원(task ID 순번·완료 대기 허브·사건 큐)은 `CoreState.task_scope` 의 `TaskScope` 로 받는다. `TaskAwaiter` 는 대기자 등록 → 저장소 조회 → 대기 순서의 완료 대기 계약이다 |
+| `src/core/task_service.rs` | `TaskService` — `Core.tasks` 로 조립되는 작업 실행 서비스. `RunnerRegistry`·`HookTaskWaits` 를 소유하고 `RunnerContext` 를 만든다. engine별 자원(task ID 순번·완료 대기 허브·사건 큐)은 `EngineSession.task_scope` 의 `TaskScope` 로 받는다. `TaskAwaiter` 는 대기자 등록 → 저장소 조회 → 대기 순서의 완료 대기 계약이다 |
 | `src/core/agent/task.rs` | `TaskService` 의 작업 API(생성·조회·취소·재시도·상태/결과 기록·reducer 입력 수집·삭제·정리, DAG 목록·조회, 훅 완료 반영 `resolve_hook_task_wait`). 서비스를 받지 않는 DAG 화면용 목록 함수 `task_list_from_state`·`dag_list_from_state` 도 서비스와 같은 구현이다 |
 | `crates/tasty-ipc/src/host_call.rs` | `HostIpcInjector` — runner thread 가 plugin IPC 를 동기 호출하는 통로 |
 | `src/adapters/ipc/handler/agent/` | `task`/`barrier`/`semaphore`/`lease`/`ratelimit` IPC 핸들러 |

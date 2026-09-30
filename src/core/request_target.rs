@@ -409,15 +409,16 @@ mod tests {
     fn an_engine_reports_the_global_hook_it_owns() {
         use crate::hook_runtime::global::HookCondition;
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let engine = engine_session.borrow_mut();
         let id = engine.hooks.add_global_hook(
             HookCondition::Interval(std::time::Duration::from_secs(60)),
             "echo x".into(),
             None,
         );
         assert!(engine_has_resource(
-            &engine,
+            &engine.as_ref(),
             ResourceId {
                 kind: Kind::GlobalHook,
                 id: u64::from(id),
@@ -425,7 +426,7 @@ mod tests {
         ));
         assert!(
             !engine_has_resource(
-                &engine,
+                &engine.as_ref(),
                 ResourceId {
                     kind: Kind::GlobalHook,
                     id: u64::from(id) + 1,

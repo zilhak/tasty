@@ -3,14 +3,13 @@
 //! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 두 저장소를 함께 정리한다.
 
 use super::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::core::engine_access::EngineMut;
 use std::time::Instant;
 
 use serde_json::{Value, json};
 
 use super::surface::query::{ScreenDiag, with_screen_diagnostics};
 
-use crate::core::CoreState;
 use crate::core::pty_registry::{PtySpawnError, PtySpawnSpec};
 use crate::ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -367,7 +366,7 @@ mod tests {
     use super::*;
     use crate::core::pty_registry::WatchPhase;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -464,7 +463,7 @@ mod tests {
             None => {
                 let elapsed = started.elapsed();
                 let still_registered = engine.runtime.pty_registry.contains(pty_id);
-                let observed = observed_pty_state(engine, pty_id, sent);
+                let observed = observed_pty_state(&engine.as_ref(), pty_id, sent);
                 panic!(
                     "{}",
                     exit_wait_failure(
@@ -513,7 +512,11 @@ mod tests {
 
     /// 실패 시 watcher 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
     /// 화면과 에코 비교는 관측 보조 자료이며 자식의 생사나 실행 이력을 보장하지 않는다.
-    fn observed_pty_state(engine: &EngineRef<'_>, pty_id: u32, sent: &str) -> String {
+    fn observed_pty_state(
+        engine: &crate::core::engine_access::EngineRef<'_>,
+        pty_id: u32,
+        sent: &str,
+    ) -> String {
         let watcher = match engine.runtime.pty_registry.get(pty_id) {
             Some(e) => watch_phase_note(e.watch_phase()),
             None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",
@@ -636,7 +639,8 @@ mod tests {
 
     #[test]
     fn spawn_write_wait_kill_list_e2e() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         let caller = CallerContext::Local;
 
@@ -676,7 +680,8 @@ mod tests {
 
     #[test]
     fn spawn_with_command_captures_exit_code() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         let caller = CallerContext::Local;
         let resp = handle_spawn(
@@ -694,7 +699,8 @@ mod tests {
 
     #[test]
     fn spawn_beyond_limit_returns_error() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         e.runtime.pty_registry = crate::core::pty_registry::PtyRegistry::with_limits(
             2,
@@ -724,7 +730,8 @@ mod tests {
     #[test]
     fn kill_forgets_only_target_waker_gate() {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
@@ -758,7 +765,8 @@ mod tests {
     #[test]
     fn idle_sweep_forgets_waker_gate() {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         e.runtime.pty_registry =
             crate::core::pty_registry::PtyRegistry::with_limits(8, std::time::Duration::ZERO);
@@ -785,7 +793,8 @@ mod tests {
 
     #[test]
     fn write_read_wait_on_unknown_id_errors() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let bogus = crate::core::pty_registry::PTY_ID_BASE + 999;
         assert!(
             handle_write(&mut e, json!(1), &json!({ "id": bogus, "text": "x" }))
@@ -837,7 +846,8 @@ mod tests {
     // 주기 정리도 registry·Terminal·waker를 모두 회수해야 한다.
     #[test]
     fn periodic_sweep_clears_registry_terminal_store_and_waker_gate() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
         e.waker_factory = Some(recorder.clone());
@@ -879,7 +889,8 @@ mod tests {
     // 주기 정리를 기다리지 않고 spawn 직전에 만료 항목을 회수해야 상한을 정확히 검사한다.
     #[test]
     fn spawn_still_reclaims_idle_slots_before_checking_the_limit() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         e.runtime.pty_registry = short_ttl_registry(1);
         e.runtime

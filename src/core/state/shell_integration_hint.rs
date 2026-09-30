@@ -46,29 +46,31 @@ impl CoreState {
 
 #[cfg(test)]
 mod tests {
-    use super::CoreState;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn no_hint_before_first_output_recorded() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         assert!(!e.take_shell_integration_hint_due(1));
     }
 
     #[test]
     fn no_hint_immediately_after_first_output() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.note_first_output(1);
         assert!(!e.take_shell_integration_hint_due(1));
     }
 
     #[test]
     fn boundary_seen_suppresses_hint_permanently() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.note_first_output(1);
         e.note_prompt_boundary_seen(1);
         e.shell_integration_first_output_at.insert(
@@ -81,7 +83,8 @@ mod tests {
     /// 이후 출력이 계속 와도 같은 surface의 요청은 다시 나오지 않는다.
     #[test]
     fn hint_fires_once_after_delay_elapsed_without_boundary() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.shell_integration_first_output_at.insert(
             1,
             std::time::Instant::now() - std::time::Duration::from_secs(999),
@@ -94,7 +97,8 @@ mod tests {
 
     #[test]
     fn different_surfaces_are_independent() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.shell_integration_first_output_at.insert(
             1,
             std::time::Instant::now() - std::time::Duration::from_secs(999),
@@ -111,7 +115,8 @@ mod tests {
     /// 다른 surface를 함께 두어 하나만 삭제하는지 확인한다.
     #[test]
     fn forget_shell_integration_hint_clears_all_three_caches() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         for sid in [1, 2] {
             e.note_first_output(sid);
             e.note_prompt_boundary_seen(sid);

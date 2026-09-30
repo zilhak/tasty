@@ -77,7 +77,7 @@ fn drain_on_close_hooks_with_lookup(
 pub(crate) fn draw_popup_layer(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     draw_ctx: &crate::adapters::ui::LayoutContext,
 ) {
     // intent-exempt: 매 프레임 번역·크기를 렌더링 전에 갱신한다. Intent 큐는 한 프레임 지연을 만든다.
@@ -199,7 +199,8 @@ mod on_close_drain_tests {
     #[test]
     fn drain_fires_hook_once_for_queued_close() {
         PLAIN_HOOK_FIRES.store(0, Ordering::SeqCst);
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.popups.open("notifications"); // close() 는 open 이었던 popup 만 큐에 push.
         state.popups.close("notifications");
 
@@ -233,7 +234,8 @@ mod on_close_drain_tests {
             B_FIRES.fetch_add(1, Ordering::SeqCst);
         }
 
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.popups.open("search_bar"); // hook_a 가 닫을 대상 — 먼저 열어둬야 close() 가 큐에 push.
         state.popups.open("notifications"); // 최초 트리거 대상도 open 이어야 close() 가 큐에 push.
         state.popups.close("notifications"); // 최초 트리거.
@@ -264,7 +266,8 @@ mod on_close_drain_tests {
             state.popups.close("notifications");
         }
 
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.popups.open("notifications"); // close() 는 open 이었던 popup 만 큐에 push.
         state.popups.close("notifications"); // 최초 트리거 — 1라운드째 큐에 이미 있음.
 

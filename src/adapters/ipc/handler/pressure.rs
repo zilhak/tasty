@@ -497,7 +497,8 @@ mod tests {
     fn the_router_answers_this_name_for_a_local_caller() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let req = tasty_ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
             idempotency_key: None,
@@ -637,7 +638,8 @@ mod tests {
     fn the_connection_block_reads_the_gauge_the_core_hands_to_the_server() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let gauge = core.connections().clone();
         assert!(gauge.try_open(4).is_some());
         assert!(gauge.try_open(4).is_some());
@@ -678,7 +680,8 @@ mod tests {
 
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let hub = StreamHub::new();
         engine.attach.set_notifier(hub.clone());
 
@@ -804,7 +807,8 @@ mod tests {
 
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let limits = QueueLimits {
             queued_bytes: 50,
             injected_depth: 3,
@@ -852,7 +856,7 @@ mod tests {
 
         let call = |core: &mut crate::core::Core,
                     state: &mut crate::state::RequestContext,
-                    engine: &mut crate::core::CoreState,
+                    engine: &mut crate::core::engine_access::EngineMut<'_>,
                     method: &str,
                     params: serde_json::Value,
                     key: Option<&str>| {
@@ -1220,7 +1224,8 @@ mod tests {
     fn the_router_reads_the_ring_the_core_holds() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         core.slow_requests()
             .finish_host(tasty_telemetry::slow_requests::HostLeg {
                 request_seq: 77,

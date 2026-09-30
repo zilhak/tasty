@@ -1,6 +1,5 @@
 //! Remote structural requests are resolved and applied at the shared application boundary.
 
-use crate::core::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::model::SurfaceId;
 use tasty_ipc::stream::StructuralOp;
@@ -225,7 +224,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .as_ref()
                 .filter(|s| !s.trim().is_empty())
                 .map(std::path::PathBuf::from)
-                .or_else(|| state.resolve_inherit_cwd_from_surface(engine, *surface_id));
+                .or_else(|| state.resolve_inherit_cwd_from_surface(&engine.as_ref(), *surface_id));
             let target = if surface_kind == "terminal" {
                 ConvertSurfaceTarget::Terminal { cwd: carried_cwd }
             } else {

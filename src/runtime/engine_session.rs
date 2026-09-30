@@ -2,15 +2,10 @@
 
 // 상위 모듈의 dead_code 허용은 시험 전용 journal 때문이다. 이 모듈은 제품 경로라 검사를 되살린다.
 #![warn(dead_code)]
-#![cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "headless는 창·parked가 없어 engine을 지역 변수로 들고 id를 쓰지 않는다"
-    )
-)]
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::core::engine_access::EngineMut;
+#[cfg(feature = "gui")]
+use crate::core::engine_access::EngineRef;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::core::CoreState;
@@ -30,6 +25,13 @@ impl EngineId {
 /// 엔진 수명 원본. 창 연결은 App registry에 있고 실행 자원은 이 객체와 함께 산다.
 /// observer/hook/task를 Terminal보다 먼저 정리한다. TaskScope drop은 task 취소가 아니다.
 pub(crate) struct EngineSession {
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "headless has one local session and no engine routing registry"
+        )
+    )]
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
@@ -52,6 +54,7 @@ impl EngineSession {
         }
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
             core: &self.core_state,

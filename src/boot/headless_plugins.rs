@@ -442,7 +442,7 @@ fn dispatch_plugin_ipc_calls_headless(
             crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
         // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
-        crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
         // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),

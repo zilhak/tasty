@@ -307,7 +307,7 @@ mod move_container_tests {
     use crate::core::state::PendingMove;
     use crate::model::SplitDirection;
 
-    fn test_engine() -> CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -383,7 +383,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_replaces_target_tab_and_keeps_source_terminal() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, a) = first_pane(&mut engine);
         let (tab_b, b) = add_tab(&mut engine, pane);
         engine.pending_move = Some(PendingMove::Tab(tab_a));
@@ -426,7 +427,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_to_later_index_in_same_pane_finds_target_by_id() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         let (tab_b, _b) = add_tab(&mut engine, pane);
         let (tab_c, _c) = add_tab(&mut engine, pane);
@@ -445,7 +447,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_into_active_target_makes_it_active() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         let (other_pane, tab_b, _b) = split_new_pane(&mut engine, pane);
         let (tab_c, _c) = add_tab(&mut engine, other_pane);
@@ -466,7 +469,8 @@ mod move_container_tests {
 
     #[test]
     fn move_last_tab_cascades_source_pane() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, tab_a, a) = first_pane(&mut engine);
         let (p2, tab_b, b) = split_new_pane(&mut engine, p1);
 
@@ -500,7 +504,8 @@ mod move_container_tests {
 
     #[test]
     fn move_only_tab_of_workspace_purges_source_workspace() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p0, tab_a, a) = first_pane(&mut engine);
         let ws0_id = engine.workspaces[0].id;
         let (q, tab_q, q_sid) = push_workspace(&mut engine);
@@ -532,7 +537,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_self_ref_is_noop_and_clears_slot() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         engine.pending_move = Some(PendingMove::Tab(tab_a));
         let ev = Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_a);
@@ -546,7 +552,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_missing_target_is_noop_and_keeps_source() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         engine.pending_move = Some(PendingMove::Tab(tab_a));
         let ev = Core::apply_replace_tab_with_tab(&mut engine, tab_a, 999_999);
@@ -560,7 +567,8 @@ mod move_container_tests {
 
     #[test]
     fn move_tab_into_mirror_workspace_is_blocked() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (_pane, tab_a, _a) = first_pane(&mut engine);
         let (_q, tab_q, _q_sid) = push_workspace(&mut engine);
         let intent = DomainIntent::ReplaceTabWithTab {
@@ -583,7 +591,8 @@ mod move_container_tests {
 
     #[test]
     fn moved_tab_is_not_recorded_in_closed_history() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         let (tab_b, _b) = add_tab(&mut engine, pane);
         assert!(engine.closed_items.is_empty());
@@ -617,7 +626,8 @@ mod move_container_tests {
     #[test]
     fn move_tab_host_events_keep_closed_tab_in_its_own_pane() {
         use crate::state::PendingHostEvent as E;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (p1, tab_a, _a) = first_pane(&mut engine);
         let (p2, tab_b, _b) = split_new_pane(&mut engine, p1);
 
@@ -655,7 +665,8 @@ mod move_container_tests {
     #[test]
     fn move_tab_within_pane_emits_only_the_target_close() {
         use crate::state::PendingHostEvent as E;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (pane, tab_a, _a) = first_pane(&mut engine);
         let (tab_b, _b) = add_tab(&mut engine, pane);
 
@@ -674,7 +685,8 @@ mod move_container_tests {
 
     #[test]
     fn move_pane_replaces_target_and_keeps_source_terminals() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, tab_a, a) = first_pane(&mut engine);
         let (p2, _tab_p2, _p2_sid) = split_new_pane(&mut engine, p1);
         let (q, tab_q, q_sid) = push_workspace(&mut engine);
@@ -720,7 +732,8 @@ mod move_container_tests {
 
     #[test]
     fn move_pane_inherits_target_split_position() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         let (_q, _tab_q, _q_sid) = push_workspace(&mut engine);
         let q = engine.workspaces[1].pane_layout().all_pane_ids()[0];
@@ -757,7 +770,8 @@ mod move_container_tests {
 
     #[test]
     fn move_only_pane_purges_source_workspace() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p0, _tab_a, a) = first_pane(&mut engine);
         let ws0_id = engine.workspaces[0].id;
         let (q, _tab_q, q_sid) = push_workspace(&mut engine);
@@ -788,7 +802,8 @@ mod move_container_tests {
 
     #[test]
     fn move_pane_self_ref_is_noop_and_clears_slot() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         engine.pending_move = Some(PendingMove::Pane(p1));
         let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, p1);
@@ -802,7 +817,8 @@ mod move_container_tests {
 
     #[test]
     fn move_pane_missing_target_is_noop_and_keeps_source() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         let (p2, _, _) = split_new_pane(&mut engine, p1);
         engine.pending_move = Some(PendingMove::Pane(p1));
@@ -820,7 +836,8 @@ mod move_container_tests {
 
     #[test]
     fn move_pane_into_mirror_workspace_is_blocked() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         let (q, _tab_q, _q_sid) = push_workspace(&mut engine);
         let intent = DomainIntent::ReplacePaneWithPane {
@@ -843,7 +860,8 @@ mod move_container_tests {
 
     #[test]
     fn moved_pane_target_is_not_recorded_in_closed_history() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         let (q, _tab_q, _q_sid) = push_workspace(&mut engine);
         Core::apply_replace_pane_with_pane(&mut engine, p1, q);
@@ -857,7 +875,8 @@ mod move_container_tests {
     fn move_pane_host_events_close_only_the_target() {
         use crate::app::structural_cascade::{SurfaceCloseCascade, cascade_surface_closed};
         use crate::state::PendingHostEvent as E;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         split_new_pane(&mut engine, p1);
         let (q, tab_q, _q_sid) = push_workspace(&mut engine);

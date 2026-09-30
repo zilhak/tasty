@@ -43,21 +43,26 @@ fn layout_of(surface_rects: Vec<(u32, egui::Rect)>) -> LayoutContext {
     }
 }
 
-fn prepared() -> (MainViewState, crate::core::CoreState, Ids) {
-    let (mut state, mut engine) = test_state();
+fn prepared() -> (
+    MainViewState,
+    crate::runtime::engine_session::EngineSession,
+    Ids,
+) {
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     for def in defs::all_defs() {
         state.popups.register_def(def, 1.0);
     }
     let surface = state.focused_surface_id(&engine).expect("first surface");
     state.add_tab(&mut engine).expect("second tab");
     let narrow = state.focused_surface_id(&engine).expect("second surface");
-    (state, engine, Ids { surface, narrow })
+    (state, engine_session, Ids { surface, narrow })
 }
 
 /// 한 프레임을 그려 나온 도형을 그대로 돌려준다.
 fn painted_shapes(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     ids: Ids,
 ) -> Vec<egui::epaint::ClippedShape> {
     let ctx = egui::Context::default();
@@ -74,7 +79,7 @@ fn painted_shapes(
 /// 한 프레임을 그려 scrim 색으로 칠해진 사각형들의 rect 를 모은다.
 fn scrim_rects(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     ids: Ids,
 ) -> Vec<egui::Rect> {
     let scrim = egui::Color32::from(crate::theme::theme().scrim());
@@ -92,7 +97,8 @@ fn scrim_rects(
 /// surface 범위 popup 의 scrim 은 그 칸 하나를 덮는다 — 화면 전체가 아니다.
 #[test]
 fn a_surface_scoped_popup_dims_only_its_own_surface() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -104,7 +110,8 @@ fn a_surface_scoped_popup_dims_only_its_own_surface() {
 /// 창 범위 popup 은 종전대로 창 전체를 덮는다.
 #[test]
 fn a_window_scoped_popup_still_dims_the_whole_window() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state
         .popups
         .open_with_scope("command_palette", PopupScope::Window);
@@ -115,7 +122,8 @@ fn a_window_scoped_popup_still_dims_the_whole_window() {
 /// 부모·자식이 같은 범위를 쓰면 scrim을 중복으로 그리지 않는다.
 #[test]
 fn a_parent_and_its_child_picker_share_one_scrim() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -131,7 +139,8 @@ fn a_parent_and_its_child_picker_share_one_scrim() {
 /// scrim이 필요한 팝업 둘도 같은 범위에서는 한 번만 그린다.
 #[test]
 fn two_scrim_popups_in_one_scope_still_paint_one_scrim() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -146,7 +155,8 @@ fn two_scrim_popups_in_one_scope_still_paint_one_scrim() {
 /// 창 전체 scrim이 있으면 내부 surface scrim을 덧그리지 않는다.
 #[test]
 fn a_window_scrim_absorbs_the_surface_scrim_under_it() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -161,7 +171,8 @@ fn a_window_scrim_absorbs_the_surface_scrim_under_it() {
 /// scrim뿐 아니라 그림자도 소속 영역 안에 있어야 한다. 도형과 clip의 교집합을 검사한다.
 #[test]
 fn nothing_a_surface_scoped_popup_paints_lands_outside_its_surface() {
-    let (mut state, mut engine, ids) = prepared();
+    let (mut state, mut engine_session, ids) = prepared();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.narrow);
     state
         .popups

@@ -520,7 +520,7 @@ mod close_surface_cascade_tests {
     use crate::core::intent::CascadeLevel;
     use tasty_terminal::Terminal;
 
-    fn test_engine() -> CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -534,7 +534,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case2_tab_close_returns_tab_level_fields() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let tab1_id = engine.next_ids.next_tab();
@@ -581,7 +582,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case3_pane_close_returns_pane_level_fields() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let pane1_id = engine.next_ids.next_pane();
@@ -624,7 +626,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case4_workspace_close_returns_workspace_level_fields() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let ws1_id = engine.next_ids.next_workspace();
         let pane1_id = engine.next_ids.next_pane();
         let tab1_id = engine.next_ids.next_tab();
@@ -669,7 +672,8 @@ mod close_surface_cascade_tests {
     #[test]
     fn case2_tab_close_preserves_the_viewed_tab() {
         let mut navigation = crate::state::navigation::NavigationState::default();
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let mut tab_ids = vec![];
@@ -709,7 +713,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case3_pane_close_keeps_focus_on_an_untouched_pane() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let pane1_id = engine.next_ids.next_pane();
@@ -751,7 +756,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case4_workspace_close_reports_the_removed_index() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let ws1_id = engine.next_ids.next_workspace();
         let pane1_id = engine.next_ids.next_pane();
         let tab1_id = engine.next_ids.next_tab();
@@ -781,7 +787,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case4_last_workspace_reports_now_empty() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         insert_detached(&mut engine, sid0);
         let ws0_id = engine.workspaces[0].id;
@@ -807,7 +814,8 @@ mod close_surface_cascade_tests {
 
     #[test]
     fn case1_split_close_returns_single_cleanup_target() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid_a = engine.workspaces[0].all_surface_ids()[0];
         insert_detached(&mut engine, sid_a);
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid_a).unwrap();

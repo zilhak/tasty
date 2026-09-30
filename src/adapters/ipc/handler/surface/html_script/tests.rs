@@ -2,8 +2,13 @@ use super::*;
 use tasty_model::html_script::{Fingerprint, ScriptDetection, ScriptScan};
 
 /// 플러그인 프로세스 없이 html kind를 등록하고 html 탭을 연다.
-fn state_with_html_tab() -> (crate::state::RequestContext, crate::core::CoreState, u32) {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+fn state_with_html_tab() -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+    u32,
+) {
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
         "kind": "html",
         "display_name_i18n_key": "surface.kind.html",
@@ -21,7 +26,7 @@ fn state_with_html_tab() -> (crate::state::RequestContext, crate::core::CoreStat
         // intent-exempt: 시험 준비용으로 html 탭을 모델에 직접 만든다. 조회 핸들러만 검사한다.
         .add_kind_tab(&mut engine, "html", &json!({ "file": "/docs/a.html" }))
         .expect("html tab");
-    (state, engine, sid)
+    (state, engine_session, sid)
 }
 
 fn html_script_of(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {
@@ -37,7 +42,8 @@ fn html_surface(engine: &crate::core::CoreState, sid: u32) -> &RemoteSurface {
 
 #[test]
 fn reports_detection_and_a_pending_banner_without_changing_it() {
-    let (_state, engine, sid) = state_with_html_tab();
+    let (_state, mut engine_session, sid) = state_with_html_tab();
+    let engine = engine_session.borrow_mut();
     let rs = html_surface(&engine, sid);
     rs.with_html_script(|st| {
         st.on_host_load_requested();
@@ -78,7 +84,8 @@ fn reports_detection_and_a_pending_banner_without_changing_it() {
 
 #[test]
 fn reports_a_load_before_its_commit_and_the_loading_banner() {
-    let (_state, engine, sid) = state_with_html_tab();
+    let (_state, mut engine_session, sid) = state_with_html_tab();
+    let engine = engine_session.borrow_mut();
     let rs = html_surface(&engine, sid);
     let scan = |b: u8| ScriptScan {
         fingerprint: Fingerprint([b; 32]),
@@ -109,7 +116,8 @@ fn reports_a_load_before_its_commit_and_the_loading_banner() {
 
 #[test]
 fn a_surface_without_a_document_reports_null_document() {
-    let (_state, engine, sid) = state_with_html_tab();
+    let (_state, mut engine_session, sid) = state_with_html_tab();
+    let engine = engine_session.borrow_mut();
     let r = html_script_of(&engine, sid).result.expect("result");
     assert!(r["document"].is_null());
     assert_eq!(r["banner"]["phase"], "hidden");
@@ -117,7 +125,8 @@ fn a_surface_without_a_document_reports_null_document() {
 
 #[test]
 fn rejects_a_missing_surface_and_a_non_html_surface() {
-    let (mut state, mut engine, _sid) = state_with_html_tab();
+    let (mut state, mut engine_session, _sid) = state_with_html_tab();
+    let mut engine = engine_session.borrow_mut();
     let err = html_script_of(&engine, 999_999)
         .error
         .expect("missing surface");

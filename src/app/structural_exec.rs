@@ -211,7 +211,7 @@ pub(crate) fn split(
                         .find_pane_by_id(resolved_pane_id)
                         .and_then(|p| p.tabs.get(state.presentation().tab_index(p)))
                         .and_then(|t| state.presentation().surface_id(t))?;
-                    state.resolve_inherit_cwd_from_surface(engine, sid)
+                    state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid)
                 })
             } else {
                 None
@@ -264,7 +264,7 @@ pub(crate) fn split(
             };
 
             let resolved_cwd = if kind == "terminal" {
-                cwd.or_else(|| state.resolve_inherit_cwd_from_surface(engine, sid))
+                cwd.or_else(|| state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid))
             } else {
                 None
             };
@@ -384,7 +384,7 @@ pub(crate) fn create_tab(
                 .find_pane_by_id(pane_id)
                 .and_then(|p| p.tabs.get(state.presentation().tab_index(p)))
                 .and_then(|t| state.presentation().surface_id(t))?;
-            state.resolve_inherit_cwd_from_surface(engine, sid)
+            state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid)
         })
     } else {
         None

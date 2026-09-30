@@ -39,7 +39,7 @@ type DispatchOutcome = (
     FileDispatchOrigin,
     bool,
     crate::state::RequestContext,
-    crate::core::CoreState,
+    crate::runtime::engine_session::EngineSession,
     u32,
 );
 
@@ -54,7 +54,8 @@ fn dispatch_through_with(
 ) -> DispatchOutcome {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.file_handler.as_ref(),
         PLUGIN,
@@ -116,7 +117,13 @@ fn dispatch_through_with(
         assert!(matches!(pending.body, Intent::NewTab { .. }));
         crate::intent::tab::handle(&mut core, &mut state, &mut engine, &pending);
     }
-    (dispatch_origin, intent_is_user, state, engine, pane_id)
+    (
+        dispatch_origin,
+        intent_is_user,
+        state,
+        engine_session,
+        pane_id,
+    )
 }
 
 fn dispatch_then_selection(
@@ -125,8 +132,9 @@ fn dispatch_then_selection(
     params: serde_json::Value,
     with_origin_surface: bool,
 ) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, state, engine, pane_id) =
+    let (origin, intent_is_user, state, mut engine_session, pane_id) =
         dispatch_through(caller, activated, params, with_origin_surface, false);
+    let engine = engine_session.borrow_mut();
     let pane = engine.find_pane_by_id(pane_id).expect("pane");
     (
         origin,
@@ -224,12 +232,12 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     );
     assert_eq!(origin, FileDispatchOrigin::User);
     assert_eq!(
-        engine.pending_structural_forward.len(),
+        engine.core_state.pending_structural_forward.len(),
         1,
         "새 탭은 forward 된다"
     );
     assert!(
-        !engine.pending_structural_forward[0].silent_failure,
+        !engine.core_state.pending_structural_forward[0].silent_failure,
         "사용자가 요청한 원격 작업의 거절은 토스트로 표시한다"
     );
     assert_eq!(state.toasts.len(), 0);
@@ -242,9 +250,9 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
         true,
     );
     assert_eq!(origin, FileDispatchOrigin::PluginUnverified);
-    assert_eq!(engine.pending_structural_forward.len(), 1);
+    assert_eq!(engine.core_state.pending_structural_forward.len(), 1);
     assert!(
-        engine.pending_structural_forward[0].silent_failure,
+        engine.core_state.pending_structural_forward[0].silent_failure,
         "에이전트가 요청한 원격 작업의 거절은 로그에 기록한다"
     );
 }
@@ -293,8 +301,9 @@ fn link_then_selection(
     navigated: &[Attempt],
     params: serde_json::Value,
 ) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, state, engine, pane_id) =
+    let (origin, intent_is_user, state, mut engine_session, pane_id) =
         dispatch_through_with(caller, None, navigated, params, true, false);
+    let engine = engine_session.borrow_mut();
     let pane = engine.find_pane_by_id(pane_id).expect("pane");
     (
         origin,
@@ -361,7 +370,8 @@ fn an_external_caller_cannot_claim_a_webview_navigation() {
 fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
     for (caller, opens) in [(plugin_caller(PLUGIN), true), (CallerContext::Local, false)] {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
             &mut out,
@@ -426,7 +436,8 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
 /// 같은 프레임에 페이지 작성자가 바뀌면 navigation 기록을 버린다. 다음 프레임의 클릭은 허용한다.
 #[test]
 fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
-    let (mut state, engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
@@ -457,7 +468,8 @@ fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_actio
 
 #[test]
 fn a_webview_navigation_backs_only_one_dispatch() {
-    let (mut state, engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     gesture(true).record(&mut state, sid);
     let mut params = link_params();
@@ -485,7 +497,8 @@ fn a_webview_navigation_backs_only_one_dispatch() {
 #[test]
 fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
     for (mirror, expected) in [(false, "deep"), (true, "deep")] {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].mirror = mirror;
         let sid = engine.workspaces[0].all_surface_ids()[0];
         let mut out = crate::ipc::window_port::IntentOutbox::default();

@@ -268,7 +268,8 @@ mod tests {
 
     #[test]
     fn dispatch_rejects_a_url_in_the_path_param() {
-        let (mut state, engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
             &mut out,
@@ -295,7 +296,8 @@ mod tests {
     }
     #[test]
     fn dispatch_rejects_missing_origin_before_enqueueing() {
-        let (mut state, engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let response = handle_dispatch(
             &mut out,

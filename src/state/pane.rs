@@ -1,7 +1,5 @@
 use crate::core::CoreState;
-#[cfg(test)]
 use crate::core::engine_access::EngineMut;
-use crate::model::SplitDirection;
 
 use super::RequestContext;
 
@@ -329,9 +327,9 @@ impl RequestContext {
     pub(crate) fn test_split_pane(
         &mut self,
         engine: &mut EngineMut<'_>,
-        direction: SplitDirection,
+        direction: crate::model::SplitDirection,
     ) -> anyhow::Result<()> {
-        let cwd = self.resolve_inherit_cwd(engine);
+        let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let new_pane_id = engine.next_ids.next_pane();
         let new_tab_id = engine.next_ids.next_tab();
         let new_surface_id = engine.next_ids.next_surface();

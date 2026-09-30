@@ -17,7 +17,8 @@ const PORT_SCANNER_ID: &str = "port_scanner";
 
 /// owner가 없으면 플러그인이 아닌 도구 메뉴에서 연 피커를 구성한다.
 fn state_with_picker(owner: Option<u64>) -> RequestContext {
-    let (mut state, _engine) = test_state();
+    let (mut state, mut _engine_session) = test_state();
+    let _engine = _engine_session.borrow_mut();
     state.dialogs.file_picker = Some(FilePickerData {
         mirror_ws_id: None,
         remote_host: None,
@@ -51,7 +52,8 @@ fn tools_menu_picker_is_nobodys_child() {
 
 #[test]
 fn no_picker_open_means_no_child() {
-    let (state, _engine) = test_state();
+    let (state, mut _engine_session) = test_state();
+    let _engine = _engine_session.borrow_mut();
     assert!(!state.plugin_popup_has_open_child(OWNER_IID));
 }
 
@@ -237,7 +239,8 @@ pub(super) fn live_layout_ctx(
 /// 에이전트가 앞쪽 workspace를 닫아 인덱스가 당겨져도 팝업은 연 workspace를 따라간다.
 #[test]
 fn workspace_scoped_popup_follows_its_workspace_after_agent_close() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.popups = registered_manager();
     let a = push_workspace(&mut engine);
     let b = push_workspace(&mut engine);
@@ -267,7 +270,8 @@ fn workspace_scoped_popup_follows_its_workspace_after_agent_close() {
 /// 탭 순서가 바뀌어도 팝업은 연 탭이 활성일 때만 보인다.
 #[test]
 fn tab_scoped_popup_follows_its_tab_after_reorder() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.popups = registered_manager();
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);

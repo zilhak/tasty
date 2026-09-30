@@ -910,7 +910,7 @@ mod tests {
     use super::*;
     use crate::core::attach::OccupancyTier;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -1030,7 +1030,8 @@ mod tests {
     #[test]
     fn spawn_kill_occupancy_wiring() {
         // 점유와 관계 등록만 검사한다. 탭 생성·입력 핸들러 전체 시험은 아니다.
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5000u32;
 
@@ -1056,7 +1057,8 @@ mod tests {
 
     #[test]
     fn adopt_registers_existing_surface_without_new_tab() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 6101u32; // 이미 존재하는(=spawn 아닌) surface
         add_extra_surface(&mut e, target);
@@ -1082,7 +1084,8 @@ mod tests {
 
     #[test]
     fn adopt_rejects_already_registered_child() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 6102u32;
         add_extra_surface(&mut e, target);
@@ -1102,7 +1105,8 @@ mod tests {
 
     #[test]
     fn adopt_rejects_nonexistent_surface() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let resp = handle_adopt(
             &mut e,
@@ -1114,7 +1118,8 @@ mod tests {
 
     #[test]
     fn adopt_rejects_self_adoption() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let resp = handle_adopt(
             &mut e,
@@ -1126,7 +1131,8 @@ mod tests {
 
     #[test]
     fn adopt_rejects_hard_occupied_target_and_leaves_registry_unchanged() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 6103u32;
         add_extra_surface(&mut e, target);
@@ -1146,7 +1152,8 @@ mod tests {
 
     #[test]
     fn release_clears_registry_and_occupancy_but_keeps_surface() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5701u32;
         add_extra_surface(&mut e, c);
@@ -1170,7 +1177,8 @@ mod tests {
 
     #[test]
     fn release_rejects_unregistered_child_index() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let resp = handle_release(
             &mut e,
@@ -1182,7 +1190,8 @@ mod tests {
 
     #[test]
     fn release_does_not_touch_unrelated_hard_occupancy() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5702u32;
         add_extra_surface(&mut e, c);
@@ -1207,7 +1216,8 @@ mod tests {
     // 이 시험은 단일 engine의 부모 선택만 확인한다. 창 간 모호성은 App::find_request_owner에서 거절한다.
     #[test]
     fn resolve_parent_omitted_surface_succeeds_with_single_parent() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         add_extra_surface(&mut e, 59010);
         let idx = e.runtime.child_terminals.next_index_for(parent);
@@ -1221,7 +1231,8 @@ mod tests {
 
     #[test]
     fn resolve_parent_omitted_surface_errors_with_multiple_parents_in_one_engine() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent1 = e.workspaces[0].all_surface_ids()[0];
         let parent2 = 59020u32;
         add_extra_surface(&mut e, 59030);
@@ -1241,7 +1252,8 @@ mod tests {
 
     #[test]
     fn send_text_with_ack_distinguishes_hard_occupied_from_not_found() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let target = 5801u32;
         add_extra_surface(&mut e, target);
         e.attach.acquire(target, 1).unwrap();
@@ -1254,7 +1266,8 @@ mod tests {
 
     #[test]
     fn send_text_with_ack_reports_not_found_for_missing_surface() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let err = send_text_to_surface_with_ack(&mut e, 424_242, "hi")
             .err()
             .expect("missing surface must fail");
@@ -1264,7 +1277,8 @@ mod tests {
     // add_extra_surface는 PTY가 없으므로 여기서는 실제 터미널이 있는 기본 surface를 쓴다.
     #[test]
     fn send_text_with_ack_succeeds_for_free_terminal() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let target = e.workspaces[0].all_surface_ids()[0];
 
         assert!(send_text_to_surface_with_ack(&mut e, target, "hi").is_ok());
@@ -1272,7 +1286,8 @@ mod tests {
 
     #[test]
     fn children_reconcile_prunes_dead_child() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         e.runtime
             .child_terminals
@@ -1284,7 +1299,8 @@ mod tests {
 
     #[test]
     fn children_item_carries_evidence_and_confidence() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 5901u32;
         add_extra_surface(&mut e, target);
@@ -1308,7 +1324,8 @@ mod tests {
 
     #[test]
     fn children_and_state_report_identical_liveness_fields() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 5902u32;
         add_extra_surface(&mut e, target);
@@ -1338,14 +1355,16 @@ mod tests {
 
     #[test]
     fn parent_lookup_unregistered_is_none() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let resp = handle_parent(&mut e, json!(1), &json!({ "surface": 424242 }));
         assert_eq!(ok(resp)["status"], "none");
     }
 
     #[test]
     fn set_state_rejects_unknown() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let resp = handle_set_state(
             &mut e,
             json!(1),
@@ -1356,7 +1375,8 @@ mod tests {
 
     #[test]
     fn set_state_updates_registry() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.runtime.child_terminals.register_child(7, child(5000, 0));
         let _ = handle_set_state(
             &mut e,
@@ -1381,7 +1401,8 @@ mod tests {
     // needs_input 뒤 idle만 보고되어도 이전 입력 대기 상태를 지워야 한다.
     #[test]
     fn set_state_idle_clears_a_pending_needs_input() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.runtime.child_terminals.register_child(7, child(5001, 0));
         fn push_child_state(e: &mut EngineMut<'_>, state: &str) {
             let resp = handle_set_state(e, json!(1), &json!({ "surface": 5001, "state": state }));

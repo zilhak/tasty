@@ -1,5 +1,6 @@
 #[cfg(any(feature = "gui", test))]
 use crate::core::engine_access::EngineMut;
+#[cfg(any(feature = "gui", test))]
 use serde_json::Value;
 #[cfg(all(test, feature = "gui"))]
 use serde_json::json;

@@ -6,7 +6,8 @@ use crate::intent::Intent;
 use crate::state::WorkspaceCloseOrigin;
 
 fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIntent) -> usize {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let event = crate::core::apply_create_workspace_inner(
         &mut engine,
         crate::core::WorkspaceCreationParams::terminal(),

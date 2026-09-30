@@ -626,7 +626,8 @@ mod close_tests {
 
     #[test]
     fn closing_the_last_workspace_is_refused() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         assert_eq!(engine.workspaces.len(), 1);
         let only = engine.workspaces[0].id;
 
@@ -661,7 +662,8 @@ mod close_tests {
 
     #[test]
     fn closing_a_workspace_a_remote_session_occupies_is_refused() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let target = add_workspace(&mut engine);
         let ws_idx = engine
             .workspaces
@@ -702,7 +704,8 @@ mod close_tests {
 
     #[test]
     fn closing_the_workspace_holding_your_own_surface_is_refused() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         add_workspace(&mut engine);
         let target = engine.workspaces[0].id;
         let caller = engine.workspaces[0]
@@ -728,7 +731,8 @@ mod close_tests {
     // 성공 경로에서 명시 대상·활성 포인터·복원 기록·응답 ID를 함께 확인한다.
     #[test]
     fn closing_a_workspace_the_user_is_not_looking_at_leaves_the_view_alone() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let target_id = add_workspace(&mut engine);
         add_workspace(&mut engine);
         assert_eq!(engine.workspaces.len(), 3);
@@ -788,7 +792,8 @@ mod close_tests {
 
     #[test]
     fn closing_a_mirror_workspace_is_refused() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mirror_id = add_workspace(&mut engine);
         let mirror_idx = engine
             .workspaces
@@ -814,7 +819,8 @@ mod close_tests {
 
     #[test]
     fn closing_an_unknown_workspace_id_is_refused() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         add_workspace(&mut engine);
 
         let res =
@@ -849,33 +855,36 @@ mod create_cwd_tests {
     // 요청 대상과 포커스 대상을 다르게 준비한다.
     #[test]
     fn a_named_surface_is_the_inherit_source_not_the_focus() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (named, named_root) = open_explorer(&mut state, &mut engine, "named/proj");
         let (focused, focused_root) = open_explorer(&mut state, &mut engine, "focused/proj");
         assert_eq!(state.focused_surface_id(&engine), Some(focused));
         assert_ne!(named_root, focused_root);
 
         assert_eq!(
-            inherit_cwd_for_create(&state, &engine, Some(named)),
+            inherit_cwd_for_create(&state, &engine.as_ref(), Some(named)),
             Some(named_root),
         );
     }
 
     #[test]
     fn without_a_named_surface_the_focus_is_the_inherit_source() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (_named, _) = open_explorer(&mut state, &mut engine, "named/proj");
         let (_focused, focused_root) = open_explorer(&mut state, &mut engine, "focused/proj");
 
         assert_eq!(
-            inherit_cwd_for_create(&state, &engine, None),
+            inherit_cwd_for_create(&state, &engine.as_ref(), None),
             Some(focused_root),
         );
     }
 
     #[test]
     fn a_malformed_surface_id_is_rejected_not_ignored() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let before = engine.workspaces.len();
 
@@ -896,7 +905,8 @@ mod create_cwd_tests {
     // 헬퍼뿐 아니라 요청 파라미터가 실제 상속 원본으로 전달되는지도 확인한다.
     #[test]
     fn the_params_surface_id_reaches_the_inherit_source() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (named, named_root) = open_explorer(&mut state, &mut engine, "named/proj");
         let (_focused, focused_root) = open_explorer(&mut state, &mut engine, "focused/proj");
         assert_ne!(named_root, focused_root);
@@ -905,25 +915,26 @@ mod create_cwd_tests {
             &json!({ "surface_id": named }),
             "terminal",
             &state,
-            &engine,
+            &engine.as_ref(),
             &json!(1),
         )
         .expect("정상 params");
         assert_eq!(got, Some(named_root));
 
-        let got = resolve_create_cwd(&json!({}), "terminal", &state, &engine, &json!(1))
+        let got = resolve_create_cwd(&json!({}), "terminal", &state, &engine.as_ref(), &json!(1))
             .expect("정상 params");
         assert_eq!(got, Some(focused_root));
     }
 
     #[test]
     fn explicit_cwd_wins_and_non_terminal_kinds_take_no_cwd() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (named, _) = open_explorer(&mut state, &mut engine, "named/proj");
         let explicit = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let params = json!({ "surface_id": named, "cwd": explicit.to_string_lossy() });
 
-        let got = resolve_create_cwd(&params, "terminal", &state, &engine, &json!(1))
+        let got = resolve_create_cwd(&params, "terminal", &state, &engine.as_ref(), &json!(1))
             .expect("정상 params");
         assert_eq!(got, Some(explicit));
 
@@ -931,7 +942,7 @@ mod create_cwd_tests {
             &json!({ "surface_id": named }),
             "explorer",
             &state,
-            &engine,
+            &engine.as_ref(),
             &json!(1),
         )
         .expect("정상 params");
@@ -944,7 +955,8 @@ mod create_cwd_tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn the_resolved_cwd_reaches_the_new_terminals_shell() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         engine.settings.general.shell = "/bin/sh".to_string();
 
@@ -971,7 +983,7 @@ mod create_cwd_tests {
                 .unwrap_or_else(|| panic!("{params}: {:?}", res.error));
             let sid = result["surface_id"].as_u64().expect("surface_id") as u32;
             assert_eq!(
-                engine.local_surface_cwd(sid).as_ref(),
+                engine.as_ref().local_surface_cwd(sid).as_ref(),
                 Some(want),
                 "{params}: 새 터미널의 셸이 계산된 cwd 에서 뜨지 않았다",
             );
@@ -980,11 +992,15 @@ mod create_cwd_tests {
 
     #[test]
     fn a_named_surface_respects_inherit_cwd_off() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let (named, _) = open_explorer(&mut state, &mut engine, "named/proj");
         engine.settings.general.inherit_cwd = false;
 
-        assert_eq!(inherit_cwd_for_create(&state, &engine, Some(named)), None,);
+        assert_eq!(
+            inherit_cwd_for_create(&state, &engine.as_ref(), Some(named)),
+            None,
+        );
     }
 }
 

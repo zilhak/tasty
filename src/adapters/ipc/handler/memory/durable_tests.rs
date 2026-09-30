@@ -26,7 +26,8 @@ fn core_with(fallback: Option<tasty_memory::InitFallback>) -> crate::core::Core 
 }
 
 fn call(core: &mut crate::core::Core, method: &str, params: Value) -> Value {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let req = tasty_ipc::protocol::JsonRpcRequest {
         response_timeout_ms: None,
         idempotency_key: None,

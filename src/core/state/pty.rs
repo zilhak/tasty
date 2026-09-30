@@ -121,134 +121,6 @@ impl CoreState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::CoreState;
-    use crate::model::{DeferredSpawn, EmptySurface, Tab};
-
-    fn engine() -> CoreState {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
-    }
-
-    /// 첫 pane에 지연 터미널 탭을 넣고 surface ID를 반환한다. 활성 탭은 바꾸지 않는다.
-    fn push_deferred_tab(engine: &mut CoreState, shell: Option<&str>) -> u32 {
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
-        let spawn = DeferredSpawn {
-            shell: shell.map(str::to_string),
-            shell_args: Vec::new(),
-            extra_env: Vec::new(),
-            cols: 80,
-            rows: 24,
-            working_dir: None,
-            restore_command: None,
-            scrollback_persist_id: Some("persist-xyz".to_string()),
-        };
-        let tab = Tab::new_named(
-            tab_id,
-            "Shell".to_string(),
-            None,
-            Box::new(EmptySurface::new_deferred(surface_id, spawn)),
-        );
-        let ws = &mut engine.workspaces[0];
-        let pane_id = ws.pane_layout().all_pane_ids()[0];
-        let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
-        pane.tabs.push(tab);
-        surface_id
-    }
-
-    fn push_deferred_plugin_tab(engine: &mut CoreState, kind: &str) -> u32 {
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
-        let placeholder = EmptySurface::new_deferred_plugin(
-            surface_id,
-            crate::model::DeferredPlugin {
-                kind: kind.to_string(),
-                snapshot: serde_json::Value::Null,
-            },
-        );
-        let tab = Tab::new_named(tab_id, "t".to_string(), None, Box::new(placeholder));
-        let ws = &mut engine.workspaces[0];
-        let pane_id = ws.pane_layout().all_pane_ids()[0];
-        let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
-        pane.tabs.push(tab);
-        surface_id
-    }
-
-    #[test]
-    fn reify_deferred_surface_dispatches_by_kind() {
-        let mut engine = engine();
-        let term = push_deferred_tab(&mut engine, None);
-        let plugin = push_deferred_plugin_tab(&mut engine, "empty");
-        let missing = push_deferred_plugin_tab(&mut engine, "tasty_no_such_kind");
-        let before = tab_order_ids(&engine);
-
-        assert!(engine.reify_deferred_surface(term), "터미널은 PTY 생성");
-        assert!(engine.runtime.terminals.get(term).is_some());
-        assert!(
-            engine.reify_deferred_surface(plugin),
-            "등록된 kind 는 restore"
-        );
-        assert!(!engine.is_surface_deferred(plugin));
-        assert!(
-            engine.runtime.terminals.get(plugin).is_none(),
-            "plugin 은 PTY 없음"
-        );
-        assert!(!engine.reify_deferred_surface(missing), "미등록 kind");
-        assert!(engine.is_surface_deferred(missing), "placeholder 유지");
-        assert!(!engine.reify_deferred_surface(term), "이미 실제화됨");
-        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
-    }
-
-    fn tab_order_ids(engine: &CoreState) -> Vec<(u32, Vec<u32>)> {
-        let ws = &engine.workspaces[0];
-        ws.pane_layout()
-            .all_pane_ids()
-            .into_iter()
-            .filter_map(|id| {
-                ws.pane_layout()
-                    .find_pane(id)
-                    .map(|p| (id, p.tabs.iter().map(|t| t.id).collect()))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn ensure_surface_initialized_moves_persist_id_and_keeps_active_tab() {
-        let mut engine = engine();
-        let sid = push_deferred_tab(&mut engine, None);
-        let before = tab_order_ids(&engine);
-
-        assert!(engine.ensure_surface_initialized(sid), "기본 셸 spawn 성공");
-        assert!(!engine.is_surface_deferred(sid));
-        assert!(engine.runtime.terminals.get(sid).is_some(), "store 에 등록");
-        assert_eq!(
-            engine.runtime.terminals.scrollback_persist_id(sid),
-            Some("persist-xyz")
-        );
-        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
-        assert!(!engine.ensure_surface_initialized(sid), "이미 생성됨");
-    }
-
-    #[test]
-    fn ensure_surface_initialized_failure_keeps_placeholder_until_the_cap() {
-        let mut engine = engine();
-        let sid = push_deferred_tab(&mut engine, Some("/nonexistent/tasty_no_such_shell"));
-
-        for _ in 0..(Tab::MAX_SPAWN_ATTEMPTS + 3) {
-            assert!(!engine.ensure_surface_initialized(sid));
-        }
-        assert!(engine.is_surface_deferred(sid), "placeholder 유지");
-        assert!(engine.runtime.terminals.get(sid).is_none());
-        let tab = engine.deferred_tab_mut(sid).expect("deferred tab");
-        assert!(
-            tab.pending_terminal_spawn(sid).is_none(),
-            "상한 뒤에는 spawn 정보를 내주지 않는다"
-        );
-    }
-}
-
 impl EngineMut<'_> {
     /// 유휴 TTL이 지난 등록을 지우고 Terminal과 waker 기록도 함께 정리한다.
     /// 실제 자식 종료·회수는 Terminal의 소유권과 플랫폼별 Drop 처리에 달려 있다.
@@ -428,6 +300,7 @@ impl EngineMut<'_> {
     /// 지연 placeholder를 종류에 맞는 경로로 실제화하는 단일 진입점이다. 성공하면 true다.
     /// 터미널은 PTY를 만들고, plugin은 등록된 kind의 restore를 호출한다.
     /// 포커스·활성 workspace·활성 tab은 바꾸지 않는다.
+    #[cfg(any(feature = "gui", test))]
     pub fn reify_deferred_surface(&mut self, surface_id: u32) -> bool {
         let kind = self
             .deferred_tab_mut(surface_id)
@@ -439,5 +312,136 @@ impl EngineMut<'_> {
             Some(crate::model::DeferredKind::Plugin) => self.reify_plugin_surface(surface_id),
             None => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CoreState;
+    use crate::model::{DeferredSpawn, EmptySurface, Tab};
+
+    fn engine() -> crate::runtime::engine_session::EngineSession {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
+    }
+
+    /// 첫 pane에 지연 터미널 탭을 넣고 surface ID를 반환한다. 활성 탭은 바꾸지 않는다.
+    fn push_deferred_tab(engine: &mut CoreState, shell: Option<&str>) -> u32 {
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let spawn = DeferredSpawn {
+            shell: shell.map(str::to_string),
+            shell_args: Vec::new(),
+            extra_env: Vec::new(),
+            cols: 80,
+            rows: 24,
+            working_dir: None,
+            restore_command: None,
+            scrollback_persist_id: Some("persist-xyz".to_string()),
+        };
+        let tab = Tab::new_named(
+            tab_id,
+            "Shell".to_string(),
+            None,
+            Box::new(EmptySurface::new_deferred(surface_id, spawn)),
+        );
+        let ws = &mut engine.workspaces[0];
+        let pane_id = ws.pane_layout().all_pane_ids()[0];
+        let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
+        pane.tabs.push(tab);
+        surface_id
+    }
+
+    fn push_deferred_plugin_tab(engine: &mut CoreState, kind: &str) -> u32 {
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let placeholder = EmptySurface::new_deferred_plugin(
+            surface_id,
+            crate::model::DeferredPlugin {
+                kind: kind.to_string(),
+                snapshot: serde_json::Value::Null,
+            },
+        );
+        let tab = Tab::new_named(tab_id, "t".to_string(), None, Box::new(placeholder));
+        let ws = &mut engine.workspaces[0];
+        let pane_id = ws.pane_layout().all_pane_ids()[0];
+        let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
+        pane.tabs.push(tab);
+        surface_id
+    }
+
+    #[test]
+    fn reify_deferred_surface_dispatches_by_kind() {
+        let mut engine_session = engine();
+        let mut engine = engine_session.borrow_mut();
+        let term = push_deferred_tab(&mut engine, None);
+        let plugin = push_deferred_plugin_tab(&mut engine, "empty");
+        let missing = push_deferred_plugin_tab(&mut engine, "tasty_no_such_kind");
+        let before = tab_order_ids(&engine);
+
+        assert!(engine.reify_deferred_surface(term), "터미널은 PTY 생성");
+        assert!(engine.runtime.terminals.get(term).is_some());
+        assert!(
+            engine.reify_deferred_surface(plugin),
+            "등록된 kind 는 restore"
+        );
+        assert!(!engine.is_surface_deferred(plugin));
+        assert!(
+            engine.runtime.terminals.get(plugin).is_none(),
+            "plugin 은 PTY 없음"
+        );
+        assert!(!engine.reify_deferred_surface(missing), "미등록 kind");
+        assert!(engine.is_surface_deferred(missing), "placeholder 유지");
+        assert!(!engine.reify_deferred_surface(term), "이미 실제화됨");
+        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
+    }
+
+    fn tab_order_ids(engine: &CoreState) -> Vec<(u32, Vec<u32>)> {
+        let ws = &engine.workspaces[0];
+        ws.pane_layout()
+            .all_pane_ids()
+            .into_iter()
+            .filter_map(|id| {
+                ws.pane_layout()
+                    .find_pane(id)
+                    .map(|p| (id, p.tabs.iter().map(|t| t.id).collect()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ensure_surface_initialized_moves_persist_id_and_keeps_active_tab() {
+        let mut engine_session = engine();
+        let mut engine = engine_session.borrow_mut();
+        let sid = push_deferred_tab(&mut engine, None);
+        let before = tab_order_ids(&engine);
+
+        assert!(engine.ensure_surface_initialized(sid), "기본 셸 spawn 성공");
+        assert!(!engine.is_surface_deferred(sid));
+        assert!(engine.runtime.terminals.get(sid).is_some(), "store 에 등록");
+        assert_eq!(
+            engine.runtime.terminals.scrollback_persist_id(sid),
+            Some("persist-xyz")
+        );
+        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
+        assert!(!engine.ensure_surface_initialized(sid), "이미 생성됨");
+    }
+
+    #[test]
+    fn ensure_surface_initialized_failure_keeps_placeholder_until_the_cap() {
+        let mut engine_session = engine();
+        let mut engine = engine_session.borrow_mut();
+        let sid = push_deferred_tab(&mut engine, Some("/nonexistent/tasty_no_such_shell"));
+
+        for _ in 0..(Tab::MAX_SPAWN_ATTEMPTS + 3) {
+            assert!(!engine.ensure_surface_initialized(sid));
+        }
+        assert!(engine.is_surface_deferred(sid), "placeholder 유지");
+        assert!(engine.runtime.terminals.get(sid).is_none());
+        let tab = engine.deferred_tab_mut(sid).expect("deferred tab");
+        assert!(
+            tab.pending_terminal_spawn(sid).is_none(),
+            "상한 뒤에는 spawn 정보를 내주지 않는다"
+        );
     }
 }

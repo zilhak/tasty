@@ -55,11 +55,14 @@ impl App {
         let origin = dispatched.origin;
         let core = &mut self.core;
         let id = source.engine();
-        let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(id) else {
+        let Some(DispatchCtx {
+            state, mut engine, ..
+        }) = engines_mut!(self).resolve(id)
+        else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
-        let applied = crate::app::structural_exec::execute(core, state, engine, intent);
-        let events = events_or_report(state, engine, &origin, applied);
+        let applied = crate::app::structural_exec::execute(core, state, &mut engine, intent);
+        let events = events_or_report(state, engine.core, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);
         }
@@ -81,7 +84,7 @@ impl App {
     ) {
         if let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(source.engine())
         {
-            state.apply_structure_result(engine, &event);
+            state.apply_structure_result(engine.core, &event);
         }
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {
@@ -370,7 +373,7 @@ impl App {
         else {
             return;
         };
-        cascade_closed_item_restored(state, engine, origin, kind, presentation);
+        cascade_closed_item_restored(state, engine.core, origin, kind, presentation);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -393,7 +396,7 @@ impl App {
             return;
         };
         if engine.settings.notification.enabled {
-            let ws_id = state.active_workspace(engine).id;
+            let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
                 crate::core::intent::DomainIntent::PushNotification {
                     ws_id,
@@ -429,7 +432,7 @@ impl App {
         };
         // 사용자가 등록한 Bell 훅은 알림·벨 표시 설정을 꺼도 실행한다.
         if engine.settings.notification.enabled && engine.settings.general.bell_notification {
-            let ws_id = state.active_workspace(engine).id;
+            let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
                 crate::core::intent::DomainIntent::PushNotification {
                     ws_id,
@@ -540,7 +543,7 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())
@@ -613,14 +616,14 @@ impl App {
     fn cascade_terminal_process_exited(&mut self, source: DispatchSource, surface_id: u32) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())
         else {
             return;
         };
-        super::process_exit::handle(&mut self.core, state, engine, surface_id);
+        super::process_exit::handle(&mut self.core, state, &mut engine, surface_id);
         if let Some(base) = dirty_main {
             base.dirty = true;
         }
@@ -630,14 +633,14 @@ impl App {
         let core = &mut self.core;
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view,
             ..
         }) = engines_mut!(self).resolve(source.engine())
         else {
             return;
         };
-        cascade_surface_closed(core, state, engine, c);
+        cascade_surface_closed(core, state, &mut engine, c);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -662,7 +665,7 @@ impl App {
         };
         cascade_surface_split(
             state,
-            engine,
+            engine.core,
             origin,
             workspace_index,
             pane_id,
@@ -688,7 +691,7 @@ impl App {
         else {
             return;
         };
-        cascade_pane_split(state, engine, origin, c);
+        cascade_pane_split(state, engine.core, origin, c);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -711,7 +714,7 @@ impl App {
         else {
             return;
         };
-        cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+        cascade_tab_created(state, &engine.as_ref(), pane_id, tab_id, surface_id);
         if activate && let Some(pane) = engine.find_pane_by_id(pane_id) {
             state.navigation.select_tab(pane, tab_id);
         }
@@ -729,14 +732,14 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view,
             ..
         }) = engines_mut!(self).resolve(source.engine())
         else {
             return;
         };
-        cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
+        cascade_pane_closed_full(state, &mut engine, pane_id, cleanup_targets, is_user_close);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -752,7 +755,7 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view,
             ..
         }) = engines_mut!(self).resolve(source.engine())
@@ -761,7 +764,7 @@ impl App {
         };
         cascade_tab_closed_full(
             state,
-            engine,
+            &mut engine,
             tab_id,
             pane_id,
             cleanup_targets,
@@ -810,7 +813,7 @@ impl App {
         else {
             return;
         };
-        cascade_workspace_created(state, engine, origin, c);
+        cascade_workspace_created(state, engine.core, origin, c);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -955,7 +958,7 @@ impl App {
     }
 
     fn cascade_terminal_mark_set(&mut self, surface_id: u32) {
-        for engine in self.engines_mut().windowed_and_parked() {
+        for mut engine in self.engines_mut().windowed_and_parked() {
             if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
                 return;
@@ -964,7 +967,7 @@ impl App {
     }
 
     fn cascade_surface_completion(&mut self, surface_id: u32, kind: AttentionKind) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             if engine.has_surface(surface_id) {
                 engine.raise_attention(surface_id, kind);
                 engine.mark_layout_dirty();
@@ -972,7 +975,7 @@ impl App {
                 return;
             }
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 engine.raise_attention(surface_id, kind);
                 engine.mark_layout_dirty();
@@ -988,7 +991,7 @@ impl App {
         surface_id: u32,
         kind_filter: Option<AttentionKind>,
     ) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             if engine.has_surface(surface_id) {
                 if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
                     engine.clear_attention(surface_id);
@@ -998,7 +1001,7 @@ impl App {
                 return;
             }
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
                     engine.clear_attention(surface_id);
@@ -1010,7 +1013,7 @@ impl App {
     }
 
     fn cascade_surface_cwd_changed(&mut self, surface_id: u32) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             if engine.has_surface(surface_id) {
                 engine.refresh_tab_display_name(surface_id);
                 engine.mark_layout_dirty();
@@ -1018,7 +1021,7 @@ impl App {
                 return;
             }
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             if engine.has_surface(surface_id) {
                 engine.refresh_tab_display_name(surface_id);
                 engine.mark_layout_dirty();
@@ -1033,7 +1036,7 @@ impl App {
             .engines()
             .windowed_and_parked()
             .next()
-            .map(|e| &e.settings);
+            .map(|e| &e.core.settings);
         let prev_appearance = prev_settings.map(|s| s.appearance.clone());
         let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
         let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
@@ -1043,7 +1046,7 @@ impl App {
         let categories_turned_off = prev_categories_enabled == Some(true)
             && !new_settings.general.workspace_categories_enabled;
 
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             engine.settings = new_settings.clone();
             if categories_turned_off {
                 engine.collapse_categories_to_normal();
@@ -1051,7 +1054,7 @@ impl App {
             }
             main.mark_dirty();
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             engine.settings = new_settings.clone();
             if categories_turned_off {
                 engine.collapse_categories_to_normal();
@@ -1125,7 +1128,7 @@ impl App {
             );
             return;
         };
-        let Some((main, engine)) = engines_mut!(self).window_pair(wid) else {
+        let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
             return;
         };
 
@@ -1150,21 +1153,21 @@ impl App {
 
     /// 창과 parked engine에 읽음 처리를 전달한다. attention 해제 여부는 engine이 정한다.
     fn cascade_notification_read(&mut self, id: u64) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             engine.mark_notification_read(id);
             main.mark_dirty();
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             engine.mark_notification_read(id);
         }
     }
 
     fn cascade_all_notifications_read(&mut self) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             engine.mark_all_notifications_read();
             main.mark_dirty();
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             engine.mark_all_notifications_read();
         }
     }
@@ -1276,10 +1279,11 @@ mod apply_error_tests {
 
     fn blocked_tab_replace() -> (
         crate::state::MainViewState,
-        crate::core::CoreState,
+        crate::runtime::engine_session::EngineSession,
         anyhow::Result<Vec<CoreEvent>>,
     ) {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let surface = engine.workspaces[0].all_surface_ids()[0];
         let (_, pane) = engine
@@ -1294,12 +1298,13 @@ mod apply_error_tests {
                 target_tab_id: tab,
             },
         );
-        (state, engine, applied)
+        (state, engine_session, applied)
     }
 
     #[test]
     fn a_user_tab_replace_on_a_mirror_shows_the_blocked_toast() {
-        let (mut state, mut engine, applied) = blocked_tab_replace();
+        let (mut state, mut engine_session, applied) = blocked_tab_replace();
+        let mut engine = engine_session.borrow_mut();
         let origin = IntentOrigin::User {
             source: UserSource::ContextMenu,
         };
@@ -1310,7 +1315,8 @@ mod apply_error_tests {
 
     #[test]
     fn an_agent_tab_replace_on_a_mirror_shows_no_toast() {
-        let (mut state, mut engine, applied) = blocked_tab_replace();
+        let (mut state, mut engine_session, applied) = blocked_tab_replace();
+        let mut engine = engine_session.borrow_mut();
         let origin = IntentOrigin::Agent {
             source: AgentSource::Ipc,
         };

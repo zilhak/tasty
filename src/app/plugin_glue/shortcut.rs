@@ -164,7 +164,7 @@ impl App {
         if self.view.is_modal_active() {
             return false;
         }
-        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
             return false;
         };
         // 일반 창 키 처리보다 먼저 실행되므로 popup·overlay·전체화면 무대의 키를 여기서 보호한다.
@@ -172,7 +172,7 @@ impl App {
             return false;
         }
         let focused =
-            crate::plugin_bridge::key_dispatch::focused_plugin_surface(&main.state, engine);
+            crate::plugin_bridge::key_dispatch::focused_plugin_surface(&main.state, engine.core);
         let host_kb = engine.settings.keybindings.clone();
 
         let matched = {
@@ -228,7 +228,7 @@ impl App {
                 action,
                 order_hint: 0,
             };
-            crate::adapters::ui::tools_menu::invoke_tool(&mut main.state, engine, &item);
+            crate::adapters::ui::tools_menu::invoke_tool(&mut main.state, &mut engine, &item);
         } else if let Some(mgr) = self.plugin_manager.as_mut() {
             crate::plugin_bridge::key_dispatch::dispatch_plugin_command(
                 mgr, &plugin_id, &cmd_id, surface_id,

@@ -793,7 +793,7 @@ impl MainView {
         let Some(sid) = self.state.focused_surface_id(&*engine) else {
             return;
         };
-        let Some(terminal) = self.state.focused_terminal(&*engine) else {
+        let Some(terminal) = self.state.focused_terminal(&engine.as_ref()) else {
             return;
         };
         let mode = terminal.with_view(&self.state.terminal_views.get(engine, sid), |view| {

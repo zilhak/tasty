@@ -54,9 +54,13 @@ impl App {
         };
         if let Some(id) = target_id {
             let core = &mut self.core;
-            let resp_opt = engines_mut!(self).window_pair(id).map(|(w, engine)| {
-                let r =
-                    host_ipc::handler::handle_checked_request(core, &mut w.state, engine, checked);
+            let resp_opt = engines_mut!(self).window_pair(id).map(|(w, mut engine)| {
+                let r = host_ipc::handler::handle_checked_request(
+                    core,
+                    &mut w.state,
+                    &mut engine,
+                    checked,
+                );
                 w.base.dirty = true;
                 r
             });
@@ -69,9 +73,13 @@ impl App {
         // 창과 parked 상태가 같은 종류의 자원을 찾도록 공용 판정을 사용한다.
         let owner_in_parked =
             named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
-        if let Some((state, engine)) = owner_in_parked {
-            let response =
-                host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
+        if let Some((state, mut engine)) = owner_in_parked {
+            let response = host_ipc::handler::handle_checked_request(
+                &mut self.core,
+                state,
+                &mut engine,
+                checked,
+            );
             self.send_routed_response(cmd, response);
             self.dispatch_pending_intents();
             return IpcStep::Handled;
@@ -87,9 +95,13 @@ impl App {
             );
             return IpcStep::Handled;
         }
-        if let Some((state, engine)) = engines_mut!(self).first_parked_session() {
-            let response =
-                host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
+        if let Some((state, mut engine)) = engines_mut!(self).first_parked_session() {
+            let response = host_ipc::handler::handle_checked_request(
+                &mut self.core,
+                state,
+                &mut engine,
+                checked,
+            );
             self.send_routed_response(cmd, response);
             self.dispatch_pending_intents();
         }

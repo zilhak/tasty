@@ -146,7 +146,8 @@ mod tests {
 
     #[test]
     fn ui_state_answers_for_a_parked_engine_without_workspaces() {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces.clear();
         let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
@@ -163,7 +164,8 @@ mod tests {
 
     #[test]
     fn ui_state_keeps_the_counts_when_a_workspace_exists() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["workspace_count"], 1);

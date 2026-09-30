@@ -6,8 +6,6 @@ use crate::core::engine_access::{EngineMut, EngineRef};
 use std::collections::HashSet;
 use std::time::Duration;
 
-use super::CoreState;
-
 /// 짧은 출력 공백으로 stale을 만들지 않기 위한 무출력 기준. 작업별 정상 소요 시간을 보장하지 않는다.
 pub const CHILD_OUTPUT_SILENCE: Duration = Duration::from_secs(120);
 
@@ -169,6 +167,57 @@ pub fn derive_child_state(registry_state: &str, obs: &ChildObservation) -> Child
         out(ChildState::Stale, E::OutputAndHookSilent, C::Heuristic)
     } else {
         out(ChildState::Active, E::RecentHookReport, C::Heuristic)
+    }
+}
+
+impl EngineRef<'_> {
+    /// 라이브 집합과 전경 이름 캐시를 재사용해 자식마다 전체 트리·프로세스를 다시 조회하지 않는다.
+    fn observe_child(&self, child_surface: u32, live: &HashSet<u32>) -> ChildObservation {
+        ChildObservation {
+            surface_live: live.contains(&child_surface),
+            pty_ready: self.runtime.terminals.contains(child_surface),
+            busy: self.is_surface_busy(child_surface),
+            foreground_is_shell: self
+                .foreground_name(child_surface)
+                .map(tasty_terminal::foreground_process::is_known_shell_name),
+            output_silence: self
+                .find_terminal_by_id(child_surface)
+                .map(|t| t.last_output_at().elapsed()),
+            hook_silence: self
+                .runtime
+                .child_terminals
+                .hook_silence(child_surface, crate::core::child_terminal::now_epoch_ms()),
+        }
+    }
+
+    /// 목록 조회와 단건 조회가 같은 상태 판정을 사용한다.
+    pub fn child_liveness_with_live(
+        &self,
+        child_surface: u32,
+        live: &HashSet<u32>,
+    ) -> ChildLiveness {
+        let obs = self.observe_child(child_surface, live);
+        derive_child_state(self.runtime.child_terminals.state_of(child_surface), &obs)
+    }
+
+    pub fn child_liveness(&self, child_surface: u32) -> ChildLiveness {
+        let live = self.live_surface_ids();
+        self.child_liveness_with_live(child_surface, &live)
+    }
+}
+
+impl EngineMut<'_> {
+    /// 목록 조회와 단건 조회가 같은 상태 판정을 사용한다.
+    pub fn child_liveness_with_live(
+        &self,
+        child_surface: u32,
+        live: &HashSet<u32>,
+    ) -> ChildLiveness {
+        self.as_ref().child_liveness_with_live(child_surface, live)
+    }
+
+    pub fn child_liveness(&self, child_surface: u32) -> ChildLiveness {
+        self.as_ref().child_liveness(child_surface)
     }
 }
 
@@ -432,61 +481,5 @@ mod tests {
         assert_eq!(ChildState::NeedsInput.as_str(), "needs_input");
         assert_eq!(ChildState::Exited.as_str(), "exited");
         assert_eq!(ChildState::Stale.as_str(), "stale");
-    }
-}
-
-impl EngineRef<'_> {
-    /// 라이브 집합과 전경 이름 캐시를 재사용해 자식마다 전체 트리·프로세스를 다시 조회하지 않는다.
-    fn observe_child(&self, child_surface: u32, live: &HashSet<u32>) -> ChildObservation {
-        ChildObservation {
-            surface_live: live.contains(&child_surface),
-            pty_ready: self.runtime.terminals.contains(child_surface),
-            busy: self.is_surface_busy(child_surface),
-            foreground_is_shell: self
-                .foreground_name(child_surface)
-                .map(tasty_terminal::foreground_process::is_known_shell_name),
-            output_silence: self
-                .find_terminal_by_id(child_surface)
-                .map(|t| t.last_output_at().elapsed()),
-            hook_silence: self
-                .runtime
-                .child_terminals
-                .hook_silence(child_surface, crate::core::child_terminal::now_epoch_ms()),
-        }
-    }
-
-    /// 목록 조회와 단건 조회가 같은 상태 판정을 사용한다.
-    pub fn child_liveness_with_live(
-        &self,
-        child_surface: u32,
-        live: &HashSet<u32>,
-    ) -> ChildLiveness {
-        let obs = self.observe_child(child_surface, live);
-        derive_child_state(self.runtime.child_terminals.state_of(child_surface), &obs)
-    }
-
-    pub fn child_liveness(&self, child_surface: u32) -> ChildLiveness {
-        let live = self.live_surface_ids();
-        self.child_liveness_with_live(child_surface, &live)
-    }
-}
-
-impl EngineMut<'_> {
-    /// 라이브 집합과 전경 이름 캐시를 재사용해 자식마다 전체 트리·프로세스를 다시 조회하지 않는다.
-    fn observe_child(&self, child_surface: u32, live: &HashSet<u32>) -> ChildObservation {
-        self.as_ref().observe_child(child_surface, live)
-    }
-
-    /// 목록 조회와 단건 조회가 같은 상태 판정을 사용한다.
-    pub fn child_liveness_with_live(
-        &self,
-        child_surface: u32,
-        live: &HashSet<u32>,
-    ) -> ChildLiveness {
-        self.as_ref().child_liveness_with_live(child_surface, live)
-    }
-
-    pub fn child_liveness(&self, child_surface: u32) -> ChildLiveness {
-        self.as_ref().child_liveness(child_surface)
     }
 }

@@ -34,9 +34,9 @@ impl App {
             "workspace.list" => Some(self.collect_list(id, |_c, s, e, id| {
                 workspace::handle_workspace_list(s, e, id)
             })),
-            "surface.list" => {
-                Some(self.collect_list(id, |_c, _s, e, id| surface::handle_surface_list(e, id)))
-            }
+            "surface.list" => Some(self.collect_list(id, |_c, _s, e, id| {
+                surface::handle_surface_list(&e.as_ref(), id)
+            })),
             "pane.list" => Some(self.collect_list(id, |_c, s, e, id| {
                 pane::handle_pane_list(&s.navigation, e, id)
             })),
@@ -47,7 +47,7 @@ impl App {
                 Some(self.collect_field(id, "ptys", |_c, _s, e, id| pty::handle_list(e, id)))
             }
             "output.observe_list" => Some(self.collect_field(id, "observers", |c, _s, e, id| {
-                output::handle_observe_list(c, e, id)
+                output::handle_observe_list(c, &e.as_ref(), id)
             })),
             // image 플러그인이 host.call로 되돌린 요청도 여기서 전체 창의 결과를 모은다.
             "image.list" => {
@@ -58,12 +58,12 @@ impl App {
             "hook.list" => {
                 let params = request.params.clone();
                 Some(self.collect_list(id, move |_c, _s, e, id| {
-                    hooks::handle_hook_list(e, id, &params)
+                    hooks::handle_hook_list(&e.as_ref(), id, &params)
                 }))
             }
-            "global_hook.list" => {
-                Some(self.collect_list(id, |_c, _s, e, id| hooks::handle_global_hook_list(e, id)))
-            }
+            "global_hook.list" => Some(self.collect_list(id, |_c, _s, e, id| {
+                hooks::handle_global_hook_list(&e.as_ref(), id)
+            })),
             "attach.list" => Some(self.collect_fields(
                 id,
                 ("attached", "workspaces"),
@@ -90,7 +90,7 @@ impl App {
         F: FnMut(
             &crate::core::Core,
             &mut crate::state::MainViewState,
-            &mut crate::core::CoreState,
+            &mut crate::core::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -104,7 +104,7 @@ impl App {
         F: FnMut(
             &crate::core::Core,
             &mut crate::state::MainViewState,
-            &mut crate::core::CoreState,
+            &mut crate::core::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -123,7 +123,7 @@ impl App {
         F: FnMut(
             &crate::core::Core,
             &mut crate::state::MainViewState,
-            &mut crate::core::CoreState,
+            &mut crate::core::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -146,7 +146,7 @@ impl App {
         F: FnMut(
             &crate::core::Core,
             &mut crate::state::MainViewState,
-            &mut crate::core::CoreState,
+            &mut crate::core::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -167,8 +167,8 @@ impl App {
         // 창과 parked engine을 한 번씩 방문하므로 같은 자원이 두 번 합산되지 않는다.
         let core = &mut self.core;
         let mut combined: Vec<Vec<serde_json::Value>> = vec![Vec::new(); fields.len().max(1)];
-        for (s, e) in engines_mut!(self).sessions() {
-            take(f(core, s, e, id.clone()), &mut combined);
+        for (s, mut e) in engines_mut!(self).sessions() {
+            take(f(core, s, &mut e, id.clone()), &mut combined);
         }
         combined
     }

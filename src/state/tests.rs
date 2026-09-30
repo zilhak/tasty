@@ -3,7 +3,10 @@ use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::model::SplitDirection;
 
 // 다른 상태·팝업 시험도 같은 engine/RequestContext 구성을 사용한다.
-pub(crate) fn test_state() -> (RequestContext, crate::core::CoreState) {
+pub(crate) fn test_state() -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
     let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
         std::sync::Arc::new(std::sync::Mutex::new(
             tasty_memory::testing::InMemoryStorage::new(),
@@ -14,7 +17,10 @@ pub(crate) fn test_state() -> (RequestContext, crate::core::CoreState) {
 /// 호출자가 보관한 메모리 mock으로 종료 후 purge 호출을 검사할 수 있게 한다.
 pub(crate) fn test_state_with_memory(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-) -> (RequestContext, crate::core::CoreState) {
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
     // 플러그인 프로세스 없이 WebView kind와 오버레이 등록을 구성한다.
@@ -48,7 +54,7 @@ pub(crate) fn test_state_with_memory(
     {
         let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
         crate::plugin_bridge::remote_kind::register_remote_kind(
-            &engine.surface_registry,
+            &engine.core_state.surface_registry,
             "com.tasty.markdown",
             &decl,
             host_cmd_tx,
@@ -58,8 +64,8 @@ pub(crate) fn test_state_with_memory(
         tasty_presets::PresetStore::load_default(),
     ));
     // 운영 부팅처럼 engine과 RequestContext가 같은 저장소를 공유해야 engine 정리를 mock으로 관찰한다.
-    engine.memory = memory.clone();
-    let state = RequestContext::new(&mut engine, preset_store, memory);
+    engine.core_state.memory = memory.clone();
+    let state = RequestContext::new(&mut engine.core_state, preset_store, memory);
     (state, engine)
 }
 
@@ -85,7 +91,8 @@ fn collect_all_surface_ids(_state: &mut RequestContext, engine: &mut EngineMut<'
 
 #[test]
 fn find_terminal_by_id_exists() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface_ids = collect_surface_ids(&mut state, &mut engine);
     assert!(!surface_ids.is_empty());
     let first_id = surface_ids[0];
@@ -94,13 +101,15 @@ fn find_terminal_by_id_exists() {
 
 #[test]
 fn find_terminal_by_id_nonexistent() {
-    let (_state, engine) = test_state();
+    let (_state, mut engine_session) = test_state();
+    let engine = engine_session.borrow_mut();
     assert!(engine.find_terminal_by_id(9999).is_none());
 }
 
 #[test]
 fn find_terminal_by_id_after_split() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let original_ids = collect_surface_ids(&mut state, &mut engine);
     let original_id = original_ids[0];
 
@@ -118,7 +127,8 @@ fn find_terminal_by_id_after_split() {
 
 #[test]
 fn find_terminal_by_id_across_tabs() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let original_ids = collect_surface_ids(&mut state, &mut engine);
     let first_id = original_ids[0];
 
@@ -134,13 +144,15 @@ fn find_terminal_by_id_across_tabs() {
 
 #[test]
 fn close_active_pane_single_fails() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert!(!state.close_active_pane(&mut engine));
 }
 
 #[test]
 fn close_active_pane_after_split() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
@@ -166,13 +178,15 @@ fn close_active_pane_after_split() {
 
 #[test]
 fn close_active_tab_single_fails() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert!(!state.close_active_tab(&mut engine));
 }
 
 #[test]
 fn close_active_tab_after_add() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap();
 
     let pane_id = state.focused_pane_id(&engine);
@@ -202,7 +216,8 @@ fn close_active_tab_after_add() {
 #[test]
 fn mirror_close_active_surface_forwards_close_surface() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
     state.active_workspace_mut(&mut engine).mirror = true;
     assert!(engine.pending_structural_forward.is_empty());
@@ -229,7 +244,8 @@ fn mirror_close_active_surface_forwards_close_surface() {
 #[test]
 fn mirror_convert_surface_from_the_user_forwards_as_user_triggered() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let sid = state.focused_surface_id(&engine).unwrap();
     state.active_workspace_mut(&mut engine).mirror = true;
@@ -259,7 +275,8 @@ fn mirror_convert_surface_from_the_user_forwards_as_user_triggered() {
 #[test]
 fn mirror_close_active_pane_forwards_close_pane() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
     state.active_workspace_mut(&mut engine).mirror = true;
 
@@ -287,7 +304,8 @@ fn mirror_close_active_pane_forwards_close_pane() {
 #[test]
 fn mirror_close_active_tab_forwards_close_tab() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
     state.active_workspace_mut(&mut engine).mirror = true;
 
@@ -305,7 +323,8 @@ fn mirror_close_active_tab_forwards_close_tab() {
 #[test]
 fn mirror_add_tab_forwards_new_tab() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let tabs_before = state
@@ -345,7 +364,8 @@ fn mirror_add_tab_forwards_new_tab() {
 #[test]
 fn mirror_close_active_tab_computes_sibling_candidate() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid_first = state.focused_surface_id(&engine).unwrap();
     state.add_tab(&mut engine).unwrap();
     let sid_second = state.focused_surface_id(&engine).unwrap();
@@ -369,7 +389,8 @@ fn mirror_close_active_tab_computes_sibling_candidate() {
 #[test]
 fn mirror_close_active_surface_split_computes_sibling_candidate() {
     use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
@@ -404,7 +425,8 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
 
 #[test]
 fn close_active_surface_split_saves_closed_item_snapshot() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
@@ -445,7 +467,8 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
 
 #[test]
 fn close_pane_saves_closed_item_snapshot() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
@@ -485,7 +508,8 @@ fn close_pane_then_restore_reinserts_pane() {
     use crate::core::builder::CoreBuilder;
     use crate::core::intent::{CoreEvent, DomainIntent, RestoredKind};
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
@@ -579,7 +603,8 @@ fn close_pane_then_restore_reinserts_pane() {
 
 #[test]
 fn mirror_close_active_pane_has_no_focus_candidates() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.active_workspace_mut(&mut engine).mirror = true;
     assert!(state.close_active_pane(&mut engine));
     assert!(
@@ -591,7 +616,8 @@ fn mirror_close_active_pane_has_no_focus_candidates() {
 
 #[test]
 fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert_eq!(engine.workspaces.len(), 1);
     let surface_ids = collect_surface_ids(&mut state, &mut engine);
     assert_eq!(surface_ids.len(), 1);
@@ -611,7 +637,8 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
 
 #[test]
 fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid_a = collect_surface_ids(&mut state, &mut engine)[0];
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
@@ -646,7 +673,8 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
 
 #[test]
 fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
@@ -693,7 +721,8 @@ fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
 
 #[test]
 fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
@@ -770,7 +799,8 @@ fn add_deferred_tab(state: &mut RequestContext, engine: &mut crate::core::CoreSt
 
 #[test]
 fn keyboard_tab_switch_reifies_deferred_surface() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = add_deferred_tab(&mut state, &mut engine);
     assert!(
         engine.is_surface_deferred(sid),
@@ -796,7 +826,8 @@ fn keyboard_tab_switch_reifies_deferred_surface() {
 
 #[test]
 fn close_active_tab_reifies_newly_active_deferred_surface() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = add_deferred_tab(&mut state, &mut engine);
     assert!(engine.is_surface_deferred(sid));
 
@@ -816,7 +847,8 @@ fn close_active_tab_reifies_newly_active_deferred_surface() {
 
 #[test]
 fn reify_displayed_surfaces_is_noop_without_deferred() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let before = collect_all_surface_ids(&mut state, &mut engine);
     state.reify_displayed_surfaces(&mut engine);
     let after = collect_all_surface_ids(&mut state, &mut engine);
@@ -852,7 +884,8 @@ fn add_mirror_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<
 fn local_attention_raise_is_suppressed_on_mirror_surface() {
     use crate::core::AttentionKind;
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
         .workspaces
         .get(state.active_workspace_index(&engine))
@@ -884,7 +917,8 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
 
     const OSC133_D: &[u8] = b"\x1b]133;D;0\x07";
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
         .workspaces
         .get(state.active_workspace_index(&engine))
@@ -945,7 +979,8 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
 fn mirror_surface_notification_item_survives_the_attention_gate() {
     use crate::core::AttentionKind;
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
     let mirror_ws_id = engine
         .workspaces
@@ -975,7 +1010,8 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
 fn surface_completion_on_mirror_surface_is_suppressed() {
     use crate::core::AttentionKind;
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
 
     engine.raise_attention(mirror_sid, AttentionKind::NeedsInput);
@@ -990,7 +1026,8 @@ fn surface_completion_on_mirror_surface_is_suppressed() {
 fn server_push_apply_is_not_blocked_by_the_mirror_gate() {
     use crate::core::AttentionKind;
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
 
     engine.set_mirror_surface_attention(mirror_sid, Some(AttentionKind::NeedsInput));
@@ -1022,7 +1059,8 @@ fn occupancy_suppresses_completion_highlight() {
     use crate::core::AttentionKind;
     use crate::model::{PhysicalPx, PhysicalRect};
 
-    let (state, mut engine) = test_state();
+    let (state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sids = engine
         .workspaces
         .get(state.active_workspace_index(&engine))
@@ -1064,7 +1102,8 @@ fn needs_input_not_suppressed_by_occupancy() {
     use crate::core::AttentionKind;
     use crate::model::{PhysicalPx, PhysicalRect};
 
-    let (state, mut engine) = test_state();
+    let (state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sids = engine
         .workspaces
         .get(state.active_workspace_index(&engine))
@@ -1095,7 +1134,8 @@ fn needs_input_not_suppressed_by_occupancy() {
 
 #[test]
 fn add_workspace_increments_count() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert_eq!(engine.workspaces.len(), 1);
     add_test_workspace(&mut state, &mut engine);
     assert_eq!(engine.workspaces.len(), 2);
@@ -1103,7 +1143,8 @@ fn add_workspace_increments_count() {
 
 #[test]
 fn switch_workspace_valid() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
     assert_eq!(state.active_workspace_index(&engine), 1);
 
@@ -1113,14 +1154,16 @@ fn switch_workspace_valid() {
 
 #[test]
 fn switch_workspace_out_of_range() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.switch_workspace(&mut engine, 999);
     assert_eq!(state.active_workspace_index(&engine), 0);
 }
 
 #[test]
 fn next_prev_workspace_single_category_wraps() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     assert_eq!(engine.workspaces.len(), 3);
@@ -1141,7 +1184,8 @@ fn next_prev_workspace_single_category_wraps() {
 
 #[test]
 fn next_workspace_in_active_category_wraps_within_category_only() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1172,7 +1216,8 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
 
 #[test]
 fn crosses_category_off_keeps_local_wrap() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1188,7 +1233,8 @@ fn crosses_category_off_keeps_local_wrap() {
 
 #[test]
 fn crosses_category_on_next_lands_on_next_category_first() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1206,7 +1252,8 @@ fn crosses_category_on_next_lands_on_next_category_first() {
 
 #[test]
 fn crosses_category_on_prev_lands_on_prev_category_last() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1222,7 +1269,8 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
 
 #[test]
 fn crosses_category_on_wraps_across_full_category_list() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1238,7 +1286,8 @@ fn crosses_category_on_wraps_across_full_category_list() {
 
 #[test]
 fn crosses_category_on_single_category_falls_back_to_local_wrap() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     assert!(!engine.settings.general.workspace_categories_enabled);
@@ -1251,7 +1300,8 @@ fn crosses_category_on_single_category_falls_back_to_local_wrap() {
 
 #[test]
 fn switch_to_category_lands_on_last_active() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1269,7 +1319,8 @@ fn switch_to_category_lands_on_last_active() {
 
 #[test]
 fn switch_to_category_falls_back_to_first_when_never_visited() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
@@ -1285,7 +1336,8 @@ fn switch_to_category_falls_back_to_first_when_never_visited() {
 #[cfg(feature = "gui")]
 #[test]
 fn switch_to_category_auto_expands_collapsed() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     let work = engine.create_category("work").expect("create work");
     engine.workspaces[1].set_category(work); // B
@@ -1303,7 +1355,8 @@ fn switch_to_category_auto_expands_collapsed() {
 
 #[test]
 fn switch_to_category_out_of_range_noop() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.switch_workspace(&mut engine, 0);
     state.switch_to_category(&mut engine, 99);
     assert_eq!(state.active_workspace_index(&engine), 0);
@@ -1311,7 +1364,8 @@ fn switch_to_category_out_of_range_noop() {
 
 #[test]
 fn next_prev_category_wraps_across_categories() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     let work = engine.create_category("work").expect("create work");
@@ -1335,7 +1389,8 @@ fn next_prev_category_wraps_across_categories() {
 
 #[test]
 fn next_prev_category_noop_when_single_category() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // 같은 normal 카테고리에 워크스페이스 추가.
     assert_eq!(state.active_workspace_index(&engine), 1);
 
@@ -1347,7 +1402,8 @@ fn next_prev_category_noop_when_single_category() {
 
 #[test]
 fn next_category_lands_on_last_active() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     let work = engine.create_category("work").expect("create work");
@@ -1363,7 +1419,8 @@ fn next_category_lands_on_last_active() {
 
 #[test]
 fn next_prev_workspace_in_active_category_noop_when_alone() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert_eq!(engine.workspaces.len(), 1);
     assert_eq!(state.active_workspace_index(&engine), 0);
 
@@ -1377,7 +1434,8 @@ fn next_prev_workspace_in_active_category_noop_when_alone() {
 #[test]
 fn resolve_inherit_cwd_from_markdown_surface() {
     // Markdown 파일의 부모 디렉터리를 cwd로 사용하는 경로를 검사한다.
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     #[cfg(windows)]
     let (root, file) = ("C:\\workspace\\proj", "C:\\workspace\\proj\\readme.md");
     #[cfg(not(windows))]
@@ -1404,7 +1462,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
     }
     let sid = sid_opt.expect("markdown surface should exist");
     assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine, sid),
+        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
         Some(std::path::PathBuf::from(root))
     );
 }
@@ -1412,7 +1470,8 @@ fn resolve_inherit_cwd_from_markdown_surface() {
 #[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
 #[test]
 fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.inherit_cwd = false;
 
     #[cfg(windows)]
@@ -1440,14 +1499,21 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
         }
     }
     let sid = sid_opt.expect("markdown surface should exist");
-    assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, sid), None);
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
+        None
+    );
 }
 
 #[test]
 fn resolve_inherit_cwd_from_unknown_surface_is_none() {
-    let (state, engine) = test_state();
+    let (state, mut engine_session) = test_state();
+    let engine = engine_session.borrow_mut();
     let _ = &engine;
-    assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, 99999), None);
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), 99999),
+        None
+    );
 }
 
 /// 실제 attach 없이 mirror 플래그와 explorer root로 원격 cwd를 구성한다.
@@ -1473,22 +1539,27 @@ fn focused_explorer(
 
 #[test]
 fn local_explorer_cwd_is_local_and_inherited() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (sid, root) = focused_explorer(&mut state, &mut engine);
     assert_eq!(
         engine.surface_cwd(sid),
         Some(crate::core::state::SurfaceCwd::Local(root.clone()))
     );
-    assert_eq!(state.resolve_inherit_cwd(&engine), Some(root.clone()));
     assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine, sid),
+        state.resolve_inherit_cwd(&engine.as_ref()),
+        Some(root.clone())
+    );
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
         Some(root)
     );
 }
 
 #[test]
 fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (sid, root) = focused_explorer(&mut state, &mut engine);
     state.active_workspace_mut(&mut engine).mirror = true;
 
@@ -1499,18 +1570,22 @@ fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
         )),
         "mirror 워크스페이스의 cwd 는 원격 출처로 분류된다"
     );
-    assert_eq!(engine.local_surface_cwd(sid), None);
-    assert_eq!(state.resolve_inherit_cwd(&engine), None);
-    assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, sid), None);
+    assert_eq!(engine.as_ref().local_surface_cwd(sid), None);
+    assert_eq!(state.resolve_inherit_cwd(&engine.as_ref()), None);
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
+        None
+    );
 }
 
 #[test]
 fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (sid, root) = focused_explorer(&mut state, &mut engine);
     let root_s = root.to_string_lossy().into_owned();
 
-    let local = state.popup_surface_context(&engine, Some(sid));
+    let local = state.popup_surface_context(&engine.as_ref(), Some(sid));
     assert_eq!(local["cwd"], serde_json::json!(root_s));
     assert_eq!(local["observed_cwd"], serde_json::json!(root_s));
     assert_eq!(local["origin_surface_id"], serde_json::json!(sid));
@@ -1518,13 +1593,13 @@ fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
     assert!(local.get("mirror").is_none());
 
     engine.settings.general.inherit_cwd = false;
-    let gated = state.popup_surface_context(&engine, Some(sid));
+    let gated = state.popup_surface_context(&engine.as_ref(), Some(sid));
     assert!(gated["cwd"].is_null());
     assert_eq!(gated["observed_cwd"], serde_json::json!(root_s));
 
     engine.settings.general.inherit_cwd = true;
     state.active_workspace_mut(&mut engine).mirror = true;
-    let mirror = state.popup_surface_context(&engine, Some(sid));
+    let mirror = state.popup_surface_context(&engine.as_ref(), Some(sid));
     assert!(
         mirror["cwd"].is_null(),
         "원격 경로는 `cwd` 키로 새지 않는다"
@@ -1537,7 +1612,8 @@ fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
 
 #[test]
 fn surface_display_path_returns_workspace_and_tab_names() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface_ids = collect_surface_ids(&mut state, &mut engine);
     let sid = surface_ids[0];
     let path = engine
@@ -1550,7 +1626,8 @@ fn surface_display_path_returns_workspace_and_tab_names() {
 
 #[test]
 fn surface_display_path_unknown_surface_is_none() {
-    let (state, engine) = test_state();
+    let (state, mut engine_session) = test_state();
+    let engine = engine_session.borrow_mut();
     assert!(
         engine
             .surface_display_path(99999, &state.navigation)
@@ -1579,7 +1656,8 @@ fn explorer_of<'a>(
 
 #[test]
 fn add_kind_tab_by_owner_opens_explorer_with_folder_cwd() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let owner = state.focused_surface_id(&engine).expect("focused surface");
     // explorer는 절대경로만 받으므로 시험 환경의 절대경로를 사용한다.
     let folder = crate::test_support::abs_path("proj/sub");
@@ -1598,7 +1676,8 @@ fn add_kind_tab_by_owner_opens_explorer_with_folder_cwd() {
 
 #[test]
 fn set_explorer_cwd_moves_root_and_clears_history() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (_t, sid) = state
         .add_kind_tab(
             &mut engine,
@@ -1637,7 +1716,8 @@ fn two_pane_setup(
 fn switch_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
     assert_eq!(state.focused_pane_id(&engine), pane_b);
 
@@ -1665,7 +1745,8 @@ fn switch_tab_on_other_pane_moves_focus() {
 fn focus_pane_action_moves_focus_without_switching_tab() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
 
     // 빈 영역 클릭이 활성 탭을 바꾸지 않는지 확인하도록 탭을 두 개 둔다.
@@ -1713,7 +1794,8 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
         (|pane_id| TabBarAction::ScrollLeft { pane_id }) as fn(u32) -> TabBarAction,
         (|pane_id| TabBarAction::ScrollRight { pane_id }) as fn(u32) -> TabBarAction,
     ] {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
         assert_eq!(state.focused_pane_id(&engine), pane_b);
 
@@ -1739,7 +1821,8 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
 fn close_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
 
     // 탭이 실제로 닫힌 뒤에도 pane이 남도록 두 개를 둔다.
@@ -1786,7 +1869,8 @@ fn close_tab_on_other_pane_moves_focus() {
 fn context_menu_actions_do_not_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
     assert_eq!(state.focused_pane_id(&engine), pane_b);
 
@@ -1816,19 +1900,20 @@ fn context_menu_actions_do_not_move_focus() {
 
 fn test_state_with_mock_memory() -> (
     RequestContext,
-    crate::core::CoreState,
+    crate::runtime::engine_session::EngineSession,
     std::sync::Arc<std::sync::Mutex<tasty_memory::testing::InMemoryStorage>>,
 ) {
     let mock = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let (state, engine) = test_state_with_memory(mock.clone());
-    (state, engine, mock)
+    let (state, engine_session) = test_state_with_memory(mock.clone());
+    (state, engine_session, mock)
 }
 
 #[test]
 fn cleanup_surface_purges_surface_scope_exactly_once() {
-    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
+    let mut engine = engine_session.borrow_mut();
     let sid = collect_surface_ids(&mut state, &mut engine)[0];
     let scope = tasty_memory::Scope::Surface(sid);
 
@@ -1860,7 +1945,8 @@ fn cleanup_surface_purges_surface_scope_exactly_once() {
 /// 도메인 자원 회수는 창 상태 없이 engine만으로 끝나야 한다.
 #[test]
 fn engine_cleanup_reclaims_domain_resources_without_window_state() {
-    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
+    let mut engine = engine_session.borrow_mut();
     let sid = collect_surface_ids(&mut state, &mut engine)[0];
     engine.attach.acquire(sid, 7).expect("하드 점유");
     let mut sums = crate::close_trace::CleanupSums::default();
@@ -1886,7 +1972,8 @@ fn engine_cleanup_reclaims_domain_resources_without_window_state() {
 
 #[test]
 fn cleanup_surface_still_clears_surface_scope_entries() {
-    let (mut state, mut engine, _mock) = test_state_with_mock_memory();
+    let (mut state, mut engine_session, _mock) = test_state_with_mock_memory();
+    let mut engine = engine_session.borrow_mut();
     let sid = collect_surface_ids(&mut state, &mut engine)[0];
 
     state.with_memory(|m| {
@@ -1917,7 +2004,8 @@ fn cleanup_surface_still_clears_surface_scope_entries() {
 
 #[test]
 fn workspace_close_purges_each_surface_scope_once() {
-    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).expect("add_tab");
     state.add_tab(&mut engine).expect("add_tab");
     let sids = collect_surface_ids(&mut state, &mut engine);
@@ -1976,7 +2064,8 @@ fn run_cascade_close(state: &mut RequestContext, engine: &mut EngineMut<'_>, sid
 /// headless에도 workspace.closed 통지와 별개로 workspace 범위 정리가 필요하다.
 #[test]
 fn cascade_workspace_removal_purges_only_its_scope_once() {
-    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
+    let mut engine = engine_session.borrow_mut();
     let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
 
     run_cascade_close(&mut state, &mut engine, sid);
@@ -2007,7 +2096,8 @@ fn cascade_workspace_removal_clears_regular_and_secret_entries_of_that_scope() {
         std::sync::Arc::new(std::sync::Mutex::new(
             tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
         ));
-    let (mut state, mut engine) = test_state_with_memory(store);
+    let (mut state, mut engine_session) = test_state_with_memory(store);
+    let mut engine = engine_session.borrow_mut();
     let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
     let scopes = [
         Scope::Workspace(victim_ws),
@@ -2045,7 +2135,8 @@ fn cascade_workspace_removal_clears_regular_and_secret_entries_of_that_scope() {
 
 #[test]
 fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let victim_sid = engine.workspaces[0].all_surface_ids()[0];
     for _ in 0..3 {
         add_test_workspace(&mut state, &mut engine);
@@ -2065,7 +2156,8 @@ fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
 
 #[test]
 fn closing_the_viewed_workspace_moves_to_a_neighbour() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     for _ in 0..2 {
         add_test_workspace(&mut state, &mut engine);
     }
@@ -2084,7 +2176,8 @@ fn closing_the_viewed_workspace_moves_to_a_neighbour() {
 
 #[test]
 fn closing_an_earlier_tab_keeps_the_viewed_tab() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap();
@@ -2118,7 +2211,8 @@ fn closing_an_earlier_tab_keeps_the_viewed_tab() {
 
 #[test]
 fn closing_an_unfocused_pane_keeps_the_focused_pane() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
@@ -2145,7 +2239,8 @@ fn closing_an_unfocused_pane_keeps_the_focused_pane() {
 
 #[test]
 fn closing_the_focused_pane_reassigns_focus() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state
         .test_split_pane(&mut engine, SplitDirection::Vertical)
@@ -2170,7 +2265,8 @@ fn closing_the_focused_pane_reassigns_focus() {
 
 #[test]
 fn agent_close_does_not_record_the_workspace_for_undo() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
 
     assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
@@ -2183,7 +2279,8 @@ fn agent_close_does_not_record_the_workspace_for_undo() {
 
 #[test]
 fn user_close_still_records_the_workspace_for_undo() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
 
     assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
@@ -2193,7 +2290,8 @@ fn user_close_still_records_the_workspace_for_undo() {
 
 #[test]
 fn agent_close_reports_agent_origin_to_plugins() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
 
     assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
@@ -2212,7 +2310,8 @@ fn agent_close_reports_agent_origin_to_plugins() {
 
 #[test]
 fn user_close_reports_user_origin_to_plugins() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
 
     assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
@@ -2225,7 +2324,8 @@ fn user_close_reports_user_origin_to_plugins() {
 #[test]
 fn closing_a_workspace_emits_the_host_event_for_both_origins() {
     for origin in [WorkspaceCloseOrigin::Agent, WorkspaceCloseOrigin::User] {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         add_test_workspace(&mut state, &mut engine);
         let workspace_id = engine.workspaces[0].id;
 
@@ -2245,7 +2345,8 @@ fn closing_a_workspace_emits_the_host_event_for_both_origins() {
 // PTY 종료 정리의 save_snapshot=false와 is_user_close=true 조합을 각각 검사한다.
 #[test]
 fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
     let ws_idx = state.active_workspace_index(&engine);
     let surface = engine.workspaces[ws_idx].all_surface_ids()[0];
@@ -2268,7 +2369,8 @@ fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
 
 #[test]
 fn inline_cascade_emits_the_workspace_closed_host_event() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
     let ws_idx = state.active_workspace_index(&engine);
     let workspace_id = engine.workspaces[ws_idx].id;
@@ -2342,7 +2444,8 @@ mod close_refuses_hard_occupied {
 
     #[test]
     fn closing_a_workspace_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let idx = add_ws(&mut engine);
         let sid = engine.workspaces[idx].all_surface_ids()[0];
         engine.attach.acquire(sid, HOLDER).expect("하드 점유");
@@ -2350,7 +2453,7 @@ mod close_refuses_hard_occupied {
         let closed = state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User);
 
         assert!(!closed, "점유된 워크스페이스는 닫히면 안 된다");
-        assert!(alive(&engine, sid), "surface 가 살아 있어야 한다");
+        assert!(alive(&engine.as_ref(), sid), "surface 가 살아 있어야 한다");
         assert_eq!(engine.workspaces.len(), 2, "거절이면 아무것도 안 사라진다");
         assert!(
             engine.attach.is_hard_occupied(sid),
@@ -2360,7 +2463,8 @@ mod close_refuses_hard_occupied {
 
     #[test]
     fn closing_an_unoccupied_workspace_still_works() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let idx = add_ws(&mut engine);
 
         assert!(state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User));
@@ -2369,7 +2473,8 @@ mod close_refuses_hard_occupied {
 
     #[test]
     fn closing_the_focused_surface_when_occupied_is_refused() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
         let pane_id = state.focused_pane_id(&engine);
         let (ws_idx, _) = engine
@@ -2389,12 +2494,13 @@ mod close_refuses_hard_occupied {
         engine.attach.acquire(sid_a, HOLDER).expect("하드 점유");
 
         assert!(!state.close_active_surface(&mut engine), "거절해야 한다");
-        assert!(alive(&engine, sid_a));
+        assert!(alive(&engine.as_ref(), sid_a));
     }
 
     #[test]
     fn closing_an_unoccupied_focused_surface_still_works() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
         let pane_id = state.focused_pane_id(&engine);
         let (ws_idx, _) = engine
@@ -2413,17 +2519,18 @@ mod close_refuses_hard_occupied {
             .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
 
         assert!(state.close_active_surface(&mut engine));
-        assert!(!alive(&engine, sid_a));
+        assert!(!alive(&engine.as_ref(), sid_a));
     }
 
     #[test]
     fn closing_a_pane_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = split_pane(&mut state, &mut engine);
         engine.attach.acquire(sid, HOLDER).expect("하드 점유");
 
         assert!(!state.close_active_pane(&mut engine), "거절해야 한다");
-        assert!(alive(&engine, sid));
+        assert!(alive(&engine.as_ref(), sid));
         assert_eq!(
             state
                 .active_workspace(&engine)
@@ -2437,38 +2544,42 @@ mod close_refuses_hard_occupied {
 
     #[test]
     fn closing_an_unoccupied_pane_still_works() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = split_pane(&mut state, &mut engine);
 
         assert!(state.close_active_pane(&mut engine));
-        assert!(!alive(&engine, sid));
+        assert!(!alive(&engine.as_ref(), sid));
     }
 
     #[test]
     fn closing_a_tab_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.add_tab(&mut engine).expect("탭 추가");
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
         engine.attach.acquire(sid, HOLDER).expect("하드 점유");
 
         assert!(!state.close_active_tab(&mut engine), "거절해야 한다");
-        assert!(alive(&engine, sid));
+        assert!(alive(&engine.as_ref(), sid));
     }
 
     #[test]
     fn closing_an_unoccupied_tab_still_works() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.add_tab(&mut engine).expect("탭 추가");
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
 
         assert!(state.close_active_tab(&mut engine));
-        assert!(!alive(&engine, sid));
+        assert!(!alive(&engine.as_ref(), sid));
     }
 
     // 요청 거절과 달리 종료된 PTY의 사후 정리는 점유 때문에 막지 않는다.
     #[test]
     fn the_post_mortem_cleanup_path_still_closes_an_occupied_surface() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         add_ws(&mut engine);
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
         engine.attach.acquire(sid, HOLDER).expect("하드 점유");
@@ -2477,7 +2588,7 @@ mod close_refuses_hard_occupied {
             state.close_surface_by_id_no_snapshot(&mut engine, sid, false),
             "사후 정리는 점유와 무관하게 통해야 한다"
         );
-        assert!(!alive(&engine, sid));
+        assert!(!alive(&engine.as_ref(), sid));
     }
 }
 
@@ -2490,7 +2601,8 @@ mod cleanup_forgets_only_the_closed_surface {
 
     #[test]
     fn the_closed_surfaces_own_lock_is_gone() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         crate::core::apply_create_workspace_inner(
             &mut engine,
             crate::core::WorkspaceCreationParams::terminal(),

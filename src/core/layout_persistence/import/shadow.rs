@@ -179,7 +179,7 @@ fn surface_tree(node: &SurfaceLayout, defects: &mut Vec<String>) -> CanonTree {
 /// CoreState를 슬롯으로 capture해 journal의 그 슬롯 엔진 stream에 가져온 뒤 그 모델을 읽는다.
 /// capture는 scrollback 저장 ID를 새로 정할 수 있어 engine을 바꿀 수 있다.
 pub(super) fn capture_and_import(
-    engine: &mut CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     store: &mut EventStore,
     epoch: WriterEpoch,
     slot: LayoutSlotId,

@@ -27,15 +27,15 @@ impl EngineMut<'_> {
     }
 }
 
-impl EngineRef<'_> {
-    pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
+impl<'a> EngineRef<'a> {
+    pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&'a Terminal> {
         self.runtime.terminals.get(surface_id)
     }
 
     /// 화면과 같은 Terminal을 사용해야 선택 좌표와 복사 내용이 맞는다.
     /// hard 점유 중에는 readonly 사본만 반환하며 없다고 원본으로 대체하지 않는다.
     #[cfg(feature = "gui")]
-    pub fn visible_terminal(&self, surface_id: u32) -> Option<&Terminal> {
+    pub fn visible_terminal(&self, surface_id: u32) -> Option<&'a Terminal> {
         if self.attach.is_hard_occupied(surface_id) {
             self.readonly_view(surface_id)
         } else {
@@ -46,17 +46,12 @@ impl EngineRef<'_> {
 
 impl EngineMut<'_> {
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
-        self.runtime.terminals.get(surface_id)
+        self.as_ref().find_terminal_by_id(surface_id)
     }
 
-    /// 화면과 같은 Terminal을 사용해야 선택 좌표와 복사 내용이 맞는다.
-    /// hard 점유 중에는 readonly 사본만 반환하며 없다고 원본으로 대체하지 않는다.
+    /// 불변 실행 대여와 같은 hard 점유 표시 정책을 사용한다.
     #[cfg(feature = "gui")]
     pub fn visible_terminal(&self, surface_id: u32) -> Option<&Terminal> {
-        if self.core.attach.is_hard_occupied(surface_id) {
-            self.runtime.readonly_views.get(&surface_id)
-        } else {
-            self.runtime.terminals.get(surface_id)
-        }
+        self.as_ref().visible_terminal(surface_id)
     }
 }

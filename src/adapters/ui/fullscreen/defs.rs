@@ -44,7 +44,7 @@ pub fn find(id: &str) -> Option<&'static StageDef> {
 fn draw_blank_stage(
     _ui: &mut egui::Ui,
     _state: &mut crate::state::MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> StageAction {
     StageAction::None
 }

@@ -110,7 +110,8 @@ mod hard_occupancy_tests {
     #[test]
     fn closing_a_surface_a_remote_session_occupies_is_refused() {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         // 두 번째 워크스페이스 — 마지막 워크스페이스 cascade 와 얽히지 않게 한다.
         crate::core::apply_create_workspace_inner(
             &mut engine,
@@ -151,7 +152,8 @@ mod hard_occupancy_tests {
     #[test]
     fn close_self_is_not_a_bypass_for_an_occupied_surface() {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         crate::core::apply_create_workspace_inner(
             &mut engine,
             crate::core::WorkspaceCreationParams::terminal(),
@@ -178,7 +180,8 @@ mod hard_occupancy_tests {
     #[test]
     fn closing_an_unoccupied_surface_still_works() {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         crate::core::apply_create_workspace_inner(
             &mut engine,
             crate::core::WorkspaceCreationParams::terminal(),

@@ -2,7 +2,6 @@
 //! 검증과 변경은 CoreState의 카테고리 메서드가 맡고, 성공하면 레이아웃 저장을 예약한다.
 
 use super::*;
-use crate::core::engine_access::EngineMut;
 
 impl Core {
     pub(super) fn apply_set_workspace_category(
@@ -69,12 +68,16 @@ mod tests {
     use super::*;
     use crate::model::NORMAL_CATEGORY_ID;
 
-    fn fixture() -> (Core, CoreState) {
+    fn fixture() -> (Core, crate::runtime::engine_session::EngineSession) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let mut engine = engine_session.borrow_mut();
         engine.layout_dirty.clear();
-        (crate::ipc::handler::cli_entry_tests::test_core(), engine)
+        (
+            crate::ipc::handler::cli_entry_tests::test_core(),
+            engine_session,
+        )
     }
 
     fn apply(core: &mut Core, engine: &mut EngineMut<'_>, intent: DomainIntent) -> Vec<CoreEvent> {
@@ -95,7 +98,8 @@ mod tests {
 
     #[test]
     fn create_appends_and_marks_the_layout_dirty() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let id = create(&mut core, &mut engine, "Work");
         assert_eq!(engine.categories().len(), 2);
         assert_eq!(engine.category_name(id), Some("Work"));
@@ -104,7 +108,8 @@ mod tests {
 
     #[test]
     fn a_rejected_create_returns_the_category_error_text() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         create(&mut core, &mut engine, "Work");
         engine.layout_dirty.clear();
         let err = core
@@ -123,7 +128,8 @@ mod tests {
 
     #[test]
     fn rename_delete_and_reorder_go_through_the_category_rules() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let a = create(&mut core, &mut engine, "A");
         let b = create(&mut core, &mut engine, "B");
         apply(
@@ -170,7 +176,8 @@ mod tests {
 
     #[test]
     fn set_workspace_category_moves_the_workspace_and_rejects_unknown_targets() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let a = create(&mut core, &mut engine, "A");
         engine.layout_dirty.clear();
         let ws_id = engine.workspaces[0].id;
@@ -199,7 +206,8 @@ mod tests {
 
     #[test]
     fn set_workspace_attach_mapping_sets_and_clears() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let ws_id = engine.workspaces[0].id;
         let mapping = crate::model::WorkspaceAttachMapping::profile("prod", Some(3));
         apply(
@@ -235,7 +243,8 @@ mod tests {
 
     #[test]
     fn category_intents_still_apply_locally_on_a_mirror_workspace() {
-        let (mut core, mut engine) = fixture();
+        let (mut core, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].mirror = true;
         let a = create(&mut core, &mut engine, "A");
         let ws_id = engine.workspaces[0].id;

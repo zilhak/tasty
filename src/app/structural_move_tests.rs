@@ -17,7 +17,8 @@ fn workspace(id: u32) -> Workspace {
 
 #[test]
 fn queued_workspace_moves_keep_the_admitted_source_id() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     engine.workspaces = vec![workspace(11), workspace(22), workspace(33)];
     state.reconcile_presentation(&engine);
@@ -52,7 +53,8 @@ fn queued_workspace_moves_keep_the_admitted_source_id() {
 
 #[test]
 fn queued_tab_moves_keep_identity_and_missing_sources_remain_noops() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     engine.workspaces = vec![workspace(11)];
     let pane = engine.workspaces[0]

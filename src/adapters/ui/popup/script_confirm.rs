@@ -116,7 +116,7 @@ pub fn on_close_script_confirm_popup(
 pub fn draw_script_confirm_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(pending) = state.dialogs.pending_script_confirm.as_ref() else {
         return PopupAction::Close;

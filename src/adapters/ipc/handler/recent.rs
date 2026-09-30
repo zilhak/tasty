@@ -58,8 +58,10 @@ mod tests {
     fn recent_query_agrees_across_states_after_either_window_records() {
         let dir = tempfile::tempdir().unwrap();
         let mut db = crate::db::Db::open(&dir.path().join("state.db")).unwrap();
-        let (mut first, _first_engine) = crate::state::tests::test_state();
-        let (mut second, _second_engine) = crate::state::tests::test_state();
+        let (mut first, mut _first_engine_session) = crate::state::tests::test_state();
+        let _first_engine = _first_engine_session.borrow_mut();
+        let (mut second, mut _second_engine_session) = crate::state::tests::test_state();
+        let _second_engine = _second_engine_session.borrow_mut();
         first.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
         second.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
         first.record_recent("markdown", &json!({"file": "/notes/one.md"}));

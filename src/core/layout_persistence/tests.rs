@@ -606,23 +606,26 @@ mod wiring {
     use std::path::Path;
 
     use super::super::{SlotLoad, load_slot_in, save_slot_in_dir, slot_path_in};
-    use crate::core::{Core, CoreState};
+    use crate::core::Core;
 
-    fn engine_with_layouts(dir: &Path) -> CoreState {
+    fn engine_with_layouts(dir: &Path) -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine_session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         std::fs::create_dir_all(dir).unwrap();
         engine.layouts_dir_override = Some(dir.to_path_buf());
         engine.layout_slot = Some(1);
         engine.settings.general.restore_layout = true;
-        engine
+        engine_session
     }
 
     #[test]
     fn saving_over_an_unparsable_slot_moves_it_aside_first() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         std::fs::write(slot_path_in(&layouts, 1), "{ NOT JSON {{").unwrap();
         // 실제 부팅 대신 판정 결과를 주입한다.
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
@@ -654,7 +657,8 @@ mod wiring {
     fn a_slot_that_became_valid_is_not_moved_aside() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         super::slots::write_valid_slot(&layouts, 1, "written-by-another-instance");
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
 
@@ -677,7 +681,8 @@ mod wiring {
     fn boot_verdict_becomes_the_engine_flags() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
 
         engine.accept_slot_load(SlotLoad::Absent, 1);
         assert!(!engine.layout_slot_protected && !engine.layout_slot_unparsable);
@@ -688,7 +693,8 @@ mod wiring {
             "읽지 못한 슬롯은 잠가야 저장이 사용자 레이아웃을 덮지 않는다"
         );
 
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
         assert!(
             engine.layout_slot_unparsable,
@@ -717,7 +723,8 @@ mod wiring {
     fn a_full_backup_budget_makes_the_boot_verdict_say_preservation_is_blocked() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         std::fs::write(slot_path_in(&layouts, 1), "{ NOT JSON {{").unwrap();
         exhaust_backup_budget(&layouts, 1);
 
@@ -734,7 +741,8 @@ mod wiring {
     fn a_save_that_cannot_preserve_records_it_and_keeps_the_original() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         let path = slot_path_in(&layouts, 1);
         std::fs::write(&path, "{ NOT JSON {{").unwrap();
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
@@ -765,7 +773,8 @@ mod wiring {
     fn a_slot_that_became_a_newer_version_is_neither_moved_nor_overwritten() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         let path = slot_path_in(&layouts, 1);
         let from_the_future = format!(
             r#"{{"version":{},"workspaces":[],"active_workspace":0}}"#,
@@ -799,7 +808,8 @@ mod wiring {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         let path = slot_path_in(&layouts, 1);
         std::fs::write(&path, "{ NOT JSON {{").unwrap();
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
@@ -829,7 +839,8 @@ mod wiring {
     fn a_locked_slot_is_never_written() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         let path = slot_path_in(&layouts, 1);
         std::fs::write(&path, "user layout we could not read").unwrap();
         engine.accept_slot_load(SlotLoad::Unreadable, 1);
@@ -861,7 +872,8 @@ mod wiring {
     fn an_unlocked_slot_is_written_as_usual() {
         let tmp = tempfile::tempdir().unwrap();
         let layouts = tmp.path().join("layouts");
-        let mut engine = engine_with_layouts(&layouts);
+        let mut engine_session = engine_with_layouts(&layouts);
+        let mut engine = engine_session.borrow_mut();
         engine.accept_slot_load(SlotLoad::Absent, 1);
         engine.mark_layout_dirty();
 
@@ -887,14 +899,15 @@ mod wiring {
 #[test]
 fn moved_tab_is_saved_at_its_new_position() {
     use super::SavedLayout;
+    use crate::core::Core;
     use crate::core::state::PendingMove;
-    use crate::core::{Core, CoreState};
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let new_engine = || {
         crate::runtime::engine_session::EngineSession::new(80, 24, waker.clone()).expect("engine")
     };
-    let mut engine = new_engine();
+    let mut engine_session = new_engine();
+    let mut engine = engine_session.borrow_mut();
     let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
     let pane0 = engine.find_pane_by_id_mut(p0).unwrap();
     pane0.tabs[0].explicit_name = Some("MOVED".to_string());
@@ -924,7 +937,8 @@ fn moved_tab_is_saved_at_its_new_position() {
         &crate::model::StructurePresentationSnapshot::default(),
     );
 
-    let mut restored = new_engine();
+    let mut restored_session = new_engine();
+    let mut restored = restored_session.borrow_mut();
     assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
         let layout = restored.workspaces[ws].pane_layout();
@@ -946,13 +960,14 @@ fn moved_tab_is_saved_at_its_new_position() {
 #[test]
 fn moved_pane_is_saved_at_its_new_position() {
     use super::SavedLayout;
-    use crate::core::{Core, CoreState};
+    use crate::core::Core;
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let new_engine = || {
         crate::runtime::engine_session::EngineSession::new(80, 24, waker.clone()).expect("engine")
     };
-    let mut engine = new_engine();
+    let mut engine_session = new_engine();
+    let mut engine = engine_session.borrow_mut();
     let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
     engine.find_pane_by_id_mut(p0).unwrap().tabs[0].explicit_name = Some("MOVED".to_string());
     let extra = crate::model::Pane::new_with_terminal_marker(
@@ -983,7 +998,8 @@ fn moved_pane_is_saved_at_its_new_position() {
         &crate::model::StructurePresentationSnapshot::default(),
     );
 
-    let mut restored = new_engine();
+    let mut restored_session = new_engine();
+    let mut restored = restored_session.borrow_mut();
     assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
         let layout = restored.workspaces[ws].pane_layout();

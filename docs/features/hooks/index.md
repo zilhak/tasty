@@ -82,7 +82,7 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 
 `tasty-hooks`는 surface와 이벤트를 매칭해 `FiredHook`을 반환한다. 레지스트리 조회와 실제 실행은
 `hook_runtime::trigger::execute_binding`이 담당한다. 핸들러 정의 레지스트리는 엔진이 공유하고(`src/hook_handler/`),
-훅 등록·감시 상태와 실행은 엔진별 `HookRuntimeState`와 `src/hook_runtime/`이 맡는다.
+훅 등록·감시 상태는 `EngineSession.hooks`의 엔진별 `HookRuntimeState`가, 실행은 `src/hook_runtime/`이 맡는다. CoreState에는 훅 상태 원본을 두지 않는다.
 
 IpcSequence는 호스트 명령 큐를 처리하는 스레드에서 기다리지 않는다.
 지연 생성한 `hook-sequence` 워커 하나(`src/hook_runtime/worker.rs`)가 surface hook과 수동 `hook_handler.dispatch`를 접수 순서대로 실행한다.

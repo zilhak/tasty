@@ -645,7 +645,7 @@ pub fn on_close_file_picker(
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(data) = state.dialogs.file_picker.as_ref() else {
         return PopupAction::Close;

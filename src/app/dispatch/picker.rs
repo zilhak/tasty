@@ -19,7 +19,7 @@ impl App {
             .collect();
         for id in pending {
             let core = &mut self.core;
-            let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+            let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
                 continue;
             };
             let Some(data) = main.state.dialogs.file_handler_picker.as_mut() else {
@@ -41,7 +41,7 @@ impl App {
                 crate::file::dispatch::apply_file_picker_result(
                     core,
                     &mut main.state,
-                    &mut *engine,
+                    &mut engine,
                     target,
                     result,
                     origin_surface_id,

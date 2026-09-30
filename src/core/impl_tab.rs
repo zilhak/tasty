@@ -195,18 +195,20 @@ mod create_tab_selection_tests {
         usize::from(activate)
     }
 
-    fn engine_and_pane() -> (CoreState, u32) {
+    fn engine_and_pane() -> (crate::runtime::engine_session::EngineSession, u32) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let engine = engine_session.borrow_mut();
         let sid = engine.workspaces[0].all_surface_ids()[0];
         let pane_id = engine.find_pane_for_surface(sid).expect("pane");
-        (engine, pane_id)
+        (engine_session, pane_id)
     }
 
     #[test]
     fn background_creation_emits_no_activation() {
-        let (mut engine, pane_id) = engine_and_pane();
+        let (mut engine_session, pane_id) = engine_and_pane();
+        let mut engine = engine_session.borrow_mut();
         assert_eq!(create(&mut engine, pane_id, "empty", false), 0);
         let pane = engine.find_pane_by_id(pane_id).unwrap();
         assert_eq!(pane.tabs.len(), 2);
@@ -214,7 +216,8 @@ mod create_tab_selection_tests {
 
     #[test]
     fn activated_creation_returns_a_user_continuation() {
-        let (mut engine, pane_id) = engine_and_pane();
+        let (mut engine_session, pane_id) = engine_and_pane();
+        let mut engine = engine_session.borrow_mut();
         assert_eq!(create(&mut engine, pane_id, "empty", true), 1);
         assert_eq!(engine.find_pane_by_id(pane_id).unwrap().tabs.len(), 2);
     }
@@ -226,13 +229,14 @@ mod tab_title_tests {
     use crate::model::SplitDirection;
     use tasty_terminal::Terminal;
 
-    fn test_engine() -> CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
-    fn split_tab_engine() -> (CoreState, u32, u32, u32) {
-        let mut engine = test_engine();
+    fn split_tab_engine() -> (crate::runtime::engine_session::EngineSession, u32, u32, u32) {
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -250,7 +254,7 @@ mod tab_title_tests {
             .runtime
             .terminals
             .insert(b, Terminal::new_detached(80, 24));
-        (engine, pane_id, a, b)
+        (engine_session, pane_id, a, b)
     }
 
     fn set_title(engine: &mut EngineMut<'_>, sid: u32, title: &str) {
@@ -273,7 +277,8 @@ mod tab_title_tests {
 
     #[test]
     fn non_focused_surface_title_does_not_change_tab_name() {
-        let (mut engine, pane_id, a, b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         let ev = Core::apply_update_tab_name(&mut engine, b, "TITLE-FROM-B".to_string());
         assert!(matches!(
             ev,
@@ -290,7 +295,8 @@ mod tab_title_tests {
 
     #[test]
     fn explicit_name_survives_focused_title() {
-        let (mut engine, pane_id, a, _b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, _b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0]
             .pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -310,7 +316,8 @@ mod tab_title_tests {
 
     #[test]
     fn refresh_projects_new_focused_surface_title() {
-        let (mut engine, pane_id, a, b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
@@ -322,7 +329,8 @@ mod tab_title_tests {
 
     #[test]
     fn refresh_clears_when_focused_has_no_title() {
-        let (mut engine, pane_id, a, b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         set_title(&mut engine, a, "TITLE-A");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
         assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
@@ -333,7 +341,8 @@ mod tab_title_tests {
 
     #[test]
     fn closing_focused_surface_reprojects_to_survivor() {
-        let (mut engine, pane_id, a, b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
@@ -346,7 +355,8 @@ mod tab_title_tests {
 
     #[test]
     fn moving_surface_reprojects_target_tab_title() {
-        let (mut engine, pane_id, a, b) = split_tab_engine();
+        let (mut engine_session, pane_id, a, b) = split_tab_engine();
+        let mut engine = engine_session.borrow_mut();
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
         engine.refresh_tab_osc_title(b);

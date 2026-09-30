@@ -63,7 +63,10 @@ pub(super) fn build_engine_and_plugins(
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     gauges: crate::core::PluginGauges,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
-) -> anyhow::Result<(crate::core::CoreState, plugin::PluginManager)> {
+) -> anyhow::Result<(
+    crate::runtime::engine_session::EngineSession,
+    plugin::PluginManager,
+)> {
     let engine = build_core_state_first_boot(
         cols,
         rows,
@@ -75,7 +78,7 @@ pub(super) fn build_engine_and_plugins(
         #[cfg(debug_assertions)]
         input_simulation_enabled,
     )?;
-    let mgr = build_plugin_manager(factory, &engine, gauges);
+    let mgr = build_plugin_manager(factory, &engine.core_state, gauges);
     Ok((engine, mgr))
 }
 
@@ -99,7 +102,7 @@ fn build_core_state_first_boot(
     runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
-) -> anyhow::Result<crate::core::CoreState> {
+) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
@@ -114,7 +117,7 @@ fn build_core_state_first_boot(
     )?;
     engine.core_state.waker_factory = Some(factory);
     engine.core_state.identify_worker = Some(Arc::new(
-        crate::identify_worker::IdentifyWorker::new(engine.file_format.clone(), proxy),
+        crate::identify_worker::IdentifyWorker::new(engine.core_state.file_format.clone(), proxy),
     ));
     #[cfg(debug_assertions)]
     {
@@ -217,7 +220,7 @@ impl App {
 
         // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
         let _bootstrapped = match self.engines.pending_mut() {
-            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, &mut engine),
+            Some(mut engine) => Self::bootstrap_workspace_if_empty(&mut self.core, &mut engine),
             None => None,
         };
 
@@ -324,7 +327,7 @@ impl App {
         &mut self,
     ) -> Option<crate::model::RestoredPresentation> {
         let t5 = std::time::Instant::now();
-        let engine = self
+        let mut engine = self
             .engines
             .pending_mut()
             .expect("pending engine must be initialized before layout restore");
@@ -466,7 +469,10 @@ impl App {
     }
 
     /// 새 engine을 창에 배정하기 전 임시 관계로 둔다. 임시 engine은 하나뿐이다.
-    pub(crate) fn install_pending_engine(&mut self, engine: crate::core::CoreState) {
+    pub(crate) fn install_pending_engine(
+        &mut self,
+        engine: crate::runtime::engine_session::EngineSession,
+    ) {
         if self.engines.insert_pending(engine).is_err() {
             tracing::error!("pending engine already present; dropping the new engine");
         }
@@ -497,7 +503,7 @@ impl App {
         let active_workspace = main.state.active_workspace_index(&session.core_state);
         Self::retire_main_engine(
             &mut self.core,
-            &mut session.core_state,
+            &mut session.borrow_mut(),
             active_workspace,
             &main.state.navigation,
         );
@@ -720,7 +726,7 @@ impl App {
         engine: crate::runtime::engine_session::EngineId,
         state: &mut crate::state::MainViewState,
     ) {
-        let Some(core_state) = self.engines.get_mut(engine) else {
+        let Some(mut core_state) = self.engines.get_mut(engine) else {
             return;
         };
         if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, &mut core_state) {

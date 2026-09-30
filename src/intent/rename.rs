@@ -3,7 +3,6 @@
 
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
-use crate::core::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::core::intent::DomainIntent;
 use crate::state::RequestContext;
@@ -133,18 +132,25 @@ mod tests {
     use super::*;
     use crate::state::PendingHostEvent;
 
-    fn run(make: impl FnOnce(u32) -> DirectRename, mirror: bool) -> (RequestContext, CoreState) {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+    fn run(
+        make: impl FnOnce(u32) -> DirectRename,
+        mirror: bool,
+    ) -> (
+        RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         engine.workspaces[0].mirror = mirror;
         engine.layout_dirty.clear();
         let rename = make(engine.workspaces[0].id);
         let intent = Intent::DirectRename(rename).from_user_menu("test");
         handle(&mut core, &mut state, &mut engine, &intent);
-        (state, engine)
+        (state, engine_session)
     }
 
-    fn first_tab(engine: &CoreState) -> (u32, u32) {
+    fn first_tab(engine: &crate::core::CoreState) -> (u32, u32) {
         let sid = engine.workspaces[0].all_surface_ids()[0];
         let pane_id = engine.find_pane_for_surface(sid).expect("pane");
         let tab = &engine.find_pane_by_id(pane_id).expect("pane").tabs[0];
@@ -166,8 +172,17 @@ mod tests {
             .collect()
     }
 
-    fn run_tab(name: Option<&str>, mirror: bool) -> (RequestContext, CoreState, u32, u32) {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+    fn run_tab(
+        name: Option<&str>,
+        mirror: bool,
+    ) -> (
+        RequestContext,
+        crate::runtime::engine_session::EngineSession,
+        u32,
+        u32,
+    ) {
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         engine.workspaces[0].mirror = mirror;
         let (pane_id, tab_id) = first_tab(&engine);
@@ -177,12 +192,13 @@ mod tests {
         })
         .from_user_menu("test");
         handle(&mut core, &mut state, &mut engine, &intent);
-        (state, engine, pane_id, tab_id)
+        (state, engine_session, pane_id, tab_id)
     }
 
     #[test]
     fn a_tab_name_is_applied_with_a_user_direct_event() {
-        let (state, engine, pane_id, tab_id) = run_tab(Some("T"), false);
+        let (state, mut engine_session, pane_id, tab_id) = run_tab(Some("T"), false);
+        let engine = engine_session.borrow_mut();
         let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
         assert_eq!(tab.explicit_name.as_deref(), Some("T"));
         assert!(engine.layout_dirty.is_dirty());
@@ -191,7 +207,8 @@ mod tests {
 
     #[test]
     fn clearing_a_tab_name_returns_to_the_surface_title() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let (pane_id, tab_id) = first_tab(&engine);
         engine.find_pane_by_id_mut(pane_id).unwrap().tabs[0].explicit_name = Some("OLD".into());
@@ -208,7 +225,8 @@ mod tests {
 
     #[test]
     fn a_mirror_tab_is_still_renamed_locally() {
-        let (state, engine, pane_id, _) = run_tab(Some("M"), true);
+        let (state, mut engine_session, pane_id, _) = run_tab(Some("M"), true);
+        let engine = engine_session.borrow_mut();
         let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
         assert_eq!(tab.explicit_name.as_deref(), Some("M"));
         assert_eq!(tab_renamed(&state).len(), 1);
@@ -216,7 +234,8 @@ mod tests {
 
     #[test]
     fn a_missing_tab_emits_no_event() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let intent = Intent::DirectRename(DirectRename::TabName {
             tab_id: 999_999,
@@ -238,13 +257,14 @@ mod tests {
 
     #[test]
     fn a_workspace_name_is_applied_with_a_user_direct_event() {
-        let (state, engine) = run(
+        let (state, mut engine_session) = run(
             |workspace_id| DirectRename::WorkspaceName {
                 workspace_id,
                 name: "N".into(),
             },
             false,
         );
+        let engine = engine_session.borrow_mut();
         assert_eq!(engine.workspaces[0].name, "N");
         assert!(engine.layout_dirty.is_dirty());
         assert!(matches!(
@@ -261,13 +281,14 @@ mod tests {
 
     #[test]
     fn a_workspace_subtitle_is_applied_with_a_user_direct_event() {
-        let (state, engine) = run(
+        let (state, mut engine_session) = run(
             |workspace_id| DirectRename::WorkspaceSubtitle {
                 workspace_id,
                 subtitle: "S".into(),
             },
             false,
         );
+        let engine = engine_session.borrow_mut();
         assert_eq!(engine.workspaces[0].subtitle, "S");
         assert!(matches!(
             renamed_events(&state).as_slice(),
@@ -282,13 +303,14 @@ mod tests {
 
     #[test]
     fn a_mirror_workspace_is_still_renamed_locally() {
-        let (state, engine) = run(
+        let (state, mut engine_session) = run(
             |workspace_id| DirectRename::WorkspaceName {
                 workspace_id,
                 name: "M".into(),
             },
             true,
         );
+        let engine = engine_session.borrow_mut();
         assert_eq!(engine.workspaces[0].name, "M");
         assert_eq!(renamed_events(&state).len(), 1);
     }

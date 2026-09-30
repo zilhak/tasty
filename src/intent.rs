@@ -440,7 +440,9 @@ mod tests {
 
     fn make_state() -> RequestContext {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine_session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));

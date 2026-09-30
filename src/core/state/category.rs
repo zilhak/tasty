@@ -193,17 +193,18 @@ impl std::fmt::Display for CategoryOpError {
 
 #[cfg(test)]
 mod category_tests {
-    use super::{CategoryOpError, CoreState};
+    use super::CategoryOpError;
     use crate::model::{CategoryNameError, NORMAL_CATEGORY_ID};
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn starts_with_normal_only() {
-        let e = engine();
+        let mut e_session = engine();
+        let e = e_session.borrow_mut();
         assert_eq!(e.categories().len(), 1);
         assert_eq!(e.categories()[0].id, NORMAL_CATEGORY_ID);
         assert!(e.categories()[0].is_normal());
@@ -211,7 +212,8 @@ mod category_tests {
 
     #[test]
     fn create_rejects_reserved_and_duplicate() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let id = e.create_category("Work").unwrap();
         assert_ne!(id, NORMAL_CATEGORY_ID);
         assert_eq!(e.categories().len(), 2);
@@ -224,7 +226,8 @@ mod category_tests {
 
     #[test]
     fn rename_rejects_normal() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         assert_eq!(
             e.rename_category(NORMAL_CATEGORY_ID, "x"),
             Err(CategoryOpError::IsNormal)
@@ -233,7 +236,8 @@ mod category_tests {
 
     #[test]
     fn delete_moves_workspaces_to_normal() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let cat = e.create_category("Work").unwrap();
         let ws_id = e.workspaces[0].id;
         e.set_workspace_category(ws_id, cat).unwrap();
@@ -249,7 +253,8 @@ mod category_tests {
 
     #[test]
     fn reorder_protects_normal_position() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.create_category("a").unwrap();
         e.create_category("b").unwrap();
         assert_eq!(e.reorder_category(0, 1), Err(CategoryOpError::NormalFixed));
@@ -260,7 +265,8 @@ mod category_tests {
 
     #[test]
     fn resolve_category_by_name_or_id() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let id = e.create_category("Study").unwrap();
         assert_eq!(e.resolve_category("study"), Some(id));
         assert_eq!(e.resolve_category(&id.to_string()), Some(id));
@@ -270,7 +276,8 @@ mod category_tests {
     #[test]
     fn mirror_workspace_not_persisted() {
         use crate::core::layout_persistence::SavedLayout;
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let base_count = e.workspaces.len();
         assert!(base_count >= 1, "엔진은 기본 workspace 를 하나 이상 가진다");
         let idx = match crate::core::apply_create_workspace_inner(
@@ -300,7 +307,8 @@ mod category_tests {
             "remap 된 active 인덱스가 저장 목록 범위 안이어야 한다"
         );
 
-        let mut restored = engine();
+        let mut restored_session = engine();
+        let mut restored = restored_session.borrow_mut();
         assert!(saved.restore(&mut restored).is_some());
         assert!(
             restored.workspaces.iter().all(|w| !w.mirror),
@@ -310,7 +318,8 @@ mod category_tests {
 
     #[test]
     fn create_workspace_inner_assigns_category() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let cat = e.create_category("Services").unwrap();
         let idx = match crate::core::apply_create_workspace_inner(
             &mut e,

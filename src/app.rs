@@ -385,6 +385,7 @@ impl App {
         self.engines()
             .primary()
             .expect("App engine accessed before initialization")
+            .core
     }
 
     /// 자동실행은 CoreState 초기화 전에도 호출될 수 있어 그때는 빈 레지스트리를 반환한다.
@@ -469,5 +470,6 @@ impl App {
         self.engines_mut()
             .primary()
             .expect("App engine accessed before initialization")
+            .core
     }
 }

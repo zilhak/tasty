@@ -5,7 +5,6 @@ use crate::core::engine_access::EngineRef;
 use std::path::{Path, PathBuf};
 
 use super::RequestContext;
-use crate::core::CoreState;
 
 /// 브랜치 이름과 detached SHA를 구분한다. 표시용 접두사는 상태바가 붙인다.
 #[derive(Debug, Clone, PartialEq, Eq)]

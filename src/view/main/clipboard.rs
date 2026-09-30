@@ -53,7 +53,7 @@ impl MainView {
             let surface_id = self.state.focused_surface_id(&*engine);
             let bracketed = self
                 .state
-                .focused_terminal(&*engine)
+                .focused_terminal(&engine.as_ref())
                 .map(|t| t.bracketed_paste());
             if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
                 dispatch_paste(self, sid, bracketed, text);
@@ -74,7 +74,7 @@ impl MainView {
         };
         let Some(bracketed) = self
             .state
-            .focused_terminal(&*engine)
+            .focused_terminal(&engine.as_ref())
             .map(|t| t.bracketed_paste())
         else {
             return;

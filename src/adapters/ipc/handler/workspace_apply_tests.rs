@@ -11,7 +11,8 @@ fn names(engine: &crate::core::CoreState) -> Vec<String> {
 
 #[test]
 fn create_with_an_unknown_category_creates_nothing() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let before = names(&engine);
 
@@ -30,7 +31,8 @@ fn create_with_an_unknown_category_creates_nothing() {
 
 #[test]
 fn create_with_a_malformed_attach_mapping_creates_nothing() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let before = names(&engine);
 
@@ -55,7 +57,8 @@ fn create_with_a_malformed_attach_mapping_creates_nothing() {
 
 #[test]
 fn update_with_an_unknown_category_keeps_the_name() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let target = engine.workspaces[0].id;
     let before = names(&engine);
@@ -74,7 +77,8 @@ fn update_with_an_unknown_category_keeps_the_name() {
 
 #[test]
 fn update_with_a_malformed_attach_mapping_keeps_the_name_and_category() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let target = engine.workspaces[0].id;
     let category_before = engine.workspaces[0].category;
@@ -109,7 +113,8 @@ fn update_with_a_malformed_attach_mapping_keeps_the_name_and_category() {
 
 #[test]
 fn attach_clear_still_ignores_a_malformed_remote_workspace() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let target = engine.workspaces[0].id;
 
@@ -132,7 +137,8 @@ fn attach_clear_still_ignores_a_malformed_remote_workspace() {
 
 #[test]
 fn valid_create_still_applies_category_and_mapping() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let other = engine.create_category("other").expect("카테고리 생성");
 

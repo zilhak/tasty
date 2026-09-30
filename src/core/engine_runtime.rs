@@ -20,6 +20,7 @@ pub(crate) struct EngineRuntime {
     pub(crate) pty_registry: PtyRegistry,
 
     /// hard attach 중 서버의 표시 사본. 원본 PTY와 별개인 기존 detached Terminal이다.
+    #[cfg(feature = "gui")]
     pub(crate) readonly_views: std::collections::HashMap<u32, tasty_terminal::Terminal>,
 }
 
@@ -30,6 +31,7 @@ impl EngineRuntime {
             terminals: TerminalStore::new(),
             child_terminals: ChildTerminalRegistry::load(),
             pty_registry: PtyRegistry::with_counter(pty_counter),
+            #[cfg(feature = "gui")]
             readonly_views: std::collections::HashMap::new(),
         }
     }

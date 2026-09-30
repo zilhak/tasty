@@ -53,7 +53,7 @@ impl AgentRequests {
 /// 에이전트 요청의 실패는 사용자 toast로 표시하지 않는다.
 pub(super) fn apply_structural_failed(
     sess: &mut AttachClientSession,
-    host: &mut MirrorHost<'_>,
+    host: &mut MirrorHost<'_, '_>,
     op_id: u64,
     reason: Option<String>,
 ) {
@@ -81,7 +81,11 @@ pub(super) fn apply_structural_failed(
 }
 
 /// 잘림 안내를 문서 본문에 넣지 않는다. 사용자 요청은 toast, 에이전트 요청은 로그로 알린다.
-pub(super) fn notify_markdown_truncated(host: &mut MirrorHost<'_>, local: u32, agent_origin: bool) {
+pub(super) fn notify_markdown_truncated(
+    host: &mut MirrorHost<'_, '_>,
+    local: u32,
+    agent_origin: bool,
+) {
     if agent_origin {
         tracing::info!(
             "markdown mirror surface {local}: agent-requested content arrived truncated (no toast)"
@@ -131,7 +135,8 @@ mod tests {
         sess.agent_requests
             .note_structural_from(&structural(false), 6);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         {
             let mut host = MirrorHost::windowed(&mut state, &mut engine);
             apply_mirror_events(
@@ -172,7 +177,8 @@ mod tests {
         sess.agent_requests
             .note_markdown_from(&markdown(12, false), 12);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let truncated = |request_id| MirrorEvent::MarkdownContentResult {
             request_id,
             surface_id: 30,

@@ -1,6 +1,6 @@
 # ADR-0054: App·Core·View가 각자의 상태를 소유하고 엔진 수명을 창과 분리한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. engine은 App registry가 소유하며 구조 선택은 창별 MainViewState로 분리됐다. Headless는 별도 CommandContext를 사용한다. 저널 원본과 나머지 실행 자원 분리는 계속 이행 대상이다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. engine은 App registry의 EngineSession이 소유하며 Terminal·hook·task·observer 실행 자원을 CoreState와 나눠 보관한다. 구조 선택은 창별 MainViewState로 분리됐다. Headless는 별도 CommandContext를 사용한다. 저널 원본과 나머지 실행 자원 분리는 계속 이행 대상이다
 - **Date**: 2026-09-30
 - **Tags**: architecture, state, ownership, lifecycle, domain
 - **Group**: foundation

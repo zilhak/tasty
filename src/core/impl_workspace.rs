@@ -288,7 +288,7 @@ impl Core {
     /// LayoutSaved는 저장 생략 때도 반환되며 실제 쓰기 성공을 뜻하지 않는다.
     #[cfg(any(feature = "gui", test))]
     pub(super) fn apply_save_layout_now(
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         active_workspace: usize,
         force: bool,
         presentation: &dyn crate::model::StructurePresentation,

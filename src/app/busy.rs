@@ -8,22 +8,24 @@ impl App {
     /// 전송 지연이나 실패가 있을 수 있어 원격 반영 시각은 보장하지 않는다.
     pub(crate) fn poll_busy_states(&mut self) {
         let hub = self.stream_hub.clone();
-        for (_, main, engine) in self.engines_mut().window_pairs() {
-            let mut changed = crate::core::Core::update_busy_surfaces(engine);
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
+            let mut changed = crate::core::Core::update_busy_surfaces(&mut engine);
             // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
-            let focused = main.state.focused_surface_id(engine);
-            changed |= main.state.refresh_status_bar_branch(engine, focused);
+            let focused = main.state.focused_surface_id(engine.core);
+            changed |= main
+                .state
+                .refresh_status_bar_branch(&engine.as_ref(), focused);
             engine.forward_busy_activity(&hub);
             engine.forward_attention(&hub);
             engine.forward_surface_cwd(&hub);
-            close_stale_mouse_capture_banners(&mut main.state, engine);
+            close_stale_mouse_capture_banners(&mut main.state, engine.core);
             if changed {
                 main.mark_dirty();
             }
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             // 창이 없는 상태에서는 상태바용 브랜치 조회와 redraw가 필요 없다.
-            crate::core::Core::update_busy_surfaces(engine);
+            crate::core::Core::update_busy_surfaces(&mut engine);
             engine.forward_busy_activity(&hub);
             engine.forward_attention(&hub);
             engine.forward_surface_cwd(&hub);

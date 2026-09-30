@@ -36,7 +36,8 @@ fn take_picker_open_request(state: &mut crate::state::RequestContext, agent: boo
 fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     FileHandlerRegistryPort::install_plugin_handlers(
@@ -106,7 +107,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
 #[test]
 fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     for action in [
         HandlerAction::OpenSurface {
             surface_kind: "empty".into(),
@@ -146,7 +148,8 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
 #[test]
 fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     assert!(!open_surface_tab(
         &mut core,
@@ -173,7 +176,8 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
 #[test]
 fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     let target = FileTarget::new("/missing/unknown");
@@ -263,7 +267,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
 #[test]
 fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let origin = engine.workspaces[0].all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     // 원래 origin과 선택된 탭을 다르게 둔다.
@@ -314,7 +319,8 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
 #[test]
 fn a_user_origin_selects_its_result_tab() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let origin = engine.workspaces[0].all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     let before = engine.find_pane_by_id(pane_id).unwrap();
@@ -353,7 +359,8 @@ fn a_user_origin_selects_its_result_tab() {
 #[test]
 fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     apply_identify_result(
         &mut core,
@@ -378,7 +385,8 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
 #[test]
 fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = engine.workspaces[0].all_surface_ids()[0];
     let recent_before = state.file_handler_recent.list().len();
     for origin_surface_id in [Some(sid), None] {
@@ -407,7 +415,8 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
 fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_picker() {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.file_handler.as_ref(),
         "com.example.picker",

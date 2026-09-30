@@ -1,7 +1,6 @@
 //! 창 경로(사용자)와 IPC 경로(에이전트)가 같은 Core 닫기를 타고,
 //! 사용자 닫기만 복원 기록을 남기는지 검사한다.
 
-use crate::core::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::core::intent::{CascadeLevel, CoreEvent, DomainIntent};
 use crate::model::{ClosedItem, SplitDirection};
@@ -32,8 +31,15 @@ fn insert_detached(engine: &mut EngineMut<'_>, sid: u32) {
 }
 
 /// 닫을 surface를 돌려준다. 시나리오는 활성 workspace 안에서 만든다.
-fn arrange(case: Case) -> (RequestContext, CoreState, u32) {
-    let (mut state, mut engine) = test_state();
+fn arrange(
+    case: Case,
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+    u32,
+) {
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let ws_idx = state.active_workspace_index(&engine);
     let pane_id = state.focused_pane_id(&engine);
@@ -80,7 +86,7 @@ fn arrange(case: Case) -> (RequestContext, CoreState, u32) {
             engine.workspaces[index].all_surface_ids()[0]
         }
     };
-    (state, engine, target)
+    (state, engine_session, target)
 }
 
 fn expected_level(case: Case) -> CascadeLevel {
@@ -105,7 +111,8 @@ fn record_matches(case: Case, item: &ClosedItem) -> bool {
 #[test]
 fn a_user_surface_close_records_one_item_of_its_level() {
     for case in CASES {
-        let (mut state, mut engine, sid) = arrange(case);
+        let (mut state, mut engine_session, sid) = arrange(case);
+        let mut engine = engine_session.borrow_mut();
         let before = engine.closed_items.len();
 
         assert!(
@@ -122,7 +129,8 @@ fn a_user_surface_close_records_one_item_of_its_level() {
 #[test]
 fn an_agent_surface_close_records_nothing() {
     for case in CASES {
-        let (mut state, mut engine, sid) = arrange(case);
+        let (mut state, mut engine_session, sid) = arrange(case);
+        let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let before = engine.closed_items.len();
 
@@ -143,7 +151,8 @@ fn an_agent_surface_close_records_nothing() {
 
 #[test]
 fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
-    let (mut state, mut engine, _) = arrange(Case::Pane);
+    let (mut state, mut engine_session, _) = arrange(Case::Pane);
+    let mut engine = engine_session.borrow_mut();
     assert!(state.close_active_pane(&mut engine));
     assert_eq!(engine.closed_items.len(), 1);
     assert!(record_matches(
@@ -151,7 +160,8 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
         engine.closed_items.list().next().unwrap()
     ));
 
-    let (mut state, mut engine, _) = arrange(Case::Tab);
+    let (mut state, mut engine_session, _) = arrange(Case::Tab);
+    let mut engine = engine_session.borrow_mut();
     assert!(state.close_active_tab(&mut engine));
     assert_eq!(engine.closed_items.len(), 1);
     assert!(record_matches(
@@ -160,7 +170,8 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     ));
 
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine, _) = arrange(Case::Pane);
+    let (mut state, mut engine_session, _) = arrange(Case::Pane);
+    let mut engine = engine_session.borrow_mut();
     let pane_id = state.focused_pane_id(&engine);
     let closed = crate::app::structural_exec::close_pane(
         &mut core,
@@ -173,7 +184,8 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     assert!(closed.closed);
     assert_eq!(engine.closed_items.len(), 0, "agent pane close");
 
-    let (mut state, mut engine, sid) = arrange(Case::Tab);
+    let (mut state, mut engine_session, sid) = arrange(Case::Tab);
+    let mut engine = engine_session.borrow_mut();
     let tab_id = engine
         .find_tab_for_surface(sid)
         .expect("tab of the focused surface");
@@ -192,7 +204,8 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
 /// 닫지 못한 탭은 복원 목록에 들어가지 않는다.
 #[test]
 fn closing_the_only_tab_fails_without_a_record() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     assert!(!state.close_active_tab(&mut engine));
     assert_eq!(engine.closed_items.len(), 0);
 }
@@ -201,12 +214,14 @@ fn closing_the_only_tab_fails_without_a_record() {
 #[test]
 fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
     for case in CASES {
-        let (mut state, mut engine, sid) = arrange(case);
+        let (mut state, mut engine_session, sid) = arrange(case);
+        let mut engine = engine_session.borrow_mut();
         let window_event = state
             .close_surface_by_id_inner(&mut engine, sid, false, true)
             .unwrap_or_else(|| panic!("{case:?}: window path did not close"));
 
-        let (_, mut twin, twin_sid) = arrange(case);
+        let (_, mut twin_session, twin_sid) = arrange(case);
+        let mut twin = twin_session.borrow_mut();
         assert_eq!(sid, twin_sid, "{case:?}: twin scenario ids differ");
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let core_events = core
@@ -235,7 +250,8 @@ fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
 /// 사용자 창 경로의 mirror 닫기는 user_triggered로 전달한다.
 #[test]
 fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
-    let (mut state, mut engine, sid) = arrange(Case::Surface);
+    let (mut state, mut engine_session, sid) = arrange(Case::Surface);
+    let mut engine = engine_session.borrow_mut();
     state.active_workspace_mut(&mut engine).mirror = true;
 
     assert!(state.close_active_surface(&mut engine));
@@ -250,7 +266,8 @@ fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
 #[cfg(feature = "gui")] // headless에는 전달 큐를 보내는 루프가 없어 거절한다
 #[test]
 fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
-    let (mut state, mut engine, sid) = arrange(Case::Surface);
+    let (mut state, mut engine_session, sid) = arrange(Case::Surface);
+    let mut engine = engine_session.borrow_mut();
     state.active_workspace_mut(&mut engine).mirror = true;
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
 

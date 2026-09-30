@@ -3,7 +3,6 @@
 
 use super::{DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
-use crate::core::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::state::RequestContext;
 

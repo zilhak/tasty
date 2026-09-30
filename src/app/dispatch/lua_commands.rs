@@ -26,7 +26,7 @@ impl App {
         };
         let mut tree = Vec::new();
         for (s, e) in self.engines().sessions() {
-            tree.extend(build_engine_tree(s, e));
+            tree.extend(build_engine_tree(s, e.core));
         }
         engine.publish_snapshot(LuaSnapshot { tree });
     }
@@ -58,7 +58,7 @@ impl App {
             if pending.result != Some(true) {
                 continue; // 취소 — 폐기(이미 take 됨).
             }
-            if let Some((main, engine)) = engines_mut!(self).window_pair(id) {
+            if let Some((main, mut engine)) = engines_mut!(self).window_pair(id) {
                 engine
                     .settings
                     .scripts

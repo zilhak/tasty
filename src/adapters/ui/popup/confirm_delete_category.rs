@@ -83,7 +83,7 @@ pub fn on_close_confirm_delete_category(
 pub fn draw_confirm_delete_category(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

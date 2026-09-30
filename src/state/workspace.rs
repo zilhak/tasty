@@ -1,3 +1,4 @@
+#[cfg(feature = "gui")]
 use crate::core::CoreState;
 
 use super::RequestContext;
@@ -383,7 +384,8 @@ mod workspace_pointer_tests {
     // 인덱스가 우연히 같아지는 경우를 피하도록 대상 ID로 확인한다.
     #[test]
     fn reordering_keeps_the_active_pointer_on_the_same_workspace() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         while engine.workspaces.len() < 4 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
@@ -412,7 +414,8 @@ mod workspace_pointer_tests {
 
     #[test]
     fn the_move_cascade_preserves_the_selected_id() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         for _ in 0..3 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
@@ -430,7 +433,8 @@ mod workspace_pointer_tests {
 
     #[test]
     fn reordering_keeps_the_category_landing_on_the_same_workspace() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         while engine.workspaces.len() < 4 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
@@ -466,7 +470,8 @@ mod workspace_pointer_tests {
 
     #[test]
     fn category_landing_points_survive_a_removal_because_they_hold_ids() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         while engine.workspaces.len() < 3 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,

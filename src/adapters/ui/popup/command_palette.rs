@@ -390,7 +390,7 @@ pub fn command_palette_sizer(
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
@@ -780,7 +780,10 @@ mod sizer_wiring_tests {
     use crate::model::{PhysicalPx, PhysicalRect};
     use crate::state::tests::test_state;
 
-    fn run_one_frame(state: &mut MainViewState, engine: &mut crate::core::CoreState) {
+    fn run_one_frame(
+        state: &mut MainViewState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
+    ) {
         let ctx = egui::Context::default();
         let term = PhysicalRect {
             x: PhysicalPx(0.0),
@@ -794,7 +797,8 @@ mod sizer_wiring_tests {
     }
 
     fn card_height_after_a_frame(query: &str) -> f32 {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state
             .popups
             .open_at_focused(COMMAND_PALETTE_POPUP_ID, egui::pos2(100.0, 100.0));

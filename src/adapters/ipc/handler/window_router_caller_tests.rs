@@ -185,7 +185,8 @@ fn a_plugin_only_window_arm_refuses_cli_and_agent_without_touching_the_window() 
             continue;
         }
         for caller in [CallerContext::Local, agent.clone()] {
-            let (mut state, mut engine) = crate::state::tests::test_state();
+            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let mut engine = engine_session.borrow_mut();
             let active_before = state.active_workspace_index(&engine);
             let resp = super::route_window_handler(
                 &mut state,

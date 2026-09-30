@@ -125,7 +125,8 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
 
 #[test]
 fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let workspace = engine.workspaces[0].id;
     let mut session = super::tests::test_session(workspace, HashMap::new());
     for generation in 1..=12 {

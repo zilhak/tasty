@@ -1,6 +1,5 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
-use crate::core::engine_access::EngineMut;
 use crate::core::{Core, CoreState};
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
@@ -119,7 +118,7 @@ mod tests {
     fn observations(
         core: &mut Core,
         state: &mut RequestContext,
-        engine: &mut EngineMut<'_>,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
     ) -> usize {
         let mut req = request("telemetry.summary");
         req.params = json!({"agent": "gate-probe", "metric": "ipc_calls"});
@@ -135,7 +134,8 @@ mod tests {
         let _home = crate::test_support::TastyHomeGuard::new();
         for prechecked in [true, false] {
             let mut core = super::super::cli_entry_tests::test_core();
-            let (mut state, mut engine) = crate::state::tests::test_state();
+            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let mut engine = engine_session.borrow_mut();
             let caller = agent(&[Permission::SurfaceRead]);
             let req = request("surface.kinds");
             budget(&core);
@@ -158,7 +158,8 @@ mod tests {
     fn permission_denial_does_not_consume_or_observe_allow() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let req = request("surface.kinds");
         budget(&core);
         let denied =
@@ -183,7 +184,8 @@ mod tests {
     fn only_a_request_that_passed_the_gate_is_timed_as_a_handler() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let req = request("surface.kinds");
         budget(&core);
 
@@ -217,7 +219,8 @@ mod tests {
     fn each_gate_refusal_is_counted_in_its_own_slot_of_the_pressure_answer() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let req = request("surface.kinds");
         let mut call = |core: &mut Core, caller: &CallerContext| {
             super::super::handle_with_caller(core, &mut state, &mut engine, &req, caller)
@@ -294,7 +297,8 @@ mod tests {
     fn local_remains_exempt_from_consumption_and_allow_observation() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let req = request("surface.kinds");
         budget(&core);
         for _ in 0..3 {

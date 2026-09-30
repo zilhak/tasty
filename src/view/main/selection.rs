@@ -200,7 +200,7 @@ impl MainView {
         // terminal grid positions, so arrow-key injection would be incorrect.
         let is_shell = self
             .state
-            .focused_terminal(&*engine)
+            .focused_terminal(&engine.as_ref())
             .and_then(|t| t.foreground_process_info())
             .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
@@ -219,7 +219,7 @@ impl MainView {
             super::ime::flush_preedit(self, engine);
         }
 
-        let terminal = match self.state.focused_terminal(&*engine) {
+        let terminal = match self.state.focused_terminal(&engine.as_ref()) {
             Some(t) => t,
             None => return,
         };

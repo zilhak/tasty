@@ -1,7 +1,6 @@
 //! 우클릭 메뉴 대상. 메뉴 결과는 메뉴를 연 뒤에 도착하므로 그 사이 바뀐 순서를 반영해 다시 찾는다.
 
 use crate::core::CoreState;
-use crate::core::engine_access::EngineMut;
 
 /// workspace 메뉴를 연 대상. 인덱스는 에이전트의 닫기·이동으로 다른 workspace를 가리킬 수 있어 ID로 보관한다.
 #[derive(Debug, Clone, Copy)]
@@ -60,7 +59,7 @@ mod tests {
     use super::*;
     use crate::state::tests::test_state;
 
-    fn push_workspace(engine: &mut EngineMut<'_>) -> u32 {
+    fn push_workspace(engine: &mut crate::core::engine_access::EngineMut<'_>) -> u32 {
         let event = crate::core::apply_create_workspace_inner(
             engine,
             crate::core::WorkspaceCreationParams::terminal(),
@@ -75,7 +74,8 @@ mod tests {
     /// 메뉴가 열린 동안 에이전트가 앞쪽 workspace를 닫아도 메뉴는 연 workspace를 가리킨다.
     #[test]
     fn workspace_target_follows_its_workspace_after_agent_close() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let a = push_workspace(&mut engine);
         let b = push_workspace(&mut engine);
         let target =
@@ -99,7 +99,8 @@ mod tests {
     /// 메뉴가 열린 동안 workspace 순서가 바뀌어도 메뉴는 연 workspace를 가리킨다.
     #[test]
     fn workspace_target_follows_its_workspace_after_reorder() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let a = push_workspace(&mut engine);
         let target =
             WorkspaceMenuTarget::capture(&engine, engine.find_workspace_index_for_id(a).unwrap());
@@ -112,7 +113,8 @@ mod tests {
     /// 대상 workspace가 닫혔으면 다른 workspace로 넘어가지 않는다.
     #[test]
     fn workspace_target_is_gone_after_its_workspace_closes() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         push_workspace(&mut engine);
         push_workspace(&mut engine);
         let target = WorkspaceMenuTarget::capture(&engine, 1);
@@ -128,7 +130,8 @@ mod tests {
     /// 메뉴가 열린 동안 탭 순서가 바뀌어도 메뉴는 연 탭을 가리킨다.
     #[test]
     fn tab_target_follows_its_tab_after_reorder() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.add_tab(&mut engine).unwrap();
         state.add_tab(&mut engine).unwrap();
         let pane_id = state.focused_pane_id(&engine);
@@ -154,7 +157,8 @@ mod tests {
     /// 대상 탭이 닫혔으면 다른 탭으로 넘어가지 않는다.
     #[test]
     fn tab_target_is_gone_after_its_tab_closes() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         state.add_tab(&mut engine).unwrap();
         let pane_id = state.focused_pane_id(&engine);
         let first = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;

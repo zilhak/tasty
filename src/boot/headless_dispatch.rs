@@ -73,7 +73,7 @@ fn dispatch_command(
     if let Some(rid) =
         crate::core::request_target::request_resource_id(&cmd.request.method, &cmd.request.params)
         && crate::core::request_target::prefix_is_host_reserved(&cmd.request.method)
-        && !crate::core::request_target::engine_has_resource(engine, rid)
+        && !crate::core::request_target::engine_has_resource(&engine.as_ref(), rid)
     {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         send_response(
@@ -94,7 +94,7 @@ fn dispatch_command(
     let resp = crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
     // 응답 전에 요청의 Intent와 후속 이벤트를 적용한다.
     crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
-    crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
+    crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
     send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())
 }

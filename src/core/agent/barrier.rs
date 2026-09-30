@@ -5,7 +5,6 @@ use tasty_agent::{AgentError, Barrier, BarrierState, BarrierStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
-use crate::core::CoreState;
 
 impl Core {
     pub(crate) fn barrier_create(

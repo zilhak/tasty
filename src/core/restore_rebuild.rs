@@ -1,7 +1,6 @@
 //! 닫힌 항목의 surface·pane을 새 ID로 다시 만든다. 필요한 PTY도 생성한다.
 //! 결과를 트리에 붙이는 일은 호출자가 맡으며 부분 생성 뒤 실패를 되돌리지는 않는다.
 
-use crate::core::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::model::closed_item::*;
 use crate::model::{
@@ -261,7 +260,7 @@ mod deferred_plugin_tests {
     // plugin kind가 등록되지 않은 상태에서 placeholder와 형제 보존을 확인한다.
     // 실제 부팅 deadline이나 plugin 준비 대기 전체를 실행하는 검사는 아니다.
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -280,7 +279,8 @@ mod deferred_plugin_tests {
 
     #[test]
     fn missing_plugin_kind_rebuilds_as_deferred_placeholder() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let panel = ClosedPanel::Generic {
             kind: "no_such_plugin".to_string(),
             snapshot: serde_json::json!({ "a": 1 }),
@@ -308,7 +308,8 @@ mod deferred_plugin_tests {
     // 실제 PTY 생성 없이 형제 보존을 확인하려고 두 탭 모두 Generic으로 만든다.
     #[test]
     fn missing_plugin_kind_preserves_sibling_tabs() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let pane = ClosedPane {
             id: 0,
             tabs: vec![
@@ -332,7 +333,8 @@ mod deferred_plugin_tests {
 
     #[test]
     fn deadline_zero_apply_preserves_sibling_panes() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let node = ClosedPaneNode::Split {
             direction: crate::model::SplitDirection::Horizontal,
             ratio: 0.5,
@@ -369,7 +371,7 @@ mod deferred_plugin_tests {
     }
 
     // 등록된 종류는 placeholder가 아닌 생성기 결과를 사용하는지 확인할 대조군이다.
-    fn register_ok_kind(e: &mut CoreState, kind: &'static str) {
+    fn register_ok_kind(e: &mut crate::core::CoreState, kind: &'static str) {
         use crate::core::surface_registry::{KindSource, RegisteredRendering, SurfaceKindDef};
         use std::collections::HashMap;
         use std::sync::Arc;
@@ -399,7 +401,8 @@ mod deferred_plugin_tests {
 
     #[test]
     fn registered_kind_restores_real_surface_not_placeholder() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         register_ok_kind(&mut e, "present_plugin");
         let panel = ClosedPanel::Generic {
             kind: "present_plugin".to_string(),

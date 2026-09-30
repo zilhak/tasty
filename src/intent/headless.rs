@@ -228,14 +228,20 @@ mod tests {
             .expect("test Core")
     }
 
-    fn fixture() -> (Core, RequestContext, CoreState, u32) {
-        let (state, engine) = crate::state::tests::test_state();
+    fn fixture() -> (
+        Core,
+        RequestContext,
+        crate::runtime::engine_session::EngineSession,
+        u32,
+    ) {
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let surface_id = *state
             .active_workspace(&engine)
             .all_surface_ids()
             .first()
             .expect("fixture workspace has a surface");
-        (test_core(), state, engine, surface_id)
+        (test_core(), state, engine_session, surface_id)
     }
 
     fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
@@ -270,7 +276,8 @@ mod tests {
 
     #[test]
     fn repeated_ipc_requests_leave_the_intent_queue_bounded() {
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         for i in 0..N {
             send(
                 &mut core,
@@ -298,7 +305,8 @@ mod tests {
     // 큐를 처리하지 않는 대조군에서는 요청마다 명령이 쌓여야 한다.
     #[test]
     fn without_a_drain_the_queue_grows_with_every_request() {
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         for _ in 0..N {
             send(
                 &mut core,
@@ -319,7 +327,8 @@ mod tests {
     // 큐를 비우기만 하지 않고 attention과 알림 상태까지 바꾸는지 검사한다.
     #[test]
     fn drain_applies_attention_and_notifications() {
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         assert!(engine.attention_kind(sid).is_none());
 
         send(
@@ -386,7 +395,8 @@ mod tests {
         use tasty_agent::TaskState;
         use tasty_agent::task::{OnFailure, TaskCommand};
 
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let ws = state.active_workspace(&engine).id;
 
         let task_id = core
@@ -448,7 +458,7 @@ mod tests {
             serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
         );
         drain_pending_intents(&mut core, &mut state, &mut engine);
-        drain_pending_host_events(&core, &mut state, &engine);
+        drain_pending_host_events(&core, &mut state, &engine.as_ref());
 
         let task = core
             .tasks
@@ -464,7 +474,8 @@ mod tests {
 
     #[test]
     fn repeated_hook_fires_leave_the_host_event_queue_bounded() {
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         set_a_hook(&mut core, &mut state, &mut engine, sid);
 
         for i in 0..N {
@@ -475,7 +486,7 @@ mod tests {
                 "surface.fire_hook",
                 serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
             );
-            drain_pending_host_events(&core, &mut state, &engine);
+            drain_pending_host_events(&core, &mut state, &engine.as_ref());
             assert!(
                 state.pending_host_events.is_empty(),
                 "drain 후 host event 큐가 남아 있으면 안 된다 (i={i})"
@@ -486,7 +497,8 @@ mod tests {
     // 이벤트를 처리하지 않는 대조군에서는 실행한 훅 수만큼 큐가 쌓인다.
     #[test]
     fn without_a_drain_the_host_event_queue_grows_with_every_fire() {
-        let (mut core, mut state, mut engine, sid) = fixture();
+        let (mut core, mut state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         set_a_hook(&mut core, &mut state, &mut engine, sid);
 
         for _ in 0..N {
@@ -508,7 +520,8 @@ mod tests {
     fn new_empty_tab_then_selection(
         dispatched: impl FnOnce(Intent) -> DispatchedIntent,
     ) -> (usize, usize) {
-        let (mut core, mut state, mut engine, _sid) = fixture();
+        let (mut core, mut state, mut engine_session, _sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         state.dispatch_intent(dispatched(Intent::NewTab {
             kind: Some("empty".to_string()),
             params: serde_json::json!({}),
@@ -534,7 +547,8 @@ mod tests {
 
     #[test]
     fn an_osc7_cwd_renames_the_tab_and_marks_the_layout_dirty() {
-        let (_core, state, mut engine, sid) = fixture();
+        let (_core, state, mut engine_session, sid) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let mut terminal = tasty_terminal::Terminal::new_detached(80, 24);
         terminal.feed_bytes(b"\x1b]7;file://localhost/tmp/tasty-osc7-probe\x07");
         engine.runtime.terminals.insert(sid, terminal);

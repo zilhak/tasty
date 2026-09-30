@@ -103,14 +103,15 @@ mod attach_block_tests {
     use super::*;
     use crate::core::intent::SendPayload;
 
-    fn test_engine() -> CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn attached_surface_blocks_server_send() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid = 9999;
         engine
             .runtime
@@ -137,7 +138,8 @@ mod attach_block_tests {
 
     #[test]
     fn nonexistent_surface_is_not_found_not_hard_occupied() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let ev =
             Core::apply_send_to_surface(&mut engine, 424242, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(
@@ -151,7 +153,8 @@ mod attach_block_tests {
 
     #[test]
     fn soft_occupied_surface_allows_server_send() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid = 9998;
         engine
             .runtime

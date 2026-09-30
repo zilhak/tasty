@@ -632,7 +632,7 @@ impl GpuState {
     fn render_fullscreen_stage(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
         // 무대에서도 입력을 소비해 나간 뒤 한꺼번에 전달되지 않게 한다.

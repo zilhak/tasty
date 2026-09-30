@@ -220,7 +220,8 @@ mod tests {
 
     #[test]
     fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         state
             .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
             .unwrap();
@@ -241,7 +242,8 @@ mod tests {
     // 외부 작성자에서 소유 플러그인으로 바뀐 기록은 host가 읽을 때까지 유지한다.
     #[test]
     fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         state
             .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
             .unwrap();
@@ -272,7 +274,8 @@ mod tests {
 
     #[test]
     fn set_url_reaches_non_focused_split_leaf() {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine);
         let md_sid = split_in_kind_surface(
             &state,
@@ -295,7 +298,8 @@ mod tests {
 
     #[test]
     fn set_url_reaches_all_leaves_of_nested_split() {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine);
         // 1차: terminal | markdown_a → 2차: (terminal | markdown_b) | markdown_a
         let md_a = split_in_kind_surface(
@@ -325,7 +329,8 @@ mod tests {
 
     #[test]
     fn set_url_sole_leaf_ok_and_unknown_id_errors() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         state
             .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
             .unwrap();
@@ -349,7 +354,8 @@ mod tests {
     fn set_url_on_markdown_surface_signals_attached_clients() {
         use tasty_ipc::stream_hub::StreamHub;
 
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine);
         let md_sid = split_in_kind_surface(
             &state,
@@ -384,7 +390,8 @@ mod tests {
 
     #[test]
     fn set_url_on_terminal_leaf_reports_not_webview() {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine);
         // 분할만 준비한다. 검사 대상은 기존 터미널이며 새 surface ID는 사용하지 않는다.
         split_in_kind_surface(

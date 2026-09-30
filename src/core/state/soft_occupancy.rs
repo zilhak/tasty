@@ -58,16 +58,16 @@ impl CoreState {
 
 #[cfg(test)]
 mod tests {
-    use super::CoreState;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn occupy_soft_records_parent_without_hard_predicate() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, Some("agent".into())).unwrap();
         assert!(!e.attach.is_hard_occupied(5000));
         let occ = e.attach.occupancy_of(5000).unwrap();
@@ -76,7 +76,8 @@ mod tests {
 
     #[test]
     fn self_release_by_subject_and_reject_non_subject() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, None).unwrap();
         assert!(e.release_soft_occupancy(5000, 77).is_err());
         assert!(e.attach.occupancy_of(5000).is_some());
@@ -86,7 +87,8 @@ mod tests {
 
     #[test]
     fn release_occupancy_clears_soft() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, None).unwrap();
         assert!(e.release_occupancy(5000)); // 로컬 force-detach tier 공용
         assert!(e.attach.occupancy_of(5000).is_none());
@@ -94,7 +96,8 @@ mod tests {
 
     #[test]
     fn release_occupancy_clears_hard() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.attach.acquire(5000, 1).unwrap();
         assert!(e.release_occupancy(5000));
         assert!(!e.attach.is_hard_occupied(5000));
@@ -102,7 +105,8 @@ mod tests {
 
     #[test]
     fn focus_cleanup_releases_soft_when_parent_gone() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99999, None).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
         assert!(e.attach.occupancy_of(5000).is_none()); // 지연 청소.
@@ -110,7 +114,8 @@ mod tests {
 
     #[test]
     fn focus_cleanup_keeps_soft_when_parent_alive() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let parent = e.workspaces[0].all_surface_ids()[0]; // 기본 워크스페이스 live surface
         e.occupy_soft(5000, parent, None).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
@@ -119,7 +124,8 @@ mod tests {
 
     #[test]
     fn focus_cleanup_ignores_hard_occupancy() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.attach.acquire(5000, 1).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
         assert!(e.attach.is_hard_occupied(5000)); // hard 는 이 경로 무관 — 유지.

@@ -76,7 +76,7 @@ mod tests {
     use std::sync::Arc;
     use tasty_settings::PluginSettingValue;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -90,7 +90,8 @@ mod tests {
 
     #[test]
     fn plugin_can_read_back_its_own_stored_setting() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.settings.set_plugin_setting(
             "com.tasty.claude",
             "spawn_child_warn_threshold",
@@ -108,7 +109,8 @@ mod tests {
 
     #[test]
     fn unset_setting_returns_null_not_error() {
-        let e = engine();
+        let mut e_session = engine();
+        let e = e_session.borrow_mut();
         let caller = plugin_caller("com.tasty.claude");
         let resp = handle_get_plugin_setting(
             &e,
@@ -122,7 +124,8 @@ mod tests {
 
     #[test]
     fn get_remote_transfer_returns_defaults() {
-        let e = engine();
+        let mut e_session = engine();
+        let e = e_session.borrow_mut();
         let resp = handle_get_remote_transfer(&e, json!(1));
         assert!(resp.error.is_none());
         let v = resp.result.unwrap();
@@ -132,7 +135,8 @@ mod tests {
 
     #[test]
     fn get_remote_transfer_reflects_live_settings() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.settings.remote_transfer.dir = "/tmp/xfer".to_string();
         e.settings.remote_transfer.max_mb = 42;
         let resp = handle_get_remote_transfer(&e, json!(1));
@@ -143,7 +147,8 @@ mod tests {
 
     #[test]
     fn plugin_cannot_read_another_plugins_setting() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.settings.set_plugin_setting(
             "com.tasty.codex",
             "spawn_child_warn_threshold",

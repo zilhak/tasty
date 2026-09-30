@@ -2,6 +2,7 @@
 
 #[cfg(feature = "gui")]
 use crate::core::engine_access::EngineRef;
+#[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
 
 use super::RequestContext;
@@ -123,7 +124,7 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    pub fn focused_terminal<'a>(&self, engine: &'a EngineRef<'_>) -> Option<&'a Terminal> {
+    pub fn focused_terminal<'a>(&self, engine: &EngineRef<'a>) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.runtime.terminals.get(id)
     }

@@ -99,7 +99,7 @@ pub fn on_close_rail_category_popup(
 pub fn draw_rail_category_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;

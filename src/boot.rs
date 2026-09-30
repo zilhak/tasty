@@ -19,8 +19,9 @@ pub(crate) mod trace;
 pub(crate) mod waker;
 pub(crate) mod wiring;
 
-use crate::App;
 #[cfg(feature = "gui")]
+use crate::App;
+#[cfg(not(feature = "gui"))]
 use crate::core::engine_access::EngineMut;
 use crate::{cli, hooks};
 
@@ -316,7 +317,7 @@ fn handle_terminal_output(
             event => fire_terminal_hooks(app, state, engine, vec![event]),
         }
     }
-    crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
+    crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
 }
 
 /// output-match 훅을 발화하고 HookFired를 큐에 넣는다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.
@@ -404,7 +405,7 @@ fn bootstrap_engine(
     app: &mut crate::app::App,
     boot_settings: &crate::settings::Settings,
     waker: &crate::adapters::production::headless_waker::HeadlessWaker,
-) -> anyhow::Result<crate::core::CoreState> {
+) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
     let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
     // 부팅 때 한 번 전체 슬롯을 기준으로 마이그레이션·scrollback GC를 수행한다.
@@ -422,14 +423,22 @@ fn bootstrap_engine(
         app.core.memory_arc(),
         std::sync::Arc::clone(app.core.tasks.runner_registry()),
     )?;
-    engine.waker_factory = Some(factory);
+    engine.core_state.waker_factory = Some(factory);
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
     app.core.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,
-        &engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
+        &engine
+            .core_state
+            .workspaces
+            .iter()
+            .map(|w| w.id)
+            .collect::<Vec<_>>(),
     );
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
-    engine.attach.set_notifier(app.stream_hub.clone());
+    engine
+        .core_state
+        .attach
+        .set_notifier(app.stream_hub.clone());
     Ok(engine)
 }
 
@@ -535,7 +544,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let mut app = App::new_headless(cli.port_file, memory_arc)?;
     start_ipc_and_seed(&mut app, &waker);
 
-    let mut engine = bootstrap_engine(&mut app, &boot_settings, &waker)?;
+    let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
+    let mut engine = session.borrow_mut();
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
     let mut state = crate::state::CommandContext::new(&mut engine, preset_store, memory);
@@ -563,7 +573,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     loop {
         crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
-        crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine.as_ref());
         // 대기 전에 agent 이벤트를 발행한다. 대기 중 새 항목이 쌓이면 다음 루프에서 전달한다.
         {
             let mut agent_events = Vec::new();

@@ -69,7 +69,7 @@ impl App {
     }
 
     fn focus_surface_from_webview(&mut self, id: winit::window::WindowId, surface_id: u32) {
-        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
         if main.state.focus_surface_by_id(&mut *engine, surface_id) {
@@ -87,7 +87,7 @@ impl App {
         if self.dispatch_plugin_shortcut_key(id, &ev.key, ev.mods) {
             return;
         }
-        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
         // 플러그인 단축키에서 처리하지 않은 키는 원래 webview가 사라졌으면 버린다.
@@ -97,8 +97,8 @@ impl App {
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return;
         }
-        if main.handle_shortcut(engine, &ev.key, ev.mods) {
-            main.after_shortcut_consumed(engine);
+        if main.handle_shortcut(&mut engine, &ev.key, ev.mods) {
+            main.after_shortcut_consumed(&mut engine);
         }
         // 호스트 단축키가 마지막 workspace를 닫았을 수 있어 다음 redraw 전에 닫기 요청을 처리한다.
         self.close_self_requesting_windows();

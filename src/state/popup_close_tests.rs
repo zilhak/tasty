@@ -94,7 +94,7 @@ fn close_button_point(popup_pos: egui::Pos2, popup_size: egui::Vec2) -> egui::Po
 fn run_frame(
     raw: egui::RawInput,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) {
     let ctx = egui::Context::default();
     drop(ctx.run(raw, |ctx| {
@@ -105,7 +105,7 @@ fn run_frame(
 fn primed_popup_geometry(
     id: PopupId,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> (egui::Pos2, egui::Vec2) {
     run_frame(empty_input(), state, engine);
     let p = state.popups.get_mut(id).expect("popup registered");
@@ -116,7 +116,8 @@ const FIXED_POS: egui::Pos2 = egui::pos2(500.0, 500.0);
 
 #[test]
 fn convert_surface_escape_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface_id = engine.workspaces[0].all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
@@ -133,7 +134,8 @@ fn convert_surface_escape_close_clears_dialog_state() {
 
 #[test]
 fn convert_surface_outside_click_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface_id = engine.workspaces[0].all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
@@ -155,7 +157,8 @@ fn convert_surface_outside_click_clears_dialog_state() {
 // Intent는 닫기를 큐에 넣으므로 다음 렌더 프레임까지 실행해 후속 정리를 검사한다.
 #[test]
 fn convert_surface_close_intent_now_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface_id = engine.workspaces[0].all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
@@ -182,7 +185,8 @@ fn convert_surface_close_intent_now_clears_dialog_state() {
 
 #[test]
 fn rename_escape_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.rename = Some((RenameTarget::NewCategory, "abc".to_string()));
     state.popups.open_at_focused(RENAME_POPUP_ID, FIXED_POS);
 
@@ -194,7 +198,8 @@ fn rename_escape_close_clears_dialog_state() {
 
 #[test]
 fn rename_x_button_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.rename = Some((RenameTarget::NewCategory, "abc".to_string()));
     state.popups.open_at_focused(RENAME_POPUP_ID, FIXED_POS);
     let (pos, size) = primed_popup_geometry(RENAME_POPUP_ID, &mut state, &mut engine);
@@ -211,7 +216,8 @@ fn rename_x_button_close_clears_dialog_state() {
 
 #[test]
 fn rail_category_escape_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.rail_category_popup = Some(cat_id);
     state
@@ -226,7 +232,8 @@ fn rail_category_escape_close_clears_dialog_state() {
 
 #[test]
 fn rail_category_close_intent_now_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.rail_category_popup = Some(cat_id);
     state
@@ -251,7 +258,8 @@ fn rail_category_close_intent_now_clears_dialog_state() {
 
 #[test]
 fn rail_category_outside_click_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.rail_category_popup = Some(cat_id);
     state
@@ -272,7 +280,8 @@ fn rail_category_outside_click_clears_dialog_state() {
 
 #[test]
 fn transfer_progress_empty_rows_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_progress = Some(TransferProgress { rows: vec![] });
     state
         .popups
@@ -286,7 +295,8 @@ fn transfer_progress_empty_rows_close_clears_dialog_state() {
 
 #[test]
 fn transfer_progress_close_intent_now_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_progress = Some(TransferProgress { rows: vec![] });
     state
         .popups
@@ -318,7 +328,8 @@ fn xfer_err(name: &str) -> TransferError {
 
 #[test]
 fn transfer_error_escape_close_pops_single_entry() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_error.push_back(xfer_err("a.txt"));
     state
         .popups
@@ -332,7 +343,8 @@ fn transfer_error_escape_close_pops_single_entry() {
 
 #[test]
 fn transfer_error_outside_click_with_single_entry_closes_without_reopen() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_error.push_back(xfer_err("a.txt"));
     state
         .popups
@@ -350,7 +362,8 @@ fn transfer_error_outside_click_with_single_entry_closes_without_reopen() {
 
 #[test]
 fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_error.push_back(xfer_err("a.txt"));
     state.dialogs.transfer_error.push_back(xfer_err("b.txt"));
     state
@@ -370,7 +383,8 @@ fn transfer_error_outside_click_with_two_entries_pops_head_and_reopens() {
 
 #[test]
 fn transfer_error_close_intent_now_pops_head_and_reopens() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.transfer_error.push_back(xfer_err("a.txt"));
     state.dialogs.transfer_error.push_back(xfer_err("b.txt"));
     state
@@ -407,7 +421,8 @@ fn pending_script_confirm(result: Option<bool>) -> PendingScriptConfirm {
 
 #[test]
 fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.pending_script_confirm = Some(pending_script_confirm(None));
     state
         .popups
@@ -432,7 +447,8 @@ fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
 // Run 결과는 다음 App 처리에서 실행하므로 닫기 훅이 지우면 안 된다.
 #[test]
 fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.pending_script_confirm = Some(pending_script_confirm(Some(true)));
     state
         .popups
@@ -458,7 +474,8 @@ fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
 
 #[test]
 fn command_palette_outside_click_close_resets_query_and_selection() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.command_palette.query = "workspace".to_string();
     state.command_palette.selected = 2;
     state
@@ -479,7 +496,8 @@ fn command_palette_outside_click_close_resets_query_and_selection() {
 // 바깥 클릭은 결과를 유지하며, 팝업의 Close 버튼 경로만 Idle로 초기화한다.
 #[test]
 fn port_scanner_outside_click_close_preserves_scan_results() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.port_scan = PortScanState::Ready {
         rows: vec![PortRowView {
             port: 8080,
@@ -522,7 +540,8 @@ fn info_modal_entry(body: &str) -> InfoModal {
 
 #[test]
 fn info_modal_close_intent_now_pops_head_and_reopens() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state
         .dialogs
         .info_modal_queue
@@ -550,7 +569,8 @@ fn info_modal_close_intent_now_pops_head_and_reopens() {
 
 #[test]
 fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state
         .dialogs
         .info_modal_queue
@@ -570,7 +590,8 @@ fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
 
 #[test]
 fn confirm_delete_category_escape_close_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.create_category("Services").unwrap();
     state.dialogs.pending_category_delete = Some(cat_id);
     state
@@ -585,7 +606,8 @@ fn confirm_delete_category_escape_close_clears_dialog_state() {
 
 #[test]
 fn confirm_delete_category_outside_click_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.create_category("Services").unwrap();
     state.dialogs.pending_category_delete = Some(cat_id);
     state
@@ -604,7 +626,8 @@ fn confirm_delete_category_outside_click_clears_dialog_state() {
 
 #[test]
 fn confirm_delete_category_close_intent_now_clears_dialog_state() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.create_category("Services").unwrap();
     state.dialogs.pending_category_delete = Some(cat_id);
     state
@@ -630,7 +653,7 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
 /// client 7이 워크스페이스를 hard 점유하고 확인 팝업이 열린 상태를 만든다.
 fn occupied_workspace_with_popup(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> (crate::model::WorkspaceId, Vec<u32>) {
     let ws_id = engine.workspaces[0].id;
     let members = engine.workspaces[0].all_surface_ids();
@@ -647,7 +670,8 @@ fn occupied_workspace_with_popup(
 
 #[test]
 fn confirm_force_detach_escape_clears_state_and_keeps_the_occupancy() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, members) = occupied_workspace_with_popup(&mut state, &mut engine);
 
     run_frame(key_input(egui::Key::Escape), &mut state, &mut engine);
@@ -669,7 +693,8 @@ fn confirm_force_detach_escape_clears_state_and_keeps_the_occupancy() {
 
 #[test]
 fn confirm_force_detach_outside_click_clears_state_and_keeps_the_occupancy() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
 
     run_frame(
@@ -689,7 +714,8 @@ fn confirm_force_detach_outside_click_clears_state_and_keeps_the_occupancy() {
 
 #[test]
 fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
 
     crate::intent::popup::handle(
@@ -715,7 +741,8 @@ fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
 
 #[test]
 fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
 
     assert_eq!(engine.attach.force_detach_workspace(ws_id), Some(7));
@@ -737,7 +764,8 @@ fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
 
 #[test]
 fn confirm_force_detach_closes_when_the_workspace_is_gone() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.pending_force_detach_workspace = Some(u32::MAX);
     state
         .popups
@@ -756,7 +784,8 @@ fn confirm_force_detach_closes_when_the_workspace_is_gone() {
 // 이 하네스는 프레임마다 Context를 새로 만들어 버튼 클릭 대신 실행 함수를 직접 검사한다.
 #[test]
 fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, members) = occupied_workspace_with_popup(&mut state, &mut engine);
     assert!(!members.is_empty(), "픽스처 워크스페이스에 surface 가 없다");
 
@@ -778,7 +807,8 @@ fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
 
 #[test]
 fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
     state.dialogs.pending_force_detach_workspace = None;
 
@@ -812,7 +842,8 @@ fn mk_picker_data() -> FileHandlerPickerData {
 
 #[test]
 fn file_handler_picker_escape_close_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_handler_picker = Some(mk_picker_data());
     state.popups.open_at_focused(PICKER_POPUP_ID, FIXED_POS);
 
@@ -827,7 +858,8 @@ fn file_handler_picker_escape_close_marks_cancelled() {
 
 #[test]
 fn file_handler_picker_close_intent_now_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_handler_picker = Some(mk_picker_data());
     state.popups.open_at_focused(PICKER_POPUP_ID, FIXED_POS);
 
@@ -874,7 +906,8 @@ fn mk_file_picker_data() -> FilePickerData {
 
 #[test]
 fn file_picker_escape_close_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_picker = Some(mk_file_picker_data());
     state
         .popups
@@ -894,7 +927,7 @@ fn file_picker_escape_close_marks_cancelled() {
 fn run_frames(
     inputs: Vec<egui::RawInput>,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> egui::Context {
     let ctx = egui::Context::default();
     for raw in inputs {
@@ -922,7 +955,7 @@ fn pointer_input(pos: egui::Pos2, pressed: Option<bool>) -> egui::RawInput {
 /// 뷰가 첫 프레임에 보고한 file picker 헤더 줄.
 fn file_picker_header_rect(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> egui::Rect {
     let ctx = run_frames(vec![empty_input()], state, engine);
     crate::adapters::ui::popup::reported_header_drag_rect(&ctx, FILE_PICKER_POPUP_ID)
@@ -934,7 +967,8 @@ fn file_picker_header_rect(
 /// 직전 프레임에 위젯이 포인터를 가졌는지로 버튼과 드래그 영역을 가른다.
 #[test]
 fn file_picker_header_close_button_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_picker = Some(mk_file_picker_data());
     state
         .popups
@@ -963,7 +997,8 @@ fn file_picker_header_close_button_marks_cancelled() {
 /// 헤더의 빈 곳(제목 오른쪽)을 끌면 popup 이 이동하고 닫히지 않는다.
 #[test]
 fn file_picker_header_drag_moves_the_popup() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_picker = Some(mk_file_picker_data());
     state
         .popups
@@ -995,7 +1030,8 @@ fn file_picker_header_drag_moves_the_popup() {
 
 #[test]
 fn file_picker_close_intent_now_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.file_picker = Some(mk_file_picker_data());
     state
         .popups
@@ -1021,7 +1057,7 @@ fn file_picker_close_intent_now_marks_cancelled() {
 }
 
 fn push_approval(
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     state: &mut crate::state::RequestContext,
     id: &str,
 ) {
@@ -1052,7 +1088,8 @@ fn push_approval(
 
 #[test]
 fn approval_empty_queue_close_clears_comment_buffer() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.approval_comment_buffer = "draft comment".to_string();
     state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
 
@@ -1064,7 +1101,8 @@ fn approval_empty_queue_close_clears_comment_buffer() {
 
 #[test]
 fn approval_x_button_close_with_empty_queue_does_not_refire() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.approval_comment_buffer = "draft comment".to_string();
     state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
     push_approval(&mut engine, &mut state, "req-1");
@@ -1090,7 +1128,8 @@ fn approval_x_button_close_with_empty_queue_does_not_refire() {
 
 #[test]
 fn approval_x_button_close_with_pending_queue_refires_open_popup() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     push_approval(&mut engine, &mut state, "req-1");
     push_approval(&mut engine, &mut state, "req-2");
     state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
@@ -1115,7 +1154,8 @@ fn approval_x_button_close_with_pending_queue_refires_open_popup() {
 
 #[test]
 fn approval_close_intent_now_refires_open_popup() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     push_approval(&mut engine, &mut state, "req-1");
     push_approval(&mut engine, &mut state, "req-2");
     state.popups.open_at_focused(APPROVAL_POPUP_ID, FIXED_POS);
@@ -1145,7 +1185,8 @@ fn approval_close_intent_now_refires_open_popup() {
 
 #[test]
 fn close_intent_now_clears_cleanup_after_next_frame() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dialogs.rename = Some((RenameTarget::NewCategory, "abc".to_string()));
     state.popups.open_at_focused(RENAME_POPUP_ID, FIXED_POS);
 
@@ -1167,7 +1208,8 @@ fn close_intent_now_clears_cleanup_after_next_frame() {
 
 #[test]
 fn preset_apply_x_button_close_clears_selection_and_target_category() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.preset_apply_target_category = Some(cat_id);
     state.dialogs.preset_picker_selected = Some("my-preset".to_string());
@@ -1189,7 +1231,8 @@ fn preset_apply_x_button_close_clears_selection_and_target_category() {
 
 #[test]
 fn preset_apply_outside_click_close_clears_selection_and_target_category() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.preset_apply_target_category = Some(cat_id);
     state.dialogs.preset_picker_selected = Some("my-preset".to_string());
@@ -1210,7 +1253,8 @@ fn preset_apply_outside_click_close_clears_selection_and_target_category() {
 
 #[test]
 fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let cat_id = engine.categories()[0].id;
     state.dialogs.preset_apply_target_category = Some(cat_id);
     state.dialogs.preset_picker_selected = Some("my-preset".to_string());
@@ -1256,7 +1300,8 @@ fn visible_popup(
 /// 범위 workspace가 닫히면 이름 변경 팝업이 닫히고, 다른 workspace에서 다시 열면 보인다.
 #[test]
 fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let b = super::popup_ownership_tests::push_workspace(&mut engine);
     let c = super::popup_ownership_tests::push_workspace(&mut engine);
     state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
@@ -1292,7 +1337,8 @@ fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
 /// 범위 workspace가 닫힌 도구 팝업은 활성 workspace로 다시 열면 보인다.
 #[test]
 fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let b = super::popup_ownership_tests::push_workspace(&mut engine);
     super::popup_ownership_tests::push_workspace(&mut engine);
     state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
@@ -1322,7 +1368,8 @@ fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
 /// 범위 탭이 닫히면 탭 이름 변경 팝업이 닫힌다.
 #[test]
 fn tab_rename_popup_closes_with_its_tab() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let pane = engine.find_pane_by_id(pane_id).unwrap();
@@ -1370,7 +1417,8 @@ fn close_tab(engine: &mut EngineMut<'_>, tab_id: u32) {
 /// 범위 surface가 사라지면 변환 팝업이 닫히고, 다른 surface로 다시 열면 보인다.
 #[test]
 fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
     state.dialogs.convert_popup = Some(target);
     open_scoped(
@@ -1409,7 +1457,8 @@ fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
 #[test]
 fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     const SEARCH_BAR_POPUP_ID: PopupId = "search_bar";
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
     state.search.surface_id = target;
     state.search.query = "needle".to_string();
@@ -1487,7 +1536,8 @@ fn search_scope(
 #[test]
 fn find_moves_a_search_bar_hidden_in_another_tab_to_the_focused_surface() {
     use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let (_tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
     find_in_focused_surface(&mut state, &mut engine);
     type_query(&mut state, "needle");
@@ -1519,7 +1569,8 @@ fn find_moves_a_search_bar_hidden_in_another_tab_to_the_focused_surface() {
 #[test]
 fn find_on_the_same_surface_only_focuses_the_open_search_bar() {
     use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("surface");
     find_in_focused_surface(&mut state, &mut engine);
     type_query(&mut state, "needle");
@@ -1541,7 +1592,8 @@ fn find_on_the_same_surface_only_focuses_the_open_search_bar() {
 #[test]
 fn find_in_a_split_sibling_moves_the_search_bar_to_it() {
     use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine) = test_state();
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     let a = state.focused_surface_id(&engine).expect("surface a");
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     let events = core

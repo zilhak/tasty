@@ -12,22 +12,24 @@ impl App {
     pub(crate) fn flush_layout_persistence(&mut self, force: bool) {
         let label = if force { "final" } else { "tick" };
         let mut engines = engines_mut!(self);
-        for (state, engine) in engines.reborrow().window_sessions() {
+        for (state, mut engine) in engines.reborrow().window_sessions() {
+            let active_workspace = state.active_workspace_index(engine.core);
             Self::flush_one_engine(
                 &mut self.core,
-                engine,
-                state.active_workspace_index(engine),
+                &mut engine,
+                active_workspace,
                 &state.navigation,
                 force,
                 label,
                 "main",
             );
         }
-        for (state, engine) in engines.parked_sessions() {
+        for (state, mut engine) in engines.parked_sessions() {
+            let active_workspace = state.active_workspace_index(engine.core);
             Self::flush_one_engine(
                 &mut self.core,
-                engine,
-                state.active_workspace_index(engine),
+                &mut engine,
+                active_workspace,
                 &state.navigation,
                 force,
                 label,

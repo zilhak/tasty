@@ -103,7 +103,8 @@ fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
 fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     crate::core::apply_create_workspace_inner(
         &mut engine,
         crate::core::WorkspaceCreationParams::terminal(),

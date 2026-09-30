@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use crate::core::CoreState;
+use crate::core::engine_access::EngineMut;
 use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::model::{Deferred, Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
@@ -31,7 +31,7 @@ struct CaptureCtx<'a> {
 impl SavedLayout {
     /// 새 scrollback ID를 Terminal store에도 기록하므로 engine을 변경할 수 있다.
     pub fn capture(
-        engine: &mut CoreState,
+        engine: &mut EngineMut<'_>,
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Self {
@@ -369,7 +369,7 @@ mod tests {
     }
 
     /// 내용 대신 TerminalSurface marker만 넣어 workspace 필터·인덱스 처리를 확인한다.
-    fn mirror_marker_ws(engine: &mut CoreState, name: &str, mirror: bool) -> Workspace {
+    fn mirror_marker_ws(engine: &mut EngineMut<'_>, name: &str, mirror: bool) -> Workspace {
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
@@ -386,28 +386,32 @@ mod tests {
     }
 
     /// scrollback 저장을 꺼 이 capture가 디스크를 쓰지 않게 한다. engine 생성의 파일 읽기까지 막지는 않는다.
-    fn engine_with_workspaces(specs: &[(&str, bool)]) -> CoreState {
+    fn engine_with_workspaces(
+        specs: &[(&str, bool)],
+    ) -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let mut engine = engine_session.borrow_mut();
         engine.settings.general.restore_surface_content = false;
         let workspaces: Vec<Workspace> = specs
             .iter()
             .map(|(name, mirror)| mirror_marker_ws(&mut engine, name, *mirror))
             .collect();
         engine.workspaces = workspaces;
-        engine
+        engine_session
     }
 
     #[test]
     fn capture_excludes_mirror_and_remaps_active() {
-        let mut engine = engine_with_workspaces(&[
+        let mut engine_session = engine_with_workspaces(&[
             ("n0", false),
             ("m1", true),
             ("n2", false),
             ("m3", true),
             ("n4", false),
         ]);
+        let mut engine = engine_session.borrow_mut();
         let saved = SavedLayout::capture(
             &mut engine,
             2,
@@ -428,7 +432,9 @@ mod tests {
 
     #[test]
     fn capture_remaps_active_when_active_was_mirror() {
-        let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false)]);
+        let mut engine_session =
+            engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false)]);
+        let mut engine = engine_session.borrow_mut();
         let saved = SavedLayout::capture(
             &mut engine,
             1,
@@ -442,7 +448,8 @@ mod tests {
 
     #[test]
     fn capture_clamps_active_when_trailing_are_mirror() {
-        let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true)]);
+        let mut engine_session = engine_with_workspaces(&[("n0", false), ("m1", true)]);
+        let mut engine = engine_session.borrow_mut();
         let saved = SavedLayout::capture(
             &mut engine,
             1,

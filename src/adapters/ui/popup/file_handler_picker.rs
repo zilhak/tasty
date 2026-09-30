@@ -880,7 +880,7 @@ fn to_entry(s: &crate::state::PickerHandlerSummary, now: i64) -> FileHandlerPick
 pub fn draw_file_handler_picker(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(picker) = state.dialogs.file_handler_picker.as_ref() else {
         return PopupAction::Close;

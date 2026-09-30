@@ -102,7 +102,7 @@ mod tests {
     fn make_test_core_state() -> (
         crate::core::Core,
         RequestContext,
-        crate::core::CoreState,
+        crate::runtime::engine_session::EngineSession,
         tempfile::TempDir,
     ) {
         use std::sync::{Arc, Mutex};
@@ -118,8 +118,9 @@ mod tests {
 
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
 
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
@@ -160,7 +161,7 @@ mod tests {
             .build()
             .expect("test Core build");
 
-        (core, state, engine, home_tmp)
+        (core, state, engine_session, home_tmp)
     }
 
     fn first_surface_id(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
@@ -193,7 +194,8 @@ mod tests {
 
     #[test]
     fn open_converts_surface_to_image_with_path() {
-        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
+        let (mut core, mut state, mut engine_session, _home_tmp) = make_test_core_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = first_surface_id(&mut state, &mut engine);
         let tmp = tempfile::tempdir().unwrap();
         let path = write_blank_png(tmp.path(), "a.png");
@@ -215,7 +217,8 @@ mod tests {
 
     #[test]
     fn open_rejects_missing_path() {
-        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
+        let (mut core, mut state, mut engine_session, _home_tmp) = make_test_core_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = first_surface_id(&mut state, &mut engine);
         let resp = handle_open(
             &mut core,
@@ -228,7 +231,8 @@ mod tests {
 
     #[test]
     fn open_rejects_unknown_surface() {
-        let (mut core, _state, mut engine, _home_tmp) = make_test_core_state();
+        let (mut core, _state, mut engine_session, _home_tmp) = make_test_core_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_open(
             &mut core,
             &mut engine,
@@ -240,7 +244,8 @@ mod tests {
 
     #[test]
     fn list_finds_image_surfaces() {
-        let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
+        let (_core, mut state, mut engine_session, _home_tmp) = make_test_core_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = first_surface_id(&mut state, &mut engine);
         assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 

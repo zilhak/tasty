@@ -1,6 +1,5 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
-use crate::core::engine_access::EngineRef;
 use tasty_agent::task::{
     TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
 };
@@ -308,13 +307,13 @@ mod hook_wait_tests {
         mock_process::MockProcessSpawner, tmp_home::TmpHome,
     };
     use crate::core::Core;
-    use crate::core::CoreState;
+
     use crate::core::builder::CoreBuilder;
     use crate::ports::notification_sound::NoopPlayer;
 
     use super::*;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -344,7 +343,11 @@ mod hook_wait_tests {
         (core, home_tmp)
     }
 
-    fn mk_ready_task(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> TaskId {
+    fn mk_ready_task(
+        core: &Core,
+        engine: &crate::core::engine_access::EngineRef<'_>,
+        workspace_id: u32,
+    ) -> TaskId {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),
@@ -367,9 +370,10 @@ mod hook_wait_tests {
     #[test]
     fn register_then_resolve_completes_the_waiting_task() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
             .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
@@ -398,9 +402,10 @@ mod hook_wait_tests {
     #[test]
     fn resolve_unregistered_hook_id_does_not_touch_any_task() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
             .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
@@ -423,9 +428,10 @@ mod hook_wait_tests {
     #[test]
     fn resolve_is_one_shot() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
             .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
@@ -457,9 +463,10 @@ mod hook_wait_tests {
     #[test]
     fn resolve_with_nonzero_exit_code_fails_the_task() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
             .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
@@ -487,7 +494,8 @@ mod hook_wait_tests {
     #[test]
     fn task_create_reserved_for_fallback_wires_through_core_to_waiting_state() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
         let opts = TaskCreateOpts {
             workspace_id: ws,
@@ -529,14 +537,14 @@ mod task_delete_tests {
         mock_process::MockProcessSpawner, tmp_home::TmpHome,
     };
     use crate::core::Core;
-    use crate::core::CoreState;
+
     use crate::core::agent::runner_host::{handle_key, run_result_key};
     use crate::core::builder::CoreBuilder;
     use crate::ports::notification_sound::NoopPlayer;
 
     use super::*;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -566,7 +574,11 @@ mod task_delete_tests {
         (core, home_tmp)
     }
 
-    fn mk_ready_task(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> TaskId {
+    fn mk_ready_task(
+        core: &Core,
+        engine: &crate::core::engine_access::EngineRef<'_>,
+        workspace_id: u32,
+    ) -> TaskId {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),
@@ -589,9 +601,10 @@ mod task_delete_tests {
     #[test]
     fn task_delete_evicts_handle_and_run_result_side_keys() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
 
         core.with_memory(|mem| {
             mem.put(
@@ -644,9 +657,10 @@ mod task_delete_tests {
     #[test]
     fn task_delete_rejects_running_task_without_touching_held_semaphore_permit() {
         let (core, _home) = core();
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let ws = 1;
-        let task_id = mk_ready_task(&core, &engine, ws);
+        let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
 
         core.with_memory(|mem| {
             let mut sem = SemaphoreStore::new(mem, HOST_OWNER);

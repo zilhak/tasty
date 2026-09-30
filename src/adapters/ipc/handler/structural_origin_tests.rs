@@ -89,7 +89,8 @@ fn an_ipc_split_keeps_the_users_focus_for_every_caller() {
         for level in ["pane", "surface"] {
             let _home = crate::test_support::TastyHomeGuard::new();
             let mut core = super::cli_entry_tests::test_core();
-            let (mut state, mut engine) = crate::state::tests::test_state();
+            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let mut engine = engine_session.borrow_mut();
             let sid = state.focused_surface_id(&engine).expect("focused surface");
             let before = user_focus(&state, &engine);
 
@@ -119,7 +120,8 @@ fn ipc_tab_and_pane_closes_leave_no_user_close_trace_for_every_caller() {
     for caller in callers() {
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = super::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
         let pane_id = state.focused_pane_id(&engine);
 
@@ -188,7 +190,8 @@ fn a_plugin_split_on_a_mirror_forwards_as_a_silent_agent_request() {
     let [_, _, plugin] = callers();
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = super::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("focused surface");
     state.active_workspace_mut(&mut engine).mirror = true;
 

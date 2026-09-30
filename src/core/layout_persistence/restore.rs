@@ -3,6 +3,7 @@
 
 #[cfg(any(feature = "gui", test))]
 use crate::core::engine_access::EngineMut;
+#[cfg(any(feature = "gui", test))]
 use std::path::PathBuf;
 
 #[cfg(any(feature = "gui", test))]

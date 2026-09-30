@@ -57,7 +57,8 @@ mod tests {
     use super::*;
     #[test]
     fn independent_windows_keep_anchors_and_retire_surface_entries() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).unwrap();
         let mut terminal = tasty_terminal::Terminal::new_detached(20, 3);
         terminal.feed_bytes(b"zero\r\none\r\ntwo\r\nthree\r\nfour");
@@ -65,7 +66,9 @@ mod tests {
         let second_window = TerminalViewports::default();
         state
             .terminal_views
-            .update(&engine, sid, |viewport, cut| viewport.scroll_up(cut, 1));
+            .update(&engine.as_ref(), sid, |viewport, cut| {
+                viewport.scroll_up(cut, 1)
+            });
         engine
             .find_terminal_by_id_mut(sid)
             .unwrap()

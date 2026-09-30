@@ -154,7 +154,7 @@ pub struct MainView {
 /// `MainView::pending_menu` 슬롯의 내용물.
 pub(crate) type PendingNativeMenuSlot = (
     crate::platform::native_menu::MenuHandle,
-    Box<dyn FnOnce(&mut MainView, &mut crate::core::CoreState, Option<u32>)>,
+    Box<dyn FnOnce(&mut MainView, &mut EngineMut<'_>, Option<u32>)>,
 );
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.

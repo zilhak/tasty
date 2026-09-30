@@ -159,17 +159,19 @@ fn workspace(id: u32, name: &str, category: u32, layout: PaneNode) -> Workspace 
 }
 
 /// scrollback 저장을 끈 빈 엔진. 이 capture는 디스크를 쓰지 않는다.
-fn engine() -> CoreState {
+fn engine() -> crate::runtime::engine_session::EngineSession {
     let waker: tasty_terminal::Waker = Arc::new(|| {});
-    let mut engine =
+    let mut engine_session =
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.restore_surface_content = false;
-    engine
+    engine_session
 }
 
 /// 여러 단계 분할, typed 필드, 여러 surface kind, 빈 카테고리와 mirror workspace를 담은 엔진.
-fn full_engine() -> CoreState {
-    let mut engine = engine();
+fn full_engine() -> crate::runtime::engine_session::EngineSession {
+    let mut engine_session = engine();
+    let mut engine = engine_session.borrow_mut();
     let side = WorkspaceCategory::new(6, "side".to_owned());
     engine.categories = vec![
         WorkspaceCategory::normal(),
@@ -245,12 +247,13 @@ fn full_engine() -> CoreState {
         pane(25, vec![tab(36, "Shell", None, leaf(terminal(48)))]),
     );
     engine.workspaces = vec![main, mirror, side_ws, normal_ws];
-    engine
+    engine_session
 }
 
 /// workspace 하나, pane 하나, tab 하나인 엔진.
-fn minimal_engine() -> CoreState {
-    let mut engine = engine();
+fn minimal_engine() -> crate::runtime::engine_session::EngineSession {
+    let mut engine_session = engine();
+    let mut engine = engine_session.borrow_mut();
     engine.categories = vec![WorkspaceCategory::normal()];
     engine.workspaces = vec![workspace(
         1,
@@ -258,12 +261,13 @@ fn minimal_engine() -> CoreState {
         0,
         pane(1, vec![tab(1, "Shell", None, leaf(terminal(1)))]),
     )];
-    engine
+    engine_session
 }
 
 /// 같은 pane에 tab 여럿, 같은 tab에 같은 방향 분할을 겹친 엔진.
-fn tabs_engine() -> CoreState {
-    let mut engine = engine();
+fn tabs_engine() -> crate::runtime::engine_session::EngineSession {
+    let mut engine_session = engine();
+    let mut engine = engine_session.borrow_mut();
     engine.categories = vec![
         WorkspaceCategory::normal(),
         WorkspaceCategory::new(2, "b".to_owned()),
@@ -297,10 +301,10 @@ fn tabs_engine() -> CoreState {
             pane(8, vec![tab(99, "x", None, leaf(terminal(250)))]),
         ),
     ];
-    engine
+    engine_session
 }
 
-fn scenarios() -> Vec<(&'static str, CoreState)> {
+fn scenarios() -> Vec<(&'static str, crate::runtime::engine_session::EngineSession)> {
     vec![
         ("full", full_engine()),
         ("minimal", minimal_engine()),
@@ -310,7 +314,7 @@ fn scenarios() -> Vec<(&'static str, CoreState)> {
 
 /// CoreState를 가져온 journal과 그 모델의 정규 표현(자료 해석 포함).
 fn imported(
-    engine: &mut CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     dir: &tempfile::TempDir,
 ) -> (EventStore, WriterEpoch, Canonical) {
     let (mut store, epoch) = open(&dir.path().join("journal.db"));
@@ -332,15 +336,18 @@ fn journal_side(canonical: &Canonical) -> Canonical {
 fn core_state_and_its_imported_journal_describe_the_same_structure() {
     for (name, mut engine) in scenarios() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let (_store, _, journal) = imported(&mut engine, &dir);
+        let (_store, _, journal) = imported(&mut engine.borrow_mut(), &dir);
         assert!(journal.defects.is_empty(), "{name}: {:?}", journal.defects);
-        let diffs = differences(&core_side(&engine), &journal_side(&journal));
+        let diffs = differences(&core_side(&engine.core_state), &journal_side(&journal));
         assert!(diffs.is_empty(), "{name}: {}", render(&diffs));
-        assert_eq!(core_side(&engine).digest(), journal_side(&journal).digest());
+        assert_eq!(
+            core_side(&engine.core_state).digest(),
+            journal_side(&journal).digest()
+        );
         // importer가 새 ID를 받으므로 원래 ID로는 비교할 수 없다.
         if name != "minimal" {
             assert_ne!(
-                core_canonical(&engine).digest(),
+                core_canonical(&engine.core_state).digest(),
                 journal.without_data().digest()
             );
         }
@@ -351,7 +358,7 @@ fn core_state_and_its_imported_journal_describe_the_same_structure() {
 fn replaying_the_imported_journal_gives_the_import_digest() {
     for (name, mut engine) in scenarios() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let (mut store, epoch, journal) = imported(&mut engine, &dir);
+        let (mut store, epoch, journal) = imported(&mut engine.borrow_mut(), &dir);
         let digest = journal.digest();
         let bytes = Canonical::of_journal(
             &journal::load(&store, &engine_stream(1)).expect("load"),
@@ -390,7 +397,8 @@ fn replaying_the_imported_journal_gives_the_import_digest() {
 
 #[test]
 fn surface_data_is_compared_by_content() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     let dir = tempfile::tempdir().expect("tempdir");
     let (_store, _, journal) = imported(&mut engine, &dir);
     let tabs = &journal.workspaces[0].panes[0].tabs;
@@ -511,18 +519,21 @@ const EXCLUDED_MUTATIONS: &[CoreMutation] = &[
 
 #[test]
 fn changing_only_core_state_changes_the_digest() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     let dir = tempfile::tempdir().expect("tempdir");
     let (_store, _, journal) = imported(&mut engine, &dir);
     let digest = journal_side(&journal).digest();
     assert_eq!(core_side(&engine).digest(), digest);
     for (name, mutate) in CORE_MUTATIONS {
-        let mut changed = full_engine();
+        let mut changed_session = full_engine();
+        let mut changed = changed_session.borrow_mut();
         mutate(&mut changed);
         assert_ne!(core_side(&changed).digest(), digest, "{name}");
     }
     for (name, mutate) in EXCLUDED_MUTATIONS {
-        let mut changed = full_engine();
+        let mut changed_session = full_engine();
+        let mut changed = changed_session.borrow_mut();
         mutate(&mut changed);
         assert_eq!(core_side(&changed).digest(), digest, "{name}");
     }
@@ -530,7 +541,8 @@ fn changing_only_core_state_changes_the_digest() {
 
 #[test]
 fn changing_only_the_journal_changes_the_replayed_digest() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut store, epoch, journal) = imported(&mut engine, &dir);
     let digest = journal_side(&journal).digest();
@@ -574,7 +586,7 @@ fn changing_only_the_journal_changes_the_replayed_digest() {
 fn positional_ids_match_across_journals_with_different_numbering() {
     let dir_a = tempfile::tempdir().expect("tempdir");
     let dir_b = tempfile::tempdir().expect("tempdir");
-    let (_a, _, first) = imported(&mut full_engine(), &dir_a);
+    let (_a, _, first) = imported(&mut full_engine().borrow_mut(), &dir_a);
     // 두 번째 journal은 ID를 먼저 예약해 가져온 ID가 달라지게 한다.
     let (mut store, epoch) = open(&dir_b.path().join("journal.db"));
     for kind in [
@@ -587,8 +599,14 @@ fn positional_ids_match_across_journals_with_different_numbering() {
             .reserve_ids(epoch, kind.label(), 5, u64::from(u32::MAX))
             .expect("reserve");
     }
-    let (_, model) = capture_and_import(&mut full_engine(), &mut store, epoch, 1, &NoScrollback)
-        .expect("import");
+    let (_, model) = capture_and_import(
+        &mut full_engine().borrow_mut(),
+        &mut store,
+        epoch,
+        1,
+        &NoScrollback,
+    )
+    .expect("import");
     let second = Canonical::of_journal(&model, &DecodedData(&store));
     assert_ne!(first.digest(), second.digest());
     assert_eq!(first.positional().digest(), second.positional().digest());
@@ -596,7 +614,8 @@ fn positional_ids_match_across_journals_with_different_numbering() {
 
 #[test]
 fn an_unregistered_surface_kind_is_the_only_known_mismatch() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     first_pane(&mut engine).tabs[0].layout_opt = Some(leaf(Box::new(Unregistered(40))));
     let dir = tempfile::tempdir().expect("tempdir");
     let (_store, _, journal) = imported(&mut engine, &dir);
@@ -614,16 +633,18 @@ fn an_unregistered_surface_kind_is_the_only_known_mismatch() {
     );
     assert_eq!(KNOWN_MISMATCHES.len(), 1);
     // 알려진 불일치가 아닌 차이는 판정하지 않는다.
-    let mut renamed = full_engine();
+    let mut renamed_session = full_engine();
+    let mut renamed = renamed_session.borrow_mut();
     first_pane(&mut renamed).tabs[0].name.push('x');
-    let other = differences(&core_side(&renamed), &core_side(&full_engine()));
+    let other = differences(&core_side(&renamed), &core_side(&full_engine().core_state));
     assert!(other.iter().all(|d| known_mismatch(d, &kept).is_none()));
 }
 
 /// capture가 그대로 저장하는 kind가 empty가 되면 알려진 불일치로 가리지 않는다.
 #[test]
 fn a_kept_kind_saved_as_empty_stays_an_unclassified_difference() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     let dir = tempfile::tempdir().expect("tempdir");
     let (_store, _, journal) = imported(&mut engine, &dir);
     let mut regressed = journal_side(&journal);
@@ -677,7 +698,8 @@ fn exclusion_list_names_every_excluded_mutation() {
 /// scrollback 저장을 끈 capture는 구조도 capture 결과도 바꾸지 않는다.
 #[test]
 fn capture_without_scrollback_leaves_core_state_unchanged() {
-    let mut engine = full_engine();
+    let mut engine_session = full_engine();
+    let mut engine = engine_session.borrow_mut();
     let before = core_canonical(&engine);
     let first = serde_json::to_string(
         &crate::core::layout_persistence::schema::SavedLayout::capture(
@@ -707,7 +729,8 @@ fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
     let real_home = tasty_utils::path::tasty_home();
     let _home = tasty_test_support::IsolatedHome::new();
     assert_ne!(tasty_utils::path::tasty_home(), real_home);
-    let mut engine = minimal_engine();
+    let mut engine_session = minimal_engine();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.restore_surface_content = true;
     let duplicate = format!("shadow-digest-missing-{}", std::process::id());
     let surface = |id| -> Box<dyn Surface> {

@@ -14,7 +14,8 @@ impl RequestContext {
 mod tests {
     #[test]
     fn hint_is_taken_once_per_surface() {
-        let (mut state, _engine) = crate::state::tests::test_state();
+        let (mut state, mut _engine_session) = crate::state::tests::test_state();
+        let _engine = _engine_session.borrow_mut();
         assert!(state.take_first_shell_integration_hint(1));
         assert!(!state.take_first_shell_integration_hint(1));
         assert!(state.take_first_shell_integration_hint(2));
@@ -23,7 +24,8 @@ mod tests {
     /// 닫힌 surface의 창 표시 기록과 Core 요청 기록만 지우고 다른 surface의 기록은 남긴다.
     #[test]
     fn surface_cleanup_forgets_only_that_surface() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         state.shell_integration_hint_shown.extend([1, 2]);
         engine.shell_integration_hint_requested.extend([1, 2]);
         state.cleanup_surface(&mut engine, 1, None);

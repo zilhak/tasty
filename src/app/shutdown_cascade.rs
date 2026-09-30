@@ -12,7 +12,7 @@ impl App {
     pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) -> usize {
         let mut closed = 0usize;
         for (state, engine) in self.engines_mut().sessions() {
-            closed += Self::enqueue_close_for_engine(state, engine);
+            closed += Self::enqueue_close_for_engine(state, engine.core);
         }
         closed
     }

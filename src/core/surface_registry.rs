@@ -532,8 +532,9 @@ mod tests {
     #[test]
     fn a_withdrawn_kind_keeps_its_definition_but_refuses_creation() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let engine = engine_session.borrow_mut();
         let reg = &engine.surface_registry;
         reg.register(plugin_def("probe_kind", "com.x.probe"));
         assert!(

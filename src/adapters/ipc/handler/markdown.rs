@@ -90,7 +90,8 @@ mod tests {
         activated: Option<(&str, u64)>,
         extra: serde_json::Value,
     ) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let sid = *state
             .active_workspace(&engine)
             .all_surface_ids()

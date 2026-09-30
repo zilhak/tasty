@@ -19,7 +19,11 @@ pub struct StageDef {
     /// 공용 메타데이터를 복제하지 않고 참조한다.
     pub meta: &'static StageMeta,
     /// 공용 배경·제목 안쪽 콘텐츠를 그린다.
-    pub draw_fn: fn(&mut egui::Ui, &mut MainViewState, &mut crate::core::CoreState) -> StageAction,
+    pub draw_fn: fn(
+        &mut egui::Ui,
+        &mut MainViewState,
+        &mut crate::core::engine_access::EngineMut<'_>,
+    ) -> StageAction,
     /// 닫기 큐에서 호출할 정리 훅. 임시 egui 상태를 지울 수 있도록 Context를 받는다.
     pub on_close: Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
 }
@@ -76,7 +80,7 @@ pub fn drain_on_close_hooks(
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) {
     drain_on_close_hooks(ctx, state, engine);
     let Some(id) = state.fullscreen_stage_id() else {

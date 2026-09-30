@@ -58,7 +58,8 @@ pub(crate) fn test_core_builder() -> crate::core::builder::CoreBuilder {
 
 #[test]
 fn surface_query_cli_entry_points_reach_their_handlers() {
-    let (_state, engine) = crate::state::tests::test_state();
+    let (_state, mut engine_session) = crate::state::tests::test_state();
+    let engine = engine_session.borrow_mut();
     let surface = engine.workspaces[0]
         .all_surface_ids()
         .first()
@@ -83,10 +84,10 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
 
         let resp = match expected_method {
             "surface.cursor_position" => {
-                super::surface::handle_cursor_position(&engine, json!(1), &req.params)
+                super::surface::handle_cursor_position(&engine.as_ref(), json!(1), &req.params)
             }
             "surface.foreground_process" => {
-                super::surface::handle_foreground_process(&engine, json!(1), &req.params)
+                super::surface::handle_foreground_process(&engine.as_ref(), json!(1), &req.params)
             }
             _ => super::surface::handle_surface_locate(&engine, json!(1), &req.params),
         };
@@ -104,7 +105,8 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
 #[test]
 fn respawn_terminal_cli_entry_point_reaches_target_lookup() {
     let mut core = test_core();
-    let (_state, mut engine) = crate::state::tests::test_state();
+    let (_state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let missing = 999_999u32;
 
     let req = command_to_request(&Commands::Surface {
@@ -130,7 +132,8 @@ fn respawn_terminal_cli_entry_point_reaches_target_lookup() {
 #[test]
 fn fire_hook_cli_entry_point_reaches_its_handler() {
     let mut core = test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface = engine.workspaces[0].all_surface_ids()[0];
 
     let req = command_to_request(&Commands::Surface {
@@ -155,7 +158,8 @@ fn fire_hook_cli_entry_point_reaches_its_handler() {
 /// `tasty send text --wait-idle` — 플래그가 메서드를 가르고, params 는 그대로다.
 #[test]
 fn send_text_wait_idle_cli_entry_point_switches_method_and_reaches_its_handler() {
-    let (_state, mut engine) = crate::state::tests::test_state();
+    let (_state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let surface = engine.workspaces[0].all_surface_ids()[0];
 
     let plain = command_to_request(&Commands::Send {

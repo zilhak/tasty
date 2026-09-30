@@ -708,7 +708,8 @@ mod explorer_open_tests {
     #[test]
     fn an_explorer_open_dispatches_the_file_with_its_origin_on_both_sides() {
         for mirror in [false, true] {
-            let (mut state, mut engine) = crate::state::tests::test_state();
+            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let mut engine = engine_session.borrow_mut();
             engine.workspaces[0].mirror = mirror;
             let sid = engine.workspaces[0].all_surface_ids()[0];
             super::apply_explorer_action(

@@ -1,7 +1,7 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::core::engine_access::EngineRef;
 use std::collections::HashMap;
 use std::thread;
 
@@ -467,7 +467,7 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
 /// worktree_path가 있으면 그 경로를 쓰고, 없으면 서버 터미널에서 cwd를 조회한다.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_git_query_request(
-    engine: &mut EngineMut<'_>,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
     hub: &StreamHub,
     client_id: u32,
     request_id: u64,
@@ -864,6 +864,112 @@ fn markdown_source_wire_capped_with_budget(bytes: &[u8], budget: usize) -> (Stri
     (text.into_owned(), false)
 }
 
+impl EngineRef<'_> {
+    fn build_workspace_descriptor(
+        &self,
+        idx: usize,
+        workspace_id: u32,
+        class: &AttachSurfaceClass,
+    ) -> serde_json::Value {
+        let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
+        serde_json::json!({
+            "event": "attached_workspace",
+            "workspace_id": workspace_id,
+            "name": self.core.workspaces[idx].name,
+            "tree": tree,
+            "surfaces": surfaces,
+        })
+    }
+
+    /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.
+    pub(crate) fn build_workspace_tree_surfaces(
+        &self,
+        idx: usize,
+        class: &AttachSurfaceClass,
+    ) -> (serde_json::Value, Vec<serde_json::Value>) {
+        let ws = &self.core.workspaces[idx];
+        let mut kinds: HashMap<u32, &'static str> = HashMap::new();
+        let mut display_names: HashMap<u32, String> = HashMap::new();
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                for tab in &pane.tabs {
+                    tab.for_each_surface(&mut |s| {
+                        if let Some(id) = s.surface_id() {
+                            kinds.insert(id, s.kind());
+                            display_names.insert(id, s.display_name());
+                        }
+                    });
+                }
+            }
+        }
+        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
+        let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
+
+        let mut surfaces = Vec::new();
+        for &sid in &class.terminals {
+            let (cols, rows) = self
+                .runtime
+                .terminals
+                .get(sid)
+                .map(|t| (t.cols(), t.rows()))
+                .unwrap_or((80, 24));
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "terminal",
+                "cols": cols,
+                "rows": rows,
+            }));
+        }
+        for (sid, kind, plugin_id) in &mesh_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kind.to_string());
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "mesh",
+                "kind": kind,
+                "plugin_id": plugin_id,
+                "display_name": display_name,
+            }));
+        }
+        // explorer는 root만 보낸다. client는 이를 초기 cwd로도 사용한다.
+        for (sid, root) in &class.explorers {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "explorer",
+                "root": root.to_string_lossy(),
+            }));
+        }
+        // 파일 내용은 별도 요청으로 받는다. file은 표시용 서버 경로이며 client의 로컬 파일 경로가 아니다.
+        for (sid, _kind, file) in &content_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kinds.get(sid).copied().unwrap_or("markdown").to_string());
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "markdown",
+                "file": file.as_ref().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+                "display_name": display_name,
+            }));
+        }
+        for &sid in class
+            .non_terminals
+            .iter()
+            .chain(mesh_rejected.iter())
+            .chain(content_rejected.iter())
+        {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "placeholder",
+                "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
+            }));
+        }
+        (ws.to_attach_tree_json(&self.attach.presentation), surfaces)
+    }
+}
+
 #[cfg(test)]
 mod markdown_content_tests {
     use super::{json_escaped_char_len, markdown_source_wire_capped_with_budget};
@@ -1060,22 +1166,25 @@ mod git_query_tests {
         assert_eq!(wire["is_current"], true);
     }
 
-    fn test_engine() -> crate::core::CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).expect("engine")
     }
 
     #[test]
     fn resolve_git_query_target_prefers_worktree_path_over_surface_cwd() {
-        let engine = test_engine();
-        let resolved = resolve_git_query_target(&engine, 999, Some("/explicit/path")).unwrap();
+        let mut engine_session = test_engine();
+        let engine = engine_session.borrow_mut();
+        let resolved =
+            resolve_git_query_target(&engine.as_ref(), 999, Some("/explicit/path")).unwrap();
         assert_eq!(resolved, std::path::PathBuf::from("/explicit/path"));
     }
 
     #[test]
     fn resolve_git_query_target_errors_without_cwd_or_worktree_path() {
-        let engine = test_engine();
-        let err = resolve_git_query_target(&engine, 999, None).unwrap_err();
+        let mut engine_session = test_engine();
+        let engine = engine_session.borrow_mut();
+        let err = resolve_git_query_target(&engine.as_ref(), 999, None).unwrap_err();
         assert!(err.contains("no known cwd"));
     }
 }
@@ -1279,10 +1388,11 @@ mod mesh_descriptor_display_name_tests {
         kind: &'static str,
         plugin_id: &str,
         display_name: &str,
-    ) -> (crate::core::CoreState, usize) {
+    ) -> (crate::runtime::engine_session::EngineSession, usize) {
         let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         let surface: Box<dyn crate::model::Surface> = Box::new(EguiMeshSurface::new(
             100,
             kind,
@@ -1294,12 +1404,14 @@ mod mesh_descriptor_display_name_tests {
         let ws = crate::model::Workspace::new_with_pane(1, "ws".to_string(), pane);
         engine.workspaces.push(ws);
         let idx = engine.workspaces.len() - 1;
-        (engine, idx)
+        (engine_session, idx)
     }
 
     #[test]
     fn image_mesh_descriptor_carries_real_display_name() {
-        let (engine, idx) = engine_with_mesh_surface("image", "com.tasty.image", "screenshot.png");
+        let (mut engine_session, idx) =
+            engine_with_mesh_surface("image", "com.tasty.image", "screenshot.png");
+        let engine = engine_session.borrow_mut();
         let class = engine.workspaces[idx].classify_attach_surfaces();
         let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
         let mesh = surfaces
@@ -1319,7 +1431,8 @@ mod mesh_descriptor_display_name_tests {
             ("image", "com.tasty.image", "screenshot.png"),
             ("mesh_demo", "com.tasty.mesh-demo", "Demo"),
         ] {
-            let (engine, idx) = engine_with_mesh_surface(kind, plugin_id, name);
+            let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, name);
+            let engine = engine_session.borrow_mut();
             let class = engine.workspaces[idx].classify_attach_surfaces();
             let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
             let mesh = surfaces
@@ -1345,7 +1458,7 @@ mod forward_exec_tests {
     fn make_core_state() -> (
         crate::core::Core,
         RequestContext,
-        crate::core::CoreState,
+        crate::runtime::engine_session::EngineSession,
         tempfile::TempDir,
     ) {
         use std::sync::{Arc, Mutex};
@@ -1360,8 +1473,9 @@ mod forward_exec_tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let term_waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn MemoryStorage>> =
@@ -1382,10 +1496,10 @@ mod forward_exec_tests {
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
             .expect("test Core build");
-        (core, state, engine, home_tmp)
+        (core, state, engine_session, home_tmp)
     }
 
-    fn seed(engine: &mut EngineMut<'_>) -> u32 {
+    fn seed(engine: &mut crate::core::engine_access::EngineMut<'_>) -> u32 {
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -1412,7 +1526,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_split_surface_executes_and_spawns() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::SplitSurface {
@@ -1451,7 +1566,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_close_surface_leaves_a_restorable_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         // workspace 전체를 지우는 경우와 구분하려고 같은 탭에 형제 surface를 둔다.
         let fd = execute_forwarded_structural_op(
@@ -1488,7 +1604,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_close_tab_leaves_a_restorable_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -1533,7 +1650,8 @@ mod forward_exec_tests {
     /// pane의 마지막 탭과 workspace의 유일한 pane은 닫히지 않으므로 기록도 남기지 않는다.
     #[test]
     fn a_forwarded_close_that_cannot_close_leaves_no_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         for op in [
             StructuralOp::CloseTab {
@@ -1576,7 +1694,7 @@ mod forward_exec_tests {
     fn forward_empty_new_tab(
         core: &mut crate::core::Core,
         state: &mut RequestContext,
-        engine: &mut EngineMut<'_>,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         anchor: u32,
         origin: ForwardOrigin,
     ) {
@@ -1596,7 +1714,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_agent_new_tab_keeps_the_selected_tab() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         forward_empty_new_tab(&mut core, &mut state, &mut engine, a, ForwardOrigin::Agent);
         assert_eq!(tabs_and_selection(&engine, a), (2, 0));
@@ -1604,7 +1723,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_user_new_tab_selects_it() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         forward_empty_new_tab(&mut core, &mut state, &mut engine, a, ForwardOrigin::User);
         assert_eq!(tabs_and_selection(&engine, a), (2, 1));
@@ -1612,7 +1732,8 @@ mod forward_exec_tests {
 
     #[test]
     fn ipc_tab_create_of_a_non_terminal_keeps_the_selected_tab() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let pane_id = engine.find_pane_for_surface(a).expect("pane");
         let req = ipc_request(
@@ -1634,7 +1755,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_close_pane_captures_the_split_context() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -1717,7 +1839,8 @@ mod forward_exec_tests {
     #[test]
     fn a_forwarded_user_split_keeps_the_server_users_focus() {
         for pane in [true, false] {
-            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let (mut core, mut state, mut engine_session, _home) = make_core_state();
+            let mut engine = engine_session.borrow_mut();
             let a = seed(&mut engine);
             let before = (
                 state.focused_pane_id(&engine),
@@ -1747,7 +1870,8 @@ mod forward_exec_tests {
     /// 복원 기록은 ForwardOrigin에서 정하고, lifecycle의 사용자 닫기 표시는 서버 사용자 기준이다.
     #[test]
     fn a_forwarded_user_close_is_restorable_but_not_a_local_user_close() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -1788,7 +1912,8 @@ mod forward_exec_tests {
     #[cfg(feature = "gui")] // headless에는 전달 큐를 보내는 루프가 없어 거절한다
     #[test]
     fn a_chained_forward_stays_a_silent_agent_request() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         state.active_workspace_mut(&mut engine).mirror = true;
 
@@ -1817,7 +1942,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_agent_close_leaves_no_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let creates = [
             StructuralOp::SplitSurface {
@@ -1892,7 +2018,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_plain_ipc_close_still_leaves_no_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -1929,7 +2056,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_restore_recreates_the_tab_and_lands_in_the_delta() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -1982,7 +2110,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_restore_with_an_empty_stack_reports_the_sentinel_reason() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let err = execute_forwarded_structural_op(
             &mut core,
@@ -1999,7 +2128,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_restore_does_not_move_the_local_users_focus() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -2061,7 +2191,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_restore_never_takes_another_workspaces_item() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let fd = execute_forwarded_structural_op(
             &mut core,
@@ -2132,7 +2263,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_split_inherits_workspace_occupancy() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 42;
@@ -2175,7 +2307,8 @@ mod forward_exec_tests {
     /// notifier를 주입해야 tap 경로가 실행된다. 실행 중 자동 tap과 호출자의 후속 tap이 겹치지 않는지 본다.
     #[test]
     fn forward_split_surface_taps_exactly_once_with_real_stream_hub() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 7;
@@ -2235,7 +2368,8 @@ mod forward_exec_tests {
         use crate::core::intent::{CoreEvent, DomainIntent};
         use tasty_ipc::stream::{StreamTag, decode_mux};
 
-        let (mut core, _state, mut engine, _home) = make_core_state();
+        let (mut core, _state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 7;
@@ -2303,7 +2437,7 @@ mod forward_exec_tests {
     fn attached_pair(
         core: &mut crate::core::Core,
         state: &mut RequestContext,
-        engine: &mut EngineMut<'_>,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
     ) -> (u32, u32, u32, tasty_ipc::stream_hub::SinkReceiver) {
         let a = seed(engine);
         let b = execute_forwarded_structural_op(
@@ -2350,7 +2484,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_pty_exit_in_an_attached_workspace_reaches_the_holder_as_a_delta() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
         crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
         let msgs = drain_control(&rx);
@@ -2371,7 +2506,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_forwarded_close_leaves_no_structure_change_behind() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (_a, b, _ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
         execute_forwarded_structural_op(
             &mut core,
@@ -2391,7 +2527,8 @@ mod forward_exec_tests {
 
     #[test]
     fn the_last_member_exiting_force_detaches_the_holder() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
         crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
         drain_control(&rx);
@@ -2412,7 +2549,8 @@ mod forward_exec_tests {
 
     #[test]
     fn a_local_member_reaches_the_holder_as_a_delta_before_its_snapshot() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (a, _b, _ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
         let pane_id = engine.find_pane_for_surface(a).expect("pane");
         crate::app::structural_exec::create_tab(
@@ -2458,13 +2596,15 @@ mod forward_exec_tests {
 
     #[test]
     fn an_anchor_alive_in_another_workspace_is_not_called_gone() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (_a, _b, _ws_id, _rx) = attached_pair(&mut core, &mut state, &mut engine);
         push_unrelated_workspace(&mut engine, 900, 901);
         let alive = StructuralOp::CloseSurface { surface_id: 901 };
         let gone = StructuralOp::CloseSurface { surface_id: 555 };
-        let reason =
-            |op| crate::core::attach_structure_sync::unresolved_forward_reason([&engine], 7, op);
+        let reason = |op| {
+            crate::core::attach_structure_sync::unresolved_forward_reason([&*engine.core], 7, op)
+        };
         assert_eq!(reason(&alive), "workspace not found");
         assert!(
             reason(&gone).starts_with("no live surface 555 "),
@@ -2475,11 +2615,13 @@ mod forward_exec_tests {
 
     #[test]
     fn an_anchor_alive_in_another_engine_is_not_called_gone() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let (_a, _b, _ws_id, _rx) = attached_pair(&mut core, &mut state, &mut engine);
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut other =
+        let mut other_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let mut other = other_session.borrow_mut();
         push_unrelated_workspace(&mut other, 900, 901);
         let op = StructuralOp::CloseSurface { surface_id: 901 };
         let reason = |engines: Vec<&crate::core::CoreState>| {
@@ -2492,7 +2634,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_new_tab_executes() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::NewTab {
@@ -2515,7 +2658,8 @@ mod forward_exec_tests {
     #[test]
     fn forwarded_tab_origin_changes_wire_selection_without_changing_server_selection() {
         for origin in [ForwardOrigin::User, ForwardOrigin::Agent] {
-            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let (mut core, mut state, mut engine_session, _home) = make_core_state();
+            let mut engine = engine_session.borrow_mut();
             let anchor = seed(&mut engine);
             state.reconcile_presentation(&engine);
             let pane_id = engine.find_pane_for_surface(anchor).unwrap();
@@ -2560,7 +2704,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_close_tab_removes_from_delta() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let mk = StructuralOp::NewTab {
             anchor_surface_id: a,
@@ -2600,7 +2745,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_unknown_kind_fails() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::NewTab {
@@ -2629,7 +2775,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_unknown_kind_reports_the_remote_reason() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let op = StructuralOp::ConvertSurface {
             surface_id: a,
@@ -2662,7 +2809,7 @@ mod forward_exec_tests {
         fn(
             &mut crate::core::Core,
             &mut dyn crate::adapters::ipc::window_port::IpcWindow,
-            &mut crate::core::CoreState,
+            &mut crate::core::engine_access::EngineMut<'_>,
             serde_json::Value,
             &serde_json::Value,
             &crate::core::origin::IntentOrigin,
@@ -2747,7 +2894,8 @@ mod forward_exec_tests {
 
     fn fail_both_ways(case: &FailureCase) -> (String, String) {
         let FailureCase(name, _, op, ipc, ipc_params) = case;
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let pane_id = engine.find_pane_for_surface(a).expect("seed pane");
 
@@ -2806,7 +2954,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_missing_anchor_fails() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
         let op = StructuralOp::ClosePane {
             anchor_surface_id: 999_999,
@@ -2839,7 +2988,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_new_tab_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine
@@ -2868,7 +3018,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_split_pane_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine
@@ -2901,7 +3052,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_close_pane_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let split = StructuralOp::SplitPane {
@@ -2948,7 +3100,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_move_tab_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let new_tab = StructuralOp::NewTab {
@@ -2990,7 +3143,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_close_surface_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let split_surface = StructuralOp::SplitSurface {
@@ -3036,7 +3190,8 @@ mod forward_exec_tests {
         use tasty_ipc::stream::StreamTag;
         use tasty_ipc::stream_hub::StreamHub;
 
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
 
@@ -3084,7 +3239,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_surface_executes_and_converts() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let op = StructuralOp::ConvertSurface {
             surface_id: a,
@@ -3114,7 +3270,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_surface_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine
@@ -3153,7 +3310,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_surface_applies_wire_cwd() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let dir = tempfile::tempdir().expect("test tempdir");
         let op = StructuralOp::ConvertSurface {
@@ -3176,7 +3334,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_surface_resolves_cwd_from_target_surface() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let dir = tempfile::tempdir().expect("test tempdir");
         engine
@@ -3205,7 +3364,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_convert_surface_respects_inherit_cwd_gate() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let dir = tempfile::tempdir().expect("test tempdir");
         engine
@@ -3235,7 +3395,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_move_surface_executes_and_cleans_up_target() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let split_surface = StructuralOp::SplitSurface {
             surface_id: a,
@@ -3285,7 +3446,8 @@ mod forward_exec_tests {
 
     #[test]
     fn forward_move_surface_succeeds_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let split_surface = StructuralOp::SplitSurface {
@@ -3328,7 +3490,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_denies_structural_create_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
@@ -3383,7 +3546,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_denies_structural_close_move_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
@@ -3459,7 +3623,8 @@ mod forward_exec_tests {
     fn dispatch_denies_preset_apply_and_pty_attach_when_hard_occupied() {
         use crate::core::pty_registry::PtySpawnSpec;
 
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
@@ -3576,7 +3741,8 @@ mod forward_exec_tests {
     /// GUI는 원격으로 전달했다고 답하고 헤드리스는 거절한다. 어느 쪽이든 관계와 soft 점유는 남는다.
     #[test]
     fn terminal_kill_keeps_the_child_when_a_mirror_child_is_not_closed_locally() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let parent = seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         let child = engine.next_ids.next_surface();
@@ -3651,7 +3817,8 @@ mod forward_exec_tests {
     /// 점유가 없으면 child의 soft 점유만 풀고 닫는다.
     #[test]
     fn dispatch_denies_terminal_kill_when_child_is_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let parent = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
@@ -3687,7 +3854,7 @@ mod forward_exec_tests {
 
         let kill = |core: &mut crate::core::Core,
                     state: &mut RequestContext,
-                    engine: &mut crate::core::CoreState| {
+                    engine: &mut crate::core::engine_access::EngineMut<'_>| {
             let req = ipc_request(
                 "terminal.kill",
                 serde_json::json!({ "surface": parent, "child": idx }),
@@ -3739,7 +3906,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_denies_terminal_spawn_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine
@@ -3795,7 +3963,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_allows_terminal_spawn_when_not_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let terminals_before = engine.runtime.terminals.iter().count();
@@ -3827,7 +3996,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_denies_terminal_spawn_into_mirror_workspace() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine.workspaces[0].mirror = true;
@@ -3870,7 +4040,8 @@ mod forward_exec_tests {
     #[cfg(feature = "gui")]
     #[test]
     fn dispatch_still_forwards_tab_create_in_mirror_workspace() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         engine.workspaces[0].mirror = true;
@@ -3909,7 +4080,8 @@ mod forward_exec_tests {
     #[cfg(not(feature = "gui"))]
     #[test]
     fn dispatch_refuses_tab_create_in_mirror_workspace_in_headless() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         engine.workspaces[0].mirror = true;
@@ -3948,7 +4120,8 @@ mod forward_exec_tests {
     #[test]
     fn dispatch_denies_terminal_spawn_when_pane_override_targets_blocked_workspace() {
         for blocked in ["mirror", "hard-occupied"] {
-            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let (mut core, mut state, mut engine_session, _home) = make_core_state();
+            let mut engine = engine_session.borrow_mut();
             let a = seed(&mut engine);
             let blocked_ws_id = engine.workspaces[0].id;
             let blocked_pane = engine.workspaces[0].pane_layout().all_pane_ids()[0];
@@ -4018,7 +4191,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_allows_tab_create_when_not_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
@@ -4038,7 +4212,8 @@ mod forward_exec_tests {
 
     #[test]
     fn dispatch_denies_convert_entrypoints_when_hard_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         engine
@@ -4078,7 +4253,8 @@ mod forward_exec_tests {
     /// 없는 파일 오류까지 진행하면 점유 검사는 통과한 것이다. occupied 오류와 구분한다.
     #[test]
     fn dispatch_allows_markdown_navigate_when_not_occupied() {
-        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (mut core, mut state, mut engine_session, _home) = make_core_state();
+        let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
         let req = ipc_request(
             "markdown.navigate",
@@ -4142,7 +4318,7 @@ mod bulk_capacity_tests {
     }
 }
 
-impl EngineMut<'_> {
+impl crate::core::engine_access::EngineMut<'_> {
     /// surface를 점유하고 화면 snapshot과 이후 출력을 보낸다. 거절하면 attach_error와 Detach를 보낸다.
     /// hub는 연결을 등록한 허브여야 한다. forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
     pub fn attach_surface_for_stream(
@@ -4461,113 +4637,7 @@ impl EngineMut<'_> {
     }
 }
 
-impl EngineRef<'_> {
-    fn build_workspace_descriptor(
-        &self,
-        idx: usize,
-        workspace_id: u32,
-        class: &AttachSurfaceClass,
-    ) -> serde_json::Value {
-        let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, class);
-        serde_json::json!({
-            "event": "attached_workspace",
-            "workspace_id": workspace_id,
-            "name": self.core.workspaces[idx].name,
-            "tree": tree,
-            "surfaces": surfaces,
-        })
-    }
-
-    /// 초기 attach와 StructuralDelta가 공유하는 트리·surface 정보다.
-    pub(crate) fn build_workspace_tree_surfaces(
-        &self,
-        idx: usize,
-        class: &AttachSurfaceClass,
-    ) -> (serde_json::Value, Vec<serde_json::Value>) {
-        let ws = &self.core.workspaces[idx];
-        let mut kinds: HashMap<u32, &'static str> = HashMap::new();
-        let mut display_names: HashMap<u32, String> = HashMap::new();
-        for pane_id in ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                for tab in &pane.tabs {
-                    tab.for_each_surface(&mut |s| {
-                        if let Some(id) = s.surface_id() {
-                            kinds.insert(id, s.kind());
-                            display_names.insert(id, s.display_name());
-                        }
-                    });
-                }
-            }
-        }
-        let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
-        let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
-
-        let mut surfaces = Vec::new();
-        for &sid in &class.terminals {
-            let (cols, rows) = self
-                .runtime
-                .terminals
-                .get(sid)
-                .map(|t| (t.cols(), t.rows()))
-                .unwrap_or((80, 24));
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "terminal",
-                "cols": cols,
-                "rows": rows,
-            }));
-        }
-        for (sid, kind, plugin_id) in &mesh_whitelisted {
-            let display_name = display_names
-                .get(sid)
-                .cloned()
-                .unwrap_or_else(|| kind.to_string());
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "mesh",
-                "kind": kind,
-                "plugin_id": plugin_id,
-                "display_name": display_name,
-            }));
-        }
-        // explorer는 root만 보낸다. client는 이를 초기 cwd로도 사용한다.
-        for (sid, root) in &class.explorers {
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "explorer",
-                "root": root.to_string_lossy(),
-            }));
-        }
-        // 파일 내용은 별도 요청으로 받는다. file은 표시용 서버 경로이며 client의 로컬 파일 경로가 아니다.
-        for (sid, _kind, file) in &content_whitelisted {
-            let display_name = display_names
-                .get(sid)
-                .cloned()
-                .unwrap_or_else(|| kinds.get(sid).copied().unwrap_or("markdown").to_string());
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "markdown",
-                "file": file.as_ref().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
-                "display_name": display_name,
-            }));
-        }
-        for &sid in class
-            .non_terminals
-            .iter()
-            .chain(mesh_rejected.iter())
-            .chain(content_rejected.iter())
-        {
-            surfaces.push(serde_json::json!({
-                "remote_id": sid,
-                "role": "placeholder",
-                "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
-            }));
-        }
-        (ws.to_attach_tree_json(&self.attach.presentation), surfaces)
-    }
-}
-
-impl EngineMut<'_> {
+impl crate::core::engine_access::EngineMut<'_> {
     fn build_workspace_descriptor(
         &self,
         idx: usize,

@@ -497,7 +497,7 @@ pub fn on_close_remote_attach_popup(
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
     _state: &mut MainViewState,
-    engine: &mut CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -1618,7 +1618,8 @@ mod tests {
     /// 연결 큐에 넣을 때 ready를 가져가므로 같은 결과를 두 번 넣지 않는다.
     #[test]
     fn create_success_pushes_exactly_one_attach() {
-        let (_state, mut engine) = crate::state::tests::test_state();
+        let (_state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let mut st = loaded_state(Vec::new());
         st.ws_sel = Some(WsSel::New);
         st.phase = NewWsPhase::Creating;
@@ -1652,7 +1653,8 @@ mod tests {
         let ready = Arc::clone(st.ready.as_ref().unwrap());
         write_ui(&ctx, st);
 
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         on_close_remote_attach_popup(&ctx, &mut state, &mut engine);
 
         assert!(
@@ -1690,7 +1692,8 @@ mod tests {
                 .is_some()
         );
 
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         on_close_remote_attach_popup(&ctx, &mut state, &mut engine);
 
         assert!(

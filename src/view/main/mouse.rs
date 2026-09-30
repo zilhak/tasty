@@ -2080,8 +2080,9 @@ mod mouse_capture_banner_tests {
     #[test]
     fn banner_is_suppressed_only_for_a_listed_foreground() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut e =
+        let mut e_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let mut e = e_session.borrow_mut();
         e.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
         assert!(!mouse_capture_banner_suppressed(&e, 42));
         e.foreground_names.insert(42, "vim".to_string());

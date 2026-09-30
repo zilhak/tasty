@@ -280,23 +280,24 @@ impl CoreState {
 #[cfg(test)]
 mod tests {
     use super::{AttentionKind, AttentionLevel, effects_of};
-    use crate::core::CoreState;
 
-    fn state() -> CoreState {
+    fn state() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     /// 같은 surface의 알림을 별개 항목으로 검사하기 위해 합치기 시간을 0으로 둔다.
-    fn state_no_coalesce() -> CoreState {
-        let mut s = state();
+    fn state_no_coalesce() -> crate::runtime::engine_session::EngineSession {
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.notifications = crate::notification::NotificationStore::with_coalesce_ms(0);
-        s
+        s_session
     }
 
     #[test]
     fn raise_and_query() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         assert!(!s.attention_dominant_kind(&[7]).is_some());
         s.raise_attention(7, AttentionKind::Completion);
         assert!(s.attention_dominant_kind(&[7]).is_some());
@@ -306,7 +307,8 @@ mod tests {
 
     #[test]
     fn raise_ignores_zero() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(0, AttentionKind::Completion);
         assert!(!s.attention_dominant_kind(&[0]).is_some());
         assert_eq!(
@@ -317,7 +319,8 @@ mod tests {
 
     #[test]
     fn clear_removes() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(3, AttentionKind::Completion);
         s.clear_attention(3);
         assert!(!s.attention_dominant_kind(&[3]).is_some());
@@ -326,7 +329,8 @@ mod tests {
 
     #[test]
     fn count_over_list() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(1, AttentionKind::Completion);
         s.raise_attention(2, AttentionKind::Completion);
         s.raise_attention(5, AttentionKind::Completion);
@@ -342,7 +346,8 @@ mod tests {
 
     #[test]
     fn mark_notification_read_clears_attention_when_no_unread_left() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
         s.raise_attention(100, AttentionKind::Completion);
         assert!(s.attention_dominant_kind(&[100]).is_some());
@@ -354,7 +359,8 @@ mod tests {
 
     #[test]
     fn mark_notification_read_keeps_attention_when_sibling_unread_remains() {
-        let mut s = state_no_coalesce();
+        let mut s_session = state_no_coalesce();
+        let mut s = s_session.borrow_mut();
         let id1 = s
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
@@ -381,7 +387,8 @@ mod tests {
 
     #[test]
     fn mark_notification_read_unknown_id_is_noop() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(100, AttentionKind::Completion);
         s.mark_notification_read(9999);
         assert!(s.attention_dominant_kind(&[100]).is_some());
@@ -389,7 +396,8 @@ mod tests {
 
     #[test]
     fn mark_all_notifications_read_clears_all_unread_surfaces() {
-        let mut s = state_no_coalesce();
+        let mut s_session = state_no_coalesce();
+        let mut s = s_session.borrow_mut();
         s.notifications.add(1, 100, "t1".into(), "b1".into());
         s.notifications.add(1, 100, "t2".into(), "b2".into());
         s.notifications.add(1, 200, "t3".into(), "b3".into());
@@ -404,7 +412,8 @@ mod tests {
 
     #[test]
     fn mark_all_notifications_read_leaves_unrelated_surface_attention_untouched() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
         s.notifications.mark_read(id); // 이미 읽음 처리된 알림
         s.raise_attention(100, AttentionKind::Completion); // 알림과 무관한 producer(toast 등)가 건 attention
@@ -422,7 +431,8 @@ mod tests {
 
     #[test]
     fn attention_forwards_only_on_change() {
-        let mut e = state();
+        let mut e_session = state();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
 
@@ -451,7 +461,8 @@ mod tests {
 
     #[test]
     fn attention_forwards_ignores_unoccupied_surfaces() {
-        let mut e = state();
+        let mut e_session = state();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert!(e.attention_forwards().is_empty());
@@ -459,7 +470,8 @@ mod tests {
 
     #[test]
     fn attention_forwards_resets_on_reacquire() {
-        let mut e = state();
+        let mut e_session = state();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
@@ -483,7 +495,8 @@ mod tests {
     /// 해제와 재획득 사이에 전송 후보 조회가 없어도 새 holder를 구분해야 한다.
     #[test]
     fn attention_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
-        let mut e = state();
+        let mut e_session = state();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
@@ -506,7 +519,8 @@ mod tests {
 
     #[test]
     fn mirror_attention_lands_in_the_same_store_consumers_read() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(11, Some(AttentionKind::NeedsInput));
         assert_eq!(s.attention_kind(11), Some(AttentionKind::NeedsInput));
         assert_eq!(
@@ -524,7 +538,8 @@ mod tests {
 
     #[test]
     fn forget_mirror_surface_attention_drops_the_record() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(12, Some(AttentionKind::Completion));
         s.forget_mirror_surface_attention(12);
         assert_eq!(s.attention_kind(12), None);
@@ -532,7 +547,8 @@ mod tests {
 
     #[test]
     fn mirror_apply_does_not_touch_forward_cache() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(13, Some(AttentionKind::NeedsInput));
         assert!(s.last_forwarded_attention.is_empty());
         s.forget_mirror_surface_attention(13);
@@ -576,7 +592,8 @@ mod tests {
 
     #[test]
     fn dominant_kind_prefers_needs_input_over_completion() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(1, AttentionKind::Completion);
         s.raise_attention(2, AttentionKind::NeedsInput);
         assert_eq!(
@@ -591,13 +608,15 @@ mod tests {
 
     #[test]
     fn dominant_kind_none_when_no_attention() {
-        let s = state();
+        let mut s_session = state();
+        let s = s_session.borrow_mut();
         assert_eq!(s.attention_dominant_kind(&[1, 2, 3]), None);
     }
 
     #[test]
     fn dominant_kind_single_completion() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(5, AttentionKind::Completion);
         assert_eq!(
             s.attention_dominant_kind(&[5]),
@@ -607,7 +626,8 @@ mod tests {
 
     #[test]
     fn raise_again_replaces_kind() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(1, AttentionKind::NeedsInput);
         assert_eq!(s.attention_kind(1), Some(AttentionKind::NeedsInput));
         s.raise_attention(1, AttentionKind::Completion);
@@ -615,16 +635,18 @@ mod tests {
     }
 
     /// 실제 attach 없이 workspace의 mirror 플래그로 분기만 검사한다.
-    fn mirror_state() -> (CoreState, u32) {
-        let mut s = state();
+    fn mirror_state() -> (crate::runtime::engine_session::EngineSession, u32) {
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.workspaces[0].mirror = true;
         let sid = s.workspaces[0].all_surface_ids()[0];
-        (s, sid)
+        (s_session, sid)
     }
 
     #[test]
     fn clear_attention_reports_the_removal_edge_only_once() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         assert!(!s.clear_attention(7), "레코드가 없으면 제거 결과는 false다");
 
         s.raise_attention(7, AttentionKind::Completion);
@@ -637,7 +659,8 @@ mod tests {
 
     #[test]
     fn mirror_clear_queues_exactly_one_forward_edge() {
-        let (mut s, sid) = mirror_state();
+        let (mut s_session, sid) = mirror_state();
+        let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
         assert!(s.pending_attention_clear_forward.is_empty());
 
@@ -661,7 +684,8 @@ mod tests {
 
     #[test]
     fn non_mirror_clear_does_not_queue_a_forward() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         let sid = s.workspaces[0].all_surface_ids()[0];
         s.raise_attention(sid, AttentionKind::Completion);
 
@@ -674,7 +698,8 @@ mod tests {
 
     #[test]
     fn mirror_notification_read_queues_the_clear_forward() {
-        let (mut s, sid) = mirror_state();
+        let (mut s_session, sid) = mirror_state();
+        let mut s = s_session.borrow_mut();
         let ws_id = s.workspaces[0].id;
         let nid = s
             .notifications
@@ -697,7 +722,8 @@ mod tests {
 
     #[test]
     fn mirror_mark_all_read_queues_the_clear_forward() {
-        let (mut s, sid) = mirror_state();
+        let (mut s_session, sid) = mirror_state();
+        let mut s = s_session.borrow_mut();
         let ws_id = s.workspaces[0].id;
         s.notifications.add(ws_id, sid, "t".into(), "b".into());
         s.set_mirror_surface_attention(sid, Some(AttentionKind::Completion));
@@ -715,7 +741,8 @@ mod tests {
 
     #[test]
     fn server_push_clear_and_teardown_do_not_queue_a_forward() {
-        let (mut s, sid) = mirror_state();
+        let (mut s_session, sid) = mirror_state();
+        let mut s = s_session.borrow_mut();
 
         s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
         s.set_mirror_surface_attention(sid, None); // 서버가 내려준 해제
@@ -736,7 +763,8 @@ mod tests {
     /// 렌더링 없이 로컬 해제 허용 조건만 검사한다.
     #[test]
     fn local_clear_is_disallowed_exactly_while_hard_occupied() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         assert!(
             s.local_attention_clear_allowed(42),
             "점유 없는 surface 는 로컬 해제 대상이다"
@@ -761,7 +789,8 @@ mod tests {
 
     #[test]
     fn soft_occupancy_does_not_gate_the_local_clear() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.attach
             .acquire_soft(42, 7, Some("child".into()))
             .expect("soft lock");
@@ -777,7 +806,8 @@ mod tests {
 
     #[test]
     fn hard_occupied_surface_survives_the_local_focus_clear() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         s.raise_attention(42, AttentionKind::NeedsInput);
         s.attach.acquire(42, 1).expect("hard lock");
 
@@ -798,7 +828,8 @@ mod tests {
 
     #[test]
     fn the_holders_clear_is_not_blocked_by_the_gate() {
-        let mut s = state();
+        let mut s_session = state();
+        let mut s = s_session.borrow_mut();
         let sid = s.workspaces[0].all_surface_ids()[0];
         let ws = s.workspaces[0].id;
         s.attach
@@ -823,7 +854,8 @@ mod tests {
 
     #[test]
     fn marking_a_notification_read_keeps_attention_while_hard_occupied() {
-        let mut s = state_no_coalesce();
+        let mut s_session = state_no_coalesce();
+        let mut s = s_session.borrow_mut();
         let occupied_read = s
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
@@ -863,7 +895,8 @@ mod tests {
 
     #[test]
     fn mark_all_read_skips_hard_occupied_surfaces_only() {
-        let mut s = state_no_coalesce();
+        let mut s_session = state_no_coalesce();
+        let mut s = s_session.borrow_mut();
         let occupied = s
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
@@ -908,7 +941,8 @@ mod tests {
 
     #[test]
     fn the_gate_does_not_block_the_mirror_users_clear() {
-        let (mut s, sid) = mirror_state();
+        let (mut s_session, sid) = mirror_state();
+        let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
 
         assert!(

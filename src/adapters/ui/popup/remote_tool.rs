@@ -301,7 +301,7 @@ pub fn on_close_remote_tool_popup(
 pub fn draw_remote_tool_popup(
     ui: &mut egui::Ui,
     _state: &mut MainViewState,
-    _engine: &mut CoreState,
+    _engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -2505,7 +2505,8 @@ mod tests {
         );
         write_filter(&ctx, ["ssh".to_string()].into_iter().collect());
 
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         on_close_remote_tool_popup(&ctx, &mut state, &mut engine);
 
         assert!(

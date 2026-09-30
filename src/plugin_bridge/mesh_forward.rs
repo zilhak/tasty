@@ -152,10 +152,13 @@ mod tests {
     use tasty_terminal::waker_factory::NoopWakerFactory;
 
     /// 터미널 대신 mesh surface를 만들고 client가 hard 점유·구독한 engine을 준비한다.
-    fn make_parked_engine(client_id: AttachClientId) -> (CoreState, u32) {
+    fn make_parked_engine(
+        client_id: AttachClientId,
+    ) -> (crate::runtime::engine_session::EngineSession, u32) {
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("core state");
+        let mut engine = engine_session.borrow_mut();
 
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         let surface_id = engine.workspaces[0]
@@ -190,7 +193,7 @@ mod tests {
             .mesh_mirror
             .upsert(surface_id, client_id, 800, 600, 2.0, None, true);
 
-        (engine, surface_id)
+        (engine_session, surface_id)
     }
 
     // 여러 parked engine의 구독이 각각 처리되는지 검사한다.
@@ -198,29 +201,29 @@ mod tests {
     fn multiple_parked_engines_are_each_serviced_independently() {
         let stream_hub = StreamHub::new();
 
-        let mut parked: Vec<(CoreState, u32)> =
+        let mut parked: Vec<(crate::runtime::engine_session::EngineSession, u32)> =
             vec![make_parked_engine(101), make_parked_engine(202)];
         // 플러그인 프로세스는 실행하지 않으며 구독 상태가 처리되는지만 검사한다.
         let mgr = PluginManager::with_registries(
             Arc::new(NoopWakerFactory),
-            parked[0].0.file_format.clone(),
-            parked[0].0.file_handler.clone(),
+            parked[0].0.core_state.file_format.clone(),
+            parked[0].0.core_state.file_handler.clone(),
         );
 
         for (engine, _sid) in parked.iter_mut() {
-            forward_mesh_frames_for_engine(engine, &mgr, &stream_hub);
+            forward_mesh_frames_for_engine(&mut engine.borrow_mut(), &mgr, &stream_hub);
         }
 
         for (engine, sid) in parked.iter_mut() {
             assert!(
-                !engine.mesh_mirror.take_dirty(*sid),
+                !engine.core_state.mesh_mirror.take_dirty(*sid),
                 "parked engine's mesh mirror subscription should have been driven"
             );
             assert!(
-                !engine.mesh_mirror.take_need_full_textures(*sid),
+                !engine.core_state.mesh_mirror.take_need_full_textures(*sid),
                 "parked engine's need_full_textures should have been consumed"
             );
-            assert!(engine.attach.is_hard_occupied(*sid));
+            assert!(engine.core_state.attach.is_hard_occupied(*sid));
         }
     }
 }

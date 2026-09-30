@@ -1020,7 +1020,8 @@ mod tests {
         use crate::ipc::handler::check_request;
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         for method in ["window.create", "someplugin.do_thing", "workspace.create"] {
             for (key, ok) in [
                 (String::new(), false),
@@ -1125,7 +1126,8 @@ mod tests {
 
         let _home = crate::test_support::TastyHomeGuard::new();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let base = engine.workspaces.len();
 
         for _ in 0..2 {

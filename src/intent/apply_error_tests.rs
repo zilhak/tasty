@@ -7,13 +7,13 @@ use crate::core::engine_access::EngineMut;
 fn fixture() -> (
     crate::core::Core,
     crate::state::RequestContext,
-    crate::core::CoreState,
+    crate::runtime::engine_session::EngineSession,
 ) {
-    let (state, engine) = crate::state::tests::test_state();
+    let (state, engine_session) = crate::state::tests::test_state();
     (
         crate::ipc::handler::cli_entry_tests::test_core(),
         state,
-        engine,
+        engine_session,
     )
 }
 
@@ -38,7 +38,8 @@ fn user() -> IntentOrigin {
 
 #[test]
 fn an_unforwardable_block_toasts_only_for_the_user() {
-    let (_core, mut state, mut engine) = fixture();
+    let (_core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     report_apply_error(&mut state, &mut engine, &agent(), "t", &blocked(false));
     assert_eq!(
         state.toasts.len(),
@@ -56,7 +57,8 @@ fn an_unforwardable_block_toasts_only_for_the_user() {
 
 #[test]
 fn a_withdrawn_kind_refusal_toasts_only_for_the_user() {
-    let (_core, mut state, mut engine) = fixture();
+    let (_core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let err = anyhow::Error::new(crate::core::surface_registry::SurfaceKindWithdrawn {
         kind: "markdown".to_string(),
         plugin_id: "com.tasty.markdown".to_string(),
@@ -79,7 +81,8 @@ fn a_withdrawn_kind_refusal_toasts_only_for_the_user() {
 /// 원격 실패 표시를 생략하는 표지가 에이전트 요청에만 붙는지 검사한다.
 #[test]
 fn an_agent_forward_is_marked_for_a_silent_failure() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let surface_id = *state
         .active_workspace(&engine)
         .all_surface_ids()
@@ -141,7 +144,8 @@ fn an_agent_forward_is_marked_for_a_silent_failure() {
 #[test]
 fn a_forwarded_block_is_user_triggered_only_for_the_user() {
     for (origin, expect_user) in [(user(), true), (agent(), false)] {
-        let (mut core, mut state, mut engine) = fixture();
+        let (mut core, mut state, mut engine_session) = fixture();
+        let mut engine = engine_session.borrow_mut();
         let source = state.focused_surface_id(&engine).expect("fixture surface");
         state.add_tab(&mut engine).expect("second tab");
         let target = state.focused_surface_id(&engine).expect("second surface");
@@ -185,7 +189,8 @@ fn a_forwarded_block_is_user_triggered_only_for_the_user() {
 
 #[test]
 fn a_preset_apply_failure_toasts_only_for_the_user() {
-    let (core, mut state, mut engine) = fixture();
+    let (core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let apply = || Intent::ApplyPreset {
         kind: tasty_presets::PresetKind::Tab,
         name: "no-such-preset-apply-error-tests".to_string(),
@@ -214,11 +219,12 @@ fn a_preset_apply_failure_toasts_only_for_the_user() {
 // 이름 검사에서 거절되므로 디스크에 쓰지 않고 저장 실패를 시험한다.
 #[test]
 fn a_preset_save_failure_toasts_only_for_the_user() {
-    let (core, mut state, mut engine) = fixture();
+    let (core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let ws = &engine.workspaces[0];
     let captured = crate::intent::preset_capture::capture_workspace_preset(
         &crate::model::StructurePresentationSnapshot::default(),
-        &engine,
+        &engine.as_ref(),
         ws,
         None,
         &engine.surface_registry,
@@ -254,7 +260,8 @@ fn a_preset_save_failure_toasts_only_for_the_user() {
 /// 플러그인을 다시 등록한 경우도 함께 검사한다.
 #[test]
 fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "probe_recent",
         "display_name_i18n_key": "surface.kind.markdown",
@@ -322,7 +329,8 @@ fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
 /// mirror surface의 경로는 원격 파일이라 로컬 최근 목록에 남기면 로컬 경로로 다시 열린다.
 #[test]
 fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "probe_recent_mirror",
         "display_name_i18n_key": "surface.kind.markdown",
@@ -409,7 +417,8 @@ fn new_tab_with_file(
 /// mirror pane에 새 탭을 열면 경로가 원격 파일이라 로컬 최근 목록에 기록하지 않는다.
 #[test]
 fn a_new_tab_in_a_mirror_pane_leaves_no_local_recent_entry() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     register_recent_probe(&engine, "probe_recent_newtab", "com.x.probe_newtab");
     engine.workspaces[0].mirror = true;
 
@@ -435,7 +444,8 @@ fn a_new_tab_in_a_mirror_pane_leaves_no_local_recent_entry() {
 /// 로컬 pane의 새 탭은 계속 최근 목록에 기록한다.
 #[test]
 fn a_new_tab_in_a_local_pane_records_the_recent_entry() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     register_recent_probe(
         &engine,
         "probe_recent_newtab_local",
@@ -463,7 +473,8 @@ fn a_new_tab_in_a_local_pane_records_the_recent_entry() {
 /// Intent 큐를 거치지 않는 IPC 구조 요청에도 silent_failure가 붙어야 한다.
 #[test]
 fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {
-    let (mut core, mut state, mut engine) = fixture();
+    let (mut core, mut state, mut engine_session) = fixture();
+    let mut engine = engine_session.borrow_mut();
     let ws = state.active_workspace(&engine);
     let surface_id = *ws.all_surface_ids().first().expect("fixture surface");
     let pane_id = engine.find_pane_for_surface(surface_id).expect("pane");

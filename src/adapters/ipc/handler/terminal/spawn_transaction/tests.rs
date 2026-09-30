@@ -3,7 +3,8 @@ use super::*;
 #[test]
 fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let parent = engine.workspaces[0].all_surface_ids()[0];
     let pane = engine.workspaces[0].pane_layout().all_pane_ids()[0];
     // An owned empty surface cannot accept a terminal command. This injects a

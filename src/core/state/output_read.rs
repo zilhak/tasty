@@ -1,5 +1,3 @@
-use super::CoreState;
-
 use crate::core::engine_access::EngineMut;
 
 impl EngineMut<'_> {

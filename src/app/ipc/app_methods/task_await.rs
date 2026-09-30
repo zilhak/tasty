@@ -2,7 +2,6 @@
 
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
-use crate::core::CoreState;
 use crate::core::engine_access::EngineRef;
 use crate::ipc::server::{IpcCommand, send_response};
 
@@ -44,9 +43,9 @@ impl App {
 
 /// 창, parked, 임시 engine 순서로 받은 engine 중 workspace를 가진 것을 고른다.
 fn task_await_engine<'a>(
-    mut engines: impl Iterator<Item = &'a CoreState>,
+    mut engines: impl Iterator<Item = EngineRef<'a>>,
     workspace_id: u32,
-) -> Option<&'a CoreState> {
+) -> Option<EngineRef<'a>> {
     engines.find(|e| e.has_workspace(workspace_id))
 }
 
@@ -60,12 +59,13 @@ mod tests {
 
     use super::*;
 
-    fn engine_with_workspace(workspace_id: u32) -> CoreState {
+    fn engine_with_workspace(workspace_id: u32) -> crate::runtime::engine_session::EngineSession {
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].id = workspace_id;
-        engine
+        engine_session
     }
 
     fn ready_task(core: &crate::core::Core, engine: &EngineRef<'_>, workspace_id: u32) -> String {
@@ -90,10 +90,12 @@ mod tests {
 
     #[test]
     fn the_engine_owning_the_workspace_is_picked_over_the_first_one() {
-        let first = engine_with_workspace(1);
-        let owner = engine_with_workspace(2);
-        let picked =
-            task_await_engine([&first, &owner].into_iter(), 2).expect("소유 engine이 있다");
+        let mut first_session = engine_with_workspace(1);
+        let first = first_session.borrow_mut();
+        let mut owner_session = engine_with_workspace(2);
+        let owner = owner_session.borrow_mut();
+        let picked = task_await_engine([first.as_ref(), owner.as_ref()].into_iter(), 2)
+            .expect("소유 engine이 있다");
         assert!(
             Arc::ptr_eq(picked.task_scope.waker_hub(), owner.task_scope.waker_hub()),
             "두 번째 engine의 workspace를 기다리면 그 engine의 허브를 써야 한다"
@@ -102,20 +104,25 @@ mod tests {
 
     #[test]
     fn a_workspace_no_engine_owns_picks_nothing() {
-        let first = engine_with_workspace(1);
-        let second = engine_with_workspace(2);
-        assert!(task_await_engine([&first, &second].into_iter(), 3).is_none());
+        let mut first_session = engine_with_workspace(1);
+        let first = first_session.borrow_mut();
+        let mut second_session = engine_with_workspace(2);
+        let second = second_session.borrow_mut();
+        assert!(task_await_engine([first.as_ref(), second.as_ref()].into_iter(), 3).is_none());
     }
 
     /// 두 engine이 메모리를 공유할 때 두 번째 engine의 작업 완료가 대기자에게 도달해야 한다.
     #[test]
     fn a_task_in_the_second_engine_wakes_its_awaiter() {
         let core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let first = engine_with_workspace(1);
-        let owner = engine_with_workspace(2);
-        let task_id = ready_task(&core, &owner, 2);
+        let mut first_session = engine_with_workspace(1);
+        let first = first_session.borrow_mut();
+        let mut owner_session = engine_with_workspace(2);
+        let owner = owner_session.borrow_mut();
+        let task_id = ready_task(&core, &owner.as_ref(), 2);
 
-        let picked = task_await_engine([&first, &owner].into_iter(), 2).expect("engine");
+        let picked =
+            task_await_engine([first.as_ref(), owner.as_ref()].into_iter(), 2).expect("engine");
         let awaiter = core.tasks.awaiter(&picked.task_scope);
         let params = json!({ "workspace_id": 2, "id": task_id, "timeout_ms": 3_000 });
         let waiting = std::thread::spawn(move || {

@@ -589,7 +589,8 @@ mod mirror_tests {
     fn tab_and_pane_presets_are_refused_on_a_mirror_workspace() {
         let dir = tempfile::tempdir().expect("tmp");
         let core = core_with_presets(dir.path());
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].mirror = true;
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
@@ -630,7 +631,8 @@ mod mirror_tests {
     fn tab_and_pane_presets_still_apply_on_a_local_workspace() {
         let dir = tempfile::tempdir().expect("tmp");
         let core = core_with_presets(dir.path());
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let ws_id = engine.workspaces[0].id;
         let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
 

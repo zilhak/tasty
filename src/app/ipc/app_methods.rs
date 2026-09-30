@@ -259,10 +259,10 @@ impl App {
             .engines()
             .window_pairs()
             .map(|(id, main, engine)| {
-                let mut info = host_ipc::handler::system_info_fields(&main.state, engine);
+                let mut info = host_ipc::handler::system_info_fields(&main.state, engine.core);
                 info["id"] = serde_json::json!(u64::from(id));
                 info["focused"] = serde_json::json!(focused_id == Some(id));
-                info["title"] = serde_json::json!(main.state.active_workspace(engine).name);
+                info["title"] = serde_json::json!(main.state.active_workspace(engine.core).name);
                 info
             })
             .collect();
@@ -694,7 +694,7 @@ impl App {
                     Some((_, m, engine)) => host_ipc::handler::session::handle_request_permission(
                         core,
                         &mut m.state,
-                        engine,
+                        engine.core,
                         caller,
                         id,
                         &cmd.request.params,

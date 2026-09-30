@@ -11,21 +11,20 @@ mod created_window_tests;
 
 use crate::app::App;
 use crate::app::window_access::engines_mut;
-use crate::core::CoreState;
 use crate::core::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        for (s, engine) in engines_mut!(self).sessions() {
-            s.detect_focus_change(engine);
-            s.detect_workspace_activation(engine);
-            s.detect_tab_focus_change(engine);
-            s.detect_tab_lifecycle(engine);
+        for (s, mut engine) in engines_mut!(self).sessions() {
+            s.detect_focus_change(engine.core);
+            s.detect_workspace_activation(engine.core);
+            s.detect_tab_focus_change(engine.core);
+            s.detect_tab_lifecycle(engine.core);
             let events = s.take_pending_host_events();
-            reproject_osc_title_on_focus(engine, &events);
-            resolve_hook_fired_task_waits(&self.core, engine, &events);
+            reproject_osc_title_on_focus(&mut engine, &events);
+            resolve_hook_fired_task_waits(&self.core, &engine.as_ref(), &events);
             drained.extend(events);
         }
         if drained.is_empty() {
@@ -96,7 +95,10 @@ impl App {
                 PendingHostEvent::WorkspaceCreated { workspace_id, name } => {
                     // 쌓을 때는 창을 모르므로 발행 시점의 소유 창을 찾는다.
                     let windows = self.engines.windows_in(self.view.views.keys().copied());
-                    let window = workspace::created_window(windows, workspace_id);
+                    let window = workspace::created_window(
+                        windows.map(|(wid, e)| (wid, e.core)),
+                        workspace_id,
+                    );
                     workspace::emit_created(mgr, lua, af!(), workspace_id, window, name)
                 }
                 PendingHostEvent::WorkspaceClosed { workspace_id } => {

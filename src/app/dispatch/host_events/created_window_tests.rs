@@ -6,7 +6,6 @@ use winit::window::WindowId;
 
 use super::workspace::created_window;
 use crate::app::engine_registry::EngineRegistry;
-use crate::core::CoreState;
 use crate::state::{MainViewState, PendingHostEvent};
 
 const WINDOW: u64 = 42;
@@ -55,7 +54,10 @@ fn create_from_ipc(state: &mut MainViewState, engine: &mut EngineMut<'_>) -> u32
 }
 
 /// engine을 창 하나에 붙인 registry. 발행 경로가 보는 창 목록과 같은 순회를 쓴다.
-fn registry_with_window(engine: CoreState, window: u64) -> EngineRegistry {
+fn registry_with_window(
+    engine: crate::runtime::engine_session::EngineSession,
+    window: u64,
+) -> EngineRegistry {
     let mut reg = EngineRegistry::default();
     let id = reg
         .insert_pending(engine)
@@ -69,33 +71,41 @@ fn window_id_at_emission(reg: &EngineRegistry, windows: &[u64], workspace_id: u3
         .iter()
         .map(|w| WindowId::from(*w))
         .collect::<Vec<_>>();
-    created_window(reg.windows_in(order.into_iter()), workspace_id).id()
+    created_window(
+        reg.windows_in(order.into_iter())
+            .map(|(wid, e)| (wid, e.core)),
+        workspace_id,
+    )
+    .id()
 }
 
 #[test]
 fn a_ui_new_workspace_in_a_window_reports_that_window() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let ws = create_from_the_ui(&mut state, &mut engine);
-    let reg = registry_with_window(engine, WINDOW);
+    let reg = registry_with_window(engine_session, WINDOW);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), WINDOW);
 }
 
 #[test]
 fn an_ipc_workspace_create_in_a_window_reports_that_window() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let ws = create_from_ipc(&mut state, &mut engine);
-    let reg = registry_with_window(engine, WINDOW);
+    let reg = registry_with_window(engine_session, WINDOW);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), WINDOW);
 }
 
 #[test]
 fn only_the_window_that_owns_the_workspace_is_reported() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let ws = create_from_the_ui(&mut state, &mut engine);
-    let (_, other_engine) = crate::state::tests::test_state();
-    let mut reg = registry_with_window(other_engine, OTHER_WINDOW);
+    let (_, other_engine_session) = crate::state::tests::test_state();
+    let mut reg = registry_with_window(other_engine_session, OTHER_WINDOW);
     let id = reg
-        .insert_pending(engine)
+        .insert_pending(engine_session)
         .unwrap_or_else(|_| panic!("pending engine already present"));
     reg.attach_window(WindowId::from(WINDOW), id);
     assert_eq!(
@@ -106,16 +116,18 @@ fn only_the_window_that_owns_the_workspace_is_reported() {
 
 #[test]
 fn a_workspace_in_a_parked_engine_reports_zero() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let ws = create_from_the_ui(&mut state, &mut engine);
-    let mut reg = registry_with_window(engine, WINDOW);
+    let mut reg = registry_with_window(engine_session, WINDOW);
     reg.park(WindowId::from(WINDOW), state);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), 0);
 }
 
 #[test]
 fn a_workspace_closed_before_emission_reports_zero() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let ws = create_from_ipc(&mut state, &mut engine);
     let idx = engine
         .workspaces
@@ -123,6 +135,6 @@ fn a_workspace_closed_before_emission_reports_zero() {
         .position(|w| w.id == ws)
         .expect("created workspace");
     engine.workspaces.remove(idx);
-    let reg = registry_with_window(engine, WINDOW);
+    let reg = registry_with_window(engine_session, WINDOW);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), 0);
 }

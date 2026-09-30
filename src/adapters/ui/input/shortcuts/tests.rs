@@ -282,9 +282,14 @@ fn option_binding_never_matches_on_non_macos() {
     assert!(!matches_binding("option+t", &key, mods_none()));
 }
 
-fn fresh_state() -> (crate::state::MainViewState, crate::core::CoreState) {
+fn fresh_state() -> (
+    crate::state::MainViewState,
+    crate::runtime::engine_session::EngineSession,
+) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+    let mut engine_session =
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+    let mut engine = engine_session.borrow_mut();
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -293,12 +298,13 @@ fn fresh_state() -> (crate::state::MainViewState, crate::core::CoreState) {
             tasty_memory::testing::InMemoryStorage::new(),
         ));
     let state = crate::state::MainViewState::new(&mut engine, preset_store, memory);
-    (state, engine)
+    (state, engine_session)
 }
 
 #[test]
 fn zoom_in_increments_terminal_font_size_override_only() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     // Pin the default so the test is independent of the user's settings file.
     engine.settings.appearance.default_font.font_size = 14.0;
     engine.settings.appearance.terminal_font.font_size = None;
@@ -319,7 +325,8 @@ fn zoom_in_increments_terminal_font_size_override_only() {
 
 #[test]
 fn zoom_out_decrements_terminal_font_size_override() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.appearance.terminal_font.font_size = Some(20.0);
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
@@ -336,7 +343,8 @@ fn zoom_out_decrements_terminal_font_size_override() {
 
 #[test]
 fn zoom_reset_clears_terminal_font_size_override() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.appearance.terminal_font.font_size = Some(20.0);
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
@@ -350,7 +358,8 @@ fn zoom_reset_clears_terminal_font_size_override() {
 
 #[test]
 fn zoom_in_clamps_at_72px() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.appearance.terminal_font.font_size = Some(71.5);
     MainView::handle_zoom_shortcut(
         &mut state,
@@ -366,7 +375,8 @@ fn zoom_in_clamps_at_72px() {
 
 #[test]
 fn zoom_out_clamps_at_6px() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.appearance.terminal_font.font_size = Some(6.5);
     MainView::handle_zoom_shortcut(
         &mut state,
@@ -396,7 +406,8 @@ fn add_test_workspace(state: &mut crate::state::MainViewState, engine: &mut Engi
 
 #[test]
 fn custom_tab_slot_key_switches_correct_tab() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap();
     state.goto_tab_in_pane(&mut engine, 0);
@@ -424,7 +435,8 @@ fn custom_tab_slot_key_switches_correct_tab() {
 
 #[test]
 fn tab_next_prev_keys_cycle_focused_pane_tabs() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap(); // 3 tabs
     state.goto_tab_in_pane(&mut engine, 0);
@@ -467,7 +479,8 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
 
 #[test]
 fn workspace_next_prev_keys_trigger_category_switch() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // ws 1
     add_test_workspace(&mut state, &mut engine); // ws 2
     state.switch_workspace(&mut engine, 0);
@@ -500,7 +513,8 @@ fn workspace_next_prev_keys_trigger_category_switch() {
 
 #[test]
 fn workspace_slot_key_switches_workspace() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // ws 1
     add_test_workspace(&mut state, &mut engine); // ws 2
     state.switch_workspace(&mut engine, 0);
@@ -521,7 +535,8 @@ fn workspace_slot_key_switches_workspace() {
 
 #[test]
 fn wrong_modifier_and_unbound_key_return_false() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap(); // 2 tabs
     state.goto_tab_in_pane(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
@@ -560,7 +575,8 @@ fn wrong_modifier_and_unbound_key_return_false() {
 
 #[test]
 fn category_combo_routes_to_category_switch() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws0 (normal)
     add_test_workspace(&mut state, &mut engine); // ws1
@@ -585,7 +601,8 @@ fn category_combo_routes_to_category_switch() {
 
 #[test]
 fn category_next_prev_keys_cycle_categories() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws1
     add_test_workspace(&mut state, &mut engine); // ws2
@@ -638,7 +655,8 @@ fn category_next_prev_keys_cycle_categories() {
 
 #[test]
 fn category_next_prev_keys_noop_when_folders_disabled() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.workspace_categories_enabled = false;
     add_test_workspace(&mut state, &mut engine);
     state.switch_workspace(&mut engine, 0);
@@ -659,7 +677,8 @@ fn category_next_prev_keys_noop_when_folders_disabled() {
 
 #[test]
 fn individual_tab_axis_slot_and_next_prev_dispatch() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap(); // 3 tabs
     state.goto_tab_in_pane(&mut engine, 0);
@@ -728,7 +747,8 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
 
 #[test]
 fn individual_workspace_axis_slot_dispatch() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // ws 1
     add_test_workspace(&mut state, &mut engine); // ws 2
     state.switch_workspace(&mut engine, 0);
@@ -755,7 +775,8 @@ fn individual_workspace_axis_slot_dispatch() {
 
 #[test]
 fn individual_category_axis_respects_folders_gate() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws0(normal) 이미 있으니 ws1 추가
     let cat = engine.create_category("Services").unwrap();
@@ -801,7 +822,8 @@ fn individual_category_axis_respects_folders_gate() {
 
 #[test]
 fn axis_combos_do_not_cross_route() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     state.add_tab(&mut engine).unwrap(); // 2 tabs
     state.goto_tab_in_pane(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
@@ -871,7 +893,8 @@ fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
 
 #[test]
 fn focused_workspace_category_returns_active_workspace_category() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     let work = engine.create_category("Work").unwrap();
     add_test_workspace(&mut state, &mut engine); // ws1, 아직 normal
     let ws1_id = engine.workspaces[1].id;
@@ -886,14 +909,16 @@ fn focused_workspace_category_returns_active_workspace_category() {
 
 #[test]
 fn focused_workspace_category_is_none_when_parked() {
-    let (state, mut engine) = fresh_state();
+    let (state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     engine.workspaces.clear(); // parked 상태 (마지막 윈도우가 닫힌 뒤) 재현.
     assert_eq!(super::focused_workspace_category(&state, &engine), None);
 }
 
 #[test]
 fn shortcut_new_workspace_inherits_active_category() {
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     let work = engine.create_category("Work").unwrap();
     add_test_workspace(&mut state, &mut engine); // ws1
     let ws1_id = engine.workspaces[1].id;
@@ -922,7 +947,8 @@ fn shortcut_new_workspace_inherits_active_category() {
 #[test]
 fn shortcut_new_workspace_stays_normal_when_categories_off() {
     // 카테고리가 꺼져 있으면 새 워크스페이스도 기본 카테고리를 사용한다.
-    let (mut state, mut engine) = fresh_state();
+    let (mut state, mut engine_session) = fresh_state();
+    let mut engine = engine_session.borrow_mut();
     assert!(!engine.settings.general.workspace_categories_enabled);
 
     let kb = crate::settings::KeybindingSettings::default();

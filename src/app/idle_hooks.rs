@@ -8,7 +8,7 @@ impl App {
     pub(crate) fn poll_idle_timeout_hooks(&mut self) {
         let exec = self.core.hook_executor();
 
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             let fired = engine.fire_idle_timeout_hooks(&exec);
             if fired.is_empty() {
                 continue;
@@ -20,7 +20,7 @@ impl App {
         }
 
         // 화면이 없는 parked engine도 계속 판정한다.
-        for (state, engine) in self.engines_mut().parked_sessions() {
+        for (state, mut engine) in self.engines_mut().parked_sessions() {
             for event in engine.fire_idle_timeout_hooks(&exec) {
                 state.enqueue_host_event(event);
             }

@@ -679,7 +679,7 @@ mod tests {
         assert!(out.actions.is_empty());
     }
 
-    fn test_engine() -> crate::core::CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -693,7 +693,8 @@ mod tests {
     /// 로컬 PTY가 없는 mirror surface도 원격 busy 상태로 탭 표시를 갱신한다.
     #[test]
     fn compute_tab_is_busy_true_for_mirror_only_surface() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let sid = 4242;
         engine.set_mirror_surface_busy(sid, true);
         let tabs = vec![tab_with_surface(sid)];
@@ -705,7 +706,8 @@ mod tests {
 
     #[test]
     fn compute_tab_is_busy_false_when_idle() {
-        let engine = test_engine();
+        let mut engine_session = test_engine();
+        let engine = engine_session.borrow_mut();
         let sid = 4343;
         let tabs = vec![tab_with_surface(sid)];
 

@@ -13,7 +13,6 @@ use winit::window::WindowId;
 
 use crate::app::App;
 use crate::app::engine_registry::{EngineRegistry, ParkedView};
-use crate::core::CoreState;
 use crate::core::layout_persistence::LayoutSlotId;
 use crate::runtime::engine_session::EngineId;
 use crate::state::MainViewState;
@@ -282,7 +281,7 @@ impl<'a> EngineScanMut<'a> {
         rid: crate::core::request_target::ResourceId,
     ) -> Option<(&'a mut MainViewState, EngineMut<'a>)> {
         self.parked_sessions()
-            .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
+            .find(|(_, e)| crate::core::request_target::engine_has_resource(&e.as_ref(), rid))
     }
 
     pub(crate) fn pending(self) -> Option<EngineMut<'a>> {
@@ -411,12 +410,12 @@ impl App {
     }
 
     /// 포커스된 MainView와 그 engine.
-    pub(crate) fn focused_pair(&self) -> Option<(&MainView, &CoreState)> {
+    pub(crate) fn focused_pair(&self) -> Option<(&MainView, EngineRef<'_>)> {
         self.engines().window_pair(self.view.focused_view_id?)
     }
 
     /// 포커스된 MainView와 그 engine. 다른 App 필드와 함께 빌려야 하면 `engines_mut!`로 `window_pair`를 쓴다.
-    pub(crate) fn focused_pair_mut(&mut self) -> Option<(&mut MainView, &mut CoreState)> {
+    pub(crate) fn focused_pair_mut(&mut self) -> Option<(&mut MainView, EngineMut<'_>)> {
         let wid = self.view.focused_view_id?;
         engines_mut!(self).window_pair(wid)
     }
@@ -457,7 +456,7 @@ impl App {
     }
 
     /// 새 engine이 공용 레지스트리·ID 발급기를 공유할 기존 engine을 찾는다. 창을 먼저, parked를 나중에 본다.
-    pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
+    pub(crate) fn any_main_engine(&self) -> Option<EngineRef<'_>> {
         self.engines().windowed_and_parked().next()
     }
 
@@ -498,8 +497,8 @@ impl App {
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
         let engines = self.engines();
         any_engine_has_workspace(
-            engines.windows().map(|(_, e)| e),
-            engines.parked_with_ids(),
+            engines.windows().map(|(_, e)| e.core),
+            engines.parked_with_ids().map(|(id, e)| (id, e.core)),
             workspace_id,
         )
     }
@@ -567,7 +566,10 @@ impl App {
         {
             return Ok(Some(wid));
         }
-        find_workspace_by_name(self.engines().windows(), target)
+        find_workspace_by_name(
+            self.engines().windows().map(|(wid, e)| (wid, e.core)),
+            target,
+        )
     }
 }
 
@@ -628,21 +630,25 @@ mod tests {
 
     use super::*;
 
-    fn engine_with_workspace_name(name: &str) -> crate::core::CoreState {
+    fn engine_with_workspace_name(name: &str) -> crate::runtime::engine_session::EngineSession {
         let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine_session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].name = name.to_string();
-        engine
+        engine_session
     }
 
     #[test]
     fn ambiguous_workspace_name_across_windows_returns_error() {
-        let e1 = engine_with_workspace_name("main");
-        let e2 = engine_with_workspace_name("main");
+        let mut e1_session = engine_with_workspace_name("main");
+        let e1 = e1_session.borrow_mut();
+        let mut e2_session = engine_with_workspace_name("main");
+        let e2 = e2_session.borrow_mut();
         let w1 = WindowId::from(1u64);
         let w2 = WindowId::from(2u64);
 
-        let err = find_workspace_by_name([(w1, &e1), (w2, &e2)].into_iter(), "main")
+        let err = find_workspace_by_name([(w1, &*e1.core), (w2, &*e2.core)].into_iter(), "main")
             .expect_err("이름이 같은 창이 둘이면 Err여야 한다");
         assert!(
             err.contains("main"),
@@ -656,24 +662,27 @@ mod tests {
 
     #[test]
     fn unique_workspace_name_still_resolves() {
-        let e1 = engine_with_workspace_name("main");
-        let e2 = engine_with_workspace_name("other");
+        let mut e1_session = engine_with_workspace_name("main");
+        let e1 = e1_session.borrow_mut();
+        let mut e2_session = engine_with_workspace_name("other");
+        let e2 = e2_session.borrow_mut();
         let w1 = WindowId::from(1u64);
         let w2 = WindowId::from(2u64);
 
         assert_eq!(
-            find_workspace_by_name([(w1, &e1), (w2, &e2)].into_iter(), "other"),
+            find_workspace_by_name([(w1, &*e1.core), (w2, &*e2.core)].into_iter(), "other"),
             Ok(Some(w2))
         );
     }
 
     #[test]
     fn no_match_returns_ok_none() {
-        let e1 = engine_with_workspace_name("main");
+        let mut e1_session = engine_with_workspace_name("main");
+        let e1 = e1_session.borrow_mut();
         let w1 = WindowId::from(1u64);
 
         assert_eq!(
-            find_workspace_by_name([(w1, &e1)].into_iter(), "nonexistent"),
+            find_workspace_by_name([(w1, &*e1.core)].into_iter(), "nonexistent"),
             Ok(None)
         );
     }
@@ -684,30 +693,32 @@ mod tests {
         let ids = names
             .iter()
             .map(|name| {
-                let (state, mut engine) = crate::state::tests::test_state();
+                let (state, mut engine_session) = crate::state::tests::test_state();
+                let mut engine = engine_session.borrow_mut();
                 engine.workspaces[0].name = (*name).to_string();
-                reg.park_for_test(state, engine)
+                reg.park_for_test(state, engine_session)
             })
             .collect();
         (reg, ids)
     }
 
     fn engine_mut(reg: &mut EngineRegistry, id: EngineId) -> &mut crate::core::CoreState {
-        reg.get_mut(id).expect("registry에 있는 engine")
+        reg.get_mut(id).expect("registry에 있는 engine").core
     }
 
     fn parked_pairs(
         reg: &EngineRegistry,
     ) -> impl Iterator<Item = (EngineId, &crate::core::CoreState)> {
-        reg.parked_sessions().map(|(id, _, e)| (id, e))
+        reg.parked_sessions().map(|(id, _, e)| (id, e.core))
     }
 
     #[test]
     fn workspace_in_windowed_engine_is_not_orphaned() {
-        let windowed = engine_with_workspace_name("mirror");
+        let mut windowed_session = engine_with_workspace_name("mirror");
+        let windowed = windowed_session.borrow_mut();
         let ws = windowed.workspaces[0].id;
         assert!(any_engine_has_workspace(
-            [&windowed].into_iter(),
+            [&*windowed.core].into_iter(),
             std::iter::empty(),
             ws
         ));
@@ -739,22 +750,26 @@ mod tests {
 
     #[test]
     fn workspace_in_no_engine_is_orphaned() {
-        let windowed = engine_with_workspace_name("local");
+        let mut windowed_session = engine_with_workspace_name("local");
+        let windowed = windowed_session.borrow_mut();
         let (reg, ids) = parked(&["other"]);
         let missing =
             windowed.workspaces[0].id + reg.get(ids[0]).expect("engine").workspaces[0].id + 1_000;
         assert!(!any_engine_has_workspace(
-            [&windowed].into_iter(),
+            [&*windowed.core].into_iter(),
             parked_pairs(&reg),
             missing
         ));
     }
 
-    fn names<'a>(engines: impl Iterator<Item = &'a crate::core::CoreState>) -> Vec<String> {
+    fn names<'a>(engines: impl Iterator<Item = EngineRef<'a>>) -> Vec<String> {
         engines.map(|e| e.workspaces[0].name.clone()).collect()
     }
 
-    fn with_pending(reg: &mut EngineRegistry, engine: crate::core::CoreState) -> EngineId {
+    fn with_pending(
+        reg: &mut EngineRegistry,
+        engine: crate::runtime::engine_session::EngineSession,
+    ) -> EngineId {
         reg.insert_pending(engine)
             .unwrap_or_else(|_| panic!("임시 engine이 이미 있다"))
     }
@@ -790,9 +805,10 @@ mod tests {
         let (mut reg, ids) = parked(&["p0", "p1"]);
         engine_mut(&mut reg, ids[0]).layout_slot = Some(4);
         engine_mut(&mut reg, ids[1]).layout_slot = Some(2);
-        let mut pending = engine_with_workspace_name("tmp");
+        let mut pending_session = engine_with_workspace_name("tmp");
+        let mut pending = pending_session.borrow_mut();
         pending.layout_slot = Some(7);
-        with_pending(&mut reg, pending);
+        with_pending(&mut reg, pending_session);
         let views = HashMap::new();
         let scan = EngineScan::from_fields(&views, &reg);
         assert_eq!(occupied_slots(scan), slots(&[2, 4, 7]));
@@ -821,7 +837,7 @@ mod tests {
         with_pending(&mut reg, engine_with_workspace_name("tmp"));
         let mut views = HashMap::new();
         let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
-        let visit = |it: &mut dyn Iterator<Item = &mut crate::core::CoreState>| -> Vec<String> {
+        let visit = |it: &mut dyn Iterator<Item = EngineMut<'_>>| -> Vec<String> {
             it.map(|e| e.workspaces[0].name.clone()).collect()
         };
         assert_eq!(
@@ -852,9 +868,10 @@ mod tests {
     fn park_appends_and_unpark_takes_the_oldest() {
         let (mut reg, ids) = parked(&["p0"]);
         let mut views = HashMap::new();
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].name = "p1".to_string();
-        let p1 = with_pending(&mut reg, engine);
+        let p1 = with_pending(&mut reg, engine_session);
         let w = WindowId::from(1u64);
         reg.attach_window(w, p1);
         let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
@@ -880,7 +897,8 @@ mod tests {
     #[test]
     fn parked_navigation_survives_application_mutations_and_unpark() {
         use crate::core::intent::DomainIntent;
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         for _ in 0..2 {
@@ -904,16 +922,16 @@ mod tests {
         let removed = pane.tabs[1].id;
         state.navigation.select_tab(pane, selected);
         let mut reg = EngineRegistry::default();
-        let id = reg.park_for_test(state, engine);
+        let id = reg.park_for_test(state, engine_session);
         let mut views = HashMap::new();
         {
             let scan = EngineScanMut::from_fields(&mut views, &mut reg);
-            let (state, engine) = scan.parked_session(id).unwrap();
+            let (state, mut engine) = scan.parked_session(id).unwrap();
             let tab_id = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
             crate::app::structural_exec::execute(
                 &mut core,
                 state,
-                engine,
+                &mut engine,
                 DomainIntent::MoveTab {
                     pane_id,
                     tab_id,
@@ -924,7 +942,7 @@ mod tests {
             crate::app::structural_exec::execute(
                 &mut core,
                 state,
-                engine,
+                &mut engine,
                 DomainIntent::CloseTab { tab_id: removed },
             )
             .unwrap();

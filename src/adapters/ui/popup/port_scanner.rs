@@ -11,7 +11,6 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
-use crate::core::CoreState;
 use crate::core::port_favorites::PortFavorites;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;

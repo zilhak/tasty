@@ -68,53 +68,6 @@ impl CoreState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    /// 사용자가 mirror workspace를 닫으면 attach client가 채운 부속 맵도 비워야 한다.
-    /// attach client의 정리는 workspace를 찾지 못하면 건너뛰므로 닫기 정리가 맡는다.
-    #[test]
-    fn user_close_of_a_mirror_workspace_forgets_the_mirror_maps() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
-        let event = crate::core::apply_create_workspace_inner(
-            &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
-        )
-        .expect("workspace 생성");
-        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
-            panic!("expected WorkspaceCreated");
-        };
-        engine.workspaces[index].mirror = true;
-        let sid = engine.workspaces[index]
-            .all_surface_ids()
-            .first()
-            .copied()
-            .expect("surface");
-
-        engine.set_mirror_surface_busy(sid, true);
-        engine.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
-        engine.set_mirror_surface_attention(sid, Some(crate::core::AttentionKind::NeedsInput));
-        #[cfg(feature = "gui")]
-        engine
-            .attach_mesh_frames
-            .update(sid, vec![1, 2, 3], 1, 1, true);
-
-        assert!(state.close_workspace_at(
-            &mut engine,
-            index,
-            crate::state::WorkspaceCloseOrigin::User
-        ));
-
-        assert!(!engine.mirror_busy_surfaces.contains(&sid), "busy 남음");
-        assert!(!engine.mirror_surface_cwd.contains_key(&sid), "cwd 남음");
-        assert!(engine.attention_kind(sid).is_none(), "attention 남음");
-        #[cfg(feature = "gui")]
-        assert!(
-            engine.attach_mesh_frames.get(sid).is_none(),
-            "mesh frame 남음"
-        );
-    }
-}
-
 impl EngineMut<'_> {
     /// 닫힌 surface의 터미널·인덱스·메모리·점유를 정리하고 단계별 시간을 sums에 합산한다.
     /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
@@ -159,5 +112,53 @@ impl EngineMut<'_> {
         if let Some(factory) = self.waker_factory.as_ref() {
             factory.forget_surface(surface_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 사용자가 mirror workspace를 닫으면 attach client가 채운 부속 맵도 비워야 한다.
+    /// attach client의 정리는 workspace를 찾지 못하면 건너뛰므로 닫기 정리가 맡는다.
+    #[test]
+    fn user_close_of_a_mirror_workspace_forgets_the_mirror_maps() {
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
+        let event = crate::core::apply_create_workspace_inner(
+            &mut engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .expect("workspace 생성");
+        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+            panic!("expected WorkspaceCreated");
+        };
+        engine.workspaces[index].mirror = true;
+        let sid = engine.workspaces[index]
+            .all_surface_ids()
+            .first()
+            .copied()
+            .expect("surface");
+
+        engine.set_mirror_surface_busy(sid, true);
+        engine.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
+        engine.set_mirror_surface_attention(sid, Some(crate::core::AttentionKind::NeedsInput));
+        #[cfg(feature = "gui")]
+        engine
+            .attach_mesh_frames
+            .update(sid, vec![1, 2, 3], 1, 1, true);
+
+        assert!(state.close_workspace_at(
+            &mut engine,
+            index,
+            crate::state::WorkspaceCloseOrigin::User
+        ));
+
+        assert!(!engine.mirror_busy_surfaces.contains(&sid), "busy 남음");
+        assert!(!engine.mirror_surface_cwd.contains_key(&sid), "cwd 남음");
+        assert!(engine.attention_kind(sid).is_none(), "attention 남음");
+        #[cfg(feature = "gui")]
+        assert!(
+            engine.attach_mesh_frames.get(sid).is_none(),
+            "mesh frame 남음"
+        );
     }
 }

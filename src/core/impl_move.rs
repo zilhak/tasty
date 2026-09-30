@@ -299,7 +299,7 @@ mod move_surface_tests {
     use super::*;
     use crate::model::SplitDirection;
 
-    fn test_engine() -> CoreState {
+    fn test_engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
@@ -307,7 +307,8 @@ mod move_surface_tests {
     /// 실제 PTY 대신 detached Terminal을 써서 store 항목과 정리 대상 반환을 확인한다.
     #[test]
     fn move_preserves_source_terminal_and_reports_b_cleanup() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -359,7 +360,8 @@ mod move_surface_tests {
 
     #[test]
     fn move_self_ref_is_noop() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, a);
@@ -372,7 +374,8 @@ mod move_surface_tests {
 
     #[test]
     fn move_missing_target_is_noop() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
             .runtime
@@ -392,7 +395,8 @@ mod move_surface_tests {
 
     #[test]
     fn move_surface_clears_pending_slot_of_any_kind() {
-        let mut engine = test_engine();
+        let mut engine_session = test_engine();
+        let mut engine = engine_session.borrow_mut();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, a);

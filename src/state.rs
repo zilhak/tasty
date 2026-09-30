@@ -746,7 +746,8 @@ mod tab_bar_height_seed_tests {
     // 물리 높이의 미측정 초기값을 논리 토큰과 혼동하지 않아야 한다.
     #[test]
     fn the_seed_is_not_the_logical_token() {
-        let (state, _engine) = super::tests::test_state();
+        let (state, mut _engine_session) = super::tests::test_state();
+        let _engine = _engine_session.borrow_mut();
         let seeded = state.tab_bar_height;
         assert_eq!(seeded, PhysicalPx(0.0), "측정 전 탭 바 높이는 0이어야 한다");
         assert_ne!(

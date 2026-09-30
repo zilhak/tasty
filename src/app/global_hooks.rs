@@ -4,7 +4,7 @@ use crate::app::App;
 
 impl App {
     pub(crate) fn poll_global_hooks(&mut self) {
-        for engine in self.engines_mut().windowed_and_parked() {
+        for mut engine in self.engines_mut().windowed_and_parked() {
             engine.poll_global_hooks();
         }
     }

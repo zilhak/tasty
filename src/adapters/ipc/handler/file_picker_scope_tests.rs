@@ -25,8 +25,14 @@ fn parent(scope: &str, target: Option<u32>) -> PopupInstance {
     }
 }
 
-fn trigger(owner: Option<u64>) -> (RequestContext, crate::core::CoreState) {
-    let (mut state, mut engine) = test_state();
+fn trigger(
+    owner: Option<u64>,
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    let (mut state, mut engine_session) = test_state();
+    let mut engine = engine_session.borrow_mut();
     for def in defs::all_defs() {
         state.popups.register_def(def, 1.0);
     }
@@ -45,7 +51,7 @@ fn trigger(owner: Option<u64>) -> (RequestContext, crate::core::CoreState) {
     for intent in state.take_pending_intents() {
         crate::intent::popup::handle(&mut state, &mut engine, &intent);
     }
-    (state, engine)
+    (state, engine_session)
 }
 
 #[test]
@@ -126,7 +132,8 @@ fn assert_work_preserved(state: &RequestContext, dir: &str, request: u64) {
 
 #[test]
 fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate() {
-    let (mut state, mut engine) = trigger(Some(7));
+    let (mut state, mut engine_session) = trigger(Some(7));
+    let mut engine = engine_session.borrow_mut();
     // 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 있는 surface를 쓴다.
     let sid = state.focused_surface_id(&engine).expect("surface");
     let inst = parent("surface", Some(sid));

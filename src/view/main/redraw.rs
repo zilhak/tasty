@@ -1017,11 +1017,11 @@ impl MainView {
     /// macOS/Windows의 Ready는 즉시 처리하며 Linux의 Pending은 이후 폴링으로 회수한다.
     pub(super) fn open_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         x: f32,
         y: f32,
         items: &[crate::platform::native_menu::MenuItem],
-        cont: impl FnOnce(&mut MainView, &mut crate::core::CoreState, Option<u32>) + 'static,
+        cont: impl FnOnce(&mut MainView, &mut EngineMut<'_>, Option<u32>) + 'static,
     ) {
         use crate::platform::native_menu::{
             MenuOutcome, show_context_menu, warn_if_menu_anchor_scale_premise_broken,
@@ -1045,7 +1045,7 @@ impl MainView {
 
     /// 메뉴 결과를 비차단 조회하고 완료됐으면 후처리를 실행한다.
     /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다.
-    pub(crate) fn poll_pending_native_menu(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn poll_pending_native_menu(&mut self, engine: &mut EngineMut<'_>) {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return;
         };
@@ -1675,7 +1675,7 @@ impl MainView {
 
     fn handle_workspace_category_header_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         cat_id: crate::model::WorkspaceCategoryId,
         x: f32,
         y: f32,
@@ -1755,7 +1755,7 @@ impl MainView {
 
     fn handle_sidebar_background_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         x: f32,
         y: f32,
     ) {
@@ -1902,7 +1902,7 @@ impl MainView {
 
     fn handle_surface_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -2403,7 +2403,7 @@ impl MainView {
 
     fn handle_new_workspace_button_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         x: f32,
         y: f32,
     ) {
@@ -2446,7 +2446,7 @@ impl MainView {
 
     fn handle_new_tab_button_native_menu(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         pane_id: u32,
         x: f32,
         y: f32,

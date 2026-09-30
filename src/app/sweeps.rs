@@ -8,7 +8,7 @@ use crate::app::App;
 impl App {
     pub(crate) fn poll_pty_sweep(&mut self) {
         let now = Instant::now();
-        for engine in self.engines_mut().windowed_and_parked() {
+        for mut engine in self.engines_mut().windowed_and_parked() {
             // 정리는 함수 안에서 끝나며 여기서는 회수한 ID 목록을 사용하지 않는다.
             let _ = engine.sweep_idle_ptys(now);
         }
@@ -16,7 +16,7 @@ impl App {
 
     pub(crate) fn poll_capture_sweep(&mut self) {
         let now = Instant::now();
-        for engine in self.engines_mut().windowed_and_parked() {
+        for mut engine in self.engines_mut().windowed_and_parked() {
             engine.capture_uploads.sweep_expired(now);
         }
     }

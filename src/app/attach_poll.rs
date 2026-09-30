@@ -7,12 +7,12 @@ use crate::view::ui::View as _;
 
 impl App {
     pub(crate) fn poll_attach_views(&mut self) {
-        for (_, main, engine) in self.engines_mut().window_pairs() {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
             if engine.refresh_readonly_views() {
                 main.mark_dirty_from(RepaintSource::AttachMirror);
             }
         }
-        for engine in self.engines_mut().parked() {
+        for mut engine in self.engines_mut().parked() {
             let _ = engine.refresh_readonly_views(); // dirty 여부 반환값 무시 — parked 는 repaint 안 함.
         }
 

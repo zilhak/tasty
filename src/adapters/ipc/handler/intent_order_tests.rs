@@ -42,7 +42,8 @@ fn labels(state: &crate::state::RequestContext) -> Vec<String> {
 fn handler_intents_append_after_the_queue_in_request_order() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = super::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("focused surface");
     state.dispatch_intent(Intent::RestoreClosedItem.from_user_shortcut("sentinel"));
 
@@ -84,7 +85,8 @@ fn handler_intents_append_after_the_queue_in_request_order() {
 fn gate_intents_precede_the_handler_intents_of_the_same_request() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = super::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("focused surface");
 
     let set = super::handle_with_caller(
@@ -132,7 +134,8 @@ fn gate_intents_precede_the_handler_intents_of_the_same_request() {
 fn a_rejected_request_leaves_the_queue_untouched() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = super::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     state.dispatch_intent(Intent::RestoreClosedItem.from_user_shortcut("sentinel"));
 
     let resp = super::handle_with_caller(
@@ -213,7 +216,8 @@ fn set_notify_and_approval_caps(
 fn a_notify_cap_precedes_the_approval_popup_fired_by_the_same_gate() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = core_with_ordered_memory();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("focused surface");
     set_notify_and_approval_caps(
         &mut core,
@@ -256,7 +260,8 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_the_same_gate() {
 fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = core_with_ordered_memory();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     set_notify_and_approval_caps(&mut core, &mut state, &mut engine, "order-probe", "tokens");
 
     let resp = super::handle_with_caller(
@@ -288,7 +293,8 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
 fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = super::cli_entry_tests::test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     for metric in ["m_a", "m_b"] {
         let resp = super::handle_with_caller(
             &mut core,

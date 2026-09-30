@@ -4,8 +4,6 @@
 use crate::core::engine_access::{EngineMut, EngineRef};
 use tasty_terminal::Terminal;
 
-use crate::core::CoreState;
-
 impl EngineMut<'_> {
     /// 점유 터미널의 화면을 사본에 적용하고 점유가 끝난 사본은 지운다.
     /// snapshot의 clear·home으로 이전 화면을 덮으며 크기가 바뀌면 사본을 다시 만든다.
@@ -44,16 +42,9 @@ impl EngineMut<'_> {
     }
 }
 
-impl EngineRef<'_> {
+impl<'a> EngineRef<'a> {
     /// 첫 갱신 전에는 사본이 없어 None이다. live 터미널이 없으면 이후 갱신도 건너뛴다.
-    pub(crate) fn readonly_view(&self, surface_id: u32) -> Option<&Terminal> {
-        self.runtime.readonly_views.get(&surface_id)
-    }
-}
-
-impl EngineMut<'_> {
-    /// 첫 갱신 전에는 사본이 없어 None이다. live 터미널이 없으면 이후 갱신도 건너뛴다.
-    pub(crate) fn readonly_view(&self, surface_id: u32) -> Option<&Terminal> {
+    pub(crate) fn readonly_view(&self, surface_id: u32) -> Option<&'a Terminal> {
         self.runtime.readonly_views.get(&surface_id)
     }
 }

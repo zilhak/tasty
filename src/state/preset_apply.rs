@@ -453,7 +453,7 @@ fn shell_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::ApplyOptions;
-    use crate::core::CoreState;
+
     use crate::core::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
     use serde_json::json;
     use tasty_presets::{
@@ -498,10 +498,14 @@ mod tests {
         assert!(PresetFieldSpec::derive_cwd(&fields, &json!({})).is_none());
     }
 
-    fn test_state() -> (crate::state::RequestContext, CoreState) {
+    fn test_state() -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker)
+        let mut engine_session = crate::runtime::engine_session::EngineSession::new(80, 24, waker)
             .expect("CoreState::new");
+        let mut engine = engine_session.borrow_mut();
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));
@@ -510,7 +514,7 @@ mod tests {
                 tasty_memory::testing::InMemoryStorage::new(),
             ));
         let state = crate::state::RequestContext::new(&mut engine, preset_store, memory);
-        (state, engine)
+        (state, engine_session)
     }
 
     fn minimal_workspace_preset() -> WorkspacePreset {
@@ -540,7 +544,8 @@ mod tests {
 
     #[test]
     fn apply_workspace_preset_sets_target_category() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let work = engine.create_category("Work").unwrap();
         let preset = minimal_workspace_preset();
 
@@ -558,7 +563,8 @@ mod tests {
 
     #[test]
     fn apply_workspace_preset_without_category_stays_normal() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let preset = minimal_workspace_preset();
 
         let idx = state
@@ -573,7 +579,8 @@ mod tests {
 
     #[test]
     fn apply_workspace_preset_ignores_dangling_category() {
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let dangling: crate::model::WorkspaceCategoryId = 9999;
         let preset = minimal_workspace_preset();
 
@@ -597,7 +604,8 @@ mod tests {
         use crate::model::{EmptySurface, SurfaceLayout};
         use tasty_presets::PresetSplitDirection;
 
-        let (mut state, mut engine) = test_state();
+        let (mut state, mut engine_session) = test_state();
+        let mut engine = engine_session.borrow_mut();
         let split = PresetSurfaceLayout::Split {
             direction: PresetSplitDirection::Vertical,
             ratio: 0.5,

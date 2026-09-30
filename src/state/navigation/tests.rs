@@ -305,7 +305,8 @@ fn legacy_split_hints_follow_node_identity_through_extract_and_resplit() {
 #[test]
 fn category_user_intents_preserve_dirty_scheduling_and_agent_isolation() {
     use crate::intent::UiIntent;
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let category = engine.create_category("work").unwrap();
     let mut apply = |intent: UiIntent| {
         engine.layout_dirty.clear();
@@ -376,12 +377,14 @@ fn category_user_intents_preserve_dirty_scheduling_and_agent_isolation() {
 #[cfg(feature = "gui")]
 #[test]
 fn category_only_changes_round_trip_and_removed_presentation_is_reclaimed() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     let category = engine.create_category("services").unwrap();
     state.navigation.collapsed_categories.insert(category);
     let saved =
         crate::core::layout_persistence::SavedLayout::capture(&mut engine, 0, &state.navigation);
-    let (mut restored_state, mut restored_engine) = crate::state::tests::test_state();
+    let (mut restored_state, mut restored_engine_session) = crate::state::tests::test_state();
+    let mut restored_engine = restored_engine_session.borrow_mut();
     let restored = saved.restore(&mut restored_engine).expect("restore");
     restored_state
         .navigation

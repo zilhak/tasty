@@ -1,7 +1,7 @@
 //! 비동기 식별·picker 결과를 GUI 상태에 적용한다.
 
+use crate::core::Core;
 use crate::core::engine_access::EngineMut;
-use crate::core::{Core, CoreState};
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
 use crate::state::{FileHandlerPickerResult, RequestContext};
@@ -147,7 +147,8 @@ pub(super) mod tests {
     use crate::core::builder::CoreBuilder;
 
     /// 직접 쓰지 않는 port도 Core 생성에 필요하므로 검사 대역을 주입한다.
-    pub(in crate::file::dispatch) fn build_test_core() -> (Core, CoreState) {
+    pub(in crate::file::dispatch) fn build_test_core()
+    -> (Core, crate::runtime::engine_session::EngineSession) {
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,
@@ -155,7 +156,7 @@ pub(super) mod tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let engine =
+        let engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
@@ -179,12 +180,13 @@ pub(super) mod tests {
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
             .expect("test Core");
-        (core, engine)
+        (core, engine_session)
     }
 
     #[test]
     fn picker_falls_back_to_all_handlers_when_no_detector_match() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let unmatched = DetectorId::new("no-such-detector");
         assert!(engine.file_handler.handlers_for(&unmatched).is_empty());
         assert!(
@@ -227,7 +229,8 @@ pub(super) mod tests {
     #[test]
     fn picker_result_does_not_run_an_ipc_handler_on_a_url_target() {
         use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         FileHandlerRegistryPort::install_plugin_handlers(
             engine.file_handler.as_ref(),
             "com.example.urlprobe",

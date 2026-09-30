@@ -5,6 +5,7 @@ pub(crate) mod picker_apply;
 #[cfg(feature = "gui")]
 pub(crate) mod remote;
 
+#[cfg(feature = "gui")]
 use crate::core::engine_access::EngineMut;
 use std::path::PathBuf;
 
@@ -657,7 +658,8 @@ mod tests {
     #[cfg(feature = "gui")]
     #[test]
     fn remote_placeholder_picker_carries_no_recent_even_when_recent_is_populated() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let any = engine
             .file_handler
             .all_handlers()

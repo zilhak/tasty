@@ -100,18 +100,64 @@ fn bump_foreground_generations(
     generations.retain(|sid, _| new_names.contains_key(sid));
 }
 
+impl EngineMut<'_> {
+    /// 로컬 PTY를 폴링한다. 반환값은 busy 집합 변화만 나타내며 이름·캡처 설정 변화는 제외한다.
+    pub fn refresh_busy_surfaces(&mut self) -> bool {
+        // Windows에서 surface마다 전체 프로세스를 다시 조회하지 않도록 한 번에 해석한다.
+        let mut sids: Vec<u32> = Vec::new();
+        let mut shell_pids: Vec<u32> = Vec::new();
+        for (sid, terminal) in self.runtime.terminals.iter() {
+            if let Some(pid) = terminal.process_id() {
+                sids.push(sid);
+                shell_pids.push(pid);
+            }
+        }
+        let foregrounds = tasty_terminal::foreground_process::resolve_foreground_many(&shell_pids);
+
+        let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut mouse_capture_disabled: std::collections::HashSet<u32> =
+            std::collections::HashSet::new();
+        let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
+            let Some(terminal) = self.runtime.terminals.get(sid) else {
+                continue;
+            };
+            if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {
+                busy.insert(sid);
+            }
+            if let Some(f) = fg.as_ref() {
+                if self.settings.general.mouse_capture_disabled_for(&f.name) {
+                    mouse_capture_disabled.insert(sid);
+                }
+                names.insert(sid, f.name.clone());
+            }
+        }
+        bump_foreground_generations(
+            &mut self.core.foreground_generation,
+            &self.core.foreground_names,
+            &names,
+        );
+
+        self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
+        self.foreground_names = names;
+        let changed = self.busy_surfaces != busy;
+        self.busy_surfaces = busy;
+        changed
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CoreState;
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn mirror_busy_surface_counts_without_local_pty() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         assert!(!e.is_surface_busy(42), "초기 상태는 idle");
         e.set_mirror_surface_busy(42, true);
         assert!(e.is_surface_busy(42));
@@ -124,7 +170,8 @@ mod tests {
 
     #[test]
     fn refresh_busy_surfaces_does_not_clobber_mirror_busy() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.set_mirror_surface_busy(42, true);
         e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 busy_surfaces 는 빈 채로 재계산.
         assert!(
@@ -135,7 +182,8 @@ mod tests {
 
     #[test]
     fn forget_mirror_surface_busy_clears_entry() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.set_mirror_surface_busy(42, true);
         e.forget_mirror_surface_busy(42);
         assert!(!e.is_surface_busy(42));
@@ -143,7 +191,8 @@ mod tests {
 
     #[test]
     fn refresh_busy_surfaces_replaces_the_mouse_capture_cache() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.mouse_capture_disabled_surfaces.insert(99);
         e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 빈 채로 재계산.
         assert!(!e.is_surface_mouse_capture_disabled(99));
@@ -151,7 +200,8 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_only_on_change() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
 
@@ -168,7 +218,8 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_resets_on_reacquire() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, false)]);
@@ -187,7 +238,8 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let sid = e.workspaces[0].all_surface_ids()[0];
         e.busy_surfaces.insert(sid);
         e.attach.acquire(sid, 7).expect("lock 획득");
@@ -245,55 +297,10 @@ mod tests {
 
     #[test]
     fn foreground_generation_accessor_reads_cache_and_defaults_to_zero() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         assert_eq!(e.foreground_generation(42), 0);
         e.foreground_generation.insert(42, 5);
         assert_eq!(e.foreground_generation(42), 5);
-    }
-}
-
-impl EngineMut<'_> {
-    /// 로컬 PTY를 폴링한다. 반환값은 busy 집합 변화만 나타내며 이름·캡처 설정 변화는 제외한다.
-    pub fn refresh_busy_surfaces(&mut self) -> bool {
-        // Windows에서 surface마다 전체 프로세스를 다시 조회하지 않도록 한 번에 해석한다.
-        let mut sids: Vec<u32> = Vec::new();
-        let mut shell_pids: Vec<u32> = Vec::new();
-        for (sid, terminal) in self.runtime.terminals.iter() {
-            if let Some(pid) = terminal.process_id() {
-                sids.push(sid);
-                shell_pids.push(pid);
-            }
-        }
-        let foregrounds = tasty_terminal::foreground_process::resolve_foreground_many(&shell_pids);
-
-        let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut mouse_capture_disabled: std::collections::HashSet<u32> =
-            std::collections::HashSet::new();
-        let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
-        for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
-            let Some(terminal) = self.runtime.terminals.get(sid) else {
-                continue;
-            };
-            if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {
-                busy.insert(sid);
-            }
-            if let Some(f) = fg.as_ref() {
-                if self.settings.general.mouse_capture_disabled_for(&f.name) {
-                    mouse_capture_disabled.insert(sid);
-                }
-                names.insert(sid, f.name.clone());
-            }
-        }
-        bump_foreground_generations(
-            &mut self.core.foreground_generation,
-            &self.core.foreground_names,
-            &names,
-        );
-
-        self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
-        self.foreground_names = names;
-        let changed = self.busy_surfaces != busy;
-        self.busy_surfaces = busy;
-        changed
     }
 }

@@ -1484,7 +1484,8 @@ mod system_info_tests {
 
     #[test]
     fn system_info_identifies_the_engine_and_the_active_workspace_by_id() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let info = system_info_fields(&state, &engine);
         assert_eq!(info["scope"], "engine");
         assert_eq!(info["workspace_count"], engine.workspaces.len());
@@ -1498,7 +1499,8 @@ mod system_info_tests {
 
     #[test]
     fn system_info_does_not_invent_an_active_workspace_for_an_empty_engine() {
-        let (state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces.clear();
         let info = system_info_fields(&state, &engine);
         assert_eq!(info["workspace_count"], 0);
@@ -1513,7 +1515,8 @@ mod system_info_tests {
     /// 패키지 버전과 별도로 서버 capability를 제공한다.
     #[test]
     fn system_info_declares_what_this_server_can_negotiate() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let resp = handle_system_info(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         let caps = result["capabilities"]
@@ -1531,7 +1534,8 @@ mod system_info_tests {
     /// client가 요구하는 capability가 응답에 실제로 포함되는지 확인한다.
     #[test]
     fn system_info_declares_the_capability_name_the_client_asks_for() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let resp = handle_system_info(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         let names: Vec<&str> = result["capabilities"]
@@ -1548,7 +1552,8 @@ mod system_info_tests {
 
     #[test]
     fn system_info_declares_the_bounds_of_the_idempotency_guarantee() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let resp = handle_system_info(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["idempotency"], super::idempotency::declaration());
@@ -1558,7 +1563,8 @@ mod system_info_tests {
     /// capability를 창별 공통 필드에 중복하지 않는다.
     #[test]
     fn the_per_window_fields_do_not_repeat_the_server_capabilities() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         let shared = system_info_fields(&state, &engine);
         assert!(
             shared.get("capabilities").is_none(),

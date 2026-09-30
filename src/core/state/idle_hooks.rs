@@ -1,6 +1,5 @@
 //! 공용 busy 타이머에서 IdleTimeout 훅을 확인한다.
 
-use super::CoreState;
 use crate::core::engine_access::EngineMut;
 use crate::core::host_event::PendingHostEvent;
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::SplitDirection;
 
-fn test_engine() -> CoreState {
+fn test_engine() -> crate::runtime::engine_session::EngineSession {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
 }
@@ -74,7 +74,8 @@ fn push_workspace(engine: &mut CoreState) -> (u32, u32, u32) {
 
 #[test]
 fn empty_slot_emits_nothing() {
-    let engine = test_engine();
+    let mut engine_session = test_engine();
+    let engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
@@ -83,7 +84,8 @@ fn empty_slot_emits_nothing() {
 
 #[test]
 fn pending_surface_region_is_emitted_only_for_the_pending_id() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, a) = first_pane(&engine);
     let (right, b) = split_new_pane(&mut engine, left);
@@ -112,7 +114,8 @@ fn pending_surface_region_is_emitted_only_for_the_pending_id() {
 
 #[test]
 fn surface_in_an_inactive_tab_puts_the_glyph_on_that_tab() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let mut navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, a) = first_pane(&engine);
     let (_, b) = add_tab(&mut engine, pane);
@@ -136,7 +139,8 @@ fn surface_in_an_inactive_tab_puts_the_glyph_on_that_tab() {
 
 #[test]
 fn pending_tab_rings_its_cell_whether_active_or_not() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (pane, tab_a, _) = first_pane(&engine);
     let (tab_b, _) = add_tab(&mut engine, pane);
@@ -161,7 +165,8 @@ fn pending_tab_rings_its_cell_whether_active_or_not() {
 
 #[test]
 fn pending_pane_rings_the_whole_pane_rect() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let (right, _) = split_new_pane(&mut engine, left);
@@ -179,7 +184,8 @@ fn pending_pane_rings_the_whole_pane_rect() {
 
 #[test]
 fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let (other_pane, other_tab, other_sid) = push_workspace(&mut engine);
@@ -208,7 +214,8 @@ fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
 
 #[test]
 fn hidden_pane_in_the_active_workspace_emits_nothing() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let (right, _) = split_new_pane(&mut engine, left);
@@ -220,7 +227,8 @@ fn hidden_pane_in_the_active_workspace_emits_nothing() {
 
 #[test]
 fn closed_pending_target_emits_nothing() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
@@ -241,7 +249,8 @@ fn closed_pending_target_emits_nothing() {
 
 #[test]
 fn live_target_keeps_the_slot() {
-    let mut engine = test_engine();
+    let mut engine_session = test_engine();
+    let mut engine = engine_session.borrow_mut();
     let (pane, tab, a) = first_pane(&engine);
     for pending in [
         PendingMove::Surface(a),

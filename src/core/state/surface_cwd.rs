@@ -65,101 +65,6 @@ impl CoreState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{RemoteCwd, SurfaceCwd};
-    use crate::core::CoreState;
-
-    fn engine() -> CoreState {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
-    }
-
-    #[test]
-    fn cwd_forwards_only_on_change() {
-        let mut e = engine();
-        let sid = e.workspaces[0].all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
-
-        let first = e.surface_cwd_forwards();
-        assert_eq!(first.len(), 1, "최초 호출은 전송 후보 1건");
-        assert_eq!((first[0].0, first[0].1), (7, sid));
-        assert_eq!(first[0].2, e.surface_cwd(sid).map(SurfaceCwd::into_wire));
-        assert!(
-            e.surface_cwd_forwards().is_empty(),
-            "값이 그대로면 안 나간다"
-        );
-    }
-
-    #[test]
-    fn released_then_reacquired_pushes_baseline_again() {
-        let mut e = engine();
-        let sid = e.workspaces[0].all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
-        assert_eq!(e.surface_cwd_forwards().len(), 1);
-
-        e.attach.release(sid, 7).expect("release");
-        assert!(e.surface_cwd_forwards().is_empty(), "점유 없음 → push 없음");
-        assert!(
-            e.last_forwarded_cwd.is_empty(),
-            "점유 해제분은 캐시에서 빠진다"
-        );
-
-        e.attach.acquire(sid, 7).expect("re-lock");
-        assert_eq!(
-            e.surface_cwd_forwards().len(),
-            1,
-            "재점유하면 초기 전송 후보를 다시 만든다"
-        );
-    }
-
-    #[test]
-    fn holder_swap_within_one_tick_pushes_to_the_new_holder() {
-        let mut e = engine();
-        let sid = e.workspaces[0].all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
-        assert_eq!(e.surface_cwd_forwards().len(), 1);
-
-        e.attach.release(sid, 7).expect("release");
-        e.attach.acquire(sid, 8).expect("lock by another client");
-        let swapped = e.surface_cwd_forwards();
-        assert_eq!(swapped.len(), 1);
-        assert_eq!((swapped[0].0, swapped[0].1), (8, sid));
-    }
-
-    #[test]
-    fn mirror_push_overrides_and_none_clears() {
-        let mut e = engine();
-        let sid = e.workspaces[0].all_surface_ids()[0];
-        e.workspaces[0].mirror = true;
-
-        e.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
-        assert_eq!(
-            e.surface_cwd(sid),
-            Some(SurfaceCwd::Remote(RemoteCwd::new("/srv/remote")))
-        );
-        assert_eq!(
-            e.local_surface_cwd(sid),
-            None,
-            "원격 cwd는 로컬 경로로 반환하지 않는다"
-        );
-
-        e.set_mirror_surface_cwd(sid, None);
-        assert!(
-            !e.mirror_surface_cwd.contains_key(&sid),
-            "None push 는 값을 지운다"
-        );
-    }
-
-    #[test]
-    fn forget_drops_the_record() {
-        let mut e = engine();
-        e.set_mirror_surface_cwd(42, Some("/srv/remote".to_string()));
-        e.forget_mirror_surface_cwd(42);
-        assert!(e.mirror_surface_cwd.is_empty());
-    }
-}
-
 impl EngineMut<'_> {
     /// 하드 점유 surface의 (holder, ID, cwd) 전송 후보. 최초 None도 포함한다.
     /// holder와 값으로 중복을 구분하고 점유가 끝난 캐시는 지운다.
@@ -221,8 +126,103 @@ impl EngineMut<'_> {
     pub(crate) fn surface_cwd(&self, surface_id: u32) -> Option<SurfaceCwd> {
         self.as_ref().surface_cwd(surface_id)
     }
+}
 
-    pub(crate) fn local_surface_cwd(&self, surface_id: u32) -> Option<PathBuf> {
-        self.as_ref().local_surface_cwd(surface_id)
+#[cfg(test)]
+mod tests {
+    use super::{RemoteCwd, SurfaceCwd};
+
+    fn engine() -> crate::runtime::engine_session::EngineSession {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
+    }
+
+    #[test]
+    fn cwd_forwards_only_on_change() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock");
+
+        let first = e.surface_cwd_forwards();
+        assert_eq!(first.len(), 1, "최초 호출은 전송 후보 1건");
+        assert_eq!((first[0].0, first[0].1), (7, sid));
+        assert_eq!(first[0].2, e.surface_cwd(sid).map(SurfaceCwd::into_wire));
+        assert!(
+            e.surface_cwd_forwards().is_empty(),
+            "값이 그대로면 안 나간다"
+        );
+    }
+
+    #[test]
+    fn released_then_reacquired_pushes_baseline_again() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock");
+        assert_eq!(e.surface_cwd_forwards().len(), 1);
+
+        e.attach.release(sid, 7).expect("release");
+        assert!(e.surface_cwd_forwards().is_empty(), "점유 없음 → push 없음");
+        assert!(
+            e.last_forwarded_cwd.is_empty(),
+            "점유 해제분은 캐시에서 빠진다"
+        );
+
+        e.attach.acquire(sid, 7).expect("re-lock");
+        assert_eq!(
+            e.surface_cwd_forwards().len(),
+            1,
+            "재점유하면 초기 전송 후보를 다시 만든다"
+        );
+    }
+
+    #[test]
+    fn holder_swap_within_one_tick_pushes_to_the_new_holder() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock");
+        assert_eq!(e.surface_cwd_forwards().len(), 1);
+
+        e.attach.release(sid, 7).expect("release");
+        e.attach.acquire(sid, 8).expect("lock by another client");
+        let swapped = e.surface_cwd_forwards();
+        assert_eq!(swapped.len(), 1);
+        assert_eq!((swapped[0].0, swapped[0].1), (8, sid));
+    }
+
+    #[test]
+    fn mirror_push_overrides_and_none_clears() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.workspaces[0].mirror = true;
+
+        e.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
+        assert_eq!(
+            e.surface_cwd(sid),
+            Some(SurfaceCwd::Remote(RemoteCwd::new("/srv/remote")))
+        );
+        assert_eq!(
+            e.as_ref().local_surface_cwd(sid),
+            None,
+            "원격 cwd는 로컬 경로로 반환하지 않는다"
+        );
+
+        e.set_mirror_surface_cwd(sid, None);
+        assert!(
+            !e.mirror_surface_cwd.contains_key(&sid),
+            "None push 는 값을 지운다"
+        );
+    }
+
+    #[test]
+    fn forget_drops_the_record() {
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
+        e.set_mirror_surface_cwd(42, Some("/srv/remote".to_string()));
+        e.forget_mirror_surface_cwd(42);
+        assert!(e.mirror_surface_cwd.is_empty());
     }
 }

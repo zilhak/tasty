@@ -110,7 +110,11 @@ pub struct PopupDef {
     /// 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용.
     pub min_size: Option<egui::Vec2>,
     /// 렌더링 함수. 매 프레임 호출. MainViewState에서 필요한 데이터를 꺼낸다.
-    pub draw_fn: fn(&mut egui::Ui, &mut MainViewState, &mut crate::core::CoreState) -> PopupAction,
+    pub draw_fn: fn(
+        &mut egui::Ui,
+        &mut MainViewState,
+        &mut crate::core::engine_access::EngineMut<'_>,
+    ) -> PopupAction,
     /// 전체화면 버튼으로 열 무대 ID. None이거나 headless면 버튼이 없다.
     /// 무대는 별도 콘텐츠이며 원본 팝업은 열린 채 그 아래 남는다.
     pub fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,

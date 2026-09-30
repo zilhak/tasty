@@ -28,7 +28,10 @@ pub(crate) enum BootPhase {
     WaitingEngine {
         started: Instant,
         rx: std::sync::mpsc::Receiver<
-            anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+            anyhow::Result<(
+                crate::runtime::engine_session::EngineSession,
+                crate::plugin::PluginManager,
+            )>,
         >,
         /// 워커 결과를 확인한 횟수. 성공한 화면 렌더 횟수와는 다르다.
         frames: u32,
@@ -288,7 +291,10 @@ impl App {
         &self,
         boot: &BootState,
     ) -> std::sync::mpsc::Receiver<
-        anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        anyhow::Result<(
+            crate::runtime::engine_session::EngineSession,
+            crate::plugin::PluginManager,
+        )>,
     > {
         let (cols, rows) = crate::app::window_lifecycle::boot_grid_size(
             &boot.gpu,
@@ -359,7 +365,13 @@ impl App {
     /// Ok(None)은 결과 대기 중이거나 엔진 생성 실패, Err는 채널 단절 또는 회수 대상 부재다.
     pub(super) fn try_recv_boot_engine_worker(
         &mut self,
-    ) -> Result<Option<(crate::core::CoreState, crate::plugin::PluginManager)>, ()> {
+    ) -> Result<
+        Option<(
+            crate::runtime::engine_session::EngineSession,
+            crate::plugin::PluginManager,
+        )>,
+        (),
+    > {
         let Some(boot) = self.boot.as_mut() else {
             return Err(());
         };
@@ -394,7 +406,7 @@ impl App {
 
         // 복원 예정이면 기본 workspace를 만들지 않았으므로 복원 실패 시 여기서 보충한다.
         let _bootstrapped = match self.engines.pending_mut() {
-            Some(engine) => {
+            Some(mut engine) => {
                 crate::app::App::bootstrap_workspace_if_empty(&mut self.core, &mut engine)
             }
             None => None,
@@ -409,7 +421,7 @@ impl App {
             .engines
             .pending_id()
             .expect("pending engine must be present to register a main window");
-        let core_state = self
+        let mut core_state = self
             .engines
             .get_mut(engine)
             .expect("pending engine must be present to register a main window");

@@ -7,7 +7,6 @@
 use crate::core::engine_access::EngineRef;
 use serde_json::Value;
 
-use crate::core::CoreState;
 use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::model::{
     Deferred, EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
@@ -224,7 +223,7 @@ mod tests {
         Arc::new(|| {}) as tasty_terminal::Waker
     }
 
-    fn engine() -> CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         crate::runtime::engine_session::EngineSession::new(80, 24, waker()).expect("CoreState::new")
     }
 
@@ -257,7 +256,8 @@ mod tests {
 
     #[test]
     fn deferred_empty_surface_captured_as_terminal_with_cwd() {
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let registry = registry();
         let sid = 7;
         let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred(
@@ -268,7 +268,7 @@ mod tests {
 
         let preset = capture_pane_preset(
             &crate::model::StructurePresentationSnapshot::default(),
-            &engine,
+            &engine.as_ref(),
             &pane,
             None,
             &registry,
@@ -282,7 +282,8 @@ mod tests {
 
     #[test]
     fn deferred_without_working_dir_captured_as_terminal_cwd_none() {
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let registry = registry();
         let sid = 8;
         let surface: Box<dyn Surface> =
@@ -291,7 +292,7 @@ mod tests {
 
         let preset = capture_pane_preset(
             &crate::model::StructurePresentationSnapshot::default(),
-            &engine,
+            &engine.as_ref(),
             &pane,
             None,
             &registry,
@@ -305,7 +306,8 @@ mod tests {
 
     #[test]
     fn non_deferred_empty_surface_stays_empty() {
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let registry = registry();
         let sid = 9;
         let surface: Box<dyn Surface> = Box::new(EmptySurface::new(sid));
@@ -313,7 +315,7 @@ mod tests {
 
         let preset = capture_pane_preset(
             &crate::model::StructurePresentationSnapshot::default(),
-            &engine,
+            &engine.as_ref(),
             &pane,
             None,
             &registry,
@@ -329,7 +331,8 @@ mod tests {
     #[test]
     fn plugin_deferred_captured_as_its_kind_with_snapshot() {
         use crate::model::DeferredPlugin;
-        let engine = engine();
+        let mut engine_session = engine();
+        let engine = engine_session.borrow_mut();
         let registry = registry();
         let sid = 10;
         let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred_plugin(
@@ -343,7 +346,7 @@ mod tests {
 
         let preset = capture_pane_preset(
             &crate::model::StructurePresentationSnapshot::default(),
-            &engine,
+            &engine.as_ref(),
             &pane,
             None,
             &registry,

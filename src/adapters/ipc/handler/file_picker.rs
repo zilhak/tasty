@@ -94,15 +94,19 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tasty_memory::MemoryStorage;
 
-    fn make_test_state() -> (RequestContext, crate::core::CoreState) {
+    fn make_test_state() -> (
+        RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine =
+        let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
+        let mut engine = engine_session.borrow_mut();
         let preset_store = Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn MemoryStorage>> =
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
         let state = RequestContext::new(&mut engine, preset_store, memory);
-        (state, engine)
+        (state, engine_session)
     }
 
     fn plugin_caller(id: &str) -> CallerContext {
@@ -114,7 +118,8 @@ mod tests {
 
     #[test]
     fn trigger_from_plugin_records_requester() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_trigger(
             &mut state,
             &mut engine,
@@ -138,7 +143,8 @@ mod tests {
 
     #[test]
     fn trigger_records_the_declared_owner_popup_instance() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_trigger(
             &mut state,
             &mut engine,
@@ -161,7 +167,8 @@ mod tests {
             permissions: Arc::new(Default::default()),
         };
         for caller in [CallerContext::Local, agent] {
-            let (mut state, mut engine) = make_test_state();
+            let (mut state, mut engine_session) = make_test_state();
+            let mut engine = engine_session.borrow_mut();
             let resp = handle_trigger(&mut state, &mut engine, &caller, json!(1), &json!({}));
             let err = resp.error.expect("non-plugin caller must be refused");
             assert_eq!(err.code, -32016, "{caller:?}");
@@ -178,7 +185,8 @@ mod tests {
 
     #[test]
     fn second_trigger_while_open_is_rejected() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let first = handle_trigger(
             &mut state,
             &mut engine,
@@ -209,7 +217,8 @@ mod tests {
 
     #[test]
     fn trigger_passes_filters_through_to_popup_state() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_trigger(
             &mut state,
             &mut engine,
@@ -238,7 +247,8 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).expect("temp dir");
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_trigger(
             &mut state,
             &mut engine,
@@ -255,7 +265,8 @@ mod tests {
 
     #[test]
     fn missing_local_start_dir_falls_back_to_home() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let resp = handle_trigger(
             &mut state,
             &mut engine,
@@ -285,7 +296,8 @@ mod tests {
 
     #[test]
     fn origin_surface_decides_remote_even_when_active_workspace_is_local() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let (ws_id, sid) = push_background_mirror(&mut engine);
         assert!(!engine.workspaces[state.active_workspace_index(&engine)].mirror);
 
@@ -312,7 +324,8 @@ mod tests {
 
     #[test]
     fn origin_without_start_dir_uses_the_pushed_remote_cwd() {
-        let (mut state, mut engine) = make_test_state();
+        let (mut state, mut engine_session) = make_test_state();
+        let mut engine = engine_session.borrow_mut();
         let (ws_id, sid) = push_background_mirror(&mut engine);
         engine.set_mirror_surface_cwd(sid, Some("/srv/pushed".to_string()));
 

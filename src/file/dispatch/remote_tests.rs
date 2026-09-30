@@ -58,9 +58,14 @@ fn open_surface(kind: &str) -> HandlerAction {
 /// mirror workspace의 첫 surface를 origin으로 식별 결과를 적용한다.
 fn apply_on_mirror(
     origin: FileDispatchOrigin,
-) -> (crate::state::RequestContext, crate::core::CoreState, usize) {
+) -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+    usize,
+) {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     install_handler(
         &engine,
@@ -80,12 +85,13 @@ fn apply_on_mirror(
         origin,
         false,
     );
-    (state, engine, surfaces)
+    (state, engine_session, surfaces)
 }
 
 #[test]
 fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
-    let (state, engine, surfaces) = apply_on_mirror(FileDispatchOrigin::User);
+    let (state, mut engine_session, surfaces) = apply_on_mirror(FileDispatchOrigin::User);
+    let engine = engine_session.borrow_mut();
     assert_eq!(engine.pending_structural_forward.len(), 1);
     let forward = &engine.pending_structural_forward[0];
     let StructuralOp::NewTab {
@@ -112,7 +118,8 @@ fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
 
 #[test]
 fn an_agent_mirror_open_is_not_marked_as_a_user_forward() {
-    let (_state, engine, _) = apply_on_mirror(FileDispatchOrigin::Agent);
+    let (_state, mut engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
+    let engine = engine_session.borrow_mut();
     assert_eq!(engine.pending_structural_forward.len(), 1);
     let forward = &engine.pending_structural_forward[0];
     assert!(!forward.user_triggered);
@@ -125,7 +132,8 @@ fn an_agent_mirror_open_is_not_marked_as_a_user_forward() {
 #[test]
 fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     install_handler(
         &engine,
         "com.example.ipc",
@@ -156,7 +164,8 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
 #[test]
 fn a_mirror_open_without_a_detector_opens_no_picker() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     engine.workspaces[0].mirror = true;
     let sid = engine.workspaces[0].all_surface_ids()[0];
     apply_identify_result(
@@ -176,7 +185,8 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
 
 #[test]
 fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
-    let (_state, engine) = crate::state::tests::test_state();
+    let (_state, mut engine_session) = crate::state::tests::test_state();
+    let engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     register_kind(&engine, "com.tasty.html", "html");
     // 같은 kind라도 허용 목록과 다른 plugin이 등록했으면 client가 원문을 받지 않는다.
@@ -207,11 +217,12 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
 fn mirror_with_ipc_first() -> (
     crate::core::Core,
     crate::state::RequestContext,
-    crate::core::CoreState,
+    crate::runtime::engine_session::EngineSession,
     u32,
 ) {
     let (core, _) = build_test_core();
-    let (state, mut engine) = crate::state::tests::test_state();
+    let (state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.file_handler.as_ref(),
@@ -231,12 +242,13 @@ fn mirror_with_ipc_first() -> (
     );
     engine.workspaces[0].mirror = true;
     let sid = engine.workspaces[0].all_surface_ids()[0];
-    (core, state, engine, sid)
+    (core, state, engine_session, sid)
 }
 
 #[test]
 fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
-    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    let (mut core, mut state, mut engine_session, sid) = mirror_with_ipc_first();
+    let mut engine = engine_session.borrow_mut();
     // 최근 목록에 원격에 열 수 없는 핸들러가 있어도 picker에 보이면 안 된다.
     state
         .file_handler_recent
@@ -273,7 +285,8 @@ fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
 
 #[test]
 fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
-    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    let (mut core, mut state, mut engine_session, sid) = mirror_with_ipc_first();
+    let mut engine = engine_session.borrow_mut();
     apply_identify_result(
         &mut core,
         &mut state,
@@ -297,7 +310,8 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
 /// 확정 뒤에도 같은 출처로 실행하도록 picker에 전달된 출처를 싣는다.
 #[test]
 fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_picker() {
-    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    let (mut core, mut state, mut engine_session, sid) = mirror_with_ipc_first();
+    let mut engine = engine_session.borrow_mut();
     apply_identify_result(
         &mut core,
         &mut state,
@@ -330,7 +344,8 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
         (FileDispatchOrigin::Agent, 0),
     ] {
         let (mut core, _) = build_test_core();
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.workspaces[0].mirror = true;
         let sid = engine.workspaces[0].all_surface_ids()[0];
         apply_identify_result(
@@ -351,7 +366,8 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
 
 #[test]
 fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers() {
-    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    let (mut core, mut state, mut engine_session, sid) = mirror_with_ipc_first();
+    let mut engine = engine_session.borrow_mut();
     let target = crate::file::dispatch::DispatchTarget::File(FileTarget::new("/remote/doc.md"));
 
     crate::file::dispatch::apply_file_picker_result(
@@ -411,7 +427,8 @@ impl IdentifySpawner for RecordingSpawner {
 
 #[test]
 fn a_mirror_origin_identifies_by_name_only() {
-    let (mut core, mut engine) = build_test_core();
+    let (mut core, mut engine_session) = build_test_core();
+    let mut engine = engine_session.borrow_mut();
     let spawner = std::sync::Arc::new(RecordingSpawner::default());
     engine.identify_worker = Some(spawner.clone());
     let sid = engine.workspaces[0].all_surface_ids()[0];

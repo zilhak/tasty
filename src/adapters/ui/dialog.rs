@@ -2,7 +2,6 @@
 //! 호출자가 실제 대상 변경을 적용한다. 갤러리도 같은 view를 사용한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::core::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::state::{MainViewState, RenameTarget};
 use crate::theme;
@@ -61,7 +60,7 @@ pub fn on_close_rename_popup(
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
 
@@ -398,7 +397,7 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn push_workspace(engine: &mut EngineMut<'_>, name: &str) -> u32 {
+    fn push_workspace(engine: &mut crate::core::engine_access::EngineMut<'_>, name: &str) -> u32 {
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
@@ -421,7 +420,7 @@ mod tests {
     /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
     fn apply_rename_and_drain(
         state: &mut MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &mut crate::core::engine_access::EngineMut<'_>,
         target: RenameTarget,
         buffer: &str,
     ) {
@@ -432,7 +431,8 @@ mod tests {
 
     #[test]
     fn workspace_rename_targets_same_workspace_after_agent_close() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         push_workspace(&mut engine, "A");
         let b_id = push_workspace(&mut engine, "B");
         push_workspace(&mut engine, "C");
@@ -454,7 +454,8 @@ mod tests {
 
     #[test]
     fn tab_rename_targets_same_tab_after_agent_move() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let ws_idx = state.active_workspace_index(&engine);
         let pane_id = state
             .navigation
@@ -482,7 +483,8 @@ mod tests {
 
     #[test]
     fn rename_target_is_gone_after_agent_closes_it() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         let b_id = push_workspace(&mut engine, "B");
         let target = RenameTarget::WorkspaceName { workspace_id: b_id };
         assert!(rename_target_exists(&target, &engine));
@@ -595,14 +597,15 @@ mod tests {
         assert_eq!(buffer, "");
     }
 
-    fn engine() -> crate::core::CoreState {
+    fn engine() -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
     }
 
     #[test]
     fn category_validation_new_category_rules() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         e.create_category("Services").unwrap();
         let (err, ok) = category_validation(&RenameTarget::NewCategory, "  ", &e);
         assert!(!ok && err.is_none());
@@ -616,7 +619,8 @@ mod tests {
 
     #[test]
     fn category_validation_rename_allows_self_name() {
-        let mut e = engine();
+        let mut e_session = engine();
+        let mut e = e_session.borrow_mut();
         let id = e.create_category("Services").unwrap();
         let (err, ok) =
             category_validation(&RenameTarget::CategoryName { cat_id: id }, "SERVICES", &e);

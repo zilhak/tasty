@@ -552,7 +552,7 @@ mod mirror_structural_guard_tests {
     use crate::model::SplitDirection;
     use tasty_terminal::Terminal;
 
-    fn build_test_core() -> (Core, CoreState) {
+    fn build_test_core() -> (Core, crate::runtime::engine_session::EngineSession) {
         use std::sync::{Arc, Mutex};
 
         use crate::adapters::test::{
@@ -563,7 +563,7 @@ mod mirror_structural_guard_tests {
         use crate::ports::notification_sound::NoopPlayer;
 
         let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let engine =
+        let engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
@@ -587,7 +587,7 @@ mod mirror_structural_guard_tests {
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
             .expect("test Core");
-        (core, engine)
+        (core, engine_session)
     }
 
     fn seed(engine: &mut EngineMut<'_>) -> (u32, u32) {
@@ -608,7 +608,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn adopt_into_mirror_pane_is_blocked() {
         use crate::core::pty_registry::PtySpawnSpec;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let pty_id = engine
@@ -656,7 +657,8 @@ mod mirror_structural_guard_tests {
     // mirror surface의 detached Terminal을 로컬 셸로 바꾸지 않는다.
     #[test]
     fn respawn_on_mirror_surface_is_blocked() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
 
@@ -681,7 +683,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn mirror_split_and_newtab_are_blocked_without_spawning() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let before = engine.runtime.terminals.iter().count();
@@ -727,7 +730,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn non_mirror_split_passes_and_spawns() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         assert!(!engine.workspaces[0].mirror);
         let before = engine.runtime.terminals.iter().count();
@@ -752,7 +756,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn create_tab_in_occupied_workspace_inherits_occupancy() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 42;
@@ -796,7 +801,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn split_pane_in_occupied_workspace_inherits_occupancy() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 7;
@@ -834,7 +840,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn split_surface_in_occupied_workspace_inherits_occupancy() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 9;
@@ -874,7 +881,8 @@ mod mirror_structural_guard_tests {
     fn adopt_terminal_in_occupied_workspace_inherits_occupancy() {
         use crate::core::pty_registry::PtySpawnSpec;
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
         let client_id = 13;
@@ -940,7 +948,8 @@ mod mirror_structural_guard_tests {
     fn adopt_terminal_promotes_headless_pty_preserving_state() {
         use crate::core::pty_registry::PtySpawnSpec;
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
 
         let pty_id = engine
@@ -1051,7 +1060,8 @@ mod mirror_structural_guard_tests {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
         use crate::core::pty_registry::PtySpawnSpec;
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         engine.waker_factory = Some(shared);
@@ -1119,7 +1129,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn adopt_unknown_pty_errors() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
         let bogus = crate::core::pty_registry::PTY_ID_BASE + 4242;
         let before = engine.runtime.terminals.iter().count();
@@ -1142,7 +1153,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn helper_flags_structural_targets_only_when_mirror() {
-        let (_core, mut engine) = build_test_core();
+        let (_core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         let tab_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
@@ -1225,7 +1237,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_split_enqueues_forward_with_local_anchor() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         assert!(engine.pending_structural_forward.is_empty());
@@ -1264,7 +1277,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_split_pane_anchors_on_pane_surface() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         core.apply(
@@ -1290,7 +1304,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_restore_enqueues_forward_and_leaves_the_local_stack_alone() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
         engine.push_closed_item(crate::model::ClosedItem::Surface {
             surface: crate::model::closed_item::ClosedSurface::from_capture(9999, None),
@@ -1329,7 +1344,8 @@ mod mirror_structural_guard_tests {
     /// 대상 pane이 없으면 mirror 판정을 할 수 없어 일반 복원 경로로 진행한다.
     #[test]
     fn a_restore_without_a_target_pane_is_not_a_mirror_op() {
-        let (mut _core, mut engine) = build_test_core();
+        let (mut _core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (_a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         assert_eq!(
@@ -1345,7 +1361,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_convert_enqueues_forward_with_local_anchor() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let err = core
@@ -1389,7 +1406,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_convert_forwards_cwd() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let err = core
@@ -1422,7 +1440,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_convert_to_terminal_forwards_cwd() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         core.apply(
@@ -1450,7 +1469,8 @@ mod mirror_structural_guard_tests {
     #[test]
     fn mirror_move_surface_enqueues_forward_when_same_workspace() {
         use tasty_ipc::stream::StructuralOp;
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         let events = core
             .apply(
@@ -1501,7 +1521,8 @@ mod mirror_structural_guard_tests {
 
     #[test]
     fn mirror_move_surface_blocked_when_crossing_workspace_boundary() {
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
 
@@ -1546,7 +1567,8 @@ mod mirror_structural_guard_tests {
     fn mark_last_forward_user_triggered_flips_on_user_origin() {
         use crate::intent::{IntentOrigin, UserSource};
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let err = core
@@ -1581,7 +1603,8 @@ mod mirror_structural_guard_tests {
     fn mark_last_forward_user_triggered_stays_false_on_agent_origin() {
         use crate::intent::IntentOrigin;
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let err = core
@@ -1614,7 +1637,8 @@ mod mirror_structural_guard_tests {
     fn mark_last_forward_user_triggered_noop_when_not_forwarded() {
         use crate::intent::{IntentOrigin, UserSource};
 
-        let (mut core, mut engine) = build_test_core();
+        let (mut core, mut engine_session) = build_test_core();
+        let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
 

@@ -8,9 +8,10 @@ GUI의 `navigation`은 사용자 선택 원본이고, headless의 같은 값 타
 Workspace·Pane·Tab에는 사용자 선택이 없다. 명령은 해소된 ID로 실행하고 Core 결과의 ID를 App이 받아 선택 삭제 보정 또는 사용자 continuation을 적용한다.
 IPC·저장·attach의 active/focused 값은 명시 read-only presentation으로 합성한다([모델·View 분리](model-view-split.md)).
 
-창의 engine(`CoreState`)은 MainViewState와 MainView 어디에도 없다. GUI에서는 `App.engines`가 engine을 소유하고,
+창의 engine 소유자(`EngineSession`)는 MainViewState와 MainView 어디에도 없다. CoreState와 Terminal·hook·task·observer 자원은 Session이 각각 소유한다. GUI에서는 `App.engines`가 engine을 소유하고,
 App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
-구조와 실행 자원의 나머지 분리는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
+CoreState만 필요한 함수에는 구조 참조를, 실행/읽기 소비자에는 `EngineMut`/`EngineRef` 대여를 전달한다. View의 terminal 읽기는 불변 대여를 사용한다.
+구조와 effect·kind 실행 객체의 나머지 분리는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
 
 ## 열 읽는 법
 

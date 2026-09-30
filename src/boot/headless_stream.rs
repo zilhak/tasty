@@ -119,7 +119,7 @@ fn apply_structural_ops(
                 false,
                 Some(
                     crate::core::attach_structure_sync::unresolved_forward_reason(
-                        [&*engine],
+                        [&*engine.core],
                         client_id,
                         &op,
                     ),

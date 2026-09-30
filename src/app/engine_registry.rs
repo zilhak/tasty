@@ -246,10 +246,13 @@ mod tests {
 
     use super::*;
 
-    fn test_engine(slot: Option<u32>) -> (MainViewState, CoreState) {
-        let (state, mut engine) = crate::state::tests::test_state();
+    fn test_engine(
+        slot: Option<u32>,
+    ) -> (MainViewState, crate::runtime::engine_session::EngineSession) {
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
         engine.layout_slot = slot;
-        (state, engine)
+        (state, engine_session)
     }
 
     fn wid(n: u64) -> WindowId {
@@ -282,7 +285,7 @@ mod tests {
     }
 
     /// 창 하나를 여는 경로와 같다. parked가 있으면 그것을, 없으면 새 engine을 임시로 둔 뒤 창에 붙인다.
-    fn open_window(reg: &mut EngineRegistry, w: WindowId, fresh: CoreState) -> EngineId {
+    fn open_window(reg: &mut EngineRegistry, w: WindowId, fresh: EngineSession) -> EngineId {
         let id = match reg.unpark_first() {
             Some((id, _)) => id,
             None => reg
