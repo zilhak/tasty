@@ -1948,8 +1948,15 @@ fn close_last_surface_of_first_workspace(
 
 fn run_cascade_close(state: &mut AppState, engine: &mut crate::core::CoreState, sid: u32) {
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let closed = crate::core::structural_exec::close_surface(&mut core, state, engine, sid, false)
-        .expect("close_surface");
+    let closed = crate::core::structural_exec::close_surface(
+        &mut core,
+        state,
+        engine,
+        sid,
+        false,
+        &crate::core::origin::IPC_AGENT,
+    )
+    .expect("close_surface");
     assert!(closed.closed);
 }
 

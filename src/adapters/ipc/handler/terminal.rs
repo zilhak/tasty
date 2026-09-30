@@ -249,6 +249,7 @@ pub(crate) fn handle_spawn(
     engine: &mut CoreState,
     id: Value,
     params: &Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
 
@@ -310,7 +311,7 @@ pub(crate) fn handle_spawn(
     if let Some(c) = &cwd {
         tab_params["cwd"] = Value::String(c.clone());
     }
-    let tab_resp = tab::handle_tab_create(core, window, engine, id.clone(), &tab_params);
+    let tab_resp = tab::handle_tab_create(core, window, engine, id.clone(), &tab_params, origin);
     let tab_val = match unwrap_ok(tab_resp, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -340,6 +341,7 @@ pub(crate) fn handle_spawn(
             nickname,
         },
         command.as_deref(),
+        origin,
     ) {
         return error;
     }
@@ -474,6 +476,7 @@ pub(crate) fn handle_kill(
     engine: &mut CoreState,
     id: Value,
     params: &Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     engine.reconcile_child_terminals();
     let parent = match resolve_parent(engine, params, &id) {
@@ -502,7 +505,7 @@ pub(crate) fn handle_kill(
     // 닫기를 먼저 시도한다. 원격 전달이나 실패로 surface가 남으면 관계와 soft 점유를 그대로 둔다.
     let close_params = json!({ "surface_id": child_surface_id });
     let closed = match unwrap_ok(
-        surface::handle_surface_close(core, window, engine, id.clone(), &close_params),
+        surface::handle_surface_close(core, window, engine, id.clone(), &close_params, origin),
         &id,
     ) {
         Ok(v) => v,

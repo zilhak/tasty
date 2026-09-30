@@ -35,6 +35,7 @@ pub fn handle_pane_close(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let pane_id = match require_pane_id(params, &id) {
         Ok(pid) => pid,
@@ -50,7 +51,7 @@ pub fn handle_pane_close(
         );
     }
 
-    match structural_exec::close_pane(core, window, engine, pane_id) {
+    match structural_exec::close_pane(core, window, engine, pane_id, origin) {
         Ok(Closed {
             id: pane_id,
             closed: true,
@@ -99,6 +100,7 @@ pub fn handle_split(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let level = match params.get("level").and_then(|v| v.as_str()) {
         Some("pane-group") | Some("pane") => SplitLevel::Pane,
@@ -130,7 +132,7 @@ pub fn handle_split(
         target_pane,
         params,
     };
-    match structural_exec::split(core, window, engine, req) {
+    match structural_exec::split(core, window, engine, req, origin) {
         Ok(SplitOutcome::Pane {
             new_pane_id,
             new_surface_id,

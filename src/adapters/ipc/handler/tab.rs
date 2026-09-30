@@ -58,6 +58,7 @@ pub fn handle_tab_create(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let pane_id = match require_pane_id(params, &id) {
         Ok(pid) => pid,
@@ -65,7 +66,7 @@ pub fn handle_tab_create(
     };
 
     // 에이전트 경로 — 새 탭은 사용자가 보던 탭을 바꾸지 않는다(ADR-0017).
-    match structural_exec::create_tab(core, window, engine, pane_id, params, false) {
+    match structural_exec::create_tab(core, window, engine, pane_id, params, false, origin) {
         Ok(TabCreated {
             pane_id,
             surface_id,
@@ -90,6 +91,7 @@ pub fn handle_tab_close(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let tab_id = match require_tab_id(params, &id) {
         Ok(tid) => tid,
@@ -106,7 +108,7 @@ pub fn handle_tab_close(
         );
     }
 
-    match structural_exec::close_tab(core, window, engine, tab_id) {
+    match structural_exec::close_tab(core, window, engine, tab_id, origin) {
         Ok(Closed {
             id: tab_id,
             closed: true,
@@ -128,6 +130,7 @@ pub fn handle_tab_move(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let pane_id = match require_pane_id(params, &id) {
         Ok(pid) => pid,
@@ -142,7 +145,7 @@ pub fn handle_tab_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    match structural_exec::move_tab(core, engine, pane_id, from, to) {
+    match structural_exec::move_tab(core, engine, pane_id, from, to, origin) {
         Ok(moved) => JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id })),
         Err(f) => super::structural_failure_response(id, f),
     }

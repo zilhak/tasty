@@ -43,6 +43,12 @@ pub enum AgentSource {
     Remote,
 }
 
+/// IPC 경로 시험이 핸들러와 structural_exec에 넘기는 출처.
+#[cfg(test)]
+pub(crate) const IPC_AGENT: IntentOrigin = IntentOrigin::Agent {
+    source: AgentSource::Ipc,
+};
+
 impl IntentOrigin {
     pub fn is_user(&self) -> bool {
         matches!(self, IntentOrigin::User { .. })

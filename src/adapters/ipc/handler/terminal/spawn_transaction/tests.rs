@@ -15,6 +15,7 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
         &mut engine,
         json!(1),
         &json!({"pane_id":pane,"type":"empty"}),
+        &crate::core::origin::IPC_AGENT,
     );
     let target = created.result.unwrap()["surface_id"].as_u64().unwrap() as u32;
     let child = ChildEntry {
@@ -24,6 +25,7 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
         role: Some("worker".into()),
         nickname: None,
     };
+    state.pending_lifecycle_events.clear();
     let result = finish(
         &mut core,
         &mut state,
@@ -32,6 +34,7 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
         parent,
         child,
         Some("must not run"),
+        &crate::core::origin::IPC_AGENT,
     );
     assert!(result.is_err());
     assert!(engine.find_surface_by_id(target).is_none());
@@ -43,5 +46,13 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
             .child_terminals
             .list_children(parent)
             .is_empty()
+    );
+    // 롤백 닫기는 spawn 요청의 출처를 따른다.
+    assert!(!state.pending_lifecycle_events.is_empty());
+    assert!(
+        state
+            .pending_lifecycle_events
+            .iter()
+            .all(|e| !e.is_user_close)
     );
 }

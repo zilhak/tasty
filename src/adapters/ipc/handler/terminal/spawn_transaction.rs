@@ -10,6 +10,7 @@ pub(super) fn finish(
     parent: u32,
     child: ChildEntry,
     command: Option<&str>,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> Result<(), JsonRpcResponse> {
     let target = child.child_surface_id;
     engine
@@ -21,13 +22,17 @@ pub(super) fn finish(
     if let Err(error) = engine.occupy_soft(target, parent, label) {
         let error =
             JsonRpcResponse::error(id.clone(), -32020, format!("occupy_soft failed: {error:?}"));
-        return Err(rollback(core, window, engine, parent, &child, error));
+        return Err(rollback(
+            core, window, engine, parent, &child, error, origin,
+        ));
     }
     if let Some(command) = command {
         if let Err(error) =
             send_body_then_submit(engine, core, id, target, build_tell_payload(command))
         {
-            return Err(rollback(core, window, engine, parent, &child, error));
+            return Err(rollback(
+                core, window, engine, parent, &child, error, origin,
+            ));
         }
     }
     Ok(())
@@ -40,6 +45,7 @@ fn rollback(
     parent: u32,
     child: &ChildEntry,
     mut original: JsonRpcResponse,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     if engine
         .runtime
@@ -62,6 +68,7 @@ fn rollback(
         engine,
         original.id.clone(),
         &json!({"surface_id":child.child_surface_id}),
+        origin,
     );
     if let Some(error) = closed.error {
         tracing::warn!("spawn rollback close failed: {}", error.message);

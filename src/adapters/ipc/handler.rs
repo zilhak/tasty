@@ -26,6 +26,8 @@ mod hook_handler;
 pub(crate) mod idempotency;
 #[cfg(test)]
 mod intent_order_tests;
+#[cfg(test)]
+mod structural_origin_tests;
 // 창 라우터 호출자 검사는 해당 라우터와 같은 GUI 조건에서 실행한다.
 #[cfg(all(test, feature = "gui"))]
 mod window_router_caller_tests;
@@ -548,6 +550,21 @@ fn spawn_target_guard(
     None
 }
 
+/// 구조 변경의 요청 출처를 IPC 호출자에서 정한다. IPC 호출은 모두 에이전트 요청이다.
+/// Local에는 사람이 실행한 CLI와 hook·webhook·agent runner의 주입 요청이 섞여 있어
+/// 사용자 조작으로 볼 근거가 없다.
+fn intent_origin_of(caller: &CallerContext) -> crate::core::origin::IntentOrigin {
+    use crate::core::origin::{AgentSource, IntentOrigin};
+    match caller {
+        CallerContext::Plugin { plugin_id, .. } => IntentOrigin::Agent {
+            source: AgentSource::Plugin(plugin_id.clone()),
+        },
+        CallerContext::Local | CallerContext::Agent { .. } => IntentOrigin::Agent {
+            source: AgentSource::Ipc,
+        },
+    }
+}
+
 fn route_engine_handler(
     core: &mut crate::core::Core,
     window: &mut dyn IpcWindow,
@@ -567,6 +584,7 @@ fn route_engine_handler(
     ) {
         return Some(resp);
     }
+    let origin = intent_origin_of(caller);
     Some(match request.method.as_str() {
         "system.info" => handle_system_info(window, engine, id),
         "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
@@ -595,19 +613,23 @@ fn route_engine_handler(
             workspace_category::handle_move(core, engine, id, &request.params)
         }
         "pane.list" => pane::handle_pane_list(engine, id),
-        "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params),
-        "split" => pane::handle_split(core, window, engine, id, &request.params),
+        "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params, &origin),
+        "split" => pane::handle_split(core, window, engine, id, &request.params, &origin),
         "tab.list" => tab::handle_tab_list(engine, id, &request.params),
-        "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params),
-        "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params),
-        "tab.move" => tab::handle_tab_move(core, engine, id, &request.params),
+        "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params, &origin),
+        "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params, &origin),
+        "tab.move" => tab::handle_tab_move(core, engine, id, &request.params, &origin),
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
-        "terminal.spawn" => terminal::handle_spawn(core, window, engine, id, &request.params),
+        "terminal.spawn" => {
+            terminal::handle_spawn(core, window, engine, id, &request.params, &origin)
+        }
         "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
-        "terminal.kill" => terminal::handle_kill(core, window, engine, id, &request.params),
+        "terminal.kill" => {
+            terminal::handle_kill(core, window, engine, id, &request.params, &origin)
+        }
         "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
         "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
@@ -631,9 +653,11 @@ fn route_engine_handler(
         "preset.rename" => preset::handle_rename(core, id, &request.params),
         "preset.capture" => preset::handle_capture(core, engine, id, &request.params),
         "preset.apply" => preset::handle_apply(core, window, engine, id, &request.params),
-        "surface.close" => surface::handle_surface_close(core, window, engine, id, &request.params),
+        "surface.close" => {
+            surface::handle_surface_close(core, window, engine, id, &request.params, &origin)
+        }
         "surface.close_self" => {
-            surface::handle_surface_close_self(core, window, engine, id, &request.params)
+            surface::handle_surface_close_self(core, window, engine, id, &request.params, &origin)
         }
         "surface.list" => surface::handle_surface_list(engine, id),
         "surface.kinds" => surface::handle_surface_kinds(engine, id),

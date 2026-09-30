@@ -580,6 +580,16 @@ pub(crate) struct ForwardedDelta {
     pub converted_surface: Option<SurfaceId>,
 }
 
+/// forward된 요청은 원격 쪽 사용자 조작이어도 이 호스트의 사용자 포커스를 옮기지 않는다.
+/// 복원 기록과 새 탭 활성화는 ForwardOrigin에서 따로 정한다.
+fn forward_intent_origin(
+    _origin: tasty_ipc::stream::ForwardOrigin,
+) -> crate::core::origin::IntentOrigin {
+    crate::core::origin::IntentOrigin::Agent {
+        source: crate::core::origin::AgentSource::Remote,
+    }
+}
+
 /// mirror의 구조 변경을 서버에서 실행한다. 호출자가 holder를 검증해야 한다.
 /// IPC의 권한·자기 대상·hard 점유 검사는 여기서 실행하지 않는다. split·tab·close는
 /// structural_exec를 공유하고 convert·restore·move-surface는 Core::apply를 직접 호출한다.
@@ -616,6 +626,7 @@ pub(crate) fn execute_forwarded_structural_op(
 
     let mut converted_surface: Option<SurfaceId> = None;
     let restorable = origin == tasty_ipc::stream::ForwardOrigin::User;
+    let intent_origin = forward_intent_origin(origin);
 
     let outcome: Result<(), String> = match op {
         StructuralOp::SplitSurface {
@@ -643,7 +654,7 @@ pub(crate) fn execute_forwarded_structural_op(
             };
             // 결과를 판정하기 전에 자동 tap 억제를 해제해야 오류가 나도 다음 생성에 영향을 주지 않는다.
             engine.attach.set_auto_tap_suppressed(true);
-            let result = exec::split(core, state, engine, req);
+            let result = exec::split(core, state, engine, req, &intent_origin);
             engine.attach.set_auto_tap_suppressed(false);
             forward_result(result)
         }
@@ -671,7 +682,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 params: &p,
             };
             engine.attach.set_auto_tap_suppressed(true);
-            let result = exec::split(core, state, engine, req);
+            let result = exec::split(core, state, engine, req, &intent_origin);
             engine.attach.set_auto_tap_suppressed(false);
             forward_result(result)
         }
@@ -686,7 +697,8 @@ pub(crate) fn execute_forwarded_structural_op(
             let p = structural_params(params, json!({ "pane_id": pane_id, "type": surface_kind }));
             engine.attach.set_auto_tap_suppressed(true);
             let activate = origin == tasty_ipc::stream::ForwardOrigin::User;
-            let result = exec::create_tab(core, state, engine, pane_id, &p, activate);
+            let result =
+                exec::create_tab(core, state, engine, pane_id, &p, activate, &intent_origin);
             engine.attach.set_auto_tap_suppressed(false);
             forward_result(result)
         }
@@ -698,6 +710,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 engine,
                 *surface_id,
                 restorable,
+                &intent_origin,
             ))
         }
         StructuralOp::CloseTab { anchor_surface_id } => {
@@ -721,7 +734,7 @@ pub(crate) fn execute_forwarded_structural_op(
             {
                 engine.push_closed_item(item);
             }
-            forward_result(exec::close_tab(core, state, engine, tab_id))
+            forward_result(exec::close_tab(core, state, engine, tab_id, &intent_origin))
         }
         StructuralOp::ClosePane { anchor_surface_id } => {
             let pane_id = engine
@@ -735,7 +748,13 @@ pub(crate) fn execute_forwarded_structural_op(
             {
                 engine.push_closed_item(item);
             }
-            forward_result(exec::close_pane(core, state, engine, pane_id))
+            forward_result(exec::close_pane(
+                core,
+                state,
+                engine,
+                pane_id,
+                &intent_origin,
+            ))
         }
         StructuralOp::MoveTab {
             anchor_surface_id,
@@ -751,6 +770,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 pane_id,
                 *from_index,
                 *to_index,
+                &intent_origin,
             ))
         }
         StructuralOp::ConvertSurface {
@@ -2479,6 +2499,141 @@ mod forward_exec_tests {
     }
 
     #[test]
+    fn forward_origins_map_to_a_remote_agent() {
+        use crate::core::origin::{AgentSource, IntentOrigin};
+        for origin in [ForwardOrigin::User, ForwardOrigin::Agent] {
+            assert!(
+                matches!(
+                    super::forward_intent_origin(origin),
+                    IntentOrigin::Agent {
+                        source: AgentSource::Remote
+                    }
+                ),
+                "{origin:?}"
+            );
+        }
+    }
+
+    fn split_op(anchor: u32, pane: bool) -> StructuralOp {
+        let surface_kind = "terminal".to_string();
+        let params = serde_json::json!({});
+        if pane {
+            StructuralOp::SplitPane {
+                anchor_surface_id: anchor,
+                direction: SplitAxis::Vertical,
+                surface_kind,
+                params,
+            }
+        } else {
+            StructuralOp::SplitSurface {
+                surface_id: anchor,
+                direction: SplitAxis::Vertical,
+                surface_kind,
+                params,
+            }
+        }
+    }
+
+    /// 원격 사용자 조작이어도 서버 호스트 사용자의 선택 pane·surface는 그대로다.
+    #[test]
+    fn a_forwarded_user_split_keeps_the_server_users_focus() {
+        for pane in [true, false] {
+            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let a = seed(&mut engine);
+            let before = (
+                state.active_workspace(&engine).focused_pane,
+                state.focused_surface_id(&engine),
+            );
+            let fd = execute_forwarded_structural_op(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &split_op(a, pane),
+                ForwardOrigin::User,
+            )
+            .expect("split ok")
+            .expect("split delta");
+            assert_eq!(fd.added_terminals.len(), 1, "pane={pane}");
+            assert_eq!(
+                (
+                    state.active_workspace(&engine).focused_pane,
+                    state.focused_surface_id(&engine),
+                ),
+                before,
+                "pane={pane}"
+            );
+        }
+    }
+
+    /// 복원 기록은 ForwardOrigin에서 정하고, lifecycle의 사용자 닫기 표시는 서버 사용자 기준이다.
+    #[test]
+    fn a_forwarded_user_close_is_restorable_but_not_a_local_user_close() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split_op(a, false),
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta");
+        let b = fd.added_terminals[0];
+        let before = engine.closed_items.len();
+        state.pending_lifecycle_events.clear();
+
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseSurface { surface_id: b },
+            ForwardOrigin::User,
+        )
+        .expect("close ok");
+
+        assert_eq!(engine.closed_items.len(), before + 1);
+        assert!(!state.pending_lifecycle_events.is_empty());
+        assert!(
+            state
+                .pending_lifecycle_events
+                .iter()
+                .all(|e| !e.is_user_close)
+        );
+    }
+
+    /// 서버도 mirror면 요청은 다시 전달된다. 그 실패는 서버 사용자 toast로 가지 않는다.
+    #[cfg(feature = "gui")] // headless에는 전달 큐를 보내는 루프가 없어 거절한다
+    #[test]
+    fn a_chained_forward_stays_a_silent_agent_request() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        state.active_workspace_mut(&mut engine).mirror = true;
+
+        let surfaces_before = engine.workspaces[0].all_surface_ids().len();
+
+        // 다시 전달한 요청은 forward_result가 성공으로 돌려준다.
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split_op(a, true),
+            ForwardOrigin::User,
+        )
+        .expect("forwarded again");
+
+        assert_eq!(
+            engine.workspaces[0].all_surface_ids().len(),
+            surfaces_before,
+            "mirror 구조 변경은 로컬에서 실행하지 않는다"
+        );
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        let forwarded = &engine.pending_structural_forward[0];
+        assert!(forwarded.silent_failure);
+        assert!(!forwarded.user_triggered);
+    }
+
+    #[test]
     fn a_forwarded_agent_close_leaves_no_snapshot() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);
@@ -2580,6 +2735,7 @@ mod forward_exec_tests {
             &mut engine,
             serde_json::Value::Null,
             &serde_json::json!({ "surface_id": b }),
+            &crate::core::origin::IPC_AGENT,
         );
         assert!(resp.error.is_none(), "일반 IPC close 자체는 성공해야 한다");
         assert_eq!(
@@ -3083,6 +3239,7 @@ mod forward_exec_tests {
             pane_id,
             &serde_json::json!({ "pane_id": pane_id }),
             false,
+            &crate::core::origin::IPC_AGENT,
         )
         .expect("local create_tab");
         let first = rx.try_recv().expect("holder 에게 무언가 나가야 한다");
@@ -3278,6 +3435,7 @@ mod forward_exec_tests {
             &mut crate::core::CoreState,
             serde_json::Value,
             &serde_json::Value,
+            &crate::core::origin::IntentOrigin,
         ) -> tasty_ipc::protocol::JsonRpcResponse,
         Box<dyn Fn(u32, u32) -> serde_json::Value>,
     );
@@ -3369,6 +3527,7 @@ mod forward_exec_tests {
             &mut engine,
             serde_json::json!(1),
             &ipc_params(a, pane_id),
+            &crate::core::origin::IPC_AGENT,
         );
         let ipc_msg = resp
             .error

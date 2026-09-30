@@ -12,8 +12,11 @@ fn close_surface_via_intent(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     surface_id: u32,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
-    match crate::core::structural_exec::close_surface(core, window, engine, surface_id, false) {
+    match crate::core::structural_exec::close_surface(
+        core, window, engine, surface_id, false, origin,
+    ) {
         Ok(crate::core::structural_exec::Closed {
             id: surface_id,
             closed: true,
@@ -57,6 +60,7 @@ pub(crate) fn handle_surface_close(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let surface_id = match require_surface_id(params, &id) {
         Ok(sid) => sid,
@@ -74,7 +78,7 @@ pub(crate) fn handle_surface_close(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, window, engine, id, surface_id)
+    close_surface_via_intent(core, window, engine, id, surface_id, origin)
 }
 
 /// 일반 close의 자기 대상 방지를 거치지 않고 닫는다. 점유 검사는 동일하게 적용한다.
@@ -84,6 +88,7 @@ pub(crate) fn handle_surface_close_self(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
+    origin: &crate::core::origin::IntentOrigin,
 ) -> JsonRpcResponse {
     let surface_id = match require_surface_id(params, &id) {
         Ok(sid) => sid,
@@ -92,7 +97,7 @@ pub(crate) fn handle_surface_close_self(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, window, engine, id, surface_id)
+    close_surface_via_intent(core, window, engine, id, surface_id, origin)
 }
 
 #[cfg(test)]
@@ -122,6 +127,7 @@ mod hard_occupancy_tests {
             &mut engine,
             json!(1),
             &json!({ "surface_id": target }),
+            &crate::core::origin::IPC_AGENT,
         );
 
         let err = res.error.expect("하드 점유 surface 는 거절해야 한다");
@@ -161,6 +167,7 @@ mod hard_occupancy_tests {
             &mut engine,
             json!(1),
             &json!({ "surface_id": target }),
+            &crate::core::origin::IPC_AGENT,
         );
 
         assert!(
@@ -186,6 +193,7 @@ mod hard_occupancy_tests {
             &mut engine,
             json!(1),
             &json!({ "surface_id": target }),
+            &crate::core::origin::IPC_AGENT,
         );
 
         assert!(

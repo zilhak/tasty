@@ -129,6 +129,7 @@ fn an_agent_surface_close_records_nothing() {
             &mut engine,
             sid,
             false,
+            &crate::core::origin::IPC_AGENT,
         )
         .expect("close_surface");
 
@@ -158,9 +159,14 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine, _) = arrange(Case::Pane);
     let pane_id = state.active_workspace(&engine).focused_pane;
-    let closed =
-        crate::core::structural_exec::close_pane(&mut core, &mut state, &mut engine, pane_id)
-            .expect("close_pane");
+    let closed = crate::core::structural_exec::close_pane(
+        &mut core,
+        &mut state,
+        &mut engine,
+        pane_id,
+        &crate::core::origin::IPC_AGENT,
+    )
+    .expect("close_pane");
     assert!(closed.closed);
     assert_eq!(engine.closed_items.len(), 0, "agent pane close");
 
@@ -168,9 +174,14 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
     let tab_id = engine
         .find_tab_for_surface(sid)
         .expect("tab of the focused surface");
-    let closed =
-        crate::core::structural_exec::close_tab(&mut core, &mut state, &mut engine, tab_id)
-            .expect("close_tab");
+    let closed = crate::core::structural_exec::close_tab(
+        &mut core,
+        &mut state,
+        &mut engine,
+        tab_id,
+        &crate::core::origin::IPC_AGENT,
+    )
+    .expect("close_tab");
     assert!(closed.closed);
     assert_eq!(engine.closed_items.len(), 0, "agent tab close");
 }
@@ -240,8 +251,14 @@ fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
     state.active_workspace_mut(&mut engine).mirror = true;
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
 
-    let result =
-        crate::core::structural_exec::close_surface(&mut core, &mut state, &mut engine, sid, false);
+    let result = crate::core::structural_exec::close_surface(
+        &mut core,
+        &mut state,
+        &mut engine,
+        sid,
+        false,
+        &crate::core::origin::IPC_AGENT,
+    );
 
     assert!(
         result.is_err(),
