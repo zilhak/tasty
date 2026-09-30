@@ -269,13 +269,27 @@ pub fn handle_workspace_create(
         },
     );
 
-    if let Some(cat_id) = category {
-        engine.workspaces[index].set_category(cat_id);
-        engine.mark_layout_dirty();
+    if let Some(category) = category
+        && let Err(e) = core.apply(
+            engine,
+            crate::core::intent::DomainIntent::SetWorkspaceCategory {
+                workspace_id,
+                category,
+            },
+        )
+    {
+        return JsonRpcResponse::internal_error(id, e.to_string());
     }
-    if let Some(mapping) = attach_mapping {
-        engine.workspaces[index].set_attach_mapping(Some(mapping));
-        engine.mark_layout_dirty();
+    if let Some(mapping) = attach_mapping
+        && let Err(e) = core.apply(
+            engine,
+            crate::core::intent::DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id,
+                mapping: Some(mapping),
+            },
+        )
+    {
+        return JsonRpcResponse::internal_error(id, e.to_string());
     }
 
     let ws = &engine.workspaces[index];
@@ -389,17 +403,33 @@ pub fn handle_workspace_update(
 
     window.cascade_workspace_meta_updated(workspace_id, name, subtitle, description);
 
-    // 검증을 마친 값만 대입한다. 변경은 layout.json에 저장하도록 표시한다.
-    if let Some(cat_id) = category {
-        engine.workspaces[index].set_category(cat_id);
-        engine.mark_layout_dirty();
+    // 검증을 마친 값만 적용한다. Core가 layout.json 저장을 예약한다.
+    if let Some(category) = category
+        && let Err(e) = core.apply(
+            engine,
+            crate::core::intent::DomainIntent::SetWorkspaceCategory {
+                workspace_id,
+                category,
+            },
+        )
+    {
+        return JsonRpcResponse::internal_error(id, e.to_string());
     }
-    if clear {
-        engine.workspaces[index].set_attach_mapping(None);
-        engine.mark_layout_dirty();
-    } else if let Some(mapping) = attach_mapping {
-        engine.workspaces[index].set_attach_mapping(Some(mapping));
-        engine.mark_layout_dirty();
+    let mapping_change = if clear {
+        Some(None)
+    } else {
+        attach_mapping.map(Some)
+    };
+    if let Some(mapping) = mapping_change
+        && let Err(e) = core.apply(
+            engine,
+            crate::core::intent::DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id,
+                mapping,
+            },
+        )
+    {
+        return JsonRpcResponse::internal_error(id, e.to_string());
     }
 
     let ws = &engine.workspaces[index];

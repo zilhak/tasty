@@ -231,8 +231,10 @@ fn build_mirror_forward_op(
                 None
             }
         }
-        // 이름·카테고리는 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
+        // 이름·카테고리·attach 매핑은 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
         D::RenameTab { .. }
+        | D::SetWorkspaceCategory { .. }
+        | D::SetWorkspaceAttachMapping { .. }
         | D::CreateCategory { .. }
         | D::RenameCategory { .. }
         | D::DeleteCategory { .. }
@@ -357,6 +359,14 @@ impl Core {
             } => Ok(vec![
                 self.apply_move_workspace(engine, from_index, to_index),
             ]),
+            DomainIntent::SetWorkspaceCategory {
+                workspace_id,
+                category,
+            } => Self::apply_set_workspace_category(engine, workspace_id, category),
+            DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id,
+                mapping,
+            } => Self::apply_set_workspace_attach_mapping(engine, workspace_id, mapping),
             DomainIntent::CreateCategory { name } => Self::apply_create_category(engine, &name),
             DomainIntent::RenameCategory { id, name } => {
                 Self::apply_rename_category(engine, id, &name)

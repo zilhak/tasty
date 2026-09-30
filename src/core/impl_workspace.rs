@@ -242,6 +242,23 @@ impl Core {
         }])
     }
 
+    pub(super) fn apply_set_workspace_attach_mapping(
+        engine: &mut crate::core::CoreState,
+        workspace_id: u32,
+        mapping: Option<crate::model::WorkspaceAttachMapping>,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let Some(ws) = engine
+            .workspaces
+            .iter_mut()
+            .find(|ws| ws.id == workspace_id)
+        else {
+            anyhow::bail!("Workspace id {} not found", workspace_id);
+        };
+        ws.set_attach_mapping(mapping);
+        engine.mark_layout_dirty();
+        Ok(Vec::new())
+    }
+
     pub(super) fn apply_create_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,

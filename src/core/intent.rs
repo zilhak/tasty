@@ -66,6 +66,17 @@ pub(crate) enum DomainIntent {
         to_index: usize,
     },
 
+    /// 없는 workspace나 카테고리면 오류다. workspace 순서와 사용자 선택은 바꾸지 않는다.
+    SetWorkspaceCategory {
+        workspace_id: u32,
+        category: crate::model::WorkspaceCategoryId,
+    },
+    /// None이면 attach 매핑을 지운다. 값 검증은 호출자가 먼저 한다.
+    SetWorkspaceAttachMapping {
+        workspace_id: u32,
+        mapping: Option<crate::model::WorkspaceAttachMapping>,
+    },
+
     /// 이름을 검증해 목록 끝에 추가한다.
     CreateCategory {
         name: String,

@@ -226,7 +226,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 
 ### 자동 매핑
 
-`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 슬롯 파일 영속). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
+`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 슬롯 파일 영속. 설정·해제는 `DomainIntent::SetWorkspaceAttachMapping`으로 `Core::apply`를 거친다). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
 
 **연결이 끊기면 mirror 는 살아있는 채로 자동 재연결을 시도한다**: heartbeat TTL 만료·force-detach 등 원격발 disconnect 로 앵커(매핑된 워크스페이스) 세션이 끊기면, mirror workspace/터미널을 걷어내는 대신 `Reconnecting` 상태로 전이해 살려두고(`src/app/attach_client.rs::enter_reconnecting`), 지수 백오프(0.5s→30s, ±20% jitter)로 재연결을 자동 시도한다(`src/app/auto_attach.rs::maybe_trigger_reconnect`).
 재연결에 성공하면 살아있던 surface 는 scrollback/local id 를 그대로 유지한 채(survivor mapping, `merge_survivor_mapping`) 연결만 새로 맺는다 — 사용자가 아무 조작을 하지 않아도(그 워크스페이스를 계속 보고 있어도) 백그라운드에서 재시도가 진행된다.

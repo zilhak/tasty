@@ -217,11 +217,13 @@ pub fn draw_full_sidebar(
                     let src_cat = engine.workspaces[from].category;
                     match target_category {
                         Some(target_cat) if target_cat != src_cat => {
-                            let ws_id = engine.workspaces[from].id;
-                            if let Err(e) = engine.set_workspace_category(ws_id, target_cat) {
-                                tracing::warn!("drag set_workspace_category failed: {e:?}");
-                            }
-                            engine.mark_layout_dirty();
+                            state.dispatch_intent(
+                                crate::core::intent::DomainIntent::SetWorkspaceCategory {
+                                    workspace_id: engine.workspaces[from].id,
+                                    category: target_cat,
+                                }
+                                .from_user_menu("sidebar_drag_category"),
+                            );
                         }
                         _ => {
                             if let Some(to) = drop_target

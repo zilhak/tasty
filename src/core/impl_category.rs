@@ -4,6 +4,18 @@
 use super::*;
 
 impl Core {
+    pub(super) fn apply_set_workspace_category(
+        engine: &mut crate::core::CoreState,
+        workspace_id: u32,
+        category: crate::model::WorkspaceCategoryId,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        engine
+            .set_workspace_category(workspace_id, category)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        engine.mark_layout_dirty();
+        Ok(Vec::new())
+    }
+
     /// 새 카테고리는 목록 끝에 추가한다. IPC는 끝 항목으로 발급된 ID를 읽는다.
     pub(super) fn apply_create_category(
         engine: &mut crate::core::CoreState,
@@ -213,6 +225,71 @@ mod tests {
     }
 
     #[test]
+    fn set_workspace_category_moves_the_workspace_and_rejects_unknown_targets() {
+        let (mut core, mut engine) = fixture();
+        let a = create(&mut core, &mut engine, "A");
+        engine.layout_dirty.clear();
+        let ws_id = engine.workspaces[0].id;
+        apply(
+            &mut core,
+            &mut engine,
+            DomainIntent::SetWorkspaceCategory {
+                workspace_id: ws_id,
+                category: a,
+            },
+        );
+        assert_eq!(engine.workspaces[0].category, a);
+        assert!(engine.layout_dirty.is_dirty());
+        assert!(
+            core.apply(
+                &mut engine,
+                DomainIntent::SetWorkspaceCategory {
+                    workspace_id: ws_id,
+                    category: 9_999,
+                },
+            )
+            .is_err()
+        );
+        assert_eq!(engine.workspaces[0].category, a);
+    }
+
+    #[test]
+    fn set_workspace_attach_mapping_sets_and_clears() {
+        let (mut core, mut engine) = fixture();
+        let ws_id = engine.workspaces[0].id;
+        let mapping = crate::model::WorkspaceAttachMapping::profile("prod", Some(3));
+        apply(
+            &mut core,
+            &mut engine,
+            DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id: ws_id,
+                mapping: Some(mapping.clone()),
+            },
+        );
+        assert_eq!(engine.workspaces[0].attach_mapping, Some(mapping));
+        assert!(engine.layout_dirty.is_dirty());
+        apply(
+            &mut core,
+            &mut engine,
+            DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id: ws_id,
+                mapping: None,
+            },
+        );
+        assert_eq!(engine.workspaces[0].attach_mapping, None);
+        assert!(
+            core.apply(
+                &mut engine,
+                DomainIntent::SetWorkspaceAttachMapping {
+                    workspace_id: 9_999,
+                    mapping: None,
+                },
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn category_intents_still_apply_locally_on_a_mirror_workspace() {
         let (mut core, mut engine) = fixture();
         engine.workspaces[0].mirror = true;
@@ -223,6 +300,25 @@ mod tests {
             DomainIntent::ToggleCategoryCollapsed { id: a },
         );
         assert!(engine.categories()[1].collapsed);
+        let ws_id = engine.workspaces[0].id;
+        apply(
+            &mut core,
+            &mut engine,
+            DomainIntent::SetWorkspaceCategory {
+                workspace_id: ws_id,
+                category: a,
+            },
+        );
+        apply(
+            &mut core,
+            &mut engine,
+            DomainIntent::SetWorkspaceAttachMapping {
+                workspace_id: ws_id,
+                mapping: Some(crate::model::WorkspaceAttachMapping::profile("p", None)),
+            },
+        );
+        assert_eq!(engine.workspaces[0].category, a);
+        assert!(engine.workspaces[0].attach_mapping.is_some());
         assert!(engine.pending_structural_forward.is_empty());
     }
 }
