@@ -978,7 +978,7 @@ mod tests {
         assert!(!e.attach.is_hard_occupied(c));
 
         assert!(e.child_terminals.remove_child(parent, idx).is_some());
-        e.release_occupancy(c);
+        e.release_soft_occupancy(c, parent).unwrap();
         assert!(e.attach.occupancy_of(c).is_none());
     }
 
